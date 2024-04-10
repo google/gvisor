@@ -1189,6 +1189,105 @@ func TestCheckpointRestore(t *testing.T) {
 	}
 }
 
+// TestCheckpointRestoreExecKilled checks that exec'd processes are killed
+// after the container is restored.
+func TestCheckpointRestoreExecKilled(t *testing.T) {
+	spec := testutil.NewSpecWithArgs("/bin/sleep", "10000")
+	conf := testutil.TestConfig(t)
+	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer cleanup()
+
+	// Create and start the container.
+	args := Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+	}
+	cont, err := New(conf, args)
+	if err != nil {
+		t.Fatalf("error creating container: %v", err)
+	}
+	defer cont.Destroy()
+	if err := cont.Start(conf); err != nil {
+		t.Fatalf("error starting container: %v", err)
+	}
+
+	execArgs := &control.ExecArgs{
+		Filename: "/bin/sleep",
+		Argv:     []string{"/bin/sleep", "10000"},
+	}
+	pid1, err := cont.Execute(conf, execArgs)
+	if err != nil {
+		t.Fatalf("error executing in container: %v", err)
+	}
+	pid2, err := cont.Execute(conf, execArgs)
+	if err != nil {
+		t.Fatalf("error executing in container: %v", err)
+	}
+
+	// Since both share the same process name, ensure that the exec'd process
+	// has a different PID than the init process.
+	if pid1 == 1 || pid2 == 1 {
+		t.Fatalf("exec'd PID cannot be 1")
+	}
+	// Wait until the init process and exec'd processes are present.
+	expectedPL := []*control.Process{
+		newProcessBuilder().Cmd("sleep").PID(1).Process(),
+		newProcessBuilder().Cmd("sleep").PID(kernel.ThreadID(pid1)).Process(),
+		newProcessBuilder().Cmd("sleep").PID(kernel.ThreadID(pid2)).Process(),
+	}
+	if err := waitForProcessList(cont, expectedPL); err != nil {
+		t.Fatalf("Failed to kill exec'ed process, err: %v", err)
+	}
+
+	// Set the image path, which is where the checkpoint image will be saved.
+	dir, err := ioutil.TempDir(testutil.TmpDir(), "checkpoint-test")
+	if err != nil {
+		t.Fatalf("ioutil.TempDir failed: %v", err)
+	}
+	defer os.RemoveAll(dir)
+	if err := os.Chmod(dir, 0777); err != nil {
+		t.Fatalf("error chmoding file: %q, %v", dir, err)
+	}
+
+	// Create the image file and open for writing.
+	checkpointPath := filepath.Join(dir, "test-image-file")
+	checkpointFile, err := os.OpenFile(checkpointPath, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0644)
+	if err != nil {
+		t.Fatalf("error opening new file at imagePath: %v", err)
+	}
+	defer checkpointFile.Close()
+
+	// Checkpoint running container; save state into new file.
+	if err := cont.Checkpoint(checkpointFile, statefile.Options{Compression: statefile.CompressionLevelFlateBestSpeed}); err != nil {
+		t.Fatalf("error checkpointing container: %v", err)
+	}
+	cont.Destroy()
+	cont = nil
+
+	cont2, err := New(conf, args)
+	if err != nil {
+		t.Fatalf("error creating container: %v", err)
+	}
+	defer cont2.Destroy()
+
+	if err := cont2.Restore(conf, checkpointPath); err != nil {
+		t.Fatalf("error restoring container: %v", err)
+	}
+
+	// Check that only the init process is present and the exec'ed
+	// processes were killed.
+	expectedPL = []*control.Process{
+		newProcessBuilder().Cmd("sleep").PID(1).Process(),
+	}
+	if err := waitForProcessList(cont2, expectedPL); err != nil {
+		t.Fatalf("Failed to kill exec'ed process, err: %v", err)
+	}
+}
+
 // TestUnixDomainSockets checks that Checkpoint/Restore works in cases
 // with filesystem Unix Domain Socket use.
 func TestUnixDomainSockets(t *testing.T) {

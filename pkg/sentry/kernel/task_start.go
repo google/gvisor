@@ -103,6 +103,8 @@ type TaskConfig struct {
 	// SessionKeyring is the session keyring associated with the parent task.
 	// It may be nil.
 	SessionKeyring *auth.Key
+
+	Origin TaskOrigin
 }
 
 // NewTask creates a new task defined by cfg.
@@ -172,6 +174,7 @@ func (ts *TaskSet) newTask(ctx context.Context, cfg *TaskConfig) (*Task, error) 
 		cgroups:        make(map[Cgroup]struct{}),
 		userCounters:   cfg.UserCounters,
 		sessionKeyring: cfg.SessionKeyring,
+		Origin:         cfg.Origin,
 	}
 	t.netns = cfg.NetworkNamespace
 	t.creds.Store(cfg.Credentials)
