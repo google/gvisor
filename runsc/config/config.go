@@ -292,7 +292,7 @@ type Config struct {
 	// each.
 	FDLimit int `flag:"fdlimit"`
 
-	// DCache sets the global dirent cache size. If zero, per-mount caches are
+	// DCache sets the global dirent cache size. If negative, per-mount caches are
 	// used.
 	DCache int `flag:"dcache"`
 

@@ -159,9 +159,9 @@ func (d *dentryCache) StateTypeName() string {
 
 func (d *dentryCache) StateFields() []string {
 	return []string{
+		"maxCachedDentries",
 		"dentries",
 		"dentriesLen",
-		"maxCachedDentries",
 	}
 }
 
@@ -170,18 +170,18 @@ func (d *dentryCache) beforeSave() {}
 // +checklocksignore
 func (d *dentryCache) StateSave(stateSinkObject state.Sink) {
 	d.beforeSave()
-	stateSinkObject.Save(0, &d.dentries)
-	stateSinkObject.Save(1, &d.dentriesLen)
-	stateSinkObject.Save(2, &d.maxCachedDentries)
+	stateSinkObject.Save(0, &d.maxCachedDentries)
+	stateSinkObject.Save(1, &d.dentries)
+	stateSinkObject.Save(2, &d.dentriesLen)
 }
 
 func (d *dentryCache) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (d *dentryCache) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &d.dentries)
-	stateSourceObject.Load(1, &d.dentriesLen)
-	stateSourceObject.Load(2, &d.maxCachedDentries)
+	stateSourceObject.Load(0, &d.maxCachedDentries)
+	stateSourceObject.Load(1, &d.dentries)
+	stateSourceObject.Load(2, &d.dentriesLen)
 }
 
 func (fstype *FilesystemType) StateTypeName() string {
@@ -273,6 +273,7 @@ func (f *filesystemOptions) StateFields() []string {
 		"interop",
 		"dfltuid",
 		"dfltgid",
+		"dcache",
 		"forcePageCache",
 		"limitHostFDTranslation",
 		"overlayfsStaleRead",
@@ -292,12 +293,13 @@ func (f *filesystemOptions) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(2, &f.interop)
 	stateSinkObject.Save(3, &f.dfltuid)
 	stateSinkObject.Save(4, &f.dfltgid)
-	stateSinkObject.Save(5, &f.forcePageCache)
-	stateSinkObject.Save(6, &f.limitHostFDTranslation)
-	stateSinkObject.Save(7, &f.overlayfsStaleRead)
-	stateSinkObject.Save(8, &f.regularFilesUseSpecialFileFD)
-	stateSinkObject.Save(9, &f.disableFifoOpen)
-	stateSinkObject.Save(10, &f.directfs)
+	stateSinkObject.Save(5, &f.dcache)
+	stateSinkObject.Save(6, &f.forcePageCache)
+	stateSinkObject.Save(7, &f.limitHostFDTranslation)
+	stateSinkObject.Save(8, &f.overlayfsStaleRead)
+	stateSinkObject.Save(9, &f.regularFilesUseSpecialFileFD)
+	stateSinkObject.Save(10, &f.disableFifoOpen)
+	stateSinkObject.Save(11, &f.directfs)
 }
 
 func (f *filesystemOptions) afterLoad(context.Context) {}
@@ -309,12 +311,13 @@ func (f *filesystemOptions) StateLoad(ctx context.Context, stateSourceObject sta
 	stateSourceObject.Load(2, &f.interop)
 	stateSourceObject.Load(3, &f.dfltuid)
 	stateSourceObject.Load(4, &f.dfltgid)
-	stateSourceObject.Load(5, &f.forcePageCache)
-	stateSourceObject.Load(6, &f.limitHostFDTranslation)
-	stateSourceObject.Load(7, &f.overlayfsStaleRead)
-	stateSourceObject.Load(8, &f.regularFilesUseSpecialFileFD)
-	stateSourceObject.Load(9, &f.disableFifoOpen)
-	stateSourceObject.Load(10, &f.directfs)
+	stateSourceObject.Load(5, &f.dcache)
+	stateSourceObject.Load(6, &f.forcePageCache)
+	stateSourceObject.Load(7, &f.limitHostFDTranslation)
+	stateSourceObject.Load(8, &f.overlayfsStaleRead)
+	stateSourceObject.Load(9, &f.regularFilesUseSpecialFileFD)
+	stateSourceObject.Load(10, &f.disableFifoOpen)
+	stateSourceObject.Load(11, &f.directfs)
 }
 
 func (d *directfsOpts) StateTypeName() string {
