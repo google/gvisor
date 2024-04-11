@@ -26,7 +26,7 @@ def _packetdrill_test_impl(ctx):
 
     transitive_files = depset()
     if hasattr(ctx.attr._test_runner, "data_runfiles"):
-        transitive_files = ctx.attr._test_runner.data_runfiles.files
+        transitive_files = ctx.attr._test_runner[DefaultInfo].data_runfiles.files
     runfiles = ctx.runfiles(
         files = [test_runner] + ctx.files._init_script + ctx.files.scripts,
         transitive_files = transitive_files,
