@@ -16,6 +16,10 @@
 // https://github.com/NVIDIA/open-gpu-kernel-modules
 package nvgpu
 
+import (
+	"fmt"
+)
+
 // Device numbers.
 const (
 	NV_MAJOR_DEVICE_NUMBER          = 195 // from kernel-open/common/inc/nv.h
@@ -28,6 +32,11 @@ const (
 // +marshal
 type Handle struct {
 	Val uint32
+}
+
+// String implements fmt.Stringer.String.
+func (h Handle) String() string {
+	return fmt.Sprintf("%#x", h.Val)
 }
 
 // P64 is NvP64, from src/common/sdk/nvidia/inc/nvtypes.h.

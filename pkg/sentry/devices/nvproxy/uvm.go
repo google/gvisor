@@ -131,8 +131,8 @@ func (fd *uvmFD) Ioctl(ctx context.Context, uio usermem.IO, sysno uintptr, args 
 		panic("Ioctl should be called from a task context")
 	}
 
-	if log.IsLogging(log.Debug) {
-		ctx.Debugf("nvproxy: uvm ioctl %#08x", cmd)
+	if ctx.IsLogging(log.Debug) {
+		ctx.Debugf("nvproxy: uvm ioctl %d = %#x", cmd, cmd)
 	}
 
 	ui := uvmIoctlState{
@@ -144,7 +144,7 @@ func (fd *uvmFD) Ioctl(ctx context.Context, uio usermem.IO, sysno uintptr, args 
 	}
 	handler := fd.nvp.abi.uvmIoctl[cmd]
 	if handler == nil {
-		ctx.Warningf("nvproxy: unknown uvm ioctl %d", cmd)
+		ctx.Warningf("nvproxy: unknown uvm ioctl %d = %#x", cmd, cmd)
 		return 0, linuxerr.EINVAL
 	}
 	return handler(&ui)
