@@ -161,3 +161,91 @@ func findHomeInPasswd(uid uint32, passwd io.Reader, defaultHome string) (string,
 
 	return defaultHome, nil
 }
+
+func findUIDGIDInPasswd(passwd io.Reader, user string) (uint32, uint32, error) {
+	s := bufio.NewScanner(passwd)
+	for s.Scan() {
+		if err := s.Err(); err != nil {
+			return 0, 0, err
+		}
+
+		line := strings.TrimSpace(s.Text())
+		if line == "" {
+			continue
+		}
+
+		// Pull out part of passwd entry. Loosely parse the passwd entry as some
+		// passwd files could be poorly written and for compatibility with runc.
+		//
+		// Per 'man 5 passwd'
+		// /etc/passwd contains one line for each user account, with seven
+		// fields delimited by colons (“:”). These fields are:
+		//
+		//	- login name
+		//	- optional encrypted password
+		//	- numerical user ID
+		//	- numerical group ID
+		//	- user name or comment field
+		//	- user home directory
+		//	- optional user command interpreter
+		parts := strings.Split(line, ":")
+
+		if parts[0] == user {
+			parseUID, err := strconv.ParseUint(parts[2], 10, 32)
+			if err != nil {
+				return 0, 0, err
+			}
+			parseGID, err := strconv.ParseUint(parts[3], 10, 32)
+			if err != nil {
+				return 0, 0, err
+			}
+			return uint32(parseUID), uint32(parseGID), nil
+		}
+	}
+	return 0, 0, fmt.Errorf("couldn't retrieve UID/GID from user: %v", user)
+}
+
+func getExecUIDGID(ctx context.Context, mns *vfs.MountNamespace, user string) (uint32, uint32, error) {
+	root := mns.Root(ctx)
+	defer root.DecRef(ctx)
+
+	creds := auth.CredentialsFromContext(ctx)
+
+	target := &vfs.PathOperation{
+		Root:  root,
+		Start: root,
+		Path:  fspath.Parse("/etc/passwd"),
+	}
+
+	opts := &vfs.OpenOptions{
+		Flags: linux.O_RDONLY,
+	}
+	fd, err := root.Mount().Filesystem().VirtualFilesystem().OpenAt(ctx, creds, target, opts)
+	if err != nil {
+		return 0, 0, nil
+	}
+	defer fd.DecRef(ctx)
+
+	r := &fileReader{
+		ctx: ctx,
+		fd:  fd,
+	}
+
+	uid, gid, err := findUIDGIDInPasswd(r, user)
+	if err != nil {
+		return 0, 0, err
+	}
+
+	return uid, gid, nil
+}
+
+// GetExecUIDGIDFromUser retrieves the UID and GID from /etc/passwd file for
+// the given user. If the user is not available, root credentials are returned.
+func GetExecUIDGIDFromUser(ctx context.Context, vmns *vfs.MountNamespace, user string) (auth.KUID, auth.KGID, error) {
+	// Read /etc/passwd and retrieve the UID/GID based on the user string.
+	uid, gid, err := getExecUIDGID(ctx, vmns, user)
+	if err != nil {
+		return 0, 0, fmt.Errorf("error reading /etc/passwd: %v", err)
+	}
+	return auth.KUID(uid), auth.KGID(gid), nil
+}
