@@ -234,9 +234,6 @@ type Config struct {
 	// for the duration of the container execution.
 	TraceFile string `flag:"trace"`
 
-	// RestoreFile is the path to the saved container image.
-	RestoreFile string
-
 	// NumNetworkChannels controls the number of AF_PACKET sockets that map
 	// to the same underlying network device. This allows netstack to better
 	// scale for high throughput use cases.

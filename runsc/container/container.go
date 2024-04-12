@@ -525,7 +525,7 @@ func (c *Container) Start(conf *config.Config) error {
 
 // Restore takes a container and replaces its kernel and file system
 // to restore a container from its state file.
-func (c *Container) Restore(conf *config.Config, restoreFile string) error {
+func (c *Container) Restore(conf *config.Config, imagePath string) error {
 	log.Debugf("Restore container, cid: %s", c.ID)
 	if err := c.Saver.lock(BlockAcquire); err != nil {
 		return err
@@ -542,7 +542,7 @@ func (c *Container) Restore(conf *config.Config, restoreFile string) error {
 		log.Warningf("StartContainer hook skipped because running inside container namespace is not supported")
 	}
 
-	if err := c.Sandbox.Restore(conf, c.ID, restoreFile); err != nil {
+	if err := c.Sandbox.Restore(conf, c.ID, imagePath); err != nil {
 		return err
 	}
 	c.changeStatus(Running)
@@ -563,15 +563,8 @@ func Run(conf *config.Config, args Args) (unix.WaitStatus, error) {
 	})
 	defer cu.Clean()
 
-	if conf.RestoreFile != "" {
-		log.Debugf("Restore: %v", conf.RestoreFile)
-		if err := c.Restore(conf, conf.RestoreFile); err != nil {
-			return 0, fmt.Errorf("starting container: %v", err)
-		}
-	} else {
-		if err := c.Start(conf); err != nil {
-			return 0, fmt.Errorf("starting container: %v", err)
-		}
+	if err := c.Start(conf); err != nil {
+		return 0, fmt.Errorf("starting container: %v", err)
 	}
 
 	// If we allocate a terminal, forward signals to the sandbox process.
@@ -721,12 +714,12 @@ func (c *Container) ForwardSignals(pid int32, fgProcess bool) func() {
 
 // Checkpoint sends the checkpoint call to the container.
 // The statefile will be written to f, the file at the specified image-path.
-func (c *Container) Checkpoint(f *os.File, options statefile.Options) error {
+func (c *Container) Checkpoint(imagePath string, options statefile.Options) error {
 	log.Debugf("Checkpoint container, cid: %s", c.ID)
 	if err := c.requireStatus("checkpoint", Created, Running, Paused); err != nil {
 		return err
 	}
-	return c.Sandbox.Checkpoint(c.ID, f, options)
+	return c.Sandbox.Checkpoint(c.ID, imagePath, options)
 }
 
 // Pause suspends the container and its kernel.

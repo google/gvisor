@@ -34,6 +34,8 @@ package kernel
 import (
 	"errors"
 	"fmt"
+	"io"
+	"os"
 	"path/filepath"
 	"time"
 
@@ -524,7 +526,7 @@ type privateMemoryFileMetadata struct {
 	owners []string
 }
 
-func savePrivateMFs(ctx context.Context, w wire.Writer, mfsToSave map[string]*pgalloc.MemoryFile) error {
+func savePrivateMFs(ctx context.Context, w wire.Writer, pw io.Writer, mfsToSave map[string]*pgalloc.MemoryFile) error {
 	var meta privateMemoryFileMetadata
 	// Generate the order in which private memory files are saved.
 	for fsID := range mfsToSave {
@@ -536,14 +538,14 @@ func savePrivateMFs(ctx context.Context, w wire.Writer, mfsToSave map[string]*pg
 	}
 	// Followed by the private memory files in order.
 	for _, fsID := range meta.owners {
-		if err := mfsToSave[fsID].SaveTo(ctx, w); err != nil {
+		if err := mfsToSave[fsID].SaveTo(ctx, w, pw); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func loadPrivateMFs(ctx context.Context, r wire.Reader) error {
+func loadPrivateMFs(ctx context.Context, r wire.Reader, pr io.Reader) error {
 	// Load the metadata.
 	var meta privateMemoryFileMetadata
 	if _, err := state.Load(ctx, r, &meta); err != nil {
@@ -560,7 +562,7 @@ func loadPrivateMFs(ctx context.Context, r wire.Reader) error {
 		if !ok {
 			return fmt.Errorf("saved memory file for %q was not configured on restore", fsID)
 		}
-		if err := mf.LoadFrom(ctx, r); err != nil {
+		if err := mf.LoadFrom(ctx, r, pr); err != nil {
 			return err
 		}
 	}
@@ -570,7 +572,7 @@ func loadPrivateMFs(ctx context.Context, r wire.Reader) error {
 // SaveTo saves the state of k to w.
 //
 // Preconditions: The kernel must be paused throughout the call to SaveTo.
-func (k *Kernel) SaveTo(ctx context.Context, w wire.Writer) error {
+func (k *Kernel) SaveTo(ctx context.Context, w wire.Writer, pagesFile *os.File) error {
 	saveStart := time.Now()
 
 	// Do not allow other Kernel methods to affect it while it's being saved.
@@ -638,10 +640,14 @@ func (k *Kernel) SaveTo(ctx context.Context, w wire.Writer) error {
 
 	// Save the memory files' state.
 	memoryStart := time.Now()
-	if err := k.mf.SaveTo(ctx, w); err != nil {
+	pw := io.Writer(w)
+	if pagesFile != nil {
+		pw = pagesFile
+	}
+	if err := k.mf.SaveTo(ctx, w, pw); err != nil {
 		return err
 	}
-	if err := savePrivateMFs(ctx, w, mfsToSave); err != nil {
+	if err := savePrivateMFs(ctx, w, pw, mfsToSave); err != nil {
 		return err
 	}
 	log.Infof("Memory files save took [%s].", time.Since(memoryStart))
@@ -677,7 +683,7 @@ func (k *Kernel) invalidateUnsavableMappings(ctx context.Context) error {
 }
 
 // LoadFrom returns a new Kernel loaded from args.
-func (k *Kernel) LoadFrom(ctx context.Context, r wire.Reader, timeReady chan struct{}, net inet.Stack, clocks sentrytime.Clocks, vfsOpts *vfs.CompleteRestoreOptions) error {
+func (k *Kernel) LoadFrom(ctx context.Context, r wire.Reader, pagesFile *os.File, timeReady chan struct{}, net inet.Stack, clocks sentrytime.Clocks, vfsOpts *vfs.CompleteRestoreOptions) error {
 	loadStart := time.Now()
 
 	k.runningTasksCond.L = &k.runningTasksMu
@@ -719,10 +725,14 @@ func (k *Kernel) LoadFrom(ctx context.Context, r wire.Reader, timeReady chan str
 
 	// Load the memory files' state.
 	memoryStart := time.Now()
-	if err := k.mf.LoadFrom(ctx, r); err != nil {
+	pr := io.Reader(r)
+	if pagesFile != nil {
+		pr = pagesFile
+	}
+	if err := k.mf.LoadFrom(ctx, r, pr); err != nil {
 		return err
 	}
-	if err := loadPrivateMFs(ctx, r); err != nil {
+	if err := loadPrivateMFs(ctx, r, pr); err != nil {
 		return err
 	}
 	log.Infof("Memory files load took [%s].", time.Since(memoryStart))

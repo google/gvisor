@@ -17,7 +17,6 @@ package cmd
 import (
 	"context"
 	"os"
-	"path/filepath"
 
 	"github.com/google/subcommands"
 	"golang.org/x/sys/unix"
@@ -99,8 +98,6 @@ func (r *Restore) Execute(_ context.Context, f *flag.FlagSet, args ...any) subco
 	var cu cleanup.Cleanup
 	defer cu.Clean()
 
-	conf.RestoreFile = filepath.Join(r.imagePath, checkpointFileName)
-
 	runArgs := container.Args{
 		ID:            id,
 		Spec:          nil,
@@ -140,8 +137,8 @@ func (r *Restore) Execute(_ context.Context, f *flag.FlagSet, args ...any) subco
 		runArgs.Spec = c.Spec
 	}
 
-	log.Debugf("Restore: %v", conf.RestoreFile)
-	if err := c.Restore(conf, conf.RestoreFile); err != nil {
+	log.Debugf("Restore: %v", r.imagePath)
+	if err := c.Restore(conf, r.imagePath); err != nil {
 		return util.Errorf("starting container: %v", err)
 	}
 
