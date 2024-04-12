@@ -1451,7 +1451,10 @@ func (s *Sandbox) destroyContainer(cid string) error {
 	return nil
 }
 
+// waitForStopped waits for the sandbox to actually stop.
+// This should only be called when the sandbox is known to be shutting down.
 func (s *Sandbox) waitForStopped() error {
+	const waitTimeout = 2 * time.Minute
 	if s.child {
 		s.statusMu.Lock()
 		defer s.statusMu.Unlock()
@@ -1467,8 +1470,7 @@ func (s *Sandbox) waitForStopped() error {
 		s.Pid.store(0)
 		return nil
 	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), waitTimeout)
 	defer cancel()
 	b := backoff.WithContext(backoff.NewConstantBackOff(100*time.Millisecond), ctx)
 	op := func() error {
