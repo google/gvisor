@@ -14,7 +14,24 @@
 
 package nvgpu
 
-// Class handles, from src/nvidia/generated/g_allclasses.h.
+import (
+	"fmt"
+)
+
+// ClassID is a client class ID, in the sense of
+// src/nvidia/src/kernel/rmapi/resource_desc.h:RS_RESOURCE_DESC::externalClassID.
+//
+// +marshal
+type ClassID uint32
+
+// String implements fmt.Stringer.String.
+func (id ClassID) String() string {
+	// Include leading zeroes for easier searchability, both here and in
+	// g_allclasses.h.
+	return fmt.Sprintf("0x%08x", uint32(id))
+}
+
+// Class IDs, from src/nvidia/generated/g_allclasses.h.
 const (
 	NV01_ROOT                        = 0x00000000
 	NV01_ROOT_NON_PRIV               = 0x00000001
@@ -27,9 +44,9 @@ const (
 	NV_MEMORY_FABRIC                 = 0x000000f8
 	NV20_SUBDEVICE_0                 = 0x00002080
 	NV2081_BINAPI                    = 0x00002081
-	NV50_MEMORY_VIRTUAL              = 0x000050a0
 	NV50_P2P                         = 0x0000503b
 	NV50_THIRD_PARTY_P2P             = 0x0000503c
+	NV50_MEMORY_VIRTUAL              = 0x000050a0
 	GT200_DEBUGGER                   = 0x000083de
 	GF100_SUBDEVICE_MASTER           = 0x000090e6
 	FERMI_CONTEXT_SHARE_A            = 0x00009067

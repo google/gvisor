@@ -127,7 +127,7 @@ type NVOS02Parameters struct {
 	HRoot         Handle
 	HObjectParent Handle
 	HObjectNew    Handle
-	HClass        uint32
+	HClass        ClassID
 	Flags         uint32
 	Pad0          [4]byte
 	PMemory       P64 // address of application mapping, without indirection
@@ -177,7 +177,7 @@ type NVOS21Parameters struct {
 	HRoot         Handle
 	HObjectParent Handle
 	HObjectNew    Handle
-	HClass        uint32
+	HClass        ClassID
 	PAllocParms   P64
 	ParamsSize    uint32
 	Status        uint32
@@ -373,7 +373,7 @@ type NVOS64Parameters struct {
 	HRoot            Handle
 	HObjectParent    Handle
 	HObjectNew       Handle
-	HClass           uint32
+	HClass           ClassID
 	PAllocParms      P64
 	PRightsRequested P64
 	ParamsSize       uint32

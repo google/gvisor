@@ -151,7 +151,7 @@ func (fd *frontendFD) Ioctl(ctx context.Context, uio usermem.IO, sysno uintptr, 
 	}
 
 	if log.IsLogging(log.Debug) {
-		ctx.Debugf("nvproxy: frontend ioctl: nr = %#08x, argSize = %#08x", nr, argSize)
+		ctx.Debugf("nvproxy: frontend ioctl: nr = %d = %#x, argSize = %d", nr, nr, argSize)
 	}
 
 	fi := frontendIoctlState{
@@ -329,7 +329,7 @@ func rmAllocMemory(fi *frontendIoctlState) (uintptr, error) {
 	}
 
 	if log.IsLogging(log.Debug) {
-		fi.ctx.Debugf("nvproxy: NV_ESC_RM_ALLOC_MEMORY class %#08x", ioctlParams.Params.HClass)
+		fi.ctx.Debugf("nvproxy: NV_ESC_RM_ALLOC_MEMORY class %v", ioctlParams.Params.HClass)
 	}
 	// See src/nvidia/arch/nvalloc/unix/src/escape.c:RmIoctl() and
 	// src/nvidia/interface/deprecated/rmapi_deprecated_allocmemory.c:rmAllocMemoryTable
@@ -338,7 +338,7 @@ func rmAllocMemory(fi *frontendIoctlState) (uintptr, error) {
 	case nvgpu.NV01_MEMORY_SYSTEM_OS_DESCRIPTOR:
 		return rmAllocOSDescriptor(fi, &ioctlParams)
 	default:
-		fi.ctx.Warningf("nvproxy: unknown NV_ESC_RM_ALLOC_MEMORY class %#08x", ioctlParams.Params.HClass)
+		fi.ctx.Warningf("nvproxy: unknown NV_ESC_RM_ALLOC_MEMORY class %v", ioctlParams.Params.HClass)
 		return 0, linuxerr.EINVAL
 	}
 }
@@ -430,7 +430,7 @@ func rmAllocOSDescriptor(fi *frontendIoctlState, ioctlParams *nvgpu.IoctlNVOS02P
 	fi.fd.nvp.objsLive[sentryIoctlParams.Params.HObjectNew] = &o.object
 	fi.fd.nvp.objsMu.Unlock()
 	cu.Release()
-	fi.ctx.Infof("nvproxy: pinned pages for OS descriptor with handle %#x", sentryIoctlParams.Params.HObjectNew)
+	fi.ctx.Infof("nvproxy: pinned pages for OS descriptor with handle %v", sentryIoctlParams.Params.HObjectNew)
 	// Unmap the reserved range, which is no longer required.
 	unix.RawSyscall(unix.SYS_MUNMAP, m, uintptr(arLen), 0)
 
@@ -669,7 +669,7 @@ func rmAlloc(fi *frontendIoctlState) (uintptr, error) {
 
 	// hClass determines the type of pAllocParms.
 	if log.IsLogging(log.Debug) {
-		fi.ctx.Debugf("nvproxy: allocation class %#08x", ioctlParams.HClass)
+		fi.ctx.Debugf("nvproxy: allocation class %v", ioctlParams.HClass)
 	}
 	// Implementors:
 	// - To map hClass to a symbol, look in
@@ -681,7 +681,7 @@ func rmAlloc(fi *frontendIoctlState) (uintptr, error) {
 	// - Add handling below.
 	handler := fi.fd.nvp.abi.allocationClass[ioctlParams.HClass]
 	if handler == nil {
-		fi.ctx.Warningf("nvproxy: unknown allocation class %#08x", ioctlParams.HClass)
+		fi.ctx.Warningf("nvproxy: unknown allocation class %v", ioctlParams.HClass)
 		// Compare
 		// src/nvidia/src/kernel/rmapi/alloc_free.c:serverAllocResourceUnderLock(),
 		// when RsResInfoByExternalClassId() is null.

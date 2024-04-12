@@ -125,7 +125,7 @@ type driverABI struct {
 	frontendIoctl   map[uint32]frontendIoctlHandler
 	uvmIoctl        map[uint32]uvmIoctlHandler
 	controlCmd      map[uint32]controlCmdHandler
-	allocationClass map[uint32]allocationClassHandler
+	allocationClass map[nvgpu.ClassID]allocationClassHandler
 }
 
 // abis is a global map containing all supported Nvidia driver ABIs. This is
@@ -285,7 +285,7 @@ func Init() {
 					nvgpu.NV2080_CTRL_CMD_FIFO_DISABLE_CHANNELS:                            ctrlSubdevFIFODisableChannels,
 					nvgpu.NV2080_CTRL_CMD_GR_GET_INFO:                                      ctrlSubdevGRGetInfo,
 				},
-				allocationClass: map[uint32]allocationClassHandler{
+				allocationClass: map[nvgpu.ClassID]allocationClassHandler{
 					nvgpu.NV01_ROOT:                 rmAllocSimple[nvgpu.Handle],
 					nvgpu.NV01_ROOT_NON_PRIV:        rmAllocSimple[nvgpu.Handle],
 					nvgpu.NV01_MEMORY_SYSTEM:        rmAllocSimple[nvgpu.NV_MEMORY_ALLOCATION_PARAMS],
@@ -421,7 +421,7 @@ func SupportedIoctls(version DriverVersion) (frontendIoctls map[uint32]struct{},
 	}
 	allocClasses = make(map[uint32]struct{})
 	for class := range abi.allocationClass {
-		allocClasses[class] = struct{}{}
+		allocClasses[uint32(class)] = struct{}{}
 	}
 	return
 }
