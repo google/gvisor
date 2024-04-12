@@ -155,8 +155,9 @@ func Init() {
 			// with the entirety of the nvproxy functionality at this version.
 			return &driverABI{
 				frontendIoctl: map[uint32]frontendIoctlHandler{
-					nvgpu.NV_ESC_CARD_INFO:                     frontendIoctlSimple, // nv_ioctl_card_info_t
+					nvgpu.NV_ESC_CARD_INFO:                     frontendIoctlSimple, // nv_ioctl_card_info_t array
 					nvgpu.NV_ESC_CHECK_VERSION_STR:             frontendIoctlSimple, // nv_rm_api_version_t
+					nvgpu.NV_ESC_ATTACH_GPUS_TO_FD:             frontendIoctlSimple, // NvU32 array containing GPU IDs
 					nvgpu.NV_ESC_SYS_PARAMS:                    frontendIoctlSimple, // nv_ioctl_sys_params_t
 					nvgpu.NV_ESC_RM_DUP_OBJECT:                 frontendIoctlSimple, // NVOS55_PARAMETERS
 					nvgpu.NV_ESC_RM_SHARE:                      frontendIoctlSimple, // NVOS57_PARAMETERS
