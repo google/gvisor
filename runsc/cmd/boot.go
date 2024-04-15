@@ -585,8 +585,10 @@ func umountProc(syncFD int) {
 	if !waitStatus.Exited() || waitStatus.ExitStatus() != 0 {
 		util.Fatalf("the proc umounter process failed: %v", waitStatus)
 	}
-	if err := unix.Access("/proc/self", unix.F_OK); err != unix.ENOENT {
-		util.Fatalf("/proc is still accessible")
+
+	entries, err := os.ReadDir("/proc");
+	if len(entries) != 0 || (err != nil && !os.IsNotExist(err)) {
+		util.Fatalf("/proc is still accessible, error: %v", err)
 	}
 }
 
