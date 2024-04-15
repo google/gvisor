@@ -54,7 +54,7 @@ func (*Checkpoint) Usage() string {
 func (c *Checkpoint) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&c.imagePath, "image-path", "", "directory path to saved container image")
 	f.BoolVar(&c.leaveRunning, "leave-running", false, "restart the container after checkpointing")
-	f.Var(newCheckpointCompressionValue(statefile.CompressionLevelFlateBestSpeed, &c.compression), "compression", "compress checkpoint image on disk. Values: none|flate-best-speed.")
+	f.Var(newCheckpointCompressionValue(statefile.CompressionLevelDefault, &c.compression), "compression", "compress checkpoint image on disk. Values: none|flate-best-speed.")
 
 	// Unimplemented flags necessary for compatibility with docker.
 	var wp string

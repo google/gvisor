@@ -1023,7 +1023,7 @@ func TestKillPid(t *testing.T) {
 // recorded. Then, it is restored in two new containers and the first number
 // printed from these containers is checked. Both should be the next consecutive
 // number after the last number from the checkpointed container.
-func testCheckpointRestore(t *testing.T, conf *config.Config, newSpecWithScript func(string) *specs.Spec) {
+func testCheckpointRestore(t *testing.T, conf *config.Config, compression statefile.CompressionLevel, newSpecWithScript func(string) *specs.Spec) {
 	dir, err := ioutil.TempDir(testutil.TmpDir(), "checkpoint-test")
 	if err != nil {
 		t.Fatalf("ioutil.TempDir failed: %v", err)
@@ -1069,7 +1069,7 @@ func testCheckpointRestore(t *testing.T, conf *config.Config, newSpecWithScript 
 	}
 
 	// Checkpoint running container; save state into new file.
-	if err := cont.Checkpoint(dir, statefile.Options{Compression: statefile.CompressionLevelFlateBestSpeed}); err != nil {
+	if err := cont.Checkpoint(dir, statefile.Options{Compression: compression}); err != nil {
 		t.Fatalf("error checkpointing container to empty file: %v", err)
 	}
 
@@ -1171,9 +1171,17 @@ func TestCheckpointRestore(t *testing.T) {
 	// Skip overlay because test requires writing to host file.
 	for name, conf := range configs(t, true /* noOverlay */) {
 		t.Run(name, func(t *testing.T) {
-			testCheckpointRestore(t, conf, func(script string) *specs.Spec {
-				return testutil.NewSpecWithArgs("bash", "-c", script)
-			})
+			compressionLevels := []statefile.CompressionLevel{
+				statefile.CompressionLevelNone,
+				statefile.CompressionLevelFlateBestSpeed,
+			}
+			for _, compression := range compressionLevels {
+				t.Run(string(compression), func(t *testing.T) {
+					testCheckpointRestore(t, conf, compression, func(script string) *specs.Spec {
+						return testutil.NewSpecWithArgs("bash", "-c", script)
+					})
+				})
+			}
 		})
 	}
 }
@@ -1337,7 +1345,7 @@ func TestUnixDomainSockets(t *testing.T) {
 			}
 
 			// Checkpoint running container; save state into new file.
-			if err := cont.Checkpoint(dir, statefile.Options{Compression: statefile.CompressionLevelFlateBestSpeed}); err != nil {
+			if err := cont.Checkpoint(dir, statefile.Options{Compression: statefile.CompressionLevelDefault}); err != nil {
 				t.Fatalf("error checkpointing container to empty file: %v", err)
 			}
 
@@ -3401,7 +3409,7 @@ func TestCheckpointRestoreEROFS(t *testing.T) {
 	// Skip overlay because test requires writing to host file.
 	for name, conf := range configs(t, true /* noOverlay */) {
 		t.Run(name, func(t *testing.T) {
-			testCheckpointRestore(t, conf, func(script string) *specs.Spec {
+			testCheckpointRestore(t, conf, statefile.CompressionLevelDefault, func(script string) *specs.Spec {
 				spec := testutil.NewSpecWithArgs("/busybox", "sh", "-c", script)
 				spec.Root = &specs.Root{
 					Path:     rootfsDir,

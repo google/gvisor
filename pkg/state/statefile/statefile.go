@@ -99,6 +99,8 @@ const (
 	CompressionLevelFlateBestSpeed = CompressionLevel("flate-best-speed")
 	// CompressionLevelNone represents the absence of any compression on an image.
 	CompressionLevelNone = CompressionLevel("none")
+	// CompressionLevelDefault represents the default compression level.
+	CompressionLevelDefault = CompressionLevelFlateBestSpeed
 )
 
 // Options is statefile options.
