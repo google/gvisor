@@ -26,7 +26,7 @@ import (
 	"gvisor.dev/gvisor/test/benchmarks/tools"
 )
 
-func BenchmarkIperf(b *testing.B) {
+func BenchmarkIperfOneConnection(b *testing.B) {
 	clientMachine, err := harness.GetMachine()
 	if err != nil {
 		b.Fatalf("failed to get machine: %v", err)
@@ -106,7 +106,7 @@ func BenchmarkIperf(b *testing.B) {
 	}
 }
 
-func BenchmarkIperfParameterized(b *testing.B) {
+func BenchmarkIperfManyConnections(b *testing.B) {
 	clientMachine, err := harness.GetMachine()
 	if err != nil {
 		b.Fatalf("failed to get machine: %v", err)
@@ -131,85 +131,37 @@ func BenchmarkIperfParameterized(b *testing.B) {
 		// server.
 		{
 			name:       "Upload",
-			length:     4,
-			parallel:   1,
+			parallel:   4,
 			clientFunc: clientMachine.GetContainer,
 			serverFunc: serverMachine.GetNativeContainer,
 		},
 		{
-			name:       "Upload",
-			length:     64,
-			parallel:   1,
-			clientFunc: clientMachine.GetContainer,
-			serverFunc: serverMachine.GetNativeContainer,
+			name:       "Download",
+			parallel:   4,
+			clientFunc: clientMachine.GetNativeContainer,
+			serverFunc: serverMachine.GetContainer,
 		},
 		{
 			name:       "Upload",
-			length:     1024,
-			parallel:   1,
-			clientFunc: clientMachine.GetContainer,
-			serverFunc: serverMachine.GetNativeContainer,
-		},
-		{
-			name:       "Upload",
-			length:     4,
-			parallel:   16,
-			clientFunc: clientMachine.GetContainer,
-			serverFunc: serverMachine.GetNativeContainer,
-		},
-		{
-			name:       "Upload",
-			length:     64,
-			parallel:   16,
-			clientFunc: clientMachine.GetContainer,
-			serverFunc: serverMachine.GetNativeContainer,
-		},
-		{
-			name:       "Upload",
-			length:     1024,
 			parallel:   16,
 			clientFunc: clientMachine.GetContainer,
 			serverFunc: serverMachine.GetNativeContainer,
 		},
 		{
 			name:       "Download",
-			length:     4,
-			parallel:   1,
-			clientFunc: clientMachine.GetNativeContainer,
-			serverFunc: serverMachine.GetContainer,
-		},
-		{
-			name:       "Download",
-			length:     64,
-			parallel:   1,
-			clientFunc: clientMachine.GetNativeContainer,
-			serverFunc: serverMachine.GetContainer,
-		},
-		{
-			name:       "Download",
-			length:     1024,
-			parallel:   1,
-			clientFunc: clientMachine.GetNativeContainer,
-			serverFunc: serverMachine.GetContainer,
-		},
-		{
-			name:       "Download",
-			length:     4,
 			parallel:   16,
 			clientFunc: clientMachine.GetNativeContainer,
 			serverFunc: serverMachine.GetContainer,
 		},
 		{
-			name:       "Download",
-			length:     64,
-			parallel:   16,
-			clientFunc: clientMachine.GetNativeContainer,
-			serverFunc: serverMachine.GetContainer,
+			name:       "Upload",
+			parallel:   64,
+			clientFunc: clientMachine.GetContainer,
+			serverFunc: serverMachine.GetNativeContainer,
 		},
 		{
 			name:       "Download",
-			length:     1024,
-			parallel:   16,
+			parallel:   64,
 			clientFunc: clientMachine.GetNativeContainer,
 			serverFunc: serverMachine.GetContainer,
 		},
@@ -217,9 +169,6 @@ func BenchmarkIperfParameterized(b *testing.B) {
 		name, err := tools.ParametersToName(tools.Parameter{
 			Name:  "operation",
 			Value: bm.name,
-		}, tools.Parameter{
-			Name:  "length",
-			Value: fmt.Sprintf("%dK", bm.length),
 		}, tools.Parameter{
 			Name:  "parallel",
 			Value: fmt.Sprintf("%d", bm.parallel),
@@ -249,8 +198,7 @@ func BenchmarkIperfParameterized(b *testing.B) {
 			}
 
 			iperf := tools.Iperf{
-				Num:      b.N,       // KB for the client to send.
-				Length:   bm.length, // KB for length.
+				Num:      b.N, // KB for the client to send.
 				Parallel: bm.parallel,
 			}
 
