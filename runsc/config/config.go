@@ -310,6 +310,12 @@ type Config struct {
 	// effect of injecting nvidia-container-runtime-hook as a prestart hook.
 	NVProxyDocker bool `flag:"nvproxy-docker"`
 
+	// NVProxyDriverVersion is the version of the NVIDIA driver ABI to use.
+	// If empty, it is autodetected from the installed NVIDIA driver.
+	// It can also be set to the special value "latest" to force the use of
+	// the latest supported NVIDIA driver ABI.
+	NVProxyDriverVersion string `flag:"nvproxy-driver-version"`
+
 	// TPUProxy enables support for TPUs.
 	TPUProxy bool `flag:"tpuproxy"`
 

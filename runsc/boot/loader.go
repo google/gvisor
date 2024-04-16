@@ -131,7 +131,8 @@ type containerInfo struct {
 	// nvidiaUVMDevMajor is the device major number used for nvidia-uvm.
 	nvidiaUVMDevMajor uint32
 
-	// nvidiaDriverVersion is the Nvidia driver version on the host.
+	// nvidiaDriverVersion is the NVIDIA driver ABI version to use for
+	// communicating with NVIDIA devices on the host.
 	nvidiaDriverVersion string
 }
 
@@ -292,7 +293,8 @@ type Args struct {
 	// ProfileOpts contains the set of profiles to enable and the
 	// corresponding FDs where profile data will be written.
 	ProfileOpts profile.Opts
-	// NvidiaDriverVersion is the Nvidia driver version on the host.
+	// NvidiaDriverVersion is the NVIDIA driver ABI version to use for
+	// communicating with NVIDIA devices on the host.
 	NvidiaDriverVersion string
 }
 
