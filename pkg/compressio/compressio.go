@@ -209,7 +209,7 @@ func (w *worker) work(compress bool, level int) {
 }
 
 type hashPool struct {
-	// mu protexts the hash list.
+	// mu protects the hash list.
 	mu sync.Mutex
 
 	// key is the key used to create hash objects.
@@ -407,17 +407,6 @@ var errNewBuffer = errors.New("buffer ready")
 
 // ErrHashMismatch is returned if the hash does not match.
 var ErrHashMismatch = errors.New("hash mismatch")
-
-// ReadByte implements wire.Reader.ReadByte.
-func (r *Reader) ReadByte() (byte, error) {
-	var p [1]byte
-	n, err := r.Read(p[:])
-	if n != 1 {
-		return p[0], err
-	}
-	// Suppress EOF.
-	return p[0], nil
-}
 
 // Read implements io.Reader.Read.
 func (r *Reader) Read(p []byte) (int, error) {
@@ -656,21 +645,6 @@ func (w *Writer) flush(c *chunk) error {
 		w.lastSum = sum
 	}
 
-	return nil
-}
-
-// WriteByte implements wire.Writer.WriteByte.
-//
-// Note that this implementation is necessary on the object itself, as an
-// interface-based dispatch cannot tell whether the array backing the slice
-// escapes, therefore the all bytes written will generate an escape.
-func (w *Writer) WriteByte(b byte) error {
-	var p [1]byte
-	p[0] = b
-	n, err := w.Write(p[:])
-	if n != 1 {
-		return err
-	}
 	return nil
 }
 

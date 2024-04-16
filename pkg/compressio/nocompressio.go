@@ -86,17 +86,6 @@ func NewSimpleReader(in io.Reader, key []byte) (*SimpleReader, error) {
 	return r, nil
 }
 
-// ReadByte implements wire.Reader.ReadByte.
-func (r *SimpleReader) ReadByte() (byte, error) {
-	var p [1]byte
-	n, err := r.Read(p[:])
-	if n != 1 {
-		return p[0], err
-	}
-	// Suppress EOF.
-	return p[0], nil
-}
-
 // Read implements io.Reader.Read.
 func (r *SimpleReader) Read(p []byte) (int, error) {
 	var scratch [4]byte
@@ -198,21 +187,6 @@ func NewSimpleWriter(out io.Writer, key []byte) (*SimpleWriter, error) {
 		out:  bufio.NewWriterSize(out, defaultBufSize),
 		key:  key,
 	}, nil
-}
-
-// WriteByte implements wire.Writer.WriteByte.
-//
-// Note that this implementation is necessary on the object itself, as an
-// interface-based dispatch cannot tell whether the array backing the slice
-// escapes, therefore the all bytes written will generate an escape.
-func (w *SimpleWriter) WriteByte(b byte) error {
-	var p [1]byte
-	p[0] = b
-	n, err := w.Write(p[:])
-	if n != 1 {
-		return err
-	}
-	return nil
 }
 
 // Write implements io.Writer.Write.
