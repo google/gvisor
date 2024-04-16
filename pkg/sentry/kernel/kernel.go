@@ -75,7 +75,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/uniqueid"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/state"
-	"gvisor.dev/gvisor/pkg/state/wire"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 )
@@ -526,7 +525,7 @@ type privateMemoryFileMetadata struct {
 	owners []string
 }
 
-func savePrivateMFs(ctx context.Context, w wire.Writer, pw io.Writer, mfsToSave map[string]*pgalloc.MemoryFile) error {
+func savePrivateMFs(ctx context.Context, w io.Writer, pw io.Writer, mfsToSave map[string]*pgalloc.MemoryFile) error {
 	var meta privateMemoryFileMetadata
 	// Generate the order in which private memory files are saved.
 	for fsID := range mfsToSave {
@@ -545,7 +544,7 @@ func savePrivateMFs(ctx context.Context, w wire.Writer, pw io.Writer, mfsToSave 
 	return nil
 }
 
-func loadPrivateMFs(ctx context.Context, r wire.Reader, pr io.Reader) error {
+func loadPrivateMFs(ctx context.Context, r io.Reader, pr io.Reader) error {
 	// Load the metadata.
 	var meta privateMemoryFileMetadata
 	if _, err := state.Load(ctx, r, &meta); err != nil {
@@ -572,7 +571,7 @@ func loadPrivateMFs(ctx context.Context, r wire.Reader, pr io.Reader) error {
 // SaveTo saves the state of k to w.
 //
 // Preconditions: The kernel must be paused throughout the call to SaveTo.
-func (k *Kernel) SaveTo(ctx context.Context, w wire.Writer, pagesFile *os.File) error {
+func (k *Kernel) SaveTo(ctx context.Context, w io.Writer, pagesFile *os.File) error {
 	saveStart := time.Now()
 
 	// Do not allow other Kernel methods to affect it while it's being saved.
@@ -683,7 +682,7 @@ func (k *Kernel) invalidateUnsavableMappings(ctx context.Context) error {
 }
 
 // LoadFrom returns a new Kernel loaded from args.
-func (k *Kernel) LoadFrom(ctx context.Context, r wire.Reader, pagesFile *os.File, timeReady chan struct{}, net inet.Stack, clocks sentrytime.Clocks, vfsOpts *vfs.CompleteRestoreOptions) error {
+func (k *Kernel) LoadFrom(ctx context.Context, r io.Reader, pagesFile *os.File, timeReady chan struct{}, net inet.Stack, clocks sentrytime.Clocks, vfsOpts *vfs.CompleteRestoreOptions) error {
 	loadStart := time.Now()
 
 	k.runningTasksCond.L = &k.runningTasksMu

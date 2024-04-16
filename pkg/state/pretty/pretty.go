@@ -195,7 +195,7 @@ func (p *printer) format(graph uint64, depth int, encoded wire.Object) (string, 
 }
 
 // printStream is the basic print implementation.
-func (p *printer) printStream(w io.Writer, r wire.Reader) (err error) {
+func (p *printer) printStream(w io.Writer, r io.Reader) (err error) {
 	// current graph ID.
 	var graph uint64
 
@@ -296,11 +296,11 @@ func (p *printer) printStream(w io.Writer, r wire.Reader) (err error) {
 }
 
 // PrintText reads the stream from r and prints text to w.
-func PrintText(w io.Writer, r wire.Reader) error {
+func PrintText(w io.Writer, r io.Reader) error {
 	return (&printer{}).printStream(w, r)
 }
 
 // PrintHTML reads the stream from r and prints html to w.
-func PrintHTML(w io.Writer, r wire.Reader) error {
+func PrintHTML(w io.Writer, r io.Reader) error {
 	return (&printer{html: true}).printStream(w, r)
 }

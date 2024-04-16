@@ -27,11 +27,10 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
 	"gvisor.dev/gvisor/pkg/state"
-	"gvisor.dev/gvisor/pkg/state/wire"
 )
 
 // SaveTo writes f's state to the given stream.
-func (f *MemoryFile) SaveTo(ctx context.Context, w wire.Writer, pw io.Writer) error {
+func (f *MemoryFile) SaveTo(ctx context.Context, w io.Writer, pw io.Writer) error {
 	// Wait for reclaim.
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -135,7 +134,7 @@ func (f *MemoryFile) RestoreID() string {
 }
 
 // LoadFrom loads MemoryFile state from the given stream.
-func (f *MemoryFile) LoadFrom(ctx context.Context, r wire.Reader, pr io.Reader) error {
+func (f *MemoryFile) LoadFrom(ctx context.Context, r io.Reader, pr io.Reader) error {
 	// Load metadata.
 	if _, err := state.Load(ctx, r, &f.fileSize); err != nil {
 		return err

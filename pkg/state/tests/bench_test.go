@@ -19,10 +19,10 @@ import (
 	"context"
 	"encoding/gob"
 	"fmt"
+	"io"
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/state"
-	"gvisor.dev/gvisor/pkg/state/wire"
 )
 
 // buildPtrObject builds a benchmark object.
@@ -80,22 +80,22 @@ func buildObjects(n int, fn func(int) any) (iters int, v any) {
 }
 
 // gobSave is a version of save using gob (no stats available).
-func gobSave(_ context.Context, w wire.Writer, v any) (_ state.Stats, err error) {
+func gobSave(_ context.Context, w io.Writer, v any) (_ state.Stats, err error) {
 	enc := gob.NewEncoder(w)
 	err = enc.Encode(v)
 	return
 }
 
 // gobLoad is a version of load using gob (no stats available).
-func gobLoad(_ context.Context, r wire.Reader, v any) (_ state.Stats, err error) {
+func gobLoad(_ context.Context, r io.Reader, v any) (_ state.Stats, err error) {
 	dec := gob.NewDecoder(r)
 	err = dec.Decode(v)
 	return
 }
 
 var allAlgos = map[string]struct {
-	Save   func(context.Context, wire.Writer, any) (state.Stats, error)
-	Load   func(context.Context, wire.Reader, any) (state.Stats, error)
+	Save   func(context.Context, io.Writer, any) (state.Stats, error)
+	Load   func(context.Context, io.Reader, any) (state.Stats, error)
 	MaxPtr int
 }{
 	"state": {

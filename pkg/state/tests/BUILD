@@ -39,8 +39,5 @@ go_test(
         "struct_test.go",
     ],
     library = ":tests",
-    deps = [
-        "//pkg/state",
-        "//pkg/state/wire",
-    ],
+    deps = ["//pkg/state"],
 )

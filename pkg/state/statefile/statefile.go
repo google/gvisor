@@ -57,7 +57,6 @@ import (
 	"time"
 
 	"gvisor.dev/gvisor/pkg/compressio"
-	"gvisor.dev/gvisor/pkg/state/wire"
 )
 
 // keySize is the AES-256 key length.
@@ -152,12 +151,6 @@ func CompressionLevelFromMetadata(metadata map[string]string) (CompressionLevel,
 	return compression, nil
 }
 
-// WriteCloser is an io.Closer and wire.Writer.
-type WriteCloser interface {
-	wire.Writer
-	io.Closer
-}
-
 func writeMetadataLen(w io.Writer, val uint64) error {
 	var buf [8]byte
 	binary.BigEndian.PutUint64(buf[:], val)
@@ -168,7 +161,7 @@ func writeMetadataLen(w io.Writer, val uint64) error {
 // NewWriter returns a state data writer for a statefile.
 //
 // Note that the returned WriteCloser must be closed.
-func NewWriter(w io.Writer, key []byte, metadata map[string]string) (WriteCloser, error) {
+func NewWriter(w io.Writer, key []byte, metadata map[string]string) (io.WriteCloser, error) {
 	if metadata == nil {
 		metadata = make(map[string]string)
 	}
@@ -315,7 +308,7 @@ func metadata(r io.Reader, h hash.Hash) (map[string]string, error) {
 }
 
 // NewReader returns a reader for a statefile.
-func NewReader(r io.Reader, key []byte) (wire.Reader, map[string]string, error) {
+func NewReader(r io.Reader, key []byte) (io.Reader, map[string]string, error) {
 	// Read the metadata with the hash.
 	h := hmac.New(sha256.New, key)
 	metadata, err := metadata(r, h)
@@ -332,7 +325,7 @@ func NewReader(r io.Reader, key []byte) (wire.Reader, map[string]string, error) 
 	}
 
 	// Pick correct reader
-	var cr wire.Reader
+	var cr io.Reader
 
 	if compression == CompressionLevelFlateBestSpeed {
 		cr, err = compressio.NewReader(r, key)
