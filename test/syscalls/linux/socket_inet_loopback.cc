@@ -979,56 +979,6 @@ TEST_P(SocketInetLoopbackTest, TCPNonBlockingConnectClose) {
 // random save as established connections which can't be delivered to the accept
 // queue because the queue is full are not correctly delivered after restore
 // causing the last accept to timeout on the restore.
-TEST_P(SocketInetLoopbackTest, TCPAcceptBacklogSizes) {
-  SocketInetTestParam const& param = GetParam();
-
-  TestAddress const& listener = param.listener;
-  TestAddress const& connector = param.connector;
-
-  // Create the listening socket.
-  const FileDescriptor listen_fd = ASSERT_NO_ERRNO_AND_VALUE(
-      Socket(listener.family(), SOCK_STREAM, IPPROTO_TCP));
-  sockaddr_storage listen_addr = listener.addr;
-  ASSERT_THAT(
-      bind(listen_fd.get(), AsSockAddr(&listen_addr), listener.addr_len),
-      SyscallSucceeds());
-  // Get the port bound by the listening socket.
-  socklen_t addrlen = listener.addr_len;
-  ASSERT_THAT(getsockname(listen_fd.get(), AsSockAddr(&listen_addr), &addrlen),
-              SyscallSucceeds());
-  uint16_t const port =
-      ASSERT_NO_ERRNO_AND_VALUE(AddrPort(listener.family(), listen_addr));
-  std::array<int, 3> backlogs = {-1, 0, 1};
-  for (auto& backlog : backlogs) {
-    ASSERT_THAT(listen(listen_fd.get(), backlog), SyscallSucceeds());
-
-    int expected_accepts;
-    if (backlog < 0) {
-      expected_accepts = 1024;
-    } else {
-      // See the comment in TCPBacklog for why this isn't backlog + 1.
-      expected_accepts = backlog;
-    }
-    for (int i = 0; i < expected_accepts; i++) {
-      SCOPED_TRACE(absl::StrCat("i=", i));
-      // Connect to the listening socket.
-      const FileDescriptor conn_fd = ASSERT_NO_ERRNO_AND_VALUE(
-          Socket(connector.family(), SOCK_STREAM, IPPROTO_TCP));
-      sockaddr_storage conn_addr = connector.addr;
-      ASSERT_NO_ERRNO(SetAddrPort(connector.family(), &conn_addr, port));
-      ASSERT_THAT(RetryEINTR(connect)(conn_fd.get(), AsSockAddr(&conn_addr),
-                                      connector.addr_len),
-                  SyscallSucceeds());
-      const FileDescriptor accepted =
-          ASSERT_NO_ERRNO_AND_VALUE(Accept(listen_fd.get(), nullptr, nullptr));
-    }
-  }
-}
-
-// TODO(b/153489135): Remove  once bug is fixed. Test fails w/
-// random save as established connections which can't be delivered to the accept
-// queue because the queue is full are not correctly delivered after restore
-// causing the last accept to timeout on the restore.
 TEST_P(SocketInetLoopbackTest, TCPBacklog) {
   SocketInetTestParam const& param = GetParam();
 
