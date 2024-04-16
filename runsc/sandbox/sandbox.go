@@ -841,11 +841,11 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 	}
 
 	if specutils.NVProxyEnabled(args.Spec, conf) {
-		nvidiaDriverVersion, err := nvproxy.HostDriverVersion()
+		version, err := getNvproxyDriverVersion(conf)
 		if err != nil {
 			return fmt.Errorf("failed to get Nvidia driver version: %w", err)
 		}
-		cmd.Args = append(cmd.Args, "--nvidia-driver-version="+nvidiaDriverVersion)
+		cmd.Args = append(cmd.Args, "--nvidia-driver-version="+version)
 	}
 
 	// Joins the network namespace if network is enabled. the sandbox talks
@@ -1554,6 +1554,21 @@ func deviceFileForPlatform(name, devicePath string) (*os.File, error) {
 		return nil, fmt.Errorf("opening device file for platform %q: %w", name, err)
 	}
 	return f, nil
+}
+
+// getNvproxyDriverVersion returns the NVIDIA driver ABI version to use by
+// nvproxy.
+func getNvproxyDriverVersion(conf *config.Config) (string, error) {
+	switch conf.NVProxyDriverVersion {
+	case "":
+		return nvproxy.HostDriverVersion()
+	case "latest":
+		nvproxy.Init()
+		return nvproxy.LatestDriver().String(), nil
+	default:
+		version, err := nvproxy.DriverVersionFrom(conf.NVProxyDriverVersion)
+		return version.String(), err
+	}
 }
 
 // checkBinaryPermissions verifies that the required binary bits are set on
