@@ -2589,6 +2589,7 @@ cc_library(
         "socket_ip_tcp_generic.h",
     ],
     deps = select_gtest() + [
+        "//test/util:save_util",
         "//test/util:socket_util",
         "//test/util:temp_path",
         "//test/util:test_util",

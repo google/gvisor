@@ -28,6 +28,7 @@
 #include "absl/memory/memory.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
+#include "test/util/save_util.h"
 #include "test/util/socket_util.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
@@ -417,6 +418,11 @@ TEST_P(TCPSocketPairTest, SetTCPCork) {
 }
 
 TEST_P(TCPSocketPairTest, TCPCork) {
+  // Disable save on this test, this test checks if the data is not recv'd by
+  // the receiver after enabling TCP_CORK when the size of the packet < MSS.
+  // But the save/resume may take more than the cork timeout of 200ms causing
+  // all the corked packets to be sent and makes the test flaky.
+  const DisableSave ds;
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
 
   EXPECT_THAT(setsockopt(sockets->first_fd(), IPPROTO_TCP, TCP_CORK,
