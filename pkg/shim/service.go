@@ -222,14 +222,14 @@ func (s *service) newCommand(ctx context.Context, containerdBinary, containerdAd
 	return cmd, nil
 }
 
-func (s *service) StartShim(ctx context.Context, id, containerdBinary, containerdAddress, containerdTTRPCAddress string) (string, error) {
-	log.L.Debugf("StartShim, id: %s, binary: %q, address: %q", id, containerdBinary, containerdAddress)
+func (s *service) StartShim(ctx context.Context, opts shim.StartOpts) (string, error) {
+	log.L.Debugf("StartShim, id: %s, binary: %q, address: %q", opts.ID, opts.ContainerdBinary, opts.Address)
 
-	cmd, err := s.newCommand(ctx, containerdBinary, containerdAddress)
+	cmd, err := s.newCommand(ctx, opts.ContainerdBinary, opts.Address)
 	if err != nil {
 		return "", err
 	}
-	address, err := shim.SocketAddress(ctx, containerdAddress, id)
+	address, err := shim.SocketAddress(ctx, opts.Address, opts.ID)
 	if err != nil {
 		return "", err
 	}
