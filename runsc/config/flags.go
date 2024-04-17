@@ -119,7 +119,7 @@ func RegisterFlags(flagSet *flag.FlagSet) {
 	flagSet.Bool("rx-checksum-offload", true, "enable RX checksum offload.")
 	flagSet.Var(queueingDisciplinePtr(QDiscFIFO), "qdisc", "specifies which queueing discipline to apply by default to the non loopback nics used by the sandbox.")
 	flagSet.Int("num-network-channels", 1, "number of underlying channels(FDs) to use for network link endpoints.")
-	flagSet.Bool("buffer-pooling", true, "enable allocation of buffers from a shared pool instead of the heap.")
+	flagSet.Bool("buffer-pooling", true, "DEPRECATED: this flag has no effect. Buffer pooling is always enabled.")
 	flagSet.Var(&xdpConfig, "EXPERIMENTAL-xdp", `whether and how to use XDP. Can be one of: "off" (default), "ns", "redirect:<device name>", or "tunnel:<device name>"`)
 	flagSet.Bool("EXPERIMENTAL-xdp-need-wakeup", true, "EXPERIMENTAL. Use XDP_USE_NEED_WAKEUP with XDP sockets.") // TODO(b/240191988): Figure out whether this helps and remove it as a flag.
 	flagSet.Bool("reproduce-nat", false, "Scrape the host netns NAT table and reproduce it in the sandbox.")
