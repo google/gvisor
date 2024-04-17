@@ -1718,3 +1718,26 @@ func (l *Loader) pidsCount(cid string) (int, error) {
 	}
 	return l.k.TaskSet().Root.NumTasksPerContainer(cid), nil
 }
+
+func (l *Loader) networkStats() ([]*NetworkInterface, error) {
+	var stats []*NetworkInterface
+	stack := l.k.RootNetworkNamespace().Stack()
+	for _, i := range stack.Interfaces() {
+		var stat inet.StatDev
+		if err := stack.Statistics(&stat, i.Name); err != nil {
+			return nil, err
+		}
+		stats = append(stats, &NetworkInterface{
+			Name:      i.Name,
+			RxBytes:   stat[0],
+			RxPackets: stat[1],
+			RxErrors:  stat[2],
+			RxDropped: stat[3],
+			TxBytes:   stat[8],
+			TxPackets: stat[9],
+			TxErrors:  stat[10],
+			TxDropped: stat[11],
+		})
+	}
+	return stats, nil
+}

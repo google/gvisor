@@ -23,6 +23,20 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/usage"
 )
 
+// NetworkInterface is the network statistics of the particular network interface
+type NetworkInterface struct {
+	// Name is the name of the network interface.
+	Name      string
+	RxBytes   uint64
+	RxPackets uint64
+	RxErrors  uint64
+	RxDropped uint64
+	TxBytes   uint64
+	TxPackets uint64
+	TxErrors  uint64
+	TxDropped uint64
+}
+
 // EventOut is the return type of the Event command.
 type EventOut struct {
 	Event Event `json:"event"`
@@ -42,9 +56,10 @@ type Event struct {
 // Stats is the runc specific stats structure for stability when encoding and
 // decoding stats.
 type Stats struct {
-	CPU    CPU    `json:"cpu"`
-	Memory Memory `json:"memory"`
-	Pids   Pids   `json:"pids"`
+	CPU               CPU                 `json:"cpu"`
+	Memory            Memory              `json:"memory"`
+	Pids              Pids                `json:"pids"`
+	NetworkInterfaces []*NetworkInterface `json:"network_interfaces"`
 }
 
 // Pids contains stats on processes.
@@ -126,6 +141,12 @@ func (cm *containerManager) Event(cid *string, out *EventOut) error {
 		return err
 	}
 	out.Event.Data.Pids.Current = uint64(pids)
+
+	networkStats, err := cm.l.networkStats()
+	if err != nil {
+		return err
+	}
+	out.Event.Data.NetworkInterfaces = networkStats
 
 	numContainers := cm.l.containerCount()
 	if numContainers == 0 {
