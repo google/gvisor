@@ -263,7 +263,6 @@ func newSender(ep *Endpoint, iss, irs seqnum.Value, sndWnd seqnum.Size, mss uint
 // their initial values.
 func (s *sender) initCongestionControl(congestionControlName tcpip.CongestionControlOption) congestionControl {
 	s.SndCwnd = InitialCwnd
-	// Set sndSsthresh to
 	s.Ssthresh = InitialSsthresh
 
 	switch congestionControlName {

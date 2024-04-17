@@ -23,13 +23,14 @@ import (
 )
 
 // effectivelyInfinity is an initialization value used for round-trip times
-// that are then set using minDuration.  It is equal to approximately 100
-// years: large enough that it will always be greater than a real TCP
-// round-trip time, and small enough that it fits in time.Duration.
-const effectivelyInfinity = 876000 * time.Hour
+// that are then set using min.  It is equal to approximately 100 years: large
+// enough that it will always be greater than a real TCP round-trip time, and
+// small enough that it fits in time.Duration.
+const effectivelyInfinity = 100 * 365 * 24 * time.Hour
 
-// c.f. RFC 9406 Section 4.3.  RTT = round-trip time.
 const (
+	// RTT = round-trip time.
+
 	// The delay increase sensitivity is determined by minRTTThresh and
 	// maxRTTThresh. Smaller values of minRTTThresh may cause spurious exits
 	// from slow start. Larger values of maxRTTThresh may result in slow start
@@ -50,20 +51,6 @@ const (
 	// of the same ACK Train during HyStart
 	ackDelta = 2 * time.Millisecond
 )
-
-func minDuration(a, b time.Duration) time.Duration {
-	if a < b {
-		return a
-	}
-	return b
-}
-
-func maxDuration(a, b time.Duration) time.Duration {
-	if a < b {
-		return b
-	}
-	return a
-}
 
 // cubicState stores the variables related to TCP CUBIC congestion
 // control algorithm state.
@@ -120,7 +107,16 @@ func (c *cubicState) enterCongestionAvoidance() {
 
 // updateHyStart tracks packet round-trip time (rtt) to find a safe threshold
 // to exit slow start without triggering packet loss.  It updates the SSThresh
-// and sets FoundThresh when it does.
+// when it does.
+// 
+// Implementation of HyStart follows the algorithm from the Linux kernel, rather
+// than RFC 9406 (https://www.rfc-editor.org/rfc/rfc9406.html). Briefly, the 
+// Linux kernel algorithm is based directly on the original HyStart paper
+// (https://doi.org/10.1016/j.comnet.2011.01.014), and differs from the RFC in
+// that two detection algorithms run in parallel ('ACK train' and 'Delay 
+// increase').  The RFC version includes only the latter algorithm and adds an
+// intermediate phase called Conservative Slow Start, which is not implemented 
+// here.
 func (c *cubicState) updateHyStart(rtt time.Duration) {
 	if rtt < 0 {
 		// negative indicates unknown
@@ -134,22 +130,20 @@ func (c *cubicState) updateHyStart(rtt time.Duration) {
 	if now.Sub(c.LastAck) < ackDelta && // ensures acks are part of the same "train"
 		c.LastRTT < effectivelyInfinity {
 		c.LastAck = now
-		thresh := c.LastRTT / 2
-		if now.Sub(c.RoundStart) > thresh {
+		if thresh := c.LastRTT / 2; now.Sub(c.RoundStart) > thresh {
 			c.s.Ssthresh = c.s.SndCwnd
 		}
 	}
 
 	// Delay increase
-	c.CurrRTT = minDuration(c.CurrRTT, rtt)
+	c.CurrRTT = min(c.CurrRTT, rtt)
 	c.SampleCount++
 
-	if c.SampleCount >= nRTTSample &&
-		c.LastRTT < effectivelyInfinity {
+	if c.SampleCount >= nRTTSample && c.LastRTT < effectivelyInfinity {
 		// i.e. LastRTT/minRTTDivisor, but clamped to minRTTThresh & maxRTTThresh
-		thresh := maxDuration(
+		thresh := max(
 			minRTTThresh,
-			minDuration(maxRTTThresh, c.LastRTT/minRTTDivisor),
+			min(maxRTTThresh, c.LastRTT/minRTTDivisor),
 		)
 		if c.CurrRTT >= (c.LastRTT + thresh) {
 			// Triggered HyStart safe exit threshold
@@ -158,7 +152,6 @@ func (c *cubicState) updateHyStart(rtt time.Duration) {
 	}
 }
 
-// resetHyStartRound begins a new HyStart round
 func (c *cubicState) beginHyStartRound(now tcpip.MonotonicTime) {
 	c.EndSeq = c.s.SndNxt
 	c.SampleCount = 0

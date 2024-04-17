@@ -24,9 +24,9 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
-// TestHyStartAckTrain_OK tests that HyStart triggers early exit from slow start
+// TestHyStartAckTrainOK tests that HyStart triggers early exit from slow start
 // if ACKs come in the same rounde for longer than RTT/2
-func TestHyStartAckTrain_OK(t *testing.T) {
+func TestHyStartAckTrainOK(t *testing.T) {
 	fClock := faketime.NewManualClock()
 	stackOpts := stack.Options{
 		TransportProtocols: []stack.TransportProtocolFactory{NewProtocol},
@@ -111,9 +111,9 @@ func TestHyStartAckTrain_OK(t *testing.T) {
 	}
 }
 
-// TestHyStartAckTrain_TooSpread tests that ACKs that are more than 2ms apart
+// TestHyStartAckTrainTooSpread tests that ACKs that are more than 2ms apart
 // are ignored for purposes of triggering HyStart via the ACK train mechanism.
-func TestHyStartAckTrain_TooSpread(t *testing.T) {
+func TestHyStartAckTrainTooSpread(t *testing.T) {
 	fClock := faketime.NewManualClock()
 	stackOpts := stack.Options{
 		TransportProtocols: []stack.TransportProtocolFactory{NewProtocol},
@@ -180,9 +180,9 @@ func TestHyStartAckTrain_TooSpread(t *testing.T) {
 	}
 }
 
-// TestHyStartDelay_OK tests that HyStart triggers early exit from slow start
+// TestHyStartDelayOK tests that HyStart triggers early exit from slow start
 // if RTT exceeds previous round by at least minRTTThresh
-func TestHyStartDelay_OK(t *testing.T) {
+func TestHyStartDelayOK(t *testing.T) {
 	fClock := faketime.NewManualClock()
 	stackOpts := stack.Options{
 		TransportProtocols: []stack.TransportProtocolFactory{NewProtocol},
