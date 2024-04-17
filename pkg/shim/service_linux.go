@@ -33,7 +33,7 @@ type linuxPlatform struct {
 	epoller *console.Epoller
 }
 
-func (p *linuxPlatform) CopyConsole(ctx context.Context, console console.Console, stdin, stdout, stderr string, wg *sync.WaitGroup) (console.Console, error) {
+func (p *linuxPlatform) CopyConsole(ctx context.Context, console console.Console, id, stdin, stdout, stderr string, wg *sync.WaitGroup) (console.Console, error) {
 	if p.epoller == nil {
 		return nil, fmt.Errorf("uninitialized epoller")
 	}
