@@ -45,6 +45,7 @@ import (
 	"github.com/containerd/containerd/runtime/v2/shim"
 	taskAPI "github.com/containerd/containerd/runtime/v2/task"
 	"github.com/containerd/containerd/sys/reaper"
+	"github.com/containerd/containerd/sys"
 	"github.com/containerd/typeurl"
 	"github.com/gogo/protobuf/types"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
@@ -282,7 +283,7 @@ func (s *service) StartShim(ctx context.Context, id, containerdBinary, container
 	if err := shim.WriteAddress(shimAddressPath, address); err != nil {
 		return "", err
 	}
-	if err := shim.SetScore(cmd.Process.Pid); err != nil {
+	if err := sys.SetOOMScore(cmd.Process.Pid, -999); err != nil {
 		return "", fmt.Errorf("failed to set OOM Score on shim: %w", err)
 	}
 	cu.Release()
