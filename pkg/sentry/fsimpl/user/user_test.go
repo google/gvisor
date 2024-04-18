@@ -209,3 +209,108 @@ func TestFindHomeInPasswd(t *testing.T) {
 		})
 	}
 }
+
+// TestGetExecUIDGIDFromUser tests the GetExecUIDGIDFromUser function.
+func TestGetExecUIDGIDFromUser(t *testing.T) {
+	tests := map[string]struct {
+		user           string
+		passwdContents string
+		passwdMode     linux.FileMode
+		expectedUID    auth.KUID
+		expectedGID    auth.KGID
+	}{
+		"success": {
+			user:           "user0",
+			passwdContents: "user0::1000:1111:&:/home/user0:/bin/sh",
+			passwdMode:     linux.S_IFREG | 0666,
+			expectedUID:    1000,
+			expectedGID:    1111,
+		},
+		"no_user": {
+			user:           "user1",
+			passwdContents: "user0::1000:1111::/home/user0:/bin/sh",
+			passwdMode:     linux.S_IFREG | 0666,
+			expectedUID:    65534,
+			expectedGID:    65534,
+		},
+		"multiple_user_no_match": {
+			user:           "user1",
+			passwdContents: "user0::1000:1111::/home/user0:/bin/sh\nuser2::1002:1112::/home/user2:/bin/sh\nuser3::1003:1113::/home/user3:/bin/sh",
+			passwdMode:     linux.S_IFREG | 0666,
+			expectedUID:    65534,
+			expectedGID:    65534,
+		},
+		"multiple_user_many_match": {
+			user:           "user1",
+			passwdContents: "user0::1000:1111::/home/user0:/bin/sh\nuser1::1002:1112::/home/user1:/bin/sh\nuser1::1003:1113::/home/user1:/bin/sh",
+			passwdMode:     linux.S_IFREG | 0666,
+			expectedUID:    65534,
+			expectedGID:    65534,
+		},
+		"invalid_file": {
+			user:           "user1",
+			passwdContents: "user0:1000:1111::/home/user0:/bin/sh\nuser1::1001:1111::/home/user1:/bin/sh\nuser2::/home/user2:/bin/sh",
+			passwdMode:     linux.S_IFREG | 0666,
+			expectedUID:    65534,
+			expectedGID:    65534,
+		},
+		"empty_file": {
+			user:           "user1",
+			passwdContents: "",
+			passwdMode:     linux.S_IFREG | 0666,
+			expectedUID:    65534,
+			expectedGID:    65534,
+		},
+		"empty_user": {
+			user:           "",
+			passwdContents: "user0::1000:1111::/home/user0:/bin/sh\nuser2::1002:1112::/home/user2:/bin/sh\nuser3::1003:1113::/home/user3:/bin/sh",
+			passwdMode:     linux.S_IFREG | 0666,
+			expectedUID:    65534,
+			expectedGID:    65534,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			ctx := contexttest.Context(t)
+			creds := auth.CredentialsFromContext(ctx)
+
+			// Create VFS.
+			vfsObj := vfs.VirtualFilesystem{}
+			if err := vfsObj.Init(ctx); err != nil {
+				t.Fatalf("VFS init: %v", err)
+			}
+			vfsObj.MustRegisterFilesystemType("tmpfs", tmpfs.FilesystemType{}, &vfs.RegisterFilesystemTypeOptions{
+				AllowUserMount: true,
+			})
+			mns, err := vfsObj.NewMountNamespace(ctx, creds, "", "tmpfs", &vfs.MountOptions{}, nil)
+			if err != nil {
+				t.Fatalf("failed to create tmpfs root mount: %v", err)
+			}
+			defer mns.DecRef(ctx)
+			root := mns.Root(ctx)
+			defer root.DecRef(ctx)
+
+			if err := createEtcPasswd(ctx, &vfsObj, creds, root, tc.passwdContents, tc.passwdMode); err != nil {
+				t.Fatalf("createEtcPasswd failed: %v", err)
+			}
+
+			gotUID, gotGID, err := GetExecUIDGIDFromUser(ctx, mns, tc.user)
+			if name == "success" {
+				if err != nil {
+					t.Fatalf("failed to get UID and GID from user: %v %v", tc.user, err)
+				}
+			} else {
+				if err == nil {
+					t.Fatalf("retrieved UID and GID when user %v is not in /etc/passwd: %v", tc.user, err)
+				}
+			}
+			if gotUID != tc.expectedUID {
+				t.Fatalf("expectedUID %v, gotUID: %v", tc.expectedUID, gotUID)
+			}
+			if gotGID != tc.expectedGID {
+				t.Fatalf("expectedGID %v, gotGID: %v", tc.expectedGID, gotGID)
+			}
+		})
+	}
+}

@@ -111,6 +111,9 @@ type StartContainerArgs struct {
 	// the root group if not set explicitly.
 	KGID auth.KGID `json:"KGID"`
 
+	// User is the user string used to retrieve UID/GID.
+	User string `json:"user"`
+
 	// ContainerID is the container for the process being executed.
 	ContainerID string `json:"container_id"`
 
@@ -198,9 +201,30 @@ func (l *Lifecycle) StartContainer(args *StartContainerArgs, _ *uint32) error {
 		return fmt.Errorf("FilePayload.Files and DonatedFDs must have same number of elements (%d != %d)", len(args.Files), len(args.DonatedFDs))
 	}
 
+	l.mu.RLock()
+	mntns, ok := l.MountNamespacesMap[args.ContainerID]
+	if !ok {
+		l.mu.RUnlock()
+		return fmt.Errorf("mount namespace is nil for %s", args.ContainerID)
+	}
+	l.mu.RUnlock()
+
+	uid := args.KUID
+	gid := args.KGID
+	if args.User != "" {
+		if uid != 0 || gid != 0 {
+			return fmt.Errorf("container spec specified both an explicit UID/GID and a user name, only one or the other may be provided")
+		}
+		var err error
+		uid, gid, err = user.GetExecUIDGIDFromUser(l.Kernel.SupervisorContext(), mntns, args.User)
+		if err != nil {
+			return fmt.Errorf("couldn't retrieve UID and GID for user %v, err: %v", args.User, err)
+		}
+	}
+
 	creds := auth.NewUserCredentials(
-		args.KUID,
-		args.KGID,
+		uid,
+		gid,
 		nil, /* extraKGIDs */
 		nil, /* capabilities */
 		l.Kernel.RootUserNamespace())
@@ -261,14 +285,7 @@ func (l *Lifecycle) StartContainer(args *StartContainerArgs, _ *uint32) error {
 	}
 	initArgs.FDTable = fdTable
 
-	l.mu.RLock()
-	mntns, ok := l.MountNamespacesMap[initArgs.ContainerID]
-	if !ok {
-		l.mu.RUnlock()
-		return fmt.Errorf("mount namespace is nil for %s", initArgs.ContainerID)
-	}
 	initArgs.MountNamespace = mntns
-	l.mu.RUnlock()
 	initArgs.MountNamespace.IncRef()
 
 	if args.ResolveBinaryPath {

@@ -161,3 +161,116 @@ func findHomeInPasswd(uid uint32, passwd io.Reader, defaultHome string) (string,
 
 	return defaultHome, nil
 }
+
+func findUIDGIDInPasswd(passwd io.Reader, user string) (auth.KUID, auth.KGID, error) {
+	defaultUID := auth.KUID(auth.OverflowUID)
+	defaultGID := auth.KGID(auth.OverflowGID)
+	uid := defaultUID
+	gid := defaultGID
+
+	s := bufio.NewScanner(passwd)
+	for s.Scan() {
+		if err := s.Err(); err != nil {
+			return defaultUID, defaultGID, err
+		}
+
+		line := strings.TrimSpace(s.Text())
+		if line == "" {
+			continue
+		}
+
+		// Per 'man 5 passwd'
+		// /etc/passwd contains one line for each user account, with seven
+		// fields delimited by colons (“:”). These fields are:
+		//
+		//	- login name
+		//	- optional encrypted password
+		//	- numerical user ID
+		//	- numerical group ID
+		//	- user name or comment field
+		//	- user home directory
+		//	- optional user command interpreter
+		const (
+			numFields = 7
+			userIdx   = 0
+			passwdIdx = 1
+			uidIdx    = 2
+			gidIdx    = 3
+			shellIdx  = 6
+		)
+		parts := strings.Split(line, ":")
+		if len(parts) != numFields {
+			// Return error if the format is invalid.
+			return defaultUID, defaultGID, fmt.Errorf("invalid line found in /etc/passwd")
+		}
+		for i := 0; i < numFields; i++ {
+			// The password and user command interpreter fields are
+			// optional, no need to check if they are empty.
+			if i == passwdIdx || i == shellIdx {
+				continue
+			}
+			if parts[i] == "" {
+				// Return error if the format is invalid.
+				return defaultUID, defaultGID, fmt.Errorf("invalid line found in /etc/passwd")
+			}
+		}
+
+		if parts[userIdx] == user {
+			parseUID, err := strconv.ParseUint(parts[uidIdx], 10, 32)
+			if err != nil {
+				return defaultUID, defaultGID, err
+			}
+			parseGID, err := strconv.ParseUint(parts[gidIdx], 10, 32)
+			if err != nil {
+				return defaultUID, defaultGID, err
+			}
+
+			if uid != defaultUID || gid != defaultGID {
+				return defaultUID, defaultGID, fmt.Errorf("multiple matches for the user: %v", user)
+			}
+			uid = auth.KUID(parseUID)
+			gid = auth.KGID(parseGID)
+		}
+	}
+	if uid == defaultUID || gid == defaultGID {
+		return defaultUID, defaultGID, fmt.Errorf("couldn't retrieve UID/GID from user: %v", user)
+	}
+	return uid, gid, nil
+}
+
+func getExecUIDGID(ctx context.Context, mns *vfs.MountNamespace, user string) (auth.KUID, auth.KGID, error) {
+	root := mns.Root(ctx)
+	defer root.DecRef(ctx)
+
+	creds := auth.CredentialsFromContext(ctx)
+
+	target := &vfs.PathOperation{
+		Root:  root,
+		Start: root,
+		Path:  fspath.Parse("/etc/passwd"),
+	}
+
+	fd, err := root.Mount().Filesystem().VirtualFilesystem().OpenAt(ctx, creds, target, &vfs.OpenOptions{Flags: linux.O_RDONLY})
+	if err != nil {
+		return auth.KUID(auth.OverflowUID), auth.KGID(auth.OverflowGID), fmt.Errorf("couldn't retrieve UID/GID from user: %v, err: %v", user, err)
+	}
+	defer fd.DecRef(ctx)
+
+	r := &fileReader{
+		ctx: ctx,
+		fd:  fd,
+	}
+
+	return findUIDGIDInPasswd(r, user)
+}
+
+// GetExecUIDGIDFromUser retrieves the UID and GID from /etc/passwd file for
+// the given user.
+func GetExecUIDGIDFromUser(ctx context.Context, vmns *vfs.MountNamespace, user string) (auth.KUID, auth.KGID, error) {
+	// Read /etc/passwd and retrieve the UID/GID based on the user string.
+	uid, gid, err := getExecUIDGID(ctx, vmns, user)
+	if err != nil {
+		return uid, gid, fmt.Errorf("error reading /etc/passwd: %v", err)
+	}
+	return uid, gid, nil
+}
