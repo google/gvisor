@@ -680,6 +680,9 @@ func (s *subprocess) Unmap(addr hostarch.Addr, length uint64) {
 	}
 }
 
+// ExpandCOWBreakOnExec implements platform.AddressSpace.ExpandCOWBreakOnExec
+func (s *subprocess) ExpandCOWBreakOnExec() bool { return false }
+
 // PreFork implements platform.AddressSpace.PreFork.
 func (s *subprocess) PreFork() {}
 

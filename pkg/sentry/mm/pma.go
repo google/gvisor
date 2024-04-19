@@ -180,6 +180,13 @@ func (mm *MemoryManager) getVecPMAsLocked(ctx context.Context, ars hostarch.Addr
 	return ars, nil
 }
 
+func (mm *MemoryManager) expandCOWBreakOnExec() bool {
+	if mm.as == nil {
+		return false
+	}
+	return mm.as.ExpandCOWBreakOnExec()
+}
+
 // getPMAsInternalLocked is equivalent to getPMAsLocked, with the following
 // exceptions:
 //
@@ -333,7 +340,7 @@ func (mm *MemoryManager) getPMAsInternalLocked(ctx context.Context, vseg vmaIter
 						}
 					}
 					var copyAR hostarch.AddrRange
-					if vma := vseg.ValuePtr(); vma.effectivePerms.Execute {
+					if vma := vseg.ValuePtr(); vma.effectivePerms.Execute && !mm.expandCOWBreakOnExec() {
 						// The majority of copy-on-write breaks on executable
 						// pages come from:
 						//
