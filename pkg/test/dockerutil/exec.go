@@ -42,7 +42,20 @@ type ExecOpts struct {
 	WorkDir string
 }
 
+// ExecError is returned when a process terminated with a non-zero exit status.
+// It implements `error`.
+type ExecError struct {
+	ExitStatus int
+}
+
+// Error implements `error.Error`.
+func (ee *ExecError) Error() string {
+	return fmt.Sprintf("process terminated with status: %d", ee.ExitStatus)
+}
+
 // Exec creates a process inside the container.
+// If the process exits with a non-zero error code, the error will be of
+// type `ExecError`.
 func (c *Container) Exec(ctx context.Context, opts ExecOpts, args ...string) (string, error) {
 	p, err := c.doExec(ctx, opts, args)
 	if err != nil {
@@ -64,7 +77,7 @@ func (c *Container) Exec(ctx context.Context, opts ExecOpts, args ...string) (st
 		return "", err
 	} else if exitStatus != 0 {
 		<-done
-		return out, fmt.Errorf("process terminated with status: %d", exitStatus)
+		return out, &ExecError{exitStatus}
 	}
 
 	<-done
@@ -109,7 +122,6 @@ func (c *Container) execConfig(r ExecOpts, cmd []string) types.ExecConfig {
 		Tty:          r.UseTTY,
 		User:         r.User,
 	}
-
 }
 
 // Process represents a containerized process.
