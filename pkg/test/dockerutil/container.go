@@ -207,11 +207,13 @@ func (c *Container) Run(ctx context.Context, r RunOpts, args ...string) (string,
 	}
 
 	if err := c.Start(ctx); err != nil {
-		return "", err
+		logs, _ := c.Logs(ctx)
+		return logs, err
 	}
 
 	if err := c.Wait(ctx); err != nil {
-		return "", err
+		logs, _ := c.Logs(ctx)
+		return logs, err
 	}
 
 	return c.Logs(ctx)

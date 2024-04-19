@@ -16,6 +16,7 @@
 package dockerutil
 
 import (
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -27,6 +28,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"testing"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/test/testutil"
@@ -120,6 +122,19 @@ func RuntimePath() (string, error) {
 		return "", fmt.Errorf("runtime does not declare a path: %v", rs)
 	}
 	return p, nil
+}
+
+// IsGVisorRuntime returns whether the default container runtime used by
+// `dockerutil` is gVisor-based or not.
+func IsGVisorRuntime(ctx context.Context, t *testing.T) (bool, error) {
+	output, err := MakeContainer(ctx, t).Run(ctx, RunOpts{Image: "basic/alpine"}, "dmesg")
+	if err != nil {
+		if strings.Contains(output, "dmesg: klogctl: Operation not permitted") {
+			return false, nil
+		}
+		return false, fmt.Errorf("failed to run dmesg: %v (output: %q)", err, output)
+	}
+	return strings.Contains(output, "gVisor"), nil
 }
 
 // UsingSystemdCgroup returns true if the docker configuration has the
