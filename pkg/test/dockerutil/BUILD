@@ -18,6 +18,7 @@ go_library(
     ],
     visibility = ["//:sandbox"],
     deps = [
+        "//pkg/sync",
         "//pkg/test/testutil",
         "//runsc/cgroup",
         "@com_github_docker_docker//api/types:go_default_library",

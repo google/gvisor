@@ -26,6 +26,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -37,6 +38,7 @@ import (
 	"github.com/docker/go-connections/nat"
 	"github.com/moby/moby/client"
 	"github.com/moby/moby/pkg/stdcopy"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/test/testutil"
 )
 
@@ -653,6 +655,66 @@ type ContainerPool struct {
 
 	// shutdownCh is always empty, and is closed when the pool is shutting down.
 	shutdownCh chan struct{}
+
+	// mu protects the fields below.
+	mu sync.Mutex
+
+	// statuses maps container name to their current status.
+	statuses map[*Container]containerPoolStatus
+
+	// firstReservation is the time of the first container reservation event.
+	firstReservation time.Time
+
+	// productive is the duration containers have cumulatively spent in reserved
+	// state.
+	productive time.Duration
+}
+
+// containerPoolStatus represents the status of a container in the pool.
+type containerPoolStatus struct {
+	when      time.Time
+	state     containerPoolState
+	userLabel string
+}
+
+// containerPoolState is the state of a container in the pool.
+type containerPoolState int
+
+// Set of containerPoolState used by ContainerPool.
+const (
+	stateNeverUsed containerPoolState = iota
+	stateIdle
+	stateReserved
+	stateReservedExclusive
+	stateShutdown
+	stateHeldForExclusive
+)
+
+// IsProductive returns true if the container is in a state where it is
+// actively being used.
+func (cps containerPoolState) IsProductive() bool {
+	return cps == stateReserved || cps == stateReservedExclusive
+}
+
+// String returns a human-friendly representation of the container state in
+// the pool.
+func (cps containerPoolState) String() string {
+	switch cps {
+	case stateNeverUsed:
+		return "never used"
+	case stateIdle:
+		return "idle"
+	case stateReserved:
+		return "reserved"
+	case stateReservedExclusive:
+		return "reserved in exclusive mode"
+	case stateHeldForExclusive:
+		return "held back to allow another container to be exclusively-reserved"
+	case stateShutdown:
+		return "shutdown"
+	default:
+		return fmt.Sprintf("unknownstate(%d)", cps)
+	}
 }
 
 // NewContainerPool returns a new ContainerPool holding the given set of
@@ -667,18 +729,28 @@ func NewContainerPool(containers []*Container) *ContainerPool {
 	}
 	exclusiveCh := make(chan struct{}, 1)
 	exclusiveCh <- struct{}{}
+	statuses := make(map[*Container]containerPoolStatus)
+	poolStarted := time.Now()
+	for _, c := range containers {
+		statuses[c] = containerPoolStatus{
+			when:  poolStarted,
+			state: stateNeverUsed,
+		}
+	}
 	return &ContainerPool{
 		containersCh:          containersCh,
 		exclusiveLockCh:       exclusiveCh,
 		containersExclusiveCh: make(chan *Container),
 		shutdownCh:            make(chan struct{}),
 		numContainers:         len(containers),
+		statuses:              statuses,
 	}
 }
 
 // releaseFn returns a function to release a container back to the pool.
 func (cp *ContainerPool) releaseFn(c *Container) func() {
 	return func() {
+		cp.setContainerState(c, stateIdle)
 		// Preferentially release to the exclusive channel.
 		select {
 		case cp.containersExclusiveCh <- c:
@@ -697,6 +769,7 @@ func (cp *ContainerPool) releaseFn(c *Container) func() {
 func (cp *ContainerPool) Get(ctx context.Context) (*Container, func(), error) {
 	select {
 	case c := <-cp.containersCh:
+		cp.setContainerState(c, stateReserved)
 		return c, cp.releaseFn(c), nil
 	case <-cp.shutdownCh:
 		return nil, func() {}, errors.New("pool's closed")
@@ -739,11 +812,13 @@ func (cp *ContainerPool) GetExclusive(ctx context.Context) (*Container, func(), 
 			releaseAll()
 			return nil, func() {}, ctx.Err()
 		}
+		cp.setContainerState(got, stateHeldForExclusive)
 		releaseFuncs = append(releaseFuncs, cp.releaseFn(got))
 		if reserved == nil {
 			reserved = got
 		}
 	}
+	cp.setContainerState(reserved, stateReservedExclusive)
 	return reserved, releaseAll, nil
 }
 
@@ -753,6 +828,105 @@ func (cp *ContainerPool) CleanUp(ctx context.Context) {
 	close(cp.shutdownCh)
 	for i := 0; i < cp.numContainers; i++ {
 		c := <-cp.containersCh
+		cp.setContainerState(c, stateShutdown)
 		c.CleanUp(ctx)
 	}
+}
+
+// setContainerState sets the state of the given container.
+func (cp *ContainerPool) setContainerState(c *Container, state containerPoolState) {
+	isProductive := state.IsProductive()
+	when := time.Now()
+	cp.mu.Lock()
+	defer cp.mu.Unlock()
+	if isProductive && cp.firstReservation.IsZero() {
+		cp.firstReservation = when
+	}
+	status := cp.statuses[c]
+	wasProductive := status.state.IsProductive()
+	if wasProductive && !isProductive {
+		cp.productive += when.Sub(status.when)
+	}
+	status.when = when
+	status.state = state
+	status.userLabel = "" // Clear any existing user label.
+	cp.statuses[c] = status
+}
+
+// Utilization returns the utilization of the pool.
+// This is the ratio of the cumulative duration containers have been in a
+// productive state (reserved) divided by the maximum potential productive
+// container-duration since the first container was reserved.
+func (cp *ContainerPool) Utilization() float64 {
+	cp.mu.Lock()
+	defer cp.mu.Unlock()
+	return cp.getUtilizationLocked(time.Now())
+}
+
+// getUtilizationLocked actually computes the utilization of the pool.
+// Preconditions: cp.mu is held.
+func (cp *ContainerPool) getUtilizationLocked(now time.Time) float64 {
+	if cp.firstReservation.IsZero() {
+		return 0
+	}
+	maxUtilization := now.Sub(cp.firstReservation) * time.Duration(len(cp.statuses))
+	actualUtilization := cp.productive
+	for container := range cp.statuses {
+		if status := cp.statuses[container]; status.state.IsProductive() {
+			actualUtilization += now.Sub(status.when)
+		}
+	}
+	return float64(actualUtilization.Nanoseconds()) / float64(maxUtilization.Nanoseconds())
+}
+
+// SetContainerLabel sets the label for a container.
+// This is printed in `cp.String`, and wiped every time the container changes
+// state. It is useful for the ContainerPool user to track what each container
+// is doing.
+func (cp *ContainerPool) SetContainerLabel(c *Container, label string) {
+	cp.mu.Lock()
+	defer cp.mu.Unlock()
+	status := cp.statuses[c]
+	status.userLabel = label
+	cp.statuses[c] = status
+}
+
+// String returns a string representation of the pool.
+// It includes the state of each container, and their user-set label.
+func (cp *ContainerPool) String() string {
+	cp.mu.Lock()
+	defer cp.mu.Unlock()
+	if cp.firstReservation.IsZero() {
+		return "ContainerPool[never used]"
+	}
+	now := time.Now()
+	containers := make([]*Container, 0, len(cp.statuses))
+	for c := range cp.statuses {
+		containers = append(containers, c)
+	}
+	sort.Slice(containers, func(i, j int) bool { return containers[i].Name < containers[j].Name })
+	containersInUse := 0
+	for _, container := range containers {
+		if status := cp.statuses[container]; status.state.IsProductive() {
+			containersInUse++
+		}
+	}
+	utilizationPct := 100.0 * cp.getUtilizationLocked(now)
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("ContainerPool[%d/%d containers in use, utilization=%.1f%%]: ", containersInUse, len(containers), utilizationPct))
+	for i, container := range containers {
+		if i > 0 {
+			sb.WriteString(", ")
+		}
+		status := cp.statuses[container]
+		sb.WriteString(container.Name)
+		sb.WriteString("[")
+		sb.WriteString(status.state.String())
+		sb.WriteString("]")
+		if status.userLabel != "" {
+			sb.WriteString(": ")
+			sb.WriteString(status.userLabel)
+		}
+	}
+	return sb.String()
 }
