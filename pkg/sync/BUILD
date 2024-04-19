@@ -27,7 +27,6 @@ go_library(
         "runtime.go",
         "runtime_amd64.go",
         "runtime_constants.go",
-        "runtime_exectracer1.go",
         "runtime_exectracer2.go",
         "runtime_go121_unsafe.go",
         "runtime_not_go121_unsafe.go",
