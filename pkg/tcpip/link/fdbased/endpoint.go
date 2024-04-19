@@ -221,11 +221,6 @@ type Options struct {
 	// system call.
 	MaxSyscallHeaderBytes int
 
-	// AFXDPFD is used with the experimental AF_XDP mode.
-	// TODO(b/240191988): Use multiple sockets.
-	// TODO(b/240191988): How do we handle the MTU issue?
-	AFXDPFD *int
-
 	// InterfaceIndex is the interface index of the underlying device.
 	InterfaceIndex int
 
