@@ -360,12 +360,13 @@ func Init() {
 			return abi
 		}
 
-		_ = addDriverABI(550, 54, 14, "8c497ff1cfc7c310fb875149bc30faa4fd26d2237b2cba6cd2e8b0780157cfe3", func() *driverABI {
+		v550_54_14 := addDriverABI(550, 54, 14, "8c497ff1cfc7c310fb875149bc30faa4fd26d2237b2cba6cd2e8b0780157cfe3", func() *driverABI {
 			abi := v550_40_07()
 			abi.uvmIoctl[nvgpu.UVM_ALLOC_SEMAPHORE_POOL] = uvmIoctlSimple[nvgpu.UVM_ALLOC_SEMAPHORE_POOL_PARAMS_V550]
 			abi.uvmIoctl[nvgpu.UVM_MAP_EXTERNAL_ALLOCATION] = uvmIoctlHasRMCtrlFD[nvgpu.UVM_MAP_EXTERNAL_ALLOCATION_PARAMS_V550]
 			return abi
 		})
+		_ = addDriverABI(550, 54, 15, "2e859ae5f912a9a47aaa9b2d40a94a14f6f486b5d3b67c0ddf8b72c1c9650385", v550_54_14)
 	})
 }
 
