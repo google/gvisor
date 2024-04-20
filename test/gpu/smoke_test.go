@@ -36,16 +36,16 @@ func TestGPUHello(t *testing.T) {
 	t.Logf("cuda-vector-add output: %s", string(out))
 }
 
-func TestCUDATests(t *testing.T) {
+func TestCUDASmokeTests(t *testing.T) {
 	ctx := context.Background()
 	c := dockerutil.MakeContainer(ctx, t)
 	defer c.CleanUp(ctx)
 
 	opts := dockerutil.GPURunOpts()
 	opts.Image = "gpu/cuda-tests"
-	out, err := c.Run(ctx, opts)
+	out, err := c.Run(ctx, opts, "/run_smoke.sh")
 	if err != nil {
-		t.Fatalf("could not run cuda-tests: %v", err)
+		t.Fatalf("could not run cuda-tests smoke tests: %v", err)
 	}
-	t.Logf("cuda-tests output: %s", string(out))
+	t.Logf("cuda-tests smoke tests output: %s", string(out))
 }

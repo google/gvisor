@@ -29,14 +29,19 @@ var (
 	setCOSGPU = flag.Bool("cos-gpu", false, "set to configure GPU settings for COS, as opposed to Docker")
 )
 
+// AllGPUCapabilities is the environment variable that enables all NVIDIA GPU
+// capabilities within a container.
+const AllGPUCapabilities = "NVIDIA_DRIVER_CAPABILITIES=all"
+
 // GPURunOpts returns Docker run options with GPU support enabled.
 func GPURunOpts() RunOpts {
 	if !*setCOSGPU {
 		return RunOpts{
+			Env: []string{AllGPUCapabilities},
 			DeviceRequests: []container.DeviceRequest{
 				{
 					Count:        -1,
-					Capabilities: [][]string{[]string{"gpu"}},
+					Capabilities: [][]string{{"gpu"}},
 					Options:      map[string]string{},
 				},
 			},
@@ -92,6 +97,7 @@ func GPURunOpts() RunOpts {
 	}
 
 	return RunOpts{
+		Env:     []string{AllGPUCapabilities},
 		Mounts:  mounts,
 		Devices: devices,
 	}

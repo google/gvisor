@@ -17,12 +17,24 @@
 
 #include <iostream>
 
+// cudaError_t is returned by CUDA runtime functions.
 #define CHECK_CUDA(expr)                                                     \
   do {                                                                       \
     cudaError_t code = (expr);                                               \
     if (code != cudaSuccess) {                                               \
       std::cout << "Check failed at " << __FILE__ << ":" << __LINE__ << ": " \
                 << #expr << ": " << cudaGetErrorString(code) << std::endl;   \
+      abort();                                                               \
+    }                                                                        \
+  } while (0)
+
+// CUresult is returned by CUDA driver functions.
+#define CHECK_CUDA_RESULT(expr)                                              \
+  do {                                                                       \
+    CUresult code = (expr);                                                  \
+    if (code != CUDA_SUCCESS) {                                              \
+      std::cout << "Check failed at " << __FILE__ << ":" << __LINE__ << ": " \
+                << #expr << ": " << code << std::endl;                       \
       abort();                                                               \
     }                                                                        \
   } while (0)
