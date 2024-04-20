@@ -1412,6 +1412,14 @@ const (
 	TCPTimeWaitReuseLoopbackOnly
 )
 
+// ConnMarkOption is used by SetSockOpt/GetSockOpt to set/get the
+// connection mark for each packet sent through this socket.
+type ConnMarkOption uint32
+
+func (*ConnMarkOption) isGettableSocketOption() {}
+
+func (*ConnMarkOption) isSettableSocketOption() {}
+
 // LingerOption is used by SetSockOpt/GetSockOpt to set/get the
 // duration for which a socket lingers before returning from Close.
 //

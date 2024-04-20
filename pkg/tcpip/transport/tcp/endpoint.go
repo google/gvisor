@@ -582,6 +582,12 @@ type Endpoint struct {
 	// to an out of window segment being received by this endpoint.
 	lastOutOfWindowAckTime tcpip.MonotonicTime
 
+	// connMark is the mark value to be set on outbound packets emitted by this
+	// endpoint. It is used to identify the connection to which the packet belongs.
+	// For servers, if a connMark is set on SYN packets, it is inherited by the
+	// established connection.
+	connMark uint32
+
 	// finWait2Timer is used to reap orphaned sockets in FIN-WAIT-2 where the peer
 	// is yet to send a FIN but on our end the socket is fully closed i.e. endpoint.Close()
 	// has been called on the socket. This timer is not started for sockets that
@@ -2032,6 +2038,11 @@ func (e *Endpoint) SetSockOpt(opt tcpip.SettableSocketOption) tcpip.Error {
 	case *tcpip.SocketDetachFilterOption:
 		return nil
 
+	case *tcpip.ConnMarkOption:
+		e.LockUser()
+		e.connMark = uint32(*v)
+		e.UnlockUser()
+
 	default:
 		return nil
 	}
@@ -2204,6 +2215,11 @@ func (e *Endpoint) GetSockOpt(opt tcpip.GettableSocketOption) tcpip.Error {
 			Addr: addr,
 			Port: port,
 		}
+
+	case *tcpip.ConnMarkOption:
+		e.LockUser()
+		*o = tcpip.ConnMarkOption(e.connMark)
+		e.UnlockUser()
 
 	default:
 		return &tcpip.ErrUnknownProtocolOption{}

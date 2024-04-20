@@ -967,6 +967,10 @@ func (e *Endpoint) makeOptions(sackBlocks []header.SACKBlock) []byte {
 func (e *Endpoint) sendEmptyRaw(flags header.TCPFlags, seq, ack seqnum.Value, rcvWnd seqnum.Size) tcpip.Error {
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{})
 	defer pkt.DecRef()
+
+	// Pass throught the connection mark (if set).
+	pkt.ConnMark = e.connMark
+
 	return e.sendRaw(pkt, flags, seq, ack, rcvWnd)
 }
 

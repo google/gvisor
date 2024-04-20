@@ -1716,6 +1716,9 @@ func (s *sender) sendSegmentFromPacketBuffer(pkt *stack.PacketBuffer, flags head
 	pkt = pkt.Clone()
 	defer pkt.DecRef()
 
+	// Pass throught the connection mark (if set).
+	pkt.ConnMark = s.ep.connMark
+
 	return s.ep.sendRaw(pkt, flags, seq, rcvNxt, rcvWnd)
 }
 
