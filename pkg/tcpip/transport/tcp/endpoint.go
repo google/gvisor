@@ -582,6 +582,10 @@ type Endpoint struct {
 	// to an out of window segment being received by this endpoint.
 	lastOutOfWindowAckTime tcpip.MonotonicTime
 
+	// userCookie is used to store a user supplied cookie value associated with
+	// the endpoint.
+	userCookie uint32
+
 	// finWait2Timer is used to reap orphaned sockets in FIN-WAIT-2 where the peer
 	// is yet to send a FIN but on our end the socket is fully closed i.e. endpoint.Close()
 	// has been called on the socket. This timer is not started for sockets that
@@ -2032,6 +2036,11 @@ func (e *Endpoint) SetSockOpt(opt tcpip.SettableSocketOption) tcpip.Error {
 	case *tcpip.SocketDetachFilterOption:
 		return nil
 
+	case *tcpip.TCPUserCookieOption:
+		e.LockUser()
+		e.userCookie = uint32(*v)
+		e.UnlockUser()
+
 	default:
 		return nil
 	}
@@ -2204,6 +2213,11 @@ func (e *Endpoint) GetSockOpt(opt tcpip.GettableSocketOption) tcpip.Error {
 			Addr: addr,
 			Port: port,
 		}
+
+	case *tcpip.TCPUserCookieOption:
+		e.LockUser()
+		*o = tcpip.TCPUserCookieOption(e.userCookie)
+		e.UnlockUser()
 
 	default:
 		return &tcpip.ErrUnknownProtocolOption{}

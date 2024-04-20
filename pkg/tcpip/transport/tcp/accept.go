@@ -202,6 +202,7 @@ func (l *listenContext) createConnectingEndpoint(s *segment, rcvdSynOpts header.
 	n.boundNICID = s.pkt.NICID
 	n.route = route
 	n.effectiveNetProtos = []tcpip.NetworkProtocolNumber{s.pkt.NetworkProtocolNumber}
+	n.userCookie = s.pkt.UserCookie
 	n.ops.SetReceiveBufferSize(int64(l.rcvWnd), false /* notify */)
 	n.amss = calculateAdvertisedMSS(n.userMSS, n.route)
 	n.setEndpointState(StateConnecting)

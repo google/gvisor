@@ -1412,6 +1412,14 @@ const (
 	TCPTimeWaitReuseLoopbackOnly
 )
 
+// TCPUserCookieOption is used by SetSockOpt/GetSockOpt to set/get a user
+// specified cookie value on a TCP endpoint.
+type TCPUserCookieOption uint32
+
+func (*TCPUserCookieOption) isGettableSocketOption() {}
+
+func (*TCPUserCookieOption) isSettableSocketOption() {}
+
 // LingerOption is used by SetSockOpt/GetSockOpt to set/get the
 // duration for which a socket lingers before returning from Close.
 //

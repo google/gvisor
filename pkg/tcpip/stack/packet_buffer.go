@@ -161,6 +161,10 @@ type PacketBuffer struct {
 	// NetworkPacketInfo holds an incoming packet's network-layer information.
 	NetworkPacketInfo NetworkPacketInfo
 
+	// userCookie is used to store a user supplied cookie value associated with
+	// the packet.
+	UserCookie uint32
+
 	tuple *tuple
 
 	// onRelease is a function to be run when the packet buffer is no longer
@@ -389,6 +393,7 @@ func (pk *PacketBuffer) Clone() *PacketBuffer {
 	newPk.NICID = pk.NICID
 	newPk.RXChecksumValidated = pk.RXChecksumValidated
 	newPk.NetworkPacketInfo = pk.NetworkPacketInfo
+	newPk.UserCookie = pk.UserCookie
 	newPk.tuple = pk.tuple
 	newPk.InitRefs()
 	return newPk
