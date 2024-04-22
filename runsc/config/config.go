@@ -239,6 +239,12 @@ type Config struct {
 	// scale for high throughput use cases.
 	NumNetworkChannels int `flag:"num-network-channels"`
 
+	// NetworkProcessorsPerChannel controls the number of goroutines used to
+	// handle packets on a single network channel. A higher number can help handle
+	// many simultaneous connections. If this is 0, runsc will divide GOMAXPROCS
+	// evenly among each network channel.
+	NetworkProcessorsPerChannel int `flag:"network-processors-per-channel"`
+
 	// Rootless allows the sandbox to be started with a user that is not root.
 	// Defense in depth measures are weaker in rootless mode. Specifically, the
 	// sandbox and Gofer process run as root inside a user namespace with root

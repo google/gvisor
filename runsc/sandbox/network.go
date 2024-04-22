@@ -281,16 +281,17 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, conf *con
 			})
 		} else {
 			link := boot.FDBasedLink{
-				Name:              iface.Name,
-				MTU:               iface.MTU,
-				Routes:            routes,
-				TXChecksumOffload: conf.TXChecksumOffload,
-				RXChecksumOffload: conf.RXChecksumOffload,
-				NumChannels:       conf.NumNetworkChannels,
-				QDisc:             conf.QDisc,
-				Neighbors:         neighbors,
-				LinkAddress:       linkAddress,
-				Addresses:         addresses,
+				Name:                 iface.Name,
+				MTU:                  iface.MTU,
+				Routes:               routes,
+				TXChecksumOffload:    conf.TXChecksumOffload,
+				RXChecksumOffload:    conf.RXChecksumOffload,
+				NumChannels:          conf.NumNetworkChannels,
+				ProcessorsPerChannel: conf.NetworkProcessorsPerChannel,
+				QDisc:                conf.QDisc,
+				Neighbors:            neighbors,
+				LinkAddress:          linkAddress,
+				Addresses:            addresses,
 			}
 
 			log.Debugf("Setting up network channels")
