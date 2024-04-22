@@ -95,22 +95,29 @@ func CapsFromVfsCaps(capData VfsCapData, creds *Credentials) (*Credentials, erro
 	if root := creds.UserNamespace.MapToKUID(RootUID); creds.EffectiveKUID == root || creds.RealKUID == root {
 		return creds, nil
 	}
-	// The credentials object is immutable.
-	newCreds := creds.Fork()
 	effective := (capData.MagicEtc & linux.VFS_CAP_FLAGS_EFFECTIVE) > 0
-	newCreds.PermittedCaps = (capData.Permitted & creds.BoundingCaps) |
+	permittedCaps := (capData.Permitted & creds.BoundingCaps) |
 		(capData.Inheritable & creds.InheritableCaps)
 	// P'(effective) = effective ? P'(permitted) : P'(ambient).
 	// The ambient capabilities has not supported yet in gVisor,
 	// set effective capabilities to 0 when effective bit is false.
-	newCreds.EffectiveCaps = 0
+	effectiveCaps := CapabilitySet(0)
 	if effective {
-		newCreds.EffectiveCaps = newCreds.PermittedCaps
+		effectiveCaps = permittedCaps
 	}
 	// Insufficient to execute correctly.
-	if (capData.Permitted & ^newCreds.PermittedCaps) != 0 {
+	if (capData.Permitted & ^permittedCaps) != 0 {
 		return nil, linuxerr.EPERM
 	}
+	// If the capabilities don't change, it will return the creds'
+	// original copy.
+	if creds.PermittedCaps == permittedCaps && creds.EffectiveCaps == effectiveCaps {
+		return creds, nil
+	}
+	// The credentials object is immutable.
+	newCreds := creds.Fork()
+	newCreds.PermittedCaps = permittedCaps
+	newCreds.EffectiveCaps = effectiveCaps
 	return newCreds, nil
 }
 
