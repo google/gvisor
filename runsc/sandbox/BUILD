@@ -25,6 +25,7 @@ go_library(
         "//pkg/control/client",
         "//pkg/control/server",
         "//pkg/coverage",
+        "//pkg/fd",
         "//pkg/log",
         "//pkg/metric:metric_go_proto",
         "//pkg/prometheus",

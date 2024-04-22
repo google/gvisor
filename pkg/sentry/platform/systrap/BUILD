@@ -80,6 +80,7 @@ go_library(
         "//pkg/bpf",
         "//pkg/context",
         "//pkg/cpuid",
+        "//pkg/fd",
         "//pkg/hostarch",
         "//pkg/log",
         "//pkg/memutil",

@@ -32,6 +32,7 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/coretag"
 	"gvisor.dev/gvisor/pkg/cpuid"
+	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/metric"
 	"gvisor.dev/gvisor/pkg/ring0"
@@ -426,7 +427,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 		Spec:                spec,
 		Conf:                conf,
 		ControllerFD:        b.controllerFD,
-		Device:              os.NewFile(uintptr(b.deviceFD), "platform device"),
+		Device:              fd.New(b.deviceFD),
 		GoferFDs:            b.ioFDs.GetArray(),
 		DevGoferFD:          b.devIoFD,
 		StdioFDs:            b.stdioFDs.GetArray(),

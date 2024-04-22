@@ -17,7 +17,6 @@ package boot
 import (
 	"errors"
 	"fmt"
-	"os"
 	"path"
 	gtime "time"
 
@@ -462,32 +461,39 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 	if len(o.Files) == 0 {
 		return fmt.Errorf("at least one file must be passed to Restore")
 	}
-	fileIdx := 0
 
-	r := restorer{container: &cm.l.root}
-	r.stateFile = o.Files[fileIdx]
-	fileIdx++
-	defer r.stateFile.Close()
-	if info, err := r.stateFile.Stat(); err != nil {
+	stateFile, err := o.ReleaseFD(0)
+	if err != nil {
 		return err
-	} else if info.Size() == 0 {
+	}
+	defer stateFile.Close()
+
+	var stat unix.Stat_t
+	if err := unix.Fstat(stateFile.FD(), &stat); err != nil {
+		return err
+	}
+	if stat.Size == 0 {
 		return fmt.Errorf("statefile cannot be empty")
 	}
 
+	r := restorer{container: &cm.l.root, stateFile: stateFile}
+
+	fileIdx := 1
 	if o.HavePagesFile {
-		r.pagesFile = o.Files[fileIdx]
+		pagesFile, err := o.ReleaseFD(fileIdx)
+		if err != nil {
+			return err
+		}
+		defer pagesFile.Close()
 		fileIdx++
-		defer r.pagesFile.Close()
+		r.pagesFile = pagesFile
 	}
 
 	if o.HaveDeviceFile {
-		// The device file is donated to the platform.
-		// Can't take ownership away from os.File. dup them to get a new FD.
-		fd, err := unix.Dup(int(o.Files[fileIdx].Fd()))
+		r.deviceFile, err = o.ReleaseFD(fileIdx)
 		if err != nil {
-			return fmt.Errorf("failed to dup file: %v", err)
+			return err
 		}
-		r.deviceFile = os.NewFile(uintptr(fd), "platform device")
 		fileIdx++
 	}
 

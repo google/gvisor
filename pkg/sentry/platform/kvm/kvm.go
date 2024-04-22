@@ -17,10 +17,10 @@ package kvm
 
 import (
 	"fmt"
-	"os"
 
 	"golang.org/x/sys/unix"
 	pkgcontext "gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/ring0"
 	"gvisor.dev/gvisor/pkg/ring0/pagetables"
@@ -80,11 +80,11 @@ var (
 
 // OpenDevice opens the KVM device and returns the File.
 // If the devicePath is empty, it will default to /dev/kvm.
-func OpenDevice(devicePath string) (*os.File, error) {
+func OpenDevice(devicePath string) (*fd.FD, error) {
 	if devicePath == "" {
 		devicePath = "/dev/kvm"
 	}
-	f, err := os.OpenFile(devicePath, unix.O_RDWR, 0)
+	f, err := fd.Open(devicePath, unix.O_RDWR, 0)
 	if err != nil {
 		return nil, fmt.Errorf("error opening KVM device file (%s): %v", devicePath, err)
 	}
@@ -92,8 +92,8 @@ func OpenDevice(devicePath string) (*os.File, error) {
 }
 
 // New returns a new KVM-based implementation of the platform interface.
-func New(deviceFile *os.File) (*KVM, error) {
-	fd := deviceFile.Fd()
+func New(deviceFile *fd.FD) (*KVM, error) {
+	fd := deviceFile.FD()
 
 	// Ensure global initialization is done.
 	globalOnce.Do(func() {
@@ -109,7 +109,7 @@ func New(deviceFile *os.File) (*KVM, error) {
 		errno unix.Errno
 	)
 	for {
-		vm, _, errno = unix.Syscall(unix.SYS_IOCTL, fd, KVM_CREATE_VM, 0)
+		vm, _, errno = unix.Syscall(unix.SYS_IOCTL, uintptr(fd), KVM_CREATE_VM, 0)
 		if errno == unix.EINTR {
 			continue
 		}
@@ -184,11 +184,11 @@ func (k *KVM) NewContext(pkgcontext.Context) platform.Context {
 
 type constructor struct{}
 
-func (*constructor) New(f *os.File) (platform.Platform, error) {
+func (*constructor) New(f *fd.FD) (platform.Platform, error) {
 	return New(f)
 }
 
-func (*constructor) OpenDevice(devicePath string) (*os.File, error) {
+func (*constructor) OpenDevice(devicePath string) (*fd.FD, error) {
 	return OpenDevice(devicePath)
 }
 

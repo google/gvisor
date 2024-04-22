@@ -115,7 +115,7 @@ type LoadOpts struct {
 
 	// PagesFile is the file in which all MemoryFile pages are stored if
 	// PagesFile is non-nil.
-	PagesFile *os.File
+	PagesFile io.Reader
 
 	// Key is used for state integrity check.
 	Key []byte

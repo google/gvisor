@@ -83,6 +83,7 @@ go_library(
         "//pkg/coretag",
         "//pkg/coverage",
         "//pkg/cpuid",
+        "//pkg/fd",
         "//pkg/log",
         "//pkg/metric",
         "//pkg/prometheus",

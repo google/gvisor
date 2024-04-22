@@ -16,10 +16,11 @@ package boot
 
 import (
 	"fmt"
-	"os"
+	"io"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/host"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
@@ -46,9 +47,9 @@ const (
 
 type restorer struct {
 	container  *containerInfo
-	stateFile  *os.File
-	pagesFile  *os.File
-	deviceFile *os.File
+	stateFile  io.Reader
+	pagesFile  io.Reader
+	deviceFile *fd.FD
 }
 
 func createNetworkNamespaceForRestore(l *Loader) (*stack.Stack, *inet.Namespace, error) {

@@ -41,6 +41,7 @@ import (
 	"gvisor.dev/gvisor/pkg/control/client"
 	"gvisor.dev/gvisor/pkg/control/server"
 	"gvisor.dev/gvisor/pkg/coverage"
+	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/log"
 	metricpb "gvisor.dev/gvisor/pkg/metric/metric_go_proto"
 	"gvisor.dev/gvisor/pkg/prometheus"
@@ -474,7 +475,7 @@ func (s *Sandbox) Restore(conf *config.Config, cid string, imagePath string) err
 	} else if deviceFile != nil {
 		defer deviceFile.Close()
 		opt.HaveDeviceFile = true
-		opt.FilePayload.Files = append(opt.FilePayload.Files, deviceFile)
+		opt.FilePayload.Files = append(opt.FilePayload.Files, deviceFile.ReleaseToFile("device file"))
 	}
 
 	conn, err := s.sandboxConnect()
@@ -809,7 +810,7 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 	if deviceFile, err := gPlatform.OpenDevice(conf.PlatformDevicePath); err != nil {
 		return fmt.Errorf("opening device file for platform %q: %v", conf.Platform, err)
 	} else if deviceFile != nil {
-		donations.DonateAndClose("device-fd", deviceFile)
+		donations.DonateAndClose("device-fd", deviceFile.ReleaseToFile("device file"))
 	}
 
 	// TODO(b/151157106): syscall tests fail by timeout if asyncpreemptoff
@@ -1543,7 +1544,7 @@ func (s *Sandbox) configureStdios(conf *config.Config, stdios []*os.File) error 
 // deviceFileForPlatform opens the device file for the given platform. If the
 // platform does not need a device file, then nil is returned.
 // devicePath may be empty to use a sane platform-specific default.
-func deviceFileForPlatform(name, devicePath string) (*os.File, error) {
+func deviceFileForPlatform(name, devicePath string) (*fd.FD, error) {
 	p, err := platform.Lookup(name)
 	if err != nil {
 		return nil, err

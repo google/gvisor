@@ -250,7 +250,7 @@ type Args struct {
 	ControllerFD int
 	// Device is an optional argument that is passed to the platform. The Loader
 	// takes ownership of this file and may close it at any time.
-	Device *os.File
+	Device *fd.FD
 	// GoferFDs is an array of FDs used to connect with the Gofer. The Loader
 	// takes ownership of these FDs and may close them at any time.
 	GoferFDs []int
@@ -670,7 +670,7 @@ func (l *Loader) Destroy() {
 	refs.OnExit()
 }
 
-func createPlatform(conf *config.Config, deviceFile *os.File) (platform.Platform, error) {
+func createPlatform(conf *config.Config, deviceFile *fd.FD) (platform.Platform, error) {
 	p, err := platform.Lookup(conf.Platform)
 	if err != nil {
 		panic(fmt.Sprintf("invalid platform %s: %s", conf.Platform, err))

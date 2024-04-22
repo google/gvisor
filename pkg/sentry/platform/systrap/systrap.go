@@ -56,6 +56,7 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	pkgcontext "gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/memutil"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
@@ -390,11 +391,11 @@ func (*Systrap) NewContext(ctx pkgcontext.Context) platform.Context {
 
 type constructor struct{}
 
-func (*constructor) New(_ *os.File) (platform.Platform, error) {
+func (*constructor) New(_ *fd.FD) (platform.Platform, error) {
 	return New()
 }
 
-func (*constructor) OpenDevice(_ string) (*os.File, error) {
+func (*constructor) OpenDevice(_ string) (*fd.FD, error) {
 	return nil, nil
 }
 
