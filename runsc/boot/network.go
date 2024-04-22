@@ -109,6 +109,10 @@ type FDBasedLink struct {
 	// NumChannels controls how many underlying FDs are to be used to
 	// create this endpoint.
 	NumChannels int
+
+	// ProcessorsPerChannel controls how many goroutines are used to handle
+	// packets on each channel.
+	ProcessorsPerChannel int
 }
 
 // BindOpt indicates whether the sentry or runsc process is responsible for
@@ -309,16 +313,17 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 			log.Infof("gso max size is: %d", link.GSOMaxSize)
 
 			linkEP, err := fdbased.New(&fdbased.Options{
-				FDs:                FDs,
-				MTU:                uint32(link.MTU),
-				EthernetHeader:     mac != "",
-				Address:            mac,
-				PacketDispatchMode: dispatchMode,
-				GSOMaxSize:         link.GSOMaxSize,
-				GVisorGSOEnabled:   link.GVisorGSOEnabled,
-				TXChecksumOffload:  link.TXChecksumOffload,
-				RXChecksumOffload:  link.RXChecksumOffload,
-				GRO:                link.GVisorGRO,
+				FDs:                  FDs,
+				MTU:                  uint32(link.MTU),
+				EthernetHeader:       mac != "",
+				Address:              mac,
+				PacketDispatchMode:   dispatchMode,
+				GSOMaxSize:           link.GSOMaxSize,
+				GVisorGSOEnabled:     link.GVisorGSOEnabled,
+				TXChecksumOffload:    link.TXChecksumOffload,
+				RXChecksumOffload:    link.RXChecksumOffload,
+				GRO:                  link.GVisorGRO,
+				ProcessorsPerChannel: link.ProcessorsPerChannel,
 			})
 			if err != nil {
 				return err

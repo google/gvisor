@@ -226,6 +226,10 @@ type Options struct {
 
 	// GRO enables generic receive offload.
 	GRO bool
+
+	// ProcessorsPerChannel is the number of goroutines used to handle packets
+	// from each FD.
+	ProcessorsPerChannel int
 }
 
 // fanoutID is used for AF_PACKET based endpoints to enable PACKET_FANOUT
