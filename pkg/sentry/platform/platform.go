@@ -19,11 +19,11 @@ package platform
 
 import (
 	"fmt"
-	"os"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/seccomp"
 	"gvisor.dev/gvisor/pkg/seccomp/precompiledseccomp"
@@ -547,12 +547,12 @@ type Constructor interface {
 	// Arguments:
 	//
 	//	* deviceFile - the device file (e.g. /dev/kvm for the KVM platform).
-	New(deviceFile *os.File) (Platform, error)
+	New(deviceFile *fd.FD) (Platform, error)
 
 	// OpenDevice opens the path to the device used by the platform.
 	// Passing in an empty string will use the default path for the device,
 	// e.g. "/dev/kvm" for the KVM platform.
-	OpenDevice(devicePath string) (*os.File, error)
+	OpenDevice(devicePath string) (*fd.FD, error)
 
 	// Requirements returns platform specific requirements.
 	Requirements() Requirements
