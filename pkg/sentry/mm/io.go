@@ -118,7 +118,7 @@ func (mm *MemoryManager) CopyOut(ctx context.Context, addr hostarch.Addr, src []
 	}
 
 	// Go through internal mappings.
-	n64, err := mm.withInternalMappings(ctx, ar, hostarch.Write, opts.IgnorePermissions, func(ims safemem.BlockSeq) (uint64, error) {
+	n64, err := mm.withInternalMappings(ctx, ar, hostarch.Write, opts.IgnorePermissions, true /* mapToUser */, func(ims safemem.BlockSeq) (uint64, error) {
 		n, err := safemem.CopySeq(ims, safemem.BlockSeqOf(safemem.BlockFromSafeSlice(src)))
 		return n, translateIOError(ctx, err)
 	})
@@ -161,7 +161,7 @@ func (mm *MemoryManager) CopyIn(ctx context.Context, addr hostarch.Addr, dst []b
 	}
 
 	// Go through internal mappings.
-	n64, err := mm.withInternalMappings(ctx, ar, hostarch.Read, opts.IgnorePermissions, func(ims safemem.BlockSeq) (uint64, error) {
+	n64, err := mm.withInternalMappings(ctx, ar, hostarch.Read, opts.IgnorePermissions, false /* mapToUser */, func(ims safemem.BlockSeq) (uint64, error) {
 		n, err := safemem.CopySeq(safemem.BlockSeqOf(safemem.BlockFromSafeSlice(dst)), ims)
 		return n, translateIOError(ctx, err)
 	})
@@ -204,7 +204,7 @@ func (mm *MemoryManager) ZeroOut(ctx context.Context, addr hostarch.Addr, toZero
 	}
 
 	// Go through internal mappings.
-	return mm.withInternalMappings(ctx, ar, hostarch.Write, opts.IgnorePermissions, func(dsts safemem.BlockSeq) (uint64, error) {
+	return mm.withInternalMappings(ctx, ar, hostarch.Write, opts.IgnorePermissions, false /* mapToUser */, func(dsts safemem.BlockSeq) (uint64, error) {
 		n, err := safemem.ZeroSeq(dsts)
 		return n, translateIOError(ctx, err)
 	})
@@ -320,7 +320,7 @@ func (mm *MemoryManager) EnsurePMAsExist(ctx context.Context, addr hostarch.Addr
 	if !ok {
 		return 0, linuxerr.EFAULT
 	}
-	n64, err := mm.withInternalMappings(ctx, ar, hostarch.Write, opts.IgnorePermissions, func(ims safemem.BlockSeq) (uint64, error) {
+	n64, err := mm.withInternalMappings(ctx, ar, hostarch.Write, opts.IgnorePermissions, false /* mapToUser */, func(ims safemem.BlockSeq) (uint64, error) {
 		return uint64(ims.NumBytes()), nil
 	})
 	return int64(n64), err
@@ -352,7 +352,7 @@ func (mm *MemoryManager) SwapUint32(ctx context.Context, addr hostarch.Addr, new
 
 	// Go through internal mappings.
 	var old uint32
-	_, err := mm.withInternalMappings(ctx, ar, hostarch.ReadWrite, opts.IgnorePermissions, func(ims safemem.BlockSeq) (uint64, error) {
+	_, err := mm.withInternalMappings(ctx, ar, hostarch.ReadWrite, opts.IgnorePermissions, false /* mapToUser */, func(ims safemem.BlockSeq) (uint64, error) {
 		if ims.NumBlocks() != 1 || ims.NumBytes() != 4 {
 			// Atomicity is unachievable across mappings.
 			return 0, linuxerr.EFAULT
@@ -395,7 +395,7 @@ func (mm *MemoryManager) CompareAndSwapUint32(ctx context.Context, addr hostarch
 
 	// Go through internal mappings.
 	var prev uint32
-	_, err := mm.withInternalMappings(ctx, ar, hostarch.ReadWrite, opts.IgnorePermissions, func(ims safemem.BlockSeq) (uint64, error) {
+	_, err := mm.withInternalMappings(ctx, ar, hostarch.ReadWrite, opts.IgnorePermissions, false /* mapToUser */, func(ims safemem.BlockSeq) (uint64, error) {
 		if ims.NumBlocks() != 1 || ims.NumBytes() != 4 {
 			// Atomicity is unachievable across mappings.
 			return 0, linuxerr.EFAULT
@@ -438,7 +438,7 @@ func (mm *MemoryManager) LoadUint32(ctx context.Context, addr hostarch.Addr, opt
 
 	// Go through internal mappings.
 	var val uint32
-	_, err := mm.withInternalMappings(ctx, ar, hostarch.Read, opts.IgnorePermissions, func(ims safemem.BlockSeq) (uint64, error) {
+	_, err := mm.withInternalMappings(ctx, ar, hostarch.Read, opts.IgnorePermissions, false /* mapToUser */, func(ims safemem.BlockSeq) (uint64, error) {
 		if ims.NumBlocks() != 1 || ims.NumBytes() != 4 {
 			// Atomicity is unachievable across mappings.
 			return 0, linuxerr.EFAULT
@@ -468,6 +468,10 @@ func (mm *MemoryManager) handleASIOFault(ctx context.Context, addr hostarch.Addr
 	end, _ := ioar.End.RoundUp()
 	ar := hostarch.AddrRange{addr.RoundDown(), end}
 
+	var pfdrs *pendingFileDecRefs
+	defer func() { // must be a closure to avoid evaluating pfdrs immediately
+		pfdrs.Cleanup()
+	}()
 	// Don't bother trying existingPMAsLocked; in most cases, if we did have
 	// existing pmas, we wouldn't have faulted.
 
@@ -486,10 +490,11 @@ func (mm *MemoryManager) handleASIOFault(ctx context.Context, addr hostarch.Addr
 
 	// Ensure that we have usable pmas.
 	mm.activeMu.Lock()
-	pseg, pend, err := mm.getPMAsLocked(ctx, vseg, ar, at)
+	pseg, pend, unmapAR, pfdrs, err := mm.getPMAsLocked(ctx, vseg, ar, at, pfdrs)
 	mm.mappingMu.RUnlock()
 	if pendaddr := pend.Start(); pendaddr < ar.End {
 		if pendaddr <= ar.Start {
+			mm.unmapASLocked(unmapAR)
 			mm.activeMu.Unlock()
 			return translateIOError(ctx, err)
 		}
@@ -501,6 +506,9 @@ func (mm *MemoryManager) handleASIOFault(ctx context.Context, addr hostarch.Addr
 	mm.activeMu.DowngradeLock()
 
 	err = mm.mapASLocked(pseg, ar, memmap.PlatformEffectDefault)
+	if err != nil {
+		mm.unmapASLocked(unmapAR)
+	}
 	mm.activeMu.RUnlock()
 	return translateIOError(ctx, err)
 }
@@ -515,7 +523,7 @@ func (mm *MemoryManager) handleASIOFault(ctx context.Context, addr hostarch.Addr
 // more useful for usermem.IO methods.
 //
 // Preconditions: 0 < ar.Length() <= math.MaxInt64.
-func (mm *MemoryManager) withInternalMappings(ctx context.Context, ar hostarch.AddrRange, at hostarch.AccessType, ignorePermissions bool, f func(safemem.BlockSeq) (uint64, error)) (int64, error) {
+func (mm *MemoryManager) withInternalMappings(ctx context.Context, ar hostarch.AddrRange, at hostarch.AccessType, ignorePermissions bool, mapToUser bool, f func(safemem.BlockSeq) (uint64, error)) (int64, error) {
 	// If pmas are already available, we can do IO without touching mm.vmas or
 	// mm.mappingMu.
 	mm.activeMu.RLock()
@@ -527,6 +535,10 @@ func (mm *MemoryManager) withInternalMappings(ctx context.Context, ar hostarch.A
 	}
 	mm.activeMu.RUnlock()
 
+	var pfdrs *pendingFileDecRefs
+	defer func() { // must be a closure to avoid evaluating pfdrs immediately
+		pfdrs.Cleanup()
+	}()
 	// Ensure that we have usable vmas.
 	mm.mappingMu.RLock()
 	vseg, vend, verr := mm.getVMAsLocked(ctx, ar, at, ignorePermissions)
@@ -540,10 +552,11 @@ func (mm *MemoryManager) withInternalMappings(ctx context.Context, ar hostarch.A
 
 	// Ensure that we have usable pmas.
 	mm.activeMu.Lock()
-	pseg, pend, perr := mm.getPMAsLocked(ctx, vseg, ar, at)
+	pseg, pend, unmapAR, pfdrs, perr := mm.getPMAsLocked(ctx, vseg, ar, at, pfdrs)
 	mm.mappingMu.RUnlock()
 	if pendaddr := pend.Start(); pendaddr < ar.End {
 		if pendaddr <= ar.Start {
+			mm.unmapASLocked(unmapAR)
 			mm.activeMu.Unlock()
 			return 0, translateIOError(ctx, perr)
 		}
@@ -557,6 +570,16 @@ func (mm *MemoryManager) withInternalMappings(ctx context.Context, ar hostarch.A
 			return 0, translateIOError(ctx, imerr)
 		}
 		ar.End = imendaddr
+	}
+	if perr == nil && mm.as != nil && mapToUser {
+		if err := mm.mapASLocked(pseg, ar, memmap.PlatformEffectDefault); err != nil {
+			mm.unmapASLocked(unmapAR)
+			// Don't need to do anything else with this error,
+			// because a memory fault will be handled though
+			// mm.HandleUserFault.
+		}
+	} else {
+		mm.unmapASLocked(unmapAR)
 	}
 
 	// Do I/O.
@@ -589,7 +612,7 @@ func (mm *MemoryManager) withVecInternalMappings(ctx context.Context, ars hostar
 	// iterator plumbing (this isn't generally practical in the vector case due
 	// to iterator invalidation between AddrRanges). Use it if possible.
 	if ars.NumRanges() == 1 {
-		return mm.withInternalMappings(ctx, ars.Head(), at, ignorePermissions, f)
+		return mm.withInternalMappings(ctx, ars.Head(), at, ignorePermissions, false /* mapToUser */, f)
 	}
 
 	// If pmas are already available, we can do IO without touching mm.vmas or
