@@ -525,7 +525,7 @@ func (c *Container) Start(conf *config.Config) error {
 
 // Restore takes a container and replaces its kernel and file system
 // to restore a container from its state file.
-func (c *Container) Restore(conf *config.Config, imagePath string) error {
+func (c *Container) Restore(conf *config.Config, imagePath string, direct bool) error {
 	log.Debugf("Restore container, cid: %s", c.ID)
 	if err := c.Saver.lock(BlockAcquire); err != nil {
 		return err
@@ -542,7 +542,7 @@ func (c *Container) Restore(conf *config.Config, imagePath string) error {
 		log.Warningf("StartContainer hook skipped because running inside container namespace is not supported")
 	}
 
-	if err := c.Sandbox.Restore(conf, c.ID, imagePath); err != nil {
+	if err := c.Sandbox.Restore(conf, c.ID, imagePath, direct); err != nil {
 		return err
 	}
 	c.changeStatus(Running)
