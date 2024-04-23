@@ -91,6 +91,21 @@ import (
 	_ "gvisor.dev/gvisor/pkg/sentry/socket/unix"
 )
 
+// ContainerRuntimeState is the runtime state of a container.
+type ContainerRuntimeState int
+
+const (
+	// RuntimeStateInvalid used just in case of error.
+	RuntimeStateInvalid ContainerRuntimeState = iota
+	// RuntimeStateCreating indicates that the container is being
+	// created, but has not started running yet.
+	RuntimeStateCreating
+	// RuntimeStateRunning indicates that the container is running.
+	RuntimeStateRunning
+	// RuntimeStateStopped indicates that the container has stopped.
+	RuntimeStateStopped
+)
+
 type containerInfo struct {
 	cid string
 
@@ -1740,4 +1755,25 @@ func (l *Loader) networkStats() ([]*NetworkInterface, error) {
 		})
 	}
 	return stats, nil
+}
+
+func (l *Loader) containerRuntimeState(cid string) ContainerRuntimeState {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	exec, ok := l.processes[execID{cid: cid}]
+	if !ok {
+		// Can't distinguish between invalid CID and stopped container, assume that
+		// CID is valid.
+		return RuntimeStateStopped
+	}
+	if exec.tg == nil {
+		// Container has no thread group assigned, so it has started yet.
+		return RuntimeStateCreating
+	}
+	if exec.tg.Leader().ExitState() == kernel.TaskExitNone {
+		// Init process is still running.
+		return RuntimeStateRunning
+	}
+	// Init process has stopped, but no one has called wait on it yet.
+	return RuntimeStateStopped
 }

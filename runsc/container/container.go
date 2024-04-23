@@ -1404,9 +1404,7 @@ func (c *Container) changeStatus(s Status) {
 		}
 
 	case Stopped:
-		if c.Status != Creating && c.Status != Created && c.Status != Running && c.Status != Stopped {
-			panic(fmt.Sprintf("invalid state transition: %v => %v", c.Status, s))
-		}
+		// All states can transition to Stopped.
 
 	default:
 		panic(fmt.Sprintf("invalid new state: %v", s))
@@ -1993,4 +1991,20 @@ func nvproxySetupAfterGoferUserns(spec *specs.Spec, conf *config.Config, goferCm
 		}
 		return nil
 	}, nil
+}
+
+// CheckStopped checks if the container is stopped and updates its status.
+func (c *Container) CheckStopped() {
+	if state, err := c.Sandbox.ContainerRuntimeState(c.ID); err != nil {
+		log.Warningf("Cannot find if container %v exists, checking if sandbox %v is running, err: %v", c.ID, c.Sandbox.ID, err)
+		if !c.IsSandboxRunning() {
+			log.Warningf("Sandbox isn't running anymore, marking container %v as stopped:", c.ID)
+			c.changeStatus(Stopped)
+		}
+	} else {
+		if state == boot.RuntimeStateStopped {
+			log.Warningf("Container %v is stopped", c.ID)
+			c.changeStatus(Stopped)
+		}
+	}
 }
