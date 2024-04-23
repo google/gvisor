@@ -22,6 +22,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
@@ -115,7 +116,7 @@ type LoadOpts struct {
 
 	// PagesFile is the file in which all MemoryFile pages are stored if
 	// PagesFile is non-nil.
-	PagesFile io.Reader
+	PagesFile *fd.FD
 
 	// Key is used for state integrity check.
 	Key []byte

@@ -48,7 +48,7 @@ const (
 type restorer struct {
 	container  *containerInfo
 	stateFile  io.Reader
-	pagesFile  io.Reader
+	pagesFile  *fd.FD
 	deviceFile *fd.FD
 }
 

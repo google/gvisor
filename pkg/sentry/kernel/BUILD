@@ -338,6 +338,7 @@ go_library(
         "//pkg/errors",
         "//pkg/errors/linuxerr",
         "//pkg/eventchannel",
+        "//pkg/fd",
         "//pkg/fspath",
         "//pkg/goid",
         "//pkg/hostarch",

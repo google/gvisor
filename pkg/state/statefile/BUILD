@@ -7,15 +7,29 @@ package(
 
 go_library(
     name = "statefile",
-    srcs = ["statefile.go"],
+    srcs = [
+        "async_io.go",
+        "statefile.go",
+    ],
     visibility = ["//:sandbox"],
-    deps = ["//pkg/compressio"],
+    deps = [
+        "//pkg/compressio",
+        "//pkg/fd",
+        "//pkg/sync",
+    ],
 )
 
 go_test(
     name = "statefile_test",
     size = "small",
-    srcs = ["statefile_test.go"],
+    srcs = [
+        "async_io_test.go",
+        "statefile_test.go",
+    ],
     library = ":statefile",
-    deps = ["//pkg/compressio"],
+    deps = [
+        "//pkg/compressio",
+        "//pkg/fd",
+        "@org_golang_x_sys//unix:go_default_library",
+    ],
 )

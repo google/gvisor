@@ -116,6 +116,7 @@ go_library(
         "//pkg/sentry/memmap",
         "//pkg/sentry/usage",
         "//pkg/state",
+        "//pkg/state/statefile",
         "//pkg/state/wire",
         "//pkg/sync",
         "//pkg/sync/locking",

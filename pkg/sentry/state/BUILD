@@ -17,6 +17,7 @@ go_library(
         "//pkg/abi/linux",
         "//pkg/context",
         "//pkg/errors/linuxerr",
+        "//pkg/fd",
         "//pkg/log",
         "//pkg/sentry/inet",
         "//pkg/sentry/kernel",
