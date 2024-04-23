@@ -39,6 +39,13 @@ type Restore struct {
 
 	// detach indicates that runsc has to start a process and exit without waiting it.
 	detach bool
+
+	// direct indicates whether O_DIRECT should be used for reading the
+	// checkpoint pages file. It is faster if the checkpoint files are not
+	// already in the page cache (for example if its coming from an untouched
+	// network block device). Usually the restore is done only once, so the cost
+	// of adding the checkpoint files to the page cache can be redundant.
+	direct bool
 }
 
 // Name implements subcommands.Command.Name.
@@ -62,6 +69,7 @@ func (r *Restore) SetFlags(f *flag.FlagSet) {
 	r.Create.SetFlags(f)
 	f.StringVar(&r.imagePath, "image-path", "", "directory path to saved container image")
 	f.BoolVar(&r.detach, "detach", false, "detach from the container's process")
+	f.BoolVar(&r.direct, "direct", false, "use O_DIRECT for reading checkpoint pages file")
 
 	// Unimplemented flags necessary for compatibility with docker.
 
@@ -138,7 +146,7 @@ func (r *Restore) Execute(_ context.Context, f *flag.FlagSet, args ...any) subco
 	}
 
 	log.Debugf("Restore: %v", r.imagePath)
-	if err := c.Restore(conf, r.imagePath); err != nil {
+	if err := c.Restore(conf, r.imagePath, r.direct); err != nil {
 		return util.Errorf("starting container: %v", err)
 	}
 

@@ -443,7 +443,7 @@ func (s *Sandbox) StartSubcontainer(spec *specs.Spec, conf *config.Config, cid s
 }
 
 // Restore sends the restore call for a container in the sandbox.
-func (s *Sandbox) Restore(conf *config.Config, cid string, imagePath string) error {
+func (s *Sandbox) Restore(conf *config.Config, cid string, imagePath string, direct bool) error {
 	log.Debugf("Restore sandbox %q", s.ID)
 
 	stateFileName := path.Join(imagePath, boot.CheckpointStateFileName)
@@ -459,9 +459,14 @@ func (s *Sandbox) Restore(conf *config.Config, cid string, imagePath string) err
 		},
 	}
 
-	// If the image file exists, we must pass it in.
+	// If the pages file exists, we must pass it in.
 	pagesFileName := path.Join(imagePath, boot.CheckpointPagesFileName)
-	if pf, err := os.Open(pagesFileName); err == nil {
+	pagesReadFlags := os.O_RDONLY
+	if direct {
+		// The contents are page-aligned, so it can be opened with O_DIRECT.
+		pagesReadFlags |= syscall.O_DIRECT
+	}
+	if pf, err := os.OpenFile(pagesFileName, pagesReadFlags, 0); err == nil {
 		defer pf.Close()
 		opt.HavePagesFile = true
 		opt.FilePayload.Files = append(opt.FilePayload.Files, pf)
@@ -1289,9 +1294,10 @@ func (s *Sandbox) Checkpoint(cid string, imagePath string, options statefile.Opt
 
 	// When there is no compression, MemoryFile contents are page-aligned.
 	// It is beneficial to store them separately so certain optimizations can be
-	// applied during restore.
+	// applied during restore. See Restore().
 	if options.Compression == statefile.CompressionLevelNone {
 		pagesFilePath := filepath.Join(imagePath, boot.CheckpointPagesFileName)
+		// TODO(b/327603247): Implement optional async O_DIRECT write.
 		pf, err := os.OpenFile(pagesFilePath, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0644)
 		if err != nil {
 			return fmt.Errorf("creating checkpoint pages file %q: %w", pagesFilePath, err)
