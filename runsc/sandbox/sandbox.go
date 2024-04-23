@@ -1381,14 +1381,12 @@ func (s *Sandbox) ExportMetrics(opts control.MetricsExportOpts) (*prometheus.Sna
 // IsRunning returns true if the sandbox or gofer process is running.
 func (s *Sandbox) IsRunning() bool {
 	pid := s.Pid.load()
-	if pid != 0 {
-		// Send a signal 0 to the sandbox process.
-		if err := unix.Kill(pid, 0); err == nil {
-			// Succeeded, process is running.
-			return true
-		}
+	if pid == 0 {
+		return false
 	}
-	return false
+	// Send a signal 0 to the sandbox process. If it succeeds, the sandbox
+	// process is running.
+	return unix.Kill(pid, 0) == nil
 }
 
 // Stacks collects and returns all stacks for the sandbox.
@@ -1760,6 +1758,17 @@ func (s *Sandbox) Mount(cid, fstype, src, dest string) error {
 		FilePayload: urpc.FilePayload{Files: files},
 	}
 	return s.call(boot.ContMgrMount, &args, nil)
+}
+
+// ContainerRuntimeState returns the runtime state of a container.
+func (s *Sandbox) ContainerRuntimeState(cid string) (boot.ContainerRuntimeState, error) {
+	log.Debugf("ContainerRuntimeState, sandbox: %q, cid: %q", s.ID, cid)
+	var state boot.ContainerRuntimeState
+	if err := s.call(boot.ContMgrContainerRuntimeState, &cid, &state); err != nil {
+		return boot.RuntimeStateInvalid, fmt.Errorf("getting container state (CID: %q): %w", cid, err)
+	}
+	log.Debugf("ContainerRuntimeState, sandbox: %q, cid: %q, state: %v", s.ID, cid, state)
+	return state, nil
 }
 
 func setCloExeOnAllFDs() error {
