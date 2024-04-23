@@ -38,6 +38,10 @@ func (mm *MemoryManager) HandleUserFault(ctx context.Context, addr hostarch.Addr
 		return linuxerr.EFAULT
 	}
 
+	var pfdrs *pendingFileDecRefs
+	defer func() { // must be a closure to avoid evaluating pfdrs immediately
+		pfdrs.Cleanup()
+	}()
 	// Don't bother trying existingPMAsLocked; in most cases, if we did have
 	// existing pmas, we wouldn't have faulted.
 
@@ -53,9 +57,10 @@ func (mm *MemoryManager) HandleUserFault(ctx context.Context, addr hostarch.Addr
 
 	// Ensure that we have a usable pma.
 	mm.activeMu.Lock()
-	pseg, _, err := mm.getPMAsLocked(ctx, vseg, ar, at)
+	pseg, _, unmapAR, pfdrs, err := mm.getPMAsLocked(ctx, vseg, ar, at, pfdrs)
 	mm.mappingMu.RUnlock()
 	if err != nil {
+		mm.unmapASLocked(unmapAR)
 		mm.activeMu.Unlock()
 		return err
 	}
@@ -66,6 +71,9 @@ func (mm *MemoryManager) HandleUserFault(ctx context.Context, addr hostarch.Addr
 
 	// Map the faulted page into the active AddressSpace.
 	err = mm.mapASLocked(pseg, ar, memmap.PlatformEffectDefault)
+	if err != nil {
+		mm.unmapASLocked(unmapAR)
+	}
 	mm.activeMu.RUnlock()
 	return err
 }
@@ -168,6 +176,10 @@ func (mm *MemoryManager) populateVMA(ctx context.Context, vseg vmaIterator, ar h
 		return
 	}
 
+	var pfdrs *pendingFileDecRefs
+	defer func() { // must be a closure to avoid evaluating pfdrs immediately
+		pfdrs.Cleanup()
+	}()
 	mm.activeMu.Lock()
 	// Can't defer mm.activeMu.Unlock(); see below.
 
@@ -179,8 +191,9 @@ func (mm *MemoryManager) populateVMA(ctx context.Context, vseg vmaIterator, ar h
 	}
 
 	// Ensure that we have usable pmas.
-	pseg, _, err := mm.getPMAsLocked(ctx, vseg, ar, hostarch.NoAccess)
+	pseg, _, unmapAR, pfdrs, err := mm.getPMAsLocked(ctx, vseg, ar, hostarch.NoAccess, pfdrs)
 	if err != nil {
+		mm.unmapASLocked(unmapAR)
 		// mm/util.c:vm_mmap_pgoff() ignores the error, if any, from
 		// mm/gup.c:mm_populate(). If it matters, we'll get it again when
 		// userspace actually tries to use the failing page.
@@ -193,7 +206,9 @@ func (mm *MemoryManager) populateVMA(ctx context.Context, vseg vmaIterator, ar h
 	mm.activeMu.DowngradeLock()
 
 	// As above, errors are silently ignored.
-	mm.mapASLocked(pseg, ar, platformEffect)
+	if err := mm.mapASLocked(pseg, ar, platformEffect); err != nil {
+		mm.unmapASLocked(unmapAR)
+	}
 	mm.activeMu.RUnlock()
 }
 
@@ -215,6 +230,11 @@ func (mm *MemoryManager) populateVMAAndUnlock(ctx context.Context, vseg vmaItera
 		return
 	}
 
+	var pfdrs *pendingFileDecRefs
+	defer func() { // must be a closure to avoid evaluating pfdrs immediately
+		pfdrs.Cleanup()
+	}()
+
 	mm.activeMu.Lock()
 
 	if mm.as == nil {
@@ -226,15 +246,18 @@ func (mm *MemoryManager) populateVMAAndUnlock(ctx context.Context, vseg vmaItera
 	// mm.mappingMu doesn't need to be write-locked for getPMAsLocked, and it
 	// isn't needed at all for mapASLocked.
 	mm.mappingMu.DowngradeLock()
-	pseg, _, err := mm.getPMAsLocked(ctx, vseg, ar, hostarch.NoAccess)
+	pseg, _, unmapAR, pfdrs, err := mm.getPMAsLocked(ctx, vseg, ar, hostarch.NoAccess, pfdrs)
 	mm.mappingMu.RUnlock()
 	if err != nil {
+		mm.unmapASLocked(unmapAR)
 		mm.activeMu.Unlock()
 		return
 	}
 
 	mm.activeMu.DowngradeLock()
-	mm.mapASLocked(pseg, ar, platformEffect)
+	if err := mm.mapASLocked(pseg, ar, platformEffect); err != nil {
+		mm.unmapASLocked(unmapAR)
+	}
 	mm.activeMu.RUnlock()
 }
 
@@ -823,6 +846,10 @@ func (mm *MemoryManager) MLock(ctx context.Context, addr hostarch.Addr, length u
 		return linuxerr.EINVAL
 	}
 
+	var pfdrs *pendingFileDecRefs
+	defer func() { // must be a closure to avoid evaluating pfdrs immediately
+		pfdrs.Cleanup()
+	}()
 	mm.mappingMu.Lock()
 	// Can't defer mm.mappingMu.Unlock(); see below.
 
@@ -890,7 +917,12 @@ func (mm *MemoryManager) MLock(ctx context.Context, addr hostarch.Addr, length u
 				mm.mappingMu.RUnlock()
 				return linuxerr.ENOMEM
 			}
-			_, _, err := mm.getPMAsLocked(ctx, vseg, vseg.Range().Intersect(ar), hostarch.NoAccess)
+			var (
+				unmapAR hostarch.AddrRange
+				err     error
+			)
+			_, _, unmapAR, pfdrs, err = mm.getPMAsLocked(ctx, vseg, vseg.Range().Intersect(ar), hostarch.NoAccess, pfdrs)
+			mm.unmapASLocked(unmapAR)
 			if err != nil {
 				mm.activeMu.Unlock()
 				mm.mappingMu.RUnlock()
@@ -941,6 +973,10 @@ func (mm *MemoryManager) MLockAll(ctx context.Context, opts MLockAllOpts) error 
 		return linuxerr.EINVAL
 	}
 
+	var pfdrs *pendingFileDecRefs
+	defer func() { // must be a closure to avoid evaluating pfdrs immediately
+		pfdrs.Cleanup()
+	}()
 	mm.mappingMu.Lock()
 	// Can't defer mm.mappingMu.Unlock(); see below.
 
@@ -985,7 +1021,9 @@ func (mm *MemoryManager) MLockAll(ctx context.Context, opts MLockAllOpts) error 
 		mm.mappingMu.DowngradeLock()
 		for vseg := mm.vmas.FirstSegment(); vseg.Ok(); vseg = vseg.NextSegment() {
 			if vseg.ValuePtr().effectivePerms.Any() {
-				mm.getPMAsLocked(ctx, vseg, vseg.Range(), hostarch.NoAccess)
+				var unmapAR hostarch.AddrRange
+				_, _, unmapAR, pfdrs, _ = mm.getPMAsLocked(ctx, vseg, vseg.Range(), hostarch.NoAccess, pfdrs)
+				mm.unmapASLocked(unmapAR)
 			}
 		}
 
