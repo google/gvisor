@@ -19,6 +19,7 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 
+#include <cerrno>
 #include <limits>
 
 #include "gmock/gmock.h"
@@ -27,6 +28,7 @@
 #include "test/util/capability_util.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/socket_util.h"
+#include "test/util/test_util.h"
 
 namespace gvisor {
 namespace testing {
@@ -394,6 +396,62 @@ TEST_P(PacketSocketTest, ReceiveSentBoundToProtocolAll) {
   ExpectReceiveOnPacketSocket(socket_, kExpectEthernetHeader, udp_bind_addr,
                               kContents, &src_addr);
   ASSERT_EQ(src_addr.sll_pkttype, PACKET_HOST);
+}
+
+// Verify that the ifindex field of sockaddr_ll must be provided when calling
+// sendto on a packet socket (e.g. the interface cannot be inferred from the
+// bound address).
+TEST_P(PacketSocketTest, SendWithoutTargetDevice) {
+  if (IsRunningOnGvisor()) {
+    GTEST_SKIP() << "gVisor does not support sending on packet sockets.";
+  }
+
+  const uint16_t kArbitraryProtocol = 0xFFFF;
+
+  // Bind the packet socket to the loopback interface. Despite this, subsequent
+  // sends will require the interface be specified.
+  const struct sockaddr_ll bind_addr = {
+      .sll_family = AF_PACKET,
+      .sll_protocol = htons(kArbitraryProtocol),
+      .sll_ifindex = ASSERT_NO_ERRNO_AND_VALUE(GetLoopbackIndex()),
+      .sll_halen = ETH_ALEN,
+  };
+  ASSERT_THAT(bind(socket_.get(), reinterpret_cast<const sockaddr*>(&bind_addr),
+                   sizeof(bind_addr)),
+              SyscallSucceeds());
+
+  // Prepare a send buffer with a valid Ethernet header.
+  // This enables sending with SOCK_RAW, and is inconsequential for SOCK_DGRAM.
+  const uint64_t kContents = 0xAAAAAAAAAAAAAAAA;
+  struct ethhdr eth = {};
+  eth.h_proto = htons(kArbitraryProtocol);
+  char send_buf[sizeof(eth) + sizeof(kContents)];
+  memcpy(send_buf, &eth, sizeof(eth));
+  memcpy(send_buf + sizeof(ethhdr), &kContents, sizeof(kContents));
+
+  // Send to a valid address.
+  const struct sockaddr_ll valid_addr = {
+      .sll_family = AF_PACKET,
+      .sll_protocol = htons(kArbitraryProtocol),
+      .sll_ifindex = ASSERT_NO_ERRNO_AND_VALUE(GetLoopbackIndex()),
+      .sll_halen = ETH_ALEN,
+  };
+  ASSERT_THAT(sendto(socket_.get(), send_buf, sizeof(send_buf), 0,
+                     reinterpret_cast<const struct sockaddr*>(&valid_addr),
+                     sizeof(valid_addr)),
+              SyscallSucceedsWithValue(sizeof(send_buf)));
+
+  // Attempt to send without specifying the interface.
+  const struct sockaddr_ll no_dev_addr = {
+      .sll_family = AF_PACKET,
+      .sll_protocol = htons(kArbitraryProtocol),
+      .sll_ifindex = 0,
+      .sll_halen = ETH_ALEN,
+  };
+  ASSERT_THAT(sendto(socket_.get(), send_buf, sizeof(send_buf), 0,
+                     reinterpret_cast<const struct sockaddr*>(&no_dev_addr),
+                     sizeof(no_dev_addr)),
+              SyscallFailsWithErrno(ENXIO));
 }
 
 INSTANTIATE_TEST_SUITE_P(AllPacketSocketTests, PacketSocketTest,

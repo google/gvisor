@@ -1569,6 +1569,7 @@ cc_binary(
         "//test/util:file_descriptor",
         "//test/util:socket_util",
         "//test/util:test_main",
+        "//test/util:test_util",
     ],
 )
 
