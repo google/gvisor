@@ -27,6 +27,7 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
 	"gvisor.dev/gvisor/pkg/state"
+	"gvisor.dev/gvisor/pkg/state/statefile"
 )
 
 // SaveTo writes f's state to the given stream.
@@ -134,7 +135,7 @@ func (f *MemoryFile) RestoreID() string {
 }
 
 // LoadFrom loads MemoryFile state from the given stream.
-func (f *MemoryFile) LoadFrom(ctx context.Context, r io.Reader, pr io.Reader) error {
+func (f *MemoryFile) LoadFrom(ctx context.Context, r io.Reader, pr *statefile.AsyncReader) error {
 	// Load metadata.
 	if _, err := state.Load(ctx, r, &f.fileSize); err != nil {
 		return err
@@ -195,7 +196,11 @@ func (f *MemoryFile) LoadFrom(ctx context.Context, r io.Reader, pr io.Reader) er
 			if ioErr != nil {
 				return
 			}
-			_, ioErr = io.ReadFull(pr, s)
+			if pr != nil {
+				pr.ReadAsync(s)
+			} else {
+				_, ioErr = io.ReadFull(r, s)
+			}
 		})
 		if ioErr != nil {
 			return ioErr

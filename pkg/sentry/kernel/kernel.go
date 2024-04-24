@@ -47,6 +47,7 @@ import (
 	"gvisor.dev/gvisor/pkg/devutil"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/eventchannel"
+	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/refs"
@@ -75,6 +76,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/uniqueid"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/state"
+	"gvisor.dev/gvisor/pkg/state/statefile"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 )
@@ -544,7 +546,7 @@ func savePrivateMFs(ctx context.Context, w io.Writer, pw io.Writer, mfsToSave ma
 	return nil
 }
 
-func loadPrivateMFs(ctx context.Context, r io.Reader, pr io.Reader) error {
+func loadPrivateMFs(ctx context.Context, r io.Reader, pr *statefile.AsyncReader) error {
 	// Load the metadata.
 	var meta privateMemoryFileMetadata
 	if _, err := state.Load(ctx, r, &meta); err != nil {
@@ -682,7 +684,7 @@ func (k *Kernel) invalidateUnsavableMappings(ctx context.Context) error {
 }
 
 // LoadFrom returns a new Kernel loaded from args.
-func (k *Kernel) LoadFrom(ctx context.Context, r io.Reader, pagesFile io.Reader, timeReady chan struct{}, net inet.Stack, clocks sentrytime.Clocks, vfsOpts *vfs.CompleteRestoreOptions) error {
+func (k *Kernel) LoadFrom(ctx context.Context, r io.Reader, pagesFile *fd.FD, timeReady chan struct{}, net inet.Stack, clocks sentrytime.Clocks, vfsOpts *vfs.CompleteRestoreOptions) error {
 	loadStart := time.Now()
 
 	k.runningTasksCond.L = &k.runningTasksMu
@@ -724,15 +726,20 @@ func (k *Kernel) LoadFrom(ctx context.Context, r io.Reader, pagesFile io.Reader,
 
 	// Load the memory files' state.
 	memoryStart := time.Now()
-	pr := io.Reader(r)
+	var pr *statefile.AsyncReader
 	if pagesFile != nil {
-		pr = pagesFile
+		pr = statefile.NewAsyncReader(pagesFile, 0 /* off */)
 	}
 	if err := k.mf.LoadFrom(ctx, r, pr); err != nil {
 		return err
 	}
 	if err := loadPrivateMFs(ctx, r, pr); err != nil {
 		return err
+	}
+	if pr != nil {
+		if err := pr.Close(); err != nil {
+			return err
+		}
 	}
 	log.Infof("Memory files load took [%s].", time.Since(memoryStart))
 

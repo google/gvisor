@@ -186,10 +186,7 @@ restart:
 		return nil, hostarch.NoAccess, err
 	}
 	if needPatch {
-		restart, _ := s.usertrap.PatchSyscall(ctx, ac, mm)
-		if restart {
-			goto restart
-		}
+		s.usertrap.PatchSyscall(ctx, ac, mm)
 	}
 	if !isSyscall && linux.Signal(c.signalInfo.Signo) == linux.SIGILL {
 		err := s.usertrap.HandleFault(ctx, ac, mm)
