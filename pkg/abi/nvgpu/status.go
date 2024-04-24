@@ -16,6 +16,7 @@ package nvgpu
 
 // Status codes, from src/common/sdk/nvidia/inc/nvstatuscodes.h.
 const (
+	NV_OK                   = 0x00000000
 	NV_ERR_INVALID_ADDRESS  = 0x0000001e
 	NV_ERR_INVALID_ARGUMENT = 0x0000001f
 	NV_ERR_INVALID_CLASS    = 0x00000022

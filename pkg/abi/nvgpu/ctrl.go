@@ -259,6 +259,13 @@ const (
 	NV503C_CTRL_CMD_UNREGISTER_VIDMEM = 0x503c0105
 )
 
+// +marshal
+type NV503C_CTRL_REGISTER_VA_SPACE_PARAMS struct {
+	HVASpace     Handle
+	Pad          [4]byte
+	VASpaceToken uint64
+}
+
 // From src/common/sdk/nvidia/inc/ctrl/ctrl83de/ctrl83dedebug.h:
 const (
 	NV83DE_CTRL_CMD_DEBUG_SET_EXCEPTION_MASK        = 0x83de0309
