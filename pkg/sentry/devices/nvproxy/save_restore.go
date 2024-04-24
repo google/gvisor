@@ -34,4 +34,5 @@ func (n *nvproxy) afterLoad(goContext.Context) {
 		panic(fmt.Sprintf("driver version %q not found in abis map", n.version))
 	}
 	n.abi = abiCons.cons()
+	n.objsFreeSet = make(map[*object]struct{})
 }

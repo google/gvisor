@@ -151,6 +151,18 @@ type containerInfo struct {
 	nvidiaDriverVersion string
 }
 
+type loaderState int
+
+const (
+	// created indicates that the Loader has been created, but not started yet.
+	created loaderState = iota
+	// started indicates that the Loader has been started.
+	started
+	// restoring indicates that the Loader has been created and is restoring
+	// containers. It will change to started after restore is completed.
+	restoring
+)
+
 // Loader keeps state needed to start the kernel and run the container.
 type Loader struct {
 	// k is the kernel.
@@ -191,6 +203,9 @@ type Loader struct {
 
 	// mu guards the fields below.
 	mu sync.Mutex
+
+	// state is guarded by mu.
+	state loaderState
 
 	// sharedMounts holds VFS mounts that may be shared between containers within
 	// the same pod. It is mapped by mount source.
@@ -847,7 +862,11 @@ func (l *Loader) run() error {
 
 	log.Infof("Process should have started...")
 	l.watchdog.Start()
-	return l.k.Start()
+	if err := l.k.Start(); err != nil {
+		return err
+	}
+	l.state = started
+	return nil
 }
 
 // createSubcontainer creates a new container inside the sandbox.
