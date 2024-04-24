@@ -220,6 +220,9 @@ func (mm *MemoryManager) mapASLocked(pseg pmaIterator, ar hostarch.AddrRange, pl
 //
 // Preconditions: mm.activeMu must be locked.
 func (mm *MemoryManager) unmapASLocked(ar hostarch.AddrRange) {
+	if ar.Length() == 0 {
+		return
+	}
 	if mm.as == nil {
 		// No AddressSpace? Force all mappings to be unmapped on the next
 		// Activate.
