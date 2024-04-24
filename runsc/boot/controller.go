@@ -222,6 +222,11 @@ type containerManager struct {
 func (cm *containerManager) StartRoot(cid *string, _ *struct{}) error {
 	log.Debugf("containerManager.StartRoot, cid: %s", *cid)
 	// Tell the root container to start and wait for the result.
+	return cm.onStart()
+}
+
+// onStart notifies that sandbox is ready to start and wait for the result.
+func (cm *containerManager) onStart() error {
 	cm.startChan <- struct{}{}
 	if err := <-cm.startResultChan; err != nil {
 		return fmt.Errorf("starting sandbox: %v", err)
@@ -461,6 +466,12 @@ type RestoreOpts struct {
 func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 	log.Debugf("containerManager.Restore")
 
+	if cm.l.state == restoring {
+		return fmt.Errorf("restore is already in progress")
+	}
+	if cm.l.state == started {
+		return fmt.Errorf("cannot restore a started container")
+	}
 	if len(o.Files) == 0 {
 		return fmt.Errorf("at least one file must be passed to Restore")
 	}
@@ -480,6 +491,7 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 	}
 
 	r := restorer{container: &cm.l.root, stateFile: stateFile}
+	cm.l.state = restoring
 
 	fileIdx := 1
 	if o.HavePagesFile {
@@ -510,14 +522,7 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 	if err := r.restore(cm.l); err != nil {
 		return err
 	}
-
-	// Tell the root container to start and wait for the result.
-	cm.startChan <- struct{}{}
-	if err := <-cm.startResultChan; err != nil {
-		return fmt.Errorf("starting sandbox: %v", err)
-	}
-
-	return nil
+	return cm.onStart()
 }
 
 // Wait waits for the init process in the given container.
