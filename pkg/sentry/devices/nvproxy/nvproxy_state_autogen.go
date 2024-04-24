@@ -43,6 +43,7 @@ func (n *nvproxy) StateTypeName() string {
 func (n *nvproxy) StateFields() []string {
 	return []string{
 		"version",
+		"clients",
 	}
 }
 
@@ -50,11 +51,13 @@ func (n *nvproxy) StateFields() []string {
 func (n *nvproxy) StateSave(stateSinkObject state.Sink) {
 	n.beforeSave()
 	stateSinkObject.Save(0, &n.version)
+	stateSinkObject.Save(1, &n.clients)
 }
 
 // +checklocksignore
 func (n *nvproxy) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &n.version)
+	stateSourceObject.Load(1, &n.clients)
 	stateSourceObject.AfterLoad(func() { n.afterLoad(ctx) })
 }
 
@@ -64,7 +67,14 @@ func (o *object) StateTypeName() string {
 
 func (o *object) StateFields() []string {
 	return []string{
+		"nvp",
+		"client",
+		"class",
+		"handle",
 		"impl",
+		"deps",
+		"rdeps",
+		"objectFreeEntry",
 	}
 }
 
@@ -73,42 +83,84 @@ func (o *object) beforeSave() {}
 // +checklocksignore
 func (o *object) StateSave(stateSinkObject state.Sink) {
 	o.beforeSave()
-	stateSinkObject.Save(0, &o.impl)
+	stateSinkObject.Save(0, &o.nvp)
+	stateSinkObject.Save(1, &o.client)
+	stateSinkObject.Save(2, &o.class)
+	stateSinkObject.Save(3, &o.handle)
+	stateSinkObject.Save(4, &o.impl)
+	stateSinkObject.Save(5, &o.deps)
+	stateSinkObject.Save(6, &o.rdeps)
+	stateSinkObject.Save(7, &o.objectFreeEntry)
 }
 
 func (o *object) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (o *object) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &o.impl)
+	stateSourceObject.Load(0, &o.nvp)
+	stateSourceObject.Load(1, &o.client)
+	stateSourceObject.Load(2, &o.class)
+	stateSourceObject.Load(3, &o.handle)
+	stateSourceObject.Load(4, &o.impl)
+	stateSourceObject.Load(5, &o.deps)
+	stateSourceObject.Load(6, &o.rdeps)
+	stateSourceObject.Load(7, &o.objectFreeEntry)
 }
 
-func (o *osDescMem) StateTypeName() string {
-	return "pkg/sentry/devices/nvproxy.osDescMem"
+func (l *objectFreeList) StateTypeName() string {
+	return "pkg/sentry/devices/nvproxy.objectFreeList"
 }
 
-func (o *osDescMem) StateFields() []string {
+func (l *objectFreeList) StateFields() []string {
 	return []string{
-		"object",
-		"pinnedRanges",
+		"head",
+		"tail",
 	}
 }
 
-func (o *osDescMem) beforeSave() {}
+func (l *objectFreeList) beforeSave() {}
 
 // +checklocksignore
-func (o *osDescMem) StateSave(stateSinkObject state.Sink) {
-	o.beforeSave()
-	stateSinkObject.Save(0, &o.object)
-	stateSinkObject.Save(1, &o.pinnedRanges)
+func (l *objectFreeList) StateSave(stateSinkObject state.Sink) {
+	l.beforeSave()
+	stateSinkObject.Save(0, &l.head)
+	stateSinkObject.Save(1, &l.tail)
 }
 
-func (o *osDescMem) afterLoad(context.Context) {}
+func (l *objectFreeList) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (o *osDescMem) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &o.object)
-	stateSourceObject.Load(1, &o.pinnedRanges)
+func (l *objectFreeList) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &l.head)
+	stateSourceObject.Load(1, &l.tail)
+}
+
+func (e *objectFreeEntry) StateTypeName() string {
+	return "pkg/sentry/devices/nvproxy.objectFreeEntry"
+}
+
+func (e *objectFreeEntry) StateFields() []string {
+	return []string{
+		"next",
+		"prev",
+	}
+}
+
+func (e *objectFreeEntry) beforeSave() {}
+
+// +checklocksignore
+func (e *objectFreeEntry) StateSave(stateSinkObject state.Sink) {
+	e.beforeSave()
+	stateSinkObject.Save(0, &e.next)
+	stateSinkObject.Save(1, &e.prev)
+}
+
+func (e *objectFreeEntry) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (e *objectFreeEntry) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &e.next)
+	stateSourceObject.Load(1, &e.prev)
 }
 
 func (dev *uvmDevice) StateTypeName() string {
@@ -171,7 +223,8 @@ func init() {
 	state.Register((*frontendDevice)(nil))
 	state.Register((*nvproxy)(nil))
 	state.Register((*object)(nil))
-	state.Register((*osDescMem)(nil))
+	state.Register((*objectFreeList)(nil))
+	state.Register((*objectFreeEntry)(nil))
 	state.Register((*uvmDevice)(nil))
 	state.Register((*DriverVersion)(nil))
 }

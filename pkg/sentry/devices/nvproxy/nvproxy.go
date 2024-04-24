@@ -22,11 +22,9 @@ import (
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/abi/nvgpu"
-	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/marshal"
-	"gvisor.dev/gvisor/pkg/sentry/mm"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
 
@@ -44,9 +42,10 @@ func Register(vfsObj *vfs.VirtualFilesystem, versionStr string, uvmDevMajor uint
 		return fmt.Errorf("unsupported Nvidia driver version: %s", versionStr)
 	}
 	nvp := &nvproxy{
-		objsLive: make(map[nvgpu.Handle]*object),
-		abi:      abiCons.cons(),
-		version:  version,
+		abi:         abiCons.cons(),
+		version:     version,
+		clients:     make(map[nvgpu.Handle]*rootClient),
+		objsFreeSet: make(map[*object]struct{}),
 	}
 	for minor := uint32(0); minor <= nvgpu.NV_CONTROL_DEVICE_MINOR; minor++ {
 		if err := vfsObj.RegisterDevice(vfs.CharDevice, nvgpu.NV_MAJOR_DEVICE_NUMBER, minor, &frontendDevice{
@@ -70,44 +69,18 @@ func Register(vfsObj *vfs.VirtualFilesystem, versionStr string, uvmDevMajor uint
 
 // +stateify savable
 type nvproxy struct {
-	objsMu   objsMutex                `state:"nosave"`
-	objsLive map[nvgpu.Handle]*object `state:"nosave"`
-	abi      *driverABI               `state:"nosave"`
-	version  DriverVersion
-}
+	abi     *driverABI `state:"nosave"`
+	version DriverVersion
 
-// object tracks an object allocated through the driver.
-//
-// +stateify savable
-type object struct {
-	impl objectImpl
-}
-
-func (o *object) init(impl objectImpl) {
-	o.impl = impl
-}
-
-// Release is called after the represented object is freed.
-func (o *object) Release(ctx context.Context) {
-	o.impl.Release(ctx)
-}
-
-type objectImpl interface {
-	Release(ctx context.Context)
-}
-
-// osDescMem is an objectImpl tracking an OS descriptor.
-//
-// +stateify savable
-type osDescMem struct {
-	object
-	pinnedRanges []mm.PinnedRange
-}
-
-// Release implements objectImpl.Release.
-func (o *osDescMem) Release(ctx context.Context) {
-	ctx.Infof("nvproxy: unpinning pages for released OS descriptor")
-	mm.Unpin(o.pinnedRanges)
+	// See object.go.
+	// Users should call nvproxy.objsLock/Unlock() rather than locking objsMu
+	// directly.
+	objsMu objsMutex `state:"nosave"`
+	// These fields are protected by objsMu.
+	clients      map[nvgpu.Handle]*rootClient
+	objsCleanup  []func()             `state:"nosave"`
+	objsFreeList objectFreeList       `state:"nosave"`
+	objsFreeSet  map[*object]struct{} `state:"nosave"`
 }
 
 type marshalPtr[T any] interface {
