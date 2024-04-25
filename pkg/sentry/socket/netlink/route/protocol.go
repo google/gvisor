@@ -169,63 +169,7 @@ func (p *Protocol) newLink(ctx context.Context, msg *nlmsg.Message, ms *nlmsg.Me
 		return syserr.ErrProtocolNotSupported
 	}
 
-	var ifinfomsg linux.InterfaceInfoMessage
-	attrs, ok := msg.GetData(&ifinfomsg)
-	if !ok {
-		return syserr.ErrInvalidArgument
-	}
-	for !attrs.Empty() {
-		// The index is unspecified, search by the interface name.
-		ahdr, value, rest, ok := attrs.ParseFirst()
-		if !ok {
-			return syserr.ErrInvalidArgument
-		}
-		attrs = rest
-		switch ahdr.Type {
-		case linux.IFLA_IFNAME:
-			if len(value) < 1 {
-				return syserr.ErrInvalidArgument
-			}
-			if ifinfomsg.Index != 0 {
-				// Device name changing isn't supported yet.
-				return syserr.ErrNotSupported
-			}
-			ifname := string(value[:len(value)-1])
-			for idx, ifa := range stack.Interfaces() {
-				if ifname == ifa.Name {
-					ifinfomsg.Index = idx
-					break
-				}
-			}
-		default:
-			ctx.Warningf("unexpected attribute: %x", ahdr.Type)
-			return syserr.ErrNotSupported
-		}
-	}
-	if ifinfomsg.Index == 0 {
-		return syserr.ErrNoDevice
-	}
-
-	flags := msg.Header().Flags
-	if flags&linux.NLM_F_EXCL != 0 {
-		return syserr.ErrExists
-	}
-	if flags&linux.NLM_F_REPLACE != 0 {
-		return syserr.ErrExists
-	}
-
-	if ifinfomsg.Flags != 0 || ifinfomsg.Change != 0 {
-		if ifinfomsg.Change & ^uint32(linux.IFF_UP) != 0 {
-			ctx.Warningf("Unsupported ifi_change flags: %x", ifinfomsg.Change)
-			return syserr.ErrInvalidArgument
-		}
-		if ifinfomsg.Flags & ^uint32(linux.IFF_UP) != 0 {
-			ctx.Warningf("Unsupported ifi_flags: %x", ifinfomsg.Change)
-			return syserr.ErrInvalidArgument
-		}
-		// Netstack interfaces are always up.
-	}
-	return nil
+	return stack.SetInterface(ctx, msg)
 }
 
 // delLink handles RTM_DELLINK requests.
