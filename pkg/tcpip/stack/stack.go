@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"io"
 	"math/rand"
+	"sort"
 	"sync/atomic"
 	"time"
 
@@ -736,6 +737,17 @@ func (s *Stack) SetPortRange(start uint16, end uint16) tcpip.Error {
 //
 // This method takes ownership of the table.
 func (s *Stack) SetRouteTable(table []tcpip.Route) {
+	sort.Search(len(table), func(i int) bool {
+		if !table[i].IsValid() {
+			panic(fmt.Sprintf("Route is not valid: (#%d) %v", i, table[i]))
+		} else {
+			return false
+		}
+	})
+	// Sort route table in descending order based on the prefix length.
+	sort.Slice(table, func(i, j int) bool {
+		return table[i].Compare(table[j]) < 0
+	})
 	s.routeMu.Lock()
 	defer s.routeMu.Unlock()
 	s.routeTable = table
@@ -750,9 +762,18 @@ func (s *Stack) GetRouteTable() []tcpip.Route {
 
 // AddRoute appends a route to the route table.
 func (s *Stack) AddRoute(route tcpip.Route) {
+	if !route.IsValid() {
+		panic(fmt.Sprintf("Route is not valid: %v", route))
+	}
 	s.routeMu.Lock()
 	defer s.routeMu.Unlock()
-	s.routeTable = append(s.routeTable, route)
+	// Sort routes in descending order based on the prefix length.
+	i := sort.Search(len(s.routeTable), func(j int) bool {
+		return route.Compare(s.routeTable[j]) < 0
+	})
+	s.routeTable = append(s.routeTable, tcpip.Route{})
+	copy(s.routeTable[i+1:], s.routeTable[i:])
+	s.routeTable[i] = route
 }
 
 // RemoveRoutes removes matching routes from the route table.

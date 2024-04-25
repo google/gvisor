@@ -279,6 +279,31 @@ func (a Address) Equal(other Address) bool {
 	return a == other
 }
 
+// IsValid returns true if the given Route contains a subnet mask in canonical
+// form.
+func (r Route) IsValid() bool {
+	size := r.Destination.address.Len()
+	return size > 0
+}
+
+// Compare returns an integer comparing two routes lexicographically. returns 0
+// if r==to, -1 if r < to, and +1 if r > to.
+func (r Route) Compare(to Route) int {
+	prefix := r.Destination.Prefix()
+	toPrefix := to.Destination.Prefix()
+	if prefix > toPrefix {
+		return -1
+	}
+	if prefix < toPrefix {
+		return 1
+	}
+	var raddr []byte
+	copy(raddr, r.Destination.address.addr[:])
+	var taddr []byte
+	copy(taddr, to.Destination.address.addr[:])
+	return bytes.Compare([]byte(raddr), []byte(taddr))
+}
+
 // MatchingPrefix returns the matching prefix length in bits.
 //
 // Panics if b and a have different lengths.

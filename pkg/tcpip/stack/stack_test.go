@@ -1526,7 +1526,7 @@ func TestEndpointExpiration(t *testing.T) {
 
 				// 1. No Address yet, send should only work for spoofing, receive for
 				// promiscuous mode.
-				//-----------------------
+				// -----------------------
 				verifyAddress(t, s, nicID, noAddr)
 				if promiscuous {
 					testRecv(t, fakeNet, localAddrByte, ep, buf)
@@ -1541,7 +1541,7 @@ func TestEndpointExpiration(t *testing.T) {
 				}
 
 				// 2. Add Address, everything should work.
-				//-----------------------
+				// -----------------------
 				protocolAddr := tcpip.ProtocolAddress{
 					Protocol: fakeNetNumber,
 					AddressWithPrefix: tcpip.AddressWithPrefix{
@@ -1634,7 +1634,7 @@ func TestEndpointExpiration(t *testing.T) {
 
 				// 9. Remove the address. Send should only work for spoofing, receive
 				// for promiscuous mode.
-				//-----------------------
+				// -----------------------
 				if err := s.RemoveAddress(nicID, localAddr); err != nil {
 					t.Fatal("RemoveAddress failed:", err)
 				}
@@ -4387,10 +4387,15 @@ func TestAddRoute(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	subnet3, err := tcpip.NewSubnet(tcpip.AddrFromSlice([]byte("\x01\x00\x00\x00")), tcpip.MaskFrom("\x01\x00\x00\x00"))
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	expected := []tcpip.Route{
 		{Destination: subnet1, Gateway: tcpip.AddrFromSlice([]byte("\x00\x00\x00\x00")), NIC: 1},
 		{Destination: subnet2, Gateway: tcpip.AddrFromSlice([]byte("\x00\x00\x00\x00")), NIC: 1},
+		{Destination: subnet3, Gateway: tcpip.AddrFromSlice([]byte("\x00\x00\x00\x00")), NIC: 1},
 	}
 
 	// Initialize the route table with one route.
