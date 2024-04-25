@@ -106,8 +106,16 @@ type sender struct {
 	// window probes.
 	unackZeroWindowProbes uint32 `state:"nosave"`
 
-	writeNext   *segment
-	writeList   segmentList
+	// writeNext is the next segment to write that hasn't already been
+	// written, i.e. the first payload starting at SND.NXT.
+	writeNext *segment
+
+	// writeList holds all writable data: both unsent data and
+	// sent-but-unacknowledged data. Alternatively: it holds all bytes
+	// starting from SND.UNA.
+	writeList segmentList
+
+	// resendTimer is used for RTOs.
 	resendTimer timer `state:"nosave"`
 
 	// rtt.TCPRTTState.SRTT and rtt.TCPRTTState.RTTVar are the "smoothed
