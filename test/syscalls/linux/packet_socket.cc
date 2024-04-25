@@ -402,7 +402,7 @@ TEST_P(PacketSocketTest, ReceiveSentBoundToProtocolAll) {
 // sendto on a packet socket (e.g. the interface cannot be inferred from the
 // bound address).
 TEST_P(PacketSocketTest, SendWithoutTargetDevice) {
-  if (IsRunningOnGvisor()) {
+  if (IsRunningOnGvisor() && GvisorPlatform() != Platform::kFuchsia) {
     GTEST_SKIP() << "gVisor does not support sending on packet sockets.";
   }
 
