@@ -39,6 +39,7 @@ go_library(
         "//pkg/sentry/kernel/time",
         "//pkg/sentry/socket",
         "//pkg/sentry/socket/netfilter",
+        "//pkg/sentry/socket/netlink/nlmsg",
         "//pkg/sentry/vfs",
         "//pkg/sync",
         "//pkg/syserr",
