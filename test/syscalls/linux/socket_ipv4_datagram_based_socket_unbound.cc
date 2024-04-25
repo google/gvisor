@@ -22,11 +22,13 @@ namespace gvisor {
 namespace testing {
 
 void IPv4DatagramBasedUnboundSocketTest::SetUp() {
+  // Require raw socket capability to create a raw socket. Note that
+  // SocketKind.type is a bitmask.
   if (GetParam().type & SOCK_RAW) {
     SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability()));
   }
 
-  if (GetParam().protocol & IPPROTO_ICMP) {
+  if (GetParam().protocol == IPPROTO_ICMP) {
     // By default, ICMP sockets cannot be created on Linux, even with root
     // privs. So we only run the test with gVisor and not hostinet, and even
     // then require CAP_NET_RAW.
