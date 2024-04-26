@@ -59,7 +59,7 @@ var (
 	mask               = flag.Int("mask", 8, "mask size for address")
 	iface              = flag.String("iface", "", "network interface name to bind for netstack")
 	sack               = flag.Bool("sack", false, "enable SACK support for netstack")
-	rack               = flag.Bool("rack", false, "enable RACK in TCP")
+	rack               = flag.Bool("rack", true, "enable RACK in TCP")
 	moderateRecvBuf    = flag.Bool("moderate_recv_buf", true, "enable TCP Receive Buffer Auto-tuning")
 	cubic              = flag.Bool("cubic", false, "enable use of CUBIC congestion control for netstack")
 	gso                = flag.Int("gso", 0, "GSO maximum size")
@@ -289,10 +289,11 @@ func newNetstackImpl(mode string) (impl, error) {
 		}
 	}
 
-	if *rack {
-		opt := tcpip.TCPRecovery(tcpip.TCPRACKLossDetection)
+	// RACK is enabled by default in netstack.
+	if !*rack {
+		opt := tcpip.TCPRecovery(0)
 		if err := s.SetTransportProtocolOption(tcp.ProtocolNumber, &opt); err != nil {
-			return nil, fmt.Errorf("enabling RACK failed: %v", err)
+			return nil, fmt.Errorf("disabling RACK failed: %v", err)
 		}
 	}
 
