@@ -18,6 +18,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"slices"
 	"testing"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
@@ -57,7 +58,7 @@ func checkProcessCaps(pid int, wantCaps *specs.LinuxCapabilities) error {
 func checkCaps(which capability.CapType, curCaps capability.Capabilities, wantCaps *specs.LinuxCapabilities) error {
 	wantNames := getCaps(which, wantCaps)
 	for name, c := range capFromName {
-		want := specutils.ContainsStr(wantNames, name)
+		want := slices.Contains(wantNames, name)
 		got := curCaps.Get(which, c)
 		if want != got {
 			if want {

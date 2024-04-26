@@ -20,6 +20,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -339,7 +340,7 @@ func parseMountOption(opt string, allowedKeys ...string) (bool, error) {
 	if len(kv) > 2 {
 		return false, fmt.Errorf("invalid option %q", opt)
 	}
-	return specutils.ContainsStr(allowedKeys, kv[0]), nil
+	return slices.Contains(allowedKeys, kv[0]), nil
 }
 
 type fdDispenser struct {
