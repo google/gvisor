@@ -687,16 +687,6 @@ func SafeMount(src, dst, fstype string, flags uintptr, data, procPath string) er
 	return unix.Mount(src, safePath, fstype, flags, data)
 }
 
-// ContainsStr returns true if 'str' is inside 'strs'.
-func ContainsStr(strs []string, str string) bool {
-	for _, s := range strs {
-		if s == str {
-			return true
-		}
-	}
-	return false
-}
-
 // RetryEintr retries the function until an error different than EINTR is
 // returned.
 func RetryEintr(f func() (uintptr, uintptr, error)) (uintptr, uintptr, error) {

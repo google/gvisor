@@ -18,7 +18,7 @@ import (
 	"fmt"
 	"math/bits"
 	"path"
-	"strings"
+	"slices"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
@@ -125,18 +125,10 @@ func validateMount(mnt *specs.Mount) error {
 	if !path.IsAbs(mnt.Destination) {
 		return fmt.Errorf("Mount.Destination must be an absolute path: %v", mnt)
 	}
-	if mnt.Type == "bind" {
+	if IsGoferMount(*mnt) {
 		return ValidateMountOptions(mnt.Options)
 	}
 	return nil
-}
-
-func moptKey(opt string) string {
-	if len(opt) == 0 {
-		return opt
-	}
-	// Guaranteed to have at least one token, since opt is not empty.
-	return strings.SplitN(opt, "=", 2)[0]
 }
 
 // FilterMountOptions filters out all invalid mount options.
@@ -163,13 +155,8 @@ func ValidateMountOptions(opts []string) error {
 }
 
 func validateMountOption(o string) error {
-	if ContainsStr(invalidOptions, o) {
+	if slices.Contains(invalidOptions, o) {
 		return fmt.Errorf("mount option %q is not supported", o)
-	}
-	_, ok1 := optionsMap[o]
-	_, ok2 := propOptionsMap[o]
-	if !ok1 && !ok2 {
-		return fmt.Errorf("unknown mount option %q", o)
 	}
 	return validatePropagation(o)
 }
