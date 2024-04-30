@@ -51,6 +51,7 @@ package systrap
 import (
 	"fmt"
 	"os"
+	"runtime"
 	"sync"
 
 	"golang.org/x/sys/unix"
@@ -324,6 +325,9 @@ func New() (*Systrap, error) {
 	}
 
 	stubInitialized.Do(func() {
+		// Don't use sentry and stub fast paths if here is just one cpu.
+		neverEnableFastPath = min(runtime.NumCPU(), runtime.GOMAXPROCS(0)) == 1
+
 		// Initialize the stub.
 		stubInit()
 

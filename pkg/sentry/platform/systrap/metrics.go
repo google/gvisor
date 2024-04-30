@@ -60,6 +60,10 @@ const (
 	minNecessaryRecordings = 5
 )
 
+// neverEnableFastPath is used for completely disabling the fast path.
+// It is set once so doesn't need any synchronizations.
+var neverEnableFastPath bool
+
 // latencyRecorder is used to collect latency metrics.
 type latencyRecorder struct {
 	stubBound   latencyBuckets
@@ -414,6 +418,9 @@ func (s *fastPathState) shouldDisableStubFP(stubMedian, sentryMedian cpuTicks) b
 // fastpath state machine described above.
 
 func sentryOffStubOff(s *fastPathState) {
+	if neverEnableFastPath {
+		return
+	}
 	periodStubBoundMedian := latencies.stubBound.getMedian()
 	s.stubBoundBaselineLatency.merge(&latencies.stubBound)
 	latencies.stubBound.reset()
