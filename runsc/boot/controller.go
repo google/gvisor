@@ -867,7 +867,7 @@ func (cm *containerManager) Mount(args *MountArgs, _ *struct{}) error {
 
 // ContainerRuntimeState returns the runtime state of a container.
 func (cm *containerManager) ContainerRuntimeState(cid *string, state *ContainerRuntimeState) error {
-	log.Debugf("containerManager.ContainerRuntimeState: cid: %s", cid)
+	log.Debugf("containerManager.ContainerRuntimeState: cid: %s", *cid)
 	*state = cm.l.containerRuntimeState(*cid)
 	return nil
 }
