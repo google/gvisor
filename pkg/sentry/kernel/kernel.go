@@ -698,6 +698,23 @@ func (k *Kernel) invalidateUnsavableMappings(ctx context.Context) error {
 func (k *Kernel) LoadFrom(ctx context.Context, r io.Reader, pagesMetadata, pagesFile *fd.FD, timeReady chan struct{}, net inet.Stack, clocks sentrytime.Clocks, vfsOpts *vfs.CompleteRestoreOptions) error {
 	loadStart := time.Now()
 
+	var (
+		mfLoadWg  sync.WaitGroup
+		mfLoadErr error
+	)
+	parallelMfLoad := pagesMetadata != nil && pagesFile != nil
+	if parallelMfLoad {
+		// Parallelize MemoryFile load and kernel load. Both are independent.
+		mfLoadWg.Add(1)
+		go func() {
+			defer mfLoadWg.Done()
+			mfLoadErr = k.loadMemoryFiles(ctx, r, pagesMetadata, pagesFile)
+		}()
+		// Defer a Wait() so we wait for k.loadMemoryFiles() to complete even if we
+		// error out without reaching the other Wait() below.
+		defer mfLoadWg.Wait()
+	}
+
 	k.runningTasksCond.L = &k.runningTasksMu
 	k.cpuClockTickerWakeCh = make(chan struct{}, 1)
 	k.cpuClockTickerStopCond.L = &k.runningTasksMu
@@ -731,34 +748,18 @@ func (k *Kernel) LoadFrom(ctx context.Context, r io.Reader, pagesMetadata, pages
 	log.Infof("Kernel load stats: %s", stats.String())
 	log.Infof("Kernel load took [%s].", time.Since(kernelStart))
 
+	if parallelMfLoad {
+		mfLoadWg.Wait()
+	} else {
+		mfLoadErr = k.loadMemoryFiles(ctx, r, pagesMetadata, pagesFile)
+	}
+	if mfLoadErr != nil {
+		return mfLoadErr
+	}
+
 	// rootNetworkNamespace should be populated after loading the state file.
 	// Restore the root network stack.
 	k.rootNetworkNamespace.RestoreRootStack(net)
-
-	// Load the memory files' state.
-	memoryStart := time.Now()
-	pmr := r
-	if pagesMetadata != nil {
-		pmr = pagesMetadata
-	}
-	var pr *statefile.AsyncReader
-	if pagesFile != nil {
-		pr = statefile.NewAsyncReader(pagesFile, 0 /* off */)
-	}
-	if err := k.mf.LoadFrom(ctx, pmr, pr); err != nil {
-		return err
-	}
-	if err := loadPrivateMFs(ctx, pmr, pr); err != nil {
-		return err
-	}
-	if pr != nil {
-		if err := pr.Close(); err != nil {
-			return err
-		}
-	}
-	log.Infof("Memory files load took [%s].", time.Since(memoryStart))
-
-	log.Infof("Overall load took [%s]", time.Since(loadStart))
 
 	k.Timekeeper().SetClocks(clocks)
 
@@ -788,6 +789,32 @@ func (k *Kernel) LoadFrom(ctx context.Context, r io.Reader, pagesMetadata, pages
 		return fmt.Errorf("UseHostCores enabled: can't increase ApplicationCores from %d to %d after restore", k.applicationCores, initAppCores)
 	}
 
+	return nil
+}
+
+func (k *Kernel) loadMemoryFiles(ctx context.Context, r io.Reader, pagesMetadata, pagesFile *fd.FD) error {
+	// Load the memory files' state.
+	memoryStart := time.Now()
+	pmr := r
+	if pagesMetadata != nil {
+		pmr = pagesMetadata
+	}
+	var pr *statefile.AsyncReader
+	if pagesFile != nil {
+		pr = statefile.NewAsyncReader(pagesFile, 0 /* off */)
+	}
+	if err := k.mf.LoadFrom(ctx, pmr, pr); err != nil {
+		return err
+	}
+	if err := loadPrivateMFs(ctx, pmr, pr); err != nil {
+		return err
+	}
+	if pr != nil {
+		if err := pr.Close(); err != nil {
+			return err
+		}
+	}
+	log.Infof("Memory files load took [%s].", time.Since(memoryStart))
 	return nil
 }
 
