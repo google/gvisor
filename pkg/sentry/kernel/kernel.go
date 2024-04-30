@@ -35,7 +35,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"path/filepath"
 	"time"
 
@@ -581,7 +580,7 @@ func loadPrivateMFs(ctx context.Context, r io.Reader, pr *statefile.AsyncReader)
 // SaveTo saves the state of k to w.
 //
 // Preconditions: The kernel must be paused throughout the call to SaveTo.
-func (k *Kernel) SaveTo(ctx context.Context, w io.Writer, pagesFile *os.File) error {
+func (k *Kernel) SaveTo(ctx context.Context, w io.Writer, pagesMetadata, pagesFile *fd.FD) error {
 	saveStart := time.Now()
 
 	// Do not allow other Kernel methods to affect it while it's being saved.
@@ -649,14 +648,18 @@ func (k *Kernel) SaveTo(ctx context.Context, w io.Writer, pagesFile *os.File) er
 
 	// Save the memory files' state.
 	memoryStart := time.Now()
-	pw := io.Writer(w)
+	pmw := w
+	if pagesMetadata != nil {
+		pmw = pagesMetadata
+	}
+	pw := w
 	if pagesFile != nil {
 		pw = pagesFile
 	}
-	if err := k.mf.SaveTo(ctx, w, pw); err != nil {
+	if err := k.mf.SaveTo(ctx, pmw, pw); err != nil {
 		return err
 	}
-	if err := savePrivateMFs(ctx, w, pw, mfsToSave); err != nil {
+	if err := savePrivateMFs(ctx, pmw, pw, mfsToSave); err != nil {
 		return err
 	}
 	log.Infof("Memory files save took [%s].", time.Since(memoryStart))
@@ -692,7 +695,7 @@ func (k *Kernel) invalidateUnsavableMappings(ctx context.Context) error {
 }
 
 // LoadFrom returns a new Kernel loaded from args.
-func (k *Kernel) LoadFrom(ctx context.Context, r io.Reader, pagesFile *fd.FD, timeReady chan struct{}, net inet.Stack, clocks sentrytime.Clocks, vfsOpts *vfs.CompleteRestoreOptions) error {
+func (k *Kernel) LoadFrom(ctx context.Context, r io.Reader, pagesMetadata, pagesFile *fd.FD, timeReady chan struct{}, net inet.Stack, clocks sentrytime.Clocks, vfsOpts *vfs.CompleteRestoreOptions) error {
 	loadStart := time.Now()
 
 	k.runningTasksCond.L = &k.runningTasksMu
@@ -734,14 +737,18 @@ func (k *Kernel) LoadFrom(ctx context.Context, r io.Reader, pagesFile *fd.FD, ti
 
 	// Load the memory files' state.
 	memoryStart := time.Now()
+	pmr := r
+	if pagesMetadata != nil {
+		pmr = pagesMetadata
+	}
 	var pr *statefile.AsyncReader
 	if pagesFile != nil {
 		pr = statefile.NewAsyncReader(pagesFile, 0 /* off */)
 	}
-	if err := k.mf.LoadFrom(ctx, r, pr); err != nil {
+	if err := k.mf.LoadFrom(ctx, pmr, pr); err != nil {
 		return err
 	}
-	if err := loadPrivateMFs(ctx, r, pr); err != nil {
+	if err := loadPrivateMFs(ctx, pmr, pr); err != nil {
 		return err
 	}
 	if pr != nil {

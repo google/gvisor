@@ -468,8 +468,14 @@ func (s *Sandbox) Restore(conf *config.Config, cid string, imagePath string, dir
 	}
 	if pf, err := os.OpenFile(pagesFileName, pagesReadFlags, 0); err == nil {
 		defer pf.Close()
+		pagesMetadataFileName := path.Join(imagePath, boot.CheckpointPagesMetadataFileName)
+		pmf, err := os.Open(pagesMetadataFileName)
+		if err != nil {
+			return fmt.Errorf("opening restore image file %q failed: %v", pagesMetadataFileName, err)
+		}
+		defer pmf.Close()
 		opt.HavePagesFile = true
-		opt.FilePayload.Files = append(opt.FilePayload.Files, pf)
+		opt.FilePayload.Files = append(opt.FilePayload.Files, pmf, pf)
 	} else if !os.IsNotExist(err) {
 		return fmt.Errorf("opening restore image file %q failed: %v", pagesFileName, err)
 	}
@@ -1341,7 +1347,13 @@ func (s *Sandbox) Checkpoint(cid string, imagePath string, options statefile.Opt
 			return fmt.Errorf("creating checkpoint pages file %q: %w", pagesFilePath, err)
 		}
 		defer pf.Close()
-		opt.FilePayload.Files = append(opt.FilePayload.Files, pf)
+		pagesMetadataFilePath := filepath.Join(imagePath, boot.CheckpointPagesMetadataFileName)
+		pmf, err := os.OpenFile(pagesMetadataFilePath, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0644)
+		if err != nil {
+			return fmt.Errorf("creating checkpoint pages metadata file %q: %w", pagesMetadataFilePath, err)
+		}
+		defer pmf.Close()
+		opt.FilePayload.Files = append(opt.FilePayload.Files, pmf, pf)
 		opt.HavePagesFile = true
 	}
 
