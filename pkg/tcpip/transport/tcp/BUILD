@@ -99,6 +99,7 @@ go_test(
     name = "tcp_test",
     size = "small",
     srcs = [
+        "cubic_test.go",
         "main_test.go",
         "segment_test.go",
         "timer_test.go",
@@ -108,7 +109,9 @@ go_test(
         "//pkg/buffer",
         "//pkg/refs",
         "//pkg/sleep",
+        "//pkg/tcpip",
         "//pkg/tcpip/faketime",
+        "//pkg/tcpip/seqnum",
         "//pkg/tcpip/stack",
         "@com_github_google_go_cmp//cmp:go_default_library",
     ],
