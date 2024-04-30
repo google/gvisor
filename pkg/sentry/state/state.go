@@ -18,7 +18,6 @@ package state
 import (
 	"fmt"
 	"io"
-	"os"
 
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
@@ -50,9 +49,13 @@ type SaveOpts struct {
 	// Destination is the save target.
 	Destination io.Writer
 
+	// PagesMetadata is the file into which MemoryFile metadata is stored if
+	// PagesMetadata is non-nil. Otherwise this content is stored in Destination.
+	PagesMetadata *fd.FD
+
 	// PagesFile is the file in which all MemoryFile pages are stored if
-	// PagesFile is non-nil.
-	PagesFile *os.File
+	// PagesFile is non-nil. Otherwise this content is stored in Destination.
+	PagesFile *fd.FD
 
 	// Key is used for state integrity check.
 	Key []byte
@@ -92,7 +95,7 @@ func (opts SaveOpts) Save(ctx context.Context, k *kernel.Kernel, w *watchdog.Wat
 		err = ErrStateFile{err}
 	} else {
 		// Save the kernel.
-		err = k.SaveTo(ctx, wc, opts.PagesFile)
+		err = k.SaveTo(ctx, wc, opts.PagesMetadata, opts.PagesFile)
 
 		// ENOSPC is a state file error. This error can only come from
 		// writing the state file, and not from fs.FileOperations.Fsync
@@ -111,11 +114,15 @@ func (opts SaveOpts) Save(ctx context.Context, k *kernel.Kernel, w *watchdog.Wat
 
 // LoadOpts contains load-related options.
 type LoadOpts struct {
-	// Destination is the load source.
+	// Source is the load source.
 	Source io.Reader
 
+	// PagesMetadata is the file into which MemoryFile metadata is stored if
+	// PagesMetadata is non-nil. Otherwise this content is stored in Source.
+	PagesMetadata *fd.FD
+
 	// PagesFile is the file in which all MemoryFile pages are stored if
-	// PagesFile is non-nil.
+	// PagesFile is non-nil. Otherwise this content is stored in Source.
 	PagesFile *fd.FD
 
 	// Key is used for state integrity check.
@@ -133,5 +140,5 @@ func (opts LoadOpts) Load(ctx context.Context, k *kernel.Kernel, timeReady chan 
 	previousMetadata = m
 
 	// Restore the Kernel object graph.
-	return k.LoadFrom(ctx, r, opts.PagesFile, timeReady, n, clocks, vfsOpts)
+	return k.LoadFrom(ctx, r, opts.PagesMetadata, opts.PagesFile, timeReady, n, clocks, vfsOpts)
 }

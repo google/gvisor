@@ -48,6 +48,9 @@ const (
 	// CheckpointStateFileName is the file within the given image-path's
 	// directory which contains the container's saved state.
 	CheckpointStateFileName = "checkpoint.img"
+	// CheckpointPagesMetadataFileName is the file within the given image-path's
+	// directory containing the container's MemoryFile metadata.
+	CheckpointPagesMetadataFileName = "pages_meta.img"
 	// CheckpointPagesFileName is the file within the given image-path's
 	// directory containing the container's MemoryFile pages.
 	CheckpointPagesFileName = "pages.img"
@@ -68,8 +71,9 @@ type restorer struct {
 	containers []*containerInfo
 
 	// Files used by restore to rehydrate the state.
-	stateFile io.ReadCloser
-	pagesFile *fd.FD
+	stateFile     io.ReadCloser
+	pagesMetadata *fd.FD
+	pagesFile     *fd.FD
 
 	// deviceFile is the required to start the platform.
 	deviceFile *fd.FD
@@ -224,7 +228,7 @@ func (r *restorer) restore(l *Loader) error {
 	ctx = context.WithValue(ctx, pgalloc.CtxMemoryFileMap, mfmap)
 
 	// Load the state.
-	loadOpts := state.LoadOpts{Source: r.stateFile, PagesFile: r.pagesFile}
+	loadOpts := state.LoadOpts{Source: r.stateFile, PagesMetadata: r.pagesMetadata, PagesFile: r.pagesFile}
 	if err := loadOpts.Load(ctx, l.k, nil, netns.Stack(), time.NewCalibratedClocks(), &vfs.CompleteRestoreOptions{}); err != nil {
 		return err
 	}
