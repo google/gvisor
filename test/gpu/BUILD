@@ -8,8 +8,10 @@ package(
 go_test(
     name = "smoke_test",
     srcs = ["smoke_test.go"],
+    # runsc is needed to invalidate the bazel cache in case of any code changes.
+    data = ["//runsc"],
     tags = [
-        "local",
+        "manual",
         "noguitar",
         "notap",
     ],
@@ -20,8 +22,10 @@ go_test(
 go_test(
     name = "pytorch_test",
     srcs = ["pytorch_test.go"],
+    # runsc is needed to invalidate the bazel cache in case of any code changes.
+    data = ["//runsc"],
     tags = [
-        "local",
+        "manual",
         "noguitar",
         "notap",
     ],
@@ -32,9 +36,11 @@ go_test(
 go_test(
     name = "textgen_test",
     srcs = ["textgen_test.go"],
+    # runsc is needed to invalidate the bazel cache in case of any code changes.
+    data = ["//runsc"],
     embedsrcs = ["gvisor.png"],
     tags = [
-        "local",
+        "manual",
         "noguitar",
         "notap",
     ],
@@ -49,8 +55,10 @@ go_test(
 go_test(
     name = "sr_test",
     srcs = ["sr_test.go"],
+    # runsc is needed to invalidate the bazel cache in case of any code changes.
+    data = ["//runsc"],
     tags = [
-        "local",
+        "manual",
         "noguitar",
         "notap",
     ],
@@ -66,8 +74,10 @@ go_test(
     name = "cuda_test",
     timeout = "eternal",  # YES_I_REALLY_NEED_AN_ETERNAL_TEST
     srcs = ["cuda_test.go"],
+    # runsc is needed to invalidate the bazel cache in case of any code changes.
+    data = ["//runsc"],
     tags = [
-        "local",
+        "manual",
         "noguitar",
         "notap",
     ],
@@ -82,8 +92,10 @@ go_test(
 go_test(
     name = "imagegen_test",
     srcs = ["imagegen_test.go"],
+    # runsc is needed to invalidate the bazel cache in case of any code changes.
+    data = ["//runsc"],
     tags = [
-        "local",
+        "manual",
         "noguitar",
         "notap",
     ],
