@@ -15,13 +15,19 @@
 package boot
 
 import (
+	"errors"
 	"fmt"
 	"io"
+	"strconv"
+	time2 "time"
 
+	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/host"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
@@ -32,8 +38,10 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/time"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sentry/watchdog"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/runsc/boot/pprof"
+	"gvisor.dev/gvisor/runsc/config"
 )
 
 const (
@@ -45,11 +53,74 @@ const (
 	CheckpointPagesFileName = "pages.img"
 )
 
+// restorer manages a restore session for a sandbox. It stores information about
+// all containers and triggers the full sandbox restore after the last
+// container is restored.
 type restorer struct {
-	container  *containerInfo
-	stateFile  io.Reader
-	pagesFile  *fd.FD
+	mu sync.Mutex
+
+	// totalContainers is the number of containers expected to be restored in
+	// the sandbox. Sandbox restore can only happen, after all containers have
+	// been restored.
+	totalContainers int
+
+	// containers is the list of containers restored so far.
+	containers []*containerInfo
+
+	// Files used by restore to rehydrate the state.
+	stateFile io.ReadCloser
+	pagesFile *fd.FD
+
+	// deviceFile is the required to start the platform.
 	deviceFile *fd.FD
+
+	// restoreDone is a callback triggered when restore is successful.
+	restoreDone func() error
+}
+
+func (r *restorer) restoreSubcontainer(spec *specs.Spec, conf *config.Config, l *Loader, cid string, stdioFDs, goferFDs, goferFilestoreFDs []*fd.FD, devGoferFD *fd.FD, goferMountConfs []GoferMountConf) error {
+	containerName := l.registerContainer(spec, cid)
+	info := &containerInfo{
+		cid:               cid,
+		containerName:     containerName,
+		conf:              conf,
+		spec:              spec,
+		stdioFDs:          stdioFDs,
+		goferFDs:          goferFDs,
+		devGoferFD:        devGoferFD,
+		goferFilestoreFDs: goferFilestoreFDs,
+		goferMountConfs:   goferMountConfs,
+	}
+	return r.restoreContainerInfo(l, info)
+}
+
+func (r *restorer) restoreContainerInfo(l *Loader, info *containerInfo) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	for _, container := range r.containers {
+		if container.containerName == info.containerName {
+			return fmt.Errorf("container %q already restored", info.containerName)
+		}
+		if container.cid == info.cid {
+			return fmt.Errorf("container CID %q already belongs to container %q", info.cid, container.containerName)
+		}
+	}
+
+	r.containers = append(r.containers, info)
+
+	log.Infof("Restored container %d of %d", len(r.containers), r.totalContainers)
+	if log.IsLogging(log.Debug) {
+		for i, fd := range info.stdioFDs {
+			log.Debugf("Restore app FD: %d host FD: %d", i, fd.FD())
+		}
+	}
+
+	if len(r.containers) == r.totalContainers {
+		// Trigger the restore if this is the last container.
+		return r.restore(l)
+	}
+	return nil
 }
 
 func createNetworkNamespaceForRestore(l *Loader) (*stack.Stack, *inet.Namespace, error) {
@@ -74,6 +145,8 @@ func createNetworkNamespaceForRestore(l *Loader) (*stack.Stack, *inet.Namespace,
 }
 
 func (r *restorer) restore(l *Loader) error {
+	log.Infof("Starting to restore %d containers", len(r.containers))
+
 	// Create a new root network namespace with the network stack of the
 	// old kernel to preserve the existing network configuration.
 	oldStack, netns, err := createNetworkNamespaceForRestore(l)
@@ -126,23 +199,28 @@ func (r *restorer) restore(l *Loader) error {
 		ctx = context.WithValue(ctx, stack.CtxRestoreStack, oldStack)
 	}
 
-	// TODO(b/298078576): Need to process hints here probably
-	mntr := newContainerMounter(&l.root, l.k, l.mountHints, l.sharedMounts, l.productName, l.sandboxID)
-
 	fdmap := make(map[vfs.RestoreID]int)
 	mfmap := make(map[string]*pgalloc.MemoryFile)
-	if err := mntr.configureRestore(fdmap, mfmap); err != nil {
-		return fmt.Errorf("configuring filesystem restore: %v", err)
+	for _, cont := range r.containers {
+		// TODO(b/298078576): Need to process hints here probably
+		mntr := newContainerMounter(cont, l.k, l.mountHints, l.sharedMounts, l.productName, cont.cid)
+		if err = mntr.configureRestore(fdmap, mfmap); err != nil {
+			return fmt.Errorf("configuring filesystem restore: %v", err)
+		}
+
+		for i, fd := range cont.stdioFDs {
+			key := host.MakeRestoreID(cont.containerName, i)
+			fdmap[key] = fd.Release()
+		}
+		for _, customFD := range cont.passFDs {
+			key := host.MakeRestoreID(cont.containerName, customFD.guest)
+			fdmap[key] = customFD.host.FD()
+		}
 	}
-	for appFD, fd := range r.container.stdioFDs {
-		key := host.MakeRestoreID(r.container.containerName, appFD)
-		fdmap[key] = fd.Release()
-	}
-	for _, customFD := range r.container.passFDs {
-		key := host.MakeRestoreID(r.container.containerName, customFD.guest)
-		fdmap[key] = customFD.host.FD()
-	}
+
+	log.Debugf("Restore using fdmap: %v", fdmap)
 	ctx = context.WithValue(ctx, vfs.CtxRestoreFilesystemFDMap, fdmap)
+	log.Debugf("Restore using mfmap: %v", fdmap)
 	ctx = context.WithValue(ctx, pgalloc.CtxMemoryFileMap, mfmap)
 
 	// Load the state.
@@ -154,6 +232,7 @@ func (r *restorer) restore(l *Loader) error {
 	// Since we have a new kernel we also must make a new watchdog.
 	dogOpts := watchdog.DefaultOpts
 	dogOpts.TaskTimeoutAction = l.root.conf.WatchdogAction
+	dogOpts.StartupTimeout = 3 * time2.Minute // Give extra time for all containers to restore.
 	dog := watchdog.New(l.k, dogOpts)
 
 	// Change the loader fields to reflect the changes made when restoring.
@@ -161,23 +240,40 @@ func (r *restorer) restore(l *Loader) error {
 	l.root.procArgs = kernel.CreateProcessArgs{}
 	l.restore = true
 
-	// Reinitialize the sandbox ID and processes map. Note that it doesn't
-	// restore the state of multiple containers, nor exec processes.
-	l.sandboxID = r.container.cid
+	l.sandboxID = l.root.cid
 
 	l.mu.Lock()
-	defer l.mu.Unlock()
+	cu := cleanup.Make(func() {
+		l.mu.Unlock()
+	})
+	defer cu.Clean()
 
-	// Set new container ID if it has changed.
-	tasks := l.k.TaskSet().Root.Tasks()
-	if tasks[0].ContainerID() != l.sandboxID { // There must be at least 1 task.
-		for _, task := range tasks {
-			task.RestoreContainerID(l.sandboxID)
+	// Update all tasks in the system with their respective new container IDs.
+	for _, task := range l.k.TaskSet().Root.Tasks() {
+		name := l.k.TaskContainerName(task)
+		newCid, ok := l.containerIDs[name]
+		if !ok {
+			return fmt.Errorf("unable to remap task with CID %q (name: %q). Available names: %v", task.ContainerID(), name, l.containerIDs)
+		}
+		task.RestoreContainerID(newCid)
+	}
+
+	// Rebuild `processes` map with containers' root process from the restored kernel.
+	for _, tg := range l.k.RootPIDNamespace().ThreadGroups() {
+		// Find all processes with no parent (root of execution), that were not started
+		// via a call to `exec`.
+		if tg.Leader().Parent() == nil && tg.Leader().Origin != kernel.OriginExec {
+			cid := tg.Leader().ContainerID()
+			proc := l.processes[execID{cid: cid}]
+			if proc == nil {
+				return fmt.Errorf("unable to find container root process with CID %q, processes: %v", cid, l.processes)
+			}
+			proc.tg = tg
 		}
 	}
 
 	// Kill all processes that have been exec'd since they cannot be properly
-	// restored, since the caller is no longer connected.
+	// restored -- the caller is no longer connected.
 	for _, tg := range l.k.RootPIDNamespace().ThreadGroups() {
 		if tg.Leader().Origin == kernel.OriginExec {
 			if err := l.k.SendExternalSignalThreadGroup(tg, &linux.SignalInfo{Signo: int32(linux.SIGKILL)}); err != nil {
@@ -186,12 +282,39 @@ func (r *restorer) restore(l *Loader) error {
 		}
 	}
 
-	eid := execID{cid: l.sandboxID}
-	l.processes = map[execID]*execProcess{
-		eid: {
-			tg: l.k.GlobalInit(),
-		},
+	l.k.RestoreContainerMapping(l.containerIDs)
+
+	// Release `l.mu` before calling into callbacks.
+	cu.Clean()
+
+	if err := r.restoreDone(); err != nil {
+		return err
 	}
 
+	r.stateFile.Close()
+	if r.pagesFile != nil {
+		r.pagesFile.Close()
+	}
+
+	log.Infof("Restore successful")
 	return nil
+}
+
+func (l *Loader) save(o *control.SaveOpts) error {
+	// TODO(gvisor.dev/issues/6243): save/restore not supported w/ hostinet
+	if l.root.conf.Network == config.NetworkHost {
+		return errors.New("checkpoint not supported when using hostinet")
+	}
+
+	if o.Metadata == nil {
+		o.Metadata = make(map[string]string)
+	}
+	o.Metadata["container_count"] = strconv.Itoa(l.containerCount())
+
+	state := control.State{
+		Kernel:   l.k,
+		Watchdog: l.watchdog,
+	}
+
+	return state.Save(o, nil)
 }

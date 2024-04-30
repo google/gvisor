@@ -77,7 +77,7 @@ func (s *State) Save(o *SaveOpts, _ *struct{}) error {
 				log.Infof("Save succeeded: exiting...")
 				s.Kernel.SetSaveSuccess(false /* autosave */)
 			} else {
-				log.Warningf("Save failed: exiting...")
+				log.Warningf("Save failed: %v", err)
 				s.Kernel.SetSaveError(err)
 			}
 			if !o.Resume {

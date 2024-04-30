@@ -351,6 +351,13 @@ type Kernel struct {
 	// devGofers maps container ID to its device gofer client.
 	devGofers   map[string]*devutil.GoferClient `state:"nosave"`
 	devGofersMu sync.Mutex                      `state:"nosave"`
+
+	// containerNames store the container name based on their container ID.
+	// Names are preserved between save/restore session, while IDs can change.
+	//
+	// Mapping: cid -> name.
+	// It's protected by extMu.
+	containerNames map[string]string
 }
 
 // InitKernelArgs holds arguments to Init.
@@ -457,6 +464,7 @@ func (k *Kernel) Init(args InitKernelArgs) error {
 		args.MaxFDLimit = MaxFdLimit
 	}
 	k.MaxFDLimit.Store(args.MaxFDLimit)
+	k.containerNames = make(map[string]string)
 
 	ctx := k.SupervisorContext()
 	if err := k.vfs.Init(ctx); err != nil {
@@ -1975,4 +1983,32 @@ func (k *Kernel) cleaupDevGofers() {
 		client.Close()
 	}
 	k.devGofers = nil
+}
+
+// RegisterContainerName registers a container name for a given container ID.
+func (k *Kernel) RegisterContainerName(cid, containerName string) {
+	k.extMu.Lock()
+	defer k.extMu.Unlock()
+	k.containerNames[cid] = containerName
+}
+
+// RestoreContainerMapping remaps old container IDs to new ones after a restore.
+// containerIDs maps "name -> new container ID". Note that container names remain
+// constant between restore sessions.
+func (k *Kernel) RestoreContainerMapping(containerIDs map[string]string) {
+	k.extMu.Lock()
+	defer k.extMu.Unlock()
+
+	// Delete mapping from old session and replace with new values.
+	k.containerNames = make(map[string]string)
+	for name, cid := range containerIDs {
+		k.containerNames[cid] = name
+	}
+}
+
+// TaskContainerName returns the container name for a given task.
+func (k *Kernel) TaskContainerName(task *Task) string {
+	k.extMu.Lock()
+	defer k.extMu.Unlock()
+	return k.containerNames[task.ContainerID()]
 }
