@@ -444,7 +444,7 @@ func (s *Sandbox) StartSubcontainer(spec *specs.Spec, conf *config.Config, cid s
 
 // Restore sends the restore call for a container in the sandbox.
 func (s *Sandbox) Restore(conf *config.Config, cid string, imagePath string, direct bool) error {
-	log.Debugf("Restore sandbox %q", s.ID)
+	log.Debugf("Restore sandbox %q from path %q", s.ID, imagePath)
 
 	stateFileName := path.Join(imagePath, boot.CheckpointStateFileName)
 	sf, err := os.Open(stateFileName)
@@ -499,6 +499,44 @@ func (s *Sandbox) Restore(conf *config.Config, cid string, imagePath string, dir
 		return fmt.Errorf("restoring container %q: %v", cid, err)
 	}
 
+	return nil
+}
+
+// RestoreSubcontainer sends the restore call for a sub-container in the sandbox.
+func (s *Sandbox) RestoreSubcontainer(spec *specs.Spec, conf *config.Config, cid string, stdios, goferFiles, goferFilestoreFiles []*os.File, devIOFile *os.File, goferMountConf []boot.GoferMountConf) error {
+	log.Debugf("Restore sub-container %q in sandbox %q, PID: %d", cid, s.ID, s.Pid.load())
+
+	if err := s.configureStdios(conf, stdios); err != nil {
+		return err
+	}
+	s.fixPidns(spec)
+
+	// The payload contains (in this specific order):
+	// * stdin/stdout/stderr (optional: only present when not using TTY)
+	// * The subcontainer's overlay filestore files (optional: only present when
+	//   host file backed overlay is configured)
+	// * Gofer files.
+	payload := urpc.FilePayload{}
+	payload.Files = append(payload.Files, stdios...)
+	payload.Files = append(payload.Files, goferFilestoreFiles...)
+	if devIOFile != nil {
+		payload.Files = append(payload.Files, devIOFile)
+	}
+	payload.Files = append(payload.Files, goferFiles...)
+
+	// Start running the container.
+	args := boot.StartArgs{
+		Spec:                 spec,
+		Conf:                 conf,
+		CID:                  cid,
+		NumGoferFilestoreFDs: len(goferFilestoreFiles),
+		IsDevIoFilePresent:   devIOFile != nil,
+		GoferMountConfs:      goferMountConf,
+		FilePayload:          payload,
+	}
+	if err := s.call(boot.ContMgrRestoreSubcontainer, &args, nil); err != nil {
+		return fmt.Errorf("starting sub-container %v: %w", spec.Process.Args, err)
+	}
 	return nil
 }
 

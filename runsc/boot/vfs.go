@@ -424,7 +424,7 @@ func newContainerMounter(info *containerInfo, k *kernel.Kernel, hints *PodMountH
 		hints:             hints,
 		sharedMounts:      sharedMounts,
 		productName:       productName,
-		containerID:       info.procArgs.ContainerID,
+		containerID:       info.cid,
 		sandboxID:         sandboxID,
 		containerName:     info.containerName,
 	}

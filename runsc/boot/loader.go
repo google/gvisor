@@ -190,6 +190,8 @@ type Loader struct {
 	// restore is set to true if we are restoring a container.
 	restore bool
 
+	restoreWaiters *sync.Cond
+
 	// sandboxID is the ID for the whole sandbox.
 	sandboxID string
 
@@ -209,6 +211,8 @@ type Loader struct {
 
 	// sharedMounts holds VFS mounts that may be shared between containers within
 	// the same pod. It is mapped by mount source.
+	//
+	// sharedMounts is guarded by mu.
 	sharedMounts map[string]*vfs.Mount
 
 	// processes maps containers init process and invocation of exec. Root
@@ -217,6 +221,13 @@ type Loader struct {
 	//
 	// processes is guarded by mu.
 	processes map[execID]*execProcess
+
+	// containerIDs store container names and IDs to assist with restore and container
+	// naming when user didn't provide one.
+	//
+	// Mapping: name -> cid.
+	// processes is guarded by mu.
+	containerIDs map[string]string
 
 	// portForwardProxies is a list of active port forwarding connections.
 	//
@@ -382,9 +393,20 @@ func New(args Args) (*Loader, error) {
 
 	kernel.IOUringEnabled = args.Conf.IOUring
 
-	info := containerInfo{
+	eid := execID{cid: args.ID}
+	l := &Loader{
+		sandboxID:     args.ID,
+		processes:     map[execID]*execProcess{eid: {}},
+		sharedMounts:  make(map[string]*vfs.Mount),
+		stopProfiling: stopProfiling,
+		productName:   args.ProductName,
+		containerIDs:  map[string]string{},
+	}
+
+	containerName := l.registerContainerLocked(args.Spec, args.ID)
+	l.root = containerInfo{
 		cid:                 args.ID,
-		containerName:       specutils.ContainerName(args.Spec),
+		containerName:       containerName,
 		conf:                args.Conf,
 		spec:                args.Spec,
 		goferMountConfs:     args.GoferMountConfs,
@@ -409,25 +431,25 @@ func New(args Args) (*Loader, error) {
 		if err != nil {
 			return nil, fmt.Errorf("dup3 of stdios failed: %w", err)
 		}
-		info.stdioFDs = append(info.stdioFDs, fd.New(newfd))
+		l.root.stdioFDs = append(l.root.stdioFDs, fd.New(newfd))
 		_ = unix.Close(stdioFD)
 		newfd++
 	}
 	for _, goferFD := range args.GoferFDs {
-		info.goferFDs = append(info.goferFDs, fd.New(goferFD))
+		l.root.goferFDs = append(l.root.goferFDs, fd.New(goferFD))
 	}
 	for _, filestoreFD := range args.GoferFilestoreFDs {
-		info.goferFilestoreFDs = append(info.goferFilestoreFDs, fd.New(filestoreFD))
+		l.root.goferFilestoreFDs = append(l.root.goferFilestoreFDs, fd.New(filestoreFD))
 	}
 	if args.DevGoferFD >= 0 {
-		info.devGoferFD = fd.New(args.DevGoferFD)
+		l.root.devGoferFD = fd.New(args.DevGoferFD)
 	}
 	if args.ExecFD >= 0 {
-		info.execFD = fd.New(args.ExecFD)
+		l.root.execFD = fd.New(args.ExecFD)
 	}
 
 	for _, customFD := range args.PassFDs {
-		info.passFDs = append(info.passFDs, fdMapping{
+		l.root.passFDs = append(l.root.passFDs, fdMapping{
 			host:  fd.New(customFD.Host),
 			guest: customFD.Guest,
 		})
@@ -441,27 +463,25 @@ func New(args Args) (*Loader, error) {
 	if specutils.NVProxyEnabled(args.Spec, args.Conf) && p.OwnsPageTables() {
 		return nil, fmt.Errorf("--nvproxy is incompatible with platform %s: owns page tables", args.Conf.Platform)
 	}
-	k := &kernel.Kernel{
-		Platform: p,
-	}
+	l.k = &kernel.Kernel{Platform: p}
 
 	// Create memory file.
 	mf, err := createMemoryFile()
 	if err != nil {
 		return nil, fmt.Errorf("creating memory file: %w", err)
 	}
-	k.SetMemoryFile(mf)
+	l.k.SetMemoryFile(mf)
 
 	// Create VDSO.
 	//
 	// Pass k as the platform since it is savable, unlike the actual platform.
-	vdso, err := loader.PrepareVDSO(k.MemoryFile())
+	vdso, err := loader.PrepareVDSO(l.k.MemoryFile())
 	if err != nil {
 		return nil, fmt.Errorf("creating vdso: %w", err)
 	}
 
 	// Create timekeeper.
-	tk := kernel.NewTimekeeper(k.MemoryFile(), vdso.ParamPage.FileRange())
+	tk := kernel.NewTimekeeper(l.k.MemoryFile(), vdso.ParamPage.FileRange())
 	tk.SetClocks(time.NewCalibratedClocks())
 
 	if err := enableStrace(args.Conf); err != nil {
@@ -473,7 +493,7 @@ func New(args Args) (*Loader, error) {
 		return nil, fmt.Errorf("getting root credentials")
 	}
 	// Create root network namespace/stack.
-	netns, err := newRootNetworkNamespace(args.Conf, tk, k, creds.UserNamespace)
+	netns, err := newRootNetworkNamespace(args.Conf, tk, l.k, creds.UserNamespace)
 	if err != nil {
 		return nil, fmt.Errorf("creating network: %w", err)
 	}
@@ -513,7 +533,7 @@ func New(args Args) (*Loader, error) {
 	}
 	// Initiate the Kernel object, which is required by the Context passed
 	// to createVFS in order to mount (among other things) procfs.
-	if err = k.Init(kernel.InitKernelArgs{
+	if err = l.k.Init(kernel.InitKernelArgs{
 		FeatureSet:           cpuid.HostFeatureSet().Fixed(),
 		Timekeeper:           tk,
 		RootUserNamespace:    creds.UserNamespace,
@@ -528,7 +548,7 @@ func New(args Args) (*Loader, error) {
 		return nil, fmt.Errorf("initializing kernel: %w", err)
 	}
 
-	if err := registerFilesystems(k, &info); err != nil {
+	if err := registerFilesystems(l.k, &l.root); err != nil {
 		return nil, fmt.Errorf("registering filesystems: %w", err)
 	}
 
@@ -544,30 +564,30 @@ func New(args Args) (*Loader, error) {
 	// Create a watchdog.
 	dogOpts := watchdog.DefaultOpts
 	dogOpts.TaskTimeoutAction = args.Conf.WatchdogAction
-	dog := watchdog.New(k, dogOpts)
+	l.watchdog = watchdog.New(l.k, dogOpts)
 
-	procArgs, err := createProcessArgs(args.ID, args.Spec, args.Conf, creds, k, k.RootPIDNamespace())
+	procArgs, err := createProcessArgs(args.ID, args.Spec, args.Conf, creds, l.k, l.k.RootPIDNamespace())
 	if err != nil {
 		return nil, fmt.Errorf("creating init process for root container: %w", err)
 	}
-	info.procArgs = procArgs
+	l.root.procArgs = procArgs
 
 	if err := initCompatLogs(args.UserLogFD); err != nil {
 		return nil, fmt.Errorf("initializing compat logs: %w", err)
 	}
 
-	mountHints, err := NewPodMountHints(args.Spec)
+	l.mountHints, err = NewPodMountHints(args.Spec)
 	if err != nil {
 		return nil, fmt.Errorf("creating pod mount hints: %w", err)
 	}
 
 	// Set up host mount that will be used for imported fds.
-	hostFilesystem, err := host.NewFilesystem(k.VFS())
+	hostFilesystem, err := host.NewFilesystem(l.k.VFS())
 	if err != nil {
 		return nil, fmt.Errorf("failed to create hostfs filesystem: %w", err)
 	}
-	defer hostFilesystem.DecRef(k.SupervisorContext())
-	k.SetHostMount(k.VFS().NewDisconnectedMount(hostFilesystem, nil, &vfs.MountOptions{}))
+	defer hostFilesystem.DecRef(l.k.SupervisorContext())
+	l.k.SetHostMount(l.k.VFS().NewDisconnectedMount(hostFilesystem, nil, &vfs.MountOptions{}))
 
 	if args.PodInitConfigFD >= 0 {
 		if err := setupSeccheck(args.PodInitConfigFD, args.SinkFDs); err != nil {
@@ -575,18 +595,7 @@ func New(args Args) (*Loader, error) {
 		}
 	}
 
-	eid := execID{cid: args.ID}
-	l := &Loader{
-		k:             k,
-		watchdog:      dog,
-		sandboxID:     args.ID,
-		processes:     map[execID]*execProcess{eid: {}},
-		mountHints:    mountHints,
-		sharedMounts:  make(map[string]*vfs.Mount),
-		root:          info,
-		stopProfiling: stopProfiling,
-		productName:   args.ProductName,
-	}
+	l.k.RegisterContainerName(args.ID, l.root.containerName)
 
 	// We don't care about child signals; some platforms can generate a
 	// tremendous number of useless ones (I'm looking at you, ptrace).
@@ -922,9 +931,10 @@ func (l *Loader) startSubcontainer(spec *specs.Spec, conf *config.Config, cid st
 		pidns = l.k.RootPIDNamespace()
 	}
 
+	containerName := l.registerContainerLocked(spec, cid)
 	info := &containerInfo{
 		cid:                 cid,
-		containerName:       specutils.ContainerName(spec),
+		containerName:       containerName,
 		conf:                conf,
 		spec:                spec,
 		goferFDs:            goferFDs,
@@ -990,6 +1000,7 @@ func (l *Loader) startSubcontainer(spec *specs.Spec, conf *config.Config, cid st
 		})
 	}
 
+	l.k.RegisterContainerName(cid, info.containerName)
 	l.k.StartProcess(ep.tg)
 	// No more failures from this point on.
 	cu.Release()
@@ -1258,9 +1269,26 @@ func (l *Loader) executeAsync(args *control.ExecArgs) (kernel.ThreadID, error) {
 func (l *Loader) waitContainer(cid string, waitStatus *uint32) error {
 	// Don't defer unlock, as doing so would make it impossible for
 	// multiple clients to wait on the same container.
-	tg, err := l.threadGroupFromID(execID{cid: cid})
+	key := execID{cid: cid}
+	tg, err := l.threadGroupFromID(key)
 	if err != nil {
-		return fmt.Errorf("can't wait for container %q: %w", cid, err)
+		l.mu.Lock()
+		// Extra handling is needed if the container is restoring.
+		if l.state != restoring {
+			l.mu.Unlock()
+			return err
+		}
+		// Container could be restoring, first check if container exists.
+		if _, err := l.findProcessLocked(key); err != nil {
+			l.mu.Unlock()
+			return err
+		}
+		log.Infof("Waiting for container being restored, CID: %q", cid)
+		l.restoreWaiters.Wait()
+		l.mu.Unlock()
+
+		log.Infof("Restore is completed, trying to wait for container %q again.", cid)
+		return l.waitContainer(cid, waitStatus)
 	}
 
 	// If the thread either has already exited or exits during waiting,
@@ -1583,9 +1611,9 @@ func (l *Loader) threadGroupFromID(key execID) (*kernel.ThreadGroup, error) {
 // error if execution ID is invalid or if the container cannot be found (maybe
 // it has been deleted). Caller must hold 'mu'.
 func (l *Loader) tryThreadGroupFromIDLocked(key execID) (*kernel.ThreadGroup, error) {
-	ep := l.processes[key]
-	if ep == nil {
-		return nil, fmt.Errorf("container %q not found", key.cid)
+	ep, err := l.findProcessLocked(key)
+	if err != nil {
+		return nil, err
 	}
 	return ep.tg, nil
 }
@@ -1595,9 +1623,9 @@ func (l *Loader) tryThreadGroupFromIDLocked(key execID) (*kernel.ThreadGroup, er
 // execution ID is invalid or if the container cannot be found (maybe it has
 // been deleted). Caller must hold 'mu'.
 func (l *Loader) ttyFromIDLocked(key execID) (*host.TTYFileDescription, error) {
-	ep := l.processes[key]
-	if ep == nil {
-		return nil, fmt.Errorf("container %q not found", key.cid)
+	ep, err := l.findProcessLocked(key)
+	if err != nil {
+		return nil, err
 	}
 	return ep.tty, nil
 }
@@ -1774,6 +1802,33 @@ func (l *Loader) networkStats() ([]*NetworkInterface, error) {
 		})
 	}
 	return stats, nil
+}
+
+func (l *Loader) findProcessLocked(key execID) (*execProcess, error) {
+	ep := l.processes[key]
+	if ep == nil {
+		return nil, fmt.Errorf("container %q not found", key.cid)
+	}
+	return ep, nil
+}
+
+func (l *Loader) registerContainer(spec *specs.Spec, cid string) string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	return l.registerContainerLocked(spec, cid)
+}
+
+func (l *Loader) registerContainerLocked(spec *specs.Spec, cid string) string {
+	containerName := specutils.ContainerName(spec)
+	if len(containerName) == 0 {
+		// If no name was provided, require containers to be restored in the same order
+		// they were created.
+		containerName = "__no_name_" + strconv.Itoa(len(l.containerIDs))
+	}
+
+	l.containerIDs[containerName] = cid
+	return containerName
 }
 
 func (l *Loader) containerRuntimeState(cid string) ContainerRuntimeState {

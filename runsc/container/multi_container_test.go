@@ -32,6 +32,7 @@ import (
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/pkg/state/statefile"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/test/testutil"
 	"gvisor.dev/gvisor/runsc/boot"
@@ -94,6 +95,44 @@ func startContainers(conf *config.Config, specs []*specs.Spec, ids []string) ([]
 		if err := cont.Start(conf); err != nil {
 			return nil, nil, fmt.Errorf("error starting container: %v", err)
 		}
+	}
+
+	return containers, cu.Release(), nil
+}
+
+func restoreContainers(conf *config.Config, specs []*specs.Spec, ids []string, imagePath string) ([]*Container, func(), error) {
+	if len(conf.RootDir) == 0 {
+		panic("conf.RootDir not set. Call testutil.SetupRootDir() to set.")
+	}
+
+	cu := cleanup.Cleanup{}
+	defer cu.Clean()
+
+	var containers []*Container
+	for i, spec := range specs {
+		bundleDir, cleanup, err := testutil.SetupBundleDir(spec)
+		if err != nil {
+			return nil, nil, fmt.Errorf("error setting up container: %v", err)
+		}
+		cu.Add(cleanup)
+
+		args := Args{
+			ID:        ids[i],
+			Spec:      spec,
+			BundleDir: bundleDir,
+		}
+		cont, err := New(conf, args)
+		if err != nil {
+			return nil, nil, fmt.Errorf("error creating container: %v", err)
+		}
+		cu.Add(func() { cont.Destroy() })
+		containers = append(containers, cont)
+
+		if err := cont.Restore(conf, imagePath, false); err != nil {
+			return nil, nil, fmt.Errorf("error restoring container: %v", err)
+		}
+
+		time.Sleep(100 * time.Millisecond)
 	}
 
 	return containers, cu.Release(), nil
@@ -2679,6 +2718,156 @@ func TestMultiContainerMemoryLeakStress(t *testing.T) {
 			t.Fatalf("Memory usage after stress containers exited did not converge to memory usage after warmup")
 		}
 		time.Sleep(time.Second)
+	}
+}
+
+// TestCheckpointRestore tests that checkpoint/restore works
+// with multi-containers.
+func TestMultiContainerCheckpointRestore(t *testing.T) {
+	// Skip overlay because test requires writing to host file.
+	for name, conf := range configs(t, true /* noOverlay */) {
+		t.Run(name, func(t *testing.T) {
+			rootDir, cleanup, err := testutil.SetupRootDir()
+			if err != nil {
+				t.Fatalf("error creating root dir: %v", err)
+			}
+			defer cleanup()
+			conf.RootDir = rootDir
+
+			dir, err := os.MkdirTemp(testutil.TmpDir(), "checkpoint-test")
+			if err != nil {
+				t.Fatalf("os.MkdirTemp() failed: %v", err)
+			}
+			defer os.RemoveAll(dir)
+			if err := os.Chmod(dir, 0777); err != nil {
+				t.Fatalf("error chmoding file: %q, %v", dir, err)
+			}
+
+			outputPath := filepath.Join(dir, "output")
+			outputFile, err := createWriteableOutputFile(outputPath)
+			if err != nil {
+				t.Fatalf("error creating output file: %v", err)
+			}
+			defer outputFile.Close()
+
+			// Create 3 containers. First requires a restore call, second requires a restoreSubcontainer
+			// that needs to wait, third issues a restoreSubcontainer call that actually restores the
+			// entire sandbox.
+			script := fmt.Sprintf("for ((i=0; ;i++)); do echo $i >> %q; sleep 1; done", outputPath)
+			testSpecs, ids := createSpecs(
+				[]string{"sleep", "100"},
+				[]string{"bash", "-c", script},
+				[]string{"sleep", "100"},
+			)
+
+			conts, cleanup, err := startContainers(conf, testSpecs, ids)
+			if err != nil {
+				t.Fatalf("error starting containers: %v", err)
+			}
+			defer cleanup()
+
+			// Wait until application has ran.
+			if err := waitForFileNotEmpty(outputFile); err != nil {
+				t.Fatalf("Failed to wait for output file: %v", err)
+			}
+
+			// Checkpoint root container; save state into new file.
+			if err := conts[0].Checkpoint(dir, statefile.Options{Compression: statefile.CompressionLevelFlateBestSpeed}); err != nil {
+				t.Fatalf("error checkpointing container to empty file: %v", err)
+			}
+			defer os.RemoveAll(dir)
+
+			lastNum, err := readOutputNum(outputPath, -1)
+			if err != nil {
+				t.Fatalf("error with outputFile: %v", err)
+			}
+
+			// Delete and recreate file before restoring.
+			if err := os.Remove(outputPath); err != nil {
+				t.Fatalf("error removing file")
+			}
+			outputFile2, err := createWriteableOutputFile(outputPath)
+			if err != nil {
+				t.Fatalf("error creating output file: %v", err)
+			}
+			defer outputFile2.Close()
+
+			// Restore into a new container with different ID (e.g. clone). Keep the
+			// initial container running to ensure no conflict with it.
+			newIds := make([]string, 0, len(ids))
+			for range ids {
+				newIds = append(newIds, testutil.RandomContainerID())
+			}
+			for _, specs := range testSpecs[1:] {
+				specs.Annotations[specutils.ContainerdSandboxIDAnnotation] = newIds[0]
+			}
+			conts2, cleanup2, err := restoreContainers(conf, testSpecs, newIds, dir)
+			if err != nil {
+				t.Fatalf("error restoring containers: %v", err)
+			}
+			defer cleanup2()
+
+			// Wait until application has ran.
+			if err := waitForFileNotEmpty(outputFile2); err != nil {
+				t.Fatalf("Failed to wait for output file: %v", err)
+			}
+
+			firstNum, err := readOutputNum(outputPath, 0)
+			if err != nil {
+				t.Fatalf("error with outputFile: %v", err)
+			}
+
+			// Check that lastNum is one less than firstNum and that the container
+			// picks up from where it left off.
+			if lastNum+1 != firstNum {
+				t.Errorf("error numbers not in order, previous: %d, next: %d", lastNum, firstNum)
+			}
+
+			for _, cont := range conts2 {
+				state := cont.State()
+				if state.Status != Running {
+					t.Fatalf("container %v is not running: %v", cont.ID, state.Status)
+				}
+			}
+
+			// Restore into a new container with different ID (e.g. clone). It
+			// requires the original container to cease to exist because they share
+			// the same identity.
+			cleanup2()
+			conts2 = nil
+
+			// Delete and recreate file before restoring.
+			if err := os.Remove(outputPath); err != nil {
+				t.Fatalf("error removing file")
+			}
+			outputFile3, err := createWriteableOutputFile(outputPath)
+			if err != nil {
+				t.Fatalf("error creating output file: %v", err)
+			}
+			defer outputFile3.Close()
+
+			_, cleanup3, err := restoreContainers(conf, testSpecs, newIds, dir)
+			if err != nil {
+				t.Fatalf("error creating containers: %v", err)
+			}
+			defer cleanup3()
+
+			// Wait until application has ran.
+			if err := waitForFileNotEmpty(outputFile3); err != nil {
+				t.Fatalf("Failed to wait for output file: %v", err)
+			}
+
+			firstNum2, err := readOutputNum(outputPath, 0)
+			if err != nil {
+				t.Fatalf("error with outputFile: %v", err)
+			}
+
+			// Check that lastNum is one less than firstNum and that the container
+			// picks up from where it left off.
+			if lastNum+1 != firstNum2 {
+				t.Errorf("error numbers not in order, previous: %d, next: %d", lastNum, firstNum2)
+			}
+		})
 	}
 }
 
