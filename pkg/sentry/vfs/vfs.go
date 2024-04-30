@@ -959,7 +959,10 @@ func (vfs *VirtualFilesystem) maybeBlockOnMountPromise(ctx context.Context, rp *
 	mp.wq.EventRegister(&e)
 	defer mp.wq.EventUnregister(&e)
 
-	var path string
+	var (
+		path string
+		err  error
+	)
 	// Unblock waiter entries that were created after this mount promise was
 	// resolved by a racing thread.
 	if mp.resolved.Load() {
@@ -967,7 +970,7 @@ func (vfs *VirtualFilesystem) maybeBlockOnMountPromise(ctx context.Context, rp *
 	} else {
 		root := RootFromContext(ctx)
 		defer root.DecRef(ctx)
-		path, err := vfs.PathnameReachable(ctx, root, vd)
+		path, err = vfs.PathnameReachable(ctx, root, vd)
 		if err != nil {
 			panic(fmt.Sprintf("could not reach %v from root", rp.Component()))
 		}
