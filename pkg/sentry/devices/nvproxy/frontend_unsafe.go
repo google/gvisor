@@ -189,12 +189,12 @@ func rmAllocInvoke[Params any](fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64
 	// identically to the equivalent NVOS21Parameters; compare
 	// src/nvidia/src/kernel/rmapi/entry_points.c:_nv04AllocWithSecInfo() and
 	// _nv04AllocWithAccessSecInfo().
-	fi.fd.nvp.objsLock()
+	fi.fd.dev.nvp.objsLock()
 	n, _, errno := unix.RawSyscall(unix.SYS_IOCTL, uintptr(fi.fd.hostFD), frontendIoctlCmd(nvgpu.NV_ESC_RM_ALLOC, nvgpu.SizeofNVOS64Parameters), uintptr(unsafe.Pointer(ioctlParams)))
 	if errno == 0 && ioctlParams.Status == nvgpu.NV_OK {
 		addObjLocked(fi, ioctlParams, allocParams)
 	}
-	fi.fd.nvp.objsUnlock()
+	fi.fd.dev.nvp.objsUnlock()
 	ioctlParams.PAllocParms = origPAllocParms
 	ioctlParams.PRightsRequested = origPRightsRequested
 	if errno != 0 {
@@ -226,13 +226,13 @@ func rmVidHeapControlAllocSize(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS32
 		allocSizeParams.Address = p64FromPtr(unsafe.Pointer(&addr))
 	}
 
-	fi.fd.nvp.objsLock()
+	fi.fd.dev.nvp.objsLock()
 	n, err := frontendIoctlInvoke(fi, ioctlParams)
 	if err == nil && ioctlParams.Status == nvgpu.NV_OK {
 		// src/nvidia/src/kernel/mem_mgr/virtual_mem.c:virtmemConstruct_IMPL() => refAddDependant()
-		fi.fd.nvp.objAdd(fi.ctx, ioctlParams.HRoot, allocSizeParams.HMemory, nvgpu.NV50_MEMORY_VIRTUAL, newSimpleObject(), ioctlParams.HObjectParent, ioctlParams.HVASpace)
+		fi.fd.dev.nvp.objAdd(fi.ctx, ioctlParams.HRoot, allocSizeParams.HMemory, nvgpu.NV50_MEMORY_VIRTUAL, newSimpleObject(), ioctlParams.HObjectParent, ioctlParams.HVASpace)
 	}
-	fi.fd.nvp.objsUnlock()
+	fi.fd.dev.nvp.objsUnlock()
 	allocSizeParams.Address = origAddress
 	if err != nil {
 		return n, err

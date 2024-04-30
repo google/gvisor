@@ -53,7 +53,7 @@ func (dev *uvmDevice) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dentry
 		return nil, err
 	}
 	fd := &uvmFD{
-		nvp:    dev.nvp,
+		dev:    dev,
 		hostFD: int32(hostFD),
 	}
 	if err := fd.vfsfd.Init(fd, opts.Flags, mnt, vfsd, &vfs.FileDescriptionOptions{
@@ -79,7 +79,7 @@ type uvmFD struct {
 	vfs.DentryMetadataFileDescriptionImpl
 	vfs.NoLockFD
 
-	nvp        *nvproxy
+	dev        *uvmDevice
 	hostFD     int32
 	memmapFile uvmFDMemmapFile
 
@@ -142,7 +142,7 @@ func (fd *uvmFD) Ioctl(ctx context.Context, uio usermem.IO, sysno uintptr, args 
 		cmd:             cmd,
 		ioctlParamsAddr: argPtr,
 	}
-	handler := fd.nvp.abi.uvmIoctl[cmd]
+	handler := fd.dev.nvp.abi.uvmIoctl[cmd]
 	if handler == nil {
 		ctx.Warningf("nvproxy: unknown uvm ioctl %d = %#x", cmd, cmd)
 		return 0, linuxerr.EINVAL

@@ -45,6 +45,13 @@ type frontendDevice struct {
 	minor uint32
 }
 
+func (dev *frontendDevice) basename() string {
+	if dev.minor == nvgpu.NV_CONTROL_DEVICE_MINOR {
+		return "nvidiactl"
+	}
+	return fmt.Sprintf("nvidia%d", dev.minor)
+}
+
 // Open implements vfs.Device.Open.
 func (dev *frontendDevice) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
 	devClient := devutil.GoferClientFromContext(ctx)
@@ -52,21 +59,15 @@ func (dev *frontendDevice) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.D
 		log.Warningf("devutil.CtxDevGoferClient is not set")
 		return nil, linuxerr.ENOENT
 	}
-	var devName string
-	if dev.minor == nvgpu.NV_CONTROL_DEVICE_MINOR {
-		devName = "nvidiactl"
-	} else {
-		devName = fmt.Sprintf("nvidia%d", dev.minor)
-	}
-	hostFD, err := devClient.OpenAt(ctx, devName, opts.Flags)
+	basename := dev.basename()
+	hostFD, err := devClient.OpenAt(ctx, basename, opts.Flags)
 	if err != nil {
-		ctx.Warningf("nvproxy: failed to open host %s: %v", devName, err)
+		ctx.Warningf("nvproxy: failed to open host %s: %v", basename, err)
 		return nil, err
 	}
 	fd := &frontendFD{
-		nvp:       dev.nvp,
-		hostFD:    int32(hostFD),
-		isControl: dev.minor == nvgpu.NV_CONTROL_DEVICE_MINOR,
+		dev:    dev,
+		hostFD: int32(hostFD),
 	}
 	if err := fd.vfsfd.Init(fd, opts.Flags, mnt, vfsd, &vfs.FileDescriptionOptions{
 		UseDentryMetadata: true,
@@ -93,9 +94,8 @@ type frontendFD struct {
 	vfs.DentryMetadataFileDescriptionImpl
 	vfs.NoLockFD
 
-	nvp        *nvproxy
+	dev        *frontendDevice
 	hostFD     int32
-	isControl  bool
 	memmapFile frontendFDMemmapFile
 
 	queue waiter.Queue
@@ -112,13 +112,13 @@ func (fd *frontendFD) Release(ctx context.Context) {
 	fdnotifier.RemoveFD(fd.hostFD)
 	fd.queue.Notify(waiter.EventHUp)
 
-	fd.nvp.objsLock()
-	defer fd.nvp.objsUnlock()
+	fd.dev.nvp.objsLock()
+	defer fd.dev.nvp.objsUnlock()
 	unix.Close(int(fd.hostFD))
 	// src/nvidia/arch/nvalloc/unix/src/osapi.c:rm_cleanup_file_private() =>
 	// RmFreeUnusedClients()
 	for h := range fd.clients {
-		fd.nvp.objFree(ctx, h, h)
+		fd.dev.nvp.objFree(ctx, h, h)
 	}
 }
 
@@ -187,7 +187,7 @@ func (fd *frontendFD) Ioctl(ctx context.Context, uio usermem.IO, sysno uintptr, 
 	// - Add symbol and parameter type definitions to //pkg/abi/nvgpu.
 	// - Add filter to seccomp_filters.go.
 	// - Add handling below.
-	handler := fd.nvp.abi.frontendIoctl[nr]
+	handler := fd.dev.nvp.abi.frontendIoctl[nr]
 	if handler == nil {
 		ctx.Warningf("nvproxy: unknown frontend ioctl %d == %#x (argSize=%d, cmd=%#x)", nr, nr, argSize, cmd)
 		return 0, linuxerr.EINVAL
@@ -421,12 +421,12 @@ func rmAllocOSDescriptor(fi *frontendIoctlState, ioctlParams *nvgpu.IoctlNVOS02P
 	origFD := ioctlParams.FD
 	ioctlParams.FD = -1
 
-	fi.fd.nvp.objsLock()
+	fi.fd.dev.nvp.objsLock()
 	n, err := frontendIoctlInvoke(fi, ioctlParams)
 	if err == nil && ioctlParams.Params.Status == nvgpu.NV_OK {
 		// Transfer ownership of pinned pages to an osDescMem object, to be
 		// unpinned when the driver OsDescMem is freed.
-		fi.fd.nvp.objAdd(fi.ctx, ioctlParams.Params.HRoot, ioctlParams.Params.HObjectNew, nvgpu.NV01_MEMORY_SYSTEM_OS_DESCRIPTOR, &osDescMem{
+		fi.fd.dev.nvp.objAdd(fi.ctx, ioctlParams.Params.HRoot, ioctlParams.Params.HObjectNew, nvgpu.NV01_MEMORY_SYSTEM_OS_DESCRIPTOR, &osDescMem{
 			pinnedRanges: prs,
 		}, ioctlParams.Params.HObjectParent)
 		unpinCleanup.Release()
@@ -434,7 +434,7 @@ func rmAllocOSDescriptor(fi *frontendIoctlState, ioctlParams *nvgpu.IoctlNVOS02P
 			fi.ctx.Debugf("nvproxy: pinned %d bytes for OS descriptor with handle %v", arLen, ioctlParams.Params.HObjectNew)
 		}
 	}
-	fi.fd.nvp.objsUnlock()
+	fi.fd.dev.nvp.objsUnlock()
 	ioctlParams.Params.PMemory = origPMemory
 	ioctlParams.FD = origFD
 	if err != nil {
@@ -457,12 +457,12 @@ func rmFree(fi *frontendIoctlState) (uintptr, error) {
 		return 0, err
 	}
 
-	fi.fd.nvp.objsLock()
+	fi.fd.dev.nvp.objsLock()
 	n, err := frontendIoctlInvoke(fi, &ioctlParams)
 	if err == nil && ioctlParams.Status == nvgpu.NV_OK {
-		fi.fd.nvp.objFree(fi.ctx, ioctlParams.HRoot, ioctlParams.HObjectOld)
+		fi.fd.dev.nvp.objFree(fi.ctx, ioctlParams.HRoot, ioctlParams.HObjectOld)
 	}
-	fi.fd.nvp.objsUnlock()
+	fi.fd.dev.nvp.objsUnlock()
 	if err != nil {
 		return n, err
 	}
@@ -515,7 +515,7 @@ func rmControl(fi *frontendIoctlState) (uintptr, error) {
 	// - Add symbol definition to //pkg/abi/nvgpu. Parameter type definition is
 	// only required for non-simple commands.
 	// - Add handling below.
-	handler := fi.fd.nvp.abi.controlCmd[ioctlParams.Cmd]
+	handler := fi.fd.dev.nvp.abi.controlCmd[ioctlParams.Cmd]
 	if handler == nil {
 		fi.ctx.Warningf("nvproxy: unknown control command %#x (paramsSize=%d)", ioctlParams.Cmd, ioctlParams.ParamsSize)
 		return 0, linuxerr.EINVAL
@@ -631,14 +631,14 @@ func ctrlRegisterVASpace(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54Parame
 	if _, err := ctrlParams.CopyIn(fi.t, addrFromP64(ioctlParams.Params)); err != nil {
 		return 0, err
 	}
-	fi.fd.nvp.objsLock()
+	fi.fd.dev.nvp.objsLock()
 	n, err := rmControlInvoke(fi, ioctlParams, &ctrlParams)
 	if err == nil && ioctlParams.Status == nvgpu.NV_OK {
 		// src/nvidia/src/kernel/gpu/bus/third_party_p2p.c:CliAddThirdPartyP2PVASpace()
 		// => refAddDependant()
-		fi.fd.nvp.objAddDep(ioctlParams.HClient, ioctlParams.HObject, ctrlParams.HVASpace)
+		fi.fd.dev.nvp.objAddDep(ioctlParams.HClient, ioctlParams.HObject, ctrlParams.HVASpace)
 	}
-	fi.fd.nvp.objsUnlock()
+	fi.fd.dev.nvp.objsUnlock()
 	if err != nil {
 		return n, err
 	}
@@ -705,7 +705,7 @@ func rmAlloc(fi *frontendIoctlState) (uintptr, error) {
 	// sessionAddDependant(), or sessionAddDependency(), which need to be
 	// mirrored by dependencies in the call to nvproxy.objAddLocked().
 	// - Add handling below.
-	handler := fi.fd.nvp.abi.allocationClass[ioctlParams.HClass]
+	handler := fi.fd.dev.nvp.abi.allocationClass[ioctlParams.HClass]
 	if handler == nil {
 		fi.ctx.Warningf("nvproxy: unknown allocation class %v", ioctlParams.HClass)
 		// Compare
@@ -736,7 +736,7 @@ func rmAllocSimple[Params any, PParams marshalPtr[Params]](fi *frontendIoctlStat
 // addSimpleObjDepParentLocked implements rmAllocInvoke.addObjLocked for
 // classes that require no special handling and depend only on their parents.
 func addSimpleObjDepParentLocked[Params any](fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64Parameters, allocParams *Params) {
-	fi.fd.nvp.objAdd(fi.ctx, ioctlParams.HRoot, ioctlParams.HObjectNew, ioctlParams.HClass, newSimpleObject(), ioctlParams.HObjectParent)
+	fi.fd.dev.nvp.objAdd(fi.ctx, ioctlParams.HRoot, ioctlParams.HObjectNew, ioctlParams.HClass, newSimpleObject(), ioctlParams.HObjectParent)
 }
 
 func rmAllocSimpleParams[Params any, PParams marshalPtr[Params]](fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64Parameters, isNVOS64 bool, objAddLocked func(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64Parameters, allocParams *Params)) (uintptr, error) {
@@ -764,7 +764,7 @@ func rmAllocNoParams(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64Parameters
 
 func rmAllocRootClient(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64Parameters, isNVOS64 bool) (uintptr, error) {
 	return rmAllocSimpleParams(fi, ioctlParams, isNVOS64, func(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64Parameters, allocParams *nvgpu.Handle) {
-		fi.fd.nvp.objAdd(fi.ctx, ioctlParams.HRoot, ioctlParams.HObjectNew, ioctlParams.HClass, newRootClient(fi.fd))
+		fi.fd.dev.nvp.objAdd(fi.ctx, ioctlParams.HRoot, ioctlParams.HObjectNew, ioctlParams.HClass, newRootClient(fi.fd))
 		if fi.fd.clients == nil {
 			fi.fd.clients = make(map[nvgpu.Handle]struct{})
 		}
@@ -808,7 +808,7 @@ func rmAllocSMDebuggerSession(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64P
 		// => _ShareDebugger() => sessionAddDependency/sessionAddDependant();
 		// the driver indirects through a per-KernelGraphicsObject
 		// RmDebuggerSession, which we elide for dependency tracking.
-		fi.fd.nvp.objAdd(fi.ctx, ioctlParams.HRoot, ioctlParams.HObjectNew, ioctlParams.HClass, newSimpleObject(), ioctlParams.HObjectParent, allocParams.HClass3DObject)
+		fi.fd.dev.nvp.objAdd(fi.ctx, ioctlParams.HRoot, ioctlParams.HObjectNew, ioctlParams.HClass, newSimpleObject(), ioctlParams.HObjectParent, allocParams.HClass3DObject)
 	})
 }
 
@@ -817,7 +817,7 @@ func rmAllocChannelGroup(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64Parame
 		// See
 		// src/nvidia/src/kernel/gpu/fifo/kernel_channel_group_api.c:kchangrpapiConstruct_IMPL()
 		// => refAddDependant().
-		fi.fd.nvp.objAdd(fi.ctx, ioctlParams.HRoot, ioctlParams.HObjectNew, ioctlParams.HClass, newSimpleObject(), ioctlParams.HObjectParent, allocParams.HVASpace)
+		fi.fd.dev.nvp.objAdd(fi.ctx, ioctlParams.HRoot, ioctlParams.HObjectNew, ioctlParams.HClass, newSimpleObject(), ioctlParams.HObjectParent, allocParams.HVASpace)
 		// Note: When the channel group's engine type is GR, which is always
 		// true unless MIG is enabled, kchangrpapiConstruct_IMPL() constructs a
 		// KERNEL_GRAPHICS_CONTEXT whose lifetime is the same as the channel
@@ -840,7 +840,7 @@ func rmAllocChannel(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64Parameters,
 		// then kchannelConstruct_IMPL() constructs one internally and frees it
 		// when the channel is destroyed, so either way no separate dependency
 		// is required.
-		fi.fd.nvp.objAdd(fi.ctx, ioctlParams.HRoot, ioctlParams.HObjectNew, ioctlParams.HClass, newSimpleObject(), ioctlParams.HObjectParent, allocParams.HVASpace, allocParams.HContextShare)
+		fi.fd.dev.nvp.objAdd(fi.ctx, ioctlParams.HRoot, ioctlParams.HObjectNew, ioctlParams.HClass, newSimpleObject(), ioctlParams.HObjectParent, allocParams.HVASpace, allocParams.HContextShare)
 	})
 }
 
@@ -852,7 +852,7 @@ func rmAllocContextShare(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64Parame
 		// group, so (given that we are representing graphics context
 		// dependencies as channel group dependencies) no separate dependency
 		// is required.
-		fi.fd.nvp.objAdd(fi.ctx, ioctlParams.HRoot, ioctlParams.HObjectNew, ioctlParams.HClass, newSimpleObject(), ioctlParams.HObjectParent, allocParams.HVASpace)
+		fi.fd.dev.nvp.objAdd(fi.ctx, ioctlParams.HRoot, ioctlParams.HObjectNew, ioctlParams.HClass, newSimpleObject(), ioctlParams.HObjectParent, allocParams.HVASpace)
 	})
 }
 
