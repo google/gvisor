@@ -47,7 +47,7 @@ func (t tPacketHdr) setTPStatus(status uint32) {
 	(*atomicbitops.Uint32)(statusPtr).Store(status)
 }
 
-func newPacketMMapDispatcher(fd int, e *endpoint) (linkDispatcher, error) {
+func newPacketMMapDispatcher(fd int, e *endpoint, opts *Options) (linkDispatcher, error) {
 	stopFD, err := stopfd.New()
 	if err != nil {
 		return nil, err
@@ -77,6 +77,8 @@ func newPacketMMapDispatcher(fd int, e *endpoint) (linkDispatcher, error) {
 	if err != nil {
 		return nil, fmt.Errorf("unix.Mmap(...,0, %v, ...) failed = %v", sz, err)
 	}
+	d.mgr = newProcessorManager(opts, e)
+	d.mgr.start()
 	d.ringBuffer = buf
 	return d, nil
 }
