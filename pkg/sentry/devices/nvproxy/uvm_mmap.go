@@ -69,6 +69,8 @@ func (fd *uvmFD) InvalidateUnsavable(ctx context.Context) error {
 }
 
 type uvmFDMemmapFile struct {
+	memmap.NoBufferedIOFallback
+
 	fd *uvmFD
 }
 

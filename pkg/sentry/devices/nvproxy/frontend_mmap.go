@@ -61,6 +61,8 @@ func (fd *frontendFD) InvalidateUnsavable(ctx context.Context) error {
 }
 
 type frontendFDMemmapFile struct {
+	memmap.NoBufferedIOFallback
+
 	fd *frontendFD
 }
 

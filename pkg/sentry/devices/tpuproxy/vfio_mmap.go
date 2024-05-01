@@ -61,6 +61,8 @@ func (fd *vfioFD) InvalidateUnsavable(ctx context.Context) error {
 }
 
 type vfioFDMemmapFile struct {
+	memmap.NoBufferedIOFallback
+
 	fd *vfioFD
 }
 

@@ -916,6 +916,8 @@ func (d *dentry) Evict(ctx context.Context, er pgalloc.EvictableRange) {
 //
 // +stateify savable
 type dentryPlatformFile struct {
+	memmap.NoBufferedIOFallback
+
 	*dentry
 
 	// fdRefs counts references on memmap.File offsets. fdRefs is protected

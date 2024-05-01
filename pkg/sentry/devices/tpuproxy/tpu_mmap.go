@@ -61,6 +61,8 @@ func (fd *tpuFD) InvalidateUnsavable(ctx context.Context) error {
 }
 
 type tpuFDMemmapFile struct {
+	memmap.NoBufferedIOFallback
+
 	fd *tpuFD
 }
 
@@ -120,6 +122,8 @@ func (fd *pciDeviceFD) InvalidateUnsavable(ctx context.Context) error {
 }
 
 type pciDeviceFdMemmapFile struct {
+	memmap.NoBufferedIOFallback
+
 	fd *pciDeviceFD
 }
 

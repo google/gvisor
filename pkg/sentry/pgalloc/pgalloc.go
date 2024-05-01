@@ -66,6 +66,8 @@ func (d Direction) String() string {
 // MemoryFile is a memmap.File whose pages may be allocated to arbitrary
 // users.
 type MemoryFile struct {
+	memmap.NoBufferedIOFallback
+
 	// opts holds options passed to NewMemoryFile. opts is immutable.
 	opts MemoryFileOpts
 

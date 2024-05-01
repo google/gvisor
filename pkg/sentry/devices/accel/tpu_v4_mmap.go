@@ -61,6 +61,8 @@ func (fd *tpuV4FD) InvalidateUnsavable(ctx context.Context) error {
 }
 
 type accelFDMemmapFile struct {
+	memmap.NoBufferedIOFallback
+
 	fd *tpuV4FD
 }
 

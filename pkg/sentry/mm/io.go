@@ -15,12 +15,15 @@
 package mm
 
 import (
+	"fmt"
+
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -118,6 +121,11 @@ func (mm *MemoryManager) CopyOut(ctx context.Context, addr hostarch.Addr, src []
 	}
 
 	// Go through internal mappings.
+	// NOTE(gvisor.dev/issue/10331): Using mm.withInternalMappings() here means
+	// that if we encounter any memmap.BufferedIOFallbackErrs, this copy will
+	// traverse an unnecessary layer of buffering. This can be fixed by
+	// inlining mm.withInternalMappings() and passing src subslices directly to
+	// memmap.File.BufferWriteAt().
 	n64, err := mm.withInternalMappings(ctx, ar, hostarch.Write, opts.IgnorePermissions, func(ims safemem.BlockSeq) (uint64, error) {
 		n, err := safemem.CopySeq(ims, safemem.BlockSeqOf(safemem.BlockFromSafeSlice(src)))
 		return n, translateIOError(ctx, err)
@@ -161,6 +169,11 @@ func (mm *MemoryManager) CopyIn(ctx context.Context, addr hostarch.Addr, dst []b
 	}
 
 	// Go through internal mappings.
+	// NOTE(gvisor.dev/issue/10331): Using mm.withInternalMappings() here means
+	// that if we encounter any memmap.BufferedIOFallbackErrs, this copy will
+	// traverse an unnecessary layer of buffering. This can be fixed by
+	// inlining mm.withInternalMappings() and passing dst subslices directly to
+	// memmap.File.BufferReadAt().
 	n64, err := mm.withInternalMappings(ctx, ar, hostarch.Read, opts.IgnorePermissions, func(ims safemem.BlockSeq) (uint64, error) {
 		n, err := safemem.CopySeq(safemem.BlockSeqOf(safemem.BlockFromSafeSlice(dst)), ims)
 		return n, translateIOError(ctx, err)
@@ -549,18 +562,19 @@ func (mm *MemoryManager) withInternalMappings(ctx context.Context, ar hostarch.A
 		}
 		ar.End = pendaddr
 	}
-	imend, imerr := mm.getPMAInternalMappingsLocked(pseg, ar)
+	imbs, t, imerr := mm.getIOMappingsLocked(pseg, ar, at)
 	mm.activeMu.DowngradeLock()
-	if imendaddr := imend.Start(); imendaddr < ar.End {
-		if imendaddr <= ar.Start {
+	if imlen := imbs.NumBytes(); imlen < uint64(ar.Length()) {
+		if imlen == 0 {
+			t.flush(0, nil)
 			mm.activeMu.RUnlock()
 			return 0, translateIOError(ctx, imerr)
 		}
-		ar.End = imendaddr
+		ar.End = ar.Start + hostarch.Addr(imlen)
 	}
 
 	// Do I/O.
-	un, err := f(mm.internalMappingsLocked(pseg, ar))
+	un, err := t.flush(f(imbs))
 	mm.activeMu.RUnlock()
 	n := int64(un)
 
@@ -619,15 +633,16 @@ func (mm *MemoryManager) withVecInternalMappings(ctx context.Context, ars hostar
 		mm.activeMu.Unlock()
 		return 0, translateIOError(ctx, perr)
 	}
-	imars, imerr := mm.getVecPMAInternalMappingsLocked(pars)
+	imbs, t, imerr := mm.getVecIOMappingsLocked(pars, at)
 	mm.activeMu.DowngradeLock()
-	if imars.NumBytes() == 0 {
+	if imbs.NumBytes() == 0 {
+		t.flush(0, nil)
 		mm.activeMu.RUnlock()
 		return 0, translateIOError(ctx, imerr)
 	}
 
 	// Do I/O.
-	un, err := f(mm.vecInternalMappingsLocked(imars))
+	un, err := t.flush(f(imbs))
 	mm.activeMu.RUnlock()
 	n := int64(un)
 
@@ -643,6 +658,263 @@ func (mm *MemoryManager) withVecInternalMappings(ctx context.Context, ars hostar
 		return n, translateIOError(ctx, perr)
 	}
 	return n, translateIOError(ctx, verr)
+}
+
+// getIOMappingsLocked returns internal mappings appropriate for I/O for
+// addresses in ar. If mappings are only available for a strict subset of ar,
+// the returned error is non-nil.
+//
+// ioBufTracker.flush() must be called on the returned ioBufTracker when the
+// returned mappings are no longer in use, and its return value indicates the
+// number of bytes actually completed after buffer flushing. Returned mappings
+// are valid until either mm.activeMu is unlocked or ioBufTracker.flush() is
+// called.
+//
+// Preconditions:
+//   - mm.activeMu must be locked for writing.
+//   - pseg.Range().Contains(ar.Start).
+//   - pmas must exist for all addresses in ar.
+//   - ar.Length() != 0.
+//
+// Postconditions: getIOMappingsLocked does not invalidate iterators into mm.pmas.
+func (mm *MemoryManager) getIOMappingsLocked(pseg pmaIterator, ar hostarch.AddrRange, at hostarch.AccessType) (safemem.BlockSeq, *ioBufTracker, error) {
+	if checkInvariants {
+		if !ar.WellFormed() || ar.Length() == 0 {
+			panic(fmt.Sprintf("invalid ar: %v", ar))
+		}
+		if !pseg.Range().Contains(ar.Start) {
+			panic(fmt.Sprintf("initial pma %v does not cover start of ar %v", pseg.Range(), ar))
+		}
+	}
+
+	if ar.End <= pseg.End() {
+		// Since only one pma is involved, we can use pma.internalMappings
+		// directly, avoiding a slice allocation.
+		if err := pseg.getInternalMappingsLocked(); err != nil {
+			if _, ok := err.(memmap.BufferedIOFallbackErr); ok {
+				goto slowPath
+			}
+			return safemem.BlockSeq{}, nil, err
+		}
+		offset := uint64(ar.Start - pseg.Start())
+		return pseg.ValuePtr().internalMappings.DropFirst64(offset).TakeFirst64(uint64(ar.Length())), nil, nil
+	}
+
+slowPath:
+	ims, t, _, err := mm.getIOMappingsTrackedLocked(pseg, ar, at, nil, nil, 0)
+	return safemem.BlockSeqFromSlice(ims), t, err
+}
+
+// getVecIOMappingsLocked returns internal mappings appropriate for I/O for
+// addresses in ars. If mappings are only available for a strict subset of ar,
+// the returned error is non-nil.
+//
+// ioBufTracker.flush() must be called on the returned ioBufTracker when the
+// returned mappings are no longer in use, and its return value indicates the
+// number of bytes actually completed after buffer flushing. Returned mappings
+// are valid until either mm.activeMu is unlocked or ioBufTracker.flush() is
+// called.
+//
+// Preconditions:
+//   - mm.activeMu must be locked for writing.
+//   - pmas must exist for all addresses in ar.
+//
+// Postconditions: getVecIOMappingsLocked does not invalidate iterators into
+// mm.pmas
+func (mm *MemoryManager) getVecIOMappingsLocked(ars hostarch.AddrRangeSeq, at hostarch.AccessType) (safemem.BlockSeq, *ioBufTracker, error) {
+	if ars.NumRanges() == 1 {
+		ar := ars.Head()
+		return mm.getIOMappingsLocked(mm.pmas.FindSegment(ar.Start), ar, at)
+	}
+
+	var ims []safemem.Block
+	var t *ioBufTracker
+	unbufBytes := uint64(0)
+	for arsit := ars; !arsit.IsEmpty(); arsit = arsit.Tail() {
+		ar := arsit.Head()
+		if ar.Length() == 0 {
+			continue
+		}
+		var err error
+		ims, t, unbufBytes, err = mm.getIOMappingsTrackedLocked(mm.pmas.FindSegment(ar.Start), ar, at, ims, t, unbufBytes)
+		if err != nil {
+			return safemem.BlockSeqFromSlice(ims), t, err
+		}
+	}
+	return safemem.BlockSeqFromSlice(ims), t, nil
+}
+
+// getIOMappingsTrackedLocked collects internal mappings appropriate for I/O
+// for addresses in ar, appends them to ims, and returns an updated slice. If
+// mappings are only available for a strict subset of ar, the returned error is
+// non-nil.
+//
+// If any iterated memmap.Files require buffering for I/O, they are recorded in
+// an ioBufTracker. Since the ioBufTracker pointer is initially nil (to
+// minimize overhead for the common case where no memmap.files require
+// buffering for I/O), getIOMappingsTrackedLocked returns an updated
+// ioBufTracker pointer.
+//
+// unbufBytes is the number of bytes of unbuffered mappings that have been
+// appended to ims since the last buffered mapping; getIOMappingsTrackedLocked
+// also returns an updated value for unbufBytes.
+//
+// Returned mappings are valid until either mm.activeMu is unlocked or
+// ioBufTracker.flush() is called.
+//
+// Preconditions:
+//   - mm.activeMu must be locked for writing.
+//   - pseg.Range().Contains(ar.Start).
+//   - pmas must exist for all addresses in ar.
+//   - ar.Length() != 0.
+//
+// Postconditions: getIOMappingsTrackedLocked does not invalidate iterators
+// into mm.pmas.
+func (mm *MemoryManager) getIOMappingsTrackedLocked(pseg pmaIterator, ar hostarch.AddrRange, at hostarch.AccessType, ims []safemem.Block, t *ioBufTracker, unbufBytes uint64) ([]safemem.Block, *ioBufTracker, uint64, error) {
+	for {
+		pmaAR := ar.Intersect(pseg.Range())
+		if err := pseg.getInternalMappingsLocked(); err == nil {
+			// Iterate the subset of the PMA's cached internal mappings that
+			// correspond to pmaAR, and append them to ims.
+			for pims := pseg.ValuePtr().internalMappings.DropFirst64(uint64(pmaAR.Start - pseg.Start())).TakeFirst64(uint64(pmaAR.Length())); !pims.IsEmpty(); pims = pims.Tail() {
+				ims = append(ims, pims.Head())
+			}
+			unbufBytes += uint64(pmaAR.Length())
+		} else if _, ok := err.(memmap.BufferedIOFallbackErr); !ok {
+			return ims, t, unbufBytes, err
+		} else {
+			// Fall back to buffered I/O as instructed.
+			if t == nil {
+				t = getIOBufTracker(at.Write)
+			}
+			buf := getByteSlicePtr(int(pmaAR.Length()))
+			pma := pseg.ValuePtr()
+			off := pseg.fileRangeOf(pmaAR).Start
+			// If the caller will read from the buffer, fill it from the file;
+			// otherwise leave it zeroed.
+			if at.Read || at.Execute {
+				var n uint64
+				n, err = pma.file.BufferReadAt(off, *buf)
+				*buf = (*buf)[:n]
+			} else {
+				err = nil
+			}
+			if len(*buf) != 0 {
+				ims = append(ims, safemem.BlockFromSafeSlice(*buf))
+				t.bufs = append(t.bufs, ioBuf{
+					unbufBytesBefore: unbufBytes,
+					file:             pma.file,
+					off:              off,
+					buf:              buf,
+				})
+				unbufBytes = 0
+			}
+			if err != nil {
+				return ims, t, unbufBytes, err
+			}
+		}
+		if ar.End <= pseg.End() {
+			return ims, t, unbufBytes, nil
+		}
+		pseg, _ = pseg.NextNonEmpty()
+	}
+}
+
+type ioBuf struct {
+	unbufBytesBefore uint64
+	file             memmap.File
+	off              uint64
+	buf              *[]byte
+}
+
+type ioBufTracker struct {
+	write bool
+	bufs  []ioBuf
+}
+
+var ioBufTrackerPool = sync.Pool{
+	New: func() any {
+		return &ioBufTracker{}
+	},
+}
+
+func getIOBufTracker(write bool) *ioBufTracker {
+	t := ioBufTrackerPool.Get().(*ioBufTracker)
+	t.write = write
+	return t
+}
+
+func putIOBufTracker(t *ioBufTracker) {
+	for i := range t.bufs {
+		t.bufs[i].file = nil
+		putByteSlicePtr(t.bufs[i].buf)
+		t.bufs[i].buf = nil
+	}
+	t.bufs = t.bufs[:0]
+	ioBufTrackerPool.Put(t)
+}
+
+func (t *ioBufTracker) flush(prevN uint64, prevErr error) (uint64, error) {
+	if t == nil {
+		return prevN, prevErr
+	}
+	return t.flushSlow(prevN, prevErr)
+}
+
+func (t *ioBufTracker) flushSlow(prevN uint64, prevErr error) (uint64, error) {
+	defer putIOBufTracker(t)
+	if !t.write {
+		return prevN, prevErr
+	}
+	// Flush dirty buffers to underlying memmap.Files.
+	rem := prevN
+	done := uint64(0)
+	for i := range t.bufs {
+		buf := &t.bufs[i]
+		if rem <= buf.unbufBytesBefore {
+			// The write ended before reaching buf.buf.
+			break
+		}
+		rem -= buf.unbufBytesBefore
+		done += buf.unbufBytesBefore
+		n, err := buf.file.BufferWriteAt(buf.off, (*buf.buf)[:min(len(*buf.buf), int(rem))])
+		rem -= n
+		done += n
+		if err != nil {
+			return done, err
+		}
+	}
+	// All buffers covered by prevN were written back successfully.
+	return prevN, prevErr
+}
+
+var byteSlicePtrPool sync.Pool
+
+// getByteSlicePtr returns a pointer to a byte slice with the given length. The
+// slice is either newly-allocated or recycled from a previous call to
+// putByteSlicePtr. The pointer should be passed to putByteSlicePtr when the
+// slice is no longer in use.
+func getByteSlicePtr(l int) *[]byte {
+	a := byteSlicePtrPool.Get()
+	if a == nil {
+		s := make([]byte, l)
+		return &s
+	}
+	sp := a.(*[]byte)
+	s := *sp
+	if l <= cap(s) {
+		s = s[:l]
+	} else {
+		s = make([]byte, l)
+	}
+	*sp = s
+	return sp
+}
+
+// putByteSlicePtr marks all of the given's slice capacity reusable by a future
+// call to getByteSlicePtr.
+func putByteSlicePtr(s *[]byte) {
+	byteSlicePtrPool.Put(s)
 }
 
 // truncatedAddrRangeSeq returns a copy of ars, but with the end truncated to

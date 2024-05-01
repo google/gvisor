@@ -436,11 +436,62 @@ type File interface {
 	// reference is held on the mapped pages.
 	MapInternal(fr FileRange, at hostarch.AccessType) (safemem.BlockSeq, error)
 
+	// BufferReadAt reads len(dst) bytes from the file into dst, starting at
+	// file offset off. It returns the number of bytes read. Like
+	// io.ReaderAt.ReadAt(), it never returns a short read with a nil error.
+	//
+	// Implementations of File for which MapInternal() never returns
+	// BufferedIOFallbackErr can embed NoBufferedIOFallback to obtain an
+	// appropriate implementation of BufferReadAt.
+	//
+	// Preconditions:
+	//	* MapInternal() returned a BufferedIOFallbackErr.
+	//	* At least one reference must be held on all read pages.
+	BufferReadAt(off uint64, dst []byte) (uint64, error)
+
+	// BufferWriteAt writes len(src) bytes src to the file, starting at file
+	// offset off. It returns the number of bytes written. Like
+	// io.WriterAt.WriteAt(), it never returns a short write with a nil error.
+	//
+	// Implementations of File for which MapInternal() never returns
+	// BufferedIOFallbackErr can embed NoBufferedIOFallback to obtain an
+	// appropriate implementation of BufferWriteAt.
+	//
+	// Preconditions:
+	//	* MapInternal() returned a BufferedIOFallbackErr.
+	//	* At least one reference must be held on all written pages.
+	BufferWriteAt(off uint64, src []byte) (uint64, error)
+
 	// FD returns the file descriptor represented by the File.
 	//
 	// The only permitted operation on the returned file descriptor is to map
 	// pages from it consistent with the requirements of AddressSpace.MapFile.
 	FD() int
+}
+
+// BufferedIOFallbackErr is returned (by value) by implementations of
+// File.MapInternal() that cannot succeed, but can still support memory-mapped
+// I/O by falling back to buffered reads and writes.
+type BufferedIOFallbackErr struct{}
+
+// Error implements error.Error.
+func (BufferedIOFallbackErr) Error() string {
+	return "memmap.File.MapInternal() is unsupported, fall back to buffered R/W for internally-mapped I/O"
+}
+
+// NoBufferedIOFallback implements File.BufferReadAt() and BufferWriteAt() for
+// implementations of File for which MapInternal() never returns
+// BufferedIOFallbackErr.
+type NoBufferedIOFallback struct{}
+
+// BufferReadAt implements File.BufferReadAt.
+func (NoBufferedIOFallback) BufferReadAt(off uint64, dst []byte) (uint64, error) {
+	panic("unimplemented: memmap.File.MapInternal() should not have returned BufferedIOFallbackErr")
+}
+
+// BufferWriteAt implements File.BufferWriteAt.
+func (NoBufferedIOFallback) BufferWriteAt(off uint64, src []byte) (uint64, error) {
+	panic("unimplemented: memmap.File.MapInternal() should not have returned BufferedIOFallbackErr")
 }
 
 // FileRange represents a range of uint64 offsets into a File.

@@ -796,75 +796,13 @@ func (mm *MemoryManager) movePMAsLocked(oldAR, newAR hostarch.AddrRange) {
 	mm.unmapASLocked(oldAR)
 }
 
-// getPMAInternalMappingsLocked ensures that pmas for all addresses in ar have
-// cached internal mappings. It returns:
-//
-//   - An iterator to the gap after the last pma with internal mappings
-//     containing an address in ar. If internal mappings exist for no addresses in
-//     ar, the iterator is to a gap that begins before ar.Start.
-//
-//   - An error that is non-nil if internal mappings exist for only a subset of
-//     ar.
-//
-// Preconditions:
-//   - mm.activeMu must be locked for writing.
-//   - pseg.Range().Contains(ar.Start).
-//   - pmas must exist for all addresses in ar.
-//   - ar.Length() != 0.
-//
-// Postconditions: getPMAInternalMappingsLocked does not invalidate iterators
-// into mm.pmas.
-func (mm *MemoryManager) getPMAInternalMappingsLocked(pseg pmaIterator, ar hostarch.AddrRange) (pmaGapIterator, error) {
-	if checkInvariants {
-		if !ar.WellFormed() || ar.Length() == 0 {
-			panic(fmt.Sprintf("invalid ar: %v", ar))
-		}
-		if !pseg.Range().Contains(ar.Start) {
-			panic(fmt.Sprintf("initial pma %v does not cover start of ar %v", pseg.Range(), ar))
-		}
-	}
-
-	for {
-		if err := pseg.getInternalMappingsLocked(); err != nil {
-			return pseg.PrevGap(), err
-		}
-		if ar.End <= pseg.End() {
-			return pseg.NextGap(), nil
-		}
-		pseg, _ = pseg.NextNonEmpty()
-	}
-}
-
-// getVecPMAInternalMappingsLocked ensures that pmas for all addresses in ars
-// have cached internal mappings. It returns the subset of ars for which
-// internal mappings exist. If this is not equal to ars, it returns a non-nil
-// error explaining why.
-//
-// Preconditions:
-//   - mm.activeMu must be locked for writing.
-//   - pmas must exist for all addresses in ar.
-//
-// Postconditions: getVecPMAInternalMappingsLocked does not invalidate iterators
-// into mm.pmas.
-func (mm *MemoryManager) getVecPMAInternalMappingsLocked(ars hostarch.AddrRangeSeq) (hostarch.AddrRangeSeq, error) {
-	for arsit := ars; !arsit.IsEmpty(); arsit = arsit.Tail() {
-		ar := arsit.Head()
-		if ar.Length() == 0 {
-			continue
-		}
-		if pend, err := mm.getPMAInternalMappingsLocked(mm.pmas.FindSegment(ar.Start), ar); err != nil {
-			return truncatedAddrRangeSeq(ars, arsit, pend.Start()), err
-		}
-	}
-	return ars, nil
-}
-
-// internalMappingsLocked returns internal mappings for addresses in ar.
+// internalMappingsLocked returns cached internal mappings for addresses in ar.
 //
 // Preconditions:
 //   - mm.activeMu must be locked.
-//   - Internal mappings must have been previously established for all addresses
-//     in ar.
+//   - While mm.activeMu was locked, a call to
+//     existingPMAsLocked(needInternalMappings=true) succeeded for all
+//     addresses in ar.
 //   - ar.Length() != 0.
 //   - pseg.Range().Contains(ar.Start).
 func (mm *MemoryManager) internalMappingsLocked(pseg pmaIterator, ar hostarch.AddrRange) safemem.BlockSeq {
@@ -898,12 +836,14 @@ func (mm *MemoryManager) internalMappingsLocked(pseg pmaIterator, ar hostarch.Ad
 	return safemem.BlockSeqFromSlice(ims)
 }
 
-// vecInternalMappingsLocked returns internal mappings for addresses in ars.
+// vecInternalMappingsLocked returns cached internal mappings for addresses in
+// ars.
 //
 // Preconditions:
 //   - mm.activeMu must be locked.
-//   - Internal mappings must have been previously established for all addresses
-//     in ars.
+//   - While mm.activeMu was locked, a call to
+//     existingVecPMAsLocked(needInternalMappings=true) succeeded for all
+//     addresses in ars.
 func (mm *MemoryManager) vecInternalMappingsLocked(ars hostarch.AddrRangeSeq) safemem.BlockSeq {
 	var ims []safemem.Block
 	for ; !ars.IsEmpty(); ars = ars.Tail() {
