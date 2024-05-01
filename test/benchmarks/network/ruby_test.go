@@ -24,6 +24,7 @@ import (
 	"gvisor.dev/gvisor/pkg/test/dockerutil"
 	"gvisor.dev/gvisor/test/benchmarks/harness"
 	"gvisor.dev/gvisor/test/benchmarks/tools"
+	"gvisor.dev/gvisor/test/metricsviz"
 )
 
 // BenchmarkRuby runs requests using 'hey' against a ruby application server.
@@ -76,6 +77,7 @@ func runRuby(b *testing.B, hey *tools.Hey) {
 		b.Fatalf("failed to spawn redis instance: %v", err)
 	}
 	defer redis.CleanUp(ctx)
+	defer metricsviz.FromContainerLogs(ctx, b, redis)
 
 	if out, err := redis.WaitForOutput(ctx, "Ready to accept connections", 3*time.Second); err != nil {
 		b.Fatalf("failed to start redis server: %v %s", err, out)

@@ -54,6 +54,10 @@ func publishHTML(ctx context.Context, testLike testing.TB, htmlOptions HTMLOptio
 	if err := os.Chmod(htmlPath, 0644); err != nil {
 		return fmt.Errorf("failed to chmod %q: %w", htmlPath, err)
 	}
-	testLike.Logf("******** METRICS CHARTS: file://%s ********", htmlPath)
+	if htmlOptions.ContainerName == "" {
+		testLike.Logf("******** METRICS CHARTS: file://%s ********", htmlPath)
+	} else {
+		testLike.Logf("******** METRICS CHARTS (%s): file://%s ********", htmlOptions.ContainerName, htmlPath)
+	}
 	return nil
 }

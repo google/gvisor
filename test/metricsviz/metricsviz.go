@@ -21,7 +21,9 @@ import (
 	"errors"
 	"fmt"
 	"hash/adler32"
+	"os"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -117,13 +119,18 @@ type HTMLOptions struct {
 	// Title is the title of this set of charts.
 	Title string
 
+	// ContainerName is the name of the container for which the metrics were
+	// collected. May be empty; usually only specified when there are more
+	// than one container involved in a single test or benchmark.
+	ContainerName string
+
 	// When is the time at which the measurements were taken.
 	When time.Time
 }
 
 type chart struct {
-	PageTitle string
-	Series    []*TimeSeries
+	Title  string
+	Series []*TimeSeries
 }
 
 // isCumulative returns whether the given series are all cumulative or all
@@ -290,16 +297,7 @@ func (c *chart) Charter() (components.Charter, error) {
 			charts.WithLabelOpts(opts.Label{Show: false}),
 		)
 	}
-	metricNames := map[MetricName]struct{}{}
-	for _, ts := range c.Series {
-		metricNames[ts.Metric.Name] = struct{}{}
-	}
-	metricNameList := make([]string, 0, len(metricNames))
-	for m := range metricNames {
-		metricNameList = append(metricNameList, string(m))
-	}
-	sort.Strings(metricNameList)
-	chartTitle := fmt.Sprintf("%s: %s", c.PageTitle, strings.Join(metricNameList, ", "))
+	chartTitle := c.Title
 	if isCumulative {
 		chartTitle += " per second"
 		yAxis.Name = "per second"
@@ -340,27 +338,74 @@ func (c *chart) Charter() (components.Charter, error) {
 // ToHTML generates an HTML page with charts of the metrics data.
 func (d *Data) ToHTML(opts HTMLOptions) (string, error) {
 	page := components.NewPage()
-	page.PageTitle = fmt.Sprintf("Metrics for %s at %v", opts.Title, opts.When.Format(time.DateTime))
+	var chartTitleRoot string
+	if opts.ContainerName == "" {
+		chartTitleRoot = opts.Title
+		page.PageTitle = fmt.Sprintf("Metrics for %s at %v", opts.Title, opts.When.Format(time.DateTime))
+	} else {
+		chartTitleRoot = fmt.Sprintf("%s [%s]", opts.Title, opts.ContainerName)
+		page.PageTitle = fmt.Sprintf("Metrics for %s (container %s) at %v", opts.Title, opts.ContainerName, opts.When.Format(time.DateTime))
+	}
 	page.Theme = echartstypes.ThemeVintage
 	page.SetLayout(components.PageFlexLayout)
-	titleToChart := make(map[string]*chart)
-	var titles []string
-	for maf, ts := range d.data {
-		title := string(maf.MetricName)
-		c, ok := titleToChart[title]
-		if !ok {
-			c = &chart{PageTitle: opts.Title}
-			titleToChart[title] = c
-			titles = append(titles, title)
+
+	// Find which groups contain which metrics that we're seeing in the data.
+	groupsToMetricNames := make(map[GroupName][]MetricName, len(d.data))
+	for maf := range d.data {
+		for groupName, metricsInGroup := range Groups {
+			if slices.Contains(metricsInGroup, maf.MetricName) && !slices.Contains(groupsToMetricNames[groupName], maf.MetricName) {
+				groupsToMetricNames[groupName] = append(groupsToMetricNames[groupName], maf.MetricName)
+			}
 		}
-		c.Series = append(c.Series, ts)
 	}
-	sort.Strings(titles)
-	for _, title := range titles {
-		c := titleToChart[title]
+
+	// Find which groups for which we have data for at least 2 metrics.
+	// These metrics will be displayed in the group charts only.
+	// The rest of the metrics will be displayed in their own chart.
+	metricToGroups := make(map[MetricName][]GroupName, len(d.data))
+	for groupName, activeGroupMetrics := range groupsToMetricNames {
+		if len(activeGroupMetrics) >= 2 {
+			for _, m := range activeGroupMetrics {
+				metricToGroups[m] = append(metricToGroups[m], groupName)
+			}
+		}
+	}
+
+	// Now go through the data and group it by the chart it'll end up in.
+	chartNameToChart := make(map[string]*chart, len(d.data))
+	var chartNames []string
+	for maf, ts := range d.data {
+		groupsForMetric := metricToGroups[maf.MetricName]
+		if len(groupsForMetric) > 0 {
+			// Group metric chart.
+			for _, groupName := range groupsForMetric {
+				chartName := string(groupName)
+				c, ok := chartNameToChart[chartName]
+				if !ok {
+					c = &chart{Title: fmt.Sprintf("%s: %s", chartTitleRoot, groupName)}
+					chartNameToChart[chartName] = c
+					chartNames = append(chartNames, chartName)
+				}
+				c.Series = append(c.Series, ts)
+			}
+		} else {
+			// Individual metric chart.
+			chartName := string(maf.MetricName)
+			c, ok := chartNameToChart[chartName]
+			if !ok {
+				c = &chart{Title: fmt.Sprintf("%s: %s", chartTitleRoot, ts.String())}
+				chartNameToChart[chartName] = c
+				chartNames = append(chartNames, chartName)
+			}
+			c.Series = append(c.Series, ts)
+		}
+	}
+	sort.Strings(chartNames)
+	for _, chartName := range chartNames {
+		c := chartNameToChart[chartName]
 		charter, err := c.Charter()
 		if err != nil {
-			return "", fmt.Errorf("failed to create charter for %q: %w", title, err)
+			return "", fmt.Errorf("failed to create charter for %q: %w", chartName, err)
 		}
 		page.AddCharts(charter)
 	}
@@ -520,6 +565,13 @@ func slugify(s string) string {
 // found within.
 // The container must be stopped or stoppable by the time this is called.
 func FromContainerLogs(ctx context.Context, testLike testing.TB, container *dockerutil.Container) {
+	FromNamedContainerLogs(ctx, testLike, container, "")
+}
+
+// FromNamedContainerLogs parses a container's logs and reports metrics data
+// found within, making note of the container's name on the results page.
+// The container must be stopped or stoppable by the time this is called.
+func FromNamedContainerLogs(ctx context.Context, testLike testing.TB, container *dockerutil.Container, containerName string) {
 	// If the container is not stopped, stop it.
 	// This is necessary to flush the profiling metrics logs.
 	st, err := container.Status(ctx)
@@ -544,12 +596,46 @@ func FromContainerLogs(ctx context.Context, testLike testing.TB, container *dock
 		testLike.Fatalf("Failed to parse metrics data: %v", err)
 	}
 	htmlOptions := HTMLOptions{
+		Title:         testLike.Name(),
+		ContainerName: containerName,
+		When:          data.startTime,
+	}
+	html, err := data.ToHTML(htmlOptions)
+	if err != nil {
+		testLike.Fatalf("Failed to generate HTML: %v", err)
+	}
+	if err := publishHTMLFn(ctx, testLike, htmlOptions, html); err != nil {
+		testLike.Fatalf("Failed to publish HTML: %v", err)
+	}
+}
+
+// FromProfilingMetricsLogFile parses a profiling metrics log file
+// (as created by --profiling-metrics-log) and reports metrics data within.
+func FromProfilingMetricsLogFile(ctx context.Context, testLike testing.TB, logFile string) {
+	contents, err := os.ReadFile(logFile)
+	if err != nil {
+		testLike.Fatalf("Failed to read log file: %v", err)
+	}
+	data, err := Parse(string(contents), false)
+	if err != nil {
+		if errors.Is(err, ErrNoMetricData) {
+			return // No metric data in the logs, so stay quiet.
+		}
+		testLike.Fatalf("Failed to parse metrics data: %v", err)
+	}
+	htmlOptions := HTMLOptions{
 		Title: testLike.Name(),
 		When:  data.startTime,
 	}
 	html, err := data.ToHTML(htmlOptions)
 	if err != nil {
 		testLike.Fatalf("Failed to generate HTML: %v", err)
+	}
+	if strings.HasSuffix(logFile, ".log") {
+		// Best-effort conversion to HTML next to the .log file in the directory,
+		// if permissions allow that. Ignore errors, what matters more is the
+		// publishing step later on.
+		_ = os.WriteFile(strings.TrimSuffix(logFile, ".log")+".html", []byte(html), 0644)
 	}
 	if err := publishHTMLFn(ctx, testLike, htmlOptions, html); err != nil {
 		testLike.Fatalf("Failed to publish HTML: %v", err)

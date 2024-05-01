@@ -26,6 +26,7 @@ import (
 	"gvisor.dev/gvisor/test/benchmarks/base"
 	"gvisor.dev/gvisor/test/benchmarks/harness"
 	"gvisor.dev/gvisor/test/benchmarks/tools"
+	"gvisor.dev/gvisor/test/metricsviz"
 )
 
 // BenchmarkSizeEmpty creates N alpine containers and reads memory usage using `docker stats`.
@@ -47,6 +48,9 @@ func BenchmarkSizeEmpty(b *testing.B) {
 			Image: "benchmarks/alpine",
 		}, "sh", "-c", "echo Hello && sleep 1000"); err != nil {
 			b.Fatalf("failed to run container: %v", err)
+		}
+		if i == 0 {
+			defer metricsviz.FromContainerLogs(ctx, b, container)
 		}
 		if _, err := container.WaitForOutputSubmatch(ctx, "Hello", 5*time.Second); err != nil {
 			b.Fatalf("failed to read container output: %v", err)
@@ -92,6 +96,9 @@ func BenchmarkSizeNginx(b *testing.B) {
 			b.Fatalf("failed to start server: %v", err)
 		}
 		defer server.CleanUp(ctx)
+		if i == 0 {
+			defer metricsviz.FromContainerLogs(ctx, b, server)
+		}
 		stats, err := server.Stats(ctx)
 		if err != nil {
 			b.Fatalf("failed to get container stats: %v", err)
@@ -139,6 +146,9 @@ func BenchmarkSizeNode(b *testing.B) {
 			b.Fatalf("failed to start server: %v", err)
 		}
 		defer server.CleanUp(ctx)
+		if i == 0 {
+			defer metricsviz.FromContainerLogs(ctx, b, server)
+		}
 		stats, err := server.Stats(ctx)
 		if err != nil {
 			b.Fatalf("failed to get container stats: %v", err)

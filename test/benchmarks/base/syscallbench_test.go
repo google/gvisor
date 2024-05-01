@@ -22,6 +22,7 @@ import (
 	"gvisor.dev/gvisor/pkg/test/dockerutil"
 	"gvisor.dev/gvisor/test/benchmarks/harness"
 	"gvisor.dev/gvisor/test/benchmarks/tools"
+	"gvisor.dev/gvisor/test/metricsviz"
 )
 
 // BenchmarSyscallbench runs a syscall b.N times on the runtime.
@@ -67,6 +68,7 @@ func BenchmarkSyscallbench(b *testing.B) {
 			); err != nil {
 				b.Fatalf("run failed with: %v", err)
 			}
+			defer metricsviz.FromContainerLogs(ctx, b, container)
 			b.Run(name, func(b *testing.B) {
 				cmd := []string{"syscallbench", fmt.Sprintf("--loops=%d", b.N), fmt.Sprintf("--syscall=%d", tc.syscallArg)}
 				b.ResetTimer()
@@ -114,6 +116,7 @@ func BenchmarkSyscallUnderSeccomp(b *testing.B) {
 			); err != nil {
 				b.Fatalf("run failed with: %v", err)
 			}
+			defer metricsviz.FromContainerLogs(ctx, b, container)
 			b.Run(name, func(b *testing.B) {
 				cmd := []string{"syscallbench", "--syscall=1", fmt.Sprintf("--loops=%d", b.N)}
 				if tc.Value == "true" {

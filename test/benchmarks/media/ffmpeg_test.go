@@ -21,6 +21,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/test/dockerutil"
 	"gvisor.dev/gvisor/test/benchmarks/harness"
+	"gvisor.dev/gvisor/test/metricsviz"
 )
 
 // BenchmarkFfmpeg runs ffmpeg in a container and records runtime.
@@ -39,19 +40,24 @@ func BenchmarkFfmpeg(b *testing.B) {
 	b.StopTimer()
 
 	for i := 0; i < b.N; i++ {
-		container := machine.GetContainer(ctx, b)
-		defer container.CleanUp(ctx)
-		if err := harness.DropCaches(machine); err != nil {
-			b.Skipf("failed to drop caches: %v. You probably need root.", err)
-		}
+		func() {
+			container := machine.GetContainer(ctx, b)
+			defer container.CleanUp(ctx)
+			if i == 0 {
+				defer metricsviz.FromContainerLogs(ctx, b, container)
+			}
+			if err := harness.DropCaches(machine); err != nil {
+				b.Skipf("failed to drop caches: %v. You probably need root.", err)
+			}
 
-		b.StartTimer()
-		if _, err := container.Run(ctx, dockerutil.RunOpts{
-			Image: "benchmarks/ffmpeg",
-		}, cmd...); err != nil {
-			b.Fatalf("failed to run container: %v", err)
-		}
-		b.StopTimer()
+			b.StartTimer()
+			if _, err := container.Run(ctx, dockerutil.RunOpts{
+				Image: "benchmarks/ffmpeg",
+			}, cmd...); err != nil {
+				b.Fatalf("failed to run container: %v", err)
+			}
+			b.StopTimer()
+		}()
 	}
 }
 

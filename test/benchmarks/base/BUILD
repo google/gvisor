@@ -26,6 +26,7 @@ benchmark_test(
         "//pkg/test/dockerutil",
         "//test/benchmarks/base",
         "//test/benchmarks/harness",
+        "//test/metricsviz",
     ],
 )
 
@@ -38,6 +39,7 @@ benchmark_test(
         "//test/benchmarks/base",
         "//test/benchmarks/harness",
         "//test/benchmarks/tools",
+        "//test/metricsviz",
     ],
 )
 
@@ -49,6 +51,7 @@ benchmark_test(
         "//pkg/test/dockerutil",
         "//test/benchmarks/harness",
         "//test/benchmarks/tools",
+        "//test/metricsviz",
     ],
 )
 
@@ -60,6 +63,7 @@ benchmark_test(
         "//pkg/test/dockerutil",
         "//test/benchmarks/harness",
         "//test/benchmarks/tools",
+        "//test/metricsviz",
     ],
 )
 
@@ -71,6 +75,7 @@ benchmark_test(
         "//pkg/test/dockerutil",
         "//test/benchmarks/harness",
         "//test/benchmarks/tools",
+        "//test/metricsviz",
     ],
 )
 
@@ -82,6 +87,7 @@ benchmark_test(
         "//pkg/test/dockerutil",
         "//test/benchmarks/harness",
         "//test/benchmarks/tools",
+        "//test/metricsviz",
         "@com_github_docker_docker//api/types:go_default_library",
     ],
 )

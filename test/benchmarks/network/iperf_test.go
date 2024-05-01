@@ -24,6 +24,7 @@ import (
 	"gvisor.dev/gvisor/pkg/test/testutil"
 	"gvisor.dev/gvisor/test/benchmarks/harness"
 	"gvisor.dev/gvisor/test/benchmarks/tools"
+	"gvisor.dev/gvisor/test/metricsviz"
 )
 
 func BenchmarkIperfOneConnection(b *testing.B) {
@@ -69,8 +70,10 @@ func BenchmarkIperfOneConnection(b *testing.B) {
 			// Set up the containers.
 			server := bm.serverFunc(ctx, b)
 			defer server.CleanUp(ctx)
+			defer metricsviz.FromNamedContainerLogs(ctx, b, server, "server")
 			client := bm.clientFunc(ctx, b)
 			defer client.CleanUp(ctx)
+			defer metricsviz.FromNamedContainerLogs(ctx, b, server, "client")
 
 			// iperf server listens on port 5001 by default.
 			port := 5001
@@ -180,8 +183,10 @@ func BenchmarkIperfManyConnections(b *testing.B) {
 			// Set up the containers.
 			server := bm.serverFunc(ctx, b)
 			defer server.CleanUp(ctx)
+			defer metricsviz.FromNamedContainerLogs(ctx, b, server, "server")
 			client := bm.clientFunc(ctx, b)
 			defer client.CleanUp(ctx)
+			defer metricsviz.FromNamedContainerLogs(ctx, b, client, "client")
 
 			// iperf server listens on port 5001 by default.
 			port := 5001

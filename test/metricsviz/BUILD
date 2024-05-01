@@ -10,6 +10,7 @@ go_library(
     testonly = 1,
     srcs = [
         "metricsviz.go",
+        "metricsviz_groups.go",
         "metricsviz_publish.go",
     ],
     visibility = ["//:sandbox"],
