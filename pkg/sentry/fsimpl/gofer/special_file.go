@@ -43,6 +43,7 @@ import (
 type specialFileFD struct {
 	fileDescription
 	specialFDEntry
+	memmap.NoBufferedIOFallback
 
 	// releaseMu synchronizes the closing of fd.handle with fd.sync(). It's safe
 	// to access fd.handle without locking for operations that require a ref to

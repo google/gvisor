@@ -781,6 +781,7 @@ func (i *inodePlatformFile) StateTypeName() string {
 
 func (i *inodePlatformFile) StateFields() []string {
 	return []string{
+		"NoBufferedIOFallback",
 		"hostFD",
 		"fdRefs",
 		"fileMapper",
@@ -792,16 +793,18 @@ func (i *inodePlatformFile) beforeSave() {}
 // +checklocksignore
 func (i *inodePlatformFile) StateSave(stateSinkObject state.Sink) {
 	i.beforeSave()
-	stateSinkObject.Save(0, &i.hostFD)
-	stateSinkObject.Save(1, &i.fdRefs)
-	stateSinkObject.Save(2, &i.fileMapper)
+	stateSinkObject.Save(0, &i.NoBufferedIOFallback)
+	stateSinkObject.Save(1, &i.hostFD)
+	stateSinkObject.Save(2, &i.fdRefs)
+	stateSinkObject.Save(3, &i.fileMapper)
 }
 
 // +checklocksignore
 func (i *inodePlatformFile) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &i.hostFD)
-	stateSourceObject.Load(1, &i.fdRefs)
-	stateSourceObject.Load(2, &i.fileMapper)
+	stateSourceObject.Load(0, &i.NoBufferedIOFallback)
+	stateSourceObject.Load(1, &i.hostFD)
+	stateSourceObject.Load(2, &i.fdRefs)
+	stateSourceObject.Load(3, &i.fileMapper)
 	stateSourceObject.AfterLoad(func() { i.afterLoad(ctx) })
 }
 

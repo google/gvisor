@@ -350,6 +350,7 @@ func (mf *imageMemmapFile) StateTypeName() string {
 
 func (mf *imageMemmapFile) StateFields() []string {
 	return []string{
+		"NoBufferedIOFallback",
 		"image",
 	}
 }
@@ -359,14 +360,16 @@ func (mf *imageMemmapFile) beforeSave() {}
 // +checklocksignore
 func (mf *imageMemmapFile) StateSave(stateSinkObject state.Sink) {
 	mf.beforeSave()
-	stateSinkObject.Save(0, &mf.image)
+	stateSinkObject.Save(0, &mf.NoBufferedIOFallback)
+	stateSinkObject.Save(1, &mf.image)
 }
 
 func (mf *imageMemmapFile) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (mf *imageMemmapFile) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &mf.image)
+	stateSourceObject.Load(0, &mf.NoBufferedIOFallback)
+	stateSourceObject.Load(1, &mf.image)
 }
 
 func init() {

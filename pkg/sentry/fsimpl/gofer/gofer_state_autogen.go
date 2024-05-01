@@ -690,6 +690,7 @@ func (d *dentryPlatformFile) StateTypeName() string {
 
 func (d *dentryPlatformFile) StateFields() []string {
 	return []string{
+		"NoBufferedIOFallback",
 		"dentry",
 		"fdRefs",
 		"hostFileMapper",
@@ -701,16 +702,18 @@ func (d *dentryPlatformFile) beforeSave() {}
 // +checklocksignore
 func (d *dentryPlatformFile) StateSave(stateSinkObject state.Sink) {
 	d.beforeSave()
-	stateSinkObject.Save(0, &d.dentry)
-	stateSinkObject.Save(1, &d.fdRefs)
-	stateSinkObject.Save(2, &d.hostFileMapper)
+	stateSinkObject.Save(0, &d.NoBufferedIOFallback)
+	stateSinkObject.Save(1, &d.dentry)
+	stateSinkObject.Save(2, &d.fdRefs)
+	stateSinkObject.Save(3, &d.hostFileMapper)
 }
 
 // +checklocksignore
 func (d *dentryPlatformFile) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &d.dentry)
-	stateSourceObject.Load(1, &d.fdRefs)
-	stateSourceObject.Load(2, &d.hostFileMapper)
+	stateSourceObject.Load(0, &d.NoBufferedIOFallback)
+	stateSourceObject.Load(1, &d.dentry)
+	stateSourceObject.Load(2, &d.fdRefs)
+	stateSourceObject.Load(3, &d.hostFileMapper)
 	stateSourceObject.AfterLoad(func() { d.afterLoad(ctx) })
 }
 
@@ -834,6 +837,7 @@ func (fd *specialFileFD) StateFields() []string {
 	return []string{
 		"fileDescription",
 		"specialFDEntry",
+		"NoBufferedIOFallback",
 		"isRegularFile",
 		"seekable",
 		"queue",
@@ -852,28 +856,30 @@ func (fd *specialFileFD) StateSave(stateSinkObject state.Sink) {
 	fd.beforeSave()
 	stateSinkObject.Save(0, &fd.fileDescription)
 	stateSinkObject.Save(1, &fd.specialFDEntry)
-	stateSinkObject.Save(2, &fd.isRegularFile)
-	stateSinkObject.Save(3, &fd.seekable)
-	stateSinkObject.Save(4, &fd.queue)
-	stateSinkObject.Save(5, &fd.off)
-	stateSinkObject.Save(6, &fd.haveBuf)
-	stateSinkObject.Save(7, &fd.buf)
-	stateSinkObject.Save(8, &fd.hostFileMapper)
-	stateSinkObject.Save(9, &fd.fileRefs)
+	stateSinkObject.Save(2, &fd.NoBufferedIOFallback)
+	stateSinkObject.Save(3, &fd.isRegularFile)
+	stateSinkObject.Save(4, &fd.seekable)
+	stateSinkObject.Save(5, &fd.queue)
+	stateSinkObject.Save(6, &fd.off)
+	stateSinkObject.Save(7, &fd.haveBuf)
+	stateSinkObject.Save(8, &fd.buf)
+	stateSinkObject.Save(9, &fd.hostFileMapper)
+	stateSinkObject.Save(10, &fd.fileRefs)
 }
 
 // +checklocksignore
 func (fd *specialFileFD) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &fd.fileDescription)
 	stateSourceObject.Load(1, &fd.specialFDEntry)
-	stateSourceObject.Load(2, &fd.isRegularFile)
-	stateSourceObject.Load(3, &fd.seekable)
-	stateSourceObject.Load(4, &fd.queue)
-	stateSourceObject.Load(5, &fd.off)
-	stateSourceObject.Load(6, &fd.haveBuf)
-	stateSourceObject.Load(7, &fd.buf)
-	stateSourceObject.Load(8, &fd.hostFileMapper)
-	stateSourceObject.Load(9, &fd.fileRefs)
+	stateSourceObject.Load(2, &fd.NoBufferedIOFallback)
+	stateSourceObject.Load(3, &fd.isRegularFile)
+	stateSourceObject.Load(4, &fd.seekable)
+	stateSourceObject.Load(5, &fd.queue)
+	stateSourceObject.Load(6, &fd.off)
+	stateSourceObject.Load(7, &fd.haveBuf)
+	stateSourceObject.Load(8, &fd.buf)
+	stateSourceObject.Load(9, &fd.hostFileMapper)
+	stateSourceObject.Load(10, &fd.fileRefs)
 	stateSourceObject.AfterLoad(func() { fd.afterLoad(ctx) })
 }
 
