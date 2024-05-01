@@ -42,6 +42,8 @@ const (
 	UVM_PAGEABLE_MEM_ACCESS            = 39
 	UVM_SET_PREFERRED_LOCATION         = 42
 	UVM_DISABLE_READ_DUPLICATION       = 45
+	UVM_TOOLS_READ_PROCESS_MEMORY      = 62
+	UVM_TOOLS_WRITE_PROCESS_MEMORY     = 63
 	UVM_MAP_DYNAMIC_PARALLELISM_REGION = 65
 	UVM_ALLOC_SEMAPHORE_POOL           = 68
 	UVM_VALIDATE_VA_RANGE              = 72
@@ -234,6 +236,26 @@ type UVM_DISABLE_READ_DUPLICATION_PARAMS struct {
 	Length        uint64
 	RMStatus      uint32
 	Pad0          [4]byte
+}
+
+// +marshal
+type UVM_TOOLS_READ_PROCESS_MEMORY_PARAMS struct {
+	Buffer    uint64
+	Size      uint64
+	TargetVA  uint64
+	BytesRead uint64
+	RMStatus  uint32
+	Pad0      [4]byte
+}
+
+// +marshal
+type UVM_TOOLS_WRITE_PROCESS_MEMORY_PARAMS struct {
+	Buffer       uint64
+	Size         uint64
+	TargetVA     uint64
+	BytesWritten uint64
+	RMStatus     uint32
+	Pad0         [4]byte
 }
 
 // +marshal
