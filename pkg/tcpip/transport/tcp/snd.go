@@ -49,6 +49,16 @@ const (
 	// before timing out the connection.
 	// Linux default TCP_RETR2, net.ipv4.tcp_retries2.
 	MaxRetries = 15
+
+	// InitialSsthresh is the the maximum int value, which depends on the
+	// platform.
+	InitialSsthresh = math.MaxInt
+
+	// unknownRTT is used to indicate to congestion control algorithms that we
+	// were unable to measure the round-trip time when processing ACKs.
+	// Algorithms (such as HyStart) that use the round-trip time should ignore
+	// such Updates.
+	unknownRTT = time.Duration(-1)
 )
 
 // congestionControl is an interface that must be implemented by any supported
@@ -64,8 +74,9 @@ type congestionControl interface {
 
 	// Update is invoked when processing inbound acks. It's passed the
 	// number of packet's that were acked by the most recent cumulative
-	// acknowledgement.
-	Update(packetsAcked int)
+	// acknowledgement.  rtt is the round-trip time, or is set to unknownRTT
+	// (above) to indicate the time is unknown.
+	Update(packetsAcked int, rtt time.Duration)
 
 	// PostRecovery is invoked when the sender is exiting a fast retransmit/
 	// recovery phase. This provides congestion control algorithms a way
@@ -260,9 +271,7 @@ func newSender(ep *Endpoint, iss, irs seqnum.Value, sndWnd seqnum.Size, mss uint
 // their initial values.
 func (s *sender) initCongestionControl(congestionControlName tcpip.CongestionControlOption) congestionControl {
 	s.SndCwnd = InitialCwnd
-	// Set sndSsthresh to the maximum int value, which depends on the
-	// platform.
-	s.Ssthresh = int(^uint(0) >> 1)
+	s.Ssthresh = InitialSsthresh
 
 	switch congestionControlName {
 	case ccCubic:
@@ -1419,9 +1428,12 @@ func (s *sender) inRecovery() bool {
 // +checklocks:s.ep.mu
 // +checklocksalias:s.rc.snd.ep.mu=s.ep.mu
 func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
+	bestRTT := unknownRTT
+
 	// Check if we can extract an RTT measurement from this ack.
 	if !rcvdSeg.parsedOptions.TS && s.RTTMeasureSeqNum.LessThan(rcvdSeg.ackNumber) {
-		s.updateRTO(s.ep.stack.Clock().NowMonotonic().Sub(s.RTTMeasureTime))
+		bestRTT = s.ep.stack.Clock().NowMonotonic().Sub(s.RTTMeasureTime)
+		s.updateRTO(bestRTT)
 		s.RTTMeasureSeqNum = s.SndNxt
 	}
 
@@ -1523,7 +1535,14 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 		//    some new data, i.e., only if it advances the left edge of
 		//    the send window.
 		if s.ep.SendTSOk && rcvdSeg.parsedOptions.TSEcr != 0 {
-			s.updateRTO(s.ep.elapsed(s.ep.stack.Clock().NowMonotonic(), rcvdSeg.parsedOptions.TSEcr))
+			tsRTT := s.ep.elapsed(s.ep.stack.Clock().NowMonotonic(), rcvdSeg.parsedOptions.TSEcr)
+			s.updateRTO(tsRTT)
+			// Following Linux, prefer RTT computed from ACKs to TSEcr because,
+			// "broken middle-boxes or peers may corrupt TS-ECR fields"
+			// https://github.com/torvalds/linux/blob/39cd87c4eb2b893354f3b850f916353f2658ae6f/net/ipv4/tcp_input.c#L3141C1-L3144C24
+			if bestRTT == unknownRTT {
+				bestRTT = tsRTT
+			}
 		}
 
 		if s.shouldSchedulePTO() {
@@ -1592,7 +1611,7 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 		// If we are not in fast recovery then update the congestion
 		// window based on the number of acknowledged packets.
 		if !s.FastRecovery.Active {
-			s.cc.Update(originalOutstanding - s.Outstanding)
+			s.cc.Update(originalOutstanding-s.Outstanding, bestRTT)
 			if s.FastRecovery.Last.LessThan(s.SndUna) {
 				s.state = tcpip.Open
 				// Update RACK when we are exiting fast or RTO

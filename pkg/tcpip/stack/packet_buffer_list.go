@@ -62,6 +62,18 @@ func (pl *PacketBufferList) PushBack(pb *PacketBuffer) {
 	pl.pbs = append(pl.pbs, pb)
 }
 
+// PopFront removes the first element in the list if it exists and returns it.
+//
+//go:nosplit
+func (pl *PacketBufferList) PopFront() *PacketBuffer {
+	if len(pl.pbs) == 0 {
+		return nil
+	}
+	pkt := pl.pbs[0]
+	pl.pbs = pl.pbs[1:]
+	return pkt
+}
+
 // DecRef decreases the reference count on each PacketBuffer
 // stored in the list.
 //

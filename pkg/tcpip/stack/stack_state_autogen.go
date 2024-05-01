@@ -847,6 +847,12 @@ func (t *TCPCubicState) StateFields() []string {
 		"Beta",
 		"WC",
 		"WEst",
+		"EndSeq",
+		"CurrRTT",
+		"LastRTT",
+		"SampleCount",
+		"LastAck",
+		"RoundStart",
 	}
 }
 
@@ -864,6 +870,12 @@ func (t *TCPCubicState) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(6, &t.Beta)
 	stateSinkObject.Save(7, &t.WC)
 	stateSinkObject.Save(8, &t.WEst)
+	stateSinkObject.Save(9, &t.EndSeq)
+	stateSinkObject.Save(10, &t.CurrRTT)
+	stateSinkObject.Save(11, &t.LastRTT)
+	stateSinkObject.Save(12, &t.SampleCount)
+	stateSinkObject.Save(13, &t.LastAck)
+	stateSinkObject.Save(14, &t.RoundStart)
 }
 
 func (t *TCPCubicState) afterLoad(context.Context) {}
@@ -879,6 +891,12 @@ func (t *TCPCubicState) StateLoad(ctx context.Context, stateSourceObject state.S
 	stateSourceObject.Load(6, &t.Beta)
 	stateSourceObject.Load(7, &t.WC)
 	stateSourceObject.Load(8, &t.WEst)
+	stateSourceObject.Load(9, &t.EndSeq)
+	stateSourceObject.Load(10, &t.CurrRTT)
+	stateSourceObject.Load(11, &t.LastRTT)
+	stateSourceObject.Load(12, &t.SampleCount)
+	stateSourceObject.Load(13, &t.LastAck)
+	stateSourceObject.Load(14, &t.RoundStart)
 }
 
 func (t *TCPRACKState) StateTypeName() string {
