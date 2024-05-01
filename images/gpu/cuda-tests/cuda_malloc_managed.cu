@@ -13,6 +13,10 @@
 // limitations under the License.
 
 #include <cuda_runtime.h>
+#include <err.h>
+#include <errno.h>
+#include <stdlib.h>
+#include <unistd.h>
 
 #include <cstdint>
 #include <iostream>
@@ -68,6 +72,99 @@ void TestMallocManagedRoundTrip(int device, unsigned int malloc_flags,
   CHECK_CUDA(cudaFree(data));
 }
 
+void TestMallocManagedReadWrite(int device) {
+  constexpr size_t kNumBlocks = 32;
+  constexpr size_t kNumThreads = 64;
+  constexpr size_t kNumElems = kNumBlocks * kNumThreads;
+
+  std::uint32_t* data = nullptr;
+  constexpr size_t kNumBytes = kNumElems * sizeof(*data);
+  CHECK_CUDA(cudaMallocManaged(&data, kNumBytes, cudaMemAttachGlobal));
+
+  // Initialize all elements in the array with a random value on the host.
+  std::random_device rd;
+  const std::uint32_t init_val =
+      std::uniform_int_distribution<std::uint32_t>()(rd);
+  for (size_t i = 0; i < kNumElems; i++) {
+    data[i] = init_val;
+  }
+
+  // Write the array's contents to a temporary file.
+  char filename[] = "/tmp/cudaMallocManagedTest.XXXXXX";
+  int fd = mkstemp(filename);
+  if (fd < 0) {
+    err(1, "mkstemp");
+  }
+  size_t done = 0;
+  while (done < kNumBytes) {
+    ssize_t n = write(fd, reinterpret_cast<char*>(data) + done,
+                      kNumBytes - done);
+    if (n >= 0) {
+      done += n;
+    } else if (n < 0 && errno != EINTR) {
+      err(1, "write");
+    }
+  }
+
+  // Mutate the array on the device.
+  addKernel<<<kNumBlocks, kNumThreads>>>(data);
+  CHECK_CUDA(cudaDeviceSynchronize());
+
+  // Check that the array has the expected result.
+  for (size_t i = 0; i < kNumElems; i++) {
+    std::uint32_t want = init_val + static_cast<std::uint32_t>(i);
+    if (data[i] != want) {
+      std::cout << "data[" << i << "]: got " << data[i] << ", wanted " << want
+                << " = " << init_val << " + " << i << std::endl;
+      abort();
+    }
+  }
+
+  // Read the array's original contents back from the temporary file.
+  if (lseek(fd, 0, SEEK_SET) < 0) {
+    err(1, "lseek");
+  }
+  done = 0;
+  while (done < kNumBytes) {
+    ssize_t n = read(fd, reinterpret_cast<char*>(data) + done,
+                     kNumBytes - done);
+    if (n > 0) {
+      done += n;
+    } else if (n == 0) {
+      errx(1, "read: unexpected EOF after %zu bytes", done);
+    } else if (n < 0 && errno != EINTR) {
+      err(1, "read");
+    }
+  }
+
+  // Check that the array matches what we originally wrote.
+  for (size_t i = 0; i < kNumElems; i++) {
+    std::uint32_t want = init_val;
+    if (data[i] != want) {
+      std::cout << "data[" << i << "]: got " << data[i] << ", wanted " << want
+                << " = " << init_val << " + " << i << std::endl;
+      abort();
+    }
+  }
+
+  // Mutate the array on the device again.
+  addKernel<<<kNumBlocks, kNumThreads>>>(data);
+  CHECK_CUDA(cudaDeviceSynchronize());
+
+  // Check that the array has the expected result again.
+  for (size_t i = 0; i < kNumElems; i++) {
+    std::uint32_t want = init_val + static_cast<std::uint32_t>(i);
+    if (data[i] != want) {
+      std::cout << "data[" << i << "]: got " << data[i] << ", wanted " << want
+                << " = " << init_val << " + " << i << std::endl;
+      abort();
+    }
+  }
+
+  close(fd);
+  CHECK_CUDA(cudaFree(data));
+}
+
 int main() {
   int device;
   CHECK_CUDA(cudaGetDevice(&device));
@@ -95,6 +192,10 @@ int main() {
               << std::endl;
     TestMallocManagedRoundTrip(device, cudaMemAttachHost, true);
   }
+
+  std::cout << "Testing read/write syscalls on cudaMallocManaged memory"
+            << std::endl;
+  TestMallocManagedReadWrite(device);
 
   std::cout << "All tests passed" << std::endl;
   return 0;
