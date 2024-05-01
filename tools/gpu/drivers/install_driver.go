@@ -180,7 +180,26 @@ func getCurrentDriver() (nvproxy.DriverVersion, error) {
 		log.Warningf("failed to run nvidia-smi: %v", err)
 		return nvproxy.DriverVersion{}, fmt.Errorf("failed to run nvidia-smi: %w", err)
 	}
-	return nvproxy.DriverVersionFrom(strings.TrimSpace(string(out)))
+	// If there are multiple GPUs, there will be one version per line.
+	// Make sure they are all the same version.
+	sameVersion := ""
+	for _, line := range strings.Split(string(out), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		if sameVersion == "" {
+			sameVersion = line
+			continue
+		}
+		if line != sameVersion {
+			return nvproxy.DriverVersion{}, fmt.Errorf("multiple driver versions found: %q and %q", sameVersion, line)
+		}
+	}
+	if sameVersion == "" {
+		return nvproxy.DriverVersion{}, fmt.Errorf("no driver version found")
+	}
+	return nvproxy.DriverVersionFrom(sameVersion)
 }
 
 // ListSupportedDrivers prints the driver to stderr in a format that can be
