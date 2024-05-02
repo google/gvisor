@@ -153,6 +153,9 @@ type Boot struct {
 	// FDs for profile data.
 	profileFDs profile.FDArgs
 
+	// profilingMetricsFD is a file descriptor to write Sentry metrics data to.
+	profilingMetricsFD int
+
 	// procMountSyncFD is a file descriptor that has to be closed when the
 	// procfs mount isn't needed anymore.
 	procMountSyncFD int
@@ -215,6 +218,7 @@ func (b *Boot) SetFlags(f *flag.FlagSet) {
 
 	// Profiling flags.
 	b.profileFDs.SetFromFlags(f)
+	f.IntVar(&b.profilingMetricsFD, "profiling-metrics-fd", -1, "file descriptor to write sentry profiling metrics.")
 }
 
 // Execute implements subcommands.Command.Execute.  It starts a sandbox in a
@@ -478,7 +482,8 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 	// but before the start-sync file is notified, as the parent process needs to query for
 	// registered metrics prior to sending the start signal.
 	metric.Initialize()
-	if metric.ProfilingMetricWriter != nil {
+	if b.profilingMetricsFD != -1 {
+		metric.ProfilingMetricWriter = os.NewFile(uintptr(b.profilingMetricsFD), "metrics file")
 		if err := metric.StartProfilingMetrics(conf.ProfilingMetrics, time.Duration(conf.ProfilingMetricsRate)*time.Microsecond); err != nil {
 			l.Destroy()
 			util.Fatalf("unable to start profiling metrics: %v", err)

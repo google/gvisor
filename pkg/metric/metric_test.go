@@ -1127,7 +1127,7 @@ func TestMetricProfiling(t *testing.T) {
 
 			// Check the header
 			lines := bufio.NewScanner(f)
-			expectedHeader := "Time (ns)\t" + strings.Join(test.metricNames, "\t")
+			expectedHeader := metricsPrefix + "Time (ns)\t" + strings.Join(test.metricNames, "\t")
 			lines.Scan()
 			header := lines.Text()
 			if header != expectedHeader {
@@ -1141,7 +1141,7 @@ func TestMetricProfiling(t *testing.T) {
 			prevValues := make([]uint64, numMetrics)
 			numDatapoints := 0
 			for lines.Scan() {
-				line := lines.Text()
+				line := strings.TrimPrefix(lines.Text(), metricsPrefix)
 				numDatapoints++
 				items := strings.Split(line, "\t")
 				if len(items) != (numMetrics + 1) {

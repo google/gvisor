@@ -15,7 +15,6 @@ go_library(
     deps = [
         "//pkg/coverage",
         "//pkg/log",
-        "//pkg/metric",
         "//pkg/refs",
         "//pkg/sentry/platform",
         "//pkg/sentry/syscalls/linux",
