@@ -2447,6 +2447,16 @@ func TestCreateNICWithOptions(t *testing.T) {
 		calls []callArgsAndExpect
 	}{
 		{
+			desc: "InvalidNICID",
+			calls: []callArgsAndExpect{
+				{
+					nicID: tcpip.NICID(0),
+					opts:  stack.NICOptions{Name: "eth0"},
+					err:   &tcpip.ErrInvalidNICID{},
+				},
+			},
+		},
+		{
 			desc: "DuplicateNICID",
 			calls: []callArgsAndExpect{
 				{
@@ -2544,7 +2554,7 @@ func TestNICStats(t *testing.T) {
 
 	var txBytesTotal, rxBytesTotal, txPacketsTotal, rxPacketsTotal int
 	for i, nic := range nics {
-		nicid := tcpip.NICID(i)
+		nicid := tcpip.NICID(i + 1)
 		ep := channel.New(1, defaultMTU, "")
 		if err := s.CreateNIC(nicid, ep); err != nil {
 			t.Fatal("CreateNIC failed: ", err)

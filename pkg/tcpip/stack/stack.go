@@ -846,6 +846,9 @@ func (s *Stack) CreateNICWithOptions(id tcpip.NICID, ep LinkEndpoint, opts NICOp
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	if id == 0 {
+		return &tcpip.ErrInvalidNICID{}
+	}
 	// Make sure id is unique.
 	if _, ok := s.nics[id]; ok {
 		return &tcpip.ErrDuplicateNICID{}
