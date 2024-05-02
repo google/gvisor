@@ -160,7 +160,7 @@ func TestErrorCorrection(t *testing.T) {
 				t.Errorf("Discontinuous time; ComputeTime(%v) got %v want %v", tc.samples[2].after, newProjected, projected)
 			}
 
-			// As the reference clock stablizes, ensure that the clock error
+			// As the reference clock stabilizes, ensure that the clock error
 			// decreases.
 			initialErr := c.errorNS
 			t.Logf("initial error: %v ns", initialErr)

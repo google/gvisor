@@ -39,7 +39,7 @@ type UMEM struct {
 	// sockfd is the underlying AF_XDP socket.
 	sockfd uint32
 
-	// frameMask masks the lower bits of an adderess to get the frame's
+	// frameMask masks the lower bits of an address to get the frame's
 	// address.
 	frameMask uint64
 

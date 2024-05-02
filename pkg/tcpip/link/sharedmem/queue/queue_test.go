@@ -492,7 +492,7 @@ func TestLotsOfReceptions(t *testing.T) {
 }
 
 func TestRxEnableNotification(t *testing.T) {
-	// Check that enabling nofifications results in properly updated state.
+	// Check that enabling notifications results in properly updated state.
 	pb1 := make([]byte, 100)
 	pb2 := make([]byte, 100)
 
@@ -507,7 +507,7 @@ func TestRxEnableNotification(t *testing.T) {
 }
 
 func TestRxDisableNotification(t *testing.T) {
-	// Check that disabling nofifications results in properly updated state.
+	// Check that disabling notifications results in properly updated state.
 	pb1 := make([]byte, 100)
 	pb2 := make([]byte, 100)
 

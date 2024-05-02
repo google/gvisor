@@ -26,7 +26,7 @@
 //     with an incoming packet. The packet is filled by the kernel, which
 //     places a descriptor to the same UMEM area in the RX queue, signifying
 //     that userspace may read the packet.
-//   - Trasmit: Userspace adds a descriptor to TX queue. The kernel
+//   - Transmit: Userspace adds a descriptor to TX queue. The kernel
 //     sends the packet (stored in UMEM) pointed to by the descriptor.
 //     Upon completion, the kernel places a descriptor in the completion
 //     queue to notify userspace that the packet is sent and the UMEM
