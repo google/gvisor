@@ -98,6 +98,29 @@ func (fs *Filesystem) stepExistingLocked(ctx context.Context, rp *vfs.ResolvingP
 	return next, false, nil
 }
 
+func (fs *Filesystem) invalidateDentryLocked(ctx context.Context, vfsObj *vfs.VirtualFilesystem, parent *Dentry, d *Dentry) {
+	delete(parent.children, d.name)
+	if d.inode.Keep() {
+		fs.deferDecRef(d)
+	}
+	rcs := vfsObj.InvalidateDentry(ctx, d.VFSDentry())
+	for _, rc := range rcs {
+		fs.deferDecRef(rc)
+	}
+	if d.isDir() {
+		var children []*Dentry
+		d.dirMu.Lock()
+		for _, child := range d.children {
+			children = append(children, child)
+		}
+		d.dirMu.Unlock()
+		for _, child := range children {
+			fs.invalidateDentryLocked(ctx, vfsObj, d, child)
+		}
+	}
+
+}
+
 // revalidateChildLocked must be called after a call to parent.vfsd.Child(name)
 // or vfs.ResolvingPath.ResolveChild(name) returns childVFSD (which may be
 // nil) to verify that the returned child (or lack thereof) is correct.
@@ -113,21 +136,8 @@ func (fs *Filesystem) revalidateChildLocked(ctx context.Context, vfsObj *vfs.Vir
 	if child != nil {
 		// Cached dentry exists, revalidate.
 		if !child.inode.Valid(ctx) {
-			childInode, err := parent.inode.Lookup(ctx, name)
-			if err != nil {
-				delete(parent.children, child.name)
-				if child.inode.Keep() {
-					fs.deferDecRef(child)
-				}
-				rcs := vfsObj.InvalidateDentry(ctx, child.VFSDentry())
-				for _, rc := range rcs {
-					fs.deferDecRef(rc)
-				}
-				return nil, err
-			}
-			fs.deferDecRef(child.inode)
-			child.inode = childInode
-			return child, nil
+			fs.invalidateDentryLocked(ctx, vfsObj, parent, child)
+			child = nil
 		}
 	}
 	if child == nil {
