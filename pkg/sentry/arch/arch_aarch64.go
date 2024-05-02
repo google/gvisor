@@ -39,7 +39,7 @@ type Registers struct {
 }
 
 const (
-	// SyscallWidth is the width of insturctions.
+	// SyscallWidth is the width of instructions.
 	SyscallWidth = 4
 )
 

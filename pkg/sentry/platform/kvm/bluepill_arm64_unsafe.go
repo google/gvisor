@@ -32,7 +32,7 @@ func fpsimdPtr(addr *byte) *arch.FpsimdContext {
 	return (*arch.FpsimdContext)(unsafe.Pointer(addr))
 }
 
-// dieArchSetup initialies the state for dieTrampoline.
+// dieArchSetup initializes the state for dieTrampoline.
 //
 // The arm64 dieTrampoline requires the vCPU to be set in R1, and the last PC
 // to be in R0. The trampoline then simulates a call to dieHandler from the

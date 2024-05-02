@@ -18,5 +18,5 @@ type contextID int
 
 // CtxIPCNamespace is the context.Value key used to retrieve an IPC namespace.
 // We define it here because it's needed in several packages, and is not
-// possible to use otherwise without causing a circular depenedency.
+// possible to use otherwise without causing a circular dependency.
 const CtxIPCNamespace contextID = iota

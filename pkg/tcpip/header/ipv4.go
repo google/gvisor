@@ -571,7 +571,7 @@ func IsV4LoopbackAddress(addr tcpip.Address) bool {
 
 // ========================= Options ==========================
 
-// An IPv4OptionType can hold the valuse for the Type in an IPv4 option.
+// An IPv4OptionType can hold the value for the Type in an IPv4 option.
 type IPv4OptionType byte
 
 // These constants are needed to identify individual options in the option list.
