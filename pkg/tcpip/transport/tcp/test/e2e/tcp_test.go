@@ -7229,7 +7229,7 @@ func TestReceiveBufferAutoTuningApplicationLimited(t *testing.T) {
 	}
 
 	// Verify that we receive a non-zero window update ACK. When running
-	// under thread santizer this test can end up sending more than 1
+	// under thread sanitizer this test can end up sending more than 1
 	// ack, 1 for the non-zero window
 	p := c.GetPacket()
 	defer p.Release()

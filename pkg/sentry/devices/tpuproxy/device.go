@@ -32,7 +32,7 @@ import (
 const (
 	// VFIO_MINOR is the VFIO minor number from include/linux/miscdevice.h.
 	VFIO_MINOR = 196
-	// VFIOPath is the path to a VFIO device, it is ususally used to
+	// VFIOPath is the path to a VFIO device, it is usually used to
 	// construct a VFIO container.
 	VFIOPath = "/dev/vfio/vfio"
 
@@ -49,7 +49,7 @@ type tpuDevice struct {
 	minor uint32
 }
 
-// Open implememnts vfs.Device.Open.
+// Open implements vfs.Device.Open.
 func (dev *tpuDevice) Open(ctx context.Context, mnt *vfs.Mount, d *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
 	devClient := devutil.GoferClientFromContext(ctx)
 	if devClient == nil {
@@ -133,7 +133,7 @@ func RegisterTPUDevice(vfsObj *vfs.VirtualFilesystem, minor uint32) error {
 	})
 }
 
-// RegisterVfioDevice registers VFIO devices that are implemented by this pacakge in vfsObj.
+// RegisterVfioDevice registers VFIO devices that are implemented by this package in vfsObj.
 func RegisterVfioDevice(vfsObj *vfs.VirtualFilesystem) error {
 	return vfsObj.RegisterDevice(vfs.CharDevice, linux.MISC_MAJOR, VFIO_MINOR, &vfioDevice{}, &vfs.RegisterDeviceOptions{
 		GroupName: vfioDeviceGroupName,

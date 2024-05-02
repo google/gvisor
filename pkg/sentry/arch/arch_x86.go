@@ -38,7 +38,7 @@ type Registers struct {
 
 // System-related constants for x86.
 const (
-	// SyscallWidth is the width of syscall, sysenter, and int 80 insturctions.
+	// SyscallWidth is the width of syscall, sysenter, and int 80 instructions.
 	SyscallWidth = 2
 )
 

@@ -3532,7 +3532,7 @@ func TestAutoGenAddrDeprecateFromPI(t *testing.T) {
 	}
 	expectPrimaryAddr(addr1)
 
-	// Deprecate addr for prefix1 immedaitely.
+	// Deprecate addr for prefix1 immediately.
 	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithPI(llAddr2, 0, prefix1, true, true, 100, 0))
 	expectAutoGenAddrEvent(t, ndpDisp, addr1, deprecatedAddr)
 	if !containsV6Addr(s.NICInfo()[nicID].ProtocolAddresses, addr1) {
@@ -3560,7 +3560,7 @@ func TestAutoGenAddrDeprecateFromPI(t *testing.T) {
 	}
 	expectPrimaryAddr(addr2)
 
-	// Deprecate addr for prefix2 immedaitely.
+	// Deprecate addr for prefix2 immediately.
 	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithPI(llAddr2, 0, prefix2, true, true, 100, 0))
 	expectAutoGenAddrEvent(t, ndpDisp, addr2, deprecatedAddr)
 	if !containsV6Addr(s.NICInfo()[nicID].ProtocolAddresses, addr2) {
@@ -5969,7 +5969,7 @@ func TestStopStartSolicitingRouters(t *testing.T) {
 		},
 
 		// Tests that when a NIC is removed, router solicitations are stopped. We
-		// cannot start router solications on a removed NIC.
+		// cannot start router solicitations on a removed NIC.
 		{
 			name: "Remove NIC",
 			stopFn: func(t *testing.T, s *stack.Stack, first bool) {
@@ -6046,7 +6046,7 @@ func TestStopStartSolicitingRouters(t *testing.T) {
 				t.Fatal("unexpectedly got a packet after router solicitation has been stopepd")
 			}
 
-			// If test.startFn is nil, there is no way to restart router solications.
+			// If test.startFn is nil, there is no way to restart router solicitations.
 			if test.startFn == nil {
 				return
 			}

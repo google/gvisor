@@ -287,7 +287,7 @@ func (p *Protocol) dumpAddrs(ctx context.Context, msg *nlmsg.Message, ms *nlmsg.
 }
 
 // commonPrefixLen reports the length of the longest IP address prefix.
-// This is a simplied version from Golang's src/net/addrselect.go.
+// This is a simplified version from Golang's src/net/addrselect.go.
 func commonPrefixLen(a, b []byte) (cpl int) {
 	for len(a) > 0 {
 		if a[0] == b[0] {

@@ -15,7 +15,7 @@
 #include "textflag.h"
 
 // GetCPU makes the getcpu(unsigned *cpu, unsigned *node, NULL) syscall for
-// the lack of an optimazed way of getting the current CPU number on arm64.
+// the lack of an optimized way of getting the current CPU number on arm64.
 
 // func GetCPU() uint32
 TEXT ·GetCPU(SB), NOSPLIT, $0-4

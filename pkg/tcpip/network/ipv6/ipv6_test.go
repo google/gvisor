@@ -729,7 +729,7 @@ func TestReceiveIPv6ExtHdrs(t *testing.T) {
 			pointer:      header.IPv6FixedHeaderSize + 8,
 		},
 		{
-			name: "destination with unknown option discard and send icmp action (muilticast)",
+			name: "destination with unknown option discard and send icmp action (multicast)",
 			extHdr: func(nextHdr uint8) ([]byte, uint8) {
 				return []byte{
 					nextHdr, 1,
