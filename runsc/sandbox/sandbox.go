@@ -772,9 +772,6 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 			return err
 		}
 	}
-	if err := donations.DonateDebugLogFile("profiling-metrics-fd", conf.ProfilingMetricsLog, "metrics", test); err != nil {
-		return err
-	}
 
 	// Relay all the config flags to the sandbox process.
 	cmd := exec.Command(specutils.ExePath, conf.ToFlags()...)
@@ -1075,6 +1072,13 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 	// Note: this must be done right after "cmd.SysProcAttr.Ctty" is set above
 	// because it relies on stdin being the next FD donated.
 	donations.Donate("stdio-fds", stdios[:]...)
+	if conf.ProfilingMetricsLog == "-" {
+		donations.Donate("profiling-metrics-fd", stdios[1])
+	} else {
+		if err := donations.DonateDebugLogFile("profiling-metrics-fd", conf.ProfilingMetricsLog, "metrics", test); err != nil {
+			return err
+		}
+	}
 
 	totalSysMem, err := totalSystemMemory()
 	if err != nil {

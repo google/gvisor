@@ -63,7 +63,7 @@ func RegisterFlags(flagSet *flag.FlagSet) {
 	// Metrics flags.
 	flagSet.String("metric-server", "", "if set, export metrics on this address. This may either be 1) 'addr:port' to export metrics on a specific network interface address, 2) ':port' for exporting metrics on all interfaces, or 3) an absolute path to a Unix Domain Socket. The substring '%ID%' will be replaced by the container ID, and '%RUNTIME_ROOT%' by the root. This flag must be specified in both `runsc metric-server` and `runsc create`, and their values must match.")
 	flagSet.String("profiling-metrics", "", "comma separated list of metric names which are going to be written to the profiling-metrics-log file from within the sentry in CSV format. profiling-metrics will be snapshotted at a rate specified by profiling-metrics-rate-us. Requires profiling-metrics-log to be set. (DO NOT USE IN PRODUCTION).")
-	flagSet.String("profiling-metrics-log", "", "file name to use for profiling-metrics output. (DO NOT USE IN PRODUCTION)")
+	flagSet.String("profiling-metrics-log", "", "file name to use for profiling-metrics output; use the special value '-' to write to the user-visible logs. (DO NOT USE IN PRODUCTION)")
 	flagSet.Int("profiling-metrics-rate-us", 1000, "the target rate (in microseconds) at which profiling metrics will be snapshotted.")
 
 	// Debugging flags: strace related

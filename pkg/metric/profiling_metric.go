@@ -30,6 +30,8 @@ import (
 const (
 	snapshotBufferSize     = 1000
 	snapshotRingbufferSize = 16
+	// metricsPrefix is prepended before every metrics line.
+	metricsPrefix = "GVISOR_METRICS\t"
 )
 
 var (
@@ -85,7 +87,8 @@ func StartProfilingMetrics(profilingMetrics string, profilingRate time.Duration)
 	}
 
 	var values []func(fieldValues ...*FieldValue) uint64
-	header := strings.Builder{}
+	var header strings.Builder
+	header.WriteString(metricsPrefix)
 	header.WriteString("Time (ns)")
 	numMetrics := 0
 
@@ -136,6 +139,7 @@ func StartProfilingMetrics(profilingMetrics string, profilingRate time.Duration)
 	writeCh := make(chan writeReq, snapshotRingbufferSize)
 	go collectProfilingMetrics(&s, values, profilingRate, writeCh)
 	go writeProfilingMetrics(&s, header.String(), writeCh)
+	log.Infof("Profiling metrics started.")
 
 	return nil
 }
@@ -213,6 +217,7 @@ func writeProfilingMetrics(s *snapshots, header string, writeReqs <-chan writeRe
 		s.curWriterIndex.Store(int32(req.ringbufferIdx))
 
 		for i := 0; i < req.numLines; i++ {
+			out.WriteString(metricsPrefix)
 			base := i * numEntries
 			// Write the time
 			prometheus.WriteInteger(out, int64(s.ringbuffer[req.ringbufferIdx][base]))

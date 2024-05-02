@@ -31,7 +31,6 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/coverage"
 	"gvisor.dev/gvisor/pkg/log"
-	"gvisor.dev/gvisor/pkg/metric"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/sentry/syscalls/linux"
@@ -55,11 +54,10 @@ var (
 	// system that are not covered by the runtime spec.
 
 	// Debugging flags.
-	logFD              = flag.Int("log-fd", -1, "file descriptor to log to.  If set, the 'log' flag is ignored.")
-	debugLogFD         = flag.Int("debug-log-fd", -1, "file descriptor to write debug logs to.  If set, the 'debug-log-dir' flag is ignored.")
-	panicLogFD         = flag.Int("panic-log-fd", -1, "file descriptor to write Go's runtime messages.")
-	coverageFD         = flag.Int("coverage-fd", -1, "file descriptor to write Go coverage output.")
-	profilingMetricsFD = flag.Int("profiling-metrics-fd", -1, "file descriptor to write sentry profiling metrics.")
+	logFD      = flag.Int("log-fd", -1, "file descriptor to log to.  If set, the 'log' flag is ignored.")
+	debugLogFD = flag.Int("debug-log-fd", -1, "file descriptor to write debug logs to.  If set, the 'debug-log-dir' flag is ignored.")
+	panicLogFD = flag.Int("panic-log-fd", -1, "file descriptor to write Go's runtime messages.")
+	coverageFD = flag.Int("coverage-fd", -1, "file descriptor to write Go coverage output.")
 )
 
 // Main is the main entrypoint.
@@ -201,12 +199,6 @@ func Main() {
 	if *coverageFD >= 0 {
 		f := os.NewFile(uintptr(*coverageFD), "coverage file")
 		coverage.EnableReport(f)
-	}
-	if *profilingMetricsFD >= 0 {
-		metric.ProfilingMetricWriter = os.NewFile(uintptr(*profilingMetricsFD), "metrics file")
-		if metric.ProfilingMetricWriter == nil {
-			log.Warningf("Failed to use -profiling-metrics-fd")
-		}
 	}
 	if conf.TestOnlyAllowRunAsCurrentUserWithoutChroot {
 		// SIGTERM is sent to all processes if a test exceeds its

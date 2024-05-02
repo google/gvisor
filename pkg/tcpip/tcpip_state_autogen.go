@@ -386,6 +386,27 @@ func (e *ErrDuplicateNICID) afterLoad(context.Context) {}
 func (e *ErrDuplicateNICID) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 }
 
+func (e *ErrInvalidNICID) StateTypeName() string {
+	return "pkg/tcpip.ErrInvalidNICID"
+}
+
+func (e *ErrInvalidNICID) StateFields() []string {
+	return []string{}
+}
+
+func (e *ErrInvalidNICID) beforeSave() {}
+
+// +checklocksignore
+func (e *ErrInvalidNICID) StateSave(stateSinkObject state.Sink) {
+	e.beforeSave()
+}
+
+func (e *ErrInvalidNICID) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (e *ErrInvalidNICID) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+}
+
 func (e *ErrInvalidEndpointState) StateTypeName() string {
 	return "pkg/tcpip.ErrInvalidEndpointState"
 }
@@ -1775,6 +1796,7 @@ func init() {
 	state.Register((*ErrDestinationRequired)(nil))
 	state.Register((*ErrDuplicateAddress)(nil))
 	state.Register((*ErrDuplicateNICID)(nil))
+	state.Register((*ErrInvalidNICID)(nil))
 	state.Register((*ErrInvalidEndpointState)(nil))
 	state.Register((*ErrInvalidOptionValue)(nil))
 	state.Register((*ErrInvalidPortRange)(nil))
