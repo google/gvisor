@@ -582,7 +582,7 @@ func (*fakeNetworkDispatcher) DeliverLinkPacket(tcpip.NetworkProtocolNumber, *st
 func TestDispatchPacketFormat(t *testing.T) {
 	for _, test := range []struct {
 		name          string
-		newDispatcher func(fd int, e *endpoint, opts *Options) (linkDispatcher, error)
+		newDispatcher func(fd int, e *endpoint) (linkDispatcher, error)
 	}{
 		{
 			name:          "readVDispatcher",
@@ -590,7 +590,7 @@ func TestDispatchPacketFormat(t *testing.T) {
 		},
 		{
 			name:          "recvMMsgDispatcher",
-			newDispatcher: newRecvMMsgDispatcher,
+			newDispatcher: func(fd int, e *endpoint) (linkDispatcher, error) { return newRecvMMsgDispatcher(fd, e, &Options{}) },
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -618,7 +618,7 @@ func TestDispatchPacketFormat(t *testing.T) {
 			d, err := test.newDispatcher(fds[0], &endpoint{
 				hdrSize:    header.EthernetMinimumSize,
 				dispatcher: sink,
-			}, &Options{ProcessorsPerChannel: 1})
+			})
 			if err != nil {
 				t.Fatal(err)
 			}
