@@ -1142,6 +1142,9 @@ func TestMetricProfiling(t *testing.T) {
 			numDatapoints := 0
 			for lines.Scan() {
 				line := strings.TrimPrefix(lines.Text(), metricsPrefix)
+				if strings.HasPrefix(line, "ADLER32\t") {
+					continue
+				}
 				numDatapoints++
 				items := strings.Split(line, "\t")
 				if len(items) != (numMetrics + 1) {
