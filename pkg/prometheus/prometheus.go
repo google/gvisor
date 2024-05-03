@@ -18,7 +18,7 @@
 package prometheus
 
 import (
-	"bufio"
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -63,27 +63,27 @@ type Metric struct {
 	Help string `json:"help"`
 }
 
-// writeHeaderTo writes the metric comment header to the given writer.
-func (m *Metric) writeHeaderTo(w io.Writer, options SnapshotExportOptions) error {
+// writeMetricHeaderTo writes the metric comment header to the given writer.
+func writeMetricHeaderTo[T io.StringWriter](w T, m *Metric, options SnapshotExportOptions) error {
 	if m.Help != "" {
 		// This writes each string component one by one (rather than using fmt.Sprintf)
 		// in order to avoid allocating strings for each metric.
-		if _, err := io.WriteString(w, "# HELP "); err != nil {
+		if _, err := w.WriteString("# HELP "); err != nil {
 			return err
 		}
-		if _, err := io.WriteString(w, options.ExporterPrefix); err != nil {
+		if _, err := w.WriteString(options.ExporterPrefix); err != nil {
 			return err
 		}
-		if _, err := io.WriteString(w, m.Name); err != nil {
+		if _, err := w.WriteString(m.Name); err != nil {
 			return err
 		}
-		if _, err := io.WriteString(w, " "); err != nil {
+		if _, err := w.WriteString(" "); err != nil {
 			return err
 		}
 		if _, err := writeEscapedString(w, m.Help, false); err != nil {
 			return err
 		}
-		if _, err := io.WriteString(w, "\n"); err != nil {
+		if _, err := w.WriteString("\n"); err != nil {
 			return err
 		}
 	}
@@ -99,22 +99,22 @@ func (m *Metric) writeHeaderTo(w io.Writer, options SnapshotExportOptions) error
 		metricType = "untyped"
 	}
 	if metricType != "" {
-		if _, err := io.WriteString(w, "# TYPE "); err != nil {
+		if _, err := w.WriteString("# TYPE "); err != nil {
 			return err
 		}
-		if _, err := io.WriteString(w, options.ExporterPrefix); err != nil {
+		if _, err := w.WriteString(options.ExporterPrefix); err != nil {
 			return err
 		}
-		if _, err := io.WriteString(w, m.Name); err != nil {
+		if _, err := w.WriteString(m.Name); err != nil {
 			return err
 		}
-		if _, err := io.WriteString(w, " "); err != nil {
+		if _, err := w.WriteString(" "); err != nil {
 			return err
 		}
-		if _, err := io.WriteString(w, metricType); err != nil {
+		if _, err := w.WriteString(metricType); err != nil {
 			return err
 		}
-		if _, err := io.WriteString(w, "\n"); err != nil {
+		if _, err := w.WriteString("\n"); err != nil {
 			return err
 		}
 	}
@@ -209,7 +209,7 @@ func (n *Number) ToFloat() float64 {
 // String returns a string representation of this number.
 func (n *Number) String() string {
 	var s strings.Builder
-	if err := n.writeTo(&s); err != nil {
+	if err := writeNumberTo(&s, n); err != nil {
 		panic(err)
 	}
 	return s.String()
@@ -242,14 +242,14 @@ func (n *Number) GreaterThan(other *Number) bool {
 // WriteInteger writes the given integer to a writer without allocating strings.
 //
 //go:nosplit
-func WriteInteger(w io.Writer, val int64) (int, error) {
+func WriteInteger[T io.StringWriter](w T, val int64) (int, error) {
 	const decimalDigits = "0123456789"
 	if val == 0 {
-		return io.WriteString(w, decimalDigits[0:1])
+		return w.WriteString(decimalDigits[0:1])
 	}
 	var written int
 	if val < 0 {
-		n, err := io.WriteString(w, "-")
+		n, err := w.WriteString("-")
 		written += n
 		if err != nil {
 			return written, err
@@ -261,7 +261,7 @@ func WriteInteger(w io.Writer, val int64) (int, error) {
 	}
 	for decimal /= 10; decimal > 0; decimal /= 10 {
 		digit := (val / decimal) % 10
-		n, err := io.WriteString(w, decimalDigits[digit:digit+1])
+		n, err := w.WriteString(decimalDigits[digit : digit+1])
 		written += n
 		if err != nil {
 			return written, err
@@ -270,9 +270,9 @@ func WriteInteger(w io.Writer, val int64) (int, error) {
 	return written, nil
 }
 
-// writeTo writes the number to the given writer.
+// writeNumberTo writes the number to the given writer.
 // This only causes heap allocations when the number is a non-zero, non-special float.
-func (n *Number) writeTo(w io.Writer) error {
+func writeNumberTo[T io.StringWriter](w T, n *Number) error {
 	var s string
 	switch {
 	// Zero case:
@@ -296,7 +296,7 @@ func (n *Number) writeTo(w io.Writer) error {
 	default:
 		s = fmt.Sprintf("%f", n.Float)
 	}
-	_, err := io.WriteString(w, s)
+	_, err := w.WriteString(s)
 	return err
 }
 
@@ -413,7 +413,7 @@ type SnapshotExportOptions struct {
 // per Prometheus spec. It does this without string allocations.
 // If `quoted` is true, quote characters will surround the string, and quote characters within `s`
 // will also be escaped.
-func writeEscapedString(w io.Writer, s string, quoted bool) (int, error) {
+func writeEscapedString[T io.StringWriter](w T, s string, quoted bool) (int, error) {
 	const (
 		quote            = '"'
 		backslash        = '\\'
@@ -427,7 +427,7 @@ func writeEscapedString(w io.Writer, s string, quoted bool) (int, error) {
 	var n int
 	var err error
 	if quoted {
-		n, err = io.WriteString(w, quoteStr)
+		n, err = w.WriteString(quoteStr)
 		written += n
 		if err != nil {
 			return written, err
@@ -437,16 +437,16 @@ func writeEscapedString(w io.Writer, s string, quoted bool) (int, error) {
 		switch r {
 		case quote:
 			if quoted {
-				n, err = io.WriteString(w, escapedQuote)
+				n, err = w.WriteString(escapedQuote)
 			} else {
-				n, err = io.WriteString(w, quoteStr)
+				n, err = w.WriteString(quoteStr)
 			}
 		case backslash:
-			n, err = io.WriteString(w, escapedBackslash)
+			n, err = w.WriteString(escapedBackslash)
 		case newline:
-			n, err = io.WriteString(w, escapedNewline)
+			n, err = w.WriteString(escapedNewline)
 		default:
-			n, err = io.WriteString(w, string(r))
+			n, err = w.WriteString(string(r))
 		}
 		written += n
 		if err != nil {
@@ -454,7 +454,7 @@ func writeEscapedString(w io.Writer, s string, quoted bool) (int, error) {
 		}
 	}
 	if quoted {
-		n, err = io.WriteString(w, quoteStr)
+		n, err = w.WriteString(quoteStr)
 		written += n
 		if err != nil {
 			return written, err
@@ -463,17 +463,17 @@ func writeEscapedString(w io.Writer, s string, quoted bool) (int, error) {
 	return written, nil
 }
 
-// writeMetricPreambleTo writes the metric name to the io.Writer. It may also
+// writeMetricPreambleTo writes the metric name to the writer. It may also
 // write unwritten help and type comments of the metric if they haven't been
-// written to the io.Writer yet.
-func (d *Data) writeMetricPreambleTo(w io.Writer, options SnapshotExportOptions, metricsWritten map[string]bool) error {
+// written to the writer yet.
+func writeMetricPreambleTo[T io.StringWriter](w T, d *Data, options SnapshotExportOptions, metricsWritten map[string]bool) error {
 	// Metric header, if we haven't printed it yet.
 	if !metricsWritten[d.Metric.Name] {
 		// Extra newline before each preamble for aesthetic reasons.
-		if _, err := io.WriteString(w, "\n"); err != nil {
+		if _, err := w.WriteString("\n"); err != nil {
 			return err
 		}
-		if err := d.Metric.writeHeaderTo(w, options); err != nil {
+		if err := writeMetricHeaderTo(w, d.Metric, options); err != nil {
 			return err
 		}
 		metricsWritten[d.Metric.Name] = true
@@ -481,11 +481,11 @@ func (d *Data) writeMetricPreambleTo(w io.Writer, options SnapshotExportOptions,
 
 	// Metric name.
 	if options.ExporterPrefix != "" {
-		if _, err := io.WriteString(w, options.ExporterPrefix); err != nil {
+		if _, err := w.WriteString(options.ExporterPrefix); err != nil {
 			return err
 		}
 	}
-	if _, err := io.WriteString(w, d.Metric.Name); err != nil {
+	if _, err := w.WriteString(d.Metric.Name); err != nil {
 		return err
 	}
 	return nil
@@ -686,9 +686,9 @@ func OrderedLabels(labels ...map[string]string) <-chan LabelOrError {
 }
 
 // writeLabelsTo writes a set of metric labels.
-func (d *Data) writeLabelsTo(w io.Writer, extraLabels map[string]string, leLabel *Number) error {
+func writeLabelsTo[T io.StringWriter](w T, d *Data, extraLabels map[string]string, leLabel *Number) error {
 	if len(d.Labels)+len(d.ExternalLabels)+len(extraLabels) != 0 || leLabel != nil {
-		if _, err := io.WriteString(w, "{"); err != nil {
+		if _, err := w.WriteString("{"); err != nil {
 			return err
 		}
 		var orderedLabels <-chan LabelOrError
@@ -708,15 +708,15 @@ func (d *Data) writeLabelsTo(w io.Writer, extraLabels map[string]string, leLabel
 				continue
 			}
 			if !firstLabel {
-				if _, err := io.WriteString(w, ","); err != nil {
+				if _, err := w.WriteString(","); err != nil {
 					return err
 				}
 			}
 			firstLabel = false
-			if _, err := io.WriteString(w, labelOrError.Key); err != nil {
+			if _, err := w.WriteString(labelOrError.Key); err != nil {
 				return err
 			}
-			if _, err := io.WriteString(w, "="); err != nil {
+			if _, err := w.WriteString("="); err != nil {
 				return err
 			}
 			if _, err := writeEscapedString(w, labelOrError.Value, true); err != nil {
@@ -726,53 +726,53 @@ func (d *Data) writeLabelsTo(w io.Writer, extraLabels map[string]string, leLabel
 		if foundError != nil {
 			return foundError
 		}
-		if _, err := io.WriteString(w, "}"); err != nil {
+		if _, err := w.WriteString("}"); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// writeMetricLine writes a single line with a single number (val) to w.
-func (d *Data) writeMetricLine(w io.Writer, metricSuffix string, val *Number, when time.Time, options SnapshotExportOptions, leLabel *Number, metricsWritten map[string]bool) error {
-	if err := d.writeMetricPreambleTo(w, options, metricsWritten); err != nil {
+// writeMetricLine writes a single Data line with a single number (val) to w.
+func writeMetricLine[T io.StringWriter](w T, d *Data, metricSuffix string, val *Number, when time.Time, options SnapshotExportOptions, leLabel *Number, metricsWritten map[string]bool) error {
+	if err := writeMetricPreambleTo(w, d, options, metricsWritten); err != nil {
 		return err
 	}
 	if metricSuffix != "" {
-		if _, err := io.WriteString(w, metricSuffix); err != nil {
+		if _, err := w.WriteString(metricSuffix); err != nil {
 			return err
 		}
 	}
-	if err := d.writeLabelsTo(w, options.ExtraLabels, leLabel); err != nil {
+	if err := writeLabelsTo(w, d, options.ExtraLabels, leLabel); err != nil {
 		return err
 	}
-	if _, err := io.WriteString(w, " "); err != nil {
+	if _, err := w.WriteString(" "); err != nil {
 		return err
 	}
-	if err := val.writeTo(w); err != nil {
+	if err := writeNumberTo(w, val); err != nil {
 		return err
 	}
-	if _, err := io.WriteString(w, " "); err != nil {
+	if _, err := w.WriteString(" "); err != nil {
 		return err
 	}
 	if _, err := WriteInteger(w, when.UnixMilli()); err != nil {
 		return err
 	}
-	if _, err := io.WriteString(w, "\n"); err != nil {
+	if _, err := w.WriteString("\n"); err != nil {
 		return err
 	}
 	return nil
 }
 
-// writeTo writes the Data to the given writer in Prometheus format.
-func (d *Data) writeTo(w io.Writer, when time.Time, options SnapshotExportOptions, metricsWritten map[string]bool) error {
+// writeDataTo writes the Data to the given writer in Prometheus format.
+func writeDataTo[T io.StringWriter](w T, d *Data, when time.Time, options SnapshotExportOptions, metricsWritten map[string]bool) error {
 	switch d.Metric.Type {
 	case TypeUntyped, TypeGauge, TypeCounter:
-		return d.writeMetricLine(w, "", d.Number, when, options, nil, metricsWritten)
+		return writeMetricLine(w, d, "", d.Number, when, options, nil, metricsWritten)
 	case TypeHistogram:
 		// Write an empty line before and after histograms to easily distinguish them from
 		// other metric lines.
-		if _, err := io.WriteString(w, "\n"); err != nil {
+		if _, err := w.WriteString("\n"); err != nil {
 			return err
 		}
 		var numSamples uint64
@@ -780,28 +780,28 @@ func (d *Data) writeTo(w io.Writer, when time.Time, options SnapshotExportOption
 		for _, bucket := range d.HistogramValue.Buckets {
 			numSamples += bucket.Samples
 			samples.Int = int64(numSamples) // Prometheus distribution bucket counts are cumulative.
-			if err := d.writeMetricLine(w, "_bucket", &samples, when, options, &bucket.UpperBound, metricsWritten); err != nil {
+			if err := writeMetricLine(w, d, "_bucket", &samples, when, options, &bucket.UpperBound, metricsWritten); err != nil {
 				return err
 			}
 		}
-		if err := d.writeMetricLine(w, "_sum", &d.HistogramValue.Total, when, options, nil, metricsWritten); err != nil {
+		if err := writeMetricLine(w, d, "_sum", &d.HistogramValue.Total, when, options, nil, metricsWritten); err != nil {
 			return err
 		}
 		samples.Int = int64(numSamples)
-		if err := d.writeMetricLine(w, "_count", &samples, when, options, nil, metricsWritten); err != nil {
+		if err := writeMetricLine(w, d, "_count", &samples, when, options, nil, metricsWritten); err != nil {
 			return err
 		}
-		if err := d.writeMetricLine(w, "_min", &d.HistogramValue.Min, when, options, nil, metricsWritten); err != nil {
+		if err := writeMetricLine(w, d, "_min", &d.HistogramValue.Min, when, options, nil, metricsWritten); err != nil {
 			return err
 		}
-		if err := d.writeMetricLine(w, "_max", &d.HistogramValue.Max, when, options, nil, metricsWritten); err != nil {
+		if err := writeMetricLine(w, d, "_max", &d.HistogramValue.Max, when, options, nil, metricsWritten); err != nil {
 			return err
 		}
-		if err := d.writeMetricLine(w, "_ssd", &d.HistogramValue.SumOfSquaredDeviations, when, options, nil, metricsWritten); err != nil {
+		if err := writeMetricLine(w, d, "_ssd", &d.HistogramValue.SumOfSquaredDeviations, when, options, nil, metricsWritten); err != nil {
 			return err
 		}
 		// Empty line after the histogram.
-		if _, err := io.WriteString(w, "\n"); err != nil {
+		if _, err := w.WriteString("\n"); err != nil {
 			return err
 		}
 		return nil
@@ -833,37 +833,47 @@ func (s *Snapshot) Add(data ...*Data) *Snapshot {
 	return s
 }
 
-// countingWriter implements io.Writer, and counts the number of bytes written to it.
-// Useful in this file to keep track of total number of bytes without having to plumb this
-// everywhere in the writeX() functions in this file.
-type countingWriter struct {
-	w       *bufio.Writer
-	written int
-}
+const counterWriterBufSize = 32768
 
-// Write implements io.Writer.Write.
-func (w *countingWriter) Write(b []byte) (int, error) {
-	written, err := w.w.Write(b)
-	w.written += written
-	return written, err
+// countingWriter implements io.StringWriter, and counts the number of bytes
+// written to it.
+// Useful in this file to keep track of total number of bytes without having
+// to plumb this everywhere in the writeX() functions in this file.
+type countingWriter[T io.StringWriter] struct {
+	buf        *bytes.Buffer
+	underlying T
+	written    int
 }
 
 // WriteString implements io.StringWriter.WriteString.
 // This avoids going into the slow, allocation-heavy path of io.WriteString.
-func (w *countingWriter) WriteString(s string) (int, error) {
-	written, err := w.w.WriteString(s)
+func (w *countingWriter[T]) WriteString(s string) (int, error) {
+	written, err := w.buf.WriteString(s)
 	w.written += written
+	if w.buf.Len() >= counterWriterBufSize {
+		w.Flush()
+	}
 	return written, err
 }
 
-// Written returns the number of bytes written to the underlying writer (minus buffered writes).
-func (w *countingWriter) Written() int {
-	return w.written - w.w.Buffered()
+func (w *countingWriter[T]) Flush() error {
+	if w.buf.Len() > 0 {
+		_, err := w.underlying.WriteString(w.buf.String())
+		w.buf.Reset()
+		return err
+	}
+	return nil
 }
 
-// writeSingleMetric writes the data to the given writer in Prometheus format.
+// Written returns the number of bytes written to the underlying writer (minus buffered writes).
+func (w *countingWriter[T]) Written() int {
+	return w.written - w.buf.Len()
+}
+
+// writeSnapshotSingleMetric writes a single metric data from a snapshot to
+// the given writer in Prometheus format.
 // It returns the number of bytes written.
-func (s *Snapshot) writeSingleMetric(w io.Writer, options SnapshotExportOptions, metricName string, metricsWritten map[string]bool) error {
+func writeSnapshotSingleMetric[T io.StringWriter](w T, s *Snapshot, options SnapshotExportOptions, metricName string, metricsWritten map[string]bool) error {
 	if !strings.HasPrefix(metricName, options.ExporterPrefix) {
 		return nil
 	}
@@ -872,29 +882,61 @@ func (s *Snapshot) writeSingleMetric(w io.Writer, options SnapshotExportOptions,
 		if d.Metric.Name != wantMetricName {
 			continue
 		}
-		if err := d.writeTo(w, s.When, options, metricsWritten); err != nil {
+		if err := writeDataTo(w, d, s.When, options, metricsWritten); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
+// ReusableWriter is a writer that can be reused to efficiently write
+// successive snapshots.
+type ReusableWriter[T io.StringWriter] struct {
+	// buf is the reusable buffer used for buffering writes.
+	// It is reset after each write, but keeps the underlying byte buffer,
+	// avoiding allocations on successive snapshot writes.
+	buf bytes.Buffer
+}
+
+// Write writes one or more snapshots to the writer.
+// This method may not be used concurrently for the same `ReusableWriter`.
+func (rw *ReusableWriter[T]) Write(w T, options ExportOptions, snapshotsToOptions map[*Snapshot]SnapshotExportOptions) (int, error) {
+	rw.buf.Reset()
+	cw := &countingWriter[T]{
+		buf:        &rw.buf,
+		underlying: w,
+	}
+	return write(cw, options, snapshotsToOptions)
+}
+
 // Write writes one or more snapshots to the writer.
 // This ensures same-name metrics across different snapshots are printed together, per spec.
-func Write(w io.Writer, options ExportOptions, snapshotsToOptions map[*Snapshot]SnapshotExportOptions) (int, error) {
+// If the caller will call `Write` successively for multiple snapshots, it is more efficient
+// to use the `ReusableWriter` type instead of this function.
+func Write[T io.StringWriter](w T, options ExportOptions, snapshotsToOptions map[*Snapshot]SnapshotExportOptions) (int, error) {
+	var b bytes.Buffer
+	// Sane default buffer size.
+	b.Grow(counterWriterBufSize)
+	cw := &countingWriter[T]{
+		buf:        &b,
+		underlying: w,
+	}
+	return write(cw, options, snapshotsToOptions)
+}
+
+func write[T io.StringWriter](cw *countingWriter[T], options ExportOptions, snapshotsToOptions map[*Snapshot]SnapshotExportOptions) (int, error) {
 	if len(snapshotsToOptions) == 0 {
 		return 0, nil
 	}
-	cw := &countingWriter{w: bufio.NewWriter(w)}
 	if options.CommentHeader != "" {
 		for _, commentLine := range strings.Split(options.CommentHeader, "\n") {
-			if _, err := io.WriteString(cw, "# "); err != nil {
+			if _, err := cw.WriteString("# "); err != nil {
 				return cw.Written(), err
 			}
-			if _, err := io.WriteString(cw, commentLine); err != nil {
+			if _, err := cw.WriteString(commentLine); err != nil {
 				return cw.Written(), err
 			}
-			if _, err := io.WriteString(cw, "\n"); err != nil {
+			if _, err := cw.WriteString("\n"); err != nil {
 				return cw.Written(), err
 			}
 		}
@@ -905,7 +947,7 @@ func Write(w io.Writer, options ExportOptions, snapshotsToOptions map[*Snapshot]
 	}
 	switch len(snapshots) {
 	case 1: // Single-snapshot case.
-		if _, err := io.WriteString(cw, fmt.Sprintf("# Writing data from snapshot containing %d data points taken at %v.\n", len(snapshots[0].Data), snapshots[0].When)); err != nil {
+		if _, err := cw.WriteString(fmt.Sprintf("# Writing data from snapshot containing %d data points taken at %v.\n", len(snapshots[0].Data), snapshots[0].When)); err != nil {
 			return cw.Written(), err
 		}
 	default: // Multi-snapshot case.
@@ -913,16 +955,16 @@ func Write(w io.Writer, options ExportOptions, snapshotsToOptions map[*Snapshot]
 		sort.Slice(snapshots, func(i, j int) bool {
 			return reflect.ValueOf(snapshots[i]).Pointer() < reflect.ValueOf(snapshots[j]).Pointer()
 		})
-		if _, err := io.WriteString(cw, fmt.Sprintf("# Writing data from %d snapshots:\n", len(snapshots))); err != nil {
+		if _, err := cw.WriteString(fmt.Sprintf("# Writing data from %d snapshots:\n", len(snapshots))); err != nil {
 			return cw.Written(), err
 		}
 		for _, snapshot := range snapshots {
-			if _, err := io.WriteString(cw, fmt.Sprintf("#   - Snapshot with %d data points taken at %v: %v\n", len(snapshot.Data), snapshot.When, snapshotsToOptions[snapshot].ExtraLabels)); err != nil {
+			if _, err := cw.WriteString(fmt.Sprintf("#   - Snapshot with %d data points taken at %v: %v\n", len(snapshot.Data), snapshot.When, snapshotsToOptions[snapshot].ExtraLabels)); err != nil {
 				return cw.Written(), err
 			}
 		}
 	}
-	if _, err := io.WriteString(cw, "\n"); err != nil {
+	if _, err := cw.WriteString("\n"); err != nil {
 		return cw.Written(), err
 	}
 	if options.MetricsWritten == nil {
@@ -942,13 +984,13 @@ func Write(w io.Writer, options ExportOptions, snapshotsToOptions map[*Snapshot]
 	sort.Strings(metricNames)
 	for _, metricName := range metricNames {
 		for _, snapshot := range snapshots {
-			snapshot.writeSingleMetric(cw, snapshotsToOptions[snapshot], metricName, options.MetricsWritten)
+			writeSnapshotSingleMetric(cw, snapshot, snapshotsToOptions[snapshot], metricName, options.MetricsWritten)
 		}
 	}
-	if _, err := io.WriteString(cw, "\n# End of metric data.\n"); err != nil {
+	if _, err := cw.WriteString("\n# End of metric data.\n"); err != nil {
 		return cw.Written(), err
 	}
-	if err := cw.w.Flush(); err != nil {
+	if err := cw.Flush(); err != nil {
 		return cw.Written(), err
 	}
 	return cw.Written(), nil
