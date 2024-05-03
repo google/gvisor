@@ -11,6 +11,7 @@ go_library(
         "prometheus.go",
         "prometheus_verify.go",
     ],
+    stateify = False,
     visibility = ["//:sandbox"],
     deps = ["//pkg/metric:metric_go_proto"],
 )

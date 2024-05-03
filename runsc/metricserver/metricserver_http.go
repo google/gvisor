@@ -16,7 +16,6 @@ package metricserver
 
 import (
 	"errors"
-	"fmt"
 	"net/http"
 	"runtime"
 	"strings"
@@ -38,7 +37,7 @@ type httpResult struct {
 var httpOK = httpResult{code: http.StatusOK}
 
 // serveIndex serves the index page.
-func (m *metricServer) serveIndex(w http.ResponseWriter, req *http.Request) httpResult {
+func (m *metricServer) serveIndex(w *httpResponseWriter, req *http.Request) httpResult {
 	if req.URL.Path != "/" {
 		if strings.HasPrefix(req.URL.Path, "/metrics?") {
 			// Prometheus's scrape_config.metrics_path takes in a query path and automatically encodes
@@ -52,15 +51,40 @@ func (m *metricServer) serveIndex(w http.ResponseWriter, req *http.Request) http
 		}
 		return httpResult{http.StatusNotFound, errors.New("path not found")}
 	}
-	fmt.Fprintf(w, "<html><head><title>runsc metrics</title></head><body>")
-	fmt.Fprintf(w, "<p>You have reached the runsc metrics server page!</p>")
-	fmt.Fprintf(w, `<p>To see actual metric data, head over to <a href="/metrics">/metrics</a>.</p>`)
-	fmt.Fprintf(w, "</body></html>")
+	w.WriteString("<html><head><title>runsc metrics</title></head><body>")
+	w.WriteString("<p>You have reached the runsc metrics server page!</p>")
+	w.WriteString(`<p>To see actual metric data, head over to <a href="/metrics">/metrics</a>.</p>`)
+	w.WriteString("</body></html>")
 	return httpOK
 }
 
+// httpResponseWriter is a ResponseWriter that also implements io.StringWriter.
+type httpResponseWriter struct {
+	resp http.ResponseWriter
+}
+
+// Header implements http.ResponseWriter.Header.
+func (w *httpResponseWriter) Header() http.Header {
+	return w.resp.Header()
+}
+
+// Write implements http.ResponseWriter.Write.
+func (w *httpResponseWriter) Write(b []byte) (int, error) {
+	return w.resp.Write(b)
+}
+
+// WriteHeader implements http.ResponseWriter.WriteHeader.
+func (w *httpResponseWriter) WriteHeader(code int) {
+	w.resp.WriteHeader(code)
+}
+
+// WriteString implements io.StringWriter.WriteString.
+func (w *httpResponseWriter) WriteString(s string) (int, error) {
+	return w.resp.Write([]byte(s))
+}
+
 // logRequest wraps an HTTP handler and adds logging to it.
-func logRequest(f func(w http.ResponseWriter, req *http.Request) httpResult) func(w http.ResponseWriter, req *http.Request) {
+func logRequest(f func(w *httpResponseWriter, req *http.Request) httpResult) func(w http.ResponseWriter, req *http.Request) {
 	return func(w http.ResponseWriter, req *http.Request) {
 		log.Infof("Request: %s %s", req.Method, req.URL.Path)
 		defer func() {
@@ -68,7 +92,7 @@ func logRequest(f func(w http.ResponseWriter, req *http.Request) httpResult) fun
 				log.Warningf("Request: %s %s: Panic:\n%v", req.Method, req.URL.Path, r)
 			}
 		}()
-		result := f(w, req)
+		result := f(&httpResponseWriter{resp: w}, req)
 		if result.err != nil {
 			http.Error(w, result.err.Error(), result.code)
 			log.Warningf("Request: %s %s: Failed with HTTP code %d: %v", req.Method, req.URL.Path, result.code, result.err)

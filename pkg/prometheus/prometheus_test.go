@@ -1170,9 +1170,9 @@ func TestVerifier(t *testing.T) {
 	}
 }
 
-// shortWriter implements io.Writer but fails after a given number of bytes.
+// shortWriter implements io.StringWriter but fails after a given number of bytes.
 type shortWriter struct {
-	buf     bytes.Buffer
+	buf     strings.Builder
 	size    int
 	maxSize int
 }
@@ -1189,9 +1189,9 @@ func (s *shortWriter) String() string {
 	return s.buf.String()
 }
 
-// Write implements io.Writer.Write.
-func (s *shortWriter) Write(b []byte) (n int, err error) {
-	toWrite := len(b)
+// Write implements io.StringWriter.WriteString.
+func (s *shortWriter) WriteString(x string) (n int, err error) {
+	toWrite := len(x)
 	leftToWrite := s.maxSize - s.size
 	if leftToWrite < toWrite {
 		toWrite = leftToWrite
@@ -1199,9 +1199,9 @@ func (s *shortWriter) Write(b []byte) (n int, err error) {
 	if toWrite == 0 {
 		return 0, errors.New("writer out of capacity")
 	}
-	written, err := s.buf.Write(b[:toWrite])
+	written, err := s.buf.WriteString(x[:toWrite])
 	s.size += written
-	if written == len(b) {
+	if written == len(x) {
 		return written, err
 	}
 	return written, errors.New("short write")
@@ -1696,7 +1696,7 @@ func TestGroupSameNameMetrics(t *testing.T) {
 	// Make sure the data written does parse.
 	// We don't use this result here because the Prometheus library is more permissive than this test.
 	if _, err := (&expfmt.TextParser{}).TextToMetricFamilies(&buf); err != nil {
-		t.Fatalf("cannot parse data written from snapshots: %v", err)
+		t.Fatalf("cannot parse data written from snapshots: %v\nraw data:\n%s\n(end of raw data)", err, rawData)
 	}
 
 	// Verify that we see all metrics, and that each time we see a new one, it's one we haven't seen

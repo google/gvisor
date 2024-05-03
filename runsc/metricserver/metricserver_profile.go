@@ -26,7 +26,7 @@ import (
 )
 
 // profileCPU returns a CPU profile over HTTP.
-func (m *metricServer) profileCPU(w http.ResponseWriter, req *http.Request) httpResult {
+func (m *metricServer) profileCPU(w *httpResponseWriter, req *http.Request) httpResult {
 	// Time to finish up profiling and flush out the results to the client.
 	const finishProfilingBuffer = 250 * time.Millisecond
 
@@ -66,7 +66,7 @@ func (m *metricServer) profileCPU(w http.ResponseWriter, req *http.Request) http
 }
 
 // profileHeap returns a heap profile over HTTP.
-func (m *metricServer) profileHeap(w http.ResponseWriter, req *http.Request) httpResult {
+func (m *metricServer) profileHeap(w *httpResponseWriter, req *http.Request) httpResult {
 	m.mu.Lock()
 	if m.shuttingDown {
 		m.mu.Unlock()
