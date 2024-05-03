@@ -1,4 +1,8 @@
-package time
+package fuse
+
+import (
+	__generics_imported0 "gvisor.dev/gvisor/pkg/sentry/kernel/time"
+)
 
 import (
 	"unsafe"
@@ -11,9 +15,9 @@ import (
 // with any writer critical sections in seq.
 //
 //go:nosplit
-func SeqAtomicLoadClock(seq *sync.SeqCount, ptr *Clock) Clock {
+func SeqAtomicLoadTime(seq *sync.SeqCount, ptr *__generics_imported0.Time) __generics_imported0.Time {
 	for {
-		if val, ok := SeqAtomicTryLoadClock(seq, seq.BeginRead(), ptr); ok {
+		if val, ok := SeqAtomicTryLoadTime(seq, seq.BeginRead(), ptr); ok {
 			return val
 		}
 	}
@@ -25,7 +29,7 @@ func SeqAtomicLoadClock(seq *sync.SeqCount, ptr *Clock) Clock {
 // (unspecified, false).
 //
 //go:nosplit
-func SeqAtomicTryLoadClock(seq *sync.SeqCount, epoch sync.SeqCountEpoch, ptr *Clock) (val Clock, ok bool) {
+func SeqAtomicTryLoadTime(seq *sync.SeqCount, epoch sync.SeqCountEpoch, ptr *__generics_imported0.Time) (val __generics_imported0.Time, ok bool) {
 	if sync.RaceEnabled {
 
 		gohacks.Memmove(unsafe.Pointer(&val), unsafe.Pointer(ptr), unsafe.Sizeof(val))
@@ -41,9 +45,9 @@ func SeqAtomicTryLoadClock(seq *sync.SeqCount, epoch sync.SeqCountEpoch, ptr *Cl
 // critical sections are forced to retry.
 //
 //go:nosplit
-func SeqAtomicStoreClock(seq *sync.SeqCount, ptr *Clock, val Clock) {
+func SeqAtomicStoreTime(seq *sync.SeqCount, ptr *__generics_imported0.Time, val __generics_imported0.Time) {
 	seq.BeginWrite()
-	SeqAtomicStoreSeqedClock(ptr, val)
+	SeqAtomicStoreSeqedTime(ptr, val)
 	seq.EndWrite()
 }
 
@@ -53,7 +57,7 @@ func SeqAtomicStoreClock(seq *sync.SeqCount, ptr *Clock, val Clock) {
 // critical section throughout the call to SeqAtomicStore.
 //
 //go:nosplit
-func SeqAtomicStoreSeqedClock(ptr *Clock, val Clock) {
+func SeqAtomicStoreSeqedTime(ptr *__generics_imported0.Time, val __generics_imported0.Time) {
 	if sync.RaceEnabled {
 		gohacks.Memmove(unsafe.Pointer(ptr), unsafe.Pointer(&val), unsafe.Sizeof(val))
 	} else {

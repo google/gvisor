@@ -36,3 +36,27 @@ func SeqAtomicTryLoadSinkSlice(seq *sync.SeqCount, epoch sync.SeqCountEpoch, ptr
 	ok = seq.ReadOk(epoch)
 	return
 }
+
+// SeqAtomicStore sets *ptr to a copy of val, ensuring that any racing reader
+// critical sections are forced to retry.
+//
+//go:nosplit
+func SeqAtomicStoreSinkSlice(seq *sync.SeqCount, ptr *[]Sink, val []Sink) {
+	seq.BeginWrite()
+	SeqAtomicStoreSeqedSinkSlice(ptr, val)
+	seq.EndWrite()
+}
+
+// SeqAtomicStoreSeqed sets *ptr to a copy of val.
+//
+// Preconditions: ptr is protected by a SeqCount that will be in a writer
+// critical section throughout the call to SeqAtomicStore.
+//
+//go:nosplit
+func SeqAtomicStoreSeqedSinkSlice(ptr *[]Sink, val []Sink) {
+	if sync.RaceEnabled {
+		gohacks.Memmove(unsafe.Pointer(ptr), unsafe.Pointer(&val), unsafe.Sizeof(val))
+	} else {
+		*ptr = val
+	}
+}

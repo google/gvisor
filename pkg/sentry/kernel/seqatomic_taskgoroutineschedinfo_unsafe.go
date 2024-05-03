@@ -36,3 +36,27 @@ func SeqAtomicTryLoadTaskGoroutineSchedInfo(seq *sync.SeqCount, epoch sync.SeqCo
 	ok = seq.ReadOk(epoch)
 	return
 }
+
+// SeqAtomicStore sets *ptr to a copy of val, ensuring that any racing reader
+// critical sections are forced to retry.
+//
+//go:nosplit
+func SeqAtomicStoreTaskGoroutineSchedInfo(seq *sync.SeqCount, ptr *TaskGoroutineSchedInfo, val TaskGoroutineSchedInfo) {
+	seq.BeginWrite()
+	SeqAtomicStoreSeqedTaskGoroutineSchedInfo(ptr, val)
+	seq.EndWrite()
+}
+
+// SeqAtomicStoreSeqed sets *ptr to a copy of val.
+//
+// Preconditions: ptr is protected by a SeqCount that will be in a writer
+// critical section throughout the call to SeqAtomicStore.
+//
+//go:nosplit
+func SeqAtomicStoreSeqedTaskGoroutineSchedInfo(ptr *TaskGoroutineSchedInfo, val TaskGoroutineSchedInfo) {
+	if sync.RaceEnabled {
+		gohacks.Memmove(unsafe.Pointer(ptr), unsafe.Pointer(&val), unsafe.Sizeof(val))
+	} else {
+		*ptr = val
+	}
+}

@@ -16,7 +16,6 @@ package fuse
 
 import (
 	"fmt"
-	"sync"
 	gotime "time"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -32,6 +31,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // +stateify savable
@@ -55,12 +55,18 @@ type inode struct {
 	// the owning filesystem. fs is immutable.
 	fs *filesystem
 
-	// nodeID is a unique id which identifies the inode between userspace
-	// and the sentry. Immutable.
-	nodeID uint64
+	// nodeID is a unique id which identifies the inode between userspace and
+	// the sentry. generation is used to distinguish inodes in case of nodeID
+	// reuse. Both are immutable.
+	nodeID     uint64
+	generation uint64
 
-	// entryTime is the time at which the entry becomes invalid.
-	entryTime time.Time
+	// entryTime is the time at which the entry must be revalidated. Reading
+	// entryTime requires either using entryTimeSeq and SeqAtomicLoadTime, or
+	// that attrMu is locked. Writing entryTime requires that attrMu is locked
+	// and that entryTimeSeq is in a writer critical section.
+	entryTimeSeq sync.SeqCount `state:"nosave"`
+	entryTime    time.Time
 
 	// attrVersion is the version of the last attribute change.
 	attrVersion atomicbitops.Uint64
@@ -193,9 +199,10 @@ func (i *inode) init(creds *auth.Credentials, devMajor, devMinor uint32, nodeid 
 	i.ctime.Store(now)
 }
 
+// +checklocks:i.attrMu
 func (i *inode) updateEntryTime(entrySec, entryNSec int64) {
 	entryTime := time.FromTimespec(linux.Timespec{Sec: entrySec, Nsec: entryNSec})
-	i.entryTime = i.fs.clock.Now().AddTime(entryTime)
+	SeqAtomicStoreTime(&i.entryTimeSeq, &i.entryTime, i.fs.clock.Now().AddTime(entryTime))
 }
 
 // CheckPermissions implements kernfs.Inode.CheckPermissions.
@@ -374,8 +381,45 @@ func (i *inode) Open(ctx context.Context, rp *vfs.ResolvingPath, d *kernfs.Dentr
 	return &fd.vfsfd, nil
 }
 
-func (i *inode) Valid(ctx context.Context) bool {
-	return i.entryTime.After(i.fs.clock.Now())
+func (i *inode) Valid(ctx context.Context, parent *kernfs.Dentry, name string) bool {
+	now := i.fs.clock.Now()
+	if entryTime := SeqAtomicLoadTime(&i.entryTimeSeq, &i.entryTime); entryTime.After(now) {
+		return true
+	}
+
+	i.attrMu.Lock()
+	defer i.attrMu.Unlock()
+	if i.entryTime.After(now) {
+		return true
+	}
+
+	in := linux.FUSELookupIn{Name: linux.CString(name)}
+	req := i.fs.conn.NewRequest(auth.CredentialsFromContext(ctx), pidFromContext(ctx), parent.Inode().(*inode).nodeID, linux.FUSE_LOOKUP, &in)
+	res, err := i.fs.conn.Call(ctx, req)
+	if err != nil {
+		return false
+	}
+	if res.Error() != nil {
+		return false
+	}
+	var out linux.FUSEEntryOut
+	if res.UnmarshalPayload(&out) != nil {
+		return false
+	}
+	if i.nodeID != out.NodeID {
+		return false
+	}
+	// Don't enforce fuse_invalid_attr() => fuse_valid_type(),
+	// fuse_valid_size() since inode.updateAttrs() and its callers
+	// don't. But do enforce fuse_stale_inode():
+	if i.generation != out.Generation {
+		return false
+	}
+	if (i.mode.RacyLoad()^out.Attr.Mode)&linux.S_IFMT != 0 {
+		return false
+	}
+	i.updateEntryTime(int64(out.EntryValid), int64(out.EntryValidNSec))
+	return true
 }
 
 // Lookup implements kernfs.Inode.Lookup.
@@ -521,7 +565,7 @@ func (i *inode) newEntry(ctx context.Context, name string, fileType linux.FileMo
 	if opcode != linux.FUSE_LOOKUP && ((out.Attr.Mode&linux.S_IFMT)^uint32(fileType) != 0 || out.NodeID == 0 || out.NodeID == linux.FUSE_ROOT_ID) {
 		return nil, linuxerr.EIO
 	}
-	child := i.fs.newInode(ctx, out.NodeID, out.FUSEEntryOut)
+	child := i.fs.newInode(ctx, out.FUSEEntryOut)
 	if opcode == linux.FUSE_CREATE {
 		// File handler is returned by fuse server at a time of file create.
 		// Save it temporary in a created child, so Open could return it when invoked

@@ -301,16 +301,16 @@ func (fs *filesystem) newRoot(ctx context.Context, creds *auth.Credentials, mode
 	return &d
 }
 
-func (fs *filesystem) newInode(ctx context.Context, nodeID uint64, out linux.FUSEEntryOut) kernfs.Inode {
+func (fs *filesystem) newInode(ctx context.Context, out linux.FUSEEntryOut) kernfs.Inode {
 	attr := out.Attr
-	i := &inode{fs: fs, nodeID: nodeID}
-	i.updateEntryTime(int64(out.EntryValid), int64(out.EntryValidNSec))
+	i := &inode{fs: fs, nodeID: out.NodeID, generation: out.Generation}
 	i.attrMu.Lock()
 	defer i.attrMu.Unlock()
 
 	creds := auth.Credentials{EffectiveKGID: auth.KGID(attr.UID), EffectiveKUID: auth.KUID(attr.UID)}
-	i.init(&creds, linux.UNNAMED_MAJOR, fs.devMinor, nodeID, linux.FileMode(attr.Mode), attr.Nlink)
+	i.init(&creds, linux.UNNAMED_MAJOR, fs.devMinor, out.NodeID, linux.FileMode(attr.Mode), attr.Nlink)
 	i.updateAttrs(attr, int64(out.AttrValid), int64(out.AttrValidNSec))
+	i.updateEntryTime(int64(out.EntryValid), int64(out.EntryValidNSec))
 
 	i.OrderedChildren.Init(kernfs.OrderedChildrenOptions{})
 	i.InitRefs()

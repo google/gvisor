@@ -130,17 +130,11 @@ type packetMMapDispatcher struct {
 	// ringOffset is the current offset into the ring buffer where the next
 	// inbound packet will be placed by the kernel.
 	ringOffset int
-
-	// mgr is the processor goroutine manager.
-	mgr *processorManager
 }
 
-func (d *packetMMapDispatcher) release() {
-	d.mgr.close()
-}
+func (*packetMMapDispatcher) release() {}
 
-func (d *packetMMapDispatcher) readMMappedPackets() (stack.PacketBufferList, bool, tcpip.Error) {
-	var pkts stack.PacketBufferList
+func (d *packetMMapDispatcher) readMMappedPacket() (*buffer.View, bool, tcpip.Error) {
 	hdr := tPacketHdr(d.ringBuffer[d.ringOffset*tpFrameSize:])
 	for hdr.tpStatus()&tpStatusUser == 0 {
 		stopped, errno := rawfile.BlockingPollUntilStopped(d.EFD, d.fd, unix.POLLIN|unix.POLLERR)
@@ -148,10 +142,10 @@ func (d *packetMMapDispatcher) readMMappedPackets() (stack.PacketBufferList, boo
 			if errno == unix.EINTR {
 				continue
 			}
-			return pkts, stopped, rawfile.TranslateErrno(errno)
+			return nil, stopped, rawfile.TranslateErrno(errno)
 		}
 		if stopped {
-			return pkts, true, nil
+			return nil, true, nil
 		}
 		if hdr.tpStatus()&tpStatusCopy != 0 {
 			// This frame is truncated so skip it after flipping the
@@ -163,39 +157,50 @@ func (d *packetMMapDispatcher) readMMappedPackets() (stack.PacketBufferList, boo
 		}
 	}
 
-	for hdr.tpStatus()&tpStatusUser == 1 {
-		// Copy out the packet from the mmapped frame to a locally owned buffer.
-		pkts.PushBack(stack.NewPacketBuffer(stack.PacketBufferOptions{
-			Payload: buffer.MakeWithView(buffer.NewViewWithData(hdr.Payload())),
-		}))
-		// Release packet to kernel.
-		hdr.setTPStatus(tpStatusKernel)
-		d.ringOffset = (d.ringOffset + 1) % tpFrameNR
-		hdr = tPacketHdr(d.ringBuffer[d.ringOffset*tpFrameSize:])
-	}
-	return pkts, false, nil
+	// Copy out the packet from the mmapped frame to a locally owned buffer.
+	pkt := buffer.NewView(int(hdr.tpSnapLen()))
+	pkt.Write(hdr.Payload())
+	// Release packet to kernel.
+	hdr.setTPStatus(tpStatusKernel)
+	d.ringOffset = (d.ringOffset + 1) % tpFrameNR
+	return pkt, false, nil
 }
 
 // dispatch reads packets from an mmaped ring buffer and dispatches them to the
 // network stack.
 func (d *packetMMapDispatcher) dispatch() (bool, tcpip.Error) {
-	pkts, stopped, err := d.readMMappedPackets()
-	defer pkts.Reset()
+	pkt, stopped, err := d.readMMappedPacket()
 	if err != nil || stopped {
 		return false, err
 	}
-	for _, pkt := range pkts.AsSlice() {
-		if d.e.hdrSize > 0 {
-			hdr, ok := pkt.LinkHeader().Consume(d.e.hdrSize)
-			if !ok {
-				panic(fmt.Sprintf("LinkHeader().Consume(%d) must succeed", d.e.hdrSize))
-			}
-			pkt.NetworkProtocolNumber = header.Ethernet(hdr).Type()
+	var p tcpip.NetworkProtocolNumber
+	if d.e.hdrSize > 0 {
+		p = header.Ethernet(pkt.AsSlice()).Type()
+	} else {
+		// We don't get any indication of what the packet is, so try to guess
+		// if it's an IPv4 or IPv6 packet.
+		switch header.IPVersion(pkt.AsSlice()) {
+		case header.IPv4Version:
+			p = header.IPv4ProtocolNumber
+		case header.IPv6Version:
+			p = header.IPv6ProtocolNumber
+		default:
+			return true, nil
 		}
-		d.mgr.queuePacket(pkt, d.e.hdrSize > 0)
 	}
-	if pkts.Len() > 0 {
-		d.mgr.wakeReady()
+
+	pbuf := stack.NewPacketBuffer(stack.PacketBufferOptions{
+		Payload: buffer.MakeWithView(pkt),
+	})
+	defer pbuf.DecRef()
+	if d.e.hdrSize > 0 {
+		if _, ok := pbuf.LinkHeader().Consume(d.e.hdrSize); !ok {
+			panic(fmt.Sprintf("LinkHeader().Consume(%d) must succeed", d.e.hdrSize))
+		}
 	}
+	d.e.mu.RLock()
+	dsp := d.e.dispatcher
+	d.e.mu.RUnlock()
+	dsp.DeliverNetworkPacket(p, pbuf)
 	return true, nil
 }
