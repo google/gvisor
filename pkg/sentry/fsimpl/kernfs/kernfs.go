@@ -640,11 +640,7 @@ func (d *Dentry) WalkDentryTree(ctx context.Context, vfsObj *vfs.VirtualFilesyst
 			// way to the child, and we're still holding fs.mu.
 		default:
 			var err error
-
-			d.dirMu.Lock()
-			target, err = d.fs.revalidateChildLocked(ctx, vfsObj, target, pc, target.children[pc])
-			d.dirMu.Unlock()
-
+			target, err = d.fs.revalidateChildLocked(ctx, vfsObj, target, pc)
 			if err != nil {
 				return nil, err
 			}
@@ -724,7 +720,7 @@ type Inode interface {
 
 	// Valid should return true if this inode is still valid, or needs to
 	// be resolved again by a call to Lookup.
-	Valid(ctx context.Context) bool
+	Valid(ctx context.Context, parent *Dentry, name string) bool
 
 	// Watches returns the set of inotify watches associated with this inode.
 	Watches() *vfs.Watches

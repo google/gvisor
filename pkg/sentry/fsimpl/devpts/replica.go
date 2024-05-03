@@ -76,7 +76,7 @@ func (ri *replicaInode) Open(ctx context.Context, rp *vfs.ResolvingPath, d *kern
 }
 
 // Valid implements kernfs.Inode.Valid.
-func (ri *replicaInode) Valid(context.Context) bool {
+func (ri *replicaInode) Valid(context.Context, *kernfs.Dentry, string) bool {
 	// Return valid if the replica still exists.
 	ri.root.mu.Lock()
 	defer ri.root.mu.Unlock()

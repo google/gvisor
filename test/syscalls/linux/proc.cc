@@ -53,6 +53,7 @@
 #include "absl/container/btree_map.h"
 #include "absl/container/flat_hash_set.h"
 #include "absl/container/node_hash_set.h"
+#include "absl/flags/flag.h"
 #include "absl/strings/ascii.h"
 #include "absl/strings/match.h"
 #include "absl/strings/numbers.h"
@@ -100,6 +101,9 @@ using ::testing::UnorderedElementsAreArray;
 
 // Exported by glibc.
 extern char** environ;
+
+ABSL_FLAG(bool, proc_pid_reuse_child, false,
+          "If true, run the Proc_PidReuse child workload.");
 
 namespace gvisor {
 namespace testing {
@@ -2912,6 +2916,32 @@ TEST(Proc, RegressionTestB236035339) {
               SyscallFailsWithErrno(ENOTDIR));
 }
 
+// NOTE(b/338393279): Tests that after execve() from a non-leader thread
+// changes which thread owns the thread group ID, the new thread group leader
+// can access its /proc/self.
+TEST(Proc, PidReuse) {
+  const ExecveArray owned_child_argv = {"/proc/self/exe",
+                                        "--proc_pid_reuse_child"};
+  char* const* const child_argv = owned_child_argv.get();
+
+  const auto rest = [child_argv] {
+    struct stat statbuf;
+    TEST_PCHECK(stat("/proc/self/cwd", &statbuf) == 0);
+
+    ScopedThread([child_argv] {
+      execve(child_argv[0], child_argv, /* envp = */ nullptr);
+      TEST_PCHECK_MSG(false, "Survived execve to test child");
+    });
+  };
+  EXPECT_THAT(InForkedProcess(rest), IsPosixErrorOkAndHolds(0));
+}
+
+[[noreturn]] void RunProcPidReuseChild() {
+  struct stat statbuf;
+  TEST_PCHECK(stat("/proc/self/cwd", &statbuf) == 0);
+  _exit(0);
+}
+
 TEST(ProcFilesystems, ReadCapLastCap) {
   std::string lastCapStr =
       ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/sys/kernel/cap_last_cap"));
@@ -2945,5 +2975,10 @@ int main(int argc, char** argv) {
   }
 
   gvisor::testing::TestInit(&argc, &argv);
+
+  if (absl::GetFlag(FLAGS_proc_pid_reuse_child)) {
+    gvisor::testing::RunProcPidReuseChild();
+  }
+
   return gvisor::testing::RunAllTests();
 }

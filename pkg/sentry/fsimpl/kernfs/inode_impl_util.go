@@ -789,7 +789,7 @@ func (s *StaticDirectory) DecRef(ctx context.Context) {
 type InodeAlwaysValid struct{}
 
 // Valid implements Inode.Valid.
-func (*InodeAlwaysValid) Valid(context.Context) bool {
+func (*InodeAlwaysValid) Valid(context.Context, *Dentry, string) bool {
 	return true
 }
 

@@ -245,7 +245,7 @@ func (s *fdSymlink) Getlink(ctx context.Context, mnt *vfs.Mount) (vfs.VirtualDen
 }
 
 // Valid implements kernfs.Inode.Valid.
-func (s *fdSymlink) Valid(ctx context.Context) bool {
+func (s *fdSymlink) Valid(ctx context.Context, parent *kernfs.Dentry, name string) bool {
 	return taskFDExists(ctx, s.fs, s.task, s.fd)
 }
 
@@ -349,6 +349,6 @@ func (d *fdInfoData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 }
 
 // Valid implements kernfs.Inode.Valid.
-func (d *fdInfoData) Valid(ctx context.Context) bool {
+func (d *fdInfoData) Valid(ctx context.Context, parent *kernfs.Dentry, name string) bool {
 	return taskFDExists(ctx, d.fs, d.task, d.fd)
 }
