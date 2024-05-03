@@ -254,7 +254,8 @@ func (r *restorer) restore(l *Loader) error {
 
 	// Update all tasks in the system with their respective new container IDs.
 	for _, task := range l.k.TaskSet().Root.Tasks() {
-		name := l.k.TaskContainerName(task)
+		oldCid := task.ContainerID()
+		name := l.k.ContainerName(oldCid)
 		newCid, ok := l.containerIDs[name]
 		if !ok {
 			return fmt.Errorf("unable to remap task with CID %q (name: %q). Available names: %v", task.ContainerID(), name, l.containerIDs)
