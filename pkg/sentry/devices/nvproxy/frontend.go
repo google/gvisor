@@ -66,8 +66,9 @@ func (dev *frontendDevice) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.D
 		return nil, err
 	}
 	fd := &frontendFD{
-		dev:    dev,
-		hostFD: int32(hostFD),
+		dev:           dev,
+		containerName: devClient.ContainerName(),
+		hostFD:        int32(hostFD),
 	}
 	if err := fd.vfsfd.Init(fd, opts.Flags, mnt, vfsd, &vfs.FileDescriptionOptions{
 		UseDentryMetadata: true,
@@ -94,12 +95,12 @@ type frontendFD struct {
 	vfs.DentryMetadataFileDescriptionImpl
 	vfs.NoLockFD
 
-	dev        *frontendDevice
-	hostFD     int32
-	memmapFile frontendFDMemmapFile
+	dev           *frontendDevice
+	containerName string
+	hostFD        int32
+	memmapFile    frontendFDMemmapFile
 
-	queue waiter.Queue
-
+	queue           waiter.Queue
 	haveMmapContext atomic.Bool
 
 	// clients are handles of clients owned by this frontendFD. clients is

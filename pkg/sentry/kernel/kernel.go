@@ -1977,7 +1977,7 @@ func (k *Kernel) GetUserCounters(uid auth.KUID) *UserCounters {
 // AddDevGofer initializes the dev gofer connection and starts tracking it.
 // It takes ownership of goferFD.
 func (k *Kernel) AddDevGofer(contName string, goferFD int) error {
-	client, err := devutil.NewGoferClient(k.SupervisorContext(), goferFD)
+	client, err := devutil.NewGoferClient(k.SupervisorContext(), contName, goferFD)
 	if err != nil {
 		return err
 	}
