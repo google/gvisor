@@ -15,11 +15,12 @@
 package metric
 
 import (
-	"bufio"
+	"bytes"
 	"errors"
 	"fmt"
 	"hash"
 	"hash/adler32"
+	"io"
 	"os"
 	"strings"
 	"time"
@@ -207,34 +208,57 @@ func collectProfilingMetrics(s *snapshots, values []func(fieldValues ...*FieldVa
 	}
 }
 
-// hashWriter is a wrapper around a bufio.Writer that also updates a hasher.
-// The goal here is speed, and correctness is enforced by the reader of this
-// data checking the hash at the end.
-type hashWriter struct {
-	realWriter *bufio.Writer
+const bufferedLines = 256
+
+// bufferedHashWriter is a buffered writer that also keeps track of
+// a hash of the data written. It flushes every `bufferedLines` lines.
+type bufferedHashWriter[T io.StringWriter] struct {
+	buf        bytes.Buffer
+	lines      int
+	underlying T
 	hasher     hash.Hash32
 }
 
-// Write writes to the realWriter and also updates the hasher.
-func (w *hashWriter) Write(p []byte) (int, error) {
-	w.hasher.Write(p)
+// WriteString writes a string to the buffer and updates the hasher.
+// This should *not* contain any newline character, unless this function
+// is being called through NewLine.
+func (w *bufferedHashWriter[T]) WriteString(s string) (int, error) {
+	w.hasher.Write([]byte(s))
 	// We ignore the effects of partial writes on the hash computation here.
 	// This is OK because the goal of this writer is speed over correctness,
 	// and correctness is enforced by the reader of this data checking the
 	// hash at the end.
-	return w.realWriter.Write(p)
+	return w.buf.WriteString(s)
 }
 
-// WriteString writes a string to the realWriter and also updates the hasher.
-func (w *hashWriter) WriteString(s string) (int, error) {
-	w.hasher.Write([]byte(s))
-	return w.realWriter.WriteString(s)
+// Flush flushes the buffer to the underlying writer.
+func (w *bufferedHashWriter[T]) Flush() {
+	if w.buf.Len() > 0 {
+		data := w.buf.String()
+		// Ensure that we write a complete line atomically, as this
+		// may get parsed while being mixed with other logs that may not
+		// have clean line endings a the time we print this.
+		if !strings.HasPrefix(data, "\n") {
+			data = "\n" + data
+		}
+		if !strings.HasSuffix(data, "\n") {
+			data = data + "\n"
+		}
+		w.underlying.WriteString(data)
+		w.buf.Reset()
+		w.lines = 0
+	}
 }
 
-// WriteRune writes a rune to the realWriter and also updates the hasher.
-func (w *hashWriter) WriteRune(r rune) {
-	w.hasher.Write([]byte(string(r)))
-	w.realWriter.WriteRune(r)
+// NewLine writes a newline character to the buffer, updates the hasher,
+// and flushes the buffer if there are at least `bufferedLines` lines in
+// the buffer.
+func (w *bufferedHashWriter[T]) NewLine() {
+	w.WriteString("\n")
+	w.lines++
+	if w.lines >= bufferedLines {
+		w.Flush()
+	}
 }
 
 // writeProfilingMetrics will write to the ProfilingMetricsWriter on every
@@ -242,10 +266,11 @@ func (w *hashWriter) WriteRune(r rune) {
 func writeProfilingMetrics(s *snapshots, header string, writeReqs <-chan writeReq) {
 	numEntries := s.numMetrics + 1
 
-	out := hashWriter{
-		realWriter: bufio.NewWriter(ProfilingMetricWriter),
+	out := bufferedHashWriter[*os.File]{
 		hasher:     adler32.New(),
+		underlying: ProfilingMetricWriter,
 	}
+	out.buf.Grow(8 * 1024 * 1024) // 8 MiB
 	out.WriteString(header)
 
 	for req := range writeReqs {
@@ -258,16 +283,16 @@ func writeProfilingMetrics(s *snapshots, header string, writeReqs <-chan writeRe
 			prometheus.WriteInteger(&out, int64(s.ringbuffer[req.ringbufferIdx][base]))
 			// Then everything else
 			for j := 1; j < numEntries; j++ {
-				out.WriteRune('\t')
+				out.WriteString("\t")
 				prometheus.WriteInteger(&out, int64(s.ringbuffer[req.ringbufferIdx][base+j]))
 			}
-			out.WriteRune('\n')
+			out.NewLine()
 		}
 	}
 
-	out.realWriter.WriteString(metricsPrefix)
-	out.realWriter.WriteString(fmt.Sprintf("ADLER32\t0x%x\n", out.hasher.Sum32()))
-	out.realWriter.Flush()
+	out.buf.WriteString(metricsPrefix)
+	out.buf.WriteString(fmt.Sprintf("ADLER32\t0x%x\n", out.hasher.Sum32()))
+	out.Flush()
 	ProfilingMetricWriter.Close()
 	doneProfilingMetrics <- true
 	close(doneProfilingMetrics)

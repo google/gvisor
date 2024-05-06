@@ -1129,7 +1129,10 @@ func TestMetricProfiling(t *testing.T) {
 			lines := bufio.NewScanner(f)
 			expectedHeader := metricsPrefix + "Time (ns)\t" + strings.Join(test.metricNames, "\t")
 			lines.Scan()
-			header := lines.Text()
+			var header string
+			for header == "" && lines.Scan() {
+				header = lines.Text()
+			}
 			if header != expectedHeader {
 				t.Fatalf("header mismatch: got '%s' want '%s'", header, expectedHeader)
 			}
@@ -1142,6 +1145,9 @@ func TestMetricProfiling(t *testing.T) {
 			numDatapoints := 0
 			for lines.Scan() {
 				line := strings.TrimPrefix(lines.Text(), metricsPrefix)
+				if line == "" {
+					continue
+				}
 				if strings.HasPrefix(line, "ADLER32\t") {
 					continue
 				}

@@ -15,6 +15,7 @@ go_library(
         "sentry_profiling.go",
         "sentry_profiling_fake.go",
     ],
+    stateify = False,
     visibility = ["//:sandbox"],
     deps = [
         ":metric_go_proto",
