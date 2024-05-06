@@ -783,7 +783,7 @@ type mountInfo struct {
 func (c *containerMounter) prepareMounts() ([]mountInfo, error) {
 	// If device gofer exists, connect to it.
 	if c.devGoferFD != nil {
-		if err := c.k.AddDevGofer(c.containerID, c.devGoferFD.Release()); err != nil {
+		if err := c.k.AddDevGofer(c.containerName, c.devGoferFD.Release()); err != nil {
 			return nil, err
 		}
 	}

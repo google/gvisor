@@ -347,7 +347,7 @@ type Kernel struct {
 	// used by processes.
 	MaxFDLimit atomicbitops.Int32
 
-	// devGofers maps container ID to its device gofer client.
+	// devGofers maps containers (using its name) to its device gofer client.
 	devGofers   map[string]*devutil.GoferClient `state:"nosave"`
 	devGofersMu sync.Mutex                      `state:"nosave"`
 
@@ -943,7 +943,7 @@ func (ctx *createProcessContext) Value(key any) any {
 		mntns.IncRef()
 		return mntns
 	case devutil.CtxDevGoferClient:
-		return ctx.kernel.getDevGoferClient(ctx.args.ContainerID)
+		return ctx.kernel.getDevGoferClient(ctx.kernel.ContainerName(ctx.args.ContainerID))
 	case inet.CtxStack:
 		return ctx.kernel.RootNetworkNamespace().Stack()
 	case ktime.CtxRealtimeClock:
@@ -1976,8 +1976,8 @@ func (k *Kernel) GetUserCounters(uid auth.KUID) *UserCounters {
 
 // AddDevGofer initializes the dev gofer connection and starts tracking it.
 // It takes ownership of goferFD.
-func (k *Kernel) AddDevGofer(cid string, goferFD int) error {
-	client, err := devutil.NewGoferClient(k.SupervisorContext(), goferFD)
+func (k *Kernel) AddDevGofer(contName string, goferFD int) error {
+	client, err := devutil.NewGoferClient(k.SupervisorContext(), contName, goferFD)
 	if err != nil {
 		return err
 	}
@@ -1987,27 +1987,27 @@ func (k *Kernel) AddDevGofer(cid string, goferFD int) error {
 	if k.devGofers == nil {
 		k.devGofers = make(map[string]*devutil.GoferClient)
 	}
-	k.devGofers[cid] = client
+	k.devGofers[contName] = client
 	return nil
 }
 
 // RemoveDevGofer closes the dev gofer connection, if one exists, and stops
 // tracking it.
-func (k *Kernel) RemoveDevGofer(cid string) {
+func (k *Kernel) RemoveDevGofer(contName string) {
 	k.devGofersMu.Lock()
 	defer k.devGofersMu.Unlock()
-	client, ok := k.devGofers[cid]
+	client, ok := k.devGofers[contName]
 	if !ok {
 		return
 	}
 	client.Close()
-	delete(k.devGofers, cid)
+	delete(k.devGofers, contName)
 }
 
-func (k *Kernel) getDevGoferClient(cid string) *devutil.GoferClient {
+func (k *Kernel) getDevGoferClient(contName string) *devutil.GoferClient {
 	k.devGofersMu.Lock()
 	defer k.devGofersMu.Unlock()
-	return k.devGofers[cid]
+	return k.devGofers[contName]
 }
 
 func (k *Kernel) cleaupDevGofers() {
@@ -2040,9 +2040,9 @@ func (k *Kernel) RestoreContainerMapping(containerIDs map[string]string) {
 	}
 }
 
-// TaskContainerName returns the container name for a given task.
-func (k *Kernel) TaskContainerName(task *Task) string {
+// ContainerName returns the container name for a given container ID.
+func (k *Kernel) ContainerName(cid string) string {
 	k.extMu.Lock()
 	defer k.extMu.Unlock()
-	return k.containerNames[task.ContainerID()]
+	return k.containerNames[cid]
 }

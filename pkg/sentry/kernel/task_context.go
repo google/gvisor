@@ -105,7 +105,7 @@ func (t *Task) contextValue(key any, isTaskGoroutine bool) any {
 		t.mountNamespace.IncRef()
 		return t.mountNamespace
 	case devutil.CtxDevGoferClient:
-		return t.k.getDevGoferClient(t.containerID)
+		return t.k.getDevGoferClient(t.k.ContainerName(t.containerID))
 	case inet.CtxStack:
 		return t.NetworkContext()
 	case ktime.CtxRealtimeClock:

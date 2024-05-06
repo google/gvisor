@@ -971,7 +971,7 @@ func (l *Loader) startSubcontainer(spec *specs.Spec, conf *config.Config, cid st
 			// createContainerProcess() will consume devGoferFD and initialize a gofer
 			// connection. This connection is owned by l.k. In case of failure, we want
 			// to clean up this gofer connection so that the gofer process can exit.
-			l.k.RemoveDevGofer(cid)
+			l.k.RemoveDevGofer(containerName)
 		})
 	}
 
@@ -1198,7 +1198,7 @@ func (l *Loader) destroySubcontainer(cid string) error {
 		}
 	}
 	// Cleanup the device gofer.
-	l.k.RemoveDevGofer(cid)
+	l.k.RemoveDevGofer(l.k.ContainerName(cid))
 
 	log.Debugf("Container destroyed, cid: %s", cid)
 	return nil

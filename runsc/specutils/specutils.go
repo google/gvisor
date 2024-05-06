@@ -44,10 +44,14 @@ import (
 const (
 	annotationFlagPrefix            = "dev.gvisor.flag."
 	annotationSeccomp               = "dev.gvisor.internal.seccomp."
-	annotationTPU                   = "dev.gvisor.internal.tpuproxy"
 	annotationSeccompRuntimeDefault = "RuntimeDefault"
 
 	annotationContainerName = "io.kubernetes.cri.container-name"
+)
+
+const (
+	// AnnotationTPU is the annotation used to enable TPU proxy on a pod.
+	AnnotationTPU = "dev.gvisor.internal.tpuproxy"
 )
 
 // ExePath must point to runsc binary, which is normally the same binary. It's
@@ -567,7 +571,7 @@ func TPUProxyIsEnabled(spec *specs.Spec, conf *config.Config) bool {
 	if conf.TPUProxy {
 		return true
 	}
-	val, ok := spec.Annotations[annotationTPU]
+	val, ok := spec.Annotations[AnnotationTPU]
 	if !ok {
 		return false
 	}

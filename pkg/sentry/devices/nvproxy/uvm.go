@@ -53,8 +53,9 @@ func (dev *uvmDevice) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dentry
 		return nil, err
 	}
 	fd := &uvmFD{
-		dev:    dev,
-		hostFD: int32(hostFD),
+		dev:           dev,
+		containerName: devClient.ContainerName(),
+		hostFD:        int32(hostFD),
 	}
 	if err := fd.vfsfd.Init(fd, opts.Flags, mnt, vfsd, &vfs.FileDescriptionOptions{
 		UseDentryMetadata: true,
@@ -79,9 +80,10 @@ type uvmFD struct {
 	vfs.DentryMetadataFileDescriptionImpl
 	vfs.NoLockFD
 
-	dev        *uvmDevice
-	hostFD     int32
-	memmapFile uvmFDMemmapFile
+	dev           *uvmDevice
+	containerName string
+	hostFD        int32
+	memmapFile    uvmFDMemmapFile
 
 	queue waiter.Queue
 }
