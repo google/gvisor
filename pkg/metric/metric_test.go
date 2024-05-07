@@ -18,6 +18,7 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
+	"hash/adler32"
 	"math"
 	"os"
 	"reflect"
@@ -1038,6 +1039,7 @@ func TestMetricProfiling(t *testing.T) {
 		name                 string
 		profilingMetricsFlag string
 		metricNames          []string
+		lossy                bool
 		incrementMetricBy    []uint64
 		numIterations        uint64
 		errOnStartProfiling  bool
@@ -1046,6 +1048,15 @@ func TestMetricProfiling(t *testing.T) {
 			name:                 "simple single metric",
 			profilingMetricsFlag: "/foo",
 			metricNames:          []string{"/foo"},
+			incrementMetricBy:    []uint64{50},
+			numIterations:        100,
+			errOnStartProfiling:  false,
+		},
+		{
+			name:                 "simple single metric, lossy writer",
+			profilingMetricsFlag: "/foo",
+			metricNames:          []string{"/foo"},
+			lossy:                true,
 			incrementMetricBy:    []uint64{50},
 			numIterations:        100,
 			errOnStartProfiling:  false,
@@ -1094,12 +1105,16 @@ func TestMetricProfiling(t *testing.T) {
 				t.Fatalf("failed to create file: '%v'", err)
 			}
 			fName := f.Name()
-			ProfilingMetricWriter = f
 
 			if err := Initialize(); err != nil {
 				t.Fatalf("Initialize error: got '%v' want nil", err)
 			}
-			if err := StartProfilingMetrics(test.profilingMetricsFlag, profilingRate); err != nil {
+			if err := StartProfilingMetrics(ProfilingMetricsOptions[*os.File]{
+				Sink:    f,
+				Lossy:   test.lossy,
+				Metrics: test.profilingMetricsFlag,
+				Rate:    profilingRate,
+			}); err != nil {
 				if test.errOnStartProfiling {
 					return
 				}
@@ -1126,9 +1141,12 @@ func TestMetricProfiling(t *testing.T) {
 			}
 
 			// Check the header
+			h := adler32.New()
 			lines := bufio.NewScanner(f)
-			expectedHeader := metricsPrefix + "Time (ns)\t" + strings.Join(test.metricNames, "\t")
-			lines.Scan()
+			expectedHeader := "Time (ns)\t" + strings.Join(test.metricNames, "\t")
+			if test.lossy {
+				expectedHeader = MetricsPrefix + expectedHeader
+			}
 			var header string
 			for header == "" && lines.Scan() {
 				header = lines.Text()
@@ -1136,6 +1154,7 @@ func TestMetricProfiling(t *testing.T) {
 			if header != expectedHeader {
 				t.Fatalf("header mismatch: got '%s' want '%s'", header, expectedHeader)
 			}
+			h.Write([]byte(strings.TrimPrefix(header, MetricsPrefix) + "\n"))
 
 			// Check that data looks sane:
 			// - Each timestamp should always be bigger.
@@ -1143,14 +1162,26 @@ func TestMetricProfiling(t *testing.T) {
 			prevTS := uint64(0)
 			prevValues := make([]uint64, numMetrics)
 			numDatapoints := 0
+			var hashLine string
 			for lines.Scan() {
-				line := strings.TrimPrefix(lines.Text(), metricsPrefix)
+				line := lines.Text()
 				if line == "" {
 					continue
 				}
-				if strings.HasPrefix(line, "ADLER32\t") {
+				if test.lossy {
+					if !strings.HasPrefix(line, MetricsPrefix) {
+						t.Fatalf("lossy writer output does not have expected prefix: got %q want %q", line, MetricsPrefix)
+					}
+					line = strings.TrimPrefix(line, MetricsPrefix)
+				}
+				if strings.HasPrefix(line, MetricsHashIndicator) {
+					if hashLine != "" {
+						t.Fatalf("got multiple hash lines")
+					}
+					hashLine = line
 					continue
 				}
+				h.Write([]byte(line + "\n"))
 				numDatapoints++
 				items := strings.Split(line, "\t")
 				if len(items) != (numMetrics + 1) {
@@ -1187,6 +1218,20 @@ func TestMetricProfiling(t *testing.T) {
 				expected := test.numIterations * test.incrementMetricBy[i]
 				if prevValues[i] != expected {
 					t.Errorf("incorrect final metric value: got %d, want %d", prevValues[i], expected)
+				}
+			}
+			if test.lossy {
+				if hashLine == "" {
+					t.Fatal("lossy writer output does not have expected hash line")
+				}
+				wantHash := fmt.Sprintf("0x%x", h.Sum32())
+				gotHash := strings.TrimPrefix(hashLine, MetricsHashIndicator)
+				if gotHash != wantHash {
+					t.Fatalf("lossy writer output does not have expected hash line: got %q want %q", gotHash, wantHash)
+				}
+			} else {
+				if hashLine != "" {
+					t.Fatalf("unexpectedly found hash line in non-lossy output: %q", hashLine)
 				}
 			}
 			f.Close()

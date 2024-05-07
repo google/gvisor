@@ -21,7 +21,6 @@ import (
 	"hash"
 	"hash/adler32"
 	"io"
-	"os"
 	"strings"
 	"time"
 
@@ -33,14 +32,14 @@ import (
 const (
 	snapshotBufferSize     = 1000
 	snapshotRingbufferSize = 16
-	// metricsPrefix is prepended before every metrics line.
-	metricsPrefix = "GVISOR_METRICS\t"
+	// MetricsPrefix is prepended before every metrics line.
+	MetricsPrefix = "GVISOR_METRICS\t"
+	// MetricsHashIndicator is prepended before the hash of the metrics
+	// data at the end of the metrics stream.
+	MetricsHashIndicator = "ADLER32\t"
 )
 
 var (
-	// ProfilingMetricWriter is the output destination to which
-	// ProfilingMetrics will be written to in TSV format.
-	ProfilingMetricWriter *os.File
 	// profilingMetricsStarted indicates whether StartProfilingMetrics has
 	// been called.
 	profilingMetricsStarted atomicbitops.Bool
@@ -56,7 +55,7 @@ var (
 )
 
 // snapshots is used to as temporary storage of metric data
-// before it's written to the ProfilingMetricWriter.
+// before it's written to the writer.
 type snapshots struct {
 	numMetrics int
 	// ringbuffer is used to store metric data.
@@ -73,30 +72,53 @@ type writeReq struct {
 	numLines int
 }
 
+// ProfilingMetricsWriter is the interface for profiling metrics sinks.
+type ProfilingMetricsWriter interface {
+	// WriteString from the io.StringWriter interface.
+	io.StringWriter
+
+	// Close closes the writer.
+	Close() error
+}
+
+// ProfilingMetricsOptions is the set of options to profile metrics.
+type ProfilingMetricsOptions[T ProfilingMetricsWriter] struct {
+	// Sink is the sink to write the profiling metrics data to.
+	Sink T
+
+	// Lossy specifies whether the sink is lossy, i.e. data may be dropped from
+	// too large logging volume. In this case, data integrity is desirable at the
+	// expense of extra CPU cost at data-writing time. The data will be prefixed
+	// with `MetricsPrefix` and the hash of the data will be appended at the end.
+	Lossy bool
+
+	// Metrics is the comma-separated list of metrics to profile.
+	Metrics string
+
+	// Rate is the rate at which the metrics are collected.
+	Rate time.Duration
+}
+
 // StartProfilingMetrics checks the ProfilingMetrics runsc flags and creates
 // goroutines responsible for outputting the profiling metric data.
 //
 // Preconditions:
 //   - All metrics are registered.
 //   - Initialize/Disable has been called.
-func StartProfilingMetrics(profilingMetrics string, profilingRate time.Duration) error {
+func StartProfilingMetrics[T ProfilingMetricsWriter](opts ProfilingMetricsOptions[T]) error {
 	if !initialized.Load() {
 		// Wait for initialization to complete to make sure that all
 		// metrics are registered.
 		return errors.New("metric initialization is not complete")
 	}
-	if ProfilingMetricWriter == nil {
-		return errors.New("tried to initialize profiling metrics without log file")
-	}
 
 	var values []func(fieldValues ...*FieldValue) uint64
 	var header strings.Builder
-	header.WriteString(metricsPrefix)
 	header.WriteString("Time (ns)")
 	numMetrics := 0
 
-	if len(profilingMetrics) > 0 {
-		metrics := strings.Split(profilingMetrics, ",")
+	if len(opts.Metrics) > 0 {
+		metrics := strings.Split(opts.Metrics, ",")
 		numMetrics = len(metrics)
 
 		for _, name := range metrics {
@@ -113,8 +135,6 @@ func StartProfilingMetrics(profilingMetrics string, profilingRate time.Duration)
 			header.WriteString(name)
 			values = append(values, m.value)
 		}
-
-		header.WriteRune('\n')
 	} else {
 		if len(definedProfilingMetrics) > 0 {
 			return fmt.Errorf("a value for --profiling-metrics was not specified; consider using a subset of '--profiling-metrics=%s'", strings.Join(definedProfilingMetrics, ","))
@@ -140,8 +160,15 @@ func StartProfilingMetrics(profilingMetrics string, profilingRate time.Duration)
 	stopProfilingMetrics = make(chan bool, 1)
 	doneProfilingMetrics = make(chan bool, 1)
 	writeCh := make(chan writeReq, snapshotRingbufferSize)
-	go collectProfilingMetrics(&s, values, profilingRate, writeCh)
-	go writeProfilingMetrics(&s, header.String(), writeCh)
+
+	go collectProfilingMetrics(&s, values, opts.Rate, writeCh)
+	if opts.Lossy {
+		lossySink := newLossyBufferedWriter(opts.Sink)
+		go writeProfilingMetrics[*lossyBufferedWriter[T]](lossySink, &s, header.String(), writeCh)
+	} else {
+		bufferedSink := newBufferedWriter(opts.Sink)
+		go writeProfilingMetrics[*bufferedWriter[T]](bufferedSink, &s, header.String(), writeCh)
+	}
 	log.Infof("Profiling metrics started.")
 
 	return nil
@@ -208,95 +235,189 @@ func collectProfilingMetrics(s *snapshots, values []func(fieldValues ...*FieldVa
 	}
 }
 
-const bufferedLines = 256
+// bufferedMetricsWriter is a ProfilingMetricsWriter that buffers data
+// before writing it to some underlying writer.
+type bufferedMetricsWriter interface {
+	// We inherit from the ProfilingMetricsWriter interface.
+	// Note however that calls to WriteString should *not* contain any
+	// newline character, unless called through NewLine.
+	ProfilingMetricsWriter
 
-// bufferedHashWriter is a buffered writer that also keeps track of
-// a hash of the data written. It flushes every `bufferedLines` lines.
-type bufferedHashWriter[T io.StringWriter] struct {
-	buf        bytes.Buffer
-	lines      int
-	underlying T
-	hasher     hash.Hash32
+	// NewLine writes a newline character to the buffer.
+	// The writer may decide to flush the buffer at this point.
+	NewLine()
+
+	// Flush flushes the buffer to the underlying writer.
+	Flush()
 }
 
-// WriteString writes a string to the buffer and updates the hasher.
-// This should *not* contain any newline character, unless this function
-// is being called through NewLine.
-func (w *bufferedHashWriter[T]) WriteString(s string) (int, error) {
-	w.hasher.Write([]byte(s))
-	// We ignore the effects of partial writes on the hash computation here.
-	// This is OK because the goal of this writer is speed over correctness,
-	// and correctness is enforced by the reader of this data checking the
-	// hash at the end.
+const (
+	// Buffer size reasonable to use for a single line of metric data.
+	lineBufSize = 4 * 1024 // 4 KiB
+
+	// Buffer size for a buffered write to an underlying sink.
+	bufSize = 984 * 1024 // 984 KiB
+
+	// Number of lines to buffer before flushing to the underlying sink
+	// by a line-buffered writer.
+	bufferedLines = bufSize / lineBufSize
+)
+
+// bufferedWriter is a buffered metrics writer that wraps an underlying
+// ProfilingMetricsWriter.
+// It implements `bufferedMetricsWriter`.
+type bufferedWriter[T ProfilingMetricsWriter] struct {
+	buf        bytes.Buffer
+	underlying T
+}
+
+func newBufferedWriter[T ProfilingMetricsWriter](underlying T) *bufferedWriter[T] {
+	w := &bufferedWriter[T]{underlying: underlying}
+	w.buf.Grow(bufSize + lineBufSize)
+	return w
+}
+
+// WriteString implements bufferedMetricsWriter.WriteString.
+func (w *bufferedWriter[T]) WriteString(s string) (int, error) {
 	return w.buf.WriteString(s)
 }
 
-// Flush flushes the buffer to the underlying writer.
-func (w *bufferedHashWriter[T]) Flush() {
-	if w.buf.Len() > 0 {
-		data := w.buf.String()
-		// Ensure that we write a complete line atomically, as this
-		// may get parsed while being mixed with other logs that may not
-		// have clean line endings a the time we print this.
-		if !strings.HasPrefix(data, "\n") {
-			data = "\n" + data
-		}
-		if !strings.HasSuffix(data, "\n") {
-			data = data + "\n"
-		}
-		w.underlying.WriteString(data)
-		w.buf.Reset()
-		w.lines = 0
-	}
-}
-
-// NewLine writes a newline character to the buffer, updates the hasher,
-// and flushes the buffer if there are at least `bufferedLines` lines in
-// the buffer.
-func (w *bufferedHashWriter[T]) NewLine() {
-	w.WriteString("\n")
-	w.lines++
-	if w.lines >= bufferedLines {
+// NewLine implements bufferedMetricsWriter.NewLine.
+func (w *bufferedWriter[T]) NewLine() {
+	w.buf.WriteString("\n")
+	if w.buf.Len() >= bufSize {
 		w.Flush()
 	}
 }
 
+// Flush implements bufferedMetricsWriter.Flush.
+func (w *bufferedWriter[T]) Flush() {
+	w.underlying.WriteString(w.buf.String())
+	w.buf.Reset()
+}
+
+// Close implements bufferedMetricsWriter.Close.
+func (w *bufferedWriter[T]) Close() error {
+	w.Flush()
+	return w.underlying.Close()
+}
+
+// lossyBufferedWriter writes to an underlying ProfilingMetricsWriter
+// and buffers data on a per-line basis. It adds a prefix to every line,
+// and keeps track of the checksum of the data it has written (which is then
+// also written to the underlying writer on `Close()`).
+// The checksum covers all of the per-line data written after the line prefix,
+// including the newline character of these lines, with the exception of
+// the checksum data line itself.
+// `lossyBufferedWriter` implements `bufferedMetricsWriter`.
+type lossyBufferedWriter[T ProfilingMetricsWriter] struct {
+	lineBuf     bytes.Buffer
+	flushBuf    bytes.Buffer
+	hasher      hash.Hash32
+	lines       int
+	longestLine int
+	underlying  T
+}
+
+// newLossyBufferedWriter creates a new lossyBufferedWriter.
+func newLossyBufferedWriter[T ProfilingMetricsWriter](underlying T) *lossyBufferedWriter[T] {
+	w := &lossyBufferedWriter[T]{
+		underlying:  underlying,
+		hasher:      adler32.New(),
+		longestLine: lineBufSize,
+	}
+	w.lineBuf.Grow(lineBufSize)
+
+	// `lineBufSize + 1` to account for the newline at the end of each line.
+	// `+ 2` to account for the newline at the beginning and end of each flush.
+	w.flushBuf.Grow((lineBufSize+1)*bufferedLines + 2)
+
+	w.flushBuf.WriteString("\n")
+	return w
+}
+
+// WriteString implements bufferedMetricsWriter.WriteString.
+func (w *lossyBufferedWriter[T]) WriteString(s string) (int, error) {
+	return w.lineBuf.WriteString(s)
+}
+
+// Flush implements bufferedMetricsWriter.Flush.
+func (w *lossyBufferedWriter[T]) Flush() {
+	if w.lines > 0 {
+		// Ensure that we write a complete line atomically, as this
+		// may get parsed while being mixed with other logs that may not
+		// have clean line endings a the time we print this.
+		w.flushBuf.WriteString("\n")
+		w.underlying.WriteString(w.flushBuf.String())
+		w.flushBuf.Reset()
+		w.flushBuf.WriteString("\n")
+		w.lines = 0
+	}
+}
+
+// NewLine implements bufferedMetricsWriter.NewLine.
+func (w *lossyBufferedWriter[T]) NewLine() {
+	w.lineBuf.WriteString("\n")
+	if lineLen := w.lineBuf.Len(); lineLen > w.longestLine {
+		wantTotalSize := (lineLen+1)*bufferedLines + 2
+		if growBy := wantTotalSize - w.flushBuf.Len(); growBy > 0 {
+			w.flushBuf.Grow(growBy)
+		}
+		w.longestLine = lineLen
+	}
+	line := w.lineBuf.String()
+	w.lineBuf.Reset()
+	w.flushBuf.WriteString(MetricsPrefix)
+	w.flushBuf.WriteString(line)
+	// We ignore the effects that partial writes on the underlying writer
+	// would have on the hash computation here.
+	// This is OK because the goal of this writer is speed over correctness,
+	// and correctness is enforced by the reader of this data checking the
+	// hash at the end.
+	w.hasher.Write([]byte(line))
+	w.lineBuf.Reset()
+	w.lines++
+	if w.lines >= bufferedLines || w.flushBuf.Len() >= bufSize {
+		w.Flush()
+	}
+}
+
+// Close implements bufferedMetricsWriter.Close.
+// It writes the checksum of the data written to the underlying writer.
+func (w *lossyBufferedWriter[T]) Close() error {
+	w.Flush()
+	w.flushBuf.WriteString(MetricsPrefix)
+	w.flushBuf.WriteString(fmt.Sprintf("%s0x%x\n", MetricsHashIndicator, w.hasher.Sum32()))
+	w.underlying.WriteString(w.flushBuf.String())
+	w.hasher.Reset()
+	w.lineBuf.Reset()
+	w.flushBuf.Reset()
+	return w.underlying.Close()
+}
+
 // writeProfilingMetrics will write to the ProfilingMetricsWriter on every
 // request via writeReqs, until writeReqs is closed.
-func writeProfilingMetrics(s *snapshots, header string, writeReqs <-chan writeReq) {
+func writeProfilingMetrics[T bufferedMetricsWriter](sink T, s *snapshots, header string, writeReqs <-chan writeReq) {
 	numEntries := s.numMetrics + 1
-
-	out := bufferedHashWriter[*os.File]{
-		hasher:     adler32.New(),
-		underlying: ProfilingMetricWriter,
-	}
-	out.buf.Grow(8 * 1024 * 1024) // 8 MiB
-	out.WriteString(header)
-
+	sink.WriteString(header)
+	sink.NewLine()
 	for req := range writeReqs {
 		s.curWriterIndex.Store(int32(req.ringbufferIdx))
-
 		for i := 0; i < req.numLines; i++ {
-			out.WriteString(metricsPrefix)
 			base := i * numEntries
 			// Write the time
-			prometheus.WriteInteger(&out, int64(s.ringbuffer[req.ringbufferIdx][base]))
+			prometheus.WriteInteger(sink, int64(s.ringbuffer[req.ringbufferIdx][base]))
 			// Then everything else
 			for j := 1; j < numEntries; j++ {
-				out.WriteString("\t")
-				prometheus.WriteInteger(&out, int64(s.ringbuffer[req.ringbufferIdx][base+j]))
+				sink.WriteString("\t")
+				prometheus.WriteInteger(sink, int64(s.ringbuffer[req.ringbufferIdx][base+j]))
 			}
-			out.NewLine()
+			sink.NewLine()
 		}
 	}
-
-	out.buf.WriteString(metricsPrefix)
-	out.buf.WriteString(fmt.Sprintf("ADLER32\t0x%x\n", out.hasher.Sum32()))
-	out.Flush()
-	ProfilingMetricWriter.Close()
+	sink.Close()
 	doneProfilingMetrics <- true
 	close(doneProfilingMetrics)
-
 	profilingMetricsStarted.Store(false)
 }
 
