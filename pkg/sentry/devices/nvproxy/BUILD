@@ -37,6 +37,7 @@ go_library(
         "object_free_list.go",
         "objs_mutex.go",
         "save_restore.go",
+        "save_restore_impl.go",
         "seccomp_filters.go",
         "uvm.go",
         "uvm_mmap.go",

@@ -12,9 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build !false
-// +build !false
-
 package nvproxy
 
 import (
@@ -24,15 +21,11 @@ import (
 
 // beforeSave is invoked by stateify.
 func (nvp *nvproxy) beforeSave() {
-	nvp.objsLock()
-	defer nvp.objsUnlock()
-	if len(nvp.clients) != 0 {
-		panic("can't save with live nvproxy clients")
-	}
+	nvp.beforeSaveImpl()
 }
 
 // afterLoad is invoked by stateify.
-func (nvp *nvproxy) afterLoad(goContext.Context) {
+func (nvp *nvproxy) afterLoad(ctx goContext.Context) {
 	Init()
 	abiCons, ok := abis[nvp.version]
 	if !ok {
@@ -40,14 +33,25 @@ func (nvp *nvproxy) afterLoad(goContext.Context) {
 	}
 	nvp.abi = abiCons.cons()
 	nvp.objsFreeSet = make(map[*object]struct{})
+	nvp.afterLoadImpl(ctx)
 }
 
 // beforeSave is invoked by stateify.
 func (fd *frontendFD) beforeSave() {
-	panic("nvproxy.frontendFD is not saveable.")
+	fd.beforeSaveImpl()
+}
+
+// afterLoad is invoked by stateify.
+func (fd *frontendFD) afterLoad(ctx goContext.Context) {
+	fd.afterLoadImpl(ctx)
 }
 
 // beforeSave is invoked by stateify.
 func (fd *uvmFD) beforeSave() {
-	panic("nvproxy.uvmFD is not saveable.")
+	fd.beforeSaveImpl()
+}
+
+// afterLoad is invoked by stateify.
+func (fd *uvmFD) afterLoad(ctx goContext.Context) {
+	fd.afterLoadImpl(ctx)
 }
