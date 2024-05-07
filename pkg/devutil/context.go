@@ -14,7 +14,7 @@
 
 package devutil
 
-import "gvisor.dev/gvisor/pkg/context"
+import "context"
 
 // contextID is this package's type for context.Context.Value keys.
 type contextID int
@@ -22,12 +22,23 @@ type contextID int
 const (
 	// CtxDevGoferClient is a Context.Value key for a /dev gofer client.
 	CtxDevGoferClient contextID = iota
+
+	// CtxDevGoferClientProvider is a Context.Value key for GoferClientProvider.
+	CtxDevGoferClientProvider
 )
 
 // GoferClientFromContext returns the device gofer client used by ctx.
 func GoferClientFromContext(ctx context.Context) *GoferClient {
 	if v := ctx.Value(CtxDevGoferClient); v != nil {
 		return v.(*GoferClient)
+	}
+	return nil
+}
+
+// GoferClientProviderFromContext returns the GoferClientProvider used by ctx.
+func GoferClientProviderFromContext(ctx context.Context) GoferClientProvider {
+	if v := ctx.Value(CtxDevGoferClientProvider); v != nil {
+		return v.(GoferClientProvider)
 	}
 	return nil
 }

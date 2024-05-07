@@ -25,6 +25,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/devutil"
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/control"
@@ -226,6 +227,7 @@ func (r *restorer) restore(l *Loader) error {
 	ctx = context.WithValue(ctx, vfs.CtxRestoreFilesystemFDMap, fdmap)
 	log.Debugf("Restore using mfmap: %v", fdmap)
 	ctx = context.WithValue(ctx, pgalloc.CtxMemoryFileMap, mfmap)
+	ctx = context.WithValue(ctx, devutil.CtxDevGoferClientProvider, l.k)
 
 	// Load the state.
 	loadOpts := state.LoadOpts{Source: r.stateFile, PagesMetadata: r.pagesMetadata, PagesFile: r.pagesFile}
