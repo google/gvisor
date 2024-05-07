@@ -87,8 +87,7 @@ func (dev *frontendDevice) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.D
 // frontendFD implements vfs.FileDescriptionImpl for /dev/nvidia# and
 // /dev/nvidiactl.
 //
-// frontendFD is not savable; we do not implement save/restore of host GPU
-// state.
+// +stateify savable
 type frontendFD struct {
 	vfsfd vfs.FileDescription
 	vfs.FileDescriptionDefaultImpl
@@ -101,7 +100,7 @@ type frontendFD struct {
 	memmapFile    frontendFDMemmapFile
 
 	queue           waiter.Queue
-	haveMmapContext atomic.Bool
+	haveMmapContext atomic.Bool `state:"nosave"`
 
 	// clients are handles of clients owned by this frontendFD. clients is
 	// protected by nvp.objsMu.
