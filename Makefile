@@ -123,6 +123,7 @@ RUNTIME_LOGS    ?= $(RUNTIME_LOG_DIR)/runsc.log.%TEST%.%TIMESTAMP%.%COMMAND%
 RUNTIME_ARGS    ?=
 DOCKER_DAEMON_CONFIG_PATH ?= /etc/docker/daemon.json
 DOCKER_RELOAD_COMMAND ?= sudo systemctl reload docker
+TEST_CHECK_UP_TO_DATE_FILE ?= /tmp/.gvisor-bazel-test-up-to-date
 
 SYSFS_GROUP_PATH := /sys/fs/cgroup
 ifeq ($(shell stat -f -c "%T" "$(SYSFS_GROUP_PATH)" 2>/dev/null),cgroup2fs)
@@ -173,7 +174,7 @@ install_runtime = $(call configure,$(1),$(2) --TESTONLY-test-name-env=RUNSC_TEST
 # Don't use cached results, otherwise multiple runs using different runtimes
 # may be skipped, if all other inputs are the same.
 test_runtime = $(call test,--test_env=RUNTIME=$(1) --nocache_test_results $(PARTITIONS) $(2))
-test_runtime_cached = $(call test,--test_env=RUNTIME=$(1) $(PARTITIONS) $(2))
+test_runtime_cached = $(call test,--test_env=RUNTIME=$(1) --test_env=TEST_CHECK_UP_TO_DATE_FILE=$(TEST_CHECK_UP_TO_DATE_FILE) $(PARTITIONS) $(2))
 
 refresh: $(RUNTIME_BIN) ## Updates the runtime binary.
 .PHONY: refresh
@@ -269,8 +270,9 @@ RUNTIME_TESTS_FLAKY_IS_ERROR ?= true
 RUNTIME_TESTS_FLAKY_SHORT_CIRCUIT ?= true
 
 %-runtime-tests: load-runtimes_% $(RUNTIME_BIN)
-	@$(call install_runtime,$(RUNTIME),--watchdog-action=panic --platform=systrap)
-	@IMAGE_TAG=$(call tag,runtimes_$*) && \
+	test -f $(TEST_CHECK_UP_TO_DATE_FILE) || \
+	{ $(call install_runtime,$(RUNTIME),--watchdog-action=panic --platform=systrap); }
+	IMAGE_TAG=$(call tag,runtimes_$*) && \
 	$(call test_runtime_cached,$(RUNTIME),--test_timeout=1800 --test_env=RUNTIME_TESTS_FILTER=$(RUNTIME_TESTS_FILTER) --test_env=RUNTIME_TESTS_PER_TEST_TIMEOUT=$(RUNTIME_TESTS_PER_TEST_TIMEOUT) --test_env=RUNTIME_TESTS_RUNS_PER_TEST=$(RUNTIME_TESTS_RUNS_PER_TEST) --test_env=RUNTIME_TESTS_FLAKY_IS_ERROR=$(RUNTIME_TESTS_FLAKY_IS_ERROR) --test_env=RUNTIME_TESTS_FLAKY_SHORT_CIRCUIT=$(RUNTIME_TESTS_FLAKY_SHORT_CIRCUIT) --test_env=IMAGE_TAG=$${IMAGE_TAG} //test/runtimes:$*)
 
 do-tests: $(RUNTIME_BIN)
