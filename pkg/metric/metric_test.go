@@ -1140,29 +1140,24 @@ func TestMetricProfiling(t *testing.T) {
 				t.Fatalf("failed to open file a second time: %v", err)
 			}
 
-			// Check the header
-			h := adler32.New()
-			lines := bufio.NewScanner(f)
-			expectedHeader := "Time (ns)\t" + strings.Join(test.metricNames, "\t")
-			if test.lossy {
-				expectedHeader = MetricsPrefix + expectedHeader
-			}
-			var header string
-			for header == "" && lines.Scan() {
-				header = lines.Text()
-			}
-			if header != expectedHeader {
-				t.Fatalf("header mismatch: got '%s' want '%s'", header, expectedHeader)
-			}
-			h.Write([]byte(strings.TrimPrefix(header, MetricsPrefix) + "\n"))
-
-			// Check that data looks sane:
+			// Check that the log looks sane:
+			// - Header should match what we expect.
+			// - We should have one metadata line per metric.
+			// - We should have one start time line.
+			// - If in lossy mode, we should have a hash line.
+			// - If we have a hash, it should match the one computed by this test.
 			// - Each timestamp should always be bigger.
 			// - Each metric value should be at least as big as the previous.
+			h := adler32.New()
+			lines := bufio.NewScanner(f)
+			expectedHeader := TimeColumn + "\t" + strings.Join(test.metricNames, "\t")
 			prevTS := uint64(0)
 			prevValues := make([]uint64, numMetrics)
 			numDatapoints := 0
 			var hashLine string
+			gotMetadataFor := make(map[string]struct{}, numMetrics)
+			gotHeader := false
+			gotStartTime := false
 			for lines.Scan() {
 				line := lines.Text()
 				if line == "" {
@@ -1182,6 +1177,34 @@ func TestMetricProfiling(t *testing.T) {
 					continue
 				}
 				h.Write([]byte(line + "\n"))
+				if strings.HasPrefix(line, MetricsMetaIndicator) {
+					line = strings.TrimPrefix(line, MetricsMetaIndicator)
+					components := strings.Split(line, "\t")
+					if len(components) != 2 {
+						t.Fatalf("got %d components in metadata line %q, want 2", len(components), line)
+					}
+					// We only verify that the metadata is present, not its contents.
+					if components[0] == "" || components[1] == "" {
+						t.Fatalf("got empty metadata line: %q", line)
+					}
+					gotMetadataFor[components[0]] = struct{}{}
+					continue
+				}
+				if strings.HasPrefix(line, MetricsStartTimeIndicator) {
+					if gotStartTime {
+						t.Fatalf("got multiple start time lines")
+					}
+					gotStartTime = true
+					continue
+				}
+				if !gotHeader {
+					// This line must be the header.
+					if line != expectedHeader {
+						t.Fatalf("got header %q, want %q", line, expectedHeader)
+					}
+					gotHeader = true
+					continue
+				}
 				numDatapoints++
 				items := strings.Split(line, "\t")
 				if len(items) != (numMetrics + 1) {
@@ -1219,6 +1242,20 @@ func TestMetricProfiling(t *testing.T) {
 				if prevValues[i] != expected {
 					t.Errorf("incorrect final metric value: got %d, want %d", prevValues[i], expected)
 				}
+			}
+			if len(gotMetadataFor) != numMetrics {
+				t.Errorf("got metadata for %d metrics, want %d", len(gotMetadataFor), numMetrics)
+			}
+			for _, metricName := range test.metricNames {
+				if _, ok := gotMetadataFor[metricName]; !ok {
+					t.Errorf("did not get metadata for metric %q", metricName)
+				}
+			}
+			if !gotStartTime {
+				t.Error("did not get start time metadata")
+			}
+			if !gotHeader {
+				t.Error("did not get header")
 			}
 			if test.lossy {
 				if hashLine == "" {

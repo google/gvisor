@@ -24,6 +24,7 @@ import (
 	"strings"
 	"time"
 
+	"google.golang.org/protobuf/encoding/protojson"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/prometheus"
@@ -37,6 +38,14 @@ const (
 	// MetricsHashIndicator is prepended before the hash of the metrics
 	// data at the end of the metrics stream.
 	MetricsHashIndicator = "ADLER32\t"
+	// TimeColumn is the column header for the time column.
+	TimeColumn = "Time (ns)"
+	// MetricsMetaIndicator is prepended before every metrics metadata line
+	// after metricsPrefix.
+	MetricsMetaIndicator = "META\t"
+	// MetricsStartTimeIndicator is prepended before the start time of the
+	// metrics collection.
+	MetricsStartTimeIndicator = "START_TIME\t"
 )
 
 var (
@@ -58,6 +67,9 @@ var (
 // before it's written to the writer.
 type snapshots struct {
 	numMetrics int
+	// startTime is the time at which collection started, as reported by
+	// CheapNowNano() which does *not* start counting from the epoch time.
+	startTime int64
 	// ringbuffer is used to store metric data.
 	ringbuffer [][]uint64
 	// curWriterIndex is the ringbuffer index currently being read by the
@@ -113,8 +125,9 @@ func StartProfilingMetrics[T ProfilingMetricsWriter](opts ProfilingMetricsOption
 	}
 
 	var values []func(fieldValues ...*FieldValue) uint64
-	var header strings.Builder
-	header.WriteString("Time (ns)")
+	var headers []string
+	var columnHeaders strings.Builder
+	columnHeaders.WriteString(TimeColumn)
 	numMetrics := 0
 
 	if len(opts.Metrics) > 0 {
@@ -131,8 +144,18 @@ func StartProfilingMetrics[T ProfilingMetricsWriter](opts ProfilingMetricsOption
 				// TODO(b/240280155): Add support for field values.
 				return fmt.Errorf("will not profile metric '%s' because it has metric fields which are not supported", name)
 			}
-			header.WriteRune('\t')
-			header.WriteString(name)
+			var metricMetadataHeader strings.Builder
+			metricMetadataHeader.WriteString(MetricsMetaIndicator)
+			metricMetadataHeader.WriteString(name)
+			metricMetadataHeader.WriteRune('\t')
+			metricMetadata, err := protojson.MarshalOptions{Multiline: false}.Marshal(m.metadata)
+			if err != nil {
+				return fmt.Errorf("failed to marshal metric schema for metric %q: %w", name, err)
+			}
+			metricMetadataHeader.Write(metricMetadata)
+			headers = append(headers, metricMetadataHeader.String())
+			columnHeaders.WriteRune('\t')
+			columnHeaders.WriteString(name)
 			values = append(values, m.value)
 		}
 	} else {
@@ -141,6 +164,11 @@ func StartProfilingMetrics[T ProfilingMetricsWriter](opts ProfilingMetricsOption
 		}
 		return fmt.Errorf("a value for --profiling-metrics was not specified; also no conditionally compiled metrics found, consider compiling runsc with --go_tag=condmetric_profiling")
 	}
+	headers = append(
+		headers,
+		fmt.Sprintf("%s%d", MetricsStartTimeIndicator, time.Now().UnixNano()),
+		columnHeaders.String(),
+	)
 
 	if !profilingMetricsStarted.CompareAndSwap(false, true) {
 		return errors.New("profiling metrics have already been started")
@@ -160,14 +188,14 @@ func StartProfilingMetrics[T ProfilingMetricsWriter](opts ProfilingMetricsOption
 	stopProfilingMetrics = make(chan bool, 1)
 	doneProfilingMetrics = make(chan bool, 1)
 	writeCh := make(chan writeReq, snapshotRingbufferSize)
-
+	s.startTime = CheapNowNano()
 	go collectProfilingMetrics(&s, values, opts.Rate, writeCh)
 	if opts.Lossy {
 		lossySink := newLossyBufferedWriter(opts.Sink)
-		go writeProfilingMetrics[*lossyBufferedWriter[T]](lossySink, &s, header.String(), writeCh)
+		go writeProfilingMetrics[*lossyBufferedWriter[T]](lossySink, &s, headers, writeCh)
 	} else {
 		bufferedSink := newBufferedWriter(opts.Sink)
-		go writeProfilingMetrics[*bufferedWriter[T]](bufferedSink, &s, header.String(), writeCh)
+		go writeProfilingMetrics[*bufferedWriter[T]](bufferedSink, &s, headers, writeCh)
 	}
 	log.Infof("Profiling metrics started.")
 
@@ -182,7 +210,6 @@ func collectProfilingMetrics(s *snapshots, values []func(fieldValues ...*FieldVa
 	numEntries := s.numMetrics + 1 // to account for the timestamp
 	ringbufferIdx := 0
 	curSnapshot := 0
-	startTime := CheapNowNano()
 	// getNewRingbufferIdx will block until the writer indicates that some part
 	// of the ringbuffer is available for writing.
 	getNewRingbufferIdx := func() {
@@ -216,7 +243,7 @@ func collectProfilingMetrics(s *snapshots, values []func(fieldValues ...*FieldVa
 		}
 
 		collectStart := CheapNowNano()
-		timestamp := time.Duration(collectStart - startTime)
+		timestamp := time.Duration(collectStart - s.startTime)
 		base := curSnapshot * numEntries
 		s.ringbuffer[ringbufferIdx][base] = uint64(timestamp)
 		for i := 1; i < numEntries; i++ {
@@ -397,10 +424,12 @@ func (w *lossyBufferedWriter[T]) Close() error {
 
 // writeProfilingMetrics will write to the ProfilingMetricsWriter on every
 // request via writeReqs, until writeReqs is closed.
-func writeProfilingMetrics[T bufferedMetricsWriter](sink T, s *snapshots, header string, writeReqs <-chan writeReq) {
+func writeProfilingMetrics[T bufferedMetricsWriter](sink T, s *snapshots, headers []string, writeReqs <-chan writeReq) {
 	numEntries := s.numMetrics + 1
-	sink.WriteString(header)
-	sink.NewLine()
+	for _, header := range headers {
+		sink.WriteString(header)
+		sink.NewLine()
+	}
 	for req := range writeReqs {
 		s.curWriterIndex.Store(int32(req.ringbufferIdx))
 		for i := 0; i < req.numLines; i++ {
@@ -416,6 +445,7 @@ func writeProfilingMetrics[T bufferedMetricsWriter](sink T, s *snapshots, header
 		}
 	}
 	sink.Close()
+
 	doneProfilingMetrics <- true
 	close(doneProfilingMetrics)
 	profilingMetricsStarted.Store(false)

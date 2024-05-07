@@ -25,6 +25,7 @@ go_library(
         "//pkg/log",
         "//pkg/prometheus",
         "//pkg/sync",
+        "@org_golang_google_protobuf//encoding/protojson:go_default_library",
         "@org_golang_google_protobuf//types/known/timestamppb",
     ],
 )
