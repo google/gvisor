@@ -34,6 +34,7 @@ iperf_version_arg=
 # various changes in the kind of link available.
 client=false
 server=false
+linux_client=false
 verbose=false
 gso=0
 swgso=false
@@ -70,6 +71,9 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --client)
       client=true
+      ;;
+    --linux_client)
+      linux_client=true
       ;;
     --client_tcp_probe_file)
       shift
@@ -216,6 +220,7 @@ while [[ $# -gt 0 ]]; do
       echo " --help                show this message"
       echo " --verbose             verbose output"
       echo " --client              use netstack as the client"
+      echo " --linux-client        print client stats in linux case"
       echo " --ideal               reset all network emulation"
       echo " --server              use netstack as the server"
       echo " --mtu                 set the mtu (bytes)"
@@ -484,8 +489,10 @@ fi
 
 if ${client}; then
   echo "BenchmarkTCP/role=client/host-gso=\$hostgso/host-gro=\$hostgro 1 \$mbits Mb/s \$client_cpu_load cpu-time"
-elif ${server}; then
-  echo "BenchmarkTCP/role=server/host-gso=\$hostgso/host-gro=\$hostgro 1 \$mbits Mb/s \$server_cpu_load cpu-time"
+  exit 0
+elif ${linux_client}; then
+  echo "BenchmarkTCP/role=client/host-gso=\$hostgso/host-gro=\$hostgro 1 \$mbits Mb/s \$client_cpu_load cpu-time"
+  exit 0
 fi
-
+echo "BenchmarkTCP/role=server/host-gso=\$hostgso/host-gro=\$hostgro 1 \$mbits Mb/s \$server_cpu_load cpu-time"
 EOF
