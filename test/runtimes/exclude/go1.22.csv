@@ -1,0 +1,9 @@
+test name,bug id,comment
+cmd/cgo/internal/testerrors,b/339191886,Too slow
+cmd/cgo/internal/testsanitizers,b/339101787,
+cmd/go,b/339179763,
+cmd/internal/testdir:0_1,,tries to run ALL tests in 'test/' directory and times out
+cmd/link,b/339311479,
+cmd/link/internal/ld,b/339311479,
+os/signal,b/339311315,
+syscall,b/118781998,
