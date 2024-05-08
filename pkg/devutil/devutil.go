@@ -52,6 +52,7 @@ func NewGoferClient(ctx context.Context, contName string, fd int) (*GoferClient,
 	return &GoferClient{
 		clientFD: client.NewFD(devInode.ControlFD),
 		hostFD:   devHostFD,
+		contName: contName,
 	}, nil
 }
 

@@ -18,6 +18,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/nvgpu"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/marshal"
 	"gvisor.dev/gvisor/pkg/sentry/mm"
 )
 
@@ -230,42 +231,76 @@ func (nvp *nvproxy) enqueueCleanup(f func()) {
 	nvp.objsCleanup = append(nvp.objsCleanup, f)
 }
 
-// simpleObject is an objectImpl tracking a driver object whose class is not
-// represented by a more specific type.
-type simpleObject struct {
-	object
+// +stateify savable
+type capturedRmAllocParams struct {
+	fd              *frontendFD
+	ioctlParams     nvgpu.NVOS64Parameters
+	rightsRequested nvgpu.RS_ACCESS_MASK
+	allocParams     []byte
 }
 
-func newSimpleObject() *simpleObject {
-	return &simpleObject{}
+func captureRmAllocParams[Params any](fd *frontendFD, ioctlParams *nvgpu.NVOS64Parameters, rightsRequested nvgpu.RS_ACCESS_MASK, allocParams *Params) capturedRmAllocParams {
+	var allocParamsBuf []byte
+	if allocParams != nil {
+		if allocParamsMarshal, ok := any(allocParams).(marshal.Marshallable); ok {
+			allocParamsBuf = make([]byte, allocParamsMarshal.SizeBytes())
+			allocParamsMarshal.MarshalBytes(allocParamsBuf)
+		} else {
+			log.Traceback("nvproxy: allocParams %T is not marshalable")
+		}
+	}
+	return capturedRmAllocParams{
+		fd:              fd,
+		ioctlParams:     *ioctlParams,
+		rightsRequested: rightsRequested,
+		allocParams:     allocParamsBuf,
+	}
+}
+
+// rmAllocObject is an objectImpl tracking a driver object allocated by an
+// invocation of NV_ESC_RM_ALLOC whose class is not represented by a more
+// specific type.
+//
+// +stateify savable
+type rmAllocObject struct {
+	object
+
+	params capturedRmAllocParams
+}
+
+func newRmAllocObject[Params any](fd *frontendFD, ioctlParams *nvgpu.NVOS64Parameters, rightsRequested nvgpu.RS_ACCESS_MASK, allocParams *Params) *rmAllocObject {
+	return &rmAllocObject{
+		params: captureRmAllocParams(fd, ioctlParams, rightsRequested, allocParams),
+	}
 }
 
 // Release implements objectImpl.Release.
-func (o *simpleObject) Release(ctx context.Context) {
+func (o *rmAllocObject) Release(ctx context.Context) {
 	// no-op
 }
 
 // rootClient is an objectImpl tracking a NV01_ROOT_CLIENT.
+//
+// +stateify savable
 type rootClient struct {
 	object
 
 	// These fields are protected by nvproxy.objsMu.
 	resources map[nvgpu.Handle]*object
 
-	// fd is the frontendFD that owns this client.
-	fd *frontendFD
+	params capturedRmAllocParams
 }
 
-func newRootClient(fd *frontendFD) *rootClient {
+func newRootClient(fd *frontendFD, ioctlParams *nvgpu.NVOS64Parameters, rightsRequested nvgpu.RS_ACCESS_MASK, allocParams *nvgpu.Handle) *rootClient {
 	return &rootClient{
 		resources: make(map[nvgpu.Handle]*object),
-		fd:        fd,
+		params:    captureRmAllocParams(fd, ioctlParams, rightsRequested, allocParams),
 	}
 }
 
 // Release implements objectImpl.Release.
 func (o *rootClient) Release(ctx context.Context) {
-	delete(o.fd.clients, o.handle)
+	delete(o.params.fd.clients, o.handle)
 }
 
 // osDescMem is an objectImpl tracking a NV01_MEMORY_SYSTEM_OS_DESCRIPTOR.
@@ -287,4 +322,24 @@ func (o *osDescMem) Release(ctx context.Context) {
 			ctx.Debugf("nvproxy: unpinned %d bytes for released OS descriptor", total)
 		}
 	})
+}
+
+// osEvent is an objectImpl tracking a NV01_EVENT_OS_EVENT.
+type osEvent struct {
+	object
+}
+
+// Release implements objectImpl.Release.
+func (o *osEvent) Release(ctx context.Context) {
+	// no-op
+}
+
+// virtMem is an objectImpl tracking a NV50_MEMORY_VIRTUAL.
+type virtMem struct {
+	object
+}
+
+// Release implements objectImpl.Release.
+func (o *virtMem) Release(ctx context.Context) {
+	// no-op
 }

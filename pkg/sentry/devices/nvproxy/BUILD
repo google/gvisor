@@ -7,6 +7,13 @@ package(default_applicable_licenses = ["//:license"])
 licenses(["notice"])
 
 declare_mutex(
+    name = "fds_mutex",
+    out = "fds_mutex.go",
+    package = "nvproxy",
+    prefix = "fds",
+)
+
+declare_mutex(
     name = "objs_mutex",
     out = "objs_mutex.go",
     package = "nvproxy",
@@ -28,6 +35,7 @@ go_template_instance(
 go_library(
     name = "nvproxy",
     srcs = [
+        "fds_mutex.go",
         "frontend.go",
         "frontend_mmap.go",
         "frontend_unsafe.go",

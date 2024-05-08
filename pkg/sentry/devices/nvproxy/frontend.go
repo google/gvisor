@@ -81,6 +81,9 @@ func (dev *frontendDevice) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.D
 		return nil, err
 	}
 	fd.memmapFile.fd = fd
+	fd.dev.nvp.fdsMu.Lock()
+	defer fd.dev.nvp.fdsMu.Unlock()
+	fd.dev.nvp.frontendFDs[fd] = struct{}{}
 	return &fd.vfsfd, nil
 }
 
@@ -103,14 +106,18 @@ type frontendFD struct {
 	haveMmapContext atomic.Bool `state:"nosave"`
 
 	// clients are handles of clients owned by this frontendFD. clients is
-	// protected by nvp.objsMu.
-	clients map[nvgpu.Handle]struct{} `state:"nosave"`
+	// protected by dev.nvp.objsMu.
+	clients map[nvgpu.Handle]struct{}
 }
 
 // Release implements vfs.FileDescriptionImpl.Release.
 func (fd *frontendFD) Release(ctx context.Context) {
 	fdnotifier.RemoveFD(fd.hostFD)
 	fd.queue.Notify(waiter.EventHUp)
+
+	fd.dev.nvp.fdsMu.Lock()
+	delete(fd.dev.nvp.frontendFDs, fd)
+	fd.dev.nvp.fdsMu.Unlock()
 
 	fd.dev.nvp.objsLock()
 	defer fd.dev.nvp.objsUnlock()
@@ -735,11 +742,11 @@ func rmAllocSimple[Params any, PParams marshalPtr[Params]](fi *frontendIoctlStat
 
 // addSimpleObjDepParentLocked implements rmAllocInvoke.addObjLocked for
 // classes that require no special handling and depend only on their parents.
-func addSimpleObjDepParentLocked[Params any](fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64Parameters, allocParams *Params) {
-	fi.fd.dev.nvp.objAdd(fi.ctx, ioctlParams.HRoot, ioctlParams.HObjectNew, ioctlParams.HClass, newSimpleObject(), ioctlParams.HObjectParent)
+func addSimpleObjDepParentLocked[Params any](fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64Parameters, rightsRequested nvgpu.RS_ACCESS_MASK, allocParams *Params) {
+	fi.fd.dev.nvp.objAdd(fi.ctx, ioctlParams.HRoot, ioctlParams.HObjectNew, ioctlParams.HClass, newRmAllocObject(fi.fd, ioctlParams, rightsRequested, allocParams), ioctlParams.HObjectParent)
 }
 
-func rmAllocSimpleParams[Params any, PParams marshalPtr[Params]](fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64Parameters, isNVOS64 bool, objAddLocked func(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64Parameters, allocParams *Params)) (uintptr, error) {
+func rmAllocSimpleParams[Params any, PParams marshalPtr[Params]](fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64Parameters, isNVOS64 bool, objAddLocked func(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64Parameters, rightsRequested nvgpu.RS_ACCESS_MASK, allocParams *Params)) (uintptr, error) {
 	if ioctlParams.PAllocParms == 0 {
 		return rmAllocInvoke[Params](fi, ioctlParams, nil, isNVOS64, objAddLocked)
 	}
@@ -763,8 +770,8 @@ func rmAllocNoParams(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64Parameters
 }
 
 func rmAllocRootClient(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64Parameters, isNVOS64 bool) (uintptr, error) {
-	return rmAllocSimpleParams(fi, ioctlParams, isNVOS64, func(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64Parameters, allocParams *nvgpu.Handle) {
-		fi.fd.dev.nvp.objAdd(fi.ctx, ioctlParams.HRoot, ioctlParams.HObjectNew, ioctlParams.HClass, newRootClient(fi.fd))
+	return rmAllocSimpleParams(fi, ioctlParams, isNVOS64, func(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64Parameters, rightsRequested nvgpu.RS_ACCESS_MASK, allocParams *nvgpu.Handle) {
+		fi.fd.dev.nvp.objAdd(fi.ctx, ioctlParams.HRoot, ioctlParams.HObjectNew, ioctlParams.HClass, newRootClient(fi.fd, ioctlParams, rightsRequested, allocParams))
 		if fi.fd.clients == nil {
 			fi.fd.clients = make(map[nvgpu.Handle]struct{})
 		}
@@ -789,7 +796,9 @@ func rmAllocEventOSEvent(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64Parame
 	origData := allocParams.Data
 	allocParams.Data = nvgpu.P64(uint64(eventFile.hostFD))
 
-	n, err := rmAllocInvoke(fi, ioctlParams, &allocParams, isNVOS64, addSimpleObjDepParentLocked)
+	n, err := rmAllocInvoke(fi, ioctlParams, &allocParams, isNVOS64, func(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64Parameters, rightsRequested nvgpu.RS_ACCESS_MASK, allocParams *nvgpu.NV0005_ALLOC_PARAMETERS) {
+		fi.fd.dev.nvp.objAdd(fi.ctx, ioctlParams.HRoot, ioctlParams.HObjectNew, ioctlParams.HClass, &osEvent{}, ioctlParams.HObjectParent)
+	})
 	if err != nil {
 		return n, err
 	}
@@ -802,22 +811,22 @@ func rmAllocEventOSEvent(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64Parame
 }
 
 func rmAllocSMDebuggerSession(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64Parameters, isNVOS64 bool) (uintptr, error) {
-	return rmAllocSimpleParams(fi, ioctlParams, isNVOS64, func(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64Parameters, allocParams *nvgpu.NV83DE_ALLOC_PARAMETERS) {
+	return rmAllocSimpleParams(fi, ioctlParams, isNVOS64, func(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64Parameters, rightsRequested nvgpu.RS_ACCESS_MASK, allocParams *nvgpu.NV83DE_ALLOC_PARAMETERS) {
 		// Compare
 		// src/nvidia/src/kernel/gpu/gr/kernel_sm_debugger_session.c:ksmdbgssnConstruct_IMPL()
 		// => _ShareDebugger() => sessionAddDependency/sessionAddDependant();
 		// the driver indirects through a per-KernelGraphicsObject
 		// RmDebuggerSession, which we elide for dependency tracking.
-		fi.fd.dev.nvp.objAdd(fi.ctx, ioctlParams.HRoot, ioctlParams.HObjectNew, ioctlParams.HClass, newSimpleObject(), ioctlParams.HObjectParent, allocParams.HClass3DObject)
+		fi.fd.dev.nvp.objAdd(fi.ctx, ioctlParams.HRoot, ioctlParams.HObjectNew, ioctlParams.HClass, newRmAllocObject(fi.fd, ioctlParams, rightsRequested, allocParams), ioctlParams.HObjectParent, allocParams.HClass3DObject)
 	})
 }
 
 func rmAllocChannelGroup(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64Parameters, isNVOS64 bool) (uintptr, error) {
-	return rmAllocSimpleParams(fi, ioctlParams, isNVOS64, func(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64Parameters, allocParams *nvgpu.NV_CHANNEL_GROUP_ALLOCATION_PARAMETERS) {
+	return rmAllocSimpleParams(fi, ioctlParams, isNVOS64, func(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64Parameters, rightsRequested nvgpu.RS_ACCESS_MASK, allocParams *nvgpu.NV_CHANNEL_GROUP_ALLOCATION_PARAMETERS) {
 		// See
 		// src/nvidia/src/kernel/gpu/fifo/kernel_channel_group_api.c:kchangrpapiConstruct_IMPL()
 		// => refAddDependant().
-		fi.fd.dev.nvp.objAdd(fi.ctx, ioctlParams.HRoot, ioctlParams.HObjectNew, ioctlParams.HClass, newSimpleObject(), ioctlParams.HObjectParent, allocParams.HVASpace)
+		fi.fd.dev.nvp.objAdd(fi.ctx, ioctlParams.HRoot, ioctlParams.HObjectNew, ioctlParams.HClass, newRmAllocObject(fi.fd, ioctlParams, rightsRequested, allocParams), ioctlParams.HObjectParent, allocParams.HVASpace)
 		// Note: When the channel group's engine type is GR, which is always
 		// true unless MIG is enabled, kchangrpapiConstruct_IMPL() constructs a
 		// KERNEL_GRAPHICS_CONTEXT whose lifetime is the same as the channel
@@ -831,7 +840,7 @@ func rmAllocChannelGroup(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64Parame
 }
 
 func rmAllocChannel(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64Parameters, isNVOS64 bool) (uintptr, error) {
-	return rmAllocSimpleParams(fi, ioctlParams, isNVOS64, func(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64Parameters, allocParams *nvgpu.NV_CHANNEL_ALLOC_PARAMS) {
+	return rmAllocSimpleParams(fi, ioctlParams, isNVOS64, func(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64Parameters, rightsRequested nvgpu.RS_ACCESS_MASK, allocParams *nvgpu.NV_CHANNEL_ALLOC_PARAMS) {
 		// See
 		// src/nvidia/src/kernel/gpu/fifo/kernel_channel.c:kchannelConstruct_IMPL()
 		// => refAddDependant(). The channel's parent may be a device or
@@ -840,19 +849,19 @@ func rmAllocChannel(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64Parameters,
 		// then kchannelConstruct_IMPL() constructs one internally and frees it
 		// when the channel is destroyed, so either way no separate dependency
 		// is required.
-		fi.fd.dev.nvp.objAdd(fi.ctx, ioctlParams.HRoot, ioctlParams.HObjectNew, ioctlParams.HClass, newSimpleObject(), ioctlParams.HObjectParent, allocParams.HVASpace, allocParams.HContextShare)
+		fi.fd.dev.nvp.objAdd(fi.ctx, ioctlParams.HRoot, ioctlParams.HObjectNew, ioctlParams.HClass, newRmAllocObject(fi.fd, ioctlParams, rightsRequested, allocParams), ioctlParams.HObjectParent, allocParams.HVASpace, allocParams.HContextShare)
 	})
 }
 
 func rmAllocContextShare(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64Parameters, isNVOS64 bool) (uintptr, error) {
-	return rmAllocSimpleParams(fi, ioctlParams, isNVOS64, func(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64Parameters, allocParams *nvgpu.NV_CTXSHARE_ALLOCATION_PARAMETERS) {
+	return rmAllocSimpleParams(fi, ioctlParams, isNVOS64, func(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64Parameters, rightsRequested nvgpu.RS_ACCESS_MASK, allocParams *nvgpu.NV_CTXSHARE_ALLOCATION_PARAMETERS) {
 		// See
 		// src/nvidia/src/kernel/gpu/fifo/kernel_ctxshare.c:kctxshareapiConstruct_IMPL()
 		// => refAddDependant(). The context share's parent is the channel
 		// group, so (given that we are representing graphics context
 		// dependencies as channel group dependencies) no separate dependency
 		// is required.
-		fi.fd.dev.nvp.objAdd(fi.ctx, ioctlParams.HRoot, ioctlParams.HObjectNew, ioctlParams.HClass, newSimpleObject(), ioctlParams.HObjectParent, allocParams.HVASpace)
+		fi.fd.dev.nvp.objAdd(fi.ctx, ioctlParams.HRoot, ioctlParams.HObjectNew, ioctlParams.HClass, newRmAllocObject(fi.fd, ioctlParams, rightsRequested, allocParams), ioctlParams.HObjectParent, allocParams.HVASpace)
 	})
 }
 

@@ -225,7 +225,7 @@ func (r *restorer) restore(l *Loader) error {
 
 	log.Debugf("Restore using fdmap: %v", fdmap)
 	ctx = context.WithValue(ctx, vfs.CtxRestoreFilesystemFDMap, fdmap)
-	log.Debugf("Restore using mfmap: %v", fdmap)
+	log.Debugf("Restore using mfmap: %v", mfmap)
 	ctx = context.WithValue(ctx, pgalloc.CtxMemoryFileMap, mfmap)
 	ctx = context.WithValue(ctx, devutil.CtxDevGoferClientProvider, l.k)
 

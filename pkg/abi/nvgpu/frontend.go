@@ -369,6 +369,7 @@ type NVOS56Parameters struct {
 // NV_ESC_RM_ALLOC.
 //
 // +marshal
+// +stateify savable
 type NVOS64Parameters struct {
 	HRoot            Handle
 	HObjectParent    Handle

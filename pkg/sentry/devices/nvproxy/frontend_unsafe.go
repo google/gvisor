@@ -169,7 +169,7 @@ func ctrlSubdevGRGetInfo(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54Parame
 	return n, nil
 }
 
-func rmAllocInvoke[Params any](fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64Parameters, allocParams *Params, isNVOS64 bool, addObjLocked func(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64Parameters, allocParams *Params)) (uintptr, error) {
+func rmAllocInvoke[Params any](fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64Parameters, allocParams *Params, isNVOS64 bool, addObjLocked func(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64Parameters, rightsRequested nvgpu.RS_ACCESS_MASK, allocParams *Params)) (uintptr, error) {
 	defer runtime.KeepAlive(allocParams) // since we convert to non-pointer-typed P64
 
 	// Temporarily replace application pointers with sentry pointers.
@@ -192,7 +192,7 @@ func rmAllocInvoke[Params any](fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64
 	fi.fd.dev.nvp.objsLock()
 	n, _, errno := unix.RawSyscall(unix.SYS_IOCTL, uintptr(fi.fd.hostFD), frontendIoctlCmd(nvgpu.NV_ESC_RM_ALLOC, nvgpu.SizeofNVOS64Parameters), uintptr(unsafe.Pointer(ioctlParams)))
 	if errno == 0 && ioctlParams.Status == nvgpu.NV_OK {
-		addObjLocked(fi, ioctlParams, allocParams)
+		addObjLocked(fi, ioctlParams, rightsRequested, allocParams)
 	}
 	fi.fd.dev.nvp.objsUnlock()
 	ioctlParams.PAllocParms = origPAllocParms
@@ -230,7 +230,7 @@ func rmVidHeapControlAllocSize(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS32
 	n, err := frontendIoctlInvoke(fi, ioctlParams)
 	if err == nil && ioctlParams.Status == nvgpu.NV_OK {
 		// src/nvidia/src/kernel/mem_mgr/virtual_mem.c:virtmemConstruct_IMPL() => refAddDependant()
-		fi.fd.dev.nvp.objAdd(fi.ctx, ioctlParams.HRoot, allocSizeParams.HMemory, nvgpu.NV50_MEMORY_VIRTUAL, newSimpleObject(), ioctlParams.HObjectParent, ioctlParams.HVASpace)
+		fi.fd.dev.nvp.objAdd(fi.ctx, ioctlParams.HRoot, allocSizeParams.HMemory, nvgpu.NV50_MEMORY_VIRTUAL, &virtMem{}, ioctlParams.HObjectParent, ioctlParams.HVASpace)
 	}
 	fi.fd.dev.nvp.objsUnlock()
 	allocSizeParams.Address = origAddress
