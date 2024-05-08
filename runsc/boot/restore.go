@@ -242,6 +242,7 @@ func (r *restorer) restore(l *Loader) error {
 	dog := watchdog.New(l.k, dogOpts)
 
 	// Change the loader fields to reflect the changes made when restoring.
+	l.watchdog.Stop()
 	l.watchdog = dog
 	l.root.procArgs = kernel.CreateProcessArgs{}
 	l.restore = true
