@@ -83,6 +83,7 @@ BAZEL              := bazel $(STARTUP_OPTIONS)
 BASE_OPTIONS       := --color=no --curses=no $(BAZEL_REMOTE_CACHE)
 BAZEL_TEST_OUTPUT  ?= errors
 TEST_OPTIONS       += $(BASE_OPTIONS) \
+  --incompatible_sandbox_hermetic_tmp=false \
   --test_output=$(BAZEL_TEST_OUTPUT) \
   --keep_going \
   --verbose_failures=true \
