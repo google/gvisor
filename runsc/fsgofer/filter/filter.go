@@ -28,6 +28,7 @@ type Options struct {
 	UDSCreateEnabled bool
 	ProfileEnabled   bool
 	DirectFS         bool
+	CgoEnabled       bool
 }
 
 // Install installs seccomp filters.
@@ -48,6 +49,11 @@ func Install(opt Options) error {
 		if opt.UDSCreateEnabled {
 			s.Merge(udsCreateSyscalls)
 		}
+	}
+
+	if opt.CgoEnabled {
+		report("CGO enabled: syscall filters less restrictive!")
+		s.Merge(cgoFilters)
 	}
 
 	// Set of additional filters used by -race and -msan. Returns empty

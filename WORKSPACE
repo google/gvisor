@@ -52,6 +52,7 @@ http_archive(
         # Allow for patching of the go_sdk.
         "//tools:rules_go_sdk.patch",
         "//tools:rules_go_facts.patch",
+        "//tools:rules_cgo.patch",
     ],
     sha256 = "80a98277ad1311dacd837f9b16db62887702e9f1d1c4c9f796d0121a46c8e184",
     urls = [
@@ -3291,4 +3292,26 @@ go_repository(
     importpath = "github.com/hanwen/go-fuse/v2",
     sum = "h1:t5ivNIH2PK+zw4OBul/iJjsoG9K6kXo4nMDoBpciC8A=",
     version = "v2.3.0",
+)
+
+# Support IVB and later machines.
+load("@bazel_tools//tools/build_defs/repo:git.bzl", "new_git_repository")
+new_git_repository(
+    name = "libtldk",
+    remote = "git@github.com:alipay/tldk.git",
+    commit = "9efb0dacb67da1da62ca78785e8cffb0c5a82785",
+    build_file_content = """
+genrule(
+    name = "tldk_genrule",
+    outs = ["libtldk.a"],
+    local = 1,
+    cmd ="make -j 1 -C external/libtldk DPDK_MACHINE=ivb EXTRA_CFLAGS='-g -O3 -fPIC -fno-omit-frame-pointer -DLOOK_ASIDE_BACKEND -Wno-error' all; cp external/libtldk/libtldk.a $(@D)/",
+    visibility = ["//visibility:public"],
+)
+cc_library(
+    name = "libtldk",
+    srcs = ["libtldk.a"],
+    visibility = ["//visibility:public"],
+)
+""",
 )
