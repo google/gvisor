@@ -1074,10 +1074,12 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 	donations.Donate("stdio-fds", stdios[:]...)
 	if conf.ProfilingMetricsLog == "-" {
 		donations.Donate("profiling-metrics-fd", stdios[1])
-	} else {
+		cmd.Args = append(cmd.Args, "--profiling-metrics-fd-lossy=true")
+	} else if conf.ProfilingMetricsLog != "" {
 		if err := donations.DonateDebugLogFile("profiling-metrics-fd", conf.ProfilingMetricsLog, "metrics", test); err != nil {
 			return err
 		}
+		cmd.Args = append(cmd.Args, "--profiling-metrics-fd-lossy=false")
 	}
 
 	totalSysMem, err := totalSystemMemory()

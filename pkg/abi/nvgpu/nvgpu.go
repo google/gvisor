@@ -30,6 +30,7 @@ const (
 // Handle is NvHandle, from src/common/sdk/nvidia/inc/nvtypes.h.
 //
 // +marshal
+// +stateify savable
 type Handle struct {
 	Val uint32
 }
@@ -60,6 +61,7 @@ const (
 // src/common/sdk/nvidia/inc/rs_access.h.
 //
 // +marshal
+// +stateify savable
 type RS_ACCESS_MASK struct {
 	Limbs [SDK_RS_ACCESS_MAX_LIMBS]uint32 // RsAccessLimb
 }

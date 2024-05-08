@@ -73,7 +73,7 @@ func (dev *uvmDevice) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dentry
 
 // uvmFD implements vfs.FileDescriptionImpl for /dev/nvidia-uvm.
 //
-// uvmFD is not savable; we do not implement save/restore of host GPU state.
+// +stateify savable
 type uvmFD struct {
 	vfsfd vfs.FileDescription
 	vfs.FileDescriptionDefaultImpl

@@ -44,6 +44,7 @@ func Register(vfsObj *vfs.VirtualFilesystem, versionStr string, uvmDevMajor uint
 	nvp := &nvproxy{
 		abi:         abiCons.cons(),
 		version:     version,
+		frontendFDs: make(map[*frontendFD]struct{}),
 		clients:     make(map[nvgpu.Handle]*rootClient),
 		objsFreeSet: make(map[*object]struct{}),
 	}
@@ -71,6 +72,9 @@ func Register(vfsObj *vfs.VirtualFilesystem, versionStr string, uvmDevMajor uint
 type nvproxy struct {
 	abi     *driverABI `state:"nosave"`
 	version DriverVersion
+
+	fdsMu       fdsMutex `state:"nosave"`
+	frontendFDs map[*frontendFD]struct{}
 
 	// See object.go.
 	// Users should call nvproxy.objsLock/Unlock() rather than locking objsMu

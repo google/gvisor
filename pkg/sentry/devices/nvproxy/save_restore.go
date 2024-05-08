@@ -19,20 +19,39 @@ import (
 	"fmt"
 )
 
-func (n *nvproxy) beforeSave() {
-	n.objsLock()
-	defer n.objsUnlock()
-	if len(n.clients) != 0 {
-		panic("can't save with live nvproxy clients")
-	}
+// beforeSave is invoked by stateify.
+func (nvp *nvproxy) beforeSave() {
+	nvp.beforeSaveImpl()
 }
 
-func (n *nvproxy) afterLoad(goContext.Context) {
+// afterLoad is invoked by stateify.
+func (nvp *nvproxy) afterLoad(ctx goContext.Context) {
 	Init()
-	abiCons, ok := abis[n.version]
+	abiCons, ok := abis[nvp.version]
 	if !ok {
-		panic(fmt.Sprintf("driver version %q not found in abis map", n.version))
+		panic(fmt.Sprintf("driver version %q not found in abis map", nvp.version))
 	}
-	n.abi = abiCons.cons()
-	n.objsFreeSet = make(map[*object]struct{})
+	nvp.abi = abiCons.cons()
+	nvp.objsFreeSet = make(map[*object]struct{})
+	nvp.afterLoadImpl(ctx)
+}
+
+// beforeSave is invoked by stateify.
+func (fd *frontendFD) beforeSave() {
+	fd.beforeSaveImpl()
+}
+
+// afterLoad is invoked by stateify.
+func (fd *frontendFD) afterLoad(ctx goContext.Context) {
+	fd.afterLoadImpl(ctx)
+}
+
+// beforeSave is invoked by stateify.
+func (fd *uvmFD) beforeSave() {
+	fd.beforeSaveImpl()
+}
+
+// afterLoad is invoked by stateify.
+func (fd *uvmFD) afterLoad(ctx goContext.Context) {
+	fd.afterLoadImpl(ctx)
 }

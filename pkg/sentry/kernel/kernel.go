@@ -943,7 +943,7 @@ func (ctx *createProcessContext) Value(key any) any {
 		mntns.IncRef()
 		return mntns
 	case devutil.CtxDevGoferClient:
-		return ctx.kernel.getDevGoferClient(ctx.kernel.ContainerName(ctx.args.ContainerID))
+		return ctx.kernel.GetDevGoferClient(ctx.kernel.ContainerName(ctx.args.ContainerID))
 	case inet.CtxStack:
 		return ctx.kernel.RootNetworkNamespace().Stack()
 	case ktime.CtxRealtimeClock:
@@ -2004,7 +2004,9 @@ func (k *Kernel) RemoveDevGofer(contName string) {
 	delete(k.devGofers, contName)
 }
 
-func (k *Kernel) getDevGoferClient(contName string) *devutil.GoferClient {
+// GetDevGoferClient implements
+// devutil.GoferClientProviderFromContext.GetDevGoferClient.
+func (k *Kernel) GetDevGoferClient(contName string) *devutil.GoferClient {
 	k.devGofersMu.Lock()
 	defer k.devGofersMu.Unlock()
 	return k.devGofers[contName]

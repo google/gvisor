@@ -52,6 +52,7 @@ func NewGoferClient(ctx context.Context, contName string, fd int) (*GoferClient,
 	return &GoferClient{
 		clientFD: client.NewFD(devInode.ControlFD),
 		hostFD:   devHostFD,
+		contName: contName,
 	}, nil
 }
 
@@ -121,4 +122,9 @@ func (g *GoferClient) OpenAt(ctx context.Context, name string, flags uint32) (in
 	client.CloseFD(ctx, childFD.ID(), false /* flush */)
 	client.CloseFD(ctx, childOpenFD, true /* flush */)
 	return childHostFD, nil
+}
+
+// GoferClientProvider provides a GoferClient for a given container.
+type GoferClientProvider interface {
+	GetDevGoferClient(contName string) *GoferClient
 }

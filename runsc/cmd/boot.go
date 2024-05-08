@@ -156,6 +156,10 @@ type Boot struct {
 	// profilingMetricsFD is a file descriptor to write Sentry metrics data to.
 	profilingMetricsFD int
 
+	// profilingMetricsLossy sets whether profilingMetricsFD is a lossy channel.
+	// If so, the format used to write to it will contain a checksum.
+	profilingMetricsLossy bool
+
 	// procMountSyncFD is a file descriptor that has to be closed when the
 	// procfs mount isn't needed anymore.
 	procMountSyncFD int
@@ -219,6 +223,7 @@ func (b *Boot) SetFlags(f *flag.FlagSet) {
 	// Profiling flags.
 	b.profileFDs.SetFromFlags(f)
 	f.IntVar(&b.profilingMetricsFD, "profiling-metrics-fd", -1, "file descriptor to write sentry profiling metrics.")
+	f.BoolVar(&b.profilingMetricsLossy, "profiling-metrics-fd-lossy", false, "if true, treat the sentry profiling metrics FD as lossy and write a checksum to it.")
 }
 
 // Execute implements subcommands.Command.Execute.  It starts a sandbox in a
@@ -483,8 +488,12 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 	// registered metrics prior to sending the start signal.
 	metric.Initialize()
 	if b.profilingMetricsFD != -1 {
-		metric.ProfilingMetricWriter = os.NewFile(uintptr(b.profilingMetricsFD), "metrics file")
-		if err := metric.StartProfilingMetrics(conf.ProfilingMetrics, time.Duration(conf.ProfilingMetricsRate)*time.Microsecond); err != nil {
+		if err := metric.StartProfilingMetrics(metric.ProfilingMetricsOptions[*os.File]{
+			Sink:    os.NewFile(uintptr(b.profilingMetricsFD), "metrics file"),
+			Lossy:   b.profilingMetricsLossy,
+			Metrics: conf.ProfilingMetrics,
+			Rate:    time.Duration(conf.ProfilingMetricsRate) * time.Microsecond,
+		}); err != nil {
 			l.Destroy()
 			util.Fatalf("unable to start profiling metrics: %v", err)
 		}

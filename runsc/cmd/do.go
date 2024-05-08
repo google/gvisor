@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"math/rand"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -253,6 +254,10 @@ func (c *Do) setupNet(cid string, spec *specs.Spec) (func(), error) {
 	if err != nil {
 		return nil, errNoDefaultInterface
 	}
+	mtu, err := deviceMTU(dev)
+	if err != nil {
+		return nil, err
+	}
 	peerIP, err := calculatePeerIP(c.ip)
 	if err != nil {
 		return nil, err
@@ -260,7 +265,7 @@ func (c *Do) setupNet(cid string, spec *specs.Spec) (func(), error) {
 	veth, peer := deviceNames(cid)
 
 	cmds := []string{
-		fmt.Sprintf("ip link add %s type veth peer name %s", veth, peer),
+		fmt.Sprintf("ip link add %s mtu %v type veth peer name %s", veth, mtu, peer),
 
 		// Setup device outside the namespace.
 		fmt.Sprintf("ip addr add %s/24 dev %s", peerIP, peer),
@@ -365,6 +370,14 @@ func defaultDevice() (string, error) {
 		return "", fmt.Errorf("malformed %q output: %q", "ip route list default", string(out))
 	}
 	return parts[4], nil
+}
+
+func deviceMTU(dev string) (int, error) {
+	intf, err := net.InterfaceByName(dev)
+	if err != nil {
+		return 0, err
+	}
+	return intf.MTU, nil
 }
 
 func makeFile(dest, content string, spec *specs.Spec) (string, error) {

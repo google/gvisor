@@ -60,6 +60,7 @@ func (fd *frontendFD) InvalidateUnsavable(ctx context.Context) error {
 	return nil
 }
 
+// +stateify savable
 type frontendFDMemmapFile struct {
 	memmap.NoBufferedIOFallback
 
