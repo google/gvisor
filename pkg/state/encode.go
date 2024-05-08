@@ -772,7 +772,7 @@ func (es *encodeState) Save(obj reflect.Value) {
 		}
 	}); err != nil {
 		// Include the object in the error message.
-		Failf("encoding error at object %#v: %w", oes.obj.Interface(), err)
+		Failf("encoding error: %w\nfor object %#v", err, oes.obj.Interface())
 	}
 
 	// Check that we have objects to serialize.
