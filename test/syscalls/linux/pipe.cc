@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <errno.h>
 #include <fcntl.h> /* Obtain O_* constant definitions */
 #include <linux/futex.h>
 #include <linux/magic.h>
@@ -32,6 +33,7 @@
 #include "test/util/file_descriptor.h"
 #include "test/util/fs_util.h"
 #include "test/util/posix_error.h"
+#include "test/util/save_util.h"
 #include "test/util/signal_util.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
@@ -275,23 +277,41 @@ TEST_P(PipeTest, Seek) {
   SKIP_IF(!CreateBlocking());
 
   for (int i = 0; i < 4; i++) {
-    // Attempt absolute seeks.
-    EXPECT_THAT(lseek(rfd_.get(), 0, SEEK_SET), SyscallFailsWithErrno(ESPIPE));
-    EXPECT_THAT(lseek(rfd_.get(), 4, SEEK_SET), SyscallFailsWithErrno(ESPIPE));
-    EXPECT_THAT(lseek(wfd_.get(), 0, SEEK_SET), SyscallFailsWithErrno(ESPIPE));
-    EXPECT_THAT(lseek(wfd_.get(), 4, SEEK_SET), SyscallFailsWithErrno(ESPIPE));
+    // Saving after each failed lseek() is too expensive for the testing
+    // benefit, especially in a loop.
+    {
+      DisableSave ds;
+      // Attempt absolute seeks.
+      EXPECT_THAT(lseek(rfd_.get(), 0, SEEK_SET),
+                  SyscallFailsWithErrno(ESPIPE));
+      EXPECT_THAT(lseek(rfd_.get(), 4, SEEK_SET),
+                  SyscallFailsWithErrno(ESPIPE));
+      EXPECT_THAT(lseek(wfd_.get(), 0, SEEK_SET),
+                  SyscallFailsWithErrno(ESPIPE));
+      EXPECT_THAT(lseek(wfd_.get(), 4, SEEK_SET),
+                  SyscallFailsWithErrno(ESPIPE));
 
-    // Attempt relative seeks.
-    EXPECT_THAT(lseek(rfd_.get(), 0, SEEK_CUR), SyscallFailsWithErrno(ESPIPE));
-    EXPECT_THAT(lseek(rfd_.get(), 4, SEEK_CUR), SyscallFailsWithErrno(ESPIPE));
-    EXPECT_THAT(lseek(wfd_.get(), 0, SEEK_CUR), SyscallFailsWithErrno(ESPIPE));
-    EXPECT_THAT(lseek(wfd_.get(), 4, SEEK_CUR), SyscallFailsWithErrno(ESPIPE));
+      // Attempt relative seeks.
+      EXPECT_THAT(lseek(rfd_.get(), 0, SEEK_CUR),
+                  SyscallFailsWithErrno(ESPIPE));
+      EXPECT_THAT(lseek(rfd_.get(), 4, SEEK_CUR),
+                  SyscallFailsWithErrno(ESPIPE));
+      EXPECT_THAT(lseek(wfd_.get(), 0, SEEK_CUR),
+                  SyscallFailsWithErrno(ESPIPE));
+      EXPECT_THAT(lseek(wfd_.get(), 4, SEEK_CUR),
+                  SyscallFailsWithErrno(ESPIPE));
 
-    // Attempt end-of-file seeks.
-    EXPECT_THAT(lseek(rfd_.get(), 0, SEEK_CUR), SyscallFailsWithErrno(ESPIPE));
-    EXPECT_THAT(lseek(rfd_.get(), -4, SEEK_END), SyscallFailsWithErrno(ESPIPE));
-    EXPECT_THAT(lseek(wfd_.get(), 0, SEEK_CUR), SyscallFailsWithErrno(ESPIPE));
-    EXPECT_THAT(lseek(wfd_.get(), -4, SEEK_END), SyscallFailsWithErrno(ESPIPE));
+      // Attempt end-of-file seeks.
+      EXPECT_THAT(lseek(rfd_.get(), 0, SEEK_CUR),
+                  SyscallFailsWithErrno(ESPIPE));
+      EXPECT_THAT(lseek(rfd_.get(), -4, SEEK_END),
+                  SyscallFailsWithErrno(ESPIPE));
+      EXPECT_THAT(lseek(wfd_.get(), 0, SEEK_CUR),
+                  SyscallFailsWithErrno(ESPIPE));
+      EXPECT_THAT(lseek(wfd_.get(), -4, SEEK_END),
+                  SyscallFailsWithErrno(ESPIPE));
+    }
+    MaybeSave();
 
     // Add some more data to the pipe.
     int buf = kTestValue;

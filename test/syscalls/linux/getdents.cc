@@ -39,7 +39,9 @@
 #include "test/util/eventfd_util.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/fs_util.h"
+#include "test/util/logging.h"
 #include "test/util/posix_error.h"
+#include "test/util/save_util.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
 
@@ -160,10 +162,15 @@ class GetdentsTest : public ::testing::Test {
 
   // Fill directory with num files, named by number starting at 0.
   void FillDirectory(size_t num) {
-    for (size_t i = 0; i < num; i++) {
-      auto name = JoinPath(dir_.path(), absl::StrCat(i));
-      TEST_CHECK(CreateWithContents(name, "").ok());
+    // Don't save after each file creation since num can be large.
+    {
+      DisableSave ds;
+      for (size_t i = 0; i < num; i++) {
+        auto name = JoinPath(dir_.path(), absl::StrCat(i));
+        TEST_CHECK(CreateWithContents(name, "").ok());
+      }
     }
+    MaybeSave();
   }
 
   // Fill directory with a given list of filenames.
