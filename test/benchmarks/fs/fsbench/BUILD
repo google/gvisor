@@ -18,5 +18,6 @@ go_library(
         "//pkg/test/dockerutil",
         "//test/benchmarks/harness",
         "//test/benchmarks/tools",
+        "//test/metricsviz",
     ],
 )

@@ -25,6 +25,7 @@ import (
 	"gvisor.dev/gvisor/pkg/test/dockerutil"
 	"gvisor.dev/gvisor/test/benchmarks/harness"
 	"gvisor.dev/gvisor/test/benchmarks/tools"
+	"gvisor.dev/gvisor/test/metricsviz"
 )
 
 // FSBenchmark represents a set of work to perform within a container that is instrumented with
@@ -124,6 +125,7 @@ func RunWithDifferentFilesystems(ctx context.Context, b *testing.B, machine harn
 			if err := container.Spawn(ctx, runOpts, "sleep", "24h"); err != nil {
 				b.Fatalf("run failed with: %v", err)
 			}
+			defer metricsviz.FromContainerLogs(ctx, b, container)
 
 			// Ignore safetext/shsprintf linter suggestion.
 			mkdirCmd := fmt.Sprintf("mkdir -p %s", prefix)

@@ -16,15 +16,19 @@
 package metricsviz
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"hash/adler32"
 	"strconv"
 	"strings"
+	"testing"
 	"time"
 
 	"google.golang.org/protobuf/encoding/protojson"
 	"gvisor.dev/gvisor/pkg/metric"
 	mpb "gvisor.dev/gvisor/pkg/metric/metric_go_proto"
+	"gvisor.dev/gvisor/pkg/test/dockerutil"
 )
 
 // MetricName is the name of a metric.
@@ -71,11 +75,15 @@ type Data struct {
 	data map[MetricAndFields]*TimeSeries
 }
 
+// ErrNoMetricData is returned when no metrics data is found in logs.
+var ErrNoMetricData = errors.New("no metrics data found")
+
 // Parse parses metrics data out of the given logs containing
 // profiling metrics data.
 // If `hasPrefix`, only lines prefixed with `metric.MetricsPrefix`
 // will be parsed. If false, all lines will be parsed, and the
 // prefix will be stripped if it is found.
+// If the log does not contain any metrics data, ErrNoMetricData is returned.
 func Parse(logs string, hasPrefix bool) (*Data, error) {
 	data := &Data{make(map[MetricAndFields]*TimeSeries)}
 	var header []MetricAndFields
@@ -83,10 +91,12 @@ func Parse(logs string, hasPrefix bool) (*Data, error) {
 	h := adler32.New()
 	checkedHash := false
 	var startTime time.Time
+	metricsLineFound := false
 	for _, line := range strings.Split(logs, "\n") {
 		if hasPrefix && !strings.HasPrefix(line, metric.MetricsPrefix) {
 			continue
 		}
+		metricsLineFound = true
 		lineData := strings.TrimPrefix(line, metric.MetricsPrefix)
 
 		// Check for hash match.
@@ -181,6 +191,9 @@ func Parse(logs string, hasPrefix bool) (*Data, error) {
 			timeseries.Data = append(timeseries.Data, Point{When: timestamp, Value: value})
 		}
 	}
+	if !metricsLineFound {
+		return nil, ErrNoMetricData
+	}
 	if startTime.IsZero() {
 		return nil, fmt.Errorf("no start time found in logs")
 	}
@@ -191,4 +204,34 @@ func Parse(logs string, hasPrefix bool) (*Data, error) {
 		return nil, fmt.Errorf("no hash data found in logs")
 	}
 	return data, nil
+}
+
+// FromContainerLogs parses a container's logs and reports metrics data
+// found within.
+// The container must be stopped or stoppable by the time this is called.
+func FromContainerLogs(ctx context.Context, testLike testing.TB, container *dockerutil.Container) {
+	// If the container is not stopped, stop it.
+	// This is necessary to flush the profiling metrics logs.
+	st, err := container.Status(ctx)
+	if err != nil {
+		testLike.Fatalf("Failed to get container status: %v", err)
+	}
+	if st.Running {
+		if err := container.Stop(ctx); err != nil {
+			testLike.Fatalf("Failed to stop container: %v", err)
+		}
+	}
+	// Get the logs.
+	logs, err := container.Logs(ctx)
+	if err != nil {
+		testLike.Fatalf("Failed to get container logs: %v", err)
+	}
+	data, err := Parse(logs, true)
+	if err != nil {
+		if errors.Is(err, ErrNoMetricData) {
+			return // No metric data in the logs, so stay quiet.
+		}
+		testLike.Fatalf("Failed to parse metrics data: %v", err)
+	}
+	testLike.Logf("Metric data successfully parsed (%d timeseries).", len(data.data))
 }

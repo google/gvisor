@@ -24,6 +24,7 @@ import (
 	"gvisor.dev/gvisor/pkg/test/dockerutil"
 	"gvisor.dev/gvisor/test/benchmarks/harness"
 	"gvisor.dev/gvisor/test/benchmarks/tools"
+	"gvisor.dev/gvisor/test/metricsviz"
 )
 
 // All possible operations from redis. Note: "ping" will
@@ -85,6 +86,7 @@ func doBenchmarkRedis(b *testing.B, ops []string) {
 	}); err != nil {
 		b.Fatalf("failed to start redis server with: %v", err)
 	}
+	defer metricsviz.FromContainerLogs(ctx, b, server)
 
 	if out, err := server.WaitForOutput(ctx, "Ready to accept connections", 3*time.Second); err != nil {
 		b.Fatalf("failed to start redis server: %v %s", err, out)
