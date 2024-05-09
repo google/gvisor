@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"hash/adler32"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -122,8 +123,8 @@ type HTMLOptions struct {
 }
 
 type chart struct {
-	PageTitle string
-	Series    []*TimeSeries
+	Title  string
+	Series []*TimeSeries
 }
 
 // isCumulative returns whether the given series are all cumulative or all
@@ -290,16 +291,7 @@ func (c *chart) Charter() (components.Charter, error) {
 			charts.WithLabelOpts(opts.Label{Show: false}),
 		)
 	}
-	metricNames := map[MetricName]struct{}{}
-	for _, ts := range c.Series {
-		metricNames[ts.Metric.Name] = struct{}{}
-	}
-	metricNameList := make([]string, 0, len(metricNames))
-	for m := range metricNames {
-		metricNameList = append(metricNameList, string(m))
-	}
-	sort.Strings(metricNameList)
-	chartTitle := fmt.Sprintf("%s: %s", c.PageTitle, strings.Join(metricNameList, ", "))
+	chartTitle := c.Title
 	if isCumulative {
 		chartTitle += " per second"
 		yAxis.Name = "per second"
@@ -343,24 +335,64 @@ func (d *Data) ToHTML(opts HTMLOptions) (string, error) {
 	page.PageTitle = fmt.Sprintf("Metrics for %s at %v", opts.Title, opts.When.Format(time.DateTime))
 	page.Theme = echartstypes.ThemeVintage
 	page.SetLayout(components.PageFlexLayout)
-	titleToChart := make(map[string]*chart)
-	var titles []string
-	for maf, ts := range d.data {
-		title := string(maf.MetricName)
-		c, ok := titleToChart[title]
-		if !ok {
-			c = &chart{PageTitle: opts.Title}
-			titleToChart[title] = c
-			titles = append(titles, title)
+
+	// Find which groups contain which metrics that we're seeing in the data.
+	groupsToMetricNames := make(map[GroupName][]MetricName, len(d.data))
+	for maf := range d.data {
+		for groupName, metricsInGroup := range Groups {
+			if slices.Contains(metricsInGroup, maf.MetricName) && !slices.Contains(groupsToMetricNames[groupName], maf.MetricName) {
+				groupsToMetricNames[groupName] = append(groupsToMetricNames[groupName], maf.MetricName)
+			}
 		}
-		c.Series = append(c.Series, ts)
 	}
-	sort.Strings(titles)
-	for _, title := range titles {
-		c := titleToChart[title]
+
+	// Find which groups for which we have data for at least 2 metrics.
+	// These metrics will be displayed in the group charts only.
+	// The rest of the metrics will be displayed in their own chart.
+	metricToGroups := make(map[MetricName][]GroupName, len(d.data))
+	for groupName, activeGroupMetrics := range groupsToMetricNames {
+		if len(activeGroupMetrics) >= 2 {
+			for _, m := range activeGroupMetrics {
+				metricToGroups[m] = append(metricToGroups[m], groupName)
+			}
+		}
+	}
+
+	// Now go through the data and group it by the chart it'll end up in.
+	chartNameToChart := make(map[string]*chart, len(d.data))
+	var chartNames []string
+	for maf, ts := range d.data {
+		groupsForMetric := metricToGroups[maf.MetricName]
+		if len(groupsForMetric) > 0 {
+			// Group metric chart.
+			for _, groupName := range groupsForMetric {
+				chartName := string(groupName)
+				c, ok := chartNameToChart[chartName]
+				if !ok {
+					c = &chart{Title: fmt.Sprintf("%s: %s", opts.Title, groupName)}
+					chartNameToChart[chartName] = c
+					chartNames = append(chartNames, chartName)
+				}
+				c.Series = append(c.Series, ts)
+			}
+		} else {
+			// Individual metric chart.
+			chartName := string(maf.MetricName)
+			c, ok := chartNameToChart[chartName]
+			if !ok {
+				c = &chart{Title: fmt.Sprintf("%s: %s", opts.Title, ts.String())}
+				chartNameToChart[chartName] = c
+				chartNames = append(chartNames, chartName)
+			}
+			c.Series = append(c.Series, ts)
+		}
+	}
+	sort.Strings(chartNames)
+	for _, chartName := range chartNames {
+		c := chartNameToChart[chartName]
 		charter, err := c.Charter()
 		if err != nil {
-			return "", fmt.Errorf("failed to create charter for %q: %w", title, err)
+			return "", fmt.Errorf("failed to create charter for %q: %w", chartName, err)
 		}
 		page.AddCharts(charter)
 	}
