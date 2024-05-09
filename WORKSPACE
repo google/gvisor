@@ -3292,3 +3292,10 @@ go_repository(
     sum = "h1:t5ivNIH2PK+zw4OBul/iJjsoG9K6kXo4nMDoBpciC8A=",
     version = "v2.3.0",
 )
+
+go_repository(
+    name = "com_github_go_echarts_go_echarts_v2",
+    importpath = "github.com/go-echarts/go-echarts/v2",
+    sum = "h1:uImZAk6qLkC6F9ju6mZ5SPBqTyK8xjZKwSmwnCg4bxg=",
+    version = "v2.3.3",
+)

@@ -16,15 +16,22 @@
 package metricsviz
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"hash/adler32"
+	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/go-echarts/go-echarts/v2/charts"
+	"github.com/go-echarts/go-echarts/v2/components"
+	"github.com/go-echarts/go-echarts/v2/opts"
+	echartstypes "github.com/go-echarts/go-echarts/v2/types"
 	"google.golang.org/protobuf/encoding/protojson"
 	"gvisor.dev/gvisor/pkg/metric"
 	mpb "gvisor.dev/gvisor/pkg/metric/metric_go_proto"
@@ -70,9 +77,300 @@ type TimeSeries struct {
 	Data []Point
 }
 
+// String returns the name of the timeseries.
+func (ts *TimeSeries) String() string {
+	if len(ts.FieldValues) == 0 {
+		if desc := strings.TrimSuffix(ts.Metric.Metadata.GetDescription(), "."); desc != "" {
+			return desc
+		}
+		return string(ts.Metric.Name)
+	}
+	orderedFields := make([]string, 0, len(ts.FieldValues))
+	for f := range ts.FieldValues {
+		orderedFields = append(orderedFields, f)
+	}
+	sort.Strings(orderedFields)
+	var b strings.Builder
+	b.WriteString(string(ts.Metric.Name))
+	b.WriteString("{")
+	for i, f := range orderedFields {
+		if i > 0 {
+			b.WriteString(",")
+		}
+		b.WriteString(f)
+		b.WriteString("=")
+		b.WriteString(ts.FieldValues[f])
+	}
+	b.WriteString("}")
+	return b.String()
+}
+
 // Data maps metrics and field values to timeseries.
 type Data struct {
-	data map[MetricAndFields]*TimeSeries
+	startTime time.Time
+	data      map[MetricAndFields]*TimeSeries
+}
+
+// HTMLOptions are options for generating an HTML page with charts of the
+// metrics data.
+type HTMLOptions struct {
+	// Title is the title of this set of charts.
+	Title string
+
+	// When is the time at which the measurements were taken.
+	When time.Time
+}
+
+type chart struct {
+	PageTitle string
+	Series    []*TimeSeries
+}
+
+// isCumulative returns whether the given series are all cumulative or all
+// not cumulative. It returns an error if the series are a mix of cumulative
+// and non-cumulative timeseries.
+func (c *chart) isCumulative() (bool, error) {
+	var isCumulative bool
+	for i, ts := range c.Series {
+		tsCumulative := ts.Metric.Metadata.GetCumulative()
+		if i == 0 {
+			isCumulative = tsCumulative
+		} else if isCumulative != tsCumulative {
+			return false, fmt.Errorf("series %d (%v) is cumulative=%v, but series 0 (%v) is cumulative=%v", i, ts, tsCumulative, c.Series[0], isCumulative)
+		}
+	}
+	return isCumulative, nil
+}
+
+// getXAxis returns the X axis labels for the chart.
+func (c *chart) getXAxis() ([]string, error) {
+	// Determine the resolution for the timestamps on the X axis.
+	// We do this depending on how long the time series we are charting is.
+	var xAxisResolution time.Duration
+	if len(c.Series) == 0 || len(c.Series[0].Data) < 2 {
+		return nil, errors.New("no series or not enough data points in series")
+	}
+	xMinTime := c.Series[0].Data[0].When
+	xMaxTime := c.Series[0].Data[len(c.Series[0].Data)-1].When
+	xDuration := xMaxTime.Sub(xMinTime)
+	switch {
+	case xDuration <= 11*time.Second:
+		xAxisResolution = time.Nanosecond
+	case xDuration <= 91*time.Second:
+		xAxisResolution = time.Microsecond
+	case xDuration <= 16*time.Minute:
+		xAxisResolution = time.Millisecond
+	default:
+		xAxisResolution = time.Second
+	}
+	formatXAxis := func(t time.Time) string {
+		secondTimestamp := t.Format("15:04:05")
+		nanos := t.Nanosecond()
+		onlyNanos := nanos % 1_000
+		onlyMicros := (nanos / 1_000) % 1_000
+		onlyMillis := (nanos / 1_000_000) % 1_000
+		switch xAxisResolution {
+		case time.Nanosecond:
+			return fmt.Sprintf("%s.%03d_%03d_%03d", secondTimestamp, onlyMillis, onlyMicros, onlyNanos)
+		case time.Microsecond:
+			return fmt.Sprintf("%s.%03d_%03d", secondTimestamp, onlyMillis, onlyMicros)
+		case time.Millisecond:
+			return fmt.Sprintf("%s.%03d", secondTimestamp, onlyMillis)
+		case time.Second:
+			return secondTimestamp
+		default:
+			panic("invalid x axis resolution")
+		}
+	}
+	var xAxis []string
+	for i, ts := range c.Series {
+		if i == 0 {
+			// Define the X axis.
+			xAxis = make([]string, len(ts.Data))
+			for i, p := range ts.Data {
+				xAxis[i] = formatXAxis(p.When)
+			}
+		} else {
+			// Check that the X axis is the same for all series.
+			if len(xAxis) != len(ts.Data) {
+				return nil, fmt.Errorf("series %d has %d data points, but series 0 has %d", i, len(ts.Data), len(xAxis))
+			}
+			for j, p := range ts.Data {
+				if xAxis[j] != formatXAxis(p.When) {
+					return nil, fmt.Errorf("series %d and series 0 differ at data point %d: %q vs %q", i, j, xAxis[j], formatXAxis(p.When))
+				}
+			}
+		}
+	}
+	return xAxis, nil
+}
+
+// series returns a single line series of the chart.
+func (c *chart) series(ts *TimeSeries, isCumulative bool) ([]opts.LineData, error) {
+	const windowDuration = time.Second
+	seriesData := make([]opts.LineData, len(ts.Data))
+	if isCumulative {
+		lastValidXIndex := 0
+		for i, p := range ts.Data {
+			baselineWhen := p.When.Add(-windowDuration)
+			foundExactIndex := -1
+			foundBeforeIndex := -1
+			foundAfterIndex := -1
+		baselineSearch:
+			for j := lastValidXIndex; j <= i; j++ {
+				jWhen := ts.Data[j].When
+				switch {
+				case jWhen.Equal(baselineWhen):
+					foundExactIndex = j
+					break baselineSearch
+				case jWhen.Before(baselineWhen):
+					foundBeforeIndex = j
+				case jWhen.After(baselineWhen) && foundAfterIndex == -1:
+					foundAfterIndex = j
+					break baselineSearch
+				default:
+					return nil, fmt.Errorf("non-ordered timestamps in timeseries: %v", ts.Data)
+				}
+			}
+			switch {
+			case foundExactIndex != -1:
+				lastValidXIndex = foundExactIndex
+				baseline := ts.Data[foundExactIndex].Value
+				seriesData[i] = opts.LineData{Value: p.Value - baseline, YAxisIndex: 0}
+			case foundBeforeIndex != -1 && foundAfterIndex != -1:
+				lastValidXIndex = foundBeforeIndex
+				// Interpolate between the two points.
+				baselineBefore := ts.Data[foundBeforeIndex].Value
+				baselineAfter := ts.Data[foundAfterIndex].Value
+				baselineDelta := baselineAfter - baselineBefore
+				whenBefore := ts.Data[foundBeforeIndex].When
+				whenAfter := ts.Data[foundAfterIndex].When
+				whenDelta := whenAfter.Sub(whenBefore)
+				baselineWhenFraction := float64(baselineWhen.Sub(whenBefore)) / float64(whenDelta)
+				baseline := baselineBefore + uint64(float64(baselineDelta)*baselineWhenFraction)
+				seriesData[i] = opts.LineData{Value: p.Value - baseline, YAxisIndex: 0, Symbol: "none"}
+			default:
+				// Happens naturally for points too early in the timeseries,
+				// set the point to nil.
+				seriesData[i] = opts.LineData{Value: nil, YAxisIndex: 0, Symbol: "none"}
+			}
+		}
+	} else {
+		// Non-cumulative time series are more straightforward.
+		for i, p := range ts.Data {
+			seriesData[i] = opts.LineData{Value: p.Value, YAxisIndex: 0, Symbol: "none"}
+		}
+	}
+	return seriesData, nil
+}
+
+// Charter creates a Charter for this chart.
+func (c *chart) Charter() (components.Charter, error) {
+	lineChart := charts.NewLine()
+	yAxis := opts.YAxis{
+		Scale: true,
+		Show:  true,
+	}
+	isCumulative, err := c.isCumulative()
+	if err != nil {
+		return nil, fmt.Errorf("cannot determine cumulative-ness of the chart: %w", err)
+	}
+	xAxis, err := c.getXAxis()
+	if err != nil {
+		return nil, fmt.Errorf("cannot determine X axis of the chart: %w", err)
+	}
+	for _, ts := range c.Series {
+		seriesData, err := c.series(ts, isCumulative)
+		if err != nil {
+			return nil, fmt.Errorf("cannot determine series data for %v: %w", ts, err)
+		}
+		lineChart.AddSeries(
+			ts.String(),
+			seriesData,
+			charts.WithLabelOpts(opts.Label{Show: false}),
+		)
+	}
+	metricNames := map[MetricName]struct{}{}
+	for _, ts := range c.Series {
+		metricNames[ts.Metric.Name] = struct{}{}
+	}
+	metricNameList := make([]string, 0, len(metricNames))
+	for m := range metricNames {
+		metricNameList = append(metricNameList, string(m))
+	}
+	sort.Strings(metricNameList)
+	chartTitle := fmt.Sprintf("%s: %s", c.PageTitle, strings.Join(metricNameList, ", "))
+	if isCumulative {
+		chartTitle += " per second"
+		yAxis.Name = "per second"
+	}
+	lineChart.SetXAxis(xAxis)
+	lineChart.SetGlobalOptions(
+		charts.WithTitleOpts(opts.Title{Title: chartTitle}),
+		charts.WithInitializationOpts(opts.Initialization{Theme: echartstypes.ThemeVintage}),
+		charts.WithXAxisOpts(opts.XAxis{
+			Show:        true,
+			Data:        []string{"foo", "bar"},
+			SplitNumber: 24,
+			AxisLabel:   &opts.AxisLabel{Show: true},
+		}),
+		charts.WithYAxisOpts(yAxis, 0),
+		charts.WithLegendOpts(opts.Legend{
+			Show:         true,
+			SelectedMode: "multiple",
+			Orient:       "vertical",
+			Right:        "5%",
+			Padding:      []int{24, 8},
+		}),
+		charts.WithDataZoomOpts(opts.DataZoom{Type: "inside", XAxisIndex: 0}),
+		charts.WithDataZoomOpts(opts.DataZoom{Type: "slider", XAxisIndex: 0}),
+		charts.WithDataZoomOpts(opts.DataZoom{Type: "inside", YAxisIndex: 0}),
+		charts.WithTooltipOpts(opts.Tooltip{Show: true, Trigger: "axis"}),
+		charts.WithToolboxOpts(opts.Toolbox{
+			Show: true,
+			Feature: &opts.ToolBoxFeature{
+				SaveAsImage: &opts.ToolBoxFeatureSaveAsImage{Name: "📸 PNG", Show: true, Type: "png"},
+			},
+		}),
+	)
+	lineChart.Validate()
+	return lineChart, nil
+}
+
+// ToHTML generates an HTML page with charts of the metrics data.
+func (d *Data) ToHTML(opts HTMLOptions) (string, error) {
+	page := components.NewPage()
+	page.PageTitle = fmt.Sprintf("Metrics for %s at %v", opts.Title, opts.When.Format(time.DateTime))
+	page.Theme = echartstypes.ThemeVintage
+	page.SetLayout(components.PageFlexLayout)
+	titleToChart := make(map[string]*chart)
+	var titles []string
+	for maf, ts := range d.data {
+		title := string(maf.MetricName)
+		c, ok := titleToChart[title]
+		if !ok {
+			c = &chart{PageTitle: opts.Title}
+			titleToChart[title] = c
+			titles = append(titles, title)
+		}
+		c.Series = append(c.Series, ts)
+	}
+	sort.Strings(titles)
+	for _, title := range titles {
+		c := titleToChart[title]
+		charter, err := c.Charter()
+		if err != nil {
+			return "", fmt.Errorf("failed to create charter for %q: %w", title, err)
+		}
+		page.AddCharts(charter)
+	}
+	page.InitAssets()
+	page.Validate()
+	var b bytes.Buffer
+	if err := page.Render(&b); err != nil {
+		return "", fmt.Errorf("failed to render page: %w", err)
+	}
+	return b.String(), nil
 }
 
 // ErrNoMetricData is returned when no metrics data is found in logs.
@@ -85,12 +383,11 @@ var ErrNoMetricData = errors.New("no metrics data found")
 // prefix will be stripped if it is found.
 // If the log does not contain any metrics data, ErrNoMetricData is returned.
 func Parse(logs string, hasPrefix bool) (*Data, error) {
-	data := &Data{make(map[MetricAndFields]*TimeSeries)}
+	data := &Data{data: make(map[MetricAndFields]*TimeSeries)}
 	var header []MetricAndFields
 	metricsMeta := make(map[MetricName]*Metric)
 	h := adler32.New()
 	checkedHash := false
-	var startTime time.Time
 	metricsLineFound := false
 	for _, line := range strings.Split(logs, "\n") {
 		if hasPrefix && !strings.HasPrefix(line, metric.MetricsPrefix) {
@@ -143,7 +440,7 @@ func Parse(logs string, hasPrefix bool) (*Data, error) {
 				return nil, fmt.Errorf("invalid start time line: %q: %w", line, err)
 			}
 			const nanosPerSecond = 1_000_000_000
-			startTime = time.Unix(int64(timestamp/nanosPerSecond), int64(timestamp%nanosPerSecond))
+			data.startTime = time.Unix(int64(timestamp/nanosPerSecond), int64(timestamp%nanosPerSecond))
 			continue
 		}
 
@@ -181,7 +478,7 @@ func Parse(logs string, hasPrefix bool) (*Data, error) {
 		if err != nil {
 			return nil, fmt.Errorf("invalid data line: %q (bad timestamp: %w)", line, err)
 		}
-		timestamp := startTime.Add(time.Duration(offsetNanos) * time.Nanosecond)
+		timestamp := data.startTime.Add(time.Duration(offsetNanos) * time.Nanosecond)
 		for i, cell := range tabularData[1:] {
 			timeseries := data.data[header[i]]
 			value, err := strconv.ParseUint(cell, 10, 64)
@@ -194,7 +491,7 @@ func Parse(logs string, hasPrefix bool) (*Data, error) {
 	if !metricsLineFound {
 		return nil, ErrNoMetricData
 	}
-	if startTime.IsZero() {
+	if data.startTime.IsZero() {
 		return nil, fmt.Errorf("no start time found in logs")
 	}
 	if len(header) == 0 {
@@ -204,6 +501,19 @@ func Parse(logs string, hasPrefix bool) (*Data, error) {
 		return nil, fmt.Errorf("no hash data found in logs")
 	}
 	return data, nil
+}
+
+var unsafeFileCharacters = regexp.MustCompile("[^-_a-zA-Z0-9., @:+=]+")
+
+// slugify returns a slugified version of the given string, safe for use
+// in a file path.
+func slugify(s string) string {
+	s = strings.ReplaceAll(s, "/", "_")
+	s = unsafeFileCharacters.ReplaceAllString(s, "_")
+	if s == "" {
+		return "blank"
+	}
+	return s
 }
 
 // FromContainerLogs parses a container's logs and reports metrics data
@@ -233,5 +543,15 @@ func FromContainerLogs(ctx context.Context, testLike testing.TB, container *dock
 		}
 		testLike.Fatalf("Failed to parse metrics data: %v", err)
 	}
-	testLike.Logf("Metric data successfully parsed (%d timeseries).", len(data.data))
+	htmlOptions := HTMLOptions{
+		Title: testLike.Name(),
+		When:  data.startTime,
+	}
+	html, err := data.ToHTML(htmlOptions)
+	if err != nil {
+		testLike.Fatalf("Failed to generate HTML: %v", err)
+	}
+	if err := publishHTMLFn(ctx, testLike, htmlOptions, html); err != nil {
+		testLike.Fatalf("Failed to publish HTML: %v", err)
+	}
 }
