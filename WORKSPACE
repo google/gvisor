@@ -1,5 +1,5 @@
-load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive", "http_file")
 load("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository")
+load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive", "http_file")
 
 # Root certificates.
 #
@@ -84,8 +84,8 @@ http_archive(
     ],
 )
 
-load("@io_bazel_rules_go//go:deps.bzl", "go_download_sdk", "go_rules_dependencies")
 load("@bazel_gazelle//:deps.bzl", "gazelle_dependencies", "go_repository")
+load("@io_bazel_rules_go//go:deps.bzl", "go_download_sdk", "go_rules_dependencies")
 
 go_rules_dependencies()
 
@@ -178,6 +178,8 @@ http_archive(
 # Load C++ cross-compilation toolchains.
 http_archive(
     name = "coral_crosstool",
+    patch_args = ["-p1"],
+    patches = ["//tools:crosstool-arm-dirs.patch"],
     sha256 = "f86d488ca353c5ee99187579fe408adb73e9f2bb1d69c6e3a42ffb904ce3ba01",
     strip_prefix = "crosstool-8e885509123395299bed6a5f9529fdc1b9751599",
     urls = [
@@ -193,6 +195,17 @@ cc_crosstool(
 )
 
 register_toolchains("//:cc_toolchain_k8", "//:cc_toolchain_aarch64")
+
+http_archive(
+    name = "com_google_protobuf",
+    sha256 = "c968404387c9cccd18676c6e1d83a1dcc39d162a7f468dace4b243c274de1f02",
+    strip_prefix = "protobuf-5.26.1",
+    urls = ["https://github.com/protocolbuffers/protobuf/archive/v5.26.1.zip"],
+)
+
+load("@com_google_protobuf//:protobuf_deps.bzl", "protobuf_deps")
+
+protobuf_deps()
 
 # Load protobuf dependencies.
 http_archive(
@@ -1467,10 +1480,10 @@ http_archive(
     name = "com_github_grpc_grpc",
     patch_args = ["-p1"],
     patches = ["//tools:grpc_extra_deps.patch"],
-    sha256 = "ec125d7fdb77ecc25b01050a0d5d32616594834d3fe163b016768e2ae42a2df6",
-    strip_prefix = "grpc-1.52.1",
+    sha256 = "493d9905aa09124c2f44268b66205dd013f3925a7e82995f36745974e97af609",
+    strip_prefix = "grpc-1.63.0",
     urls = [
-        "https://github.com/grpc/grpc/archive/v1.52.1.tar.gz",
+        "https://github.com/grpc/grpc/archive/v1.63.0.tar.gz",
     ],
 )
 
@@ -1501,17 +1514,6 @@ http_archive(
         "https://github.com/google/benchmark/archive/v1.7.1.tar.gz",
     ],
 )
-
-http_archive(
-    name = "com_google_protobuf",
-    sha256 = "528927e398f4e290001886894dac17c5c6a2e5548f3fb68004cfb01af901b53a",
-    strip_prefix = "protobuf-3.17.3",
-    urls = ["https://github.com/protocolbuffers/protobuf/archive/v3.17.3.zip"],
-)
-
-load("@com_google_protobuf//:protobuf_deps.bzl", "protobuf_deps")
-
-protobuf_deps()
 
 # Schemas for testing.
 http_file(

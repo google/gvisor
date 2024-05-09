@@ -16,7 +16,9 @@
 startup --host_jvm_args=-Dbazel.DigestFunction=SHA256
 
 # Build with C++17.
-build --cxxopt=-std=c++17
+# com_google_protobuf is compiled with a few warnings.
+build --cxxopt=-std=c++17 --cxxopt=-Wno-error=maybe-uninitialized
+build --host_cxxopt=-std=c++17 --host_cxxopt=-Wno-error=maybe-uninitialized
 
 # Display the current git revision in the info block.
 build --stamp --workspace_status_command tools/workspace_status.sh
