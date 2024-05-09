@@ -118,6 +118,11 @@ type HTMLOptions struct {
 	// Title is the title of this set of charts.
 	Title string
 
+	// ContainerName is the name of the container for which the metrics were
+	// collected. May be empty; usually only specified when there are more
+	// than one container involved in a single test or benchmark.
+	ContainerName string
+
 	// When is the time at which the measurements were taken.
 	When time.Time
 }
@@ -332,7 +337,14 @@ func (c *chart) Charter() (components.Charter, error) {
 // ToHTML generates an HTML page with charts of the metrics data.
 func (d *Data) ToHTML(opts HTMLOptions) (string, error) {
 	page := components.NewPage()
-	page.PageTitle = fmt.Sprintf("Metrics for %s at %v", opts.Title, opts.When.Format(time.DateTime))
+	var chartTitleRoot string
+	if opts.ContainerName == "" {
+		chartTitleRoot = opts.Title
+		page.PageTitle = fmt.Sprintf("Metrics for %s at %v", opts.Title, opts.When.Format(time.DateTime))
+	} else {
+		chartTitleRoot = fmt.Sprintf("%s [%s]", opts.Title, opts.ContainerName)
+		page.PageTitle = fmt.Sprintf("Metrics for %s (container %s) at %v", opts.Title, opts.ContainerName, opts.When.Format(time.DateTime))
+	}
 	page.Theme = echartstypes.ThemeVintage
 	page.SetLayout(components.PageFlexLayout)
 
@@ -369,7 +381,7 @@ func (d *Data) ToHTML(opts HTMLOptions) (string, error) {
 				chartName := string(groupName)
 				c, ok := chartNameToChart[chartName]
 				if !ok {
-					c = &chart{Title: fmt.Sprintf("%s: %s", opts.Title, groupName)}
+					c = &chart{Title: fmt.Sprintf("%s: %s", chartTitleRoot, groupName)}
 					chartNameToChart[chartName] = c
 					chartNames = append(chartNames, chartName)
 				}
@@ -380,7 +392,7 @@ func (d *Data) ToHTML(opts HTMLOptions) (string, error) {
 			chartName := string(maf.MetricName)
 			c, ok := chartNameToChart[chartName]
 			if !ok {
-				c = &chart{Title: fmt.Sprintf("%s: %s", opts.Title, ts.String())}
+				c = &chart{Title: fmt.Sprintf("%s: %s", chartTitleRoot, ts.String())}
 				chartNameToChart[chartName] = c
 				chartNames = append(chartNames, chartName)
 			}
@@ -552,6 +564,13 @@ func slugify(s string) string {
 // found within.
 // The container must be stopped or stoppable by the time this is called.
 func FromContainerLogs(ctx context.Context, testLike testing.TB, container *dockerutil.Container) {
+	FromNamedContainerLogs(ctx, testLike, container, "")
+}
+
+// FromNamedContainerLogs parses a container's logs and reports metrics data
+// found within, making note of the container's name on the results page.
+// The container must be stopped or stoppable by the time this is called.
+func FromNamedContainerLogs(ctx context.Context, testLike testing.TB, container *dockerutil.Container, containerName string) {
 	// If the container is not stopped, stop it.
 	// This is necessary to flush the profiling metrics logs.
 	st, err := container.Status(ctx)
@@ -576,8 +595,9 @@ func FromContainerLogs(ctx context.Context, testLike testing.TB, container *dock
 		testLike.Fatalf("Failed to parse metrics data: %v", err)
 	}
 	htmlOptions := HTMLOptions{
-		Title: testLike.Name(),
-		When:  data.startTime,
+		Title:         testLike.Name(),
+		ContainerName: containerName,
+		When:          data.startTime,
 	}
 	html, err := data.ToHTML(htmlOptions)
 	if err != nil {
