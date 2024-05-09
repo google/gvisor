@@ -150,23 +150,26 @@ func (fs *Filesystem) revalidateChildLocked(ctx context.Context, vfsObj *vfs.Vir
 //
 // Postconditions: Caller must call fs.processDeferredDecRefs*.
 func (fs *Filesystem) invalidateRemovedChildLocked(ctx context.Context, vfsObj *vfs.VirtualFilesystem, d *Dentry) {
-	if d.inode.Keep() {
-		fs.deferDecRef(d)
-	}
-	rcs := vfsObj.InvalidateDentry(ctx, d.VFSDentry())
-	for _, rc := range rcs {
-		fs.deferDecRef(rc)
-	}
-	if d.isDir() {
-		var children []*Dentry
-		d.dirMu.Lock()
-		for name, child := range d.children {
-			children = append(children, child)
-			delete(d.children, name)
+	toInvalidate := []*Dentry{d}
+	for len(toInvalidate) != 0 {
+		d := toInvalidate[len(toInvalidate)-1]
+		toInvalidate = toInvalidate[:len(toInvalidate)-1]
+
+		if d.inode.Keep() {
+			fs.deferDecRef(d)
 		}
-		d.dirMu.Unlock()
-		for _, child := range children {
-			fs.invalidateRemovedChildLocked(ctx, vfsObj, child)
+		rcs := vfsObj.InvalidateDentry(ctx, d.VFSDentry())
+		for _, rc := range rcs {
+			fs.deferDecRef(rc)
+		}
+
+		if d.isDir() {
+			d.dirMu.Lock()
+			for name, child := range d.children {
+				toInvalidate = append(toInvalidate, child)
+				delete(d.children, name)
+			}
+			d.dirMu.Unlock()
 		}
 	}
 }

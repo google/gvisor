@@ -197,48 +197,86 @@ func (fs *filesystem) revalidateStep(ctx context.Context, rp resolvingPath, d *d
 
 // Precondition: fs.renameMu must be locked.
 func (d *dentry) invalidate(ctx context.Context, vfsObj *vfs.VirtualFilesystem, ds **[]*dentry) {
-	// If the dentry is a mountpoint, InvalidateDentry may drop the
-	// last reference on it, resulting in lock recursion. To avoid
-	// this, take a dentry reference first, then drop it while
-	// deferring the call to dentry.checkCachingLocked().
-	d.IncRef()
-	rcs := vfsObj.InvalidateDentry(ctx, &d.vfsd)
-	for _, rc := range rcs {
-		rc.DecRef(ctx)
-	}
-	d.decRefNoCaching()
+	// Remove d from its parent.
+	func() {
+		parent := d.parent.Load()
+		parent.opMu.RLock()
+		defer parent.opMu.RUnlock()
+		parent.childrenMu.Lock()
+		defer parent.childrenMu.Unlock()
 
-	// Re-evaluate its caching status (i.e. if it has 0 references, drop it).
-	// The dentry will be reloaded next time it's accessed.
-	*ds = appendDentry(*ds, d)
+		if d.isSynthetic() {
+			// Normally we don't mark invalidated dentries as deleted since
+			// they may still exist (but at a different path), and also for
+			// consistency with Linux. However, synthetic files are guaranteed
+			// to become unreachable if their dentries are invalidated, so
+			// treat their invalidation as deletion.
+			d.deleteSynthetic(parent, ds)
+		}
 
-	parent := d.parent.Load()
-	parent.opMu.RLock()
-	defer parent.opMu.RUnlock()
-	parent.childrenMu.Lock()
-	defer parent.childrenMu.Unlock()
+		// Since the opMu was just reacquired above, re-check that the
+		// parent's child with this name is still the same. Do not touch it if
+		// it has been replaced with a different one.
+		if child := parent.children[d.name]; child == d {
+			// Invalidate dentry so it gets reloaded next time it's accessed.
+			delete(parent.children, d.name)
+		}
+	}()
 
-	if d.isSynthetic() {
-		// Normally we don't mark invalidated dentries as deleted since
-		// they may still exist (but at a different path), and also for
-		// consistency with Linux. However, synthetic files are guaranteed
-		// to become unreachable if their dentries are invalidated, so
-		// treat their invalidation as deletion.
-		d.setDeleted()
+	// Invalidate d and its descendants.
+	toInvalidate := []*dentry{d}
+	for len(toInvalidate) != 0 {
+		d := toInvalidate[len(toInvalidate)-1]
+		toInvalidate = toInvalidate[:len(toInvalidate)-1]
+
+		// If the dentry is a mountpoint, InvalidateDentry may drop the
+		// last reference on it, resulting in lock recursion. To avoid
+		// this, take a dentry reference first, then drop it while
+		// deferring the call to dentry.checkCachingLocked().
+		d.IncRef()
+		rcs := vfsObj.InvalidateDentry(ctx, &d.vfsd)
+		for _, rc := range rcs {
+			rc.DecRef(ctx)
+		}
 		d.decRefNoCaching()
+
+		// Re-evaluate its caching status (i.e. if it has 0 references, drop it).
+		// The dentry will be reloaded next time it's accessed.
 		*ds = appendDentry(*ds, d)
 
-		parent.syntheticChildren--
-		parent.clearDirentsLocked()
+		if d.isDir() {
+			toInvalidate = d.disownAllChildrenForInvalidation(ctx, vfsObj, toInvalidate, ds)
+		}
 	}
+}
 
-	// Since the opMu was just reacquired above, re-check that the
-	// parent's child with this name is still the same. Do not touch it if
-	// it has been replaced with a different one.
-	if child := parent.children[d.name]; child == d {
-		// Invalidate dentry so it gets reloaded next time it's accessed.
-		delete(parent.children, d.name)
+// +checklocks:parent.childrenMu
+func (d *dentry) deleteSynthetic(parent *dentry, ds **[]*dentry) {
+	d.setDeleted()
+	d.decRefNoCaching()
+	*ds = appendDentry(*ds, d)
+	parent.syntheticChildren--
+	parent.clearDirentsLocked()
+}
+
+// disownAllChildrenForInvalidation removes all child dentries from d, appends
+// them to children, and returns an updated slice. Consistent with
+// dentry.invalidate(), removed synthetic dentries are marked deleted.
+//
+// Precondition: fs.renameMu must be locked.
+func (d *dentry) disownAllChildrenForInvalidation(ctx context.Context, vfsObj *vfs.VirtualFilesystem, children []*dentry, ds **[]*dentry) []*dentry {
+	d.opMu.RLock()
+	defer d.opMu.RUnlock()
+	d.childrenMu.Lock()
+	defer d.childrenMu.Unlock()
+	for name, child := range d.children {
+		children = append(children, child)
+		delete(d.children, name)
+		if child.isSynthetic() {
+			child.deleteSynthetic(d, ds)
+		}
 	}
+	return children
 }
 
 // revalidateStatePool caches revalidateState instances to save array
