@@ -24,6 +24,7 @@ import (
 	"path"
 	"path/filepath"
 	"strconv"
+	"sync"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -478,6 +479,14 @@ func (fd *controlFDLisa) WalkStat(path lisafs.StringArray, recordStat func(linux
 	return nil
 }
 
+// Used to log rejected fifo/uds operations, one time each.
+var (
+	logRejectedFifoOpenOnce   sync.Once
+	logRejectedUdsOpenOnce    sync.Once
+	logRejectedUdsCreateOnce  sync.Once
+	logRejectedUdsConnectOnce sync.Once
+)
+
 // Open implements lisafs.ControlFDImpl.Open.
 func (fd *controlFDLisa) Open(flags uint32) (*lisafs.OpenFD, int, error) {
 	ftype := fd.FileType()
@@ -485,10 +494,16 @@ func (fd *controlFDLisa) Open(flags uint32) (*lisafs.OpenFD, int, error) {
 	switch ftype {
 	case unix.S_IFIFO:
 		if !server.config.HostFifo.AllowOpen() {
+			logRejectedFifoOpenOnce.Do(func() {
+				log.Warningf("Rejecting attempt to open fifo/pipe from host filesystem: %q. If you want to allow this, set flag --host-fifo=open", fd.ControlFD.Node().FilePath())
+			})
 			return nil, -1, unix.EPERM
 		}
 	case unix.S_IFSOCK:
 		if !server.config.HostUDS.AllowOpen() {
+			logRejectedUdsOpenOnce.Do(func() {
+				log.Warningf("Rejecting attempt to open unix domain socket from host filesystem. If you want to allow this, set flag --host-uds=open", fd.ControlFD.Node().FilePath())
+			})
 			return nil, -1, unix.EPERM
 		}
 	}
@@ -771,6 +786,9 @@ func isSockTypeSupported(sockType uint32) bool {
 // Connect implements lisafs.ControlFDImpl.Connect.
 func (fd *controlFDLisa) Connect(sockType uint32) (int, error) {
 	if !fd.Conn().ServerImpl().(*LisafsServer).config.HostUDS.AllowOpen() {
+		logRejectedUdsConnectOnce.Do(func() {
+			log.Warningf("Rejecting attempt to connect to unix domain socket from host filesystem: %q. If you want to allow this, set flag --host-uds=open", fd.ControlFD.Node().FilePath())
+		})
 		return -1, unix.EPERM
 	}
 
@@ -803,6 +821,9 @@ func (fd *controlFDLisa) Connect(sockType uint32) (int, error) {
 // BindAt implements lisafs.ControlFDImpl.BindAt.
 func (fd *controlFDLisa) BindAt(name string, sockType uint32, mode linux.FileMode, uid lisafs.UID, gid lisafs.GID) (*lisafs.ControlFD, linux.Statx, *lisafs.BoundSocketFD, int, error) {
 	if !fd.Conn().ServerImpl().(*LisafsServer).config.HostUDS.AllowCreate() {
+		logRejectedUdsCreateOnce.Do(func() {
+			log.Warningf("Rejecting attempt to create unix domain socket from host filesystem: %q. If you want to allow this, set flag --host-uds=create", name)
+		})
 		return nil, linux.Statx{}, nil, -1, unix.EPERM
 	}
 

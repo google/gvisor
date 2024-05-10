@@ -26,6 +26,7 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fspath"
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/host"
 	"gvisor.dev/gvisor/pkg/sentry/fsmetric"
@@ -1048,6 +1049,9 @@ afterTrailingSymlink:
 	return child.open(ctx, rp, &opts)
 }
 
+// Used to log a rejected fifo open, once.
+var logRejectedFifoOpenOnce sync.Once
+
 // Preconditions: The caller must hold no locks (since opening pipes may block
 // indefinitely).
 func (d *dentry) open(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.OpenOptions) (*vfs.FileDescription, error) {
@@ -1132,6 +1136,9 @@ func (d *dentry) open(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.Open
 			return d.pipe.Open(ctx, mnt, &d.vfsd, opts.Flags, &d.locks)
 		}
 		if d.fs.opts.disableFifoOpen {
+			logRejectedFifoOpenOnce.Do(func() {
+				log.Warningf("Rejecting attempt to open fifo/pipe from host filesystem: %q. If you want to allow this, set flag --host-fifo=open", d.name)
+			})
 			return nil, linuxerr.EPERM
 		}
 	}

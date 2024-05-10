@@ -652,6 +652,11 @@ func runRunsc(tc *gtest.TestCase, spec *specs.Spec) error {
 				case strings.Contains(line, "Opened a writable executable"):
 				// Expected in some tests, eg. /gvisor/test/syscalls/linux/sysret.cc
 				case strings.Contains(line, "invalid rip for 64 bit mode"):
+				// Expected in some tests that create pipes or sockets.
+				case strings.Contains(line, "Rejecting attempt to open fifo/pipe"):
+				case strings.Contains(line, "Rejecting attempt to open unix domain socket"):
+				case strings.Contains(line, "Rejecting attempt to connect to unix domain socket"):
+				case strings.Contains(line, "Rejecting attempt to create unix domain socket"):
 
 				// Ignore clock frequency adjustment messages.
 				case strings.Contains(line, "adjusted frequency from"):
