@@ -27,6 +27,7 @@
 #include "absl/strings/string_view.h"
 #include "test/syscalls/linux/unix_domain_socket_test_util.h"
 #include "test/util/capability_util.h"
+#include "test/util/save_util.h"
 #include "test/util/socket_util.h"
 #include "test/util/test_util.h"
 
@@ -75,6 +76,8 @@ TEST_P(AllSocketPairTest, BasicSendmmsg) {
   char sent_data[200];
   RandomizeBuffer(sent_data, sizeof(sent_data));
 
+  // TODO(b/323000153): Flaky with S/R.
+  gvisor::testing::DisableSave ds;
   std::vector<struct mmsghdr> msgs(10);
   std::vector<struct iovec> iovs(msgs.size());
   const int chunk_size = sizeof(sent_data) / msgs.size();

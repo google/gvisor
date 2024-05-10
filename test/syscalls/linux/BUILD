@@ -2528,6 +2528,7 @@ cc_library(
     deps = select_gtest() + [
         ":unix_domain_socket_test_util",
         "//test/util:capability_util",
+        "//test/util:save_util",
         "//test/util:socket_util",
         "//test/util:test_util",
         "@com_google_absl//absl/strings",
