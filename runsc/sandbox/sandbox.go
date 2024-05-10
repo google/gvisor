@@ -48,6 +48,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/erofs"
+	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/sentry/seccheck"
 	"gvisor.dev/gvisor/pkg/state/statefile"
@@ -1324,8 +1325,8 @@ func (s *Sandbox) SignalProcess(cid string, pid int32, sig unix.Signal, fgProces
 
 // Checkpoint sends the checkpoint call for a container in the sandbox.
 // The statefile will be written to f.
-func (s *Sandbox) Checkpoint(cid string, imagePath string, options statefile.Options) error {
-	log.Debugf("Checkpoint sandbox %q, options %+v", s.ID, options)
+func (s *Sandbox) Checkpoint(cid string, imagePath string, sfOpts statefile.Options, mfOpts pgalloc.SaveOpts) error {
+	log.Debugf("Checkpoint sandbox %q, statefile options %+v, MemoryFile options %+v", s.ID, sfOpts, mfOpts)
 
 	stateFilePath := filepath.Join(imagePath, boot.CheckpointStateFileName)
 	sf, err := os.OpenFile(stateFilePath, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0644)
@@ -1335,17 +1336,18 @@ func (s *Sandbox) Checkpoint(cid string, imagePath string, options statefile.Opt
 	defer sf.Close()
 
 	opt := control.SaveOpts{
-		Metadata: options.WriteToMetadata(map[string]string{}),
+		Metadata:           sfOpts.WriteToMetadata(map[string]string{}),
+		MemoryFileSaveOpts: mfOpts,
 		FilePayload: urpc.FilePayload{
 			Files: []*os.File{sf},
 		},
-		Resume: options.Resume,
+		Resume: sfOpts.Resume,
 	}
 
 	// When there is no compression, MemoryFile contents are page-aligned.
 	// It is beneficial to store them separately so certain optimizations can be
 	// applied during restore. See Restore().
-	if options.Compression == statefile.CompressionLevelNone {
+	if sfOpts.Compression == statefile.CompressionLevelNone {
 		pagesFilePath := filepath.Join(imagePath, boot.CheckpointPagesFileName)
 		// TODO(b/327603247): Implement optional async O_DIRECT write.
 		pf, err := os.OpenFile(pagesFilePath, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0644)

@@ -42,6 +42,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/erofs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/state/statefile"
 	"gvisor.dev/gvisor/pkg/sync"
@@ -1069,7 +1070,7 @@ func testCheckpointRestore(t *testing.T, conf *config.Config, compression statef
 	}
 
 	// Checkpoint running container; save state into new file.
-	if err := cont.Checkpoint(dir, statefile.Options{Compression: compression}); err != nil {
+	if err := cont.Checkpoint(dir, statefile.Options{Compression: compression}, pgalloc.SaveOpts{}); err != nil {
 		t.Fatalf("error checkpointing container to empty file: %v", err)
 	}
 
@@ -1251,7 +1252,7 @@ func TestCheckpointRestoreExecKilled(t *testing.T) {
 	}
 
 	// Checkpoint running container.
-	if err := cont.Checkpoint(dir, statefile.Options{Compression: statefile.CompressionLevelFlateBestSpeed}); err != nil {
+	if err := cont.Checkpoint(dir, statefile.Options{Compression: statefile.CompressionLevelFlateBestSpeed}, pgalloc.SaveOpts{}); err != nil {
 		t.Fatalf("error checkpointing container: %v", err)
 	}
 	cont.Destroy()
@@ -1345,7 +1346,7 @@ func TestUnixDomainSockets(t *testing.T) {
 			}
 
 			// Checkpoint running container; save state into new file.
-			if err := cont.Checkpoint(dir, statefile.Options{Compression: statefile.CompressionLevelDefault}); err != nil {
+			if err := cont.Checkpoint(dir, statefile.Options{Compression: statefile.CompressionLevelDefault}, pgalloc.SaveOpts{}); err != nil {
 				t.Fatalf("error checkpointing container to empty file: %v", err)
 			}
 

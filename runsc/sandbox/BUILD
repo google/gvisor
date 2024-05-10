@@ -32,6 +32,7 @@ go_library(
         "//pkg/sentry/control",
         "//pkg/sentry/devices/nvproxy",
         "//pkg/sentry/fsimpl/erofs",
+        "//pkg/sentry/pgalloc",
         "//pkg/sentry/platform",
         "//pkg/sentry/seccheck",
         "//pkg/state/statefile",

@@ -21,6 +21,7 @@ go_library(
         "//pkg/log",
         "//pkg/sentry/inet",
         "//pkg/sentry/kernel",
+        "//pkg/sentry/pgalloc",
         "//pkg/sentry/time",
         "//pkg/sentry/vfs",
         "//pkg/sentry/watchdog",

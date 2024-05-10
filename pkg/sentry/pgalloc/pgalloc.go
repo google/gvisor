@@ -272,18 +272,6 @@ type usageInfo struct {
 	memCgID uint32
 }
 
-// canCommit returns true if the tracked region can be committed.
-func (u *usageInfo) canCommit() bool {
-	// refs must be greater than 0 because we assume that reclaimable pages
-	// (that aren't already known to be committed) are not committed. This
-	// isn't necessarily true, even after the reclaimer does Decommit(),
-	// because the kernel may subsequently back the hugepage-sized region
-	// containing the decommitted page with a hugepage. However, it's
-	// consistent with our treatment of unallocated pages, which have the same
-	// property.
-	return !u.knownCommitted && u.refs != 0
-}
-
 // An EvictableMemoryUser represents a user of MemoryFile-allocated memory that
 // may be asked to deallocate that memory in the presence of memory pressure.
 type EvictableMemoryUser interface {
@@ -1141,20 +1129,29 @@ func (f *MemoryFile) UpdateUsage(memCgIDs map[uint32]struct{}) error {
 	if memCgIDs == nil {
 		f.usageLast = time.Now()
 	}
-	err = f.updateUsageLocked(currentUsage, memCgIDs, mincore)
+	err = f.updateUsageLocked(currentUsage, memCgIDs, false /* alsoScanCommitted */, mincore)
 	log.Debugf("UpdateUsage: currentUsage=%d, usageExpected=%d, usageSwapped=%d.",
 		currentUsage, f.usageExpected, f.usageSwapped)
 	log.Debugf("UpdateUsage: took %v.", time.Since(f.usageLast))
 	return err
 }
 
-// updateUsageLocked attempts to detect commitment of previous-uncommitted
-// pages by invoking checkCommitted, which is a function that, for each page i
-// in bs, sets committed[i] to 1 if the page is committed and 0 otherwise.
+// updateUsageLocked attempts to detect commitment of previously-uncommitted
+// pages by invoking checkCommitted, and updates memory accounting to reflect
+// newly-committed pages. If alsoScanCommitted is true, updateUsageLocked also
+// attempts to detect decommitment of previously-committed pages; this is only
+// used by save/restore, which optionally temporarily treats zeroed pages as
+// decommitted in order to skip saving them.
+//
+// For each page i in bs, checkCommitted must set committed[i] to 1 if the page
+// is committed and 0 otherwise. off is the offset at which bs begins.
+// wasCommitted is true if the page was known-committed before the call to
+// checkCommitted and false otherwise; wasCommitted can only be true if
+// alsoScanCommitted is true.
 //
 // Precondition: f.mu must be held; it may be unlocked and reacquired.
 // +checklocks:f.mu
-func (f *MemoryFile) updateUsageLocked(currentUsage uint64, memCgIDs map[uint32]struct{}, checkCommitted func(bs []byte, committed []byte) error) error {
+func (f *MemoryFile) updateUsageLocked(currentUsage uint64, memCgIDs map[uint32]struct{}, alsoScanCommitted bool, checkCommitted func(bs []byte, committed []byte, off uint64, wasCommitted bool) error) error {
 	// Track if anything changed to elide the merge. In the common case, we
 	// expect all segments to be committed and no merge to occur.
 	changedAny := false
@@ -1193,7 +1190,19 @@ func (f *MemoryFile) updateUsageLocked(currentUsage uint64, memCgIDs map[uint32]
 	// Iterate over all usage data. There will only be usage segments
 	// present when there is an associated reference.
 	for seg := f.usage.FirstSegment(); seg.Ok(); {
-		if !seg.ValuePtr().canCommit() {
+		if seg.ValuePtr().refs == 0 {
+			// We assume that reclaimable pages (that aren't already known to
+			// be committed) are not committed. This isn't necessarily true,
+			// even after the reclaimer does Decommit(), because the kernel may
+			// subsequently back the hugepage-sized region containing the
+			// decommitted page with a hugepage. However, it's consistent with
+			// our treatment of unallocated pages, which have the same
+			// property.
+			seg = seg.NextSegment()
+			continue
+		}
+		wasCommitted := seg.ValuePtr().knownCommitted
+		if !alsoScanCommitted && wasCommitted {
 			seg = seg.NextSegment()
 			continue
 		}
@@ -1233,48 +1242,60 @@ func (f *MemoryFile) updateUsageLocked(currentUsage uint64, memCgIDs map[uint32]
 				// by f.UpdateUsage() might take a really long time. So unlock f.mu
 				// while checkCommitted runs.
 				f.mu.Unlock() // +checklocksforce
-				err := checkCommitted(s, buf)
+				err := checkCommitted(s, buf, r.Start, wasCommitted)
 				f.mu.Lock()
 				if err != nil {
 					checkErr = err
 					return
 				}
 
-				// Scan each page and switch out segments.
+				// Scan each page and switch out segments. If wasCommitted is
+				// false, then we are marking ranges that are now committed;
+				// otherwise, we are marking ranges that are now uncommitted.
+				unchangedVal := byte(0)
+				if wasCommitted {
+					unchangedVal = 1
+				}
 				seg := f.usage.LowerBoundSegment(r.Start)
 				for i := 0; i < bufLen; {
-					if buf[i]&0x1 == 0 {
+					if buf[i]&0x1 == unchangedVal {
 						i++
 						continue
 					}
-					// Scan to the end of this committed range.
+					// Scan to the end of this changed range.
 					j := i + 1
 					for ; j < bufLen; j++ {
-						if buf[j]&0x1 == 0 {
+						if buf[j]&0x1 == unchangedVal {
 							break
 						}
 					}
-					committedFR := memmap.FileRange{
+					changedFR := memmap.FileRange{
 						Start: r.Start + uint64(i*hostarch.PageSize),
 						End:   r.Start + uint64(j*hostarch.PageSize),
 					}
-					// Advance seg to committedFR.Start.
-					for seg.Ok() && seg.End() < committedFR.Start {
+					// Advance seg to changedFR.Start.
+					for seg.Ok() && seg.End() <= changedFR.Start {
 						seg = seg.NextSegment()
 					}
-					// Mark pages overlapping committedFR as committed.
-					for seg.Ok() && seg.Start() < committedFR.End {
-						if seg.ValuePtr().canCommit() {
-							seg = f.usage.Isolate(seg, committedFR)
-							seg.ValuePtr().knownCommitted = true
+					// Mark pages overlapping changedFR as committed or
+					// decommitted.
+					for seg.Ok() && seg.Start() < changedFR.End {
+						if seg.ValuePtr().refs != 0 && seg.ValuePtr().knownCommitted == wasCommitted {
+							seg = f.usage.Isolate(seg, changedFR)
+							seg.ValuePtr().knownCommitted = !wasCommitted
 							amount := seg.Range().Length()
-							usage.MemoryAccounting.Inc(amount, seg.ValuePtr().kind, seg.ValuePtr().memCgID)
-							f.usageExpected += amount
+							if wasCommitted {
+								usage.MemoryAccounting.Dec(amount, seg.ValuePtr().kind, seg.ValuePtr().memCgID)
+								f.usageExpected -= amount
+							} else {
+								usage.MemoryAccounting.Inc(amount, seg.ValuePtr().kind, seg.ValuePtr().memCgID)
+								f.usageExpected += amount
+							}
 							changedAny = true
 						}
 						seg = seg.NextSegment()
 					}
-					// Continue scanning for committed pages.
+					// Continue scanning for changed pages.
 					i = j + 1
 				}
 

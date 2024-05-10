@@ -25,6 +25,7 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/time"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sentry/watchdog"
@@ -63,6 +64,9 @@ type SaveOpts struct {
 	// Metadata is save metadata.
 	Metadata map[string]string
 
+	// MemoryFileSaveOpts is passed to calls to pgalloc.MemoryFile.SaveTo().
+	MemoryFileSaveOpts pgalloc.SaveOpts
+
 	// Callback is called prior to unpause, with any save error.
 	Callback func(err error)
 
@@ -95,7 +99,7 @@ func (opts SaveOpts) Save(ctx context.Context, k *kernel.Kernel, w *watchdog.Wat
 		err = ErrStateFile{err}
 	} else {
 		// Save the kernel.
-		err = k.SaveTo(ctx, wc, opts.PagesMetadata, opts.PagesFile)
+		err = k.SaveTo(ctx, wc, opts.PagesMetadata, opts.PagesFile, opts.MemoryFileSaveOpts)
 
 		// ENOSPC is a state file error. This error can only come from
 		// writing the state file, and not from fs.FileOperations.Fsync

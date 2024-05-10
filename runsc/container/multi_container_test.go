@@ -32,6 +32,7 @@ import (
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/state/statefile"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/test/testutil"
@@ -2772,7 +2773,7 @@ func TestMultiContainerCheckpointRestore(t *testing.T) {
 			}
 
 			// Checkpoint root container; save state into new file.
-			if err := conts[0].Checkpoint(dir, statefile.Options{Compression: statefile.CompressionLevelFlateBestSpeed}); err != nil {
+			if err := conts[0].Checkpoint(dir, statefile.Options{Compression: statefile.CompressionLevelFlateBestSpeed}, pgalloc.SaveOpts{}); err != nil {
 				t.Fatalf("error checkpointing container to empty file: %v", err)
 			}
 			defer os.RemoveAll(dir)

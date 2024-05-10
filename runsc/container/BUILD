@@ -80,6 +80,7 @@ go_test(
         "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/limits",
+        "//pkg/sentry/pgalloc",
         "//pkg/sentry/platform",
         "//pkg/sentry/seccheck",
         "//pkg/sentry/seccheck/points:points_go_proto",

@@ -51,6 +51,7 @@ go_library(
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/kernel/time",
         "//pkg/sentry/limits",
+        "//pkg/sentry/pgalloc",
         "//pkg/sentry/state",
         "//pkg/sentry/strace",
         "//pkg/sentry/usage",

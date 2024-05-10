@@ -92,6 +92,7 @@ go_library(
         "//pkg/sentry/devices/tpuproxy",
         "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/auth",
+        "//pkg/sentry/pgalloc",
         "//pkg/sentry/platform",
         "//pkg/state/pretty",
         "//pkg/state/statefile",

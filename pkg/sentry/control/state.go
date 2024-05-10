@@ -21,6 +21,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/state"
 	"gvisor.dev/gvisor/pkg/sentry/watchdog"
 	"gvisor.dev/gvisor/pkg/urpc"
@@ -43,6 +44,9 @@ type SaveOpts struct {
 
 	// Metadata is the set of metadata to prepend to the state file.
 	Metadata map[string]string `json:"metadata"`
+
+	// MemoryFileSaveOpts is passed to calls to pgalloc.MemoryFile.SaveTo().
+	MemoryFileSaveOpts pgalloc.SaveOpts
 
 	// HavePagesFile indicates whether the pages file and its corresponding
 	// metadata file is provided.
@@ -76,9 +80,10 @@ func (s *State) Save(o *SaveOpts, _ *struct{}) error {
 	}
 	defer stateFile.Close()
 	saveOpts := state.SaveOpts{
-		Destination: stateFile,
-		Key:         o.Key,
-		Metadata:    o.Metadata,
+		Destination:        stateFile,
+		Key:                o.Key,
+		Metadata:           o.Metadata,
+		MemoryFileSaveOpts: o.MemoryFileSaveOpts,
 		Callback: func(err error) {
 			if err == nil {
 				log.Infof("Save succeeded: exiting...")
