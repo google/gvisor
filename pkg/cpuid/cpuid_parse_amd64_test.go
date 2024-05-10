@@ -54,6 +54,14 @@ func archSkipFeature(feature Feature, version hostos.Version) bool {
 		// PERFCTR_LLC renamed in
 		// 910448bbed066ab1082b510eef1ae61bb792d854 (4.14).
 		return true
+	// Block 7.
+	case feature == X86FeatureARCH_CAPABILITIES:
+		// This feature is sometimes added by CPU microcode loaded by the
+		// kernel, in which case it will appear in CPUID but not /proc/cpuinfo.
+		// This can be detected from a "x86/CPU: CPU features have changed
+		// after loading microcode, but might not take effect" message printed
+		// to dmesg by arch/x86/kernel/cpu/common.c:microcode_check().
+		return true
 	default:
 		return false
 	}
