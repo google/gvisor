@@ -561,6 +561,37 @@ func ctrlCmdFailWithStatus(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54Para
 	return err
 }
 
+func ctrlExportObjectToFD(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54Parameters) (uintptr, error) {
+	var ctrlParams nvgpu.NV0000_CTRL_OS_UNIX_EXPORT_OBJECT_TO_FD_PARAMS
+	if ctrlParams.SizeBytes() != int(ioctlParams.ParamsSize) {
+		return 0, linuxerr.EINVAL
+	}
+	if _, err := ctrlParams.CopyIn(fi.t, addrFromP64(ioctlParams.Params)); err != nil {
+		return 0, err
+	}
+	ctlFileGeneric, _ := fi.t.FDTable().Get(ctrlParams.FD)
+	if ctlFileGeneric == nil {
+		return 0, linuxerr.EINVAL
+	}
+	defer ctlFileGeneric.DecRef(fi.ctx)
+	ctlFile, ok := ctlFileGeneric.Impl().(*frontendFD)
+	if !ok {
+		return 0, linuxerr.EINVAL
+	}
+
+	origFD := ctrlParams.FD
+	ctrlParams.FD = ctlFile.hostFD
+	n, err := rmControlInvoke(fi, ioctlParams, &ctrlParams)
+	ctrlParams.FD = origFD
+	if err != nil {
+		return n, err
+	}
+	if _, err := ctrlParams.CopyOut(fi.t, addrFromP64(ioctlParams.Params)); err != nil {
+		return n, err
+	}
+	return n, nil
+}
+
 func ctrlClientSystemGetBuildVersion(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54Parameters) (uintptr, error) {
 	var ctrlParams nvgpu.NV0000_CTRL_SYSTEM_GET_BUILD_VERSION_PARAMS
 	if ctrlParams.SizeBytes() != int(ioctlParams.ParamsSize) {

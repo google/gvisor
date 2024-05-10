@@ -279,6 +279,7 @@ func Init() {
 					nvgpu.NVA06F_CTRL_CMD_GPFIFO_SCHEDULE:                                  rmControlSimple,
 					nvgpu.NVC56F_CTRL_CMD_GET_KMB:                                          rmControlSimple,
 					nvgpu.NV0000_CTRL_CMD_SYSTEM_GET_BUILD_VERSION:                         ctrlClientSystemGetBuildVersion,
+					nvgpu.NV0000_CTRL_CMD_OS_UNIX_EXPORT_OBJECT_TO_FD:                      ctrlExportObjectToFD,
 					nvgpu.NV0080_CTRL_CMD_FIFO_GET_CHANNELLIST:                             ctrlDevFIFOGetChannelList,
 					nvgpu.NV0080_CTRL_CMD_GPU_GET_CLASSLIST:                                ctrlDevGpuGetClasslist,
 					nvgpu.NV2080_CTRL_CMD_FIFO_DISABLE_CHANNELS:                            ctrlSubdevFIFODisableChannels,
