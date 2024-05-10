@@ -1201,8 +1201,6 @@ func getSockOptTCP(t *kernel.Task, s socket.Socket, ep commonEndpoint, name, out
 			return nil, syserr.TranslateNetstackError(err)
 		}
 
-		// TODO(b/64800844): Translate fields once they are added to
-		// tcpip.TCPInfoOption.
 		info := linux.TCPInfo{
 			State:       uint8(v.State),
 			RTO:         uint32(v.RTO / time.Microsecond),
