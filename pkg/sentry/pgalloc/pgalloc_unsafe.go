@@ -29,7 +29,7 @@ func unsafeSlice(addr uintptr, length int) (slice []byte) {
 	return
 }
 
-func mincore(s []byte, buf []byte) error {
+func mincore(s []byte, buf []byte, off uint64, wasCommitted bool) error {
 	if _, _, errno := unix.RawSyscall(
 		unix.SYS_MINCORE,
 		uintptr(unsafe.Pointer(&s[0])),

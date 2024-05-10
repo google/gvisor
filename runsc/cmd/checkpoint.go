@@ -20,6 +20,7 @@ import (
 	"os"
 
 	"github.com/google/subcommands"
+	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/state/statefile"
 	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/config"
@@ -29,9 +30,10 @@ import (
 
 // Checkpoint implements subcommands.Command for the "checkpoint" command.
 type Checkpoint struct {
-	imagePath    string
-	leaveRunning bool
-	compression  CheckpointCompression
+	imagePath                 string
+	leaveRunning              bool
+	compression               CheckpointCompression
+	excludeCommittedZeroPages bool
 }
 
 // Name implements subcommands.Command.Name.
@@ -55,6 +57,7 @@ func (c *Checkpoint) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&c.imagePath, "image-path", "", "directory path to saved container image")
 	f.BoolVar(&c.leaveRunning, "leave-running", false, "restart the container after checkpointing")
 	f.Var(newCheckpointCompressionValue(statefile.CompressionLevelDefault, &c.compression), "compression", "compress checkpoint image on disk. Values: none|flate-best-speed.")
+	f.BoolVar(&c.excludeCommittedZeroPages, "exclude-committed-zero-pages", false, "exclude committed zero-filled pages from checkpoint")
 
 	// Unimplemented flags necessary for compatibility with docker.
 	var wp string
@@ -84,14 +87,19 @@ func (c *Checkpoint) Execute(_ context.Context, f *flag.FlagSet, args ...any) su
 		util.Fatalf("making directories at path provided: %v", err)
 	}
 
-	sOpts := statefile.Options{Compression: c.compression.Level()}
+	sOpts := statefile.Options{
+		Compression: c.compression.Level(),
+	}
+	mfOpts := pgalloc.SaveOpts{
+		ExcludeCommittedZeroPages: c.excludeCommittedZeroPages,
+	}
 
 	if c.leaveRunning {
 		// Do not destroy the sandbox after saving.
 		sOpts.Resume = true
 	}
 
-	if err := cont.Checkpoint(c.imagePath, sOpts); err != nil {
+	if err := cont.Checkpoint(c.imagePath, sOpts, mfOpts); err != nil {
 		util.Fatalf("checkpoint failed: %v", err)
 	}
 

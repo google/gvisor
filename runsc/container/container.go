@@ -702,12 +702,12 @@ func (c *Container) ForwardSignals(pid int32, fgProcess bool) func() {
 
 // Checkpoint sends the checkpoint call to the container.
 // The statefile will be written to f, the file at the specified image-path.
-func (c *Container) Checkpoint(imagePath string, options statefile.Options) error {
+func (c *Container) Checkpoint(imagePath string, sfOpts statefile.Options, mfOpts pgalloc.SaveOpts) error {
 	log.Debugf("Checkpoint container, cid: %s", c.ID)
 	if err := c.requireStatus("checkpoint", Created, Running, Paused); err != nil {
 		return err
 	}
-	return c.Sandbox.Checkpoint(c.ID, imagePath, options)
+	return c.Sandbox.Checkpoint(c.ID, imagePath, sfOpts, mfOpts)
 }
 
 // Pause suspends the container and its kernel.

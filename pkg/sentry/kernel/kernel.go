@@ -534,7 +534,11 @@ type privateMemoryFileMetadata struct {
 	owners []string
 }
 
-func savePrivateMFs(ctx context.Context, w io.Writer, pw io.Writer, mfsToSave map[string]*pgalloc.MemoryFile) error {
+func savePrivateMFs(ctx context.Context, w io.Writer, pw io.Writer, mfsToSave map[string]*pgalloc.MemoryFile, mfOpts pgalloc.SaveOpts) error {
+	// mfOpts.ExcludeCommittedZeroPages is expected to reflect application
+	// memory usage behavior, but not necessarily usage of private MemoryFiles.
+	mfOpts.ExcludeCommittedZeroPages = false
+
 	var meta privateMemoryFileMetadata
 	// Generate the order in which private memory files are saved.
 	for fsID := range mfsToSave {
@@ -546,7 +550,7 @@ func savePrivateMFs(ctx context.Context, w io.Writer, pw io.Writer, mfsToSave ma
 	}
 	// Followed by the private memory files in order.
 	for _, fsID := range meta.owners {
-		if err := mfsToSave[fsID].SaveTo(ctx, w, pw); err != nil {
+		if err := mfsToSave[fsID].SaveTo(ctx, w, pw, mfOpts); err != nil {
 			return err
 		}
 	}
@@ -580,7 +584,7 @@ func loadPrivateMFs(ctx context.Context, r io.Reader, pr *statefile.AsyncReader)
 // SaveTo saves the state of k to w.
 //
 // Preconditions: The kernel must be paused throughout the call to SaveTo.
-func (k *Kernel) SaveTo(ctx context.Context, w io.Writer, pagesMetadata, pagesFile *fd.FD) error {
+func (k *Kernel) SaveTo(ctx context.Context, w io.Writer, pagesMetadata, pagesFile *fd.FD, mfOpts pgalloc.SaveOpts) error {
 	saveStart := time.Now()
 
 	// Do not allow other Kernel methods to affect it while it's being saved.
@@ -656,10 +660,10 @@ func (k *Kernel) SaveTo(ctx context.Context, w io.Writer, pagesMetadata, pagesFi
 	if pagesFile != nil {
 		pw = pagesFile
 	}
-	if err := k.mf.SaveTo(ctx, pmw, pw); err != nil {
+	if err := k.mf.SaveTo(ctx, pmw, pw, mfOpts); err != nil {
 		return err
 	}
-	if err := savePrivateMFs(ctx, pmw, pw, mfsToSave); err != nil {
+	if err := savePrivateMFs(ctx, pmw, pw, mfsToSave, mfOpts); err != nil {
 		return err
 	}
 	log.Infof("Memory files save took [%s].", time.Since(memoryStart))
