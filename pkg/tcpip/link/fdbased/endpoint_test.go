@@ -582,15 +582,61 @@ func (*fakeNetworkDispatcher) DeliverLinkPacket(tcpip.NetworkProtocolNumber, *st
 func TestDispatchPacketFormat(t *testing.T) {
 	for _, test := range []struct {
 		name          string
-		newDispatcher func(fd int, e *endpoint) (linkDispatcher, error)
+		newDispatcher func(fd int, e *endpoint, opts *Options) (linkDispatcher, error)
+		ethHdr        []byte
+		netHdr        []byte
 	}{
 		{
 			name:          "readVDispatcher",
 			newDispatcher: newReadVDispatcher,
+			ethHdr: []byte{
+				1, 2, 3, 4, 5, 60,
+				1, 2, 3, 4, 5, 61,
+				8, 0,
+			},
+			netHdr: []byte{0x40, 0, 0, 0},
 		},
 		{
 			name:          "recvMMsgDispatcher",
-			newDispatcher: func(fd int, e *endpoint) (linkDispatcher, error) { return newRecvMMsgDispatcher(fd, e, &Options{}) },
+			newDispatcher: newRecvMMsgDispatcher,
+			ethHdr: []byte{
+				1, 2, 3, 4, 5, 60,
+				1, 2, 3, 4, 5, 61,
+				8, 0,
+			},
+			netHdr: []byte{0x40, 0, 0, 0},
+		},
+		{
+			name:          "readVDispatcherNoEth",
+			newDispatcher: newReadVDispatcher,
+			netHdr:        []byte{0x40, 0, 0, 0},
+		},
+		{
+			name:          "readVDispatcherNoEthIPv6",
+			newDispatcher: newReadVDispatcher,
+			netHdr: []byte{
+				0x60, 0, 0, 0, // IPv6 Preamble
+				0, 0x04, 0, 0, // IPv6 Preamble
+				byte(header.IPv6HopByHopOptionsExtHdrIdentifier), // Next header
+				0xff,                   // Hop limit
+				0, 0, 0, 0, 0, 0, 0, 0, // Src addr
+				0, 0, 0, 0, 0, 0, 0, 0,
+				0, 0, 0, 0, 0, 0, 0, 0, // Dst addr
+				0, 0, 0, 0, 0, 0, 0, 0,
+
+				// Hop by hop extension header.
+				byte(header.IPv6DestinationOptionsExtHdrIdentifier),
+				0x8,              // Length.
+				0, 0, 0, 0, 0, 0, // Padding.
+
+				// Destination options extension header.
+				0,                // Next header (none)
+				0x8,              // Length.
+				0, 0, 0, 0, 0, 0, // Padding.
+
+				// payload data.
+				1, 2, 3, 4,
+			},
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -600,14 +646,7 @@ func TestDispatchPacketFormat(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			data := []byte{
-				// Ethernet header.
-				1, 2, 3, 4, 5, 60,
-				1, 2, 3, 4, 5, 61,
-				8, 0,
-				// Mock network header.
-				40, 41, 42, 43,
-			}
+			data := append(test.ethHdr, test.netHdr...)
 			err = unix.Sendmsg(fds[1], data, nil, nil, 0)
 			if err != nil {
 				t.Fatal(err)
@@ -616,9 +655,9 @@ func TestDispatchPacketFormat(t *testing.T) {
 			// Create and run dispatcher once.
 			sink := &fakeNetworkDispatcher{}
 			d, err := test.newDispatcher(fds[0], &endpoint{
-				hdrSize:    header.EthernetMinimumSize,
+				hdrSize:    len(test.ethHdr),
 				dispatcher: sink,
-			})
+			}, &Options{ProcessorsPerChannel: 1})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -633,11 +672,20 @@ func TestDispatchPacketFormat(t *testing.T) {
 			}
 			pkt := sink.pkts[0]
 			defer pkt.DecRef()
-			if got, want := len(pkt.LinkHeader().Slice()), header.EthernetMinimumSize; got != want {
-				t.Errorf("pkt.LinkHeader().View().Size() = %d, want %d", got, want)
+			if len(test.ethHdr) > 0 {
+				if got, want := len(pkt.LinkHeader().Slice()), header.EthernetMinimumSize; got != want {
+					t.Errorf("pkt.LinkHeader().View().Size() = %d, want %d", got, want)
+				}
 			}
-			if got, want := pkt.Data().Size(), 4; got != want {
+			if got, want := pkt.Data().Size(), len(test.netHdr); got != want {
 				t.Errorf("pkt.Data().Size() = %d, want %d", got, want)
+			}
+			wantProto := header.IPv4ProtocolNumber
+			if header.IPVersion(test.netHdr[:]) == header.IPv6Version {
+				wantProto = header.IPv6ProtocolNumber
+			}
+			if pkt.NetworkProtocolNumber != wantProto {
+				t.Errorf("pkt.NetworkProtocolNumber = %d, want %d", pkt.NetworkProtocolNumber, wantProto)
 			}
 		})
 	}

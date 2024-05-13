@@ -225,6 +225,18 @@ func (b IPv6) DestinationAddress() tcpip.Address {
 	return tcpip.AddrFrom16([16]byte(b[v6DstAddr:][:IPv6AddressSize]))
 }
 
+// SourceAddressSlice returns the "source address" field of the ipv6 header as a
+// byte slice.
+func (b IPv6) SourceAddressSlice() []byte {
+	return []byte(b[v6SrcAddr:][:IPv6AddressSize])
+}
+
+// DestinationAddressSlice returns the "destination address" field of the ipv6
+// header as a byte slice.
+func (b IPv6) DestinationAddressSlice() []byte {
+	return []byte(b[v6DstAddr:][:IPv6AddressSize])
+}
+
 // Checksum implements Network.Checksum. Given that IPv6 doesn't have a
 // checksum, it just returns 0.
 func (IPv6) Checksum() uint16 {
