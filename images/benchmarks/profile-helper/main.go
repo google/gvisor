@@ -163,21 +163,22 @@ func setContainerdFlag(remove bool) {
 // with "DATA:", and to rate-limit it. It also keeps track of the
 // hash of the stream.
 type dirStreamWriter struct {
-	beganStream bool
-	dirPath     string
-	lastLine    time.Time
-	checksum    hash.Hash
+	beganStream         bool
+	estimatedTotalBytes int64
+	dirPath             string
+	lastLine            time.Time
+	checksum            hash.Hash
 }
 
 // Write implements `io.WriteCloser.Write`.
 func (w *dirStreamWriter) Write(b []byte) (int, error) {
 	const (
-		maxLineSize     = 384
-		linesPerSecond  = 8
+		maxLineSize     = 984
+		linesPerSecond  = 192
 		durationPerLine = time.Second / time.Duration(linesPerSecond)
 	)
 	if !w.beganStream {
-		if _, err := fmt.Fprintf(os.Stdout, "BEGIN:%s\n", w.dirPath); err != nil {
+		if _, err := fmt.Fprintf(os.Stdout, "BEGIN:%d:%s\n", w.estimatedTotalBytes, w.dirPath); err != nil {
 			return 0, err
 		}
 		w.beganStream = true
@@ -244,9 +245,26 @@ func streamDir() {
 	if *dirPath == "" {
 		usagef("Must provide --dir")
 	}
+	time.Sleep(15 * time.Second)
+	var totalBytes int64
+	err := filepath.Walk(*dirPath, func(path string, info fs.FileInfo, walkErr error) error {
+		if walkErr != nil {
+			// Keep walking other directories, so return nil here.
+			return nil
+		}
+		if info.IsDir() {
+			return nil
+		}
+		totalBytes += info.Size()
+		return nil
+	})
+	if err != nil {
+		exitf("cannot walk directory %q: %w", *dirPath, err)
+	}
 	dsw := &dirStreamWriter{
-		dirPath:  *dirPath,
-		checksum: sha256.New(),
+		estimatedTotalBytes: totalBytes,
+		dirPath:             *dirPath,
+		checksum:            sha256.New(),
 	}
 	enc := base64.NewEncoder(base64.StdEncoding, dsw)
 	fl, err := flate.NewWriter(enc, flate.BestCompression)
@@ -254,7 +272,6 @@ func streamDir() {
 		exitf("Cannot create flate writer: %v", err)
 	}
 	tw := tar.NewWriter(fl)
-	time.Sleep(15 * time.Second)
 	err = filepath.Walk(*dirPath, func(path string, info fs.FileInfo, walkErr error) error {
 		if walkErr != nil {
 			// Keep walking other directories, so return nil here.
