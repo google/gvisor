@@ -1,4 +1,4 @@
-FROM ubuntu:bionic
+FROM ubuntu
 
 RUN apt-get update && apt-get install -y \
   autoconf \
@@ -7,7 +7,7 @@ RUN apt-get update && apt-get install -y \
   curl \
   java-common \
   make \
-  openjdk-17-jdk \
+  openjdk-21-jdk \
   unzip \
   zip
 
@@ -15,26 +15,26 @@ RUN apt-get update && apt-get install -y \
 # Proctor expects this to be in /root/jdk.
 WORKDIR /root
 RUN set -ex \
- && curl -fsSL --retry 10 -o /tmp/jdk.tar.gz https://github.com/openjdk/jdk17u/archive/refs/tags/jdk-17.0.2-ga.tar.gz \
+ && curl -fsSL --retry 10 -o /tmp/jdk.tar.gz https://github.com/openjdk/jdk21u/archive/refs/tags/jdk-21.0.3-ga.tar.gz \
  && tar -zxzf /tmp/jdk.tar.gz \
- && mv jdk17u-jdk-17.0.2-ga /root/jdk \
+ && mv jdk21u-jdk-21.0.3-ga /root/jdk \
  && rm -f /tmp/jdk.tar.gz
 
-# Install jtreg and add to PATH.
+# Install jtreg 7.4 and add to PATH.
 #
-# NOTE: None of the tagged releases (up to jtreg-6.2+1) build correctly, so we
-# use a recent commit that does work.
+# NOTE: While upgrading jdk version, if this jtreg version does not build
+# openjdk correctly, try using a recent version of jtreg that does work.
 #
 # ALSO NOTE: The installed location of the JDK is annoyingly path dependant,
-# and is "/usr/lib/jvm/java-17-openjdk-amd64" on x86_64 but "-aarch64" on
+# and is "/usr/lib/jvm/java-21-openjdk-amd64" on x86_64 but "-aarch64" on
 # ARM64. The `build.sh` step below uses a wildcard to work around the fact that
 # we don't know the full path.
-ARG COMMIT=284b16ed44b3bc25e9dde11efc4b1013702871cb
+ARG COMMIT=c40e6ea6d47dcdabba8715a6f70c55d89bdce693
 RUN set -ex \
  && curl -fsSL --retry 10 -o jtreg.tar.gz https://github.com/openjdk/jtreg/archive/${COMMIT}.tar.gz \
  && tar -zxvf jtreg.tar.gz \
  && mv jtreg-${COMMIT} jtreg \
- && bash jtreg/make/build.sh --jdk /usr/lib/jvm/java-17-openjdk-* \
+ && bash jtreg/make/build.sh --jdk /usr/lib/jvm/java-21-openjdk-* \
  && rm -f jtreg.tar.gz
 
 ENV PATH="/root/jtreg/build/images/jtreg/bin:$PATH"

@@ -510,7 +510,7 @@ steps:
   - <<: *common
     <<: *docker
     label: ":java: Java runtime tests"
-    command: make java17-runtime-tests RUNTIME_ARGS=--directfs
+    command: make java21-runtime-tests RUNTIME_ARGS=--directfs
     parallelism: 40
     agents:
       <<: *platform_specific_agents
@@ -553,7 +553,7 @@ steps:
   - <<: *common
     <<: *docker
     label: ":java: Java runtime tests (goferfs)"
-    command: make java17-runtime-tests RUNTIME_ARGS=--directfs=false
+    command: make java21-runtime-tests RUNTIME_ARGS=--directfs=false
     parallelism: 40
     if: build.branch == "master"
     agents:
