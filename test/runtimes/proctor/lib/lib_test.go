@@ -18,8 +18,8 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
-	"reflect"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -52,7 +52,7 @@ func TestSearchEmptyDir(t *testing.T) {
 		t.Errorf("search error: %v", err)
 	}
 
-	if !reflect.DeepEqual(got, want) {
+	if !slices.Equal(got, want) {
 		t.Errorf("Found %#v; want %#v", got, want)
 	}
 }
@@ -121,7 +121,7 @@ func TestSearch(t *testing.T) {
 		t.Errorf("search error: %v", err)
 	}
 
-	if !reflect.DeepEqual(got, want) {
+	if !slices.Equal(got, want) {
 		t.Errorf("Found %#v; want %#v", got, want)
 	}
 }

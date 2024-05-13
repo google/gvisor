@@ -15,7 +15,7 @@
 package bpf
 
 import (
-	"reflect"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -301,7 +301,7 @@ func TestOptimize(t *testing.T) {
 			} else {
 				optimizedInsns = Optimize(optimizedInsns)
 			}
-			if !reflect.DeepEqual(optimizedInsns, test.want) {
+			if !slices.Equal(optimizedInsns, test.want) {
 				t.Errorf("got optimized instructions:\n%v\nwant:\n%v\n", prettyInstructions(optimizedInsns), prettyInstructions(test.want))
 			}
 		})

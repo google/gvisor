@@ -15,9 +15,10 @@
 package memmap
 
 import (
-	"gvisor.dev/gvisor/pkg/hostarch"
-	"reflect"
+	"slices"
 	"testing"
+
+	"gvisor.dev/gvisor/pkg/hostarch"
 )
 
 type testMappingSpace struct {
@@ -40,7 +41,7 @@ func TestAddRemoveMapping(t *testing.T) {
 	ms := &testMappingSpace{}
 
 	mapped := set.AddMapping(ms, hostarch.AddrRange{0x10000, 0x12000}, 0x1000, true)
-	if got, want := mapped, []MappableRange{{0x1000, 0x3000}}; !reflect.DeepEqual(got, want) {
+	if got, want := mapped, []MappableRange{{0x1000, 0x3000}}; !slices.Equal(got, want) {
 		t.Errorf("AddMapping: got %+v, wanted %+v", got, want)
 	}
 
@@ -59,7 +60,7 @@ func TestAddRemoveMapping(t *testing.T) {
 	t.Log(&set)
 
 	mapped = set.AddMapping(ms, hostarch.AddrRange{0x30000, 0x31000}, 0x4000, true)
-	if got, want := mapped, []MappableRange{{0x4000, 0x5000}}; !reflect.DeepEqual(got, want) {
+	if got, want := mapped, []MappableRange{{0x4000, 0x5000}}; !slices.Equal(got, want) {
 		t.Errorf("AddMapping: got %+v, wanted %+v", got, want)
 	}
 
@@ -70,7 +71,7 @@ func TestAddRemoveMapping(t *testing.T) {
 	t.Log(&set)
 
 	mapped = set.AddMapping(ms, hostarch.AddrRange{0x12000, 0x15000}, 0x3000, true)
-	if got, want := mapped, []MappableRange{{0x3000, 0x4000}, {0x5000, 0x6000}}; !reflect.DeepEqual(got, want) {
+	if got, want := mapped, []MappableRange{{0x3000, 0x4000}, {0x5000, 0x6000}}; !slices.Equal(got, want) {
 		t.Errorf("AddMapping: got %+v, wanted %+v", got, want)
 	}
 
@@ -83,7 +84,7 @@ func TestAddRemoveMapping(t *testing.T) {
 	t.Log(&set)
 
 	unmapped := set.RemoveMapping(ms, hostarch.AddrRange{0x10000, 0x11000}, 0x1000, true)
-	if got, want := unmapped, []MappableRange{{0x1000, 0x2000}}; !reflect.DeepEqual(got, want) {
+	if got, want := unmapped, []MappableRange{{0x1000, 0x2000}}; !slices.Equal(got, want) {
 		t.Errorf("RemoveMapping: got %+v, wanted %+v", got, want)
 	}
 
@@ -106,7 +107,7 @@ func TestAddRemoveMapping(t *testing.T) {
 	t.Log(&set)
 
 	unmapped = set.RemoveMapping(ms, hostarch.AddrRange{0x11000, 0x15000}, 0x2000, true)
-	if got, want := unmapped, []MappableRange{{0x2000, 0x4000}, {0x5000, 0x6000}}; !reflect.DeepEqual(got, want) {
+	if got, want := unmapped, []MappableRange{{0x2000, 0x4000}, {0x5000, 0x6000}}; !slices.Equal(got, want) {
 		t.Errorf("RemoveMapping: got %+v, wanted %+v", got, want)
 	}
 
@@ -115,7 +116,7 @@ func TestAddRemoveMapping(t *testing.T) {
 	t.Log(&set)
 
 	unmapped = set.RemoveMapping(ms, hostarch.AddrRange{0x30000, 0x31000}, 0x4000, true)
-	if got, want := unmapped, []MappableRange{{0x4000, 0x5000}}; !reflect.DeepEqual(got, want) {
+	if got, want := unmapped, []MappableRange{{0x4000, 0x5000}}; !slices.Equal(got, want) {
 		t.Errorf("RemoveMapping: got %+v, wanted %+v", got, want)
 	}
 }
@@ -129,7 +130,7 @@ func TestInvalidateWholeMapping(t *testing.T) {
 	// [0x10000, 0x11000) => [0, 0x1000)
 	t.Log(&set)
 	set.Invalidate(MappableRange{0, 0x1000}, InvalidateOpts{})
-	if got, want := ms.inv, []hostarch.AddrRange{{0x10000, 0x11000}}; !reflect.DeepEqual(got, want) {
+	if got, want := ms.inv, []hostarch.AddrRange{{Start: 0x10000, End: 0x11000}}; !slices.Equal(got, want) {
 		t.Errorf("Invalidate: got %+v, wanted %+v", got, want)
 	}
 }
@@ -143,7 +144,7 @@ func TestInvalidatePartialMapping(t *testing.T) {
 	// [0x10000, 0x13000) => [0, 0x3000)
 	t.Log(&set)
 	set.Invalidate(MappableRange{0x1000, 0x2000}, InvalidateOpts{})
-	if got, want := ms.inv, []hostarch.AddrRange{{0x11000, 0x12000}}; !reflect.DeepEqual(got, want) {
+	if got, want := ms.inv, []hostarch.AddrRange{{Start: 0x11000, End: 0x12000}}; !slices.Equal(got, want) {
 		t.Errorf("Invalidate: got %+v, wanted %+v", got, want)
 	}
 }
@@ -159,7 +160,7 @@ func TestInvalidateMultipleMappings(t *testing.T) {
 	// [0x12000, 0x13000) => [0x2000, 0x3000)
 	t.Log(&set)
 	set.Invalidate(MappableRange{0, 0x3000}, InvalidateOpts{})
-	if got, want := ms.inv, []hostarch.AddrRange{{0x10000, 0x11000}, {0x20000, 0x21000}}; !reflect.DeepEqual(got, want) {
+	if got, want := ms.inv, []hostarch.AddrRange{{Start: 0x10000, End: 0x11000}, {Start: 0x20000, End: 0x21000}}; !slices.Equal(got, want) {
 		t.Errorf("Invalidate: got %+v, wanted %+v", got, want)
 	}
 }
@@ -176,10 +177,10 @@ func TestInvalidateOverlappingMappings(t *testing.T) {
 	// ms2:[0x11000, 0x13000) => [0x1000, 0x3000)
 	t.Log(&set)
 	set.Invalidate(MappableRange{0x1000, 0x2000}, InvalidateOpts{})
-	if got, want := ms1.inv, []hostarch.AddrRange{{0x11000, 0x12000}}; !reflect.DeepEqual(got, want) {
+	if got, want := ms1.inv, []hostarch.AddrRange{{Start: 0x11000, End: 0x12000}}; !slices.Equal(got, want) {
 		t.Errorf("Invalidate: ms1: got %+v, wanted %+v", got, want)
 	}
-	if got, want := ms2.inv, []hostarch.AddrRange{{0x20000, 0x21000}}; !reflect.DeepEqual(got, want) {
+	if got, want := ms2.inv, []hostarch.AddrRange{{Start: 0x20000, End: 0x21000}}; !slices.Equal(got, want) {
 		t.Errorf("Invalidate: ms1: got %+v, wanted %+v", got, want)
 	}
 }
@@ -189,7 +190,7 @@ func TestMixedWritableMappings(t *testing.T) {
 	ms := &testMappingSpace{}
 
 	mapped := set.AddMapping(ms, hostarch.AddrRange{0x10000, 0x12000}, 0x1000, true)
-	if got, want := mapped, []MappableRange{{0x1000, 0x3000}}; !reflect.DeepEqual(got, want) {
+	if got, want := mapped, []MappableRange{{0x1000, 0x3000}}; !slices.Equal(got, want) {
 		t.Errorf("AddMapping: got %+v, wanted %+v", got, want)
 	}
 
@@ -198,7 +199,7 @@ func TestMixedWritableMappings(t *testing.T) {
 	t.Log(&set)
 
 	mapped = set.AddMapping(ms, hostarch.AddrRange{0x20000, 0x22000}, 0x2000, false)
-	if got, want := mapped, []MappableRange{{0x3000, 0x4000}}; !reflect.DeepEqual(got, want) {
+	if got, want := mapped, []MappableRange{{0x3000, 0x4000}}; !slices.Equal(got, want) {
 		t.Errorf("AddMapping: got %+v, wanted %+v", got, want)
 	}
 
@@ -228,7 +229,7 @@ func TestMixedWritableMappings(t *testing.T) {
 	t.Log(&set)
 
 	unmapped = set.RemoveMapping(ms, hostarch.AddrRange{0x11000, 0x12000}, 0x2000, true)
-	if got, want := unmapped, []MappableRange{{0x2000, 0x3000}}; !reflect.DeepEqual(got, want) {
+	if got, want := unmapped, []MappableRange{{0x2000, 0x3000}}; !slices.Equal(got, want) {
 		t.Errorf("RemoveMapping: got %+v, wanted %+v", got, want)
 	}
 
@@ -244,7 +245,7 @@ func TestMixedWritableMappings(t *testing.T) {
 	}
 
 	unmapped = set.RemoveMapping(ms, hostarch.AddrRange{0x10000, 0x12000}, 0x1000, true)
-	if got, want := unmapped, []MappableRange{{0x1000, 0x2000}}; !reflect.DeepEqual(got, want) {
+	if got, want := unmapped, []MappableRange{{0x1000, 0x2000}}; !slices.Equal(got, want) {
 		t.Errorf("RemoveMapping: got %+v, wanted %+v", got, want)
 	}
 
@@ -253,7 +254,7 @@ func TestMixedWritableMappings(t *testing.T) {
 	t.Log(&set)
 
 	unmapped = set.RemoveMapping(ms, hostarch.AddrRange{0x21000, 0x22000}, 0x3000, false)
-	if got, want := unmapped, []MappableRange{{0x3000, 0x4000}}; !reflect.DeepEqual(got, want) {
+	if got, want := unmapped, []MappableRange{{0x3000, 0x4000}}; !slices.Equal(got, want) {
 		t.Errorf("RemoveMapping: got %+v, wanted %+v", got, want)
 	}
 }

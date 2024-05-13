@@ -27,6 +27,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -502,7 +503,7 @@ func TestLifecycle(t *testing.T) {
 				SandboxID:   args.ID,
 				ContainerID: args.ID,
 			}
-			if got, want := ids, []FullID{fullID}; !reflect.DeepEqual(got, want) {
+			if got, want := ids, []FullID{fullID}; !slices.Equal(got, want) {
 				t.Errorf("container list got %v, want %v", got, want)
 			}
 

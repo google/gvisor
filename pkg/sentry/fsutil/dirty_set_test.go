@@ -15,7 +15,7 @@
 package fsutil
 
 import (
-	"reflect"
+	"slices"
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/hostarch"
@@ -30,7 +30,7 @@ func TestDirtySet(t *testing.T) {
 	want := []DirtyFlatSegment{
 		{hostarch.PageSize, 2 * hostarch.PageSize, DirtyInfo{Keep: true}},
 	}
-	if got := set.ExportSlice(); !reflect.DeepEqual(got, want) {
+	if got := set.ExportSlice(); !slices.Equal(got, want) {
 		t.Errorf("set:\n\tgot %v,\n\twant %v", got, want)
 	}
 }

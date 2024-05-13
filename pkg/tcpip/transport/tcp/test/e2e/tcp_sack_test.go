@@ -19,7 +19,7 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"reflect"
+	"slices"
 	"testing"
 	"time"
 
@@ -320,7 +320,7 @@ func TestUpdateSACKBlocks(t *testing.T) {
 		copy(sack.Blocks[:], tc.sackBlocks)
 		sack.NumBlocks = len(tc.sackBlocks)
 		tcp.UpdateSACKBlocks(&sack, tc.segStart, tc.segEnd, tc.rcvNxt)
-		if got, want := sack.Blocks[:sack.NumBlocks], tc.updated; !reflect.DeepEqual(got, want) {
+		if got, want := sack.Blocks[:sack.NumBlocks], tc.updated; !slices.Equal(got, want) {
 			t.Errorf("UpdateSACKBlocks(%v, %v, %v, %v), got: %v, want: %v", tc.sackBlocks, tc.segStart, tc.segEnd, tc.rcvNxt, got, want)
 		}
 
@@ -349,7 +349,7 @@ func TestTrimSackBlockList(t *testing.T) {
 		copy(sack.Blocks[:], tc.sackBlocks)
 		sack.NumBlocks = len(tc.sackBlocks)
 		tcp.TrimSACKBlockList(&sack, tc.rcvNxt)
-		if got, want := sack.Blocks[:sack.NumBlocks], tc.trimmed; !reflect.DeepEqual(got, want) {
+		if got, want := sack.Blocks[:sack.NumBlocks], tc.trimmed; !slices.Equal(got, want) {
 			t.Errorf("TrimSackBlockList(%v, %v), got: %v, want: %v", tc.sackBlocks, tc.rcvNxt, got, want)
 		}
 	}

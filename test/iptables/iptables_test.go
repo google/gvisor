@@ -19,7 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"reflect"
+	"slices"
 	"sync"
 	"testing"
 
@@ -469,7 +469,7 @@ func TestFilterAddrs(t *testing.T) {
 	}
 
 	for _, tc := range tcs {
-		if got := filterAddrs(tc.addrs, tc.ipv6); !reflect.DeepEqual(got, tc.want) {
+		if got := filterAddrs(tc.addrs, tc.ipv6); !slices.Equal(got, tc.want) {
 			t.Errorf("%v with IPv6 %t: got %v, but wanted %v", tc.addrs, tc.ipv6, got, tc.want)
 		}
 	}

@@ -21,7 +21,7 @@ import (
 	"hash/adler32"
 	"math"
 	"os"
-	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -729,7 +729,7 @@ func TestTimerMetric(t *testing.T) {
 	}
 	m := emitter[0].(*pb.MetricUpdate).Metrics[0]
 	wantFields := []string{"foo", "quux"}
-	if !reflect.DeepEqual(m.GetFieldValues(), wantFields) {
+	if !slices.Equal(m.GetFieldValues(), wantFields) {
 		t.Errorf("%+v: got fields %v want %v", m, m.GetFieldValues(), wantFields)
 	}
 	dv, ok := m.Value.(*pb.MetricValue_DistributionValue)

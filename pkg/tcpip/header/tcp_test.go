@@ -16,6 +16,7 @@ package header_test
 
 import (
 	"reflect"
+	"slices"
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -63,7 +64,7 @@ func TestEncodeSACKBlocks(t *testing.T) {
 		t.Logf("testing: %v", tc)
 		header.EncodeSACKBlocks(tc.sackBlocks, b)
 		opts := header.ParseTCPOptions(b)
-		if got, want := opts.SACKBlocks, tc.want; !reflect.DeepEqual(got, want) {
+		if got, want := opts.SACKBlocks, tc.want; !slices.Equal(got, want) {
 			t.Errorf("header.EncodeSACKBlocks(%v, %v), encoded blocks got: %v, want: %v", tc.sackBlocks, b, got, want)
 		}
 	}

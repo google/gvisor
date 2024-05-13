@@ -15,7 +15,7 @@
 package gohacks
 
 import (
-	"reflect"
+	"slices"
 	"testing"
 )
 
@@ -45,7 +45,7 @@ func TestImmutableBytesFromString(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			got := ImmutableBytesFromString(tc.input)
-			if !reflect.DeepEqual(got, tc.want) {
+			if !slices.Equal(got, tc.want) {
 				t.Errorf("got contents %v (len %d cap %d) want %v (len %d cap %d)", got, len(got), cap(got), tc.want, len(tc.want), cap(tc.want))
 			}
 		})

@@ -17,7 +17,7 @@ package portforward
 import (
 	"fmt"
 	"net"
-	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -63,7 +63,7 @@ func TestLocalHostSocket(t *testing.T) {
 			return fmt.Errorf("could not read data: %v", err)
 		}
 
-		if !reflect.DeepEqual(data[:recLen], clientData) {
+		if !slices.Equal(data[:recLen], clientData) {
 			return fmt.Errorf("server mismatch data recieved: got: %s want: %s", data[:recLen], clientData)
 		}
 
@@ -102,7 +102,7 @@ func TestLocalHostSocket(t *testing.T) {
 			dataLen += n
 		}
 
-		if !reflect.DeepEqual(data[:dataLen], serverData) {
+		if !slices.Equal(data[:dataLen], serverData) {
 			return fmt.Errorf("server mismatch data received: got: %s want: %s", data[:dataLen], clientData)
 		}
 		return nil

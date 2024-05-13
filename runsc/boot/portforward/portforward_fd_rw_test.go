@@ -18,7 +18,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"reflect"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -320,7 +320,7 @@ func TestReaderWriter(t *testing.T) {
 				want = append(want, buf...)
 			}
 
-			if !reflect.DeepEqual(got, want) {
+			if !slices.Equal(got, want) {
 				t.Fatalf("mismatch types: got: %q want: %q", string(got), string(want))
 			}
 

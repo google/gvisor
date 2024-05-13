@@ -20,7 +20,7 @@ import (
 	"fmt"
 	"io"
 	"math/rand"
-	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -625,7 +625,7 @@ func TestBufferPullUp(t *testing.T) {
 			for v := b.data.Front(); v != nil; v = v.Next() {
 				gotLengths = append(gotLengths, v.Size())
 			}
-			if !reflect.DeepEqual(gotLengths, tc.lengths) {
+			if !slices.Equal(gotLengths, tc.lengths) {
 				t.Errorf("lengths = %v; want %v", gotLengths, tc.lengths)
 			}
 		})

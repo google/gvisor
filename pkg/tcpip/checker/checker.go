@@ -18,7 +18,7 @@ package checker
 
 import (
 	"encoding/binary"
-	"reflect"
+	"slices"
 	"testing"
 	"time"
 
@@ -463,7 +463,7 @@ func Raw(want []byte) NetworkChecker {
 	return func(t *testing.T, h []header.Network) {
 		t.Helper()
 
-		if got := h[len(h)-1].Payload(); !reflect.DeepEqual(got, want) {
+		if got := h[len(h)-1].Payload(); !slices.Equal(got, want) {
 			t.Errorf("Wrong payload, got %v, want %v", got, want)
 		}
 	}
@@ -917,7 +917,7 @@ func TCPSACKBlockChecker(sackBlocks []header.SACKBlock) TransportChecker {
 			}
 		}
 
-		if !reflect.DeepEqual(gotSACKBlocks, sackBlocks) {
+		if !slices.Equal(gotSACKBlocks, sackBlocks) {
 			t.Errorf("SACKBlocks are not equal, got = %v, want = %v", gotSACKBlocks, sackBlocks)
 		}
 	}
@@ -928,7 +928,7 @@ func Payload(want []byte) TransportChecker {
 	return func(t *testing.T, h header.Transport) {
 		t.Helper()
 
-		if got := h.Payload(); !reflect.DeepEqual(got, want) {
+		if got := h.Payload(); !slices.Equal(got, want) {
 			t.Errorf("Wrong payload, got %v, want %v", got, want)
 		}
 	}

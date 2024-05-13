@@ -22,7 +22,7 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
-	"reflect"
+	"slices"
 	"testing"
 	"time"
 	"unsafe"
@@ -506,7 +506,7 @@ func TestIovecBuffer(t *testing.T) {
 			buf.Apply(func(v *buffer.View) {
 				lengths = append(lengths, v.Size())
 			})
-			if !reflect.DeepEqual(lengths, c.wantLengths) {
+			if !slices.Equal(lengths, c.wantLengths) {
 				t.Errorf("Pulled view lengths = %v, want %v", lengths, c.wantLengths)
 			}
 

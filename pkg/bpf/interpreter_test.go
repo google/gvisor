@@ -16,6 +16,7 @@ package bpf
 
 import (
 	"reflect"
+	"slices"
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -886,7 +887,7 @@ func TestValidInstructions(t *testing.T) {
 			if retOptimized.ReturnValue != retFast {
 				t.Fatalf("expected return value from optimized version: got %d, non-optimized execution returned %d", retOptimized.ReturnValue, retFast)
 			}
-			if !reflect.DeepEqual(retOptimized.InputAccessed, execution.InputAccessed) {
+			if !slices.Equal(retOptimized.InputAccessed, execution.InputAccessed) {
 				t.Fatalf("expected input read coverage from optimized version: got %s, non-optimized execution was %s", retOptimized.String(), execution.String())
 			}
 		})

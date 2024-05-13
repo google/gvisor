@@ -15,7 +15,7 @@
 package bits
 
 import (
-	"reflect"
+	"slices"
 	"testing"
 )
 
@@ -82,7 +82,7 @@ func TestForEachSetBit64(t *testing.T) {
 		ForEachSetBit64(n, func(i int) {
 			got = append(got, i)
 		})
-		if !reflect.DeepEqual(got, want) {
+		if !slices.Equal(got, want) {
 			t.Errorf("ForEachSetBit64(%#x): iterated bits %v, wanted %v", n, got, want)
 		}
 	}

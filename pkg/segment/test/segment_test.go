@@ -17,7 +17,7 @@ package segment
 import (
 	"fmt"
 	"math/rand"
-	"reflect"
+	"slices"
 	"testing"
 )
 
@@ -343,7 +343,7 @@ func TestNextLargeEnoughGap(t *testing.T) {
 		}
 	}
 
-	if !reflect.DeepEqual(gapArr2, gapArr1) {
+	if !slices.Equal(gapArr2, gapArr1) {
 		t.Errorf("Search result not correct, got: %v, wanted: %v", gapArr1, gapArr2)
 	}
 	if t.Failed() {
@@ -393,7 +393,7 @@ func TestPrevLargeEnoughGap(t *testing.T) {
 			gapArr2 = append(gapArr2, gap.Range().Start)
 		}
 	}
-	if !reflect.DeepEqual(gapArr2, gapArr1) {
+	if !slices.Equal(gapArr2, gapArr1) {
 		t.Errorf("Search result not correct, got: %v, wanted: %v", gapArr1, gapArr2)
 	}
 	if t.Failed() {
@@ -648,7 +648,7 @@ func TestMutateRange(t *testing.T) {
 				(*seg.ValuePtr())++
 				return true
 			})
-			if got := s.ExportSlice(); !reflect.DeepEqual(got, test.final) {
+			if got := s.ExportSlice(); !slices.Equal(got, test.final) {
 				t.Errorf("Set mismatch after mutation: got %v, wanted %v", got, test.final)
 			}
 		})

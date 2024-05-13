@@ -17,6 +17,7 @@ package usage
 import (
 	"math/rand"
 	"reflect"
+	"slices"
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/bpf"
@@ -29,7 +30,7 @@ import (
 // match byte-for-byte. If not, it prints them side-by-side.
 func comparePrograms(t *testing.T, precompiled, freshlyCompiled []bpf.Instruction) {
 	t.Helper()
-	if !reflect.DeepEqual(precompiled, freshlyCompiled) {
+	if !slices.Equal(precompiled, freshlyCompiled) {
 		t.Error("Precompiled and freshly-compiled versions of the program do not match:")
 		t.Errorf("     Offset | %-32s | %-32s", "Freshly-compiled", "Compiled")
 		for i := 0; i < max(len(precompiled), len(freshlyCompiled)); i++ {

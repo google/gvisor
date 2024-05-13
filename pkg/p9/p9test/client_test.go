@@ -20,7 +20,7 @@ import (
 	"io"
 	"math/rand"
 	"os"
-	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -633,7 +633,7 @@ func renameHelper(h *Harness, root p9.File, srcNames []string, dstNames []string
 			// renameSrcPath here? If yes, then this is a mismatch.
 			// We can't rename the src to some subpath of itself.
 			if len(renameDestPath) > len(renameSrcPath) &&
-				reflect.DeepEqual(renameDestPath[:len(renameSrcPath)], renameSrcPath) {
+				slices.Equal(renameDestPath[:len(renameSrcPath)], renameSrcPath) {
 				renameDestPath = nil
 				renameSrcPath = nil
 				continue

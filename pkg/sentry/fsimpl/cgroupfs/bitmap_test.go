@@ -16,7 +16,7 @@ package cgroupfs
 
 import (
 	"fmt"
-	"reflect"
+	"slices"
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/bitmap"
@@ -48,7 +48,7 @@ func TestFormat(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Failed to parse formatted bitmap: %v", err)
 			}
-			if got, want := b1.ToSlice(), b.ToSlice(); !reflect.DeepEqual(got, want) {
+			if got, want := b1.ToSlice(), b.ToSlice(); !slices.Equal(got, want) {
 				t.Errorf("Parsing formatted output doesn't result in the original bitmap. Got %v, want %v", got, want)
 			}
 		})
@@ -90,7 +90,7 @@ func TestParse(t *testing.T) {
 			}
 
 			got := b.ToSlice()
-			if !reflect.DeepEqual(got, tt.output) {
+			if !slices.Equal(got, tt.output) {
 				t.Errorf("Parsed bitmap doesn't match what we expected. Got %v, want %v", got, tt.output)
 			}
 

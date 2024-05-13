@@ -16,7 +16,7 @@ package bitmap
 
 import (
 	"math"
-	"reflect"
+	"slices"
 	"testing"
 )
 
@@ -110,7 +110,7 @@ func TestRemove(t *testing.T) {
 		bitmap.Remove(firstSlice[i])
 	}
 	bitmapSlice := bitmap.ToSlice()
-	if !reflect.DeepEqual(bitmapSlice, secondSlice) {
+	if !slices.Equal(bitmapSlice, secondSlice) {
 		t.Errorf("After Remove() firstSlice, remained slice: %v, wanted: %v", bitmapSlice, secondSlice)
 	}
 
@@ -119,7 +119,7 @@ func TestRemove(t *testing.T) {
 	}
 	bitmapSlice = bitmap.ToSlice()
 	emptySlice := make([]uint32, 0)
-	if !reflect.DeepEqual(bitmapSlice, emptySlice) {
+	if !slices.Equal(bitmapSlice, emptySlice) {
 		t.Errorf("After Remove secondSlice, remained slice: %v, wanted: %v", bitmapSlice, emptySlice)
 	}
 
@@ -153,7 +153,7 @@ func TestFlipRange(t *testing.T) {
 
 			bitmap.FlipRange(uint32(tt.flipRangeMin), uint32(tt.flipRangeMax+1))
 			flipBitmapSlice := bitmap.ToSlice()
-			if !reflect.DeepEqual(flipFillSlice, flipBitmapSlice) {
+			if !slices.Equal(flipFillSlice, flipBitmapSlice) {
 				t.Errorf("%v, flipped slice: %v, wanted: %v", tt.name, flipBitmapSlice, flipFillSlice)
 			}
 		})
@@ -186,7 +186,7 @@ func TestClearRange(t *testing.T) {
 					clearedSlice = append(clearedSlice, uint32(i))
 				}
 			}
-			if !reflect.DeepEqual(clearedSlice, clearedBitmapSlice) {
+			if !slices.Equal(clearedSlice, clearedBitmapSlice) {
 				t.Errorf("%v, cleared slice: %v, wanted: %v", tt.name, clearedBitmapSlice, clearedSlice)
 			}
 		})
@@ -402,7 +402,7 @@ func TestGrow(t *testing.T) {
 			want[i] = uint32(i)
 		}
 	}
-	if !reflect.DeepEqual(bitmap.ToSlice(), want) {
+	if !slices.Equal(bitmap.ToSlice(), want) {
 		t.Errorf("Grow() got: %v, want: %v", bitmap.ToSlice(), want)
 	}
 }

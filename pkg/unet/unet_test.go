@@ -18,7 +18,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
-	"reflect"
+	"slices"
 	"testing"
 	"time"
 
@@ -660,7 +660,7 @@ func TestControlMessage(t *testing.T) {
 		cm.EnableFDs(i)
 		cm.PackFDs(want...)
 		got, err := cm.ExtractFDs()
-		if err != nil || !reflect.DeepEqual(got, want) {
+		if err != nil || !slices.Equal(got, want) {
 			t.Errorf("cm.ExtractFDs() = %v, %v, want = %v, %v", got, err, want, nil)
 		}
 	}

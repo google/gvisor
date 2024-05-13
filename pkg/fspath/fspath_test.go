@@ -15,7 +15,7 @@
 package fspath
 
 import (
-	"reflect"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -126,7 +126,7 @@ func TestParse(t *testing.T) {
 			for pit := p.Begin; pit.Ok(); pit = pit.Next() {
 				pcs = append(pcs, pit.String())
 			}
-			if !reflect.DeepEqual(pcs, test.relpath) {
+			if !slices.Equal(pcs, test.relpath) {
 				t.Errorf("relative path: got %v, wanted %v", pcs, test.relpath)
 			}
 		})

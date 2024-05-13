@@ -15,7 +15,7 @@
 package boot
 
 import (
-	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -56,7 +56,7 @@ func TestPodMountHintsHappy(t *testing.T) {
 	if want := pod; want != mount1.Share {
 		t.Errorf("mount1 type, want: %q, got: %q", want, mount1.Share)
 	}
-	if want := []string(nil); !reflect.DeepEqual(want, mount1.Mount.Options) {
+	if want := []string(nil); !slices.Equal(want, mount1.Mount.Options) {
 		t.Errorf("mount1 type, want: %q, got: %q", want, mount1.Mount.Options)
 	}
 
@@ -73,7 +73,7 @@ func TestPodMountHintsHappy(t *testing.T) {
 	if want := container; want != mount2.Share {
 		t.Errorf("mount2 type, want: %q, got: %q", want, mount2.Share)
 	}
-	if want := []string{"rw", "private"}; !reflect.DeepEqual(want, mount2.Mount.Options) {
+	if want := []string{"rw", "private"}; !slices.Equal(want, mount2.Mount.Options) {
 		t.Errorf("mount2 type, want: %q, got: %q", want, mount2.Mount.Options)
 	}
 }
@@ -185,7 +185,7 @@ func TestIgnoreInvalidMountOptions(t *testing.T) {
 		t.Fatalf("newPodMountHints failed: %v", err)
 	}
 	mount1 := podHints.Mounts["mount1"]
-	if want := []string{"rw", "noexec"}; !reflect.DeepEqual(want, mount1.Mount.Options) {
+	if want := []string{"rw", "noexec"}; !slices.Equal(want, mount1.Mount.Options) {
 		t.Errorf("mount2 type, want: %q, got: %q", want, mount1.Mount.Options)
 	}
 }
