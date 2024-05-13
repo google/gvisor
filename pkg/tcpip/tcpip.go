@@ -1190,8 +1190,6 @@ const (
 )
 
 // TCPInfoOption is used by GetSockOpt to expose TCP statistics.
-//
-// TODO(b/64800844): Add and populate stat fields.
 type TCPInfoOption struct {
 	// RTT is the smoothed round trip time.
 	RTT time.Duration

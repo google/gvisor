@@ -92,7 +92,7 @@ func (fs FeatureSet) HasFeature(feature Feature) bool {
 
 // WriteCPUInfoTo is to generate a section of one cpu in /proc/cpuinfo. This is
 // a minimal /proc/cpuinfo, and the bogomips field is simply made up.
-func (fs FeatureSet) WriteCPUInfoTo(cpu uint, w io.Writer) {
+func (fs FeatureSet) WriteCPUInfoTo(cpu, numCPU uint, w io.Writer) {
 	fmt.Fprintf(w, "processor\t: %d\n", cpu)
 	fmt.Fprintf(w, "BogoMIPS\t: %.02f\n", fs.cpuFreqMHz) // It's bogus anyway.
 	fmt.Fprintf(w, "Features\t\t: %s\n", fs.FlagString())

@@ -266,7 +266,7 @@ func cpuInfoData(k *kernel.Kernel) string {
 	features := k.FeatureSet()
 	var buf bytes.Buffer
 	for i, max := uint(0), k.ApplicationCores(); i < max; i++ {
-		features.WriteCPUInfoTo(i, &buf)
+		features.WriteCPUInfoTo(i, max, &buf)
 	}
 	return buf.String()
 }

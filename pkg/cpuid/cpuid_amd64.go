@@ -309,7 +309,7 @@ func (fs FeatureSet) HasFeature(feature Feature) bool {
 // WriteCPUInfoTo is to generate a section of one cpu in /proc/cpuinfo. This is
 // a minimal /proc/cpuinfo, it is missing some fields like "microcode" that are
 // not always printed in Linux. The bogomips field is simply made up.
-func (fs FeatureSet) WriteCPUInfoTo(cpu uint, w io.Writer) {
+func (fs FeatureSet) WriteCPUInfoTo(cpu, numCPU uint, w io.Writer) {
 	// Avoid many redundant calls here, since this can occasionally appear
 	// in the hot path. Read all basic information up front, see above.
 	ax, _, _, _ := fs.query(featureInfo)
@@ -322,6 +322,12 @@ func (fs FeatureSet) WriteCPUInfoTo(cpu uint, w io.Writer) {
 	fmt.Fprintf(w, "model name\t: %s\n", "unknown") // Unknown for now.
 	fmt.Fprintf(w, "stepping\t: %s\n", "unknown")   // Unknown for now.
 	fmt.Fprintf(w, "cpu MHz\t\t: %.3f\n", cpuFreqMHz)
+	fmt.Fprintf(w, "physical id\t: 0\n") // Pretend all CPUs are in the same socket.
+	fmt.Fprintf(w, "siblings\t: %d\n", numCPU)
+	fmt.Fprintf(w, "core id\t\t: %d\n", cpu)
+	fmt.Fprintf(w, "cpu cores\t: %d\n", numCPU) // Pretend each CPU is a distinct core (rather than a hyperthread).
+	fmt.Fprintf(w, "apicid\t\t: %d\n", cpu)
+	fmt.Fprintf(w, "initial apicid\t: %d\n", cpu)
 	fmt.Fprintf(w, "fpu\t\t: yes\n")
 	fmt.Fprintf(w, "fpu_exception\t: yes\n")
 	fmt.Fprintf(w, "cpuid level\t: %d\n", uint32(xSaveInfo)) // Same as ax in vendorID.
