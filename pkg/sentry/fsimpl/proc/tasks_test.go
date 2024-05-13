@@ -410,8 +410,6 @@ func TestProcSelf(t *testing.T) {
 }
 
 func iterateDir(ctx context.Context, t *testing.T, s *testutil.System, fd *vfs.FileDescription) {
-	t.Logf("Iterating: %s", fd.MappedName(ctx))
-
 	var collector testutil.DirentCollector
 	if err := fd.IterDirents(ctx, &collector); err != nil {
 		t.Fatalf("IterDirents(): %v", err)
@@ -429,20 +427,16 @@ func iterateDir(ctx context.Context, t *testing.T, s *testutil.System, fd *vfs.F
 		}
 		absPath := path.Join(fd.MappedName(ctx), d.Name)
 		if d.Type == linux.DT_LNK {
-			link, err := s.VFS.ReadlinkAt(
+			_, err := s.VFS.ReadlinkAt(
 				ctx,
 				auth.CredentialsFromContext(ctx),
 				&vfs.PathOperation{Root: s.Root, Start: s.Root, Path: fspath.Parse(absPath)},
 			)
 			if err != nil {
 				t.Errorf("vfsfs.ReadlinkAt(%v) failed: %v", absPath, err)
-			} else {
-				t.Logf("Skipping symlink: %s => %s", absPath, link)
 			}
 			continue
 		}
-
-		t.Logf("Opening: %s", absPath)
 		child, err := s.VFS.OpenAt(
 			ctx,
 			auth.CredentialsFromContext(ctx),
