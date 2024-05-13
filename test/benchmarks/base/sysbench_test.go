@@ -22,6 +22,7 @@ import (
 	"gvisor.dev/gvisor/pkg/test/dockerutil"
 	"gvisor.dev/gvisor/test/benchmarks/harness"
 	"gvisor.dev/gvisor/test/benchmarks/tools"
+	"gvisor.dev/gvisor/test/metricsviz"
 )
 
 type testCase struct {
@@ -30,7 +31,7 @@ type testCase struct {
 	test    tools.Sysbench
 }
 
-// BenchmarSysbench runs sysbench on the runtime.
+// BenchmarkSysbench runs sysbench on the runtime.
 func BenchmarkSysbench(b *testing.B) {
 	testCases := []testCase{
 		{
@@ -108,6 +109,7 @@ func BenchmarkSysbench(b *testing.B) {
 			ctx := context.Background()
 			sysbench := machine.GetContainer(ctx, b)
 			defer sysbench.CleanUp(ctx)
+			defer metricsviz.FromContainerLogs(ctx, b, sysbench)
 
 			cmd := tc.test.MakeCmd(b)
 			b.ResetTimer()

@@ -16,6 +16,7 @@ go_library(
         "//pkg/test/dockerutil",
         "//test/benchmarks/harness",
         "//test/benchmarks/tools",
+        "//test/metricsviz",
     ],
 )
 
@@ -31,6 +32,7 @@ benchmark_test(
         "//pkg/test/testutil",
         "//test/benchmarks/harness",
         "//test/benchmarks/tools",
+        "//test/metricsviz",
     ],
 )
 
@@ -45,6 +47,7 @@ benchmark_test(
         "//pkg/test/dockerutil",
         "//test/benchmarks/harness",
         "//test/benchmarks/tools",
+        "//test/metricsviz",
     ],
 )
 
@@ -59,6 +62,7 @@ benchmark_test(
         "//pkg/test/dockerutil",
         "//test/benchmarks/harness",
         "//test/benchmarks/tools",
+        "//test/metricsviz",
     ],
 )
 

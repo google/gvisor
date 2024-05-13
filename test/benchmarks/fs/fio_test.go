@@ -25,6 +25,7 @@ import (
 	"gvisor.dev/gvisor/pkg/test/dockerutil"
 	"gvisor.dev/gvisor/test/benchmarks/harness"
 	"gvisor.dev/gvisor/test/benchmarks/tools"
+	"gvisor.dev/gvisor/test/metricsviz"
 )
 
 // Fio benchmarks run fio on the runtime under test. There are 4 basic test
@@ -192,6 +193,7 @@ func doFioBenchmark(b *testing.B, testCases []tools.Fio) {
 				ctx := context.Background()
 				container := machine.GetContainer(ctx, b)
 				cu := cleanup.Make(func() {
+					metricsviz.FromContainerLogs(ctx, b, container)
 					container.CleanUp(ctx)
 				})
 				defer cu.Clean()

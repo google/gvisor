@@ -22,6 +22,7 @@ import (
 	"gvisor.dev/gvisor/pkg/test/dockerutil"
 	"gvisor.dev/gvisor/test/benchmarks/harness"
 	"gvisor.dev/gvisor/test/benchmarks/tools"
+	"gvisor.dev/gvisor/test/metricsviz"
 )
 
 // runStaticServer runs static serving workloads (httpd, nginx).
@@ -46,6 +47,7 @@ func runStaticServer(b *testing.B, serverOpts dockerutil.RunOpts, serverCmd []st
 	defer client.CleanUp(ctx)
 	server := serverMachine.GetContainer(ctx, b)
 	defer server.CleanUp(ctx)
+	defer metricsviz.FromContainerLogs(ctx, b, server)
 
 	// Start the server.
 	if err := server.Spawn(ctx, serverOpts, serverCmd...); err != nil {

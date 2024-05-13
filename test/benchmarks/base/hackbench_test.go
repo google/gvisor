@@ -22,6 +22,7 @@ import (
 	"gvisor.dev/gvisor/pkg/test/dockerutil"
 	"gvisor.dev/gvisor/test/benchmarks/harness"
 	"gvisor.dev/gvisor/test/benchmarks/tools"
+	"gvisor.dev/gvisor/test/metricsviz"
 )
 
 // BenchmarHackbench runs hackbench on the runtime.
@@ -69,6 +70,7 @@ func BenchmarkHackbench(b *testing.B) {
 			); err != nil {
 				b.Fatalf("run failed with: %v", err)
 			}
+			defer metricsviz.FromContainerLogs(ctx, b, container)
 
 			cmd := tc.MakeCmd(b)
 			b.ResetTimer()

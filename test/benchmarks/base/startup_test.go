@@ -23,6 +23,7 @@ import (
 	"gvisor.dev/gvisor/pkg/test/dockerutil"
 	"gvisor.dev/gvisor/test/benchmarks/base"
 	"gvisor.dev/gvisor/test/benchmarks/harness"
+	"gvisor.dev/gvisor/test/metricsviz"
 )
 
 // BenchmarkStartEmpty times startup time for an empty container.
@@ -46,6 +47,9 @@ func BenchmarkStartupEmpty(b *testing.B) {
 			b.Fatalf("failed to start container: %v", err)
 		}
 		b.StopTimer()
+		if i == 0 {
+			metricsviz.FromContainerLogs(ctx, b, container)
+		}
 		container.CleanUp(ctx)
 		harness.DebugLog(b, "Ran container: %d", i)
 	}
@@ -113,6 +117,7 @@ func runServerWorkload(ctx context.Context, b *testing.B, args base.ServerArgs) 
 			server := args.Machine.GetContainer(ctx, b)
 			defer func() {
 				b.StopTimer()
+				metricsviz.FromContainerLogs(ctx, b, server)
 				// Cleanup servers as we run so that we can go indefinitely.
 				server.CleanUp(ctx)
 				b.StartTimer()
