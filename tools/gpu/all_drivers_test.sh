@@ -26,5 +26,5 @@ read -r -a versions <<< "$(cat "${tmp_file}")"
 
 for driver in "${versions[@]}"; do
   make sudo TARGETS=tools/gpu:main ARGS="install --version ${driver}"
-  make gpu-smoke-tests
+  make gpu-smoke-tests RUNTIME_ARGS="--debug"
 done
