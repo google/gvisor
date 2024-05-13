@@ -50,6 +50,7 @@ go_library(
         "//pkg/hostos",
         "//pkg/log",
         "//pkg/memutil",
+        "//pkg/metric",
         "//pkg/rand",
         "//pkg/refs",
         "//pkg/sentry/arch",

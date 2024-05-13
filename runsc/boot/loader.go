@@ -36,6 +36,7 @@ import (
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/memutil"
+	"gvisor.dev/gvisor/pkg/metric"
 	"gvisor.dev/gvisor/pkg/rand"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/control"
@@ -372,7 +373,11 @@ func getRootCredentials(spec *specs.Spec, conf *config.Config, userNs *auth.User
 // New initializes a new kernel loader configured by spec.
 // New also handles setting up a kernel for restoring a container.
 func New(args Args) (*Loader, error) {
-	stopProfiling := profile.Start(args.ProfileOpts)
+	stopProfilingRuntime := profile.Start(args.ProfileOpts)
+	stopProfiling := func() {
+		stopProfilingRuntime()
+		metric.StopProfilingMetrics()
+	}
 
 	// Initialize seccheck points.
 	seccheck.Initialize()
