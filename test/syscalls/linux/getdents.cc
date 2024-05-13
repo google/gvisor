@@ -503,6 +503,22 @@ TYPED_TEST(GetdentsTest, ZeroLengthOutBuffer) {
               SyscallFailsWithErrno(EINVAL));
 }
 
+// Tests that getdents() fails when called with too large size.
+TYPED_TEST(GetdentsTest, TooLargeSize) {
+  auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto fd = ASSERT_NO_ERRNO_AND_VALUE(Open(dir.path(), O_DIRECTORY));
+
+  typename TestFixture::DirentBufferType dirents(100);
+  // Try one over the limit.
+  EXPECT_THAT(RetryEINTR(syscall)(this->SyscallNum(), fd.get(), dirents.Data(),
+                                  static_cast<uint32_t>(INT32_MAX) + 1),
+              SyscallFailsWithErrno(EINVAL));
+  // Try way over the limit.
+  EXPECT_THAT(RetryEINTR(syscall)(this->SyscallNum(), fd.get(), dirents.Data(),
+                                  static_cast<uint32_t>(-1)),
+              SyscallFailsWithErrno(EINVAL));
+}
+
 // Some tests using the glibc readdir interface.
 TEST(ReaddirTest, OpenDir) {
   DIR* dev;

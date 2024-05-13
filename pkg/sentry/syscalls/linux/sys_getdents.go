@@ -43,7 +43,8 @@ const DirentStructBytesWithoutName = 8 + 8 + 2 + 1 + 1
 func getdents(t *kernel.Task, args arch.SyscallArguments, isGetdents64 bool) (uintptr, *kernel.SyscallControl, error) {
 	fd := args[0].Int()
 	addr := args[1].Pointer()
-	size := int(args[2].Uint())
+	size := args[2].Int()
+
 	if size < DirentStructBytesWithoutName {
 		return 0, nil, linuxerr.EINVAL
 	}
@@ -64,7 +65,7 @@ func getdents(t *kernel.Task, args arch.SyscallArguments, isGetdents64 bool) (ui
 		return 0, nil, err
 	}
 
-	cb := getGetdentsCallback(t, int(allowedSize), size, isGetdents64)
+	cb := getGetdentsCallback(t, int(allowedSize), int(size), isGetdents64)
 	err = file.IterDirents(t, cb)
 	n, _ := t.CopyOutBytes(addr, cb.buf[:cb.copied])
 
