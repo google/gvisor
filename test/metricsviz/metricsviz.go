@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"hash/adler32"
+	"os"
 	"regexp"
 	"slices"
 	"sort"
@@ -602,6 +603,39 @@ func FromNamedContainerLogs(ctx context.Context, testLike testing.TB, container 
 	html, err := data.ToHTML(htmlOptions)
 	if err != nil {
 		testLike.Fatalf("Failed to generate HTML: %v", err)
+	}
+	if err := publishHTMLFn(ctx, testLike, htmlOptions, html); err != nil {
+		testLike.Fatalf("Failed to publish HTML: %v", err)
+	}
+}
+
+// FromProfilingMetricsLogFile parses a profiling metrics log file
+// (as created by --profiling-metrics-log) and reports metrics data within.
+func FromProfilingMetricsLogFile(ctx context.Context, testLike testing.TB, logFile string) {
+	contents, err := os.ReadFile(logFile)
+	if err != nil {
+		testLike.Fatalf("Failed to read log file: %v", err)
+	}
+	data, err := Parse(string(contents), false)
+	if err != nil {
+		if errors.Is(err, ErrNoMetricData) {
+			return // No metric data in the logs, so stay quiet.
+		}
+		testLike.Fatalf("Failed to parse metrics data: %v", err)
+	}
+	htmlOptions := HTMLOptions{
+		Title: testLike.Name(),
+		When:  data.startTime,
+	}
+	html, err := data.ToHTML(htmlOptions)
+	if err != nil {
+		testLike.Fatalf("Failed to generate HTML: %v", err)
+	}
+	if strings.HasSuffix(logFile, ".log") {
+		// Best-effort conversion to HTML next to the .log file in the directory,
+		// if permissions allow that. Ignore errors, what matters more is the
+		// publishing step later on.
+		_ = os.WriteFile(strings.TrimSuffix(logFile, ".log")+".html", []byte(html), 0644)
 	}
 	if err := publishHTMLFn(ctx, testLike, htmlOptions, html); err != nil {
 		testLike.Fatalf("Failed to publish HTML: %v", err)
