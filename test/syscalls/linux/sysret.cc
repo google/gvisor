@@ -29,7 +29,7 @@ namespace testing {
 namespace {
 
 constexpr uint64_t kNonCanonicalRip = 0xCCCC000000000000;
-constexpr uint64_t kNonCanonicalRsp = 0xFFFF000000000000;
+constexpr uint64_t kNonCanonicalRsp = 0xFE00000000000000;
 
 class SysretTest : public ::testing::Test {
  protected:
