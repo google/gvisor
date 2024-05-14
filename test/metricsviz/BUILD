@@ -7,7 +7,6 @@ package(
 
 go_library(
     name = "metricsviz",
-    testonly = 1,
     srcs = [
         "metricsviz.go",
         "metricsviz_groups.go",
@@ -17,7 +16,7 @@ go_library(
     deps = [
         "//pkg/metric",
         "//pkg/metric:metric_go_proto",
-        "//pkg/test/dockerutil",
+        "@com_github_docker_docker//api/types:go_default_library",
         "@com_github_go_echarts_go_echarts_v2//charts:go_default_library",
         "@com_github_go_echarts_go_echarts_v2//components:go_default_library",
         "@com_github_go_echarts_go_echarts_v2//opts:go_default_library",

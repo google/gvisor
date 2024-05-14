@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"hash/adler32"
 	"os"
+	"path"
 	"regexp"
 	"slices"
 	"sort"
@@ -30,6 +31,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/docker/docker/api/types"
 	"github.com/go-echarts/go-echarts/v2/charts"
 	"github.com/go-echarts/go-echarts/v2/components"
 	"github.com/go-echarts/go-echarts/v2/opts"
@@ -37,7 +39,6 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 	"gvisor.dev/gvisor/pkg/metric"
 	mpb "gvisor.dev/gvisor/pkg/metric/metric_go_proto"
-	"gvisor.dev/gvisor/pkg/test/dockerutil"
 )
 
 // MetricName is the name of a metric.
@@ -438,6 +439,9 @@ func Parse(logs string, hasPrefix bool) (*Data, error) {
 		if hasPrefix && !strings.HasPrefix(line, metric.MetricsPrefix) {
 			continue
 		}
+		if line == "" {
+			continue
+		}
 		metricsLineFound = true
 		lineData := strings.TrimPrefix(line, metric.MetricsPrefix)
 
@@ -561,17 +565,25 @@ func slugify(s string) string {
 	return s
 }
 
+// Container represents a container that can be stopped and from which we can
+// get logs.
+type Container interface {
+	Stop(context.Context) error
+	Status(context.Context) (types.ContainerState, error)
+	Logs(context.Context) (string, error)
+}
+
 // FromContainerLogs parses a container's logs and reports metrics data
 // found within.
 // The container must be stopped or stoppable by the time this is called.
-func FromContainerLogs(ctx context.Context, testLike testing.TB, container *dockerutil.Container) {
+func FromContainerLogs(ctx context.Context, testLike testing.TB, container Container) {
 	FromNamedContainerLogs(ctx, testLike, container, "")
 }
 
 // FromNamedContainerLogs parses a container's logs and reports metrics data
 // found within, making note of the container's name on the results page.
 // The container must be stopped or stoppable by the time this is called.
-func FromNamedContainerLogs(ctx context.Context, testLike testing.TB, container *dockerutil.Container, containerName string) {
+func FromNamedContainerLogs(ctx context.Context, testLike testing.TB, container Container, containerName string) {
 	// If the container is not stopped, stop it.
 	// This is necessary to flush the profiling metrics logs.
 	st, err := container.Status(ctx)
@@ -604,7 +616,7 @@ func FromNamedContainerLogs(ctx context.Context, testLike testing.TB, container 
 	if err != nil {
 		testLike.Fatalf("Failed to generate HTML: %v", err)
 	}
-	if err := publishHTMLFn(ctx, testLike, htmlOptions, html); err != nil {
+	if err := publishHTMLFn(ctx, testLike.Logf, htmlOptions, html); err != nil {
 		testLike.Fatalf("Failed to publish HTML: %v", err)
 	}
 }
@@ -612,24 +624,50 @@ func FromNamedContainerLogs(ctx context.Context, testLike testing.TB, container 
 // FromProfilingMetricsLogFile parses a profiling metrics log file
 // (as created by --profiling-metrics-log) and reports metrics data within.
 func FromProfilingMetricsLogFile(ctx context.Context, testLike testing.TB, logFile string) {
+	if err := fromFile(ctx, testLike.Name(), logFile, false, testLike.Logf); err != nil {
+		testLike.Fatalf("Failed to process metrics logs file: %v", err)
+	}
+}
+
+// FromFile reads a file and detects whether it is a profiling metrics log
+// file or a file with GVISOR_METRICS-prefixed lines.
+// Either way, it parses the metrics data and reports it.
+func FromFile(ctx context.Context, logFile string, logFn func(string, ...any)) error {
 	contents, err := os.ReadFile(logFile)
 	if err != nil {
-		testLike.Fatalf("Failed to read log file: %v", err)
+		return fmt.Errorf("failed to read log file: %w", err)
 	}
-	data, err := Parse(string(contents), false)
+	logName := strings.TrimSuffix(path.Base(logFile), ".log")
+	for _, line := range strings.Split(string(contents), "\n") {
+		if strings.HasPrefix(line, metric.MetricsPrefix) {
+			return fromFile(ctx, logName, logFile, true, logFn)
+		}
+		if strings.HasPrefix(line, metric.TimeColumn) {
+			return fromFile(ctx, logName, logFile, false, logFn)
+		}
+	}
+	return fmt.Errorf("could not recognize %q as a metrics log file", logFile)
+}
+
+func fromFile(ctx context.Context, name, logFile string, hasPrefix bool, logFn func(string, ...any)) error {
+	contents, err := os.ReadFile(logFile)
+	if err != nil {
+		return fmt.Errorf("failed to read log file: %w", err)
+	}
+	data, err := Parse(string(contents), hasPrefix)
 	if err != nil {
 		if errors.Is(err, ErrNoMetricData) {
-			return // No metric data in the logs, so stay quiet.
+			return nil // No metric data in the logs, so stay quiet.
 		}
-		testLike.Fatalf("Failed to parse metrics data: %v", err)
+		return fmt.Errorf("failed to parse metrics data: %w", err)
 	}
 	htmlOptions := HTMLOptions{
-		Title: testLike.Name(),
+		Title: name,
 		When:  data.startTime,
 	}
 	html, err := data.ToHTML(htmlOptions)
 	if err != nil {
-		testLike.Fatalf("Failed to generate HTML: %v", err)
+		return fmt.Errorf("failed to generate HTML: %w", err)
 	}
 	if strings.HasSuffix(logFile, ".log") {
 		// Best-effort conversion to HTML next to the .log file in the directory,
@@ -637,7 +675,8 @@ func FromProfilingMetricsLogFile(ctx context.Context, testLike testing.TB, logFi
 		// publishing step later on.
 		_ = os.WriteFile(strings.TrimSuffix(logFile, ".log")+".html", []byte(html), 0644)
 	}
-	if err := publishHTMLFn(ctx, testLike, htmlOptions, html); err != nil {
-		testLike.Fatalf("Failed to publish HTML: %v", err)
+	if err := publishHTMLFn(ctx, logFn, htmlOptions, html); err != nil {
+		return fmt.Errorf("failed to publish HTML: %w", err)
 	}
+	return nil
 }

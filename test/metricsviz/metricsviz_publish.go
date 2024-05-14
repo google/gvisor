@@ -20,7 +20,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"testing"
 	"time"
 )
 
@@ -30,7 +29,7 @@ var publishHTMLFn = publishHTML
 
 // publishHTML publishes the HTML contents to a sane file location and
 // writes the path to the logger.
-func publishHTML(ctx context.Context, testLike testing.TB, htmlOptions HTMLOptions, html string) error {
+func publishHTML(ctx context.Context, logFn func(format string, args ...any), htmlOptions HTMLOptions, html string) error {
 	// We don't use the test's temporary directory here because it is deleted at
 	// the end of the test, but we want to keep the HTML around later for
 	// viewing. So we just use a new temporary directory in `/tmp` here.
@@ -55,9 +54,9 @@ func publishHTML(ctx context.Context, testLike testing.TB, htmlOptions HTMLOptio
 		return fmt.Errorf("failed to chmod %q: %w", htmlPath, err)
 	}
 	if htmlOptions.ContainerName == "" {
-		testLike.Logf("******** METRICS CHARTS: file://%s ********", htmlPath)
+		logFn("******** METRICS CHARTS: file://%s ********", htmlPath)
 	} else {
-		testLike.Logf("******** METRICS CHARTS (%s): file://%s ********", htmlOptions.ContainerName, htmlPath)
+		logFn("******** METRICS CHARTS (%s): file://%s ********", htmlOptions.ContainerName, htmlPath)
 	}
 	return nil
 }
