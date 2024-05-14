@@ -101,15 +101,16 @@ type requestStub struct {
 	done chan *thread
 }
 
-// maxSysmsgThreads specifies the maximum number of system threads that a
-// subprocess can create in context decoupled mode.
-// TODO(b/268366549): Replace maxSystemThreads below.
-var maxSysmsgThreads = runtime.GOMAXPROCS(0)
+// maxSysmsgThreads is the maximum number of sysmsg threads that a subprocess
+// can create. It is based on GOMAXPROCS and set once, so it must be set after
+// GOMAXPROCS has been adjusted (see loader.go:Args.NumCPU).
+var maxSysmsgThreads = 0
+
+// maxChildThreads is the max number of all child system threads that a
+// subprocess can create, including sysmsg threads.
+var maxChildThreads = 0
 
 const (
-	// maxSystemThreads specifies the maximum number of system threads that a
-	// subprocess may create in order to process the contexts.
-	maxSystemThreads = 4096
 	// maxGuestContexts specifies the maximum number of task contexts that a
 	// subprocess can handle.
 	maxGuestContexts = 4095
@@ -318,7 +319,7 @@ func newSubprocess(create func() (*thread, error), memoryFile *pgalloc.MemoryFil
 	sp := &subprocess{
 		requests:          requests,
 		faultedContexts:   make(map[*platformContext]struct{}),
-		sysmsgStackPool:   pool.Pool{Start: 0, Limit: maxSystemThreads},
+		sysmsgStackPool:   pool.Pool{Start: 0, Limit: uint64(maxChildThreads)},
 		threadContextPool: pool.Pool{Start: 0, Limit: maxGuestContexts},
 		memoryFile:        memoryFile,
 		sysmsgThreads:     make(map[uint32]*sysmsgThread),

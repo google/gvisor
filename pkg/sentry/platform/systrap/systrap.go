@@ -318,6 +318,10 @@ func (*Systrap) MinUserAddress() hostarch.Addr {
 func New() (*Systrap, error) {
 	// CPUID information has been initialized at this point.
 	archState.Init()
+	// GOMAXPROCS has been set at this point.
+	maxSysmsgThreads = runtime.GOMAXPROCS(0)
+	// Account for syscall thread.
+	maxChildThreads = maxSysmsgThreads + 1
 
 	mf, err := createMemoryFile()
 	if err != nil {

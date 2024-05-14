@@ -149,7 +149,7 @@ func stubInit() {
 	// Allocate maxGuestThreads plus ONE because each per-thread stack
 	// has to be aligned to sysmsg.PerThreadMemSize.
 	// Look at sysmsg/sighandler.c:sysmsg_addr() for more details.
-	mapLen, _ = hostarch.PageRoundUp(mapLen + sysmsg.PerThreadMemSize*(maxSystemThreads+1))
+	mapLen, _ = hostarch.PageRoundUp(mapLen + sysmsg.PerThreadMemSize*(uintptr(maxChildThreads+1)))
 
 	// Allocate context queue region
 	stubContextQueueRegion = mapLen
