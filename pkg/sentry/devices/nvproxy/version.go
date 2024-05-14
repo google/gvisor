@@ -149,10 +149,9 @@ func addDriverABI(major, minor, patch int, runfileChecksum string, cons driverAB
 // Init initializes abis global map.
 func Init() {
 	abisOnce.Do(func() {
-		v535_104_05 := addDriverABI(535, 104, 05, "2f9d609d1da770beee757636635c46e7ed8253ade887b87c7a5482e33fcbedc9", func() *driverABI {
-			// 535.104.05 is the earliest driver version supported by nvproxy. Since
-			// there is no parent to inherit from, the driverABI needs to be constructed
-			// with the entirety of the nvproxy functionality at this version.
+		v535_104_05 := func() *driverABI {
+			// Since there is no parent to inherit from, the driverABI needs to be
+			// constructed with the entirety of the nvproxy functionality.
 			return &driverABI{
 				frontendIoctl: map[uint32]frontendIoctlHandler{
 					nvgpu.NV_ESC_CARD_INFO:                     frontendIoctlSimple, // nv_ioctl_card_info_t array
@@ -323,7 +322,7 @@ func Init() {
 					nvgpu.HOPPER_SEC2_WORK_LAUNCH_A: rmAllocNoParams,
 				},
 			}
-		})
+		}
 
 		// 535.104.12 exists on the "535.104.12" branch. It branched off the main
 		// branch at 535.104.05.
