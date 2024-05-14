@@ -74,6 +74,16 @@ type IoctlAllocOSEvent struct {
 	Status  uint32
 }
 
+// GetFrontendFD implements HasFrontendFD.GetFrontendFD.
+func (p *IoctlAllocOSEvent) GetFrontendFD() int32 {
+	return int32(p.FD)
+}
+
+// SetFrontendFD implements HasFrontendFD.SetFrontendFD.
+func (p *IoctlAllocOSEvent) SetFrontendFD(fd int32) {
+	p.FD = uint32(fd)
+}
+
 // IoctlFreeOSEvent is nv_ioctl_free_os_event_t, the parameter type for
 // NV_ESC_FREE_OS_EVENT.
 //
@@ -83,6 +93,16 @@ type IoctlFreeOSEvent struct {
 	HDevice Handle
 	FD      uint32
 	Status  uint32
+}
+
+// GetFrontendFD implements HasFrontendFD.GetFrontendFD.
+func (p *IoctlFreeOSEvent) GetFrontendFD() int32 {
+	return int32(p.FD)
+}
+
+// SetFrontendFD implements HasFrontendFD.SetFrontendFD.
+func (p *IoctlFreeOSEvent) SetFrontendFD(fd int32) {
+	p.FD = uint32(fd)
 }
 
 // RMAPIVersion is nv_rm_api_version_t, the parameter type for
@@ -404,6 +424,14 @@ func (n *NVOS64Parameters) FromOS64(other NVOS64Parameters) { *n = other }
 
 // ToOS64 implements RmAllocParamType.ToOS64.
 func (n *NVOS64Parameters) ToOS64() NVOS64Parameters { return *n }
+
+// HasFrontendFD is a type constraint for parameter structs containing a
+// frontend FD field. This is necessary because, as of this writing (Go 1.20),
+// there is no way to enable field access using a Go type constraint.
+type HasFrontendFD interface {
+	GetFrontendFD() int32
+	SetFrontendFD(int32)
+}
 
 // Frontend ioctl parameter struct sizes.
 var (

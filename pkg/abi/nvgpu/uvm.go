@@ -14,14 +14,6 @@
 
 package nvgpu
 
-// HasRMCtrlFD is a type constraint for UVM parameter structs containing a
-// RMCtrlFD field. This is necessary because, as of this writing (Go 1.20),
-// there is no way to enable field access using a Go type constraint.
-type HasRMCtrlFD interface {
-	GetRMCtrlFD() int32
-	SetRMCtrlFD(int32)
-}
-
 // UVM ioctl commands.
 const (
 	// From kernel-open/nvidia-uvm/uvm_linux_ioctl.h:
@@ -86,11 +78,13 @@ type UVM_REGISTER_GPU_VASPACE_PARAMS struct {
 	RMStatus uint32
 }
 
-func (p *UVM_REGISTER_GPU_VASPACE_PARAMS) GetRMCtrlFD() int32 {
+// GetFrontendFD implements HasFrontendFD.GetFrontendFD.
+func (p *UVM_REGISTER_GPU_VASPACE_PARAMS) GetFrontendFD() int32 {
 	return p.RMCtrlFD
 }
 
-func (p *UVM_REGISTER_GPU_VASPACE_PARAMS) SetRMCtrlFD(fd int32) {
+// SetFrontendFD implements HasFrontendFD.SetFrontendFD.
+func (p *UVM_REGISTER_GPU_VASPACE_PARAMS) SetFrontendFD(fd int32) {
 	p.RMCtrlFD = fd
 }
 
@@ -113,11 +107,13 @@ type UVM_REGISTER_CHANNEL_PARAMS struct {
 	Pad0     [4]byte
 }
 
-func (p *UVM_REGISTER_CHANNEL_PARAMS) GetRMCtrlFD() int32 {
+// GetFrontendFD implements HasFrontendFD.GetFrontendFD.
+func (p *UVM_REGISTER_CHANNEL_PARAMS) GetFrontendFD() int32 {
 	return p.RMCtrlFD
 }
 
-func (p *UVM_REGISTER_CHANNEL_PARAMS) SetRMCtrlFD(fd int32) {
+// SetFrontendFD implements HasFrontendFD.SetFrontendFD.
+func (p *UVM_REGISTER_CHANNEL_PARAMS) SetFrontendFD(fd int32) {
 	p.RMCtrlFD = fd
 }
 
@@ -142,11 +138,13 @@ type UVM_MAP_EXTERNAL_ALLOCATION_PARAMS struct {
 	RMStatus           uint32
 }
 
-func (p *UVM_MAP_EXTERNAL_ALLOCATION_PARAMS) GetRMCtrlFD() int32 {
+// GetFrontendFD implements HasFrontendFD.GetFrontendFD.
+func (p *UVM_MAP_EXTERNAL_ALLOCATION_PARAMS) GetFrontendFD() int32 {
 	return p.RMCtrlFD
 }
 
-func (p *UVM_MAP_EXTERNAL_ALLOCATION_PARAMS) SetRMCtrlFD(fd int32) {
+// SetFrontendFD implements HasFrontendFD.SetFrontendFD.
+func (p *UVM_MAP_EXTERNAL_ALLOCATION_PARAMS) SetFrontendFD(fd int32) {
 	p.RMCtrlFD = fd
 }
 
@@ -163,11 +161,13 @@ type UVM_MAP_EXTERNAL_ALLOCATION_PARAMS_V550 struct {
 	RMStatus           uint32
 }
 
-func (p *UVM_MAP_EXTERNAL_ALLOCATION_PARAMS_V550) GetRMCtrlFD() int32 {
+// GetFrontendFD implements HasFrontendFD.GetFrontendFD.
+func (p *UVM_MAP_EXTERNAL_ALLOCATION_PARAMS_V550) GetFrontendFD() int32 {
 	return p.RMCtrlFD
 }
 
-func (p *UVM_MAP_EXTERNAL_ALLOCATION_PARAMS_V550) SetRMCtrlFD(fd int32) {
+// SetFrontendFD implements HasFrontendFD.SetFrontendFD.
+func (p *UVM_MAP_EXTERNAL_ALLOCATION_PARAMS_V550) SetFrontendFD(fd int32) {
 	p.RMCtrlFD = fd
 }
 
@@ -191,11 +191,13 @@ type UVM_REGISTER_GPU_PARAMS struct {
 	RMStatus    uint32
 }
 
-func (p *UVM_REGISTER_GPU_PARAMS) GetRMCtrlFD() int32 {
+// GetFrontendFD implements HasFrontendFD.GetFrontendFD.
+func (p *UVM_REGISTER_GPU_PARAMS) GetFrontendFD() int32 {
 	return p.RMCtrlFD
 }
 
-func (p *UVM_REGISTER_GPU_PARAMS) SetRMCtrlFD(fd int32) {
+// SetFrontendFD implements HasFrontendFD.SetFrontendFD.
+func (p *UVM_REGISTER_GPU_PARAMS) SetFrontendFD(fd int32) {
 	p.RMCtrlFD = fd
 }
 
