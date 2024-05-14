@@ -21,6 +21,7 @@ import (
 	"hash"
 	"hash/adler32"
 	"io"
+	"os"
 	"strings"
 	"time"
 
@@ -376,6 +377,10 @@ func (w *lossyBufferedWriter[T]) Flush() {
 		// have clean line endings a the time we print this.
 		w.flushBuf.WriteString("\n")
 		w.underlying.WriteString(w.flushBuf.String())
+		if f, isFile := any(w.underlying).(*os.File); isFile {
+			// If we're dealing with a file, also call `sync(2)`.
+			f.Sync()
+		}
 		w.flushBuf.Reset()
 		w.flushBuf.WriteString("\n")
 		w.lines = 0

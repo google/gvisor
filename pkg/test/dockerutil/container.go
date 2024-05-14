@@ -248,6 +248,21 @@ func (c *Container) create(ctx context.Context, profileImage string, conf *conta
 		// unmodified "basic/alpine" image name. This should be easy to grok.
 		c.profileInit(profileImage)
 	}
+	if hostconf == nil || hostconf.LogConfig.Type == "" {
+		// If logging config is not explicitly specified, set it to a fairly
+		// generous default. This makes large volumes of log more reliably
+		// captured, which is useful for profiling metrics.
+		if hostconf == nil {
+			hostconf = &container.HostConfig{}
+		}
+		hostconf.LogConfig.Type = "local"
+		hostconf.LogConfig.Config = map[string]string{
+			"mode":     "blocking",
+			"max-size": "1g",
+			"max-file": "10",
+			"compress": "false",
+		}
+	}
 	cont, err := c.client.ContainerCreate(ctx, conf, hostconf, nil, nil, c.Name)
 	if err != nil {
 		return err

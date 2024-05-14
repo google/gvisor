@@ -450,7 +450,7 @@ func Parse(logs string, hasPrefix bool) (*Data, error) {
 			}
 			wantHash := uint32(wantHashInt64)
 			if gotHash := h.Sum32(); gotHash != wantHash {
-				return nil, fmt.Errorf("hash mismatch: computed 0x%x, logs said it should be 0x%x", gotHash, wantHash)
+				return nil, fmt.Errorf("checksum mismatch: computed 0x%x, logs said it should be 0x%x. This is likely due to a log buffer overrun or similar issue causing some lines to be omitted; please configure the container or the runtime to allow higher logging volume", gotHash, wantHash)
 			}
 			checkedHash = true
 			continue
@@ -517,7 +517,7 @@ func Parse(logs string, hasPrefix bool) (*Data, error) {
 		// Regular lines.
 		tabularData := strings.Split(lineData, "\t")
 		if len(tabularData) != len(header)+1 {
-			return nil, fmt.Errorf("invalid data line: %q with %d components which does not match header %v which has %d components", line, len(tabularData), header, len(header))
+			return nil, fmt.Errorf("invalid data line: %q with %d components which does not match header which has %d components. This is likely due to a log buffer overrun or similar issue causing the line to be cut off; please configure the container or the runtime to allow higher logging volume", line, len(tabularData), len(header))
 		}
 		offsetNanos, err := strconv.ParseUint(tabularData[0], 10, 64)
 		if err != nil {
