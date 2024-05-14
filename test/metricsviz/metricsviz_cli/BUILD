@@ -1,4 +1,4 @@
-load("//tools:defs.bzl", "go_binary")
+load("//tools:defs.bzl", "go_binary", "go_test")
 
 package(
     default_applicable_licenses = ["//:license"],
