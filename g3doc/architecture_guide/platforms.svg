@@ -2,13 +2,6 @@
 <!-- Created with Inkscape (http://www.inkscape.org/) -->
 
 <svg
-   xmlns:dc="http://purl.org/dc/elements/1.1/"
-   xmlns:cc="http://creativecommons.org/ns#"
-   xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
-   xmlns:svg="http://www.w3.org/2000/svg"
-   xmlns="http://www.w3.org/2000/svg"
-   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
-   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
    width="142.67763mm"
    height="67.063133mm"
    viewBox="0 0 142.67763 67.063134"
@@ -17,8 +10,15 @@
    inkscape:export-filename="/home/ascannell/resources.png"
    inkscape:export-xdpi="53.50127"
    inkscape:export-ydpi="53.50127"
-   inkscape:version="0.92.4 (5da689c313, 2019-01-14)"
-   sodipodi:docname="platforms.svg">
+   inkscape:version="1.2.2 (b0a8486541, 2022-12-01)"
+   sodipodi:docname="platforms.svg"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg"
+   xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+   xmlns:cc="http://creativecommons.org/ns#"
+   xmlns:dc="http://purl.org/dc/elements/1.1/">
   <defs
      id="defs2" />
   <sodipodi:namedview
@@ -28,9 +28,9 @@
      borderopacity="1.0"
      inkscape:pageopacity="0.0"
      inkscape:pageshadow="2"
-     inkscape:zoom="0.98994949"
-     inkscape:cx="86.443612"
-     inkscape:cy="102.88104"
+     inkscape:zoom="1.979899"
+     inkscape:cx="268.1955"
+     inkscape:cy="167.43278"
      inkscape:document-units="mm"
      inkscape:current-layer="layer1"
      showgrid="false"
@@ -39,10 +39,13 @@
      fit-margin-right="0"
      fit-margin-bottom="0"
      inkscape:window-width="1920"
-     inkscape:window-height="1005"
+     inkscape:window-height="996"
      inkscape:window-x="0"
      inkscape:window-y="0"
-     inkscape:window-maximized="1" />
+     inkscape:window-maximized="1"
+     inkscape:showpageshadow="2"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1" />
   <metadata
      id="metadata5">
     <rdf:RDF>
@@ -51,7 +54,7 @@
         <dc:format>image/svg+xml</dc:format>
         <dc:type
            rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
-        <dc:title></dc:title>
+        <dc:title />
       </cc:Work>
     </rdf:RDF>
   </metadata>
@@ -83,7 +86,7 @@
        style="fill:#ff8080;stroke-width:0.19060372" />
     <text
        xml:space="preserve"
-       style="font-style:normal;font-weight:normal;font-size:3.40292525px;line-height:1.25;font-family:sans-serif;letter-spacing:0px;word-spacing:0px;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.08507314"
+       style="font-style:normal;font-weight:normal;font-size:3.40293px;line-height:1.25;font-family:sans-serif;letter-spacing:0px;word-spacing:0px;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.0850731"
        x="41.03727"
        y="148.58765"
        id="text65"><tspan
@@ -91,10 +94,10 @@
          id="tspan63"
          x="41.03727"
          y="148.58765"
-         style="stroke-width:0.08507314">gVisor</tspan></text>
+         style="stroke-width:0.0850731">gVisor</tspan></text>
     <text
        xml:space="preserve"
-       style="font-style:normal;font-weight:normal;font-size:3.33113885px;line-height:1.25;font-family:sans-serif;letter-spacing:0px;word-spacing:0px;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.08327847"
+       style="font-style:normal;font-weight:normal;font-size:3.33114px;line-height:1.25;font-family:sans-serif;letter-spacing:0px;word-spacing:0px;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.0832785"
        x="45.473087"
        y="132.50232"
        id="text123"><tspan
@@ -102,10 +105,10 @@
          id="tspan121"
          x="45.473087"
          y="132.50232"
-         style="stroke-width:0.08327847">workload</tspan></text>
+         style="stroke-width:0.0832785">workload</tspan></text>
     <text
        xml:space="preserve"
-       style="font-style:normal;font-weight:normal;font-size:6.43922186px;line-height:1.25;font-family:sans-serif;letter-spacing:0px;word-spacing:0px;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.16098055"
+       style="font-style:normal;font-weight:normal;font-size:6.43922px;line-height:1.25;font-family:sans-serif;letter-spacing:0px;word-spacing:0px;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.160981"
        x="97.768547"
        y="163.15665"
        id="text163"><tspan
@@ -113,7 +116,7 @@
          id="tspan161"
          x="97.768547"
          y="163.15665"
-         style="stroke-width:0.16098055">host</tspan></text>
+         style="stroke-width:0.160981">host</tspan></text>
     <rect
        style="fill:#e9afdd;stroke-width:0.39185274"
        id="rect16-7"
@@ -137,7 +140,7 @@
        style="fill:#ff8080;stroke-width:0.19589928" />
     <text
        xml:space="preserve"
-       style="font-style:normal;font-weight:normal;font-size:3.40292525px;line-height:1.25;font-family:sans-serif;letter-spacing:0px;word-spacing:0px;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.08507314"
+       style="font-style:normal;font-weight:normal;font-size:3.40293px;line-height:1.25;font-family:sans-serif;letter-spacing:0px;word-spacing:0px;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.0850731"
        x="112.86765"
        y="129.01863"
        id="text65-2"><tspan
@@ -145,10 +148,10 @@
          id="tspan63-9"
          x="112.86765"
          y="129.01863"
-         style="stroke-width:0.08507314">gVisor</tspan></text>
+         style="stroke-width:0.0850731">gVisor</tspan></text>
     <text
        xml:space="preserve"
-       style="font-style:normal;font-weight:normal;font-size:3.33113885px;line-height:1.25;font-family:sans-serif;letter-spacing:0px;word-spacing:0px;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.08327847"
+       style="font-style:normal;font-weight:normal;font-size:3.33114px;line-height:1.25;font-family:sans-serif;letter-spacing:0px;word-spacing:0px;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.0832785"
        x="117.63519"
        y="114.02371"
        id="text123-1"><tspan
@@ -156,7 +159,7 @@
          id="tspan121-2"
          x="117.63519"
          y="114.02371"
-         style="stroke-width:0.08327847">workload</tspan></text>
+         style="stroke-width:0.0832785">workload</tspan></text>
     <rect
        id="rect10-7-7"
        width="11.815663"
@@ -166,7 +169,7 @@
        style="fill:#aaccff;stroke-width:0.07705856" />
     <text
        xml:space="preserve"
-       style="font-style:normal;font-weight:normal;font-size:4.35074377px;line-height:1.25;font-family:sans-serif;letter-spacing:0px;word-spacing:0px;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.10876859"
+       style="font-style:normal;font-weight:normal;font-size:4.35074px;line-height:1.25;font-family:sans-serif;letter-spacing:0px;word-spacing:0px;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.108769"
        x="55.931114"
        y="148.90578"
        id="text144"><tspan
@@ -174,7 +177,7 @@
          id="tspan142"
          x="55.931114"
          y="148.90578"
-         style="stroke-width:0.10876859">KVM</tspan></text>
+         style="stroke-width:0.108769">KVM</tspan></text>
     <rect
        id="rect10-6"
        width="33.408691"
@@ -191,7 +194,7 @@
        style="fill:#ff8080;stroke-width:0.19060372" />
     <text
        xml:space="preserve"
-       style="font-style:normal;font-weight:normal;font-size:3.40292525px;line-height:1.25;font-family:sans-serif;letter-spacing:0px;word-spacing:0px;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.08507314"
+       style="font-style:normal;font-weight:normal;font-size:3.40293px;line-height:1.25;font-family:sans-serif;letter-spacing:0px;word-spacing:0px;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.0850731"
        x="76.000565"
        y="148.25128"
        id="text65-6"><tspan
@@ -199,10 +202,10 @@
          id="tspan63-2"
          x="76.000565"
          y="148.25128"
-         style="stroke-width:0.08507314">gVisor</tspan></text>
+         style="stroke-width:0.0850731">gVisor</tspan></text>
     <text
        xml:space="preserve"
-       style="font-style:normal;font-weight:normal;font-size:3.33113885px;line-height:1.25;font-family:sans-serif;letter-spacing:0px;word-spacing:0px;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.08327847"
+       style="font-style:normal;font-weight:normal;font-size:3.33114px;line-height:1.25;font-family:sans-serif;letter-spacing:0px;word-spacing:0px;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.0832785"
        x="80.436386"
        y="132.16595"
        id="text123-6"><tspan
@@ -210,7 +213,7 @@
          id="tspan121-1"
          x="80.436386"
          y="132.16595"
-         style="stroke-width:0.08327847">workload</tspan></text>
+         style="stroke-width:0.0832785">workload</tspan></text>
     <rect
        id="rect10-7-7-8"
        width="11.815664"
@@ -220,15 +223,15 @@
        style="fill:#ffeeaa;stroke-width:0.07705856" />
     <text
        xml:space="preserve"
-       style="font-style:normal;font-weight:normal;font-size:3.39456654px;line-height:1.25;font-family:sans-serif;letter-spacing:0px;word-spacing:0px;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.08486416"
-       x="89.92292"
-       y="147.89806"
+       style="font-style:normal;font-weight:normal;font-size:3.39457px;line-height:1.25;font-family:sans-serif;letter-spacing:0px;word-spacing:0px;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.0848642"
+       x="89.655647"
+       y="148.03169"
        id="text144-7"><tspan
          sodipodi:role="line"
          id="tspan142-9"
-         x="89.92292"
-         y="147.89806"
-         style="stroke-width:0.08486416">ptrace</tspan></text>
+         x="89.655647"
+         y="148.03169"
+         style="stroke-width:0.0848642">systrap</tspan></text>
     <rect
        id="rect10-7-7-8-3"
        width="11.815665"
@@ -238,18 +241,18 @@
        style="fill:#ffeeaa;stroke-width:0.07705856" />
     <text
        xml:space="preserve"
-       style="font-style:normal;font-weight:normal;font-size:3.39456654px;line-height:1.25;font-family:sans-serif;letter-spacing:0px;word-spacing:0px;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.08486416"
-       x="127.51052"
+       style="font-style:normal;font-weight:normal;font-size:3.39457px;line-height:1.25;font-family:sans-serif;letter-spacing:0px;word-spacing:0px;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.0848642"
+       x="127.24325"
        y="128.9362"
        id="text144-7-7"><tspan
          sodipodi:role="line"
          id="tspan142-9-5"
-         x="127.51052"
+         x="127.24325"
          y="128.9362"
-         style="stroke-width:0.08486416">ptrace</tspan></text>
+         style="stroke-width:0.0848642">systrap</tspan></text>
     <text
        xml:space="preserve"
-       style="font-style:normal;font-weight:normal;font-size:5.45061255px;line-height:1.25;font-family:sans-serif;letter-spacing:0px;word-spacing:0px;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.13626531"
+       style="font-style:normal;font-weight:normal;font-size:5.45061px;line-height:1.25;font-family:sans-serif;letter-spacing:0px;word-spacing:0px;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.136265"
        x="138.49318"
        y="152.11841"
        id="text229"><tspan
@@ -257,7 +260,7 @@
          id="tspan227"
          x="138.49318"
          y="152.11841"
-         style="stroke-width:0.13626531">VM</tspan></text>
+         style="stroke-width:0.136265">VM</tspan></text>
     <rect
        style="fill:#b3b3b3;stroke-width:0.16518368"
        id="rect16-9"
@@ -267,7 +270,7 @@
        y="134.99774" />
     <text
        xml:space="preserve"
-       style="font-style:normal;font-weight:normal;font-size:6.17854786px;line-height:1.25;font-family:sans-serif;letter-spacing:0px;word-spacing:0px;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.15446369"
+       style="font-style:normal;font-weight:normal;font-size:6.17855px;line-height:1.25;font-family:sans-serif;letter-spacing:0px;word-spacing:0px;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.154464"
        x="132.91473"
        y="142.07658"
        id="text248"><tspan
@@ -275,7 +278,7 @@
          id="tspan246"
          x="132.91473"
          y="142.07658"
-         style="stroke-width:0.15446369">guest</tspan></text>
+         style="stroke-width:0.154464">guest</tspan></text>
     <rect
        id="rect10-5-2"
        width="33.408691"
@@ -292,7 +295,7 @@
        style="fill:#ff8080;stroke-width:0.19589929" />
     <text
        xml:space="preserve"
-       style="font-style:normal;font-weight:normal;font-size:3.40292525px;line-height:1.25;font-family:sans-serif;letter-spacing:0px;word-spacing:0px;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.08507314"
+       style="font-style:normal;font-weight:normal;font-size:3.40293px;line-height:1.25;font-family:sans-serif;letter-spacing:0px;word-spacing:0px;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.0850731"
        x="147.94815"
        y="128.84665"
        id="text65-2-8"><tspan
@@ -300,10 +303,10 @@
          id="tspan63-9-9"
          x="147.94815"
          y="128.84665"
-         style="stroke-width:0.08507314">gVisor</tspan></text>
+         style="stroke-width:0.0850731">gVisor</tspan></text>
     <text
        xml:space="preserve"
-       style="font-style:normal;font-weight:normal;font-size:3.33113885px;line-height:1.25;font-family:sans-serif;letter-spacing:0px;word-spacing:0px;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.08327847"
+       style="font-style:normal;font-weight:normal;font-size:3.33114px;line-height:1.25;font-family:sans-serif;letter-spacing:0px;word-spacing:0px;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.0832785"
        x="152.71565"
        y="113.85176"
        id="text123-1-7"><tspan
@@ -311,7 +314,7 @@
          id="tspan121-2-3"
          x="152.71565"
          y="113.85176"
-         style="stroke-width:0.08327847">workload</tspan></text>
+         style="stroke-width:0.0832785">workload</tspan></text>
     <rect
        id="rect10-7-7-8-3-6"
        width="11.815666"
@@ -321,14 +324,14 @@
        style="fill:#ffeeaa;stroke-width:0.07705856" />
     <text
        xml:space="preserve"
-       style="font-style:normal;font-weight:normal;font-size:3.39456654px;line-height:1.25;font-family:sans-serif;letter-spacing:0px;word-spacing:0px;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.08486416"
-       x="162.59088"
+       style="font-style:normal;font-weight:normal;font-size:3.39457px;line-height:1.25;font-family:sans-serif;letter-spacing:0px;word-spacing:0px;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.0848642"
+       x="162.45724"
        y="128.76421"
        id="text144-7-7-1"><tspan
          sodipodi:role="line"
          id="tspan142-9-5-2"
-         x="162.59088"
+         x="162.45724"
          y="128.76421"
-         style="stroke-width:0.08486416">ptrace</tspan></text>
+         style="stroke-width:0.0848642">systrap</tspan></text>
   </g>
 </svg>

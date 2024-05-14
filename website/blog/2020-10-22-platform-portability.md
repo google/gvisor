@@ -6,13 +6,18 @@ requires expensive bare-metal machines or cloud instances to run safely with
 good performance, increasing cost and complexity for Cloud users. gVisor,
 however, takes a more flexible approach.
 
+**NOTE 2024-05**: This post describes the ptrace and KVM platforms, which were
+the only two gVisor platforms at the time it was written. The
+[Systrap platform](/blog/2023/04/28/systrap-release/) was added since and
+provides better performance than ptrace.
+
 One of the pillars of gVisor's architecture is portability, allowing it to run
 anywhere that runs Linux. Modern Cloud-Native applications run in containers in
 many different places, from bare metal to virtual machines, and can't always
 rely on nested virtualization. It is important for gVisor to be able to support
 the environments where you run containers.
 
-gVisor achieves portability through an abstraction called a _Platform_.
+gVisor achieves portability through an abstraction called a *Platform*.
 Platforms can have many implementations, and each implementation can cover
 different environments, making use of available software or hardware features.
 
