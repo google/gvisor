@@ -72,7 +72,7 @@ while [[ $# -gt 0 ]]; do
     --client)
       client=true
       ;;
-    --linux_client)
+    --linux-client)
       linux_client=true
       ;;
     --client_tcp_probe_file)
