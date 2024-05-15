@@ -25,7 +25,6 @@ import (
 	"gvisor.dev/gvisor/pkg/fdnotifier"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
-	"gvisor.dev/gvisor/pkg/marshal"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
@@ -165,16 +164,16 @@ func uvmIoctlNoParams(ui *uvmIoctlState) (uintptr, error) {
 	return uvmIoctlInvoke[byte](ui, nil)
 }
 
-func uvmIoctlSimple[Params any, PParams marshalPtr[Params]](ui *uvmIoctlState) (uintptr, error) {
+func uvmIoctlSimple[Params any, PtrParams marshalPtr[Params]](ui *uvmIoctlState) (uintptr, error) {
 	var ioctlParams Params
-	if _, err := (PParams)(&ioctlParams).CopyIn(ui.t, ui.ioctlParamsAddr); err != nil {
+	if _, err := (PtrParams)(&ioctlParams).CopyIn(ui.t, ui.ioctlParamsAddr); err != nil {
 		return 0, err
 	}
 	n, err := uvmIoctlInvoke(ui, &ioctlParams)
 	if err != nil {
 		return n, err
 	}
-	if _, err := (PParams)(&ioctlParams).CopyOut(ui.t, ui.ioctlParamsAddr); err != nil {
+	if _, err := (PtrParams)(&ioctlParams).CopyOut(ui.t, ui.ioctlParamsAddr); err != nil {
 		return n, err
 	}
 	return n, nil
@@ -241,25 +240,19 @@ func uvmMMInitialize(ui *uvmIoctlState) (uintptr, error) {
 	return n, nil
 }
 
-type hasRMCtrlFDPtr[T any] interface {
-	*T
-	marshal.Marshallable
-	nvgpu.HasRMCtrlFD
-}
-
-func uvmIoctlHasRMCtrlFD[Params any, PParams hasRMCtrlFDPtr[Params]](ui *uvmIoctlState) (uintptr, error) {
+func uvmIoctlHasFrontendFD[Params any, PtrParams hasFrontendFDPtr[Params]](ui *uvmIoctlState) (uintptr, error) {
 	var ioctlParams Params
-	if _, err := (PParams)(&ioctlParams).CopyIn(ui.t, ui.ioctlParamsAddr); err != nil {
+	if _, err := (PtrParams)(&ioctlParams).CopyIn(ui.t, ui.ioctlParamsAddr); err != nil {
 		return 0, err
 	}
 
-	rmCtrlFD := (PParams)(&ioctlParams).GetRMCtrlFD()
+	rmCtrlFD := (PtrParams)(&ioctlParams).GetFrontendFD()
 	if rmCtrlFD < 0 {
 		n, err := uvmIoctlInvoke(ui, &ioctlParams)
 		if err != nil {
 			return n, err
 		}
-		if _, err := (PParams)(&ioctlParams).CopyOut(ui.t, ui.ioctlParamsAddr); err != nil {
+		if _, err := (PtrParams)(&ioctlParams).CopyOut(ui.t, ui.ioctlParamsAddr); err != nil {
 			return n, err
 		}
 		return n, nil
@@ -276,15 +269,15 @@ func uvmIoctlHasRMCtrlFD[Params any, PParams hasRMCtrlFDPtr[Params]](ui *uvmIoct
 	}
 
 	sentryIoctlParams := ioctlParams
-	(PParams)(&sentryIoctlParams).SetRMCtrlFD(ctlFile.hostFD)
+	(PtrParams)(&sentryIoctlParams).SetFrontendFD(ctlFile.hostFD)
 	n, err := uvmIoctlInvoke(ui, &sentryIoctlParams)
 	if err != nil {
 		return n, err
 	}
 
 	outIoctlParams := sentryIoctlParams
-	(PParams)(&outIoctlParams).SetRMCtrlFD(rmCtrlFD)
-	if _, err := (PParams)(&outIoctlParams).CopyOut(ui.t, ui.ioctlParamsAddr); err != nil {
+	(PtrParams)(&outIoctlParams).SetFrontendFD(rmCtrlFD)
+	if _, err := (PtrParams)(&outIoctlParams).CopyOut(ui.t, ui.ioctlParamsAddr); err != nil {
 		return n, err
 	}
 

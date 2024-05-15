@@ -3407,9 +3407,9 @@ func (s *sock) State() uint32 {
 			return 0
 		}
 	case socket.IsICMP(s):
-		// TODO(b/112063468): Export states for ICMP sockets.
+		// We don't support this yet.
 	case socket.IsRaw(s):
-		// TODO(b/112063468): Export states for raw sockets.
+		// We don't support this yet.
 	default:
 		// Unknown transport protocol, how did we make this socket?
 		log.Warningf("Unknown transport protocol for an existing socket: family=%v, type=%v, protocol=%v, internal type %v", s.family, s.skType, s.protocol, reflect.TypeOf(s.Endpoint).Elem())

@@ -95,3 +95,8 @@ type marshalPtr[T any] interface {
 func addrFromP64(p nvgpu.P64) hostarch.Addr {
 	return hostarch.Addr(uintptr(uint64(p)))
 }
+
+type hasFrontendFDPtr[T any] interface {
+	marshalPtr[T]
+	nvgpu.HasFrontendFD
+}

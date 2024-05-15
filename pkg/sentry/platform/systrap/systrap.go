@@ -316,12 +316,14 @@ func (*Systrap) MinUserAddress() hostarch.Addr {
 
 // New returns a new seccomp-based implementation of the platform interface.
 func New() (*Systrap, error) {
-	// CPUID information has been initialized at this point.
-	archState.Init()
-	// GOMAXPROCS has been set at this point.
-	maxSysmsgThreads = runtime.GOMAXPROCS(0)
-	// Account for syscall thread.
-	maxChildThreads = maxSysmsgThreads + 1
+	if maxSysmsgThreads == 0 {
+		// CPUID information has been initialized at this point.
+		archState.Init()
+		// GOMAXPROCS has been set at this point.
+		maxSysmsgThreads = runtime.GOMAXPROCS(0)
+		// Account for syscall thread.
+		maxChildThreads = maxSysmsgThreads + 1
+	}
 
 	mf, err := createMemoryFile()
 	if err != nil {
@@ -425,7 +427,9 @@ func createMemoryFile() (*pgalloc.MemoryFile, error) {
 		return nil, fmt.Errorf("error creating memfd: %v", err)
 	}
 	memfile := os.NewFile(uintptr(fd), memfileName)
-	mf, err := pgalloc.NewMemoryFile(memfile, pgalloc.MemoryFileOpts{})
+	mf, err := pgalloc.NewMemoryFile(memfile, pgalloc.MemoryFileOpts{
+		EnforceMaximumAllocatable: true,
+	})
 	if err != nil {
 		memfile.Close()
 		return nil, fmt.Errorf("error creating pgalloc.MemoryFile: %v", err)

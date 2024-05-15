@@ -92,6 +92,16 @@ type NV0000_CTRL_OS_UNIX_EXPORT_OBJECT_TO_FD_PARAMS struct {
 	Flags  uint32
 }
 
+// GetFrontendFD implements HasFrontendFD.GetFrontendFD.
+func (p *NV0000_CTRL_OS_UNIX_EXPORT_OBJECT_TO_FD_PARAMS) GetFrontendFD() int32 {
+	return p.FD
+}
+
+// SetFrontendFD implements HasFrontendFD.SetFrontendFD.
+func (p *NV0000_CTRL_OS_UNIX_EXPORT_OBJECT_TO_FD_PARAMS) SetFrontendFD(fd int32) {
+	p.FD = fd
+}
+
 // +marshal
 type NV0000_CTRL_SYSTEM_GET_BUILD_VERSION_PARAMS struct {
 	SizeOfStrings            uint32
