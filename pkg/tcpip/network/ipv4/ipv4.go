@@ -462,19 +462,26 @@ func (e *endpoint) addIPHeader(srcAddr, dstAddr tcpip.Address, pkt *stack.Packet
 	if length > math.MaxUint16 {
 		return &tcpip.ErrMessageTooLong{}
 	}
-	// RFC 6864 section 4.3 mandates uniqueness of ID values for non-atomic
-	// datagrams. Since the DF bit is never being set here, all datagrams
-	// are non-atomic and need an ID.
-	ipH.Encode(&header.IPv4Fields{
+
+	fields := header.IPv4Fields{
 		TotalLength: uint16(length),
-		ID:          e.getID(),
 		TTL:         params.TTL,
 		TOS:         params.TOS,
 		Protocol:    uint8(params.Protocol),
 		SrcAddr:     srcAddr,
 		DstAddr:     dstAddr,
 		Options:     options,
-	})
+	}
+	if params.DF {
+		// Treat want and do the same.
+		fields.Flags = header.IPv4FlagDontFragment
+	} else {
+		// RFC 6864 section 4.3 mandates uniqueness of ID values for
+		// non-atomic datagrams.
+		fields.ID = e.getID()
+	}
+	ipH.Encode(&fields)
+
 	ipH.SetChecksum(^ipH.CalculateChecksum())
 	pkt.NetworkProtocolNumber = ProtocolNumber
 	return nil

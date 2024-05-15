@@ -319,6 +319,9 @@ type NetworkHeaderParams struct {
 
 	// TOS refers to TypeOfService or TrafficClass field of the IP-header.
 	TOS uint8
+
+	// DF indicates whether the DF bit should be set.
+	DF bool
 }
 
 // GroupAddressableEndpoint is an endpoint that supports group addressing.

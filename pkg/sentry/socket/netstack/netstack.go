@@ -1762,6 +1762,30 @@ func getSockOptIP(t *kernel.Task, s socket.Socket, ep commonEndpoint, name int, 
 			return nil, err
 		}
 		return &ret, nil
+
+	case linux.IP_MTU_DISCOVER:
+		if outLen < sizeOfInt32 {
+			return nil, syserr.ErrInvalidArgument
+		}
+
+		v, err := ep.GetSockOptInt(tcpip.MTUDiscoverOption)
+		if err != nil {
+			return nil, syserr.TranslateNetstackError(err)
+		}
+		switch tcpip.PMTUDStrategy(v) {
+		case tcpip.PMTUDiscoveryWant:
+			v = linux.IP_PMTUDISC_WANT
+		case tcpip.PMTUDiscoveryDont:
+			v = linux.IP_PMTUDISC_DONT
+		case tcpip.PMTUDiscoveryDo:
+			v = linux.IP_PMTUDISC_DO
+		case tcpip.PMTUDiscoveryProbe:
+			v = linux.IP_PMTUDISC_PROBE
+		default:
+			panic(fmt.Errorf("unknown PMTUD option: %d", v))
+		}
+		vP := primitive.Int32(v)
+		return &vP, nil
 	}
 	return nil, syserr.ErrProtocolNotAvailable
 }
@@ -2576,6 +2600,28 @@ func setSockOptIP(t *kernel.Task, s socket.Socket, ep commonEndpoint, name int, 
 		log.Infof("IPT_SO_SET_ADD_COUNTERS is not supported")
 		return nil
 
+	case linux.IP_MTU_DISCOVER:
+		if len(optVal) == 0 {
+			return nil
+		}
+		v, err := parseIntOrChar(optVal)
+		if err != nil {
+			return err
+		}
+		switch v {
+		case linux.IP_PMTUDISC_DONT:
+			v = int32(tcpip.PMTUDiscoveryDont)
+		case linux.IP_PMTUDISC_WANT:
+			v = int32(tcpip.PMTUDiscoveryWant)
+		case linux.IP_PMTUDISC_DO:
+			v = int32(tcpip.PMTUDiscoveryDo)
+		case linux.IP_PMTUDISC_PROBE:
+			v = int32(tcpip.PMTUDiscoveryProbe)
+		default:
+			return syserr.ErrNotSupported
+		}
+		return syserr.TranslateNetstackError(ep.SetSockOptInt(tcpip.MTUDiscoverOption, int(v)))
+
 	case linux.IP_ADD_SOURCE_MEMBERSHIP,
 		linux.IP_BIND_ADDRESS_NO_PORT,
 		linux.IP_BLOCK_SOURCE,
@@ -2585,7 +2631,6 @@ func setSockOptIP(t *kernel.Task, s socket.Socket, ep commonEndpoint, name int, 
 		linux.IP_IPSEC_POLICY,
 		linux.IP_MINTTL,
 		linux.IP_MSFILTER,
-		linux.IP_MTU_DISCOVER,
 		linux.IP_MULTICAST_ALL,
 		linux.IP_NODEFRAG,
 		linux.IP_OPTIONS,

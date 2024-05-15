@@ -4245,7 +4245,7 @@ func TestRetransmitIPv4IDUniqueness(t *testing.T) {
 			// have DF=0. This needs to be done because the IPv4 ID uniqueness
 			// applies only to non-atomic IPv4 datagrams as defined in RFC 6864
 			// Section 4, and datagrams with DF=0 are non-atomic.
-			if err := c.EP.SetSockOptInt(tcpip.MTUDiscoverOption, tcpip.PMTUDiscoveryDont); err != nil {
+			if err := c.EP.SetSockOptInt(tcpip.MTUDiscoverOption, int(tcpip.PMTUDiscoveryDont)); err != nil {
 				t.Fatalf("disabling PMTU discovery via sockopt to force DF=0 failed: %s", err)
 			}
 

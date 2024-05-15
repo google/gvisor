@@ -18,6 +18,7 @@
 #include <linux/filter.h>
 #include <sys/epoll.h>
 #endif  // __linux__
+#include <errno.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <poll.h>
@@ -2325,6 +2326,49 @@ TEST_P(TcpSocketTest, GetSocketAcceptConnNonListener) {
       SyscallSucceeds());
   ASSERT_EQ(length, sizeof(got));
   EXPECT_EQ(got, 0);
+}
+
+TEST_P(TcpSocketTest, SetPMTUD) {
+  // IP_PMTUDISC_WANT should be default.
+  int got = -1;
+  socklen_t length = sizeof(got);
+  ASSERT_THAT(
+      getsockopt(accepted_.get(), SOL_IP, IP_MTU_DISCOVER, &got, &length),
+      SyscallSucceeds());
+  EXPECT_EQ(got, IP_PMTUDISC_WANT);
+
+  int set = IP_PMTUDISC_DO;
+  ASSERT_THAT(
+      setsockopt(accepted_.get(), SOL_IP, IP_MTU_DISCOVER, &set, length),
+      SyscallSucceeds());
+  ASSERT_THAT(
+      getsockopt(accepted_.get(), SOL_IP, IP_MTU_DISCOVER, &got, &length),
+      SyscallSucceeds());
+  EXPECT_EQ(got, IP_PMTUDISC_DO);
+  set = IP_PMTUDISC_DONT;
+  ASSERT_THAT(
+      setsockopt(accepted_.get(), SOL_IP, IP_MTU_DISCOVER, &set, length),
+      SyscallSucceeds());
+  ASSERT_THAT(
+      getsockopt(accepted_.get(), SOL_IP, IP_MTU_DISCOVER, &got, &length),
+      SyscallSucceeds());
+  EXPECT_EQ(got, IP_PMTUDISC_DONT);
+
+  // IP_PMTUDISC_PROBE is not supported by gVisor.
+  set = IP_PMTUDISC_PROBE;
+  if (IsRunningOnGvisor() && !IsRunningWithHostinet()) {
+    ASSERT_THAT(
+        setsockopt(accepted_.get(), SOL_IP, IP_MTU_DISCOVER, &set, length),
+        SyscallFailsWithErrno(ENOTSUP));
+  } else {
+    ASSERT_THAT(
+        setsockopt(accepted_.get(), SOL_IP, IP_MTU_DISCOVER, &set, length),
+        SyscallSucceeds());
+    ASSERT_THAT(
+        getsockopt(accepted_.get(), SOL_IP, IP_MTU_DISCOVER, &got, &length),
+        SyscallSucceeds());
+    EXPECT_EQ(got, IP_PMTUDISC_PROBE);
+  }
 }
 
 TEST_P(SimpleTcpSocketTest, GetSocketAcceptConnWithShutdown) {
