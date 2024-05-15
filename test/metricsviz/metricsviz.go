@@ -444,6 +444,9 @@ var ErrNoMetricData = errors.New("no metrics data found")
 // will be parsed. If false, all lines will be parsed, and the
 // prefix will be stripped if it is found.
 // If the log does not contain any metrics data, ErrNoMetricData is returned.
+// If the log does contain data but not all lines can be validated, an error
+// is returned but the returned `*Data` is still populated as much as
+// possible.
 func Parse(logs string, hasPrefix bool) (*Data, error) {
 	data := &Data{rawLogs: logs, data: make(map[MetricAndFields]*TimeSeries)}
 	var header []MetricAndFields
@@ -451,7 +454,9 @@ func Parse(logs string, hasPrefix bool) (*Data, error) {
 	lineChecksum := adler32.New()
 	overallChecksum := adler32.New()
 	checkedHash := false
+	lineHashMismatch := false
 	metricsLineFound := false
+	var gotErrs []error
 	for _, line := range strings.Split(logs, "\n") {
 		if hasPrefix && !strings.HasPrefix(line, metric.MetricsPrefix) {
 			continue
@@ -467,13 +472,19 @@ func Parse(logs string, hasPrefix bool) (*Data, error) {
 			hash := strings.TrimPrefix(lineData, metric.MetricsHashIndicator)
 			wantHashInt64, err := strconv.ParseUint(strings.TrimPrefix(hash, "0x"), 16, 32)
 			if err != nil {
-				return nil, fmt.Errorf("invalid hash line: %q: %w", line, err)
-			}
-			wantHash := uint32(wantHashInt64)
-			if gotHash := overallChecksum.Sum32(); gotHash != wantHash {
-				return nil, fmt.Errorf("checksum mismatch: computed 0x%x, logs said it should be 0x%x. This is likely due to a log buffer overrun or similar issue causing some lines to be omitted; please configure the container or the runtime to allow higher logging volume", gotHash, wantHash)
+				gotErrs = append(gotErrs, fmt.Errorf("invalid hash line: %q: %w", line, err))
+				continue
 			}
 			checkedHash = true
+			wantHash := uint32(wantHashInt64)
+			if gotHash := overallChecksum.Sum32(); gotHash != wantHash {
+				// If there has already been a line checksum mismatch, we already know
+				// that the overall checksum won't match either, so no need to add
+				// another error about it here.
+				if !lineHashMismatch {
+					gotErrs = append(gotErrs, fmt.Errorf("checksum mismatch: computed 0x%x, logs said it should be 0x%x. This is likely due to a log buffer overrun or similar issue causing some lines to be omitted; please configure the container or the runtime to allow higher logging volume", gotHash, wantHash))
+				}
+			}
 			continue
 		}
 
@@ -486,13 +497,16 @@ func Parse(logs string, hasPrefix bool) (*Data, error) {
 			// There should be a per-line checksum at the end of each line.
 			tabSplit := strings.Split(lineData, "\t")
 			if len(tabSplit) < 2 {
-				return nil, fmt.Errorf("invalid line: %q (no tab separator found)", line)
+				gotErrs = append(gotErrs, fmt.Errorf("invalid line: %q (no tab separator found)", line))
+				continue
 			}
 			lineChecksum.Reset()
 			lineChecksum.Write([]byte(strings.Join(tabSplit[:len(tabSplit)-1], "\t")))
 			wantLineChecksum := fmt.Sprintf("0x%x", lineChecksum.Sum32())
 			if gotLineChecksum := tabSplit[len(tabSplit)-1]; gotLineChecksum != wantLineChecksum {
-				return nil, fmt.Errorf("per-line checksum mismatch: computed 0x%x, line said it should be 0x%x. This is likely due to a log buffer overrun or similar issue causing some lines to be omitted; please configure the container or the runtime to allow higher logging volume", gotLineChecksum, wantLineChecksum)
+				gotErrs = append(gotErrs, fmt.Errorf("per-line checksum mismatch: computed 0x%x, line said it should be 0x%x (%q). This is likely due to a log buffer overrun or similar issue causing some lines to be omitted; please configure the container or the runtime to allow higher logging volume", wantLineChecksum, gotLineChecksum, line))
+				lineHashMismatch = true
+				continue
 			}
 			lineData = strings.Join(tabSplit[:len(tabSplit)-1], "\t")
 		}
@@ -583,9 +597,16 @@ func Parse(logs string, hasPrefix bool) (*Data, error) {
 		return nil, fmt.Errorf("no header found in logs")
 	}
 	if hasPrefix && !checkedHash {
-		return nil, fmt.Errorf("no hash data found in logs")
+		gotErrs = append(gotErrs, fmt.Errorf("no hash data found in logs"))
 	}
-	return data, nil
+	switch len(gotErrs) {
+	case 0:
+		return data, nil
+	case 1:
+		return data, gotErrs[0]
+	default:
+		return data, fmt.Errorf("multiple errors found in logs: %v", gotErrs)
+	}
 }
 
 var unsafeFileCharacters = regexp.MustCompile("[^-_a-zA-Z0-9., @:+=]+")
@@ -641,7 +662,10 @@ func FromNamedContainerLogs(ctx context.Context, testLike testing.TB, container 
 		if errors.Is(err, ErrNoMetricData) {
 			return // No metric data in the logs, so stay quiet.
 		}
-		testLike.Fatalf("Failed to parse metrics data: %v", err)
+		if data == nil {
+			testLike.Fatalf("Failed to parse metrics data: %v", err)
+		}
+		testLike.Logf("Error while parsing metrics data (data may be incomplete): %v", err)
 	}
 	htmlOptions := HTMLOptions{
 		Title:         testLike.Name(),
@@ -714,7 +738,10 @@ func fromFile(ctx context.Context, name, logFile string, logContents []byte, has
 		if errors.Is(err, ErrNoMetricData) {
 			return nil // No metric data in the logs, so stay quiet.
 		}
-		return fmt.Errorf("failed to parse metrics data: %w", err)
+		if data == nil {
+			return fmt.Errorf("failed to parse metrics data: %w", err)
+		}
+		logFn("Error while parsing metrics data (data may be incomplete): %v", err)
 	}
 	htmlOptions := HTMLOptions{
 		Title: name,
