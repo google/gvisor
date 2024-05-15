@@ -845,7 +845,7 @@ func (s *Server) Run(ctx context.Context) error {
 		if !m.allowUnknownRoot {
 			return fmt.Errorf("invalid root directory %q: tried to list sandboxes within it and got: %w", conf.RootDir, err)
 		}
-		log.Warningf("Invalid root directory %q: tried to list sandboxes within it and got: %v. Continuing anyway, as the server is configured to tolerate this.", conf.RootDir, err)
+		log.Infof("Root directory %q: tried to list sandboxes within it and got: %v. Continuing anyway, as this is expected with --allow-unknown-root.", conf.RootDir, err)
 	}
 	// container.ListSandboxes uses a glob pattern, which doesn't error out on
 	// permission errors. Double-check by actually listing the directory.
@@ -853,7 +853,7 @@ func (s *Server) Run(ctx context.Context) error {
 		if !m.allowUnknownRoot {
 			return fmt.Errorf("invalid root directory %q: tried to list all entries within it and got: %w", conf.RootDir, err)
 		}
-		log.Warningf("Invalid root directory %q: tried to list all entries within it and got: %v. Continuing anyway, as the server is configured to tolerate this.", conf.RootDir, err)
+		log.Infof("Root directory %q: tried to list all entries within it and got: %v. Continuing anyway, as this is expected with --allow-unknown-root.", conf.RootDir, err)
 	}
 	m.startTime = time.Now()
 	m.rootDir = conf.RootDir
