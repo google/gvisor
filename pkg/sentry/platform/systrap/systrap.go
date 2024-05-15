@@ -427,7 +427,9 @@ func createMemoryFile() (*pgalloc.MemoryFile, error) {
 		return nil, fmt.Errorf("error creating memfd: %v", err)
 	}
 	memfile := os.NewFile(uintptr(fd), memfileName)
-	mf, err := pgalloc.NewMemoryFile(memfile, pgalloc.MemoryFileOpts{})
+	mf, err := pgalloc.NewMemoryFile(memfile, pgalloc.MemoryFileOpts{
+		EnforceMaximumAllocatable: true,
+	})
 	if err != nil {
 		memfile.Close()
 		return nil, fmt.Errorf("error creating pgalloc.MemoryFile: %v", err)
