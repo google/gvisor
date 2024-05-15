@@ -357,11 +357,13 @@ func (rc *rackControl) detectLoss(rcvTime tcpip.MonotonicTime) int {
 	var timeout time.Duration
 	numLost := 0
 	for seg := rc.snd.writeList.Front(); seg != nil && seg.xmitCount != 0; seg = seg.Next() {
-		if rc.snd.ep.scoreboard.IsSACKED(seg.sackBlock()) {
+		// xmitCount can be 0 for packets that are broken up for PMTUD.
+		// The initial transmission "doesn't count" WRT loss detection.
+		if rc.snd.ep.scoreboard.IsSACKED(seg.sackBlock()) || seg.xmitCount == 0 {
 			continue
 		}
 
-		if seg.lost && seg.xmitCount == 1 {
+		if seg.lost && seg.xmitCount > 1 {
 			numLost++
 			continue
 		}

@@ -342,10 +342,16 @@ func (s *sender) updateMaxPayloadSize(mtu, count int) {
 			break
 		}
 
-		if nextSeg == s.writeNext && seg.payloadSize() > m {
-			// We found a segment exceeding the MTU. Rewind
-			// writeNext and try to retransmit it.
-			nextSeg = seg
+		if seg.payloadSize() > m {
+			// xmitCount is used for loss detection, but
+			// retransmission doesn't indicate congestion here,
+			// it's just PMTUD.
+			seg.xmitCount = 0
+			if nextSeg == s.writeNext {
+				// We found a segment exceeding the MTU. Rewind
+				// writeNext and try to retransmit it.
+				nextSeg = seg
+			}
 		}
 
 		if s.ep.SACKPermitted && s.ep.scoreboard.IsSACKED(seg.sackBlock()) {
