@@ -115,6 +115,15 @@ syscall_test(
     debug = False,
     # Takes too long to run with S/R.
     save = False,
+    test = "//test/perf/linux:open_read_close_benchmark",
+)
+
+syscall_test(
+    size = "large",
+    add_overlay = True,
+    debug = False,
+    # Takes too long to run with S/R.
+    save = False,
     test = "//test/perf/linux:dup_benchmark",
 )
 
