@@ -432,7 +432,8 @@ func Parse(logs string, hasPrefix bool) (*Data, error) {
 	data := &Data{data: make(map[MetricAndFields]*TimeSeries)}
 	var header []MetricAndFields
 	metricsMeta := make(map[MetricName]*Metric)
-	h := adler32.New()
+	lineChecksum := adler32.New()
+	overallChecksum := adler32.New()
 	checkedHash := false
 	metricsLineFound := false
 	for _, line := range strings.Split(logs, "\n") {
@@ -453,7 +454,7 @@ func Parse(logs string, hasPrefix bool) (*Data, error) {
 				return nil, fmt.Errorf("invalid hash line: %q: %w", line, err)
 			}
 			wantHash := uint32(wantHashInt64)
-			if gotHash := h.Sum32(); gotHash != wantHash {
+			if gotHash := overallChecksum.Sum32(); gotHash != wantHash {
 				return nil, fmt.Errorf("checksum mismatch: computed 0x%x, logs said it should be 0x%x. This is likely due to a log buffer overrun or similar issue causing some lines to be omitted; please configure the container or the runtime to allow higher logging volume", gotHash, wantHash)
 			}
 			checkedHash = true
@@ -462,8 +463,23 @@ func Parse(logs string, hasPrefix bool) (*Data, error) {
 
 		// If it's not a hash line, add it to the hash regardless of which other
 		// type of line it is.
-		h.Write([]byte(lineData))
-		h.Write([]byte("\n"))
+		overallChecksum.Write([]byte(lineData))
+		overallChecksum.Write([]byte("\n"))
+
+		if hasPrefix {
+			// There should be a per-line checksum at the end of each line.
+			tabSplit := strings.Split(lineData, "\t")
+			if len(tabSplit) < 2 {
+				return nil, fmt.Errorf("invalid line: %q (no tab separator found)", line)
+			}
+			lineChecksum.Reset()
+			lineChecksum.Write([]byte(strings.Join(tabSplit[:len(tabSplit)-1], "\t")))
+			wantLineChecksum := fmt.Sprintf("0x%x", lineChecksum.Sum32())
+			if gotLineChecksum := tabSplit[len(tabSplit)-1]; gotLineChecksum != wantLineChecksum {
+				return nil, fmt.Errorf("per-line checksum mismatch: computed 0x%x, line said it should be 0x%x. This is likely due to a log buffer overrun or similar issue causing some lines to be omitted; please configure the container or the runtime to allow higher logging volume", gotLineChecksum, wantLineChecksum)
+			}
+			lineData = strings.Join(tabSplit[:len(tabSplit)-1], "\t")
+		}
 
 		if strings.HasPrefix(lineData, metric.MetricsMetaIndicator) {
 			lineMetadata := strings.TrimPrefix(lineData, metric.MetricsMetaIndicator)
@@ -500,7 +516,11 @@ func Parse(logs string, hasPrefix bool) (*Data, error) {
 			if headerCells[0] != metric.TimeColumn {
 				return nil, fmt.Errorf("invalid header line: %q", line)
 			}
-			for _, cell := range headerCells[1:] {
+			for i, cell := range headerCells[1:] {
+				if hasPrefix && i == len(headerCells)-2 && cell == "Checksum" {
+					// Ignore this column name; it is the column indicator for the per-line checksum.
+					continue
+				}
 				// If metric fields were to be implemented, they would be part of
 				// the header cell here. For now we just assume that the header
 				// cells are just metric names.

@@ -1151,6 +1151,9 @@ func TestMetricProfiling(t *testing.T) {
 			h := adler32.New()
 			lines := bufio.NewScanner(f)
 			expectedHeader := TimeColumn + "\t" + strings.Join(test.metricNames, "\t")
+			if test.lossy {
+				expectedHeader += "\tChecksum"
+			}
 			prevTS := uint64(0)
 			prevValues := make([]uint64, numMetrics)
 			numDatapoints := 0
@@ -1177,6 +1180,17 @@ func TestMetricProfiling(t *testing.T) {
 					continue
 				}
 				h.Write([]byte(line + "\n"))
+				// Check line checksum
+				if test.lossy {
+					tabSplit := strings.Split(line, "\t")
+					gotLineChecksum := tabSplit[len(tabSplit)-1]
+					wantLineChecksum := fmt.Sprintf("0x%x", adler32.Checksum([]byte(strings.Join(tabSplit[:len(tabSplit)-1], "\t"))))
+					if gotLineChecksum != wantLineChecksum {
+						t.Errorf("got line checksum %q, want %q", gotLineChecksum, wantLineChecksum)
+						continue
+					}
+					line = strings.TrimSuffix(line, "\t"+gotLineChecksum)
+				}
 				if strings.HasPrefix(line, MetricsMetaIndicator) {
 					line = strings.TrimPrefix(line, MetricsMetaIndicator)
 					components := strings.Split(line, "\t")
