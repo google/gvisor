@@ -15,6 +15,7 @@ java/lang/ClassLoader/loadLibraryDeadlock/TestLoadLibraryDeadlock.java,,Broken t
 java/lang/ClassLoader/loadLibraryUnload/LoadLibraryUnloadTest.java,,Broken test
 java/lang/ClassLoader/nativeLibrary/NativeLibraryTest.java,,Broken test
 java/lang/StackWalker/NativeMethod.java,,Broken test
+java/lang/StringBuilder/StringBufferRepeat.java,,Broken test
 java/lang/String/nativeEncoding/StringPlatformChars.java,,Broken test
 java/lang/Thread/jni/AttachCurrentThread/AttachTest.java#id0,,Broken test
 java/lang/Thread/jni/AttachCurrentThread/AttachTest.java#id1,,Broken test
@@ -54,13 +55,19 @@ java/nio/channels/unixdomain/SocketOptions.java,,
 java/nio/file/attribute/BasicFileAttributeView/CreationTime.java,,Broken test
 java/nio/jni/NewDirectByteBuffer.java,,Broken test
 java/rmi/transport/checkLeaseInfoLeak/CheckLeaseLeak.java,,Broken test
+java/security/misc/Versions.java,,Broken test
 java/security/Security/ConfigFileTest.java,,Broken test
+java/util/concurrent/LinkedTransferQueue/SubclassTest.java,,Broken test
+java/util/Currency/CurrencyTest.java,,Broken test
+java/util/Currency/ValidateISO4217.java,,Broken test
 java/util/ResourceBundle/Control/MissingResourceCauseTestRun.java,,Broken test
+java/util/TimeZone/AssureTzdataVersion.java,,Broken test
 javax/imageio/plugins/jpeg/JPEGsNotAcceleratedTest.java,,Broken test
 javax/management/remote/mandatory/connection/RMIConnector_NPETest.java,,Broken test
 javax/management/security/HashedPasswordFileTest.java,,Broken test
 jdk/internal/loader/NativeLibraries/Main.java,,Broken test
 jdk/internal/vm/Continuation/Basic.java#id0,,Broken test
+jdk/jfr/api/consumer/streaming/TestJVMExit.java,,Only fails on Buildkite
 jdk/jfr/event/gc/detailed/TestZUncommitEvent.java#ZGenerational,,
 jdk/jfr/event/gc/detailed/TestZUncommitEvent.java#ZSinglegen,,
 jdk/jfr/event/runtime/TestNetworkUtilizationEvent.java,,
@@ -80,6 +87,7 @@ sun/tools/jhsdb/HeapDumpTestWithActiveProcess.java,,Broken test
 sun/tools/jhsdb/JShellHeapDumpTest.java,,Broken test
 sun/tools/jhsdb/JStackStressTest.java,,Broken test
 sun/tools/jhsdb/heapconfig/JMapHeapConfigTest.java,,Broken test
+sun/util/calendar/zi/TestZoneInfo310.java,,Broken test
 tools/jimage/JImageExtractTest.java,,Broken test
 tools/jimage/JImageTest.java,,Broken test
 tools/jlink/JLinkReproducible3Test.java,,Broken test
