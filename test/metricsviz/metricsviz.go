@@ -41,6 +41,11 @@ import (
 	mpb "gvisor.dev/gvisor/pkg/metric/metric_go_proto"
 )
 
+const (
+	htmlRawLogsPrefix = "GVISOR RAW LOGS:"
+	htmlRawLogsSuffix = "/END OF RAW GVISOR LOGS"
+)
+
 // MetricName is the name of a metric.
 type MetricName string
 
@@ -111,6 +116,7 @@ func (ts *TimeSeries) String() string {
 // Data maps metrics and field values to timeseries.
 type Data struct {
 	startTime time.Time
+	rawLogs   string
 	data      map[MetricAndFields]*TimeSeries
 }
 
@@ -416,7 +422,17 @@ func (d *Data) ToHTML(opts HTMLOptions) (string, error) {
 	if err := page.Render(&b); err != nil {
 		return "", fmt.Errorf("failed to render page: %w", err)
 	}
-	return b.String(), nil
+	html := b.String()
+
+	// Insert raw logs in the HTML file itself as a comment.
+	const headTag = "<head>"
+	headTagIndex := strings.Index(html, headTag)
+	if headTagIndex == -1 {
+		return "", fmt.Errorf("no <head> tag found in HTML")
+	}
+	headTagFinishIndex := headTagIndex + len(headTag)
+	html = html[:headTagFinishIndex] + "\n<!--\n" + htmlRawLogsPrefix + "\n" + d.rawLogs + "\n" + htmlRawLogsSuffix + "\n-->\n" + html[headTagFinishIndex:]
+	return html, nil
 }
 
 // ErrNoMetricData is returned when no metrics data is found in logs.
@@ -429,7 +445,7 @@ var ErrNoMetricData = errors.New("no metrics data found")
 // prefix will be stripped if it is found.
 // If the log does not contain any metrics data, ErrNoMetricData is returned.
 func Parse(logs string, hasPrefix bool) (*Data, error) {
-	data := &Data{data: make(map[MetricAndFields]*TimeSeries)}
+	data := &Data{rawLogs: logs, data: make(map[MetricAndFields]*TimeSeries)}
 	var header []MetricAndFields
 	metricsMeta := make(map[MetricName]*Metric)
 	lineChecksum := adler32.New()
@@ -644,7 +660,11 @@ func FromNamedContainerLogs(ctx context.Context, testLike testing.TB, container 
 // FromProfilingMetricsLogFile parses a profiling metrics log file
 // (as created by --profiling-metrics-log) and reports metrics data within.
 func FromProfilingMetricsLogFile(ctx context.Context, testLike testing.TB, logFile string) {
-	if err := fromFile(ctx, testLike.Name(), logFile, false, testLike.Logf); err != nil {
+	contents, err := os.ReadFile(logFile)
+	if err != nil {
+		testLike.Fatalf("failed to read log file: %v", err)
+	}
+	if err := fromFile(ctx, testLike.Name(), logFile, contents, false, testLike.Logf); err != nil {
 		testLike.Fatalf("Failed to process metrics logs file: %v", err)
 	}
 }
@@ -657,24 +677,39 @@ func FromFile(ctx context.Context, logFile string, logFn func(string, ...any)) e
 	if err != nil {
 		return fmt.Errorf("failed to read log file: %w", err)
 	}
+	lines := strings.Split(string(contents), "\n")
 	logName := strings.TrimSuffix(path.Base(logFile), ".log")
-	for _, line := range strings.Split(string(contents), "\n") {
+	foundRawHTMLPrefix := -1
+	foundRawHTMLSuffix := -1
+	for i, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == htmlRawLogsPrefix {
+			foundRawHTMLPrefix = i
+		} else if line == htmlRawLogsSuffix {
+			foundRawHTMLSuffix = i
+		}
+	}
+	if foundRawHTMLPrefix != -1 && foundRawHTMLSuffix != -1 {
+		// Isolate the contents of the raw logs from inside the HTML file.
+		lines = lines[foundRawHTMLPrefix+1 : foundRawHTMLSuffix]
+		contents = []byte(strings.Join(lines, "\n"))
+	}
+	for _, line := range lines {
+		if line == "" {
+			continue
+		}
 		if strings.HasPrefix(line, metric.MetricsPrefix) {
-			return fromFile(ctx, logName, logFile, true, logFn)
+			return fromFile(ctx, logName, logFile, contents, true, logFn)
 		}
 		if strings.HasPrefix(line, metric.TimeColumn) {
-			return fromFile(ctx, logName, logFile, false, logFn)
+			return fromFile(ctx, logName, logFile, contents, false, logFn)
 		}
 	}
 	return fmt.Errorf("could not recognize %q as a metrics log file", logFile)
 }
 
-func fromFile(ctx context.Context, name, logFile string, hasPrefix bool, logFn func(string, ...any)) error {
-	contents, err := os.ReadFile(logFile)
-	if err != nil {
-		return fmt.Errorf("failed to read log file: %w", err)
-	}
-	data, err := Parse(string(contents), hasPrefix)
+func fromFile(ctx context.Context, name, logFile string, logContents []byte, hasPrefix bool, logFn func(string, ...any)) error {
+	data, err := Parse(string(logContents), hasPrefix)
 	if err != nil {
 		if errors.Is(err, ErrNoMetricData) {
 			return nil // No metric data in the logs, so stay quiet.
