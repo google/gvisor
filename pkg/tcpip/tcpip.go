@@ -995,10 +995,13 @@ const (
 	UseDefaultIPv6HopLimit = -1
 )
 
+// PMTUDStrategy is the kind of PMTUD to perform.
+type PMTUDStrategy int
+
 const (
 	// PMTUDiscoveryWant is a setting of the MTUDiscoverOption to use
 	// per-route settings.
-	PMTUDiscoveryWant int = iota
+	PMTUDiscoveryWant PMTUDStrategy = iota
 
 	// PMTUDiscoveryDont is a setting of the MTUDiscoverOption to disable
 	// path MTU discovery.

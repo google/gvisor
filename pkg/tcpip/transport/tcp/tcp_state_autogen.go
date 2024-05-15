@@ -382,6 +382,7 @@ func (e *Endpoint) StateFields() []string {
 		"owner",
 		"ops",
 		"lastOutOfWindowAckTime",
+		"pmtud",
 	}
 }
 
@@ -442,6 +443,7 @@ func (e *Endpoint) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(49, &e.owner)
 	stateSinkObject.Save(50, &e.ops)
 	stateSinkObject.Save(51, &e.lastOutOfWindowAckTime)
+	stateSinkObject.Save(52, &e.pmtud)
 }
 
 // +checklocksignore
@@ -497,6 +499,7 @@ func (e *Endpoint) StateLoad(ctx context.Context, stateSourceObject state.Source
 	stateSourceObject.Load(49, &e.owner)
 	stateSourceObject.Load(50, &e.ops)
 	stateSourceObject.Load(51, &e.lastOutOfWindowAckTime)
+	stateSourceObject.Load(52, &e.pmtud)
 	stateSourceObject.LoadValue(11, new(EndpointState), func(y any) { e.loadState(ctx, y.(EndpointState)) })
 	stateSourceObject.AfterLoad(func() { e.afterLoad(ctx) })
 }

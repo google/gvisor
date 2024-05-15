@@ -824,7 +824,7 @@ func (e *Endpoint) SetSockOptInt(opt tcpip.SockOptInt, v int) tcpip.Error {
 	case tcpip.MTUDiscoverOption:
 		// Return not supported if the value is not disabling path
 		// MTU discovery.
-		if v != tcpip.PMTUDiscoveryDont {
+		if tcpip.PMTUDStrategy(v) != tcpip.PMTUDiscoveryDont {
 			return &tcpip.ErrNotSupported{}
 		}
 
@@ -862,7 +862,7 @@ func (e *Endpoint) GetSockOptInt(opt tcpip.SockOptInt) (int, tcpip.Error) {
 	switch opt {
 	case tcpip.MTUDiscoverOption:
 		// The only supported setting is path MTU discovery disabled.
-		return tcpip.PMTUDiscoveryDont, nil
+		return int(tcpip.PMTUDiscoveryDont), nil
 
 	case tcpip.MulticastTTLOption:
 		e.mu.Lock()

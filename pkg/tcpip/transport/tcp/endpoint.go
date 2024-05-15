@@ -600,6 +600,11 @@ type Endpoint struct {
 	//
 	// +checklocks:mu
 	limRdr *io.LimitedReader `state:"nosave"`
+
+	// pmtud is the PMTUD strategy to use.
+	//
+	// +checklocks:mu
+	pmtud tcpip.PMTUDStrategy
 }
 
 // UniqueID implements stack.TransportEndpoint.UniqueID.
@@ -1890,9 +1895,16 @@ func (e *Endpoint) SetSockOptInt(opt tcpip.SockOptInt, v int) tcpip.Error {
 		e.UnlockUser()
 
 	case tcpip.MTUDiscoverOption:
-		// Return not supported if attempting to set this option to
-		// anything other than path MTU discovery disabled.
-		if v != tcpip.PMTUDiscoveryDont {
+		switch v := tcpip.PMTUDStrategy(v); v {
+		case tcpip.PMTUDiscoveryWant, tcpip.PMTUDiscoveryDont, tcpip.PMTUDiscoveryDo:
+			e.LockUser()
+			e.pmtud = v
+			e.UnlockUser()
+		case tcpip.PMTUDiscoveryProbe:
+			// We don't support a way to ignore MTU updates; it's
+			// either on or it's off.
+			return &tcpip.ErrNotSupported{}
+		default:
 			return &tcpip.ErrNotSupported{}
 		}
 
@@ -2089,9 +2101,10 @@ func (e *Endpoint) GetSockOptInt(opt tcpip.SockOptInt) (int, tcpip.Error) {
 		return v, nil
 
 	case tcpip.MTUDiscoverOption:
-		// Always return the path MTU discovery disabled setting since
-		// it's the only one supported.
-		return tcpip.PMTUDiscoveryDont, nil
+		e.LockUser()
+		v := e.pmtud
+		e.UnlockUser()
+		return int(v), nil
 
 	case tcpip.ReceiveQueueSizeOption:
 		return e.readyReceiveSize()
