@@ -257,12 +257,16 @@ var (
 	// deepSleepTimeout is much shorter than the Linux scheduler timeslice, so the
 	// only thing that matters here is whether the Sentry handles syscall faster
 	// than the overhead of scheduling another stub thread.
-	fastPathContextLimit = uint32(maxSysmsgThreads * 2)
+	//
+	// It is set after maxSysmsgThreads is initialized.
+	fastPathContextLimit = uint32(0)
 )
 
 // controlFastPath is used to spawn a goroutine when creating the Systrap
 // platform.
 func controlFastPath() {
+	fastPathContextLimit = uint32(maxSysmsgThreads * 2)
+
 	for {
 		time.Sleep(recordingPeriod)
 
