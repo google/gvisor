@@ -1191,8 +1191,7 @@ func TestCheckpointRestore(t *testing.T) {
 // TestCheckpointRestoreExecKilled checks that exec'd processes are killed
 // after the container is restored.
 func TestCheckpointRestoreExecKilled(t *testing.T) {
-	spec := testutil.NewSpecWithArgs("/bin/sleep", "10000")
-	conf := testutil.TestConfig(t)
+	spec, conf := sleepSpecConf(t)
 	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
 	if err != nil {
 		t.Fatalf("error setting up container: %v", err)
@@ -1954,8 +1953,7 @@ func TestAbbreviatedIDs(t *testing.T) {
 }
 
 func TestGoferExits(t *testing.T) {
-	spec := testutil.NewSpecWithArgs("/bin/sleep", "10000")
-	conf := testutil.TestConfig(t)
+	spec, conf := sleepSpecConf(t)
 	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
 
 	if err != nil {
@@ -2131,8 +2129,7 @@ func TestWaitOnExitedSandbox(t *testing.T) {
 }
 
 func TestDestroyNotStarted(t *testing.T) {
-	spec := testutil.NewSpecWithArgs("/bin/sleep", "100")
-	conf := testutil.TestConfig(t)
+	spec, conf := sleepSpecConf(t)
 	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
 	if err != nil {
 		t.Fatalf("error setting up container: %v", err)
@@ -2157,8 +2154,7 @@ func TestDestroyNotStarted(t *testing.T) {
 // TestDestroyStarting attempts to force a race between start and destroy.
 func TestDestroyStarting(t *testing.T) {
 	for i := 0; i < 10; i++ {
-		spec := testutil.NewSpecWithArgs("/bin/sleep", "100")
-		conf := testutil.TestConfig(t)
+		spec, conf := sleepSpecConf(t)
 		rootDir, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
 		if err != nil {
 			t.Fatalf("error setting up container: %v", err)
@@ -2342,7 +2338,7 @@ func TestMountSymlink(t *testing.T) {
 				t.Fatalf("os.Symlink(%q, %q): %v", target, link, err)
 			}
 
-			spec := testutil.NewSpecWithArgs("/bin/sleep", "1000")
+			spec, _ := sleepSpecConf(t)
 
 			// Mount to a symlink to ensure the mount code will follow it and mount
 			// at the symlink target.
@@ -2939,12 +2935,9 @@ func TestFDPassingExec(t *testing.T) {
 	}
 	defer cleanup()
 
-	conf := testutil.TestConfig(t)
-
 	// We just sleep here because we want to test file descriptor passing
 	// inside a process executed inside an already running container.
-	spec := testutil.NewSpecWithArgs("bash", "-c", "sleep infinity")
-
+	spec, conf := sleepSpecConf(t)
 	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
 	if err != nil {
 		t.Fatalf("error setting up container: %v", err)
@@ -3075,12 +3068,9 @@ func TestExecFDRun(t *testing.T) {
 // TestExecFDExec checks that an executable from the host can be started from a
 // file descriptor inside an already running container.
 func TestExecFDExec(t *testing.T) {
-	conf := testutil.TestConfig(t)
-
 	// We just sleep here because we want to test execution in an already
 	// running container.
-	spec := testutil.NewSpecWithArgs("bash", "-c", "sleep infinity")
-
+	spec, conf := sleepSpecConf(t)
 	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
 	if err != nil {
 		t.Fatalf("error setting up container: %v", err)
@@ -3242,8 +3232,7 @@ find $dir -type l -o -type f | sort | xargs cat | md5sum`), 0755); err != nil {
 		}
 	}
 
-	spec, _ := sleepSpecConf(t)
-	conf := testutil.TestConfig(t)
+	spec, conf := sleepSpecConf(t)
 	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
 	if err != nil {
 		t.Fatalf("error setting up container: %v", err)
@@ -3446,8 +3435,7 @@ func TestLookupEROFS(t *testing.T) {
 	}
 	defer os.RemoveAll(testDir)
 
-	spec, _ := sleepSpecConf(t)
-	conf := testutil.TestConfig(t)
+	spec, conf := sleepSpecConf(t)
 	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
 	if err != nil {
 		t.Fatalf("error setting up container: %v", err)

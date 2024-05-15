@@ -41,6 +41,8 @@ import (
 	"gvisor.dev/gvisor/runsc/specutils"
 )
 
+var sleepCmd = []string{"/bin/sleep", "1000"}
+
 func createSpecs(cmds ...[]string) ([]*specs.Spec, []string) {
 	var specs []*specs.Spec
 	var ids []string
@@ -230,8 +232,7 @@ func TestMultiContainerSanity(t *testing.T) {
 			conf.RootDir = rootDir
 
 			// Setup the containers.
-			sleep := []string{"sleep", "100"}
-			specs, ids := createSpecs(sleep, sleep)
+			specs, ids := createSpecs(sleepCmd, sleepCmd)
 			containers, cleanup, err := startContainers(conf, specs, ids)
 			if err != nil {
 				t.Fatalf("error starting containers: %v", err)
@@ -268,8 +269,7 @@ func TestMultiPIDNS(t *testing.T) {
 			conf.RootDir = rootDir
 
 			// Setup the containers.
-			sleep := []string{"sleep", "100"}
-			testSpecs, ids := createSpecs(sleep, sleep)
+			testSpecs, ids := createSpecs(sleepCmd, sleepCmd)
 			testSpecs[1].Linux = &specs.Linux{
 				Namespaces: []specs.LinuxNamespace{
 					{
@@ -340,8 +340,7 @@ func TestMultiPIDNSPath(t *testing.T) {
 			conf.RootDir = rootDir
 
 			// Setup the containers.
-			sleep := []string{"sleep", "100"}
-			testSpecs, ids := createSpecs(sleep, sleep, sleep)
+			testSpecs, ids := createSpecs(sleepCmd, sleepCmd, sleepCmd)
 			testSpecs[0].Linux = &specs.Linux{
 				Namespaces: []specs.LinuxNamespace{
 					{
@@ -547,8 +546,7 @@ func TestMultiPIDNSRoot(t *testing.T) {
 
 			// Setup the containers. One in the root PID namespace and another in a
 			// sub-namespace.
-			sleep := []string{"sleep", "100"}
-			testSpecs, ids := createSpecs(sleep, sleep, sleep)
+			testSpecs, ids := createSpecs(sleepCmd, sleepCmd, sleepCmd)
 			testSpecs[1].Linux = &specs.Linux{
 				Namespaces: []specs.LinuxNamespace{
 					{
@@ -631,10 +629,9 @@ func TestMultiContainerWait(t *testing.T) {
 	conf.RootDir = rootDir
 
 	// The first container should run the entire duration of the test.
-	cmd1 := []string{"sleep", "100"}
 	// We'll wait on the second container, which is much shorter lived.
 	cmd2 := []string{"sleep", "1"}
-	specs, ids := createSpecs(cmd1, cmd2)
+	specs, ids := createSpecs(sleepCmd, cmd2)
 
 	containers, cleanup, err := startContainers(conf, specs, ids)
 	if err != nil {
@@ -676,10 +673,9 @@ func TestExecWait(t *testing.T) {
 	conf.RootDir = rootDir
 
 	// The first container should run the entire duration of the test.
-	cmd1 := []string{"sleep", "100"}
 	// We'll wait on the second container, which is much shorter lived.
 	cmd2 := []string{"sleep", "1"}
-	specs, ids := createSpecs(cmd1, cmd2)
+	specs, ids := createSpecs(sleepCmd, cmd2)
 	containers, cleanup, err := startContainers(conf, specs, ids)
 	if err != nil {
 		t.Fatalf("error starting containers: %v", err)
@@ -743,8 +739,6 @@ func TestExecWait(t *testing.T) {
 // TestMultiContainerMount tests that bind mounts can be used with multiple
 // containers.
 func TestMultiContainerMount(t *testing.T) {
-	cmd1 := []string{"sleep", "100"}
-
 	// 'src != dst' ensures that 'dst' doesn't exist in the host and must be
 	// properly mapped inside the container to work.
 	src, err := ioutil.TempDir(testutil.TmpDir(), "container")
@@ -754,7 +748,7 @@ func TestMultiContainerMount(t *testing.T) {
 	dst := src + ".dst"
 	cmd2 := []string{"touch", filepath.Join(dst, "file")}
 
-	sps, ids := createSpecs(cmd1, cmd2)
+	sps, ids := createSpecs(sleepCmd, cmd2)
 	sps[1].Mounts = append(sps[1].Mounts, specs.Mount{
 		Source:      src,
 		Destination: dst,
@@ -799,8 +793,7 @@ func TestMultiContainerSignal(t *testing.T) {
 			conf.RootDir = rootDir
 
 			// Setup the containers.
-			sleep := []string{"sleep", "100"}
-			specs, ids := createSpecs(sleep, sleep)
+			specs, ids := createSpecs(sleepCmd, sleepCmd)
 			containers, cleanup, err := startContainers(conf, specs, ids)
 			if err != nil {
 				t.Fatalf("error starting containers: %v", err)
@@ -900,7 +893,7 @@ func TestMultiContainerDestroy(t *testing.T) {
 
 			// First container will remain intact while the second container is killed.
 			podSpecs, ids := createSpecs(
-				[]string{"sleep", "100"},
+				sleepCmd,
 				[]string{app, "fork-bomb"})
 
 			// Run the fork bomb in a PID namespace to prevent processes to be
@@ -966,8 +959,8 @@ func TestMultiContainerProcesses(t *testing.T) {
 	// will just execve into 'sleep' and both containers will look the
 	// same.
 	specs, ids := createSpecs(
-		[]string{"sleep", "100"},
-		[]string{"sh", "-c", "{ sleep 100; }"})
+		sleepCmd,
+		[]string{"sh", "-c", "{ sleep 1000; }"})
 	containers, cleanup, err := startContainers(conf, specs, ids)
 	if err != nil {
 		t.Fatalf("error starting containers: %v", err)
@@ -993,8 +986,8 @@ func TestMultiContainerProcesses(t *testing.T) {
 
 	// Now exec into the second container and verify it shows up in the container.
 	args := &control.ExecArgs{
-		Filename: "/bin/sleep",
-		Argv:     []string{"/bin/sleep", "100"},
+		Filename: sleepCmd[0],
+		Argv:     sleepCmd,
 	}
 	if _, err := containers[1].Execute(conf, args); err != nil {
 		t.Fatalf("error exec'ing: %v", err)
@@ -1108,10 +1101,7 @@ func TestMultiContainerKillAll(t *testing.T) {
 }
 
 func TestMultiContainerDestroyNotStarted(t *testing.T) {
-	specs, ids := createSpecs(
-		[]string{"/bin/sleep", "100"},
-		[]string{"/bin/sleep", "100"})
-
+	specs, ids := createSpecs(sleepCmd, sleepCmd)
 	conf := testutil.TestConfig(t)
 	_, bundleDir, cleanup, err := testutil.SetupContainer(specs[0], conf)
 	if err != nil {
@@ -1161,7 +1151,7 @@ func TestMultiContainerDestroyNotStarted(t *testing.T) {
 func TestMultiContainerDestroyStarting(t *testing.T) {
 	cmds := make([][]string, 10)
 	for i := range cmds {
-		cmds[i] = []string{"/bin/sleep", "100"}
+		cmds[i] = sleepCmd
 	}
 	specs, ids := createSpecs(cmds...)
 
@@ -1388,8 +1378,7 @@ func TestMultiContainerContainerDestroyStress(t *testing.T) {
 func TestMultiContainerSharedMount(t *testing.T) {
 	testSharedMount(t, func(t *testing.T, conf *config.Config, sourceDir string, mntType string) {
 		// Setup the containers.
-		sleep := []string{"sleep", "100"}
-		podSpec, ids := createSpecs(sleep, sleep)
+		podSpec, ids := createSpecs(sleepCmd, sleepCmd)
 		mnt0 := specs.Mount{
 			Destination: "/mydir/test",
 			Source:      sourceDir,
@@ -1492,8 +1481,7 @@ func TestMultiContainerSharedMount(t *testing.T) {
 func TestMultiContainerSharedMountReadonly(t *testing.T) {
 	testSharedMount(t, func(t *testing.T, conf *config.Config, sourceDir string, mntType string) {
 		// Setup the containers.
-		sleep := []string{"sleep", "100"}
-		podSpec, ids := createSpecs(sleep, sleep)
+		podSpec, ids := createSpecs(sleepCmd, sleepCmd)
 		mnt0 := specs.Mount{
 			Destination: "/mydir/test",
 			Source:      sourceDir,
@@ -1548,8 +1536,7 @@ func TestMultiContainerSharedMountReadonly(t *testing.T) {
 // container mounts.
 func TestMultiContainerSharedMountCompatible(t *testing.T) {
 	testSharedMount(t, func(t *testing.T, conf *config.Config, sourceDir string, mntType string) {
-		sleep := []string{"sleep", "100"}
-		podSpec, ids := createSpecs(sleep, sleep)
+		podSpec, ids := createSpecs(sleepCmd, sleepCmd)
 
 		// Init container and annotations allow read-write and exec.
 		mnt0 := specs.Mount{
@@ -1612,10 +1599,9 @@ func TestMultiContainerSharedMountRestart(t *testing.T) {
 	for numSubConts := 1; numSubConts <= 2; numSubConts++ {
 		testSharedMount(t, func(t *testing.T, conf *config.Config, sourceDir string, mntType string) {
 			// Setup the containers.
-			sleep := []string{"sleep", "100"}
-			cmds := [][]string{sleep}
-			for i := 1; i <= numSubConts; i++ {
-				cmds = append(cmds, sleep)
+			var cmds [][]string
+			for i := 0; i <= numSubConts; i++ {
+				cmds = append(cmds, sleepCmd)
 			}
 			podSpec, ids := createSpecs(cmds...)
 
@@ -1700,8 +1686,7 @@ func TestMultiContainerSharedMountRestart(t *testing.T) {
 func TestMultiContainerSharedMountUnsupportedOptions(t *testing.T) {
 	testSharedMount(t, func(t *testing.T, conf *config.Config, sourceDir string, mntType string) {
 		// Setup the containers.
-		sleep := []string{"/bin/sleep", "100"}
-		podSpec, ids := createSpecs(sleep, sleep)
+		podSpec, ids := createSpecs(sleepCmd, sleepCmd)
 		mnt0 := specs.Mount{
 			Destination: "/mydir/test",
 			Source:      sourceDir,
@@ -1743,8 +1728,7 @@ func TestMultiContainerSharedMountUnsupportedOptions(t *testing.T) {
 func TestMultiContainerSharedMountsRepeated(t *testing.T) {
 	testSharedMount(t, func(t *testing.T, conf *config.Config, sourceDir string, mntType string) {
 		// Setup the containers.
-		sleep := []string{"/bin/sleep", "100"}
-		podSpec, ids := createSpecs(sleep)
+		podSpec, ids := createSpecs(sleepCmd)
 		mnt0 := specs.Mount{
 			Destination: "/mydir/test1",
 			Source:      sourceDir,
@@ -1805,10 +1789,9 @@ func TestMultiContainerSharedBindMount(t *testing.T) {
 			}
 			t.Run(fmt.Sprintf("containers-%d", numContainers), func(t *testing.T) {
 				// Setup the containers.
-				sleep := []string{"sleep", "100"}
 				var cmds [][]string
 				for i := 0; i < numContainers; i++ {
-					cmds = append(cmds, sleep)
+					cmds = append(cmds, sleepCmd)
 				}
 				podSpec, ids := createSpecs(cmds...)
 
@@ -1922,7 +1905,7 @@ func TestMultiContainerMultiRootCanHandleFDs(t *testing.T) {
 
 		// Create the specs.
 		specs, ids := createSpecs(
-			[]string{"sleep", "1000"},
+			sleepCmd,
 			[]string{app, "fd_sender", "--socket", socketPath},
 			[]string{app, "fd_receiver", "--socket", socketPath},
 		)
@@ -1958,8 +1941,7 @@ func TestMultiContainerGoferKilled(t *testing.T) {
 	conf := testutil.TestConfig(t)
 	conf.RootDir = rootDir
 
-	sleep := []string{"sleep", "100"}
-	specs, ids := createSpecs(sleep, sleep, sleep)
+	specs, ids := createSpecs(sleepCmd, sleepCmd, sleepCmd)
 	containers, cleanup, err := startContainers(conf, specs, ids)
 	if err != nil {
 		t.Fatalf("error starting containers: %v", err)
@@ -2030,8 +2012,7 @@ func TestMultiContainerGoferKilled(t *testing.T) {
 }
 
 func TestMultiContainerLoadSandbox(t *testing.T) {
-	sleep := []string{"sleep", "100"}
-	specs, ids := createSpecs(sleep, sleep, sleep)
+	specs, ids := createSpecs(sleepCmd, sleepCmd, sleepCmd)
 
 	rootDir, cleanup, err := testutil.SetupRootDir()
 	if err != nil {
@@ -2051,7 +2032,7 @@ func TestMultiContainerLoadSandbox(t *testing.T) {
 
 	// Then create unrelated containers.
 	for i := 0; i < 3; i++ {
-		specs, ids = createSpecs(sleep, sleep, sleep)
+		specs, ids = createSpecs(sleepCmd, sleepCmd, sleepCmd)
 		_, cleanup, err = startContainers(conf, specs, ids)
 		if err != nil {
 			t.Fatalf("error starting containers: %v", err)
@@ -2099,9 +2080,8 @@ func TestMultiContainerLoadSandbox(t *testing.T) {
 // TestMultiContainerRunNonRoot checks that child container can be configured
 // when running as non-privileged user.
 func TestMultiContainerRunNonRoot(t *testing.T) {
-	cmdRoot := []string{"/bin/sleep", "100"}
 	cmdSub := []string{"/bin/true"}
-	podSpecs, ids := createSpecs(cmdRoot, cmdSub)
+	podSpecs, ids := createSpecs(sleepCmd, cmdSub)
 
 	// User running inside container can't list '$TMP/blocked' and would fail to
 	// mount it.
@@ -2185,7 +2165,7 @@ func TestMultiContainerHomeEnvDir(t *testing.T) {
 			}
 
 			// We will sleep in the root container in order to ensure that the root
-			//container doesn't terminate before sub containers can be created.
+			// container doesn't terminate before sub containers can be created.
 			rootCmd := []string{"/bin/sh", "-c", fmt.Sprintf(`printf "$HOME" > %s; sleep 1000`, homeDirs["root"].Name())}
 			subCmd := []string{"/bin/sh", "-c", fmt.Sprintf(`printf "$HOME" > %s`, homeDirs["sub"].Name())}
 			execCmd := fmt.Sprintf(`printf "$HOME" > %s`, homeDirs["exec"].Name())
@@ -2455,8 +2435,7 @@ func TestMultiContainerShm(t *testing.T) {
 	defer cleanup()
 	conf.RootDir = rootDir
 
-	sleep := []string{"sleep", "100"}
-	testSpecs, ids := createSpecs(sleep, sleep)
+	testSpecs, ids := createSpecs(sleepCmd, sleepCmd)
 
 	sharedMount := specs.Mount{
 		Destination: "/dev/shm",
@@ -2513,13 +2492,11 @@ func TestMultiContainerOverlayLeaks(t *testing.T) {
 	// Configure root overlay backed by rootfs itself.
 	conf.Overlay2.Set("root:self")
 
-	// Root container will just sleep.
-	sleep := []string{"sleep", "100"}
 	// Since all containers share the same conf.RootDir, and root filesystems
 	// have overlay enabled, the root directory should never be modified. Hence,
 	// creating files at the same locations should not lead to EEXIST error.
 	createFsTree := []string{"/app", "fsTreeCreate", "--depth=10", "--file-per-level=10", "--file-size=4096"}
-	testSpecs, ids := createSpecs(sleep, createFsTree, createFsTree, createFsTree)
+	testSpecs, ids := createSpecs(sleepCmd, createFsTree, createFsTree, createFsTree)
 	for i, s := range testSpecs {
 		if i == 0 {
 			// Root container just sleeps, so should be fine.
@@ -2615,9 +2592,6 @@ func TestMultiContainerMemoryLeakStress(t *testing.T) {
 	// files in the root directory.
 	conf.Overlay2.Set("root:memory")
 
-	// Root container will just sleep.
-	sleep := []string{"sleep", "1000"}
-
 	// Subcontainers will do a lot of filesystem work. Create a lot of them.
 	createFsTree := []string{app, "fsTreeCreate", "--depth=10", "--file-per-level=10", "--file-size=1048576"}
 	const (
@@ -2627,7 +2601,7 @@ func TestMultiContainerMemoryLeakStress(t *testing.T) {
 		maxReclaimDurationPerContainer     = 5 * time.Second
 	)
 	cmds := make([][]string, 0, warmupContainers+stressContainers+1)
-	cmds = append(cmds, sleep)
+	cmds = append(cmds, sleepCmd)
 	for i := 0; i < warmupContainers+stressContainers; i++ {
 		cmds = append(cmds, createFsTree)
 	}
@@ -2756,9 +2730,9 @@ func TestMultiContainerCheckpointRestore(t *testing.T) {
 			// entire sandbox.
 			script := fmt.Sprintf("for ((i=0; ;i++)); do echo $i >> %q; sleep 1; done", outputPath)
 			testSpecs, ids := createSpecs(
-				[]string{"sleep", "100"},
+				sleepCmd,
 				[]string{"bash", "-c", script},
-				[]string{"sleep", "100"},
+				sleepCmd,
 			)
 
 			conts, cleanup, err := startContainers(conf, testSpecs, ids)
@@ -2889,10 +2863,7 @@ func TestMultiContainerCgroups(t *testing.T) {
 			defer cleanup()
 			conf.RootDir = rootDir
 
-			podSpecs, ids := createSpecs(
-				[]string{"sleep", "100"},
-				[]string{"sleep", "100"})
-
+			podSpecs, ids := createSpecs(sleepCmd, sleepCmd)
 			podSpecs[1].Linux = &specs.Linux{
 				Namespaces: []specs.LinuxNamespace{{Type: "pid"}},
 			}
@@ -2969,10 +2940,7 @@ func TestMultiContainerCgroupsMemoryUsage(t *testing.T) {
 			defer cleanup()
 			conf.RootDir = rootDir
 
-			podSpecs, ids := createSpecs(
-				[]string{"sleep", "100"},
-				[]string{"sleep", "10"})
-
+			podSpecs, ids := createSpecs(sleepCmd, sleepCmd)
 			podSpecs[1].Linux = &specs.Linux{
 				Namespaces: []specs.LinuxNamespace{{Type: "pid"}},
 			}
@@ -3025,9 +2993,14 @@ func TestMultiContainerCgroupsMemoryUsage(t *testing.T) {
 				t.Fatalf("error total usage is less total %v container0_usage %v container1_usage %v", usageTotal, usage0, usage1)
 			}
 
-			// Wait for the second container to exit and check that the new usage must
-			// be less than the old usage.
-			time.Sleep(12 * time.Second)
+			// Kill the second container and check that usage has decreased.
+			if err := containers[1].SignalContainer(unix.SIGKILL, true); err != nil {
+				t.Fatalf("error killing container %q: %v", containers[1].ID, err)
+			}
+			if _, err := containers[1].Wait(); err != nil {
+				t.Fatalf("error waiting forcontainer %q: %v", containers[1].ID, err)
+			}
+
 			newUsageTotal, err := containers[0].Sandbox.CgroupsReadControlFile(ctrlRoot)
 			if err != nil {
 				t.Fatalf("error getting total usage %v", err)
