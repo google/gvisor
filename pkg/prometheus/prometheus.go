@@ -270,6 +270,30 @@ func WriteInteger[T io.StringWriter](w T, val int64) (int, error) {
 	return written, nil
 }
 
+// WriteHex writes the given integer as hex to a writer
+// without allocating strings.
+//
+//go:nosplit
+func WriteHex[T io.StringWriter](w T, val uint64) (int, error) {
+	const hexDigits = "0123456789abcdef"
+	if val == 0 {
+		return w.WriteString(hexDigits[0:1])
+	}
+	var written int
+	hex := uint64(16)
+	for ; val/hex != 0; hex <<= 4 {
+	}
+	for hex >>= 4; hex > 0; hex >>= 4 {
+		digit := (val / hex) % 16
+		n, err := w.WriteString(hexDigits[digit : digit+1])
+		written += n
+		if err != nil {
+			return written, err
+		}
+	}
+	return written, nil
+}
+
 // writeNumberTo writes the number to the given writer.
 // This only causes heap allocations when the number is a non-zero, non-special float.
 func writeNumberTo[T io.StringWriter](w T, n *Number) error {

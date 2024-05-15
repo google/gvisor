@@ -159,6 +159,9 @@ func StartProfilingMetrics[T ProfilingMetricsWriter](opts ProfilingMetricsOption
 			columnHeaders.WriteString(name)
 			values = append(values, m.value)
 		}
+		if opts.Lossy {
+			columnHeaders.WriteString("\tChecksum")
+		}
 	} else {
 		if len(definedProfilingMetrics) > 0 {
 			return fmt.Errorf("a value for --profiling-metrics was not specified; consider using a subset of '--profiling-metrics=%s'", strings.Join(definedProfilingMetrics, ","))
@@ -337,22 +340,27 @@ func (w *bufferedWriter[T]) Close() error {
 // The checksum covers all of the per-line data written after the line prefix,
 // including the newline character of these lines, with the exception of
 // the checksum data line itself.
+// All lines are also checksummed individually, with the checksum covering
+// the contents of the line after the line prefix but before the tab and
+// line checksum itself at the end of the line.
 // `lossyBufferedWriter` implements `bufferedMetricsWriter`.
 type lossyBufferedWriter[T ProfilingMetricsWriter] struct {
-	lineBuf     bytes.Buffer
-	flushBuf    bytes.Buffer
-	hasher      hash.Hash32
-	lines       int
-	longestLine int
-	underlying  T
+	lineBuf       bytes.Buffer
+	flushBuf      bytes.Buffer
+	lineHasher    hash.Hash32
+	overallHasher hash.Hash32
+	lines         int
+	longestLine   int
+	underlying    T
 }
 
 // newLossyBufferedWriter creates a new lossyBufferedWriter.
 func newLossyBufferedWriter[T ProfilingMetricsWriter](underlying T) *lossyBufferedWriter[T] {
 	w := &lossyBufferedWriter[T]{
-		underlying:  underlying,
-		hasher:      adler32.New(),
-		longestLine: lineBufSize,
+		underlying:    underlying,
+		lineHasher:    adler32.New(),
+		overallHasher: adler32.New(),
+		longestLine:   lineBufSize,
 	}
 	w.lineBuf.Grow(lineBufSize)
 
@@ -389,7 +397,6 @@ func (w *lossyBufferedWriter[T]) Flush() {
 
 // NewLine implements bufferedMetricsWriter.NewLine.
 func (w *lossyBufferedWriter[T]) NewLine() {
-	w.lineBuf.WriteString("\n")
 	if lineLen := w.lineBuf.Len(); lineLen > w.longestLine {
 		wantTotalSize := (lineLen+1)*bufferedLines + 2
 		if growBy := wantTotalSize - w.flushBuf.Len(); growBy > 0 {
@@ -398,15 +405,23 @@ func (w *lossyBufferedWriter[T]) NewLine() {
 		w.longestLine = lineLen
 	}
 	line := w.lineBuf.String()
+	w.lineHasher.Reset()
+	w.lineHasher.Write([]byte(line))
+	lineHash := w.lineHasher.Sum32()
 	w.lineBuf.Reset()
 	w.flushBuf.WriteString(MetricsPrefix)
+	beforeLineIndex := w.flushBuf.Len()
 	w.flushBuf.WriteString(line)
+	w.flushBuf.WriteString("\t0x")
+	prometheus.WriteHex(&w.flushBuf, uint64(lineHash))
+	w.flushBuf.WriteString("\n")
+	afterLineIndex := w.flushBuf.Len()
 	// We ignore the effects that partial writes on the underlying writer
 	// would have on the hash computation here.
 	// This is OK because the goal of this writer is speed over correctness,
 	// and correctness is enforced by the reader of this data checking the
 	// hash at the end.
-	w.hasher.Write([]byte(line))
+	w.overallHasher.Write(w.flushBuf.Bytes()[beforeLineIndex:afterLineIndex])
 	w.lineBuf.Reset()
 	w.lines++
 	if w.lines >= bufferedLines || w.flushBuf.Len() >= bufSize {
@@ -419,9 +434,12 @@ func (w *lossyBufferedWriter[T]) NewLine() {
 func (w *lossyBufferedWriter[T]) Close() error {
 	w.Flush()
 	w.flushBuf.WriteString(MetricsPrefix)
-	w.flushBuf.WriteString(fmt.Sprintf("%s0x%x\n", MetricsHashIndicator, w.hasher.Sum32()))
+	w.flushBuf.WriteString(MetricsHashIndicator)
+	w.flushBuf.WriteString("0x")
+	prometheus.WriteHex(&w.flushBuf, uint64(w.overallHasher.Sum32()))
+	w.flushBuf.WriteString("\n")
 	w.underlying.WriteString(w.flushBuf.String())
-	w.hasher.Reset()
+	w.overallHasher.Reset()
 	w.lineBuf.Reset()
 	w.flushBuf.Reset()
 	return w.underlying.Close()

@@ -62,6 +62,12 @@ func (p *processor) deliverPackets() {
 	p.e.mu.RLock()
 	p.gro.Dispatcher = p.e.dispatcher
 	p.e.mu.RUnlock()
+	if p.gro.Dispatcher == nil {
+		p.mu.Lock()
+		p.pkts.Reset()
+		p.mu.Unlock()
+		return
+	}
 
 	p.mu.Lock()
 	for p.pkts.Len() > 0 {

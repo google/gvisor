@@ -183,9 +183,9 @@ func makeRoute(netProto tcpip.NetworkProtocolNumber, gateway, localAddr, remoteA
 
 	loop := PacketOut
 
-	// TODO(gvisor.dev/issue/4689): Loopback interface loops back packets at the
-	// link endpoint level. We can remove this check once loopback interfaces
-	// loop back packets at the network layer.
+	// Loopback interface loops back packets at the link endpoint level. We
+	// could remove this check if loopback interfaces looped back packets
+	// at the network layer.
 	if !outgoingNIC.IsLoopback() {
 		if handleLocal && localAddr != (tcpip.Address{}) && remoteAddr == localAddr {
 			loop = PacketLoop
@@ -264,9 +264,9 @@ func makeRouteInner(netProto tcpip.NetworkProtocolNumber, localAddr, remoteAddr 
 // A local route is a route to a destination that is local to the stack.
 func makeLocalRoute(netProto tcpip.NetworkProtocolNumber, localAddr, remoteAddr tcpip.Address, outgoingNIC, localAddressNIC *nic, localAddressEndpoint AssignableAddressEndpoint) *Route {
 	loop := PacketLoop
-	// TODO(gvisor.dev/issue/4689): Loopback interface loops back packets at the
-	// link endpoint level. We can remove this check once loopback interfaces
-	// loop back packets at the network layer.
+	// Loopback interface loops back packets at the link endpoint level. We
+	// could remove this check if loopback interfaces looped back packets
+	// at the network layer.
 	if outgoingNIC.IsLoopback() {
 		loop = PacketOut
 	}
