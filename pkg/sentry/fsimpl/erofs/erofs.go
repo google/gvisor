@@ -68,9 +68,9 @@ type filesystem struct {
 	// mf implements memmap.File for this image.
 	mf imageMemmapFile
 
-	// inodeBuckets contains the inodes in use. Multiple buckets are used to
-	// reduce the lock contention. Bucket is chosen based on the hash calculation
-	// on nid in filesystem.inodeBucket.
+	// inodeBuckets contains the inodes in use. Multiple buckets are used
+	// to reduce the lock contention. Bucket is chosen based on the hash
+	// calculation on nid in filesystem.inodeBucket.
 	inodeBuckets []inodeBucket
 }
 
@@ -216,9 +216,10 @@ func (ib *inodeBucket) getInode(nid uint64) *inode {
 	return i
 }
 
-// addInode adds the inode identified by nid into the bucket. It will first check
-// whether the old inode exists. If not, it will call newInode() to get the new inode.
-// The inode eventually saved in the bucket will be returned with a reference for caller.
+// addInode adds the inode identified by nid into the bucket. It will first
+// check whether the old inode exists. If not, it will call newInode() to get
+// the new inode.  The inode eventually saved in the bucket will be returned
+// with a reference for caller.
 func (ib *inodeBucket) addInode(nid uint64, newInode func() *inode) *inode {
 	ib.mu.Lock()
 	defer ib.mu.Unlock()
@@ -353,8 +354,8 @@ func (i *inode) fileType() uint16 {
 // until the filesystem is unmounted. The reference model works like this:
 //
 //   - The initial reference count of each dentry is one, which is the reference
-//     held by the parent (so when the reference count is one, it also means that
-//     this is a cached dentry, i.e. not in use).
+//     held by the parent (so when the reference count is one, it also means
+//     that this is a cached dentry, i.e. not in use).
 //
 //   - When a dentry is used (e.g. opened by someone), its reference count will
 //     be increased and the new reference is held by caller.
@@ -362,8 +363,9 @@ func (i *inode) fileType() uint16 {
 //   - The reference count of root dentry is two. One reference is returned to
 //     the caller of `GetFilesystem()`, and the other is held by `fs`.
 //
-// TODO: This can lead to unbounded memory growth in sentry due to the ever-growing
-// dentry tree. We should have a dentry LRU cache, similar to what fsimpl/gofer does.
+// TODO: This can lead to unbounded memory growth in sentry due to the
+// ever-growing dentry tree. We should have a dentry LRU cache, similar to what
+// fsimpl/gofer does.
 //
 // +stateify savable
 type dentry struct {
