@@ -226,6 +226,27 @@ func TestGetExecUIDGIDFromUser(t *testing.T) {
 			expectedUID:    1000,
 			expectedGID:    1111,
 		},
+		"success_with_uid_only": {
+			user:           "1000",
+			passwdContents: "user0::1000:1111:&:/home/user0:/bin/sh",
+			passwdMode:     linux.S_IFREG | 0666,
+			expectedUID:    1000,
+			expectedGID:    1111,
+		},
+		"success_with_uid_and_gid": {
+			user:           "1000:1111",
+			passwdContents: "user0::1000:1111:&:/home/user0:/bin/sh",
+			passwdMode:     linux.S_IFREG | 0666,
+			expectedUID:    1000,
+			expectedGID:    1111,
+		},
+		"success_with_uid_and_wrong_gid": {
+			user:           "1000:1112",
+			passwdContents: "user0::1000:1111:&:/home/user0:/bin/sh",
+			passwdMode:     linux.S_IFREG | 0666,
+			expectedUID:    1000,
+			expectedGID:    1111,
+		},
 		"no_user": {
 			user:           "user1",
 			passwdContents: "user0::1000:1111::/home/user0:/bin/sh",
@@ -296,7 +317,7 @@ func TestGetExecUIDGIDFromUser(t *testing.T) {
 			}
 
 			gotUID, gotGID, err := GetExecUIDGIDFromUser(ctx, mns, tc.user)
-			if name == "success" {
+			if strings.HasPrefix(name, "success") {
 				if err != nil {
 					t.Fatalf("failed to get UID and GID from user: %v %v", tc.user, err)
 				}

@@ -168,6 +168,35 @@ func findUIDGIDInPasswd(passwd io.Reader, user string) (auth.KUID, auth.KGID, er
 	uid := defaultUID
 	gid := defaultGID
 
+	// Per 'man 5 passwd'
+	// /etc/passwd contains one line for each user account, with seven
+	// fields delimited by colons (“:”). These fields are:
+	//
+	//	- login name
+	//	- optional encrypted password
+	//	- numerical user ID
+	//	- numerical group ID
+	//	- user name or comment field
+	//	- user home directory
+	//	- optional user command interpreter
+	const (
+		numFields = 7
+		userIdx   = 0
+		passwdIdx = 1
+		uidIdx    = 2
+		gidIdx    = 3
+		shellIdx  = 6
+	)
+	usergroup := strings.SplitN(user, ":", 2)
+	uStringOrID := usergroup[0]
+
+	// Check if we have a uid or string for user.
+	idxToMatch := uidIdx
+	_, err := strconv.Atoi(uStringOrID)
+	if err != nil {
+		idxToMatch = userIdx
+	}
+
 	s := bufio.NewScanner(passwd)
 	for s.Scan() {
 		if err := s.Err(); err != nil {
@@ -179,25 +208,6 @@ func findUIDGIDInPasswd(passwd io.Reader, user string) (auth.KUID, auth.KGID, er
 			continue
 		}
 
-		// Per 'man 5 passwd'
-		// /etc/passwd contains one line for each user account, with seven
-		// fields delimited by colons (“:”). These fields are:
-		//
-		//	- login name
-		//	- optional encrypted password
-		//	- numerical user ID
-		//	- numerical group ID
-		//	- user name or comment field
-		//	- user home directory
-		//	- optional user command interpreter
-		const (
-			numFields = 7
-			userIdx   = 0
-			passwdIdx = 1
-			uidIdx    = 2
-			gidIdx    = 3
-			shellIdx  = 6
-		)
 		parts := strings.Split(line, ":")
 		if len(parts) != numFields {
 			// Return error if the format is invalid.
@@ -215,7 +225,7 @@ func findUIDGIDInPasswd(passwd io.Reader, user string) (auth.KUID, auth.KGID, er
 			}
 		}
 
-		if parts[userIdx] == user {
+		if parts[idxToMatch] == uStringOrID {
 			parseUID, err := strconv.ParseUint(parts[uidIdx], 10, 32)
 			if err != nil {
 				return defaultUID, defaultGID, err
