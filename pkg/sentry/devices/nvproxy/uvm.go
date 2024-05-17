@@ -165,15 +165,16 @@ func uvmIoctlNoParams(ui *uvmIoctlState) (uintptr, error) {
 }
 
 func uvmIoctlSimple[Params any, PtrParams marshalPtr[Params]](ui *uvmIoctlState) (uintptr, error) {
-	var ioctlParams Params
-	if _, err := (PtrParams)(&ioctlParams).CopyIn(ui.t, ui.ioctlParamsAddr); err != nil {
+	var ioctlParamsValue Params
+	ioctlParams := PtrParams(&ioctlParamsValue)
+	if _, err := ioctlParams.CopyIn(ui.t, ui.ioctlParamsAddr); err != nil {
 		return 0, err
 	}
-	n, err := uvmIoctlInvoke(ui, &ioctlParams)
+	n, err := uvmIoctlInvoke(ui, ioctlParams)
 	if err != nil {
 		return n, err
 	}
-	if _, err := (PtrParams)(&ioctlParams).CopyOut(ui.t, ui.ioctlParamsAddr); err != nil {
+	if _, err := ioctlParams.CopyOut(ui.t, ui.ioctlParamsAddr); err != nil {
 		return n, err
 	}
 	return n, nil
@@ -237,18 +238,19 @@ func uvmMMInitialize(ui *uvmIoctlState) (uintptr, error) {
 }
 
 func uvmIoctlHasFrontendFD[Params any, PtrParams hasFrontendFDPtr[Params]](ui *uvmIoctlState) (uintptr, error) {
-	var ioctlParams Params
-	if _, err := (PtrParams)(&ioctlParams).CopyIn(ui.t, ui.ioctlParamsAddr); err != nil {
+	var ioctlParamsValue Params
+	ioctlParams := PtrParams(&ioctlParamsValue)
+	if _, err := ioctlParams.CopyIn(ui.t, ui.ioctlParamsAddr); err != nil {
 		return 0, err
 	}
 
-	origFD := (PtrParams)(&ioctlParams).GetFrontendFD()
+	origFD := ioctlParams.GetFrontendFD()
 	if origFD < 0 {
-		n, err := uvmIoctlInvoke(ui, &ioctlParams)
+		n, err := uvmIoctlInvoke(ui, ioctlParams)
 		if err != nil {
 			return n, err
 		}
-		if _, err := (PtrParams)(&ioctlParams).CopyOut(ui.t, ui.ioctlParamsAddr); err != nil {
+		if _, err := ioctlParams.CopyOut(ui.t, ui.ioctlParamsAddr); err != nil {
 			return n, err
 		}
 		return n, nil
@@ -264,13 +266,13 @@ func uvmIoctlHasFrontendFD[Params any, PtrParams hasFrontendFDPtr[Params]](ui *u
 		return 0, linuxerr.EINVAL
 	}
 
-	(PtrParams)(&ioctlParams).SetFrontendFD(ctlFile.hostFD)
-	n, err := uvmIoctlInvoke(ui, &ioctlParams)
-	(PtrParams)(&ioctlParams).SetFrontendFD(origFD)
+	ioctlParams.SetFrontendFD(ctlFile.hostFD)
+	n, err := uvmIoctlInvoke(ui, ioctlParams)
+	ioctlParams.SetFrontendFD(origFD)
 	if err != nil {
 		return n, err
 	}
-	if _, err := (PtrParams)(&ioctlParams).CopyOut(ui.t, ui.ioctlParamsAddr); err != nil {
+	if _, err := ioctlParams.CopyOut(ui.t, ui.ioctlParamsAddr); err != nil {
 		return n, err
 	}
 	return n, nil
