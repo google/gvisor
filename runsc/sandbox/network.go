@@ -80,6 +80,7 @@ func createDefaultLoopbackInterface(conf *config.Config, conn *urpc.Client) erro
 	link.GVisorGRO = conf.GVisorGRO
 	if err := conn.Call(boot.NetworkCreateLinksAndRoutes, &boot.CreateLinksAndRoutesArgs{
 		LoopbackLinks: []boot.LoopbackLink{link},
+		DisconnectOk:  conf.NetDisconnectOk,
 	}, nil); err != nil {
 		return fmt.Errorf("creating loopback link and routes: %v", err)
 	}
@@ -159,7 +160,9 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, conf *con
 	}
 
 	// Collect addresses and routes from the interfaces.
-	var args boot.CreateLinksAndRoutesArgs
+	args := boot.CreateLinksAndRoutesArgs{
+		DisconnectOk: conf.NetDisconnectOk,
+	}
 	for _, iface := range ifaces {
 		if iface.Flags&net.FlagUp == 0 {
 			log.Infof("Skipping down interface: %+v", iface)
