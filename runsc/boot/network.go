@@ -178,6 +178,10 @@ type CreateLinksAndRoutesArgs struct {
 	// NATBlob indicates whether FilePayload also contains an iptables NAT
 	// ruleset.
 	NATBlob bool
+
+	// DisconnectOk indicates that link endpoints should have the capability
+	// CapabilityDisconnectOk set.
+	DisconnectOk bool
 }
 
 // IPWithPrefix is an address with its subnet prefix length.
@@ -324,6 +328,7 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 				RXChecksumOffload:    link.RXChecksumOffload,
 				GRO:                  link.GVisorGRO,
 				ProcessorsPerChannel: link.ProcessorsPerChannel,
+				DisconnectOk:         args.DisconnectOk,
 			})
 			if err != nil {
 				return err
@@ -417,6 +422,7 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 			InterfaceIndex:    link.InterfaceIndex,
 			Bind:              link.Bind == BindSentry,
 			GRO:               link.GVisorGRO,
+			DisconnectOk:      args.DisconnectOk,
 		})
 		if err != nil {
 			return err

@@ -125,6 +125,7 @@ func RegisterFlags(flagSet *flag.FlagSet) {
 	flagSet.Bool("EXPERIMENTAL-xdp-need-wakeup", true, "EXPERIMENTAL. Use XDP_USE_NEED_WAKEUP with XDP sockets.") // TODO(b/240191988): Figure out whether this helps and remove it as a flag.
 	flagSet.Bool("reproduce-nat", false, "Scrape the host netns NAT table and reproduce it in the sandbox.")
 	flagSet.Bool("reproduce-nftables", false, "Attempt to scrape and reproduce nftable rules inside the sandbox. Overrides reproduce-nat when true.")
+	flagSet.Bool("net-disconnect-ok", false, "Indicates whether the link endpoint capability CapabilityDisconnectOk should be set. This allows open connections to be disconnected upon save.")
 
 	// Flags that control sandbox runtime behavior: accelerator related.
 	flagSet.Bool("nvproxy", false, "EXPERIMENTAL: enable support for Nvidia GPUs")
@@ -154,6 +155,7 @@ var overrideAllowlist = map[string]struct {
 	"strace-syscalls":   {},
 	"strace-log-size":   {},
 	"host-uds":          {},
+	"net-disconnect-ok": {},
 
 	"oci-seccomp": {check: checkOciSeccomp},
 }
