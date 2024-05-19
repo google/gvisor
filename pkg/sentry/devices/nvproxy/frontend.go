@@ -269,15 +269,16 @@ func frontendRegisterFD(fi *frontendIoctlState) (uintptr, error) {
 }
 
 func frontendIoctHasFD[Params any, PtrParams hasFrontendFDPtr[Params]](fi *frontendIoctlState) (uintptr, error) {
-	var ioctlParams Params
-	if int(fi.ioctlParamsSize) != (PtrParams)(&ioctlParams).SizeBytes() {
+	var ioctlParamsValue Params
+	ioctlParams := PtrParams(&ioctlParamsValue)
+	if int(fi.ioctlParamsSize) != ioctlParams.SizeBytes() {
 		return 0, linuxerr.EINVAL
 	}
-	if _, err := (PtrParams)(&ioctlParams).CopyIn(fi.t, fi.ioctlParamsAddr); err != nil {
+	if _, err := ioctlParams.CopyIn(fi.t, fi.ioctlParamsAddr); err != nil {
 		return 0, err
 	}
 
-	origFD := (PtrParams)(&ioctlParams).GetFrontendFD()
+	origFD := ioctlParams.GetFrontendFD()
 	eventFileGeneric, _ := fi.t.FDTable().Get(origFD)
 	if eventFileGeneric == nil {
 		return 0, linuxerr.EINVAL
@@ -288,13 +289,13 @@ func frontendIoctHasFD[Params any, PtrParams hasFrontendFDPtr[Params]](fi *front
 		return 0, linuxerr.EINVAL
 	}
 
-	(PtrParams)(&ioctlParams).SetFrontendFD(eventFile.hostFD)
-	n, err := frontendIoctlInvoke(fi, &ioctlParams)
-	(PtrParams)(&ioctlParams).SetFrontendFD(origFD)
+	ioctlParams.SetFrontendFD(eventFile.hostFD)
+	n, err := frontendIoctlInvoke(fi, ioctlParams)
+	ioctlParams.SetFrontendFD(origFD)
 	if err != nil {
 		return n, err
 	}
-	if _, err := (PtrParams)(&ioctlParams).CopyOut(fi.t, fi.ioctlParamsAddr); err != nil {
+	if _, err := ioctlParams.CopyOut(fi.t, fi.ioctlParamsAddr); err != nil {
 		return n, err
 	}
 	return n, nil
@@ -528,15 +529,16 @@ func ctrlCmdFailWithStatus(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54Para
 }
 
 func ctrlHasFrontendFD[Params any, PtrParams hasFrontendFDPtr[Params]](fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54Parameters) (uintptr, error) {
-	var ctrlParams Params
-	if (PtrParams)(&ctrlParams).SizeBytes() != int(ioctlParams.ParamsSize) {
+	var ctrlParamsValue Params
+	ctrlParams := PtrParams(&ctrlParamsValue)
+	if ctrlParams.SizeBytes() != int(ioctlParams.ParamsSize) {
 		return 0, linuxerr.EINVAL
 	}
-	if _, err := (PtrParams)(&ctrlParams).CopyIn(fi.t, addrFromP64(ioctlParams.Params)); err != nil {
+	if _, err := ctrlParams.CopyIn(fi.t, addrFromP64(ioctlParams.Params)); err != nil {
 		return 0, err
 	}
 
-	origFD := (PtrParams)(&ctrlParams).GetFrontendFD()
+	origFD := ctrlParams.GetFrontendFD()
 	ctlFileGeneric, _ := fi.t.FDTable().Get(origFD)
 	if ctlFileGeneric == nil {
 		return 0, linuxerr.EINVAL
@@ -547,13 +549,13 @@ func ctrlHasFrontendFD[Params any, PtrParams hasFrontendFDPtr[Params]](fi *front
 		return 0, linuxerr.EINVAL
 	}
 
-	(PtrParams)(&ctrlParams).SetFrontendFD(ctlFile.hostFD)
-	n, err := rmControlInvoke(fi, ioctlParams, &ctrlParams)
-	(PtrParams)(&ctrlParams).SetFrontendFD(origFD)
+	ctrlParams.SetFrontendFD(ctlFile.hostFD)
+	n, err := rmControlInvoke(fi, ioctlParams, ctrlParams)
+	ctrlParams.SetFrontendFD(origFD)
 	if err != nil {
 		return n, err
 	}
-	if _, err := (PtrParams)(&ctrlParams).CopyOut(fi.t, addrFromP64(ioctlParams.Params)); err != nil {
+	if _, err := ctrlParams.CopyOut(fi.t, addrFromP64(ioctlParams.Params)); err != nil {
 		return n, err
 	}
 	return n, nil
@@ -749,15 +751,16 @@ func rmAllocSimpleParams[Params any, PtrParams marshalPtr[Params]](fi *frontendI
 		return rmAllocInvoke[Params](fi, ioctlParams, nil, isNVOS64, objAddLocked)
 	}
 
-	var allocParams Params
-	if _, err := (PtrParams)(&allocParams).CopyIn(fi.t, addrFromP64(ioctlParams.PAllocParms)); err != nil {
+	var allocParamsValue Params
+	allocParams := PtrParams(&allocParamsValue)
+	if _, err := allocParams.CopyIn(fi.t, addrFromP64(ioctlParams.PAllocParms)); err != nil {
 		return 0, err
 	}
-	n, err := rmAllocInvoke(fi, ioctlParams, &allocParams, isNVOS64, objAddLocked)
+	n, err := rmAllocInvoke(fi, ioctlParams, allocParams, isNVOS64, objAddLocked)
 	if err != nil {
 		return n, err
 	}
-	if _, err := (PtrParams)(&allocParams).CopyOut(fi.t, addrFromP64(ioctlParams.PAllocParms)); err != nil {
+	if _, err := allocParams.CopyOut(fi.t, addrFromP64(ioctlParams.PAllocParms)); err != nil {
 		return n, err
 	}
 	return n, nil

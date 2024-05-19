@@ -34,6 +34,13 @@ type Checkpoint struct {
 	leaveRunning              bool
 	compression               CheckpointCompression
 	excludeCommittedZeroPages bool
+
+	// direct indicates whether O_DIRECT should be used for writing the
+	// checkpoint pages file. It bypasses the kernel page cache. It is beneficial
+	// if the checkpoint files are not expected to be read again on this host.
+	// For example, if the checkpoint files will be stored on a network block
+	// device, which will be detached after the checkpoint is done.
+	direct bool
 }
 
 // Name implements subcommands.Command.Name.
@@ -58,6 +65,7 @@ func (c *Checkpoint) SetFlags(f *flag.FlagSet) {
 	f.BoolVar(&c.leaveRunning, "leave-running", false, "restart the container after checkpointing")
 	f.Var(newCheckpointCompressionValue(statefile.CompressionLevelDefault, &c.compression), "compression", "compress checkpoint image on disk. Values: none|flate-best-speed.")
 	f.BoolVar(&c.excludeCommittedZeroPages, "exclude-committed-zero-pages", false, "exclude committed zero-filled pages from checkpoint")
+	f.BoolVar(&c.direct, "direct", false, "use O_DIRECT for writing checkpoint pages file")
 
 	// Unimplemented flags necessary for compatibility with docker.
 	var wp string
@@ -99,7 +107,7 @@ func (c *Checkpoint) Execute(_ context.Context, f *flag.FlagSet, args ...any) su
 		sOpts.Resume = true
 	}
 
-	if err := cont.Checkpoint(c.imagePath, sOpts, mfOpts); err != nil {
+	if err := cont.Checkpoint(c.imagePath, c.direct, sOpts, mfOpts); err != nil {
 		util.Fatalf("checkpoint failed: %v", err)
 	}
 
