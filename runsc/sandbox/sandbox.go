@@ -1325,7 +1325,7 @@ func (s *Sandbox) SignalProcess(cid string, pid int32, sig unix.Signal, fgProces
 
 // Checkpoint sends the checkpoint call for a container in the sandbox.
 // The statefile will be written to f.
-func (s *Sandbox) Checkpoint(cid string, imagePath string, sfOpts statefile.Options, mfOpts pgalloc.SaveOpts) error {
+func (s *Sandbox) Checkpoint(cid string, imagePath string, direct bool, sfOpts statefile.Options, mfOpts pgalloc.SaveOpts) error {
 	log.Debugf("Checkpoint sandbox %q, statefile options %+v, MemoryFile options %+v", s.ID, sfOpts, mfOpts)
 
 	stateFilePath := filepath.Join(imagePath, boot.CheckpointStateFileName)
@@ -1349,8 +1349,12 @@ func (s *Sandbox) Checkpoint(cid string, imagePath string, sfOpts statefile.Opti
 	// applied during restore. See Restore().
 	if sfOpts.Compression == statefile.CompressionLevelNone {
 		pagesFilePath := filepath.Join(imagePath, boot.CheckpointPagesFileName)
-		// TODO(b/327603247): Implement optional async O_DIRECT write.
-		pf, err := os.OpenFile(pagesFilePath, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0644)
+		pagesWriteFlags := os.O_CREATE | os.O_EXCL | os.O_RDWR
+		if direct {
+			// The writes will be page-aligned, so it can be opened with O_DIRECT.
+			pagesWriteFlags |= syscall.O_DIRECT
+		}
+		pf, err := os.OpenFile(pagesFilePath, pagesWriteFlags, 0644)
 		if err != nil {
 			return fmt.Errorf("creating checkpoint pages file %q: %w", pagesFilePath, err)
 		}

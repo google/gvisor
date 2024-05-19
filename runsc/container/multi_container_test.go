@@ -131,7 +131,7 @@ func restoreContainers(conf *config.Config, specs []*specs.Spec, ids []string, i
 		cu.Add(func() { cont.Destroy() })
 		containers = append(containers, cont)
 
-		if err := cont.Restore(conf, imagePath, false); err != nil {
+		if err := cont.Restore(conf, imagePath, false /* direct */); err != nil {
 			return nil, nil, fmt.Errorf("error restoring container: %v", err)
 		}
 
@@ -2747,7 +2747,7 @@ func TestMultiContainerCheckpointRestore(t *testing.T) {
 			}
 
 			// Checkpoint root container; save state into new file.
-			if err := conts[0].Checkpoint(dir, statefile.Options{Compression: statefile.CompressionLevelFlateBestSpeed}, pgalloc.SaveOpts{}); err != nil {
+			if err := conts[0].Checkpoint(dir, false /* direct */, statefile.Options{Compression: statefile.CompressionLevelFlateBestSpeed}, pgalloc.SaveOpts{}); err != nil {
 				t.Fatalf("error checkpointing container to empty file: %v", err)
 			}
 			defer os.RemoveAll(dir)
