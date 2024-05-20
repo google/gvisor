@@ -193,8 +193,12 @@ func tcpipConnectionID(pkt *stack.PacketBuffer) (connectionID, bool) {
 
 		cid.srcAddr = ipHdr.SourceAddressSlice()
 		cid.dstAddr = ipHdr.DestinationAddressSlice()
-		cid.srcPort = tcpHdr.SourcePort()
-		cid.dstPort = tcpHdr.DestinationPort()
+		// All fragment packets need to be processed by the same goroutine, so
+		// only record the TCP ports if this is not a fragment packet.
+		if ipHdr.IsValid(pkt.Data().Size()) && !ipHdr.More() && ipHdr.FragmentOffset() == 0 {
+			cid.srcPort = tcpHdr.SourcePort()
+			cid.dstPort = tcpHdr.DestinationPort()
+		}
 		cid.proto = header.IPv4ProtocolNumber
 	case header.IPv6Version:
 		h, ok = pkt.Data().PullUp(header.IPv6FixedHeaderSize + tcpSrcDstPortLen)
