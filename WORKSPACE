@@ -198,9 +198,9 @@ register_toolchains("//:cc_toolchain_k8", "//:cc_toolchain_aarch64")
 
 http_archive(
     name = "com_google_protobuf",
-    sha256 = "c968404387c9cccd18676c6e1d83a1dcc39d162a7f468dace4b243c274de1f02",
-    strip_prefix = "protobuf-5.26.1",
-    urls = ["https://github.com/protocolbuffers/protobuf/archive/v5.26.1.zip"],
+    sha256 = "528927e398f4e290001886894dac17c5c6a2e5548f3fb68004cfb01af901b53a",
+    strip_prefix = "protobuf-3.17.3",
+    urls = ["https://github.com/protocolbuffers/protobuf/archive/v3.17.3.zip"],
 )
 
 load("@com_google_protobuf//:protobuf_deps.bzl", "protobuf_deps")
