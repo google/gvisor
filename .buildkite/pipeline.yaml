@@ -502,8 +502,8 @@ steps:
   - <<: *common
     <<: *docker
     label: ":php: PHP runtime tests"
-    command: make php8.1.1-runtime-tests RUNTIME_ARGS=--directfs
-    parallelism: 10
+    command: make php8.3.7-runtime-tests RUNTIME_ARGS=--directfs
+    parallelism: 2
     agents:
       <<: *platform_specific_agents
       arch: "amd64"
@@ -544,8 +544,8 @@ steps:
   - <<: *common
     <<: *docker
     label: ":php: PHP runtime tests (goferfs)"
-    command: make php8.1.1-runtime-tests RUNTIME_ARGS=--directfs=false
-    parallelism: 10
+    command: make php8.3.7-runtime-tests RUNTIME_ARGS=--directfs=false
+    parallelism: 2
     if: build.branch == "master"
     agents:
       <<: *platform_specific_agents

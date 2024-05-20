@@ -29,8 +29,8 @@ runtime_test(
 )
 
 runtime_test(
-    name = "php8.1.1",
-    exclude_file = "exclude/php8.1.1.csv",
+    name = "php8.3.7",
+    exclude_file = "exclude/php8.3.7.csv",
     lang = "php",
     shard_count = more_shards,
 )

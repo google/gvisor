@@ -1,4 +1,4 @@
-FROM ubuntu:bionic
+FROM ubuntu:jammy
 RUN apt-get update && apt-get install -y \
   autoconf \
   automake \
@@ -8,10 +8,11 @@ RUN apt-get update && apt-get install -y \
   libsqlite3-dev \
   libtool \
   libxml2-dev \
+  pkg-config \
   re2c
 
 WORKDIR /root
-ARG VERSION=8.1.1
+ARG VERSION=8.3.7
 RUN curl -o php-${VERSION}.tar.gz https://www.php.net/distributions/php-${VERSION}.tar.gz
 RUN tar -zxf php-${VERSION}.tar.gz
 

@@ -31,7 +31,7 @@ Language | Version | Running the test suite
 Go       | 1.22    | `make go1.22-runtime-tests`
 Java     | 21      | `make java21-runtime-tests`
 NodeJS   | 16.13.2 | `make nodejs16.13.2-runtime-tests`
-Php      | 8.1.1   | `make php8.1.1-runtime-tests`
+Php      | 8.3.7   | `make php8.3.7-runtime-tests`
 Python   | 3.10.2  | `make python3.10.2-runtime-tests`
 
 You can modify the runtime test behaviors by passing in the following `make`

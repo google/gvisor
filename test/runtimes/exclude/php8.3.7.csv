@@ -1,0 +1,6 @@
+test name,bug id,comment
+tests/output/stream_isatty_err.phpt,,Fails on Buildkite because container needs to be run with a pseudo-TTY
+tests/output/stream_isatty_in-err.phpt,,Fails on Buildkite because container needs to be run with a pseudo-TTY
+tests/output/stream_isatty_in-out.phpt,,Fails on Buildkite because container needs to be run with a pseudo-TTY
+tests/output/stream_isatty_out-err.phpt,,Fails on Buildkite because container needs to be run with a pseudo-TTY
+tests/output/stream_isatty_out.phpt,,Fails on Buildkite because container needs to be run with a pseudo-TTY
