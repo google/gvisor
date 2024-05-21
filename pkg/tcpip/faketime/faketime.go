@@ -25,6 +25,8 @@ import (
 )
 
 // NullClock implements a clock that never advances.
+//
+// +stateify savable
 type NullClock struct{}
 
 var _ tcpip.Clock = (*NullClock)(nil)
@@ -40,6 +42,8 @@ func (*NullClock) NowMonotonic() tcpip.MonotonicTime {
 }
 
 // nullTimer implements a timer that never fires.
+//
+// +stateify savable
 type nullTimer struct{}
 
 var _ tcpip.Timer = (*nullTimer)(nil)
@@ -92,26 +96,31 @@ func (n *notificationChannels) wait() {
 	}
 }
 
+// +stateify savable
+type manualClockMutex struct {
+	sync.RWMutex `state:"nosave"`
+
+	// now is the current (fake) time of the clock.
+	now time.Time
+
+	// times is min-heap of times.
+	times timeHeap
+
+	// timers holds the timers scheduled for each time.
+	timers map[time.Time]map[*manualTimer]struct{}
+}
+
 // ManualClock implements tcpip.Clock and only advances manually with Advance
 // method.
+//
+// +stateify savable
 type ManualClock struct {
 	// runningTimers tracks the completion of timer callbacks that began running
 	// immediately upon their scheduling. It is used to ensure the proper ordering
 	// of timer callback dispatch.
 	runningTimers notificationChannels
 
-	mu struct {
-		sync.RWMutex
-
-		// now is the current (fake) time of the clock.
-		now time.Time
-
-		// times is min-heap of times.
-		times timeHeap
-
-		// timers holds the timers scheduled for each time.
-		timers map[time.Time]map[*manualTimer]struct{}
-	}
+	mu manualClockMutex
 }
 
 // NewManualClock creates a new ManualClock instance.
@@ -325,18 +334,23 @@ func (mc *ManualClock) stopTimer(mt *manualTimer) bool {
 	return true
 }
 
+// +stateify savable
+type manualTimerMu struct {
+	sync.Mutex `state:"nosave"`
+
+	// firesAt is the time when the timer will fire.
+	//
+	// Zero only when the timer is not active.
+	firesAt time.Time
+}
+
+// +stateify savable
 type manualTimer struct {
 	clock *ManualClock
-	f     func()
+	// TODO(b/341946753): Restore when netstack is savable.
+	f func() `state:"nosave"`
 
-	mu struct {
-		sync.Mutex
-
-		// firesAt is the time when the timer will fire.
-		//
-		// Zero only when the timer is not active.
-		firesAt time.Time
-	}
+	mu manualTimerMu
 }
 
 var _ tcpip.Timer = (*manualTimer)(nil)

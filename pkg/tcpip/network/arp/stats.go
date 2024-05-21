@@ -22,6 +22,8 @@ import (
 var _ stack.NetworkEndpointStats = (*Stats)(nil)
 
 // Stats holds statistics related to ARP.
+//
+// +stateify savable
 type Stats struct {
 	// ARP holds ARP statistics.
 	ARP tcpip.ARPStats
@@ -30,6 +32,7 @@ type Stats struct {
 // IsNetworkEndpointStats implements stack.NetworkEndpointStats.
 func (*Stats) IsNetworkEndpointStats() {}
 
+// +stateify savable
 type sharedStats struct {
 	localStats Stats
 	arp        multiCounterARPStats
@@ -37,6 +40,7 @@ type sharedStats struct {
 
 // LINT.IfChange(multiCounterARPStats)
 
+// +stateify savable
 type multiCounterARPStats struct {
 	packetsReceived                                 tcpip.MultiCounterStat
 	disabledPacketsReceived                         tcpip.MultiCounterStat

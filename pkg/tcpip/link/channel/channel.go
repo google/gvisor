@@ -134,13 +134,15 @@ var _ stack.GSOEndpoint = (*Endpoint)(nil)
 
 // Endpoint is link layer endpoint that stores outbound packets in a channel
 // and allows injection of inbound packets.
+//
+// +stateify savable
 type Endpoint struct {
 	mtu                uint32
 	linkAddr           tcpip.LinkAddress
 	LinkEPCapabilities stack.LinkEndpointCapabilities
 	SupportedGSOKind   stack.SupportedGSO
 
-	mu sync.RWMutex
+	mu sync.RWMutex `state:"nosave"`
 	// +checklocks:mu
 	dispatcher stack.NetworkDispatcher
 

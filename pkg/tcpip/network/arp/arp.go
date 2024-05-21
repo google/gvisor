@@ -45,6 +45,7 @@ var _ ip.DADProtocol = (*endpoint)(nil)
 // the link-layer is via stack.NetworkEndpoint.HandlePacket.
 var _ stack.NetworkEndpoint = (*endpoint)(nil)
 
+// +stateify savable
 type endpoint struct {
 	protocol *protocol
 
@@ -55,7 +56,7 @@ type endpoint struct {
 	stats sharedStats
 
 	// mu protects annotated fields below.
-	mu sync.Mutex
+	mu sync.Mutex `state:"nosave"`
 
 	// +checklocks:mu
 	dad ip.DAD
@@ -257,6 +258,7 @@ func (e *endpoint) Stats() stack.NetworkEndpointStats {
 
 var _ stack.NetworkProtocol = (*protocol)(nil)
 
+// +stateify savable
 type protocol struct {
 	stack   *stack.Stack
 	options Options
@@ -388,6 +390,8 @@ func (*protocol) Parse(pkt *stack.PacketBuffer) (proto tcpip.TransportProtocolNu
 }
 
 // Options holds options to configure a protocol.
+//
+// +stateify savable
 type Options struct {
 	// DADConfigs is the default DAD configurations used by ARP endpoints.
 	DADConfigs stack.DADConfigurations

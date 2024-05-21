@@ -33,6 +33,7 @@ const (
 	extended
 )
 
+// +stateify savable
 type dadState struct {
 	nonce         []byte
 	extendRequest extendRequest
@@ -50,9 +51,12 @@ type DADProtocol interface {
 }
 
 // DADOptions holds options for DAD.
+//
+// +stateify savable
 type DADOptions struct {
-	Clock              tcpip.Clock
-	SecureRNG          io.Reader
+	Clock tcpip.Clock
+	// TODO(b/341946753): Restore when netstack is savable.
+	SecureRNG          io.Reader `state:"nosave"`
 	NonceSize          uint8
 	ExtendDADTransmits uint8
 	Protocol           DADProtocol
@@ -60,11 +64,13 @@ type DADOptions struct {
 }
 
 // DAD performs duplicate address detection for addresses.
+//
+// +stateify savable
 type DAD struct {
 	opts    DADOptions
 	configs stack.DADConfigurations
 
-	protocolMU sync.Locker
+	protocolMU sync.Locker `state:"nosave"`
 	addresses  map[tcpip.Address]dadState
 }
 

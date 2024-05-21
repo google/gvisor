@@ -41,6 +41,8 @@ import (
 // QueueConfig holds all the file descriptors needed to describe a tx or rx
 // queue over shared memory. It is used when creating new shared memory
 // endpoints to describe tx and rx queues.
+//
+// +stateify savable
 type QueueConfig struct {
 	// DataFD is a file descriptor for the file that contains the data to
 	// be transmitted via this queue. Descriptors contain offsets within
@@ -92,6 +94,8 @@ func QueueConfigFromFDs(fds []int) (QueueConfig, error) {
 }
 
 // Options specify the details about the sharedmem endpoint to be created.
+//
+// +stateify savable
 type Options struct {
 	// MTU is the mtu to use for this endpoint.
 	MTU uint32
@@ -142,6 +146,7 @@ type Options struct {
 var _ stack.LinkEndpoint = (*endpoint)(nil)
 var _ stack.GSOEndpoint = (*endpoint)(nil)
 
+// +stateify savable
 type endpoint struct {
 	// mtu (maximum transmission unit) is the maximum size of a packet.
 	// mtu is immutable.
@@ -187,10 +192,11 @@ type endpoint struct {
 
 	// onClosed is a function to be called when the FD's peer (if any) closes
 	// its end of the communication pipe.
-	onClosed func(tcpip.Error)
+	// TODO(b/341946753): Restore when netstack is savable.
+	onClosed func(tcpip.Error) `state:"nosave"`
 
 	// mu protects the following fields.
-	mu sync.Mutex
+	mu sync.Mutex `state:"nosave"`
 
 	// tx is the transmit queue.
 	// +checklocks:mu

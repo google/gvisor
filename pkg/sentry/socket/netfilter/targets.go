@@ -100,6 +100,7 @@ func init() {
 // The stack package provides some basic, useful targets for us. The following
 // types wrap them for compatibility with the extension system.
 
+// +stateify savable
 type acceptTarget struct {
 	stack.AcceptTarget
 }
@@ -110,6 +111,7 @@ func (at *acceptTarget) id() targetID {
 	}
 }
 
+// +stateify savable
 type dropTarget struct {
 	stack.DropTarget
 }
@@ -120,6 +122,7 @@ func (dt *dropTarget) id() targetID {
 	}
 }
 
+// +stateify savable
 type errorTarget struct {
 	stack.ErrorTarget
 }
@@ -131,6 +134,7 @@ func (et *errorTarget) id() targetID {
 	}
 }
 
+// +stateify savable
 type userChainTarget struct {
 	stack.UserChainTarget
 }
@@ -142,6 +146,7 @@ func (uc *userChainTarget) id() targetID {
 	}
 }
 
+// +stateify savable
 type returnTarget struct {
 	stack.ReturnTarget
 }
@@ -152,6 +157,7 @@ func (rt *returnTarget) id() targetID {
 	}
 }
 
+// +stateify savable
 type redirectTarget struct {
 	stack.RedirectTarget
 
@@ -167,6 +173,7 @@ func (rt *redirectTarget) id() targetID {
 	}
 }
 
+// +stateify savable
 type standardTargetMaker struct {
 	NetworkProtocol tcpip.NetworkProtocolNumber
 }
@@ -224,6 +231,7 @@ func (*standardTargetMaker) unmarshal(buf []byte, filter stack.IPHeaderFilter) (
 	}, nil
 }
 
+// +stateify savable
 type errorTargetMaker struct {
 	NetworkProtocol tcpip.NetworkProtocolNumber
 }
@@ -287,6 +295,7 @@ func (*errorTargetMaker) unmarshal(buf []byte, filter stack.IPHeaderFilter) (tar
 	}
 }
 
+// +stateify savable
 type redirectTargetMaker struct {
 	NetworkProtocol tcpip.NetworkProtocolNumber
 }
@@ -364,6 +373,7 @@ func (*redirectTargetMaker) unmarshal(buf []byte, filter stack.IPHeaderFilter) (
 	return &target, nil
 }
 
+// +stateify savable
 type nfNATTargetMaker struct {
 	NetworkProtocol tcpip.NetworkProtocolNumber
 }
@@ -478,6 +488,8 @@ func parseTarget(filter stack.IPHeaderFilter, optVal []byte, ipv6 bool) (stack.T
 }
 
 // JumpTarget implements stack.Target.
+//
+// +stateify savable
 type JumpTarget struct {
 	// Offset is the byte offset of the rule to jump to. It is used for
 	// marshaling and unmarshaling.

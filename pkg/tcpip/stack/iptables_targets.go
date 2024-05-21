@@ -24,6 +24,8 @@ import (
 )
 
 // AcceptTarget accepts packets.
+//
+// +stateify savable
 type AcceptTarget struct {
 	// NetworkProtocol is the network protocol the target is used with.
 	NetworkProtocol tcpip.NetworkProtocolNumber
@@ -35,6 +37,8 @@ func (*AcceptTarget) Action(*PacketBuffer, Hook, *Route, AddressableEndpoint) (R
 }
 
 // DropTarget drops packets.
+//
+// +stateify savable
 type DropTarget struct {
 	// NetworkProtocol is the network protocol the target is used with.
 	NetworkProtocol tcpip.NetworkProtocolNumber
@@ -67,6 +71,8 @@ const (
 
 // RejectIPv4Target drops packets and sends back an error packet in response to the
 // matched packet.
+//
+// +stateify savable
 type RejectIPv4Target struct {
 	Handler    RejectIPv4WithHandler
 	RejectWith RejectIPv4WithICMPType
@@ -107,6 +113,8 @@ const (
 
 // RejectIPv6Target drops packets and sends back an error packet in response to the
 // matched packet.
+//
+// +stateify savable
 type RejectIPv6Target struct {
 	Handler    RejectIPv6WithHandler
 	RejectWith RejectIPv6WithICMPType
@@ -129,6 +137,8 @@ func (rt *RejectIPv6Target) Action(pkt *PacketBuffer, hook Hook, _ *Route, _ Add
 
 // ErrorTarget logs an error and drops the packet. It represents a target that
 // should be unreachable.
+//
+// +stateify savable
 type ErrorTarget struct {
 	// NetworkProtocol is the network protocol the target is used with.
 	NetworkProtocol tcpip.NetworkProtocolNumber
@@ -141,6 +151,8 @@ func (*ErrorTarget) Action(*PacketBuffer, Hook, *Route, AddressableEndpoint) (Ru
 }
 
 // UserChainTarget marks a rule as the beginning of a user chain.
+//
+// +stateify savable
 type UserChainTarget struct {
 	// Name is the chain name.
 	Name string
@@ -156,6 +168,8 @@ func (*UserChainTarget) Action(*PacketBuffer, Hook, *Route, AddressableEndpoint)
 
 // ReturnTarget returns from the current chain. If the chain is a built-in, the
 // hook's underflow should be called.
+//
+// +stateify savable
 type ReturnTarget struct {
 	// NetworkProtocol is the network protocol the target is used with.
 	NetworkProtocol tcpip.NetworkProtocolNumber
@@ -167,6 +181,8 @@ func (*ReturnTarget) Action(*PacketBuffer, Hook, *Route, AddressableEndpoint) (R
 }
 
 // DNATTarget modifies the destination port/IP of packets.
+//
+// +stateify savable
 type DNATTarget struct {
 	// The new destination address for packets.
 	//
@@ -219,6 +235,8 @@ func (rt *DNATTarget) Action(pkt *PacketBuffer, hook Hook, r *Route, addressEP A
 // destination port/IP. Outgoing packets are redirected to the loopback device,
 // and incoming packets are redirected to the incoming interface (rather than
 // forwarded).
+//
+// +stateify savable
 type RedirectTarget struct {
 	// Port indicates port used to redirect. It is immutable.
 	Port uint16
@@ -258,6 +276,8 @@ func (rt *RedirectTarget) Action(pkt *PacketBuffer, hook Hook, r *Route, address
 }
 
 // SNATTarget modifies the source port/IP in the outgoing packets.
+//
+// +stateify savable
 type SNATTarget struct {
 	Addr tcpip.Address
 	Port uint16
@@ -356,6 +376,8 @@ func (st *SNATTarget) Action(pkt *PacketBuffer, hook Hook, r *Route, _ Addressab
 }
 
 // MasqueradeTarget modifies the source port/IP in the outgoing packets.
+//
+// +stateify savable
 type MasqueradeTarget struct {
 	// NetworkProtocol is the network protocol the target is used with. It
 	// is immutable.

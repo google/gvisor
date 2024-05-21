@@ -107,11 +107,13 @@ func (p PacketDispatchMode) String() string {
 var _ stack.LinkEndpoint = (*endpoint)(nil)
 var _ stack.GSOEndpoint = (*endpoint)(nil)
 
+// +stateify savable
 type fdInfo struct {
 	fd       int
 	isSocket bool
 }
 
+// +stateify savable
 type endpoint struct {
 	// fds is the set of file descriptors each identifying one inbound/outbound
 	// channel. The endpoint will dispatch from all inbound channels as well as
@@ -137,7 +139,7 @@ type endpoint struct {
 
 	inboundDispatchers []linkDispatcher
 
-	mu sync.RWMutex
+	mu sync.RWMutex `state:"nosave"`
 	// +checklocks:mu
 	dispatcher stack.NetworkDispatcher
 
@@ -171,6 +173,8 @@ type endpoint struct {
 }
 
 // Options specify the details about the fd-based endpoint to be created.
+//
+// +stateify savable
 type Options struct {
 	// FDs is a set of FDs used to read/write packets.
 	FDs []int
@@ -800,10 +804,12 @@ func (e *endpoint) ARPHardwareType() header.ARPHardwareType {
 
 // InjectableEndpoint is an injectable fd-based endpoint. The endpoint writes
 // to the FD, but does not read from it. All reads come from injected packets.
+//
+// +satetify savable
 type InjectableEndpoint struct {
 	endpoint
 
-	mu sync.RWMutex
+	mu sync.RWMutex `state:"nosave"`
 	// +checklocks:mu
 	dispatcher stack.NetworkDispatcher
 }

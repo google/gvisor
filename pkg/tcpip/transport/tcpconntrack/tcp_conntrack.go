@@ -55,14 +55,17 @@ const maxWindowShift = 14
 
 // TCB is a TCP Control Block. It holds state necessary to keep track of a TCP
 // connection and inform the caller when the connection has been closed.
+//
+// +stateify savable
 type TCB struct {
 	reply    stream
 	original stream
 
 	// State handlers. hdr is not guaranteed to contain bytes beyond the TCP
 	// header itself, i.e. it may not contain the payload.
-	handlerReply    func(tcb *TCB, hdr header.TCP, dataLen int) Result
-	handlerOriginal func(tcb *TCB, hdr header.TCP, dataLen int) Result
+	// TODO(b/341946753): Restore them when netstack is savable.
+	handlerReply    func(tcb *TCB, hdr header.TCP, dataLen int) Result `state:"nosave"`
+	handlerOriginal func(tcb *TCB, hdr header.TCP, dataLen int) Result `state:"nosave"`
 
 	// firstFin holds a pointer to the first stream to send a FIN.
 	firstFin *stream
@@ -321,6 +324,8 @@ func allOtherOriginal(t *TCB, tcp header.TCP, dataLen int) Result {
 }
 
 // streams holds the state of a TCP unidirectional stream.
+//
+// +stateify savable
 type stream struct {
 	// The interval [una, end) is the allowed interval as defined by the
 	// receiver, i.e., anything less than una has already been acknowledged

@@ -165,6 +165,8 @@ type ReachabilityConfirmationFlags struct {
 // NUDConfigurations is the NUD configurations for the netstack. This is used
 // by the neighbor cache to operate the NUD state machine on each device in the
 // local network.
+//
+// +stateify savable
 type NUDConfigurations struct {
 	// BaseReachableTime is the base duration for computing the random reachable
 	// time.
@@ -314,26 +316,31 @@ func calcMaxRandomFactor(minRandomFactor float32) float32 {
 	return defaultMaxRandomFactor
 }
 
+// +stateify savable
+type nudStateMu struct {
+	sync.RWMutex `state:"nosave"`
+
+	config NUDConfigurations
+
+	// reachableTime is the duration to wait for a REACHABLE entry to
+	// transition into STALE after inactivity. This value is calculated with
+	// the algorithm defined in RFC 4861 section 6.3.2.
+	reachableTime time.Duration
+
+	expiration            tcpip.MonotonicTime
+	prevBaseReachableTime time.Duration
+	prevMinRandomFactor   float32
+	prevMaxRandomFactor   float32
+}
+
 // NUDState stores states needed for calculating reachable time.
+//
+// +stateify savable
 type NUDState struct {
 	clock tcpip.Clock
-	rng   *rand.Rand
-
-	mu struct {
-		sync.RWMutex
-
-		config NUDConfigurations
-
-		// reachableTime is the duration to wait for a REACHABLE entry to
-		// transition into STALE after inactivity. This value is calculated with
-		// the algorithm defined in RFC 4861 section 6.3.2.
-		reachableTime time.Duration
-
-		expiration            tcpip.MonotonicTime
-		prevBaseReachableTime time.Duration
-		prevMinRandomFactor   float32
-		prevMaxRandomFactor   float32
-	}
+	// TODO(b/341946753): Restore when netstack is savable.
+	rng *rand.Rand `state:"nosave"`
+	mu  nudStateMu
 }
 
 // NewNUDState returns new NUDState using c as configuration and the specified

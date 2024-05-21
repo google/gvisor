@@ -90,6 +90,8 @@ type IGMPEndpoint interface {
 }
 
 // IGMPOptions holds options for IGMP.
+//
+// +stateify savable
 type IGMPOptions struct {
 	// Enabled indicates whether IGMP will be performed.
 	//
@@ -107,6 +109,8 @@ var _ ip.MulticastGroupProtocol = (*igmpState)(nil)
 // igmpState is the per-interface IGMP state.
 //
 // igmpState.init() MUST be called after creating an IGMP state.
+//
+// +stateify savable
 type igmpState struct {
 	// The IPv4 endpoint this igmpState is for.
 	ep *endpoint

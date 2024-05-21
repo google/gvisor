@@ -23,6 +23,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
+// +stateify savable
 type linkResolver struct {
 	resolver LinkAddressResolver
 
@@ -34,6 +35,8 @@ var _ NetworkDispatcher = (*nic)(nil)
 
 // nic represents a "network interface card" to which the networking stack is
 // attached.
+//
+// +stateify savable
 type nic struct {
 	NetworkLinkEndpoint
 
@@ -47,7 +50,7 @@ type nic struct {
 	// enableDisableMu is used to synchronize attempts to enable/disable the NIC.
 	// Without this mutex, calls to enable/disable the NIC may interleave and
 	// leave the NIC in an inconsistent state.
-	enableDisableMu nicRWMutex
+	enableDisableMu nicRWMutex `state:"nosave"`
 
 	// The network endpoints themselves may be modified by calling the interface's
 	// methods, but the map reference and entries must be constant.
@@ -69,7 +72,7 @@ type nic struct {
 	linkResQueue packetsPendingLinkResolution
 
 	// packetEPsMu protects annotated fields below.
-	packetEPsMu packetEPsRWMutex
+	packetEPsMu packetEPsRWMutex `state:"nosave"`
 
 	// eps is protected by the mutex, but the values contained in it are not.
 	//
@@ -95,6 +98,7 @@ func makeNICStats(global tcpip.NICStats) sharedStats {
 	return stats
 }
 
+// +stateify savable
 type packetEndpointList struct {
 	mu packetEndpointListRWMutex
 
@@ -138,6 +142,7 @@ func (p *packetEndpointList) forEach(fn func(PacketEndpoint)) {
 
 var _ QueueingDiscipline = (*delegatingQueueingDiscipline)(nil)
 
+// +stateify savable
 type delegatingQueueingDiscipline struct {
 	LinkWriter
 }

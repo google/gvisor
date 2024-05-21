@@ -38,6 +38,8 @@ func New(ep stack.LinkEndpoint) *Endpoint {
 // It adds an ethernet header to packets before sending them out through its
 // inner link endpoint and consumes an ethernet header before sending the
 // packet to the stack.
+//
+// +stateify savable
 type Endpoint struct {
 	nested.Endpoint
 }

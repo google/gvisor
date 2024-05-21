@@ -60,6 +60,8 @@ var (
 )
 
 // FragmentID is the identifier for a fragment.
+//
+// +stateify savable
 type FragmentID struct {
 	// Source is the source address of the fragment.
 	Source tcpip.Address
@@ -78,8 +80,10 @@ type FragmentID struct {
 
 // Fragmentation is the main structure that other modules
 // of the stack should use to implement IP Fragmentation.
+//
+// +stateify savable
 type Fragmentation struct {
-	mu             sync.Mutex
+	mu             sync.Mutex `state:"nosave"`
 	highLimit      int
 	lowLimit       int
 	reassemblers   map[FragmentID]*reassembler

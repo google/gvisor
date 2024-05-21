@@ -43,6 +43,7 @@ const (
 	MaxBufferSize = 4 << 20 // 4MiB
 )
 
+// +stateify savable
 type protocol struct {
 	stack *stack.Stack
 }

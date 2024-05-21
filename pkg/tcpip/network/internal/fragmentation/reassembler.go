@@ -23,6 +23,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
+// +stateify savable
 type hole struct {
 	first  uint16
 	last   uint16
@@ -33,12 +34,13 @@ type hole struct {
 	pkt *stack.PacketBuffer
 }
 
+// +stateify savable
 type reassembler struct {
 	reassemblerEntry
 	id        FragmentID
 	memSize   int
 	proto     uint8
-	mu        sync.Mutex
+	mu        sync.Mutex `state:"nosave"`
 	holes     []hole
 	filled    int
 	done      bool

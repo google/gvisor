@@ -32,10 +32,12 @@ var _ stack.NetworkDispatcher = (*Endpoint)(nil)
 var _ stack.LinkEndpoint = (*Endpoint)(nil)
 
 // Endpoint is a waitable link-layer endpoint.
+//
+// +stateify savable
 type Endpoint struct {
 	dispatchGate sync.Gate
 
-	mu sync.RWMutex
+	mu sync.RWMutex `state:"nosave"`
 	// +checklocks:mu
 	dispatcher stack.NetworkDispatcher
 

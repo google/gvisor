@@ -28,10 +28,12 @@ import (
 // trivial routing rules that determine which InjectableEndpoint a given packet
 // will be written to. Note that HandleLocal works differently for this
 // endpoint (see WritePacket).
+//
+// +stateify savable
 type InjectableEndpoint struct {
 	routes map[tcpip.Address]stack.InjectableLinkEndpoint
 
-	mu sync.RWMutex
+	mu sync.RWMutex `state:"nosave"`
 	// +checklocks:mu
 	dispatcher stack.NetworkDispatcher
 }

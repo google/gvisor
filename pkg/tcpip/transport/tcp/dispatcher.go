@@ -29,8 +29,10 @@ import (
 )
 
 // epQueue is a queue of endpoints.
+//
+// +stateify savable
 type epQueue struct {
-	mu   sync.Mutex
+	mu   sync.Mutex `state:"nosave"`
 	list endpointList
 }
 
@@ -73,14 +75,17 @@ func (q *epQueue) empty() bool {
 }
 
 // processor is responsible for processing packets queued to a tcp endpoint.
+//
+// +stateify savable
 type processor struct {
-	epQ              epQueue
-	sleeper          sleep.Sleeper
-	newEndpointWaker sleep.Waker
-	closeWaker       sleep.Waker
-	pauseWaker       sleep.Waker
-	pauseChan        chan struct{}
-	resumeChan       chan struct{}
+	epQ     epQueue
+	sleeper sleep.Sleeper
+	// TODO(b/341946753): Restore them when netstack is savable.
+	newEndpointWaker sleep.Waker   `state:"nosave"`
+	closeWaker       sleep.Waker   `state:"nosave"`
+	pauseWaker       sleep.Waker   `state:"nosave"`
+	pauseChan        chan struct{} `state:"nosave"`
+	resumeChan       chan struct{} `state:"nosave"`
 }
 
 func (p *processor) close() {
@@ -355,11 +360,13 @@ func (p *processor) resume() {
 // goroutines do full tcp processing. The processor is selected based on the
 // hash of the endpoint id to ensure that delivery for the same endpoint happens
 // in-order.
+//
+// +stateify savable
 type dispatcher struct {
 	processors []processor
-	wg         sync.WaitGroup
+	wg         sync.WaitGroup `state:"nosave"`
 	hasher     jenkinsHasher
-	mu         sync.Mutex
+	mu         sync.Mutex `state:"nosave"`
 	// +checklocks:mu
 	paused bool
 	// +checklocks:mu
@@ -491,6 +498,8 @@ func (d *dispatcher) resume() {
 }
 
 // jenkinsHasher contains state needed to for a jenkins hash.
+//
+// +stateify savable
 type jenkinsHasher struct {
 	seed uint32
 }
