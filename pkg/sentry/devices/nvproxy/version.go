@@ -279,6 +279,9 @@ func Init() {
 					nvgpu.NVC56F_CTRL_CMD_GET_KMB:                                          rmControlSimple,
 					nvgpu.NV0000_CTRL_CMD_SYSTEM_GET_BUILD_VERSION:                         ctrlClientSystemGetBuildVersion,
 					nvgpu.NV0000_CTRL_CMD_OS_UNIX_EXPORT_OBJECT_TO_FD:                      ctrlHasFrontendFD[nvgpu.NV0000_CTRL_OS_UNIX_EXPORT_OBJECT_TO_FD_PARAMS],
+					nvgpu.NV0000_CTRL_CMD_OS_UNIX_IMPORT_OBJECT_FROM_FD:                    ctrlHasFrontendFD[nvgpu.NV0000_CTRL_OS_UNIX_IMPORT_OBJECT_FROM_FD_PARAMS],
+					nvgpu.NV0000_CTRL_CMD_OS_UNIX_GET_EXPORT_OBJECT_INFO:                   ctrlHasFrontendFD[nvgpu.NV0000_CTRL_OS_UNIX_GET_EXPORT_OBJECT_INFO_PARAMS],
+					nvgpu.NV0041_CTRL_CMD_GET_SURFACE_INFO:                                 ctrlClientGetSurfaceInfo,
 					nvgpu.NV0080_CTRL_CMD_FIFO_GET_CHANNELLIST:                             ctrlDevFIFOGetChannelList,
 					nvgpu.NV0080_CTRL_CMD_GPU_GET_CLASSLIST:                                ctrlDevGpuGetClasslist,
 					nvgpu.NV2080_CTRL_CMD_FIFO_DISABLE_CHANNELS:                            ctrlSubdevFIFODisableChannels,
@@ -340,6 +343,7 @@ func Init() {
 		// 545.23.06 is an intermediate unqualified version from the main branch.
 		v545_23_06 := func() *driverABI {
 			abi := v535_113_01()
+			abi.controlCmd[nvgpu.NV0000_CTRL_CMD_OS_UNIX_GET_EXPORT_OBJECT_INFO] = ctrlHasFrontendFD[nvgpu.NV0000_CTRL_OS_UNIX_GET_EXPORT_OBJECT_INFO_PARAMS_V545]
 			abi.allocationClass[nvgpu.NV01_MEMORY_SYSTEM] = rmAllocSimple[nvgpu.NV_MEMORY_ALLOCATION_PARAMS_V545]
 			abi.allocationClass[nvgpu.NV01_MEMORY_LOCAL_USER] = rmAllocSimple[nvgpu.NV_MEMORY_ALLOCATION_PARAMS_V545]
 			abi.allocationClass[nvgpu.NV50_MEMORY_VIRTUAL] = rmAllocSimple[nvgpu.NV_MEMORY_ALLOCATION_PARAMS_V545]
