@@ -534,8 +534,8 @@ steps:
   - <<: *common
     <<: *docker
     label: ":python: Python runtime tests"
-    command: make python3.10.2-runtime-tests RUNTIME_ARGS=--directfs
-    parallelism: 10
+    command: make python3.12.3-runtime-tests RUNTIME_ARGS=--directfs
+    parallelism: 2
     agents:
       <<: *platform_specific_agents
       arch: "amd64"
@@ -580,8 +580,8 @@ steps:
   - <<: *common
     <<: *docker
     label: ":python: Python runtime tests (goferfs)"
-    command: make python3.10.2-runtime-tests RUNTIME_ARGS=--directfs=false
-    parallelism: 10
+    command: make python3.12.3-runtime-tests RUNTIME_ARGS=--directfs=false
+    parallelism: 2
     if: build.branch == "master"
     agents:
       <<: *platform_specific_agents

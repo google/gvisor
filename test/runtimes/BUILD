@@ -36,8 +36,8 @@ runtime_test(
 )
 
 runtime_test(
-    name = "python3.10.2",
-    exclude_file = "exclude/python3.10.2.csv",
+    name = "python3.12.3",
+    exclude_file = "exclude/python.csv",
     lang = "python",
     shard_count = more_shards,
 )
