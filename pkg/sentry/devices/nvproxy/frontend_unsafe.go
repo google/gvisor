@@ -70,6 +70,42 @@ func ctrlClientSystemGetBuildVersionInvoke(fi *frontendIoctlState, ioctlParams *
 	return n, nil
 }
 
+func ctrlClientGetSurfaceInfo(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54Parameters) (uintptr, error) {
+	var ctrlParams nvgpu.NV0041_CTRL_GET_SURFACE_INFO_PARAMS
+	if ctrlParams.SizeBytes() != int(ioctlParams.ParamsSize) {
+		return 0, linuxerr.EINVAL
+	}
+	if _, err := ctrlParams.CopyIn(fi.t, addrFromP64(ioctlParams.Params)); err != nil {
+		return 0, err
+	}
+	if ctrlParams.SurfaceInfoListSize == 0 {
+		// Compare
+		// src/nvidia/src/kernel/gpu/mem_mgr/mem_ctrl.c:memCtrlCmdGetSurfaceInfoLvm_IMPL().
+		return 0, nil
+	}
+	surfaceInfoList := make([]byte, int(ctrlParams.SurfaceInfoListSize)*(*nvgpu.NVXXXX_CTRL_XXX_INFO)(nil).SizeBytes())
+	if _, err := fi.t.CopyInBytes(addrFromP64(ctrlParams.SurfaceInfoList), surfaceInfoList); err != nil {
+		return 0, err
+	}
+
+	origSurfaceInfoList := ctrlParams.SurfaceInfoList
+	ctrlParams.SurfaceInfoList = p64FromPtr(unsafe.Pointer(&surfaceInfoList[0]))
+	n, err := rmControlInvoke(fi, ioctlParams, &ctrlParams)
+	ctrlParams.SurfaceInfoList = origSurfaceInfoList
+	if err != nil {
+		return n, err
+	}
+
+	if _, err := fi.t.CopyOutBytes(addrFromP64(origSurfaceInfoList), surfaceInfoList); err != nil {
+		return 0, err
+	}
+	if _, err := ctrlParams.CopyOut(fi.t, addrFromP64(ioctlParams.Params)); err != nil {
+		return n, err
+	}
+
+	return n, nil
+}
+
 func ctrlDevGpuGetClasslistInvoke(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54Parameters, ctrlParams *nvgpu.NV0080_CTRL_GPU_GET_CLASSLIST_PARAMS, classList []uint32) (uintptr, error) {
 	origClassList := ctrlParams.ClassList
 	ctrlParams.ClassList = p64FromPtr(unsafe.Pointer(&classList[0]))

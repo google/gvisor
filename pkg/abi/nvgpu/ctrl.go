@@ -73,8 +73,50 @@ const (
 
 // From src/common/sdk/nvidia/inc/ctrl/ctrl0000/ctrl0000unix.h:
 const (
-	NV0000_CTRL_CMD_OS_UNIX_EXPORT_OBJECT_TO_FD = 0x3d05
+	NV0000_CTRL_CMD_OS_UNIX_EXPORT_OBJECT_TO_FD    = 0x3d05
+	NV0000_CTRL_CMD_OS_UNIX_IMPORT_OBJECT_FROM_FD  = 0x3d06
+	NV0000_CTRL_CMD_OS_UNIX_GET_EXPORT_OBJECT_INFO = 0x3d08
+	NV0000_OS_UNIX_EXPORT_OBJECT_FD_BUFFER_SIZE    = 64
 )
+
+// +marshal
+type NV0000_CTRL_OS_UNIX_GET_EXPORT_OBJECT_INFO_PARAMS struct {
+	FD             int32
+	DeviceInstance uint32
+	MaxObjects     uint16
+	Pad            [2]byte
+	Metadata       [NV0000_OS_UNIX_EXPORT_OBJECT_FD_BUFFER_SIZE]uint8
+}
+
+// GetFrontendFD implements HasFrontendFD.GetFrontendFD.
+func (p *NV0000_CTRL_OS_UNIX_GET_EXPORT_OBJECT_INFO_PARAMS) GetFrontendFD() int32 {
+	return p.FD
+}
+
+// SetFrontendFD implements HasFrontendFD.SetFrontendFD.
+func (p *NV0000_CTRL_OS_UNIX_GET_EXPORT_OBJECT_INFO_PARAMS) SetFrontendFD(fd int32) {
+	p.FD = fd
+}
+
+// +marshal
+type NV0000_CTRL_OS_UNIX_GET_EXPORT_OBJECT_INFO_PARAMS_V545 struct {
+	FD             int32
+	DeviceInstance uint32
+	GpuInstanceID  uint32
+	MaxObjects     uint16
+	Pad            [2]byte
+	Metadata       [NV0000_OS_UNIX_EXPORT_OBJECT_FD_BUFFER_SIZE]uint8
+}
+
+// GetFrontendFD implements HasFrontendFD.GetFrontendFD.
+func (p *NV0000_CTRL_OS_UNIX_GET_EXPORT_OBJECT_INFO_PARAMS_V545) GetFrontendFD() int32 {
+	return p.FD
+}
+
+// SetFrontendFD implements HasFrontendFD.SetFrontendFD.
+func (p *NV0000_CTRL_OS_UNIX_GET_EXPORT_OBJECT_INFO_PARAMS_V545) SetFrontendFD(fd int32) {
+	p.FD = fd
+}
 
 // +marshal
 type NV0000_CTRL_OS_UNIX_EXPORT_OBJECT struct {
@@ -103,6 +145,22 @@ func (p *NV0000_CTRL_OS_UNIX_EXPORT_OBJECT_TO_FD_PARAMS) SetFrontendFD(fd int32)
 }
 
 // +marshal
+type NV0000_CTRL_OS_UNIX_IMPORT_OBJECT_FROM_FD_PARAMS struct {
+	FD     int32
+	Object NV0000_CTRL_OS_UNIX_EXPORT_OBJECT
+}
+
+// GetFrontendFD implements HasFrontendFD.GetFrontendFD.
+func (p *NV0000_CTRL_OS_UNIX_IMPORT_OBJECT_FROM_FD_PARAMS) GetFrontendFD() int32 {
+	return p.FD
+}
+
+// SetFrontendFD implements HasFrontendFD.SetFrontendFD.
+func (p *NV0000_CTRL_OS_UNIX_IMPORT_OBJECT_FROM_FD_PARAMS) SetFrontendFD(fd int32) {
+	p.FD = fd
+}
+
+// +marshal
 type NV0000_CTRL_SYSTEM_GET_BUILD_VERSION_PARAMS struct {
 	SizeOfStrings            uint32
 	Pad                      [4]byte
@@ -111,6 +169,18 @@ type NV0000_CTRL_SYSTEM_GET_BUILD_VERSION_PARAMS struct {
 	PTitleBuffer             P64
 	ChangelistNumber         uint32
 	OfficialChangelistNumber uint32
+}
+
+// From src/common/sdk/nvidia/inc/ctrl/ctrl0041.h
+const (
+	NV0041_CTRL_CMD_GET_SURFACE_INFO = 0x410110
+)
+
+// +marshal
+type NV0041_CTRL_GET_SURFACE_INFO_PARAMS struct {
+	SurfaceInfoListSize uint32
+	Pad                 [4]byte
+	SurfaceInfoList     P64
 }
 
 // From src/common/sdk/nvidia/inc/ctrl/ctrl0080/ctrl0080fb.h:
