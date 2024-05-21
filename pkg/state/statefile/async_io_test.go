@@ -25,10 +25,13 @@ import (
 )
 
 func TestAsyncReader(t *testing.T) {
+	// Create random data.
 	const chunkSize = 4096
 	const dataLen = 1024 * chunkSize
 	data := make([]byte, dataLen)
 	_, _ = rand.Read(data)
+
+	// Create a temp file with the data.
 	testFile, err := os.CreateTemp(t.TempDir(), "source")
 	if err != nil {
 		t.Fatalf("failed to create temp source file: %v", err)
@@ -41,17 +44,19 @@ func TestAsyncReader(t *testing.T) {
 		t.Fatalf("failed to close temp source file: %v", err)
 	}
 
+	// Read the data from the file using async reads.
 	sourceFD, err := fd.Open(testFilePath, unix.O_RDONLY, 0)
 	if err != nil {
 		t.Fatalf("failed to open source file %q: %v", testFilePath, err)
 	}
 	ar := NewAsyncReader(sourceFD, 0 /* off */)
+	defer ar.Close()
 	p := make([]byte, dataLen)
 	for i := 0; i < dataLen; i += chunkSize {
 		ar.ReadAsync(p[i : i+chunkSize])
 	}
-	if err := ar.Close(); err != nil {
-		t.Fatalf("AsyncReader.Wait returned error: %v", err)
+	if err := ar.Wait(); err != nil {
+		t.Fatalf("AsyncReader.Wait failed: %v", err)
 	}
 	if ret := bytes.Compare(p, data); ret != 0 {
 		t.Errorf("bytes differ")

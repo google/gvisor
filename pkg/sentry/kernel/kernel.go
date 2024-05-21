@@ -806,6 +806,7 @@ func (k *Kernel) loadMemoryFiles(ctx context.Context, r io.Reader, pagesMetadata
 	var pr *statefile.AsyncReader
 	if pagesFile != nil {
 		pr = statefile.NewAsyncReader(pagesFile, 0 /* off */)
+		defer pr.Close()
 	}
 	if err := k.mf.LoadFrom(ctx, pmr, pr); err != nil {
 		return err
@@ -814,7 +815,7 @@ func (k *Kernel) loadMemoryFiles(ctx context.Context, r io.Reader, pagesMetadata
 		return err
 	}
 	if pr != nil {
-		if err := pr.Close(); err != nil {
+		if err := pr.Wait(); err != nil {
 			return err
 		}
 	}
