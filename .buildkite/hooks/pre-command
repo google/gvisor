@@ -1,6 +1,9 @@
 set -euo pipefail
 
-# Use a per-day bazel remote cache.
+# Use a per-day bazel remote cache. As the cache object's TTL expires, they are
+# deleted on an ongoing basis. Such partial deletion can break the cache state.
+# Using per day cache will ensure that builds triggered on a certain day have
+# the full bazel remote cache to use. TTL of the cache must be >1 day.
 export BAZEL_REMOTE_CACHE="--remote_cache=https://storage.googleapis.com/gvisor-buildkite-bazel-cache/$(date +%Y-%m-%d) --google_default_credentials"
 
 if POSIXLY_CORRECT=true df --local --output=pcent,ipcent,target | grep -vE '/snap/' | grep -qE '9[4-9]%|100%'; then
