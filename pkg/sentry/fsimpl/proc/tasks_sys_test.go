@@ -17,6 +17,7 @@ package proc
 import (
 	"bytes"
 	"reflect"
+	"slices"
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -143,6 +144,62 @@ func TestConfigureIPForwarding(t *testing.T) {
 			// Read the values from the stack and check them.
 			if got, want := s.IPForwarding, c.final; got != want {
 				t.Errorf("s.IPForwarding incorrect; got: %v, want: %v", got, want)
+			}
+		})
+	}
+}
+
+func TestParseInt32Vec(t *testing.T) {
+	ctx := context.Background()
+	tests := []struct {
+		name          string
+		src           []byte
+		buf           []int32
+		expectedBuf   []int32
+		expectedBytes int64
+	}{
+		{
+			name:          "EmptyInput",
+			src:           []byte(""),
+			buf:           []int32{},
+			expectedBuf:   []int32{},
+			expectedBytes: 0,
+		},
+		{
+			name:          "SingleNum",
+			src:           []byte("123"),
+			buf:           []int32{0},
+			expectedBuf:   []int32{123},
+			expectedBytes: 3,
+		},
+		{
+			name:          "MultipleNum",
+			src:           []byte("123 456"),
+			buf:           []int32{0, 0},
+			expectedBuf:   []int32{123, 456},
+			expectedBytes: 7,
+		},
+		{
+			name:          "FirstNNum",
+			src:           []byte("123 456"),
+			buf:           []int32{0, 0, 789},
+			expectedBuf:   []int32{123, 456, 789},
+			expectedBytes: 7,
+		},
+		{
+			name:          "ParsePartially",
+			src:           []byte("123 a"),
+			buf:           []int32{0},
+			expectedBuf:   []int32{123},
+			expectedBytes: 4,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			originalBuf := append([]int32(nil), test.buf...)
+			n, err := ParseInt32Vec(ctx, usermem.BytesIOSequence(test.src), test.buf)
+			if !slices.Equal(test.buf, test.expectedBuf) || n != test.expectedBytes {
+				t.Errorf("ParseInt32Vec(ctx, %v, %v) returns %v, %v, result buffer is %v; expected: %v, %v", test.src, originalBuf, n, err, test.buf, test.expectedBuf, test.expectedBytes)
 			}
 		})
 	}
