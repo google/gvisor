@@ -233,8 +233,8 @@ func TestConnectToSelf(t *testing.T) {
 	d := dockerutil.MakeContainer(ctx, t)
 	defer d.CleanUp(ctx)
 
-	// Creates server that replies "server" and exists. Sleeps at the end because
-	// 'docker exec' gets killed if the init process exists before it can finish.
+	// Creates server that replies "server" and exits. Sleeps at the end because
+	// 'docker exec' gets killed if the init process exits before it can finish.
 	if err := d.Spawn(ctx, dockerutil.RunOpts{
 		Image: "basic/ubuntu",
 	}, "/bin/sh", "-c", "echo server | nc -l -p 8080 && sleep 1"); err != nil {
