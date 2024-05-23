@@ -374,11 +374,6 @@ var (
 	// MaximumTotalMemoryBytes is the maximum reported total system memory.
 	// The 0 value indicates no maximum.
 	MaximumTotalMemoryBytes uint64
-
-	// MaximumAllocatableBytes is the maximum allowed to be allocated from a
-	// single memory file. Usually this is the same as
-	// MaximumTotalMemoryBytes.
-	MaximumAllocatableBytes uint64
 )
 
 // TotalMemory returns the "total usable memory" available.
