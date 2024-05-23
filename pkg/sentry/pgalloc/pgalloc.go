@@ -222,6 +222,10 @@ type MemoryFileOpts struct {
 	// RestoreID is an opaque string used to reassociate the MemoryFile with its
 	// replacement during restore.
 	RestoreID string
+
+	// EnforceMemoryMappingLimit is a flag that governs whether the MemoryFile
+	// will be limited in the size of its memory mapping.
+	EnforceMemoryMappingLimit bool
 }
 
 // DelayedEvictionType is the type of MemoryFileOpts.DelayedEviction.
@@ -319,6 +323,9 @@ const (
 
 	// maxPage is the highest 64-bit page.
 	maxPage = math.MaxUint64 &^ (hostarch.PageSize - 1)
+
+	reqShiftForFiveLevelEPT       = 57
+	maxMappingsSizeBytes    int64 = 1 << (reqShiftForFiveLevelEPT - chunkShift) // 256MB
 )
 
 // NewMemoryFile creates a MemoryFile backed by the given file. If
@@ -556,13 +563,17 @@ func (f *MemoryFile) allocate(length uint64, opts *AllocOpts) (memmap.FileRange,
 	if int64(fr.End) > f.fileSize {
 		// Round the new file size up to be chunk-aligned.
 		newFileSize := (int64(fr.End) + chunkMask) &^ chunkMask
+		newMappingsSize := newFileSize >> chunkShift
+		if f.opts.EnforceMemoryMappingLimit && newMappingsSize > maxMappingsSizeBytes {
+			return memmap.FileRange{}, linuxerr.ENOMEM
+		}
 		if err := f.file.Truncate(newFileSize); err != nil {
 			return memmap.FileRange{}, err
 		}
 		f.fileSize = newFileSize
 		f.mappingsMu.Lock()
 		oldMappings := *f.mappings.Load()
-		newMappings := make([]uintptr, newFileSize>>chunkShift)
+		newMappings := make([]uintptr, newMappingsSize)
 		copy(newMappings, oldMappings)
 		f.mappings.Store(&newMappings)
 		f.mappingsMu.Unlock()

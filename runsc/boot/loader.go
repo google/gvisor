@@ -733,7 +733,9 @@ func createMemoryFile() (*pgalloc.MemoryFile, error) {
 	// We can't enable pgalloc.MemoryFileOpts.UseHostMemcgPressure even if
 	// there are memory cgroups specified, because at this point we're already
 	// in a mount namespace in which the relevant cgroupfs is not visible.
-	mf, err := pgalloc.NewMemoryFile(memfile, pgalloc.MemoryFileOpts{})
+	mf, err := pgalloc.NewMemoryFile(memfile, pgalloc.MemoryFileOpts{
+		EnforceMemoryMappingLimit: true,
+	})
 	if err != nil {
 		_ = memfile.Close()
 		return nil, fmt.Errorf("error creating pgalloc.MemoryFile: %w", err)
