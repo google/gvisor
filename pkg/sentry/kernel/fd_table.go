@@ -93,11 +93,12 @@ func (f *FDTable) saveDescriptorTable() map[int32]descriptor {
 	m := make(map[int32]descriptor)
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.forEach(context.Background(), func(fd int32, file *vfs.FileDescription, flags FDFlags) {
+	f.forEach(context.Background(), func(fd int32, file *vfs.FileDescription, flags FDFlags) bool {
 		m[fd] = descriptor{
 			file:  file,
 			flags: flags,
 		}
+		return true
 	})
 	return m
 }
@@ -155,29 +156,26 @@ func (f *FDTable) DecRef(ctx context.Context) {
 // forEachUpTo iterates over all non-nil files upto maxFds (non-inclusive) in sorted order.
 //
 // It is the caller's responsibility to acquire an appropriate lock.
-func (f *FDTable) forEachUpTo(ctx context.Context, maxFd int32, fn func(fd int32, file *vfs.FileDescription, flags FDFlags)) {
+func (f *FDTable) forEachUpTo(ctx context.Context, maxFd int32, fn func(fd int32, file *vfs.FileDescription, flags FDFlags) bool) {
 	// Iterate through the fdBitmap.
 	f.fdBitmap.ForEach(0, uint32(maxFd), func(ufd uint32) bool {
 		fd := int32(ufd)
 		file, flags, ok := f.get(fd)
-		if !ok {
+		if !ok || file == nil {
 			return true
 		}
-		if file != nil {
-			if !file.TryIncRef() {
-				return true
-			}
-			fn(fd, file, flags)
-			file.DecRef(ctx)
+		if !file.TryIncRef() {
+			return true
 		}
-		return true
+		defer file.DecRef(ctx)
+		return fn(fd, file, flags)
 	})
 }
 
 // forEach iterates over all non-nil files upto maxFd in sorted order.
 //
 // It is the caller's responsibility to acquire an appropriate lock.
-func (f *FDTable) forEach(ctx context.Context, fn func(fd int32, file *vfs.FileDescription, flags FDFlags)) {
+func (f *FDTable) forEach(ctx context.Context, fn func(fd int32, file *vfs.FileDescription, flags FDFlags) bool) {
 	f.forEachUpTo(ctx, MaxFdLimit, fn)
 }
 
@@ -189,11 +187,12 @@ func (f *FDTable) String() string {
 	f.mu.Lock()
 	// Can't release f.mu from defer, because vfsObj.PathnameWithDeleted
 	// should not be called under the fdtable mutex.
-	f.forEach(ctx, func(fd int32, file *vfs.FileDescription, flags FDFlags) {
+	f.forEach(ctx, func(fd int32, file *vfs.FileDescription, flags FDFlags) bool {
 		if file != nil {
 			file.IncRef()
 			files[fd] = file
 		}
+		return true
 	})
 	f.mu.Unlock()
 	defer func() {
@@ -425,8 +424,9 @@ func (f *FDTable) GetFDs(ctx context.Context) []int32 {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	fds := make([]int32, 0, int(f.fdBitmap.GetNumOnes()))
-	f.forEach(ctx, func(fd int32, _ *vfs.FileDescription, _ FDFlags) {
+	f.forEach(ctx, func(fd int32, _ *vfs.FileDescription, _ FDFlags) bool {
 		fds = append(fds, fd)
+		return true
 	})
 	return fds
 }
@@ -447,13 +447,14 @@ func (f *FDTable) Fork(ctx context.Context, maxFd int32) *FDTable {
 	clone := f.k.NewFDTable()
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.forEachUpTo(ctx, maxFd, func(fd int32, file *vfs.FileDescription, flags FDFlags) {
+	f.forEachUpTo(ctx, maxFd, func(fd int32, file *vfs.FileDescription, flags FDFlags) bool {
 		// The set function here will acquire an appropriate table
 		// reference for the clone. We don't need anything else.
 		if df := clone.set(fd, file, flags); df != nil {
 			panic("file set")
 		}
 		clone.fdBitmap.Add(uint32(fd))
+		return true
 	})
 	return clone
 }
@@ -485,7 +486,7 @@ func (f *FDTable) RemoveIf(ctx context.Context, cond func(*vfs.FileDescription, 
 	var files []*vfs.FileDescription
 
 	f.mu.Lock()
-	f.forEach(ctx, func(fd int32, file *vfs.FileDescription, flags FDFlags) {
+	f.forEach(ctx, func(fd int32, file *vfs.FileDescription, flags FDFlags) bool {
 		if cond(file, flags) {
 			// Clear from table.
 			if df := f.set(fd, nil, FDFlags{}); df != nil {
@@ -493,6 +494,7 @@ func (f *FDTable) RemoveIf(ctx context.Context, cond func(*vfs.FileDescription, 
 				files = append(files, df)
 			}
 		}
+		return true
 	})
 	f.mu.Unlock()
 
