@@ -1230,6 +1230,11 @@ func (l *Loader) executeAsync(args *control.ExecArgs) (kernel.ThreadID, error) {
 	if args.MountNamespace == nil || !args.MountNamespace.TryIncRef() {
 		return 0, fmt.Errorf("container %q has stopped", args.ContainerID)
 	}
+	sctx := l.k.SupervisorContext()
+	root := args.MountNamespace.Root(sctx)
+	defer root.DecRef(sctx)
+	ctx := vfs.WithRoot(sctx, root)
+	defer args.MountNamespace.DecRef(ctx)
 
 	args.Envv, err = specutils.ResolveEnvs(args.Envv)
 	if err != nil {
@@ -1237,11 +1242,6 @@ func (l *Loader) executeAsync(args *control.ExecArgs) (kernel.ThreadID, error) {
 	}
 
 	// Add the HOME environment variable if it is not already set.
-	sctx := l.k.SupervisorContext()
-	root := args.MountNamespace.Root(sctx)
-	defer root.DecRef(sctx)
-	ctx := vfs.WithRoot(sctx, root)
-	defer args.MountNamespace.DecRef(ctx)
 	args.Envv, err = user.MaybeAddExecUserHome(ctx, args.MountNamespace, args.KUID, args.Envv)
 	if err != nil {
 		return 0, err
