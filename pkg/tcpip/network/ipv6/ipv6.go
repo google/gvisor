@@ -180,6 +180,28 @@ var _ stack.NDPEndpoint = (*endpoint)(nil)
 var _ MLDEndpoint = (*endpoint)(nil)
 var _ NDPEndpoint = (*endpoint)(nil)
 
+// +stateify savable
+type endpointMu struct {
+	sync.RWMutex `state:"nosave"`
+
+	addressableEndpointState stack.AddressableEndpointState
+	ndp                      ndpState
+	mld                      mldState
+}
+
+// +stateify savable
+type dadMu struct {
+	sync.Mutex `state:"nosave"`
+
+	dad ip.DAD
+}
+
+// +stateify savable
+type endpointDAD struct {
+	mu dadMu
+}
+
+// +stateify savable
 type endpoint struct {
 	nic        stack.NetworkInterface
 	dispatcher stack.TransportDispatcher
@@ -201,13 +223,7 @@ type endpoint struct {
 	// forwarding. Currently, setting this value to true is a no-op.
 	multicastForwarding atomicbitops.Uint32
 
-	mu struct {
-		sync.RWMutex
-
-		addressableEndpointState stack.AddressableEndpointState
-		ndp                      ndpState
-		mld                      mldState
-	}
+	mu endpointMu
 
 	// dad is used to check if an arbitrary address is already assigned to some
 	// neighbor.
@@ -218,13 +234,7 @@ type endpoint struct {
 	// not be called with the actual DAD result.
 	//
 	// LOCK ORDERING: mu > dad.mu.
-	dad struct {
-		mu struct {
-			sync.Mutex
-
-			dad ip.DAD
-		}
-	}
+	dad endpointDAD
 }
 
 // NICNameFromID is a function that returns a stable name for the specified NIC,
@@ -238,12 +248,14 @@ type NICNameFromID func(tcpip.NICID, string) string
 
 // OpaqueInterfaceIdentifierOptions holds the options related to the generation
 // of opaque interface identifiers (IIDs) as defined by RFC 7217.
+//
+// +stateify savable
 type OpaqueInterfaceIdentifierOptions struct {
 	// NICNameFromID is a function that returns a stable name for a specified NIC,
 	// even if the NIC ID changes over time.
 	//
 	// Must be specified to generate the opaque IID.
-	NICNameFromID NICNameFromID
+	NICNameFromID NICNameFromID `state:"nosave"`
 
 	// SecretKey is a pseudo-random number used as the secret key when generating
 	// opaque IIDs as defined by RFC 7217. The key SHOULD be at least
@@ -2264,25 +2276,29 @@ var _ stack.MulticastForwardingNetworkProtocol = (*protocol)(nil)
 var _ stack.RejectIPv6WithHandler = (*protocol)(nil)
 var _ fragmentation.TimeoutHandler = (*protocol)(nil)
 
+// +stateify savable
+type protocolMu struct {
+	sync.RWMutex `state:"nosave"`
+
+	// eps is keyed by NICID to allow protocol methods to retrieve an endpoint
+	// when handling a packet, by looking at which NIC handled the packet.
+	eps map[tcpip.NICID]*endpoint
+
+	// ICMP types for which the stack's global rate limiting must apply.
+	icmpRateLimitedTypes map[header.ICMPv6Type]struct{}
+
+	// multicastForwardingDisp is the multicast forwarding event dispatcher that
+	// an integrator can provide to receive multicast forwarding events. Note
+	// that multicast packets will only be forwarded if this is non-nil.
+	multicastForwardingDisp stack.MulticastForwardingEventDispatcher
+}
+
+// +stateify savable
 type protocol struct {
 	stack   *stack.Stack
 	options Options
 
-	mu struct {
-		sync.RWMutex
-
-		// eps is keyed by NICID to allow protocol methods to retrieve an endpoint
-		// when handling a packet, by looking at which NIC handled the packet.
-		eps map[tcpip.NICID]*endpoint
-
-		// ICMP types for which the stack's global rate limiting must apply.
-		icmpRateLimitedTypes map[header.ICMPv6Type]struct{}
-
-		// multicastForwardingDisp is the multicast forwarding event dispatcher that
-		// an integrator can provide to receive multicast forwarding events. Note
-		// that multicast packets will only be forwarded if this is non-nil.
-		multicastForwardingDisp stack.MulticastForwardingEventDispatcher
-	}
+	mu protocolMu
 
 	// defaultTTL is the current default TTL for the protocol. Only the
 	// uint8 portion of it is meaningful.
@@ -2687,6 +2703,8 @@ func calculateNetworkMTU(linkMTU, networkHeadersLen uint32) (uint32, tcpip.Error
 }
 
 // Options holds options to configure a new protocol.
+//
+// +stateify savable
 type Options struct {
 	// NDPConfigs is the default NDP configurations used by interfaces.
 	NDPConfigs NDPConfigurations

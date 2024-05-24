@@ -25,6 +25,7 @@ import (
 var _ stack.NetworkDispatcher = (*endpoint)(nil)
 var _ stack.LinkEndpoint = (*endpoint)(nil)
 
+// +stateify savable
 type endpoint struct {
 	nested.Endpoint
 }

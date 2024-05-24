@@ -18,6 +18,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip"
 )
 
+// +stateify savable
 type sharedStats struct {
 	local tcpip.NICStats
 	multiCounterNICStats
@@ -25,6 +26,7 @@ type sharedStats struct {
 
 // LINT.IfChange(multiCounterNICPacketStats)
 
+// +stateify savable
 type multiCounterNICPacketStats struct {
 	packets tcpip.MultiCounterStat
 	bytes   tcpip.MultiCounterStat
@@ -39,6 +41,7 @@ func (m *multiCounterNICPacketStats) init(a, b *tcpip.NICPacketStats) {
 
 // LINT.IfChange(multiCounterNICNeighborStats)
 
+// +stateify savable
 type multiCounterNICNeighborStats struct {
 	unreachableEntryLookups                    tcpip.MultiCounterStat
 	droppedConfirmationForNoninitiatedNeighbor tcpip.MultiCounterStat
@@ -55,6 +58,7 @@ func (m *multiCounterNICNeighborStats) init(a, b *tcpip.NICNeighborStats) {
 
 // LINT.IfChange(multiCounterNICStats)
 
+// +stateify savable
 type multiCounterNICStats struct {
 	unknownL3ProtocolRcvdPacketCounts tcpip.MultiIntegralStatCounterMap
 	unknownL4ProtocolRcvdPacketCounts tcpip.MultiIntegralStatCounterMap

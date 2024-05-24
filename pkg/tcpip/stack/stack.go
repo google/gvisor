@@ -43,9 +43,10 @@ const (
 	DefaultTOS = 0
 )
 
+// +stateify savable
 type transportProtocolState struct {
 	proto          TransportProtocol
-	defaultHandler func(id TransportEndpointID, pkt *PacketBuffer) bool
+	defaultHandler func(id TransportEndpointID, pkt *PacketBuffer) bool `state:"nosave"`
 }
 
 // RestoredEndpoint is an endpoint that needs to be restored.
@@ -76,6 +77,8 @@ var netRawMissingLogger = log.BasicRateLimitedLogger(time.Minute)
 // table.
 //
 // LOCK ORDERING: mu > routeMu.
+//
+// +stateify savable
 type Stack struct {
 	transportProtocols map[tcpip.TransportProtocolNumber]*transportProtocolState
 	networkProtocols   map[tcpip.NetworkProtocolNumber]NetworkProtocol
@@ -90,18 +93,18 @@ type Stack struct {
 	stats tcpip.Stats
 
 	// routeMu protects annotated fields below.
-	routeMu routeStackRWMutex
+	routeMu routeStackRWMutex `state:"nosave"`
 
 	// +checklocks:routeMu
 	routeTable []tcpip.Route
 
-	mu stackRWMutex
+	mu stackRWMutex `state:"nosave"`
 	// +checklocks:mu
 	nics                     map[tcpip.NICID]*nic
 	defaultForwardingEnabled map[tcpip.NetworkProtocolNumber]struct{}
 
 	// cleanupEndpointsMu protects cleanupEndpoints.
-	cleanupEndpointsMu cleanupEndpointsMutex
+	cleanupEndpointsMu cleanupEndpointsMutex `state:"nosave"`
 	// +checklocks:cleanupEndpointsMu
 	cleanupEndpoints map[TransportEndpoint]struct{}
 
@@ -109,7 +112,8 @@ type Stack struct {
 
 	// If not nil, then any new endpoints will have this probe function
 	// invoked everytime they receive a TCP segment.
-	tcpProbeFunc atomic.Value // TCPProbeFunc
+	// TODO(b/341946753): Restore them when netstack is savable.
+	tcpProbeFunc atomic.Value `state:"nosave"` // TCPProbeFunc
 
 	// clock is used to generate user-visible times.
 	clock tcpip.Clock
@@ -119,7 +123,7 @@ type Stack struct {
 
 	// tables are the iptables packet filtering and manipulation rules.
 	// TODO(gvisor.dev/issue/4595): S/R this field.
-	tables *IPTables
+	tables *IPTables `state:"nosave"`
 
 	// restoredEndpoints is a list of endpoints that need to be restored if the
 	// stack is being restored.
@@ -151,10 +155,12 @@ type Stack struct {
 	// randomGenerator is an injectable pseudo random generator that can be
 	// used when a random number is required. It must not be used in
 	// security-sensitive contexts.
-	insecureRNG *rand.Rand
+	// TODO(b/341946753): Restore them when netstack is savable.
+	insecureRNG *rand.Rand `state:"nosave"`
 
 	// secureRNG is a cryptographically secure random number generator.
-	secureRNG cryptorand.RNG
+	// TODO(b/341946753): Restore them when netstack is savable.
+	secureRNG cryptorand.RNG `state:"nosave"`
 
 	// sendBufferSize holds the min/default/max send buffer sizes for
 	// endpoints other than TCP.

@@ -86,10 +86,11 @@ const (
 	ccCubic = "cubic"
 )
 
+// +stateify savable
 type protocol struct {
 	stack *stack.Stack
 
-	mu                         sync.RWMutex
+	mu                         sync.RWMutex `state:"nosave"`
 	sackEnabled                bool
 	recovery                   tcpip.TCPRecovery
 	delayEnabled               bool

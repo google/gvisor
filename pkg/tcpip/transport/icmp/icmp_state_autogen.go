@@ -167,9 +167,38 @@ func (e *icmpPacketEntry) StateLoad(ctx context.Context, stateSourceObject state
 	stateSourceObject.Load(1, &e.prev)
 }
 
+func (p *protocol) StateTypeName() string {
+	return "pkg/tcpip/transport/icmp.protocol"
+}
+
+func (p *protocol) StateFields() []string {
+	return []string{
+		"stack",
+		"number",
+	}
+}
+
+func (p *protocol) beforeSave() {}
+
+// +checklocksignore
+func (p *protocol) StateSave(stateSinkObject state.Sink) {
+	p.beforeSave()
+	stateSinkObject.Save(0, &p.stack)
+	stateSinkObject.Save(1, &p.number)
+}
+
+func (p *protocol) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (p *protocol) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &p.stack)
+	stateSourceObject.Load(1, &p.number)
+}
+
 func init() {
 	state.Register((*icmpPacket)(nil))
 	state.Register((*endpoint)(nil))
 	state.Register((*icmpPacketList)(nil))
 	state.Register((*icmpPacketEntry)(nil))
+	state.Register((*protocol)(nil))
 }

@@ -1184,6 +1184,31 @@ func (s *stdClock) StateLoad(ctx context.Context, stateSourceObject state.Source
 	stateSourceObject.AfterLoad(func() { s.afterLoad(ctx) })
 }
 
+func (st *stdTimer) StateTypeName() string {
+	return "pkg/tcpip.stdTimer"
+}
+
+func (st *stdTimer) StateFields() []string {
+	return []string{
+		"t",
+	}
+}
+
+func (st *stdTimer) beforeSave() {}
+
+// +checklocksignore
+func (st *stdTimer) StateSave(stateSinkObject state.Sink) {
+	st.beforeSave()
+	stateSinkObject.Save(0, &st.t)
+}
+
+func (st *stdTimer) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (st *stdTimer) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &st.t)
+}
+
 func (mt *MonotonicTime) StateTypeName() string {
 	return "pkg/tcpip.MonotonicTime"
 }
@@ -1263,6 +1288,34 @@ func (m *AddressMask) afterLoad(context.Context) {}
 func (m *AddressMask) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &m.mask)
 	stateSourceObject.Load(1, &m.length)
+}
+
+func (s *Subnet) StateTypeName() string {
+	return "pkg/tcpip.Subnet"
+}
+
+func (s *Subnet) StateFields() []string {
+	return []string{
+		"address",
+		"mask",
+	}
+}
+
+func (s *Subnet) beforeSave() {}
+
+// +checklocksignore
+func (s *Subnet) StateSave(stateSinkObject state.Sink) {
+	s.beforeSave()
+	stateSinkObject.Save(0, &s.address)
+	stateSinkObject.Save(1, &s.mask)
+}
+
+func (s *Subnet) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (s *Subnet) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &s.address)
+	stateSourceObject.Load(1, &s.mask)
 }
 
 func (f *FullAddress) StateTypeName() string {
@@ -1448,6 +1501,68 @@ func (l *LinkPacketInfo) StateLoad(ctx context.Context, stateSourceObject state.
 	stateSourceObject.Load(1, &l.PktType)
 }
 
+func (t *TCPSendBufferSizeRangeOption) StateTypeName() string {
+	return "pkg/tcpip.TCPSendBufferSizeRangeOption"
+}
+
+func (t *TCPSendBufferSizeRangeOption) StateFields() []string {
+	return []string{
+		"Min",
+		"Default",
+		"Max",
+	}
+}
+
+func (t *TCPSendBufferSizeRangeOption) beforeSave() {}
+
+// +checklocksignore
+func (t *TCPSendBufferSizeRangeOption) StateSave(stateSinkObject state.Sink) {
+	t.beforeSave()
+	stateSinkObject.Save(0, &t.Min)
+	stateSinkObject.Save(1, &t.Default)
+	stateSinkObject.Save(2, &t.Max)
+}
+
+func (t *TCPSendBufferSizeRangeOption) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (t *TCPSendBufferSizeRangeOption) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &t.Min)
+	stateSourceObject.Load(1, &t.Default)
+	stateSourceObject.Load(2, &t.Max)
+}
+
+func (t *TCPReceiveBufferSizeRangeOption) StateTypeName() string {
+	return "pkg/tcpip.TCPReceiveBufferSizeRangeOption"
+}
+
+func (t *TCPReceiveBufferSizeRangeOption) StateFields() []string {
+	return []string{
+		"Min",
+		"Default",
+		"Max",
+	}
+}
+
+func (t *TCPReceiveBufferSizeRangeOption) beforeSave() {}
+
+// +checklocksignore
+func (t *TCPReceiveBufferSizeRangeOption) StateSave(stateSinkObject state.Sink) {
+	t.beforeSave()
+	stateSinkObject.Save(0, &t.Min)
+	stateSinkObject.Save(1, &t.Default)
+	stateSinkObject.Save(2, &t.Max)
+}
+
+func (t *TCPReceiveBufferSizeRangeOption) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (t *TCPReceiveBufferSizeRangeOption) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &t.Min)
+	stateSourceObject.Load(1, &t.Default)
+	stateSourceObject.Load(2, &t.Max)
+}
+
 func (f *ICMPv6Filter) StateTypeName() string {
 	return "pkg/tcpip.ICMPv6Filter"
 }
@@ -1560,6 +1675,102 @@ func (i *IPv6PacketInfo) StateLoad(ctx context.Context, stateSourceObject state.
 	stateSourceObject.Load(1, &i.NIC)
 }
 
+func (s *SendBufferSizeOption) StateTypeName() string {
+	return "pkg/tcpip.SendBufferSizeOption"
+}
+
+func (s *SendBufferSizeOption) StateFields() []string {
+	return []string{
+		"Min",
+		"Default",
+		"Max",
+	}
+}
+
+func (s *SendBufferSizeOption) beforeSave() {}
+
+// +checklocksignore
+func (s *SendBufferSizeOption) StateSave(stateSinkObject state.Sink) {
+	s.beforeSave()
+	stateSinkObject.Save(0, &s.Min)
+	stateSinkObject.Save(1, &s.Default)
+	stateSinkObject.Save(2, &s.Max)
+}
+
+func (s *SendBufferSizeOption) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (s *SendBufferSizeOption) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &s.Min)
+	stateSourceObject.Load(1, &s.Default)
+	stateSourceObject.Load(2, &s.Max)
+}
+
+func (r *ReceiveBufferSizeOption) StateTypeName() string {
+	return "pkg/tcpip.ReceiveBufferSizeOption"
+}
+
+func (r *ReceiveBufferSizeOption) StateFields() []string {
+	return []string{
+		"Min",
+		"Default",
+		"Max",
+	}
+}
+
+func (r *ReceiveBufferSizeOption) beforeSave() {}
+
+// +checklocksignore
+func (r *ReceiveBufferSizeOption) StateSave(stateSinkObject state.Sink) {
+	r.beforeSave()
+	stateSinkObject.Save(0, &r.Min)
+	stateSinkObject.Save(1, &r.Default)
+	stateSinkObject.Save(2, &r.Max)
+}
+
+func (r *ReceiveBufferSizeOption) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (r *ReceiveBufferSizeOption) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &r.Min)
+	stateSourceObject.Load(1, &r.Default)
+	stateSourceObject.Load(2, &r.Max)
+}
+
+func (r *Route) StateTypeName() string {
+	return "pkg/tcpip.Route"
+}
+
+func (r *Route) StateFields() []string {
+	return []string{
+		"Destination",
+		"Gateway",
+		"NIC",
+		"SourceHint",
+	}
+}
+
+func (r *Route) beforeSave() {}
+
+// +checklocksignore
+func (r *Route) StateSave(stateSinkObject state.Sink) {
+	r.beforeSave()
+	stateSinkObject.Save(0, &r.Destination)
+	stateSinkObject.Save(1, &r.Gateway)
+	stateSinkObject.Save(2, &r.NIC)
+	stateSinkObject.Save(3, &r.SourceHint)
+}
+
+func (r *Route) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (r *Route) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &r.Destination)
+	stateSourceObject.Load(1, &r.Gateway)
+	stateSourceObject.Load(2, &r.NIC)
+	stateSourceObject.Load(3, &r.SourceHint)
+}
+
 func (s *StatCounter) StateTypeName() string {
 	return "pkg/tcpip.StatCounter"
 }
@@ -1583,6 +1794,1057 @@ func (s *StatCounter) afterLoad(context.Context) {}
 // +checklocksignore
 func (s *StatCounter) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &s.count)
+}
+
+func (m *MultiCounterStat) StateTypeName() string {
+	return "pkg/tcpip.MultiCounterStat"
+}
+
+func (m *MultiCounterStat) StateFields() []string {
+	return []string{
+		"a",
+		"b",
+	}
+}
+
+func (m *MultiCounterStat) beforeSave() {}
+
+// +checklocksignore
+func (m *MultiCounterStat) StateSave(stateSinkObject state.Sink) {
+	m.beforeSave()
+	stateSinkObject.Save(0, &m.a)
+	stateSinkObject.Save(1, &m.b)
+}
+
+func (m *MultiCounterStat) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (m *MultiCounterStat) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &m.a)
+	stateSourceObject.Load(1, &m.b)
+}
+
+func (i *ICMPv4PacketStats) StateTypeName() string {
+	return "pkg/tcpip.ICMPv4PacketStats"
+}
+
+func (i *ICMPv4PacketStats) StateFields() []string {
+	return []string{
+		"EchoRequest",
+		"EchoReply",
+		"DstUnreachable",
+		"SrcQuench",
+		"Redirect",
+		"TimeExceeded",
+		"ParamProblem",
+		"Timestamp",
+		"TimestampReply",
+		"InfoRequest",
+		"InfoReply",
+	}
+}
+
+func (i *ICMPv4PacketStats) beforeSave() {}
+
+// +checklocksignore
+func (i *ICMPv4PacketStats) StateSave(stateSinkObject state.Sink) {
+	i.beforeSave()
+	stateSinkObject.Save(0, &i.EchoRequest)
+	stateSinkObject.Save(1, &i.EchoReply)
+	stateSinkObject.Save(2, &i.DstUnreachable)
+	stateSinkObject.Save(3, &i.SrcQuench)
+	stateSinkObject.Save(4, &i.Redirect)
+	stateSinkObject.Save(5, &i.TimeExceeded)
+	stateSinkObject.Save(6, &i.ParamProblem)
+	stateSinkObject.Save(7, &i.Timestamp)
+	stateSinkObject.Save(8, &i.TimestampReply)
+	stateSinkObject.Save(9, &i.InfoRequest)
+	stateSinkObject.Save(10, &i.InfoReply)
+}
+
+func (i *ICMPv4PacketStats) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (i *ICMPv4PacketStats) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &i.EchoRequest)
+	stateSourceObject.Load(1, &i.EchoReply)
+	stateSourceObject.Load(2, &i.DstUnreachable)
+	stateSourceObject.Load(3, &i.SrcQuench)
+	stateSourceObject.Load(4, &i.Redirect)
+	stateSourceObject.Load(5, &i.TimeExceeded)
+	stateSourceObject.Load(6, &i.ParamProblem)
+	stateSourceObject.Load(7, &i.Timestamp)
+	stateSourceObject.Load(8, &i.TimestampReply)
+	stateSourceObject.Load(9, &i.InfoRequest)
+	stateSourceObject.Load(10, &i.InfoReply)
+}
+
+func (i *ICMPv4SentPacketStats) StateTypeName() string {
+	return "pkg/tcpip.ICMPv4SentPacketStats"
+}
+
+func (i *ICMPv4SentPacketStats) StateFields() []string {
+	return []string{
+		"ICMPv4PacketStats",
+		"Dropped",
+		"RateLimited",
+	}
+}
+
+func (i *ICMPv4SentPacketStats) beforeSave() {}
+
+// +checklocksignore
+func (i *ICMPv4SentPacketStats) StateSave(stateSinkObject state.Sink) {
+	i.beforeSave()
+	stateSinkObject.Save(0, &i.ICMPv4PacketStats)
+	stateSinkObject.Save(1, &i.Dropped)
+	stateSinkObject.Save(2, &i.RateLimited)
+}
+
+func (i *ICMPv4SentPacketStats) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (i *ICMPv4SentPacketStats) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &i.ICMPv4PacketStats)
+	stateSourceObject.Load(1, &i.Dropped)
+	stateSourceObject.Load(2, &i.RateLimited)
+}
+
+func (i *ICMPv4ReceivedPacketStats) StateTypeName() string {
+	return "pkg/tcpip.ICMPv4ReceivedPacketStats"
+}
+
+func (i *ICMPv4ReceivedPacketStats) StateFields() []string {
+	return []string{
+		"ICMPv4PacketStats",
+		"Invalid",
+	}
+}
+
+func (i *ICMPv4ReceivedPacketStats) beforeSave() {}
+
+// +checklocksignore
+func (i *ICMPv4ReceivedPacketStats) StateSave(stateSinkObject state.Sink) {
+	i.beforeSave()
+	stateSinkObject.Save(0, &i.ICMPv4PacketStats)
+	stateSinkObject.Save(1, &i.Invalid)
+}
+
+func (i *ICMPv4ReceivedPacketStats) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (i *ICMPv4ReceivedPacketStats) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &i.ICMPv4PacketStats)
+	stateSourceObject.Load(1, &i.Invalid)
+}
+
+func (i *ICMPv4Stats) StateTypeName() string {
+	return "pkg/tcpip.ICMPv4Stats"
+}
+
+func (i *ICMPv4Stats) StateFields() []string {
+	return []string{
+		"PacketsSent",
+		"PacketsReceived",
+	}
+}
+
+func (i *ICMPv4Stats) beforeSave() {}
+
+// +checklocksignore
+func (i *ICMPv4Stats) StateSave(stateSinkObject state.Sink) {
+	i.beforeSave()
+	stateSinkObject.Save(0, &i.PacketsSent)
+	stateSinkObject.Save(1, &i.PacketsReceived)
+}
+
+func (i *ICMPv4Stats) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (i *ICMPv4Stats) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &i.PacketsSent)
+	stateSourceObject.Load(1, &i.PacketsReceived)
+}
+
+func (i *ICMPv6PacketStats) StateTypeName() string {
+	return "pkg/tcpip.ICMPv6PacketStats"
+}
+
+func (i *ICMPv6PacketStats) StateFields() []string {
+	return []string{
+		"EchoRequest",
+		"EchoReply",
+		"DstUnreachable",
+		"PacketTooBig",
+		"TimeExceeded",
+		"ParamProblem",
+		"RouterSolicit",
+		"RouterAdvert",
+		"NeighborSolicit",
+		"NeighborAdvert",
+		"RedirectMsg",
+		"MulticastListenerQuery",
+		"MulticastListenerReport",
+		"MulticastListenerReportV2",
+		"MulticastListenerDone",
+	}
+}
+
+func (i *ICMPv6PacketStats) beforeSave() {}
+
+// +checklocksignore
+func (i *ICMPv6PacketStats) StateSave(stateSinkObject state.Sink) {
+	i.beforeSave()
+	stateSinkObject.Save(0, &i.EchoRequest)
+	stateSinkObject.Save(1, &i.EchoReply)
+	stateSinkObject.Save(2, &i.DstUnreachable)
+	stateSinkObject.Save(3, &i.PacketTooBig)
+	stateSinkObject.Save(4, &i.TimeExceeded)
+	stateSinkObject.Save(5, &i.ParamProblem)
+	stateSinkObject.Save(6, &i.RouterSolicit)
+	stateSinkObject.Save(7, &i.RouterAdvert)
+	stateSinkObject.Save(8, &i.NeighborSolicit)
+	stateSinkObject.Save(9, &i.NeighborAdvert)
+	stateSinkObject.Save(10, &i.RedirectMsg)
+	stateSinkObject.Save(11, &i.MulticastListenerQuery)
+	stateSinkObject.Save(12, &i.MulticastListenerReport)
+	stateSinkObject.Save(13, &i.MulticastListenerReportV2)
+	stateSinkObject.Save(14, &i.MulticastListenerDone)
+}
+
+func (i *ICMPv6PacketStats) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (i *ICMPv6PacketStats) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &i.EchoRequest)
+	stateSourceObject.Load(1, &i.EchoReply)
+	stateSourceObject.Load(2, &i.DstUnreachable)
+	stateSourceObject.Load(3, &i.PacketTooBig)
+	stateSourceObject.Load(4, &i.TimeExceeded)
+	stateSourceObject.Load(5, &i.ParamProblem)
+	stateSourceObject.Load(6, &i.RouterSolicit)
+	stateSourceObject.Load(7, &i.RouterAdvert)
+	stateSourceObject.Load(8, &i.NeighborSolicit)
+	stateSourceObject.Load(9, &i.NeighborAdvert)
+	stateSourceObject.Load(10, &i.RedirectMsg)
+	stateSourceObject.Load(11, &i.MulticastListenerQuery)
+	stateSourceObject.Load(12, &i.MulticastListenerReport)
+	stateSourceObject.Load(13, &i.MulticastListenerReportV2)
+	stateSourceObject.Load(14, &i.MulticastListenerDone)
+}
+
+func (i *ICMPv6SentPacketStats) StateTypeName() string {
+	return "pkg/tcpip.ICMPv6SentPacketStats"
+}
+
+func (i *ICMPv6SentPacketStats) StateFields() []string {
+	return []string{
+		"ICMPv6PacketStats",
+		"Dropped",
+		"RateLimited",
+	}
+}
+
+func (i *ICMPv6SentPacketStats) beforeSave() {}
+
+// +checklocksignore
+func (i *ICMPv6SentPacketStats) StateSave(stateSinkObject state.Sink) {
+	i.beforeSave()
+	stateSinkObject.Save(0, &i.ICMPv6PacketStats)
+	stateSinkObject.Save(1, &i.Dropped)
+	stateSinkObject.Save(2, &i.RateLimited)
+}
+
+func (i *ICMPv6SentPacketStats) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (i *ICMPv6SentPacketStats) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &i.ICMPv6PacketStats)
+	stateSourceObject.Load(1, &i.Dropped)
+	stateSourceObject.Load(2, &i.RateLimited)
+}
+
+func (i *ICMPv6ReceivedPacketStats) StateTypeName() string {
+	return "pkg/tcpip.ICMPv6ReceivedPacketStats"
+}
+
+func (i *ICMPv6ReceivedPacketStats) StateFields() []string {
+	return []string{
+		"ICMPv6PacketStats",
+		"Unrecognized",
+		"Invalid",
+		"RouterOnlyPacketsDroppedByHost",
+	}
+}
+
+func (i *ICMPv6ReceivedPacketStats) beforeSave() {}
+
+// +checklocksignore
+func (i *ICMPv6ReceivedPacketStats) StateSave(stateSinkObject state.Sink) {
+	i.beforeSave()
+	stateSinkObject.Save(0, &i.ICMPv6PacketStats)
+	stateSinkObject.Save(1, &i.Unrecognized)
+	stateSinkObject.Save(2, &i.Invalid)
+	stateSinkObject.Save(3, &i.RouterOnlyPacketsDroppedByHost)
+}
+
+func (i *ICMPv6ReceivedPacketStats) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (i *ICMPv6ReceivedPacketStats) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &i.ICMPv6PacketStats)
+	stateSourceObject.Load(1, &i.Unrecognized)
+	stateSourceObject.Load(2, &i.Invalid)
+	stateSourceObject.Load(3, &i.RouterOnlyPacketsDroppedByHost)
+}
+
+func (i *ICMPv6Stats) StateTypeName() string {
+	return "pkg/tcpip.ICMPv6Stats"
+}
+
+func (i *ICMPv6Stats) StateFields() []string {
+	return []string{
+		"PacketsSent",
+		"PacketsReceived",
+	}
+}
+
+func (i *ICMPv6Stats) beforeSave() {}
+
+// +checklocksignore
+func (i *ICMPv6Stats) StateSave(stateSinkObject state.Sink) {
+	i.beforeSave()
+	stateSinkObject.Save(0, &i.PacketsSent)
+	stateSinkObject.Save(1, &i.PacketsReceived)
+}
+
+func (i *ICMPv6Stats) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (i *ICMPv6Stats) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &i.PacketsSent)
+	stateSourceObject.Load(1, &i.PacketsReceived)
+}
+
+func (i *ICMPStats) StateTypeName() string {
+	return "pkg/tcpip.ICMPStats"
+}
+
+func (i *ICMPStats) StateFields() []string {
+	return []string{
+		"V4",
+		"V6",
+	}
+}
+
+func (i *ICMPStats) beforeSave() {}
+
+// +checklocksignore
+func (i *ICMPStats) StateSave(stateSinkObject state.Sink) {
+	i.beforeSave()
+	stateSinkObject.Save(0, &i.V4)
+	stateSinkObject.Save(1, &i.V6)
+}
+
+func (i *ICMPStats) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (i *ICMPStats) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &i.V4)
+	stateSourceObject.Load(1, &i.V6)
+}
+
+func (i *IGMPPacketStats) StateTypeName() string {
+	return "pkg/tcpip.IGMPPacketStats"
+}
+
+func (i *IGMPPacketStats) StateFields() []string {
+	return []string{
+		"MembershipQuery",
+		"V1MembershipReport",
+		"V2MembershipReport",
+		"V3MembershipReport",
+		"LeaveGroup",
+	}
+}
+
+func (i *IGMPPacketStats) beforeSave() {}
+
+// +checklocksignore
+func (i *IGMPPacketStats) StateSave(stateSinkObject state.Sink) {
+	i.beforeSave()
+	stateSinkObject.Save(0, &i.MembershipQuery)
+	stateSinkObject.Save(1, &i.V1MembershipReport)
+	stateSinkObject.Save(2, &i.V2MembershipReport)
+	stateSinkObject.Save(3, &i.V3MembershipReport)
+	stateSinkObject.Save(4, &i.LeaveGroup)
+}
+
+func (i *IGMPPacketStats) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (i *IGMPPacketStats) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &i.MembershipQuery)
+	stateSourceObject.Load(1, &i.V1MembershipReport)
+	stateSourceObject.Load(2, &i.V2MembershipReport)
+	stateSourceObject.Load(3, &i.V3MembershipReport)
+	stateSourceObject.Load(4, &i.LeaveGroup)
+}
+
+func (i *IGMPSentPacketStats) StateTypeName() string {
+	return "pkg/tcpip.IGMPSentPacketStats"
+}
+
+func (i *IGMPSentPacketStats) StateFields() []string {
+	return []string{
+		"IGMPPacketStats",
+		"Dropped",
+	}
+}
+
+func (i *IGMPSentPacketStats) beforeSave() {}
+
+// +checklocksignore
+func (i *IGMPSentPacketStats) StateSave(stateSinkObject state.Sink) {
+	i.beforeSave()
+	stateSinkObject.Save(0, &i.IGMPPacketStats)
+	stateSinkObject.Save(1, &i.Dropped)
+}
+
+func (i *IGMPSentPacketStats) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (i *IGMPSentPacketStats) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &i.IGMPPacketStats)
+	stateSourceObject.Load(1, &i.Dropped)
+}
+
+func (i *IGMPReceivedPacketStats) StateTypeName() string {
+	return "pkg/tcpip.IGMPReceivedPacketStats"
+}
+
+func (i *IGMPReceivedPacketStats) StateFields() []string {
+	return []string{
+		"IGMPPacketStats",
+		"Invalid",
+		"ChecksumErrors",
+		"Unrecognized",
+	}
+}
+
+func (i *IGMPReceivedPacketStats) beforeSave() {}
+
+// +checklocksignore
+func (i *IGMPReceivedPacketStats) StateSave(stateSinkObject state.Sink) {
+	i.beforeSave()
+	stateSinkObject.Save(0, &i.IGMPPacketStats)
+	stateSinkObject.Save(1, &i.Invalid)
+	stateSinkObject.Save(2, &i.ChecksumErrors)
+	stateSinkObject.Save(3, &i.Unrecognized)
+}
+
+func (i *IGMPReceivedPacketStats) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (i *IGMPReceivedPacketStats) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &i.IGMPPacketStats)
+	stateSourceObject.Load(1, &i.Invalid)
+	stateSourceObject.Load(2, &i.ChecksumErrors)
+	stateSourceObject.Load(3, &i.Unrecognized)
+}
+
+func (i *IGMPStats) StateTypeName() string {
+	return "pkg/tcpip.IGMPStats"
+}
+
+func (i *IGMPStats) StateFields() []string {
+	return []string{
+		"PacketsSent",
+		"PacketsReceived",
+	}
+}
+
+func (i *IGMPStats) beforeSave() {}
+
+// +checklocksignore
+func (i *IGMPStats) StateSave(stateSinkObject state.Sink) {
+	i.beforeSave()
+	stateSinkObject.Save(0, &i.PacketsSent)
+	stateSinkObject.Save(1, &i.PacketsReceived)
+}
+
+func (i *IGMPStats) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (i *IGMPStats) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &i.PacketsSent)
+	stateSourceObject.Load(1, &i.PacketsReceived)
+}
+
+func (i *IPForwardingStats) StateTypeName() string {
+	return "pkg/tcpip.IPForwardingStats"
+}
+
+func (i *IPForwardingStats) StateFields() []string {
+	return []string{
+		"Unrouteable",
+		"ExhaustedTTL",
+		"InitializingSource",
+		"LinkLocalSource",
+		"LinkLocalDestination",
+		"PacketTooBig",
+		"HostUnreachable",
+		"ExtensionHeaderProblem",
+		"UnexpectedMulticastInputInterface",
+		"UnknownOutputEndpoint",
+		"NoMulticastPendingQueueBufferSpace",
+		"OutgoingDeviceNoBufferSpace",
+		"Errors",
+	}
+}
+
+func (i *IPForwardingStats) beforeSave() {}
+
+// +checklocksignore
+func (i *IPForwardingStats) StateSave(stateSinkObject state.Sink) {
+	i.beforeSave()
+	stateSinkObject.Save(0, &i.Unrouteable)
+	stateSinkObject.Save(1, &i.ExhaustedTTL)
+	stateSinkObject.Save(2, &i.InitializingSource)
+	stateSinkObject.Save(3, &i.LinkLocalSource)
+	stateSinkObject.Save(4, &i.LinkLocalDestination)
+	stateSinkObject.Save(5, &i.PacketTooBig)
+	stateSinkObject.Save(6, &i.HostUnreachable)
+	stateSinkObject.Save(7, &i.ExtensionHeaderProblem)
+	stateSinkObject.Save(8, &i.UnexpectedMulticastInputInterface)
+	stateSinkObject.Save(9, &i.UnknownOutputEndpoint)
+	stateSinkObject.Save(10, &i.NoMulticastPendingQueueBufferSpace)
+	stateSinkObject.Save(11, &i.OutgoingDeviceNoBufferSpace)
+	stateSinkObject.Save(12, &i.Errors)
+}
+
+func (i *IPForwardingStats) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (i *IPForwardingStats) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &i.Unrouteable)
+	stateSourceObject.Load(1, &i.ExhaustedTTL)
+	stateSourceObject.Load(2, &i.InitializingSource)
+	stateSourceObject.Load(3, &i.LinkLocalSource)
+	stateSourceObject.Load(4, &i.LinkLocalDestination)
+	stateSourceObject.Load(5, &i.PacketTooBig)
+	stateSourceObject.Load(6, &i.HostUnreachable)
+	stateSourceObject.Load(7, &i.ExtensionHeaderProblem)
+	stateSourceObject.Load(8, &i.UnexpectedMulticastInputInterface)
+	stateSourceObject.Load(9, &i.UnknownOutputEndpoint)
+	stateSourceObject.Load(10, &i.NoMulticastPendingQueueBufferSpace)
+	stateSourceObject.Load(11, &i.OutgoingDeviceNoBufferSpace)
+	stateSourceObject.Load(12, &i.Errors)
+}
+
+func (i *IPStats) StateTypeName() string {
+	return "pkg/tcpip.IPStats"
+}
+
+func (i *IPStats) StateFields() []string {
+	return []string{
+		"PacketsReceived",
+		"ValidPacketsReceived",
+		"DisabledPacketsReceived",
+		"InvalidDestinationAddressesReceived",
+		"InvalidSourceAddressesReceived",
+		"PacketsDelivered",
+		"PacketsSent",
+		"OutgoingPacketErrors",
+		"MalformedPacketsReceived",
+		"MalformedFragmentsReceived",
+		"IPTablesPreroutingDropped",
+		"IPTablesInputDropped",
+		"IPTablesForwardDropped",
+		"IPTablesOutputDropped",
+		"IPTablesPostroutingDropped",
+		"OptionTimestampReceived",
+		"OptionRecordRouteReceived",
+		"OptionRouterAlertReceived",
+		"OptionUnknownReceived",
+		"Forwarding",
+	}
+}
+
+func (i *IPStats) beforeSave() {}
+
+// +checklocksignore
+func (i *IPStats) StateSave(stateSinkObject state.Sink) {
+	i.beforeSave()
+	stateSinkObject.Save(0, &i.PacketsReceived)
+	stateSinkObject.Save(1, &i.ValidPacketsReceived)
+	stateSinkObject.Save(2, &i.DisabledPacketsReceived)
+	stateSinkObject.Save(3, &i.InvalidDestinationAddressesReceived)
+	stateSinkObject.Save(4, &i.InvalidSourceAddressesReceived)
+	stateSinkObject.Save(5, &i.PacketsDelivered)
+	stateSinkObject.Save(6, &i.PacketsSent)
+	stateSinkObject.Save(7, &i.OutgoingPacketErrors)
+	stateSinkObject.Save(8, &i.MalformedPacketsReceived)
+	stateSinkObject.Save(9, &i.MalformedFragmentsReceived)
+	stateSinkObject.Save(10, &i.IPTablesPreroutingDropped)
+	stateSinkObject.Save(11, &i.IPTablesInputDropped)
+	stateSinkObject.Save(12, &i.IPTablesForwardDropped)
+	stateSinkObject.Save(13, &i.IPTablesOutputDropped)
+	stateSinkObject.Save(14, &i.IPTablesPostroutingDropped)
+	stateSinkObject.Save(15, &i.OptionTimestampReceived)
+	stateSinkObject.Save(16, &i.OptionRecordRouteReceived)
+	stateSinkObject.Save(17, &i.OptionRouterAlertReceived)
+	stateSinkObject.Save(18, &i.OptionUnknownReceived)
+	stateSinkObject.Save(19, &i.Forwarding)
+}
+
+func (i *IPStats) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (i *IPStats) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &i.PacketsReceived)
+	stateSourceObject.Load(1, &i.ValidPacketsReceived)
+	stateSourceObject.Load(2, &i.DisabledPacketsReceived)
+	stateSourceObject.Load(3, &i.InvalidDestinationAddressesReceived)
+	stateSourceObject.Load(4, &i.InvalidSourceAddressesReceived)
+	stateSourceObject.Load(5, &i.PacketsDelivered)
+	stateSourceObject.Load(6, &i.PacketsSent)
+	stateSourceObject.Load(7, &i.OutgoingPacketErrors)
+	stateSourceObject.Load(8, &i.MalformedPacketsReceived)
+	stateSourceObject.Load(9, &i.MalformedFragmentsReceived)
+	stateSourceObject.Load(10, &i.IPTablesPreroutingDropped)
+	stateSourceObject.Load(11, &i.IPTablesInputDropped)
+	stateSourceObject.Load(12, &i.IPTablesForwardDropped)
+	stateSourceObject.Load(13, &i.IPTablesOutputDropped)
+	stateSourceObject.Load(14, &i.IPTablesPostroutingDropped)
+	stateSourceObject.Load(15, &i.OptionTimestampReceived)
+	stateSourceObject.Load(16, &i.OptionRecordRouteReceived)
+	stateSourceObject.Load(17, &i.OptionRouterAlertReceived)
+	stateSourceObject.Load(18, &i.OptionUnknownReceived)
+	stateSourceObject.Load(19, &i.Forwarding)
+}
+
+func (a *ARPStats) StateTypeName() string {
+	return "pkg/tcpip.ARPStats"
+}
+
+func (a *ARPStats) StateFields() []string {
+	return []string{
+		"PacketsReceived",
+		"DisabledPacketsReceived",
+		"MalformedPacketsReceived",
+		"RequestsReceived",
+		"RequestsReceivedUnknownTargetAddress",
+		"OutgoingRequestInterfaceHasNoLocalAddressErrors",
+		"OutgoingRequestBadLocalAddressErrors",
+		"OutgoingRequestsDropped",
+		"OutgoingRequestsSent",
+		"RepliesReceived",
+		"OutgoingRepliesDropped",
+		"OutgoingRepliesSent",
+	}
+}
+
+func (a *ARPStats) beforeSave() {}
+
+// +checklocksignore
+func (a *ARPStats) StateSave(stateSinkObject state.Sink) {
+	a.beforeSave()
+	stateSinkObject.Save(0, &a.PacketsReceived)
+	stateSinkObject.Save(1, &a.DisabledPacketsReceived)
+	stateSinkObject.Save(2, &a.MalformedPacketsReceived)
+	stateSinkObject.Save(3, &a.RequestsReceived)
+	stateSinkObject.Save(4, &a.RequestsReceivedUnknownTargetAddress)
+	stateSinkObject.Save(5, &a.OutgoingRequestInterfaceHasNoLocalAddressErrors)
+	stateSinkObject.Save(6, &a.OutgoingRequestBadLocalAddressErrors)
+	stateSinkObject.Save(7, &a.OutgoingRequestsDropped)
+	stateSinkObject.Save(8, &a.OutgoingRequestsSent)
+	stateSinkObject.Save(9, &a.RepliesReceived)
+	stateSinkObject.Save(10, &a.OutgoingRepliesDropped)
+	stateSinkObject.Save(11, &a.OutgoingRepliesSent)
+}
+
+func (a *ARPStats) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (a *ARPStats) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &a.PacketsReceived)
+	stateSourceObject.Load(1, &a.DisabledPacketsReceived)
+	stateSourceObject.Load(2, &a.MalformedPacketsReceived)
+	stateSourceObject.Load(3, &a.RequestsReceived)
+	stateSourceObject.Load(4, &a.RequestsReceivedUnknownTargetAddress)
+	stateSourceObject.Load(5, &a.OutgoingRequestInterfaceHasNoLocalAddressErrors)
+	stateSourceObject.Load(6, &a.OutgoingRequestBadLocalAddressErrors)
+	stateSourceObject.Load(7, &a.OutgoingRequestsDropped)
+	stateSourceObject.Load(8, &a.OutgoingRequestsSent)
+	stateSourceObject.Load(9, &a.RepliesReceived)
+	stateSourceObject.Load(10, &a.OutgoingRepliesDropped)
+	stateSourceObject.Load(11, &a.OutgoingRepliesSent)
+}
+
+func (t *TCPStats) StateTypeName() string {
+	return "pkg/tcpip.TCPStats"
+}
+
+func (t *TCPStats) StateFields() []string {
+	return []string{
+		"ActiveConnectionOpenings",
+		"PassiveConnectionOpenings",
+		"CurrentEstablished",
+		"CurrentConnected",
+		"EstablishedResets",
+		"EstablishedClosed",
+		"EstablishedTimedout",
+		"ListenOverflowSynDrop",
+		"ListenOverflowAckDrop",
+		"ListenOverflowSynCookieSent",
+		"ListenOverflowSynCookieRcvd",
+		"ListenOverflowInvalidSynCookieRcvd",
+		"FailedConnectionAttempts",
+		"ValidSegmentsReceived",
+		"InvalidSegmentsReceived",
+		"SegmentsSent",
+		"SegmentSendErrors",
+		"ResetsSent",
+		"ResetsReceived",
+		"Retransmits",
+		"FastRecovery",
+		"SACKRecovery",
+		"TLPRecovery",
+		"SlowStartRetransmits",
+		"FastRetransmit",
+		"Timeouts",
+		"ChecksumErrors",
+		"FailedPortReservations",
+		"SegmentsAckedWithDSACK",
+		"SpuriousRecovery",
+		"SpuriousRTORecovery",
+		"ForwardMaxInFlightDrop",
+	}
+}
+
+func (t *TCPStats) beforeSave() {}
+
+// +checklocksignore
+func (t *TCPStats) StateSave(stateSinkObject state.Sink) {
+	t.beforeSave()
+	stateSinkObject.Save(0, &t.ActiveConnectionOpenings)
+	stateSinkObject.Save(1, &t.PassiveConnectionOpenings)
+	stateSinkObject.Save(2, &t.CurrentEstablished)
+	stateSinkObject.Save(3, &t.CurrentConnected)
+	stateSinkObject.Save(4, &t.EstablishedResets)
+	stateSinkObject.Save(5, &t.EstablishedClosed)
+	stateSinkObject.Save(6, &t.EstablishedTimedout)
+	stateSinkObject.Save(7, &t.ListenOverflowSynDrop)
+	stateSinkObject.Save(8, &t.ListenOverflowAckDrop)
+	stateSinkObject.Save(9, &t.ListenOverflowSynCookieSent)
+	stateSinkObject.Save(10, &t.ListenOverflowSynCookieRcvd)
+	stateSinkObject.Save(11, &t.ListenOverflowInvalidSynCookieRcvd)
+	stateSinkObject.Save(12, &t.FailedConnectionAttempts)
+	stateSinkObject.Save(13, &t.ValidSegmentsReceived)
+	stateSinkObject.Save(14, &t.InvalidSegmentsReceived)
+	stateSinkObject.Save(15, &t.SegmentsSent)
+	stateSinkObject.Save(16, &t.SegmentSendErrors)
+	stateSinkObject.Save(17, &t.ResetsSent)
+	stateSinkObject.Save(18, &t.ResetsReceived)
+	stateSinkObject.Save(19, &t.Retransmits)
+	stateSinkObject.Save(20, &t.FastRecovery)
+	stateSinkObject.Save(21, &t.SACKRecovery)
+	stateSinkObject.Save(22, &t.TLPRecovery)
+	stateSinkObject.Save(23, &t.SlowStartRetransmits)
+	stateSinkObject.Save(24, &t.FastRetransmit)
+	stateSinkObject.Save(25, &t.Timeouts)
+	stateSinkObject.Save(26, &t.ChecksumErrors)
+	stateSinkObject.Save(27, &t.FailedPortReservations)
+	stateSinkObject.Save(28, &t.SegmentsAckedWithDSACK)
+	stateSinkObject.Save(29, &t.SpuriousRecovery)
+	stateSinkObject.Save(30, &t.SpuriousRTORecovery)
+	stateSinkObject.Save(31, &t.ForwardMaxInFlightDrop)
+}
+
+func (t *TCPStats) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (t *TCPStats) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &t.ActiveConnectionOpenings)
+	stateSourceObject.Load(1, &t.PassiveConnectionOpenings)
+	stateSourceObject.Load(2, &t.CurrentEstablished)
+	stateSourceObject.Load(3, &t.CurrentConnected)
+	stateSourceObject.Load(4, &t.EstablishedResets)
+	stateSourceObject.Load(5, &t.EstablishedClosed)
+	stateSourceObject.Load(6, &t.EstablishedTimedout)
+	stateSourceObject.Load(7, &t.ListenOverflowSynDrop)
+	stateSourceObject.Load(8, &t.ListenOverflowAckDrop)
+	stateSourceObject.Load(9, &t.ListenOverflowSynCookieSent)
+	stateSourceObject.Load(10, &t.ListenOverflowSynCookieRcvd)
+	stateSourceObject.Load(11, &t.ListenOverflowInvalidSynCookieRcvd)
+	stateSourceObject.Load(12, &t.FailedConnectionAttempts)
+	stateSourceObject.Load(13, &t.ValidSegmentsReceived)
+	stateSourceObject.Load(14, &t.InvalidSegmentsReceived)
+	stateSourceObject.Load(15, &t.SegmentsSent)
+	stateSourceObject.Load(16, &t.SegmentSendErrors)
+	stateSourceObject.Load(17, &t.ResetsSent)
+	stateSourceObject.Load(18, &t.ResetsReceived)
+	stateSourceObject.Load(19, &t.Retransmits)
+	stateSourceObject.Load(20, &t.FastRecovery)
+	stateSourceObject.Load(21, &t.SACKRecovery)
+	stateSourceObject.Load(22, &t.TLPRecovery)
+	stateSourceObject.Load(23, &t.SlowStartRetransmits)
+	stateSourceObject.Load(24, &t.FastRetransmit)
+	stateSourceObject.Load(25, &t.Timeouts)
+	stateSourceObject.Load(26, &t.ChecksumErrors)
+	stateSourceObject.Load(27, &t.FailedPortReservations)
+	stateSourceObject.Load(28, &t.SegmentsAckedWithDSACK)
+	stateSourceObject.Load(29, &t.SpuriousRecovery)
+	stateSourceObject.Load(30, &t.SpuriousRTORecovery)
+	stateSourceObject.Load(31, &t.ForwardMaxInFlightDrop)
+}
+
+func (u *UDPStats) StateTypeName() string {
+	return "pkg/tcpip.UDPStats"
+}
+
+func (u *UDPStats) StateFields() []string {
+	return []string{
+		"PacketsReceived",
+		"UnknownPortErrors",
+		"ReceiveBufferErrors",
+		"MalformedPacketsReceived",
+		"PacketsSent",
+		"PacketSendErrors",
+		"ChecksumErrors",
+	}
+}
+
+func (u *UDPStats) beforeSave() {}
+
+// +checklocksignore
+func (u *UDPStats) StateSave(stateSinkObject state.Sink) {
+	u.beforeSave()
+	stateSinkObject.Save(0, &u.PacketsReceived)
+	stateSinkObject.Save(1, &u.UnknownPortErrors)
+	stateSinkObject.Save(2, &u.ReceiveBufferErrors)
+	stateSinkObject.Save(3, &u.MalformedPacketsReceived)
+	stateSinkObject.Save(4, &u.PacketsSent)
+	stateSinkObject.Save(5, &u.PacketSendErrors)
+	stateSinkObject.Save(6, &u.ChecksumErrors)
+}
+
+func (u *UDPStats) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (u *UDPStats) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &u.PacketsReceived)
+	stateSourceObject.Load(1, &u.UnknownPortErrors)
+	stateSourceObject.Load(2, &u.ReceiveBufferErrors)
+	stateSourceObject.Load(3, &u.MalformedPacketsReceived)
+	stateSourceObject.Load(4, &u.PacketsSent)
+	stateSourceObject.Load(5, &u.PacketSendErrors)
+	stateSourceObject.Load(6, &u.ChecksumErrors)
+}
+
+func (n *NICNeighborStats) StateTypeName() string {
+	return "pkg/tcpip.NICNeighborStats"
+}
+
+func (n *NICNeighborStats) StateFields() []string {
+	return []string{
+		"UnreachableEntryLookups",
+		"DroppedConfirmationForNoninitiatedNeighbor",
+		"DroppedInvalidLinkAddressConfirmations",
+	}
+}
+
+func (n *NICNeighborStats) beforeSave() {}
+
+// +checklocksignore
+func (n *NICNeighborStats) StateSave(stateSinkObject state.Sink) {
+	n.beforeSave()
+	stateSinkObject.Save(0, &n.UnreachableEntryLookups)
+	stateSinkObject.Save(1, &n.DroppedConfirmationForNoninitiatedNeighbor)
+	stateSinkObject.Save(2, &n.DroppedInvalidLinkAddressConfirmations)
+}
+
+func (n *NICNeighborStats) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (n *NICNeighborStats) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &n.UnreachableEntryLookups)
+	stateSourceObject.Load(1, &n.DroppedConfirmationForNoninitiatedNeighbor)
+	stateSourceObject.Load(2, &n.DroppedInvalidLinkAddressConfirmations)
+}
+
+func (n *NICPacketStats) StateTypeName() string {
+	return "pkg/tcpip.NICPacketStats"
+}
+
+func (n *NICPacketStats) StateFields() []string {
+	return []string{
+		"Packets",
+		"Bytes",
+	}
+}
+
+func (n *NICPacketStats) beforeSave() {}
+
+// +checklocksignore
+func (n *NICPacketStats) StateSave(stateSinkObject state.Sink) {
+	n.beforeSave()
+	stateSinkObject.Save(0, &n.Packets)
+	stateSinkObject.Save(1, &n.Bytes)
+}
+
+func (n *NICPacketStats) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (n *NICPacketStats) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &n.Packets)
+	stateSourceObject.Load(1, &n.Bytes)
+}
+
+func (m *IntegralStatCounterMap) StateTypeName() string {
+	return "pkg/tcpip.IntegralStatCounterMap"
+}
+
+func (m *IntegralStatCounterMap) StateFields() []string {
+	return []string{
+		"counterMap",
+	}
+}
+
+func (m *IntegralStatCounterMap) beforeSave() {}
+
+// +checklocksignore
+func (m *IntegralStatCounterMap) StateSave(stateSinkObject state.Sink) {
+	m.beforeSave()
+	stateSinkObject.Save(0, &m.counterMap)
+}
+
+func (m *IntegralStatCounterMap) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (m *IntegralStatCounterMap) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &m.counterMap)
+}
+
+func (m *MultiIntegralStatCounterMap) StateTypeName() string {
+	return "pkg/tcpip.MultiIntegralStatCounterMap"
+}
+
+func (m *MultiIntegralStatCounterMap) StateFields() []string {
+	return []string{
+		"a",
+		"b",
+	}
+}
+
+func (m *MultiIntegralStatCounterMap) beforeSave() {}
+
+// +checklocksignore
+func (m *MultiIntegralStatCounterMap) StateSave(stateSinkObject state.Sink) {
+	m.beforeSave()
+	stateSinkObject.Save(0, &m.a)
+	stateSinkObject.Save(1, &m.b)
+}
+
+func (m *MultiIntegralStatCounterMap) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (m *MultiIntegralStatCounterMap) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &m.a)
+	stateSourceObject.Load(1, &m.b)
+}
+
+func (s *NICStats) StateTypeName() string {
+	return "pkg/tcpip.NICStats"
+}
+
+func (s *NICStats) StateFields() []string {
+	return []string{
+		"UnknownL3ProtocolRcvdPacketCounts",
+		"UnknownL4ProtocolRcvdPacketCounts",
+		"MalformedL4RcvdPackets",
+		"Tx",
+		"TxPacketsDroppedNoBufferSpace",
+		"Rx",
+		"DisabledRx",
+		"Neighbor",
+	}
+}
+
+func (s *NICStats) beforeSave() {}
+
+// +checklocksignore
+func (s *NICStats) StateSave(stateSinkObject state.Sink) {
+	s.beforeSave()
+	stateSinkObject.Save(0, &s.UnknownL3ProtocolRcvdPacketCounts)
+	stateSinkObject.Save(1, &s.UnknownL4ProtocolRcvdPacketCounts)
+	stateSinkObject.Save(2, &s.MalformedL4RcvdPackets)
+	stateSinkObject.Save(3, &s.Tx)
+	stateSinkObject.Save(4, &s.TxPacketsDroppedNoBufferSpace)
+	stateSinkObject.Save(5, &s.Rx)
+	stateSinkObject.Save(6, &s.DisabledRx)
+	stateSinkObject.Save(7, &s.Neighbor)
+}
+
+func (s *NICStats) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (s *NICStats) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &s.UnknownL3ProtocolRcvdPacketCounts)
+	stateSourceObject.Load(1, &s.UnknownL4ProtocolRcvdPacketCounts)
+	stateSourceObject.Load(2, &s.MalformedL4RcvdPackets)
+	stateSourceObject.Load(3, &s.Tx)
+	stateSourceObject.Load(4, &s.TxPacketsDroppedNoBufferSpace)
+	stateSourceObject.Load(5, &s.Rx)
+	stateSourceObject.Load(6, &s.DisabledRx)
+	stateSourceObject.Load(7, &s.Neighbor)
+}
+
+func (s *Stats) StateTypeName() string {
+	return "pkg/tcpip.Stats"
+}
+
+func (s *Stats) StateFields() []string {
+	return []string{
+		"DroppedPackets",
+		"NICs",
+		"ICMP",
+		"IGMP",
+		"IP",
+		"ARP",
+		"TCP",
+		"UDP",
+	}
+}
+
+func (s *Stats) beforeSave() {}
+
+// +checklocksignore
+func (s *Stats) StateSave(stateSinkObject state.Sink) {
+	s.beforeSave()
+	stateSinkObject.Save(0, &s.DroppedPackets)
+	stateSinkObject.Save(1, &s.NICs)
+	stateSinkObject.Save(2, &s.ICMP)
+	stateSinkObject.Save(3, &s.IGMP)
+	stateSinkObject.Save(4, &s.IP)
+	stateSinkObject.Save(5, &s.ARP)
+	stateSinkObject.Save(6, &s.TCP)
+	stateSinkObject.Save(7, &s.UDP)
+}
+
+func (s *Stats) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (s *Stats) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &s.DroppedPackets)
+	stateSourceObject.Load(1, &s.NICs)
+	stateSourceObject.Load(2, &s.ICMP)
+	stateSourceObject.Load(3, &s.IGMP)
+	stateSourceObject.Load(4, &s.IP)
+	stateSourceObject.Load(5, &s.ARP)
+	stateSourceObject.Load(6, &s.TCP)
+	stateSourceObject.Load(7, &s.UDP)
 }
 
 func (r *ReceiveErrors) StateTypeName() string {
@@ -1777,6 +3039,90 @@ func (a *AddressWithPrefix) StateLoad(ctx context.Context, stateSourceObject sta
 	stateSourceObject.Load(1, &a.PrefixLen)
 }
 
+func (p *ProtocolAddress) StateTypeName() string {
+	return "pkg/tcpip.ProtocolAddress"
+}
+
+func (p *ProtocolAddress) StateFields() []string {
+	return []string{
+		"Protocol",
+		"AddressWithPrefix",
+	}
+}
+
+func (p *ProtocolAddress) beforeSave() {}
+
+// +checklocksignore
+func (p *ProtocolAddress) StateSave(stateSinkObject state.Sink) {
+	p.beforeSave()
+	stateSinkObject.Save(0, &p.Protocol)
+	stateSinkObject.Save(1, &p.AddressWithPrefix)
+}
+
+func (p *ProtocolAddress) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (p *ProtocolAddress) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &p.Protocol)
+	stateSourceObject.Load(1, &p.AddressWithPrefix)
+}
+
+func (j *jobInstance) StateTypeName() string {
+	return "pkg/tcpip.jobInstance"
+}
+
+func (j *jobInstance) StateFields() []string {
+	return []string{
+		"timer",
+		"earlyReturn",
+	}
+}
+
+func (j *jobInstance) beforeSave() {}
+
+// +checklocksignore
+func (j *jobInstance) StateSave(stateSinkObject state.Sink) {
+	j.beforeSave()
+	stateSinkObject.Save(0, &j.timer)
+	stateSinkObject.Save(1, &j.earlyReturn)
+}
+
+func (j *jobInstance) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (j *jobInstance) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &j.timer)
+	stateSourceObject.Load(1, &j.earlyReturn)
+}
+
+func (j *Job) StateTypeName() string {
+	return "pkg/tcpip.Job"
+}
+
+func (j *Job) StateFields() []string {
+	return []string{
+		"clock",
+		"instance",
+	}
+}
+
+func (j *Job) beforeSave() {}
+
+// +checklocksignore
+func (j *Job) StateSave(stateSinkObject state.Sink) {
+	j.beforeSave()
+	stateSinkObject.Save(0, &j.clock)
+	stateSinkObject.Save(1, &j.instance)
+}
+
+func (j *Job) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (j *Job) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &j.clock)
+	stateSourceObject.Load(1, &j.instance)
+}
+
 func init() {
 	state.Register((*ErrAborted)(nil))
 	state.Register((*ErrAddressFamilyNotSupported)(nil))
@@ -1828,22 +3174,57 @@ func init() {
 	state.Register((*LocalSockError)(nil))
 	state.Register((*SockError)(nil))
 	state.Register((*stdClock)(nil))
+	state.Register((*stdTimer)(nil))
 	state.Register((*MonotonicTime)(nil))
 	state.Register((*Address)(nil))
 	state.Register((*AddressMask)(nil))
+	state.Register((*Subnet)(nil))
 	state.Register((*FullAddress)(nil))
 	state.Register((*SendableControlMessages)(nil))
 	state.Register((*ReceivableControlMessages)(nil))
 	state.Register((*LinkPacketInfo)(nil))
+	state.Register((*TCPSendBufferSizeRangeOption)(nil))
+	state.Register((*TCPReceiveBufferSizeRangeOption)(nil))
 	state.Register((*ICMPv6Filter)(nil))
 	state.Register((*LingerOption)(nil))
 	state.Register((*IPPacketInfo)(nil))
 	state.Register((*IPv6PacketInfo)(nil))
+	state.Register((*SendBufferSizeOption)(nil))
+	state.Register((*ReceiveBufferSizeOption)(nil))
+	state.Register((*Route)(nil))
 	state.Register((*StatCounter)(nil))
+	state.Register((*MultiCounterStat)(nil))
+	state.Register((*ICMPv4PacketStats)(nil))
+	state.Register((*ICMPv4SentPacketStats)(nil))
+	state.Register((*ICMPv4ReceivedPacketStats)(nil))
+	state.Register((*ICMPv4Stats)(nil))
+	state.Register((*ICMPv6PacketStats)(nil))
+	state.Register((*ICMPv6SentPacketStats)(nil))
+	state.Register((*ICMPv6ReceivedPacketStats)(nil))
+	state.Register((*ICMPv6Stats)(nil))
+	state.Register((*ICMPStats)(nil))
+	state.Register((*IGMPPacketStats)(nil))
+	state.Register((*IGMPSentPacketStats)(nil))
+	state.Register((*IGMPReceivedPacketStats)(nil))
+	state.Register((*IGMPStats)(nil))
+	state.Register((*IPForwardingStats)(nil))
+	state.Register((*IPStats)(nil))
+	state.Register((*ARPStats)(nil))
+	state.Register((*TCPStats)(nil))
+	state.Register((*UDPStats)(nil))
+	state.Register((*NICNeighborStats)(nil))
+	state.Register((*NICPacketStats)(nil))
+	state.Register((*IntegralStatCounterMap)(nil))
+	state.Register((*MultiIntegralStatCounterMap)(nil))
+	state.Register((*NICStats)(nil))
+	state.Register((*Stats)(nil))
 	state.Register((*ReceiveErrors)(nil))
 	state.Register((*SendErrors)(nil))
 	state.Register((*ReadErrors)(nil))
 	state.Register((*WriteErrors)(nil))
 	state.Register((*TransportEndpointStats)(nil))
 	state.Register((*AddressWithPrefix)(nil))
+	state.Register((*ProtocolAddress)(nil))
+	state.Register((*jobInstance)(nil))
+	state.Register((*Job)(nil))
 }

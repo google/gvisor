@@ -28,12 +28,14 @@ import (
 // concurrency guards.
 //
 // See the tests in this package for example usage.
+//
+// +stateify savable
 type Endpoint struct {
 	child    stack.LinkEndpoint
 	embedder stack.NetworkDispatcher
 
 	// mu protects dispatcher.
-	mu         sync.RWMutex
+	mu         sync.RWMutex `state:"nosave"`
 	dispatcher stack.NetworkDispatcher
 }
 

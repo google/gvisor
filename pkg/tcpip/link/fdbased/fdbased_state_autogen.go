@@ -8,3 +8,177 @@
 // +build linux
 
 package fdbased
+
+import (
+	"context"
+
+	"gvisor.dev/gvisor/pkg/state"
+)
+
+func (f *fdInfo) StateTypeName() string {
+	return "pkg/tcpip/link/fdbased.fdInfo"
+}
+
+func (f *fdInfo) StateFields() []string {
+	return []string{
+		"fd",
+		"isSocket",
+	}
+}
+
+func (f *fdInfo) beforeSave() {}
+
+// +checklocksignore
+func (f *fdInfo) StateSave(stateSinkObject state.Sink) {
+	f.beforeSave()
+	stateSinkObject.Save(0, &f.fd)
+	stateSinkObject.Save(1, &f.isSocket)
+}
+
+func (f *fdInfo) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (f *fdInfo) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &f.fd)
+	stateSourceObject.Load(1, &f.isSocket)
+}
+
+func (e *endpoint) StateTypeName() string {
+	return "pkg/tcpip/link/fdbased.endpoint"
+}
+
+func (e *endpoint) StateFields() []string {
+	return []string{
+		"fds",
+		"mtu",
+		"hdrSize",
+		"addr",
+		"caps",
+		"closed",
+		"inboundDispatchers",
+		"dispatcher",
+		"packetDispatchMode",
+		"gsoMaxSize",
+		"wg",
+		"gsoKind",
+		"maxSyscallHeaderBytes",
+		"writevMaxIovs",
+	}
+}
+
+func (e *endpoint) beforeSave() {}
+
+// +checklocksignore
+func (e *endpoint) StateSave(stateSinkObject state.Sink) {
+	e.beforeSave()
+	stateSinkObject.Save(0, &e.fds)
+	stateSinkObject.Save(1, &e.mtu)
+	stateSinkObject.Save(2, &e.hdrSize)
+	stateSinkObject.Save(3, &e.addr)
+	stateSinkObject.Save(4, &e.caps)
+	stateSinkObject.Save(5, &e.closed)
+	stateSinkObject.Save(6, &e.inboundDispatchers)
+	stateSinkObject.Save(7, &e.dispatcher)
+	stateSinkObject.Save(8, &e.packetDispatchMode)
+	stateSinkObject.Save(9, &e.gsoMaxSize)
+	stateSinkObject.Save(10, &e.wg)
+	stateSinkObject.Save(11, &e.gsoKind)
+	stateSinkObject.Save(12, &e.maxSyscallHeaderBytes)
+	stateSinkObject.Save(13, &e.writevMaxIovs)
+}
+
+func (e *endpoint) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (e *endpoint) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &e.fds)
+	stateSourceObject.Load(1, &e.mtu)
+	stateSourceObject.Load(2, &e.hdrSize)
+	stateSourceObject.Load(3, &e.addr)
+	stateSourceObject.Load(4, &e.caps)
+	stateSourceObject.Load(5, &e.closed)
+	stateSourceObject.Load(6, &e.inboundDispatchers)
+	stateSourceObject.Load(7, &e.dispatcher)
+	stateSourceObject.Load(8, &e.packetDispatchMode)
+	stateSourceObject.Load(9, &e.gsoMaxSize)
+	stateSourceObject.Load(10, &e.wg)
+	stateSourceObject.Load(11, &e.gsoKind)
+	stateSourceObject.Load(12, &e.maxSyscallHeaderBytes)
+	stateSourceObject.Load(13, &e.writevMaxIovs)
+}
+
+func (o *Options) StateTypeName() string {
+	return "pkg/tcpip/link/fdbased.Options"
+}
+
+func (o *Options) StateFields() []string {
+	return []string{
+		"FDs",
+		"MTU",
+		"EthernetHeader",
+		"ClosedFunc",
+		"Address",
+		"SaveRestore",
+		"DisconnectOk",
+		"GSOMaxSize",
+		"GVisorGSOEnabled",
+		"PacketDispatchMode",
+		"TXChecksumOffload",
+		"RXChecksumOffload",
+		"MaxSyscallHeaderBytes",
+		"InterfaceIndex",
+		"GRO",
+		"ProcessorsPerChannel",
+	}
+}
+
+func (o *Options) beforeSave() {}
+
+// +checklocksignore
+func (o *Options) StateSave(stateSinkObject state.Sink) {
+	o.beforeSave()
+	stateSinkObject.Save(0, &o.FDs)
+	stateSinkObject.Save(1, &o.MTU)
+	stateSinkObject.Save(2, &o.EthernetHeader)
+	stateSinkObject.Save(3, &o.ClosedFunc)
+	stateSinkObject.Save(4, &o.Address)
+	stateSinkObject.Save(5, &o.SaveRestore)
+	stateSinkObject.Save(6, &o.DisconnectOk)
+	stateSinkObject.Save(7, &o.GSOMaxSize)
+	stateSinkObject.Save(8, &o.GVisorGSOEnabled)
+	stateSinkObject.Save(9, &o.PacketDispatchMode)
+	stateSinkObject.Save(10, &o.TXChecksumOffload)
+	stateSinkObject.Save(11, &o.RXChecksumOffload)
+	stateSinkObject.Save(12, &o.MaxSyscallHeaderBytes)
+	stateSinkObject.Save(13, &o.InterfaceIndex)
+	stateSinkObject.Save(14, &o.GRO)
+	stateSinkObject.Save(15, &o.ProcessorsPerChannel)
+}
+
+func (o *Options) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (o *Options) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &o.FDs)
+	stateSourceObject.Load(1, &o.MTU)
+	stateSourceObject.Load(2, &o.EthernetHeader)
+	stateSourceObject.Load(3, &o.ClosedFunc)
+	stateSourceObject.Load(4, &o.Address)
+	stateSourceObject.Load(5, &o.SaveRestore)
+	stateSourceObject.Load(6, &o.DisconnectOk)
+	stateSourceObject.Load(7, &o.GSOMaxSize)
+	stateSourceObject.Load(8, &o.GVisorGSOEnabled)
+	stateSourceObject.Load(9, &o.PacketDispatchMode)
+	stateSourceObject.Load(10, &o.TXChecksumOffload)
+	stateSourceObject.Load(11, &o.RXChecksumOffload)
+	stateSourceObject.Load(12, &o.MaxSyscallHeaderBytes)
+	stateSourceObject.Load(13, &o.InterfaceIndex)
+	stateSourceObject.Load(14, &o.GRO)
+	stateSourceObject.Load(15, &o.ProcessorsPerChannel)
+}
+
+func init() {
+	state.Register((*fdInfo)(nil))
+	state.Register((*endpoint)(nil))
+	state.Register((*Options)(nil))
+}

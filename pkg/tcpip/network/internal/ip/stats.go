@@ -20,6 +20,8 @@ import "gvisor.dev/gvisor/pkg/tcpip"
 
 // MultiCounterIPForwardingStats holds IP forwarding statistics. Each counter
 // may have several versions.
+//
+// +stateify savable
 type MultiCounterIPForwardingStats struct {
 	// Unrouteable is the number of IP packets received which were dropped
 	// because the netstack could not construct a route to their
@@ -101,6 +103,8 @@ func (m *MultiCounterIPForwardingStats) Init(a, b *tcpip.IPForwardingStats) {
 
 // MultiCounterIPStats holds IP statistics, each counter may have several
 // versions.
+//
+// +stateify savable
 type MultiCounterIPStats struct {
 	// PacketsReceived is the number of IP packets received from the link
 	// layer.

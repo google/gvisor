@@ -35,6 +35,8 @@ const (
 )
 
 // protocol implements stack.TransportProtocol.
+//
+// +stateify savable
 type protocol struct {
 	stack *stack.Stack
 

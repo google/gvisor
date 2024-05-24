@@ -91,6 +91,7 @@ func (*stdClock) AfterFunc(d time.Duration, f func()) Timer {
 	}
 }
 
+// +stateify savable
 type stdTimer struct {
 	t *time.Timer
 }

@@ -135,6 +135,31 @@ func (e *endpoint) StateLoad(ctx context.Context, stateSourceObject state.Source
 	stateSourceObject.AfterLoad(func() { e.afterLoad(ctx) })
 }
 
+func (p *protocol) StateTypeName() string {
+	return "pkg/tcpip/transport/udp.protocol"
+}
+
+func (p *protocol) StateFields() []string {
+	return []string{
+		"stack",
+	}
+}
+
+func (p *protocol) beforeSave() {}
+
+// +checklocksignore
+func (p *protocol) StateSave(stateSinkObject state.Sink) {
+	p.beforeSave()
+	stateSinkObject.Save(0, &p.stack)
+}
+
+func (p *protocol) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (p *protocol) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &p.stack)
+}
+
 func (l *udpPacketList) StateTypeName() string {
 	return "pkg/tcpip/transport/udp.udpPacketList"
 }
@@ -194,6 +219,7 @@ func (e *udpPacketEntry) StateLoad(ctx context.Context, stateSourceObject state.
 func init() {
 	state.Register((*udpPacket)(nil))
 	state.Register((*endpoint)(nil))
+	state.Register((*protocol)(nil))
 	state.Register((*udpPacketList)(nil))
 	state.Register((*udpPacketEntry)(nil))
 }

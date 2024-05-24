@@ -222,11 +222,6 @@ type MemoryFileOpts struct {
 	// RestoreID is an opaque string used to reassociate the MemoryFile with its
 	// replacement during restore.
 	RestoreID string
-
-	// EnforceMaximumAllocatable is a flag that governs whether the MemoryFile
-	// will be limited in size of total allocations by
-	// usage.MaximumAllocatableBytes.
-	EnforceMaximumAllocatable bool
 }
 
 // DelayedEvictionType is the type of MemoryFileOpts.DelayedEviction.
@@ -544,11 +539,6 @@ func (f *MemoryFile) allocate(length uint64, opts *AllocOpts) (memmap.FileRange,
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	if !f.hasSpaceToAllocate(length) {
-		log.Debugf("Enforcing memory limit on allocation of size %d, max is %d, already have %d", length, usage.MaximumAllocatableBytes, f.usageExpected)
-		return memmap.FileRange{}, linuxerr.ENOMEM
-	}
-
 	// Align hugepage-and-larger allocations on hugepage boundaries to try
 	// to take advantage of hugetmpfs.
 	alignment := uint64(hostarch.PageSize)
@@ -591,25 +581,6 @@ func (f *MemoryFile) allocate(length uint64, opts *AllocOpts) (memmap.FileRange,
 	})
 
 	return fr, nil
-}
-
-func (f *MemoryFile) hasSpaceToAllocate(length uint64) bool {
-	if f.opts.EnforceMaximumAllocatable && usage.MaximumAllocatableBytes != 0 && ((f.usageExpected+length) > usage.MaximumAllocatableBytes || (f.usageExpected+length) < f.usageExpected) {
-		// f.usageExpected is not guaranteed to be correct because it is
-		// updated only when f.UpdateUsage is called periodically.
-		// To eliminate false-positives double check against the exact
-		// measure; we don't care as much about false-negatives, which
-		// helps avoid a host-syscall via f.TotalUsage in the happy-path.
-		exactUsage, err := f.TotalUsage()
-		if err != nil {
-			log.Warningf("Failed to fetch total usage for memory file: %v", err)
-			return false
-		}
-		if (exactUsage+length) > usage.MaximumAllocatableBytes || (exactUsage+length) < exactUsage {
-			return false
-		}
-	}
-	return true
 }
 
 // findAvailableRange returns an available range in the usageSet.

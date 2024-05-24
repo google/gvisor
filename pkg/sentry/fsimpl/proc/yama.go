@@ -22,7 +22,6 @@ import (
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
-	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -61,24 +60,17 @@ func (s *yamaPtraceScope) Write(ctx context.Context, _ *vfs.FileDescription, src
 		// Ignore partial writes.
 		return 0, linuxerr.EINVAL
 	}
-	if src.NumBytes() == 0 {
-		return 0, nil
-	}
-
-	// Limit the amount of memory allocated.
-	src = src.TakeFirst(hostarch.PageSize - 1)
-
-	var v int32
-	n, err := usermem.CopyInt32StringInVec(ctx, src.IO, src.Addrs, &v, src.Opts)
-	if err != nil {
+	buf := make([]int32, 1)
+	n, err := ParseInt32Vec(ctx, src, buf)
+	if err != nil || n == 0 {
 		return 0, err
 	}
 
 	// We do not support YAMA levels > YAMA_SCOPE_RELATIONAL.
-	if v < linux.YAMA_SCOPE_DISABLED || v > linux.YAMA_SCOPE_RELATIONAL {
+	if buf[0] < linux.YAMA_SCOPE_DISABLED || buf[0] > linux.YAMA_SCOPE_RELATIONAL {
 		return 0, linuxerr.EINVAL
 	}
 
-	s.level.Store(v)
+	s.level.Store(buf[0])
 	return n, nil
 }

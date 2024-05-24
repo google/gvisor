@@ -79,6 +79,7 @@ var _ stack.AddressableEndpoint = (*endpoint)(nil)
 var _ stack.NetworkEndpoint = (*endpoint)(nil)
 var _ IGMPEndpoint = (*endpoint)(nil)
 
+// +stateify savable
 type endpoint struct {
 	nic        stack.NetworkInterface
 	dispatcher stack.TransportDispatcher
@@ -101,7 +102,7 @@ type endpoint struct {
 	multicastForwarding atomicbitops.Uint32
 
 	// mu protects below.
-	mu sync.RWMutex
+	mu sync.RWMutex `state:"nosave"`
 
 	// +checklocks:mu
 	addressableEndpointState stack.AddressableEndpointState
@@ -1505,11 +1506,12 @@ var _ stack.MulticastForwardingNetworkProtocol = (*protocol)(nil)
 var _ stack.RejectIPv4WithHandler = (*protocol)(nil)
 var _ fragmentation.TimeoutHandler = (*protocol)(nil)
 
+// +stateify savable
 type protocol struct {
 	stack *stack.Stack
 
 	// mu protects annotated fields below.
-	mu sync.RWMutex
+	mu sync.RWMutex `state:"nosave"`
 
 	// eps is keyed by NICID to allow protocol methods to retrieve an endpoint
 	// when handling a packet, by looking at which NIC handled the packet.
@@ -1912,6 +1914,8 @@ func hashRoute(srcAddr, dstAddr tcpip.Address, protocol tcpip.TransportProtocolN
 }
 
 // Options holds options to configure a new protocol.
+//
+// +stateify savable
 type Options struct {
 	// IGMP holds options for IGMP.
 	IGMP IGMPOptions

@@ -145,6 +145,118 @@ func (c *cubicState) StateLoad(ctx context.Context, stateSourceObject state.Sour
 	stateSourceObject.Load(2, &c.s)
 }
 
+func (q *epQueue) StateTypeName() string {
+	return "pkg/tcpip/transport/tcp.epQueue"
+}
+
+func (q *epQueue) StateFields() []string {
+	return []string{
+		"list",
+	}
+}
+
+func (q *epQueue) beforeSave() {}
+
+// +checklocksignore
+func (q *epQueue) StateSave(stateSinkObject state.Sink) {
+	q.beforeSave()
+	stateSinkObject.Save(0, &q.list)
+}
+
+func (q *epQueue) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (q *epQueue) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &q.list)
+}
+
+func (p *processor) StateTypeName() string {
+	return "pkg/tcpip/transport/tcp.processor"
+}
+
+func (p *processor) StateFields() []string {
+	return []string{
+		"epQ",
+		"sleeper",
+	}
+}
+
+func (p *processor) beforeSave() {}
+
+// +checklocksignore
+func (p *processor) StateSave(stateSinkObject state.Sink) {
+	p.beforeSave()
+	stateSinkObject.Save(0, &p.epQ)
+	stateSinkObject.Save(1, &p.sleeper)
+}
+
+func (p *processor) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (p *processor) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &p.epQ)
+	stateSourceObject.Load(1, &p.sleeper)
+}
+
+func (d *dispatcher) StateTypeName() string {
+	return "pkg/tcpip/transport/tcp.dispatcher"
+}
+
+func (d *dispatcher) StateFields() []string {
+	return []string{
+		"processors",
+		"hasher",
+		"paused",
+		"closed",
+	}
+}
+
+func (d *dispatcher) beforeSave() {}
+
+// +checklocksignore
+func (d *dispatcher) StateSave(stateSinkObject state.Sink) {
+	d.beforeSave()
+	stateSinkObject.Save(0, &d.processors)
+	stateSinkObject.Save(1, &d.hasher)
+	stateSinkObject.Save(2, &d.paused)
+	stateSinkObject.Save(3, &d.closed)
+}
+
+func (d *dispatcher) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (d *dispatcher) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &d.processors)
+	stateSourceObject.Load(1, &d.hasher)
+	stateSourceObject.Load(2, &d.paused)
+	stateSourceObject.Load(3, &d.closed)
+}
+
+func (j *jenkinsHasher) StateTypeName() string {
+	return "pkg/tcpip/transport/tcp.jenkinsHasher"
+}
+
+func (j *jenkinsHasher) StateFields() []string {
+	return []string{
+		"seed",
+	}
+}
+
+func (j *jenkinsHasher) beforeSave() {}
+
+// +checklocksignore
+func (j *jenkinsHasher) StateSave(stateSinkObject state.Sink) {
+	j.beforeSave()
+	stateSinkObject.Save(0, &j.seed)
+}
+
+func (j *jenkinsHasher) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (j *jenkinsHasher) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &j.seed)
+}
+
 func (s *SACKInfo) StateTypeName() string {
 	return "pkg/tcpip/transport/tcp.SACKInfo"
 }
@@ -536,6 +648,88 @@ func (k *keepalive) StateLoad(ctx context.Context, stateSourceObject state.Sourc
 	stateSourceObject.Load(1, &k.interval)
 	stateSourceObject.Load(2, &k.count)
 	stateSourceObject.Load(3, &k.unacked)
+}
+
+func (p *protocol) StateTypeName() string {
+	return "pkg/tcpip/transport/tcp.protocol"
+}
+
+func (p *protocol) StateFields() []string {
+	return []string{
+		"stack",
+		"sackEnabled",
+		"recovery",
+		"delayEnabled",
+		"alwaysUseSynCookies",
+		"sendBufferSize",
+		"recvBufferSize",
+		"congestionControl",
+		"availableCongestionControl",
+		"moderateReceiveBuffer",
+		"lingerTimeout",
+		"timeWaitTimeout",
+		"timeWaitReuse",
+		"minRTO",
+		"maxRTO",
+		"maxRetries",
+		"synRetries",
+		"dispatcher",
+		"seqnumSecret",
+		"tsOffsetSecret",
+	}
+}
+
+func (p *protocol) beforeSave() {}
+
+// +checklocksignore
+func (p *protocol) StateSave(stateSinkObject state.Sink) {
+	p.beforeSave()
+	stateSinkObject.Save(0, &p.stack)
+	stateSinkObject.Save(1, &p.sackEnabled)
+	stateSinkObject.Save(2, &p.recovery)
+	stateSinkObject.Save(3, &p.delayEnabled)
+	stateSinkObject.Save(4, &p.alwaysUseSynCookies)
+	stateSinkObject.Save(5, &p.sendBufferSize)
+	stateSinkObject.Save(6, &p.recvBufferSize)
+	stateSinkObject.Save(7, &p.congestionControl)
+	stateSinkObject.Save(8, &p.availableCongestionControl)
+	stateSinkObject.Save(9, &p.moderateReceiveBuffer)
+	stateSinkObject.Save(10, &p.lingerTimeout)
+	stateSinkObject.Save(11, &p.timeWaitTimeout)
+	stateSinkObject.Save(12, &p.timeWaitReuse)
+	stateSinkObject.Save(13, &p.minRTO)
+	stateSinkObject.Save(14, &p.maxRTO)
+	stateSinkObject.Save(15, &p.maxRetries)
+	stateSinkObject.Save(16, &p.synRetries)
+	stateSinkObject.Save(17, &p.dispatcher)
+	stateSinkObject.Save(18, &p.seqnumSecret)
+	stateSinkObject.Save(19, &p.tsOffsetSecret)
+}
+
+func (p *protocol) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (p *protocol) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &p.stack)
+	stateSourceObject.Load(1, &p.sackEnabled)
+	stateSourceObject.Load(2, &p.recovery)
+	stateSourceObject.Load(3, &p.delayEnabled)
+	stateSourceObject.Load(4, &p.alwaysUseSynCookies)
+	stateSourceObject.Load(5, &p.sendBufferSize)
+	stateSourceObject.Load(6, &p.recvBufferSize)
+	stateSourceObject.Load(7, &p.congestionControl)
+	stateSourceObject.Load(8, &p.availableCongestionControl)
+	stateSourceObject.Load(9, &p.moderateReceiveBuffer)
+	stateSourceObject.Load(10, &p.lingerTimeout)
+	stateSourceObject.Load(11, &p.timeWaitTimeout)
+	stateSourceObject.Load(12, &p.timeWaitReuse)
+	stateSourceObject.Load(13, &p.minRTO)
+	stateSourceObject.Load(14, &p.maxRTO)
+	stateSourceObject.Load(15, &p.maxRetries)
+	stateSourceObject.Load(16, &p.synRetries)
+	stateSourceObject.Load(17, &p.dispatcher)
+	stateSourceObject.Load(18, &p.seqnumSecret)
+	stateSourceObject.Load(19, &p.tsOffsetSecret)
 }
 
 func (rc *rackControl) StateTypeName() string {
@@ -1080,6 +1274,10 @@ func init() {
 	state.Register((*acceptQueue)(nil))
 	state.Register((*handshake)(nil))
 	state.Register((*cubicState)(nil))
+	state.Register((*epQueue)(nil))
+	state.Register((*processor)(nil))
+	state.Register((*dispatcher)(nil))
+	state.Register((*jenkinsHasher)(nil))
 	state.Register((*SACKInfo)(nil))
 	state.Register((*ReceiveErrors)(nil))
 	state.Register((*SendErrors)(nil))
@@ -1087,6 +1285,7 @@ func init() {
 	state.Register((*sndQueueInfo)(nil))
 	state.Register((*Endpoint)(nil))
 	state.Register((*keepalive)(nil))
+	state.Register((*protocol)(nil))
 	state.Register((*rackControl)(nil))
 	state.Register((*receiver)(nil))
 	state.Register((*renoState)(nil))

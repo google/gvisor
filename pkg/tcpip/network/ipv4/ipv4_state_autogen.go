@@ -232,6 +232,531 @@ func (e *icmpv4FragmentationNeededSockError) StateLoad(ctx context.Context, stat
 	stateSourceObject.Load(1, &e.mtu)
 }
 
+func (i *IGMPOptions) StateTypeName() string {
+	return "pkg/tcpip/network/ipv4.IGMPOptions"
+}
+
+func (i *IGMPOptions) StateFields() []string {
+	return []string{
+		"Enabled",
+	}
+}
+
+func (i *IGMPOptions) beforeSave() {}
+
+// +checklocksignore
+func (i *IGMPOptions) StateSave(stateSinkObject state.Sink) {
+	i.beforeSave()
+	stateSinkObject.Save(0, &i.Enabled)
+}
+
+func (i *IGMPOptions) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (i *IGMPOptions) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &i.Enabled)
+}
+
+func (igmp *igmpState) StateTypeName() string {
+	return "pkg/tcpip/network/ipv4.igmpState"
+}
+
+func (igmp *igmpState) StateFields() []string {
+	return []string{
+		"ep",
+		"genericMulticastProtocol",
+		"mode",
+		"igmpV1Job",
+	}
+}
+
+func (igmp *igmpState) beforeSave() {}
+
+// +checklocksignore
+func (igmp *igmpState) StateSave(stateSinkObject state.Sink) {
+	igmp.beforeSave()
+	stateSinkObject.Save(0, &igmp.ep)
+	stateSinkObject.Save(1, &igmp.genericMulticastProtocol)
+	stateSinkObject.Save(2, &igmp.mode)
+	stateSinkObject.Save(3, &igmp.igmpV1Job)
+}
+
+func (igmp *igmpState) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (igmp *igmpState) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &igmp.ep)
+	stateSourceObject.Load(1, &igmp.genericMulticastProtocol)
+	stateSourceObject.Load(2, &igmp.mode)
+	stateSourceObject.Load(3, &igmp.igmpV1Job)
+}
+
+func (e *endpoint) StateTypeName() string {
+	return "pkg/tcpip/network/ipv4.endpoint"
+}
+
+func (e *endpoint) StateFields() []string {
+	return []string{
+		"nic",
+		"dispatcher",
+		"protocol",
+		"stats",
+		"enabled",
+		"forwarding",
+		"multicastForwarding",
+		"addressableEndpointState",
+		"igmp",
+	}
+}
+
+func (e *endpoint) beforeSave() {}
+
+// +checklocksignore
+func (e *endpoint) StateSave(stateSinkObject state.Sink) {
+	e.beforeSave()
+	stateSinkObject.Save(0, &e.nic)
+	stateSinkObject.Save(1, &e.dispatcher)
+	stateSinkObject.Save(2, &e.protocol)
+	stateSinkObject.Save(3, &e.stats)
+	stateSinkObject.Save(4, &e.enabled)
+	stateSinkObject.Save(5, &e.forwarding)
+	stateSinkObject.Save(6, &e.multicastForwarding)
+	stateSinkObject.Save(7, &e.addressableEndpointState)
+	stateSinkObject.Save(8, &e.igmp)
+}
+
+func (e *endpoint) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (e *endpoint) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &e.nic)
+	stateSourceObject.Load(1, &e.dispatcher)
+	stateSourceObject.Load(2, &e.protocol)
+	stateSourceObject.Load(3, &e.stats)
+	stateSourceObject.Load(4, &e.enabled)
+	stateSourceObject.Load(5, &e.forwarding)
+	stateSourceObject.Load(6, &e.multicastForwarding)
+	stateSourceObject.Load(7, &e.addressableEndpointState)
+	stateSourceObject.Load(8, &e.igmp)
+}
+
+func (p *protocol) StateTypeName() string {
+	return "pkg/tcpip/network/ipv4.protocol"
+}
+
+func (p *protocol) StateFields() []string {
+	return []string{
+		"stack",
+		"eps",
+		"icmpRateLimitedTypes",
+		"defaultTTL",
+		"ids",
+		"hashIV",
+		"idTS",
+		"fragmentation",
+		"options",
+		"multicastRouteTable",
+		"multicastForwardingDisp",
+	}
+}
+
+func (p *protocol) beforeSave() {}
+
+// +checklocksignore
+func (p *protocol) StateSave(stateSinkObject state.Sink) {
+	p.beforeSave()
+	stateSinkObject.Save(0, &p.stack)
+	stateSinkObject.Save(1, &p.eps)
+	stateSinkObject.Save(2, &p.icmpRateLimitedTypes)
+	stateSinkObject.Save(3, &p.defaultTTL)
+	stateSinkObject.Save(4, &p.ids)
+	stateSinkObject.Save(5, &p.hashIV)
+	stateSinkObject.Save(6, &p.idTS)
+	stateSinkObject.Save(7, &p.fragmentation)
+	stateSinkObject.Save(8, &p.options)
+	stateSinkObject.Save(9, &p.multicastRouteTable)
+	stateSinkObject.Save(10, &p.multicastForwardingDisp)
+}
+
+func (p *protocol) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (p *protocol) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &p.stack)
+	stateSourceObject.Load(1, &p.eps)
+	stateSourceObject.Load(2, &p.icmpRateLimitedTypes)
+	stateSourceObject.Load(3, &p.defaultTTL)
+	stateSourceObject.Load(4, &p.ids)
+	stateSourceObject.Load(5, &p.hashIV)
+	stateSourceObject.Load(6, &p.idTS)
+	stateSourceObject.Load(7, &p.fragmentation)
+	stateSourceObject.Load(8, &p.options)
+	stateSourceObject.Load(9, &p.multicastRouteTable)
+	stateSourceObject.Load(10, &p.multicastForwardingDisp)
+}
+
+func (o *Options) StateTypeName() string {
+	return "pkg/tcpip/network/ipv4.Options"
+}
+
+func (o *Options) StateFields() []string {
+	return []string{
+		"IGMP",
+		"AllowExternalLoopbackTraffic",
+	}
+}
+
+func (o *Options) beforeSave() {}
+
+// +checklocksignore
+func (o *Options) StateSave(stateSinkObject state.Sink) {
+	o.beforeSave()
+	stateSinkObject.Save(0, &o.IGMP)
+	stateSinkObject.Save(1, &o.AllowExternalLoopbackTraffic)
+}
+
+func (o *Options) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (o *Options) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &o.IGMP)
+	stateSourceObject.Load(1, &o.AllowExternalLoopbackTraffic)
+}
+
+func (s *Stats) StateTypeName() string {
+	return "pkg/tcpip/network/ipv4.Stats"
+}
+
+func (s *Stats) StateFields() []string {
+	return []string{
+		"IP",
+		"IGMP",
+		"ICMP",
+	}
+}
+
+func (s *Stats) beforeSave() {}
+
+// +checklocksignore
+func (s *Stats) StateSave(stateSinkObject state.Sink) {
+	s.beforeSave()
+	stateSinkObject.Save(0, &s.IP)
+	stateSinkObject.Save(1, &s.IGMP)
+	stateSinkObject.Save(2, &s.ICMP)
+}
+
+func (s *Stats) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (s *Stats) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &s.IP)
+	stateSourceObject.Load(1, &s.IGMP)
+	stateSourceObject.Load(2, &s.ICMP)
+}
+
+func (s *sharedStats) StateTypeName() string {
+	return "pkg/tcpip/network/ipv4.sharedStats"
+}
+
+func (s *sharedStats) StateFields() []string {
+	return []string{
+		"localStats",
+		"ip",
+		"icmp",
+		"igmp",
+	}
+}
+
+func (s *sharedStats) beforeSave() {}
+
+// +checklocksignore
+func (s *sharedStats) StateSave(stateSinkObject state.Sink) {
+	s.beforeSave()
+	stateSinkObject.Save(0, &s.localStats)
+	stateSinkObject.Save(1, &s.ip)
+	stateSinkObject.Save(2, &s.icmp)
+	stateSinkObject.Save(3, &s.igmp)
+}
+
+func (s *sharedStats) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (s *sharedStats) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &s.localStats)
+	stateSourceObject.Load(1, &s.ip)
+	stateSourceObject.Load(2, &s.icmp)
+	stateSourceObject.Load(3, &s.igmp)
+}
+
+func (m *multiCounterICMPv4PacketStats) StateTypeName() string {
+	return "pkg/tcpip/network/ipv4.multiCounterICMPv4PacketStats"
+}
+
+func (m *multiCounterICMPv4PacketStats) StateFields() []string {
+	return []string{
+		"echoRequest",
+		"echoReply",
+		"dstUnreachable",
+		"srcQuench",
+		"redirect",
+		"timeExceeded",
+		"paramProblem",
+		"timestamp",
+		"timestampReply",
+		"infoRequest",
+		"infoReply",
+	}
+}
+
+func (m *multiCounterICMPv4PacketStats) beforeSave() {}
+
+// +checklocksignore
+func (m *multiCounterICMPv4PacketStats) StateSave(stateSinkObject state.Sink) {
+	m.beforeSave()
+	stateSinkObject.Save(0, &m.echoRequest)
+	stateSinkObject.Save(1, &m.echoReply)
+	stateSinkObject.Save(2, &m.dstUnreachable)
+	stateSinkObject.Save(3, &m.srcQuench)
+	stateSinkObject.Save(4, &m.redirect)
+	stateSinkObject.Save(5, &m.timeExceeded)
+	stateSinkObject.Save(6, &m.paramProblem)
+	stateSinkObject.Save(7, &m.timestamp)
+	stateSinkObject.Save(8, &m.timestampReply)
+	stateSinkObject.Save(9, &m.infoRequest)
+	stateSinkObject.Save(10, &m.infoReply)
+}
+
+func (m *multiCounterICMPv4PacketStats) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (m *multiCounterICMPv4PacketStats) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &m.echoRequest)
+	stateSourceObject.Load(1, &m.echoReply)
+	stateSourceObject.Load(2, &m.dstUnreachable)
+	stateSourceObject.Load(3, &m.srcQuench)
+	stateSourceObject.Load(4, &m.redirect)
+	stateSourceObject.Load(5, &m.timeExceeded)
+	stateSourceObject.Load(6, &m.paramProblem)
+	stateSourceObject.Load(7, &m.timestamp)
+	stateSourceObject.Load(8, &m.timestampReply)
+	stateSourceObject.Load(9, &m.infoRequest)
+	stateSourceObject.Load(10, &m.infoReply)
+}
+
+func (m *multiCounterICMPv4SentPacketStats) StateTypeName() string {
+	return "pkg/tcpip/network/ipv4.multiCounterICMPv4SentPacketStats"
+}
+
+func (m *multiCounterICMPv4SentPacketStats) StateFields() []string {
+	return []string{
+		"multiCounterICMPv4PacketStats",
+		"dropped",
+		"rateLimited",
+	}
+}
+
+func (m *multiCounterICMPv4SentPacketStats) beforeSave() {}
+
+// +checklocksignore
+func (m *multiCounterICMPv4SentPacketStats) StateSave(stateSinkObject state.Sink) {
+	m.beforeSave()
+	stateSinkObject.Save(0, &m.multiCounterICMPv4PacketStats)
+	stateSinkObject.Save(1, &m.dropped)
+	stateSinkObject.Save(2, &m.rateLimited)
+}
+
+func (m *multiCounterICMPv4SentPacketStats) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (m *multiCounterICMPv4SentPacketStats) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &m.multiCounterICMPv4PacketStats)
+	stateSourceObject.Load(1, &m.dropped)
+	stateSourceObject.Load(2, &m.rateLimited)
+}
+
+func (m *multiCounterICMPv4ReceivedPacketStats) StateTypeName() string {
+	return "pkg/tcpip/network/ipv4.multiCounterICMPv4ReceivedPacketStats"
+}
+
+func (m *multiCounterICMPv4ReceivedPacketStats) StateFields() []string {
+	return []string{
+		"multiCounterICMPv4PacketStats",
+		"invalid",
+	}
+}
+
+func (m *multiCounterICMPv4ReceivedPacketStats) beforeSave() {}
+
+// +checklocksignore
+func (m *multiCounterICMPv4ReceivedPacketStats) StateSave(stateSinkObject state.Sink) {
+	m.beforeSave()
+	stateSinkObject.Save(0, &m.multiCounterICMPv4PacketStats)
+	stateSinkObject.Save(1, &m.invalid)
+}
+
+func (m *multiCounterICMPv4ReceivedPacketStats) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (m *multiCounterICMPv4ReceivedPacketStats) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &m.multiCounterICMPv4PacketStats)
+	stateSourceObject.Load(1, &m.invalid)
+}
+
+func (m *multiCounterICMPv4Stats) StateTypeName() string {
+	return "pkg/tcpip/network/ipv4.multiCounterICMPv4Stats"
+}
+
+func (m *multiCounterICMPv4Stats) StateFields() []string {
+	return []string{
+		"packetsSent",
+		"packetsReceived",
+	}
+}
+
+func (m *multiCounterICMPv4Stats) beforeSave() {}
+
+// +checklocksignore
+func (m *multiCounterICMPv4Stats) StateSave(stateSinkObject state.Sink) {
+	m.beforeSave()
+	stateSinkObject.Save(0, &m.packetsSent)
+	stateSinkObject.Save(1, &m.packetsReceived)
+}
+
+func (m *multiCounterICMPv4Stats) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (m *multiCounterICMPv4Stats) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &m.packetsSent)
+	stateSourceObject.Load(1, &m.packetsReceived)
+}
+
+func (m *multiCounterIGMPPacketStats) StateTypeName() string {
+	return "pkg/tcpip/network/ipv4.multiCounterIGMPPacketStats"
+}
+
+func (m *multiCounterIGMPPacketStats) StateFields() []string {
+	return []string{
+		"membershipQuery",
+		"v1MembershipReport",
+		"v2MembershipReport",
+		"v3MembershipReport",
+		"leaveGroup",
+	}
+}
+
+func (m *multiCounterIGMPPacketStats) beforeSave() {}
+
+// +checklocksignore
+func (m *multiCounterIGMPPacketStats) StateSave(stateSinkObject state.Sink) {
+	m.beforeSave()
+	stateSinkObject.Save(0, &m.membershipQuery)
+	stateSinkObject.Save(1, &m.v1MembershipReport)
+	stateSinkObject.Save(2, &m.v2MembershipReport)
+	stateSinkObject.Save(3, &m.v3MembershipReport)
+	stateSinkObject.Save(4, &m.leaveGroup)
+}
+
+func (m *multiCounterIGMPPacketStats) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (m *multiCounterIGMPPacketStats) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &m.membershipQuery)
+	stateSourceObject.Load(1, &m.v1MembershipReport)
+	stateSourceObject.Load(2, &m.v2MembershipReport)
+	stateSourceObject.Load(3, &m.v3MembershipReport)
+	stateSourceObject.Load(4, &m.leaveGroup)
+}
+
+func (m *multiCounterIGMPSentPacketStats) StateTypeName() string {
+	return "pkg/tcpip/network/ipv4.multiCounterIGMPSentPacketStats"
+}
+
+func (m *multiCounterIGMPSentPacketStats) StateFields() []string {
+	return []string{
+		"multiCounterIGMPPacketStats",
+		"dropped",
+	}
+}
+
+func (m *multiCounterIGMPSentPacketStats) beforeSave() {}
+
+// +checklocksignore
+func (m *multiCounterIGMPSentPacketStats) StateSave(stateSinkObject state.Sink) {
+	m.beforeSave()
+	stateSinkObject.Save(0, &m.multiCounterIGMPPacketStats)
+	stateSinkObject.Save(1, &m.dropped)
+}
+
+func (m *multiCounterIGMPSentPacketStats) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (m *multiCounterIGMPSentPacketStats) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &m.multiCounterIGMPPacketStats)
+	stateSourceObject.Load(1, &m.dropped)
+}
+
+func (m *multiCounterIGMPReceivedPacketStats) StateTypeName() string {
+	return "pkg/tcpip/network/ipv4.multiCounterIGMPReceivedPacketStats"
+}
+
+func (m *multiCounterIGMPReceivedPacketStats) StateFields() []string {
+	return []string{
+		"multiCounterIGMPPacketStats",
+		"invalid",
+		"checksumErrors",
+		"unrecognized",
+	}
+}
+
+func (m *multiCounterIGMPReceivedPacketStats) beforeSave() {}
+
+// +checklocksignore
+func (m *multiCounterIGMPReceivedPacketStats) StateSave(stateSinkObject state.Sink) {
+	m.beforeSave()
+	stateSinkObject.Save(0, &m.multiCounterIGMPPacketStats)
+	stateSinkObject.Save(1, &m.invalid)
+	stateSinkObject.Save(2, &m.checksumErrors)
+	stateSinkObject.Save(3, &m.unrecognized)
+}
+
+func (m *multiCounterIGMPReceivedPacketStats) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (m *multiCounterIGMPReceivedPacketStats) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &m.multiCounterIGMPPacketStats)
+	stateSourceObject.Load(1, &m.invalid)
+	stateSourceObject.Load(2, &m.checksumErrors)
+	stateSourceObject.Load(3, &m.unrecognized)
+}
+
+func (m *multiCounterIGMPStats) StateTypeName() string {
+	return "pkg/tcpip/network/ipv4.multiCounterIGMPStats"
+}
+
+func (m *multiCounterIGMPStats) StateFields() []string {
+	return []string{
+		"packetsSent",
+		"packetsReceived",
+	}
+}
+
+func (m *multiCounterIGMPStats) beforeSave() {}
+
+// +checklocksignore
+func (m *multiCounterIGMPStats) StateSave(stateSinkObject state.Sink) {
+	m.beforeSave()
+	stateSinkObject.Save(0, &m.packetsSent)
+	stateSinkObject.Save(1, &m.packetsReceived)
+}
+
+func (m *multiCounterIGMPStats) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (m *multiCounterIGMPStats) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &m.packetsSent)
+	stateSourceObject.Load(1, &m.packetsReceived)
+}
+
 func init() {
 	state.Register((*icmpv4DestinationUnreachableSockError)(nil))
 	state.Register((*icmpv4DestinationHostUnreachableSockError)(nil))
@@ -242,4 +767,19 @@ func init() {
 	state.Register((*icmpv4SourceHostIsolatedSockError)(nil))
 	state.Register((*icmpv4DestinationHostUnknownSockError)(nil))
 	state.Register((*icmpv4FragmentationNeededSockError)(nil))
+	state.Register((*IGMPOptions)(nil))
+	state.Register((*igmpState)(nil))
+	state.Register((*endpoint)(nil))
+	state.Register((*protocol)(nil))
+	state.Register((*Options)(nil))
+	state.Register((*Stats)(nil))
+	state.Register((*sharedStats)(nil))
+	state.Register((*multiCounterICMPv4PacketStats)(nil))
+	state.Register((*multiCounterICMPv4SentPacketStats)(nil))
+	state.Register((*multiCounterICMPv4ReceivedPacketStats)(nil))
+	state.Register((*multiCounterICMPv4Stats)(nil))
+	state.Register((*multiCounterIGMPPacketStats)(nil))
+	state.Register((*multiCounterIGMPSentPacketStats)(nil))
+	state.Register((*multiCounterIGMPReceivedPacketStats)(nil))
+	state.Register((*multiCounterIGMPStats)(nil))
 }

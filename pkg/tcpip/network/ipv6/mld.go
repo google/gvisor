@@ -57,6 +57,8 @@ type MLDEndpoint interface {
 }
 
 // MLDOptions holds options for MLD.
+//
+// +stateify savable
 type MLDOptions struct {
 	// Enabled indicates whether MLD will be performed.
 	//
@@ -74,6 +76,8 @@ var _ ip.MulticastGroupProtocol = (*mldState)(nil)
 // mldState is the per-interface MLD state.
 //
 // mldState.init MUST be called to initialize the MLD state.
+//
+// +stateify savable
 type mldState struct {
 	// The IPv6 endpoint this mldState is for.
 	ep *endpoint

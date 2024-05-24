@@ -8,6 +8,111 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
+func (d *dadState) StateTypeName() string {
+	return "pkg/tcpip/network/internal/ip.dadState"
+}
+
+func (d *dadState) StateFields() []string {
+	return []string{
+		"nonce",
+		"extendRequest",
+		"done",
+		"timer",
+		"completionHandlers",
+	}
+}
+
+func (d *dadState) beforeSave() {}
+
+// +checklocksignore
+func (d *dadState) StateSave(stateSinkObject state.Sink) {
+	d.beforeSave()
+	stateSinkObject.Save(0, &d.nonce)
+	stateSinkObject.Save(1, &d.extendRequest)
+	stateSinkObject.Save(2, &d.done)
+	stateSinkObject.Save(3, &d.timer)
+	stateSinkObject.Save(4, &d.completionHandlers)
+}
+
+func (d *dadState) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (d *dadState) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &d.nonce)
+	stateSourceObject.Load(1, &d.extendRequest)
+	stateSourceObject.Load(2, &d.done)
+	stateSourceObject.Load(3, &d.timer)
+	stateSourceObject.Load(4, &d.completionHandlers)
+}
+
+func (d *DADOptions) StateTypeName() string {
+	return "pkg/tcpip/network/internal/ip.DADOptions"
+}
+
+func (d *DADOptions) StateFields() []string {
+	return []string{
+		"Clock",
+		"NonceSize",
+		"ExtendDADTransmits",
+		"Protocol",
+		"NICID",
+	}
+}
+
+func (d *DADOptions) beforeSave() {}
+
+// +checklocksignore
+func (d *DADOptions) StateSave(stateSinkObject state.Sink) {
+	d.beforeSave()
+	stateSinkObject.Save(0, &d.Clock)
+	stateSinkObject.Save(1, &d.NonceSize)
+	stateSinkObject.Save(2, &d.ExtendDADTransmits)
+	stateSinkObject.Save(3, &d.Protocol)
+	stateSinkObject.Save(4, &d.NICID)
+}
+
+func (d *DADOptions) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (d *DADOptions) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &d.Clock)
+	stateSourceObject.Load(1, &d.NonceSize)
+	stateSourceObject.Load(2, &d.ExtendDADTransmits)
+	stateSourceObject.Load(3, &d.Protocol)
+	stateSourceObject.Load(4, &d.NICID)
+}
+
+func (d *DAD) StateTypeName() string {
+	return "pkg/tcpip/network/internal/ip.DAD"
+}
+
+func (d *DAD) StateFields() []string {
+	return []string{
+		"opts",
+		"configs",
+		"addresses",
+	}
+}
+
+func (d *DAD) beforeSave() {}
+
+// +checklocksignore
+func (d *DAD) StateSave(stateSinkObject state.Sink) {
+	d.beforeSave()
+	stateSinkObject.Save(0, &d.opts)
+	stateSinkObject.Save(1, &d.configs)
+	stateSinkObject.Save(2, &d.addresses)
+}
+
+func (d *DAD) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (d *DAD) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &d.opts)
+	stateSourceObject.Load(1, &d.configs)
+	stateSourceObject.Load(2, &d.addresses)
+}
+
 func (e *ErrMessageTooLong) StateTypeName() string {
 	return "pkg/tcpip/network/internal/ip.ErrMessageTooLong"
 }
@@ -50,7 +155,278 @@ func (e *ErrNoMulticastPendingQueueBufferSpace) afterLoad(context.Context) {}
 func (e *ErrNoMulticastPendingQueueBufferSpace) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 }
 
+func (m *multicastGroupState) StateTypeName() string {
+	return "pkg/tcpip/network/internal/ip.multicastGroupState"
+}
+
+func (m *multicastGroupState) StateFields() []string {
+	return []string{
+		"joins",
+		"transmissionLeft",
+		"lastToSendReport",
+		"delayedReportJob",
+		"queriedIncludeSources",
+		"deleteScheduled",
+	}
+}
+
+func (m *multicastGroupState) beforeSave() {}
+
+// +checklocksignore
+func (m *multicastGroupState) StateSave(stateSinkObject state.Sink) {
+	m.beforeSave()
+	stateSinkObject.Save(0, &m.joins)
+	stateSinkObject.Save(1, &m.transmissionLeft)
+	stateSinkObject.Save(2, &m.lastToSendReport)
+	stateSinkObject.Save(3, &m.delayedReportJob)
+	stateSinkObject.Save(4, &m.queriedIncludeSources)
+	stateSinkObject.Save(5, &m.deleteScheduled)
+}
+
+func (m *multicastGroupState) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (m *multicastGroupState) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &m.joins)
+	stateSourceObject.Load(1, &m.transmissionLeft)
+	stateSourceObject.Load(2, &m.lastToSendReport)
+	stateSourceObject.Load(3, &m.delayedReportJob)
+	stateSourceObject.Load(4, &m.queriedIncludeSources)
+	stateSourceObject.Load(5, &m.deleteScheduled)
+}
+
+func (g *GenericMulticastProtocolOptions) StateTypeName() string {
+	return "pkg/tcpip/network/internal/ip.GenericMulticastProtocolOptions"
+}
+
+func (g *GenericMulticastProtocolOptions) StateFields() []string {
+	return []string{
+		"Clock",
+		"Protocol",
+		"MaxUnsolicitedReportDelay",
+	}
+}
+
+func (g *GenericMulticastProtocolOptions) beforeSave() {}
+
+// +checklocksignore
+func (g *GenericMulticastProtocolOptions) StateSave(stateSinkObject state.Sink) {
+	g.beforeSave()
+	stateSinkObject.Save(0, &g.Clock)
+	stateSinkObject.Save(1, &g.Protocol)
+	stateSinkObject.Save(2, &g.MaxUnsolicitedReportDelay)
+}
+
+func (g *GenericMulticastProtocolOptions) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (g *GenericMulticastProtocolOptions) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &g.Clock)
+	stateSourceObject.Load(1, &g.Protocol)
+	stateSourceObject.Load(2, &g.MaxUnsolicitedReportDelay)
+}
+
+func (g *GenericMulticastProtocolState) StateTypeName() string {
+	return "pkg/tcpip/network/internal/ip.GenericMulticastProtocolState"
+}
+
+func (g *GenericMulticastProtocolState) StateFields() []string {
+	return []string{
+		"opts",
+		"memberships",
+		"robustnessVariable",
+		"queryInterval",
+		"mode",
+		"modeTimer",
+		"generalQueryV2Timer",
+		"stateChangedReportV2Timer",
+		"stateChangedReportV2TimerSet",
+	}
+}
+
+func (g *GenericMulticastProtocolState) beforeSave() {}
+
+// +checklocksignore
+func (g *GenericMulticastProtocolState) StateSave(stateSinkObject state.Sink) {
+	g.beforeSave()
+	stateSinkObject.Save(0, &g.opts)
+	stateSinkObject.Save(1, &g.memberships)
+	stateSinkObject.Save(2, &g.robustnessVariable)
+	stateSinkObject.Save(3, &g.queryInterval)
+	stateSinkObject.Save(4, &g.mode)
+	stateSinkObject.Save(5, &g.modeTimer)
+	stateSinkObject.Save(6, &g.generalQueryV2Timer)
+	stateSinkObject.Save(7, &g.stateChangedReportV2Timer)
+	stateSinkObject.Save(8, &g.stateChangedReportV2TimerSet)
+}
+
+func (g *GenericMulticastProtocolState) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (g *GenericMulticastProtocolState) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &g.opts)
+	stateSourceObject.Load(1, &g.memberships)
+	stateSourceObject.Load(2, &g.robustnessVariable)
+	stateSourceObject.Load(3, &g.queryInterval)
+	stateSourceObject.Load(4, &g.mode)
+	stateSourceObject.Load(5, &g.modeTimer)
+	stateSourceObject.Load(6, &g.generalQueryV2Timer)
+	stateSourceObject.Load(7, &g.stateChangedReportV2Timer)
+	stateSourceObject.Load(8, &g.stateChangedReportV2TimerSet)
+}
+
+func (m *MultiCounterIPForwardingStats) StateTypeName() string {
+	return "pkg/tcpip/network/internal/ip.MultiCounterIPForwardingStats"
+}
+
+func (m *MultiCounterIPForwardingStats) StateFields() []string {
+	return []string{
+		"Unrouteable",
+		"ExhaustedTTL",
+		"InitializingSource",
+		"LinkLocalSource",
+		"LinkLocalDestination",
+		"PacketTooBig",
+		"HostUnreachable",
+		"ExtensionHeaderProblem",
+		"UnexpectedMulticastInputInterface",
+		"UnknownOutputEndpoint",
+		"NoMulticastPendingQueueBufferSpace",
+		"OutgoingDeviceNoBufferSpace",
+		"Errors",
+	}
+}
+
+func (m *MultiCounterIPForwardingStats) beforeSave() {}
+
+// +checklocksignore
+func (m *MultiCounterIPForwardingStats) StateSave(stateSinkObject state.Sink) {
+	m.beforeSave()
+	stateSinkObject.Save(0, &m.Unrouteable)
+	stateSinkObject.Save(1, &m.ExhaustedTTL)
+	stateSinkObject.Save(2, &m.InitializingSource)
+	stateSinkObject.Save(3, &m.LinkLocalSource)
+	stateSinkObject.Save(4, &m.LinkLocalDestination)
+	stateSinkObject.Save(5, &m.PacketTooBig)
+	stateSinkObject.Save(6, &m.HostUnreachable)
+	stateSinkObject.Save(7, &m.ExtensionHeaderProblem)
+	stateSinkObject.Save(8, &m.UnexpectedMulticastInputInterface)
+	stateSinkObject.Save(9, &m.UnknownOutputEndpoint)
+	stateSinkObject.Save(10, &m.NoMulticastPendingQueueBufferSpace)
+	stateSinkObject.Save(11, &m.OutgoingDeviceNoBufferSpace)
+	stateSinkObject.Save(12, &m.Errors)
+}
+
+func (m *MultiCounterIPForwardingStats) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (m *MultiCounterIPForwardingStats) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &m.Unrouteable)
+	stateSourceObject.Load(1, &m.ExhaustedTTL)
+	stateSourceObject.Load(2, &m.InitializingSource)
+	stateSourceObject.Load(3, &m.LinkLocalSource)
+	stateSourceObject.Load(4, &m.LinkLocalDestination)
+	stateSourceObject.Load(5, &m.PacketTooBig)
+	stateSourceObject.Load(6, &m.HostUnreachable)
+	stateSourceObject.Load(7, &m.ExtensionHeaderProblem)
+	stateSourceObject.Load(8, &m.UnexpectedMulticastInputInterface)
+	stateSourceObject.Load(9, &m.UnknownOutputEndpoint)
+	stateSourceObject.Load(10, &m.NoMulticastPendingQueueBufferSpace)
+	stateSourceObject.Load(11, &m.OutgoingDeviceNoBufferSpace)
+	stateSourceObject.Load(12, &m.Errors)
+}
+
+func (m *MultiCounterIPStats) StateTypeName() string {
+	return "pkg/tcpip/network/internal/ip.MultiCounterIPStats"
+}
+
+func (m *MultiCounterIPStats) StateFields() []string {
+	return []string{
+		"PacketsReceived",
+		"ValidPacketsReceived",
+		"DisabledPacketsReceived",
+		"InvalidDestinationAddressesReceived",
+		"InvalidSourceAddressesReceived",
+		"PacketsDelivered",
+		"PacketsSent",
+		"OutgoingPacketErrors",
+		"MalformedPacketsReceived",
+		"MalformedFragmentsReceived",
+		"IPTablesPreroutingDropped",
+		"IPTablesInputDropped",
+		"IPTablesForwardDropped",
+		"IPTablesOutputDropped",
+		"IPTablesPostroutingDropped",
+		"OptionTimestampReceived",
+		"OptionRecordRouteReceived",
+		"OptionRouterAlertReceived",
+		"OptionUnknownReceived",
+		"Forwarding",
+	}
+}
+
+func (m *MultiCounterIPStats) beforeSave() {}
+
+// +checklocksignore
+func (m *MultiCounterIPStats) StateSave(stateSinkObject state.Sink) {
+	m.beforeSave()
+	stateSinkObject.Save(0, &m.PacketsReceived)
+	stateSinkObject.Save(1, &m.ValidPacketsReceived)
+	stateSinkObject.Save(2, &m.DisabledPacketsReceived)
+	stateSinkObject.Save(3, &m.InvalidDestinationAddressesReceived)
+	stateSinkObject.Save(4, &m.InvalidSourceAddressesReceived)
+	stateSinkObject.Save(5, &m.PacketsDelivered)
+	stateSinkObject.Save(6, &m.PacketsSent)
+	stateSinkObject.Save(7, &m.OutgoingPacketErrors)
+	stateSinkObject.Save(8, &m.MalformedPacketsReceived)
+	stateSinkObject.Save(9, &m.MalformedFragmentsReceived)
+	stateSinkObject.Save(10, &m.IPTablesPreroutingDropped)
+	stateSinkObject.Save(11, &m.IPTablesInputDropped)
+	stateSinkObject.Save(12, &m.IPTablesForwardDropped)
+	stateSinkObject.Save(13, &m.IPTablesOutputDropped)
+	stateSinkObject.Save(14, &m.IPTablesPostroutingDropped)
+	stateSinkObject.Save(15, &m.OptionTimestampReceived)
+	stateSinkObject.Save(16, &m.OptionRecordRouteReceived)
+	stateSinkObject.Save(17, &m.OptionRouterAlertReceived)
+	stateSinkObject.Save(18, &m.OptionUnknownReceived)
+	stateSinkObject.Save(19, &m.Forwarding)
+}
+
+func (m *MultiCounterIPStats) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (m *MultiCounterIPStats) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &m.PacketsReceived)
+	stateSourceObject.Load(1, &m.ValidPacketsReceived)
+	stateSourceObject.Load(2, &m.DisabledPacketsReceived)
+	stateSourceObject.Load(3, &m.InvalidDestinationAddressesReceived)
+	stateSourceObject.Load(4, &m.InvalidSourceAddressesReceived)
+	stateSourceObject.Load(5, &m.PacketsDelivered)
+	stateSourceObject.Load(6, &m.PacketsSent)
+	stateSourceObject.Load(7, &m.OutgoingPacketErrors)
+	stateSourceObject.Load(8, &m.MalformedPacketsReceived)
+	stateSourceObject.Load(9, &m.MalformedFragmentsReceived)
+	stateSourceObject.Load(10, &m.IPTablesPreroutingDropped)
+	stateSourceObject.Load(11, &m.IPTablesInputDropped)
+	stateSourceObject.Load(12, &m.IPTablesForwardDropped)
+	stateSourceObject.Load(13, &m.IPTablesOutputDropped)
+	stateSourceObject.Load(14, &m.IPTablesPostroutingDropped)
+	stateSourceObject.Load(15, &m.OptionTimestampReceived)
+	stateSourceObject.Load(16, &m.OptionRecordRouteReceived)
+	stateSourceObject.Load(17, &m.OptionRouterAlertReceived)
+	stateSourceObject.Load(18, &m.OptionUnknownReceived)
+	stateSourceObject.Load(19, &m.Forwarding)
+}
+
 func init() {
+	state.Register((*dadState)(nil))
+	state.Register((*DADOptions)(nil))
+	state.Register((*DAD)(nil))
 	state.Register((*ErrMessageTooLong)(nil))
 	state.Register((*ErrNoMulticastPendingQueueBufferSpace)(nil))
+	state.Register((*multicastGroupState)(nil))
+	state.Register((*GenericMulticastProtocolOptions)(nil))
+	state.Register((*GenericMulticastProtocolState)(nil))
+	state.Register((*MultiCounterIPForwardingStats)(nil))
+	state.Register((*MultiCounterIPStats)(nil))
 }

@@ -44,6 +44,7 @@ var LogPackets atomicbitops.Uint32 = atomicbitops.FromUint32(1)
 // sniffer was created for this flag to have effect.
 var LogPacketsToPCAP atomicbitops.Uint32 = atomicbitops.FromUint32(1)
 
+// +stateify savable
 type endpoint struct {
 	nested.Endpoint
 	writer     io.Writer

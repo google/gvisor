@@ -40,6 +40,7 @@ const MTU = 1500
 
 var _ stack.LinkEndpoint = (*endpoint)(nil)
 
+// +stateify savable
 type endpoint struct {
 	// fd is the underlying AF_XDP socket.
 	fd int
@@ -52,14 +53,15 @@ type endpoint struct {
 
 	// closed is a function to be called when the FD's peer (if any) closes
 	// its end of the communication pipe.
-	closed func(tcpip.Error)
+	// TODO(b/341946753): Restore when netstack is savable.
+	closed func(tcpip.Error) `state:"nosave"`
 
-	mu sync.RWMutex
+	mu sync.RWMutex `state:"nosave"`
 	// +checkloks:mu
 	networkDispatcher stack.NetworkDispatcher
 
 	// wg keeps track of running goroutines.
-	wg sync.WaitGroup
+	wg sync.WaitGroup `state:"nosave"`
 
 	// control is used to control the AF_XDP socket.
 	control *xdp.ControlBlock

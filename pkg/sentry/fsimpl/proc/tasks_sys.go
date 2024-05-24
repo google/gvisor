@@ -227,22 +227,15 @@ func (d *tcpSackData) Write(ctx context.Context, _ *vfs.FileDescription, src use
 		// No need to handle partial writes thus far.
 		return 0, linuxerr.EINVAL
 	}
-	if src.NumBytes() == 0 {
-		return 0, nil
-	}
-
-	// Limit the amount of memory allocated.
-	src = src.TakeFirst(hostarch.PageSize - 1)
-
-	var v int32
-	n, err := usermem.CopyInt32StringInVec(ctx, src.IO, src.Addrs, &v, src.Opts)
-	if err != nil {
+	buf := make([]int32, 1)
+	n, err := ParseInt32Vec(ctx, src, buf)
+	if err != nil || n == 0 {
 		return 0, err
 	}
 	if d.enabled == nil {
 		d.enabled = new(bool)
 	}
-	*d.enabled = v != 0
+	*d.enabled = buf[0] != 0
 	return n, d.stack.SetTCPSACKEnabled(*d.enabled)
 }
 
@@ -275,19 +268,12 @@ func (d *tcpRecoveryData) Write(ctx context.Context, _ *vfs.FileDescription, src
 		// No need to handle partial writes thus far.
 		return 0, linuxerr.EINVAL
 	}
-	if src.NumBytes() == 0 {
-		return 0, nil
-	}
-
-	// Limit the amount of memory allocated.
-	src = src.TakeFirst(hostarch.PageSize - 1)
-
-	var v int32
-	n, err := usermem.CopyInt32StringInVec(ctx, src.IO, src.Addrs, &v, src.Opts)
-	if err != nil {
+	buf := make([]int32, 1)
+	n, err := ParseInt32Vec(ctx, src, buf)
+	if err != nil || n == 0 {
 		return 0, err
 	}
-	if err := d.stack.SetTCPRecovery(inet.TCPLossRecovery(v)); err != nil {
+	if err := d.stack.SetTCPRecovery(inet.TCPLossRecovery(buf[0])); err != nil {
 		return 0, err
 	}
 	return n, nil
@@ -329,21 +315,15 @@ func (d *tcpMemData) Write(ctx context.Context, _ *vfs.FileDescription, src user
 		// No need to handle partial writes thus far.
 		return 0, linuxerr.EINVAL
 	}
-	if src.NumBytes() == 0 {
-		return 0, nil
-	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
-
-	// Limit the amount of memory allocated.
-	src = src.TakeFirst(hostarch.PageSize - 1)
 	size, err := d.readSizeLocked()
 	if err != nil {
 		return 0, err
 	}
 	buf := []int32{int32(size.Min), int32(size.Default), int32(size.Max)}
-	n, err := usermem.CopyInt32StringsInVec(ctx, src.IO, src.Addrs, buf, src.Opts)
-	if err != nil {
+	n, err := ParseInt32Vec(ctx, src, buf)
+	if err != nil || n == 0 {
 		return 0, err
 	}
 	newSize := inet.TCPBufferSize{
@@ -414,19 +394,12 @@ func (ipf *ipForwarding) Write(ctx context.Context, _ *vfs.FileDescription, src 
 		// No need to handle partial writes thus far.
 		return 0, linuxerr.EINVAL
 	}
-	if src.NumBytes() == 0 {
-		return 0, nil
-	}
-
-	// Limit input size so as not to impact performance if input size is large.
-	src = src.TakeFirst(hostarch.PageSize - 1)
-
-	var v int32
-	n, err := usermem.CopyInt32StringInVec(ctx, src.IO, src.Addrs, &v, src.Opts)
-	if err != nil {
+	buf := make([]int32, 1)
+	n, err := ParseInt32Vec(ctx, src, buf)
+	if err != nil || n == 0 {
 		return 0, err
 	}
-	ipf.enabled = v != 0
+	ipf.enabled = buf[0] != 0
 	if err := ipf.stack.SetForwarding(ipv4.ProtocolNumber, ipf.enabled); err != nil {
 		return 0, err
 	}
@@ -467,17 +440,10 @@ func (pr *portRange) Write(ctx context.Context, _ *vfs.FileDescription, src user
 		// No need to handle partial writes thus far.
 		return 0, linuxerr.EINVAL
 	}
-	if src.NumBytes() == 0 {
-		return 0, nil
-	}
-
-	// Limit input size so as not to impact performance if input size is
-	// large.
-	src = src.TakeFirst(hostarch.PageSize - 1)
 
 	ports := make([]int32, 2)
-	n, err := usermem.CopyInt32StringsInVec(ctx, src.IO, src.Addrs, ports, src.Opts)
-	if err != nil {
+	n, err := ParseInt32Vec(ctx, src, ports)
+	if err != nil || n == 0 {
 		return 0, err
 	}
 
@@ -523,24 +489,17 @@ func (f *atomicInt32File) Write(ctx context.Context, _ *vfs.FileDescription, src
 		// Ignore partial writes.
 		return 0, linuxerr.EINVAL
 	}
-	if src.NumBytes() == 0 {
-		return 0, nil
-	}
-
-	// Limit the amount of memory allocated.
-	src = src.TakeFirst(hostarch.PageSize - 1)
-
-	var v int32
-	n, err := usermem.CopyInt32StringInVec(ctx, src.IO, src.Addrs, &v, src.Opts)
-	if err != nil {
+	buf := make([]int32, 1)
+	n, err := ParseInt32Vec(ctx, src, buf)
+	if err != nil || n == 0 {
 		return 0, err
 	}
 
-	if v < f.min || v > f.max {
+	if buf[0] < f.min || buf[0] > f.max {
 		return 0, linuxerr.EINVAL
 	}
 
-	f.val.Store(v)
+	f.val.Store(buf[0])
 	return n, nil
 }
 
@@ -554,4 +513,18 @@ func randUUID() string {
 	uuid[8] = (uuid[8] & 0x3f) | 0x80 // RFC 4122 UUID
 	uuid[6] = (uuid[6] & 0x0f) | 0x40 // Version 4 (random)
 	return fmt.Sprintf("%x-%x-%x-%x-%x\n", uuid[:4], uuid[4:6], uuid[6:8], uuid[8:10], uuid[10:])
+}
+
+// ParseInt32Vec interprets src as string encoding slice of int32, and
+// returns the parsed value and the number of bytes read.
+//
+// The numbers of int32 will be populated even if an error is returned eventually.
+func ParseInt32Vec(ctx context.Context, src usermem.IOSequence, buf []int32) (int64, error) {
+	if src.NumBytes() == 0 {
+		return 0, nil
+	}
+	// Limit input size so as not to impact performance if input size is large.
+	src = src.TakeFirst(hostarch.PageSize - 1)
+
+	return usermem.CopyInt32StringsInVec(ctx, src.IO, src.Addrs, buf, src.Opts)
 }

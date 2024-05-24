@@ -105,6 +105,8 @@ const (
 
 // multicastGroupState holds the Generic Multicast Protocol state for a
 // multicast group.
+//
+// +stateify savable
 type multicastGroupState struct {
 	// joins is the number of times the group has been joined.
 	joins uint64
@@ -130,7 +132,8 @@ type multicastGroupState struct {
 	// delyedReportJobFiresAt is the time when the delayed report job will fire.
 	//
 	// A zero value indicates that the job is not scheduled.
-	delayedReportJobFiresAt time.Time
+	// TODO(b/341946753): Restore when netstack is savable.
+	delayedReportJobFiresAt time.Time `state:"nosave"`
 
 	// queriedIncludeSources holds sources that were queried for.
 	//
@@ -155,9 +158,12 @@ func (m *multicastGroupState) clearQueriedIncludeSources() {
 
 // GenericMulticastProtocolOptions holds options for the generic multicast
 // protocol.
+//
+// +stateify savable
 type GenericMulticastProtocolOptions struct {
 	// Rand is the source of random numbers.
-	Rand *rand.Rand
+	// TODO(b/341946753): Restore when netstack is savable.
+	Rand *rand.Rand `state:"nosave"`
 
 	// Clock is the clock used to create timers.
 	Clock tcpip.Clock
@@ -267,9 +273,11 @@ const (
 //
 // GenericMulticastProtocolState.MakeAllNonMemberLocked MUST be called when the
 // multicast group protocol is disabled so that leave messages may be sent.
+//
+// +stateify savable
 type GenericMulticastProtocolState struct {
 	// Do not allow overwriting this state.
-	_ sync.NoCopy
+	_ sync.NoCopy `state:"nosave"`
 
 	opts GenericMulticastProtocolOptions
 
@@ -277,7 +285,7 @@ type GenericMulticastProtocolState struct {
 	memberships map[tcpip.Address]multicastGroupState
 
 	// protocolMU is the mutex used to protect the protocol.
-	protocolMU *sync.RWMutex
+	protocolMU *sync.RWMutex `state:"nosave"`
 
 	// V2 state.
 	robustnessVariable uint8
@@ -285,8 +293,9 @@ type GenericMulticastProtocolState struct {
 	mode               protocolMode
 	modeTimer          tcpip.Timer
 
-	generalQueryV2Timer        tcpip.Timer
-	generalQueryV2TimerFiresAt time.Time
+	generalQueryV2Timer tcpip.Timer
+	// TODO(b/341946753): Restore when netstack is savable.
+	generalQueryV2TimerFiresAt time.Time `state:"nosave"`
 
 	stateChangedReportV2Timer    tcpip.Timer
 	stateChangedReportV2TimerSet bool

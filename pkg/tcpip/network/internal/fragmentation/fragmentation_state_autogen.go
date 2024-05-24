@@ -8,6 +8,178 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
+func (f *FragmentID) StateTypeName() string {
+	return "pkg/tcpip/network/internal/fragmentation.FragmentID"
+}
+
+func (f *FragmentID) StateFields() []string {
+	return []string{
+		"Source",
+		"Destination",
+		"ID",
+		"Protocol",
+	}
+}
+
+func (f *FragmentID) beforeSave() {}
+
+// +checklocksignore
+func (f *FragmentID) StateSave(stateSinkObject state.Sink) {
+	f.beforeSave()
+	stateSinkObject.Save(0, &f.Source)
+	stateSinkObject.Save(1, &f.Destination)
+	stateSinkObject.Save(2, &f.ID)
+	stateSinkObject.Save(3, &f.Protocol)
+}
+
+func (f *FragmentID) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (f *FragmentID) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &f.Source)
+	stateSourceObject.Load(1, &f.Destination)
+	stateSourceObject.Load(2, &f.ID)
+	stateSourceObject.Load(3, &f.Protocol)
+}
+
+func (f *Fragmentation) StateTypeName() string {
+	return "pkg/tcpip/network/internal/fragmentation.Fragmentation"
+}
+
+func (f *Fragmentation) StateFields() []string {
+	return []string{
+		"highLimit",
+		"lowLimit",
+		"reassemblers",
+		"rList",
+		"memSize",
+		"timeout",
+		"blockSize",
+		"clock",
+		"releaseJob",
+		"timeoutHandler",
+	}
+}
+
+func (f *Fragmentation) beforeSave() {}
+
+// +checklocksignore
+func (f *Fragmentation) StateSave(stateSinkObject state.Sink) {
+	f.beforeSave()
+	stateSinkObject.Save(0, &f.highLimit)
+	stateSinkObject.Save(1, &f.lowLimit)
+	stateSinkObject.Save(2, &f.reassemblers)
+	stateSinkObject.Save(3, &f.rList)
+	stateSinkObject.Save(4, &f.memSize)
+	stateSinkObject.Save(5, &f.timeout)
+	stateSinkObject.Save(6, &f.blockSize)
+	stateSinkObject.Save(7, &f.clock)
+	stateSinkObject.Save(8, &f.releaseJob)
+	stateSinkObject.Save(9, &f.timeoutHandler)
+}
+
+func (f *Fragmentation) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (f *Fragmentation) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &f.highLimit)
+	stateSourceObject.Load(1, &f.lowLimit)
+	stateSourceObject.Load(2, &f.reassemblers)
+	stateSourceObject.Load(3, &f.rList)
+	stateSourceObject.Load(4, &f.memSize)
+	stateSourceObject.Load(5, &f.timeout)
+	stateSourceObject.Load(6, &f.blockSize)
+	stateSourceObject.Load(7, &f.clock)
+	stateSourceObject.Load(8, &f.releaseJob)
+	stateSourceObject.Load(9, &f.timeoutHandler)
+}
+
+func (h *hole) StateTypeName() string {
+	return "pkg/tcpip/network/internal/fragmentation.hole"
+}
+
+func (h *hole) StateFields() []string {
+	return []string{
+		"first",
+		"last",
+		"filled",
+		"final",
+		"pkt",
+	}
+}
+
+func (h *hole) beforeSave() {}
+
+// +checklocksignore
+func (h *hole) StateSave(stateSinkObject state.Sink) {
+	h.beforeSave()
+	stateSinkObject.Save(0, &h.first)
+	stateSinkObject.Save(1, &h.last)
+	stateSinkObject.Save(2, &h.filled)
+	stateSinkObject.Save(3, &h.final)
+	stateSinkObject.Save(4, &h.pkt)
+}
+
+func (h *hole) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (h *hole) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &h.first)
+	stateSourceObject.Load(1, &h.last)
+	stateSourceObject.Load(2, &h.filled)
+	stateSourceObject.Load(3, &h.final)
+	stateSourceObject.Load(4, &h.pkt)
+}
+
+func (r *reassembler) StateTypeName() string {
+	return "pkg/tcpip/network/internal/fragmentation.reassembler"
+}
+
+func (r *reassembler) StateFields() []string {
+	return []string{
+		"reassemblerEntry",
+		"id",
+		"memSize",
+		"proto",
+		"holes",
+		"filled",
+		"done",
+		"createdAt",
+		"pkt",
+	}
+}
+
+func (r *reassembler) beforeSave() {}
+
+// +checklocksignore
+func (r *reassembler) StateSave(stateSinkObject state.Sink) {
+	r.beforeSave()
+	stateSinkObject.Save(0, &r.reassemblerEntry)
+	stateSinkObject.Save(1, &r.id)
+	stateSinkObject.Save(2, &r.memSize)
+	stateSinkObject.Save(3, &r.proto)
+	stateSinkObject.Save(4, &r.holes)
+	stateSinkObject.Save(5, &r.filled)
+	stateSinkObject.Save(6, &r.done)
+	stateSinkObject.Save(7, &r.createdAt)
+	stateSinkObject.Save(8, &r.pkt)
+}
+
+func (r *reassembler) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (r *reassembler) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &r.reassemblerEntry)
+	stateSourceObject.Load(1, &r.id)
+	stateSourceObject.Load(2, &r.memSize)
+	stateSourceObject.Load(3, &r.proto)
+	stateSourceObject.Load(4, &r.holes)
+	stateSourceObject.Load(5, &r.filled)
+	stateSourceObject.Load(6, &r.done)
+	stateSourceObject.Load(7, &r.createdAt)
+	stateSourceObject.Load(8, &r.pkt)
+}
+
 func (l *reassemblerList) StateTypeName() string {
 	return "pkg/tcpip/network/internal/fragmentation.reassemblerList"
 }
@@ -65,6 +237,10 @@ func (e *reassemblerEntry) StateLoad(ctx context.Context, stateSourceObject stat
 }
 
 func init() {
+	state.Register((*FragmentID)(nil))
+	state.Register((*Fragmentation)(nil))
+	state.Register((*hole)(nil))
+	state.Register((*reassembler)(nil))
 	state.Register((*reassemblerList)(nil))
 	state.Register((*reassemblerEntry)(nil))
 }

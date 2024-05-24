@@ -30,6 +30,8 @@ func (lifetimes *AddressLifetimes) sanitize() {
 var _ AddressableEndpoint = (*AddressableEndpointState)(nil)
 
 // AddressableEndpointState is an implementation of an AddressableEndpoint.
+//
+// +stateify savable
 type AddressableEndpointState struct {
 	networkEndpoint NetworkEndpoint
 	options         AddressableEndpointStateOptions
@@ -38,7 +40,7 @@ type AddressableEndpointState struct {
 	//
 	// AddressableEndpointState.mu
 	//   addressState.mu
-	mu addressableEndpointStateRWMutex
+	mu addressableEndpointStateRWMutex `state:"nosave"`
 	// +checklocks:mu
 	endpoints map[tcpip.Address]*addressState
 	// +checklocks:mu
@@ -47,6 +49,8 @@ type AddressableEndpointState struct {
 
 // AddressableEndpointStateOptions contains options used to configure an
 // AddressableEndpointState.
+//
+// +stateify savable
 type AddressableEndpointStateOptions struct {
 	// HiddenWhileDisabled determines whether addresses should be returned to
 	// callers while the NetworkEndpoint this AddressableEndpointState belongs
@@ -732,6 +736,8 @@ func (a *AddressableEndpointState) Cleanup() {
 var _ AddressEndpoint = (*addressState)(nil)
 
 // addressState holds state for an address.
+//
+// +stateify savable
 type addressState struct {
 	addressableEndpointState *AddressableEndpointState
 	addr                     tcpip.AddressWithPrefix
@@ -742,7 +748,7 @@ type addressState struct {
 	//
 	// AddressableEndpointState.mu
 	//   addressState.mu
-	mu   addressStateRWMutex
+	mu   addressStateRWMutex `state:"nosave"`
 	refs addressStateRefs
 	// checklocks:mu
 	kind AddressKind

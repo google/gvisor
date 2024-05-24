@@ -513,9 +513,6 @@ func New(args Args) (*Loader, error) {
 		// As per tmpfs(5), the default size limit is 50% of total physical RAM.
 		// See mm/shmem.c:shmem_default_max_blocks().
 		tmpfs.SetDefaultSizeLimit(args.TotalHostMem / 2)
-		// Set a generous but sane on maximum allowable size for memory
-		// file allocates.
-		usage.MaximumAllocatableBytes = args.TotalHostMem
 	}
 
 	if args.TotalMem > 0 {
@@ -523,8 +520,6 @@ func New(args Args) (*Loader, error) {
 		// use /proc/meminfo can make allocations based on this limit.
 		usage.MinimumTotalMemoryBytes = args.TotalMem
 		usage.MaximumTotalMemoryBytes = args.TotalMem
-		// Reset max allocatable to TotalMem because it's smaller than TotalHostMem.
-		usage.MaximumAllocatableBytes = args.TotalMem
 		log.Infof("Setting total memory to %.2f GB", float64(args.TotalMem)/(1<<30))
 	}
 
@@ -738,9 +733,7 @@ func createMemoryFile() (*pgalloc.MemoryFile, error) {
 	// We can't enable pgalloc.MemoryFileOpts.UseHostMemcgPressure even if
 	// there are memory cgroups specified, because at this point we're already
 	// in a mount namespace in which the relevant cgroupfs is not visible.
-	mf, err := pgalloc.NewMemoryFile(memfile, pgalloc.MemoryFileOpts{
-		EnforceMaximumAllocatable: true,
-	})
+	mf, err := pgalloc.NewMemoryFile(memfile, pgalloc.MemoryFileOpts{})
 	if err != nil {
 		_ = memfile.Close()
 		return nil, fmt.Errorf("error creating pgalloc.MemoryFile: %w", err)
@@ -1237,6 +1230,11 @@ func (l *Loader) executeAsync(args *control.ExecArgs) (kernel.ThreadID, error) {
 	if args.MountNamespace == nil || !args.MountNamespace.TryIncRef() {
 		return 0, fmt.Errorf("container %q has stopped", args.ContainerID)
 	}
+	sctx := l.k.SupervisorContext()
+	root := args.MountNamespace.Root(sctx)
+	defer root.DecRef(sctx)
+	ctx := vfs.WithRoot(sctx, root)
+	defer args.MountNamespace.DecRef(ctx)
 
 	args.Envv, err = specutils.ResolveEnvs(args.Envv)
 	if err != nil {
@@ -1244,11 +1242,6 @@ func (l *Loader) executeAsync(args *control.ExecArgs) (kernel.ThreadID, error) {
 	}
 
 	// Add the HOME environment variable if it is not already set.
-	sctx := l.k.SupervisorContext()
-	root := args.MountNamespace.Root(sctx)
-	defer root.DecRef(sctx)
-	ctx := vfs.WithRoot(sctx, root)
-	defer args.MountNamespace.DecRef(ctx)
 	args.Envv, err = user.MaybeAddExecUserHome(ctx, args.MountNamespace, args.KUID, args.Envv)
 	if err != nil {
 		return 0, err

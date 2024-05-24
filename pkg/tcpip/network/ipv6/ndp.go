@@ -341,6 +341,8 @@ func (c HandleRAsConfiguration) enabled(forwarding bool) bool {
 }
 
 // NDPConfigurations is the NDP configurations for the netstack.
+//
+// +stateify savable
 type NDPConfigurations struct {
 	// The number of Router Solicitation messages to send when the IPv6 endpoint
 	// becomes enabled.
@@ -461,6 +463,7 @@ func (c *NDPConfigurations) validate() {
 	}
 }
 
+// +stateify savable
 type timer struct {
 	// done indicates to the timer that the timer was stopped.
 	done *bool
@@ -468,15 +471,18 @@ type timer struct {
 	timer tcpip.Timer
 }
 
+// +stateify savable
 type offLinkRoute struct {
 	dest   tcpip.Subnet
 	router tcpip.Address
 }
 
 // ndpState is the per-Interface NDP state.
+//
+// +stateify savable
 type ndpState struct {
 	// Do not allow overwriting this state.
-	_ sync.NoCopy
+	_ sync.NoCopy `state:"nosave"`
 
 	// The IPv6 endpoint this ndpState is for.
 	ep *endpoint
@@ -518,6 +524,8 @@ type ndpState struct {
 
 // offLinkRouteState holds data associated with an off-link route discovered by
 // a Router Advertisement (RA).
+//
+// +stateify savable
 type offLinkRouteState struct {
 	prf header.NDPRoutePreference
 
@@ -530,6 +538,8 @@ type offLinkRouteState struct {
 // onLinkPrefixState holds data associated with an on-link prefix discovered by
 // a Router Advertisement's Prefix Information option (PI) when the NDP
 // configurations was configured to do so.
+//
+// +stateify savable
 type onLinkPrefixState struct {
 	// Job to invalidate the on-link prefix.
 	//
@@ -538,6 +548,8 @@ type onLinkPrefixState struct {
 }
 
 // tempSLAACAddrState holds state associated with a temporary SLAAC address.
+//
+// +stateify savable
 type tempSLAACAddrState struct {
 	// Job to deprecate the temporary SLAAC address.
 	//
@@ -565,7 +577,22 @@ type tempSLAACAddrState struct {
 	regenerated bool
 }
 
+// +stateify savable
+type stableAddrState struct {
+	// The address's endpoint.
+	//
+	// May only be nil when the address is being (re-)generated. Otherwise,
+	// must not be nil as all SLAAC prefixes must have a stable address.
+	addressEndpoint stack.AddressEndpoint
+
+	// The number of times an address has been generated locally where the IPv6
+	// endpoint already had the generated address.
+	localGenerationFailures uint8
+}
+
 // slaacPrefixState holds state associated with a SLAAC prefix.
+//
+// +stateify savable
 type slaacPrefixState struct {
 	// Job to deprecate the prefix.
 	//
@@ -584,17 +611,7 @@ type slaacPrefixState struct {
 	preferredUntil *tcpip.MonotonicTime
 
 	// State associated with the stable address generated for the prefix.
-	stableAddr struct {
-		// The address's endpoint.
-		//
-		// May only be nil when the address is being (re-)generated. Otherwise,
-		// must not be nil as all SLAAC prefixes must have a stable address.
-		addressEndpoint stack.AddressEndpoint
-
-		// The number of times an address has been generated locally where the IPv6
-		// endpoint already had the generated address.
-		localGenerationFailures uint8
-	}
+	stableAddr stableAddrState
 
 	// The temporary (short-lived) addresses generated for the SLAAC prefix.
 	tempAddrs map[tcpip.Address]tempSLAACAddrState
