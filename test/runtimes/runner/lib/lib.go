@@ -266,6 +266,9 @@ func (f testDeps) ReadCorpus(string, []reflect.Type) ([]corpusEntry, error) { re
 func (f testDeps) CheckCorpus([]any, []reflect.Type) error                  { return nil }
 func (f testDeps) ResetCoverage()                                           {}
 func (f testDeps) SnapshotCoverage()                                        {}
+func (f testDeps) InitRuntimeCoverage() (mode string, tearDown func(string, string) (string, error), snapcov func() float64) {
+	return
+}
 
 // Copied from testing/fuzz.go.
 type corpusEntry = struct {
