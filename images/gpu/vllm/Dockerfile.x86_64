@@ -1,0 +1,21 @@
+# v2.45.1
+FROM alpine/git@sha256:4d7fe8d770483993c0cec264d49a573bac49e5239db47a9846572352e72da49c as downloader
+# post checkout hook. checks that command git lfs is available.
+RUN apk add git-lfs && \
+    git lfs install && \
+    GIT_CLONE_PROTECTION_ACTIVE=false git clone https://huggingface.co/facebook/opt-125m /opt-125m && \
+    rm /opt-125m/flax_model.msgpack && \
+    rm /opt-125m/tf_model.h5
+# post checkout hook. checks that command git lfs is available.
+RUN GIT_CLONE_PROTECTION_ACTIVE=false git clone https://huggingface.co/datasets/anon8231489123/ShareGPT_Vicuna_unfiltered /dataset
+RUN git clone https://github.com/vllm-project/vllm.git /vllm && cd /vllm && git checkout v0.4.2
+
+# v0.4.2
+FROM vllm/vllm-openai@sha256:c63bd9e99c6d5914032b396be38a80fd9640693da62b64b907434d38bf38a8e9
+COPY --from=downloader /vllm/examples/template_chatml.jinja /vllm/examples/template_chatml.jinja
+COPY --from=downloader /vllm/benchmarks /vllm/benchmarks
+COPY --from=downloader /opt-125m /model
+COPY --from=downloader /dataset/ShareGPT_V3_unfiltered_cleaned_split.json /ShareGPT_V3_unfiltered_cleaned_split.json
+
+ENTRYPOINT ["python3"]
+CMD ["-m", "vllm.entrypoints.openai.api_server", "--model", "/model", "--chat-template", "/vllm/examples/template_chatml.jinja"]
