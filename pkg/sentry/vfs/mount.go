@@ -1569,7 +1569,7 @@ func superBlockOpts(mountPath string, mnt *Mount) string {
 func (vfs *VirtualFilesystem) generateOptionalTags(ctx context.Context, mnt *Mount, root VirtualDentry) string {
 	vfs.lockMounts()
 	defer vfs.unlockMounts(ctx)
-	// TODO(b/249777195): Support MS_UNBINDABLE propagation type.
+	// TODO(b/305893463): Support MS_UNBINDABLE propagation type.
 	var optionalSb strings.Builder
 	if mnt.isShared {
 		optionalSb.WriteString(fmt.Sprintf("shared:%d ", mnt.groupID))
