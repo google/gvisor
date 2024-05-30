@@ -412,8 +412,41 @@ packetimpact_testbench(
 )
 
 packetimpact_testbench(
-    name = "generic_dgram_socket_send_recv",
-    srcs = ["generic_dgram_socket_send_recv_test.go"],
+    name = "icmpv4_socket_send_recv",
+    srcs = [
+        "generic_dgram_socket_send_recv.go",
+        "icmpv4_socket_send_recv_test.go",
+    ],
+    deps = [
+        "//pkg/tcpip",
+        "//pkg/tcpip/header",
+        "//test/packetimpact/testbench",
+        "@com_github_google_go_cmp//cmp:go_default_library",
+        "@org_golang_x_sys//unix:go_default_library",
+    ],
+)
+
+packetimpact_testbench(
+    name = "icmpv6_socket_send_recv",
+    srcs = [
+        "generic_dgram_socket_send_recv.go",
+        "icmpv6_socket_send_recv_test.go",
+    ],
+    deps = [
+        "//pkg/tcpip",
+        "//pkg/tcpip/header",
+        "//test/packetimpact/testbench",
+        "@com_github_google_go_cmp//cmp:go_default_library",
+        "@org_golang_x_sys//unix:go_default_library",
+    ],
+)
+
+packetimpact_testbench(
+    name = "udp_socket_send_recv",
+    srcs = [
+        "generic_dgram_socket_send_recv.go",
+        "udp_socket_send_recv_test.go",
+    ],
     deps = [
         "//pkg/tcpip",
         "//pkg/tcpip/header",
