@@ -304,7 +304,15 @@ ALL_TESTS = [
         name = "tcp_fin_retransmission",
     ),
     PacketimpactTestInfo(
-        name = "generic_dgram_socket_send_recv",
+        name = "icmpv4_socket_send_recv",
+        timeout = "long",
+    ),
+    PacketimpactTestInfo(
+        name = "icmpv6_socket_send_recv",
+        timeout = "long",
+    ),
+    PacketimpactTestInfo(
+        name = "udp_socket_send_recv",
         timeout = "long",
     ),
     PacketimpactTestInfo(
