@@ -24,12 +24,27 @@ type contextID int
 const (
 	// CtxStack is a Context.Value key for a network stack.
 	CtxStack contextID = iota
+	// CtxNamespaceByFD is a Context.Value key for NamespaceByFD.
+	CtxNamespaceByFD
 )
 
 // StackFromContext returns the network stack associated with ctx.
 func StackFromContext(ctx context.Context) Stack {
 	if v := ctx.Value(CtxStack); v != nil {
 		return v.(Stack)
+	}
+	return nil
+}
+
+// NamespaceByFD returns the network namespace associated with the specified
+// file descriptor.
+type NamespaceByFD = func(fd int32) (*Namespace, error)
+
+// NamespaceByFDFromContext returns NamespaceByFD to lookup the network
+// namespace associated with the specified file descriptor.
+func NamespaceByFDFromContext(ctx context.Context) NamespaceByFD {
+	if v := ctx.Value(CtxNamespaceByFD); v != nil {
+		return v.(NamespaceByFD)
 	}
 	return nil
 }

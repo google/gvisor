@@ -19,6 +19,8 @@
 #include <linux/if.h>
 #include <linux/netlink.h>
 #include <linux/rtnetlink.h>
+#include <linux/veth.h>
+#include <string.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -1280,6 +1282,79 @@ TEST(NetlinkRouteTest, PasscredCreds) {
   // running in a userns without root mapped.
   EXPECT_THAT(creds.uid, AnyOf(Eq(0), Eq(65534)));
   EXPECT_THAT(creds.gid, AnyOf(Eq(0), Eq(65534)));
+}
+
+#ifndef NLMSG_TAIL
+#define NLMSG_TAIL(nmsg) \
+  ((struct rtattr*)(((char*)(nmsg)) + NLMSG_ALIGN((nmsg)->nlmsg_len)))
+#endif
+
+void addattr(struct nlmsghdr* n, int maxlen, int type, const void* data,
+             int alen) {
+  int len = NLA_HDRLEN + alen;
+  struct rtattr* rta;
+
+  ASSERT_LE(NLMSG_ALIGN(n->nlmsg_len) + RTA_ALIGN(len), maxlen);
+
+  rta = NLMSG_TAIL(n);
+  rta->rta_type = type;
+  rta->rta_len = len;
+  memcpy(RTA_DATA(rta), data, alen);
+  n->nlmsg_len = NLMSG_ALIGN(n->nlmsg_len) + RTA_ALIGN(len);
+}
+
+TEST(NetlinkRouteTest, VethAdd) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+  SKIP_IF(IsRunningWithHostinet());
+
+  Link loopback_link = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink());
+
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
+
+  struct request {
+    struct nlmsghdr hdr;
+    struct ifinfomsg ifm;
+    char buf[1024];
+  };
+
+  struct request req = {};
+  req.hdr.nlmsg_len = NLMSG_LENGTH(sizeof(struct ifinfomsg));
+  req.hdr.nlmsg_type = RTM_NEWLINK;
+  req.hdr.nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK | NLM_F_CREATE;
+  req.hdr.nlmsg_seq = kSeq;
+  req.ifm.ifi_family = AF_UNSPEC;
+  req.ifm.ifi_index = 0;
+  req.ifm.ifi_change = IFF_UP;
+  req.ifm.ifi_flags = IFF_UP;
+
+  const char veth_first[] = "veth_first";
+  addattr(&req.hdr, sizeof(req), IFLA_IFNAME, veth_first, strlen(veth_first));
+
+  struct rtattr* linkinfo;
+  linkinfo = NLMSG_TAIL(&req.hdr);
+  {
+    addattr(&req.hdr, sizeof(req), IFLA_LINKINFO, nullptr, 0);
+    addattr(&req.hdr, sizeof(req), IFLA_INFO_KIND, "veth", 4);
+
+    struct rtattr *veth_data, *peer_data;
+    veth_data = NLMSG_TAIL(&req.hdr);
+    {
+      addattr(&req.hdr, sizeof(req), IFLA_INFO_DATA, NULL, 0);
+      peer_data = NLMSG_TAIL(&req.hdr);
+      {
+        struct ifinfomsg ifm = {};
+        addattr(&req.hdr, sizeof(req), VETH_INFO_PEER, &ifm, sizeof(ifm));
+        const char veth_second[] = "veth_second";
+        addattr(&req.hdr, sizeof(req), IFLA_IFNAME, veth_second,
+                strlen(veth_second));
+      }
+      peer_data->rta_len = (uint64_t)NLMSG_TAIL(&req.hdr) - (uint64_t)peer_data;
+    }
+    veth_data->rta_len = (uint64_t)NLMSG_TAIL(&req.hdr) - (uint64_t)veth_data;
+  }
+  linkinfo->rta_len = (uint64_t)NLMSG_TAIL(&req.hdr) - (uint64_t)linkinfo;
+  EXPECT_NO_ERRNO(NetlinkRequestAckOrError(fd, kSeq, &req, req.hdr.nlmsg_len));
 }
 
 }  // namespace

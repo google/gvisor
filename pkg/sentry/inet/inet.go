@@ -247,3 +247,25 @@ const (
 	TCP_RACK_STATIC_REO_WND
 	TCP_RACK_NO_DUPTHRESH
 )
+
+// InterfaceRequest contains information about an adding interface.
+type InterfaceRequest struct {
+	// Kind is the link type.
+	Kind string
+	// Name is the interface name.
+	Name string
+	// Addr is the hardware device address.
+	Addr []byte
+	// MTU is the maximum transmission unit.
+	MTU uint32
+	// Data is link type specific device properties.
+	Data any
+}
+
+// VethPeerReq contains information about a second interface of a new veth pair.
+type VethPeerReq struct {
+	// Req is information about the second end of the new veth pair.
+	Req InterfaceRequest
+	// Stack is the stack where the second end has to be added.
+	Stack Stack
+}

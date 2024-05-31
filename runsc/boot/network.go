@@ -255,7 +255,7 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 
 	// Loopback normally appear before other interfaces.
 	for _, link := range args.LoopbackLinks {
-		nicID++
+		nicID = tcpip.NICID(n.Stack.UniqueID())
 		nicids[link.Name] = nicID
 
 		linkEP := ethernet.New(loopback.New())
