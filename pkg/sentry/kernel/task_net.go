@@ -15,6 +15,9 @@
 package kernel
 
 import (
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/nsfs"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
 )
 
@@ -49,4 +52,28 @@ func (t *Task) GetNetworkNamespace() *inet.Namespace {
 	}
 	t.mu.Unlock()
 	return netns
+}
+
+// NetworkNamespaceByFD returns the network namespace associated with the specified descriptor.
+func (t *Task) NetworkNamespaceByFD(fd int32) (*inet.Namespace, error) {
+	file := t.GetFile(fd)
+	if file == nil {
+		return nil, linuxerr.EBADF
+	}
+	defer file.DecRef(t)
+
+	d, ok := file.Dentry().Impl().(*kernfs.Dentry)
+	if !ok {
+		return nil, linuxerr.EINVAL
+	}
+	i, ok := d.Inode().(*nsfs.Inode)
+	if !ok {
+		return nil, linuxerr.EINVAL
+	}
+	ns, ok := i.Namespace().(*inet.Namespace)
+	if !ok {
+		return nil, linuxerr.EINVAL
+	}
+	ns.IncRef()
+	return ns, nil
 }

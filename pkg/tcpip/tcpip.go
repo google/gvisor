@@ -35,6 +35,8 @@ import (
 	"io"
 	"math"
 	"math/bits"
+	"math/rand"
+	"net"
 	"reflect"
 	"strconv"
 	"strings"
@@ -2708,6 +2710,15 @@ func ParseMACAddress(s string) (LinkAddress, error) {
 		addr = append(addr, byte(u))
 	}
 	return LinkAddress(addr), nil
+}
+
+// GetRandMacAddr returns a mac address that can be used for local virtual devices.
+func GetRandMacAddr() LinkAddress {
+	mac := make(net.HardwareAddr, 6)
+	rand.Read(mac) // Fill with random data.
+	mac[0] &^= 0x1 // Clear multicast bit.
+	mac[0] |= 0x2  // Set local assignment bit (IEEE802).
+	return LinkAddress(mac)
 }
 
 // AddressWithPrefix is an address with its subnet prefix length.
