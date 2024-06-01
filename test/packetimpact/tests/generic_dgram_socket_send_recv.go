@@ -86,6 +86,7 @@ func runAllCombinations(t *testing.T, proto protocolTest) {
 		dut.Net.RemoteIPv6,
 	} {
 		t.Run(fmt.Sprintf("bindTo=%s", bindTo), func(t *testing.T) {
+			t.Parallel()
 			for _, sendTo := range []net.IP{
 				net.IPv4bcast,
 				net.IPv4allsys,
