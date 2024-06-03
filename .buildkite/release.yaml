@@ -21,7 +21,6 @@ env:
 steps:
   - <<: *common
     label: ":ship: Push all images (x86_64)"
-    if: build.branch == "master" && build.tag == null
     commands:
       - make ARCH=x86_64 push-all-images
     agents:
