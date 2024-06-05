@@ -289,6 +289,27 @@ func TestGetExecUIDGIDFromUser(t *testing.T) {
 			expectedUID:    65534,
 			expectedGID:    65534,
 		},
+		"success_with_comments": {
+			user:           "user0",
+			passwdContents: "#This is a comment\nuser0::1000:1111:&:/home/user0:/bin/sh\nuser2::1002:1112:&:/home/user2:/bin/sh\nuser3:&:1003:1113::/home/user3:/bin/sh",
+			passwdMode:     linux.S_IFREG | 0666,
+			expectedUID:    1000,
+			expectedGID:    1111,
+		},
+		"success_with_comments_mid_file": {
+			user:           "user0",
+			passwdContents: "user0::1000:1111:&:/home/user0:/bin/sh\nuser2::1002:1112:&:/home/user2:/bin/sh\n#This is a comment\n\nuser3:&:1003:1113::/home/user3:/bin/sh",
+			passwdMode:     linux.S_IFREG | 0666,
+			expectedUID:    1000,
+			expectedGID:    1111,
+		},
+		"success_empty_gecos": {
+			user:           "user0",
+			passwdContents: "user0::1000:1111::/home/user0:/bin/sh\nuser2::1002:1112::/home/user2:/bin/sh\nuser3::1003:1113::/home/user3:/bin/sh",
+			passwdMode:     linux.S_IFREG | 0666,
+			expectedUID:    1000,
+			expectedGID:    1111,
+		},
 	}
 
 	for name, tc := range tests {

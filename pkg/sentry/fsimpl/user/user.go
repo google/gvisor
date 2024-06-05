@@ -176,7 +176,7 @@ func findUIDGIDInPasswd(passwd io.Reader, user string) (auth.KUID, auth.KGID, er
 	//	- optional encrypted password
 	//	- numerical user ID
 	//	- numerical group ID
-	//	- user name or comment field
+	//	- Gecos field
 	//	- user home directory
 	//	- optional user command interpreter
 	const (
@@ -185,6 +185,7 @@ func findUIDGIDInPasswd(passwd io.Reader, user string) (auth.KUID, auth.KGID, er
 		passwdIdx = 1
 		uidIdx    = 2
 		gidIdx    = 3
+		gecosIdx  = 4
 		shellIdx  = 6
 	)
 	usergroup := strings.SplitN(user, ":", 2)
@@ -204,24 +205,24 @@ func findUIDGIDInPasswd(passwd io.Reader, user string) (auth.KUID, auth.KGID, er
 		}
 
 		line := strings.TrimSpace(s.Text())
-		if line == "" {
+		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
 
 		parts := strings.Split(line, ":")
 		if len(parts) != numFields {
 			// Return error if the format is invalid.
-			return defaultUID, defaultGID, fmt.Errorf("invalid line found in /etc/passwd")
+			return defaultUID, defaultGID, fmt.Errorf("invalid line found in /etc/passwd, there should be 7 fields but found %v", len(parts))
 		}
 		for i := 0; i < numFields; i++ {
-			// The password and user command interpreter fields are
+			// The password, GECOS and user command interpreter fields are
 			// optional, no need to check if they are empty.
-			if i == passwdIdx || i == shellIdx {
+			if i == passwdIdx || i == shellIdx || i == gecosIdx {
 				continue
 			}
 			if parts[i] == "" {
 				// Return error if the format is invalid.
-				return defaultUID, defaultGID, fmt.Errorf("invalid line found in /etc/passwd")
+				return defaultUID, defaultGID, fmt.Errorf("invalid line found in /etc/passwd, field[%v] is empty", i)
 			}
 		}
 
