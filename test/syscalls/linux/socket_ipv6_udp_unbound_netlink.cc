@@ -18,7 +18,10 @@
 
 #include "gtest/gtest.h"
 #include "test/syscalls/linux/socket_netlink_route_util.h"
+#include "test/syscalls/linux/socket_netlink_util.h"
 #include "test/util/capability_util.h"
+#include "test/util/file_descriptor.h"
+#include "test/util/posix_error.h"
 
 namespace gvisor {
 namespace testing {
@@ -27,12 +30,14 @@ namespace testing {
 // in an associated subnet.
 TEST_P(IPv6UDPUnboundSocketNetlinkTest, JoinSubnet) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+  FileDescriptor nlsk =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
 
   // Add an IP address to the loopback interface.
   Link loopback_link = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink());
   struct in6_addr addr;
   EXPECT_EQ(1, inet_pton(AF_INET6, "2001:db8::1", &addr));
-  EXPECT_NO_ERRNO(LinkAddLocalAddr(loopback_link.index, AF_INET6,
+  EXPECT_NO_ERRNO(LinkAddLocalAddr(nlsk, loopback_link.index, AF_INET6,
                                    /*prefixlen=*/64, &addr, sizeof(addr)));
 
   // Binding to an unassigned address but an address that is in the subnet

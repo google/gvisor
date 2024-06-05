@@ -28,6 +28,7 @@ import (
 	"gvisor.dev/gvisor/pkg/marshal"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
@@ -109,6 +110,9 @@ type Socket struct {
 	// TODO(gvisor.dev/issue/1119): We don't actually support filtering,
 	// this is just bookkeeping for tracking add/remove.
 	filter bool
+
+	// netns is the network namespace associated with the socket.
+	netns *inet.Namespace
 }
 
 var _ socket.Socket = (*Socket)(nil)
@@ -140,9 +144,15 @@ func New(t *kernel.Task, skType linux.SockType, protocol Protocol) (*Socket, *sy
 		ep:             ep,
 		connection:     connection,
 		sendBufferSize: defaultSendBufferSize,
+		netns:          t.GetNetworkNamespace(),
 	}
 	fd.LockFD.Init(&vfs.FileLocks{})
 	return fd, nil
+}
+
+// Stack returns the network stack associated with the socket.
+func (s *Socket) Stack() inet.Stack {
+	return s.netns.Stack()
 }
 
 // Release implements vfs.FileDescriptionImpl.Release.
@@ -155,6 +165,7 @@ func (s *Socket) Release(ctx context.Context) {
 	if s.bound {
 		s.ports.Release(s.protocol.Protocol(), s.portID)
 	}
+	s.netns.DecRef(ctx)
 }
 
 // Epollable implements FileDescriptionImpl.Epollable.
@@ -744,7 +755,7 @@ func (s *Socket) processMessages(ctx context.Context, buf []byte) *syserr.Error 
 		}
 
 		ms := nlmsg.NewMessageSet(s.portID, hdr.Seq)
-		if err := s.protocol.ProcessMessage(ctx, msg, ms); err != nil {
+		if err := s.protocol.ProcessMessage(ctx, s, msg, ms); err != nil {
 			dumpErrorMessage(hdr, ms, err)
 		} else if hdr.Flags&linux.NLM_F_ACK == linux.NLM_F_ACK {
 			dumpAckMessage(hdr, ms)

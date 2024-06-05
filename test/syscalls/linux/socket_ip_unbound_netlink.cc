@@ -20,12 +20,16 @@
 
 #include <cstdio>
 #include <cstring>
+#include <utility>
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "test/syscalls/linux/ip_socket_test_util.h"
 #include "test/syscalls/linux/socket_netlink_route_util.h"
+#include "test/syscalls/linux/socket_netlink_util.h"
 #include "test/util/capability_util.h"
+#include "test/util/file_descriptor.h"
+#include "test/util/posix_error.h"
 #include "test/util/socket_util.h"
 #include "test/util/test_util.h"
 
@@ -42,14 +46,17 @@ TEST_P(IPv6UnboundSocketTest, ConnectToBadLocalAddress) {
   // across save/restore.
   DisableSave ds;
 
+  FileDescriptor nlsk =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
+
   // Delete the loopback address from the loopback interface.
   Link loopback_link = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink());
-  EXPECT_NO_ERRNO(LinkDelLocalAddr(loopback_link.index, AF_INET6,
+  EXPECT_NO_ERRNO(LinkDelLocalAddr(nlsk, loopback_link.index, AF_INET6,
                                    /*prefixlen=*/128, &in6addr_loopback,
                                    sizeof(in6addr_loopback)));
   Cleanup defer_addr_removal =
-      Cleanup([loopback_link = std::move(loopback_link)] {
-        EXPECT_NO_ERRNO(LinkAddLocalAddr(loopback_link.index, AF_INET6,
+      Cleanup([loopback_link = std::move(loopback_link), &nlsk] {
+        EXPECT_NO_ERRNO(LinkAddLocalAddr(nlsk, loopback_link.index, AF_INET6,
                                          /*prefixlen=*/128, &in6addr_loopback,
                                          sizeof(in6addr_loopback)));
       });
@@ -75,15 +82,18 @@ TEST_P(IPv4UnboundSocketTest, ConnectToBadLocalAddress) {
   // across save/restore.
   DisableSave ds;
 
+  FileDescriptor nlsk =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
   // Delete the loopback address from the loopback interface.
   Link loopback_link = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink());
   struct in_addr laddr;
   laddr.s_addr = htonl(INADDR_LOOPBACK);
-  EXPECT_NO_ERRNO(LinkDelLocalAddr(loopback_link.index, AF_INET,
+  EXPECT_NO_ERRNO(LinkDelLocalAddr(nlsk, loopback_link.index, AF_INET,
                                    /*prefixlen=*/8, &laddr, sizeof(laddr)));
-  Cleanup defer_addr_removal = Cleanup(
-      [loopback_link = std::move(loopback_link), addr = std::move(laddr)] {
-        EXPECT_NO_ERRNO(LinkAddLocalAddr(loopback_link.index, AF_INET,
+  Cleanup defer_addr_removal =
+      Cleanup([loopback_link = std::move(loopback_link),
+               addr = std::move(laddr), &nlsk] {
+        EXPECT_NO_ERRNO(LinkAddLocalAddr(nlsk, loopback_link.index, AF_INET,
                                          /*prefixlen=*/8, &addr, sizeof(addr)));
       });
   TestAddress addr = V4Loopback();

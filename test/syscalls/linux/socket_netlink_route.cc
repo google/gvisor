@@ -657,6 +657,8 @@ TEST(NetlinkRouteTest, AddAndRemoveAddr) {
   // Don't do cooperative save/restore because netstack state is not restored.
   // TODO(gvisor.dev/issue/4595): enable cooperative save tests.
   const DisableSave ds;
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
 
   Link loopback_link = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink());
 
@@ -664,30 +666,65 @@ TEST(NetlinkRouteTest, AddAndRemoveAddr) {
   ASSERT_EQ(inet_pton(AF_INET, "10.0.0.1", &addr), 1);
 
   // Create should succeed, as no such address in kernel.
-  ASSERT_NO_ERRNO(LinkAddLocalAddr(loopback_link.index, AF_INET,
+  ASSERT_NO_ERRNO(LinkAddLocalAddr(fd, loopback_link.index, AF_INET,
                                    /*prefixlen=*/24, &addr, sizeof(addr)));
 
-  Cleanup defer_addr_removal = Cleanup(
-      [loopback_link = std::move(loopback_link), addr = std::move(addr)] {
-        // First delete should succeed, as address exists.
-        EXPECT_NO_ERRNO(LinkDelLocalAddr(loopback_link.index, AF_INET,
-                                         /*prefixlen=*/24, &addr,
-                                         sizeof(addr)));
+  Cleanup defer_addr_removal = Cleanup([&] {
+    // First delete should succeed, as address exists.
+    EXPECT_NO_ERRNO(LinkDelLocalAddr(fd, loopback_link.index, AF_INET,
+                                     /*prefixlen=*/24, &addr, sizeof(addr)));
 
-        // Second delete should fail, as address no longer exists.
-        EXPECT_THAT(LinkDelLocalAddr(loopback_link.index, AF_INET,
-                                     /*prefixlen=*/24, &addr, sizeof(addr)),
-                    PosixErrorIs(EADDRNOTAVAIL, _));
-      });
+    // Second delete should fail, as address no longer exists.
+    EXPECT_THAT(LinkDelLocalAddr(fd, loopback_link.index, AF_INET,
+                                 /*prefixlen=*/24, &addr, sizeof(addr)),
+                PosixErrorIs(EADDRNOTAVAIL, _));
+  });
 
   // Replace an existing address should succeed.
-  ASSERT_NO_ERRNO(LinkReplaceLocalAddr(loopback_link.index, AF_INET,
+  ASSERT_NO_ERRNO(LinkReplaceLocalAddr(fd, loopback_link.index, AF_INET,
                                        /*prefixlen=*/24, &addr, sizeof(addr)));
 
   // Create exclusive should fail, as we created the address above.
-  EXPECT_THAT(LinkAddExclusiveLocalAddr(loopback_link.index, AF_INET,
+  EXPECT_THAT(LinkAddExclusiveLocalAddr(fd, loopback_link.index, AF_INET,
                                         /*prefixlen=*/24, &addr, sizeof(addr)),
               PosixErrorIs(EEXIST, _));
+}
+
+TEST(NetlinkRouteTest, LinkedToNetns) {
+  SKIP_IF(IsRunningWithHostinet());
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+  // Don't do cooperative save/restore because netstack state is not restored.
+  // TODO(gvisor.dev/issue/4595): enable cooperative save tests.
+  const DisableSave ds;
+
+  FileDescriptor root_netns_nlsk =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
+
+  const FileDescriptor nsfd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/thread-self/ns/net", O_RDONLY));
+  Cleanup defer_netns = Cleanup([&] {
+    ASSERT_THAT(setns(nsfd.get(), CLONE_NEWNET), SyscallSucceedsWithValue(0));
+  });
+  ASSERT_THAT(unshare(CLONE_NEWNET), SyscallSucceedsWithValue(0));
+  FileDescriptor nlsk =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
+
+  Link loopback_link = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink());
+
+  struct in_addr addr;
+  ASSERT_EQ(inet_pton(AF_INET, "10.0.0.1", &addr), 1);
+
+  // Create should succeed, as no such address in kernel.
+  ASSERT_NO_ERRNO(LinkAddLocalAddr(nlsk, loopback_link.index, AF_INET,
+                                   /*prefixlen=*/24, &addr, sizeof(addr)));
+
+  // No such address in the root network namespace.
+  EXPECT_THAT(LinkDelLocalAddr(root_netns_nlsk, loopback_link.index, AF_INET,
+                               /*prefixlen=*/24, &addr, sizeof(addr)),
+              PosixErrorIs(EADDRNOTAVAIL, _));
+  // The address exists in the current namespace.
+  EXPECT_NO_ERRNO(LinkDelLocalAddr(nlsk, loopback_link.index, AF_INET,
+                                   /*prefixlen=*/24, &addr, sizeof(addr)));
 }
 
 // GetRouteDump tests a RTM_GETROUTE + NLM_F_DUMP request.

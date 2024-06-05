@@ -118,11 +118,9 @@ PosixError PopulateRuleNlmsghdr(NetlinkModification modification,
 }
 
 // Adds or removes the specified address from the specified interface.
-PosixError LinkModifyLocalAddr(int index, int family, int prefixlen,
-                               const void* addr, int addrlen,
+PosixError LinkModifyLocalAddr(FileDescriptor& fd, int index, int family,
+                               int prefixlen, const void* addr, int addrlen,
                                NetlinkModification modification) {
-  ASSIGN_OR_RETURN_ERRNO(FileDescriptor fd, NetlinkBoundSocket(NETLINK_ROUTE));
-
   struct request {
     struct nlmsghdr hdr;
     struct ifaddrmsg ifaddr;
@@ -297,27 +295,28 @@ PosixErrorOr<Link> LoopbackLink() {
   return PosixError(ENOENT, "loopback link not found");
 }
 
-PosixError LinkAddLocalAddr(int index, int family, int prefixlen,
-                            const void* addr, int addrlen) {
-  return LinkModifyLocalAddr(index, family, prefixlen, addr, addrlen,
+PosixError LinkAddLocalAddr(FileDescriptor& fd, int index, int family,
+                            int prefixlen, const void* addr, int addrlen) {
+  return LinkModifyLocalAddr(fd, index, family, prefixlen, addr, addrlen,
                              NetlinkModification::kAdd);
 }
 
-PosixError LinkAddExclusiveLocalAddr(int index, int family, int prefixlen,
-                                     const void* addr, int addrlen) {
-  return LinkModifyLocalAddr(index, family, prefixlen, addr, addrlen,
+PosixError LinkAddExclusiveLocalAddr(FileDescriptor& fd, int index, int family,
+                                     int prefixlen, const void* addr,
+                                     int addrlen) {
+  return LinkModifyLocalAddr(fd, index, family, prefixlen, addr, addrlen,
                              NetlinkModification::kAddExclusive);
 }
 
-PosixError LinkReplaceLocalAddr(int index, int family, int prefixlen,
-                                const void* addr, int addrlen) {
-  return LinkModifyLocalAddr(index, family, prefixlen, addr, addrlen,
+PosixError LinkReplaceLocalAddr(FileDescriptor& fd, int index, int family,
+                                int prefixlen, const void* addr, int addrlen) {
+  return LinkModifyLocalAddr(fd, index, family, prefixlen, addr, addrlen,
                              NetlinkModification::kReplace);
 }
 
-PosixError LinkDelLocalAddr(int index, int family, int prefixlen,
-                            const void* addr, int addrlen) {
-  return LinkModifyLocalAddr(index, family, prefixlen, addr, addrlen,
+PosixError LinkDelLocalAddr(FileDescriptor& fd, int index, int family,
+                            int prefixlen, const void* addr, int addrlen) {
+  return LinkModifyLocalAddr(fd, index, family, prefixlen, addr, addrlen,
                              NetlinkModification::kDelete);
 }
 

@@ -22,6 +22,7 @@ go_library(
         "//pkg/marshal/primitive",
         "//pkg/sentry/arch",
         "//pkg/sentry/fsimpl/sockfs",
+        "//pkg/sentry/inet",
         "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/kernel/time",

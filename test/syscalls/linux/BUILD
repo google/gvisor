@@ -2742,8 +2742,11 @@ cc_library(
     ],
     deps = select_gtest() + [
         ":socket_netlink_route_util",
+        ":socket_netlink_util",
         "//test/util:capability_util",
         "//test/util:cleanup",
+        "//test/util:file_descriptor",
+        "//test/util:posix_error",
         "//test/util:socket_util",
     ],
     alwayslink = 1,
@@ -2760,7 +2763,10 @@ cc_library(
     ],
     deps = select_gtest() + [
         ":socket_netlink_route_util",
+        ":socket_netlink_util",
         "//test/util:capability_util",
+        "//test/util:file_descriptor",
+        "//test/util:posix_error",
         "//test/util:socket_util",
     ],
     alwayslink = 1,
@@ -3247,7 +3253,10 @@ cc_binary(
     deps = select_gtest() + [
         ":ip_socket_test_util",
         ":socket_netlink_route_util",
+        ":socket_netlink_util",
         "//test/util:capability_util",
+        "//test/util:file_descriptor",
+        "//test/util:posix_error",
         "//test/util:socket_util",
         "//test/util:test_main",
         "//test/util:test_util",
@@ -4094,6 +4103,7 @@ cc_binary(
     malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         ":socket_netlink_route_util",
+        ":socket_netlink_util",
         "//test/util:capability_util",
         "//test/util:file_descriptor",
         "//test/util:fs_util",

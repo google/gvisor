@@ -17,10 +17,15 @@
 #include <arpa/inet.h>
 #include <poll.h>
 
+#include <utility>
+
 #include "gtest/gtest.h"
 #include "test/syscalls/linux/socket_netlink_route_util.h"
+#include "test/syscalls/linux/socket_netlink_util.h"
 #include "test/util/capability_util.h"
 #include "test/util/cleanup.h"
+#include "test/util/file_descriptor.h"
+#include "test/util/posix_error.h"
 
 namespace gvisor {
 namespace testing {
@@ -31,19 +36,21 @@ constexpr size_t kSendBufSize = 200;
 // associated subnet.
 TEST_P(IPv4UDPUnboundSocketNetlinkTest, JoinSubnet) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+  FileDescriptor nlsk =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
 
   // Add an IP address to the loopback interface.
   Link loopback_link = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink());
   struct in_addr addr;
   ASSERT_EQ(1, inet_pton(AF_INET, "192.0.2.1", &addr));
-  ASSERT_NO_ERRNO(LinkAddLocalAddr(loopback_link.index, AF_INET,
+  ASSERT_NO_ERRNO(LinkAddLocalAddr(nlsk, loopback_link.index, AF_INET,
                                    /*prefixlen=*/24, &addr, sizeof(addr)));
-  Cleanup defer_addr_removal = Cleanup(
-      [loopback_link = std::move(loopback_link), addr = std::move(addr)] {
-        EXPECT_NO_ERRNO(LinkDelLocalAddr(loopback_link.index, AF_INET,
-                                         /*prefixlen=*/24, &addr,
-                                         sizeof(addr)));
-      });
+  Cleanup defer_addr_removal = Cleanup([loopback_link =
+                                            std::move(loopback_link),
+                                        addr = std::move(addr), &nlsk] {
+    EXPECT_NO_ERRNO(LinkDelLocalAddr(nlsk, loopback_link.index, AF_INET,
+                                     /*prefixlen=*/24, &addr, sizeof(addr)));
+  });
 
   auto snd_sock = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
   auto rcv_sock = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
@@ -103,19 +110,21 @@ TEST_P(IPv4UDPUnboundSocketNetlinkTest, ReuseAddrSubnetDirectedBroadcast) {
   constexpr int kNumSocketsPerType = 2;
 
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+  FileDescriptor nlsk =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
 
   // Add an IP address to the loopback interface.
   Link loopback_link = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink());
   struct in_addr addr;
   ASSERT_EQ(1, inet_pton(AF_INET, "192.0.2.1", &addr));
-  ASSERT_NO_ERRNO(LinkAddLocalAddr(loopback_link.index, AF_INET,
+  ASSERT_NO_ERRNO(LinkAddLocalAddr(nlsk, loopback_link.index, AF_INET,
                                    24 /* prefixlen */, &addr, sizeof(addr)));
-  Cleanup defer_addr_removal = Cleanup(
-      [loopback_link = std::move(loopback_link), addr = std::move(addr)] {
-        EXPECT_NO_ERRNO(LinkDelLocalAddr(loopback_link.index, AF_INET,
-                                         /*prefixlen=*/24, &addr,
-                                         sizeof(addr)));
-      });
+  Cleanup defer_addr_removal = Cleanup([loopback_link =
+                                            std::move(loopback_link),
+                                        addr = std::move(addr), &nlsk] {
+    EXPECT_NO_ERRNO(LinkDelLocalAddr(nlsk, loopback_link.index, AF_INET,
+                                     /*prefixlen=*/24, &addr, sizeof(addr)));
+  });
 
   TestAddress broadcast_address("SubnetBroadcastAddress");
   broadcast_address.addr.ss_family = AF_INET;
