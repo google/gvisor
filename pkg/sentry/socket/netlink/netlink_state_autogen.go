@@ -28,6 +28,7 @@ func (s *Socket) StateFields() []string {
 		"portID",
 		"sendBufferSize",
 		"filter",
+		"netns",
 	}
 }
 
@@ -50,6 +51,7 @@ func (s *Socket) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(11, &s.portID)
 	stateSinkObject.Save(12, &s.sendBufferSize)
 	stateSinkObject.Save(13, &s.filter)
+	stateSinkObject.Save(14, &s.netns)
 }
 
 func (s *Socket) afterLoad(context.Context) {}
@@ -70,6 +72,7 @@ func (s *Socket) StateLoad(ctx context.Context, stateSourceObject state.Source) 
 	stateSourceObject.Load(11, &s.portID)
 	stateSourceObject.Load(12, &s.sendBufferSize)
 	stateSourceObject.Load(13, &s.filter)
+	stateSourceObject.Load(14, &s.netns)
 }
 
 func (k *kernelSCM) StateTypeName() string {
