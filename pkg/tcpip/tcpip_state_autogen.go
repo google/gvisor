@@ -1747,6 +1747,7 @@ func (r *Route) StateFields() []string {
 		"Gateway",
 		"NIC",
 		"SourceHint",
+		"MTU",
 	}
 }
 
@@ -1759,6 +1760,7 @@ func (r *Route) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &r.Gateway)
 	stateSinkObject.Save(2, &r.NIC)
 	stateSinkObject.Save(3, &r.SourceHint)
+	stateSinkObject.Save(4, &r.MTU)
 }
 
 func (r *Route) afterLoad(context.Context) {}
@@ -1769,6 +1771,7 @@ func (r *Route) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(1, &r.Gateway)
 	stateSourceObject.Load(2, &r.NIC)
 	stateSourceObject.Load(3, &r.SourceHint)
+	stateSourceObject.Load(4, &r.MTU)
 }
 
 func (s *StatCounter) StateTypeName() string {
