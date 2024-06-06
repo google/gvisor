@@ -1215,7 +1215,7 @@ func (k *Kernel) pauseTimeLocked(ctx context.Context) {
 		// This means we'll iterate FDTables shared by multiple tasks repeatedly,
 		// but ktime.Timer.Pause is idempotent so this is harmless.
 		if t.fdTable != nil {
-			t.fdTable.forEach(ctx, func(_ int32, fd *vfs.FileDescription, _ FDFlags) bool {
+			t.fdTable.ForEach(ctx, func(_ int32, fd *vfs.FileDescription, _ FDFlags) bool {
 				if tfd, ok := fd.Impl().(*timerfd.TimerFileDescription); ok {
 					tfd.PauseTimer()
 				}
@@ -1246,7 +1246,7 @@ func (k *Kernel) resumeTimeLocked(ctx context.Context) {
 			}
 		}
 		if t.fdTable != nil {
-			t.fdTable.forEach(ctx, func(_ int32, fd *vfs.FileDescription, _ FDFlags) bool {
+			t.fdTable.ForEach(ctx, func(_ int32, fd *vfs.FileDescription, _ FDFlags) bool {
 				if tfd, ok := fd.Impl().(*timerfd.TimerFileDescription); ok {
 					tfd.ResumeTimer()
 				}
@@ -1352,6 +1352,11 @@ func (k *Kernel) Pause() {
 	k.extMu.Unlock()
 	k.tasks.runningGoroutines.Wait()
 	k.tasks.aioGoroutines.Wait()
+}
+
+// IsPaused returns true if the kernel is currently paused.
+func (k *Kernel) IsPaused() bool {
+	return k.tasks.isExternallyStopped()
 }
 
 // ReceiveTaskStates receives full states for all tasks.

@@ -93,7 +93,7 @@ func (f *FDTable) saveDescriptorTable() map[int32]descriptor {
 	m := make(map[int32]descriptor)
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.forEach(context.Background(), func(fd int32, file *vfs.FileDescription, flags FDFlags) bool {
+	f.ForEach(context.Background(), func(fd int32, file *vfs.FileDescription, flags FDFlags) bool {
 		m[fd] = descriptor{
 			file:  file,
 			flags: flags,
@@ -172,10 +172,10 @@ func (f *FDTable) forEachUpTo(ctx context.Context, maxFd int32, fn func(fd int32
 	})
 }
 
-// forEach iterates over all non-nil files upto maxFd in sorted order.
+// ForEach iterates over all non-nil files upto maxFd in sorted order.
 //
 // It is the caller's responsibility to acquire an appropriate lock.
-func (f *FDTable) forEach(ctx context.Context, fn func(fd int32, file *vfs.FileDescription, flags FDFlags) bool) {
+func (f *FDTable) ForEach(ctx context.Context, fn func(fd int32, file *vfs.FileDescription, flags FDFlags) bool) {
 	f.forEachUpTo(ctx, MaxFdLimit, fn)
 }
 
@@ -187,7 +187,7 @@ func (f *FDTable) String() string {
 	f.mu.Lock()
 	// Can't release f.mu from defer, because vfsObj.PathnameWithDeleted
 	// should not be called under the fdtable mutex.
-	f.forEach(ctx, func(fd int32, file *vfs.FileDescription, flags FDFlags) bool {
+	f.ForEach(ctx, func(fd int32, file *vfs.FileDescription, flags FDFlags) bool {
 		if file != nil {
 			file.IncRef()
 			files[fd] = file
@@ -424,7 +424,7 @@ func (f *FDTable) GetFDs(ctx context.Context) []int32 {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	fds := make([]int32, 0, int(f.fdBitmap.GetNumOnes()))
-	f.forEach(ctx, func(fd int32, _ *vfs.FileDescription, _ FDFlags) bool {
+	f.ForEach(ctx, func(fd int32, _ *vfs.FileDescription, _ FDFlags) bool {
 		fds = append(fds, fd)
 		return true
 	})
@@ -486,7 +486,7 @@ func (f *FDTable) RemoveIf(ctx context.Context, cond func(*vfs.FileDescription, 
 	var files []*vfs.FileDescription
 
 	f.mu.Lock()
-	f.forEach(ctx, func(fd int32, file *vfs.FileDescription, flags FDFlags) bool {
+	f.ForEach(ctx, func(fd int32, file *vfs.FileDescription, flags FDFlags) bool {
 		if cond(file, flags) {
 			// Clear from table.
 			if df := f.set(fd, nil, FDFlags{}); df != nil {

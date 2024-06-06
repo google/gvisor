@@ -241,3 +241,11 @@ func (ts *TaskSet) EndExternalStop() {
 		t.tg.signalHandlers.mu.Unlock()
 	}
 }
+
+// isExternallyStopped returns true if BeginExternalStop() has been called on
+// this TaskSet, without a corresponding call to EndExternalStop().
+func (ts *TaskSet) isExternallyStopped() bool {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	return ts.stopCount > 0
+}
