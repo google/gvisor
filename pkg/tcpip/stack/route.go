@@ -54,6 +54,11 @@ type Route struct {
 	// neighbor cache.
 	// +checklocks:mu
 	neighborEntry *neighborEntry
+
+	// mtu is the maximum transmission unit to use for this route.
+	// If mtu is 0, this field is ignored and the MTU of the outgoing NIC
+	// is used for egress packets.
+	mtu uint32
 }
 
 // +stateify savable
@@ -140,7 +145,7 @@ func (r *Route) fieldsLocked() RouteInfo {
 // ownership of the provided local address.
 //
 // Returns an empty route if validation fails.
-func constructAndValidateRoute(netProto tcpip.NetworkProtocolNumber, addressEndpoint AssignableAddressEndpoint, localAddressNIC, outgoingNIC *nic, gateway, localAddr, remoteAddr tcpip.Address, handleLocal, multicastLoop bool) *Route {
+func constructAndValidateRoute(netProto tcpip.NetworkProtocolNumber, addressEndpoint AssignableAddressEndpoint, localAddressNIC, outgoingNIC *nic, gateway, localAddr, remoteAddr tcpip.Address, handleLocal, multicastLoop bool, mtu uint32) *Route {
 	if localAddr.BitLen() == 0 {
 		localAddr = addressEndpoint.AddressWithPrefix().Address
 	}
@@ -165,6 +170,7 @@ func constructAndValidateRoute(netProto tcpip.NetworkProtocolNumber, addressEndp
 		addressEndpoint,
 		handleLocal,
 		multicastLoop,
+		mtu,
 	)
 
 	return r
@@ -172,7 +178,7 @@ func constructAndValidateRoute(netProto tcpip.NetworkProtocolNumber, addressEndp
 
 // makeRoute initializes a new route. It takes ownership of the provided
 // AssignableAddressEndpoint.
-func makeRoute(netProto tcpip.NetworkProtocolNumber, gateway, localAddr, remoteAddr tcpip.Address, outgoingNIC, localAddressNIC *nic, localAddressEndpoint AssignableAddressEndpoint, handleLocal, multicastLoop bool) *Route {
+func makeRoute(netProto tcpip.NetworkProtocolNumber, gateway, localAddr, remoteAddr tcpip.Address, outgoingNIC, localAddressNIC *nic, localAddressEndpoint AssignableAddressEndpoint, handleLocal, multicastLoop bool, mtu uint32) *Route {
 	if localAddressNIC.stack != outgoingNIC.stack {
 		panic(fmt.Sprintf("cannot create a route with NICs from different stacks"))
 	}
@@ -198,7 +204,7 @@ func makeRoute(netProto tcpip.NetworkProtocolNumber, gateway, localAddr, remoteA
 		}
 	}
 
-	r := makeRouteInner(netProto, localAddr, remoteAddr, outgoingNIC, localAddressNIC, localAddressEndpoint, loop)
+	r := makeRouteInner(netProto, localAddr, remoteAddr, outgoingNIC, localAddressNIC, localAddressEndpoint, loop, mtu)
 	if r.Loop()&PacketOut == 0 {
 		// Packet will not leave the stack, no need for a gateway or a remote link
 		// address.
@@ -238,7 +244,7 @@ func makeRoute(netProto tcpip.NetworkProtocolNumber, gateway, localAddr, remoteA
 	return r
 }
 
-func makeRouteInner(netProto tcpip.NetworkProtocolNumber, localAddr, remoteAddr tcpip.Address, outgoingNIC, localAddressNIC *nic, localAddressEndpoint AssignableAddressEndpoint, loop PacketLooping) *Route {
+func makeRouteInner(netProto tcpip.NetworkProtocolNumber, localAddr, remoteAddr tcpip.Address, outgoingNIC, localAddressNIC *nic, localAddressEndpoint AssignableAddressEndpoint, loop PacketLooping, mtu uint32) *Route {
 	r := &Route{
 		routeInfo: routeInfo{
 			NetProto:         netProto,
@@ -249,6 +255,7 @@ func makeRouteInner(netProto tcpip.NetworkProtocolNumber, localAddr, remoteAddr 
 		},
 		localAddressNIC: localAddressNIC,
 		outgoingNIC:     outgoingNIC,
+		mtu:             mtu,
 	}
 
 	r.mu.Lock()
@@ -270,7 +277,7 @@ func makeLocalRoute(netProto tcpip.NetworkProtocolNumber, localAddr, remoteAddr 
 	if outgoingNIC.IsLoopback() {
 		loop = PacketOut
 	}
-	return makeRouteInner(netProto, localAddr, remoteAddr, outgoingNIC, localAddressNIC, localAddressEndpoint, loop)
+	return makeRouteInner(netProto, localAddr, remoteAddr, outgoingNIC, localAddressNIC, localAddressEndpoint, loop, 0 /* mtu */)
 }
 
 // RemoteLinkAddress returns the link-layer (MAC) address of the next hop in
@@ -515,8 +522,11 @@ func (r *Route) DefaultTTL() uint8 {
 	return r.outgoingNIC.getNetworkEndpoint(r.NetProto()).DefaultTTL()
 }
 
-// MTU returns the MTU of the underlying network endpoint.
+// MTU returns the MTU of the route if present, otherwise the MTU of the underlying network endpoint.
 func (r *Route) MTU() uint32 {
+	if r.mtu > 0 {
+		return r.mtu
+	}
 	return r.outgoingNIC.getNetworkEndpoint(r.NetProto()).MTU()
 }
 
