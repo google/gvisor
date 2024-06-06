@@ -100,7 +100,7 @@ bool operator==(const KernelVersion& first, const KernelVersion& second) {
 PosixErrorOr<KernelVersion> ParseKernelVersion(absl::string_view vers_str) {
   KernelVersion version = {};
   std::vector<std::string> values =
-      absl::StrSplit(vers_str, absl::ByAnyChar(".-"));
+      absl::StrSplit(vers_str, absl::ByAnyChar(".-+"));
   if (values.size() == 2) {
     ASSIGN_OR_RETURN_ERRNO(version.major, Atoi<int>(values[0]));
     ASSIGN_OR_RETURN_ERRNO(version.minor, Atoi<int>(values[1]));

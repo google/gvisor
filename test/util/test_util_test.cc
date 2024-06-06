@@ -58,6 +58,9 @@ TEST(KernelVersionParsing, ValidateParsing) {
   v = ASSERT_NO_ERRNO_AND_VALUE(ParseKernelVersion("4.0"));
   ASSERT_TRUE(v == KernelVersion({4, 0, 0}));
 
+  v = ASSERT_NO_ERRNO_AND_VALUE(ParseKernelVersion("6.1.90+"));
+  ASSERT_TRUE(v == KernelVersion({6, 1, 90}));
+
   ASSERT_THAT(ParseKernelVersion("4.a"), PosixErrorIs(EINVAL, ::testing::_));
   ASSERT_THAT(ParseKernelVersion("3"), PosixErrorIs(EINVAL, ::testing::_));
   ASSERT_THAT(ParseKernelVersion(""), PosixErrorIs(EINVAL, ::testing::_));
