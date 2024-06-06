@@ -151,6 +151,9 @@ func (fd *uvmFD) Ioctl(ctx context.Context, uio usermem.IO, sysno uintptr, args 
 	return handler(&ui)
 }
 
+// IsNvidiaDeviceFD implements NvidiaDeviceFD.IsNvidiaDeviceFD.
+func (fd *uvmFD) IsNvidiaDeviceFD() {}
+
 // uvmIoctlState holds the state of a call to uvmFD.Ioctl().
 type uvmIoctlState struct {
 	fd              *uvmFD

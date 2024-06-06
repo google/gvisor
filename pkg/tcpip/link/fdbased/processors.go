@@ -137,7 +137,7 @@ func (m *processorManager) connectionHash(cid *connectionID) uint32 {
 
 // queuePacket queues a packet to be delivered to the appropriate processor.
 func (m *processorManager) queuePacket(pkt *stack.PacketBuffer, hasEthHeader bool) {
-	var pIdx int
+	var pIdx uint32
 	cid, nonConnectionPkt := tcpipConnectionID(pkt)
 	if !hasEthHeader {
 		if nonConnectionPkt {
@@ -152,7 +152,7 @@ func (m *processorManager) queuePacket(pkt *stack.PacketBuffer, hasEthHeader boo
 		// first processor.
 		pIdx = 0
 	} else {
-		pIdx = int(m.connectionHash(&cid)) % len(m.processors)
+		pIdx = m.connectionHash(&cid) % uint32(len(m.processors))
 	}
 	p := &m.processors[pIdx]
 	p.mu.Lock()

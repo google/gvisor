@@ -202,6 +202,9 @@ func (fd *frontendFD) Ioctl(ctx context.Context, uio usermem.IO, sysno uintptr, 
 	return handler(&fi)
 }
 
+// IsNvidiaDeviceFD implements NvidiaDeviceFD.IsNvidiaDeviceFD.
+func (fd *frontendFD) IsNvidiaDeviceFD() {}
+
 func frontendIoctlCmd(nr, argSize uint32) uintptr {
 	return uintptr(linux.IOWR(nvgpu.NV_IOCTL_MAGIC, nr, argSize))
 }
