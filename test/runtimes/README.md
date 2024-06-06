@@ -27,10 +27,10 @@ The following `make` targets will run an entire runtime test suite locally.
 Note: java runtime test take 1+ hours with 16 cores.
 
 Language | Version | Running the test suite
--------- | ------- | ----------------------------------
+-------- | ------- | ---------------------------------
 Go       | 1.22    | `make go1.22-runtime-tests`
 Java     | 21      | `make java21-runtime-tests`
-NodeJS   | 16.13.2 | `make nodejs16.13.2-runtime-tests`
+NodeJS   | 22.2.0  | `make nodejs22.2.0-runtime-tests`
 Php      | 8.3.7   | `make php8.3.7-runtime-tests`
 Python   | 3.12.3  | `make python3.12.3-runtime-tests`
 

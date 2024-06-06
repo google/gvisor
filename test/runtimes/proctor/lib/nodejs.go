@@ -42,5 +42,5 @@ func (nodejsRunner) ListTests() ([]string, error) {
 // TestCmds implements TestRunner.TestCmds.
 func (nodejsRunner) TestCmds(tests []string) []*exec.Cmd {
 	args := append([]string{filepath.Join("tools", "test.py"), "--timeout=180"}, tests...)
-	return []*exec.Cmd{exec.Command("/usr/bin/python", args...)}
+	return []*exec.Cmd{exec.Command("/usr/bin/python3.10", args...)}
 }

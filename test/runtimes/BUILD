@@ -22,8 +22,8 @@ runtime_test(
 )
 
 runtime_test(
-    name = "nodejs16.13.2",
-    exclude_file = "exclude/nodejs16.13.2.csv",
+    name = "nodejs22.2.0",
+    exclude_file = "exclude/nodejs22.2.0.csv",
     lang = "nodejs",
     shard_count = most_shards,
 )

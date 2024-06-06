@@ -526,7 +526,7 @@ steps:
   - <<: *common
     <<: *docker
     label: ":node: NodeJS runtime tests"
-    command: make nodejs16.13.2-runtime-tests RUNTIME_ARGS=--directfs
+    command: make nodejs22.2.0-runtime-tests RUNTIME_ARGS=--directfs
     parallelism: 10
     agents:
       <<: *platform_specific_agents
@@ -571,7 +571,7 @@ steps:
   - <<: *common
     <<: *docker
     label: ":node: NodeJS runtime tests (goferfs)"
-    command: make nodejs16.13.2-runtime-tests RUNTIME_ARGS=--directfs=false
+    command: make nodejs22.2.0-runtime-tests RUNTIME_ARGS=--directfs=false
     parallelism: 10
     if: build.branch == "master"
     agents:
