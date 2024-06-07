@@ -27,6 +27,7 @@ const (
 	UVM_UNREGISTER_GPU_VASPACE         = 26
 	UVM_REGISTER_CHANNEL               = 27
 	UVM_UNREGISTER_CHANNEL             = 28
+	UVM_SET_RANGE_GROUP                = 31
 	UVM_MAP_EXTERNAL_ALLOCATION        = 33
 	UVM_FREE                           = 34
 	UVM_REGISTER_GPU                   = 37
@@ -34,6 +35,7 @@ const (
 	UVM_PAGEABLE_MEM_ACCESS            = 39
 	UVM_SET_PREFERRED_LOCATION         = 42
 	UVM_DISABLE_READ_DUPLICATION       = 45
+	UVM_MIGRATE_RANGE_GROUP            = 53
 	UVM_TOOLS_READ_PROCESS_MEMORY      = 62
 	UVM_TOOLS_WRITE_PROCESS_MEMORY     = 63
 	UVM_MAP_DYNAMIC_PARALLELISM_REGION = 65
@@ -123,6 +125,15 @@ type UVM_UNREGISTER_CHANNEL_PARAMS struct {
 	HClient  Handle
 	HChannel Handle
 	RMStatus uint32
+}
+
+// +marshal
+type UVM_SET_RANGE_GROUP_PARAMS struct {
+	RangeGroupID  uint64
+	RequestedBase uint64
+	Length        uint64
+	RMStatus      uint32
+	Pad0          [4]byte
 }
 
 // +marshal
@@ -238,6 +249,14 @@ type UVM_DISABLE_READ_DUPLICATION_PARAMS struct {
 	Length        uint64
 	RMStatus      uint32
 	Pad0          [4]byte
+}
+
+// +marshal
+type UVM_MIGRATE_RANGE_GROUP_PARAMS struct {
+	RangeGroupID    uint64
+	DestinationUUID NvUUID
+	RMStatus        uint32
+	Pad0            [4]byte
 }
 
 // +marshal
