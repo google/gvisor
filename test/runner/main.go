@@ -388,10 +388,11 @@ func runRunsc(tc *gtest.TestCase, spec *specs.Spec) error {
 		if err != nil {
 			return fmt.Errorf("could not create temp dir: %v", err)
 		}
-		debugLogDir += "/"
-		runscLogDir = debugLogDir + "/runsc.log"
-		log.Infof("runsc logs: %s", debugLogDir)
-		args = append(args, "-debug-log", runscLogDir)
+		runscLogDir = filepath.Join(debugLogDir, "runsc.log")
+		log.Infof("runsc logs: %s", runscLogDir)
+		// Pass a trailing slash to --debug-log flag to ensure that runscLogDir is
+		// populated with per-command log files. See specutils.DebugLogFile().
+		args = append(args, "-debug-log", runscLogDir+"/")
 		args = append(args, "-coverage-report", debugLogDir)
 
 		// Default -log sends messages to stderr which makes reading the test log
@@ -608,83 +609,18 @@ func runRunsc(tc *gtest.TestCase, spec *specs.Spec) error {
 	}
 	if err == nil && len(testLogDir) > 0 {
 		var warningsFound []string
-		f, err := os.Open(runscLogDir)
+		files, err := os.ReadDir(runscLogDir)
 		if err != nil {
 			return err
 		}
-		scanner := bufio.NewScanner(f)
-		for scanner.Scan() {
-			// This is trivial match for Google's log file format.
-			line := scanner.Text()
-			if len(line) >= 5 && line[:5] == "panic" {
-				warningsFound = append(warningsFound, strings.TrimSpace(line))
+		for _, file := range files {
+			f, err := os.Open(filepath.Join(runscLogDir, file.Name()))
+			if err != nil {
+				return err
 			}
-			if len(line) >= 2 && (line[0] == 'E' || line[0] == 'W') && (line[1] >= '0' && line[1] <= '9') {
-				// Ignore a basic set of warnings that we've
-				// determined to be fine. We want these to stay
-				// as warnings, even if they are constant.
-				switch {
-				// Reasonable warnings, allowed during tests.
-				case strings.Contains(line, "Will try waiting on the sandbox process instead."):
-				case strings.Contains(line, "lisafs: batch closing FDs"):
-				case strings.Contains(line, "This is only safe in tests!"):
-				case strings.Contains(line, "Capability \"checkpoint_restore\" is not permitted, dropping it."):
-				case strings.Contains(line, "syscall filters less restrictive!"):
-				case strings.Contains(line, "Getdent64: skipping file"):
-				// Capability "perfmon" is not permitted, dropping it.
-				case strings.Contains(line, "is not permitted, dropping it."):
-				case strings.Contains(line, "sndPrepopulatedMsg failed"):
-				case strings.Contains(line, "PR_SET_NO_NEW_PRIVS is assumed to always be set."):
-				case strings.Contains(line, "TSC snapshot unavailable"):
-				case strings.Contains(line, "copy up failed to copy up contents"):
-				case strings.Contains(line, "populate failed for"):
-				case strings.Contains(line, "ASAN is enabled: syscall filters less restrictive"):
-				case strings.Contains(line, "MSAN is enabled: syscall filters less restrictive"):
-				case strings.Contains(line, "TSAN is enabled: syscall filters less restrictive"):
-				case strings.Contains(line, "Optional feature EnablePCID not supported"):
-				case strings.Contains(line, "Optional feature EnableSMEP not supported"):
-				case strings.Contains(line, "Optional feature EnableVPID not supported"):
-				case strings.Contains(line, "Optional feature GMPWithVPID not supported"):
-				case strings.Contains(line, "Optional feature ValidateGMPPF not supported"):
-				case strings.Contains(line, "Pass-through networking enabled"):
-				// Expected in some tests that create files as 0755,
-				// ex. /gvisor/test/syscalls/linux/exec.cc
-				case strings.Contains(line, "Opened a writable executable"):
-				// Expected in some tests, eg. /gvisor/test/syscalls/linux/sysret.cc
-				case strings.Contains(line, "invalid rip for 64 bit mode"):
-				// Expected in some tests that create pipes or sockets.
-				case strings.Contains(line, "Rejecting attempt to open fifo/pipe"):
-				case strings.Contains(line, "Rejecting attempt to open unix domain socket"):
-				case strings.Contains(line, "Rejecting attempt to connect to unix domain socket"):
-				case strings.Contains(line, "Rejecting attempt to create unix domain socket"):
-
-				// Ignore clock frequency adjustment messages.
-				case strings.Contains(line, "adjusted frequency from"):
-
-				// FIXME(b/70990997): URPC error: possible race?
-				case strings.Contains(line, "urpc: error decoding: bad file descriptor"):
-
-				// FIXME(b/147228315): GVISOR_PREEMPTION_INTERRUPT not yet supported on AMD.
-				case strings.Contains(line, "Optional feature PreemptionInterrupt not supported"):
-
-				// Ignore denied dirty timestamp writebacks. It occurs because,
-				// in tests, gofer doesn't have permission to change atime.
-				case strings.Contains(line, "gofer.dentry.destroyLocked: failed to close file with write dirty timestamps: operation not permitted"):
-				case strings.Contains(line, "Tsetattrclunk failed, losing FID"):
-				// gsys_get_timekeeping_params hasn't been implemented for ARM.
-				case strings.Contains(line, "Error retrieving TSC snapshot, unable to save TSC: function not implemented"):
-
-				case *save:
-					// Ignore these warnings for S/R tests as we try to delete the sandbox
-					// after the sandbox has exited and before attempting to restore it.
-					if strings.Contains(line, "couldn't find container") ||
-						strings.Contains(line, "Container not found, creating new one, cid:") ||
-						strings.Contains(line, "Error sending signal") ||
-						strings.Contains(line, "Cannot signal container") {
-						continue
-					}
-
-				default:
+			scanner := bufio.NewScanner(f)
+			for scanner.Scan() {
+				if line := scanner.Text(); isWarning(line) {
 					warningsFound = append(warningsFound, strings.TrimSpace(line))
 				}
 			}
@@ -698,6 +634,88 @@ func runRunsc(tc *gtest.TestCase, spec *specs.Spec) error {
 	}
 
 	return err
+}
+
+func isWarning(line string) bool {
+	if len(line) >= 5 && line[:5] == "panic" {
+		return true
+	}
+	if !hasWarningPrefix(line) {
+		return false
+	}
+	// Ignore a basic set of warnings that we've
+	// determined to be fine. We want these to stay
+	// as warnings, even if they are constant.
+	switch {
+	// Reasonable warnings, allowed during tests.
+	case strings.Contains(line, "Will try waiting on the sandbox process instead."):
+	case strings.Contains(line, "lisafs: batch closing FDs"):
+	case strings.Contains(line, "This is only safe in tests!"):
+	case strings.Contains(line, "Capability \"checkpoint_restore\" is not permitted, dropping it."):
+	case strings.Contains(line, "syscall filters less restrictive!"):
+	case strings.Contains(line, "Getdent64: skipping file"):
+	// Capability "perfmon" is not permitted, dropping it.
+	case strings.Contains(line, "is not permitted, dropping it."):
+	case strings.Contains(line, "sndPrepopulatedMsg failed"):
+	case strings.Contains(line, "PR_SET_NO_NEW_PRIVS is assumed to always be set."):
+	case strings.Contains(line, "TSC snapshot unavailable"):
+	case strings.Contains(line, "copy up failed to copy up contents"):
+	case strings.Contains(line, "populate failed for"):
+	case strings.Contains(line, "ASAN is enabled: syscall filters less restrictive"):
+	case strings.Contains(line, "MSAN is enabled: syscall filters less restrictive"):
+	case strings.Contains(line, "TSAN is enabled: syscall filters less restrictive"):
+	case strings.Contains(line, "Optional feature EnablePCID not supported"):
+	case strings.Contains(line, "Optional feature EnableSMEP not supported"):
+	case strings.Contains(line, "Optional feature EnableVPID not supported"):
+	case strings.Contains(line, "Optional feature GMPWithVPID not supported"):
+	case strings.Contains(line, "Optional feature ValidateGMPPF not supported"):
+	case strings.Contains(line, "Pass-through networking enabled"):
+	// Expected in some tests that create files as 0755,
+	// ex. /gvisor/test/syscalls/linux/exec.cc
+	case strings.Contains(line, "Opened a writable executable"):
+	// Expected in some tests, eg. /gvisor/test/syscalls/linux/sysret.cc
+	case strings.Contains(line, "invalid rip for 64 bit mode"):
+	// Expected in some tests that create pipes or sockets.
+	case strings.Contains(line, "Rejecting attempt to open fifo/pipe"):
+	case strings.Contains(line, "Rejecting attempt to open unix domain socket"):
+	case strings.Contains(line, "Rejecting attempt to connect to unix domain socket"):
+	case strings.Contains(line, "Rejecting attempt to create unix domain socket"):
+
+	// Ignore clock frequency adjustment messages.
+	case strings.Contains(line, "adjusted frequency from"):
+
+	// FIXME(b/70990997): URPC error: possible race?
+	case strings.Contains(line, "urpc: error decoding: bad file descriptor"):
+
+	// FIXME(b/147228315): GVISOR_PREEMPTION_INTERRUPT not yet supported on AMD.
+	case strings.Contains(line, "Optional feature PreemptionInterrupt not supported"):
+
+	// Ignore denied dirty timestamp writebacks. It occurs because,
+	// in tests, gofer doesn't have permission to change atime.
+	case strings.Contains(line, "gofer.dentry.destroyLocked: failed to close file with write dirty timestamps: operation not permitted"):
+	case strings.Contains(line, "Tsetattrclunk failed, losing FID"):
+	// gsys_get_timekeeping_params hasn't been implemented for ARM.
+	case strings.Contains(line, "Error retrieving TSC snapshot, unable to save TSC: function not implemented"):
+
+	case *save:
+		// Ignore these warnings for S/R tests as we try to delete the sandbox
+		// after the sandbox has exited and before attempting to restore it.
+		if strings.Contains(line, "couldn't find container") ||
+			strings.Contains(line, "Container not found, creating new one, cid:") ||
+			strings.Contains(line, "Error sending signal") ||
+			strings.Contains(line, "Cannot signal container") {
+			break
+		}
+
+	default:
+		return true
+	}
+	return false
+}
+
+func hasWarningPrefix(line string) bool {
+	// This is trivial match for Google's log file format.
+	return len(line) >= 2 && (line[0] == 'E' || line[0] == 'W') && (line[1] >= '0' && line[1] <= '9')
 }
 
 // setupHostUDSTree updates the spec to expose a UDS files tree for testing
@@ -715,7 +733,7 @@ func setupHostUDSTree(spec *specs.Spec) (cleanup func(), err error) {
 		Type:        "bind",
 	})
 
-	// Individial attach points for each socket to test mounts that attach
+	// Individual attach points for each socket to test mounts that attach
 	// directly to the sockets.
 	for _, protocol := range []string{"stream", "seqpacket"} {
 		for _, name := range []string{"echo", "nonlistening"} {
