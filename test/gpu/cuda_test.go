@@ -71,12 +71,11 @@ var (
 // testCompatibility maps test names to their compatibility data.
 // Unmapped test names are assumed to be fully compatible.
 var testCompatibility = map[string]Compatibility{
-	"0_Introduction/simpleAttributes":     RequiresFeatures(FeaturePersistentL2Caching),
-	"0_Introduction/simpleCUDA2GL":        RequiresFeatures(FeatureGL),
-	"0_Introduction/simpleIPC":            &BrokenInGVisor{OnlyWhenMultipleGPU: true},
-	"0_Introduction/simpleP2P":            MultiCompatibility(&RequiresMultiGPU{}, &BrokenInGVisor{}),
-	"0_Introduction/UnifiedMemoryStreams": &BrokenInGVisor{},
-	"0_Introduction/vectorAddMMAP":        &BrokenInGVisor{OnlyWhenMultipleGPU: true},
+	"0_Introduction/simpleAttributes": RequiresFeatures(FeaturePersistentL2Caching),
+	"0_Introduction/simpleCUDA2GL":    RequiresFeatures(FeatureGL),
+	"0_Introduction/simpleIPC":        &BrokenInGVisor{OnlyWhenMultipleGPU: true},
+	"0_Introduction/simpleP2P":        MultiCompatibility(&RequiresMultiGPU{}, &BrokenInGVisor{}),
+	"0_Introduction/vectorAddMMAP":    &BrokenInGVisor{OnlyWhenMultipleGPU: true},
 	"2_Concepts_and_Techniques/cuHook": &BrokenEverywhere{
 		Reason: "Requires ancient version of glibc (<=2.33)",
 	},

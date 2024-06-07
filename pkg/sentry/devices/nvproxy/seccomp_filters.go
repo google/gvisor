@@ -136,6 +136,10 @@ func Filters() seccomp.SyscallRules {
 			},
 			seccomp.PerArg{
 				seccomp.NonNegativeFD{},
+				seccomp.EqualTo(nvgpu.UVM_SET_RANGE_GROUP),
+			},
+			seccomp.PerArg{
+				seccomp.NonNegativeFD{},
 				seccomp.EqualTo(nvgpu.UVM_MAP_EXTERNAL_ALLOCATION),
 			},
 			seccomp.PerArg{
@@ -161,6 +165,10 @@ func Filters() seccomp.SyscallRules {
 			seccomp.PerArg{
 				seccomp.NonNegativeFD{},
 				seccomp.EqualTo(nvgpu.UVM_DISABLE_READ_DUPLICATION),
+			},
+			seccomp.PerArg{
+				seccomp.NonNegativeFD{},
+				seccomp.EqualTo(nvgpu.UVM_MIGRATE_RANGE_GROUP),
 			},
 			seccomp.PerArg{
 				seccomp.NonNegativeFD{},
