@@ -74,9 +74,7 @@ var (
 )
 
 func (t *Task) invokeExternal() {
-	t.BeginExternalStop()
 	go func() { // S/R-SAFE: External control flow.
-		defer t.EndExternalStop()
 		t.SyscallTable().External(t.Kernel())
 	}()
 }

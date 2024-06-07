@@ -140,28 +140,6 @@ func (t *Task) endInternalStopLocked() {
 	t.endStopLocked()
 }
 
-// BeginExternalStop indicates the start of an external stop that applies to t.
-// BeginExternalStop does not wait for t's task goroutine to stop.
-func (t *Task) BeginExternalStop() {
-	t.tg.pidns.owner.mu.RLock()
-	defer t.tg.pidns.owner.mu.RUnlock()
-	t.tg.signalHandlers.mu.Lock()
-	defer t.tg.signalHandlers.mu.Unlock()
-	t.beginStopLocked()
-	t.interrupt()
-}
-
-// EndExternalStop indicates the end of an external stop started by a previous
-// call to Task.BeginExternalStop. EndExternalStop does not wait for t's task
-// goroutine to resume.
-func (t *Task) EndExternalStop() {
-	t.tg.pidns.owner.mu.RLock()
-	defer t.tg.pidns.owner.mu.RUnlock()
-	t.tg.signalHandlers.mu.Lock()
-	defer t.tg.signalHandlers.mu.Unlock()
-	t.endStopLocked()
-}
-
 // beginStopLocked increments t.stopCount to indicate that a new internal or
 // external stop applies to t.
 //
