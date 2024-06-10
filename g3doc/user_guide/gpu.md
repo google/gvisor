@@ -31,7 +31,16 @@ This runtime is just a shim and delegates all commands to the configured low
 level runtime (which defaults to `runc`). To use gVisor, specify `runsc` as the
 low level runtime in `/etc/nvidia-container-runtime/config.toml`
 [via the `runtimes` option](https://github.com/NVIDIA/nvidia-container-toolkit/tree/main/cmd/nvidia-container-runtime#low-level-runtime-path)
-and then run CUDA containers with `nvidia-container-runtime`.
+and then run CUDA containers with `nvidia-container-runtime`. The `runtimes`
+option allows to specify an executable path or executable name that is
+searchable in `$PATH`. To specify `runsc` with specific flags, the following
+executable can be used:
+
+```
+# !/bin/bash
+
+exec /path/to/runsc --nvproxy <other runsc flags> "$@"
+```
 
 NOTE: gVisor currently only supports
 [legacy mode](https://github.com/NVIDIA/nvidia-container-toolkit/tree/main/cmd/nvidia-container-runtime#legacy-mode).
