@@ -592,8 +592,7 @@ class RawSocketICMPv6Test : public Test {
   void SetUp() override {
     SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability()));
 
-    fd_ = ASSERT_NO_ERRNO_AND_VALUE(
-        Socket(AF_INET6, SOCK_RAW | SOCK_NONBLOCK, IPPROTO_ICMPV6));
+    fd_ = ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET6, SOCK_RAW, IPPROTO_ICMPV6));
   }
 
   void TearDown() override {
