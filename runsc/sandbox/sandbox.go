@@ -1405,7 +1405,7 @@ func createSaveFiles(path string, direct bool, compression statefile.Compression
 // Pause sends the pause call for a container in the sandbox.
 func (s *Sandbox) Pause(cid string) error {
 	log.Debugf("Pause sandbox %q", s.ID)
-	if err := s.call(boot.LifecyclePause, nil, nil); err != nil {
+	if err := s.call(boot.ContMgrPause, nil, nil); err != nil {
 		return fmt.Errorf("pausing container %q: %w", cid, err)
 	}
 	return nil
@@ -1414,7 +1414,7 @@ func (s *Sandbox) Pause(cid string) error {
 // Resume sends the resume call for a container in the sandbox.
 func (s *Sandbox) Resume(cid string) error {
 	log.Debugf("Resume sandbox %q", s.ID)
-	if err := s.call(boot.LifecycleResume, nil, nil); err != nil {
+	if err := s.call(boot.ContMgrResume, nil, nil); err != nil {
 		return fmt.Errorf("resuming container %q: %w", cid, err)
 	}
 	return nil

@@ -21,6 +21,7 @@ go_library(
         "mount_hints.go",
         "network.go",
         "restore.go",
+        "restore_impl.go",
         "seccheck.go",
         "strace.go",
         "vfs.go",
