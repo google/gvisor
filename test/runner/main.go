@@ -167,6 +167,7 @@ func runTestCaseNative(testBin string, tc *gtest.TestCase, args []string, t *tes
 	}
 
 	args = append(args, gtest.TestFlags...)
+	log.Infof("Executing: %v", append([]string{testBin}, args...))
 	cmd := exec.Command(testBin, args...)
 	cmd.Env = env
 	cmd.Stdout = os.Stdout
@@ -285,6 +286,7 @@ func prepareSave(args []string, undeclaredOutputsDir string, dirs []string, inde
 
 func deleteSandbox(args []string, id string) error {
 	deleteArgs := append(args, "delete", "-force=true", id)
+	log.Infof("Executing: %v", append([]string{specutils.ExePath}, deleteArgs...))
 	deleteCmd := exec.Command(specutils.ExePath, deleteArgs...)
 	if err := deleteCmd.Run(); err != nil {
 		return fmt.Errorf("delete error: %v", err)
@@ -373,6 +375,7 @@ func runRunsc(tc *gtest.TestCase, spec *specs.Spec) error {
 
 	testLogDir := ""
 	runscLogDir := ""
+	runscCoverageDir := ""
 	undeclaredOutputsDir := ""
 	dirs := []string{}
 	saveArgs := []string{}
@@ -384,16 +387,17 @@ func runRunsc(tc *gtest.TestCase, spec *specs.Spec) error {
 		if err := os.MkdirAll(testLogDir, 0755); err != nil {
 			return fmt.Errorf("could not create test dir: %v", err)
 		}
-		debugLogDir, err := ioutil.TempDir(testLogDir, "runsc")
+		tmpDir, err := ioutil.TempDir(testLogDir, "runsc")
 		if err != nil {
 			return fmt.Errorf("could not create temp dir: %v", err)
 		}
-		runscLogDir = filepath.Join(debugLogDir, "runsc.log")
+		runscLogDir = filepath.Join(tmpDir, "logs")
 		log.Infof("runsc logs: %s", runscLogDir)
 		// Pass a trailing slash to --debug-log flag to ensure that runscLogDir is
 		// populated with per-command log files. See specutils.DebugLogFile().
 		args = append(args, "-debug-log", runscLogDir+"/")
-		args = append(args, "-coverage-report", debugLogDir)
+		runscCoverageDir = filepath.Join(tmpDir, "coverage")
+		args = append(args, "-coverage-report", runscCoverageDir+"/")
 
 		// Default -log sends messages to stderr which makes reading the test log
 		// difficult. Instead, drop them when debug log is enabled given it's a
@@ -438,6 +442,7 @@ func runRunsc(tc *gtest.TestCase, spec *specs.Spec) error {
 	if *waitForPid != 0 {
 		createArgs := append(args, "create", "-pid-file", filepath.Join(testLogDir, "pid"), "--bundle", bundleDir, id)
 		defer os.Remove(filepath.Join(testLogDir, "pid"))
+		log.Infof("Executing: %v", append([]string{specutils.ExePath}, createArgs...))
 		createCmd := exec.Command(specutils.ExePath, createArgs...)
 		createCmd.SysProcAttr = sysProcAttr
 		createCmd.Stdout = os.Stdout
@@ -474,6 +479,7 @@ func runRunsc(tc *gtest.TestCase, spec *specs.Spec) error {
 	} else {
 		cmdArgs = append(args, "run", "--bundle", bundleDir, id)
 	}
+	log.Infof("Executing: %v", append([]string{specutils.ExePath}, cmdArgs...))
 	cmd := exec.Command(specutils.ExePath, cmdArgs...)
 	cmd.SysProcAttr = sysProcAttr
 	if *container || *network == "host" || (cmd.SysProcAttr.Cloneflags&unix.CLONE_NEWNET != 0) {
@@ -496,6 +502,7 @@ func runRunsc(tc *gtest.TestCase, spec *specs.Spec) error {
 		done := make(chan bool, 1)
 		dArgs := append([]string{}, args...)
 		dArgs = append(dArgs, "debug", "--stacks", id)
+		log.Infof("Executing: %v", append([]string{specutils.ExePath}, dArgs...))
 		go func(dArgs []string) {
 			debug := exec.Command(specutils.ExePath, dArgs...)
 			debug.Stdout = os.Stdout
@@ -515,6 +522,7 @@ func runRunsc(tc *gtest.TestCase, spec *specs.Spec) error {
 		dArgs = append(args, "debug",
 			fmt.Sprintf("--signal=%d", unix.SIGTERM),
 			id)
+		log.Infof("Executing: %v", append([]string{specutils.ExePath}, dArgs...))
 		signal := exec.Command(specutils.ExePath, dArgs...)
 		signal.Stdout = os.Stdout
 		signal.Stderr = os.Stderr
@@ -556,6 +564,7 @@ func runRunsc(tc *gtest.TestCase, spec *specs.Spec) error {
 				return fmt.Errorf("prepareSave error: %v", err)
 			}
 			restoreArgs = append(restoreArgs, "restore", "--image-path", dirs[i-1], "--bundle", bundleDir, id)
+			log.Infof("Executing: %v", append([]string{specutils.ExePath}, restoreArgs...))
 			restoreCmd := exec.Command(specutils.ExePath, restoreArgs...)
 			restoreCmd.SysProcAttr = sysProcAttr
 			if *container || *network == "host" || (restoreCmd.SysProcAttr.Cloneflags&unix.CLONE_NEWNET != 0) {
@@ -588,6 +597,7 @@ func runRunsc(tc *gtest.TestCase, spec *specs.Spec) error {
 				return fmt.Errorf("could not start container: %v", err)
 			}
 			waitArgs := append(args, "wait", id)
+			log.Infof("Executing: %v", append([]string{specutils.ExePath}, waitArgs...))
 			waitCmd := exec.Command(specutils.ExePath, waitArgs...)
 			waitCmd.SysProcAttr = sysProcAttr
 			waitCmd.Stderr = os.Stderr
