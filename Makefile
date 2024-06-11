@@ -458,7 +458,8 @@ BENCHMARKS_RUNC      ?= true
 BENCHMARKS_FILTER    ?= .
 BENCHMARKS_OPTIONS   ?= -test.benchtime=30s
 BENCHMARKS_ARGS      ?= -test.v -test.bench=$(BENCHMARKS_FILTER) $(BENCHMARKS_OPTIONS)
-BENCHMARKS_PROFILE   ?= -pprof-dir=/tmp/profile -pprof-cpu -pprof-heap -pprof-block -pprof-mutex
+BENCHMARKS_PROFILE   ?=
+# Example: BENCHMARKS_PROFILE='-pprof-dir=/tmp/profile -pprof-cpu -pprof-heap -pprof-block -pprof-mutex'
 
 init-benchmark-table: ## Initializes a BigQuery table with the benchmark schema.
 	@$(call run,//tools/parsers:parser,init --project=$(BENCHMARKS_PROJECT) --dataset=$(BENCHMARKS_DATASET) --table=$(BENCHMARKS_TABLE))

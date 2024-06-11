@@ -15,11 +15,14 @@
 package dockerutil
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"time"
 
 	"golang.org/x/sys/unix"
@@ -32,10 +35,12 @@ import (
 
 // profile is for running profiles with 'runsc debug'.
 type profile struct {
-	BasePath string
-	Types    []string
-	Duration time.Duration
-	cmd      *exec.Cmd
+	BasePath    string
+	Types       []string
+	Duration    time.Duration
+	errorBuf    bytes.Buffer
+	isProfiling bool
+	cmd         *exec.Cmd
 }
 
 // profileInit initializes a profile object, if required.
@@ -86,13 +91,15 @@ func (p *profile) createProcess(c *Container) error {
 		return fmt.Errorf("failed to get root directory: %v", err)
 	}
 
-	// Format is `runsc --root=rootDir debug --profile-*=file --duration=24h containerID`.
-	args := []string{fmt.Sprintf("--root=%s", rootDir), "debug"}
+	// Format is `runsc --debug-log=/dev/stderr --root=rootDir debug --profile-*=file --duration=24h containerID`.
+	args := []string{"--debug-log=/dev/stderr", fmt.Sprintf("--root=%s", rootDir), "debug"}
 	for _, profileArg := range p.Types {
+		p.isProfiling = true
 		outputPath := filepath.Join(p.BasePath, fmt.Sprintf("%s.pprof", profileArg))
 		args = append(args, fmt.Sprintf("--profile-%s=%s", profileArg, outputPath))
 	}
 	if *trace {
+		p.isProfiling = true
 		args = append(args, fmt.Sprintf("--trace=%s", filepath.Join(p.BasePath, "sentry.trace")))
 	}
 	args = append(args, fmt.Sprintf("--duration=%s", p.Duration)) // Or until container exits.
@@ -109,7 +116,7 @@ func (p *profile) createProcess(c *Container) error {
 		time.Sleep(100 * time.Millisecond)
 	}
 	p.cmd = exec.Command(path, args...)
-	p.cmd.Stderr = os.Stderr // Pass through errors.
+	p.cmd.Stderr = &p.errorBuf
 	if err := p.cmd.Start(); err != nil {
 		return fmt.Errorf("start process failed: %v", err)
 	}
@@ -143,6 +150,28 @@ func (p *profile) Start(c *Container) error {
 func (p *profile) Stop(c *Container) error {
 	killErr := p.killProcess()
 	waitErr := p.waitProcess()
+	if waitErr != nil || killErr != nil {
+		if output := p.errorBuf.String(); output != "" {
+			fmt.Fprintf(os.Stderr, "\nprofile subcommand output:\n%s\n", output)
+			p.errorBuf.Reset()
+		}
+		if p.isProfiling {
+			runtimeArgs, err := RuntimeArgs()
+			if err != nil {
+				return fmt.Errorf("profiling failed (%v / %v) and we failed to get runtime args (%v); perhaps the runtime is not configured for profiling", killErr, waitErr, err)
+			}
+			profileEnabled := false
+			for _, possibleFlag := range []string{"-profile", "--profile", "-profile=true", "--profile=true"} {
+				if slices.Contains(runtimeArgs, possibleFlag) {
+					profileEnabled = true
+					break
+				}
+			}
+			if !profileEnabled {
+				return errors.New("runtime does not have profiling enabled, profiling will not work; either disable profiling (e.g. BENCHMARKS_PROFILE='') or add --profile=true to runtime flags")
+			}
+		}
+	}
 	if waitErr != nil && killErr != nil {
 		return killErr
 	}

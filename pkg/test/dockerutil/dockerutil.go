@@ -124,6 +124,32 @@ func RuntimePath() (string, error) {
 	return p, nil
 }
 
+// RuntimeArgs returns the arguments for the current runtime.
+func RuntimeArgs() ([]string, error) {
+	rs, err := runtimeMap()
+	if err != nil {
+		return nil, err
+	}
+	argsAny, ok := rs["runtimeArgs"]
+	if !ok {
+		// The runtime does not have any arguments.
+		return nil, nil
+	}
+	argsAnySlice, ok := argsAny.([]any)
+	if !ok {
+		return nil, fmt.Errorf("runtime arguments should be a list of strings, got: %q (type: %T)", argsAny, argsAny)
+	}
+	args := make([]string, 0, len(argsAnySlice))
+	for i, argAny := range argsAnySlice {
+		arg, ok := argAny.(string)
+		if !ok {
+			return nil, fmt.Errorf("runtime arguments should be a list of strings, got: %q (index %d is %q which has unexpected type %T)", argsAny, i, argAny, argAny)
+		}
+		args = append(args, arg)
+	}
+	return args, nil
+}
+
 // IsGVisorRuntime returns whether the default container runtime used by
 // `dockerutil` is gVisor-based or not.
 func IsGVisorRuntime(ctx context.Context, t *testing.T) (bool, error) {
