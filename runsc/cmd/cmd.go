@@ -24,6 +24,7 @@ import (
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/runsc/specutils"
 )
@@ -46,9 +47,18 @@ func (i *intFlags) Get() any {
 	return i
 }
 
-// GetArray returns array of FDs.
+// GetArray returns an array of ints representing FDs.
 func (i *intFlags) GetArray() []int {
 	return *i
+}
+
+// GetFDs returns an array of *fd.FD.
+func (i *intFlags) GetFDs() []*fd.FD {
+	rv := make([]*fd.FD, 0, len(*i))
+	for _, val := range *i {
+		rv = append(rv, fd.New(val))
+	}
+	return rv
 }
 
 // Set implements flag.Value. Set(String()) should be idempotent.

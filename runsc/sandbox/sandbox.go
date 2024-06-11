@@ -850,6 +850,14 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 	}
 	donations.DonateAndClose("sink-fds", args.SinkFiles...)
 
+	if len(conf.TestOnlyAutosaveImagePath) != 0 {
+		files, err := createSaveFiles(conf.TestOnlyAutosaveImagePath, false, statefile.CompressionLevelFlateBestSpeed)
+		if err != nil {
+			return fmt.Errorf("failed to create auto save files: %w", err)
+		}
+		donations.DonateAndClose("save-fds", files...)
+	}
+
 	gPlatform, err := platform.Lookup(conf.Platform)
 	if err != nil {
 		return fmt.Errorf("cannot look up platform: %w", err)
@@ -1328,45 +1336,24 @@ func (s *Sandbox) SignalProcess(cid string, pid int32, sig unix.Signal, fgProces
 func (s *Sandbox) Checkpoint(cid string, imagePath string, direct bool, sfOpts statefile.Options, mfOpts pgalloc.SaveOpts) error {
 	log.Debugf("Checkpoint sandbox %q, statefile options %+v, MemoryFile options %+v", s.ID, sfOpts, mfOpts)
 
-	stateFilePath := filepath.Join(imagePath, boot.CheckpointStateFileName)
-	sf, err := os.OpenFile(stateFilePath, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0644)
+	files, err := createSaveFiles(imagePath, direct, sfOpts.Compression)
 	if err != nil {
-		return fmt.Errorf("creating checkpoint state file %q: %w", stateFilePath, err)
+		return err
 	}
-	defer sf.Close()
+	defer func() {
+		for _, f := range files {
+			_ = f.Close()
+		}
+	}()
 
 	opt := control.SaveOpts{
 		Metadata:           sfOpts.WriteToMetadata(map[string]string{}),
 		MemoryFileSaveOpts: mfOpts,
 		FilePayload: urpc.FilePayload{
-			Files: []*os.File{sf},
+			Files: files,
 		},
-		Resume: sfOpts.Resume,
-	}
-
-	// When there is no compression, MemoryFile contents are page-aligned.
-	// It is beneficial to store them separately so certain optimizations can be
-	// applied during restore. See Restore().
-	if sfOpts.Compression == statefile.CompressionLevelNone {
-		pagesFilePath := filepath.Join(imagePath, boot.CheckpointPagesFileName)
-		pagesWriteFlags := os.O_CREATE | os.O_EXCL | os.O_RDWR
-		if direct {
-			// The writes will be page-aligned, so it can be opened with O_DIRECT.
-			pagesWriteFlags |= syscall.O_DIRECT
-		}
-		pf, err := os.OpenFile(pagesFilePath, pagesWriteFlags, 0644)
-		if err != nil {
-			return fmt.Errorf("creating checkpoint pages file %q: %w", pagesFilePath, err)
-		}
-		defer pf.Close()
-		pagesMetadataFilePath := filepath.Join(imagePath, boot.CheckpointPagesMetadataFileName)
-		pmf, err := os.OpenFile(pagesMetadataFilePath, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0644)
-		if err != nil {
-			return fmt.Errorf("creating checkpoint pages metadata file %q: %w", pagesMetadataFilePath, err)
-		}
-		defer pmf.Close()
-		opt.FilePayload.Files = append(opt.FilePayload.Files, pmf, pf)
-		opt.HavePagesFile = true
+		HavePagesFile: len(files) > 1,
+		Resume:        sfOpts.Resume,
 	}
 
 	if err := s.call(boot.ContMgrCheckpoint, &opt, nil); err != nil {
@@ -1375,10 +1362,50 @@ func (s *Sandbox) Checkpoint(cid string, imagePath string, direct bool, sfOpts s
 	return nil
 }
 
+// createSaveFiles creates the files used by checkpoint to save the state. They are returned in
+// the following order: sentry state, page metadata, page file. This is the same order expected by
+// RPCs and argument passing to the sandbox.
+func createSaveFiles(path string, direct bool, compression statefile.CompressionLevel) ([]*os.File, error) {
+	var files []*os.File
+
+	stateFilePath := filepath.Join(path, boot.CheckpointStateFileName)
+	f, err := os.OpenFile(stateFilePath, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0644)
+	if err != nil {
+		return nil, fmt.Errorf("creating checkpoint state file %q: %w", stateFilePath, err)
+	}
+	files = append(files, f)
+
+	// When there is no compression, MemoryFile contents are page-aligned.
+	// It is beneficial to store them separately so certain optimizations can be
+	// applied during restore. See Restore().
+	if compression == statefile.CompressionLevelNone {
+		pagesMetadataFilePath := filepath.Join(path, boot.CheckpointPagesMetadataFileName)
+		f, err = os.OpenFile(pagesMetadataFilePath, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0644)
+		if err != nil {
+			return nil, fmt.Errorf("creating checkpoint pages metadata file %q: %w", pagesMetadataFilePath, err)
+		}
+		files = append(files, f)
+
+		pagesFilePath := filepath.Join(path, boot.CheckpointPagesFileName)
+		pagesWriteFlags := os.O_CREATE | os.O_EXCL | os.O_RDWR
+		if direct {
+			// The writes will be page-aligned, so it can be opened with O_DIRECT.
+			pagesWriteFlags |= syscall.O_DIRECT
+		}
+		f, err := os.OpenFile(pagesFilePath, pagesWriteFlags, 0644)
+		if err != nil {
+			return nil, fmt.Errorf("creating checkpoint pages file %q: %w", pagesFilePath, err)
+		}
+		files = append(files, f)
+	}
+
+	return files, nil
+}
+
 // Pause sends the pause call for a container in the sandbox.
 func (s *Sandbox) Pause(cid string) error {
 	log.Debugf("Pause sandbox %q", s.ID)
-	if err := s.call(boot.LifecyclePause, nil, nil); err != nil {
+	if err := s.call(boot.ContMgrPause, nil, nil); err != nil {
 		return fmt.Errorf("pausing container %q: %w", cid, err)
 	}
 	return nil
@@ -1387,7 +1414,7 @@ func (s *Sandbox) Pause(cid string) error {
 // Resume sends the resume call for a container in the sandbox.
 func (s *Sandbox) Resume(cid string) error {
 	log.Debugf("Resume sandbox %q", s.ID)
-	if err := s.call(boot.LifecycleResume, nil, nil); err != nil {
+	if err := s.call(boot.ContMgrResume, nil, nil); err != nil {
 		return fmt.Errorf("resuming container %q: %w", cid, err)
 	}
 	return nil

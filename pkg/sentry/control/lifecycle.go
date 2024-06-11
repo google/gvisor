@@ -389,18 +389,6 @@ func (l *Lifecycle) reap(containerID string, tg *kernel.ThreadGroup) {
 	})
 }
 
-// Pause pauses all tasks, blocking until they are stopped.
-func (l *Lifecycle) Pause(_, _ *struct{}) error {
-	l.Kernel.Pause()
-	return nil
-}
-
-// Resume resumes all tasks.
-func (l *Lifecycle) Resume(_, _ *struct{}) error {
-	l.Kernel.Unpause()
-	return nil
-}
-
 // Shutdown sends signal to destroy the sentry/sandbox.
 func (l *Lifecycle) Shutdown(_, _ *struct{}) error {
 	close(l.ShutdownCh)

@@ -72,6 +72,12 @@ const (
 	// ContMgrRestoreSubcontainer restores a container from a statefile.
 	ContMgrRestoreSubcontainer = "containerManager.RestoreSubcontainer"
 
+	// ContMgrPause pauses all tasks, blocking until they are stopped.
+	ContMgrPause = "containerManager.Pause"
+
+	// ContMgrResume resumes all tasks.
+	ContMgrResume = "containerManager.Resume"
+
 	// ContMgrSignal sends a signal to a container.
 	ContMgrSignal = "containerManager.Signal"
 
@@ -128,12 +134,6 @@ const (
 // Logging related commands (see logging.go for more details).
 const (
 	LoggingChange = "Logging.Change"
-)
-
-// Lifecycle related commands (see lifecycle.go for more details).
-const (
-	LifecyclePause  = "Lifecycle.Pause"
-	LifecycleResume = "Lifecycle.Resume"
 )
 
 // Usage related commands (see usage.go for more details).
@@ -642,6 +642,18 @@ func (cm *containerManager) RestoreSubcontainer(args *StartArgs, _ *struct{}) er
 	}
 	log.Debugf("Container restored, cid: %s", args.CID)
 	return nil
+}
+
+// Pause pauses all tasks, blocking until they are stopped.
+func (cm *containerManager) Pause(_, _ *struct{}) error {
+	cm.l.k.Pause()
+	return nil
+}
+
+// Resume resumes all tasks.
+func (cm *containerManager) Resume(_, _ *struct{}) error {
+	cm.l.k.Unpause()
+	return postResumeImpl(cm.l.k)
 }
 
 // Wait waits for the init process in the given container.

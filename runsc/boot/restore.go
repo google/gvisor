@@ -295,6 +295,7 @@ func (r *restorer) restore(l *Loader) error {
 	// Release `l.mu` before calling into callbacks.
 	cu.Clean()
 
+	// r.restoreDone() signals and waits for the sandbox to start.
 	if err := r.restoreDone(); err != nil {
 		return err
 	}
@@ -302,6 +303,10 @@ func (r *restorer) restore(l *Loader) error {
 	r.stateFile.Close()
 	if r.pagesFile != nil {
 		r.pagesFile.Close()
+	}
+
+	if err := postRestoreImpl(l.k); err != nil {
+		return err
 	}
 
 	log.Infof("Restore successful")
@@ -319,10 +324,22 @@ func (l *Loader) save(o *control.SaveOpts) error {
 	}
 	o.Metadata["container_count"] = strconv.Itoa(l.containerCount())
 
+	if err := preSaveImpl(l.k, o); err != nil {
+		return err
+	}
+
 	state := control.State{
 		Kernel:   l.k,
 		Watchdog: l.watchdog,
 	}
+	if err := state.Save(o, nil); err != nil {
+		return err
+	}
 
-	return state.Save(o, nil)
+	if o.Resume {
+		if err := postResumeImpl(l.k); err != nil {
+			return err
+		}
+	}
+	return nil
 }
