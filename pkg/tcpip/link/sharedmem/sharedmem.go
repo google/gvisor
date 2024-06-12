@@ -345,6 +345,13 @@ func (e *endpoint) LinkAddress() tcpip.LinkAddress {
 	return e.addr
 }
 
+// SetLinkAddress implements stack.LinkEndpoint.SetLinkAddress.
+func (e *endpoint) SetLinkAddress(addr tcpip.LinkAddress) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.addr = addr
+}
+
 // AddHeader implements stack.LinkEndpoint.AddHeader.
 func (e *endpoint) AddHeader(pkt *stack.PacketBuffer) {
 	// Add ethernet header if needed.

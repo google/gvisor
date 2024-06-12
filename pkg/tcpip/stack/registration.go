@@ -1100,6 +1100,9 @@ type NetworkLinkEndpoint interface {
 	// endpoint.
 	LinkAddress() tcpip.LinkAddress
 
+	// SetLinkAddress updated the endpoint's link address (typically a MAC).
+	SetLinkAddress(addr tcpip.LinkAddress)
+
 	// Capabilities returns the set of capabilities supported by the
 	// endpoint.
 	Capabilities() LinkEndpointCapabilities

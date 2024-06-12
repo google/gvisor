@@ -118,6 +118,13 @@ func (e *Endpoint) LinkAddress() tcpip.LinkAddress {
 	return e.linkAddr
 }
 
+// SetLinkAddress implements stack.LinkEndpoint.
+func (e *Endpoint) SetLinkAddress(addr tcpip.LinkAddress) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.linkAddr = addr
+}
+
 // ARPHardwareType implements stack.LinkEndpoint.
 func (*Endpoint) ARPHardwareType() header.ARPHardwareType {
 	return header.ARPHardwareNone

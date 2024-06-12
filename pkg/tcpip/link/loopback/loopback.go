@@ -79,6 +79,9 @@ func (*endpoint) LinkAddress() tcpip.LinkAddress {
 	return ""
 }
 
+// SetLinkAddress implements stack.LinkEndpoint.SetLinkAddress.
+func (*endpoint) SetLinkAddress(tcpip.LinkAddress) {}
+
 // Wait implements stack.LinkEndpoint.Wait.
 func (*endpoint) Wait() {}
 

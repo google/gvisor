@@ -252,6 +252,13 @@ func (e *Endpoint) LinkAddress() tcpip.LinkAddress {
 	return e.linkAddr
 }
 
+// SetLinkAddress implements stack.LinkEndpoint.SetLinkAddress.
+func (e *Endpoint) SetLinkAddress(addr tcpip.LinkAddress) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.linkAddr = addr
+}
+
 // WritePackets stores outbound packets into the channel.
 // Multiple concurrent calls are permitted.
 func (e *Endpoint) WritePackets(pkts stack.PacketBufferList) (int, tcpip.Error) {

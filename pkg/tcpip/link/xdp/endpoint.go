@@ -239,6 +239,13 @@ func (ep *endpoint) LinkAddress() tcpip.LinkAddress {
 	return ep.addr
 }
 
+// SetLinkAddress implemens stack.LinkEndpoint.SetLinkAddress
+func (ep *endpoint) SetLinkAddress(addr tcpip.LinkAddress) {
+	ep.mu.Lock()
+	defer ep.mu.Unlock()
+	ep.addr = addr
+}
+
 // Wait implements stack.LinkEndpoint.Wait. It waits for the endpoint to stop
 // reading from its FD.
 func (ep *endpoint) Wait() {
