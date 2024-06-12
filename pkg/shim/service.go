@@ -17,6 +17,7 @@ package shim
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -44,11 +45,13 @@ import (
 	"github.com/containerd/containerd/runtime/v2/shim"
 	taskAPI "github.com/containerd/containerd/runtime/v2/task"
 	"github.com/containerd/containerd/sys/reaper"
+	"github.com/containerd/containerd/sys"
 	"github.com/containerd/typeurl"
 	"github.com/gogo/protobuf/types"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/sys/unix"
+	"google.golang.org/protobuf/proto"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/shim/runtimeoptions/v14"
 
@@ -219,14 +222,14 @@ func (s *service) newCommand(ctx context.Context, containerdBinary, containerdAd
 	return cmd, nil
 }
 
-func (s *service) StartShim(ctx context.Context, id, containerdBinary, containerdAddress, containerdTTRPCAddress string) (string, error) {
-	log.L.Debugf("StartShim, id: %s, binary: %q, address: %q", id, containerdBinary, containerdAddress)
+func (s *service) StartShim(ctx context.Context, opts shim.StartOpts) (string, error) {
+	log.L.Debugf("StartShim, id: %s, binary: %q, address: %q", opts.ID, opts.ContainerdBinary, opts.Address)
 
-	cmd, err := s.newCommand(ctx, containerdBinary, containerdAddress)
+	cmd, err := s.newCommand(ctx, opts.ContainerdBinary, opts.Address)
 	if err != nil {
 		return "", err
 	}
-	address, err := shim.SocketAddress(ctx, containerdAddress, id)
+	address, err := shim.SocketAddress(ctx, opts.Address, opts.ID)
 	if err != nil {
 		return "", err
 	}
@@ -280,7 +283,7 @@ func (s *service) StartShim(ctx context.Context, id, containerdBinary, container
 	if err := shim.WriteAddress(shimAddressPath, address); err != nil {
 		return "", err
 	}
-	if err := shim.SetScore(cmd.Process.Pid); err != nil {
+	if err := sys.SetOOMScore(cmd.Process.Pid, -999); err != nil {
 		return "", fmt.Errorf("failed to set OOM Score on shim: %w", err)
 	}
 	cu.Release()
@@ -751,6 +754,39 @@ func (s *service) Pids(ctx context.Context, r *taskAPI.PidsRequest) (*taskAPI.Pi
 	return resp, errdefs.ToGRPC(err)
 }
 
+// marshalAny marshals the value v into an any with the correct TypeUrl.
+// If the provided object is already a proto.Any message, then it will be
+// returned verbatim. If it is of type proto.Message, it will be marshaled as a
+// protocol buffer. Otherwise, the object will be marshaled to json.
+func marshalAny(v interface{}) (*types.Any, error) {
+	var marshal func(v interface{}) ([]byte, error)
+	switch t := v.(type) {
+	case *types.Any:
+		// avoid re-serializing the type if we have an any.
+		return t, nil
+	case proto.Message:
+		marshal = func(v interface{}) ([]byte, error) {
+			return proto.Marshal(t)
+		}
+	default:
+		marshal = json.Marshal
+	}
+
+	url, err := typeurl.TypeURL(v)
+	if err != nil {
+		return nil, err
+	}
+
+	data, err := marshal(v)
+	if err != nil {
+		return nil, err
+	}
+	return &types.Any{
+		TypeUrl: url,
+		Value:   data,
+	}, nil
+}
+
 func (s *service) pids(ctx context.Context, r *taskAPI.PidsRequest) (*taskAPI.PidsResponse, error) {
 	log.L.Debugf("Pids, id: %s", r.ID)
 
@@ -768,7 +804,7 @@ func (s *service) pids(ctx context.Context, r *taskAPI.PidsRequest) (*taskAPI.Pi
 				d := &runctypes.ProcessDetails{
 					ExecID: p.ID(),
 				}
-				a, err := typeurl.MarshalAny(d)
+				a, err := marshalAny(d)
 				if err != nil {
 					return nil, fmt.Errorf("failed to marshal process %d info: %w", pid, err)
 				}
@@ -914,7 +950,7 @@ func (s *service) stats(ctx context.Context, r *taskAPI.StatsRequest) (*taskAPI.
 			Limit:   stats.Pids.Limit,
 		},
 	}
-	data, err := typeurl.MarshalAny(metrics)
+	data, err := marshalAny(metrics)
 	if err != nil {
 		log.L.Debugf("Stats error, id: %s: %v", r.ID, err)
 		return nil, err
