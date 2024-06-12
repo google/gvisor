@@ -73,6 +73,10 @@ func (e *countedEndpoint) LinkAddress() tcpip.LinkAddress {
 	return e.linkAddr
 }
 
+func (e *countedEndpoint) SetLinkAddress(addr tcpip.LinkAddress) {
+	e.linkAddr = addr
+}
+
 // WritePackets implements stack.LinkEndpoint.WritePackets.
 func (e *countedEndpoint) WritePackets(pkts stack.PacketBufferList) (int, tcpip.Error) {
 	e.writeCount += pkts.Len()

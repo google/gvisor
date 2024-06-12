@@ -181,6 +181,19 @@ func TestAddress(t *testing.T) {
 	}
 }
 
+func TestSetAddress(t *testing.T) {
+	addrs := []tcpip.LinkAddress{"abc", "def"}
+	c := newContext(t, &Options{Address: laddr, MTU: mtu})
+	defer c.cleanup()
+	for _, addr := range addrs {
+		c.ep.SetLinkAddress(addr)
+
+		if want, v := addr, c.ep.LinkAddress(); want != v {
+			t.Errorf("LinkAddress() = %v, want %v", v, want)
+		}
+	}
+}
+
 func testWritePacket(t *testing.T, plen int, eth bool, gsoMaxSize uint32, hash uint32) {
 	c := newContext(t, &Options{Address: laddr, MTU: mtu, EthernetHeader: eth, GSOMaxSize: gsoMaxSize})
 	defer c.cleanup()

@@ -114,6 +114,13 @@ func (e *Endpoint) LinkAddress() tcpip.LinkAddress {
 	return e.child.LinkAddress()
 }
 
+// SetLinkAddress implements stack.LinkEndpoint.SetLinkAddress.
+func (e *Endpoint) SetLinkAddress(addr tcpip.LinkAddress) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.child.SetLinkAddress(addr)
+}
+
 // WritePackets implements stack.LinkEndpoint.
 func (e *Endpoint) WritePackets(pkts stack.PacketBufferList) (int, tcpip.Error) {
 	return e.child.WritePackets(pkts)

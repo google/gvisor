@@ -821,6 +821,20 @@ func TestCloseWhileWaitingToPost(t *testing.T) {
 	c.ep.Wait()
 }
 
+func TestSetLinkAddress(t *testing.T) {
+	c := newTestContext(t, 20000, 1500, tcpip.LinkAddress("xyz"))
+	defer c.cleanup()
+
+	addrs := []tcpip.LinkAddress{"abc", "def"}
+	for _, addr := range addrs {
+		c.ep.SetLinkAddress(addr)
+
+		if want, v := addr, c.ep.LinkAddress(); want != v {
+			t.Errorf("LinkAddress() = %v, want %v", v, want)
+		}
+	}
+}
+
 func TestMain(m *testing.M) {
 	refs.SetLeakMode(refs.LeaksPanic)
 	code := m.Run()

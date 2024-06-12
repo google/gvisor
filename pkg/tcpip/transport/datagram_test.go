@@ -149,9 +149,9 @@ func (*mockEndpoint) MaxHeaderLength() uint16 {
 	return 0
 }
 func (*mockEndpoint) LinkAddress() tcpip.LinkAddress {
-	var l tcpip.LinkAddress
-	return l
+	return ""
 }
+func (*mockEndpoint) SetLinkAddress(tcpip.LinkAddress) {}
 func (e *mockEndpoint) WritePackets(pkts stack.PacketBufferList) (int, tcpip.Error) {
 	if e.writeErr != nil {
 		return 0, e.writeErr

@@ -65,6 +65,9 @@ func (*MockLinkEndpoint) MaxHeaderLength() uint16 { return 0 }
 // LinkAddress implements LinkEndpoint.LinkAddress.
 func (*MockLinkEndpoint) LinkAddress() tcpip.LinkAddress { return "" }
 
+// SetLinkAddress implements LinkEndpoint.LinkAddress.
+func (*MockLinkEndpoint) SetLinkAddress(tcpip.LinkAddress) {}
+
 // WritePackets implements LinkEndpoint.WritePackets.
 func (ep *MockLinkEndpoint) WritePackets(pkts stack.PacketBufferList) (int, tcpip.Error) {
 	var n int

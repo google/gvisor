@@ -1,4 +1,4 @@
-load("//tools:defs.bzl", "go_library")
+load("//tools:defs.bzl", "go_library", "go_test")
 
 package(
     default_applicable_licenses = ["//:license"],
@@ -15,4 +15,11 @@ go_library(
         "//pkg/tcpip/header",
         "//pkg/tcpip/stack",
     ],
+)
+
+go_test(
+    name = "channel_test",
+    srcs = ["channel_test.go"],
+    library = ":channel",
+    deps = ["//pkg/tcpip"],
 )

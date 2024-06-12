@@ -304,6 +304,11 @@ func (e *fwdTestLinkEndpoint) LinkAddress() tcpip.LinkAddress {
 	return e.linkAddr
 }
 
+// SetLinkAddress sets the link address of this endpoint.
+func (e *fwdTestLinkEndpoint) SetLinkAddress(addr tcpip.LinkAddress) {
+	e.linkAddr = addr
+}
+
 // WritePackets stores outbound packets into the channel.
 func (e *fwdTestLinkEndpoint) WritePackets(pkts PacketBufferList) (int, tcpip.Error) {
 	n := 0

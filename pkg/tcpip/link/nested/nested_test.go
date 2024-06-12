@@ -33,6 +33,7 @@ var _ stack.LinkEndpoint = (*parentEndpoint)(nil)
 var _ stack.NetworkDispatcher = (*parentEndpoint)(nil)
 
 type childEndpoint struct {
+	addr tcpip.LinkAddress
 	stack.LinkEndpoint
 	dispatcher stack.NetworkDispatcher
 }
@@ -45,6 +46,14 @@ func (c *childEndpoint) Attach(dispatcher stack.NetworkDispatcher) {
 
 func (c *childEndpoint) IsAttached() bool {
 	return c.dispatcher != nil
+}
+
+func (c *childEndpoint) LinkAddress() tcpip.LinkAddress {
+	return c.addr
+}
+
+func (c *childEndpoint) SetLinkAddress(addr tcpip.LinkAddress) {
+	c.addr = addr
 }
 
 type counterDispatcher struct {
@@ -111,6 +120,23 @@ func TestNestedLinkEndpoint(t *testing.T) {
 		p.DecRef()
 		if disp.count != 0 {
 			t.Errorf("After second packet with dispatcher detached, got disp.count = %d, want = 0", disp.count)
+		}
+	}
+}
+
+func TestSetLinkAddress(t *testing.T) {
+	var (
+		childEP childEndpoint
+		ep      parentEndpoint
+		disp    counterDispatcher
+	)
+	addrs := []tcpip.LinkAddress{"abc", "def"}
+	ep.Endpoint.Init(&childEP, &disp)
+	for _, addr := range addrs {
+		ep.SetLinkAddress(addr)
+
+		if want, v := addr, ep.LinkAddress(); want != v {
+			t.Errorf("LinkAddress() = %v, want %v", v, want)
 		}
 	}
 }

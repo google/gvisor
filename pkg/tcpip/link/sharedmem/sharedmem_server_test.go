@@ -403,6 +403,34 @@ func TestClientBulkTransfer(t *testing.T) {
 	}
 }
 
+func TestSetLinkAddress(t *testing.T) {
+	q, err := sharedmem.NewQueuePair(sharedmem.QueueOptions{})
+	if err != nil {
+		q.Close()
+		t.Fatalf("failed to create sharedmem queue: %s", err)
+	}
+	defer q.Close()
+	ep, err := sharedmem.NewServerEndpoint(sharedmem.Options{
+		MTU:         defaultMTU,
+		BufferSize:  defaultBufferSize,
+		LinkAddress: remoteLinkAddr,
+		TX:          q.TXQueueConfig(),
+		RX:          q.RXQueueConfig(),
+		PeerFD:      123,
+	})
+	if err != nil {
+		t.Fatalf("failed to create sharedmem endpoint: %s", err)
+	}
+	addrs := []tcpip.LinkAddress{"abc", "def"}
+	for _, addr := range addrs {
+		ep.SetLinkAddress(addr)
+
+		if want, v := addr, ep.LinkAddress(); want != v {
+			t.Errorf("LinkAddress() = %v, want %v", v, want)
+		}
+	}
+}
+
 func TestMain(m *testing.M) {
 	refs.SetLeakMode(refs.LeaksPanic)
 	code := m.Run()

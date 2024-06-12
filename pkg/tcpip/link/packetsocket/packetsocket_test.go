@@ -42,8 +42,9 @@ func (*nullEndpoint) MaxHeaderLength() uint16 {
 	return 0
 }
 func (*nullEndpoint) LinkAddress() tcpip.LinkAddress {
-	var l tcpip.LinkAddress
-	return l
+	return ""
+}
+func (*nullEndpoint) SetLinkAddress(tcpip.LinkAddress) {
 }
 func (*nullEndpoint) WritePackets(pkts stack.PacketBufferList) (int, tcpip.Error) {
 	return pkts.Len(), nil

@@ -126,6 +126,14 @@ func (e *Endpoint) LinkAddress() tcpip.LinkAddress {
 	return e.lower.LinkAddress()
 }
 
+// SetLinkAddress implements stack.LinkEndpoint.SetLinkAddress. It forwards the
+// request to the lower endpoint.
+func (e *Endpoint) SetLinkAddress(addr tcpip.LinkAddress) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.lower.SetLinkAddress(addr)
+}
+
 // WritePackets implements stack.LinkEndpoint.WritePackets. It is called by
 // higher-level protocols to write packets. It only forwards packets to the
 // lower endpoint if Wait or WaitWrite haven't been called.

@@ -74,6 +74,9 @@ func (m *InjectableEndpoint) LinkAddress() tcpip.LinkAddress {
 	return ""
 }
 
+// SetLinkAddress implements stack.LinkEndpoint.SetLinkAddress.
+func (m *InjectableEndpoint) SetLinkAddress(tcpip.LinkAddress) {}
+
 // Attach implements stack.LinkEndpoint.
 func (m *InjectableEndpoint) Attach(dispatcher stack.NetworkDispatcher) {
 	for _, endpoint := range m.routes {
