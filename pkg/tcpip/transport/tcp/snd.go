@@ -1572,8 +1572,11 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 			// segments (which are always at the end of list) that
 			// have no data, but do consume a sequence number.
 			seg := s.writeList.Front()
-			datalen := seg.logicalLen()
+			if seg == nil {
+				panic(fmt.Sprintf("invalid state: there are %d unacknowledged bytes left, but the write list is empty:\n%+v", ackLeft, s.TCPSenderState))
+			}
 
+			datalen := seg.logicalLen()
 			if datalen > ackLeft {
 				prevCount := s.pCount(seg, s.MaxPayloadSize)
 				seg.TrimFront(ackLeft)

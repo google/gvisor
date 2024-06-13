@@ -501,14 +501,12 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 		if err != nil {
 			return err
 		}
-		defer cm.restorer.pagesMetadata.Close()
 		fileIdx++
 
 		cm.restorer.pagesFile, err = o.ReleaseFD(fileIdx)
 		if err != nil {
 			return err
 		}
-		defer cm.restorer.pagesFile.Close()
 		fileIdx++
 	}
 
