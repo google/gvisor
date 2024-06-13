@@ -304,6 +304,9 @@ func (r *restorer) restore(l *Loader) error {
 	if r.pagesFile != nil {
 		r.pagesFile.Close()
 	}
+	if r.pagesMetadata != nil {
+		r.pagesMetadata.Close()
+	}
 
 	if err := postRestoreImpl(l.k); err != nil {
 		return err
