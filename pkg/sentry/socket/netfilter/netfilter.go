@@ -35,7 +35,7 @@ import (
 // enableLogging controls whether to log the (de)serialization of netfilter
 // structs between userspace and netstack. These logs are useful when
 // developing iptables, but can pollute sentry logs otherwise.
-const enableLogging = false
+const enableLogging = true
 
 // nflog logs messages related to the writing and reading of iptables.
 func nflog(format string, args ...any) {
@@ -275,20 +275,6 @@ func SetEntries(mapper IDMapper, stk *stack.Stack, optVal []byte, ipv6 bool) *sy
 		jump.RuleNum = jumpTo
 		rule.Target = jump
 		table.Rules[ruleIdx] = rule
-	}
-
-	// Since we don't support FORWARD, yet, make sure all other chains point to
-	// ACCEPT rules.
-	for hook, ruleIdx := range table.BuiltinChains {
-		if hook := stack.Hook(hook); hook == stack.Forward {
-			if ruleIdx == stack.HookUnset {
-				continue
-			}
-			if !isUnconditionalAccept(table.Rules[ruleIdx], ipv6) {
-				nflog("hook %d is unsupported.", hook)
-				return syserr.ErrInvalidArgument
-			}
-		}
 	}
 
 	// TODO(gvisor.dev/issue/6167): Check the following conditions:
