@@ -39,6 +39,9 @@ const (
 func (s *subprocess) resetSysemuRegs(regs *arch.Registers) {
 }
 
+// ExpandCOWBreakOnExec implements platform.AddressSpace.ExpandCOWBreakOnExec.
+func (s *subprocess) ExpandCOWBreakOnExec() bool { return false }
+
 // createSyscallRegs sets up syscall registers.
 //
 // This should be called to generate registers for a system call.

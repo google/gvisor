@@ -365,6 +365,12 @@ type AddressSpace interface {
 	// Platform.SupportsAddressSpaceIO() == true. AddressSpaces for which this
 	// does not hold may panic if AddressSpaceIO methods are invoked.
 	AddressSpaceIO
+
+	// ExpandCOWBreakOnExec returns true if MemoryManager needs to treat
+	// executable VMA-s like regular ones. It can be useful if a platform
+	// needs to modify executable vma-s. Look at
+	// MemoryManager.getPMAInternalMappingsLocked for more details.
+	ExpandCOWBreakOnExec() bool
 }
 
 // AddressSpaceIO supports IO through the memory mappings installed in an

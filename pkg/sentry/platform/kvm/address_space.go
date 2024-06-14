@@ -243,3 +243,6 @@ func (as *addressSpace) PreFork() {}
 
 // PostFork implements platform.AddressSpace.PostFork.
 func (as *addressSpace) PostFork() {}
+
+// ExpandCOWBreakOnExec implements platform.AddressSpace.ExpandCOWBreakOnExec.
+func (as *addressSpace) ExpandCOWBreakOnExec() bool { return false }
