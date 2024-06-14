@@ -1382,6 +1382,23 @@ cc_binary(
 )
 
 cc_binary(
+    name = "mmap_eternal_test",
+    testonly = 1,
+    srcs = ["mmap_eternal.cc"],
+    linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
+    deps = select_gtest() + [
+        "//test/util:logging",
+        "//test/util:memory_util",
+        "//test/util:multiprocess_util",
+        "//test/util:posix_error",
+        "//test/util:save_util",
+        "//test/util:test_main",
+        "//test/util:test_util",
+    ],
+)
+
+cc_binary(
     name = "mmap_test",
     testonly = 1,
     srcs = ["mmap.cc"],

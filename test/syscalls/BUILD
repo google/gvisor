@@ -397,6 +397,12 @@ syscall_test(
 )
 
 syscall_test(
+    timeout = "eternal",  # YES_I_REALLY_NEED_AN_ETERNAL_TEST
+    save = False,  # save tests incorrectly shorten timeout to "long"
+    test = "//test/syscalls/linux:mmap_eternal_test",
+)
+
+syscall_test(
     size = "medium",
     shard_count = more_shards,
     test = "//test/syscalls/linux:mmap_test",
