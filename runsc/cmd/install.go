@@ -53,7 +53,7 @@ func (*Install) Synopsis() string {
 
 // Usage implements subcommands.Command.Usage.
 func (*Install) Usage() string {
-	return `install [flags] <name> [-- [args...]] -- if provided, args are passed to the runtime
+	return `install [--runtime=<name>] [flags] [-- [args...]] -- if provided, args are passed to the runtime
 `
 }
 

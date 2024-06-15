@@ -15,6 +15,8 @@
 package filter
 
 import (
+	"sort"
+
 	"gvisor.dev/gvisor/pkg/seccomp/precompiledseccomp"
 	"gvisor.dev/gvisor/pkg/sync"
 )
@@ -35,6 +37,17 @@ func GetPrecompiled(programName string) (precompiledseccomp.Program, bool) {
 	registerPrecompiledProgramsOnce.Do(registerPrograms)
 	program, ok := precompiledPrograms[programName]
 	return program, ok
+}
+
+// ListPrecompiled returns a list of all registered program names.
+func ListPrecompiled() []string {
+	registerPrecompiledProgramsOnce.Do(registerPrograms)
+	programNames := make([]string, 0, len(precompiledPrograms))
+	for name := range precompiledPrograms {
+		programNames = append(programNames, name)
+	}
+	sort.Strings(programNames)
+	return programNames
 }
 
 // registerPrograms registers available programs inside `precompiledPrograms`.

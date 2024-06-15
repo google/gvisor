@@ -56,6 +56,13 @@ func Install(opt Options) error {
 		seccompOpts.DefaultAction = linux.SECCOMP_RET_TRAP
 	} else {
 		log.Infof("No precompiled program found for config options %v, building seccomp program from scratch. This may slow down container startup.", key)
+		if log.IsLogging(log.Debug) {
+			precompiledKeys := ListPrecompiled()
+			log.Debugf("Precompiled seccomp-bpf program configuration option variants (%d):", len(precompiledKeys))
+			for k := range precompiledKeys {
+				log.Debugf("  %v", k)
+			}
+		}
 	}
 	rules, denyRules := config.Rules(opt)
 	return seccomp.Install(rules, denyRules, seccompOpts)
