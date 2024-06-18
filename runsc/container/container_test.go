@@ -1278,6 +1278,89 @@ func TestCheckpointRestoreExecKilled(t *testing.T) {
 	}
 }
 
+// TestCheckpointRestoreCreateMountPoint tests that mountpoints created during
+// container creation are re-created after checkpoint/restore.
+func TestCheckpointRestoreCreateMountPoint(t *testing.T) {
+	dir, err := os.MkdirTemp(testutil.TmpDir(), "checkpoint-test")
+	if err != nil {
+		t.Fatalf("os.MkdirTemp() failed: %v", err)
+	}
+	defer os.RemoveAll(dir)
+	if err := os.Chmod(dir, 0777); err != nil {
+		t.Fatalf("error chmoding file: %q, %v", dir, err)
+	}
+
+	spec, conf := sleepSpecConf(t)
+
+	mountDest := filepath.Join(dir, "/foo-dir")
+	spec.Mounts = append(spec.Mounts, specs.Mount{
+		Destination: mountDest,
+		Type:        "tmpfs",
+	})
+
+	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer cleanup()
+
+	// Create and start the container.
+	args := Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+	}
+	cont, err := New(conf, args)
+	if err != nil {
+		t.Fatalf("error creating container: %v", err)
+	}
+	defer cont.Destroy()
+	if err := cont.Start(conf); err != nil {
+		t.Fatalf("error starting container: %v", err)
+	}
+	if err := waitForProcessCount(cont, 1); err != nil {
+		t.Fatal(err)
+	}
+
+	// Check that mount point was created.
+	if ws, err := execute(conf, cont, "/usr/bin/test", "-d", mountDest); err != nil {
+		t.Fatal(err)
+	} else if ws != 0 {
+		t.Fatalf("directory was not re-created upon restore, ws: %v", ws)
+	}
+
+	// Checkpoint running container; save state into new file.
+	if err := cont.Checkpoint(dir, false, statefile.Options{Compression: statefile.CompressionLevelDefault}, pgalloc.SaveOpts{}); err != nil {
+		t.Fatalf("error checkpointing container to file: %v", err)
+	}
+
+	// Remove directory created by the container.
+	if err := os.RemoveAll(mountDest); err != nil {
+		t.Fatalf("error removing mount point directory: %v", err)
+	}
+
+	// Destroy the original container to restore it in place.
+	cont.Destroy()
+	cont = nil
+
+	cont2, err := New(conf, args)
+	if err != nil {
+		t.Fatalf("error creating container: %v", err)
+	}
+	defer cont2.Destroy()
+
+	if err := cont2.Restore(conf, dir, false /* direct */); err != nil {
+		t.Fatalf("error restoring container: %v", err)
+	}
+
+	// Check that mount point was re-created after restore.
+	if ws, err := execute(conf, cont2, "/usr/bin/test", "-d", mountDest); err != nil {
+		t.Fatal(err)
+	} else if ws != 0 {
+		t.Fatalf("directory was not re-created upon restore, ws: %v", ws)
+	}
+}
+
 // TestUnixDomainSockets checks that Checkpoint/Restore works in cases
 // with filesystem Unix Domain Socket use.
 func TestUnixDomainSockets(t *testing.T) {

@@ -842,6 +842,7 @@ func (fs *filesystem) MkdirAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 			if fs.opts.interop != InteropModeShared {
 				parent.incLinks()
 			}
+			child.forMountpoint = opts.ForSyntheticMountpoint
 			return child, nil
 		}
 
