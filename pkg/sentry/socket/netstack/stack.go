@@ -694,6 +694,23 @@ func (s *Stack) RouteTable() []inet.Route {
 	return routeTable
 }
 
+// AddRoute implements inet.Stack.AddRoute
+func (s *Stack) AddRoute(route inet.Route) error {
+	rt := tcpip.Route{
+		Destination: tcpip.AddressWithPrefix{
+			Address:   tcpip.AddrFromSlice(route.DstAddr),
+			PrefixLen: int(route.DstLen)}.Subnet(),
+		Gateway:    tcpip.AddrFromSlice(route.GatewayAddr),
+		SourceHint: tcpip.AddrFromSlice(route.SrcAddr),
+		NIC:        tcpip.NICID(route.OutputInterface),
+	}
+	s.Stack.RemoveRoutes(func(r tcpip.Route) bool {
+		return rt.Equal(r)
+	})
+	s.Stack.AddRoute(rt)
+	return nil
+}
+
 // IPTables returns the stack's iptables.
 func (s *Stack) IPTables() (*stack.IPTables, error) {
 	return s.Stack.IPTables(), nil

@@ -322,3 +322,14 @@ func (v *BytesView) Uint32() (uint32, bool) {
 	val.UnmarshalBytes(attr)
 	return uint32(val), true
 }
+
+// Int32 converts the raw attribute value to int32.
+func (v *BytesView) Int32() (int32, bool) {
+	attr := []byte(*v)
+	val := primitive.Int32(0)
+	if len(attr) != val.SizeBytes() {
+		return 0, false
+	}
+	val.UnmarshalBytes(attr)
+	return int32(val), true
+}

@@ -28,6 +28,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/socket/netlink"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netlink/nlmsg"
 	"gvisor.dev/gvisor/pkg/syserr"
+	"gvisor.dev/gvisor/pkg/tcpip"
 )
 
 // commandKind describes the operational class of a message type.
@@ -381,6 +382,106 @@ func parseForDestination(msg *nlmsg.Message) ([]byte, *syserr.Error) {
 	return nil, syserr.ErrInvalidArgument
 }
 
+func (p *Protocol) newRoute(ctx context.Context, s *netlink.Socket, msg *nlmsg.Message, ms *nlmsg.MessageSet) *syserr.Error {
+	stack := s.Stack()
+	if stack == nil {
+		// No network routes.
+		return syserr.ErrProtocolNotSupported
+	}
+
+	hdr := msg.Header()
+
+	if hdr.Flags&linux.NLM_F_REQUEST != linux.NLM_F_REQUEST {
+		return syserr.ErrProtocolNotSupported
+	}
+
+	var routeMsg linux.RouteMessage
+	attrs, ok := msg.GetData(&routeMsg)
+	if !ok {
+		return syserr.ErrInvalidArgument
+	}
+
+	route := inet.Route{
+		Family:   routeMsg.Family,
+		DstLen:   routeMsg.DstLen,
+		SrcLen:   routeMsg.SrcLen,
+		TOS:      routeMsg.TOS,
+		Table:    routeMsg.Table,
+		Protocol: routeMsg.Protocol,
+		Scope:    routeMsg.Scope,
+		Type:     routeMsg.Type,
+		Flags:    routeMsg.Flags,
+	}
+
+	for !attrs.Empty() {
+		ahdr, value, rest, ok := attrs.ParseFirst()
+		if !ok {
+			return syserr.ErrInvalidArgument
+		}
+		attrs = rest
+
+		switch ahdr.Type {
+		case linux.RTA_DST:
+			if len(value) < 1 {
+				return syserr.ErrInvalidArgument
+			}
+			route.DstAddr = value
+		case linux.RTA_SRC:
+			if len(value) < 1 {
+				return syserr.ErrInvalidArgument
+			}
+			route.SrcAddr = value
+		case linux.RTA_OIF:
+			oif := nlmsg.BytesView(value)
+			outputInterface, ok := oif.Int32()
+			if !ok {
+				return syserr.ErrInvalidArgument
+			}
+			if _, exist := stack.Interfaces()[outputInterface]; !exist {
+				return syserr.ErrNoDevice
+			}
+			route.OutputInterface = outputInterface
+		case linux.RTA_GATEWAY:
+			if len(value) < 1 {
+				return syserr.ErrInvalidArgument
+			}
+			route.GatewayAddr = value
+		}
+	}
+
+	localRoute := tcpip.Route{
+		Destination: tcpip.AddressWithPrefix{
+			Address:   tcpip.AddrFromSlice(route.DstAddr),
+			PrefixLen: int(route.DstLen)}.Subnet(),
+		Gateway: tcpip.AddrFromSlice(route.GatewayAddr),
+		NIC:     tcpip.NICID(route.OutputInterface),
+	}
+	found := false
+	for _, rt := range stack.RouteTable() {
+		if localRoute.Equal(tcpip.Route{
+			Destination: tcpip.AddressWithPrefix{
+				Address:   tcpip.AddrFromSlice(rt.DstAddr),
+				PrefixLen: int(rt.DstLen)}.Subnet(),
+			Gateway: tcpip.AddrFromSlice(rt.GatewayAddr),
+			NIC:     tcpip.NICID(rt.OutputInterface),
+		}) {
+			found = true
+			break
+		}
+	}
+	if found {
+		switch {
+		case hdr.Flags&linux.NLM_F_CREATE != 0:
+			return syserr.ErrExists
+		case hdr.Flags&linux.NLM_F_EXCL != 0:
+			return nil
+		}
+	} else if hdr.Flags&(linux.NLM_F_EXCL|linux.NLM_F_REPLACE) != 0 {
+		return syserr.ErrInvalidArgument
+	}
+	return syserr.FromError(stack.AddRoute(route))
+}
+
 // dumpRoutes handles RTM_GETROUTE requests.
 func (p *Protocol) dumpRoutes(ctx context.Context, s *netlink.Socket, msg *nlmsg.Message, ms *nlmsg.MessageSet) *syserr.Error {
 	// RTM_GETROUTE dump requests need not contain anything more than the
@@ -594,6 +695,8 @@ func (p *Protocol) ProcessMessage(ctx context.Context, s *netlink.Socket, msg *n
 			return p.getLink(ctx, s, msg, ms)
 		case linux.RTM_DELLINK:
 			return p.delLink(ctx, s, msg, ms)
+		case linux.RTM_NEWROUTE:
+			return p.newRoute(ctx, s, msg, ms)
 		case linux.RTM_GETROUTE:
 			return p.dumpRoutes(ctx, s, msg, ms)
 		case linux.RTM_NEWADDR:
