@@ -29,6 +29,13 @@ declare_rwmutex(
 )
 
 declare_rwmutex(
+    name = "bridge_mutex",
+    out = "bridge_mutex.go",
+    package = "stack",
+    prefix = "bridge",
+)
+
+declare_rwmutex(
     name = "route_stack_mutex",
     out = "route_stack_mutex.go",
     package = "stack",
@@ -201,6 +208,8 @@ go_library(
         "address_state_refs.go",
         "addressable_endpoint_state.go",
         "addressable_endpoint_state_mutex.go",
+        "bridge.go",
+        "bridge_mutex.go",
         "bucket_mutex.go",
         "cleanup_endpoints_mutex.go",
         "conn_mutex.go",
@@ -334,5 +343,23 @@ go_test(
         "//pkg/tcpip/transport/tcpconntrack",
         "@com_github_google_go_cmp//cmp:go_default_library",
         "@com_github_google_go_cmp//cmp/cmpopts:go_default_library",
+    ],
+)
+
+go_test(
+    name = "bridge_test",
+    size = "small",
+    srcs = [
+        "bridge_test.go",
+    ],
+    deps = [
+        "//pkg/buffer",
+        "//pkg/refs",
+        "//pkg/tcpip",
+        "//pkg/tcpip/header",
+        "//pkg/tcpip/link/channel",
+        "//pkg/tcpip/link/ethernet",
+        "//pkg/tcpip/link/veth",
+        "//pkg/tcpip/stack",
     ],
 )

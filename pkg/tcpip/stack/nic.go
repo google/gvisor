@@ -87,6 +87,9 @@ type nic struct {
 	// deliverLinkPackets is off by default because some users already
 	// deliver link packets by explicitly calling nic.DeliverLinkPackets.
 	deliverLinkPackets bool
+
+	// Primary is the main controlling interface in a bonded setup.
+	Primary *nic
 }
 
 // makeNICStats initializes the NIC statistics and associates them to the global
@@ -1078,4 +1081,12 @@ func (n *nic) multicastForwarding(protocol tcpip.NetworkProtocolNumber) (bool, t
 	}
 
 	return ep.MulticastForwarding(), nil
+}
+
+// CoordinatorNIC represents NetworkLinkEndpoint that can join multiple network devices.
+type CoordinatorNIC interface {
+	// AddNIC adds the specified NIC device.
+	AddNIC(n *nic) tcpip.Error
+	// DelNIC deletes the specified NIC device.
+	DelNIC(n *nic) tcpip.Error
 }
