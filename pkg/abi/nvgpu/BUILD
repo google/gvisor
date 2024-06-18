@@ -16,6 +16,9 @@ go_library(
         "uvm.go",
     ],
     marshal = True,
-    visibility = ["//pkg/sentry:internal"],
+    visibility = [
+        "//pkg/sentry:internal",
+        "//tools:__subpackages__",
+    ],
     deps = ["//pkg/marshal"],
 )

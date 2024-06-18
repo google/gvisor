@@ -170,6 +170,7 @@ type NVOS00Parameters struct {
 // RmAllocParamType should be implemented by all possible parameter types for
 // NV_ESC_RM_ALLOC.
 type RmAllocParamType interface {
+	GetHClass() ClassID
 	GetPAllocParms() P64
 	GetPRightsRequested() P64
 	SetPAllocParms(p P64)
@@ -201,6 +202,11 @@ type NVOS21Parameters struct {
 	PAllocParms   P64
 	ParamsSize    uint32
 	Status        uint32
+}
+
+// GetHClass implements RmAllocParamType.GetHClass.
+func (n *NVOS21Parameters) GetHClass() ClassID {
+	return n.HClass
 }
 
 // GetPAllocParms implements RmAllocParamType.GetPAllocParms.
@@ -401,6 +407,11 @@ type NVOS64Parameters struct {
 	Flags            uint32
 	Status           uint32
 	_                uint32
+}
+
+// GetHClass implements RmAllocParamType.GetHClass.
+func (n *NVOS64Parameters) GetHClass() ClassID {
+	return n.HClass
 }
 
 // GetPAllocParms implements RmAllocParamType.GetPAllocParms.

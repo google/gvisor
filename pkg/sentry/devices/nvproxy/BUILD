@@ -54,7 +54,7 @@ go_library(
     ],
     visibility = [
         "//pkg/sentry:internal",
-        "//tools/gpu:__subpackages__",
+        "//tools:__subpackages__",
     ],
     deps = [
         "//pkg/abi/linux",
