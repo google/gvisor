@@ -95,13 +95,14 @@ func (ft FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.VirtualF
 	procfs.MaxCachedDentries = maxCachedDentries
 	procfs.VFSFilesystem().Init(vfsObj, &ft, procfs)
 
-	var fakeCgroupControllers map[string]string
-	if opts.InternalData != nil {
-		data := opts.InternalData.(*InternalData)
-		fakeCgroupControllers = data.Cgroups
+	var internalData *InternalData
+	if opts.InternalData == nil {
+		internalData = &InternalData{}
+	} else {
+		internalData = opts.InternalData.(*InternalData)
 	}
 
-	inode := procfs.newTasksInode(ctx, k, pidns, fakeCgroupControllers)
+	inode := procfs.newTasksInode(ctx, k, pidns, internalData)
 	var dentry kernfs.Dentry
 	dentry.InitRoot(&procfs.Filesystem, inode)
 	return procfs.VFSFilesystem(), dentry.VFSDentry(), nil
@@ -157,6 +158,7 @@ func (fs *filesystem) newStaticDir(ctx context.Context, creds *auth.Credentials,
 //
 // +stateify savable
 type InternalData struct {
+	ExtraInternalData
 	Cgroups map[string]string
 }
 

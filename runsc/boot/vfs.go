@@ -877,11 +877,14 @@ func getMountNameAndOptions(spec *specs.Spec, conf *config.Config, m *mountInfo,
 
 	// Find filesystem name and FS specific data field.
 	switch m.mount.Type {
-	case devpts.Name, dev.Name, proc.Name:
+	case devpts.Name, dev.Name:
 		// Nothing to do.
 
 	case Nonefs:
 		fsName = sys.Name
+
+	case proc.Name:
+		internalData = newProcInternalData(spec)
 
 	case sys.Name:
 		sysData := &sys.InternalData{EnableTPUProxyPaths: specutils.TPUProxyIsEnabled(spec, conf)}

@@ -15,33 +15,13 @@
 //go:build !false
 // +build !false
 
-package boot
+package sandbox
 
 import (
-	specs "github.com/opencontainers/runtime-spec/specs-go"
-	"gvisor.dev/gvisor/pkg/sentry/control"
-	"gvisor.dev/gvisor/pkg/sentry/fsimpl/proc"
-	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/runsc/config"
+	"gvisor.dev/gvisor/runsc/donation"
 )
 
-func preSaveImpl(*kernel.Kernel, *control.SaveOpts) error {
-	return nil
-}
-
-// Precondition: The kernel should be running.
-func postRestoreImpl(*kernel.Kernel) error {
-	return nil
-}
-
-// Precondition: The kernel should be running.
-func postResumeImpl(*kernel.Kernel) error {
-	return nil
-}
-
-func newProcInternalData(*specs.Spec) *proc.InternalData {
-	return &proc.InternalData{}
-}
-
-func (l *Loader) initDone(args Args) error {
+func createSandboxProcessExtra(conf *config.Config, args *Args, donations *donation.Agency) error {
 	return nil
 }

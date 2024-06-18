@@ -139,6 +139,7 @@ func (i *InternalData) StateTypeName() string {
 
 func (i *InternalData) StateFields() []string {
 	return []string{
+		"ExtraInternalData",
 		"Cgroups",
 	}
 }
@@ -148,14 +149,16 @@ func (i *InternalData) beforeSave() {}
 // +checklocksignore
 func (i *InternalData) StateSave(stateSinkObject state.Sink) {
 	i.beforeSave()
-	stateSinkObject.Save(0, &i.Cgroups)
+	stateSinkObject.Save(0, &i.ExtraInternalData)
+	stateSinkObject.Save(1, &i.Cgroups)
 }
 
 func (i *InternalData) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (i *InternalData) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &i.Cgroups)
+	stateSourceObject.Load(0, &i.ExtraInternalData)
+	stateSourceObject.Load(1, &i.Cgroups)
 }
 
 func (i *implStatFS) StateTypeName() string {

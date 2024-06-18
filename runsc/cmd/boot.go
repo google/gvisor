@@ -456,6 +456,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 		SinkFDs:             b.sinkFDs.GetArray(),
 		ProfileOpts:         b.profileFDs.ToOpts(),
 		NvidiaDriverVersion: b.nvidiaDriverVersion,
+		SaveFDs:             b.saveFDs.GetFDs(),
 	}
 	l, err := boot.New(bootArgs)
 	if err != nil {
@@ -472,10 +473,6 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 			// Umount /proc right before installing seccomp filters.
 			umountProc(b.procMountSyncFD)
 		}
-	}
-
-	if len(conf.TestOnlyAutosaveImagePath) != 0 {
-		boot.EnableAutosave(l, conf.TestOnlyAutosaveResume, b.saveFDs.GetFDs()...)
 	}
 
 	// Prepare metrics.

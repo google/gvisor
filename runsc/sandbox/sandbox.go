@@ -475,10 +475,16 @@ func (s *Sandbox) Restore(conf *config.Config, cid string, imagePath string, dir
 			return fmt.Errorf("opening restore image file %q failed: %v", pagesMetadataFileName, err)
 		}
 		defer pmf.Close()
+
 		opt.HavePagesFile = true
 		opt.FilePayload.Files = append(opt.FilePayload.Files, pmf, pf)
+		log.Infof("Found page files for sandbox %q. Page metadata: %q, pages: %q", s.ID, pagesMetadataFileName, pagesFileName)
+
 	} else if !os.IsNotExist(err) {
-		return fmt.Errorf("opening restore image file %q failed: %v", pagesFileName, err)
+		return fmt.Errorf("opening restore pages file %q failed: %v", pagesFileName, err)
+
+	} else {
+		log.Infof("Using single checkpoint file for sandbox %q", s.ID)
 	}
 
 	// If the platform needs a device FD we must pass it in.
@@ -856,6 +862,10 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 			return fmt.Errorf("failed to create auto save files: %w", err)
 		}
 		donations.DonateAndClose("save-fds", files...)
+	}
+
+	if err := createSandboxProcessExtra(conf, args, &donations); err != nil {
+		return err
 	}
 
 	gPlatform, err := platform.Lookup(conf.Platform)

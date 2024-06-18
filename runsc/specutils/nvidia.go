@@ -20,7 +20,6 @@ import (
 	"strings"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
-	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/runsc/config"
 )
 
@@ -34,15 +33,7 @@ func NVProxyEnabled(spec *specs.Spec, conf *config.Config) bool {
 	if conf.NVProxy {
 		return true
 	}
-	val, ok := spec.Annotations[AnnotationNVProxy]
-	if !ok {
-		return false
-	}
-	ret, err := strconv.ParseBool(val)
-	if err != nil {
-		log.Warningf("nvproxy annotation set to invalid value %q: %w. Skipping.", val, err)
-	}
-	return ret
+	return AnnotationToBool(spec, AnnotationNVProxy)
 }
 
 // GPUFunctionalityRequested returns true if the container should have access

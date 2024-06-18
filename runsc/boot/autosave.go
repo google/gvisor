@@ -66,7 +66,7 @@ func getTargetForSaveResume(l *Loader) func(k *kernel.Kernel) {
 	}
 }
 
-func getTargetForSaveRestore(l *Loader, files ...*fd.FD) func(k *kernel.Kernel) {
+func getTargetForSaveRestore(l *Loader, files []*fd.FD) func(k *kernel.Kernel) {
 	if len(files) != 1 && len(files) != 3 {
 		panic(fmt.Sprintf("Unexpected number of files: %v", len(files)))
 	}
@@ -86,13 +86,13 @@ func getTargetForSaveRestore(l *Loader, files ...*fd.FD) func(k *kernel.Kernel) 
 	}
 }
 
-// EnableAutosave enables auto save restore in syscall tests.
-func EnableAutosave(l *Loader, isResume bool, files ...*fd.FD) error {
+// enableAutosave enables auto save restore in syscall tests.
+func enableAutosave(l *Loader, isResume bool, files []*fd.FD) error {
 	var target func(k *kernel.Kernel)
 	if isResume {
 		target = getTargetForSaveResume(l)
 	} else {
-		target = getTargetForSaveRestore(l, files...)
+		target = getTargetForSaveRestore(l, files)
 	}
 
 	for _, table := range kernel.SyscallTables() {
