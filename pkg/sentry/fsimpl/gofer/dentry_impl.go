@@ -21,6 +21,7 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fsutil"
+	"gvisor.dev/gvisor/pkg/lisafs"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
@@ -531,19 +532,49 @@ func (fs *filesystem) restoreRoot(ctx context.Context, opts *vfs.CompleteRestore
 func (d *dentry) restoreFile(ctx context.Context, opts *vfs.CompleteRestoreOptions) error {
 	switch dt := d.impl.(type) {
 	case *lisafsDentry:
-		inode, err := d.parent.Load().impl.(*lisafsDentry).controlFD.Walk(ctx, d.name)
+		controlFD := d.parent.Load().impl.(*lisafsDentry).controlFD
+		inode, err := controlFD.Walk(ctx, d.name)
 		if err != nil {
-			return err
+			if !dt.isDir() || !dt.forMountpoint {
+				return err
+			}
+
+			// Recreate directories that were created during volume mounting, since
+			// during restore we don't attempt to remount them.
+			inode, err = controlFD.MkdirAt(ctx, d.name, linux.FileMode(d.mode.Load()), lisafs.UID(d.uid.Load()), lisafs.GID(d.gid.Load()))
+			if err != nil {
+				return err
+			}
 		}
 		return dt.restoreFile(ctx, &inode, opts)
+
 	case *directfsDentry:
+		controlFD := d.parent.Load().impl.(*directfsDentry).controlFD
 		childFD, err := tryOpen(func(flags int) (int, error) {
-			return unix.Openat(d.parent.Load().impl.(*directfsDentry).controlFD, d.name, flags, 0)
+			n, err := unix.Openat(controlFD, d.name, flags, 0)
+			return n, err
 		})
 		if err != nil {
-			return err
+			if !dt.isDir() || !dt.forMountpoint {
+				return err
+			}
+
+			// Recreate directories that were created during volume mounting, since
+			// during restore we don't attempt to remount them.
+			if err := unix.Mkdirat(controlFD, d.name, d.mode.Load()); err != nil {
+				return err
+			}
+
+			// Try again...
+			childFD, err = tryOpen(func(flags int) (int, error) {
+				return unix.Openat(controlFD, d.name, flags, 0)
+			})
+			if err != nil {
+				return err
+			}
 		}
 		return dt.restoreFile(ctx, childFD, opts)
+
 	default:
 		panic("unknown dentry implementation")
 	}
