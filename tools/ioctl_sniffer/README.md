@@ -19,7 +19,6 @@ To start, we need to build the shared library and Go binary:
 
 ```
 make copy TARGETS=//tools/ioctl_sniffer:run_sniffer DESTINATION=bin/
-make copy TARGETS=//tools/ioctl_sniffer:ioctl_hook DESTINATION=bin/
 ```
 
 Once we have the binary, we can hook into any GPU workload by passing the
@@ -46,7 +45,3 @@ Alloc:
     ...
 Unknown:
 ```
-
-Note that by default, `run_sniffer` assumes the shared library is located in the
-same directory. You can specify the path to the library with the optional
-`-ld_preload` flag.

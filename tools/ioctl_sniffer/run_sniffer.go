@@ -23,9 +23,31 @@ import (
 
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/tools/ioctl_sniffer/sniffer"
+
+	_ "embed" // Necessary to use go:embed.
 )
 
-var ldPreloadPath = flag.String("ld_preload", "./libioctl_hook.so", "The path to the LD_PRELOAD library.")
+//go:embed libioctl_hook.so
+var ioctlHookSharedObject []byte
+
+// createSharedObject creates a temporary directory containing the ioctl hook
+// shared object, and returns the path to it. This file will be automatically
+// deleted when the program exits.
+func createSharedObject() (*os.File, error) {
+	tmpFile, err := os.CreateTemp(os.TempDir(), "libioctl_hook.*.so")
+	if err != nil {
+		return nil, fmt.Errorf("failed to create temporary file: %w", err)
+	}
+	// Remove the file from the filesystem but keep a handle open to it
+	// so that it lasts only as long as the program does.
+	if err := os.Remove(tmpFile.Name()); err != nil {
+		return nil, fmt.Errorf("failed to unlink temporary file: %w", err)
+	}
+	if _, err := tmpFile.Write(ioctlHookSharedObject); err != nil {
+		return nil, fmt.Errorf("failed to write to temporary file: %w", err)
+	}
+	return tmpFile, nil
+}
 
 // Main is our main function.
 func Main() error {
@@ -39,6 +61,16 @@ func Main() error {
 		return fmt.Errorf("failed to init sniffer: %w", err)
 	}
 
+	hookFile, err := createSharedObject()
+	if err != nil {
+		return fmt.Errorf("failed to create shared object file: %w", err)
+	}
+	defer func() {
+		if err := hookFile.Close(); err != nil {
+			log.Warningf("failed to close shared object file: %w", err)
+		}
+	}()
+
 	// Create a pipe to read the output of the command.
 	r, w, err := os.Pipe()
 	if err != nil {
@@ -51,7 +83,9 @@ func Main() error {
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	cmd.Env = append(os.Environ(), fmt.Sprintf("LD_PRELOAD=%s", *ldPreloadPath))
+	// Refer to the hook file by file descriptor here as its named file no
+	// longer exists.
+	cmd.Env = append(os.Environ(), fmt.Sprintf("LD_PRELOAD=/proc/%d/fd/%d", os.Getpid(), hookFile.Fd()))
 
 	// Run the command and start reading the output.
 	if err := cmd.Start(); err != nil {
