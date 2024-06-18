@@ -116,19 +116,20 @@ func createLoader(conf *config.Config, spec *specs.Spec) (*Loader, func(), error
 	sock := fmt.Sprintf("\x00loader-test.%010d", rand.Int())
 	fd, err := server.CreateSocket(sock)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("failed to create socket: %w", err)
 	}
 	sandEnd, cleanup, err := startGofer(spec.Root.Path, conf)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("failed to start gofer: %w", err)
 	}
 
 	// Loader takes ownership of stdio.
 	var stdio []int
 	for _, f := range []*os.File{os.Stdin, os.Stdout, os.Stderr} {
-		newFd, err := unix.Dup(int(f.Fd()))
+		fd := int(f.Fd())
+		newFd, err := unix.Dup(fd)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, fmt.Errorf("failed to dup FD %d: %w", fd, err)
 		}
 		stdio = append(stdio, newFd)
 	}
@@ -148,7 +149,7 @@ func createLoader(conf *config.Config, spec *specs.Spec) (*Loader, func(), error
 	l, err := New(args)
 	if err != nil {
 		cleanup()
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("boot.New: %w", err)
 	}
 	return l, cleanup, nil
 }
@@ -273,9 +274,12 @@ func TestHostnetWithRawSockets(t *testing.T) {
 
 	// Creating loader should fail.
 	l, err := New(Args{
-		ID:   "should-fail",
-		Spec: testSpec(),
-		Conf: conf,
+		ID:              "should-fail",
+		Spec:            testSpec(),
+		Conf:            conf,
+		DevGoferFD:      -1,
+		PodInitConfigFD: -1,
+		ExecFD:          -1,
 	})
 	if err == nil {
 		l.Destroy()
