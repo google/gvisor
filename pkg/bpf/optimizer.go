@@ -618,6 +618,7 @@ func optimizeJumpsToSmallestSetOfReturns(insns []Instruction) ([]Instruction, bo
 				// to instead jump to `popularPC`.
 				if rewriteAllJumpsToReturn(insns, unpopularPC, popularPC, rewriteOps) {
 					changed = true
+					break
 				}
 			}
 		}
