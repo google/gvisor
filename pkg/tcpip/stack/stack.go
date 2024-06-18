@@ -843,6 +843,18 @@ type NICOptions struct {
 	DeliverLinkPackets bool
 }
 
+// GetNICByID return a network device associated with the specified ID.
+func (s *Stack) GetNICByID(id tcpip.NICID) (*nic, tcpip.Error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	n, ok := s.nics[id]
+	if !ok {
+		return nil, &tcpip.ErrNoSuchFile{}
+	}
+	return n, nil
+}
+
 // CreateNICWithOptions creates a NIC with the provided id, LinkEndpoint, and
 // NICOptions. See the documentation on type NICOptions for details on how
 // NICs can be configured.
@@ -964,6 +976,13 @@ func (s *Stack) removeNICLocked(id tcpip.NICID) tcpip.Error {
 	}
 	delete(s.nics, id)
 
+	if nic.Primary != nil {
+		b := nic.Primary.NetworkLinkEndpoint.(CoordinatorNIC)
+		if err := b.DelNIC(nic); err != nil {
+			return err
+		}
+	}
+
 	// Remove routes in-place. n tracks the number of routes written.
 	s.routeMu.Lock()
 	n := 0
@@ -979,6 +998,31 @@ func (s *Stack) removeNICLocked(id tcpip.NICID) tcpip.Error {
 	s.routeMu.Unlock()
 
 	return nic.remove()
+}
+
+// SetNICCoordinator sets a coordinator device.
+func (s *Stack) SetNICCoordinator(id tcpip.NICID, mid tcpip.NICID) tcpip.Error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	nic, ok := s.nics[id]
+	if !ok {
+		return &tcpip.ErrUnknownNICID{}
+	}
+
+	m, ok := s.nics[mid]
+	if !ok {
+		return &tcpip.ErrUnknownNICID{}
+	}
+	b, ok := m.NetworkLinkEndpoint.(CoordinatorNIC)
+	if !ok {
+		return &tcpip.ErrNotSupported{}
+	}
+	if err := b.AddNIC(nic); err != nil {
+		return err
+	}
+	nic.Primary = m
+	return nil
 }
 
 // NICInfo captures the name and addresses assigned to a NIC.

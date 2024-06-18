@@ -165,6 +165,21 @@ func (s *Stack) SetInterface(ctx context.Context, msg *nlmsg.Message) *syserr.Er
 		// Netstack interfaces are always up.
 	}
 
+	return s.setLink(tcpip.NICID(ifinfomsg.Index), attrs)
+}
+
+func (s *Stack) setLink(id tcpip.NICID, linkAttrs map[uint16]nlmsg.BytesView) *syserr.Error {
+	if v, ok := linkAttrs[linux.IFLA_MASTER]; ok {
+		master, ok := v.Uint32()
+		if !ok {
+			return syserr.ErrInvalidArgument
+		}
+		if master != 0 {
+			if err := s.Stack.SetNICCoordinator(id, tcpip.NICID(master)); err != nil {
+				return syserr.TranslateNetstackError(err)
+			}
+		}
+	}
 	return nil
 }
 
@@ -232,6 +247,10 @@ func (s *Stack) newVeth(ctx context.Context, linkAttrs map[uint16]nlmsg.BytesVie
 		return syserr.TranslateNetstackError(err)
 	}
 	ep.SetStack(s.Stack, id)
+	if err := s.setLink(id, linkAttrs); err != nil {
+		peerEP.Close()
+		return err
+	}
 
 	if peerName == "" {
 		peerName = fmt.Sprintf("veth%d", peerID)
@@ -244,6 +263,34 @@ func (s *Stack) newVeth(ctx context.Context, linkAttrs map[uint16]nlmsg.BytesVie
 		return syserr.TranslateNetstackError(err)
 	}
 	peerEP.SetStack(peerStack.Stack, id)
+	if peerLinkAttrs != nil {
+		if err := s.setLink(peerID, peerLinkAttrs); err != nil {
+			peerStack.Stack.RemoveNIC(peerID)
+			peerEP.Close()
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (s *Stack) newBridge(ctx context.Context, linkAttrs map[uint16]nlmsg.BytesView, linkInfoAttrs map[uint16]nlmsg.BytesView) *syserr.Error {
+	ifname := ""
+
+	if v, ok := linkAttrs[linux.IFLA_IFNAME]; ok {
+		ifname = v.String()
+	}
+	ep := stack.NewBridgeEndpoint(defaultMTU)
+	id := tcpip.NICID(s.Stack.UniqueID())
+	err := s.Stack.CreateNICWithOptions(id, ep, stack.NICOptions{
+		Name: ifname,
+	})
+	if err != nil {
+		return syserr.TranslateNetstackError(err)
+	}
+	if err := s.setLink(id, linkAttrs); err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -275,6 +322,8 @@ func (s *Stack) newInterface(ctx context.Context, msg *nlmsg.Message, linkAttrs 
 	switch kind {
 	case "":
 		return syserr.ErrInvalidArgument
+	case "bridge":
+		return s.newBridge(ctx, linkAttrs, linkInfoAttrs)
 	case "veth":
 		return s.newVeth(ctx, linkAttrs, linkInfoAttrs)
 	}
