@@ -24,6 +24,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/prometheus"
 	"gvisor.dev/gvisor/runsc/container"
+	"gvisor.dev/gvisor/runsc/specutils"
 )
 
 // SandboxPrometheusLabels returns a set of Prometheus labels that identifies the sandbox running
@@ -70,6 +71,8 @@ func ComputeSpecMetadata(allContainers []*container.Container) map[string]string
 
 	hasUID0Container := false
 	ociVersion := unknownOCIVersion
+	hasNVProxy := false
+	hasTPUProxy := false
 	for _, cont := range allContainers {
 		if cont.RunsAsUID0() {
 			hasUID0Container = true
@@ -79,9 +82,13 @@ func ComputeSpecMetadata(allContainers []*container.Container) map[string]string
 		} else if ociVersion != cont.Spec.Version {
 			ociVersion = inconsistentOCIVersion
 		}
+		hasNVProxy = hasNVProxy || cont.Spec.Annotations[specutils.AnnotationNVProxy] == "true"
+		hasTPUProxy = hasTPUProxy || cont.Spec.Annotations[specutils.AnnotationTPU] == "true"
 	}
 	return map[string]string{
 		"hasuid0":    strconv.FormatBool(hasUID0Container),
 		"ociversion": ociVersion,
+		"nvproxy":    strconv.FormatBool(hasNVProxy),
+		"tpuproxy":   strconv.FormatBool(hasTPUProxy),
 	}
 }

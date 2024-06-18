@@ -14,5 +14,6 @@ go_library(
     deps = [
         "//pkg/prometheus",
         "//runsc/container",
+        "//runsc/specutils",
     ],
 )
