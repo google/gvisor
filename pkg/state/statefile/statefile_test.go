@@ -92,7 +92,7 @@ func TestStatefile(t *testing.T) {
 					c.metadata = map[string]string{}
 				}
 
-				c.metadata[compressionKey] = string(compress)
+				c.metadata[CompressionKey] = string(compress)
 
 				t.Run(c.name, func(t *testing.T) {
 					for _, key := range [][]byte{nil, integrityKey} {

@@ -64,8 +64,9 @@ type tasksInode struct {
 
 var _ kernfs.Inode = (*tasksInode)(nil)
 
-func (fs *filesystem) newTasksInode(ctx context.Context, k *kernel.Kernel, pidns *kernel.PIDNamespace, fakeCgroupControllers map[string]string) *tasksInode {
+func (fs *filesystem) newTasksInode(ctx context.Context, k *kernel.Kernel, pidns *kernel.PIDNamespace, internalData *InternalData) *tasksInode {
 	root := auth.NewRootCredentials(pidns.UserNamespace())
+
 	contents := map[string]kernfs.Inode{
 		"cmdline":        fs.newInode(ctx, root, 0444, &cmdLineData{}),
 		"cpuinfo":        fs.newInode(ctx, root, 0444, newStaticFileSetStat(cpuInfoData(k))),
@@ -86,14 +87,16 @@ func (fs *filesystem) newTasksInode(ctx context.Context, k *kernel.Kernel, pidns
 	}
 	// If fakeCgroupControllers are provided, don't create a cgroupfs backed
 	// /proc/cgroup as it will not match the fake controllers.
-	if len(fakeCgroupControllers) == 0 {
+	if len(internalData.Cgroups) == 0 {
 		contents["cgroups"] = fs.newInode(ctx, root, 0444, &cgroupsData{})
 	}
+
+	fs.newTasksInodeExtra(ctx, root, internalData, k, contents)
 
 	inode := &tasksInode{
 		pidns:                 pidns,
 		fs:                    fs,
-		fakeCgroupControllers: fakeCgroupControllers,
+		fakeCgroupControllers: internalData.Cgroups,
 	}
 	inode.InodeAttrs.Init(ctx, root, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), linux.ModeDirectory|0555)
 	inode.InitRefs()

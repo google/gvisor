@@ -15,33 +15,19 @@
 //go:build !false
 // +build !false
 
-package boot
+package proc
 
 import (
-	specs "github.com/opencontainers/runtime-spec/specs-go"
-	"gvisor.dev/gvisor/pkg/sentry/control"
-	"gvisor.dev/gvisor/pkg/sentry/fsimpl/proc"
+	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 )
 
-func preSaveImpl(*kernel.Kernel, *control.SaveOpts) error {
-	return nil
-}
+// ExtraInternalData is an empty struct that could contain extra data for the procfs.
+//
+// +stateify savable
+type ExtraInternalData struct{}
 
-// Precondition: The kernel should be running.
-func postRestoreImpl(*kernel.Kernel) error {
-	return nil
-}
-
-// Precondition: The kernel should be running.
-func postResumeImpl(*kernel.Kernel) error {
-	return nil
-}
-
-func newProcInternalData(*specs.Spec) *proc.InternalData {
-	return &proc.InternalData{}
-}
-
-func (l *Loader) initDone(args Args) error {
-	return nil
+func (fs *filesystem) newTasksInodeExtra(context.Context, *auth.Credentials, *InternalData, *kernel.Kernel, map[string]kernfs.Inode) {
 }

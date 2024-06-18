@@ -87,7 +87,8 @@ var ErrMetadataInvalid = fmt.Errorf("metadata invalid, can't start with _")
 var ErrInvalidFlags = fmt.Errorf("flags set is invalid")
 
 const (
-	compressionKey = "compression"
+	// CompressionKey is the key for the compression level in the metadata.
+	CompressionKey = "compression"
 )
 
 // CompressionLevel is the image compression level.
@@ -102,6 +103,10 @@ const (
 	CompressionLevelDefault = CompressionLevelFlateBestSpeed
 )
 
+func (c CompressionLevel) String() string {
+	return string(c)
+}
+
 // Options is statefile options.
 type Options struct {
 	// Compression is an image compression type/level.
@@ -115,7 +120,7 @@ type Options struct {
 // WriteToMetadata save options to the metadata storage.  Method returns the
 // reference to the original metadata map to allow to be used in the chain calls.
 func (o Options) WriteToMetadata(metadata map[string]string) map[string]string {
-	metadata[compressionKey] = string(o.Compression)
+	metadata[CompressionKey] = string(o.Compression)
 	return metadata
 }
 
@@ -126,6 +131,8 @@ func CompressionLevelFromString(val string) (CompressionLevel, error) {
 		return CompressionLevelFlateBestSpeed, nil
 	case string(CompressionLevelNone):
 		return CompressionLevelNone, nil
+	case "":
+		return CompressionLevelDefault, nil
 	default:
 		return CompressionLevelNone, ErrInvalidFlags
 	}
@@ -136,16 +143,15 @@ func CompressionLevelFromString(val string) (CompressionLevel, error) {
 // is the "flate-best-speed" state because the default behavior used to be to always
 // compress. If the parameter is missing it will be set to default.
 func CompressionLevelFromMetadata(metadata map[string]string) (CompressionLevel, error) {
-	var err error
+	compression := CompressionLevelDefault
 
-	compression := CompressionLevelFlateBestSpeed
-
-	if val, ok := metadata[compressionKey]; ok {
+	if val, ok := metadata[CompressionKey]; ok {
+		var err error
 		if compression, err = CompressionLevelFromString(val); err != nil {
 			return CompressionLevelNone, err
 		}
 	} else {
-		metadata[compressionKey] = string(compression)
+		metadata[CompressionKey] = string(compression)
 	}
 
 	return compression, nil

@@ -571,15 +571,7 @@ func TPUProxyIsEnabled(spec *specs.Spec, conf *config.Config) bool {
 	if conf.TPUProxy {
 		return true
 	}
-	val, ok := spec.Annotations[AnnotationTPU]
-	if !ok {
-		return false
-	}
-	ret, err := strconv.ParseBool(val)
-	if err != nil {
-		log.Warningf("tpuproxy annotation set to invalid value %q: %w. Skipping.", val, err)
-	}
-	return ret
+	return AnnotationToBool(spec, AnnotationTPU)
 }
 
 // VFIOFunctionalityRequested returns true if the container should have access
@@ -763,4 +755,19 @@ func FaqErrorMsg(anchor, msg string) string {
 // if no annotation is found.
 func ContainerName(spec *specs.Spec) string {
 	return spec.Annotations[annotationContainerName]
+}
+
+// AnnotationToBool parses the annotation value as a bool. On failure, it logs a warning and
+// returns false.
+func AnnotationToBool(spec *specs.Spec, annotation string) bool {
+	val, ok := spec.Annotations[annotation]
+	if !ok {
+		return false
+	}
+	ret, err := strconv.ParseBool(val)
+	if err != nil {
+		log.Warningf("Failed to parse annotation %q=%q as a bool: %v", annotation, val, err)
+		return false
+	}
+	return ret
 }

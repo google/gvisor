@@ -66,6 +66,7 @@ go_library(
         "fd_dir_inode_refs.go",
         "fd_info_dir_inode_refs.go",
         "filesystem.go",
+        "proc_impl.go",
         "subtasks.go",
         "subtasks_inode_refs.go",
         "task.go",
