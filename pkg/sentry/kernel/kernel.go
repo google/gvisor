@@ -1918,6 +1918,7 @@ func (k *Kernel) Release() {
 	k.rootIPCNamespace.DecRef(ctx)
 	k.rootUTSNamespace.DecRef(ctx)
 	k.cleaupDevGofers()
+	k.mf.Destroy()
 }
 
 // PopulateNewCgroupHierarchy moves all tasks into a newly created cgroup

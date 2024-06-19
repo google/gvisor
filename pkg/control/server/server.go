@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/sys/unix"
@@ -42,7 +43,7 @@ type Server struct {
 	socket *unet.ServerSocket
 
 	// server is our rpc server.
-	server *urpc.Server
+	server atomic.Pointer[urpc.Server]
 
 	// wg waits for the accept loop to terminate.
 	wg sync.WaitGroup
@@ -50,9 +51,18 @@ type Server struct {
 
 // New returns a new bound control server.
 func New(socket *unet.ServerSocket) *Server {
-	return &Server{
+	s := &Server{
 		socket: socket,
-		server: urpc.NewServer(),
+	}
+	s.server.Store(urpc.NewServer())
+	return s
+}
+
+// ResetServer resets the server, clearing all registered objects. It stops the
+// old server asynchronously.
+func (s *Server) ResetServer() {
+	if old := s.server.Swap(urpc.NewServer()); old != nil {
+		go old.Stop(0)
 	}
 }
 
@@ -75,7 +85,7 @@ func (s *Server) Stop(timeout time.Duration) {
 
 	// This will cause existing clients to be terminated safely. If the
 	// registered handlers have a Stop callback, it will be called.
-	s.server.Stop(timeout)
+	s.server.Load().Stop(timeout)
 }
 
 // StartServing starts listening for connect and spawns the main service
@@ -107,13 +117,13 @@ func (s *Server) serve() {
 		}
 
 		// Handle the connection non-blockingly.
-		s.server.StartHandling(conn)
+		s.server.Load().StartHandling(conn)
 	}
 }
 
 // Register registers a specific control interface with the server.
 func (s *Server) Register(obj any) {
-	s.server.Register(obj)
+	s.server.Load().Register(obj)
 }
 
 // CreateFromFD creates a new control bound to the given 'fd'. It has no
