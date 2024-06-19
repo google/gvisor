@@ -246,7 +246,6 @@ func (r *restorer) restore(l *Loader) error {
 	l.watchdog = dog
 	l.root.procArgs = kernel.CreateProcessArgs{}
 	l.restore = true
-
 	l.sandboxID = l.root.cid
 
 	l.mu.Lock()
@@ -291,6 +290,9 @@ func (r *restorer) restore(l *Loader) error {
 	}
 
 	l.k.RestoreContainerMapping(l.containerIDs)
+
+	// Refresh the control server with the newly created kernel.
+	l.ctrl.refreshHandlers()
 
 	// Release `l.mu` before calling into callbacks.
 	cu.Clean()

@@ -2787,6 +2787,39 @@ func TestUsageFD(t *testing.T) {
 	if total == 0 {
 		t.Errorf("UsageFD total got zero")
 	}
+
+	// Set the image path, which is where the checkpoint image will be saved.
+	dir, err := ioutil.TempDir(testutil.TmpDir(), "checkpoint")
+	if err != nil {
+		t.Fatalf("ioutil.TempDir failed: %v", err)
+	}
+	defer os.RemoveAll(dir)
+	if err := os.Chmod(dir, 0777); err != nil {
+		t.Fatalf("error chmoding file: %q, %v", dir, err)
+	}
+
+	// Checkpoint running container.
+	if err := cont.Checkpoint(dir, false /* direct */, statefile.Options{Compression: statefile.CompressionLevelDefault}, pgalloc.SaveOpts{}); err != nil {
+		t.Fatalf("error checkpointing container: %v", err)
+	}
+	cont.Destroy()
+	cont = nil
+
+	cont2, err := New(conf, args)
+	if err != nil {
+		t.Fatalf("error creating container: %v", err)
+	}
+	defer cont2.Destroy()
+
+	if err := cont2.Restore(conf, dir, false /* direct */); err != nil {
+		t.Fatalf("error restoring container: %v", err)
+	}
+
+	// Ensure UsageFD() is still working after restore.
+	_, err = cont2.Sandbox.UsageFD()
+	if err != nil {
+		t.Fatalf("error usageFD from restored container: %v", err)
+	}
 }
 
 // TestProfile checks that profiling options generate profiles.
