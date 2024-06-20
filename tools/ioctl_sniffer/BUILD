@@ -45,6 +45,10 @@ go_binary(
         ":ioctl_hook",  # keep
     ],
     static = True,
+    visibility = [
+        "//test:__subpackages__",
+        "//tools/ioctl_sniffer:__subpackages__",
+    ],
     deps = [
         "//pkg/log",
         "//tools/ioctl_sniffer/sniffer",

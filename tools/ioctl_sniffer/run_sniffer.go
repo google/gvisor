@@ -27,6 +27,9 @@ import (
 	_ "embed" // Necessary to use go:embed.
 )
 
+var enforceCompatability = flag.Bool("enforce_compatibility", false, "If true, the sniffer will fail if it detects an unsupported ioctl.")
+var verbose = flag.Bool("verbose", false, "If true, the sniffer will print all Nvidia ioctls it sees.")
+
 //go:embed libioctl_hook.so
 var ioctlHookSharedObject []byte
 
@@ -54,6 +57,10 @@ func Main() error {
 	flag.Parse()
 	if len(flag.Args()) == 0 {
 		return fmt.Errorf("no command specified")
+	}
+
+	if *verbose {
+		log.SetLevel(log.Debug)
 	}
 
 	// Init our sniffer
@@ -95,7 +102,12 @@ func Main() error {
 	w.Close()
 	results := sniffer.ReadHookOutput(r)
 
+	if *enforceCompatability && results.HasUnsupportedIoctl() {
+		return fmt.Errorf("unsupported ioctls found: %v", results)
+	}
+
 	// Once we've read all the output, print the list of missing ioctls.
+	log.Infof("============== Unsupported ioctls ==============")
 	log.Infof("%s", results)
 
 	if err := cmd.Wait(); err != nil {

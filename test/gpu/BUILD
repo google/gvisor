@@ -102,3 +102,22 @@ go_test(
     visibility = ["//:sandbox"],
     deps = ["//test/gpu/stablediffusion"],
 )
+
+go_test(
+    name = "sniffer_test",
+    srcs = ["sniffer_test.go"],
+    data = [
+        "//tools/ioctl_sniffer:run_sniffer",
+    ],
+    tags = [
+        "manual",
+        "noguitar",
+        "notap",
+    ],
+    visibility = ["//:sandbox"],
+    deps = [
+        "//pkg/test/dockerutil",
+        "//pkg/test/testutil",
+        "@com_github_docker_docker//api/types/mount:go_default_library",
+    ],
+)

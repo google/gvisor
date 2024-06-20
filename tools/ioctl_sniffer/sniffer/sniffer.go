@@ -93,6 +93,11 @@ func (i Ioctl) IsSupported() bool {
 		_, ok := suppUvmIoctls[uint32(i.nr)]
 		return ok
 	case control:
+		// Legacy ioctls are a special case where nvproxy passes them through unconditionally,
+		// since they are undocumented and unlikely to contain problematic arguments.
+		if i.cmd&nvgpu.RM_GSS_LEGACY_MASK != 0 {
+			return true
+		}
 		_, ok := suppControlCmds[uint32(i.cmd)]
 		return ok
 	case alloc:
@@ -165,7 +170,6 @@ func (r *Results) String() string {
 	// each time is fine.
 	b := new(strings.Builder)
 
-	fmt.Fprintln(b, "============== Unsupported ioctls ==============")
 	printIoctls(b, frontend, r.unsupportedOther[frontend])
 	printIoctls(b, uvm, r.unsupportedOther[uvm])
 	printIoctls(b, control, r.unsupportedControl)
@@ -173,6 +177,11 @@ func (r *Results) String() string {
 	printIoctls(b, unknown, r.unsupportedOther[unknown])
 
 	return b.String()
+}
+
+// HasUnsupportedIoctl returns true if there are any unsupported ioctls.
+func (r *Results) HasUnsupportedIoctl() bool {
+	return len(r.unsupportedControl) != 0 || len(r.unsupportedAlloc) != 0 || len(r.unsupportedOther) != 0
 }
 
 // Init reads from nvproxy and sets up the supported ioctl maps.
