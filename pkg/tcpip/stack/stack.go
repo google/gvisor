@@ -861,22 +861,36 @@ func (s *Stack) GetNICByID(id tcpip.NICID) (*nic, tcpip.Error) {
 //
 // LinkEndpoint.Attach will be called to bind ep with a NetworkDispatcher.
 func (s *Stack) CreateNICWithOptions(id tcpip.NICID, ep LinkEndpoint, opts NICOptions) tcpip.Error {
+	n, err := s.addNICWithOptions(id, ep, opts)
+	if err != nil {
+		return err
+	}
+	// NOTE(b/348247021): Attach should happen without holding s.mu.
+	n.attach()
+	if !opts.Disabled {
+		return n.enable()
+	}
+	return nil
+}
+
+func (s *Stack) addNICWithOptions(id tcpip.NICID, ep LinkEndpoint, opts NICOptions) (*nic, tcpip.Error) {
+	if id == 0 {
+		return nil, &tcpip.ErrInvalidNICID{}
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if id == 0 {
-		return &tcpip.ErrInvalidNICID{}
-	}
 	// Make sure id is unique.
 	if _, ok := s.nics[id]; ok {
-		return &tcpip.ErrDuplicateNICID{}
+		return nil, &tcpip.ErrDuplicateNICID{}
 	}
 
 	// Make sure name is unique, unless unnamed.
 	if opts.Name != "" {
 		for _, n := range s.nics {
 			if n.Name() == opts.Name {
-				return &tcpip.ErrDuplicateNICID{}
+				return nil, &tcpip.ErrDuplicateNICID{}
 			}
 		}
 	}
@@ -888,11 +902,7 @@ func (s *Stack) CreateNICWithOptions(id tcpip.NICID, ep LinkEndpoint, opts NICOp
 		}
 	}
 	s.nics[id] = n
-	if !opts.Disabled {
-		return n.enable()
-	}
-
-	return nil
+	return n, nil
 }
 
 // CreateNIC creates a NIC with the provided id and LinkEndpoint and calls

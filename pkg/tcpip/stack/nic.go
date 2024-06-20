@@ -161,6 +161,7 @@ func (qDisc *delegatingQueueingDiscipline) WritePacket(pkt *PacketBuffer) tcpip.
 }
 
 // newNIC returns a new NIC using the default NDP configurations from stack.
+// The caller needs to attach() and enable() the NIC appropriately.
 func newNIC(stack *Stack, id tcpip.NICID, ep LinkEndpoint, opts NICOptions) *nic {
 	// TODO(b/141011931): Validate a LinkEndpoint (ep) is valid. For
 	// example, make sure that the link address it provides is a valid
@@ -216,9 +217,11 @@ func newNIC(stack *Stack, id tcpip.NICID, ep LinkEndpoint, opts NICOptions) *nic
 		}
 	}
 
-	nic.NetworkLinkEndpoint.Attach(nic)
-
 	return nic
+}
+
+func (n *nic) attach() {
+	n.NetworkLinkEndpoint.Attach(n)
 }
 
 func (n *nic) getNetworkEndpoint(proto tcpip.NetworkProtocolNumber) NetworkEndpoint {
