@@ -29,19 +29,19 @@ corresponding command to run it to `run_sniffer`, like so:
 ```
 
 This should run the workload as normal and provide an output of all the
-unsupported `ioctl(2)` calls it detected at the end:
+unsupported `ioctl(2)` calls it detected at the end. For example:
 
 ```
 ============== Unsupported ioctls ==============
-Frontend:
-UVM:
+Frontend: None
+UVM: None
 Control:
-    Control ioctl: request=0xc020462a [nr=0x2a (42), cmd=0x20810110 (545325328)] => ret=0
-    Control ioctl: request=0xc020462a [nr=0x2a (42), cmd=0x2080014b (545259851)] => ret=0
+    Control ioctl: request=0xc020462a [nr=NV_ESC_RM_CONTROL, cmd=0x20810110] => ret=0
+    Control ioctl: request=0xc020462a [nr=NV_ESC_RM_CONTROL, cmd=0x2080014b] => ret=0
     ...
 Alloc:
-    Alloc ioctl: request=0xc030462b [nr=0x2b (43), hClass=0xc639 (50745)] => ret=0
-    Alloc ioctl: request=0xc030462b [nr=0x2b (43), hClass=0xc640 (50752)] => ret=0
+    Alloc ioctl: request=0xc030462b [nr=NV_ESC_RM_ALLOC, hClass=0xc640] => ret=0
+    Alloc ioctl: request=0xc030462b [nr=NV_ESC_RM_ALLOC, hClass=0x73] => ret=0
     ...
-Unknown:
+Unknown: None
 ```

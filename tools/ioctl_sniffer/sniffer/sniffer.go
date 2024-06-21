@@ -35,25 +35,18 @@ var (
 	deviceDevPath = regexp.MustCompile(`/dev/nvidia(\d+)`)
 )
 
-const (
-	frontend = iota
-	uvm
-	control
-	alloc
-	unknown
-)
-
-// ioctlClass is the class of the ioctl as defined above.
+// ioctlClass is the class of the ioctl. It mainly corresponds to the various
+// parts where nvproxy supports branches.
 type ioctlClass uint32
 
-// ioctlNr is the command number of the ioctl.
-type ioctlNr uint32
-
-// controlCommand is the control command, specifically for the NV_ESC_RM_CONTROL ioctl.
-type controlCommand uint32
-
-// allocClass is the alloc class, specifically for the NV_ESC_RM_ALLOC ioctl.
-type allocClass uint32
+const (
+	frontend ioctlClass = iota
+	uvm
+	control // Implies NV_ESC_RM_CONTROL frontend ioctl.
+	alloc   // Implies NV_ESC_RM_ALLOC frontend ioctl.
+	unknown // Implies unsupported Nvidia device file.
+	_numClasses
+)
 
 func (c ioctlClass) String() string {
 	switch c {
@@ -70,99 +63,73 @@ func (c ioctlClass) String() string {
 	}
 }
 
+// ioctlSubclass represents an instance of a given ioctlClass.
+// - For frontend and uvm ioctls, this is IOC_NR(request).
+// - For NV_ESC_RM_CONTROL frontend ioctl, this is the control command number.
+// - For NV_ESC_RM_ALLOC frontend ioctl, this is the alloc class.
+type ioctlSubclass uint32
+
 var (
-	suppFrontendIoctls, suppUvmIoctls, suppControlCmds, suppAllocClasses map[uint32]struct{}
+	supportedIoctls [_numClasses]map[uint32]struct{}
 )
 
 // Ioctl contains the parsed ioctl protobuf information.
 type Ioctl struct {
-	pb     *pb.Ioctl
-	class  ioctlClass
-	nr     ioctlNr
-	cmd    controlCommand // Control ioctls only.
-	hClass allocClass     // Alloc ioctls only.
+	pb       *pb.Ioctl
+	class    ioctlClass
+	subclass ioctlSubclass
 }
 
 // IsSupported returns true if the ioctl is supported by nvproxy.
 func (i Ioctl) IsSupported() bool {
-	switch i.class {
-	case frontend:
-		_, ok := suppFrontendIoctls[uint32(i.nr)]
-		return ok
-	case uvm:
-		_, ok := suppUvmIoctls[uint32(i.nr)]
-		return ok
-	case control:
+	if i.class == control && i.subclass&nvgpu.RM_GSS_LEGACY_MASK != 0 {
 		// Legacy ioctls are a special case where nvproxy passes them through unconditionally,
 		// since they are undocumented and unlikely to contain problematic arguments.
-		if i.cmd&nvgpu.RM_GSS_LEGACY_MASK != 0 {
-			return true
-		}
-		_, ok := suppControlCmds[uint32(i.cmd)]
-		return ok
-	case alloc:
-		_, ok := suppAllocClasses[uint32(i.hClass)]
-		return ok
-	default:
-		return false
+		return true
 	}
+	_, ok := supportedIoctls[i.class][uint32(i.subclass)]
+	return ok
 }
 
 func (i Ioctl) String() string {
 	switch i.class {
 	case control:
-		return fmt.Sprintf("%s ioctl: request=%#x [nr=%#x (%d), cmd=%#x (%d)] => ret=%d",
-			i.class, i.pb.GetRequest(), i.nr, i.nr, i.cmd, i.cmd, i.pb.GetRet())
+		return fmt.Sprintf("%s ioctl: request=%#x [nr=NV_ESC_RM_CONTROL, cmd=%#x] => ret=%d",
+			i.class, i.pb.GetRequest(), i.subclass, i.pb.GetRet())
 	case alloc:
-		return fmt.Sprintf("%s ioctl: request=%#x [nr=%#x (%d), hClass=%#x (%d)] => ret=%d",
-			i.class, i.pb.GetRequest(), i.nr, i.nr, i.hClass, i.hClass, i.pb.GetRet())
-	default:
-		return fmt.Sprintf("%s ioctl: request=%#x [nr=%#x (%d), size=%d] => ret=%d",
-			i.class, i.pb.GetRequest(), i.nr, i.nr, len(i.pb.GetArgData()), i.pb.GetRet())
+		return fmt.Sprintf("%s ioctl: request=%#x [nr=NV_ESC_RM_ALLOC, hClass=%#x] => ret=%d",
+			i.class, i.pb.GetRequest(), i.subclass, i.pb.GetRet())
+	case frontend:
+		return fmt.Sprintf("%s ioctl: request=%#x [nr=%#x, size=%d] => ret=%d",
+			i.class, i.pb.GetRequest(), i.subclass, len(i.pb.GetArgData()), i.pb.GetRet())
+	case uvm:
+		return fmt.Sprintf("%s ioctl: request=%#x [nr=%#x] => ret=%d",
+			i.class, i.pb.GetRequest(), i.subclass, i.pb.GetRet())
+	case unknown:
+		return fmt.Sprintf("%s ioctl: path=%s request=%#x [nr=%#x] => ret=%d",
+			i.class, i.pb.GetFdPath(), i.pb.GetRequest(), i.subclass, i.pb.GetRet())
 	}
+	panic("unreachable")
 }
 
 // Results contains the list of unsupported ioctls.
 type Results struct {
-	unsupportedControl map[controlCommand]Ioctl
-	unsupportedAlloc   map[allocClass]Ioctl
-	unsupportedOther   map[ioctlClass]map[ioctlNr]Ioctl
+	unsupported [_numClasses]map[ioctlSubclass]Ioctl
 }
 
 // NewResults creates a new Results object.
 func NewResults() *Results {
 	return &Results{
-		unsupportedControl: make(map[controlCommand]Ioctl),
-		unsupportedAlloc:   make(map[allocClass]Ioctl),
-		unsupportedOther:   make(map[ioctlClass]map[ioctlNr]Ioctl),
+		unsupported: [_numClasses]map[ioctlSubclass]Ioctl{},
 	}
 }
 
 // AddUnsupportedIoctl adds an unsupported ioctl to the results.
 func (r *Results) AddUnsupportedIoctl(ioctl Ioctl) {
-	switch ioctl.class {
-	case control:
-		r.unsupportedControl[ioctl.cmd] = ioctl
-	case alloc:
-		r.unsupportedAlloc[ioctl.hClass] = ioctl
-	default:
-		if r.unsupportedOther[ioctl.class] == nil {
-			r.unsupportedOther[ioctl.class] = make(map[ioctlNr]Ioctl)
-		}
-		r.unsupportedOther[ioctl.class][ioctl.nr] = ioctl
+	if r.unsupported[ioctl.class] == nil {
+		r.unsupported[ioctl.class] = make(map[ioctlSubclass]Ioctl)
 	}
-}
-
-func printIoctls[T comparable](b *strings.Builder, class ioctlClass, m map[T]Ioctl) {
-	if len(m) == 0 {
-		fmt.Fprintf(b, "%v: None\n", class)
-		return
-	}
-
-	fmt.Fprintf(b, "%v:\n", class)
-	for _, ioctl := range m {
-		fmt.Fprintf(b, "\t%v\n", ioctl)
-	}
+	r.unsupported[ioctl.class][ioctl.subclass] = ioctl
 }
 
 func (r *Results) String() string {
@@ -170,18 +137,29 @@ func (r *Results) String() string {
 	// each time is fine.
 	b := new(strings.Builder)
 
-	printIoctls(b, frontend, r.unsupportedOther[frontend])
-	printIoctls(b, uvm, r.unsupportedOther[uvm])
-	printIoctls(b, control, r.unsupportedControl)
-	printIoctls(b, alloc, r.unsupportedAlloc)
-	printIoctls(b, unknown, r.unsupportedOther[unknown])
+	for class := ioctlClass(0); class < _numClasses; class++ {
+		if len(r.unsupported[class]) == 0 {
+			fmt.Fprintf(b, "%v: None\n", class)
+			continue
+		}
+
+		fmt.Fprintf(b, "%v:\n", class)
+		for _, ioctl := range r.unsupported[class] {
+			fmt.Fprintf(b, "\t%v\n", ioctl)
+		}
+	}
 
 	return b.String()
 }
 
 // HasUnsupportedIoctl returns true if there are any unsupported ioctls.
 func (r *Results) HasUnsupportedIoctl() bool {
-	return len(r.unsupportedControl) != 0 || len(r.unsupportedAlloc) != 0 || len(r.unsupportedOther) != 0
+	for _, m := range r.unsupported {
+		if len(m) != 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // Init reads from nvproxy and sets up the supported ioctl maps.
@@ -200,10 +178,16 @@ func Init() error {
 
 	log.Infof("Host driver version: %v", driverVer)
 
-	var ok bool
-	suppFrontendIoctls, suppUvmIoctls, suppControlCmds, suppAllocClasses, ok = nvproxy.SupportedIoctls(driverVer)
+	suppFrontendIoctls, suppUvmIoctls, suppControlCmds, suppAllocClasses, ok := nvproxy.SupportedIoctls(driverVer)
 	if !ok {
 		return fmt.Errorf("host driver version %s is not supported", driverVer)
+	}
+	supportedIoctls = [_numClasses]map[uint32]struct{}{
+		frontend: suppFrontendIoctls,
+		uvm:      suppUvmIoctls,
+		control:  suppControlCmds,
+		alloc:    suppAllocClasses,
+		unknown:  make(map[uint32]struct{}),
 	}
 
 	return nil
@@ -242,14 +226,16 @@ func ParseIoctlOutput(ioctl *pb.Ioctl) (Ioctl, error) {
 	parsedIoctl := Ioctl{pb: ioctl}
 
 	// Categorize and do class-specific parsing.
+	path := ioctl.GetFdPath()
 	switch {
-	case ioctl.GetFdPath() == uvmDevPath:
+	case path == uvmDevPath:
 		parsedIoctl.class = uvm
-		parsedIoctl.nr = ioctlNr(ioctl.GetRequest())
-	case ioctl.GetFdPath() == ctlDevPath || deviceDevPath.MatchString(ioctl.GetFdPath()):
-		parsedIoctl.nr = ioctlNr(linux.IOC_NR(uint32(ioctl.GetRequest())))
+		parsedIoctl.subclass = ioctlSubclass(ioctl.GetRequest())
+	case path == ctlDevPath || deviceDevPath.MatchString(path):
+		parsedIoctl.class = frontend
+		parsedIoctl.subclass = ioctlSubclass(linux.IOC_NR(uint32(ioctl.GetRequest())))
 
-		switch parsedIoctl.nr {
+		switch parsedIoctl.subclass {
 		case nvgpu.NV_ESC_RM_CONTROL:
 			data := ioctl.GetArgData()
 			if uint32(len(data)) != nvgpu.SizeofNVOS54Parameters {
@@ -259,7 +245,7 @@ func ParseIoctlOutput(ioctl *pb.Ioctl) (Ioctl, error) {
 			ioctlParams.UnmarshalBytes(data)
 
 			parsedIoctl.class = control
-			parsedIoctl.cmd = controlCommand(ioctlParams.Cmd)
+			parsedIoctl.subclass = ioctlSubclass(ioctlParams.Cmd)
 		case nvgpu.NV_ESC_RM_ALLOC:
 			data := ioctl.GetArgData()
 			var isNVOS64 bool
@@ -274,13 +260,11 @@ func ParseIoctlOutput(ioctl *pb.Ioctl) (Ioctl, error) {
 			ioctlParams.UnmarshalBytes(data)
 
 			parsedIoctl.class = alloc
-			parsedIoctl.hClass = allocClass(ioctlParams.GetHClass())
-		default:
-			parsedIoctl.class = frontend
+			parsedIoctl.subclass = ioctlSubclass(ioctlParams.GetHClass())
 		}
 	default:
 		parsedIoctl.class = unknown
-		parsedIoctl.nr = ioctlNr(linux.IOC_NR(uint32(ioctl.GetRequest())))
+		parsedIoctl.subclass = ioctlSubclass(linux.IOC_NR(uint32(ioctl.GetRequest())))
 	}
 
 	return parsedIoctl, nil
