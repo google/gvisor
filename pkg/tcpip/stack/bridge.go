@@ -15,9 +15,6 @@
 package stack
 
 import (
-	"math/rand"
-	"net"
-
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -67,19 +64,11 @@ func (p *bridgePort) DeliverNetworkPacket(protocol tcpip.NetworkProtocolNumber, 
 func (p *bridgePort) DeliverLinkPacket(protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer) {
 }
 
-func getRandMacAddr() tcpip.LinkAddress {
-	mac := make(net.HardwareAddr, 6)
-	rand.Read(mac) // Fill with random data.
-	mac[0] &^= 0x1 // Clear multicast bit.
-	mac[0] |= 0x2  // Set local assignment bit (IEEE802).
-	return tcpip.LinkAddress(mac)
-}
-
 // NewBridgeEndpoint creates a new bridge endpoint.
 func NewBridgeEndpoint(mtu uint32) *BridgeEndpoint {
 	b := &BridgeEndpoint{
 		mtu:  mtu,
-		addr: getRandMacAddr(),
+		addr: tcpip.GetRandMacAddr(),
 	}
 	b.ports = make(map[tcpip.NICID]*bridgePort)
 	return b
