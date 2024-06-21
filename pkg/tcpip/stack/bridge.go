@@ -40,7 +40,6 @@ func (p *bridgePort) ParseHeader(pkt *PacketBuffer) bool {
 func (p *bridgePort) DeliverNetworkPacket(protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer) {
 	bridge := p.bridge
 	bridge.mu.Lock()
-	defer bridge.mu.Unlock()
 
 	// Send the packet to all other ports.
 	for _, port := range bridge.ports {
@@ -55,7 +54,14 @@ func (p *bridgePort) DeliverNetworkPacket(protocol tcpip.NetworkProtocolNumber, 
 		newPkt.DecRef()
 	}
 
-	bridge.injectInboundLocked(protocol, pkt)
+	d := bridge.dispatcher
+	bridge.mu.Unlock()
+	if d != nil {
+		// The dispatcher may acquire Stack.mu in DeliverNetworkPacket(), which is
+		// ordered above bridge.mu. So call DeliverNetworkPacket() without holding
+		// bridge.mu to avoid circular locking.
+		d.DeliverNetworkPacket(protocol, pkt)
+	}
 }
 
 func (p *bridgePort) DeliverLinkPacket(protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer) {
@@ -147,14 +153,6 @@ func (b *BridgeEndpoint) DelNIC(nic *nic) tcpip.Error {
 	delete(b.ports, nic.id)
 	nic.NetworkLinkEndpoint.Attach(nic)
 	return nil
-}
-
-// +checklocks:b.mu
-func (b *BridgeEndpoint) injectInboundLocked(protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer) {
-	d := b.dispatcher
-	if d != nil {
-		d.DeliverNetworkPacket(protocol, pkt)
-	}
 }
 
 // MTU implements stack.LinkEndpoint.MTU.
