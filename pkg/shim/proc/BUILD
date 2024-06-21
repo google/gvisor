@@ -25,7 +25,7 @@ go_library(
     deps = [
         "//pkg/atomicbitops",
         "//pkg/cleanup",
-        "//pkg/shim/runsc",
+        "//pkg/shim/runsccmd",
         "//pkg/shim/utils",
         "@com_github_containerd_console//:go_default_library",
         "@com_github_containerd_containerd//errdefs:go_default_library",

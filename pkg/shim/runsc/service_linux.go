@@ -16,7 +16,7 @@
 //go:build linux
 // +build linux
 
-package shim
+package runsc
 
 import (
 	"context"
@@ -93,7 +93,7 @@ func (p *linuxPlatform) Close() error {
 
 // initialize a single epoll fd to manage our consoles. `initPlatform` should
 // only be called once.
-func (s *service) initPlatform() error {
+func (s *runscService) initPlatform() error {
 	if s.platform != nil {
 		return nil
 	}

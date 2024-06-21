@@ -22,7 +22,7 @@ import (
 	"strings"
 	"time"
 
-	"gvisor.dev/gvisor/pkg/shim/runsc"
+	"gvisor.dev/gvisor/pkg/shim/runsccmd"
 )
 
 const (
@@ -35,7 +35,7 @@ const (
 var ExitCh = make(chan Exit, bufferSize)
 
 // TODO(mlaventure): move to runc package?
-func getLastRuntimeError(r *runsc.Runsc) (string, error) {
+func getLastRuntimeError(r *runsccmd.Runsc) (string, error) {
 	if r.Log == "" {
 		return "", nil
 	}

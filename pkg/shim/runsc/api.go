@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package shim
+package runsc
 
 import (
 	"github.com/containerd/containerd/api/events"
