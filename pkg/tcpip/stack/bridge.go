@@ -15,9 +15,6 @@
 package stack
 
 import (
-	"math/rand"
-	"net"
-
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -40,7 +37,6 @@ func (p *bridgePort) ParseHeader(pkt *PacketBuffer) bool {
 func (p *bridgePort) DeliverNetworkPacket(protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer) {
 	bridge := p.bridge
 	bridge.mu.Lock()
-	defer bridge.mu.Unlock()
 
 	// Send the packet to all other ports.
 	for _, port := range bridge.ports {
@@ -55,25 +51,24 @@ func (p *bridgePort) DeliverNetworkPacket(protocol tcpip.NetworkProtocolNumber, 
 		newPkt.DecRef()
 	}
 
-	bridge.injectInboundLocked(protocol, pkt)
+	d := bridge.dispatcher
+	bridge.mu.Unlock()
+	if d != nil {
+		// The dispatcher may acquire Stack.mu in DeliverNetworkPacket(), which is
+		// ordered above bridge.mu. So call DeliverNetworkPacket() without holding
+		// bridge.mu to avoid circular locking.
+		d.DeliverNetworkPacket(protocol, pkt)
+	}
 }
 
 func (p *bridgePort) DeliverLinkPacket(protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer) {
-}
-
-func getRandMacAddr() tcpip.LinkAddress {
-	mac := make(net.HardwareAddr, 6)
-	rand.Read(mac) // Fill with random data.
-	mac[0] &^= 0x1 // Clear multicast bit.
-	mac[0] |= 0x2  // Set local assignment bit (IEEE802).
-	return tcpip.LinkAddress(mac)
 }
 
 // NewBridgeEndpoint creates a new bridge endpoint.
 func NewBridgeEndpoint(mtu uint32) *BridgeEndpoint {
 	b := &BridgeEndpoint{
 		mtu:  mtu,
-		addr: getRandMacAddr(),
+		addr: tcpip.GetRandMacAddr(),
 	}
 	b.ports = make(map[tcpip.NICID]*bridgePort)
 	return b
@@ -147,14 +142,6 @@ func (b *BridgeEndpoint) DelNIC(nic *nic) tcpip.Error {
 	delete(b.ports, nic.id)
 	nic.NetworkLinkEndpoint.Attach(nic)
 	return nil
-}
-
-// +checklocks:b.mu
-func (b *BridgeEndpoint) injectInboundLocked(protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer) {
-	d := b.dispatcher
-	if d != nil {
-		d.DeliverNetworkPacket(protocol, pkt)
-	}
 }
 
 // MTU implements stack.LinkEndpoint.MTU.

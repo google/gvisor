@@ -13,8 +13,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package runsc provides an API to interact with runsc command line.
-package runsc
+// Package runsccmd provides an API to interact with runsc command line.
+package runsccmd
 
 import (
 	"bytes"

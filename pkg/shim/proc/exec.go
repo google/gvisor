@@ -33,8 +33,7 @@ import (
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/cleanup"
-
-	"gvisor.dev/gvisor/pkg/shim/runsc"
+	"gvisor.dev/gvisor/pkg/shim/runsccmd"
 )
 
 type execProcess struct {
@@ -150,7 +149,7 @@ func (e *execProcess) kill(ctx context.Context, sig uint32, _ bool) error {
 		return nil
 	}
 
-	opts := runsc.KillOpts{Pid: internalPid}
+	opts := runsccmd.KillOpts{Pid: internalPid}
 	if err := e.parent.runtime.Kill(ctx, e.parent.id, int(sig), &opts); err != nil {
 		return fmt.Errorf("%s: %w", err.Error(), errdefs.ErrNotFound)
 	}
@@ -199,7 +198,7 @@ func (e *execProcess) start(ctx context.Context) error {
 		e.io = io
 	}
 
-	opts := &runsc.ExecOpts{
+	opts := &runsccmd.ExecOpts{
 		PidFile:         filepath.Join(e.path, fmt.Sprintf("%s.pid", e.id)),
 		InternalPidFile: filepath.Join(e.path, fmt.Sprintf("%s-internal.pid", e.id)),
 		IO:              e.io,

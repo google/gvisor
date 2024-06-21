@@ -37,7 +37,7 @@ import (
 	runc "github.com/containerd/go-runc"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
-	"gvisor.dev/gvisor/pkg/shim/runsc"
+	"gvisor.dev/gvisor/pkg/shim/runsccmd"
 	"gvisor.dev/gvisor/pkg/shim/utils"
 )
 
@@ -63,7 +63,7 @@ type Init struct {
 	console  console.Console
 	Platform stdio.Platform
 	io       runc.IO
-	runtime  *runsc.Runsc
+	runtime  *runsccmd.Runsc
 	status   int
 	exited   time.Time
 	pid      int
@@ -79,11 +79,11 @@ type Init struct {
 }
 
 // NewRunsc returns a new runsc instance for a process.
-func NewRunsc(root, path, namespace, runtime string, config map[string]string, spec *specs.Spec) *runsc.Runsc {
+func NewRunsc(root, path, namespace, runtime string, config map[string]string, spec *specs.Spec) *runsccmd.Runsc {
 	if root == "" {
 		root = RunscRoot
 	}
-	return &runsc.Runsc{
+	return &runsccmd.Runsc{
 		Command:      runtime,
 		PdeathSignal: unix.SIGKILL,
 		Log:          filepath.Join(path, "log.json"),
@@ -95,7 +95,7 @@ func NewRunsc(root, path, namespace, runtime string, config map[string]string, s
 }
 
 // New returns a new init process.
-func New(id string, runtime *runsc.Runsc, stdio stdio.Stdio) *Init {
+func New(id string, runtime *runsccmd.Runsc, stdio stdio.Stdio) *Init {
 	p := &Init{
 		id:        id,
 		runtime:   runtime,
@@ -126,7 +126,7 @@ func (p *Init) Create(ctx context.Context, r *CreateConfig) (err error) {
 	}
 	// pidFile is the file that will contain the sandbox pid.
 	pidFile := filepath.Join(p.Bundle, "init.pid")
-	opts := &runsc.CreateOpts{
+	opts := &runsccmd.CreateOpts{
 		PidFile: pidFile,
 	}
 	if socket != nil {
@@ -357,7 +357,7 @@ func (p *Init) kill(ctx context.Context, signal uint32, all bool) error {
 		if state == statusStopped {
 			return fmt.Errorf("no such process: %w", errdefs.ErrNotFound)
 		}
-		killErr = p.runtime.Kill(ctx, p.id, int(signal), &runsc.KillOpts{All: all})
+		killErr = p.runtime.Kill(ctx, p.id, int(signal), &runsccmd.KillOpts{All: all})
 		if killErr == nil {
 			return nil
 		}
@@ -376,7 +376,7 @@ func (p *Init) KillAll(context context.Context) {
 }
 
 func (p *Init) killAllLocked(context context.Context) {
-	if err := p.runtime.Kill(context, p.id, int(unix.SIGKILL), &runsc.KillOpts{All: true}); err != nil {
+	if err := p.runtime.Kill(context, p.id, int(unix.SIGKILL), &runsccmd.KillOpts{All: true}); err != nil {
 		log.L.Warningf("Ignoring error killing container %q: %v", p.id, err)
 	}
 }
@@ -387,7 +387,7 @@ func (p *Init) Stdin() io.Closer {
 }
 
 // Runtime returns the OCI runtime configured for the init process.
-func (p *Init) Runtime() *runsc.Runsc {
+func (p *Init) Runtime() *runsccmd.Runsc {
 	return p.runtime
 }
 
