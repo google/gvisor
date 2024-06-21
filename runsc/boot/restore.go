@@ -128,25 +128,13 @@ func (r *restorer) restoreContainerInfo(l *Loader, info *containerInfo) error {
 	return nil
 }
 
-func createNetworkNamespaceForRestore(l *Loader) (*stack.Stack, *inet.Namespace, error) {
-	creds := getRootCredentials(l.root.spec, l.root.conf, nil /* UserNamespace */)
-	if creds == nil {
-		return nil, nil, fmt.Errorf("getting root credentials")
-	}
-
+func createNetworStackForRestore(l *Loader) (*stack.Stack, inet.Stack) {
 	// Save the current network stack to slap on top of the one that was restored.
 	curNetwork := l.k.RootNetworkNamespace().Stack()
-	eps, ok := curNetwork.(*netstack.Stack)
-	if !ok {
-		return nil, inet.NewRootNamespace(hostinet.NewStack(), nil, creds.UserNamespace), nil
+	if eps, ok := curNetwork.(*netstack.Stack); ok {
+		return eps.Stack, curNetwork
 	}
-
-	creator := &sandboxNetstackCreator{
-		clock:                    l.k.Timekeeper(),
-		uniqueID:                 l.k,
-		allowPacketEndpointWrite: l.root.conf.AllowPacketEndpointWrite,
-	}
-	return eps.Stack, inet.NewRootNamespace(curNetwork, creator, creds.UserNamespace), nil
+	return nil, hostinet.NewStack()
 }
 
 func (r *restorer) restore(l *Loader) error {
@@ -154,10 +142,7 @@ func (r *restorer) restore(l *Loader) error {
 
 	// Create a new root network namespace with the network stack of the
 	// old kernel to preserve the existing network configuration.
-	oldStack, netns, err := createNetworkNamespaceForRestore(l)
-	if err != nil {
-		return fmt.Errorf("creating network: %w", err)
-	}
+	oldStack, oldInetStack := createNetworStackForRestore(l)
 
 	// Reset the network stack in the network namespace to nil before
 	// replacing the kernel. This will not free the network stack when this
@@ -231,7 +216,7 @@ func (r *restorer) restore(l *Loader) error {
 
 	// Load the state.
 	loadOpts := state.LoadOpts{Source: r.stateFile, PagesMetadata: r.pagesMetadata, PagesFile: r.pagesFile}
-	if err := loadOpts.Load(ctx, l.k, nil, netns.Stack(), time.NewCalibratedClocks(), &vfs.CompleteRestoreOptions{}); err != nil {
+	if err := loadOpts.Load(ctx, l.k, nil, oldInetStack, time.NewCalibratedClocks(), &vfs.CompleteRestoreOptions{}); err != nil {
 		return err
 	}
 
