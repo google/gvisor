@@ -2234,6 +2234,9 @@ type TCPStats struct {
 	// dropped due to exceeding the maximum number of in-flight connection
 	// requests.
 	ForwardMaxInFlightDrop *StatCounter
+
+	// CongestionWindow.
+	CongestionWindow *NetworkMetric
 }
 
 // UDPStats collects UDP-specific stats.
@@ -2576,6 +2579,10 @@ func InitStatCounters(v reflect.Value) {
 				*s = new(IntegralStatCounterMap)
 				(*s).Init()
 			}
+		} else if s, ok := v.Addr().Interface().(**NetworkMetric); ok {
+			if *s == nil {
+				*s = new(NetworkMetric)
+			}
 		} else {
 			InitStatCounters(v)
 		}
@@ -2847,3 +2854,20 @@ func DeleteDanglingEndpoint(e Endpoint) {
 // AsyncLoading is the global barrier for asynchronous endpoint loading
 // activities.
 var AsyncLoading sync.WaitGroup
+
+// A NetworkMetric keeps track of a statistic.
+//
+// +stateify savable
+type NetworkMetric struct {
+	value atomicbitops.Uint64
+}
+
+// Set sets the network metric value.
+func (m *NetworkMetric) Set(val uint64) {
+	m.value.Store(val)
+}
+
+// Get returns the network metric value.
+func (m *NetworkMetric) Get() uint64 {
+	return m.value.Load()
+}

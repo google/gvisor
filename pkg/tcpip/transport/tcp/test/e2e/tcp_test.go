@@ -9420,6 +9420,40 @@ func TestLateSynCookieAck(t *testing.T) {
 	}
 }
 
+func TestCongestionWindowMetric(t *testing.T) {
+	c := context.New(t, e2e.DefaultMTU)
+	defer c.Cleanup()
+
+	rto := 1 * time.Second
+	minRTOOpt := tcpip.TCPMinRTOOption(rto / 2)
+	if err := c.Stack().SetTransportProtocolOption(tcp.ProtocolNumber, &minRTOOpt); err != nil {
+		t.Fatalf("SetTransportProtocolOption(%d, &%T(%d)): %s", tcp.ProtocolNumber, minRTOOpt, minRTOOpt, err)
+	}
+	maxRTOOpt := tcpip.TCPMaxRTOOption(rto)
+	if err := c.Stack().SetTransportProtocolOption(tcp.ProtocolNumber, &maxRTOOpt); err != nil {
+		t.Fatalf("SetTransportProtocolOption(%d, &%T(%d)): %s", tcp.ProtocolNumber, maxRTOOpt, maxRTOOpt, err)
+	}
+	c.CreateConnected(context.TestInitialSequenceNumber, 30000 /* rcvWnd */, -1 /* epRcvBuf */)
+	if got := c.Stack().Stats().TCP.CongestionWindow.Get(); got != tcp.InitialCwnd {
+		t.Errorf("got c.Stack().Stats().TCP.CongestionWindow.Get() = %d, want = 10", got)
+	}
+
+	var r bytes.Reader
+	for i := 0; i < tcp.InitialCwnd; i++ {
+		r.Reset([]byte{0})
+		if _, err := c.EP.Write(&r, tcpip.WriteOptions{}); err != nil {
+			t.Fatalf("Write #%d failed: %s", i+1, err)
+		}
+	}
+
+	// Wait for RTO, check the congestion window is reduced to 1.
+	time.Sleep(rto)
+	if got := c.Stack().Stats().TCP.CongestionWindow.Get(); got != 1 {
+		t.Errorf("got c.Stack().Stats().TCP.CongestionWindow.Get() = %d, want = 1", got)
+	}
+
+}
+
 func TestMain(m *testing.M) {
 	refs.SetLeakMode(refs.LeaksPanic)
 	code := m.Run()

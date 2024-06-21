@@ -46,6 +46,7 @@ func (r *renoState) updateSlowStart(packetsAcked int) int {
 
 	packetsAcked -= newcwnd - r.s.SndCwnd
 	r.s.SndCwnd = newcwnd
+	r.s.ep.stack.Stats().TCP.CongestionWindow.Set(uint64(newcwnd))
 	return packetsAcked
 }
 
@@ -56,6 +57,7 @@ func (r *renoState) updateCongestionAvoidance(packetsAcked int) {
 	r.s.SndCAAckCount += packetsAcked
 	if r.s.SndCAAckCount >= r.s.SndCwnd {
 		r.s.SndCwnd += r.s.SndCAAckCount / r.s.SndCwnd
+		r.s.ep.stack.Stats().TCP.CongestionWindow.Set(uint64(r.s.SndCwnd))
 		r.s.SndCAAckCount = r.s.SndCAAckCount % r.s.SndCwnd
 	}
 }
@@ -99,6 +101,7 @@ func (r *renoState) HandleRTOExpired() {
 	// RFC 5681, page 7, we must use 1 regardless of the value of the
 	// initial congestion window.
 	r.s.SndCwnd = 1
+	r.s.ep.stack.Stats().TCP.CongestionWindow.Set(uint64(r.s.SndCwnd))
 }
 
 // PostRecovery implements congestionControl.PostRecovery.
