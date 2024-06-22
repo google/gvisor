@@ -156,10 +156,6 @@ type endpoint struct {
 	// bufferSize is immutable.
 	bufferSize uint32
 
-	// addr is the local address of this endpoint.
-	// addr is immutable.
-	addr tcpip.LinkAddress
-
 	// peerFD is an fd to the peer that can be used to detect when the
 	// peer is gone.
 	// peerFD is immutable.
@@ -196,7 +192,7 @@ type endpoint struct {
 	onClosed func(tcpip.Error) `state:"nosave"`
 
 	// mu protects the following fields.
-	mu sync.Mutex `state:"nosave"`
+	mu sync.RWMutex `state:"nosave"`
 
 	// tx is the transmit queue.
 	// +checklocks:mu
@@ -205,6 +201,11 @@ type endpoint struct {
 	// workerStarted specifies whether the worker goroutine was started.
 	// +checklocks:mu
 	workerStarted bool
+
+	// addr is the local address of this endpoint.
+	//
+	// +checklocks:mu
+	addr tcpip.LinkAddress
 }
 
 // New creates a new shared-memory-based endpoint. Buffers will be broken up
@@ -342,6 +343,8 @@ func (e *endpoint) MaxHeaderLength() uint16 {
 // LinkAddress implements stack.LinkEndpoint.LinkAddress. It returns the local
 // link address.
 func (e *endpoint) LinkAddress() tcpip.LinkAddress {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
 	return e.addr
 }
 
@@ -354,6 +357,8 @@ func (e *endpoint) SetLinkAddress(addr tcpip.LinkAddress) {
 
 // AddHeader implements stack.LinkEndpoint.AddHeader.
 func (e *endpoint) AddHeader(pkt *stack.PacketBuffer) {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
 	// Add ethernet header if needed.
 	if len(e.addr) == 0 {
 		return
@@ -374,6 +379,8 @@ func (e *endpoint) parseHeader(pkt *stack.PacketBuffer) bool {
 
 // ParseHeader implements stack.LinkEndpoint.ParseHeader.
 func (e *endpoint) ParseHeader(pkt *stack.PacketBuffer) bool {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
 	// Add ethernet header if needed.
 	if len(e.addr) == 0 {
 		return true
@@ -475,7 +482,10 @@ func (e *endpoint) dispatchLoop(d stack.NetworkDispatcher) {
 		}
 
 		var proto tcpip.NetworkProtocolNumber
-		if len(e.addr) != 0 {
+		e.mu.RLock()
+		addrLen := len(e.addr)
+		e.mu.RUnlock()
+		if addrLen != 0 {
 			if !e.parseHeader(pkt) {
 				pkt.DecRef()
 				continue
@@ -500,7 +510,6 @@ func (e *endpoint) dispatchLoop(d stack.NetworkDispatcher) {
 				continue
 			}
 		}
-
 		// Send packet up the stack.
 		d.DeliverNetworkPacket(proto, pkt)
 		pkt.DecRef()

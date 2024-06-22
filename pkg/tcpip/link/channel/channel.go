@@ -138,13 +138,14 @@ var _ stack.GSOEndpoint = (*Endpoint)(nil)
 // +stateify savable
 type Endpoint struct {
 	mtu                uint32
-	linkAddr           tcpip.LinkAddress
 	LinkEPCapabilities stack.LinkEndpointCapabilities
 	SupportedGSOKind   stack.SupportedGSO
 
 	mu sync.RWMutex `state:"nosave"`
 	// +checklocks:mu
 	dispatcher stack.NetworkDispatcher
+	// +checklocks:mu
+	linkAddr tcpip.LinkAddress
 
 	// Outbound packet queue.
 	q *queue
@@ -249,6 +250,8 @@ func (*Endpoint) MaxHeaderLength() uint16 {
 
 // LinkAddress returns the link address of this endpoint.
 func (e *Endpoint) LinkAddress() tcpip.LinkAddress {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
 	return e.linkAddr
 }
 
