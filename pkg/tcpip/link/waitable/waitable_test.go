@@ -101,6 +101,9 @@ func (*countedEndpoint) ParseHeader(*stack.PacketBuffer) bool {
 	panic("unimplemented")
 }
 
+// Close implements stack.LinkEndpoint.
+func (*countedEndpoint) Close() {}
+
 func TestWaitWrite(t *testing.T) {
 	ep := &countedEndpoint{}
 	wep := New(ep)

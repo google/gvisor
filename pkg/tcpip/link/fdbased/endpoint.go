@@ -813,6 +813,9 @@ func (e *endpoint) ARPHardwareType() header.ARPHardwareType {
 	return header.ARPHardwareNone
 }
 
+// Close implements stack.LinkEndpoint.
+func (e *endpoint) Close() {}
+
 // InjectableEndpoint is an injectable fd-based endpoint. The endpoint writes
 // to the FD, but does not read from it. All reads come from injected packets.
 //

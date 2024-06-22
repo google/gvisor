@@ -183,6 +183,9 @@ func (e *mockEndpoint) pktsSize() int {
 	return s
 }
 
+// Close implements stack.LinkEndpoint.
+func (*mockEndpoint) Close() {}
+
 func TestSndBuf(t *testing.T) {
 	const nicID = 1
 

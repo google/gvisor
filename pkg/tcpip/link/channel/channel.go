@@ -54,7 +54,9 @@ type queue struct {
 func (q *queue) Close() {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	close(q.c)
+	if !q.closed {
+		close(q.c)
+	}
 	q.closed = true
 }
 

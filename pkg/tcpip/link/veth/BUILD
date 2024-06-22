@@ -19,7 +19,17 @@ go_library(
 
 go_test(
     name = "veth_test",
-    srcs = ["veth_test.go"],
-    library = ":veth",
-    deps = ["//pkg/tcpip"],
+    size = "small",
+    srcs = [
+        "veth_test.go",
+    ],
+    deps = [
+        "//pkg/buffer",
+        "//pkg/refs",
+        "//pkg/tcpip",
+        "//pkg/tcpip/header",
+        "//pkg/tcpip/link/ethernet",
+        "//pkg/tcpip/link/veth",
+        "//pkg/tcpip/stack",
+    ],
 )

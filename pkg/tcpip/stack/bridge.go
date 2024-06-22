@@ -211,3 +211,6 @@ func (b *BridgeEndpoint) AddHeader(pkt *PacketBuffer) {
 func (b *BridgeEndpoint) ParseHeader(*PacketBuffer) bool {
 	return true
 }
+
+// Close implements stack.LinkEndpoint.Close.
+func (b *BridgeEndpoint) Close() {}

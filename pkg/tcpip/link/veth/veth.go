@@ -107,7 +107,12 @@ func (e *Endpoint) Close() {
 	e.stack = nil
 	e.mu.Unlock()
 	if stack != nil {
-		stack.RemoveNIC(idx)
+		// The pair endpoint can live in the current stack or another one.
+		// RemoveNIC will take the stack lock, so let's run it in another
+		// goroutine to avoid lock conflicts.
+		go func() {
+			stack.RemoveNIC(idx)
+		}()
 	}
 	close(*e.backlogQueue)
 }

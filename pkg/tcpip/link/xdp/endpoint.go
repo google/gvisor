@@ -410,3 +410,6 @@ func (ep *endpoint) dispatch() (bool, tcpip.Error) {
 		}
 	}
 }
+
+// Close implements stack.LinkEndpoint.
+func (*endpoint) Close() {}

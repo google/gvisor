@@ -141,6 +141,7 @@ func (f *fwdTestNetworkEndpoint) WriteHeaderIncludedPacket(r *Route, pkt *Packet
 	return f.nic.WritePacket(r, pkt)
 }
 
+// Close implements stack.LinkEndpoint.
 func (f *fwdTestNetworkEndpoint) Close() {
 	f.AddressableEndpointState.Cleanup()
 }
@@ -337,6 +338,8 @@ func (*fwdTestLinkEndpoint) AddHeader(*PacketBuffer) {}
 
 // ParseHeader implements stack.LinkEndpoint.ParseHeader.
 func (*fwdTestLinkEndpoint) ParseHeader(*PacketBuffer) bool { return true }
+
+func (*fwdTestLinkEndpoint) Close() {}
 
 func fwdTestNetFactory(t *testing.T, proto *fwdTestNetworkProtocol) (*faketime.ManualClock, *fwdTestLinkEndpoint, *fwdTestLinkEndpoint) {
 	clock := faketime.NewManualClock()

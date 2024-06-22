@@ -61,6 +61,8 @@ type stubLinkEndpoint struct {
 	stack.LinkEndpoint
 }
 
+func (*stubLinkEndpoint) Close() {}
+
 func (*stubLinkEndpoint) MTU() uint32 {
 	return defaultMTU
 }
