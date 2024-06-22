@@ -111,7 +111,6 @@ func (e *endpoint) StateFields() []string {
 	return []string{
 		"mtu",
 		"bufferSize",
-		"addr",
 		"peerFD",
 		"caps",
 		"hdrSize",
@@ -122,6 +121,7 @@ func (e *endpoint) StateFields() []string {
 		"completed",
 		"tx",
 		"workerStarted",
+		"addr",
 	}
 }
 
@@ -132,17 +132,17 @@ func (e *endpoint) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
 	stateSinkObject.Save(0, &e.mtu)
 	stateSinkObject.Save(1, &e.bufferSize)
-	stateSinkObject.Save(2, &e.addr)
-	stateSinkObject.Save(3, &e.peerFD)
-	stateSinkObject.Save(4, &e.caps)
-	stateSinkObject.Save(5, &e.hdrSize)
-	stateSinkObject.Save(6, &e.gsoMaxSize)
-	stateSinkObject.Save(7, &e.virtioNetHeaderRequired)
-	stateSinkObject.Save(8, &e.rx)
-	stateSinkObject.Save(9, &e.stopRequested)
-	stateSinkObject.Save(10, &e.completed)
-	stateSinkObject.Save(11, &e.tx)
-	stateSinkObject.Save(12, &e.workerStarted)
+	stateSinkObject.Save(2, &e.peerFD)
+	stateSinkObject.Save(3, &e.caps)
+	stateSinkObject.Save(4, &e.hdrSize)
+	stateSinkObject.Save(5, &e.gsoMaxSize)
+	stateSinkObject.Save(6, &e.virtioNetHeaderRequired)
+	stateSinkObject.Save(7, &e.rx)
+	stateSinkObject.Save(8, &e.stopRequested)
+	stateSinkObject.Save(9, &e.completed)
+	stateSinkObject.Save(10, &e.tx)
+	stateSinkObject.Save(11, &e.workerStarted)
+	stateSinkObject.Save(12, &e.addr)
 }
 
 func (e *endpoint) afterLoad(context.Context) {}
@@ -151,17 +151,17 @@ func (e *endpoint) afterLoad(context.Context) {}
 func (e *endpoint) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &e.mtu)
 	stateSourceObject.Load(1, &e.bufferSize)
-	stateSourceObject.Load(2, &e.addr)
-	stateSourceObject.Load(3, &e.peerFD)
-	stateSourceObject.Load(4, &e.caps)
-	stateSourceObject.Load(5, &e.hdrSize)
-	stateSourceObject.Load(6, &e.gsoMaxSize)
-	stateSourceObject.Load(7, &e.virtioNetHeaderRequired)
-	stateSourceObject.Load(8, &e.rx)
-	stateSourceObject.Load(9, &e.stopRequested)
-	stateSourceObject.Load(10, &e.completed)
-	stateSourceObject.Load(11, &e.tx)
-	stateSourceObject.Load(12, &e.workerStarted)
+	stateSourceObject.Load(2, &e.peerFD)
+	stateSourceObject.Load(3, &e.caps)
+	stateSourceObject.Load(4, &e.hdrSize)
+	stateSourceObject.Load(5, &e.gsoMaxSize)
+	stateSourceObject.Load(6, &e.virtioNetHeaderRequired)
+	stateSourceObject.Load(7, &e.rx)
+	stateSourceObject.Load(8, &e.stopRequested)
+	stateSourceObject.Load(9, &e.completed)
+	stateSourceObject.Load(10, &e.tx)
+	stateSourceObject.Load(11, &e.workerStarted)
+	stateSourceObject.Load(12, &e.addr)
 }
 
 func init() {

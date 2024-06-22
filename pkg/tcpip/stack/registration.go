@@ -1138,6 +1138,9 @@ type NetworkLinkEndpoint interface {
 
 	// ParseHeader parses the link layer header to the packet.
 	ParseHeader(*PacketBuffer) bool
+
+	// Close is called when the endpoint is removed from a stack.
+	Close()
 }
 
 // QueueingDiscipline provides a queueing strategy for outgoing packets (e.g

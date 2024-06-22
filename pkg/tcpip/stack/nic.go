@@ -329,6 +329,7 @@ func (n *nic) remove() tcpip.Error {
 	// Prevent packets from going down to the link before shutting the link down.
 	n.qDisc.Close()
 	n.NetworkLinkEndpoint.Attach(nil)
+	n.NetworkLinkEndpoint.Close()
 
 	return nil
 }

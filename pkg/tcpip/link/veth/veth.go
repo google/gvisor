@@ -43,10 +43,6 @@ type Endpoint struct {
 
 	backlogQueue *chan vethPacket
 
-	// linkAddr is the local address of this endpoint.
-	// linkaddr is immutable.
-	linkAddr tcpip.LinkAddress
-
 	mu sync.RWMutex `state:"nosave"`
 	// +checklocks:mu
 	dispatcher stack.NetworkDispatcher
@@ -55,6 +51,10 @@ type Endpoint struct {
 	stack *stack.Stack
 	// +checklocks:mu
 	idx tcpip.NICID
+	// linkAddr is the local address of this endpoint.
+	//
+	// +checklocks:mu
+	linkAddr tcpip.LinkAddress
 }
 
 // NewPair creates a new veth pair.
@@ -107,7 +107,12 @@ func (e *Endpoint) Close() {
 	e.stack = nil
 	e.mu.Unlock()
 	if stack != nil {
-		stack.RemoveNIC(idx)
+		// The pair endpoint can live in the current stack or another one.
+		// RemoveNIC will take the stack lock, so let's run it in another
+		// goroutine to avoid lock conflicts.
+		go func() {
+			stack.RemoveNIC(idx)
+		}()
 	}
 	close(*e.backlogQueue)
 }
@@ -167,6 +172,8 @@ func (*Endpoint) MaxHeaderLength() uint16 {
 
 // LinkAddress returns the link address of this endpoint.
 func (e *Endpoint) LinkAddress() tcpip.LinkAddress {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
 	return e.linkAddr
 }
 

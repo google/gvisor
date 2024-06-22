@@ -45,9 +45,6 @@ type endpoint struct {
 	// fd is the underlying AF_XDP socket.
 	fd int
 
-	// addr is the address of the endpoint.
-	addr tcpip.LinkAddress
-
 	// caps holds the endpoint capabilities.
 	caps stack.LinkEndpointCapabilities
 
@@ -68,6 +65,11 @@ type endpoint struct {
 
 	// stopFD is used to stop the dispatch loop.
 	stopFD stopfd.StopFD
+
+	// addr is the address of the endpoint.
+	//
+	// +checklocks:mu
+	addr tcpip.LinkAddress
 }
 
 // Options specify the details about the fd-based endpoint to be created.
@@ -236,6 +238,8 @@ func (ep *endpoint) MaxHeaderLength() uint16 {
 
 // LinkAddress returns the link address of this endpoint.
 func (ep *endpoint) LinkAddress() tcpip.LinkAddress {
+	ep.mu.RLock()
+	defer ep.mu.RUnlock()
 	return ep.addr
 }
 
@@ -406,3 +410,6 @@ func (ep *endpoint) dispatch() (bool, tcpip.Error) {
 		}
 	}
 }
+
+// Close implements stack.LinkEndpoint.
+func (*endpoint) Close() {}

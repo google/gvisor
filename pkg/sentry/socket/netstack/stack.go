@@ -262,7 +262,7 @@ func (s *Stack) newVeth(ctx context.Context, linkAttrs map[uint16]nlmsg.BytesVie
 		peerEP.Close()
 		return syserr.TranslateNetstackError(err)
 	}
-	peerEP.SetStack(peerStack.Stack, id)
+	peerEP.SetStack(peerStack.Stack, peerID)
 	if peerLinkAttrs != nil {
 		if err := s.setLink(peerID, peerLinkAttrs); err != nil {
 			peerStack.Stack.RemoveNIC(peerID)

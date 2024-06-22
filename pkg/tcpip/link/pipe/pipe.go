@@ -45,13 +45,14 @@ func New(linkAddr1, linkAddr2 tcpip.LinkAddress, mtu uint32) (*Endpoint, *Endpoi
 //
 // +stateify savable
 type Endpoint struct {
-	linked   *Endpoint
-	linkAddr tcpip.LinkAddress
-	mtu      uint32
+	linked *Endpoint
+	mtu    uint32
 
 	mu sync.RWMutex `state:"nosave"`
 	// +checklocks:mu
 	dispatcher stack.NetworkDispatcher
+	// +checklocks:mu
+	linkAddr tcpip.LinkAddress
 }
 
 func (e *Endpoint) deliverPackets(pkts stack.PacketBufferList) {
@@ -115,6 +116,8 @@ func (*Endpoint) MaxHeaderLength() uint16 {
 
 // LinkAddress implements stack.LinkEndpoint.
 func (e *Endpoint) LinkAddress() tcpip.LinkAddress {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
 	return e.linkAddr
 }
 
@@ -135,3 +138,6 @@ func (*Endpoint) AddHeader(*stack.PacketBuffer) {}
 
 // ParseHeader implements stack.LinkEndpoint.
 func (*Endpoint) ParseHeader(*stack.PacketBuffer) bool { return true }
+
+// Close implements stack.LinkEndpoint.
+func (e *Endpoint) Close() {}

@@ -48,10 +48,10 @@ func (e *Endpoint) StateFields() []string {
 		"pair",
 		"mtu",
 		"backlogQueue",
-		"linkAddr",
 		"dispatcher",
 		"stack",
 		"idx",
+		"linkAddr",
 	}
 }
 
@@ -63,10 +63,10 @@ func (e *Endpoint) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &e.pair)
 	stateSinkObject.Save(1, &e.mtu)
 	stateSinkObject.Save(2, &e.backlogQueue)
-	stateSinkObject.Save(3, &e.linkAddr)
-	stateSinkObject.Save(4, &e.dispatcher)
-	stateSinkObject.Save(5, &e.stack)
-	stateSinkObject.Save(6, &e.idx)
+	stateSinkObject.Save(3, &e.dispatcher)
+	stateSinkObject.Save(4, &e.stack)
+	stateSinkObject.Save(5, &e.idx)
+	stateSinkObject.Save(6, &e.linkAddr)
 }
 
 func (e *Endpoint) afterLoad(context.Context) {}
@@ -76,10 +76,10 @@ func (e *Endpoint) StateLoad(ctx context.Context, stateSourceObject state.Source
 	stateSourceObject.Load(0, &e.pair)
 	stateSourceObject.Load(1, &e.mtu)
 	stateSourceObject.Load(2, &e.backlogQueue)
-	stateSourceObject.Load(3, &e.linkAddr)
-	stateSourceObject.Load(4, &e.dispatcher)
-	stateSourceObject.Load(5, &e.stack)
-	stateSourceObject.Load(6, &e.idx)
+	stateSourceObject.Load(3, &e.dispatcher)
+	stateSourceObject.Load(4, &e.stack)
+	stateSourceObject.Load(5, &e.idx)
+	stateSourceObject.Load(6, &e.linkAddr)
 }
 
 func init() {

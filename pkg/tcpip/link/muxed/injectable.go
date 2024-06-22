@@ -155,6 +155,9 @@ func (*InjectableEndpoint) AddHeader(*stack.PacketBuffer) {}
 // ParseHeader implements stack.LinkEndpoint.ParseHeader.
 func (*InjectableEndpoint) ParseHeader(*stack.PacketBuffer) bool { return true }
 
+// Close implements stack.LinkEndpoint.
+func (*InjectableEndpoint) Close() {}
+
 // NewInjectableEndpoint creates a new multi-endpoint injectable endpoint.
 func NewInjectableEndpoint(routes map[tcpip.Address]stack.InjectableLinkEndpoint) *InjectableEndpoint {
 	return &InjectableEndpoint{

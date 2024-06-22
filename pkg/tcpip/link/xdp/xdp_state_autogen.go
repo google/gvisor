@@ -18,11 +18,11 @@ func (ep *endpoint) StateTypeName() string {
 func (ep *endpoint) StateFields() []string {
 	return []string{
 		"fd",
-		"addr",
 		"caps",
 		"networkDispatcher",
 		"control",
 		"stopFD",
+		"addr",
 	}
 }
 
@@ -32,11 +32,11 @@ func (ep *endpoint) beforeSave() {}
 func (ep *endpoint) StateSave(stateSinkObject state.Sink) {
 	ep.beforeSave()
 	stateSinkObject.Save(0, &ep.fd)
-	stateSinkObject.Save(1, &ep.addr)
-	stateSinkObject.Save(2, &ep.caps)
-	stateSinkObject.Save(3, &ep.networkDispatcher)
-	stateSinkObject.Save(4, &ep.control)
-	stateSinkObject.Save(5, &ep.stopFD)
+	stateSinkObject.Save(1, &ep.caps)
+	stateSinkObject.Save(2, &ep.networkDispatcher)
+	stateSinkObject.Save(3, &ep.control)
+	stateSinkObject.Save(4, &ep.stopFD)
+	stateSinkObject.Save(5, &ep.addr)
 }
 
 func (ep *endpoint) afterLoad(context.Context) {}
@@ -44,11 +44,11 @@ func (ep *endpoint) afterLoad(context.Context) {}
 // +checklocksignore
 func (ep *endpoint) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &ep.fd)
-	stateSourceObject.Load(1, &ep.addr)
-	stateSourceObject.Load(2, &ep.caps)
-	stateSourceObject.Load(3, &ep.networkDispatcher)
-	stateSourceObject.Load(4, &ep.control)
-	stateSourceObject.Load(5, &ep.stopFD)
+	stateSourceObject.Load(1, &ep.caps)
+	stateSourceObject.Load(2, &ep.networkDispatcher)
+	stateSourceObject.Load(3, &ep.control)
+	stateSourceObject.Load(4, &ep.stopFD)
+	stateSourceObject.Load(5, &ep.addr)
 }
 
 func init() {

@@ -127,9 +127,6 @@ type endpoint struct {
 	// is added/removed; otherwise an ethernet header is used.
 	hdrSize int
 
-	// addr is the address of the endpoint.
-	addr tcpip.LinkAddress
-
 	// caps holds the endpoint capabilities.
 	caps stack.LinkEndpointCapabilities
 
@@ -170,6 +167,11 @@ type endpoint struct {
 	// maxSyscallHeaderBytes, it falls back to writing the packet using writev
 	// via WritePacket.)
 	writevMaxIovs int
+
+	// addr is the address of the endpoint.
+	//
+	// +checklocks:mu
+	addr tcpip.LinkAddress
 }
 
 // Options specify the details about the fd-based endpoint to be created.
@@ -470,6 +472,8 @@ func (e *endpoint) MaxHeaderLength() uint16 {
 
 // LinkAddress returns the link address of this endpoint.
 func (e *endpoint) LinkAddress() tcpip.LinkAddress {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
 	return e.addr
 }
 
@@ -808,6 +812,9 @@ func (e *endpoint) ARPHardwareType() header.ARPHardwareType {
 	}
 	return header.ARPHardwareNone
 }
+
+// Close implements stack.LinkEndpoint.
+func (e *endpoint) Close() {}
 
 // InjectableEndpoint is an injectable fd-based endpoint. The endpoint writes
 // to the FD, but does not read from it. All reads come from injected packets.
