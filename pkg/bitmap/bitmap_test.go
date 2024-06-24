@@ -292,6 +292,13 @@ func TestBitmapNumOnes(t *testing.T) {
 	if bitmapOnes != uint32(20) {
 		t.Errorf("After ClearRange, GetNumOnes() returns: %v, wanted: %v", bitmapOnes, 20)
 	}
+
+	// Reset to fully clear bitmap.
+	bitmap.Reset()
+	bitmapOnes = bitmap.GetNumOnes()
+	if bitmapOnes != uint32(0) {
+		t.Errorf("After Reset, GetNumOnes() returns: %v, wanted: %v", bitmapOnes, 0)
+	}
 }
 
 type bitmapForEachTestcase struct {
