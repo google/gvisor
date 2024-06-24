@@ -61,6 +61,10 @@ func (e *countedEndpoint) MTU() uint32 {
 	return e.mtu
 }
 
+func (e *countedEndpoint) SetMTU(mtu uint32) {
+	e.mtu = mtu
+}
+
 func (e *countedEndpoint) Capabilities() stack.LinkEndpointCapabilities {
 	return e.capabilities
 }

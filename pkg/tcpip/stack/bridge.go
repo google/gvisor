@@ -84,7 +84,8 @@ type BridgeEndpoint struct {
 	// +checklocks:mu
 	addr tcpip.LinkAddress
 	// +checklocks:mu
-	attached        bool
+	attached bool
+	// +checklocks:mu
 	mtu             uint32
 	maxHeaderLength atomicbitops.Uint32
 }
@@ -146,10 +147,19 @@ func (b *BridgeEndpoint) DelNIC(nic *nic) tcpip.Error {
 
 // MTU implements stack.LinkEndpoint.MTU.
 func (b *BridgeEndpoint) MTU() uint32 {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
 	if b.mtu > header.EthernetMinimumSize {
 		return b.mtu - header.EthernetMinimumSize
 	}
 	return 0
+}
+
+// SetMTU implements stack.LinkEndpoint.SetMTU.
+func (b *BridgeEndpoint) SetMTU(mtu uint32) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.mtu = mtu
 }
 
 // MaxHeaderLength implements stack.LinkEndpoint.

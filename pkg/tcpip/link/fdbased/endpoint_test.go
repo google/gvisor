@@ -194,6 +194,19 @@ func TestSetAddress(t *testing.T) {
 	}
 }
 
+func TestMTU(t *testing.T) {
+	mtus := []uint32{200, 300}
+	c := newContext(t, &Options{MTU: mtu})
+	defer c.cleanup()
+	for _, m := range mtus {
+		c.ep.SetMTU(m)
+
+		if want, v := m, c.ep.MTU(); want != v {
+			t.Errorf("MTU() = %v, want %v", v, want)
+		}
+	}
+}
+
 func testWritePacket(t *testing.T, plen int, eth bool, gsoMaxSize uint32, hash uint32) {
 	c := newContext(t, &Options{Address: laddr, MTU: mtu, EthernetHeader: eth, GSOMaxSize: gsoMaxSize})
 	defer c.cleanup()

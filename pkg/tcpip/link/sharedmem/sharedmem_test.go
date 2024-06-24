@@ -835,6 +835,20 @@ func TestSetLinkAddress(t *testing.T) {
 	}
 }
 
+func TestMTU(t *testing.T) {
+	c := newTestContext(t, 20000, 1500, "")
+	defer c.cleanup()
+
+	mtus := []uint32{1000, 2000}
+	for _, mtu := range mtus {
+		c.ep.SetMTU(mtu)
+
+		if want, v := mtu, c.ep.MTU(); want != v {
+			t.Errorf("MTU() = %v, want %v", v, want)
+		}
+	}
+}
+
 func TestMain(m *testing.M) {
 	refs.SetLeakMode(refs.LeaksPanic)
 	code := m.Run()

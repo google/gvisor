@@ -129,6 +129,20 @@ func TestDestroyDevices(t *testing.T) {
 	}
 }
 
+func TestMTU(t *testing.T) {
+	mtus := []uint32{100, 200}
+	e, e2 := veth.NewPair(1500)
+	defer e.Close()
+	defer e2.Close()
+	for _, mtu := range mtus {
+		e.SetMTU(mtu)
+
+		if want, v := mtu, e.MTU(); want != v {
+			t.Errorf("MTU() = %v, want %v", v, want)
+		}
+	}
+}
+
 func TestMain(m *testing.M) {
 	refs.SetLeakMode(refs.LeaksPanic)
 	code := m.Run()

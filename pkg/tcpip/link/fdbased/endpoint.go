@@ -120,9 +120,6 @@ type endpoint struct {
 	// hash outbound packets to specific channels based on the packet hash.
 	fds []fdInfo
 
-	// mtu (maximum transmission unit) is the maximum size of a packet.
-	mtu uint32
-
 	// hdrSize specifies the link-layer header size. If set to 0, no header
 	// is added/removed; otherwise an ethernet header is used.
 	hdrSize int
@@ -172,6 +169,10 @@ type endpoint struct {
 	//
 	// +checklocks:mu
 	addr tcpip.LinkAddress
+
+	// mtu (maximum transmission unit) is the maximum size of a packet.
+	// +checklocks:mu
+	mtu uint32
 }
 
 // Options specify the details about the fd-based endpoint to be created.
@@ -454,10 +455,18 @@ func (e *endpoint) IsAttached() bool {
 	return e.dispatcher != nil
 }
 
-// MTU implements stack.LinkEndpoint.MTU. It returns the value initialized
-// during construction.
+// MTU implements stack.LinkEndpoint.MTU.
 func (e *endpoint) MTU() uint32 {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
 	return e.mtu
+}
+
+// SetMTU implements stack.LinkEndpoint.SetMTU.
+func (e *endpoint) SetMTU(mtu uint32) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.mtu = mtu
 }
 
 // Capabilities implements stack.LinkEndpoint.Capabilities.

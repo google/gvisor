@@ -35,6 +35,7 @@ type nullEndpoint struct {
 func (*nullEndpoint) MTU() uint32 {
 	return math.MaxUint32
 }
+func (*nullEndpoint) SetMTU(uint32) {}
 func (*nullEndpoint) Capabilities() stack.LinkEndpointCapabilities {
 	return 0
 }

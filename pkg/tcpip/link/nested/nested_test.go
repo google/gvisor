@@ -33,6 +33,7 @@ var _ stack.LinkEndpoint = (*parentEndpoint)(nil)
 var _ stack.NetworkDispatcher = (*parentEndpoint)(nil)
 
 type childEndpoint struct {
+	mtu  uint32
 	addr tcpip.LinkAddress
 	stack.LinkEndpoint
 	dispatcher stack.NetworkDispatcher
@@ -54,6 +55,14 @@ func (c *childEndpoint) LinkAddress() tcpip.LinkAddress {
 
 func (c *childEndpoint) SetLinkAddress(addr tcpip.LinkAddress) {
 	c.addr = addr
+}
+
+func (c *childEndpoint) MTU() uint32 {
+	return c.mtu
+}
+
+func (c *childEndpoint) SetMTU(mtu uint32) {
+	c.mtu = mtu
 }
 
 type counterDispatcher struct {
@@ -136,6 +145,23 @@ func TestSetLinkAddress(t *testing.T) {
 		ep.SetLinkAddress(addr)
 
 		if want, v := addr, ep.LinkAddress(); want != v {
+			t.Errorf("LinkAddress() = %v, want %v", v, want)
+		}
+	}
+}
+
+func TestMTU(t *testing.T) {
+	var (
+		childEP childEndpoint
+		ep      parentEndpoint
+		disp    counterDispatcher
+	)
+	mtus := []uint32{1500, 2000}
+	ep.Endpoint.Init(&childEP, &disp)
+	for _, mtu := range mtus {
+		ep.Endpoint.SetMTU(mtu)
+
+		if want, v := mtu, ep.MTU(); want != v {
 			t.Errorf("LinkAddress() = %v, want %v", v, want)
 		}
 	}

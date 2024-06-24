@@ -108,6 +108,12 @@ func (e *Endpoint) MTU() uint32 {
 	return e.lower.MTU()
 }
 
+// SetMTU implements stack.LinkEndpoint.SetMTU. It just forwards the request to
+// the lower endpoint.
+func (e *Endpoint) SetMTU(mtu uint32) {
+	e.lower.SetMTU(mtu)
+}
+
 // Capabilities implements stack.LinkEndpoint.Capabilities. It just forwards the
 // request to the lower endpoint.
 func (e *Endpoint) Capabilities() stack.LinkEndpointCapabilities {

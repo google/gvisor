@@ -56,6 +56,9 @@ func NewMockLinkEndpoint(mtu uint32, err tcpip.Error, allowPackets int) *MockLin
 // MTU implements LinkEndpoint.MTU.
 func (ep *MockLinkEndpoint) MTU() uint32 { return ep.mtu }
 
+// SetMTU implements LinkEndpoint.SetMTU.
+func (ep *MockLinkEndpoint) SetMTU(mtu uint32) { ep.mtu = mtu }
+
 // Capabilities implements LinkEndpoint.Capabilities.
 func (*MockLinkEndpoint) Capabilities() stack.LinkEndpointCapabilities { return 0 }
 

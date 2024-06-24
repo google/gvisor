@@ -33,3 +33,17 @@ func TestSetAddress(t *testing.T) {
 		}
 	}
 }
+
+func TestMTU(t *testing.T) {
+	mtus := []uint32{1000, 2000}
+	e := &Endpoint{
+		mtu: 10,
+	}
+	for _, mtu := range mtus {
+		e.SetMTU(mtu)
+
+		if want, v := mtu, e.MTU(); want != v {
+			t.Errorf("MTU() = %v, want %v", v, want)
+		}
+	}
+}

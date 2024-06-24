@@ -32,3 +32,17 @@ func TestSetLinkAddress(t *testing.T) {
 		}
 	}
 }
+
+func TestSetMTU(t *testing.T) {
+	expectedMTU := []uint32{1000, 3000}
+	size, mtu := 10, uint32(2000)
+	e := New(size, mtu, tcpip.LinkAddress("xyz"))
+	defer e.Close()
+	for _, mtu := range expectedMTU {
+		e.SetMTU(mtu)
+
+		if want, v := mtu, e.MTU(); want != v {
+			t.Errorf("MTU() = %v, want %v", v, want)
+		}
+	}
+}

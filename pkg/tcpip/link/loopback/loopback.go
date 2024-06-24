@@ -62,6 +62,9 @@ func (*endpoint) MTU() uint32 {
 	return 65536
 }
 
+// SetMTU implements stack.LinkEndpoint.SetMTU. It has no impact.
+func (*endpoint) SetMTU(uint32) {}
+
 // Capabilities implements stack.LinkEndpoint.Capabilities. Loopback advertises
 // itself as supporting checksum offload, but in reality it's just omitted.
 func (*endpoint) Capabilities() stack.LinkEndpointCapabilities {

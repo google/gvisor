@@ -142,6 +142,7 @@ type mockEndpoint struct {
 func (*mockEndpoint) MTU() uint32 {
 	return math.MaxUint32
 }
+func (*mockEndpoint) SetMTU(uint32) {}
 func (*mockEndpoint) Capabilities() stack.LinkEndpointCapabilities {
 	return 0
 }

@@ -177,6 +177,8 @@ func (*testObject) MTU() uint32 {
 	return 65536
 }
 
+func (*testObject) SetMTU(uint32) {}
+
 // Capabilities implements stack.LinkEndpoint.Capabilities.
 func (*testObject) Capabilities() stack.LinkEndpointCapabilities {
 	return 0

@@ -29,6 +29,19 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
+func TestInjectableEndpointMTU(t *testing.T) {
+	endpoint, _, _ := makeTestInjectableEndpoint(t)
+
+	mtus := []uint32{100, 200}
+	for _, mtu := range mtus {
+		endpoint.SetMTU(mtu)
+
+		if want, v := mtu, endpoint.MTU(); want != v {
+			t.Errorf("MTU() = %v, want %v", v, want)
+		}
+	}
+}
+
 func TestInjectableEndpointRawDispatch(t *testing.T) {
 	endpoint, sock, dstIP := makeTestInjectableEndpoint(t)
 

@@ -282,10 +282,14 @@ func (e *fwdTestLinkEndpoint) IsAttached() bool {
 	return e.dispatcher != nil
 }
 
-// MTU implements stack.LinkEndpoint.MTU. It returns the value initialized
-// during construction.
+// MTU implements stack.LinkEndpoint.MTU.
 func (e *fwdTestLinkEndpoint) MTU() uint32 {
 	return e.mtu
+}
+
+// SetMTU implements stack.LinkEndpoint.SetMTU.
+func (e *fwdTestLinkEndpoint) SetMTU(mtu uint32) {
+	e.mtu = mtu
 }
 
 // Capabilities implements stack.LinkEndpoint.Capabilities.

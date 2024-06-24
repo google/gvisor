@@ -431,6 +431,34 @@ func TestSetLinkAddress(t *testing.T) {
 	}
 }
 
+func TestMTU(t *testing.T) {
+	q, err := sharedmem.NewQueuePair(sharedmem.QueueOptions{})
+	if err != nil {
+		q.Close()
+		t.Fatalf("failed to create sharedmem queue: %s", err)
+	}
+	defer q.Close()
+	ep, err := sharedmem.NewServerEndpoint(sharedmem.Options{
+		MTU:         defaultMTU,
+		BufferSize:  defaultBufferSize,
+		LinkAddress: remoteLinkAddr,
+		TX:          q.TXQueueConfig(),
+		RX:          q.RXQueueConfig(),
+		PeerFD:      123,
+	})
+	if err != nil {
+		t.Fatalf("failed to create sharedmem endpoint: %s", err)
+	}
+	mtus := []uint32{1000, 2000}
+	for _, mtu := range mtus {
+		ep.SetMTU(mtu)
+
+		if want, v := mtu, ep.MTU(); want != v {
+			t.Errorf("MTU() = %v, want %v", v, want)
+		}
+	}
+}
+
 func TestMain(m *testing.M) {
 	refs.SetLeakMode(refs.LeaksPanic)
 	code := m.Run()
