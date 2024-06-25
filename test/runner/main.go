@@ -186,7 +186,7 @@ func runTestCaseNative(testBin string, tc *gtest.TestCase, args []string, t *tes
 		// setup_container takes in its target argv as positional arguments.
 		cmd.Path = getSetupContainerPath()
 		cmd.Args = append([]string{cmd.Path}, cmd.Args...)
-		cmd.SysProcAttr.Cloneflags |= unix.CLONE_NEWUSER | unix.CLONE_NEWNET | unix.CLONE_NEWIPC | unix.CLONE_NEWUTS
+		cmd.SysProcAttr.Cloneflags |= unix.CLONE_NEWUSER | unix.CLONE_NEWNET | unix.CLONE_NEWIPC | unix.CLONE_NEWUTS | unix.CLONE_NEWNS
 		// Set current user/group as root inside the namespace.
 		cmd.SysProcAttr.UidMappings = []syscall.SysProcIDMap{
 			{ContainerID: 0, HostID: os.Getuid(), Size: 1},

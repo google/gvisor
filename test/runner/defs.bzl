@@ -211,6 +211,7 @@ def syscall_test_variants(
         save_resume = False,
         size = "medium",
         timeout = None,
+        overlay = False,
         **kwargs):
     """Generates syscall tests for all variants.
 
@@ -258,6 +259,7 @@ def syscall_test_variants(
             save_resume = save_resume,
             size = size,
             timeout = timeout,
+            overlay = overlay,
             **kwargs
         )
 
@@ -367,6 +369,7 @@ def syscall_test(
         tags = None,
         save = True,
         size = "medium",
+        overlay = False,
         **kwargs):
     """syscall_test is a macro that will create targets for all platforms.
 
@@ -430,6 +433,7 @@ def syscall_test(
         False,  # save, generate all tests without save variant.
         False,  # save_resume, generate all tests without save_resume variant.
         size,
+        overlay = overlay,
         **kwargs
     )
 
