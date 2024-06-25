@@ -81,7 +81,7 @@ import (
 type Filesystem struct {
 	vfsfs vfs.Filesystem
 
-	deferredDecRefsMu deferredDecRefsMutex `state:"nosave"`
+	deferredDecRefsMu deferredDecRefsMutex
 
 	// deferredDecRefs is a list of dentries waiting to be DecRef()ed. This is
 	// used to defer dentry destruction until mu can be acquired for
@@ -109,7 +109,7 @@ type Filesystem struct {
 	//   defer fs.mu.RUnlock()
 	//   ...
 	//   fs.deferDecRef(dentry)
-	mu filesystemRWMutex `state:"nosave"`
+	mu filesystemRWMutex
 
 	// nextInoMinusOne is used to to allocate inode numbers on this
 	// filesystem. Must be accessed by atomic operations.
@@ -131,6 +131,41 @@ type Filesystem struct {
 	// hostfs). Filesystem holds an extra reference on root to prevent it from
 	// being destroyed prematurely. This is immutable.
 	root *Dentry
+
+	lockSubclass int
+}
+
+// Init initializes the Filesystem object.
+func (fs *Filesystem) Init(lockSubclass int) {
+	fs.lockSubclass = lockSubclass
+	fs.mu.SetSubclass(lockSubclass)
+	fs.deferredDecRefsMu.SetSubclass(lockSubclass)
+}
+
+func init() {
+	deferredDecRefsSetSubclassNameMap(LockClassNameMap)
+	filesystemSetSubclassNameMap(LockClassNameMap)
+
+}
+
+const (
+	CgroupfsLockClass int = iota + 1
+	ProcfsLockClass
+	FusefsLockClass
+	SysfsLockClass
+	DevptsfsLockClass
+	HostfsLockClass
+	SockfsLockClass
+)
+
+var LockClassNameMap = map[int]string{
+	CgroupfsLockClass: "cgroup",
+	ProcfsLockClass:   "proc",
+	FusefsLockClass:   "fuse",
+	SysfsLockClass:    "sysfs",
+	DevptsfsLockClass: "devpts",
+	HostfsLockClass:   "host",
+	SockfsLockClass:   "sock",
 }
 
 // deferDecRef defers dropping a dentry ref until the next call to

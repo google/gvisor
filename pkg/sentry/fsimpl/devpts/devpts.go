@@ -175,6 +175,7 @@ func (fstype *FilesystemType) newFilesystem(ctx context.Context, vfsObj *vfs.Vir
 	fs := &filesystem{
 		devMinor: devMinor,
 	}
+	fs.Init(kernfs.DevptsfsLockClass)
 	fs.Filesystem.VFSFilesystem().Init(vfsObj, fstype, fs)
 
 	// Construct the root directory. This is always inode id 1.
