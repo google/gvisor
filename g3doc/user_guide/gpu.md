@@ -162,6 +162,46 @@ to describe about your use case. If a missing `ioctl` implementation is the
 problem, then the [debug logs](/docs/user_guide/debugging/) will contain
 warnings with prefix `nvproxy: unknown *`.
 
+### Debugging
+
+There are a few methods to try when debugging GPU workloads. The first step to
+try should be gVisor's
+[ioctl_sniffer](https://github.com/google/gvisor/tree/master/tools/ioctl_sniffer)
+tool; if your GPU workload fails due to unimplemented `ioctl` commands in
+gVisor, this tool will provide a list of the specific ones.
+
+Occasionally, you may also need to dig into the Nvidia GPU Driver itself. To do
+so, you can install the OSS Driver repo and checkout the appropriate driver
+version.
+
+```
+DRIVER_VERSION=550.54.15
+git clone https://github.com/NVIDIA/open-gpu-kernel-modules.git
+cd open-gpu-kernel-modules
+git checkout tags/$DRIVER_VERSION
+```
+
+For `printk()` debugging, it is advised to use `portDbgPrintf()`. See more
+discussion
+[here](https://github.com/NVIDIA/open-gpu-kernel-modules/discussions/347). You
+should be able to see the prints via `dmesg(1)`.
+
+Then uninstall the existing Nvidia driver, build kernel module from local source
+files and reinstall it.
+
+```
+sudo /usr/bin/nvidia-uninstall
+make modules -j$(nproc)
+sudo make modules_install -j$(nproc)
+sudo insmod kernel-open/nvidia.ko
+sudo insmod kernel-open/nvidia-uvm.ko
+sudo insmod kernel-open/nvidia-drm.ko
+sudo insmod kernel-open/nvidia-modeset.ko
+
+# Install the user-space NVIDIA GPU driver components using the .run file.
+sudo sh NVIDIA-Linux-x86_64-$DRIVER_VERSION.run --no-kernel-modules
+```
+
 ## Security
 
 While CUDA support enables important use cases for gVisor, it is important for
