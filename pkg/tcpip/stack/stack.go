@@ -1025,6 +1025,19 @@ func (s *Stack) SetNICCoordinator(id tcpip.NICID, mid tcpip.NICID) tcpip.Error {
 	return nil
 }
 
+// SetNICAddress sets the hardware address which is identified by the nic ID.
+func (s *Stack) SetNICAddress(id tcpip.NICID, addr tcpip.LinkAddress) tcpip.Error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	nic, ok := s.nics[id]
+	if !ok {
+		return &tcpip.ErrUnknownNICID{}
+	}
+	nic.NetworkLinkEndpoint.SetLinkAddress(addr)
+	return nil
+}
+
 // NICInfo captures the name and addresses assigned to a NIC.
 type NICInfo struct {
 	Name              string

@@ -50,7 +50,6 @@ func (e *endpoint) StateTypeName() string {
 func (e *endpoint) StateFields() []string {
 	return []string{
 		"fds",
-		"mtu",
 		"hdrSize",
 		"caps",
 		"closed",
@@ -63,6 +62,7 @@ func (e *endpoint) StateFields() []string {
 		"maxSyscallHeaderBytes",
 		"writevMaxIovs",
 		"addr",
+		"mtu",
 	}
 }
 
@@ -72,19 +72,19 @@ func (e *endpoint) beforeSave() {}
 func (e *endpoint) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
 	stateSinkObject.Save(0, &e.fds)
-	stateSinkObject.Save(1, &e.mtu)
-	stateSinkObject.Save(2, &e.hdrSize)
-	stateSinkObject.Save(3, &e.caps)
-	stateSinkObject.Save(4, &e.closed)
-	stateSinkObject.Save(5, &e.inboundDispatchers)
-	stateSinkObject.Save(6, &e.dispatcher)
-	stateSinkObject.Save(7, &e.packetDispatchMode)
-	stateSinkObject.Save(8, &e.gsoMaxSize)
-	stateSinkObject.Save(9, &e.wg)
-	stateSinkObject.Save(10, &e.gsoKind)
-	stateSinkObject.Save(11, &e.maxSyscallHeaderBytes)
-	stateSinkObject.Save(12, &e.writevMaxIovs)
-	stateSinkObject.Save(13, &e.addr)
+	stateSinkObject.Save(1, &e.hdrSize)
+	stateSinkObject.Save(2, &e.caps)
+	stateSinkObject.Save(3, &e.closed)
+	stateSinkObject.Save(4, &e.inboundDispatchers)
+	stateSinkObject.Save(5, &e.dispatcher)
+	stateSinkObject.Save(6, &e.packetDispatchMode)
+	stateSinkObject.Save(7, &e.gsoMaxSize)
+	stateSinkObject.Save(8, &e.wg)
+	stateSinkObject.Save(9, &e.gsoKind)
+	stateSinkObject.Save(10, &e.maxSyscallHeaderBytes)
+	stateSinkObject.Save(11, &e.writevMaxIovs)
+	stateSinkObject.Save(12, &e.addr)
+	stateSinkObject.Save(13, &e.mtu)
 }
 
 func (e *endpoint) afterLoad(context.Context) {}
@@ -92,19 +92,19 @@ func (e *endpoint) afterLoad(context.Context) {}
 // +checklocksignore
 func (e *endpoint) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &e.fds)
-	stateSourceObject.Load(1, &e.mtu)
-	stateSourceObject.Load(2, &e.hdrSize)
-	stateSourceObject.Load(3, &e.caps)
-	stateSourceObject.Load(4, &e.closed)
-	stateSourceObject.Load(5, &e.inboundDispatchers)
-	stateSourceObject.Load(6, &e.dispatcher)
-	stateSourceObject.Load(7, &e.packetDispatchMode)
-	stateSourceObject.Load(8, &e.gsoMaxSize)
-	stateSourceObject.Load(9, &e.wg)
-	stateSourceObject.Load(10, &e.gsoKind)
-	stateSourceObject.Load(11, &e.maxSyscallHeaderBytes)
-	stateSourceObject.Load(12, &e.writevMaxIovs)
-	stateSourceObject.Load(13, &e.addr)
+	stateSourceObject.Load(1, &e.hdrSize)
+	stateSourceObject.Load(2, &e.caps)
+	stateSourceObject.Load(3, &e.closed)
+	stateSourceObject.Load(4, &e.inboundDispatchers)
+	stateSourceObject.Load(5, &e.dispatcher)
+	stateSourceObject.Load(6, &e.packetDispatchMode)
+	stateSourceObject.Load(7, &e.gsoMaxSize)
+	stateSourceObject.Load(8, &e.wg)
+	stateSourceObject.Load(9, &e.gsoKind)
+	stateSourceObject.Load(10, &e.maxSyscallHeaderBytes)
+	stateSourceObject.Load(11, &e.writevMaxIovs)
+	stateSourceObject.Load(12, &e.addr)
+	stateSourceObject.Load(13, &e.mtu)
 }
 
 func (o *Options) StateTypeName() string {

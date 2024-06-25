@@ -136,6 +136,7 @@ func (s *Stack) SetInterface(ctx context.Context, msg *nlmsg.Message) *syserr.Er
 			}
 		case linux.IFLA_MASTER:
 		case linux.IFLA_LINKINFO:
+		case linux.IFLA_ADDRESS:
 		default:
 			ctx.Warningf("unexpected attribute: %x", attr)
 			return syserr.ErrNotSupported
@@ -169,13 +170,24 @@ func (s *Stack) SetInterface(ctx context.Context, msg *nlmsg.Message) *syserr.Er
 }
 
 func (s *Stack) setLink(id tcpip.NICID, linkAttrs map[uint16]nlmsg.BytesView) *syserr.Error {
-	if v, ok := linkAttrs[linux.IFLA_MASTER]; ok {
-		master, ok := v.Uint32()
-		if !ok {
-			return syserr.ErrInvalidArgument
-		}
-		if master != 0 {
-			if err := s.Stack.SetNICCoordinator(id, tcpip.NICID(master)); err != nil {
+	for t, v := range linkAttrs {
+		switch t {
+		case linux.IFLA_MASTER:
+			master, ok := v.Uint32()
+			if !ok {
+				return syserr.ErrInvalidArgument
+			}
+			if master != 0 {
+				if err := s.Stack.SetNICCoordinator(id, tcpip.NICID(master)); err != nil {
+					return syserr.TranslateNetstackError(err)
+				}
+			}
+		case linux.IFLA_ADDRESS:
+			addr, err := tcpip.ParseMACAddress(v.String())
+			if err != nil {
+				return syserr.ErrInvalidArgument
+			}
+			if err := s.Stack.SetNICAddress(id, addr); err != nil {
 				return syserr.TranslateNetstackError(err)
 			}
 		}

@@ -39,7 +39,6 @@ const backlogQueueSize = 64
 // +stateify savable
 type Endpoint struct {
 	pair *Endpoint
-	mtu  uint32
 
 	backlogQueue *chan vethPacket
 
@@ -55,6 +54,8 @@ type Endpoint struct {
 	//
 	// +checklocks:mu
 	linkAddr tcpip.LinkAddress
+	// +checklocks:mu
+	mtu uint32
 }
 
 // NewPair creates a new veth pair.
@@ -143,10 +144,18 @@ func (e *Endpoint) IsAttached() bool {
 	return e.dispatcher != nil
 }
 
-// MTU implements stack.LinkEndpoint.MTU. It returns the value initialized
-// during construction.
+// MTU implements stack.LinkEndpoint.MTU.
 func (e *Endpoint) MTU() uint32 {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
 	return e.mtu
+}
+
+// SetMTU implements stack.LinkEndpoint.SetMTU.
+func (e *Endpoint) SetMTU(mtu uint32) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.mtu = mtu
 }
 
 // Capabilities implements stack.LinkEndpoint.Capabilities.

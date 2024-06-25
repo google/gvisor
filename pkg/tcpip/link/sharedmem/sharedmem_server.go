@@ -28,10 +28,6 @@ import (
 )
 
 type serverEndpoint struct {
-	// mtu (maximum transmission unit) is the maximum size of a packet.
-	// mtu is immutable.
-	mtu uint32
-
 	// bufferSize is the size of each individual buffer.
 	// bufferSize is immutable.
 	bufferSize uint32
@@ -80,6 +76,9 @@ type serverEndpoint struct {
 	//
 	// +checklocks:mu
 	addr tcpip.LinkAddress
+	// mtu (maximum transmission unit) is the maximum size of a packet.
+	// +checklocks:mu
+	mtu uint32
 }
 
 // NewServerEndpoint creates a new shared-memory-based endpoint. Buffers will be
@@ -180,10 +179,17 @@ func (e *serverEndpoint) IsAttached() bool {
 	return e.workerStarted
 }
 
-// MTU implements stack.LinkEndpoint.MTU. It returns the value initialized
-// during construction.
+// MTU implements stack.LinkEndpoint.MTU.
 func (e *serverEndpoint) MTU() uint32 {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
 	return e.mtu
+}
+
+func (e *serverEndpoint) SetMTU(mtu uint32) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.mtu = mtu
 }
 
 // Capabilities implements stack.LinkEndpoint.Capabilities.

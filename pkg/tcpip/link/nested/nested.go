@@ -99,6 +99,11 @@ func (e *Endpoint) MTU() uint32 {
 	return e.child.MTU()
 }
 
+// SetMTU implements stack.LinkEndpoint.
+func (e *Endpoint) SetMTU(mtu uint32) {
+	e.child.SetMTU(mtu)
+}
+
 // Capabilities implements stack.LinkEndpoint.
 func (e *Endpoint) Capabilities() stack.LinkEndpointCapabilities {
 	return e.child.Capabilities()

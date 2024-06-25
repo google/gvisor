@@ -148,10 +148,6 @@ var _ stack.GSOEndpoint = (*endpoint)(nil)
 
 // +stateify savable
 type endpoint struct {
-	// mtu (maximum transmission unit) is the maximum size of a packet.
-	// mtu is immutable.
-	mtu uint32
-
 	// bufferSize is the size of each individual buffer.
 	// bufferSize is immutable.
 	bufferSize uint32
@@ -206,6 +202,9 @@ type endpoint struct {
 	//
 	// +checklocks:mu
 	addr tcpip.LinkAddress
+	// mtu (maximum transmission unit) is the maximum size of a packet.
+	// +checklocks:mu
+	mtu uint32
 }
 
 // New creates a new shared-memory-based endpoint. Buffers will be broken up
@@ -323,10 +322,17 @@ func (e *endpoint) IsAttached() bool {
 	return e.workerStarted
 }
 
-// MTU implements stack.LinkEndpoint.MTU. It returns the value initialized
-// during construction.
+// MTU implements stack.LinkEndpoint.MTU.
 func (e *endpoint) MTU() uint32 {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
 	return e.mtu
+}
+
+func (e *endpoint) SetMTU(mtu uint32) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.mtu = mtu
 }
 
 // Capabilities implements stack.LinkEndpoint.Capabilities.

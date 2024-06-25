@@ -139,7 +139,6 @@ var _ stack.GSOEndpoint = (*Endpoint)(nil)
 //
 // +stateify savable
 type Endpoint struct {
-	mtu                uint32
 	LinkEPCapabilities stack.LinkEndpointCapabilities
 	SupportedGSOKind   stack.SupportedGSO
 
@@ -148,6 +147,8 @@ type Endpoint struct {
 	dispatcher stack.NetworkDispatcher
 	// +checklocks:mu
 	linkAddr tcpip.LinkAddress
+	// +checklocks:mu
+	mtu uint32
 
 	// Outbound packet queue.
 	q *queue
@@ -223,10 +224,18 @@ func (e *Endpoint) IsAttached() bool {
 	return e.dispatcher != nil
 }
 
-// MTU implements stack.LinkEndpoint.MTU. It returns the value initialized
-// during construction.
+// MTU implements stack.LinkEndpoint.MTU.
 func (e *Endpoint) MTU() uint32 {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
 	return e.mtu
+}
+
+// SetMTU implements stack.LinkEndpoint.SetMTU.
+func (e *Endpoint) SetMTU(mtu uint32) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.mtu = mtu
 }
 
 // Capabilities implements stack.LinkEndpoint.Capabilities.

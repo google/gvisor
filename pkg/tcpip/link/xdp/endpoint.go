@@ -226,6 +226,9 @@ func (ep *endpoint) MTU() uint32 {
 	return MTU
 }
 
+// SetMTU implements stack.LinkEndpoint.SetMTU. It has no impact.
+func (*endpoint) SetMTU(uint32) {}
+
 // Capabilities implements stack.LinkEndpoint.Capabilities.
 func (ep *endpoint) Capabilities() stack.LinkEndpointCapabilities {
 	return ep.caps

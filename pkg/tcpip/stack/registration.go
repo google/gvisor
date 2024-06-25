@@ -1090,6 +1090,9 @@ type NetworkLinkEndpoint interface {
 	// includes the maximum size of an IP packet.
 	MTU() uint32
 
+	// SetMTU update the maximum transmission unit for the endpoint.
+	SetMTU(mtu uint32)
+
 	// MaxHeaderLength returns the maximum size the data link (and
 	// lower level layers combined) headers can have. Higher levels use this
 	// information to reserve space in the front of the packets they're

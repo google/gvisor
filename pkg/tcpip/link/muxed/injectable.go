@@ -49,6 +49,13 @@ func (m *InjectableEndpoint) MTU() uint32 {
 	return minMTU
 }
 
+// SetMTU implements stack.LinkEndpoint.
+func (m *InjectableEndpoint) SetMTU(mtu uint32) {
+	for _, endpoint := range m.routes {
+		endpoint.SetMTU(mtu)
+	}
+}
+
 // Capabilities implements stack.LinkEndpoint.
 func (m *InjectableEndpoint) Capabilities() stack.LinkEndpointCapabilities {
 	minCapabilities := stack.LinkEndpointCapabilities(^uint(0))
