@@ -1252,7 +1252,9 @@ TEST_P(SocketInetLoopbackTest, AcceptedInheritsTCPUserTimeout) {
       ASSERT_NO_ERRNO_AND_VALUE(AddrPort(listener.family(), listen_addr));
 
   // Set the userTimeout on the listening socket.
-  constexpr int kUserTimeout = 10;
+  // Use a large value to avoid a spurious timeout.
+  // This is not a round number to make it more evident this is not the default.
+  constexpr int kUserTimeout = 120001;
   ASSERT_THAT(setsockopt(listen_fd.get(), IPPROTO_TCP, TCP_USER_TIMEOUT,
                          &kUserTimeout, sizeof(kUserTimeout)),
               SyscallSucceeds());
