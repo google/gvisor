@@ -16,6 +16,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
@@ -53,7 +54,7 @@ func createSharedObject() (*os.File, error) {
 }
 
 // Main is our main function.
-func Main() error {
+func Main(ctx context.Context) error {
 	flag.Parse()
 	if len(flag.Args()) == 0 {
 		return fmt.Errorf("no command specified")
@@ -78,47 +79,55 @@ func Main() error {
 		}
 	}()
 
-	// Create a pipe to read the output of the command.
-	r, w, err := os.Pipe()
-	if err != nil {
-		return fmt.Errorf("failed to create pipe: %w", err)
+	// Start the sniffer server.
+	server := sniffer.NewServer()
+	if err := server.Listen(); err != nil {
+		return fmt.Errorf("failed to start sniffer server: %w", err)
 	}
+
+	serveCtx, serveCancel := context.WithCancel(ctx)
+	defer serveCancel()
+	go func() {
+		if err := server.Serve(serveCtx); err != nil {
+			log.Warningf("failed to serve sniffer server: %w", err)
+		}
+	}()
 
 	// Set up command from flags
 	cmd := exec.Command(flag.Arg(0), flag.Args()[1:]...)
-	cmd.ExtraFiles = []*os.File{w}
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	// Refer to the hook file by file descriptor here as its named file no
 	// longer exists.
 	cmd.Env = append(os.Environ(), fmt.Sprintf("LD_PRELOAD=/proc/%d/fd/%d", os.Getpid(), hookFile.Fd()))
+	cmd.Env = append(cmd.Env, fmt.Sprintf("GVISOR_IOCTL_SNIFFER_SOCKET_PATH=%v", server.Addr()))
 
 	// Run the command and start reading the output.
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("failed to run command: %w", err)
 	}
 
-	w.Close()
-	results := sniffer.ReadHookOutput(r)
+	// Once our command is done, we can close the sniffer server and print the
+	// results.
+	cmdErr := cmd.Wait()
+	serveCancel()
 
-	if *enforceCompatability && results.HasUnsupportedIoctl() {
-		return fmt.Errorf("unsupported ioctls found: %v", results)
-	}
-
-	// Once we've read all the output, print the list of missing ioctls.
+	// Merge results from each connection.
+	finalResults := server.AllResults()
 	log.Infof("============== Unsupported ioctls ==============")
-	log.Infof("%s", results)
+	log.Infof("%v", finalResults)
 
-	if err := cmd.Wait(); err != nil {
-		return fmt.Errorf("command exited with error: %w", err)
+	if cmdErr != nil {
+		return fmt.Errorf("command exited with error: %w", cmdErr)
 	}
 
 	return nil
 }
 
 func main() {
-	if err := Main(); err != nil {
+	ctx := context.Background()
+	if err := Main(ctx); err != nil {
 		log.Warningf("%v", err)
 		os.Exit(1)
 	}

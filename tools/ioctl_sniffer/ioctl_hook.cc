@@ -24,6 +24,7 @@
 #include <unistd.h>
 
 #include <cstring>
+#include <iostream>
 #include <string>
 
 #include "absl/strings/match.h"
@@ -42,7 +43,7 @@ void init_libc_ioctl_handle() {
 
   libc_ioctl_handle = (libc_ioctl)dlsym(RTLD_NEXT, "ioctl");
   if (!libc_ioctl_handle) {
-    printf("Failed to hook ioctl: %s\n", dlerror());
+    std::cerr << "Failed to hook ioctl: " << dlerror() << "\n";
     exit(1);
   }
 }

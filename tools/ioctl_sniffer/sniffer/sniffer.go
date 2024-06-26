@@ -16,6 +16,7 @@
 package sniffer
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -162,6 +163,15 @@ func (r *Results) HasUnsupportedIoctl() bool {
 	return false
 }
 
+// Merge merges the results from another Results object into this one.
+func (r *Results) Merge(other *Results) {
+	for class := ioctlClass(0); class < _numClasses; class++ {
+		for _, ioctl := range other.unsupported[class] {
+			r.AddUnsupportedIoctl(ioctl)
+		}
+	}
+}
+
 // Init reads from nvproxy and sets up the supported ioctl maps.
 func Init() error {
 	nvproxy.Init()
@@ -194,10 +204,10 @@ func Init() error {
 }
 
 // ReadHookOutput reads the output of the ioctl hook until an EOF is reached.
-func ReadHookOutput(r io.Reader) *Results {
+func (c Connection) ReadHookOutput(ctx context.Context) *Results {
 	res := NewResults()
 	for {
-		ioctlPB, err := ReadIoctlProto(r)
+		ioctlPB, err := c.ReadIoctlProto(ctx)
 		if err != nil {
 			if !errors.Is(err, io.EOF) {
 				log.Warningf("Error reading ioctl proto: %v", err)

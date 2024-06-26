@@ -16,18 +16,58 @@
 
 #include <stdint.h>
 #include <stdio.h>
+#include <sys/socket.h>
+#include <sys/un.h>
 #include <unistd.h>
 
+#include <cerrno>
+#include <cstdlib>
+#include <cstring>
+#include <iostream>
+#include <vector>
+
 #include "tools/ioctl_sniffer/ioctl.pb.h"
-#include "google/protobuf/io/zero_copy_stream_impl.h"
+
+thread_local pid_t socket_owner_tid = -1;
+thread_local int socket_fd = -1;
+
+void InitializeSocket() {
+  int sfd = socket(AF_UNIX, SOCK_STREAM, 0);
+  if (sfd < 0) {
+    std::cerr << "Failed to create socket: " << strerror(errno) << "\n";
+    exit(1);
+  }
+
+  struct sockaddr_un addr;
+  addr.sun_family = AF_UNIX;
+  strncpy(addr.sun_path, std::getenv("GVISOR_IOCTL_SNIFFER_SOCKET_PATH"),
+          sizeof(addr.sun_path));
+
+  // Ensure the path is null terminated.
+  addr.sun_path[sizeof(addr.sun_path) - 1] = '\0';
+
+  if (connect(sfd, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)) < 0) {
+    std::cerr << "Failed to connect to socket " << addr.sun_path << ": "
+              << strerror(errno) << "\n";
+    exit(1);
+  }
+
+  socket_owner_tid = gettid();
+  socket_fd = sfd;
+}
 
 void WriteIoctlProto(gvisor::Ioctl &ioctl) {
-  // Write size of the proto message.
-  uint64_t size = ioctl.ByteSizeLong();
-  write(LOG_OUTPUT_FD, &size, sizeof(size));
+  if (socket_owner_tid != gettid()) {
+    InitializeSocket();
+  }
 
-  // Write the proto message.
-  google::protobuf::io::FileOutputStream os(LOG_OUTPUT_FD);
-  ioctl.SerializeToZeroCopyStream(&os);
-  os.Flush();
+  static thread_local std::vector<char> buffer;
+  uint64_t size = ioctl.ByteSizeLong();
+  buffer.resize(size + sizeof(size));
+
+  // Write size of the proto message first.
+  memcpy(buffer.data(), &size, sizeof(size));
+  ioctl.SerializeToArray(buffer.data() + sizeof(size), size);
+
+  write(socket_fd, buffer.data(), buffer.size());
 }
