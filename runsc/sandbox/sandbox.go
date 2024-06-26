@@ -60,7 +60,9 @@ import (
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/console"
 	"gvisor.dev/gvisor/runsc/donation"
+	"gvisor.dev/gvisor/runsc/profile"
 	"gvisor.dev/gvisor/runsc/specutils"
+	"gvisor.dev/gvisor/runsc/starttime"
 )
 
 const (
@@ -188,6 +190,9 @@ type Sandbox struct {
 	// to the entire pod.
 	MountHints *boot.PodMountHints `json:"mountHints"`
 
+	// StartTime is the time the sandbox was started.
+	StartTime time.Time `json:"startTime"`
+
 	// child is set if a sandbox process is a child of the current process.
 	//
 	// This field isn't saved to json, because only a creator of sandbox
@@ -285,6 +290,7 @@ func New(conf *config.Config, args *Args) (*Sandbox, error) {
 		MetricMetadata:      conf.MetricMetadata(),
 		MetricServerAddress: conf.MetricServer,
 		MountHints:          args.MountHints,
+		StartTime:           starttime.Get(),
 	}
 	if args.Spec != nil && args.Spec.Annotations != nil {
 		s.PodName = args.Spec.Annotations[podNameAnnotation]
@@ -763,11 +769,11 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 		}
 	}
 	if specutils.IsDebugCommand(conf, "boot") {
-		if err := donations.DonateDebugLogFile("debug-log-fd", conf.DebugLog, "boot", test); err != nil {
+		if err := donations.DonateDebugLogFile("debug-log-fd", conf.DebugLog, "boot", test, s.StartTime); err != nil {
 			return err
 		}
 	}
-	if err := donations.DonateDebugLogFile("panic-log-fd", conf.PanicLog, "panic", test); err != nil {
+	if err := donations.DonateDebugLogFile("panic-log-fd", conf.PanicLog, "panic", test, s.StartTime); err != nil {
 		return err
 	}
 	covFilename := conf.CoverageReport
@@ -775,7 +781,7 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 		covFilename = os.Getenv("GO_COVERAGE_FILE")
 	}
 	if covFilename != "" && coverage.Available() {
-		if err := donations.DonateDebugLogFile("coverage-fd", covFilename, "cov", test); err != nil {
+		if err := donations.DonateDebugLogFile("coverage-fd", covFilename, "cov", test, s.StartTime); err != nil {
 			return err
 		}
 	}
@@ -817,6 +823,7 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 		return err
 	}
 	const profFlags = os.O_CREATE | os.O_WRONLY | os.O_TRUNC
+	profile.UpdatePaths(conf, s.StartTime)
 	if err := donations.OpenAndDonate("profile-block-fd", conf.ProfileBlock, profFlags); err != nil {
 		return err
 	}
@@ -1095,7 +1102,7 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 		donations.Donate("profiling-metrics-fd", stdios[1])
 		cmd.Args = append(cmd.Args, "--profiling-metrics-fd-lossy=true")
 	} else if conf.ProfilingMetricsLog != "" {
-		if err := donations.DonateDebugLogFile("profiling-metrics-fd", conf.ProfilingMetricsLog, "metrics", test); err != nil {
+		if err := donations.DonateDebugLogFile("profiling-metrics-fd", conf.ProfilingMetricsLog, "metrics", test, s.StartTime); err != nil {
 			return err
 		}
 		cmd.Args = append(cmd.Args, "--profiling-metrics-fd-lossy=false")

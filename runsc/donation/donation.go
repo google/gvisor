@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"time"
 
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/runsc/specutils"
@@ -75,11 +76,11 @@ func (f *Agency) OpenAndDonate(flag, path string, flags int) error {
 // DonateDebugLogFile is similar to DonateAndClose but handles the opening of
 // the file using specutils.DebugLogFile() for convenience. It's a noop, if
 // path is empty.
-func (f *Agency) DonateDebugLogFile(flag, logPattern, command, test string) error {
+func (f *Agency) DonateDebugLogFile(flag, logPattern, command, test string, timestamp time.Time) error {
 	if len(logPattern) == 0 {
 		return nil
 	}
-	file, err := specutils.DebugLogFile(logPattern, command, test)
+	file, err := specutils.DebugLogFile(logPattern, command, test, timestamp)
 	if err != nil {
 		return fmt.Errorf("opening debug log file in %q: %v", logPattern, err)
 	}

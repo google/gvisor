@@ -47,8 +47,10 @@ import (
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/console"
 	"gvisor.dev/gvisor/runsc/donation"
+	"gvisor.dev/gvisor/runsc/profile"
 	"gvisor.dev/gvisor/runsc/sandbox"
 	"gvisor.dev/gvisor/runsc/specutils"
+	"gvisor.dev/gvisor/runsc/starttime"
 )
 
 const cgroupParentAnnotation = "dev.gvisor.spec.cgroup-parent"
@@ -1200,7 +1202,18 @@ func (c *Container) createGoferProcess(spec *specs.Spec, conf *config.Config, bu
 			}
 		}
 		if specutils.IsDebugCommand(conf, "gofer") {
-			if err := donations.DonateDebugLogFile("debug-log-fd", conf.DebugLog, "gofer", test); err != nil {
+			// The startTime here can mean one of two things:
+			// - If this is the first gofer started at the same time as the sandbox,
+			//   then this starttime will exactly match the one used by the sandbox
+			//   itself (i.e. `Sandbox.StartTime`). This is desirable, such that the
+			//   first gofer's log filename will have the exact same timestamp as
+			//   the sandbox's log filename timestamp.
+			// - If this is not the first gofer, then this starttime will be later
+			//   than the sandbox start time; this is desirable such that we can
+			//   distinguish the gofer log filenames between each other.
+			// In either case, `starttime.Get` gets us the timestamp we want.
+			startTime := starttime.Get()
+			if err := donations.DonateDebugLogFile("debug-log-fd", conf.DebugLog, "gofer", test, startTime); err != nil {
 				return nil, nil, nil, err
 			}
 		}
@@ -1701,6 +1714,7 @@ func (c *Container) donateGoferProfileFDs(conf *config.Config, donations *donati
 	// into a single file.
 	profSuffix := ".gofer." + c.ID
 	const profFlags = os.O_CREATE | os.O_WRONLY | os.O_TRUNC
+	profile.UpdatePaths(conf, starttime.Get())
 	if conf.ProfileBlock != "" {
 		if err := donations.OpenAndDonate("profile-block-fd", conf.ProfileBlock+profSuffix, profFlags); err != nil {
 			return err

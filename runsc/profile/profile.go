@@ -16,13 +16,17 @@
 package profile
 
 import (
+	"fmt"
 	"os"
 	"runtime"
 	"runtime/pprof"
 	"runtime/trace"
+	"strings"
+	"time"
 
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/control"
+	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/flag"
 )
 
@@ -176,4 +180,27 @@ func Start(opts Opts) func() {
 	}
 
 	return stopProfiling
+}
+
+// UpdatePaths updates profiling-related file paths in the given config.
+func UpdatePaths(conf *config.Config, timestamp time.Time) {
+	if !conf.ProfileEnable {
+		return
+	}
+	conf.ProfileCPU = updatePath(conf.ProfileCPU, timestamp)
+	conf.ProfileHeap = updatePath(conf.ProfileHeap, timestamp)
+	conf.ProfileMutex = updatePath(conf.ProfileMutex, timestamp)
+	conf.ProfileBlock = updatePath(conf.ProfileBlock, timestamp)
+}
+
+func updatePath(path string, now time.Time) string {
+	path = strings.ReplaceAll(path, "%TIMESTAMP%", fmt.Sprintf("%d", now.Unix()))
+	path = strings.ReplaceAll(path, "%YYYY%", now.Format("2006"))
+	path = strings.ReplaceAll(path, "%MM%", now.Format("01"))
+	path = strings.ReplaceAll(path, "%DD%", now.Format("02"))
+	path = strings.ReplaceAll(path, "%HH%", now.Format("15"))
+	path = strings.ReplaceAll(path, "%II%", now.Format("04"))
+	path = strings.ReplaceAll(path, "%SS%", now.Format("05"))
+	path = strings.ReplaceAll(path, "%NN%", fmt.Sprintf("%09d", now.Nanosecond()))
+	return path
 }
