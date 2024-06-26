@@ -314,3 +314,6 @@ func (*Endpoint) AddHeader(*stack.PacketBuffer) {}
 
 // ParseHeader implements stack.LinkEndpoint.ParseHeader.
 func (*Endpoint) ParseHeader(*stack.PacketBuffer) bool { return true }
+
+// SetOnCloseAction implements stack.LinkEndpoint.
+func (*Endpoint) SetOnCloseAction(func()) {}

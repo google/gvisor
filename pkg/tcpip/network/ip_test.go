@@ -387,6 +387,9 @@ func (*testInterface) CheckLocalAddress(tcpip.NetworkProtocolNumber, tcpip.Addre
 // Close implements stack.LinkEndpoint.
 func (*testInterface) Close() {}
 
+// SetOnCloseAction implements stack.LinkEndpoint.SetOnCloseAction.
+func (*testInterface) SetOnCloseAction(func()) {}
+
 func TestSourceAddressValidation(t *testing.T) {
 	rxIPv4ICMP := func(e *channel.Endpoint, src tcpip.Address) {
 		totalLen := header.IPv4MinimumSize + header.ICMPv4MinimumSize

@@ -25,6 +25,36 @@ import (
 var _ stack.LinkEndpoint = (*Endpoint)(nil)
 var _ stack.GSOEndpoint = (*Endpoint)(nil)
 
+type veth struct {
+	mu           sync.RWMutex
+	closed       bool
+	backlogQueue chan vethPacket
+	mtu          uint32
+	endpoints    [2]Endpoint
+}
+
+func (v *veth) close() {
+	v.mu.Lock()
+	closed := v.closed
+	v.closed = true
+	v.mu.Unlock()
+	if closed {
+		return
+	}
+
+	for i := range v.endpoints {
+		e := &v.endpoints[i]
+		e.mu.Lock()
+		action := e.onCloseAction
+		e.onCloseAction = nil
+		e.mu.Unlock()
+		if action != nil {
+			action()
+		}
+	}
+	close(v.backlogQueue)
+}
+
 // +stateify savable
 type vethPacket struct {
 	e        *Endpoint
@@ -38,84 +68,55 @@ const backlogQueueSize = 64
 //
 // +stateify savable
 type Endpoint struct {
-	pair *Endpoint
+	peer *Endpoint
 
-	backlogQueue *chan vethPacket
+	veth *veth
 
 	mu sync.RWMutex `state:"nosave"`
 	// +checklocks:mu
 	dispatcher stack.NetworkDispatcher
-
-	// +checklocks:mu
-	stack *stack.Stack
-	// +checklocks:mu
-	idx tcpip.NICID
 	// linkAddr is the local address of this endpoint.
 	//
 	// +checklocks:mu
 	linkAddr tcpip.LinkAddress
 	// +checklocks:mu
-	mtu uint32
+	onCloseAction func()
 }
 
 // NewPair creates a new veth pair.
 func NewPair(mtu uint32) (*Endpoint, *Endpoint) {
-	backlogQueue := make(chan vethPacket, backlogQueueSize)
-	a := &Endpoint{
+	veth := veth{
+		backlogQueue: make(chan vethPacket, backlogQueueSize),
 		mtu:          mtu,
-		linkAddr:     tcpip.GetRandMacAddr(),
-		backlogQueue: &backlogQueue,
+		endpoints: [2]Endpoint{
+			Endpoint{
+				linkAddr: tcpip.GetRandMacAddr(),
+			},
+			Endpoint{
+				linkAddr: tcpip.GetRandMacAddr(),
+			},
+		},
 	}
-	b := &Endpoint{
-		mtu:          mtu,
-		pair:         a,
-		linkAddr:     tcpip.GetRandMacAddr(),
-		backlogQueue: &backlogQueue,
-	}
-	a.pair = b
+	a := &veth.endpoints[0]
+	b := &veth.endpoints[1]
+	a.peer = b
+	b.peer = a
+	a.veth = &veth
+	b.veth = &veth
 	go func() {
-		for t := range backlogQueue {
+		for t := range veth.backlogQueue {
 			t.e.InjectInbound(t.protocol, t.pkt)
 			t.pkt.DecRef()
 		}
+
 	}()
 	return a, b
-}
-
-// SetStack stores the stack and the device index.
-func (e *Endpoint) SetStack(s *stack.Stack, idx tcpip.NICID) {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	e.stack = s
-	e.idx = idx
 }
 
 // Close closes e. Further packet injections will return an error, and all pending
 // packets are discarded. Close may be called concurrently with WritePackets.
 func (e *Endpoint) Close() {
-	e.mu.Lock()
-	stack := e.stack
-	e.stack = nil
-	e.mu.Unlock()
-	if stack == nil {
-		return
-	}
-
-	e = e.pair
-	e.mu.Lock()
-	stack = e.stack
-	idx := e.idx
-	e.stack = nil
-	e.mu.Unlock()
-	if stack != nil {
-		// The pair endpoint can live in the current stack or another one.
-		// RemoveNIC will take the stack lock, so let's run it in another
-		// goroutine to avoid lock conflicts.
-		go func() {
-			stack.RemoveNIC(idx)
-		}()
-	}
-	close(*e.backlogQueue)
+	e.veth.close()
 }
 
 // InjectInbound injects an inbound packet. If the endpoint is not attached, the
@@ -146,16 +147,16 @@ func (e *Endpoint) IsAttached() bool {
 
 // MTU implements stack.LinkEndpoint.MTU.
 func (e *Endpoint) MTU() uint32 {
-	e.mu.RLock()
-	defer e.mu.RUnlock()
-	return e.mtu
+	e.veth.mu.RLock()
+	defer e.veth.mu.RUnlock()
+	return e.veth.mtu
 }
 
 // SetMTU implements stack.LinkEndpoint.SetMTU.
 func (e *Endpoint) SetMTU(mtu uint32) {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	e.mtu = mtu
+	e.veth.mu.Lock()
+	defer e.veth.mu.Unlock()
+	e.veth.mtu = mtu
 }
 
 // Capabilities implements stack.LinkEndpoint.Capabilities.
@@ -204,8 +205,8 @@ func (e *Endpoint) WritePackets(pkts stack.PacketBufferList) (int, tcpip.Error) 
 		newPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 			Payload: pkt.ToBuffer(),
 		})
-		(*e.backlogQueue) <- vethPacket{
-			e:        e.pair,
+		(e.veth.backlogQueue) <- vethPacket{
+			e:        e.peer,
 			protocol: pkt.NetworkProtocolNumber,
 			pkt:      newPkt,
 		}
@@ -228,3 +229,10 @@ func (e *Endpoint) AddHeader(pkt *stack.PacketBuffer) {}
 
 // ParseHeader implements stack.LinkEndpoint.ParseHeader.
 func (e *Endpoint) ParseHeader(pkt *stack.PacketBuffer) bool { return true }
+
+// SetOnCloseAction implements stack.LinkEndpoint.
+func (e *Endpoint) SetOnCloseAction(action func()) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.onCloseAction = action
+}

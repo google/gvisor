@@ -416,3 +416,6 @@ func (ep *endpoint) dispatch() (bool, tcpip.Error) {
 
 // Close implements stack.LinkEndpoint.
 func (*endpoint) Close() {}
+
+// SetOnCloseAction implements stack.LinkEndpoint.
+func (*endpoint) SetOnCloseAction(func()) {}

@@ -111,6 +111,9 @@ func (ep *MockLinkEndpoint) Close() {
 	ep.WrittenPackets = nil
 }
 
+// SetOnCloseAction implements stack.LinkEndpoint.SetOnCloseAction.
+func (*MockLinkEndpoint) SetOnCloseAction(func()) {}
+
 // MakeRandPkt generates a randomized packet. transportHeaderLength indicates
 // how many random bytes will be copied in the Transport Header.
 // extraHeaderReserveLength indicates how much extra space will be reserved for
