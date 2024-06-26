@@ -41,6 +41,7 @@ import (
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/flag"
 	"gvisor.dev/gvisor/runsc/specutils"
+	"gvisor.dev/gvisor/runsc/starttime"
 	"gvisor.dev/gvisor/runsc/version"
 )
 
@@ -133,6 +134,9 @@ func Main() {
 	// case that does not occur.
 	_ = time.Local.String()
 
+	// Set the start time as soon as possible.
+	startTime := starttime.Get()
+
 	var emitters log.MultiEmitter
 	if *debugLogFD > -1 {
 		f := os.NewFile(uintptr(*debugLogFD), "debug log file")
@@ -140,7 +144,7 @@ func Main() {
 		emitters = append(emitters, newEmitter(conf.DebugLogFormat, f))
 
 	} else if len(conf.DebugLog) > 0 && specutils.IsDebugCommand(conf, subcommand) {
-		f, err := specutils.DebugLogFile(conf.DebugLog, subcommand, "" /* name */)
+		f, err := specutils.DebugLogFile(conf.DebugLog, subcommand, "" /* name */, startTime)
 		if err != nil {
 			util.Fatalf("error opening debug log file in %q: %v", conf.DebugLog, err)
 		}

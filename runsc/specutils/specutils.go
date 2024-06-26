@@ -528,12 +528,12 @@ func WaitForReady(pid int, timeout time.Duration, ready func() (bool, error)) er
 //     <yyyymmdd-hhmmss.uuuuuu>
 //   - %COMMAND%: is replaced with 'command'
 //   - %TEST%: is replaced with 'test' (omitted by default)
-func DebugLogFile(logPattern, command, test string) (*os.File, error) {
+func DebugLogFile(logPattern, command, test string, timestamp time.Time) (*os.File, error) {
 	if strings.HasSuffix(logPattern, "/") {
 		// Default format: <debug-log>/runsc.log.<yyyymmdd-hhmmss.uuuuuu>.<command>.txt
 		logPattern += "runsc.log.%TIMESTAMP%.%COMMAND%.txt"
 	}
-	logPattern = strings.Replace(logPattern, "%TIMESTAMP%", time.Now().Format("20060102-150405.000000"), -1)
+	logPattern = strings.Replace(logPattern, "%TIMESTAMP%", timestamp.Format("20060102-150405.000000"), -1)
 	logPattern = strings.Replace(logPattern, "%COMMAND%", command, -1)
 	logPattern = strings.Replace(logPattern, "%TEST%", test, -1)
 

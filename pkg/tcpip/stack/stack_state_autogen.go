@@ -1938,6 +1938,7 @@ func (s *Stack) StateFields() []string {
 		"routeTable",
 		"nics",
 		"defaultForwardingEnabled",
+		"nicIDGen",
 		"cleanupEndpoints",
 		"PortManager",
 		"clock",
@@ -1948,7 +1949,6 @@ func (s *Stack) StateFields() []string {
 		"seed",
 		"nudConfigs",
 		"nudDisp",
-		"uniqueIDGenerator",
 		"sendBufferSize",
 		"receiveBufferSize",
 		"tcpInvalidRateLimit",
@@ -1970,17 +1970,17 @@ func (s *Stack) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(6, &s.routeTable)
 	stateSinkObject.Save(7, &s.nics)
 	stateSinkObject.Save(8, &s.defaultForwardingEnabled)
-	stateSinkObject.Save(9, &s.cleanupEndpoints)
-	stateSinkObject.Save(10, &s.PortManager)
-	stateSinkObject.Save(11, &s.clock)
-	stateSinkObject.Save(12, &s.handleLocal)
-	stateSinkObject.Save(13, &s.restoredEndpoints)
-	stateSinkObject.Save(14, &s.resumableEndpoints)
-	stateSinkObject.Save(15, &s.icmpRateLimiter)
-	stateSinkObject.Save(16, &s.seed)
-	stateSinkObject.Save(17, &s.nudConfigs)
-	stateSinkObject.Save(18, &s.nudDisp)
-	stateSinkObject.Save(19, &s.uniqueIDGenerator)
+	stateSinkObject.Save(9, &s.nicIDGen)
+	stateSinkObject.Save(10, &s.cleanupEndpoints)
+	stateSinkObject.Save(11, &s.PortManager)
+	stateSinkObject.Save(12, &s.clock)
+	stateSinkObject.Save(13, &s.handleLocal)
+	stateSinkObject.Save(14, &s.restoredEndpoints)
+	stateSinkObject.Save(15, &s.resumableEndpoints)
+	stateSinkObject.Save(16, &s.icmpRateLimiter)
+	stateSinkObject.Save(17, &s.seed)
+	stateSinkObject.Save(18, &s.nudConfigs)
+	stateSinkObject.Save(19, &s.nudDisp)
 	stateSinkObject.Save(20, &s.sendBufferSize)
 	stateSinkObject.Save(21, &s.receiveBufferSize)
 	stateSinkObject.Save(22, &s.tcpInvalidRateLimit)
@@ -2000,17 +2000,17 @@ func (s *Stack) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(6, &s.routeTable)
 	stateSourceObject.Load(7, &s.nics)
 	stateSourceObject.Load(8, &s.defaultForwardingEnabled)
-	stateSourceObject.Load(9, &s.cleanupEndpoints)
-	stateSourceObject.Load(10, &s.PortManager)
-	stateSourceObject.Load(11, &s.clock)
-	stateSourceObject.Load(12, &s.handleLocal)
-	stateSourceObject.Load(13, &s.restoredEndpoints)
-	stateSourceObject.Load(14, &s.resumableEndpoints)
-	stateSourceObject.Load(15, &s.icmpRateLimiter)
-	stateSourceObject.Load(16, &s.seed)
-	stateSourceObject.Load(17, &s.nudConfigs)
-	stateSourceObject.Load(18, &s.nudDisp)
-	stateSourceObject.Load(19, &s.uniqueIDGenerator)
+	stateSourceObject.Load(9, &s.nicIDGen)
+	stateSourceObject.Load(10, &s.cleanupEndpoints)
+	stateSourceObject.Load(11, &s.PortManager)
+	stateSourceObject.Load(12, &s.clock)
+	stateSourceObject.Load(13, &s.handleLocal)
+	stateSourceObject.Load(14, &s.restoredEndpoints)
+	stateSourceObject.Load(15, &s.resumableEndpoints)
+	stateSourceObject.Load(16, &s.icmpRateLimiter)
+	stateSourceObject.Load(17, &s.seed)
+	stateSourceObject.Load(18, &s.nudConfigs)
+	stateSourceObject.Load(19, &s.nudDisp)
 	stateSourceObject.Load(20, &s.sendBufferSize)
 	stateSourceObject.Load(21, &s.receiveBufferSize)
 	stateSourceObject.Load(22, &s.tcpInvalidRateLimit)

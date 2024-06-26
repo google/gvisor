@@ -367,7 +367,6 @@ type Endpoint struct {
 	stack       *stack.Stack  `state:"manual"`
 	protocol    *protocol     `state:"manual"`
 	waiterQueue *waiter.Queue `state:"wait"`
-	uniqueID    uint64
 
 	// hardError is meaningful only when state is stateError. It stores the
 	// error to be returned when read/write syscalls are called and the
@@ -605,11 +604,6 @@ type Endpoint struct {
 	//
 	// +checklocks:mu
 	pmtud tcpip.PMTUDStrategy
-}
-
-// UniqueID implements stack.TransportEndpoint.UniqueID.
-func (e *Endpoint) UniqueID() uint64 {
-	return e.uniqueID
 }
 
 // calculateAdvertisedMSS calculates the MSS to advertise.
@@ -866,7 +860,6 @@ func newEndpoint(s *stack.Stack, protocol *protocol, netProto tcpip.NetworkProto
 			interval: DefaultKeepaliveInterval,
 			count:    DefaultKeepaliveCount,
 		},
-		uniqueID:     s.UniqueID(),
 		ipv4TTL:      tcpip.UseDefaultIPv4TTL,
 		ipv6HopLimit: tcpip.UseDefaultIPv6HopLimit,
 		// txHash only determines which outgoing queue to use, so

@@ -118,3 +118,8 @@ type EthtoolGetFeaturesBlock struct {
 	Active       uint32
 	NeverChanged uint32
 }
+
+const (
+	// LOOPBACK_IFINDEX is defined in include/net/flow.h.
+	LOOPBACK_IFINDEX = 1
+)

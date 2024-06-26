@@ -60,7 +60,6 @@ type endpoint struct {
 	stack       *stack.Stack `state:"manual"`
 	transProto  tcpip.TransportProtocolNumber
 	waiterQueue *waiter.Queue
-	uniqueID    uint64
 	net         network.Endpoint
 	stats       tcpip.TransportEndpointStats
 	ops         tcpip.SocketOptions
@@ -86,7 +85,6 @@ func newEndpoint(s *stack.Stack, netProto tcpip.NetworkProtocolNumber, transProt
 		stack:       s,
 		transProto:  transProto,
 		waiterQueue: waiterQueue,
-		uniqueID:    s.UniqueID(),
 	}
 	ep.ops.InitHandler(ep, ep.stack, tcpip.GetStackSendBufferLimits, tcpip.GetStackReceiveBufferLimits)
 	ep.ops.SetSendBufferSize(32*1024, false /* notify */)
@@ -108,11 +106,6 @@ func newEndpoint(s *stack.Stack, netProto tcpip.NetworkProtocolNumber, transProt
 // WakeupWriters implements tcpip.SocketOptionsHandler.
 func (e *endpoint) WakeupWriters() {
 	e.net.MaybeSignalWritable()
-}
-
-// UniqueID implements stack.TransportEndpoint.UniqueID.
-func (e *endpoint) UniqueID() uint64 {
-	return e.uniqueID
 }
 
 // Abort implements stack.TransportEndpoint.Abort.
