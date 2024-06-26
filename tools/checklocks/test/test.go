@@ -64,3 +64,10 @@ type nestedGuardStruct struct {
 	val oneGuardStruct
 	ptr *oneGuardStruct
 }
+
+// fieldCommentStruct has one lock and a single field, but uses the
+// field.Comment instead of field.Doc for the guard.
+type fieldCommentStruct struct {
+	mu           sync.Mutex
+	guardedField int // +checklocks:mu
+}
