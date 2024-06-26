@@ -247,8 +247,8 @@ func (s *Stack) newVeth(ctx context.Context, linkAttrs map[uint16]nlmsg.BytesVie
 		}
 	}
 	ep, peerEP := veth.NewPair(defaultMTU)
-	id := tcpip.NICID(s.Stack.UniqueID())
-	peerID := tcpip.NICID(peerStack.Stack.UniqueID())
+	id := s.Stack.NextNICID()
+	peerID := peerStack.Stack.NextNICID()
 	if ifname == "" {
 		ifname = fmt.Sprintf("veth%d", id)
 	}
@@ -293,7 +293,7 @@ func (s *Stack) newBridge(ctx context.Context, linkAttrs map[uint16]nlmsg.BytesV
 		ifname = v.String()
 	}
 	ep := stack.NewBridgeEndpoint(defaultMTU)
-	id := tcpip.NICID(s.Stack.UniqueID())
+	id := s.Stack.NextNICID()
 	err := s.Stack.CreateNICWithOptions(id, ep, stack.NICOptions{
 		Name: ifname,
 	})

@@ -503,7 +503,7 @@ func New(args Args) (*Loader, error) {
 		return nil, fmt.Errorf("getting root credentials")
 	}
 	// Create root network namespace/stack.
-	netns, err := newRootNetworkNamespace(args.Conf, tk, l.k, creds.UserNamespace)
+	netns, err := newRootNetworkNamespace(args.Conf, tk, creds.UserNamespace)
 	if err != nil {
 		return nil, fmt.Errorf("creating network: %w", err)
 	}
@@ -1381,7 +1381,7 @@ func (l *Loader) WaitExit() linux.WaitStatus {
 	return l.k.GlobalInit().ExitStatus()
 }
 
-func newRootNetworkNamespace(conf *config.Config, clock tcpip.Clock, uniqueID stack.UniqueID, userns *auth.UserNamespace) (*inet.Namespace, error) {
+func newRootNetworkNamespace(conf *config.Config, clock tcpip.Clock, userns *auth.UserNamespace) (*inet.Namespace, error) {
 	// Create an empty network stack because the network namespace may be empty at
 	// this point. Netns is configured before Run() is called. Netstack is
 	// configured using a control uRPC message. Host network is configured inside
@@ -1398,13 +1398,12 @@ func newRootNetworkNamespace(conf *config.Config, clock tcpip.Clock, uniqueID st
 		return inet.NewRootNamespace(hostinet.NewStack(), nil, userns), nil
 
 	case config.NetworkNone, config.NetworkSandbox:
-		s, err := newEmptySandboxNetworkStack(clock, uniqueID, conf.AllowPacketEndpointWrite)
+		s, err := newEmptySandboxNetworkStack(clock, conf.AllowPacketEndpointWrite)
 		if err != nil {
 			return nil, err
 		}
 		creator := &sandboxNetstackCreator{
 			clock:                    clock,
-			uniqueID:                 uniqueID,
 			allowPacketEndpointWrite: conf.AllowPacketEndpointWrite,
 		}
 		return inet.NewRootNamespace(s, creator, userns), nil
@@ -1415,7 +1414,7 @@ func newRootNetworkNamespace(conf *config.Config, clock tcpip.Clock, uniqueID st
 
 }
 
-func newEmptySandboxNetworkStack(clock tcpip.Clock, uniqueID stack.UniqueID, allowPacketEndpointWrite bool) (inet.Stack, error) {
+func newEmptySandboxNetworkStack(clock tcpip.Clock, allowPacketEndpointWrite bool) (*netstack.Stack, error) {
 	netProtos := []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol, arp.NewProtocol}
 	transProtos := []stack.TransportProtocolFactory{
 		tcp.NewProtocol,
@@ -1433,7 +1432,6 @@ func newEmptySandboxNetworkStack(clock tcpip.Clock, uniqueID stack.UniqueID, all
 		// privileges.
 		RawFactory:               raw.EndpointFactory{},
 		AllowPacketEndpointWrite: allowPacketEndpointWrite,
-		UniqueID:                 uniqueID,
 		DefaultIPTables:          netfilter.DefaultLinuxTables,
 	})}
 
@@ -1472,20 +1470,22 @@ func newEmptySandboxNetworkStack(clock tcpip.Clock, uniqueID stack.UniqueID, all
 // +stateify savable
 type sandboxNetstackCreator struct {
 	clock                    tcpip.Clock
-	uniqueID                 stack.UniqueID
 	allowPacketEndpointWrite bool
 }
 
 // CreateStack implements kernel.NetworkStackCreator.CreateStack.
 func (f *sandboxNetstackCreator) CreateStack() (inet.Stack, error) {
-	s, err := newEmptySandboxNetworkStack(f.clock, f.uniqueID, f.allowPacketEndpointWrite)
+	s, err := newEmptySandboxNetworkStack(f.clock, f.allowPacketEndpointWrite)
 	if err != nil {
 		return nil, err
 	}
 
 	// Setup loopback.
-	n := &Network{Stack: s.(*netstack.Stack).Stack}
-	nicID := tcpip.NICID(f.uniqueID.UniqueID())
+	n := &Network{Stack: s.Stack}
+	nicID := s.Stack.NextNICID()
+	if nicID != linux.LOOPBACK_IFINDEX {
+		return nil, fmt.Errorf("loopback device should always have index %d, got %d", linux.LOOPBACK_IFINDEX, nicID)
+	}
 	link := DefaultLoopbackLink
 	linkEP := ethernet.New(loopback.New())
 	opts := stack.NICOptions{

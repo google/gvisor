@@ -64,13 +64,6 @@ type ResumableEndpoint interface {
 	Resume()
 }
 
-// uniqueIDGenerator is a default unique ID generator.
-type uniqueIDGenerator atomicbitops.Uint64
-
-func (u *uniqueIDGenerator) UniqueID() uint64 {
-	return ((*atomicbitops.Uint64)(u)).Add(1)
-}
-
 var netRawMissingLogger = log.BasicRateLimitedLogger(time.Minute)
 
 // Stack is a networking stack, with all supported protocols, NICs, and route
@@ -100,8 +93,12 @@ type Stack struct {
 
 	mu stackRWMutex `state:"nosave"`
 	// +checklocks:mu
-	nics                     map[tcpip.NICID]*nic
+	nics map[tcpip.NICID]*nic
+	// +checklocks:mu
 	defaultForwardingEnabled map[tcpip.NetworkProtocolNumber]struct{}
+
+	// nicIDGen is used to generate NIC IDs.
+	nicIDGen atomicbitops.Int32
 
 	// cleanupEndpointsMu protects cleanupEndpoints.
 	cleanupEndpointsMu cleanupEndpointsMutex `state:"nosave"`
@@ -149,9 +146,6 @@ type Stack struct {
 	// integrator NUD related events.
 	nudDisp NUDDispatcher
 
-	// uniqueIDGenerator is a generator of unique identifiers.
-	uniqueIDGenerator UniqueID
-
 	// randomGenerator is an injectable pseudo random generator that can be
 	// used when a random number is required. It must not be used in
 	// security-sensitive contexts.
@@ -187,11 +181,6 @@ type Stack struct {
 	tsOffsetSecret uint32
 }
 
-// UniqueID is an abstract generator of unique identifiers.
-type UniqueID interface {
-	UniqueID() uint64
-}
-
 // NetworkProtocolFactory instantiates a network protocol.
 //
 // NetworkProtocolFactory must not attempt to modify the stack, it may only
@@ -224,9 +213,6 @@ type Options struct {
 	// should be handled by the stack internally (true) or outside the
 	// stack (false).
 	HandleLocal bool
-
-	// UniqueID is an optional generator of unique identifiers.
-	UniqueID UniqueID
 
 	// NUDConfigs is the default NUD configurations used by interfaces.
 	NUDConfigs NUDConfigurations
@@ -353,10 +339,6 @@ func New(opts Options) *Stack {
 		clock = tcpip.NewStdClock()
 	}
 
-	if opts.UniqueID == nil {
-		opts.UniqueID = new(uniqueIDGenerator)
-	}
-
 	if opts.SecureRNG == nil {
 		opts.SecureRNG = cryptorand.Reader
 	}
@@ -398,7 +380,6 @@ func New(opts Options) *Stack {
 		icmpRateLimiter:              NewICMPRateLimiter(clock),
 		seed:                         secureRNG.Uint32(),
 		nudConfigs:                   opts.NUDConfigs,
-		uniqueIDGenerator:            opts.UniqueID,
 		nudDisp:                      opts.NUDDisp,
 		insecureRNG:                  insecureRNG,
 		secureRNG:                    secureRNG,
@@ -439,9 +420,13 @@ func New(opts Options) *Stack {
 	return s
 }
 
-// UniqueID returns a unique identifier.
-func (s *Stack) UniqueID() uint64 {
-	return s.uniqueIDGenerator.UniqueID()
+// NextNICID allocates the next available NIC ID and returns it.
+func (s *Stack) NextNICID() tcpip.NICID {
+	next := s.nicIDGen.Add(1)
+	if next < 0 {
+		panic("NICID overflow")
+	}
+	return tcpip.NICID(next)
 }
 
 // SetNetworkProtocolOption allows configuring individual protocol level

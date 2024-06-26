@@ -45,7 +45,6 @@ type fakeTransportEndpoint struct {
 	proto    *fakeTransportProtocol
 	peerAddr tcpip.Address
 	route    *stack.Route
-	uniqueID uint64
 
 	// acceptQueue is non-nil iff bound.
 	acceptQueue []*fakeTransportEndpoint
@@ -69,7 +68,7 @@ func (f *fakeTransportEndpoint) SocketOptions() *tcpip.SocketOptions {
 }
 
 func newFakeTransportEndpoint(proto *fakeTransportProtocol, netProto tcpip.NetworkProtocolNumber, s *stack.Stack) tcpip.Endpoint {
-	ep := &fakeTransportEndpoint{TransportEndpointInfo: stack.TransportEndpointInfo{NetProto: netProto}, proto: proto, uniqueID: s.UniqueID()}
+	ep := &fakeTransportEndpoint{TransportEndpointInfo: stack.TransportEndpointInfo{NetProto: netProto}, proto: proto}
 	ep.ops.InitHandler(ep, s, tcpip.GetStackSendBufferLimits, tcpip.GetStackReceiveBufferLimits)
 	return ep
 }
@@ -160,10 +159,6 @@ func (f *fakeTransportEndpoint) Connect(addr tcpip.FullAddress) tcpip.Error {
 	f.route = r
 
 	return nil
-}
-
-func (f *fakeTransportEndpoint) UniqueID() uint64 {
-	return f.uniqueID
 }
 
 func (*fakeTransportEndpoint) ConnectEndpoint(e tcpip.Endpoint) tcpip.Error {

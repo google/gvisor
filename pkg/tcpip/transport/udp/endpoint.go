@@ -63,7 +63,6 @@ type endpoint struct {
 	// change throughout the lifetime of the endpoint.
 	stack       *stack.Stack `state:"manual"`
 	waiterQueue *waiter.Queue
-	uniqueID    uint64
 	net         network.Endpoint
 	stats       tcpip.TransportEndpointStats
 	ops         tcpip.SocketOptions
@@ -110,7 +109,6 @@ func newEndpoint(s *stack.Stack, netProto tcpip.NetworkProtocolNumber, waiterQue
 	e := &endpoint{
 		stack:       s,
 		waiterQueue: waiterQueue,
-		uniqueID:    s.UniqueID(),
 	}
 	e.ops.InitHandler(e, e.stack, tcpip.GetStackSendBufferLimits, tcpip.GetStackReceiveBufferLimits)
 	e.ops.SetMulticastLoop(true)
@@ -135,11 +133,6 @@ func newEndpoint(s *stack.Stack, netProto tcpip.NetworkProtocolNumber, waiterQue
 // WakeupWriters implements tcpip.SocketOptionsHandler.
 func (e *endpoint) WakeupWriters() {
 	e.net.MaybeSignalWritable()
-}
-
-// UniqueID implements stack.TransportEndpoint.
-func (e *endpoint) UniqueID() uint64 {
-	return e.uniqueID
 }
 
 func (e *endpoint) LastError() tcpip.Error {
