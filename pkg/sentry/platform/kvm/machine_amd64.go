@@ -68,6 +68,7 @@ func (m *machine) initArchState() error {
 
 	bluepill(c)
 	ring0.SetCPUIDFaulting(true)
+	redpill()
 
 	return nil
 }
@@ -284,9 +285,8 @@ func nonCanonical(addr uint64, signal int32, info *linux.SignalInfo) (hostarch.A
 //
 //go:nosplit
 func (c *vCPU) fault(signal int32, info *linux.SignalInfo) (hostarch.AccessType, error) {
-	bluepill(c) // Probably no-op, but may not be.
-	faultAddr := ring0.ReadCR2()
-	code, user := c.ErrorCode()
+	faultAddr := c.SwitchOptsFaultAddr                              //ring0.ReadCR2()
+	code, user := c.SwitchOptsErrorCode, c.SwitchOptsErrorType != 0 // c.ErrorCode()
 	if !user {
 		// The last fault serviced by this CPU was not a user
 		// fault, so we can't reliably trust the faultAddr or
@@ -346,10 +346,14 @@ func (c *vCPU) SwitchToUser(switchOpts ring0.SwitchOpts, info *linux.SignalInfo)
 	// from guest mode). So we need to ensure that between the bluepill
 	// call here and the switch call immediately below, no additional
 	// allocations occur.
-	entersyscall()
-	bluepill(c)
-	vector = c.CPU.SwitchToUser(switchOpts)
-	exitsyscall()
+	if false {
+		entersyscall()
+		bluepill(c)
+		vector = c.CPU.SwitchToUser(switchOpts)
+		exitsyscall()
+	} else {
+		vector = c.switchToUser(switchOpts)
+	}
 
 	switch vector {
 	case ring0.Syscall, ring0.SyscallInt80:

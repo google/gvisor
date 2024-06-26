@@ -47,9 +47,9 @@ func newAllocator() *allocator {
 //go:nosplit
 func (a *allocator) NewPTEs() *pagetables.PTEs {
 	ptes := a.base.NewPTEs() // escapes: bluepill below.
-	if a.cpu != nil {
-		bluepill(a.cpu)
-	}
+	//if a.cpu != nil {
+	//	bluepill(a.cpu)
+	//}
 	return ptes
 }
 
@@ -87,9 +87,9 @@ func (a *allocator) LookupPTEs(physical uintptr) *pagetables.PTEs {
 //go:nosplit
 func (a *allocator) FreePTEs(ptes *pagetables.PTEs) {
 	a.base.FreePTEs(ptes) // escapes: bluepill below.
-	if a.cpu != nil {
-		bluepill(a.cpu)
-	}
+	//if a.cpu != nil {
+	//	bluepill(a.cpu)
+	//}
 }
 
 // Recycle implements pagetables.Allocator.Recycle.
