@@ -83,8 +83,9 @@ func Boot() (*kernel.Kernel, error) {
 	}
 
 	// Create timekeeper.
-	tk := kernel.NewTimekeeper(k.MemoryFile(), vdso.ParamPage.FileRange())
-	tk.SetClocks(time.NewCalibratedClocks())
+	tk := kernel.NewTimekeeper()
+	params := kernel.NewVDSOParamPage(k.MemoryFile(), vdso.ParamPage.FileRange())
+	tk.SetClocks(time.NewCalibratedClocks(), params)
 
 	creds := auth.NewRootCredentials(auth.NewRootUserNamespace())
 
@@ -96,6 +97,7 @@ func Boot() (*kernel.Kernel, error) {
 		Timekeeper:        tk,
 		RootUserNamespace: creds.UserNamespace,
 		Vdso:              vdso,
+		VdsoParams:        params,
 		RootUTSNamespace:  kernel.NewUTSNamespace("hostname", "domain", creds.UserNamespace),
 		RootIPCNamespace:  kernel.NewIPCNamespace(creds.UserNamespace),
 		PIDNamespace:      kernel.NewRootPIDNamespace(creds.UserNamespace),

@@ -51,21 +51,20 @@ func (c *mockClocks) GetTime(id sentrytime.ClockID) (int64, error) {
 
 // stateTestClocklessTimekeeper returns a test Timekeeper which has not had
 // SetClocks called.
-func stateTestClocklessTimekeeper(tb testing.TB) *Timekeeper {
+func stateTestClocklessTimekeeper(tb testing.TB) (*Timekeeper, *VDSOParamPage) {
 	ctx := contexttest.Context(tb)
 	mf := pgalloc.MemoryFileFromContext(ctx)
 	fr, err := mf.Allocate(hostarch.PageSize, pgalloc.AllocOpts{Kind: usage.Anonymous})
 	if err != nil {
 		tb.Fatalf("failed to allocate memory: %v", err)
 	}
-	return &Timekeeper{
-		params: NewVDSOParamPage(mf, fr),
-	}
+	params := NewVDSOParamPage(mf, fr)
+	return &Timekeeper{}, params
 }
 
 func stateTestTimekeeper(tb testing.TB) *Timekeeper {
-	t := stateTestClocklessTimekeeper(tb)
-	t.SetClocks(sentrytime.NewCalibratedClocks())
+	t, params := stateTestClocklessTimekeeper(tb)
+	t.SetClocks(sentrytime.NewCalibratedClocks(), params)
 	return t
 }
 
@@ -75,8 +74,8 @@ func TestTimekeeperMonotonicZero(t *testing.T) {
 		monotonic: 100000,
 	}
 
-	tk := stateTestClocklessTimekeeper(t)
-	tk.SetClocks(c)
+	tk, params := stateTestClocklessTimekeeper(t)
+	tk.SetClocks(c, params)
 	defer tk.Destroy()
 
 	now, err := tk.GetTime(sentrytime.Monotonic)
@@ -106,11 +105,11 @@ func TestTimekeeperMonotonicForward(t *testing.T) {
 		realtime:  600000,
 	}
 
-	tk := stateTestClocklessTimekeeper(t)
+	tk, params := stateTestClocklessTimekeeper(t)
 	tk.restored = make(chan struct{})
 	tk.saveMonotonic = 100000
 	tk.saveRealtime = 400000
-	tk.SetClocks(c)
+	tk.SetClocks(c, params)
 	defer tk.Destroy()
 
 	// The monotonic clock should jump ahead by 200000 to 300000.
@@ -134,11 +133,11 @@ func TestTimekeeperMonotonicJumpBackwards(t *testing.T) {
 		realtime:  400000,
 	}
 
-	tk := stateTestClocklessTimekeeper(t)
+	tk, params := stateTestClocklessTimekeeper(t)
 	tk.restored = make(chan struct{})
 	tk.saveMonotonic = 100000
 	tk.saveRealtime = 600000
-	tk.SetClocks(c)
+	tk.SetClocks(c, params)
 	defer tk.Destroy()
 
 	// The monotonic clock should remain at 100000.
