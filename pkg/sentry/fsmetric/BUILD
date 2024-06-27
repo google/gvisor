@@ -8,5 +8,8 @@ go_library(
     name = "fsmetric",
     srcs = ["fsmetric.go"],
     visibility = ["//pkg/sentry:internal"],
-    deps = ["//pkg/metric"],
+    deps = [
+        "//pkg/metric",
+        "//pkg/metric:metric_go_proto",
+    ],
 )

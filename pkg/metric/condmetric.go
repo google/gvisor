@@ -48,10 +48,20 @@ func (m *FakeUint64Metric) Value(fieldValues ...*FieldValue) uint64 {
 //go:nosplit
 func (m *FakeUint64Metric) Increment(fieldValues ...*FieldValue) {}
 
+// Decrement on a FakeUint64Metric does nothing.
+//
+//go:nosplit
+func (m *FakeUint64Metric) Decrement(fieldValues ...*FieldValue) {}
+
 // IncrementBy on a FakeUint64Metric does nothing.
 //
 //go:nosplit
 func (m *FakeUint64Metric) IncrementBy(v uint64, fieldValues ...*FieldValue) {}
+
+// Set on a FakeUint64Metric does nothing.
+//
+//go:nosplit
+func (m *FakeUint64Metric) Set(v uint64, fieldValues ...*FieldValue) {}
 
 // AddSample on a FakeUint64Metric does nothing.
 //
@@ -76,12 +86,12 @@ func (o FakeTimedOperation) Finish(extraFields ...*FieldValue) {}
 type FakeMetricBuilder struct{}
 
 // NewUint64Metric creates a fake Uint64 metric.
-func (b *FakeMetricBuilder) NewUint64Metric(name string, sync bool, units pb.MetricMetadata_Units, description string, fields ...Field) (*FakeUint64Metric, error) {
+func (b *FakeMetricBuilder) NewUint64Metric(name string, metadata Uint64Metadata) (*FakeUint64Metric, error) {
 	return &FakeUint64Metric{}, nil
 }
 
 // MustCreateNewUint64Metric creates a fake Uint64 metric.
-func (b *FakeMetricBuilder) MustCreateNewUint64Metric(name string, sync bool, description string, fields ...Field) *FakeUint64Metric {
+func (b *FakeMetricBuilder) MustCreateNewUint64Metric(name string, metadata Uint64Metadata) *FakeUint64Metric {
 	return &FakeUint64Metric{}
 }
 
@@ -111,8 +121,8 @@ type RealMetricBuilder struct{}
 
 // NewUint64Metric calls the generic metric.NewUint64Metric to produce a real
 // Uint64 metric.
-func (b *RealMetricBuilder) NewUint64Metric(name string, sync bool, units pb.MetricMetadata_Units, description string, fields ...Field) (*Uint64Metric, error) {
-	m, err := NewUint64Metric(name, sync, units, description, fields...)
+func (b *RealMetricBuilder) NewUint64Metric(name string, metadata Uint64Metadata) (*Uint64Metric, error) {
+	m, err := NewUint64Metric(name, metadata)
 	if err != nil {
 		return m, err
 	}
@@ -122,8 +132,8 @@ func (b *RealMetricBuilder) NewUint64Metric(name string, sync bool, units pb.Met
 
 // MustCreateNewUint64Metric creates a real Uint64 metric or panics if unable to
 // do so.
-func (b *RealMetricBuilder) MustCreateNewUint64Metric(name string, sync bool, description string, fields ...Field) *Uint64Metric {
-	m, err := b.NewUint64Metric(name, sync, pb.MetricMetadata_UNITS_NONE, description, fields...)
+func (b *RealMetricBuilder) MustCreateNewUint64Metric(name string, metadata Uint64Metadata) *Uint64Metric {
+	m, err := b.NewUint64Metric(name, metadata)
 	if err != nil {
 		panic(fmt.Sprintf("Unable to create metric %q: %s", name, err))
 	}

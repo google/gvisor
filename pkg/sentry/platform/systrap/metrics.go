@@ -19,6 +19,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/metric"
 )
 
 // This file contains all logic related to context switch latency metrics.
@@ -569,23 +570,23 @@ func sentryOnStubOn(s *fastPathState) {
 
 // Profiling metrics intended for debugging purposes.
 var (
-	numTimesSentryFastPathDisabled = SystrapProfiling.MustCreateNewUint64Metric("/systrap/numTimesSentryFastPathDisabled", false, "")
-	numTimesSentryFastPathEnabled  = SystrapProfiling.MustCreateNewUint64Metric("/systrap/numTimesSentryFastPathEnabled", false, "")
-	numTimesStubFastPathDisabled   = SystrapProfiling.MustCreateNewUint64Metric("/systrap/numTimesStubFastPathDisabled", false, "")
-	numTimesStubFastPathEnabled    = SystrapProfiling.MustCreateNewUint64Metric("/systrap/numTimesStubFastPathEnabled", false, "")
-	numTimesStubKicked             = SystrapProfiling.MustCreateNewUint64Metric("/systrap/numTimesStubKicked", false, "")
+	numTimesSentryFastPathDisabled = SystrapProfiling.MustCreateNewUint64Metric("/systrap/numTimesSentryFastPathDisabled", metric.Uint64Metadata{Cumulative: true})
+	numTimesSentryFastPathEnabled  = SystrapProfiling.MustCreateNewUint64Metric("/systrap/numTimesSentryFastPathEnabled", metric.Uint64Metadata{Cumulative: true})
+	numTimesStubFastPathDisabled   = SystrapProfiling.MustCreateNewUint64Metric("/systrap/numTimesStubFastPathDisabled", metric.Uint64Metadata{Cumulative: true})
+	numTimesStubFastPathEnabled    = SystrapProfiling.MustCreateNewUint64Metric("/systrap/numTimesStubFastPathEnabled", metric.Uint64Metadata{Cumulative: true})
+	numTimesStubKicked             = SystrapProfiling.MustCreateNewUint64Metric("/systrap/numTimesStubKicked", metric.Uint64Metadata{Cumulative: true})
 
-	stubLatWithin1kUS   = SystrapProfiling.MustCreateNewUint64Metric("/systrap/stubLatWithin1kUS", false, "")
-	stubLatWithin5kUS   = SystrapProfiling.MustCreateNewUint64Metric("/systrap/stubLatWithin5kUS", false, "")
-	stubLatWithin10kUS  = SystrapProfiling.MustCreateNewUint64Metric("/systrap/stubLatWithin10kUS", false, "")
-	stubLatWithin20kUS  = SystrapProfiling.MustCreateNewUint64Metric("/systrap/stubLatWithin20kUS", false, "")
-	stubLatWithin40kUS  = SystrapProfiling.MustCreateNewUint64Metric("/systrap/stubLatWithin40kUS", false, "")
-	stubLatGreater40kUS = SystrapProfiling.MustCreateNewUint64Metric("/systrap/stubLatGreater40kUS", false, "")
+	stubLatWithin1kUS   = SystrapProfiling.MustCreateNewUint64Metric("/systrap/stubLatWithin1kUS", metric.Uint64Metadata{Cumulative: true})
+	stubLatWithin5kUS   = SystrapProfiling.MustCreateNewUint64Metric("/systrap/stubLatWithin5kUS", metric.Uint64Metadata{Cumulative: true})
+	stubLatWithin10kUS  = SystrapProfiling.MustCreateNewUint64Metric("/systrap/stubLatWithin10kUS", metric.Uint64Metadata{Cumulative: true})
+	stubLatWithin20kUS  = SystrapProfiling.MustCreateNewUint64Metric("/systrap/stubLatWithin20kUS", metric.Uint64Metadata{Cumulative: true})
+	stubLatWithin40kUS  = SystrapProfiling.MustCreateNewUint64Metric("/systrap/stubLatWithin40kUS", metric.Uint64Metadata{Cumulative: true})
+	stubLatGreater40kUS = SystrapProfiling.MustCreateNewUint64Metric("/systrap/stubLatGreater40kUS", metric.Uint64Metadata{Cumulative: true})
 
-	sentryLatWithin1kUS   = SystrapProfiling.MustCreateNewUint64Metric("/systrap/sentryLatWithin1kUS", false, "")
-	sentryLatWithin5kUS   = SystrapProfiling.MustCreateNewUint64Metric("/systrap/sentryLatWithin5kUS", false, "")
-	sentryLatWithin10kUS  = SystrapProfiling.MustCreateNewUint64Metric("/systrap/sentryLatWithin10kUS", false, "")
-	sentryLatWithin20kUS  = SystrapProfiling.MustCreateNewUint64Metric("/systrap/sentryLatWithin20kUS", false, "")
-	sentryLatWithin40kUS  = SystrapProfiling.MustCreateNewUint64Metric("/systrap/sentryLatWithin40kUS", false, "")
-	sentryLatGreater40kUS = SystrapProfiling.MustCreateNewUint64Metric("/systrap/sentryLatGreater40kUS", false, "")
+	sentryLatWithin1kUS   = SystrapProfiling.MustCreateNewUint64Metric("/systrap/sentryLatWithin1kUS", metric.Uint64Metadata{Cumulative: true})
+	sentryLatWithin5kUS   = SystrapProfiling.MustCreateNewUint64Metric("/systrap/sentryLatWithin5kUS", metric.Uint64Metadata{Cumulative: true})
+	sentryLatWithin10kUS  = SystrapProfiling.MustCreateNewUint64Metric("/systrap/sentryLatWithin10kUS", metric.Uint64Metadata{Cumulative: true})
+	sentryLatWithin20kUS  = SystrapProfiling.MustCreateNewUint64Metric("/systrap/sentryLatWithin20kUS", metric.Uint64Metadata{Cumulative: true})
+	sentryLatWithin40kUS  = SystrapProfiling.MustCreateNewUint64Metric("/systrap/sentryLatWithin40kUS", metric.Uint64Metadata{Cumulative: true})
+	sentryLatGreater40kUS = SystrapProfiling.MustCreateNewUint64Metric("/systrap/sentryLatGreater40kUS", metric.Uint64Metadata{Cumulative: true})
 )

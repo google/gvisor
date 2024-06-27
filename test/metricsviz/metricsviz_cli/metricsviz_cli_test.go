@@ -38,7 +38,11 @@ func TestMetricsvizCLI(t *testing.T) {
 		t.Fatalf("Failed to find metricsviz_cli: %v", err)
 	}
 	const testMetricName = "/metricsviz_cli_test/counter"
-	testMetric := metric.MustCreateNewUint64Metric(testMetricName, true, fmt.Sprintf("test counter for %s", t.Name()))
+	testMetric := metric.MustCreateNewUint64Metric(testMetricName, metric.Uint64Metadata{
+		Cumulative:  true,
+		Sync:        true,
+		Description: fmt.Sprintf("test counter for %s", t.Name()),
+	})
 	if err := metric.Initialize(); err != nil {
 		t.Fatalf("Failed to initialize metrics: %v", err)
 	}

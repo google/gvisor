@@ -33,7 +33,11 @@ var (
 	sessions   = make(map[string]*State)
 )
 
-var sessionCounter = metric.MustCreateNewUint64Metric("/trace/sessions_created", false /* sync */, "Counts the number of trace sessions created.")
+var sessionCounter = metric.MustCreateNewUint64Metric("/trace/sessions_created",
+	metric.Uint64Metadata{
+		Cumulative:  true,
+		Description: "Counts the number of trace sessions created.",
+	})
 
 // SessionConfig describes a new session configuration. A session consists of a
 // set of points to be enabled and sinks where the points are sent to.

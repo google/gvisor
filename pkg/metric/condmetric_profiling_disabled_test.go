@@ -26,7 +26,10 @@ import (
 func TestProfilingMetricsDisabled(t *testing.T) {
 	defer resetTest()
 
-	_, err := SentryProfiling.NewUint64Metric("/counterM", false, pb.MetricMetadata_UNITS_NONE, "One uint64 metric")
+	_, err := SentryProfiling.NewUint64Metric("/counterM", Uint64Metadata{
+		Cumulative:  true,
+		Description: "one uint64 metric",
+	})
 	if err != nil {
 		t.Fatalf("NewUint64Metric got err %v want nil", err)
 	}
