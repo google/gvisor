@@ -932,6 +932,62 @@ func (e *ErrMulticastInputCannotBeOutput) afterLoad(context.Context) {}
 func (e *ErrMulticastInputCannotBeOutput) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 }
 
+func (l *RouteList) StateTypeName() string {
+	return "pkg/tcpip.RouteList"
+}
+
+func (l *RouteList) StateFields() []string {
+	return []string{
+		"head",
+		"tail",
+	}
+}
+
+func (l *RouteList) beforeSave() {}
+
+// +checklocksignore
+func (l *RouteList) StateSave(stateSinkObject state.Sink) {
+	l.beforeSave()
+	stateSinkObject.Save(0, &l.head)
+	stateSinkObject.Save(1, &l.tail)
+}
+
+func (l *RouteList) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (l *RouteList) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &l.head)
+	stateSourceObject.Load(1, &l.tail)
+}
+
+func (e *RouteEntry) StateTypeName() string {
+	return "pkg/tcpip.RouteEntry"
+}
+
+func (e *RouteEntry) StateFields() []string {
+	return []string{
+		"next",
+		"prev",
+	}
+}
+
+func (e *RouteEntry) beforeSave() {}
+
+// +checklocksignore
+func (e *RouteEntry) StateSave(stateSinkObject state.Sink) {
+	e.beforeSave()
+	stateSinkObject.Save(0, &e.next)
+	stateSinkObject.Save(1, &e.prev)
+}
+
+func (e *RouteEntry) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (e *RouteEntry) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &e.next)
+	stateSourceObject.Load(1, &e.prev)
+}
+
 func (l *sockErrorList) StateTypeName() string {
 	return "pkg/tcpip.sockErrorList"
 }
@@ -1743,6 +1799,7 @@ func (r *Route) StateTypeName() string {
 
 func (r *Route) StateFields() []string {
 	return []string{
+		"RouteEntry",
 		"Destination",
 		"Gateway",
 		"NIC",
@@ -1756,22 +1813,24 @@ func (r *Route) beforeSave() {}
 // +checklocksignore
 func (r *Route) StateSave(stateSinkObject state.Sink) {
 	r.beforeSave()
-	stateSinkObject.Save(0, &r.Destination)
-	stateSinkObject.Save(1, &r.Gateway)
-	stateSinkObject.Save(2, &r.NIC)
-	stateSinkObject.Save(3, &r.SourceHint)
-	stateSinkObject.Save(4, &r.MTU)
+	stateSinkObject.Save(0, &r.RouteEntry)
+	stateSinkObject.Save(1, &r.Destination)
+	stateSinkObject.Save(2, &r.Gateway)
+	stateSinkObject.Save(3, &r.NIC)
+	stateSinkObject.Save(4, &r.SourceHint)
+	stateSinkObject.Save(5, &r.MTU)
 }
 
 func (r *Route) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (r *Route) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &r.Destination)
-	stateSourceObject.Load(1, &r.Gateway)
-	stateSourceObject.Load(2, &r.NIC)
-	stateSourceObject.Load(3, &r.SourceHint)
-	stateSourceObject.Load(4, &r.MTU)
+	stateSourceObject.Load(0, &r.RouteEntry)
+	stateSourceObject.Load(1, &r.Destination)
+	stateSourceObject.Load(2, &r.Gateway)
+	stateSourceObject.Load(3, &r.NIC)
+	stateSourceObject.Load(4, &r.SourceHint)
+	stateSourceObject.Load(5, &r.MTU)
 }
 
 func (s *StatCounter) StateTypeName() string {
@@ -3171,6 +3230,8 @@ func init() {
 	state.Register((*ErrWouldBlock)(nil))
 	state.Register((*ErrMissingRequiredFields)(nil))
 	state.Register((*ErrMulticastInputCannotBeOutput)(nil))
+	state.Register((*RouteList)(nil))
+	state.Register((*RouteEntry)(nil))
 	state.Register((*sockErrorList)(nil))
 	state.Register((*sockErrorEntry)(nil))
 	state.Register((*SocketOptions)(nil))

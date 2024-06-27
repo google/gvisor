@@ -247,7 +247,6 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 		return fmt.Errorf("args.FilePayload.Files has %d FDs but we need %d entries based on FDBasedLinks, XDPLinks, and PCAP", got, wantFDs)
 	}
 
-	var nicID tcpip.NICID
 	nicids := make(map[string]tcpip.NICID)
 
 	// Collect routes from all links.
@@ -255,7 +254,7 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 
 	// Loopback normally appear before other interfaces.
 	for _, link := range args.LoopbackLinks {
-		nicID = n.Stack.NextNICID()
+		nicID := n.Stack.NextNICID()
 		nicids[link.Name] = nicID
 
 		linkEP := ethernet.New(loopback.New())
@@ -298,7 +297,7 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 		}
 
 		for _, link := range args.FDBasedLinks {
-			nicID++
+			nicID := n.Stack.NextNICID()
 			nicids[link.Name] = nicID
 
 			FDs := make([]int, 0, link.NumChannels)
@@ -387,7 +386,7 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 			return fmt.Errorf("XDP only supports one link device, but got %d", nlinks)
 		}
 		link := args.XDPLinks[0]
-		nicID++
+		nicID := n.Stack.NextNICID()
 		nicids[link.Name] = nicID
 
 		// Get the AF_XDP socket.
