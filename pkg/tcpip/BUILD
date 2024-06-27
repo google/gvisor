@@ -19,10 +19,23 @@ go_template_instance(
     },
 )
 
+go_template_instance(
+    name = "route_list",
+    out = "route_list.go",
+    package = "tcpip",
+    prefix = "Route",
+    template = "//pkg/ilist:generic_list",
+    types = {
+        "Element": "*Route",
+        "Linker": "*Route",
+    },
+)
+
 go_library(
     name = "tcpip",
     srcs = [
         "errors.go",
+        "route_list.go",
         "sock_err_list.go",
         "socketops.go",
         "stdclock.go",

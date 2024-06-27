@@ -1513,6 +1513,8 @@ func GetStackReceiveBufferLimits(so StackHandler) ReceiveBufferSizeOption {
 //
 // +stateify savable
 type Route struct {
+	RouteEntry
+
 	// Destination must contain the target address for this row to be viable.
 	Destination Subnet
 

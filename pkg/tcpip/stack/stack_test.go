@@ -4402,14 +4402,14 @@ func TestAddRoute(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	subnet2, err := tcpip.NewSubnet(tcpip.AddrFromSlice([]byte("\x01\x00\x00\x00")), tcpip.MaskFrom("\x01\x00\x00\x00"))
+	subnet2, err := tcpip.NewSubnet(tcpip.AddrFromSlice([]byte("\x01\x00\x00\x00")), tcpip.MaskFrom("\xff\x00\x00\x00"))
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	expected := []tcpip.Route{
-		{Destination: subnet1, Gateway: tcpip.AddrFromSlice([]byte("\x00\x00\x00\x00")), NIC: 1},
 		{Destination: subnet2, Gateway: tcpip.AddrFromSlice([]byte("\x00\x00\x00\x00")), NIC: 1},
+		{Destination: subnet1, Gateway: tcpip.AddrFromSlice([]byte("\x00\x00\x00\x00")), NIC: 1},
 	}
 
 	// Initialize the route table with one route.
@@ -4423,7 +4423,7 @@ func TestAddRoute(t *testing.T) {
 		t.Fatalf("Unexpected route table length got = %d, want = %d", got, want)
 	}
 	for i, route := range rt {
-		if got, want := route, expected[i]; got != want {
+		if got, want := route, expected[i]; !got.Equal(want) {
 			t.Fatalf("Unexpected route got = %#v, want = %#v", got, want)
 		}
 	}

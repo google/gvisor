@@ -516,7 +516,7 @@ func (e *Endpoint) AcquireContextForWrite(opts tcpip.WriteOptions) (WriteContext
 			}
 		}
 
-		dst, netProto, err := e.checkV4Mapped(*to)
+		dst, netProto, err := e.checkV4Mapped(*to, false /* bind */)
 		if err != nil {
 			return WriteContext{}, err
 		}
@@ -656,7 +656,7 @@ func (e *Endpoint) ConnectAndThen(addr tcpip.FullAddress, f func(netProto tcpip.
 		return &tcpip.ErrInvalidEndpointState{}
 	}
 
-	addr, netProto, err := e.checkV4Mapped(addr)
+	addr, netProto, err := e.checkV4Mapped(addr, false /* bind */)
 	if err != nil {
 		return err
 	}
@@ -710,9 +710,9 @@ func (e *Endpoint) Shutdown() tcpip.Error {
 
 // checkV4MappedRLocked determines the effective network protocol and converts
 // addr to its canonical form.
-func (e *Endpoint) checkV4Mapped(addr tcpip.FullAddress) (tcpip.FullAddress, tcpip.NetworkProtocolNumber, tcpip.Error) {
+func (e *Endpoint) checkV4Mapped(addr tcpip.FullAddress, bind bool) (tcpip.FullAddress, tcpip.NetworkProtocolNumber, tcpip.Error) {
 	info := e.Info()
-	unwrapped, netProto, err := info.AddrNetProtoLocked(addr, e.ops.GetV6Only())
+	unwrapped, netProto, err := info.AddrNetProtoLocked(addr, e.ops.GetV6Only(), bind)
 	if err != nil {
 		return tcpip.FullAddress{}, 0, err
 	}
@@ -747,7 +747,7 @@ func (e *Endpoint) BindAndThen(addr tcpip.FullAddress, f func(tcpip.NetworkProto
 		return &tcpip.ErrInvalidEndpointState{}
 	}
 
-	addr, netProto, err := e.checkV4Mapped(addr)
+	addr, netProto, err := e.checkV4Mapped(addr, true /* bind */)
 	if err != nil {
 		return err
 	}
@@ -907,7 +907,7 @@ func (e *Endpoint) SetSockOpt(opt tcpip.SettableSocketOption) tcpip.Error {
 		defer e.mu.Unlock()
 
 		fa := tcpip.FullAddress{Addr: v.InterfaceAddr}
-		fa, netProto, err := e.checkV4Mapped(fa)
+		fa, netProto, err := e.checkV4Mapped(fa, true /* bind */)
 		if err != nil {
 			return err
 		}

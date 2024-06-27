@@ -178,6 +178,9 @@ var (
 
 	// IPv4AllRoutersGroup is a multicast address for all routers.
 	IPv4AllRoutersGroup = tcpip.AddrFrom4([4]byte{0xe0, 0x00, 0x00, 0x02})
+
+	// IPv4Loopback is the loopback IPv4 address.
+	IPv4Loopback = tcpip.AddrFrom4([4]byte{0x7f, 0x00, 0x00, 0x01})
 )
 
 // Flags that may be set in an IPv4 packet.

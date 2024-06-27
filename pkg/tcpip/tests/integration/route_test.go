@@ -131,7 +131,7 @@ func TestLocalPing(t *testing.T) {
 			netProto:           ipv4.ProtocolNumber,
 			linkEndpoint:       loopback.New,
 			icmpBuf:            ipv4ICMPBuf,
-			expectedConnectErr: &tcpip.ErrHostUnreachable{},
+			expectedConnectErr: &tcpip.ErrNetworkUnreachable{},
 			checkLinkEndpoint:  func(*testing.T, stack.LinkEndpoint) {},
 		},
 		{
@@ -140,7 +140,7 @@ func TestLocalPing(t *testing.T) {
 			netProto:           ipv6.ProtocolNumber,
 			linkEndpoint:       loopback.New,
 			icmpBuf:            ipv6ICMPBuf,
-			expectedConnectErr: &tcpip.ErrHostUnreachable{},
+			expectedConnectErr: &tcpip.ErrBadLocalAddress{},
 			checkLinkEndpoint:  func(*testing.T, stack.LinkEndpoint) {},
 		},
 		{
@@ -149,7 +149,7 @@ func TestLocalPing(t *testing.T) {
 			netProto:           ipv4.ProtocolNumber,
 			linkEndpoint:       channelEP,
 			icmpBuf:            ipv4ICMPBuf,
-			expectedConnectErr: &tcpip.ErrHostUnreachable{},
+			expectedConnectErr: &tcpip.ErrNetworkUnreachable{},
 			checkLinkEndpoint:  channelEPCheck,
 		},
 		{
@@ -158,7 +158,7 @@ func TestLocalPing(t *testing.T) {
 			netProto:           ipv6.ProtocolNumber,
 			linkEndpoint:       channelEP,
 			icmpBuf:            ipv6ICMPBuf,
-			expectedConnectErr: &tcpip.ErrHostUnreachable{},
+			expectedConnectErr: &tcpip.ErrBadLocalAddress{},
 			checkLinkEndpoint:  channelEPCheck,
 		},
 	}
