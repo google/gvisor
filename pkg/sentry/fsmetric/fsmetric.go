@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"gvisor.dev/gvisor/pkg/metric"
+	metricpb "gvisor.dev/gvisor/pkg/metric/metric_go_proto"
 )
 
 // RecordWaitTime enables the ReadWait, GoferReadWait9P, GoferReadWaitHost, and
@@ -31,27 +32,80 @@ var RecordWaitTime = false
 
 // Metrics that apply to all filesystems.
 var (
-	Opens    = metric.MustCreateNewUint64Metric("/fs/opens", false /* sync */, "Number of file opens.")
-	Reads    = metric.MustCreateNewUint64Metric("/fs/reads", false /* sync */, "Number of file reads.")
-	ReadWait = metric.MustCreateNewUint64NanosecondsMetric("/fs/read_wait", false /* sync */, "Time waiting on file reads, in nanoseconds.")
+	Opens = metric.MustCreateNewUint64Metric("/fs/opens",
+		metric.Uint64Metadata{
+			Cumulative:  true,
+			Description: "Number of file opens.",
+		})
+	Reads = metric.MustCreateNewUint64Metric("/fs/reads", metric.Uint64Metadata{
+		Cumulative:  true,
+		Description: "Number of file reads.",
+	})
+	ReadWait = metric.MustCreateNewUint64Metric("/fs/read_wait", metric.Uint64Metadata{
+		Cumulative:  true,
+		Description: "Time waiting on file reads, in nanoseconds.",
+		Unit:        metricpb.MetricMetadata_UNITS_NANOSECONDS,
+	})
 )
 
 // Metrics that only apply to fs/gofer and fsimpl/gofer.
 var (
-	GoferOpens9P      = metric.MustCreateNewUint64Metric("/gofer/opens_9p", false /* sync */, "Number of times a file was opened from a gofer and did not have a host file descriptor.")
-	GoferOpensHost    = metric.MustCreateNewUint64Metric("/gofer/opens_host", false /* sync */, "Number of times a file was opened from a gofer and did have a host file descriptor.")
-	GoferReads9P      = metric.MustCreateNewUint64Metric("/gofer/reads_9p", false /* sync */, "Number of 9P file reads from a gofer.")
-	GoferReadWait9P   = metric.MustCreateNewUint64NanosecondsMetric("/gofer/read_wait_9p", false /* sync */, "Time waiting on 9P file reads from a gofer, in nanoseconds.")
-	GoferReadsHost    = metric.MustCreateNewUint64Metric("/gofer/reads_host", false /* sync */, "Number of host file reads from a gofer.")
-	GoferReadWaitHost = metric.MustCreateNewUint64NanosecondsMetric("/gofer/read_wait_host", false /* sync */, "Time waiting on host file reads from a gofer, in nanoseconds.")
+	GoferOpens9P = metric.MustCreateNewUint64Metric("/gofer/opens_9p",
+		metric.Uint64Metadata{
+			Cumulative:  true,
+			Description: "Number of times a file was opened from a gofer and did not have a host file descriptor.",
+		})
+	GoferOpensHost = metric.MustCreateNewUint64Metric("/gofer/opens_host",
+		metric.Uint64Metadata{
+			Cumulative:  true,
+			Description: "Number of times a file was opened from a gofer and did have a host file descriptor.",
+		})
+	GoferReads9P = metric.MustCreateNewUint64Metric("/gofer/reads_9p",
+		metric.Uint64Metadata{
+			Cumulative:  true,
+			Description: "Number of 9P file reads from a gofer.",
+		})
+	GoferReadWait9P = metric.MustCreateNewUint64Metric("/gofer/read_wait_9p", metric.Uint64Metadata{
+		Cumulative:  true,
+		Description: "Time waiting on 9P file reads from a gofer, in nanoseconds.",
+		Unit:        metricpb.MetricMetadata_UNITS_NANOSECONDS,
+	})
+	GoferReadsHost = metric.MustCreateNewUint64Metric("/gofer/reads_host",
+		metric.Uint64Metadata{
+			Cumulative:  true,
+			Description: "Number of host file reads from a gofer.",
+		})
+	GoferReadWaitHost = metric.MustCreateNewUint64Metric("/gofer/read_wait_host",
+		metric.Uint64Metadata{
+			Cumulative:  true,
+			Description: "Time waiting on host file reads from a gofer, in nanoseconds.",
+			Unit:        metricpb.MetricMetadata_UNITS_NANOSECONDS,
+		})
 )
 
 // Metrics that only apply to fs/tmpfs and fsimpl/tmpfs.
 var (
-	TmpfsOpensRO  = metric.MustCreateNewUint64Metric("/in_memory_file/opens_ro", false /* sync */, "Number of times an in-memory file was opened in read-only mode.")
-	TmpfsOpensW   = metric.MustCreateNewUint64Metric("/in_memory_file/opens_w", false /* sync */, "Number of times an in-memory file was opened in write mode.")
-	TmpfsReads    = metric.MustCreateNewUint64Metric("/in_memory_file/reads", false /* sync */, "Number of in-memory file reads.")
-	TmpfsReadWait = metric.MustCreateNewUint64NanosecondsMetric("/in_memory_file/read_wait", false /* sync */, "Time waiting on in-memory file reads, in nanoseconds.")
+	TmpfsOpensRO = metric.MustCreateNewUint64Metric("/in_memory_file/opens_ro",
+		metric.Uint64Metadata{
+			Cumulative:  true,
+			Description: "Number of times an in-memory file was opened in read-only mode.",
+		})
+	TmpfsOpensW = metric.MustCreateNewUint64Metric("/in_memory_file/opens_w",
+		metric.Uint64Metadata{
+			Cumulative:  true,
+			Description: "Number of times an in-memory file was opened in write mode.",
+		})
+	TmpfsReads = metric.MustCreateNewUint64Metric("/in_memory_file/reads",
+		metric.Uint64Metadata{
+			Cumulative:  true,
+			Description: "Number of in-memory file reads.",
+		})
+	TmpfsReadWait = metric.MustCreateNewUint64Metric("/in_memory_file/read_wait",
+		metric.Uint64Metadata{
+			Cumulative:  true,
+			Description: "Time waiting on in-memory file reads, in nanoseconds.",
+			Unit:        metricpb.MetricMetadata_UNITS_NANOSECONDS,
+		})
 )
 
 // StartReadWait indicates the beginning of a file read.

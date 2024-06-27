@@ -160,6 +160,7 @@ type Kernel struct {
 	useHostCores         bool
 	extraAuxv            []arch.AuxEntry
 	vdso                 *loader.VDSO
+	vdsoParams           *VDSOParamPage
 	rootUTSNamespace     *UTSNamespace
 	rootIPCNamespace     *IPCNamespace
 
@@ -405,6 +406,9 @@ type InitKernelArgs struct {
 	// Vdso holds the VDSO and its parameter page.
 	Vdso *loader.VDSO
 
+	// VdsoParams is the VDSO parameter page manager.
+	VdsoParams *VDSOParamPage
+
 	// RootUTSNamespace is the root UTS namespace.
 	RootUTSNamespace *UTSNamespace
 
@@ -466,6 +470,7 @@ func (k *Kernel) Init(args InitKernelArgs) error {
 	}
 	k.extraAuxv = args.ExtraAuxv
 	k.vdso = args.Vdso
+	k.vdsoParams = args.VdsoParams
 	k.futexes = futex.NewManager()
 	k.netlinkPorts = port.New()
 	k.ptraceExceptions = make(map[*Task]*Task)
@@ -777,7 +782,7 @@ func (k *Kernel) LoadFrom(ctx context.Context, r io.Reader, pagesMetadata, pages
 	// Restore the root network stack.
 	k.rootNetworkNamespace.RestoreRootStack(net)
 
-	k.Timekeeper().SetClocks(clocks)
+	k.Timekeeper().SetClocks(clocks, k.vdsoParams)
 
 	if timeReady != nil {
 		close(timeReady)
@@ -1249,7 +1254,7 @@ func (k *Kernel) resumeTimeLocked(ctx context.Context) {
 	// The CPU clock ticker will automatically resume as task goroutines resume
 	// execution.
 
-	k.timekeeper.ResumeUpdates()
+	k.timekeeper.ResumeUpdates(k.vdsoParams)
 	for t := range k.tasks.Root.tids {
 		if t == t.tg.leader {
 			t.tg.itimerRealTimer.Resume()

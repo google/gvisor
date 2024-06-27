@@ -28,8 +28,14 @@ import (
 	"gvisor.dev/gvisor/pkg/sync"
 )
 
-var totalTicks = metric.MustCreateNewUint64Metric("/memory_events/ticks", false /*sync*/, "Total number of memory event periods that have elapsed since startup.")
-var totalEvents = metric.MustCreateNewUint64Metric("/memory_events/events", false /*sync*/, "Total number of memory events emitted.")
+var totalTicks = metric.MustCreateNewUint64Metric("/memory_events/ticks", metric.Uint64Metadata{
+	Cumulative:  true,
+	Description: "Total number of memory event periods that have elapsed since startup.",
+})
+var totalEvents = metric.MustCreateNewUint64Metric("/memory_events/events", metric.Uint64Metadata{
+	Cumulative:  true,
+	Description: "Total number of memory events emitted.",
+})
 
 // MemoryEvents describes the configuration for the global memory event emitter.
 type MemoryEvents struct {

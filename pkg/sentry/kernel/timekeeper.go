@@ -21,8 +21,6 @@ import (
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/log"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
-	"gvisor.dev/gvisor/pkg/sentry/memmap"
-	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	sentrytime "gvisor.dev/gvisor/pkg/sentry/time"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -80,9 +78,6 @@ type Timekeeper struct {
 	// monotonicOffset.
 	saveRealtime int64
 
-	// params manages the parameter page.
-	params *VDSOParamPage
-
 	// mu protects destruction with stop and wg.
 	mu sync.Mutex `state:"nosave"`
 
@@ -97,10 +92,8 @@ type Timekeeper struct {
 // NewTimekeeper does not take ownership of paramPage.
 //
 // SetClocks must be called on the returned Timekeeper before it is usable.
-func NewTimekeeper(mf *pgalloc.MemoryFile, paramPage memmap.FileRange) *Timekeeper {
-	t := Timekeeper{
-		params: NewVDSOParamPage(mf, paramPage),
-	}
+func NewTimekeeper() *Timekeeper {
+	t := Timekeeper{}
 	t.realtimeClock = &timekeeperClock{tk: &t, c: sentrytime.Realtime}
 	t.monotonicClock = &timekeeperClock{tk: &t, c: sentrytime.Monotonic}
 	return &t
@@ -113,11 +106,11 @@ func NewTimekeeper(mf *pgalloc.MemoryFile, paramPage memmap.FileRange) *Timekeep
 // could cause time discontinuities.
 //
 // It must also be called after Load.
-func (t *Timekeeper) SetClocks(c sentrytime.Clocks) {
+func (t *Timekeeper) SetClocks(c sentrytime.Clocks, params *VDSOParamPage) {
 	// Update the params, marking them "not ready", as we may need to
 	// restart calibration on this new machine.
 	if t.restored != nil {
-		if err := t.params.Write(func() vdsoParams {
+		if err := params.Write(func() vdsoParams {
 			return vdsoParams{}
 		}); err != nil {
 			panic("unable to reset VDSO params: " + err.Error())
@@ -170,7 +163,7 @@ func (t *Timekeeper) SetClocks(c sentrytime.Clocks) {
 
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	t.startUpdater()
+	t.startUpdater(params)
 
 	if t.restored != nil {
 		close(t.restored)
@@ -206,7 +199,7 @@ func (t *Timekeeper) AfterFunc(d time.Duration, f func()) tcpip.Timer {
 // startUpdater starts an update goroutine that keeps the clocks updated.
 //
 // mu must be held.
-func (t *Timekeeper) startUpdater() {
+func (t *Timekeeper) startUpdater(params *VDSOParamPage) {
 	if t.stop != nil {
 		// Timekeeper already started
 		return
@@ -230,7 +223,7 @@ func (t *Timekeeper) startUpdater() {
 			// Call Update within a Write block to prevent the VDSO
 			// from using the old params between Update and
 			// Write.
-			if err := t.params.Write(func() vdsoParams {
+			if err := params.Write(func() vdsoParams {
 				monotonicParams, monotonicOk, realtimeParams, realtimeOk := t.clocks.Update()
 
 				var p vdsoParams
@@ -291,10 +284,10 @@ func (t *Timekeeper) PauseUpdates() {
 }
 
 // ResumeUpdates restarts clock parameter updates stopped by PauseUpdates.
-func (t *Timekeeper) ResumeUpdates() {
+func (t *Timekeeper) ResumeUpdates(params *VDSOParamPage) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	t.startUpdater()
+	t.startUpdater(params)
 }
 
 // GetTime returns the current time in nanoseconds.

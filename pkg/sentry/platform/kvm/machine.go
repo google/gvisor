@@ -115,28 +115,50 @@ var (
 	// hostExitCounter is a metric that tracks how many times the sentry
 	// performed a host to guest world switch.
 	hostExitCounter = KVMProfiling.MustCreateNewUint64Metric(
-		"/kvm/host_exits", false, "The number of times the sentry performed a host to guest world switch.")
+		"/kvm/host_exits",
+		metric.Uint64Metadata{
+			Cumulative:  true,
+			Description: "The number of times the sentry performed a host to guest world switch.",
+		})
 
 	// userExitCounter is a metric that tracks how many times the sentry has
 	// had an exit from userspace. Analogous to vCPU.userExits.
 	userExitCounter = KVMProfiling.MustCreateNewUint64Metric(
-		"/kvm/user_exits", false, "The number of times the sentry has had an exit from userspace.")
+		"/kvm/user_exits",
+		metric.Uint64Metadata{
+			Cumulative:  true,
+			Description: "The number of times the sentry has had an exit from userspace.",
+		})
 
 	// interruptCounter is a metric that tracks how many times execution returned
 	// to the KVM host to handle a pending signal.
 	interruptCounter = KVMProfiling.MustCreateNewUint64Metric(
-		"/kvm/interrupts", false, "The number of times the signal handler was invoked.")
+		"/kvm/interrupts",
+		metric.Uint64Metadata{
+			Cumulative:  true,
+			Description: "The number of times the signal handler was invoked.",
+		})
 
 	// mmapCallCounter is a metric that tracks how many times the function
 	// seccompMmapSyscall has been called.
 	mmapCallCounter = KVMProfiling.MustCreateNewUint64Metric(
-		"/kvm/mmap_calls", false, "The number of times seccompMmapSyscall has been called.")
+		"/kvm/mmap_calls",
+		metric.Uint64Metadata{
+			Cumulative:  true,
+			Description: "The number of times seccompMmapSyscall has been called.",
+		})
 
 	// getVCPUCounter is a metric that tracks how many times different paths of
 	// machine.Get() are triggered.
 	getVCPUCounter = KVMProfiling.MustCreateNewUint64Metric(
-		"/kvm/get_vcpu", false, "The number of times that machine.Get() was called, split by path the function took.",
-		metric.NewField("acquisition_type", &getVCPUAcquisitionFastReused, &getVCPUAcquisitionReused, &getVCPUAcquisitionUnused, &getVCPUAcquisitionStolen))
+		"/kvm/get_vcpu",
+		metric.Uint64Metadata{
+			Cumulative:  true,
+			Description: "The number of times that machine.Get() was called, split by path the function took.",
+			Fields: []metric.Field{
+				metric.NewField("acquisition_type", &getVCPUAcquisitionFastReused, &getVCPUAcquisitionReused, &getVCPUAcquisitionUnused, &getVCPUAcquisitionStolen),
+			},
+		})
 
 	// asInvalidateDuration are durations of calling addressSpace.invalidate().
 	asInvalidateDuration = KVMProfiling.MustCreateNewTimerMetric("/kvm/address_space_invalidate",

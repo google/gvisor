@@ -491,8 +491,9 @@ func New(args Args) (*Loader, error) {
 	}
 
 	// Create timekeeper.
-	tk := kernel.NewTimekeeper(l.k.MemoryFile(), vdso.ParamPage.FileRange())
-	tk.SetClocks(time.NewCalibratedClocks())
+	tk := kernel.NewTimekeeper()
+	params := kernel.NewVDSOParamPage(l.k.MemoryFile(), vdso.ParamPage.FileRange())
+	tk.SetClocks(time.NewCalibratedClocks(), params)
 
 	if err := enableStrace(args.Conf); err != nil {
 		return nil, fmt.Errorf("enabling strace: %w", err)
@@ -550,6 +551,7 @@ func New(args Args) (*Loader, error) {
 		RootNetworkNamespace: netns,
 		ApplicationCores:     uint(args.NumCPU),
 		Vdso:                 vdso,
+		VdsoParams:           params,
 		RootUTSNamespace:     kernel.NewUTSNamespace(args.Spec.Hostname, args.Spec.Hostname, creds.UserNamespace),
 		RootIPCNamespace:     kernel.NewIPCNamespace(creds.UserNamespace),
 		PIDNamespace:         kernel.NewRootPIDNamespace(creds.UserNamespace),

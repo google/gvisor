@@ -392,7 +392,15 @@ func RegisterSyscallTable(s *SyscallTable) {
 			unimplementedSyscallNumbers[i] = []*metric.FieldValue{s}
 		}
 		allowedValues[len(allowedValues)-1] = outOfRangeSyscallNumber[0]
-		unimplementedSyscallCounter = metric.MustCreateNewUint64Metric("/unimplemented_syscalls", true, "Number of times the application tried to call an unimplemented syscall, broken down by syscall number", metric.NewField("sysno", allowedValues...))
+		unimplementedSyscallCounter = metric.MustCreateNewUint64Metric("/unimplemented_syscalls",
+			metric.Uint64Metadata{
+				Cumulative:  true,
+				Sync:        true,
+				Description: "Number of times the application tried to call an unimplemented syscall, broken down by syscall number",
+				Fields: []metric.Field{
+					metric.NewField("sysno", allowedValues...),
+				},
+			})
 	})
 	s.Init()
 }

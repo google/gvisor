@@ -80,13 +80,21 @@ func statCounterValue(cm *tcpip.StatCounter) func(...*metric.FieldValue) uint64 
 
 func mustCreateMetric(name, description string) *tcpip.StatCounter {
 	var cm tcpip.StatCounter
-	metric.MustRegisterCustomUint64Metric(name, true /* cumulative */, false /* sync */, description, statCounterValue(&cm))
+	metric.MustRegisterCustomUint64Metric(name,
+		metric.Uint64Metadata{
+			Cumulative:  true,
+			Description: description,
+		}, statCounterValue(&cm))
 	return &cm
 }
 
 func mustCreateGauge(name, description string) *tcpip.StatCounter {
 	var cm tcpip.StatCounter
-	metric.MustRegisterCustomUint64Metric(name, false /* cumulative */, false /* sync */, description, statCounterValue(&cm))
+	metric.MustRegisterCustomUint64Metric(name,
+		metric.Uint64Metadata{
+			Cumulative:  false,
+			Description: description,
+		}, statCounterValue(&cm))
 	return &cm
 }
 
