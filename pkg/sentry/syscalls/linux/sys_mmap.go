@@ -67,6 +67,7 @@ func Mmap(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *
 		},
 		MaxPerms:  hostarch.AnyAccess,
 		GrowsDown: linux.MAP_GROWSDOWN&flags != 0,
+		Stack:     linux.MAP_STACK&flags != 0,
 	}
 	if linux.MAP_POPULATE&flags != 0 {
 		opts.PlatformEffect = memmap.PlatformEffectCommit

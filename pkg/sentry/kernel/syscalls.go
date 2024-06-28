@@ -496,7 +496,10 @@ type SyscallInfo struct {
 // IncrementUnimplementedSyscallCounter increments the "unimplemented syscall" metric for the given
 // syscall number.
 // A syscall table must have been initialized prior to calling this function.
-// +checkescape:all
+//
+// FIXME(gvisor.dev/issue/10556): checkescape can't distinguish between this
+// file and files named syscalls.go in other directories, resulting in false
+// positives, so this function cannot be +checkescape:all.
 //
 //go:nosplit
 func IncrementUnimplementedSyscallCounter(sysno uintptr) {

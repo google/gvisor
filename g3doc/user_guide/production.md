@@ -140,6 +140,15 @@ Passthrough to use the host's (Linux's) network stack, rather than gVisor's own.
 <a class="button" href="/docs/user_guide/networking/">Configure Networking
 &raquo;</a>
 
+### Optimizing MM performance {#configure-mm}
+
+gVisor will make transparent huge pages (THP) available to applications if
+provided by the host Linux kernel. Linux disables this feature by default; to
+enable it, write "advise" to the file
+`/sys/kernel/mm/transparent_hugepage/shmem_enabled`. Performance effects of THP
+vary by workload and platform; KVM platform performance in particular can
+benefit greatly from enabling THP.
+
 [Istio]: https://istio.io/
 [Istio overhead]: https://istio.io/latest/docs/ops/deployment/performance-and-scalability/
 [Security Model]: /docs/architecture_guide/security/

@@ -252,6 +252,10 @@ PosixErrorOr<KernelVersion> GetKernelVersion();
 
 static const size_t kPageSize = sysconf(_SC_PAGESIZE);
 
+#if defined(__x86_64__) || defined(__aarch64__)
+inline constexpr size_t kHugePageSize = 1 << 21;
+#endif
+
 enum class CPUVendor { kIntel, kAMD, kUnknownVendor };
 
 CPUVendor GetCPUVendor();

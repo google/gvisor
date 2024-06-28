@@ -60,6 +60,7 @@ const (
 	vmaMaxPermsExecute
 	vmaPrivate
 	vmaGrowsDown
+	vmaIsStack
 )
 
 func (v *vma) saveRealPerms() int {
@@ -97,6 +98,9 @@ func (v *vma) saveRealPerms() int {
 	if v.growsDown {
 		b |= vmaGrowsDown
 	}
+	if v.isStack {
+		b |= vmaIsStack
+	}
 	return b
 }
 
@@ -133,6 +137,9 @@ func (v *vma) loadRealPerms(_ goContext.Context, b int) {
 	}
 	if b&vmaGrowsDown > 0 {
 		v.growsDown = true
+	}
+	if b&vmaIsStack > 0 {
+		v.isStack = true
 	}
 }
 

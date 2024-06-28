@@ -40,7 +40,7 @@ namespace {
 
 void ExpectAllMappingBytes(Mapping const& m, char c) {
   auto const v = m.view();
-  for (size_t i = 0; i < kPageSize; i++) {
+  for (size_t i = 0; i < v.size(); i++) {
     ASSERT_EQ(v[i], c) << "at offset " << i;
   }
 }
@@ -49,7 +49,7 @@ void ExpectAllMappingBytes(Mapping const& m, char c) {
 // helpful failure messages.
 void CheckAllMappingBytes(Mapping const& m, char c) {
   auto const v = m.view();
-  for (size_t i = 0; i < kPageSize; i++) {
+  for (size_t i = 0; i < v.size(); i++) {
     TEST_CHECK_MSG(v[i] == c, "mapping contains wrong value");
   }
 }
@@ -134,6 +134,96 @@ TEST(MadviseDontneedTest, IgnoresPermissions) {
   auto m =
       ASSERT_NO_ERRNO_AND_VALUE(MmapAnon(kPageSize, PROT_NONE, MAP_PRIVATE));
   EXPECT_THAT(madvise(m.ptr(), m.len(), MADV_DONTNEED), SyscallSucceeds());
+}
+
+class MadviseDontneedHugePageSubrangeTest : public ::testing::Test {
+ protected:
+  static constexpr char kDataValue = 9;
+
+  void TearDown() override {
+    if (data_start_) {
+      free(data_start_);
+    }
+  }
+
+  PosixError GetAndFillHugePages(size_t length) {
+    void* memptr;
+    if (int ret = posix_memalign(&memptr, kHugePageSize, length); ret != 0) {
+      return PosixError(ret, "posix_memalign failed");
+    }
+    data_start_ = static_cast<char*>(memptr);
+    data_len_ = length;
+    memset(data_start_, kDataValue, data_len_);
+    return PosixError();
+  }
+
+  void TestMadvDontneedSubrange(size_t start_off, size_t end_off) {
+    TEST_CHECK(start_off <= data_len_);
+    TEST_CHECK(end_off <= data_len_);
+    TEST_CHECK(start_off <= end_off);
+    char* const inner_start = data_start_ + start_off;
+    size_t const inner_len = end_off - start_off;
+    ASSERT_THAT(madvise(inner_start, inner_len, MADV_DONTNEED),
+                SyscallSucceeds());
+    auto v = absl::string_view(data_start_, start_off);
+    for (size_t i = 0; i < v.size(); i++) {
+      ASSERT_EQ(v[i], kDataValue)
+          << "at offset " << i << " of range before MADV_DONTNEED";
+    }
+    v = absl::string_view(inner_start, inner_len);
+    for (size_t i = 0; i < v.size(); i++) {
+      ASSERT_EQ(v[i], 0) << "at offset " << i
+                         << " of range under MADV_DONTNEED";
+    }
+    v = absl::string_view(data_start_ + end_off, data_len_ - end_off);
+    for (size_t i = 0; i < v.size(); i++) {
+      ASSERT_EQ(v[i], kDataValue)
+          << "at offset " << i << " of range after MADV_DONTNEED";
+    }
+  }
+
+  char* data_start_ = nullptr;
+  size_t data_len_ = 0;
+};
+
+TEST_F(MadviseDontneedHugePageSubrangeTest, OneHugePageWhole) {
+  ASSERT_NO_ERRNO(GetAndFillHugePages(kHugePageSize));
+  TestMadvDontneedSubrange(0, kHugePageSize);
+}
+
+TEST_F(MadviseDontneedHugePageSubrangeTest, OneHugePagePartial) {
+  ASSERT_NO_ERRNO(GetAndFillHugePages(kHugePageSize));
+  TestMadvDontneedSubrange(kHugePageSize / 4, kHugePageSize * 3 / 4);
+}
+
+TEST_F(MadviseDontneedHugePageSubrangeTest, TwoHugePagesPartialStart) {
+  ASSERT_NO_ERRNO(GetAndFillHugePages(kHugePageSize * 2));
+  TestMadvDontneedSubrange(kHugePageSize / 2, kHugePageSize);
+}
+
+TEST_F(MadviseDontneedHugePageSubrangeTest, TwoHugePagesPartialEnd) {
+  ASSERT_NO_ERRNO(GetAndFillHugePages(kHugePageSize * 2));
+  TestMadvDontneedSubrange(kHugePageSize, kHugePageSize * 3 / 2);
+}
+
+TEST_F(MadviseDontneedHugePageSubrangeTest, TwoHugePagesPartialStartAndEnd) {
+  ASSERT_NO_ERRNO(GetAndFillHugePages(kHugePageSize * 2));
+  TestMadvDontneedSubrange(kHugePageSize / 2, kHugePageSize * 3 / 2);
+}
+
+TEST_F(MadviseDontneedHugePageSubrangeTest, ThreeHugePagesPartialStart) {
+  ASSERT_NO_ERRNO(GetAndFillHugePages(kHugePageSize * 3));
+  TestMadvDontneedSubrange(kHugePageSize / 2, kHugePageSize * 2);
+}
+
+TEST_F(MadviseDontneedHugePageSubrangeTest, ThreeHugePagesPartialEnd) {
+  ASSERT_NO_ERRNO(GetAndFillHugePages(kHugePageSize * 3));
+  TestMadvDontneedSubrange(kHugePageSize, kHugePageSize * 5 / 2);
+}
+
+TEST_F(MadviseDontneedHugePageSubrangeTest, ThreeHugePagesPartialStartAndEnd) {
+  ASSERT_NO_ERRNO(GetAndFillHugePages(kHugePageSize * 3));
+  TestMadvDontneedSubrange(kHugePageSize / 2, kHugePageSize * 5 / 2);
 }
 
 TEST(MadviseDontforkTest, AddressLength) {

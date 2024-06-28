@@ -499,7 +499,7 @@ func (mm *MemoryManager) handleASIOFault(ctx context.Context, addr hostarch.Addr
 
 	// Ensure that we have usable pmas.
 	mm.activeMu.Lock()
-	pseg, pend, err := mm.getPMAsLocked(ctx, vseg, ar, at)
+	pseg, pend, err := mm.getPMAsLocked(ctx, vseg, ar, at, true /* callerIndirectCommit */)
 	mm.mappingMu.RUnlock()
 	if pendaddr := pend.Start(); pendaddr < ar.End {
 		if pendaddr <= ar.Start {
@@ -553,7 +553,7 @@ func (mm *MemoryManager) withInternalMappings(ctx context.Context, ar hostarch.A
 
 	// Ensure that we have usable pmas.
 	mm.activeMu.Lock()
-	pseg, pend, perr := mm.getPMAsLocked(ctx, vseg, ar, at)
+	pseg, pend, perr := mm.getPMAsLocked(ctx, vseg, ar, at, true /* callerIndirectCommit */)
 	mm.mappingMu.RUnlock()
 	if pendaddr := pend.Start(); pendaddr < ar.End {
 		if pendaddr <= ar.Start {
@@ -627,7 +627,7 @@ func (mm *MemoryManager) withVecInternalMappings(ctx context.Context, ars hostar
 
 	// Ensure that we have usable pmas.
 	mm.activeMu.Lock()
-	pars, perr := mm.getVecPMAsLocked(ctx, vars, at)
+	pars, perr := mm.getVecPMAsLocked(ctx, vars, at, true /* callerIndirectCommit */)
 	mm.mappingMu.RUnlock()
 	if pars.NumBytes() == 0 {
 		mm.activeMu.Unlock()

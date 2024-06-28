@@ -21,6 +21,7 @@ import (
 	"io"
 	"runtime"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
@@ -48,11 +49,10 @@ type SaveOpts struct {
 
 // SaveTo writes f's state to the given stream.
 func (f *MemoryFile) SaveTo(ctx context.Context, w io.Writer, pw io.Writer, opts SaveOpts) error {
-	// Wait for reclaim.
+	// Wait for memory release.
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	for f.reclaimable {
-		f.reclaimCond.Signal()
+	for f.haveWaste {
 		f.mu.Unlock()
 		runtime.Gosched()
 		f.mu.Lock()
@@ -63,8 +63,8 @@ func (f *MemoryFile) SaveTo(ctx context.Context, w io.Writer, pw io.Writer, opts
 		panic(fmt.Sprintf("evictions still pending for %d users; call StartEvictions and WaitForEvictions before SaveTo", len(f.evictable)))
 	}
 
-	// Ensure that all pages that contain non-zero bytes have knownCommitted
-	// set, since we only store knownCommitted pages below.
+	// Ensure that all pages that contain non-zero bytes are marked
+	// known-committed, since we only store known-committed pages below.
 	zeroPage := make([]byte, hostarch.PageSize)
 	var (
 		decommitWarnOnce  sync.Once
@@ -110,7 +110,7 @@ func (f *MemoryFile) SaveTo(ctx context.Context, w io.Writer, pw io.Writer, opts
 			decommitPendingFR = memmap.FileRange{}
 		}
 	}
-	err := f.updateUsageLocked(0, nil, opts.ExcludeCommittedZeroPages, func(bs []byte, committed []byte, off uint64, wasCommitted bool) error {
+	err := f.updateUsageLocked(nil, opts.ExcludeCommittedZeroPages, func(bs []byte, committed []byte, off uint64, wasCommitted bool) error {
 		scanTotal += uint64(len(bs))
 		for pgoff := 0; pgoff < len(bs); pgoff += hostarch.PageSize {
 			i := pgoff / hostarch.PageSize
@@ -138,25 +138,46 @@ func (f *MemoryFile) SaveTo(ctx context.Context, w io.Writer, pw io.Writer, opts
 	log.Debugf("MemoryFile.SaveTo: scanned %d bytes, decommitted %d bytes in %d syscalls", scanTotal, decommitTotal, decommitCount)
 
 	// Save metadata.
-	if _, err := state.Save(ctx, w, &f.fileSize); err != nil {
+	if _, err := state.Save(ctx, w, &f.unwasteSmall); err != nil {
 		return err
 	}
-	if _, err := state.Save(ctx, w, &f.usage); err != nil {
+	if _, err := state.Save(ctx, w, &f.unwasteHuge); err != nil {
+		return err
+	}
+	if _, err := state.Save(ctx, w, &f.unfreeSmall); err != nil {
+		return err
+	}
+	if _, err := state.Save(ctx, w, &f.unfreeHuge); err != nil {
+		return err
+	}
+	if _, err := state.Save(ctx, w, &f.subreleased); err != nil {
+		return err
+	}
+	if _, err := state.Save(ctx, w, &f.memAcct); err != nil {
+		return err
+	}
+	if _, err := state.Save(ctx, w, &f.knownCommittedBytes); err != nil {
+		return err
+	}
+	if _, err := state.Save(ctx, w, &f.commitSeq); err != nil {
+		return err
+	}
+	if _, err := state.Save(ctx, w, f.chunks.Load()); err != nil {
 		return err
 	}
 
 	// Dump out committed pages.
-	for seg := f.usage.FirstSegment(); seg.Ok(); seg = seg.NextSegment() {
-		if !seg.Value().knownCommitted {
+	for maseg := f.memAcct.FirstSegment(); maseg.Ok(); maseg = maseg.NextSegment() {
+		if !maseg.ValuePtr().knownCommitted {
 			continue
 		}
 		// Write a header to distinguish from objects.
-		if err := state.WriteHeader(w, uint64(seg.Range().Length()), false); err != nil {
+		if err := state.WriteHeader(w, uint64(maseg.Range().Length()), false); err != nil {
 			return err
 		}
 		// Write out data.
 		var ioErr error
-		err := f.forEachMappingSlice(seg.Range(), func(s []byte) {
+		f.forEachMappingSlice(maseg.Range(), func(s []byte) {
 			if ioErr != nil {
 				return
 			}
@@ -164,9 +185,6 @@ func (f *MemoryFile) SaveTo(ctx context.Context, w io.Writer, pw io.Writer, opts
 		})
 		if ioErr != nil {
 			return ioErr
-		}
-		if err != nil {
-			return err
 		}
 	}
 
@@ -194,45 +212,88 @@ func (f *MemoryFile) RestoreID() string {
 
 // LoadFrom loads MemoryFile state from the given stream.
 func (f *MemoryFile) LoadFrom(ctx context.Context, r io.Reader, pr *statefile.AsyncReader) error {
-	// Load metadata.
-	if _, err := state.Load(ctx, r, &f.fileSize); err != nil {
-		return err
-	}
-	if err := f.file.Truncate(f.fileSize); err != nil {
-		return err
-	}
-	newMappings := make([]uintptr, f.fileSize>>chunkShift)
-	f.mappings.Store(&newMappings)
-	if _, err := state.Load(ctx, r, &f.usage); err != nil {
-		return err
-	}
+	// Clear sets since non-empty sets will panic if loaded into.
+	f.unwasteSmall.RemoveAll()
+	f.unwasteHuge.RemoveAll()
+	f.unfreeSmall.RemoveAll()
+	f.unfreeHuge.RemoveAll()
+	f.memAcct.RemoveAll()
 
-	// Try to map committed chunks concurrently: For any given chunk, either
-	// this loop or the following one will mmap the chunk first and cache it in
-	// f.mappings for the other, but this loop is likely to run ahead of the
-	// other since it doesn't do any work between mmaps. The rest of this
-	// function doesn't mutate f.usage, so it's safe to iterate concurrently.
-	mapperDone := make(chan struct{})
-	mapperCanceled := atomicbitops.FromInt32(0)
-	go func() { // S/R-SAFE: see comment
-		defer func() { close(mapperDone) }()
-		for seg := f.usage.FirstSegment(); seg.Ok(); seg = seg.NextSegment() {
-			if mapperCanceled.Load() != 0 {
-				return
-			}
-			if seg.Value().knownCommitted {
-				f.forEachMappingSlice(seg.Range(), func(s []byte) {})
-			}
+	// Load metadata.
+	if _, err := state.Load(ctx, r, &f.unwasteSmall); err != nil {
+		return err
+	}
+	if _, err := state.Load(ctx, r, &f.unwasteHuge); err != nil {
+		return err
+	}
+	if _, err := state.Load(ctx, r, &f.unfreeSmall); err != nil {
+		return err
+	}
+	if _, err := state.Load(ctx, r, &f.unfreeHuge); err != nil {
+		return err
+	}
+	if _, err := state.Load(ctx, r, &f.subreleased); err != nil {
+		return err
+	}
+	if _, err := state.Load(ctx, r, &f.memAcct); err != nil {
+		return err
+	}
+	if _, err := state.Load(ctx, r, &f.knownCommittedBytes); err != nil {
+		return err
+	}
+	if _, err := state.Load(ctx, r, &f.commitSeq); err != nil {
+		return err
+	}
+	var chunks []chunkInfo
+	if _, err := state.Load(ctx, r, &chunks); err != nil {
+		return err
+	}
+	f.chunks.Store(&chunks)
+	if err := f.file.Truncate(int64(len(chunks)) * chunkSize); err != nil {
+		return err
+	}
+	// Obtain chunk mappings, then madvise them concurrently with loading data.
+	var (
+		madviseEnd  atomicbitops.Uint64
+		madviseChan = make(chan struct{}, 1)
+		madviseWG   sync.WaitGroup
+	)
+	if len(chunks) != 0 {
+		m, _, errno := unix.Syscall6(
+			unix.SYS_MMAP,
+			0,
+			uintptr(len(chunks)*chunkSize),
+			unix.PROT_READ|unix.PROT_WRITE,
+			unix.MAP_SHARED,
+			f.file.Fd(),
+			0)
+		if errno != 0 {
+			return fmt.Errorf("failed to mmap MemoryFile: %w", errno)
 		}
-	}()
-	defer func() {
-		mapperCanceled.Store(1)
-		<-mapperDone
-	}()
+		for i := range chunks {
+			chunk := &chunks[i]
+			chunk.mapping = m
+			m += chunkSize
+		}
+		madviseWG.Add(1)
+		go func() {
+			defer madviseWG.Done()
+			for i := range chunks {
+				chunk := &chunks[i]
+				f.madviseChunkMapping(chunk.mapping, chunkSize, chunk.huge)
+				madviseEnd.Add(chunkSize)
+				select {
+				case madviseChan <- struct{}{}:
+				default:
+				}
+			}
+		}()
+	}
+	defer madviseWG.Wait()
 
 	// Load committed pages.
-	for seg := f.usage.FirstSegment(); seg.Ok(); seg = seg.NextSegment() {
-		if !seg.Value().knownCommitted {
+	for maseg := f.memAcct.FirstSegment(); maseg.Ok(); maseg = maseg.NextSegment() {
+		if !maseg.ValuePtr().knownCommitted {
 			continue
 		}
 		// Verify header.
@@ -244,13 +305,17 @@ func (f *MemoryFile) LoadFrom(ctx context.Context, r io.Reader, pr *statefile.As
 			// Not expected.
 			return fmt.Errorf("unexpected object")
 		}
-		if expected := uint64(seg.Range().Length()); length != expected {
+		if expected := uint64(maseg.Range().Length()); length != expected {
 			// Size mismatch.
 			return fmt.Errorf("mismatched segment: expected %d, got %d", expected, length)
 		}
+		// Wait for all chunks spanned by this segment to be madvised.
+		for madviseEnd.Load() < maseg.End() {
+			<-madviseChan
+		}
 		// Read data.
 		var ioErr error
-		err = f.forEachMappingSlice(seg.Range(), func(s []byte) {
+		f.forEachMappingSlice(maseg.Range(), func(s []byte) {
 			if ioErr != nil {
 				return
 			}
@@ -263,16 +328,14 @@ func (f *MemoryFile) LoadFrom(ctx context.Context, r io.Reader, pr *statefile.As
 		if ioErr != nil {
 			return ioErr
 		}
-		if err != nil {
-			return err
-		}
 
 		// Update accounting for restored pages. We need to do this here since
 		// these segments are marked as "known committed", and will be skipped
 		// over on accounting scans.
-		amount := seg.Range().Length()
-		usage.MemoryAccounting.Inc(amount, seg.Value().kind, seg.Value().memCgID)
-		f.usageExpected += amount
+		if !f.opts.DisableMemoryAccounting {
+			amount := maseg.Range().Length()
+			usage.MemoryAccounting.Inc(amount, maseg.ValuePtr().kind, maseg.ValuePtr().memCgID)
+		}
 	}
 
 	return nil

@@ -90,6 +90,9 @@ func RegisterFlags(flagSet *flag.FlagSet) {
 	flagSet.Bool("enable-core-tags", false, "enables core tagging. Requires host linux kernel >= 5.14.")
 	flagSet.String("pod-init-config", "", "path to configuration file with additional steps to take during pod creation.")
 
+	// Flags that control sandbox runtime behavior: MM related.
+	flagSet.Bool("app-huge-pages", true, "enable use of huge pages for application memory; requires /sys/kernel/mm/transparent_hugepage/shmem_enabled = advise")
+
 	// Flags that control sandbox runtime behavior: FS related.
 	flagSet.Var(fileAccessTypePtr(FileAccessExclusive), "file-access", "specifies which filesystem validation to use for the root mount: exclusive (default), shared.")
 	flagSet.Var(fileAccessTypePtr(FileAccessShared), "file-access-mounts", "specifies which filesystem validation to use for volumes other than the root mount: shared (default), exclusive.")

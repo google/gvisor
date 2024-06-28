@@ -294,6 +294,9 @@ type vma struct {
 	// metag, none of which we currently support.
 	growsDown bool `state:"manual"`
 
+	// isStack is true if this is a MAP_STACK mapping.
+	isStack bool `state:"manual"`
+
 	// dontfork is the MADV_DONTFORK setting for this vma configured by madvise().
 	dontfork bool
 
@@ -330,6 +333,7 @@ func (v *vma) copy() vma {
 		maxPerms:       v.maxPerms,
 		private:        v.private,
 		growsDown:      v.growsDown,
+		isStack:        v.isStack,
 		dontfork:       v.dontfork,
 		mlockMode:      v.mlockMode,
 		numaPolicy:     v.numaPolicy,
@@ -379,6 +383,13 @@ type pma struct {
 	// If private is false, this pma caches a translation from the
 	// corresponding vma's memmap.Mappable.Translate.
 	private bool
+
+	// If huge is true, this pma was returned by a call to MemoryFile.Allocate()
+	// with AllocOpts.Hugepage = true. Note that due to pma splitting, pma may
+	// no longer be hugepage-aligned.
+	//
+	// Invariant: If huge == true, then private == true.
+	huge bool
 
 	// If internalMappings is not empty, it is the cached return value of
 	// file.MapInternal for the memmap.FileRange mapped by this pma.
