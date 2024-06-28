@@ -311,7 +311,7 @@ func (n *nic) enable() tcpip.Error {
 // remove detaches NIC from the link endpoint and releases network endpoint
 // resources. This guarantees no packets between this NIC and the network
 // stack.
-func (n *nic) remove() tcpip.Error {
+func (n *nic) remove(closeLinkEndpoint bool) tcpip.Error {
 	n.enableDisableMu.Lock()
 
 	n.disableLocked()
@@ -329,7 +329,16 @@ func (n *nic) remove() tcpip.Error {
 	// Prevent packets from going down to the link before shutting the link down.
 	n.qDisc.Close()
 	n.NetworkLinkEndpoint.Attach(nil)
-	n.NetworkLinkEndpoint.Close()
+	if closeLinkEndpoint {
+		ep := n.NetworkLinkEndpoint
+		ep.SetOnCloseAction(nil)
+		// The link endpoint has to be closed without holding a
+		// netstack lock, because it can trigger other netstack
+		// operations.
+		go func() {
+			ep.Close()
+		}()
+	}
 
 	return nil
 }

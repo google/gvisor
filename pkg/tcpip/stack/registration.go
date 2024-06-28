@@ -1141,6 +1141,12 @@ type NetworkLinkEndpoint interface {
 
 	// Close is called when the endpoint is removed from a stack.
 	Close()
+
+	// SetOnCloseAction sets the action that will be exected before closing the
+	// endpoint. It is used to destroy a network device when its endpoint
+	// is closed. Endpoints that are closed only after destroying their
+	// network devices can implement this method as no-op.
+	SetOnCloseAction(func())
 }
 
 // QueueingDiscipline provides a queueing strategy for outgoing packets (e.g

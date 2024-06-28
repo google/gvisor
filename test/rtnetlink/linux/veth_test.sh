@@ -30,6 +30,7 @@ if ! wait_for ! ip link show test_veth02; then
   exit 1
 fi
 
+# Create new veth pair where devices are in two namespaces.
 ip netns add test
 ip link add test_veth01 type veth peer name test_veth02 netns test
 ip link show test_veth01
@@ -39,3 +40,15 @@ if ! wait_for ! ip link show test_veth01; then
   fail "test_veth01 hasn't been destroyed"
 fi
 
+# Create new veth pair and move one end in another namespace.
+ip netns add test
+ip link add test_veth01 type veth peer name test_veth02
+ip link set dev test_veth02 netns test
+ip link show test_veth01
+ip netns exec test ip link show test_veth02
+# Check that test_veth02 will be destroyed after changing netns.
+ip link del test_veth01
+if ! wait_for ! ip netns exec test ip link show test_veth02; then
+  fail "test_veth02 hasn't been destroyed"
+fi
+ip netns del test

@@ -171,3 +171,8 @@ func (e *Endpoint) ParseHeader(pkt *stack.PacketBuffer) bool {
 func (e *Endpoint) Close() {
 	e.child.Close()
 }
+
+// SetOnCloseAction implement stack.LinkEndpoints.
+func (e *Endpoint) SetOnCloseAction(action func()) {
+	e.child.SetOnCloseAction(action)
+}

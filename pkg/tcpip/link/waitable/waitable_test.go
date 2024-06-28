@@ -108,6 +108,9 @@ func (*countedEndpoint) ParseHeader(*stack.PacketBuffer) bool {
 // Close implements stack.LinkEndpoint.
 func (*countedEndpoint) Close() {}
 
+// SetOnCloseAction implements stack.LinkEndpoint.SetOnCloseAction.
+func (*countedEndpoint) SetOnCloseAction(func()) {}
+
 func TestWaitWrite(t *testing.T) {
 	ep := &countedEndpoint{}
 	wep := New(ep)
