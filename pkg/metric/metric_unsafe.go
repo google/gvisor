@@ -46,7 +46,9 @@ func snapshotDistribution(samples []atomicbitops.Uint64) []uint64 {
 	return snapshot
 }
 
-// CheapNowNano returns the current unix timestamp in nanoseconds.
+// CheapNowNano returns the a timestamp in nanoseconds.
+// It is *NOT* measured from the Unix epoch.
+// It is monotonic.
 //
 //go:nosplit
 func CheapNowNano() int64 {
