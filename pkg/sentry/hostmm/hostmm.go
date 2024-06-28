@@ -20,10 +20,30 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"regexp"
 
 	"gvisor.dev/gvisor/pkg/eventfd"
 	"gvisor.dev/gvisor/pkg/log"
 )
+
+// GetTransparentHugepageEnum returns the currently selected option for
+// whichever of
+// /sys/kernel/mm/transparent_hugepage/{enabled,shmem_enabled,defrag} is
+// specified by filename. (Only the basename is required, not the full path.)
+func GetTransparentHugepageEnum(filename string) (string, error) {
+	pathname := path.Join("/sys/kernel/mm/transparent_hugepage/", filename)
+	data, err := os.ReadFile(pathname)
+	if err != nil {
+		return "", err
+	}
+	// In these files, the selected option is highlighted by square brackets.
+	m := regexp.MustCompile(`\[.*\]`).Find(data)
+	if m == nil {
+		return "", fmt.Errorf("failed to parse %s: %q", pathname, data)
+	}
+	// Remove the square brackets.
+	return string(m[1 : len(m)-1]), nil
+}
 
 // NotifyCurrentMemcgPressureCallback requests that f is called whenever the
 // calling process' memory cgroup indicates memory pressure of the given level,

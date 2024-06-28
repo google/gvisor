@@ -94,6 +94,10 @@ func (mm *MemoryManager) existingVecPMAsLocked(ars hostarch.AddrRangeSeq, at hos
 //
 //   - An error that is non-nil if pmas exist for only a subset of ar.
 //
+// If callerIndirectCommit is true, the caller of getPMAsLocked will shortly
+// commit all pages in ar without using the caller's page tables, in the same
+// sense as pgalloc.AllocateCallerIndirectCommit.
+//
 // Preconditions:
 //   - mm.mappingMu must be locked.
 //   - mm.activeMu must be locked for writing.
@@ -101,7 +105,7 @@ func (mm *MemoryManager) existingVecPMAsLocked(ars hostarch.AddrRangeSeq, at hos
 //   - vseg.Range().Contains(ar.Start).
 //   - vmas must exist for all addresses in ar, and support accesses of type at
 //     (i.e. permission checks must have been performed against vmas).
-func (mm *MemoryManager) getPMAsLocked(ctx context.Context, vseg vmaIterator, ar hostarch.AddrRange, at hostarch.AccessType) (pmaIterator, pmaGapIterator, error) {
+func (mm *MemoryManager) getPMAsLocked(ctx context.Context, vseg vmaIterator, ar hostarch.AddrRange, at hostarch.AccessType, callerIndirectCommit bool) (pmaIterator, pmaGapIterator, error) {
 	if checkInvariants {
 		if !ar.WellFormed() || ar.Length() == 0 {
 			panic(fmt.Sprintf("invalid ar: %v", ar))
@@ -123,7 +127,7 @@ func (mm *MemoryManager) getPMAsLocked(ctx context.Context, vseg vmaIterator, ar
 	}
 	ar = hostarch.AddrRange{ar.Start.RoundDown(), end}
 
-	pstart, pend, perr := mm.getPMAsInternalLocked(ctx, vseg, ar, at)
+	pstart, pend, perr := mm.getPMAsInternalLocked(ctx, vseg, ar, at, callerIndirectCommit)
 	if pend.Start() <= ar.Start {
 		return pmaIterator{}, pend, perr
 	}
@@ -148,7 +152,7 @@ func (mm *MemoryManager) getPMAsLocked(ctx context.Context, vseg vmaIterator, ar
 //   - mm.activeMu must be locked for writing.
 //   - vmas must exist for all addresses in ars, and support accesses of type at
 //     (i.e. permission checks must have been performed against vmas).
-func (mm *MemoryManager) getVecPMAsLocked(ctx context.Context, ars hostarch.AddrRangeSeq, at hostarch.AccessType) (hostarch.AddrRangeSeq, error) {
+func (mm *MemoryManager) getVecPMAsLocked(ctx context.Context, ars hostarch.AddrRangeSeq, at hostarch.AccessType, callerIndirectCommit bool) (hostarch.AddrRangeSeq, error) {
 	for arsit := ars; !arsit.IsEmpty(); arsit = arsit.Tail() {
 		ar := arsit.Head()
 		if ar.Length() == 0 {
@@ -169,7 +173,7 @@ func (mm *MemoryManager) getVecPMAsLocked(ctx context.Context, ars hostarch.Addr
 		}
 		ar = hostarch.AddrRange{ar.Start.RoundDown(), end}
 
-		_, pend, perr := mm.getPMAsInternalLocked(ctx, mm.vmas.FindSegment(ar.Start), ar, at)
+		_, pend, perr := mm.getPMAsInternalLocked(ctx, mm.vmas.FindSegment(ar.Start), ar, at, callerIndirectCommit)
 		if perr != nil {
 			return truncatedAddrRangeSeq(ars, arsit, pend.Start()), perr
 		}
@@ -193,7 +197,7 @@ func (mm *MemoryManager) getVecPMAsLocked(ctx context.Context, ars hostarch.Addr
 //   - getPMAsInternalLocked additionally requires that ar is page-aligned.
 //     getPMAsInternalLocked is an implementation helper for getPMAsLocked and
 //     getVecPMAsLocked; other clients should call one of those instead.
-func (mm *MemoryManager) getPMAsInternalLocked(ctx context.Context, vseg vmaIterator, ar hostarch.AddrRange, at hostarch.AccessType) (pmaIterator, pmaGapIterator, error) {
+func (mm *MemoryManager) getPMAsInternalLocked(ctx context.Context, vseg vmaIterator, ar hostarch.AddrRange, at hostarch.AccessType, callerIndirectCommit bool) (pmaIterator, pmaGapIterator, error) {
 	if checkInvariants {
 		if !ar.WellFormed() || ar.Length() == 0 || !ar.IsPageAligned() {
 			panic(fmt.Sprintf("invalid ar: %v", ar))
@@ -214,18 +218,18 @@ func (mm *MemoryManager) getPMAsInternalLocked(ctx context.Context, vseg vmaIter
 		mm.unmapASLocked(unmapAR)
 	}()
 
-	memCgID := pgalloc.MemoryCgroupIDFromContext(ctx)
-	opts := pgalloc.AllocOpts{Kind: usage.Anonymous, Dir: pgalloc.BottomUp, MemCgID: memCgID}
 	vma := vseg.ValuePtr()
+	memCgID := pgalloc.MemoryCgroupIDFromContext(ctx)
+	allocDir := pgalloc.BottomUp
 	if uintptr(ar.Start) < atomic.LoadUintptr(&vma.lastFault) {
 		// Detect cases where memory is accessed downwards and change memory file
 		// allocation order to increase the chances that pages are coalesced.
-		opts.Dir = pgalloc.TopDown
+		allocDir = pgalloc.TopDown
 	}
 	atomic.StoreUintptr(&vma.lastFault, uintptr(ar.Start))
 
-	// Limit the range we allocate to ar, aligned to privateAllocUnit.
-	maskAR := privateAligned(ar)
+	// Limit the range we allocate to ar, aligned to hugepage boundaries.
+	hugeMaskAR := hugepageAligned(ar)
 	// The range in which we iterate vmas and pmas is still limited to ar, to
 	// ensure that we don't allocate or COW-break a pma we don't need.
 	pseg, pgap := mm.pmas.Find(ar.Start)
@@ -247,8 +251,32 @@ func (mm *MemoryManager) getPMAsInternalLocked(ctx context.Context, vseg vmaIter
 				}
 				if vma.mappable == nil {
 					// Private anonymous mappings get pmas by allocating.
-					allocAR := optAR.Intersect(maskAR)
-					fr, err := mm.mf.Allocate(uint64(allocAR.Length()), opts)
+					// The allocated range is limited to ar, expanded to
+					// hugepage alignment. This is done even if the allocation
+					// will not be hugepage-backed, in an attempt to reduce
+					// application page faults (that trap into the sentry) by
+					// creating AddressSpace mappings in advance.
+					allocAR := optAR.Intersect(hugeMaskAR)
+					// Don't back stacks with huge pages due to low utilization
+					// and because they're often fragmented by copy-on-write.
+					huge := mm.mf.HugepagesEnabled() && allocAR.IsHugePageAligned() && !vma.growsDown && !vma.isStack
+					allocOpts := pgalloc.AllocOpts{
+						Kind:    usage.Anonymous,
+						MemCgID: memCgID,
+						Mode:    pgalloc.AllocateUncommitted,
+						Huge:    huge,
+						Dir:     allocDir,
+					}
+					// If the allocation is hugepage-backed and
+					// callerIndirectCommit is true, the caller will commit every
+					// allocated huge page. If the allocation is not
+					// hugepage-backed, the caller won't commit every allocated
+					// page since hugeMaskAR is ar expanded to huge alignment,
+					// unless only one page in optAR falls into the huge page.
+					if callerIndirectCommit && (huge || allocAR.Length() == hostarch.PageSize) {
+						allocOpts.Mode = pgalloc.AllocateCallerIndirectCommit
+					}
+					fr, err := mm.mf.Allocate(uint64(allocAR.Length()), allocOpts)
 					if err != nil {
 						return pstart, pgap, err
 					}
@@ -268,6 +296,7 @@ func (mm *MemoryManager) getPMAsInternalLocked(ctx context.Context, vseg vmaIter
 						// only reference, the new pma does not need
 						// copy-on-write.
 						private: true,
+						huge:    huge,
 					}).NextNonEmpty()
 					pstart = pmaIterator{} // iterators invalidated
 				} else {
@@ -341,7 +370,7 @@ func (mm *MemoryManager) getPMAsInternalLocked(ctx context.Context, vseg vmaIter
 						}
 					}
 					var copyAR hostarch.AddrRange
-					if vma := vseg.ValuePtr(); vma.effectivePerms.Execute {
+					if vma.effectivePerms.Execute {
 						// The majority of copy-on-write breaks on executable
 						// pages come from:
 						//
@@ -355,7 +384,7 @@ func (mm *MemoryManager) getPMAsInternalLocked(ctx context.Context, vseg vmaIter
 						// to benefit from copying nearby pages, so if the vma
 						// is executable, only copy the pages required.
 						copyAR = pseg.Range().Intersect(ar)
-					} else if vma.growsDown {
+					} else if vma.growsDown || vma.isStack {
 						// In most cases, the new process will not use most of
 						// its stack before exiting or invoking execve(); it is
 						// especially unlikely to return very far down its call
@@ -372,18 +401,23 @@ func (mm *MemoryManager) getPMAsInternalLocked(ctx context.Context, vseg vmaIter
 						}
 						copyAR = pseg.Range().Intersect(stackMaskAR)
 					} else {
-						copyAR = pseg.Range().Intersect(maskAR)
+						// Hugepage-align the range to be copied, for the same
+						// reasons as for private anonymous allocations.
+						copyAR = pseg.Range().Intersect(hugeMaskAR)
 					}
 					// Get internal mappings from the pma to copy from.
 					if err := pseg.getInternalMappingsLocked(); err != nil {
 						return pstart, pseg.PrevGap(), err
 					}
 					// Copy contents.
+					huge := mm.mf.HugepagesEnabled() && copyAR.IsHugePageAligned()
 					reader := safemem.BlockSeqReader{Blocks: mm.internalMappingsLocked(pseg, copyAR)}
 					fr, err := mm.mf.Allocate(uint64(copyAR.Length()), pgalloc.AllocOpts{
 						Kind:       usage.Anonymous,
-						Mode:       pgalloc.AllocateAndWritePopulate,
 						MemCgID:    memCgID,
+						Mode:       pgalloc.AllocateAndWritePopulate,
+						Huge:       huge,
+						Dir:        allocDir,
 						ReaderFunc: reader.ReadToBlocks,
 					})
 					if _, ok := err.(safecopy.BusError); ok {
@@ -413,6 +447,7 @@ func (mm *MemoryManager) getPMAsInternalLocked(ctx context.Context, vseg vmaIter
 					oldpma.maxPerms = vma.maxPerms
 					oldpma.needCOW = false
 					oldpma.private = true
+					oldpma.huge = huge
 					oldpma.internalMappings = safemem.BlockSeq{}
 					// Try to merge the pma with its neighbors.
 					if prev := pseg.PrevSegment(); prev.Ok() {
@@ -518,21 +553,9 @@ func (mm *MemoryManager) getPMAsInternalLocked(ctx context.Context, vseg vmaIter
 	}
 }
 
-const (
-	// When memory is allocated for a private pma, align the allocated address
-	// range to a privateAllocUnit boundary when possible. Larger values of
-	// privateAllocUnit may reduce page faults by allowing fewer, larger pmas
-	// to be mapped, but may result in larger amounts of wasted memory in the
-	// presence of fragmentation. privateAllocUnit must be a power-of-2
-	// multiple of hostarch.PageSize.
-	privateAllocUnit = hostarch.HugePageSize
-
-	privateAllocMask = privateAllocUnit - 1
-)
-
-func privateAligned(ar hostarch.AddrRange) hostarch.AddrRange {
-	aligned := hostarch.AddrRange{ar.Start &^ privateAllocMask, ar.End}
-	if end := (ar.End + privateAllocMask) &^ privateAllocMask; end >= ar.End {
+func hugepageAligned(ar hostarch.AddrRange) hostarch.AddrRange {
+	aligned := hostarch.AddrRange{ar.Start.HugeRoundDown(), ar.End}
+	if end, ok := ar.End.HugeRoundUp(); ok {
 		aligned.End = end
 	}
 	if checkInvariants {
@@ -684,7 +707,7 @@ func (mm *MemoryManager) Pin(ctx context.Context, ar hostarch.AddrRange, at host
 
 	// Ensure that we have usable pmas.
 	mm.activeMu.Lock()
-	pseg, pend, perr := mm.getPMAsLocked(ctx, vseg, ar, at)
+	pseg, pend, perr := mm.getPMAsLocked(ctx, vseg, ar, at, false /* callerIndirectCommit */)
 	mm.mappingMu.RUnlock()
 	if pendaddr := pend.Start(); pendaddr < ar.End {
 		if pendaddr <= ar.Start {
@@ -900,7 +923,8 @@ func (pmaSetFunctions) Merge(ar1 hostarch.AddrRange, pma1 pma, ar2 hostarch.Addr
 		pma1.effectivePerms != pma2.effectivePerms ||
 		pma1.maxPerms != pma2.maxPerms ||
 		pma1.needCOW != pma2.needCOW ||
-		pma1.private != pma2.private {
+		pma1.private != pma2.private ||
+		pma1.huge != pma2.huge {
 		return pma{}, false
 	}
 

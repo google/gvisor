@@ -356,6 +356,10 @@ type MMapOpts struct {
 	// downward on guard page faults.
 	GrowsDown bool
 
+	// Stack is equivalent to MAP_STACK, which has no mandatory semantics in
+	// Linux.
+	Stack bool
+
 	PlatformEffect MMapPlatformEffect
 
 	// MLockMode specifies the memory locking behavior of the mapping.

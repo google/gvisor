@@ -44,10 +44,13 @@ func (mm *MemoryManager) createVMALocked(ctx context.Context, opts memmap.MMapOp
 
 	// Find a usable range.
 	addr, err := mm.findAvailableLocked(opts.Length, findAvailableOpts{
-		Addr:     opts.Addr,
-		Fixed:    opts.Fixed,
-		Unmap:    opts.Unmap,
-		Map32Bit: opts.Map32Bit,
+		Addr:      opts.Addr,
+		Fixed:     opts.Fixed,
+		GrowsDown: opts.GrowsDown,
+		Stack:     opts.Stack,
+		Private:   opts.Private,
+		Unmap:     opts.Unmap,
+		Map32Bit:  opts.Map32Bit,
 	})
 	if err != nil {
 		// Can't force without opts.Unmap and opts.Fixed.
@@ -119,6 +122,7 @@ func (mm *MemoryManager) createVMALocked(ctx context.Context, opts memmap.MMapOp
 		maxPerms:       opts.MaxPerms,
 		private:        opts.Private,
 		growsDown:      opts.GrowsDown,
+		isStack:        opts.Stack,
 		mlockMode:      opts.MLockMode,
 		numaPolicy:     linux.MPOL_DEFAULT,
 		id:             opts.MappingIdentity,
@@ -144,10 +148,13 @@ type findAvailableOpts struct {
 	//
 	//	- Unmap allows existing guard pages in the returned range.
 
-	Addr     hostarch.Addr
-	Fixed    bool
-	Unmap    bool
-	Map32Bit bool
+	Addr      hostarch.Addr
+	Fixed     bool
+	GrowsDown bool
+	Stack     bool
+	Private   bool
+	Unmap     bool
+	Map32Bit  bool
 }
 
 // map32Start/End are the bounds to which MAP_32BIT mappings are constrained,
@@ -187,9 +194,10 @@ func (mm *MemoryManager) findAvailableLocked(length uint64, opts findAvailableOp
 		return 0, linuxerr.ENOMEM
 	}
 
-	// Prefer hugepage alignment if a hugepage or more is requested.
+	// Prefer hugepage alignment if a hugepage or more is requested and the vma
+	// will actually be eligible for hugepages.
 	alignment := uint64(hostarch.PageSize)
-	if length >= hostarch.HugePageSize {
+	if length >= hostarch.HugePageSize && opts.Private && !opts.GrowsDown && !opts.Stack {
 		alignment = hostarch.HugePageSize
 	}
 
@@ -465,6 +473,7 @@ func (vmaSetFunctions) Merge(ar1 hostarch.AddrRange, vma1 vma, ar2 hostarch.Addr
 		vma1.maxPerms != vma2.maxPerms ||
 		vma1.private != vma2.private ||
 		vma1.growsDown != vma2.growsDown ||
+		vma1.isStack != vma2.isStack ||
 		vma1.mlockMode != vma2.mlockMode ||
 		vma1.numaPolicy != vma2.numaPolicy ||
 		vma1.numaNodemask != vma2.numaNodemask ||

@@ -165,7 +165,7 @@ func (r *restorer) restore(l *Loader) error {
 		Platform: p,
 	}
 
-	mf, err := createMemoryFile()
+	mf, err := createMemoryFile(l.root.conf.AppHugePages, l.hostShmemHuge)
 	if err != nil {
 		return fmt.Errorf("creating memory file: %v", err)
 	}

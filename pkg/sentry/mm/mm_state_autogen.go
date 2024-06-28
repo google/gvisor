@@ -361,6 +361,7 @@ func (p *pma) StateFields() []string {
 		"maxPerms",
 		"needCOW",
 		"private",
+		"huge",
 	}
 }
 
@@ -378,6 +379,7 @@ func (p *pma) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(4, &p.maxPerms)
 	stateSinkObject.Save(5, &p.needCOW)
 	stateSinkObject.Save(6, &p.private)
+	stateSinkObject.Save(7, &p.huge)
 }
 
 func (p *pma) afterLoad(context.Context) {}
@@ -390,6 +392,7 @@ func (p *pma) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(4, &p.maxPerms)
 	stateSourceObject.Load(5, &p.needCOW)
 	stateSourceObject.Load(6, &p.private)
+	stateSourceObject.Load(7, &p.huge)
 	stateSourceObject.LoadValue(0, new(string), func(y any) { p.loadFile(ctx, y.(string)) })
 }
 

@@ -140,72 +140,250 @@ func (e *evictableRangeFlatSegment) StateLoad(ctx context.Context, stateSourceOb
 	stateSourceObject.Load(2, &e.Value)
 }
 
-func (u *usageInfo) StateTypeName() string {
-	return "pkg/sentry/pgalloc.usageInfo"
+func (s *memAcctSet) StateTypeName() string {
+	return "pkg/sentry/pgalloc.memAcctSet"
 }
 
-func (u *usageInfo) StateFields() []string {
+func (s *memAcctSet) StateFields() []string {
+	return []string{
+		"root",
+	}
+}
+
+func (s *memAcctSet) beforeSave() {}
+
+// +checklocksignore
+func (s *memAcctSet) StateSave(stateSinkObject state.Sink) {
+	s.beforeSave()
+	var rootValue []memAcctFlatSegment
+	rootValue = s.saveRoot()
+	stateSinkObject.SaveValue(0, rootValue)
+}
+
+func (s *memAcctSet) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (s *memAcctSet) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.LoadValue(0, new([]memAcctFlatSegment), func(y any) { s.loadRoot(ctx, y.([]memAcctFlatSegment)) })
+}
+
+func (n *memAcctnode) StateTypeName() string {
+	return "pkg/sentry/pgalloc.memAcctnode"
+}
+
+func (n *memAcctnode) StateFields() []string {
+	return []string{
+		"nrSegments",
+		"parent",
+		"parentIndex",
+		"hasChildren",
+		"maxGap",
+		"keys",
+		"values",
+		"children",
+	}
+}
+
+func (n *memAcctnode) beforeSave() {}
+
+// +checklocksignore
+func (n *memAcctnode) StateSave(stateSinkObject state.Sink) {
+	n.beforeSave()
+	stateSinkObject.Save(0, &n.nrSegments)
+	stateSinkObject.Save(1, &n.parent)
+	stateSinkObject.Save(2, &n.parentIndex)
+	stateSinkObject.Save(3, &n.hasChildren)
+	stateSinkObject.Save(4, &n.maxGap)
+	stateSinkObject.Save(5, &n.keys)
+	stateSinkObject.Save(6, &n.values)
+	stateSinkObject.Save(7, &n.children)
+}
+
+func (n *memAcctnode) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (n *memAcctnode) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &n.nrSegments)
+	stateSourceObject.Load(1, &n.parent)
+	stateSourceObject.Load(2, &n.parentIndex)
+	stateSourceObject.Load(3, &n.hasChildren)
+	stateSourceObject.Load(4, &n.maxGap)
+	stateSourceObject.Load(5, &n.keys)
+	stateSourceObject.Load(6, &n.values)
+	stateSourceObject.Load(7, &n.children)
+}
+
+func (m *memAcctFlatSegment) StateTypeName() string {
+	return "pkg/sentry/pgalloc.memAcctFlatSegment"
+}
+
+func (m *memAcctFlatSegment) StateFields() []string {
+	return []string{
+		"Start",
+		"End",
+		"Value",
+	}
+}
+
+func (m *memAcctFlatSegment) beforeSave() {}
+
+// +checklocksignore
+func (m *memAcctFlatSegment) StateSave(stateSinkObject state.Sink) {
+	m.beforeSave()
+	stateSinkObject.Save(0, &m.Start)
+	stateSinkObject.Save(1, &m.End)
+	stateSinkObject.Save(2, &m.Value)
+}
+
+func (m *memAcctFlatSegment) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (m *memAcctFlatSegment) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &m.Start)
+	stateSourceObject.Load(1, &m.End)
+	stateSourceObject.Load(2, &m.Value)
+}
+
+func (c *chunkInfo) StateTypeName() string {
+	return "pkg/sentry/pgalloc.chunkInfo"
+}
+
+func (c *chunkInfo) StateFields() []string {
+	return []string{
+		"huge",
+	}
+}
+
+func (c *chunkInfo) beforeSave() {}
+
+// +checklocksignore
+func (c *chunkInfo) StateSave(stateSinkObject state.Sink) {
+	c.beforeSave()
+	stateSinkObject.Save(0, &c.huge)
+}
+
+func (c *chunkInfo) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (c *chunkInfo) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &c.huge)
+}
+
+func (u *unwasteInfo) StateTypeName() string {
+	return "pkg/sentry/pgalloc.unwasteInfo"
+}
+
+func (u *unwasteInfo) StateFields() []string {
+	return []string{}
+}
+
+func (u *unwasteInfo) beforeSave() {}
+
+// +checklocksignore
+func (u *unwasteInfo) StateSave(stateSinkObject state.Sink) {
+	u.beforeSave()
+}
+
+func (u *unwasteInfo) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (u *unwasteInfo) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+}
+
+func (u *unfreeInfo) StateTypeName() string {
+	return "pkg/sentry/pgalloc.unfreeInfo"
+}
+
+func (u *unfreeInfo) StateFields() []string {
+	return []string{
+		"refs",
+	}
+}
+
+func (u *unfreeInfo) beforeSave() {}
+
+// +checklocksignore
+func (u *unfreeInfo) StateSave(stateSinkObject state.Sink) {
+	u.beforeSave()
+	stateSinkObject.Save(0, &u.refs)
+}
+
+func (u *unfreeInfo) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (u *unfreeInfo) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &u.refs)
+}
+
+func (m *memAcctInfo) StateTypeName() string {
+	return "pkg/sentry/pgalloc.memAcctInfo"
+}
+
+func (m *memAcctInfo) StateFields() []string {
 	return []string{
 		"kind",
-		"knownCommitted",
-		"refs",
 		"memCgID",
+		"knownCommitted",
+		"wasteOrReleasing",
+		"commitSeq",
 	}
 }
 
-func (u *usageInfo) beforeSave() {}
+func (m *memAcctInfo) beforeSave() {}
 
 // +checklocksignore
-func (u *usageInfo) StateSave(stateSinkObject state.Sink) {
-	u.beforeSave()
-	stateSinkObject.Save(0, &u.kind)
-	stateSinkObject.Save(1, &u.knownCommitted)
-	stateSinkObject.Save(2, &u.refs)
-	stateSinkObject.Save(3, &u.memCgID)
+func (m *memAcctInfo) StateSave(stateSinkObject state.Sink) {
+	m.beforeSave()
+	stateSinkObject.Save(0, &m.kind)
+	stateSinkObject.Save(1, &m.memCgID)
+	stateSinkObject.Save(2, &m.knownCommitted)
+	stateSinkObject.Save(3, &m.wasteOrReleasing)
+	stateSinkObject.Save(4, &m.commitSeq)
 }
 
-func (u *usageInfo) afterLoad(context.Context) {}
+func (m *memAcctInfo) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (u *usageInfo) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &u.kind)
-	stateSourceObject.Load(1, &u.knownCommitted)
-	stateSourceObject.Load(2, &u.refs)
-	stateSourceObject.Load(3, &u.memCgID)
+func (m *memAcctInfo) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &m.kind)
+	stateSourceObject.Load(1, &m.memCgID)
+	stateSourceObject.Load(2, &m.knownCommitted)
+	stateSourceObject.Load(3, &m.wasteOrReleasing)
+	stateSourceObject.Load(4, &m.commitSeq)
 }
 
-func (s *reclaimSet) StateTypeName() string {
-	return "pkg/sentry/pgalloc.reclaimSet"
+func (s *unfreeSet) StateTypeName() string {
+	return "pkg/sentry/pgalloc.unfreeSet"
 }
 
-func (s *reclaimSet) StateFields() []string {
+func (s *unfreeSet) StateFields() []string {
 	return []string{
 		"root",
 	}
 }
 
-func (s *reclaimSet) beforeSave() {}
+func (s *unfreeSet) beforeSave() {}
 
 // +checklocksignore
-func (s *reclaimSet) StateSave(stateSinkObject state.Sink) {
+func (s *unfreeSet) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
-	var rootValue []reclaimFlatSegment
+	var rootValue []unfreeFlatSegment
 	rootValue = s.saveRoot()
 	stateSinkObject.SaveValue(0, rootValue)
 }
 
-func (s *reclaimSet) afterLoad(context.Context) {}
+func (s *unfreeSet) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (s *reclaimSet) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.LoadValue(0, new([]reclaimFlatSegment), func(y any) { s.loadRoot(ctx, y.([]reclaimFlatSegment)) })
+func (s *unfreeSet) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.LoadValue(0, new([]unfreeFlatSegment), func(y any) { s.loadRoot(ctx, y.([]unfreeFlatSegment)) })
 }
 
-func (n *reclaimnode) StateTypeName() string {
-	return "pkg/sentry/pgalloc.reclaimnode"
+func (n *unfreenode) StateTypeName() string {
+	return "pkg/sentry/pgalloc.unfreenode"
 }
 
-func (n *reclaimnode) StateFields() []string {
+func (n *unfreenode) StateFields() []string {
 	return []string{
 		"nrSegments",
 		"parent",
@@ -218,10 +396,10 @@ func (n *reclaimnode) StateFields() []string {
 	}
 }
 
-func (n *reclaimnode) beforeSave() {}
+func (n *unfreenode) beforeSave() {}
 
 // +checklocksignore
-func (n *reclaimnode) StateSave(stateSinkObject state.Sink) {
+func (n *unfreenode) StateSave(stateSinkObject state.Sink) {
 	n.beforeSave()
 	stateSinkObject.Save(0, &n.nrSegments)
 	stateSinkObject.Save(1, &n.parent)
@@ -233,10 +411,10 @@ func (n *reclaimnode) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(7, &n.children)
 }
 
-func (n *reclaimnode) afterLoad(context.Context) {}
+func (n *unfreenode) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (n *reclaimnode) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+func (n *unfreenode) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &n.nrSegments)
 	stateSourceObject.Load(1, &n.parent)
 	stateSourceObject.Load(2, &n.parentIndex)
@@ -247,11 +425,11 @@ func (n *reclaimnode) StateLoad(ctx context.Context, stateSourceObject state.Sou
 	stateSourceObject.Load(7, &n.children)
 }
 
-func (r *reclaimFlatSegment) StateTypeName() string {
-	return "pkg/sentry/pgalloc.reclaimFlatSegment"
+func (u *unfreeFlatSegment) StateTypeName() string {
+	return "pkg/sentry/pgalloc.unfreeFlatSegment"
 }
 
-func (r *reclaimFlatSegment) StateFields() []string {
+func (u *unfreeFlatSegment) StateFields() []string {
 	return []string{
 		"Start",
 		"End",
@@ -259,124 +437,124 @@ func (r *reclaimFlatSegment) StateFields() []string {
 	}
 }
 
-func (r *reclaimFlatSegment) beforeSave() {}
+func (u *unfreeFlatSegment) beforeSave() {}
 
 // +checklocksignore
-func (r *reclaimFlatSegment) StateSave(stateSinkObject state.Sink) {
-	r.beforeSave()
-	stateSinkObject.Save(0, &r.Start)
-	stateSinkObject.Save(1, &r.End)
-	stateSinkObject.Save(2, &r.Value)
-}
-
-func (r *reclaimFlatSegment) afterLoad(context.Context) {}
-
-// +checklocksignore
-func (r *reclaimFlatSegment) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &r.Start)
-	stateSourceObject.Load(1, &r.End)
-	stateSourceObject.Load(2, &r.Value)
-}
-
-func (s *usageSet) StateTypeName() string {
-	return "pkg/sentry/pgalloc.usageSet"
-}
-
-func (s *usageSet) StateFields() []string {
-	return []string{
-		"root",
-	}
-}
-
-func (s *usageSet) beforeSave() {}
-
-// +checklocksignore
-func (s *usageSet) StateSave(stateSinkObject state.Sink) {
-	s.beforeSave()
-	var rootValue []usageFlatSegment
-	rootValue = s.saveRoot()
-	stateSinkObject.SaveValue(0, rootValue)
-}
-
-func (s *usageSet) afterLoad(context.Context) {}
-
-// +checklocksignore
-func (s *usageSet) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.LoadValue(0, new([]usageFlatSegment), func(y any) { s.loadRoot(ctx, y.([]usageFlatSegment)) })
-}
-
-func (n *usagenode) StateTypeName() string {
-	return "pkg/sentry/pgalloc.usagenode"
-}
-
-func (n *usagenode) StateFields() []string {
-	return []string{
-		"nrSegments",
-		"parent",
-		"parentIndex",
-		"hasChildren",
-		"maxGap",
-		"keys",
-		"values",
-		"children",
-	}
-}
-
-func (n *usagenode) beforeSave() {}
-
-// +checklocksignore
-func (n *usagenode) StateSave(stateSinkObject state.Sink) {
-	n.beforeSave()
-	stateSinkObject.Save(0, &n.nrSegments)
-	stateSinkObject.Save(1, &n.parent)
-	stateSinkObject.Save(2, &n.parentIndex)
-	stateSinkObject.Save(3, &n.hasChildren)
-	stateSinkObject.Save(4, &n.maxGap)
-	stateSinkObject.Save(5, &n.keys)
-	stateSinkObject.Save(6, &n.values)
-	stateSinkObject.Save(7, &n.children)
-}
-
-func (n *usagenode) afterLoad(context.Context) {}
-
-// +checklocksignore
-func (n *usagenode) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &n.nrSegments)
-	stateSourceObject.Load(1, &n.parent)
-	stateSourceObject.Load(2, &n.parentIndex)
-	stateSourceObject.Load(3, &n.hasChildren)
-	stateSourceObject.Load(4, &n.maxGap)
-	stateSourceObject.Load(5, &n.keys)
-	stateSourceObject.Load(6, &n.values)
-	stateSourceObject.Load(7, &n.children)
-}
-
-func (u *usageFlatSegment) StateTypeName() string {
-	return "pkg/sentry/pgalloc.usageFlatSegment"
-}
-
-func (u *usageFlatSegment) StateFields() []string {
-	return []string{
-		"Start",
-		"End",
-		"Value",
-	}
-}
-
-func (u *usageFlatSegment) beforeSave() {}
-
-// +checklocksignore
-func (u *usageFlatSegment) StateSave(stateSinkObject state.Sink) {
+func (u *unfreeFlatSegment) StateSave(stateSinkObject state.Sink) {
 	u.beforeSave()
 	stateSinkObject.Save(0, &u.Start)
 	stateSinkObject.Save(1, &u.End)
 	stateSinkObject.Save(2, &u.Value)
 }
 
-func (u *usageFlatSegment) afterLoad(context.Context) {}
+func (u *unfreeFlatSegment) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (u *usageFlatSegment) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+func (u *unfreeFlatSegment) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &u.Start)
+	stateSourceObject.Load(1, &u.End)
+	stateSourceObject.Load(2, &u.Value)
+}
+
+func (s *unwasteSet) StateTypeName() string {
+	return "pkg/sentry/pgalloc.unwasteSet"
+}
+
+func (s *unwasteSet) StateFields() []string {
+	return []string{
+		"root",
+	}
+}
+
+func (s *unwasteSet) beforeSave() {}
+
+// +checklocksignore
+func (s *unwasteSet) StateSave(stateSinkObject state.Sink) {
+	s.beforeSave()
+	var rootValue []unwasteFlatSegment
+	rootValue = s.saveRoot()
+	stateSinkObject.SaveValue(0, rootValue)
+}
+
+func (s *unwasteSet) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (s *unwasteSet) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.LoadValue(0, new([]unwasteFlatSegment), func(y any) { s.loadRoot(ctx, y.([]unwasteFlatSegment)) })
+}
+
+func (n *unwastenode) StateTypeName() string {
+	return "pkg/sentry/pgalloc.unwastenode"
+}
+
+func (n *unwastenode) StateFields() []string {
+	return []string{
+		"nrSegments",
+		"parent",
+		"parentIndex",
+		"hasChildren",
+		"maxGap",
+		"keys",
+		"values",
+		"children",
+	}
+}
+
+func (n *unwastenode) beforeSave() {}
+
+// +checklocksignore
+func (n *unwastenode) StateSave(stateSinkObject state.Sink) {
+	n.beforeSave()
+	stateSinkObject.Save(0, &n.nrSegments)
+	stateSinkObject.Save(1, &n.parent)
+	stateSinkObject.Save(2, &n.parentIndex)
+	stateSinkObject.Save(3, &n.hasChildren)
+	stateSinkObject.Save(4, &n.maxGap)
+	stateSinkObject.Save(5, &n.keys)
+	stateSinkObject.Save(6, &n.values)
+	stateSinkObject.Save(7, &n.children)
+}
+
+func (n *unwastenode) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (n *unwastenode) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &n.nrSegments)
+	stateSourceObject.Load(1, &n.parent)
+	stateSourceObject.Load(2, &n.parentIndex)
+	stateSourceObject.Load(3, &n.hasChildren)
+	stateSourceObject.Load(4, &n.maxGap)
+	stateSourceObject.Load(5, &n.keys)
+	stateSourceObject.Load(6, &n.values)
+	stateSourceObject.Load(7, &n.children)
+}
+
+func (u *unwasteFlatSegment) StateTypeName() string {
+	return "pkg/sentry/pgalloc.unwasteFlatSegment"
+}
+
+func (u *unwasteFlatSegment) StateFields() []string {
+	return []string{
+		"Start",
+		"End",
+		"Value",
+	}
+}
+
+func (u *unwasteFlatSegment) beforeSave() {}
+
+// +checklocksignore
+func (u *unwasteFlatSegment) StateSave(stateSinkObject state.Sink) {
+	u.beforeSave()
+	stateSinkObject.Save(0, &u.Start)
+	stateSinkObject.Save(1, &u.End)
+	stateSinkObject.Save(2, &u.Value)
+}
+
+func (u *unwasteFlatSegment) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (u *unwasteFlatSegment) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &u.Start)
 	stateSourceObject.Load(1, &u.End)
 	stateSourceObject.Load(2, &u.Value)
@@ -387,11 +565,17 @@ func init() {
 	state.Register((*evictableRangeSet)(nil))
 	state.Register((*evictableRangenode)(nil))
 	state.Register((*evictableRangeFlatSegment)(nil))
-	state.Register((*usageInfo)(nil))
-	state.Register((*reclaimSet)(nil))
-	state.Register((*reclaimnode)(nil))
-	state.Register((*reclaimFlatSegment)(nil))
-	state.Register((*usageSet)(nil))
-	state.Register((*usagenode)(nil))
-	state.Register((*usageFlatSegment)(nil))
+	state.Register((*memAcctSet)(nil))
+	state.Register((*memAcctnode)(nil))
+	state.Register((*memAcctFlatSegment)(nil))
+	state.Register((*chunkInfo)(nil))
+	state.Register((*unwasteInfo)(nil))
+	state.Register((*unfreeInfo)(nil))
+	state.Register((*memAcctInfo)(nil))
+	state.Register((*unfreeSet)(nil))
+	state.Register((*unfreenode)(nil))
+	state.Register((*unfreeFlatSegment)(nil))
+	state.Register((*unwasteSet)(nil))
+	state.Register((*unwastenode)(nil))
+	state.Register((*unwasteFlatSegment)(nil))
 }

@@ -308,6 +308,9 @@ type Config struct {
 	// exists, but is mostly idle. Not supported in rootless mode.
 	DirectFS bool `flag:"directfs"`
 
+	// AppHugePages enables support for application huge pages.
+	AppHugePages bool `flag:"app-huge-pages"`
+
 	// NVProxy enables support for Nvidia GPUs.
 	NVProxy bool `flag:"nvproxy"`
 
