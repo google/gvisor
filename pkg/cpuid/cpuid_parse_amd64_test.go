@@ -19,6 +19,10 @@ package cpuid
 
 import "gvisor.dev/gvisor/pkg/hostos"
 
+const (
+	intelP8136 = "Intel(R) Xeon(R) Platinum P-8136 CPU @ 2.00GHz"
+)
+
 func archSkipFeature(feature Feature, version hostos.Version) bool {
 	switch {
 	// Block 0.
@@ -61,6 +65,15 @@ func archSkipFeature(feature Feature, version hostos.Version) bool {
 		// This can be detected from a "x86/CPU: CPU features have changed
 		// after loading microcode, but might not take effect" message printed
 		// to dmesg by arch/x86/kernel/cpu/common.c:microcode_check().
+		return true
+	default:
+		return false
+	}
+}
+
+func skipFeatureByModel(feature Feature, model string) bool {
+	switch {
+	case model == intelP8136 && feature == X86FeatureARCH_CAPABILITIES:
 		return true
 	default:
 		return false
