@@ -57,7 +57,12 @@ include_in_menu: True
 
 This table is a reference of {{.OS}} syscalls for the {{.Arch}} architecture and
 their compatibility status in gVisor. gVisor does not support all syscalls and
-some syscalls may have a partial implementation.
+some syscalls may have a partial implementation. However, note that a syscall
+not being implemented in gVisor does **not** imply that applications using it
+will not work. Most language runtimes and libraries that call a syscall marked
+as unimplemented in this table have fallback code to use an alternative
+syscall that *is* supported in gVisor. See the
+[compatibility page](/docs/user_guide/compatibility) for more info.
 
 This page is automatically generated from the source code.
 

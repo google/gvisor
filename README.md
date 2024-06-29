@@ -8,12 +8,23 @@
 
 ## What is gVisor?
 
-**gVisor** is an application kernel, written in Go, that implements a
-substantial portion of the Linux system surface. It includes an
-[Open Container Initiative (OCI)][oci] runtime called `runsc` that provides an
-isolation boundary between the application and the host kernel. The `runsc`
-runtime integrates with Docker and Kubernetes, making it simple to run sandboxed
-containers.
+**gVisor** is an application kernel that implements a Linux-like interface.
+Unlike Linux, it is written in a memory-safe language (Go) and runs in
+userspace. It includes an [Open Container Initiative (OCI)][oci] runtime called
+`runsc` that provides an isolation boundary between the application and the host
+kernel. The `runsc` runtime integrates with Docker and Kubernetes, making it
+simple to run sandboxed containers.
+
+## What **isn't** gVisor?
+
+*   gVisor is **not a syscall filter** (e.g. `seccomp-bpf`), nor a wrapper over
+    Linux isolation primitives (e.g. `firejail`, AppArmor, etc.).
+*   gVisor is also **not a VM** in the everyday sense of the term (e.g.
+    VirtualBox, QEMU).
+
+**gVisor exists somewhere in the middle**, providing many security benefits of
+VMs while maintaining the lower resource footprint, fast startup, and
+flexibility of regular userspace applications.
 
 ## Why does gVisor exist?
 

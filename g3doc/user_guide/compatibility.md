@@ -14,83 +14,26 @@ be fixed much faster.
 
 ## What works?
 
-The following applications/images have been tested:
+gVisor is widely used as a container runtime supporting arbitrary user-provided
+workloads in Cloud products such as
+[DigitalOcean's App Platform](https://docs.digitalocean.com/products/app-platform/)
+or [Google's Cloud Run](https://cloud.google.com/run/). See the [Users](/users)
+page for more. The decision to use gVisor for these products means that
+compatibility issues are not a common problem for most workloads in practice.
 
-*   elasticsearch
-*   golang
-*   httpd
-*   java8
-*   jenkins
-*   mariadb
-*   memcached
-*   mongo
-*   mysql
-*   nginx
-*   node
-*   php
-*   postgres
-*   prometheus
-*   python
-*   redis
-*   registry
-*   rust
-*   tomcat
-*   wordpress
+While gVisor only implements a subset of the Linux syscall ABI, the
+unimplemented part of the ABI is mostly comprised of alternatives to existing
+syscalls that gVisor does support. For example, gVisor does not fully support
+`io_uring`-related syscalls, but does support other I/O-related syscalls. Most
+language runtimes and libraries will automatically determine which syscall
+variant they should use, so they will work in gVisor. For this reason, looking
+through the [list of supported syscalls](linux/amd64) is not necessarily a good
+measure of how widely compatible gVisor is in practice.
 
-## Utilities
-
-Most common utilities work. Note that:
-
-*   Some tools, such as `tcpdump` and old versions of `ping`, require explicitly
-    enabling raw sockets via the unsafe `--net-raw` runsc flag.
-    *   In case of tcpdump the following invocations will work
-        *   tcpdump -i any
-        *   tcpdump -i \<device-name\> -p (-p disables promiscuous mode)
-*   Different Docker images can behave differently. For example, Alpine Linux
-    and Ubuntu have different `ip` binaries.
-
-    Specific tools include:
-
-<!-- mdformat off(don't wrap the table) -->
-
-| Tool       | Status                                                                                              |
-| :--------: | :-----------------------------------------:                                                         |
-| apt-get    | Working.                                                                                            |
-| bundle     | Working.                                                                                            |
-| cat        | Working.                                                                                            |
-| curl       | Working.                                                                                            |
-| dd         | Working.                                                                                            |
-| df         | Working.                                                                                            |
-| dig        | Working.                                                                                            |
-| drill      | Working.                                                                                            |
-| env        | Working.                                                                                            |
-| find       | Working.                                                                                            |
-| gcore      | Working.                                                                                            |
-| gdb        | Working.                                                                                            |
-| gosu       | Working.                                                                                            |
-| grep       | Working.                                                                                            |
-| ifconfig   | Works partially, like ip. Full support [in progress](https://gvisor.dev/issue/578).                 |
-| ip         | Some subcommands work (e.g. addr, route). Full support [in progress](https://gvisor.dev/issue/578). |
-| less       | Working.                                                                                            |
-| ls         | Working.                                                                                            |
-| lsof       | Working.                                                                                            |
-| mount      | Works in readonly mode. gVisor doesn't currently support creating new mounts at runtime.            |
-| nc         | Working.                                                                                            |
-| nmap       | Not working.                                                                                        |
-| netstat    | [In progress](https://gvisor.dev/issue/2112).                                                       |
-| nslookup   | Working.                                                                                            |
-| ping       | Working.                                                                                            |
-| ps         | Working.                                                                                            |
-| route      | Working.                                                                                            |
-| ss         | [In progress](https://gvisor.dev/issue/2114).                                                       |
-| sshd       | Partially working. Job control [in progress](https://gvisor.dev/issue/154).                         |
-| strace     | Working.                                                                                            |
-| tar        | Working.                                                                                            |
-| tcpdump    | Working [only with libpcap versions < 1.10](https://github.com/google/gvisor/issues/6699), [Promiscuous mode in progress](https://gvisor.dev/issue/3333).                             |
-| top        | Working.                                                                                            |
-| uptime     | Working.                                                                                            |
-| vim        | Working.                                                                                            |
-| wget       | Working.                                                                                            |
+gVisor releases go through the regression tests of popular language runtimes
+(Python, Java, Node.js, PHP, Go) to ensure continued compatibility with the base
+libraries of these languages. This means most programs written in these
+languages will work.
 
 <!-- mdformat on -->
 
