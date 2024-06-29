@@ -18,6 +18,8 @@ import (
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/atomicbitops"
+	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/nsfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/waiter"
@@ -156,8 +158,9 @@ type PIDNamespace struct {
 	// appropriate capabilities in userns. The userns pointer is immutable.
 	userns *auth.UserNamespace
 
-	// id is a unique ID assigned to the PID namespace. id is immutable.
-	id uint64
+	// inode is the nsfs inode for this PID namespace. inode is immutable after
+	// initialization.
+	inode *nsfs.Inode
 
 	// The following fields are protected by owner.mu.
 
@@ -208,7 +211,6 @@ func newPIDNamespace(ts *TaskSet, parent *PIDNamespace, userns *auth.UserNamespa
 		owner:         ts,
 		parent:        parent,
 		userns:        userns,
-		id:            lastPIDNSID.Add(1),
 		tasks:         make(map[ThreadID]*Task),
 		tids:          make(map[*Task]ThreadID),
 		tgids:         make(map[*ThreadGroup]ThreadID),
@@ -219,13 +221,6 @@ func newPIDNamespace(ts *TaskSet, parent *PIDNamespace, userns *auth.UserNamespa
 		extra:         newPIDNamespaceData(),
 	}
 }
-
-// lastPIDNSID is the last value of PIDNamespace.ID assigned to a PID
-// namespace.
-//
-// This is global rather than being per-TaskSet or Kernel because
-// NewRootPIDNamespace() is called before the Kernel is initialized.
-var lastPIDNSID atomicbitops.Uint64
 
 // NewRootPIDNamespace creates the root PID namespace. 'owner' is not available
 // yet when root namespace is created and must be set by caller.
@@ -239,6 +234,26 @@ func (ns *PIDNamespace) NewChild(userns *auth.UserNamespace) *PIDNamespace {
 	return newPIDNamespace(ns.owner, ns, userns)
 }
 
+// SetInode sets the PID namespace's nsfs inode.
+func (ns *PIDNamespace) SetInode(inode *nsfs.Inode) {
+	ns.inode = inode
+}
+
+// GetInode returns the nsfs inode associated with the PID namespace.
+func (ns *PIDNamespace) GetInode() *nsfs.Inode {
+	return ns.inode
+}
+
+// Type implements vfs.Namespace.Type.
+func (ns *PIDNamespace) Type() string {
+	return "pid"
+}
+
+// Destroy implements vfs.Namespace.Destroy.
+func (ns *PIDNamespace) Destroy(ctx context.Context) {
+	// PIDNamespaces are not reference-counted, so this is a no-op.
+}
+
 // TaskWithID returns the task with thread ID tid in PID namespace ns. If no
 // task has that TID, TaskWithID returns nil.
 func (ns *PIDNamespace) TaskWithID(tid ThreadID) *Task {
@@ -246,11 +261,6 @@ func (ns *PIDNamespace) TaskWithID(tid ThreadID) *Task {
 	t := ns.tasks[tid]
 	ns.owner.mu.RUnlock()
 	return t
-}
-
-// ID returns a non-zero ID that is unique across PID namespaces.
-func (ns *PIDNamespace) ID() uint64 {
-	return ns.id
 }
 
 // ThreadGroupWithID returns the thread group led by the task with thread ID

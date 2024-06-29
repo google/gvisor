@@ -1250,17 +1250,6 @@ func (fs *filesystem) newNamespaceSymlink(ctx context.Context, task *kernel.Task
 	return taskInode
 }
 
-func (fs *filesystem) newPIDNamespaceSymlink(ctx context.Context, task *kernel.Task, ino uint64) kernfs.Inode {
-	target := fmt.Sprintf("pid:[%d]", task.PIDNamespace().ID())
-
-	inode := &namespaceSymlink{task: task}
-	// Note: credentials are overridden by taskOwnedInode.
-	inode.Init(ctx, task.Credentials(), linux.UNNAMED_MAJOR, fs.devMinor, ino, target)
-
-	taskInode := &taskOwnedInode{Inode: inode, owner: task}
-	return taskInode
-}
-
 func (fs *filesystem) newFakeNamespaceSymlink(ctx context.Context, task *kernel.Task, ino uint64, ns string) kernfs.Inode {
 	// Namespace symlinks should contain the namespace name and the inode number
 	// for the namespace instance, so for example user:[123456]. We currently fake
@@ -1300,6 +1289,13 @@ func (s *namespaceSymlink) getInode(t *kernel.Task) *nsfs.Inode {
 		}
 		inode, _ := mntns.Refs.(*nsfs.Inode)
 		return inode
+	case linux.CLONE_NEWPID:
+		if pidns := t.PIDNamespace(); pidns != nil {
+			inode := pidns.GetInode()
+			inode.IncRef()
+			return inode
+		}
+		return nil
 	default:
 		panic("unknown namespace")
 	}
