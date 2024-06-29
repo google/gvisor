@@ -23,9 +23,9 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/buffer"
+	"gvisor.dev/gvisor/pkg/rawfile"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
-	"gvisor.dev/gvisor/pkg/tcpip/link/rawfile"
 	"gvisor.dev/gvisor/pkg/tcpip/link/stopfd"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
@@ -148,7 +148,7 @@ func (d *packetMMapDispatcher) readMMappedPackets() (stack.PacketBufferList, boo
 			if errno == unix.EINTR {
 				continue
 			}
-			return pkts, stopped, rawfile.TranslateErrno(errno)
+			return pkts, stopped, tcpip.TranslateErrno(errno)
 		}
 		if stopped {
 			return pkts, true, nil

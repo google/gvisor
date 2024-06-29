@@ -32,6 +32,8 @@ type Error interface {
 	fmt.Stringer
 }
 
+const maxErrno = 134
+
 // LINT.IfChange
 
 // ErrAborted indicates the operation was aborted.

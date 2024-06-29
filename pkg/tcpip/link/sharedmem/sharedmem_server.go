@@ -20,10 +20,10 @@ package sharedmem
 import (
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/buffer"
+	"gvisor.dev/gvisor/pkg/rawfile"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
-	"gvisor.dev/gvisor/pkg/tcpip/link/rawfile"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
@@ -158,9 +158,13 @@ func (e *serverEndpoint) Attach(dispatcher stack.NetworkDispatcher) {
 				// When sharedmem endpoint is in use the peerFD is never used for any
 				// data transfer and this Read should only return if the peer is
 				// shutting down.
-				_, err := rawfile.BlockingRead(e.peerFD, b)
+				_, errno := rawfile.BlockingRead(e.peerFD, b)
 				if e.onClosed != nil {
-					e.onClosed(err)
+					if errno == 0 {
+						e.onClosed(nil)
+					} else {
+						e.onClosed(tcpip.TranslateErrno(errno))
+					}
 				}
 				e.completed.Done()
 			}()
