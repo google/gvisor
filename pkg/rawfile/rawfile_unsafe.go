@@ -15,8 +15,7 @@
 //go:build linux
 // +build linux
 
-// Package rawfile contains utilities for using the netstack with raw host
-// files on Linux hosts.
+// Package rawfile contains utilities for using raw host files on Linux hosts.
 package rawfile
 
 import (
@@ -24,7 +23,6 @@ import (
 	"unsafe"
 
 	"golang.org/x/sys/unix"
-	"gvisor.dev/gvisor/pkg/tcpip"
 )
 
 // SizeofIovec is the size of a unix.Iovec in bytes.
@@ -106,39 +104,28 @@ func GetMTU(name string) (uint32, error) {
 
 // NonBlockingWrite writes the given buffer to a file descriptor. It fails if
 // partial data is written.
-func NonBlockingWrite(fd int, buf []byte) tcpip.Error {
+func NonBlockingWrite(fd int, buf []byte) unix.Errno {
 	var ptr unsafe.Pointer
 	if len(buf) > 0 {
 		ptr = unsafe.Pointer(&buf[0])
 	}
 
 	_, _, e := unix.RawSyscall(unix.SYS_WRITE, uintptr(fd), uintptr(ptr), uintptr(len(buf)))
-	if e != 0 {
-		return TranslateErrno(e)
-	}
-
-	return nil
+	return e
 }
 
 // NonBlockingWriteIovec writes iovec to a file descriptor in a single unix.
 // It fails if partial data is written.
-func NonBlockingWriteIovec(fd int, iovec []unix.Iovec) tcpip.Error {
+func NonBlockingWriteIovec(fd int, iovec []unix.Iovec) unix.Errno {
 	iovecLen := uintptr(len(iovec))
 	_, _, e := unix.RawSyscall(unix.SYS_WRITEV, uintptr(fd), uintptr(unsafe.Pointer(&iovec[0])), iovecLen)
-	if e != 0 {
-		return TranslateErrno(e)
-	}
-	return nil
+	return e
 }
 
 // NonBlockingSendMMsg sends multiple messages on a socket.
-func NonBlockingSendMMsg(fd int, msgHdrs []MMsgHdr) (int, tcpip.Error) {
+func NonBlockingSendMMsg(fd int, msgHdrs []MMsgHdr) (int, unix.Errno) {
 	n, _, e := unix.RawSyscall6(unix.SYS_SENDMMSG, uintptr(fd), uintptr(unsafe.Pointer(&msgHdrs[0])), uintptr(len(msgHdrs)), unix.MSG_DONTWAIT, 0, 0)
-	if e != 0 {
-		return 0, TranslateErrno(e)
-	}
-
-	return int(n), nil
+	return int(n), e
 }
 
 // PollEvent represents the pollfd structure passed to a poll() system call.
@@ -148,22 +135,10 @@ type PollEvent struct {
 	Revents int16
 }
 
-// BlockingRead reads from a file descriptor that is set up as non-blocking. If
-// no data is available, it will block in a poll() syscall until the file
+// BlockingRead reads from a file descriptor that is set up as non-blocking.
+// If no data is available, it will block in a poll() syscall  until the file
 // descriptor becomes readable.
-func BlockingRead(fd int, b []byte) (int, tcpip.Error) {
-	n, err := BlockingReadUntranslated(fd, b)
-	if err != 0 {
-		return n, TranslateErrno(err)
-	}
-	return n, nil
-}
-
-// BlockingReadUntranslated reads from a file descriptor that is set up as
-// non-blocking. If no data is available, it will block in a poll() syscall
-// until the file descriptor becomes readable. It returns the raw unix.Errno
-// value returned by the underlying syscalls.
-func BlockingReadUntranslated(fd int, b []byte) (int, unix.Errno) {
+func BlockingRead(fd int, b []byte) (int, unix.Errno) {
 	for {
 		n, _, e := unix.RawSyscall(unix.SYS_READ, uintptr(fd), uintptr(unsafe.Pointer(&b[0])), uintptr(len(b)))
 		if e == 0 {
@@ -187,21 +162,21 @@ func BlockingReadUntranslated(fd int, b []byte) (int, unix.Errno) {
 // available, it will block in a poll() syscall until the file descriptor
 // becomes readable or stop is signalled (efd becomes readable). Returns -1 in
 // the latter case.
-func BlockingReadvUntilStopped(efd int, fd int, iovecs []unix.Iovec) (int, tcpip.Error) {
+func BlockingReadvUntilStopped(efd int, fd int, iovecs []unix.Iovec) (int, unix.Errno) {
 	for {
 		n, _, e := unix.RawSyscall(unix.SYS_READV, uintptr(fd), uintptr(unsafe.Pointer(&iovecs[0])), uintptr(len(iovecs)))
 		if e == 0 {
-			return int(n), nil
+			return int(n), 0
 		}
 		if e != 0 && e != unix.EWOULDBLOCK {
-			return 0, TranslateErrno(e)
+			return 0, e
 		}
 		stopped, e := BlockingPollUntilStopped(efd, fd, unix.POLLIN)
 		if stopped {
-			return -1, nil
+			return -1, e
 		}
 		if e != 0 && e != unix.EINTR {
-			return 0, TranslateErrno(e)
+			return 0, e
 		}
 	}
 }
@@ -211,23 +186,23 @@ func BlockingReadvUntilStopped(efd int, fd int, iovecs []unix.Iovec) (int, tcpip
 // structures. If no data is available, it will block in a poll() syscall until
 // the file descriptor becomes readable or stop is signalled (efd becomes
 // readable). Returns -1 in the latter case.
-func BlockingRecvMMsgUntilStopped(efd int, fd int, msgHdrs []MMsgHdr) (int, tcpip.Error) {
+func BlockingRecvMMsgUntilStopped(efd int, fd int, msgHdrs []MMsgHdr) (int, unix.Errno) {
 	for {
 		n, _, e := unix.RawSyscall6(unix.SYS_RECVMMSG, uintptr(fd), uintptr(unsafe.Pointer(&msgHdrs[0])), uintptr(len(msgHdrs)), unix.MSG_DONTWAIT, 0, 0)
 		if e == 0 {
-			return int(n), nil
+			return int(n), e
 		}
 
 		if e != 0 && e != unix.EWOULDBLOCK {
-			return 0, TranslateErrno(e)
+			return 0, e
 		}
 
 		stopped, e := BlockingPollUntilStopped(efd, fd, unix.POLLIN)
 		if stopped {
-			return -1, nil
+			return -1, e
 		}
 		if e != 0 && e != unix.EINTR {
-			return 0, TranslateErrno(e)
+			return 0, e
 		}
 	}
 }

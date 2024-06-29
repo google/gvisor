@@ -13,11 +13,11 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/buffer",
+        "//pkg/rawfile",
         "//pkg/sync",
         "//pkg/tcpip",
         "//pkg/tcpip/header",
         "//pkg/tcpip/link/qdisc/fifo",
-        "//pkg/tcpip/link/rawfile",
         "//pkg/tcpip/link/stopfd",
         "//pkg/tcpip/stack",
         "//pkg/xdp",

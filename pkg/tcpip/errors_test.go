@@ -1,4 +1,4 @@
-// Copyright 2020 The gVisor Authors.
+// Copyright 2024 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -15,36 +15,35 @@
 //go:build linux
 // +build linux
 
-package rawfile
+package tcpip
 
 import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
 	"golang.org/x/sys/unix"
-	"gvisor.dev/gvisor/pkg/tcpip"
 )
 
 func TestTranslateErrno(t *testing.T) {
 	for _, test := range []struct {
 		errno      unix.Errno
-		translated tcpip.Error
+		translated Error
 	}{
 		{
 			errno:      unix.Errno(0),
-			translated: &tcpip.ErrInvalidEndpointState{},
+			translated: &ErrInvalidEndpointState{},
 		},
 		{
 			errno:      unix.Errno(maxErrno),
-			translated: &tcpip.ErrInvalidEndpointState{},
+			translated: &ErrInvalidEndpointState{},
 		},
 		{
 			errno:      unix.Errno(514),
-			translated: &tcpip.ErrInvalidEndpointState{},
+			translated: &ErrInvalidEndpointState{},
 		},
 		{
 			errno:      unix.EEXIST,
-			translated: &tcpip.ErrDuplicateAddress{},
+			translated: &ErrDuplicateAddress{},
 		},
 	} {
 		got := TranslateErrno(test.errno)

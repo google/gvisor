@@ -17,7 +17,7 @@ go_library(
     ],
     deps = [
         "//pkg/hostarch",
-        "//pkg/tcpip/link/rawfile",
+        "//pkg/rawfile",
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )

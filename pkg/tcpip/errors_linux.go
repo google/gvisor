@@ -1,4 +1,4 @@
-// Copyright 2018 The gVisor Authors.
+// Copyright 2024 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -15,63 +15,60 @@
 //go:build linux
 // +build linux
 
-package rawfile
+package tcpip
 
 import (
 	"golang.org/x/sys/unix"
-	"gvisor.dev/gvisor/pkg/tcpip"
 )
 
-const maxErrno = 134
-
 // TranslateErrno translate an errno from the syscall package into a
-// tcpip.Error.
+// tcpip Error.
 //
 // Valid, but unrecognized errnos will be translated to
-// *tcpip.ErrInvalidEndpointState (EINVAL).
-func TranslateErrno(e unix.Errno) tcpip.Error {
+// *ErrInvalidEndpointState (EINVAL). This includes the "zero" value.
+func TranslateErrno(e unix.Errno) Error {
 	switch e {
 	case unix.EEXIST:
-		return &tcpip.ErrDuplicateAddress{}
+		return &ErrDuplicateAddress{}
 	case unix.ENETUNREACH:
-		return &tcpip.ErrHostUnreachable{}
+		return &ErrHostUnreachable{}
 	case unix.EINVAL:
-		return &tcpip.ErrInvalidEndpointState{}
+		return &ErrInvalidEndpointState{}
 	case unix.EALREADY:
-		return &tcpip.ErrAlreadyConnecting{}
+		return &ErrAlreadyConnecting{}
 	case unix.EISCONN:
-		return &tcpip.ErrAlreadyConnected{}
+		return &ErrAlreadyConnected{}
 	case unix.EADDRINUSE:
-		return &tcpip.ErrPortInUse{}
+		return &ErrPortInUse{}
 	case unix.EADDRNOTAVAIL:
-		return &tcpip.ErrBadLocalAddress{}
+		return &ErrBadLocalAddress{}
 	case unix.EPIPE:
-		return &tcpip.ErrClosedForSend{}
+		return &ErrClosedForSend{}
 	case unix.EWOULDBLOCK:
-		return &tcpip.ErrWouldBlock{}
+		return &ErrWouldBlock{}
 	case unix.ECONNREFUSED:
-		return &tcpip.ErrConnectionRefused{}
+		return &ErrConnectionRefused{}
 	case unix.ETIMEDOUT:
-		return &tcpip.ErrTimeout{}
+		return &ErrTimeout{}
 	case unix.EINPROGRESS:
-		return &tcpip.ErrConnectStarted{}
+		return &ErrConnectStarted{}
 	case unix.EDESTADDRREQ:
-		return &tcpip.ErrDestinationRequired{}
+		return &ErrDestinationRequired{}
 	case unix.ENOTSUP:
-		return &tcpip.ErrNotSupported{}
+		return &ErrNotSupported{}
 	case unix.ENOTTY:
-		return &tcpip.ErrQueueSizeNotSupported{}
+		return &ErrQueueSizeNotSupported{}
 	case unix.ENOTCONN:
-		return &tcpip.ErrNotConnected{}
+		return &ErrNotConnected{}
 	case unix.ECONNRESET:
-		return &tcpip.ErrConnectionReset{}
+		return &ErrConnectionReset{}
 	case unix.ECONNABORTED:
-		return &tcpip.ErrConnectionAborted{}
+		return &ErrConnectionAborted{}
 	case unix.EMSGSIZE:
-		return &tcpip.ErrMessageTooLong{}
+		return &ErrMessageTooLong{}
 	case unix.ENOBUFS:
-		return &tcpip.ErrNoBufferSpace{}
+		return &ErrNoBufferSpace{}
 	default:
-		return &tcpip.ErrInvalidEndpointState{}
+		return &ErrInvalidEndpointState{}
 	}
 }

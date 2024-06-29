@@ -23,11 +23,11 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/buffer"
+	"gvisor.dev/gvisor/pkg/rawfile"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/qdisc/fifo"
-	"gvisor.dev/gvisor/pkg/tcpip/link/rawfile"
 	"gvisor.dev/gvisor/pkg/tcpip/link/stopfd"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/xdp"
@@ -351,7 +351,7 @@ func (ep *endpoint) dispatch() (bool, tcpip.Error) {
 			if errno == unix.EINTR {
 				continue
 			}
-			return !stopped, rawfile.TranslateErrno(errno)
+			return !stopped, tcpip.TranslateErrno(errno)
 		}
 		if stopped {
 			return true, nil
