@@ -1,8 +1,9 @@
 # What is gVisor?
 
-gVisor is an application kernel, written in Go, that implements a substantial
-portion of the [Linux system call interface][linux]. It provides an additional
-layer of isolation between running applications and the host operating system.
+**gVisor** provides a strong layer of isolation between running applications and
+the host operating system. It is an application kernel that implements a
+[Linux-like interface][linux]. Unlike Linux, it is written in a memory-safe
+language (Go) and runs in userspace.
 
 gVisor includes an [Open Container Initiative (OCI)][oci] runtime called `runsc`
 that makes it easy to work with existing container tooling. The `runsc` runtime
@@ -32,6 +33,17 @@ utilization.
 
 Two other approaches are commonly taken to provide stronger isolation than
 native containers.
+
+*   gVisor is **not a syscall filter** (e.g. `seccomp-bpf`), nor a wrapper over
+    Linux isolation primitives (e.g. `firejail`, AppArmor, etc.).
+*   gVisor is also **not a VM** in the everyday sense of the term (e.g.
+    VirtualBox, QEMU).
+
+**gVisor takes a distinct third approach**, providing many security benefits of
+VMs while maintaining the lower resource footprint, fast startup, and
+flexibility of regular userspace applications.
+
+Let's take a closer look.
 
 **Machine-level virtualization**, such as [KVM][kvm] and [Xen][xen], exposes
 virtualized hardware to a guest kernel via a Virtual Machine Monitor (VMM). This
@@ -110,7 +122,7 @@ Each container running in the sandbox has its own isolated instance of:
 The entrypoint to running a sandboxed container is the `runsc` executable.
 `runsc` implements the [Open Container Initiative (OCI)][oci] runtime
 specification, which is used by Docker and Kubernetes. This means that OCI
-compatible _filesystem bundles_ can be run by `runsc`. Filesystem bundles are
+compatible *filesystem bundles* can be run by `runsc`. Filesystem bundles are
 comprised of a `config.json` file containing container configuration, and a root
 filesystem for the container. Please see the [OCI runtime spec][runtime-spec]
 for more information on filesystem bundles. `runsc` implements multiple commands

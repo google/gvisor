@@ -8,12 +8,15 @@
 
 ## What is gVisor?
 
-**gVisor** is an application kernel that implements a Linux-like interface.
-Unlike Linux, it is written in a memory-safe language (Go) and runs in
-userspace. It includes an [Open Container Initiative (OCI)][oci] runtime called
-`runsc` that provides an isolation boundary between the application and the host
-kernel. The `runsc` runtime integrates with Docker and Kubernetes, making it
-simple to run sandboxed containers.
+**gVisor** provides a strong layer of isolation between running applications and
+the host operating system. It is an application kernel that implements a
+[Linux-like interface][linux]. Unlike Linux, it is written in a memory-safe
+language (Go) and runs in userspace.
+
+gVisor includes an [Open Container Initiative (OCI)][oci] runtime called `runsc`
+that makes it easy to work with existing container tooling. The `runsc` runtime
+integrates with Docker and Kubernetes, making it simple to run sandboxed
+containers.
 
 ## What **isn't** gVisor?
 
@@ -22,7 +25,7 @@ simple to run sandboxed containers.
 *   gVisor is also **not a VM** in the everyday sense of the term (e.g.
     VirtualBox, QEMU).
 
-**gVisor exists somewhere in the middle**, providing many security benefits of
+**gVisor takes a distinct third approach**, providing many security benefits of
 VMs while maintaining the lower resource footprint, fast startup, and
 flexibility of regular userspace applications.
 
@@ -138,6 +141,7 @@ See [Contributing.md](CONTRIBUTING.md).
 [gvisor-users-list]: https://groups.google.com/forum/#!forum/gvisor-users
 [gvisor-dev]: https://gvisor.dev
 [gvisor-dev-list]: https://groups.google.com/forum/#!forum/gvisor-dev
+[linux]: https://en.wikipedia.org/wiki/Linux_kernel_interfaces
 [oci]: https://www.opencontainers.org
 [old-linux]: https://gvisor.dev/docs/user_guide/networking/#gso
 [sandbox]: https://en.wikipedia.org/wiki/Sandbox_(computer_security)
