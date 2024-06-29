@@ -1057,6 +1057,19 @@ func (s *Stack) SetNICAddress(id tcpip.NICID, addr tcpip.LinkAddress) tcpip.Erro
 	return nil
 }
 
+// SetNICName sets a NIC's name.
+func (s *Stack) SetNICName(id tcpip.NICID, name string) tcpip.Error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	nic, ok := s.nics[id]
+	if !ok {
+		return &tcpip.ErrUnknownNICID{}
+	}
+	nic.name = name
+	return nil
+}
+
 // NICInfo captures the name and addresses assigned to a NIC.
 type NICInfo struct {
 	Name              string

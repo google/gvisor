@@ -123,15 +123,13 @@ func (s *Stack) SetInterface(ctx context.Context, msg *nlmsg.Message) *syserr.Er
 			if len(value) < 1 {
 				return syserr.ErrInvalidArgument
 			}
-			if ifinfomsg.Index != 0 {
-				// Device name changing isn't supported yet.
-				return syserr.ErrNotSupported
-			}
-			ifname = value.String()
-			for idx, ifa := range s.Interfaces() {
-				if ifname == ifa.Name {
-					ifinfomsg.Index = idx
-					break
+			if ifinfomsg.Index == 0 {
+				ifname = value.String()
+				for idx, ifa := range s.Interfaces() {
+					if ifname == ifa.Name {
+						ifinfomsg.Index = idx
+						break
+					}
 				}
 			}
 		case linux.IFLA_MASTER:
@@ -188,6 +186,10 @@ func (s *Stack) setLink(id tcpip.NICID, linkAttrs map[uint16]nlmsg.BytesView) *s
 				return syserr.ErrInvalidArgument
 			}
 			if err := s.Stack.SetNICAddress(id, addr); err != nil {
+				return syserr.TranslateNetstackError(err)
+			}
+		case linux.IFLA_IFNAME:
+			if err := s.Stack.SetNICName(id, v.String()); err != nil {
 				return syserr.TranslateNetstackError(err)
 			}
 		}
