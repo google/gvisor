@@ -1070,6 +1070,19 @@ func (s *Stack) SetNICName(id tcpip.NICID, name string) tcpip.Error {
 	return nil
 }
 
+// SetNICMTU sets a NIC's MTU.
+func (s *Stack) SetNICMTU(id tcpip.NICID, mtu uint32) tcpip.Error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	nic, ok := s.nics[id]
+	if !ok {
+		return &tcpip.ErrUnknownNICID{}
+	}
+	nic.NetworkLinkEndpoint.SetMTU(mtu)
+	return nil
+}
+
 // NICInfo captures the name and addresses assigned to a NIC.
 type NICInfo struct {
 	Name              string
