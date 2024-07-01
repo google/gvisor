@@ -162,11 +162,17 @@ void CheckLinkMsg(const struct nlmsghdr* hdr, const Link& link) {
       reinterpret_cast<const struct ifinfomsg*>(NLMSG_DATA(hdr));
   EXPECT_EQ(msg->ifi_index, link.index);
 
-  const struct rtattr* rta = FindRtAttr(hdr, msg, IFLA_IFNAME);
-  EXPECT_NE(nullptr, rta) << "IFLA_IFNAME not found in message.";
-  if (rta != nullptr) {
-    std::string name(reinterpret_cast<const char*>(RTA_DATA(rta)));
+  const struct rtattr* rta_name = FindRtAttr(hdr, msg, IFLA_IFNAME);
+  EXPECT_NE(nullptr, rta_name) << "IFLA_IFNAME not found in message.";
+  if (rta_name != nullptr) {
+    std::string name(reinterpret_cast<const char*>(RTA_DATA(rta_name)));
     EXPECT_EQ(name, link.name);
+  }
+  const struct rtattr* rta_mtu = FindRtAttr(hdr, msg, IFLA_MTU);
+  EXPECT_NE(nullptr, rta_mtu) << "IFLA_MTU not found in message.";
+  if (rta_mtu != nullptr) {
+    const auto mtu = *(reinterpret_cast<uint32_t*>(RTA_DATA(rta_mtu)));
+    EXPECT_EQ(mtu, link.mtu);
   }
 }
 
