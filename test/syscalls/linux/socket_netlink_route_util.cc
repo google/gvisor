@@ -270,8 +270,8 @@ PosixErrorOr<std::vector<Link>> DumpLinks() {
     }
     const struct ifinfomsg* msg =
         reinterpret_cast<const struct ifinfomsg*>(NLMSG_DATA(hdr));
-    const auto* rta = FindRtAttr(hdr, msg, IFLA_IFNAME);
-    if (rta == nullptr) {
+    const auto* rta_name = FindRtAttr(hdr, msg, IFLA_IFNAME);
+    if (rta_name == nullptr) {
       // Ignore links that do not have a name.
       return;
     }
@@ -280,7 +280,11 @@ PosixErrorOr<std::vector<Link>> DumpLinks() {
     links.back().index = msg->ifi_index;
     links.back().type = msg->ifi_type;
     links.back().name =
-        std::string(reinterpret_cast<const char*>(RTA_DATA(rta)));
+        std::string(reinterpret_cast<const char*>(RTA_DATA(rta_name)));
+    const auto* rta_mtu = FindRtAttr(hdr, msg, IFLA_MTU);
+    links.back().mtu = rta_mtu == nullptr
+                           ? 0
+                           : *reinterpret_cast<uint32_t*>(RTA_DATA(rta_mtu));
   }));
   return links;
 }
