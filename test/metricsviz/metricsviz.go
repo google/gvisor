@@ -221,9 +221,13 @@ func (c *chart) getXAxis() ([]string, error) {
 
 // series returns a single line series of the chart.
 func (c *chart) series(ts *TimeSeries, isCumulative bool) ([]opts.LineData, error) {
-	const windowDuration = time.Second
+	const (
+		windowDuration  = time.Second
+		minTimeToReport = 10 * time.Millisecond
+	)
 	seriesData := make([]opts.LineData, len(ts.Data))
 	if isCumulative {
+		timeSeriesIsLongEnough := false
 		lastValidXIndex := 0
 		for i, p := range ts.Data {
 			baselineWhen := p.When.Add(-windowDuration)
@@ -263,11 +267,29 @@ func (c *chart) series(ts *TimeSeries, isCumulative bool) ([]opts.LineData, erro
 				baselineWhenFraction := float64(baselineWhen.Sub(whenBefore)) / float64(whenDelta)
 				baseline := baselineBefore + uint64(float64(baselineDelta)*baselineWhenFraction)
 				seriesData[i] = opts.LineData{Value: p.Value - baseline, YAxisIndex: 0, Symbol: "none"}
+				timeSeriesIsLongEnough = true
+			case p.When.Sub(ts.Data[0].When) >= minTimeToReport:
+				// We don't yet have enough points to get a full `windowDuration`'s
+				// worth of data, but we do have enough data to report something if
+				// we assume that the rate can be extrapolated from the first point
+				// until now.
+				baselineBefore := ts.Data[0].Value
+				baselineAfter := p.Value
+				baselineDelta := baselineAfter - baselineBefore
+				whenBefore := ts.Data[0].When
+				whenAfter := p.When
+				whenDelta := whenAfter.Sub(whenBefore)
+				interpolationMultiplier := float64(windowDuration.Nanoseconds()) / float64(whenDelta.Nanoseconds())
+				seriesData[i] = opts.LineData{Value: uint64(float64(baselineDelta) * interpolationMultiplier), YAxisIndex: 0, Symbol: "none"}
+				timeSeriesIsLongEnough = true
 			default:
 				// Happens naturally for points too early in the timeseries,
 				// set the point to nil.
 				seriesData[i] = opts.LineData{Value: nil, YAxisIndex: 0, Symbol: "none"}
 			}
+		}
+		if !timeSeriesIsLongEnough {
+			return nil, fmt.Errorf("metric %v is cumulative but timeseries data for it is smaller than minimum chartable duration (%v), please run the workload for longer for cumulative timeseries to become meaningful", ts.Metric.Name, minTimeToReport)
 		}
 	} else {
 		// Non-cumulative time series are more straightforward.
