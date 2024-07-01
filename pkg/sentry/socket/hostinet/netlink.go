@@ -270,6 +270,11 @@ func removeInterface(idx int32) error {
 	return doNetlinkRouteRequest(msgs)
 }
 
+func addRoute(route inet.Route) error {
+	// TODO(b/343524351): implements RTM_NEWROUTE for hostinet.
+	return nil
+}
+
 func doNetlinkInterfaceRequest(typ, flags uint16, idx uint32, addr inet.InterfaceAddr) error {
 	// [ NetlinkMessageHeader | InterfaceAddrMessage | RtAttr | localAddr | RtAttr | peerAddr ]
 	hdr := linux.NetlinkMessageHeader{
