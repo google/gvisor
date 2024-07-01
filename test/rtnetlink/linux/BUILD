@@ -20,6 +20,12 @@ sh_binary(
 )
 
 sh_binary(
+    name = "setlink_test",
+    srcs = ["setlink_test.sh"],
+    deps = [":rtnetlink_test"],
+)
+
+sh_binary(
     name = "bridge_test",
     srcs = ["bridge_test.sh"],
     data = [
