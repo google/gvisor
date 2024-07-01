@@ -162,11 +162,27 @@ func (p *Protocol) getLink(ctx context.Context, s *netlink.Socket, msg *nlmsg.Me
 	return nil
 }
 
+// newLink handles RTM_NEWLINK reqeusts.
 func (p *Protocol) newLink(ctx context.Context, s *netlink.Socket, msg *nlmsg.Message, ms *nlmsg.MessageSet) *syserr.Error {
 	stack := s.Stack()
 	if stack == nil {
 		// No network stack.
 		return syserr.ErrProtocolNotSupported
+	}
+
+	return stack.SetInterface(ctx, msg)
+}
+
+// setLink handles RTM_SETLINK requests.
+func (p *Protocol) setLink(ctx context.Context, s *netlink.Socket, msg *nlmsg.Message, ms *nlmsg.MessageSet) *syserr.Error {
+	stack := s.Stack()
+	if stack == nil {
+		// No network stack.
+		return syserr.ErrProtocolNotSupported
+	}
+
+	if msg.Header().Flags&linux.NLM_F_CREATE == linux.NLM_F_CREATE {
+		return syserr.ErrInvalidArgument
 	}
 
 	return stack.SetInterface(ctx, msg)
@@ -594,14 +610,15 @@ func (p *Protocol) ProcessMessage(ctx context.Context, s *netlink.Socket, msg *n
 			return p.getLink(ctx, s, msg, ms)
 		case linux.RTM_DELLINK:
 			return p.delLink(ctx, s, msg, ms)
+		case linux.RTM_SETLINK:
+			// RTM_NEWLINK is backward compatible to RTM_SETLINK.
+			return p.setLink(ctx, s, msg, ms)
 		case linux.RTM_GETROUTE:
 			return p.dumpRoutes(ctx, s, msg, ms)
 		case linux.RTM_NEWADDR:
 			return p.newAddr(ctx, s, msg, ms)
 		case linux.RTM_DELADDR:
 			return p.delAddr(ctx, s, msg, ms)
-		case linux.RTM_SETLINK:
-			return nil
 		default:
 			return syserr.ErrNotSupported
 		}
