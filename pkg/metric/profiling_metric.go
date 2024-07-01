@@ -99,6 +99,9 @@ type ProfilingMetricsWriter interface {
 	// WriteString from the io.StringWriter interface.
 	io.StringWriter
 
+	// Truncate truncates the underlying writer, if possible.
+	Truncate(size int64) error
+
 	// Close closes the writer.
 	Close() error
 }
@@ -197,6 +200,13 @@ func StartProfilingMetrics[T ProfilingMetricsWriter](opts ProfilingMetricsOption
 	for i := 0; i < snapshotRingbufferSize; i++ {
 		s.ringbuffer[i] = make([]uint64, snapshotBufferSize*(numMetrics+1))
 	}
+
+	// Truncate the underlying sink if possible to delete any past profiling
+	// data in the file, if any, as it makes no sense to concatenate them or
+	// to overwrite them in-place.
+	// We ignore errors here because the sink may not be truncatable,
+	// e.g. when it is pointing to the stdout FD.
+	_ = opts.Sink.Truncate(0)
 
 	stopProfilingMetrics = atomicbitops.FromBool(false)
 	doneProfilingMetrics = make(chan bool, 1)
@@ -377,6 +387,11 @@ func (w *bufferedWriter[T]) Flush() {
 	w.buf.Reset()
 }
 
+// Truncate implements bufferedMetricsWriter.Truncate.
+func (w *bufferedWriter[T]) Truncate(size int64) error {
+	return w.underlying.Truncate(size)
+}
+
 // Close implements bufferedMetricsWriter.Close.
 func (w *bufferedWriter[T]) Close() error {
 	w.Flush()
@@ -477,6 +492,11 @@ func (w *lossyBufferedWriter[T]) NewLine() {
 	if w.lines >= bufferedLines || w.flushBuf.Len() >= bufSize {
 		w.Flush()
 	}
+}
+
+// Truncate implements bufferedMetricsWriter.Truncate.
+func (w *lossyBufferedWriter[T]) Truncate(size int64) error {
+	return w.underlying.Truncate(size)
 }
 
 // Close implements bufferedMetricsWriter.Close.
