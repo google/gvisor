@@ -7,9 +7,7 @@ package(
 
 go_library(
     name = "shim",
-    srcs = [
-        "service.go",
-    ],
+    srcs = ["service.go"],
     visibility = ["//shim:__subpackages__"],
     deps = [
         "//pkg/cleanup",
