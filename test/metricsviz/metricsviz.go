@@ -351,7 +351,7 @@ func (c *chart) Charter() (components.Charter, error) {
 		}),
 		charts.WithDataZoomOpts(opts.DataZoom{Type: "inside", XAxisIndex: 0}),
 		charts.WithDataZoomOpts(opts.DataZoom{Type: "slider", XAxisIndex: 0}),
-		charts.WithDataZoomOpts(opts.DataZoom{Type: "inside", YAxisIndex: 0}),
+		charts.WithDataZoomOpts(opts.DataZoom{Type: "inside", YAxisIndex: []int{}}),
 		charts.WithTooltipOpts(opts.Tooltip{Show: true, Trigger: "axis"}),
 		charts.WithToolboxOpts(opts.Toolbox{
 			Show: true,
@@ -363,6 +363,21 @@ func (c *chart) Charter() (components.Charter, error) {
 	lineChart.Validate()
 	return lineChart, nil
 }
+
+const connectAllChartsJavascript = `
+<script type="text/javascript">
+let all_charts = [];
+document.querySelectorAll('canvas, div').forEach(function(element) {
+	const maybe_chart = echarts.getInstanceByDom(element);
+	if (maybe_chart) {
+		all_charts.push(maybe_chart);
+	}
+});
+if (all_charts.length > 1) {
+	echarts.connect(all_charts);
+}
+</script>
+`
 
 // ToHTML generates an HTML page with charts of the metrics data.
 func (d *Data) ToHTML(opts HTMLOptions) (string, error) {
@@ -454,6 +469,15 @@ func (d *Data) ToHTML(opts HTMLOptions) (string, error) {
 	}
 	headTagFinishIndex := headTagIndex + len(headTag)
 	html = html[:headTagFinishIndex] + "\n<!--\n" + htmlRawLogsPrefix + "\n" + d.rawLogs + "\n" + htmlRawLogsSuffix + "\n-->\n" + html[headTagFinishIndex:]
+
+	// Insert a script to link the charts' X axis together.
+	const endBodyTag = "</body>"
+	endBodyTagIndex := strings.Index(html, endBodyTag)
+	if endBodyTagIndex == -1 {
+		return "", fmt.Errorf("no </body> tag found in HTML")
+	}
+	html = html[:endBodyTagIndex] + connectAllChartsJavascript + html[endBodyTagIndex:]
+
 	return html, nil
 }
 
