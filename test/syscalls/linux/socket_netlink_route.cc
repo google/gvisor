@@ -171,7 +171,8 @@ void CheckLinkMsg(const struct nlmsghdr* hdr, const Link& link) {
   const struct rtattr* rta_mtu = FindRtAttr(hdr, msg, IFLA_MTU);
   EXPECT_NE(nullptr, rta_mtu) << "IFLA_MTU not found in message.";
   if (rta_mtu != nullptr) {
-    const auto mtu = *(reinterpret_cast<uint32_t*>(RTA_DATA(rta_mtu)));
+    const auto mtu = *(uint32_t*)(RTA_DATA(rta_mtu));
+    std::cout << "mtu: " << mtu << "link.mtu " << link.mtu << std::endl;
     EXPECT_EQ(mtu, link.mtu);
   }
 }
@@ -256,6 +257,61 @@ TEST(NetlinkRouteTest, ChangeLinkName) {
   bool found = false;
   ASSERT_NO_ERRNO(NetlinkRequestResponse(
       fd, &req, sizeof(req),
+      [&](const struct nlmsghdr* hdr) {
+        CheckLinkMsg(hdr, loopback_link);
+        found = true;
+      },
+      false));
+  EXPECT_TRUE(found) << "Netlink response does not contain any links.";
+}
+
+TEST(NetlinkRouteTest, ChangeMTU) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+  SKIP_IF(IsRunningWithHostinet());
+  SKIP_IF(!IsRunningOnGvisor());
+  Link loopback_link = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink());
+
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
+
+  struct request {
+    struct nlmsghdr hdr;
+    struct ifinfomsg ifm;
+    struct rtattr rtattr;
+    uint32_t mtu;
+  } req = {};
+
+  // Change the MTU.
+  req.hdr.nlmsg_len = sizeof(req);
+  req.hdr.nlmsg_type = RTM_NEWLINK;
+  req.hdr.nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
+  req.hdr.nlmsg_seq = kSeq;
+  req.ifm.ifi_family = AF_UNSPEC;
+  req.ifm.ifi_index = loopback_link.index;
+  req.rtattr.rta_type = IFLA_MTU;
+  req.rtattr.rta_len = RTA_LENGTH(sizeof(uint32_t));
+  req.mtu = 1500;
+  ASSERT_NE(req.mtu, loopback_link.mtu);
+  EXPECT_NO_ERRNO(NetlinkRequestAckOrError(fd, kSeq, &req, sizeof(req)));
+
+  // See b/348220986, this is a known issue. The interface MTU is slightly
+  // different because of the package header size.
+  loopback_link.mtu = 1486;
+  // Verify the new MTU.
+  struct searchrequest {
+    struct nlmsghdr hdr;
+    struct ifinfomsg ifm;
+  } search = {};
+  search.hdr.nlmsg_len = sizeof(search);
+  search.hdr.nlmsg_type = RTM_GETLINK;
+  search.hdr.nlmsg_flags = NLM_F_REQUEST;
+  search.hdr.nlmsg_seq = kSeq;
+  search.ifm.ifi_family = AF_UNSPEC;
+  search.ifm.ifi_index = loopback_link.index;
+
+  bool found = false;
+  ASSERT_NO_ERRNO(NetlinkRequestResponse(
+      fd, &search, sizeof(search),
       [&](const struct nlmsghdr* hdr) {
         CheckLinkMsg(hdr, loopback_link);
         found = true;
@@ -1408,8 +1464,6 @@ TEST(NetlinkRouteTest, VethAdd) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
   SKIP_IF(IsRunningWithHostinet());
 
-  Link loopback_link = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink());
-
   FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
 
@@ -1457,7 +1511,6 @@ TEST(NetlinkRouteTest, VethAdd) {
   linkinfo->rta_len = (uint64_t)NLMSG_TAIL(&req.hdr) - (uint64_t)linkinfo;
   EXPECT_NO_ERRNO(NetlinkRequestAckOrError(fd, kSeq, &req, req.hdr.nlmsg_len));
 }
-
 }  // namespace
 
 }  // namespace testing

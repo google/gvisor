@@ -135,6 +135,7 @@ func (s *Stack) SetInterface(ctx context.Context, msg *nlmsg.Message) *syserr.Er
 		case linux.IFLA_MASTER:
 		case linux.IFLA_LINKINFO:
 		case linux.IFLA_ADDRESS:
+		case linux.IFLA_MTU:
 		default:
 			ctx.Warningf("unexpected attribute: %x", attr)
 			return syserr.ErrNotSupported
@@ -151,7 +152,6 @@ func (s *Stack) SetInterface(ctx context.Context, msg *nlmsg.Message) *syserr.Er
 	if flags&(linux.NLM_F_EXCL|linux.NLM_F_REPLACE) != 0 {
 		return syserr.ErrExists
 	}
-
 	if ifinfomsg.Flags != 0 || ifinfomsg.Change != 0 {
 		if ifinfomsg.Change & ^uint32(linux.IFF_UP) != 0 {
 			ctx.Warningf("Unsupported ifi_change flags: %x", ifinfomsg.Change)
@@ -190,6 +190,14 @@ func (s *Stack) setLink(id tcpip.NICID, linkAttrs map[uint16]nlmsg.BytesView) *s
 			}
 		case linux.IFLA_IFNAME:
 			if err := s.Stack.SetNICName(id, v.String()); err != nil {
+				return syserr.TranslateNetstackError(err)
+			}
+		case linux.IFLA_MTU:
+			mtu, ok := v.Uint32()
+			if !ok {
+				return syserr.ErrInvalidArgument
+			}
+			if err := s.Stack.SetNICMTU(id, mtu); err != nil {
 				return syserr.TranslateNetstackError(err)
 			}
 		}
