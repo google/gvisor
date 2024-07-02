@@ -252,17 +252,8 @@ func collectProfilingMetrics(s *snapshots, values []func(fieldValues ...*FieldVa
 	)
 	backoffFactor := initialBackoffFactor
 
-	// To keep track of time cheaply, we use `CheapNowNano`.
-	// However, this can drift as it has poor precision.
-	// To get something more precise, we periodically call `time.Now`
-	// and `CheapNowNano` and use these two variables to track both.
-	// This way, we can compute a more precise time by using
-	// `CheapNowNano() - cheapTime + preciseTime`.
-	preciseTime := s.startTime
-	cheapTime := cheapStartTime
-
 	stopCollecting := false
-	for nextCollection := s.startTime; !stopCollecting; nextCollection += profilingRate.Nanoseconds() {
+	for nextCollection := cheapStartTime; !stopCollecting; nextCollection += profilingRate.Nanoseconds() {
 
 		// For small durations, just spin. Otherwise sleep.
 		for {
@@ -271,7 +262,7 @@ func collectProfilingMetrics(s *snapshots, values []func(fieldValues ...*FieldVa
 				spinMaxNanos  = 250
 				yieldMaxNanos = 1_000
 			)
-			now := CheapNowNano() - cheapTime + preciseTime
+			now := CheapNowNano()
 			nanosToNextCollection := nextCollection - now
 			if nanosToNextCollection <= 0 {
 				// Collect now.
@@ -294,8 +285,7 @@ func collectProfilingMetrics(s *snapshots, values []func(fieldValues ...*FieldVa
 			// Collect one last time before stopping.
 		}
 
-		collectStart := CheapNowNano() - cheapTime + preciseTime
-		timestamp := time.Duration(collectStart - s.startTime)
+		timestamp := time.Duration(CheapNowNano() - cheapStartTime)
 		base := curSnapshot * numEntries
 		ringBuf := s.ringbuffer[ringbufferIdx]
 		ringBuf[base] = uint64(timestamp)
@@ -316,9 +306,6 @@ func collectProfilingMetrics(s *snapshots, values []func(fieldValues ...*FieldVa
 				time.Sleep(backoffSleep)
 				backoffFactor = min(backoffFactor*backoffFactorGrowth, backoffFactorMax)
 			}
-			// Refresh precise time.
-			preciseTime = time.Now().UnixNano()
-			cheapTime = CheapNowNano()
 		}
 	}
 	if curSnapshot != 0 {
