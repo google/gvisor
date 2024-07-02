@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"hash/adler32"
+	"html"
 	"os"
 	"path"
 	"regexp"
@@ -115,9 +116,10 @@ func (ts *TimeSeries) String() string {
 
 // Data maps metrics and field values to timeseries.
 type Data struct {
-	startTime time.Time
-	rawLogs   string
-	data      map[MetricAndFields]*TimeSeries
+	startTime       time.Time
+	rawLogs         string
+	data            map[MetricAndFields]*TimeSeries
+	collectionStats *metric.CollectionStats
 }
 
 // HTMLOptions are options for generating an HTML page with charts of the
@@ -459,26 +461,57 @@ func (d *Data) ToHTML(opts HTMLOptions) (string, error) {
 	if err := page.Render(&b); err != nil {
 		return "", fmt.Errorf("failed to render page: %w", err)
 	}
-	html := b.String()
+	pageHTML := b.String()
 
 	// Insert raw logs in the HTML file itself as a comment.
 	const headTag = "<head>"
-	headTagIndex := strings.Index(html, headTag)
+	headTagIndex := strings.Index(pageHTML, headTag)
 	if headTagIndex == -1 {
 		return "", fmt.Errorf("no <head> tag found in HTML")
 	}
 	headTagFinishIndex := headTagIndex + len(headTag)
-	html = html[:headTagFinishIndex] + "\n<!--\n" + htmlRawLogsPrefix + "\n" + d.rawLogs + "\n" + htmlRawLogsSuffix + "\n-->\n" + html[headTagFinishIndex:]
+	pageHTML = pageHTML[:headTagFinishIndex] + "\n<!--\n" + htmlRawLogsPrefix + "\n" + d.rawLogs + "\n" + htmlRawLogsSuffix + "\n-->\n" + pageHTML[headTagFinishIndex:]
+
+	// Add stats and warnings to the HTML file at the top of the page.
+	const beginBodyTag = "<body>"
+	beginBodyTagIndex := strings.Index(pageHTML, beginBodyTag)
+	if beginBodyTagIndex == -1 {
+		return "", fmt.Errorf("no <body> tag found in HTML")
+	}
+	var statsHTML strings.Builder
+	statsHTML.WriteString("<ul>")
+	var warningsHTML strings.Builder
+	haveWarning := false
+	if d.collectionStats != nil {
+		d.collectionStats.Log(func(format string, val ...any) {
+			statsHTML.WriteString("<li>")
+			statsHTML.WriteString(html.EscapeString(fmt.Sprintf(format, val...)))
+			statsHTML.WriteString("</li>")
+		}, func(format string, val ...any) {
+			if !haveWarning {
+				warningsHTML.WriteString(`<div style="color: #990000; background: #FFF0F0; font-weight: bold; border: 2px solid #FF0000; padding: 1em;">`)
+				warningsHTML.WriteString("<strong>WARNING</strong>: ")
+				haveWarning = true
+			}
+			warningsHTML.WriteString(html.EscapeString(fmt.Sprintf(format, val...)))
+			warningsHTML.WriteString("<br/>")
+		})
+	}
+	statsHTML.WriteString("</ul>")
+	if haveWarning {
+		warningsHTML.WriteString("</div>")
+	}
+	pageHTML = pageHTML[:beginBodyTagIndex+len(beginBodyTag)] + warningsHTML.String() + statsHTML.String() + pageHTML[beginBodyTagIndex+len(beginBodyTag):]
 
 	// Insert a script to link the charts' X axis together.
 	const endBodyTag = "</body>"
-	endBodyTagIndex := strings.Index(html, endBodyTag)
+	endBodyTagIndex := strings.Index(pageHTML, endBodyTag)
 	if endBodyTagIndex == -1 {
 		return "", fmt.Errorf("no </body> tag found in HTML")
 	}
-	html = html[:endBodyTagIndex] + connectAllChartsJavascript + html[endBodyTagIndex:]
+	pageHTML = pageHTML[:endBodyTagIndex] + connectAllChartsJavascript + pageHTML[endBodyTagIndex:]
 
-	return html, nil
+	return pageHTML, nil
 }
 
 // ErrNoMetricData is returned when no metrics data is found in logs.
@@ -582,6 +615,18 @@ func Parse(logs string, hasPrefix bool) (*Data, error) {
 			}
 			const nanosPerSecond = 1_000_000_000
 			data.startTime = time.Unix(int64(timestamp/nanosPerSecond), int64(timestamp%nanosPerSecond))
+			continue
+		}
+
+		if strings.HasPrefix(lineData, metric.MetricsStatsIndicator) {
+			stats, err := metric.ParseCollectionStats(lineData)
+			if err != nil {
+				return nil, fmt.Errorf("invalid stats line: %q: %w", line, err)
+			}
+			if data.collectionStats != nil {
+				return nil, errors.New("multiple stats lines found in logs")
+			}
+			data.collectionStats = stats
 			continue
 		}
 

@@ -16,6 +16,7 @@ package metric
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"hash"
@@ -58,6 +59,9 @@ const (
 	// MetricsStartTimeIndicator is prepended before the start time of the
 	// metrics collection.
 	MetricsStartTimeIndicator = "START_TIME\t"
+	// MetricsStatsIndicator is prepended before the stats of the metrics
+	// collection process.
+	MetricsStatsIndicator = "STATS\t"
 )
 
 // CollectionStats contains statistics about the profiling metrics collection
@@ -145,6 +149,9 @@ type writeReq struct {
 
 // ProfilingMetricsWriter is the interface for profiling metrics sinks.
 type ProfilingMetricsWriter interface {
+	// Write from the io.Writer interface.
+	io.Writer
+
 	// WriteString from the io.StringWriter interface.
 	io.StringWriter
 
@@ -349,8 +356,7 @@ func collectProfilingMetrics(s *snapshots, values []func(fieldValues ...*FieldVa
 		}
 		afterCollectionTimestamp := CheapNowNano()
 		middleCollectionTimestamp := (beforeCollectionTimestamp + afterCollectionTimestamp) / 2
-		relativeCollectionTimestamp := time.Duration(middleCollectionTimestamp - cheapStartTime)
-		ringBuf[base] = uint64(relativeCollectionTimestamp.Nanoseconds())
+		ringBuf[base] = uint64(middleCollectionTimestamp - cheapStartTime)
 		curSnapshot++
 		stats.TotalSnapshots++
 		stats.TotalSleepTimingErrorNanos += uint64(max(nextCollection-beforeCollectionTimestamp, beforeCollectionTimestamp-nextCollection))
@@ -417,6 +423,11 @@ func newBufferedWriter[T ProfilingMetricsWriter](underlying T) *bufferedWriter[T
 	w := &bufferedWriter[T]{underlying: underlying}
 	w.buf.Grow(bufSize + lineBufSize)
 	return w
+}
+
+// Write implements bufferedMetricsWriter.Write.
+func (w *bufferedWriter[T]) Write(s []byte) (int, error) {
+	return w.buf.Write(s)
 }
 
 // WriteString implements bufferedMetricsWriter.WriteString.
@@ -486,6 +497,11 @@ func newLossyBufferedWriter[T ProfilingMetricsWriter](underlying T) *lossyBuffer
 
 	w.flushBuf.WriteString("\n")
 	return w
+}
+
+// Write implements bufferedMetricsWriter.Write.
+func (w *lossyBufferedWriter[T]) Write(s []byte) (int, error) {
+	return w.lineBuf.Write(s)
 }
 
 // WriteString implements bufferedMetricsWriter.WriteString.
@@ -589,6 +605,9 @@ func writeProfilingMetrics[T bufferedMetricsWriter](sink T, s *snapshots, header
 			sink.NewLine()
 		}
 	}
+	sink.WriteString(MetricsStatsIndicator)
+	stats.WriteTo(sink)
+	sink.NewLine()
 	sink.Close()
 
 	doneProfilingMetrics <- stats
@@ -597,7 +616,7 @@ func writeProfilingMetrics[T bufferedMetricsWriter](sink T, s *snapshots, header
 }
 
 // Log logs some statistics about the profiling metrics collection process.
-func (s *CollectionStats) Log() {
+func (s *CollectionStats) Log(infoFn func(format string, val ...any), warningFn func(format string, val ...any)) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -620,42 +639,66 @@ func (s *CollectionStats) Log() {
 		captureRate = float64(s.TotalSnapshots) / float64(expectedSnapshots)
 	}
 	if captureRate < .99 {
-		log.Warningf("Profiling metrics: Captured %d snapshots out of %d expected (%.2f%% capture rate) over %v.", s.TotalSnapshots, expectedSnapshots, captureRate*100.0, captureDuration)
-		log.Warningf("This indicates that the profiling metrics writer is not keeping up with the metrics collection rate.")
-		log.Warningf("Ensure that the profiling metrics log is stored on a fast storage device, or consider reducing the metric profiling rate.")
+		warningFn("Captured %d snapshots out of %d expected (%.2f%% capture rate) over %v.", s.TotalSnapshots, expectedSnapshots, captureRate*100.0, captureDuration)
+		warningFn("This indicates that the profiling metrics writer is not keeping up with the metrics collection rate.")
+		warningFn("Ensure that the profiling metrics log is stored on a fast storage device, or consider reducing the metric profiling rate.")
 	} else {
-		log.Infof("Profiling metrics: Captured %d snapshots out of %d expected (%.2f%% capture rate) over %v. This is OK.", s.TotalSnapshots, expectedSnapshots, captureRate*100.0, captureDuration)
+		infoFn("Captured %d snapshots out of %d expected (%.2f%% capture rate) over %v. This is acceptable.", s.TotalSnapshots, expectedSnapshots, captureRate*100.0, captureDuration)
 	}
 	averageSleepTimingError := totalSleepTimingError / time.Duration(s.TotalSnapshots)
 	sleepTimingErrorVsRate := float64(averageSleepTimingError) / float64(collectionRate)
 	if sleepTimingErrorVsRate > .1 {
-		log.Warningf("Profiling metrics: Average sleep timing error is high: %v (%.2f%% of the collection interval).", averageSleepTimingError, sleepTimingErrorVsRate*100.0)
-		log.Warningf("This means the profiling metrics collector is not waking up at the correct time to collect the next snapshot.")
-		log.Warningf("This may mean that the CPU is overloaded (e.g. from other processes running on the same machine or from the workload itself taking up all the cores).")
-		log.Warningf("Consider using a slower profiling rate, removing other background processes, or tweaking the sleep consts in profiling_metric.go.")
+		warningFn("Average sleep timing error is high: %v (%.2f%% of the collection interval).", averageSleepTimingError, sleepTimingErrorVsRate*100.0)
+		warningFn("This means the profiling metrics collector is not waking up at the correct time to collect the next snapshot.")
+		warningFn("This may mean that the CPU is overloaded (e.g. from other processes running on the same machine or from the workload itself taking up all the cores).")
+		warningFn("Consider using a slower profiling rate, removing other background processes, or tweaking the sleep consts in profiling_metric.go.")
 	} else {
-		log.Infof("Profiling metrics: Average sleep timing error: %v (%.2f%% of the collection interval). This is OK.", averageSleepTimingError, sleepTimingErrorVsRate*100.0)
+		infoFn("Average sleep timing error: %v (%.2f%% of the collection interval). This is acceptable.", averageSleepTimingError, sleepTimingErrorVsRate*100.0)
 	}
 	averageCollectionTimingError := totalCollectionTimingError / time.Duration(s.TotalSnapshots)
 	collectionTimingErrorVsRate := float64(averageCollectionTimingError) / float64(collectionRate)
 	if collectionTimingErrorVsRate > .1 {
-		log.Warningf("Profiling metrics: Average collection timing error is high: %v (%.2f%% of the collection interval).", averageCollectionTimingError, collectionTimingErrorVsRate*100.0)
-		log.Warningf("This means the time between getting the value of the first metric vs the last metric within a single collection cycle is a too large fraction of the profiling rate.")
-		log.Warningf("This means there is significant drift between the time a value is reported as having vs the time it was actually scraped, relative to the profiling interval.")
-		log.Warningf("Consider using a slower profiling rate or profiling fewer metrics at a time.")
+		warningFn("Average collection timing error is high: %v (%.2f%% of the collection interval).", averageCollectionTimingError, collectionTimingErrorVsRate*100.0)
+		warningFn("This means the time between getting the value of the first metric vs the last metric within a single collection cycle is a too large fraction of the profiling rate.")
+		warningFn("This means there is significant drift between the time a value is reported as having vs the time it was actually scraped, relative to the profiling interval.")
+		warningFn("Consider using a slower profiling rate or profiling fewer metrics at a time.")
 	} else {
-		log.Infof("Profiling metrics: Average collection timing error: %v (%.2f%% of the collection interval). This is OK.", averageCollectionTimingError, collectionTimingErrorVsRate*100.0)
+		infoFn("Average collection timing error: %v (%.2f%% of the collection interval). This is acceptable.", averageCollectionTimingError, collectionTimingErrorVsRate*100.0)
 	}
 	if s.NumBackoffSleeps > 0 {
 		ratioLostToBackoff := float64(totalBackoffSleep) / float64(captureDuration)
 		if ratioLostToBackoff > .05 {
-			log.Warningf("Profiling metrics: Backed off %d times due to slow writer; total %v spent in backoff sleep (%.2f%% of the capture duration).")
-			log.Warningf("This indicates that the profiling metrics writer is not keeping up with the metrics collection rate.")
-			log.Warningf("Ensure that the profiling metrics log is stored on a fast storage device, or consider reducing the metric profiling rate.")
+			warningFn("Backed off %d times due to slow writer; total %v spent in backoff sleep (%.2f%% of the capture duration).")
+			warningFn("This indicates that the profiling metrics writer is not keeping up with the metrics collection rate.")
+			warningFn("Ensure that the profiling metrics log is stored on a fast storage device, or consider reducing the metric profiling rate.")
 		} else {
-			log.Infof("Profiling metrics: Backed off %d times due to slow writer; total %v spent in backoff sleep (%.2f%% of the capture duration). This is OK.", s.NumBackoffSleeps, totalBackoffSleep, ratioLostToBackoff*100.0)
+			infoFn("Backed off %d times due to slow writer; total %v spent in backoff sleep (%.2f%% of the capture duration). This is acceptable.", s.NumBackoffSleeps, totalBackoffSleep, ratioLostToBackoff*100.0)
 		}
 	}
+}
+
+// WriteTo writes the statistics about the profiling metrics collection process
+// to the given io.Writer.
+func (s *CollectionStats) WriteTo(w io.Writer) (int64, error) {
+	s.mu.Lock()
+	marshalled, err := json.Marshal(s)
+	s.mu.Unlock()
+	if err != nil {
+		return 0, err
+	}
+	n, err := w.Write(marshalled)
+	return int64(n), err
+}
+
+// ParseCollectionStats parses the profiling metrics collection stats from the
+// given line.
+func ParseCollectionStats(line string) (*CollectionStats, error) {
+	line = strings.TrimPrefix(line, MetricsStatsIndicator)
+	var stats CollectionStats
+	if err := json.Unmarshal([]byte(line), &stats); err != nil {
+		return nil, err
+	}
+	return &stats, nil
 }
 
 // StopProfilingMetrics stops the profiling metrics goroutines. Call to make sure
@@ -672,5 +715,9 @@ func StopProfilingMetrics() {
 	}
 	stats := <-doneProfilingMetrics
 	log.Infof("Profiling metrics stopped.")
-	stats.Log()
+	stats.Log(func(format string, val ...any) {
+		log.Infof("Profiling metrics: "+format, val...)
+	}, func(format string, val ...any) {
+		log.Warningf("Profiling metrics: "+format, val...)
+	})
 }

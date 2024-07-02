@@ -1192,6 +1192,7 @@ func TestMetricProfiling(t *testing.T) {
 			gotMetadataFor := make(map[string]struct{}, numMetrics)
 			gotHeader := false
 			gotStartTime := false
+			gotStats := false
 			for lines.Scan() {
 				line := lines.Text()
 				if line == "" {
@@ -1240,6 +1241,17 @@ func TestMetricProfiling(t *testing.T) {
 						t.Fatalf("got multiple start time lines")
 					}
 					gotStartTime = true
+					continue
+				}
+				if strings.HasPrefix(line, MetricsStatsIndicator) {
+					if gotStats {
+						t.Fatalf("got multiple stats lines")
+					}
+					gotStats = true
+					_, err := ParseCollectionStats(line)
+					if err != nil {
+						t.Fatalf("failed to parse collection stats: %v", err)
+					}
 					continue
 				}
 				if !gotHeader {
@@ -1298,6 +1310,9 @@ func TestMetricProfiling(t *testing.T) {
 			}
 			if !gotStartTime {
 				t.Error("did not get start time metadata")
+			}
+			if !gotStats {
+				t.Error("did not get collection stats")
 			}
 			if !gotHeader {
 				t.Error("did not get header")
