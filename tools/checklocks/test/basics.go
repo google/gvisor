@@ -143,3 +143,13 @@ func testTwoLocksDoubleGuardStructOnlyOne(tc *twoLocksDoubleGuardStruct) {
 func testTwoLocksDoubleGuardStructInvalid(tc *twoLocksDoubleGuardStruct) {
 	tc.doubleGuardedField = 3 // +checklocksfail:2
 }
+
+func testFieldCommentValid(tc *fieldCommentStruct) {
+	tc.mu.Lock()
+	tc.guardedField = 1
+	tc.mu.Unlock()
+}
+
+func testFieldCommentInvalid(tc *fieldCommentStruct) {
+	tc.guardedField = 2 // +checklocksfail
+}
