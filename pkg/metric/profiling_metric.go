@@ -327,9 +327,22 @@ func collectProfilingMetrics(s *snapshots, values []func(fieldValues ...*FieldVa
 		// For small durations, just spin (and maybe yield). Otherwise sleep.
 		for {
 			const (
-				wakeUpNanos   = 10
-				spinMaxNanos  = 250
-				yieldMaxNanos = 1_000
+				// When the next collection time is closer than `spinMaxNanos` away,
+				// we will spin in place waiting for the collection time to come.
+				// If it is further away, see `yieldMaxNanos`.
+				spinMaxNanos = 50_000
+				// When the next collection time is closer than `yieldMaxNanos` away,
+				// we will continuously call `runtime.Gosched` until the collection
+				// time comes.
+				// If it is further away, we will call `time.Sleep` (but see
+				// `wakeUpNanos`).
+				// Look at your kernel's CONFIG_HZ configuration to see what a good
+				// lower bound for this value should be.
+				yieldMaxNanos = 2_500_000
+				// When we decide to call `time.Sleep`, `wakeUpNanos` is the amount of
+				// time to *undersleep* by passed to `time.Sleep`, such that we are
+				// likely to wake up a bit before the actual next collection time.
+				wakeUpNanos = 100_000
 			)
 			beforeCollectionTimestamp = CheapNowNano()
 			nanosToNextCollection := nextCollection - beforeCollectionTimestamp
