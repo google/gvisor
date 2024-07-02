@@ -15,6 +15,7 @@ func (e *endpoint) StateTypeName() string {
 func (e *endpoint) StateFields() []string {
 	return []string{
 		"dispatcher",
+		"mtu",
 	}
 }
 
@@ -24,6 +25,7 @@ func (e *endpoint) beforeSave() {}
 func (e *endpoint) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
 	stateSinkObject.Save(0, &e.dispatcher)
+	stateSinkObject.Save(1, &e.mtu)
 }
 
 func (e *endpoint) afterLoad(context.Context) {}
@@ -31,6 +33,7 @@ func (e *endpoint) afterLoad(context.Context) {}
 // +checklocksignore
 func (e *endpoint) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &e.dispatcher)
+	stateSourceObject.Load(1, &e.mtu)
 }
 
 func init() {
