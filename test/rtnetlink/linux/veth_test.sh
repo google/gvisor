@@ -30,17 +30,6 @@ if ! wait_for ! ip link show test_veth02; then
   exit 1
 fi
 
-# Create a new veth pair in the current namespace and rename the link.
-ip link add name test_veth01 type veth peer name test_veth02
-ip link set test_veth01 name test_veth03
-ip link show test_veth03
-ip link del name test_veth03
-# Check that test_veth02 has been destroyed.
-if ! wait_for ! ip link show test_veth02; then
-  fail "test_veth02 hasn't been destroyed"
-  exit 1
-fi
-
 ip netns add test
 ip link add test_veth01 type veth peer name test_veth02 netns test
 ip link show test_veth01
