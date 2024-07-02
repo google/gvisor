@@ -910,6 +910,9 @@ func (s *Stack) CreateNICWithOptions(id tcpip.NICID, ep LinkEndpoint, opts NICOp
 		}
 	}
 	s.nics[id] = n
+	ep.SetOnCloseAction(func() {
+		s.RemoveNIC(id)
+	})
 	if !opts.Disabled {
 		return n.enable()
 	}
@@ -1016,7 +1019,7 @@ func (s *Stack) removeNICLocked(id tcpip.NICID) tcpip.Error {
 	}
 	s.routeMu.Unlock()
 
-	return nic.remove()
+	return nic.remove(true /* closeLinkEndpoint */)
 }
 
 // SetNICCoordinator sets a coordinator device.
@@ -2339,4 +2342,28 @@ func (s *Stack) IsSubnetBroadcast(nicID tcpip.NICID, protocol tcpip.NetworkProto
 // operations.
 func (s *Stack) PacketEndpointWriteSupported() bool {
 	return s.packetEndpointWriteSupported
+}
+
+// SetNICStack moves the network device to the specified network namespace.
+func (s *Stack) SetNICStack(id tcpip.NICID, peer *Stack) (tcpip.NICID, tcpip.Error) {
+	s.mu.Lock()
+	nic, ok := s.nics[id]
+	if !ok {
+		s.mu.Unlock()
+		return 0, &tcpip.ErrUnknownNICID{}
+	}
+	if s == peer {
+		s.mu.Unlock()
+		return id, nil
+	}
+	delete(s.nics, id)
+
+	// Remove routes in-place. n tracks the number of routes written.
+	s.RemoveRoutes(func(r tcpip.Route) bool { return r.NIC == id })
+	ne := nic.NetworkLinkEndpoint.(LinkEndpoint)
+	nic.remove(false /* closeLinkEndpoint */)
+	s.mu.Unlock()
+
+	id = tcpip.NICID(peer.NextNICID())
+	return id, peer.CreateNICWithOptions(id, ne, NICOptions{Name: nic.Name()})
 }

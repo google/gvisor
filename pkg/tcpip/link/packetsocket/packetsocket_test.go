@@ -57,6 +57,7 @@ func (*nullEndpoint) ARPHardwareType() header.ARPHardwareType { return header.AR
 func (*nullEndpoint) AddHeader(*stack.PacketBuffer)           {}
 func (*nullEndpoint) ParseHeader(*stack.PacketBuffer) bool    { return true }
 func (*nullEndpoint) Close()                                  {}
+func (*nullEndpoint) SetOnCloseAction(func())                 {}
 
 var _ stack.NetworkDispatcher = (*testNetworkDispatcher)(nil)
 

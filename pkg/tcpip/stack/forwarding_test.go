@@ -345,6 +345,9 @@ func (*fwdTestLinkEndpoint) ParseHeader(*PacketBuffer) bool { return true }
 
 func (*fwdTestLinkEndpoint) Close() {}
 
+// SetOnCloseAction implements stack.LinkEndpoint.SetOnCloseAction.
+func (*fwdTestLinkEndpoint) SetOnCloseAction(func()) {}
+
 func fwdTestNetFactory(t *testing.T, proto *fwdTestNetworkProtocol) (*faketime.ManualClock, *fwdTestLinkEndpoint, *fwdTestLinkEndpoint) {
 	clock := faketime.NewManualClock()
 	// Create a stack with the network protocol and two NICs.

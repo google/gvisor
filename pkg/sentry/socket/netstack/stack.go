@@ -136,6 +136,7 @@ func (s *Stack) SetInterface(ctx context.Context, msg *nlmsg.Message) *syserr.Er
 		case linux.IFLA_LINKINFO:
 		case linux.IFLA_ADDRESS:
 		case linux.IFLA_MTU:
+		case linux.IFLA_NET_NS_FD:
 		default:
 			ctx.Warningf("unexpected attribute: %x", attr)
 			return syserr.ErrNotSupported
@@ -164,10 +165,34 @@ func (s *Stack) SetInterface(ctx context.Context, msg *nlmsg.Message) *syserr.Er
 		// Netstack interfaces are always up.
 	}
 
-	return s.setLink(tcpip.NICID(ifinfomsg.Index), attrs)
+	return s.setLink(ctx, tcpip.NICID(ifinfomsg.Index), attrs)
 }
 
-func (s *Stack) setLink(id tcpip.NICID, linkAttrs map[uint16]nlmsg.BytesView) *syserr.Error {
+func (s *Stack) setLink(ctx context.Context, id tcpip.NICID, linkAttrs map[uint16]nlmsg.BytesView) *syserr.Error {
+	// IFLA_NET_NS_FD has to be handled first, because other parameters may be reseted.
+	if v, ok := linkAttrs[linux.IFLA_NET_NS_FD]; ok {
+		fd, ok := v.Uint32()
+		if !ok {
+			return syserr.ErrInvalidArgument
+		}
+		f := inet.NamespaceByFDFromContext(ctx)
+		if f == nil {
+			return syserr.ErrInvalidArgument
+		}
+		ns, err := f(int32(fd))
+		if err != nil {
+			return syserr.FromError(err)
+		}
+		defer ns.DecRef(ctx)
+		peer := ns.Stack().(*Stack)
+		if peer.Stack != s.Stack {
+			var err tcpip.Error
+			id, err = s.Stack.SetNICStack(id, peer.Stack)
+			if err != nil {
+				return syserr.TranslateNetstackError(err)
+			}
+		}
+	}
 	for t, v := range linkAttrs {
 		switch t {
 		case linux.IFLA_MASTER:
@@ -268,8 +293,7 @@ func (s *Stack) newVeth(ctx context.Context, linkAttrs map[uint16]nlmsg.BytesVie
 	if err != nil {
 		return syserr.TranslateNetstackError(err)
 	}
-	ep.SetStack(s.Stack, id)
-	if err := s.setLink(id, linkAttrs); err != nil {
+	if err := s.setLink(ctx, id, linkAttrs); err != nil {
 		peerEP.Close()
 		return err
 	}
@@ -284,9 +308,8 @@ func (s *Stack) newVeth(ctx context.Context, linkAttrs map[uint16]nlmsg.BytesVie
 		peerEP.Close()
 		return syserr.TranslateNetstackError(err)
 	}
-	peerEP.SetStack(peerStack.Stack, peerID)
 	if peerLinkAttrs != nil {
-		if err := peerStack.setLink(peerID, peerLinkAttrs); err != nil {
+		if err := peerStack.setLink(ctx, peerID, peerLinkAttrs); err != nil {
 			peerStack.Stack.RemoveNIC(peerID)
 			peerEP.Close()
 			return err
@@ -310,7 +333,7 @@ func (s *Stack) newBridge(ctx context.Context, linkAttrs map[uint16]nlmsg.BytesV
 	if err != nil {
 		return syserr.TranslateNetstackError(err)
 	}
-	if err := s.setLink(id, linkAttrs); err != nil {
+	if err := s.setLink(ctx, id, linkAttrs); err != nil {
 		return err
 	}
 

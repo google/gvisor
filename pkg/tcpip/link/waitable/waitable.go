@@ -183,6 +183,11 @@ func (e *Endpoint) ParseHeader(pkt *stack.PacketBuffer) bool {
 	return e.lower.ParseHeader(pkt)
 }
 
+// SetOnCloseAction implements stack.LinkEndpoint.SetOnCloseAction.
+func (e *Endpoint) SetOnCloseAction(action func()) {
+	e.lower.SetOnCloseAction(action)
+}
+
 // Close implements stack.LinkEndpoint.
 func (e *Endpoint) Close() {
 	e.lower.Close()

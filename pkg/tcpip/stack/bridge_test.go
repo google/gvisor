@@ -100,7 +100,6 @@ func TestWritePacketBetweenDevices(t *testing.T) {
 	if err := secondStack.CreateNIC(vethID, ethernet.New(veth2)); err != nil {
 		t.Fatalf("s.CreateNIC(%d, _): %s", vethID, err)
 	}
-	veth2.SetStack(secondStack, vethID)
 	veth2.SetLinkAddress(localLinkAddr)
 
 	s := stack.New(stack.Options{})
@@ -122,7 +121,6 @@ func TestWritePacketBetweenDevices(t *testing.T) {
 	if err := s.CreateNIC(vethID, ethernet.New(veth1)); err != nil {
 		t.Fatalf("s.CreateNIC(%d, _): %s", vethID, err)
 	}
-	veth1.SetStack(s, vethID)
 	if err := s.SetNICCoordinator(vethID, bridgeID); err != nil {
 		t.Fatalf("s.SetNICCoordinator")
 	}

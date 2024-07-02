@@ -110,13 +110,11 @@ func TestDestroyDevices(t *testing.T) {
 	if err := s1.CreateNIC(vethFirstID, ethernet.New(veth1)); err != nil {
 		t.Fatalf("s.CreateNIC(%d, _): %s", vethFirstID, err)
 	}
-	veth1.SetStack(s1, vethFirstID)
 
 	s2 := stack.New(stack.Options{})
 	if err := s2.CreateNIC(vethSecondID, ethernet.New(veth2)); err != nil {
 		t.Fatalf("s.CreateNIC(%d, _): %s", vethSecondID, err)
 	}
-	veth2.SetStack(s2, vethSecondID)
 
 	s1.RemoveNIC(vethFirstID)
 	timeout := time.Millisecond
