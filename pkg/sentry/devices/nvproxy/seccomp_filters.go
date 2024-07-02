@@ -136,6 +136,14 @@ func Filters() seccomp.SyscallRules {
 			},
 			seccomp.PerArg{
 				seccomp.NonNegativeFD{},
+				seccomp.EqualTo(nvgpu.UVM_ENABLE_PEER_ACCESS),
+			},
+			seccomp.PerArg{
+				seccomp.NonNegativeFD{},
+				seccomp.EqualTo(nvgpu.UVM_DISABLE_PEER_ACCESS),
+			},
+			seccomp.PerArg{
+				seccomp.NonNegativeFD{},
 				seccomp.EqualTo(nvgpu.UVM_SET_RANGE_GROUP),
 			},
 			seccomp.PerArg{

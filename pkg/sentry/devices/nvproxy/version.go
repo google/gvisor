@@ -182,6 +182,8 @@ func Init() {
 					nvgpu.UVM_UNREGISTER_GPU_VASPACE:         uvmIoctlSimple[nvgpu.UVM_UNREGISTER_GPU_VASPACE_PARAMS],
 					nvgpu.UVM_REGISTER_CHANNEL:               uvmIoctlHasFrontendFD[nvgpu.UVM_REGISTER_CHANNEL_PARAMS],
 					nvgpu.UVM_UNREGISTER_CHANNEL:             uvmIoctlSimple[nvgpu.UVM_UNREGISTER_CHANNEL_PARAMS],
+					nvgpu.UVM_ENABLE_PEER_ACCESS:             uvmIoctlSimple[nvgpu.UVM_ENABLE_PEER_ACCESS_PARAMS],
+					nvgpu.UVM_DISABLE_PEER_ACCESS:            uvmIoctlSimple[nvgpu.UVM_DISABLE_PEER_ACCESS_PARAMS],
 					nvgpu.UVM_SET_RANGE_GROUP:                uvmIoctlSimple[nvgpu.UVM_SET_RANGE_GROUP_PARAMS],
 					nvgpu.UVM_MAP_EXTERNAL_ALLOCATION:        uvmIoctlHasFrontendFD[nvgpu.UVM_MAP_EXTERNAL_ALLOCATION_PARAMS],
 					nvgpu.UVM_FREE:                           uvmIoctlSimple[nvgpu.UVM_FREE_PARAMS],
