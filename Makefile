@@ -24,6 +24,7 @@ header = echo --- $(1) >&2
 EMPTY :=
 SPACE := $(EMPTY) $(EMPTY)
 SHELL = /bin/bash
+REPO_DIR := $(shell dirname $(realpath $(firstword $(MAKEFILE_LIST))))
 COMMA := ,
 
 ## usage: make <target>
@@ -71,6 +72,10 @@ copy: ## Copies the given $(TARGETS) to the given $(DESTINATION). E.g. make copy
 run: ## Runs the given $(TARGETS), built with $(OPTIONS), using $(ARGS). E.g. make run TARGETS=runsc ARGS=-version
 	@$(call run,$(TARGETS),$(ARGS))
 .PHONY: run
+
+query: ## Runs a bazel query. E.g. make query TARGETS=//test/...
+	@$(call query,$(OPTIONS) $(TARGETS))
+.PHONY: query
 
 sudo: ## Runs the given $(TARGETS) as per run, but using "sudo -E". E.g. make sudo TARGETS=test/root:root_test ARGS=-test.v
 	@$(call sudo,$(TARGETS),$(ARGS))
@@ -502,6 +507,47 @@ benchmark-platforms: load-benchmarks $(RUNTIME_BIN) ## Runs benchmarks for runc 
 run-benchmark: load-benchmarks ## Runs single benchmark and optionally sends data to BigQuery.
 	@$(call run_benchmark,$(RUNTIME))
 .PHONY: run-benchmark
+
+# The arguments passed to benchmarks when run for PGO profile collection.
+# This should *not* include the `-profile` or `-profile-cpu` arguments, as
+# those are added automatically.
+BENCHMARKS_ARGS_PGO  := -test.v -test.bench=. -test.benchtime=30s
+# The threshold below which the `benchmark-refresh-pgo` rule will update the
+# profile.
+BENCHMARKS_PGO_REFRESH_THRESHOLD ?= 0.7
+
+benchmark-refresh-pgo: load-benchmarks $(RUNTIME_BIN) ## Refresh profiles of all benchmarks for PGO purposes.
+	@set -e; if test -z "$(BENCHMARKS_PLATFORMS)"; then \
+		echo 'Must specify BENCHMARKS_PLATFORMS.' >&2; \
+		exit 1; \
+	else \
+		PGO_RUNTIME_KEY="$$( $(call run,tools/profiletool,runtime-info) )"; \
+		export PGO_RUNTIME_KEY; \
+		for PLATFORM in $(BENCHMARKS_PLATFORMS); do \
+			PLATFORM_TMPDIR="$$(mktemp --tmpdir=/tmp --directory "pgo_$${PGO_RUNTIME_KEY}_$${PLATFORM}.XXXXXXXX")"; \
+			for PGO_BENCHMARK_TARGET in $$( $(call query,'attr(tags, gvisor_pgo_benchmark, //test/benchmarks/...)') | sed 's~^//~~'); do \
+				PGO_BENCHMARK_BASENAME="$$(echo "$${PGO_BENCHMARK_TARGET}" | cut -d: -f2 | sed 's/_test$$//')"; \
+				PGO_PROFILE_OLD="$(REPO_DIR)/runsc/profiles/$${PGO_RUNTIME_KEY}_$${PLATFORM}/$${PGO_BENCHMARK_BASENAME}.pgo.pprof.pb.gz"; \
+				PGO_PROFILE_NEW="$${PLATFORM_TMPDIR}/$${PGO_BENCHMARK_BASENAME}.pgo.pprof.pb.gz"; \
+				mkdir -p "$$(dirname "$${PGO_PROFILE_OLD}")"; \
+				mkdir -p "$${PLATFORM_TMPDIR}/$${PGO_BENCHMARK_BASENAME}"; \
+				$(call install_runtime,$${PLATFORM}_$${PGO_RUNTIME_KEY}_pgo_$${PGO_BENCHMARK_BASENAME},--platform $${PLATFORM} --profile --profile-cpu="$${PLATFORM_TMPDIR}/$${PGO_BENCHMARK_BASENAME}/$${PGO_BENCHMARK_BASENAME}.%YYYY%-%MM%-%DD%_%HH%-%II%-%SS%-%NN%.pgo.pprof.pb.gz"); \
+				$(call sudo,$${PGO_BENCHMARK_TARGET},-runtime=$${PLATFORM}_$${PGO_RUNTIME_KEY}_pgo_$${PGO_BENCHMARK_BASENAME} $(BENCHMARKS_ARGS_PGO)); \
+				$(call run,tools/profiletool,merge --out="$${PGO_PROFILE_NEW}" "$${PLATFORM_TMPDIR}/$${PGO_BENCHMARK_BASENAME}"); \
+				rm -rf --one-file-system "$${PLATFORM_TMPDIR}/$${PGO_BENCHMARK_BASENAME}"; \
+				if [[ ! -f "$${PGO_PROFILE_OLD}" ]]; then \
+					cp "$${PGO_PROFILE_NEW}" "$${PGO_PROFILE_OLD}"; \
+					echo "--- PGO: New profile for $${PGO_BENCHMARK_BASENAME} on $${PGO_RUNTIME_KEY} $${PLATFORM}" >&2; \
+				elif $(call run,tools/profiletool,check-similar --threshold=$(BENCHMARKS_PGO_REFRESH_THRESHOLD) "$${PGO_PROFILE_OLD}" "$${PGO_PROFILE_NEW}"); then \
+					echo "--- PGO: Profile for $${PGO_BENCHMARK_BASENAME} on $${PGO_RUNTIME_KEY} $${PLATFORM} is already up-to-date." >&2; \
+				else \
+					cp "$${PGO_PROFILE_NEW}" "$${PGO_PROFILE_OLD}"; \
+					echo "--- PGO: Updated profile for $${PGO_BENCHMARK_BASENAME} on $${PGO_RUNTIME_KEY} $${PLATFORM}" >&2; \
+				fi; \
+			done; \
+		done; \
+	fi
+.PHONY: benchmark-refresh-pgo
 
 ## Seccomp targets.
 seccomp-sentry-filters:  # Dumps seccomp-bpf program for the Sentry binary.

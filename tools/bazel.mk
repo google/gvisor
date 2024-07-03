@@ -271,6 +271,7 @@ copy     = $(call header,COPY $(1) $(2)) && $(call build_paths,$(1),cp -fa {} $(
 run      = $(call header,RUN $(1) $(2)) && $(call build_paths,$(1),{} $(2))
 sudo     = $(call header,SUDO $(1) $(2)) && $(call build_paths,$(1),sudo -E {} $(2))
 test     = $(call header,TEST $(1)) && $(call wrapper,$(BAZEL) test --strip=never $(BAZEL_OPTIONS) $(TEST_OPTIONS) $(1))
+query    = $(call wrapper,$(BAZEL) query $(BAZEL_OPTIONS) $(1))
 
 clean: ## Cleans the bazel cache.
 	@$(call clean)

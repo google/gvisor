@@ -16,6 +16,7 @@ benchmark_test(
     name = "tensorflow_test",
     srcs = ["tensorflow_test.go"],
     library = ":ml",
+    use_for_pgo = False,
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/test/dockerutil",
