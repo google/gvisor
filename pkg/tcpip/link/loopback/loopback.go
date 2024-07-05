@@ -135,3 +135,6 @@ func (*endpoint) ParseHeader(*stack.PacketBuffer) bool { return true }
 
 // Close implements stack.LinkEndpoint.
 func (*endpoint) Close() {}
+
+// SetOnCloseAction implements stack.LinkEndpoint.
+func (*endpoint) SetOnCloseAction(func()) {}

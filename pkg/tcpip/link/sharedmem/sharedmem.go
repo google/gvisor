@@ -253,6 +253,9 @@ func New(opts Options) (stack.LinkEndpoint, error) {
 	return e, nil
 }
 
+// SetOnCloseAction implements stack.LinkEndpoint.SetOnCloseAction.
+func (e *endpoint) SetOnCloseAction(func()) {}
+
 // Close frees most resources associated with the endpoint. Wait() must be
 // called after Close() in order to free the rest.
 func (e *endpoint) Close() {

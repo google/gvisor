@@ -118,6 +118,9 @@ func NewServerEndpoint(opts Options) (stack.LinkEndpoint, error) {
 	return e, nil
 }
 
+// SetOnCloseAction implements stack.LinkEndpoint.SetOnCloseAction.
+func (*serverEndpoint) SetOnCloseAction(func()) {}
+
 // Close frees all resources associated with the endpoint.
 func (e *serverEndpoint) Close() {
 	// Tell dispatch goroutine to stop, then write to the eventfd so that it wakes
