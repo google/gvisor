@@ -115,9 +115,29 @@ As a result, `nvproxy` has the following limitations:
 
 ### Supported GPUs {#gpu-models}
 
-gVisor currently supports NVIDIA GPUs: T4, L4, A100, A10G and H100. Please
+gVisor currently supports NVIDIA GPUs:
+
+* **T4**, based on the
+  [Turing architecture](https://en.wikipedia.org/wiki/Turing_(microarchitecture))
+* **A100** and **A10G**, based on the
+  [Ampere architecture](https://en.wikipedia.org/wiki/Ampere_(microarchitecture))
+* **L4**, based on the
+  [Ada Lovelace architecture](https://en.wikipedia.org/wiki/Ada_Lovelace_(microarchitecture))
+* **H100**, based on the
+  [Hopper architecture](https://en.wikipedia.org/wiki/Hopper_(microarchitecture))
+
+While not officially supported, other NVIDIA GPUs based on the same
+architectures as the above will likely work as well. This includes
+consumer-oriented GPUs such as **RTX 3090** (Ampere) and **RTX 4090** (Ada
+Lovelace).
+
+Therefore, if you encounter an incompatible workload on a GPU on one of the
+above architectures, even if on an unsupported GPU, chances are that this
+workload is also incompatible in the same manner on one of the
+officially-supported GPUs. Please
 [open a GitHub issue](https://github.com/google/gvisor/issues/new?labels=type%3A+enhancement,area%3A+gpu&template=bug_report.yml)
-if you want support for another GPU model.
+with reproduction instructions so that it can be tested against an
+officially-supported GPU.
 
 ### Rolling Version Support Window {#driver-versions}
 
@@ -132,6 +152,14 @@ To see what drivers a given `runsc` version supports, run:
 ```
 $ runsc nvproxy list-supported-drivers
 ```
+
+**NOTE**: `runsc`'s driver version is a strict version match because `runsc`
+cannot assume ABI compatibility between driver versions. You may force `runsc`
+to use a given supported ABI version with the `--nvproxy-driver-version` even
+when running on a host that has an unsupported driver version. However, doing
+so is **not officially supported**, and running old drivers is generally not
+secure as many driver updates address security bugs. Bug reports with the
+`--nvproxy-driver-version` flag set will be treated as invalid.
 
 ### Supported Device Files {#device-files}
 
@@ -160,7 +188,8 @@ commands might still be unimplemented. Please
 [open a GitHub issue](https://github.com/google/gvisor/issues/new?labels=type%3A+bug,area%3A+gpu&template=bug_report.yml)
 to describe about your use case. If a missing `ioctl` implementation is the
 problem, then the [debug logs](/docs/user_guide/debugging/) will contain
-warnings with prefix `nvproxy: unknown *`.
+warnings with prefix `nvproxy: unknown *`. See below on how to run the
+`ioctl_sniffer` tool.
 
 ### Debugging
 
