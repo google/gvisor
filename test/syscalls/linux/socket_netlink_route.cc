@@ -207,7 +207,14 @@ TEST(NetlinkRouteTest, GetLinkByIndex) {
   EXPECT_TRUE(found) << "Netlink response does not contain any links.";
 }
 
-TEST(NetlinkRouteTest, ChangeLinkName) {
+// NetlinkRouteTest with a single parameter that must be RTM_NEWLINK or
+// RTM_SETLINK.
+using NetlinkSetLinkTest = ::testing::TestWithParam<int>;
+
+INSTANTIATE_TEST_SUITE_P(_, NetlinkSetLinkTest,
+                         ::testing::Values(RTM_NEWLINK, RTM_SETLINK));
+
+TEST_P(NetlinkSetLinkTest, ChangeLinkName) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
   SKIP_IF(IsRunningWithHostinet());
   // Hosts that run with old kernel allow renaming only when
@@ -231,7 +238,7 @@ TEST(NetlinkRouteTest, ChangeLinkName) {
   // Change the link name.
   struct request req = {};
   req.hdr.nlmsg_len = sizeof(req);
-  req.hdr.nlmsg_type = RTM_NEWLINK;
+  req.hdr.nlmsg_type = GetParam();
   req.hdr.nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
   req.hdr.nlmsg_seq = kSeq;
   req.ifm.ifi_family = AF_UNSPEC;
@@ -265,7 +272,7 @@ TEST(NetlinkRouteTest, ChangeLinkName) {
   EXPECT_TRUE(found) << "Netlink response does not contain any links.";
 }
 
-TEST(NetlinkRouteTest, ChangeMTU) {
+TEST_P(NetlinkSetLinkTest, ChangeMTU) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
   SKIP_IF(IsRunningWithHostinet());
   SKIP_IF(!IsRunningOnGvisor());
@@ -283,7 +290,7 @@ TEST(NetlinkRouteTest, ChangeMTU) {
 
   // Change the MTU.
   req.hdr.nlmsg_len = sizeof(req);
-  req.hdr.nlmsg_type = RTM_NEWLINK;
+  req.hdr.nlmsg_type = GetParam();
   req.hdr.nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
   req.hdr.nlmsg_seq = kSeq;
   req.ifm.ifi_family = AF_UNSPEC;
