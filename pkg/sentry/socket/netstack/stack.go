@@ -137,6 +137,7 @@ func (s *Stack) SetInterface(ctx context.Context, msg *nlmsg.Message) *syserr.Er
 		case linux.IFLA_ADDRESS:
 		case linux.IFLA_MTU:
 		case linux.IFLA_NET_NS_FD:
+		case linux.IFLA_TXQLEN:
 		default:
 			ctx.Warningf("unexpected attribute: %x", attr)
 			return syserr.ErrNotSupported
@@ -225,6 +226,8 @@ func (s *Stack) setLink(ctx context.Context, id tcpip.NICID, linkAttrs map[uint1
 			if err := s.Stack.SetNICMTU(id, mtu); err != nil {
 				return syserr.TranslateNetstackError(err)
 			}
+		case linux.IFLA_TXQLEN:
+			// TODO(b/340388892): support IFLA_TXQLEN.
 		}
 	}
 	return nil
