@@ -38,6 +38,8 @@ type endpoint struct {
 	// +checklocks:mu
 	dispatcher stack.NetworkDispatcher
 	// +checklocks:mu
+	addr tcpip.LinkAddress
+	// +checklocks:mu
 	mtu uint32
 }
 
@@ -91,12 +93,18 @@ func (*endpoint) MaxHeaderLength() uint16 {
 }
 
 // LinkAddress returns the link address of this endpoint.
-func (*endpoint) LinkAddress() tcpip.LinkAddress {
-	return ""
+func (e *endpoint) LinkAddress() tcpip.LinkAddress {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return e.addr
 }
 
 // SetLinkAddress implements stack.LinkEndpoint.SetLinkAddress.
-func (*endpoint) SetLinkAddress(tcpip.LinkAddress) {}
+func (e *endpoint) SetLinkAddress(addr tcpip.LinkAddress) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.addr = addr
+}
 
 // Wait implements stack.LinkEndpoint.Wait.
 func (*endpoint) Wait() {}

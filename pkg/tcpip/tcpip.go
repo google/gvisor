@@ -55,6 +55,11 @@ const (
 	ipv6ProtocolNumber = 0x86dd
 )
 
+const (
+	// LinkAddressSize is the size of a MAC address.
+	LinkAddressSize = 6
+)
+
 // Errors related to Subnet
 var (
 	errSubnetLengthMismatch = errors.New("subnet length of address and mask differ")
@@ -2705,7 +2710,7 @@ func ParseMACAddress(s string) (LinkAddress, error) {
 	parts := strings.FieldsFunc(s, func(c rune) bool {
 		return c == ':' || c == '-'
 	})
-	if len(parts) != 6 {
+	if len(parts) != LinkAddressSize {
 		return "", fmt.Errorf("inconsistent parts: %s", s)
 	}
 	addr := make([]byte, 0, len(parts))
@@ -2721,7 +2726,7 @@ func ParseMACAddress(s string) (LinkAddress, error) {
 
 // GetRandMacAddr returns a mac address that can be used for local virtual devices.
 func GetRandMacAddr() LinkAddress {
-	mac := make(net.HardwareAddr, 6)
+	mac := make(net.HardwareAddr, LinkAddressSize)
 	rand.Read(mac) // Fill with random data.
 	mac[0] &^= 0x1 // Clear multicast bit.
 	mac[0] |= 0x2  // Set local assignment bit (IEEE802).
