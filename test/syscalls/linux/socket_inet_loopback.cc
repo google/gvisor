@@ -1525,13 +1525,13 @@ TEST_P(SocketInetLoopbackTest, TCPDeferAcceptTimeout) {
   // timeout is hit.
   const auto start = absl::Now();
   absl::SleepFor(absl::Seconds(kTCPDeferAccept - 1));
+  const int result = accept(listen_fd.get(), nullptr, nullptr);
   // It's possible that we ended up sleeping for longer than the
   // TCP_DEFER_ACCEPT timeout. If this happens, skip this test.
   if (absl::Now() >= start + absl::Seconds(kTCPDeferAccept)) {
     GTEST_SKIP();
   }
-  ASSERT_THAT(accept(listen_fd.get(), nullptr, nullptr),
-              SyscallFailsWithErrno(EWOULDBLOCK));
+  ASSERT_THAT(result, SyscallFailsWithErrno(EWOULDBLOCK));
 
   // Set FD back to blocking.
   opts &= ~O_NONBLOCK;
