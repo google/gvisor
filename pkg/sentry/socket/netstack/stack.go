@@ -206,10 +206,10 @@ func (s *Stack) setLink(ctx context.Context, id tcpip.NICID, linkAttrs map[uint1
 				}
 			}
 		case linux.IFLA_ADDRESS:
-			addr, err := tcpip.ParseMACAddress(v.String())
-			if err != nil {
+			if len(v) != tcpip.LinkAddressSize {
 				return syserr.ErrInvalidArgument
 			}
+			addr := tcpip.LinkAddress(v)
 			if err := s.Stack.SetNICAddress(id, addr); err != nil {
 				return syserr.TranslateNetstackError(err)
 			}

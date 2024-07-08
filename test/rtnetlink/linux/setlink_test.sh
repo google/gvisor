@@ -38,3 +38,14 @@ if ! wait_for ! ip link show test_veth02; then
   fail "test_veth02 hasn't been destroyed"
   exit 1
 fi
+
+# Change the hardware address of a new veth device.
+ip link add name test_veth01 type veth peer name test_veth02
+ip link set dev test_veth01 address 1a:2a:3a:4a:5a:6a
+ip link show test_veth01 | grep "1a:2a:3a:4a:5a:6a"
+ip link del name test_veth01
+# Check that test_veth02 has been destroyed.
+if ! wait_for ! ip link show test_veth02; then
+  fail "test_veth02 hasn't been destroyed"
+  exit 1
+fi

@@ -172,8 +172,13 @@ void CheckLinkMsg(const struct nlmsghdr* hdr, const Link& link) {
   EXPECT_NE(nullptr, rta_mtu) << "IFLA_MTU not found in message.";
   if (rta_mtu != nullptr) {
     const auto mtu = *(uint32_t*)(RTA_DATA(rta_mtu));
-    std::cout << "mtu: " << mtu << "link.mtu " << link.mtu << std::endl;
     EXPECT_EQ(mtu, link.mtu);
+  }
+  const struct rtattr* rta_address = FindRtAttr(hdr, msg, IFLA_ADDRESS);
+  EXPECT_NE(nullptr, rta_address) << "IFLA_ADDRESS not found in message.";
+  if (rta_address != nullptr) {
+    std::string address(reinterpret_cast<const char*>(RTA_DATA(rta_address)));
+    EXPECT_EQ(address, link.address);
   }
 }
 
@@ -305,6 +310,69 @@ TEST_P(NetlinkSetLinkTest, ChangeMTU) {
   // different because of the package header size.
   loopback_link.mtu = 1486;
   // Verify the new MTU.
+  struct searchrequest {
+    struct nlmsghdr hdr;
+    struct ifinfomsg ifm;
+  } search = {};
+  search.hdr.nlmsg_len = sizeof(search);
+  search.hdr.nlmsg_type = RTM_GETLINK;
+  search.hdr.nlmsg_flags = NLM_F_REQUEST;
+  search.hdr.nlmsg_seq = kSeq;
+  search.ifm.ifi_family = AF_UNSPEC;
+  search.ifm.ifi_index = loopback_link.index;
+
+  bool found = false;
+  ASSERT_NO_ERRNO(NetlinkRequestResponse(
+      fd, &search, sizeof(search),
+      [&](const struct nlmsghdr* hdr) {
+        CheckLinkMsg(hdr, loopback_link);
+        found = true;
+      },
+      false));
+  EXPECT_TRUE(found) << "Netlink response does not contain any links.";
+}
+
+TEST_P(NetlinkSetLinkTest, ChangeMACAddress) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+  SKIP_IF(!IsRunningOnGvisor());
+  SKIP_IF(IsRunningWithHostinet());
+  Link loopback_link = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink());
+
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
+
+  struct request {
+    struct nlmsghdr hdr;
+    struct ifinfomsg ifm;
+    struct rtattr rtattr;
+    char address[1024];
+  };
+
+  const int address_size = 6;
+  const char address[address_size + 1] = {static_cast<char>(0xa1),
+                                          static_cast<char>(0xa2),
+                                          static_cast<char>(0xa3),
+                                          static_cast<char>(0xa4),
+                                          static_cast<char>(0xa5),
+                                          static_cast<char>(0xa6),
+                                          '\0'};
+
+  // Change the link MAC address.
+  struct request req = {};
+  req.hdr.nlmsg_type = GetParam();
+  req.hdr.nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
+  req.hdr.nlmsg_seq = kSeq;
+  req.ifm.ifi_family = AF_UNSPEC;
+  req.ifm.ifi_index = loopback_link.index;
+  req.rtattr.rta_type = IFLA_ADDRESS;
+  req.rtattr.rta_len = RTA_LENGTH(address_size);
+  strncpy(req.address, address, sizeof(req.address));
+  req.hdr.nlmsg_len =
+      NLMSG_LENGTH(sizeof(req.ifm)) + NLMSG_ALIGN(req.rtattr.rta_len);
+  EXPECT_NO_ERRNO(NetlinkRequestAckOrError(fd, kSeq, &req, sizeof(req)));
+
+  loopback_link.address = std::string(address);
+  // Search the link by its index.
   struct searchrequest {
     struct nlmsghdr hdr;
     struct ifinfomsg ifm;

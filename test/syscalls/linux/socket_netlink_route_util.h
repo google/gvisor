@@ -30,6 +30,7 @@ struct Link {
   int16_t type;
   std::string name;
   uint32_t mtu;
+  std::string address;
 };
 
 PosixError DumpLinks(const FileDescriptor& fd, uint32_t seq,

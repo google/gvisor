@@ -285,6 +285,11 @@ PosixErrorOr<std::vector<Link>> DumpLinks() {
     links.back().mtu = rta_mtu == nullptr
                            ? 0
                            : *reinterpret_cast<uint32_t*>(RTA_DATA(rta_mtu));
+    const auto* rta_address = FindRtAttr(hdr, msg, IFLA_ADDRESS);
+    links.back().address =
+        rta_address == nullptr
+            ? ""
+            : std::string(reinterpret_cast<const char*>(RTA_DATA(rta_address)));
   }));
   return links;
 }
