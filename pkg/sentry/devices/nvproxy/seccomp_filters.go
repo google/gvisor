@@ -192,6 +192,10 @@ func Filters() seccomp.SyscallRules {
 			},
 			seccomp.PerArg{
 				seccomp.NonNegativeFD{},
+				seccomp.EqualTo(nvgpu.UVM_UNMAP_EXTERNAL),
+			},
+			seccomp.PerArg{
+				seccomp.NonNegativeFD{},
 				seccomp.EqualTo(nvgpu.UVM_ALLOC_SEMAPHORE_POOL),
 			},
 			seccomp.PerArg{

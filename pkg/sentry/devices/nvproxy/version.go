@@ -194,6 +194,7 @@ func Init() {
 					nvgpu.UVM_DISABLE_READ_DUPLICATION:       uvmIoctlSimple[nvgpu.UVM_DISABLE_READ_DUPLICATION_PARAMS],
 					nvgpu.UVM_MIGRATE_RANGE_GROUP:            uvmIoctlSimple[nvgpu.UVM_MIGRATE_RANGE_GROUP_PARAMS],
 					nvgpu.UVM_MAP_DYNAMIC_PARALLELISM_REGION: uvmIoctlSimple[nvgpu.UVM_MAP_DYNAMIC_PARALLELISM_REGION_PARAMS],
+					nvgpu.UVM_UNMAP_EXTERNAL:                 uvmIoctlSimple[nvgpu.UVM_UNMAP_EXTERNAL_PARAMS],
 					nvgpu.UVM_ALLOC_SEMAPHORE_POOL:           uvmIoctlSimple[nvgpu.UVM_ALLOC_SEMAPHORE_POOL_PARAMS],
 					nvgpu.UVM_VALIDATE_VA_RANGE:              uvmIoctlSimple[nvgpu.UVM_VALIDATE_VA_RANGE_PARAMS],
 					nvgpu.UVM_CREATE_EXTERNAL_RANGE:          uvmIoctlSimple[nvgpu.UVM_CREATE_EXTERNAL_RANGE_PARAMS],
