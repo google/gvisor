@@ -60,6 +60,9 @@ var (
 // TPU v5 symlinks go to /sys/class/vfio-dev/vfio#.
 func (fs *filesystem) newDeviceClassDir(ctx context.Context, creds *auth.Credentials, tpuDeviceTypes []string, pciMainBusDevicePath string) (map[string]map[string]kernfs.Inode, error) {
 	dirs := map[string]map[string]kernfs.Inode{}
+	for _, tpuDeviceType := range tpuDeviceTypes {
+		dirs[tpuDeviceType] = map[string]kernfs.Inode{}
+	}
 	pciDents, err := hostDirEntries(pciMainBusDevicePath)
 	if err != nil {
 		return nil, err
@@ -67,7 +70,6 @@ func (fs *filesystem) newDeviceClassDir(ctx context.Context, creds *auth.Credent
 	for _, pciDent := range pciDents {
 		for _, tpuDeviceType := range tpuDeviceTypes {
 			subPath := path.Join(pciMainBusDevicePath, pciDent, tpuDeviceType)
-			dirs[tpuDeviceType] = map[string]kernfs.Inode{}
 			deviceDents, err := hostDirEntries(subPath)
 			if err != nil {
 				// Skips the path that doesn't exist.
