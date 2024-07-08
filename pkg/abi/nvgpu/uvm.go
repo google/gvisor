@@ -41,6 +41,7 @@ const (
 	UVM_TOOLS_READ_PROCESS_MEMORY      = 62
 	UVM_TOOLS_WRITE_PROCESS_MEMORY     = 63
 	UVM_MAP_DYNAMIC_PARALLELISM_REGION = 65
+	UVM_UNMAP_EXTERNAL                 = 66
 	UVM_ALLOC_SEMAPHORE_POOL           = 68
 	UVM_VALIDATE_VA_RANGE              = 72
 	UVM_CREATE_EXTERNAL_RANGE          = 73
@@ -297,6 +298,15 @@ type UVM_TOOLS_WRITE_PROCESS_MEMORY_PARAMS struct {
 
 // +marshal
 type UVM_MAP_DYNAMIC_PARALLELISM_REGION_PARAMS struct {
+	Base     uint64
+	Length   uint64
+	GPUUUID  NvUUID
+	RMStatus uint32
+	Pad0     [4]byte
+}
+
+// +marshal
+type UVM_UNMAP_EXTERNAL_PARAMS struct {
 	Base     uint64
 	Length   uint64
 	GPUUUID  NvUUID
