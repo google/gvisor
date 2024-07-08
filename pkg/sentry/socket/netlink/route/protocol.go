@@ -515,6 +515,10 @@ func (p *Protocol) newAddr(ctx context.Context, s *netlink.Socket, msg *nlmsg.Me
 				return syserr.ErrInvalidArgument
 			}
 		case linux.IFA_ADDRESS:
+		case linux.IFA_BROADCAST:
+			// TODO(b/340929168): support IFA_BROADCAST. The standard
+			// broadcast address (the last IP address of the subnet) is
+			// used by default.
 		default:
 			ctx.Warningf("Unknown attribute: %v", ahdr.Type)
 			return syserr.ErrNotSupported
