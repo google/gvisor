@@ -197,6 +197,13 @@ func (e *Endpoint) SetLinkAddress(addr tcpip.LinkAddress) {
 // WritePackets stores outbound packets into the channel.
 // Multiple concurrent calls are permitted.
 func (e *Endpoint) WritePackets(pkts stack.PacketBufferList) (int, tcpip.Error) {
+	e.veth.mu.RLock()
+	defer e.veth.mu.RUnlock()
+
+	if e.veth.closed {
+		return 0, nil
+	}
+
 	n := 0
 	for _, pkt := range pkts.AsSlice() {
 		// In order to properly loop back to the inbound side we must create a
