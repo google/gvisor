@@ -27,6 +27,8 @@ const (
 	UVM_UNREGISTER_GPU_VASPACE         = 26
 	UVM_REGISTER_CHANNEL               = 27
 	UVM_UNREGISTER_CHANNEL             = 28
+	UVM_ENABLE_PEER_ACCESS             = 29
+	UVM_DISABLE_PEER_ACCESS            = 30
 	UVM_SET_RANGE_GROUP                = 31
 	UVM_MAP_EXTERNAL_ALLOCATION        = 33
 	UVM_FREE                           = 34
@@ -124,6 +126,20 @@ type UVM_UNREGISTER_CHANNEL_PARAMS struct {
 	GPUUUID  NvUUID
 	HClient  Handle
 	HChannel Handle
+	RMStatus uint32
+}
+
+// +marshal
+type UVM_ENABLE_PEER_ACCESS_PARAMS struct {
+	GPUUUIDA NvUUID
+	GPUUUIDB NvUUID
+	RMStatus uint32
+}
+
+// +marshal
+type UVM_DISABLE_PEER_ACCESS_PARAMS struct {
+	GPUUUIDA NvUUID
+	GPUUUIDB NvUUID
 	RMStatus uint32
 }
 
