@@ -2,6 +2,7 @@ test name,bug id,comment
 benchmark/test-benchmark-napi.js,,Broken test
 internet/test-dgram-multicast-ssm-multi-process.js,b/344592701,
 internet/test-dgram-multicast-ssmv6-multi-process.js,,Broken test
+internet/test-dns.js,,Broken test (Flaky because it relies on external network)
 internet/test-dns-ipv4.js,,Broken test (Flaky because it relies on external network)
 internet/test-inspector-help-page.js,,Broken test
 internet/test-net-autoselectfamily-events-failure.js,,Broken test
