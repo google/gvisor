@@ -7,14 +7,6 @@ _templates:
           limit: 10
         - exit_status: "*"
           limit: 2
-  common_60_tl: &common_60_tl
-    timeout_in_minutes: 60
-    retry:
-      automatic:
-        - exit_status: -1
-          limit: 10
-        - exit_status: "*"
-          limit: 2
   source_test: &source_test
     if: build.env("STAGED_BINARIES") == null
   source_test_presubmit: &source_test_presubmit
@@ -109,7 +101,7 @@ steps:
       arch: "arm64"
 
   # Build everything (continuous only).
-  - <<: *common_60_tl
+  - <<: *common
     <<: *source_test_continuous
     label: ":world_map: Build everything"
     commands:
