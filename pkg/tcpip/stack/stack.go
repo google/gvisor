@@ -697,10 +697,6 @@ func (s *Stack) DisableMulticastForwardingForProtocol(protocol tcpip.NetworkProt
 // the specified NIC for the passed protocol.
 //
 // Returns the previous configuration on the NIC.
-//
-// TODO(https://gvisor.dev/issue/7338): Implement support for multicast
-// forwarding. Currently, setting this value is a no-op and is not ready for
-// use.
 func (s *Stack) SetNICMulticastForwarding(id tcpip.NICID, protocol tcpip.NetworkProtocolNumber, enable bool) (bool, tcpip.Error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
