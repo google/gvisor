@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/google/pprof/profile"
 	"gvisor.dev/gvisor/pkg/log"
@@ -61,9 +62,30 @@ func mergeProfiles() error {
 	if err := mergeCmd.Parse(os.Args[2:]); err != nil {
 		return fmt.Errorf("invalid flags: %w", err)
 	}
-	profilePaths := mergeCmd.Args()
-	if len(profilePaths) < 2 {
-		return errors.New("must provide at least 2 profiles as positional arguments")
+	argPaths := mergeCmd.Args()
+	var profilePaths []string
+	for _, argPath := range argPaths {
+		st, err := os.Stat(argPath)
+		if err != nil {
+			return fmt.Errorf("cannot stat %q: %w", argPath, err)
+		}
+		if st.IsDir() {
+			filepath.Walk(argPath, func(path string, info os.FileInfo, err error) error {
+				if err != nil {
+					return fmt.Errorf("cannot walk %q: %w", path, err)
+				}
+				if info.IsDir() {
+					return nil
+				}
+				profilePaths = append(profilePaths, path)
+				return nil
+			})
+		} else {
+			profilePaths = append(profilePaths, argPath)
+		}
+	}
+	if len(profilePaths) == 0 {
+		return errors.New("no profiles (or directories containing profiles) specified as positional arguments")
 	}
 	profiles := make([]*profile.Profile, len(profilePaths))
 	for i, profilePath := range profilePaths {
@@ -73,7 +95,7 @@ func mergeProfiles() error {
 		}
 		prof, err := profile.Parse(profileFile)
 		if err != nil {
-			return fmt.Errorf("cannot parse %q: %w", profilePath, err)
+			return fmt.Errorf("cannot parse %q as a profile: %w", profilePath, err)
 		}
 		profileFile.Close()
 		profiles[i] = prof
