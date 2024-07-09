@@ -82,7 +82,7 @@ static int rt_sigqueueinfo(pid_t tgid, int sig, siginfo_t* uinfo) {
 }
 
 TEST_F(RtSignalTest, InvalidTID) {
-  siginfo_t uinfo;
+  siginfo_t uinfo = {};
   // Depending on the kernel version, these calls may fail with
   // ESRCH (goobunutu machines) or EPERM (production machines). Thus,
   // the test simply ensures that they do fail.
@@ -93,7 +93,7 @@ TEST_F(RtSignalTest, InvalidTID) {
 }
 
 TEST_F(RtSignalTest, InvalidCodes) {
-  siginfo_t uinfo;
+  siginfo_t uinfo = {};
 
   // We need a child for the code checks to apply. If the process is delivering
   // to itself, then it can use whatever codes it wants and they will go
@@ -122,7 +122,7 @@ TEST_F(RtSignalTest, InvalidCodes) {
 }
 
 TEST_F(RtSignalTest, ValueDelivered) {
-  siginfo_t uinfo;
+  siginfo_t uinfo = {};
   uinfo.si_code = -1;  // SI_QUEUE (allowed).
   uinfo.si_errno = 0x1234;
 
@@ -137,7 +137,7 @@ TEST_F(RtSignalTest, SignoMatch) {
   auto mask2_cleanup =
       ASSERT_NO_ERRNO_AND_VALUE(ScopedSignalMask(SIG_UNBLOCK, SIGUSR2));
 
-  siginfo_t uinfo;
+  siginfo_t uinfo = {};
   uinfo.si_code = -1;  // SI_QUEUE (allowed).
 
   EXPECT_THAT(rt_sigqueueinfo(getpid(), SIGUSR1, &uinfo), SyscallSucceeds());
