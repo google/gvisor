@@ -208,10 +208,16 @@ func (e *Endpoint) WritePackets(pkts stack.PacketBufferList) (int, tcpip.Error) 
 	for _, pkt := range pkts.AsSlice() {
 		// In order to properly loop back to the inbound side we must create a
 		// fresh packet that only contains the underlying payload with no headers
-		// or struct fields set.
+		// or struct fields set. We must deep clone the payload to avoid
+		// two goroutines writing to the same buffer.
+		//
+		// TODO(b/240580913): Remove this once IP headers use reference counted
+		// views instead of raw byte slices.
+		payload := pkt.ToBuffer()
 		newPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-			Payload: pkt.ToBuffer(),
+			Payload: payload.DeepClone(),
 		})
+		payload.Release()
 		(e.veth.backlogQueue) <- vethPacket{
 			e:        e.peer,
 			protocol: pkt.NetworkProtocolNumber,
