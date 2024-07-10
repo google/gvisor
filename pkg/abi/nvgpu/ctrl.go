@@ -236,6 +236,22 @@ const (
 	NV0080_CTRL_CMD_PERF_CUDA_LIMIT_SET_CONTROL = 0x801909
 )
 
+// From src/common/sdk/nvidia/inc/ctrl/ctrl00fd.h:
+const (
+	NV00FD_CTRL_CMD_GET_INFO   = 0xfd0101
+	NV00FD_CTRL_CMD_ATTACH_MEM = 0xfd0102
+	NV00FD_CTRL_CMD_ATTACH_GPU = 0xfd0104
+	NV00FD_CTRL_CMD_DETACH_MEM = 0xfd0105
+)
+
+// +marshal
+type NV00FD_CTRL_ATTACH_GPU_PARAMS struct {
+	HSubDevice    Handle
+	Flags         uint32
+	DevDescriptor uint64
+}
+
+
 // From src/common/sdk/nvidia/inc/ctrl/ctrl2080/ctrl2080bus.h:
 const (
 	NV2080_CTRL_CMD_BUS_GET_PCI_INFO                   = 0x20801801

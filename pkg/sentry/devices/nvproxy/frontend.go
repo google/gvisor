@@ -564,6 +564,18 @@ func ctrlHasFrontendFD[Params any, PtrParams hasFrontendFDPtr[Params]](fi *front
 	return n, nil
 }
 
+func ctrlMemoryMulticastFabricAttachGPU(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54Parameters) (uintptr, error) {
+	var ctrlParams nvgpu.NV00FD_CTRL_ATTACH_GPU_PARAMS
+	if ctrlParams.SizeBytes() != int(ioctlParams.ParamsSize) {
+		return 0, linuxerr.EINVAL
+	}
+	if _, err := ctrlParams.CopyIn(fi.t, addrFromP64(ioctlParams.Params)); err != nil {
+		return 0, err
+	}
+
+	return ctrlMemoryMulticastFabricAttachGPUInvoke(fi, ioctlParams, &ctrlParams)
+}
+
 func ctrlClientSystemGetBuildVersion(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54Parameters) (uintptr, error) {
 	var ctrlParams nvgpu.NV0000_CTRL_SYSTEM_GET_BUILD_VERSION_PARAMS
 	if ctrlParams.SizeBytes() != int(ioctlParams.ParamsSize) {
