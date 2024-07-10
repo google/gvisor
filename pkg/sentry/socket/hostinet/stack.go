@@ -382,6 +382,12 @@ func (s *Stack) RouteTable() []inet.Route {
 	return append([]inet.Route(nil), routes...)
 }
 
+// NewRoute implements inet.Stack.NewRoute.
+func (*Stack) NewRoute(context.Context, *nlmsg.Message) *syserr.Error {
+	// TODO(b/343524351): implements RTM_NEWROUTE for hostinet.
+	return syserr.ErrNotSupported
+}
+
 // Pause implements inet.Stack.Pause.
 func (*Stack) Pause() {}
 

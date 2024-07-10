@@ -397,6 +397,20 @@ func parseForDestination(msg *nlmsg.Message) ([]byte, *syserr.Error) {
 	return nil, syserr.ErrInvalidArgument
 }
 
+// newRoute handles RTM_NEWROUTE requests.
+func (p *Protocol) newRoute(ctx context.Context, s *netlink.Socket, msg *nlmsg.Message, ms *nlmsg.MessageSet) *syserr.Error {
+	stack := s.Stack()
+	if stack == nil {
+		// No network routes.
+		return syserr.ErrProtocolNotSupported
+	}
+
+	if msg.Header().Flags&linux.NLM_F_REQUEST != linux.NLM_F_REQUEST {
+		return syserr.ErrProtocolNotSupported
+	}
+	return stack.NewRoute(ctx, msg)
+}
+
 // dumpRoutes handles RTM_GETROUTE requests.
 func (p *Protocol) dumpRoutes(ctx context.Context, s *netlink.Socket, msg *nlmsg.Message, ms *nlmsg.MessageSet) *syserr.Error {
 	// RTM_GETROUTE dump requests need not contain anything more than the
@@ -617,6 +631,8 @@ func (p *Protocol) ProcessMessage(ctx context.Context, s *netlink.Socket, msg *n
 		case linux.RTM_SETLINK:
 			// RTM_NEWLINK is backward compatible to RTM_SETLINK.
 			return p.setLink(ctx, s, msg, ms)
+		case linux.RTM_NEWROUTE:
+			return p.newRoute(ctx, s, msg, ms)
 		case linux.RTM_GETROUTE:
 			return p.dumpRoutes(ctx, s, msg, ms)
 		case linux.RTM_NEWADDR:

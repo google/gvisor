@@ -301,3 +301,75 @@ func TestAttrView(t *testing.T) {
 		}
 	}
 }
+
+type bytesViewTest[T any] struct {
+	desc  string
+	input nlmsg.BytesView
+	ok    bool
+	value T
+}
+
+func TestBytesView(t *testing.T) {
+	tests := []any{
+		bytesViewTest[string]{
+			desc:  "Convert BytesView to string",
+			input: nlmsg.BytesView([]byte("hello world")),
+			ok:    true,
+			value: "hello world",
+		},
+		bytesViewTest[uint32]{
+			desc:  "Convert BytesView to uint32",
+			input: nlmsg.BytesView([]byte{7, 0, 0, 0}),
+			ok:    true,
+			value: 7,
+		},
+		bytesViewTest[uint32]{
+			desc:  "Failed to convert BytesView to uint32",
+			input: nlmsg.BytesView([]byte{7, 0}),
+			ok:    false,
+			value: 0,
+		},
+		bytesViewTest[int32]{
+			desc:  "Convert BytesView to int32",
+			input: nlmsg.BytesView([]byte{8, 0, 0, 0}),
+			ok:    true,
+			value: 8,
+		},
+		bytesViewTest[int32]{
+			desc:  "Failed convert BytesView to int32",
+			input: nlmsg.BytesView([]byte{8}),
+			ok:    false,
+			value: 0,
+		},
+	}
+	for _, test := range tests {
+		switch test.(type) {
+		case bytesViewTest[string]:
+			tst := test.(bytesViewTest[string])
+			value := tst.input.String()
+			if value != tst.value {
+				t.Errorf("%v: BytesView.String() got %v, want %v", tst.desc, value, tst.value)
+			}
+		case bytesViewTest[uint32]:
+			tst := test.(bytesViewTest[uint32])
+			value, ok := tst.input.Uint32()
+			if ok != tst.ok {
+				t.Errorf("%v: BytesView.Uint32() got ok = %v, want %v", tst.desc, ok, tst.ok)
+			}
+			if ok && value != tst.value {
+				t.Errorf("%v: BytesView.Uint32() got %v, want %v", tst.desc, value, tst.value)
+			}
+		case bytesViewTest[int32]:
+			tst := test.(bytesViewTest[int32])
+			value, ok := tst.input.Int32()
+			if ok != tst.ok {
+				t.Errorf("%v: BytesView.Int32() got ok = %v, want %v", tst.desc, ok, tst.ok)
+			}
+			if ok && value != tst.value {
+				t.Errorf("%v: BytesView.Int32() got %v, want %v", tst.desc, value, tst.value)
+			}
+		default:
+			t.Errorf("BytesView %T not support", t)
+		}
+	}
+}

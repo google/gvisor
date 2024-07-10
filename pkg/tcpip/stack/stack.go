@@ -784,6 +784,11 @@ func (s *Stack) RemoveRoutes(match func(tcpip.Route) bool) {
 	s.routeMu.Lock()
 	defer s.routeMu.Unlock()
 
+	s.removeRoutesLocked(match)
+}
+
+// +checklocks:s.routeMu
+func (s *Stack) removeRoutesLocked(match func(tcpip.Route) bool) {
 	for route := s.routeTable.Front(); route != nil; {
 		next := route.Next()
 		if match(*route) {
@@ -791,6 +796,20 @@ func (s *Stack) RemoveRoutes(match func(tcpip.Route) bool) {
 		}
 		route = next
 	}
+}
+
+// ReplaceRoute replaces the route in the routing table which matchse
+// the lookup key for the routing table. If there is no match, the given
+// route will still be added to the routing table.
+// The lookup key consists of destination, ToS, scope and output interface.
+func (s *Stack) ReplaceRoute(route tcpip.Route) {
+	s.routeMu.Lock()
+	defer s.routeMu.Unlock()
+
+	s.removeRoutesLocked(func(rt tcpip.Route) bool {
+		return rt.Equal(route)
+	})
+	s.addRouteLocked(&route)
 }
 
 // NewEndpoint creates a new transport layer endpoint of the given protocol.
