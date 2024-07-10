@@ -425,6 +425,7 @@ func (k *Kernel) StateFields() []string {
 		"MaxFDLimit",
 		"containerNames",
 		"additionalCheckpointState",
+		"checkpointCounter",
 	}
 }
 
@@ -476,6 +477,7 @@ func (k *Kernel) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(38, &k.MaxFDLimit)
 	stateSinkObject.Save(39, &k.containerNames)
 	stateSinkObject.Save(40, &k.additionalCheckpointState)
+	stateSinkObject.Save(41, &k.checkpointCounter)
 }
 
 func (k *Kernel) afterLoad(context.Context) {}
@@ -522,6 +524,7 @@ func (k *Kernel) StateLoad(ctx context.Context, stateSourceObject state.Source) 
 	stateSourceObject.Load(38, &k.MaxFDLimit)
 	stateSourceObject.Load(39, &k.containerNames)
 	stateSourceObject.Load(40, &k.additionalCheckpointState)
+	stateSourceObject.Load(41, &k.checkpointCounter)
 	stateSourceObject.LoadValue(21, new([]tcpip.Endpoint), func(y any) { k.loadDanglingEndpoints(ctx, y.([]tcpip.Endpoint)) })
 }
 

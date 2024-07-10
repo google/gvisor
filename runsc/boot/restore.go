@@ -299,6 +299,10 @@ func (r *restorer) restore(l *Loader) error {
 		return err
 	}
 
+	// Restore was successful, so increment the checkpoint count manually. The
+	// count was saved while the previous kernel was being saved and checkpoint
+	// success was unknown at that time. Now we know the checkpoint succeeded.
+	l.k.IncCheckpointCount()
 	log.Infof("Restore successful")
 	return nil
 }
@@ -330,6 +334,7 @@ func (l *Loader) save(o *control.SaveOpts) error {
 		if err := postResumeImpl(l.k); err != nil {
 			return err
 		}
+		l.k.IncCheckpointCount()
 	}
 	return nil
 }

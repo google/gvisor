@@ -1001,28 +1001,25 @@ func (s *Stack) CheckNIC(id tcpip.NICID) bool {
 // RemoveNIC removes NIC and all related routes from the network stack.
 func (s *Stack) RemoveNIC(id tcpip.NICID) tcpip.Error {
 	s.mu.Lock()
-	deferAct, err := s.removeNICLocked(id)
-	s.mu.Unlock()
-	if deferAct != nil {
-		deferAct()
-	}
-	return err
+	defer s.mu.Unlock()
+
+	return s.removeNICLocked(id)
 }
 
 // removeNICLocked removes NIC and all related routes from the network stack.
 //
 // +checklocks:s.mu
-func (s *Stack) removeNICLocked(id tcpip.NICID) (func(), tcpip.Error) {
+func (s *Stack) removeNICLocked(id tcpip.NICID) tcpip.Error {
 	nic, ok := s.nics[id]
 	if !ok {
-		return nil, &tcpip.ErrUnknownNICID{}
+		return &tcpip.ErrUnknownNICID{}
 	}
 	delete(s.nics, id)
 
 	if nic.Primary != nil {
 		b := nic.Primary.NetworkLinkEndpoint.(CoordinatorNIC)
 		if err := b.DelNIC(nic); err != nil {
-			return nil, err
+			return err
 		}
 	}
 
@@ -1927,22 +1924,14 @@ func (s *Stack) Wait() {
 		p.Wait()
 	}
 
-	deferActs := make([]func(), 0)
-
 	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	for id, n := range s.nics {
 		// Remove NIC to ensure that qDisc goroutines are correctly
 		// terminated on stack teardown.
-		act, _ := s.removeNICLocked(id)
+		s.removeNICLocked(id)
 		n.NetworkLinkEndpoint.Wait()
-		if act != nil {
-			deferActs = append(deferActs, act)
-		}
-	}
-	s.mu.Unlock()
-
-	for _, act := range deferActs {
-		act()
 	}
 }
 
@@ -2387,14 +2376,8 @@ func (s *Stack) SetNICStack(id tcpip.NICID, peer *Stack) (tcpip.NICID, tcpip.Err
 	// Remove routes in-place. n tracks the number of routes written.
 	s.RemoveRoutes(func(r tcpip.Route) bool { return r.NIC == id })
 	ne := nic.NetworkLinkEndpoint.(LinkEndpoint)
-	deferAct, err := nic.remove(false /* closeLinkEndpoint */)
+	nic.remove(false /* closeLinkEndpoint */)
 	s.mu.Unlock()
-	if deferAct != nil {
-		deferAct()
-	}
-	if err != nil {
-		return 0, err
-	}
 
 	id = tcpip.NICID(peer.NextNICID())
 	return id, peer.CreateNICWithOptions(id, ne, NICOptions{Name: nic.Name()})

@@ -359,17 +359,25 @@ type Kernel struct {
 	// It's protected by extMu.
 	containerNames map[string]string
 
+	// checkpointMu is used to protect the checkpointing related fields below.
+	checkpointMu sync.Mutex `state:"nosave"`
+
 	// additionalCheckpointState stores additional state that needs
-	// to be checkpointed. It's protected by extMu.
+	// to be checkpointed. It's protected by checkpointMu.
 	additionalCheckpointState map[any]any
 
-	// Saver registers someone that knows how to save the kernel.
+	// saver implements the Saver interface, which (as of writing) supports
+	// asynchronous checkpointing. It's protected by checkpointMu.
 	saver Saver `state:"nosave"`
+
+	// checkpointCounter is the number of times the kernel has been checkpointed.
+	// It's protected by checkpointMu.
+	checkpointCounter uint32
 }
 
 // Saver is an interface for saving the kernel.
 type Saver interface {
-	SaveAsync(done func()) error
+	SaveAsync() error
 }
 
 // InitKernelArgs holds arguments to Init.
@@ -1821,8 +1829,8 @@ func (k *Kernel) SetHostMount(mnt *vfs.Mount) {
 
 // AddStateToCheckpoint adds a key-value pair to be additionally checkpointed.
 func (k *Kernel) AddStateToCheckpoint(key, v any) {
-	k.extMu.Lock()
-	defer k.extMu.Unlock()
+	k.checkpointMu.Lock()
+	defer k.checkpointMu.Unlock()
 	if k.additionalCheckpointState == nil {
 		k.additionalCheckpointState = make(map[any]any)
 	}
@@ -1832,8 +1840,8 @@ func (k *Kernel) AddStateToCheckpoint(key, v any) {
 // PopCheckpointState pops a key-value pair from the additional checkpoint
 // state. If the key doesn't exist, nil is returned.
 func (k *Kernel) PopCheckpointState(key any) any {
-	k.extMu.Lock()
-	defer k.extMu.Unlock()
+	k.checkpointMu.Lock()
+	defer k.checkpointMu.Unlock()
 	if v, ok := k.additionalCheckpointState[key]; ok {
 		delete(k.additionalCheckpointState, key)
 		return v
@@ -2104,11 +2112,30 @@ func (k *Kernel) ContainerName(cid string) string {
 // SetSaver sets the kernel's Saver.
 // Thread-compatible.
 func (k *Kernel) SetSaver(s Saver) {
+	k.checkpointMu.Lock()
+	defer k.checkpointMu.Unlock()
 	k.saver = s
 }
 
 // Saver returns the kernel's Saver.
 // Thread-compatible.
 func (k *Kernel) Saver() Saver {
+	k.checkpointMu.Lock()
+	defer k.checkpointMu.Unlock()
 	return k.saver
+}
+
+// IncCheckpointCount increments the checkpoint counter.
+func (k *Kernel) IncCheckpointCount() {
+	k.checkpointMu.Lock()
+	defer k.checkpointMu.Unlock()
+	k.checkpointCounter++
+}
+
+// CheckpointCount returns the current checkpoint count. Note that the result
+// may be stale by the time the caller uses it.
+func (k *Kernel) CheckpointCount() uint32 {
+	k.checkpointMu.Lock()
+	defer k.checkpointMu.Unlock()
+	return k.checkpointCounter
 }
