@@ -118,26 +118,26 @@ As a result, `nvproxy` has the following limitations:
 gVisor currently supports NVIDIA GPUs:
 
 *   **T4**, based on the
-    [Turing architecture](https://en.wikipedia.org/wiki/Turing_\(microarchitecture\))
+    [Turing microarchitecture](https://en.wikipedia.org/wiki/Turing_\(microarchitecture\))
 *   **A100** and **A10G**, based on the
-    [Ampere architecture](https://en.wikipedia.org/wiki/Ampere_\(microarchitecture\))
+    [Ampere microarchitecture](https://en.wikipedia.org/wiki/Ampere_\(microarchitecture\))
 *   **L4**, based on the
-    [Ada Lovelace architecture](https://en.wikipedia.org/wiki/Ada_Lovelace_\(microarchitecture\))
+    [Ada Lovelace microarchitecture](https://en.wikipedia.org/wiki/Ada_Lovelace_\(microarchitecture\))
 *   **H100**, based on the
-    [Hopper architecture](https://en.wikipedia.org/wiki/Hopper_\(microarchitecture\))
+    [Hopper microarchitecture](https://en.wikipedia.org/wiki/Hopper_\(microarchitecture\))
 
 While not officially supported, other NVIDIA GPUs based on the same
-architectures as the above will likely work as well. This includes
+microarchitectures as the above will likely work as well. This includes
 consumer-oriented GPUs such as **RTX 3090** (Ampere) and **RTX 4090** (Ada
 Lovelace).
 
 Therefore, if you encounter an incompatible workload on a GPU on one of the
-above architectures, even if on an unsupported GPU, chances are that this
-workload is also incompatible in the same manner on one of the
-officially-supported GPUs. Please
+above microarchitectures, even if on an unsupported GPU, chances are that this
+workload is also incompatible in the same manner on one of the officially
+supported GPUs. Please
 [open a GitHub issue](https://github.com/google/gvisor/issues/new?labels=type%3A+enhancement,area%3A+gpu&template=bug_report.yml)
-with reproduction instructions so that it can be tested against an
-officially-supported GPU.
+with reproduction instructions so that it can be tested against an officially
+supported GPU.
 
 ### Rolling Version Support Window {#driver-versions}
 
