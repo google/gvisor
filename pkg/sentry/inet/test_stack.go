@@ -26,6 +26,8 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
+var _ Stack = (*TestStack)(nil)
+
 // TestStack is a dummy implementation of Stack for tests.
 type TestStack struct {
 	InterfacesMap     map[int32]Interface
@@ -155,6 +157,11 @@ func (s *TestStack) Statistics(stat any, arg string) error {
 // RouteTable implements Stack.
 func (s *TestStack) RouteTable() []Route {
 	return s.RouteList
+}
+
+// NewRoute implements Stack.
+func (s *TestStack) NewRoute(ctx context.Context, msg *nlmsg.Message) *syserr.Error {
+	return syserr.ErrNotPermitted
 }
 
 // Pause implements Stack.

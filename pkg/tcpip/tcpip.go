@@ -60,6 +60,12 @@ const (
 	LinkAddressSize = 6
 )
 
+// Known IP address.
+var (
+	IPv4Zero = []byte{0, 0, 0, 0}
+	IPv6Zero = []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
+)
+
 // Errors related to Subnet
 var (
 	errSubnetLengthMismatch = errors.New("subnet length of address and mask differ")
@@ -1553,7 +1559,7 @@ func (r Route) String() string {
 // Equal returns true if the given Route is equal to this Route.
 func (r Route) Equal(to Route) bool {
 	// NOTE: This relies on the fact that r.Destination == to.Destination
-	return r.Destination.Equal(to.Destination) && r.Gateway == to.Gateway && r.NIC == to.NIC
+	return r.Destination.Equal(to.Destination) && r.NIC == to.NIC
 }
 
 // TransportProtocolNumber is the number of a transport protocol.
