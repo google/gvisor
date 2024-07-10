@@ -311,10 +311,7 @@ func (n *nic) enable() tcpip.Error {
 // remove detaches NIC from the link endpoint and releases network endpoint
 // resources. This guarantees no packets between this NIC and the network
 // stack.
-//
-// It returns an action that has to be excuted after releasing the Stack lock
-// and any error encountered.
-func (n *nic) remove(closeLinkEndpoint bool) (func(), tcpip.Error) {
+func (n *nic) remove(closeLinkEndpoint bool) tcpip.Error {
 	n.enableDisableMu.Lock()
 
 	n.disableLocked()
@@ -329,7 +326,6 @@ func (n *nic) remove(closeLinkEndpoint bool) (func(), tcpip.Error) {
 	// We must not hold n.enableDisableMu here.
 	n.linkResQueue.cancel()
 
-	var deferAct func()
 	// Prevent packets from going down to the link before shutting the link down.
 	n.qDisc.Close()
 	n.NetworkLinkEndpoint.Attach(nil)
@@ -339,10 +335,12 @@ func (n *nic) remove(closeLinkEndpoint bool) (func(), tcpip.Error) {
 		// The link endpoint has to be closed without holding a
 		// netstack lock, because it can trigger other netstack
 		// operations.
-		deferAct = ep.Close
+		go func() {
+			ep.Close()
+		}()
 	}
 
-	return deferAct, nil
+	return nil
 }
 
 // setPromiscuousMode enables or disables promiscuous mode.
