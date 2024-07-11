@@ -121,3 +121,15 @@ go_test(
         "@com_github_docker_docker//api/types/mount:go_default_library",
     ],
 )
+
+go_test(
+    name = "nccl_test",
+    srcs = ["nccl_test.go"],
+    tags = [
+        "manual",
+        "noguitar",
+        "notap",
+    ],
+    visibility = ["//:sandbox"],
+    deps = ["//pkg/test/dockerutil"],
+)
