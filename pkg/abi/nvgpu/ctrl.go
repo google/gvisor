@@ -311,6 +311,11 @@ const (
 	NV2080_CTRL_CMD_GR_GET_SM_ISSUE_RATE_MODIFIER = 0x20801230
 )
 
+// From src/common/sdk/nvidia/inc/ctrl/ctrl2080/ctrl2080grmgr.h:
+const (
+	NV2080_CTRL_CMD_GRMGR_GET_GR_FS_INFO = 0x20803801
+)
+
 // From src/common/sdk/nvidia/inc/ctrl/ctrl2080/ctrl2080gsp.h:
 const (
 	NV2080_CTRL_CMD_GSP_GET_FEATURES = 0x20803601
@@ -387,7 +392,8 @@ const (
 
 // From src/common/sdk/nvidia/inc/ctrl/ctrl906f.h:
 const (
-	NV906F_CTRL_CMD_RESET_CHANNEL = 0x906f0102
+	NV906F_CTRL_GET_CLASS_ENGINEID = 0x906f0101
+	NV906F_CTRL_CMD_RESET_CHANNEL  = 0x906f0102
 )
 
 // From src/common/sdk/nvidia/inc/ctrl/ctrl90e6.h:
