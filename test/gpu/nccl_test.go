@@ -54,7 +54,8 @@ func TestNCCL(t *testing.T) {
 
 	ctx := context.Background()
 	for _, test := range testNames {
-		t.Logf("Running NCCL test: %s", test)
-		runNCCL(ctx, t, test)
+		t.Run(test, func(t *testing.T) {
+			runNCCL(ctx, t, test)
+		})
 	}
 }
