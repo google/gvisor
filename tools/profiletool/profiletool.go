@@ -16,6 +16,7 @@
 package main
 
 import (
+	"compress/gzip"
 	"errors"
 	"fmt"
 	"os"
@@ -109,13 +110,10 @@ func mergeProfiles() error {
 	if err != nil {
 		return fmt.Errorf("cannot create %q: %w", *mergeOut, err)
 	}
-	if err := merged.Write(mergedFile); err != nil {
-		mergedFile.Close()
+	defer mergedFile.Close()
+	if err := writeMaxCompressionProfile(merged, mergedFile); err != nil {
 		os.Remove(*mergeOut)
 		return fmt.Errorf("cannot write merged profile to %q: %w", *mergeOut, err)
-	}
-	if err := mergedFile.Close(); err != nil {
-		return fmt.Errorf("cannot close %q: %w", *mergeOut, err)
 	}
 	return nil
 }
@@ -143,13 +141,32 @@ func compactProfile() error {
 	if err != nil {
 		return fmt.Errorf("cannot create %q: %w", *compactOut, err)
 	}
-	if err := prof.Write(compactedFile); err != nil {
+	if err := writeMaxCompressionProfile(prof, compactedFile); err != nil {
 		compactedFile.Close()
 		os.Remove(*compactOut)
 		return fmt.Errorf("cannot write compacted profile to %q: %w", *compactOut, err)
 	}
 	if err := compactedFile.Close(); err != nil {
 		return fmt.Errorf("cannot close %q: %w", *compactOut, err)
+	}
+	return nil
+}
+
+// writeMaxCompressionProfile writes a profile to a file with the maximum
+// compression level. The file handle is not closed.
+func writeMaxCompressionProfile(p *profile.Profile, out *os.File) error {
+	// The profile library writes profiles with the fastest (i.e. worst)
+	// compression level by default, and does not allow setting the compression
+	// level. So we compress it with the maximum level manually here.
+	writer, err := gzip.NewWriterLevel(out, gzip.BestCompression)
+	if err != nil {
+		return fmt.Errorf("cannot create zlib writer: %w", err)
+	}
+	if err := p.WriteUncompressed(writer); err != nil {
+		return fmt.Errorf("cannot write profile to zlib writer: %w", err)
+	}
+	if err := writer.Close(); err != nil {
+		return fmt.Errorf("cannot close zlib writer: %w", err)
 	}
 	return nil
 }
