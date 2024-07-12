@@ -92,6 +92,13 @@ const (
 	// return its ExitStatus.
 	ContMgrWaitPID = "containerManager.WaitPID"
 
+	// ContMgrWaitCheckpoint waits for the Kernel to have been successfully
+	// checkpointed n-1 times, then waits for either the n-th successful
+	// checkpoint (in which case it returns nil) or any number of failed
+	// checkpoints (in which case it returns an error returned by any such
+	// failure).
+	ContMgrWaitCheckpoint = "containerManager.WaitCheckpoint"
+
 	// ContMgrRootContainerStart starts a new sandbox with a root container.
 	ContMgrRootContainerStart = "containerManager.StartRoot"
 
@@ -689,6 +696,16 @@ func (cm *containerManager) WaitPID(args *WaitPIDArgs, waitStatus *uint32) error
 	log.Debugf("containerManager.Wait, cid: %s, pid: %d", args.CID, args.PID)
 	err := cm.l.waitPID(kernel.ThreadID(args.PID), args.CID, waitStatus)
 	log.Debugf("containerManager.Wait, cid: %s, pid: %d, waitStatus: %#x, err: %v", args.CID, args.PID, *waitStatus, err)
+	return err
+}
+
+// WaitCheckpoint waits for the Kernel to have been successfully checkpointed
+// n-1 times, then waits for either the n-th successful checkpoint (in which
+// case it returns nil) or any number of failed checkpoints (in which case it
+// returns an error returned by any such failure).
+func (cm *containerManager) WaitCheckpoint(n *uint32, _ *struct{}) error {
+	err := cm.l.k.WaitCheckpoint(*n)
+	log.Debugf("containerManager.WaitCheckpoint, n = %d, err = %v", *n, err)
 	return err
 }
 

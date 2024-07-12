@@ -307,7 +307,13 @@ func (r *restorer) restore(l *Loader) error {
 	return nil
 }
 
-func (l *Loader) save(o *control.SaveOpts) error {
+func (l *Loader) save(o *control.SaveOpts) (err error) {
+	defer func() {
+		// This closure is required to capture the final value of err.
+		l.k.OnCheckpointAttempt(err)
+	}()
+	l.k.ResetCheckpointStatus()
+
 	// TODO(gvisor.dev/issues/6243): save/restore not supported w/ hostinet
 	if l.root.conf.Network == config.NetworkHost {
 		return errors.New("checkpoint not supported when using hostinet")
@@ -334,7 +340,6 @@ func (l *Loader) save(o *control.SaveOpts) error {
 		if err := postResumeImpl(l.k); err != nil {
 			return err
 		}
-		l.k.IncCheckpointCount()
 	}
 	return nil
 }

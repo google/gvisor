@@ -2760,11 +2760,26 @@ func testMultiContainerCheckpointRestore(t *testing.T, conf *config.Config, comp
 		t.Fatalf("Failed to wait for output file: %v", err)
 	}
 
+	checkpointWaiter := make(chan struct{}, 1)
+	go func() {
+		// WaitCheckpoint on the second container.
+		if err := conts[1].WaitCheckpoint(1); err != nil {
+			t.Errorf("error waiting for checkpoint to complete: %v", err)
+		}
+		checkpointWaiter <- struct{}{}
+	}()
+
 	// Checkpoint root container; save state into new file.
 	if err := conts[0].Checkpoint(dir, false /* direct */, statefile.Options{Compression: compression}, pgalloc.SaveOpts{}); err != nil {
 		t.Fatalf("error checkpointing container to empty file: %v", err)
 	}
-	defer os.RemoveAll(dir)
+
+	// WaitCheckpoint() should return after checkpoint is complete.
+	select {
+	case <-checkpointWaiter:
+	case <-time.After(10 * time.Second):
+		t.Errorf("timed out waiting for checkpoint to complete")
+	}
 
 	lastNum, err := readOutputNum(outputPath, -1)
 	if err != nil {

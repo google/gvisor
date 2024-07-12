@@ -362,6 +362,10 @@ type Kernel struct {
 	// checkpointMu is used to protect the checkpointing related fields below.
 	checkpointMu sync.Mutex `state:"nosave"`
 
+	// checkpointCond is used to wait for a checkpoint to complete. It uses
+	// checkpointMu as its mutex.
+	checkpointCond sync.Cond `state:"nosave"`
+
 	// additionalCheckpointState stores additional state that needs
 	// to be checkpointed. It's protected by checkpointMu.
 	additionalCheckpointState map[any]any
@@ -370,9 +374,19 @@ type Kernel struct {
 	// asynchronous checkpointing. It's protected by checkpointMu.
 	saver Saver `state:"nosave"`
 
-	// checkpointCounter is the number of times the kernel has been checkpointed.
-	// It's protected by checkpointMu.
+	// checkpointCounter aims to track the number of times the kernel has been
+	// successfully checkpointed. It's updated via calls to OnCheckpointAttempt()
+	// and IncCheckpointCount(). Kernel checkpoint-ers must call these methods
+	// appropriately so the counter is accurate. It's protected by checkpointMu.
 	checkpointCounter uint32
+
+	// lastCheckpointStatus is the error value returned from the most recent
+	// checkpoint attempt. If this value is nil, then the `checkpointCounter`-th
+	// checkpoint attempt succeeded and no checkpoint attempt has completed since.
+	// If this value is non-nil, then the `checkpointCounter`-th checkpoint
+	// attempt succeeded, after which at least one more checkpoint attempt was
+	// made and failed with this error. It's protected by checkpointMu.
+	lastCheckpointStatus error `state:"nosave"`
 }
 
 // Saver is an interface for saving the kernel.
@@ -461,6 +475,7 @@ func (k *Kernel) Init(args InitKernelArgs) error {
 		k.rootNetworkNamespace = inet.NewRootNamespace(nil, nil, args.RootUserNamespace)
 	}
 	k.runningTasksCond.L = &k.runningTasksMu
+	k.checkpointCond.L = &k.checkpointMu
 	k.cpuClockTickerWakeCh = make(chan struct{}, 1)
 	k.cpuClockTickerStopCond.L = &k.runningTasksMu
 	k.applicationCores = args.ApplicationCores
@@ -745,6 +760,7 @@ func (k *Kernel) LoadFrom(ctx context.Context, r io.Reader, pagesMetadata, pages
 	}
 
 	k.runningTasksCond.L = &k.runningTasksMu
+	k.checkpointCond.L = &k.checkpointMu
 	k.cpuClockTickerWakeCh = make(chan struct{}, 1)
 	k.cpuClockTickerStopCond.L = &k.runningTasksMu
 
@@ -2138,4 +2154,49 @@ func (k *Kernel) CheckpointCount() uint32 {
 	k.checkpointMu.Lock()
 	defer k.checkpointMu.Unlock()
 	return k.checkpointCounter
+}
+
+// OnCheckpointAttempt is called when a checkpoint attempt is completed. err is
+// any checkpoint errors that may have occurred.
+func (k *Kernel) OnCheckpointAttempt(err error) {
+	k.checkpointMu.Lock()
+	defer k.checkpointMu.Unlock()
+	if err == nil {
+		k.checkpointCounter++
+	}
+	k.lastCheckpointStatus = err
+	k.checkpointCond.Broadcast()
+}
+
+// ResetCheckpointStatus resets the last checkpoint status, indicating a new
+// checkpoint is in progress. Caller must call OnCheckpointAttempt when the
+// checkpoint attempt is completed.
+func (k *Kernel) ResetCheckpointStatus() {
+	k.checkpointMu.Lock()
+	defer k.checkpointMu.Unlock()
+	k.lastCheckpointStatus = nil
+}
+
+// WaitCheckpoint waits for the Kernel to have been successfully checkpointed
+// n-1 times, then waits for either the n-th successful checkpoint (in which
+// case it returns nil) or any number of failed checkpoints (in which case it
+// returns an error returned by any such failure).
+func (k *Kernel) WaitCheckpoint(n uint32) error {
+	if n == 0 {
+		return nil
+	}
+	k.checkpointMu.Lock()
+	defer k.checkpointMu.Unlock()
+	if k.checkpointCounter >= n {
+		// n-th checkpoint already completed successfully.
+		return nil
+	}
+	for k.checkpointCounter < n {
+		if k.checkpointCounter == n-1 && k.lastCheckpointStatus != nil {
+			// n-th checkpoint was attempted but it had failed.
+			return k.lastCheckpointStatus
+		}
+		k.checkpointCond.Wait()
+	}
+	return nil
 }
