@@ -261,7 +261,10 @@ func (e *endpoint) SetOnCloseAction(func()) {}
 func (e *endpoint) Close() {
 	// Tell dispatch goroutine to stop, then write to the eventfd so that
 	// it wakes up in case it's sleeping.
-	e.stopRequested.Store(1)
+	if e.stopRequested.Swap(1) == 1 {
+		// It is already closed.
+		return
+	}
 	e.rx.eventFD.Notify()
 
 	// Cleanup the queues inline if the worker hasn't started yet; we also
