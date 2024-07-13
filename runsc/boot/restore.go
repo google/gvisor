@@ -276,6 +276,10 @@ func (r *restorer) restore(l *Loader) error {
 
 	l.k.RestoreContainerMapping(l.containerIDs)
 
+	if err := l.kernelInitExtra(); err != nil {
+		return err
+	}
+
 	// Refresh the control server with the newly created kernel.
 	l.ctrl.refreshHandlers()
 
