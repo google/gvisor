@@ -653,6 +653,18 @@ func (c *Container) WaitPID(pid int32) (unix.WaitStatus, error) {
 	return c.Sandbox.WaitPID(c.ID, pid)
 }
 
+// WaitCheckpoint waits for the Kernel to have been successfully checkpointed
+// n-1 times, then waits for either the n-th successful checkpoint (in which
+// case it returns nil) or any number of failed checkpoints (in which case it
+// returns an error returned by any such failure).
+func (c *Container) WaitCheckpoint(n uint32) error {
+	log.Debugf("Wait on %d-th checkpoint to complete in container, cid: %s", n, c.ID)
+	if !c.IsSandboxRunning() {
+		return fmt.Errorf("sandbox is not running")
+	}
+	return c.Sandbox.WaitCheckpoint(n)
+}
+
 // SignalContainer sends the signal to the container. If all is true and signal
 // is SIGKILL, then waits for all processes to exit before returning.
 // SignalContainer returns an error if the container is already stopped.

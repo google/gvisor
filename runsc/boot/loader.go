@@ -628,7 +628,7 @@ func New(args Args) (*Loader, error) {
 		enableAutosave(l, args.Conf.TestOnlyAutosaveResume, l.saveFDs)
 	}
 
-	if err := l.initDone(args); err != nil {
+	if err := l.kernelInitExtra(); err != nil {
 		return nil, err
 	}
 
