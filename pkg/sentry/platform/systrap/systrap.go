@@ -350,6 +350,8 @@ func New() (*Systrap, error) {
 		globalPool.source = source
 
 		initSysmsgThreadPriority()
+
+		initSeccompNotify()
 	})
 
 	latencyMonitoring.Do(func() {
