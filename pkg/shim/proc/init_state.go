@@ -20,9 +20,10 @@ import (
 	"fmt"
 
 	"github.com/containerd/containerd/errdefs"
-	"github.com/containerd/containerd/pkg/process"
 	runc "github.com/containerd/go-runc"
 	"golang.org/x/sys/unix"
+
+	"gvisor.dev/gvisor/pkg/shim/extension"
 )
 
 type stateTransition int
@@ -47,9 +48,11 @@ func (s stateTransition) String() string {
 }
 
 type initState interface {
-	Start(context.Context) error
+	// Start starts the process. If RestoreConfig is provided, the process is
+	// restored using the checkpoint image provided in the config.
+	Start(context.Context, *extension.RestoreConfig) error
 	Delete(context.Context) error
-	Exec(context.Context, string, *ExecConfig) (process.Process, error)
+	Exec(context.Context, string, *ExecConfig) (extension.Process, error)
 	State(ctx context.Context) (string, error)
 	Stats(context.Context, string) (*runc.Stats, error)
 	Kill(context.Context, uint32, bool) error
@@ -77,14 +80,14 @@ func (s *createdState) transition(transition stateTransition) {
 	}
 }
 
-func (s *createdState) Start(ctx context.Context) error {
-	if err := s.p.start(ctx); err != nil {
+func (s *createdState) Start(ctx context.Context, restoreConf *extension.RestoreConfig) error {
+	if err := s.p.start(ctx, restoreConf); err != nil {
 		// Containerd doesn't allow deleting container in created state.
-		// However, for gvisor, a non-root container in created state can
-		// only go to running state. If the container can't be started,
+		// However, for gVisor, a non-root container in created state can
+		// only go to running state. If the container can't be started/restored,
 		// it can only stay in created state, and never be deleted.
-		// To work around that, we treat non-root container in start failure
-		// state as stopped.
+		// To work around that, we treat non-root container in start/restore
+		// failure state as stopped.
 		if !s.p.Sandbox {
 			s.p.io.Close()
 			s.p.setExited(internalErrorCode)
@@ -113,7 +116,7 @@ func (s *createdState) SetExited(status int) {
 	s.transition(stopped)
 }
 
-func (s *createdState) Exec(ctx context.Context, path string, r *ExecConfig) (process.Process, error) {
+func (s *createdState) Exec(ctx context.Context, path string, r *ExecConfig) (extension.Process, error) {
 	return s.p.exec(path, r)
 }
 
@@ -146,7 +149,7 @@ func (s *runningState) transition(transition stateTransition) {
 	}
 }
 
-func (s *runningState) Start(ctx context.Context) error {
+func (s *runningState) Start(context.Context, *extension.RestoreConfig) error {
 	return fmt.Errorf("cannot start a running container")
 }
 
@@ -163,7 +166,7 @@ func (s *runningState) SetExited(status int) {
 	s.transition(stopped)
 }
 
-func (s *runningState) Exec(_ context.Context, path string, r *ExecConfig) (process.Process, error) {
+func (s *runningState) Exec(_ context.Context, path string, r *ExecConfig) (extension.Process, error) {
 	return s.p.exec(path, r)
 }
 
@@ -196,7 +199,7 @@ func (s *stoppedState) transition(transition stateTransition) {
 	}
 }
 
-func (s *stoppedState) Start(context.Context) error {
+func (s *stoppedState) Start(context.Context, *extension.RestoreConfig) error {
 	return fmt.Errorf("cannot start a stopped container")
 }
 
@@ -216,7 +219,7 @@ func (s *stoppedState) SetExited(status int) {
 	s.process.setExited(status)
 }
 
-func (s *stoppedState) Exec(context.Context, string, *ExecConfig) (process.Process, error) {
+func (s *stoppedState) Exec(context.Context, string, *ExecConfig) (extension.Process, error) {
 	return nil, fmt.Errorf("cannot exec in a stopped state")
 }
 

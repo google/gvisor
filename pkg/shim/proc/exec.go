@@ -33,6 +33,7 @@ import (
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/cleanup"
+	"gvisor.dev/gvisor/pkg/shim/extension"
 	"gvisor.dev/gvisor/pkg/shim/runsccmd"
 )
 
@@ -168,7 +169,7 @@ func (e *execProcess) Start(ctx context.Context) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
-	return e.execState.Start(ctx)
+	return e.execState.Start(ctx, nil /* restoreConf */)
 }
 
 func (e *execProcess) start(ctx context.Context) error {
@@ -273,6 +274,10 @@ func (e *execProcess) start(ctx context.Context) error {
 
 	cu.Release() // cancel cleanup on success.
 	return nil
+}
+
+func (e *execProcess) Restore(context.Context, *extension.RestoreConfig) error {
+	return fmt.Errorf("cannot restore an exec'd process")
 }
 
 func (e *execProcess) Status(context.Context) (string, error) {

@@ -18,6 +18,7 @@ package extension
 import (
 	"context"
 
+	"github.com/containerd/containerd/pkg/process"
 	"github.com/containerd/containerd/runtime/v2/task"
 )
 
@@ -25,9 +26,29 @@ import (
 // extension should not handle this task request. Returning an error will fail the task request.
 var NewExtension func(ctx context.Context, next TaskServiceExt, req *task.CreateTaskRequest) (TaskServiceExt, error)
 
+// RestoreRequest is a request to restore a container. It extends
+// task.StartRequest with restore functionality.
+type RestoreRequest struct {
+	Start task.StartRequest
+	Conf  RestoreConfig
+}
+
+// Process extends process.Process with extra restore functionality.
+type Process interface {
+	process.Process
+	// Restore restores the container from a snapshot.
+	Restore(context.Context, *RestoreConfig) error
+}
+
+// RestoreConfig is the configuration for a restore request.
+type RestoreConfig struct {
+	ImagePath string
+	Direct    bool
+}
+
 // TaskServiceExt extends TaskRequest with extra functionality required by the shim.
 type TaskServiceExt interface {
 	task.TaskService
 	Cleanup(ctx context.Context) (*task.DeleteResponse, error)
-	Restore(ctx context.Context, req *task.StartRequest) (*task.StartResponse, error)
+	Restore(ctx context.Context, req *RestoreRequest) (*task.StartResponse, error)
 }

@@ -111,7 +111,7 @@ type runscService struct {
 	task *proc.Init
 
 	// processes maps ExecId to processes running through exec.
-	processes map[string]process.Process
+	processes map[string]extension.Process
 
 	events chan any
 
@@ -148,7 +148,7 @@ func New(ctx context.Context, id string, publisher shim.Publisher) (extension.Ta
 	go ep.run(ctx)
 	s := &runscService{
 		id:        id,
-		processes: make(map[string]process.Process),
+		processes: make(map[string]extension.Process),
 		events:    make(chan any, 128),
 		ec:        proc.ExitCh,
 		oomPoller: ep,
@@ -611,9 +611,19 @@ func (s *runscService) Checkpoint(ctx context.Context, r *taskAPI.CheckpointTask
 }
 
 // Restore restores the container.
-func (s *runscService) Restore(ctx context.Context, r *taskAPI.StartRequest) (*taskAPI.StartResponse, error) {
-	log.L.Debugf("Restore, id: %s", r.ID)
-	return nil, errdefs.ErrNotImplemented
+func (s *runscService) Restore(ctx context.Context, r *extension.RestoreRequest) (*taskAPI.StartResponse, error) {
+	p, err := s.getProcess(r.Start.ExecID)
+	if err != nil {
+		return nil, err
+	}
+	if err := p.Restore(ctx, &r.Conf); err != nil {
+		return nil, err
+	}
+	// TODO: Set the cgroup and oom notifications on restore.
+	// https://github.com/google/gvisor-containerd-shim/issues/58
+	return &taskAPI.StartResponse{
+		Pid: uint32(p.Pid()),
+	}, nil
 }
 
 // Connect returns shim information such as the shim's pid.
@@ -798,7 +808,7 @@ func (s *runscService) forward(ctx context.Context, publisher shim.Publisher) {
 	}
 }
 
-func (s *runscService) getProcess(execID string) (process.Process, error) {
+func (s *runscService) getProcess(execID string) (extension.Process, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
