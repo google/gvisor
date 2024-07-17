@@ -331,6 +331,7 @@ INTEGRATION_TARGETS := //test/image:image_test //test/e2e:integration_test
 
 docker-tests: load-basic $(RUNTIME_BIN)
 	@$(call install_runtime,$(RUNTIME),) # Clear flags.
+	@$(call install_runtime,$(RUNTIME)-docker,--net-raw) # Used by TestDocker*.
 	@$(call install_runtime,$(RUNTIME)-fdlimit,--fdlimit=2000) # Used by TestRlimitNoFile.
 	@$(call install_runtime,$(RUNTIME)-dcache,--fdlimit=2000 --dcache=100) # Used by TestDentryCacheLimit.
 	@$(call install_runtime,$(RUNTIME)-host-uds,--host-uds=all) # Used by TestHostSocketConnect.
@@ -340,11 +341,13 @@ docker-tests: load-basic $(RUNTIME_BIN)
 
 overlay-tests: load-basic $(RUNTIME_BIN)
 	@$(call install_runtime,$(RUNTIME),--overlay2=all:dir=/tmp)
+	@$(call install_runtime,$(RUNTIME)-docker,--net-raw --overlay2=all:dir=/tmp)
 	@$(call test_runtime,$(RUNTIME),--test_env=TEST_OVERLAY=true $(INTEGRATION_TARGETS))
 .PHONY: overlay-tests
 
 swgso-tests: load-basic $(RUNTIME_BIN)
 	@$(call install_runtime,$(RUNTIME),--software-gso=true --gso=false)
+	@$(call install_runtime,$(RUNTIME)-docker,--net-raw --software-gso=true --gso=false)
 	@$(call test_runtime,$(RUNTIME),$(INTEGRATION_TARGETS))
 .PHONY: swgso-tests
 
@@ -358,11 +361,13 @@ kvm-tests: load-basic $(RUNTIME_BIN)
 	@if ! test -w /dev/kvm; then sudo chmod a+rw /dev/kvm; fi
 	@$(call test,//pkg/sentry/platform/kvm:kvm_test)
 	@$(call install_runtime,$(RUNTIME),--platform=kvm)
+	@$(call install_runtime,$(RUNTIME)-docker,--net-raw --platform=kvm)
 	@$(call test_runtime,$(RUNTIME),$(INTEGRATION_TARGETS))
 .PHONY: kvm-tests
 
 systrap-tests: load-basic $(RUNTIME_BIN)
 	@$(call install_runtime,$(RUNTIME),--platform=systrap)
+	@$(call install_runtime,$(RUNTIME)-docker,--net-raw --platform=systrap)
 	@$(call test_runtime,$(RUNTIME),$(INTEGRATION_TARGETS))
 .PHONY: systrap-tests
 

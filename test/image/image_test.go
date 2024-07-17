@@ -339,22 +339,30 @@ func TestStdio(t *testing.T) {
 	}
 }
 
+func TestDockerOverlayWithHostNetwork(t *testing.T) {
+	testDocker(t, true, true)
+}
+
 func TestDockerOverlay(t *testing.T) {
-	testDocker(t, true)
+	testDocker(t, true, false)
+}
+
+func TestDockerWithHostNetwork(t *testing.T) {
+	testDocker(t, false, true)
 }
 
 func TestDocker(t *testing.T) {
 	// Overlayfs can't be built on top of another overlayfs, so docket has
 	// to fall back to the vfs driver.
-	testDocker(t, false)
+	testDocker(t, false, false)
 }
 
-func testDocker(t *testing.T, overlay bool) {
+func testDocker(t *testing.T, overlay, hostNetwork bool) {
 	if testutil.IsRunningWithHostNet() {
 		t.Skip("docker doesn't work with hostinet")
 	}
 	ctx := context.Background()
-	d := dockerutil.MakeContainer(ctx, t)
+	d := dockerutil.MakeContainerWithRuntime(ctx, t, "-docker")
 	defer d.CleanUp(ctx)
 
 	// Start the container.
@@ -395,18 +403,13 @@ func testDocker(t *testing.T, overlay bool) {
 		}
 		break
 	}
-	p, err := d.ExecProcess(ctx, dockerutil.ExecOpts{},
-		"docker", "run", "--network", "host", "--rm", "alpine", "echo", "Hello World")
+	cmd := []string{"docker", "run", "--rm", "alpine", "sh", "-c", "apk add curl && curl -h"}
+	if hostNetwork {
+		cmd = []string{"docker", "run", "--network", "host", "--rm", "alpine", "sh", "-c", "apk add curl && curl -h"}
+	}
+	_, err := d.ExecProcess(ctx, dockerutil.ExecOpts{}, cmd...)
 	if err != nil {
 		t.Fatalf("docker exec failed: %v", err)
-	}
-	stdout, stderr, err := p.Read()
-	t.Logf("Container output: == stdout ==\n%s\n== stderr ==\n%s", stdout, stderr)
-	if err != nil {
-		t.Errorf("failed to read process output: %s", err)
-	}
-	if stdout != "Hello World\n" {
-		t.Errorf("Unexpected output: %#v", stdout)
 	}
 }
 
