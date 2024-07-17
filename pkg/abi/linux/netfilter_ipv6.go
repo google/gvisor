@@ -15,6 +15,8 @@
 package linux
 
 import (
+	"math"
+
 	"gvisor.dev/gvisor/pkg/marshal"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 )
@@ -23,6 +25,24 @@ import (
 // ip6tables. Some constants and structs are equal to their IPv4 analogues, and
 // are only distinguished by context (e.g. whether used on an IPv4 of IPv6
 // socket).
+
+// Netfilter IPv6 Standard Hook Priorities, from uapi/linux/netfilter_ipv6.h.
+const (
+	NF_IP4_PRI_FIRST             = math.MinInt
+	NF_IP4_PRI_RAW_BEFORE_DEFRAG = -450
+	NF_IP4_PRI_CONNTRACK_DEFRAG  = -400
+	NF_IP4_PRI_RAW               = -300
+	NF_IP4_PRI_SELINUX_FIRST     = -225
+	NF_IP4_PRI_CONNTRACK         = -200
+	NF_IP4_PRI_MANGLE            = -150
+	NF_IP4_PRI_NAT_DST           = -100
+	NF_IP4_PRI_FILTER            = 0
+	NF_IP4_PRI_SECURITY          = 50
+	NF_IP4_PRI_NAT_SRC           = 100
+	NF_IP4_PRI_SELINUX_LAST      = 225
+	NF_IP4_PRI_CONNTRACK_HELPER  = 300
+	NF_IP4_PRI_LAST              = math.MaxInt
+)
 
 // Socket options for SOL_SOCLET. These correspond to values in
 // include/uapi/linux/netfilter_ipv6/ip6_tables.h.

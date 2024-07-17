@@ -178,6 +178,21 @@ type subprocess struct {
 	dead atomicbitops.Bool
 }
 
+var seccompNotifyIsSupported = false
+
+func initSeccompNotify() {
+	_, _, errno := unix.Syscall(seccomp.SYS_SECCOMP, linux.SECCOMP_SET_MODE_FILTER, linux.SECCOMP_FILTER_FLAG_NEW_LISTENER, 0)
+	switch errno {
+	case unix.EFAULT:
+		// seccomp unotify is supported.
+	case unix.EINVAL:
+		log.Warningf("Seccomp user-space notification mechanism isn't " +
+			"supported by the kernel (available since Linux 5.0).")
+	default:
+		panic(fmt.Sprintf("seccomp returns unexpected code: %d", errno))
+	}
+}
+
 func (s *subprocess) initSyscallThread(ptraceThread *thread, seccompNotify bool) error {
 	s.syscallThreadMu.Lock()
 	defer s.syscallThreadMu.Unlock()

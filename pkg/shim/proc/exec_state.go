@@ -20,11 +20,12 @@ import (
 	"fmt"
 
 	"github.com/containerd/console"
+	"gvisor.dev/gvisor/pkg/shim/extension"
 )
 
 type execState interface {
 	Resize(console.WinSize) error
-	Start(context.Context) error
+	Start(context.Context, *extension.RestoreConfig) error
 	Delete(context.Context) error
 	Kill(context.Context, uint32, bool) error
 	SetExited(int)
@@ -55,7 +56,10 @@ func (s *execCreatedState) Resize(ws console.WinSize) error {
 	return s.p.resize(ws)
 }
 
-func (s *execCreatedState) Start(ctx context.Context) error {
+func (s *execCreatedState) Start(ctx context.Context, restoreConf *extension.RestoreConfig) error {
+	if restoreConf != nil {
+		return fmt.Errorf("cannot restore an exec'd process")
+	}
 	if err := s.p.start(ctx); err != nil {
 		return err
 	}
@@ -99,7 +103,7 @@ func (s *execRunningState) Resize(ws console.WinSize) error {
 	return s.p.resize(ws)
 }
 
-func (s *execRunningState) Start(context.Context) error {
+func (s *execRunningState) Start(context.Context, *extension.RestoreConfig) error {
 	return fmt.Errorf("cannot start a running process")
 }
 
@@ -137,7 +141,7 @@ func (s *execStoppedState) Resize(console.WinSize) error {
 	return fmt.Errorf("cannot resize a stopped container")
 }
 
-func (s *execStoppedState) Start(context.Context) error {
+func (s *execStoppedState) Start(context.Context, *extension.RestoreConfig) error {
 	return fmt.Errorf("cannot start a stopped process")
 }
 

@@ -42,6 +42,7 @@ const (
 	NV01_EVENT_OS_EVENT              = 0x00000079
 	NV01_DEVICE_0                    = 0x00000080
 	NV_MEMORY_FABRIC                 = 0x000000f8
+	NV_MEMORY_MULTICAST_FABRIC       = 0x000000fd
 	NV20_SUBDEVICE_0                 = 0x00002080
 	NV2081_BINAPI                    = 0x00002081
 	NV50_P2P                         = 0x0000503b
@@ -331,6 +332,45 @@ type NV00F8_ALLOCATION_PARAMETERS struct {
 	AllocFlags uint32
 	_          uint32
 	Map        nv00f8Map
+}
+
+// From src/common/sdk/nvidia/inc/class/cl00e0.h
+const (
+	NV_MEM_EXPORT_UUID_LEN = 16
+)
+
+// NV_EXPORT_MEM_PACKET is from
+// src/common/sdk/nvidia/inc/class/cl00e0.h
+//
+// +marshal
+type NV_EXPORT_MEM_PACKET struct {
+	UUID   [NV_MEM_EXPORT_UUID_LEN]uint8
+	Opaque [16]uint8
+}
+
+// NV00FD_ALLOCATION_PARAMETERS is the alloc param type for NV_MEMORY_MULTICAST_FABRIC
+// from src/common/sdk/nvidia/inc/class/cl00fd.h
+//
+// +marshal
+type NV00FD_ALLOCATION_PARAMETERS struct {
+	Alignment  uint64
+	AllocSize  uint64
+	PageSize   uint32
+	AllocFlags uint32
+	NumGPUs    uint32
+	_          uint32
+	POsEvent   P64
+}
+
+// NV00FD_ALLOCATION_PARAMETERS_V545 is the updated version of
+// NV00FD_ALLOCATION_PARAMETERS since 545.23.06.
+//
+// +marshal
+type NV00FD_ALLOCATION_PARAMETERS_V545 struct {
+	ExpPacket NV_EXPORT_MEM_PACKET
+	Index     uint16
+	_         [6]byte
+	NV00FD_ALLOCATION_PARAMETERS
 }
 
 // NV_CONFIDENTIAL_COMPUTE_ALLOC_PARAMS is the alloc param type for

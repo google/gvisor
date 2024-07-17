@@ -234,7 +234,9 @@ func updateGlobalOnce(fd int) error {
 	// explicitly set OSXSAVE, since this does not come in the feature
 	// entries, but can be provided when the relevant CR4 bit is set.
 	s := &cpuidSupported
-	cpuid.X86FeatureOSXSAVE.Set(s)
+	if cpuid.HostFeatureSet().UseXsave() {
+		cpuid.X86FeatureOSXSAVE.Set(s)
+	}
 	// Explicitly disable nested virtualization. Since we don't provide
 	// any virtualization APIs, there is no need to enable this feature.
 	cpuid.X86FeatureVMX.Unset(s)

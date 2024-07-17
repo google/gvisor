@@ -156,7 +156,7 @@ func (t *Task) CgroupPrepareMigrate(dst Cgroup) (*CgroupMigrationContext, error)
 	defer t.mu.Unlock()
 	src, found := t.findCgroupWithMatchingHierarchyLocked(dst)
 	if !found {
-		log.Warningf("Cannot migrate to cgroup %v since task %v not currently in target hierarchy %v", dst, t, dst.HierarchyID())
+		log.Warningf("Cannot migrate to cgroup %v since task not currently in target hierarchy %v", dst, dst.HierarchyID())
 		return nil, linuxerr.EINVAL
 	}
 	if err := dst.PrepareMigrate(t, &src); err != nil {

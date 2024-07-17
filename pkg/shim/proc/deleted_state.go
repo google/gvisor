@@ -21,8 +21,8 @@ import (
 
 	"github.com/containerd/console"
 	"github.com/containerd/containerd/errdefs"
-	"github.com/containerd/containerd/pkg/process"
 	runc "github.com/containerd/go-runc"
+	"gvisor.dev/gvisor/pkg/shim/extension"
 )
 
 type deletedState struct{}
@@ -31,7 +31,7 @@ func (*deletedState) Resize(console.WinSize) error {
 	return fmt.Errorf("cannot resize a deleted container/process")
 }
 
-func (*deletedState) Start(context.Context) error {
+func (*deletedState) Start(context.Context, *extension.RestoreConfig) error {
 	return fmt.Errorf("cannot start a deleted container/process")
 }
 
@@ -45,7 +45,7 @@ func (*deletedState) Kill(_ context.Context, signal uint32, _ bool) error {
 
 func (*deletedState) SetExited(int) {}
 
-func (*deletedState) Exec(context.Context, string, *ExecConfig) (process.Process, error) {
+func (*deletedState) Exec(context.Context, string, *ExecConfig) (extension.Process, error) {
 	return nil, fmt.Errorf("cannot exec in a deleted state")
 }
 

@@ -47,6 +47,23 @@ func rmControlInvoke[Params any](fi *frontendIoctlState, ioctlParams *nvgpu.NVOS
 	return n, nil
 }
 
+func ctrlMemoryMulticastFabricAttachGPUInvoke(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54Parameters, ctrlParams *nvgpu.NV00FD_CTRL_ATTACH_GPU_PARAMS) (uintptr, error) {
+	origDevDescriptor := ctrlParams.DevDescriptor
+	devDescriptor, _ := fi.t.FDTable().Get(int32(origDevDescriptor))
+	if devDescriptor == nil {
+		return 0, linuxerr.EINVAL
+	}
+	defer devDescriptor.DecRef(fi.ctx)
+	devDesc, ok := devDescriptor.Impl().(*frontendFD)
+	if !ok {
+		return 0, linuxerr.EINVAL
+	}
+	ctrlParams.DevDescriptor = uint64(devDesc.hostFD)
+	n, err := rmControlInvoke(fi, ioctlParams, ctrlParams)
+	ctrlParams.DevDescriptor = origDevDescriptor
+	return n, err
+}
+
 func ctrlClientSystemGetBuildVersionInvoke(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54Parameters, ctrlParams *nvgpu.NV0000_CTRL_SYSTEM_GET_BUILD_VERSION_PARAMS, driverVersionBuf, versionBuf, titleBuf *byte) (uintptr, error) {
 	// *Buf arguments don't need runtime.KeepAlive() since our caller
 	// ctrlClientSystemGetBuildVersion() copies them out, keeping them alive

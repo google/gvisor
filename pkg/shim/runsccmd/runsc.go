@@ -194,7 +194,10 @@ func (r *Runsc) Resume(context context.Context, id string) error {
 
 // Start will start an already created container.
 func (r *Runsc) Start(context context.Context, id string, cio runc.IO) error {
-	cmd := r.command(context, "start", id)
+	return r.start(context, cio, r.command(context, "start", id))
+}
+
+func (r *Runsc) start(context context.Context, cio runc.IO, cmd *exec.Cmd) error {
 	if cio != nil {
 		cio.Set(cmd)
 	}
@@ -224,6 +227,36 @@ func (r *Runsc) Start(context context.Context, id string, cio runc.IO) error {
 	}
 
 	return err
+}
+
+// RestoreOpts is a set of options to runsc.Restore().
+type RestoreOpts struct {
+	ImagePath string
+	Detach    bool
+	Direct    bool
+}
+
+func (o *RestoreOpts) args() []string {
+	var out []string
+	if o.ImagePath != "" {
+		out = append(out, fmt.Sprintf("--image-path=%s", o.ImagePath))
+	}
+	if o.Detach {
+		out = append(out, "--detach")
+	}
+	if o.Direct {
+		out = append(out, "--direct")
+	}
+	return out
+}
+
+// Restore will restore an already created container.
+func (r *Runsc) Restore(context context.Context, id string, cio runc.IO, opts *RestoreOpts) error {
+	args := []string{"restore"}
+	if opts != nil {
+		args = append(args, opts.args()...)
+	}
+	return r.start(context, cio, r.command(context, append(args, id)...))
 }
 
 type waitResult struct {
