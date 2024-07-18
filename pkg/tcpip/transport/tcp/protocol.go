@@ -513,8 +513,20 @@ func (*protocol) Parse(pkt *stack.PacketBuffer) bool {
 	return parse.TCP(pkt)
 }
 
-// NewProtocol returns a TCP transport protocol.
+// NewProtocol returns a TCP transport protocol with Reno congestion control.
 func NewProtocol(s *stack.Stack) stack.TransportProtocol {
+	return newProtocol(s, ccReno)
+}
+
+// NewProtocolCUBIC returns a TCP transport protocol with CUBIC congestion
+// control.
+//
+// TODO(b/345835636): Remove this and make CUBIC the default across the board.
+func NewProtocolCUBIC(s *stack.Stack) stack.TransportProtocol {
+	return newProtocol(s, ccCubic)
+}
+
+func newProtocol(s *stack.Stack, cc string) stack.TransportProtocol {
 	rng := s.SecureRNG()
 	var seqnumSecret [16]byte
 	var tsOffsetSecret [16]byte
@@ -537,7 +549,7 @@ func NewProtocol(s *stack.Stack) stack.TransportProtocol {
 			Max:     MaxBufferSize,
 		},
 		sackEnabled:                true,
-		congestionControl:          ccReno,
+		congestionControl:          cc,
 		availableCongestionControl: []string{ccReno, ccCubic},
 		moderateReceiveBuffer:      true,
 		lingerTimeout:              DefaultTCPLingerTimeout,
