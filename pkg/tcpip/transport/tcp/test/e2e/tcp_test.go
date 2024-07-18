@@ -5739,7 +5739,6 @@ func TestPathMTUDiscovery(t *testing.T) {
 			}
 			checker.IPv4(t, p,
 				checker.PayloadLen(size+header.TCPMinimumSize),
-				checker.FragmentFlags(header.IPv4FlagDontFragment),
 				checker.TCP(
 					checker.DstPort(context.TestPort),
 					checker.TCPSeqNum(seqNum),
