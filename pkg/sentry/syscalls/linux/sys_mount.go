@@ -116,9 +116,12 @@ func Mount(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, 
 	}
 
 	// Only copy in source, fstype, and data if we are doing a normal mount.
-	source, err := t.CopyInString(sourceAddr, hostarch.PageSize)
-	if err != nil {
-		return 0, nil, err
+	var source string
+	if sourceAddr != 0 {
+		source, err = t.CopyInString(sourceAddr, hostarch.PageSize)
+		if err != nil {
+			return 0, nil, err
+		}
 	}
 	fsType, err := t.CopyInString(typeAddr, hostarch.PageSize)
 	if err != nil {

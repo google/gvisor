@@ -2328,6 +2328,28 @@ TEST(MountTest, DetachedMountBindFails) {
               SyscallFailsWithErrno(EINVAL));
 }
 
+TEST(MountTest, MountProc) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  // Mount procfs with a NULL source to a temporary directory.
+  const TempPath dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  ASSERT_THAT(mount(NULL, dir.path().c_str(), "proc", 0, NULL),
+              SyscallSucceeds());
+  auto cleanup = Cleanup([&dir] {
+    EXPECT_THAT(umount2(dir.path().c_str(), 0), SyscallSucceeds());
+  });
+
+  // Verify that /proc/self/mountinfo describes the device as "none".
+  const std::vector<ProcMountInfoEntry> mountinfo =
+      ASSERT_NO_ERRNO_AND_VALUE(ProcSelfMountInfoEntries());
+  for (auto const& e : mountinfo) {
+    if (e.mount_point == dir.path()) {
+      EXPECT_EQ(e.fstype, "proc");
+      EXPECT_EQ(e.mount_source, "none");
+    }
+  }
+}
+
 }  // namespace
 
 }  // namespace testing
