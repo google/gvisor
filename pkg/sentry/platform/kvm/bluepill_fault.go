@@ -28,7 +28,7 @@ const (
 	// all available KVM slots (~512), but small enough that KVM does not
 	// complain about slot sizes (~4GB). See handleBluepillFault for how
 	// this block is used.
-	faultBlockSize = 2 << 30
+	faultBlockSize = 8 << 30
 
 	// faultBlockMask is the mask for the fault blocks.
 	//
