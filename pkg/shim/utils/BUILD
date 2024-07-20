@@ -15,6 +15,7 @@ go_library(
     visibility = [
         "//pkg/shim:__subpackages__",
         "//shim:__subpackages__",
+        "//visibility:public",
     ],
     deps = [
         "//runsc/specutils",
