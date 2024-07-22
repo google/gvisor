@@ -573,7 +573,23 @@ func ctrlMemoryMulticastFabricAttachGPU(fi *frontendIoctlState, ioctlParams *nvg
 		return 0, err
 	}
 
-	return ctrlMemoryMulticastFabricAttachGPUInvoke(fi, ioctlParams, &ctrlParams)
+	origDevDescriptor := ctrlParams.DevDescriptor
+	devDescriptor, _ := fi.t.FDTable().Get(int32(origDevDescriptor))
+	if devDescriptor == nil {
+		return 0, linuxerr.EINVAL
+	}
+	defer devDescriptor.DecRef(fi.ctx)
+	devDesc, ok := devDescriptor.Impl().(*frontendFD)
+	if !ok {
+		return 0, linuxerr.EINVAL
+	}
+
+	ctrlParams.DevDescriptor = uint64(devDesc.hostFD)
+	n, err := rmControlInvoke(fi, ioctlParams, &ctrlParams)
+	ctrlParams.DevDescriptor = origDevDescriptor
+	// Note that ctrlParams.CopyOut() is not called here because
+	// NV00FD_CTRL_ATTACH_GPU_PARAMS is an input-only parameter.
+	return n, err
 }
 
 func ctrlClientSystemGetBuildVersion(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54Parameters) (uintptr, error) {

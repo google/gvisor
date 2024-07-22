@@ -41,6 +41,7 @@ const (
 	NV01_MEMORY_SYSTEM_OS_DESCRIPTOR = 0x00000071
 	NV01_EVENT_OS_EVENT              = 0x00000079
 	NV01_DEVICE_0                    = 0x00000080
+	RM_USER_SHARED_DATA              = 0x000000de
 	NV_MEMORY_FABRIC                 = 0x000000f8
 	NV_MEMORY_MULTICAST_FABRIC       = 0x000000fd
 	NV20_SUBDEVICE_0                 = 0x00002080
@@ -312,6 +313,22 @@ type NV_GR_ALLOCATION_PARAMETERS struct {
 type NV_HOPPER_USERMODE_A_PARAMS struct {
 	Bar1Mapping uint8
 	Priv        uint8
+}
+
+// NV00DE_ALLOC_PARAMETERS is the alloc param type for RM_USER_SHARED_DATA,
+// from src/common/sdk/nvidia/inc/class/cl00de.h.
+//
+// +marshal
+type NV00DE_ALLOC_PARAMETERS struct {
+	Reserved uint32
+}
+
+// NV00DE_ALLOC_PARAMETERS_V545 is the updated version of
+// NV00DE_ALLOC_PARAMETERS since 545.23.06.
+//
+// +marshal
+type NV00DE_ALLOC_PARAMETERS_V545 struct {
+	PolledDataMask uint64
 }
 
 // +marshal

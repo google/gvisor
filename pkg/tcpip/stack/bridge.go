@@ -36,7 +36,7 @@ func (p *bridgePort) ParseHeader(pkt *PacketBuffer) bool {
 // DeliverNetworkPacket implements stack.NetworkDispatcher.
 func (p *bridgePort) DeliverNetworkPacket(protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer) {
 	bridge := p.bridge
-	bridge.mu.Lock()
+	bridge.mu.RLock()
 
 	// Send the packet to all other ports.
 	for _, port := range bridge.ports {
@@ -52,7 +52,7 @@ func (p *bridgePort) DeliverNetworkPacket(protocol tcpip.NetworkProtocolNumber, 
 	}
 
 	d := bridge.dispatcher
-	bridge.mu.Unlock()
+	bridge.mu.RUnlock()
 	if d != nil {
 		// The dispatcher may acquire Stack.mu in DeliverNetworkPacket(), which is
 		// ordered above bridge.mu. So call DeliverNetworkPacket() without holding
