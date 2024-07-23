@@ -196,6 +196,56 @@ cc_crosstool(
 
 register_toolchains("//:cc_toolchain_k8", "//:cc_toolchain_aarch64")
 
+# Load LLVM dependencies.
+LLVM_COMMIT = "926f85db98aae66ab8f57b9981f47ddddb868c51"
+LLVM_SHA256 = "c78c94b2a03b2cf6ef1ba035c31a6f1b0bb7913da8af5aa8d5c2061f6499d589"
+
+http_archive(
+    name = "llvm-raw",
+    build_file_content = "# empty",
+    sha256 = LLVM_SHA256,
+    strip_prefix = "llvm-project-" + LLVM_COMMIT,
+    urls = ["https://github.com/llvm/llvm-project/archive/{commit}.tar.gz".format(commit = LLVM_COMMIT)],
+)
+
+load("@llvm-raw//utils/bazel:configure.bzl", "llvm_configure")
+
+llvm_configure(name = "llvm-project")
+
+load("@bazel_tools//tools/build_defs/repo:utils.bzl", "maybe")
+
+maybe(
+    http_archive,
+    name = "llvm_zlib",
+    build_file = "@llvm-raw//utils/bazel/third_party_build:zlib-ng.BUILD",
+    sha256 = "e36bb346c00472a1f9ff2a0a4643e590a254be6379da7cddd9daeb9a7f296731",
+    strip_prefix = "zlib-ng-2.0.7",
+    urls = [
+        "https://github.com/zlib-ng/zlib-ng/archive/refs/tags/2.0.7.zip",
+    ],
+)
+
+maybe(
+    http_archive,
+    name = "llvm_zstd",
+    build_file = "@llvm-raw//utils/bazel/third_party_build:zstd.BUILD",
+    sha256 = "7c42d56fac126929a6a85dbc73ff1db2411d04f104fae9bdea51305663a83fd0",
+    strip_prefix = "zstd-1.5.2",
+    urls = [
+        "https://github.com/facebook/zstd/releases/download/v1.5.2/zstd-1.5.2.tar.gz",
+    ],
+)
+
+# Load other C++ dependencies.
+http_archive(
+  name = "nlohmann_json",
+  sha256 = "ba6e7817353793d13e5214ed819ea5b0defc0ffb2a348f4e34b10ac6f1c50154",
+  strip_prefix = "json-960b763ecd144f156d05ec61f577b04107290137",
+  urls = [
+    "https://github.com/nlohmann/json/archive/960b763ecd144f156d05ec61f577b04107290137.tar.gz"
+  ]
+)
+
 http_archive(
     name = "com_google_protobuf",
     sha256 = "c968404387c9cccd18676c6e1d83a1dcc39d162a7f468dace4b243c274de1f02",
