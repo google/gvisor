@@ -97,6 +97,9 @@ type Stack interface {
 	// Restore restarts the network stack after restore.
 	Restore()
 
+	// RestoreClock restores the clock in network stack with the kernel's clock.
+	RestoreClock(clock tcpip.Clock)
+
 	// Destroy the network stack.
 	Destroy()
 

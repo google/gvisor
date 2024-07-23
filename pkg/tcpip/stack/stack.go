@@ -1977,6 +1977,10 @@ func (s *Stack) Restore() {
 	}
 }
 
+func (s *Stack) RestoreClock(clock tcpip.Clock) {
+	s.clock = clock
+}
+
 // Resume resumes the stack after a save.
 func (s *Stack) Resume() {
 	s.mu.Lock()

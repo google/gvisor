@@ -170,6 +170,9 @@ func (s *TestStack) Pause() {}
 // Restore implements Stack.
 func (s *TestStack) Restore() {}
 
+// RestoreClock implements Stack.
+func (s *TestStack) RestoreClock(_ tcpip.Clock) {}
+
 // Resume implements Stack.
 func (s *TestStack) Resume() {}
 
