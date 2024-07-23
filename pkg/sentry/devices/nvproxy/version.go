@@ -234,6 +234,7 @@ func Init() {
 					nvgpu.NV2080_CTRL_CMD_BUS_GET_PCIE_SUPPORTED_GPU_ATOMICS:               rmControlSimple,
 					nvgpu.NV2080_CTRL_CMD_BUS_GET_C2C_INFO:                                 rmControlSimple,
 					nvgpu.NV2080_CTRL_CMD_CE_GET_ALL_CAPS:                                  rmControlSimple,
+					nvgpu.NV2080_CTRL_CMD_EVENT_SET_NOTIFICATION:                           rmControlSimple,
 					nvgpu.NV2080_CTRL_CMD_FB_GET_INFO_V2:                                   rmControlSimple,
 					nvgpu.NV2080_CTRL_CMD_GPU_GET_INFO_V2:                                  rmControlSimple,
 					nvgpu.NV2080_CTRL_CMD_FLCN_GET_CTX_BUFFER_SIZE:                         rmControlSimple,
@@ -242,9 +243,14 @@ func Init() {
 					nvgpu.NV2080_CTRL_CMD_GPU_GET_SIMULATION_INFO:                          rmControlSimple,
 					nvgpu.NV2080_CTRL_CMD_GPU_QUERY_ECC_STATUS:                             rmControlSimple,
 					nvgpu.NV2080_CTRL_CMD_GPU_QUERY_COMPUTE_MODE_RULES:                     rmControlSimple,
+					nvgpu.NV2080_CTRL_CMD_GPU_QUERY_ECC_CONFIGURATION:                      rmControlSimple,
+					nvgpu.NV2080_CTRL_CMD_GPU_GET_OEM_BOARD_INFO:                           rmControlSimple,
 					nvgpu.NV2080_CTRL_CMD_GPU_ACQUIRE_COMPUTE_MODE_RESERVATION:             rmControlSimple,
 					nvgpu.NV2080_CTRL_CMD_GPU_RELEASE_COMPUTE_MODE_RESERVATION:             rmControlSimple,
 					nvgpu.NV2080_CTRL_CMD_GPU_GET_GID_INFO:                                 rmControlSimple,
+					nvgpu.NV2080_CTRL_CMD_GPU_GET_INFOROM_OBJECT_VERSION:                   rmControlSimple,
+					nvgpu.NV2080_CTRL_CMD_GPU_GET_INFOROM_IMAGE_VERSION:                    rmControlSimple,
+					nvgpu.NV2080_CTRL_CMD_GPU_QUERY_INFOROM_ECC_SUPPORT:                    rmControlSimple,
 					nvgpu.NV2080_CTRL_CMD_GPU_GET_ENGINES_V2:                               rmControlSimple,
 					nvgpu.NV2080_CTRL_CMD_GPU_GET_ACTIVE_PARTITION_IDS:                     rmControlSimple,
 					nvgpu.NV2080_CTRL_CMD_GPU_GET_PIDS:                                     rmControlSimple,
@@ -291,12 +297,13 @@ func Init() {
 					nvgpu.NV0000_CTRL_CMD_OS_UNIX_EXPORT_OBJECT_TO_FD:                      ctrlHasFrontendFD[nvgpu.NV0000_CTRL_OS_UNIX_EXPORT_OBJECT_TO_FD_PARAMS],
 					nvgpu.NV0000_CTRL_CMD_OS_UNIX_IMPORT_OBJECT_FROM_FD:                    ctrlHasFrontendFD[nvgpu.NV0000_CTRL_OS_UNIX_IMPORT_OBJECT_FROM_FD_PARAMS],
 					nvgpu.NV0000_CTRL_CMD_OS_UNIX_GET_EXPORT_OBJECT_INFO:                   ctrlHasFrontendFD[nvgpu.NV0000_CTRL_OS_UNIX_GET_EXPORT_OBJECT_INFO_PARAMS],
-					nvgpu.NV0041_CTRL_CMD_GET_SURFACE_INFO:                                 ctrlClientGetSurfaceInfo,
+					nvgpu.NV0041_CTRL_CMD_GET_SURFACE_INFO:                                 ctrlIoctlHasInfoList[nvgpu.NV0041_CTRL_GET_SURFACE_INFO_PARAMS],
 					nvgpu.NV0080_CTRL_CMD_FIFO_GET_CHANNELLIST:                             ctrlDevFIFOGetChannelList,
 					nvgpu.NV00FD_CTRL_CMD_ATTACH_GPU:                                       ctrlMemoryMulticastFabricAttachGPU,
 					nvgpu.NV0080_CTRL_CMD_GPU_GET_CLASSLIST:                                ctrlDevGpuGetClasslist,
 					nvgpu.NV2080_CTRL_CMD_FIFO_DISABLE_CHANNELS:                            ctrlSubdevFIFODisableChannels,
-					nvgpu.NV2080_CTRL_CMD_GR_GET_INFO:                                      ctrlSubdevGRGetInfo,
+					nvgpu.NV2080_CTRL_CMD_BIOS_GET_INFO:                                    ctrlIoctlHasInfoList[nvgpu.NV2080_CTRL_BIOS_GET_INFO_PARAMS],
+					nvgpu.NV2080_CTRL_CMD_GR_GET_INFO:                                      ctrlIoctlHasInfoList[nvgpu.NV2080_CTRL_GR_GET_INFO_PARAMS],
 					nvgpu.NV503C_CTRL_CMD_REGISTER_VA_SPACE:                                ctrlRegisterVASpace,
 				},
 				allocationClass: map[nvgpu.ClassID]allocationClassHandler{
@@ -308,6 +315,7 @@ func Init() {
 					nvgpu.NV01_EVENT_OS_EVENT:        rmAllocEventOSEvent,
 					nvgpu.NV2081_BINAPI:              rmAllocSimple[nvgpu.NV2081_ALLOC_PARAMETERS],
 					nvgpu.NV01_DEVICE_0:              rmAllocSimple[nvgpu.NV0080_ALLOC_PARAMETERS],
+					nvgpu.RM_USER_SHARED_DATA:        rmAllocSimple[nvgpu.NV00DE_ALLOC_PARAMETERS],
 					nvgpu.NV_MEMORY_FABRIC:           rmAllocSimple[nvgpu.NV00F8_ALLOCATION_PARAMETERS],
 					nvgpu.NV_MEMORY_MULTICAST_FABRIC: rmAllocSimple[nvgpu.NV00FD_ALLOCATION_PARAMETERS],
 					nvgpu.NV20_SUBDEVICE_0:           rmAllocSimple[nvgpu.NV2080_ALLOC_PARAMETERS],
@@ -356,6 +364,7 @@ func Init() {
 		v545_23_06 := func() *driverABI {
 			abi := v535_113_01()
 			abi.controlCmd[nvgpu.NV0000_CTRL_CMD_OS_UNIX_GET_EXPORT_OBJECT_INFO] = ctrlHasFrontendFD[nvgpu.NV0000_CTRL_OS_UNIX_GET_EXPORT_OBJECT_INFO_PARAMS_V545]
+			abi.allocationClass[nvgpu.RM_USER_SHARED_DATA] = rmAllocSimple[nvgpu.NV00DE_ALLOC_PARAMETERS_V545]
 			abi.allocationClass[nvgpu.NV_MEMORY_MULTICAST_FABRIC] = rmAllocSimple[nvgpu.NV00FD_ALLOCATION_PARAMETERS_V545]
 			abi.allocationClass[nvgpu.NV01_MEMORY_SYSTEM] = rmAllocSimple[nvgpu.NV_MEMORY_ALLOCATION_PARAMS_V545]
 			abi.allocationClass[nvgpu.NV01_MEMORY_LOCAL_USER] = rmAllocSimple[nvgpu.NV_MEMORY_ALLOCATION_PARAMS_V545]
@@ -370,6 +379,7 @@ func Init() {
 			abi.controlCmd[nvgpu.NV0000_CTRL_CMD_GPU_ASYNC_ATTACH_ID] = rmControlSimple
 			abi.controlCmd[nvgpu.NV0000_CTRL_CMD_GPU_WAIT_ATTACH_ID] = rmControlSimple
 			abi.controlCmd[nvgpu.NV0080_CTRL_CMD_PERF_CUDA_LIMIT_SET_CONTROL] = rmControlSimple // NV0080_CTRL_PERF_CUDA_LIMIT_CONTROL_PARAMS
+			abi.controlCmd[nvgpu.NV2080_CTRL_CMD_PERF_GET_CURRENT_PSTATE] = rmControlSimple
 			// NV2081_BINAPI forwards all control commands to the GSP in
 			// src/nvidia/src/kernel/rmapi/binary_api.c:binapiControl_IMPL().
 			abi.controlCmd[(nvgpu.NV2081_BINAPI<<16)|0x0108] = rmControlSimple

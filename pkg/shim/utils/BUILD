@@ -13,8 +13,7 @@ go_library(
         "volumes.go",
     ],
     visibility = [
-        "//pkg/shim:__subpackages__",
-        "//shim:__subpackages__",
+        "//visibility:public",
     ],
     deps = [
         "//runsc/specutils",

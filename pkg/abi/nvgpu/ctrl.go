@@ -29,10 +29,26 @@ const (
 
 // From src/common/sdk/nvidia/inc/ctrl/ctrlxxxx.h:
 
-// +marshal
+// NVXXXX_CTRL_XXX_INFO is typedef-ed as the following in the driver:
+// - NV2080_CTRL_GR_INFO
+// - NV2080_CTRL_BIOS_INFO
+// - NV0041_CTRL_SURFACE_INFO
+//
+// +marshal slice:CtrlXxxInfoSlice
 type NVXXXX_CTRL_XXX_INFO struct {
 	Index uint32
 	Data  uint32
+}
+
+// CtrlXxxInfoSize is sizeof(NVXXXX_CTRL_XXX_INFO).
+var CtrlXxxInfoSize = uint32((*NVXXXX_CTRL_XXX_INFO)(nil).SizeBytes())
+
+// HasCtrlInfoList is a type constraint for parameter structs containing a list
+// of NVXXXX_CTRL_XXX_INFO and are simple otherwise.
+type HasCtrlInfoList interface {
+	ListSize() uint32
+	SetCtrlInfoList(ptr P64)
+	CtrlInfoList() P64
 }
 
 // From src/common/sdk/nvidia/inc/ctrl/ctrl0000/ctrl0000client.h:
@@ -183,6 +199,21 @@ type NV0041_CTRL_GET_SURFACE_INFO_PARAMS struct {
 	SurfaceInfoList     P64
 }
 
+// ListSize implements HasCtrlInfoList.ListSize.
+func (p *NV0041_CTRL_GET_SURFACE_INFO_PARAMS) ListSize() uint32 {
+	return p.SurfaceInfoListSize
+}
+
+// SetCtrlInfoList implements HasCtrlInfoList.SetCtrlInfoList.
+func (p *NV0041_CTRL_GET_SURFACE_INFO_PARAMS) SetCtrlInfoList(ptr P64) {
+	p.SurfaceInfoList = ptr
+}
+
+// CtrlInfoList implements HasCtrlInfoList.CtrlInfoList.
+func (p *NV0041_CTRL_GET_SURFACE_INFO_PARAMS) CtrlInfoList() P64 {
+	return p.SurfaceInfoList
+}
+
 // From src/common/sdk/nvidia/inc/ctrl/ctrl0080/ctrl0080fb.h:
 const (
 	NV0080_CTRL_CMD_FB_GET_CAPS_V2 = 0x801307
@@ -251,6 +282,33 @@ type NV00FD_CTRL_ATTACH_GPU_PARAMS struct {
 	DevDescriptor uint64
 }
 
+// From src/common/sdk/nvidia/inc/ctrl/ctrl2080/ctrl2080bios.h:
+const (
+	NV2080_CTRL_CMD_BIOS_GET_INFO = 0x20800802
+)
+
+// +marshal
+type NV2080_CTRL_BIOS_GET_INFO_PARAMS struct {
+	BiosInfoListSize uint32
+	Pad              [4]byte
+	BiosInfoList     P64
+}
+
+// ListSize implements HasCtrlInfoList.ListSize.
+func (p *NV2080_CTRL_BIOS_GET_INFO_PARAMS) ListSize() uint32 {
+	return p.BiosInfoListSize
+}
+
+// SetCtrlInfoList implements HasCtrlInfoList.SetCtrlInfoList.
+func (p *NV2080_CTRL_BIOS_GET_INFO_PARAMS) SetCtrlInfoList(ptr P64) {
+	p.BiosInfoList = ptr
+}
+
+// CtrlInfoList implements HasCtrlInfoList.CtrlInfoList.
+func (p *NV2080_CTRL_BIOS_GET_INFO_PARAMS) CtrlInfoList() P64 {
+	return p.BiosInfoList
+}
+
 // From src/common/sdk/nvidia/inc/ctrl/ctrl2080/ctrl2080bus.h:
 const (
 	NV2080_CTRL_CMD_BUS_GET_PCI_INFO                   = 0x20801801
@@ -263,6 +321,11 @@ const (
 // From src/common/sdk/nvidia/inc/ctrl/ctrl2080/ctrl2080ce.h:
 const (
 	NV2080_CTRL_CMD_CE_GET_ALL_CAPS = 0x20802a0a
+)
+
+// From src/common/sdk/nvidia/inc/ctrl/ctrl2080/ctrl2080event.h:
+const (
+	NV2080_CTRL_CMD_EVENT_SET_NOTIFICATION = 0x20800301
 )
 
 // From src/common/sdk/nvidia/inc/ctrl/ctrl2080/ctrl2080fb.h:
@@ -303,9 +366,14 @@ const (
 	NV2080_CTRL_CMD_GPU_GET_SIMULATION_INFO              = 0x20800119
 	NV2080_CTRL_CMD_GPU_QUERY_ECC_STATUS                 = 0x2080012f
 	NV2080_CTRL_CMD_GPU_QUERY_COMPUTE_MODE_RULES         = 0x20800131
+	NV2080_CTRL_CMD_GPU_QUERY_ECC_CONFIGURATION          = 0x20800133
+	NV2080_CTRL_CMD_GPU_GET_OEM_BOARD_INFO               = 0x2080013f
 	NV2080_CTRL_CMD_GPU_ACQUIRE_COMPUTE_MODE_RESERVATION = 0x20800145 // undocumented; paramSize == 0
 	NV2080_CTRL_CMD_GPU_RELEASE_COMPUTE_MODE_RESERVATION = 0x20800146 // undocumented; paramSize == 0
 	NV2080_CTRL_CMD_GPU_GET_GID_INFO                     = 0x2080014a
+	NV2080_CTRL_CMD_GPU_GET_INFOROM_OBJECT_VERSION       = 0x2080014b
+	NV2080_CTRL_CMD_GPU_GET_INFOROM_IMAGE_VERSION        = 0x20800156
+	NV2080_CTRL_CMD_GPU_QUERY_INFOROM_ECC_SUPPORT        = 0x20800157
 	NV2080_CTRL_CMD_GPU_GET_ENGINES_V2                   = 0x20800170
 	NV2080_CTRL_CMD_GPU_GET_ACTIVE_PARTITION_IDS         = 0x2080018b
 	NV2080_CTRL_CMD_GPU_GET_PIDS                         = 0x2080018d
@@ -344,6 +412,21 @@ type NV2080_CTRL_GR_GET_INFO_PARAMS struct {
 	GRRouteInfo    NV0080_CTRL_GR_ROUTE_INFO
 }
 
+// ListSize implements HasCtrlInfoList.ListSize.
+func (p *NV2080_CTRL_GR_GET_INFO_PARAMS) ListSize() uint32 {
+	return p.GRInfoListSize
+}
+
+// SetCtrlInfoList implements HasCtrlInfoList.SetCtrlInfoList.
+func (p *NV2080_CTRL_GR_GET_INFO_PARAMS) SetCtrlInfoList(ptr P64) {
+	p.GRInfoList = ptr
+}
+
+// CtrlInfoList implements HasCtrlInfoList.CtrlInfoList.
+func (p *NV2080_CTRL_GR_GET_INFO_PARAMS) CtrlInfoList() P64 {
+	return p.GRInfoList
+}
+
 // From src/common/sdk/nvidia/inc/ctrl/ctrl2080/ctrl2080mc.h:
 const (
 	NV2080_CTRL_CMD_MC_GET_ARCH_INFO      = 0x20801701
@@ -371,6 +454,7 @@ const (
 // From src/common/sdk/nvidia/inc/ctrl/ctrl2080/ctrl2080tmr.h:
 const (
 	NV2080_CTRL_CMD_TIMER_GET_GPU_CPU_TIME_CORRELATION_INFO = 0x20800406
+	NV2080_CTRL_CMD_PERF_GET_CURRENT_PSTATE                 = 0x20802068
 )
 
 // From src/common/sdk/nvidia/inc/ctrl/ctrl503c.h:

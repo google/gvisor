@@ -47,23 +47,6 @@ func rmControlInvoke[Params any](fi *frontendIoctlState, ioctlParams *nvgpu.NVOS
 	return n, nil
 }
 
-func ctrlMemoryMulticastFabricAttachGPUInvoke(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54Parameters, ctrlParams *nvgpu.NV00FD_CTRL_ATTACH_GPU_PARAMS) (uintptr, error) {
-	origDevDescriptor := ctrlParams.DevDescriptor
-	devDescriptor, _ := fi.t.FDTable().Get(int32(origDevDescriptor))
-	if devDescriptor == nil {
-		return 0, linuxerr.EINVAL
-	}
-	defer devDescriptor.DecRef(fi.ctx)
-	devDesc, ok := devDescriptor.Impl().(*frontendFD)
-	if !ok {
-		return 0, linuxerr.EINVAL
-	}
-	ctrlParams.DevDescriptor = uint64(devDesc.hostFD)
-	n, err := rmControlInvoke(fi, ioctlParams, ctrlParams)
-	ctrlParams.DevDescriptor = origDevDescriptor
-	return n, err
-}
-
 func ctrlClientSystemGetBuildVersionInvoke(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54Parameters, ctrlParams *nvgpu.NV0000_CTRL_SYSTEM_GET_BUILD_VERSION_PARAMS, driverVersionBuf, versionBuf, titleBuf *byte) (uintptr, error) {
 	// *Buf arguments don't need runtime.KeepAlive() since our caller
 	// ctrlClientSystemGetBuildVersion() copies them out, keeping them alive
@@ -87,34 +70,40 @@ func ctrlClientSystemGetBuildVersionInvoke(fi *frontendIoctlState, ioctlParams *
 	return n, nil
 }
 
-func ctrlClientGetSurfaceInfo(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54Parameters) (uintptr, error) {
-	var ctrlParams nvgpu.NV0041_CTRL_GET_SURFACE_INFO_PARAMS
+func ctrlIoctlHasInfoList[Params any, PtrParams hasCtrlInfoListPtr[Params]](fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54Parameters) (uintptr, error) {
+	var ctrlParamsValue Params
+	ctrlParams := PtrParams(&ctrlParamsValue)
+
 	if ctrlParams.SizeBytes() != int(ioctlParams.ParamsSize) {
 		return 0, linuxerr.EINVAL
 	}
 	if _, err := ctrlParams.CopyIn(fi.t, addrFromP64(ioctlParams.Params)); err != nil {
 		return 0, err
 	}
-	if ctrlParams.SurfaceInfoListSize == 0 {
-		// Compare
-		// src/nvidia/src/kernel/gpu/mem_mgr/mem_ctrl.c:memCtrlCmdGetSurfaceInfoLvm_IMPL().
-		return 0, nil
-	}
-	surfaceInfoList := make([]byte, int(ctrlParams.SurfaceInfoListSize)*(*nvgpu.NVXXXX_CTRL_XXX_INFO)(nil).SizeBytes())
-	if _, err := fi.t.CopyInBytes(addrFromP64(ctrlParams.SurfaceInfoList), surfaceInfoList); err != nil {
-		return 0, err
+	var infoList []byte
+	if listSize := ctrlParams.ListSize(); listSize > 0 {
+		infoList = make([]byte, listSize*nvgpu.CtrlXxxInfoSize)
+		if _, err := fi.t.CopyInBytes(addrFromP64(ctrlParams.CtrlInfoList()), infoList); err != nil {
+			return 0, err
+		}
 	}
 
-	origSurfaceInfoList := ctrlParams.SurfaceInfoList
-	ctrlParams.SurfaceInfoList = p64FromPtr(unsafe.Pointer(&surfaceInfoList[0]))
-	n, err := rmControlInvoke(fi, ioctlParams, &ctrlParams)
-	ctrlParams.SurfaceInfoList = origSurfaceInfoList
+	origInfoList := ctrlParams.CtrlInfoList()
+	if infoList == nil {
+		ctrlParams.SetCtrlInfoList(p64FromPtr(unsafe.Pointer(nil)))
+	} else {
+		ctrlParams.SetCtrlInfoList(p64FromPtr(unsafe.Pointer(&infoList[0])))
+	}
+	n, err := rmControlInvoke(fi, ioctlParams, ctrlParams)
+	ctrlParams.SetCtrlInfoList(origInfoList)
 	if err != nil {
 		return n, err
 	}
 
-	if _, err := fi.t.CopyOutBytes(addrFromP64(origSurfaceInfoList), surfaceInfoList); err != nil {
-		return 0, err
+	if infoList != nil {
+		if _, err := fi.t.CopyOutBytes(addrFromP64(origInfoList), infoList); err != nil {
+			return n, err
+		}
 	}
 	if _, err := ctrlParams.CopyOut(fi.t, addrFromP64(ioctlParams.Params)); err != nil {
 		return n, err
@@ -178,42 +167,6 @@ func ctrlDevFIFOGetChannelList(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54
 	}
 	if _, err := primitive.CopyUint32SliceOut(fi.t, addrFromP64(origPChannelList), channelList); err != nil {
 		return 0, err
-	}
-	if _, err := ctrlParams.CopyOut(fi.t, addrFromP64(ioctlParams.Params)); err != nil {
-		return n, err
-	}
-
-	return n, nil
-}
-
-func ctrlSubdevGRGetInfo(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54Parameters) (uintptr, error) {
-	var ctrlParams nvgpu.NV2080_CTRL_GR_GET_INFO_PARAMS
-	if ctrlParams.SizeBytes() != int(ioctlParams.ParamsSize) {
-		return 0, linuxerr.EINVAL
-	}
-	if _, err := ctrlParams.CopyIn(fi.t, addrFromP64(ioctlParams.Params)); err != nil {
-		return 0, err
-	}
-	if ctrlParams.GRInfoListSize == 0 {
-		// Compare
-		// src/nvidia/src/kernel/gpu/gr/kernel_graphics.c:_kgraphicsCtrlCmdGrGetInfoV2().
-		return 0, linuxerr.EINVAL
-	}
-	infoList := make([]byte, int(ctrlParams.GRInfoListSize)*(*nvgpu.NVXXXX_CTRL_XXX_INFO)(nil).SizeBytes())
-	if _, err := fi.t.CopyInBytes(addrFromP64(ctrlParams.GRInfoList), infoList); err != nil {
-		return 0, err
-	}
-
-	origGRInfoList := ctrlParams.GRInfoList
-	ctrlParams.GRInfoList = p64FromPtr(unsafe.Pointer(&infoList[0]))
-	n, err := rmControlInvoke(fi, ioctlParams, &ctrlParams)
-	ctrlParams.GRInfoList = origGRInfoList
-	if err != nil {
-		return n, err
-	}
-
-	if _, err := fi.t.CopyOutBytes(addrFromP64(origGRInfoList), infoList); err != nil {
-		return n, err
 	}
 	if _, err := ctrlParams.CopyOut(fi.t, addrFromP64(ioctlParams.Params)); err != nil {
 		return n, err
