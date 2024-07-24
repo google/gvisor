@@ -24,32 +24,14 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+
 	"gvisor.dev/gvisor/pkg/test/testutil"
+	"gvisor.dev/gvisor/tools/nvidia_driver_differ/parser"
 )
-
-type InputJSON struct {
-	Structs []string `json:"structs"`
-}
-
-type OutputJSON struct {
-	Structs StructDefinitions `json:"structs"`
-}
-
-type StructDefinitions map[string]StructDefinition
-
-type StructDefinition struct {
-	Fields []StructField
-	Source string
-}
-
-type StructField struct {
-	Name string
-	Type string
-}
 
 // TestParser runs driver_ast_parser on test_struct.cc and compares the output to the expected json.
 func TestParser(t *testing.T) {
-	parser, err := testutil.FindFile("tools/nvidia_driver_differ/driver_ast_parser")
+	driverParser, err := testutil.FindFile("tools/nvidia_driver_differ/driver_ast_parser")
 	if err != nil {
 		t.Fatalf("failed to find driver_ast_parser: %v", err)
 	}
@@ -73,7 +55,7 @@ func TestParser(t *testing.T) {
 		}
 	}()
 
-	input := InputJSON{
+	input := parser.InputJSON{
 		Structs: []string{"TestStruct"},
 	}
 	if err := json.NewEncoder(structsFile).Encode(&input); err != nil {
@@ -81,7 +63,7 @@ func TestParser(t *testing.T) {
 	}
 	structsFile.Sync()
 
-	cmd := exec.Command(parser, "--structs", structsFile.Name(), testStructFile)
+	cmd := exec.Command(driverParser, "--structs", structsFile.Name(), testStructFile)
 	var stderr strings.Builder
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()
@@ -89,23 +71,23 @@ func TestParser(t *testing.T) {
 		t.Fatalf("failed to run driver_ast_parser: %v\n%s", err, stderr.String())
 	}
 
-	outputJSON := OutputJSON{}
+	outputJSON := parser.OutputJSON{}
 	if err := json.Unmarshal(out, &outputJSON); err != nil {
 		t.Fatalf("failed to unmarshal output %s: %v", string(out), err)
 	}
-	expectedOutput := OutputJSON{
-		Structs: StructDefinitions{
-			"TestStruct": StructDefinition{
-				Fields: []StructField{
-					StructField{
+	expectedOutput := parser.OutputJSON{
+		Structs: parser.StructDefs{
+			"TestStruct": parser.StructDef{
+				Fields: []parser.StructField{
+					parser.StructField{
 						Name: "a",
 						Type: "int",
 					},
-					StructField{
+					parser.StructField{
 						Name: "b",
 						Type: "int",
 					},
-					StructField{
+					parser.StructField{
 						Name: "c",
 						Type: "OtherInt",
 					},
@@ -115,7 +97,7 @@ func TestParser(t *testing.T) {
 		},
 	}
 
-	if diff := cmp.Diff(expectedOutput, outputJSON, cmpopts.IgnoreFields(StructDefinition{}, "Source")); diff != "" {
+	if diff := cmp.Diff(expectedOutput, outputJSON, cmpopts.IgnoreFields(parser.StructDef{}, "Source")); diff != "" {
 		t.Fatalf("output mismatch (-want +got):\n%s", diff)
 	}
 

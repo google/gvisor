@@ -1,4 +1,4 @@
-load("//tools:defs.bzl", "cc_binary", "go_test")
+load("//tools:defs.bzl", "cc_binary", "go_binary", "go_test")
 
 package(
     default_applicable_licenses = ["//:license"],
@@ -29,7 +29,14 @@ go_test(
     ],
     deps = [
         "//pkg/test/testutil",
+        "//tools/nvidia_driver_differ/parser",
         "@com_github_google_go_cmp//cmp:go_default_library",
         "@com_github_google_go_cmp//cmp/cmpopts:go_default_library",
     ],
+)
+
+go_binary(
+    name = "run_differ",
+    srcs = ["run_differ.go"],
+    static = True,
 )
