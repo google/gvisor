@@ -34,7 +34,7 @@ for driver in "${versions[@]}"; do
     echo "Installing driver ${driver} failed. Not testing this version." >&2
     continue
   fi
-  make gpu-smoke-tests RUNTIME_ARGS="--debug"
+  make gpu-smoke-tests
   num_successful="$(( $num_successful + 1 ))"
 done
 if [[ "$num_successful" == 0 ]]; then

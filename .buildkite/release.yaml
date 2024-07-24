@@ -50,14 +50,14 @@ steps:
   - <<: *common
     label: ":female_supervillain: COS GPU Tests"
     commands:
-      - make cos-gpu-all-tests RUNTIME_ARGS="--debug"
+      - make cos-gpu-all-tests
     agents:
       queue: cos-canary-gpu
   - <<: *common
     label: ":screwdriver: GPU Tests"
     commands:
       - make sudo TARGETS=//tools/gpu:main ARGS="install --latest" || cat /var/log/nvidia-installer.log
-      - make gpu-all-tests RUNTIME_ARGS="--debug"
+      - make gpu-all-tests
     agents:
       queue: gpu
   - <<: *common
