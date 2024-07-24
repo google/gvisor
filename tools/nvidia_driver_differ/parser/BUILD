@@ -10,6 +10,7 @@ go_library(
     srcs = [
         "clang_config.go",
         "json_definitions.go",
+        "sources.go",
     ],
     visibility = ["//tools/nvidia_driver_differ:__subpackages__"],
     deps = ["@com_github_google_go_cmp//cmp:go_default_library"],
