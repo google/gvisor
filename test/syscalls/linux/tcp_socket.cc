@@ -1329,7 +1329,9 @@ TEST_P(SimpleTcpSocketTest, ListenConnectParallel) {
           // Wait for the connect to fail or succeed as it can race with the
           // socket listening.
           struct pollfd poll_fd = {c.get(), POLLERR | POLLOUT, 0};
-          EXPECT_THAT(RetryEINTR(poll)(&poll_fd, 1, 1000),
+          const int timeout =
+              GvisorPlatform() == Platform::kFuchsia ? -1 : 1000;
+          EXPECT_THAT(RetryEINTR(poll)(&poll_fd, 1, timeout),
                       SyscallSucceedsWithValue(1));
         }));
   }
