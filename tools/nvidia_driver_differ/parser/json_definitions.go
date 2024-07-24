@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package parser contains functions for parsing the output of driver_ast_parser.
+// Package parser contains functions for interfacing with driver_ast_parser.
 package parser
 
 import (
