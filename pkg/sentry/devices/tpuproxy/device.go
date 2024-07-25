@@ -15,8 +15,8 @@
 package tpuproxy
 
 import (
-	"fmt"
 	"path/filepath"
+	"strconv"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -32,6 +32,7 @@ import (
 const (
 	// VFIO_MINOR is the VFIO minor number from include/linux/miscdevice.h.
 	VFIO_MINOR = 196
+
 	// VFIOPath is the path to a VFIO device, it is usually used to
 	// construct a VFIO container.
 	VFIOPath = "/dev/vfio/vfio"
@@ -46,7 +47,10 @@ const (
 type tpuDevice struct {
 	mu sync.Mutex
 
+	// minor is the device minor number.
 	minor uint32
+	// num is the number of the device in the dev filesystem (e.g /dev/vfio/0).
+	num uint32
 }
 
 // Open implements vfs.Device.Open.
@@ -58,10 +62,10 @@ func (dev *tpuDevice) Open(ctx context.Context, mnt *vfs.Mount, d *vfs.Dentry, o
 	}
 	dev.mu.Lock()
 	defer dev.mu.Unlock()
-	devName := fmt.Sprintf("vfio/%d", dev.minor)
+	devName := filepath.Join("vfio", strconv.Itoa(int(dev.num)))
 	hostFD, err := devClient.OpenAt(ctx, devName, opts.Flags)
 	if err != nil {
-		ctx.Warningf("vfioDevice: failed to open host %s: %v", devName, err)
+		ctx.Warningf("tpuDevice: failed to open host %s: %v", devName, err)
 		return nil, err
 	}
 	fd := &tpuFD{
@@ -83,12 +87,7 @@ func (dev *tpuDevice) Open(ctx context.Context, mnt *vfs.Mount, d *vfs.Dentry, o
 }
 
 // device implements vfs.Device for /dev/vfio/vfio.
-type vfioDevice struct {
-	mu sync.Mutex
-
-	// +checklocks:mu
-	devAddrSet DevAddrSet
-}
+type vfioDevice struct{}
 
 // Open implements vfs.Device.Open.
 func (dev *vfioDevice) Open(ctx context.Context, mnt *vfs.Mount, d *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
@@ -98,9 +97,7 @@ func (dev *vfioDevice) Open(ctx context.Context, mnt *vfs.Mount, d *vfs.Dentry, 
 		return nil, linuxerr.ENOENT
 	}
 
-	dev.mu.Lock()
-	defer dev.mu.Unlock()
-	name := fmt.Sprintf("vfio/%s", filepath.Base(VFIOPath))
+	name := filepath.Join("vfio", filepath.Base(VFIOPath))
 	hostFD, err := client.OpenAt(ctx, name, opts.Flags)
 	if err != nil {
 		ctx.Warningf("failed to open host file %s: %v", name, err)
@@ -125,9 +122,10 @@ func (dev *vfioDevice) Open(ctx context.Context, mnt *vfs.Mount, d *vfs.Dentry, 
 }
 
 // RegisterTPUDevice registers devices implemented by this package in vfsObj.
-func RegisterTPUDevice(vfsObj *vfs.VirtualFilesystem, minor uint32) error {
+func RegisterTPUDevice(vfsObj *vfs.VirtualFilesystem, minor, deviceNum uint32) error {
 	return vfsObj.RegisterDevice(vfs.CharDevice, linux.VFIO_MAJOR, minor, &tpuDevice{
 		minor: minor,
+		num:   deviceNum,
 	}, &vfs.RegisterDeviceOptions{
 		GroupName: tpuDeviceGroupName,
 	})

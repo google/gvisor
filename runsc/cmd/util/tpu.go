@@ -20,7 +20,9 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"syscall"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/tpu"
 )
 
@@ -35,12 +37,12 @@ const (
 )
 
 var tpuV4DeviceIDs = map[uint64]any{tpu.TPUV4DeviceID: nil, tpu.TPUV4liteDeviceID: nil}
-var tpuV5DeviceIDs = map[uint64]any{tpu.TPUV5eDeviceID: nil}
+var tpuV5DeviceIDs = map[uint64]any{tpu.TPUV5eDeviceID: nil, tpu.TPUV5pDeviceID: nil}
 
-// ExtractTpuDeviceMinor returns the accelerator device minor number for that
+// ExtractTPUDeviceMinor returns the accelerator device minor number for that
 // the passed device path. If the passed device is not a valid TPU device, then
 // it returns false.
-func ExtractTpuDeviceMinor(path string) (uint32, bool, error) {
+func ExtractTPUDeviceMinor(path string) (uint32, bool, error) {
 	devNum, valid, err := tpuV4DeviceMinor(path)
 	if err != nil {
 		return 0, false, err
@@ -60,10 +62,11 @@ func tpuDeviceMinor(devicePath, devicePathRegex, sysfsFormat string, allowedDevi
 	if matches == nil {
 		return 0, false, nil
 	}
-	minor, err := strconv.ParseUint(matches[1], 10, 32)
-	if err != nil {
-		return 0, false, fmt.Errorf("invalid host device file %q: %w", devicePath, err)
+	var st syscall.Stat_t
+	if err := syscall.Stat(devicePath, &st); err != nil {
+		return 0, false, err
 	}
+	minor := unix.Minor(st.Rdev)
 	vendor, err := readHexInt(fmt.Sprintf(sysfsFormat, minor, vendorFile))
 	if err != nil {
 		return 0, false, err
@@ -78,7 +81,7 @@ func tpuDeviceMinor(devicePath, devicePathRegex, sysfsFormat string, allowedDevi
 	if _, ok := allowedDeviceIDs[deviceID]; !ok {
 		return 0, false, nil
 	}
-	return uint32(minor), true, nil
+	return minor, true, nil
 }
 
 // tpuv4DeviceMinor returns v4 and v4lite TPU device minor number for the given path.

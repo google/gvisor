@@ -148,6 +148,7 @@ func (dev *tpuDevice) StateFields() []string {
 	return []string{
 		"mu",
 		"minor",
+		"num",
 	}
 }
 
@@ -158,6 +159,7 @@ func (dev *tpuDevice) StateSave(stateSinkObject state.Sink) {
 	dev.beforeSave()
 	stateSinkObject.Save(0, &dev.mu)
 	stateSinkObject.Save(1, &dev.minor)
+	stateSinkObject.Save(2, &dev.num)
 }
 
 func (dev *tpuDevice) afterLoad(context.Context) {}
@@ -166,6 +168,7 @@ func (dev *tpuDevice) afterLoad(context.Context) {}
 func (dev *tpuDevice) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &dev.mu)
 	stateSourceObject.Load(1, &dev.minor)
+	stateSourceObject.Load(2, &dev.num)
 }
 
 func init() {

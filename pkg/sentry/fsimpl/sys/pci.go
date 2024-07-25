@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"path"
 	regex "regexp"
+	"strings"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -29,17 +30,19 @@ import (
 )
 
 const (
-	pciMainBusDevicePath = "/sys/devices/pci0000:00"
-	accelDevice          = "accel"
-	vfioDevice           = "vfio-dev"
+	accelDevice        = "accel"
+	vfioDevice         = "vfio-dev"
+	sysDevicesMainPath = "/sys/devices"
 )
 
 var (
-	// Matches PCI device addresses in the main domain.
-	pciDeviceRegex = regex.MustCompile(`0000:([a-fA-F0-9]{2}|[a-fA-F0-9]{4}):[a-fA-F0-9]{2}\.[a-fA-F0-9]{1,2}`)
+	// pciBusRegex matches PCI bus addresses.
+	pciBusRegex = regex.MustCompile(`pci0000:[[:xdigit:]]{2}`)
+	// Matches PCI device addresses.
+	pciDeviceRegex = regex.MustCompile(`0000:([[:xdigit:]]{2}|[[:xdigit:]]{4}):[[:xdigit:]]{2}\.[[:xdigit:]]{1,2}`)
 	// Matches the directories for the main bus (i.e. pci000:00),
 	// individual devices (e.g. 00:00:04.0), accel (TPU v4), and vfio (TPU v5)
-	sysDevicesDirRegex = regex.MustCompile(`pci0000:00|accel|vfio|(0000:([a-fA-F0-9]{2}|[a-fA-F0-9]{4}):[a-fA-F0-9]{2}\.[a-fA-F0-9]{1,2})`)
+	sysDevicesDirRegex = regex.MustCompile(`pci0000:[[:xdigit:]]{2}|accel|vfio|vfio-dev|(0000:([[:xdigit:]]{2}|[[:xdigit:]]{4}):[[:xdigit:]]{2}\.[[:xdigit:]]{1,2})`)
 	// Files allowlisted for host passthrough. These files are read-only.
 	sysDevicesFiles = map[string]any{
 		"vendor": nil, "device": nil, "subsystem_vendor": nil, "subsystem_device": nil,
@@ -49,27 +52,56 @@ var (
 		"is_device_owned": nil, "device_owner": nil, "framework_version": nil,
 		"user_mem_ranges": nil, "interrupt_counts": nil, "chip_model": nil,
 		"bar_offsets": nil, "bar_sizes": nil, "resource0": nil, "resource1": nil,
-		"resource2": nil, "resource3": nil, "resource4": nil, "resource5": nil,
+		"resource2": nil, "resource3": nil, "resource4": nil, "resource5": nil, "enable": nil,
 	}
 )
+
+// sysDevicesPCIPaths returns the paths of all PCI devices on the host in a
+// /sys/devices directory.
+func sysDevicesPCIPaths(sysDevicesPath string) ([]string, error) {
+	sysDevicesDents, err := hostDirEntries(sysDevicesPath)
+	if err != nil {
+		return nil, err
+	}
+	var pciPaths []string
+	for _, dent := range sysDevicesDents {
+		if pciBusRegex.MatchString(dent) {
+			pciDents, err := hostDirEntries(path.Join(sysDevicesPath, dent))
+			if err != nil {
+				return nil, err
+			}
+			for _, pciDent := range pciDents {
+				pciPaths = append(pciPaths, path.Join(sysDevicesPath, dent, pciDent))
+			}
+		}
+	}
+	return pciPaths, nil
+}
+
+// pciBusFromAddress returns the PCI bus address from a PCI address.
+//
+// Preconditions: pciAddr is a valid PCI address.
+func pciBusFromAddress(pciAddr string) string {
+	return strings.Join(strings.Split(pciAddr, ":")[:2], ":")
+}
 
 // Creates TPU devices' symlinks under /sys/class/. TPU device types that are
 // not present on host will be ignored.
 //
 // TPU v4 symlinks are created at /sys/class/accel/accel#.
 // TPU v5 symlinks go to /sys/class/vfio-dev/vfio#.
-func (fs *filesystem) newDeviceClassDir(ctx context.Context, creds *auth.Credentials, tpuDeviceTypes []string, pciMainBusDevicePath string) (map[string]map[string]kernfs.Inode, error) {
+func (fs *filesystem) newDeviceClassDir(ctx context.Context, creds *auth.Credentials, tpuDeviceTypes []string, sysDevicesPath string) (map[string]map[string]kernfs.Inode, error) {
 	dirs := map[string]map[string]kernfs.Inode{}
 	for _, tpuDeviceType := range tpuDeviceTypes {
 		dirs[tpuDeviceType] = map[string]kernfs.Inode{}
 	}
-	pciDents, err := hostDirEntries(pciMainBusDevicePath)
+	pciPaths, err := sysDevicesPCIPaths(sysDevicesPath)
 	if err != nil {
 		return nil, err
 	}
-	for _, pciDent := range pciDents {
+	for _, pciPath := range pciPaths {
 		for _, tpuDeviceType := range tpuDeviceTypes {
-			subPath := path.Join(pciMainBusDevicePath, pciDent, tpuDeviceType)
+			subPath := path.Join(pciPath, tpuDeviceType)
 			deviceDents, err := hostDirEntries(subPath)
 			if err != nil {
 				// Skips the path that doesn't exist.
@@ -81,7 +113,9 @@ func (fs *filesystem) newDeviceClassDir(ctx context.Context, creds *auth.Credent
 			if numOfDeviceDents := len(deviceDents); numOfDeviceDents != 1 {
 				return nil, fmt.Errorf("exactly one entry is expected at %v while there are %d", subPath, numOfDeviceDents)
 			}
-			dirs[tpuDeviceType][deviceDents[0]] = kernfs.NewStaticSymlink(ctx, creds, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), fmt.Sprintf("../../devices/pci0000:00/%s/%s/%s", pciDent, tpuDeviceType, deviceDents[0]))
+			pciAddr := path.Base(pciPath)
+			pciBus := pciBusFromAddress(pciAddr)
+			dirs[tpuDeviceType][deviceDents[0]] = kernfs.NewStaticSymlink(ctx, creds, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), fmt.Sprintf("../../devices/pci%s/%s/%s/%s", pciBus, pciAddr, tpuDeviceType, deviceDents[0]))
 		}
 	}
 	if len(dirs) == 0 {
@@ -91,14 +125,16 @@ func (fs *filesystem) newDeviceClassDir(ctx context.Context, creds *auth.Credent
 }
 
 // Create /sys/bus/pci/devices symlinks.
-func (fs *filesystem) newBusPCIDevicesDir(ctx context.Context, creds *auth.Credentials, pciMainBusDevicePath string) (map[string]kernfs.Inode, error) {
+func (fs *filesystem) newBusPCIDevicesDir(ctx context.Context, creds *auth.Credentials, sysDevicesPath string) (map[string]kernfs.Inode, error) {
 	pciDevicesDir := map[string]kernfs.Inode{}
-	pciDents, err := hostDirEntries(pciMainBusDevicePath)
+	pciPaths, err := sysDevicesPCIPaths(sysDevicesPath)
 	if err != nil {
 		return nil, err
 	}
-	for _, pciDent := range pciDents {
-		pciDevicesDir[pciDent] = kernfs.NewStaticSymlink(ctx, creds, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), fmt.Sprintf("../../../devices/pci0000:00/%s", pciDent))
+	for _, pciPath := range pciPaths {
+		pciAddr := path.Base(pciPath)
+		pciBus := pciBusFromAddress(pciAddr)
+		pciDevicesDir[pciAddr] = kernfs.NewStaticSymlink(ctx, creds, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), fmt.Sprintf("../../../devices/pci%s/%s", pciBus, pciAddr))
 	}
 
 	return pciDevicesDir, nil
@@ -106,7 +142,7 @@ func (fs *filesystem) newBusPCIDevicesDir(ctx context.Context, creds *auth.Crede
 
 // Recursively build out sysfs directories according to the allowlisted files,
 // directories, and symlinks defined in this package.
-func (fs *filesystem) mirrorPCIBusDeviceDir(ctx context.Context, creds *auth.Credentials, dir string, iommuGroups map[string]string) (map[string]kernfs.Inode, error) {
+func (fs *filesystem) mirrorSysDevicesDir(ctx context.Context, creds *auth.Credentials, dir string, iommuGroups map[string]string) (map[string]kernfs.Inode, error) {
 	subs := map[string]kernfs.Inode{}
 	dents, err := hostDirEntries(dir)
 	if err != nil {
@@ -123,7 +159,7 @@ func (fs *filesystem) mirrorPCIBusDeviceDir(ctx context.Context, creds *auth.Cre
 			if match := sysDevicesDirRegex.MatchString(dent); !match {
 				continue
 			}
-			contents, err := fs.mirrorPCIBusDeviceDir(ctx, creds, dentPath, iommuGroups)
+			contents, err := fs.mirrorSysDevicesDir(ctx, creds, dentPath, iommuGroups)
 			if err != nil {
 				return nil, err
 			}

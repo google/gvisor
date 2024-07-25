@@ -74,8 +74,9 @@ const (
 const SelfFilestorePrefix = ".gvisor.filestore."
 
 const (
-	pciPathGlobTPUv4 = "/sys/devices/pci0000:00/*/accel/accel*"
-	pciPathGlobTPUv5 = "/sys/devices/pci0000:00/*/vfio-dev/vfio*"
+	pciPathGlobTPUv4   = "/sys/devices/pci0000:*/*/accel/accel*"
+	pciPathGlobTPUv5   = "/sys/devices/pci0000:*/*/vfio-dev/vfio*"
+	iommuGroupPathGlob = "/sys/kernel/iommu_groups/*/devices/*"
 )
 
 // SelfFilestorePath returns the path at which the self filestore file is
@@ -1381,12 +1382,12 @@ func createDeviceFile(ctx context.Context, creds *auth.Credentials, info *contai
 }
 
 // registerTPUDevice registers a TPU device in vfsObj based on the given device ID.
-func registerTPUDevice(vfsObj *vfs.VirtualFilesystem, minor uint32, deviceID int64) error {
+func registerTPUDevice(vfsObj *vfs.VirtualFilesystem, minor, deviceNum uint32, deviceID int64) error {
 	switch deviceID {
 	case tpu.TPUV4DeviceID, tpu.TPUV4liteDeviceID:
 		return accel.RegisterTPUDevice(vfsObj, minor, deviceID == tpu.TPUV4liteDeviceID)
-	case tpu.TPUV5eDeviceID:
-		return tpuproxy.RegisterTPUDevice(vfsObj, minor)
+	case tpu.TPUV5eDeviceID, tpu.TPUV5pDeviceID:
+		return tpuproxy.RegisterTPUDevice(vfsObj, minor, deviceNum)
 	default:
 		return fmt.Errorf("unsupported TPU device with ID: 0x%x", deviceID)
 	}
@@ -1396,8 +1397,8 @@ func registerTPUDevice(vfsObj *vfs.VirtualFilesystem, minor uint32, deviceID int
 // TPU v4 devices are accessible via /sys/devices/pci0000:00/<pci_address>/accel/accel# on the host.
 // TPU v5 devices are accessible via at /sys/devices/pci0000:00/<pci_address>/vfio-dev/vfio# on the host.
 var pathGlobToPathRegex = map[string]string{
-	pciPathGlobTPUv4: `^/sys/devices/pci0000:00/\d+:\d+:\d+\.\d+/accel/accel(\d+)$`,
-	pciPathGlobTPUv5: `^/sys/devices/pci0000:00/\d+:\d+:\d+\.\d+/vfio-dev/vfio(\d+)$`,
+	pciPathGlobTPUv4: `^/sys/devices/pci0000:[[:xdigit:]]{2}/\d+:\d+:\d+\.\d+/accel/accel(\d+)$`,
+	pciPathGlobTPUv5: `^/sys/devices/pci0000:[[:xdigit:]]{2}/\d+:\d+:\d+\.\d+/vfio-dev/vfio(\d+)$`,
 }
 
 func tpuProxyRegisterDevices(info *containerInfo, vfsObj *vfs.VirtualFilesystem) error {
@@ -1429,7 +1430,33 @@ func tpuProxyRegisterDevices(info *containerInfo, vfsObj *vfs.VirtualFilesystem)
 			if err != nil {
 				return fmt.Errorf("parsing PCI device ID: %w", err)
 			}
-			if err := registerTPUDevice(vfsObj, uint32(deviceNum), deviceID); err != nil {
+			// VFIO iommu groups correspond to the device minor number. Use these
+			// paths to get the correct minor number for the sentry-internal TPU
+			// device files.
+			var minorNum int
+			switch deviceID {
+			case tpu.TPUV4DeviceID, tpu.TPUV4liteDeviceID:
+				minorNum = int(deviceNum)
+			case tpu.TPUV5eDeviceID, tpu.TPUV5pDeviceID:
+				groupPaths, err := filepath.Glob(iommuGroupPathGlob)
+				if err != nil {
+					return fmt.Errorf("enumerating IOMMU group files: %w", err)
+				}
+				for _, groupPath := range groupPaths {
+					pci := path.Base(groupPath)
+					if strings.Contains(pciPath, pci) {
+						minor, err := strconv.Atoi(strings.Split(groupPath, "/")[4])
+						if err != nil {
+							return fmt.Errorf("parsing IOMMU group minor number: %w", err)
+						}
+						minorNum = minor
+						break
+					}
+				}
+			default:
+				return fmt.Errorf("unsupported TPU device with ID: 0x%x", deviceID)
+			}
+			if err := registerTPUDevice(vfsObj, uint32(minorNum), uint32(deviceNum), deviceID); err != nil {
 				return fmt.Errorf("registering TPU driver: %w", err)
 			}
 		}
