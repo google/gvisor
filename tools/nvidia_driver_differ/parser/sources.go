@@ -41,7 +41,9 @@ func (d *DriverSourceDir) GetNonUVMSourcePaths() ([]string, error) {
 	patterns := []string{
 		"src/common/sdk/nvidia/inc/nvos.h",
 		"src/nvidia/arch/nvalloc/unix/include/nv-ioctl.h",
+		"src/nvidia/arch/nvalloc/unix/include/nv-unix-nvos-params-wrappers.h",
 		"src/common/sdk/nvidia/inc/class/*.h",
+		"src/common/sdk/nvidia/inc/ctrl/*.h",
 		"src/common/sdk/nvidia/inc/ctrl/*/*.h",
 	}
 
