@@ -132,18 +132,20 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		idata := opts.InternalData.(*InternalData)
 		productName = idata.ProductName
 		if idata.EnableTPUProxyPaths {
-			deviceToIommuGroup, err := pciDeviceIOMMUGroups(path.Join(idata.TestSysfsPathPrefix, iommuGroupSysPath))
+			deviceToIOMMUGroup, err := pciDeviceIOMMUGroups(path.Join(idata.TestSysfsPathPrefix, iommuGroupSysPath))
 			if err != nil {
 				return nil, nil, err
 			}
-			pciPath := path.Join(idata.TestSysfsPathPrefix, pciMainBusDevicePath)
-			pciMainBusSub, err := fs.mirrorPCIBusDeviceDir(ctx, creds, pciPath, deviceToIommuGroup)
+			sysDevicesPath := path.Join(idata.TestSysfsPathPrefix, sysDevicesMainPath)
+			sysDevicesSub, err := fs.mirrorSysDevicesDir(ctx, creds, sysDevicesPath, deviceToIOMMUGroup)
 			if err != nil {
 				return nil, nil, err
 			}
-			devicesSub["pci0000:00"] = fs.newDir(ctx, creds, defaultSysDirMode, pciMainBusSub)
+			for dir, sub := range sysDevicesSub {
+				devicesSub[dir] = sub
+			}
 
-			deviceDirs, err := fs.newDeviceClassDir(ctx, creds, []string{accelDevice, vfioDevice}, pciPath)
+			deviceDirs, err := fs.newDeviceClassDir(ctx, creds, []string{accelDevice, vfioDevice}, sysDevicesPath)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -151,7 +153,7 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 			for tpuDeviceType, symlinkDir := range deviceDirs {
 				classSub[tpuDeviceType] = fs.newDir(ctx, creds, defaultSysDirMode, symlinkDir)
 			}
-			pciDevicesSub, err := fs.newBusPCIDevicesDir(ctx, creds, pciPath)
+			pciDevicesSub, err := fs.newBusPCIDevicesDir(ctx, creds, sysDevicesPath)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -282,7 +284,8 @@ func (fs *filesystem) mirrorIOMMUGroups(ctx context.Context, creds *auth.Credent
 			subs[dent] = fs.newHostFile(ctx, creds, defaultSysMode, absPath)
 		case unix.S_IFLNK:
 			if pciDeviceRegex.MatchString(dent) {
-				subs[dent] = kernfs.NewStaticSymlink(ctx, creds, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), fmt.Sprintf("../../../../devices/pci0000:00/%s", dent))
+				pciBus := pciBusFromAddress(dent)
+				subs[dent] = kernfs.NewStaticSymlink(ctx, creds, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), fmt.Sprintf("../../../../devices/pci%s/%s", pciBus, dent))
 			}
 		}
 	}

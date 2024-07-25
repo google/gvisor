@@ -199,8 +199,12 @@ func (dev PCIDeviceInfo) path() string {
 func TestEnableTPUProxyPathsV5(t *testing.T) {
 	// Set up the fs tree that will be mirrored in the sentry.
 	sysfsTestDir := t.TempDir()
-	pciPath := path.Join(sysfsTestDir, "sys", "devices", "pci0000:00")
-	if err := os.MkdirAll(pciPath, 0755); err != nil {
+	pciPath0 := path.Join(sysfsTestDir, "sys", "devices", "pci0000:00")
+	if err := os.MkdirAll(pciPath0, 0755); err != nil {
+		t.Fatalf("Failed to create PCI directory: %v", err)
+	}
+	pciPath1 := path.Join(sysfsTestDir, "sys", "devices", "pci0000:10")
+	if err := os.MkdirAll(pciPath1, 0755); err != nil {
 		t.Fatalf("Failed to create PCI directory: %v", err)
 	}
 	busPath := path.Join(sysfsTestDir, "sys", "bus", "pci", "devices")
@@ -215,15 +219,21 @@ func TestEnableTPUProxyPathsV5(t *testing.T) {
 	devices := []PCIDeviceInfo{
 		PCIDeviceInfo{
 			group:      "0",
-			pciPath:    pciPath,
+			pciPath:    pciPath0,
 			pciAddress: "0000:00:04.0",
 			name:       "vfio0",
 		},
 		PCIDeviceInfo{
 			group:      "1",
-			pciPath:    pciPath,
+			pciPath:    pciPath0,
 			pciAddress: "0000:00:05.0",
 			name:       "vfio1",
+		},
+		PCIDeviceInfo{
+			group:      "2",
+			pciPath:    pciPath1,
+			pciAddress: "0000:10:05.0",
+			name:       "vfio2",
 		},
 	}
 	for _, device := range devices {
@@ -234,20 +244,20 @@ func TestEnableTPUProxyPathsV5(t *testing.T) {
 		if err := os.Symlink(path.Join("..", "..", "..", device.pciAddress), path.Join(devicePath, "device")); err != nil {
 			t.Fatalf("Failed to symlink device directory: %v", err)
 		}
-		if err := os.Symlink(path.Join("..", "..", "..", "devices", "pci0000:00", device.pciAddress), path.Join(busPath, device.pciAddress)); err != nil {
+		if err := os.Symlink(path.Join("..", "..", "..", "devices", path.Base(device.pciPath), device.pciAddress), path.Join(busPath, device.pciAddress)); err != nil {
 			t.Fatalf("Failed to symlink bus directory: %v", err)
 		}
-		if err := os.Symlink(path.Join("..", "..", "devices", "pci0000:00", device.pciAddress, vfioDev, device.name), path.Join(sysClassPath, device.name)); err != nil {
+		if err := os.Symlink(path.Join("..", "..", "devices", path.Base(device.pciPath), device.pciAddress, vfioDev, device.name), path.Join(sysClassPath, device.name)); err != nil {
 			t.Fatalf("Failed to symlink class directory: %v", err)
 		}
 		iommuPath := path.Join(sysfsTestDir, "sys", "kernel", "iommu_groups", device.group, "devices")
 		if err := os.MkdirAll(iommuPath, 0755); err != nil {
 			t.Fatalf("Failed to create iommu_groups directory: %v", err)
 		}
-		if err := os.Symlink(path.Join("..", "..", "..", "..", "devices", "pci0000:00", device.pciAddress), path.Join(iommuPath, device.pciAddress)); err != nil {
+		if err := os.Symlink(path.Join("..", "..", "..", "..", "devices", path.Base(device.pciPath), device.pciAddress), path.Join(iommuPath, device.pciAddress)); err != nil {
 			t.Fatalf("Failed to symlink iommu_group devices directory: %v", err)
 		}
-		if err := os.Symlink(path.Join("..", "..", "..", "kernel", "iommu_groups", device.group), path.Join(pciPath, device.pciAddress, "iommu_group")); err != nil {
+		if err := os.Symlink(path.Join("..", "..", "..", "kernel", "iommu_groups", device.group), path.Join(device.pciPath, device.pciAddress, "iommu_group")); err != nil {
 			t.Fatalf("Failed to symlink iommu_groups directory: %v", err)
 		}
 	}
@@ -256,13 +266,13 @@ func TestEnableTPUProxyPathsV5(t *testing.T) {
 
 	for _, device := range devices {
 		// Validate PCI device symlinks.
-		pop := s.PathOpAtRoot(path.Join("devices", "pci0000:00", device.pciAddress))
+		pop := s.PathOpAtRoot(path.Join("devices", path.Base(device.pciPath), device.pciAddress))
 		s.AssertAllDirentTypes(s.ListDirents(pop), map[string]testutil.DirentType{
 			"iommu_group": linux.DT_LNK,
 			vfioDev:       linux.DT_DIR,
 		})
 		// Validate VFIO device symlinks.
-		pop = s.PathOpAtRoot(path.Join("devices", "pci0000:00", device.pciAddress, vfioDev, device.name))
+		pop = s.PathOpAtRoot(path.Join("devices", path.Base(device.pciPath), device.pciAddress, vfioDev, device.name))
 		s.AssertAllDirentTypes(s.ListDirents(pop), map[string]testutil.DirentType{
 			"device": linux.DT_LNK,
 		})

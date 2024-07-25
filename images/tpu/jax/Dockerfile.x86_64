@@ -1,4 +1,4 @@
-FROM python:3.8
+FROM python:3.10
 
 RUN pip install --upgrade jax
 RUN pip install jax[tpu] -f https://storage.googleapis.com/jax-releases/libtpu_releases.html

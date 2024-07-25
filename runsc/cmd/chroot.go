@@ -151,24 +151,24 @@ func mountTPUSyslinkInChroot(chroot, dest, relativePath string, validator func(l
 }
 
 func mountTPUDeviceInfoInChroot(chroot, devicePath, sysfsFormat, pciDeviceFormat string) error {
-	deviceNum, valid, err := util.ExtractTpuDeviceMinor(devicePath)
+	deviceMinor, valid, err := util.ExtractTPUDeviceMinor(devicePath)
 	if err != nil {
 		return fmt.Errorf("extracting TPU device minor: %w", err)
 	}
 	if !valid {
 		return nil
 	}
-	// Multiple paths link to the /sys/devices/pci0000:00/<pci_address>
+	// Multiple paths link to the /sys/devices/<pci_bus>/<pci_address>
 	// directory that contains all relevant sysfs accel/vfio device info that we need
 	// bind mounted into the sandbox chroot. We can construct this path by
 	// reading the link below, which points to
-	//   * /sys/devices/pci0000:00/<pci_address>/accel/accel#
-	//   * or /sys/devices/pci0000:00/<pci_address>/vfio-dev/vfio# for VFIO-based TPU
+	//   * /sys/devices/<pci_bus>/<pci_address>/accel/accel#
+	//   * or /sys/devices/<pci_bus>/<pci_address>/vfio-dev/vfio# for VFIO-based TPU
 	// and traversing up 2 directories.
-	// The sysDevicePath itself is a soft link to the deivce directory.
-	sysDevicePath := fmt.Sprintf(sysfsFormat, deviceNum)
+	// The sysDevicePath itself is a soft link to the device directory.
+	sysDevicePath := fmt.Sprintf(sysfsFormat, deviceMinor)
 	sysPCIDeviceDir, err := mountTPUSyslinkInChroot(chroot, sysDevicePath, "../..", func(link string) bool {
-		sysDeviceLinkMatcher := regexp.MustCompile(fmt.Sprintf(pciDeviceFormat, deviceNum))
+		sysDeviceLinkMatcher := regexp.MustCompile(fmt.Sprintf(pciDeviceFormat, deviceMinor))
 		return sysDeviceLinkMatcher.MatchString(link)
 	})
 	if err != nil {
@@ -179,7 +179,8 @@ func mountTPUDeviceInfoInChroot(chroot, devicePath, sysfsFormat, pciDeviceFormat
 	iommuGroupPath := path.Join(sysPCIDeviceDir, "iommu_group")
 	if _, err := os.Stat(iommuGroupPath); err == nil {
 		if _, err := mountTPUSyslinkInChroot(chroot, iommuGroupPath, "", func(link string) bool {
-			return fmt.Sprintf("../../../kernel/iommu_groups/%d", deviceNum) == link
+			iommuGroupPathMatcher := regexp.MustCompile(`../../../kernel/iommu_groups/\d+`)
+			return iommuGroupPathMatcher.MatchString(link)
 		}); err != nil {
 			return err
 		}
@@ -196,11 +197,11 @@ func tpuProxyUpdateChroot(chroot string, spec *specs.Spec, conf *config.Config) 
 		"/dev/accel*": "/sys/class/accel/accel%d",
 		"/dev/vfio/*": "/sys/class/vfio-dev/vfio%d"}
 	pathGlobToPciDeviceFormat := map[string]string{
-		"/dev/accel*": `../../devices/pci0000:00/(\d+:\d+:\d+\.\d+)/accel/accel%d`,
-		"/dev/vfio/*": `../../devices/pci0000:00/(\d+:\d+:\d+\.\d+)/vfio-dev/vfio%d`}
+		"/dev/accel*": `../../devices/pci0000:[[:xdigit:]]{2}/(\d+:\d+:\d+\.\d+)/accel/accel%d`,
+		"/dev/vfio/*": `../../devices/pci0000:[[:xdigit:]]{2}/(\d+:\d+:\d+\.\d+)/vfio-dev/vfio%d`}
 	// Bind mount device info directories for all TPU devices on the host.
-	// For v4 TPU, the directory /sys/devices/pci0000:00/<pci_address>/accel/accel# is mounted;
-	// For v5e TPU, the directory /sys/devices/pci0000:00/<pci_address>/vfio-dev/vfio# is mounted.
+	// For v4 TPU, the directory /sys/devices/<pci_bus>/<pci_address>/accel/accel# is mounted;
+	// For v5e TPU, the directory /sys/devices/<pci_bus>/<pci_address>/vfio-dev/vfio# is mounted.
 	for pathGlob, sysfsFormat := range pathGlobToSysfsFormat {
 		paths, err := filepath.Glob(pathGlob)
 		if err != nil {

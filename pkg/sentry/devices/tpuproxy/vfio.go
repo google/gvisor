@@ -16,6 +16,7 @@ package tpuproxy
 
 import (
 	"fmt"
+	"sync"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -45,10 +46,15 @@ type vfioFD struct {
 	device     *vfioDevice
 	queue      waiter.Queue
 	memmapFile vfioFDMemmapFile
+
+	mu sync.Mutex
+	// +checklocks:mu
+	devAddrSet DevAddrSet
 }
 
 // Release implements vfs.FileDescriptionImpl.Release.
 func (fd *vfioFD) Release(context.Context) {
+	fd.unpinRange(DevAddrRange{0, ^uint64(0)})
 	fdnotifier.RemoveFD(fd.hostFD)
 	fd.queue.Notify(waiter.EventHUp)
 	unix.Close(int(fd.hostFD))
@@ -198,15 +204,16 @@ func (fd *vfioFD) iommuMapDma(ctx context.Context, t *kernel.Task, arg hostarch.
 	// Unmap the reserved range, which is no longer required.
 	unix.RawSyscall(unix.SYS_MUNMAP, m, uintptr(ar.Length()), 0)
 
-	fd.device.mu.Lock()
-	defer fd.device.mu.Unlock()
+	fd.mu.Lock()
+	defer fd.mu.Unlock()
+	dar := devAddr
 	for _, pr := range prs {
-		rlen := uint64(pr.Source.Length())
-		fd.device.devAddrSet.InsertRange(DevAddrRange{
-			devAddr,
-			devAddr + rlen,
+		r := uint64(pr.Source.Length())
+		fd.devAddrSet.InsertRange(DevAddrRange{
+			dar,
+			dar + r,
 		}, pr)
-		devAddr += rlen
+		dar += r
 	}
 	return n, nil
 }
@@ -221,22 +228,29 @@ func (fd *vfioFD) iommuUnmapDma(ctx context.Context, t *kernel.Task, arg hostarc
 		// gVisor working with TPU.
 		return 0, linuxerr.ENOSYS
 	}
-	n, err := IOCTLInvokePtrArg[uint32](fd.hostFD, linux.VFIO_IOMMU_MAP_DMA, &dmaUnmap)
+	n, err := IOCTLInvokePtrArg[uint32](fd.hostFD, linux.VFIO_IOMMU_UNMAP_DMA, &dmaUnmap)
 	if err != nil {
 		return 0, nil
 	}
-	fd.device.mu.Lock()
-	defer fd.device.mu.Unlock()
-	s := &fd.device.devAddrSet
+	if _, err := dmaUnmap.CopyOut(t, arg); err != nil {
+		return 0, err
+	}
+
 	r := DevAddrRange{Start: dmaUnmap.IOVa, End: dmaUnmap.IOVa + dmaUnmap.Size}
-	seg := s.LowerBoundSegment(r.Start)
+	fd.unpinRange(r)
+	return n, nil
+}
+
+func (fd *vfioFD) unpinRange(r DevAddrRange) {
+	fd.mu.Lock()
+	defer fd.mu.Unlock()
+	seg := fd.devAddrSet.LowerBoundSegment(r.Start)
 	for seg.Ok() && seg.Start() < r.End {
-		seg = s.Isolate(seg, r)
+		seg = fd.devAddrSet.Isolate(seg, r)
 		mm.Unpin([]mm.PinnedRange{seg.Value()})
-		gap := s.Remove(seg)
+		gap := fd.devAddrSet.Remove(seg)
 		seg = gap.NextSegment()
 	}
-	return n, nil
 }
 
 // VFIO extension.
