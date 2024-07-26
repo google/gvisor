@@ -50,7 +50,10 @@ func (fd *frontendFD) StateFields() []string {
 		"containerName",
 		"hostFD",
 		"memmapFile",
-		"queue",
+		"internalQueue",
+		"internalEntry",
+		"cachedEvents",
+		"appQueue",
 		"clients",
 	}
 }
@@ -66,8 +69,11 @@ func (fd *frontendFD) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(5, &fd.containerName)
 	stateSinkObject.Save(6, &fd.hostFD)
 	stateSinkObject.Save(7, &fd.memmapFile)
-	stateSinkObject.Save(8, &fd.queue)
-	stateSinkObject.Save(9, &fd.clients)
+	stateSinkObject.Save(8, &fd.internalQueue)
+	stateSinkObject.Save(9, &fd.internalEntry)
+	stateSinkObject.Save(10, &fd.cachedEvents)
+	stateSinkObject.Save(11, &fd.appQueue)
+	stateSinkObject.Save(12, &fd.clients)
 }
 
 // +checklocksignore
@@ -80,8 +86,11 @@ func (fd *frontendFD) StateLoad(ctx context.Context, stateSourceObject state.Sou
 	stateSourceObject.Load(5, &fd.containerName)
 	stateSourceObject.Load(6, &fd.hostFD)
 	stateSourceObject.Load(7, &fd.memmapFile)
-	stateSourceObject.Load(8, &fd.queue)
-	stateSourceObject.Load(9, &fd.clients)
+	stateSourceObject.Load(8, &fd.internalQueue)
+	stateSourceObject.Load(9, &fd.internalEntry)
+	stateSourceObject.Load(10, &fd.cachedEvents)
+	stateSourceObject.Load(11, &fd.appQueue)
+	stateSourceObject.Load(12, &fd.clients)
 	stateSourceObject.AfterLoad(func() { fd.afterLoad(ctx) })
 }
 
