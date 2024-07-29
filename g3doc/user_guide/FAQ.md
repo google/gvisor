@@ -160,6 +160,39 @@ This error may happen when using `gvisor-containerd-shim` with a `containerd`
 that does not contain the fix for [CVE-2020-15257]. The resolve the issue,
 update containerd to 1.3.9 or 1.4.3 (or newer versions respectively).
 
+### I'm getting an error like `SELinux is not supported: system_u:system_r:container_t:s0:...`
+
+This error may happen in systems where SELinux is enabled. You can check this is
+the case with the `sestatus` command:
+
+```
+$ sudo sestatus
+SELinux status:                 enabled
+[...]
+```
+
+Since gVisor does not support setting SELinux labels, you can disable SELinux
+specifically for the new container by passing the `--security-opt label=disable`
+argument during its creation.
+
+### I'm getting an error like `error remounting chroot in read-only: permission denied` {#selinux-nested}
+
+This error may happen when gVisor is running **within** a container, in a
+system with SELinux in **enforcing** mode. To ensure this is the case, check
+your system's audit logs (e.g., `journalctl`) for SELinux denials like the
+following:
+
+```
+AVC avc: denied { mounton  } for ... scontext=... tcontext=... permissive=0
+```
+
+To resolve this issue, label the **outer** container with the
+`container_engine_t` SELinux label, by passing the
+`--security-opt label=type:container_engine_t` argument during its creation.
+
+This SELinux label is reserved for running a container engine (here gVisor)
+within another container (e.g., Docker or Podman).
+
 [security-model]: /docs/architecture_guide/security/
 [host-net]: /docs/user_guide/networking/#network-passthrough
 [debugging]: /docs/user_guide/debugging/
