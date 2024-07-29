@@ -20,6 +20,7 @@ go_library(
         "rubydev.go",
         "sysbench.go",
         "tools.go",
+        "triton.go",
     ],
     visibility = ["//:sandbox"],
 )
@@ -34,6 +35,7 @@ go_test(
         "iperf_test.go",
         "meminfo_test.go",
         "sysbench_test.go",
+        "triton_test.go",
     ],
     library = ":tools",
 )
