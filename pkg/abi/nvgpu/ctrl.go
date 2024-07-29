@@ -267,6 +267,11 @@ const (
 	NV0080_CTRL_CMD_PERF_CUDA_LIMIT_SET_CONTROL = 0x801909
 )
 
+// From src/common/sdk/nvidia/inc/ctrl/ctrl00f8.h:
+const (
+	NV00F8_CTRL_CMD_ATTACH_MEM = 0xf80103
+)
+
 // From src/common/sdk/nvidia/inc/ctrl/ctrl00fd.h:
 const (
 	NV00FD_CTRL_CMD_GET_INFO   = 0xfd0101

@@ -225,6 +225,7 @@ func Init() {
 					0x80028b: rmControlSimple, // unknown, paramsSize == 1
 					nvgpu.NV0080_CTRL_CMD_GPU_GET_CLASSLIST_V2:                             rmControlSimple,
 					nvgpu.NV0080_CTRL_CMD_HOST_GET_CAPS_V2:                                 rmControlSimple,
+					nvgpu.NV00F8_CTRL_CMD_ATTACH_MEM:                                       rmControlSimple,
 					nvgpu.NV00FD_CTRL_CMD_GET_INFO:                                         rmControlSimple,
 					nvgpu.NV00FD_CTRL_CMD_ATTACH_MEM:                                       rmControlSimple,
 					nvgpu.NV00FD_CTRL_CMD_DETACH_MEM:                                       rmControlSimple,
