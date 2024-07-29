@@ -17,7 +17,7 @@ package parser
 import (
 	"bufio"
 	"fmt"
-	"os"
+	"io"
 	"path/filepath"
 )
 
@@ -83,19 +83,13 @@ func (d *DriverSourceDir) GetUVMIncludePaths() []string {
 }
 
 // WriteIncludeFile writes an cc file at file that includes all the given sources.
-func WriteIncludeFile(sources []string, path string) error {
-	f, err := os.Create(path)
-	if err != nil {
-		return fmt.Errorf("failed to create include file: %w", err)
-	}
-	defer f.Close()
-
-	w := bufio.NewWriter(f)
+func WriteIncludeFile(sources []string, w io.Writer) error {
+	bufW := bufio.NewWriter(w)
 	for _, source := range sources {
-		if _, err := w.WriteString(fmt.Sprintf("#include \"%s\"\n", source)); err != nil {
+		if _, err := bufW.WriteString(fmt.Sprintf("#include \"%s\"\n", source)); err != nil {
 			return fmt.Errorf("failed to write to include file: %w", err)
 		}
 	}
 
-	return w.Flush()
+	return bufW.Flush()
 }

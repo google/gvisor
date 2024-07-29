@@ -18,6 +18,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path"
 )
 
 // ClangASTConfig is the format for compilation_commands.json.
@@ -42,11 +43,12 @@ func NewParserConfig(directory, filename string, includes []string) ClangASTConf
 	}
 }
 
-// CreateCompileCommandsFile writes the given config to file.
-func CreateCompileCommandsFile(config []ClangASTConfig, path string) error {
-	f, err := os.Create(path)
+// CreateCompileCommandsFile creates a new compile_commands.json file in the given directory, and
+// writes config to it.
+func CreateCompileCommandsFile(dir string, config []ClangASTConfig) error {
+	f, err := os.Create(path.Join(dir, "compile_commands.json"))
 	if err != nil {
-		return fmt.Errorf("failed to create %s: %w", path, err)
+		return fmt.Errorf("failed to create compile_commands.json: %w", err)
 	}
 	defer f.Close()
 
