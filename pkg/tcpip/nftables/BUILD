@@ -7,7 +7,10 @@ package(
 
 go_library(
     name = "nftables",
-    srcs = ["nftables.go"],
+    srcs = [
+        "nftables.go",
+        "nftinterp.go",
+    ],
     deps = [
         "//pkg/abi/linux",
         "//pkg/tcpip/stack",
@@ -16,7 +19,10 @@ go_library(
 
 go_test(
     name = "nftables_test",
-    srcs = ["nftables_test.go"],
+    srcs = [
+        "nftables_test.go",
+        "nftinterp_test.go",
+    ],
     library = ":nftables",
     deps = [
         "//pkg/abi/linux",
