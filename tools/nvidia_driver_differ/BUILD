@@ -11,6 +11,9 @@ cc_binary(
         "driver_ast_parser.cc",
         "driver_ast_parser.h",
     ],
+    visibility = [
+        "//pkg/sentry/devices/nvproxy:__subpackages__",
+    ],
     deps = [
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/strings",

@@ -89,3 +89,14 @@ go_test(
     srcs = ["nvproxy_test.go"],
     library = ":nvproxy",
 )
+
+go_test(
+    name = "nvproxy_driver_parity_test",
+    srcs = ["nvproxy_driver_parity_test.go"],
+    data = ["//tools/nvidia_driver_differ:driver_ast_parser"],
+    deps = [
+        ":nvproxy",
+        "//pkg/test/testutil",
+        "//tools/nvidia_driver_differ/parser",
+    ],
+)
