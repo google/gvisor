@@ -52,7 +52,13 @@ struct DriverStructReporter : public MatchFinder::MatchCallback {
   json TypeAliases;
   absl::flat_hash_set<std::string> ParsedTypes;
 
-  auto get_struct_matcher(std::string struct_name) {
+  // This matches the case where a struct is being defined.
+  // E.g.
+  // typedef struct {
+  //   int a;
+  //   int b;
+  // } TestStruct;
+  auto get_struct_definition_matcher(std::string struct_name) {
     // Nvidia's driver typedefs all their struct. We search for the
     // typedef declaration, and go from there to find the struct definition.
     return typedefDecl(
@@ -66,24 +72,46 @@ struct DriverStructReporter : public MatchFinder::MatchCallback {
         .bind("typedef_decl");
   }
 
+  // In some cases, a struct name is typedef'd to an existing struct.
+  // E.g.
+  // typedef TestStructA TestStructB;
+  auto get_struct_typedef_matcher(std::string struct_name) {
+    // Nvidia's driver typedefs all their struct. We search for the
+    // typedef declaration, and go from there to find the struct definition.
+    return typedefDecl(
+               allOf(hasName(struct_name),
+                     // Match and bind to the struct declaration.
+                     hasType(
+                         // Need to specify elaboratedType, otherwise hasType
+                         // will complain that the type is ambiguous.
+                         elaboratedType(hasDeclaration(typedefDecl())))))
+        .bind("typedef_decl");
+  }
+
   void run(const MatchFinder::MatchResult &result) override {
+    const auto &sm = result.Context->getSourceManager();
+
     const auto *typedef_decl =
         result.Nodes.getNodeAs<clang::TypedefDecl>("typedef_decl");
     if (typedef_decl == nullptr) {
       std::cerr << "Unable to find typedef decl\n";
       exit(1);
     }
+    std::string name = typedef_decl->getNameAsString();
 
+    // If struct_decl doesn't exist, then we know it's a typedef to an existing
+    // struct.
     const auto *struct_decl =
         result.Nodes.getNodeAs<clang::RecordDecl>("struct_decl");
     if (struct_decl == nullptr) {
-      std::cerr << "Unable to find struct decl for "
-                << typedef_decl->getNameAsString() << "\n";
-      exit(1);
+      // Add the typedef to TypeAliases, and recurse on the underlying type.
+      const auto type = typedef_decl->getUnderlyingType();
+      const auto type_name = type.getAsString();
+      TypeAliases[name] = type_name;
+      add_type_definition(type, type_name, sm);
+      return;
     }
 
-    std::string name = typedef_decl->getNameAsString();
-    const auto &sm = result.Context->getSourceManager();
     add_type_definition(result.Context->getTypeDeclType(struct_decl), name, sm);
   }
 
@@ -208,7 +236,8 @@ int main(int argc, const char **argv) {
   StructNamesIS >> StructNamesJSON;
   for (json::iterator it = StructNamesJSON["structs"].begin();
        it != StructNamesJSON["structs"].end(); ++it) {
-    finder.addMatcher(reporter.get_struct_matcher(*it), &reporter);
+    finder.addMatcher(reporter.get_struct_definition_matcher(*it), &reporter);
+    finder.addMatcher(reporter.get_struct_typedef_matcher(*it), &reporter);
   }
 
   // Run tool
