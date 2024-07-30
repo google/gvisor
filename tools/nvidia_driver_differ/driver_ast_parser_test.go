@@ -76,35 +76,45 @@ func TestParser(t *testing.T) {
 		t.Fatalf("failed to unmarshal output %s: %v", string(out), err)
 	}
 	expectedOutput := parser.OutputJSON{
-		Structs: parser.StructDefs{
-			"TestStruct": parser.StructDef{
-				Fields: []parser.StructField{
-					parser.StructField{
-						Name: "a",
-						Type: "int",
-					},
-					parser.StructField{
-						Name: "b",
-						Type: "int",
-					},
-					parser.StructField{
-						Name: "c",
-						Type: "OtherInt",
-					},
+		Records: parser.RecordDefs{
+			"TestStruct": parser.RecordDef{
+				Fields: []parser.RecordField{
+					parser.RecordField{Name: "a", Type: "int"},
+					parser.RecordField{Name: "b", Type: "int"},
+					parser.RecordField{Name: "e", Type: "TestStruct::e_t[4]"},
+					parser.RecordField{Name: "f", Type: "TestUnion"},
 				},
-				Source: "test_struct.cc:24:3",
+				Source: "test_struct.cc:25:16",
 			},
+			"TestStruct::e_t": parser.RecordDef{
+				Fields: []parser.RecordField{
+					parser.RecordField{Name: "c", Type: "OtherInt"},
+					parser.RecordField{Name: "d", Type: "OtherInt"},
+				},
+				Source: "test_struct.cc:28:3",
+			},
+			"TestUnion": parser.RecordDef{
+				Fields: []parser.RecordField{
+					parser.RecordField{Name: "u_a", Type: "int"},
+					parser.RecordField{Name: "u_b", Type: "int"},
+				},
+				Source: "test_struct.cc:20:9",
+			},
+		},
+		Aliases: parser.TypeAliases{
+			"OtherInt": "int",
+			"int":      "int",
 		},
 	}
 
-	if diff := cmp.Diff(expectedOutput, outputJSON, cmpopts.IgnoreFields(parser.StructDef{}, "Source")); diff != "" {
+	if diff := cmp.Diff(expectedOutput, outputJSON, cmpopts.IgnoreFields(parser.RecordDef{}, "Source")); diff != "" {
 		t.Fatalf("output mismatch (-want +got):\n%s", diff)
 	}
 
 	// Only check the source suffix since the absolute path will be different every run.
-	for name, structDef := range outputJSON.Structs {
-		if !strings.HasSuffix(structDef.Source, expectedOutput.Structs[name].Source) {
-			t.Fatalf("source mismatch for %s: should end with %s, got %s", name, expectedOutput.Structs[name].Source, structDef.Source)
+	for name, structDef := range outputJSON.Records {
+		if !strings.HasSuffix(structDef.Source, expectedOutput.Records[name].Source) {
+			t.Fatalf("source mismatch for %s: should end with %s, got %s", name, expectedOutput.Records[name].Source, structDef.Source)
 		}
 	}
 }

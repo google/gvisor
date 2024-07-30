@@ -14,16 +14,24 @@
 
 #include "tools/nvidia_driver_differ/driver_ast_parser.h"
 
+#include <stdlib.h>
+
+#include <cstdint>
 #include <fstream>
 #include <iostream>
 #include <string>
 
+#include "absl/container/flat_hash_set.h"
+#include "absl/strings/str_cat.h"
 #include "nlohmann/json.hpp"
 #include "clang/include/clang/AST/Decl.h"
+#include "clang/include/clang/AST/Type.h"
 #include "clang/include/clang/ASTMatchers/ASTMatchFinder.h"
 #include "clang/include/clang/ASTMatchers/ASTMatchers.h"
+#include "clang/include/clang/Basic/SourceManager.h"
 #include "clang/include/clang/Tooling/CommonOptionsParser.h"
 #include "clang/include/clang/Tooling/Tooling.h"
+#include "llvm/include/llvm/Support/Casting.h"
 #include "llvm/include/llvm/Support/CommandLine.h"
 #include "llvm/include/llvm/Support/raw_ostream.h"
 
@@ -40,7 +48,9 @@ using clang::ast_matchers::MatchFinder;
 using json = nlohmann::json;
 
 struct DriverStructReporter : public MatchFinder::MatchCallback {
-  json StructDefinitions;
+  json RecordDefinitions;
+  json TypeAliases;
+  absl::flat_hash_set<std::string> ParsedTypes;
 
   auto get_struct_matcher(std::string struct_name) {
     // Nvidia's driver typedefs all their struct. We search for the
@@ -61,7 +71,7 @@ struct DriverStructReporter : public MatchFinder::MatchCallback {
         result.Nodes.getNodeAs<clang::TypedefDecl>("typedef_decl");
     if (typedef_decl == nullptr) {
       std::cerr << "Unable to find typedef decl\n";
-      return;
+      exit(1);
     }
 
     const auto *struct_decl =
@@ -69,28 +79,88 @@ struct DriverStructReporter : public MatchFinder::MatchCallback {
     if (struct_decl == nullptr) {
       std::cerr << "Unable to find struct decl for "
                 << typedef_decl->getNameAsString() << "\n";
-      return;
-    }
-
-    // Add struct definition to json.
-    // TODO(b/347796680): Consider improvements:
-    //  Store alignment attributes as well?
-    //  Make recursive? Relevant for recursive structs not defined in nvproxy,
-    //    or unnamed structs/unions.
-    //  Handle anonymous names?
-    json fields = json::array();
-    for (const auto *field : struct_decl->fields()) {
-      fields.push_back(
-          json::object({{"name", field->getNameAsString()},
-                        {"type", field->getType().getAsString()}}));
+      exit(1);
     }
 
     std::string name = typedef_decl->getNameAsString();
-    std::string source = typedef_decl->getLocation().printToString(
-        result.Context->getSourceManager());
+    const auto &sm = result.Context->getSourceManager();
+    add_type_definition(result.Context->getTypeDeclType(struct_decl), name, sm);
+  }
 
-    StructDefinitions[name] =
-        json::object({{"fields", fields}, {"source", source}});
+  // Adds the type definition of `type` to either `RecordDefinitions` or
+  // `TypeAliases`, mapped to `name`. Recursively adds the type definitions
+  // of any nested types.
+  void add_type_definition(const clang::QualType &type, const std::string &name,
+                           const clang::SourceManager &sm) {
+    // We've already handled this type.
+    if (ParsedTypes.contains(name)) {
+      return;
+    }
+    ParsedTypes.insert(name);
+
+    // We use the canonical type to get past any typedefs.
+    const auto canonical_type = type.getCanonicalType();
+
+    if (canonical_type->isRecordType()) {
+      const auto record_decl = canonical_type->getAsRecordDecl();
+
+      add_record_definition(record_decl, name, sm);
+    } else {
+      TypeAliases[name] = canonical_type.getAsString();
+    }
+  }
+
+  // Adds the type definition of `record_decl` to `RecordDefinitions`, mapped
+  // to `name`. Recursively adds the type definitions of any nested types.
+  void add_record_definition(const clang::RecordDecl *record_decl,
+                             const std::string &name,
+                             const clang::SourceManager &sm) {
+    json fields;
+    for (const auto *field : record_decl->fields()) {
+      auto field_type = field->getType();
+
+      // If this is an array type, save the array size then get the underlying
+      // element type to recurse on later.
+      uint64_t array_size = 0;
+      if (field_type->isConstantArrayType()) {
+        const auto *CAT = llvm::dyn_cast<clang::ConstantArrayType>(
+            field_type->castAsArrayTypeUnsafe());
+        if (CAT == nullptr) {
+          std::cerr << "Unable to cast to ConstantArrayType\n";
+          exit(1);
+        }
+        array_size = CAT->getSize().getZExtValue();
+        field_type = CAT->getElementType();
+      }
+
+      // Get the type name. If the type is not named, we use the record name
+      // and field name to create a fake type name.
+      std::string base_type_name;
+      if (field_type->hasUnnamedOrLocalType()) {
+        base_type_name =
+            absl::StrCat(name, "::", field->getNameAsString(), "_t");
+      } else {
+        base_type_name = field_type.getAsString();
+      }
+
+      // If this is an array type, add the array size to the type name.
+      std::string field_type_name = base_type_name;
+      if (array_size > 0) {
+        absl::StrAppend(&field_type_name, "[", array_size, "]");
+      }
+
+      // Add field to json.
+      fields.push_back(json::object(
+          {{"name", field->getNameAsString()}, {"type", field_type_name}}));
+
+      // Recurse on the field type.
+      add_type_definition(field_type, base_type_name, sm);
+    }
+
+    std::string source = record_decl->getLocation().printToString(sm);
+
+    RecordDefinitions[name] =
+        json::object({{"source", source}, {"fields", fields}});
   }
 };
 
@@ -108,7 +178,7 @@ static llvm::cl::opt<std::string> StructNames(
 
 static llvm::cl::opt<std::string> OutputFile(
     "output", "o",
-    llvm::cl::desc("Path to the output file for the parsed structs. "
+    llvm::cl::desc("Path to the output file for the parsed type definitions. "
                    "By default, will print to stdout."),
     llvm::cl::cat(DriverASTParserCategory));
 
@@ -145,7 +215,8 @@ int main(int argc, const char **argv) {
   int ret = Tool.run(clang::tooling::newFrontendActionFactory(&finder).get());
 
   // Print output.
-  json output = json::object({{"structs", reporter.StructDefinitions}});
+  json output = json::object({{"records", reporter.RecordDefinitions},
+                              {"aliases", reporter.TypeAliases}});
   if (OutputFile.empty()) {
     std::cout << output.dump() << "\n";
   } else {

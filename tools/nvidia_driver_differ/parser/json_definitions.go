@@ -30,36 +30,40 @@ type InputJSON struct {
 
 // OutputJSON is the format for the output of driver_ast_parser.
 type OutputJSON struct {
-	Structs StructDefs `json:"structs"`
+	Records RecordDefs  `json:"records"`
+	Aliases TypeAliases `json:"aliases"`
 }
 
-// StructField represents a field in a struct.
-type StructField struct {
+// RecordField represents a field in a record (struct or union).
+type RecordField struct {
 	Name string
 	Type string
 }
 
-func (s StructField) String() string {
+func (s RecordField) String() string {
 	return fmt.Sprintf("%s %s", s.Type, s.Name)
 }
 
-// StructDef represents a struct definition.
-type StructDef struct {
-	Fields []StructField
+// RecordDef represents the definition of a record (struct or union).
+type RecordDef struct {
+	Fields []RecordField
 	Source string
 }
 
-// Equals returns true if the two struct definitions are equal. We only
+// Equals returns true if the two record definitions are equal. We only
 // compare the fields, not the source.
-func (s StructDef) Equals(other StructDef) bool {
+func (s RecordDef) Equals(other RecordDef) bool {
 	return slices.Equal(s.Fields, other.Fields)
 }
 
-// StructDefs is a map of struct name to struct definition.
-type StructDefs map[string]StructDef
+// RecordDefs is a map of type names to definitions.
+type RecordDefs map[string]RecordDef
 
-// GetStructDiff prints a diff between two struct definitions.
-func GetStructDiff(name string, s1, s2 StructDef) string {
+// TypeAliases is a map of type aliases to their underlying type.
+type TypeAliases map[string]string
+
+// GetRecordDiff prints a diff between two records.
+func GetRecordDiff(name string, s1, s2 RecordDef) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "--- A: %s\n", s1.Source)
 	fmt.Fprintf(&b, "+++ B: %s\n", s2.Source)

@@ -12,8 +12,11 @@ cc_binary(
         "driver_ast_parser.h",
     ],
     deps = [
+        "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/strings",
         "@llvm-project//clang:ast",
         "@llvm-project//clang:ast_matchers",
+        "@llvm-project//clang:basic",
         "@llvm-project//clang:tooling",
         "@llvm-project//llvm:Support",
         "@nlohmann_json//:json",

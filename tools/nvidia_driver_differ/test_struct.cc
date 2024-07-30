@@ -17,8 +17,17 @@
 
 typedef int OtherInt;
 
+typedef union {
+  int u_a;
+  int u_b;
+} TestUnion;
+
 typedef struct TestStruct {
   int a;
   int b;
-  OtherInt c;
+  struct {
+    OtherInt c;
+    OtherInt d;
+  } e[4];
+  TestUnion f;
 } TestStruct;
