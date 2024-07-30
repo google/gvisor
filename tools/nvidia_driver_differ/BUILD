@@ -41,5 +41,14 @@ go_test(
 go_binary(
     name = "run_differ",
     srcs = ["run_differ.go"],
-    static = True,
+    embedsrcs = [
+        ":driver_ast_parser",  # keep
+    ],
+    # Disable nogo tests because this has C++ dependencies.
+    nogo = False,
+    deps = [
+        "//pkg/log",
+        "//pkg/sentry/devices/nvproxy",
+        "//tools/nvidia_driver_differ/parser",
+    ],
 )

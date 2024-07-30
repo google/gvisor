@@ -22,6 +22,7 @@ import (
 	"strings"
 
 	"github.com/google/go-cmp/cmp"
+	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy"
 )
 
 // InputJSON is the format for the structs.json file that driver_ast_parser takes as input.
@@ -76,7 +77,7 @@ type RecordDefs map[string]RecordDef
 type TypeAliases map[string]string
 
 // GetRecordDiff prints a diff between two records.
-func GetRecordDiff(name string, s1, s2 RecordDef) string {
+func GetRecordDiff(name nvproxy.DriverStructName, s1, s2 RecordDef) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "--- A: %s\n", s1.Source)
 	fmt.Fprintf(&b, "+++ B: %s\n", s2.Source)
