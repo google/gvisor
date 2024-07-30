@@ -32,8 +32,8 @@ type InputJSON struct {
 
 // OutputJSON is the format for the output of driver_ast_parser.
 type OutputJSON struct {
-	Records RecordDefs  `json:"records"`
-	Aliases TypeAliases `json:"aliases"`
+	Records RecordDefs
+	Aliases TypeAliases
 }
 
 // Merge merges the struct definitions from b into this OutputJSON.
@@ -50,8 +50,9 @@ func (a *OutputJSON) Merge(b OutputJSON) {
 
 // RecordField represents a field in a record (struct or union).
 type RecordField struct {
-	Name string
-	Type string
+	Name   string
+	Type   string
+	Offset uint64
 }
 
 func (s RecordField) String() string {
@@ -60,30 +61,52 @@ func (s RecordField) String() string {
 
 // RecordDef represents the definition of a record (struct or union).
 type RecordDef struct {
-	Fields []RecordField
-	Source string
+	Fields  []RecordField
+	Size    uint64
+	IsUnion bool `json:"is_union"`
+	Source  string
 }
 
-// Equals returns true if the two record definitions are equal. We only
-// compare the fields, not the source.
+// Equals returns true if the two record definitions are equal. We ignore the source of the records.
 func (s RecordDef) Equals(other RecordDef) bool {
-	return slices.Equal(s.Fields, other.Fields)
+	return s.IsUnion == other.IsUnion && s.Size == other.Size && slices.Equal(s.Fields, other.Fields)
+}
+
+// TypeDef represents the definition of a type.
+type TypeDef struct {
+	Type string
+	Size uint64
 }
 
 // RecordDefs is a map of type names to definitions.
 type RecordDefs map[string]RecordDef
 
 // TypeAliases is a map of type aliases to their underlying type.
-type TypeAliases map[string]string
+type TypeAliases map[string]TypeDef
 
 // GetRecordDiff prints a diff between two records.
-func GetRecordDiff(name nvproxy.DriverStructName, s1, s2 RecordDef) string {
+func GetRecordDiff(name nvproxy.DriverStructName, A, B RecordDef) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "--- A: %s\n", s1.Source)
-	fmt.Fprintf(&b, "+++ B: %s\n", s2.Source)
+	fmt.Fprintf(&b, "--- A: %s\n", A.Source)
+	fmt.Fprintf(&b, "+++ B: %s\n", B.Source)
 
-	fmt.Fprintf(&b, "struct %s\n", name)
-	fmt.Fprint(&b, cmp.Diff(s1.Fields, s2.Fields))
+	switch {
+	case A.IsUnion && !B.IsUnion:
+		fmt.Fprintf(&b, "- union %s\n", name)
+		fmt.Fprintf(&b, "+ struct %s\n", name)
+	case !A.IsUnion && B.IsUnion:
+		fmt.Fprintf(&b, "- struct %s\n", name)
+		fmt.Fprintf(&b, "+ union %s\n", name)
+	case A.IsUnion && B.IsUnion:
+		fmt.Fprintf(&b, "union %s\n", name)
+	case !A.IsUnion && !B.IsUnion:
+		fmt.Fprintf(&b, "struct %s\n", name)
+	}
+
+	if A.Size != B.Size {
+		fmt.Fprintf(&b, "  size: %d -> %d\n", A.Size, B.Size)
+	}
+	fmt.Fprint(&b, cmp.Diff(A.Fields, B.Fields))
 
 	return b.String()
 }

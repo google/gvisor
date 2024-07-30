@@ -56,7 +56,7 @@ func TestParser(t *testing.T) {
 	}()
 
 	input := parser.InputJSON{
-		Structs: []string{"TestStruct"},
+		Structs: []string{"TestStruct", "TestStruct2"},
 	}
 	if err := json.NewEncoder(structsFile).Encode(&input); err != nil {
 		t.Fatalf("failed to write input structs file: %v", err)
@@ -79,31 +79,48 @@ func TestParser(t *testing.T) {
 		Records: parser.RecordDefs{
 			"TestStruct": parser.RecordDef{
 				Fields: []parser.RecordField{
-					parser.RecordField{Name: "a", Type: "int"},
-					parser.RecordField{Name: "b", Type: "int"},
-					parser.RecordField{Name: "e", Type: "TestStruct::e_t[4]"},
-					parser.RecordField{Name: "f", Type: "TestUnion"},
+					parser.RecordField{Name: "a", Type: "int", Offset: 0},
+					parser.RecordField{Name: "b", Type: "int", Offset: 4},
+					parser.RecordField{Name: "e", Type: "TestStruct::e_t[4]", Offset: 8},
+					parser.RecordField{Name: "f", Type: "TestUnion", Offset: 40},
 				},
-				Source: "test_struct.cc:25:16",
+				Size:    44,
+				IsUnion: false,
+				Source:  "test_struct.cc:25:16",
+			},
+			"TestStruct2": parser.RecordDef{
+				Fields: []parser.RecordField{
+					parser.RecordField{Name: "a", Type: "int", Offset: 0},
+					parser.RecordField{Name: "b", Type: "int", Offset: 4},
+					parser.RecordField{Name: "e", Type: "TestStruct::e_t[4]", Offset: 8},
+					parser.RecordField{Name: "f", Type: "TestUnion", Offset: 40},
+				},
+				Size:    44,
+				IsUnion: false,
+				Source:  "test_struct.cc:25:16",
 			},
 			"TestStruct::e_t": parser.RecordDef{
 				Fields: []parser.RecordField{
-					parser.RecordField{Name: "c", Type: "OtherInt"},
-					parser.RecordField{Name: "d", Type: "OtherInt"},
+					parser.RecordField{Name: "c", Type: "OtherInt", Offset: 0},
+					parser.RecordField{Name: "d", Type: "OtherInt", Offset: 4},
 				},
-				Source: "test_struct.cc:28:3",
+				Size:    8,
+				IsUnion: false,
+				Source:  "test_struct.cc:28:3",
 			},
 			"TestUnion": parser.RecordDef{
 				Fields: []parser.RecordField{
-					parser.RecordField{Name: "u_a", Type: "int"},
-					parser.RecordField{Name: "u_b", Type: "int"},
+					parser.RecordField{Name: "u_a", Type: "int", Offset: 0},
+					parser.RecordField{Name: "u_b", Type: "int", Offset: 0},
 				},
-				Source: "test_struct.cc:20:9",
+				Size:    4,
+				IsUnion: true,
+				Source:  "test_struct.cc:20:9",
 			},
 		},
 		Aliases: parser.TypeAliases{
-			"OtherInt": "int",
-			"int":      "int",
+			"OtherInt": parser.TypeDef{Type: "int", Size: 4},
+			"int":      parser.TypeDef{Type: "int", Size: 4},
 		},
 	}
 

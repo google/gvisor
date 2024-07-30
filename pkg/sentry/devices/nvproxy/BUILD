@@ -96,6 +96,7 @@ go_test(
     data = ["//tools/nvidia_driver_differ:driver_ast_parser"],
     deps = [
         ":nvproxy",
+        "//pkg/abi/nvgpu",
         "//pkg/test/testutil",
         "//tools/nvidia_driver_differ/parser",
     ],
