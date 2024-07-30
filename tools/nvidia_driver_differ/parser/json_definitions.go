@@ -17,6 +17,7 @@ package parser
 
 import (
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 
@@ -32,6 +33,18 @@ type InputJSON struct {
 type OutputJSON struct {
 	Records RecordDefs  `json:"records"`
 	Aliases TypeAliases `json:"aliases"`
+}
+
+// Merge merges the struct definitions from b into this OutputJSON.
+func (a *OutputJSON) Merge(b OutputJSON) {
+	if a.Records == nil {
+		a.Records = make(RecordDefs)
+	}
+	if a.Aliases == nil {
+		a.Aliases = make(TypeAliases)
+	}
+	maps.Copy(a.Records, b.Records)
+	maps.Copy(a.Aliases, b.Aliases)
 }
 
 // RecordField represents a field in a record (struct or union).

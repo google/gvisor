@@ -19,17 +19,24 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+
+	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy"
 )
 
 // DriverSourceDir represents a directory containing the source code for a given driver version.
 type DriverSourceDir struct {
-	Path    string
-	Version string
+	ParentDirectory string
+	Version         nvproxy.DriverVersion
+}
+
+// Name returns the name of the driver source directory.
+func (d DriverSourceDir) Name() string {
+	return d.Version.String()
 }
 
 // GlobDriverFiles returns all files in the given driver directory that match the given pattern.
 func (d *DriverSourceDir) GlobDriverFiles(pattern string) ([]string, error) {
-	files, err := filepath.Glob(fmt.Sprintf("%s/%s", d.Path, pattern))
+	files, err := filepath.Glob(fmt.Sprintf("%s/%s/%s", d.ParentDirectory, d.Name(), pattern))
 	if err != nil {
 		return nil, fmt.Errorf("failed to glob files: %w", err)
 	}
@@ -61,24 +68,24 @@ func (d *DriverSourceDir) GetNonUVMSourcePaths() ([]string, error) {
 // GetUVMSourcePaths returns the list of paths for uvm source files.
 func (d *DriverSourceDir) GetUVMSourcePaths() []string {
 	return []string{
-		fmt.Sprintf("%s/kernel-open/nvidia-uvm/uvm_ioctl.h", d.Path),
-		fmt.Sprintf("%s/kernel-open/nvidia-uvm/uvm_linux_ioctl.h", d.Path),
+		fmt.Sprintf("%s/kernel-open/nvidia-uvm/uvm_ioctl.h", d.Name()),
+		fmt.Sprintf("%s/kernel-open/nvidia-uvm/uvm_linux_ioctl.h", d.Name()),
 	}
 }
 
 // GetNonUVMIncludePaths returns the list of paths for non-uvm include files.
 func (d *DriverSourceDir) GetNonUVMIncludePaths() []string {
 	return []string{
-		fmt.Sprintf("%s/src/common/sdk/nvidia/inc", d.Path),
-		fmt.Sprintf("%s/src/common/shared/inc", d.Path),
-		fmt.Sprintf("%s/src/nvidia/arch/nvalloc/unix/include", d.Path),
+		fmt.Sprintf("%s/src/common/sdk/nvidia/inc", d.Name()),
+		fmt.Sprintf("%s/src/common/shared/inc", d.Name()),
+		fmt.Sprintf("%s/src/nvidia/arch/nvalloc/unix/include", d.Name()),
 	}
 }
 
 // GetUVMIncludePaths returns the list of paths for uvm include files.
 func (d *DriverSourceDir) GetUVMIncludePaths() []string {
 	return []string{
-		fmt.Sprintf("%s/kernel-open/common/inc", d.Path),
+		fmt.Sprintf("%s/kernel-open/common/inc", d.Name()),
 	}
 }
 
