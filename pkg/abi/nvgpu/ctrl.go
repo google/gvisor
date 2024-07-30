@@ -97,7 +97,7 @@ const (
 
 // +marshal
 type NV0000_CTRL_OS_UNIX_GET_EXPORT_OBJECT_INFO_PARAMS struct {
-	FD             int32
+	FD             int32 `nvproxy:"same"`
 	DeviceInstance uint32
 	MaxObjects     uint16
 	Pad            [2]byte
@@ -116,7 +116,7 @@ func (p *NV0000_CTRL_OS_UNIX_GET_EXPORT_OBJECT_INFO_PARAMS) SetFrontendFD(fd int
 
 // +marshal
 type NV0000_CTRL_OS_UNIX_GET_EXPORT_OBJECT_INFO_PARAMS_V545 struct {
-	FD             int32
+	FD             int32 `nvproxy:"NV0000_CTRL_OS_UNIX_GET_EXPORT_OBJECT_INFO_PARAMS"`
 	DeviceInstance uint32
 	GpuInstanceID  uint32
 	MaxObjects     uint16
@@ -145,7 +145,7 @@ type NV0000_CTRL_OS_UNIX_EXPORT_OBJECT struct {
 
 // +marshal
 type NV0000_CTRL_OS_UNIX_EXPORT_OBJECT_TO_FD_PARAMS struct {
-	Object NV0000_CTRL_OS_UNIX_EXPORT_OBJECT
+	Object NV0000_CTRL_OS_UNIX_EXPORT_OBJECT `nvproxy:"same"`
 	FD     int32
 	Flags  uint32
 }
@@ -162,7 +162,7 @@ func (p *NV0000_CTRL_OS_UNIX_EXPORT_OBJECT_TO_FD_PARAMS) SetFrontendFD(fd int32)
 
 // +marshal
 type NV0000_CTRL_OS_UNIX_IMPORT_OBJECT_FROM_FD_PARAMS struct {
-	FD     int32
+	FD     int32 `nvproxy:"same"`
 	Object NV0000_CTRL_OS_UNIX_EXPORT_OBJECT
 }
 
@@ -178,7 +178,7 @@ func (p *NV0000_CTRL_OS_UNIX_IMPORT_OBJECT_FROM_FD_PARAMS) SetFrontendFD(fd int3
 
 // +marshal
 type NV0000_CTRL_SYSTEM_GET_BUILD_VERSION_PARAMS struct {
-	SizeOfStrings            uint32
+	SizeOfStrings            uint32 `nvproxy:"same"`
 	Pad                      [4]byte
 	PDriverVersionBuffer     P64
 	PVersionBuffer           P64
@@ -194,7 +194,7 @@ const (
 
 // +marshal
 type NV0041_CTRL_GET_SURFACE_INFO_PARAMS struct {
-	SurfaceInfoListSize uint32
+	SurfaceInfoListSize uint32 `nvproxy:"same"`
 	Pad                 [4]byte
 	SurfaceInfoList     P64
 }
@@ -226,7 +226,7 @@ const (
 
 // +marshal
 type NV0080_CTRL_FIFO_GET_CHANNELLIST_PARAMS struct {
-	NumChannels        uint32
+	NumChannels        uint32 `nvproxy:"same"`
 	Pad                [4]byte
 	PChannelHandleList P64
 	PChannelList       P64
@@ -243,7 +243,7 @@ const (
 
 // +marshal
 type NV0080_CTRL_GPU_GET_CLASSLIST_PARAMS struct {
-	NumClasses uint32
+	NumClasses uint32 `nvproxy:"same"`
 	Pad        [4]byte
 	ClassList  P64
 }
@@ -252,7 +252,7 @@ type NV0080_CTRL_GPU_GET_CLASSLIST_PARAMS struct {
 
 // +marshal
 type NV0080_CTRL_GR_ROUTE_INFO struct {
-	Flags uint32
+	Flags uint32 `nvproxy:"same"`
 	Pad   [4]byte
 	Route uint64
 }
@@ -282,7 +282,7 @@ const (
 
 // +marshal
 type NV00FD_CTRL_ATTACH_GPU_PARAMS struct {
-	HSubDevice    Handle
+	HSubDevice    Handle `nvproxy:"same"`
 	Flags         uint32
 	DevDescriptor uint64
 }
@@ -294,7 +294,7 @@ const (
 
 // +marshal
 type NV2080_CTRL_BIOS_GET_INFO_PARAMS struct {
-	BiosInfoListSize uint32
+	BiosInfoListSize uint32 `nvproxy:"same"`
 	Pad              [4]byte
 	BiosInfoList     P64
 }
@@ -352,7 +352,7 @@ const (
 
 // +marshal
 type NV2080_CTRL_FIFO_DISABLE_CHANNELS_PARAMS struct {
-	BDisable               uint8
+	BDisable               uint8 `nvproxy:"same"`
 	Pad1                   [3]byte
 	NumChannels            uint32
 	BOnlyDisableScheduling uint8
@@ -411,7 +411,7 @@ const (
 
 // +marshal
 type NV2080_CTRL_GR_GET_INFO_PARAMS struct {
-	GRInfoListSize uint32 // in elements
+	GRInfoListSize uint32 `nvproxy:"same"` // in elements
 	Pad            [4]byte
 	GRInfoList     P64
 	GRRouteInfo    NV0080_CTRL_GR_ROUTE_INFO
@@ -471,7 +471,7 @@ const (
 
 // +marshal
 type NV503C_CTRL_REGISTER_VA_SPACE_PARAMS struct {
-	HVASpace     Handle
+	HVASpace     Handle `nvproxy:"same"`
 	Pad          [4]byte
 	VASpaceToken uint64
 }

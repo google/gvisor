@@ -55,20 +55,18 @@ const (
 // Frontend ioctl parameter structs, from src/common/sdk/nvidia/inc/nvos.h or
 // kernel-open/common/inc/nv-ioctl.h.
 
-// IoctlRegisterFD is nv_ioctl_register_fd_t, the parameter type for
-// NV_ESC_REGISTER_FD.
+// IoctlRegisterFD is the parameter type for NV_ESC_REGISTER_FD.
 //
 // +marshal
 type IoctlRegisterFD struct {
-	CtlFD int32
+	CtlFD int32 `nvproxy:"nv_ioctl_register_fd_t"`
 }
 
-// IoctlAllocOSEvent is nv_ioctl_alloc_os_event_t, the parameter type for
-// NV_ESC_ALLOC_OS_EVENT.
+// IoctlAllocOSEvent is the parameter type for NV_ESC_ALLOC_OS_EVENT.
 //
 // +marshal
 type IoctlAllocOSEvent struct {
-	HClient Handle
+	HClient Handle `nvproxy:"nv_ioctl_alloc_os_event_t"`
 	HDevice Handle
 	FD      uint32
 	Status  uint32
@@ -84,12 +82,11 @@ func (p *IoctlAllocOSEvent) SetFrontendFD(fd int32) {
 	p.FD = uint32(fd)
 }
 
-// IoctlFreeOSEvent is nv_ioctl_free_os_event_t, the parameter type for
-// NV_ESC_FREE_OS_EVENT.
+// IoctlFreeOSEvent is the parameter type for NV_ESC_FREE_OS_EVENT.
 //
 // +marshal
 type IoctlFreeOSEvent struct {
-	HClient Handle
+	HClient Handle `nvproxy:"nv_ioctl_free_os_event_t"`
 	HDevice Handle
 	FD      uint32
 	Status  uint32
@@ -105,46 +102,42 @@ func (p *IoctlFreeOSEvent) SetFrontendFD(fd int32) {
 	p.FD = uint32(fd)
 }
 
-// RMAPIVersion is nv_rm_api_version_t, the parameter type for
-// NV_ESC_CHECK_VERSION_STR.
+// RMAPIVersion is the parameter type for NV_ESC_CHECK_VERSION_STR.
 //
 // +marshal
 type RMAPIVersion struct {
-	Cmd           uint32
+	Cmd           uint32 `nvproxy:"nv_ioctl_rm_api_version_t"`
 	Reply         uint32
 	VersionString [64]byte
 }
 
-// IoctlSysParams is nv_ioctl_sys_params_t, the parameter type for
-// NV_ESC_SYS_PARAMS.
+// IoctlSysParams is the parameter type for NV_ESC_SYS_PARAMS.
 //
 // +marshal
 type IoctlSysParams struct {
-	MemblockSize uint64
+	MemblockSize uint64 `nvproxy:"nv_ioctl_sys_params_t"`
 }
 
-// IoctlWaitOpenComplete is nv_ioctl_wait_open_complete_t, the parameter type
-// for NV_ESC_WAIT_OPEN_COMPLETE.
+// IoctlWaitOpenComplete is the parameter type for NV_ESC_WAIT_OPEN_COMPLETE.
 //
 // +marshal
 type IoctlWaitOpenComplete struct {
-	Rc            int32
+	Rc            int32 `nvproxy:"nv_ioctl_wait_open_complete_t"`
 	AdapterStatus uint32
 }
 
-// IoctlNVOS02ParametersWithFD is nv_ioctl_nvos2_parameters_with_fd, the
-// parameter type for NV_ESC_RM_ALLOC_MEMORY.
+// IoctlNVOS02ParametersWithFD is the parameter type for NV_ESC_RM_ALLOC_MEMORY.
 //
 // +marshal
 type IoctlNVOS02ParametersWithFD struct {
-	Params NVOS02Parameters
+	Params NVOS02Parameters `nvproxy:"nv_ioctl_nvos02_parameters_with_fd"`
 	FD     int32
 	Pad0   [4]byte
 }
 
 // +marshal
 type NVOS02Parameters struct {
-	HRoot         Handle
+	HRoot         Handle `nvproxy:"NVOS02_PARAMETERS"`
 	HObjectParent Handle
 	HObjectNew    Handle
 	HClass        ClassID
@@ -156,12 +149,11 @@ type NVOS02Parameters struct {
 	Pad1          [4]byte
 }
 
-// NVOS00Parameters is NVOS00_PARAMETERS, the parameter type for
-// NV_ESC_RM_FREE.
+// NVOS00Parameters is the parameter type for NV_ESC_RM_FREE.
 //
 // +marshal
 type NVOS00Parameters struct {
-	HRoot         Handle
+	HRoot         Handle `nvproxy:"NVOS00_PARAMETERS"`
 	HObjectParent Handle
 	HObjectOld    Handle
 	Status        uint32
@@ -190,12 +182,11 @@ func GetRmAllocParamObj(isNVOS64 bool) RmAllocParamType {
 	return &NVOS21Parameters{}
 }
 
-// NVOS21Parameters is NVOS21_PARAMETERS, one possible parameter type for
-// NV_ESC_RM_ALLOC.
+// NVOS21Parameters is one possible parameter type for NV_ESC_RM_ALLOC.
 //
 // +marshal
 type NVOS21Parameters struct {
-	HRoot         Handle
+	HRoot         Handle `nvproxy:"NVOS21_PARAMETERS"`
 	HObjectParent Handle
 	HObjectNew    Handle
 	HClass        ClassID
@@ -251,12 +242,11 @@ func (n *NVOS21Parameters) ToOS64() NVOS64Parameters {
 	}
 }
 
-// NVOS55Parameters is NVOS55_PARAMETERS, the parameter type for
-// NV_ESC_RM_DUP_OBJECT.
+// NVOS55Parameters is the parameter type for NV_ESC_RM_DUP_OBJECT.
 //
 // +marshal
 type NVOS55Parameters struct {
-	HClient    Handle
+	HClient    Handle `nvproxy:"NVOS55_PARAMETERS"`
 	HParent    Handle
 	HObject    Handle
 	HClientSrc Handle
@@ -265,23 +255,21 @@ type NVOS55Parameters struct {
 	Status     uint32
 }
 
-// NVOS57Parameters is NVOS57_PARAMETERS, the parameter type for
-// NV_ESC_RM_SHARE.
+// NVOS57Parameters is the parameter type for NV_ESC_RM_SHARE.
 //
 // +marshal
 type NVOS57Parameters struct {
-	HClient     Handle
+	HClient     Handle `nvproxy:"NVOS57_PARAMETERS"`
 	HObject     Handle
 	SharePolicy RS_SHARE_POLICY
 	Status      uint32
 }
 
-// NVOS32Parameters is NVOS32_PARAMETERS, the parameter type for
-// NV_ESC_RM_VID_HEAP_CONTROL.
+// NVOS32Parameters is the parameter type for NV_ESC_RM_VID_HEAP_CONTROL.
 //
 // +marshal
 type NVOS32Parameters struct {
-	HRoot         Handle
+	HRoot         Handle `nvproxy:"NVOS32_PARAMETERS"`
 	HObjectParent Handle
 	Function      uint32
 	HVASpace      Handle
@@ -324,20 +312,19 @@ type NVOS32AllocSize struct {
 	CtagOffset      uint32
 }
 
-// IoctlNVOS33ParametersWithFD is nv_ioctl_nvos33_parameters_with_fd, the
-// parameter type for NV_ESC_RM_MAP_MEMORY, from
-// src/nvidia/arch/nvalloc/unix/include/nv-unix-nvos-params-wrappers.h.
+// IoctlNVOS33ParametersWithFD is the parameter type for NV_ESC_RM_MAP_MEMORY,
+// from src/nvidia/arch/nvalloc/unix/include/nv-unix-nvos-params-wrappers.h.
 //
 // +marshal
 type IoctlNVOS33ParametersWithFD struct {
-	Params NVOS33Parameters
+	Params NVOS33Parameters `nvproxy:"nv_ioctl_nvos33_parameters_with_fd"`
 	FD     int32
 	Pad0   [4]byte
 }
 
 // +marshal
 type NVOS33Parameters struct {
-	HClient        Handle
+	HClient        Handle `nvproxy:"NVOS33_PARAMETERS"`
 	HDevice        Handle
 	HMemory        Handle
 	Pad0           [4]byte
@@ -348,12 +335,11 @@ type NVOS33Parameters struct {
 	Flags          uint32
 }
 
-// NVOS34Parameters is NVOS34_PARAMETERS, the parameter type for
-// NV_ESC_RM_UNMAP_MEMORY.
+// NVOS34Parameters is the parameter type for NV_ESC_RM_UNMAP_MEMORY.
 //
 // +marshal
 type NVOS34Parameters struct {
-	HClient        Handle
+	HClient        Handle `nvproxy:"NVOS34_PARAMETERS"`
 	HDevice        Handle
 	HMemory        Handle
 	Pad0           [4]byte
@@ -362,12 +348,11 @@ type NVOS34Parameters struct {
 	Flags          uint32
 }
 
-// NVOS54Parameters is NVOS54_PARAMETERS, the parameter type for
-// NV_ESC_RM_CONTROL.
+// NVOS54Parameters is the parameter type for NV_ESC_RM_CONTROL.
 //
 // +marshal
 type NVOS54Parameters struct {
-	HClient    Handle
+	HClient    Handle `nvproxy:"NVOS54_PARAMETERS"`
 	HObject    Handle
 	Cmd        uint32
 	Flags      uint32
@@ -376,12 +361,11 @@ type NVOS54Parameters struct {
 	Status     uint32
 }
 
-// NVOS56Parameters is NVOS56_PARAMETERS, the parameter type for
-// NV_ESC_RM_UPDATE_DEVICE_MAPPING_INFO.
+// NVOS56Parameters is the parameter type for NV_ESC_RM_UPDATE_DEVICE_MAPPING_INFO.
 //
 // +marshal
 type NVOS56Parameters struct {
-	HClient        Handle
+	HClient        Handle `nvproxy:"NVOS56_PARAMETERS"`
 	HDevice        Handle
 	HMemory        Handle
 	Pad0           [4]byte
@@ -391,13 +375,12 @@ type NVOS56Parameters struct {
 	Pad1           [4]byte
 }
 
-// NVOS64Parameters is NVOS64_PARAMETERS, one possible parameter type for
-// NV_ESC_RM_ALLOC.
+// NVOS64Parameters is one possible parameter type for NV_ESC_RM_ALLOC.
 //
 // +marshal
 // +stateify savable
 type NVOS64Parameters struct {
-	HRoot            Handle
+	HRoot            Handle `nvproxy:"NVOS64_PARAMETERS"`
 	HObjectParent    Handle
 	HObjectNew       Handle
 	HClass           ClassID
