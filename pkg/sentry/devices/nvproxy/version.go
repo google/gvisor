@@ -440,6 +440,7 @@ func Init() {
 							0x80028b: nil, // unknown, paramsSize == 1
 							nvgpu.NV0080_CTRL_CMD_GPU_GET_CLASSLIST_V2:                             simpleIoctl("NV0080_CTRL_GPU_GET_CLASSLIST_V2_PARAMS"),
 							nvgpu.NV0080_CTRL_CMD_HOST_GET_CAPS_V2:                                 simpleIoctl("NV0080_CTRL_HOST_GET_CAPS_V2_PARAMS"),
+							nvgpu.NV00F8_CTRL_CMD_ATTACH_MEM:                                       simpleIoctl("NV00F8_CTRL_ATTACH_MEM_PARAMS"),
 							nvgpu.NV00FD_CTRL_CMD_GET_INFO:                                         simpleIoctl("NV00FD_CTRL_GET_INFO_PARAMS"),
 							nvgpu.NV00FD_CTRL_CMD_ATTACH_MEM:                                       simpleIoctl("NV00FD_CTRL_ATTACH_MEM_PARAMS"),
 							nvgpu.NV00FD_CTRL_CMD_DETACH_MEM:                                       simpleIoctl("NV00FD_CTRL_DETACH_MEM_PARAMS"),
