@@ -16,6 +16,7 @@ package nvproxy
 
 import (
 	"fmt"
+	"reflect"
 	"strconv"
 	"strings"
 
@@ -102,6 +103,10 @@ type uvmIoctlHandler func(ui *uvmIoctlState) (uintptr, error)
 // This indirection exists to avoid memory usage from unused driver ABIs.
 type driverABIFunc func() *driverABI
 
+// driverStructNamesFunc returns a mapping of struct names used by an ABI version.
+// This indirection exists to avoid the memory usage from struct name maps if they are not used.
+type driverStructNamesFunc func() *driverStructNames
+
 // abiConAndChecksum couples the driver's abiConstructor to the SHA256 checksum of its linux .run
 // driver installer file from NVIDIA.
 type abiConAndChecksum struct {
@@ -126,7 +131,22 @@ type driverABI struct {
 	uvmIoctl        map[uint32]uvmIoctlHandler
 	controlCmd      map[uint32]controlCmdHandler
 	allocationClass map[nvgpu.ClassID]allocationClassHandler
+
+	getStructNames driverStructNamesFunc
 }
+
+// To help with verifying and supporting new driver versions, we want to keep
+// track of all the driver structs that we currently support. We do so by mapping ioctl
+// numbers to a list of struct names used by that ioctl.
+type driverStructNames struct {
+	frontendNames   map[uint32][]DriverStructName
+	uvmNames        map[uint32][]DriverStructName
+	controlNames    map[uint32][]DriverStructName
+	allocationNames map[nvgpu.ClassID][]DriverStructName
+}
+
+// DriverStructName is the name of a struct used by the Nvidia driver.
+type DriverStructName = string
 
 // abis is a global map containing all supported Nvidia driver ABIs. This is
 // initialized on Init() and is immutable henceforth.
@@ -345,6 +365,203 @@ func Init() {
 					nvgpu.TURING_USERMODE_A:          rmAllocNoParams,
 					nvgpu.HOPPER_SEC2_WORK_LAUNCH_A:  rmAllocNoParams,
 				},
+
+				getStructNames: func() *driverStructNames {
+					return &driverStructNames{
+						frontendNames: map[uint32][]DriverStructName{
+							nvgpu.NV_ESC_CARD_INFO:                     simpleIoctl("nv_ioctl_card_info_t"),
+							nvgpu.NV_ESC_CHECK_VERSION_STR:             getStructName(nvgpu.RMAPIVersion{}),
+							nvgpu.NV_ESC_ATTACH_GPUS_TO_FD:             nil, // NvU32 array containing GPU IDs
+							nvgpu.NV_ESC_SYS_PARAMS:                    getStructName(nvgpu.IoctlSysParams{}),
+							nvgpu.NV_ESC_RM_DUP_OBJECT:                 getStructName(nvgpu.NVOS55Parameters{}),
+							nvgpu.NV_ESC_RM_SHARE:                      getStructName(nvgpu.NVOS57Parameters{}),
+							nvgpu.NV_ESC_RM_UNMAP_MEMORY:               getStructName(nvgpu.NVOS34Parameters{}),
+							nvgpu.NV_ESC_RM_UPDATE_DEVICE_MAPPING_INFO: getStructName(nvgpu.NVOS56Parameters{}),
+							nvgpu.NV_ESC_REGISTER_FD:                   getStructName(nvgpu.IoctlRegisterFD{}),
+							nvgpu.NV_ESC_ALLOC_OS_EVENT:                getStructName(nvgpu.IoctlAllocOSEvent{}),
+							nvgpu.NV_ESC_FREE_OS_EVENT:                 getStructName(nvgpu.IoctlFreeOSEvent{}),
+							nvgpu.NV_ESC_NUMA_INFO:                     nil, // nvproxy ignores this ioctl
+							nvgpu.NV_ESC_RM_ALLOC_MEMORY:               getStructName(nvgpu.IoctlNVOS02ParametersWithFD{}),
+							nvgpu.NV_ESC_RM_FREE:                       getStructName(nvgpu.NVOS00Parameters{}),
+							nvgpu.NV_ESC_RM_CONTROL:                    getStructName(nvgpu.NVOS54Parameters{}),
+							nvgpu.NV_ESC_RM_ALLOC:                      append(getStructName(nvgpu.NVOS21Parameters{}), getStructName(nvgpu.NVOS64Parameters{})...),
+							nvgpu.NV_ESC_RM_VID_HEAP_CONTROL:           getStructName(nvgpu.NVOS32Parameters{}),
+							nvgpu.NV_ESC_RM_MAP_MEMORY:                 getStructName(nvgpu.IoctlNVOS33ParametersWithFD{}),
+						},
+						uvmNames: map[uint32][]DriverStructName{
+							nvgpu.UVM_INITIALIZE:                     getStructName(nvgpu.UVM_INITIALIZE_PARAMS{}),
+							nvgpu.UVM_DEINITIALIZE:                   nil, // Doesn't have any params
+							nvgpu.UVM_CREATE_RANGE_GROUP:             getStructName(nvgpu.UVM_CREATE_RANGE_GROUP_PARAMS{}),
+							nvgpu.UVM_DESTROY_RANGE_GROUP:            getStructName(nvgpu.UVM_DESTROY_RANGE_GROUP_PARAMS{}),
+							nvgpu.UVM_REGISTER_GPU_VASPACE:           getStructName(nvgpu.UVM_REGISTER_GPU_VASPACE_PARAMS{}),
+							nvgpu.UVM_UNREGISTER_GPU_VASPACE:         getStructName(nvgpu.UVM_UNREGISTER_GPU_VASPACE_PARAMS{}),
+							nvgpu.UVM_REGISTER_CHANNEL:               getStructName(nvgpu.UVM_REGISTER_CHANNEL_PARAMS{}),
+							nvgpu.UVM_UNREGISTER_CHANNEL:             getStructName(nvgpu.UVM_UNREGISTER_CHANNEL_PARAMS{}),
+							nvgpu.UVM_ENABLE_PEER_ACCESS:             getStructName(nvgpu.UVM_ENABLE_PEER_ACCESS_PARAMS{}),
+							nvgpu.UVM_DISABLE_PEER_ACCESS:            getStructName(nvgpu.UVM_DISABLE_PEER_ACCESS_PARAMS{}),
+							nvgpu.UVM_SET_RANGE_GROUP:                getStructName(nvgpu.UVM_SET_RANGE_GROUP_PARAMS{}),
+							nvgpu.UVM_MAP_EXTERNAL_ALLOCATION:        getStructName(nvgpu.UVM_MAP_EXTERNAL_ALLOCATION_PARAMS{}),
+							nvgpu.UVM_FREE:                           getStructName(nvgpu.UVM_FREE_PARAMS{}),
+							nvgpu.UVM_REGISTER_GPU:                   getStructName(nvgpu.UVM_REGISTER_GPU_PARAMS{}),
+							nvgpu.UVM_UNREGISTER_GPU:                 getStructName(nvgpu.UVM_UNREGISTER_GPU_PARAMS{}),
+							nvgpu.UVM_PAGEABLE_MEM_ACCESS:            getStructName(nvgpu.UVM_PAGEABLE_MEM_ACCESS_PARAMS{}),
+							nvgpu.UVM_SET_PREFERRED_LOCATION:         getStructName(nvgpu.UVM_SET_PREFERRED_LOCATION_PARAMS{}),
+							nvgpu.UVM_DISABLE_READ_DUPLICATION:       getStructName(nvgpu.UVM_DISABLE_READ_DUPLICATION_PARAMS{}),
+							nvgpu.UVM_MIGRATE_RANGE_GROUP:            getStructName(nvgpu.UVM_MIGRATE_RANGE_GROUP_PARAMS{}),
+							nvgpu.UVM_MAP_DYNAMIC_PARALLELISM_REGION: getStructName(nvgpu.UVM_MAP_DYNAMIC_PARALLELISM_REGION_PARAMS{}),
+							nvgpu.UVM_UNMAP_EXTERNAL:                 getStructName(nvgpu.UVM_UNMAP_EXTERNAL_PARAMS{}),
+							nvgpu.UVM_ALLOC_SEMAPHORE_POOL:           getStructName(nvgpu.UVM_ALLOC_SEMAPHORE_POOL_PARAMS{}),
+							nvgpu.UVM_VALIDATE_VA_RANGE:              getStructName(nvgpu.UVM_VALIDATE_VA_RANGE_PARAMS{}),
+							nvgpu.UVM_CREATE_EXTERNAL_RANGE:          getStructName(nvgpu.UVM_CREATE_EXTERNAL_RANGE_PARAMS{}),
+							nvgpu.UVM_MM_INITIALIZE:                  getStructName(nvgpu.UVM_MM_INITIALIZE_PARAMS{}),
+						},
+						controlNames: map[uint32][]DriverStructName{
+							nvgpu.NV0000_CTRL_CMD_CLIENT_GET_ADDR_SPACE_TYPE:        simpleIoctl("NV0000_CTRL_CLIENT_GET_ADDR_SPACE_TYPE_PARAMS"),
+							nvgpu.NV0000_CTRL_CMD_CLIENT_SET_INHERITED_SHARE_POLICY: simpleIoctl("NV0000_CTRL_CLIENT_SET_INHERITED_SHARE_POLICY_PARAMS"),
+							nvgpu.NV0000_CTRL_CMD_GPU_GET_ATTACHED_IDS:              simpleIoctl("NV0000_CTRL_GPU_GET_ATTACHED_IDS_PARAMS"),
+							nvgpu.NV0000_CTRL_CMD_GPU_GET_ID_INFO:                   simpleIoctl("NV0000_CTRL_GPU_GET_ID_INFO_PARAMS"),
+							nvgpu.NV0000_CTRL_CMD_GPU_GET_ID_INFO_V2:                simpleIoctl("NV0000_CTRL_GPU_GET_ID_INFO_V2_PARAMS"),
+							nvgpu.NV0000_CTRL_CMD_GPU_GET_PROBED_IDS:                simpleIoctl("NV0000_CTRL_GPU_GET_PROBED_IDS_PARAMS"),
+							nvgpu.NV0000_CTRL_CMD_GPU_ATTACH_IDS:                    simpleIoctl("NV0000_CTRL_GPU_ATTACH_IDS_PARAMS"),
+							nvgpu.NV0000_CTRL_CMD_GPU_DETACH_IDS:                    simpleIoctl("NV0000_CTRL_GPU_DETACH_IDS_PARAMS"),
+							nvgpu.NV0000_CTRL_CMD_GPU_GET_PCI_INFO:                  simpleIoctl("NV0000_CTRL_GPU_GET_PCI_INFO_PARAMS"),
+							nvgpu.NV0000_CTRL_CMD_GPU_QUERY_DRAIN_STATE:             simpleIoctl("NV0000_CTRL_GPU_QUERY_DRAIN_STATE_PARAMS"),
+							nvgpu.NV0000_CTRL_CMD_GPU_GET_MEMOP_ENABLE:              simpleIoctl("NV0000_CTRL_GPU_GET_MEMOP_ENABLE_PARAMS"),
+							nvgpu.NV0000_CTRL_CMD_SYNC_GPU_BOOST_GROUP_INFO:         simpleIoctl("NV0000_SYNC_GPU_BOOST_GROUP_INFO_PARAMS"),
+							nvgpu.NV0000_CTRL_CMD_SYSTEM_GET_P2P_CAPS:               simpleIoctl("NV0000_CTRL_SYSTEM_GET_P2P_CAPS_PARAMS"),
+							nvgpu.NV0000_CTRL_CMD_SYSTEM_GET_P2P_CAPS_V2:            simpleIoctl("NV0000_CTRL_SYSTEM_GET_P2P_CAPS_V2_PARAMS"),
+							nvgpu.NV0000_CTRL_CMD_SYSTEM_GET_FABRIC_STATUS:          simpleIoctl("NV0000_CTRL_SYSTEM_GET_FABRIC_STATUS_PARAMS"),
+							nvgpu.NV0000_CTRL_CMD_SYSTEM_GET_P2P_CAPS_MATRIX:        simpleIoctl("NV0000_CTRL_SYSTEM_GET_P2P_CAPS_MATRIX_PARAMS"),
+							nvgpu.NV0000_CTRL_CMD_SYSTEM_GET_FEATURES:               simpleIoctl("NV0000_CTRL_SYSTEM_GET_FEATURES_PARAMS"),
+							nvgpu.NV0080_CTRL_CMD_FB_GET_CAPS_V2:                    simpleIoctl("NV0080_CTRL_FB_GET_CAPS_V2_PARAMS"),
+							nvgpu.NV0080_CTRL_CMD_GPU_GET_NUM_SUBDEVICES:            simpleIoctl("NV0080_CTRL_GPU_GET_NUM_SUBDEVICES_PARAMS"),
+							nvgpu.NV0080_CTRL_CMD_GPU_QUERY_SW_STATE_PERSISTENCE:    simpleIoctl("NV0080_CTRL_GPU_QUERY_SW_STATE_PERSISTENCE_PARAMS"),
+							nvgpu.NV0080_CTRL_CMD_GPU_GET_VIRTUALIZATION_MODE:       simpleIoctl("NV0080_CTRL_GPU_GET_VIRTUALIZATION_MODE_PARAMS"),
+							0x80028b: nil, // unknown, paramsSize == 1
+							nvgpu.NV0080_CTRL_CMD_GPU_GET_CLASSLIST_V2:                             simpleIoctl("NV0080_CTRL_GPU_GET_CLASSLIST_V2_PARAMS"),
+							nvgpu.NV0080_CTRL_CMD_HOST_GET_CAPS_V2:                                 simpleIoctl("NV0080_CTRL_HOST_GET_CAPS_V2_PARAMS"),
+							nvgpu.NV00F8_CTRL_CMD_ATTACH_MEM:                                       simpleIoctl("NV00F8_CTRL_ATTACH_MEM_PARAMS"),
+							nvgpu.NV00FD_CTRL_CMD_GET_INFO:                                         simpleIoctl("NV00FD_CTRL_GET_INFO_PARAMS"),
+							nvgpu.NV00FD_CTRL_CMD_ATTACH_MEM:                                       simpleIoctl("NV00FD_CTRL_ATTACH_MEM_PARAMS"),
+							nvgpu.NV00FD_CTRL_CMD_DETACH_MEM:                                       simpleIoctl("NV00FD_CTRL_DETACH_MEM_PARAMS"),
+							nvgpu.NV2080_CTRL_CMD_BUS_GET_PCI_INFO:                                 simpleIoctl("NV2080_CTRL_BUS_GET_PCI_INFO_PARAMS"),
+							nvgpu.NV2080_CTRL_CMD_BUS_GET_PCI_BAR_INFO:                             simpleIoctl("NV2080_CTRL_BUS_GET_PCI_BAR_INFO_PARAMS"),
+							nvgpu.NV2080_CTRL_CMD_BUS_GET_INFO_V2:                                  simpleIoctl("NV2080_CTRL_BUS_GET_INFO_V2_PARAMS"),
+							nvgpu.NV2080_CTRL_CMD_BUS_GET_PCIE_SUPPORTED_GPU_ATOMICS:               simpleIoctl("NV2080_CTRL_CMD_BUS_GET_PCIE_SUPPORTED_GPU_ATOMICS_PARAMS"),
+							nvgpu.NV2080_CTRL_CMD_BUS_GET_C2C_INFO:                                 simpleIoctl("NV2080_CTRL_CMD_BUS_GET_C2C_INFO_PARAMS"),
+							nvgpu.NV2080_CTRL_CMD_CE_GET_ALL_CAPS:                                  simpleIoctl("NV2080_CTRL_CE_GET_ALL_CAPS_PARAMS"),
+							nvgpu.NV2080_CTRL_CMD_EVENT_SET_NOTIFICATION:                           simpleIoctl("NV2080_CTRL_EVENT_SET_NOTIFICATION_PARAMS"),
+							nvgpu.NV2080_CTRL_CMD_FB_GET_INFO_V2:                                   simpleIoctl("NV2080_CTRL_FB_GET_INFO_V2_PARAMS"),
+							nvgpu.NV2080_CTRL_CMD_GPU_GET_INFO_V2:                                  simpleIoctl("NV2080_CTRL_GPU_GET_INFO_V2_PARAMS"),
+							nvgpu.NV2080_CTRL_CMD_FLCN_GET_CTX_BUFFER_SIZE:                         simpleIoctl("NV2080_CTRL_FLCN_GET_CTX_BUFFER_SIZE_PARAMS"),
+							nvgpu.NV2080_CTRL_CMD_GPU_GET_NAME_STRING:                              simpleIoctl("NV2080_CTRL_GPU_GET_NAME_STRING_PARAMS"),
+							nvgpu.NV2080_CTRL_CMD_GPU_GET_SHORT_NAME_STRING:                        simpleIoctl("NV2080_CTRL_GPU_GET_SHORT_NAME_STRING_PARAMS"),
+							nvgpu.NV2080_CTRL_CMD_GPU_GET_SIMULATION_INFO:                          simpleIoctl("NV2080_CTRL_GPU_GET_SIMULATION_INFO_PARAMS"),
+							nvgpu.NV2080_CTRL_CMD_GPU_QUERY_ECC_STATUS:                             simpleIoctl("NV2080_CTRL_GPU_QUERY_ECC_STATUS_PARAMS"),
+							nvgpu.NV2080_CTRL_CMD_GPU_QUERY_COMPUTE_MODE_RULES:                     simpleIoctl("NV2080_CTRL_GPU_QUERY_COMPUTE_MODE_RULES_PARAMS"),
+							nvgpu.NV2080_CTRL_CMD_GPU_QUERY_ECC_CONFIGURATION:                      simpleIoctl("NV2080_CTRL_GPU_QUERY_ECC_CONFIGURATION_PARAMS"),
+							nvgpu.NV2080_CTRL_CMD_GPU_GET_OEM_BOARD_INFO:                           simpleIoctl("NV2080_CTRL_GPU_GET_OEM_BOARD_INFO_PARAMS"),
+							nvgpu.NV2080_CTRL_CMD_GPU_ACQUIRE_COMPUTE_MODE_RESERVATION:             nil, // undocumented; paramSize == 0
+							nvgpu.NV2080_CTRL_CMD_GPU_RELEASE_COMPUTE_MODE_RESERVATION:             nil, // undocumented; paramSize == 0
+							nvgpu.NV2080_CTRL_CMD_GPU_GET_GID_INFO:                                 simpleIoctl("NV2080_CTRL_GPU_GET_GID_INFO_PARAMS"),
+							nvgpu.NV2080_CTRL_CMD_GPU_GET_INFOROM_OBJECT_VERSION:                   simpleIoctl("NV2080_CTRL_GPU_GET_INFOROM_OBJECT_VERSION_PARAMS"),
+							nvgpu.NV2080_CTRL_CMD_GPU_GET_INFOROM_IMAGE_VERSION:                    simpleIoctl("NV2080_CTRL_GPU_GET_INFOROM_IMAGE_VERSION_PARAMS"),
+							nvgpu.NV2080_CTRL_CMD_GPU_QUERY_INFOROM_ECC_SUPPORT:                    nil, // No params.
+							nvgpu.NV2080_CTRL_CMD_GPU_GET_ENGINES_V2:                               simpleIoctl("NV2080_CTRL_GPU_GET_ENGINES_V2_PARAMS"),
+							nvgpu.NV2080_CTRL_CMD_GPU_GET_ACTIVE_PARTITION_IDS:                     simpleIoctl("NV2080_CTRL_GPU_GET_ACTIVE_PARTITION_IDS_PARAMS"),
+							nvgpu.NV2080_CTRL_CMD_GPU_GET_PIDS:                                     simpleIoctl("NV2080_CTRL_GPU_GET_PIDS_PARAMS"),
+							nvgpu.NV2080_CTRL_CMD_GPU_GET_PID_INFO:                                 simpleIoctl("NV2080_CTRL_GPU_GET_PID_INFO_PARAMS"),
+							nvgpu.NV2080_CTRL_CMD_GPU_GET_COMPUTE_POLICY_CONFIG:                    simpleIoctl("NV2080_CTRL_GPU_GET_COMPUTE_POLICY_CONFIG_PARAMS"),
+							nvgpu.NV2080_CTRL_CMD_GET_GPU_FABRIC_PROBE_INFO:                        simpleIoctl("NV2080_CTRL_CMD_GET_GPU_FABRIC_PROBE_INFO_PARAMS"),
+							nvgpu.NV2080_CTRL_CMD_GR_SET_CTXSW_PREEMPTION_MODE:                     simpleIoctl("NV2080_CTRL_GR_SET_CTXSW_PREEMPTION_MODE_PARAMS"),
+							nvgpu.NV2080_CTRL_CMD_GR_GET_CTX_BUFFER_SIZE:                           simpleIoctl("NV2080_CTRL_GR_GET_CTX_BUFFER_SIZE_PARAMS"),
+							nvgpu.NV2080_CTRL_CMD_GR_GET_GLOBAL_SM_ORDER:                           simpleIoctl("NV2080_CTRL_GR_GET_GLOBAL_SM_ORDER_PARAMS"),
+							nvgpu.NV2080_CTRL_CMD_GR_GET_CAPS_V2:                                   simpleIoctl("NV2080_CTRL_GR_GET_CAPS_V2_PARAMS"),
+							nvgpu.NV2080_CTRL_CMD_GR_GET_GPC_MASK:                                  simpleIoctl("NV2080_CTRL_GR_GET_GPC_MASK_PARAMS"),
+							nvgpu.NV2080_CTRL_CMD_GR_GET_TPC_MASK:                                  simpleIoctl("NV2080_CTRL_GR_GET_TPC_MASK_PARAMS"),
+							nvgpu.NV2080_CTRL_CMD_GR_GET_SM_ISSUE_RATE_MODIFIER:                    simpleIoctl("NV2080_CTRL_GR_GET_SM_ISSUE_RATE_MODIFIER_PARAMS"),
+							nvgpu.NV2080_CTRL_CMD_GRMGR_GET_GR_FS_INFO:                             simpleIoctl("NV2080_CTRL_GRMGR_GET_GR_FS_INFO_PARAMS"),
+							nvgpu.NV2080_CTRL_CMD_GSP_GET_FEATURES:                                 simpleIoctl("NV2080_CTRL_GSP_GET_FEATURES_PARAMS"),
+							nvgpu.NV2080_CTRL_CMD_MC_GET_ARCH_INFO:                                 simpleIoctl("NV2080_CTRL_MC_GET_ARCH_INFO_PARAMS"),
+							nvgpu.NV2080_CTRL_CMD_MC_SERVICE_INTERRUPTS:                            simpleIoctl("NV2080_CTRL_MC_SERVICE_INTERRUPTS_PARAMS"),
+							nvgpu.NV2080_CTRL_CMD_NVLINK_GET_NVLINK_CAPS:                           simpleIoctl("NV2080_CTRL_CMD_NVLINK_GET_NVLINK_CAPS_PARAMS"),
+							nvgpu.NV2080_CTRL_CMD_NVLINK_GET_NVLINK_STATUS:                         simpleIoctl("NV2080_CTRL_CMD_NVLINK_GET_NVLINK_STATUS_PARAMS"),
+							nvgpu.NV2080_CTRL_CMD_PERF_BOOST:                                       simpleIoctl("NV2080_CTRL_PERF_BOOST_PARAMS"),
+							nvgpu.NV2080_CTRL_CMD_RC_GET_WATCHDOG_INFO:                             simpleIoctl("NV2080_CTRL_RC_GET_WATCHDOG_INFO_PARAMS"),
+							nvgpu.NV2080_CTRL_CMD_RC_RELEASE_WATCHDOG_REQUESTS:                     nil, // No params.
+							nvgpu.NV2080_CTRL_CMD_RC_SOFT_DISABLE_WATCHDOG:                         nil, // No params.
+							nvgpu.NV2080_CTRL_CMD_TIMER_GET_GPU_CPU_TIME_CORRELATION_INFO:          simpleIoctl("NV2080_CTRL_TIMER_GET_GPU_CPU_TIME_CORRELATION_INFO_PARAMS"),
+							nvgpu.NV503C_CTRL_CMD_REGISTER_VIDMEM:                                  simpleIoctl("NV503C_CTRL_REGISTER_VIDMEM_PARAMS"),
+							nvgpu.NV503C_CTRL_CMD_UNREGISTER_VIDMEM:                                simpleIoctl("NV503C_CTRL_UNREGISTER_VIDMEM_PARAMS"),
+							nvgpu.NV83DE_CTRL_CMD_DEBUG_SET_EXCEPTION_MASK:                         simpleIoctl("NV83DE_CTRL_DEBUG_SET_EXCEPTION_MASK_PARAMS"),
+							nvgpu.NV83DE_CTRL_CMD_DEBUG_READ_ALL_SM_ERROR_STATES:                   simpleIoctl("NV83DE_CTRL_DEBUG_READ_ALL_SM_ERROR_STATES_PARAMS"),
+							nvgpu.NV83DE_CTRL_CMD_DEBUG_CLEAR_ALL_SM_ERROR_STATES:                  simpleIoctl("NV83DE_CTRL_DEBUG_CLEAR_ALL_SM_ERROR_STATES_PARAMS"),
+							nvgpu.NV906F_CTRL_GET_CLASS_ENGINEID:                                   simpleIoctl("NV906F_CTRL_GET_CLASS_ENGINEID_PARAMS"),
+							nvgpu.NV906F_CTRL_CMD_RESET_CHANNEL:                                    simpleIoctl("NV906F_CTRL_CMD_RESET_CHANNEL_PARAMS"),
+							nvgpu.NV90E6_CTRL_CMD_MASTER_GET_VIRTUAL_FUNCTION_ERROR_CONT_INTR_MASK: simpleIoctl("NV90E6_CTRL_MASTER_GET_VIRTUAL_FUNCTION_ERROR_CONT_INTR_MASK_PARAMS"),
+							nvgpu.NVC36F_CTRL_GET_CLASS_ENGINEID:                                   simpleIoctl("NVC36F_CTRL_GET_CLASS_ENGINEID_PARAMS"),
+							nvgpu.NVC36F_CTRL_CMD_GPFIFO_GET_WORK_SUBMIT_TOKEN:                     simpleIoctl("NVC36F_CTRL_CMD_GPFIFO_GET_WORK_SUBMIT_TOKEN_PARAMS"),
+							nvgpu.NV_CONF_COMPUTE_CTRL_CMD_SYSTEM_GET_CAPABILITIES:                 simpleIoctl("NV_CONF_COMPUTE_CTRL_CMD_SYSTEM_GET_CAPABILITIES_PARAMS"),
+							nvgpu.NV_CONF_COMPUTE_CTRL_CMD_SYSTEM_GET_GPUS_STATE:                   simpleIoctl("NV_CONF_COMPUTE_CTRL_CMD_SYSTEM_GET_GPUS_STATE_PARAMS"),
+							nvgpu.NV_CONF_COMPUTE_CTRL_CMD_GPU_GET_NUM_SECURE_CHANNELS:             simpleIoctl("NV_CONF_COMPUTE_CTRL_CMD_GPU_GET_NUM_SECURE_CHANNELS_PARAMS"),
+							nvgpu.NVA06C_CTRL_CMD_GPFIFO_SCHEDULE:                                  simpleIoctl("NVA06C_CTRL_GPFIFO_SCHEDULE_PARAMS"),
+							nvgpu.NVA06C_CTRL_CMD_SET_TIMESLICE:                                    simpleIoctl("NVA06C_CTRL_SET_TIMESLICE_PARAMS"),
+							nvgpu.NVA06C_CTRL_CMD_PREEMPT:                                          simpleIoctl("NVA06C_CTRL_PREEMPT_PARAMS"),
+							nvgpu.NVA06F_CTRL_CMD_GPFIFO_SCHEDULE:                                  simpleIoctl("NVA06F_CTRL_GPFIFO_SCHEDULE_PARAMS"),
+							nvgpu.NVC56F_CTRL_CMD_GET_KMB:                                          simpleIoctl("NVC56F_CTRL_CMD_GET_KMB_PARAMS"),
+							nvgpu.NV0000_CTRL_CMD_SYSTEM_GET_BUILD_VERSION:                         getStructName(nvgpu.NV0000_CTRL_SYSTEM_GET_BUILD_VERSION_PARAMS{}),
+							nvgpu.NV0000_CTRL_CMD_OS_UNIX_EXPORT_OBJECT_TO_FD:                      getStructName(nvgpu.NV0000_CTRL_OS_UNIX_EXPORT_OBJECT_TO_FD_PARAMS{}),
+							nvgpu.NV0000_CTRL_CMD_OS_UNIX_IMPORT_OBJECT_FROM_FD:                    getStructName(nvgpu.NV0000_CTRL_OS_UNIX_IMPORT_OBJECT_FROM_FD_PARAMS{}),
+							nvgpu.NV0000_CTRL_CMD_OS_UNIX_GET_EXPORT_OBJECT_INFO:                   getStructName(nvgpu.NV0000_CTRL_OS_UNIX_GET_EXPORT_OBJECT_INFO_PARAMS{}),
+							nvgpu.NV0041_CTRL_CMD_GET_SURFACE_INFO:                                 getStructName(nvgpu.NV0041_CTRL_GET_SURFACE_INFO_PARAMS{}),
+							nvgpu.NV0080_CTRL_CMD_FIFO_GET_CHANNELLIST:                             getStructName(nvgpu.NV0080_CTRL_FIFO_GET_CHANNELLIST_PARAMS{}),
+							nvgpu.NV00FD_CTRL_CMD_ATTACH_GPU:                                       getStructName(nvgpu.NV00FD_CTRL_ATTACH_GPU_PARAMS{}),
+							nvgpu.NV0080_CTRL_CMD_GPU_GET_CLASSLIST:                                getStructName(nvgpu.NV0080_CTRL_GPU_GET_CLASSLIST_PARAMS{}),
+							nvgpu.NV2080_CTRL_CMD_FIFO_DISABLE_CHANNELS:                            getStructName(nvgpu.NV2080_CTRL_FIFO_DISABLE_CHANNELS_PARAMS{}),
+							nvgpu.NV2080_CTRL_CMD_BIOS_GET_INFO:                                    getStructName(nvgpu.NV2080_CTRL_BIOS_GET_INFO_PARAMS{}),
+							nvgpu.NV2080_CTRL_CMD_GR_GET_INFO:                                      getStructName(nvgpu.NV2080_CTRL_GR_GET_INFO_PARAMS{}),
+							nvgpu.NV503C_CTRL_CMD_REGISTER_VA_SPACE:                                getStructName(nvgpu.NV503C_CTRL_REGISTER_VA_SPACE_PARAMS{}),
+						},
+						allocationNames: map[nvgpu.ClassID][]DriverStructName{
+							nvgpu.NV01_ROOT:                  getStructName(nvgpu.Handle{}),
+							nvgpu.NV01_ROOT_NON_PRIV:         getStructName(nvgpu.Handle{}),
+							nvgpu.NV01_MEMORY_SYSTEM:         getStructName(nvgpu.NV_MEMORY_ALLOCATION_PARAMS{}),
+							nvgpu.NV01_MEMORY_LOCAL_USER:     getStructName(nvgpu.NV_MEMORY_ALLOCATION_PARAMS{}),
+							nvgpu.NV01_ROOT_CLIENT:           getStructName(nvgpu.Handle{}),
+							nvgpu.NV01_EVENT_OS_EVENT:        getStructName(nvgpu.NV0005_ALLOC_PARAMETERS{}),
+							nvgpu.NV2081_BINAPI:              getStructName(nvgpu.NV2081_ALLOC_PARAMETERS{}),
+							nvgpu.NV01_DEVICE_0:              getStructName(nvgpu.NV0080_ALLOC_PARAMETERS{}),
+							nvgpu.RM_USER_SHARED_DATA:        getStructName(nvgpu.NV00DE_ALLOC_PARAMETERS{}),
+							nvgpu.NV_MEMORY_FABRIC:           getStructName(nvgpu.NV00F8_ALLOCATION_PARAMETERS{}),
+							nvgpu.NV_MEMORY_MULTICAST_FABRIC: getStructName(nvgpu.NV00FD_ALLOCATION_PARAMETERS{}),
+							nvgpu.NV20_SUBDEVICE_0:           getStructName(nvgpu.NV2080_ALLOC_PARAMETERS{}),
+							nvgpu.NV50_MEMORY_VIRTUAL:        getStructName(nvgpu.NV_MEMORY_ALLOCATION_PARAMS{}),
+							nvgpu.NV50_P2P:                   getStructName(nvgpu.NV503B_ALLOC_PARAMETERS{}),
+							nvgpu.NV50_THIRD_PARTY_P2P:       getStructName(nvgpu.NV503C_ALLOC_PARAMETERS{}),
+							nvgpu.GT200_DEBUGGER:             getStructName(nvgpu.NV83DE_ALLOC_PARAMETERS{}),
+							nvgpu.FERMI_CONTEXT_SHARE_A:      getStructName(nvgpu.NV_CTXSHARE_ALLOCATION_PARAMETERS{}),
+							nvgpu.FERMI_VASPACE_A:            getStructName(nvgpu.NV_VASPACE_ALLOCATION_PARAMETERS{}),
+							nvgpu.KEPLER_CHANNEL_GROUP_A:     getStructName(nvgpu.NV_CHANNEL_GROUP_ALLOCATION_PARAMETERS{}),
+							nvgpu.TURING_CHANNEL_GPFIFO_A:    getStructName(nvgpu.NV_CHANNEL_ALLOC_PARAMS{}),
+							nvgpu.AMPERE_CHANNEL_GPFIFO_A:    getStructName(nvgpu.NV_CHANNEL_ALLOC_PARAMS{}),
+							nvgpu.HOPPER_CHANNEL_GPFIFO_A:    getStructName(nvgpu.NV_CHANNEL_ALLOC_PARAMS{}),
+							nvgpu.TURING_DMA_COPY_A:          getStructName(nvgpu.NVB0B5_ALLOCATION_PARAMETERS{}),
+							nvgpu.AMPERE_DMA_COPY_A:          getStructName(nvgpu.NVB0B5_ALLOCATION_PARAMETERS{}),
+							nvgpu.AMPERE_DMA_COPY_B:          getStructName(nvgpu.NVB0B5_ALLOCATION_PARAMETERS{}),
+							nvgpu.HOPPER_DMA_COPY_A:          getStructName(nvgpu.NVB0B5_ALLOCATION_PARAMETERS{}),
+							nvgpu.TURING_COMPUTE_A:           getStructName(nvgpu.NV_GR_ALLOCATION_PARAMETERS{}),
+							nvgpu.AMPERE_COMPUTE_A:           getStructName(nvgpu.NV_GR_ALLOCATION_PARAMETERS{}),
+							nvgpu.AMPERE_COMPUTE_B:           getStructName(nvgpu.NV_GR_ALLOCATION_PARAMETERS{}),
+							nvgpu.ADA_COMPUTE_A:              getStructName(nvgpu.NV_GR_ALLOCATION_PARAMETERS{}),
+							nvgpu.NV_CONFIDENTIAL_COMPUTE:    getStructName(nvgpu.NV_CONFIDENTIAL_COMPUTE_ALLOC_PARAMS{}),
+							nvgpu.HOPPER_COMPUTE_A:           getStructName(nvgpu.NV_GR_ALLOCATION_PARAMETERS{}),
+							nvgpu.HOPPER_USERMODE_A:          getStructName(nvgpu.NV_HOPPER_USERMODE_A_PARAMS{}),
+							nvgpu.GF100_SUBDEVICE_MASTER:     nil, // No params
+							nvgpu.TURING_USERMODE_A:          nil, // No params
+							nvgpu.HOPPER_SEC2_WORK_LAUNCH_A:  nil, // No params
+						},
+					}
+				},
 			}
 		}
 
@@ -370,6 +587,20 @@ func Init() {
 			abi.allocationClass[nvgpu.NV01_MEMORY_SYSTEM] = rmAllocSimple[nvgpu.NV_MEMORY_ALLOCATION_PARAMS_V545]
 			abi.allocationClass[nvgpu.NV01_MEMORY_LOCAL_USER] = rmAllocSimple[nvgpu.NV_MEMORY_ALLOCATION_PARAMS_V545]
 			abi.allocationClass[nvgpu.NV50_MEMORY_VIRTUAL] = rmAllocSimple[nvgpu.NV_MEMORY_ALLOCATION_PARAMS_V545]
+
+			prevNames := abi.getStructNames
+			abi.getStructNames = func() *driverStructNames {
+				names := prevNames()
+				names.controlNames[nvgpu.NV0000_CTRL_CMD_OS_UNIX_GET_EXPORT_OBJECT_INFO] = getStructName(nvgpu.NV0000_CTRL_OS_UNIX_GET_EXPORT_OBJECT_INFO_PARAMS_V545{})
+				names.allocationNames[nvgpu.RM_USER_SHARED_DATA] = getStructName(nvgpu.NV00DE_ALLOC_PARAMETERS_V545{})
+				names.allocationNames[nvgpu.NV_MEMORY_MULTICAST_FABRIC] = getStructName(nvgpu.NV00FD_ALLOCATION_PARAMETERS_V545{})
+				names.allocationNames[nvgpu.NV01_MEMORY_SYSTEM] = getStructName(nvgpu.NV_MEMORY_ALLOCATION_PARAMS_V545{})
+				names.allocationNames[nvgpu.NV01_MEMORY_LOCAL_USER] = getStructName(nvgpu.NV_MEMORY_ALLOCATION_PARAMS_V545{})
+				names.allocationNames[nvgpu.NV50_MEMORY_VIRTUAL] = getStructName(nvgpu.NV_MEMORY_ALLOCATION_PARAMS_V545{})
+
+				return names
+			}
+
 			return abi
 		}
 
@@ -385,18 +616,90 @@ func Init() {
 			// src/nvidia/src/kernel/rmapi/binary_api.c:binapiControl_IMPL().
 			abi.controlCmd[(nvgpu.NV2081_BINAPI<<16)|0x0108] = rmControlSimple
 			abi.uvmIoctl[nvgpu.UVM_SET_PREFERRED_LOCATION] = uvmIoctlSimple[nvgpu.UVM_SET_PREFERRED_LOCATION_PARAMS_V550]
+
+			prevNames := abi.getStructNames
+			abi.getStructNames = func() *driverStructNames {
+				names := prevNames()
+				names.frontendNames[nvgpu.NV_ESC_WAIT_OPEN_COMPLETE] = simpleIoctl("nv_ioctl_wait_open_complete_t")
+				names.controlNames[nvgpu.NV0000_CTRL_CMD_GPU_ASYNC_ATTACH_ID] = simpleIoctl("NV0000_CTRL_GPU_ASYNC_ATTACH_ID_PARAMS")
+				names.controlNames[nvgpu.NV0000_CTRL_CMD_GPU_WAIT_ATTACH_ID] = simpleIoctl("NV0000_CTRL_GPU_WAIT_ATTACH_ID_PARAMS")
+				names.controlNames[nvgpu.NV0080_CTRL_CMD_PERF_CUDA_LIMIT_SET_CONTROL] = simpleIoctl("NV0080_CTRL_PERF_CUDA_LIMIT_CONTROL_PARAMS")
+				names.controlNames[nvgpu.NV2080_CTRL_CMD_PERF_GET_CURRENT_PSTATE] = simpleIoctl("NV2080_CTRL_PERF_GET_CURRENT_PSTATE_PARAMS")
+				// NV2081_BINAPI forwards all control commands to the GSP in
+				// src/nvidia/src/kernel/rmapi/binary_api.c:binapiControl_IMPL().
+				// As such, there are no structs defined in the driver for this.
+				names.controlNames[(nvgpu.NV2081_BINAPI<<16)|0x0108] = nil
+				names.uvmNames[nvgpu.UVM_SET_PREFERRED_LOCATION] = getStructName(nvgpu.UVM_SET_PREFERRED_LOCATION_PARAMS_V550{})
+
+				return names
+			}
+
 			return abi
 		}
 
-		v550_54_14 := addDriverABI(550, 54, 14, "8c497ff1cfc7c310fb875149bc30faa4fd26d2237b2cba6cd2e8b0780157cfe3", func() *driverABI {
+		v550_54_14 := func() *driverABI {
 			abi := v550_40_07()
 			abi.uvmIoctl[nvgpu.UVM_ALLOC_SEMAPHORE_POOL] = uvmIoctlSimple[nvgpu.UVM_ALLOC_SEMAPHORE_POOL_PARAMS_V550]
 			abi.uvmIoctl[nvgpu.UVM_MAP_EXTERNAL_ALLOCATION] = uvmIoctlHasFrontendFD[nvgpu.UVM_MAP_EXTERNAL_ALLOCATION_PARAMS_V550]
+
+			prevNames := abi.getStructNames
+			abi.getStructNames = func() *driverStructNames {
+				names := prevNames()
+				names.uvmNames[nvgpu.UVM_ALLOC_SEMAPHORE_POOL] = getStructName(nvgpu.UVM_ALLOC_SEMAPHORE_POOL_PARAMS_V550{})
+				names.uvmNames[nvgpu.UVM_MAP_EXTERNAL_ALLOCATION] = getStructName(nvgpu.UVM_MAP_EXTERNAL_ALLOCATION_PARAMS_V550{})
+
+				return names
+			}
+
 			return abi
-		})
+		}
+		_ = addDriverABI(550, 54, 14, "8c497ff1cfc7c310fb875149bc30faa4fd26d2237b2cba6cd2e8b0780157cfe3", v550_54_14)
+
 		v550_54_15 := addDriverABI(550, 54, 15, "2e859ae5f912a9a47aaa9b2d40a94a14f6f486b5d3b67c0ddf8b72c1c9650385", v550_54_14)
 		_ = addDriverABI(550, 90, 07, "51acf579d5a9884f573a1d3f522e7fafa5e7841e22a9cec0b4bbeae31b0b9733", v550_54_15)
 	})
+}
+
+// simpleIoctl simply returns a slice containing structName. This is used for ioctls that don't
+// have a struct defined in nvproxy, but we know the driver struct name.
+func simpleIoctl(structName string) []DriverStructName {
+	return []DriverStructName{structName}
+}
+
+// getStructName takes an instance of an nvproxy struct and reads the `nvproxy` tag to determine the
+// struct name. If the tag is empty, then it returns nil.
+func getStructName(params any) []DriverStructName {
+	paramType := reflect.TypeOf(params)
+
+	// Right now, we only expect parameter structs
+	if paramType.Kind() != reflect.Struct {
+		panic(fmt.Sprintf("expected struct, got %v", paramType.Kind()))
+	}
+
+	// Look through each field for the tag, panicking if there are not exactly one.
+	driverName, found := "", false
+	for i := 0; i < paramType.NumField(); i++ {
+		field := paramType.Field(i)
+		if name, ok := field.Tag.Lookup("nvproxy"); ok {
+			if found {
+				panic(fmt.Sprintf("multiple nvproxy tags for %v", paramType.Name()))
+			}
+			driverName = name
+			found = true
+		}
+	}
+
+	if !found {
+		panic(fmt.Sprintf("missing nvproxy tag for %v", paramType.Name()))
+	}
+	switch driverName {
+	case "":
+		return nil
+	case "same":
+		return []DriverStructName{paramType.Name()}
+	default:
+		return []DriverStructName{driverName}
+	}
 }
 
 // ForEachSupportDriver calls f on all supported drivers.
@@ -454,4 +757,39 @@ func SupportedIoctls(version DriverVersion) (frontendIoctls map[uint32]struct{},
 		allocClasses[uint32(class)] = struct{}{}
 	}
 	return
+}
+
+// SupportedStructNames returns the list of struct names supported by the given driver version.
+// It merges the frontend, uvm, control, and allocation names into one slice.
+func SupportedStructNames(version DriverVersion) ([]DriverStructName, bool) {
+	namesCons, ok := abis[version]
+	if !ok {
+		return nil, false
+	}
+	abi := namesCons.cons()
+	names := abi.getStructNames()
+
+	var allNames []DriverStructName
+	for _, names := range names.frontendNames {
+		if names != nil {
+			allNames = append(allNames, names...)
+		}
+	}
+	for _, names := range names.uvmNames {
+		if names != nil {
+			allNames = append(allNames, names...)
+		}
+	}
+	for _, names := range names.controlNames {
+		if names != nil {
+			allNames = append(allNames, names...)
+		}
+	}
+	for _, names := range names.allocationNames {
+		if names != nil {
+			allNames = append(allNames, names...)
+		}
+	}
+
+	return allNames, true
 }
