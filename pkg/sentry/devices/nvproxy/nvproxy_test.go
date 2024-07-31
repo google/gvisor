@@ -37,3 +37,36 @@ func TestAllSupportedHashesPresent(t *testing.T) {
 		}
 	}
 }
+
+// TestABIStructNamesInSync tests that all the supported ioctls in an ABI version are also mapped
+// by GetStructNames.
+func TestABIStructNamesInSync(t *testing.T) {
+	Init()
+	for version, abiCons := range abis {
+		t.Run(version.String(), func(t *testing.T) {
+			abi := abiCons.cons()
+			structNames := abi.getStructNames()
+
+			for ioctl := range abi.frontendIoctl {
+				if _, ok := structNames.frontendNames[ioctl]; !ok {
+					t.Errorf("Frontend ioctl %#x not found in struct names for version %v", ioctl, version.String())
+				}
+			}
+			for ioctl := range abi.uvmIoctl {
+				if _, ok := structNames.uvmNames[ioctl]; !ok {
+					t.Errorf("UVM ioctl %#x not found in struct names for version %v", ioctl, version.String())
+				}
+			}
+			for ioctl := range abi.controlCmd {
+				if _, ok := structNames.controlNames[ioctl]; !ok {
+					t.Errorf("Control command %#x not found in struct names for version %v", ioctl, version.String())
+				}
+			}
+			for ioctl := range abi.allocationClass {
+				if _, ok := structNames.allocationNames[ioctl]; !ok {
+					t.Errorf("Alloc class %#x not found in struct names for version %v", ioctl, version.String())
+				}
+			}
+		})
+	}
+}
