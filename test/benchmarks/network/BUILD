@@ -26,6 +26,7 @@ benchmark_test(
         "iperf_test.go",
     ],
     library = ":network",
+    use_for_pgo = False,
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/test/dockerutil",
@@ -42,6 +43,7 @@ benchmark_test(
         "node_test.go",
     ],
     library = ":network",
+    use_for_pgo = False,
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/test/dockerutil",
@@ -57,6 +59,7 @@ benchmark_test(
         "ruby_test.go",
     ],
     library = ":network",
+    use_for_pgo = False,
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/test/dockerutil",
@@ -72,6 +75,7 @@ benchmark_test(
         "nginx_test.go",
     ],
     library = ":network",
+    use_for_pgo = False,
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/test/dockerutil",
@@ -86,6 +90,7 @@ benchmark_test(
         "httpd_test.go",
     ],
     library = ":network",
+    use_for_pgo = False,
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/test/dockerutil",

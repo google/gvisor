@@ -1,0 +1,38 @@
+agents:
+  queue: release
+_templates:
+  common: &common
+    timeout_in_minutes: 600
+    retry:
+      automatic:
+        - exit_status: -1
+          limit: 10
+        - exit_status: "*"
+          limit: 2
+
+notify:
+  - email: "devnull@google.com"  # TODO(b/323401901): Make this not go to /dev/null
+    if: build.state == "failed"
+
+env:
+  # Force a clean checkout every time to avoid reuse of files between runs.
+  BUILDKITE_CLEAN_CHECKOUT: true
+
+steps:
+  - <<: *common
+    label: ":arrows_counterclockwise: Refresh PGO profiles (x86_64 Systrap)"
+    if: build.branch == "master" && build.tag == null
+    commands:
+      - make ARCH=x86_64 benchmark-refresh-pgo BENCHMARKS_PLATFORMS=systrap
+      - '
+        if [[ "$(git status --porcelain | wc -l)" -gt 0 ]]; then
+          git pull --rebase=true &&
+          git add runsc/profiles &&
+          git commit -m "Update runsc profiles for PGO (profile-guided optimizations)." &&
+          git push;
+        else
+          echo "No changes to runsc profiles." >&2;
+        fi
+        '
+    agents:
+      arch: "amd64"
