@@ -60,6 +60,13 @@ var (
 			Cumulative:  true,
 			Description: "Number of times a file was opened from a gofer and did have a host file descriptor.",
 		})
+	// TODO(b/354724938): Remove this metric when we no longer implement
+	// this open-by-connecting behavior.
+	GoferOpensByConnecting = metric.MustCreateNewUint64Metric("/gofer/opens_by_connecting",
+		metric.Uint64Metadata{
+			Cumulative:  true,
+			Description: "Number of times a socket was opened via open syscall that is silently translated to connect",
+		})
 	GoferReads9P = metric.MustCreateNewUint64Metric("/gofer/reads_9p",
 		metric.Uint64Metadata{
 			Cumulative:  true,

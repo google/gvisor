@@ -379,6 +379,9 @@ type InternalFilesystemOptions struct {
 
 	// If OpenSocketsByConnecting is true, silently translate attempts to open
 	// files identifying as sockets to connect RPCs.
+	//
+	// TODO(b/354724938): Remove this option once there are no callers who
+	// rely on this behavior.
 	OpenSocketsByConnecting bool
 }
 
