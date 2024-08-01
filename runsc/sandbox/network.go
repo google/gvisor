@@ -103,17 +103,17 @@ func joinNetNS(nsPath string) (func(), error) {
 	}, nil
 }
 
-// isRootNS determines whether we are running in the root net namespace.
-// /proc/sys/net/core/rmem_default only exists in root network namespace.
-func isRootNS() (bool, error) {
-	err := unix.Access("/proc/sys/net/core/rmem_default", unix.F_OK)
+// isRootNetNS determines whether we are running in the root net namespace.
+// /proc/sys/net/core/dev_weight only exists in root network namespace.
+func isRootNetNS() (bool, error) {
+	err := unix.Access("/proc/sys/net/core/dev_weight", unix.F_OK)
 	switch err {
 	case nil:
 		return true, nil
 	case unix.ENOENT:
 		return false, nil
 	default:
-		return false, fmt.Errorf("failed to access /proc/sys/net/core/rmem_default: %v", err)
+		return false, fmt.Errorf("failed to access /proc/sys/net/core/dev_weight: %v", err)
 	}
 }
 
@@ -151,7 +151,7 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, conf *con
 		return fmt.Errorf("querying interfaces: %w", err)
 	}
 
-	isRoot, err := isRootNS()
+	isRoot, err := isRootNetNS()
 	if err != nil {
 		return err
 	}
