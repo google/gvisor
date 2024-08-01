@@ -40,7 +40,7 @@ import (
 //
 // +stateify savable
 type Stack struct {
-	Stack *stack.Stack `state:"manual"`
+	Stack *stack.Stack
 }
 
 // Destroy implements inet.Stack.Destroy.

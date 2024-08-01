@@ -35,7 +35,11 @@ const (
 
 // RestoreStackFromContext returns the stack to be used during restore.
 func RestoreStackFromContext(ctx context.Context) *Stack {
-	return ctx.Value(CtxRestoreStack).(*Stack)
+	st := ctx.Value(CtxRestoreStack)
+	if st == nil {
+		return nil
+	}
+	return st.(*Stack)
 }
 
 // TCPProbeFunc is the expected function type for a TCP probe function to be

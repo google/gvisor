@@ -240,6 +240,10 @@ type Loader struct {
 	portForwardProxies []*pf.Proxy
 
 	saveFDs []*fd.FD
+
+	// saveNetworkStack indicates if the saved network stack should be used
+	// during restore.
+	saveNetworkStack bool
 }
 
 // execID uniquely identifies a sentry process that is executed in a container.
@@ -626,6 +630,10 @@ func New(args Args) (*Loader, error) {
 
 	if len(args.Conf.TestOnlyAutosaveImagePath) != 0 {
 		enableAutosave(l, args.Conf.TestOnlyAutosaveResume, l.saveFDs)
+	}
+
+	if args.Conf.TestOnlySaveNetstack {
+		l.saveNetworkStack = true
 	}
 
 	if err := l.kernelInitExtra(); err != nil {

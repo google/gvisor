@@ -29,7 +29,7 @@ type Namespace struct {
 	inode *nsfs.Inode
 
 	// stack is the network stack implementation of this network namespace.
-	stack Stack `state:"nosave"`
+	stack Stack
 
 	// creator allows kernel to create new network stack for network namespaces.
 	// If nil, no networking will function if network is namespaced.
@@ -125,9 +125,10 @@ func (n *Namespace) RestoreRootStack(stack Stack) {
 	if !n.isRoot {
 		panic("RestoreRootStack can only be called on root network namespace")
 	}
-	if n.stack != nil {
+	// This will not be nil as n.stack is no longer marked nosave.
+	/*if n.stack != nil {
 		panic("RestoreRootStack called after a stack has already been set")
-	}
+	}*/
 	n.stack = stack
 }
 
