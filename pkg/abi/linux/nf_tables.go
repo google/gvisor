@@ -80,3 +80,15 @@ const (
 	// Return to the topmost chain on the jump stack.
 	NFT_RETURN = -5
 )
+
+// Nf table relational operators.
+// Used by the nft comparison operation to compare values in registers.
+// These correspond to enum values in include/uapi/linux/netfilter/nf_tables.h.
+const (
+	NFT_CMP_EQ  = iota // equal
+	NFT_CMP_NEQ        // not equal
+	NFT_CMP_LT         // less than
+	NFT_CMP_LTE        // less than or equal to
+	NFT_CMP_GT         // greater than
+	NFT_CMP_GTE        // greater than or equal to
+)
