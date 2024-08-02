@@ -226,11 +226,19 @@ func (ts *TaskSet) newTask(ctx context.Context, cfg *TaskConfig) (*Task, error) 
 		// we're in uncharted territory and can return whatever we want.
 		return nil, linuxerr.EINTR
 	}
+	if ts.liveTasks == 0 && ts.noNewTasksIfZeroLive {
+		// Since liveTasks == 0, our caller cannot be a task goroutine invoking
+		// a syscall, so it's safe to return a non-errno error that is more
+		// explanatory.
+		return nil, fmt.Errorf("task creation disabled after Kernel.WaitExited() may have returned")
+	}
 	if err := ts.assignTIDsLocked(t); err != nil {
 		return nil, err
 	}
 	// Below this point, newTask is expected not to fail (there is no rollback
 	// of assignTIDsLocked or any of the following).
+
+	ts.liveTasks++
 
 	// Logging on t's behalf will panic if t.logPrefix hasn't been
 	// initialized. This is the earliest point at which we can do so
@@ -383,7 +391,6 @@ func (t *Task) Start(tid ThreadID) {
 	}
 	t.goroutineStopped.Add(1)
 	t.tg.liveGoroutines.Add(1)
-	t.tg.pidns.owner.liveGoroutines.Add(1)
 	t.tg.pidns.owner.runningGoroutines.Add(1)
 
 	// Task is now running in system mode.
