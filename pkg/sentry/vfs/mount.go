@@ -1370,7 +1370,7 @@ func (vfs *VirtualFilesystem) GenerateProcMounts(ctx context.Context, taskRootDi
 		if err != nil {
 			// For some reason we didn't get a path. Log a warning
 			// and run with empty path.
-			ctx.Warningf("VFS.GenerateProcMounts: error getting pathname for mount root %+v: %v", mnt.root, err)
+			ctx.Warningf("VFS.GenerateProcMounts: error getting pathname for mount root: %v", err)
 			path = ""
 		}
 		if path == "" {
@@ -1437,7 +1437,7 @@ func (vfs *VirtualFilesystem) GenerateProcMountInfo(ctx context.Context, taskRoo
 		if err != nil {
 			// For some reason we didn't get a path. Log a warning
 			// and run with empty path.
-			ctx.Warningf("VFS.GenerateProcMountInfo: error getting pathname for mount root %+v: %v", mnt.root, err)
+			ctx.Warningf("VFS.GenerateProcMountInfo: error getting pathname for mount root: %v", err)
 			continue
 		}
 		if pathFromRoot == "" {
@@ -1449,7 +1449,7 @@ func (vfs *VirtualFilesystem) GenerateProcMountInfo(ctx context.Context, taskRoo
 		if err != nil {
 			// For some reason we didn't get a path. Log a warning
 			// and run with empty path.
-			ctx.Warningf("VFS.GenerateProcMountInfo: error getting pathname for mount root %+v: %v", mnt.root, err)
+			ctx.Warningf("VFS.GenerateProcMountInfo: error getting pathname for mount root: %v", err)
 			continue
 		}
 		if pathFromFS == "" {
@@ -1464,7 +1464,7 @@ func (vfs *VirtualFilesystem) GenerateProcMountInfo(ctx context.Context, taskRoo
 		statx, err := vfs.StatAt(ctx, creds, pop, &StatOptions{})
 		if err != nil {
 			// Well that's not good. Ignore this mount.
-			ctx.Warningf("VFS.GenerateProcMountInfo: failed to stat mount root %+v: %v", mnt.root, err)
+			ctx.Warningf("VFS.GenerateProcMountInfo: failed to stat mount root: %v", err)
 			continue
 		}
 
