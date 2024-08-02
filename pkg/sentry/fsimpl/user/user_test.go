@@ -21,6 +21,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/tmpfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -29,10 +30,10 @@ import (
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
-// createEtcPasswd creates /etc/passwd with the given contents and mode. If
+// createEtcFile creates /etc/<file> with the given contents and mode. If
 // mode is empty, then no file will be created. If mode is not a regular file
 // mode, then contents is ignored.
-func createEtcPasswd(ctx context.Context, vfsObj *vfs.VirtualFilesystem, creds *auth.Credentials, root vfs.VirtualDentry, contents string, mode linux.FileMode) error {
+func createEtcFile(ctx context.Context, vfsObj *vfs.VirtualFilesystem, creds *auth.Credentials, root vfs.VirtualDentry, contents string, mode linux.FileMode, filePath string) error {
 	pop := vfs.PathOperation{
 		Root:  root,
 		Start: root,
@@ -40,14 +41,14 @@ func createEtcPasswd(ctx context.Context, vfsObj *vfs.VirtualFilesystem, creds *
 	}
 	if err := vfsObj.MkdirAt(ctx, creds, &pop, &vfs.MkdirOptions{
 		Mode: 0755,
-	}); err != nil {
+	}); err != nil && err != linuxerr.EEXIST { // Ignore error if it already exists.
 		return fmt.Errorf("failed to create directory etc: %v", err)
 	}
 
 	pop = vfs.PathOperation{
 		Root:  root,
 		Start: root,
-		Path:  fspath.Parse("etc/passwd"),
+		Path:  fspath.Parse(filePath),
 	}
 	switch mode.FileType() {
 	case 0:
@@ -128,7 +129,7 @@ func TestGetExecUserHome(t *testing.T) {
 			root := mns.Root(ctx)
 			defer root.DecRef(ctx)
 
-			if err := createEtcPasswd(ctx, &vfsObj, creds, root, tc.passwdContents, tc.passwdMode); err != nil {
+			if err := createEtcFile(ctx, &vfsObj, creds, root, tc.passwdContents, tc.passwdMode, "/etc/passwd"); err != nil {
 				t.Fatalf("createEtcPasswd failed: %v", err)
 			}
 
@@ -215,102 +216,187 @@ func TestGetExecUIDGIDFromUser(t *testing.T) {
 	tests := map[string]struct {
 		user           string
 		passwdContents string
-		passwdMode     linux.FileMode
+		groupContents  string
+		fileMode       linux.FileMode
 		expectedUID    auth.KUID
 		expectedGID    auth.KGID
 	}{
-		"success": {
+		"user0": {
 			user:           "user0",
 			passwdContents: "user0::1000:1111:&:/home/user0:/bin/sh",
-			passwdMode:     linux.S_IFREG | 0666,
+			groupContents:  "",
+			fileMode:       linux.S_IFREG | 0666,
 			expectedUID:    1000,
 			expectedGID:    1111,
 		},
-		"success_with_uid_only": {
+		"uid_only": {
 			user:           "1000",
 			passwdContents: "user0::1000:1111:&:/home/user0:/bin/sh",
-			passwdMode:     linux.S_IFREG | 0666,
+			groupContents:  "",
+			fileMode:       linux.S_IFREG | 0666,
 			expectedUID:    1000,
 			expectedGID:    1111,
 		},
-		"success_with_uid_and_gid": {
+		"uid_and_gid": {
 			user:           "1000:1111",
 			passwdContents: "user0::1000:1111:&:/home/user0:/bin/sh",
-			passwdMode:     linux.S_IFREG | 0666,
+			groupContents:  "",
+			fileMode:       linux.S_IFREG | 0666,
 			expectedUID:    1000,
 			expectedGID:    1111,
 		},
-		"success_with_uid_and_wrong_gid": {
+		"uid_and_wrong_gid": {
 			user:           "1000:1112",
 			passwdContents: "user0::1000:1111:&:/home/user0:/bin/sh",
-			passwdMode:     linux.S_IFREG | 0666,
+			groupContents:  "",
+			fileMode:       linux.S_IFREG | 0666,
 			expectedUID:    1000,
-			expectedGID:    1111,
+			expectedGID:    1112,
 		},
-		"no_user": {
+		"user_missing": {
 			user:           "user1",
 			passwdContents: "user0::1000:1111::/home/user0:/bin/sh",
-			passwdMode:     linux.S_IFREG | 0666,
-			expectedUID:    65534,
-			expectedGID:    65534,
+			groupContents:  "",
+			fileMode:       linux.S_IFREG | 0666,
+			expectedUID:    0,
+			expectedGID:    0,
 		},
 		"multiple_user_no_match": {
 			user:           "user1",
 			passwdContents: "user0::1000:1111::/home/user0:/bin/sh\nuser2::1002:1112::/home/user2:/bin/sh\nuser3::1003:1113::/home/user3:/bin/sh",
-			passwdMode:     linux.S_IFREG | 0666,
-			expectedUID:    65534,
-			expectedGID:    65534,
+			groupContents:  "",
+			fileMode:       linux.S_IFREG | 0666,
+			expectedUID:    0,
+			expectedGID:    0,
 		},
 		"multiple_user_many_match": {
 			user:           "user1",
 			passwdContents: "user0::1000:1111::/home/user0:/bin/sh\nuser1::1002:1112::/home/user1:/bin/sh\nuser1::1003:1113::/home/user1:/bin/sh",
-			passwdMode:     linux.S_IFREG | 0666,
-			expectedUID:    65534,
-			expectedGID:    65534,
+			groupContents:  "",
+			fileMode:       linux.S_IFREG | 0666,
+			expectedUID:    1002,
+			expectedGID:    1112,
 		},
 		"invalid_file": {
 			user:           "user1",
 			passwdContents: "user0:1000:1111::/home/user0:/bin/sh\nuser1::1001:1111::/home/user1:/bin/sh\nuser2::/home/user2:/bin/sh",
-			passwdMode:     linux.S_IFREG | 0666,
-			expectedUID:    65534,
-			expectedGID:    65534,
+			groupContents:  "",
+			fileMode:       linux.S_IFREG | 0666,
+			expectedUID:    0,
+			expectedGID:    0,
 		},
 		"empty_file": {
 			user:           "user1",
 			passwdContents: "",
-			passwdMode:     linux.S_IFREG | 0666,
-			expectedUID:    65534,
-			expectedGID:    65534,
+			groupContents:  "",
+			fileMode:       linux.S_IFREG | 0666,
+			expectedUID:    0,
+			expectedGID:    0,
 		},
 		"empty_user": {
 			user:           "",
 			passwdContents: "user0::1000:1111::/home/user0:/bin/sh\nuser2::1002:1112::/home/user2:/bin/sh\nuser3::1003:1113::/home/user3:/bin/sh",
-			passwdMode:     linux.S_IFREG | 0666,
-			expectedUID:    65534,
-			expectedGID:    65534,
+			groupContents:  "",
+			fileMode:       linux.S_IFREG | 0666,
+			expectedUID:    0,
+			expectedGID:    0,
 		},
-		"success_with_comments": {
+		"with_comments": {
 			user:           "user0",
 			passwdContents: "#This is a comment\nuser0::1000:1111:&:/home/user0:/bin/sh\nuser2::1002:1112:&:/home/user2:/bin/sh\nuser3:&:1003:1113::/home/user3:/bin/sh",
-			passwdMode:     linux.S_IFREG | 0666,
+			groupContents:  "",
+			fileMode:       linux.S_IFREG | 0666,
 			expectedUID:    1000,
 			expectedGID:    1111,
 		},
-		"success_with_comments_mid_file": {
+		"with_comments_mid_file": {
 			user:           "user0",
 			passwdContents: "user0::1000:1111:&:/home/user0:/bin/sh\nuser2::1002:1112:&:/home/user2:/bin/sh\n#This is a comment\n\nuser3:&:1003:1113::/home/user3:/bin/sh",
-			passwdMode:     linux.S_IFREG | 0666,
+			groupContents:  "",
+			fileMode:       linux.S_IFREG | 0666,
 			expectedUID:    1000,
 			expectedGID:    1111,
 		},
-		"success_empty_gecos": {
+		"empty_gecos": {
 			user:           "user0",
 			passwdContents: "user0::1000:1111::/home/user0:/bin/sh\nuser2::1002:1112::/home/user2:/bin/sh\nuser3::1003:1113::/home/user3:/bin/sh",
-			passwdMode:     linux.S_IFREG | 0666,
+			groupContents:  "",
+			fileMode:       linux.S_IFREG | 0666,
 			expectedUID:    1000,
 			expectedGID:    1111,
 		},
-	}
+		"numeric_user_empty_file": {
+			user:           "1000",
+			passwdContents: "",
+			groupContents:  "",
+			fileMode:       linux.S_IFREG | 0666,
+			expectedUID:    1000,
+			expectedGID:    0,
+		},
+		"numeric_user_does_not_match": {
+			user:           "1005",
+			passwdContents: "user0::1000:1111::/home/user0:/bin/sh\nuser2::1002:1112::/home/user2:/bin/sh\nuser3::1003:1113::/home/user3:/bin/sh",
+			groupContents:  "",
+			fileMode:       linux.S_IFREG | 0666,
+			expectedUID:    1005,
+			expectedGID:    0,
+		},
+		"numeric_user_numeric_group_does_not_match": {
+			user:           "1005:1006",
+			passwdContents: "user0::1000:1111::/home/user0:/bin/sh\nuser2::1002:1112::/home/user2:/bin/sh\nuser3::1003:1113::/home/user3:/bin/sh",
+			groupContents:  "",
+			fileMode:       linux.S_IFREG | 0666,
+			expectedUID:    1005,
+			expectedGID:    1006,
+		},
+		"numeric_user_string_group_does_not_match": {
+			user:           "1005:group10",
+			passwdContents: "user0::1000:1111::/home/user0:/bin/sh\nuser2::1002:1112::/home/user2:/bin/sh\nuser3::1003:1113::/home/user3:/bin/sh",
+			groupContents:  "",
+			fileMode:       linux.S_IFREG | 0666,
+			expectedUID:    1005,
+			expectedGID:    0,
+		},
+		"string_user_numeric_group_does_not_match": {
+			user:           "user10:1006",
+			passwdContents: "user0::1000:1111::/home/user0:/bin/sh\nuser2::1002:1112::/home/user2:/bin/sh\nuser3::1003:1113::/home/user3:/bin/sh",
+			groupContents:  "",
+			fileMode:       linux.S_IFREG | 0666,
+			expectedUID:    0,
+			expectedGID:    1006,
+		},
+		"string_user_string_group_does_not_match": {
+			user:           "user10:group10",
+			passwdContents: "user0::1000:1111::/home/user0:/bin/sh\nuser2::1002:1112::/home/user2:/bin/sh\nuser3::1003:1113::/home/user3:/bin/sh",
+			groupContents:  "",
+			fileMode:       linux.S_IFREG | 0666,
+			expectedUID:    0,
+			expectedGID:    0,
+		},
+		"group_does_not_match_but_exist": {
+			user:           "user0:group2",
+			passwdContents: "user0::1000:1111::/home/user0:/bin/sh\nuser2::1002:1112::/home/user2:/bin/sh\nuser3::1003:1113::/home/user3:/bin/sh",
+			groupContents:  "group1:x:1110:user0,user1,user2\ngroup2:x:1112:user0,user1,user2",
+			fileMode:       linux.S_IFREG | 0666,
+			expectedUID:    1000,
+			expectedGID:    1112,
+		},
+		"group_does_not_match_and_does_not_exist": {
+			user:           "user0:group10",
+			passwdContents: "user0::1000:1111::/home/user0:/bin/sh\nuser2::1002:1112::/home/user2:/bin/sh\nuser3::1003:1113::/home/user3:/bin/sh",
+			groupContents:  "group1:x:1110:user0,user1,user2\ngroup2:x:1112:user0,user1,user2",
+			fileMode:       linux.S_IFREG | 0666,
+			expectedUID:    1000,
+			expectedGID:    0,
+		},
+		"numeric_group_does_not_match_and_does_not_exist": {
+			user:           "user0:1113",
+			passwdContents: "user0::1000:1111::/home/user0:/bin/sh\nuser2::1002:1112::/home/user2:/bin/sh\nuser3::1003:1113::/home/user3:/bin/sh",
+			groupContents:  "group1:x:1110:user0,user1,user2\ngroup2:x:1112:user0,user1,user2",
+			fileMode:       linux.S_IFREG | 0666,
+			expectedUID:    1000,
+			expectedGID:    1113,
+		}}
 
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -333,20 +419,14 @@ func TestGetExecUIDGIDFromUser(t *testing.T) {
 			root := mns.Root(ctx)
 			defer root.DecRef(ctx)
 
-			if err := createEtcPasswd(ctx, &vfsObj, creds, root, tc.passwdContents, tc.passwdMode); err != nil {
-				t.Fatalf("createEtcPasswd failed: %v", err)
+			if err := createEtcFile(ctx, &vfsObj, creds, root, tc.passwdContents, tc.fileMode, "etc/passwd"); err != nil {
+				t.Fatalf("createEtcFile failed: %v", err)
+			}
+			if err := createEtcFile(ctx, &vfsObj, creds, root, tc.groupContents, tc.fileMode, "/etc/group"); err != nil {
+				t.Fatalf("createEtcFile failed: %v", err)
 			}
 
-			gotUID, gotGID, err := GetExecUIDGIDFromUser(ctx, mns, tc.user)
-			if strings.HasPrefix(name, "success") {
-				if err != nil {
-					t.Fatalf("failed to get UID and GID from user: %v %v", tc.user, err)
-				}
-			} else {
-				if err == nil {
-					t.Fatalf("retrieved UID and GID when user %v is not in /etc/passwd: %v", tc.user, err)
-				}
-			}
+			gotUID, gotGID := GetExecUIDGIDFromUser(ctx, mns, tc.user)
 			if gotUID != tc.expectedUID {
 				t.Fatalf("expectedUID %v, gotUID: %v", tc.expectedUID, gotUID)
 			}

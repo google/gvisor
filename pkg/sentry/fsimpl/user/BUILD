@@ -33,6 +33,7 @@ go_test(
     deps = [
         "//pkg/abi/linux",
         "//pkg/context",
+        "//pkg/errors/linuxerr",
         "//pkg/fspath",
         "//pkg/sentry/fsimpl/tmpfs",
         "//pkg/sentry/kernel/auth",
