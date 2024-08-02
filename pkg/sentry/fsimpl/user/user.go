@@ -26,9 +26,15 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fspath"
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/usermem"
+)
+
+const (
+	defaultUID = auth.KUID(0)
+	defaultGID = auth.KGID(0)
 )
 
 type fileReader struct {
@@ -162,9 +168,80 @@ func findHomeInPasswd(uid uint32, passwd io.Reader, defaultHome string) (string,
 	return defaultHome, nil
 }
 
-func findUIDGIDInPasswd(passwd io.Reader, user string) (auth.KUID, auth.KGID, error) {
-	defaultUID := auth.KUID(auth.OverflowUID)
-	defaultGID := auth.KGID(auth.OverflowGID)
+func openFile(ctx context.Context, mns *vfs.MountNamespace, path string) (*vfs.FileDescription, error) {
+	log.Infof("Opening %q", path)
+	root := mns.Root(ctx)
+	defer root.DecRef(ctx)
+	creds := auth.CredentialsFromContext(ctx)
+
+	target := &vfs.PathOperation{
+		Root:  root,
+		Start: root,
+		Path:  fspath.Parse(path),
+	}
+	fd, err := root.Mount().Filesystem().VirtualFilesystem().OpenAt(ctx, creds, target, &vfs.OpenOptions{Flags: linux.O_RDONLY})
+	if err != nil {
+		log.Warningf("Failed to open %q, error: %v", path, err)
+		return nil, err
+	}
+
+	return fd, nil
+}
+
+// findGroupInGroupFile parses a group file and returns the given group's
+// gid. If the gid is a number, we don't need to read the file.
+//
+// If we don't find the group, we return 0.
+func findGroupInGroupFile(ctx context.Context, mns *vfs.MountNamespace, gidString string) auth.KGID {
+	// gid is a number, we don't need to read the file.
+	gidInt, err := strconv.Atoi(gidString)
+	if err == nil {
+		return auth.KGID(gidInt)
+	}
+
+	fd, err := openFile(ctx, mns, "/etc/group")
+	if err != nil {
+		return defaultGID
+	}
+	defer fd.DecRef(ctx)
+
+	r := &fileReader{
+		ctx: ctx,
+		fd:  fd,
+	}
+
+	// Group file format:
+	// group_name:password:gid:<user1,user2,user3>
+	const (
+		grpIdx    = 0
+		passwdIdx = 1
+		gidIdx    = 2
+	)
+
+	s := bufio.NewScanner(r)
+	for s.Scan() {
+		if err := s.Err(); err != nil {
+			return defaultGID
+		}
+		line := strings.TrimSpace(s.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		parts := strings.Split(line, ":")
+		if parts[grpIdx] == gidString {
+			gidInt, err := strconv.Atoi(parts[gidIdx])
+			if err != nil {
+				return defaultGID
+			}
+			return auth.KGID(gidInt)
+		}
+	}
+
+	// Not found, return 0
+	return defaultGID
+}
+
+func findUIDGIDInPasswd(passwd io.Reader, user string) (auth.KUID, auth.KGID) {
 	uid := defaultUID
 	gid := defaultGID
 
@@ -201,7 +278,7 @@ func findUIDGIDInPasswd(passwd io.Reader, user string) (auth.KUID, auth.KGID, er
 	s := bufio.NewScanner(passwd)
 	for s.Scan() {
 		if err := s.Err(); err != nil {
-			return defaultUID, defaultGID, err
+			return getDefaultUIDGID(user)
 		}
 
 		line := strings.TrimSpace(s.Text())
@@ -211,8 +288,8 @@ func findUIDGIDInPasswd(passwd io.Reader, user string) (auth.KUID, auth.KGID, er
 
 		parts := strings.Split(line, ":")
 		if len(parts) != numFields {
-			// Return error if the format is invalid.
-			return defaultUID, defaultGID, fmt.Errorf("invalid line found in /etc/passwd, there should be 7 fields but found %v", len(parts))
+			// If format is invalid, return default values.
+			return getDefaultUIDGID(user)
 		}
 		for i := 0; i < numFields; i++ {
 			// The password, GECOS and user command interpreter fields are
@@ -221,49 +298,56 @@ func findUIDGIDInPasswd(passwd io.Reader, user string) (auth.KUID, auth.KGID, er
 				continue
 			}
 			if parts[i] == "" {
-				// Return error if the format is invalid.
-				return defaultUID, defaultGID, fmt.Errorf("invalid line found in /etc/passwd, field[%v] is empty", i)
+				// If format is invalid, return default values.
+				return getDefaultUIDGID(user)
 			}
 		}
 
 		if parts[idxToMatch] == uStringOrID {
 			parseUID, err := strconv.ParseUint(parts[uidIdx], 10, 32)
 			if err != nil {
-				return defaultUID, defaultGID, err
+				return getDefaultUIDGID(user)
 			}
 			parseGID, err := strconv.ParseUint(parts[gidIdx], 10, 32)
 			if err != nil {
-				return defaultUID, defaultGID, err
-			}
-
-			if uid != defaultUID || gid != defaultGID {
-				return defaultUID, defaultGID, fmt.Errorf("multiple matches for the user: %v", user)
+				return getDefaultUIDGID(user)
 			}
 			uid = auth.KUID(parseUID)
 			gid = auth.KGID(parseGID)
+			return uid, gid
 		}
 	}
-	if uid == defaultUID || gid == defaultGID {
-		return defaultUID, defaultGID, fmt.Errorf("couldn't retrieve UID/GID from user: %v", user)
-	}
-	return uid, gid, nil
+
+	return getDefaultUIDGID(user)
 }
 
-func getExecUIDGID(ctx context.Context, mns *vfs.MountNamespace, user string) (auth.KUID, auth.KGID, error) {
-	root := mns.Root(ctx)
-	defer root.DecRef(ctx)
+func getDefaultUIDGID(user string) (auth.KUID, auth.KGID) {
+	usergroup := strings.SplitN(user, ":", 2)
+	uid := defaultUID
+	gid := defaultGID
 
-	creds := auth.CredentialsFromContext(ctx)
-
-	target := &vfs.PathOperation{
-		Root:  root,
-		Start: root,
-		Path:  fspath.Parse("/etc/passwd"),
+	// resolving uid. If it is numeric, set uid to the int value, if not keep it to 0.
+	u, err := strconv.Atoi(usergroup[0])
+	if err == nil {
+		uid = auth.KUID(u)
 	}
 
-	fd, err := root.Mount().Filesystem().VirtualFilesystem().OpenAt(ctx, creds, target, &vfs.OpenOptions{Flags: linux.O_RDONLY})
+	// if we do have a group, try to get the numeric value. If numeric, set gid to the int value, if
+	// not keep it to 0.
+	if len(usergroup) == 2 {
+		g, err := strconv.Atoi(usergroup[1])
+		if err == nil {
+			gid = auth.KGID(g)
+		}
+	}
+
+	return uid, gid
+}
+
+func getExecUIDGID(ctx context.Context, mns *vfs.MountNamespace, user string) (auth.KUID, auth.KGID) {
+	fd, err := openFile(ctx, mns, "/etc/passwd")
 	if err != nil {
-		return auth.KUID(auth.OverflowUID), auth.KGID(auth.OverflowGID), fmt.Errorf("couldn't retrieve UID/GID from user: %v, err: %v", user, err)
+		return getDefaultUIDGID(user)
 	}
 	defer fd.DecRef(ctx)
 
@@ -271,17 +355,21 @@ func getExecUIDGID(ctx context.Context, mns *vfs.MountNamespace, user string) (a
 		ctx: ctx,
 		fd:  fd,
 	}
+	// This return kGid from the passwd file (if we find one). We might have recieved a group id
+	// string or numeric from the user.
+	kUID, kGID := findUIDGIDInPasswd(r, user)
+	usergroup := strings.SplitN(user, ":", 2)
+	if len(usergroup) == 2 {
+		kGID = findGroupInGroupFile(ctx, mns, usergroup[1])
+	}
+	return kUID, kGID
 
-	return findUIDGIDInPasswd(r, user)
 }
 
 // GetExecUIDGIDFromUser retrieves the UID and GID from /etc/passwd file for
 // the given user.
-func GetExecUIDGIDFromUser(ctx context.Context, vmns *vfs.MountNamespace, user string) (auth.KUID, auth.KGID, error) {
+func GetExecUIDGIDFromUser(ctx context.Context, vmns *vfs.MountNamespace, user string) (auth.KUID, auth.KGID) {
 	// Read /etc/passwd and retrieve the UID/GID based on the user string.
-	uid, gid, err := getExecUIDGID(ctx, vmns, user)
-	if err != nil {
-		return uid, gid, fmt.Errorf("error reading /etc/passwd: %v", err)
-	}
-	return uid, gid, nil
+	uid, gid := getExecUIDGID(ctx, vmns, user)
+	return uid, gid
 }
