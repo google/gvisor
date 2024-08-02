@@ -1370,9 +1370,15 @@ func (k *Kernel) decRunningTasks() {
 	// active without an expensive transition.
 }
 
-// WaitExited blocks until all tasks in k have exited.
+// WaitExited blocks until all tasks in k have exited. No tasks can be created
+// after WaitExited returns.
 func (k *Kernel) WaitExited() {
-	k.tasks.liveGoroutines.Wait()
+	k.tasks.mu.Lock()
+	defer k.tasks.mu.Unlock()
+	k.tasks.noNewTasksIfZeroLive = true
+	for k.tasks.liveTasks != 0 {
+		k.tasks.zeroLiveTasksCond.Wait()
+	}
 }
 
 // Kill requests that all tasks in k immediately exit as if group exiting with

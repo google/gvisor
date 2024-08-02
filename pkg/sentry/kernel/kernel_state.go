@@ -20,6 +20,11 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip"
 )
 
+// afterLoad is invoked by stateify.
+func (ts *TaskSet) afterLoad(_ context.Context) {
+	ts.zeroLiveTasksCond.L = &ts.mu
+}
+
 // saveDanglingEndpoints is invoked by stateify.
 func (k *Kernel) saveDanglingEndpoints() []tcpip.Endpoint {
 	return tcpip.GetDanglingEndpoints()

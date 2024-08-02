@@ -82,6 +82,7 @@ var (
 	ErrStreamPipe                = newWithHost("streams pipe error", errno.ESTRPIPE, unix.ESTRPIPE)
 	ErrStructureNeedsCleaning    = newWithHost("structure needs cleaning", errno.EUCLEAN, unix.EUCLEAN)
 	ErrIsNotNamedFile            = newWithHost("not a XENIX named type file", errno.ENOTNAM, unix.ENOTNAM)
+	ErrNotAvailable              = newWithHost("no XENIX semaphores available", errno.ENAVAIL, unix.ENAVAIL)
 	ErrIsNamedFile               = newWithHost("is a named type file", errno.EISNAM, unix.EISNAM)
 	ErrRemoteIO                  = newWithHost("remote I/O error", errno.EREMOTEIO, unix.EREMOTEIO)
 	ErrNoMedium                  = newWithHost("no medium found", errno.ENOMEDIUM, unix.ENOMEDIUM)

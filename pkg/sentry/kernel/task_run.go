@@ -100,9 +100,16 @@ func (t *Task) run(threadID uintptr) {
 			t.accountTaskGoroutineEnter(TaskGoroutineNonexistent)
 			t.goroutineStopped.Done()
 			t.tg.liveGoroutines.Done()
-			t.tg.pidns.owner.liveGoroutines.Done()
-			t.tg.pidns.owner.runningGoroutines.Done()
 			t.p.Release()
+
+			ts := t.tg.pidns.owner
+			ts.mu.Lock()
+			ts.liveTasks--
+			if ts.liveTasks == 0 {
+				ts.zeroLiveTasksCond.Broadcast()
+			}
+			ts.mu.Unlock()
+			ts.runningGoroutines.Done()
 
 			// Deferring this store triggers a false positive in the race
 			// detector (https://github.com/golang/go/issues/42599).

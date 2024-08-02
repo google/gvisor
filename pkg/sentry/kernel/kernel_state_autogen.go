@@ -2187,6 +2187,8 @@ func (ts *TaskSet) StateFields() []string {
 	return []string{
 		"Root",
 		"sessions",
+		"liveTasks",
+		"noNewTasksIfZeroLive",
 	}
 }
 
@@ -2197,14 +2199,17 @@ func (ts *TaskSet) StateSave(stateSinkObject state.Sink) {
 	ts.beforeSave()
 	stateSinkObject.Save(0, &ts.Root)
 	stateSinkObject.Save(1, &ts.sessions)
+	stateSinkObject.Save(2, &ts.liveTasks)
+	stateSinkObject.Save(3, &ts.noNewTasksIfZeroLive)
 }
-
-func (ts *TaskSet) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (ts *TaskSet) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &ts.Root)
 	stateSourceObject.Load(1, &ts.sessions)
+	stateSourceObject.Load(2, &ts.liveTasks)
+	stateSourceObject.Load(3, &ts.noNewTasksIfZeroLive)
+	stateSourceObject.AfterLoad(func() { ts.afterLoad(ctx) })
 }
 
 func (ns *PIDNamespace) StateTypeName() string {
