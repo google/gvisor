@@ -132,6 +132,7 @@ static const char* required_fields[] = {
     "model name",
     "stepping",
     "cpu MHz",
+    "cache size",
     "physical id",
     "siblings",
     "core id",
