@@ -120,9 +120,10 @@ namespace {
 #endif /* SUID_DUMP_ROOT */
 
 #if defined(__x86_64__) || defined(__i386__)
-// This list of "required" fields is taken from reading the file
-// arch/x86/kernel/cpu/proc.c and seeing which fields will be unconditionally
-// printed by the kernel.
+// This list of "required" fields consists of the set of fields that are printed
+// unconditionally by the kernel (see arch/x86/kernel/cpu/proc.c) and a set of fields
+// that are printed conditionally, but are present on common configurations
+// (e.g. when CONFIG_SMP is set).
 static const char* required_fields[] = {
     "processor",
     "vendor_id",
