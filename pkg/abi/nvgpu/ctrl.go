@@ -72,6 +72,22 @@ const (
 	NV0000_CTRL_CMD_GPU_WAIT_ATTACH_ID    = 0x290
 )
 
+// NV0000_CTRL_GPU_GET_ID_INFO_PARAMS is the param type for NV0000_CTRL_CMD_GPU_GET_ID_INFO,
+// from src/common/sdk/nvidia/inc/ctrl/ctrl0000/ctrl0000gpu.h.
+//
+// +marshal
+type NV0000_CTRL_GPU_GET_ID_INFO_PARAMS struct {
+	GpuID             uint32 `nvproxy:"same"`
+	GpuFlags          uint32
+	DeviceInstance    uint32
+	SubDeviceInstance uint32
+	SzName            P64
+	SliStatus         uint32
+	BoardID           uint32
+	GpuInstance       uint32
+	NumaID            int32
+}
+
 // From src/common/sdk/nvidia/inc/ctrl/ctrl0000/ctrl0000syncgpuboost.h:
 const (
 	NV0000_CTRL_CMD_SYNC_GPU_BOOST_GROUP_INFO = 0xa04
@@ -85,7 +101,33 @@ const (
 	NV0000_CTRL_CMD_SYSTEM_GET_FABRIC_STATUS   = 0x136
 	NV0000_CTRL_CMD_SYSTEM_GET_P2P_CAPS_MATRIX = 0x13a
 	NV0000_CTRL_CMD_SYSTEM_GET_FEATURES        = 0x1f0
+	NV0000_CTRL_SYSTEM_MAX_ATTACHED_GPUS       = 32
+	NV0000_CTRL_P2P_CAPS_INDEX_TABLE_SIZE      = 9
 )
+
+// NV0000_CTRL_SYSTEM_GET_P2P_CAPS_PARAMS is the param type for NV0000_CTRL_CMD_SYSTEM_GET_P2P_CAPS,
+// from src/common/sdk/nvidia/inc/ctrl/ctrl0000/ctrl0000system.h.
+//
+// +marshal
+type NV0000_CTRL_SYSTEM_GET_P2P_CAPS_PARAMS struct {
+	GpuIDs             [NV0000_CTRL_SYSTEM_MAX_ATTACHED_GPUS]uint32 `nvproxy:"same"`
+	GpuCount           uint32
+	P2PCaps            uint32
+	P2POptimalReadCEs  uint32
+	P2POptimalWriteCEs uint32
+	P2PCapsStatus      [NV0000_CTRL_P2P_CAPS_INDEX_TABLE_SIZE]uint8
+	_                  [7]byte
+	BusPeerIDs         P64
+}
+
+// NV0000_CTRL_SYSTEM_GET_P2P_CAPS_PARAMS_V550 is the updated version of
+// NV0000_CTRL_SYSTEM_GET_P2P_CAPS_PARAMS since 550.40.07.
+//
+// +marshal
+type NV0000_CTRL_SYSTEM_GET_P2P_CAPS_PARAMS_V550 struct {
+	NV0000_CTRL_SYSTEM_GET_P2P_CAPS_PARAMS `nvproxy:"NV0000_CTRL_SYSTEM_GET_P2P_CAPS_PARAMS"`
+	BusEgmPeerIDs                          P64
+}
 
 // From src/common/sdk/nvidia/inc/ctrl/ctrl0000/ctrl0000unix.h:
 const (
@@ -100,8 +142,8 @@ type NV0000_CTRL_OS_UNIX_GET_EXPORT_OBJECT_INFO_PARAMS struct {
 	FD             int32 `nvproxy:"same"`
 	DeviceInstance uint32
 	MaxObjects     uint16
-	Pad            [2]byte
 	Metadata       [NV0000_OS_UNIX_EXPORT_OBJECT_FD_BUFFER_SIZE]uint8
+	Pad            [2]byte
 }
 
 // GetFrontendFD implements HasFrontendFD.GetFrontendFD.
@@ -120,8 +162,8 @@ type NV0000_CTRL_OS_UNIX_GET_EXPORT_OBJECT_INFO_PARAMS_V545 struct {
 	DeviceInstance uint32
 	GpuInstanceID  uint32
 	MaxObjects     uint16
-	Pad            [2]byte
 	Metadata       [NV0000_OS_UNIX_EXPORT_OBJECT_FD_BUFFER_SIZE]uint8
+	Pad            [2]byte
 }
 
 // GetFrontendFD implements HasFrontendFD.GetFrontendFD.
@@ -136,11 +178,8 @@ func (p *NV0000_CTRL_OS_UNIX_GET_EXPORT_OBJECT_INFO_PARAMS_V545) SetFrontendFD(f
 
 // +marshal
 type NV0000_CTRL_OS_UNIX_EXPORT_OBJECT struct {
-	Type uint32 // enum NV0000_CTRL_OS_UNIX_EXPORT_OBJECT_TYPE
-	// These fields are inside union `data`, in struct `rmObject`.
-	HDevice Handle
-	HParent Handle
-	HObject Handle
+	Type uint32   // enum NV0000_CTRL_OS_UNIX_EXPORT_OBJECT_TYPE
+	Data [12]byte // union
 }
 
 // +marshal

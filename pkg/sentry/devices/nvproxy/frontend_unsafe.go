@@ -175,6 +175,96 @@ func ctrlDevFIFOGetChannelList(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54
 	return n, nil
 }
 
+func ctrlClientSystemGetP2PCapsInitializeArray(origArr nvgpu.P64, gpuCount uint32) (nvgpu.P64, []uint32, bool) {
+	// The driver doesn't try and copy memory if the array is null. See
+	// src/nvidia/src/kernel/rmapi/embedded_param_copy.c::embeddedParamCopyIn(),
+	// case NV0000_CTRL_CMD_SYSTEM_GET_P2P_CAPS.
+	if origArr == 0 {
+		return 0, nil, true
+	}
+
+	// Params size is gpuCount * gpuCount * sizeof(NvU32).
+	numEntries := gpuCount * gpuCount
+	if numEntries*4 > nvgpu.RMAPI_PARAM_COPY_MAX_PARAMS_SIZE {
+		return 0, nil, false
+	}
+
+	arr := make([]uint32, numEntries)
+	return p64FromPtr(unsafe.Pointer(&arr[0])), arr, true
+}
+
+func ctrlClientSystemGetP2PCaps(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54Parameters) (uintptr, error) {
+	var ctrlParams nvgpu.NV0000_CTRL_SYSTEM_GET_P2P_CAPS_PARAMS
+	if ctrlParams.SizeBytes() != int(ioctlParams.ParamsSize) {
+		return 0, linuxerr.EINVAL
+	}
+	if _, err := ctrlParams.CopyIn(fi.t, addrFromP64(ioctlParams.Params)); err != nil {
+		return 0, err
+	}
+
+	origBusPeerIDs := ctrlParams.BusPeerIDs
+	busPeerIDs, busPeerIDsBuf, ok := ctrlClientSystemGetP2PCapsInitializeArray(origBusPeerIDs, ctrlParams.GpuCount)
+	if !ok {
+		return 0, ctrlCmdFailWithStatus(fi, ioctlParams, nvgpu.NV_ERR_INVALID_ARGUMENT)
+	}
+	ctrlParams.BusPeerIDs = busPeerIDs
+
+	n, err := rmControlInvoke(fi, ioctlParams, &ctrlParams)
+	ctrlParams.BusPeerIDs = origBusPeerIDs
+	if err != nil {
+		return n, err
+	}
+
+	if _, err := primitive.CopyUint32SliceOut(fi.t, addrFromP64(origBusPeerIDs), busPeerIDsBuf); err != nil {
+		return n, err
+	}
+
+	_, err = ctrlParams.CopyOut(fi.t, addrFromP64(ioctlParams.Params))
+	return n, err
+}
+
+func ctrlClientSystemGetP2PCapsV550(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54Parameters) (uintptr, error) {
+	var ctrlParams nvgpu.NV0000_CTRL_SYSTEM_GET_P2P_CAPS_PARAMS_V550
+	if ctrlParams.SizeBytes() != int(ioctlParams.ParamsSize) {
+		return 0, linuxerr.EINVAL
+	}
+	if _, err := ctrlParams.CopyIn(fi.t, addrFromP64(ioctlParams.Params)); err != nil {
+		return 0, err
+	}
+
+	origBusPeerIDs := ctrlParams.BusPeerIDs
+	busPeerIDs, busPeerIDsBuf, ok := ctrlClientSystemGetP2PCapsInitializeArray(origBusPeerIDs, ctrlParams.GpuCount)
+	if !ok {
+		return 0, ctrlCmdFailWithStatus(fi, ioctlParams, nvgpu.NV_ERR_INVALID_ARGUMENT)
+	}
+	ctrlParams.BusPeerIDs = busPeerIDs
+
+	origBusEgmPeerIDs := ctrlParams.BusEgmPeerIDs
+	busEgmPeerIDs, busEgmPeerIDsBuf, ok := ctrlClientSystemGetP2PCapsInitializeArray(origBusEgmPeerIDs, ctrlParams.GpuCount)
+	if !ok {
+		return 0, ctrlCmdFailWithStatus(fi, ioctlParams, nvgpu.NV_ERR_INVALID_ARGUMENT)
+	}
+	ctrlParams.BusEgmPeerIDs = busEgmPeerIDs
+
+	n, err := rmControlInvoke(fi, ioctlParams, &ctrlParams)
+	ctrlParams.BusPeerIDs = origBusPeerIDs
+	ctrlParams.BusEgmPeerIDs = origBusEgmPeerIDs
+	if err != nil {
+		return n, err
+	}
+
+	// If origBufPeerIDS or origBusEgmPeerIDs is null, the corresponding buffer will be nil
+	// and CopyUint32SliceOut() will be a no-op.
+	if _, err := primitive.CopyUint32SliceOut(fi.t, addrFromP64(origBusPeerIDs), busPeerIDsBuf); err != nil {
+		return n, err
+	}
+	if _, err := primitive.CopyUint32SliceOut(fi.t, addrFromP64(origBusEgmPeerIDs), busEgmPeerIDsBuf); err != nil {
+		return n, err
+	}
+	_, err = ctrlParams.CopyOut(fi.t, addrFromP64(ioctlParams.Params))
+	return n, err
+}
+
 func rmAllocInvoke[Params any](fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64Parameters, allocParams *Params, isNVOS64 bool, addObjLocked func(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64Parameters, rightsRequested nvgpu.RS_ACCESS_MASK, allocParams *Params)) (uintptr, error) {
 	defer runtime.KeepAlive(allocParams) // since we convert to non-pointer-typed P64
 

@@ -161,8 +161,8 @@ type UVM_MAP_EXTERNAL_ALLOCATION_PARAMS struct {
 	PerGPUAttributes   [UVM_MAX_GPUS]UvmGpuMappingAttributes
 	GPUAttributesCount uint64
 	RMCtrlFD           int32
-	HClient            Handle
-	HMemory            Handle
+	HClient            uint32 // These are treated like NvHandle, but the driver uses NvU32.
+	HMemory            uint32 // These are treated like NvHandle, but the driver uses NvU32.
 	RMStatus           uint32
 }
 
@@ -184,8 +184,8 @@ type UVM_MAP_EXTERNAL_ALLOCATION_PARAMS_V550 struct {
 	PerGPUAttributes   [UVM_MAX_GPUS_V2]UvmGpuMappingAttributes
 	GPUAttributesCount uint64
 	RMCtrlFD           int32
-	HClient            Handle
-	HMemory            Handle
+	HClient            uint32 // These are treated like NvHandle, but the driver uses NvU32.
+	HMemory            uint32 // These are treated like NvHandle, but the driver uses NvU32.
 	RMStatus           uint32
 }
 

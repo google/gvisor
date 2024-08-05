@@ -396,5 +396,4 @@ type NV00FD_ALLOCATION_PARAMETERS_V545 struct {
 // +marshal
 type NV_CONFIDENTIAL_COMPUTE_ALLOC_PARAMS struct {
 	Handle Handle `nvproxy:"same"`
-	_      uint32
 }
