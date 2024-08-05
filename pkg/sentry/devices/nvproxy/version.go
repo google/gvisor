@@ -225,7 +225,6 @@ func Init() {
 					nvgpu.NV0000_CTRL_CMD_CLIENT_GET_ADDR_SPACE_TYPE:        rmControlSimple,
 					nvgpu.NV0000_CTRL_CMD_CLIENT_SET_INHERITED_SHARE_POLICY: rmControlSimple,
 					nvgpu.NV0000_CTRL_CMD_GPU_GET_ATTACHED_IDS:              rmControlSimple,
-					nvgpu.NV0000_CTRL_CMD_GPU_GET_ID_INFO:                   rmControlSimple,
 					nvgpu.NV0000_CTRL_CMD_GPU_GET_ID_INFO_V2:                rmControlSimple,
 					nvgpu.NV0000_CTRL_CMD_GPU_GET_PROBED_IDS:                rmControlSimple,
 					nvgpu.NV0000_CTRL_CMD_GPU_ATTACH_IDS:                    rmControlSimple,
@@ -234,7 +233,6 @@ func Init() {
 					nvgpu.NV0000_CTRL_CMD_GPU_QUERY_DRAIN_STATE:             rmControlSimple,
 					nvgpu.NV0000_CTRL_CMD_GPU_GET_MEMOP_ENABLE:              rmControlSimple,
 					nvgpu.NV0000_CTRL_CMD_SYNC_GPU_BOOST_GROUP_INFO:         rmControlSimple,
-					nvgpu.NV0000_CTRL_CMD_SYSTEM_GET_P2P_CAPS:               rmControlSimple,
 					nvgpu.NV0000_CTRL_CMD_SYSTEM_GET_P2P_CAPS_V2:            rmControlSimple,
 					nvgpu.NV0000_CTRL_CMD_SYSTEM_GET_FABRIC_STATUS:          rmControlSimple,
 					nvgpu.NV0000_CTRL_CMD_SYSTEM_GET_P2P_CAPS_MATRIX:        rmControlSimple,
@@ -315,7 +313,9 @@ func Init() {
 					nvgpu.NVA06C_CTRL_CMD_PREEMPT:                                          rmControlSimple,
 					nvgpu.NVA06F_CTRL_CMD_GPFIFO_SCHEDULE:                                  rmControlSimple,
 					nvgpu.NVC56F_CTRL_CMD_GET_KMB:                                          rmControlSimple,
+					nvgpu.NV0000_CTRL_CMD_GPU_GET_ID_INFO:                                  ctrlGpuGetIDInfo,
 					nvgpu.NV0000_CTRL_CMD_SYSTEM_GET_BUILD_VERSION:                         ctrlClientSystemGetBuildVersion,
+					nvgpu.NV0000_CTRL_CMD_SYSTEM_GET_P2P_CAPS:                              ctrlClientSystemGetP2PCaps,
 					nvgpu.NV0000_CTRL_CMD_OS_UNIX_EXPORT_OBJECT_TO_FD:                      ctrlHasFrontendFD[nvgpu.NV0000_CTRL_OS_UNIX_EXPORT_OBJECT_TO_FD_PARAMS],
 					nvgpu.NV0000_CTRL_CMD_OS_UNIX_IMPORT_OBJECT_FROM_FD:                    ctrlHasFrontendFD[nvgpu.NV0000_CTRL_OS_UNIX_IMPORT_OBJECT_FROM_FD_PARAMS],
 					nvgpu.NV0000_CTRL_CMD_OS_UNIX_GET_EXPORT_OBJECT_INFO:                   ctrlHasFrontendFD[nvgpu.NV0000_CTRL_OS_UNIX_GET_EXPORT_OBJECT_INFO_PARAMS],
@@ -420,7 +420,6 @@ func Init() {
 							nvgpu.NV0000_CTRL_CMD_CLIENT_GET_ADDR_SPACE_TYPE:        simpleIoctl("NV0000_CTRL_CLIENT_GET_ADDR_SPACE_TYPE_PARAMS"),
 							nvgpu.NV0000_CTRL_CMD_CLIENT_SET_INHERITED_SHARE_POLICY: simpleIoctl("NV0000_CTRL_CLIENT_SET_INHERITED_SHARE_POLICY_PARAMS"),
 							nvgpu.NV0000_CTRL_CMD_GPU_GET_ATTACHED_IDS:              simpleIoctl("NV0000_CTRL_GPU_GET_ATTACHED_IDS_PARAMS"),
-							nvgpu.NV0000_CTRL_CMD_GPU_GET_ID_INFO:                   simpleIoctl("NV0000_CTRL_GPU_GET_ID_INFO_PARAMS"),
 							nvgpu.NV0000_CTRL_CMD_GPU_GET_ID_INFO_V2:                simpleIoctl("NV0000_CTRL_GPU_GET_ID_INFO_V2_PARAMS"),
 							nvgpu.NV0000_CTRL_CMD_GPU_GET_PROBED_IDS:                simpleIoctl("NV0000_CTRL_GPU_GET_PROBED_IDS_PARAMS"),
 							nvgpu.NV0000_CTRL_CMD_GPU_ATTACH_IDS:                    simpleIoctl("NV0000_CTRL_GPU_ATTACH_IDS_PARAMS"),
@@ -429,7 +428,6 @@ func Init() {
 							nvgpu.NV0000_CTRL_CMD_GPU_QUERY_DRAIN_STATE:             simpleIoctl("NV0000_CTRL_GPU_QUERY_DRAIN_STATE_PARAMS"),
 							nvgpu.NV0000_CTRL_CMD_GPU_GET_MEMOP_ENABLE:              simpleIoctl("NV0000_CTRL_GPU_GET_MEMOP_ENABLE_PARAMS"),
 							nvgpu.NV0000_CTRL_CMD_SYNC_GPU_BOOST_GROUP_INFO:         simpleIoctl("NV0000_SYNC_GPU_BOOST_GROUP_INFO_PARAMS"),
-							nvgpu.NV0000_CTRL_CMD_SYSTEM_GET_P2P_CAPS:               simpleIoctl("NV0000_CTRL_SYSTEM_GET_P2P_CAPS_PARAMS"),
 							nvgpu.NV0000_CTRL_CMD_SYSTEM_GET_P2P_CAPS_V2:            simpleIoctl("NV0000_CTRL_SYSTEM_GET_P2P_CAPS_V2_PARAMS"),
 							nvgpu.NV0000_CTRL_CMD_SYSTEM_GET_FABRIC_STATUS:          simpleIoctl("NV0000_CTRL_SYSTEM_GET_FABRIC_STATUS_PARAMS"),
 							nvgpu.NV0000_CTRL_CMD_SYSTEM_GET_P2P_CAPS_MATRIX:        simpleIoctl("NV0000_CTRL_SYSTEM_GET_P2P_CAPS_MATRIX_PARAMS"),
@@ -510,7 +508,9 @@ func Init() {
 							nvgpu.NVA06C_CTRL_CMD_PREEMPT:                                          simpleIoctl("NVA06C_CTRL_PREEMPT_PARAMS"),
 							nvgpu.NVA06F_CTRL_CMD_GPFIFO_SCHEDULE:                                  simpleIoctl("NVA06F_CTRL_GPFIFO_SCHEDULE_PARAMS"),
 							nvgpu.NVC56F_CTRL_CMD_GET_KMB:                                          simpleIoctl("NVC56F_CTRL_CMD_GET_KMB_PARAMS"),
+							nvgpu.NV0000_CTRL_CMD_GPU_GET_ID_INFO:                                  getStructName(nvgpu.NV0000_CTRL_GPU_GET_ID_INFO_PARAMS{}),
 							nvgpu.NV0000_CTRL_CMD_SYSTEM_GET_BUILD_VERSION:                         getStructName(nvgpu.NV0000_CTRL_SYSTEM_GET_BUILD_VERSION_PARAMS{}),
+							nvgpu.NV0000_CTRL_CMD_SYSTEM_GET_P2P_CAPS:                              getStructName(nvgpu.NV0000_CTRL_SYSTEM_GET_P2P_CAPS_PARAMS{}),
 							nvgpu.NV0000_CTRL_CMD_OS_UNIX_EXPORT_OBJECT_TO_FD:                      getStructName(nvgpu.NV0000_CTRL_OS_UNIX_EXPORT_OBJECT_TO_FD_PARAMS{}),
 							nvgpu.NV0000_CTRL_CMD_OS_UNIX_IMPORT_OBJECT_FROM_FD:                    getStructName(nvgpu.NV0000_CTRL_OS_UNIX_IMPORT_OBJECT_FROM_FD_PARAMS{}),
 							nvgpu.NV0000_CTRL_CMD_OS_UNIX_GET_EXPORT_OBJECT_INFO:                   getStructName(nvgpu.NV0000_CTRL_OS_UNIX_GET_EXPORT_OBJECT_INFO_PARAMS{}),
@@ -616,6 +616,7 @@ func Init() {
 			// NV2081_BINAPI forwards all control commands to the GSP in
 			// src/nvidia/src/kernel/rmapi/binary_api.c:binapiControl_IMPL().
 			abi.controlCmd[(nvgpu.NV2081_BINAPI<<16)|0x0108] = rmControlSimple
+			abi.controlCmd[nvgpu.NV0000_CTRL_CMD_SYSTEM_GET_P2P_CAPS] = ctrlClientSystemGetP2PCapsV550
 			abi.uvmIoctl[nvgpu.UVM_SET_PREFERRED_LOCATION] = uvmIoctlSimple[nvgpu.UVM_SET_PREFERRED_LOCATION_PARAMS_V550]
 
 			prevNames := abi.getStructNames
@@ -630,6 +631,7 @@ func Init() {
 				// src/nvidia/src/kernel/rmapi/binary_api.c:binapiControl_IMPL().
 				// As such, there are no structs defined in the driver for this.
 				names.controlNames[(nvgpu.NV2081_BINAPI<<16)|0x0108] = nil
+				names.controlNames[nvgpu.NV0000_CTRL_CMD_SYSTEM_GET_P2P_CAPS] = getStructName(nvgpu.NV0000_CTRL_SYSTEM_GET_P2P_CAPS_PARAMS_V550{})
 				names.uvmNames[nvgpu.UVM_SET_PREFERRED_LOCATION] = getStructName(nvgpu.UVM_SET_PREFERRED_LOCATION_PARAMS_V550{})
 
 				return names
