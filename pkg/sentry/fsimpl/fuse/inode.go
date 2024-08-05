@@ -19,11 +19,11 @@ import (
 	gotime "time"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
-
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/marshal"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
@@ -280,7 +280,7 @@ func (i *inode) Open(ctx context.Context, rp *vfs.ResolvingPath, d *kernfs.Dentr
 		fdImpl vfs.FileDescriptionImpl
 		opcode linux.FUSEOpcode
 	)
-	switch i.filemode().FileType() {
+	switch ft := i.filemode().FileType(); ft {
 	case linux.S_IFREG:
 		regularFD := &regularFileFD{}
 		fd = &(regularFD.fileDescription)
@@ -302,6 +302,9 @@ func (i *inode) Open(ctx context.Context, rp *vfs.ResolvingPath, d *kernfs.Dentr
 		opcode = linux.FUSE_OPENDIR
 	case linux.S_IFLNK:
 		return nil, linuxerr.ELOOP
+	default:
+		log.Warningf("Open on unknown file type: %v", ft)
+		return nil, linuxerr.EINVAL
 	}
 
 	fd.LockFD.Init(&i.locks)
