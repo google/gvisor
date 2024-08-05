@@ -53,9 +53,9 @@ func (*listSupportedDrivers) Execute(ctx context.Context, f *flag.FlagSet, args 
 		return subcommands.ExitUsageError
 	}
 
-	nvproxy.ForEachSupportDriver(func(version nvproxy.DriverVersion, _ string) {
-		fmt.Println(version)
-	})
+	for _, d := range nvproxy.SupportedDrivers() {
+		fmt.Println(d)
+	}
 
 	return subcommands.ExitSuccess
 }

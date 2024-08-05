@@ -17,6 +17,7 @@ package nvproxy
 import (
 	"fmt"
 	"reflect"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -719,6 +720,19 @@ func LatestDriver() DriverVersion {
 			ret = version
 		}
 	}
+	return ret
+}
+
+// SupportedDrivers returns a list of all supported drivers.
+// Precondition: Init() must have been called.
+func SupportedDrivers() []DriverVersion {
+	var ret []DriverVersion
+	for version := range abis {
+		ret = append(ret, version)
+	}
+	sort.Slice(ret, func(i, j int) bool {
+		return !ret[i].isGreaterThan(ret[j])
+	})
 	return ret
 }
 
