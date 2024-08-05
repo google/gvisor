@@ -19,6 +19,7 @@ go_test(
     srcs = ["nftables_test.go"],
     library = ":nftables",
     deps = [
+        "//pkg/abi/linux",
         "//pkg/buffer",
         "//pkg/tcpip/stack",
     ],

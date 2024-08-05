@@ -53,6 +53,7 @@ import (
 const (
 	defaultBaseChainCapacity = 8
 	defaultRuleCapacity      = 8
+	registersByteSize        = 64 // 4 16-byte registers or 16 4-byte registers.
 )
 
 // AddressFamily describes the 6 address families supported by nftables.
@@ -277,6 +278,7 @@ type Chain struct {
 
 // BaseChainInfo stores hook-related info for attaching a chain to the pipeline.
 type BaseChainInfo struct {
+
 	// BcType is the base chain type of the chain (filter, nat, route).
 	BcType BaseChainType
 
@@ -551,98 +553,271 @@ type Operation interface {
 	Eval() Verdict
 }
 
-// Verdict represents verdict statements and are issued (returned) from tables,
-// chains, and rules when processing packets to alter the control flow
-// of the ruleset and determine the actions and modifications to be performed on
-// packets.
-type Verdict uint32
+//
+// Register and Register-Related Implementations.
+// Note: Registers are represented by type uint8 for the register number.
+//
+
+func isVerdictRegister(reg uint8) bool {
+	return reg == linux.NFT_REG_VERDICT
+}
+
+func is16ByteRegister(reg uint8) bool {
+	return reg >= linux.NFT_REG_1 && reg <= linux.NFT_REG_4
+}
+
+func is4ByteRegister(reg uint8) bool {
+	return reg >= linux.NFT_REG32_00 && reg <= linux.NFT_REG32_15
+}
+
+func isRegister(reg uint8) bool {
+	return isVerdictRegister(reg) || is16ByteRegister(reg) || is4ByteRegister(reg)
+}
+
+// RegisterDataType is the type of data to be set in a register.
+type RegisterDataType int
 
 const (
-	//
-	// Absolute verdicts are issued from tables, chains, and rules. These are
-	// called absolute because they terminate ruleset evaluation immediately.
-	//
-
-	// NftDrop, terminates evaluation and drops the packet, occurs instantly.
-	NftDrop Verdict = iota
-
-	// NftAccept, terminates evaluation and accepts the packet; the packet can
-	// still be dropped later by another hook or another chain within same hook.
-	NftAccept
-
-	//
-	// Internal verdicts are issued only for rules and continue/modify evaluation.
-	//
-
-	// NftQueue, terminates the current evaluation and queues packet to userspace.
-	// Userspace must provide a Drop or Accept verdict. In the case Accept is
-	// issued, processing resumes with the next base chain hook, not the rule
-	// following the Queue verdict.
-	NftQueue
-
-	// NftContinue, continues evaluation with the next rule. This is the default
-	// behavior if no verdict is issued.
-	NftContinue
-
-	// NftReturn, returns from the current chain and continues evaluation with the
-	// next rule in the previous chain. If issued from a base chain (no previous
-	// chain), the verdict issued is as specified by the base chain's policy.
-	NftReturn
-
-	// NftJump, continues evaluation at the first rule in the specified chain and
-	// is set to continue evaluation back at the next rule in the current chain
-	// after the specified chain is entirely evaluated or issues a Return (by
-	// pushing the current position in the ruleset to a call stack). In the case
-	// an absolute verdict is issued from the specified chain, ruleset evaluation
-	// terminates immediately as normal.
-	NftJump // chain required as argument
-
-	// NftGoto, continues evaluation at the first rule in the specified chain
-	// similar to NftJump but doesn't push the current position to a call stack so
-	// evaluation doesn't resume at the current chain.
-	NftGoto // chain required as argument
-
-	// NumVerdicts is the number of verdicts supported by nftables.
-	NumVerdicts
+	// DataVerdict represents a verdict to be stored in a register.
+	DataVerdict RegisterDataType = iota
+	// Data4Bytes represents 4 bytes of data to be stored in a register.
+	Data4Bytes
+	// Data16Bytes represents 16 bytes of data to be stored in a register.
+	Data16Bytes
 )
 
-// String for Verdict prints names for the supported verdicts.
+// RegisterData represents the data to be set in a register.
+type RegisterData interface {
+
+	// Type returns the register data type.
+	Type() RegisterDataType
+
+	// String returns a string representation of the register data.
+	String() string
+
+	// Equal compares the register data to another.
+	Equal(other RegisterData) bool
+
+	// ValidateRegister ensures the register is compatible with the data type,
+	// returning an error otherwise.
+	ValidateRegister(reg uint8) error
+
+	// StoreData sets the data in the destination register, panicking if the
+	// register is not valid for the data type.
+	// Note: assumes data is valid for register. This is used primarily during
+	// operation evaluation and the data type/register compatibility should have
+	// been checked during the operation init.
+	StoreData(regs *RegisterSet, reg uint8)
+}
+
+// VerdictData represents a verdict as data to be stored in a register.
+type VerdictData struct {
+	data Verdict
+}
+
+// NewVerdictData creates a RegisterData for a verdict.
+func NewVerdictData(verdict Verdict) RegisterData { return VerdictData{data: verdict} }
+
+// Type returns the DataVerdict register data type for VerdictData.
+func (rd VerdictData) Type() RegisterDataType { return DataVerdict }
+
+// String returns a string representation of the verdict data.
+func (rd VerdictData) String() string {
+	return rd.data.String()
+}
+
+// Equal compares the verdict data to another RegisterData object.
+func (rd VerdictData) Equal(other RegisterData) bool {
+	if other == nil {
+		return false
+	}
+	if other.Type() != DataVerdict {
+		return false
+	}
+	return rd.data == other.(VerdictData).data
+}
+
+// ValidateRegister ensures the register is compatible with VerdictData.
+func (rd VerdictData) ValidateRegister(reg uint8) error {
+	if !isVerdictRegister(reg) {
+		return fmt.Errorf("verdict data type is only valid for register 0")
+	}
+	return nil
+}
+
+// StoreData sets the data in the destination register to the verdict.
+func (rd VerdictData) StoreData(regs *RegisterSet, reg uint8) {
+	if err := rd.ValidateRegister(reg); err != nil {
+		panic(err)
+	}
+	regs.verdict = rd.data
+}
+
+// BytesData represents a 4 or 16 bytes of data to be stored in a register.
+type BytesData struct {
+	data []byte
+}
+
+// NewBytesData creates a RegisterData for 4 or 16 bytes of data.
+func NewBytesData(bytes []byte) RegisterData {
+	if len(bytes) != 4 && len(bytes) != 16 {
+		panic(fmt.Errorf("invalid byte data length: %d", len(bytes)))
+	}
+	return BytesData{data: bytes}
+}
+
+// Type returns the Data4Bytes or Data16Bytes register data type depending
+// on the length of the BytesData.
+func (rd BytesData) Type() RegisterDataType {
+	if len(rd.data) == 4 {
+		return Data4Bytes
+	}
+	return Data16Bytes
+}
+
+// String returns a string representation of the bytes data.
+func (rd BytesData) String() string {
+	return fmt.Sprintf("%x", rd.data)
+}
+
+// Equal compares the bytes data to another RegisterData object.
+func (rd BytesData) Equal(other RegisterData) bool {
+	if other == nil {
+		return false
+	}
+	if other.Type() != rd.Type() {
+		return false
+	}
+	return slices.Equal(rd.data, other.(BytesData).data)
+}
+
+// ValidateRegister ensures the register is compatible with Bytes4Data.
+func (rd BytesData) ValidateRegister(reg uint8) error {
+	if rd.Type() == Data4Bytes {
+		if !is4ByteRegister(reg) && !is16ByteRegister(reg) {
+			return fmt.Errorf("4-byte data type is only valid for 4-byte and 16-byte registers")
+		}
+	} else {
+		if !is16ByteRegister(reg) {
+			return fmt.Errorf("16-byte data type is only valid for 16-byte registers")
+		}
+	}
+	return nil
+}
+
+// StoreData sets the data in the destination register to the uint32.
+func (rd BytesData) StoreData(regs *RegisterSet, reg uint8) {
+	if err := rd.ValidateRegister(reg); err != nil {
+		panic(err)
+	}
+	var start uint8
+	var regBuf []byte
+	// Stores 4-byte data in a 4-byte register.
+	if is4ByteRegister(reg) {
+		start = (reg - linux.NFT_REG32_00) * linux.NFT_REG32_SIZE
+		regBuf = regs.data[start : start+linux.NFT_REG32_SIZE]
+	} else {
+		// Stores 16-byte data in a 16-byte register.
+		if rd.Type() == Data16Bytes {
+			start = (reg - linux.NFT_REG_1) * linux.NFT_REG_SIZE
+			regBuf = regs.data[start : start+linux.NFT_REG_SIZE]
+		} else {
+			// Stores 4-byte data in a 16-byte register, leaving excess space on the
+			// left (bc the data is little endian).
+			start = (reg-linux.NFT_REG_1)*linux.NFT_REG_SIZE + linux.NFT_REG_SIZE - linux.NFT_REG32_SIZE
+			regBuf = regs.data[start : start+linux.NFT_REG32_SIZE]
+		}
+	}
+	copy(regBuf, rd.data)
+}
+
+// RegisterSet represents the set of registers supported by the kernel.
+// Use RegisterData.StoreData to set data in the registers.
+// Note: Corresponds to nft_regs from include/net/netfilter/nf_tables.h.
+type RegisterSet struct {
+	verdict Verdict                 // 16-byte verdict register
+	data    [registersByteSize]byte // 4 16-byte registers or 16 4-byte registers
+}
+
+// NewRegisterSet creates a new RegisterSet with the Continue Verdict and all
+// registers set to 0.
+func NewRegisterSet() RegisterSet {
+	return RegisterSet{
+		verdict: Verdict{Code: VC(linux.NFT_CONTINUE)},
+		data:    [registersByteSize]byte{0},
+	}
+}
+
+// Verdict returns the verdict data.
+func (regs *RegisterSet) Verdict() Verdict {
+	return regs.verdict
+}
+
+//
+// Verdict Implementation.
+// There are two types of verdicts:
+// 1. Netfilter (External) Verdicts: Drop, Accept, Stolen, Queue, Repeat, Stop
+// 		These are terminal verdicts that are returned to the kernel.
+// 2. Nftable (Internal) Verdicts:, Continue, Break, Jump, Goto, Return
+// 		These are internal verdicts that only exist within the nftables library.
+// Both share the same numeric space (uint32 Verdict Code).
+//
+
+// Verdict represents the result of evaluating a packet against a rule or chain.
+type Verdict struct {
+	// Code is the numeric code that represents the verdict issued.
+	Code uint32
+
+	// ChainName is the name of the chain to continue evaluation if the verdict is
+	// Jump or Goto.
+	// Note: the chain must be in the same table as the current chain.
+	ChainName string
+}
+
+// String returns a string representation of the verdict.
 func (v Verdict) String() string {
+	out := VerdictToString(v.Code)
+	if v.ChainName != "" {
+		out += fmt.Sprintf(" -> %s", v.ChainName)
+	}
+	return out
+}
+
+// VC converts a numeric code to a uint32 number representing the verdict.
+func VC(v int32) uint32 {
+	return uint32(v)
+}
+
+// VerdictToString prints names for the supported verdicts.
+func VerdictToString(v uint32) string {
 	switch v {
-	case NftDrop:
+	// Netfilter (External) Verdicts:
+	case VC(linux.NF_DROP):
 		return "Drop"
-	case NftAccept:
+	case VC(linux.NF_ACCEPT):
 		return "Accept"
-	case NftQueue:
+	case VC(linux.NF_STOLEN):
+		return "Stolen"
+	case VC(linux.NF_QUEUE):
 		return "Queue"
-	case NftContinue:
+	case VC(linux.NF_REPEAT):
+		return "Repeat"
+	case VC(linux.NF_STOP):
+		return "Stop"
+	// Nftable (Internal) Verdicts:
+	case VC(linux.NFT_CONTINUE):
 		return "Continue"
-	case NftReturn:
-		return "Return"
-	case NftJump:
+	case VC(linux.NFT_BREAK):
+		return "Break"
+	case VC(linux.NFT_JUMP):
 		return "Jump"
-	case NftGoto:
+	case VC(linux.NFT_GOTO):
 		return "Goto"
+	case VC(linux.NFT_RETURN):
+		return "Return"
 	default:
 		panic(fmt.Sprintf("invalid verdict: %d", int(v)))
 	}
-}
-
-// validateVerdict ensures the verdict is valid (can be absolute or internal).
-func validateVerdict(verdict Verdict) error {
-	// Note verdict is unsigned so it can't be less than 0.
-	if verdict >= NumVerdicts {
-		return fmt.Errorf("invalid verdict: %d", int(verdict))
-	}
-	return nil
-}
-
-// validateAbsoluteVerdict ensures an absolute verdict (Drop or Accept).
-func validateAbsoluteVerdict(verdict Verdict) error {
-	if verdict != NftDrop && verdict != NftAccept {
-		return fmt.Errorf("invalid absolute verdict: %d", int(verdict))
-	}
-	return nil
 }
 
 //
@@ -840,17 +1015,17 @@ func (nf *NFTables) EvaluateHook(family AddressFamily,
 	hook Hook, pkt *stack.PacketBuffer) (Verdict, *stack.PacketBuffer, error) {
 	// Ensures address family is valid.
 	if err := validateAddressFamily(family); err != nil {
-		return NftDrop, nil, err
+		return Verdict{}, nil, err
 	}
 
 	// Ensures hook is valid.
 	if err := validateHook(hook, family); err != nil {
-		return NftDrop, nil, err
+		return Verdict{}, nil, err
 	}
 
 	// Immediately accept if there are no base chains for the specified hook.
 	if nf.filters[family] == nil || nf.filters[family].hfStacks[hook] == nil {
-		return NftAccept, pkt, nil
+		return Verdict{Code: VC(linux.NF_ACCEPT)}, pkt, nil
 	}
 
 	// Evaluates packet through all base chains for given hook in priority order.
@@ -862,12 +1037,12 @@ func (nf *NFTables) EvaluateHook(family AddressFamily,
 		// Note: chain.evaluate() returns an absolute verdict.
 		newPkt, chainVerdict := chain.evaluate(pkt)
 		// Returns immediately if the verdict is Drop.
-		if chainVerdict == NftDrop {
-			return NftDrop, nil, nil
+		if chainVerdict.Code == VC(linux.NF_DROP) {
+			return Verdict{Code: VC(linux.NF_DROP)}, nil, nil
 		}
 		pkt = newPkt
 	}
-	return NftAccept, pkt, nil
+	return Verdict{Code: VC(linux.NF_ACCEPT)}, pkt, nil
 }
 
 //
@@ -1071,7 +1246,7 @@ func (c *Chain) AddRule(rule *Rule) {
 func (c *Chain) evaluate(pkt *stack.PacketBuffer) (*stack.PacketBuffer, Verdict) {
 	// TODO(b/345684870): Implement this by evaluating all rules in a chain in
 	// sequential order.
-	return pkt, NftAccept
+	return pkt, Verdict{Code: VC(linux.NF_ACCEPT)}
 }
 
 //
