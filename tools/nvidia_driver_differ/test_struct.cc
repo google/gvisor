@@ -31,3 +31,5 @@ typedef struct TestStruct {
   } e[4];
   TestUnion f;
 } TestStruct;
+
+typedef TestStruct TestStruct2;
