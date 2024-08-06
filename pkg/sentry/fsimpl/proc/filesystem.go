@@ -92,6 +92,7 @@ func (ft FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.VirtualF
 	procfs := &filesystem{
 		devMinor: devMinor,
 	}
+	procfs.Init(kernfs.ProcfsLockClass)
 	procfs.MaxCachedDentries = maxCachedDentries
 	procfs.VFSFilesystem().Init(vfsObj, &ft, procfs)
 

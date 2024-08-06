@@ -31,12 +31,14 @@ func NewMutexClass(reflect.Type, []string) *MutexClass {
 	return nil
 }
 
+func (m *MutexClass) SetSubclassNameMap(map[int]string) {}
+
 // AddGLock is no-op without the lockdep tag.
 //
 //go:inline
-func AddGLock(*MutexClass, int) {}
+func AddGLock(*MutexClass, int, int) {}
 
 // DelGLock is no-op without the lockdep tag.
 //
 //go:inline
-func DelGLock(*MutexClass, int) {}
+func DelGLock(*MutexClass, int, int) {}
