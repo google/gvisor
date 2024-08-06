@@ -33,6 +33,7 @@ import (
 	"reflect"
 	"regexp"
 	"runtime/debug"
+	"slices"
 	"strings"
 	"sync"
 
@@ -676,34 +677,33 @@ func (i *importer) allFactsAndFindings() (FindingSet, *facts.Bundle) {
 	return findings, allFacts
 }
 
-// FindRoot finds a package root.
-func FindRoot(srcs []string, srcRootRegex string) (string, error) {
+// FindRoots finds a package roots.
+func FindRoots(srcs []string, srcRootRegex string) ([]string, error) {
 	if srcRootRegex == "" {
-		return "", nil
+		return nil, nil
 	}
 
-	// Calculate the root source directory. This is always a directory
-	// named 'src', of which we simply take the first we find. This is a
-	// bit fragile, but works for all currently known Go source
-	// configurations.
+	// Calculate the root source directories. This is always a directory
+	// named 'src'. It's possible that there are more than one of these
+	// directories.
 	//
 	// Note that there may be extra files outside of the root source
 	// directory; we simply ignore those.
 	re, err := regexp.Compile(srcRootRegex)
 	if err != nil {
-		return "", fmt.Errorf("srcRootRegex is not valid: %w", err)
+		return nil, fmt.Errorf("srcRootRegex is not valid: %w", err)
 	}
-	srcRootPrefix := ""
+	var srcRootPrefixes []string
 	for _, filename := range srcs {
-		if s := re.FindString(filename); len(s) > len(srcRootPrefix) {
-			srcRootPrefix = s
+		if s := re.FindString(filename); s != "" && !slices.Contains(srcRootPrefixes, s) {
+			srcRootPrefixes = append(srcRootPrefixes, s)
 		}
 	}
-	if srcRootPrefix == "" {
+	if len(srcRootPrefixes) == 0 {
 		// For whatever reason, we didn't identify a good common prefix to use here.
-		return "", fmt.Errorf("unable to identify src prefix for %v with regex %s", srcs, srcRootRegex)
+		return nil, fmt.Errorf("unable to identify src prefix for %v with regex %s", srcs, srcRootRegex)
 	}
-	return srcRootPrefix, nil
+	return srcRootPrefixes, nil
 }
 
 // SplitPackages splits a typical package structure into packages.
@@ -742,14 +742,15 @@ func SplitPackages(srcs []string, srcRootPrefix string) map[string][]string {
 			continue
 		}
 
-		// In Go's sources, vendored packages under cmd/vendor are imported via
-		// paths not containing cmd/vendor.
-		pkg = strings.TrimPrefix(pkg, "cmd/vendor/")
-
-		// Place the special runtime package (functions emitted by the
-		// compiler itself) into the runtime packages.
 		if strings.Contains(filename, "cmd/compile/internal/typecheck/_builtin/runtime.go") {
+			// Place the special runtime package (functions emitted by the
+			// compiler itself) into the runtime packages.
 			pkg = "runtime"
+		} else if strings.HasPrefix(pkg, "cmd") {
+			// Ignore packages in cmd, these are packages that are needed to build Go
+			// programs (like the Go tool or the compiler), but they are not part of
+			// the standard library and can't be in the set of transitive dependencies.
+			continue
 		}
 
 		// Add to the package.
