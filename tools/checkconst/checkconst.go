@@ -141,6 +141,20 @@ func extractFacts(pass *analysis.Pass) {
 
 	// Accumulate all facts.
 	c.walkScope(pass, make([]string, 0, 128), pass.Pkg.Scope())
+
+	// "MapType" was renamed to "OldMapType" in go.dev/cl/580779, but there
+	// are a number of nogo tests that rely on MapType.Hasher to be present.
+	// Rolling out that change without breaking nogo tests is means that we
+	// need to support both names for a short while until we can use the go1.24
+	// build tag to fix the issue in sources.
+	//
+	// TODO(floriank): Remove once no longer needed
+	if pass.Pkg.Path() == "internal/abi" {
+		if cc, ok := c.Offsets["OldMapType.Hasher"]; ok {
+			c.Offsets["MapType.Hasher"] = cc
+		}
+	}
+
 	pass.ExportPackageFact(&c)
 }
 
