@@ -225,12 +225,18 @@ func (fd *DeviceFD) Write(ctx context.Context, src usermem.IOSequence, opts vfs.
 		return 0, linuxerr.EPERM
 	}
 
+	var hdr linux.FUSEHeaderOut
+	if src.NumBytes() < int64(hdr.SizeBytes()) {
+		return 0, linuxerr.EINVAL
+	}
 	n, err := src.CopyIn(ctx, fd.writeBuf[:])
 	if err != nil {
 		return 0, err
 	}
-	var hdr linux.FUSEHeaderOut
 	hdr.UnmarshalBytes(fd.writeBuf[:])
+	if src.NumBytes() != int64(hdr.Len) {
+		return 0, linuxerr.EINVAL
+	}
 
 	fut, ok := fd.completions[hdr.Unique]
 	if !ok {
