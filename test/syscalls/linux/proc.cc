@@ -125,28 +125,14 @@ namespace {
 // fields that are printed conditionally, but are present on common
 // configurations (e.g. when CONFIG_SMP is set).
 static const char* required_fields[] = {
-    "processor",
-    "vendor_id",
-    "cpu family",
-    "model\t\t:",
-    "model name",
-    "stepping",
-    "cpu MHz",
-    "physical id",
-    "siblings",
-    "core id",
-    "cpu cores",
-    "apicid\t\t:",
-    "initial apicid",
-    "fpu\t\t:",
-    "fpu_exception",
-    "cpuid level",
-    "wp",
-    "bogomips",
-    "clflush size",
-    "cache_alignment",
-    "address sizes",
-    "power management",
+    "processor",     "vendor_id",        "cpu family",
+    "model\t\t:",    "model name",       "stepping",
+    "cpu MHz",       "cache size",       "physical id",
+    "siblings",      "core id",          "cpu cores",
+    "apicid\t\t:",   "initial apicid",   "fpu\t\t:",
+    "fpu_exception", "cpuid level",      "wp",
+    "bogomips",      "clflush size",     "cache_alignment",
+    "address sizes", "power management",
 };
 #elif defined(__aarch64__)
 // This list of "required" fields is taken from reading the file

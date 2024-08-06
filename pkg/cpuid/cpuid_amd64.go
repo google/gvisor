@@ -308,7 +308,7 @@ func (fs FeatureSet) HasFeature(feature Feature) bool {
 
 // WriteCPUInfoTo is to generate a section of one cpu in /proc/cpuinfo. This is
 // a minimal /proc/cpuinfo, it is missing some fields like "microcode" that are
-// not always printed in Linux. The bogomips field is simply made up.
+// not always printed in Linux. Several fields are simply made up.
 func (fs FeatureSet) WriteCPUInfoTo(cpu, numCPU uint, w io.Writer) {
 	// Avoid many redundant calls here, since this can occasionally appear
 	// in the hot path. Read all basic information up front, see above.
@@ -322,6 +322,13 @@ func (fs FeatureSet) WriteCPUInfoTo(cpu, numCPU uint, w io.Writer) {
 	fmt.Fprintf(w, "model name\t: %s\n", "unknown") // Unknown for now.
 	fmt.Fprintf(w, "stepping\t: %s\n", "unknown")   // Unknown for now.
 	fmt.Fprintf(w, "cpu MHz\t\t: %.3f\n", cpuFreqMHz)
+	// Pretend the CPU has 8192 KB of cache. Note that real /proc/cpuinfo exposes total L3 cache
+	// size on Intel and per-core L2 cache size on AMD (as of Linux 6.1.0), so the value of this
+	// field is not really important in practice. Any value that is chosen here will be wrong
+	// by an order of magnitude on a significant chunk of x86 machines.
+	// 8192 KB is selected because it is a reasonable size that will be effectively usable on
+	// lightly loaded machines - most machines have 1-4MB of L3 cache per core.
+	fmt.Fprintf(w, "cache size\t: 8192 KB\n")
 	fmt.Fprintf(w, "physical id\t: 0\n") // Pretend all CPUs are in the same socket.
 	fmt.Fprintf(w, "siblings\t: %d\n", numCPU)
 	fmt.Fprintf(w, "core id\t\t: %d\n", cpu)
