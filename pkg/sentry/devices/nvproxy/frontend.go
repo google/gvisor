@@ -859,6 +859,12 @@ func rmAllocSimpleParams[Params any, PtrParams marshalPtr[Params]](fi *frontendI
 
 	var allocParamsValue Params
 	allocParams := PtrParams(&allocParamsValue)
+	// Sometimes, the params are optional, in which case the size is 0.
+	if ioctlParams.ParamsSize != 0 && allocParams.SizeBytes() != int(ioctlParams.ParamsSize) {
+		fi.ctx.Warningf("nvproxy: mismatched param sizes for alloc class %v. Param struct has size %v, got %v (bytes).",
+			ioctlParams.HClass, allocParams.SizeBytes(), ioctlParams.ParamsSize)
+		return 0, linuxerr.EINVAL
+	}
 	if _, err := allocParams.CopyIn(fi.t, addrFromP64(ioctlParams.PAllocParms)); err != nil {
 		return 0, err
 	}
