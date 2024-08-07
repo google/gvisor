@@ -252,10 +252,9 @@ func (conn *connection) CallAsync(ctx context.Context, r *Request) error {
 // The forget request does not have a reply,
 // as documented in include/uapi/linux/fuse.h:FUSE_FORGET.
 func (conn *connection) Call(ctx context.Context, r *Request) (*Response, error) {
-	b := blockerFromContext(ctx)
 	// Block requests sent before connection is initialized.
 	if !conn.Initialized() && r.hdr.Opcode != linux.FUSE_INIT {
-		if err := b.Block(conn.initializedChan); err != nil {
+		if err := ctx.Block(conn.initializedChan); err != nil {
 			return nil, err
 		}
 	}
@@ -276,13 +275,13 @@ func (conn *connection) Call(ctx context.Context, r *Request) (*Response, error)
 		return nil, linuxerr.ECONNREFUSED
 	}
 
-	fut, err := conn.callFuture(b, r)
+	fut, err := conn.callFuture(ctx, r)
 	conn.fd.mu.Unlock()
 	if err != nil {
 		return nil, err
 	}
 
-	return fut.resolve(b)
+	return fut.resolve(ctx)
 }
 
 // callFuture makes a request to the server and returns a future response.

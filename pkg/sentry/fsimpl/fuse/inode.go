@@ -115,14 +115,6 @@ type inode struct {
 	blockSize atomicbitops.Uint32 // 0 if unknown.
 }
 
-func blockerFromContext(ctx context.Context) context.Blocker {
-	kernelTask := kernel.TaskFromContext(ctx)
-	if kernelTask == nil {
-		return ctx
-	}
-	return kernelTask
-}
-
 func pidFromContext(ctx context.Context) uint32 {
 	kernelTask := kernel.TaskFromContext(ctx)
 	if kernelTask == nil {
