@@ -199,8 +199,11 @@ struct DriverStructReporter : public MatchFinder::MatchCallback {
         record_decl->getLocation().printToString(ctx->getSourceManager());
     // getTypeSize returns the size in bits, so we divide by 8 to get bytes.
     uint64_t size = ctx->getTypeSize(record_decl->getTypeForDecl()) / 8;
-    RecordDefinitions[name] =
-        json::object({{"source", source}, {"fields", fields}, {"size", size}});
+    bool is_union = record_decl->isUnion();
+    RecordDefinitions[name] = json::object({{"source", source},
+                                            {"fields", fields},
+                                            {"size", size},
+                                            {"is_union", is_union}});
   }
 };
 

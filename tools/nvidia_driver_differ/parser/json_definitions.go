@@ -32,8 +32,8 @@ type InputJSON struct {
 
 // OutputJSON is the format for the output of driver_ast_parser.
 type OutputJSON struct {
-	Records RecordDefs  `json:"records"`
-	Aliases TypeAliases `json:"aliases"`
+	Records RecordDefs
+	Aliases TypeAliases
 }
 
 // Merge merges the struct definitions from b into this OutputJSON.
@@ -60,14 +60,15 @@ func (s RecordField) String() string {
 
 // RecordDef represents the definition of a record (struct or union).
 type RecordDef struct {
-	Fields []RecordField
-	Size   uint64
-	Source string
+	Fields  []RecordField
+	Size    uint64
+	IsUnion bool `json:"is_union"`
+	Source  string
 }
 
 // Equals returns true if the two record definitions are equal. We ignore the source of the records.
 func (s RecordDef) Equals(other RecordDef) bool {
-	return s.Size == other.Size && slices.Equal(s.Fields, other.Fields)
+	return s.IsUnion == other.IsUnion && s.Size == other.Size && slices.Equal(s.Fields, other.Fields)
 }
 
 // TypeDef represents the definition of a type.
@@ -88,7 +89,18 @@ func GetRecordDiff(name nvproxy.DriverStructName, a, b RecordDef) string {
 	fmt.Fprintf(&sb, "--- A: %s\n", a.Source)
 	fmt.Fprintf(&sb, "+++ B: %s\n", b.Source)
 
-	fmt.Fprintf(&sb, "struct %s\n", name)
+	switch {
+	case a.IsUnion && !b.IsUnion:
+		fmt.Fprintf(&sb, "- union %s\n", name)
+		fmt.Fprintf(&sb, "+ struct %s\n", name)
+	case !a.IsUnion && b.IsUnion:
+		fmt.Fprintf(&sb, "- struct %s\n", name)
+		fmt.Fprintf(&sb, "+ union %s\n", name)
+	case a.IsUnion && b.IsUnion:
+		fmt.Fprintf(&sb, "union %s\n", name)
+	case !a.IsUnion && !b.IsUnion:
+		fmt.Fprintf(&sb, "struct %s\n", name)
+	}
 	if a.Size != b.Size {
 		fmt.Fprintf(&sb, "  size: %d -> %d (bytes)\n", a.Size, b.Size)
 	}

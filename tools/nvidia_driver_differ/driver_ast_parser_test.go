@@ -84,8 +84,9 @@ func TestParser(t *testing.T) {
 					parser.RecordField{Name: "e", Type: "TestStruct::e_t[4]"},
 					parser.RecordField{Name: "f", Type: "TestUnion"},
 				},
-				Size:   44,
-				Source: "test_struct.cc:25:16",
+				Size:    44,
+				IsUnion: false,
+				Source:  "test_struct.cc:25:16",
 			},
 			"TestStruct2": parser.RecordDef{
 				Fields: []parser.RecordField{
@@ -94,24 +95,27 @@ func TestParser(t *testing.T) {
 					parser.RecordField{Name: "e", Type: "TestStruct::e_t[4]"},
 					parser.RecordField{Name: "f", Type: "TestUnion"},
 				},
-				Size:   44,
-				Source: "test_struct.cc:25:16",
+				Size:    44,
+				IsUnion: false,
+				Source:  "test_struct.cc:25:16",
 			},
 			"TestStruct::e_t": parser.RecordDef{
 				Fields: []parser.RecordField{
 					parser.RecordField{Name: "c", Type: "OtherInt"},
 					parser.RecordField{Name: "d", Type: "OtherInt"},
 				},
-				Size:   8,
-				Source: "test_struct.cc:28:3",
+				Size:    8,
+				IsUnion: false,
+				Source:  "test_struct.cc:28:3",
 			},
 			"TestUnion": parser.RecordDef{
 				Fields: []parser.RecordField{
 					parser.RecordField{Name: "u_a", Type: "int"},
 					parser.RecordField{Name: "u_b", Type: "int"},
 				},
-				Size:   4,
-				Source: "test_struct.cc:20:9",
+				Size:    4,
+				IsUnion: true,
+				Source:  "test_struct.cc:20:9",
 			},
 		},
 		Aliases: parser.TypeAliases{
