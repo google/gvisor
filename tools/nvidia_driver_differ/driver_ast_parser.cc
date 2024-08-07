@@ -24,6 +24,7 @@
 #include "absl/container/flat_hash_set.h"
 #include "absl/strings/str_cat.h"
 #include "nlohmann/json.hpp"
+#include "clang/include/clang/AST/ASTContext.h"
 #include "clang/include/clang/AST/Decl.h"
 #include "clang/include/clang/AST/Type.h"
 #include "clang/include/clang/ASTMatchers/ASTMatchFinder.h"
@@ -89,7 +90,7 @@ struct DriverStructReporter : public MatchFinder::MatchCallback {
   }
 
   void run(const MatchFinder::MatchResult &result) override {
-    const auto &sm = result.Context->getSourceManager();
+    const auto *ctx = result.Context;
 
     const auto *typedef_decl =
         result.Nodes.getNodeAs<clang::TypedefDecl>("typedef_decl");
@@ -104,22 +105,28 @@ struct DriverStructReporter : public MatchFinder::MatchCallback {
     const auto *struct_decl =
         result.Nodes.getNodeAs<clang::RecordDecl>("struct_decl");
     if (struct_decl == nullptr) {
-      // Add the typedef to TypeAliases, and recurse on the underlying type.
+      // Generate the definition for the underlying type, then copy it for
+      // this struct.
       const auto type = typedef_decl->getUnderlyingType();
       const auto type_name = type.getAsString();
-      TypeAliases[name] = type_name;
-      add_type_definition(type, type_name, sm);
+      add_type_definition(type, type_name, ctx);
+
+      if (type->isRecordType()) {
+        RecordDefinitions[name] = RecordDefinitions[type_name];
+      } else {
+        TypeAliases[name] = TypeAliases[type_name];
+      }
       return;
     }
 
-    add_type_definition(result.Context->getTypeDeclType(struct_decl), name, sm);
+    add_type_definition(ctx->getTypeDeclType(struct_decl), name, ctx);
   }
 
   // Adds the type definition of `type` to either `RecordDefinitions` or
   // `TypeAliases`, mapped to `name`. Recursively adds the type definitions
   // of any nested types.
   void add_type_definition(const clang::QualType &type, const std::string &name,
-                           const clang::SourceManager &sm) {
+                           const clang::ASTContext *ctx) {
     // We've already handled this type.
     if (ParsedTypes.contains(name)) {
       return;
@@ -132,9 +139,12 @@ struct DriverStructReporter : public MatchFinder::MatchCallback {
     if (canonical_type->isRecordType()) {
       const auto record_decl = canonical_type->getAsRecordDecl();
 
-      add_record_definition(record_decl, name, sm);
+      add_record_definition(record_decl, name, ctx);
     } else {
-      TypeAliases[name] = canonical_type.getAsString();
+      // getTypeSize returns the size in bits, so we divide by 8 to get bytes.
+      uint64_t size = ctx->getTypeSize(canonical_type) / 8;
+      TypeAliases[name] = json::object(
+          {{"size", size}, {"type", canonical_type.getAsString()}});
     }
   }
 
@@ -142,7 +152,7 @@ struct DriverStructReporter : public MatchFinder::MatchCallback {
   // to `name`. Recursively adds the type definitions of any nested types.
   void add_record_definition(const clang::RecordDecl *record_decl,
                              const std::string &name,
-                             const clang::SourceManager &sm) {
+                             const clang::ASTContext *ctx) {
     json fields;
     for (const auto *field : record_decl->fields()) {
       auto field_type = field->getType();
@@ -182,13 +192,15 @@ struct DriverStructReporter : public MatchFinder::MatchCallback {
           {{"name", field->getNameAsString()}, {"type", field_type_name}}));
 
       // Recurse on the field type.
-      add_type_definition(field_type, base_type_name, sm);
+      add_type_definition(field_type, base_type_name, ctx);
     }
 
-    std::string source = record_decl->getLocation().printToString(sm);
-
+    std::string source =
+        record_decl->getLocation().printToString(ctx->getSourceManager());
+    // getTypeSize returns the size in bits, so we divide by 8 to get bytes.
+    uint64_t size = ctx->getTypeSize(record_decl->getTypeForDecl()) / 8;
     RecordDefinitions[name] =
-        json::object({{"source", source}, {"fields", fields}});
+        json::object({{"source", source}, {"fields", fields}, {"size", size}});
   }
 };
 

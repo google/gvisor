@@ -56,7 +56,7 @@ func TestParser(t *testing.T) {
 	}()
 
 	input := parser.InputJSON{
-		Structs: []string{"TestStruct"},
+		Structs: []string{"TestStruct", "TestStruct2"},
 	}
 	if err := json.NewEncoder(structsFile).Encode(&input); err != nil {
 		t.Fatalf("failed to write input structs file: %v", err)
@@ -84,6 +84,17 @@ func TestParser(t *testing.T) {
 					parser.RecordField{Name: "e", Type: "TestStruct::e_t[4]"},
 					parser.RecordField{Name: "f", Type: "TestUnion"},
 				},
+				Size:   44,
+				Source: "test_struct.cc:25:16",
+			},
+			"TestStruct2": parser.RecordDef{
+				Fields: []parser.RecordField{
+					parser.RecordField{Name: "a", Type: "int"},
+					parser.RecordField{Name: "b", Type: "int"},
+					parser.RecordField{Name: "e", Type: "TestStruct::e_t[4]"},
+					parser.RecordField{Name: "f", Type: "TestUnion"},
+				},
+				Size:   44,
 				Source: "test_struct.cc:25:16",
 			},
 			"TestStruct::e_t": parser.RecordDef{
@@ -91,6 +102,7 @@ func TestParser(t *testing.T) {
 					parser.RecordField{Name: "c", Type: "OtherInt"},
 					parser.RecordField{Name: "d", Type: "OtherInt"},
 				},
+				Size:   8,
 				Source: "test_struct.cc:28:3",
 			},
 			"TestUnion": parser.RecordDef{
@@ -98,12 +110,13 @@ func TestParser(t *testing.T) {
 					parser.RecordField{Name: "u_a", Type: "int"},
 					parser.RecordField{Name: "u_b", Type: "int"},
 				},
+				Size:   4,
 				Source: "test_struct.cc:20:9",
 			},
 		},
 		Aliases: parser.TypeAliases{
-			"OtherInt": "int",
-			"int":      "int",
+			"OtherInt": parser.TypeDef{Type: "int", Size: 4},
+			"int":      parser.TypeDef{Type: "int", Size: 4},
 		},
 	}
 

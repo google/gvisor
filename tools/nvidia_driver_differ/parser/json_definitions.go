@@ -61,29 +61,38 @@ func (s RecordField) String() string {
 // RecordDef represents the definition of a record (struct or union).
 type RecordDef struct {
 	Fields []RecordField
+	Size   uint64
 	Source string
 }
 
-// Equals returns true if the two record definitions are equal. We only
-// compare the fields, not the source.
+// Equals returns true if the two record definitions are equal. We ignore the source of the records.
 func (s RecordDef) Equals(other RecordDef) bool {
-	return slices.Equal(s.Fields, other.Fields)
+	return s.Size == other.Size && slices.Equal(s.Fields, other.Fields)
+}
+
+// TypeDef represents the definition of a type.
+type TypeDef struct {
+	Type string
+	Size uint64
 }
 
 // RecordDefs is a map of type names to definitions.
 type RecordDefs map[string]RecordDef
 
 // TypeAliases is a map of type aliases to their underlying type.
-type TypeAliases map[string]string
+type TypeAliases map[string]TypeDef
 
 // GetRecordDiff prints a diff between two records.
-func GetRecordDiff(name nvproxy.DriverStructName, s1, s2 RecordDef) string {
-	var b strings.Builder
-	fmt.Fprintf(&b, "--- A: %s\n", s1.Source)
-	fmt.Fprintf(&b, "+++ B: %s\n", s2.Source)
+func GetRecordDiff(name nvproxy.DriverStructName, a, b RecordDef) string {
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "--- A: %s\n", a.Source)
+	fmt.Fprintf(&sb, "+++ B: %s\n", b.Source)
 
-	fmt.Fprintf(&b, "struct %s\n", name)
-	fmt.Fprint(&b, cmp.Diff(s1.Fields, s2.Fields))
+	fmt.Fprintf(&sb, "struct %s\n", name)
+	if a.Size != b.Size {
+		fmt.Fprintf(&sb, "  size: %d -> %d (bytes)\n", a.Size, b.Size)
+	}
+	fmt.Fprint(&sb, cmp.Diff(a.Fields, b.Fields))
 
-	return b.String()
+	return sb.String()
 }

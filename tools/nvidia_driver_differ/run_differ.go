@@ -170,8 +170,8 @@ func Main() error {
 			continue
 		}
 
-		if baseAlias != nextAlias {
-			log.Infof("alias %s changed from %s to %s", name, baseAlias, nextAlias)
+		if baseAlias.Type != nextAlias.Type {
+			log.Infof("alias %s changed from %s to %s", name, baseAlias.Type, nextAlias.Type)
 		}
 	}
 
