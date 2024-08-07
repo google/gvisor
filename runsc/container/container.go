@@ -243,6 +243,9 @@ func New(conf *config.Config, args Args) (*Container, error) {
 	// Lock the container metadata file to prevent concurrent creations of
 	// containers with the same id.
 	if err := c.Saver.LockForNew(); err != nil {
+		// As we have not allocated any resources yet, we revoke the clean-up operation.
+		// Otherwise, we may accidently destroy an existing container.
+		cu.Release()
 		return nil, fmt.Errorf("cannot lock container metadata file: %w", err)
 	}
 	defer c.Saver.UnlockOrDie()
