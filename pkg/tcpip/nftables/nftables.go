@@ -575,6 +575,33 @@ type Operation interface {
 	evaluate(regs *RegisterSet, pkt *stack.PacketBuffer)
 }
 
+// Ensures all operations implement the Operation interface at compile time.
+var (
+	_ Operation = (*Immediate)(nil)
+)
+
+// Immediate is an operation that sets the data in a register.
+type Immediate struct {
+	data RegisterData // Data to set the destination register to.
+	dreg uint8        // Number of the destination register.
+}
+
+// NewImmediate creates a new Immediate operation.
+func NewImmediate(dreg uint8, data RegisterData) (*Immediate, error) {
+	if err := data.ValidateRegister(dreg); err != nil {
+		return nil, err
+	}
+	return &Immediate{dreg: dreg, data: data}, nil
+}
+
+// TypeString for Immediate returns "Immediate" as the string operation type.
+func (op *Immediate) TypeString() string { return "Immediate" }
+
+// evaluate for Immediate sets the data in the destination register.
+func (op Immediate) evaluate(regs *RegisterSet, pkt *stack.PacketBuffer) {
+	op.data.StoreData(regs, op.dreg)
+}
+
 //
 // Register and Register-Related Implementations.
 // Note: Registers are represented by type uint8 for the register number.
@@ -1072,15 +1099,15 @@ func (nf *NFTables) EvaluateHook(family AddressFamily, hook Hook, pkt *stack.Pac
 		}
 
 		// Terminates immediately on netfilter terminal verdicts.
-		switch regs.verdict.Code {
+		switch regs.Verdict().Code {
 		case VC(linux.NF_ACCEPT), VC(linux.NF_DROP), VC(linux.NF_STOLEN), VC(linux.NF_QUEUE):
-			return regs.verdict, nil
+			return regs.Verdict(), nil
 		}
 	}
 
 	// Returns policy verdict of the last base chain evaluated if no terminal
 	// verdict was issued.
-	switch regs.verdict.Code {
+	switch regs.Verdict().Code {
 	case VC(linux.NFT_CONTINUE), VC(linux.NFT_RETURN):
 		if bc.GetBaseChainInfo().PolicyDrop {
 			return Verdict{Code: VC(linux.NF_DROP)}, nil
@@ -1088,7 +1115,7 @@ func (nf *NFTables) EvaluateHook(family AddressFamily, hook Hook, pkt *stack.Pac
 		return Verdict{Code: VC(linux.NF_ACCEPT)}, nil
 	}
 
-	panic(fmt.Sprintf("unexpected verdict from hook evaluation: %d", regs.verdict.Code))
+	panic(fmt.Sprintf("unexpected verdict from hook evaluation: %d", regs.Verdict().Code))
 }
 
 //
