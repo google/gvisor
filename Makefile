@@ -568,6 +568,47 @@ webhook-update: test/kubernetes/gvisor-injection-admission-webhook.yaml.in
 	cat $< | sed -e "s|%WEBHOOK%|$${WEBHOOK}|g" | sed -e "s|%INIT%|$${INIT}|g" > test/kubernetes/gvisor-injection-admission-webhook.yaml
 .PHONY: webhook-update
 
+## Syzkaller smoke test.
+##
+##   This verifies that gVisor can run as a fuzzable kernel in Syzkaller.
+##   https://github.com/google/syzkaller
+##
+##   If this test is broken, chances are that you either modified gVisor
+##   in a way that makes it incompatible with Syzkaller, or that Syzkaller
+##   changed in a way that makes gVisor no longer work with it.
+##   This test runs the same test as Syzkaller does as part of its test
+##   suite:
+##   https://github.com/google/syzkaller/blob/master/tools/gvisor-smoke-test.sh
+##
+##   The following variables may be set:
+##     SYZKALLER_IMAGE     - The name of the container image.
+##     SYZKALLER_CONTAINER - The name of the running container.
+##     SYZKALLER_REPO_URL  - The git URL of the Syzkaller repository.
+##
+SYZKALLER_IMAGE     ?= gcr.io/syzkaller/syzbot:latest
+SYZKALLER_CONTAINER ?= gvisor-syz-$(HASH)-$(ARCH)
+SYZKALLER_REPO_URL  ?= https://github.com/google/syzkaller
+syzkaller-smoke-test: $(RUNTIME_BIN)
+	@docker rm -f $(SYZKALLER_CONTAINER) 2>/dev/null || true && \
+	docker run --rm \
+		--name="$(SYZKALLER_CONTAINER)" \
+		--runtime="$(UNSANDBOXED_RUNTIME)" \
+		--hostname="$(SYZKALLER_CONTAINER)" \
+		$(DOCKER_PRIVILEGED) \
+		--pid=host \
+		-v "$(RUNTIME_BIN):$(RUNTIME_BIN):ro" \
+		-e "GOPATH=/__w/syzkaller/syzkaller/gopath" \
+		-e "GVISOR_VMLINUX_PATH=$(RUNTIME_BIN)" \
+		"$(SYZKALLER_IMAGE)" \
+		/bin/bash -xeuc ' \
+			mkdir -p "$$GOPATH/src/github.com/google" && \
+			git clone --depth=1 https://github.com/google/syzkaller "$$GOPATH/src/github.com/google/syzkaller" && \
+			cd "$$GOPATH/src/github.com/google/syzkaller" && \
+			make && \
+			bash tools/gvisor-smoke-test.sh \
+		'
+.PHONY: syzkaller-smoke-test
+
 ##
 ## Repository builders.
 ##
