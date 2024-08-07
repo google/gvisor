@@ -187,9 +187,14 @@ struct DriverStructReporter : public MatchFinder::MatchCallback {
         absl::StrAppend(&field_type_name, "[", array_size, "]");
       }
 
+      // getFieldOffset returns the size in bits, so we divide by 8 to get
+      // bytes.
+      uint64_t offset = ctx->getFieldOffset(field) / 8;
+
       // Add field to json.
-      fields.push_back(json::object(
-          {{"name", field->getNameAsString()}, {"type", field_type_name}}));
+      fields.push_back(json::object({{"name", field->getNameAsString()},
+                                     {"type", field_type_name},
+                                     {"offset", offset}}));
 
       // Recurse on the field type.
       add_type_definition(field_type, base_type_name, ctx);

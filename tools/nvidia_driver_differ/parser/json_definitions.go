@@ -50,8 +50,9 @@ func (a *OutputJSON) Merge(b OutputJSON) {
 
 // RecordField represents a field in a record (struct or union).
 type RecordField struct {
-	Name string
-	Type string
+	Name   string
+	Type   string
+	Offset uint64
 }
 
 func (s RecordField) String() string {
