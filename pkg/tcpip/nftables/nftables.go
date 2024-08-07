@@ -51,9 +51,9 @@ import (
 
 // Defines the default capacity for the slices of hook functions and rules.
 const (
-	defaultBaseChainCapacity = 8
-	defaultRuleCapacity      = 8
-	registersByteSize        = 64 // 4 16-byte registers or 16 4-byte registers.
+	registersByteSize = 64 // 4 16-byte registers or 16 4-byte registers.
+	nestedJumpLimit   = 16 // Maximum number of nested jumps allowed,
+	// corresponding to NFT_JUMP_STACK_SIZE in include/net/netfilter/nf_tables.h.
 )
 
 // AddressFamily describes the 6 address families supported by nftables.
@@ -541,16 +541,38 @@ func validateBaseChainInfo(info *BaseChainInfo, family AddressFamily) error {
 	return nil
 }
 
-// Rule represents a single rule in a chain.
-// TODO(b/345684870): More detailed public description after implementation.
+// Rule represents a single rule in a chain and is represented as a list of
+// operations that are evaluated sequentially (on a packet).
+// Note: Empty rules should be created directly (via &Rule{}) and the chain will
+// be set by the AddRule function once the rule is added to a chain.
 type Rule struct {
-	// Implement later
+	chain *Chain
+	ops   []Operation
 }
 
-// Operation is an interface for all ops that can be performed on a packet.
+// evaluate evaluates the rule on the given packet and register set, changing
+// the register set and possibly the packet in place.
+// The verdict in regs.Verdict() may be an nf table internal verdict or a
+// netfilter terminal verdict.
+func (r *Rule) evaluate(regs *RegisterSet, pkt *stack.PacketBuffer) error {
+	for _, op := range r.ops {
+		op.evaluate(regs, pkt)
+		if regs.Verdict().Code != VC(linux.NFT_CONTINUE) {
+			break
+		}
+	}
+	return nil
+}
+
+// Operation represents a single operation in a rule.
 type Operation interface {
-	// Implement later
-	Eval() Verdict
+
+	// TypeString returns the string representation of the type of the operation.
+	TypeString() string
+
+	// evaluate evaluates the operation on the given packet and register set,
+	// changing the register set and possibly the packet in place.
+	evaluate(regs *RegisterSet, pkt *stack.PacketBuffer)
 }
 
 //
@@ -1008,41 +1030,65 @@ func (nf *NFTables) DeleteChain(family AddressFamily, tableName string, chainNam
 }
 
 // EvaluateHook evaluates a packet using the rules of the given hook for the
-// given address family, returning an absolute Verdict and the resulting packet.
+// given address family, returning a netfilter verdict and modifying the packet
+// in place.
 // Returns an error if address family or hook is invalid or they don't match.
-// Note: if there is an error returned, Verdict is NftDrop and packet is nil.
-func (nf *NFTables) EvaluateHook(family AddressFamily,
-	hook Hook, pkt *stack.PacketBuffer) (Verdict, *stack.PacketBuffer, error) {
+// TODO(b/345684870): Consider removing error case if we never return an error.
+func (nf *NFTables) EvaluateHook(family AddressFamily, hook Hook, pkt *stack.PacketBuffer) (Verdict, error) {
+	// Note: none of the other evaluate functions are public because they require
+	// jumping to different chains in the same table, so all chains, rules, and
+	// operations must be tied to a table. Thus, calling evaluate for standalone
+	// chains, rules, or operations can be misleading and dangerous.
+
 	// Ensures address family is valid.
 	if err := validateAddressFamily(family); err != nil {
-		return Verdict{}, nil, err
+		return Verdict{}, err
 	}
 
 	// Ensures hook is valid.
 	if err := validateHook(hook, family); err != nil {
-		return Verdict{}, nil, err
+		return Verdict{}, err
 	}
 
 	// Immediately accept if there are no base chains for the specified hook.
-	if nf.filters[family] == nil || nf.filters[family].hfStacks[hook] == nil {
-		return Verdict{Code: VC(linux.NF_ACCEPT)}, pkt, nil
+	if nf.filters[family] == nil || nf.filters[family].hfStacks[hook] == nil ||
+		len(nf.filters[family].hfStacks[hook].baseChains) == 0 {
+		return Verdict{Code: VC(linux.NF_ACCEPT)}, nil
 	}
 
+	regs := NewRegisterSet()
+
 	// Evaluates packet through all base chains for given hook in priority order.
-	for _, chain := range nf.filters[family].hfStacks[hook].baseChains {
+	var bc *Chain
+	for _, bc = range nf.filters[family].hfStacks[hook].baseChains {
 		// Doesn't evaluate chain if it's table is flagged as dormant.
-		if _, dormant := chain.table.flagSet[TableFlagDormant]; dormant {
+		if _, dormant := bc.table.flagSet[TableFlagDormant]; dormant {
 			continue
 		}
-		// Note: chain.evaluate() returns an absolute verdict.
-		newPkt, chainVerdict := chain.evaluate(pkt)
-		// Returns immediately if the verdict is Drop.
-		if chainVerdict.Code == VC(linux.NF_DROP) {
-			return Verdict{Code: VC(linux.NF_DROP)}, nil, nil
+
+		err := bc.evaluate(&regs, pkt)
+		if err != nil {
+			return Verdict{}, err
 		}
-		pkt = newPkt
+
+		// Terminates immediately on netfilter terminal verdicts.
+		switch regs.verdict.Code {
+		case VC(linux.NF_ACCEPT), VC(linux.NF_DROP), VC(linux.NF_STOLEN), VC(linux.NF_QUEUE):
+			return regs.verdict, nil
+		}
 	}
-	return Verdict{Code: VC(linux.NF_ACCEPT)}, pkt, nil
+
+	// Returns policy verdict of the last base chain evaluated if no terminal
+	// verdict was issued.
+	switch regs.verdict.Code {
+	case VC(linux.NFT_CONTINUE), VC(linux.NFT_RETURN):
+		if bc.GetBaseChainInfo().PolicyDrop {
+			return Verdict{Code: VC(linux.NF_DROP)}, nil
+		}
+		return Verdict{Code: VC(linux.NF_ACCEPT)}, nil
+	}
+
+	panic(fmt.Sprintf("unexpected verdict from hook evaluation: %d", regs.verdict.Code))
 }
 
 //
@@ -1112,7 +1158,6 @@ func (t *Table) AddChain(name string, info *BaseChainInfo, comment string, error
 		name:          name,
 		table:         t,
 		baseChainInfo: info,
-		rules:         make([]*Rule, 0, defaultRuleCapacity),
 		comment:       comment,
 	}
 
@@ -1206,18 +1251,13 @@ func (c *Chain) SetBaseChainInfo(info *BaseChainInfo) error {
 
 	// Initializes hook function stack (and its slice of base chains) if
 	// first base chain for this hook (for the given address family).
-	hfStack := hfStacks[info.Hook]
-	if hfStack == nil {
-		hfStack = &hookFunctionStack{
-			hook:       info.Hook,
-			baseChains: make([]*Chain, 0, defaultBaseChainCapacity),
-		}
-		hfStacks[info.Hook] = hfStack
+	if hfStacks[info.Hook] == nil {
+		hfStacks[info.Hook] = &hookFunctionStack{hook: info.Hook}
 	}
 
 	// Sets the base chain info and attaches to the pipeline.
 	c.baseChainInfo = info
-	hfStack.attachBaseChain(c)
+	hfStacks[info.Hook].attachBaseChain(c)
 
 	return nil
 }
@@ -1233,20 +1273,86 @@ func (c *Chain) SetComment(comment string) {
 }
 
 // AddRule adds a rule to the chain.
-// TODO(b/345684870): Implement this and initialize the Rule in this func
-// (i.e. change parameters)
 func (c *Chain) AddRule(rule *Rule) {
+	// Assigns the chain to the rule.
+	rule.chain = c
 
-	// Rules slice is guaranteed to be initialized
 	c.rules = append(c.rules, rule)
 }
 
-// Chain.evaluate evaluates the packet through the chain's rules.
-// Returns a Verdict and the packet (which may be modified).
-func (c *Chain) evaluate(pkt *stack.PacketBuffer) (*stack.PacketBuffer, Verdict) {
-	// TODO(b/345684870): Implement this by evaluating all rules in a chain in
-	// sequential order.
-	return pkt, Verdict{Code: VC(linux.NF_ACCEPT)}
+// evaluateFromRule is a helper function for Chain.evaluate that evaluates the
+// packet through the rules in the chain starting at the specified rule index.
+func (c *Chain) evaluateFromRule(rIdx int, jumpDepth int, regs *RegisterSet, pkt *stack.PacketBuffer) error {
+	if jumpDepth >= nestedJumpLimit {
+		return fmt.Errorf("jump stack limit of %d exceeded", nestedJumpLimit)
+	}
+
+	// Resets verdict to continue for the next rule.
+	regs.verdict.Code = VC(linux.NFT_CONTINUE)
+
+	// Evaluates all rules in the chain (breaking on terminal verdicts).
+evalLoop:
+	for ; rIdx < len(c.rules); rIdx++ {
+		rule := c.rules[rIdx]
+		if err := rule.evaluate(regs, pkt); err != nil {
+			return err
+		}
+
+		// Continues evaluation at target chains for jump and goto verdicts.
+		jumped := false
+		switch regs.Verdict().Code {
+		case VC(linux.NFT_JUMP):
+			jumpDepth++
+			jumped = true
+			fallthrough
+		case VC(linux.NFT_GOTO):
+			// Finds the chain named in the same table as the calling chain.
+			nextChain, exists := c.table.chains[regs.verdict.ChainName]
+			if !exists {
+				return fmt.Errorf("chain '%s' does not exist in table %s", regs.verdict.ChainName, c.table.GetName())
+			}
+			if err := nextChain.evaluateFromRule(0, jumpDepth, regs, pkt); err != nil {
+				return err
+			}
+			// Ends evaluation for goto (and continues evaluation for jump).
+			if !jumped {
+				break evalLoop
+			}
+			jumpDepth--
+		}
+
+		// Only continues evaluation for Continue and Break verdicts.
+		switch regs.Verdict().Code {
+		case VC(linux.NFT_BREAK):
+			// Resets verdict for next rule (after breaking from a single operation).
+			regs.verdict.Code = VC(linux.NFT_CONTINUE)
+		case VC(linux.NFT_CONTINUE):
+			// Goes to next rule.
+			continue
+		default:
+			// Break evaluation for all the netfilter verdicts.
+			break evalLoop
+		}
+	}
+	return nil
+}
+
+// evaluate for Chain evaluates the packet through the chain's rules and returns
+// the verdict and modifies the packet in place.
+func (c *Chain) evaluate(regs *RegisterSet, pkt *stack.PacketBuffer) error {
+	return c.evaluateFromRule(0, 0, regs, pkt)
+}
+
+//
+// Rule Functions
+//
+
+// AddOperation adds an operation to the rule.
+func (r *Rule) AddOperation(op Operation) {
+	if op == nil {
+		panic("operation is nil")
+	}
+	r.ops = append(r.ops, op)
 }
 
 //

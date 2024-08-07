@@ -38,11 +38,11 @@ func TestUnsupportedAddressFamily(t *testing.T) {
 	for _, unsupportedFamily := range []AddressFamily{AddressFamily(NumAFs), AddressFamily(-1)} {
 		// Note: the Prerouting hook is arbitrary (any hook would work).
 		pkt := makeTestingPacket()
-		v, finalPkt, err := nf.EvaluateHook(unsupportedFamily, Prerouting, pkt)
+		v, err := nf.EvaluateHook(unsupportedFamily, Prerouting, pkt)
 		if err == nil {
 			t.Fatalf("expecting error for EvaluateHook with unsupported address family %d; got %s verdict, %s packet, and error %v",
 				int(unsupportedFamily),
-				v.String(), packetResultString(pkt, finalPkt), err)
+				v.String(), packetResultString(makeTestingPacket(), pkt), err)
 		}
 	}
 }
@@ -56,7 +56,7 @@ func TestAcceptAllForSupportedHooks(t *testing.T) {
 			nf := NewNFTables()
 			for _, hook := range []Hook{Prerouting, Input, Forward, Output, Postrouting, Ingress, Egress} {
 				pkt := makeTestingPacket()
-				v, finalPkt, err := nf.EvaluateHook(family, hook, pkt)
+				v, err := nf.EvaluateHook(family, hook, pkt)
 
 				supported := false
 				for _, h := range supportedHooks[family] {
@@ -70,13 +70,13 @@ func TestAcceptAllForSupportedHooks(t *testing.T) {
 					if err != nil || v.Code != VC(linux.NF_ACCEPT) {
 						t.Fatalf("expecting accept verdict for EvaluateHook with supported hook %s for family %s; got %s verdict, %s packet, and error %v",
 							hook.String(), family.String(),
-							v.String(), packetResultString(pkt, finalPkt), err)
+							v.String(), packetResultString(makeTestingPacket(), pkt), err)
 					}
 				} else {
 					if err == nil {
 						t.Fatalf("expecting error for EvaluateHook with unsupported hook %s for family %s; got %s verdict, %s packet, and error %v",
 							hook.String(), family.String(),
-							v.String(), packetResultString(pkt, finalPkt), err)
+							v.String(), packetResultString(makeTestingPacket(), pkt), err)
 					}
 				}
 			}
