@@ -351,6 +351,12 @@ func (s *Socket) Write(ctx context.Context, src usermem.IOSequence, opts vfs.Wri
 	if w.Notify != nil {
 		w.Notify()
 	}
+	if _, skType, _ := s.Type(); skType == linux.SOCK_DGRAM {
+		if err != nil && err.Error() == linuxerr.EPIPE.Error() {
+			log.Infof("HERE....")
+			return n, linuxerr.ECONNREFUSED
+		}
+	}
 	return n, err
 
 }
