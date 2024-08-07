@@ -195,7 +195,12 @@ func (r *Response) Error() error {
 		return nil
 	}
 
+	// If we get a bad error in the response, warn and convert it to EINVAL.
 	sysErrNo := unix.Errno(-errno)
+	if !linuxerr.IsValid(sysErrNo) {
+		log.Warningf("fusefs: invalid response error %d does not correspond to a Linux error", sysErrNo)
+		sysErrNo = unix.Errno(unix.EINVAL)
+	}
 	return error(sysErrNo)
 }
 
@@ -213,7 +218,6 @@ func (r *Response) UnmarshalPayload(m marshal.Marshallable) error {
 	if haveDataLen < wantDataLen {
 		log.Warningf("fusefs: Payload too small. Minimum data length required: %d, but got data length %d", wantDataLen, haveDataLen)
 		return linuxerr.EINVAL
-
 	}
 
 	// The response data is empty unless there is some payload. And so, doesn't
