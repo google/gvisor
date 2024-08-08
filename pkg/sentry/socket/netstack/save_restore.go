@@ -17,12 +17,18 @@ package netstack
 import (
 	"context"
 
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
 // afterLoad is invoked by stateify.
 func (s *Stack) afterLoad(ctx context.Context) {
-	s.Stack = stack.RestoreStackFromContext(ctx)
+	log.Infof("Check if s.Stack is nil %v", s.Stack)
+	if st := stack.RestoreStackFromContext(ctx); st != nil {
+		log.Infof("Netstack is not restored, assign the new netstack.")
+		/* instead check if the stack should be restored or use new-old stack. */
+		s.Stack = st
+	}
 	if s.Stack == nil {
 		panic("can't restore without netstack/tcpip/stack.Stack")
 	}

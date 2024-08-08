@@ -370,6 +370,9 @@ type Config struct {
 
 	// TestOnlyAutosaveResume indicates save resume for syscall tests.
 	TestOnlyAutosaveResume bool `flag:"TESTONLY-autosave-resume"`
+
+	// TestOnlySaveNetstack indicates netstack should be saved and restored.
+	TestOnlySaveNetstack bool `flag:"TESTONLY-save-netstack"`
 }
 
 func (c *Config) validate() error {

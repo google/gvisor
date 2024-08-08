@@ -143,6 +143,7 @@ func RegisterFlags(flagSet *flag.FlagSet) {
 	flagSet.Bool("TESTONLY-afs-syscall-panic", false, "TEST ONLY; do not ever use! Used for tests exercising gVisor panic reporting.")
 	flagSet.String("TESTONLY-autosave-image-path", "", "TEST ONLY; enable auto save for syscall tests and set path for state file.")
 	flagSet.Bool("TESTONLY-autosave-resume", false, "TEST ONLY; enable auto save and resume for syscall tests and set path for state file.")
+	flagSet.Bool("TESTONLY-save-netstack", false, "TEST ONLY; enable save/restore for netstack.")
 }
 
 // overrideAllowlist lists all flags that can be changed using OCI
