@@ -686,12 +686,12 @@ func adjustMountOptions(conf *config.Config, path string, opts []string) ([]stri
 	switch statfs.Type {
 	case unix.OVERLAYFS_SUPER_MAGIC:
 		rv = append(rv, "overlayfs_stale_read")
-	case unix.NFS_SUPER_MAGIC:
+	case unix.NFS_SUPER_MAGIC, unix.FUSE_SUPER_MAGIC:
 		// The gofer client implements remote file handle sharing for performance.
-		// However, remote filesystems like NFS rely on close(2) syscall for
-		// flushing file data to the server. Such handle sharing prevents the
+		// However, remote filesystems like NFS and FUSE rely on close(2) syscall
+		// for flushing file data to the server. Such handle sharing prevents the
 		// application's close(2) syscall from being propagated to the host. Hence
-		// disable file handle sharing, so NFS files are flushed correctly.
+		// disable file handle sharing, so remote files are flushed correctly.
 		rv = append(rv, "disable_file_handle_sharing")
 	}
 	return rv, nil
