@@ -139,3 +139,26 @@ TEXT ·addrOfDieTrampoline(SB), $0-8
 	MOVQ $·dieTrampoline(SB), AX
 	MOVQ AX, ret+0(FP)
 	RET
+
+// func kvmSyscall6(trap, a1, a2, a3, a4, a5, a6 uintptr) (ret uintptr)
+TEXT    ·kvmSyscall6(SB),NOSPLIT,$0-64
+        MOVQ    a1+8(FP), DI
+        MOVQ    a2+16(FP), SI
+        MOVQ    a3+24(FP), DX
+        MOVQ    a4+32(FP), R10
+        MOVQ    a5+40(FP), R8
+        MOVQ    a6+48(FP), R9
+        MOVQ    trap+0(FP), AX  // syscall entry
+        SYSCALL
+        MOVQ    AX, ret+56(FP)  // ret
+        RET
+
+// func kvmSyscall(trap, a1, a2, a3 uintptr) (ret uintptr)
+TEXT    ·kvmSyscall(SB),NOSPLIT,$0-40
+        MOVQ    a1+8(FP), DI
+        MOVQ    a2+16(FP), SI
+        MOVQ    a3+24(FP), DX
+        MOVQ    trap+0(FP), AX  // syscall entry
+        SYSCALL
+        MOVQ    AX, ret+32(FP)  // ret
+        RET
