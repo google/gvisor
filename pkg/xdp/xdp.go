@@ -153,9 +153,9 @@ func NewFromSocket(sockfd int, ifaceIdx, queueID uint32, opts Opts) (*ControlBlo
 	}
 
 	reg := unix.XDPUmemReg{
-		Addr: uint64(sliceBackingPointer(umemMemory)),
-		Len:  uint64(len(umemMemory)),
-		Size: opts.FrameSize,
+		Addr:       uint64(sliceBackingPointer(umemMemory)),
+		Len:        uint64(len(umemMemory)),
+		Chunk_size: opts.FrameSize,
 		// Not useful in the RX path.
 		Headroom: 0,
 		// TODO(b/240191988): Investigate use of SHARED flag.
