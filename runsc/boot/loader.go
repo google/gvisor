@@ -54,6 +54,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/seccheck"
 	pb "gvisor.dev/gvisor/pkg/sentry/seccheck/points/points_go_proto"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netfilter"
+	"gvisor.dev/gvisor/pkg/sentry/socket/plugin"
 	"gvisor.dev/gvisor/pkg/sentry/time"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
@@ -811,6 +812,8 @@ func (l *Loader) installSeccompFilters() error {
 			NVProxy:               specutils.NVProxyEnabled(l.root.spec, l.root.conf),
 			TPUProxy:              specutils.TPUProxyIsEnabled(l.root.spec, l.root.conf),
 			ControllerFD:          uint32(l.ctrl.srv.FD()),
+			CgoEnabled:            config.CgoEnabled,
+			PluginNetwork:         l.root.conf.Network == config.NetworkPlugin,
 		}
 		if err := filter.Install(opts); err != nil {
 			return fmt.Errorf("installing seccomp filters: %w", err)
@@ -1446,6 +1449,8 @@ func newRootNetworkNamespace(conf *config.Config, clock tcpip.Clock, userns *aut
 			allowPacketEndpointWrite: conf.AllowPacketEndpointWrite,
 		}
 		return inet.NewRootNamespace(s, creator, userns), nil
+	case config.NetworkPlugin:
+		return inet.NewRootNamespace(plugin.GetPluginStack(), nil, userns), nil
 
 	default:
 		panic(fmt.Sprintf("invalid network configuration: %v", conf.Network))

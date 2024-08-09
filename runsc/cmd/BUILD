@@ -95,6 +95,7 @@ go_library(
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/pgalloc",
         "//pkg/sentry/platform",
+        "//pkg/sentry/socket/plugin",
         "//pkg/state/pretty",
         "//pkg/state/statefile",
         "//pkg/unet",

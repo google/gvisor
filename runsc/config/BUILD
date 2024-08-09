@@ -8,6 +8,8 @@ package(
 go_library(
     name = "config",
     srcs = [
+        "cgo_disabled.go",
+        "cgo_enabled.go",
         "config.go",
         "config_bundles.go",
         "flags.go",

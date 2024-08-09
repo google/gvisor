@@ -36,6 +36,7 @@ go_library(
         "//pkg/sentry/pgalloc",
         "//pkg/sentry/platform",
         "//pkg/sentry/seccheck",
+        "//pkg/sentry/socket/plugin",
         "//pkg/state/statefile",
         "//pkg/sync",
         "//pkg/tcpip/header",
