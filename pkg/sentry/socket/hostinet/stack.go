@@ -394,6 +394,9 @@ func (*Stack) Pause() {}
 // Restore implements inet.Stack.Restore.
 func (*Stack) Restore() {}
 
+// RestoreClock implements inet.Stack.RestoreClock.
+func (*Stack) RestoreClock(_ tcpip.Clock) {}
+
 // Resume implements inet.Stack.Resume.
 func (*Stack) Resume() {}
 

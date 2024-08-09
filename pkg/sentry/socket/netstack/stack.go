@@ -873,6 +873,11 @@ func (s *Stack) Restore() {
 	s.Stack.Restore()
 }
 
+// RestoreClock implements inet.Stack.RestoreClock.
+func (s *Stack) RestoreClock(clock tcpip.Clock) {
+	s.Stack.RestoreClock(clock)
+}
+
 // Resume implements inet.Stack.Resume.
 func (s *Stack) Resume() {
 	s.Stack.Resume()
