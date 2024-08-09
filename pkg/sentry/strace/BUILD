@@ -39,6 +39,7 @@ go_library(
         "//pkg/sentry/kernel",
         "//pkg/sentry/socket",
         "//pkg/sentry/socket/netlink",
+        "//pkg/sentry/socket/unix",
         "//pkg/sentry/syscalls/linux",
     ],
 )

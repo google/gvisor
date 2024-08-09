@@ -26,6 +26,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/socket"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netlink"
+	"gvisor.dev/gvisor/pkg/sentry/socket/unix"
 	slinux "gvisor.dev/gvisor/pkg/sentry/syscalls/linux"
 )
 
@@ -345,17 +346,18 @@ func sockAddr(t *kernel.Task, addr hostarch.Addr, length uint32) string {
 	familyStr := SocketFamily.Parse(uint64(family))
 
 	switch family {
-	case linux.AF_INET, linux.AF_INET6, linux.AF_UNIX:
+	case linux.AF_INET, linux.AF_INET6, linux.AF_PACKET:
 		fa, _, err := socket.AddressAndFamily(b)
 		if err != nil {
 			return fmt.Sprintf("%#x {Family: %s, error extracting address: %v}", addr, familyStr, err)
 		}
-
-		if family == linux.AF_UNIX {
-			return fmt.Sprintf("%#x {Family: %s, Addr: %q}", addr, familyStr, string(fa.Addr.AsSlice()))
-		}
-
 		return fmt.Sprintf("%#x {Family: %s, Addr: %v, Port: %d}", addr, familyStr, fa.Addr, fa.Port)
+	case linux.AF_UNIX:
+		fa, _, err := unix.AddressAndFamily(b)
+		if err != nil {
+			return fmt.Sprintf("%#x {Family: %s, error extracting address: %v}", addr, familyStr, err)
+		}
+		return fmt.Sprintf("%#x {Family: %s, Addr: %q}", addr, familyStr, fa.Addr)
 	case linux.AF_NETLINK:
 		sa, err := netlink.ExtractSockAddr(b)
 		if err != nil {
