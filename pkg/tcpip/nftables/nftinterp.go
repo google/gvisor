@@ -116,7 +116,9 @@ func InterpretRule(ruleString string) (*Rule, error) {
 		if err != nil {
 			return nil, err
 		}
-		r.AddOperation(op)
+		if err := r.AddOperation(op); err != nil {
+			return nil, err
+		}
 	}
 
 	return r, nil
@@ -136,6 +138,8 @@ func InterpretOperation(line string, lnIdx int) (Operation, error) {
 	switch tokens[1] {
 	case "immediate":
 		return InterpretImmediate(line, lnIdx)
+	case "cmp":
+		return InterpretComparison(line, lnIdx)
 	default:
 		return nil, &SyntaxError{lnIdx, 1, fmt.Sprintf("unrecognized operation type: %s", tokens[1])}
 	}
@@ -197,6 +201,69 @@ func InterpretImmediate(line string, lnIdx int) (Operation, error) {
 	return imm, nil
 }
 
+// InterpretComparison creates a new Comparison operation from the given string.
+func InterpretComparison(line string, lnIdx int) (Operation, error) {
+	tokens := strings.Fields(line)
+
+	// Requires at least 7 tokens:
+	// 		"[", "cmp", op, "reg", register index, register value, "]".
+	if len(tokens) < 7 {
+		return nil, &SyntaxError{lnIdx, 0, fmt.Sprintf("incorrect number of tokens for cmp operation, should be at least 7, got %d", len(tokens))}
+	}
+
+	if err := checkOperationBrackets(tokens, lnIdx); err != nil {
+		return nil, err
+	}
+
+	tkIdx := 1
+
+	// First token should be "cmp".
+	if err := consumeToken("cmp", tokens, lnIdx, tkIdx); err != nil {
+		return nil, err
+	}
+	tkIdx++
+
+	// Second token should be the comparison operator.
+	cop, err := parseCmpOp(tokens[tkIdx], lnIdx, tkIdx)
+	if err != nil {
+		return nil, err
+	}
+	tkIdx++
+
+	// Third token should be "reg".
+	if err := consumeToken("reg", tokens, lnIdx, tkIdx); err != nil {
+		return nil, err
+	}
+	tkIdx++
+
+	// Fourth token should be the uint8 representing the register index.
+	reg, err := parseRegister(tokens[tkIdx], lnIdx, tkIdx)
+	if err != nil {
+		return nil, err
+	}
+	tkIdx++
+
+	// Fifth token should be the value.
+	nextIdx, data, err := parseRegisterData(reg, tokens, lnIdx, tkIdx)
+	if err != nil {
+		return nil, err
+	}
+	tkIdx = nextIdx
+
+	// Done parsing tokens.
+	if tkIdx != len(tokens)-1 {
+		return nil, &SyntaxError{lnIdx, tkIdx, "unexpected token after comparison operation"}
+	}
+
+	// Create the operation with the specified arguments.
+	cmp, err := NewComparison(reg, cop, data)
+	if err != nil {
+		return nil, &LogicError{lnIdx, tkIdx, err}
+	}
+
+	return cmp, nil
+}
+
 //
 // Interpreter Helper Functions.
 //
@@ -239,14 +306,14 @@ func parseRegisterData(reg uint8, tokens []string, lnIdx int, tkIdx int) (int, R
 		}
 		return nextIdx, NewVerdictData(verdict), nil
 	}
-	// Handles hex data (4- or 16-byte).
+	// Handles hex data (4-, 8-, 12-, or 16-byte).
 	if len(tokens[tkIdx]) > 1 && tokens[tkIdx][:2] == "0x" {
 		nextIdx, data, err := parseHexData(tokens, lnIdx, tkIdx)
 		if err != nil {
 			return 0, nil, err
 		}
-		// Validates the register data type. 4-byte data is valid for both 4- and
-		// 16-byte registers, but 16-byte data is only valid for 16-byte registers.
+		// 4-byte data is only valid for 4-byte register. Any byte data can be
+		// stored in 16-byte registerValidates the register data type.
 		if err := data.ValidateRegister(reg); err != nil {
 			return 0, nil, &LogicError{lnIdx, tkIdx, err}
 		}
@@ -318,10 +385,30 @@ func parseHexData(tokens []string, lnIdx int, tkIdx int) (int, RegisterData, err
 		}
 		bytes = append(bytes, bytes4...)
 	}
-	if len(bytes) == 4 || len(bytes) == 16 {
-		return tkIdx, NewBytesData(bytes), nil
+	if len(bytes) > 16 {
+		return 0, nil, &SyntaxError{lnIdx, tkIdx, fmt.Sprintf("cannot have more than 16 bytes of hexadecimal data, got %d", len(bytes))}
 	}
-	return 0, nil, &SyntaxError{lnIdx, tkIdx, fmt.Sprintf("incorrect number of bytes for hexadecimal data, should be 4 or 16, got %d", len(bytes))}
+	return tkIdx, NewBytesData(bytes), nil
+}
+
+// parseCmpOp parses the NftCmpOp from the given string.
+func parseCmpOp(copString string, lnIdx int, tkIdx int) (NftCmpOp, error) {
+	switch copString {
+	case "eq":
+		return linux.NFT_CMP_EQ, nil
+	case "neq":
+		return linux.NFT_CMP_NEQ, nil
+	case "lt":
+		return linux.NFT_CMP_LT, nil
+	case "lte":
+		return linux.NFT_CMP_LTE, nil
+	case "gt":
+		return linux.NFT_CMP_GT, nil
+	case "gte":
+		return linux.NFT_CMP_GTE, nil
+	default:
+		return 0, &SyntaxError{lnIdx, tkIdx, fmt.Sprintf("invalid comparison operator: '%s'", copString)}
+	}
 }
 
 // consumeToken is a helper function that checks if the token at the given index

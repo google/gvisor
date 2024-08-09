@@ -543,25 +543,12 @@ func validateBaseChainInfo(info *BaseChainInfo, family AddressFamily) error {
 
 // Rule represents a single rule in a chain and is represented as a list of
 // operations that are evaluated sequentially (on a packet).
-// Note: Empty rules should be created directly (via &Rule{}) and the chain will
-// be set by the AddRule function once the rule is added to a chain.
+// Rules must be registered to a chain to be used and evaluated, and rules that
+// have been registered to a chain cannot be modified.
+// Note: Empty rules should be created directly (via &Rule{}).
 type Rule struct {
 	chain *Chain
 	ops   []Operation
-}
-
-// evaluate evaluates the rule on the given packet and register set, changing
-// the register set and possibly the packet in place.
-// The verdict in regs.Verdict() may be an nf table internal verdict or a
-// netfilter terminal verdict.
-func (r *Rule) evaluate(regs *RegisterSet, pkt *stack.PacketBuffer) error {
-	for _, op := range r.ops {
-		op.evaluate(regs, pkt)
-		if regs.Verdict().Code != VC(linux.NFT_CONTINUE) {
-			break
-		}
-	}
-	return nil
 }
 
 // Operation represents a single operation in a rule.
@@ -578,6 +565,7 @@ type Operation interface {
 // Ensures all operations implement the Operation interface at compile time.
 var (
 	_ Operation = (*Immediate)(nil)
+	_ Operation = (*Comparison)(nil)
 )
 
 // Immediate is an operation that sets the data in a register.
@@ -600,6 +588,131 @@ func (op *Immediate) TypeString() string { return "Immediate" }
 // evaluate for Immediate sets the data in the destination register.
 func (op Immediate) evaluate(regs *RegisterSet, pkt *stack.PacketBuffer) {
 	op.data.StoreData(regs, op.dreg)
+}
+
+// Comparison is an operation that compares the data in a register to a given
+// value and breaks (by setting the verdict register to NFT_BREAK) from the rule
+// if the comparison is false.
+// Note: comparison operators are not supported for verdict registers.
+type Comparison struct {
+	data RegisterData // Data to compare the source register to.
+	sreg uint8        // Number of the source register.
+	cop  NftCmpOp     // Comparison operator.
+}
+
+// NftCmpOp is the comparison operator for a Comparison operation.
+// Note: corresponds to enum nft_cmp_op from
+// include/uapi/linux/netfilter/nf_tables.h and uses the same constants.
+type NftCmpOp int
+
+// String for NftCmpOp returns the string representation of the comparison
+// operator.
+func (cop NftCmpOp) String() string {
+	switch cop {
+	case linux.NFT_CMP_EQ:
+		return "=="
+	case linux.NFT_CMP_NEQ:
+		return "!="
+	case linux.NFT_CMP_LT:
+		return "<"
+	case linux.NFT_CMP_LTE:
+		return "<="
+	case linux.NFT_CMP_GT:
+		return ">"
+	case linux.NFT_CMP_GTE:
+		return ">="
+	default:
+		return fmt.Sprintf("%d", int(cop))
+	}
+}
+
+// validateComparisonOp ensures the comparison operator is valid.
+func validateComparisonOp(cop NftCmpOp) error {
+	switch cop {
+	case linux.NFT_CMP_EQ, linux.NFT_CMP_NEQ, linux.NFT_CMP_LT, linux.NFT_CMP_LTE, linux.NFT_CMP_GT, linux.NFT_CMP_GTE:
+		return nil
+	default:
+		return fmt.Errorf("invalid comparison operator: %d", int(cop))
+	}
+}
+
+// NewComparison creates a new Comparison operation.
+func NewComparison(sreg uint8, cop NftCmpOp, data RegisterData) (*Comparison, error) {
+	if sreg == linux.NFT_REG_VERDICT {
+		return nil, fmt.Errorf("comparison operation cannot use verdict register as source")
+	}
+	if err := data.ValidateRegister(sreg); err != nil {
+		return nil, err
+	}
+	if err := validateComparisonOp(cop); err != nil {
+		return nil, err
+	}
+	return &Comparison{sreg: sreg, cop: cop, data: data}, nil
+}
+
+// TypeString for Comparison returns "Comparison" as the string operation type.
+func (op *Comparison) TypeString() string { return "Comparison" }
+
+// evaluate for Comparison compares the data in the source register to the given
+// data and breaks from the rule if the comparison is false.
+func (op Comparison) evaluate(regs *RegisterSet, pkt *stack.PacketBuffer) {
+	// Gets the data to compare to.
+	bytesData, ok := op.data.(BytesData)
+	if !ok {
+		panic("comparison operation data is not BytesData")
+	}
+	// Gets the data from the source register.
+	regBuf := bytesData.getRegisterData(regs, op.sreg)
+
+	// Compares from left to right in 4-byte chunks starting with the rightmost
+	// byte of every 4-byte chunk since the data is little endian.
+	// For example, 16-byte IPv6 address 2001:000a:130f:0000:0000:09c0:876a:130b
+	// is represented as 0x0a000120 0x00000f13 0xc0090000 0x0b136a87 in operations
+	// and as [0a|00|01|20|00|00|0f|13|c0|09|00|00|0b|13|6a|87] in the byte slice,
+	// so we compare right to left in the first 4 bytes and then go to the next 4.
+	dif := 0
+	for i := 3; i < len(bytesData.data); {
+		if regBuf[i] < bytesData.data[i] {
+			dif = -1
+			break
+		}
+		if regBuf[i] > bytesData.data[i] {
+			dif = 1
+			break
+		}
+		if i%4 == 0 {
+			i += 8
+		}
+		i--
+	}
+	switch op.cop {
+	case linux.NFT_CMP_EQ:
+		if dif == 0 {
+			return
+		}
+	case linux.NFT_CMP_NEQ:
+		if dif != 0 {
+			return
+		}
+	case linux.NFT_CMP_LT:
+		if dif < 0 {
+			return
+		}
+	case linux.NFT_CMP_LTE:
+		if dif <= 0 {
+			return
+		}
+	case linux.NFT_CMP_GT:
+		if dif > 0 {
+			return
+		}
+	case linux.NFT_CMP_GTE:
+		if dif >= 0 {
+			return
+		}
+	}
+	// Comparison is false, so break from the rule.
+	regs.verdict = Verdict{Code: VC(linux.NFT_BREAK)}
 }
 
 //
@@ -637,10 +750,6 @@ const (
 
 // RegisterData represents the data to be set in a register.
 type RegisterData interface {
-
-	// Type returns the register data type.
-	Type() RegisterDataType
-
 	// String returns a string representation of the register data.
 	String() string
 
@@ -667,9 +776,6 @@ type VerdictData struct {
 // NewVerdictData creates a RegisterData for a verdict.
 func NewVerdictData(verdict Verdict) RegisterData { return VerdictData{data: verdict} }
 
-// Type returns the DataVerdict register data type for VerdictData.
-func (rd VerdictData) Type() RegisterDataType { return DataVerdict }
-
 // String returns a string representation of the verdict data.
 func (rd VerdictData) String() string {
 	return rd.data.String()
@@ -680,16 +786,17 @@ func (rd VerdictData) Equal(other RegisterData) bool {
 	if other == nil {
 		return false
 	}
-	if other.Type() != DataVerdict {
+	otherVD, ok := other.(VerdictData)
+	if !ok {
 		return false
 	}
-	return rd.data == other.(VerdictData).data
+	return rd.data == otherVD.data
 }
 
 // ValidateRegister ensures the register is compatible with VerdictData.
 func (rd VerdictData) ValidateRegister(reg uint8) error {
 	if !isVerdictRegister(reg) {
-		return fmt.Errorf("verdict data type is only valid for register 0")
+		return fmt.Errorf("verdict can only be stored in verdict register")
 	}
 	return nil
 }
@@ -709,19 +816,10 @@ type BytesData struct {
 
 // NewBytesData creates a RegisterData for 4 or 16 bytes of data.
 func NewBytesData(bytes []byte) RegisterData {
-	if len(bytes) != 4 && len(bytes) != 16 {
+	if len(bytes)%4 != 0 || len(bytes) > 16 {
 		panic(fmt.Errorf("invalid byte data length: %d", len(bytes)))
 	}
 	return BytesData{data: bytes}
-}
-
-// Type returns the Data4Bytes or Data16Bytes register data type depending
-// on the length of the BytesData.
-func (rd BytesData) Type() RegisterDataType {
-	if len(rd.data) == 4 {
-		return Data4Bytes
-	}
-	return Data16Bytes
 }
 
 // String returns a string representation of the bytes data.
@@ -734,24 +832,41 @@ func (rd BytesData) Equal(other RegisterData) bool {
 	if other == nil {
 		return false
 	}
-	if other.Type() != rd.Type() {
+	otherBD, ok := other.(BytesData)
+	if !ok {
 		return false
 	}
-	return slices.Equal(rd.data, other.(BytesData).data)
+	return slices.Equal(rd.data, otherBD.data)
 }
 
 // ValidateRegister ensures the register is compatible with Bytes4Data.
 func (rd BytesData) ValidateRegister(reg uint8) error {
-	if rd.Type() == Data4Bytes {
-		if !is4ByteRegister(reg) && !is16ByteRegister(reg) {
-			return fmt.Errorf("4-byte data type is only valid for 4-byte and 16-byte registers")
-		}
-	} else {
-		if !is16ByteRegister(reg) {
-			return fmt.Errorf("16-byte data type is only valid for 16-byte registers")
+	if isVerdictRegister(reg) {
+		return fmt.Errorf("data cannot be stored in verdict register")
+	}
+	if is4ByteRegister(reg) {
+		if len(rd.data) != 4 {
+			return fmt.Errorf("%d-byte data cannot be stored in 4-byte register", len(rd.data))
 		}
 	}
+	// 16-byte register can be used for any data (guaranteed to be <= 16 bytes)
 	return nil
+}
+
+// getRegisterData is a helper function that gets the appropriate slice of
+// register data from the register set.
+// Note: does not support verdict data and assumes the register is valid for the
+// given data type.
+func (rd BytesData) getRegisterData(regs *RegisterSet, reg uint8) []byte {
+	// The entire 4-byte register (data must be exactly 4 bytes)
+	if is4ByteRegister(reg) {
+		start := (reg - linux.NFT_REG32_00) * linux.NFT_REG32_SIZE
+		return regs.data[start : start+linux.NFT_REG32_SIZE]
+	}
+	// The appropriate (mod 4)-byte data in a 16-byte register
+	// Leaves excess space on the left (bc the data is little endian).
+	end := (int(reg)-linux.NFT_REG_1)*linux.NFT_REG_SIZE + linux.NFT_REG_SIZE
+	return regs.data[end-len(rd.data) : end]
 }
 
 // StoreData sets the data in the destination register to the uint32.
@@ -759,24 +874,7 @@ func (rd BytesData) StoreData(regs *RegisterSet, reg uint8) {
 	if err := rd.ValidateRegister(reg); err != nil {
 		panic(err)
 	}
-	var start uint8
-	var regBuf []byte
-	// Stores 4-byte data in a 4-byte register.
-	if is4ByteRegister(reg) {
-		start = (reg - linux.NFT_REG32_00) * linux.NFT_REG32_SIZE
-		regBuf = regs.data[start : start+linux.NFT_REG32_SIZE]
-	} else {
-		// Stores 16-byte data in a 16-byte register.
-		if rd.Type() == Data16Bytes {
-			start = (reg - linux.NFT_REG_1) * linux.NFT_REG_SIZE
-			regBuf = regs.data[start : start+linux.NFT_REG_SIZE]
-		} else {
-			// Stores 4-byte data in a 16-byte register, leaving excess space on the
-			// left (bc the data is little endian).
-			start = (reg-linux.NFT_REG_1)*linux.NFT_REG_SIZE + linux.NFT_REG_SIZE - linux.NFT_REG32_SIZE
-			regBuf = regs.data[start : start+linux.NFT_REG32_SIZE]
-		}
-	}
+	regBuf := rd.getRegisterData(regs, reg)
 	copy(regBuf, rd.data)
 }
 
@@ -825,7 +923,7 @@ type Verdict struct {
 
 // String returns a string representation of the verdict.
 func (v Verdict) String() string {
-	out := VerdictToString(v.Code)
+	out := VerdictCodeToString(v.Code)
 	if v.ChainName != "" {
 		out += fmt.Sprintf(" -> %s", v.ChainName)
 	}
@@ -837,8 +935,8 @@ func VC(v int32) uint32 {
 	return uint32(v)
 }
 
-// VerdictToString prints names for the supported verdicts.
-func VerdictToString(v uint32) string {
+// VerdictCodeToString prints names for the supported verdicts.
+func VerdictCodeToString(v uint32) string {
 	switch v {
 	// Netfilter (External) Verdicts:
 	case VC(linux.NF_DROP):
@@ -867,6 +965,152 @@ func VerdictToString(v uint32) string {
 	default:
 		panic(fmt.Sprintf("invalid verdict: %d", int(v)))
 	}
+}
+
+// -----------------------------------------------------------------------------
+// -----------------------------------------------------------------------------
+
+//
+// Core Evaluation Functions
+//
+
+// EvaluateHook evaluates a packet using the rules of the given hook for the
+// given address family, returning a netfilter verdict and modifying the packet
+// in place.
+// Returns an error if address family or hook is invalid or they don't match.
+// TODO(b/345684870): Consider removing error case if we never return an error.
+func (nf *NFTables) EvaluateHook(family AddressFamily, hook Hook, pkt *stack.PacketBuffer) (Verdict, error) {
+	// Note: none of the other evaluate functions are public because they require
+	// jumping to different chains in the same table, so all chains, rules, and
+	// operations must be tied to a table. Thus, calling evaluate for standalone
+	// chains, rules, or operations can be misleading and dangerous.
+
+	// Ensures address family is valid.
+	if err := validateAddressFamily(family); err != nil {
+		return Verdict{}, err
+	}
+
+	// Ensures hook is valid.
+	if err := validateHook(hook, family); err != nil {
+		return Verdict{}, err
+	}
+
+	// Immediately accept if there are no base chains for the specified hook.
+	if nf.filters[family] == nil || nf.filters[family].hfStacks[hook] == nil ||
+		len(nf.filters[family].hfStacks[hook].baseChains) == 0 {
+		return Verdict{Code: VC(linux.NF_ACCEPT)}, nil
+	}
+
+	regs := NewRegisterSet()
+
+	// Evaluates packet through all base chains for given hook in priority order.
+	var bc *Chain
+	for _, bc = range nf.filters[family].hfStacks[hook].baseChains {
+		// Doesn't evaluate chain if it's table is flagged as dormant.
+		if _, dormant := bc.table.flagSet[TableFlagDormant]; dormant {
+			continue
+		}
+
+		err := bc.evaluate(&regs, pkt)
+		if err != nil {
+			return Verdict{}, err
+		}
+
+		// Terminates immediately on netfilter terminal verdicts.
+		switch regs.Verdict().Code {
+		case VC(linux.NF_ACCEPT), VC(linux.NF_DROP), VC(linux.NF_STOLEN), VC(linux.NF_QUEUE):
+			return regs.Verdict(), nil
+		}
+	}
+
+	// Returns policy verdict of the last base chain evaluated if no terminal
+	// verdict was issued.
+	switch regs.Verdict().Code {
+	case VC(linux.NFT_CONTINUE), VC(linux.NFT_RETURN):
+		if bc.GetBaseChainInfo().PolicyDrop {
+			return Verdict{Code: VC(linux.NF_DROP)}, nil
+		}
+		return Verdict{Code: VC(linux.NF_ACCEPT)}, nil
+	}
+
+	panic(fmt.Sprintf("unexpected verdict from hook evaluation: %s", VerdictCodeToString(regs.Verdict().Code)))
+}
+
+// evaluateFromRule is a helper function for Chain.evaluate that evaluates the
+// packet through the rules in the chain starting at the specified rule index.
+func (c *Chain) evaluateFromRule(rIdx int, jumpDepth int, regs *RegisterSet, pkt *stack.PacketBuffer) error {
+	if jumpDepth >= nestedJumpLimit {
+		return fmt.Errorf("jump stack limit of %d exceeded", nestedJumpLimit)
+	}
+
+	// Resets verdict to continue for the next rule.
+	regs.verdict.Code = VC(linux.NFT_CONTINUE)
+
+	// Evaluates all rules in the chain (breaking on terminal verdicts).
+evalLoop:
+	for ; rIdx < len(c.rules); rIdx++ {
+		rule := c.rules[rIdx]
+		if err := rule.evaluate(regs, pkt); err != nil {
+			return err
+		}
+
+		// Continues evaluation at target chains for jump and goto verdicts.
+		jumped := false
+		switch regs.Verdict().Code {
+		case VC(linux.NFT_JUMP):
+			jumpDepth++
+			jumped = true
+			fallthrough
+		case VC(linux.NFT_GOTO):
+			// Finds the chain named in the same table as the calling chain.
+			nextChain, exists := c.table.chains[regs.verdict.ChainName]
+			if !exists {
+				return fmt.Errorf("chain '%s' does not exist in table %s", regs.verdict.ChainName, c.table.GetName())
+			}
+			if err := nextChain.evaluateFromRule(0, jumpDepth, regs, pkt); err != nil {
+				return err
+			}
+			// Ends evaluation for goto (and continues evaluation for jump).
+			if !jumped {
+				break evalLoop
+			}
+			jumpDepth--
+		}
+
+		// Only continues evaluation for Continue and Break verdicts.
+		switch regs.Verdict().Code {
+		case VC(linux.NFT_BREAK):
+			// Resets verdict for next rule (after breaking from a single operation).
+			regs.verdict.Code = VC(linux.NFT_CONTINUE)
+		case VC(linux.NFT_CONTINUE):
+			// Goes to next rule.
+			continue
+		default:
+			// Break evaluation for all the netfilter verdicts.
+			break evalLoop
+		}
+	}
+	return nil
+}
+
+// evaluate for Chain evaluates the packet through the chain's rules and returns
+// the verdict and modifies the packet in place.
+func (c *Chain) evaluate(regs *RegisterSet, pkt *stack.PacketBuffer) error {
+	return c.evaluateFromRule(0, 0, regs, pkt)
+}
+
+// evaluate evaluates the rule on the given packet and register set, changing
+// the register set and possibly the packet in place.
+// The verdict in regs.Verdict() may be an nf table internal verdict or a
+// netfilter terminal verdict.
+func (r *Rule) evaluate(regs *RegisterSet, pkt *stack.PacketBuffer) error {
+	for _, op := range r.ops {
+		op.evaluate(regs, pkt)
+		if regs.Verdict().Code != VC(linux.NFT_CONTINUE) {
+			break
+		}
+	}
+	return nil
 }
 
 //
@@ -1056,68 +1300,6 @@ func (nf *NFTables) DeleteChain(family AddressFamily, tableName string, chainNam
 	return t.DeleteChain(chainName), nil
 }
 
-// EvaluateHook evaluates a packet using the rules of the given hook for the
-// given address family, returning a netfilter verdict and modifying the packet
-// in place.
-// Returns an error if address family or hook is invalid or they don't match.
-// TODO(b/345684870): Consider removing error case if we never return an error.
-func (nf *NFTables) EvaluateHook(family AddressFamily, hook Hook, pkt *stack.PacketBuffer) (Verdict, error) {
-	// Note: none of the other evaluate functions are public because they require
-	// jumping to different chains in the same table, so all chains, rules, and
-	// operations must be tied to a table. Thus, calling evaluate for standalone
-	// chains, rules, or operations can be misleading and dangerous.
-
-	// Ensures address family is valid.
-	if err := validateAddressFamily(family); err != nil {
-		return Verdict{}, err
-	}
-
-	// Ensures hook is valid.
-	if err := validateHook(hook, family); err != nil {
-		return Verdict{}, err
-	}
-
-	// Immediately accept if there are no base chains for the specified hook.
-	if nf.filters[family] == nil || nf.filters[family].hfStacks[hook] == nil ||
-		len(nf.filters[family].hfStacks[hook].baseChains) == 0 {
-		return Verdict{Code: VC(linux.NF_ACCEPT)}, nil
-	}
-
-	regs := NewRegisterSet()
-
-	// Evaluates packet through all base chains for given hook in priority order.
-	var bc *Chain
-	for _, bc = range nf.filters[family].hfStacks[hook].baseChains {
-		// Doesn't evaluate chain if it's table is flagged as dormant.
-		if _, dormant := bc.table.flagSet[TableFlagDormant]; dormant {
-			continue
-		}
-
-		err := bc.evaluate(&regs, pkt)
-		if err != nil {
-			return Verdict{}, err
-		}
-
-		// Terminates immediately on netfilter terminal verdicts.
-		switch regs.Verdict().Code {
-		case VC(linux.NF_ACCEPT), VC(linux.NF_DROP), VC(linux.NF_STOLEN), VC(linux.NF_QUEUE):
-			return regs.Verdict(), nil
-		}
-	}
-
-	// Returns policy verdict of the last base chain evaluated if no terminal
-	// verdict was issued.
-	switch regs.Verdict().Code {
-	case VC(linux.NFT_CONTINUE), VC(linux.NFT_RETURN):
-		if bc.GetBaseChainInfo().PolicyDrop {
-			return Verdict{Code: VC(linux.NF_DROP)}, nil
-		}
-		return Verdict{Code: VC(linux.NF_ACCEPT)}, nil
-	}
-
-	panic(fmt.Sprintf("unexpected verdict from hook evaluation: %d", regs.Verdict().Code))
-}
-
 //
 // Table Functions
 //
@@ -1299,87 +1481,149 @@ func (c *Chain) SetComment(comment string) {
 	c.comment = comment
 }
 
-// AddRule adds a rule to the chain.
-func (c *Chain) AddRule(rule *Rule) {
-	// Assigns the chain to the rule.
-	rule.chain = c
-
-	c.rules = append(c.rules, rule)
-}
-
-// evaluateFromRule is a helper function for Chain.evaluate that evaluates the
-// packet through the rules in the chain starting at the specified rule index.
-func (c *Chain) evaluateFromRule(rIdx int, jumpDepth int, regs *RegisterSet, pkt *stack.PacketBuffer) error {
-	if jumpDepth >= nestedJumpLimit {
-		return fmt.Errorf("jump stack limit of %d exceeded", nestedJumpLimit)
+// RegisterRule assigns the chain to the rule and adds the rule to the chain's
+// rule list at the given index.
+// Valid indices are -1 (append) and [0, len]. Errors on invalid index.
+// This also checks that the operations in the rule comply with the chain.
+// Checks done:
+// - All jump and goto operations have a valid target chain.
+// - Loop checking for jump and goto operations.
+// - TODO(b/345684870): Add more checks as more operations are supported.
+func (c *Chain) RegisterRule(rule *Rule, index int) error {
+	if rule.chain != nil {
+		return fmt.Errorf("rule is already registered to a chain")
 	}
 
-	// Resets verdict to continue for the next rule.
-	regs.verdict.Code = VC(linux.NFT_CONTINUE)
+	if index < -1 || index > len(c.rules) {
+		return fmt.Errorf("invalid index %d for rule registration", index)
+	}
 
-	// Evaluates all rules in the chain (breaking on terminal verdicts).
-evalLoop:
-	for ; rIdx < len(c.rules); rIdx++ {
-		rule := c.rules[rIdx]
-		if err := rule.evaluate(regs, pkt); err != nil {
+	// Checks if there are loops from all jump and goto operations in the rule.
+	for _, op := range rule.ops {
+		isJumpOrGoto, targetChainName := isJumpOrGotoOperation(op)
+		if !isJumpOrGoto {
+			continue
+		}
+		nextChain, exists := c.table.chains[targetChainName]
+		if !exists {
+			return fmt.Errorf("chain '%s' does not exist in table %s", targetChainName, c.table.GetName())
+		}
+		if err := nextChain.checkLoops(c); err != nil {
 			return err
 		}
+	}
 
-		// Continues evaluation at target chains for jump and goto verdicts.
-		jumped := false
-		switch regs.Verdict().Code {
-		case VC(linux.NFT_JUMP):
-			jumpDepth++
-			jumped = true
-			fallthrough
-		case VC(linux.NFT_GOTO):
-			// Finds the chain named in the same table as the calling chain.
-			nextChain, exists := c.table.chains[regs.verdict.ChainName]
-			if !exists {
-				return fmt.Errorf("chain '%s' does not exist in table %s", regs.verdict.ChainName, c.table.GetName())
-			}
-			if err := nextChain.evaluateFromRule(0, jumpDepth, regs, pkt); err != nil {
-				return err
-			}
-			// Ends evaluation for goto (and continues evaluation for jump).
-			if !jumped {
-				break evalLoop
-			}
-			jumpDepth--
-		}
+	// Assigns chain to rule and adds rule to chain's rule list at given index.
+	rule.chain = c
 
-		// Only continues evaluation for Continue and Break verdicts.
-		switch regs.Verdict().Code {
-		case VC(linux.NFT_BREAK):
-			// Resets verdict for next rule (after breaking from a single operation).
-			regs.verdict.Code = VC(linux.NFT_CONTINUE)
-		case VC(linux.NFT_CONTINUE):
-			// Goes to next rule.
-			continue
-		default:
-			// Break evaluation for all the netfilter verdicts.
-			break evalLoop
-		}
+	// Adds the rule to the chain's rule list at the correct index.
+	if index == -1 || index == len(c.rules) {
+		c.rules = append(c.rules, rule)
+	} else {
+		c.rules = slices.Insert(c.rules, index, rule)
 	}
 	return nil
 }
 
-// evaluate for Chain evaluates the packet through the chain's rules and returns
-// the verdict and modifies the packet in place.
-func (c *Chain) evaluate(regs *RegisterSet, pkt *stack.PacketBuffer) error {
-	return c.evaluateFromRule(0, 0, regs, pkt)
+// UnregisterRule removes the rule at the given index from the chain's rule list
+// and unassigns the chain from the rule then returns the unregistered rule.
+// Valid indices are -1 (pop) and [0, len-1]. Panics on invalid index.
+func (c *Chain) UnregisterRule(index int) *Rule {
+	rule, err := c.GetRule(index)
+	if err != nil {
+		panic(fmt.Sprintf("invalid index %d for rule registration", index))
+	}
+	if index == -1 {
+		index = len(c.rules) - 1
+	}
+	c.rules = append(c.rules[:index], c.rules[index+1:]...)
+	rule.chain = nil
+	return rule
+}
+
+// GetRule returns the rule at the given index in the chain's rule list.
+// Valid indices are -1 (last) and [0, len-1]. Errors on invalid index.
+func (c *Chain) GetRule(index int) (*Rule, error) {
+	if index < -1 || index > len(c.rules)-1 {
+		return nil, fmt.Errorf("invalid index %d for rule retrieval", index)
+	}
+	if index == -1 {
+		return c.rules[len(c.rules)-1], nil
+	}
+	return c.rules[index], nil
+}
+
+// RuleCount returns the number of rules in the chain.
+func (c *Chain) RuleCount() int {
+	return len(c.rules)
+}
+
+//
+// Loop Checking Helper Functions
+//
+
+// isJumpOrGoto returns whether the operation is an immediate operation that
+// sets the verdict register to a jump or goto verdict and returns the name of
+// the target chain to jump or goto if so.
+func isJumpOrGotoOperation(op Operation) (bool, string) {
+	imm, ok := op.(*Immediate)
+	if !ok {
+		return false, ""
+	}
+	verdictData, ok := imm.data.(VerdictData)
+	if !ok {
+		return false, ""
+	}
+	verdict := verdictData.data
+	if verdict.Code != VC(linux.NFT_JUMP) && verdict.Code != VC(linux.NFT_GOTO) {
+		return false, ""
+	}
+	return true, verdict.ChainName
+}
+
+// checkLoops detects if there are any loops via jumps and gotos between chains
+// by tracing all immediate operations starting from the destination chain
+// of a jump or goto operation and checking that no jump or goto operations lead
+// back to the original source chain.
+// Note: this loop checking is done whenever a rule is registered to a chain.
+func (c *Chain) checkLoops(source *Chain) error {
+	if c == source {
+		return fmt.Errorf("loop detected between calling chain %s and source chain %s", c.name, source.name)
+	}
+	for _, rule := range c.rules {
+		for _, op := range rule.ops {
+			isJumpOrGoto, targetChainName := isJumpOrGotoOperation(op)
+			if !isJumpOrGoto {
+				continue
+			}
+			nextChain, exists := c.table.chains[targetChainName]
+			if !exists {
+				return fmt.Errorf("chain '%s' does not exist in table %s", targetChainName, c.table.GetName())
+			}
+			if err := nextChain.checkLoops(source); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 //
 // Rule Functions
 //
 
-// AddOperation adds an operation to the rule.
-func (r *Rule) AddOperation(op Operation) {
+// AddOperation adds an operation to the rule. Adding operations is only allowed
+// before the rule is registered to a chain. Returns an error if the operation
+// is nil or if the rule is already registered to a chain.
+func (r *Rule) AddOperation(op Operation) error {
 	if op == nil {
-		panic("operation is nil")
+		return fmt.Errorf("operation is nil")
+	}
+	if r.chain != nil {
+		return fmt.Errorf("cannot add operation to a rule that is already registered to a chain")
 	}
 	r.ops = append(r.ops, op)
+	return nil
 }
 
 //
