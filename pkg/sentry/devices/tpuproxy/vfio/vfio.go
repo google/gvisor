@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package tpuproxy
+package vfio
 
 import (
 	"fmt"
@@ -27,6 +27,7 @@ import (
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/sentry/devices/tpuproxy/util"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/mm"
@@ -113,7 +114,7 @@ func (fd *vfioFD) Ioctl(ctx context.Context, uio usermem.IO, sysno uintptr, args
 func (fd *vfioFD) checkExtension(ext extension) (uintptr, error) {
 	switch ext {
 	case linux.VFIO_TYPE1_IOMMU, linux.VFIO_SPAPR_TCE_IOMMU, linux.VFIO_TYPE1v2_IOMMU:
-		ret, err := IOCTLInvoke[uint32, int32](fd.hostFD, linux.VFIO_CHECK_EXTENSION, int32(ext))
+		ret, err := util.IOCTLInvoke[uint32, int32](fd.hostFD, linux.VFIO_CHECK_EXTENSION, int32(ext))
 		if err != nil {
 			log.Warningf("check VFIO extension %s: %v", ext, err)
 			return 0, err
@@ -128,7 +129,7 @@ func (fd *vfioFD) checkExtension(ext extension) (uintptr, error) {
 func (fd *vfioFD) setIOMMU(ext extension) (uintptr, error) {
 	switch ext {
 	case linux.VFIO_TYPE1_IOMMU, linux.VFIO_SPAPR_TCE_IOMMU, linux.VFIO_TYPE1v2_IOMMU:
-		ret, err := IOCTLInvoke[uint32, int32](fd.hostFD, linux.VFIO_SET_IOMMU, int32(ext))
+		ret, err := util.IOCTLInvoke[uint32, int32](fd.hostFD, linux.VFIO_SET_IOMMU, int32(ext))
 		if err != nil {
 			log.Warningf("set the IOMMU group to %s: %v", ext, err)
 			return 0, err
@@ -196,7 +197,7 @@ func (fd *vfioFD) iommuMapDma(ctx context.Context, t *kernel.Task, arg hostarch.
 	}
 	// Replace Vaddr with the host's virtual address.
 	dmaMap.Vaddr = uint64(m)
-	n, err := IOCTLInvokePtrArg[uint32](fd.hostFD, linux.VFIO_IOMMU_MAP_DMA, &dmaMap)
+	n, err := util.IOCTLInvokePtrArg[uint32](fd.hostFD, linux.VFIO_IOMMU_MAP_DMA, &dmaMap)
 	if err != nil {
 		return n, err
 	}
@@ -228,7 +229,7 @@ func (fd *vfioFD) iommuUnmapDma(ctx context.Context, t *kernel.Task, arg hostarc
 		// gVisor working with TPU.
 		return 0, linuxerr.ENOSYS
 	}
-	n, err := IOCTLInvokePtrArg[uint32](fd.hostFD, linux.VFIO_IOMMU_UNMAP_DMA, &dmaUnmap)
+	n, err := util.IOCTLInvokePtrArg[uint32](fd.hostFD, linux.VFIO_IOMMU_UNMAP_DMA, &dmaUnmap)
 	if err != nil {
 		return 0, nil
 	}

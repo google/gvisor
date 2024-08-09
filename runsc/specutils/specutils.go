@@ -35,7 +35,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/bits"
 	"gvisor.dev/gvisor/pkg/log"
-	"gvisor.dev/gvisor/pkg/sentry/devices/tpuproxy"
+	"gvisor.dev/gvisor/pkg/sentry/devices/tpuproxy/vfio"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/flag"
@@ -577,7 +577,7 @@ func TPUProxyIsEnabled(spec *specs.Spec, conf *config.Config) bool {
 // VFIOFunctionalityRequested returns true if the container should have access
 // to VFIO functionality.
 func VFIOFunctionalityRequested(dev *specs.LinuxDevice) bool {
-	return strings.HasPrefix(dev.Path, filepath.Dir(tpuproxy.VFIOPath))
+	return strings.HasPrefix(dev.Path, filepath.Dir(vfio.VFIOPath))
 }
 
 // AcceleratorFunctionalityRequested returns true if the container should have

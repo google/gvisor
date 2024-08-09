@@ -28,7 +28,6 @@ import (
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/abi/nvgpu"
-	"gvisor.dev/gvisor/pkg/abi/tpu"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/devutil"
@@ -36,10 +35,10 @@ import (
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/log"
-	"gvisor.dev/gvisor/pkg/sentry/devices/accel"
 	"gvisor.dev/gvisor/pkg/sentry/devices/memdev"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy"
 	"gvisor.dev/gvisor/pkg/sentry/devices/tpuproxy"
+	"gvisor.dev/gvisor/pkg/sentry/devices/tpuproxy/vfio"
 	"gvisor.dev/gvisor/pkg/sentry/devices/ttydev"
 	"gvisor.dev/gvisor/pkg/sentry/devices/tundev"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/cgroupfs"
@@ -72,12 +71,6 @@ const (
 
 // SelfFilestorePrefix is the prefix of the self filestore file name.
 const SelfFilestorePrefix = ".gvisor.filestore."
-
-const (
-	pciPathGlobTPUv4   = "/sys/devices/pci0000:*/*/accel/accel*"
-	pciPathGlobTPUv5   = "/sys/devices/pci0000:*/*/vfio-dev/vfio*"
-	iommuGroupPathGlob = "/sys/kernel/iommu_groups/*/devices/*"
-)
 
 // SelfFilestorePath returns the path at which the self filestore file is
 // stored for a given mount.
@@ -1381,87 +1374,14 @@ func createDeviceFile(ctx context.Context, creds *auth.Credentials, info *contai
 	return dev.CreateDeviceFile(ctx, vfsObj, creds, root, devSpec.Path, major, minor, mode, devSpec.UID, devSpec.GID)
 }
 
-// registerTPUDevice registers a TPU device in vfsObj based on the given device ID.
-func registerTPUDevice(vfsObj *vfs.VirtualFilesystem, minor, deviceNum uint32, deviceID int64) error {
-	switch deviceID {
-	case tpu.TPUV4DeviceID, tpu.TPUV4liteDeviceID:
-		return accel.RegisterTPUDevice(vfsObj, minor, deviceID == tpu.TPUV4liteDeviceID)
-	case tpu.TPUV5eDeviceID, tpu.TPUV5pDeviceID:
-		return tpuproxy.RegisterTPUDevice(vfsObj, minor, deviceNum)
-	default:
-		return fmt.Errorf("unsupported TPU device with ID: 0x%x", deviceID)
-	}
-}
-
-// pathGlobToPathRegex is a map that points a TPU PCI path glob to its path regex.
-// TPU v4 devices are accessible via /sys/devices/pci0000:00/<pci_address>/accel/accel# on the host.
-// TPU v5 devices are accessible via at /sys/devices/pci0000:00/<pci_address>/vfio-dev/vfio# on the host.
-var pathGlobToPathRegex = map[string]string{
-	pciPathGlobTPUv4: `^/sys/devices/pci0000:[[:xdigit:]]{2}/\d+:\d+:\d+\.\d+/accel/accel(\d+)$`,
-	pciPathGlobTPUv5: `^/sys/devices/pci0000:[[:xdigit:]]{2}/\d+:\d+:\d+\.\d+/vfio-dev/vfio(\d+)$`,
-}
-
 func tpuProxyRegisterDevices(info *containerInfo, vfsObj *vfs.VirtualFilesystem) error {
 	if !specutils.TPUProxyIsEnabled(info.spec, info.conf) {
 		return nil
 	}
-	// Enumerate all potential PCI paths where TPU devices are available and register the found TPU devices.
-	for pciPathGlobal, pathRegex := range pathGlobToPathRegex {
-		pciAddrs, err := filepath.Glob(pciPathGlobal)
-		if err != nil {
-			return fmt.Errorf("enumerating PCI device files: %w", err)
-		}
-		pciPathRegex := regexp.MustCompile(pathRegex)
-		for _, pciPath := range pciAddrs {
-			ms := pciPathRegex.FindStringSubmatch(pciPath)
-			if ms == nil {
-				continue
-			}
-			deviceNum, err := strconv.ParseUint(ms[1], 10, 32)
-			if err != nil {
-				return fmt.Errorf("parsing PCI device number: %w", err)
-			}
-			var deviceIDBytes []byte
-			if deviceIDBytes, err = os.ReadFile(path.Join(pciPath, "device/device")); err != nil {
-				return fmt.Errorf("reading PCI device ID: %w", err)
-			}
-			deviceIDStr := strings.Replace(string(deviceIDBytes), "0x", "", -1)
-			deviceID, err := strconv.ParseInt(strings.TrimSpace(deviceIDStr), 16, 64)
-			if err != nil {
-				return fmt.Errorf("parsing PCI device ID: %w", err)
-			}
-			// VFIO iommu groups correspond to the device minor number. Use these
-			// paths to get the correct minor number for the sentry-internal TPU
-			// device files.
-			var minorNum int
-			switch deviceID {
-			case tpu.TPUV4DeviceID, tpu.TPUV4liteDeviceID:
-				minorNum = int(deviceNum)
-			case tpu.TPUV5eDeviceID, tpu.TPUV5pDeviceID:
-				groupPaths, err := filepath.Glob(iommuGroupPathGlob)
-				if err != nil {
-					return fmt.Errorf("enumerating IOMMU group files: %w", err)
-				}
-				for _, groupPath := range groupPaths {
-					pci := path.Base(groupPath)
-					if strings.Contains(pciPath, pci) {
-						minor, err := strconv.Atoi(strings.Split(groupPath, "/")[4])
-						if err != nil {
-							return fmt.Errorf("parsing IOMMU group minor number: %w", err)
-						}
-						minorNum = minor
-						break
-					}
-				}
-			default:
-				return fmt.Errorf("unsupported TPU device with ID: 0x%x", deviceID)
-			}
-			if err := registerTPUDevice(vfsObj, uint32(minorNum), uint32(deviceNum), deviceID); err != nil {
-				return fmt.Errorf("registering TPU driver: %w", err)
-			}
-		}
+	if err := tpuproxy.RegisterHostTPUDevices(vfsObj); err != nil {
+		return fmt.Errorf("registering host TPU devices: %w", err)
 	}
-	if err := tpuproxy.RegisterVfioDevice(vfsObj); err != nil {
+	if err := vfio.RegisterVFIODevice(vfsObj); err != nil {
 		return fmt.Errorf("registering vfio driver: %w", err)
 	}
 	return nil

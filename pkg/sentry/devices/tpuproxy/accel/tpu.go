@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package accel implements proxying for hardware accelerators.
 package accel
 
 import (
@@ -27,7 +26,7 @@ import (
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
-	"gvisor.dev/gvisor/pkg/sentry/devices/tpuproxy"
+	"gvisor.dev/gvisor/pkg/sentry/devices/tpuproxy/util"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/mm"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
@@ -46,7 +45,7 @@ type tpuV4FD struct {
 	vfs.NoLockFD
 
 	hostFD     int32
-	device     *tpuV4Device
+	device     *tpuDevice
 	queue      waiter.Queue
 	memmapFile accelFDMemmapFile
 }
@@ -68,7 +67,7 @@ func (fd *tpuV4FD) Release(context.Context) {
 				Size:           r.End - r.Start,
 				HostAddress:    0,
 			}
-			_, err := tpuproxy.IOCTLInvokePtrArg[gasket.Ioctl](fd.hostFD, gasket.GASKET_IOCTL_UNMAP_BUFFER, &gpti)
+			_, err := util.IOCTLInvokePtrArg[gasket.Ioctl](fd.hostFD, gasket.GASKET_IOCTL_UNMAP_BUFFER, &gpti)
 			if err != nil {
 				log.Warningf("could not unmap range [%#x, %#x) (index %d) on device: %v", r.Start, r.End, v.pageTableIndex, err)
 			}
@@ -133,17 +132,17 @@ func (fd *tpuV4FD) Ioctl(ctx context.Context, uio usermem.IO, sysno uintptr, arg
 		gasket.GASKET_IOCTL_MAP_DMA_BUF:
 		return 0, linuxerr.ENOSYS
 	case gasket.GASKET_IOCTL_RESET:
-		return tpuproxy.IOCTLInvoke[gasket.Ioctl, uint64](fd.hostFD, gasket.GASKET_IOCTL_RESET, args[2].Uint64())
+		return util.IOCTLInvoke[gasket.Ioctl, uint64](fd.hostFD, gasket.GASKET_IOCTL_RESET, args[2].Uint64())
 	case gasket.GASKET_IOCTL_MAP_BUFFER:
 		return gasketMapBufferIoctl(ctx, t, fd.hostFD, fd, argPtr)
 	case gasket.GASKET_IOCTL_UNMAP_BUFFER:
 		return gasketUnmapBufferIoctl(ctx, t, fd.hostFD, fd, argPtr)
 	case gasket.GASKET_IOCTL_CLEAR_INTERRUPT_COUNTS:
-		return tpuproxy.IOCTLInvoke[gasket.Ioctl](fd.hostFD, gasket.GASKET_IOCTL_CLEAR_INTERRUPT_COUNTS, 0)
+		return util.IOCTLInvoke[gasket.Ioctl](fd.hostFD, gasket.GASKET_IOCTL_CLEAR_INTERRUPT_COUNTS, 0)
 	case gasket.GASKET_IOCTL_REGISTER_INTERRUPT:
 		return gasketInterruptMappingIoctl(ctx, t, fd.hostFD, argPtr, fd.device.lite)
 	case gasket.GASKET_IOCTL_UNREGISTER_INTERRUPT:
-		return tpuproxy.IOCTLInvoke[gasket.Ioctl, uint64](fd.hostFD, gasket.GASKET_IOCTL_UNREGISTER_INTERRUPT, args[2].Uint64())
+		return util.IOCTLInvoke[gasket.Ioctl, uint64](fd.hostFD, gasket.GASKET_IOCTL_UNREGISTER_INTERRUPT, args[2].Uint64())
 	default:
 		return 0, linuxerr.EINVAL
 	}

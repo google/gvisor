@@ -12,9 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package tpuproxy
+// Package vfio implements a proxy for VFIO devices.
+package vfio
 
 import (
+	"fmt"
 	"path/filepath"
 	"strconv"
 
@@ -33,12 +35,11 @@ const (
 	// VFIO_MINOR is the VFIO minor number from include/linux/miscdevice.h.
 	VFIO_MINOR = 196
 
-	// VFIOPath is the path to a VFIO device, it is usually used to
-	// construct a VFIO container.
-	VFIOPath = "/dev/vfio/vfio"
-
 	tpuDeviceGroupName  = "vfio"
 	vfioDeviceGroupName = "vfio"
+
+	// VFIOPath is the valid path to a VFIO device.
+	VFIOPath = "/dev/vfio/vfio"
 )
 
 // device implements TPU's vfs.Device for /dev/vfio/[0-9]+
@@ -97,7 +98,7 @@ func (dev *vfioDevice) Open(ctx context.Context, mnt *vfs.Mount, d *vfs.Dentry, 
 		return nil, linuxerr.ENOENT
 	}
 
-	name := filepath.Join("vfio", filepath.Base(VFIOPath))
+	name := fmt.Sprintf("vfio/%s", filepath.Base(VFIOPath))
 	hostFD, err := client.OpenAt(ctx, name, opts.Flags)
 	if err != nil {
 		ctx.Warningf("failed to open host file %s: %v", name, err)
@@ -131,8 +132,8 @@ func RegisterTPUDevice(vfsObj *vfs.VirtualFilesystem, minor, deviceNum uint32) e
 	})
 }
 
-// RegisterVfioDevice registers VFIO devices that are implemented by this package in vfsObj.
-func RegisterVfioDevice(vfsObj *vfs.VirtualFilesystem) error {
+// RegisterVFIODevice registers VFIO devices that are implemented by this package in vfsObj.
+func RegisterVFIODevice(vfsObj *vfs.VirtualFilesystem) error {
 	return vfsObj.RegisterDevice(vfs.CharDevice, linux.MISC_MAJOR, VFIO_MINOR, &vfioDevice{}, &vfs.RegisterDeviceOptions{
 		GroupName: vfioDeviceGroupName,
 	})

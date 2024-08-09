@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package accel implements a proxy for gasket based accel devices.
 package accel
 
 import (
@@ -29,10 +30,10 @@ import (
 	"gvisor.dev/gvisor/pkg/sync"
 )
 
-// tpuV4Device implements vfs.Device for /dev/accel[0-9]+.
+// tpuDevice implements vfs.Device for /dev/accel[0-9]+.
 //
 // +stateify savable
-type tpuV4Device struct {
+type tpuDevice struct {
 	mu sync.Mutex
 
 	minor uint32
@@ -45,7 +46,7 @@ type tpuV4Device struct {
 	owner *kernel.ThreadGroup
 }
 
-func (dev *tpuV4Device) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
+func (dev *tpuDevice) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
 	devClient := devutil.GoferClientFromContext(ctx)
 	if devClient == nil {
 		log.Warningf("devutil.CtxDevGoferClient is not set")
@@ -89,7 +90,7 @@ func (dev *tpuV4Device) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dent
 
 // RegisterTPUDevice registers all devices implemented by this package in vfsObj.
 func RegisterTPUDevice(vfsObj *vfs.VirtualFilesystem, minor uint32, lite bool) error {
-	return vfsObj.RegisterDevice(vfs.CharDevice, linux.ACCEL_MAJOR, minor, &tpuV4Device{
+	return vfsObj.RegisterDevice(vfs.CharDevice, linux.ACCEL_MAJOR, minor, &tpuDevice{
 		lite:  lite,
 		minor: minor,
 	}, &vfs.RegisterDeviceOptions{

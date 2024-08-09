@@ -16,6 +16,7 @@ package tpuproxy
 
 import (
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/abi/gasket"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/seccomp"
 )
@@ -102,6 +103,30 @@ func Filters() seccomp.SyscallRules {
 			seccomp.PerArg{
 				seccomp.NonNegativeFD{},
 				seccomp.EqualTo(linux.VFIO_SET_IOMMU),
+			},
+			seccomp.PerArg{
+				seccomp.NonNegativeFD{},
+				seccomp.EqualTo(gasket.GASKET_IOCTL_RESET),
+			},
+			seccomp.PerArg{
+				seccomp.NonNegativeFD{},
+				seccomp.EqualTo(gasket.GASKET_IOCTL_MAP_BUFFER),
+			},
+			seccomp.PerArg{
+				seccomp.NonNegativeFD{},
+				seccomp.EqualTo(gasket.GASKET_IOCTL_UNMAP_BUFFER),
+			},
+			seccomp.PerArg{
+				seccomp.NonNegativeFD{},
+				seccomp.EqualTo(gasket.GASKET_IOCTL_CLEAR_INTERRUPT_COUNTS),
+			},
+			seccomp.PerArg{
+				seccomp.NonNegativeFD{},
+				seccomp.EqualTo(gasket.GASKET_IOCTL_REGISTER_INTERRUPT),
+			},
+			seccomp.PerArg{
+				seccomp.NonNegativeFD{},
+				seccomp.EqualTo(gasket.GASKET_IOCTL_UNREGISTER_INTERRUPT),
 			},
 		},
 	})

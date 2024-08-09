@@ -90,6 +90,7 @@ go_library(
         "//pkg/ring0",
         "//pkg/sentry/control",
         "//pkg/sentry/devices/tpuproxy",
+        "//pkg/sentry/devices/tpuproxy/vfio",
         "//pkg/sentry/hostmm",
         "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/auth",
