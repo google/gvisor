@@ -101,6 +101,7 @@ func Load(rootDir string, id FullID, opts LoadOpts) (*Container, error) {
 		}
 		return nil, fmt.Errorf("reading container metadata file %q: %v", state.statePath(), err)
 	}
+	c.Sandbox.SetRootDir(rootDir)
 
 	if opts.RootContainer && c.ID != c.Sandbox.ID {
 		return nil, fmt.Errorf("ID %q doesn't belong to a sandbox", id)
