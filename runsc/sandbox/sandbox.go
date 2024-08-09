@@ -75,13 +75,17 @@ const (
 	namespaceAnnotation = "io.kubernetes.cri.sandbox-namespace"
 )
 
+func controlSocketName(id string) string {
+	return fmt.Sprintf("runsc-%s.sock", id)
+}
+
 // createControlSocket finds a location and creates the socket used to
 // communicate with the sandbox. The socket is a UDS on the host filesystem.
 //
 // Note that abstract sockets are *not* used, because any user can connect to
 // them. There is no file mode protecting abstract sockets.
 func createControlSocket(rootDir, id string) (string, int, error) {
-	name := fmt.Sprintf("runsc-%s.sock", id)
+	name := controlSocketName(id)
 
 	// Only use absolute paths to guarantee resolution from anywhere.
 	for _, dir := range []string{rootDir, "/var/run", "/run", "/tmp"} {
@@ -184,6 +188,7 @@ type Sandbox struct {
 
 	// ControlSocketPath is the path to the sandbox's uRPC server socket.
 	// Connections to the sandbox are made through this.
+	// DO NOT access this directly, use getControlSocketPath() instead.
 	ControlSocketPath string `json:"controlSocketPath"`
 
 	// MountHints provides extra information about container mounts that apply
@@ -192,6 +197,12 @@ type Sandbox struct {
 
 	// StartTime is the time the sandbox was started.
 	StartTime time.Time `json:"startTime"`
+
+	// rootDir is the same as config.Config.RootDir. It represents the runtime
+	// root directory being used by the current runsc invocation. It's not saved
+	// to json, because the RootDir can change across runsc invocations.
+	// Depending on the caller's mount namespace, the path can vary.
+	rootDir string `nojson:"true"`
 
 	// child is set if a sandbox process is a child of the current process.
 	//
@@ -684,9 +695,38 @@ func (s *Sandbox) PortForward(opts *boot.PortForwardOpts) error {
 	return nil
 }
 
+// SetRootDir sets the root directory from the current runsc invocation.
+func (s *Sandbox) SetRootDir(rootDir string) {
+	s.rootDir = rootDir
+}
+
+// getControlSocketPath gets the control socket path for the sandbox.
+func (s *Sandbox) getControlSocketPath() string {
+	err := unix.Access(s.ControlSocketPath, unix.F_OK)
+	if err == nil {
+		return s.ControlSocketPath
+	}
+	log.Infof("Failed to stat Sandbox.ControlSocketPath=%q: %v", s.ControlSocketPath, err)
+
+	// Try to find the control socket in s.RootDir (in case RootDir has changed).
+	if s.rootDir != "" {
+		path := filepath.Join(s.rootDir, controlSocketName(s.ID))
+		if unix.Access(path, unix.F_OK) == nil {
+			log.Infof("Found a control socket in RootDir=%q", s.rootDir)
+			return path
+		}
+	}
+
+	// No control socket found.
+	return ""
+}
+
 func (s *Sandbox) sandboxConnect() (*urpc.Client, error) {
 	log.Debugf("Connecting to sandbox %q", s.ID)
-	path := s.ControlSocketPath
+	path := s.getControlSocketPath()
+	if path == "" {
+		return nil, fmt.Errorf("no control socket found for sandbox %q", s.ID)
+	}
 	if len(path) >= linux.UnixPathMax {
 		// This is not an abstract socket path. It is a filesystem path.
 		// UDS connect fails when the len(socket path) >= UNIX_PATH_MAX. Instead
@@ -1298,9 +1338,10 @@ func (s *Sandbox) IsRootContainer(cid string) bool {
 func (s *Sandbox) destroy() error {
 	log.Debugf("Destroying sandbox %q", s.ID)
 	// Only delete the control file if it exists.
-	if len(s.ControlSocketPath) > 0 {
-		if err := os.Remove(s.ControlSocketPath); err != nil {
-			log.Warningf("failed to delete control socket file %q: %v", s.ControlSocketPath, err)
+	controlSocketPath := s.getControlSocketPath()
+	if len(controlSocketPath) > 0 {
+		if err := os.Remove(controlSocketPath); err != nil {
+			log.Warningf("failed to delete control socket file %q: %v", controlSocketPath, err)
 		}
 	}
 	pid := s.Pid.load()
