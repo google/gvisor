@@ -445,7 +445,7 @@ func (s *Socket) Endpoint() transport.Endpoint {
 
 // extractPath extracts and validates the address.
 func extractPath(sockaddr []byte) (string, *syserr.Error) {
-	addr, family, err := addressAndFamily(sockaddr)
+	addr, family, err := AddressAndFamily(sockaddr)
 	if err != nil {
 		if err == syserr.ErrAddressFamilyNotSupported {
 			err = syserr.ErrInvalidArgument
@@ -466,7 +466,9 @@ func extractPath(sockaddr []byte) (string, *syserr.Error) {
 	return p, nil
 }
 
-func addressAndFamily(addr []byte) (transport.Address, uint16, *syserr.Error) {
+// AddressAndFamily converts the addr byte slice to a transport.Address and
+// family. It supports only AF_UNIX addresses.
+func AddressAndFamily(addr []byte) (transport.Address, uint16, *syserr.Error) {
 	// Make sure we have at least 2 bytes for the address family.
 	if len(addr) < 2 {
 		return transport.Address{}, 0, syserr.ErrInvalidArgument
