@@ -1065,7 +1065,6 @@ func (p *packetEndpointList) StateTypeName() string {
 
 func (p *packetEndpointList) StateFields() []string {
 	return []string{
-		"mu",
 		"eps",
 	}
 }
@@ -1075,16 +1074,14 @@ func (p *packetEndpointList) beforeSave() {}
 // +checklocksignore
 func (p *packetEndpointList) StateSave(stateSinkObject state.Sink) {
 	p.beforeSave()
-	stateSinkObject.Save(0, &p.mu)
-	stateSinkObject.Save(1, &p.eps)
+	stateSinkObject.Save(0, &p.eps)
 }
 
 func (p *packetEndpointList) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (p *packetEndpointList) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &p.mu)
-	stateSourceObject.Load(1, &p.eps)
+	stateSourceObject.Load(0, &p.eps)
 }
 
 func (qDisc *delegatingQueueingDiscipline) StateTypeName() string {

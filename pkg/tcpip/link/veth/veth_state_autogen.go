@@ -8,6 +8,37 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
+func (v *veth) StateTypeName() string {
+	return "pkg/tcpip/link/veth.veth"
+}
+
+func (v *veth) StateFields() []string {
+	return []string{
+		"closed",
+		"mtu",
+		"endpoints",
+	}
+}
+
+func (v *veth) beforeSave() {}
+
+// +checklocksignore
+func (v *veth) StateSave(stateSinkObject state.Sink) {
+	v.beforeSave()
+	stateSinkObject.Save(0, &v.closed)
+	stateSinkObject.Save(1, &v.mtu)
+	stateSinkObject.Save(2, &v.endpoints)
+}
+
+func (v *veth) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (v *veth) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &v.closed)
+	stateSourceObject.Load(1, &v.mtu)
+	stateSourceObject.Load(2, &v.endpoints)
+}
+
 func (v *vethPacket) StateTypeName() string {
 	return "pkg/tcpip/link/veth.vethPacket"
 }
@@ -49,7 +80,6 @@ func (e *Endpoint) StateFields() []string {
 		"veth",
 		"dispatcher",
 		"linkAddr",
-		"onCloseAction",
 	}
 }
 
@@ -62,7 +92,6 @@ func (e *Endpoint) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &e.veth)
 	stateSinkObject.Save(2, &e.dispatcher)
 	stateSinkObject.Save(3, &e.linkAddr)
-	stateSinkObject.Save(4, &e.onCloseAction)
 }
 
 func (e *Endpoint) afterLoad(context.Context) {}
@@ -73,10 +102,10 @@ func (e *Endpoint) StateLoad(ctx context.Context, stateSourceObject state.Source
 	stateSourceObject.Load(1, &e.veth)
 	stateSourceObject.Load(2, &e.dispatcher)
 	stateSourceObject.Load(3, &e.linkAddr)
-	stateSourceObject.Load(4, &e.onCloseAction)
 }
 
 func init() {
+	state.Register((*veth)(nil))
 	state.Register((*vethPacket)(nil))
 	state.Register((*Endpoint)(nil))
 }
