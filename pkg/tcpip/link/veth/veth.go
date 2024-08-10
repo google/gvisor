@@ -25,10 +25,11 @@ import (
 var _ stack.LinkEndpoint = (*Endpoint)(nil)
 var _ stack.GSOEndpoint = (*Endpoint)(nil)
 
+// +stateify savable
 type veth struct {
-	mu           sync.RWMutex
+	mu           sync.RWMutex `state:"nosave"`
 	closed       bool
-	backlogQueue chan vethPacket
+	backlogQueue chan vethPacket `state:"nosave"`
 	mtu          uint32
 	endpoints    [2]Endpoint
 }
@@ -80,7 +81,7 @@ type Endpoint struct {
 	// +checklocks:mu
 	linkAddr tcpip.LinkAddress
 	// +checklocks:mu
-	onCloseAction func()
+	onCloseAction func() `state:"nosave"`
 }
 
 // NewPair creates a new veth pair.

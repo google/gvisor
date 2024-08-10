@@ -103,7 +103,7 @@ func makeNICStats(global tcpip.NICStats) sharedStats {
 
 // +stateify savable
 type packetEndpointList struct {
-	mu packetEndpointListRWMutex
+	mu packetEndpointListRWMutex `state:"nosave"`
 
 	// eps is protected by mu, but the contained PacketEndpoint values are not.
 	//
