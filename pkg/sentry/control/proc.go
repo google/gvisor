@@ -40,8 +40,6 @@ import (
 )
 
 // Proc includes task-related functions.
-//
-// At the moment, this is limited to exec support.
 type Proc struct {
 	Kernel *kernel.Kernel
 }
@@ -518,4 +516,22 @@ func (args *ExecArgs) unpackFiles() (map[int]*fd.FD, *fd.FD, error) {
 		fdMap[appFD] = hostFD
 	}
 	return fdMap, execFD, nil
+}
+
+// SignalProcessArgs is the arguments to SignalProcess.
+type SignalProcessArgs struct {
+	// Signal number to send.
+	Signo int `json:"signo"`
+
+	// Process ID (in the root PID namespace) to signal.
+	PID int `json:"pid"`
+}
+
+// SignalProcess sends a signal to the process with the given PID.
+func (proc *Proc) SignalProcess(args *SignalProcessArgs, _ *struct{}) error {
+	tg := proc.Kernel.RootPIDNamespace().ThreadGroupWithID(kernel.ThreadID(args.PID))
+	if tg == nil {
+		return fmt.Errorf("no such process with PID %d", args.PID)
+	}
+	return proc.Kernel.SendExternalSignalThreadGroup(tg, &linux.SignalInfo{Signo: int32(args.Signo)})
 }
