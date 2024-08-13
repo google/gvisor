@@ -176,7 +176,7 @@ func addDriverABI(major, minor, patch int, runfileChecksum string, cons driverAB
 // Init initializes abis global map.
 func Init() {
 	abisOnce.Do(func() {
-		v535_104_05 := func() *driverABI {
+		v535_161_07 := func() *driverABI {
 			// Since there is no parent to inherit from, the driverABI needs to be
 			// constructed with the entirety of the nvproxy functionality.
 			return &driverABI{
@@ -572,48 +572,13 @@ func Init() {
 			}
 		}
 
-		// 535.104.12 exists on the "535.104.12" branch. It branched off the main
-		// branch at 535.104.05.
-		_ = addDriverABI(535, 104, 12, "ffc2d89e233d2427edb1ff5f436028a94b3ef86e78f97e088e11d905c82e8001", v535_104_05)
-
-		// 535.113.01 is an intermediate unqualified version from the main branch.
-		v535_113_01 := v535_104_05
-
-		// The following exist on the "535" branch. They branched off the main
-		// branch at 535.113.01.
-		v535_129_03 := addDriverABI(535, 129, 03, "e6dca5626a2608c6bb2a046cfcb7c1af338b9e961a7dd90ac09bb8a126ff002e", v535_113_01)
-		v535_154_05 := addDriverABI(535, 154, 05, "7e95065caa6b82de926110f14827a61972eb12c200e863a29e9fb47866eaa898", v535_129_03)
-		_ = addDriverABI(535, 161, 07, "edc527f1dcfa0212a3bf815ebf302d45ef9663834a41e11a851dd38da159a8cd", v535_154_05)
-
-		// 545.23.06 is an intermediate unqualified version from the main branch.
-		v545_23_06 := func() *driverABI {
-			abi := v535_113_01()
-			abi.controlCmd[nvgpu.NV0000_CTRL_CMD_OS_UNIX_GET_EXPORT_OBJECT_INFO] = ctrlHasFrontendFD[nvgpu.NV0000_CTRL_OS_UNIX_GET_EXPORT_OBJECT_INFO_PARAMS_V545]
-			abi.allocationClass[nvgpu.RM_USER_SHARED_DATA] = rmAllocSimple[nvgpu.NV00DE_ALLOC_PARAMETERS_V545]
-			abi.allocationClass[nvgpu.NV_MEMORY_MULTICAST_FABRIC] = rmAllocSimple[nvgpu.NV00FD_ALLOCATION_PARAMETERS_V545]
-			abi.allocationClass[nvgpu.NV01_MEMORY_SYSTEM] = rmAllocSimple[nvgpu.NV_MEMORY_ALLOCATION_PARAMS_V545]
-			abi.allocationClass[nvgpu.NV01_MEMORY_LOCAL_USER] = rmAllocSimple[nvgpu.NV_MEMORY_ALLOCATION_PARAMS_V545]
-			abi.allocationClass[nvgpu.NV50_MEMORY_VIRTUAL] = rmAllocSimple[nvgpu.NV_MEMORY_ALLOCATION_PARAMS_V545]
-
-			prevNames := abi.getStructNames
-			abi.getStructNames = func() *driverStructNames {
-				names := prevNames()
-				names.controlNames[nvgpu.NV0000_CTRL_CMD_OS_UNIX_GET_EXPORT_OBJECT_INFO] = getStructName(nvgpu.NV0000_CTRL_OS_UNIX_GET_EXPORT_OBJECT_INFO_PARAMS_V545{})
-				names.allocationNames[nvgpu.RM_USER_SHARED_DATA] = getStructName(nvgpu.NV00DE_ALLOC_PARAMETERS_V545{})
-				names.allocationNames[nvgpu.NV_MEMORY_MULTICAST_FABRIC] = getStructName(nvgpu.NV00FD_ALLOCATION_PARAMETERS_V545{})
-				names.allocationNames[nvgpu.NV01_MEMORY_SYSTEM] = getStructName(nvgpu.NV_MEMORY_ALLOCATION_PARAMS_V545{})
-				names.allocationNames[nvgpu.NV01_MEMORY_LOCAL_USER] = getStructName(nvgpu.NV_MEMORY_ALLOCATION_PARAMS_V545{})
-				names.allocationNames[nvgpu.NV50_MEMORY_VIRTUAL] = getStructName(nvgpu.NV_MEMORY_ALLOCATION_PARAMS_V545{})
-
-				return names
-			}
-
-			return abi
-		}
+		_ = addDriverABI(535, 161, 07, "edc527f1dcfa0212a3bf815ebf302d45ef9663834a41e11a851dd38da159a8cd", v535_161_07)
+		v535_161_08 := addDriverABI(535, 161, 8 /*08*/, "0f026c2e6161c0bd453830903c55569e402eb1cf0c5a8e56c39e7998df55565c", v535_161_07)
+		v535_183_01 := addDriverABI(535, 183, 01, "f6707afbdda9407e3cbc2e5128e60bcbcdbf02fae29958c72fafb5d405e8b883", v535_161_08)
 
 		// 550.40.07 is an intermediate unqualified version from the main branch.
 		v550_40_07 := func() *driverABI {
-			abi := v545_23_06()
+			abi := v535_183_01()
 			abi.frontendIoctl[nvgpu.NV_ESC_WAIT_OPEN_COMPLETE] = frontendIoctlSimple // nv_ioctl_wait_open_complete_t
 			abi.controlCmd[nvgpu.NV0000_CTRL_CMD_GPU_ASYNC_ATTACH_ID] = rmControlSimple
 			abi.controlCmd[nvgpu.NV0000_CTRL_CMD_GPU_WAIT_ATTACH_ID] = rmControlSimple
@@ -623,7 +588,13 @@ func Init() {
 			// src/nvidia/src/kernel/rmapi/binary_api.c:binapiControl_IMPL().
 			abi.controlCmd[(nvgpu.NV2081_BINAPI<<16)|0x0108] = rmControlSimple
 			abi.controlCmd[nvgpu.NV0000_CTRL_CMD_SYSTEM_GET_P2P_CAPS] = ctrlClientSystemGetP2PCapsV550
+			abi.controlCmd[nvgpu.NV0000_CTRL_CMD_OS_UNIX_GET_EXPORT_OBJECT_INFO] = ctrlHasFrontendFD[nvgpu.NV0000_CTRL_OS_UNIX_GET_EXPORT_OBJECT_INFO_PARAMS_V545]
 			abi.uvmIoctl[nvgpu.UVM_SET_PREFERRED_LOCATION] = uvmIoctlSimple[nvgpu.UVM_SET_PREFERRED_LOCATION_PARAMS_V550]
+			abi.allocationClass[nvgpu.RM_USER_SHARED_DATA] = rmAllocSimple[nvgpu.NV00DE_ALLOC_PARAMETERS_V545]
+			abi.allocationClass[nvgpu.NV_MEMORY_MULTICAST_FABRIC] = rmAllocSimple[nvgpu.NV00FD_ALLOCATION_PARAMETERS_V545]
+			abi.allocationClass[nvgpu.NV01_MEMORY_SYSTEM] = rmAllocSimple[nvgpu.NV_MEMORY_ALLOCATION_PARAMS_V545]
+			abi.allocationClass[nvgpu.NV01_MEMORY_LOCAL_USER] = rmAllocSimple[nvgpu.NV_MEMORY_ALLOCATION_PARAMS_V545]
+			abi.allocationClass[nvgpu.NV50_MEMORY_VIRTUAL] = rmAllocSimple[nvgpu.NV_MEMORY_ALLOCATION_PARAMS_V545]
 
 			prevNames := abi.getStructNames
 			abi.getStructNames = func() *driverStructNames {
@@ -638,7 +609,14 @@ func Init() {
 				// As such, there are no structs defined in the driver for this.
 				names.controlNames[(nvgpu.NV2081_BINAPI<<16)|0x0108] = nil
 				names.controlNames[nvgpu.NV0000_CTRL_CMD_SYSTEM_GET_P2P_CAPS] = getStructName(nvgpu.NV0000_CTRL_SYSTEM_GET_P2P_CAPS_PARAMS_V550{})
+				names.controlNames[nvgpu.NV0000_CTRL_CMD_OS_UNIX_GET_EXPORT_OBJECT_INFO] = getStructName(nvgpu.NV0000_CTRL_OS_UNIX_GET_EXPORT_OBJECT_INFO_PARAMS_V545{})
 				names.uvmNames[nvgpu.UVM_SET_PREFERRED_LOCATION] = getStructName(nvgpu.UVM_SET_PREFERRED_LOCATION_PARAMS_V550{})
+
+				names.allocationNames[nvgpu.RM_USER_SHARED_DATA] = getStructName(nvgpu.NV00DE_ALLOC_PARAMETERS_V545{})
+				names.allocationNames[nvgpu.NV_MEMORY_MULTICAST_FABRIC] = getStructName(nvgpu.NV00FD_ALLOCATION_PARAMETERS_V545{})
+				names.allocationNames[nvgpu.NV01_MEMORY_SYSTEM] = getStructName(nvgpu.NV_MEMORY_ALLOCATION_PARAMS_V545{})
+				names.allocationNames[nvgpu.NV01_MEMORY_LOCAL_USER] = getStructName(nvgpu.NV_MEMORY_ALLOCATION_PARAMS_V545{})
+				names.allocationNames[nvgpu.NV50_MEMORY_VIRTUAL] = getStructName(nvgpu.NV_MEMORY_ALLOCATION_PARAMS_V545{})
 
 				return names
 			}
