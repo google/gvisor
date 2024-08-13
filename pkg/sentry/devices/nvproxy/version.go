@@ -138,16 +138,22 @@ type driverABI struct {
 
 // To help with verifying and supporting new driver versions, we want to keep
 // track of all the driver structs that we currently support. We do so by mapping ioctl
-// numbers to a list of struct names used by that ioctl.
+// numbers to a list of DriverStructs used by that ioctl.
 type driverStructNames struct {
-	frontendNames   map[uint32][]DriverStructName
-	uvmNames        map[uint32][]DriverStructName
-	controlNames    map[uint32][]DriverStructName
-	allocationNames map[nvgpu.ClassID][]DriverStructName
+	frontendNames   map[uint32][]DriverStruct
+	uvmNames        map[uint32][]DriverStruct
+	controlNames    map[uint32][]DriverStruct
+	allocationNames map[nvgpu.ClassID][]DriverStruct
 }
 
 // DriverStructName is the name of a struct used by the Nvidia driver.
 type DriverStructName = string
+
+// DriverStruct ties an nvproxy struct type to its corresponding driver struct name.
+type DriverStruct struct {
+	Name DriverStructName
+	Type reflect.Type
+}
 
 // abis is a global map containing all supported Nvidia driver ABIs. This is
 // initialized on Init() and is immutable henceforth.
@@ -369,7 +375,7 @@ func Init() {
 
 				getStructNames: func() *driverStructNames {
 					return &driverStructNames{
-						frontendNames: map[uint32][]DriverStructName{
+						frontendNames: map[uint32][]DriverStruct{
 							nvgpu.NV_ESC_CARD_INFO:                     simpleIoctl("nv_ioctl_card_info_t"),
 							nvgpu.NV_ESC_CHECK_VERSION_STR:             getStructName(nvgpu.RMAPIVersion{}),
 							nvgpu.NV_ESC_ATTACH_GPUS_TO_FD:             nil, // NvU32 array containing GPU IDs
@@ -389,7 +395,7 @@ func Init() {
 							nvgpu.NV_ESC_RM_VID_HEAP_CONTROL:           getStructName(nvgpu.NVOS32Parameters{}),
 							nvgpu.NV_ESC_RM_MAP_MEMORY:                 getStructName(nvgpu.IoctlNVOS33ParametersWithFD{}),
 						},
-						uvmNames: map[uint32][]DriverStructName{
+						uvmNames: map[uint32][]DriverStruct{
 							nvgpu.UVM_INITIALIZE:                     getStructName(nvgpu.UVM_INITIALIZE_PARAMS{}),
 							nvgpu.UVM_DEINITIALIZE:                   nil, // Doesn't have any params
 							nvgpu.UVM_CREATE_RANGE_GROUP:             getStructName(nvgpu.UVM_CREATE_RANGE_GROUP_PARAMS{}),
@@ -416,7 +422,7 @@ func Init() {
 							nvgpu.UVM_CREATE_EXTERNAL_RANGE:          getStructName(nvgpu.UVM_CREATE_EXTERNAL_RANGE_PARAMS{}),
 							nvgpu.UVM_MM_INITIALIZE:                  getStructName(nvgpu.UVM_MM_INITIALIZE_PARAMS{}),
 						},
-						controlNames: map[uint32][]DriverStructName{
+						controlNames: map[uint32][]DriverStruct{
 							nvgpu.NV0000_CTRL_CMD_CLIENT_GET_ADDR_SPACE_TYPE:        simpleIoctl("NV0000_CTRL_CLIENT_GET_ADDR_SPACE_TYPE_PARAMS"),
 							nvgpu.NV0000_CTRL_CMD_CLIENT_SET_INHERITED_SHARE_POLICY: simpleIoctl("NV0000_CTRL_CLIENT_SET_INHERITED_SHARE_POLICY_PARAMS"),
 							nvgpu.NV0000_CTRL_CMD_GPU_GET_ATTACHED_IDS:              simpleIoctl("NV0000_CTRL_GPU_GET_ATTACHED_IDS_PARAMS"),
@@ -523,7 +529,7 @@ func Init() {
 							nvgpu.NV2080_CTRL_CMD_GR_GET_INFO:                                      getStructName(nvgpu.NV2080_CTRL_GR_GET_INFO_PARAMS{}),
 							nvgpu.NV503C_CTRL_CMD_REGISTER_VA_SPACE:                                getStructName(nvgpu.NV503C_CTRL_REGISTER_VA_SPACE_PARAMS{}),
 						},
-						allocationNames: map[nvgpu.ClassID][]DriverStructName{
+						allocationNames: map[nvgpu.ClassID][]DriverStruct{
 							nvgpu.NV01_ROOT:                  getStructName(nvgpu.Handle{}),
 							nvgpu.NV01_ROOT_NON_PRIV:         getStructName(nvgpu.Handle{}),
 							nvgpu.NV01_MEMORY_SYSTEM:         getStructName(nvgpu.NV_MEMORY_ALLOCATION_PARAMS{}),
@@ -665,13 +671,18 @@ func Init() {
 
 // simpleIoctl simply returns a slice containing structName. This is used for ioctls that don't
 // have a struct defined in nvproxy, but we know the driver struct name.
-func simpleIoctl(structName string) []DriverStructName {
-	return []DriverStructName{structName}
+func simpleIoctl(structName string) []DriverStruct {
+	return []DriverStruct{
+		DriverStruct{
+			Name: structName,
+			Type: nil,
+		},
+	}
 }
 
 // getStructName takes an instance of an nvproxy struct and reads the `nvproxy` tag to determine the
 // struct name. If the tag is empty, then it returns nil.
-func getStructName(params any) []DriverStructName {
+func getStructName(params any) []DriverStruct {
 	paramType := reflect.TypeOf(params)
 
 	// Right now, we only expect parameter structs
@@ -680,14 +691,14 @@ func getStructName(params any) []DriverStructName {
 	}
 
 	// Look through each field for the tag, panicking if there are not exactly one.
-	driverName, found := "", false
+	tagName, found := "", false
 	for i := 0; i < paramType.NumField(); i++ {
 		field := paramType.Field(i)
 		if name, ok := field.Tag.Lookup("nvproxy"); ok {
 			if found {
 				panic(fmt.Sprintf("multiple nvproxy tags for %v", paramType.Name()))
 			}
-			driverName = name
+			tagName = name
 			found = true
 		}
 	}
@@ -695,13 +706,21 @@ func getStructName(params any) []DriverStructName {
 	if !found {
 		panic(fmt.Sprintf("missing nvproxy tag for %v", paramType.Name()))
 	}
-	switch driverName {
+	var driverName string
+	switch tagName {
 	case "":
 		return nil
 	case "same":
-		return []DriverStructName{paramType.Name()}
+		driverName = paramType.Name()
 	default:
-		return []DriverStructName{driverName}
+		driverName = tagName
+	}
+
+	return []DriverStruct{
+		DriverStruct{
+			Name: driverName,
+			Type: paramType,
+		},
 	}
 }
 
@@ -786,25 +805,50 @@ func SupportedStructNames(version DriverVersion) ([]DriverStructName, bool) {
 	names := abi.getStructNames()
 
 	var allNames []DriverStructName
-	for _, names := range names.frontendNames {
-		if names != nil {
-			allNames = append(allNames, names...)
+	addNames := func(names []DriverStruct) {
+		for _, name := range names {
+			allNames = append(allNames, name.Name)
 		}
+	}
+
+	for _, names := range names.frontendNames {
+		addNames(names)
 	}
 	for _, names := range names.uvmNames {
-		if names != nil {
-			allNames = append(allNames, names...)
-		}
+		addNames(names)
 	}
 	for _, names := range names.controlNames {
-		if names != nil {
-			allNames = append(allNames, names...)
-		}
+		addNames(names)
 	}
 	for _, names := range names.allocationNames {
-		if names != nil {
-			allNames = append(allNames, names...)
-		}
+		addNames(names)
+	}
+
+	return allNames, true
+}
+
+// SupportedStructTypes returns the list of struct types supported by the given driver version.
+// It merges the frontend, uvm, control, and allocation names into one slice.
+func SupportedStructTypes(version DriverVersion) ([]DriverStruct, bool) {
+	namesCons, ok := abis[version]
+	if !ok {
+		return nil, false
+	}
+	abi := namesCons.cons()
+	names := abi.getStructNames()
+
+	var allNames []DriverStruct
+	for _, names := range names.frontendNames {
+		allNames = append(allNames, names...)
+	}
+	for _, names := range names.uvmNames {
+		allNames = append(allNames, names...)
+	}
+	for _, names := range names.controlNames {
+		allNames = append(allNames, names...)
+	}
+	for _, names := range names.allocationNames {
+		allNames = append(allNames, names...)
 	}
 
 	return allNames, true
