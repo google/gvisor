@@ -3,10 +3,8 @@
 Docker is a platform designed to help developers build, share, and run container
 applications.
 
-In gVisor, all basic docker commands should function as expected. However, it's
-important to note that, currently, only the host network driver is supported.
-This means that both 'docker run' and 'docker build' commands must be executed
-with the `--network=host` option.
+In gVisor, all basic docker commands should function as expected. The host
+network driver and the bridge network driver are tested and supported.
 
 ## How to run Docker in a gVisor container
 
@@ -42,10 +40,10 @@ RUN mkdir -p /usr/share/cowsay/cows/
 RUN curl -o /usr/share/cowsay/cows/docker.cow https://raw.githubusercontent.com/docker/whalesay/master/docker.cow
 ENTRYPOINT ["/usr/games/cowsay", "-f", "docker.cow"]
 EOF
-$ docker build --network=host -t whalesay .
+$ docker build -t whalesay .
 ....
 Successfully tagged whalesay:latest
-$ docker run --network host -it --rm whalesay "Containers do not contain, but gVisor-s do!"
+$ docker run -it --rm whalesay "Containers do not contain, but gVisor-s do!"
  _________________________________________
 / Containers do not contain, but gVisor-s \
 \ do!                                     /
