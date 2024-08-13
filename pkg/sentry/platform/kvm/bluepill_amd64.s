@@ -40,30 +40,6 @@
 // System call definitions.
 #define SYS_MMAP 9
 
-// See bluepill.go.
-TEXT ·bluepill(SB),NOSPLIT|NOFRAME,$0
-begin:
-	MOVQ arg+0(FP), AX
-	LEAQ VCPU_CPU(AX), BX
-
-	// The gorountine stack will be changed in guest which renders
-	// the frame pointer outdated and misleads perf tools.
-	// Disconnect the frame-chain with the zeroed frame pointer
-	// when it is saved in the frame in bluepillHandler().
-	MOVQ BP, CX
-	MOVQ $0, BP
-	BYTE CLI;
-	MOVQ CX, BP
-check_vcpu:
-	MOVQ ENTRY_CPU_SELF(GS), CX
-	CMPQ BX, CX
-	JE right_vCPU
-wrong_vcpu:
-	CALL ·redpill(SB)
-	JMP begin
-right_vCPU:
-	RET
-
 // sighandler: see bluepill.go for documentation.
 //
 // The arguments are the following:
@@ -122,6 +98,17 @@ fallback:
 	MOVQ ·savedSigsysHandler(SB), AX
 	JMP AX
 
+TEXT ·rflags(SB), $8-8
+	PUSHFQ
+	POPQ AX
+	MOVQ AX, ret+0(FP)
+	RET
+
+TEXT ·addrOfBluepillUserHandler(SB), $0-8
+	MOVQ $·bluepillUserHandler(SB), AX
+	MOVQ AX, ret+0(FP)
+	RET
+
 // func addrOfSighandler() uintptr
 TEXT ·addrOfSigsysHandler(SB), $0-8
 	MOVQ $·sigsysHandler(SB), AX
@@ -137,5 +124,10 @@ TEXT ·dieTrampoline(SB),NOSPLIT|NOFRAME,$0
 // func addrOfDieTrampoline() uintptr
 TEXT ·addrOfDieTrampoline(SB), $0-8
 	MOVQ $·dieTrampoline(SB), AX
+	MOVQ AX, ret+0(FP)
+	RET
+
+TEXT ·currentCPU(SB), $0-8
+	MOVQ ENTRY_CPU_SELF(GS), AX
 	MOVQ AX, ret+0(FP)
 	RET

@@ -23,6 +23,7 @@ import (
 	"reflect"
 	"runtime"
 	"runtime/debug"
+	"unsafe"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -30,6 +31,7 @@ import (
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/ring0"
 	"gvisor.dev/gvisor/pkg/ring0/pagetables"
+	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	ktime "gvisor.dev/gvisor/pkg/sentry/time"
 )
@@ -77,6 +79,10 @@ type vCPUArchState struct {
 	//
 	// This starts above fixedKernelPCID.
 	PCIDs *pagetables.PCIDs
+
+	bluepillStack           uintptr
+	bluepillSigframe        *arch.UContext64
+	bluepillSigframeFPState uintptr
 }
 
 const (
@@ -95,6 +101,26 @@ const (
 
 // initArchState initializes architecture-specific state.
 func (c *vCPU) initArchState() error {
+	stackSize := uintptr(hostarch.PageSize)
+
+	maxFPUSizeUint, fpuAlignmentUint := cpuid.HostFeatureSet().ExtendedStateSize()
+	fpuAlignment := uintptr(fpuAlignmentUint)
+	maxFPUSize := uintptr(maxFPUSizeUint)
+
+	fpuOffset := (unsafe.Sizeof(arch.UContext64{}) + fpuAlignment - 1) / fpuAlignment * fpuAlignment
+	mappingSize, _ := hostarch.PageRoundUp(stackSize + maxFPUSize + fpuOffset)
+
+	addr, _, errno := unix.Syscall6(unix.SYS_MMAP, 0, mappingSize,
+		uintptr(unix.PROT_READ|unix.PROT_WRITE),
+		uintptr(unix.MAP_PRIVATE|unix.MAP_ANONYMOUS),
+		0, 0)
+	if errno != 0 {
+		return fmt.Errorf("mmap failed: %d", errno)
+	}
+	c.bluepillStack = addr + stackSize
+	c.bluepillSigframe = (*arch.UContext64)(unsafe.Pointer(addr + stackSize))
+	c.bluepillSigframeFPState = addr + stackSize + fpuOffset
+
 	var (
 		kernelSystemRegs systemRegs
 		kernelUserRegs   userRegs

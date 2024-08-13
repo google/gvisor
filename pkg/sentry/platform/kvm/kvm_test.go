@@ -510,6 +510,7 @@ func BenchmarkKernelSyscall(b *testing.B) {
 	applicationTest(b, true, testutil.AddrOfGetpid(), func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {
 		// iteration does not include machine.Get() / machine.Put().
 		for i := 0; i < b.N; i++ {
+			bluepill(c)
 			testutil.Getpid()
 		}
 		return false

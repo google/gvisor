@@ -21,8 +21,10 @@ import (
 	"unsafe"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/ring0"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/sigframe"
 )
 
 // dieArchSetup initializes the state for dieTrampoline.
@@ -140,4 +142,40 @@ func bluepillReadyStopGuest(c *vCPU) bool {
 //go:nosplit
 func bluepillArchHandleExit(c *vCPU, context unsafe.Pointer) {
 	c.die(bluepillArchContext(context), "unknown")
+}
+
+func addrOfBluepillUserHandler() uintptr
+func rflags() uint64
+
+const _RFLAGS_IF = 1 << 9
+
+func currentCPU() *vCPU
+
+// bluepill enters guest mode.
+//
+//go:nosplit
+func bluepill(c *vCPU) {
+	// Interrupts are always disabled in the VM.
+	if rflags()&_RFLAGS_IF == 0 {
+		if currentCPU() != c {
+			redpill()
+		} else {
+			// Already in the vm.
+			return
+		}
+	}
+
+	// Block all signals.
+	sigmask := linux.SignalSet(^uint64(0))
+	sigframe.CallUserSignalHandler(c.bluepillStack, addrOfBluepillUserHandler(), uintptr(unsafe.Pointer(c)), c.bluepillSigframe, c.bluepillSigframeFPState, &sigmask)
+}
+
+// +checkescape:all
+//
+//go:nosplit
+func bluepillUserHandler(frame uintptr) {
+	// Sanitize the registers; interrupts must always be disabled.
+	c := bluepillArchEnter(bluepillArchContext(unsafe.Pointer(frame)))
+	bluepillHandler(unsafe.Pointer(frame))
+	sigframe.UserSigreturn(c.bluepillSigframe)
 }
