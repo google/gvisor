@@ -81,13 +81,15 @@ func getDriverDefs(t *testing.T, runner *parser.Runner, version nvproxy.DriverVe
 // TestSupportedStructNames tests that all the structs listed in nvproxy are found in the driver
 // source code.
 func TestSupportedStructNames(t *testing.T) {
-	f, runner := createParserRunner(t)
-	defer f.Close()
 	nvproxy.Init()
 
 	// Run the parser on all supported driver versions
 	nvproxy.ForEachSupportDriver(func(version nvproxy.DriverVersion, checksum string) {
 		t.Run(version.String(), func(t *testing.T) {
+			t.Parallel()
+			f, runner := createParserRunner(t)
+			defer f.Close()
+
 			structNames, defs := getDriverDefs(t, runner, version)
 
 			// Check that every struct is found in the parser output.
@@ -102,13 +104,17 @@ func TestSupportedStructNames(t *testing.T) {
 	})
 }
 
+// TestStructDefinitionParity tests that the struct definitions in nvproxy are the same as the
+// definitions in the driver source code.
 func TestStructDefinitionParity(t *testing.T) {
-	f, runner := createParserRunner(t)
-	defer f.Close()
 	nvproxy.Init()
 
 	nvproxy.ForEachSupportDriver(func(version nvproxy.DriverVersion, checksum string) {
 		t.Run(version.String(), func(t *testing.T) {
+			t.Parallel()
+			f, runner := createParserRunner(t)
+			defer f.Close()
+
 			_, defs := getDriverDefs(t, runner, version)
 
 			nvproxyDefs, ok := nvproxy.SupportedStructTypes(version)
