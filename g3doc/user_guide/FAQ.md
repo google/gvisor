@@ -8,9 +8,8 @@ Today, gVisor requires Linux.
 
 ### What CPU architectures are supported? {#supported-cpus}
 
-gVisor currently supports [x86_64/AMD64](https://en.wikipedia.org/wiki/X86-64)
-compatible processors. Preliminary support is also available for
-[ARM64](https://en.wikipedia.org/wiki/ARM_architecture#AArch64).
+gVisor supports [x86_64/AMD64](https://en.wikipedia.org/wiki/X86-64) and
+[ARM64](https://en.wikipedia.org/wiki/ARM_architecture#AArch64) processors.
 
 ### Do I need to modify my Linux application to use gVisor? {#modify-app}
 
@@ -60,7 +59,7 @@ This is tracked in [bug #268](https://gvisor.dev/issue/268).
 
 You're using an old version of Docker. See [Docker Quick Start][docker].
 
-### I can’t see a file copied with: `docker cp` {#fs-cache}
+### I can't see a file copied with: `docker cp` {#fs-cache}
 
 For performance reasons, gVisor caches directory contents, and therefore it may
 not realize a new file was copied to a given directory. To invalidate the cache
