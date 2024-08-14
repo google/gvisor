@@ -116,7 +116,9 @@ func InterpretRule(ruleString string) (*Rule, error) {
 		if err != nil {
 			return nil, err
 		}
-		r.AddOperation(op)
+		if err := r.AddOperation(op); err != nil {
+			return nil, err
+		}
 	}
 
 	return r, nil
