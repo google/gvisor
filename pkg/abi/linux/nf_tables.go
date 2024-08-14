@@ -92,3 +92,30 @@ const (
 	NFT_CMP_GT         // greater than
 	NFT_CMP_GTE        // greater than or equal to
 )
+
+// Nf table payload expression offset bases.
+// Used by the nft payload operations to access appropriate data in the packet.
+// These correspond to enum values in include/uapi/linux/netfilter/nf_tables.h.
+const (
+	NFT_PAYLOAD_LL_HEADER        = iota // link layer header
+	NFT_PAYLOAD_NETWORK_HEADER          // network header
+	NFT_PAYLOAD_TRANSPORT_HEADER        // transport header
+	NFT_PAYLOAD_INNER_HEADER            // inner header / payload
+	NFT_PAYLOAD_TUN_HEADER              // tunneling protocol header
+)
+
+// Nf table payload expression checksum types.
+// Used by the nft payload set operation to mark the type of checksum to use.
+// These correspond to enum values in include/uapi/linux/netfilter/nf_tables.h.
+const (
+	NFT_PAYLOAD_CSUM_NONE = iota // no checksumming
+	NFT_PAYLOAD_CSUM_INET        // internet checksum (RFC 791)
+	NFT_PAYLOAD_CSUM_SCTP        // CRC-32c, for use in SCTP header (RFC 3309)
+)
+
+// Nf table payload expression checksum flags.
+// Used by the nft payload set operation to mark the flags for checksumming.
+// These correspond to enum values in include/uapi/linux/netfilter/nf_tables.h.
+const (
+	NFT_PAYLOAD_L4CSUM_PSEUDOHDR = (1 << 0) // use pseudoheader for L4 checksum
+)

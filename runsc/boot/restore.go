@@ -128,7 +128,7 @@ func (r *restorer) restoreContainerInfo(l *Loader, info *containerInfo) error {
 	return nil
 }
 
-func createNetworStackForRestore(l *Loader) (*stack.Stack, inet.Stack) {
+func createNetworkStackForRestore(l *Loader) (*stack.Stack, inet.Stack) {
 	// Save the current network stack to slap on top of the one that was restored.
 	curNetwork := l.k.RootNetworkNamespace().Stack()
 	if eps, ok := curNetwork.(*netstack.Stack); ok {
@@ -142,7 +142,7 @@ func (r *restorer) restore(l *Loader) error {
 
 	// Create a new root network namespace with the network stack of the
 	// old kernel to preserve the existing network configuration.
-	oldStack, oldInetStack := createNetworStackForRestore(l)
+	oldStack, oldInetStack := createNetworkStackForRestore(l)
 
 	// Reset the network stack in the network namespace to nil before
 	// replacing the kernel. This will not free the network stack when this
