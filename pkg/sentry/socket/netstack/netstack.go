@@ -2625,6 +2625,8 @@ func setSockOptIP(t *kernel.Task, s socket.Socket, ep commonEndpoint, name int, 
 			v = int32(tcpip.PMTUDiscoveryDo)
 		case linux.IP_PMTUDISC_PROBE:
 			v = int32(tcpip.PMTUDiscoveryProbe)
+		case linux.IP_PMTUDISC_INTERFACE, linux.IP_PMTUDISC_OMIT:
+			return nil // Noop.
 		default:
 			return syserr.ErrNotSupported
 		}

@@ -2755,6 +2755,20 @@ TEST_P(SimpleTcpSocketTest, SetTCPCorkOff) {
 }
 #endif  // __linux__
 
+TEST_P(SimpleTcpSocketTest, SetUnsupportedPMTUDISC) {
+  int fd;
+  ASSERT_THAT(fd = socket(GetParam(), SOCK_STREAM, IPPROTO_TCP),
+              SyscallSucceeds());
+
+  int set = IP_PMTUDISC_INTERFACE;
+  socklen_t length = sizeof(set);
+  EXPECT_THAT(setsockopt(fd, IPPROTO_IP, IP_MTU_DISCOVER, &set, length),
+              SyscallSucceeds());
+  set = IP_PMTUDISC_OMIT;
+  EXPECT_THAT(setsockopt(fd, IPPROTO_IP, IP_MTU_DISCOVER, &set, length),
+              SyscallSucceeds());
+}
+
 INSTANTIATE_TEST_SUITE_P(AllInetTests, SimpleTcpSocketTest,
                          ::testing::Values(AF_INET, AF_INET6));
 
