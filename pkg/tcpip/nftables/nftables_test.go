@@ -290,6 +290,284 @@ func TestEvaluateImmediate(t *testing.T) {
 	}
 }
 
+// TestEvaluateComparison tests that the Comparison operation correctly compares
+// the data in the source register to the given data.
+// Note: Relies on expected behavior of the Immediate operation.
+func TestEvaluateComparison(t *testing.T) {
+	for _, test := range []struct {
+		tname string
+		op1   Operation // will be nil if unused
+		op2   Operation // will be nil if unused
+		res   bool      // should be true if we reach end of the rule (no breaks)
+	}{
+		{
+			tname: "compare register == 4-byte data, true",
+			op1:   mustCreateImmediate(t, linux.NFT_REG_1, NewBytesData([]byte{0, 0, 0, 0})),
+			op2:   mustCreateComparison(t, linux.NFT_REG_1, linux.NFT_CMP_EQ, NewBytesData([]byte{0, 0, 0, 0})),
+			res:   true,
+		},
+		{
+			tname: "compare register == 4-byte data, false",
+			op1:   mustCreateImmediate(t, linux.NFT_REG32_11, NewBytesData([]byte{1, 0, 0, 0})),
+			op2:   mustCreateComparison(t, linux.NFT_REG32_11, linux.NFT_CMP_EQ, NewBytesData([]byte{0, 0, 0, 0})),
+			res:   false,
+		},
+		{
+			tname: "compare register != 4-byte data, true",
+			op1:   mustCreateImmediate(t, linux.NFT_REG32_03, NewBytesData([]byte{1, 7, 0, 0})),
+			op2:   mustCreateComparison(t, linux.NFT_REG32_03, linux.NFT_CMP_NEQ, NewBytesData([]byte{1, 98, 0, 56})),
+			res:   true,
+		},
+		{
+			tname: "compare register != 4-byte data, false",
+			op1:   mustCreateImmediate(t, linux.NFT_REG_3, NewBytesData([]byte{1, 98, 0, 56})),
+			op2:   mustCreateComparison(t, linux.NFT_REG_3, linux.NFT_CMP_NEQ, NewBytesData([]byte{1, 98, 0, 56})),
+			res:   false,
+		},
+		{
+			tname: "compare register < 4-byte data, true",
+			op1:   mustCreateImmediate(t, linux.NFT_REG_4, NewBytesData([]byte{29, 0, 0, 0})),
+			op2:   mustCreateComparison(t, linux.NFT_REG_4, linux.NFT_CMP_LT, NewBytesData([]byte{100, 0, 0, 0})),
+			res:   true,
+		},
+		{
+			tname: "compare register < 4-byte data, false eq",
+			op1:   mustCreateImmediate(t, linux.NFT_REG32_04, NewBytesData([]byte{100, 0, 0, 0})),
+			op2:   mustCreateComparison(t, linux.NFT_REG32_04, linux.NFT_CMP_LT, NewBytesData([]byte{100, 0, 0, 0})),
+			res:   false,
+		},
+		{
+			tname: "compare register < 4-byte data, false gt",
+			op1:   mustCreateImmediate(t, linux.NFT_REG32_14, NewBytesData([]byte{200, 0, 0, 0})),
+			op2:   mustCreateComparison(t, linux.NFT_REG32_14, linux.NFT_CMP_LT, NewBytesData([]byte{100, 0, 0, 0})),
+			res:   false,
+		},
+		{
+			tname: "compare register > 4-byte data, true",
+			op1:   mustCreateImmediate(t, linux.NFT_REG32_15, NewBytesData([]byte{0, 0, 0, 1})),
+			op2:   mustCreateComparison(t, linux.NFT_REG32_15, linux.NFT_CMP_GT, NewBytesData([]byte{29, 76, 230, 0})),
+			res:   true,
+		},
+		{
+			tname: "compare register > 4-byte data, false eq",
+			op1:   mustCreateImmediate(t, linux.NFT_REG32_07, NewBytesData([]byte{29, 76, 230, 0})),
+			op2:   mustCreateComparison(t, linux.NFT_REG32_07, linux.NFT_CMP_GT, NewBytesData([]byte{29, 76, 230, 0})),
+			res:   false,
+		},
+		{
+			tname: "compare register > 4-byte data, false lt",
+			op1:   mustCreateImmediate(t, linux.NFT_REG32_05, NewBytesData([]byte{28, 76, 230, 0})),
+			op2:   mustCreateComparison(t, linux.NFT_REG32_05, linux.NFT_CMP_GT, NewBytesData([]byte{29, 76, 230, 0})),
+			res:   false,
+		},
+		{
+			tname: "compare register <= 4-byte data, true lt",
+			op1:   mustCreateImmediate(t, linux.NFT_REG_2, NewBytesData([]byte{29, 0, 0, 0})),
+			op2:   mustCreateComparison(t, linux.NFT_REG_2, linux.NFT_CMP_LTE, NewBytesData([]byte{100, 0, 0, 0})),
+			res:   true,
+		},
+		{
+			tname: "compare register <= 4-byte data, true eq",
+			op1:   mustCreateImmediate(t, linux.NFT_REG32_09, NewBytesData([]byte{100, 0, 0, 0})),
+			op2:   mustCreateComparison(t, linux.NFT_REG32_09, linux.NFT_CMP_LTE, NewBytesData([]byte{100, 0, 0, 0})),
+			res:   true,
+		},
+		{
+			tname: "compare register <= 4-byte data, false",
+			op1:   mustCreateImmediate(t, linux.NFT_REG32_06, NewBytesData([]byte{200, 0, 0, 0})),
+			op2:   mustCreateComparison(t, linux.NFT_REG32_06, linux.NFT_CMP_LTE, NewBytesData([]byte{100, 0, 0, 0})),
+			res:   false,
+		},
+		{
+			tname: "compare register >= 4-byte data, true gt",
+			op1:   mustCreateImmediate(t, linux.NFT_REG32_12, NewBytesData([]byte{0, 0, 0, 1})),
+			op2:   mustCreateComparison(t, linux.NFT_REG32_12, linux.NFT_CMP_GTE, NewBytesData([]byte{29, 76, 230, 0})),
+			res:   true,
+		},
+		{
+			tname: "compare register >= 4-byte data, true eq",
+			op1:   mustCreateImmediate(t, linux.NFT_REG_1, NewBytesData([]byte{29, 76, 230, 0})),
+			op2:   mustCreateComparison(t, linux.NFT_REG_1, linux.NFT_CMP_GTE, NewBytesData([]byte{29, 76, 230, 0})),
+			res:   true,
+		},
+		{
+			tname: "compare register >= 4-byte data, false",
+			op1:   mustCreateImmediate(t, linux.NFT_REG_3, NewBytesData([]byte{28, 76, 230, 0})),
+			op2:   mustCreateComparison(t, linux.NFT_REG_3, linux.NFT_CMP_GTE, NewBytesData([]byte{29, 76, 230, 0})),
+			res:   false,
+		},
+		{
+			tname: "compare register == 16-byte data, true",
+			op1:   mustCreateImmediate(t, linux.NFT_REG_1, NewBytesData([]byte{1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0})),
+			op2:   mustCreateComparison(t, linux.NFT_REG_1, linux.NFT_CMP_EQ, NewBytesData([]byte{1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0})),
+			res:   true,
+		},
+		{
+			tname: "compare register == 16-byte data, false",
+			op1:   mustCreateImmediate(t, linux.NFT_REG_2, NewBytesData([]byte{1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0})),
+			op2:   mustCreateComparison(t, linux.NFT_REG_2, linux.NFT_CMP_EQ, NewBytesData([]byte{1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1})),
+			res:   false,
+		},
+		{
+			tname: "compare register != 16-byte data, true",
+			op1:   mustCreateImmediate(t, linux.NFT_REG_3, NewBytesData([]byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16})),
+			op2:   mustCreateComparison(t, linux.NFT_REG_3, linux.NFT_CMP_NEQ, NewBytesData([]byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15})),
+			res:   true,
+		},
+		{
+			tname: "compare register != 16-byte data, false",
+			op1:   mustCreateImmediate(t, linux.NFT_REG_4, NewBytesData([]byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16})),
+			op2:   mustCreateComparison(t, linux.NFT_REG_4, linux.NFT_CMP_NEQ, NewBytesData([]byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16})),
+			res:   false,
+		},
+		{
+			tname: "compare register < 16-byte data, true",
+			op1:   mustCreateImmediate(t, linux.NFT_REG_1, NewBytesData([]byte{0x0a, 0x00, 0x01, 0x1f, 0x00, 0x00, 0x0f, 0x13, 0xc0, 0x09, 0x00, 0x00, 0x0b, 0x13, 0x6a, 0xaa})),
+			op2:   mustCreateComparison(t, linux.NFT_REG_1, linux.NFT_CMP_LT, NewBytesData([]byte{0x0a, 0x00, 0x01, 0x20, 0x00, 0x00, 0x0f, 0x13, 0xc0, 0x09, 0x00, 0x00, 0x0b, 0x13, 0x6a, 0x87})),
+			res:   true,
+		},
+		{
+			tname: "compare register < 16-byte data, false eq",
+			op1:   mustCreateImmediate(t, linux.NFT_REG_2, NewBytesData([]byte{0x0a, 0x00, 0x01, 0x20, 0x00, 0x00, 0x0f, 0x13, 0xc0, 0x09, 0x00, 0x00, 0x0b, 0x13, 0x6a, 0x87})),
+			op2:   mustCreateComparison(t, linux.NFT_REG_2, linux.NFT_CMP_LT, NewBytesData([]byte{0x0a, 0x00, 0x01, 0x20, 0x00, 0x00, 0x0f, 0x13, 0xc0, 0x09, 0x00, 0x00, 0x0b, 0x13, 0x6a, 0x87})),
+			res:   false,
+		},
+		{
+			tname: "compare register < 16-byte data, false gt",
+			op1:   mustCreateImmediate(t, linux.NFT_REG_3, NewBytesData([]byte{0x0a, 0x00, 0x01, 0x21, 0x00, 0x00, 0x0f, 0x13, 0xc0, 0x09, 0x00, 0x00, 0x0b, 0x13, 0x6a, 0xaa})),
+			op2:   mustCreateComparison(t, linux.NFT_REG_3, linux.NFT_CMP_LT, NewBytesData([]byte{0x0a, 0x00, 0x01, 0x20, 0x00, 0x00, 0x0f, 0x13, 0xc0, 0x09, 0x00, 0x00, 0x0b, 0x13, 0x6a, 0x87})),
+			res:   false,
+		},
+		{
+			tname: "compare register > 16-byte data, true",
+			op1:   mustCreateImmediate(t, linux.NFT_REG_4, NewBytesData([]byte{0x0a, 0x00, 0x01, 0x21, 0xaa, 0xaa, 0xaa, 0xaa, 0xc0, 0x09, 0x00, 0x00, 0x0b, 0x13, 0x6a, 0x87})),
+			op2:   mustCreateComparison(t, linux.NFT_REG_4, linux.NFT_CMP_GT, NewBytesData([]byte{0x0a, 0x00, 0x01, 0x20, 0xcc, 0xcc, 0xcc, 0xcc, 0xc0, 0x09, 0x00, 0x00, 0x0b, 0x13, 0x6a, 0x87})),
+			res:   true,
+		},
+		{
+			tname: "compare register > 16-byte data, false eq",
+			op1:   mustCreateImmediate(t, linux.NFT_REG_1, NewBytesData([]byte{0x0a, 0x00, 0x01, 0x20, 0x00, 0x00, 0x0f, 0x13, 0xc0, 0x09, 0x00, 0x00, 0x0b, 0x13, 0x6a, 0x87})),
+			op2:   mustCreateComparison(t, linux.NFT_REG_1, linux.NFT_CMP_GT, NewBytesData([]byte{0x0a, 0x00, 0x01, 0x20, 0x00, 0x00, 0x0f, 0x13, 0xc0, 0x09, 0x00, 0x00, 0x0b, 0x13, 0x6a, 0x87})),
+			res:   false,
+		},
+		{
+			tname: "compare register > 16-byte data, false lt",
+			op1:   mustCreateImmediate(t, linux.NFT_REG_2, NewBytesData([]byte{0x0a, 0x00, 0x01, 0x1f, 0x00, 0x00, 0x0f, 0x13, 0xc0, 0x09, 0x00, 0x00, 0x0b, 0x13, 0x6a, 0x90})),
+			op2:   mustCreateComparison(t, linux.NFT_REG_2, linux.NFT_CMP_GT, NewBytesData([]byte{0x0a, 0x00, 0x01, 0x20, 0x00, 0x00, 0x0f, 0x13, 0xc0, 0x09, 0x00, 0x00, 0x0b, 0x13, 0x6a, 0x87})),
+			res:   false,
+		},
+		{
+			tname: "compare register <= 16-byte data, true lt",
+			op1:   mustCreateImmediate(t, linux.NFT_REG_1, NewBytesData([]byte{0x0a, 0x00, 0x01, 0x20, 0x00, 0x00, 0x0f, 0x13, 0xc0, 0x09, 0x00, 0x00, 0x0b, 0x13, 0x6a, 0x86})),
+			op2:   mustCreateComparison(t, linux.NFT_REG_1, linux.NFT_CMP_LTE, NewBytesData([]byte{0x0a, 0x00, 0x01, 0x20, 0x00, 0x00, 0x0f, 0x13, 0xc0, 0x09, 0x00, 0x00, 0x0b, 0x13, 0x6a, 0x87})),
+			res:   true,
+		},
+		{
+			tname: "compare register <= 16-byte data, true eq",
+			op1:   mustCreateImmediate(t, linux.NFT_REG_2, NewBytesData([]byte{0x0a, 0x00, 0x01, 0x20, 0x00, 0x00, 0x0f, 0x13, 0xc0, 0x09, 0x00, 0x00, 0x0b, 0x13, 0x6a, 0x87})),
+			op2:   mustCreateComparison(t, linux.NFT_REG_2, linux.NFT_CMP_LTE, NewBytesData([]byte{0x0a, 0x00, 0x01, 0x20, 0x00, 0x00, 0x0f, 0x13, 0xc0, 0x09, 0x00, 0x00, 0x0b, 0x13, 0x6a, 0x87})),
+			res:   true,
+		},
+		{
+			tname: "compare register <= 16-byte data, false",
+			op1:   mustCreateImmediate(t, linux.NFT_REG_3, NewBytesData([]byte{0x0a, 0x00, 0x01, 0x20, 0x00, 0x00, 0x0f, 0x13, 0xc0, 0x09, 0xaa, 0x00, 0x0b, 0x13, 0x6a, 0x88})),
+			op2:   mustCreateComparison(t, linux.NFT_REG_3, linux.NFT_CMP_LTE, NewBytesData([]byte{0x0a, 0x00, 0x01, 0x20, 0x00, 0x00, 0x0f, 0x13, 0xc0, 0x09, 0x00, 0x00, 0x0b, 0x13, 0x6a, 0x87})),
+			res:   false,
+		},
+		{
+			tname: "compare register >= 16-byte data, true gt",
+			op1:   mustCreateImmediate(t, linux.NFT_REG_4, NewBytesData([]byte{0xaa, 0xaa, 0xaa, 0x20, 0xaa, 0xaa, 0xaa, 0x13, 0xc0, 0x09, 0x00, 0x00, 0x0b, 0x13, 0x6a, 0x87})),
+			op2:   mustCreateComparison(t, linux.NFT_REG_4, linux.NFT_CMP_GTE, NewBytesData([]byte{0x0a, 0x00, 0x01, 0x20, 0x00, 0x00, 0x0f, 0x13, 0xc0, 0x09, 0x00, 0x00, 0x0b, 0x13, 0x6a, 0x87})),
+			res:   true,
+		},
+		{
+			tname: "compare register >= 16-byte data, true eq",
+			op1:   mustCreateImmediate(t, linux.NFT_REG_3, NewBytesData([]byte{0xab, 0xbc, 0xcd, 0xde, 0xef, 0x00, 0x01, 0x12, 0x23, 0x34, 0x45, 0x56, 0x67, 0x78, 0x89, 0x90})),
+			op2:   mustCreateComparison(t, linux.NFT_REG_3, linux.NFT_CMP_GTE, NewBytesData([]byte{0xab, 0xbc, 0xcd, 0xde, 0xef, 0x00, 0x01, 0x12, 0x23, 0x34, 0x45, 0x56, 0x67, 0x78, 0x89, 0x90})),
+			res:   true,
+		},
+		{
+			tname: "compare register >= 16-byte data, false",
+			op1:   mustCreateImmediate(t, linux.NFT_REG_4, NewBytesData([]byte{0x0a, 0x00, 0x01, 0x20, 0x00, 0x00, 0x0f, 0x13, 0xc0, 0x09, 0x00, 0x00, 0x0a, 0x13, 0x6a, 0x85})),
+			op2:   mustCreateComparison(t, linux.NFT_REG_4, linux.NFT_CMP_GTE, NewBytesData([]byte{0x0a, 0x00, 0x01, 0x20, 0x00, 0x00, 0x0f, 0x13, 0xc0, 0x09, 0x00, 0x00, 0x0b, 0x13, 0x6a, 0x87})),
+			res:   false,
+		},
+		{
+			tname: "compare empty 4-byte register, true",
+			op1:   mustCreateComparison(t, linux.NFT_REG32_10, linux.NFT_CMP_EQ, NewBytesData([]byte{0, 0, 0, 0})),
+			res:   true,
+		},
+		{
+			tname: "compare empty 4-byte register, false",
+			op1:   mustCreateComparison(t, linux.NFT_REG32_11, linux.NFT_CMP_EQ, NewBytesData([]byte{1, 0, 0, 0})),
+			res:   false,
+		},
+		{
+			tname: "compare empty 16-byte register, true",
+			op1:   mustCreateComparison(t, linux.NFT_REG_1, linux.NFT_CMP_LT, NewBytesData([]byte{1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0})),
+			res:   true,
+		},
+		{
+			tname: "compare empty 16-byte register, false",
+			op1:   mustCreateComparison(t, linux.NFT_REG_4, linux.NFT_CMP_GTE, NewBytesData([]byte{1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0})),
+			res:   false,
+		},
+	} {
+		t.Run(test.tname, func(t *testing.T) {
+			// Sets up an NFTables object with a single table, chain, and rule.
+			nf := NewNFTables()
+			tab, err := nf.AddTable(arbitraryFamily, "test", "test table", false)
+			if err != nil {
+				t.Fatalf("unexpected error for AddTable: %v", err)
+			}
+			bc, err := tab.AddChain("base_chain", nil, "test chain", false)
+			if err != nil {
+				t.Fatalf("unexpected error for AddChain: %v", err)
+			}
+			bc.SetBaseChainInfo(arbitraryInfoPolicyAccept)
+			rule := &Rule{}
+
+			// Adds testing operations.
+			if test.op1 != nil {
+				rule.AddOperation(test.op1)
+			}
+			if test.op2 != nil {
+				rule.AddOperation(test.op2)
+			}
+
+			// Add an operation that drops. This is what the final verdict should be
+			// if all the comparisons are true (res = true).
+			rule.AddOperation(mustCreateImmediate(t, linux.NFT_REG_VERDICT, NewVerdictData(Verdict{Code: VC(linux.NF_DROP)})))
+
+			// Registers the rule to the base chain.
+			if err := bc.RegisterRule(rule, -1); err != nil {
+				t.Fatalf("unexpected error for RegisterRule: %v", err)
+			}
+
+			// Runs evaluation and checks verdict.
+			pkt := makeTestingPacket()
+			v, err := nf.EvaluateHook(arbitraryFamily, arbitraryHook, pkt)
+			if err != nil {
+				t.Fatalf("unexpected error for EvaluateHook: %v", err)
+			}
+			// If all comparisons are true, the packet will get to the end of the rule
+			// and the last operation above will set the final verdict to oppose the
+			// base chain policy. If any comparison is false, the comparison operation
+			// will break from the rule and the final verdict will default to the base
+			// chain policy.
+			if test.res {
+				if v.Code != VC(linux.NF_DROP) {
+					t.Fatalf("expected verdict Drop for %t result, got %v", test.res, v)
+				}
+			} else {
+				if v.Code != VC(linux.NF_ACCEPT) {
+					t.Fatalf("expected base chain policy verdict Accept for %t result, got %v", test.res, v)
+				}
+			}
+		})
+	}
+}
+
 // TestLoopCheckOnRegisterAndUnregister tests the loop checking and accompanying
 // logic on registering and unregistering rules.
 func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
@@ -881,4 +1159,13 @@ func mustCreateImmediate(t *testing.T, dreg uint8, data RegisterData) *Immediate
 		t.Fatalf("failed to create immediate: %v", err)
 	}
 	return imm
+}
+
+// mustCreateComparison wraps the NewComparison function for brevity.
+func mustCreateComparison(t *testing.T, sreg uint8, cop int, data RegisterData) *Comparison {
+	cmp, err := NewComparison(sreg, cop, data)
+	if err != nil {
+		t.Fatalf("failed to create comparison: %v", err)
+	}
+	return cmp
 }

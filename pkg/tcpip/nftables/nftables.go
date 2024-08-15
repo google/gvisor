@@ -42,6 +42,8 @@ import (
 	"fmt"
 	"slices"
 
+	"encoding/binary"
+
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
@@ -554,9 +556,6 @@ type Rule struct {
 // Operation represents a single operation in a rule.
 type Operation interface {
 
-	// TypeString returns the string representation of the type of the operation.
-	TypeString() string
-
 	// evaluate evaluates the operation on the given packet and register set,
 	// changing the register set and possibly the packet in place.
 	evaluate(regs *RegisterSet, pkt *stack.PacketBuffer)
@@ -565,6 +564,7 @@ type Operation interface {
 // Ensures all operations implement the Operation interface at compile time.
 var (
 	_ Operation = (*Immediate)(nil)
+	_ Operation = (*Comparison)(nil)
 )
 
 // Immediate is an operation that sets the data in a register.
@@ -581,12 +581,117 @@ func NewImmediate(dreg uint8, data RegisterData) (*Immediate, error) {
 	return &Immediate{dreg: dreg, data: data}, nil
 }
 
-// TypeString for Immediate returns "Immediate" as the string operation type.
-func (op *Immediate) TypeString() string { return "Immediate" }
-
 // evaluate for Immediate sets the data in the destination register.
 func (op Immediate) evaluate(regs *RegisterSet, pkt *stack.PacketBuffer) {
 	op.data.StoreData(regs, op.dreg)
+}
+
+// Comparison is an operation that compares the data in a register to a given
+// value and breaks (by setting the verdict register to NFT_BREAK) from the rule
+// if the comparison is false.
+// Note: comparison operations are not supported for the verdict register.
+type Comparison struct {
+	data RegisterData // Data to compare the source register to.
+	sreg uint8        // Number of the source register.
+	cop  cmpOp        // Comparison operator.
+}
+
+// cmpOp is the comparison operator for a Comparison operation.
+// Note: corresponds to enum nft_cmp_op from
+// include/uapi/linux/netfilter/nf_tables.h and uses the same constants.
+type cmpOp int
+
+// String for NftCmpOp returns the string representation of the comparison
+// operator.
+func (cop cmpOp) String() string {
+	switch cop {
+	case linux.NFT_CMP_EQ:
+		return "=="
+	case linux.NFT_CMP_NEQ:
+		return "!="
+	case linux.NFT_CMP_LT:
+		return "<"
+	case linux.NFT_CMP_LTE:
+		return "<="
+	case linux.NFT_CMP_GT:
+		return ">"
+	case linux.NFT_CMP_GTE:
+		return ">="
+	default:
+		panic(fmt.Sprintf("invalid comparison operator: %d", int(cop)))
+	}
+}
+
+// validateComparisonOp ensures the comparison operator is valid.
+func validateComparisonOp(cop cmpOp) error {
+	switch cop {
+	case linux.NFT_CMP_EQ, linux.NFT_CMP_NEQ, linux.NFT_CMP_LT, linux.NFT_CMP_LTE, linux.NFT_CMP_GT, linux.NFT_CMP_GTE:
+		return nil
+	default:
+		return fmt.Errorf("invalid comparison operator: %d", int(cop))
+	}
+}
+
+// NewComparison creates a new Comparison operation.
+func NewComparison(sreg uint8, op int, data RegisterData) (*Comparison, error) {
+	if sreg == linux.NFT_REG_VERDICT {
+		return nil, fmt.Errorf("comparison operation cannot use verdict register as source")
+	}
+	if err := data.ValidateRegister(sreg); err != nil {
+		return nil, err
+	}
+	cop := cmpOp(op)
+	if err := validateComparisonOp(cop); err != nil {
+		return nil, err
+	}
+	return &Comparison{sreg: sreg, cop: cop, data: data}, nil
+}
+
+// evaluate for Comparison compares the data in the source register to the given
+// data and breaks from the rule if the comparison is false.
+func (op Comparison) evaluate(regs *RegisterSet, pkt *stack.PacketBuffer) {
+	// Gets the data from the source register.
+	regBuf := getRegisterData(regs, op.sreg, op.data.Type())
+	// Gets the data to compare to.
+	bytesData, ok := op.data.(BytesData)
+	if !ok {
+		panic("comparison operation data is not BytesData")
+	}
+	// Compares from left to right in 4-byte chunks starting with the rightmost
+	// byte of every 4-byte chunk since the data is little endian.
+	// For example, 16-byte IPv6 address 2001:000a:130f:0000:0000:09c0:876a:130b
+	// is represented as 0x0a000120 0x00000f13 0xc0090000 0x0b136a87 in operations
+	// and as [0a|00|01|20|00|00|0f|13|c0|09|00|00|0b|13|6a|87] in the byte slice,
+	// so we compare right to left in the first 4 bytes and then go to the next 4.
+	dif := 0
+	for i := 0; i < len(bytesData.data) && dif == 0; i += 4 {
+		regVal := binary.LittleEndian.Uint32(regBuf[i : i+4])
+		opVal := binary.LittleEndian.Uint32(bytesData.data[i : i+4])
+		if regVal < opVal {
+			dif = -1
+		} else if regVal > opVal {
+			dif = 1
+		}
+	}
+	var result bool
+	switch op.cop {
+	case linux.NFT_CMP_EQ:
+		result = dif == 0
+	case linux.NFT_CMP_NEQ:
+		result = dif != 0
+	case linux.NFT_CMP_LT:
+		result = dif < 0
+	case linux.NFT_CMP_LTE:
+		result = dif <= 0
+	case linux.NFT_CMP_GT:
+		result = dif > 0
+	case linux.NFT_CMP_GTE:
+		result = dif >= 0
+	}
+	if !result {
+		// Comparison is false, so break from the rule.
+		regs.verdict = Verdict{Code: VC(linux.NFT_BREAK)}
+	}
 }
 
 //
@@ -735,29 +840,33 @@ func (rd BytesData) ValidateRegister(reg uint8) error {
 	return nil
 }
 
+// getRegisterData is a helper function that gets the appropriate slice of
+// register data from the register set.
+// Note: does not support verdict data and assumes the register is valid for the
+// given data type.
+func getRegisterData(regs *RegisterSet, reg uint8, dataType RegisterDataType) []byte {
+	// 4-byte data in a 4-byte register.
+	if is4ByteRegister(reg) {
+		start := (reg - linux.NFT_REG32_00) * linux.NFT_REG32_SIZE
+		return regs.data[start : start+linux.NFT_REG32_SIZE]
+	}
+	// 16-byte data in a 16-byte register.
+	if dataType == Data16Bytes {
+		start := (reg - linux.NFT_REG_1) * linux.NFT_REG_SIZE
+		return regs.data[start : start+linux.NFT_REG_SIZE]
+	}
+	// 4-byte data in a 16-byte register
+	// Leaves excess space on the left (bc the data is little endian).
+	start := (reg-linux.NFT_REG_1)*linux.NFT_REG_SIZE + linux.NFT_REG_SIZE - linux.NFT_REG32_SIZE
+	return regs.data[start : start+linux.NFT_REG32_SIZE]
+}
+
 // StoreData sets the data in the destination register to the uint32.
 func (rd BytesData) StoreData(regs *RegisterSet, reg uint8) {
 	if err := rd.ValidateRegister(reg); err != nil {
 		panic(err)
 	}
-	var start uint8
-	var regBuf []byte
-	// Stores 4-byte data in a 4-byte register.
-	if is4ByteRegister(reg) {
-		start = (reg - linux.NFT_REG32_00) * linux.NFT_REG32_SIZE
-		regBuf = regs.data[start : start+linux.NFT_REG32_SIZE]
-	} else {
-		// Stores 16-byte data in a 16-byte register.
-		if rd.Type() == Data16Bytes {
-			start = (reg - linux.NFT_REG_1) * linux.NFT_REG_SIZE
-			regBuf = regs.data[start : start+linux.NFT_REG_SIZE]
-		} else {
-			// Stores 4-byte data in a 16-byte register, leaving excess space on the
-			// left (bc the data is little endian).
-			start = (reg-linux.NFT_REG_1)*linux.NFT_REG_SIZE + linux.NFT_REG_SIZE - linux.NFT_REG32_SIZE
-			regBuf = regs.data[start : start+linux.NFT_REG32_SIZE]
-		}
-	}
+	regBuf := getRegisterData(regs, reg, rd.Type())
 	copy(regBuf, rd.data)
 }
 
@@ -806,7 +915,7 @@ type Verdict struct {
 
 // String returns a string representation of the verdict.
 func (v Verdict) String() string {
-	out := VerdictToString(v.Code)
+	out := VerdictCodeToString(v.Code)
 	if v.ChainName != "" {
 		out += fmt.Sprintf(" -> %s", v.ChainName)
 	}
@@ -818,8 +927,8 @@ func VC(v int32) uint32 {
 	return uint32(v)
 }
 
-// VerdictToString prints names for the supported verdicts.
-func VerdictToString(v uint32) string {
+// VerdictCodeToString prints names for the supported verdicts.
+func VerdictCodeToString(v uint32) string {
 	switch v {
 	// Netfilter (External) Verdicts:
 	case VC(linux.NF_DROP):
@@ -916,7 +1025,7 @@ func (nf *NFTables) EvaluateHook(family AddressFamily, hook Hook, pkt *stack.Pac
 		return Verdict{Code: VC(linux.NF_ACCEPT)}, nil
 	}
 
-	panic(fmt.Sprintf("unexpected verdict from hook evaluation: %s", VerdictToString(regs.Verdict().Code)))
+	panic(fmt.Sprintf("unexpected verdict from hook evaluation: %s", VerdictCodeToString(regs.Verdict().Code)))
 }
 
 // evaluateFromRule is a helper function for Chain.evaluate that evaluates the
