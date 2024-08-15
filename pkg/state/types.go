@@ -204,7 +204,7 @@ var singleFieldOrder = []int{0}
 //
 // This method never returns nil.
 func (tbd *typeDecodeDatabase) Lookup(id typeID, typ reflect.Type) *reconciledTypeEntry {
-	if len(tbd.byID) > int(id) && tbd.byID[id-1] != nil {
+	if len(tbd.byID) >= int(id) && tbd.byID[id-1] != nil {
 		// Already reconciled.
 		return tbd.byID[id-1]
 	}
