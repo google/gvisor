@@ -16,26 +16,39 @@
 #define TOOLS_NVIDIA_DRIVER_DIFFER_DRIVER_AST_PARSER_H_
 
 const char ToolHelpDescription[] =
-    R"a(This tool parses a given C++ source file and outputs the struct definitions
-for a list of provided struct names. To parse structs defined in multiple files,
-it is easier to create a C++ file that includes all the files to be parsed. You
-will also need a compile_commands.json file that contains a compile command with
-the relevant include directories.
+    R"a(This tool parses a given C++ source file and outputs relevant definitions
+for a list of provided struct names. It finds the definitions for each struct
+given by the names provided, as well as any nested structs or types that they
+depend on.
+
+This tool is intended to be used to parse the NVIDIA driver source code; as
+such, there are some assumptions made about how structs are defined and what
+types are used.
+
+To parse structs defined in multiple files, it is easier to create a C++ file
+that includes all the files to be parsed. You will also need a
+compile_commands.json file that contains a compile command with the relevant
+include directories.
 
 The struct names should be specified in a JSON file containing a JSON object,
 which has a "structs" key that maps to a list of strings. The tool will search
 for the struct definition in the given source files, and output the struct
 definition to the specified output file.
 
-This output file will contain a JSON object with a "structs" field mapping each
-struct name to its struct definition. Each struct definition will be a JSON
-array of fields, where each field is a JSON object with a "name" and a "type"
-key. The fields will be ordered in the same order as they appear in the struct
+This output file will contain a JSON object with a "records" (structs or unions)
+field mapping each name to its definition, as well as an "aliases" field for
+any aliases that were found. A variety of information is outputted:
+- For records, the fields are given as a JSON array of objects with "name",
+  "type", and "offset" keys. The record also has a "size" key indicating the
+  size of the struct in bytes, an "is_union" key indicating whether it is a
+  union or not, and a "source" key containing the file name and line number
+  where it was defined.
+- For aliases, the type is given as a JSON object with a "type" and "size" key
 
 Example usage:
     driver_ast_parser --structs=structs.json -o=output.json driver_source_files.h
 
-The structs.json file should contain an array of struct names to parse:
+structs.json:
     {
         "structs": [
             "TestStruct",

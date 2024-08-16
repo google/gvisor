@@ -25,7 +25,7 @@ Once we have the binary, we can hook into any GPU workload by passing the
 corresponding command to run it to `run_sniffer`, like so:
 
 ```
-./run_sniffer nvidia-smi
+bin/run_sniffer nvidia-smi
 ```
 
 This should run the workload as normal and provide an output of all the
