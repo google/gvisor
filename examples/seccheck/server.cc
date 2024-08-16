@@ -239,7 +239,7 @@ bool handshake(int client_fd) {
   return true;
 }
 
-extern "C" int main(int argc, char** argv) {
+int main(int argc, char** argv) {
   for (int c = 0; (c = getopt(argc, argv, "q")) != -1;) {
     switch (c) {
       case 'q':
