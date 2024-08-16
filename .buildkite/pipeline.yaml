@@ -578,6 +578,13 @@ steps:
     agents:
       <<: *platform_specific_agents
       arch: "amd64"
+  - <<: *common
+    <<: *source_test_continuous
+    label: ":slot_machine: Syzkaller smoke test"
+    commands:
+      - make syzkaller-smoke-test
+    agents:
+      arch: "amd64"
 
   # Run basic benchmarks smoke tests (no upload).
   - <<: *common
