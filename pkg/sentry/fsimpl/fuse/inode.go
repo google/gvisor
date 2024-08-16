@@ -15,7 +15,6 @@
 package fuse
 
 import (
-	"fmt"
 	gotime "time"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -171,12 +170,9 @@ func (i *inode) touchAtime() {
 	i.atime.Store(i.fs.clock.Now().Nanoseconds())
 }
 
+// Precondition: isValidType(mode) == true.
 // +checklocks:i.attrMu
 func (i *inode) init(creds *auth.Credentials, devMajor, devMinor uint32, nodeid uint64, mode linux.FileMode, nlink uint32) {
-	if mode.FileType() == 0 {
-		panic(fmt.Sprintf("No file type specified in 'mode' for InodeAttrs.Init(): mode=0%o", mode))
-	}
-
 	i.nodeID = nodeid
 	i.ino.Store(nodeid)
 	i.mode.Store(uint32(mode))
@@ -560,7 +556,10 @@ func (i *inode) newEntry(ctx context.Context, name string, fileType linux.FileMo
 	if opcode != linux.FUSE_LOOKUP && ((out.Attr.Mode&linux.S_IFMT)^uint32(fileType) != 0 || out.NodeID == 0 || out.NodeID == linux.FUSE_ROOT_ID) {
 		return nil, linuxerr.EIO
 	}
-	child := i.fs.newInode(ctx, out.FUSEEntryOut)
+	child, err := i.fs.newInode(ctx, out.FUSEEntryOut)
+	if err != nil {
+		return nil, err
+	}
 	if opcode == linux.FUSE_CREATE {
 		// File handler is returned by fuse server at a time of file create.
 		// Save it temporary in a created child, so Open could return it when invoked
