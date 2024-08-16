@@ -91,4 +91,5 @@ var (
 	ErrKeyExpired                = newWithHost("key has expired", errno.EKEYEXPIRED, unix.EKEYEXPIRED)
 	ErrKeyRevoked                = newWithHost("key has been revoked", errno.EKEYREVOKED, unix.EKEYREVOKED)
 	ErrKeyRejected               = newWithHost("key was rejected by service", errno.EKEYREJECTED, unix.EKEYREJECTED)
+	ErrRFKill                    = newWithHost("operation not possible due to RF-kill", errno.ERFKILL, unix.ERFKILL)
 )

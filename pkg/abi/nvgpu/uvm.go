@@ -36,7 +36,10 @@ const (
 	UVM_UNREGISTER_GPU                 = 38
 	UVM_PAGEABLE_MEM_ACCESS            = 39
 	UVM_SET_PREFERRED_LOCATION         = 42
+	UVM_UNSET_PREFERRED_LOCATION       = 43
 	UVM_DISABLE_READ_DUPLICATION       = 45
+	UVM_UNSET_ACCESSED_BY              = 47
+	UVM_MIGRATE                        = 51
 	UVM_MIGRATE_RANGE_GROUP            = 53
 	UVM_TOOLS_READ_PROCESS_MEMORY      = 62
 	UVM_TOOLS_WRITE_PROCESS_MEMORY     = 63
@@ -261,11 +264,63 @@ type UVM_SET_PREFERRED_LOCATION_PARAMS_V550 struct {
 }
 
 // +marshal
+type UVM_UNSET_PREFERRED_LOCATION_PARAMS struct {
+	RequestedBase uint64 `nvproxy:"same"`
+	Length        uint64
+	RMStatus      uint32
+	Pad0          [4]byte
+}
+
+// +marshal
 type UVM_DISABLE_READ_DUPLICATION_PARAMS struct {
 	RequestedBase uint64 `nvproxy:"same"`
 	Length        uint64
 	RMStatus      uint32
 	Pad0          [4]byte
+}
+
+// +marshal
+type UVM_UNSET_ACCESSED_BY_PARAMS struct {
+	RequestedBase  uint64 `nvproxy:"same"`
+	Length         uint64
+	AccessedByUUID NvUUID
+	RMStatus       uint32
+	Pad0           [4]byte
+}
+
+// +marshal
+type UVM_MIGRATE_PARAMS struct {
+	Base             uint64 `nvproxy:"same"`
+	Length           uint64
+	DestinationUUID  NvUUID
+	Flags            uint32
+	_                [4]byte
+	SemaphoreAddress uint64
+	SemaphorePayload uint32
+	CPUNumaNode      uint32
+	UserSpaceStart   uint64
+	UserSpaceLength  uint64
+	RMStatus         uint32
+	_                [4]byte
+}
+
+// UVM_MIGRATE_PARAMS_V550 is the updated version of
+// UVM_MIGRATE_PARAMS since 550.40.07.
+//
+// +marshal
+type UVM_MIGRATE_PARAMS_V550 struct {
+	Base             uint64 `nvproxy:"UVM_MIGRATE_PARAMS"`
+	Length           uint64
+	DestinationUUID  NvUUID
+	Flags            uint32
+	_                [4]byte
+	SemaphoreAddress uint64
+	SemaphorePayload uint32
+	CPUNumaNode      int32
+	UserSpaceStart   uint64
+	UserSpaceLength  uint64
+	RMStatus         uint32
+	_                [4]byte
 }
 
 // +marshal
