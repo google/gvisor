@@ -41,8 +41,10 @@ const (
 // queueDispatchers. All outgoing packets are consistently hashed to a single
 // underlying queue using the PacketBuffer.Hash if set, otherwise all packets
 // are queued to the first queue to avoid reordering in case of missing hash.
+//
+// +stateify savable
 type discipline struct {
-	wg          sync.WaitGroup
+	wg          sync.WaitGroup `state:"nosave"`
 	dispatchers []queueDispatcher
 
 	closed atomicbitops.Int32
@@ -51,15 +53,17 @@ type discipline struct {
 // queueDispatcher is responsible for dispatching all outbound packets in its
 // queue. It will also smartly batch packets when possible and write them
 // through the lower LinkWriter.
+//
+// +stateify savable
 type queueDispatcher struct {
 	lower stack.LinkWriter
 
-	mu sync.Mutex
+	mu sync.Mutex `state:"nosave"`
 	// +checklocks:mu
 	queue packetBufferCircularList
 
-	newPacketWaker sleep.Waker
-	closeWaker     sleep.Waker
+	newPacketWaker sleep.Waker `state:"nosave"`
+	closeWaker     sleep.Waker `state:"nosave"`
 }
 
 // New creates a new fifo queuing discipline with the n queues with maximum

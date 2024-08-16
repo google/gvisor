@@ -61,6 +61,8 @@ func slotToPayloadSize(offset uint64) uint64 {
 // pipe. Indices into this pipe are split into two fields: offset, which counts
 // the number of bytes from the beginning of the buffer, and revolution, which
 // counts the number of times the index has wrapped around.
+//
+// +stateify savable
 type pipe struct {
 	buffer []byte
 }

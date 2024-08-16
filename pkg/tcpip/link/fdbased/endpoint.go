@@ -129,7 +129,7 @@ type endpoint struct {
 
 	// closed is a function to be called when the FD's peer (if any) closes
 	// its end of the communication pipe.
-	closed func(tcpip.Error)
+	closed func(tcpip.Error) `state:"nosave"`
 
 	inboundDispatchers []linkDispatcher
 
@@ -146,7 +146,7 @@ type endpoint struct {
 	gsoMaxSize uint32
 
 	// wg keeps track of running goroutines.
-	wg sync.WaitGroup
+	wg sync.WaitGroup `state:"nosave"`
 
 	// gsoKind is the supported kind of GSO.
 	gsoKind stack.SupportedGSO
@@ -837,7 +837,7 @@ func (*endpoint) SetOnCloseAction(func()) {}
 // InjectableEndpoint is an injectable fd-based endpoint. The endpoint writes
 // to the FD, but does not read from it. All reads come from injected packets.
 //
-// +satetify savable
+// +stateify savable
 type InjectableEndpoint struct {
 	endpoint
 

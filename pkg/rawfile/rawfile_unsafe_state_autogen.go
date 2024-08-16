@@ -9,3 +9,41 @@
 // +build linux
 
 package rawfile
+
+import (
+	"context"
+
+	"gvisor.dev/gvisor/pkg/state"
+)
+
+func (m *MMsgHdr) StateTypeName() string {
+	return "pkg/rawfile.MMsgHdr"
+}
+
+func (m *MMsgHdr) StateFields() []string {
+	return []string{
+		"Msg",
+		"Len",
+	}
+}
+
+func (m *MMsgHdr) beforeSave() {}
+
+// +checklocksignore
+func (m *MMsgHdr) StateSave(stateSinkObject state.Sink) {
+	m.beforeSave()
+	stateSinkObject.Save(0, &m.Msg)
+	stateSinkObject.Save(1, &m.Len)
+}
+
+func (m *MMsgHdr) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (m *MMsgHdr) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &m.Msg)
+	stateSourceObject.Load(1, &m.Len)
+}
+
+func init() {
+	state.Register((*MMsgHdr)(nil))
+}

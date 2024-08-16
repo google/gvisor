@@ -30,6 +30,8 @@ import (
 
 // serverTx represents the server end of the sharedmem queue and is used to send
 // packets to the peer in the buffers posted by the peer in the fillPipe.
+//
+// +stateify savable
 type serverTx struct {
 	// fillPipe represents the receive end of the pipe that carries the RxBuffers
 	// posted by the peer.

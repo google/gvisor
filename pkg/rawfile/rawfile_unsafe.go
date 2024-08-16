@@ -69,6 +69,8 @@ func AppendIovecFromBytes(iovs []unix.Iovec, bs []byte, max int) []unix.Iovec {
 }
 
 // MMsgHdr represents the mmsg_hdr structure required by recvmmsg() on linux.
+//
+// +stateify savable
 type MMsgHdr struct {
 	Msg unix.Msghdr
 	Len uint32

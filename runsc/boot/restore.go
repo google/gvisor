@@ -189,6 +189,12 @@ func (r *restorer) restore(l *Loader) error {
 		ctx = context.WithValue(ctx, stack.CtxRestoreStack, oldStack)
 	}
 
+	l.mu.Lock()
+	cu := cleanup.Make(func() {
+		l.mu.Unlock()
+	})
+	defer cu.Clean()
+
 	fdmap := make(map[vfs.RestoreID]int)
 	mfmap := make(map[string]*pgalloc.MemoryFile)
 	for _, cont := range r.containers {
@@ -232,12 +238,6 @@ func (r *restorer) restore(l *Loader) error {
 	l.root.procArgs = kernel.CreateProcessArgs{}
 	l.restore = true
 	l.sandboxID = l.root.cid
-
-	l.mu.Lock()
-	cu := cleanup.Make(func() {
-		l.mu.Unlock()
-	})
-	defer cu.Clean()
 
 	// Update all tasks in the system with their respective new container IDs.
 	for _, task := range l.k.TaskSet().Root.Tasks() {

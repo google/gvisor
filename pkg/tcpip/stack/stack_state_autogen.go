@@ -140,6 +140,74 @@ func (a *addressState) StateLoad(ctx context.Context, stateSourceObject state.So
 	stateSourceObject.Load(8, &a.disp)
 }
 
+func (p *bridgePort) StateTypeName() string {
+	return "pkg/tcpip/stack.bridgePort"
+}
+
+func (p *bridgePort) StateFields() []string {
+	return []string{
+		"bridge",
+		"nic",
+	}
+}
+
+func (p *bridgePort) beforeSave() {}
+
+// +checklocksignore
+func (p *bridgePort) StateSave(stateSinkObject state.Sink) {
+	p.beforeSave()
+	stateSinkObject.Save(0, &p.bridge)
+	stateSinkObject.Save(1, &p.nic)
+}
+
+func (p *bridgePort) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (p *bridgePort) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &p.bridge)
+	stateSourceObject.Load(1, &p.nic)
+}
+
+func (b *BridgeEndpoint) StateTypeName() string {
+	return "pkg/tcpip/stack.BridgeEndpoint"
+}
+
+func (b *BridgeEndpoint) StateFields() []string {
+	return []string{
+		"ports",
+		"dispatcher",
+		"addr",
+		"attached",
+		"mtu",
+		"maxHeaderLength",
+	}
+}
+
+func (b *BridgeEndpoint) beforeSave() {}
+
+// +checklocksignore
+func (b *BridgeEndpoint) StateSave(stateSinkObject state.Sink) {
+	b.beforeSave()
+	stateSinkObject.Save(0, &b.ports)
+	stateSinkObject.Save(1, &b.dispatcher)
+	stateSinkObject.Save(2, &b.addr)
+	stateSinkObject.Save(3, &b.attached)
+	stateSinkObject.Save(4, &b.mtu)
+	stateSinkObject.Save(5, &b.maxHeaderLength)
+}
+
+func (b *BridgeEndpoint) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (b *BridgeEndpoint) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &b.ports)
+	stateSourceObject.Load(1, &b.dispatcher)
+	stateSourceObject.Load(2, &b.addr)
+	stateSourceObject.Load(3, &b.attached)
+	stateSourceObject.Load(4, &b.mtu)
+	stateSourceObject.Load(5, &b.maxHeaderLength)
+}
+
 func (t *tuple) StateTypeName() string {
 	return "pkg/tcpip/stack.tuple"
 }
@@ -2847,6 +2915,8 @@ func init() {
 	state.Register((*AddressableEndpointState)(nil))
 	state.Register((*AddressableEndpointStateOptions)(nil))
 	state.Register((*addressState)(nil))
+	state.Register((*bridgePort)(nil))
+	state.Register((*BridgeEndpoint)(nil))
 	state.Register((*tuple)(nil))
 	state.Register((*tupleID)(nil))
 	state.Register((*conn)(nil))

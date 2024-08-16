@@ -31,6 +31,7 @@ import (
 // BufConfig defines the shape of the buffer used to read packets from the NIC.
 var BufConfig = []int{128, 256, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768}
 
+// +stateify savable
 type iovecBuffer struct {
 	// buffer is the actual buffer that holds the packet contents. Some contents
 	// are reused across calls to pullBuffer if number of requested bytes is
@@ -145,6 +146,8 @@ func (b *iovecBuffer) release() {
 
 // readVDispatcher uses readv() system call to read inbound packets and
 // dispatches them.
+//
+// +stateify savable
 type readVDispatcher struct {
 	stopfd.StopFD
 	// fd is the file descriptor used to send and receive packets.
@@ -207,6 +210,8 @@ func (d *readVDispatcher) dispatch() (bool, tcpip.Error) {
 
 // recvMMsgDispatcher uses the recvmmsg system call to read inbound packets and
 // dispatches them.
+//
+// +stateify savable
 type recvMMsgDispatcher struct {
 	stopfd.StopFD
 	// fd is the file descriptor used to send and receive packets.

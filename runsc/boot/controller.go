@@ -488,6 +488,10 @@ type RestoreOpts struct {
 func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 	log.Debugf("containerManager.Restore")
 
+	cm.l.mu.Lock()
+	cu := cleanup.Make(cm.l.mu.Unlock)
+	defer cu.Clean()
+
 	if cm.l.state == restoring {
 		return fmt.Errorf("restore is already in progress")
 	}
@@ -514,6 +518,8 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 	cm.restorer = &restorer{restoreDone: cm.onRestoreDone, stateFile: stateFile}
 	cm.l.restoreWaiters = sync.NewCond(&cm.l.mu)
 	cm.l.state = restoring
+	// Release `cm.l.mu`.
+	cu.Clean()
 
 	fileIdx := 1
 	if o.HavePagesFile {
@@ -590,9 +596,12 @@ func (cm *containerManager) onRestoreDone() error {
 func (cm *containerManager) RestoreSubcontainer(args *StartArgs, _ *struct{}) error {
 	log.Debugf("containerManager.RestoreSubcontainer, cid: %s, args: %+v", args.CID, args)
 
+	cm.l.mu.Lock()
 	if cm.l.state != restoring {
+		cm.l.mu.Unlock()
 		return fmt.Errorf("sandbox is not being restored, cannot restore subcontainer")
 	}
+	cm.l.mu.Unlock()
 
 	// Validate arguments.
 	if args.Spec == nil {
@@ -808,8 +817,9 @@ func (cm *containerManager) ProcfsDump(_ *struct{}, out *[]procfs.ProcessProcfsD
 	log.Debugf("containerManager.ProcfsDump")
 	ts := cm.l.k.TaskSet()
 	pidns := ts.Root
-	*out = make([]procfs.ProcessProcfsDump, 0, len(cm.l.processes))
-	for _, tg := range pidns.ThreadGroups() {
+	tgs := pidns.ThreadGroups()
+	*out = make([]procfs.ProcessProcfsDump, 0, len(tgs))
+	for _, tg := range tgs {
 		pid := pidns.IDOfThreadGroup(tg)
 		procDump, err := procfs.Dump(tg.Leader(), pid, pidns)
 		if err != nil {
@@ -848,6 +858,8 @@ func (cm *containerManager) Mount(args *MountArgs, _ *struct{}) error {
 	var cu cleanup.Cleanup
 	defer cu.Clean()
 
+	cm.l.mu.Lock()
+	defer cm.l.mu.Unlock()
 	eid := execID{cid: args.ContainerID}
 	ep, ok := cm.l.processes[eid]
 	if !ok {

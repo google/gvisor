@@ -8,6 +8,62 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
+func (d *discipline) StateTypeName() string {
+	return "pkg/tcpip/link/qdisc/fifo.discipline"
+}
+
+func (d *discipline) StateFields() []string {
+	return []string{
+		"dispatchers",
+		"closed",
+	}
+}
+
+func (d *discipline) beforeSave() {}
+
+// +checklocksignore
+func (d *discipline) StateSave(stateSinkObject state.Sink) {
+	d.beforeSave()
+	stateSinkObject.Save(0, &d.dispatchers)
+	stateSinkObject.Save(1, &d.closed)
+}
+
+func (d *discipline) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (d *discipline) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &d.dispatchers)
+	stateSourceObject.Load(1, &d.closed)
+}
+
+func (qd *queueDispatcher) StateTypeName() string {
+	return "pkg/tcpip/link/qdisc/fifo.queueDispatcher"
+}
+
+func (qd *queueDispatcher) StateFields() []string {
+	return []string{
+		"lower",
+		"queue",
+	}
+}
+
+func (qd *queueDispatcher) beforeSave() {}
+
+// +checklocksignore
+func (qd *queueDispatcher) StateSave(stateSinkObject state.Sink) {
+	qd.beforeSave()
+	stateSinkObject.Save(0, &qd.lower)
+	stateSinkObject.Save(1, &qd.queue)
+}
+
+func (qd *queueDispatcher) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (qd *queueDispatcher) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &qd.lower)
+	stateSourceObject.Load(1, &qd.queue)
+}
+
 func (pl *packetBufferCircularList) StateTypeName() string {
 	return "pkg/tcpip/link/qdisc/fifo.packetBufferCircularList"
 }
@@ -40,5 +96,7 @@ func (pl *packetBufferCircularList) StateLoad(ctx context.Context, stateSourceOb
 }
 
 func init() {
+	state.Register((*discipline)(nil))
+	state.Register((*queueDispatcher)(nil))
 	state.Register((*packetBufferCircularList)(nil))
 }

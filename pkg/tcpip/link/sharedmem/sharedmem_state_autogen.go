@@ -11,6 +11,86 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
+func (s *serverRx) StateTypeName() string {
+	return "pkg/tcpip/link/sharedmem.serverRx"
+}
+
+func (s *serverRx) StateFields() []string {
+	return []string{
+		"packetPipe",
+		"completionPipe",
+		"data",
+		"eventFD",
+		"sharedData",
+		"sharedEventFDState",
+	}
+}
+
+func (s *serverRx) beforeSave() {}
+
+// +checklocksignore
+func (s *serverRx) StateSave(stateSinkObject state.Sink) {
+	s.beforeSave()
+	stateSinkObject.Save(0, &s.packetPipe)
+	stateSinkObject.Save(1, &s.completionPipe)
+	stateSinkObject.Save(2, &s.data)
+	stateSinkObject.Save(3, &s.eventFD)
+	stateSinkObject.Save(4, &s.sharedData)
+	stateSinkObject.Save(5, &s.sharedEventFDState)
+}
+
+func (s *serverRx) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (s *serverRx) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &s.packetPipe)
+	stateSourceObject.Load(1, &s.completionPipe)
+	stateSourceObject.Load(2, &s.data)
+	stateSourceObject.Load(3, &s.eventFD)
+	stateSourceObject.Load(4, &s.sharedData)
+	stateSourceObject.Load(5, &s.sharedEventFDState)
+}
+
+func (s *serverTx) StateTypeName() string {
+	return "pkg/tcpip/link/sharedmem.serverTx"
+}
+
+func (s *serverTx) StateFields() []string {
+	return []string{
+		"fillPipe",
+		"completionPipe",
+		"data",
+		"eventFD",
+		"sharedData",
+		"sharedEventFDState",
+	}
+}
+
+func (s *serverTx) beforeSave() {}
+
+// +checklocksignore
+func (s *serverTx) StateSave(stateSinkObject state.Sink) {
+	s.beforeSave()
+	stateSinkObject.Save(0, &s.fillPipe)
+	stateSinkObject.Save(1, &s.completionPipe)
+	stateSinkObject.Save(2, &s.data)
+	stateSinkObject.Save(3, &s.eventFD)
+	stateSinkObject.Save(4, &s.sharedData)
+	stateSinkObject.Save(5, &s.sharedEventFDState)
+}
+
+func (s *serverTx) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (s *serverTx) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &s.fillPipe)
+	stateSourceObject.Load(1, &s.completionPipe)
+	stateSourceObject.Load(2, &s.data)
+	stateSourceObject.Load(3, &s.eventFD)
+	stateSourceObject.Load(4, &s.sharedData)
+	stateSourceObject.Load(5, &s.sharedEventFDState)
+}
+
 func (q *QueueConfig) StateTypeName() string {
 	return "pkg/tcpip/link/sharedmem.QueueConfig"
 }
@@ -164,8 +244,66 @@ func (e *endpoint) StateLoad(ctx context.Context, stateSourceObject state.Source
 	stateSourceObject.Load(12, &e.mtu)
 }
 
+func (e *serverEndpoint) StateTypeName() string {
+	return "pkg/tcpip/link/sharedmem.serverEndpoint"
+}
+
+func (e *serverEndpoint) StateFields() []string {
+	return []string{
+		"bufferSize",
+		"rx",
+		"stopRequested",
+		"peerFD",
+		"caps",
+		"hdrSize",
+		"virtioNetHeaderRequired",
+		"tx",
+		"workerStarted",
+		"addr",
+		"mtu",
+	}
+}
+
+func (e *serverEndpoint) beforeSave() {}
+
+// +checklocksignore
+func (e *serverEndpoint) StateSave(stateSinkObject state.Sink) {
+	e.beforeSave()
+	stateSinkObject.Save(0, &e.bufferSize)
+	stateSinkObject.Save(1, &e.rx)
+	stateSinkObject.Save(2, &e.stopRequested)
+	stateSinkObject.Save(3, &e.peerFD)
+	stateSinkObject.Save(4, &e.caps)
+	stateSinkObject.Save(5, &e.hdrSize)
+	stateSinkObject.Save(6, &e.virtioNetHeaderRequired)
+	stateSinkObject.Save(7, &e.tx)
+	stateSinkObject.Save(8, &e.workerStarted)
+	stateSinkObject.Save(9, &e.addr)
+	stateSinkObject.Save(10, &e.mtu)
+}
+
+func (e *serverEndpoint) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (e *serverEndpoint) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &e.bufferSize)
+	stateSourceObject.Load(1, &e.rx)
+	stateSourceObject.Load(2, &e.stopRequested)
+	stateSourceObject.Load(3, &e.peerFD)
+	stateSourceObject.Load(4, &e.caps)
+	stateSourceObject.Load(5, &e.hdrSize)
+	stateSourceObject.Load(6, &e.virtioNetHeaderRequired)
+	stateSourceObject.Load(7, &e.tx)
+	stateSourceObject.Load(8, &e.workerStarted)
+	stateSourceObject.Load(9, &e.addr)
+	stateSourceObject.Load(10, &e.mtu)
+}
+
 func init() {
+	state.Register((*serverRx)(nil))
+	state.Register((*serverTx)(nil))
 	state.Register((*QueueConfig)(nil))
 	state.Register((*Options)(nil))
 	state.Register((*endpoint)(nil))
+	state.Register((*serverEndpoint)(nil))
 }

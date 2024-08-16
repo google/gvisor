@@ -8,6 +8,111 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
+func (gb *groBucket) StateTypeName() string {
+	return "pkg/tcpip/stack/gro.groBucket"
+}
+
+func (gb *groBucket) StateFields() []string {
+	return []string{
+		"count",
+		"packets",
+		"packetsPrealloc",
+		"allocIdxs",
+	}
+}
+
+func (gb *groBucket) beforeSave() {}
+
+// +checklocksignore
+func (gb *groBucket) StateSave(stateSinkObject state.Sink) {
+	gb.beforeSave()
+	stateSinkObject.Save(0, &gb.count)
+	stateSinkObject.Save(1, &gb.packets)
+	stateSinkObject.Save(2, &gb.packetsPrealloc)
+	stateSinkObject.Save(3, &gb.allocIdxs)
+}
+
+func (gb *groBucket) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (gb *groBucket) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &gb.count)
+	stateSourceObject.Load(1, &gb.packets)
+	stateSourceObject.Load(2, &gb.packetsPrealloc)
+	stateSourceObject.Load(3, &gb.allocIdxs)
+}
+
+func (pk *groPacket) StateTypeName() string {
+	return "pkg/tcpip/stack/gro.groPacket"
+}
+
+func (pk *groPacket) StateFields() []string {
+	return []string{
+		"groPacketEntry",
+		"pkt",
+		"ipHdr",
+		"tcpHdr",
+		"initialLength",
+		"idx",
+	}
+}
+
+func (pk *groPacket) beforeSave() {}
+
+// +checklocksignore
+func (pk *groPacket) StateSave(stateSinkObject state.Sink) {
+	pk.beforeSave()
+	stateSinkObject.Save(0, &pk.groPacketEntry)
+	stateSinkObject.Save(1, &pk.pkt)
+	stateSinkObject.Save(2, &pk.ipHdr)
+	stateSinkObject.Save(3, &pk.tcpHdr)
+	stateSinkObject.Save(4, &pk.initialLength)
+	stateSinkObject.Save(5, &pk.idx)
+}
+
+func (pk *groPacket) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (pk *groPacket) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &pk.groPacketEntry)
+	stateSourceObject.Load(1, &pk.pkt)
+	stateSourceObject.Load(2, &pk.ipHdr)
+	stateSourceObject.Load(3, &pk.tcpHdr)
+	stateSourceObject.Load(4, &pk.initialLength)
+	stateSourceObject.Load(5, &pk.idx)
+}
+
+func (gd *GRO) StateTypeName() string {
+	return "pkg/tcpip/stack/gro.GRO"
+}
+
+func (gd *GRO) StateFields() []string {
+	return []string{
+		"enabled",
+		"buckets",
+		"Dispatcher",
+	}
+}
+
+func (gd *GRO) beforeSave() {}
+
+// +checklocksignore
+func (gd *GRO) StateSave(stateSinkObject state.Sink) {
+	gd.beforeSave()
+	stateSinkObject.Save(0, &gd.enabled)
+	stateSinkObject.Save(1, &gd.buckets)
+	stateSinkObject.Save(2, &gd.Dispatcher)
+}
+
+func (gd *GRO) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (gd *GRO) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &gd.enabled)
+	stateSourceObject.Load(1, &gd.buckets)
+	stateSourceObject.Load(2, &gd.Dispatcher)
+}
+
 func (l *groPacketList) StateTypeName() string {
 	return "pkg/tcpip/stack/gro.groPacketList"
 }
@@ -65,6 +170,9 @@ func (e *groPacketEntry) StateLoad(ctx context.Context, stateSourceObject state.
 }
 
 func init() {
+	state.Register((*groBucket)(nil))
+	state.Register((*groPacket)(nil))
+	state.Register((*GRO)(nil))
 	state.Register((*groPacketList)(nil))
 	state.Register((*groPacketEntry)(nil))
 }

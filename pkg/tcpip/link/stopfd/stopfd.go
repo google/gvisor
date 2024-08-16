@@ -25,6 +25,8 @@ import (
 )
 
 // StopFD is an eventfd used to signal the stop of a dispatcher.
+//
+// +stateify savable
 type StopFD struct {
 	EFD int
 }

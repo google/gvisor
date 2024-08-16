@@ -71,6 +71,46 @@ func (f *Flags) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(2, &f.NoPacketInfo)
 }
 
+func (e *tunEndpoint) StateTypeName() string {
+	return "pkg/tcpip/link/tun.tunEndpoint"
+}
+
+func (e *tunEndpoint) StateFields() []string {
+	return []string{
+		"tunEndpointRefs",
+		"Endpoint",
+		"stack",
+		"nicID",
+		"name",
+		"isTap",
+	}
+}
+
+func (e *tunEndpoint) beforeSave() {}
+
+// +checklocksignore
+func (e *tunEndpoint) StateSave(stateSinkObject state.Sink) {
+	e.beforeSave()
+	stateSinkObject.Save(0, &e.tunEndpointRefs)
+	stateSinkObject.Save(1, &e.Endpoint)
+	stateSinkObject.Save(2, &e.stack)
+	stateSinkObject.Save(3, &e.nicID)
+	stateSinkObject.Save(4, &e.name)
+	stateSinkObject.Save(5, &e.isTap)
+}
+
+func (e *tunEndpoint) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (e *tunEndpoint) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &e.tunEndpointRefs)
+	stateSourceObject.Load(1, &e.Endpoint)
+	stateSourceObject.Load(2, &e.stack)
+	stateSourceObject.Load(3, &e.nicID)
+	stateSourceObject.Load(4, &e.name)
+	stateSourceObject.Load(5, &e.isTap)
+}
+
 func (r *tunEndpointRefs) StateTypeName() string {
 	return "pkg/tcpip/link/tun.tunEndpointRefs"
 }
@@ -98,5 +138,6 @@ func (r *tunEndpointRefs) StateLoad(ctx context.Context, stateSourceObject state
 func init() {
 	state.Register((*Device)(nil))
 	state.Register((*Flags)(nil))
+	state.Register((*tunEndpoint)(nil))
 	state.Register((*tunEndpointRefs)(nil))
 }
