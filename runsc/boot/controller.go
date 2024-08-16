@@ -671,7 +671,7 @@ func (cm *containerManager) Pause(_, _ *struct{}) error {
 // Resume resumes all tasks.
 func (cm *containerManager) Resume(_, _ *struct{}) error {
 	cm.l.k.Unpause()
-	return postResumeImpl(cm.l.k)
+	return postResumeImpl(cm.l)
 }
 
 // Wait waits for the init process in the given container.

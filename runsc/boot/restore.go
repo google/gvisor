@@ -299,7 +299,7 @@ func (r *restorer) restore(l *Loader) error {
 		r.pagesMetadata.Close()
 	}
 
-	if err := postRestoreImpl(l.k); err != nil {
+	if err := postRestoreImpl(l); err != nil {
 		return err
 	}
 
@@ -328,7 +328,7 @@ func (l *Loader) save(o *control.SaveOpts) (err error) {
 	}
 	o.Metadata["container_count"] = strconv.Itoa(l.containerCount())
 
-	if err := preSaveImpl(l.k, o); err != nil {
+	if err := preSaveImpl(l, o); err != nil {
 		return err
 	}
 
@@ -341,7 +341,7 @@ func (l *Loader) save(o *control.SaveOpts) (err error) {
 	}
 
 	if o.Resume {
-		if err := postResumeImpl(l.k); err != nil {
+		if err := postResumeImpl(l); err != nil {
 			return err
 		}
 	}

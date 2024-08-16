@@ -231,8 +231,14 @@ type Loader struct {
 	// naming when user didn't provide one.
 	//
 	// Mapping: name -> cid.
-	// processes is guarded by mu.
+	// containerIDs is guarded by mu.
 	containerIDs map[string]string
+
+	// containerSpecs stores container specs for each container in sandbox.
+	//
+	// Mapping: cid -> spec.
+	// containerSpecs is guarded by mu.
+	containerSpecs map[string]*specs.Spec
 
 	// portForwardProxies is a list of active port forwarding connections.
 	//
@@ -412,14 +418,15 @@ func New(args Args) (*Loader, error) {
 
 	eid := execID{cid: args.ID}
 	l := &Loader{
-		sandboxID:     args.ID,
-		processes:     map[execID]*execProcess{eid: {}},
-		sharedMounts:  make(map[string]*vfs.Mount),
-		stopProfiling: stopProfiling,
-		productName:   args.ProductName,
-		hostShmemHuge: args.HostShmemHuge,
-		containerIDs:  map[string]string{},
-		saveFDs:       args.SaveFDs,
+		sandboxID:      args.ID,
+		processes:      map[execID]*execProcess{eid: {}},
+		sharedMounts:   make(map[string]*vfs.Mount),
+		stopProfiling:  stopProfiling,
+		productName:    args.ProductName,
+		hostShmemHuge:  args.HostShmemHuge,
+		containerIDs:   make(map[string]string),
+		containerSpecs: make(map[string]*specs.Spec),
+		saveFDs:        args.SaveFDs,
 	}
 
 	containerName := l.registerContainerLocked(args.Spec, args.ID)
@@ -1885,7 +1892,14 @@ func (l *Loader) registerContainerLocked(spec *specs.Spec, cid string) string {
 	}
 
 	l.containerIDs[containerName] = cid
+	l.containerSpecs[cid] = spec
 	return containerName
+}
+
+func (l *Loader) getContainerSpec(cid string) *specs.Spec {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.containerSpecs[cid]
 }
 
 func (l *Loader) containerRuntimeState(cid string) ContainerRuntimeState {

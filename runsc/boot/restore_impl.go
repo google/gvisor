@@ -21,20 +21,19 @@ import (
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/proc"
-	"gvisor.dev/gvisor/pkg/sentry/kernel"
 )
 
-func preSaveImpl(*kernel.Kernel, *control.SaveOpts) error {
+func preSaveImpl(*Loader, *control.SaveOpts) error {
 	return nil
 }
 
 // Precondition: The kernel should be running.
-func postRestoreImpl(*kernel.Kernel) error {
+func postRestoreImpl(*Loader) error {
 	return nil
 }
 
 // Precondition: The kernel should be running.
-func postResumeImpl(*kernel.Kernel) error {
+func postResumeImpl(*Loader) error {
 	return nil
 }
 
