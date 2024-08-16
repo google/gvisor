@@ -41,6 +41,7 @@ archs = [
 
 oses = [
     "_linux",
+    "_nonlinux",
 ]
 
 generic = [

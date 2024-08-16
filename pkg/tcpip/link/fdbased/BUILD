@@ -11,7 +11,7 @@ go_library(
         "endpoint.go",
         "endpoint_unsafe.go",
         "mmap.go",
-        "mmap_stub.go",
+        "mmap_nonlinux.go",
         "mmap_unsafe.go",
         "packet_dispatchers.go",
         "processors.go",

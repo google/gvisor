@@ -77,7 +77,7 @@ func checkPacketInfoEqual(t *testing.T, got, want packetInfo) {
 	}
 }
 
-type context struct {
+type testContext struct {
 	t        *testing.T
 	readFDs  []int
 	writeFDs []int
@@ -86,7 +86,7 @@ type context struct {
 	done     chan struct{}
 }
 
-func newContext(t *testing.T, opt *Options) *context {
+func newContext(t *testing.T, opt *Options) *testContext {
 	firstFDPair, err := unix.Socketpair(unix.AF_UNIX, unix.SOCK_SEQPACKET, 0)
 	if err != nil {
 		t.Fatalf("Socketpair failed: %v", err)
@@ -107,7 +107,7 @@ func newContext(t *testing.T, opt *Options) *context {
 		t.Fatalf("Failed to create FD endpoint: %v", err)
 	}
 
-	c := &context{
+	c := &testContext{
 		t:        t,
 		readFDs:  []int{firstFDPair[0], secondFDPair[0]},
 		writeFDs: opt.FDs,
@@ -121,7 +121,7 @@ func newContext(t *testing.T, opt *Options) *context {
 	return c
 }
 
-func (c *context) cleanup() {
+func (c *testContext) cleanup() {
 	for _, fd := range c.readFDs {
 		unix.Close(fd)
 	}
@@ -132,12 +132,12 @@ func (c *context) cleanup() {
 	}
 }
 
-func (c *context) DeliverNetworkPacket(protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
+func (c *testContext) DeliverNetworkPacket(protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
 	pkt.IncRef()
 	c.ch <- packetInfo{protocol, pkt}
 }
 
-func (c *context) DeliverLinkPacket(tcpip.NetworkProtocolNumber, *stack.PacketBuffer) {
+func (c *testContext) DeliverLinkPacket(tcpip.NetworkProtocolNumber, *stack.PacketBuffer) {
 	c.t.Fatal("DeliverLinkPacket not implemented")
 }
 
