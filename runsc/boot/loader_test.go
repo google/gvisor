@@ -480,6 +480,8 @@ func TestCreateMountNamespace(t *testing.T) {
 			defer l.Destroy()
 			defer loaderCleanup()
 
+			l.mu.Lock()
+			defer l.mu.Unlock()
 			mntr := newContainerMounter(&l.root, l.k, l.mountHints, l.sharedMounts, "", l.sandboxID)
 			ctx := l.k.SupervisorContext()
 			creds := auth.NewRootCredentials(l.root.procArgs.Credentials.UserNamespace)
