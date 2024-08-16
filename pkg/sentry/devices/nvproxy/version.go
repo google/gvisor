@@ -218,7 +218,10 @@ func Init() {
 					nvgpu.UVM_UNREGISTER_GPU:                 uvmIoctlSimple[nvgpu.UVM_UNREGISTER_GPU_PARAMS],
 					nvgpu.UVM_PAGEABLE_MEM_ACCESS:            uvmIoctlSimple[nvgpu.UVM_PAGEABLE_MEM_ACCESS_PARAMS],
 					nvgpu.UVM_SET_PREFERRED_LOCATION:         uvmIoctlSimple[nvgpu.UVM_SET_PREFERRED_LOCATION_PARAMS],
+					nvgpu.UVM_UNSET_PREFERRED_LOCATION:       uvmIoctlSimple[nvgpu.UVM_UNSET_PREFERRED_LOCATION_PARAMS],
 					nvgpu.UVM_DISABLE_READ_DUPLICATION:       uvmIoctlSimple[nvgpu.UVM_DISABLE_READ_DUPLICATION_PARAMS],
+					nvgpu.UVM_UNSET_ACCESSED_BY:              uvmIoctlSimple[nvgpu.UVM_UNSET_ACCESSED_BY_PARAMS],
+					nvgpu.UVM_MIGRATE:                        uvmIoctlSimple[nvgpu.UVM_MIGRATE_PARAMS],
 					nvgpu.UVM_MIGRATE_RANGE_GROUP:            uvmIoctlSimple[nvgpu.UVM_MIGRATE_RANGE_GROUP_PARAMS],
 					nvgpu.UVM_MAP_DYNAMIC_PARALLELISM_REGION: uvmIoctlSimple[nvgpu.UVM_MAP_DYNAMIC_PARALLELISM_REGION_PARAMS],
 					nvgpu.UVM_UNMAP_EXTERNAL:                 uvmIoctlSimple[nvgpu.UVM_UNMAP_EXTERNAL_PARAMS],
@@ -413,7 +416,10 @@ func Init() {
 							nvgpu.UVM_UNREGISTER_GPU:                 getStructName(nvgpu.UVM_UNREGISTER_GPU_PARAMS{}),
 							nvgpu.UVM_PAGEABLE_MEM_ACCESS:            getStructName(nvgpu.UVM_PAGEABLE_MEM_ACCESS_PARAMS{}),
 							nvgpu.UVM_SET_PREFERRED_LOCATION:         getStructName(nvgpu.UVM_SET_PREFERRED_LOCATION_PARAMS{}),
+							nvgpu.UVM_UNSET_PREFERRED_LOCATION:       getStructName(nvgpu.UVM_UNSET_PREFERRED_LOCATION_PARAMS{}),
 							nvgpu.UVM_DISABLE_READ_DUPLICATION:       getStructName(nvgpu.UVM_DISABLE_READ_DUPLICATION_PARAMS{}),
+							nvgpu.UVM_UNSET_ACCESSED_BY:              getStructName(nvgpu.UVM_UNSET_ACCESSED_BY_PARAMS{}),
+							nvgpu.UVM_MIGRATE:                        getStructName(nvgpu.UVM_MIGRATE_PARAMS{}),
 							nvgpu.UVM_MIGRATE_RANGE_GROUP:            getStructName(nvgpu.UVM_MIGRATE_RANGE_GROUP_PARAMS{}),
 							nvgpu.UVM_MAP_DYNAMIC_PARALLELISM_REGION: getStructName(nvgpu.UVM_MAP_DYNAMIC_PARALLELISM_REGION_PARAMS{}),
 							nvgpu.UVM_UNMAP_EXTERNAL:                 getStructName(nvgpu.UVM_UNMAP_EXTERNAL_PARAMS{}),
@@ -624,6 +630,7 @@ func Init() {
 			abi.controlCmd[(nvgpu.NV2081_BINAPI<<16)|0x0108] = rmControlSimple
 			abi.controlCmd[nvgpu.NV0000_CTRL_CMD_SYSTEM_GET_P2P_CAPS] = ctrlClientSystemGetP2PCapsV550
 			abi.uvmIoctl[nvgpu.UVM_SET_PREFERRED_LOCATION] = uvmIoctlSimple[nvgpu.UVM_SET_PREFERRED_LOCATION_PARAMS_V550]
+			abi.uvmIoctl[nvgpu.UVM_MIGRATE] = uvmIoctlSimple[nvgpu.UVM_MIGRATE_PARAMS_V550]
 
 			prevNames := abi.getStructNames
 			abi.getStructNames = func() *driverStructNames {
@@ -639,6 +646,7 @@ func Init() {
 				names.controlNames[(nvgpu.NV2081_BINAPI<<16)|0x0108] = nil
 				names.controlNames[nvgpu.NV0000_CTRL_CMD_SYSTEM_GET_P2P_CAPS] = getStructName(nvgpu.NV0000_CTRL_SYSTEM_GET_P2P_CAPS_PARAMS_V550{})
 				names.uvmNames[nvgpu.UVM_SET_PREFERRED_LOCATION] = getStructName(nvgpu.UVM_SET_PREFERRED_LOCATION_PARAMS_V550{})
+				names.uvmNames[nvgpu.UVM_MIGRATE] = getStructName(nvgpu.UVM_MIGRATE_PARAMS_V550{})
 
 				return names
 			}

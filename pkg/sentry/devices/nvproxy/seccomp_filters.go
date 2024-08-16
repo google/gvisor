@@ -172,7 +172,19 @@ func Filters() seccomp.SyscallRules {
 			},
 			seccomp.PerArg{
 				seccomp.NonNegativeFD{},
+				seccomp.EqualTo(nvgpu.UVM_UNSET_PREFERRED_LOCATION),
+			},
+			seccomp.PerArg{
+				seccomp.NonNegativeFD{},
 				seccomp.EqualTo(nvgpu.UVM_DISABLE_READ_DUPLICATION),
+			},
+			seccomp.PerArg{
+				seccomp.NonNegativeFD{},
+				seccomp.EqualTo(nvgpu.UVM_UNSET_ACCESSED_BY),
+			},
+			seccomp.PerArg{
+				seccomp.NonNegativeFD{},
+				seccomp.EqualTo(nvgpu.UVM_MIGRATE),
 			},
 			seccomp.PerArg{
 				seccomp.NonNegativeFD{},
