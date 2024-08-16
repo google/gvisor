@@ -15,6 +15,8 @@
 package pipe
 
 // Tx is the transmit side of the shared memory ring buffer.
+//
+// +stateify savable
 type Tx struct {
 	p              pipe
 	maxPayloadSize uint64

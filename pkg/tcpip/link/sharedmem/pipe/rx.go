@@ -15,6 +15,8 @@
 package pipe
 
 // Rx is the receive side of the shared memory ring buffer.
+//
+// +stateify savable
 type Rx struct {
 	p pipe
 

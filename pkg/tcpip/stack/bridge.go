@@ -22,6 +22,7 @@ import (
 
 var _ NetworkLinkEndpoint = (*BridgeEndpoint)(nil)
 
+// +stateify savable
 type bridgePort struct {
 	bridge *BridgeEndpoint
 	nic    *nic
@@ -75,8 +76,10 @@ func NewBridgeEndpoint(mtu uint32) *BridgeEndpoint {
 }
 
 // BridgeEndpoint is a bridge endpoint.
+//
+// +stateify savable
 type BridgeEndpoint struct {
-	mu bridgeRWMutex
+	mu bridgeRWMutex `state:"nosave"`
 	// +checklocks:mu
 	ports map[tcpip.NICID]*bridgePort
 	// +checklocks:mu

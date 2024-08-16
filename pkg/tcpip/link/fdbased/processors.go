@@ -30,8 +30,9 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/stack/gro"
 )
 
+// +stateify savable
 type processor struct {
-	mu sync.Mutex
+	mu sync.Mutex `state:"nosave"`
 	// +checklocks:mu
 	pkts stack.PacketBufferList
 
@@ -83,10 +84,12 @@ func (p *processor) deliverPackets() {
 
 // processorManager handles starting, closing, and queuing packets on processor
 // goroutines.
+//
+// +stateify savable
 type processorManager struct {
 	processors []processor
 	seed       uint32
-	wg         sync.WaitGroup
+	wg         sync.WaitGroup `state:"nosave"`
 	e          *endpoint
 	ready      []bool
 }

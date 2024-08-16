@@ -115,6 +115,8 @@ func (t tPacketHdr) Payload() []byte {
 
 // packetMMapDispatcher uses PACKET_RX_RING's to read/dispatch inbound packets.
 // See: mmap_amd64_unsafe.go for implementation details.
+//
+// +stateify savable
 type packetMMapDispatcher struct {
 	stopfd.StopFD
 	// fd is the file descriptor used to send and receive packets.
