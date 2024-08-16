@@ -308,6 +308,7 @@ gpu-all-tests: gpu-images gpu-smoke-tests $(RUNTIME_BIN)
 	@$(call sudo,test/gpu:imagegen_test,--runtime=$(RUNTIME) -test.v $(ARGS))
 	@$(call sudo,test/gpu:sr_test,--runtime=$(RUNTIME) -test.v $(ARGS))
 	@$(call sudo,test/gpu:nccl_test,--runtime=$(RUNTIME) -test.v $(ARGS))
+	@$(call test,--test_env=RUNTIME=$(RUNTIME) test/gpu:sniffer_test)
 .PHONY: gpu-all-tests
 
 cos-gpu-all-tests: gpu-images cos-gpu-smoke-tests $(RUNTIME_BIN)
@@ -317,6 +318,7 @@ cos-gpu-all-tests: gpu-images cos-gpu-smoke-tests $(RUNTIME_BIN)
 	@$(call sudo,test/gpu:imagegen_test,--runtime=$(RUNTIME) -test.v --cos-gpu $(ARGS))
 	@$(call sudo,test/gpu:sr_test,--runtime=$(RUNTIME) -test.v --cos-gpu $(ARGS))
 	@$(call sudo,test/gpu:nccl_test,--runtime=$(RUNTIME) -test.v --cos-gpu $(ARGS))
+	@$(call test,--test_env=RUNTIME=$(RUNTIME) --test_arg="--cos-gpu" test/gpu:sniffer_test)
 .PHONY: cos-gpu-all-tests
 
 portforward-tests: load-basic_redis load-basic_nginx $(RUNTIME_BIN)

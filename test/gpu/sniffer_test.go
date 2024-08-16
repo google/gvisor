@@ -32,7 +32,7 @@ const maxDuration = 1 * time.Minute
 // RunCommand runs the given command via the sniffer, with the -enforce_compatibility flag.
 //
 //	It's run in a docker container, with the cuda-tests image.
-func runCommand(t *testing.T, cmd ...string) (string, error) {
+func runCUDATestsCommand(t *testing.T, cmd ...string) (string, error) {
 	// Find the sniffer binary
 	cliPath, err := testutil.FindFile("tools/ioctl_sniffer/run_sniffer")
 	if err != nil {
@@ -62,19 +62,19 @@ func runCommand(t *testing.T, cmd ...string) (string, error) {
 }
 
 func TestSupportedCUDAProgram(t *testing.T) {
-	output, err := runCommand(t, "/run_sample", "0_Introduction/vectorAdd")
+	output, err := runCUDATestsCommand(t, "/run_smoke.sh")
 	t.Logf("%s", output)
 	if err != nil {
 		t.Logf("Error: %v", err)
 		if strings.Contains(output, "unsupported ioctls found") {
 			t.Fatalf("'unsupported ioctls found' found in output")
 		}
-		t.Fatalf("Failed to run vectorAdd")
+		t.Fatalf("Failed to run run_smoke.sh")
 	}
 }
 
 func TestUnsupportedCUDAProgram(t *testing.T) {
-	output, err := runCommand(t, "/unsupported_ioctl")
+	output, err := runCUDATestsCommand(t, "/unsupported_ioctl")
 	t.Logf("%s", output)
 	if err == nil {
 		t.Fatalf("Expected run_sniffer to fail")
