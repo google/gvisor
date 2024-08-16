@@ -26,24 +26,31 @@ import (
 // FindFile searches for a file inside the test run environment. It returns the
 // full path to the file. It fails if none or more than one file is found.
 func FindFile(path string) (string, error) {
-	wd, err := os.Getwd()
+	// Get the directory of the currently running executable.
+	// Note: This is not the same as using os.Getwd(), as the latter is not
+	// correct if this test is run using `sudo`.
+	ex, err := os.Executable()
 	if err != nil {
 		return "", err
 	}
+	wd := filepath.Dir(ex)
 
-	// The test root is demarcated by a path element called "__main__". Search for
-	// it backwards from the working directory.
-	root := wd
-	for {
-		dir, name := filepath.Split(root)
-		if name == "__main__" {
-			break
+	// The runfiles root is demarcated by a path element called "__main__". Search for it starting
+	// from the current working directory.
+	var root string
+	filepath.WalkDir(wd, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
 		}
-		if len(dir) == 0 {
-			return "", fmt.Errorf("directory __main__ not found in %q", wd)
+		if d.Name() == "__main__" {
+			root = path
+			return filepath.SkipAll
 		}
-		// Remove ending slash to loop around.
-		root = dir[:len(dir)-1]
+		return nil
+	})
+
+	if root == "" {
+		return "", fmt.Errorf("directory __main__ not found in %q", wd)
 	}
 
 	// Annoyingly, bazel adds the build type to the directory path for go
