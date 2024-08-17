@@ -18,25 +18,48 @@ package sniffer_test
 import (
 	"context"
 	"errors"
+	"os"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/docker/docker/api/types/mount"
 	"gvisor.dev/gvisor/pkg/test/dockerutil"
-	"gvisor.dev/gvisor/pkg/test/testutil"
+
+	// Needed for go:embed
+	_ "embed"
 )
 
 const maxDuration = 1 * time.Minute
+
+//go:embed run_sniffer_copy
+var runSnifferBinary []byte
 
 // RunCommand runs the given command via the sniffer, with the -enforce_compatibility flag.
 //
 //	It's run in a docker container, with the cuda-tests image.
 func runCUDATestsCommand(t *testing.T, cmd ...string) (string, error) {
-	// Find the sniffer binary
-	cliPath, err := testutil.FindFile("tools/ioctl_sniffer/run_sniffer")
+	// Extract the sniffer binary to a temporary location.
+	runSniffer, err := os.CreateTemp("/tmp", "run_sniffer.*")
 	if err != nil {
-		t.Fatalf("Failed to find run_sniffer: %v", err)
+		t.Fatalf("Failed to create temporary file: %v", err)
+	}
+	defer func() {
+		if err := runSniffer.Close(); err != nil {
+			t.Fatalf("Failed to close temporary file: %v", err)
+		}
+		if err := os.Remove(runSniffer.Name()); err != nil {
+			t.Fatalf("Failed to unlink temporary file: %v", err)
+		}
+	}()
+	if _, err := runSniffer.Write(runSnifferBinary); err != nil {
+		t.Fatalf("Failed to write to temporary file: %v", err)
+	}
+	if err := runSniffer.Sync(); err != nil {
+		t.Fatalf("Failed to sync temporary file: %v", err)
+	}
+	if err := runSniffer.Chmod(0o555); err != nil {
+		t.Fatalf("Failed to chmod temporary file: %v", err)
 	}
 
 	// Set up our docker container
@@ -51,7 +74,7 @@ func runCUDATestsCommand(t *testing.T, cmd ...string) (string, error) {
 	opts.Image = "gpu/cuda-tests"
 	opts.Mounts = append(opts.Mounts, mount.Mount{
 		Type:     mount.TypeBind,
-		Source:   cliPath,
+		Source:   runSniffer.Name(),
 		Target:   "/run_sniffer",
 		ReadOnly: false,
 	})
