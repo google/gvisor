@@ -79,6 +79,7 @@ go_library(
         "//pkg/sentry/platform",
         "//pkg/sentry/platform/interrupt",
         "//pkg/sentry/time",
+        "//pkg/sigframe",
         "//pkg/sighandling",
         "//pkg/sync",
         "@org_golang_x_sys//unix:go_default_library",

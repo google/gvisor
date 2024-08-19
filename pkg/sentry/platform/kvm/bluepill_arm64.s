@@ -50,7 +50,7 @@ TEXT ·setTLS(SB),NOSPLIT,$0-8
 // See bluepill.go.
 TEXT ·bluepill(SB),NOSPLIT,$0
 begin:
-	MOVD	arg+0(FP), R8
+	MOVD	c+0(FP), R8
 	MOVD	$VCPU_CPU(R8), R9
 	ORR	$0xffff000000000000, R9, R9
 	// Trigger sigill.

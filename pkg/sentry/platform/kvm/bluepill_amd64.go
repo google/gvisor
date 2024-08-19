@@ -28,6 +28,10 @@ var (
 	bluepillSignal = unix.SIGSEGV
 )
 
+func bluepillArchVCPU(context *arch.SignalContext64) *vCPU {
+	return vCPUPtr(uintptr(context.Rax))
+}
+
 // bluepillArchEnter is called during bluepillEnter.
 //
 //go:nosplit

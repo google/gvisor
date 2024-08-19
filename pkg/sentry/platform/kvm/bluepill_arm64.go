@@ -18,15 +18,23 @@
 package kvm
 
 import (
+	"fmt"
+
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/ring0"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/sighandling"
 )
 
 var (
 	// The action for bluepillSignal is changed by sigaction().
 	bluepillSignal = unix.SIGILL
 )
+
+// bluepill enters guest mode.
+//
+//go:nosplit
+func bluepill(c *vCPU)
 
 // getTLS returns the value of TPIDR_EL0 register.
 //
@@ -129,4 +137,11 @@ func (c *vCPU) KernelException(vector ring0.Vector) {
 //
 //go:nosplit
 func (c *vCPU) hltSanityCheck() {
+}
+
+func init() {
+	// Install the handler.
+	if err := sighandling.ReplaceSignalHandler(bluepillSignal, addrOfSighandler(), &savedHandler); err != nil {
+		panic(fmt.Sprintf("Unable to set handler for signal %d: %v", bluepillSignal, err))
+	}
 }

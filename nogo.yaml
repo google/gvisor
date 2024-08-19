@@ -106,6 +106,7 @@ analyzers:
         - "\\[amd64\\].*sysret: RET without writing to 8-byte"
         - "\\[amd64\\].*iret: RET without writing to 8-byte"
         - "\\[amd64\\].*exception: use of .* points beyond argument frame"
+        - "\\[amd64\\].*retjmp: use of .* points beyond argument frame"
         - "\\[arm64\\].*HaltEl1ExceptionAndResume: unknown variable"
         - "\\[arm64\\].*HaltEl1ExceptionAndResume: use of .* points beyond argument frame"
   assign:
@@ -193,6 +194,7 @@ analyzers:
         - pkg/sentry/pgalloc/pgalloc_unsafe.go                     # Special case.
         - pkg/sentry/platform/kvm/bluepill_unsafe.go               # Special case.
         - pkg/sentry/platform/kvm/machine_unsafe.go                # Special case.
+        - pkg/sentry/platform/kvm/bluepill_amd64_unsafe.go         # Special case.
         - pkg/sentry/platform/pgalloc/pgalloc_unsafe.go            # Special case.
         - pkg/sentry/platform/systrap/stub_unsafe.go               # Special case.
         - pkg/sentry/platform/systrap/syscall_thread_unsafe.go     # Special case.
