@@ -18,11 +18,16 @@
 package kvm
 
 import (
+	"fmt"
 	"unsafe"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/cpuid"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/ring0"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/sigframe"
 )
 
 // dieArchSetup initializes the state for dieTrampoline.
@@ -140,4 +145,71 @@ func bluepillReadyStopGuest(c *vCPU) bool {
 //go:nosplit
 func bluepillArchHandleExit(c *vCPU, context unsafe.Pointer) {
 	c.die(bluepillArchContext(context), "unknown")
+}
+
+func addrOfBluepillUserHandler() uintptr
+func rflags() uint64
+
+const _RFLAGS_IF = 1 << 9
+
+func currentCPU() *vCPU
+
+// bluepill enters guest mode.
+//
+//go:nosplit
+func bluepill(c *vCPU) {
+	// Interrupts are always disabled in the VM.
+	if rflags()&_RFLAGS_IF == 0 {
+		if currentCPU() == c {
+			// Already in the vm.
+			return
+		}
+		// Wrong vCPU, switch to the right one.
+		redpill()
+	}
+
+	// Block all signals.
+	sigmask := linux.SignalSet(^uint64(0))
+	c.bluepillSigframe.MContext.Rax = uint64(uintptr(unsafe.Pointer(c)))
+	if err := sigframe.CallWithSignalFrame(
+		c.bluepillStack, addrOfBluepillUserHandler(),
+		c.bluepillSigframe, c.bluepillSigframeFPState, &sigmask); err != nil {
+		throw("failed to swallow the bluepill")
+	}
+}
+
+// +checkescape:all
+//
+//go:nosplit
+func bluepillUserHandler(frame uintptr) {
+	// Sanitize the registers; interrupts must always be disabled.
+	context := bluepillArchContext(unsafe.Pointer(frame))
+	c := vCPUPtr(uintptr(context.Rax))
+	bluepillHandler(unsafe.Pointer(frame))
+	sigframe.Sigreturn(c.bluepillSigframe)
+}
+
+//go:nosplit
+func (c *vCPU) initBluepillHandler() error {
+	stackSize := uintptr(hostarch.PageSize)
+
+	maxFPUSizeUint, fpuAlignmentUint := cpuid.HostFeatureSet().ExtendedStateSize()
+	fpuAlignment := uintptr(fpuAlignmentUint)
+	maxFPUSize := uintptr(maxFPUSizeUint)
+
+	fpuOffset := (unsafe.Sizeof(arch.UContext64{}) + fpuAlignment - 1) / fpuAlignment * fpuAlignment
+	mappingSize, _ := hostarch.PageRoundUp(stackSize + maxFPUSize + fpuOffset)
+
+	addr, _, errno := unix.Syscall6(unix.SYS_MMAP, 0, mappingSize,
+		uintptr(unix.PROT_READ|unix.PROT_WRITE),
+		uintptr(unix.MAP_PRIVATE|unix.MAP_ANONYMOUS),
+		0, 0)
+	if errno != 0 {
+		return fmt.Errorf("mmap failed: %d", errno)
+	}
+	c.bluepillStack = addr + stackSize
+	c.bluepillSigframe = (*arch.UContext64)(unsafe.Pointer(addr + stackSize))
+	c.bluepillSigframeFPState = addr + stackSize + fpuOffset
+
+	return nil
 }
