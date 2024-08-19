@@ -17,6 +17,10 @@
 
 package ring0
 
+import (
+	"gvisor.dev/gvisor/pkg/sentry/arch"
+)
+
 var (
 	// VirtualAddressBits is the number of bits available in the virtual
 	// address space.
@@ -144,6 +148,17 @@ type CPUArchState struct {
 	hasXSAVE    bool
 	hasXSAVEOPT bool
 	hasFSGSBASE bool
+
+	SwitchOptsNeedIRET    uint64
+	SwitchOptsRegs        *arch.Registers
+	SwitchOptsFPU         *byte
+	SwitchOptsUserCR3     uint64
+	SwitchOptsVector      Vector
+	SwitchOptsFaultAddr   uintptr
+	SwitchOptsErrorCode   uintptr
+	SwitchOptsErrorType   uintptr
+	SwitchOptsInterrupted uint64
+	SwitchOptsStack       [256]byte
 }
 
 // ErrorCode returns the last error code.
@@ -178,6 +193,10 @@ func (c *CPU) Vector() uintptr {
 //go:nosplit
 func (c *CPU) FaultAddr() uintptr {
 	return c.faultAddr
+}
+
+func (c *CPU) KernelCR3(kernelPCID uint16) {
+	c.kernelCR3 = uintptr(c.kernel.PageTables.CR3(true, kernelPCID))
 }
 
 // SwitchArchOpts are embedded in SwitchOpts.

@@ -94,6 +94,9 @@ func start()
 // wrapper function rather than the function itself. We must reference from
 // assembly to get the ABI0 (i.e., primary) address.
 func AddrOfStart() uintptr
+func AddrOfDoSwitchToUserLoop() uintptr
+
+func doSwitchToUserLoop()
 
 // Exception stubs.
 func divideByZero()

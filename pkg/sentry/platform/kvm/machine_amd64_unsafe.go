@@ -19,6 +19,7 @@ package kvm
 
 import (
 	"fmt"
+	"sync/atomic"
 	"unsafe"
 
 	"golang.org/x/sys/unix"
@@ -194,4 +195,8 @@ func seccompMmapSyscall(context unsafe.Pointer) (uintptr, uintptr, unix.Errno) {
 	ctx.Rax = uint64(addr)
 
 	return addr, uintptr(ctx.Rsi), e
+}
+
+func (c *vCPU) interrupted() {
+	atomic.StoreUint64(&c.SwitchOptsInterrupted, 1)
 }
