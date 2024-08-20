@@ -265,6 +265,7 @@ func (t *Task) Clone(args *linux.CloneArgs) (ThreadID, *SyscallControl, error) {
 		ContainerID:      t.ContainerID(),
 		UserCounters:     uc,
 		SessionKeyring:   sessionKeyring,
+		Personality:      t.personality.Load(),
 		Origin:           t.Origin,
 	}
 	if args.Flags&linux.CLONE_THREAD == 0 {
