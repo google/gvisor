@@ -241,6 +241,7 @@ func (p *Init) start(ctx context.Context, restoreConf *extension.RestoreConfig) 
 	} else {
 		if err := p.runtime.Restore(ctx, p.id, cio, &runsccmd.RestoreOpts{
 			ImagePath: restoreConf.ImagePath,
+			Detach:    true,
 			Direct:    restoreConf.Direct,
 		}); err != nil {
 			return p.runtimeError(err, "OCI runtime restore failed")
