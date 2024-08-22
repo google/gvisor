@@ -23,6 +23,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/ring0"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/sentry/platform"
 )
 
 type kvmOneReg struct {
@@ -64,8 +65,8 @@ type kvmVcpuEvents struct {
 }
 
 // updateGlobalOnce does global initialization. It has to be called only once.
-func updateGlobalOnce(fd int) error {
-	err := updateSystemValues(int(fd))
+func updateGlobalOnce(opts platform.ConstructorOpts) error {
+	err := updateSystemValues(opts.DeviceFile.FD())
 	ring0.Init()
 	physicalInit()
 	// The linux.Task represents the possible largest task size, which the UserspaceSize shouldn't be larger than.

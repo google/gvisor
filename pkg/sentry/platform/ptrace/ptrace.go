@@ -261,7 +261,7 @@ func (p *PTrace) NewAddressSpace(any) (platform.AddressSpace, <-chan struct{}, e
 
 type constructor struct{}
 
-func (*constructor) New(*fd.FD) (platform.Platform, error) {
+func (*constructor) New(opts platform.ConstructorOpts) (platform.Platform, error) {
 	return New()
 }
 

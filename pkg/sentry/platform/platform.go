@@ -547,7 +547,7 @@ type Constructor interface {
 	// Arguments:
 	//
 	//	* deviceFile - the device file (e.g. /dev/kvm for the KVM platform).
-	New(deviceFile *fd.FD) (Platform, error)
+	New(opts ConstructorOpts) (Platform, error)
 
 	// OpenDevice opens the path to the device used by the platform.
 	// Passing in an empty string will use the default path for the device,
@@ -560,6 +560,16 @@ type Constructor interface {
 	// PrecompiledSeccompInfo returns a list of `SeccompInfo`s that is
 	// useful to precompile into the Sentry.
 	PrecompiledSeccompInfo() []SeccompInfo
+}
+
+// ConstructorOpts provides options to Constructor.New.
+type ConstructorOpts struct {
+	// If DeviceFile is not nil, it is the device file required by the platform
+	// (e.g. /dev/kvm for the KVM platform).
+	DeviceFile *fd.FD
+
+	// HostMSRSpecCtrl is a value of MSR_IA32_SPEC_CTRL on the host.
+	HostMSRSpecCtrl uint64
 }
 
 // platforms contains all available platform types.

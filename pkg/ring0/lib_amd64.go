@@ -81,15 +81,20 @@ func rdmsr(reg uintptr) uintptr
 
 // Mostly-constants set by Init.
 var (
-	hasSMEP       bool
-	hasSMAP       bool
-	hasPCID       bool
-	hasXSAVEOPT   bool
-	hasXSAVE      bool
-	hasFSGSBASE   bool
-	validXCR0Mask uintptr
-	localXCR0     uintptr
+	hasSMEP         bool
+	hasSMAP         bool
+	hasPCID         bool
+	hasXSAVEOPT     bool
+	hasXSAVE        bool
+	hasFSGSBASE     bool
+	validXCR0Mask   uintptr
+	localXCR0       uintptr
+	hostMSRSpecCtrl uint64
 )
+
+func SetHostMSRSpecCtrl(v uint64) {
+	hostMSRSpecCtrl = v
+}
 
 // Init sets function pointers based on architectural features.
 //

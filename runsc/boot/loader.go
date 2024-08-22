@@ -245,6 +245,9 @@ type Loader struct {
 	// +checklocks:mu
 	portForwardProxies []*pf.Proxy
 
+	// hostMSRSpecCtrl is the value of MSR_IA32_SPEC_CTRL on the host.
+	hostMSRSpecCtrl uint64
+
 	// +checklocks:mu
 	saveFDs []*fd.FD
 }
@@ -355,8 +358,9 @@ type Args struct {
 	// /sys/kernel/mm/transparent_hugepage/shmem_enabled, or empty if this is
 	// unknown.
 	HostShmemHuge string
-
-	SaveFDs []*fd.FD
+	// HostMSRSpecCtrl is the value of MSR_IA32_SPEC_CTRL on the host.
+	HostMSRSpecCtrl uint64
+	SaveFDs         []*fd.FD
 }
 
 // make sure stdioFDs are always the same on initial start and on restore
@@ -483,7 +487,12 @@ func New(args Args) (*Loader, error) {
 	}
 
 	// Create kernel and platform.
-	p, err := createPlatform(args.Conf, args.Device)
+	platformOpts := platform.ConstructorOpts{
+		HostMSRSpecCtrl: args.HostMSRSpecCtrl,
+		DeviceFile:      args.Device,
+	}
+	l.hostMSRSpecCtrl = args.HostMSRSpecCtrl
+	p, err := createPlatform(args.Conf, platformOpts)
 	if err != nil {
 		return nil, fmt.Errorf("creating platform: %w", err)
 	}
@@ -748,13 +757,13 @@ func (l *Loader) Destroy() {
 	refs.OnExit()
 }
 
-func createPlatform(conf *config.Config, deviceFile *fd.FD) (platform.Platform, error) {
+func createPlatform(conf *config.Config, opts platform.ConstructorOpts) (platform.Platform, error) {
 	p, err := platform.Lookup(conf.Platform)
 	if err != nil {
 		panic(fmt.Sprintf("invalid platform %s: %s", conf.Platform, err))
 	}
 	log.Infof("Platform: %s", conf.Platform)
-	return p.New(deviceFile)
+	return p.New(opts)
 }
 
 func createMemoryFile(appHugePages bool, hostShmemHuge string) (*pgalloc.MemoryFile, error) {

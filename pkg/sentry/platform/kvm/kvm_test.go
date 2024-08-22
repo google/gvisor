@@ -48,7 +48,10 @@ func kvmTest(t testHarness, setup func(*KVM), fn func(*vCPU) bool) {
 	if err != nil {
 		t.Fatalf("error opening device file: %v", err)
 	}
-	k, err := New(deviceFile)
+	opts := platform.ConstructorOpts{
+		DeviceFile: deviceFile,
+	}
+	k, err := New(opts)
 	if err != nil {
 		t.Fatalf("error creating KVM instance: %v", err)
 	}
