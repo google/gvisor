@@ -1,4 +1,4 @@
-FROM ubuntu:20.04 as build
+FROM ubuntu:jammy as build
 
 # Install build dependencies:
 RUN apt-get update && apt-get install -y git build-essential libssl-dev libz-dev
@@ -22,7 +22,7 @@ RUN cd /tmp/wrk2 \
 # Make.
 RUN cd /tmp/wrk2 && make
 
-FROM ubuntu:20.04
+FROM ubuntu:jammy
 RUN set -x \
         && apt-get update \
         && apt-get install -y \
