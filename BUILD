@@ -19,7 +19,9 @@ exports_files(["LICENSE"])
 nogo_config(
     name = "nogo_config",
     srcs = ["nogo.yaml"],
-    visibility = ["//:sandbox"],
+    visibility = [
+        "//visibility:public",
+    ],
 )
 
 doc(

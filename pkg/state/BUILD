@@ -80,7 +80,9 @@ go_library(
     ],
     marshal = False,
     stateify = False,
-    visibility = ["//:sandbox"],
+    visibility = [
+        "//visibility:public",
+    ],
     deps = [
         "//pkg/state/wire",
     ],
