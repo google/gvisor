@@ -310,6 +310,9 @@ func startGo(c *CPU) {
 	// sysret instruction is designed to work (it assumes they follow).
 	wrmsr(_MSR_STAR, uintptr(uint64(Kcode)<<32|uint64(Ucode32)<<48))
 	wrmsr(_MSR_CSTAR, kernelFunc(addrOfSysenter()))
+	if hostMSRSpecCtrl != 0 {
+		wrmsr(_MSR_IA32_SPEC_CTRL, uintptr(hostMSRSpecCtrl))
+	}
 }
 
 // SetCPUIDFaulting sets CPUID faulting per the boolean value.

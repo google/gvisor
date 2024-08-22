@@ -12,6 +12,8 @@ go_library(
         "network.go",
         "network_unsafe.go",
         "sandbox.go",
+        "sandbox_amd64.go",
+        "sandbox_arm64.go",
         "sandbox_impl.go",
         "xdp.go",
     ],
@@ -20,6 +22,8 @@ go_library(
         "//test:__subpackages__",
     ],
     deps = [
+        "//pkg/sentry/hostcpu",
+        "//pkg/marshal/primitive",
         "//pkg/abi/linux",
         "//pkg/atomicbitops",
         "//pkg/cleanup",

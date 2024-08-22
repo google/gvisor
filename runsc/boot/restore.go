@@ -32,6 +32,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/host"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/socket/hostinet"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netstack"
@@ -149,7 +150,12 @@ func (r *restorer) restore(l *Loader) error {
 	// old kernel is released.
 	l.k.RootNetworkNamespace().ResetStack()
 
-	p, err := createPlatform(l.root.conf, r.deviceFile)
+	// Create kernel and platform.
+	platformOpts := platform.ConstructorOpts{
+		HostMSRSpecCtrl: l.hostMSRSpecCtrl,
+		DeviceFile: r.deviceFile,
+	}
+	p, err := createPlatform(l.root.conf, platformOpts)
 	if err != nil {
 		return fmt.Errorf("creating platform: %v", err)
 	}

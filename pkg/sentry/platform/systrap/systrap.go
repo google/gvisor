@@ -400,7 +400,7 @@ func (*Systrap) NewContext(ctx pkgcontext.Context) platform.Context {
 
 type constructor struct{}
 
-func (*constructor) New(_ *fd.FD) (platform.Platform, error) {
+func (*constructor) New(opts platform.ConstructorOpts) (platform.Platform, error) {
 	return New()
 }
 

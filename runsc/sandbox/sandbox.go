@@ -1212,6 +1212,8 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 
 	_ = donation.DonateAndTransferCustomFiles(cmd, nextFD, args.PassFiles)
 
+	cmd.Args = archUpdateSandboxArgs(conf, cmd.Args)
+
 	// Add container ID as the last argument.
 	cmd.Args = append(cmd.Args, s.ID)
 
