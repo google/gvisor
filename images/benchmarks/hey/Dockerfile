@@ -4,7 +4,7 @@ WORKDIR /go/src/github.com/rakyll/hey
 RUN go mod download
 RUN CGO_ENABLED=0 go build -o /hey hey.go
 
-FROM ubuntu:18.04
+FROM ubuntu:jammy
 RUN set -x \
         && apt-get update \
         && apt-get install -y \
