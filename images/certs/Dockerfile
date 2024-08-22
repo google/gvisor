@@ -1,7 +1,7 @@
 # Generates the a CA cert, a server key, and a server cert signed by the CA.
 # reference:
 # https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/apiserver/pkg/admission/plugin/webhook/testcerts/gencerts.sh
-FROM ubuntu:18.04
+FROM ubuntu:jammy
 WORKDIR /certs
 ADD server.conf /conf/server.conf
 # Install openssl.
