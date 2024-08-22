@@ -128,7 +128,7 @@ $(foreach image, $(ALL_IMAGES), $(eval $(call tag_expand_rule,$(image))))
 local_tag = \
   docker tag $(call remote_image,$(1)):$(call tag,$(1)) $(call local_image,$(1)):$(call tag,$(1)) >&2
 latest_tag = \
-  docker tag $(call local_image,$(1)):$(call tag,$(1)) $(call local_image,$(1)) >&2
+  docker tag $(call local_image,$(1)):$(call tag,$(1)) $(call local_image,$(1)):latest >&2
 tag-%: ## Tag a local image.
 	@$(call header,TAG $*)
 	@$(call local_tag,$*) && $(call latest_tag,$*)
@@ -181,9 +181,17 @@ test-%: register-cross ## Build an image locally if the remote doesn't exist.
 # push pushes the remote image, after validating that the tag doesn't exist
 # yet. Note that this generic rule will match the fully-expanded remote image
 # tag.
+# If DOCKER_PUSH_AS_LATEST is set to true, this also marks this image as being
+# the latest one on the remote repository.
+DOCKER_PUSH_AS_LATEST ?= false
 push-%:
 	$(call image_manifest,$*) >&2 || \
-	( $(call rebuild,$*) && docker image push $(call remote_image,$*):$(call tag,$*) >&2 )
+	( $(call rebuild,$*) && \
+	  docker image push $(call remote_image,$*):$(call tag,$*) >&2 && \
+	  ( test $(DOCKER_PUSH_AS_LATEST) '!=' true || \
+	    docker image push $(call remote_image,$*):latest >&2 \
+	  ) \
+	)
 
 # register-cross registers the necessary qemu binaries for cross-compilation.
 # This may be used by any target that may execute containers that are not the
