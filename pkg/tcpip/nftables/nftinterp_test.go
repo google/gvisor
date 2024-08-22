@@ -21,8 +21,6 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 )
 
-// interpretOperationTestAction is a generic action for testing the
-// interpretation of an operation.
 type interpretOperationTestAction struct {
 	tname    string
 	opStr    string
@@ -108,9 +106,29 @@ func TestInterpretImmediateOps(t *testing.T) {
 			expected: nil,
 		},
 		{
+			tname:    "16-byte register with 2-byte data",
+			opStr:    "[ immediate reg 2 0xb80d ]",
+			expected: nil, // can handle 2-byte data but must be padded to 4-bytes
+		},
+		{
 			tname:    "16-byte register with 4-byte data",
-			opStr:    "[ immediate reg 3 0x0201a8c0 ]",
-			expected: mustCreateImmediate(t, linux.NFT_REG_3, NewBytesData([]byte{0x02, 0x01, 0xa8, 0xc0})),
+			opStr:    "[ immediate reg 1 0x0201a8c0 ]",
+			expected: mustCreateImmediate(t, linux.NFT_REG_1, NewBytesData([]byte{0x02, 0x01, 0xa8, 0xc0})),
+		},
+		{
+			tname:    "16-byte register with 6-byte data",
+			opStr:    "[ immediate reg 2 0xb80d0120 0x0050 ]",
+			expected: nil, // can handle 6-byte data but must be padded to 8-bytes
+		},
+		{
+			tname:    "16-byte register with 8-byte data",
+			opStr:    "[ immediate reg 2 0xb80d0120 0x00000050 ]",
+			expected: mustCreateImmediate(t, linux.NFT_REG_2, NewBytesData([]byte{0xb8, 0x0d, 0x01, 0x20, 0x00, 0x00, 0x00, 0x50})),
+		},
+		{
+			tname:    "16-byte register with 12-byte data",
+			opStr:    "[ immediate reg 3 0xb80d0120 0x00000050 0xb80d0120 ]",
+			expected: mustCreateImmediate(t, linux.NFT_REG_3, NewBytesData([]byte{0xb8, 0x0d, 0x01, 0x20, 0x00, 0x00, 0x00, 0x50, 0xb8, 0x0d, 0x01, 0x20})),
 		},
 		{
 			tname:    "16-byte register with 16-byte data",
@@ -118,9 +136,9 @@ func TestInterpretImmediateOps(t *testing.T) {
 			expected: mustCreateImmediate(t, linux.NFT_REG_4, NewBytesData([]byte{0xb8, 0x0d, 0x01, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00})),
 		},
 		{
-			tname:    "16-byte register with 8-byte data",
-			opStr:    "[ immediate reg 4 0xb80d0120 0x00000050 ]",
-			expected: nil,
+			tname:    "16-byte register with uneven bytes data",
+			opStr:    "[ immediate reg 2 0xb80d0120 0x0f60a0 ]",
+			expected: nil, // can handle uneven but must be padded to 4-byte multiple
 		},
 		{
 			tname:    "4-byte register with verdict data",
@@ -131,6 +149,11 @@ func TestInterpretImmediateOps(t *testing.T) {
 			tname:    "4-byte register with verdict data with target",
 			opStr:    "[ immediate reg 9 goto -> next_chain ]",
 			expected: nil,
+		},
+		{
+			tname:    "4-byte register with 2-byte data",
+			opStr:    "[ immediate reg 8 0xb80d ]",
+			expected: nil, // can handle 2-byte data but must be padded to 4-bytes
 		},
 		{
 			tname:    "4-byte register with 4-byte data",
@@ -173,72 +196,182 @@ func TestInterpretComparisonOps(t *testing.T) {
 			expected: nil,
 		},
 		{
-			tname:    "register == 4-byte data",
-			opStr:    "[ cmp eq reg 1 0x0302010a ]",
-			expected: mustCreateComparison(t, linux.NFT_REG_1, linux.NFT_CMP_EQ, NewBytesData([]byte{0x03, 0x02, 0x01, 0x0a})),
+			tname:    "verdict register with 8-byte data comparison",
+			opStr:    "[ cmp lt reg 0 0xb80d0120 0x02000000 ]",
+			expected: nil,
 		},
 		{
-			tname:    "register != 4-byte data",
-			opStr:    "[ cmp neq reg 2 0x00000064 ]",
-			expected: mustCreateComparison(t, linux.NFT_REG_2, linux.NFT_CMP_NEQ, NewBytesData([]byte{0x00, 0x00, 0x00, 0x64})),
-		},
-		{
-			tname:    "register < 4-byte data",
-			opStr:    "[ cmp lt reg 3 0x00000000 ]",
-			expected: mustCreateComparison(t, linux.NFT_REG_3, linux.NFT_CMP_LT, NewBytesData([]byte{0x00, 0x00, 0x00, 0x00})),
-		},
-		{
-			tname:    "register <= 4-byte data",
-			opStr:    "[ cmp lte reg 4 0x00000164 ]",
-			expected: mustCreateComparison(t, linux.NFT_REG_4, linux.NFT_CMP_LTE, NewBytesData([]byte{0x00, 0x00, 0x01, 0x64})),
-		},
-		{
-			tname:    "register > 4-byte data",
-			opStr:    "[ cmp gt reg 8 0xe8030000 ]",
-			expected: mustCreateComparison(t, linux.NFT_REG32_00, linux.NFT_CMP_GT, NewBytesData([]byte{0xe8, 0x03, 0x00, 0x00})),
-		},
-		{
-			tname:    "register >= 4-byte data",
-			opStr:    "[ cmp gte reg 9 0xc02b0000 ]",
-			expected: mustCreateComparison(t, linux.NFT_REG32_01, linux.NFT_CMP_GTE, NewBytesData([]byte{0xc0, 0x2b, 0x00, 0x00})),
+			tname:    "verdict register with 12-byte data comparison",
+			opStr:    "[ cmp gte reg 0 0xb80d0120 0x18305290 0x02000000 ]",
+			expected: nil,
 		},
 		{
 			tname:    "verdict register with 16-byte data comparison",
-			opStr:    "[ cmp gt reg 0 0xb80d0120 0x00000000 0x00000000 0x02000000 ]",
+			opStr:    "[ cmp neq reg 0 0xb80d0120 0x18305290 0x18305290 0x02000000 ]",
+			expected: nil,
+		},
+		{
+			tname:    "4-byte register == 4-byte data",
+			opStr:    "[ cmp eq reg 8 0x0302010a ]",
+			expected: mustCreateComparison(t, linux.NFT_REG32_00, linux.NFT_CMP_EQ, NewBytesData([]byte{0x03, 0x02, 0x01, 0x0a})),
+		},
+		{
+			tname:    "4-byte register != 4-byte data",
+			opStr:    "[ cmp neq reg 9 0x00000064 ]",
+			expected: mustCreateComparison(t, linux.NFT_REG32_01, linux.NFT_CMP_NEQ, NewBytesData([]byte{0x00, 0x00, 0x00, 0x64})),
+		},
+		{
+			tname:    "4-byte register < 4-byte data",
+			opStr:    "[ cmp lt reg 10 0x00000000 ]",
+			expected: mustCreateComparison(t, linux.NFT_REG32_02, linux.NFT_CMP_LT, NewBytesData([]byte{0x00, 0x00, 0x00, 0x00})),
+		},
+		{
+			tname:    "4-byte register <= 4-byte data",
+			opStr:    "[ cmp lte reg 11 0x00000164 ]",
+			expected: mustCreateComparison(t, linux.NFT_REG32_03, linux.NFT_CMP_LTE, NewBytesData([]byte{0x00, 0x00, 0x01, 0x64})),
+		},
+		{
+			tname:    "4-byte register > 4-byte data",
+			opStr:    "[ cmp gt reg 12 0xe8030000 ]",
+			expected: mustCreateComparison(t, linux.NFT_REG32_04, linux.NFT_CMP_GT, NewBytesData([]byte{0xe8, 0x03, 0x00, 0x00})),
+		},
+		{
+			tname:    "4-byte register >= 4-byte data",
+			opStr:    "[ cmp gte reg 13 0xc02b0000 ]",
+			expected: mustCreateComparison(t, linux.NFT_REG32_05, linux.NFT_CMP_GTE, NewBytesData([]byte{0xc0, 0x2b, 0x00, 0x00})),
+		},
+		{
+			tname:    "4-byte register with 8-byte data comparison",
+			opStr:    "[ cmp eq reg 14 0xb80d0120 0x02000000 ]",
+			expected: nil,
+		},
+		{
+			tname:    "4-byte register with 12-byte data comparison",
+			opStr:    "[ cmp lte reg 15 0xb80d0120 0x18305290 0x02000000 ]",
 			expected: nil,
 		},
 		{
 			tname:    "4-byte register with 16-byte data comparison",
-			opStr:    "[ cmp lte reg 8 0x0302010a 0x00000000 0x00000000 0x02000001 ]",
+			opStr:    "[ cmp gt reg 16 0x0302010a 0x00000000 0x00000000 0x02000001 ]",
 			expected: nil,
 		},
 		{
-			tname:    "register == 16-byte data",
+			tname:    "16-byte register == 4-byte data",
+			opStr:    "[ cmp eq reg 1 0x0302010a ]",
+			expected: mustCreateComparison(t, linux.NFT_REG_1, linux.NFT_CMP_EQ, NewBytesData([]byte{0x03, 0x02, 0x01, 0x0a})),
+		},
+		{
+			tname:    "16-byte register != 4-byte data",
+			opStr:    "[ cmp neq reg 2 0x00000064 ]",
+			expected: mustCreateComparison(t, linux.NFT_REG_2, linux.NFT_CMP_NEQ, NewBytesData([]byte{0x00, 0x00, 0x00, 0x64})),
+		},
+		{
+			tname:    "16-byte register < 4-byte data",
+			opStr:    "[ cmp lt reg 3 0x00000000 ]",
+			expected: mustCreateComparison(t, linux.NFT_REG_3, linux.NFT_CMP_LT, NewBytesData([]byte{0x00, 0x00, 0x00, 0x00})),
+		},
+		{
+			tname:    "16-byte register <= 4-byte data",
+			opStr:    "[ cmp lte reg 4 0x00000164 ]",
+			expected: mustCreateComparison(t, linux.NFT_REG_4, linux.NFT_CMP_LTE, NewBytesData([]byte{0x00, 0x00, 0x01, 0x64})),
+		},
+		{
+			tname:    "16-byte register > 4-byte data",
+			opStr:    "[ cmp gt reg 1 0xe8030000 ]",
+			expected: mustCreateComparison(t, linux.NFT_REG_1, linux.NFT_CMP_GT, NewBytesData([]byte{0xe8, 0x03, 0x00, 0x00})),
+		},
+		{
+			tname:    "16-byte register >= 4-byte data",
+			opStr:    "[ cmp gte reg 2 0xc02b0000 ]",
+			expected: mustCreateComparison(t, linux.NFT_REG_2, linux.NFT_CMP_GTE, NewBytesData([]byte{0xc0, 0x2b, 0x00, 0x00})),
+		},
+		{
+			tname:    "16-byte register == 8-byte data",
+			opStr:    "[ cmp eq reg 1 0x0302010a 0x12345678 ]",
+			expected: mustCreateComparison(t, linux.NFT_REG_1, linux.NFT_CMP_EQ, NewBytesData([]byte{0x03, 0x02, 0x01, 0x0a, 0x12, 0x34, 0x56, 0x78})),
+		},
+		{
+			tname:    "16-byte register != 8-byte data",
+			opStr:    "[ cmp neq reg 2 0x00000064 0x00000020 ]",
+			expected: mustCreateComparison(t, linux.NFT_REG_2, linux.NFT_CMP_NEQ, NewBytesData([]byte{0x00, 0x00, 0x00, 0x64, 0x00, 0x00, 0x00, 0x20})),
+		},
+		{
+			tname:    "16-byte register < 8-byte data",
+			opStr:    "[ cmp lt reg 3 0x00000000 0x00000000 ]",
+			expected: mustCreateComparison(t, linux.NFT_REG_3, linux.NFT_CMP_LT, NewBytesData([]byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00})),
+		},
+		{
+			tname:    "16-byte register <= 8-byte data",
+			opStr:    "[ cmp lte reg 4 0x00000164 0x00000164 ]",
+			expected: mustCreateComparison(t, linux.NFT_REG_4, linux.NFT_CMP_LTE, NewBytesData([]byte{0x00, 0x00, 0x01, 0x64, 0x00, 0x00, 0x01, 0x64})),
+		},
+		{
+			tname:    "16-byte register > 8-byte data",
+			opStr:    "[ cmp gt reg 2 0xe8030000 0x00000f13 ]",
+			expected: mustCreateComparison(t, linux.NFT_REG_2, linux.NFT_CMP_GT, NewBytesData([]byte{0xe8, 0x03, 0x00, 0x00, 0x00, 0x00, 0x0f, 0x13})),
+		},
+		{
+			tname:    "16-byte register >= 8-byte data",
+			opStr:    "[ cmp gte reg 3 0x0a000120 0xc0090000 ]",
+			expected: mustCreateComparison(t, linux.NFT_REG_3, linux.NFT_CMP_GTE, NewBytesData([]byte{0x0a, 0x00, 0x01, 0x20, 0xc0, 0x09, 0x00, 0x00})),
+		},
+		{
+			tname:    "16-byte register == 12-byte data",
+			opStr:    "[ cmp eq reg 1 0x0302010a 0x00000000 0x12345678 ]",
+			expected: mustCreateComparison(t, linux.NFT_REG_1, linux.NFT_CMP_EQ, NewBytesData([]byte{0x03, 0x02, 0x01, 0x0a, 0x00, 0x00, 0x00, 0x00, 0x12, 0x34, 0x56, 0x78})),
+		},
+		{
+			tname:    "16-byte register != 12-byte data",
+			opStr:    "[ cmp neq reg 2 0x00000064 0x00000000 0x00000020 ]",
+			expected: mustCreateComparison(t, linux.NFT_REG_2, linux.NFT_CMP_NEQ, NewBytesData([]byte{0x00, 0x00, 0x00, 0x64, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x20})),
+		},
+		{
+			tname:    "16-byte register < 12-byte data",
+			opStr:    "[ cmp lt reg 3 0x00000000 0x00000000 0x00000000 ]",
+			expected: mustCreateComparison(t, linux.NFT_REG_3, linux.NFT_CMP_LT, NewBytesData([]byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00})),
+		},
+		{
+			tname:    "16-byte register <= 12-byte data",
+			opStr:    "[ cmp lte reg 4 0x00000164 0x00000164 0x00000164 ]",
+			expected: mustCreateComparison(t, linux.NFT_REG_4, linux.NFT_CMP_LTE, NewBytesData([]byte{0x00, 0x00, 0x01, 0x64, 0x00, 0x00, 0x01, 0x64, 0x00, 0x00, 0x01, 0x64})),
+		},
+		{
+			tname:    "16-byte register > 12-byte data",
+			opStr:    "[ cmp gt reg 2 0xe8030000 0x00000f13 0xc0090000 ]",
+			expected: mustCreateComparison(t, linux.NFT_REG_2, linux.NFT_CMP_GT, NewBytesData([]byte{0xe8, 0x03, 0x00, 0x00, 0x00, 0x00, 0x0f, 0x13, 0xc0, 0x09, 0x00, 0x00})),
+		},
+		{
+			tname:    "16-byte register >= 12-byte data",
+			opStr:    "[ cmp gte reg 3 0x0a000120 0x00000f13 0xc0090000 ]",
+			expected: mustCreateComparison(t, linux.NFT_REG_3, linux.NFT_CMP_GTE, NewBytesData([]byte{0x0a, 0x00, 0x01, 0x20, 0x00, 0x00, 0x0f, 0x13, 0xc0, 0x09, 0x00, 0x00})),
+		},
+		{
+			tname:    "16-byte register == 16-byte data",
 			opStr:    "[ cmp eq reg 1 0x0302010a 0x00000000 0x00000000 0x02000002 ]",
 			expected: mustCreateComparison(t, linux.NFT_REG_1, linux.NFT_CMP_EQ, NewBytesData([]byte{0x03, 0x02, 0x01, 0x0a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x02})),
 		},
 		{
-			tname:    "register != 16-byte data",
+			tname:    "16-byte register != 16-byte data",
 			opStr:    "[ cmp neq reg 2 0x00000064 0x00000000 0x00000000 0x02000000 ]",
 			expected: mustCreateComparison(t, linux.NFT_REG_2, linux.NFT_CMP_NEQ, NewBytesData([]byte{0x00, 0x00, 0x00, 0x64, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00})),
 		},
 		{
-			tname:    "register < 16-byte data",
+			tname:    "16-byte register < 16-byte data",
 			opStr:    "[ cmp lt reg 3 0x00000000 0x00000000 0x00000000 0x00000000 ]",
 			expected: mustCreateComparison(t, linux.NFT_REG_3, linux.NFT_CMP_LT, NewBytesData([]byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00})),
 		},
 		{
-			tname:    "register <= 16-byte data",
+			tname:    "16-byte register <= 16-byte data",
 			opStr:    "[ cmp lte reg 4 0x00000164 0x00000164 0x00000164 0x00000164 ]",
 			expected: mustCreateComparison(t, linux.NFT_REG_4, linux.NFT_CMP_LTE, NewBytesData([]byte{0x00, 0x00, 0x01, 0x64, 0x00, 0x00, 0x01, 0x64, 0x00, 0x00, 0x01, 0x64, 0x00, 0x00, 0x01, 0x64})),
 		},
 		{
-			tname:    "register > 16-byte data",
+			tname:    "16-byte register > 16-byte data",
 			opStr:    "[ cmp gt reg 2 0xe8030000 0x00000f13 0xc0090000 0x0b136a87 ]",
 			expected: mustCreateComparison(t, linux.NFT_REG_2, linux.NFT_CMP_GT, NewBytesData([]byte{0xe8, 0x03, 0x00, 0x00, 0x00, 0x00, 0x0f, 0x13, 0xc0, 0x09, 0x00, 0x00, 0x0b, 0x13, 0x6a, 0x87})),
 		},
 		{
-			tname:    "register >= 16-byte data",
+			tname:    "16-byte register >= 16-byte data",
 			opStr:    "[ cmp gte reg 3 0x0a000120 0x00000f13 0xc0090000 0x0b136a87 ]",
 			expected: mustCreateComparison(t, linux.NFT_REG_3, linux.NFT_CMP_GTE, NewBytesData([]byte{0x0a, 0x00, 0x01, 0x20, 0x00, 0x00, 0x0f, 0x13, 0xc0, 0x09, 0x00, 0x00, 0x0b, 0x13, 0x6a, 0x87})),
 		},

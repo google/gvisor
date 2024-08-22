@@ -306,14 +306,14 @@ func parseRegisterData(reg uint8, tokens []string, lnIdx int, tkIdx int) (int, R
 		}
 		return nextIdx, NewVerdictData(verdict), nil
 	}
-	// Handles hex data (4- or 16-byte).
+	// Handles hex data (4-, 8-, 12-, or 16-byte).
 	if len(tokens[tkIdx]) > 1 && tokens[tkIdx][:2] == "0x" {
 		nextIdx, data, err := parseHexData(tokens, lnIdx, tkIdx)
 		if err != nil {
 			return 0, nil, err
 		}
-		// Validates the register data type. 4-byte data is valid for both 4- and
-		// 16-byte registers, but 16-byte data is only valid for 16-byte registers.
+		// 4-byte data is only valid for 4-byte register. Any byte data can be
+		// stored in 16-byte registerValidates the register data type.
 		if err := data.ValidateRegister(reg); err != nil {
 			return 0, nil, &LogicError{lnIdx, tkIdx, err}
 		}
@@ -385,10 +385,10 @@ func parseHexData(tokens []string, lnIdx int, tkIdx int) (int, RegisterData, err
 		}
 		bytes = append(bytes, bytes4...)
 	}
-	if len(bytes) == 4 || len(bytes) == 16 {
-		return tkIdx, NewBytesData(bytes), nil
+	if len(bytes) > 16 {
+		return 0, nil, &SyntaxError{lnIdx, tkIdx, fmt.Sprintf("cannot have more than 16 bytes of hexadecimal data, got %d", len(bytes))}
 	}
-	return 0, nil, &SyntaxError{lnIdx, tkIdx, fmt.Sprintf("incorrect number of bytes for hexadecimal data, should be 4 or 16, got %d", len(bytes))}
+	return tkIdx, NewBytesData(bytes), nil
 }
 
 // parseCmpOp parses the int representing the cmpOp from the given string.

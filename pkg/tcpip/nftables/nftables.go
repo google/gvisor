@@ -650,13 +650,14 @@ func NewComparison(sreg uint8, op int, data RegisterData) (*Comparison, error) {
 // evaluate for Comparison compares the data in the source register to the given
 // data and breaks from the rule if the comparison is false.
 func (op Comparison) evaluate(regs *RegisterSet, pkt *stack.PacketBuffer) {
-	// Gets the data from the source register.
-	regBuf := getRegisterData(regs, op.sreg, op.data.Type())
 	// Gets the data to compare to.
 	bytesData, ok := op.data.(BytesData)
 	if !ok {
 		panic("comparison operation data is not BytesData")
 	}
+	// Gets the data from the source register.
+	regBuf := bytesData.getRegisterBuffer(regs, op.sreg)
+
 	// Compares from left to right in 4-byte chunks starting with the rightmost
 	// byte of every 4-byte chunk since the data is little endian.
 	// For example, 16-byte IPv6 address 2001:000a:130f:0000:0000:09c0:876a:130b
@@ -715,24 +716,8 @@ func isRegister(reg uint8) bool {
 	return isVerdictRegister(reg) || is16ByteRegister(reg) || is4ByteRegister(reg)
 }
 
-// RegisterDataType is the type of data to be set in a register.
-type RegisterDataType int
-
-const (
-	// DataVerdict represents a verdict to be stored in a register.
-	DataVerdict RegisterDataType = iota
-	// Data4Bytes represents 4 bytes of data to be stored in a register.
-	Data4Bytes
-	// Data16Bytes represents 16 bytes of data to be stored in a register.
-	Data16Bytes
-)
-
 // RegisterData represents the data to be set in a register.
 type RegisterData interface {
-
-	// Type returns the register data type.
-	Type() RegisterDataType
-
 	// String returns a string representation of the register data.
 	String() string
 
@@ -759,9 +744,6 @@ type VerdictData struct {
 // NewVerdictData creates a RegisterData for a verdict.
 func NewVerdictData(verdict Verdict) RegisterData { return VerdictData{data: verdict} }
 
-// Type returns the DataVerdict register data type for VerdictData.
-func (rd VerdictData) Type() RegisterDataType { return DataVerdict }
-
 // String returns a string representation of the verdict data.
 func (rd VerdictData) String() string {
 	return rd.data.String()
@@ -769,13 +751,20 @@ func (rd VerdictData) String() string {
 
 // Equal compares the verdict data to another RegisterData object.
 func (rd VerdictData) Equal(other RegisterData) bool {
-	return other != nil && other.Type() == DataVerdict && rd.data == other.(VerdictData).data
+	if other == nil {
+		return false
+	}
+	otherVD, ok := other.(VerdictData)
+	if !ok {
+		return false
+	}
+	return rd.data == otherVD.data
 }
 
 // ValidateRegister ensures the register is compatible with VerdictData.
 func (rd VerdictData) ValidateRegister(reg uint8) error {
 	if !isVerdictRegister(reg) {
-		return fmt.Errorf("verdict data type is only valid for register 0")
+		return fmt.Errorf("verdict can only be stored in verdict register")
 	}
 	return nil
 }
@@ -788,26 +777,17 @@ func (rd VerdictData) StoreData(regs *RegisterSet, reg uint8) {
 	regs.verdict = rd.data
 }
 
-// BytesData represents a 4 or 16 bytes of data to be stored in a register.
+// BytesData represents data in 4-byte chunks to be stored in a register.
 type BytesData struct {
 	data []byte
 }
 
-// NewBytesData creates a RegisterData for 4 or 16 bytes of data.
+// NewBytesData creates a RegisterData for 4, 8, 12, or 16 bytes of data.
 func NewBytesData(bytes []byte) RegisterData {
-	if len(bytes) != 4 && len(bytes) != 16 {
+	if len(bytes)%4 != 0 || len(bytes) > 16 {
 		panic(fmt.Errorf("invalid byte data length: %d", len(bytes)))
 	}
 	return BytesData{data: bytes}
-}
-
-// Type returns the Data4Bytes or Data16Bytes register data type depending
-// on the length of the BytesData.
-func (rd BytesData) Type() RegisterDataType {
-	if len(rd.data) == 4 {
-		return Data4Bytes
-	}
-	return Data16Bytes
 }
 
 // String returns a string representation of the bytes data.
@@ -820,54 +800,47 @@ func (rd BytesData) Equal(other RegisterData) bool {
 	if other == nil {
 		return false
 	}
-	if other.Type() != rd.Type() {
+	otherBD, ok := other.(BytesData)
+	if !ok {
 		return false
 	}
-	return slices.Equal(rd.data, other.(BytesData).data)
+	return slices.Equal(rd.data, otherBD.data)
 }
 
-// ValidateRegister ensures the register is compatible with Bytes4Data.
+// ValidateRegister ensures the register is compatible with this bytes data.
 func (rd BytesData) ValidateRegister(reg uint8) error {
-	if rd.Type() == Data4Bytes {
-		if !is4ByteRegister(reg) && !is16ByteRegister(reg) {
-			return fmt.Errorf("4-byte data type is only valid for 4-byte and 16-byte registers")
-		}
-	} else {
-		if !is16ByteRegister(reg) {
-			return fmt.Errorf("16-byte data type is only valid for 16-byte registers")
-		}
+	if isVerdictRegister(reg) {
+		return fmt.Errorf("data cannot be stored in verdict register")
 	}
+	if is4ByteRegister(reg) && len(rd.data) != 4 {
+		return fmt.Errorf("%d-byte data cannot be stored in 4-byte register", len(rd.data))
+	}
+	// 16-byte register can be used for any data (guaranteed to be <= 16 bytes)
 	return nil
 }
 
-// getRegisterData is a helper function that gets the appropriate slice of
+// getRegisterBuffer is a helper function that gets the appropriate slice of
 // register data from the register set.
 // Note: does not support verdict data and assumes the register is valid for the
 // given data type.
-func getRegisterData(regs *RegisterSet, reg uint8, dataType RegisterDataType) []byte {
-	// 4-byte data in a 4-byte register.
+func (rd BytesData) getRegisterBuffer(regs *RegisterSet, reg uint8) []byte {
+	// The entire 4-byte register (data must be exactly 4 bytes)
 	if is4ByteRegister(reg) {
 		start := (reg - linux.NFT_REG32_00) * linux.NFT_REG32_SIZE
 		return regs.data[start : start+linux.NFT_REG32_SIZE]
 	}
-	// 16-byte data in a 16-byte register.
-	if dataType == Data16Bytes {
-		start := (reg - linux.NFT_REG_1) * linux.NFT_REG_SIZE
-		return regs.data[start : start+linux.NFT_REG_SIZE]
-	}
-	// 4-byte data in a 16-byte register
+	// The appropriate (mod 4)-byte data in a 16-byte register
 	// Leaves excess space on the left (bc the data is little endian).
-	start := (reg-linux.NFT_REG_1)*linux.NFT_REG_SIZE + linux.NFT_REG_SIZE - linux.NFT_REG32_SIZE
-	return regs.data[start : start+linux.NFT_REG32_SIZE]
+	end := (int(reg)-linux.NFT_REG_1)*linux.NFT_REG_SIZE + linux.NFT_REG_SIZE
+	return regs.data[end-len(rd.data) : end]
 }
 
-// StoreData sets the data in the destination register to the uint32.
+// StoreData sets the data in the destination register to the bytes data.
 func (rd BytesData) StoreData(regs *RegisterSet, reg uint8) {
 	if err := rd.ValidateRegister(reg); err != nil {
 		panic(err)
 	}
-	regBuf := getRegisterData(regs, reg, rd.Type())
-	copy(regBuf, rd.data)
+	copy(rd.getRegisterBuffer(regs, reg), rd.data)
 }
 
 // RegisterSet represents the set of registers supported by the kernel.
@@ -1572,10 +1545,11 @@ func isJumpOrGotoOperation(op Operation) (bool, string) {
 	if !ok {
 		return false, ""
 	}
-	if imm.data.Type() != DataVerdict {
+	verdictData, ok := imm.data.(VerdictData)
+	if !ok {
 		return false, ""
 	}
-	verdict := imm.data.(VerdictData).data
+	verdict := verdictData.data
 	if verdict.Code != VC(linux.NFT_JUMP) && verdict.Code != VC(linux.NFT_GOTO) {
 		return false, ""
 	}
