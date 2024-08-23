@@ -38,10 +38,15 @@ func TestMetricsvizCLI(t *testing.T) {
 		t.Fatalf("Failed to find metricsviz_cli: %v", err)
 	}
 	const testMetricName = "/metricsviz_cli_test/counter"
+	testVal1 := &metric.FieldValue{Value: "val1"}
+	testVal2 := &metric.FieldValue{Value: "val2"}
+	testVal3 := &metric.FieldValue{Value: "val3"}
+	testVals := []*metric.FieldValue{testVal1, testVal2, testVal3}
 	testMetric := metric.MustCreateNewUint64Metric(testMetricName, metric.Uint64Metadata{
 		Cumulative:  true,
 		Sync:        true,
 		Description: fmt.Sprintf("test counter for %s", t.Name()),
+		Fields:      []metric.Field{metric.NewField("field1", testVals...)},
 	})
 	if err := metric.Initialize(); err != nil {
 		t.Fatalf("Failed to initialize metrics: %v", err)
@@ -68,7 +73,7 @@ func TestMetricsvizCLI(t *testing.T) {
 			waitCtx, waitCancel := context.WithTimeout(ctx, 25*time.Millisecond)
 			defer waitCancel()
 			for waitCtx.Err() == nil {
-				testMetric.Increment()
+				testMetric.Increment(testVals[rand.IntN(len(testVals))])
 				select {
 				case <-waitCtx.Done():
 				case <-time.After(time.Millisecond):

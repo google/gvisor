@@ -89,10 +89,7 @@ type TimeSeries struct {
 // String returns the name of the timeseries.
 func (ts *TimeSeries) String() string {
 	if len(ts.FieldValues) == 0 {
-		if desc := strings.TrimSuffix(ts.Metric.Metadata.GetDescription(), "."); desc != "" {
-			return desc
-		}
-		return string(ts.Metric.Name)
+		return ts.ChartTitle()
 	}
 	orderedFields := make([]string, 0, len(ts.FieldValues))
 	for f := range ts.FieldValues {
@@ -112,6 +109,15 @@ func (ts *TimeSeries) String() string {
 	}
 	b.WriteString("}")
 	return b.String()
+}
+
+// ChartTitle returns a string appropriate for using as a chart title when
+// this timeseries is the only metric being shown on a chart.
+func (ts *TimeSeries) ChartTitle() string {
+	if desc := strings.TrimSuffix(ts.Metric.Metadata.GetDescription(), "."); desc != "" {
+		return desc
+	}
+	return string(ts.Metric.Name)
 }
 
 // Data maps metrics and field values to timeseries.
@@ -439,7 +445,7 @@ func (d *Data) ToHTML(opts HTMLOptions) (string, error) {
 			chartName := string(maf.MetricName)
 			c, ok := chartNameToChart[chartName]
 			if !ok {
-				c = &chart{Title: fmt.Sprintf("%s: %s", chartTitleRoot, ts.String())}
+				c = &chart{Title: fmt.Sprintf("%s: %s", chartTitleRoot, ts.ChartTitle())}
 				chartNameToChart[chartName] = c
 				chartNames = append(chartNames, chartName)
 			}
@@ -642,19 +648,42 @@ func Parse(logs string, hasPrefix bool) (*Data, error) {
 					// Ignore this column name; it is the column indicator for the per-line checksum.
 					continue
 				}
-				// If metric fields were to be implemented, they would be part of
-				// the header cell here. For now we just assume that the header
-				// cells are just metric names.
-				name := MetricName(cell)
-				if _, ok := metricsMeta[name]; !ok {
+				var name MetricName
+				var fieldCombination string
+				leftBracketIndex := strings.Index(cell, "[")
+				if leftBracketIndex != -1 {
+					name = MetricName(cell[:leftBracketIndex])
+					rightBracketIndex := strings.Index(cell, "]")
+					if rightBracketIndex == -1 {
+						return nil, fmt.Errorf("invalid header line: %q (%q has '[' bracket but no closing ']' at the end)", line, cell)
+					}
+					fieldCombination = cell[leftBracketIndex+1 : rightBracketIndex]
+				} else {
+					name = MetricName(cell)
+				}
+				metricMeta, ok := metricsMeta[name]
+				if !ok {
 					return nil, fmt.Errorf("invalid header line: %q (unknown metric %q)", line, name)
 				}
-				maf := MetricAndFields{MetricName: name}
+				maf := MetricAndFields{MetricName: name, FieldValues: fieldCombination}
 				header = append(header, maf)
-				data.data[maf] = &TimeSeries{Metric: metricsMeta[name]}
-			}
-			if len(header) != len(metricsMeta) {
-				return nil, fmt.Errorf("invalid header line: %q (header has %d metrics (%+v), but %d metrics were found in metadata: %v)", line, len(header), header, len(metricsMeta), metricsMeta)
+				var fieldValues map[string]string
+				if fieldCombination != "" {
+					fieldsMeta := metricMeta.Metadata.GetFields()
+					fieldValuesSplit := strings.Split(fieldCombination, ",")
+					if len(fieldValuesSplit) != len(fieldsMeta) {
+						return nil, fmt.Errorf("invalid header line: %q (metric %q has %d fields (%v), but %d field values were found in column header: %q)", line, name, len(fieldsMeta), fieldsMeta, len(fieldValuesSplit), fieldCombination)
+					}
+					fieldValues = make(map[string]string, len(fieldsMeta))
+					for i, fieldMeta := range fieldsMeta {
+						fieldValue := fieldValuesSplit[i]
+						if !slices.Contains(fieldMeta.GetAllowedValues(), fieldValue) {
+							return nil, fmt.Errorf("invalid header line: %q (metric %q has field %q that the header column claims to be %q, which is not in the allowed values: %v)", line, name, fieldMeta.GetFieldName(), fieldValue, fieldMeta.GetAllowedValues())
+						}
+						fieldValues[fieldMeta.GetFieldName()] = fieldValue
+					}
+				}
+				data.data[maf] = &TimeSeries{Metric: metricsMeta[name], FieldValues: fieldValues}
 			}
 			continue
 		}
