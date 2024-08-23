@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io"
 	"runtime"
+	"time"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
@@ -65,6 +66,7 @@ func (f *MemoryFile) SaveTo(ctx context.Context, w io.Writer, pw io.Writer, opts
 
 	// Ensure that all pages that contain non-zero bytes are marked
 	// known-committed, since we only store known-committed pages below.
+	timeScanStart := time.Now()
 	zeroPage := make([]byte, hostarch.PageSize)
 	var (
 		decommitWarnOnce  sync.Once
@@ -135,9 +137,10 @@ func (f *MemoryFile) SaveTo(ctx context.Context, w io.Writer, pw io.Writer, opts
 	if err != nil {
 		return err
 	}
-	log.Debugf("MemoryFile.SaveTo: scanned %d bytes, decommitted %d bytes in %d syscalls", scanTotal, decommitTotal, decommitCount)
+	log.Debugf("MemoryFile.SaveTo: scanned %d bytes, decommitted %d bytes in %d syscalls, %s", scanTotal, decommitTotal, decommitCount, time.Since(timeScanStart))
 
 	// Save metadata.
+	timeMetadataStart := time.Now()
 	if _, err := state.Save(ctx, w, &f.unwasteSmall); err != nil {
 		return err
 	}
@@ -165,8 +168,11 @@ func (f *MemoryFile) SaveTo(ctx context.Context, w io.Writer, pw io.Writer, opts
 	if _, err := state.Save(ctx, w, f.chunks.Load()); err != nil {
 		return err
 	}
+	log.Debugf("MemoryFile.SaveTo: saved metadata in %s", time.Since(timeMetadataStart))
 
 	// Dump out committed pages.
+	timePagesStart := time.Now()
+	savedBytes := uint64(0)
 	for maseg := f.memAcct.FirstSegment(); maseg.Ok(); maseg = maseg.NextSegment() {
 		if !maseg.ValuePtr().knownCommitted {
 			continue
@@ -186,7 +192,10 @@ func (f *MemoryFile) SaveTo(ctx context.Context, w io.Writer, pw io.Writer, opts
 		if ioErr != nil {
 			return ioErr
 		}
+		savedBytes += maseg.Range().Length()
 	}
+	durPages := time.Since(timePagesStart)
+	log.Debugf("MemoryFile.SaveTo: saved pages in %s (%d bytes, %f bytes/second)", durPages, savedBytes, float64(savedBytes)/durPages.Seconds())
 
 	return nil
 }
@@ -212,6 +221,8 @@ func (f *MemoryFile) RestoreID() string {
 
 // LoadFrom loads MemoryFile state from the given stream.
 func (f *MemoryFile) LoadFrom(ctx context.Context, r io.Reader, pr *statefile.AsyncReader) error {
+	timeMetadataStart := time.Now()
+
 	// Clear sets since non-empty sets will panic if loaded into.
 	f.unwasteSmall.RemoveAll()
 	f.unwasteHuge.RemoveAll()
@@ -249,6 +260,7 @@ func (f *MemoryFile) LoadFrom(ctx context.Context, r io.Reader, pr *statefile.As
 		return err
 	}
 	f.chunks.Store(&chunks)
+	log.Debugf("MemoryFile.LoadFrom: loaded metadata in %s", time.Since(timeMetadataStart))
 	if err := f.file.Truncate(int64(len(chunks)) * chunkSize); err != nil {
 		return err
 	}
@@ -292,6 +304,8 @@ func (f *MemoryFile) LoadFrom(ctx context.Context, r io.Reader, pr *statefile.As
 	defer madviseWG.Wait()
 
 	// Load committed pages.
+	timePagesStart := time.Now()
+	loadedBytes := uint64(0)
 	for maseg := f.memAcct.FirstSegment(); maseg.Ok(); maseg = maseg.NextSegment() {
 		if !maseg.ValuePtr().knownCommitted {
 			continue
@@ -332,11 +346,14 @@ func (f *MemoryFile) LoadFrom(ctx context.Context, r io.Reader, pr *statefile.As
 		// Update accounting for restored pages. We need to do this here since
 		// these segments are marked as "known committed", and will be skipped
 		// over on accounting scans.
+		amount := maseg.Range().Length()
+		loadedBytes += amount
 		if !f.opts.DisableMemoryAccounting {
-			amount := maseg.Range().Length()
 			usage.MemoryAccounting.Inc(amount, maseg.ValuePtr().kind, maseg.ValuePtr().memCgID)
 		}
 	}
+	durPages := time.Since(timePagesStart)
+	log.Debugf("MemoryFile.LoadFrom: loaded pages in %s (%d bytes, %f bytes/second)", durPages, loadedBytes, float64(loadedBytes)/durPages.Seconds())
 
 	return nil
 }
