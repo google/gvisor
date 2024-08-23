@@ -16,6 +16,7 @@
 package state
 
 import (
+	"bufio"
 	"fmt"
 	"io"
 
@@ -98,8 +99,17 @@ func (opts SaveOpts) Save(ctx context.Context, k *kernel.Kernel, w *watchdog.Wat
 	if err != nil {
 		err = ErrStateFile{err}
 	} else {
+		var pagesMetadata io.Writer
+		if opts.PagesMetadata != nil {
+			// //pkg/state/wire writes one byte at a time; buffer these writes
+			// to avoid making one syscall per write. For the "main" state
+			// file, this buffering is handled by statefile.NewWriter() =>
+			// compressio.Writer or compressio.NewSimpleWriter().
+			pagesMetadata = bufio.NewWriter(opts.PagesMetadata)
+		}
+
 		// Save the kernel.
-		err = k.SaveTo(ctx, wc, opts.PagesMetadata, opts.PagesFile, opts.MemoryFileSaveOpts)
+		err = k.SaveTo(ctx, wc, pagesMetadata, opts.PagesFile, opts.MemoryFileSaveOpts)
 
 		// ENOSPC is a state file error. This error can only come from
 		// writing the state file, and not from fs.FileOperations.Fsync
@@ -110,6 +120,11 @@ func (opts SaveOpts) Save(ctx context.Context, k *kernel.Kernel, w *watchdog.Wat
 
 		if closeErr := wc.Close(); err == nil && closeErr != nil {
 			err = ErrStateFile{closeErr}
+		}
+		if pagesMetadata != nil {
+			if flushErr := pagesMetadata.(*bufio.Writer).Flush(); err == nil && flushErr != nil {
+				err = ErrStateFile{flushErr}
+			}
 		}
 	}
 	opts.Callback(err)
@@ -140,9 +155,17 @@ func (opts LoadOpts) Load(ctx context.Context, k *kernel.Kernel, timeReady chan 
 	if err != nil {
 		return ErrStateFile{err}
 	}
+	var pagesMetadata io.Reader
+	if opts.PagesMetadata != nil {
+		// //pkg/state/wire reads one byte at a time; buffer these reads to
+		// avoid making one syscall per read. For the "main" state file, this
+		// buffering is handled by statefile.NewReader() => compressio.Reader
+		// or compressio.NewSimpleReader().
+		pagesMetadata = bufio.NewReader(opts.PagesMetadata)
+	}
 
 	previousMetadata = m
 
 	// Restore the Kernel object graph.
-	return k.LoadFrom(ctx, r, opts.PagesMetadata, opts.PagesFile, timeReady, n, clocks, vfsOpts)
+	return k.LoadFrom(ctx, r, pagesMetadata, opts.PagesFile, timeReady, n, clocks, vfsOpts)
 }
