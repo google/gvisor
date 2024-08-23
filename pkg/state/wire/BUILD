@@ -13,6 +13,5 @@ go_library(
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/gohacks",
-        "//pkg/sync",
     ],
 )

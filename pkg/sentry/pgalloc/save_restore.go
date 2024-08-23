@@ -30,6 +30,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/usage"
 	"gvisor.dev/gvisor/pkg/state"
 	"gvisor.dev/gvisor/pkg/state/statefile"
+	"gvisor.dev/gvisor/pkg/state/wire"
 	"gvisor.dev/gvisor/pkg/sync"
 )
 
@@ -171,6 +172,7 @@ func (f *MemoryFile) SaveTo(ctx context.Context, w io.Writer, pw io.Writer, opts
 	log.Debugf("MemoryFile.SaveTo: saved metadata in %s", time.Since(timeMetadataStart))
 
 	// Dump out committed pages.
+	ww := wire.Writer{Writer: w}
 	timePagesStart := time.Now()
 	savedBytes := uint64(0)
 	for maseg := f.memAcct.FirstSegment(); maseg.Ok(); maseg = maseg.NextSegment() {
@@ -178,7 +180,7 @@ func (f *MemoryFile) SaveTo(ctx context.Context, w io.Writer, pw io.Writer, opts
 			continue
 		}
 		// Write a header to distinguish from objects.
-		if err := state.WriteHeader(w, uint64(maseg.Range().Length()), false); err != nil {
+		if err := state.WriteHeader(&ww, uint64(maseg.Range().Length()), false); err != nil {
 			return err
 		}
 		// Write out data.
@@ -304,6 +306,7 @@ func (f *MemoryFile) LoadFrom(ctx context.Context, r io.Reader, pr *statefile.As
 	defer madviseWG.Wait()
 
 	// Load committed pages.
+	wr := wire.Reader{Reader: r}
 	timePagesStart := time.Now()
 	loadedBytes := uint64(0)
 	for maseg := f.memAcct.FirstSegment(); maseg.Ok(); maseg = maseg.NextSegment() {
@@ -311,7 +314,7 @@ func (f *MemoryFile) LoadFrom(ctx context.Context, r io.Reader, pr *statefile.As
 			continue
 		}
 		// Verify header.
-		length, object, err := state.ReadHeader(r)
+		length, object, err := state.ReadHeader(&wr)
 		if err != nil {
 			return err
 		}

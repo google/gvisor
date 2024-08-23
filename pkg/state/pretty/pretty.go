@@ -196,6 +196,8 @@ func (p *printer) format(graph uint64, depth int, encoded wire.Object) (string, 
 
 // printStream is the basic print implementation.
 func (p *printer) printStream(w io.Writer, r io.Reader) (err error) {
+	wr := wire.Reader{Reader: r}
+
 	// current graph ID.
 	var graph uint64
 
@@ -218,7 +220,7 @@ func (p *printer) printStream(w io.Writer, r io.Reader) (err error) {
 
 	for {
 		// Find the first object to begin generation.
-		length, object, err := state.ReadHeader(r)
+		length, object, err := state.ReadHeader(&wr)
 		if err == io.EOF {
 			// Nothing else to do.
 			break
@@ -252,7 +254,7 @@ func (p *printer) printStream(w io.Writer, r io.Reader) (err error) {
 		)
 		for i := uint64(0); i < length; {
 			// Unmarshal either a type object or object ID.
-			encoded := wire.Load(r)
+			encoded := wire.Load(&wr)
 			switch we := encoded.(type) {
 			case *wire.Type:
 				str, _ := p.format(graph, 0, encoded)
@@ -270,7 +272,7 @@ func (p *printer) printStream(w io.Writer, r io.Reader) (err error) {
 				// Unmarshal the actual object.
 				objects = append(objects, objectAndID{
 					id:  uint64(we),
-					obj: wire.Load(r),
+					obj: wire.Load(&wr),
 				})
 				i++
 			default:
