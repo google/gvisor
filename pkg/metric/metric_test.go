@@ -1062,10 +1062,16 @@ func TestFieldMapperMustUseSameValuePointer(t *testing.T) {
 }
 
 func TestMetricProfiling(t *testing.T) {
+	fieldVal1 := &FieldValue{"val1"}
+	fieldVal2 := &FieldValue{"val2"}
+	fieldVal3 := &FieldValue{"val3"}
+
 	for _, test := range []struct {
 		name                 string
 		profilingMetricsFlag string
 		metricNames          []string
+		firstMetricFields    []Field
+		expectedHeader       string // If unspecified, computed automatically for non-field metrics.
 		lossy                bool
 		incrementMetricBy    []uint64
 		numIterations        uint64
@@ -1105,6 +1111,30 @@ func TestMetricProfiling(t *testing.T) {
 			errOnStartProfiling:  false,
 		},
 		{
+			name:                 "single metric with 1 field",
+			profilingMetricsFlag: "/foo",
+			metricNames:          []string{"/foo"},
+			firstMetricFields: []Field{
+				NewField("field1", fieldVal1, fieldVal2, fieldVal3),
+			},
+			expectedHeader:      TimeColumn + "\t/foo[val1]\t/foo[val2]\t/foo[val3]",
+			incrementMetricBy:   []uint64{1337},
+			numIterations:       100,
+			errOnStartProfiling: false,
+		},
+		{
+			name:                 "multiple metrics and one has fields",
+			profilingMetricsFlag: "/foo,/bar",
+			metricNames:          []string{"/foo", "/bar"},
+			firstMetricFields: []Field{
+				NewField("field1", fieldVal1, fieldVal2, fieldVal3),
+			},
+			expectedHeader:      TimeColumn + "\t/foo[val1]\t/foo[val2]\t/foo[val3]\t/bar",
+			incrementMetricBy:   []uint64{42, 27},
+			numIterations:       100,
+			errOnStartProfiling: false,
+		},
+		{
 			name:                 "mismatched names",
 			profilingMetricsFlag: "/foo,/fighter,/big/test/baz,/metric",
 			metricNames:          []string{"/foo", "/bar", "/big/test/baz", "/metric"},
@@ -1116,19 +1146,41 @@ func TestMetricProfiling(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			defer resetTest()
 			const profilingRate = 1000 * time.Microsecond
-			numMetrics := len(test.metricNames)
+			numEntries := 0
+			for i := range test.metricNames {
+				if i == 0 {
+					fm, err := newFieldMapper(test.firstMetricFields...)
+					if err != nil {
+						t.Fatalf("newFieldMapper err: got %v wanted nil", err)
+					}
+					numEntries += fm.numKeys()
+				} else {
+					numEntries++
+				}
+			}
 
-			metrics := make([]*Uint64Metric, numMetrics)
+			metrics := make([]*Uint64Metric, len(test.metricNames))
 			for i, m := range test.metricNames {
+				var fields []Field
+				if i == 0 {
+					for _, f := range test.firstMetricFields {
+						fields = append(fields, f)
+					}
+				}
 				newMetric, err := NewUint64Metric(m, Uint64Metadata{
 					Cumulative:  true,
 					Sync:        true,
 					Description: fooDescription,
+					Fields:      fields,
 				})
 				metrics[i] = newMetric
 				if err != nil {
 					t.Fatalf("NewUint64Metric got err '%v' want nil", err)
 				}
+			}
+			firstMetricFieldMapper, err := newFieldMapper(test.firstMetricFields...)
+			if err != nil {
+				t.Fatalf("newFieldMapper err: got %v wanted nil", err)
 			}
 
 			f, err := os.CreateTemp(t.TempDir(), "profiling-metrics")
@@ -1158,7 +1210,15 @@ func TestMetricProfiling(t *testing.T) {
 			// Generate some test data
 			for i := 0; i < int(test.numIterations); i++ {
 				for metricIdx, m := range metrics {
-					m.IncrementBy(test.incrementMetricBy[metricIdx])
+					if metricIdx == 0 {
+						for fieldKey := 0; fieldKey < firstMetricFieldMapper.numKeys(); fieldKey++ {
+							fieldValues := make([]*FieldValue, len(test.firstMetricFields))
+							firstMetricFieldMapper.keyToMultiFieldInPlace(fieldKey, fieldValues)
+							m.IncrementBy(test.incrementMetricBy[metricIdx], fieldValues...)
+						}
+					} else {
+						m.IncrementBy(test.incrementMetricBy[metricIdx])
+					}
 				}
 				// Give time to the collector to record it.
 				time.Sleep(profilingRate)
@@ -1181,15 +1241,18 @@ func TestMetricProfiling(t *testing.T) {
 			// - Each metric value should be at least as big as the previous.
 			h := adler32.New()
 			lines := bufio.NewScanner(f)
-			expectedHeader := TimeColumn + "\t" + strings.Join(test.metricNames, "\t")
+			expectedHeader := test.expectedHeader
+			if expectedHeader == "" {
+				expectedHeader = TimeColumn + "\t" + strings.Join(test.metricNames, "\t")
+			}
 			if test.lossy {
 				expectedHeader += "\tChecksum"
 			}
 			prevTS := uint64(0)
-			prevValues := make([]uint64, numMetrics)
+			prevValues := make([]uint64, numEntries)
 			numDatapoints := 0
 			var hashLine string
-			gotMetadataFor := make(map[string]struct{}, numMetrics)
+			gotMetadataFor := make(map[string]struct{}, len(test.metricNames))
 			gotHeader := false
 			gotStartTime := false
 			gotStats := false
@@ -1264,8 +1327,8 @@ func TestMetricProfiling(t *testing.T) {
 				}
 				numDatapoints++
 				items := strings.Split(line, "\t")
-				if len(items) != (numMetrics + 1) {
-					t.Fatalf("incorrect number of items on line '%s': got %d, want %d", line, len(items), numMetrics+1)
+				if len(items) != (numEntries + 1) {
+					t.Fatalf("incorrect number of items on line '%s': got %d, want %d", line, len(items), numEntries+1)
 				}
 				// Check timestamp
 				ts, err := strconv.ParseUint(items[0], 10, 64)
@@ -1278,7 +1341,7 @@ func TestMetricProfiling(t *testing.T) {
 				prevTS = ts
 
 				// Check metric values
-				for i := 1; i <= numMetrics; i++ {
+				for i := 1; i <= numEntries; i++ {
 					m, err := strconv.ParseUint(items[i], 10, 64)
 					if err != nil {
 						t.Errorf("m ParseUint error on line '%s': got '%v' want nil", line, err)
@@ -1294,14 +1357,22 @@ func TestMetricProfiling(t *testing.T) {
 				t.Errorf("numDatapoints: got %d, want at least %d", numDatapoints, expectedMinNumDatapoints)
 			}
 			// Check that the final total for each metric is correct
-			for i := 0; i < numMetrics; i++ {
-				expected := test.numIterations * test.incrementMetricBy[i]
-				if prevValues[i] != expected {
-					t.Errorf("incorrect final metric value: got %d, want %d", prevValues[i], expected)
+			for metricIdx := range metrics {
+				expected := test.numIterations * test.incrementMetricBy[metricIdx]
+				if metricIdx == 0 {
+					for fieldKey := 0; fieldKey < firstMetricFieldMapper.numKeys(); fieldKey++ {
+						if prevValues[fieldKey] != expected {
+							t.Errorf("incorrect final metric value: got %d, want %d", prevValues[fieldKey], expected)
+						}
+					}
+				} else {
+					if itemIdx := firstMetricFieldMapper.numKeys() + metricIdx - 1; prevValues[itemIdx] != expected {
+						t.Errorf("incorrect final metric value: got %d, want %d", prevValues[itemIdx], expected)
+					}
 				}
 			}
-			if len(gotMetadataFor) != numMetrics {
-				t.Errorf("got metadata for %d metrics, want %d", len(gotMetadataFor), numMetrics)
+			if len(gotMetadataFor) != len(test.metricNames) {
+				t.Errorf("got metadata for %d metrics, want %d", len(gotMetadataFor), len(test.metricNames))
 			}
 			for _, metricName := range test.metricNames {
 				if _, ok := gotMetadataFor[metricName]; !ok {
