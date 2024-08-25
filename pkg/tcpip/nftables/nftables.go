@@ -550,48 +550,48 @@ func validateBaseChainInfo(info *BaseChainInfo, family AddressFamily) error {
 // Note: Empty rules should be created directly (via &Rule{}).
 type Rule struct {
 	chain *Chain
-	ops   []Operation
+	ops   []operation
 }
 
-// Operation represents a single operation in a rule.
-type Operation interface {
+// operation represents a single operation in a rule.
+type operation interface {
 
 	// evaluate evaluates the operation on the given packet and register set,
 	// changing the register set and possibly the packet in place.
-	evaluate(regs *RegisterSet, pkt *stack.PacketBuffer)
+	evaluate(regs *registerSet, pkt *stack.PacketBuffer)
 }
 
 // Ensures all operations implement the Operation interface at compile time.
 var (
-	_ Operation = (*Immediate)(nil)
-	_ Operation = (*Comparison)(nil)
+	_ operation = (*immediate)(nil)
+	_ operation = (*comparison)(nil)
 )
 
-// Immediate is an operation that sets the data in a register.
-type Immediate struct {
-	data RegisterData // Data to set the destination register to.
+// immediate is an operation that sets the data in a register.
+type immediate struct {
+	data registerData // Data to set the destination register to.
 	dreg uint8        // Number of the destination register.
 }
 
-// NewImmediate creates a new Immediate operation.
-func NewImmediate(dreg uint8, data RegisterData) (*Immediate, error) {
-	if err := data.ValidateRegister(dreg); err != nil {
+// newImmediate creates a new Immediate operation.
+func newImmediate(dreg uint8, data registerData) (*immediate, error) {
+	if err := data.validateRegister(dreg); err != nil {
 		return nil, err
 	}
-	return &Immediate{dreg: dreg, data: data}, nil
+	return &immediate{dreg: dreg, data: data}, nil
 }
 
 // evaluate for Immediate sets the data in the destination register.
-func (op Immediate) evaluate(regs *RegisterSet, pkt *stack.PacketBuffer) {
-	op.data.StoreData(regs, op.dreg)
+func (op immediate) evaluate(regs *registerSet, pkt *stack.PacketBuffer) {
+	op.data.storeData(regs, op.dreg)
 }
 
-// Comparison is an operation that compares the data in a register to a given
+// comparison is an operation that compares the data in a register to a given
 // value and breaks (by setting the verdict register to NFT_BREAK) from the rule
 // if the comparison is false.
 // Note: comparison operations are not supported for the verdict register.
-type Comparison struct {
-	data RegisterData // Data to compare the source register to.
+type comparison struct {
+	data registerData // Data to compare the source register to.
 	sreg uint8        // Number of the source register.
 	cop  cmpOp        // Comparison operator.
 }
@@ -632,26 +632,26 @@ func validateComparisonOp(cop cmpOp) error {
 	}
 }
 
-// NewComparison creates a new Comparison operation.
-func NewComparison(sreg uint8, op int, data RegisterData) (*Comparison, error) {
+// newComparison creates a new Comparison operation.
+func newComparison(sreg uint8, op int, data registerData) (*comparison, error) {
 	if sreg == linux.NFT_REG_VERDICT {
 		return nil, fmt.Errorf("comparison operation cannot use verdict register as source")
 	}
-	if err := data.ValidateRegister(sreg); err != nil {
+	if err := data.validateRegister(sreg); err != nil {
 		return nil, err
 	}
 	cop := cmpOp(op)
 	if err := validateComparisonOp(cop); err != nil {
 		return nil, err
 	}
-	return &Comparison{sreg: sreg, cop: cop, data: data}, nil
+	return &comparison{sreg: sreg, cop: cop, data: data}, nil
 }
 
 // evaluate for Comparison compares the data in the source register to the given
 // data and breaks from the rule if the comparison is false.
-func (op Comparison) evaluate(regs *RegisterSet, pkt *stack.PacketBuffer) {
+func (op comparison) evaluate(regs *registerSet, pkt *stack.PacketBuffer) {
 	// Gets the data to compare to.
-	bytesData, ok := op.data.(BytesData)
+	bytesData, ok := op.data.(bytesData)
 	if !ok {
 		panic("comparison operation data is not BytesData")
 	}
@@ -716,99 +716,99 @@ func isRegister(reg uint8) bool {
 	return isVerdictRegister(reg) || is16ByteRegister(reg) || is4ByteRegister(reg)
 }
 
-// RegisterData represents the data to be set in a register.
-type RegisterData interface {
+// registerData represents the data to be set in a register.
+type registerData interface {
 	// String returns a string representation of the register data.
 	String() string
 
-	// Equal compares the register data to another.
-	Equal(other RegisterData) bool
+	// equal compares the register data to another.
+	equal(other registerData) bool
 
-	// ValidateRegister ensures the register is compatible with the data type,
+	// validateRegister ensures the register is compatible with the data type,
 	// returning an error otherwise.
-	ValidateRegister(reg uint8) error
+	validateRegister(reg uint8) error
 
-	// StoreData sets the data in the destination register, panicking if the
+	// storeData sets the data in the destination register, panicking if the
 	// register is not valid for the data type.
 	// Note: assumes data is valid for register. This is used primarily during
 	// operation evaluation and the data type/register compatibility should have
 	// been checked during the operation init.
-	StoreData(regs *RegisterSet, reg uint8)
+	storeData(regs *registerSet, reg uint8)
 }
 
-// VerdictData represents a verdict as data to be stored in a register.
-type VerdictData struct {
+// verdictData represents a verdict as data to be stored in a register.
+type verdictData struct {
 	data Verdict
 }
 
-// NewVerdictData creates a RegisterData for a verdict.
-func NewVerdictData(verdict Verdict) RegisterData { return VerdictData{data: verdict} }
+// newVerdictData creates a RegisterData for a verdict.
+func newVerdictData(verdict Verdict) registerData { return verdictData{data: verdict} }
 
 // String returns a string representation of the verdict data.
-func (rd VerdictData) String() string {
+func (rd verdictData) String() string {
 	return rd.data.String()
 }
 
-// Equal compares the verdict data to another RegisterData object.
-func (rd VerdictData) Equal(other RegisterData) bool {
+// equal compares the verdict data to another RegisterData object.
+func (rd verdictData) equal(other registerData) bool {
 	if other == nil {
 		return false
 	}
-	otherVD, ok := other.(VerdictData)
+	otherVD, ok := other.(verdictData)
 	if !ok {
 		return false
 	}
 	return rd.data == otherVD.data
 }
 
-// ValidateRegister ensures the register is compatible with VerdictData.
-func (rd VerdictData) ValidateRegister(reg uint8) error {
+// validateRegister ensures the register is compatible with VerdictData.
+func (rd verdictData) validateRegister(reg uint8) error {
 	if !isVerdictRegister(reg) {
 		return fmt.Errorf("verdict can only be stored in verdict register")
 	}
 	return nil
 }
 
-// StoreData sets the data in the destination register to the verdict.
-func (rd VerdictData) StoreData(regs *RegisterSet, reg uint8) {
-	if err := rd.ValidateRegister(reg); err != nil {
+// storeData sets the data in the destination register to the verdict.
+func (rd verdictData) storeData(regs *registerSet, reg uint8) {
+	if err := rd.validateRegister(reg); err != nil {
 		panic(err)
 	}
 	regs.verdict = rd.data
 }
 
-// BytesData represents data in 4-byte chunks to be stored in a register.
-type BytesData struct {
+// bytesData represents data in 4-byte chunks to be stored in a register.
+type bytesData struct {
 	data []byte
 }
 
-// NewBytesData creates a RegisterData for 4, 8, 12, or 16 bytes of data.
-func NewBytesData(bytes []byte) RegisterData {
+// newBytesData creates a RegisterData for 4, 8, 12, or 16 bytes of data.
+func newBytesData(bytes []byte) registerData {
 	if len(bytes)%4 != 0 || len(bytes) > 16 {
 		panic(fmt.Errorf("invalid byte data length: %d", len(bytes)))
 	}
-	return BytesData{data: bytes}
+	return bytesData{data: bytes}
 }
 
 // String returns a string representation of the bytes data.
-func (rd BytesData) String() string {
+func (rd bytesData) String() string {
 	return fmt.Sprintf("%x", rd.data)
 }
 
-// Equal compares the bytes data to another RegisterData object.
-func (rd BytesData) Equal(other RegisterData) bool {
+// equal compares the bytes data to another RegisterData object.
+func (rd bytesData) equal(other registerData) bool {
 	if other == nil {
 		return false
 	}
-	otherBD, ok := other.(BytesData)
+	otherBD, ok := other.(bytesData)
 	if !ok {
 		return false
 	}
 	return slices.Equal(rd.data, otherBD.data)
 }
 
-// ValidateRegister ensures the register is compatible with this bytes data.
-func (rd BytesData) ValidateRegister(reg uint8) error {
+// validateRegister ensures the register is compatible with this bytes data.
+func (rd bytesData) validateRegister(reg uint8) error {
 	if isVerdictRegister(reg) {
 		return fmt.Errorf("data cannot be stored in verdict register")
 	}
@@ -823,7 +823,7 @@ func (rd BytesData) ValidateRegister(reg uint8) error {
 // register data from the register set.
 // Note: does not support verdict data and assumes the register is valid for the
 // given data type.
-func (rd BytesData) getRegisterBuffer(regs *RegisterSet, reg uint8) []byte {
+func (rd bytesData) getRegisterBuffer(regs *registerSet, reg uint8) []byte {
 	// The entire 4-byte register (data must be exactly 4 bytes)
 	if is4ByteRegister(reg) {
 		start := (reg - linux.NFT_REG32_00) * linux.NFT_REG32_SIZE
@@ -835,33 +835,33 @@ func (rd BytesData) getRegisterBuffer(regs *RegisterSet, reg uint8) []byte {
 	return regs.data[end-len(rd.data) : end]
 }
 
-// StoreData sets the data in the destination register to the bytes data.
-func (rd BytesData) StoreData(regs *RegisterSet, reg uint8) {
-	if err := rd.ValidateRegister(reg); err != nil {
+// storeData sets the data in the destination register to the bytes data.
+func (rd bytesData) storeData(regs *registerSet, reg uint8) {
+	if err := rd.validateRegister(reg); err != nil {
 		panic(err)
 	}
 	copy(rd.getRegisterBuffer(regs, reg), rd.data)
 }
 
-// RegisterSet represents the set of registers supported by the kernel.
+// registerSet represents the set of registers supported by the kernel.
 // Use RegisterData.StoreData to set data in the registers.
 // Note: Corresponds to nft_regs from include/net/netfilter/nf_tables.h.
-type RegisterSet struct {
+type registerSet struct {
 	verdict Verdict                 // 16-byte verdict register
 	data    [registersByteSize]byte // 4 16-byte registers or 16 4-byte registers
 }
 
-// NewRegisterSet creates a new RegisterSet with the Continue Verdict and all
+// newRegisterSet creates a new RegisterSet with the Continue Verdict and all
 // registers set to 0.
-func NewRegisterSet() RegisterSet {
-	return RegisterSet{
+func newRegisterSet() registerSet {
+	return registerSet{
 		verdict: Verdict{Code: VC(linux.NFT_CONTINUE)},
 		data:    [registersByteSize]byte{0},
 	}
 }
 
 // Verdict returns the verdict data.
-func (regs *RegisterSet) Verdict() Verdict {
+func (regs *registerSet) Verdict() Verdict {
 	return regs.verdict
 }
 
@@ -966,7 +966,7 @@ func (nf *NFTables) EvaluateHook(family AddressFamily, hook Hook, pkt *stack.Pac
 		return Verdict{Code: VC(linux.NF_ACCEPT)}, nil
 	}
 
-	regs := NewRegisterSet()
+	regs := newRegisterSet()
 
 	// Evaluates packet through all base chains for given hook in priority order.
 	var bc *Chain
@@ -1003,7 +1003,7 @@ func (nf *NFTables) EvaluateHook(family AddressFamily, hook Hook, pkt *stack.Pac
 
 // evaluateFromRule is a helper function for Chain.evaluate that evaluates the
 // packet through the rules in the chain starting at the specified rule index.
-func (c *Chain) evaluateFromRule(rIdx int, jumpDepth int, regs *RegisterSet, pkt *stack.PacketBuffer) error {
+func (c *Chain) evaluateFromRule(rIdx int, jumpDepth int, regs *registerSet, pkt *stack.PacketBuffer) error {
 	if jumpDepth >= nestedJumpLimit {
 		return fmt.Errorf("jump stack limit of %d exceeded", nestedJumpLimit)
 	}
@@ -1060,7 +1060,7 @@ evalLoop:
 
 // evaluate for Chain evaluates the packet through the chain's rules and returns
 // the verdict and modifies the packet in place.
-func (c *Chain) evaluate(regs *RegisterSet, pkt *stack.PacketBuffer) error {
+func (c *Chain) evaluate(regs *registerSet, pkt *stack.PacketBuffer) error {
 	return c.evaluateFromRule(0, 0, regs, pkt)
 }
 
@@ -1068,7 +1068,7 @@ func (c *Chain) evaluate(regs *RegisterSet, pkt *stack.PacketBuffer) error {
 // the register set and possibly the packet in place.
 // The verdict in regs.Verdict() may be an nf table internal verdict or a
 // netfilter terminal verdict.
-func (r *Rule) evaluate(regs *RegisterSet, pkt *stack.PacketBuffer) error {
+func (r *Rule) evaluate(regs *registerSet, pkt *stack.PacketBuffer) error {
 	for _, op := range r.ops {
 		op.evaluate(regs, pkt)
 		if regs.Verdict().Code != VC(linux.NFT_CONTINUE) {
@@ -1540,12 +1540,12 @@ func (c *Chain) RuleCount() int {
 // isJumpOrGoto returns whether the operation is an immediate operation that
 // sets the verdict register to a jump or goto verdict and returns the name of
 // the target chain to jump or goto if so.
-func isJumpOrGotoOperation(op Operation) (bool, string) {
-	imm, ok := op.(*Immediate)
+func isJumpOrGotoOperation(op operation) (bool, string) {
+	imm, ok := op.(*immediate)
 	if !ok {
 		return false, ""
 	}
-	verdictData, ok := imm.data.(VerdictData)
+	verdictData, ok := imm.data.(verdictData)
 	if !ok {
 		return false, ""
 	}
@@ -1587,10 +1587,10 @@ func (c *Chain) checkLoops(source *Chain) error {
 // Rule Functions
 //
 
-// AddOperation adds an operation to the rule. Adding operations is only allowed
+// addOperation adds an operation to the rule. Adding operations is only allowed
 // before the rule is registered to a chain. Returns an error if the operation
 // is nil or if the rule is already registered to a chain.
-func (r *Rule) AddOperation(op Operation) error {
+func (r *Rule) addOperation(op operation) error {
 	if op == nil {
 		return fmt.Errorf("operation is nil")
 	}
