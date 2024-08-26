@@ -59,7 +59,7 @@ func testSafecopy(t *testing.T, mapSize uintptr, fileSize uintptr, testFunc func
 				uintptr(memfile.Fd()),
 				0)
 			if errno != 0 {
-				t.Errorf("error mapping file: %v", errno)
+				t.Fatalf("error mapping file: %v", errno)
 			}
 			mappings[i] = addr
 			testFunc(t, c, addr)
@@ -68,8 +68,9 @@ func testSafecopy(t *testing.T, mapSize uintptr, fileSize uintptr, testFunc func
 	})
 }
 
+var mapSize = faultBlockSize
+
 func TestSafecopySigbus(t *testing.T) {
-	mapSize := uintptr(faultBlockSize)
 	fileSize := mapSize - hostarch.PageSize
 	buf := make([]byte, hostarch.PageSize)
 	testSafecopy(t, mapSize, fileSize, func(t *testing.T, c *vCPU, addr uintptr) {
@@ -83,7 +84,6 @@ func TestSafecopySigbus(t *testing.T) {
 }
 
 func TestSafecopy(t *testing.T) {
-	mapSize := uintptr(faultBlockSize)
 	fileSize := mapSize
 	testSafecopy(t, mapSize, fileSize, func(t *testing.T, c *vCPU, addr uintptr) {
 		want := uint32(0x12345678)

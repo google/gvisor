@@ -517,6 +517,34 @@ func BenchmarkKernelSyscall(b *testing.B) {
 	})
 }
 
+func BenchmarkSentrySyscall(b *testing.B) {
+	// Note that the target passed here is irrelevant, we never execute SwitchToUser.
+	applicationTest(b, true, testutil.AddrOfGetpid(), func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {
+		// iteration does not include machine.Get() / machine.Put().
+		for i := 0; i < b.N; i++ {
+			testutil.Getpid()
+		}
+		return false
+	})
+}
+
+func BenchmarkHostMMap(b *testing.B) {
+	kvmTest(b, nil, func(c *vCPU) bool {
+		// iteration does not include machine.Get() / machine.Put().
+		for i := 0; i < b.N; i++ {
+			addr, _, errno := unix.Syscall6(unix.SYS_MMAP, 0, hostarch.PageSize, unix.PROT_READ|unix.PROT_WRITE, unix.MAP_ANONYMOUS|unix.MAP_PRIVATE, 0, 0)
+			if errno != 0 {
+				b.Fatalf("mmap failed: %s", errno)
+			}
+			_, _, errno = unix.Syscall(unix.SYS_MUNMAP, addr, hostarch.PageSize, 0)
+			if errno != 0 {
+				b.Fatalf("munmap failed: %s", errno)
+			}
+		}
+		return false
+	})
+}
+
 func BenchmarkKernelVDSO(b *testing.B) {
 	// Note that the target passed here is irrelevant, we never execute SwitchToUser.
 	applicationTest(b, true, testutil.AddrOfGetpid(), func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {

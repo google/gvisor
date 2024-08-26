@@ -67,6 +67,7 @@ go_library(
         "//pkg/cpuid",
         "//pkg/fd",
         "//pkg/hostarch",
+        "//pkg/hostos",
         "//pkg/hosttid",
         "//pkg/log",
         "//pkg/metric",

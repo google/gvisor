@@ -25,6 +25,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/hostos"
 	"gvisor.dev/gvisor/pkg/hosttid"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/metric"
@@ -296,9 +297,25 @@ func newMachine(vm int) (*machine, error) {
 	m.upperSharedPageTables.MarkReadOnlyShared()
 	m.kernel.PageTables = pagetables.NewWithUpper(newAllocator(), m.upperSharedPageTables, ring0.KernelStartAddress)
 
-	// Install seccomp rules to trap runtime mmap system calls. They will
-	// be handled by seccompMmapHandler.
-	seccompMmapRules(m)
+	// Before the 6.9 kernel we couldn't map the entire sentry
+	// address space into VM, because there were a two-byte overhead
+	// per page in the kernel. This issue was fixed by a364c014a2c1
+	// ("kvm/x86: allocate the write-tracking metadata on-demand").
+	kernelVersion, err := hostos.KernelVersion()
+	if err != nil {
+		return nil, err
+	}
+	mapEntireAddressSpace := runtime.GOARCH != "amd64" || kernelVersion.AtLeast(6, 9)
+	if mapEntireAddressSpace {
+		// Increase faultBlockSize to be sure that we will not reach the limit.
+		// faultBlockSize has to equal or less than KVM_MEM_MAX_NR_PAGES.
+		faultBlockSize = uintptr(1) << 42
+		faultBlockMask = ^uintptr(faultBlockSize - 1)
+	} else {
+		// Install seccomp rules to trap runtime mmap system calls. They will
+		// be handled by seccompMmapHandler.
+		seccompMmapRules(m)
+	}
 
 	// Apply the physical mappings. Note that these mappings may point to
 	// guest physical addresses that are not actually available. These
@@ -352,6 +369,7 @@ func newMachine(vm int) (*machine, error) {
 	// seccompMmapHandler, so here we have to guarantee that mmap is not
 	// called while we hold the slot spinlock.
 	disableAsyncPreemption()
+
 	applyVirtualRegions(func(vr virtualRegion) {
 		if excludeVirtualRegion(vr) {
 			return // skip region.
@@ -365,8 +383,12 @@ func newMachine(vm int) (*machine, error) {
 		mapRegion(vr, 0)
 
 	})
+	if mapEntireAddressSpace {
+		for _, r := range physicalRegions {
+			m.mapPhysical(r.physical, r.length, physicalRegions)
+		}
+	}
 	enableAsyncPreemption()
-
 	// Initialize architecture state.
 	if err := m.initArchState(); err != nil {
 		m.Destroy()
