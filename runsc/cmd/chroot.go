@@ -202,16 +202,21 @@ func tpuProxyUpdateChroot(chroot string, spec *specs.Spec, conf *config.Config) 
 	// Bind mount device info directories for all TPU devices on the host.
 	// For v4 TPU, the directory /sys/devices/<pci_bus>/<pci_address>/accel/accel# is mounted;
 	// For v5e TPU, the directory /sys/devices/<pci_bus>/<pci_address>/vfio-dev/vfio# is mounted.
+	foundDevices := false
 	for pathGlob, sysfsFormat := range pathGlobToSysfsFormat {
 		paths, err := filepath.Glob(pathGlob)
 		if err != nil {
 			return fmt.Errorf("enumerating TPU device files: %w", err)
 		}
 		for _, devPath := range paths {
+			foundDevices = true
 			if err := mountTPUDeviceInfoInChroot(chroot, devPath, sysfsFormat, pathGlobToPciDeviceFormat[pathGlob]); err != nil {
 				return err
 			}
 		}
+	}
+	if !foundDevices {
+		return fmt.Errorf("could not find any TPU devices on the host")
 	}
 	return nil
 }

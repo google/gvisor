@@ -192,6 +192,13 @@ func (ts *TaskSet) Kill(ws linux.WaitStatus) {
 	}
 }
 
+// IsExiting returns true if all tasks in ts are exiting or have exited.
+func (ts *TaskSet) IsExiting() bool {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	return ts.Root.exiting
+}
+
 // advanceExitStateLocked checks that t's current exit state is oldExit, then
 // sets it to newExit. If t's current exit state is not oldExit,
 // advanceExitStateLocked panics.

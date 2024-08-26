@@ -118,7 +118,7 @@ var (
 		"/kvm/host_exits",
 		metric.Uint64Metadata{
 			Cumulative:  true,
-			Description: "The number of times the sentry performed a host to guest world switch.",
+			Description: "KVM host-to-guest world switch by Sentry.",
 		})
 
 	// userExitCounter is a metric that tracks how many times the sentry has
@@ -127,7 +127,7 @@ var (
 		"/kvm/user_exits",
 		metric.Uint64Metadata{
 			Cumulative:  true,
-			Description: "The number of times the sentry has had an exit from userspace.",
+			Description: "KVM sentry exits from userspace.",
 		})
 
 	// interruptCounter is a metric that tracks how many times execution returned
@@ -136,7 +136,7 @@ var (
 		"/kvm/interrupts",
 		metric.Uint64Metadata{
 			Cumulative:  true,
-			Description: "The number of times the signal handler was invoked.",
+			Description: "KVM signal handler invocations.",
 		})
 
 	// mmapCallCounter is a metric that tracks how many times the function
@@ -145,7 +145,7 @@ var (
 		"/kvm/mmap_calls",
 		metric.Uint64Metadata{
 			Cumulative:  true,
-			Description: "The number of times seccompMmapSyscall has been called.",
+			Description: "KVM seccompMmapSyscall calls.",
 		})
 
 	// getVCPUCounter is a metric that tracks how many times different paths of
@@ -154,7 +154,7 @@ var (
 		"/kvm/get_vcpu",
 		metric.Uint64Metadata{
 			Cumulative:  true,
-			Description: "The number of times that machine.Get() was called, split by path the function took.",
+			Description: "KVM machine.Get() calls per CPU acquisition path.",
 			Fields: []metric.Field{
 				metric.NewField("acquisition_type", &getVCPUAcquisitionFastReused, &getVCPUAcquisitionReused, &getVCPUAcquisitionUnused, &getVCPUAcquisitionStolen),
 			},
@@ -163,7 +163,7 @@ var (
 	// asInvalidateDuration are durations of calling addressSpace.invalidate().
 	asInvalidateDuration = KVMProfiling.MustCreateNewTimerMetric("/kvm/address_space_invalidate",
 		metric.NewExponentialBucketer(15, uint64(time.Nanosecond*100), 1, 2),
-		"Duration of calling addressSpace.invalidate().")
+		"Duration of KVM addressSpace.invalidate().")
 )
 
 // vCPU is a single KVM vCPU.
