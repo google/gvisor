@@ -185,6 +185,19 @@ type connection struct {
 	noOpen bool
 }
 
+func connError(err error) error {
+	errno, ok := linuxerr.TranslateError(err)
+	if !ok {
+		log.Warningf("fuse: failed with invalid error: %v", err)
+		return linuxerr.EINVAL
+	}
+	if !linuxerr.IsValid(linuxerr.ToUnix(errno)) {
+		log.Warningf("fuse: failed with invalid error: %v", err)
+		return linuxerr.EINVAL
+	}
+	return err
+}
+
 func (conn *connection) saveInitializedChan() bool {
 	select {
 	case <-conn.initializedChan:
@@ -255,7 +268,7 @@ func (conn *connection) Call(ctx context.Context, r *Request) (*Response, error)
 	// Block requests sent before connection is initialized.
 	if !conn.Initialized() && r.hdr.Opcode != linux.FUSE_INIT {
 		if err := ctx.Block(conn.initializedChan); err != nil {
-			return nil, err
+			return nil, connError(err)
 		}
 	}
 
@@ -278,10 +291,15 @@ func (conn *connection) Call(ctx context.Context, r *Request) (*Response, error)
 	fut, err := conn.callFuture(ctx, r)
 	conn.fd.mu.Unlock()
 	if err != nil {
-		return nil, err
+		return nil, connError(err)
 	}
 
-	return fut.resolve(ctx)
+	var res *Response
+	res, err = fut.resolve(ctx)
+	if err != nil {
+		return res, connError(err)
+	}
+	return res, nil
 }
 
 // callFuture makes a request to the server and returns a future response.
