@@ -30,7 +30,6 @@ go_library(
         "//pkg/log",
         "//pkg/seccomp",
         "//pkg/seccomp/precompiledseccomp",
-        "//pkg/sentry/devices/accel",
         "//pkg/sentry/devices/nvproxy",
         "//pkg/sentry/devices/tpuproxy",
         "//pkg/sentry/platform",

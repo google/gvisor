@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package tpuproxy
+package vfio
 
 import (
 	"gvisor.dev/gvisor/pkg/context"
@@ -25,26 +25,26 @@ import (
 )
 
 // ConfigureMMap implements vfs.FileDescriptionImpl.ConfigureMMap.
-func (fd *vfioFD) ConfigureMMap(ctx context.Context, opts *memmap.MMapOpts) error {
+func (fd *pciDeviceFD) ConfigureMMap(ctx context.Context, opts *memmap.MMapOpts) error {
 	return vfs.GenericConfigureMMap(&fd.vfsfd, fd, opts)
 }
 
 // AddMapping implements memmap.Mappable.AddMapping.
-func (fd *vfioFD) AddMapping(ctx context.Context, ms memmap.MappingSpace, ar hostarch.AddrRange, offset uint64, writable bool) error {
+func (fd *pciDeviceFD) AddMapping(ctx context.Context, ms memmap.MappingSpace, ar hostarch.AddrRange, offset uint64, writable bool) error {
 	return nil
 }
 
 // RemoveMapping implements memmap.Mappable.RemoveMapping.
-func (fd *vfioFD) RemoveMapping(ctx context.Context, ms memmap.MappingSpace, ar hostarch.AddrRange, offset uint64, writable bool) {
+func (fd *pciDeviceFD) RemoveMapping(ctx context.Context, ms memmap.MappingSpace, ar hostarch.AddrRange, offset uint64, writable bool) {
 }
 
 // CopyMapping implements memmap.Mappable.CopyMapping.
-func (fd *vfioFD) CopyMapping(ctx context.Context, ms memmap.MappingSpace, srcAR, dstAR hostarch.AddrRange, offset uint64, writable bool) error {
+func (fd *pciDeviceFD) CopyMapping(ctx context.Context, ms memmap.MappingSpace, srcAR, dstAR hostarch.AddrRange, offset uint64, writable bool) error {
 	return nil
 }
 
 // Translate implements memmap.Mappable.Translate.
-func (fd *vfioFD) Translate(ctx context.Context, required, optional memmap.MappableRange, at hostarch.AccessType) ([]memmap.Translation, error) {
+func (fd *pciDeviceFD) Translate(ctx context.Context, required, optional memmap.MappableRange, at hostarch.AccessType) ([]memmap.Translation, error) {
 	return []memmap.Translation{
 		{
 			Source: optional,
@@ -56,31 +56,31 @@ func (fd *vfioFD) Translate(ctx context.Context, required, optional memmap.Mappa
 }
 
 // InvalidateUnsavable implements memmap.Mappable.InvalidateUnsavable.
-func (fd *vfioFD) InvalidateUnsavable(ctx context.Context) error {
+func (fd *pciDeviceFD) InvalidateUnsavable(ctx context.Context) error {
 	return nil
 }
 
-type vfioFDMemmapFile struct {
+type pciDeviceFdMemmapFile struct {
 	memmap.NoBufferedIOFallback
 
-	fd *vfioFD
+	fd *pciDeviceFD
 }
 
 // IncRef implements memmap.File.IncRef.
-func (mf *vfioFDMemmapFile) IncRef(memmap.FileRange, uint32) {
+func (mf *pciDeviceFdMemmapFile) IncRef(memmap.FileRange, uint32) {
 }
 
 // DecRef implements memmap.File.DecRef.
-func (mf *vfioFDMemmapFile) DecRef(fr memmap.FileRange) {
+func (mf *pciDeviceFdMemmapFile) DecRef(fr memmap.FileRange) {
 }
 
 // MapInternal implements memmap.File.MapInternal.
-func (mf *vfioFDMemmapFile) MapInternal(fr memmap.FileRange, at hostarch.AccessType) (safemem.BlockSeq, error) {
-	log.Traceback("tpuproxy: rejecting vfioFdMemmapFile.MapInternal")
+func (mf *pciDeviceFdMemmapFile) MapInternal(fr memmap.FileRange, at hostarch.AccessType) (safemem.BlockSeq, error) {
+	log.Traceback("tpuproxy: rejecting pciDeviceFdMemmapFile.MapInternal")
 	return safemem.BlockSeq{}, linuxerr.EINVAL
 }
 
 // FD implements memmap.File.FD.
-func (mf *vfioFDMemmapFile) FD() int {
+func (mf *pciDeviceFdMemmapFile) FD() int {
 	return int(mf.fd.hostFD)
 }
