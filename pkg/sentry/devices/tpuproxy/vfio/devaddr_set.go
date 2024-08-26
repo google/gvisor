@@ -1,4 +1,4 @@
-package tpuproxy
+package vfio
 
 import (
 	__generics_imported0 "gvisor.dev/gvisor/pkg/sentry/mm"

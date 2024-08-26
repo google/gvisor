@@ -1,4 +1,4 @@
-package tpuproxy
+package vfio
 
 // A Range represents a contiguous range of T.
 //
