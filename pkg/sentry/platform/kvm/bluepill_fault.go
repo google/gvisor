@@ -21,14 +21,14 @@ import (
 	"gvisor.dev/gvisor/pkg/hostarch"
 )
 
-const (
+var (
 	// faultBlockSize is the size used for servicing memory faults.
 	//
 	// This should be large enough to avoid frequent faults and avoid using
 	// all available KVM slots (~512), but small enough that KVM does not
 	// complain about slot sizes (~4GB). See handleBluepillFault for how
 	// this block is used.
-	faultBlockSize = 2 << 30
+	faultBlockSize = uintptr(2 << 30)
 
 	// faultBlockMask is the mask for the fault blocks.
 	//
