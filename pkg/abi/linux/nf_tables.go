@@ -93,6 +93,14 @@ const (
 	NFT_CMP_GTE        // greater than or equal to
 )
 
+// Nf table range operators.
+// Used by the nft range operation to compare values in registers.
+// These correspond to enum values in include/uapi/linux/netfilter/nf_tables.h.
+const (
+	NFT_RANGE_EQ = iota
+	NFT_RANGE_NEQ
+)
+
 // Nf table payload expression offset bases.
 // Used by the nft payload operations to access appropriate data in the packet.
 // These correspond to enum values in include/uapi/linux/netfilter/nf_tables.h.
