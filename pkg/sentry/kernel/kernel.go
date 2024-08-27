@@ -659,6 +659,23 @@ func (k *Kernel) SaveTo(ctx context.Context, w, pagesMetadata io.Writer, pagesFi
 		mf.MarkSavable()
 	}
 
+	var (
+		mfSaveWg  sync.WaitGroup
+		mfSaveErr error
+	)
+	parallelMfSave := pagesMetadata != nil && pagesFile != nil
+	if parallelMfSave {
+		// Parallelize MemoryFile save and kernel save. Both are independent.
+		mfSaveWg.Add(1)
+		go func() {
+			defer mfSaveWg.Done()
+			mfSaveErr = k.saveMemoryFiles(ctx, w, pagesMetadata, pagesFile, mfsToSave, mfOpts)
+		}()
+		// Defer a Wait() so we wait for k.saveMemoryFiles() to complete even if we
+		// error out without reaching the other Wait() below.
+		defer mfSaveWg.Wait()
+	}
+
 	// Save the CPUID FeatureSet before the rest of the kernel so we can
 	// verify its compatibility on restore before attempting to restore the
 	// entire kernel, which may fail on an incompatible machine.
@@ -690,6 +707,20 @@ func (k *Kernel) SaveTo(ctx context.Context, w, pagesMetadata io.Writer, pagesFi
 	log.Infof("Kernel save stats: %s", stats.String())
 	log.Infof("Kernel save took [%s].", time.Since(kernelStart))
 
+	if parallelMfSave {
+		mfSaveWg.Wait()
+	} else {
+		mfSaveErr = k.saveMemoryFiles(ctx, w, pagesMetadata, pagesFile, mfsToSave, mfOpts)
+	}
+	if mfSaveErr != nil {
+		return mfSaveErr
+	}
+
+	log.Infof("Overall save took [%s].", time.Since(saveStart))
+	return nil
+}
+
+func (k *Kernel) saveMemoryFiles(ctx context.Context, w, pagesMetadata io.Writer, pagesFile *fd.FD, mfsToSave map[string]*pgalloc.MemoryFile, mfOpts pgalloc.SaveOpts) error {
 	// Save the memory files' state.
 	memoryStart := time.Now()
 	pmw := w
@@ -707,9 +738,6 @@ func (k *Kernel) SaveTo(ctx context.Context, w, pagesMetadata io.Writer, pagesFi
 		return err
 	}
 	log.Infof("Memory files save took [%s].", time.Since(memoryStart))
-
-	log.Infof("Overall save took [%s].", time.Since(saveStart))
-
 	return nil
 }
 

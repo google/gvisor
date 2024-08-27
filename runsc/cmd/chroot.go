@@ -83,7 +83,7 @@ func copyFile(dst, src string) error {
 
 // setUpChroot creates an empty directory with runsc mounted at /runsc and proc
 // mounted at /proc.
-func setUpChroot(pidns bool, spec *specs.Spec, conf *config.Config) error {
+func setUpChroot(spec *specs.Spec, conf *config.Config) error {
 	// We are a new mount namespace, so we can use /tmp as a directory to
 	// construct a new root.
 	chroot := os.TempDir()
@@ -108,15 +108,9 @@ func setUpChroot(pidns bool, spec *specs.Spec, conf *config.Config) error {
 		log.Warningf("Failed to copy /etc/localtime: %v. UTC timezone will be used.", err)
 	}
 
-	if pidns {
-		flags := uint32(unix.MS_NOSUID | unix.MS_NODEV | unix.MS_NOEXEC | unix.MS_RDONLY)
-		if err := mountInChroot(chroot, "proc", "/proc", "proc", flags); err != nil {
-			return fmt.Errorf("error mounting proc in chroot: %v", err)
-		}
-	} else {
-		if err := mountInChroot(chroot, "/proc", "/proc", "bind", unix.MS_BIND|unix.MS_RDONLY|unix.MS_REC); err != nil {
-			return fmt.Errorf("error mounting proc in chroot: %v", err)
-		}
+	flags := uint32(unix.MS_NOSUID | unix.MS_NODEV | unix.MS_NOEXEC | unix.MS_RDONLY)
+	if err := mountInChroot(chroot, "proc", "/proc", "proc", flags); err != nil {
+		return fmt.Errorf("error mounting proc in chroot: %v", err)
 	}
 
 	if err := tpuProxyUpdateChroot(chroot, spec, conf); err != nil {

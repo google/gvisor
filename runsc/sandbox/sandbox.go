@@ -946,16 +946,7 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 		{Type: specs.IPCNamespace},
 		{Type: specs.MountNamespace},
 		{Type: specs.UTSNamespace},
-	}
-
-	if gPlatform.Requirements().RequiresCurrentPIDNS {
-		// TODO(b/75837838): Also set a new PID namespace so that we limit
-		// access to other host processes.
-		log.Infof("Sandbox will be started in the current PID namespace")
-	} else {
-		log.Infof("Sandbox will be started in a new PID namespace")
-		nss = append(nss, specs.LinuxNamespace{Type: specs.PIDNamespace})
-		cmd.Args = append(cmd.Args, "--pidns=true")
+		{Type: specs.PIDNamespace},
 	}
 
 	if specutils.NVProxyEnabled(args.Spec, conf) {

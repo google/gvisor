@@ -455,9 +455,6 @@ func (f SegmentationFault) Error() string {
 
 // Requirements is used to specify platform specific requirements.
 type Requirements struct {
-	// RequiresCurrentPIDNS indicates that the sandbox has to be started in the
-	// current pid namespace.
-	RequiresCurrentPIDNS bool
 	// RequiresCapSysPtrace indicates that the sandbox has to be started with
 	// the CAP_SYS_PTRACE capability.
 	RequiresCapSysPtrace bool
