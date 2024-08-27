@@ -128,7 +128,7 @@ func (p *PortForward) Execute(ctx context.Context, f *flag.FlagSet, args ...any)
 	// Start port forwarding with the local port.
 	var wg sync.WaitGroup
 	ctx, cancel := context.WithCancel(ctx)
-	wg.Add(3)
+	wg.Add(1)
 	go func(localPort, portNum int) {
 		defer cancel()
 		defer wg.Done()
@@ -141,7 +141,6 @@ func (p *PortForward) Execute(ctx context.Context, f *flag.FlagSet, args ...any)
 
 	// Exit port forwarding if the container exits.
 	go func() {
-		defer wg.Done()
 		// Cancel port forwarding after Wait returns regardless of return
 		// value as err may indicate sandbox has terminated already.
 		_, _ = c.Wait()
@@ -151,7 +150,6 @@ func (p *PortForward) Execute(ctx context.Context, f *flag.FlagSet, args ...any)
 
 	// Wait for ^C from the user.
 	go func() {
-		defer wg.Done()
 		sig := waitSignal()
 		fmt.Printf("Got %v, Exiting...\n", sig)
 		cancel()
