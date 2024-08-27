@@ -141,9 +141,6 @@ type Boot struct {
 
 	saveFDs intFlags
 
-	// pidns is set if the sandbox is in its own pid namespace.
-	pidns bool
-
 	// attached is set to true to kill the sandbox process when the parent process
 	// terminates. This flag is set when the command execve's itself because
 	// parent death signal doesn't propagate through execve when uid/gid changes.
@@ -199,7 +196,6 @@ func (b *Boot) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&b.bundleDir, "bundle", "", "required path to the root of the bundle directory")
 	f.BoolVar(&b.applyCaps, "apply-caps", false, "if true, apply capabilities defined in the spec to the process")
 	f.BoolVar(&b.setUpRoot, "setup-root", false, "if true, set up an empty root for the process")
-	f.BoolVar(&b.pidns, "pidns", false, "if true, the sandbox is in its own PID namespace")
 	f.IntVar(&b.cpuNum, "cpu-num", 0, "number of CPUs to create inside the sandbox")
 	f.IntVar(&b.procMountSyncFD, "proc-mount-sync-fd", -1, "file descriptor that has to be written to when /proc isn't needed anymore and can be unmounted")
 	f.IntVar(&b.syncUsernsFD, "sync-userns-fd", -1, "file descriptor used to synchronize rootless user namespace initialization.")
@@ -300,7 +296,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 	}
 
 	if b.setUpRoot {
-		if err := setUpChroot(b.pidns, spec, conf); err != nil {
+		if err := setUpChroot(spec, conf); err != nil {
 			util.Fatalf("error setting up chroot: %v", err)
 		}
 		argOverride["setup-root"] = "false"

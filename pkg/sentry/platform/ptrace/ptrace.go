@@ -271,11 +271,8 @@ func (*constructor) OpenDevice(_ string) (*fd.FD, error) {
 
 // Flags implements platform.Constructor.Flags().
 func (*constructor) Requirements() platform.Requirements {
-	// TODO(b/75837838): Also set a new PID namespace so that we limit
-	// access to other host processes.
 	return platform.Requirements{
 		RequiresCapSysPtrace: true,
-		RequiresCurrentPIDNS: true,
 	}
 }
 
