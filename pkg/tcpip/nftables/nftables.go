@@ -42,8 +42,6 @@ import (
 	"fmt"
 	"slices"
 
-	"encoding/binary"
-
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
@@ -658,22 +656,17 @@ func (op comparison) evaluate(regs *registerSet, pkt *stack.PacketBuffer) {
 	// Gets the data from the source register.
 	regBuf := bytesData.getRegisterBuffer(regs, op.sreg)
 
-	// Compares from left to right in 4-byte chunks starting with the rightmost
-	// byte of every 4-byte chunk since the data is little endian.
-	// For example, 16-byte IPv6 address 2001:000a:130f:0000:0000:09c0:876a:130b
-	// is represented as 0x0a000120 0x00000f13 0xc0090000 0x0b136a87 in operations
-	// and as [0a|00|01|20|00|00|0f|13|c0|09|00|00|0b|13|6a|87] in the byte slice,
-	// so we compare right to left in the first 4 bytes and then go to the next 4.
+	// Compares bytes from left to right for all bytes in the comparison data.
 	dif := 0
-	for i := 0; i < len(bytesData.data) && dif == 0; i += 4 {
-		regVal := binary.LittleEndian.Uint32(regBuf[i : i+4])
-		opVal := binary.LittleEndian.Uint32(bytesData.data[i : i+4])
-		if regVal < opVal {
+	for i := 0; i < len(bytesData.data) && dif == 0; i++ {
+		if regBuf[i] < bytesData.data[i] {
 			dif = -1
-		} else if regVal > opVal {
+		} else if regBuf[i] > bytesData.data[i] {
 			dif = 1
 		}
 	}
+
+	// Determines the comparison result depending on the operator.
 	var result bool
 	switch op.cop {
 	case linux.NFT_CMP_EQ:
@@ -777,22 +770,25 @@ func (rd verdictData) storeData(regs *registerSet, reg uint8) {
 	regs.verdict = rd.data
 }
 
-// bytesData represents data in 4-byte chunks to be stored in a register.
+// bytesData represents <= 16 bytes of data to be stored in a register.
 type bytesData struct {
 	data []byte
 }
 
-// newBytesData creates a RegisterData for 4, 8, 12, or 16 bytes of data.
+// newBytesData creates a RegisterData for <= 16 bytes of data.
 func newBytesData(bytes []byte) registerData {
-	if len(bytes)%4 != 0 || len(bytes) > 16 {
-		panic(fmt.Errorf("invalid byte data length: %d", len(bytes)))
+	if len(bytes) == 0 {
+		panic("bytes data cannot be empty")
+	}
+	if len(bytes) > 16 {
+		panic(fmt.Errorf("bytes data cannot be more than 16 bytes: %d", len(bytes)))
 	}
 	return bytesData{data: bytes}
 }
 
-// String returns a string representation of the bytes data.
+// String returns a string representation of the big endian bytes data.
 func (rd bytesData) String() string {
-	return fmt.Sprintf("%x", rd.data)
+	return fmt.Sprintf("be %x", rd.data)
 }
 
 // equal compares the bytes data to another RegisterData object.
@@ -812,7 +808,7 @@ func (rd bytesData) validateRegister(reg uint8) error {
 	if isVerdictRegister(reg) {
 		return fmt.Errorf("data cannot be stored in verdict register")
 	}
-	if is4ByteRegister(reg) && len(rd.data) != 4 {
+	if is4ByteRegister(reg) && len(rd.data) > 4 {
 		return fmt.Errorf("%d-byte data cannot be stored in 4-byte register", len(rd.data))
 	}
 	// 16-byte register can be used for any data (guaranteed to be <= 16 bytes)
@@ -824,15 +820,14 @@ func (rd bytesData) validateRegister(reg uint8) error {
 // Note: does not support verdict data and assumes the register is valid for the
 // given data type.
 func (rd bytesData) getRegisterBuffer(regs *registerSet, reg uint8) []byte {
-	// The entire 4-byte register (data must be exactly 4 bytes)
+	// Returns the entire 4-byte register
 	if is4ByteRegister(reg) {
 		start := (reg - linux.NFT_REG32_00) * linux.NFT_REG32_SIZE
 		return regs.data[start : start+linux.NFT_REG32_SIZE]
 	}
-	// The appropriate (mod 4)-byte data in a 16-byte register
-	// Leaves excess space on the left (bc the data is little endian).
-	end := (int(reg)-linux.NFT_REG_1)*linux.NFT_REG_SIZE + linux.NFT_REG_SIZE
-	return regs.data[end-len(rd.data) : end]
+	// Returns the entire 16-byte register
+	start := (reg - linux.NFT_REG_1) * linux.NFT_REG_SIZE
+	return regs.data[start : start+linux.NFT_REG_SIZE]
 }
 
 // storeData sets the data in the destination register to the bytes data.

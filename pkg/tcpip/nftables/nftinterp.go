@@ -365,17 +365,18 @@ func parseVerdict(tokens []string, lnIdx int, tkIdx int) (int, Verdict, error) {
 	return tkIdx, v, nil
 }
 
-// parseHexData parses little endian hexadecimal data from the given token and
-// returns the index of the next token to process (can consume multiple tokens).
+// parseHexData parses little endian hexadecimal data from the given token,
+// converts to big endian, and returns the index of the next token to process.
 func parseHexData(tokens []string, lnIdx int, tkIdx int) (int, registerData, error) {
 	var bytes []byte
 	for ; tkIdx < len(tokens); tkIdx++ {
-		if len(tokens[tkIdx]) < 2 || tokens[tkIdx][:2] != "0x" {
+		if len(tokens[tkIdx]) <= 2 || tokens[tkIdx][:2] != "0x" {
 			break
 		}
 
-		if len(tokens[tkIdx]) != 10 {
-			return 0, nil, &SyntaxError{lnIdx, tkIdx, fmt.Sprintf("hexadecimal data must be exactly 8 digits long (excluding 0x): '%s'", tokens[tkIdx])}
+		// Hexadecimal data must have 2 digits per byte (even number of characters).
+		if len(tokens[tkIdx])%2 != 0 {
+			return 0, nil, &SyntaxError{lnIdx, tkIdx, fmt.Sprintf("invalid hexadecimal data: '%s'", tokens[tkIdx])}
 		}
 
 		// Decodes the little endian hex string into bytes
@@ -383,6 +384,8 @@ func parseHexData(tokens []string, lnIdx int, tkIdx int) (int, registerData, err
 		if err != nil {
 			return 0, nil, &SyntaxError{lnIdx, tkIdx, fmt.Sprintf("could not decode hexadecimal data: '%s'", tokens[tkIdx])}
 		}
+		// Converts the bytes to big endian and appends to the bytes slice.
+		slices.Reverse(bytes4)
 		bytes = append(bytes, bytes4...)
 	}
 	if len(bytes) > 16 {

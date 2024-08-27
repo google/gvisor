@@ -106,9 +106,9 @@ func TestAcceptAllForSupportedHooks(t *testing.T) {
 	}
 }
 
-// TestEvaluateImmediate tests that the Immediate operation correctly sets the
+// TestEvaluateImmediateVerdict tests that the Immediate operation correctly sets the
 // register value and behaves as expected during evaluation.
-func TestEvaluateImmediate(t *testing.T) {
+func TestEvaluateImmediateVerdict(t *testing.T) {
 	for _, test := range []struct {
 		tname    string
 		baseOp1  operation // will be nil if unused
@@ -234,6 +234,12 @@ func TestEvaluateImmediate(t *testing.T) {
 			baseOp2: mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NF_ACCEPT)})),
 			verdict: Verdict{Code: VC(linux.NF_DROP)},
 		},
+		{
+			tname:   "immediate load register",
+			baseOp1: mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NF_DROP)})),
+			baseOp2: mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NF_ACCEPT)})),
+			verdict: Verdict{Code: VC(linux.NF_DROP)},
+		},
 	} {
 		t.Run(test.tname, func(t *testing.T) {
 			// Sets up an NFTables object with a base chain (for 2 rules) and another
@@ -287,6 +293,62 @@ func TestEvaluateImmediate(t *testing.T) {
 				t.Fatalf("expected verdict %v, got %v", test.verdict, v)
 			}
 		})
+	}
+}
+
+// TestEvaluateImmediateVerdict tests that the Immediate operation correctly
+// loads bytes data of all lengths into all supported registers.
+func TestEvaluateImmediateBytesData(t *testing.T) {
+	bytes := []byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10}
+	for blen := 1; blen <= len(bytes); blen++ {
+		for _, registerSize := range []int{linux.NFT_REG32_SIZE, linux.NFT_REG_SIZE} {
+			if blen > registerSize {
+				continue
+			}
+			tname := fmt.Sprintf("immediately load %d bytes into %d-byte registers", blen, registerSize)
+			t.Run(tname, func(t *testing.T) {
+				// Sets up an NFTables object with a base chain with policy accept.
+				nf := NewNFTables()
+				tab, err := nf.AddTable(arbitraryFamily, "test", "test table", false)
+				if err != nil {
+					t.Fatalf("unexpected error for AddTable: %v", err)
+				}
+				bc, err := tab.AddChain("base_chain", nil, "test chain", false)
+				if err != nil {
+					t.Fatalf("unexpected error for AddChain: %v", err)
+				}
+				bc.SetBaseChainInfo(arbitraryInfoPolicyAccept)
+
+				// Adds a rule and immediate operation per register of registerSize.
+				switch registerSize {
+				case linux.NFT_REG32_SIZE:
+					for reg := linux.NFT_REG32_00; reg <= linux.NFT_REG32_15; reg++ {
+						rule := &Rule{}
+						rule.addOperation(mustCreateImmediate(t, uint8(reg), newBytesData(bytes[:blen])))
+						if err := bc.RegisterRule(rule, -1); err != nil {
+							t.Fatalf("unexpected error for RegisterRule for rule %d: %v", reg-linux.NFT_REG32_00, err)
+						}
+					}
+				case linux.NFT_REG_SIZE:
+					for reg := linux.NFT_REG_1; reg <= linux.NFT_REG_4; reg++ {
+						rule := &Rule{}
+						rule.addOperation(mustCreateImmediate(t, uint8(reg), newBytesData(bytes[:blen])))
+						if err := bc.RegisterRule(rule, -1); err != nil {
+							t.Fatalf("unexpected error for RegisterRule for rule %d: %v", reg-linux.NFT_REG_1, err)
+						}
+					}
+				}
+				// Runs evaluation and checks for default policy verdict accept
+				pkt := makeTestingPacket()
+				v, err := nf.EvaluateHook(arbitraryFamily, arbitraryHook, pkt)
+				if err != nil {
+					t.Fatalf("unexpected error for EvaluateHook: %v", err)
+				}
+				if v.Code != linux.NF_ACCEPT {
+					t.Fatalf("expected default policy verdict accept, got %v", v)
+				}
+			})
+		}
 	}
 }
 
@@ -345,8 +407,8 @@ func TestEvaluateComparison(t *testing.T) {
 		},
 		{
 			tname: "compare register > 4-byte data, true",
-			op1:   mustCreateImmediate(t, linux.NFT_REG32_15, newBytesData([]byte{0, 0, 0, 1})),
-			op2:   mustCreateComparison(t, linux.NFT_REG32_15, linux.NFT_CMP_GT, newBytesData([]byte{29, 76, 230, 0})),
+			op1:   mustCreateImmediate(t, linux.NFT_REG32_15, newBytesData([]byte{29, 76, 230, 0})),
+			op2:   mustCreateComparison(t, linux.NFT_REG32_15, linux.NFT_CMP_GT, newBytesData([]byte{0, 0, 0, 1})),
 			res:   true,
 		},
 		{
@@ -381,8 +443,8 @@ func TestEvaluateComparison(t *testing.T) {
 		},
 		{
 			tname: "compare register >= 4-byte data, true gt",
-			op1:   mustCreateImmediate(t, linux.NFT_REG32_12, newBytesData([]byte{0, 0, 0, 1})),
-			op2:   mustCreateComparison(t, linux.NFT_REG32_12, linux.NFT_CMP_GTE, newBytesData([]byte{29, 76, 230, 0})),
+			op1:   mustCreateImmediate(t, linux.NFT_REG32_12, newBytesData([]byte{29, 76, 230, 0})),
+			op2:   mustCreateComparison(t, linux.NFT_REG32_12, linux.NFT_CMP_GTE, newBytesData([]byte{0, 0, 0, 1})),
 			res:   true,
 		},
 		{
@@ -442,8 +504,8 @@ func TestEvaluateComparison(t *testing.T) {
 		},
 		{
 			tname: "compare register > 8-byte data, true",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_4, newBytesData([]byte{0, 0, 0, 1, 0, 0, 0, 0})),
-			op2:   mustCreateComparison(t, linux.NFT_REG_4, linux.NFT_CMP_GT, newBytesData([]byte{29, 76, 230, 0, 0, 0, 0, 0})),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_4, newBytesData([]byte{29, 76, 230, 0, 0, 0, 0, 0})),
+			op2:   mustCreateComparison(t, linux.NFT_REG_4, linux.NFT_CMP_GT, newBytesData([]byte{0, 0, 0, 1, 0, 0, 0, 0})),
 			res:   true,
 		},
 		{
@@ -478,7 +540,7 @@ func TestEvaluateComparison(t *testing.T) {
 		},
 		{
 			tname: "compare register >= 8-byte data, true gt",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_2, newBytesData([]byte{0, 0, 0, 1, 0, 0, 0, 0})),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_2, newBytesData([]byte{30, 0, 0, 1, 0, 0, 0, 0})),
 			op2:   mustCreateComparison(t, linux.NFT_REG_2, linux.NFT_CMP_GTE, newBytesData([]byte{29, 76, 230, 0, 0, 0, 0, 0})),
 			res:   true,
 		},
