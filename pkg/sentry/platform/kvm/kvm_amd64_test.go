@@ -53,6 +53,24 @@ func TestSegments(t *testing.T) {
 	})
 }
 
+func vmcall(ax uintptr) uintptr
+func vmmcall(ax uintptr) uintptr
+
+func BenchmarkVMCall(b *testing.B) {
+	vmcallIsSupported := cpuid.HostFeatureSet().Intel()
+	kvmTest(b, nil, func(c *vCPU) bool {
+		for i := 0; i < b.N; i++ {
+			bluepill(c)
+			if vmcallIsSupported {
+				vmcall(0)
+			} else {
+				vmmcall(0)
+			}
+		}
+		return false
+	})
+}
+
 // stmxcsr reads the MXCSR control and status register.
 func stmxcsr(addr *uint32)
 
