@@ -119,3 +119,12 @@ const (
 const (
 	NFT_PAYLOAD_L4CSUM_PSEUDOHDR = (1 << 0) // use pseudoheader for L4 checksum
 )
+
+// Nf table bitwise operators.
+// Used by the nft bitwise operation to perform bitwise math over register data.
+// These correspond to enum values in include/uapi/linux/netfilter/nf_tables.h.
+const (
+	NFT_BITWISE_BOOL   = iota // mask-and-xor operation for NOT, AND, OR, & XOR
+	NFT_BITWISE_LSHIFT        // left-shift operation
+	NFT_BITWISE_RSHIFT        // right-shift operation
+)
