@@ -15,6 +15,9 @@ go_library(
         "stack.go",
         "tun.go",
     ],
+    imports = [
+        "gvisor.dev/gvisor/pkg/tcpip/stack",
+    ],
     visibility = [
         "//pkg/sentry:internal",
     ],

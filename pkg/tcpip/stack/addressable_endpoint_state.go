@@ -41,10 +41,12 @@ type AddressableEndpointState struct {
 	// AddressableEndpointState.mu
 	//   addressState.mu
 	mu addressableEndpointStateRWMutex `state:"nosave"`
+	// TODO(b/361075310): Enable s/r for the below fields.
+	//
 	// +checklocks:mu
-	endpoints map[tcpip.Address]*addressState
+	endpoints map[tcpip.Address]*addressState `state:"nosave"`
 	// +checklocks:mu
-	primary []*addressState
+	primary []*addressState `state:"nosave"`
 }
 
 // AddressableEndpointStateOptions contains options used to configure an

@@ -40,7 +40,14 @@ import (
 //
 // +stateify savable
 type Stack struct {
-	Stack *stack.Stack `state:"manual"`
+	Stack                  *stack.Stack `state:".(*stack.Stack)"`
+	shouldSaveRestoreStack bool
+}
+
+// EnableSaveRestore enables netstack s/r.
+func (s *Stack) EnableSaveRestore() error {
+	s.shouldSaveRestoreStack = true
+	return nil
 }
 
 // Destroy implements inet.Stack.Destroy.

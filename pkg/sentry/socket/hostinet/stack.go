@@ -421,3 +421,8 @@ func (*Stack) PortRange() (uint16, uint16) {
 func (*Stack) SetPortRange(uint16, uint16) error {
 	return linuxerr.EACCES
 }
+
+// EnableSaveRestore implements inet.Stack.EnableSaveRestore.
+func (*Stack) EnableSaveRestore() error {
+	return fmt.Errorf("s/r is not supported for hostinet")
+}

@@ -247,6 +247,10 @@ type Loader struct {
 
 	// +checklocks:mu
 	saveFDs []*fd.FD
+
+	// saveRestoreNet indicates if the saved network stack should be used
+	// during restore.
+	saveRestoreNet bool
 }
 
 // execID uniquely identifies a sentry process that is executed in a container.
@@ -524,6 +528,14 @@ func New(args Args) (*Loader, error) {
 	netns, err := newRootNetworkNamespace(args.Conf, tk, creds.UserNamespace)
 	if err != nil {
 		return nil, fmt.Errorf("creating network: %w", err)
+	}
+
+	// S/R is not supported for hostinet.
+	if l.root.conf.Network != config.NetworkHost && args.Conf.TestOnlySaveRestoreNetstack {
+		l.saveRestoreNet = true
+		if err := netns.Stack().EnableSaveRestore(); err != nil {
+			return nil, fmt.Errorf("enable s/r: %w", err)
+		}
 	}
 
 	if args.NumCPU == 0 {
