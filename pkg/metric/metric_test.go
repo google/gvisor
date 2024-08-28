@@ -27,8 +27,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/prometheus/common/expfmt"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/testing/protocmp"
 	pb "gvisor.dev/gvisor/pkg/metric/metric_go_proto"
 	"gvisor.dev/gvisor/pkg/prometheus"
 	"gvisor.dev/gvisor/pkg/sync"
@@ -99,6 +101,8 @@ func TestVerifyName(t *testing.T) {
 
 func TestInitialize(t *testing.T) {
 	defer resetTest()
+	field1 := NewField("field1", &fieldValFoo, &fieldValBar)
+	field2 := NewField("field2", &fieldValBaz, &fieldValQuux)
 
 	_, err := NewUint64Metric("/foo", Uint64Metadata{
 		Cumulative:  true,
@@ -112,6 +116,7 @@ func TestInitialize(t *testing.T) {
 		Cumulative:  true,
 		Sync:        true,
 		Description: barDescription,
+		Fields:      []Field{field1, field2},
 		Unit:        pb.MetricMetadata_UNITS_NANOSECONDS,
 	})
 	if err != nil {
@@ -119,8 +124,6 @@ func TestInitialize(t *testing.T) {
 	}
 
 	bucketer := NewExponentialBucketer(3, 2, 0, 1)
-	field1 := NewField("field1", &fieldValFoo, &fieldValBar)
-	field2 := NewField("field2", &fieldValBaz, &fieldValQuux)
 	_, err = NewDistributionMetric("/distrib", true, bucketer, pb.MetricMetadata_UNITS_NANOSECONDS, distribDescription, field1, field2)
 	if err != nil {
 		t.Fatalf("NewDistributionMetric got err %v want nil", err)
@@ -179,6 +182,13 @@ func TestInitialize(t *testing.T) {
 			}
 			if !m.Sync {
 				t.Errorf("/bar %+v Sync got false want true", m)
+			}
+			wantFields := []*pb.MetricMetadata_Field{
+				{FieldName: "field1", AllowedValues: []string{"foo", "bar"}},
+				{FieldName: "field2", AllowedValues: []string{"baz", "quux"}},
+			}
+			if diff := cmp.Diff(m.Fields, wantFields, protocmp.Transform()); diff != "" {
+				t.Errorf("/bar %+v fields: got %v want %v\ndiff:\n%s", m, m.Fields, wantFields, diff)
 			}
 			if m.Units != pb.MetricMetadata_UNITS_NANOSECONDS {
 				t.Errorf("/bar %+v Units got %v want %v", m, m.Units, pb.MetricMetadata_UNITS_NANOSECONDS)
@@ -260,6 +270,8 @@ func TestDisable(t *testing.T) {
 
 func TestEmitMetricUpdate(t *testing.T) {
 	defer resetTest()
+	field1 := NewField("field1", &fieldValFoo, &fieldValBar)
+	field2 := NewField("field2", &fieldValBaz, &fieldValQuux)
 
 	foo, err := NewUint64Metric("/foo", Uint64Metadata{
 		Cumulative:  true,
@@ -269,17 +281,16 @@ func TestEmitMetricUpdate(t *testing.T) {
 		t.Fatalf("NewUint64Metric got err %v want nil", err)
 	}
 
-	_, err = NewUint64Metric("/bar", Uint64Metadata{
+	bar, err := NewUint64Metric("/bar", Uint64Metadata{
 		Cumulative:  true,
 		Description: barDescription,
+		Fields:      []Field{field1, field2},
 	})
 	if err != nil {
 		t.Fatalf("NewUint64Metric got err %v want nil", err)
 	}
 
 	bucketer := NewExponentialBucketer(2, 2, 0, 1)
-	field1 := NewField("field1", &fieldValFoo, &fieldValBar)
-	field2 := NewField("field2", &fieldValBaz, &fieldValQuux)
 	distrib, err := NewDistributionMetric("/distrib", false, bucketer, pb.MetricMetadata_UNITS_NONE, distribDescription, field1, field2)
 	if err != nil {
 		t.Fatalf("NewDistributionMetric: %v", err)
@@ -302,11 +313,11 @@ func TestEmitMetricUpdate(t *testing.T) {
 		t.Fatalf("emitter %v got %T want pb.MetricUpdate", emitter[0], emitter[0])
 	}
 
-	if len(update.Metrics) != 2 {
-		t.Errorf("MetricUpdate got %d metrics want %d", len(update.Metrics), 2)
+	// We only expect /foo, as /bar is initially omitted due to being all-zero.
+	if len(update.Metrics) != 1 {
+		t.Errorf("MetricUpdate got %d metrics want %d", len(update.Metrics), 1)
 	}
 
-	// Both are included for their initial values.
 	foundFoo := false
 	foundBar := false
 	foundDistrib := false
@@ -334,8 +345,8 @@ func TestEmitMetricUpdate(t *testing.T) {
 	if !foundFoo {
 		t.Errorf("/foo not found: %+v", emitter)
 	}
-	if !foundBar {
-		t.Errorf("/bar not found: %+v", emitter)
+	if foundBar {
+		t.Errorf("/bar unexpectedly found: %+v", emitter)
 	}
 	if foundDistrib {
 		t.Errorf("/distrib unexpectedly found: %+v", emitter)
@@ -375,13 +386,16 @@ func TestEmitMetricUpdate(t *testing.T) {
 	}
 	verifyPrometheusParsing(t)
 
-	// Add a few samples to the distribution metric.
+	// Add a few samples to the distribution metric and increment two of the
+	// /bar field combinations.
 	distrib.AddSample(1, &fieldValFoo, &fieldValBaz)
 	distrib.AddSample(1, &fieldValFoo, &fieldValBaz)
 	distrib.AddSample(3, &fieldValFoo, &fieldValBaz)
 	distrib.AddSample(-1, &fieldValFoo, &fieldValQuux)
 	distrib.AddSample(1, &fieldValFoo, &fieldValQuux)
 	distrib.AddSample(100, &fieldValFoo, &fieldValQuux)
+	bar.Increment(&fieldValFoo, &fieldValBaz)
+	bar.IncrementBy(1337, &fieldValFoo, &fieldValQuux)
 	emitter.Reset()
 	EmitMetricUpdate()
 	if len(emitter) != 1 {
@@ -391,40 +405,61 @@ func TestEmitMetricUpdate(t *testing.T) {
 	if !ok {
 		t.Fatalf("emitter %v got %T want pb.MetricUpdate", emitter[0], emitter[0])
 	}
-	if len(update.Metrics) != 2 {
-		t.Fatalf("MetricUpdate got %d metrics want %d", len(update.Metrics), 1)
+	if len(update.Metrics) != 4 {
+		t.Fatalf("MetricUpdate got %d metrics want %d", len(update.Metrics), 4)
 	}
 	for _, m := range update.Metrics {
-		if m.Name != "/distrib" {
-			t.Fatalf("Metric %+v name got %q want '/distrib'", m, m.Name)
-		}
-		if len(m.FieldValues) != 2 {
-			t.Fatalf("Metric %+v fields: got %v want %d fields", m, m.FieldValues, 2)
-		}
-		if m.FieldValues[0] != "foo" {
-			t.Fatalf("Metric %+v field 0: got %v want %v", m, m.FieldValues[0], "foo")
-		}
-		dv, ok := m.Value.(*pb.MetricValue_DistributionValue)
-		if !ok {
-			t.Fatalf("%+v: value %v got %T want pb.MetricValue_DistributionValue", m, m.Value, m.Value)
-		}
-		samples := dv.DistributionValue.GetNewSamples()
-		if len(samples) != 4 {
-			t.Fatalf("%+v: got %d buckets, want %d", dv.DistributionValue, len(samples), 4)
-		}
-		var wantSamples []uint64
-		switch m.FieldValues[1] {
-		case "baz":
-			wantSamples = []uint64{0, 2, 1, 0}
-		case "quux":
-			wantSamples = []uint64{1, 1, 0, 1}
-		default:
-			t.Fatalf("%+v: got unexpected field[1]: %q", m, m.FieldValues[1])
-		}
-		for i, s := range samples {
-			if s != wantSamples[i] {
-				t.Errorf("%+v [fields %v]: sample %d: got %d want %d", dv.DistributionValue, m.FieldValues, i, s, wantSamples[i])
+		switch m.Name {
+		case "/distrib":
+			if len(m.FieldValues) != 2 {
+				t.Fatalf("Metric %+v fields: got %v want %d fields", m, m.FieldValues, 2)
 			}
+			if m.FieldValues[0] != "foo" {
+				t.Fatalf("Metric %+v field 0: got %v want %v", m, m.FieldValues[0], "foo")
+			}
+			dv, ok := m.Value.(*pb.MetricValue_DistributionValue)
+			if !ok {
+				t.Fatalf("%+v: value %v got %T want pb.MetricValue_DistributionValue", m, m.Value, m.Value)
+			}
+			samples := dv.DistributionValue.GetNewSamples()
+			if len(samples) != 4 {
+				t.Fatalf("%+v: got %d buckets, want %d", dv.DistributionValue, len(samples), 4)
+			}
+			var wantSamples []uint64
+			switch m.FieldValues[1] {
+			case "baz":
+				wantSamples = []uint64{0, 2, 1, 0}
+			case "quux":
+				wantSamples = []uint64{1, 1, 0, 1}
+			default:
+				t.Fatalf("%+v: got unexpected field[1]: %q", m, m.FieldValues[1])
+			}
+			for i, s := range samples {
+				if s != wantSamples[i] {
+					t.Errorf("%+v [fields %v]: sample %d: got %d want %d", dv.DistributionValue, m.FieldValues, i, s, wantSamples[i])
+				}
+			}
+		case "/bar":
+			if len(m.FieldValues) != 2 {
+				t.Fatalf("Metric %+v fields: got %v want %d fields", m, m.FieldValues, 2)
+			}
+			if m.FieldValues[0] != "foo" {
+				t.Fatalf("Metric %+v field 0: got %v want %v", m, m.FieldValues[0], "foo")
+			}
+			var wantValue uint64
+			switch m.FieldValues[1] {
+			case "baz":
+				wantValue = 1
+			case "quux":
+				wantValue = 1337
+			default:
+				t.Fatalf("%+v: got unexpected field[1]: %q", m, m.FieldValues[1])
+			}
+			if uv, ok := m.Value.(*pb.MetricValue_Uint64Value); !ok || uv.Uint64Value != wantValue {
+				t.Errorf("%+v: value for fields %v: got %T value %v want uint64 value %d", m, m.FieldValues, m.Value, m.Value, wantValue)
+			}
+		default:
+			t.Fatalf("Metric update %+v: Unexpected metric name got %q", m, m.Name)
 		}
 	}
 	verifyPrometheusParsing(t)
@@ -461,103 +496,6 @@ func TestEmitMetricUpdate(t *testing.T) {
 	if len(emitter) != 0 {
 		t.Fatalf("EmitMetricUpdate emitted %d events want %d", len(emitter), 0)
 	}
-	verifyPrometheusParsing(t)
-}
-
-func TestEmitMetricUpdateWithFields(t *testing.T) {
-	defer resetTest()
-
-	var (
-		weird1 = FieldValue{"weird1"}
-		weird2 = FieldValue{"weird2"}
-	)
-	field := NewField("weirdness_type", &weird1, &weird2)
-
-	counter, err := NewUint64Metric("/weirdness", Uint64Metadata{
-		Cumulative:  true,
-		Description: counterDescription,
-		Fields:      []Field{field},
-	})
-	if err != nil {
-		t.Fatalf("NewUint64Metric got err %v want nil", err)
-	}
-
-	if err := Initialize(); err != nil {
-		t.Fatalf("Initialize(): %s", err)
-	}
-	verifyPrometheusParsing(t)
-
-	// Don't care about the registration metrics.
-	emitter.Reset()
-	EmitMetricUpdate()
-
-	// For metrics with fields, we do not emit data unless the value is
-	// incremented.
-	if len(emitter) != 0 {
-		t.Fatalf("EmitMetricUpdate emitted %d events want 0", len(emitter))
-	}
-	verifyPrometheusParsing(t)
-
-	counter.IncrementBy(4, &weird1)
-	counter.Increment(&weird2)
-
-	emitter.Reset()
-	EmitMetricUpdate()
-
-	if len(emitter) != 1 {
-		t.Fatalf("EmitMetricUpdate emitted %d events want 1", len(emitter))
-	}
-
-	update, ok := emitter[0].(*pb.MetricUpdate)
-	if !ok {
-		t.Fatalf("emitter %v got %T want pb.MetricUpdate", emitter[0], emitter[0])
-	}
-
-	if len(update.Metrics) != 2 {
-		t.Errorf("MetricUpdate got %d metrics want 2", len(update.Metrics))
-	}
-
-	foundWeird1 := false
-	foundWeird2 := false
-	for i := 0; i < len(update.Metrics); i++ {
-		m := update.Metrics[i]
-
-		if m.Name != "/weirdness" {
-			t.Errorf("Metric %+v name got %q want '/weirdness'", m, m.Name)
-		}
-		if len(m.FieldValues) != 1 {
-			t.Errorf("MetricUpdate got %d fields want 1", len(m.FieldValues))
-		}
-
-		switch m.FieldValues[0] {
-		case weird1.Value:
-			uv, ok := m.Value.(*pb.MetricValue_Uint64Value)
-			if !ok {
-				t.Errorf("%+v: value %v got %T want pb.MetricValue_Uint64Value", m, m.Value, m.Value)
-			}
-			if uv.Uint64Value != 4 {
-				t.Errorf("%v: Value got %v want 4", m, uv.Uint64Value)
-			}
-			foundWeird1 = true
-		case weird2.Value:
-			uv, ok := m.Value.(*pb.MetricValue_Uint64Value)
-			if !ok {
-				t.Errorf("%+v: value %v got %T want pb.MetricValue_Uint64Value", m, m.Value, m.Value)
-			}
-			if uv.Uint64Value != 1 {
-				t.Errorf("%v: Value got %v want 1", m, uv.Uint64Value)
-			}
-			foundWeird2 = true
-		}
-	}
-
-	if !foundWeird1 {
-		t.Errorf("Field value weird1 not found: %+v", emitter)
-	}
-	if !foundWeird2 {
-		t.Errorf("Field value weird2 not found: %+v", emitter)
-	}
-
 	verifyPrometheusParsing(t)
 }
 
@@ -1065,6 +1003,12 @@ func TestMetricProfiling(t *testing.T) {
 	fieldVal1 := &FieldValue{"val1"}
 	fieldVal2 := &FieldValue{"val2"}
 	fieldVal3 := &FieldValue{"val3"}
+	fieldVal4 := &FieldValue{"val4"}
+	fieldVal5 := &FieldValue{"val5"}
+	fieldVal6 := &FieldValue{"val6"}
+	fieldVal7 := &FieldValue{"val7"}
+	fieldVal8 := &FieldValue{"val8"}
+	fieldVal9 := &FieldValue{"val9"}
 
 	for _, test := range []struct {
 		name                 string
@@ -1118,6 +1062,48 @@ func TestMetricProfiling(t *testing.T) {
 				NewField("field1", fieldVal1, fieldVal2, fieldVal3),
 			},
 			expectedHeader:      TimeColumn + "\t/foo[val1]\t/foo[val2]\t/foo[val3]",
+			incrementMetricBy:   []uint64{1337},
+			numIterations:       100,
+			errOnStartProfiling: false,
+		},
+		{
+			name:                 "single metric with multiple fields",
+			profilingMetricsFlag: "/foo",
+			metricNames:          []string{"/foo"},
+			firstMetricFields: []Field{
+				NewField("field1", fieldVal1, fieldVal2, fieldVal3),
+				NewField("field2", fieldVal4, fieldVal5, fieldVal6),
+				NewField("field3", fieldVal7, fieldVal8, fieldVal9),
+			},
+			expectedHeader: TimeColumn + "\t" + strings.Join([]string{
+				"/foo[val1,val4,val7]",
+				"/foo[val1,val4,val8]",
+				"/foo[val1,val4,val9]",
+				"/foo[val1,val5,val7]",
+				"/foo[val1,val5,val8]",
+				"/foo[val1,val5,val9]",
+				"/foo[val1,val6,val7]",
+				"/foo[val1,val6,val8]",
+				"/foo[val1,val6,val9]",
+				"/foo[val2,val4,val7]",
+				"/foo[val2,val4,val8]",
+				"/foo[val2,val4,val9]",
+				"/foo[val2,val5,val7]",
+				"/foo[val2,val5,val8]",
+				"/foo[val2,val5,val9]",
+				"/foo[val2,val6,val7]",
+				"/foo[val2,val6,val8]",
+				"/foo[val2,val6,val9]",
+				"/foo[val3,val4,val7]",
+				"/foo[val3,val4,val8]",
+				"/foo[val3,val4,val9]",
+				"/foo[val3,val5,val7]",
+				"/foo[val3,val5,val8]",
+				"/foo[val3,val5,val9]",
+				"/foo[val3,val6,val7]",
+				"/foo[val3,val6,val8]",
+				"/foo[val3,val6,val9]",
+			}, "\t"),
 			incrementMetricBy:   []uint64{1337},
 			numIterations:       100,
 			errOnStartProfiling: false,
