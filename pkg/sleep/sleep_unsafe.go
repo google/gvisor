@@ -394,6 +394,7 @@ type Waker struct {
 	allWakersNext *Waker
 }
 
+// +stateify savable
 type wakerState struct {
 	asserted bool
 	other    *Sleeper

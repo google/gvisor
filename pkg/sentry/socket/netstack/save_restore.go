@@ -22,6 +22,11 @@ import (
 
 // afterLoad is invoked by stateify.
 func (s *Stack) afterLoad(ctx context.Context) {
+	if s.shouldSaveRestoreStack {
+		// This indicates that netstack s/r is enabled and the stack
+		// should not be replaced with the new stack from context.
+		return
+	}
 	s.Stack = stack.RestoreStackFromContext(ctx)
 	if s.Stack == nil {
 		panic("can't restore without netstack/tcpip/stack.Stack")

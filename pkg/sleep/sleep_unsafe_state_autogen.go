@@ -74,7 +74,36 @@ func (w *Waker) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.LoadValue(0, new(wakerState), func(y any) { w.loadS(ctx, y.(wakerState)) })
 }
 
+func (w *wakerState) StateTypeName() string {
+	return "pkg/sleep.wakerState"
+}
+
+func (w *wakerState) StateFields() []string {
+	return []string{
+		"asserted",
+		"other",
+	}
+}
+
+func (w *wakerState) beforeSave() {}
+
+// +checklocksignore
+func (w *wakerState) StateSave(stateSinkObject state.Sink) {
+	w.beforeSave()
+	stateSinkObject.Save(0, &w.asserted)
+	stateSinkObject.Save(1, &w.other)
+}
+
+func (w *wakerState) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (w *wakerState) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &w.asserted)
+	stateSourceObject.Load(1, &w.other)
+}
+
 func init() {
 	state.Register((*Sleeper)(nil))
 	state.Register((*Waker)(nil))
+	state.Register((*wakerState)(nil))
 }

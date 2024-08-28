@@ -29,7 +29,7 @@ type Namespace struct {
 	inode *nsfs.Inode
 
 	// stack is the network stack implementation of this network namespace.
-	stack Stack `state:"nosave"`
+	stack Stack
 
 	// creator allows kernel to create new network stack for network namespaces.
 	// If nil, no networking will function if network is namespaced.

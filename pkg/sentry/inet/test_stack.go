@@ -215,3 +215,9 @@ func (*TestStack) SetGROTimeout(NICID int32, timeout time.Duration) error {
 	// No-op.
 	return nil
 }
+
+// EnableSaveRestore implements Stack.
+func (*TestStack) EnableSaveRestore() error {
+	// No-op.
+	return nil
+}

@@ -120,6 +120,9 @@ type Stack interface {
 	// SetPortRange sets the UDP and TCP IPv4 and IPv6 ephemeral port range
 	// (inclusive).
 	SetPortRange(start uint16, end uint16) error
+
+	// EnableSaveRestore enables netstack s/r.
+	EnableSaveRestore() error
 }
 
 // Interface contains information about a network interface.

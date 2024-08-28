@@ -6,6 +6,7 @@ import (
 	"context"
 
 	"gvisor.dev/gvisor/pkg/state"
+	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
 func (s *sock) StateTypeName() string {
@@ -82,7 +83,10 @@ func (s *Stack) StateTypeName() string {
 }
 
 func (s *Stack) StateFields() []string {
-	return []string{}
+	return []string{
+		"Stack",
+		"shouldSaveRestoreStack",
+	}
 }
 
 func (s *Stack) beforeSave() {}
@@ -90,10 +94,16 @@ func (s *Stack) beforeSave() {}
 // +checklocksignore
 func (s *Stack) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
+	var StackValue *stack.Stack
+	StackValue = s.saveStack()
+	stateSinkObject.SaveValue(0, StackValue)
+	stateSinkObject.Save(1, &s.shouldSaveRestoreStack)
 }
 
 // +checklocksignore
 func (s *Stack) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(1, &s.shouldSaveRestoreStack)
+	stateSourceObject.LoadValue(0, new(*stack.Stack), func(y any) { s.loadStack(ctx, y.(*stack.Stack)) })
 	stateSourceObject.AfterLoad(func() { s.afterLoad(ctx) })
 }
 

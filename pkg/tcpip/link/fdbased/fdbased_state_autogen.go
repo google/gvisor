@@ -245,7 +245,6 @@ func (b *iovecBuffer) StateTypeName() string {
 func (b *iovecBuffer) StateFields() []string {
 	return []string{
 		"views",
-		"iovecs",
 		"sizes",
 		"skipsVnetHdr",
 		"pulledIndex",
@@ -258,10 +257,9 @@ func (b *iovecBuffer) beforeSave() {}
 func (b *iovecBuffer) StateSave(stateSinkObject state.Sink) {
 	b.beforeSave()
 	stateSinkObject.Save(0, &b.views)
-	stateSinkObject.Save(1, &b.iovecs)
-	stateSinkObject.Save(2, &b.sizes)
-	stateSinkObject.Save(3, &b.skipsVnetHdr)
-	stateSinkObject.Save(4, &b.pulledIndex)
+	stateSinkObject.Save(1, &b.sizes)
+	stateSinkObject.Save(2, &b.skipsVnetHdr)
+	stateSinkObject.Save(3, &b.pulledIndex)
 }
 
 func (b *iovecBuffer) afterLoad(context.Context) {}
@@ -269,10 +267,9 @@ func (b *iovecBuffer) afterLoad(context.Context) {}
 // +checklocksignore
 func (b *iovecBuffer) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &b.views)
-	stateSourceObject.Load(1, &b.iovecs)
-	stateSourceObject.Load(2, &b.sizes)
-	stateSourceObject.Load(3, &b.skipsVnetHdr)
-	stateSourceObject.Load(4, &b.pulledIndex)
+	stateSourceObject.Load(1, &b.sizes)
+	stateSourceObject.Load(2, &b.skipsVnetHdr)
+	stateSourceObject.Load(3, &b.pulledIndex)
 }
 
 func (d *readVDispatcher) StateTypeName() string {

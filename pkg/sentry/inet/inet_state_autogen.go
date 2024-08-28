@@ -105,6 +105,7 @@ func (n *Namespace) StateTypeName() string {
 func (n *Namespace) StateFields() []string {
 	return []string{
 		"inode",
+		"stack",
 		"creator",
 		"isRoot",
 		"userNS",
@@ -118,19 +119,21 @@ func (n *Namespace) beforeSave() {}
 func (n *Namespace) StateSave(stateSinkObject state.Sink) {
 	n.beforeSave()
 	stateSinkObject.Save(0, &n.inode)
-	stateSinkObject.Save(1, &n.creator)
-	stateSinkObject.Save(2, &n.isRoot)
-	stateSinkObject.Save(3, &n.userNS)
-	stateSinkObject.Save(4, &n.abstractSockets)
+	stateSinkObject.Save(1, &n.stack)
+	stateSinkObject.Save(2, &n.creator)
+	stateSinkObject.Save(3, &n.isRoot)
+	stateSinkObject.Save(4, &n.userNS)
+	stateSinkObject.Save(5, &n.abstractSockets)
 }
 
 // +checklocksignore
 func (n *Namespace) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &n.inode)
-	stateSourceObject.LoadWait(1, &n.creator)
-	stateSourceObject.Load(2, &n.isRoot)
-	stateSourceObject.Load(3, &n.userNS)
-	stateSourceObject.Load(4, &n.abstractSockets)
+	stateSourceObject.Load(1, &n.stack)
+	stateSourceObject.LoadWait(2, &n.creator)
+	stateSourceObject.Load(3, &n.isRoot)
+	stateSourceObject.Load(4, &n.userNS)
+	stateSourceObject.Load(5, &n.abstractSockets)
 	stateSourceObject.AfterLoad(func() { n.afterLoad(ctx) })
 }
 

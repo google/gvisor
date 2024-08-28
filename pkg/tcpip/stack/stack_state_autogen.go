@@ -40,8 +40,6 @@ func (a *AddressableEndpointState) StateFields() []string {
 	return []string{
 		"networkEndpoint",
 		"options",
-		"endpoints",
-		"primary",
 	}
 }
 
@@ -52,8 +50,6 @@ func (a *AddressableEndpointState) StateSave(stateSinkObject state.Sink) {
 	a.beforeSave()
 	stateSinkObject.Save(0, &a.networkEndpoint)
 	stateSinkObject.Save(1, &a.options)
-	stateSinkObject.Save(2, &a.endpoints)
-	stateSinkObject.Save(3, &a.primary)
 }
 
 func (a *AddressableEndpointState) afterLoad(context.Context) {}
@@ -62,8 +58,6 @@ func (a *AddressableEndpointState) afterLoad(context.Context) {}
 func (a *AddressableEndpointState) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &a.networkEndpoint)
 	stateSourceObject.Load(1, &a.options)
-	stateSourceObject.Load(2, &a.endpoints)
-	stateSourceObject.Load(3, &a.primary)
 }
 
 func (a *AddressableEndpointStateOptions) StateTypeName() string {
