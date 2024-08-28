@@ -85,7 +85,7 @@ process must first incur the overhead of executing the seccomp filter[^3], and
 then generating a full signal stack before being able to run the signal handler.
 What if there was a way to simply have the sandboxed process jump to another
 user-space function when it wanted to perform a system call? Well, turns out,
-there is[^4] There is a popular x86 instruction pattern that’s used to perform
+there is[^4]! There is a popular x86 instruction pattern that’s used to perform
 system calls, and it goes a little something like this: **`mov sysno, %eax;
 syscall`**. The size of the mov instruction is 5 bytes and the size of the
 syscall instruction is 2 bytes. Luckily this is just enough space to fit in a
@@ -160,7 +160,7 @@ encounter any issues, please let us know at
 [^3]: Seccomp filters are known to have a “not insubstantial” overhead:
     [https://lwn.net/Articles/656307/](https://lwn.net/Articles/656307/).
 
-[^4]: On the x86_64 architecture, ARM does not have this optimization as of the
+[^4]: On the x86_64 architecture. ARM does not have this optimization as of the
     time of writing.
 
 <!-- mdformat on -->
