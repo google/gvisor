@@ -52,7 +52,7 @@ func checkOp(t *testing.T, test interpretOperationTestAction, checkFunc func(str
 	}
 }
 
-// TestInterpretImmediateOps tests the interpretation of immediate operations.
+// TestInterpretImmediateOps tests interpretation of immediate operations.
 func TestInterpretImmediateOps(t *testing.T) {
 	for _, test := range []interpretOperationTestAction{
 		{
@@ -162,7 +162,7 @@ func checkImmediateOp(tname string, expected operation, actual operation) error 
 	return nil
 }
 
-// TestInterpretComparisonOps tests the interpretation of comparison operations.
+// TestInterpretComparisonOps tests interpretation of comparison operations.
 func TestInterpretComparisonOps(t *testing.T) {
 	for _, test := range []interpretOperationTestAction{
 		{
@@ -371,6 +371,126 @@ func checkComparisonOp(tname string, expected operation, actual operation) error
 	}
 	if !cmp.data.equal(expectedCmp.data) {
 		return fmt.Errorf("expected data to be %v for %s, got %v", expectedCmp.data, tname, cmp.data)
+	}
+	return nil
+}
+
+// TestInterpretPayloadLoadOps tests interpretation of payload load operations.
+// Most operations are direct output of nft binary commands. All stated commands
+// should be preceded by nft --debug=netlink to generate matching operations.
+func TestInterpretPayloadLoadOps(t *testing.T) {
+	for _, test := range []interpretOperationTestAction{
+		{
+			tname:    "load bytes into verdict register",
+			opStr:    "[ payload load 2b @ transport header + 0 => reg 0 ]",
+			expected: nil,
+		},
+		// cmd: add rule ip6 ip tab ch tcp flags syn counter accept
+		{
+			tname:    "load 1 byte into 4-byte register",
+			opStr:    "[ payload load 1b @ transport header + 13 => reg 9 ]",
+			expected: mustCreatePayloadLoad(t, linux.NFT_PAYLOAD_TRANSPORT_HEADER, 13, 1, linux.NFT_REG32_01),
+		},
+		{
+			tname:    "load 1 byte into 16-byte register",
+			opStr:    "[ payload load 1b @ transport header + 13 => reg 1 ]",
+			expected: mustCreatePayloadLoad(t, linux.NFT_PAYLOAD_TRANSPORT_HEADER, 13, 1, linux.NFT_REG_1),
+		},
+		// cmd: add rule ip tab ch tcp sport 80 counter accept
+		{
+			tname:    "load 2 bytes into 4-byte register no offset",
+			opStr:    "[ payload load 2b @ transport header + 0 => reg 8 ]",
+			expected: mustCreatePayloadLoad(t, linux.NFT_PAYLOAD_TRANSPORT_HEADER, 0, 2, linux.NFT_REG32_00),
+		},
+		{
+			tname:    "load 2 bytes into 16-byte register no offset",
+			opStr:    "[ payload load 2b @ transport header + 0 => reg 1 ]",
+			expected: mustCreatePayloadLoad(t, linux.NFT_PAYLOAD_TRANSPORT_HEADER, 0, 2, linux.NFT_REG_1),
+		},
+		// cmd: add rule ip tab ch tcp dport 12345 counter accept
+		{
+			tname:    "load 2 bytes into 4-byte register with offset",
+			opStr:    "[ payload load 2b @ transport header + 2 => reg 9 ]",
+			expected: mustCreatePayloadLoad(t, linux.NFT_PAYLOAD_TRANSPORT_HEADER, 2, 2, linux.NFT_REG32_01),
+		},
+		{
+			tname:    "load 2 bytes into 16-byte register with offset",
+			opStr:    "[ payload load 2b @ transport header + 2 => reg 1 ]",
+			expected: mustCreatePayloadLoad(t, linux.NFT_PAYLOAD_TRANSPORT_HEADER, 2, 2, linux.NFT_REG_1),
+		},
+		// cmd: add rule ip tab ch @th,24,24 0xabcdef counter accept
+		{
+			tname:    "load 3 bytes into 4-byte register",
+			opStr:    "[ payload load 3b @ transport header + 3 => reg 10 ]",
+			expected: mustCreatePayloadLoad(t, linux.NFT_PAYLOAD_TRANSPORT_HEADER, 3, 3, linux.NFT_REG32_02),
+		},
+		{
+			tname:    "load 3 bytes into 16-byte register",
+			opStr:    "[ payload load 3b @ transport header + 3 => reg 2 ]",
+			expected: mustCreatePayloadLoad(t, linux.NFT_PAYLOAD_TRANSPORT_HEADER, 3, 3, linux.NFT_REG_2),
+		},
+		// cmd: add rule ip tab ch ip daddr 192.168.1.1 counter accept
+		{
+			tname:    "load 4 bytes into 4-byte register",
+			opStr:    "[ payload load 4b @ network header + 16 => reg 12 ]",
+			expected: mustCreatePayloadLoad(t, linux.NFT_PAYLOAD_NETWORK_HEADER, 16, 4, linux.NFT_REG32_04),
+		},
+		{
+			tname:    "load 4 bytes into 16-byte register",
+			opStr:    "[ payload load 4b @ network header + 16 => reg 1 ]",
+			expected: mustCreatePayloadLoad(t, linux.NFT_PAYLOAD_NETWORK_HEADER, 16, 4, linux.NFT_REG_1),
+		},
+		// cmd: add rule ip tab ch ether saddr 01:23:45:67:89:ab counter drop
+		{
+			tname:    "load 6 bytes into 4-byte register",
+			opStr:    "[ payload load 6b @ link header + 6 => reg 13 ]",
+			expected: nil,
+		},
+		{
+			tname:    "load 6 bytes into 16-byte register",
+			opStr:    "[ payload load 6b @ link header + 6 => reg 3 ]",
+			expected: mustCreatePayloadLoad(t, linux.NFT_PAYLOAD_LL_HEADER, 6, 6, linux.NFT_REG_3),
+		},
+		// cmd: add rule ip6 tab ch ip6 saddr 2001:db8::2 counter accept
+		{
+			tname:    "load 16 bytes into 4-byte register",
+			opStr:    "[ payload load 16b @ network header + 8 => reg 10 ]",
+			expected: nil,
+		},
+		{
+			tname:    "load 16 bytes into 16-byte register",
+			opStr:    "[ payload load 16b @ network header + 8 => reg 1 ]",
+			expected: mustCreatePayloadLoad(t, linux.NFT_PAYLOAD_NETWORK_HEADER, 8, 16, linux.NFT_REG_1),
+		},
+		{
+			tname:    "load >16 bytes into 16-byte register",
+			opStr:    "[ payload load 20b @ network header + 16 => reg 1 ]",
+			expected: nil,
+		},
+	} {
+		t.Run(test.tname, func(t *testing.T) { checkOp(t, test, checkPayloadLoadOp) })
+	}
+}
+
+// checkPayloadLoadOp checks that the given operation is a payload load
+// operation and that it matches the expected payload load operation.
+func checkPayloadLoadOp(tname string, expected operation, actual operation) error {
+	expectedPdLoad := expected.(*payloadLoad)
+	pdload, ok := actual.(*payloadLoad)
+	if !ok {
+		return fmt.Errorf("expected operation type to be PayloadLoad for %s, got %T", tname, actual)
+	}
+	if pdload.base != expectedPdLoad.base {
+		return fmt.Errorf("expected payload base to be %v for %s, got %v", expectedPdLoad.base, tname, pdload.base)
+	}
+	if pdload.offset != expectedPdLoad.offset {
+		return fmt.Errorf("expected offset to be %d for %s, got %d", expectedPdLoad.offset, tname, pdload.offset)
+	}
+	if pdload.blen != expectedPdLoad.blen {
+		return fmt.Errorf("expected length to be %d for %s, got %d", expectedPdLoad.blen, tname, pdload.blen)
+	}
+	if pdload.dreg != expectedPdLoad.dreg {
+		return fmt.Errorf("expected destination register to be %d for %s, got %d", expectedPdLoad.dreg, tname, pdload.dreg)
 	}
 	return nil
 }

@@ -17,7 +17,6 @@ package nftables
 import (
 	"encoding/hex"
 	"fmt"
-	"math"
 	"regexp"
 	"slices"
 	"strconv"
@@ -124,7 +123,7 @@ func InterpretRule(ruleString string) (*Rule, error) {
 	return r, nil
 }
 
-// InterpretOperation creates a new Operation from the given operation string,
+// InterpretOperation creates a new operation from the given operation string,
 // assumed to be a single line of text surrounded in square brackets.
 // Note: the operation string should be generated as output from the official nft
 // binary (can be accomplished by using flag --debug=netlink).
@@ -140,6 +139,8 @@ func InterpretOperation(line string, lnIdx int) (operation, error) {
 		return InterpretImmediate(line, lnIdx)
 	case "cmp":
 		return InterpretComparison(line, lnIdx)
+	case "payload":
+		return InterpretPayloadLoad(line, lnIdx)
 	default:
 		return nil, &SyntaxError{lnIdx, 1, fmt.Sprintf("unrecognized operation type: %s", tokens[1])}
 	}
@@ -264,6 +265,102 @@ func InterpretComparison(line string, lnIdx int) (operation, error) {
 	return cmp, nil
 }
 
+// InterpretPayloadLoad creates a new PayloadLoad operation from the given
+// string.
+func InterpretPayloadLoad(line string, lnIdx int) (operation, error) {
+	tokens := strings.Fields(line)
+
+	// Requires exactly 13 tokens:
+	// 		"[", "payload", "load", len+"b", "@", payload base, "header", "+", offset, "=>", "reg", register index, "]".
+	if len(tokens) != 13 {
+		return nil, &SyntaxError{lnIdx, 0, fmt.Sprintf("incorrect number of tokens for payload load operation, should be exactly 13, got %d", len(tokens))}
+	}
+
+	if err := checkOperationBrackets(tokens, lnIdx); err != nil {
+		return nil, err
+	}
+
+	tkIdx := 1
+
+	// First token should be "payload".
+	if err := consumeToken("payload", tokens, lnIdx, tkIdx); err != nil {
+		return nil, err
+	}
+	tkIdx++
+
+	// Second token should be "load".
+	if err := consumeToken("load", tokens, lnIdx, tkIdx); err != nil {
+		return nil, err
+	}
+	tkIdx++
+
+	// Third token should be the length (in bytes) of the payload followed by 'b'.
+	len, err := parsePayloadLength(tokens[tkIdx], lnIdx, tkIdx)
+	if err != nil {
+		return nil, err
+	}
+	tkIdx++
+
+	// Fourth token should be "@".
+	if err := consumeToken("@", tokens, lnIdx, tkIdx); err != nil {
+		return nil, err
+	}
+	tkIdx++
+
+	// Fifth token should be the payload base header.
+	base, err := parsePayloadBase(tokens[tkIdx], lnIdx, tkIdx)
+	if err != nil {
+		return nil, err
+	}
+	tkIdx++
+
+	// Sixth token should be "header".
+	if err := consumeToken("header", tokens, lnIdx, tkIdx); err != nil {
+		return nil, err
+	}
+	tkIdx++
+
+	// Seventh token should be "+".
+	if err := consumeToken("+", tokens, lnIdx, tkIdx); err != nil {
+		return nil, err
+	}
+	tkIdx++
+
+	// Eighth token should be the uint8 representing the offset.
+	offset, err := parseUint8(tokens[tkIdx], "offset", lnIdx, tkIdx)
+	if err != nil {
+		return nil, err
+	}
+	tkIdx++
+
+	// Ninth token should be "=>".
+	if err := consumeToken("=>", tokens, lnIdx, tkIdx); err != nil {
+		return nil, err
+	}
+	tkIdx++
+
+	// Tenth token should be "reg".
+	if err := consumeToken("reg", tokens, lnIdx, tkIdx); err != nil {
+		return nil, err
+	}
+	tkIdx++
+
+	// Eleventh token should be the uint8 representing the register index.
+	reg, err := parseRegister(tokens[tkIdx], lnIdx, tkIdx)
+	if err != nil {
+		return nil, err
+	}
+	tkIdx++
+
+	// Create the operation with the specified arguments.
+	pdload, err := newPayloadLoad(base, offset, len, reg)
+	if err != nil {
+		return nil, &LogicError{lnIdx, tkIdx, err}
+	}
+
+	return pdload, nil
+}
+
 //
 // Interpreter Helper Functions.
 //
@@ -280,18 +377,25 @@ func checkOperationBrackets(tokens []string, lnIdx int) error {
 	return nil
 }
 
+// parseUint8 parses the uint8 which should be supposed from the given string.
+func parseUint8(regString string, supposed string, lnIdx int, tkIdx int) (uint8, error) {
+	v64, err := strconv.ParseUint(regString, 10, 8)
+	if err != nil {
+		return 0, &SyntaxError{lnIdx, tkIdx, fmt.Sprintf("could not parse uint8 %s: '%s'", supposed, regString)}
+	}
+	return uint8(v64), nil
+}
+
 // parseRegister parses the register index from the given string.
 func parseRegister(regString string, lnIdx int, tkIdx int) (uint8, error) {
-	reg64, err := strconv.ParseUint(regString, 10, 8)
+	reg, err := parseUint8(regString, "register index", lnIdx, tkIdx)
 	if err != nil {
-		return 0, &SyntaxError{lnIdx, tkIdx, fmt.Sprintf("could not parse uint8 register index: '%s'", regString)}
+		return 0, err
 	}
-
-	if reg64 > math.MaxUint8 || !isRegister(uint8(reg64)) {
-		return 0, &SyntaxError{lnIdx, tkIdx, fmt.Sprintf("invalid register index: %d", reg64)}
+	if !isRegister(reg) {
+		return 0, &SyntaxError{lnIdx, tkIdx, fmt.Sprintf("invalid register index: %d", reg)}
 	}
-
-	return uint8(reg64), nil
+	return reg, nil
 }
 
 // parseRegisterData parses the register data from the given token and returns
@@ -411,6 +515,39 @@ func parseCmpOp(copString string, lnIdx int, tkIdx int) (int, error) {
 		return linux.NFT_CMP_GTE, nil
 	default:
 		return 0, &SyntaxError{lnIdx, tkIdx, fmt.Sprintf("invalid comparison operator: '%s'", copString)}
+	}
+}
+
+// parsePayloadLength parses the payload length from the given string
+// expecting a unsigned 8-bit integer followed by 'b'.
+func parsePayloadLength(lenString string, lnIdx int, tkIdx int) (uint8, error) {
+	lastChar := lenString[len(lenString)-1]
+	if lastChar != 'b' {
+		return 0, &SyntaxError{lnIdx, tkIdx, fmt.Sprintf("expected 'b' at the end of payload length, got '%c'", lastChar)}
+	}
+	numStr := lenString[:len(lenString)-1]
+	len, err := strconv.ParseUint(numStr, 10, 8)
+	if err != nil {
+		return 0, &SyntaxError{lnIdx, tkIdx, fmt.Sprintf("could not parse uint8 payload length: '%s'", numStr)}
+	}
+	if len > 16 {
+		return 0, &SyntaxError{lnIdx, tkIdx, fmt.Sprintf("payload length must be <= 16 bytes, got %d", len)}
+	}
+	return uint8(len), nil
+}
+
+// parsePayloadBase parses the payload base header from the given string.
+func parsePayloadBase(baseString string, lnIdx int, tkIdx int) (payloadBase, error) {
+	switch baseString {
+	case "link":
+		return linux.NFT_PAYLOAD_LL_HEADER, nil
+	case "network":
+		return linux.NFT_PAYLOAD_NETWORK_HEADER, nil
+	case "transport":
+		return linux.NFT_PAYLOAD_TRANSPORT_HEADER, nil
+	// Inner and Tunnel Headers cannot be specified in payload load operation.
+	default:
+		return 0, &SyntaxError{lnIdx, tkIdx, fmt.Sprintf("invalid payload base: '%s'", baseString)}
 	}
 }
 

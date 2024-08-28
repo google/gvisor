@@ -33,6 +33,8 @@
 // returns the verdict issued by the ruleset and the packet modified by the
 // ruleset (if the verdict is not Drop).
 //
+// Inner Headers and Tunneling Headers are not supported.
+//
 // Finally, note that error checking for parameters/inputs is only guaranteed
 // for public functions. Most private functions are assumed to have
 // valid/prechecked inputs.
@@ -43,6 +45,7 @@ import (
 	"slices"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
@@ -563,6 +566,7 @@ type operation interface {
 var (
 	_ operation = (*immediate)(nil)
 	_ operation = (*comparison)(nil)
+	_ operation = (*payloadLoad)(nil)
 )
 
 // immediate is an operation that sets the data in a register.
@@ -654,7 +658,7 @@ func (op comparison) evaluate(regs *registerSet, pkt *stack.PacketBuffer) {
 		panic("comparison operation data is not BytesData")
 	}
 	// Gets the data from the source register.
-	regBuf := bytesData.getRegisterBuffer(regs, op.sreg)
+	regBuf := getRegisterBuffer(regs, op.sreg)
 
 	// Compares bytes from left to right for all bytes in the comparison data.
 	dif := 0
@@ -686,6 +690,104 @@ func (op comparison) evaluate(regs *registerSet, pkt *stack.PacketBuffer) {
 		// Comparison is false, so break from the rule.
 		regs.verdict = Verdict{Code: VC(linux.NFT_BREAK)}
 	}
+}
+
+// payloadLoad is an operation that loads data from the packet payload into a
+// register.
+// Note: payload operations are not supported for the verdict register.
+type payloadLoad struct {
+	base   payloadBase // Payload base to access data from.
+	offset uint8       // Number of bytes to skip after the base.
+	blen   uint8       // Number of bytes to load.
+	dreg   uint8       // Number of the destination register.
+}
+
+// payloadBase is the header that determines the location of the packet data.
+// Note: corresponds to enum nft_payload_bases from
+// include/uapi/linux/netfilter/nf_tables.h and uses the same constants.
+type payloadBase int
+
+// String for NftPayloadBase returns the string representation of the payload
+// base.
+func (base payloadBase) String() string {
+	switch base {
+	case linux.NFT_PAYLOAD_LL_HEADER:
+		return "Link Layer Header"
+	case linux.NFT_PAYLOAD_NETWORK_HEADER:
+		return "Network Header"
+	case linux.NFT_PAYLOAD_TRANSPORT_HEADER:
+		return "Transport Header"
+	case linux.NFT_PAYLOAD_INNER_HEADER:
+		panic("inner header not supported")
+	case linux.NFT_PAYLOAD_TUN_HEADER:
+		panic("tunneling header not supported")
+	default:
+		panic(fmt.Sprintf("invalid payload base: %d", int(base)))
+	}
+}
+
+// validatePayloadBase ensures the payload base is valid.
+func validatePayloadBase(base payloadBase) error {
+	switch base {
+	case linux.NFT_PAYLOAD_LL_HEADER, linux.NFT_PAYLOAD_NETWORK_HEADER, linux.NFT_PAYLOAD_TRANSPORT_HEADER:
+		return nil
+	case linux.NFT_PAYLOAD_INNER_HEADER:
+		return fmt.Errorf("inner header not supported")
+	case linux.NFT_PAYLOAD_TUN_HEADER:
+		return fmt.Errorf("tunneling header not supported")
+	default:
+		return fmt.Errorf("invalid payload base: %d", int(base))
+	}
+}
+
+// newPayloadLoad creates a new PayloadLoad operation.
+func newPayloadLoad(base payloadBase, offset, blen, dreg uint8) (*payloadLoad, error) {
+	if dreg == linux.NFT_REG_VERDICT {
+		return nil, fmt.Errorf("payload load operation cannot use verdict register as destination")
+	}
+	if blen > 16 || (blen > 4 && is4ByteRegister(dreg)) {
+		return nil, fmt.Errorf("payload length %d is too long for destination register %d", blen, dreg)
+	}
+	if err := validatePayloadBase(base); err != nil {
+		return nil, err
+	}
+	return &payloadLoad{base: base, offset: offset, blen: blen, dreg: dreg}, nil
+}
+
+// evaluate for PayloadLoad loads data from the packet payload into the
+// destination register.
+func (op payloadLoad) evaluate(regs *registerSet, pkt *stack.PacketBuffer) {
+	// Gets the data from the packet payload.
+	var payload []byte = nil
+	switch op.base {
+	case linux.NFT_PAYLOAD_LL_HEADER:
+		// Note: Assumes Mac Header is present and valid for necessary use cases.
+		// Also, doesn't check VLAN tag because VLAN isn't supported by gVisor.
+		payload = pkt.LinkHeader().Slice()
+	case linux.NFT_PAYLOAD_NETWORK_HEADER:
+		// No checks done in linux kernel.
+		payload = pkt.NetworkHeader().Slice()
+	case linux.NFT_PAYLOAD_TRANSPORT_HEADER:
+		// Note: Assumes L4 protocol is present and valid for necessary use cases.
+
+		// Errors if the packet is fragmented for IPv4 only.
+		if net := pkt.NetworkHeader().Slice(); len(net) > 0 && pkt.NetworkProtocolNumber == header.IPv4ProtocolNumber {
+			if h := header.IPv4(net); h.More() || h.FragmentOffset() != 0 {
+				break // packet is fragmented
+			}
+		}
+		payload = pkt.TransportHeader().Slice()
+	}
+
+	// Breaks if could not retrieve packet data.
+	if payload == nil || len(payload) < int(op.offset+op.blen) {
+		regs.verdict = Verdict{Code: VC(linux.NFT_BREAK)}
+		return
+	}
+
+	// Copies payload data into the specified register.
+	data := newBytesData(payload[op.offset : op.offset+op.blen])
+	data.storeData(regs, op.dreg)
 }
 
 //
@@ -815,11 +917,12 @@ func (rd bytesData) validateRegister(reg uint8) error {
 	return nil
 }
 
-// getRegisterBuffer is a helper function that gets the appropriate slice of
-// register data from the register set.
+// getRegisterBuffer is a helper function that gets the appropriate slice of the
+// register from the register set. The number of bytes returned is rounded up to
+// the nearest 4-byte multiple.
 // Note: does not support verdict data and assumes the register is valid for the
 // given data type.
-func (rd bytesData) getRegisterBuffer(regs *registerSet, reg uint8) []byte {
+func getRegisterBuffer(regs *registerSet, reg uint8) []byte {
 	// Returns the entire 4-byte register
 	if is4ByteRegister(reg) {
 		start := (reg - linux.NFT_REG32_00) * linux.NFT_REG32_SIZE
@@ -835,7 +938,7 @@ func (rd bytesData) storeData(regs *registerSet, reg uint8) {
 	if err := rd.validateRegister(reg); err != nil {
 		panic(err)
 	}
-	copy(rd.getRegisterBuffer(regs, reg), rd.data)
+	copy(getRegisterBuffer(regs, reg), rd.data)
 }
 
 // registerSet represents the set of registers supported by the kernel.
@@ -846,7 +949,7 @@ type registerSet struct {
 	data    [registersByteSize]byte // 4 16-byte registers or 16 4-byte registers
 }
 
-// newRegisterSet creates a new RegisterSet with the Continue Verdict and all
+// newRegisterSet creates a new registerSet with the Continue Verdict and all
 // registers set to 0.
 func newRegisterSet() registerSet {
 	return registerSet{
@@ -858,6 +961,10 @@ func newRegisterSet() registerSet {
 // Verdict returns the verdict data.
 func (regs *registerSet) Verdict() Verdict {
 	return regs.verdict
+}
+
+func (regs *registerSet) String() string {
+	return fmt.Sprintf("verdict: %v, data: %x", regs.verdict, regs.data)
 }
 
 //

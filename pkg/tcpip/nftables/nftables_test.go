@@ -15,19 +15,24 @@
 package nftables
 
 import (
+	"encoding/binary"
 	"fmt"
 	"reflect"
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/buffer"
+	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
+// Table Constants.
 const (
-	arbitraryTargetChain string        = "target_chain"
-	arbitraryHook        Hook          = Prerouting
-	arbitraryFamily      AddressFamily = Inet
+	arbitraryTargetChain         string        = "target_chain"
+	arbitraryHook                Hook          = Prerouting
+	arbitraryFamily              AddressFamily = Inet
+	arbitraryReservedHeaderBytes int           = 16
 )
 
 var (
@@ -38,6 +43,7 @@ var (
 		}
 		return priority
 	}()
+
 	arbitraryInfoPolicyAccept *BaseChainInfo = &BaseChainInfo{
 		BcType:   BaseChainTypeFilter,
 		Hook:     arbitraryHook,
@@ -45,26 +51,250 @@ var (
 	}
 )
 
-// makeTestingPacket creates an arbitrary packet for testing.
-func makeTestingPacket() *stack.PacketBuffer {
+// Packet Constants.
+const (
+	transportProtocol = tcpip.TransportProtocolNumber(6)
+
+	arbitraryHeaderID   = 3
+	arbitraryTimeToLive = 64
+
+	// TODO(b/345684870): Use constants defined in the pkg/tcpip/header package.
+	// Ethernet Offsets and Lengths.
+	ethDstAddrOffset = 0
+	ethDstAddrLen    = 6
+	ethSrcAddrOffset = 6
+	ethSrcAddrLen    = 6
+	ethTypeOffset    = 12
+	ethTypeLen       = 2
+
+	// IPv4 Offsets and Lengths.
+	ipv4LengthOffset   = 2
+	ipv4LengthLen      = 2
+	ipv4IDOffset       = 4
+	ipv4IDLen          = 2
+	ipv4FragOffOffset  = 6
+	ipv4FragOffLen     = 2
+	ipv4TTLOffset      = 8
+	ipv4TTLLen         = 1
+	ipv4ProtocolOffset = 9
+	ipv4ProtocolLen    = 1
+	ipv4ChecksumOffset = 10
+	ipv4ChecksumLen    = 2
+	ipv4SrcAddrOffset  = 12
+	ipv4SrcAddrLen     = 4
+	ipv4DstAddrOffset  = 16
+	ipv4DstAddrLen     = 4
+
+	// IPv6 Offsets and Lengths.
+	ipv6LengthOffset   = 4
+	ipv6LengthLen      = 2
+	ipv6NextHdrOffset  = 6
+	ipv6NextHdrLen     = 1
+	ipv6HopLimitOffset = 7
+	ipv6HopLimitLen    = 1
+	ipv6SrcAddrOffset  = 8
+	ipv6SrcAddrLen     = 16
+	ipv6DstAddrOffset  = 24
+	ipv6DstAddrLen     = 16
+
+	// TCP Offsets and Lengths.
+	tcpSrcPortOffset  = 0
+	tcpSrcPortLen     = 2
+	tcpDstPortOffset  = 2
+	tcpDstPortLen     = 2
+	tcpSeqNumOffset   = 4
+	tcpSeqNumLen      = 4
+	tcpAckNumOffset   = 8
+	tcpAckNumLen      = 4
+	tcpWindowOffset   = 14
+	tcpWindowLen      = 2
+	tcpChecksumOffset = 16
+	tcpChecksumLen    = 2
+	tcpUrgPtrOffset   = 18
+	tcpUrgPtrLen      = 2
+)
+
+var (
+	arbitraryLinkAddr     = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x06")
+	arbitraryLinkAddr2    = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x07")
+	arbitraryLinkAddrB    = [6]byte{0x02, 0x02, 0x03, 0x04, 0x05, 0x06}
+	arbitraryLinkAddrB2   = [6]byte{0x02, 0x02, 0x03, 0x04, 0x05, 0x07}
+	arbitraryEthernetType = header.IPv4ProtocolNumber
+
+	arbitraryIPv4AddrB  = [4]byte{192, 168, 1, 1}
+	arbitraryIPv4AddrB2 = [4]byte{192, 168, 1, 9}
+	ipv4MinTotalLength  = header.IPv4MinimumSize
+
+	arbitraryIPv6AddrB   = [16]byte{0x20, 0x01, 0x0d, 0xb8, 0x85, 0xa3, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xaa}
+	arbitraryIPv6AddrB2  = [16]byte{0x20, 0x01, 0x0d, 0xb8, 0x85, 0xa3, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xbb}
+	ipv6MinPayloadLength = 0
+
+	arbitraryPort    = 12345
+	arbitraryPort2   = 80
+	tcpSeqNum        = 32
+	tcpAckNum        = 165
+	tcpWinSize       = 65535
+	tcpUrgentPointer = 0
+
+	arbitraryNonZeroFragmentOffset = 16
+)
+
+// makeArbitraryGeneralPacket creates an arbitrary packet for testing.
+func makeArbitraryGeneralPacket(reserved int) *stack.PacketBuffer {
 	return stack.NewPacketBuffer(stack.PacketBufferOptions{
-		ReserveHeaderBytes: 50,
+		ReserveHeaderBytes: reserved,
 		Payload:            buffer.MakeWithData([]byte{0, 2, 4, 8, 16, 32, 64, 128}),
 	})
+}
+
+// makeArbitraryEtherPacket creates a packet with an arbitrary ethernet header.
+func makeArbitraryEtherPacket(reserved int) *stack.PacketBuffer {
+	eth := make([]byte, header.EthernetMinimumSize)
+	header.Ethernet(eth).Encode(&header.EthernetFields{
+		SrcAddr: arbitraryLinkAddr,
+		DstAddr: arbitraryLinkAddr2,
+		Type:    arbitraryEthernetType,
+	})
+	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+		ReserveHeaderBytes: reserved,
+		Payload:            buffer.MakeWithData(eth),
+	})
+	pkt.LinkHeader().Consume(header.EthernetMinimumSize)
+	return pkt
+}
+
+// makeArbitraryIPv4Packet creates a packet with an arbitrary IPv4 header.
+func makeArbitraryIPv4Packet(reserved int) *stack.PacketBuffer {
+	// Creates a new PacketBuffer with enough space for the IPv4 header.
+	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+		ReserveHeaderBytes: reserved,
+	})
+
+	// Prepends the IPv4 header to the packet buffer.
+	ipv4Hdr := header.IPv4(pkt.NetworkHeader().Push(header.IPv4MinimumSize))
+
+	// Initializes the IPv4 header with fields.
+	ipv4Hdr.Encode(&header.IPv4Fields{
+		TOS:            0,
+		TotalLength:    uint16(ipv4MinTotalLength),
+		ID:             arbitraryHeaderID,
+		FragmentOffset: 0,
+		TTL:            arbitraryTimeToLive,
+		Protocol:       uint8(transportProtocol),
+		Checksum:       0,
+		SrcAddr:        tcpip.AddrFrom4(arbitraryIPv4AddrB),
+		DstAddr:        tcpip.AddrFrom4(arbitraryIPv4AddrB2),
+		Options:        nil,
+	})
+
+	// Calculates and sets the checksum.
+	ipv4Hdr.SetChecksum(^ipv4Hdr.CalculateChecksum())
+
+	// Sets the network protocol number.
+	pkt.NetworkProtocolNumber = header.IPv4ProtocolNumber
+
+	return pkt
+}
+
+// makeFragmentedIPv4Packet creates a packet with an arbitrary IPv4 header that
+// is fragmented (FragmentOffset != 0).
+func makeFragmentedIPv4Packet(reserved int) *stack.PacketBuffer {
+	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+		ReserveHeaderBytes: reserved,
+	})
+	ipv4Hdr := header.IPv4(pkt.NetworkHeader().Push(header.IPv4MinimumSize))
+	ipv4Hdr.Encode(&header.IPv4Fields{
+		TOS:            0,
+		TotalLength:    uint16(ipv4MinTotalLength),
+		ID:             arbitraryHeaderID,
+		FragmentOffset: uint16(arbitraryNonZeroFragmentOffset),
+		TTL:            arbitraryTimeToLive,
+		Protocol:       uint8(transportProtocol),
+		Checksum:       0,
+		SrcAddr:        tcpip.AddrFrom4(arbitraryIPv4AddrB),
+		DstAddr:        tcpip.AddrFrom4(arbitraryIPv4AddrB2),
+		Options:        nil,
+	})
+	ipv4Hdr.SetChecksum(^ipv4Hdr.CalculateChecksum())
+	pkt.NetworkProtocolNumber = header.IPv4ProtocolNumber
+	return pkt
+}
+
+// makeArbitraryIPv6Packet creates a packet with an arbitrary IPv6 header.
+func makeArbitraryIPv6Packet(reserved int) *stack.PacketBuffer {
+	// Creates a new PacketBuffer with enough space for the IPv4 header.
+	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+		ReserveHeaderBytes: reserved,
+	})
+
+	// Prepends the IPv6 header to the packet buffer.
+	ipv6Hdr := header.IPv6(pkt.NetworkHeader().Push(header.IPv6MinimumSize))
+
+	// Initializes the IPv6 header with fields.
+	ipv6Hdr.Encode(&header.IPv6Fields{
+		TrafficClass:      0,
+		FlowLabel:         0,
+		PayloadLength:     uint16(ipv6MinPayloadLength),
+		TransportProtocol: transportProtocol,
+		HopLimit:          arbitraryTimeToLive,
+		SrcAddr:           tcpip.AddrFrom16(arbitraryIPv6AddrB),
+		DstAddr:           tcpip.AddrFrom16(arbitraryIPv6AddrB2),
+	})
+
+	// Sets the network protocol number.
+	pkt.NetworkProtocolNumber = header.IPv6ProtocolNumber
+
+	return pkt
+}
+
+// makeArbitraryIPv4TCPPacket creates a packet with an arbitrary IPv4 and TCP
+// header.
+func makeArbitraryIPv4TCPPacket(reserved int) *stack.PacketBuffer {
+	pkt := makeArbitraryIPv4Packet(reserved)
+
+	// Prepends the TCP header to the packet buffer.
+	tcpHdr := header.TCP(pkt.TransportHeader().Push(header.TCPMinimumSize))
+
+	// Initializes the TCP header with fields.
+	tcpHdr.Encode(&header.TCPFields{
+		SrcPort:       uint16(arbitraryPort),
+		DstPort:       uint16(arbitraryPort2),
+		SeqNum:        uint32(tcpSeqNum),
+		AckNum:        uint32(tcpAckNum),
+		DataOffset:    header.TCPMinimumSize,
+		WindowSize:    uint16(tcpWinSize),
+		Checksum:      0,
+		UrgentPointer: uint16(tcpUrgentPointer),
+	})
+
+	// Calculates the TCP checksum using the pseudo-header and set it in the TCP header.
+	tcpHdr.SetChecksum(tcpHdr.CalculateChecksum(header.PseudoHeaderChecksum(
+		header.TCPProtocolNumber,
+		tcpip.AddrFrom4(arbitraryIPv4AddrB),
+		tcpip.AddrFrom4(arbitraryIPv4AddrB2),
+		header.TCPMinimumSize,
+	)))
+
+	// Sets the transport protocol number.
+	pkt.TransportProtocolNumber = header.TCPProtocolNumber
+
+	return pkt
 }
 
 // TestUnsupportedAddressFamily tests that an empty NFTables object returns an
 // error when evaluating a packet for an unsupported address family.
 func TestUnsupportedAddressFamily(t *testing.T) {
+	// Makes arbitrary packet for comparison (to check for no changes).
+	cmpPkt := makeArbitraryGeneralPacket(arbitraryReservedHeaderBytes)
 	nf := NewNFTables()
 	for _, unsupportedFamily := range []AddressFamily{AddressFamily(NumAFs), AddressFamily(-1)} {
 		// Note: the Prerouting hook is arbitrary (any hook would work).
-		pkt := makeTestingPacket()
+		pkt := makeArbitraryGeneralPacket(arbitraryReservedHeaderBytes)
 		v, err := nf.EvaluateHook(unsupportedFamily, arbitraryHook, pkt)
 		if err == nil {
 			t.Fatalf("expecting error for EvaluateHook with unsupported address family %d; got %v verdict, %s packet, and error %v",
 				int(unsupportedFamily),
-				v, packetResultString(makeTestingPacket(), pkt), err)
+				v, packetResultString(cmpPkt, pkt), err)
 		}
 	}
 }
@@ -73,11 +303,13 @@ func TestUnsupportedAddressFamily(t *testing.T) {
 // supported hooks and errors for unsupported hooks for all address families
 // when evaluating packets at the hook-level.
 func TestAcceptAllForSupportedHooks(t *testing.T) {
+	// Makes arbitrary packet for comparison (to check for no changes).
+	cmpPkt := makeArbitraryGeneralPacket(arbitraryReservedHeaderBytes)
 	for _, family := range []AddressFamily{IP, IP6, Inet, Arp, Bridge, Netdev} {
 		t.Run(family.String()+" address family", func(t *testing.T) {
 			nf := NewNFTables()
 			for _, hook := range []Hook{Prerouting, Input, Forward, Output, Postrouting, Ingress, Egress} {
-				pkt := makeTestingPacket()
+				pkt := makeArbitraryGeneralPacket(arbitraryReservedHeaderBytes)
 				v, err := nf.EvaluateHook(family, hook, pkt)
 
 				supported := false
@@ -92,13 +324,13 @@ func TestAcceptAllForSupportedHooks(t *testing.T) {
 					if err != nil || v.Code != VC(linux.NF_ACCEPT) {
 						t.Fatalf("expecting accept verdict for EvaluateHook with supported hook %v for family %v; got %v verdict, %s packet, and error %v",
 							hook, family,
-							v, packetResultString(makeTestingPacket(), pkt), err)
+							v, packetResultString(cmpPkt, pkt), err)
 					}
 				} else {
 					if err == nil {
 						t.Fatalf("expecting error for EvaluateHook with unsupported hook %v for family %v; got %v verdict, %s packet, and error %v",
 							hook, family,
-							v, packetResultString(makeTestingPacket(), pkt), err)
+							v, packetResultString(cmpPkt, pkt), err)
 					}
 				}
 			}
@@ -283,7 +515,7 @@ func TestEvaluateImmediateVerdict(t *testing.T) {
 			}
 
 			// Runs evaluation and checks verdict.
-			pkt := makeTestingPacket()
+			pkt := makeArbitraryGeneralPacket(arbitraryReservedHeaderBytes)
 			v, err := nf.EvaluateHook(arbitraryFamily, arbitraryHook, pkt)
 
 			if err != nil {
@@ -339,7 +571,7 @@ func TestEvaluateImmediateBytesData(t *testing.T) {
 					}
 				}
 				// Runs evaluation and checks for default policy verdict accept
-				pkt := makeTestingPacket()
+				pkt := makeArbitraryGeneralPacket(arbitraryReservedHeaderBytes)
 				v, err := nf.EvaluateHook(arbitraryFamily, arbitraryHook, pkt)
 				if err != nil {
 					t.Fatalf("unexpected error for EvaluateHook: %v", err)
@@ -824,7 +1056,7 @@ func TestEvaluateComparison(t *testing.T) {
 			}
 
 			// Runs evaluation and checks verdict.
-			pkt := makeTestingPacket()
+			pkt := makeArbitraryGeneralPacket(arbitraryReservedHeaderBytes)
 			v, err := nf.EvaluateHook(arbitraryFamily, arbitraryHook, pkt)
 			if err != nil {
 				t.Fatalf("unexpected error for EvaluateHook: %v", err)
@@ -841,6 +1073,266 @@ func TestEvaluateComparison(t *testing.T) {
 			} else {
 				if v.Code != VC(linux.NF_ACCEPT) {
 					t.Fatalf("expected base chain policy verdict Accept for %t result, got %v", test.res, v)
+				}
+			}
+		})
+	}
+}
+
+// TestEvaluatePayloadLoad tests that the Payload Load operation correctly loads
+// the specified payload into the destination register.
+// The nft binary commands used to generate these are stated above each test.
+// All commands should be preceded by nft --debug=netlink.
+// Note: Relies on expected behavior of the Comparison operation.
+// TODO(b/339691111): Add tests for VLAN, ARP, ICMP, ICMPv6, IGMP, UDP headers.
+func TestEvaluatePayloadLoad(t *testing.T) {
+	// Sets testing packets.
+	ethernetPacket := makeArbitraryEtherPacket(0)
+	ipv4Packet := makeArbitraryIPv4Packet(header.IPv4MinimumSize)
+	ipv6Packet := makeArbitraryIPv6Packet(header.IPv6MinimumSize)
+	tcpPacket := makeArbitraryIPv4TCPPacket(header.IPv4MinimumSize + header.TCPMinimumSize)
+
+	for _, test := range []struct {
+		tname string
+		pkt   *stack.PacketBuffer
+		op1   operation // Payload Load operation to test.
+		op2   operation // Comparison operation to check resulting data in register,
+		// nil if expecting a break during evaluation.
+	}{
+		// Ethernet header expression commands.
+		{ // cmd: add rule ip tab ch ether saddr 02:02:03:04:05:06
+			tname: "load ethernet header source address",
+			pkt:   ethernetPacket,
+			op1:   mustCreatePayloadLoad(t, linux.NFT_PAYLOAD_LL_HEADER, ethSrcAddrOffset, ethSrcAddrLen, linux.NFT_REG_1),
+			op2:   mustCreateComparison(t, linux.NFT_REG_1, linux.NFT_CMP_EQ, newBytesData(arbitraryLinkAddrB[:])),
+		},
+		{ // cmd: add rule ip tab ch ether daddr 02:02:03:04:05:07
+			tname: "load ethernet header destination address",
+			pkt:   ethernetPacket,
+			op1:   mustCreatePayloadLoad(t, linux.NFT_PAYLOAD_LL_HEADER, ethDstAddrOffset, ethDstAddrLen, linux.NFT_REG_1),
+			op2:   mustCreateComparison(t, linux.NFT_REG_1, linux.NFT_CMP_EQ, newBytesData(arbitraryLinkAddrB2[:])),
+		},
+		{ // cmd: add rule ip tab ch ether type ip
+			tname: "load ethernet header type",
+			pkt:   ethernetPacket,
+			op1:   mustCreatePayloadLoad(t, linux.NFT_PAYLOAD_LL_HEADER, ethTypeOffset, ethTypeLen, linux.NFT_REG_1),
+			op2:   mustCreateComparison(t, linux.NFT_REG_1, linux.NFT_CMP_EQ, newBytesData(numToBE(int(arbitraryEthernetType), ethTypeLen))),
+		},
+
+		// IPv4 header expression commands.
+		{ // cmd: add rule ip tab ch ip length 20
+			tname: "load ipv4 header length",
+			pkt:   ipv4Packet,
+			op1:   mustCreatePayloadLoad(t, linux.NFT_PAYLOAD_NETWORK_HEADER, ipv4LengthOffset, ipv4LengthLen, linux.NFT_REG32_01),
+			op2:   mustCreateComparison(t, linux.NFT_REG32_01, linux.NFT_CMP_EQ, newBytesData(numToBE(header.IPv4MinimumSize, ipv4LengthLen))),
+		},
+		{ // cmd: add rule ip tab ch ip id 3
+			tname: "load ipv4 header ip id",
+			pkt:   ipv4Packet,
+			op1:   mustCreatePayloadLoad(t, linux.NFT_PAYLOAD_NETWORK_HEADER, ipv4IDOffset, ipv4IDLen, linux.NFT_REG32_01),
+			op2:   mustCreateComparison(t, linux.NFT_REG32_01, linux.NFT_CMP_EQ, newBytesData(numToBE(arbitraryHeaderID, ipv4IDLen))),
+		},
+		{ // cmd: add rule ip tab ch ip frag-off 0
+			tname: "load ipv4 header fragment offset",
+			pkt:   ipv4Packet,
+			op1:   mustCreatePayloadLoad(t, linux.NFT_PAYLOAD_NETWORK_HEADER, ipv4FragOffOffset, ipv4FragOffLen, linux.NFT_REG_1),
+			op2:   mustCreateComparison(t, linux.NFT_REG_1, linux.NFT_CMP_EQ, newBytesData(numToBE(0, ipv4FragOffLen))),
+		},
+		// Though the packet is fragmented, there should be no issue because we are
+		// changing data within the network header.
+		{ // cmd: add rule ip tab ch ip frag-off 1
+			tname: "load ipv4 header fragment offset non zero for fragmented packet",
+			pkt:   makeFragmentedIPv4Packet(header.IPv4MinimumSize),
+			op1:   mustCreatePayloadLoad(t, linux.NFT_PAYLOAD_NETWORK_HEADER, ipv4FragOffOffset, ipv4FragOffLen, linux.NFT_REG_1),
+			op2:   mustCreateComparison(t, linux.NFT_REG_1, linux.NFT_CMP_EQ, newBytesData(numToBE(arbitraryNonZeroFragmentOffset/8, ipv4FragOffLen))),
+			// we divide by 8 because the fragment offset is in units of 8 bytes,
+			// which is encoded into the packet in IPv4.Encode()
+		},
+		{ // cmd: add rule ip tab ch ip ttl 64
+			tname: "load ipv4 header time to live",
+			pkt:   ipv4Packet,
+			op1:   mustCreatePayloadLoad(t, linux.NFT_PAYLOAD_NETWORK_HEADER, ipv4TTLOffset, ipv4TTLLen, linux.NFT_REG32_01),
+			op2:   mustCreateComparison(t, linux.NFT_REG32_01, linux.NFT_CMP_EQ, newBytesData(numToBE(arbitraryTimeToLive, ipv4TTLLen))),
+		},
+		{ // cmd: add rule ip tab ch tcp
+			tname: "load ipv4 header protocol",
+			pkt:   ipv4Packet,
+			op1:   mustCreatePayloadLoad(t, linux.NFT_PAYLOAD_NETWORK_HEADER, ipv4ProtocolOffset, ipv4ProtocolLen, linux.NFT_REG_1),
+			op2:   mustCreateComparison(t, linux.NFT_REG_1, linux.NFT_CMP_EQ, newBytesData(numToBE(int(transportProtocol), ipv4ProtocolLen))),
+		},
+		{ // cmd: add rule ip tab ch ip saddr 192.168.1.1
+			tname: "load ipv4 header source address",
+			pkt:   ipv4Packet,
+			op1:   mustCreatePayloadLoad(t, linux.NFT_PAYLOAD_NETWORK_HEADER, ipv4SrcAddrOffset, ipv4SrcAddrLen, linux.NFT_REG_1),
+			op2:   mustCreateComparison(t, linux.NFT_REG_1, linux.NFT_CMP_EQ, newBytesData(arbitraryIPv4AddrB[:])),
+		},
+		{ // cmd: add rule ip tab ch ip daddr 192.168.1.9
+			tname: "load ipv4 header destination address",
+			pkt:   ipv4Packet,
+			op1:   mustCreatePayloadLoad(t, linux.NFT_PAYLOAD_NETWORK_HEADER, ipv4DstAddrOffset, ipv4DstAddrLen, linux.NFT_REG_1),
+			op2:   mustCreateComparison(t, linux.NFT_REG_1, linux.NFT_CMP_EQ, newBytesData(arbitraryIPv4AddrB2[:])),
+		},
+		{ // cmd: add rule ip tab ch ip checksum __
+			tname: "load ipv4 header checksum",
+			pkt:   ipv4Packet,
+			op1:   mustCreatePayloadLoad(t, linux.NFT_PAYLOAD_NETWORK_HEADER, ipv4ChecksumOffset, ipv4ChecksumLen, linux.NFT_REG_1),
+			op2:   mustCreateComparison(t, linux.NFT_REG_1, linux.NFT_CMP_EQ, newBytesData(numToBE(int(header.IPv4(ipv4Packet.NetworkHeader().Slice()).Checksum()), ipv4ChecksumLen))),
+		},
+
+		// IPv6 header expression commands.
+		{ // cmd: add rule ip6 tab ch ip6 length 0
+			tname: "load ipv6 header length",
+			pkt:   ipv6Packet,
+			op1:   mustCreatePayloadLoad(t, linux.NFT_PAYLOAD_NETWORK_HEADER, ipv6LengthOffset, ipv6LengthLen, linux.NFT_REG_1),
+			op2:   mustCreateComparison(t, linux.NFT_REG_1, linux.NFT_CMP_EQ, newBytesData(numToBE(0, ipv6LengthLen))),
+		},
+		{ // cmd: add rule ip6 tab ch ip6 nexthdr tcp
+			tname: "load ipv6 header next header",
+			pkt:   ipv6Packet,
+			op1:   mustCreatePayloadLoad(t, linux.NFT_PAYLOAD_NETWORK_HEADER, ipv6NextHdrOffset, ipv6NextHdrLen, linux.NFT_REG_1),
+			op2:   mustCreateComparison(t, linux.NFT_REG_1, linux.NFT_CMP_EQ, newBytesData(numToBE(int(transportProtocol), ipv6NextHdrLen))),
+		},
+		{ // cmd: add rule ip6 tab ch ip6 hoplimit 64
+			tname: "load ipv6 header hop limit",
+			pkt:   ipv6Packet,
+			op1:   mustCreatePayloadLoad(t, linux.NFT_PAYLOAD_NETWORK_HEADER, ipv6HopLimitOffset, ipv6HopLimitLen, linux.NFT_REG32_01),
+			op2:   mustCreateComparison(t, linux.NFT_REG32_01, linux.NFT_CMP_EQ, newBytesData(numToBE(arbitraryTimeToLive, ipv6HopLimitLen))),
+		},
+		{ // cmd: add rule ip6 tab ch ip6 saddr 2001:db8:85a3::aa
+			tname: "load ipv6 header source address",
+			pkt:   ipv6Packet,
+			op1:   mustCreatePayloadLoad(t, linux.NFT_PAYLOAD_NETWORK_HEADER, ipv6SrcAddrOffset, ipv6SrcAddrLen, linux.NFT_REG_1),
+			op2:   mustCreateComparison(t, linux.NFT_REG_1, linux.NFT_CMP_EQ, newBytesData(arbitraryIPv6AddrB[:])),
+		},
+		{ // cmd: add rule ip6 tab ch ip6 saddr 2001:db8:85a3::bb
+			tname: "load ipv6 header destination address",
+			pkt:   ipv6Packet,
+			op1:   mustCreatePayloadLoad(t, linux.NFT_PAYLOAD_NETWORK_HEADER, ipv6DstAddrOffset, ipv6DstAddrLen, linux.NFT_REG_1),
+			op2:   mustCreateComparison(t, linux.NFT_REG_1, linux.NFT_CMP_EQ, newBytesData(arbitraryIPv6AddrB2[:])),
+		},
+
+		// TCP header expression commands.
+		// Since we are changing data within the transport header with a fragmented
+		// IPv4 packet, this can be problematic, so the evaluation should break.
+		{
+			tname: "load for transport header with a fragmented ipv4 packet",
+			pkt: func() *stack.PacketBuffer {
+				p := makeFragmentedIPv4Packet(header.IPv4MinimumSize + header.TCPMinimumSize)
+				tcpHdr := header.TCP(p.TransportHeader().Push(header.TCPMinimumSize))
+				tcpHdr.Encode(&header.TCPFields{
+					SrcPort:       uint16(arbitraryPort),
+					DstPort:       uint16(arbitraryPort2),
+					SeqNum:        uint32(tcpSeqNum),
+					AckNum:        uint32(tcpAckNum),
+					DataOffset:    header.TCPMinimumSize,
+					WindowSize:    uint16(tcpWinSize),
+					Checksum:      0,
+					UrgentPointer: uint16(tcpUrgentPointer),
+				})
+				tcpHdr.SetChecksum(tcpHdr.CalculateChecksum(header.PseudoHeaderChecksum(
+					header.TCPProtocolNumber,
+					tcpip.AddrFrom4(arbitraryIPv4AddrB),
+					tcpip.AddrFrom4(arbitraryIPv4AddrB2),
+					header.TCPMinimumSize,
+				)))
+				p.TransportProtocolNumber = header.TCPProtocolNumber
+				return p
+			}(),
+			op1: mustCreatePayloadLoad(t, linux.NFT_PAYLOAD_TRANSPORT_HEADER, tcpSrcPortOffset, tcpSrcPortLen, linux.NFT_REG_1),
+			op2: nil,
+		},
+		{ // cmd: add rule ip tab ch tcp sport 12345
+			tname: "load tcp header source port",
+			pkt:   tcpPacket,
+			op1:   mustCreatePayloadLoad(t, linux.NFT_PAYLOAD_TRANSPORT_HEADER, tcpSrcPortOffset, tcpSrcPortLen, linux.NFT_REG_1),
+			op2:   mustCreateComparison(t, linux.NFT_REG_1, linux.NFT_CMP_EQ, newBytesData(numToBE(arbitraryPort, tcpSrcPortLen))),
+		},
+		{ // cmd: add rule ip tab ch tcp dport 80
+			tname: "load tcp header destination port",
+			pkt:   tcpPacket,
+			op1:   mustCreatePayloadLoad(t, linux.NFT_PAYLOAD_TRANSPORT_HEADER, tcpDstPortOffset, tcpDstPortLen, linux.NFT_REG32_01),
+			op2:   mustCreateComparison(t, linux.NFT_REG32_01, linux.NFT_CMP_EQ, newBytesData(numToBE(arbitraryPort2, tcpDstPortLen))),
+		},
+		{
+			// cmd: add rule ip tab ch tcp sequence 32
+			tname: "load tcp header sequence number",
+			pkt:   tcpPacket,
+			op1:   mustCreatePayloadLoad(t, linux.NFT_PAYLOAD_TRANSPORT_HEADER, tcpSeqNumOffset, tcpSeqNumLen, linux.NFT_REG_1),
+			op2:   mustCreateComparison(t, linux.NFT_REG_1, linux.NFT_CMP_EQ, newBytesData(numToBE(tcpSeqNum, tcpSeqNumLen))),
+		},
+		{ // cmd: add rule ip tab ch tcp ackseq 165
+			tname: "load tcp header acknowledgement sequence number",
+			pkt:   tcpPacket,
+			op1:   mustCreatePayloadLoad(t, linux.NFT_PAYLOAD_TRANSPORT_HEADER, tcpAckNumOffset, tcpAckNumLen, linux.NFT_REG32_01),
+			op2:   mustCreateComparison(t, linux.NFT_REG32_01, linux.NFT_CMP_EQ, newBytesData(numToBE(tcpAckNum, tcpAckNumLen))),
+		},
+		{ // cmd: add rule ip tab ch tcp window 65535
+			tname: "load tcp header window",
+			pkt:   tcpPacket,
+			op1:   mustCreatePayloadLoad(t, linux.NFT_PAYLOAD_TRANSPORT_HEADER, tcpWindowOffset, tcpWindowLen, linux.NFT_REG_1),
+			op2:   mustCreateComparison(t, linux.NFT_REG_1, linux.NFT_CMP_EQ, newBytesData(numToBE(tcpWinSize, tcpWindowLen))),
+		},
+		{ // cmd: add rule ip tab ch checksum __
+			tname: "load tcp header checksum",
+			pkt:   tcpPacket,
+			op1:   mustCreatePayloadLoad(t, linux.NFT_PAYLOAD_TRANSPORT_HEADER, tcpChecksumOffset, tcpChecksumLen, linux.NFT_REG_1),
+			op2:   mustCreateComparison(t, linux.NFT_REG_1, linux.NFT_CMP_EQ, newBytesData(numToBE(int(header.TCP(tcpPacket.TransportHeader().Slice()).Checksum()), tcpChecksumLen))),
+		},
+		{ // cmd: add rule ip tab ch urgptr 0
+			tname: "load tcp header urgent pointer",
+			pkt:   tcpPacket,
+			op1:   mustCreatePayloadLoad(t, linux.NFT_PAYLOAD_TRANSPORT_HEADER, tcpUrgPtrOffset, tcpUrgPtrLen, linux.NFT_REG_1),
+			op2:   mustCreateComparison(t, linux.NFT_REG_1, linux.NFT_CMP_EQ, newBytesData(numToBE(tcpUrgentPointer, tcpUrgPtrLen))),
+		},
+	} {
+		t.Run(test.tname, func(t *testing.T) {
+			// Sets up an NFTables object with a single table, chain, and rule.
+			nf := NewNFTables()
+			tab, err := nf.AddTable(arbitraryFamily, "test", "test table", false)
+			if err != nil {
+				t.Fatalf("unexpected error for AddTable: %v", err)
+			}
+			bc, err := tab.AddChain("base_chain", nil, "test chain", false)
+			if err != nil {
+				t.Fatalf("unexpected error for AddChain: %v", err)
+			}
+			bc.SetBaseChainInfo(arbitraryInfoPolicyAccept)
+			rule := &Rule{}
+
+			// Adds testing operations.
+			if test.op1 != nil {
+				rule.addOperation(test.op1)
+			}
+			if test.op2 != nil {
+				rule.addOperation(test.op2)
+			}
+
+			// Adds drop operation. Will be final verdict if all comparisons are true.
+			rule.addOperation(mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NF_DROP)})))
+
+			// Registers the rule to the base chain.
+			if err := bc.RegisterRule(rule, -1); err != nil {
+				t.Fatalf("unexpected error for RegisterRule: %v", err)
+			}
+
+			// Runs evaluation.
+			v, err := nf.EvaluateHook(arbitraryFamily, arbitraryHook, test.pkt)
+			if err != nil {
+				t.Fatalf("unexpected error for EvaluateHook: %v", err)
+			}
+
+			// Checks for final verdict.
+			if test.op2 == nil {
+				// If no comparison operation is set, then payload load should break,
+				// resulting in Accept as the default policy verdict.
+				if v.Code != VC(linux.NF_ACCEPT) {
+					t.Fatalf("expected verdict Accept for break during evaluation, got %v", v)
+				}
+			} else {
+				// If a comparison operation is set, both payload load and comparison
+				// should succeed, resulting in Drop as the final verdict.
+				if v.Code != VC(linux.NF_DROP) {
+					t.Fatalf("expected verdict Drop for true comparison, got %v", v)
 				}
 			}
 		})
@@ -1298,7 +1790,7 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 			}
 
 			// Runs evaluation and checks verdict.
-			pkt := makeTestingPacket()
+			pkt := makeArbitraryGeneralPacket(arbitraryReservedHeaderBytes)
 			v, err := nf.EvaluateHook(arbitraryFamily, arbitraryHook, pkt)
 			if err != nil {
 				if test.verdict.ChainName != "error" {
@@ -1405,7 +1897,7 @@ func TestMaxNestedJumps(t *testing.T) {
 			}
 
 			// Runs evaluation and checks verdict.
-			pkt := makeTestingPacket()
+			pkt := makeArbitraryGeneralPacket(arbitraryReservedHeaderBytes)
 			v, err := nf.EvaluateHook(arbitraryFamily, arbitraryHook, pkt)
 			if err != nil {
 				if test.verdict.ChainName != "error" {
@@ -1417,6 +1909,18 @@ func TestMaxNestedJumps(t *testing.T) {
 			}
 		})
 	}
+}
+
+// numToBE converts an n-byte int to Big Endian where n is in [1, 8].
+// Assumes the given number can be represented in n bytes.
+func numToBE(v int, n int) []byte {
+	if n > 8 {
+		panic("cannot support more than 8 bytes")
+	}
+	// Gets 8-byte slice Big Endian representation of the number.
+	be64 := binary.BigEndian.AppendUint64(nil, uint64(v))
+	// Returns last n bytes as the n-byte Big Endian representation.
+	return be64[8-n:]
 }
 
 // packetResultString compares 2 packets by equality and returns a string
@@ -1447,4 +1951,13 @@ func mustCreateComparison(t *testing.T, sreg uint8, cop int, data registerData) 
 		t.Fatalf("failed to create comparison: %v", err)
 	}
 	return cmp
+}
+
+// mustCreatePayloadLoad wraps the NewPayloadLoad function for brevity.
+func mustCreatePayloadLoad(t *testing.T, base payloadBase, offset, len, dreg uint8) *payloadLoad {
+	pdload, err := newPayloadLoad(base, offset, len, dreg)
+	if err != nil {
+		t.Fatalf("failed to create payload load: %v", err)
+	}
+	return pdload
 }
