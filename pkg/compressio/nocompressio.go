@@ -62,6 +62,9 @@ type SimpleReader struct {
 
 	// current chunk position
 	done uint32
+
+	// scratch is a 4-byte scratch buffer used for 32-bit integers.
+	scratch [4]byte
 }
 
 var _ io.Reader = (*SimpleReader)(nil)
@@ -88,19 +91,17 @@ func NewSimpleReader(in io.Reader, key []byte) (*SimpleReader, error) {
 
 // Read implements io.Reader.Read.
 func (r *SimpleReader) Read(p []byte) (int, error) {
-	var scratch [4]byte
-
 	if len(p) == 0 {
 		return r.in.Read(p)
 	}
 
 	// need next chunk?
 	if r.done >= r.chunkSize {
-		if _, err := io.ReadFull(r.in, scratch[:]); err != nil {
+		if _, err := io.ReadFull(r.in, r.scratch[:]); err != nil {
 			return 0, err
 		}
 
-		r.chunkSize = binary.BigEndian.Uint32(scratch[:])
+		r.chunkSize = binary.BigEndian.Uint32(r.scratch[:])
 		r.done = 0
 		if r.key != nil {
 			r.h.Reset()
@@ -136,8 +137,8 @@ func (r *SimpleReader) Read(p []byte) (int, error) {
 	r.done += uint32(n)
 	if r.done >= r.chunkSize {
 		if r.key != nil {
-			binary.BigEndian.PutUint32(scratch[:], r.chunkSize)
-			r.h.Write(scratch[:4])
+			binary.BigEndian.PutUint32(r.scratch[:], r.chunkSize)
+			r.h.Write(r.scratch[:])
 
 			sum := r.h.Sum(nil)
 			readerSum := make([]byte, len(sum))
@@ -173,6 +174,9 @@ type SimpleWriter struct {
 
 	// closed indicates whether the file has been closed.
 	closed bool
+
+	// scratch is a 4-byte scratch buffer used for 32-bit integers.
+	scratch [4]byte
 }
 
 var _ io.Writer = (*SimpleWriter)(nil)
@@ -191,8 +195,6 @@ func NewSimpleWriter(out io.Writer, key []byte) (*SimpleWriter, error) {
 
 // Write implements io.Writer.Write.
 func (w *SimpleWriter) Write(p []byte) (int, error) {
-	var scratch [4]byte
-
 	// Did we close already?
 	if w.closed {
 		return 0, io.ErrUnexpectedEOF
@@ -201,8 +203,8 @@ func (w *SimpleWriter) Write(p []byte) (int, error) {
 	l := uint32(len(p))
 
 	// chunk length
-	binary.BigEndian.PutUint32(scratch[:], l)
-	if _, err := w.out.Write(scratch[:4]); err != nil {
+	binary.BigEndian.PutUint32(w.scratch[:], l)
+	if _, err := w.out.Write(w.scratch[:]); err != nil {
 		return 0, err
 	}
 
@@ -219,8 +221,8 @@ func (w *SimpleWriter) Write(p []byte) (int, error) {
 		_, _ = h.Write(p)
 
 		// chunk length
-		binary.BigEndian.PutUint32(scratch[:], l)
-		h.Write(scratch[:4])
+		binary.BigEndian.PutUint32(w.scratch[:], l)
+		h.Write(w.scratch[:])
 
 		sum := h.Sum(nil)
 		if _, err := io.CopyN(w.out, bytes.NewReader(sum), int64(len(sum))); err != nil {
