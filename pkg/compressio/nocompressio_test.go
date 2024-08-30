@@ -54,10 +54,10 @@ func TestNoCompress(t *testing.T) {
 						Name: fmt.Sprintf("len(data)=%d, blockSize=%d, key=%s, corruptData=%v", len(data), blockSize, string(key), corruptData),
 						Data: data,
 						NewWriter: func(b *bytes.Buffer) (io.Writer, error) {
-							return NewSimpleWriter(b, key)
+							return NewSimpleWriter(b, key), nil
 						},
 						NewReader: func(b *bytes.Buffer) (io.Reader, error) {
-							return NewSimpleReader(b, key)
+							return NewSimpleReader(b, key), nil
 						},
 						CorruptData: corruptData,
 					})

@@ -227,13 +227,13 @@ func NewWriter(w io.Writer, key []byte, metadata map[string]string) (io.WriteClo
 
 	// Wrap in compression. When using "best compression" mode, there is usually
 	// only a little gain in file size reduction, which translate to even smaller
-	// gain in restore latency reduction, while inccuring much more CPU usage at
+	// gain in restore latency reduction, while incurring much more CPU usage at
 	// save time.
 	if compression == CompressionLevelFlateBestSpeed {
 		return compressio.NewWriter(w, key, compressionChunkSize, flate.BestSpeed)
 	}
 
-	return compressio.NewSimpleWriter(w, key)
+	return compressio.NewSimpleWriter(w, key), nil
 }
 
 // MetadataUnsafe reads out the metadata from a state file without verifying any
@@ -336,7 +336,7 @@ func NewReader(r io.Reader, key []byte) (io.Reader, map[string]string, error) {
 	if compression == CompressionLevelFlateBestSpeed {
 		cr, err = compressio.NewReader(r, key)
 	} else if compression == CompressionLevelNone {
-		cr, err = compressio.NewSimpleReader(r, key)
+		cr = compressio.NewSimpleReader(r, key)
 	} else {
 		// Should never occur, as it has the default path.
 		return nil, nil, fmt.Errorf("metadata contains invalid compression flag value: %v", compression)
