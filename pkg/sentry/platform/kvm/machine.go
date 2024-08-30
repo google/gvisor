@@ -262,6 +262,15 @@ func (m *machine) createVCPU(id int) *vCPU {
 	return c // Done.
 }
 
+// AllowMappingEntireAddressSpace enables mapping the entire process address
+// space to the VM.
+//
+// On x86_64, kernels before 6.9 with enabled
+// CONFIG_KVM_EXTERNAL_WRITE_TRACKING didn't allow us to map the entire
+// process address space to the VM, because the memory tracking was always
+// enabled and it has a significant memory overhead.
+var AllowMappingEntireAddressSpace bool
+
 // newMachine returns a new VM context.
 func newMachine(vm int) (*machine, error) {
 	// Create the machine.
@@ -305,7 +314,8 @@ func newMachine(vm int) (*machine, error) {
 	if err != nil {
 		return nil, err
 	}
-	mapEntireAddressSpace := runtime.GOARCH != "amd64" || kernelVersion.AtLeast(6, 9)
+	mapEntireAddressSpace := AllowMappingEntireAddressSpace ||
+		runtime.GOARCH != "amd64" || kernelVersion.AtLeast(6, 9)
 	if mapEntireAddressSpace {
 		// Increase faultBlockSize to be sure that we will not reach the limit.
 		// faultBlockSize has to equal or less than KVM_MEM_MAX_NR_PAGES.
