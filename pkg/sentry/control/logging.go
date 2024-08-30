@@ -81,11 +81,7 @@ func (l *Logging) Change(args *LoggingArgs, code *int) error {
 	}
 
 	if args.SetLogPackets {
-		if args.LogPackets {
-			sniffer.LogPackets.Store(1)
-		} else {
-			sniffer.LogPackets.Store(0)
-		}
+		sniffer.LogPackets.Store(args.LogPackets)
 		log.Infof("LogPackets set to: %v", sniffer.LogPackets.Load())
 	}
 

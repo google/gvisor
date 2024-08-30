@@ -594,12 +594,11 @@ func New(args Args) (*Loader, error) {
 	}
 
 	// Turn on packet logging if enabled.
+	sniffer.LogPackets.Store(args.Conf.LogPackets)
 	if args.Conf.LogPackets {
 		log.Infof("Packet logging enabled")
-		sniffer.LogPackets.Store(1)
 	} else {
 		log.Infof("Packet logging disabled")
-		sniffer.LogPackets.Store(0)
 	}
 
 	// Create a watchdog.
