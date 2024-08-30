@@ -385,6 +385,13 @@ func (e *endpoint) SetNDPConfigurations(c NDPConfigurations) {
 	e.mu.ndp.configs = c
 }
 
+// NDPConfigurations implements NDPEndpoint.
+func (e *endpoint) NDPConfigurations() NDPConfigurations {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return e.mu.ndp.configs
+}
+
 // hasTentativeAddr returns true if addr is tentative on e.
 func (e *endpoint) hasTentativeAddr(addr tcpip.Address) bool {
 	e.mu.RLock()

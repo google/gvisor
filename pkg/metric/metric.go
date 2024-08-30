@@ -241,6 +241,10 @@ type customUint64Metric struct {
 	// fields is the set of fields of the metric.
 	fields []Field
 
+	// fieldMapper is used to generate index keys for the fields array (above)
+	// based on field value combinations, and vice-versa.
+	fieldMapper fieldMapper
+
 	// value returns the current value of the metric for the given set of
 	// fields. It takes a variadic number of field values as argument.
 	value func(fieldValues ...*FieldValue) uint64
@@ -398,8 +402,6 @@ func (m fieldMapper) lookupSingle(fieldIndex int, fieldValue *FieldValue, idx, r
 		panic("invalid field value or did not reuse the same FieldValue pointer as passed in NewField")
 	}
 
-	// Use map lookup instead.
-
 	// Match using FieldValue pointer.
 	// This avoids the string hashing step that string maps otherwise do.
 	valIdx, found := field.valuesPtrMap[fieldValue]
@@ -552,6 +554,11 @@ func RegisterCustomUint64Metric(name string, metadata Uint64Metadata, value func
 		promType = prometheus.TypeCounter
 	}
 
+	fm, err := newFieldMapper(metadata.Fields...)
+	if err != nil {
+		return fmt.Errorf("invalid fields: %w", err)
+	}
+
 	allMetrics.uint64Metrics[name] = customUint64Metric{
 		metadata: &pb.MetricMetadata{
 			Name:           name,
@@ -567,15 +574,10 @@ func RegisterCustomUint64Metric(name string, metadata Uint64Metadata, value func
 			Help: metadata.Description,
 			Type: promType,
 		},
-		fields: metadata.Fields,
-		value:  value,
+		fields:      metadata.Fields,
+		fieldMapper: fm,
+		value:       value,
 	}
-
-	// Metrics can exist without fields.
-	if l := len(metadata.Fields); l > 1 {
-		return fmt.Errorf("%d fields provided, must be <= 1", l)
-	}
-
 	for _, field := range metadata.Fields {
 		allMetrics.uint64Metrics[name].metadata.Fields = append(allMetrics.uint64Metrics[name].metadata.Fields, field.toProto())
 	}
@@ -598,20 +600,14 @@ func NewUint64Metric(name string, metadata Uint64Metadata) (*Uint64Metric, error
 	if err := verifyName(name); err != nil {
 		return nil, err
 	}
-	f, err := newFieldMapper(metadata.Fields...)
-	if err != nil {
-		return nil, err
-	}
-	m := Uint64Metric{
-		name:        name,
-		fieldMapper: f,
-		fields:      make([]atomicbitops.Uint64, f.numKeys()),
-	}
+	m := Uint64Metric{name: name}
 	if err := RegisterCustomUint64Metric(name, metadata, m.Value); err != nil {
 		return nil, err
 	}
 	cm := allMetrics.uint64Metrics[name]
 	cm.forEachNonZero = m.forEachNonZero
+	m.fieldMapper = cm.fieldMapper
+	m.fields = make([]atomicbitops.Uint64, cm.fieldMapper.numKeys())
 	allMetrics.uint64Metrics[name] = cm
 	return &m, nil
 }
@@ -1250,25 +1246,30 @@ func (m *metricSet) Values() metricValues {
 		distributionStatistics:   make(map[string][]distributionStatisticsSnapshot, len(m.distributionMetrics)),
 		stages:                   stages,
 	}
+	var tmpFieldValues []*FieldValue
 	for k, v := range m.uint64Metrics {
 		fields := v.fields
 		switch len(fields) {
 		case 0:
 			vals.uint64Metrics[k] = v.value()
-		case 1:
-			fieldsMap := make(map[*FieldValue]uint64)
+		default:
+			numFieldCombinations := v.fieldMapper.numKeys()
+			perFieldKeyVals := make([]uint64, numFieldCombinations)
 			if v.forEachNonZero != nil {
 				v.forEachNonZero(func(fieldValues []*FieldValue, val uint64) {
-					fieldsMap[fieldValues[0]] = val
+					perFieldKeyVals[v.fieldMapper.lookup(fieldValues...)] = val
 				})
 			} else {
-				for _, fieldValue := range fields[0].values {
-					fieldsMap[fieldValue] = v.value(fieldValue)
+				if len(tmpFieldValues) < len(v.fields) {
+					tmpFieldValues = make([]*FieldValue, len(v.fields))
+				}
+				fieldValues := tmpFieldValues[:len(v.fields)]
+				for fieldKey := 0; fieldKey < numFieldCombinations; fieldKey++ {
+					v.fieldMapper.keyToMultiFieldInPlace(fieldKey, fieldValues)
+					perFieldKeyVals[fieldKey] = v.value(fieldValues...)
 				}
 			}
-			vals.uint64Metrics[k] = fieldsMap
-		default:
-			panic(fmt.Sprintf("Unsupported number of metric fields: %d", len(fields)))
+			vals.uint64Metrics[k] = perFieldKeyVals
 		}
 	}
 	for name, metric := range m.distributionMetrics {
@@ -1304,8 +1305,9 @@ func (m *metricSet) Values() metricValues {
 // metricValues contains a copy of the values of all metrics.
 type metricValues struct {
 	// uint64Metrics is a map of uint64 metrics,
-	// with key as metric name. Value can be either uint64, or map[*FieldValue]uint64
-	// to support metrics with one field.
+	// with key as metric name. Value can be either uint64, or []uint64
+	// to support metrics with fields. The index corresponds to the field
+	// value combination key as managed by `fieldMapper`.
 	uint64Metrics map[string]any
 
 	// distributionMetrics is a map of distribution metrics.
@@ -1375,19 +1377,19 @@ func EmitMetricUpdate() {
 				Name:  k,
 				Value: &pb.MetricValue_Uint64Value{Uint64Value: t},
 			})
-		case map[*FieldValue]uint64:
-			for fieldValue, metricValue := range t {
+		case []uint64:
+			for fieldKey, metricValue := range t {
 				// Emit data on the first call only if the field
 				// value has been incremented. For all other
 				// calls, emit data if the field value has been
 				// changed from the previous emit.
-				if (!ok && metricValue == 0) || (ok && prev.(map[*FieldValue]uint64)[fieldValue] == metricValue) {
+				if (!ok && metricValue == 0) || (ok && prev.([]uint64)[fieldKey] == metricValue) {
 					continue
 				}
 
 				m.Metrics = append(m.Metrics, &pb.MetricValue{
 					Name:        k,
-					FieldValues: []string{fieldValue.Value},
+					FieldValues: allMetrics.uint64Metrics[k].fieldMapper.keyToMultiField(fieldKey),
 					Value:       &pb.MetricValue_Uint64Value{Uint64Value: metricValue},
 				})
 			}
@@ -1533,16 +1535,18 @@ func GetSnapshot(options SnapshotOptions) (*prometheus.Snapshot, error) {
 				continue
 			}
 			snapshot.Add(prometheus.NewIntData(m.prometheusMetric, int64(t)))
-		case map[*FieldValue]uint64:
-			for fieldValue, metricValue := range t {
+		case []uint64:
+			for fieldKey, metricValue := range t {
 				if m.metadata.GetCumulative() && metricValue == 0 {
 					// Zero-valued counter, ignore.
 					continue
 				}
-				snapshot.Add(prometheus.LabeledIntData(m.prometheusMetric, map[string]string{
-					// uint64 metrics currently only support at most one field name.
-					m.metadata.Fields[0].GetFieldName(): fieldValue.Value,
-				}, int64(metricValue)))
+				fieldValues := m.fieldMapper.keyToMultiField(fieldKey)
+				fieldKeysAndValues := make(map[string]string, len(fieldValues))
+				for i, field := range m.fields {
+					fieldKeysAndValues[field.name] = fieldValues[i]
+				}
+				snapshot.Add(prometheus.LabeledIntData(m.prometheusMetric, fieldKeysAndValues, int64(metricValue)))
 			}
 		default:
 			panic(fmt.Sprintf("unsupported type in uint64Metrics: %T (%v)", v, v))
