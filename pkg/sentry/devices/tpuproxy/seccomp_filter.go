@@ -106,6 +106,10 @@ func Filters() seccomp.SyscallRules {
 			},
 			seccomp.PerArg{
 				seccomp.NonNegativeFD{},
+				seccomp.EqualTo(linux.VFIO_DEVICE_RESET),
+			},
+			seccomp.PerArg{
+				seccomp.NonNegativeFD{},
 				seccomp.EqualTo(gasket.GASKET_IOCTL_RESET),
 			},
 			seccomp.PerArg{

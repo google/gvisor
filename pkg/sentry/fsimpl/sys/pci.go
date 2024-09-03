@@ -71,7 +71,9 @@ func sysDevicesPCIPaths(sysDevicesPath string) ([]string, error) {
 				return nil, err
 			}
 			for _, pciDent := range pciDents {
-				pciPaths = append(pciPaths, path.Join(sysDevicesPath, dent, pciDent))
+				if pciDeviceRegex.MatchString(pciDent) {
+					pciPaths = append(pciPaths, path.Join(sysDevicesPath, dent, pciDent))
+				}
 			}
 		}
 	}
