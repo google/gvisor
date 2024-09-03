@@ -29,6 +29,7 @@ import (
 
 	"github.com/google/subcommands"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"github.com/syndtr/gocapability/capability"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/coretag"
 	"gvisor.dev/gvisor/pkg/cpuid"
@@ -48,21 +49,29 @@ import (
 
 // Note that directfsSandboxCaps is the same as caps defined in gofer.go
 // except CAP_SYS_CHROOT because we don't need to chroot in directfs mode.
-var directfsSandboxCaps = []string{
-	"CAP_CHOWN",
-	"CAP_DAC_OVERRIDE",
-	"CAP_DAC_READ_SEARCH",
-	"CAP_FOWNER",
-	"CAP_FSETID",
-}
+var (
+	directfsSandboxCaps = []string{
+		"CAP_CHOWN",
+		"CAP_DAC_OVERRIDE",
+		"CAP_DAC_READ_SEARCH",
+		"CAP_FOWNER",
+		"CAP_FSETID",
+	}
 
-// directfsSandboxLinuxCaps is the minimal set of capabilities needed by the
-// sandbox to operate on files in directfs mode.
-var directfsSandboxLinuxCaps = &specs.LinuxCapabilities{
-	Bounding:  directfsSandboxCaps,
-	Effective: directfsSandboxCaps,
-	Permitted: directfsSandboxCaps,
-}
+	// directfsSandboxLinuxCaps is the minimal set of capabilities needed by the
+	// sandbox to operate on files in directfs mode.
+	directfsSandboxLinuxCaps = &specs.LinuxCapabilities{
+		Bounding:  directfsSandboxCaps,
+		Effective: directfsSandboxCaps,
+		Permitted: directfsSandboxCaps,
+	}
+
+	hostnetSandboxLinuxCaps = map[capability.Cap]string{
+		capability.CAP_NET_ADMIN:        "CAP_NET_ADMIN",
+		capability.CAP_NET_BIND_SERVICE: "CAP_NET_BIND_SERVICE",
+		capability.CAP_NET_RAW:          "CAP_NET_RAW",
+	}
+)
 
 // Boot implements subcommands.Command for the "boot" command which starts a
 // new sandbox. It should not be called directly.
@@ -342,10 +351,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 	specutils.LogSpecDebug(spec, conf.OCISeccomp)
 
 	if b.applyCaps {
-		caps := spec.Process.Capabilities
-		if caps == nil {
-			caps = &specs.LinuxCapabilities{}
-		}
+		caps := &specs.LinuxCapabilities{}
 
 		gPlatform, err := platform.Lookup(conf.Platform)
 		if err != nil {
@@ -361,6 +367,31 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 
 		if conf.DirectFS {
 			caps = specutils.MergeCapabilities(caps, directfsSandboxLinuxCaps)
+		}
+		if conf.Network == config.NetworkHost {
+			curCaps, err := capability.NewPid2(0)
+			if err != nil {
+				util.Fatalf("capability.NewPid2(0) failed: %v", err)
+			}
+			if err := curCaps.Load(); err != nil {
+				util.Fatalf("unable to load capabilities: %v", err)
+			}
+			addCaps := []string{}
+			for c, strCap := range hostnetSandboxLinuxCaps {
+				if c == capability.CAP_NET_RAW && !conf.EnableRaw {
+					continue
+				}
+				if curCaps.Get(capability.PERMITTED, c) {
+					addCaps = append(addCaps, strCap)
+				}
+			}
+			if len(addCaps) != 0 {
+				caps = specutils.MergeCapabilities(caps, &specs.LinuxCapabilities{
+					Bounding:  addCaps,
+					Effective: addCaps,
+					Permitted: addCaps,
+				})
+			}
 		}
 		argOverride["apply-caps"] = "false"
 

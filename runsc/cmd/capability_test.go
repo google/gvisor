@@ -82,13 +82,13 @@ func testCapabilities(t *testing.T, directfs bool) {
 	spec := testutil.NewSpecWithArgs("/bin/sleep", "10000")
 	caps := []string{
 		"CAP_CHOWN",
-		"CAP_SYS_PTRACE", // ptrace is added due to the platform choice.
+		"CAP_SYS_ADMIN",
+		"CAP_NET_ADMIN",
 	}
 	spec.Process.Capabilities = &specs.LinuxCapabilities{
-		Permitted:   caps,
-		Bounding:    caps,
-		Effective:   caps,
-		Inheritable: caps,
+		Permitted: caps,
+		Bounding:  caps,
+		Effective: caps,
 	}
 
 	conf := testutil.TestConfig(t)
@@ -118,7 +118,16 @@ func testCapabilities(t *testing.T, directfs bool) {
 		t.Fatalf("error starting container: %v", err)
 	}
 
-	wantSandboxCaps := spec.Process.Capabilities
+	caps = []string{
+		"CAP_SYS_PTRACE", // ptrace is added due to the platform choice.
+		"CAP_NET_ADMIN",
+		"CAP_NET_BIND_SERVICE",
+	}
+	wantSandboxCaps := &specs.LinuxCapabilities{
+		Permitted: caps,
+		Bounding:  caps,
+		Effective: caps,
+	}
 	if directfs {
 		// With directfs, the sandbox has additional capabilities.
 		wantSandboxCaps = specutils.MergeCapabilities(wantSandboxCaps, directfsSandboxLinuxCaps)
