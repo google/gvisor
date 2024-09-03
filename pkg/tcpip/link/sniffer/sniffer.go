@@ -44,17 +44,19 @@ var LogPackets atomicbitops.Uint32 = atomicbitops.FromUint32(1)
 // sniffer was created for this flag to have effect.
 var LogPacketsToPCAP atomicbitops.Uint32 = atomicbitops.FromUint32(1)
 
+// Endpoint is used to sniff and log network traffic.
+//
 // +stateify savable
-type endpoint struct {
+type Endpoint struct {
 	nested.Endpoint
 	writer     io.Writer
 	maxPCAPLen uint32
 	logPrefix  string
 }
 
-var _ stack.GSOEndpoint = (*endpoint)(nil)
-var _ stack.LinkEndpoint = (*endpoint)(nil)
-var _ stack.NetworkDispatcher = (*endpoint)(nil)
+var _ stack.GSOEndpoint = (*Endpoint)(nil)
+var _ stack.LinkEndpoint = (*Endpoint)(nil)
+var _ stack.NetworkDispatcher = (*Endpoint)(nil)
 
 // A Direction indicates whether the packing is being sent or received.
 type Direction int
@@ -68,7 +70,7 @@ const (
 
 // New creates a new sniffer link-layer endpoint. It wraps around another
 // endpoint and logs packets and they traverse the endpoint.
-func New(lower stack.LinkEndpoint) stack.LinkEndpoint {
+func New(lower stack.LinkEndpoint) *Endpoint {
 	return NewWithPrefix(lower, "")
 }
 
@@ -79,8 +81,8 @@ func New(lower stack.LinkEndpoint) stack.LinkEndpoint {
 // logPrefix is prepended to the log line without any separators.
 // E.g. logPrefix = "NIC:en0/" will produce log lines like
 // "NIC:en0/send udp [...]".
-func NewWithPrefix(lower stack.LinkEndpoint, logPrefix string) stack.LinkEndpoint {
-	sniffer := &endpoint{logPrefix: logPrefix}
+func NewWithPrefix(lower stack.LinkEndpoint, logPrefix string) *Endpoint {
+	sniffer := &Endpoint{logPrefix: logPrefix}
 	sniffer.Endpoint.Init(lower, sniffer)
 	return sniffer
 }
@@ -119,11 +121,11 @@ func writePCAPHeader(w io.Writer, maxLen uint32) error {
 // snapLen is the maximum amount of a packet to be saved. Packets with a length
 // less than or equal to snapLen will be saved in their entirety. Longer
 // packets will be truncated to snapLen.
-func NewWithWriter(lower stack.LinkEndpoint, writer io.Writer, snapLen uint32) (stack.LinkEndpoint, error) {
+func NewWithWriter(lower stack.LinkEndpoint, writer io.Writer, snapLen uint32) (*Endpoint, error) {
 	if err := writePCAPHeader(writer, snapLen); err != nil {
 		return nil, err
 	}
-	sniffer := &endpoint{
+	sniffer := &Endpoint{
 		writer:     writer,
 		maxPCAPLen: snapLen,
 	}
@@ -134,12 +136,12 @@ func NewWithWriter(lower stack.LinkEndpoint, writer io.Writer, snapLen uint32) (
 // DeliverNetworkPacket implements the stack.NetworkDispatcher interface. It is
 // called by the link-layer endpoint being wrapped when a packet arrives, and
 // logs the packet before forwarding to the actual dispatcher.
-func (e *endpoint) DeliverNetworkPacket(protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
+func (e *Endpoint) DeliverNetworkPacket(protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
 	e.dumpPacket(DirectionRecv, protocol, pkt)
 	e.Endpoint.DeliverNetworkPacket(protocol, pkt)
 }
 
-func (e *endpoint) dumpPacket(dir Direction, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
+func (e *Endpoint) dumpPacket(dir Direction, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
 	writer := e.writer
 	if LogPackets.Load() == 1 {
 		LogPacket(e.logPrefix, dir, protocol, pkt)
@@ -163,7 +165,7 @@ func (e *endpoint) dumpPacket(dir Direction, protocol tcpip.NetworkProtocolNumbe
 // WritePackets implements the stack.LinkEndpoint interface. It is called by
 // higher-level protocols to write packets; it just logs the packet and
 // forwards the request to the lower endpoint.
-func (e *endpoint) WritePackets(pkts stack.PacketBufferList) (int, tcpip.Error) {
+func (e *Endpoint) WritePackets(pkts stack.PacketBufferList) (int, tcpip.Error) {
 	for _, pkt := range pkts.AsSlice() {
 		e.dumpPacket(DirectionSend, pkt.NetworkProtocolNumber, pkt)
 	}

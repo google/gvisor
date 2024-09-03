@@ -8,11 +8,11 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (e *endpoint) StateTypeName() string {
-	return "pkg/tcpip/link/sniffer.endpoint"
+func (e *Endpoint) StateTypeName() string {
+	return "pkg/tcpip/link/sniffer.Endpoint"
 }
 
-func (e *endpoint) StateFields() []string {
+func (e *Endpoint) StateFields() []string {
 	return []string{
 		"Endpoint",
 		"writer",
@@ -21,10 +21,10 @@ func (e *endpoint) StateFields() []string {
 	}
 }
 
-func (e *endpoint) beforeSave() {}
+func (e *Endpoint) beforeSave() {}
 
 // +checklocksignore
-func (e *endpoint) StateSave(stateSinkObject state.Sink) {
+func (e *Endpoint) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
 	stateSinkObject.Save(0, &e.Endpoint)
 	stateSinkObject.Save(1, &e.writer)
@@ -32,10 +32,10 @@ func (e *endpoint) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(3, &e.logPrefix)
 }
 
-func (e *endpoint) afterLoad(context.Context) {}
+func (e *Endpoint) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (e *endpoint) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+func (e *Endpoint) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &e.Endpoint)
 	stateSourceObject.Load(1, &e.writer)
 	stateSourceObject.Load(2, &e.maxPCAPLen)
@@ -43,5 +43,5 @@ func (e *endpoint) StateLoad(ctx context.Context, stateSourceObject state.Source
 }
 
 func init() {
-	state.Register((*endpoint)(nil))
+	state.Register((*Endpoint)(nil))
 }
