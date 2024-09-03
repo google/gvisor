@@ -243,11 +243,11 @@ func (e *endpoint) checkLocalAddress(addr tcpip.Address) bool {
 // is used to find out which transport endpoint must be notified about the ICMP
 // packet. We only expect the payload, not the enclosing ICMP packet.
 func (e *endpoint) handleControl(errInfo stack.TransportError, pkt *stack.PacketBuffer) {
-	h, ok := pkt.Data().PullUp(header.IPv4MinimumSize)
+	h, ok := pkt.Data().PullUpView(header.IPv4MinimumSize)
 	if !ok {
 		return
 	}
-	hdr := header.IPv4(h)
+	hdr := header.IPv4Buffer{View: h}
 
 	// We don't use IsValid() here because ICMP only requires that the IP
 	// header plus 8 bytes of the transport header be included. So it's
@@ -301,7 +301,7 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer) {
 		return
 	}
 
-	iph := header.IPv4(pkt.NetworkHeader().Slice())
+	iph := header.IPv4Buffer{View: pkt.NetworkHeader().View()}
 	var newOptions header.IPv4Options
 	if opts := iph.Options(); len(opts) != 0 {
 		// RFC 1122 section 3.2.2.6 (page 43) (and similar for other round trip
@@ -355,7 +355,7 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer) {
 		// DeliverTransportPacket so that is is only done when needed.
 		replyData := stack.PayloadSince(pkt.TransportHeader())
 		defer replyData.Release()
-		ipHdr := header.IPv4(pkt.NetworkHeader().Slice())
+		ipHdr := header.IPv4Buffer{View: pkt.NetworkHeader().View()}
 		localAddressBroadcast := pkt.NetworkPacketInfo.LocalAddressBroadcast
 
 		// It's possible that a raw socket expects to receive this.
@@ -414,14 +414,14 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer) {
 		// Take the base of the incoming request IP header but replace the options.
 		replyHeaderLength := uint8(header.IPv4MinimumSize + len(newOptions))
 		replyIPHdrView := buffer.NewView(int(replyHeaderLength))
-		replyIPHdrView.Write(iph[:header.IPv4MinimumSize])
+		replyIPHdrView.Write(iph.View.AsSlice()[:header.IPv4MinimumSize])
 		replyIPHdrView.Write(newOptions)
-		replyIPHdr := header.IPv4(replyIPHdrView.AsSlice())
+		replyIPHdr := header.IPv4Buffer{View: *replyIPHdrView}
 		replyIPHdr.SetHeaderLength(replyHeaderLength)
 		replyIPHdr.SetSourceAddress(r.LocalAddress())
 		replyIPHdr.SetDestinationAddress(r.RemoteAddress())
 		replyIPHdr.SetTTL(r.DefaultTTL())
-		replyIPHdr.SetTotalLength(uint16(len(replyIPHdr) + len(replyData.AsSlice())))
+		replyIPHdr.SetTotalLength(uint16(replyIPHdr.Size() + len(replyData.AsSlice())))
 		replyIPHdr.SetChecksum(0)
 		replyIPHdr.SetChecksum(^replyIPHdr.CalculateChecksum())
 
@@ -607,7 +607,7 @@ func (*icmpReasonHostUnreachable) isICMPReason() {}
 // possible as well as any error metadata as is available. returnError
 // expects pkt to hold a valid IPv4 packet as per the wire format.
 func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer, deliveredLocally bool) tcpip.Error {
-	origIPHdr := header.IPv4(pkt.NetworkHeader().Slice())
+	origIPHdr := header.IPv4Buffer{View: pkt.NetworkHeader().View()}
 	origIPHdrSrc := origIPHdr.SourceAddress()
 	origIPHdrDst := origIPHdr.DestinationAddress()
 
@@ -749,11 +749,11 @@ func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer, deliv
 	}
 	available := mtu - header.ICMPv4MinimumSize
 
-	if available < len(origIPHdr)+header.ICMPv4MinimumErrorPayloadSize {
+	if available < origIPHdr.View.Size()+header.ICMPv4MinimumErrorPayloadSize {
 		return nil
 	}
 
-	payloadLen := len(origIPHdr) + len(transportHeader) + pkt.Data().Size()
+	payloadLen := origIPHdr.View.Size() + len(transportHeader) + pkt.Data().Size()
 	if payloadLen > available {
 		payloadLen = available
 	}
@@ -766,8 +766,8 @@ func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer, deliv
 	// required. This is now the payload of the new ICMP packet and no longer
 	// considered a packet in its own right.
 
-	payload := buffer.MakeWithView(pkt.NetworkHeader().View())
-	payload.Append(pkt.TransportHeader().View())
+	payload := buffer.MakeWithView(pkt.NetworkHeader().OwnedView())
+	payload.Append(pkt.TransportHeader().OwnedView())
 	if dataCap := payloadLen - int(payload.Size()); dataCap > 0 {
 		buf := pkt.Data().ToBuffer()
 		buf.Truncate(int64(dataCap))

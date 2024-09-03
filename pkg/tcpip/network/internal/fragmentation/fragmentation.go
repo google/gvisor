@@ -321,7 +321,7 @@ func MakePacketFragmenter(pkt *stack.PacketBuffer, fragmentPayloadLen uint32, re
 	// supported for outbound packets, the fragmentable data should not include
 	// these headers.
 	var fragmentableData buffer.Buffer
-	fragmentableData.Append(pkt.TransportHeader().View())
+	fragmentableData.Append(pkt.TransportHeader().OwnedView())
 	pktBuf := pkt.Data().ToBuffer()
 	fragmentableData.Merge(&pktBuf)
 	fragmentCount := (uint32(fragmentableData.Size()) + fragmentPayloadLen - 1) / fragmentPayloadLen

@@ -1153,7 +1153,7 @@ func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer, deliv
 		return nil
 	}
 
-	network, transport := pkt.NetworkHeader().View(), pkt.TransportHeader().View()
+	network, transport := pkt.NetworkHeader().OwnedView(), pkt.TransportHeader().OwnedView()
 
 	// As per RFC 4443 section 2.4
 	//

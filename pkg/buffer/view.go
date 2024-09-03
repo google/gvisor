@@ -292,6 +292,19 @@ func (v *View) ReadFrom(r io.Reader) (n int64, err error) {
 	}
 }
 
+// WithSlice calls f with a slice of the data in this view. The slice in f is
+// safe to modify.
+func (v *View) WithSlice(f func(b []byte)) {
+	if v == nil {
+		panic("cannot copy into a nil view")
+	}
+	if v.sharesChunk() {
+		defer v.chunk.DecRef()
+		v.chunk = v.chunk.Clone()
+	}
+	f(v.chunk.data[v.read:v.write])
+}
+
 // WriteAt writes data to the views's chunk starting at start. If the
 // view's chunk has a reference count greater than 1, the chunk is copied first
 // and then written to.

@@ -741,7 +741,7 @@ func (e *endpoint) forwardPacketWithRoute(route *stack.Route, pkt *stack.PacketB
 
 // forwardUnicastPacket attempts to forward a packet to its final destination.
 func (e *endpoint) forwardUnicastPacket(pkt *stack.PacketBuffer) ip.ForwardingError {
-	hView := pkt.NetworkHeader().View()
+	hView := pkt.NetworkHeader().OwnedView()
 	defer hView.Release()
 	h := header.IPv4(hView.AsSlice())
 
@@ -1794,7 +1794,7 @@ func (p *protocol) parseAndValidate(pkt *stack.PacketBuffer) (*buffer.View, bool
 		p.parseTransport(pkt, transProtoNum)
 	}
 
-	return pkt.NetworkHeader().View(), true
+	return pkt.NetworkHeader().OwnedView(), true
 }
 
 func (p *protocol) parseTransport(pkt *stack.PacketBuffer, transProtoNum tcpip.TransportProtocolNumber) {

@@ -3639,10 +3639,10 @@ func checkPacketEquality(t *testing.T, expected, actual *stack.PacketBuffer) {
 	if expected.NetworkProtocolNumber != actual.NetworkProtocolNumber {
 		t.Fatalf("expected network protocol number %d for resulting packet, got %d", expected.NetworkProtocolNumber, actual.NetworkProtocolNumber)
 	}
-	if actualHasNetwork, expectedHasNetwork := actual.NetworkHeader().View() != nil, expected.NetworkHeader().View() != nil; actualHasNetwork != expectedHasNetwork {
+	if actualHasNetwork, expectedHasNetwork := actual.NetworkHeader().OwnedView() != nil, expected.NetworkHeader().OwnedView() != nil; actualHasNetwork != expectedHasNetwork {
 		t.Fatalf("expected network header is present to be %t for resulting packet, got %v", actualHasNetwork, expectedHasNetwork)
 	}
-	if actual.NetworkHeader().View() != nil && expected.Network().Checksum() != actual.Network().Checksum() {
+	if actual.NetworkHeader().OwnedView() != nil && expected.Network().Checksum() != actual.Network().Checksum() {
 		t.Fatalf("expected network checksum %d for resulting packet, got %d", expected.Network().Checksum(), actual.Network().Checksum())
 	}
 	if actual.TransportProtocolNumber != expected.TransportProtocolNumber {

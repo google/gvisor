@@ -487,14 +487,21 @@ type PacketHeader struct {
 	typ headerType
 }
 
-// View returns an caller-owned copy of the underlying storage of h as a
-// *buffer.View.
-func (h PacketHeader) View() *buffer.View {
-	view := h.pk.headerView(h.typ)
-	if view.Size() == 0 {
+// View returns a View representing he underlying storage of h. The View is
+// owned by the PacketBuffer and must be cloned before passing it to a new
+// owner.
+func (h PacketHeader) View() buffer.View {
+	return h.pk.headerView(h.typ)
+}
+
+// OwnedView returns a View representing the underlying storage of h. The View
+// is owned by the called and must be released after use.
+func (h PacketHeader) OwnedView() *buffer.View {
+	v := h.pk.headerView(h.typ)
+	if v.Size() == 0 {
 		return nil
 	}
-	return view.Clone()
+	return v.Clone()
 }
 
 // Slice returns the underlying storage of h as a []byte. The returned slice
@@ -535,6 +542,11 @@ type PacketData struct {
 func (d PacketData) PullUp(size int) (b []byte, ok bool) {
 	view, ok := d.pk.buf.PullUp(d.pk.dataOffset(), size)
 	return view.AsSlice(), ok
+}
+
+// PullUpView is the same as PullUp except that it returns a buffer.View.
+func (d PacketData) PullUpView(size int) (b buffer.View, ok bool) {
+	return d.pk.buf.PullUp(d.pk.dataOffset(), size)
 }
 
 // Consume is the same as PullUp except that is additionally consumes the

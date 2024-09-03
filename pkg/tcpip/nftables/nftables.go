@@ -1654,7 +1654,7 @@ func (op metaLoad) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *Ru
 	// Network EtherType Protocol (16-bit, network order).
 	case linux.NFT_META_PROTOCOL:
 		// Only valid if network header is present.
-		if pkt.NetworkHeader().View() == nil {
+		if v := pkt.NetworkHeader().View(); v.Size() == 0 {
 			break
 		}
 		target = binary.BigEndian.AppendUint16(nil, uint16(pkt.NetworkProtocolNumber))
@@ -1694,7 +1694,7 @@ func (op metaLoad) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *Ru
 		if pkt.NetworkProtocolNumber != header.IPv6ProtocolNumber {
 			break
 		}
-		if pkt.NetworkHeader().View() != nil {
+		if v := pkt.NetworkHeader().View(); v.Size() != 0 {
 			tcid, _ := pkt.Network().TOS()
 			target = binary.NativeEndian.AppendUint32(nil, uint32(tcid))
 		}

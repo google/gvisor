@@ -1471,12 +1471,12 @@ func (e *endpoint) processExtensionHeaders(h header.IPv6, pkt *stack.PacketBuffe
 	//	- Any IPv6 header bytes after the first 40 (i.e. extensions).
 	//	- The transport header, if present.
 	//	- Any other payload data.
-	v := pkt.NetworkHeader().View()
+	v := pkt.NetworkHeader().OwnedView()
 	if v != nil {
 		v.TrimFront(header.IPv6MinimumSize)
 	}
 	buf := buffer.MakeWithView(v)
-	buf.Append(pkt.TransportHeader().View())
+	buf.Append(pkt.TransportHeader().OwnedView())
 	dataBuf := pkt.Data().ToBuffer()
 	buf.Merge(&dataBuf)
 	it := header.MakeIPv6PayloadIterator(header.IPv6ExtensionHeaderIdentifier(h.NextHeader()), buf)
@@ -2621,7 +2621,7 @@ func (p *protocol) parseAndValidate(pkt *stack.PacketBuffer) (*buffer.View, bool
 		p.parseTransport(pkt, transProtoNum)
 	}
 
-	return pkt.NetworkHeader().View(), true
+	return pkt.NetworkHeader().OwnedView(), true
 }
 
 func (p *protocol) parseTransport(pkt *stack.PacketBuffer, transProtoNum tcpip.TransportProtocolNumber) {

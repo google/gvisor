@@ -19,6 +19,7 @@ go_library(
         "igmpv3.go",
         "interfaces.go",
         "ipv4.go",
+        "ipv4_buffer.go",
         "ipv6.go",
         "ipv6_extension_headers.go",
         "ipv6_fragment.go",
