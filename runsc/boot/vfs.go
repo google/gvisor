@@ -1388,7 +1388,7 @@ func tpuProxyRegisterDevices(info *containerInfo, vfsObj *vfs.VirtualFilesystem)
 	if err := tpuproxy.RegisterHostTPUDevices(vfsObj, allowedTPUDeviceIDs); err != nil {
 		return fmt.Errorf("registering host TPU devices: %w", err)
 	}
-	if err := vfio.RegisterVFIODevice(vfsObj); err != nil {
+	if err := vfio.RegisterVFIODevice(vfsObj, true /* useDevGofer */); err != nil {
 		return fmt.Errorf("registering vfio driver: %w", err)
 	}
 	return nil

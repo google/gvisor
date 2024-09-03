@@ -32,8 +32,8 @@ import (
 )
 
 const (
-	pciPathGlobTPUv4   = "/sys/devices/pci0000:*/*/accel/accel*"
-	pciPathGlobTPUv5   = "/sys/devices/pci0000:*/*/vfio-dev/vfio*"
+	pciPathGlobTPUv4   = "/sys/devices/pci0000:*/**/accel/accel*"
+	pciPathGlobTPUv5   = "/sys/devices/pci0000:*/**/vfio-dev/vfio*"
 	iommuGroupPathGlob = "/sys/kernel/iommu_groups/*/devices/*"
 )
 
@@ -42,8 +42,8 @@ var (
 	// TPU v4 devices are accessible via /sys/devices/pci0000:00/<pci_address>/accel/accel# on the host.
 	// TPU v5 devices are accessible via at /sys/devices/pci0000:00/<pci_address>/vfio-dev/vfio# on the host.
 	pathGlobToPathRegex = map[string]string{
-		pciPathGlobTPUv4: `^/sys/devices/pci0000:[[:xdigit:]]{2}/\d+:\d+:\d+\.\d+/accel/accel(\d+)$`,
-		pciPathGlobTPUv5: `^/sys/devices/pci0000:[[:xdigit:]]{2}/\d+:\d+:\d+\.\d+/vfio-dev/vfio(\d+)$`,
+		pciPathGlobTPUv4: `^/sys/devices/pci0000:[[:xdigit:]]{2}/(0000:([[:xdigit:]]{2}|[[:xdigit:]]{4}):[[:xdigit:]]{2}\.[[:xdigit:]]{1,2}/)+accel/accel(\d+)$`,
+		pciPathGlobTPUv5: `^/sys/devices/pci0000:[[:xdigit:]]{2}/(0000:([[:xdigit:]]{2}|[[:xdigit:]]{4}):[[:xdigit:]]{2}\.[[:xdigit:]]{1,2}/)+vfio-dev/vfio(\d+)$`,
 	}
 )
 
@@ -61,7 +61,7 @@ func RegisterHostTPUDevices(vfsObj *vfs.VirtualFilesystem, allowedDeviceIDs map[
 			if ms == nil {
 				continue
 			}
-			minorNum, err := strconv.ParseUint(ms[1], 10, 32)
+			minorNum, err := strconv.ParseUint(ms[len(ms)-1], 10, 32)
 			if err != nil {
 				return fmt.Errorf("parsing PCI device number: %w", err)
 			}
@@ -117,7 +117,7 @@ func registerTPUDevice(vfsObj *vfs.VirtualFilesystem, minor, deviceNum uint32, d
 	case tpu.TPUV4DeviceID, tpu.TPUV4liteDeviceID:
 		return accel.RegisterTPUDevice(vfsObj, minor, deviceID == tpu.TPUV4liteDeviceID)
 	case tpu.TPUV5eDeviceID, tpu.TPUV5pDeviceID:
-		return vfio.RegisterTPUDevice(vfsObj, minor, deviceNum)
+		return vfio.RegisterTPUDevice(vfsObj, minor, deviceNum, false /* useDevGofer */)
 	default:
 		return fmt.Errorf("unsupported TPU device with ID: 0x%x", deviceID)
 	}

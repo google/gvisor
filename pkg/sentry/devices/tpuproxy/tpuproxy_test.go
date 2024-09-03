@@ -32,7 +32,7 @@ func TestTPUPath(t *testing.T) {
 			name:     "TPUv4PCIPathMatch",
 			pathGlob: pciPathGlobTPUv4,
 			path:     "/sys/devices/pci0000:00/0000:00:01.0/accel/accel16",
-			submatch: []string{"/sys/devices/pci0000:00/0000:00:01.0/accel/accel16", "16"},
+			submatch: []string{"/sys/devices/pci0000:00/0000:00:01.0/accel/accel16", "0000:00:01.0/", "00", "16"},
 		},
 		{
 			name:     "TPUv4PCIPathNoMatch",
@@ -44,7 +44,7 @@ func TestTPUPath(t *testing.T) {
 			name:     "TPUv5PCIPathMatch",
 			pathGlob: pciPathGlobTPUv5,
 			path:     "/sys/devices/pci0000:00/0000:00:05.0/vfio-dev/vfio20",
-			submatch: []string{"/sys/devices/pci0000:00/0000:00:05.0/vfio-dev/vfio20", "20"},
+			submatch: []string{"/sys/devices/pci0000:00/0000:00:05.0/vfio-dev/vfio20", "0000:00:05.0/", "00", "20"},
 		},
 		{
 			name:     "TPUv5PCIPathNoMatch",

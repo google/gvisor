@@ -186,10 +186,11 @@ func TestEnableTPUProxyPathsV4(t *testing.T) {
 
 type PCIDeviceInfo struct {
 	// IOMMU group.
-	group      string
-	pciPath    string
-	pciAddress string
-	name       string
+	group             string
+	pciPath           string
+	pciAddress        string
+	name              string
+	nestedDeviceIndex int
 }
 
 func (dev PCIDeviceInfo) path() string {
@@ -218,22 +219,32 @@ func TestEnableTPUProxyPathsV5(t *testing.T) {
 
 	devices := []PCIDeviceInfo{
 		PCIDeviceInfo{
-			group:      "0",
-			pciPath:    pciPath0,
-			pciAddress: "0000:00:04.0",
-			name:       "vfio0",
+			group:             "0",
+			pciPath:           pciPath0,
+			pciAddress:        "0000:00:04.0",
+			name:              "vfio0",
+			nestedDeviceIndex: -1,
 		},
 		PCIDeviceInfo{
-			group:      "1",
-			pciPath:    pciPath0,
-			pciAddress: "0000:00:05.0",
-			name:       "vfio1",
+			group:             "1",
+			pciPath:           pciPath0,
+			pciAddress:        "0000:00:05.0",
+			name:              "vfio1",
+			nestedDeviceIndex: -1,
 		},
 		PCIDeviceInfo{
-			group:      "2",
-			pciPath:    pciPath1,
-			pciAddress: "0000:10:05.0",
-			name:       "vfio2",
+			group:             "2",
+			pciPath:           pciPath1,
+			pciAddress:        "0000:10:05.0",
+			name:              "vfio2",
+			nestedDeviceIndex: 3,
+		},
+		PCIDeviceInfo{
+			group:             "3",
+			pciPath:           pciPath1,
+			pciAddress:        "0000:10:05.0/0000:03:00.1",
+			name:              "vfio3",
+			nestedDeviceIndex: -1,
 		},
 	}
 	for _, device := range devices {
@@ -244,7 +255,7 @@ func TestEnableTPUProxyPathsV5(t *testing.T) {
 		if err := os.Symlink(path.Join("..", "..", "..", device.pciAddress), path.Join(devicePath, "device")); err != nil {
 			t.Fatalf("Failed to symlink device directory: %v", err)
 		}
-		if err := os.Symlink(path.Join("..", "..", "..", "devices", path.Base(device.pciPath), device.pciAddress), path.Join(busPath, device.pciAddress)); err != nil {
+		if err := os.Symlink(path.Join("..", "..", "..", "devices", path.Base(device.pciPath), device.pciAddress), path.Join(busPath, path.Base(device.pciAddress))); err != nil {
 			t.Fatalf("Failed to symlink bus directory: %v", err)
 		}
 		if err := os.Symlink(path.Join("..", "..", "devices", path.Base(device.pciPath), device.pciAddress, vfioDev, device.name), path.Join(sysClassPath, device.name)); err != nil {
@@ -254,7 +265,7 @@ func TestEnableTPUProxyPathsV5(t *testing.T) {
 		if err := os.MkdirAll(iommuPath, 0755); err != nil {
 			t.Fatalf("Failed to create iommu_groups directory: %v", err)
 		}
-		if err := os.Symlink(path.Join("..", "..", "..", "..", "devices", path.Base(device.pciPath), device.pciAddress), path.Join(iommuPath, device.pciAddress)); err != nil {
+		if err := os.Symlink(path.Join("..", "..", "..", "..", "devices", path.Base(device.pciPath), device.pciAddress), path.Join(iommuPath, path.Base(device.pciAddress))); err != nil {
 			t.Fatalf("Failed to symlink iommu_group devices directory: %v", err)
 		}
 		if err := os.Symlink(path.Join("..", "..", "..", "kernel", "iommu_groups", device.group), path.Join(device.pciPath, device.pciAddress, "iommu_group")); err != nil {
@@ -267,10 +278,15 @@ func TestEnableTPUProxyPathsV5(t *testing.T) {
 	for _, device := range devices {
 		// Validate PCI device symlinks.
 		pop := s.PathOpAtRoot(path.Join("devices", path.Base(device.pciPath), device.pciAddress))
-		s.AssertAllDirentTypes(s.ListDirents(pop), map[string]testutil.DirentType{
+		contents := map[string]testutil.DirentType{
 			"iommu_group": linux.DT_LNK,
 			vfioDev:       linux.DT_DIR,
-		})
+		}
+		if device.nestedDeviceIndex != -1 {
+			deviceName := path.Base(devices[device.nestedDeviceIndex].pciAddress)
+			contents[deviceName] = linux.DT_DIR
+		}
+		s.AssertAllDirentTypes(s.ListDirents(pop), contents)
 		// Validate VFIO device symlinks.
 		pop = s.PathOpAtRoot(path.Join("devices", path.Base(device.pciPath), device.pciAddress, vfioDev, device.name))
 		s.AssertAllDirentTypes(s.ListDirents(pop), map[string]testutil.DirentType{
@@ -279,7 +295,7 @@ func TestEnableTPUProxyPathsV5(t *testing.T) {
 		// Validate $IOMMU_GROUP/devices.
 		pop = s.PathOpAtRoot(path.Join("kernel", "iommu_groups", string(device.group), "devices"))
 		s.AssertAllDirentTypes(s.ListDirents(pop), map[string]testutil.DirentType{
-			device.pciAddress: linux.DT_LNK,
+			path.Base(device.pciAddress): linux.DT_LNK,
 		})
 	}
 }
