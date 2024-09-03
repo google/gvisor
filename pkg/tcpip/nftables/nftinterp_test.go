@@ -385,7 +385,7 @@ func TestInterpretPayloadLoadOps(t *testing.T) {
 			opStr:    "[ payload load 2b @ transport header + 0 => reg 0 ]",
 			expected: nil,
 		},
-		// cmd: add rule ip6 ip tab ch tcp flags syn counter accept
+		// cmd: add rule ip tab ch tcp flags syn counter accept
 		{
 			tname:    "load 1 byte into 4-byte register",
 			opStr:    "[ payload load 1b @ transport header + 13 => reg 9 ]",
@@ -491,6 +491,175 @@ func checkPayloadLoadOp(tname string, expected operation, actual operation) erro
 	}
 	if pdload.dreg != expectedPdLoad.dreg {
 		return fmt.Errorf("expected destination register to be %d for %s, got %d", expectedPdLoad.dreg, tname, pdload.dreg)
+	}
+	return nil
+}
+
+// TestInterpretPayloadSetOps tests interpretation of payload set operations.
+// Most operations are direct output of nft binary commands. All stated commands
+// should be preceded by nft --debug=netlink to generate matching operations.
+func TestInterpretPayloadSetOps(t *testing.T) {
+	for _, test := range []interpretOperationTestAction{
+		// Simple checksum type tests.
+		{
+			tname:    "set checksum type, none",
+			opStr:    "[ payload write reg 1 => 6b @ link header + 0 csum_type 0 csum_off 0 csum_flags 0x0 ]",
+			expected: mustCreatePayloadSet(t, linux.NFT_PAYLOAD_LL_HEADER, 0, 6, linux.NFT_REG_1, linux.NFT_PAYLOAD_CSUM_NONE, 0, 0x0),
+		},
+		{
+			tname:    "set checksum type, inet",
+			opStr:    "[ payload write reg 1 => 6b @ link header + 0 csum_type 1 csum_off 0 csum_flags 0x0 ]",
+			expected: mustCreatePayloadSet(t, linux.NFT_PAYLOAD_LL_HEADER, 0, 6, linux.NFT_REG_1, linux.NFT_PAYLOAD_CSUM_INET, 0, 0x0),
+		},
+		{
+			tname:    "set checksum type, sctp", // not supported
+			opStr:    "[ payload write reg 1 => 6b @ link header + 0 csum_type 2 csum_off 0 csum_flags 0x0 ]",
+			expected: nil,
+		},
+		{
+			tname:    "set out of range checksum type",
+			opStr:    "[ payload write reg 1 => 6b @ link header + 0 csum_type 3 csum_off 0 csum_flags 0x0 ]",
+			expected: nil,
+		},
+		// Simple checksum offset tests.
+		{
+			tname:    "set valid offset",
+			opStr:    "[ payload write reg 1 => 6b @ link header + 0 csum_type 0 csum_off 100 csum_flags 0x0 ]",
+			expected: mustCreatePayloadSet(t, linux.NFT_PAYLOAD_LL_HEADER, 0, 6, linux.NFT_REG_1, linux.NFT_PAYLOAD_CSUM_NONE, 100, 0x0),
+		},
+		{
+			tname:    "set negative checksum offset",
+			opStr:    "[ payload write reg 1 => 6b @ link header + 100 csum_type 1 csum_off -1 csum_flags 0x0 ]",
+			expected: nil,
+		},
+		// Simple checksum flags tests.
+		{
+			tname:    "set checksum flags, L4 with psuedoheader flag",
+			opStr:    "[ payload write reg 1 => 6b @ link header + 0 csum_type 0 csum_off 0 csum_flags 0x1 ]",
+			expected: mustCreatePayloadSet(t, linux.NFT_PAYLOAD_LL_HEADER, 0, 6, linux.NFT_REG_1, linux.NFT_PAYLOAD_CSUM_NONE, 0, linux.NFT_PAYLOAD_L4CSUM_PSEUDOHDR),
+		},
+		{
+			tname:    "set invalid checksum flags",
+			opStr:    "[ payload write reg 1 => 6b @ link header + 0 csum_type 0 csum_off 0 csum_flags 0x2 ]",
+			expected: nil,
+		},
+		// Invalid register tests.
+		{
+			tname:    "set from verdict register",
+			opStr:    "[ payload write reg 0 => 4b @ link header + 0 csum_type 0 csum_off 0 csum_flags 0x0 ]",
+			expected: nil,
+		},
+		{
+			tname:    "set >4 bytes from 4-byte register",
+			opStr:    "[ payload write reg 9 => 6b @ link header + 0 csum_type 0 csum_off 0 csum_flags 0x0 ]",
+			expected: nil,
+		},
+		{
+			tname:    "set >16 bytes from 16-byte register",
+			opStr:    "[ payload write reg 2 => 20b @ link header + 0 csum_type 0 csum_off 0 csum_flags 0x0 ]",
+			expected: nil,
+		},
+
+		// Valid tests.
+		// Note: It doesn't seem like the nft binary ever outputs payload set ops
+		// that have an odd offset or length and checksumming on. This makes sense
+		// because the offset and length are specified in bytes, but the checksum is
+		// calculated in half-words (2-bytes), which means the checksum calculation
+		// is only valid if the offset and length are even. However, the linux
+		// kernel does not specifically enforce this, so on linux it's technically
+		// possible to declare payload set operations that undoubtedly result in
+		// invalid checksums. Since the nft binary is what generates our input, we
+		// do not test these edge cases either.
+
+		// cmd: add rule ip tab ch @nh,24,8 set 0xab
+		{
+			tname:    "set 1 byte from 4-byte register with csum NONE and no flags",
+			opStr:    "[ payload write reg 8 => 1b @ network header + 3 csum_type 0 csum_off 0 csum_flags 0x0 ]",
+			expected: mustCreatePayloadSet(t, linux.NFT_PAYLOAD_NETWORK_HEADER, 3, 1, linux.NFT_REG32_00, linux.NFT_PAYLOAD_CSUM_NONE, 0, 0x0),
+		},
+		{
+			tname:    "set 1 byte from 16-byte register with csum NONE and no flags",
+			opStr:    "[ payload write reg 1 => 1b @ network header + 4 csum_type 0 csum_off 0 csum_flags 0x0 ]",
+			expected: mustCreatePayloadSet(t, linux.NFT_PAYLOAD_NETWORK_HEADER, 4, 1, linux.NFT_REG_1, linux.NFT_PAYLOAD_CSUM_NONE, 0, 0x0),
+		},
+		// cmd: add rule ip tab ch tcp sport set 80
+		{
+			tname:    "set 2 bytes from 4-byte register with csum INET and no flags",
+			opStr:    "[ payload write reg 9 => 2b @ transport header + 0 csum_type 1 csum_off 16 csum_flags 0x0 ]",
+			expected: mustCreatePayloadSet(t, linux.NFT_PAYLOAD_TRANSPORT_HEADER, 0, 2, linux.NFT_REG32_01, linux.NFT_PAYLOAD_CSUM_INET, 16, 0x0),
+		},
+		{
+			tname:    "set 2 bytes from 16-byte register with csum INET and no flags",
+			opStr:    "[ payload write reg 2 => 2b @ transport header + 0 csum_type 1 csum_off 16 csum_flags 0x0 ]",
+			expected: mustCreatePayloadSet(t, linux.NFT_PAYLOAD_TRANSPORT_HEADER, 0, 2, linux.NFT_REG_2, linux.NFT_PAYLOAD_CSUM_INET, 16, 0x0),
+		},
+		// cmd: add rule ip tab ch @ll,24,24 set 0xabcdef
+		{
+			tname:    "set 3 bytes from 4-byte register with csum NONE and no flags",
+			opStr:    "[ payload write reg 10 => 3b @ link header + 3 csum_type 0 csum_off 0 csum_flags 0x0 ]",
+			expected: mustCreatePayloadSet(t, linux.NFT_PAYLOAD_LL_HEADER, 3, 3, linux.NFT_REG32_02, linux.NFT_PAYLOAD_CSUM_NONE, 0, 0x0),
+		},
+		{
+			tname:    "set 3 bytes from 16-byte register with csum NONE and no flags",
+			opStr:    "[ payload write reg 2 => 3b @ link header + 3 csum_type 0 csum_off 0 csum_flags 0x0 ]",
+			expected: mustCreatePayloadSet(t, linux.NFT_PAYLOAD_LL_HEADER, 3, 3, linux.NFT_REG_2, linux.NFT_PAYLOAD_CSUM_NONE, 0, 0x0),
+		},
+		// cmd: add rule ip tab ch ip daddr set 192.168.1.1
+		{
+			tname:    "set 4 bytes from 4-byte register with csum INET and pseudoheader flag",
+			opStr:    "[ payload write reg 11 => 4b @ network header + 16 csum_type 1 csum_off 10 csum_flags 0x1 ]",
+			expected: mustCreatePayloadSet(t, linux.NFT_PAYLOAD_NETWORK_HEADER, 16, 4, linux.NFT_REG32_03, linux.NFT_PAYLOAD_CSUM_INET, 10, linux.NFT_PAYLOAD_L4CSUM_PSEUDOHDR),
+		},
+		{
+			tname:    "set 4 bytes from 4-byte register with csum INET and pseudoheader flag",
+			opStr:    "[ payload write reg 3 => 4b @ network header + 16 csum_type 1 csum_off 10 csum_flags 0x1 ]",
+			expected: mustCreatePayloadSet(t, linux.NFT_PAYLOAD_NETWORK_HEADER, 16, 4, linux.NFT_REG_3, linux.NFT_PAYLOAD_CSUM_INET, 10, linux.NFT_PAYLOAD_L4CSUM_PSEUDOHDR),
+		},
+		// cmd: add rule ip tab ch ether saddr set 01:23:45:67:89:ab
+		{
+			tname:    "set 6 bytes from 16-byte register with csum NONE and no flags",
+			opStr:    "[ payload write reg 4 => 6b @ link header + 6 csum_type 0 csum_off 0 csum_flags 0x0 ]",
+			expected: mustCreatePayloadSet(t, linux.NFT_PAYLOAD_LL_HEADER, 6, 6, linux.NFT_REG_4, linux.NFT_PAYLOAD_CSUM_NONE, 0, 0x0),
+		},
+		// cmd: add rule ip6 tab ch ip6 saddr set 2001:db8::2
+		{
+			tname:    "set 16 bytes from 16-byte register with csum NONE and psuedoheader flag",
+			opStr:    "[ payload write reg 1 => 16b @ network header + 8 csum_type 0 csum_off 0 csum_flags 0x1 ]",
+			expected: mustCreatePayloadSet(t, linux.NFT_PAYLOAD_NETWORK_HEADER, 8, 16, linux.NFT_REG_1, linux.NFT_PAYLOAD_CSUM_NONE, 0, linux.NFT_PAYLOAD_L4CSUM_PSEUDOHDR),
+		},
+	} {
+		t.Run(test.tname, func(t *testing.T) { checkOp(t, test, checkPayloadSetOp) })
+	}
+}
+
+// checkPayloadSetOp checks that the given operation is a payload set
+// operation and that it matches the expected payload set operation.
+func checkPayloadSetOp(tname string, expected operation, actual operation) error {
+	expectedPdSet := expected.(*payloadSet)
+	pdset, ok := actual.(*payloadSet)
+	if !ok {
+		return fmt.Errorf("expected operation type to be PayloadLoad for %s, got %T", tname, actual)
+	}
+	if pdset.base != expectedPdSet.base {
+		return fmt.Errorf("expected payload base to be %v for %s, got %v", expectedPdSet.base, tname, pdset.base)
+	}
+	if pdset.offset != expectedPdSet.offset {
+		return fmt.Errorf("expected offset to be %d for %s, got %d", expectedPdSet.offset, tname, pdset.offset)
+	}
+	if pdset.blen != expectedPdSet.blen {
+		return fmt.Errorf("expected length to be %d for %s, got %d", expectedPdSet.blen, tname, pdset.blen)
+	}
+	if pdset.sreg != expectedPdSet.sreg {
+		return fmt.Errorf("expected destination register to be %d for %s, got %d", expectedPdSet.sreg, tname, pdset.sreg)
+	}
+	if pdset.csumType != expectedPdSet.csumType {
+		return fmt.Errorf("expected checksum type to be %d for %s, got %d", expectedPdSet.csumType, tname, pdset.csumType)
+	}
+	if pdset.csumOffset != expectedPdSet.csumOffset {
+		return fmt.Errorf("expected checksum offset to be %d for %s, got %d", expectedPdSet.csumOffset, tname, pdset.csumOffset)
+	}
+	if pdset.csumFlags != expectedPdSet.csumFlags {
+		return fmt.Errorf("expected checksum flags to be %b for %s, got %b", expectedPdSet.csumFlags, tname, pdset.csumFlags)
 	}
 	return nil
 }

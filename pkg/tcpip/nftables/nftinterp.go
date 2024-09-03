@@ -140,7 +140,13 @@ func InterpretOperation(line string, lnIdx int) (operation, error) {
 	case "cmp":
 		return InterpretComparison(line, lnIdx)
 	case "payload":
-		return InterpretPayloadLoad(line, lnIdx)
+		switch tokens[2] {
+		case "load":
+			return InterpretPayloadLoad(line, lnIdx)
+		case "write":
+			return InterpretPayloadSet(line, lnIdx)
+		}
+		return nil, &SyntaxError{lnIdx, 2, fmt.Sprintf("unrecognized operation type: payload %s", tokens[2])}
 	default:
 		return nil, &SyntaxError{lnIdx, 1, fmt.Sprintf("unrecognized operation type: %s", tokens[1])}
 	}
@@ -361,6 +367,141 @@ func InterpretPayloadLoad(line string, lnIdx int) (operation, error) {
 	return pdload, nil
 }
 
+// InterpretPayloadSet creates a new PayloadSet operation from the given string.
+func InterpretPayloadSet(line string, lnIdx int) (operation, error) {
+	tokens := strings.Fields(line)
+
+	// Requires at least 19 tokens:
+	// 		"[", "payload", "write", "reg", register index, "=>", len+"b", "@", payload base, "header", "+", offset,
+	//		"csum_type", checksum type, "csum_off", checksum offset, "csum_flags", checksum flags as hexadecimal, "]".
+	if len(tokens) != 19 {
+		return nil, &SyntaxError{lnIdx, 0, fmt.Sprintf("incorrect number of tokens for payload set operation, should be exactly 19, got %d", len(tokens))}
+	}
+
+	if err := checkOperationBrackets(tokens, lnIdx); err != nil {
+		return nil, err
+	}
+
+	tkIdx := 1
+
+	// First token should be "payload".
+	if err := consumeToken("payload", tokens, lnIdx, tkIdx); err != nil {
+		return nil, err
+	}
+	tkIdx++
+
+	// Second token should be "write".
+	if err := consumeToken("write", tokens, lnIdx, tkIdx); err != nil {
+		return nil, err
+	}
+	tkIdx++
+
+	// Third token should be "reg"
+	if err := consumeToken("reg", tokens, lnIdx, tkIdx); err != nil {
+		return nil, err
+	}
+	tkIdx++
+
+	// Fourth token should be the uint8 representing the register index.
+	reg, err := parseRegister(tokens[tkIdx], lnIdx, tkIdx)
+	if err != nil {
+		return nil, err
+	}
+	tkIdx++
+
+	// Fifth token should be "=>".
+	if err := consumeToken("=>", tokens, lnIdx, tkIdx); err != nil {
+		return nil, err
+	}
+	tkIdx++
+
+	// Sixth token should be the length (in bytes) of the payload followed by 'b'.
+	len, err := parsePayloadLength(tokens[tkIdx], lnIdx, tkIdx)
+	if err != nil {
+		return nil, err
+	}
+	tkIdx++
+
+	// Seventh token should be "@".
+	if err := consumeToken("@", tokens, lnIdx, tkIdx); err != nil {
+		return nil, err
+	}
+	tkIdx++
+
+	// Eighth token should be the payload base header.
+	base, err := parsePayloadBase(tokens[tkIdx], lnIdx, tkIdx)
+	if err != nil {
+		return nil, err
+	}
+	tkIdx++
+
+	// Ninth token should be "header".
+	if err := consumeToken("header", tokens, lnIdx, tkIdx); err != nil {
+		return nil, err
+	}
+	tkIdx++
+
+	// Tenth token should be "+".
+	if err := consumeToken("+", tokens, lnIdx, tkIdx); err != nil {
+		return nil, err
+	}
+	tkIdx++
+
+	// Eleventh token should be the uint8 representing the offset.
+	offset, err := parseUint8(tokens[tkIdx], "offset", lnIdx, tkIdx)
+	if err != nil {
+		return nil, err
+	}
+	tkIdx++
+
+	// Twelfth token should be "csum_type".
+	if err := consumeToken("csum_type", tokens, lnIdx, tkIdx); err != nil {
+		return nil, err
+	}
+	tkIdx++
+
+	// Thirteenth token should be the uint8 representing the checksum type.
+	csumType, err := parseUint8(tokens[tkIdx], "checksum type", lnIdx, tkIdx)
+	if err != nil {
+		return nil, err
+	}
+	tkIdx++
+
+	// Fourteenth token should be "csum_off".
+	if err := consumeToken("csum_off", tokens, lnIdx, tkIdx); err != nil {
+		return nil, err
+	}
+	tkIdx++
+
+	// Fifteenth token should be the uint8 representing the checksum offset.
+	csumOff, err := parseUint8(tokens[tkIdx], "checksum offset", lnIdx, tkIdx)
+	if err != nil {
+		return nil, err
+	}
+	tkIdx++
+
+	// Sixteenth token should be "csum_flags".
+	if err := consumeToken("csum_flags", tokens, lnIdx, tkIdx); err != nil {
+		return nil, err
+	}
+	tkIdx++
+
+	// Seventeenth token should be the uint8 representing checksum flags (in hex).
+	csumFlags, err := parseUint8(tokens[tkIdx], "checksum flags", lnIdx, tkIdx)
+	if err != nil {
+		return nil, err
+	}
+	tkIdx++
+
+	// Create the operation with the specified arguments.
+	pdset, err := newPayloadSet(base, offset, len, reg, csumType, csumOff, csumFlags)
+	if err != nil {
+		return nil, &LogicError{lnIdx, tkIdx, err}
+	}
+
+	return pdset, nil
+}
+
 //
 // Interpreter Helper Functions.
 //
@@ -378,8 +519,15 @@ func checkOperationBrackets(tokens []string, lnIdx int) error {
 }
 
 // parseUint8 parses the uint8 which should be supposed from the given string.
+// Input starting with "0x" are parsed as base 16, otherwise assumes base 10.
 func parseUint8(regString string, supposed string, lnIdx int, tkIdx int) (uint8, error) {
-	v64, err := strconv.ParseUint(regString, 10, 8)
+	var v64 uint64
+	var err error
+	if len(regString) > 2 && regString[:2] == "0x" {
+		v64, err = strconv.ParseUint(regString[2:], 16, 8)
+	} else {
+		v64, err = strconv.ParseUint(regString, 10, 8)
+	}
 	if err != nil {
 		return 0, &SyntaxError{lnIdx, tkIdx, fmt.Sprintf("could not parse uint8 %s: '%s'", supposed, regString)}
 	}

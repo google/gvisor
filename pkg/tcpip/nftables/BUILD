@@ -13,6 +13,7 @@ go_library(
     ],
     deps = [
         "//pkg/abi/linux",
+        "//pkg/tcpip/checksum",
         "//pkg/tcpip/header",
         "//pkg/tcpip/stack",
     ],
