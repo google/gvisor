@@ -138,7 +138,11 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 				return nil, nil, err
 			}
 			sysDevicesPath := path.Join(idata.TestSysfsPathPrefix, sysDevicesMainPath)
-			sysDevicesSub, err := fs.mirrorSysDevicesDir(ctx, creds, sysDevicesPath, deviceToIOMMUGroup)
+			pciPaths, err := pciDevicePaths(sysDevicesPath)
+			if err != nil {
+				return nil, nil, err
+			}
+			sysDevicesSub, err := fs.mirrorSysDevicesDir(ctx, creds, sysDevicesPath, deviceToIOMMUGroup, pciPaths)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -146,7 +150,7 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 				devicesSub[dir] = sub
 			}
 
-			deviceDirs, err := fs.newDeviceClassDir(ctx, creds, []string{accelDevice, vfioDevice}, sysDevicesPath)
+			deviceDirs, err := fs.newDeviceClassDir(ctx, creds, []string{accelDevice, vfioDevice}, sysDevicesPath, pciPaths)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -154,7 +158,7 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 			for tpuDeviceType, symlinkDir := range deviceDirs {
 				classSub[tpuDeviceType] = fs.newDir(ctx, creds, defaultSysDirMode, symlinkDir)
 			}
-			pciDevicesSub, err := fs.newBusPCIDevicesDir(ctx, creds, sysDevicesPath)
+			pciDevicesSub, err := fs.newBusPCIDevicesDir(ctx, creds, pciPaths)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -162,7 +166,7 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 				"devices": fs.newDir(ctx, creds, defaultSysDirMode, pciDevicesSub),
 			})
 			iommuPath := path.Join(idata.TestSysfsPathPrefix, iommuGroupSysPath)
-			iommuGroups, err := fs.mirrorIOMMUGroups(ctx, creds, iommuPath)
+			iommuGroups, err := fs.mirrorIOMMUGroups(ctx, creds, iommuPath, pciPaths)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -321,7 +325,7 @@ func kernelDir(ctx context.Context, fs *filesystem, creds *auth.Credentials) map
 }
 
 // Recursively build out IOMMU directories from the host.
-func (fs *filesystem) mirrorIOMMUGroups(ctx context.Context, creds *auth.Credentials, dir string) (map[string]kernfs.Inode, error) {
+func (fs *filesystem) mirrorIOMMUGroups(ctx context.Context, creds *auth.Credentials, dir string, pciPaths map[string]string) (map[string]kernfs.Inode, error) {
 	subs := map[string]kernfs.Inode{}
 	dents, err := hostDirEntries(dir)
 	if err != nil {
@@ -340,7 +344,7 @@ func (fs *filesystem) mirrorIOMMUGroups(ctx context.Context, creds *auth.Credent
 		}
 		switch mode {
 		case unix.S_IFDIR:
-			contents, err := fs.mirrorIOMMUGroups(ctx, creds, absPath)
+			contents, err := fs.mirrorIOMMUGroups(ctx, creds, absPath, pciPaths)
 			if err != nil {
 				return nil, err
 			}
@@ -349,8 +353,7 @@ func (fs *filesystem) mirrorIOMMUGroups(ctx context.Context, creds *auth.Credent
 			subs[dent] = fs.newHostFile(ctx, creds, defaultSysMode, absPath)
 		case unix.S_IFLNK:
 			if pciDeviceRegex.MatchString(dent) {
-				pciBus := pciBusFromAddress(dent)
-				subs[dent] = kernfs.NewStaticSymlink(ctx, creds, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), fmt.Sprintf("../../../../devices/pci%s/%s", pciBus, dent))
+				subs[dent] = kernfs.NewStaticSymlink(ctx, creds, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), fmt.Sprintf("../../../../devices/%s", pciPaths[dent]))
 			}
 		}
 	}
