@@ -54,11 +54,19 @@ import (
 // TODO(b/345684870): Remove unused functions once initial implementation is
 // complete.
 
-// Defines the default capacity for the slices of hook functions and rules.
+// Defines general constants for the nftables interpreter.
 const (
-	registersByteSize = 64 // 4 16-byte registers or 16 4-byte registers.
-	nestedJumpLimit   = 16 // Maximum number of nested jumps allowed,
-	// corresponding to NFT_JUMP_STACK_SIZE in include/net/netfilter/nf_tables.h.
+
+	// Number of bytes for 4 16-byte registers or 16 4-byte registers.
+	registersByteSize = 64
+
+	// Maximum number of nested jumps allowed, corresponding to
+	// NFT_JUMP_STACK_SIZE in include/net/netfilter/nf_tables.h.
+	nestedJumpLimit = 16
+
+	// Limit (exclusive) for number of buts that can be shifted for non-boolean
+	// bitwise operations.
+	bitshiftLimit = 32
 )
 
 // AddressFamily describes the 6 address families supported by nftables.
@@ -570,6 +578,7 @@ var (
 	_ operation = (*comparison)(nil)
 	_ operation = (*payloadLoad)(nil)
 	_ operation = (*payloadSet)(nil)
+	_ operation = (*bitwise)(nil)
 )
 
 // immediate is an operation that sets the data in a register.
@@ -954,6 +963,180 @@ func (op payloadSet) evaluate(regs *registerSet, pkt *stack.PacketBuffer) {
 				// New Total = Old Total - Old Data + New Data (same as above)
 				transport.SetChecksum(^checksum.Combine(^transport.Checksum(), checksum.Combine(newDataCsum, ^oldDataCsum)))
 			}
+		}
+	}
+}
+
+// bitwiseOp is the bitwise operator for a bitwise operation.
+// Note: corresponds to enum nft_bitwise_ops from
+// include/uapi/linux/netfilter/nf_tables.h and uses the same constants.
+type bitwiseOp int
+
+// String for bitwiseOp returns the string representation of the bitwise
+// operator.
+func (bop bitwiseOp) String() string {
+	switch bop {
+	case linux.NFT_BITWISE_BOOL:
+		return "bitwise boolean"
+	case linux.NFT_BITWISE_LSHIFT:
+		return "bitwise <<"
+	case linux.NFT_BITWISE_RSHIFT:
+		return "bitwise >>"
+	default:
+		panic(fmt.Sprintf("invalid bitwise operator: %d", int(bop)))
+	}
+}
+
+// bitwise is an operation that performs bitwise math operations over data in
+// a given register, storing the result in a destination register.
+// Note: bitwise operations are not supported for the verdict register.
+type bitwise struct {
+	sreg  uint8        // Number of the source register.
+	dreg  uint8        // Number of the destination register.
+	bop   bitwiseOp    // Bitwise operator to use.
+	blen  uint8        // Number of bytes to apply bitwise operation to.
+	mask  registerData // Mask to apply bitwise & for boolean operations (before ^).
+	xor   registerData // Xor to apply bitwise ^ for boolean operations (after &).
+	shift uint32       // Shift to apply bitwise <</>> for non-boolean operations.
+
+	// Note: Technically, the linux kernel has defined bool, lshift, and rshift
+	// as the 3 types of bitwise operations. However, we have not been able to
+	// observe the lshift or rshift operations used by the nft binary. Thus, we
+	// have no way to test the interpretation of these operations. Maintaining
+	// consistency with the linux kernel, we have fully implemented lshift and
+	// rshift, and We will leave the code here in case we are able to observe
+	// their use in the future (perhaps outside the nft binary debug output).
+}
+
+// newBitwiseBool creates a new bitwise boolean operation.
+func newBitwiseBool(sreg, dreg uint8, mask, xor []byte) (*bitwise, error) {
+	if sreg == linux.NFT_REG_VERDICT || dreg == linux.NFT_REG_VERDICT {
+		return nil, fmt.Errorf("bitwise operation cannot use verdict register as source or destination")
+	}
+	blen := len(mask)
+	if blen != len(xor) {
+		return nil, fmt.Errorf("bitwise boolean operation mask and xor must be the same length")
+	}
+	if blen > 16 || (blen > 4 && (is4ByteRegister(sreg) || is4ByteRegister(dreg))) {
+		return nil, fmt.Errorf("bitwise operation length %d is too long for source register %d, destination register %d", blen, sreg, dreg)
+	}
+	return &bitwise{sreg: sreg, dreg: dreg, bop: linux.NFT_BITWISE_BOOL, blen: uint8(blen), mask: newBytesData(mask), xor: newBytesData(xor)}, nil
+}
+
+// newBitwiseShift creates a new bitwise shift operation.
+func newBitwiseShift(sreg, dreg, blen uint8, shift uint32, right bool) (*bitwise, error) {
+	if sreg == linux.NFT_REG_VERDICT || dreg == linux.NFT_REG_VERDICT {
+		return nil, fmt.Errorf("bitwise operation cannot use verdict register as source or destination")
+	}
+	if blen > 16 || (blen > 4 && (is4ByteRegister(sreg) || is4ByteRegister(dreg))) {
+		return nil, fmt.Errorf("bitwise operation length %d is too long for source register %d, destination register %d", blen, sreg, dreg)
+	}
+	if shift >= bitshiftLimit {
+		return nil, fmt.Errorf("bitwise operation shift %d must be less than %d", shift, bitshiftLimit)
+	}
+	bop := bitwiseOp(linux.NFT_BITWISE_LSHIFT)
+	if right {
+		bop = linux.NFT_BITWISE_RSHIFT
+	}
+	return &bitwise{sreg: sreg, dreg: dreg, blen: blen, bop: bop, shift: shift}, nil
+}
+
+// evaluateBitwiseBool performs the bitwise boolean operation on the source register
+// data and stores the result in the destination register.
+func evaluateBitwiseBool(sregBuf, dregBuf, mask, xor []byte) {
+	for i := 0; i < len(mask); i++ {
+		dregBuf[i] = (sregBuf[i] & mask[i]) ^ xor[i]
+	}
+}
+
+// evaluateBitwiseLshift performs the bitwise left shift operation on source
+// register in 4 byte chunks and stores the result in the destination register.
+func evaluateBitwiseLshift(sregBuf, dregBuf []byte, shift uint32) {
+	carry := uint32(0)
+
+	// Rounds down to nearest 4-byte multiple.
+	for start := (len(sregBuf) - 1) & ^3; start >= 0; start -= 4 {
+		// Extracts the 4-byte chunk from the source register, padding if necessary.
+		var chunk uint32
+		if start+4 <= len(sregBuf) {
+			chunk = binary.BigEndian.Uint32(sregBuf[start:])
+		} else {
+			var padded [4]byte
+			copy(padded[:], sregBuf[start:])
+			chunk = binary.BigEndian.Uint32(padded[:])
+		}
+
+		// Does left shift, adds the carry, and calculates the new carry.
+		res := (chunk << shift) | carry
+		carry = chunk >> (bitshiftLimit - shift)
+
+		// Stores the result in the destination register, using temporary buffer
+		// if necessary.
+		if start+4 <= len(dregBuf) {
+			binary.BigEndian.PutUint32(dregBuf[start:], res)
+		} else {
+			var padded [4]byte
+			binary.BigEndian.PutUint32(padded[:], res)
+			copy(dregBuf[start:], padded[:])
+		}
+	}
+}
+
+// evaluateBitwiseRshift performs the bitwise right shift operation on source
+// register in 4 byte chunks and stores the result in the destination register.
+func evaluateBitwiseRshift(sregBuf, dregBuf []byte, shift uint32) {
+	carry := uint32(0)
+
+	for start := 0; start < len(sregBuf); start += 4 {
+		// Extracts the 4-byte chunk from the source register, padding if necessary.
+		var chunk uint32
+		if start+4 <= len(sregBuf) {
+			chunk = binary.BigEndian.Uint32(sregBuf[start:])
+		} else {
+			var padded [4]byte
+			copy(padded[:], sregBuf[start:])
+			chunk = binary.BigEndian.Uint32(padded[:])
+		}
+
+		// Does right shift, adds the carry, and calculates the new carry.
+		res := carry | (chunk >> shift)
+		carry = chunk << (bitshiftLimit - shift)
+
+		// Stores the result in the destination register, using temporary buffer
+		// if necessary.
+		if start+4 <= len(dregBuf) {
+			binary.BigEndian.PutUint32(dregBuf[start:], res)
+		} else {
+			var padded [4]byte
+			binary.BigEndian.PutUint32(padded[:], res)
+			copy(dregBuf[start:], padded[:])
+		}
+	}
+}
+
+// evaluate for bitwise performs the bitwise operation on the source register
+// data and stores the result in the destination register.
+func (op bitwise) evaluate(regs *registerSet, pkt *stack.PacketBuffer) {
+	// Gets the specified buffers of the source and destination registers.
+	sregBuf := getRegisterBuffer(regs, op.sreg)[:op.blen]
+	dregBuf := getRegisterBuffer(regs, op.dreg)[:op.blen]
+
+	if op.bop == linux.NFT_BITWISE_BOOL {
+		mask, ok := op.mask.(bytesData)
+		if !ok {
+			panic("bitwise bool mask data is not BytesData")
+		}
+		xor, ok := op.xor.(bytesData)
+		if !ok {
+			panic("bitwise bool xor data is not BytesData")
+		}
+		evaluateBitwiseBool(sregBuf, dregBuf, mask.data, xor.data)
+		return
+	} else {
+		if op.bop == linux.NFT_BITWISE_LSHIFT {
+			evaluateBitwiseLshift(sregBuf, dregBuf, op.shift)
+		} else {
+			evaluateBitwiseRshift(sregBuf, dregBuf, op.shift)
 		}
 	}
 }

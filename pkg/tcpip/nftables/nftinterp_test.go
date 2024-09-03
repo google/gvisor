@@ -664,6 +664,113 @@ func checkPayloadSetOp(tname string, expected operation, actual operation) error
 	return nil
 }
 
+// TestInterpretBitwiseOps tests interpretation of bitwise operations.
+// Note: Only tests bitwise bool operations for now because interpretation of
+// non-boolean operations is not supported from the nft binary debug output.
+func TestInterpretBitwiseOps(t *testing.T) {
+	for _, test := range []interpretOperationTestAction{
+		// Invalid interpretations.
+		{
+			tname:    "verdict register with bitwise bool",
+			opStr:    "[ bitwise reg 0 = ( reg 1 & 0x000003ff ) ^ 0x0000b000 ]",
+			expected: nil,
+		},
+		{
+			tname:    "4-byte register with > 4-byte data for bitwise bool",
+			opStr:    "[ bitwise reg 1 = ( reg 9 & 0x000003ff 0x09040302 ) ^ 0x0000b000 0x11ff11ff ]",
+			expected: nil,
+		},
+		{
+			tname:    "mismatch mask and xor lengths for bitwise bool",
+			opStr:    "[ bitwise reg 1 = ( reg 1 & 0x000003ff ) ^ 0x0000b000 0x11ff11ff ]",
+			expected: nil,
+		},
+		// cmd: add rule ip filter input ip dscp set 0x2c
+		{
+			tname:    "same 4-byte register with 4-byte data for bitwise bool",
+			opStr:    "[ bitwise reg 10 = ( reg 10 & 0x000003ff ) ^ 0x0000b000 ]",
+			expected: mustCreateBitwiseBool(t, linux.NFT_REG32_02, linux.NFT_REG32_02, []byte{0xff, 0x03, 0x00, 0x00}, []byte{0x00, 0xb0, 0x00, 0x00}),
+		},
+		{
+			tname:    "dif 4-byte registers with 4-byte data for bitwise bool",
+			opStr:    "[ bitwise reg 8 = ( reg 9 & 0x000003ff ) ^ 0x0000b000 ]",
+			expected: mustCreateBitwiseBool(t, linux.NFT_REG32_01, linux.NFT_REG32_00, []byte{0xff, 0x03, 0x00, 0x00}, []byte{0x00, 0xb0, 0x00, 0x00}),
+		},
+		// cmd: add rule ip filter input ip saddr and 55 or 0xffff0000 == 34
+		{
+			tname:    "same 16-byte register with 4-byte data for bitwise bool",
+			opStr:    "[ bitwise reg 1 = ( reg 1 & 0x37000000 ) ^ 0x0000ffff ]",
+			expected: mustCreateBitwiseBool(t, linux.NFT_REG_1, linux.NFT_REG_1, []byte{0x00, 0x00, 0x00, 0x37}, []byte{0xff, 0xff, 0x00, 0x00}),
+		},
+		{
+			tname:    "dif 16-byte registers with 4-byte data for bitwise bool",
+			opStr:    "[ bitwise reg 4 = ( reg 3 & 0x37000000 ) ^ 0x0000ffff ]",
+			expected: mustCreateBitwiseBool(t, linux.NFT_REG_3, linux.NFT_REG_4, []byte{0x00, 0x00, 0x00, 0x37}, []byte{0xff, 0xff, 0x00, 0x00}),
+		},
+		// cmd: add rule ip filter input ip saddr and 0xff0230ff == 5
+		{
+			tname:    "4- and 16-byte registers with 4-byte data for bitwise bool",
+			opStr:    "[ bitwise reg 4 = ( reg 14 & 0xff3002ff ) ^ 0x00000000 ]",
+			expected: mustCreateBitwiseBool(t, linux.NFT_REG32_06, linux.NFT_REG_4, []byte{0xff, 0x02, 0x30, 0xff}, []byte{0x00, 0x00, 0x00, 0x00}),
+		},
+		{
+			tname:    "16- and 4-byte registers with 4-byte data for bitwise bool",
+			opStr:    "[ bitwise reg 14 = ( reg 1 & 0xff3002ff ) ^ 0x00000000 ]",
+			expected: mustCreateBitwiseBool(t, linux.NFT_REG_1, linux.NFT_REG32_06, []byte{0xff, 0x02, 0x30, 0xff}, []byte{0x00, 0x00, 0x00, 0x00}),
+		},
+		// More than 4 bytes of data.
+		{
+			tname:    "8-byte data for bitwise bool",
+			opStr:    "[ bitwise reg 1 = ( reg 1 & 0x00000000 0x00000000 ) ^ 0x00000164 0x00000164 ]",
+			expected: mustCreateBitwiseBool(t, linux.NFT_REG_1, linux.NFT_REG_1, []byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}, []byte{0x64, 0x01, 0x00, 0x00, 0x64, 0x01, 0x00, 0x00}),
+		},
+		{
+			tname:    "12-byte data for bitwise bool",
+			opStr:    "[ bitwise reg 4 = ( reg 2 & 0x0302010a 0x00000000 0x12345678 ) ^ 0x0a000120 0x00000f13 0xc0090000 ]",
+			expected: mustCreateBitwiseBool(t, linux.NFT_REG_2, linux.NFT_REG_4, []byte{0x0a, 0x01, 0x02, 0x03, 0x00, 0x00, 0x00, 0x00, 0x78, 0x56, 0x34, 0x12}, []byte{0x20, 0x01, 0x00, 0x0a, 0x13, 0x0f, 0x00, 0x00, 0x00, 0x00, 0x09, 0xc0}),
+		},
+		{
+			tname:    "16-byte data for bitwise bool",
+			opStr:    "[ bitwise reg 1 = ( reg 3 & 0xe8030000 0x00000f13 0xc0090000 0x0b136a87 ) ^ 0x0a000120 0x00000f13 0xc0090000 0x00000000 ]",
+			expected: mustCreateBitwiseBool(t, linux.NFT_REG_3, linux.NFT_REG_1, []byte{0x00, 0x00, 0x03, 0xe8, 0x13, 0x0f, 0x00, 0x00, 0x00, 0x00, 0x09, 0xc0, 0x87, 0x6a, 0x13, 0x0b}, []byte{0x20, 0x01, 0x00, 0x0a, 0x13, 0x0f, 0x00, 0x00, 0x00, 0x00, 0x09, 0xc0, 0x00, 0x00, 0x00, 0x00}),
+		},
+	} {
+		t.Run(test.tname, func(t *testing.T) { checkOp(t, test, checkBitwiseOp) })
+	}
+}
+
+// checkBitwiseOp checks that the given operation is a bitwise operation and
+// that it matches the expected bitwise operation.
+func checkBitwiseOp(tname string, expected operation, actual operation) error {
+	expectedBit := expected.(*bitwise)
+	bit, ok := actual.(*bitwise)
+	if !ok {
+		return fmt.Errorf("expected operation type to be BitwiseBool for %s, got %T", tname, actual)
+	}
+	if bit.sreg != expectedBit.sreg {
+		return fmt.Errorf("expected source register to be %d for %s, got %d", expectedBit.sreg, tname, bit.sreg)
+	}
+	if bit.dreg != expectedBit.dreg {
+		return fmt.Errorf("expected destination register to be %d for %s, got %d", expectedBit.dreg, tname, bit.dreg)
+	}
+	if bit.bop != expectedBit.bop {
+		return fmt.Errorf("expected bitwise operation to be %d for %s, got %d", expectedBit.bop, tname, bit.bop)
+	}
+	if bit.blen != expectedBit.blen {
+		return fmt.Errorf("expected bitwise length to be %d for %s, got %d", expectedBit.blen, tname, bit.blen)
+	}
+	if !bit.mask.equal(expectedBit.mask) {
+		return fmt.Errorf("expected bitwise mask to be %v for %s, got %v", expectedBit.mask, tname, bit.mask)
+	}
+	if !bit.xor.equal(expectedBit.xor) {
+		return fmt.Errorf("expected bitwise xor to be %v for %s, got %v", expectedBit.xor, tname, bit.xor)
+	}
+	if bit.shift != expectedBit.shift {
+		return fmt.Errorf("expected bitwise shift to be %d for %s, got %d", expectedBit.shift, tname, bit.shift)
+	}
+	return nil
+}
+
 // TestInterpretRule tests the interpretation of basic and general rules as a
 // list of operations.
 func TestInterpretRule(t *testing.T) {

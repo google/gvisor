@@ -147,6 +147,10 @@ func InterpretOperation(line string, lnIdx int) (operation, error) {
 			return InterpretPayloadSet(line, lnIdx)
 		}
 		return nil, &SyntaxError{lnIdx, 2, fmt.Sprintf("unrecognized operation type: payload %s", tokens[2])}
+	case "bitwise":
+		// Assumes the bitwise operation is a boolean because interpretation of
+		// non-boolean operations is not supported from the nft binary debug output.
+		return InterpretBitwiseBool(line, lnIdx)
 	default:
 		return nil, &SyntaxError{lnIdx, 1, fmt.Sprintf("unrecognized operation type: %s", tokens[1])}
 	}
@@ -500,6 +504,112 @@ func InterpretPayloadSet(line string, lnIdx int) (operation, error) {
 	}
 
 	return pdset, nil
+}
+
+// InterpretBitwiseBool creates a new Comparison operation from the given string.
+func InterpretBitwiseBool(line string, lnIdx int) (operation, error) {
+	tokens := strings.Fields(line)
+
+	// Requires at least 14 tokens:
+	// 		"[", "bitwise", "reg", dreg index, "=", "(", "reg", sreg index, "&", mask value, ")", "^", xor value, "]".
+	if len(tokens) < 14 {
+		return nil, &SyntaxError{lnIdx, 0, fmt.Sprintf("incorrect number of tokens for bitwise boolean operation, should be at least 14, got %d", len(tokens))}
+	}
+
+	if err := checkOperationBrackets(tokens, lnIdx); err != nil {
+		return nil, err
+	}
+
+	tkIdx := 1
+
+	// First token should be "bitwise".
+	if err := consumeToken("bitwise", tokens, lnIdx, tkIdx); err != nil {
+		return nil, err
+	}
+	tkIdx++
+
+	// Second token should be "reg".
+	if err := consumeToken("reg", tokens, lnIdx, tkIdx); err != nil {
+		return nil, err
+	}
+	tkIdx++
+
+	// Third token should be the uint8 representing destination register index.
+	dreg, err := parseRegister(tokens[tkIdx], lnIdx, tkIdx)
+	if err != nil {
+		return nil, err
+	}
+	tkIdx++
+
+	// Fourth token should be "=".
+	if err := consumeToken("=", tokens, lnIdx, tkIdx); err != nil {
+		return nil, err
+	}
+	tkIdx++
+
+	// Fifth token should be "(".
+	if err := consumeToken("(", tokens, lnIdx, tkIdx); err != nil {
+		return nil, err
+	}
+	tkIdx++
+
+	// Sixth token should be "reg".
+	if err := consumeToken("reg", tokens, lnIdx, tkIdx); err != nil {
+		return nil, err
+	}
+	tkIdx++
+
+	// Seventh token should be the uint8 representing source register index.
+	sreg, err := parseRegister(tokens[tkIdx], lnIdx, tkIdx)
+	if err != nil {
+		return nil, err
+	}
+	tkIdx++
+
+	// Eighth token should be "&".
+	if err := consumeToken("&", tokens, lnIdx, tkIdx); err != nil {
+		return nil, err
+	}
+	tkIdx++
+
+	// Ninth token should be the bytesData representing the mask value.
+	nextIdx, mask, err := parseHexData(tokens, lnIdx, tkIdx)
+	if err != nil {
+		return nil, err
+	}
+	tkIdx = nextIdx
+
+	// Tenth token should be ")".
+	if err := consumeToken(")", tokens, lnIdx, tkIdx); err != nil {
+		return nil, err
+	}
+	tkIdx++
+
+	// Eleventh token should be "^".
+	if err := consumeToken("^", tokens, lnIdx, tkIdx); err != nil {
+		return nil, err
+	}
+	tkIdx++
+
+	// Twelfth token should be the bytesData representing the xor value.
+	nextIdx, xor, err := parseHexData(tokens, lnIdx, tkIdx)
+	if err != nil {
+		return nil, err
+	}
+	tkIdx = nextIdx
+
+	// Done parsing tokens.
+	if tkIdx != len(tokens)-1 {
+		return nil, &SyntaxError{lnIdx, tkIdx, "unexpected token after bitwise boolean operation"}
+	}
+
+	// Create the operation with the specified arguments.
+	bitwiseBool, err := newBitwiseBool(sreg, dreg, mask, xor)
+	if err != nil {
+		return nil, &LogicError{lnIdx, tkIdx, err}
+	}
+
+	return bitwiseBool, nil
 }
 
 //

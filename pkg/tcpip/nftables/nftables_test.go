@@ -1906,6 +1906,178 @@ func TestEvaluatePayloadSet(t *testing.T) {
 	}
 }
 
+// TestEvaluateBitwise tests that the Bitwise operation correctly performs the
+// appropriate bitwise operation on the source register data and stores the
+// result in the destination register.
+// Note: Relies on expected behavior of the Immediate and Comparison operation.
+func TestEvaluateBitwise(t *testing.T) {
+	for _, test := range []struct {
+		tname string
+		op1   operation // Immediate operation to set source register.
+		op2   operation // Bitwise operation to test.
+		op3   operation // Comparison operation to validate result.
+	}{
+		// Bitwise bool operations.
+		// cmd: add rule ip filter input ip saddr and _ or _ == 105
+		{
+			tname: "same 4-byte register with 4-byte data for bitwise bool",
+			op1:   mustCreateImmediate(t, linux.NFT_REG32_01, newBytesData(numToBE(4783, 4))),
+			op2:   mustCreateBitwiseBool(t, linux.NFT_REG32_01, linux.NFT_REG32_01, numToBE(55, 4), numToBE(78, 4)),
+			op3:   mustCreateComparison(t, linux.NFT_REG32_01, linux.NFT_CMP_EQ, numToBE((4783&55)^78, 4)),
+		},
+		{
+			tname: "same 16-byte register with 4-byte data for bitwise bool",
+			op1:   mustCreateImmediate(t, linux.NFT_REG_1, newBytesData(numToBE(4783, 4))),
+			op2:   mustCreateBitwiseBool(t, linux.NFT_REG_1, linux.NFT_REG_1, numToBE(55, 4), numToBE(78, 4)),
+			op3:   mustCreateComparison(t, linux.NFT_REG_1, linux.NFT_CMP_EQ, numToBE((4783&55)^78, 4)),
+		},
+		// cmd: add rule ip filter input ip saddr and 0x11111111 == 285217024
+		{
+			tname: "dif 4-byte registers with 4-byte data for bitwise bool",
+			op1:   mustCreateImmediate(t, linux.NFT_REG32_01, newBytesData(numToBE(400700800, 4))),
+			op2:   mustCreateBitwiseBool(t, linux.NFT_REG32_01, linux.NFT_REG32_02, numToBE(0x11111111, 4), numToBE(0, 4)),
+			op3:   mustCreateComparison(t, linux.NFT_REG32_02, linux.NFT_CMP_EQ, numToBE(400700800&0x11111111, 4)),
+		},
+		{
+			tname: "dif 16-byte registers with 4-byte data for bitwise bool",
+			op1:   mustCreateImmediate(t, linux.NFT_REG_1, newBytesData(numToBE(400700800, 4))),
+			op2:   mustCreateBitwiseBool(t, linux.NFT_REG_1, linux.NFT_REG_2, numToBE(0x11111111, 4), numToBE(0, 4)),
+			op3:   mustCreateComparison(t, linux.NFT_REG_2, linux.NFT_CMP_EQ, numToBE(400700800&0x11111111, 4)),
+		},
+		// add rule ip filter input ip saddr or 0xff0230ff == 267583535
+		{
+			tname: "4- and 16-byte registers with 4-byte data for bitwise bool",
+			op1:   mustCreateImmediate(t, linux.NFT_REG32_10, newBytesData(numToBE(0, 4))),
+			op2:   mustCreateBitwiseBool(t, linux.NFT_REG32_10, linux.NFT_REG_2, numToBE(0x00cffd00, 4), numToBE(0xff3002ff, 4)),
+			op3:   mustCreateComparison(t, linux.NFT_REG_2, linux.NFT_CMP_EQ, numToBE((0&0x00cffd00)^0xff3002ff, 4)),
+		},
+		{
+			tname: "16- and 4-byte registers with 4-byte data for bitwise bool",
+			op1:   mustCreateImmediate(t, linux.NFT_REG_3, newBytesData(numToBE(0, 4))),
+			op2:   mustCreateBitwiseBool(t, linux.NFT_REG_3, linux.NFT_REG32_05, numToBE(0x00cffd00, 4), numToBE(0xff3002ff, 4)),
+			op3:   mustCreateComparison(t, linux.NFT_REG32_05, linux.NFT_CMP_EQ, numToBE((0&0x00cffd00)^0xff3002ff, 4)),
+		},
+		{
+			tname: "8-byte data for bitwise bool",
+			op1:   mustCreateImmediate(t, linux.NFT_REG_1, newBytesData(numToBE(0x12345678, 8))),
+			op2:   mustCreateBitwiseBool(t, linux.NFT_REG_1, linux.NFT_REG_1, numToBE(0x00cffd00, 8), numToBE(0xff3002ff, 8)),
+			op3:   mustCreateComparison(t, linux.NFT_REG_1, linux.NFT_CMP_EQ, numToBE((0x12345678&0x00cffd00)^0xff3002ff, 8)),
+		},
+		{
+			tname: "16-byte data for bitwise bool",
+			op1:   mustCreateImmediate(t, linux.NFT_REG_4, newBytesData([]byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff})),
+			op2:   mustCreateBitwiseBool(t, linux.NFT_REG_4, linux.NFT_REG_2, []byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff}, []byte{0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xfe}),
+			op3:   mustCreateComparison(t, linux.NFT_REG_2, linux.NFT_CMP_EQ, []byte{0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01}),
+		},
+		// Bitwise shift operations.
+		// No nft binary commands were observed that directly used shift operations.
+		{
+			tname: "0 shift left for bitwise lshift",
+			op1:   mustCreateImmediate(t, linux.NFT_REG32_01, newBytesData(numToBE(4783, 4))),
+			op2:   mustCreateBitwiseShift(t, linux.NFT_REG32_01, linux.NFT_REG32_01, 4, 0, false),
+			op3:   mustCreateComparison(t, linux.NFT_REG32_01, linux.NFT_CMP_EQ, numToBE(4783, 4)),
+		},
+		{
+			tname: "0 shift right for bitwise rshift",
+			op1:   mustCreateImmediate(t, linux.NFT_REG_1, newBytesData(numToBE(4783, 4))),
+			op2:   mustCreateBitwiseShift(t, linux.NFT_REG_1, linux.NFT_REG_1, 4, 0, true),
+			op3:   mustCreateComparison(t, linux.NFT_REG_1, linux.NFT_CMP_EQ, numToBE(4783, 4)),
+		},
+		{
+			tname: "1-bit shift left for bitwise lshift",
+			op1:   mustCreateImmediate(t, linux.NFT_REG_4, newBytesData(numToBE(4782, 4))),
+			op2:   mustCreateBitwiseShift(t, linux.NFT_REG_4, linux.NFT_REG_4, 4, 1, false),
+			op3:   mustCreateComparison(t, linux.NFT_REG_4, linux.NFT_CMP_EQ, numToBE(4782<<1, 4)),
+		},
+		{
+			tname: "1-bit shift right for bitwise rshift",
+			op1:   mustCreateImmediate(t, linux.NFT_REG32_06, newBytesData(numToBE(4782, 4))),
+			op2:   mustCreateBitwiseShift(t, linux.NFT_REG32_06, linux.NFT_REG32_06, 4, 1, true),
+			op3:   mustCreateComparison(t, linux.NFT_REG32_06, linux.NFT_CMP_EQ, numToBE(4782>>1, 4)),
+		},
+		{
+			tname: "8-bit shift left for bitwise lshift",
+			op1:   mustCreateImmediate(t, linux.NFT_REG_4, newBytesData(numToBE(4782, 4))),
+			op2:   mustCreateBitwiseShift(t, linux.NFT_REG_4, linux.NFT_REG_4, 4, 8, false),
+			op3:   mustCreateComparison(t, linux.NFT_REG_4, linux.NFT_CMP_EQ, numToBE(4782<<8, 4)),
+		},
+		{
+			tname: "8-bit shift right for bitwise rshift",
+			op1:   mustCreateImmediate(t, linux.NFT_REG32_06, newBytesData(numToBE(4782, 4))),
+			op2:   mustCreateBitwiseShift(t, linux.NFT_REG32_06, linux.NFT_REG32_06, 4, 8, true),
+			op3:   mustCreateComparison(t, linux.NFT_REG32_06, linux.NFT_CMP_EQ, numToBE(4782>>8, 4)),
+		},
+		{
+			tname: "16-bit shift left for bitwise lshift",
+			op1:   mustCreateImmediate(t, linux.NFT_REG_4, newBytesData(numToBE(0x45678910, 8))),
+			op2:   mustCreateBitwiseShift(t, linux.NFT_REG_4, linux.NFT_REG_4, 8, 16, false),
+			op3:   mustCreateComparison(t, linux.NFT_REG_4, linux.NFT_CMP_EQ, numToBE(0x45678910<<16, 8)),
+		},
+		{
+			tname: "16-bit shift right for bitwise rshift",
+			op1:   mustCreateImmediate(t, linux.NFT_REG32_06, newBytesData(numToBE(0x45678910, 4))),
+			op2:   mustCreateBitwiseShift(t, linux.NFT_REG32_06, linux.NFT_REG32_06, 4, 16, true),
+			op3:   mustCreateComparison(t, linux.NFT_REG32_06, linux.NFT_CMP_EQ, numToBE(0x45678910>>16, 4)),
+		},
+		{
+			tname: "max-bit shift left for bitwise lshift",
+			op1:   mustCreateImmediate(t, linux.NFT_REG32_03, newBytesData(numToBE(0x45678910, 4))),
+			op2:   mustCreateBitwiseShift(t, linux.NFT_REG32_03, linux.NFT_REG_2, 4, bitshiftLimit-1, false),
+			op3:   mustCreateComparison(t, linux.NFT_REG_2, linux.NFT_CMP_EQ, numToBE(0x45678910<<(bitshiftLimit-1), 4)),
+		},
+		{
+			tname: "max-bit shift right for bitwise rshift",
+			op1:   mustCreateImmediate(t, linux.NFT_REG_3, newBytesData(numToBE(0x45678910, 8))),
+			op2:   mustCreateBitwiseShift(t, linux.NFT_REG_3, linux.NFT_REG_2, 8, bitshiftLimit-1, true),
+			op3:   mustCreateComparison(t, linux.NFT_REG_2, linux.NFT_CMP_EQ, numToBE(0x45678910>>(bitshiftLimit-1), 8)),
+		},
+	} {
+		t.Run(test.tname, func(t *testing.T) {
+			// Sets up an NFTables object with a single table, chain, and rule.
+			nf := NewNFTables()
+			tab, err := nf.AddTable(arbitraryFamily, "test", "test table", false)
+			if err != nil {
+				t.Fatalf("unexpected error for AddTable: %v", err)
+			}
+			bc, err := tab.AddChain("base_chain", nil, "test chain", false)
+			if err != nil {
+				t.Fatalf("unexpected error for AddChain: %v", err)
+			}
+			bc.SetBaseChainInfo(arbitraryInfoPolicyAccept)
+			rule := &Rule{}
+
+			// Adds testing operations.
+			if test.op1 != nil {
+				rule.addOperation(test.op1)
+			}
+			if test.op2 != nil {
+				rule.addOperation(test.op2)
+			}
+			if test.op3 != nil {
+				rule.addOperation(test.op3)
+			}
+
+			// Adds drop operation. Will be final verdict if comparison is true.
+			rule.addOperation(mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NF_DROP)})))
+
+			// Registers the rule to the base chain.
+			if err := bc.RegisterRule(rule, -1); err != nil {
+				t.Fatalf("unexpected error for RegisterRule: %v", err)
+			}
+
+			// Runs evaluation and checks verdict.
+			pkt := makeArbitraryPacket(arbitraryReservedHeaderBytes)
+			v, err := nf.EvaluateHook(arbitraryFamily, arbitraryHook, pkt)
+			if err != nil {
+				t.Fatalf("unexpected error for EvaluateHook: %v", err)
+			}
+			if v.Code != VC(linux.NF_DROP) {
+				t.Fatalf("expected verdict Drop for true comparison, got %v", v)
+			}
+		})
+	}
+}
+
 // TestLoopCheckOnRegisterAndUnregister tests the loop checking and accompanying
 // logic on registering and unregistering rules.
 func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
@@ -2536,4 +2708,22 @@ func mustCreatePayloadSet(t *testing.T, base payloadBase, offset uint8, len uint
 		t.Fatalf("failed to create payload set: %v", err)
 	}
 	return pdset
+}
+
+// mustCreateBitwiseBool wraps the newBitwiseBool function for brevity.
+func mustCreateBitwiseBool(t *testing.T, sreg, dreg uint8, mask, xor []byte) *bitwise {
+	bit, err := newBitwiseBool(sreg, dreg, mask, xor)
+	if err != nil {
+		t.Fatalf("failed to create bitwise bool: %v", err)
+	}
+	return bit
+}
+
+// mustCreateBitwiseShift wraps the newBitwiseShift function for brevity.
+func mustCreateBitwiseShift(t *testing.T, sreg, dreg, blen uint8, shift uint32, right bool) *bitwise {
+	bit, err := newBitwiseShift(sreg, dreg, blen, shift, right)
+	if err != nil {
+		t.Fatalf("failed to create bitwise shift: %v", err)
+	}
+	return bit
 }
