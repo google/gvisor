@@ -68,6 +68,17 @@ const (
 	DirectionRecv
 )
 
+func (dr Direction) String() string {
+	switch dr {
+	case DirectionSend:
+		return "send"
+	case DirectionRecv:
+		return "recv"
+	default:
+		panic(fmt.Sprintf("invalid Direction %d", dr))
+	}
+}
+
 // New creates a new sniffer link-layer endpoint. It wraps around another
 // endpoint and logs packets and they traverse the endpoint.
 func New(lower stack.LinkEndpoint) *Endpoint {
@@ -137,20 +148,26 @@ func NewWithWriter(lower stack.LinkEndpoint, writer io.Writer, snapLen uint32) (
 // called by the link-layer endpoint being wrapped when a packet arrives, and
 // logs the packet before forwarding to the actual dispatcher.
 func (e *Endpoint) DeliverNetworkPacket(protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
-	e.dumpPacket(DirectionRecv, protocol, pkt)
+	e.DumpPacket(DirectionRecv, protocol, pkt, nil)
 	e.Endpoint.DeliverNetworkPacket(protocol, pkt)
 }
 
-func (e *Endpoint) dumpPacket(dir Direction, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
+// DumpPacket logs a packet, depending on configuration, to stderr and/or a
+// pcap file. ts is an optional timestamp for the packet.
+func (e *Endpoint) DumpPacket(dir Direction, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer, ts *time.Time) {
 	writer := e.writer
 	if LogPackets.Load() == 1 {
 		LogPacket(e.logPrefix, dir, protocol, pkt)
 	}
 	if writer != nil && LogPacketsToPCAP.Load() == 1 {
 		packet := pcapPacket{
-			timestamp:     time.Now(),
 			packet:        pkt,
 			maxCaptureLen: int(e.maxPCAPLen),
+		}
+		if ts == nil {
+			packet.timestamp = time.Now()
+		} else {
+			packet.timestamp = *ts
 		}
 		b, err := packet.MarshalBinary()
 		if err != nil {
@@ -167,7 +184,7 @@ func (e *Endpoint) dumpPacket(dir Direction, protocol tcpip.NetworkProtocolNumbe
 // forwards the request to the lower endpoint.
 func (e *Endpoint) WritePackets(pkts stack.PacketBufferList) (int, tcpip.Error) {
 	for _, pkt := range pkts.AsSlice() {
-		e.dumpPacket(DirectionSend, pkt.NetworkProtocolNumber, pkt)
+		e.DumpPacket(DirectionSend, pkt.NetworkProtocolNumber, pkt, nil)
 	}
 	return e.Endpoint.WritePackets(pkts)
 }
@@ -182,16 +199,6 @@ func LogPacket(prefix string, dir Direction, protocol tcpip.NetworkProtocolNumbe
 	var id uint32
 	var fragmentOffset uint16
 	var moreFragments bool
-
-	var directionPrefix string
-	switch dir {
-	case DirectionSend:
-		directionPrefix = "send"
-	case DirectionRecv:
-		directionPrefix = "recv"
-	default:
-		panic(fmt.Sprintf("unrecognized direction: %d", dir))
-	}
 
 	clone := trimmedClone(pkt)
 	defer clone.DecRef()
@@ -234,14 +241,14 @@ func LogPacket(prefix string, dir Direction, protocol tcpip.NetworkProtocolNumbe
 		log.Infof(
 			"%s%s arp %s (%s) -> %s (%s) valid:%t",
 			prefix,
-			directionPrefix,
+			dir,
 			tcpip.AddrFromSlice(arp.ProtocolAddressSender()), tcpip.LinkAddress(arp.HardwareAddressSender()),
 			tcpip.AddrFromSlice(arp.ProtocolAddressTarget()), tcpip.LinkAddress(arp.HardwareAddressTarget()),
 			arp.IsValid(),
 		)
 		return
 	default:
-		log.Infof("%s%s unknown network protocol: %d", prefix, directionPrefix, protocol)
+		log.Infof("%s%s unknown network protocol: %d", prefix, dir, protocol)
 		return
 	}
 
@@ -285,7 +292,7 @@ func LogPacket(prefix string, dir Direction, protocol tcpip.NetworkProtocolNumbe
 				icmpType = "info reply"
 			}
 		}
-		log.Infof("%s%s %s %s -> %s %s len:%d id:%04x code:%d", prefix, directionPrefix, transName, src, dst, icmpType, size, id, icmp.Code())
+		log.Infof("%s%s %s %s -> %s %s len:%d id:%04x code:%d", prefix, dir, transName, src, dst, icmpType, size, id, icmp.Code())
 		return
 
 	case header.ICMPv6ProtocolNumber:
@@ -320,7 +327,7 @@ func LogPacket(prefix string, dir Direction, protocol tcpip.NetworkProtocolNumbe
 		case header.ICMPv6RedirectMsg:
 			icmpType = "redirect message"
 		}
-		log.Infof("%s%s %s %s -> %s %s len:%d id:%04x code:%d", prefix, directionPrefix, transName, src, dst, icmpType, size, id, icmp.Code())
+		log.Infof("%s%s %s %s -> %s %s len:%d id:%04x code:%d", prefix, dir, transName, src, dst, icmpType, size, id, icmp.Code())
 		return
 
 	case header.UDPProtocolNumber:
@@ -361,24 +368,24 @@ func LogPacket(prefix string, dir Direction, protocol tcpip.NetworkProtocolNumbe
 
 			// Initialize the TCP flags.
 			flags := tcp.Flags()
-			details = fmt.Sprintf("flags: %s seqnum: %d ack: %d win: %d xsum:0x%x", flags, tcp.SequenceNumber(), tcp.AckNumber(), tcp.WindowSize(), tcp.Checksum())
+			details = fmt.Sprintf("flags:%s seqnum:%d ack:%d win:%d xsum:0x%x", flags, tcp.SequenceNumber(), tcp.AckNumber(), tcp.WindowSize(), tcp.Checksum())
 			if flags&header.TCPFlagSyn != 0 {
-				details += fmt.Sprintf(" options: %+v", header.ParseSynOptions(tcp.Options(), flags&header.TCPFlagAck != 0))
+				details += fmt.Sprintf(" options:%+v", header.ParseSynOptions(tcp.Options(), flags&header.TCPFlagAck != 0))
 			} else {
-				details += fmt.Sprintf(" options: %+v", tcp.ParsedOptions())
+				details += fmt.Sprintf(" options:%+v", tcp.ParsedOptions())
 			}
 		}
 
 	default:
-		log.Infof("%s%s %s -> %s unknown transport protocol: %d", prefix, directionPrefix, src, dst, transProto)
+		log.Infof("%s%s %s -> %s unknown transport protocol: %d", prefix, dir, src, dst, transProto)
 		return
 	}
 
 	if pkt.GSOOptions.Type != stack.GSONone {
-		details += fmt.Sprintf(" gso: %#v", pkt.GSOOptions)
+		details += fmt.Sprintf(" gso:%#v", pkt.GSOOptions)
 	}
 
-	log.Infof("%s%s %s %s:%d -> %s:%d len:%d id:%04x %s", prefix, directionPrefix, transName, src, srcPort, dst, dstPort, size, id, details)
+	log.Infof("%s%s %s %s:%d -> %s:%d len:%d id:0x%04x %s", prefix, dir, transName, src, srcPort, dst, dstPort, size, id, details)
 }
 
 // trimmedClone clones the packet buffer to not modify the original. It trims
