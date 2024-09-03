@@ -22,6 +22,9 @@ import (
 
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/mount"
+
+	// Needed for go:embed
+	_ "embed"
 )
 
 // Flags.
@@ -29,15 +32,58 @@ var (
 	setCOSGPU = flag.Bool("cos-gpu", false, "set to configure GPU settings for COS, as opposed to Docker")
 )
 
-// AllGPUCapabilities is the environment variable that enables all NVIDIA GPU
-// capabilities within a container.
-const AllGPUCapabilities = "NVIDIA_DRIVER_CAPABILITIES=all"
+//go:embed run_sniffer_copy
+var runSnifferBinary []byte
+
+const (
+	// ioctlSnifferMountPath is the in-container path at which the ioctl sniffer is mounted.
+	ioctlSnifferMountPath = "/ioctl_sniffer"
+)
+
+const (
+	// AllGPUCapabilities is the environment variable that enables all NVIDIA
+	// GPU capabilities within a container.
+	AllGPUCapabilities = "NVIDIA_DRIVER_CAPABILITIES=all"
+
+	// DefaultGPUCapabilities is the environment variable that enables default
+	// NVIDIA GPU capabilities within a container.
+	DefaultGPUCapabilities = "NVIDIA_DRIVER_CAPABILITIES=compute,utility"
+)
 
 // GPURunOpts returns Docker run options with GPU support enabled.
-func GPURunOpts() RunOpts {
+func GPURunOpts(sniffGPUOpts SniffGPUOpts) (RunOpts, error) {
+	var mounts []mount.Mount
+	if sniffGPUOpts.DisableSnifferReason == "" {
+		// Extract the sniffer binary to a temporary location.
+		runSniffer, err := os.CreateTemp("", "run_sniffer.*")
+		if err != nil {
+			return RunOpts{}, fmt.Errorf("failed to create temporary file: %w", err)
+		}
+		if _, err := runSniffer.Write(runSnifferBinary); err != nil {
+			return RunOpts{}, fmt.Errorf("failed to write to temporary file: %w", err)
+		}
+		if err := runSniffer.Sync(); err != nil {
+			return RunOpts{}, fmt.Errorf("failed to sync temporary file: %w", err)
+		}
+		if err := runSniffer.Chmod(0o555); err != nil {
+			return RunOpts{}, fmt.Errorf("failed to chmod temporary file: %w", err)
+		}
+		if err := runSniffer.Close(); err != nil {
+			return RunOpts{}, fmt.Errorf("failed to close temporary file: %w", err)
+		}
+		sniffGPUOpts.runSniffer = runSniffer
+		mounts = append(mounts, mount.Mount{
+			Source:   runSniffer.Name(),
+			Target:   ioctlSnifferMountPath,
+			Type:     mount.TypeBind,
+			ReadOnly: true,
+		})
+	}
+	gpuEnv := []string{sniffGPUOpts.GPUCapabilities()}
+
 	if !*setCOSGPU {
 		return RunOpts{
-			Env: []string{AllGPUCapabilities},
+			Env: gpuEnv,
 			DeviceRequests: []container.DeviceRequest{
 				{
 					Count:        -1,
@@ -45,7 +91,9 @@ func GPURunOpts() RunOpts {
 					Options:      map[string]string{},
 				},
 			},
-		}
+			Mounts:       mounts,
+			sniffGPUOpts: &sniffGPUOpts,
+		}, nil
 	}
 
 	// COS has specific settings since it has a custom installer for GPU drivers.
@@ -68,7 +116,6 @@ func GPURunOpts() RunOpts {
 		})
 	}
 
-	var mounts []mount.Mount
 	for _, nvidiaBin := range []string{
 		"/home/kubernetes/bin/nvidia/bin",
 		"/var/lib/nvidia/bin",
@@ -97,10 +144,61 @@ func GPURunOpts() RunOpts {
 	}
 
 	return RunOpts{
-		Env:     []string{AllGPUCapabilities},
-		Mounts:  mounts,
-		Devices: devices,
+		Env:          gpuEnv,
+		Mounts:       mounts,
+		Devices:      devices,
+		sniffGPUOpts: &sniffGPUOpts,
+	}, nil
+}
+
+// SniffGPUOpts dictates options to sniffer GPU workloads.
+type SniffGPUOpts struct {
+	// If set, explains why the sniffer should be disabled for this test.
+	// If unset or empty, the sniffer is enabled.
+	DisableSnifferReason string
+
+	// If true, the test will not fail even when the workload calls incompatible
+	// ioctls. Useful for debugging.
+	// TODO(b/340955577): Should be converted to a flag and removed from this
+	// struct once all GPU tests have no incompatible ioctls.
+	AllowIncompatibleIoctl bool
+
+	// The set of GPU capabilities exposed to the container.
+	// If unset, defaults to `DefaultGPUCapabilities`.
+	Capabilities string
+
+	// The fields below are set internally.
+	runSniffer *os.File
+}
+
+// GPUCapabilities returns the set of GPU capabilities meant to be
+// exposed to the container.
+func (sgo *SniffGPUOpts) GPUCapabilities() string {
+	if sgo.Capabilities == "" {
+		return DefaultGPUCapabilities
 	}
+	return sgo.Capabilities
+}
+
+// prepend prepends the sniffer arguments to the given command.
+func (sgo *SniffGPUOpts) prepend(argv []string) []string {
+	if sgo.DisableSnifferReason != "" {
+		return argv
+	}
+	snifferArgv := []string{
+		ioctlSnifferMountPath,
+		"--verbose=true",
+		fmt.Sprintf("--enforce_compatibility=%t", !sgo.AllowIncompatibleIoctl),
+		// TODO(eperot): Add flag to enforce capability set here once implemented.
+	}
+	return append(snifferArgv, argv...)
+}
+
+func (sgo *SniffGPUOpts) cleanup() error {
+	if err := os.Remove(sgo.runSniffer.Name()); err != nil {
+		return fmt.Errorf("failed to unlink temporary file %q: %w", sgo.runSniffer.Name(), err)
+	}
+	return nil
 }
 
 // NumGPU crudely estimates the number of NVIDIA GPUs on the host.

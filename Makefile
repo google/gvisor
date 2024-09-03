@@ -177,6 +177,7 @@ dev: $(RUNTIME_BIN) ## Installs a set of local runtimes. Requires sudo.
 	@$(call configure_noreload,$(RUNTIME)-p,--net-raw --profile)
 	@$(call configure_noreload,$(RUNTIME)-cgroup-d,--net-raw --debug --strace --log-packets --cgroupfs)
 	@$(call configure_noreload,$(RUNTIME)-systemd-d,--net-raw --debug --strace --log-packets --systemd-cgroup)
+	@$(call configure_noreload,$(RUNTIME)-gpu,--nvproxy)
 	@$(call reload_docker)
 .PHONY: dev
 
@@ -298,7 +299,7 @@ cos-gpu-smoke-tests: gpu-smoke-images $(RUNTIME_BIN)
 # This is a superset of those needed for smoke tests.
 # It includes non-GPU images that are used as part of GPU tests,
 # e.g. busybox and python.
-gpu-images: gpu-smoke-images load-gpu_pytorch load-gpu_ollama load-gpu_ollama_client load-basic_busybox load-basic_python load-gpu_stable-diffusion-xl load-gpu_vllm load-gpu_nccl-tests
+gpu-images: gpu-smoke-images load-gpu_pytorch load-gpu_ollama load-gpu_ollama_client load-basic_busybox load-basic_python load-gpu_stable-diffusion-xl load-gpu_vllm load-gpu_nccl-tests load-benchmarks_ffmpeg
 .PHONY: gpu-images
 
 gpu-all-tests: gpu-images gpu-smoke-tests $(RUNTIME_BIN)

@@ -51,7 +51,10 @@ func doVLLMTest(b *testing.B) {
 	}
 
 	// Run vllm.
-	runOpts := dockerutil.GPURunOpts()
+	runOpts, err := dockerutil.GPURunOpts(dockerutil.SniffGPUOpts{AllowIncompatibleIoctl: true})
+	if err != nil {
+		b.Fatalf("failed to get GPU run options: %v", err)
+	}
 	runOpts.Image = "gpu/vllm"
 	runOpts.Env = []string{"PYTHONPATH=$PYTHONPATH:/vllm"}
 

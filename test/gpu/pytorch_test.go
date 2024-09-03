@@ -26,7 +26,10 @@ import (
 func runPytorch(ctx context.Context, t *testing.T, scriptPath string, args ...string) {
 	t.Helper()
 	c := dockerutil.MakeContainer(ctx, t)
-	opts := dockerutil.GPURunOpts()
+	opts, err := dockerutil.GPURunOpts(dockerutil.SniffGPUOpts{AllowIncompatibleIoctl: true})
+	if err != nil {
+		t.Fatalf("Failed to get GPU run options: %v", err)
+	}
 	opts.Image = "gpu/pytorch"
 	cmd := append([]string{"python3", scriptPath}, args...)
 	out, err := c.Run(ctx, opts, cmd...)

@@ -250,9 +250,12 @@ func TestCgroupV1(t *testing.T) {
 	}
 
 	// Make configs.
-	conf, hostconf, _ := d.ConfigsFrom(dockerutil.RunOpts{
+	conf, hostconf, _, err := d.ConfigsFrom(ctx, dockerutil.RunOpts{
 		Image: "basic/alpine",
 	}, "sleep", "10000")
+	if err != nil {
+		t.Fatalf("Cannot get container config: %v", err)
+	}
 
 	// Add Cgroup arguments to configs.
 	for _, attr := range attrs {
@@ -416,9 +419,12 @@ func TestCgroupV2(t *testing.T) {
 		baseCgroupPath = cgroupPath("system.slice")
 	}
 	// Make configs.
-	conf, hostconf, _ := d.ConfigsFrom(dockerutil.RunOpts{
+	conf, hostconf, _, err := d.ConfigsFrom(ctx, dockerutil.RunOpts{
 		Image: "basic/alpine",
 	}, "sleep", "10000")
+	if err != nil {
+		t.Fatalf("Cannot get container config: %v", err)
+	}
 
 	// Add Cgroup arguments to configs.
 	for _, attr := range attrs {
@@ -515,9 +521,12 @@ func TestCgroupParent(t *testing.T) {
 	if useSystemd {
 		parent = "system-runsc.slice"
 	}
-	conf, hostconf, _ := d.ConfigsFrom(dockerutil.RunOpts{
+	conf, hostconf, _, err := d.ConfigsFrom(ctx, dockerutil.RunOpts{
 		Image: "basic/alpine",
 	}, "sleep", "10000")
+	if err != nil {
+		t.Fatalf("Cannot get container config: %v", err)
+	}
 	hostconf.Resources.CgroupParent = parent
 
 	if err := d.CreateFrom(ctx, "basic/alpine", conf, hostconf, nil); err != nil {
@@ -571,9 +580,12 @@ func TestSystemdCgroupJoinTwice(t *testing.T) {
 
 	// Construct a known cgroup name.
 	parent := "system-runsc.slice"
-	conf, hostconf, _ := d.ConfigsFrom(dockerutil.RunOpts{
+	conf, hostconf, _, err := d.ConfigsFrom(ctx, dockerutil.RunOpts{
 		Image: "basic/alpine",
 	}, "sleep", "10000")
+	if err != nil {
+		t.Fatalf("Cannot get container config: %v", err)
+	}
 	hostconf.Resources.CgroupParent = parent
 
 	if err := d.CreateFrom(ctx, "basic/alpine", conf, hostconf, nil); err != nil {
