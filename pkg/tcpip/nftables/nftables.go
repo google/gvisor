@@ -638,18 +638,19 @@ func validateComparisonOp(cop cmpOp) error {
 }
 
 // newComparison creates a new Comparison operation.
-func newComparison(sreg uint8, op int, data registerData) (*comparison, error) {
+func newComparison(sreg uint8, op int, data []byte) (*comparison, error) {
 	if sreg == linux.NFT_REG_VERDICT {
 		return nil, fmt.Errorf("comparison operation cannot use verdict register as source")
 	}
-	if err := data.validateRegister(sreg); err != nil {
+	bytesData := newBytesData(data)
+	if err := bytesData.validateRegister(sreg); err != nil {
 		return nil, err
 	}
 	cop := cmpOp(op)
 	if err := validateComparisonOp(cop); err != nil {
 		return nil, err
 	}
-	return &comparison{sreg: sreg, cop: cop, data: data}, nil
+	return &comparison{sreg: sreg, cop: cop, data: bytesData}, nil
 }
 
 // evaluate for Comparison compares the data in the source register to the given
@@ -1003,7 +1004,7 @@ type verdictData struct {
 	data Verdict
 }
 
-// newVerdictData creates a RegisterData for a verdict.
+// newVerdictData creates a registerData for a verdict.
 func newVerdictData(verdict Verdict) registerData { return verdictData{data: verdict} }
 
 // String returns a string representation of the verdict data.
@@ -1044,7 +1045,7 @@ type bytesData struct {
 	data []byte
 }
 
-// newBytesData creates a RegisterData for <= 16 bytes of data.
+// newBytesData creates a registerData for <= 16 bytes of data.
 func newBytesData(bytes []byte) registerData {
 	if len(bytes) == 0 {
 		panic("bytes data cannot be empty")

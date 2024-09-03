@@ -250,8 +250,8 @@ func InterpretComparison(line string, lnIdx int) (operation, error) {
 	}
 	tkIdx++
 
-	// Fifth token should be the value.
-	nextIdx, data, err := parseRegisterData(reg, tokens, lnIdx, tkIdx)
+	// Fifth token should be the bytesData representing the value.
+	nextIdx, data, err := parseHexData(tokens, lnIdx, tkIdx)
 	if err != nil {
 		return nil, err
 	}
@@ -558,18 +558,17 @@ func parseRegisterData(reg uint8, tokens []string, lnIdx int, tkIdx int) (int, r
 		}
 		return nextIdx, newVerdictData(verdict), nil
 	}
-	// Handles hex data (4-, 8-, 12-, or 16-byte).
+	// Handles hex data.
 	if len(tokens[tkIdx]) > 1 && tokens[tkIdx][:2] == "0x" {
 		nextIdx, data, err := parseHexData(tokens, lnIdx, tkIdx)
 		if err != nil {
 			return 0, nil, err
 		}
-		// 4-byte data is only valid for 4-byte register. Any byte data can be
-		// stored in 16-byte registerValidates the register data type.
-		if err := data.validateRegister(reg); err != nil {
+		bytesData := newBytesData(data)
+		if err := bytesData.validateRegister(reg); err != nil {
 			return 0, nil, &LogicError{lnIdx, tkIdx, err}
 		}
-		return nextIdx, data, nil
+		return nextIdx, bytesData, nil
 	}
 	// TODO(b/345684870): cases will be added here as more types are supported.
 	return 0, nil, &SyntaxError{lnIdx, tkIdx, fmt.Sprintf("invalid register data: '%s'", tokens[tkIdx])}
@@ -619,7 +618,7 @@ func parseVerdict(tokens []string, lnIdx int, tkIdx int) (int, Verdict, error) {
 
 // parseHexData parses little endian hexadecimal data from the given token,
 // converts to big endian, and returns the index of the next token to process.
-func parseHexData(tokens []string, lnIdx int, tkIdx int) (int, registerData, error) {
+func parseHexData(tokens []string, lnIdx int, tkIdx int) (int, []byte, error) {
 	var bytes []byte
 	for ; tkIdx < len(tokens); tkIdx++ {
 		if len(tokens[tkIdx]) <= 2 || tokens[tkIdx][:2] != "0x" {
@@ -643,7 +642,7 @@ func parseHexData(tokens []string, lnIdx int, tkIdx int) (int, registerData, err
 	if len(bytes) > 16 {
 		return 0, nil, &SyntaxError{lnIdx, tkIdx, fmt.Sprintf("cannot have more than 16 bytes of hexadecimal data, got %d", len(bytes))}
 	}
-	return tkIdx, newBytesData(bytes), nil
+	return tkIdx, bytes, nil
 }
 
 // parseCmpOp parses the int representing the cmpOp from the given string.
