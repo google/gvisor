@@ -225,12 +225,13 @@ func (c *Container) Run(ctx context.Context, r RunOpts, args ...string) (string,
 
 	if err := c.Start(ctx); err != nil {
 		logs, _ := c.Logs(ctx)
-		return logs, err
+		return logs, fmt.Errorf("failed to start container: %w", err)
 	}
 
 	if err := c.Wait(ctx); err != nil {
+		info, ierr := c.client.ContainerInspect(ctx, c.id)
 		logs, _ := c.Logs(ctx)
-		return logs, err
+		return logs, fmt.Errorf("failed to wait for container: %w info: %+v info_err: %v", err, info.ContainerJSONBase.State, ierr)
 	}
 
 	return c.Logs(ctx)
@@ -288,7 +289,7 @@ func (c *Container) create(ctx context.Context, profileImage string, conf *conta
 	}
 	cont, err := c.client.ContainerCreate(ctx, conf, hostconf, nil, nil, c.Name)
 	if err != nil {
-		return err
+		return fmt.Errorf("ContainerCreate failed: %v warnings: %v", err, cont.Warnings)
 	}
 	c.id = cont.ID
 	return nil

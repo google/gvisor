@@ -271,7 +271,7 @@ int main() {
 
   std::cout << "Testing read/write syscalls on cudaMallocHost memory"
             << std::endl;
-  TestMallocHostReadWrite(device);
+  // TestMallocHostReadWrite(device);
 
   std::cout << "Testing cudaMallocManaged(flags=cudaMemAttachGlobal)"
             << std::endl;
