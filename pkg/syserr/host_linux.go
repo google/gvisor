@@ -93,4 +93,9 @@ var (
 	ErrKeyRejected               = newWithHost("key was rejected by service", errno.EKEYREJECTED, unix.EKEYREJECTED)
 	ErrRFKill                    = newWithHost("operation not possible due to RF-kill", errno.ERFKILL, unix.ERFKILL)
 	ErrHwPoison                  = newWithHost("memory page has hardware error", errno.EHWPOISON, unix.EHWPOISON)
+
+	// Linux has not implemented error 58, but there are crashes mainly
+	// from the fuse daemon with this error code causing panic. Return
+	// EINVAL with invalid error message for this error code.
+	ErrInvalid = newWithHost("invalid error", errno.Errno(58), unix.EINVAL)
 )
