@@ -110,10 +110,10 @@ TEST(FPSigTest, Fork) {
   asm volatile("svc #0\n" : "=r"(x0) : "r"(x0), "r"(x1), "r"(x2), "r"(x8) :);
   ret = x0;
 #endif
-  EXPECT_EQ(ret, 0);
-
   uint64_t got;
   GET_FP0(got);
+
+  EXPECT_EQ(ret, 0);
 
   if (getpid() == parent) {  // Parent.
     int status;

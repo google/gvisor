@@ -82,11 +82,12 @@ void sigusr1(int s, siginfo_t* siginfo, void* _uc) {
   asm volatile("svc #0\n" : "=r"(x0) : "r"(x0), "r"(x1), "r"(x2), "r"(x8) :);
   ret = x0;
 #endif
-  EXPECT_EQ(ret, 0);
 
   // Record value of %xmm0 again to verify that the nested signal handler
   // does not clobber it.
   GET_FP0(exitxmm[0]);
+
+  EXPECT_EQ(ret, 0);
 }
 
 TEST(FPSigTest, NestedSignals) {
@@ -132,10 +133,10 @@ TEST(FPSigTest, NestedSignals) {
   asm volatile("svc #0\n" : "=r"(x0) : "r"(x0), "r"(x1), "r"(x2), "r"(x8) :);
   ret = x0;
 #endif
-  EXPECT_EQ(ret, 0);
-
   uint64_t got;
   GET_FP0(got);
+
+  EXPECT_EQ(ret, 0);
 
   //
   // The checks below verifies the following:
