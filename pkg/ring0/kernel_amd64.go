@@ -186,7 +186,7 @@ func (c *CPU) CR0() uint64 {
 //
 //go:nosplit
 func (c *CPU) CR4() uint64 {
-	cr4 := uint64(_CR4_PAE | _CR4_PSE | _CR4_OSFXSR | _CR4_OSXMMEXCPT)
+	cr4 := uint64(_CR4_PAE | _CR4_PSE | _CR4_PGE | _CR4_OSFXSR | _CR4_OSXMMEXCPT)
 	if hasPCID {
 		cr4 |= _CR4_PCIDE
 	}
