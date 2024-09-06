@@ -86,7 +86,7 @@ func (g *interfaceGenerator) validatePrimitiveNewtype(t *ast.Ident) {
 	case "string":
 		g.abortAt(t.Pos(), "Type 'string' is dynamically-sized and cannot be marshalled, use a fixed size byte array '[...]byte' instead")
 	default:
-		debugfAt(g.f.Position(t.Pos()), fmt.Sprintf("Found derived type '%s', will attempt dispatch via marshal.Marshallable.\n", t.Name))
+		debugfAt(g.f.Position(t.Pos()), "%s", fmt.Sprintf("Found derived type '%s', will attempt dispatch via marshal.Marshallable.\n", t.Name))
 	}
 }
 

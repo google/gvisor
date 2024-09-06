@@ -48,7 +48,7 @@ func checkOp(t *testing.T, test interpretOperationTestAction, checkFunc func(str
 		t.Fatalf("expected non-nil operation for %s, got nil", test.tname)
 	}
 	if err := checkFunc(test.tname, test.expected, actual); err != nil {
-		t.Fatalf(err.Error())
+		t.Fatalf("%s", err.Error())
 	}
 }
 
@@ -815,11 +815,11 @@ func TestInterpretRule(t *testing.T) {
 				switch testOp.(type) {
 				case *immediate:
 					if err := checkImmediateOp(test.tname, testOp, op); err != nil {
-						t.Fatalf(err.Error())
+						t.Fatalf("%s", err.Error())
 					}
 				case *comparison:
 					if err := checkComparisonOp(test.tname, testOp, op); err != nil {
-						t.Fatalf(err.Error())
+						t.Fatalf("%s", err.Error())
 					}
 				// TODO(b/345684870): cases will be added here as more types are supported.
 				default:

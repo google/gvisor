@@ -340,7 +340,7 @@ func (es *Escapes) Reportf(pass *analysis.Pass) {
 			fmt.Fprintf(&b, "→ %s ", cs.Resolved.String())
 		}
 		fmt.Fprintf(&b, "→ %s", es.Details[r])
-		pass.Reportf(es.CallSites[r][0].LocalPos, b.String())
+		pass.Reportf(es.CallSites[r][0].LocalPos, "%s", b.String())
 	}
 }
 
@@ -930,7 +930,7 @@ func run(pass *analysis.Pass, binary io.Reader) (any, error) {
 			}
 			for reason, local := range testReasons {
 				// We didn't find the escapes we wanted.
-				pass.Reportf(fdecl.Pos(), fmt.Sprintf("testescapes not found: reason=%s, local=%t", reason, local))
+				pass.Reportf(fdecl.Pos(), "%s", fmt.Sprintf("testescapes not found: reason=%s, local=%t", reason, local))
 			}
 			if len(testReasons) > 0 {
 				// Report for debugging.

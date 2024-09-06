@@ -76,7 +76,7 @@ func (g *interfaceGenerator) isStructPacked(st *ast.StructType) bool {
 			if f.Tag.Value == "`marshal:\"unaligned\"`" {
 				if packed {
 					debugfAt(g.f.Position(g.t.Pos()),
-						fmt.Sprintf("Marking type '%s' as not packed due to tag `marshal:\"unaligned\"`.\n", g.t.Name))
+						"%s", fmt.Sprintf("Marking type '%s' as not packed due to tag `marshal:\"unaligned\"`.\n", g.t.Name))
 					packed = false
 				}
 			}

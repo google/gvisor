@@ -101,7 +101,7 @@ func TestProfile(t *testing.T) {
 
 			// Check all expected files exist and have data.
 			if err := checkFiles(localProfile.BasePath, tc.expectedFiles); err != nil {
-				t.Fatalf(err.Error())
+				t.Fatalf("%s", err.Error())
 			}
 		})
 	}

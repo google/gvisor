@@ -38,7 +38,7 @@ type cmd struct {
 func (c *cmd) Execute(ctx context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
 	conf, err := config.NewFromFlags(flag.CommandLine)
 	if err != nil {
-		util.Fatalf(err.Error())
+		util.Fatalf("%s", err.Error())
 	}
 	if conf.MetricServer == "" || conf.RootDir == "" {
 		flag.CommandLine.Usage()

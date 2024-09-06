@@ -889,7 +889,7 @@ func (c *Container) Destroy() error {
 	if len(errs) == 0 {
 		return nil
 	}
-	return fmt.Errorf(strings.Join(errs, "\n"))
+	return fmt.Errorf("%s", strings.Join(errs, "\n"))
 }
 
 func (c *Container) sandboxID() string {

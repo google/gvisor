@@ -49,7 +49,7 @@ func run(pass *analysis.Pass) (any, error) {
 			}
 
 			// Throw the error.
-			pass.Reportf(imp.Pos(), fmt.Sprintf("package unsafe imported by %s; must end with _unsafe.go", path.Base(filename)))
+			pass.Reportf(imp.Pos(), "%s", fmt.Sprintf("package unsafe imported by %s; must end with _unsafe.go", path.Base(filename)))
 		}
 	}
 	return nil, nil
