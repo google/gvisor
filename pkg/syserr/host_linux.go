@@ -92,4 +92,5 @@ var (
 	ErrKeyRevoked                = newWithHost("key has been revoked", errno.EKEYREVOKED, unix.EKEYREVOKED)
 	ErrKeyRejected               = newWithHost("key was rejected by service", errno.EKEYREJECTED, unix.EKEYREJECTED)
 	ErrRFKill                    = newWithHost("operation not possible due to RF-kill", errno.ERFKILL, unix.ERFKILL)
+	ErrHwPoison                  = newWithHost("memory page has hardware error", errno.EHWPOISON, unix.EHWPOISON)
 )

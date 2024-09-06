@@ -88,7 +88,7 @@ func Main() {
 	// Create a new Config from the flags.
 	conf, err := config.NewFromFlags(flag.CommandLine)
 	if err != nil {
-		util.Fatalf(err.Error())
+		util.Fatalf("%s", err.Error())
 	}
 
 	var errorLogger io.Writer

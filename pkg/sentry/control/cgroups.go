@@ -56,7 +56,7 @@ type CgroupsResult struct {
 // AsError interprets the result as an error.
 func (r *CgroupsResult) AsError() error {
 	if r.IsError {
-		return fmt.Errorf(r.Data)
+		return fmt.Errorf("%s", r.Data)
 	}
 	return nil
 }
@@ -64,7 +64,7 @@ func (r *CgroupsResult) AsError() error {
 // Unpack splits CgroupsResult into a (value, error) tuple.
 func (r *CgroupsResult) Unpack() (string, error) {
 	if r.IsError {
-		return "", fmt.Errorf(r.Data)
+		return "", fmt.Errorf("%s", r.Data)
 	}
 	return r.Data, nil
 }

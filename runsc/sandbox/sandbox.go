@@ -1751,7 +1751,7 @@ func checkBinaryPermissions(conf *config.Config) error {
 	}
 
 	if info.Mode().Perm()&neededBits != neededBits {
-		return fmt.Errorf(specutils.FaqErrorMsg("runsc-perms", fmt.Sprintf("%s does not have the correct permissions", exePath)))
+		return fmt.Errorf("%s", specutils.FaqErrorMsg("runsc-perms", fmt.Sprintf("%s does not have the correct permissions", exePath)))
 	}
 	return nil
 }

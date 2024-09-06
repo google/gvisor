@@ -210,7 +210,7 @@ func (d *Debug) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomm
 		}
 
 		if err := c.Sandbox.ChangeLogging(args); err != nil {
-			return util.Errorf(err.Error())
+			return util.Errorf("%s", err.Error())
 		}
 		util.Infof("Logging options changed")
 	}
@@ -235,7 +235,7 @@ func (d *Debug) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomm
 		src := opts[1]
 		dest := opts[2]
 		if err := c.Sandbox.Mount(c.ID, fstype, src, dest); err != nil {
-			util.Fatalf(err.Error())
+			util.Fatalf("%s", err.Error())
 		}
 	}
 
