@@ -62,8 +62,8 @@ import (
 // keySize is the AES-256 key length.
 const keySize = 32
 
-// compressionChunkSize is the chunk size for compression.
-const compressionChunkSize = 1024 * 1024
+// stateFileChunkSize is the chunk size used to read/write the state file.
+const stateFileChunkSize = 1024 * 1024
 
 // maxMetadataSize is the size limit of metadata section.
 const maxMetadataSize = 16 * 1024 * 1024
@@ -230,10 +230,10 @@ func NewWriter(w io.Writer, key []byte, metadata map[string]string) (io.WriteClo
 	// gain in restore latency reduction, while incurring much more CPU usage at
 	// save time.
 	if compression == CompressionLevelFlateBestSpeed {
-		return compressio.NewWriter(w, key, compressionChunkSize, flate.BestSpeed)
+		return compressio.NewWriter(w, key, stateFileChunkSize, flate.BestSpeed)
 	}
 
-	return compressio.NewSimpleWriter(w, key), nil
+	return compressio.NewSimpleWriter(w, key, stateFileChunkSize), nil
 }
 
 // MetadataUnsafe reads out the metadata from a state file without verifying any

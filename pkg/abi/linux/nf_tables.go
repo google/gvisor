@@ -136,3 +136,23 @@ const (
 	NFT_BITWISE_LSHIFT        // left-shift operation
 	NFT_BITWISE_RSHIFT        // right-shift operation
 )
+
+// Nf table route expression keys.
+// Used by the nft route operation to determine the routing data to retrieve.
+// These correspond to enum values in include/uapi/linux/netfilter/nf_tables.h.
+const (
+	// Traffic Class Identifier (Realm) associated with route
+	NFT_RT_CLASSID = iota
+
+	// Routing nexthop for IPv4 (next IPv4 address to jump to)
+	NFT_RT_NEXTHOP4
+
+	// Routing nexthop for IPv6 (next IPv6 address to jump to)
+	NFT_RT_NEXTHOP6
+
+	// Maximum Segment Size for TCP connections (largest size for a single packet)
+	NFT_RT_TCPMSS
+
+	// Bool for whether packet route involves a IPsec transform st xfrm is applied
+	NFT_RT_XFRM
+)
