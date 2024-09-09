@@ -16,10 +16,7 @@ package nvproxy
 
 import (
 	"gvisor.dev/gvisor/pkg/context"
-	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
-	"gvisor.dev/gvisor/pkg/log"
-	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
@@ -73,13 +70,6 @@ func (mf *frontendFDMemmapFile) IncRef(fr memmap.FileRange, memCgID uint32) {
 
 // DecRef implements memmap.File.DecRef.
 func (mf *frontendFDMemmapFile) DecRef(fr memmap.FileRange) {
-}
-
-// MapInternal implements memmap.File.MapInternal.
-func (mf *frontendFDMemmapFile) MapInternal(fr memmap.FileRange, at hostarch.AccessType) (safemem.BlockSeq, error) {
-	// FIXME(jamieliu): determine if this is safe
-	log.Traceback("nvproxy: rejecting frontendFDMemmapFile.MapInternal")
-	return safemem.BlockSeq{}, linuxerr.EINVAL
 }
 
 // FD implements memmap.File.FD.

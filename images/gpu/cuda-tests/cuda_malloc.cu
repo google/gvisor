@@ -29,6 +29,106 @@ __global__ void addKernel(std::uint32_t* data) {
   data[index] += static_cast<std::uint32_t>(index);
 }
 
+void TestMallocHostReadWrite(int device) {
+  constexpr size_t kNumBlocks = 32;
+  constexpr size_t kNumThreads = 64;
+  constexpr size_t kNumElems = kNumBlocks * kNumThreads;
+
+  constexpr size_t kNumBytes = kNumElems * sizeof(std::uint32_t);
+  std::uint32_t* cpu_data = nullptr;
+  CHECK_CUDA(cudaMallocHost(&cpu_data, kNumBytes, cudaHostAllocWriteCombined));
+  std::uint32_t* gpu_data = nullptr;
+  CHECK_CUDA(cudaMalloc(&gpu_data, kNumBytes));
+
+  // Initialize all elements in the host array with a random value.
+  std::random_device rd;
+  const std::uint32_t init_val =
+      std::uniform_int_distribution<std::uint32_t>()(rd);
+  for (size_t i = 0; i < kNumElems; i++) {
+    cpu_data[i] = init_val;
+  }
+
+  // Write the host array's contents to a temporary file.
+  char filename[] = "/tmp/cudaMallocHostTest.XXXXXX";
+  int fd = mkstemp(filename);
+  if (fd < 0) {
+    err(1, "mkstemp");
+  }
+  size_t done = 0;
+  while (done < kNumBytes) {
+    ssize_t n = write(fd, reinterpret_cast<char*>(cpu_data) + done,
+                      kNumBytes - done);
+    if (n >= 0) {
+      done += n;
+    } else if (n < 0 && errno != EINTR) {
+      err(1, "write");
+    }
+  }
+
+  // Copy the array to the device, mutate it there, and copy it back.
+  CHECK_CUDA(cudaMemcpy(gpu_data, cpu_data, kNumBytes, cudaMemcpyHostToDevice));
+  addKernel<<<kNumBlocks, kNumThreads>>>(gpu_data);
+  CHECK_CUDA(cudaDeviceSynchronize());
+  CHECK_CUDA(cudaMemcpy(cpu_data, gpu_data, kNumBytes, cudaMemcpyDeviceToHost));
+
+  // Check that the array has the expected result.
+  for (size_t i = 0; i < kNumElems; i++) {
+    std::uint32_t want = init_val + static_cast<std::uint32_t>(i);
+    if (cpu_data[i] != want) {
+      std::cout << "cpu_data[" << i << "]: got " << cpu_data[i] << ", wanted "
+                << want << " = " << init_val << " + " << i << std::endl;
+      abort();
+    }
+  }
+
+  // Read the array's original contents back from the temporary file.
+  if (lseek(fd, 0, SEEK_SET) < 0) {
+    err(1, "lseek");
+  }
+  done = 0;
+  while (done < kNumBytes) {
+    ssize_t n = read(fd, reinterpret_cast<char*>(cpu_data) + done,
+                     kNumBytes - done);
+    if (n > 0) {
+      done += n;
+    } else if (n == 0) {
+      errx(1, "read: unexpected EOF after %zu bytes", done);
+    } else if (n < 0 && errno != EINTR) {
+      err(1, "read");
+    }
+  }
+
+  // Check that the array matches what we originally wrote.
+  for (size_t i = 0; i < kNumElems; i++) {
+    std::uint32_t want = init_val;
+    if (cpu_data[i] != want) {
+      std::cout << "cpu_data[" << i << "]: got " << cpu_data[i] << ", wanted "
+                << want << " = " << init_val << " + " << i << std::endl;
+      abort();
+    }
+  }
+
+  // Mutate the array on the device again.
+  CHECK_CUDA(cudaMemcpy(gpu_data, cpu_data, kNumBytes, cudaMemcpyHostToDevice));
+  addKernel<<<kNumBlocks, kNumThreads>>>(gpu_data);
+  CHECK_CUDA(cudaDeviceSynchronize());
+  CHECK_CUDA(cudaMemcpy(cpu_data, gpu_data, kNumBytes, cudaMemcpyDeviceToHost));
+
+  // Check that the array has the expected result again.
+  for (size_t i = 0; i < kNumElems; i++) {
+    std::uint32_t want = init_val + static_cast<std::uint32_t>(i);
+    if (cpu_data[i] != want) {
+      std::cout << "cpu_data[" << i << "]: got " << cpu_data[i] << ", wanted "
+                << want << " = " << init_val << " + " << i << std::endl;
+      abort();
+    }
+  }
+
+  close(fd);
+  CHECK_CUDA(cudaFreeHost(cpu_data));
+  CHECK_CUDA(cudaFree(gpu_data));
+}
+
 void TestMallocManagedRoundTrip(int device, unsigned int malloc_flags,
                                 bool prefetch) {
   constexpr size_t kNumBlocks = 32;
@@ -168,6 +268,10 @@ void TestMallocManagedReadWrite(int device) {
 int main() {
   int device;
   CHECK_CUDA(cudaGetDevice(&device));
+
+  std::cout << "Testing read/write syscalls on cudaMallocHost memory"
+            << std::endl;
+  TestMallocHostReadWrite(device);
 
   std::cout << "Testing cudaMallocManaged(flags=cudaMemAttachGlobal)"
             << std::endl;

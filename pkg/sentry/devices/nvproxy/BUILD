@@ -14,6 +14,13 @@ declare_mutex(
 )
 
 declare_mutex(
+    name = "frontend_mmap_mutex",
+    out = "frontend_mmap_mutex.go",
+    package = "nvproxy",
+    prefix = "frontendMmap",
+)
+
+declare_mutex(
     name = "objs_mutex",
     out = "objs_mutex.go",
     package = "nvproxy",
@@ -38,6 +45,8 @@ go_library(
         "fds_mutex.go",
         "frontend.go",
         "frontend_mmap.go",
+        "frontend_mmap_mutex.go",
+        "frontend_mmap_unsafe.go",
         "frontend_unsafe.go",
         "nvproxy.go",
         "nvproxy_unsafe.go",

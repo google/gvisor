@@ -128,7 +128,13 @@ type frontendFD struct {
 	cachedEvents  atomicbitops.Uint64
 	appQueue      waiter.Queue
 
-	haveMmapContext atomicbitops.Bool `state:"nosave"`
+	// mmapMu protects the following fields.
+	mmapMu frontendMmapMutex `state:"nosave"`
+	// These fields are marked nosave since we do not automatically reinvoke
+	// NV_ESC_RM_MAP_MEMORY after restore, so restored FDs have no
+	// mmap_context.
+	mmapLength   uint64  `state:"nosave"`
+	mmapInternal uintptr `state:"nosave"`
 
 	// clients are handles of clients owned by this frontendFD. clients is
 	// protected by dev.nvp.objsMu.
@@ -137,6 +143,12 @@ type frontendFD struct {
 
 // Release implements vfs.FileDescriptionImpl.Release.
 func (fd *frontendFD) Release(ctx context.Context) {
+	fd.mmapMu.Lock()
+	if fd.mmapInternal != 0 {
+		unix.RawSyscall(unix.SYS_MUNMAP, fd.mmapInternal, uintptr(fd.mmapLength), 0)
+	}
+	fd.mmapMu.Unlock()
+
 	fdnotifier.RemoveFD(fd.hostFD)
 	fd.appQueue.Notify(waiter.EventHUp)
 
@@ -1020,17 +1032,21 @@ func rmMapMemory(fi *frontendIoctlState) (uintptr, error) {
 	if !ok {
 		return 0, linuxerr.EINVAL
 	}
-	if mapFile.haveMmapContext.Load() || !mapFile.haveMmapContext.CompareAndSwap(false, true) {
+
+	mapFile.mmapMu.Lock()
+	defer mapFile.mmapMu.Unlock()
+	if mapFile.mmapLength != 0 {
 		fi.ctx.Warningf("nvproxy: attempted to reuse FD %d for NV_ESC_RM_MAP_MEMORY", ioctlParams.FD)
 		return 0, linuxerr.EINVAL
 	}
+
 	origFD := ioctlParams.FD
 	ioctlParams.FD = mapFile.hostFD
-
 	n, err := frontendIoctlInvoke(fi, &ioctlParams)
 	if err != nil {
 		return n, err
 	}
+	mapFile.mmapLength = ioctlParams.Params.Length
 
 	ioctlParams.FD = origFD
 	if _, err := ioctlParams.CopyOut(fi.t, fi.ioctlParamsAddr); err != nil {

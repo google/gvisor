@@ -190,6 +190,7 @@ analyzers:
         - "pkg/flipcall/.*_unsafe.go"                              # Special case.
         - pkg/gohacks/noescape_unsafe.go                           # Special case.
         - pkg/ring0/pagetables/allocator_unsafe.go                 # Special case.
+        - pkg/sentry/devices/nvproxy/frontend_mmap_unsafe.go       # Special case.
         - pkg/sentry/fsutil/host_file_mapper_unsafe.go             # Special case.
         - pkg/sentry/pgalloc/pgalloc_unsafe.go                     # Special case.
         - pkg/sentry/platform/kvm/bluepill_unsafe.go               # Special case.

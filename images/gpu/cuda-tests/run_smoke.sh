@@ -17,5 +17,5 @@
 set -eux
 
 cd /
-nvcc cuda_malloc_managed.cu -o cuda_malloc_managed
-./cuda_malloc_managed
+nvcc cuda_malloc.cu -o cuda_malloc
+./cuda_malloc
