@@ -1,0 +1,40 @@
+load("//tools:defs.bzl", "go_binary", "go_test")
+
+package(
+    default_applicable_licenses = ["//:license"],
+    licenses = ["notice"],
+)
+
+go_binary(
+    name = "gvisor2pcap",
+    srcs = [
+        "main.go",
+    ],
+    static = True,
+    deps = [
+        "//pkg/buffer",
+        "//pkg/log",
+        "//pkg/tcpip",
+        "//pkg/tcpip/header",
+        "//pkg/tcpip/link/sniffer",
+        "//pkg/tcpip/stack",
+    ],
+)
+
+go_test(
+    name = "gvisor2pcap_test",
+    srcs = ["gvisor2pcap_test.go"],
+    data = [
+        "wget.log",
+        ":gvisor2pcap",
+    ],
+    deps = [
+        "//pkg/buffer",
+        "//pkg/log",
+        "//pkg/tcpip",
+        "//pkg/tcpip/header",
+        "//pkg/tcpip/link/sniffer",
+        "//pkg/tcpip/stack",
+        "//pkg/test/testutil",
+    ],
+)
