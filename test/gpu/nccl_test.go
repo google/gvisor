@@ -27,7 +27,10 @@ import (
 func runNCCL(ctx context.Context, t *testing.T, testName string) {
 	t.Helper()
 	c := dockerutil.MakeContainer(ctx, t)
-	opts := dockerutil.GPURunOpts()
+	opts, err := dockerutil.GPURunOpts(dockerutil.SniffGPUOpts{AllowIncompatibleIoctl: true})
+	if err != nil {
+		t.Fatalf("Failed to get GPU run options: %v", err)
+	}
 	opts.Image = "gpu/nccl-tests"
 	cmd := fmt.Sprintf("/nccl-tests/build/%s", testName)
 	out, err := c.Run(ctx, opts, cmd)

@@ -34,7 +34,10 @@ func TestGPUCheckpointRestore(t *testing.T) {
 	c := dockerutil.MakeContainer(ctx, t)
 	defer c.CleanUp(ctx)
 
-	opts := dockerutil.GPURunOpts()
+	opts, err := dockerutil.GPURunOpts(dockerutil.SniffGPUOpts{AllowIncompatibleIoctl: true})
+	if err != nil {
+		t.Fatalf("failed to get GPU run options: %v", err)
+	}
 	opts.Image = "basic/cuda-vector-add"
 	if err := c.Spawn(ctx, opts, "sleep", "infinity"); err != nil {
 		t.Fatalf("could not run cuda-vector-add: %v", err)

@@ -48,8 +48,7 @@ go_binary(
     nogo = False,
     static = True,
     visibility = [
-        "//test:__subpackages__",
-        "//tools/ioctl_sniffer:__subpackages__",
+        "//:sandbox",
     ],
     deps = [
         "//pkg/log",

@@ -27,13 +27,18 @@ func TestGPUHello(t *testing.T) {
 	c := dockerutil.MakeContainer(ctx, t)
 	defer c.CleanUp(ctx)
 
-	opts := dockerutil.GPURunOpts()
+	opts, err := dockerutil.GPURunOpts(dockerutil.SniffGPUOpts{
+		DisableSnifferReason: "image has too old version of libc vs sniffer",
+	})
+	if err != nil {
+		t.Fatalf("failed to get GPU run options: %v", err)
+	}
 	opts.Image = "basic/cuda-vector-add"
 	out, err := c.Run(ctx, opts)
+	t.Logf("cuda-vector-add output: %s", string(out))
 	if err != nil {
 		t.Fatalf("could not run cuda-vector-add: %v", err)
 	}
-	t.Logf("cuda-vector-add output: %s", string(out))
 }
 
 func TestCUDASmokeTests(t *testing.T) {
@@ -41,11 +46,14 @@ func TestCUDASmokeTests(t *testing.T) {
 	c := dockerutil.MakeContainer(ctx, t)
 	defer c.CleanUp(ctx)
 
-	opts := dockerutil.GPURunOpts()
+	opts, err := dockerutil.GPURunOpts(dockerutil.SniffGPUOpts{AllowIncompatibleIoctl: true})
+	if err != nil {
+		t.Fatalf("failed to get GPU run options: %v", err)
+	}
 	opts.Image = "gpu/cuda-tests"
 	out, err := c.Run(ctx, opts, "/run_smoke.sh")
+	t.Logf("cuda-tests smoke tests output: %s", string(out))
 	if err != nil {
 		t.Fatalf("could not run cuda-tests smoke tests: %v", err)
 	}
-	t.Logf("cuda-tests smoke tests output: %s", string(out))
 }

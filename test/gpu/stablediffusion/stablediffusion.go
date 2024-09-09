@@ -47,7 +47,12 @@ type dockerRunner struct {
 func (dr *dockerRunner) Run(ctx context.Context, image string, argv []string) ([]byte, error) {
 	cont := dockerutil.MakeContainer(ctx, dr.logger)
 	defer cont.CleanUp(ctx)
-	opts := dockerutil.GPURunOpts()
+	opts, err := dockerutil.GPURunOpts(dockerutil.SniffGPUOpts{
+		AllowIncompatibleIoctl: true,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get GPU run options: %w", err)
+	}
 	opts.Image = image
 	if err := cont.Spawn(ctx, opts, argv...); err != nil {
 		return nil, fmt.Errorf("could not start Stable Diffusion container: %v", err)

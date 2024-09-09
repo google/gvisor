@@ -103,33 +103,16 @@ go_test(
     deps = ["//test/gpu/stablediffusion"],
 )
 
-# We copy the `run_sniffer` binary here because `go:embed` can only embed
-# from the current directory or subdirectories, not parents of it.
-genrule(
-    name = "run_sniffer_copy",
-    srcs = [
-        "//tools/ioctl_sniffer:run_sniffer",
-    ],
-    outs = ["run_sniffer_copy"],
-    cmd = "cat < $(SRCS) > $@",
-)
-
 go_test(
     name = "sniffer_test",
     srcs = ["sniffer_test.go"],
-    embedsrcs = [
-        ":run_sniffer_copy",  # keep
-    ],
     tags = [
         "manual",
         "noguitar",
         "notap",
     ],
     visibility = ["//:sandbox"],
-    deps = [
-        "//pkg/test/dockerutil",
-        "@com_github_docker_docker//api/types/mount:go_default_library",
-    ],
+    deps = ["//pkg/test/dockerutil"],
 )
 
 go_test(

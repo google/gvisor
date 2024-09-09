@@ -115,6 +115,10 @@ type RunOpts struct {
 	DeviceRequests []container.DeviceRequest
 
 	Devices []container.DeviceMapping
+
+	// sniffGPUOpts, if set, sets the rules for GPU sniffing during this test.
+	// Must be set via `RunOpts.SniffGPU`.
+	sniffGPUOpts *SniffGPUOpts
 }
 
 func makeContainer(ctx context.Context, logger testutil.Logger, runtime string) *Container {
@@ -164,7 +168,11 @@ func MakeNativeContainer(ctx context.Context, logger testutil.Logger) *Container
 
 // Spawn is analogous to 'docker run -d'.
 func (c *Container) Spawn(ctx context.Context, r RunOpts, args ...string) error {
-	if err := c.create(ctx, r.Image, c.config(r, args), c.hostConfig(r), nil); err != nil {
+	cfg, err := c.config(ctx, r, args)
+	if err != nil {
+		return fmt.Errorf("container config: %w", err)
+	}
+	if err := c.create(ctx, r.Image, cfg, c.hostConfig(r), nil); err != nil {
 		return err
 	}
 	return c.Start(ctx)
@@ -173,7 +181,10 @@ func (c *Container) Spawn(ctx context.Context, r RunOpts, args ...string) error 
 // SpawnProcess is analogous to 'docker run -it'. It returns a process
 // which represents the root process.
 func (c *Container) SpawnProcess(ctx context.Context, r RunOpts, args ...string) (Process, error) {
-	config, hostconf, netconf := c.ConfigsFrom(r, args...)
+	config, hostconf, netconf, err := c.ConfigsFrom(ctx, r, args...)
+	if err != nil {
+		return Process{}, fmt.Errorf("container config: %w", err)
+	}
 	config.Tty = true
 	config.OpenStdin = true
 
@@ -204,7 +215,11 @@ func (c *Container) SpawnProcess(ctx context.Context, r RunOpts, args ...string)
 
 // Run is analogous to 'docker run'.
 func (c *Container) Run(ctx context.Context, r RunOpts, args ...string) (string, error) {
-	if err := c.create(ctx, r.Image, c.config(r, args), c.hostConfig(r), nil); err != nil {
+	cfg, err := c.config(ctx, r, args)
+	if err != nil {
+		return "", fmt.Errorf("container config: %w", err)
+	}
+	if err := c.create(ctx, r.Image, cfg, c.hostConfig(r), nil); err != nil {
 		return "", err
 	}
 
@@ -223,8 +238,12 @@ func (c *Container) Run(ctx context.Context, r RunOpts, args ...string) (string,
 
 // ConfigsFrom returns container configs from RunOpts and args. The caller should call 'CreateFrom'
 // and Start.
-func (c *Container) ConfigsFrom(r RunOpts, args ...string) (*container.Config, *container.HostConfig, *network.NetworkingConfig) {
-	return c.config(r, args), c.hostConfig(r), &network.NetworkingConfig{}
+func (c *Container) ConfigsFrom(ctx context.Context, r RunOpts, args ...string) (*container.Config, *container.HostConfig, *network.NetworkingConfig, error) {
+	cfg, err := c.config(ctx, r, args)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("container config: %w", err)
+	}
+	return cfg, c.hostConfig(r), &network.NetworkingConfig{}, nil
 }
 
 // MakeLink formats a link to add to a RunOpts.
@@ -239,7 +258,11 @@ func (c *Container) CreateFrom(ctx context.Context, profileImage string, conf *c
 
 // Create is analogous to 'docker create'.
 func (c *Container) Create(ctx context.Context, r RunOpts, args ...string) error {
-	return c.create(ctx, r.Image, c.config(r, args), c.hostConfig(r), nil)
+	cfg, err := c.config(ctx, r, args)
+	if err != nil {
+		return fmt.Errorf("container config: %w", err)
+	}
+	return c.create(ctx, r.Image, cfg, c.hostConfig(r), nil)
 }
 
 func (c *Container) create(ctx context.Context, profileImage string, conf *container.Config, hostconf *container.HostConfig, netconf *network.NetworkingConfig) error {
@@ -271,7 +294,7 @@ func (c *Container) create(ctx context.Context, profileImage string, conf *conta
 	return nil
 }
 
-func (c *Container) config(r RunOpts, args []string) *container.Config {
+func (c *Container) config(ctx context.Context, r RunOpts, args []string) (*container.Config, error) {
 	ports := nat.PortSet{}
 	for _, p := range r.Ports {
 		port := nat.Port(fmt.Sprintf("%d", p))
@@ -279,15 +302,38 @@ func (c *Container) config(r RunOpts, args []string) *container.Config {
 	}
 	env := append(r.Env, fmt.Sprintf("RUNSC_TEST_NAME=%s", c.Name))
 
+	image := testutil.ImageByName(r.Image)
+	entrypoint := r.Entrypoint
+	if r.sniffGPUOpts != nil {
+		c.cleanups = append(c.cleanups, func() {
+			r.sniffGPUOpts.cleanup()
+		})
+		if len(entrypoint) == 0 && len(args) == 0 {
+			// Need to look up the image's default entrypoint/args so we can prepend to them.
+			// If we don't, then we will end up overwriting them.
+			imageInfo, _, err := c.client.ImageInspectWithRaw(ctx, image)
+			if err != nil {
+				return nil, fmt.Errorf("cannot inspect image %q: %w", image, err)
+			}
+			entrypoint = []string(imageInfo.Config.Entrypoint)
+			args = []string(imageInfo.Config.Cmd)
+		}
+		if len(entrypoint) != 0 {
+			entrypoint = r.sniffGPUOpts.prepend(entrypoint)
+		} else {
+			args = r.sniffGPUOpts.prepend(args)
+		}
+	}
+
 	return &container.Config{
-		Image:        testutil.ImageByName(r.Image),
+		Image:        image,
 		Cmd:          args,
-		Entrypoint:   r.Entrypoint,
+		Entrypoint:   entrypoint,
 		ExposedPorts: ports,
 		Env:          env,
 		WorkingDir:   r.WorkDir,
 		User:         r.User,
-	}
+	}, nil
 }
 
 func (c *Container) hostConfig(r RunOpts) *container.HostConfig {

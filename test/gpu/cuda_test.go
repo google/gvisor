@@ -395,10 +395,13 @@ func (*FullyCompatible) IsExpectedFailure(ctx context.Context, env *TestEnvironm
 }
 
 // getContainerOpts returns the container run options to run CUDA tests.
-func getContainerOpts() dockerutil.RunOpts {
-	opts := dockerutil.GPURunOpts()
+func getContainerOpts() (dockerutil.RunOpts, error) {
+	opts, err := dockerutil.GPURunOpts(dockerutil.SniffGPUOpts{AllowIncompatibleIoctl: true})
+	if err != nil {
+		return dockerutil.RunOpts{}, fmt.Errorf("failed to get GPU run options: %w", err)
+	}
 	opts.Image = "gpu/cuda-tests"
-	return opts
+	return opts, nil
 }
 
 // testLog logs a line as a test log.
@@ -446,7 +449,11 @@ func GetEnvironment(ctx context.Context, t *testing.T) (*TestEnvironment, error)
 	}
 	featuresContainer := dockerutil.MakeContainer(ctx, t)
 	defer featuresContainer.CleanUp(ctx)
-	featuresList, err := featuresContainer.Run(ctx, getContainerOpts(), "/list_features.sh")
+	runOpts, err := getContainerOpts()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get container options: %w", err)
+	}
+	featuresList, err := featuresContainer.Run(ctx, runOpts, "/list_features.sh")
 	if err != nil {
 		return nil, fmt.Errorf("cannot get list of CUDA features: %v", err)
 	}
@@ -656,7 +663,11 @@ func TestCUDA(t *testing.T) {
 	// Get a list of sample tests.
 	listContainer := dockerutil.MakeContainer(ctx, t)
 	defer listContainer.CleanUp(ctx)
-	testsList, err := listContainer.Run(ctx, getContainerOpts(), "/list_sample_tests.sh")
+	runOpts, err := getContainerOpts()
+	if err != nil {
+		t.Fatalf("Failed to get container options: %v", err)
+	}
+	testsList, err := listContainer.Run(ctx, runOpts, "/list_sample_tests.sh")
 	if err != nil {
 		t.Fatalf("Cannot list sample tests: %v", err)
 	}
@@ -700,7 +711,11 @@ func TestCUDA(t *testing.T) {
 	for i := 0; i < numContainers; i++ {
 		spawnGroup.Go(func() error {
 			c := dockerutil.MakeContainer(ctx, t)
-			if err := c.Spawn(spawnCtx, getContainerOpts(), "/bin/sleep", "6h"); err != nil {
+			runOpts, err := getContainerOpts()
+			if err != nil {
+				return fmt.Errorf("failed to get container options: %w", err)
+			}
+			if err := c.Spawn(spawnCtx, runOpts, "/bin/sleep", "6h"); err != nil {
 				return fmt.Errorf("container %v failed to spawn: %w", c.Name, err)
 			}
 			containers[i] = c
@@ -790,7 +805,7 @@ func TestCUDA(t *testing.T) {
 				"  $ docker run --runtime=%s --gpus=all -e %s --rm %s /run_sample %s",
 				dockerutil.Runtime(),
 				dockerutil.AllGPUCapabilities,
-				getContainerOpts().Image,
+				runOpts.Image,
 				failedTests[0],
 			)
 		}
