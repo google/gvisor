@@ -30,15 +30,22 @@ import (
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
-// InitialRTO is the initial retransmission timeout.
-// https://github.com/torvalds/linux/blob/7c636d4d20f/include/net/tcp.h#L142
-const InitialRTO = time.Second
+const (
+	// tcpMinTimeout is the minimum timeout for a SYN retransmit.
+	// This mirrors the TCP_TIMEOUT_MIN variable in Linux.
+	// See: https://github.com/torvalds/linux/blob/249aca0d3d631660aa3583c6a3559b75b6e971b4/include/net/tcp.h#L143
+	tcpMinTimeout = 2 * time.Microsecond
 
-// maxSegmentsPerWake is the maximum number of segments to process in the main
-// protocol goroutine per wake-up. Yielding [after this number of segments are
-// processed] allows other events to be processed as well (e.g., timeouts,
-// resets, etc.).
-const maxSegmentsPerWake = 100
+	// InitialRTO is the initial retransmission timeout.
+	// https://github.com/torvalds/linux/blob/7c636d4d20f/include/net/tcp.h#L142
+	InitialRTO = time.Second
+
+	// maxSegmentsPerWake is the maximum number of segments to process in the main
+	// protocol goroutine per wake-up. Yielding [after this number of segments are
+	// processed] allows other events to be processed as well (e.g., timeouts,
+	// resets, etc.).
+	maxSegmentsPerWake = 100
+)
 
 type handshakeState int
 
@@ -297,6 +304,9 @@ func (h *handshake) synSentState(s *segment) tcpip.Error {
 		//        <SEQ=SEG.ACK><CTL=RST>
 		//   and send it.
 		h.ep.sendEmptyRaw(header.TCPFlagRst, s.ackNumber, 0, 0)
+		// Since this was a challenge ACK reschedule the retransmit timer to fire
+		// soon so that the SYN is retransmitted quickly.
+		h.retransmitTimer.reinit(tcpMinTimeout)
 		return nil
 	}
 
@@ -699,6 +709,11 @@ func (bt *backoffTimer) reset() tcpip.Error {
 	}
 	bt.t.Reset(bt.timeout)
 	return nil
+}
+
+func (bt *backoffTimer) reinit(timeout time.Duration) {
+	bt.timeout = timeout
+	bt.t.Reset(bt.timeout)
 }
 
 func (bt *backoffTimer) stop() {
