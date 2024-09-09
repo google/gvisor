@@ -54,7 +54,7 @@ func TestNoCompress(t *testing.T) {
 						Name: fmt.Sprintf("len(data)=%d, blockSize=%d, key=%s, corruptData=%v", len(data), blockSize, string(key), corruptData),
 						Data: data,
 						NewWriter: func(b *bytes.Buffer) (io.WriteCloser, error) {
-							return NewSimpleWriter(b, key), nil
+							return NewSimpleWriter(b, key, blockSize), nil
 						},
 						NewReader: func(b *bytes.Buffer) (io.Reader, error) {
 							return NewSimpleReader(b, key), nil
@@ -87,7 +87,7 @@ func benchmarkNoCompress1ByteWrite(b *testing.B, key []byte, blockSize uint32) {
 		buf [1]byte
 		out bytes.Buffer
 	)
-	w := NewSimpleWriter(&out, key)
+	w := NewSimpleWriter(&out, key, blockSize)
 	for i := 0; i < b.N; i++ {
 		w.Write(buf[:])
 	}

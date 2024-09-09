@@ -69,8 +69,8 @@ func TestStatefile(t *testing.T) {
 		{"longer than hash", []byte("012356asdjflkasjlk3jlk23j4lkjaso0d789f0aujw3lkjlkxsdf78asdful2kj3ljka78"), nil},
 
 		// Make sure we have one longer than the chunk size.
-		{"chunks", make([]byte, 3*compressionChunkSize), nil},
-		{"large", make([]byte, 30*compressionChunkSize), nil},
+		{"chunks", make([]byte, 3*stateFileChunkSize), nil},
+		{"large", make([]byte, 30*stateFileChunkSize), nil},
 
 		// Different metadata.
 		{"one metadata", []byte("data"), map[string]string{"foo": "bar"}},

@@ -234,7 +234,7 @@ func benchmark(b *testing.B, compression bool, write bool, hash bool, blockSize 
 		}
 	} else {
 		opts.NewWriter = func(b *bytes.Buffer) (io.WriteCloser, error) {
-			return NewSimpleWriter(b, key), nil
+			return NewSimpleWriter(b, key, blockSize), nil
 		}
 		opts.NewReader = func(b *bytes.Buffer) (io.Reader, error) {
 			return NewSimpleReader(b, key), nil
