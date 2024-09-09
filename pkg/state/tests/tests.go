@@ -19,6 +19,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"math"
 	"reflect"
 	"testing"
@@ -26,15 +27,6 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 	"gvisor.dev/gvisor/pkg/state/pretty"
 )
-
-// discard is an implementation of wire.Writer.
-type discard struct{}
-
-// Write implements wire.Writer.Write.
-func (discard) Write(p []byte) (int, error) { return len(p), nil }
-
-// WriteByte implements wire.Writer.WriteByte.
-func (discard) WriteByte(byte) error { return nil }
 
 // checkEqual checks if two objects are equal.
 //
@@ -103,7 +95,7 @@ func runTestCases(t *testing.T, shouldFail bool, prefix string, objects []any) {
 					t.Errorf("PrettyPrint(html=false) failed unexpected: %v", err)
 				}
 			}
-			if err := pretty.PrintHTML(discard{}, bytes.NewReader(saveBuffer.Bytes())); err != nil {
+			if err := pretty.PrintHTML(io.Discard, bytes.NewReader(saveBuffer.Bytes())); err != nil {
 				// See above.
 				if !shouldFail {
 					t.Errorf("PrettyPrint(html=true) failed unexpected: %v", err)

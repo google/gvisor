@@ -117,7 +117,7 @@ func BenchmarkEncoding(b *testing.B) {
 				b.ReportAllocs()
 				b.StartTimer()
 				for i := 0; i < n; i++ {
-					if _, err := algoInfo.Save(context.Background(), discard{}, v); err != nil {
+					if _, err := algoInfo.Save(context.Background(), io.Discard, v); err != nil {
 						b.Errorf("save failed: %v", err)
 					}
 				}

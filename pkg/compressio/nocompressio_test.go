@@ -69,22 +69,22 @@ func TestNoCompress(t *testing.T) {
 
 // The following benchmarks aims to be representative of how the wire
 // package writes to the image. In practice, wire package only calls Write
-// with a single byte at a time. Because all types boil down to wire.Uint
-// whose implementation invokes Write with one byte at a time.
+// with very small buffers. Because all types boil down to wire.Uint whose
+// implementation invokes Write with at most 10 bytes at a time.
 
 func BenchmarkTinyIO(b *testing.B) {
 	// Use the same chunk size as the statefile package.
 	const blockSize = 1024 * 1024
 	for _, key := range [][]byte{nil, hashKey} {
 		b.Run(benchmarkName(false, true, key != nil, blockSize), func(b *testing.B) {
-			benchmarkNoCompress1ByteWrite(b, key, blockSize)
+			benchmarkNoCompress8ByteWrite(b, key, blockSize)
 		})
 	}
 }
 
-func benchmarkNoCompress1ByteWrite(b *testing.B, key []byte, blockSize uint32) {
+func benchmarkNoCompress8ByteWrite(b *testing.B, key []byte, blockSize uint32) {
 	var (
-		buf [1]byte
+		buf [8]byte
 		out bytes.Buffer
 	)
 	w := NewSimpleWriter(&out, key, blockSize)
