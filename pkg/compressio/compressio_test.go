@@ -22,6 +22,7 @@ import (
 	"io"
 	"math/rand"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 )
@@ -49,30 +50,30 @@ func initTest(t harness, size int) []byte {
 }
 
 type testOpts struct {
-	Name            string
-	Data            []byte
-	NewWriter       func(*bytes.Buffer) (io.Writer, error)
-	NewReader       func(*bytes.Buffer) (io.Reader, error)
-	PreCompress     func()
-	PostCompress    func()
-	PreDecompress   func()
-	PostDecompress  func()
-	CompressIters   int
-	DecompressIters int
-	CorruptData     bool
+	Name        string
+	Data        []byte
+	NewWriter   func(*bytes.Buffer) (io.WriteCloser, error)
+	NewReader   func(*bytes.Buffer) (io.Reader, error)
+	PreWrite    func()
+	PostWrite   func()
+	PreRead     func()
+	PostRead    func()
+	WriteIters  int
+	ReadIters   int
+	CorruptData bool
 }
 
 func doTest(t harness, opts testOpts) {
 	// Compress.
 	var compressed bytes.Buffer
 	compressionStartTime := time.Now()
-	if opts.PreCompress != nil {
-		opts.PreCompress()
+	if opts.PreWrite != nil {
+		opts.PreWrite()
 	}
-	if opts.CompressIters <= 0 {
-		opts.CompressIters = 1
+	if opts.WriteIters <= 0 {
+		opts.WriteIters = 1
 	}
-	for i := 0; i < opts.CompressIters; i++ {
+	for i := 0; i < opts.WriteIters; i++ {
 		compressed.Reset()
 		w, err := opts.NewWriter(&compressed)
 		if err != nil {
@@ -82,16 +83,13 @@ func doTest(t harness, opts testOpts) {
 			t.Errorf("%s: compress got err %v, expected nil", opts.Name, err)
 			return
 		}
-		closer, ok := w.(io.Closer)
-		if ok {
-			if err := closer.Close(); err != nil {
-				t.Errorf("%s: got err %v, expected nil", opts.Name, err)
-				return
-			}
+		if err := w.Close(); err != nil {
+			t.Errorf("%s: got err %v, expected nil", opts.Name, err)
+			return
 		}
 	}
-	if opts.PostCompress != nil {
-		opts.PostCompress()
+	if opts.PostWrite != nil {
+		opts.PostWrite()
 	}
 	compressionTime := time.Since(compressionStartTime)
 	compressionRatio := float32(compressed.Len()) / float32(len(opts.Data))
@@ -104,17 +102,17 @@ func doTest(t harness, opts testOpts) {
 	// Decompress.
 	var decompressed bytes.Buffer
 	decompressionStartTime := time.Now()
-	if opts.PreDecompress != nil {
-		opts.PreDecompress()
+	if opts.PreRead != nil {
+		opts.PreRead()
 	}
-	if opts.DecompressIters <= 0 {
-		opts.DecompressIters = 1
+	if opts.ReadIters <= 0 {
+		opts.ReadIters = 1
 	}
 	if opts.CorruptData {
 		b := compressed.Bytes()
 		b[rand.Intn(len(b))]++
 	}
-	for i := 0; i < opts.DecompressIters; i++ {
+	for i := 0; i < opts.ReadIters; i++ {
 		decompressed.Reset()
 		r, err := opts.NewReader(bytes.NewBuffer(compressed.Bytes()))
 		if err != nil {
@@ -129,8 +127,8 @@ func doTest(t harness, opts testOpts) {
 			return
 		}
 	}
-	if opts.PostDecompress != nil {
-		opts.PostDecompress()
+	if opts.PostRead != nil {
+		opts.PostRead()
 	}
 	decompressionTime := time.Since(decompressionStartTime)
 
@@ -185,7 +183,7 @@ func TestCompress(t *testing.T) {
 					doTest(t, testOpts{
 						Name: fmt.Sprintf("len(data)=%d, blockSize=%d, key=%s, corruptData=%v", len(data), blockSize, string(key), corruptData),
 						Data: data,
-						NewWriter: func(b *bytes.Buffer) (io.Writer, error) {
+						NewWriter: func(b *bytes.Buffer) (io.WriteCloser, error) {
 							return NewWriter(b, key, blockSize, flate.BestSpeed)
 						},
 						NewReader: func(b *bytes.Buffer) (io.Reader, error) {
@@ -201,7 +199,7 @@ func TestCompress(t *testing.T) {
 		doTest(t, testOpts{
 			Name: fmt.Sprintf("len(data)=%d, vanilla flate", len(data)),
 			Data: data,
-			NewWriter: func(b *bytes.Buffer) (io.Writer, error) {
+			NewWriter: func(b *bytes.Buffer) (io.WriteCloser, error) {
 				return flate.NewWriter(b, flate.BestSpeed)
 			},
 			NewReader: func(b *bytes.Buffer) (io.Reader, error) {
@@ -215,7 +213,7 @@ const (
 	benchDataSize = 600 * 1024 * 1024
 )
 
-func benchmark(b *testing.B, compress bool, hash bool, blockSize uint32) {
+func benchmark(b *testing.B, compression bool, write bool, hash bool, blockSize uint32) {
 	b.StopTimer()
 	b.SetBytes(benchDataSize)
 	data := initTest(b, benchDataSize)
@@ -224,71 +222,67 @@ func benchmark(b *testing.B, compress bool, hash bool, blockSize uint32) {
 		key = nil
 	}
 	opts := testOpts{
-		Name: fmt.Sprintf("compress=%t, hash=%t, len(data)=%d, blockSize=%d", compress, hash, len(data), blockSize),
+		Name: fmt.Sprintf("compression=%t, write=%t, hash=%t, len(data)=%d, blockSize=%d", compression, write, hash, len(data), blockSize),
 		Data: data,
-		NewWriter: func(b *bytes.Buffer) (io.Writer, error) {
-			return NewWriter(b, key, blockSize, flate.BestSpeed)
-		},
-		NewReader: func(b *bytes.Buffer) (io.Reader, error) {
-			return NewReader(b, key)
-		},
 	}
-	if compress {
-		opts.PreCompress = b.StartTimer
-		opts.PostCompress = b.StopTimer
-		opts.CompressIters = b.N
+	if compression {
+		opts.NewWriter = func(b *bytes.Buffer) (io.WriteCloser, error) {
+			return NewWriter(b, key, blockSize, flate.BestSpeed)
+		}
+		opts.NewReader = func(b *bytes.Buffer) (io.Reader, error) {
+			return NewReader(b, key)
+		}
 	} else {
-		opts.PreDecompress = b.StartTimer
-		opts.PostDecompress = b.StopTimer
-		opts.DecompressIters = b.N
+		opts.NewWriter = func(b *bytes.Buffer) (io.WriteCloser, error) {
+			return NewSimpleWriter(b, key), nil
+		}
+		opts.NewReader = func(b *bytes.Buffer) (io.Reader, error) {
+			return NewSimpleReader(b, key), nil
+		}
+	}
+	if write {
+		opts.PreWrite = b.StartTimer
+		opts.PostWrite = b.StopTimer
+		opts.WriteIters = b.N
+	} else {
+		opts.PreRead = b.StartTimer
+		opts.PostRead = b.StopTimer
+		opts.ReadIters = b.N
 	}
 	doTest(b, opts)
 }
 
-func BenchmarkCompressNoHash64K(b *testing.B) {
-	benchmark(b, true, false, 64*1024)
+func benchmarkName(compression bool, write bool, hash bool, blockSize uint32) string {
+	var sb strings.Builder
+	if compression {
+		sb.WriteString("Compress")
+	} else {
+		sb.WriteString("NoCompress")
+	}
+	if write {
+		sb.WriteString("Write")
+	} else {
+		sb.WriteString("Read")
+	}
+	if hash {
+		sb.WriteString("Hash")
+	} else {
+		sb.WriteString("NoHash")
+	}
+	sb.WriteString(fmt.Sprintf("%dKbBlock", blockSize/1024))
+	return sb.String()
 }
 
-func BenchmarkCompressHash64K(b *testing.B) {
-	benchmark(b, true, true, 64*1024)
-}
-
-func BenchmarkDecompressNoHash64K(b *testing.B) {
-	benchmark(b, false, false, 64*1024)
-}
-
-func BenchmarkDecompressHash64K(b *testing.B) {
-	benchmark(b, false, true, 64*1024)
-}
-
-func BenchmarkCompressNoHash1M(b *testing.B) {
-	benchmark(b, true, false, 1024*1024)
-}
-
-func BenchmarkCompressHash1M(b *testing.B) {
-	benchmark(b, true, true, 1024*1024)
-}
-
-func BenchmarkDecompressNoHash1M(b *testing.B) {
-	benchmark(b, false, false, 1024*1024)
-}
-
-func BenchmarkDecompressHash1M(b *testing.B) {
-	benchmark(b, false, true, 1024*1024)
-}
-
-func BenchmarkCompressNoHash16M(b *testing.B) {
-	benchmark(b, true, false, 16*1024*1024)
-}
-
-func BenchmarkCompressHash16M(b *testing.B) {
-	benchmark(b, true, true, 16*1024*1024)
-}
-
-func BenchmarkDecompressNoHash16M(b *testing.B) {
-	benchmark(b, false, false, 16*1024*1024)
-}
-
-func BenchmarkDecompressHash16M(b *testing.B) {
-	benchmark(b, false, true, 16*1024*1024)
+func BenchmarkLargeIO(b *testing.B) {
+	for _, compress := range []bool{false, true} {
+		for _, blockSize := range []uint32{64 * 1024, 1024 * 1024, 16 * 1024 * 1024} {
+			for _, hash := range []bool{false, true} {
+				for _, write := range []bool{false, true} {
+					b.Run(benchmarkName(compress, write, hash, blockSize), func(b *testing.B) {
+						benchmark(b, compress, write, hash, blockSize)
+					})
+				}
+			}
+		}
+	}
 }
