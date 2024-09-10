@@ -58,17 +58,8 @@ func (r *Reader) readByte() byte {
 type Writer struct {
 	io.Writer
 
-	buf [1]byte
-}
-
-// writeByte writes a single byte to w.Writer without allocation. It panics on
-// error.
-func (w *Writer) writeByte(b byte) {
-	w.buf[0] = b
-	n, err := w.Write(w.buf[:])
-	if n != 1 {
-		panic(err)
-	}
+	// buf is used by Uint as a scratch buffer.
+	buf [10]byte
 }
 
 // readFull is a utility. The equivalent is not needed for Write, but the API
@@ -173,11 +164,16 @@ func loadUint(r *Reader) Uint {
 
 // save implements Object.save.
 func (u Uint) save(w *Writer) {
+	i := 0
 	for u >= 0x80 {
-		w.writeByte(byte(u) | 0x80)
+		w.buf[i] = byte(u) | 0x80
+		i++
 		u >>= 7
 	}
-	w.writeByte(byte(u))
+	w.buf[i] = byte(u)
+	if _, err := w.Write(w.buf[:i+1]); err != nil {
+		panic(err)
+	}
 }
 
 // load implements Object.load.
