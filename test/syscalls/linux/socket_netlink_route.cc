@@ -25,6 +25,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#include <bitset>
 #include <cerrno>
 #include <cstdint>
 #include <iostream>
@@ -1127,6 +1128,11 @@ TEST_P(NetlinkRouteIpInvariantTest, NewRoute) {
       prefixlen = 64;
       dst = &dst_v6;
       dst_len = sizeof(dst_v6);
+      std::cout << "dst: ";
+      for (int i = 0; i < sizeof(dst_v6.s6_addr); i++) {
+        std::cout << std::bitset<8>(dst_v6.s6_addr[i]) << " ";
+      }
+      std::cout << std::endl;
       break;
     default:
       FAIL() << "address family must be AF_INET or AF_INET6";
@@ -1174,7 +1180,7 @@ TEST_P(NetlinkRouteIpInvariantTest, NewRoute) {
               case AF_INET:
                 inet_ntop(AF_INET, RTA_DATA(attr), v4_address,
                           sizeof(v4_address));
-                if (strcmp(v4_address, dst_v4_address.c_str())) {
+                if (strcmp(v4_address, dst_v4_address.c_str()) == 0) {
                   routeDstFound = true;
                   return;
                 }
@@ -1182,7 +1188,7 @@ TEST_P(NetlinkRouteIpInvariantTest, NewRoute) {
               case AF_INET6:
                 inet_ntop(AF_INET6, RTA_DATA(attr), v6_address,
                           sizeof(v6_address));
-                if (strcmp(v6_address, dst_v6_address.c_str())) {
+                if (strcmp(v6_address, dst_v6_address.c_str()) == 0) {
                   routeDstFound = true;
                   return;
                 }

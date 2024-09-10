@@ -781,6 +781,7 @@ func (s *Stack) NewRoute(ctx context.Context, msg *nlmsg.Message) *syserr.Error 
 			if len(value) < 1 {
 				return syserr.ErrInvalidArgument
 			}
+			fmt.Printf("received ip address: %b\n", value)
 			route.DstAddr = value
 		case linux.RTA_SRC:
 			if len(value) < 1 {
