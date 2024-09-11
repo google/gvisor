@@ -18,22 +18,18 @@ package dockerutil
 import (
 	"flag"
 	"fmt"
+	"io"
 	"os"
 
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/mount"
-
-	// Needed for go:embed
-	_ "embed"
+	"gvisor.dev/gvisor/pkg/test/testutil"
 )
 
 // Flags.
 var (
 	setCOSGPU = flag.Bool("cos-gpu", false, "set to configure GPU settings for COS, as opposed to Docker")
 )
-
-//go:embed run_sniffer_copy
-var runSnifferBinary []byte
 
 const (
 	// ioctlSnifferMountPath is the in-container path at which the ioctl sniffer is mounted.
@@ -54,12 +50,22 @@ const (
 func GPURunOpts(sniffGPUOpts SniffGPUOpts) (RunOpts, error) {
 	var mounts []mount.Mount
 	if sniffGPUOpts.DisableSnifferReason == "" {
-		// Extract the sniffer binary to a temporary location.
+		snifferRunfilesPath, err := testutil.FindFile("tools/ioctl_sniffer/run_sniffer")
+		if err != nil {
+			return RunOpts{}, fmt.Errorf("failed to find run_sniffer binary: %w", err)
+		}
+		snifferRunfilesFile, err := os.Open(snifferRunfilesPath)
+		if err != nil {
+			return RunOpts{}, fmt.Errorf("failed to open run_sniffer binary: %w", err)
+		}
+		defer snifferRunfilesFile.Close()
+		// Copy the sniffer binary to a temporary location.
 		runSniffer, err := os.CreateTemp("", "run_sniffer.*")
 		if err != nil {
 			return RunOpts{}, fmt.Errorf("failed to create temporary file: %w", err)
 		}
-		if _, err := runSniffer.Write(runSnifferBinary); err != nil {
+		defer runSniffer.Close()
+		if _, err := io.Copy(runSniffer, snifferRunfilesFile); err != nil {
 			return RunOpts{}, fmt.Errorf("failed to write to temporary file: %w", err)
 		}
 		if err := runSniffer.Sync(); err != nil {
@@ -67,9 +73,6 @@ func GPURunOpts(sniffGPUOpts SniffGPUOpts) (RunOpts, error) {
 		}
 		if err := runSniffer.Chmod(0o555); err != nil {
 			return RunOpts{}, fmt.Errorf("failed to chmod temporary file: %w", err)
-		}
-		if err := runSniffer.Close(); err != nil {
-			return RunOpts{}, fmt.Errorf("failed to close temporary file: %w", err)
 		}
 		sniffGPUOpts.runSniffer = runSniffer
 		mounts = append(mounts, mount.Mount{

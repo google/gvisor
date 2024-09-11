@@ -5,17 +5,6 @@ package(
     licenses = ["notice"],
 )
 
-# We copy the `run_sniffer` binary here because `go:embed` can only embed
-# from the current directory or subdirectories, not parents of it.
-genrule(
-    name = "run_sniffer_bin",
-    srcs = [
-        "//tools/ioctl_sniffer:run_sniffer",
-    ],
-    outs = ["run_sniffer_copy"],
-    cmd = "cat < $(SRCS) > $@",
-)
-
 go_library(
     name = "dockerutil",
     testonly = 1,
@@ -27,8 +16,8 @@ go_library(
         "network.go",
         "profile.go",
     ],
-    embedsrcs = [
-        ":run_sniffer_bin",  # keep
+    data = [
+        "//tools/ioctl_sniffer:run_sniffer",
     ],
     visibility = ["//:sandbox"],
     deps = [

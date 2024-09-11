@@ -284,15 +284,15 @@ gpu-smoke-images: load-basic_cuda-vector-add load-gpu_cuda-tests
 .PHONY: gpu-smoke-images
 
 gpu-smoke-tests: gpu-smoke-images $(RUNTIME_BIN)
-	@$(call sudo,test/gpu:smoke_test,--runtime=runc -test.v $(ARGS))
+	@$(call test,test/gpu:smoke_test,--runtime=runc -test.v $(ARGS))
 	@$(call install_runtime,$(RUNTIME),--nvproxy=true --nvproxy-docker=true)
-	@$(call sudo,test/gpu:smoke_test,--runtime=$(RUNTIME) -test.v $(ARGS))
+	@$(call test,test/gpu:smoke_test,--runtime=$(RUNTIME) -test.v $(ARGS))
 .PHONY: gpu-smoke-tests
 
 cos-gpu-smoke-tests: gpu-smoke-images $(RUNTIME_BIN)
-	@$(call sudo,test/gpu:smoke_test,--runtime=runc -test.v --cos-gpu $(ARGS))
+	@$(call test,test/gpu:smoke_test,--runtime=runc -test.v --cos-gpu $(ARGS))
 	@$(call install_runtime,$(RUNTIME),--nvproxy=true)
-	@$(call sudo,test/gpu:smoke_test,--runtime=$(RUNTIME) -test.v --cos-gpu $(ARGS))
+	@$(call test,test/gpu:smoke_test,--runtime=$(RUNTIME) -test.v --cos-gpu $(ARGS))
 .PHONY: cos-gpu-smoke-tests
 
 # Images needed for GPU tests.
@@ -304,22 +304,22 @@ gpu-images: gpu-smoke-images load-gpu_pytorch load-gpu_ollama load-gpu_ollama_cl
 
 gpu-all-tests: gpu-images gpu-smoke-tests $(RUNTIME_BIN)
 	@$(call install_runtime,$(RUNTIME),--nvproxy=true --nvproxy-docker=true)
-	@$(call sudo,test/gpu:pytorch_test,--runtime=$(RUNTIME) -test.v $(ARGS))
-	@$(call sudo,test/gpu:textgen_test,--runtime=$(RUNTIME) -test.v $(ARGS))
-	@$(call sudo,test/gpu:imagegen_test,--runtime=$(RUNTIME) -test.v $(ARGS))
-	@$(call sudo,test/gpu:sr_test,--runtime=$(RUNTIME) -test.v $(ARGS))
-	@$(call sudo,test/gpu:nccl_test,--runtime=$(RUNTIME) -test.v $(ARGS))
-	@$(call sudo,test/gpu:sniffer_test,--runtime=$(RUNTIME) -test.v $(ARGS))
+	@$(call test,test/gpu:pytorch_test,--runtime=$(RUNTIME) -test.v $(ARGS))
+	@$(call test,test/gpu:textgen_test,--runtime=$(RUNTIME) -test.v $(ARGS))
+	@$(call test,test/gpu:imagegen_test,--runtime=$(RUNTIME) -test.v $(ARGS))
+	@$(call test,test/gpu:sr_test,--runtime=$(RUNTIME) -test.v $(ARGS))
+	@$(call test,test/gpu:nccl_test,--runtime=$(RUNTIME) -test.v $(ARGS))
+	@$(call test,test/gpu:sniffer_test,--runtime=$(RUNTIME) -test.v $(ARGS))
 .PHONY: gpu-all-tests
 
 cos-gpu-all-tests: gpu-images cos-gpu-smoke-tests $(RUNTIME_BIN)
 	@$(call install_runtime,$(RUNTIME),--nvproxy=true)
-	@$(call sudo,test/gpu:pytorch_test,--runtime=$(RUNTIME) -test.v --cos-gpu $(ARGS))
-	@$(call sudo,test/gpu:textgen_test,--runtime=$(RUNTIME) -test.v --cos-gpu $(ARGS))
-	@$(call sudo,test/gpu:imagegen_test,--runtime=$(RUNTIME) -test.v --cos-gpu $(ARGS))
-	@$(call sudo,test/gpu:sr_test,--runtime=$(RUNTIME) -test.v --cos-gpu $(ARGS))
-	@$(call sudo,test/gpu:nccl_test,--runtime=$(RUNTIME) -test.v --cos-gpu $(ARGS))
-	@$(call sudo,test/gpu:sniffer_test,--runtime=$(RUNTIME) -test.v --cos-gpu $(ARGS))
+	@$(call test,test/gpu:pytorch_test,--runtime=$(RUNTIME) -test.v --cos-gpu $(ARGS))
+	@$(call test,test/gpu:textgen_test,--runtime=$(RUNTIME) -test.v --cos-gpu $(ARGS))
+	@$(call test,test/gpu:imagegen_test,--runtime=$(RUNTIME) -test.v --cos-gpu $(ARGS))
+	@$(call test,test/gpu:sr_test,--runtime=$(RUNTIME) -test.v --cos-gpu $(ARGS))
+	@$(call test,test/gpu:nccl_test,--runtime=$(RUNTIME) -test.v --cos-gpu $(ARGS))
+	@$(call test,test/gpu:sniffer_test,--runtime=$(RUNTIME) -test.v --cos-gpu $(ARGS))
 .PHONY: cos-gpu-all-tests
 
 portforward-tests: load-basic_redis load-basic_nginx $(RUNTIME_BIN)
