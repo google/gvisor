@@ -1953,6 +1953,10 @@ func setCloExeOnAllFDs() error {
 			}
 			flags, _, errno := unix.RawSyscall(unix.SYS_FCNTL, uintptr(fd), unix.F_GETFD, 0)
 			if errno != 0 {
+				if errno == unix.EBADF {
+					// Raced with the FD being closed.
+					continue
+				}
 				return fmt.Errorf("error getting descriptor flags: %w", errno)
 			}
 			if flags&unix.FD_CLOEXEC != 0 {
@@ -1960,6 +1964,10 @@ func setCloExeOnAllFDs() error {
 			}
 			flags |= unix.FD_CLOEXEC
 			if _, _, errno := unix.RawSyscall(unix.SYS_FCNTL, uintptr(fd), unix.F_SETFD, flags); errno != 0 {
+				if errno == unix.EBADF {
+					// Raced with the FD being closed.
+					continue
+				}
 				return fmt.Errorf("error setting CLOEXEC: %w", errno)
 			}
 		}

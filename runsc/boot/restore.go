@@ -137,6 +137,14 @@ func createNetworkStackForRestore(l *Loader) (*stack.Stack, inet.Stack) {
 	return nil, hostinet.NewStack()
 }
 
+// Validate OCI specs before restoring the containers.
+func validateSpecs(oldSpecs, newSpecs map[string]*specs.Spec) error {
+	if len(oldSpecs) != len(newSpecs) {
+		return fmt.Errorf("incorrect number of specs during checkpoint and restore")
+	}
+	return nil
+}
+
 func (r *restorer) restore(l *Loader) error {
 	log.Infof("Starting to restore %d containers", len(r.containers))
 
@@ -223,6 +231,14 @@ func (r *restorer) restore(l *Loader) error {
 	// Load the state.
 	loadOpts := state.LoadOpts{Source: r.stateFile, PagesMetadata: r.pagesMetadata, PagesFile: r.pagesFile}
 	if err := loadOpts.Load(ctx, l.k, nil, oldInetStack, time.NewCalibratedClocks(), &vfs.CompleteRestoreOptions{}, l.saveRestoreNet); err != nil {
+		return err
+	}
+
+	oldSpecs, err := popContainerSpecsFromCheckpoint(l.k)
+	if err != nil {
+		return err
+	}
+	if err := validateSpecs(oldSpecs, l.containerSpecs); err != nil {
 		return err
 	}
 
@@ -327,6 +343,9 @@ func (l *Loader) save(o *control.SaveOpts) (err error) {
 		o.Metadata = make(map[string]string)
 	}
 	o.Metadata["container_count"] = strconv.Itoa(l.containerCount())
+
+	// Save container specs.
+	l.addContainerSpecsToCheckpoint()
 
 	if err := preSaveImpl(l, o); err != nil {
 		return err
