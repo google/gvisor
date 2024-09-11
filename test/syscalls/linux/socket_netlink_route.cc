@@ -1113,16 +1113,16 @@ TEST_P(NetlinkRouteIpInvariantTest, NewRoute) {
   void* dst = nullptr;
   int dst_len;
   int prefixlen;
+  struct in_addr dst_v4;
+  struct in6_addr dst_v6;
   switch (family) {
     case AF_INET:
-      struct in_addr dst_v4;
       ASSERT_EQ(inet_pton(family, dst_v4_address.c_str(), &dst_v4), 1);
       prefixlen = 24;
       dst = &dst_v4;
       dst_len = sizeof(dst_v4);
       break;
     case AF_INET6:
-      struct in6_addr dst_v6;
       ASSERT_EQ(inet_pton(family, dst_v6_address.c_str(), &dst_v6), 1);
       prefixlen = 64;
       dst = &dst_v6;
@@ -1174,7 +1174,7 @@ TEST_P(NetlinkRouteIpInvariantTest, NewRoute) {
               case AF_INET:
                 inet_ntop(AF_INET, RTA_DATA(attr), v4_address,
                           sizeof(v4_address));
-                if (strcmp(v4_address, dst_v4_address.c_str())) {
+                if (strcmp(v4_address, dst_v4_address.c_str()) == 0) {
                   routeDstFound = true;
                   return;
                 }
@@ -1182,7 +1182,7 @@ TEST_P(NetlinkRouteIpInvariantTest, NewRoute) {
               case AF_INET6:
                 inet_ntop(AF_INET6, RTA_DATA(attr), v6_address,
                           sizeof(v6_address));
-                if (strcmp(v6_address, dst_v6_address.c_str())) {
+                if (strcmp(v6_address, dst_v6_address.c_str()) == 0) {
                   routeDstFound = true;
                   return;
                 }
