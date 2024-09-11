@@ -16,6 +16,7 @@
 package boot
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	mrand "math/rand"
@@ -363,8 +364,16 @@ type Args struct {
 	SaveFDs []*fd.FD
 }
 
-// make sure stdioFDs are always the same on initial start and on restore
-const startingStdioFD = 256
+const (
+	// startingStdioFD is the starting stdioFD number used during sandbox
+	// start and restore. This makes sure the stdioFDs are always the same
+	// on initial start and on restore.
+	startingStdioFD = 256
+
+	// containerSpecsKey is the key used to add and pop the container specs to the
+	// kernel during save/restore.
+	containerSpecsKey = "container_specs"
+)
 
 func getRootCredentials(spec *specs.Spec, conf *config.Config, userNs *auth.UserNamespace) *auth.Credentials {
 	// Create capabilities.
@@ -1940,4 +1949,36 @@ func (l *Loader) containerRuntimeState(cid string) ContainerRuntimeState {
 	}
 	// Init process has stopped, but no one has called wait on it yet.
 	return RuntimeStateStopped
+}
+
+// addContainerSpecsToCheckpoint adds the container specs to the kernel.
+func (l *Loader) addContainerSpecsToCheckpoint() {
+	l.mu.Lock()
+	s := l.containerSpecs
+	l.mu.Unlock()
+
+	specsMap := make(map[string][]byte)
+	for k, v := range s {
+		data, err := json.Marshal(v)
+		if err != nil {
+			log.Warningf("json marshal error for specs %v", err)
+			return
+		}
+		specsMap[k] = data
+	}
+	l.k.AddStateToCheckpoint(containerSpecsKey, specsMap)
+}
+
+// popContainerSpecsFromCheckpoint pops all the container specs from the kernel.
+func popContainerSpecsFromCheckpoint(k *kernel.Kernel) (map[string]*specs.Spec, error) {
+	specsMap := (k.PopCheckpointState(containerSpecsKey)).(map[string][]byte)
+	oldSpecs := make(map[string]*specs.Spec)
+	for k, v := range specsMap {
+		var s specs.Spec
+		if err := json.Unmarshal(v, &s); err != nil {
+			return nil, fmt.Errorf("json unmarshal error for specs %v", err)
+		}
+		oldSpecs[k] = &s
+	}
+	return oldSpecs, nil
 }
