@@ -34,7 +34,9 @@ func TestGPUCheckpointRestore(t *testing.T) {
 	c := dockerutil.MakeContainer(ctx, t)
 	defer c.CleanUp(ctx)
 
-	opts, err := dockerutil.GPURunOpts(dockerutil.SniffGPUOpts{AllowIncompatibleIoctl: true})
+	opts, err := dockerutil.GPURunOpts(dockerutil.SniffGPUOpts{
+		DisableSnifferReason: "TODO(gvisor.dev/issue/10885): Verify that this test works",
+	})
 	if err != nil {
 		t.Fatalf("failed to get GPU run options: %v", err)
 	}

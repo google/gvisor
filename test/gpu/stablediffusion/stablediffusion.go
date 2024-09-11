@@ -48,7 +48,7 @@ func (dr *dockerRunner) Run(ctx context.Context, image string, argv []string) ([
 	cont := dockerutil.MakeContainer(ctx, dr.logger)
 	defer cont.CleanUp(ctx)
 	opts, err := dockerutil.GPURunOpts(dockerutil.SniffGPUOpts{
-		AllowIncompatibleIoctl: true,
+		DisableSnifferReason: "TODO(gvisor.dev/issue/10885): Verify that this test works",
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get GPU run options: %w", err)

@@ -27,7 +27,9 @@ import (
 func runNCCL(ctx context.Context, t *testing.T, testName string) {
 	t.Helper()
 	c := dockerutil.MakeContainer(ctx, t)
-	opts, err := dockerutil.GPURunOpts(dockerutil.SniffGPUOpts{AllowIncompatibleIoctl: true})
+	opts, err := dockerutil.GPURunOpts(dockerutil.SniffGPUOpts{
+		DisableSnifferReason: "TODO(gvisor.dev/issue/10885): Verify that this test works",
+	})
 	if err != nil {
 		t.Fatalf("Failed to get GPU run options: %v", err)
 	}

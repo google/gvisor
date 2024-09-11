@@ -150,7 +150,7 @@ type dockerServer struct {
 // in a local Docker container.
 func NewDocker(ctx context.Context, cont *dockerutil.Container, logger testutil.Logger) (*Ollama, error) {
 	opts, err := dockerutil.GPURunOpts(dockerutil.SniffGPUOpts{
-		AllowIncompatibleIoctl: true,
+		DisableSnifferReason: "TODO(gvisor.dev/issue/10885): Verify that this test works",
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get GPU run options: %w", err)
