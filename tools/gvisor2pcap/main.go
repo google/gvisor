@@ -168,10 +168,6 @@ func processLine(ep *sniffer.Endpoint, scanner *bufio.Scanner) error {
 		return fmt.Errorf("bad source: %w", err)
 	}
 
-	if srcIP.Is6() || dstIP.Is6() {
-		return fmt.Errorf("IPv6 packet")
-	}
-
 	// Packet length is of the form "len:200". It describes the
 	// payload length not including headers.
 	length, err := consumeFieldUint[uint16](&tokens, "len")
@@ -438,21 +434,37 @@ func processLine(ep *sniffer.Endpoint, scanner *bufio.Scanner) error {
 		WindowSize: window,
 	})
 	copy(tcpHdr[header.TCPMinimumSize:], optsBuf)
+	length += uint16(len(tcpHdr))
 
 	// Build IP header.
-	length += header.IPv4MinimumSize + uint16(len(tcpHdr))
-	ipHdr := header.IPv4(make([]byte, header.IPv4MinimumSize))
-	ipHdr.Encode(&header.IPv4Fields{
-		TotalLength: length,
-		ID:          id,
-		TTL:         10, // Made up.
-		TOS:         0,  // Made up.
-		Protocol:    uint8(transProto),
-		Checksum:    csum,
-		SrcAddr:     tcpip.AddrFrom4(srcIP.As4()),
-		DstAddr:     tcpip.AddrFrom4(dstIP.As4()),
-		Options:     nil,
-	})
+	var ipHdr []byte
+	if srcIP.Is4() {
+		length += header.IPv4MinimumSize
+		hdr := make(header.IPv4, header.IPv4MinimumSize)
+		hdr.Encode(&header.IPv4Fields{
+			TotalLength: length,
+			ID:          id,
+			TTL:         10, // Made up.
+			TOS:         0,  // Made up.
+			Protocol:    uint8(transProto),
+			Checksum:    csum,
+			SrcAddr:     tcpip.AddrFrom4(srcIP.As4()),
+			DstAddr:     tcpip.AddrFrom4(dstIP.As4()),
+			Options:     nil,
+		})
+		ipHdr = hdr
+	} else {
+		length += header.IPv6MinimumSize
+		hdr := make(header.IPv6, header.IPv6MinimumSize)
+		hdr.Encode(&header.IPv6Fields{
+			PayloadLength:     uint16(len(tcpHdr)),
+			TransportProtocol: transProto,
+			SrcAddr:           tcpip.AddrFrom16(srcIP.As16()),
+			DstAddr:           tcpip.AddrFrom16(dstIP.As16()),
+			ExtensionHeaders:  header.IPv6ExtHdrSerializer{},
+		})
+		ipHdr = hdr
+	}
 
 	// Build PacketBuffer.
 	data := make([]byte, length)

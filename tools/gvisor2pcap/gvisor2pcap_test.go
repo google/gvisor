@@ -152,11 +152,24 @@ func TestGolden(t *testing.T) {
 	testBinary(t, packetLogFile, tempDir)
 }
 
+// TestGolden6 runs against the packet logs from `wget -6`. This is a larger,
+// more realistic log than we could reasonably generate ourselves.
+//
+// One way to generate a new golden is via docker configured to run `runsc`
+// with `--log-packets`. Build an image with wget and run
+// `docker run --runtime runsc wget-image wget -6 google.com`
+func TestGolden6(t *testing.T) {
+	tempDir := t.TempDir()
+	packetLogFile, err := testutil.FindFile("tools/gvisor2pcap/wget6.log")
+	if err != nil {
+		t.Fatalf("couldn't get log path: %v", err)
+	}
+
+	testBinary(t, packetLogFile, tempDir)
+}
+
 // allowedErrors matches output for packets that are known to be unhandled.
-var allowedErrors = regexp.MustCompile(strings.Join([]string{
-	"unhandled protocol (udp|arp|icmp)",
-	"IPv6 packet",
-}, "|"))
+var allowedErrors = regexp.MustCompile("unhandled protocol (udp|arp|icmp)")
 
 // testBinary runs gvisor2pcap with an input and checks that packets are either
 // handled or in the set of known unhandled packet types.

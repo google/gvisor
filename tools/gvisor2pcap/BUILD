@@ -26,6 +26,7 @@ go_test(
     srcs = ["gvisor2pcap_test.go"],
     data = [
         "wget.log",
+        "wget6.log",
         ":gvisor2pcap",
     ],
     deps = [
