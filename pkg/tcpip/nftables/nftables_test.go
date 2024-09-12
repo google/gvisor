@@ -1113,6 +1113,237 @@ func TestEvaluateComparison(t *testing.T) {
 	}
 }
 
+// TestEvaluateRanged tests that the Ranged operation correctly checks that the
+// the data in the source register is within the specified inclusive range.
+// Note: Relies on expected behavior of the Immediate operation.
+func TestEvaluateRanged(t *testing.T) {
+	for _, test := range []struct {
+		tname string
+		op1   operation // Immediate operation that sets the source register.
+		op2   operation // Ranged operation to test.
+		res   bool      // should be true if we reach end of the rule (no breaks)
+	}{
+		// 4-byte ranges, alternates between 4-byte and 16-byte registers.
+		{
+			tname: "4-byte data eq within range",
+			op1:   mustCreateImmediate(t, linux.NFT_REG_1, newBytesData(numToBE(1, 4))),
+			op2:   mustCreateRanged(t, linux.NFT_REG_1, linux.NFT_RANGE_EQ, numToBE(0, 4), numToBE(5, 4)),
+			res:   true,
+		},
+		{
+			tname: "4-byte data neq within range",
+			op1:   mustCreateImmediate(t, linux.NFT_REG_1, newBytesData(numToBE(4, 4))),
+			op2:   mustCreateRanged(t, linux.NFT_REG_1, linux.NFT_RANGE_NEQ, numToBE(0, 4), numToBE(5, 4)),
+			res:   false,
+		},
+		{
+			tname: "4-byte data eq below range",
+			op1:   mustCreateImmediate(t, linux.NFT_REG32_00, newBytesData(numToBE(1, 4))),
+			op2:   mustCreateRanged(t, linux.NFT_REG32_00, linux.NFT_RANGE_EQ, numToBE(3, 4), numToBE(5, 4)),
+			res:   false,
+		},
+		{
+			tname: "4-byte data neq below range",
+			op1:   mustCreateImmediate(t, linux.NFT_REG32_00, newBytesData(numToBE(1, 4))),
+			op2:   mustCreateRanged(t, linux.NFT_REG32_00, linux.NFT_RANGE_NEQ, numToBE(3, 4), numToBE(5, 4)),
+			res:   true,
+		},
+		{
+			tname: "4-byte data eq above range",
+			op1:   mustCreateImmediate(t, linux.NFT_REG32_00, newBytesData(numToBE(954, 4))),
+			op2:   mustCreateRanged(t, linux.NFT_REG32_00, linux.NFT_RANGE_EQ, numToBE(3, 4), numToBE(5, 4)),
+			res:   false,
+		},
+		{
+			tname: "4-byte data neq above range",
+			op1:   mustCreateImmediate(t, linux.NFT_REG32_00, newBytesData(numToBE(954, 4))),
+			op2:   mustCreateRanged(t, linux.NFT_REG32_00, linux.NFT_RANGE_NEQ, numToBE(3, 4), numToBE(5, 4)),
+			res:   true,
+		},
+		{
+			tname: "4-byte data eq on lower bound",
+			op1:   mustCreateImmediate(t, linux.NFT_REG32_00, newBytesData(numToBE(1, 4))),
+			op2:   mustCreateRanged(t, linux.NFT_REG32_00, linux.NFT_RANGE_EQ, numToBE(1, 4), numToBE(5, 4)),
+			res:   true,
+		},
+		{
+			tname: "4-byte data neq on lower bound",
+			op1:   mustCreateImmediate(t, linux.NFT_REG32_00, newBytesData(numToBE(1, 4))),
+			op2:   mustCreateRanged(t, linux.NFT_REG32_00, linux.NFT_RANGE_NEQ, numToBE(1, 4), numToBE(5, 4)),
+			res:   false,
+		},
+		{
+			tname: "4-byte data eq on upper bound",
+			op1:   mustCreateImmediate(t, linux.NFT_REG_4, newBytesData(numToBE(100, 4))),
+			op2:   mustCreateRanged(t, linux.NFT_REG_4, linux.NFT_RANGE_EQ, numToBE(4, 4), numToBE(100, 4)),
+			res:   true,
+		},
+		{
+			tname: "4-byte data neq on upper bound",
+			op1:   mustCreateImmediate(t, linux.NFT_REG_4, newBytesData(numToBE(100, 4))),
+			op2:   mustCreateRanged(t, linux.NFT_REG_4, linux.NFT_RANGE_NEQ, numToBE(4, 4), numToBE(100, 4)),
+			res:   false,
+		},
+		{
+			tname: "4-byte data eq on point range",
+			op1:   mustCreateImmediate(t, linux.NFT_REG_4, newBytesData(numToBE(123, 4))),
+			op2:   mustCreateRanged(t, linux.NFT_REG_4, linux.NFT_RANGE_EQ, numToBE(123, 4), numToBE(123, 4)),
+			res:   true,
+		},
+		{
+			tname: "4-byte data neq on point range",
+			op1:   mustCreateImmediate(t, linux.NFT_REG_4, newBytesData(numToBE(123, 4))),
+			op2:   mustCreateRanged(t, linux.NFT_REG_4, linux.NFT_RANGE_NEQ, numToBE(123, 4), numToBE(123, 4)),
+			res:   false,
+		},
+		// 8-byte ranges.
+		{
+			tname: "8-byte data eq within range",
+			op1:   mustCreateImmediate(t, linux.NFT_REG_1, newBytesData(numToBE(1, 8))),
+			op2:   mustCreateRanged(t, linux.NFT_REG_1, linux.NFT_RANGE_EQ, numToBE(0, 8), numToBE(5, 8)),
+			res:   true,
+		},
+		{
+			tname: "8-byte data neq within range",
+			op1:   mustCreateImmediate(t, linux.NFT_REG_2, newBytesData(numToBE(4, 8))),
+			op2:   mustCreateRanged(t, linux.NFT_REG_2, linux.NFT_RANGE_NEQ, numToBE(0, 8), numToBE(5, 8)),
+			res:   false,
+		},
+		{
+			tname: "8-byte data eq below range",
+			op1:   mustCreateImmediate(t, linux.NFT_REG_3, newBytesData(numToBE(1, 8))),
+			op2:   mustCreateRanged(t, linux.NFT_REG_3, linux.NFT_RANGE_EQ, numToBE(3, 8), numToBE(5, 8)),
+			res:   false,
+		},
+		{
+			tname: "8-byte data neq below range",
+			op1:   mustCreateImmediate(t, linux.NFT_REG_4, newBytesData(numToBE(1, 8))),
+			op2:   mustCreateRanged(t, linux.NFT_REG_4, linux.NFT_RANGE_NEQ, numToBE(3, 8), numToBE(5, 8)),
+			res:   true,
+		},
+		{
+			tname: "8-byte data eq above range",
+			op1:   mustCreateImmediate(t, linux.NFT_REG_1, newBytesData(numToBE(954, 8))),
+			op2:   mustCreateRanged(t, linux.NFT_REG_1, linux.NFT_RANGE_EQ, numToBE(3, 8), numToBE(5, 8)),
+			res:   false,
+		},
+		{
+			tname: "8-byte data neq above range",
+			op1:   mustCreateImmediate(t, linux.NFT_REG_2, newBytesData(numToBE(954, 8))),
+			op2:   mustCreateRanged(t, linux.NFT_REG_2, linux.NFT_RANGE_NEQ, numToBE(3, 8), numToBE(5, 8)),
+			res:   true,
+		},
+		{
+			tname: "8-byte data eq on lower bound",
+			op1:   mustCreateImmediate(t, linux.NFT_REG_3, newBytesData(numToBE(1, 8))),
+			op2:   mustCreateRanged(t, linux.NFT_REG_3, linux.NFT_RANGE_EQ, numToBE(1, 8), numToBE(5, 8)),
+			res:   true,
+		},
+		{
+			tname: "8-byte data neq on lower bound",
+			op1:   mustCreateImmediate(t, linux.NFT_REG_4, newBytesData(numToBE(1, 8))),
+			op2:   mustCreateRanged(t, linux.NFT_REG_4, linux.NFT_RANGE_NEQ, numToBE(1, 8), numToBE(5, 8)),
+			res:   false,
+		},
+		{
+			tname: "8-byte data eq on upper bound",
+			op1:   mustCreateImmediate(t, linux.NFT_REG_4, newBytesData(numToBE(100, 8))),
+			op2:   mustCreateRanged(t, linux.NFT_REG_4, linux.NFT_RANGE_EQ, numToBE(4, 8), numToBE(100, 8)),
+			res:   true,
+		},
+		{
+			tname: "8-byte data neq on upper bound",
+			op1:   mustCreateImmediate(t, linux.NFT_REG_4, newBytesData(numToBE(100, 8))),
+			op2:   mustCreateRanged(t, linux.NFT_REG_4, linux.NFT_RANGE_NEQ, numToBE(4, 8), numToBE(100, 8)),
+			res:   false,
+		},
+		{
+			tname: "8-byte data eq on point range",
+			op1:   mustCreateImmediate(t, linux.NFT_REG_1, newBytesData(numToBE(123, 8))),
+			op2:   mustCreateRanged(t, linux.NFT_REG_1, linux.NFT_RANGE_EQ, numToBE(123, 8), numToBE(123, 8)),
+			res:   true,
+		},
+		{
+			tname: "8-byte data neq on point range",
+			op1:   mustCreateImmediate(t, linux.NFT_REG_3, newBytesData(numToBE(123, 8))),
+			op2:   mustCreateRanged(t, linux.NFT_REG_3, linux.NFT_RANGE_NEQ, numToBE(123, 8), numToBE(123, 8)),
+			res:   false,
+		},
+		// simpler 16-byte ranges.
+		{
+			tname: "16-byte data eq within range",
+			op1:   mustCreateImmediate(t, linux.NFT_REG_1, newBytesData([]byte{1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0})),
+			op2:   mustCreateRanged(t, linux.NFT_REG_1, linux.NFT_RANGE_EQ, []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0}, []byte{5, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0}),
+			res:   true,
+		},
+		{
+			tname: "16-byte data neq within range",
+			op1:   mustCreateImmediate(t, linux.NFT_REG_2, newBytesData([]byte{1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0})),
+			op2:   mustCreateRanged(t, linux.NFT_REG_2, linux.NFT_RANGE_NEQ, []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0}, []byte{5, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0}),
+			res:   false,
+		},
+		{
+			tname: "16-byte data eq outside range",
+			op1:   mustCreateImmediate(t, linux.NFT_REG_3, newBytesData([]byte{0x45, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0})),
+			op2:   mustCreateRanged(t, linux.NFT_REG_3, linux.NFT_RANGE_EQ, []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0}, []byte{5, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0}),
+			res:   false,
+		},
+		{
+			tname: "16-byte data neq outside range",
+			op1:   mustCreateImmediate(t, linux.NFT_REG_4, newBytesData([]byte{0x45, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0})),
+			op2:   mustCreateRanged(t, linux.NFT_REG_4, linux.NFT_RANGE_NEQ, []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0}, []byte{5, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0}),
+			res:   true,
+		},
+	} {
+		t.Run(test.tname, func(t *testing.T) {
+			// Sets up an NFTables object with a single table, chain, and rule.
+			nf := NewNFTables()
+			tab, err := nf.AddTable(arbitraryFamily, "test", "test table", false)
+			if err != nil {
+				t.Fatalf("unexpected error for AddTable: %v", err)
+			}
+			bc, err := tab.AddChain("base_chain", nil, "test chain", false)
+			if err != nil {
+				t.Fatalf("unexpected error for AddChain: %v", err)
+			}
+			bc.SetBaseChainInfo(arbitraryInfoPolicyAccept)
+			rule := &Rule{}
+
+			// Adds testing operations.
+			if test.op1 != nil {
+				rule.addOperation(test.op1)
+			}
+			if test.op2 != nil {
+				rule.addOperation(test.op2)
+			}
+
+			// Adds drop operation. Will be final verdict if comparison is true.
+			rule.addOperation(mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NF_DROP)})))
+
+			// Registers the rule to the base chain.
+			if err := bc.RegisterRule(rule, -1); err != nil {
+				t.Fatalf("unexpected error for RegisterRule: %v", err)
+			}
+
+			// Runs evaluation and checks verdict.
+			pkt := makeArbitraryPacket(arbitraryReservedHeaderBytes)
+			v, err := nf.EvaluateHook(arbitraryFamily, arbitraryHook, pkt)
+			if err != nil {
+				t.Fatalf("unexpected error for EvaluateHook: %v", err)
+			}
+			if test.res {
+				if v.Code != VC(linux.NF_DROP) {
+					t.Fatalf("expected verdict Drop for %t result, got %v", test.res, v)
+				}
+			} else {
+				if v.Code != VC(linux.NF_ACCEPT) {
+					t.Fatalf("expected base chain policy verdict Accept for %t result, got %v", test.res, v)
+				}
+			}
+		})
+	}
+}
+
 // TestEvaluatePayloadLoad tests that the Payload Load operation correctly loads
 // the specified payload into the destination register.
 // The nft binary commands used to generate these are stated above each test.
@@ -2690,6 +2921,15 @@ func mustCreateComparison(t *testing.T, sreg uint8, cop int, data []byte) *compa
 		t.Fatalf("failed to create comparison: %v", err)
 	}
 	return cmp
+}
+
+// mustCreateRanged wraps the newRanged function for brevity.
+func mustCreateRanged(t *testing.T, sreg uint8, rop int, low, high []byte) *ranged {
+	rng, err := newRanged(sreg, rop, low, high)
+	if err != nil {
+		t.Fatalf("failed to create ranged: %v", err)
+	}
+	return rng
 }
 
 // mustCreatePayloadLoad wraps the newPayloadLoad function for brevity.

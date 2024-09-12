@@ -41,6 +41,7 @@
 package nftables
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"slices"
@@ -576,6 +577,7 @@ type operation interface {
 var (
 	_ operation = (*immediate)(nil)
 	_ operation = (*comparison)(nil)
+	_ operation = (*ranged)(nil)
 	_ operation = (*payloadLoad)(nil)
 	_ operation = (*payloadSet)(nil)
 	_ operation = (*bitwise)(nil)
@@ -615,8 +617,7 @@ type comparison struct {
 // include/uapi/linux/netfilter/nf_tables.h and uses the same constants.
 type cmpOp int
 
-// String for NftCmpOp returns the string representation of the comparison
-// operator.
+// String for cmpOp returns string representation of the comparison operator.
 func (cop cmpOp) String() string {
 	switch cop {
 	case linux.NFT_CMP_EQ:
@@ -667,18 +668,12 @@ func newComparison(sreg uint8, op int, data []byte) (*comparison, error) {
 func (op comparison) evaluate(regs *registerSet, pkt *stack.PacketBuffer) {
 	// Gets the data to compare to.
 	data := op.data.data
+
 	// Gets the data from the source register.
-	regBuf := getRegisterBuffer(regs, op.sreg)
+	regBuf := getRegisterBuffer(regs, op.sreg)[:len(data)]
 
 	// Compares bytes from left to right for all bytes in the comparison data.
-	dif := 0
-	for i := 0; i < len(data) && dif == 0; i++ {
-		if regBuf[i] < data[i] {
-			dif = -1
-		} else if regBuf[i] > data[i] {
-			dif = 1
-		}
-	}
+	dif := bytes.Compare(regBuf, data)
 
 	// Determines the comparison result depending on the operator.
 	var result bool
@@ -697,6 +692,93 @@ func (op comparison) evaluate(regs *registerSet, pkt *stack.PacketBuffer) {
 		result = dif >= 0
 	}
 	if !result {
+		// Comparison is false, so break from the rule.
+		regs.verdict = Verdict{Code: VC(linux.NFT_BREAK)}
+	}
+}
+
+// ranged is an operation that checks whether the data in a register is between
+// an inclusive range and breaks if the comparison is false.
+// Note: ranged operations are not supported for the verdict register.
+// Note: named "ranged" because "range" is a reserved keyword in Go.
+type ranged struct {
+	low  bytesData // Data to compare the source register to.
+	high bytesData // Data to compare the source register to.
+	sreg uint8     // Number of the source register.
+	rop  rngOp     // Range operator.
+
+	// Note: The linux kernel defines the range operation, but we have not been
+	// able to observe it used by the nft binary. For any commands that may use
+	// range, the nft binary seems to use two comparison operations instead. Thus,
+	// there is no interpretation of the range operation via the nft binary debug
+	// output, but the operation is fully supported and implemented.
+}
+
+// rngOp is the range operator for a Ranged operation.
+// Note: corresponds to enum nft_range_ops from
+// include/uapi/linux/netfilter/nf_tables.h and uses the same constants.
+type rngOp int
+
+// String for rngOp returns string representation of the range operator.
+func (rop rngOp) String() string {
+	switch rop {
+	case linux.NFT_RANGE_EQ:
+		return "range =="
+	case linux.NFT_CMP_NEQ:
+		return "range !="
+	default:
+		panic(fmt.Sprintf("invalid range operator: %d", int(rop)))
+	}
+}
+
+// validateRangeOp ensures the range operator is valid.
+func validateRangeOp(rop rngOp) error {
+	switch rop {
+	case linux.NFT_RANGE_EQ, linux.NFT_RANGE_NEQ:
+		return nil
+	default:
+		return fmt.Errorf("invalid range operator: %d", int(rop))
+	}
+}
+
+// newRanged creates a new Ranged operation.
+func newRanged(sreg uint8, op int, low, high []byte) (*ranged, error) {
+	if sreg == linux.NFT_REG_VERDICT {
+		return nil, fmt.Errorf("comparison operation cannot use verdict register as source")
+	}
+	if len(low) != len(high) {
+		return nil, fmt.Errorf("upper and lower bounds for ranged operation must be the same length")
+	}
+	lowData := newBytesData(low)
+	if err := lowData.validateRegister(sreg); err != nil {
+		return nil, err
+	}
+	highData := newBytesData(high)
+	if err := highData.validateRegister(sreg); err != nil {
+		return nil, err
+	}
+	rop := rngOp(op)
+	if err := validateRangeOp(rop); err != nil {
+		return nil, err
+	}
+	return &ranged{sreg: sreg, rop: rop, low: lowData, high: highData}, nil
+}
+
+// evaluate for Ranged checks whether the source register data is within the
+// specified inclusive range and breaks from the rule if comparison is false.
+func (op ranged) evaluate(regs *registerSet, pkt *stack.PacketBuffer) {
+	// Gets the upper and lower bounds as bytesData.
+	low, high := op.low.data, op.high.data
+
+	// Gets the data from the source register.
+	regBuf := getRegisterBuffer(regs, op.sreg)[:len(low)]
+
+	// Compares register data to both lower and upper bounds.
+	d1 := bytes.Compare(regBuf, low)
+	d2 := bytes.Compare(regBuf, high)
+
+	// Determines the comparison result depending on the operator.
+	if (d1 >= 0 && d2 <= 0) != (op.rop == linux.NFT_RANGE_EQ) {
 		// Comparison is false, so break from the rule.
 		regs.verdict = Verdict{Code: VC(linux.NFT_BREAK)}
 	}
