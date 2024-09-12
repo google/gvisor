@@ -29,6 +29,13 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/platform/kvm/testutil"
 )
 
+func TestGetCS(t *testing.T) {
+	cs := getcs()
+	if cs != 0x33 {
+		t.Fatalf("cs = 0x%x", cs)
+	}
+}
+
 func TestSegments(t *testing.T) {
 	applicationTest(t, true, testutil.AddrOfTwiddleSegments(), func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {
 		testutil.SetTestSegments(regs)

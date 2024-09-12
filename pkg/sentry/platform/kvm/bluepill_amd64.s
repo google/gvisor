@@ -59,10 +59,9 @@ fallback:
 	MOVQ ·savedSigsysHandler(SB), AX
 	JMP AX
 
-TEXT ·rflags(SB), $8-8
-	PUSHFQ
-	POPQ AX
-	MOVQ AX, ret+0(FP)
+TEXT ·getcs(SB), $0-2
+	MOVW CS, AX
+	MOVW AX, ret+0(FP)
 	RET
 
 TEXT ·addrOfBluepillUserHandler(SB), $0-8
