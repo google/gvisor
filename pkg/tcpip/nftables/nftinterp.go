@@ -151,6 +151,8 @@ func InterpretOperation(line string, lnIdx int) (operation, error) {
 		// Assumes the bitwise operation is a boolean because interpretation of
 		// non-boolean operations is not supported from the nft binary debug output.
 		return InterpretBitwiseBool(line, lnIdx)
+	case "counter":
+		return InterpretCounter(line, lnIdx)
 	default:
 		return nil, &SyntaxError{lnIdx, 1, fmt.Sprintf("unrecognized operation type: %s", tokens[1])}
 	}
@@ -610,6 +612,60 @@ func InterpretBitwiseBool(line string, lnIdx int) (operation, error) {
 	}
 
 	return bitwiseBool, nil
+}
+
+// InterpretCounter creates a new Counter operation from the given string.
+func InterpretCounter(line string, lnIdx int) (operation, error) {
+	tokens := strings.Fields(line)
+
+	// Requires exactly 7 tokens:
+	// 		"[", "counter", "pkts", initial packets, "bytes", initial bytes, "]".
+	if len(tokens) != 7 {
+		return nil, &SyntaxError{lnIdx, 0, fmt.Sprintf("incorrect number of tokens for counter operation, should be exactly 7, got %d", len(tokens))}
+	}
+
+	if err := checkOperationBrackets(tokens, lnIdx); err != nil {
+		return nil, err
+	}
+
+	tkIdx := 1
+
+	// First token should be "counter".
+	if err := consumeToken("counter", tokens, lnIdx, tkIdx); err != nil {
+		return nil, err
+	}
+	tkIdx++
+
+	// Second token should be "pkts".
+	if err := consumeToken("pkts", tokens, lnIdx, tkIdx); err != nil {
+		return nil, err
+	}
+	tkIdx++
+
+	// Third token should be int64 representing initial packets.
+	initialPkts, err := strconv.ParseInt(tokens[tkIdx], 10, 64)
+	if err != nil {
+		return nil, &SyntaxError{lnIdx, tkIdx, fmt.Sprintf("could not parse int64 initial packets: '%s'", tokens[tkIdx])}
+	}
+	tkIdx++
+
+	// Fourth token should be "bytes".
+	if err := consumeToken("bytes", tokens, lnIdx, tkIdx); err != nil {
+		return nil, err
+	}
+	tkIdx++
+
+	// Fifth token should be int64 representing initial bytes.
+	initialBytes, err := strconv.ParseInt(tokens[tkIdx], 10, 64)
+	if err != nil {
+		return nil, &SyntaxError{lnIdx, tkIdx, fmt.Sprintf("could not parse int64 initial bytes: '%s'", tokens[tkIdx])}
+	}
+	tkIdx++
+
+	// Create the operation with the specified arguments.
+	cntr := newCounter(initialPkts, initialBytes)
+
+	return cntr, nil
 }
 
 //

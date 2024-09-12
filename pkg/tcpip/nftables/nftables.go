@@ -45,6 +45,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"slices"
+	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/tcpip/checksum"
@@ -52,8 +53,8 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
-// TODO(b/345684870): Remove unused functions once initial implementation is
-// complete.
+// TODO(b/345684870): Make the nftables package thread-safe! Must be done before
+// the package is used in production.
 
 // Defines general constants for the nftables interpreter.
 const (
@@ -581,6 +582,7 @@ var (
 	_ operation = (*payloadLoad)(nil)
 	_ operation = (*payloadSet)(nil)
 	_ operation = (*bitwise)(nil)
+	_ operation = (*counter)(nil)
 )
 
 // immediate is an operation that sets the data in a register.
@@ -1210,6 +1212,30 @@ func (op bitwise) evaluate(regs *registerSet, pkt *stack.PacketBuffer) {
 			evaluateBitwiseRshift(sregBuf, dregBuf, op.shift)
 		}
 	}
+}
+
+// counter is an operation that increments a counter for the packets and number
+// of bytes each time the operation is evaluated.
+type counter struct {
+	// Must be thread-safe because data stored here is updated for each evaluation
+	// and evaluations can happen in parallel for processing multiple packets.
+
+	bytes   atomic.Int64 // Number of bytes that have passed through counter.
+	packets atomic.Int64 // Number of packets that have passed through counter.
+}
+
+// newCounter creates a new counter operation.
+func newCounter(startBytes, startPackets int64) *counter {
+	cntr := &counter{}
+	cntr.bytes.Store(startBytes)
+	cntr.packets.Store(startPackets)
+	return cntr
+}
+
+// evaluate for counter increments the counter for the packet and bytes.
+func (op *counter) evaluate(regs *registerSet, pkt *stack.PacketBuffer) {
+	op.bytes.Add(int64(pkt.Size()))
+	op.packets.Add(1)
 }
 
 //

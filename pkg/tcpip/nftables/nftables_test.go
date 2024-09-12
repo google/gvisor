@@ -2309,6 +2309,80 @@ func TestEvaluateBitwise(t *testing.T) {
 	}
 }
 
+// TestEvaluateCounter tests that the Counter operation correctly increments the
+// counter for the number of bytes and packets as it encounters packets.
+// Note: relies on expected behavior of Comparison and Payload Load operations.
+func TestEvaluateCounter(t *testing.T) {
+	// Creates a counter operation.
+	counter := newCounter(0, 0)
+	// Defines the packets to be used in the test.
+	desiredIpv4Address := tcpip.AddrFrom4(arbitraryIPv4AddrB)
+	countedIPv4Pkt := func() *stack.PacketBuffer {
+		fields := arbitraryIPv4Fields()
+		fields.SrcAddr = desiredIpv4Address
+		return makeIPv4Packet(header.IPv4MinimumSize, fields)
+	}
+	uncountedIPv4Pkt := func() *stack.PacketBuffer {
+		fields := arbitraryIPv4Fields()
+		fields.SrcAddr = tcpip.AddrFrom4(arbitraryIPv4AddrB2)
+		return makeIPv4Packet(header.IPv4MinimumSize, fields)
+	}
+	pkts := []*stack.PacketBuffer{countedIPv4Pkt(), uncountedIPv4Pkt(), countedIPv4Pkt(), countedIPv4Pkt(),
+		uncountedIPv4Pkt(), countedIPv4Pkt(), uncountedIPv4Pkt(), uncountedIPv4Pkt(), uncountedIPv4Pkt(), countedIPv4Pkt()}
+	t.Run("counter increment tests", func(t *testing.T) {
+		// Sets up an NFTables object with a base chain with policy accept.
+		nf := NewNFTables()
+		tab, err := nf.AddTable(arbitraryFamily, "test", "test table", false)
+		if err != nil {
+			t.Fatalf("unexpected error for AddTable: %v", err)
+		}
+		bc, err := tab.AddChain("base_chain", nil, "test chain", false)
+		if err != nil {
+			t.Fatalf("unexpected error for AddChain: %v", err)
+		}
+		bc.SetBaseChainInfo(arbitraryInfoPolicyAccept)
+
+		// Creates a rule that filters for the desired IPv4 address and adds the
+		// counter to the end of the rule. So, the counter should only increment for
+		// packets that satisfy the comparison.
+		rule := &Rule{}
+		rule.addOperation(mustCreatePayloadLoad(t, linux.NFT_PAYLOAD_NETWORK_HEADER, ipv4SrcAddrOffset, ipv4SrcAddrLen, linux.NFT_REG_1))
+		rule.addOperation(mustCreateComparison(t, linux.NFT_REG_1, linux.NFT_CMP_EQ, desiredIpv4Address.AsSlice()))
+		rule.addOperation(counter)
+		if err := bc.RegisterRule(rule, -1); err != nil {
+			t.Fatalf("unexpected error for RegisterRule: %v", err)
+		}
+
+		// Runs evaluation for each packet and checks whether the counter has
+		// incremented correctly.
+		prevBytes := counter.bytes.Load()
+		prevPackets := counter.packets.Load()
+		for i, pkt := range pkts {
+			_, err := nf.EvaluateHook(arbitraryFamily, arbitraryHook, pkt)
+			if err != nil {
+				t.Fatalf("unexpected error for EvaluateHook for packet %d: %v", i, err)
+			}
+			// Checks whether the counter should have incremented for the packet.
+			expectedDBytes, expectedDPackets := int64(0), int64(0)
+			if pkt.Network().SourceAddress() == desiredIpv4Address {
+				expectedDBytes, expectedDPackets = int64(pkt.Size()), 1
+			}
+			// Checks that the counter incremented correctly.
+			newBytes := counter.bytes.Load()
+			newPackets := counter.packets.Load()
+			if dBytes := newBytes - prevBytes; dBytes != expectedDBytes {
+				t.Fatalf("counter bytes incremented by %d for packet %d, expected %d", dBytes, i, expectedDBytes)
+			}
+			if dPackets := newPackets - prevPackets; dPackets != expectedDPackets {
+				t.Fatalf("counter packets incremented by %d for packet %d, expected %d", dPackets, i, expectedDPackets)
+			}
+			// Updates the previous values for the next packet.
+			prevBytes = newBytes
+			prevPackets = newPackets
+		}
+	})
+}
+
 // TestLoopCheckOnRegisterAndUnregister tests the loop checking and accompanying
 // logic on registering and unregistering rules.
 func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {

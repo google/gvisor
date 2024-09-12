@@ -771,6 +771,43 @@ func checkBitwiseOp(tname string, expected operation, actual operation) error {
 	return nil
 }
 
+// TestInterpretCounterOps tests interpretation of counter operations.
+// Note: test cases are pretty simple because the counter operation is
+// essentially always called with 0 initial bytes and packets.
+func TestInterpretCounterOps(t *testing.T) {
+	for _, test := range []interpretOperationTestAction{
+		{ // cmd: add rule ip tab ch counter
+			tname:    "counter with 0 initial bytes and packets",
+			opStr:    "[ counter pkts 0 bytes 0 ]",
+			expected: newCounter(0, 0),
+		},
+		{
+			tname:    "counter with non-zero initial bytes and packets",
+			opStr:    "[ counter pkts 4561 bytes 39 ]",
+			expected: newCounter(4561, 39),
+		},
+	} {
+		t.Run(test.tname, func(t *testing.T) { checkOp(t, test, checkCounterOp) })
+	}
+}
+
+// checkCounterOp checks that the given operation is a counter operation and
+// that it matches the expected counter operation.
+func checkCounterOp(tname string, expected operation, actual operation) error {
+	expectedCntr := expected.(*counter)
+	cntr, ok := actual.(*counter)
+	if !ok {
+		return fmt.Errorf("expected operation type to be Counter for %s, got %T", tname, actual)
+	}
+	if bytes, expectedBytes := cntr.bytes.Load(), expectedCntr.bytes.Load(); bytes != expectedBytes {
+		return fmt.Errorf("expected bytes counter to be %d for %s, got %d", expectedBytes, tname, bytes)
+	}
+	if pkts, expectedPkts := cntr.packets.Load(), expectedCntr.packets.Load(); pkts != expectedPkts {
+		return fmt.Errorf("expected packets counter to be %d for %s, got %d", expectedPkts, tname, pkts)
+	}
+	return nil
+}
+
 // TestInterpretRule tests the interpretation of basic and general rules as a
 // list of operations.
 func TestInterpretRule(t *testing.T) {
