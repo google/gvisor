@@ -69,16 +69,16 @@ const (
 	NFT_CONTINUE int32 = -1
 
 	// Terminate evaluation of the current rule.
-	NFT_BREAK = -2
+	NFT_BREAK int32 = -2
 
 	// Push the current chain on the jump stack and jump to a chain.
-	NFT_JUMP = -3
+	NFT_JUMP int32 = -3
 
 	// Jump to a chain without pushing the current chain on the jump stack.
-	NFT_GOTO = -4
+	NFT_GOTO int32 = -4
 
 	// Return to the topmost chain on the jump stack.
-	NFT_RETURN = -5
+	NFT_RETURN int32 = -5
 )
 
 // Nf table relational operators.
