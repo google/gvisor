@@ -20,10 +20,13 @@ import (
 	"reflect"
 	"slices"
 	"testing"
+	"time"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/buffer"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/faketime"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
@@ -320,7 +323,7 @@ func makeIPv6TCPPacket(reserved int, ipv6Fields *header.IPv6Fields, tcpFields *h
 func TestUnsupportedAddressFamily(t *testing.T) {
 	// Makes arbitrary packet for comparison (to check for no changes).
 	cmpPkt := makeArbitraryPacket(arbitraryReservedHeaderBytes)
-	nf := NewNFTables()
+	nf := newNFTablesStd()
 	for _, unsupportedFamily := range []AddressFamily{AddressFamily(NumAFs), AddressFamily(-1)} {
 		// Note: the Prerouting hook is arbitrary (any hook would work).
 		pkt := makeArbitraryPacket(arbitraryReservedHeaderBytes)
@@ -341,7 +344,7 @@ func TestAcceptAllForSupportedHooks(t *testing.T) {
 	cmpPkt := makeArbitraryPacket(arbitraryReservedHeaderBytes)
 	for _, family := range []AddressFamily{IP, IP6, Inet, Arp, Bridge, Netdev} {
 		t.Run(family.String()+" address family", func(t *testing.T) {
-			nf := NewNFTables()
+			nf := newNFTablesStd()
 			for _, hook := range []Hook{Prerouting, Input, Forward, Output, Postrouting, Ingress, Egress} {
 				pkt := makeArbitraryPacket(arbitraryReservedHeaderBytes)
 				v, err := nf.EvaluateHook(family, hook, pkt)
@@ -510,7 +513,7 @@ func TestEvaluateImmediateVerdict(t *testing.T) {
 		t.Run(test.tname, func(t *testing.T) {
 			// Sets up an NFTables object with a base chain (for 2 rules) and another
 			// target chain (for 1 rule).
-			nf := NewNFTables()
+			nf := newNFTablesStd()
 			tab, err := nf.AddTable(arbitraryFamily, "test", "test table", false)
 			if err != nil {
 				t.Fatalf("unexpected error for AddTable: %v", err)
@@ -574,7 +577,7 @@ func TestEvaluateImmediateBytesData(t *testing.T) {
 			tname := fmt.Sprintf("immediately load %d bytes into %d-byte registers", blen, registerSize)
 			t.Run(tname, func(t *testing.T) {
 				// Sets up an NFTables object with a base chain with policy accept.
-				nf := NewNFTables()
+				nf := newNFTablesStd()
 				tab, err := nf.AddTable(arbitraryFamily, "test", "test table", false)
 				if err != nil {
 					t.Fatalf("unexpected error for AddTable: %v", err)
@@ -1060,7 +1063,7 @@ func TestEvaluateComparison(t *testing.T) {
 	} {
 		t.Run(test.tname, func(t *testing.T) {
 			// Sets up an NFTables object with a single table, chain, and rule.
-			nf := NewNFTables()
+			nf := newNFTablesStd()
 			tab, err := nf.AddTable(arbitraryFamily, "test", "test table", false)
 			if err != nil {
 				t.Fatalf("unexpected error for AddTable: %v", err)
@@ -1297,7 +1300,7 @@ func TestEvaluateRanged(t *testing.T) {
 	} {
 		t.Run(test.tname, func(t *testing.T) {
 			// Sets up an NFTables object with a single table, chain, and rule.
-			nf := NewNFTables()
+			nf := newNFTablesStd()
 			tab, err := nf.AddTable(arbitraryFamily, "test", "test table", false)
 			if err != nil {
 				t.Fatalf("unexpected error for AddTable: %v", err)
@@ -1531,7 +1534,7 @@ func TestEvaluatePayloadLoad(t *testing.T) {
 	} {
 		t.Run(test.tname, func(t *testing.T) {
 			// Sets up an NFTables object with a single table, chain, and rule.
-			nf := NewNFTables()
+			nf := newNFTablesStd()
 			tab, err := nf.AddTable(arbitraryFamily, "test", "test table", false)
 			if err != nil {
 				t.Fatalf("unexpected error for AddTable: %v", err)
@@ -2035,7 +2038,7 @@ func TestEvaluatePayloadSet(t *testing.T) {
 	} {
 		t.Run(test.tname, func(t *testing.T) {
 			// Sets up an NFTables object with a single table, chain, and rule.
-			nf := NewNFTables()
+			nf := newNFTablesStd()
 			tab, err := nf.AddTable(arbitraryFamily, "test", "test table", false)
 			if err != nil {
 				t.Fatalf("unexpected error for AddTable: %v", err)
@@ -2265,7 +2268,7 @@ func TestEvaluateBitwise(t *testing.T) {
 	} {
 		t.Run(test.tname, func(t *testing.T) {
 			// Sets up an NFTables object with a single table, chain, and rule.
-			nf := NewNFTables()
+			nf := newNFTablesStd()
 			tab, err := nf.AddTable(arbitraryFamily, "test", "test table", false)
 			if err != nil {
 				t.Fatalf("unexpected error for AddTable: %v", err)
@@ -2331,7 +2334,7 @@ func TestEvaluateCounter(t *testing.T) {
 		uncountedIPv4Pkt(), countedIPv4Pkt(), uncountedIPv4Pkt(), uncountedIPv4Pkt(), uncountedIPv4Pkt(), countedIPv4Pkt()}
 	t.Run("counter increment tests", func(t *testing.T) {
 		// Sets up an NFTables object with a base chain with policy accept.
-		nf := NewNFTables()
+		nf := newNFTablesStd()
 		tab, err := nf.AddTable(arbitraryFamily, "test", "test table", false)
 		if err != nil {
 			t.Fatalf("unexpected error for AddTable: %v", err)
@@ -2379,6 +2382,79 @@ func TestEvaluateCounter(t *testing.T) {
 			// Updates the previous values for the next packet.
 			prevBytes = newBytes
 			prevPackets = newPackets
+		}
+	})
+}
+
+// TestEvaluateLast tests that the Last operation correctly records the last
+// time the operation was evaluated.
+func TestEvaluateLast(t *testing.T) {
+	// Creates last operation and number of elapses (in milliseconds) for testing.
+	last := &last{}
+	elapses := []int64{0, 1000, 500, 1000, 100, 200, 300, 20000, 50, 700}
+	totalElapsed := make([]int64, len(elapses))
+	copy(totalElapsed, elapses)
+
+	t.Run("last timing tests", func(t *testing.T) {
+		// Makes an arbitrary packet to be used in the test.
+		pkt := makeArbitraryPacket(arbitraryReservedHeaderBytes)
+
+		// Sets up an NFTables object with a base chain and fake manual clock.
+		fakeClock := faketime.NewManualClock()
+		nf := NewNFTables(fakeClock)
+		tab, err := nf.AddTable(arbitraryFamily, "test", "test table", false)
+		if err != nil {
+			t.Fatalf("unexpected error for AddTable: %v", err)
+		}
+		bc, err := tab.AddChain("base_chain", nil, "test chain", false)
+		if err != nil {
+			t.Fatalf("unexpected error for AddChain: %v", err)
+		}
+		bc.SetBaseChainInfo(arbitraryInfoPolicyAccept)
+
+		// Registers a single rule with the last operation.
+		rule := &Rule{}
+		rule.addOperation(last)
+		if err := bc.RegisterRule(rule, -1); err != nil {
+			t.Fatalf("unexpected error for RegisterRule: %v", err)
+		}
+
+		// Sets up a wait group to wait for all AfterFunc goroutines to complete.
+		var wg sync.WaitGroup
+		wg.Add(len(elapses))
+		defer wg.Wait()
+
+		// Calls EvaluateHook for each elapse and checks that the last operation
+		// recorded the correct timestamp and has the set flag set.
+		startStamp := nf.startTime.UnixMilli()
+		clock := nf.clock
+		for i := range elapses {
+			// Uses totalElapsed slice to avoid race conditions.
+			if i != 0 {
+				totalElapsed[i] += totalElapsed[i-1]
+			}
+			clock.AfterFunc(time.Duration(totalElapsed[i])*time.Millisecond, func() {
+				// Decrements wait group counter at end to signal func has completed.
+				defer wg.Done()
+
+				// Evaluates the packet (which should update last's timestamp).
+				_, err := nf.EvaluateHook(arbitraryFamily, arbitraryHook, pkt)
+				if err != nil {
+					t.Fatalf("unexpected error for EvaluateHook for packet %d: %v", i, err)
+				}
+
+				// Checks the set flag and the timestamp via total elapsed time.
+				if !last.set.Load() {
+					t.Fatalf("last operation not set for packet %d", i)
+				}
+				if dTotal := last.timestampMS.Load() - startStamp; dTotal != totalElapsed[i] {
+					t.Fatalf("last operation recorded %d milliseconds since start for packet %d, expected %d", dTotal, i, totalElapsed[i])
+				}
+			})
+		}
+		// Manually advances the clock to trigger the AfterFunc goroutines.
+		for _, elapse := range elapses {
+			fakeClock.Advance(time.Duration(elapse) * time.Millisecond)
 		}
 	})
 }
@@ -2796,7 +2872,7 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 	} {
 		t.Run(test.tname, func(t *testing.T) {
 			// Sets up an NFTables object based on test struct.
-			nf := NewNFTables()
+			nf := newNFTablesStd()
 			tab, err := nf.AddTable(arbitraryFamily, "test", "test table", false)
 			if err != nil {
 				t.Fatalf("unexpected error for AddTable: %v", err)
@@ -2907,7 +2983,7 @@ func TestMaxNestedJumps(t *testing.T) {
 	} {
 		t.Run(test.tname, func(t *testing.T) {
 			// Sets up chains of nested jumps or gotos.
-			nf := NewNFTables()
+			nf := newNFTablesStd()
 			tab, err := nf.AddTable(arbitraryFamily, "test", "test table", false)
 			if err != nil {
 				t.Fatalf("unexpected error for AddTable: %v", err)
@@ -2977,6 +3053,11 @@ func packetResultString(initial, final *stack.PacketBuffer) string {
 		return "unmodified"
 	}
 	return "modified"
+}
+
+// newNFTablesStd creates a new NFTables object w/ a standard clock for testing.
+func newNFTablesStd() *NFTables {
+	return NewNFTables(tcpip.NewStdClock())
 }
 
 // mustCreateImmediate wraps the newImmediate function for brevity.

@@ -13,6 +13,7 @@ go_library(
     ],
     deps = [
         "//pkg/abi/linux",
+        "//pkg/tcpip",
         "//pkg/tcpip/checksum",
         "//pkg/tcpip/header",
         "//pkg/tcpip/stack",
@@ -29,7 +30,9 @@ go_test(
     deps = [
         "//pkg/abi/linux",
         "//pkg/buffer",
+        "//pkg/sync",
         "//pkg/tcpip",
+        "//pkg/tcpip/faketime",
         "//pkg/tcpip/header",
         "//pkg/tcpip/stack",
     ],

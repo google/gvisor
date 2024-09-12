@@ -46,8 +46,10 @@ import (
 	"fmt"
 	"slices"
 	"sync/atomic"
+	"time"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/checksum"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
@@ -208,7 +210,9 @@ func validateHook(hook Hook, family AddressFamily) error {
 // NFTables represents the nftables state for all address families.
 // Note: unlike iptables, nftables doesn't start with any initialized tables.
 type NFTables struct {
-	filters [NumAFs]*addressFamilyFilter
+	filters   [NumAFs]*addressFamilyFilter // Filters for each address family.
+	clock     tcpip.Clock                  // Clock for timing evaluations.
+	startTime time.Time                    // Time NFTables object was created.
 }
 
 // addressFamilyFilter represents the nftables state for a specific address
@@ -216,6 +220,9 @@ type NFTables struct {
 type addressFamilyFilter struct {
 	// family is the address family of the filter.
 	family AddressFamily
+
+	// nftState is the NFTables object the filter belongs to.
+	nftState *NFTables
 
 	// tables is a map of tables for each address family.
 	tables map[string]*Table
@@ -570,8 +577,9 @@ type Rule struct {
 type operation interface {
 
 	// evaluate evaluates the operation on the given packet and register set,
-	// changing the register set and possibly the packet in place.
-	evaluate(regs *registerSet, pkt *stack.PacketBuffer)
+	// changing the register set and possibly the packet in place. We pass the
+	// assigned rule to allow the operation to access parts of the NFTables state.
+	evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *Rule)
 }
 
 // Ensures all operations implement the Operation interface at compile time.
@@ -583,6 +591,7 @@ var (
 	_ operation = (*payloadSet)(nil)
 	_ operation = (*bitwise)(nil)
 	_ operation = (*counter)(nil)
+	_ operation = (*last)(nil)
 )
 
 // immediate is an operation that sets the data in a register.
@@ -600,7 +609,7 @@ func newImmediate(dreg uint8, data registerData) (*immediate, error) {
 }
 
 // evaluate for Immediate sets the data in the destination register.
-func (op immediate) evaluate(regs *registerSet, pkt *stack.PacketBuffer) {
+func (op immediate) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *Rule) {
 	op.data.storeData(regs, op.dreg)
 }
 
@@ -667,7 +676,7 @@ func newComparison(sreg uint8, op int, data []byte) (*comparison, error) {
 
 // evaluate for Comparison compares the data in the source register to the given
 // data and breaks from the rule if the comparison is false.
-func (op comparison) evaluate(regs *registerSet, pkt *stack.PacketBuffer) {
+func (op comparison) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *Rule) {
 	// Gets the data to compare to.
 	data := op.data.data
 
@@ -768,7 +777,7 @@ func newRanged(sreg uint8, op int, low, high []byte) (*ranged, error) {
 
 // evaluate for Ranged checks whether the source register data is within the
 // specified inclusive range and breaks from the rule if comparison is false.
-func (op ranged) evaluate(regs *registerSet, pkt *stack.PacketBuffer) {
+func (op ranged) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *Rule) {
 	// Gets the upper and lower bounds as bytesData.
 	low, high := op.low.data, op.high.data
 
@@ -876,7 +885,7 @@ func newPayloadLoad(base payloadBase, offset, blen, dreg uint8) (*payloadLoad, e
 
 // evaluate for PayloadLoad loads data from the packet payload into the
 // destination register.
-func (op payloadLoad) evaluate(regs *registerSet, pkt *stack.PacketBuffer) {
+func (op payloadLoad) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *Rule) {
 	// Gets the packet payload.
 	payload := getPayloadBuffer(pkt, op.base)
 
@@ -956,7 +965,7 @@ func newPayloadSet(base payloadBase, offset, blen, sreg, csumType, csumOffset, c
 
 // evaluate for PayloadSet sets data in the packet payload to the value in the
 // source register.
-func (op payloadSet) evaluate(regs *registerSet, pkt *stack.PacketBuffer) {
+func (op payloadSet) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *Rule) {
 	// Gets the packet payload.
 	payload := getPayloadBuffer(pkt, op.base)
 
@@ -1197,7 +1206,7 @@ func evaluateBitwiseRshift(sregBuf, dregBuf []byte, shift uint32) {
 
 // evaluate for bitwise performs the bitwise operation on the source register
 // data and stores the result in the destination register.
-func (op bitwise) evaluate(regs *registerSet, pkt *stack.PacketBuffer) {
+func (op bitwise) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *Rule) {
 	// Gets the specified buffers of the source and destination registers.
 	sregBuf := getRegisterBuffer(regs, op.sreg)[:op.blen]
 	dregBuf := getRegisterBuffer(regs, op.dreg)[:op.blen]
@@ -1233,9 +1242,35 @@ func newCounter(startBytes, startPackets int64) *counter {
 }
 
 // evaluate for counter increments the counter for the packet and bytes.
-func (op *counter) evaluate(regs *registerSet, pkt *stack.PacketBuffer) {
+func (op *counter) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *Rule) {
 	op.bytes.Add(int64(pkt.Size()))
 	op.packets.Add(1)
+}
+
+// last is an operation that records the last time the operation was evaluated
+// for the purpose of tracking the last time the rule has matched a packet.
+// Note: no explicit constructor bc no fields need to be set (use &last{}).
+type last struct {
+	// Must be thread-safe because data stored here is updated for each evaluation
+	// and evaluations can happen in parallel for processing multiple packets.
+
+	// timestampMS is the time of last evaluation as a millisecond unix time.
+	// Milliseconds chosen as units because closest in magnitude to jiffies.
+	timestampMS atomic.Int64
+
+	// set is whether the operation has been evaluated at least once.
+	set atomic.Bool
+
+	// Note: The last operation has not been observed in the nft binary debug
+	// output, so it has no interpretation, though it is fully implemented.
+}
+
+// evaluate for last records the last time the operation was evaluated and flags
+// if this was the first time the operation was evaluated.
+func (op *last) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *Rule) {
+	clock := rule.chain.table.afFilter.nftState.clock
+	op.timestampMS.Store(clock.Now().UnixMilli())
+	op.set.CompareAndSwap(false, true)
 }
 
 //
@@ -1620,7 +1655,7 @@ func (c *Chain) evaluate(regs *registerSet, pkt *stack.PacketBuffer) error {
 // netfilter terminal verdict.
 func (r *Rule) evaluate(regs *registerSet, pkt *stack.PacketBuffer) error {
 	for _, op := range r.ops {
-		op.evaluate(regs, pkt)
+		op.evaluate(regs, pkt, r)
 		if regs.Verdict().Code != VC(linux.NFT_CONTINUE) {
 			break
 		}
@@ -1634,10 +1669,13 @@ func (r *Rule) evaluate(regs *registerSet, pkt *stack.PacketBuffer) error {
 // chains, and rules for convenience.
 //
 
-// NewNFTables creates a new NFTables object.
-// Note: nothing needs to be initialized in the struct before use.
-func NewNFTables() *NFTables {
-	return &NFTables{}
+// NewNFTables creates a new NFTables state object using the given clock for
+// timing operations.
+func NewNFTables(clock tcpip.Clock) *NFTables {
+	if clock == nil {
+		panic("nftables state must be initialized with a non-nil clock")
+	}
+	return &NFTables{clock: clock, startTime: clock.Now()}
 }
 
 // Flush clears entire ruleset and all data for all address families.
@@ -1701,6 +1739,7 @@ func (nf *NFTables) AddTable(family AddressFamily, name string, comment string,
 	if nf.filters[family] == nil {
 		nf.filters[family] = &addressFamilyFilter{
 			family:   family,
+			nftState: nf,
 			tables:   make(map[string]*Table),
 			hfStacks: make(map[Hook]*hookFunctionStack),
 		}
