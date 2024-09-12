@@ -148,9 +148,8 @@ func bluepillArchHandleExit(c *vCPU, context unsafe.Pointer) {
 }
 
 func addrOfBluepillUserHandler() uintptr
-func rflags() uint64
 
-const _RFLAGS_IF = 1 << 9
+func getcs() uint16
 
 func currentCPU() *vCPU
 
@@ -158,8 +157,8 @@ func currentCPU() *vCPU
 //
 //go:nosplit
 func bluepill(c *vCPU) {
-	// Interrupts are always disabled in the VM.
-	if rflags()&_RFLAGS_IF == 0 {
+	// The sentry is running in the VM ring 0.
+	if getcs()&3 == 0 {
 		if currentCPU() == c {
 			// Already in the vm.
 			return

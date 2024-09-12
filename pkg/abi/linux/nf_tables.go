@@ -156,3 +156,12 @@ const (
 	// Bool for whether packet route involves a IPsec transform st xfrm is applied
 	NFT_RT_XFRM
 )
+
+// Nf table byteorder operators.
+// Used by the nft byteorder operation to convert data in a register to a
+// specific byte order.
+// These correspond to enum values in include/uapi/linux/netfilter/nf_tables.h.
+const (
+	NFT_BYTEORDER_NTOH = iota // network to host operator
+	NFT_BYTEORDER_HTON        // host to network operator
+)

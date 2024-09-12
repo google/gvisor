@@ -309,50 +309,46 @@ func (d *readVDispatcher) StateLoad(ctx context.Context, stateSourceObject state
 	stateSourceObject.Load(4, &d.mgr)
 }
 
-func (d *recvMMsgDispatcher) StateTypeName() string {
+func (r *recvMMsgDispatcher) StateTypeName() string {
 	return "pkg/tcpip/link/fdbased.recvMMsgDispatcher"
 }
 
-func (d *recvMMsgDispatcher) StateFields() []string {
+func (r *recvMMsgDispatcher) StateFields() []string {
 	return []string{
 		"StopFD",
 		"fd",
 		"e",
 		"bufs",
-		"msgHdrs",
 		"pkts",
 		"gro",
 		"mgr",
 	}
 }
 
-func (d *recvMMsgDispatcher) beforeSave() {}
+func (r *recvMMsgDispatcher) beforeSave() {}
 
 // +checklocksignore
-func (d *recvMMsgDispatcher) StateSave(stateSinkObject state.Sink) {
-	d.beforeSave()
-	stateSinkObject.Save(0, &d.StopFD)
-	stateSinkObject.Save(1, &d.fd)
-	stateSinkObject.Save(2, &d.e)
-	stateSinkObject.Save(3, &d.bufs)
-	stateSinkObject.Save(4, &d.msgHdrs)
-	stateSinkObject.Save(5, &d.pkts)
-	stateSinkObject.Save(6, &d.gro)
-	stateSinkObject.Save(7, &d.mgr)
+func (r *recvMMsgDispatcher) StateSave(stateSinkObject state.Sink) {
+	r.beforeSave()
+	stateSinkObject.Save(0, &r.StopFD)
+	stateSinkObject.Save(1, &r.fd)
+	stateSinkObject.Save(2, &r.e)
+	stateSinkObject.Save(3, &r.bufs)
+	stateSinkObject.Save(4, &r.pkts)
+	stateSinkObject.Save(5, &r.gro)
+	stateSinkObject.Save(6, &r.mgr)
 }
 
-func (d *recvMMsgDispatcher) afterLoad(context.Context) {}
-
 // +checklocksignore
-func (d *recvMMsgDispatcher) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &d.StopFD)
-	stateSourceObject.Load(1, &d.fd)
-	stateSourceObject.Load(2, &d.e)
-	stateSourceObject.Load(3, &d.bufs)
-	stateSourceObject.Load(4, &d.msgHdrs)
-	stateSourceObject.Load(5, &d.pkts)
-	stateSourceObject.Load(6, &d.gro)
-	stateSourceObject.Load(7, &d.mgr)
+func (r *recvMMsgDispatcher) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &r.StopFD)
+	stateSourceObject.Load(1, &r.fd)
+	stateSourceObject.Load(2, &r.e)
+	stateSourceObject.Load(3, &r.bufs)
+	stateSourceObject.Load(4, &r.pkts)
+	stateSourceObject.Load(5, &r.gro)
+	stateSourceObject.Load(6, &r.mgr)
+	stateSourceObject.AfterLoad(func() { r.afterLoad(ctx) })
 }
 
 func (p *processor) StateTypeName() string {

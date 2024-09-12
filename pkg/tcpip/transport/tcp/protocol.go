@@ -364,7 +364,7 @@ func (p *protocol) SetOption(option tcpip.SettableTransportProtocolOption) tcpip
 		return nil
 
 	case *tcpip.TCPSynRetriesOption:
-		if *v < 1 || *v > 255 {
+		if *v < 1 {
 			return &tcpip.ErrInvalidOptionValue{}
 		}
 		p.mu.Lock()
