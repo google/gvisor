@@ -2459,6 +2459,117 @@ func TestEvaluateLast(t *testing.T) {
 	})
 }
 
+// TestEvaluateRoute tests that the Route operation correctly loads the specific
+// route data into into the destination register.
+// The nft binary commands used to generate these are stated above each test.
+// Also note that all these commands mirror the ones in TestInterpretRouteOps.
+// All commands should be preceded by nft --debug=netlink.
+// Note: Relies on expected behavior of the Comparison operation.
+func TestEvaluateRoute(t *testing.T) {
+	for _, test := range []struct {
+		tname string
+		pkt   *stack.PacketBuffer
+		op1   operation // Route operation to test.
+		op2   operation // Comparison operation to check resulting data in register,
+	}{
+		// IPv4 Next Hop Commands
+		{ // cmd: add rule ip filter output rt nexthop 192.168.1.1
+			tname: "load nexthop4 key to 4-byte register",
+			pkt: func() *stack.PacketBuffer {
+				pkt := makeIPv4Packet(header.IPv6MinimumSize, arbitraryIPv4Fields())
+				pkt.EgressRoute.NextHop = tcpip.AddrFrom4(arbitraryIPv4AddrB)
+				return pkt
+			}(),
+			op1: mustCreateRoute(t, linux.NFT_RT_NEXTHOP4, linux.NFT_REG32_06),
+			op2: mustCreateComparison(t, linux.NFT_REG32_06, linux.NFT_CMP_EQ, arbitraryIPv4AddrB[:]),
+		},
+		{ // cmd: add rule ip filter output rt nexthop 192.168.1.9
+			tname: "load nexthop4 key to 16-byte register",
+			pkt: func() *stack.PacketBuffer {
+				pkt := makeIPv4Packet(header.IPv6MinimumSize, arbitraryIPv4Fields())
+				pkt.EgressRoute.NextHop = tcpip.AddrFrom4(arbitraryIPv4AddrB2)
+				return pkt
+			}(),
+			op1: mustCreateRoute(t, linux.NFT_RT_NEXTHOP4, linux.NFT_REG_3),
+			op2: mustCreateComparison(t, linux.NFT_REG_3, linux.NFT_CMP_EQ, arbitraryIPv4AddrB2[:]),
+		},
+		// IPv6 Next Hop Commands
+		{ // cmd: add rule ip filter output rt nexthop 2001:db8:85a3::aa
+			tname: "load nexthop6 key to 16-byte register",
+			pkt: func() *stack.PacketBuffer {
+				pkt := makeIPv6Packet(header.IPv6MinimumSize, arbitraryIPv6Fields())
+				pkt.EgressRoute.NextHop = tcpip.AddrFrom16(arbitraryIPv6AddrB)
+				return pkt
+			}(),
+			op1: mustCreateRoute(t, linux.NFT_RT_NEXTHOP6, linux.NFT_REG_1),
+			op2: mustCreateComparison(t, linux.NFT_REG_1, linux.NFT_CMP_EQ, arbitraryIPv6AddrB[:]),
+		},
+		// TCP Maximum Segment Size Commands
+		{ // cmd: add rule ip filter output rt mtu 1500
+			tname: "load tcpmss key to 4-byte register",
+			pkt: func() *stack.PacketBuffer {
+				pkt := makeIPv4Packet(header.IPv6MinimumSize, arbitraryIPv4Fields())
+				pkt.GSOOptions.MSS = 1500
+				return pkt
+			}(),
+			op1: mustCreateRoute(t, linux.NFT_RT_TCPMSS, linux.NFT_REG32_00),
+			op2: mustCreateComparison(t, linux.NFT_REG32_00, linux.NFT_CMP_EQ, binary.NativeEndian.AppendUint16(nil, 1500)),
+		},
+		{ // cmd: add rule ip filter output rt mtu 0x0102
+			tname: "load tcpmss key to 16-byte register",
+			pkt: func() *stack.PacketBuffer {
+				pkt := makeIPv6Packet(header.IPv6MinimumSize, arbitraryIPv6Fields())
+				pkt.GSOOptions.MSS = 0x0102
+				return pkt
+			}(),
+			op1: mustCreateRoute(t, linux.NFT_RT_TCPMSS, linux.NFT_REG_4),
+			op2: mustCreateComparison(t, linux.NFT_REG_4, linux.NFT_CMP_EQ, binary.NativeEndian.AppendUint16(nil, 0x0102)),
+		},
+	} {
+		t.Run(test.tname, func(t *testing.T) {
+			// Sets up an NFTables object with a single table, chain, and rule.
+			nf := newNFTablesStd()
+			tab, err := nf.AddTable(arbitraryFamily, "test", "test table", false)
+			if err != nil {
+				t.Fatalf("unexpected error for AddTable: %v", err)
+			}
+			bc, err := tab.AddChain("base_chain", nil, "test chain", false)
+			if err != nil {
+				t.Fatalf("unexpected error for AddChain: %v", err)
+			}
+			bc.SetBaseChainInfo(arbitraryInfoPolicyAccept)
+			rule := &Rule{}
+
+			// Adds testing operations.
+			if test.op1 != nil {
+				rule.addOperation(test.op1)
+			}
+			if test.op2 != nil {
+				rule.addOperation(test.op2)
+			}
+
+			// Adds drop operation. Will be final verdict if all comparisons are true.
+			rule.addOperation(mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NF_DROP)})))
+
+			// Registers the rule to the base chain.
+			if err := bc.RegisterRule(rule, -1); err != nil {
+				t.Fatalf("unexpected error for RegisterRule: %v", err)
+			}
+
+			// Runs evaluation.
+			v, err := nf.EvaluateHook(arbitraryFamily, arbitraryHook, test.pkt)
+			if err != nil {
+				t.Fatalf("unexpected error for EvaluateHook: %v", err)
+			}
+
+			// Checks for final verdict (should be Drop if comparisons are true).
+			if v.Code != VC(linux.NF_DROP) {
+				t.Fatalf("expected verdict Drop for true comparison, got %v", v)
+			}
+		})
+	}
+}
+
 // TestLoopCheckOnRegisterAndUnregister tests the loop checking and accompanying
 // logic on registering and unregistering rules.
 func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
@@ -3121,4 +3232,13 @@ func mustCreateBitwiseShift(t *testing.T, sreg, dreg, blen uint8, shift uint32, 
 		t.Fatalf("failed to create bitwise shift: %v", err)
 	}
 	return bit
+}
+
+// mustCreateRoute wraps the newRoute function for brevity.
+func mustCreateRoute(t *testing.T, key routeKey, dreg uint8) *route {
+	rt, err := newRoute(key, dreg)
+	if err != nil {
+		t.Fatalf("failed to create route: %v", err)
+	}
+	return rt
 }

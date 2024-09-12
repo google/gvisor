@@ -592,6 +592,7 @@ var (
 	_ operation = (*bitwise)(nil)
 	_ operation = (*counter)(nil)
 	_ operation = (*last)(nil)
+	_ operation = (*route)(nil)
 )
 
 // immediate is an operation that sets the data in a register.
@@ -660,7 +661,7 @@ func validateComparisonOp(cop cmpOp) error {
 
 // newComparison creates a new Comparison operation.
 func newComparison(sreg uint8, op int, data []byte) (*comparison, error) {
-	if sreg == linux.NFT_REG_VERDICT {
+	if isVerdictRegister(sreg) {
 		return nil, fmt.Errorf("comparison operation cannot use verdict register as source")
 	}
 	bytesData := newBytesData(data)
@@ -754,7 +755,7 @@ func validateRangeOp(rop rngOp) error {
 
 // newRanged creates a new Ranged operation.
 func newRanged(sreg uint8, op int, low, high []byte) (*ranged, error) {
-	if sreg == linux.NFT_REG_VERDICT {
+	if isVerdictRegister(sreg) {
 		return nil, fmt.Errorf("comparison operation cannot use verdict register as source")
 	}
 	if len(low) != len(high) {
@@ -810,9 +811,13 @@ type payloadLoad struct {
 // include/uapi/linux/netfilter/nf_tables.h and uses the same constants.
 type payloadBase int
 
-// String for NftPayloadBase returns the string representation of the payload
-// base.
+// String for payloadBase returns the string representation of the payload base.
 func (base payloadBase) String() string {
+	// Uses errors from validation to handle unsupported payload bases.
+	if err := validatePayloadBase(base); err != nil {
+		panic(err)
+	}
+	// Cases for supported payload bases.
 	switch base {
 	case linux.NFT_PAYLOAD_LL_HEADER:
 		return "Link Layer Header"
@@ -820,20 +825,18 @@ func (base payloadBase) String() string {
 		return "Network Header"
 	case linux.NFT_PAYLOAD_TRANSPORT_HEADER:
 		return "Transport Header"
-	case linux.NFT_PAYLOAD_INNER_HEADER:
-		panic("inner header not supported")
-	case linux.NFT_PAYLOAD_TUN_HEADER:
-		panic("tunneling header not supported")
 	default:
-		panic(fmt.Sprintf("invalid payload base: %d", int(base)))
+		return fmt.Sprintf("Unknown Supported Payload Base: %d", int(base))
 	}
 }
 
 // validatePayloadBase ensures the payload base is valid.
 func validatePayloadBase(base payloadBase) error {
 	switch base {
+	// Supported payload bases.
 	case linux.NFT_PAYLOAD_LL_HEADER, linux.NFT_PAYLOAD_NETWORK_HEADER, linux.NFT_PAYLOAD_TRANSPORT_HEADER:
 		return nil
+	// Unsupported payload bases.
 	case linux.NFT_PAYLOAD_INNER_HEADER:
 		return fmt.Errorf("inner header not supported")
 	case linux.NFT_PAYLOAD_TUN_HEADER:
@@ -871,7 +874,7 @@ func getPayloadBuffer(pkt *stack.PacketBuffer, base payloadBase) []byte {
 
 // newPayloadLoad creates a new PayloadLoad operation.
 func newPayloadLoad(base payloadBase, offset, blen, dreg uint8) (*payloadLoad, error) {
-	if dreg == linux.NFT_REG_VERDICT {
+	if isVerdictRegister(dreg) {
 		return nil, fmt.Errorf("payload load operation cannot use verdict register as destination")
 	}
 	if blen > 16 || (blen > 4 && is4ByteRegister(dreg)) {
@@ -944,7 +947,7 @@ func validateChecksumType(csumType uint8) error {
 
 // newPayloadSet creates a new PayloadSet operation.
 func newPayloadSet(base payloadBase, offset, blen, sreg, csumType, csumOffset, csumFlags uint8) (*payloadSet, error) {
-	if sreg == linux.NFT_REG_VERDICT {
+	if isVerdictRegister(sreg) {
 		return nil, fmt.Errorf("payload set operation cannot use verdict register as destination")
 	}
 	if blen > 16 || (blen > 4 && is4ByteRegister(sreg)) {
@@ -1100,7 +1103,7 @@ type bitwise struct {
 
 // newBitwiseBool creates a new bitwise boolean operation.
 func newBitwiseBool(sreg, dreg uint8, mask, xor []byte) (*bitwise, error) {
-	if sreg == linux.NFT_REG_VERDICT || dreg == linux.NFT_REG_VERDICT {
+	if isVerdictRegister(sreg) || isVerdictRegister(dreg) {
 		return nil, fmt.Errorf("bitwise operation cannot use verdict register as source or destination")
 	}
 	blen := len(mask)
@@ -1115,7 +1118,7 @@ func newBitwiseBool(sreg, dreg uint8, mask, xor []byte) (*bitwise, error) {
 
 // newBitwiseShift creates a new bitwise shift operation.
 func newBitwiseShift(sreg, dreg, blen uint8, shift uint32, right bool) (*bitwise, error) {
-	if sreg == linux.NFT_REG_VERDICT || dreg == linux.NFT_REG_VERDICT {
+	if isVerdictRegister(sreg) || isVerdictRegister(dreg) {
 		return nil, fmt.Errorf("bitwise operation cannot use verdict register as source or destination")
 	}
 	if blen > 16 || (blen > 4 && (is4ByteRegister(sreg) || is4ByteRegister(dreg))) {
@@ -1271,6 +1274,119 @@ func (op *last) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *Rule)
 	clock := rule.chain.table.afFilter.nftState.clock
 	op.timestampMS.Store(clock.Now().UnixMilli())
 	op.set.CompareAndSwap(false, true)
+}
+
+// route is an operation that loads specific route data into a register.
+// Note: route operations are not supported for the verdict register.
+type route struct {
+	key  routeKey // Route key specifying what data to retrieve.
+	dreg uint8    // Number of the destination register.
+
+	// Route information is stored AS IS. If the data is a field stored by the
+	// kernel, it is stored in host endian. If the data is from the packet, it
+	// is stored in big endian (network order).
+	// The nft binary handles the necessary endian conversions from user input.
+	// For example, if the user wants to check if some kernel data == 123 vs
+	// payload data == 123, the nft binary passes host endian register data for
+	// the former and big endian register data for the latter.
+}
+
+// routeKey is the key that determines the specific route data to retrieve.
+// Note: corresponds to enum nft_rt_keys from
+// include/uapi/linux/netfilter/nf_tables.h and uses the same constants.
+type routeKey int
+
+// String for routeKey returns the string representation of the route key.
+func (key routeKey) String() string {
+	// Uses errors from validation to handle unsupported route keys.
+	if err := validateRouteKey(key); err != nil {
+		panic(err)
+	}
+	// Cases for supported route keys.
+	switch key {
+	case linux.NFT_RT_NEXTHOP4:
+		return "Next Hop IPv4"
+	case linux.NFT_RT_NEXTHOP6:
+		return "Next Hop IPv6"
+	case linux.NFT_RT_TCPMSS:
+		return "TCP Maximum Segment Size (TCPMSS)"
+	default:
+		return fmt.Sprintf("Unknown Supported Route Key: %d", int(key))
+	}
+}
+
+// validateRouteKey ensures the route key is valid.
+func validateRouteKey(key routeKey) error {
+	switch key {
+	// Supported route keys.
+	case linux.NFT_RT_NEXTHOP4, linux.NFT_RT_NEXTHOP6, linux.NFT_RT_TCPMSS:
+		return nil
+	// Unsupported route keys.
+	case linux.NFT_RT_CLASSID:
+		// Note: We can trivially support Traffic Class ID for IPv6, but we need to
+		// do more work to support it for IPv4. For safety, we mark it as
+		// unsupported since we don't know what packet type we're working with until
+		// the time of evaluation. In the worst case, we don't want the user to
+		// initialize a route with this key and then have it silently break and
+		// yield a difficult-to-debug error.
+		return fmt.Errorf("traffic class id not supported")
+	case linux.NFT_RT_XFRM:
+		return fmt.Errorf("xfrm transformation not supported")
+	default:
+		return fmt.Errorf("invalid route key: %d", int(key))
+	}
+}
+
+// newRoute creates a new route operation.
+func newRoute(key routeKey, dreg uint8) (*route, error) {
+	if isVerdictRegister(dreg) {
+		return nil, fmt.Errorf("route operation cannot use verdict register as destination")
+	}
+	if err := validateRouteKey(key); err != nil {
+		return nil, err
+	}
+
+	return &route{key: key, dreg: dreg}, nil
+}
+
+// evaluate for Route loads specific routing data into the destination register.
+func (op route) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *Rule) {
+	// Gets the target data to be stored in the destination register.
+	var target []byte
+	switch op.key {
+
+	// Retrieves next hop IPv4 address (restricted to IPv4).
+	// Stores data in big endian network order.
+	case linux.NFT_RT_NEXTHOP4:
+		if pkt.NetworkProtocolNumber != header.IPv4ProtocolNumber {
+			break
+		}
+		target = pkt.EgressRoute.NextHop.AsSlice()
+
+	// Retrieves next hop IPv6 address (restricted to IPv6).
+	// Stores data in big endian network order.
+	case linux.NFT_RT_NEXTHOP6:
+		if pkt.NetworkProtocolNumber != header.IPv6ProtocolNumber {
+			break
+		}
+		target = pkt.EgressRoute.NextHop.AsSlice()
+
+	// Retrieves the TCP Maximum Segment Size (TCPMSS).
+	// Stores data in host endian.
+	case linux.NFT_RT_TCPMSS:
+		tcpmss := pkt.GSOOptions.MSS
+		target = binary.NativeEndian.AppendUint16(nil, tcpmss)
+	}
+
+	// Breaks if could not retrieve target data.
+	if target == nil {
+		regs.verdict = Verdict{Code: VC(linux.NFT_BREAK)}
+		return
+	}
+
+	// Stores the target data in the destination register.
+	data := newBytesData(target)
+	data.storeData(regs, op.dreg)
 }
 
 //

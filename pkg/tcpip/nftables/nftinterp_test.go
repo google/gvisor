@@ -808,6 +808,82 @@ func checkCounterOp(tname string, expected operation, actual operation) error {
 	return nil
 }
 
+// TestInterpretRouteOps tests interpretation of route operations.
+func TestInterpretRouteOps(t *testing.T) {
+	for _, test := range []interpretOperationTestAction{
+		{ // cmd: add rule ip filter output rt nexthop 192.168.1.1
+			tname:    "load nexthop4 key to 4-byte register",
+			opStr:    "[ rt load nexthop4 => reg 14 ]",
+			expected: mustCreateRoute(t, linux.NFT_RT_NEXTHOP4, linux.NFT_REG32_06),
+		},
+		{ // cmd: add rule ip filter output rt nexthop 192.168.1.9
+			tname:    "load nexthop4 key to 4-byte register",
+			opStr:    "[ rt load nexthop4 => reg 3 ]",
+			expected: mustCreateRoute(t, linux.NFT_RT_NEXTHOP4, linux.NFT_REG_3),
+		},
+		{ // cmd: add rule ip6 filter output rt nexthop 2001:db8:85a3::aa
+			tname:    "load nexthop6 key to 16-byte register",
+			opStr:    "[ rt load nexthop6 => reg 1 ]",
+			expected: mustCreateRoute(t, linux.NFT_RT_NEXTHOP6, linux.NFT_REG_1),
+		},
+		{ // cmd: add rule ip filter output rt mtu 1500
+			tname:    "load tcpmss key to 4-byte register",
+			opStr:    "[ rt load tcpmss => reg 8 ]",
+			expected: mustCreateRoute(t, linux.NFT_RT_TCPMSS, linux.NFT_REG32_00),
+		},
+		{ // cmd: add rule ip filter output rt mtu 0x0102
+			tname:    "load tcpmss key to 16-byte register",
+			opStr:    "[ rt load tcpmss => reg 4 ]",
+			expected: mustCreateRoute(t, linux.NFT_RT_TCPMSS, linux.NFT_REG_4),
+		},
+		// Result in errors.
+		{ // cmd: add rule ip filter output rt classid 0x05
+			tname:    "unsupported route key classid",
+			opStr:    "[ rt load classid => reg 10 ]",
+			expected: nil,
+		},
+		{ // cmd: add rule ip filter output rt ipsec exists
+			tname:    "unsupported route key ipsec",
+			opStr:    "[ rt load ipsec => reg 1 ]",
+			expected: nil,
+		},
+		{
+			tname:    "invalid route key keyword",
+			opStr:    "[ rt load xrfm => reg 1 ]",
+			expected: nil,
+		},
+		{
+			tname:    "too few tokens for route operation",
+			opStr:    "[ rt nexthop6 => reg 1 ]",
+			expected: nil,
+		},
+		{
+			tname:    "too many tokens for route operation",
+			opStr:    "[ rt load tcpmss => reg 4 -> reg 5 ]",
+			expected: nil,
+		},
+	} {
+		t.Run(test.tname, func(t *testing.T) { checkOp(t, test, checkRouteOp) })
+	}
+}
+
+// checkRouteOp checks that the given operation is a route operation and
+// that it matches the expected route operation.
+func checkRouteOp(tname string, expected operation, actual operation) error {
+	expectedRt := expected.(*route)
+	rt, ok := actual.(*route)
+	if !ok {
+		return fmt.Errorf("expected operation type to be Route for %s, got %T", tname, actual)
+	}
+	if rt.key != expectedRt.key {
+		return fmt.Errorf("expected route key to be %v for %s, got %v", expectedRt.key, tname, rt.key)
+	}
+	if rt.dreg != expectedRt.dreg {
+		return fmt.Errorf("expected destination register to be %d for %s, got %d", expectedRt.dreg, tname, rt.dreg)
+	}
+	return nil
+}
+
 // TestInterpretRule tests the interpretation of basic and general rules as a
 // list of operations.
 func TestInterpretRule(t *testing.T) {

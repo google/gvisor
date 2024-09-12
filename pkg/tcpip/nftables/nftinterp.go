@@ -153,6 +153,8 @@ func InterpretOperation(line string, lnIdx int) (operation, error) {
 		return InterpretBitwiseBool(line, lnIdx)
 	case "counter":
 		return InterpretCounter(line, lnIdx)
+	case "rt":
+		return InterpretRoute(line, lnIdx)
 	default:
 		return nil, &SyntaxError{lnIdx, 1, fmt.Sprintf("unrecognized operation type: %s", tokens[1])}
 	}
@@ -668,6 +670,69 @@ func InterpretCounter(line string, lnIdx int) (operation, error) {
 	return cntr, nil
 }
 
+// InterpretRoute creates a new Route operation from the given string.
+func InterpretRoute(line string, lnIdx int) (operation, error) {
+	tokens := strings.Fields(line)
+
+	// Requires exactly 8 tokens:
+	// 		"[", "rt", "load", route key, "=>", "reg", register index, "]".
+	if len(tokens) != 8 {
+		return nil, &SyntaxError{lnIdx, 0, fmt.Sprintf("incorrect number of tokens for route operation, should be exactly 8, got %d", len(tokens))}
+	}
+
+	if err := checkOperationBrackets(tokens, lnIdx); err != nil {
+		return nil, err
+	}
+
+	tkIdx := 1
+
+	// First token should be "rt".
+	if err := consumeToken("rt", tokens, lnIdx, tkIdx); err != nil {
+		return nil, err
+	}
+	tkIdx++
+
+	// Second token should be "load".
+	if err := consumeToken("load", tokens, lnIdx, tkIdx); err != nil {
+		return nil, err
+	}
+	tkIdx++
+
+	// Third token should be the route key.
+	key, err := parseRouteKey(tokens[tkIdx], lnIdx, tkIdx)
+	if err != nil {
+		return nil, err
+	}
+	tkIdx++
+
+	// Fourth token should be "=>".
+	if err := consumeToken("=>", tokens, lnIdx, tkIdx); err != nil {
+		return nil, err
+	}
+	tkIdx++
+
+	// Fifth token should be "reg".
+	if err := consumeToken("reg", tokens, lnIdx, tkIdx); err != nil {
+		return nil, err
+	}
+	tkIdx++
+
+	// Sixth token should be the uint8 representing the register index.
+	reg, err := parseRegister(tokens[tkIdx], lnIdx, tkIdx)
+	if err != nil {
+		return nil, err
+	}
+	tkIdx++
+
+	// Create the operation with the specified arguments.
+	rt, err := newRoute(key, reg)
+	if err != nil {
+		return nil, &LogicError{lnIdx, tkIdx, err}
+	}
+
+	return rt, nil
+}
+
 //
 // Interpreter Helper Functions.
 //
@@ -861,6 +926,27 @@ func parsePayloadBase(baseString string, lnIdx int, tkIdx int) (payloadBase, err
 	// Inner and Tunnel Headers cannot be specified in payload load operation.
 	default:
 		return 0, &SyntaxError{lnIdx, tkIdx, fmt.Sprintf("invalid payload base: '%s'", baseString)}
+	}
+}
+
+// parseRouteKey parses the route key from the given string.
+func parseRouteKey(keyString string, lnIdx int, tkIdx int) (routeKey, error) {
+	switch keyString {
+	// Fully supported route keys.
+	case "nexthop4":
+		return linux.NFT_RT_NEXTHOP4, nil
+	case "nexthop6":
+		return linux.NFT_RT_NEXTHOP6, nil
+	case "tcpmss":
+		return linux.NFT_RT_TCPMSS, nil
+	// Keys supported for interpretation but not yet for logic/evaluation.
+	// Note: Will result in logic error during operation construction.
+	case "classid":
+		return linux.NFT_RT_CLASSID, nil
+	case "ipsec":
+		return linux.NFT_RT_XFRM, nil
+	default:
+		return 0, &SyntaxError{lnIdx, tkIdx, fmt.Sprintf("invalid route key keyword: '%s'", keyString)}
 	}
 }
 
