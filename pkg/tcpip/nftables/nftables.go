@@ -605,9 +605,9 @@ func (op immediate) evaluate(regs *registerSet, pkt *stack.PacketBuffer) {
 // if the comparison is false.
 // Note: comparison operations are not supported for the verdict register.
 type comparison struct {
-	data registerData // Data to compare the source register to.
-	sreg uint8        // Number of the source register.
-	cop  cmpOp        // Comparison operator.
+	data bytesData // Data to compare the source register to.
+	sreg uint8     // Number of the source register.
+	cop  cmpOp     // Comparison operator.
 }
 
 // cmpOp is the comparison operator for a Comparison operation.
@@ -666,19 +666,16 @@ func newComparison(sreg uint8, op int, data []byte) (*comparison, error) {
 // data and breaks from the rule if the comparison is false.
 func (op comparison) evaluate(regs *registerSet, pkt *stack.PacketBuffer) {
 	// Gets the data to compare to.
-	bytesData, ok := op.data.(bytesData)
-	if !ok {
-		panic("comparison operation data is not BytesData")
-	}
+	data := op.data.data
 	// Gets the data from the source register.
 	regBuf := getRegisterBuffer(regs, op.sreg)
 
 	// Compares bytes from left to right for all bytes in the comparison data.
 	dif := 0
-	for i := 0; i < len(bytesData.data) && dif == 0; i++ {
-		if regBuf[i] < bytesData.data[i] {
+	for i := 0; i < len(data) && dif == 0; i++ {
+		if regBuf[i] < data[i] {
 			dif = -1
-		} else if regBuf[i] > bytesData.data[i] {
+		} else if regBuf[i] > data[i] {
 			dif = 1
 		}
 	}
@@ -991,13 +988,13 @@ func (bop bitwiseOp) String() string {
 // a given register, storing the result in a destination register.
 // Note: bitwise operations are not supported for the verdict register.
 type bitwise struct {
-	sreg  uint8        // Number of the source register.
-	dreg  uint8        // Number of the destination register.
-	bop   bitwiseOp    // Bitwise operator to use.
-	blen  uint8        // Number of bytes to apply bitwise operation to.
-	mask  registerData // Mask to apply bitwise & for boolean operations (before ^).
-	xor   registerData // Xor to apply bitwise ^ for boolean operations (after &).
-	shift uint32       // Shift to apply bitwise <</>> for non-boolean operations.
+	sreg  uint8     // Number of the source register.
+	dreg  uint8     // Number of the destination register.
+	bop   bitwiseOp // Bitwise operator to use.
+	blen  uint8     // Number of bytes to apply bitwise operation to.
+	mask  bytesData // Mask to apply bitwise & for boolean operations (before ^).
+	xor   bytesData // Xor to apply bitwise ^ for boolean operations (after &).
+	shift uint32    // Shift to apply bitwise <</>> for non-boolean operations.
 
 	// Note: Technically, the linux kernel has defined bool, lshift, and rshift
 	// as the 3 types of bitwise operations. However, we have not been able to
@@ -1122,15 +1119,7 @@ func (op bitwise) evaluate(regs *registerSet, pkt *stack.PacketBuffer) {
 	dregBuf := getRegisterBuffer(regs, op.dreg)[:op.blen]
 
 	if op.bop == linux.NFT_BITWISE_BOOL {
-		mask, ok := op.mask.(bytesData)
-		if !ok {
-			panic("bitwise bool mask data is not BytesData")
-		}
-		xor, ok := op.xor.(bytesData)
-		if !ok {
-			panic("bitwise bool xor data is not BytesData")
-		}
-		evaluateBitwiseBool(sregBuf, dregBuf, mask.data, xor.data)
+		evaluateBitwiseBool(sregBuf, dregBuf, op.mask.data, op.xor.data)
 		return
 	} else {
 		if op.bop == linux.NFT_BITWISE_LSHIFT {
@@ -1188,7 +1177,7 @@ type verdictData struct {
 }
 
 // newVerdictData creates a registerData for a verdict.
-func newVerdictData(verdict Verdict) registerData { return verdictData{data: verdict} }
+func newVerdictData(verdict Verdict) verdictData { return verdictData{data: verdict} }
 
 // String returns a string representation of the verdict data.
 func (rd verdictData) String() string {
@@ -1229,7 +1218,7 @@ type bytesData struct {
 }
 
 // newBytesData creates a registerData for <= 16 bytes of data.
-func newBytesData(bytes []byte) registerData {
+func newBytesData(bytes []byte) bytesData {
 	if len(bytes) == 0 {
 		panic("bytes data cannot be empty")
 	}
