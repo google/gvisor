@@ -73,7 +73,7 @@ func (t *Timer) StateFields() []string {
 		"clock",
 		"listener",
 		"setting",
-		"paused",
+		"pauseState",
 	}
 }
 
@@ -85,7 +85,7 @@ func (t *Timer) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &t.clock)
 	stateSinkObject.Save(1, &t.listener)
 	stateSinkObject.Save(2, &t.setting)
-	stateSinkObject.Save(3, &t.paused)
+	stateSinkObject.Save(3, &t.pauseState)
 }
 
 func (t *Timer) afterLoad(context.Context) {}
@@ -95,7 +95,7 @@ func (t *Timer) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &t.clock)
 	stateSourceObject.Load(1, &t.listener)
 	stateSourceObject.Load(2, &t.setting)
-	stateSourceObject.Load(3, &t.paused)
+	stateSourceObject.Load(3, &t.pauseState)
 }
 
 func init() {

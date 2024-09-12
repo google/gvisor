@@ -434,8 +434,7 @@ type Timer struct {
 	// setting is the timer setting. setting is protected by mu.
 	setting Setting
 
-	// paused is true if the Timer is paused. paused is protected by mu.
-	paused bool
+	pauseState timerPauseState
 
 	// kicker is used to wake the Timer goroutine. The kicker pointer is
 	// immutable, but its state is protected by mu.
@@ -452,6 +451,20 @@ type Timer struct {
 	// goroutine to exit.
 	events chan struct{} `state:"nosave"`
 }
+
+type timerPauseState uint8
+
+const (
+	// timerUnpaused indicates that the Timer is neither paused nor
+	// destroyed.
+	timerUnpaused timerPauseState = iota
+
+	// timerPaused indicates that the Timer is paused, not destroyed.
+	timerPaused
+
+	// timerDestroyed indicates that the Timer is destroyed.
+	timerDestroyed
+)
 
 // timerTickEvents are Clock events that require the Timer goroutine to Tick
 // prematurely.
@@ -488,13 +501,16 @@ func (t *Timer) init() {
 	go t.runGoroutine() // S/R-SAFE: synchronized by t.mu
 }
 
-// Destroy releases resources owned by the Timer. A Destroyed Timer must not be
-// used again; in particular, a Destroyed Timer should not be Saved.
+// Destroy releases resources owned by the Timer. Pause and Resume may be
+// called on a Destroyed Timer and are no-ops. No other methods may be called
+// on a Destroyed Timer.
 func (t *Timer) Destroy() {
 	// Stop the Timer, ensuring that the Timer goroutine will not call
 	// t.kicker.Reset, before calling t.kicker.Stop.
 	t.mu.Lock()
 	t.setting.Enabled = false
+	// Set timerDestroyed to prevent t.Tick() from mutating Timer state.
+	t.pauseState = timerDestroyed
 	t.mu.Unlock()
 	t.kicker.Stop()
 	// Unregister t.entry, ensuring that the Clock will not send to t.events,
@@ -526,7 +542,7 @@ func (t *Timer) Tick() {
 	now := unlockedClock.Now()
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	if t.paused {
+	if t.pauseState != timerUnpaused {
 		return
 	}
 	if t.clock != unlockedClock {
@@ -548,7 +564,10 @@ func (t *Timer) Tick() {
 func (t *Timer) Pause() {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	t.paused = true
+	if t.pauseState != timerUnpaused {
+		return
+	}
+	t.pauseState = timerPaused
 	// t.kicker may be nil if we were restored but never resumed.
 	if t.kicker != nil {
 		t.kicker.Stop()
@@ -560,10 +579,10 @@ func (t *Timer) Pause() {
 func (t *Timer) Resume() {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	if !t.paused {
+	if t.pauseState != timerPaused {
 		return
 	}
-	t.paused = false
+	t.pauseState = timerUnpaused
 
 	// Lazily initialize the Timer. We can't call Timer.init until Timer.Resume
 	// because save/restore will restore Timers before
@@ -589,8 +608,8 @@ func (t *Timer) Get() (Time, Setting) {
 	now := unlockedClock.Now()
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	if t.paused {
-		panic(fmt.Sprintf("Timer.Get called on paused Timer %p", t))
+	if t.pauseState != timerUnpaused {
+		panic(fmt.Sprintf("Timer.Get called on Timer %p in pause state %v", t, t.pauseState))
 	}
 	if t.clock != unlockedClock {
 		now = t.clock.Now()
@@ -632,8 +651,8 @@ func (t *Timer) SwapAnd(s Setting, f func()) (Time, Setting) {
 	now := unlockedClock.Now()
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	if t.paused {
-		panic(fmt.Sprintf("Timer.SwapAnd called on paused Timer %p", t))
+	if t.pauseState != timerUnpaused {
+		panic(fmt.Sprintf("Timer.SwapAnd called on Timer %p in pause state %v", t, t.pauseState))
 	}
 	if t.clock != unlockedClock {
 		now = t.clock.Now()
