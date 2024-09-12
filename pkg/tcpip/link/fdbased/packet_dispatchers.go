@@ -227,7 +227,7 @@ type recvMMsgDispatcher struct {
 	// reference an array of iovecs in the iovecs field defined above.  This
 	// array is passed as the parameter to recvmmsg call to retrieve
 	// potentially more than 1 packet per unix.
-	msgHdrs []rawfile.MMsgHdr
+	msgHdrs []rawfile.MMsgHdr `state:"nosave"`
 
 	// pkts is reused to avoid allocations.
 	pkts stack.PacketBufferList

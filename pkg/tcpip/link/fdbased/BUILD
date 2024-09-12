@@ -15,6 +15,7 @@ go_library(
         "mmap_unsafe.go",
         "packet_dispatchers.go",
         "processors.go",
+        "save_restore.go",
     ],
     visibility = ["//visibility:public"],
     deps = [
