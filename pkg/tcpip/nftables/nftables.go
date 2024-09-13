@@ -55,6 +55,8 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
+// TODO(b/345684870): Break this file up into multiple files by operation type.
+// Each operation should get its own file.
 // TODO(b/345684870): Make the nftables package thread-safe! Must be done before
 // the package is used in production.
 
@@ -593,6 +595,7 @@ var (
 	_ operation = (*counter)(nil)
 	_ operation = (*last)(nil)
 	_ operation = (*route)(nil)
+	_ operation = (*byteorder)(nil)
 )
 
 // immediate is an operation that sets the data in a register.
@@ -877,7 +880,7 @@ func newPayloadLoad(base payloadBase, offset, blen, dreg uint8) (*payloadLoad, e
 	if isVerdictRegister(dreg) {
 		return nil, fmt.Errorf("payload load operation cannot use verdict register as destination")
 	}
-	if blen > 16 || (blen > 4 && is4ByteRegister(dreg)) {
+	if blen > linux.NFT_REG_SIZE || (blen > linux.NFT_REG32_SIZE && is4ByteRegister(dreg)) {
 		return nil, fmt.Errorf("payload length %d is too long for destination register %d", blen, dreg)
 	}
 	if err := validatePayloadBase(base); err != nil {
@@ -950,7 +953,7 @@ func newPayloadSet(base payloadBase, offset, blen, sreg, csumType, csumOffset, c
 	if isVerdictRegister(sreg) {
 		return nil, fmt.Errorf("payload set operation cannot use verdict register as destination")
 	}
-	if blen > 16 || (blen > 4 && is4ByteRegister(sreg)) {
+	if blen > linux.NFT_REG_SIZE || (blen > linux.NFT_REG32_SIZE && is4ByteRegister(sreg)) {
 		return nil, fmt.Errorf("payload length %d is too long for destination register %d", blen, sreg)
 	}
 	if err := validatePayloadBase(base); err != nil {
@@ -1110,7 +1113,7 @@ func newBitwiseBool(sreg, dreg uint8, mask, xor []byte) (*bitwise, error) {
 	if blen != len(xor) {
 		return nil, fmt.Errorf("bitwise boolean operation mask and xor must be the same length")
 	}
-	if blen > 16 || (blen > 4 && (is4ByteRegister(sreg) || is4ByteRegister(dreg))) {
+	if blen > linux.NFT_REG_SIZE || (blen > linux.NFT_REG32_SIZE && (is4ByteRegister(sreg) || is4ByteRegister(dreg))) {
 		return nil, fmt.Errorf("bitwise operation length %d is too long for source register %d, destination register %d", blen, sreg, dreg)
 	}
 	return &bitwise{sreg: sreg, dreg: dreg, bop: linux.NFT_BITWISE_BOOL, blen: uint8(blen), mask: newBytesData(mask), xor: newBytesData(xor)}, nil
@@ -1121,7 +1124,7 @@ func newBitwiseShift(sreg, dreg, blen uint8, shift uint32, right bool) (*bitwise
 	if isVerdictRegister(sreg) || isVerdictRegister(dreg) {
 		return nil, fmt.Errorf("bitwise operation cannot use verdict register as source or destination")
 	}
-	if blen > 16 || (blen > 4 && (is4ByteRegister(sreg) || is4ByteRegister(dreg))) {
+	if blen > linux.NFT_REG_SIZE || (blen > linux.NFT_REG32_SIZE && (is4ByteRegister(sreg) || is4ByteRegister(dreg))) {
 		return nil, fmt.Errorf("bitwise operation length %d is too long for source register %d, destination register %d", blen, sreg, dreg)
 	}
 	if shift >= bitshiftLimit {
@@ -1389,6 +1392,128 @@ func (op route) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *Rule)
 	data.storeData(regs, op.dreg)
 }
 
+// byteorder is an operation that performs byte order operations on a register.
+// Note: byteorder operations are not supported for the verdict register.
+type byteorder struct {
+	sreg uint8       // Number of the source register.
+	dreg uint8       // Number of the destination register.
+	bop  byteorderOp // Byte order operation to perform.
+	blen uint8       // Number of total bytes to operate on.
+	size uint8       // Granular size in bytes to operate on.
+}
+
+// byteorderOp is the byte order operator for a byteorder operation.
+// Note: corresponds to enum nft_byteorder_ops from
+// include/uapi/linux/netfilter/nf_tables.h and uses the same constants.
+type byteorderOp int
+
+// String for byteorderOp returns the string representation of the byteorder
+// operator.
+func (bop byteorderOp) String() string {
+	switch bop {
+	case linux.NFT_BYTEORDER_NTOH:
+		return "network to host"
+	case linux.NFT_BYTEORDER_HTON:
+		return "host to network"
+	default:
+		panic(fmt.Sprintf("unknown supported byteorder operator: %d", int(bop)))
+	}
+}
+
+// validateByteorderOp ensures the byteorder operator is valid.
+func validateByteorderOp(bop byteorderOp) error {
+	switch bop {
+	// Supported operators.
+	case linux.NFT_BYTEORDER_NTOH, linux.NFT_BYTEORDER_HTON:
+		return nil
+	default:
+		return fmt.Errorf("invalid byteorder operator: %d", int(bop))
+	}
+}
+
+// newByteorder creates a new byteorder operation.
+func newByteorder(sreg, dreg uint8, bop byteorderOp, blen, size uint8) (*byteorder, error) {
+	if isVerdictRegister(sreg) || isVerdictRegister(dreg) {
+		return nil, fmt.Errorf("byteorder operation cannot use verdict register")
+	}
+	if err := validateByteorderOp(bop); err != nil {
+		return nil, err
+	}
+	if blen > linux.NFT_REG_SIZE {
+		return nil, fmt.Errorf("byteorder operation cannot have length greater than the max register size of %d bytes", linux.NFT_REG_SIZE)
+	}
+	if (is4ByteRegister(sreg) || is4ByteRegister(dreg)) && blen > linux.NFT_REG32_SIZE {
+		return nil, fmt.Errorf("byteorder operation cannot have length greater than the max register size of %d bytes", linux.NFT_REG32_SIZE)
+	}
+	if size > blen {
+		return nil, fmt.Errorf("byteorder operation cannot have size greater than length")
+	}
+	if size != 2 && size != 4 && size != 8 {
+		return nil, fmt.Errorf("byteorder operation size must be 2, 4, or 8 bytes")
+	}
+	return &byteorder{sreg: sreg, dreg: dreg, bop: bop, blen: blen, size: size}, nil
+}
+
+// evaluate for byteorder performs the byte order operation on the source
+// register and stores the result in the destination register.
+func (op byteorder) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *Rule) {
+	// Gets the source and destination registers.
+	src := getRegisterBuffer(regs, op.sreg)
+	dst := getRegisterBuffer(regs, op.dreg)
+
+	// Performs the byte order operations on the source register and stores the
+	// result in as many bytes as are available in the destination register.
+	switch op.size {
+	case 8:
+		switch op.bop {
+		case linux.NFT_BYTEORDER_NTOH:
+			for i := uint8(0); i < op.blen; i += 8 {
+				networkNum := binary.BigEndian.Uint64(src[i : i+8])
+				binary.NativeEndian.PutUint64(dst[i:], networkNum)
+			}
+		case linux.NFT_BYTEORDER_HTON:
+			for i := uint8(0); i < op.blen; i += 8 {
+				hostNum := binary.NativeEndian.Uint64(src[i : i+8])
+				binary.BigEndian.PutUint64(dst[i:], hostNum)
+			}
+		}
+
+	case 4:
+		switch op.bop {
+		case linux.NFT_BYTEORDER_NTOH:
+			for i := uint8(0); i < op.blen; i += 4 {
+				networkNum := binary.BigEndian.Uint32(src[i : i+4])
+				binary.NativeEndian.PutUint32(dst[i:], networkNum)
+			}
+		case linux.NFT_BYTEORDER_HTON:
+			for i := uint8(0); i < op.blen; i += 4 {
+				hostNum := binary.NativeEndian.Uint32(src[i : i+4])
+				binary.BigEndian.PutUint32(dst[i:], hostNum)
+			}
+		}
+
+	case 2:
+		switch op.bop {
+		case linux.NFT_BYTEORDER_NTOH:
+			for i := uint8(0); i < op.blen; i += 2 {
+				networkNum := binary.BigEndian.Uint16(src[i : i+2])
+				binary.NativeEndian.PutUint16(dst[i:], networkNum)
+			}
+		case linux.NFT_BYTEORDER_HTON:
+			for i := uint8(0); i < op.blen; i += 2 {
+				hostNum := binary.NativeEndian.Uint16(src[i : i+2])
+				binary.BigEndian.PutUint16(dst[i:], hostNum)
+			}
+		}
+	}
+
+	// Zeroes out excess bytes of the destination register.
+	// This is done since comparison can be done in multiples of 4 bytes.
+	if rem := op.blen % 4; rem != 0 {
+		clear(dst[op.blen : op.blen+4-rem])
+	}
+}
+
 //
 // Register and Register-Related Implementations.
 // Note: Registers are represented by type uint8 for the register number.
@@ -1481,8 +1606,8 @@ func newBytesData(bytes []byte) bytesData {
 	if len(bytes) == 0 {
 		panic("bytes data cannot be empty")
 	}
-	if len(bytes) > 16 {
-		panic(fmt.Errorf("bytes data cannot be more than 16 bytes: %d", len(bytes)))
+	if len(bytes) > linux.NFT_REG_SIZE {
+		panic(fmt.Errorf("bytes data cannot be more than %d bytes: %d", linux.NFT_REG_SIZE, len(bytes)))
 	}
 	return bytesData{data: bytes}
 }
@@ -1509,8 +1634,8 @@ func (rd bytesData) validateRegister(reg uint8) error {
 	if isVerdictRegister(reg) {
 		return fmt.Errorf("data cannot be stored in verdict register")
 	}
-	if is4ByteRegister(reg) && len(rd.data) > 4 {
-		return fmt.Errorf("%d-byte data cannot be stored in 4-byte register", len(rd.data))
+	if is4ByteRegister(reg) && len(rd.data) > linux.NFT_REG32_SIZE {
+		return fmt.Errorf("%d-byte data cannot be stored in %d-byte register", len(rd.data), linux.NFT_REG32_SIZE)
 	}
 	// 16-byte register can be used for any data (guaranteed to be <= 16 bytes)
 	return nil

@@ -884,6 +884,79 @@ func checkRouteOp(tname string, expected operation, actual operation) error {
 	return nil
 }
 
+// TestInterpretByteorderOps tests interpretation of byteorder operations.
+// Note: Most byteorder operations have been revealed in the nft binary
+// debug output through bitshifts (which oddly do not use the native bitwise
+// operation lshift and rshift operators). Thus, many of following commands are
+// simply variations of lshift and rshift commands.
+func TestInterpretByteorderOps(t *testing.T) {
+	for _, test := range []interpretOperationTestAction{
+		{ // cmd: add rule ip tab ch tcp dport rshift 4 == 0x5678
+			tname:    "ntoh size 2 len 2",
+			opStr:    "[ byteorder reg 1 = ntoh(reg 1, 2, 2) ]",
+			expected: mustCreateByteorder(t, linux.NFT_REG_1, linux.NFT_REG_1, linux.NFT_BYTEORDER_NTOH, 2, 2),
+		},
+		{ // cmd: add rule ip tab ch tcp dport rshift 7 == 0x345
+			tname:    "ntoh size 2 len 2 again",
+			opStr:    "[ byteorder reg 2 = ntoh(reg 11, 2, 2) ]",
+			expected: mustCreateByteorder(t, linux.NFT_REG_2, linux.NFT_REG32_03, linux.NFT_BYTEORDER_NTOH, 2, 2),
+		},
+		{ // cmd: add rule ip filter input @th,24,24 rshift 1 0xabcdef
+			tname:    "ntoh size 2 len 3 again",
+			opStr:    "[ byteorder reg 15 = ntoh(reg 15, 2, 3) ]",
+			expected: mustCreateByteorder(t, linux.NFT_REG32_07, linux.NFT_REG32_07, linux.NFT_BYTEORDER_NTOH, 3, 2),
+		},
+		{ // cmd: add rule ip filter input ether saddr lshift 1 == 01223456
+			tname:    "ntoh size 2 len 6",
+			opStr:    "[ byteorder reg 4 = ntoh(reg 3, 2, 6) ]",
+			expected: mustCreateByteorder(t, linux.NFT_REG_4, linux.NFT_REG_3, linux.NFT_BYTEORDER_NTOH, 6, 2),
+		},
+		{ // cmd: add rule ip tab ch ip daddr rshift 20 99900
+			tname:    "ntoh size 4 len 4",
+			opStr:    "[ byteorder reg 9 = ntoh(reg 1, 4, 4) ]",
+			expected: mustCreateByteorder(t, linux.NFT_REG32_01, linux.NFT_REG_1, linux.NFT_BYTEORDER_NTOH, 4, 4),
+		},
+		{ // cmd: add rule ip6 tab ch ip6 daddr rshift 90 603
+			tname:    "ntoh size 8 len 16",
+			opStr:    "[ byteorder reg 1 = ntoh(reg 1, 8, 16) ]",
+			expected: mustCreateByteorder(t, linux.NFT_REG_1, linux.NFT_REG_1, linux.NFT_BYTEORDER_NTOH, 16, 8),
+		},
+		{ // cmd: add rule ip filter input meta length gt 1000 accept
+			tname:    "hton size 4 len 4",
+			opStr:    "[ byteorder reg 8 = hton(reg 1, 4, 4) ]",
+			expected: mustCreateByteorder(t, linux.NFT_REG32_00, linux.NFT_REG_1, linux.NFT_BYTEORDER_HTON, 4, 4),
+		},
+	} {
+		t.Run(test.tname, func(t *testing.T) { checkOp(t, test, checkByteorderOp) })
+	}
+}
+
+// checkByteorderOp checks that the given operation is a byteorder operation
+// and that it matches the expected byteorder operation.
+func checkByteorderOp(tname string, expected operation, actual operation) error {
+	expectedOrder := expected.(*byteorder)
+	order, ok := actual.(*byteorder)
+	if !ok {
+		return fmt.Errorf("expected operation type to be Byteorder for %s, got %T", tname, actual)
+	}
+	if order.sreg != expectedOrder.sreg {
+		return fmt.Errorf("expected source register to be %d for %s, got %d", expectedOrder.sreg, tname, order.sreg)
+	}
+	if order.dreg != expectedOrder.dreg {
+		return fmt.Errorf("expected destination register to be %d for %s, got %d", expectedOrder.dreg, tname, order.dreg)
+	}
+	if order.bop != expectedOrder.bop {
+		return fmt.Errorf("expected byteorder operator to be %v for %s, got %v", expectedOrder.bop, tname, order.bop)
+	}
+	if order.blen != expectedOrder.blen {
+		return fmt.Errorf("expected byteorder length to be %d for %s, got %d", expectedOrder.blen, tname, order.blen)
+	}
+	if order.size != expectedOrder.size {
+		return fmt.Errorf("expected byteorder size to be %d for %s, got %d", expectedOrder.size, tname, order.size)
+	}
+	return nil
+}
+
 // TestInterpretRule tests the interpretation of basic and general rules as a
 // list of operations.
 func TestInterpretRule(t *testing.T) {

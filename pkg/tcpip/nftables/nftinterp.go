@@ -155,6 +155,8 @@ func InterpretOperation(line string, lnIdx int) (operation, error) {
 		return InterpretCounter(line, lnIdx)
 	case "rt":
 		return InterpretRoute(line, lnIdx)
+	case "byteorder":
+		return InterpretByteorder(line, lnIdx)
 	default:
 		return nil, &SyntaxError{lnIdx, 1, fmt.Sprintf("unrecognized operation type: %s", tokens[1])}
 	}
@@ -309,7 +311,7 @@ func InterpretPayloadLoad(line string, lnIdx int) (operation, error) {
 	tkIdx++
 
 	// Third token should be the length (in bytes) of the payload followed by 'b'.
-	len, err := parsePayloadLength(tokens[tkIdx], lnIdx, tkIdx)
+	blen, err := parseUint8PlusChar(tokens[tkIdx], 'b', lnIdx, tkIdx)
 	if err != nil {
 		return nil, err
 	}
@@ -367,7 +369,7 @@ func InterpretPayloadLoad(line string, lnIdx int) (operation, error) {
 	tkIdx++
 
 	// Create the operation with the specified arguments.
-	pdload, err := newPayloadLoad(base, offset, len, reg)
+	pdload, err := newPayloadLoad(base, offset, blen, reg)
 	if err != nil {
 		return nil, &LogicError{lnIdx, tkIdx, err}
 	}
@@ -424,7 +426,7 @@ func InterpretPayloadSet(line string, lnIdx int) (operation, error) {
 	tkIdx++
 
 	// Sixth token should be the length (in bytes) of the payload followed by 'b'.
-	len, err := parsePayloadLength(tokens[tkIdx], lnIdx, tkIdx)
+	blen, err := parseUint8PlusChar(tokens[tkIdx], 'b', lnIdx, tkIdx)
 	if err != nil {
 		return nil, err
 	}
@@ -502,7 +504,7 @@ func InterpretPayloadSet(line string, lnIdx int) (operation, error) {
 	tkIdx++
 
 	// Create the operation with the specified arguments.
-	pdset, err := newPayloadSet(base, offset, len, reg, csumType, csumOff, csumFlags)
+	pdset, err := newPayloadSet(base, offset, blen, reg, csumType, csumOff, csumFlags)
 	if err != nil {
 		return nil, &LogicError{lnIdx, tkIdx, err}
 	}
@@ -733,6 +735,89 @@ func InterpretRoute(line string, lnIdx int) (operation, error) {
 	return rt, nil
 }
 
+// InterpretByteorder creates a new Byteorder operation from the given string.
+func InterpretByteorder(line string, lnIdx int) (operation, error) {
+	tokens := strings.Fields(line)
+
+	// Requires exactly 10 tokens:
+	// 		"[", "byteorder", "reg", dreg index, "=", byteorder op+"(reg", sreg index+",", size+",", blen+")", "]".
+	if len(tokens) != 10 {
+		return nil, &SyntaxError{lnIdx, 0, fmt.Sprintf("incorrect number of tokens for route operation, should be exactly 10, got %d", len(tokens))}
+	}
+
+	if err := checkOperationBrackets(tokens, lnIdx); err != nil {
+		return nil, err
+	}
+
+	tkIdx := 1
+
+	// First token should be "byteorder".
+	if err := consumeToken("byteorder", tokens, lnIdx, tkIdx); err != nil {
+		return nil, err
+	}
+	tkIdx++
+
+	// Second token should be "reg".
+	if err := consumeToken("reg", tokens, lnIdx, tkIdx); err != nil {
+		return nil, err
+	}
+	tkIdx++
+
+	// Third token should be the uint8 representing destination register index.
+	dreg, err := parseRegister(tokens[tkIdx], lnIdx, tkIdx)
+	if err != nil {
+		return nil, err
+	}
+	tkIdx++
+
+	// Fourth token should be "=".
+	if err := consumeToken("=", tokens, lnIdx, tkIdx); err != nil {
+		return nil, err
+	}
+	tkIdx++
+
+	// Fifth token should be "ntoh(reg".
+	var bop byteorderOp
+	switch tokens[tkIdx] {
+	case "ntoh(reg":
+		bop = linux.NFT_BYTEORDER_NTOH
+	case "hton(reg":
+		bop = linux.NFT_BYTEORDER_HTON
+	default:
+		return nil, &SyntaxError{lnIdx, tkIdx, fmt.Sprintf("expected 'ntoh' or 'hton' keyword followed by '(reg' at token %d, got '%s'", tkIdx, tokens[tkIdx])}
+	}
+	tkIdx++
+
+	// Sixth token should be the source register index followed by ','.
+	sreg, err := parseUint8PlusChar(tokens[tkIdx], ',', lnIdx, tkIdx)
+	if err != nil {
+		return nil, err
+	}
+	tkIdx++
+
+	// Seventh token should be the size in bytes followed by ','.
+	size, err := parseUint8PlusChar(tokens[tkIdx], ',', lnIdx, tkIdx)
+	if err != nil {
+		return nil, err
+	}
+	tkIdx++
+
+	// Eighth token should be the length in bytes followed by ')'.
+	blen, err := parseUint8PlusChar(tokens[tkIdx], ')', lnIdx, tkIdx)
+	if err != nil {
+		return nil, err
+	}
+	tkIdx++
+
+	// Create the operation with the specified arguments.
+	order, err := newByteorder(dreg, sreg, bop, blen, size)
+	if err != nil {
+		return nil, &LogicError{lnIdx, tkIdx, err}
+	}
+
+	return order, nil
+}
+
 //
 // Interpreter Helper Functions.
 //
@@ -870,8 +955,9 @@ func parseHexData(tokens []string, lnIdx int, tkIdx int) (int, []byte, error) {
 		slices.Reverse(bytes4)
 		bytes = append(bytes, bytes4...)
 	}
-	if len(bytes) > 16 {
-		return 0, nil, &SyntaxError{lnIdx, tkIdx, fmt.Sprintf("cannot have more than 16 bytes of hexadecimal data, got %d", len(bytes))}
+	if len(bytes) > linux.NFT_REG_SIZE {
+		return 0, nil, &SyntaxError{lnIdx, tkIdx, fmt.Sprintf("cannot have more than %d bytes of hexadecimal data, got %d",
+			linux.NFT_REG_SIZE, len(bytes))}
 	}
 	return tkIdx, bytes, nil
 }
@@ -896,22 +982,19 @@ func parseCmpOp(copString string, lnIdx int, tkIdx int) (int, error) {
 	}
 }
 
-// parsePayloadLength parses the payload length from the given string
-// expecting a unsigned 8-bit integer followed by 'b'.
-func parsePayloadLength(lenString string, lnIdx int, tkIdx int) (uint8, error) {
-	lastChar := lenString[len(lenString)-1]
-	if lastChar != 'b' {
-		return 0, &SyntaxError{lnIdx, tkIdx, fmt.Sprintf("expected 'b' at the end of payload length, got '%c'", lastChar)}
+// parseUint8PlusChar parses the a uint8 followed by the given character from
+// the given string.
+func parseUint8PlusChar(numString string, char byte, lnIdx int, tkIdx int) (uint8, error) {
+	lastChar := numString[len(numString)-1]
+	if lastChar != char {
+		return 0, &SyntaxError{lnIdx, tkIdx, fmt.Sprintf("expected '%c' at the end of the uint8, got '%c'", char, lastChar)}
 	}
-	numStr := lenString[:len(lenString)-1]
-	len, err := strconv.ParseUint(numStr, 10, 8)
+	numStr := numString[:len(numString)-1]
+	num, err := strconv.ParseUint(numStr, 10, 8)
 	if err != nil {
-		return 0, &SyntaxError{lnIdx, tkIdx, fmt.Sprintf("could not parse uint8 payload length: '%s'", numStr)}
+		return 0, &SyntaxError{lnIdx, tkIdx, fmt.Sprintf("could not parse uint8: '%s'", numStr)}
 	}
-	if len > 16 {
-		return 0, &SyntaxError{lnIdx, tkIdx, fmt.Sprintf("payload length must be <= 16 bytes, got %d", len)}
-	}
-	return uint8(len), nil
+	return uint8(num), nil
 }
 
 // parsePayloadBase parses the payload base header from the given string.

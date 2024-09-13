@@ -2570,6 +2570,249 @@ func TestEvaluateRoute(t *testing.T) {
 	}
 }
 
+// TestEvaluateByteorder tests that the Byteorder operation correctly performs
+// the appropriate byteorder operation on the source register data and stores
+// the result in the destination register.
+// Note: Relies on expected behavior of the Immediate and Comparison operation.
+func TestEvaluateByteorder(t *testing.T) {
+	// Given a big endian and little endian byte slice of the same number, returns
+	// the correct byte slice based on the host endianness.
+	// Note: Uses enclosure so endianness doesn't need to be passed as an arg or
+	// rechecked for every call.
+	chooseOrder := func() func([]byte, []byte) []byte {
+		hostBytes := binary.NativeEndian.AppendUint16(nil, 0x0102)
+		isBigEndian := hostBytes[0] == 0x01
+		return func(big, little []byte) []byte {
+			if isBigEndian {
+				return big
+			}
+			return little
+		}
+	}()
+	// Like createChooseOrder but takes ints instead of byte slices.
+	chooseOrderN := func(big, little, size int) []byte {
+		return chooseOrder(numToBE(big, size), numToBE(little, size))
+	}
+	for _, test := range []struct {
+		tname string
+		op1   operation // Immediate operation to set source register.
+		op2   operation // Byteorder operation to test.
+		op3   operation // Comparison operation to validate result.
+	}{
+		// Size 2 tests (Lengths 2, 3, 4, 6, 8, 16)
+		{
+			tname: "ntoh size 2 len 2",
+			op1:   mustCreateImmediate(t, linux.NFT_REG32_01, newBytesData(numToBE(0x0102, 2))),
+			op2:   mustCreateByteorder(t, linux.NFT_REG32_01, linux.NFT_REG32_01, linux.NFT_BYTEORDER_NTOH, 2, 2),
+			op3:   mustCreateComparison(t, linux.NFT_REG32_01, linux.NFT_CMP_EQ, chooseOrderN(0x0102, 0x0201, 2)),
+		},
+		{
+			tname: "hton size 2 len 2",
+			op1:   mustCreateImmediate(t, linux.NFT_REG32_01, newBytesData(numToBE(0x0102, 2))),
+			op2:   mustCreateByteorder(t, linux.NFT_REG32_01, linux.NFT_REG_1, linux.NFT_BYTEORDER_HTON, 2, 2),
+			op3:   mustCreateComparison(t, linux.NFT_REG_1, linux.NFT_CMP_EQ, chooseOrderN(0x0102, 0x0201, 2)),
+		},
+		{
+			tname: "ntoh size 2 len 3",
+			op1:   mustCreateImmediate(t, linux.NFT_REG32_01, newBytesData(numToBE(0x010203, 3))),
+			op2:   mustCreateByteorder(t, linux.NFT_REG32_01, linux.NFT_REG_1, linux.NFT_BYTEORDER_NTOH, 3, 2),
+			op3:   mustCreateComparison(t, linux.NFT_REG_1, linux.NFT_CMP_EQ, chooseOrderN(0x010203, 0x020100, 3)),
+		},
+		{
+			tname: "hton size 2 len 3",
+			op1:   mustCreateImmediate(t, linux.NFT_REG_1, newBytesData(numToBE(0x010203, 3))),
+			op2:   mustCreateByteorder(t, linux.NFT_REG_1, linux.NFT_REG32_01, linux.NFT_BYTEORDER_HTON, 3, 2),
+			op3:   mustCreateComparison(t, linux.NFT_REG32_01, linux.NFT_CMP_EQ, chooseOrderN(0x010203, 0x020100, 3)),
+		},
+		{
+			tname: "ntoh size 2 len 4",
+			op1:   mustCreateImmediate(t, linux.NFT_REG32_10, newBytesData(numToBE(0x01020304, 4))),
+			op2:   mustCreateByteorder(t, linux.NFT_REG32_10, linux.NFT_REG32_05, linux.NFT_BYTEORDER_NTOH, 4, 2),
+			op3:   mustCreateComparison(t, linux.NFT_REG32_05, linux.NFT_CMP_EQ, chooseOrderN(0x01020304, 0x02010403, 4)),
+		},
+		{
+			tname: "hton size 2 len 4",
+			op1:   mustCreateImmediate(t, linux.NFT_REG_4, newBytesData(numToBE(0x01020304, 4))),
+			op2:   mustCreateByteorder(t, linux.NFT_REG_4, linux.NFT_REG32_09, linux.NFT_BYTEORDER_HTON, 4, 2),
+			op3:   mustCreateComparison(t, linux.NFT_REG32_09, linux.NFT_CMP_EQ, chooseOrderN(0x01020304, 0x02010403, 4)),
+		},
+		{
+			tname: "ntoh size 2 len 6",
+			op1:   mustCreateImmediate(t, linux.NFT_REG_1, newBytesData(numToBE(0x010203040506, 6))),
+			op2:   mustCreateByteorder(t, linux.NFT_REG_1, linux.NFT_REG_1, linux.NFT_BYTEORDER_NTOH, 6, 2),
+			op3:   mustCreateComparison(t, linux.NFT_REG_1, linux.NFT_CMP_EQ, chooseOrderN(0x010203040506, 0x020104030605, 6)),
+		},
+		{
+			tname: "hton size 2 len 6",
+			op1:   mustCreateImmediate(t, linux.NFT_REG_1, newBytesData(numToBE(0x010203040506, 6))),
+			op2:   mustCreateByteorder(t, linux.NFT_REG_1, linux.NFT_REG_1, linux.NFT_BYTEORDER_HTON, 6, 2),
+			op3:   mustCreateComparison(t, linux.NFT_REG_1, linux.NFT_CMP_EQ, chooseOrderN(0x010203040506, 0x020104030605, 6)),
+		},
+		{
+			tname: "ntoh size 2 len 8",
+			op1:   mustCreateImmediate(t, linux.NFT_REG_1, newBytesData(numToBE(0x0102030405060708, 8))),
+			op2:   mustCreateByteorder(t, linux.NFT_REG_1, linux.NFT_REG_4, linux.NFT_BYTEORDER_NTOH, 8, 2),
+			op3:   mustCreateComparison(t, linux.NFT_REG_4, linux.NFT_CMP_EQ, chooseOrderN(0x0102030405060708, 0x0201040306050807, 8)),
+		},
+		{
+			tname: "hton size 2 len 8",
+			op1:   mustCreateImmediate(t, linux.NFT_REG_1, newBytesData(numToBE(0x0102030405060708, 8))),
+			op2:   mustCreateByteorder(t, linux.NFT_REG_1, linux.NFT_REG_4, linux.NFT_BYTEORDER_HTON, 8, 2),
+			op3:   mustCreateComparison(t, linux.NFT_REG_4, linux.NFT_CMP_EQ, chooseOrderN(0x0102030405060708, 0x0201040306050807, 8)),
+		},
+		{
+			tname: "ntoh size 2 len 16",
+			op1:   mustCreateImmediate(t, linux.NFT_REG_3, newBytesData([]byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10})),
+			op2:   mustCreateByteorder(t, linux.NFT_REG_3, linux.NFT_REG_2, linux.NFT_BYTEORDER_NTOH, 16, 2),
+			op3: mustCreateComparison(t, linux.NFT_REG_2, linux.NFT_CMP_EQ, chooseOrder([]byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10},
+				[]byte{0x02, 0x01, 0x04, 0x03, 0x06, 0x05, 0x08, 0x07, 0x0a, 0x09, 0x0c, 0x0b, 0x0e, 0x0d, 0x10, 0x0f})),
+		},
+		{
+			tname: "hton size 2 len 16",
+			op1:   mustCreateImmediate(t, linux.NFT_REG_3, newBytesData([]byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10})),
+			op2:   mustCreateByteorder(t, linux.NFT_REG_3, linux.NFT_REG_2, linux.NFT_BYTEORDER_HTON, 16, 2),
+			op3: mustCreateComparison(t, linux.NFT_REG_2, linux.NFT_CMP_EQ, chooseOrder([]byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10},
+				[]byte{0x02, 0x01, 0x04, 0x03, 0x06, 0x05, 0x08, 0x07, 0x0a, 0x09, 0x0c, 0x0b, 0x0e, 0x0d, 0x10, 0x0f})),
+		},
+		// Size 4 tests (Lengths 4, 6, 8, 16)
+		{
+			tname: "ntoh size 4 len 4",
+			op1:   mustCreateImmediate(t, linux.NFT_REG32_05, newBytesData(numToBE(0x01020304, 4))),
+			op2:   mustCreateByteorder(t, linux.NFT_REG32_05, linux.NFT_REG_2, linux.NFT_BYTEORDER_NTOH, 4, 4),
+			op3:   mustCreateComparison(t, linux.NFT_REG_2, linux.NFT_CMP_EQ, chooseOrderN(0x01020304, 0x04030201, 4)),
+		},
+		{
+			tname: "hton size 4 len 4",
+			op1:   mustCreateImmediate(t, linux.NFT_REG_4, newBytesData(numToBE(0x01020304, 4))),
+			op2:   mustCreateByteorder(t, linux.NFT_REG_4, linux.NFT_REG32_09, linux.NFT_BYTEORDER_HTON, 4, 4),
+			op3:   mustCreateComparison(t, linux.NFT_REG32_09, linux.NFT_CMP_EQ, chooseOrderN(0x01020304, 0x04030201, 4)),
+		},
+		{
+			tname: "ntoh size 4 len 6",
+			op1:   mustCreateImmediate(t, linux.NFT_REG_4, newBytesData(numToBE(0x010203040506, 6))),
+			op2:   mustCreateByteorder(t, linux.NFT_REG_4, linux.NFT_REG_2, linux.NFT_BYTEORDER_NTOH, 6, 4),
+			op3:   mustCreateComparison(t, linux.NFT_REG_2, linux.NFT_CMP_EQ, chooseOrderN(0x010203040506, 0x040302010000, 6)),
+		},
+		{
+			tname: "hton size 4 len 6",
+			op1:   mustCreateImmediate(t, linux.NFT_REG_4, newBytesData(numToBE(0x010203040506, 6))),
+			op2:   mustCreateByteorder(t, linux.NFT_REG_4, linux.NFT_REG_2, linux.NFT_BYTEORDER_HTON, 6, 4),
+			op3:   mustCreateComparison(t, linux.NFT_REG_2, linux.NFT_CMP_EQ, chooseOrderN(0x010203040506, 0x040302010000, 6)),
+		},
+		{
+			tname: "ntoh size 4 len 8",
+			op1:   mustCreateImmediate(t, linux.NFT_REG_1, newBytesData(numToBE(0x0102030405060708, 8))),
+			op2:   mustCreateByteorder(t, linux.NFT_REG_1, linux.NFT_REG_4, linux.NFT_BYTEORDER_NTOH, 8, 4),
+			op3:   mustCreateComparison(t, linux.NFT_REG_4, linux.NFT_CMP_EQ, chooseOrderN(0x0102030405060708, 0x0403020108070605, 8)),
+		},
+		{
+			tname: "hton size 4 len 8",
+			op1:   mustCreateImmediate(t, linux.NFT_REG_1, newBytesData(numToBE(0x0102030405060708, 8))),
+			op2:   mustCreateByteorder(t, linux.NFT_REG_1, linux.NFT_REG_4, linux.NFT_BYTEORDER_HTON, 8, 4),
+			op3:   mustCreateComparison(t, linux.NFT_REG_4, linux.NFT_CMP_EQ, chooseOrderN(0x0102030405060708, 0x0403020108070605, 8)),
+		},
+		{
+			tname: "ntoh size 4 len 16",
+			op1:   mustCreateImmediate(t, linux.NFT_REG_3, newBytesData([]byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10})),
+			op2:   mustCreateByteorder(t, linux.NFT_REG_3, linux.NFT_REG_2, linux.NFT_BYTEORDER_NTOH, 16, 4),
+			op3: mustCreateComparison(t, linux.NFT_REG_2, linux.NFT_CMP_EQ, chooseOrder([]byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10},
+				[]byte{0x04, 0x03, 0x02, 0x01, 0x08, 0x07, 0x06, 0x05, 0x0c, 0x0b, 0x0a, 0x09, 0x10, 0x0f, 0x0e, 0x0d})),
+		},
+		{
+			tname: "hton size 4 len 16",
+			op1:   mustCreateImmediate(t, linux.NFT_REG_3, newBytesData([]byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10})),
+			op2:   mustCreateByteorder(t, linux.NFT_REG_3, linux.NFT_REG_2, linux.NFT_BYTEORDER_HTON, 16, 4),
+			op3: mustCreateComparison(t, linux.NFT_REG_2, linux.NFT_CMP_EQ, chooseOrder([]byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10},
+				[]byte{0x04, 0x03, 0x02, 0x01, 0x08, 0x07, 0x06, 0x05, 0x0c, 0x0b, 0x0a, 0x09, 0x10, 0x0f, 0x0e, 0x0d})),
+		},
+		// Size 8 tests (Lengths 8, 12, 16)
+		{
+			tname: "ntoh size 8 len 8",
+			op1:   mustCreateImmediate(t, linux.NFT_REG_1, newBytesData(numToBE(0x0102030405060708, 8))),
+			op2:   mustCreateByteorder(t, linux.NFT_REG_1, linux.NFT_REG_4, linux.NFT_BYTEORDER_NTOH, 8, 8),
+			op3:   mustCreateComparison(t, linux.NFT_REG_4, linux.NFT_CMP_EQ, chooseOrderN(0x0102030405060708, 0x0807060504030201, 8)),
+		},
+		{
+			tname: "hton size 8 len 8",
+			op1:   mustCreateImmediate(t, linux.NFT_REG_1, newBytesData(numToBE(0x0102030405060708, 8))),
+			op2:   mustCreateByteorder(t, linux.NFT_REG_1, linux.NFT_REG_4, linux.NFT_BYTEORDER_HTON, 8, 8),
+			op3:   mustCreateComparison(t, linux.NFT_REG_4, linux.NFT_CMP_EQ, chooseOrderN(0x0102030405060708, 0x0807060504030201, 8)),
+		},
+		{
+			tname: "ntoh size 8 len 12",
+			op1:   mustCreateImmediate(t, linux.NFT_REG_3, newBytesData([]byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c})),
+			op2:   mustCreateByteorder(t, linux.NFT_REG_3, linux.NFT_REG_2, linux.NFT_BYTEORDER_NTOH, 12, 8),
+			op3: mustCreateComparison(t, linux.NFT_REG_2, linux.NFT_CMP_EQ, chooseOrder([]byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c},
+				[]byte{0x08, 0x07, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01, 0x00, 0x00, 0x00, 0x00})),
+		},
+		{
+			tname: "hton size 8 len 12",
+			op1:   mustCreateImmediate(t, linux.NFT_REG_3, newBytesData([]byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c})),
+			op2:   mustCreateByteorder(t, linux.NFT_REG_3, linux.NFT_REG_2, linux.NFT_BYTEORDER_HTON, 12, 8),
+			op3: mustCreateComparison(t, linux.NFT_REG_2, linux.NFT_CMP_EQ, chooseOrder([]byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c},
+				[]byte{0x08, 0x07, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01, 0x00, 0x00, 0x00, 0x00})),
+		},
+		{
+			tname: "ntoh size 8 len 16",
+			op1:   mustCreateImmediate(t, linux.NFT_REG_4, newBytesData([]byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10})),
+			op2:   mustCreateByteorder(t, linux.NFT_REG_4, linux.NFT_REG_4, linux.NFT_BYTEORDER_NTOH, 16, 8),
+			op3: mustCreateComparison(t, linux.NFT_REG_4, linux.NFT_CMP_EQ, chooseOrder([]byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10},
+				[]byte{0x08, 0x07, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01, 0x10, 0x0f, 0x0e, 0x0d, 0x0c, 0x0b, 0x0a, 0x09})),
+		},
+		{
+			tname: "hton size 8 len 16",
+			op1:   mustCreateImmediate(t, linux.NFT_REG_4, newBytesData([]byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10})),
+			op2:   mustCreateByteorder(t, linux.NFT_REG_4, linux.NFT_REG_4, linux.NFT_BYTEORDER_HTON, 16, 8),
+			op3: mustCreateComparison(t, linux.NFT_REG_4, linux.NFT_CMP_EQ, chooseOrder([]byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10},
+				[]byte{0x08, 0x07, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01, 0x10, 0x0f, 0x0e, 0x0d, 0x0c, 0x0b, 0x0a, 0x09})),
+		},
+	} {
+		t.Run(test.tname, func(t *testing.T) {
+			// Sets up an NFTables object with a single table, chain, and rule.
+			nf := newNFTablesStd()
+			tab, err := nf.AddTable(arbitraryFamily, "test", "test table", false)
+			if err != nil {
+				t.Fatalf("unexpected error for AddTable: %v", err)
+			}
+			bc, err := tab.AddChain("base_chain", nil, "test chain", false)
+			if err != nil {
+				t.Fatalf("unexpected error for AddChain: %v", err)
+			}
+			bc.SetBaseChainInfo(arbitraryInfoPolicyAccept)
+			rule := &Rule{}
+
+			// Adds testing operations.
+			if test.op1 != nil {
+				rule.addOperation(test.op1)
+			}
+			if test.op2 != nil {
+				rule.addOperation(test.op2)
+			}
+			if test.op3 != nil {
+				rule.addOperation(test.op3)
+			}
+
+			// Adds drop operation. Will be final verdict if comparison is true.
+			rule.addOperation(mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NF_DROP)})))
+
+			// Registers the rule to the base chain.
+			if err := bc.RegisterRule(rule, -1); err != nil {
+				t.Fatalf("unexpected error for RegisterRule: %v", err)
+			}
+
+			// Runs evaluation and checks verdict.
+			pkt := makeArbitraryPacket(arbitraryReservedHeaderBytes)
+			v, err := nf.EvaluateHook(arbitraryFamily, arbitraryHook, pkt)
+			if err != nil {
+				t.Fatalf("unexpected error for EvaluateHook: %v", err)
+			}
+			if v.Code != VC(linux.NF_DROP) {
+				t.Fatalf("expected verdict Drop for true comparison, got %v", v)
+			}
+		})
+	}
+}
+
 // TestLoopCheckOnRegisterAndUnregister tests the loop checking and accompanying
 // logic on registering and unregistering rules.
 func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
@@ -3241,4 +3484,13 @@ func mustCreateRoute(t *testing.T, key routeKey, dreg uint8) *route {
 		t.Fatalf("failed to create route: %v", err)
 	}
 	return rt
+}
+
+// mustCreateByteorder wraps the newByteorder function for brevity.
+func mustCreateByteorder(t *testing.T, sreg, dreg uint8, bop byteorderOp, blen, size uint8) *byteorder {
+	order, err := newByteorder(sreg, dreg, bop, blen, size)
+	if err != nil {
+		t.Fatalf("failed to create byteorder: %v", err)
+	}
+	return order
 }
