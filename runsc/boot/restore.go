@@ -315,15 +315,19 @@ func (r *restorer) restore(l *Loader) error {
 		r.pagesMetadata.Close()
 	}
 
-	if err := postRestoreImpl(l); err != nil {
-		return err
-	}
+	go func() {
+		if err := postRestoreImpl(l); err != nil {
+			log.Warningf("Killing the sandbox after post restore work failed: %w", err)
+			l.k.Kill(linux.WaitStatusTerminationSignal(linux.SIGKILL))
+			return
+		}
 
-	// Restore was successful, so increment the checkpoint count manually. The
-	// count was saved while the previous kernel was being saved and checkpoint
-	// success was unknown at that time. Now we know the checkpoint succeeded.
-	l.k.IncCheckpointCount()
-	log.Infof("Restore successful")
+		// Restore was successful, so increment the checkpoint count manually. The
+		// count was saved while the previous kernel was being saved and checkpoint
+		// success was unknown at that time. Now we know the checkpoint succeeded.
+		l.k.IncCheckpointCount()
+		log.Infof("Restore successful")
+	}()
 	return nil
 }
 
