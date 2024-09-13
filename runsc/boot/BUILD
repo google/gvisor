@@ -94,6 +94,7 @@ go_library(
         "//pkg/sentry/socket/netlink/route",
         "//pkg/sentry/socket/netlink/uevent",
         "//pkg/sentry/socket/netstack",
+        "//pkg/sentry/socket/plugin",
         "//pkg/sentry/socket/unix",
         "//pkg/sentry/state",
         "//pkg/sentry/strace",

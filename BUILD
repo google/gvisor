@@ -138,6 +138,7 @@ go_path(
         "//tools/checklocks",
 
         # Packages that are not dependencies of the above.
+        "//pkg/sentry/socket/plugin/stack",
         "//pkg/sentry/kernel/memevent",
         "//pkg/tcpip/adapters/gonet",
         "//pkg/tcpip/faketime",
