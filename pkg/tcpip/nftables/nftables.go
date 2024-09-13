@@ -104,44 +104,40 @@ const (
 	NumAFs
 )
 
+// addressFamilyStrings maps address families to their string representation.
+var addressFamilyStrings = map[AddressFamily]string{
+	IP:     "IPv4",
+	IP6:    "IPv6",
+	Inet:   "Internet (Both IPv4/IPv6)",
+	Arp:    "ARP",
+	Bridge: "Bridge",
+	Netdev: "Netdev",
+}
+
 // String for AddressFamily returns the name of the address family.
 func (f AddressFamily) String() string {
-	switch f {
-	case IP:
-		return "IPv4"
-	case IP6:
-		return "IPv6"
-	case Inet:
-		return "Internet (Both IPv4/IPv6)"
-	case Arp:
-		return "ARP"
-	case Bridge:
-		return "Bridge"
-	case Netdev:
-		return "Netdev"
-	default:
-		panic(fmt.Sprintf("invalid address family: %d", int(f)))
+	if af, ok := addressFamilyStrings[f]; ok {
+		return af
 	}
+	panic(fmt.Sprintf("invalid address family: %d", int(f)))
+}
+
+// addressFamilyProtocols maps address families to their protocol number.
+var addressFamilyProtocols = map[AddressFamily]uint8{
+	IP:     linux.NFPROTO_INET,
+	IP6:    linux.NFPROTO_IPV6,
+	Inet:   linux.NFPROTO_IPV6,
+	Arp:    linux.NFPROTO_ARP,
+	Bridge: linux.NFPROTO_BRIDGE,
+	Netdev: linux.NFPROTO_NETDEV,
 }
 
 // Protocol returns the protocol number for the address family.
 func (f AddressFamily) Protocol() uint8 {
-	switch f {
-	case IP:
-		return linux.NFPROTO_INET
-	case IP6:
-		return linux.NFPROTO_IPV6
-	case Inet:
-		return linux.NFPROTO_IPV6
-	case Arp:
-		return linux.NFPROTO_ARP
-	case Bridge:
-		return linux.NFPROTO_BRIDGE
-	case Netdev:
-		return linux.NFPROTO_NETDEV
-	default:
-		panic(fmt.Sprintf("invalid address family: %d", int(f)))
+	if protocol, ok := addressFamilyProtocols[f]; ok {
+		return protocol
 	}
+	panic(fmt.Sprintf("invalid address family: %d", int(f)))
 }
 
 // validateAddressFamily ensures the family address is valid (within bounds).
@@ -185,26 +181,23 @@ const (
 	NumHooks
 )
 
+// hookStrings maps hooks to their string representation.
+var hookStrings = map[Hook]string{
+	Prerouting:  "Prerouting",
+	Input:       "Input",
+	Forward:     "Forward",
+	Output:      "Output",
+	Postrouting: "Postrouting",
+	Ingress:     "Ingress",
+	Egress:      "Egress",
+}
+
 // String for Hook returns the name of the hook.
 func (h Hook) String() string {
-	switch h {
-	case Prerouting:
-		return "Prerouting"
-	case Input:
-		return "Input"
-	case Forward:
-		return "Forward"
-	case Output:
-		return "Output"
-	case Postrouting:
-		return "Postrouting"
-	case Ingress:
-		return "Ingress"
-	case Egress:
-		return "Egress"
-	default:
-		panic(fmt.Sprintf("invalid hook: %d", int(h)))
+	if hook, ok := hookStrings[h]; ok {
+		return hook
 	}
+	panic(fmt.Sprintf("invalid hook: %d", int(h)))
 }
 
 // supportedHooks maps each address family to its supported hooks.
@@ -379,18 +372,19 @@ const (
 	NumBaseChainTypes
 )
 
+// baseChainTypeStrings maps base chain types to their string representation.
+var baseChainTypeStrings = map[BaseChainType]string{
+	BaseChainTypeFilter: "filter",
+	BaseChainTypeNat:    "nat",
+	BaseChainTypeRoute:  "route",
+}
+
 // String for BaseChainType returns the name of the base chain type.
 func (bcType BaseChainType) String() string {
-	switch bcType {
-	case BaseChainTypeFilter:
-		return "filter"
-	case BaseChainTypeNat:
-		return "nat"
-	case BaseChainTypeRoute:
-		return "route"
-	default:
-		panic(fmt.Sprintf("invalid base chain type: %d", int(bcType)))
+	if bcTypeString, ok := baseChainTypeStrings[bcType]; ok {
+		return bcTypeString
 	}
+	panic(fmt.Sprintf("invalid base chain type: %d", int(bcType)))
 }
 
 // supportedAFsForBaseChainTypes maps each base chain type to its supported
@@ -655,24 +649,22 @@ type comparison struct {
 // include/uapi/linux/netfilter/nf_tables.h and uses the same constants.
 type cmpOp int
 
+// cmpOpStrings is a map of cmpOp to its string representation.
+var cmpOpStrings = map[cmpOp]string{
+	linux.NFT_CMP_EQ:  "==",
+	linux.NFT_CMP_NEQ: "!=",
+	linux.NFT_CMP_LT:  "<",
+	linux.NFT_CMP_LTE: "<=",
+	linux.NFT_CMP_GT:  ">",
+	linux.NFT_CMP_GTE: ">=",
+}
+
 // String for cmpOp returns string representation of the comparison operator.
 func (cop cmpOp) String() string {
-	switch cop {
-	case linux.NFT_CMP_EQ:
-		return "=="
-	case linux.NFT_CMP_NEQ:
-		return "!="
-	case linux.NFT_CMP_LT:
-		return "<"
-	case linux.NFT_CMP_LTE:
-		return "<="
-	case linux.NFT_CMP_GT:
-		return ">"
-	case linux.NFT_CMP_GTE:
-		return ">="
-	default:
-		panic(fmt.Sprintf("invalid comparison operator: %d", int(cop)))
+	if copStr, ok := cmpOpStrings[cop]; ok {
+		return copStr
 	}
+	panic(fmt.Sprintf("invalid comparison operator: %d", int(cop)))
 }
 
 // validateComparisonOp ensures the comparison operator is valid.
@@ -757,16 +749,18 @@ type ranged struct {
 // include/uapi/linux/netfilter/nf_tables.h and uses the same constants.
 type rngOp int
 
+// rngOpStrings is a map of rngOp to its string representation.
+var rngOpStrings = map[rngOp]string{
+	linux.NFT_RANGE_EQ:  "range ==",
+	linux.NFT_RANGE_NEQ: "range !=",
+}
+
 // String for rngOp returns string representation of the range operator.
 func (rop rngOp) String() string {
-	switch rop {
-	case linux.NFT_RANGE_EQ:
-		return "range =="
-	case linux.NFT_CMP_NEQ:
-		return "range !="
-	default:
-		panic(fmt.Sprintf("invalid range operator: %d", int(rop)))
+	if ropStr, ok := rngOpStrings[rop]; ok {
+		return ropStr
 	}
+	panic(fmt.Sprintf("invalid range operator: %d", int(rop)))
 }
 
 // validateRangeOp ensures the range operator is valid.
@@ -837,23 +831,21 @@ type payloadLoad struct {
 // include/uapi/linux/netfilter/nf_tables.h and uses the same constants.
 type payloadBase int
 
+// payloadBaseStrings is a map of payloadBase to its string representation.
+var payloadBaseStrings = map[payloadBase]string{
+	linux.NFT_PAYLOAD_LL_HEADER:        "Link Layer Header",
+	linux.NFT_PAYLOAD_NETWORK_HEADER:   "Network Header",
+	linux.NFT_PAYLOAD_TRANSPORT_HEADER: "Transport Header",
+	linux.NFT_PAYLOAD_INNER_HEADER:     "Inner Header",
+	linux.NFT_PAYLOAD_TUN_HEADER:       "Tunneling Header",
+}
+
 // String for payloadBase returns the string representation of the payload base.
 func (base payloadBase) String() string {
-	// Uses errors from validation to handle unsupported payload bases.
-	if err := validatePayloadBase(base); err != nil {
-		panic(err)
+	if baseStr, ok := payloadBaseStrings[base]; ok {
+		return baseStr
 	}
-	// Cases for supported payload bases.
-	switch base {
-	case linux.NFT_PAYLOAD_LL_HEADER:
-		return "Link Layer Header"
-	case linux.NFT_PAYLOAD_NETWORK_HEADER:
-		return "Network Header"
-	case linux.NFT_PAYLOAD_TRANSPORT_HEADER:
-		return "Transport Header"
-	default:
-		return fmt.Sprintf("Unknown Supported Payload Base: %d", int(base))
-	}
+	panic(fmt.Sprintf("Invalid Payload Base: %d", int(base)))
 }
 
 // validatePayloadBase ensures the payload base is valid.
@@ -863,10 +855,6 @@ func validatePayloadBase(base payloadBase) error {
 	case linux.NFT_PAYLOAD_LL_HEADER, linux.NFT_PAYLOAD_NETWORK_HEADER, linux.NFT_PAYLOAD_TRANSPORT_HEADER:
 		return nil
 	// Unsupported payload bases.
-	case linux.NFT_PAYLOAD_INNER_HEADER:
-		return fmt.Errorf("inner header not supported")
-	case linux.NFT_PAYLOAD_TUN_HEADER:
-		return fmt.Errorf("tunneling header not supported")
 	default:
 		return fmt.Errorf("invalid payload base: %d", int(base))
 	}
@@ -1091,19 +1079,20 @@ func (op payloadSet) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *
 // include/uapi/linux/netfilter/nf_tables.h and uses the same constants.
 type bitwiseOp int
 
+// bitwiseOpStrings is a map of bitwiseOp to its string representation.
+var bitwiseOpStrings = map[bitwiseOp]string{
+	linux.NFT_BITWISE_BOOL:   "bitwise boolean",
+	linux.NFT_BITWISE_LSHIFT: "bitwise <<",
+	linux.NFT_BITWISE_RSHIFT: "bitwise >>",
+}
+
 // String for bitwiseOp returns the string representation of the bitwise
 // operator.
 func (bop bitwiseOp) String() string {
-	switch bop {
-	case linux.NFT_BITWISE_BOOL:
-		return "bitwise boolean"
-	case linux.NFT_BITWISE_LSHIFT:
-		return "bitwise <<"
-	case linux.NFT_BITWISE_RSHIFT:
-		return "bitwise >>"
-	default:
-		panic(fmt.Sprintf("invalid bitwise operator: %d", int(bop)))
+	if str, ok := bitwiseOpStrings[bop]; ok {
+		return str
 	}
+	panic(fmt.Sprintf("invalid bitwise operator: %d", int(bop)))
 }
 
 // bitwise is an operation that performs bitwise math operations over data in
@@ -1322,23 +1311,21 @@ type route struct {
 // include/uapi/linux/netfilter/nf_tables.h and uses the same constants.
 type routeKey int
 
+// routeKeyStrings is a map of route key to its string representation.
+var routeKeyStrings = map[routeKey]string{
+	linux.NFT_RT_CLASSID:  "Traffic Class ID",
+	linux.NFT_RT_NEXTHOP4: "Next Hop IPv4",
+	linux.NFT_RT_NEXTHOP6: "Next Hop IPv6",
+	linux.NFT_RT_TCPMSS:   "TCP Maximum Segment Size (TCPMSS)",
+	linux.NFT_RT_XFRM:     "IPsec Transformation",
+}
+
 // String for routeKey returns the string representation of the route key.
 func (key routeKey) String() string {
-	// Uses errors from validation to handle unsupported route keys.
-	if err := validateRouteKey(key); err != nil {
-		panic(err)
+	if keyStr, ok := routeKeyStrings[key]; ok {
+		return keyStr
 	}
-	// Cases for supported route keys.
-	switch key {
-	case linux.NFT_RT_NEXTHOP4:
-		return "Next Hop IPv4"
-	case linux.NFT_RT_NEXTHOP6:
-		return "Next Hop IPv6"
-	case linux.NFT_RT_TCPMSS:
-		return "TCP Maximum Segment Size (TCPMSS)"
-	default:
-		return fmt.Sprintf("Unknown Supported Route Key: %d", int(key))
-	}
+	panic(fmt.Sprintf("invalid route key: %d", int(key)))
 }
 
 // validateRouteKey ensures the route key is valid.
@@ -1430,17 +1417,20 @@ type byteorder struct {
 // include/uapi/linux/netfilter/nf_tables.h and uses the same constants.
 type byteorderOp int
 
+// byteorderOpStrings is a map of byteorder operator to its string
+// representation.
+var byteorderOpStrings = map[byteorderOp]string{
+	linux.NFT_BYTEORDER_NTOH: "network to host",
+	linux.NFT_BYTEORDER_HTON: "host to network",
+}
+
 // String for byteorderOp returns the string representation of the byteorder
 // operator.
 func (bop byteorderOp) String() string {
-	switch bop {
-	case linux.NFT_BYTEORDER_NTOH:
-		return "network to host"
-	case linux.NFT_BYTEORDER_HTON:
-		return "host to network"
-	default:
-		panic(fmt.Sprintf("unknown supported byteorder operator: %d", int(bop)))
+	if bopStr, ok := byteorderOpStrings[bop]; ok {
+		return bopStr
 	}
+	panic(fmt.Sprintf("invalid byteorder operator: %d", int(bop)))
 }
 
 // validateByteorderOp ensures the byteorder operator is valid.
@@ -1602,11 +1592,10 @@ var metaKeyStrings = map[metaKey]string{
 // String for metaKey returns the string representation of the meta key. This
 // supports strings for supported and unsupported meta keys.
 func (key metaKey) String() string {
-	keyStr, ok := metaKeyStrings[key]
-	if !ok {
-		return fmt.Sprintf("Unsupported Meta Key: %d", int(key))
+	if keyStr, ok := metaKeyStrings[key]; ok {
+		return keyStr
 	}
-	return keyStr
+	panic(fmt.Sprintf("invalid meta key: %d", int(key)))
 }
 
 // metaDataLengths holds the length in bytes for each supported meta key.
@@ -1855,7 +1844,7 @@ func newBytesData(bytes []byte) bytesData {
 
 // String returns a string representation of the big endian bytes data.
 func (rd bytesData) String() string {
-	return fmt.Sprintf("be %x", rd.data)
+	return fmt.Sprintf("%x", rd.data)
 }
 
 // equal compares the bytes data to another RegisterData object.
@@ -1967,36 +1956,30 @@ func VC(v int32) uint32 {
 	return uint32(v)
 }
 
+// verdictCodeStrings is a map of verdict code to its string representation.
+var verdictCodeStrings = map[uint32]string{
+	// Netfilter (External) Verdicts:
+	VC(linux.NF_DROP):   "Drop",
+	VC(linux.NF_ACCEPT): "Accept",
+	VC(linux.NF_STOLEN): "Stolen",
+	VC(linux.NF_QUEUE):  "Queue",
+	VC(linux.NF_REPEAT): "Repeat",
+	VC(linux.NF_STOP):   "Stop",
+	// Nftable (Internal) Verdicts:
+	VC(linux.NFT_CONTINUE): "Continue",
+	VC(linux.NFT_BREAK):    "Break",
+	VC(linux.NFT_JUMP):     "Jump",
+	VC(linux.NFT_GOTO):     "Goto",
+	VC(linux.NFT_RETURN):   "Return",
+}
+
 // VerdictCodeToString prints names for the supported verdicts.
 func VerdictCodeToString(v uint32) string {
-	switch v {
-	// Netfilter (External) Verdicts:
-	case VC(linux.NF_DROP):
-		return "Drop"
-	case VC(linux.NF_ACCEPT):
-		return "Accept"
-	case VC(linux.NF_STOLEN):
-		return "Stolen"
-	case VC(linux.NF_QUEUE):
-		return "Queue"
-	case VC(linux.NF_REPEAT):
-		return "Repeat"
-	case VC(linux.NF_STOP):
-		return "Stop"
-	// Nftable (Internal) Verdicts:
-	case VC(linux.NFT_CONTINUE):
-		return "Continue"
-	case VC(linux.NFT_BREAK):
-		return "Break"
-	case VC(linux.NFT_JUMP):
-		return "Jump"
-	case VC(linux.NFT_GOTO):
-		return "Goto"
-	case VC(linux.NFT_RETURN):
-		return "Return"
-	default:
-		panic(fmt.Sprintf("invalid verdict: %d", int(v)))
+
+	if vcStr, ok := verdictCodeStrings[v]; ok {
+		return vcStr
 	}
+	return fmt.Sprintf("invalid verdict: %d", v)
 }
 
 // -----------------------------------------------------------------------------

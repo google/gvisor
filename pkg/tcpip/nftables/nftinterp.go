@@ -955,27 +955,27 @@ func parseRegisterData(reg uint8, tokens []string, lnIdx int, tkIdx int) (int, r
 	return 0, nil, &SyntaxError{lnIdx, tkIdx, fmt.Sprintf("invalid register data: '%s'", tokens[tkIdx])}
 }
 
+// verdictCodeFromKeyword is a map of verdict keyword to its corresponding enum value.
+var verdictCodeFromKeyword = map[string]int32{
+	"accept":   linux.NF_ACCEPT,
+	"drop":     linux.NF_DROP,
+	"continue": linux.NFT_CONTINUE,
+	"return":   linux.NFT_RETURN,
+	"jump":     linux.NFT_JUMP,
+	"goto":     linux.NFT_GOTO,
+}
+
 // parseVerdict parses the verdict from the given token and returns
 // the index of the next token to process (can consume multiple tokens).
 func parseVerdict(tokens []string, lnIdx int, tkIdx int) (int, Verdict, error) {
 	v := Verdict{}
 
-	switch tokens[tkIdx] {
-	case "accept":
-		v.Code = VC(linux.NF_ACCEPT)
-	case "drop":
-		v.Code = VC(linux.NF_DROP)
-	case "continue":
-		v.Code = VC(linux.NFT_CONTINUE)
-	case "return":
-		v.Code = VC(linux.NFT_RETURN)
-	case "jump":
-		v.Code = VC(linux.NFT_JUMP)
-	case "goto":
-		v.Code = VC(linux.NFT_GOTO)
-	default:
+	vcString := tokens[tkIdx]
+	vc, ok := verdictCodeFromKeyword[vcString]
+	if !ok {
 		return 0, v, &SyntaxError{lnIdx, tkIdx, fmt.Sprintf("invalid verdict: '%s'", tokens[tkIdx])}
 	}
+	v.Code = VC(vc)
 	tkIdx++
 
 	// jump and chain verdicts require 2 more tokens to specify the target chain.
@@ -1027,24 +1027,24 @@ func parseHexData(tokens []string, lnIdx int, tkIdx int) (int, []byte, error) {
 	return tkIdx, bytes, nil
 }
 
+// cmpOpFromKeyword is a map of comparison operator keywords to their
+// corresponding enum value.
+var cmpOpFromKeyword = map[string]int{
+	"eq":  linux.NFT_CMP_EQ,
+	"neq": linux.NFT_CMP_NEQ,
+	"lt":  linux.NFT_CMP_LT,
+	"lte": linux.NFT_CMP_LTE,
+	"gt":  linux.NFT_CMP_GT,
+	"gte": linux.NFT_CMP_GTE,
+}
+
 // parseCmpOp parses the int representing the cmpOp from the given string.
 func parseCmpOp(copString string, lnIdx int, tkIdx int) (int, error) {
-	switch copString {
-	case "eq":
-		return linux.NFT_CMP_EQ, nil
-	case "neq":
-		return linux.NFT_CMP_NEQ, nil
-	case "lt":
-		return linux.NFT_CMP_LT, nil
-	case "lte":
-		return linux.NFT_CMP_LTE, nil
-	case "gt":
-		return linux.NFT_CMP_GT, nil
-	case "gte":
-		return linux.NFT_CMP_GTE, nil
-	default:
+	cop, ok := cmpOpFromKeyword[copString]
+	if !ok {
 		return 0, &SyntaxError{lnIdx, tkIdx, fmt.Sprintf("invalid comparison operator keyword: '%s'", copString)}
 	}
+	return cop, nil
 }
 
 // parseUint8PlusChar parses the a uint8 followed by the given character from
@@ -1062,40 +1062,43 @@ func parseUint8PlusChar(numString string, char byte, lnIdx int, tkIdx int) (uint
 	return uint8(num), nil
 }
 
+// payloadBaseFromKeyword is a map of payload base keywords to their
+// corresponding enum value.
+var payloadBaseFromKeyword = map[string]payloadBase{
+	"link":      linux.NFT_PAYLOAD_LL_HEADER,
+	"network":   linux.NFT_PAYLOAD_NETWORK_HEADER,
+	"transport": linux.NFT_PAYLOAD_TRANSPORT_HEADER,
+}
+
 // parsePayloadBase parses the payload base header from the given string.
 func parsePayloadBase(baseString string, lnIdx int, tkIdx int) (payloadBase, error) {
-	switch baseString {
-	case "link":
-		return linux.NFT_PAYLOAD_LL_HEADER, nil
-	case "network":
-		return linux.NFT_PAYLOAD_NETWORK_HEADER, nil
-	case "transport":
-		return linux.NFT_PAYLOAD_TRANSPORT_HEADER, nil
-	// Inner and Tunnel Headers cannot be specified in payload load operation.
-	default:
+	base, ok := payloadBaseFromKeyword[baseString]
+	if !ok {
+		// Inner and Tunnel Headers cannot be specified in payload load operation.
 		return 0, &SyntaxError{lnIdx, tkIdx, fmt.Sprintf("invalid payload base keyword: '%s'", baseString)}
 	}
+	return base, nil
+}
+
+// routeKeys is a map of route key keywords to their corresponding enum value.
+var routeKeyFromKeyword = map[string]routeKey{
+	// Fully supported route keys.
+	"nexthop4": linux.NFT_RT_NEXTHOP4,
+	"nexthop6": linux.NFT_RT_NEXTHOP6,
+	"tcpmss":   linux.NFT_RT_TCPMSS,
+	// Keys supported for interpretation but not yet for logic/evaluation.
+	// Note: Will result in logic error during operation construction.
+	"classid": linux.NFT_RT_CLASSID,
+	"ipsec":   linux.NFT_RT_XFRM,
 }
 
 // parseRouteKey parses the route key from the given string.
 func parseRouteKey(keyString string, lnIdx int, tkIdx int) (routeKey, error) {
-	switch keyString {
-	// Fully supported route keys.
-	case "nexthop4":
-		return linux.NFT_RT_NEXTHOP4, nil
-	case "nexthop6":
-		return linux.NFT_RT_NEXTHOP6, nil
-	case "tcpmss":
-		return linux.NFT_RT_TCPMSS, nil
-	// Keys supported for interpretation but not yet for logic/evaluation.
-	// Note: Will result in logic error during operation construction.
-	case "classid":
-		return linux.NFT_RT_CLASSID, nil
-	case "ipsec":
-		return linux.NFT_RT_XFRM, nil
-	default:
+	key, ok := routeKeyFromKeyword[keyString]
+	if !ok {
 		return 0, &SyntaxError{lnIdx, tkIdx, fmt.Sprintf("invalid route key keyword: '%s'", keyString)}
 	}
+	return key, nil
 }
 
 // metaKeyFromKeyword is a map of meta key keywords to their corresponding enum value.
