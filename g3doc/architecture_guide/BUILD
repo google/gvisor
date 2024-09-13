@@ -49,3 +49,14 @@ doc(
     permalink = "/docs/architecture_guide/performance/",
     weight = "20",
 )
+
+doc(
+    name = "networking",
+    src = "networking.md",
+    category = "Architecture Guide",
+    data = [
+        "packetflow.svg",
+    ],
+    permalink = "/docs/architecture_guide/networking/",
+    weight = "50",
+)

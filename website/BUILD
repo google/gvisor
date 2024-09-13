@@ -147,6 +147,7 @@ docs(
         "//g3doc:index",
         "//g3doc:roadmap",
         "//g3doc:style",
+        "//g3doc/architecture_guide:networking",
         "//g3doc/architecture_guide:performance",
         "//g3doc/architecture_guide:platforms",
         "//g3doc/architecture_guide:resources",
