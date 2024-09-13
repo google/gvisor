@@ -90,6 +90,9 @@ func (dev *accelDevice) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dent
 
 // RegisterTPUDevice registers all devices implemented by this package in vfsObj.
 func RegisterTPUDevice(vfsObj *vfs.VirtualFilesystem, minor uint32, lite bool) error {
+	if vfsObj.IsDeviceRegistered(vfs.CharDevice, linux.ACCEL_MAJOR, minor) {
+		return nil
+	}
 	return vfsObj.RegisterDevice(vfs.CharDevice, linux.ACCEL_MAJOR, minor, &accelDevice{
 		lite:  lite,
 		minor: minor,

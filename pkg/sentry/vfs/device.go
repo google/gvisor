@@ -110,6 +110,15 @@ func (vfs *VirtualFilesystem) ForEachDevice(cb func(pathname string, kind Device
 	return nil
 }
 
+// IsDeviceRegistered returns true if a device that matches the
+// (kind, major, minor) tuple is registered.
+func (vfs *VirtualFilesystem) IsDeviceRegistered(kind DeviceKind, major, minor uint32) bool {
+	vfs.devicesMu.RLock()
+	defer vfs.devicesMu.RUnlock()
+	_, ok := vfs.devices[devTuple{kind, major, minor}]
+	return ok
+}
+
 // OpenDeviceSpecialFile returns a FileDescription representing the given
 // device.
 func (vfs *VirtualFilesystem) OpenDeviceSpecialFile(ctx context.Context, mnt *Mount, d *Dentry, kind DeviceKind, major, minor uint32, opts *OpenOptions) (*FileDescription, error) {

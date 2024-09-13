@@ -17,6 +17,7 @@
 package tpuproxy
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path"
@@ -25,100 +26,71 @@ import (
 	"strconv"
 	"strings"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/tpu"
+	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/sentry/devices/tpuproxy/accel"
 	"gvisor.dev/gvisor/pkg/sentry/devices/tpuproxy/vfio"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
 
-const (
-	pciPathGlobTPUv4   = "/sys/devices/pci0000:*/**/accel/accel*"
-	pciPathGlobTPUv5   = "/sys/devices/pci0000:*/**/vfio-dev/vfio*"
-	iommuGroupPathGlob = "/sys/kernel/iommu_groups/*/devices/*"
-)
-
 var (
-	// pathGlobToPathRegex is a map that points a TPU PCI path glob to its path regex.
-	// TPU v4 devices are accessible via /sys/devices/pci0000:00/<pci_address>/accel/accel# on the host.
-	// TPU v5 devices are accessible via at /sys/devices/pci0000:00/<pci_address>/vfio-dev/vfio# on the host.
-	pathGlobToPathRegex = map[string]string{
-		pciPathGlobTPUv4: `^/sys/devices/pci0000:[[:xdigit:]]{2}/(0000:([[:xdigit:]]{2}|[[:xdigit:]]{4}):[[:xdigit:]]{2}\.[[:xdigit:]]{1,2}/)+accel/accel(\d+)$`,
-		pciPathGlobTPUv5: `^/sys/devices/pci0000:[[:xdigit:]]{2}/(0000:([[:xdigit:]]{2}|[[:xdigit:]]{4}):[[:xdigit:]]{2}\.[[:xdigit:]]{1,2}/)+vfio-dev/vfio(\d+)$`,
-	}
+	// TPUv4DeviceRegex is the regex for detecting TPUv4 device paths.
+	TPUv4DeviceRegex = regexp.MustCompile(`/dev/accel(\d+)`)
+
+	// TPUv5DeviceRegex is the regex for detecting TPUv5 device paths.
+	TPUv5DeviceRegex = regexp.MustCompile(`/dev/vfio/(\d+)`)
 )
 
-// RegisterHostTPUDevices enumerates TPU devices on the host and registers them
-// in the sandbox VFS.
-func RegisterHostTPUDevices(vfsObj *vfs.VirtualFilesystem, allowedDeviceIDs map[int64]any) error {
-	for pciPathGlobal, pathRegex := range pathGlobToPathRegex {
-		pciAddrs, err := filepath.Glob(pciPathGlobal)
-		if err != nil {
-			return fmt.Errorf("enumerating PCI device files: %w", err)
-		}
-		pciPathRegex := regexp.MustCompile(pathRegex)
-		for _, pciPath := range pciAddrs {
-			ms := pciPathRegex.FindStringSubmatch(pciPath)
-			if ms == nil {
-				continue
-			}
-			minorNum, err := strconv.ParseUint(ms[len(ms)-1], 10, 32)
-			if err != nil {
-				return fmt.Errorf("parsing PCI device number: %w", err)
-			}
-			var deviceIDBytes []byte
-			if deviceIDBytes, err = os.ReadFile(path.Join(pciPath, "device/device")); err != nil {
-				return fmt.Errorf("reading PCI device ID: %w", err)
-			}
-			deviceIDStr := strings.Replace(string(deviceIDBytes), "0x", "", -1)
-			deviceID, err := strconv.ParseInt(strings.TrimSpace(deviceIDStr), 16, 64)
-			if err != nil {
-				return fmt.Errorf("parsing PCI device ID: %w", err)
-			}
-			if _, ok := allowedDeviceIDs[deviceID]; !ok {
-				return fmt.Errorf("unsupported TPU device with ID: 0x%x", deviceID)
-			}
-			// VFIO iommu groups correspond to the device number. Use these
-			// paths to get the correct number for the sentry-internal TPU
-			// device files.
-			var deviceNum int
-			switch deviceID {
-			case tpu.TPUV4DeviceID, tpu.TPUV4liteDeviceID:
-				deviceNum = int(deviceNum)
-			case tpu.TPUV5eDeviceID, tpu.TPUV5pDeviceID:
-				groupPaths, err := filepath.Glob(iommuGroupPathGlob)
-				if err != nil {
-					return fmt.Errorf("enumerating IOMMU group files: %w", err)
-				}
-				for _, groupPath := range groupPaths {
-					pci := path.Base(groupPath)
-					if strings.Contains(pciPath, pci) {
-						n, err := strconv.Atoi(strings.Split(groupPath, "/")[4])
-						if err != nil {
-							return fmt.Errorf("parsing IOMMU group minor number: %w", err)
-						}
-						deviceNum = n
-						break
-					}
-				}
-			default:
-				return fmt.Errorf("unsupported TPU device with ID: 0x%x", deviceID)
-			}
-			if err := registerTPUDevice(vfsObj, uint32(minorNum), uint32(deviceNum), deviceID); err != nil {
-				return fmt.Errorf("registering TPU driver: %w", err)
-			}
-		}
+// RegisterTPUv4Device registers the TPUv4 device with the provided minor number
+// where the corresponding PCI device is located at pciPath. Accel devices
+// always have their device file number set to their minor number.
+func RegisterTPUv4Device(ctx context.Context, creds *auth.Credentials, root vfs.VirtualDentry, vfsObj *vfs.VirtualFilesystem, devPath string, minorNum uint32) error {
+	// Get the PCI path from the accel device's symlink at
+	// /sys/class/accel/accel\d+. The link will be in the form
+	// "../../devices/pci0000:*/**/accel/accel\d+".
+	linkPath := filepath.Join("/sys/class/accel", filepath.Base(devPath))
+	linkContent, err := vfsObj.ReadlinkAt(ctx, creds, &vfs.PathOperation{Root: root, Start: root, Path: fspath.Parse(linkPath)})
+	if err != nil {
+		return fmt.Errorf("reading link %q: %w", linkPath, err)
+	}
+	// Exclude the ../../devices prefix and the accel/accel\d+ suffix.
+	pciPath := strings.TrimSuffix(strings.TrimPrefix(linkContent, "../../devices"), fmt.Sprintf("accel/%s", filepath.Base(devPath)))
+	pciDeviceIDPath := path.Join("/sys/devices", pciPath, "device")
+
+	fd, err := unix.Openat(-1, pciDeviceIDPath, unix.O_RDONLY|unix.O_NOFOLLOW, 0)
+	if err != nil {
+		return err
+	}
+	file := os.NewFile(uintptr(fd), pciDeviceIDPath)
+	defer file.Close()
+	buf := bytes.Buffer{}
+	if _, err := buf.ReadFrom(file); err != nil {
+		return err
+	}
+
+	deviceIDStr := strings.Replace(buf.String(), "0x", "", -1)
+	deviceID, err := strconv.ParseInt(strings.TrimSpace(deviceIDStr), 16, 64)
+	if err != nil {
+		return fmt.Errorf("parsing PCI device ID: %w", err)
+	}
+	if err := accel.RegisterTPUDevice(vfsObj, minorNum, deviceID == tpu.TPUV4liteDeviceID); err != nil {
+		return fmt.Errorf("registering TPU driver: %w", err)
 	}
 	return nil
 }
 
-// registerTPUDevice registers a TPU device in vfsObj based on the given device ID.
-func registerTPUDevice(vfsObj *vfs.VirtualFilesystem, minor, deviceNum uint32, deviceID int64) error {
-	switch deviceID {
-	case tpu.TPUV4DeviceID, tpu.TPUV4liteDeviceID:
-		return accel.RegisterTPUDevice(vfsObj, minor, deviceID == tpu.TPUV4liteDeviceID)
-	case tpu.TPUV5eDeviceID, tpu.TPUV5pDeviceID:
-		return vfio.RegisterTPUDevice(vfsObj, minor, deviceNum, false /* useDevGofer */)
-	default:
-		return fmt.Errorf("unsupported TPU device with ID: 0x%x", deviceID)
+// RegisterTPUv5Device registers the TPUv5 device with the provided device path
+// and minor number.
+func RegisterTPUv5Device(vfsObj *vfs.VirtualFilesystem, devPath string, minorNum uint32) error {
+	deviceNum, err := strconv.ParseInt(path.Base(devPath), 10, 32)
+	if err != nil {
+		return fmt.Errorf("parsing device path number: %w", err)
 	}
+	if err := vfio.RegisterTPUDevice(vfsObj, uint32(minorNum), uint32(deviceNum), true /* useDevGofer */); err != nil {
+		return fmt.Errorf("registering TPU driver: %w", err)
+	}
+	return nil
 }

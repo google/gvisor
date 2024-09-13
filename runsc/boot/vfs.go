@@ -28,7 +28,6 @@ import (
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/abi/nvgpu"
-	"gvisor.dev/gvisor/pkg/abi/tpu"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/devutil"
@@ -158,10 +157,6 @@ func registerFilesystems(k *kernel.Kernel, info *containerInfo) error {
 	}
 
 	if err := nvproxyRegisterDevices(info, vfsObj); err != nil {
-		return err
-	}
-
-	if err := tpuProxyRegisterDevices(info, vfsObj); err != nil {
 		return err
 	}
 
@@ -1365,7 +1360,28 @@ func createDeviceFile(ctx context.Context, creds *auth.Credentials, info *contai
 	default:
 		return fmt.Errorf("specified device at %q has invalid type %q", devSpec.Path, devSpec.Type)
 	}
-	if devSpec.Path == "/dev/nvidia-uvm" && info.nvidiaUVMDevMajor != 0 && major != info.nvidiaUVMDevMajor {
+	if strings.HasPrefix(devSpec.Path, "/dev/vfio") || strings.HasPrefix(devSpec.Path, "/dev/accel") {
+		if devSpec.Path == "/dev/vfio/vfio" {
+			if err := vfio.RegisterVFIODevice(vfsObj, true /* useDevGofer */); err != nil {
+				return fmt.Errorf("registering vfio driver: %w", err)
+			}
+		} else if tpuproxy.TPUv4DeviceRegex.MatchString(devSpec.Path) {
+
+			if err := tpuproxy.RegisterTPUv4Device(ctx, creds, root, vfsObj, devSpec.Path, minor); err != nil {
+				return fmt.Errorf("registering TPUv4 device: %w", err)
+			}
+		} else if tpuproxy.TPUv5DeviceRegex.MatchString(devSpec.Path) {
+			if err := tpuproxy.RegisterTPUv5Device(vfsObj, devSpec.Path, minor); err != nil {
+				return fmt.Errorf("registering TPUv5 device: %w", err)
+			}
+			log.Infof("Switching %v device major number from %d to %d", devSpec.Path, devSpec.Major, major)
+			var err error
+			major, err = vfio.GetTPUDeviceMajor(vfsObj)
+			if err != nil {
+				return fmt.Errorf("getting TPU device major number: %w", err)
+			}
+		}
+	} else if devSpec.Path == "/dev/nvidia-uvm" && info.nvidiaUVMDevMajor != 0 && major != info.nvidiaUVMDevMajor {
 		// nvidia-uvm's major device number is dynamically assigned, so the
 		// number that it has on the host may differ from the number that
 		// it has in sentry VFS; switch from the former to the latter.
@@ -1373,25 +1389,6 @@ func createDeviceFile(ctx context.Context, creds *auth.Credentials, info *contai
 		major = info.nvidiaUVMDevMajor
 	}
 	return dev.CreateDeviceFile(ctx, vfsObj, creds, root, devSpec.Path, major, minor, mode, devSpec.UID, devSpec.GID)
-}
-
-func tpuProxyRegisterDevices(info *containerInfo, vfsObj *vfs.VirtualFilesystem) error {
-	if !specutils.TPUProxyIsEnabled(info.spec, info.conf) {
-		return nil
-	}
-	allowedTPUDeviceIDs := map[int64]any{
-		tpu.TPUV4DeviceID:     nil,
-		tpu.TPUV4liteDeviceID: nil,
-		tpu.TPUV5pDeviceID:    nil,
-		tpu.TPUV5eDeviceID:    nil,
-	}
-	if err := tpuproxy.RegisterHostTPUDevices(vfsObj, allowedTPUDeviceIDs); err != nil {
-		return fmt.Errorf("registering host TPU devices: %w", err)
-	}
-	if err := vfio.RegisterVFIODevice(vfsObj, true /* useDevGofer */); err != nil {
-		return fmt.Errorf("registering vfio driver: %w", err)
-	}
-	return nil
 }
 
 func nvproxyRegisterDevices(info *containerInfo, vfsObj *vfs.VirtualFilesystem) error {

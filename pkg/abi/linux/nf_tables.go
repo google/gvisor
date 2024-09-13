@@ -165,3 +165,45 @@ const (
 	NFT_BYTEORDER_NTOH = iota // network to host operator
 	NFT_BYTEORDER_HTON        // host to network operator
 )
+
+// Nf tables meta expression keys.
+// Used by the nft meta operation to retrieve meta data from the packet.
+// These correspond to enum values in include/uapi/linux/netfilter/nf_tables.h.
+const (
+	NFT_META_LEN           = iota // Packet length
+	NFT_META_PROTOCOL             // Packet ethertype protocol, invalid in OUTPUT
+	NFT_META_PRIORITY             // Packet priority
+	NFT_META_MARK                 // Packet mark
+	NFT_META_IIF                  // Packet input interface index
+	NFT_META_OIF                  // Packet output interface index
+	NFT_META_IIFNAME              // Packet input interface name
+	NFT_META_OIFNAME              // Packet output interface name
+	NFT_META_IIFTYPE              // Packet input interface type
+	NFT_META_OIFTYPE              // Packet output interface type
+	NFT_META_SKUID                // Originating socket UID
+	NFT_META_SKGID                // Originating socket GID
+	NFT_META_NFTRACE              // Packet nftrace bit
+	NFT_META_RTCLASSID            // Realm value of packet's route
+	NFT_META_SECMARK              // Packet secmark
+	NFT_META_NFPROTO              // Netfilter protocol
+	NFT_META_L4PROTO              // Layer 4 protocol number
+	NFT_META_BRI_IIFNAME          // Packet input bridge interface name
+	NFT_META_BRI_OIFNAME          // Packet output bridge interface name
+	NFT_META_PKTTYPE              // Packet type, special handling for loopback
+	NFT_META_CPU                  // CPU id through smp_processor_id()
+	NFT_META_IIFGROUP             // Packet input interface group
+	NFT_META_OIFGROUP             // Packet output interface group
+	NFT_META_CGROUP               // Socket control group
+	NFT_META_PRANDOM              // A 32bit pseudo-random number
+	NFT_META_SECPATH              // Boolean, secpath_exists
+	NFT_META_IIFKIND              // Packet input interface kind name
+	NFT_META_OIFKIND              // Packet output interface kind name
+	NFT_META_BRI_IIFPVID          // Packet input bridge port pvid
+	NFT_META_BRI_IIFVPROTO        // Packet input bridge vlan proto
+	NFT_META_TIME_NS              // Time since epoch (in nanoseconds)
+	NFT_META_TIME_DAY             // Day of week (from 0 = Sunday to 6 = Saturday)
+	NFT_META_TIME_HOUR            // Hour of day (in sec), secs since start of day
+	NFT_META_SDIF                 // Slave device interface index
+	NFT_META_SDIFNAME             // Slave device interface name
+	NFT_META_BRI_BROUTE           // Packet br_netfilter_broute bit
+)

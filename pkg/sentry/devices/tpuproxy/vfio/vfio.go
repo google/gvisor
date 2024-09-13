@@ -41,6 +41,12 @@ const (
 	VFIOPath = "/dev/vfio/vfio"
 )
 
+var (
+	tpuDeviceMajor        uint32
+	tpuDeviceMajorInit    sync.Once
+	tpuDeviceMajorInitErr error
+)
+
 // device implements TPU's vfs.Device for /dev/vfio/[0-9]+
 //
 // +stateify savable
@@ -158,7 +164,14 @@ func (dev *vfioDevice) Open(ctx context.Context, mnt *vfs.Mount, d *vfs.Dentry, 
 
 // RegisterTPUDevice registers devices implemented by this package in vfsObj.
 func RegisterTPUDevice(vfsObj *vfs.VirtualFilesystem, minor, deviceNum uint32, useDevGofer bool) error {
-	return vfsObj.RegisterDevice(vfs.CharDevice, linux.VFIO_MAJOR, minor, &tpuDevice{
+	major, err := GetTPUDeviceMajor(vfsObj)
+	if err != nil {
+		return err
+	}
+	if vfsObj.IsDeviceRegistered(vfs.CharDevice, major, minor) {
+		return nil
+	}
+	return vfsObj.RegisterDevice(vfs.CharDevice, major, minor, &tpuDevice{
 		minor:       minor,
 		num:         deviceNum,
 		useDevGofer: useDevGofer,
@@ -171,6 +184,9 @@ func RegisterTPUDevice(vfsObj *vfs.VirtualFilesystem, minor, deviceNum uint32, u
 
 // RegisterVFIODevice registers VFIO devices that are implemented by this package in vfsObj.
 func RegisterVFIODevice(vfsObj *vfs.VirtualFilesystem, useDevGofer bool) error {
+	if vfsObj.IsDeviceRegistered(vfs.CharDevice, linux.MISC_MAJOR, VFIO_MINOR) {
+		return nil
+	}
 	return vfsObj.RegisterDevice(vfs.CharDevice, linux.MISC_MAJOR, VFIO_MINOR, &vfioDevice{
 		useDevGofer: useDevGofer,
 	}, &vfs.RegisterDeviceOptions{
@@ -178,4 +194,13 @@ func RegisterVFIODevice(vfsObj *vfs.VirtualFilesystem, useDevGofer bool) error {
 		Pathname:  path.Join("vfio", "vfio"),
 		FilePerms: 0666,
 	})
+}
+
+// GetTPUDeviceMajor returns the dynamically allocated major number for the vfio
+// device.
+func GetTPUDeviceMajor(vfsObj *vfs.VirtualFilesystem) (uint32, error) {
+	tpuDeviceMajorInit.Do(func() {
+		tpuDeviceMajor, tpuDeviceMajorInitErr = vfsObj.GetDynamicCharDevMajor()
+	})
+	return tpuDeviceMajor, tpuDeviceMajorInitErr
 }

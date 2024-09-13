@@ -551,7 +551,7 @@ func shouldExposeVFIODevice(path string) bool {
 //
 // Precondition: tpuproxy is enabled.
 func shouldExposeTpuDevice(path string) bool {
-	_, valid, _ := util.ExtractTPUDeviceMinor(path)
+	valid, _ := util.IsTPUDeviceValid(path)
 	return valid || shouldExposeVFIODevice(path)
 }
 
