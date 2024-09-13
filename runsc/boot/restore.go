@@ -139,8 +139,10 @@ func createNetworkStackForRestore(l *Loader) (*stack.Stack, inet.Stack) {
 
 // Validate OCI specs before restoring the containers.
 func validateSpecs(oldSpecs, newSpecs map[string]*specs.Spec) error {
-	if len(oldSpecs) != len(newSpecs) {
-		return fmt.Errorf("incorrect number of specs during checkpoint and restore")
+	for name := range newSpecs {
+		if _, ok := oldSpecs[name]; !ok {
+			return fmt.Errorf("checkpoint image does not contain spec for container: %q", name)
+		}
 	}
 	return nil
 }
