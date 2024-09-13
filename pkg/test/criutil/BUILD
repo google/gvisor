@@ -9,6 +9,7 @@ go_library(
     name = "criutil",
     testonly = 1,
     srcs = ["criutil.go"],
+    nogo = False,
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/test/dockerutil",

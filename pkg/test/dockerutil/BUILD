@@ -54,6 +54,7 @@ go_test(
         "profile_test.go",
     ],
     library = ":dockerutil",
+    nogo = False,
     tags = [
         # Requires docker and runsc to be configured before test runs.
         # Also requires the test to be run as root.
