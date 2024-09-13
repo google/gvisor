@@ -957,6 +957,101 @@ func checkByteorderOp(tname string, expected operation, actual operation) error 
 	return nil
 }
 
+// TestInterpretMetaLoadOps tests interpretation of meta load operations.
+func TestInterpretMetaLoadOps(t *testing.T) {
+	for _, test := range []interpretOperationTestAction{
+		{ // cmd: add rule ip tab ch meta length 0x01020304
+			tname:    "meta load len test",
+			opStr:    "[ meta load len => reg 2 ]",
+			expected: mustCreateMetaLoad(t, linux.NFT_META_LEN, linux.NFT_REG_2),
+		},
+		{ // cmd: add rule inet tab ch meta protocol 0x0102
+			tname:    "meta load protocol test",
+			opStr:    "[ meta load protocol => reg 3 ]",
+			expected: mustCreateMetaLoad(t, linux.NFT_META_PROTOCOL, linux.NFT_REG_3),
+		},
+		{ // cmd: add rule inet tab ch meta nfproto 253
+			tname:    "meta load nfproto test",
+			opStr:    "[ meta load nfproto => reg 4 ]",
+			expected: mustCreateMetaLoad(t, linux.NFT_META_NFPROTO, linux.NFT_REG_4),
+		},
+		{ // cmd: add rule inet tab ch meta l4proto 0x17
+			tname:    "meta load l4proto test",
+			opStr:    "[ meta load l4proto => reg 8 ]",
+			expected: mustCreateMetaLoad(t, linux.NFT_META_L4PROTO, linux.NFT_REG32_00),
+		},
+		{ // cmd: add rule inet tab ch skuid 0x09080706
+			tname:    "meta load skuid test",
+			opStr:    "[ meta load skuid => reg 10 ]",
+			expected: mustCreateMetaLoad(t, linux.NFT_META_SKUID, linux.NFT_REG32_02),
+		},
+		{ // cmd: add rule inet tab ch meta skgid 0x09080706
+			tname:    "meta load skgid test",
+			opStr:    "[ meta load skgid => reg 11 ]",
+			expected: mustCreateMetaLoad(t, linux.NFT_META_SKGID, linux.NFT_REG32_03),
+		},
+		{ // cmd: add rule inet tab ch rtclassid 0x01020304
+			tname:    "meta load rtclassid test",
+			opStr:    "[ meta load rtclassid => reg 12 ]",
+			expected: mustCreateMetaLoad(t, linux.NFT_META_RTCLASSID, linux.NFT_REG32_04),
+		},
+		{ // cmd: add rule inet tab ch pkttype 0x59
+			tname:    "meta load pkttype test",
+			opStr:    "[ meta load pkttype => reg 13 ]",
+			expected: mustCreateMetaLoad(t, linux.NFT_META_PKTTYPE, linux.NFT_REG32_05),
+		},
+		{ // cmd: add rule inet tab ch meta random 0x02040608
+			tname:    "meta load prandom test",
+			opStr:    "[ meta load prandom => reg 9 ]",
+			expected: mustCreateMetaLoad(t, linux.NFT_META_PRANDOM, linux.NFT_REG32_01),
+		},
+		{ // cmd: add rule inet tab ch time "2020-06-06 17:00"
+			tname:    "meta load arbitrary time test",
+			opStr:    "[ meta load time => reg 4 ]",
+			expected: mustCreateMetaLoad(t, linux.NFT_META_TIME_NS, linux.NFT_REG_4),
+		},
+		{ // cmd: add rule inet tab ch time "1970-01-01 00:00:01"
+			tname:    "meta load time 1 sec after unix epoch test",
+			opStr:    "[ meta load time => reg 3 ]",
+			expected: mustCreateMetaLoad(t, linux.NFT_META_TIME_NS, linux.NFT_REG_3),
+		},
+		{ // cmd: add rule inet tab ch time "1969-01-01 00:00:00"
+			tname:    "meta load time 1 year before unix epoch test",
+			opStr:    "[ meta load time => reg 2 ]",
+			expected: mustCreateMetaLoad(t, linux.NFT_META_TIME_NS, linux.NFT_REG_2),
+		},
+		{ // cmd: add rule inet tab ch day Monday
+			tname:    "meta load day test",
+			opStr:    "[ meta load day => reg 23 ]",
+			expected: mustCreateMetaLoad(t, linux.NFT_META_TIME_DAY, linux.NFT_REG32_15),
+		},
+		{ // cmd: add rule inet tab ch hour 0x01020304
+			tname:    "meta load hour test",
+			opStr:    "[ meta load hour => reg 22 ]",
+			expected: mustCreateMetaLoad(t, linux.NFT_META_TIME_HOUR, linux.NFT_REG32_14),
+		},
+	} {
+		t.Run(test.tname, func(t *testing.T) { checkOp(t, test, checkMetaLoadOp) })
+	}
+}
+
+// checkMetaLoadOp checks that the given operation is a meta load operation and
+// that it matches the expected meta load operation.
+func checkMetaLoadOp(tname string, expected operation, actual operation) error {
+	expectedMtLoad := expected.(*metaLoad)
+	mtLoad, ok := actual.(*metaLoad)
+	if !ok {
+		return fmt.Errorf("expected operation type to be MetaLoad for %s, got %T", tname, actual)
+	}
+	if mtLoad.key != expectedMtLoad.key {
+		return fmt.Errorf("expected meta key to be %v for %s, got %v", expectedMtLoad.key, tname, mtLoad.key)
+	}
+	if mtLoad.dreg != expectedMtLoad.dreg {
+		return fmt.Errorf("expected destination register to be %d for %s, got %d", expectedMtLoad.dreg, tname, mtLoad.dreg)
+	}
+	return nil
+}
+
 // TestInterpretRule tests the interpretation of basic and general rules as a
 // list of operations.
 func TestInterpretRule(t *testing.T) {

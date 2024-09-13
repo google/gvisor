@@ -17,6 +17,7 @@ package nftables
 import (
 	"encoding/binary"
 	"fmt"
+	"math/rand"
 	"reflect"
 	"slices"
 	"testing"
@@ -125,6 +126,13 @@ const (
 	tcpChecksumLen    = 2
 	tcpUrgPtrOffset   = 18
 	tcpUrgPtrLen      = 2
+
+	// Arbitrary Socket IDs
+	arbitrarySKUID = 0x020304
+	arbitrarySKGID = 45668
+
+	// Arbitrary Packet Type
+	arbitraryPktType = tcpip.PacketOutgoing
 )
 
 var (
@@ -229,6 +237,9 @@ func makeIPv4Packet(reserved int, ipv4Fields *header.IPv4Fields) *stack.PacketBu
 	// Prepends the IPv4 header to the packet buffer.
 	ipv4Hdr := header.IPv4(pkt.NetworkHeader().Push(header.IPv4MinimumSize))
 
+	// Sets the packet type.
+	pkt.PktType = arbitraryPktType
+
 	// Initializes the IPv4 header with fields.
 	ipv4Hdr.Encode(ipv4Fields)
 
@@ -250,6 +261,9 @@ func makeIPv6Packet(reserved int, ipv6Fields *header.IPv6Fields) *stack.PacketBu
 
 	// Prepends the IPv6 header to the packet buffer.
 	ipv6Hdr := header.IPv6(pkt.NetworkHeader().Push(header.IPv6MinimumSize))
+
+	// Sets the packet type.
+	pkt.PktType = arbitraryPktType
 
 	// Initializes the IPv6 header with fields.
 	ipv6Hdr.Encode(ipv6Fields)
@@ -2401,7 +2415,8 @@ func TestEvaluateLast(t *testing.T) {
 
 		// Sets up an NFTables object with a base chain and fake manual clock.
 		fakeClock := faketime.NewManualClock()
-		nf := NewNFTables(fakeClock)
+		fixedRng := rand.New(rand.NewSource(0))
+		nf := NewNFTables(fakeClock, fixedRng)
 		tab, err := nf.AddTable(arbitraryFamily, "test", "test table", false)
 		if err != nil {
 			t.Fatalf("unexpected error for AddTable: %v", err)
@@ -2808,6 +2823,196 @@ func TestEvaluateByteorder(t *testing.T) {
 			}
 			if v.Code != VC(linux.NF_DROP) {
 				t.Fatalf("expected verdict Drop for true comparison, got %v", v)
+			}
+		})
+	}
+}
+
+// mockPacketOwner implements PacketOwner for testing.
+type mockPacketOwner struct {
+	uid uint32
+	gid uint32
+}
+
+// KUID returns the UID of the mock packet owner.
+func (m mockPacketOwner) KUID() uint32 {
+	return m.uid
+}
+
+// KGID returns the GID of the mock packet owner.
+func (m mockPacketOwner) KGID() uint32 {
+	return m.gid
+}
+
+// TestEvaluateMetaLoad tests that the Meta Load operation correctly loads
+// the specific meta data into the destination register.
+// The nft binary commands used to generate these are stated above each test.
+// All commands should be preceded by nft --debug=netlink.
+// Note: Relies on expected behavior of the Comparison operation.
+// Note: Does all comparisons in multiples of 4 bytes.
+// TODO(b/339691111): Add tests for VLAN, ARP, ICMP, ICMPv6, IGMP, UDP headers.
+func TestEvaluateMetaLoad(t *testing.T) {
+	// Initializes testing packet.
+	tcid := 0x05
+	pktSize := header.IPv6MinimumSize + header.TCPMinimumSize
+	ipv6Fields := arbitraryIPv6Fields()
+	ipv6Fields.TrafficClass = uint8(tcid)
+	tcpFields := arbitraryTCPFields()
+	pkt := makeIPv6TCPPacket(pktSize, ipv6Fields, tcpFields)
+	pkt.Owner = &mockPacketOwner{arbitrarySKUID, arbitrarySKGID}
+
+	// Sets up a fake clock (now = UnixEpoch) and dependent time/random fields.
+	fakeClock := faketime.NewManualClock()
+	now := fakeClock.Now()
+	timeNS := now.UnixNano()
+	timeDay := now.Weekday()
+	timeHour := now.Hour()*3600 + now.Minute()*60 + now.Second()
+	fixedRng := rand.New(rand.NewSource(0))
+	seededRandUint32 := fixedRng.Uint32() // fixes rng
+
+	for _, test := range []struct {
+		tname string
+		pkt   *stack.PacketBuffer
+		op1   operation // Meta Load operation to test.
+		op2   operation // Comparison operation to check result data in register.
+		// Note: op2 should be nil if expecting a break during evaluation.
+	}{
+		{ // cmd: add rule ip6 tab ch meta length 60
+			tname: "meta load len test",
+			pkt:   pkt,
+			op1:   mustCreateMetaLoad(t, linux.NFT_META_LEN, linux.NFT_REG_2),
+			op2: mustCreateComparison(t, linux.NFT_REG_2, linux.NFT_CMP_EQ,
+				binary.NativeEndian.AppendUint32(nil, uint32(pktSize))),
+		},
+		{ // cmd: add rule ip6 tab ch meta protocol 0x86dd
+			tname: "meta load protocol test",
+			pkt:   pkt,
+			op1:   mustCreateMetaLoad(t, linux.NFT_META_PROTOCOL, linux.NFT_REG_3),
+			op2: mustCreateComparison(t, linux.NFT_REG_3, linux.NFT_CMP_EQ,
+				append(numToBE(int(header.IPv6ProtocolNumber), 2), 0, 0)),
+		},
+		{ // cmd: add rule ip6 tab ch meta nfproto 0x0a
+			tname: "meta load nfproto test",
+			pkt:   pkt,
+			op1:   mustCreateMetaLoad(t, linux.NFT_META_NFPROTO, linux.NFT_REG_4),
+			op2: mustCreateComparison(t, linux.NFT_REG_4, linux.NFT_CMP_EQ,
+				[]byte{IP6.Protocol(), 0, 0, 0}),
+		},
+		{ // cmd: add rule ip6 tab ch meta l4proto 0x6
+			tname: "meta load l4proto test",
+			pkt:   pkt,
+			op1:   mustCreateMetaLoad(t, linux.NFT_META_L4PROTO, linux.NFT_REG32_00),
+			op2: mustCreateComparison(t, linux.NFT_REG32_00, linux.NFT_CMP_EQ,
+				[]byte{uint8(tcpTransportProtocol), 0, 0, 0}),
+		},
+		{ // cmd: add rule ip6 tab ch skuid 0x020304
+			tname: "meta load skuid test",
+			pkt:   pkt,
+			op1:   mustCreateMetaLoad(t, linux.NFT_META_SKUID, linux.NFT_REG32_02),
+			op2: mustCreateComparison(t, linux.NFT_REG32_02, linux.NFT_CMP_EQ,
+				binary.NativeEndian.AppendUint32(nil, arbitrarySKUID)),
+		},
+		{ // cmd: add rule ip6 tab ch skgid 45668
+			tname: "meta load skgid test",
+			pkt:   pkt,
+			op1:   mustCreateMetaLoad(t, linux.NFT_META_SKGID, linux.NFT_REG32_03),
+			op2: mustCreateComparison(t, linux.NFT_REG32_03, linux.NFT_CMP_EQ,
+				binary.NativeEndian.AppendUint32(nil, arbitrarySKGID)),
+		},
+		{ // cmd: add rule ip6 tab ch rtclassid 0x05
+			tname: "meta load rtclassid test",
+			pkt:   pkt,
+			op1:   mustCreateMetaLoad(t, linux.NFT_META_RTCLASSID, linux.NFT_REG32_04),
+			op2: mustCreateComparison(t, linux.NFT_REG32_04, linux.NFT_CMP_EQ,
+				binary.NativeEndian.AppendUint32(nil, uint32(tcid))),
+		},
+		{ // cmd: add rule ip6 tab ch pkttype 2
+			tname: "meta load pkttype test",
+			pkt:   pkt,
+			op1:   mustCreateMetaLoad(t, linux.NFT_META_PKTTYPE, linux.NFT_REG32_05),
+			op2: mustCreateComparison(t, linux.NFT_REG32_05, linux.NFT_CMP_EQ,
+				[]byte{uint8(arbitraryPktType), 0, 0, 0}),
+		},
+		{ // cmd: add rule ip6 tab ch meta random 4059586549
+			tname: "meta load prandom test",
+			pkt:   pkt,
+			op1:   mustCreateMetaLoad(t, linux.NFT_META_PRANDOM, linux.NFT_REG32_01),
+			op2: mustCreateComparison(t, linux.NFT_REG32_01, linux.NFT_CMP_EQ,
+				numToBE(int(seededRandUint32), 4)),
+		},
+		{ // cmd: add rule ip6 tab ch time "1970-01-01 00:00:00"
+			tname: "meta load time at unix epoch test",
+			pkt:   pkt,
+			op1:   mustCreateMetaLoad(t, linux.NFT_META_TIME_NS, linux.NFT_REG_3),
+			op2: mustCreateComparison(t, linux.NFT_REG_3, linux.NFT_CMP_EQ,
+				binary.NativeEndian.AppendUint64(nil, uint64(timeNS))),
+		},
+		{ // cmd: add rule ip6 tab ch day Thursday
+			tname: "meta load day test",
+			pkt:   pkt,
+			op1:   mustCreateMetaLoad(t, linux.NFT_META_TIME_DAY, linux.NFT_REG32_15),
+			op2: mustCreateComparison(t, linux.NFT_REG32_15, linux.NFT_CMP_EQ,
+				[]byte{uint8(timeDay), 0, 0, 0}),
+		},
+		{ // cmd: add rule inet tab ch hour 0x01020304
+			tname: "meta load hour test",
+			pkt:   pkt,
+			op1:   mustCreateMetaLoad(t, linux.NFT_META_TIME_HOUR, linux.NFT_REG32_14),
+			op2: mustCreateComparison(t, linux.NFT_REG32_14, linux.NFT_CMP_EQ,
+				binary.NativeEndian.AppendUint32(nil, uint32(timeHour))),
+		},
+	} {
+		t.Run(test.tname, func(t *testing.T) {
+			// Sets up an NFTables object with a base chain and fake manual clock.
+			// Using Manual Clock sets time.Now to Unix Epoch which fixes rng seed!
+			nf := NewNFTables(fakeClock, rand.New(rand.NewSource(0)))
+
+			tab, err := nf.AddTable(arbitraryFamily, "test", "test table", false)
+			if err != nil {
+				t.Fatalf("unexpected error for AddTable: %v", err)
+			}
+			bc, err := tab.AddChain("base_chain", nil, "test chain", false)
+			if err != nil {
+				t.Fatalf("unexpected error for AddChain: %v", err)
+			}
+			bc.SetBaseChainInfo(arbitraryInfoPolicyAccept)
+			rule := &Rule{}
+
+			// Adds testing operations.
+			if test.op1 != nil {
+				rule.addOperation(test.op1)
+			}
+			if test.op2 != nil {
+				rule.addOperation(test.op2)
+			}
+
+			// Adds drop operation. Will be final verdict if all comparisons are true.
+			rule.addOperation(mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NF_DROP)})))
+
+			// Registers the rule to the base chain.
+			if err := bc.RegisterRule(rule, -1); err != nil {
+				t.Fatalf("unexpected error for RegisterRule: %v", err)
+			}
+
+			// Runs evaluation.
+			v, err := nf.EvaluateHook(arbitraryFamily, arbitraryHook, test.pkt)
+			if err != nil {
+				t.Fatalf("unexpected error for EvaluateHook: %v", err)
+			}
+
+			// Checks for final verdict.
+			if test.op2 == nil {
+				// If no comparison operation is set, then payload load should break,
+				// resulting in Accept as the default policy verdict.
+				if v.Code != VC(linux.NF_ACCEPT) {
+					t.Fatalf("expected verdict Accept for break during evaluation, got %v", v)
+				}
+			} else {
+				// If a comparison operation is set, both payload load and comparison
+				// should succeed, resulting in Drop as the final verdict.
+				if v.Code != VC(linux.NF_DROP) {
+					t.Fatalf("expected verdict Drop for true comparison, got %v", v)
+				}
 			}
 		})
 	}
@@ -3411,7 +3616,9 @@ func packetResultString(initial, final *stack.PacketBuffer) string {
 
 // newNFTablesStd creates a new NFTables object w/ a standard clock for testing.
 func newNFTablesStd() *NFTables {
-	return NewNFTables(tcpip.NewStdClock())
+	stdClock := tcpip.NewStdClock()
+	fixedRng := rand.New(rand.NewSource(0))
+	return NewNFTables(stdClock, fixedRng)
 }
 
 // mustCreateImmediate wraps the newImmediate function for brevity.
@@ -3493,4 +3700,13 @@ func mustCreateByteorder(t *testing.T, sreg, dreg uint8, bop byteorderOp, blen, 
 		t.Fatalf("failed to create byteorder: %v", err)
 	}
 	return order
+}
+
+// mustCreateMetaLoad wraps the newMetaLoad function for brevity.
+func mustCreateMetaLoad(t *testing.T, key metaKey, dreg uint8) *metaLoad {
+	mtload, err := newMetaLoad(key, dreg)
+	if err != nil {
+		t.Fatalf("failed to create meta load: %v", err)
+	}
+	return mtload
 }

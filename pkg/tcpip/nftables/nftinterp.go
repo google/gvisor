@@ -157,6 +157,8 @@ func InterpretOperation(line string, lnIdx int) (operation, error) {
 		return InterpretRoute(line, lnIdx)
 	case "byteorder":
 		return InterpretByteorder(line, lnIdx)
+	case "meta":
+		return InterpretMetaLoad(line, lnIdx)
 	default:
 		return nil, &SyntaxError{lnIdx, 1, fmt.Sprintf("unrecognized operation type: %s", tokens[1])}
 	}
@@ -818,6 +820,69 @@ func InterpretByteorder(line string, lnIdx int) (operation, error) {
 	return order, nil
 }
 
+// InterpretMetaLoad creates a new MetaLoad operation from the given string.
+func InterpretMetaLoad(line string, lnIdx int) (operation, error) {
+	tokens := strings.Fields(line)
+
+	// Requires exactly 8 tokens:
+	// 		"[", "meta", "load", meta key, "=>", "reg", register index, "]".
+	if len(tokens) != 8 {
+		return nil, &SyntaxError{lnIdx, 0, fmt.Sprintf("incorrect number of tokens for meta operation, should be exactly 8, got %d", len(tokens))}
+	}
+
+	if err := checkOperationBrackets(tokens, lnIdx); err != nil {
+		return nil, err
+	}
+
+	tkIdx := 1
+
+	// First token should be "meta".
+	if err := consumeToken("meta", tokens, lnIdx, tkIdx); err != nil {
+		return nil, err
+	}
+	tkIdx++
+
+	// Second token should be "load".
+	if err := consumeToken("load", tokens, lnIdx, tkIdx); err != nil {
+		return nil, err
+	}
+	tkIdx++
+
+	// Third token should be the meta key.
+	key, err := parseMetaKey(tokens[tkIdx], lnIdx, tkIdx)
+	if err != nil {
+		return nil, err
+	}
+	tkIdx++
+
+	// Fourth token should be "=>".
+	if err := consumeToken("=>", tokens, lnIdx, tkIdx); err != nil {
+		return nil, err
+	}
+	tkIdx++
+
+	// Fifth token should be "reg".
+	if err := consumeToken("reg", tokens, lnIdx, tkIdx); err != nil {
+		return nil, err
+	}
+	tkIdx++
+
+	// Sixth token should be the uint8 representing the register index.
+	reg, err := parseRegister(tokens[tkIdx], lnIdx, tkIdx)
+	if err != nil {
+		return nil, err
+	}
+	tkIdx++
+
+	// Create the operation with the specified arguments.
+	mtLoad, err := newMetaLoad(key, reg)
+	if err != nil {
+		return nil, &LogicError{lnIdx, tkIdx, err}
+	}
+
+	return mtLoad, nil
+}
+
 //
 // Interpreter Helper Functions.
 //
@@ -978,7 +1043,7 @@ func parseCmpOp(copString string, lnIdx int, tkIdx int) (int, error) {
 	case "gte":
 		return linux.NFT_CMP_GTE, nil
 	default:
-		return 0, &SyntaxError{lnIdx, tkIdx, fmt.Sprintf("invalid comparison operator: '%s'", copString)}
+		return 0, &SyntaxError{lnIdx, tkIdx, fmt.Sprintf("invalid comparison operator keyword: '%s'", copString)}
 	}
 }
 
@@ -1008,7 +1073,7 @@ func parsePayloadBase(baseString string, lnIdx int, tkIdx int) (payloadBase, err
 		return linux.NFT_PAYLOAD_TRANSPORT_HEADER, nil
 	// Inner and Tunnel Headers cannot be specified in payload load operation.
 	default:
-		return 0, &SyntaxError{lnIdx, tkIdx, fmt.Sprintf("invalid payload base: '%s'", baseString)}
+		return 0, &SyntaxError{lnIdx, tkIdx, fmt.Sprintf("invalid payload base keyword: '%s'", baseString)}
 	}
 }
 
@@ -1031,6 +1096,53 @@ func parseRouteKey(keyString string, lnIdx int, tkIdx int) (routeKey, error) {
 	default:
 		return 0, &SyntaxError{lnIdx, tkIdx, fmt.Sprintf("invalid route key keyword: '%s'", keyString)}
 	}
+}
+
+// metaKeyFromKeyword is a map of meta key keywords to their corresponding enum value.
+var metaKeyFromKeyword = map[string]metaKey{
+	// Supported meta keys.
+	"len":       linux.NFT_META_LEN,
+	"protocol":  linux.NFT_META_PROTOCOL,
+	"nfproto":   linux.NFT_META_NFPROTO,
+	"l4proto":   linux.NFT_META_L4PROTO,
+	"skuid":     linux.NFT_META_SKUID,
+	"skgid":     linux.NFT_META_SKGID,
+	"rtclassid": linux.NFT_META_RTCLASSID,
+	"pkttype":   linux.NFT_META_PKTTYPE,
+	"prandom":   linux.NFT_META_PRANDOM,
+	"time":      linux.NFT_META_TIME_NS,
+	"day":       linux.NFT_META_TIME_DAY,
+	"hour":      linux.NFT_META_TIME_HOUR,
+	// Unsupported meta keys.
+	"priority": linux.NFT_META_PRIORITY,
+	"mark":     linux.NFT_META_MARK,
+	"iif":      linux.NFT_META_IIF,
+	"oif":      linux.NFT_META_OIF,
+	"iifname":  linux.NFT_META_IIFNAME,
+	"oifname":  linux.NFT_META_OIFNAME,
+	"iiftype":  linux.NFT_META_IIFTYPE,
+	"oiftype":  linux.NFT_META_OIFTYPE,
+	"iifgroup": linux.NFT_META_IIFGROUP,
+	"oifgroup": linux.NFT_META_OIFGROUP,
+	"cgroup":   linux.NFT_META_CGROUP,
+	"iifkind":  linux.NFT_META_IIFKIND,
+	"oifkind":  linux.NFT_META_OIFKIND,
+	"sdif":     linux.NFT_META_SDIF,
+	"sdifname": linux.NFT_META_SDIFNAME,
+	"nftrace":  linux.NFT_META_NFTRACE,
+	"cpu":      linux.NFT_META_CPU,
+	"secmark":  linux.NFT_META_SECMARK,
+	"secpath":  linux.NFT_META_SECPATH,
+	"broute":   linux.NFT_META_BRI_BROUTE,
+}
+
+// parseMetaKey parses the meta key from the given string.
+func parseMetaKey(keyString string, lnIdx int, tkIdx int) (metaKey, error) {
+	key, ok := metaKeyFromKeyword[keyString]
+	if !ok {
+		return 0, &SyntaxError{lnIdx, tkIdx, fmt.Sprintf("invalid meta key keyword: '%s'", keyString)}
+	}
+	return key, nil
 }
 
 // consumeToken is a helper function that checks if the token at the given index
