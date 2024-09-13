@@ -237,7 +237,7 @@ type Loader struct {
 
 	// containerSpecs stores container specs for each container in sandbox.
 	//
-	// Mapping: cid -> spec.
+	// Mapping: name -> spec.
 	// +checklocks:mu
 	containerSpecs map[string]*specs.Spec
 
@@ -1920,14 +1920,14 @@ func (l *Loader) registerContainerLocked(spec *specs.Spec, cid string) string {
 	}
 
 	l.containerIDs[containerName] = cid
-	l.containerSpecs[cid] = spec
+	l.containerSpecs[containerName] = spec
 	return containerName
 }
 
-func (l *Loader) getContainerSpec(cid string) *specs.Spec {
+func (l *Loader) getContainerSpec(containerName string) *specs.Spec {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	return l.containerSpecs[cid]
+	return l.containerSpecs[containerName]
 }
 
 func (l *Loader) containerRuntimeState(cid string) ContainerRuntimeState {
