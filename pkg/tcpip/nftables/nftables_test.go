@@ -2103,53 +2103,8 @@ func TestEvaluatePayloadSet(t *testing.T) {
 				}
 			}
 
-			// Compares checksums first for resulting and expected packet.
-			if test.outPkt.NetworkProtocolNumber != test.pkt.NetworkProtocolNumber {
-				t.Fatalf("expected network protocol number %d for resulting packet, got %d", test.outPkt.NetworkProtocolNumber, test.pkt.NetworkProtocolNumber)
-			}
-			if test.pkt.NetworkHeader().View() != nil && test.outPkt.Network().Checksum() != test.pkt.Network().Checksum() {
-				t.Fatalf("expected network checksum %d for resulting packet, got %d", test.outPkt.Network().Checksum(), test.pkt.Network().Checksum())
-			}
-			if test.pkt.TransportProtocolNumber != test.outPkt.TransportProtocolNumber {
-				t.Fatalf("expected transport protocol number %d for resulting packet, got %d", test.outPkt.TransportProtocolNumber, test.pkt.TransportProtocolNumber)
-			}
-			if test.pkt.TransportProtocolNumber != 0 {
-				var transport header.Transport
-				var transportOut header.Transport
-				switch tBytes, tOutBytes := test.pkt.TransportHeader().Slice(),
-					test.outPkt.TransportHeader().Slice(); test.pkt.TransportProtocolNumber {
-				case header.TCPProtocolNumber:
-					transport = header.TCP(tBytes)
-					transportOut = header.TCP(tOutBytes)
-				case header.UDPProtocolNumber:
-					transport = header.UDP(tBytes)
-					transportOut = header.UDP(tOutBytes)
-				case header.ICMPv4ProtocolNumber:
-					transport = header.ICMPv4(tBytes)
-					transportOut = header.ICMPv4(tOutBytes)
-				case header.ICMPv6ProtocolNumber:
-					transport = header.ICMPv6(tBytes)
-					transportOut = header.ICMPv6(tOutBytes)
-				case header.IGMPProtocolNumber:
-					transport = header.IGMP(tBytes)
-					transportOut = header.IGMP(tOutBytes)
-				}
-				if transport != nil && transport.Checksum() != transportOut.Checksum() {
-					t.Fatalf("expected transport checksum %d for resulting packet, got %d", transport.Checksum(), transportOut.Checksum())
-				}
-			}
-
-			// Compares raw packet data in bytes for resulting and expected packet.
-			actual := test.pkt.AsSlices()
-			expected := test.outPkt.AsSlices()
-			if len(actual) != len(expected) {
-				t.Fatalf("expected %d slices of data for the resulting packet, got %d", len(expected), len(actual))
-			}
-			for i := range actual {
-				if !slices.Equal(actual[i], expected[i]) {
-					t.Fatalf("packet data does not match expected packet data (for slice %d)", i)
-				}
-			}
+			// Checks if the packet are equal.
+			checkPacketEquality(t, test.outPkt, test.pkt)
 		})
 	}
 }
@@ -3018,6 +2973,89 @@ func TestEvaluateMetaLoad(t *testing.T) {
 	}
 }
 
+// TestEvaluateMetaSet tests that the Meta Set operation correctly sets specific
+// packet meta data to the value in the source register.
+func TestEvaluateMetaSet(t *testing.T) {
+	// Packet type to set anc test for.
+	testPktType := tcpip.PacketMulticast
+	for _, test := range []struct {
+		tname  string
+		pkt    *stack.PacketBuffer
+		outPkt *stack.PacketBuffer
+		op1    operation // Immediate operation to load source register.
+		op2    operation // Meta set operation to test.
+	}{
+		// cmd: nft --debug=netlink add rule ip tab ch meta pkttype set 34
+		{
+			tname: "meta set pkttype 4-byte reg test",
+			pkt:   makeIPv4Packet(header.IPv4MinimumSize, arbitraryIPv4Fields()),
+			outPkt: func() *stack.PacketBuffer {
+				pkt := makeIPv4Packet(header.IPv4MinimumSize, arbitraryIPv4Fields())
+				pkt.PktType = testPktType
+				return pkt
+			}(),
+			op1: mustCreateImmediate(t, linux.NFT_REG32_06, newBytesData([]byte{uint8(testPktType)})),
+			op2: mustCreateMetaSet(t, linux.NFT_META_PKTTYPE, linux.NFT_REG32_06),
+		},
+		{
+			tname: "meta set pkttype 16-byte reg test",
+			pkt:   makeIPv4Packet(header.IPv4MinimumSize, arbitraryIPv4Fields()),
+			outPkt: func() *stack.PacketBuffer {
+				pkt := makeIPv4Packet(header.IPv4MinimumSize, arbitraryIPv4Fields())
+				pkt.PktType = testPktType
+				return pkt
+			}(),
+			op1: mustCreateImmediate(t, linux.NFT_REG_3, newBytesData([]byte{uint8(testPktType)})),
+			op2: mustCreateMetaSet(t, linux.NFT_META_PKTTYPE, linux.NFT_REG_3),
+		},
+	} {
+		t.Run(test.tname, func(t *testing.T) {
+			// Sets up an NFTables object with a single table, chain, and rule.
+			nf := newNFTablesStd()
+			tab, err := nf.AddTable(arbitraryFamily, "test", "test table", false)
+			if err != nil {
+				t.Fatalf("unexpected error for AddTable: %v", err)
+			}
+			bc, err := tab.AddChain("base_chain", nil, "test chain", false)
+			if err != nil {
+				t.Fatalf("unexpected error for AddChain: %v", err)
+			}
+			bc.SetBaseChainInfo(arbitraryInfoPolicyAccept)
+			rule := &Rule{}
+
+			// Adds testing operations.
+			if test.op1 != nil {
+				rule.addOperation(test.op1)
+			}
+			if test.op2 != nil {
+				rule.addOperation(test.op2)
+			}
+
+			// Adds drop operation, to be final verdict if evaluation is successful.
+			rule.addOperation(mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NF_DROP)})))
+
+			// Registers the rule to the base chain.
+			if err := bc.RegisterRule(rule, -1); err != nil {
+				t.Fatalf("unexpected error for RegisterRule: %v", err)
+			}
+
+			// Runs evaluation.
+			v, err := nf.EvaluateHook(arbitraryFamily, arbitraryHook, test.pkt)
+			if err != nil {
+				t.Fatalf("unexpected error for EvaluateHook: %v", err)
+			}
+
+			// Evaluation should be successful and result in Drop verdict.
+			if v.Code != VC(linux.NF_DROP) {
+				t.Fatalf("expected verdict Drop for successful evaluation, got %v", v)
+			}
+
+			// Checks if the packet are equal.
+			checkPacketEquality(t, test.outPkt, test.pkt)
+		})
+	}
+}
+
 // TestLoopCheckOnRegisterAndUnregister tests the loop checking and accompanying
 // logic on registering and unregistering rules.
 func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
@@ -3590,6 +3628,64 @@ func TestMaxNestedJumps(t *testing.T) {
 	}
 }
 
+// checkPacketEquality checks that the given packets are equal for all fields
+// and data relevant to our testing. This is not an exhaustive check.
+func checkPacketEquality(t *testing.T, expected, actual *stack.PacketBuffer) {
+	if expected.PktType != actual.PktType {
+		t.Fatalf("expected packet type %d for resulting packet, got %d", int(expected.PktType), int(actual.PktType))
+	}
+
+	// Compares checksums first for the expected and actual packet.
+	if expected.NetworkProtocolNumber != actual.NetworkProtocolNumber {
+		t.Fatalf("expected network protocol number %d for resulting packet, got %d", expected.NetworkProtocolNumber, actual.NetworkProtocolNumber)
+	}
+	if actualHasNetwork, expectedHasNetwork := actual.NetworkHeader().View() != nil, expected.NetworkHeader().View() != nil; actualHasNetwork != expectedHasNetwork {
+		t.Fatalf("expected network header is present to be %t for resulting packet, got %v", actualHasNetwork, expectedHasNetwork)
+	}
+	if actual.NetworkHeader().View() != nil && expected.Network().Checksum() != actual.Network().Checksum() {
+		t.Fatalf("expected network checksum %d for resulting packet, got %d", expected.Network().Checksum(), actual.Network().Checksum())
+	}
+	if actual.TransportProtocolNumber != expected.TransportProtocolNumber {
+		t.Fatalf("expected transport protocol number %d for resulting packet, got %d", expected.TransportProtocolNumber, actual.TransportProtocolNumber)
+	}
+	if actual.TransportProtocolNumber != 0 {
+		var transport header.Transport
+		var transportExpected header.Transport
+		switch tBytes, tOutBytes := actual.TransportHeader().Slice(), expected.TransportHeader().Slice(); actual.TransportProtocolNumber {
+		case header.TCPProtocolNumber:
+			transport = header.TCP(tBytes)
+			transportExpected = header.TCP(tOutBytes)
+		case header.UDPProtocolNumber:
+			transport = header.UDP(tBytes)
+			transportExpected = header.UDP(tOutBytes)
+		case header.ICMPv4ProtocolNumber:
+			transport = header.ICMPv4(tBytes)
+			transportExpected = header.ICMPv4(tOutBytes)
+		case header.ICMPv6ProtocolNumber:
+			transport = header.ICMPv6(tBytes)
+			transportExpected = header.ICMPv6(tOutBytes)
+		case header.IGMPProtocolNumber:
+			transport = header.IGMP(tBytes)
+			transportExpected = header.IGMP(tOutBytes)
+		}
+		if transport != nil && transport.Checksum() != transportExpected.Checksum() {
+			t.Fatalf("expected transport checksum %d for resulting packet, got %d", transport.Checksum(), transportExpected.Checksum())
+		}
+	}
+
+	// Compares raw packet data in bytes for resulting and expected packet.
+	actualSlices := actual.AsSlices()
+	expectedSlices := expected.AsSlices()
+	if len(actualSlices) != len(expectedSlices) {
+		t.Fatalf("expected %d slices of data for the resulting packet, got %d", len(expectedSlices), len(actualSlices))
+	}
+	for i := range actualSlices {
+		if !slices.Equal(actualSlices[i], expectedSlices[i]) {
+			t.Fatalf("packet data does not match expected packet data (for slice %d)", i)
+		}
+	}
+}
+
 // numToBE converts an n-byte int to Big Endian where n is in [1, 8].
 // Assumes the given number can be represented in n bytes.
 func numToBE(v int, n int) []byte {
@@ -3709,4 +3805,13 @@ func mustCreateMetaLoad(t *testing.T, key metaKey, dreg uint8) *metaLoad {
 		t.Fatalf("failed to create meta load: %v", err)
 	}
 	return mtload
+}
+
+// mustCreateMetaSet wraps the newMetaSet function for brevity.
+func mustCreateMetaSet(t *testing.T, key metaKey, sreg uint8) *metaSet {
+	mtset, err := newMetaSet(key, sreg)
+	if err != nil {
+		t.Fatalf("failed to create meta set: %v", err)
+	}
+	return mtset
 }

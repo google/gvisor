@@ -1052,6 +1052,42 @@ func checkMetaLoadOp(tname string, expected operation, actual operation) error {
 	return nil
 }
 
+// TestInterpretMetaSetOps tests interpretation of meta set operations.
+func TestInterpretMetaSetOps(t *testing.T) {
+	for _, test := range []interpretOperationTestAction{
+		// cmd: nft --debug=netlink add rule ip tab ch meta pkttype set 34
+		{
+			tname:    "meta set pkttype 4-byte reg test",
+			opStr:    "[ meta set pkttype with reg 14 ]",
+			expected: mustCreateMetaSet(t, linux.NFT_META_PKTTYPE, linux.NFT_REG32_06),
+		},
+		{
+			tname:    "meta set pkttype 16-byte reg test",
+			opStr:    "[ meta set pkttype with reg 3 ]",
+			expected: mustCreateMetaSet(t, linux.NFT_META_PKTTYPE, linux.NFT_REG_3),
+		},
+	} {
+		t.Run(test.tname, func(t *testing.T) { checkOp(t, test, checkMetaSetOp) })
+	}
+}
+
+// checkMetaSetOp checks that the given operation is a meta set operation and
+// that it matches the expected meta set operation.
+func checkMetaSetOp(tname string, expected operation, actual operation) error {
+	expectedMtSet := expected.(*metaSet)
+	mtSet, ok := actual.(*metaSet)
+	if !ok {
+		return fmt.Errorf("expected operation type to be MetaLoad for %s, got %T", tname, actual)
+	}
+	if mtSet.key != expectedMtSet.key {
+		return fmt.Errorf("expected meta key to be %v for %s, got %v", expectedMtSet.key, tname, mtSet.key)
+	}
+	if mtSet.sreg != expectedMtSet.sreg {
+		return fmt.Errorf("expected destination register to be %d for %s, got %d", expectedMtSet.sreg, tname, mtSet.sreg)
+	}
+	return nil
+}
+
 // TestInterpretRule tests the interpretation of basic and general rules as a
 // list of operations.
 func TestInterpretRule(t *testing.T) {

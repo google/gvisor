@@ -158,7 +158,13 @@ func InterpretOperation(line string, lnIdx int) (operation, error) {
 	case "byteorder":
 		return InterpretByteorder(line, lnIdx)
 	case "meta":
-		return InterpretMetaLoad(line, lnIdx)
+		switch tokens[2] {
+		case "load":
+			return InterpretMetaLoad(line, lnIdx)
+		case "set":
+			return InterpretMetaSet(line, lnIdx)
+		}
+		return nil, &SyntaxError{lnIdx, 2, fmt.Sprintf("unrecognized operation type: meta %s", tokens[2])}
 	default:
 		return nil, &SyntaxError{lnIdx, 1, fmt.Sprintf("unrecognized operation type: %s", tokens[1])}
 	}
@@ -881,6 +887,69 @@ func InterpretMetaLoad(line string, lnIdx int) (operation, error) {
 	}
 
 	return mtLoad, nil
+}
+
+// InterpretMetaSet creates a new MetaSet operation from the given string.
+func InterpretMetaSet(line string, lnIdx int) (operation, error) {
+	tokens := strings.Fields(line)
+
+	// Requires exactly 8 tokens:
+	// 		"[", "meta", "set", meta key, "with", "reg", register index, "]".
+	if len(tokens) != 8 {
+		return nil, &SyntaxError{lnIdx, 0, fmt.Sprintf("incorrect number of tokens for meta operation, should be exactly 8, got %d", len(tokens))}
+	}
+
+	if err := checkOperationBrackets(tokens, lnIdx); err != nil {
+		return nil, err
+	}
+
+	tkIdx := 1
+
+	// First token should be "meta".
+	if err := consumeToken("meta", tokens, lnIdx, tkIdx); err != nil {
+		return nil, err
+	}
+	tkIdx++
+
+	// Second token should be "set".
+	if err := consumeToken("set", tokens, lnIdx, tkIdx); err != nil {
+		return nil, err
+	}
+	tkIdx++
+
+	// Third token should be the meta key.
+	key, err := parseMetaKey(tokens[tkIdx], lnIdx, tkIdx)
+	if err != nil {
+		return nil, err
+	}
+	tkIdx++
+
+	// Fourth token should be "with".
+	if err := consumeToken("with", tokens, lnIdx, tkIdx); err != nil {
+		return nil, err
+	}
+	tkIdx++
+
+	// Fifth token should be "reg".
+	if err := consumeToken("reg", tokens, lnIdx, tkIdx); err != nil {
+		return nil, err
+	}
+	tkIdx++
+
+	// Sixth token should be the uint8 representing the register index.
+	reg, err := parseRegister(tokens[tkIdx], lnIdx, tkIdx)
+	if err != nil {
+		return nil, err
+	}
+	tkIdx++
+
+	// Create the operation with the specified arguments.
+	mtSet, err := newMetaSet(key, reg)
+	if err != nil {
+		return nil, &LogicError{lnIdx, tkIdx, err}
+	}
+
+	return mtSet, nil
 }
 
 //
