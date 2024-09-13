@@ -70,10 +70,3 @@ const (
 	// ACCEL_MAJOR is the major device number for compute accelerator devices.
 	ACCEL_MAJOR = 121
 )
-
-// Major device numbers for VFIO-based TPU.
-const (
-	// Major devices number between 243 and 254 are usually reserved for local use.
-	// The device number 245 is used by VFIO based TPU in GCP.
-	VFIO_MAJOR = 245
-)

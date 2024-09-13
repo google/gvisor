@@ -79,6 +79,7 @@ go_library(
     visibility = ["//runsc:__subpackages__"],
     deps = [
         "//pkg/abi/linux",
+        "//pkg/abi/tpu",
         "//pkg/cleanup",
         "//pkg/coretag",
         "//pkg/coverage",
@@ -131,6 +132,7 @@ go_test(
     size = "small",
     srcs = [
         "capability_test.go",
+        "chroot_test.go",
         "delete_test.go",
         "exec_test.go",
         "gofer_test.go",
@@ -158,5 +160,6 @@ go_test(
         "@com_github_google_subcommands//:go_default_library",
         "@com_github_opencontainers_runtime_spec//specs-go:go_default_library",
         "@com_github_syndtr_gocapability//capability:go_default_library",
+        "@org_golang_x_sys//unix:go_default_library",
     ],
 )

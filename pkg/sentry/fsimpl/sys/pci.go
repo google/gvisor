@@ -175,9 +175,11 @@ func (fs *filesystem) mirrorSysDevicesDir(ctx context.Context, creds *auth.Crede
 				if err != nil {
 					return nil, err
 				}
+				// Remove the bus prefix.
+				pciPath := pciBusRegex.ReplaceAllString(pciPaths[pciDeviceName], "")
 				// Both the device and PCI address entries are links to the original PCI
 				// device directory that's at the same place earlier in the dir tree.
-				linkContent = fmt.Sprintf("../../../%s", pciPaths[pciDeviceName])
+				linkContent = path.Join("../../../", pciPath)
 			case dent == "iommu_group":
 				pciDeviceName, err := pciDeviceName(dir)
 				if err != nil {
