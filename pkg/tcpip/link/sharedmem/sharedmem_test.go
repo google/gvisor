@@ -171,7 +171,7 @@ func (c *testContext) waitForPackets(n int, to <-chan time.Time, errorStr string
 		select {
 		case <-c.packetCh:
 		case <-to:
-			c.t.Fatalf(errorStr)
+			c.t.Fatal(errorStr)
 		}
 	}
 }

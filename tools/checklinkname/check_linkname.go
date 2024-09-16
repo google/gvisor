@@ -131,7 +131,7 @@ func (u *UnresolvedLinknames) resolveRemaining(pass *analysis.Pass, resolvePos f
 	}
 }
 
-// go:linkname can be rather confusing. https://pkg.go.dev/cmd/compile says:
+// "go:linkname" can be rather confusing. https://pkg.go.dev/cmd/compile says:
 //
 // //go:linkname localname [importpath.name]
 //

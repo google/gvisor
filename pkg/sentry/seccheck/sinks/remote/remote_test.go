@@ -224,7 +224,7 @@ func TestExample(t *testing.T) {
 		return nil
 	}
 	if err := testutil.Poll(check, time.Second); err != nil {
-		t.Errorf(err.Error())
+		t.Errorf("%s", err.Error())
 	}
 }
 
