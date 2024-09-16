@@ -680,7 +680,12 @@ func TestDispatchPacketFormat(t *testing.T) {
 
 			// Create and run dispatcher once.
 			sink := &fakeNetworkDispatcher{}
+			var addr tcpip.LinkAddress
+			if len(test.ethHdr) > 0 {
+				addr = tcpip.LinkAddress(test.ethHdr[:header.EthernetAddressSize])
+			}
 			d, err := test.newDispatcher(fds[0], &endpoint{
+				addr:       addr,
 				hdrSize:    len(test.ethHdr),
 				dispatcher: sink,
 			}, &Options{ProcessorsPerChannel: 1})
