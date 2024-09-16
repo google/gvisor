@@ -156,6 +156,7 @@ analyzers:
     external: # Enabled.
       suppress:
         - "fmt.Fprintln arg list ends with redundant newline"
+        - "non-constant format string in call to .*"
   shift:
     generated: # Disabled for generated code; these shifts are well-defined.
       exclude: [".*"]
