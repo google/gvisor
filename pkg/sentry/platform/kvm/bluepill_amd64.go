@@ -18,14 +18,8 @@
 package kvm
 
 import (
-	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/ring0"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
-)
-
-var (
-	// The action for bluepillSignal is changed by sigaction().
-	bluepillSignal = unix.SIGSEGV
 )
 
 func bluepillArchVCPU(context *arch.SignalContext64) *vCPU {

@@ -828,7 +828,7 @@ func seccompMmapRules(m *machine) {
 	seccompMmapRulesOnce.Do(func() {
 		// Install the handler.
 		if err := sighandling.ReplaceSignalHandler(unix.SIGSYS, addrOfSigsysHandler(), &savedSigsysHandler); err != nil {
-			panic(fmt.Sprintf("Unable to set handler for signal %d: %v", bluepillSignal, err))
+			panic(fmt.Sprintf("Unable to set handler for signal %d: %v", unix.SIGSYS, err))
 		}
 		rules := []seccomp.RuleSet{
 			// Trap mmap system calls and handle them in sigsysGoHandler
