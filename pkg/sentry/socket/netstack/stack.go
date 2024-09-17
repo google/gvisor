@@ -749,87 +749,86 @@ func (s *Stack) RouteTable() []inet.Route {
 	return routeTable
 }
 
-// NewRoute implements inet.Stack.NewRoute.
-func (s *Stack) NewRoute(ctx context.Context, msg *nlmsg.Message) *syserr.Error {
-	var routeMsg linux.RouteMessage
-	attrs, ok := msg.GetData(&routeMsg)
+// localRoute constructs a local route from the netlink message.
+func (s *Stack) localRoute(msg *nlmsg.Message) (tcpip.Route, *syserr.Error) {
+	var rtMsg linux.RouteMessage
+	attrs, ok := msg.GetData(&rtMsg)
 	if !ok {
-		return syserr.ErrInvalidArgument
+		return tcpip.Route{}, syserr.ErrInvalidArgument
 	}
 
 	route := inet.Route{
-		Family:   routeMsg.Family,
-		DstLen:   routeMsg.DstLen,
-		SrcLen:   routeMsg.SrcLen,
-		TOS:      routeMsg.TOS,
-		Table:    routeMsg.Table,
-		Protocol: routeMsg.Protocol,
-		Scope:    routeMsg.Scope,
-		Type:     routeMsg.Type,
-		Flags:    routeMsg.Flags,
+		Family:   rtMsg.Family,
+		DstLen:   rtMsg.DstLen,
+		SrcLen:   rtMsg.SrcLen,
+		TOS:      rtMsg.TOS,
+		Table:    rtMsg.Table,
+		Protocol: rtMsg.Protocol,
+		Scope:    rtMsg.Scope,
+		Type:     rtMsg.Type,
+		Flags:    rtMsg.Flags,
 	}
 
 	for !attrs.Empty() {
 		ahdr, value, rest, ok := attrs.ParseFirst()
 		if !ok {
-			return syserr.ErrInvalidArgument
+			return tcpip.Route{}, syserr.ErrInvalidArgument
 		}
 		attrs = rest
 
 		switch ahdr.Type {
 		case linux.RTA_DST:
 			if len(value) < 1 {
-				return syserr.ErrInvalidArgument
+				return tcpip.Route{}, syserr.ErrInvalidArgument
 			}
 			route.DstAddr = value
 		case linux.RTA_SRC:
 			if len(value) < 1 {
-				return syserr.ErrInvalidArgument
+				return tcpip.Route{}, syserr.ErrInvalidArgument
 			}
 			route.SrcAddr = value
 		case linux.RTA_OIF:
 			oif := nlmsg.BytesView(value)
 			outputInterface, ok := oif.Int32()
 			if !ok {
-				return syserr.ErrInvalidArgument
+				return tcpip.Route{}, syserr.ErrInvalidArgument
 			}
 			if _, exist := s.Interfaces()[outputInterface]; !exist {
-				return syserr.ErrNoDevice
+				return tcpip.Route{}, syserr.ErrNoDevice
 			}
 			route.OutputInterface = outputInterface
 		case linux.RTA_GATEWAY:
 			if len(value) < 1 {
-				return syserr.ErrInvalidArgument
+				return tcpip.Route{}, syserr.ErrInvalidArgument
 			}
 			route.GatewayAddr = value
 		case linux.RTA_PRIORITY:
 		default:
-			ctx.Warningf("Unknown attribute: %v", ahdr.Type)
-			return syserr.ErrNotSupported
+			log.Warningf("Unknown attribute: %v", ahdr.Type)
+			return tcpip.Route{}, syserr.ErrNotSupported
 		}
 	}
-
 	var dest tcpip.Subnet
 	// When no destination address is provided, the new route might be the default route.
 	if route.DstAddr == nil {
 		if route.GatewayAddr == nil {
-			return syserr.ErrInvalidArgument
+			return tcpip.Route{}, syserr.ErrInvalidArgument
 		}
 		switch len(route.GatewayAddr) {
 		case header.IPv4AddressSize:
 			subnet, err := tcpip.NewSubnet(tcpip.AddrFromSlice(tcpip.IPv4Zero), tcpip.MaskFromBytes(tcpip.IPv4Zero))
 			if err != nil {
-				return syserr.ErrInvalidArgument
+				return tcpip.Route{}, syserr.ErrInvalidArgument
 			}
 			dest = subnet
 		case header.IPv6AddressSize:
 			subnet, err := tcpip.NewSubnet(tcpip.AddrFromSlice(tcpip.IPv6Zero), tcpip.MaskFromBytes(tcpip.IPv6Zero))
 			if err != nil {
-				return syserr.ErrInvalidArgument
+				return tcpip.Route{}, syserr.ErrInvalidArgument
 			}
 			dest = subnet
 		default:
-			return syserr.ErrInvalidArgument
+			return tcpip.Route{}, syserr.ErrInvalidArgument
 		}
 	} else {
 		dest = tcpip.AddressWithPrefix{
@@ -842,8 +841,41 @@ func (s *Stack) NewRoute(ctx context.Context, msg *nlmsg.Message) *syserr.Error 
 		Gateway:     tcpip.AddrFromSlice(route.GatewayAddr),
 		NIC:         tcpip.NICID(route.OutputInterface),
 	}
+
 	if len(route.SrcAddr) != 0 {
 		localRoute.SourceHint = tcpip.AddrFromSlice(route.SrcAddr)
+	}
+
+	return localRoute, nil
+}
+
+// RemoveRoute implements inte.Stack.RemoveRoute.
+func (s *Stack) RemoveRoute(ctx context.Context, msg *nlmsg.Message) *syserr.Error {
+	localRoute, err := s.localRoute(msg)
+	if err != nil {
+		return err
+	}
+	if removed := s.Stack.RemoveRoutes(func(rt tcpip.Route) bool {
+		// Both gateway and NIC are compared with existing routes
+		// only when they are present in the netlink message.
+		if localRoute.Gateway.Len() > 0 && !localRoute.Gateway.Equal(rt.Gateway) {
+			return false
+		}
+		if localRoute.NIC > 0 && localRoute.NIC != rt.NIC {
+			return false
+		}
+		return rt.Destination.Equal(localRoute.Destination)
+	}); removed == 0 {
+		return syserr.ErrNoProcess
+	}
+	return nil
+}
+
+// NewRoute implements inet.Stack.NewRoute.
+func (s *Stack) NewRoute(ctx context.Context, msg *nlmsg.Message) *syserr.Error {
+	localRoute, err := s.localRoute(msg)
+	if err != nil {
+		return err
 	}
 	found := false
 	for _, rt := range s.Stack.GetRouteTable() {

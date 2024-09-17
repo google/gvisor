@@ -388,6 +388,11 @@ func (*Stack) NewRoute(context.Context, *nlmsg.Message) *syserr.Error {
 	return syserr.ErrNotSupported
 }
 
+// RemoveRoute implements inet.Stack.RemoveRoute.
+func (*Stack) RemoveRoute(context.Context, *nlmsg.Message) *syserr.Error {
+	return syserr.ErrNotSupported
+}
+
 // Pause implements inet.Stack.Pause.
 func (*Stack) Pause() {}
 

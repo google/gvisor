@@ -39,11 +39,6 @@ import (
 // package. Valid values are 0 or 1.
 var LogPackets atomicbitops.Uint32 = atomicbitops.FromUint32(1)
 
-// LogPacketsToPCAP is a flag used to enable or disable logging packets to a
-// pcap writer. Valid values are 0 or 1. A writer must have been specified when the
-// sniffer was created for this flag to have effect.
-var LogPacketsToPCAP atomicbitops.Uint32 = atomicbitops.FromUint32(1)
-
 // Endpoint is used to sniff and log network traffic.
 //
 // +stateify savable
@@ -155,11 +150,10 @@ func (e *Endpoint) DeliverNetworkPacket(protocol tcpip.NetworkProtocolNumber, pk
 // DumpPacket logs a packet, depending on configuration, to stderr and/or a
 // pcap file. ts is an optional timestamp for the packet.
 func (e *Endpoint) DumpPacket(dir Direction, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer, ts *time.Time) {
-	writer := e.writer
 	if LogPackets.Load() == 1 {
 		LogPacket(e.logPrefix, dir, protocol, pkt)
 	}
-	if writer != nil && LogPacketsToPCAP.Load() == 1 {
+	if e.writer != nil {
 		packet := pcapPacket{
 			packet:        pkt,
 			maxCaptureLen: int(e.maxPCAPLen),
@@ -173,7 +167,7 @@ func (e *Endpoint) DumpPacket(dir Direction, protocol tcpip.NetworkProtocolNumbe
 		if err != nil {
 			panic(err)
 		}
-		if _, err := writer.Write(b); err != nil {
+		if _, err := e.writer.Write(b); err != nil {
 			panic(err)
 		}
 	}

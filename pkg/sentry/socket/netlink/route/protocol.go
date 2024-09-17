@@ -411,6 +411,18 @@ func (p *Protocol) newRoute(ctx context.Context, s *netlink.Socket, msg *nlmsg.M
 	return stack.NewRoute(ctx, msg)
 }
 
+// deleteRoute handles RTM_DELROUTE requests.
+func (p *Protocol) deleteRoute(ctx context.Context, s *netlink.Socket, msg *nlmsg.Message, ms *nlmsg.MessageSet) *syserr.Error {
+	stack := s.Stack()
+	if stack == nil {
+		return syserr.ErrNoNet
+	}
+	if msg.Header().Flags&linux.NLM_F_REQUEST != linux.NLM_F_REQUEST {
+		return syserr.ErrProtocolNotSupported
+	}
+	return stack.RemoveRoute(ctx, msg)
+}
+
 // dumpRoutes handles RTM_GETROUTE requests.
 func (p *Protocol) dumpRoutes(ctx context.Context, s *netlink.Socket, msg *nlmsg.Message, ms *nlmsg.MessageSet) *syserr.Error {
 	// RTM_GETROUTE dump requests need not contain anything more than the
@@ -635,6 +647,8 @@ func (p *Protocol) ProcessMessage(ctx context.Context, s *netlink.Socket, msg *n
 			return p.newRoute(ctx, s, msg, ms)
 		case linux.RTM_GETROUTE:
 			return p.dumpRoutes(ctx, s, msg, ms)
+		case linux.RTM_DELROUTE:
+			return p.deleteRoute(ctx, s, msg, ms)
 		case linux.RTM_NEWADDR:
 			return p.newAddr(ctx, s, msg, ms)
 		case linux.RTM_DELADDR:

@@ -779,23 +779,27 @@ func (s *Stack) addRouteLocked(route *tcpip.Route) {
 	s.routeTable.PushBack(route)
 }
 
-// RemoveRoutes removes matching routes from the route table.
-func (s *Stack) RemoveRoutes(match func(tcpip.Route) bool) {
+// RemoveRoutes removes matching routes from the route table, it
+// returns the number of routes that are removed.
+func (s *Stack) RemoveRoutes(match func(tcpip.Route) bool) int {
 	s.routeMu.Lock()
 	defer s.routeMu.Unlock()
 
-	s.removeRoutesLocked(match)
+	return s.removeRoutesLocked(match)
 }
 
 // +checklocks:s.routeMu
-func (s *Stack) removeRoutesLocked(match func(tcpip.Route) bool) {
+func (s *Stack) removeRoutesLocked(match func(tcpip.Route) bool) int {
+	count := 0
 	for route := s.routeTable.Front(); route != nil; {
 		next := route.Next()
 		if match(*route) {
 			s.routeTable.Remove(route)
+			count++
 		}
 		route = next
 	}
+	return count
 }
 
 // ReplaceRoute replaces the route in the routing table which matchse
