@@ -42,6 +42,8 @@ namespace testing {
 using ::testing::IsNull;
 using ::testing::NotNull;
 
+constexpr int kTimeoutSecs = 10;
+
 TEST_P(IPv6UDPUnboundSocketTest, IPv6PacketInfo) {
   auto sender_socket = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
   auto receiver_socket = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
@@ -91,7 +93,7 @@ TEST_P(IPv6UDPUnboundSocketTest, IPv6PacketInfo) {
       .msg_control = recv_cmsg_buf,
       .msg_controllen = sizeof(recv_cmsg_buf),
   };
-  ASSERT_THAT(RecvMsgTimeout(receiver_socket->get(), &recv_msg, 1 /*timeout*/),
+  ASSERT_THAT(RecvMsgTimeout(receiver_socket->get(), &recv_msg, kTimeoutSecs),
               IsPosixErrorOkAndHolds(sizeof(send_buf)));
   EXPECT_EQ(memcmp(send_buf, recv_buf, sizeof(send_buf)), 0);
 
@@ -181,7 +183,7 @@ TEST_P(IPv6UDPUnboundSocketTest, SetAndReceiveIPReceiveOrigDstAddr) {
   received_msg.msg_controllen = CMSG_LEN(cmsg_data_len);
   received_msg.msg_control = received_cmsg_buf;
 
-  ASSERT_THAT(RecvMsgTimeout(receiver->get(), &received_msg, 1 /*timeout*/),
+  ASSERT_THAT(RecvMsgTimeout(receiver->get(), &received_msg, kTimeoutSecs),
               IsPosixErrorOkAndHolds(kDataLength));
 
   cmsghdr* cmsg = CMSG_FIRSTHDR(&received_msg);
