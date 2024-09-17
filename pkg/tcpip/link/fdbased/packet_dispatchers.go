@@ -22,7 +22,6 @@ import (
 	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/rawfile"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/stopfd"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/tcpip/stack/gro"
@@ -197,11 +196,11 @@ func (d *readVDispatcher) dispatch() (bool, tcpip.Error) {
 	})
 	defer pkt.DecRef()
 
-	if d.e.hdrSize > 0 {
-		if !d.e.parseHeader(pkt) {
-			return false, nil
-		}
-		pkt.NetworkProtocolNumber = header.Ethernet(pkt.LinkHeader().Slice()).Type()
+	d.e.mu.RLock()
+	addr := d.e.addr
+	d.e.mu.RUnlock()
+	if !d.e.parseInboundHeader(pkt, addr) {
+		return false, nil
 	}
 	d.mgr.queuePacket(pkt, d.e.hdrSize > 0)
 	d.mgr.wakeReady()
@@ -301,6 +300,7 @@ func (d *recvMMsgDispatcher) dispatch() (bool, tcpip.Error) {
 	// Process each of received packets.
 
 	d.e.mu.RLock()
+	addr := d.e.addr
 	dsp := d.e.dispatcher
 	d.e.mu.RUnlock()
 
@@ -317,15 +317,10 @@ func (d *recvMMsgDispatcher) dispatch() (bool, tcpip.Error) {
 		// Mark that this iovec has been processed.
 		d.msgHdrs[k].Msg.Iovlen = 0
 
-		if d.e.hdrSize > 0 {
-			hdr, ok := pkt.LinkHeader().Consume(d.e.hdrSize)
-			if !ok {
-				return false, nil
-			}
-			pkt.NetworkProtocolNumber = header.Ethernet(hdr).Type()
+		if d.e.parseInboundHeader(pkt, addr) {
+			pkt.RXChecksumValidated = d.e.caps&stack.CapabilityRXChecksumOffload != 0
+			d.mgr.queuePacket(pkt, d.e.hdrSize > 0)
 		}
-		pkt.RXChecksumValidated = d.e.caps&stack.CapabilityRXChecksumOffload != 0
-		d.mgr.queuePacket(pkt, d.e.hdrSize > 0)
 	}
 	d.mgr.wakeReady()
 

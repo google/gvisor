@@ -19,13 +19,11 @@ package fdbased
 
 import (
 	"encoding/binary"
-	"fmt"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/rawfile"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/stopfd"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
@@ -186,15 +184,13 @@ func (d *packetMMapDispatcher) dispatch() (bool, tcpip.Error) {
 	if err != nil || stopped {
 		return false, err
 	}
+	d.e.mu.RLock()
+	addr := d.e.addr
+	d.e.mu.RUnlock()
 	for _, pkt := range pkts.AsSlice() {
-		if d.e.hdrSize > 0 {
-			hdr, ok := pkt.LinkHeader().Consume(d.e.hdrSize)
-			if !ok {
-				panic(fmt.Sprintf("LinkHeader().Consume(%d) must succeed", d.e.hdrSize))
-			}
-			pkt.NetworkProtocolNumber = header.Ethernet(hdr).Type()
+		if d.e.parseInboundHeader(pkt, addr) {
+			d.mgr.queuePacket(pkt, d.e.hdrSize > 0)
 		}
-		d.mgr.queuePacket(pkt, d.e.hdrSize > 0)
 	}
 	if pkts.Len() > 0 {
 		d.mgr.wakeReady()

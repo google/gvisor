@@ -2046,8 +2046,6 @@ func (s *Stack) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(23, &s.tsOffsetSecret)
 }
 
-func (s *Stack) afterLoad(context.Context) {}
-
 // +checklocksignore
 func (s *Stack) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &s.transportProtocols)
@@ -2074,6 +2072,7 @@ func (s *Stack) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(21, &s.receiveBufferSize)
 	stateSourceObject.Load(22, &s.tcpInvalidRateLimit)
 	stateSourceObject.Load(23, &s.tsOffsetSecret)
+	stateSourceObject.AfterLoad(func() { s.afterLoad(ctx) })
 }
 
 func (t *TransportEndpointInfo) StateTypeName() string {
