@@ -159,6 +159,11 @@ func (s *TestStack) RouteTable() []Route {
 	return s.RouteList
 }
 
+// RemoveRoute implements Stack.
+func (s *TestStack) RemoveRoute(ctx context.Context, msg *nlmsg.Message) *syserr.Error {
+	return nil
+}
+
 // NewRoute implements Stack.
 func (s *TestStack) NewRoute(ctx context.Context, msg *nlmsg.Message) *syserr.Error {
 	return syserr.ErrNotPermitted

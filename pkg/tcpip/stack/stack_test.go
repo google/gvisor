@@ -4449,15 +4449,16 @@ func TestRemoveRoutes(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Initialize the route table with three routes.
-	s.SetRouteTable([]tcpip.Route{
+	routeList := []tcpip.Route{
 		{Destination: subnet1, Gateway: tcpip.AddrFromSlice([]byte("\x00\x00\x00\x00")), NIC: 1},
 		{Destination: subnet2, Gateway: tcpip.AddrFromSlice([]byte("\x00\x00\x00\x00")), NIC: 1},
 		{Destination: subnet3, Gateway: tcpip.AddrFromSlice([]byte("\x00\x00\x00\x00")), NIC: 1},
-	})
+	}
+	// Initialize the route table with three routes.
+	s.SetRouteTable(routeList)
 
 	// Remove routes with the specific address.
-	s.RemoveRoutes(func(r tcpip.Route) bool {
+	removed := s.RemoveRoutes(func(r tcpip.Route) bool {
 		return r.Destination.ID() == addressToRemove
 	})
 
@@ -4470,6 +4471,10 @@ func TestRemoveRoutes(t *testing.T) {
 		if got, want := route, expected[i]; got != want {
 			t.Fatalf("Unexpected route got = %#v, want = %#v", got, want)
 		}
+	}
+
+	if got, want := removed, len(routeList)-len(expected); want != removed {
+		t.Fatalf("stack.RemoveRoutes(_) removes %v routes, want = %v", got, want)
 	}
 }
 

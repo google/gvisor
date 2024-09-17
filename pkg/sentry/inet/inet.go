@@ -85,6 +85,9 @@ type Stack interface {
 	// RouteTable returns the network stack's route table.
 	RouteTable() []Route
 
+	// RemoveRoute deletes the specified route.
+	RemoveRoute(ctx context.Context, msg *nlmsg.Message) *syserr.Error
+
 	// NewRoute adds the given route to the network stack's route table.
 	NewRoute(ctx context.Context, msg *nlmsg.Message) *syserr.Error
 

@@ -1195,6 +1195,111 @@ TEST_P(NetlinkRouteIpInvariantTest, NewRoute) {
   EXPECT_TRUE(routeDstFound);
 }
 
+TEST_P(NetlinkRouteIpInvariantTest, DeleteRoute) {
+  // CAP_NET_ADMIN is required to modify the routing table.
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+  SKIP_IF(!IsRunningOnGvisor());
+  SKIP_IF(IsRunningWithHostinet());
+  // Routes are not savable.
+  DisableSave ds;
+
+  const std::string dst_v4_address = "192.0.3.0";
+  const std::string dst_v6_address = "2011:db8::";
+
+  // Based on the test parameter, build an IPv4 or IPv6 destination subnet.
+  int family = GetParam();
+  void* dst = nullptr;
+  int dst_len;
+  int prefixlen;
+  struct in_addr dst_v4;
+  struct in6_addr dst_v6;
+  switch (family) {
+    case AF_INET:
+      ASSERT_EQ(inet_pton(family, dst_v4_address.c_str(), &dst_v4), 1);
+      prefixlen = 24;
+      dst = &dst_v4;
+      dst_len = sizeof(dst_v4);
+      break;
+    case AF_INET6:
+      ASSERT_EQ(inet_pton(family, dst_v6_address.c_str(), &dst_v6), 1);
+      prefixlen = 64;
+      dst = &dst_v6;
+      dst_len = sizeof(dst_v6);
+      break;
+    default:
+      FAIL() << "address family must be AF_INET or AF_INET6";
+  }
+
+  Link loopback_link = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink());
+
+  ASSERT_NO_ERRNO(
+      AddUnicastRoute(loopback_link.index, family, prefixlen, dst, dst_len));
+  ASSERT_NO_ERRNO(
+      DelUnicastRoute(loopback_link.index, family, prefixlen, dst, dst_len));
+
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
+
+  struct request {
+    struct nlmsghdr hdr;
+    struct rtmsg rtm;
+  };
+
+  struct request req = {};
+  req.hdr.nlmsg_len = sizeof(req);
+  req.hdr.nlmsg_type = RTM_GETROUTE;
+  req.hdr.nlmsg_flags = NLM_F_REQUEST | NLM_F_DUMP;
+  req.hdr.nlmsg_seq = kSeq;
+  req.rtm.rtm_family = AF_UNSPEC;
+
+  bool routeDstFound = false;
+  ASSERT_NO_ERRNO(NetlinkRequestResponse(
+      fd, &req, sizeof(req),
+      [&](const struct nlmsghdr* hdr) {
+        // Validate the reponse to RTM_GETROUTE.
+        EXPECT_THAT(hdr->nlmsg_type, AnyOf(Eq(RTM_NEWROUTE), Eq(NLMSG_DONE)));
+        // The test should not proceed if it's not a RTM_NEWROUTE message.
+        if (hdr->nlmsg_type != RTM_NEWROUTE) {
+          return;
+        }
+        const struct rtmsg* msg =
+            reinterpret_cast<const struct rtmsg*>(NLMSG_DATA(hdr));
+        int len = RTM_PAYLOAD(hdr);
+        for (struct rtattr* attr = RTM_RTA(msg); RTA_OK(attr, len);
+             attr = RTA_NEXT(attr, len)) {
+          if (attr->rta_type == RTA_DST) {
+            char v4_address[INET_ADDRSTRLEN] = {};
+            char v6_address[INET6_ADDRSTRLEN] = {};
+            switch (family) {
+              case AF_INET:
+                inet_ntop(AF_INET, RTA_DATA(attr), v4_address,
+                          sizeof(v4_address));
+                if (strcmp(v4_address, dst_v4_address.c_str()) == 0) {
+                  routeDstFound = true;
+                  return;
+                }
+                break;
+              case AF_INET6:
+                inet_ntop(AF_INET6, RTA_DATA(attr), v6_address,
+                          sizeof(v6_address));
+                if (strcmp(v6_address, dst_v6_address.c_str()) == 0) {
+                  routeDstFound = true;
+                  return;
+                }
+                break;
+            }
+          }
+        }
+      },
+      false));
+  // No route that matches the given destination address can be found.
+  EXPECT_FALSE(routeDstFound);
+  // Removing a route that doens't exist returns an error.
+  EXPECT_THAT(
+      DelUnicastRoute(loopback_link.index, family, prefixlen, dst, dst_len),
+      PosixErrorIs(ESRCH, _));
+}
+
 TEST_P(NetlinkRouteIpInvariantTest, AddAndRemoveRoute) {
   // Gvisor does not support `RTM_NEWROUTE` or `RTM_DELROUTE`.
   SKIP_IF(IsRunningOnGvisor() && GvisorPlatform() != Platform::kStarnix);
