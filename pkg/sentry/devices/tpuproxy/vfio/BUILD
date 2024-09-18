@@ -35,6 +35,7 @@ go_library(
         "//pkg/sentry/arch",
         "//pkg/sentry/devices/tpuproxy/util",
         "//pkg/sentry/fsimpl/eventfd",
+        "//pkg/sentry/fsutil",
         "//pkg/sentry/kernel",
         "//pkg/sentry/memmap",
         "//pkg/sentry/mm",

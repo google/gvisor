@@ -28,7 +28,9 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/devices/tpuproxy/util"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/eventfd"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -40,8 +42,11 @@ type pciDeviceFD struct {
 	vfs.DentryMetadataFileDescriptionImpl
 	vfs.NoLockFD
 
-	hostFD     int32
-	queue      waiter.Queue
+	hostFD int32
+	queue  waiter.Queue
+
+	mapsMu     sync.Mutex
+	mappings   memmap.MappingSet
 	memmapFile pciDeviceFdMemmapFile
 }
 
