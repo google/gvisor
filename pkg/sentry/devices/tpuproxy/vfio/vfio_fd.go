@@ -246,13 +246,9 @@ func (fd *vfioFD) iommuUnmapDma(ctx context.Context, t *kernel.Task, arg hostarc
 func (fd *vfioFD) unpinRange(r DevAddrRange) {
 	fd.mu.Lock()
 	defer fd.mu.Unlock()
-	seg := fd.devAddrSet.LowerBoundSegment(r.Start)
-	for seg.Ok() && seg.Start() < r.End {
-		seg = fd.devAddrSet.Isolate(seg, r)
+	fd.devAddrSet.RemoveRangeWith(r, func(seg DevAddrIterator) {
 		mm.Unpin([]mm.PinnedRange{seg.Value()})
-		gap := fd.devAddrSet.Remove(seg)
-		seg = gap.NextSegment()
-	}
+	})
 }
 
 // VFIO extension.
