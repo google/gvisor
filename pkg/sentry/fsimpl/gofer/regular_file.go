@@ -295,12 +295,9 @@ func (fd *regularFileFD) writeCache(ctx context.Context, d *dentry, offset int64
 	var freed []memmap.FileRange
 
 	d.dataMu.Lock()
-	cseg := d.cache.LowerBoundSegment(mr.Start)
-	for cseg.Ok() && cseg.Start() < mr.End {
-		cseg = d.cache.Isolate(cseg, mr)
+	d.cache.RemoveRangeWith(mr, func(cseg fsutil.FileRangeIterator) {
 		freed = append(freed, memmap.FileRange{cseg.Value(), cseg.Value() + cseg.Range().Length()})
-		cseg = d.cache.Remove(cseg).NextSegment()
-	}
+	})
 	d.dataMu.Unlock()
 
 	// Invalidate mappings of removed pages.

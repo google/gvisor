@@ -530,21 +530,52 @@ func (s *MappingSet) RemoveAll() {
 // if the caller needs to do additional work before removing each segment,
 // iterate segments and call Remove in a loop instead.
 func (s *MappingSet) RemoveRange(r MappableRange) MappingGapIterator {
-	seg, gap := s.Find(r.Start)
-	if seg.Ok() {
-		seg = s.Isolate(seg, r)
-		gap = s.Remove(seg)
-	}
-	for seg = gap.NextSegment(); seg.Ok() && seg.Start() < r.End; seg = gap.NextSegment() {
-		seg = s.SplitAfter(seg, r.End)
-		gap = s.Remove(seg)
-	}
-	return gap
+	return s.RemoveRangeWith(r, nil)
 }
 
 // RemoveFullRange is equivalent to RemoveRange, except that if any key in the
 // given range does not correspond to a segment, RemoveFullRange panics.
 func (s *MappingSet) RemoveFullRange(r MappableRange) MappingGapIterator {
+	return s.RemoveFullRangeWith(r, nil)
+}
+
+// RemoveRangeWith removes all segments in the given range. An iterator to the
+// newly formed gap is returned, and all existing iterators are invalidated.
+//
+// The function f is applied to each segment immediately before it is removed,
+// in order of ascending keys. Segments that lie partially outside r are split
+// before f is called, such that f only observes segments entirely within r.
+// Non-empty gaps between segments are skipped.
+//
+// RemoveRangeWith searches the set to find segments to remove. If the caller
+// already has an iterator to either end of the range of segments to remove, or
+// if the caller needs to do additional work before removing each segment,
+// iterate segments and call Remove in a loop instead.
+//
+// N.B. f must not invalidate iterators into s.
+func (s *MappingSet) RemoveRangeWith(r MappableRange, f func(seg MappingIterator)) MappingGapIterator {
+	seg, gap := s.Find(r.Start)
+	if seg.Ok() {
+		seg = s.Isolate(seg, r)
+		if f != nil {
+			f(seg)
+		}
+		gap = s.Remove(seg)
+	}
+	for seg = gap.NextSegment(); seg.Ok() && seg.Start() < r.End; seg = gap.NextSegment() {
+		seg = s.SplitAfter(seg, r.End)
+		if f != nil {
+			f(seg)
+		}
+		gap = s.Remove(seg)
+	}
+	return gap
+}
+
+// RemoveFullRangeWith is equivalent to RemoveRangeWith, except that if any key
+// in the given range does not correspond to a segment, RemoveFullRangeWith
+// panics.
+func (s *MappingSet) RemoveFullRangeWith(r MappableRange, f func(seg MappingIterator)) MappingGapIterator {
 	seg := s.FindSegment(r.Start)
 	if !seg.Ok() {
 		panic(fmt.Sprintf("missing segment at %v", r.Start))
@@ -552,6 +583,9 @@ func (s *MappingSet) RemoveFullRange(r MappableRange) MappingGapIterator {
 	seg = s.SplitBefore(seg, r.Start)
 	for {
 		seg = s.SplitAfter(seg, r.End)
+		if f != nil {
+			f(seg)
+		}
 		end := seg.End()
 		gap := s.Remove(seg)
 		if r.End <= end {
@@ -817,11 +851,11 @@ func (s *MappingSet) Isolate(seg MappingIterator, r MappableRange) MappingIterat
 // LowerBoundSegmentSplitBefore provides an iterator to the first segment to be
 // mutated, suitable as the initial value for a loop variable.
 func (s *MappingSet) LowerBoundSegmentSplitBefore(min uint64) MappingIterator {
-	seg := s.LowerBoundSegment(min)
+	seg, gap := s.Find(min)
 	if seg.Ok() {
-		seg = s.SplitBefore(seg, min)
+		return s.SplitBefore(seg, min)
 	}
-	return seg
+	return gap.NextSegment()
 }
 
 // UpperBoundSegmentSplitAfter combines UpperBoundSegment and SplitAfter.
@@ -831,11 +865,11 @@ func (s *MappingSet) LowerBoundSegmentSplitBefore(min uint64) MappingIterator {
 // UpperBoundSegmentSplitAfter provides an iterator to the first segment to be
 // mutated, suitable as the initial value for a loop variable.
 func (s *MappingSet) UpperBoundSegmentSplitAfter(max uint64) MappingIterator {
-	seg := s.UpperBoundSegment(max)
+	seg, gap := s.Find(max)
 	if seg.Ok() {
-		seg = s.SplitAfter(seg, max)
+		return s.SplitAfter(seg, max)
 	}
-	return seg
+	return gap.PrevSegment()
 }
 
 // VisitRange applies the function f to all segments intersecting the range r,

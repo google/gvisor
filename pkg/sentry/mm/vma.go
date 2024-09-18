@@ -401,12 +401,7 @@ func (mm *MemoryManager) removeVMAsLocked(ctx context.Context, ar hostarch.AddrR
 			panic(fmt.Sprintf("invalid ar: %v", ar))
 		}
 	}
-	vseg, vgap := mm.vmas.Find(ar.Start)
-	if vgap.Ok() {
-		vseg = vgap.NextSegment()
-	}
-	for vseg.Ok() && vseg.Start() < ar.End {
-		vseg = mm.vmas.Isolate(vseg, ar)
+	vgap := mm.vmas.RemoveRangeWith(ar, func(vseg vmaIterator) {
 		vmaAR := vseg.Range()
 		vma := vseg.ValuePtr()
 		if vma.mappable != nil {
@@ -422,9 +417,7 @@ func (mm *MemoryManager) removeVMAsLocked(ctx context.Context, ar hostarch.AddrR
 		if vma.mlockMode != memmap.MLockNone {
 			mm.lockedAS -= uint64(vmaAR.Length())
 		}
-		vgap = mm.vmas.Remove(vseg)
-		vseg = vgap.NextSegment()
-	}
+	})
 	return vgap, droppedIDs
 }
 

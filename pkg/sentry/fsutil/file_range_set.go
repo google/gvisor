@@ -183,12 +183,9 @@ func (s *FileRangeSet) Fill(ctx context.Context, required, optional memmap.Mappa
 //
 // Preconditions: mr must be page-aligned.
 func (s *FileRangeSet) Drop(mr memmap.MappableRange, mf *pgalloc.MemoryFile) {
-	seg := s.LowerBoundSegment(mr.Start)
-	for seg.Ok() && seg.Start() < mr.End {
-		seg = s.Isolate(seg, mr)
+	s.RemoveRangeWith(mr, func(seg FileRangeIterator) {
 		mf.DecRef(seg.FileRange())
-		seg = s.Remove(seg).NextSegment()
-	}
+	})
 }
 
 // DropAll removes all segments in mr, freeing the corresponding

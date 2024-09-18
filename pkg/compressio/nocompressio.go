@@ -44,6 +44,7 @@ import (
 //
 //	data
 //	data size
+//  previous hash
 
 // SimpleReader is a reader for uncompressed image containing hashes.
 type SimpleReader struct {
@@ -59,8 +60,11 @@ type SimpleReader struct {
 	// current chunk position
 	done uint32
 
+	// prevHash is the previous hash value.
+	prevHash [sha256.Size]byte
+
 	// scratch is a scratch buffer used for reading chunk size and hash values.
-	scratch [2 * sha256.Size]byte
+	scratch [sha256.Size]byte
 }
 
 var _ io.Reader = (*SimpleReader)(nil)
@@ -133,19 +137,22 @@ func (r *SimpleReader) Read(p []byte) (int, error) {
 		binary.BigEndian.PutUint32(r.scratch[:4], r.chunkSize)
 		r.h.Write(r.scratch[:4])
 
-		// Compute the hash into the first 32 bytes of the scratch buffer. Pass a
-		// 32-byte capacity slice (with 0 length) to avoid allocation.
-		r.h.Sum(r.scratch[0:0:sha256.Size])
+		// Add previous hash to hash.
+		r.h.Write(r.prevHash[:])
 
-		// Read the hash value from the stream into the second 32 bytes of scratch.
-		if _, err := io.ReadFull(r.in, r.scratch[sha256.Size:2*sha256.Size]); err != nil {
+		// Compute the hash into prevHash, now that we don't need the old value.
+		// Pass a 32-byte capacity slice (with 0 length) to avoid allocation.
+		r.h.Sum(r.prevHash[0:0:sha256.Size])
+
+		// Read the hash value from the stream.
+		if _, err := io.ReadFull(r.in, r.scratch[:]); err != nil {
 			if err == io.EOF {
 				return n, io.ErrUnexpectedEOF
 			}
 			return n, err
 		}
 
-		if !hmac.Equal(r.scratch[:sha256.Size], r.scratch[sha256.Size:2*sha256.Size]) {
+		if !hmac.Equal(r.scratch[:sha256.Size], r.prevHash[:sha256.Size]) {
 			return n, ErrHashMismatch
 		}
 
@@ -172,6 +179,9 @@ type SimpleWriter struct {
 
 	// done is the current chunk position.
 	done int
+
+	// prevHash is the previous hash value.
+	prevHash [sha256.Size]byte
 
 	// buf is used to buffer the output.
 	buf []byte
@@ -258,13 +268,15 @@ func (w *SimpleWriter) directWrite(p []byte) (int, error) {
 		return n, err
 	}
 
-	// Write the hash. Compute it by writing the data followed by data size.
+	// Write the hash. Compute it as per package comments.
 	w.h.Reset()
 	_, _ = w.h.Write(p)
 	_, _ = w.h.Write(w.buf[:4])
-	// Pass a 32-byte capacity  slice (with 0 length) to avoid allocation.
-	w.h.Sum(w.buf[0:0:sha256.Size])
-	_, err = w.base.Write(w.buf[:sha256.Size])
+	_, _ = w.h.Write(w.prevHash[:])
+	// Compute the hash into prevHash, now that we don't need the old value.
+	// Pass a 32-byte capacity slice (with 0 length) to avoid allocation.
+	w.h.Sum(w.prevHash[0:0:sha256.Size])
+	_, err = w.base.Write(w.prevHash[:sha256.Size])
 	return n, err
 }
 
@@ -280,10 +292,13 @@ func (w *SimpleWriter) flush() error {
 	w.h.Reset()
 	_, _ = w.h.Write(w.buf[4 : 4+w.done])
 	_, _ = w.h.Write(w.buf[:4])
+	_, _ = w.h.Write(w.prevHash[:])
 
-	// Calculate the hash and write it after the data section in the buffer.
+	// Compute the hash into prevHash, now that we don't need the old value.
 	// Pass a 32-byte capacity slice (with 0 length) to avoid allocation.
-	w.h.Sum(w.buf[4+w.done : 4+w.done : 4+w.done+sha256.Size])
+	w.h.Sum(w.prevHash[0:0:sha256.Size])
+	// Write it after the data section in the buffer.
+	copy(w.buf[4+w.done:4+w.done+sha256.Size], w.prevHash[:sha256.Size])
 
 	// Write out to the stream.
 	_, err := w.base.Write(w.buf[:4+w.done+sha256.Size])

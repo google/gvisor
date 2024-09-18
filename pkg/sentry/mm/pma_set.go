@@ -534,21 +534,52 @@ func (s *pmaSet) RemoveAll() {
 // if the caller needs to do additional work before removing each segment,
 // iterate segments and call Remove in a loop instead.
 func (s *pmaSet) RemoveRange(r __generics_imported0.AddrRange) pmaGapIterator {
-	seg, gap := s.Find(r.Start)
-	if seg.Ok() {
-		seg = s.Isolate(seg, r)
-		gap = s.Remove(seg)
-	}
-	for seg = gap.NextSegment(); seg.Ok() && seg.Start() < r.End; seg = gap.NextSegment() {
-		seg = s.SplitAfter(seg, r.End)
-		gap = s.Remove(seg)
-	}
-	return gap
+	return s.RemoveRangeWith(r, nil)
 }
 
 // RemoveFullRange is equivalent to RemoveRange, except that if any key in the
 // given range does not correspond to a segment, RemoveFullRange panics.
 func (s *pmaSet) RemoveFullRange(r __generics_imported0.AddrRange) pmaGapIterator {
+	return s.RemoveFullRangeWith(r, nil)
+}
+
+// RemoveRangeWith removes all segments in the given range. An iterator to the
+// newly formed gap is returned, and all existing iterators are invalidated.
+//
+// The function f is applied to each segment immediately before it is removed,
+// in order of ascending keys. Segments that lie partially outside r are split
+// before f is called, such that f only observes segments entirely within r.
+// Non-empty gaps between segments are skipped.
+//
+// RemoveRangeWith searches the set to find segments to remove. If the caller
+// already has an iterator to either end of the range of segments to remove, or
+// if the caller needs to do additional work before removing each segment,
+// iterate segments and call Remove in a loop instead.
+//
+// N.B. f must not invalidate iterators into s.
+func (s *pmaSet) RemoveRangeWith(r __generics_imported0.AddrRange, f func(seg pmaIterator)) pmaGapIterator {
+	seg, gap := s.Find(r.Start)
+	if seg.Ok() {
+		seg = s.Isolate(seg, r)
+		if f != nil {
+			f(seg)
+		}
+		gap = s.Remove(seg)
+	}
+	for seg = gap.NextSegment(); seg.Ok() && seg.Start() < r.End; seg = gap.NextSegment() {
+		seg = s.SplitAfter(seg, r.End)
+		if f != nil {
+			f(seg)
+		}
+		gap = s.Remove(seg)
+	}
+	return gap
+}
+
+// RemoveFullRangeWith is equivalent to RemoveRangeWith, except that if any key
+// in the given range does not correspond to a segment, RemoveFullRangeWith
+// panics.
+func (s *pmaSet) RemoveFullRangeWith(r __generics_imported0.AddrRange, f func(seg pmaIterator)) pmaGapIterator {
 	seg := s.FindSegment(r.Start)
 	if !seg.Ok() {
 		panic(fmt.Sprintf("missing segment at %v", r.Start))
@@ -556,6 +587,9 @@ func (s *pmaSet) RemoveFullRange(r __generics_imported0.AddrRange) pmaGapIterato
 	seg = s.SplitBefore(seg, r.Start)
 	for {
 		seg = s.SplitAfter(seg, r.End)
+		if f != nil {
+			f(seg)
+		}
 		end := seg.End()
 		gap := s.Remove(seg)
 		if r.End <= end {
@@ -821,11 +855,11 @@ func (s *pmaSet) Isolate(seg pmaIterator, r __generics_imported0.AddrRange) pmaI
 // LowerBoundSegmentSplitBefore provides an iterator to the first segment to be
 // mutated, suitable as the initial value for a loop variable.
 func (s *pmaSet) LowerBoundSegmentSplitBefore(min __generics_imported0.Addr) pmaIterator {
-	seg := s.LowerBoundSegment(min)
+	seg, gap := s.Find(min)
 	if seg.Ok() {
-		seg = s.SplitBefore(seg, min)
+		return s.SplitBefore(seg, min)
 	}
-	return seg
+	return gap.NextSegment()
 }
 
 // UpperBoundSegmentSplitAfter combines UpperBoundSegment and SplitAfter.
@@ -835,11 +869,11 @@ func (s *pmaSet) LowerBoundSegmentSplitBefore(min __generics_imported0.Addr) pma
 // UpperBoundSegmentSplitAfter provides an iterator to the first segment to be
 // mutated, suitable as the initial value for a loop variable.
 func (s *pmaSet) UpperBoundSegmentSplitAfter(max __generics_imported0.Addr) pmaIterator {
-	seg := s.UpperBoundSegment(max)
+	seg, gap := s.Find(max)
 	if seg.Ok() {
-		seg = s.SplitAfter(seg, max)
+		return s.SplitAfter(seg, max)
 	}
-	return seg
+	return gap.PrevSegment()
 }
 
 // VisitRange applies the function f to all segments intersecting the range r,
