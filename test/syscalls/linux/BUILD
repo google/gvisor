@@ -904,6 +904,7 @@ cc_binary(
         "//test/util:capability_util",
         "//test/util:logging",
         "//test/util:memory_util",
+        "//test/util:posix_error",
         "//test/util:test_main",
         "//test/util:test_util",
         "//test/util:thread_util",

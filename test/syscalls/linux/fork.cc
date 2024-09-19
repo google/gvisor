@@ -17,6 +17,7 @@
 #include <sched.h>
 #include <stdlib.h>
 #include <sys/mman.h>
+#include <sys/mount.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
@@ -31,9 +32,10 @@
 #include "gtest/gtest.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
-#include "test/util/capability_util.h"
+#include "test/util/linux_capability_util.h"
 #include "test/util/logging.h"
 #include "test/util/memory_util.h"
+#include "test/util/posix_error.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
 
@@ -428,6 +430,30 @@ TEST(CloneTest, NewUserNamespacePermitsAllOtherNamespaces) {
           /* arg = */ nullptr),
       SyscallSucceeds());
 
+  int status;
+  ASSERT_THAT(waitpid(child_pid, &status, 0),
+              SyscallSucceedsWithValue(child_pid));
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0)
+      << "status = " << status;
+}
+
+TEST(CloneTest, NewUserMountNamespace) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(CanCreateUserNamespace()));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  Mapping child_stack = ASSERT_NO_ERRNO_AND_VALUE(
+      MmapAnon(kPageSize, PROT_READ | PROT_WRITE, MAP_PRIVATE));
+  int child_pid;
+  ASSERT_THAT(child_pid = clone(
+                  +[](void*) {
+                    TEST_CHECK_SUCCESS(mount(nullptr, "/", nullptr,
+                                             MS_REC | MS_PRIVATE, nullptr));
+                    return 0;
+                  },
+                  reinterpret_cast<void*>(child_stack.addr() + kPageSize),
+                  CLONE_NEWUSER | CLONE_NEWIPC | CLONE_NEWNET | CLONE_NEWUTS |
+                      SIGCHLD | CLONE_NEWNS,
+                  /* arg = */ nullptr),
+              SyscallSucceeds());
   int status;
   ASSERT_THAT(waitpid(child_pid, &status, 0),
               SyscallSucceedsWithValue(child_pid));
