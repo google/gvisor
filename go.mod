@@ -1,6 +1,6 @@
 module gvisor.dev/gvisor
 
-go 1.22.0
+go 1.23.1
 
 require (
 	github.com/BurntSushi/toml v1.2.1
