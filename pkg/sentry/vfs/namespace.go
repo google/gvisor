@@ -158,14 +158,14 @@ type NamespaceInodeGetter interface {
 // with proper mounts from the new namespace.
 func (vfs *VirtualFilesystem) CloneMountNamespace(
 	ctx context.Context,
-	creds *auth.Credentials,
+	uns *auth.UserNamespace,
 	ns *MountNamespace,
 	root *VirtualDentry,
 	cwd *VirtualDentry,
 	nsfs NamespaceInodeGetter,
 ) (*MountNamespace, error) {
 	newns := &MountNamespace{
-		Owner:       creds.UserNamespace,
+		Owner:       uns,
 		mountpoints: make(map[*Dentry]uint32),
 	}
 

@@ -210,7 +210,7 @@ func (f *HostFileMapper) forEachMappingBlockLocked(fr memmap.FileRange, fd int, 
 		if chunkStart+chunkSize > fr.End {
 			endOff = fr.End - chunkStart
 		}
-		fn(f.unsafeBlockFromChunkMapping(m.addr).TakeFirst64(endOff).DropFirst64(startOff))
+		fn(unsafeBlockFromMapping(m.addr, chunkSize).TakeFirst64(endOff).DropFirst64(startOff))
 		chunkStart += chunkSize
 		if chunkStart >= fr.End || chunkStart == 0 {
 			break
