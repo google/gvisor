@@ -201,7 +201,7 @@ func (t *Task) Clone(args *linux.CloneArgs) (ThreadID, *SyscallControl, error) {
 	mntns := t.mountNamespace
 	if args.Flags&linux.CLONE_NEWNS != 0 {
 		var err error
-		mntns, err = t.k.vfs.CloneMountNamespace(t, creds, mntns, &fsContext.root, &fsContext.cwd, t.k)
+		mntns, err = t.k.vfs.CloneMountNamespace(t, userns, mntns, &fsContext.root, &fsContext.cwd, t.k)
 		if err != nil {
 			return 0, nil, err
 		}
@@ -666,7 +666,7 @@ func (t *Task) Unshare(flags int32) error {
 			return linuxerr.EPERM
 		}
 		oldMountNS := t.mountNamespace
-		mntns, err := t.k.vfs.CloneMountNamespace(t, creds, oldMountNS, &t.fsContext.root, &t.fsContext.cwd, t.k)
+		mntns, err := t.k.vfs.CloneMountNamespace(t, creds.UserNamespace, oldMountNS, &t.fsContext.root, &t.fsContext.cwd, t.k)
 		if err != nil {
 			return err
 		}
