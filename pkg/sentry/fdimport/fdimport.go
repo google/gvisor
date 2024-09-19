@@ -21,6 +21,7 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fd"
+	"gvisor.dev/gvisor/pkg/sentry/devices/ttydev"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/host"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -106,6 +107,8 @@ func Import(ctx context.Context, fdTable *kernel.FDTable, console bool, uid auth
 	if ttyFile == nil {
 		return nil, nil
 	}
+	// HACK.
+	ttydev.TTYFile = ttyFile
 	return ttyFile.Impl().(*host.TTYFileDescription), nil
 }
 

@@ -22,6 +22,9 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
 
+// TTYFile is a HACK.
+var TTYFile *vfs.FileDescription
+
 const (
 	// See drivers/tty/tty_io.c:tty_init().
 	ttyDevMinor     = 0
@@ -35,6 +38,9 @@ type ttyDevice struct{}
 
 // Open implements vfs.Device.Open.
 func (ttyDevice) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
+	if TTYFile != nil {
+		return TTYFile, nil
+	}
 	return nil, linuxerr.EIO
 }
 
