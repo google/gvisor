@@ -103,6 +103,8 @@ func TestOptionsConfigKey(t *testing.T) {
 		"ProfileEnable":         func(opt *Options) { opt.ProfileEnable = !opt.ProfileEnable },
 		"NVProxy":               func(opt *Options) { opt.NVProxy = !opt.NVProxy },
 		"TPUProxy":              func(opt *Options) { opt.TPUProxy = !opt.TPUProxy },
+		"CgoEnabled":            func(opt *Options) { opt.CgoEnabled = !opt.CgoEnabled },
+		"PluginNetwork":         func(opt *Options) { opt.PluginNetwork = !opt.PluginNetwork },
 	}
 
 	// Map of `Options` struct field names mapped to a function to mutate them.

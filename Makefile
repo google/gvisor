@@ -221,7 +221,7 @@ nogo-tests:
 #
 # FIXME(gvisor.dev/issue/10045): Need to fix broken tests.
 unit-tests: ## Local package unit tests in pkg/..., tools/.., etc.
-	@$(call test,--test_tag_filters=-nogo$(COMMA)-requires-kvm -- //:all pkg/... tools/... runsc/... vdso/... test/trace/... -//pkg/metric:metric_test -//pkg/coretag:coretag_test -//runsc/config:config_test -//tools/tracereplay:tracereplay_test -//test/trace:trace_test)
+	@$(call test,--test_tag_filters=-nogo$(COMMA)-requires-kvm --build_tag_filters=-network_plugins -- //:all pkg/... tools/... runsc/... vdso/... test/trace/... -//pkg/metric:metric_test -//pkg/coretag:coretag_test -//runsc/config:config_test -//tools/tracereplay:tracereplay_test -//test/trace:trace_test)
 .PHONY: unit-tests
 
 # See unit-tests: this includes runsc/container.

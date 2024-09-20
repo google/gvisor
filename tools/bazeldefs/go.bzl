@@ -74,7 +74,12 @@ def go_importpath(target):
     """Returns the importpath for the target."""
     return target[GoLibrary].importpath
 
-def go_library(name, arch_deps = [], **kwargs):
+def go_library(name, bazel_cgo = False, bazel_cdeps = [], bazel_clinkopts = [], bazel_copts = [], arch_deps = [], **kwargs):
+    if bazel_cgo == True:
+        kwargs["cgo"] = bazel_cgo
+        kwargs["cdeps"] = bazel_cdeps
+        kwargs["copts"] = bazel_copts
+        kwargs["clinkopts"] = bazel_clinkopts
     _go_library(
         name = name,
         importpath = "gvisor.dev/gvisor/" + native.package_name(),
