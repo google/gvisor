@@ -10,6 +10,8 @@ gVisor can do all packet processing internally and only has to enable a few host
 I/O syscalls for near-complete networking capabilities. This keeps gVisor’s
 exposure to host vulnerabilities as narrow as possible.
 
+<!--/excerpt-->
+
 Although writing Netstack in Go was important for runtime safety, up until now
 it had an undeniable performance cost. iperf benchmarks showed Netstack was
 spending between 20-30% of its processing time allocating memory and pausing for

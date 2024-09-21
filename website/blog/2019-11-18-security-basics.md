@@ -16,6 +16,8 @@ and _platform portability_ (run gVisor wherever Linux OCI containers run).
 Delivering on each of these goals requires careful security considerations and a
 robust design.
 
+<!--/excerpt-->
+
 ## What does "sandbox" mean?
 
 gVisor allows the execution of untrusted containers, preventing them from

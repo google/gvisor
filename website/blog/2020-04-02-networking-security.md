@@ -8,6 +8,8 @@ networking architecture of gVisor, and the tradeoffs involved. In particular, we
 will cover how these principles culminated in two networking modes, how they
 work, and the properties of each.
 
+<!--/excerpt-->
+
 ## gVisor's security architecture in the context of networking
 
 Linux networking is complicated. The TCP protocol is over 40 years old, and has
