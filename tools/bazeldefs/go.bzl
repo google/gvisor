@@ -74,7 +74,22 @@ def go_importpath(target):
     """Returns the importpath for the target."""
     return target[GoLibrary].importpath
 
-def go_library(name, arch_deps = [], **kwargs):
+def go_library(name, bazel_cgo = False, cgo_cdeps = [], cgo_clinkopts = [], cgo_copts = [], **kwargs):
+    """Wrapper for `go_library` rule.
+
+    Args:
+        name: name of the target.
+        bazel_cgo: if True, build with cgo.
+        cgo_cdeps: cgo deps to pass to `go_library`.
+        cgo_clinkopts: cgo linkopts to pass to `go_library`.
+        cgo_copts: cgo opts to pass to `go_library`.
+        **kwargs: rest of the arguments are passed to `go_library`.
+    """
+    if bazel_cgo == True:
+        kwargs["cgo"] = bazel_cgo
+        kwargs["cdeps"] = cgo_cdeps
+        kwargs["clinkopts"] = cgo_clinkopts
+        kwargs["copts"] = cgo_copts
     _go_library(
         name = name,
         importpath = "gvisor.dev/gvisor/" + native.package_name(),
