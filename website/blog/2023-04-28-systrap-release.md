@@ -6,7 +6,7 @@ virtualization. Unlike the ptrace platform, it’s fast 🚀. Go try it by addin
 `--platform=systrap` to the runsc flags. If you want to know more about it, read
 on.
 
---------------------------------------------------------------------------------
+<!--/excerpt-->
 
 gVisor is a security boundary for arbitrary Linux processes. Boundaries do not
 come for free, and gVisor imposes some performance overhead on sandboxed

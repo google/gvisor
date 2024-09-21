@@ -7,12 +7,13 @@ generate images using a GPU from within gVisor. Both the
 and the [PyTorch] code used by Stable Diffusion were run entirely within gVisor
 while being able to leverage the NVIDIA GPU.
 
+<!--/excerpt-->
+
 ![A sandboxed GPU](/assets/images/2023-06-20-sandboxed-gpu.png "A sandboxed GPU.")
 <span class="attribution">**Sand**boxing a GPU. Generated with Stable Diffusion
 v1.5.<br/>This picture gets a lot deeper once you realize that GPUs are made out
 of sand.</span>
 
---------------------------------------------------------------------------------
 
 ## Disclaimer
 

@@ -10,6 +10,8 @@ many measures. As a container runtime, gVisor provides container-native security
 without sacrificing resource efficiency. Therefore, it has been on our radar
 since it was released.
 
+<!--/excerpt-->
+
 However, there have been performance concerns raised by members of
 [academia](https://www.usenix.org/system/files/hotcloud19-paper-young.pdf) and
 [industry](https://news.ycombinator.com/item?id=19924036). Users of gVisor tend

@@ -4,6 +4,8 @@ gVisor has implemented the [RACK](https://datatracker.ietf.org/doc/html/rfc8985)
 (Recent ACKnowledgement) TCP loss-detection algorithm in our network stack,
 which improves throughput in the presence of packet loss and reordering.
 
+<!--/excerpt-->
+
 TCP is a connection-oriented protocol that detects and recovers from loss by
 retransmitting packets. [RACK](https://datatracker.ietf.org/doc/html/rfc8985) is
 one of the recent loss-detection methods implemented in Linux and BSD, which

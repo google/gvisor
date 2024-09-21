@@ -9,6 +9,8 @@ provides the ability for an external process to observe application behavior and
 detect threats at runtime. Using this mechanism, gVisor users can watch actions
 performed by the container and generate alerts when something unexpected occurs.
 
+<!--/excerpt-->
+
 A monitoring process can connect to the gVisor sandbox and receive a stream of
 actions that the application is performing. The monitoring process decides what
 actions are allowed and what steps to take based on policies for the given

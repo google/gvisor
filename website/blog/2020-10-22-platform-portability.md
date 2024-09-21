@@ -6,6 +6,8 @@ requires expensive bare-metal machines or cloud instances to run safely with
 good performance, increasing cost and complexity for Cloud users. gVisor,
 however, takes a more flexible approach.
 
+<!--/excerpt-->
+
 **NOTE 2024-05**: This post describes the ptrace and KVM platforms, which were
 the only two gVisor platforms at the time it was written. The
 [Systrap platform](/blog/2023/04/28/systrap-release/) was added since and

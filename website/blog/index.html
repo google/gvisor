@@ -12,8 +12,8 @@ pagination:
   <div class="blog-meta">
     {% include byline.html authors=post.authors date=post.date %}
   </div>
-  <p>{{ post.excerpt | strip_html }}</p>
-  <p><a href="{{ post.url }}">Full Post &raquo;</a></p>
+  <p>{{ post.excerpt }}</p>
+  <p><a href="{{ post.url }}">Read more &raquo;</a></p>
 </div>
 {% endfor %}
 

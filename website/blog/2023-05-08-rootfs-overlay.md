@@ -6,7 +6,7 @@ a tmpfs filesystem. Learn more about this feature in the following blog that was
 [originally posted](https://opensource.googleblog.com/2023/04/gvisor-improves-performance-with-root-filesystem-overlay.html)
 on [Google Open Source Blog](https://opensource.googleblog.com/).
 
---------------------------------------------------------------------------------
+<!--/excerpt-->
 
 ## Costly Filesystem Access
 
