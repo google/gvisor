@@ -54,6 +54,30 @@ filesystem is important because k8s scans the container's root filesystem from
 the host to enforce local ephemeral storage limits. You can also place the
 overlay host file in another directory using `--overlay2=root:/path/dir`.
 
+## Directfs
+
+Directfs is a feature that allows the sandbox process to directly access the
+container filesystem. Directfs is enabled by default in runsc and can be
+disabled with `--directfs=false` flag. Directfs provides reasonable security
+while maintaining good performance by avoiding gofer round trips. Irrespective
+of this setting, the container filesystem is always owned by the gofer process
+and the sandbox mount namespace is always empty. To learn more, see our
+[blog post](https://gvisor.dev/blog/2023/06/27/directfs/) about it.
+
+When directfs is enabled, the gofer process donates file descriptors for all
+mount points to the sandbox. The sandbox then uses file descriptor based system
+calls (like `openat(2)`, `fchownat(2)`, etc) to access and operate on files
+directly. The sandbox can only operate on filesystem trees exposed to it by the
+gofer and cannot access the host's filesystem. There are additional security
+measures like enforcing the usage of `O_NOFOLLOW` via seccomp and ensuring that
+host filesystem FDs are not leaked on sandbox startup.
+
+When directfs is disabled, the sandbox runs with stricter seccomp filters and
+fewer capabilities such that the sandbox process can not perform filesystem
+operations. It communicates with the Gofer process (via RPCs) to perform
+filesystem operations on its behalf. This increases security but comes with a
+performance trade-off.
+
 ## Shared root filesystem
 
 The root filesystem is where the image is extracted and is not generally

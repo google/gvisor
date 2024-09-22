@@ -142,12 +142,18 @@ filesystem attributes) and not underlying host system resources.
 While the sandbox virtualizes many operations for the application, we limit the
 sandbox's own interactions with the host to the following high-level operations:
 
-1.  Communicate with a Gofer process via a connected socket. The sandbox may
-    receive new file descriptors from the Gofer process, corresponding to opened
-    files. These files can then be read from and written to by the sandbox.
+1.  Establish communication with a Gofer process using a connected socket. The
+    Gofer process manages the container's filesystem and provides file
+    descriptors to the sandbox upon request. The sandbox can read from and write
+    to these file descriptors directly. The sandbox itself operates within an
+    empty mount namespace. The sandbox can be
+    [further tuned](../user_guide/filesystem.md#directfs) to deny all access to
+    the filesystem, in which case the Gofer process performs all operations on
+    behalf of the sandbox.
 1.  Make a minimal set of host system calls. The calls do not include the
     creation of new sockets (unless host networking mode is enabled) or opening
-    files. The calls include duplication and closing of file descriptors,
+    files (unless [directfs](../user_guide/filesystem.md#directfs) is enabled).
+    The calls include duplication and closing of file descriptors,
     synchronization, timers and signal management.
 1.  Read and write packets to a virtual ethernet device. This is not required if
     host networking is enabled (or networking is disabled).
