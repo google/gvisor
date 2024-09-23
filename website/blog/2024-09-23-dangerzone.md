@@ -401,8 +401,10 @@ Dangerzone is strongly security-focused, so we believe it's worth the cost.
 
 We hope that this article demystifies some security aspects of containers, so
 that you can use Dangerzone and gVisor with even more confidence. Feel free to
-reach out to us with any questions or comments: *
-[Etienne Perot](https://perot.me) * [Alexis Métaireau](https://notmyidea.org) *
-[Alex Pyrgiotis](https://freedom.press/people/alex-p) *
-[Freedom of the Press Foundation (FPF)](https://freedom.press/contact/) *
-[gVisor community](https://gvisor.dev/community)
+reach out to us with any questions or comments:
+
+*   [Alexis Métaireau](https://notmyidea.org)
+*   [Alex Pyrgiotis](https://freedom.press/people/alex-p)
+*   [Etienne Perot](https://perot.me)
+*   [Freedom of the Press Foundation (FPF)](https://freedom.press/contact/)
+*   [gVisor community](https://gvisor.dev/community)
