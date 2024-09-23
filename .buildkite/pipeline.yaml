@@ -87,7 +87,7 @@ steps:
     label: ":world_map: Build runsc and pkg (AMD64)"
     commands:
       - "make build TARGETS=//pkg/..."
-      - "make build TARGETS=//runsc/..."
+      - "make build TARGETS='--build_tag_filters=-network_plugins //runsc/...'"
     agents:
       arch: "amd64"
 
@@ -96,7 +96,7 @@ steps:
     label: ":world_map: Build runsc and pkg (ARM64)"
     commands:
       - "make build TARGETS=//pkg/..."
-      - "make build TARGETS=//runsc/..."
+      - "make build TARGETS='--build_tag_filters=-network_plugins //runsc/...'"
     agents:
       arch: "arm64"
 
@@ -105,7 +105,7 @@ steps:
     <<: *source_test_continuous
     label: ":world_map: Build everything"
     commands:
-      - "make build TARGETS=//..."
+      - "make build TARGETS='--build_tag_filters=-network_plugins //...'"
 
   # Check that the Go branch builds. This is not technically required, as this build is maintained
   # as a GitHub action in order to preserve this maintaince across forks. However, providing the

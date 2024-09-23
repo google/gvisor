@@ -74,7 +74,7 @@ def go_importpath(target):
     """Returns the importpath for the target."""
     return target[GoLibrary].importpath
 
-def go_library(name, bazel_cgo = False, cgo_cdeps = [], cgo_clinkopts = [], cgo_copts = [], **kwargs):
+def go_library(name, bazel_cgo = False, bazel_cdeps = [], bazel_clinkopts = [], bazel_copts = [], **kwargs):
     """Wrapper for `go_library` rule.
 
     Args:
@@ -87,9 +87,9 @@ def go_library(name, bazel_cgo = False, cgo_cdeps = [], cgo_clinkopts = [], cgo_
     """
     if bazel_cgo == True:
         kwargs["cgo"] = bazel_cgo
-        kwargs["cdeps"] = cgo_cdeps
-        kwargs["clinkopts"] = cgo_clinkopts
-        kwargs["copts"] = cgo_copts
+        kwargs["cdeps"] = bazel_cdeps
+        kwargs["clinkopts"] = bazel_clinkopts
+        kwargs["copts"] = bazel_copts
     _go_library(
         name = name,
         importpath = "gvisor.dev/gvisor/" + native.package_name(),
