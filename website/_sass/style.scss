@@ -183,7 +183,7 @@ table th {
   margin: 20px auto;
 }
 
-.blog-content .attribution {
+.blog-content .attribution, .blog-content figcaption {
   /* Stay close to the image. */
   display: block;
   margin-top: 6px;
@@ -195,11 +195,18 @@ table th {
   color: $text-color-secondary;
 }
 
-.blog-content * img:has(+ .attribution) {
+.blog-content * img:has(+ .attribution), .blog-content * img:has(+ figcaption) {
   /* Remove bottom margins from images where there is an attribution line
    * immediately following the image.
    */
   margin-bottom: 0px;
+}
+
+.blog-content .attribution, .blog-content figcaption {
+  /* Remove margin above image caption. */
+  margin-top: 0px;
+  /* Add margin under image caption. */
+  margin-bottom: 1em;
 }
 
 .blog-content details {

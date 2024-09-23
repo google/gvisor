@@ -27,6 +27,14 @@ defaults:
       layout: default
 analytics: "UA-150193582-1"
 authors:
+  almet:
+    name: Alexis Métaireau
+    email: alexis@notmyidea.org
+    url: https://notmyidea.org
+  apyrgio:
+    name: Alex Pyrgiotis
+    email: alex.p@freedom.press
+    url: https://freedom.press/people/alex-p
   ayushranjan:
     name: Ayush Ranjan
     email: ayushranjan@google.com
