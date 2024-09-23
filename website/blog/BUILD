@@ -141,6 +141,18 @@ doc(
     permalink = "/blog/2024/02/01/seccomp/",
 )
 
+doc(
+    name = "dangerzone",
+    src = "2024-09-23-dangerzone.md",
+    authors = [
+        "almet",
+        "apyrgio",
+        "eperot",
+    ],
+    layout = "post",
+    permalink = "/blog/2024/09/23/safe-ride-into-the-dangerzone/",
+)
+
 docs(
     name = "posts",
     deps = [
