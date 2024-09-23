@@ -40,11 +40,11 @@ func ARP(pkt *stack.PacketBuffer) bool {
 //
 // Returns true if the header was successfully parsed.
 func IPv4(pkt *stack.PacketBuffer) bool {
-	hdr, ok := pkt.Data().PullUp(header.IPv4MinimumSize)
+	hdrView, ok := pkt.Data().PullUpView(header.IPv4MinimumSize)
 	if !ok {
 		return false
 	}
-	ipHdr := header.IPv4(hdr)
+	ipHdr := header.IPv4Buffer{View: &hdrView}
 
 	// Header may have options, determine the true header length.
 	headerLen := int(ipHdr.HeaderLength())
@@ -54,12 +54,13 @@ func IPv4(pkt *stack.PacketBuffer) bool {
 		// case.
 		headerLen = header.IPv4MinimumSize
 	}
-	hdr, ok = pkt.NetworkHeader().Consume(headerLen)
+	_, ok = pkt.NetworkHeader().Consume(headerLen)
 	if !ok {
 		return false
 	}
-	ipHdr = header.IPv4(hdr)
-	length := int(ipHdr.TotalLength()) - len(hdr)
+	v := pkt.NetworkHeader().View()
+	ipHdr = header.IPv4Buffer{View: &v}
+	length := int(ipHdr.TotalLength()) - hdrView.Size()
 	if length < 0 {
 		return false
 	}

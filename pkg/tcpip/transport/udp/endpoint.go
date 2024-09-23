@@ -961,7 +961,9 @@ func (e *endpoint) HandlePacket(id stack.TransportEndpointID, pkt *stack.PacketB
 	packet.tosOrTClass, _ = pkt.Network().TOS()
 	switch pkt.NetworkProtocolNumber {
 	case header.IPv4ProtocolNumber:
-		packet.ttlOrHopLimit = header.IPv4(pkt.NetworkHeader().Slice()).TTL()
+		v := pkt.NetworkHeader().View()
+		h := header.IPv4Buffer{View: &v}
+		packet.ttlOrHopLimit = h.TTL()
 	case header.IPv6ProtocolNumber:
 		packet.ttlOrHopLimit = header.IPv6(pkt.NetworkHeader().Slice()).HopLimit()
 	}

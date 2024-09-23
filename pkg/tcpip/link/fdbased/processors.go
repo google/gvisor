@@ -177,22 +177,26 @@ type connectionID struct {
 // been processed if they were present.
 func tcpipConnectionID(pkt *stack.PacketBuffer) (connectionID, bool) {
 	var cid connectionID
-	h, ok := pkt.Data().PullUp(1)
+	v, ok := pkt.Data().PullUpView(1)
 	if !ok {
 		// Skip this packet.
 		return cid, true
 	}
 
 	const tcpSrcDstPortLen = 4
-	switch header.IPVersion(h) {
+	switch header.IPVersion(v.AsSlice()) {
 	case header.IPv4Version:
-		hdrLen := header.IPv4(h).HeaderLength()
-		h, ok = pkt.Data().PullUp(int(hdrLen) + tcpSrcDstPortLen)
+		hb := header.IPv4Buffer{View: &v}
+		hdrLen := hb.HeaderLength()
+		v, ok = pkt.Data().PullUpView(int(hdrLen) + tcpSrcDstPortLen)
 		if !ok {
 			return cid, true
 		}
-		ipHdr := header.IPv4(h[:hdrLen])
-		tcpHdr := header.TCP(h[hdrLen:][:tcpSrcDstPortLen])
+		ipView := v.Clone()
+		defer ipView.Release()
+		ipView.CapLength(int(hdrLen))
+		ipHdr := header.IPv4Buffer{View: ipView}
+		tcpHdr := header.TCP(v.AsSlice()[hdrLen:][:tcpSrcDstPortLen])
 
 		cid.srcAddr = ipHdr.SourceAddressSlice()
 		cid.dstAddr = ipHdr.DestinationAddressSlice()
@@ -204,15 +208,15 @@ func tcpipConnectionID(pkt *stack.PacketBuffer) (connectionID, bool) {
 		}
 		cid.proto = header.IPv4ProtocolNumber
 	case header.IPv6Version:
-		h, ok = pkt.Data().PullUp(header.IPv6FixedHeaderSize + tcpSrcDstPortLen)
+		v, ok = pkt.Data().PullUpView(header.IPv6FixedHeaderSize + tcpSrcDstPortLen)
 		if !ok {
 			return cid, true
 		}
-		ipHdr := header.IPv6(h)
+		ipHdr := header.IPv6(v.AsSlice())
 
 		var tcpHdr header.TCP
 		if tcpip.TransportProtocolNumber(ipHdr.NextHeader()) == header.TCPProtocolNumber {
-			tcpHdr = header.TCP(h[header.IPv6FixedHeaderSize:][:tcpSrcDstPortLen])
+			tcpHdr = header.TCP(v.AsSlice()[header.IPv6FixedHeaderSize:][:tcpSrcDstPortLen])
 		} else {
 			// Slow path for IPv6 extension headers :(.
 			dataBuf := pkt.Data().ToBuffer()
@@ -226,11 +230,11 @@ func tcpipConnectionID(pkt *stack.PacketBuffer) (connectionID, bool) {
 				}
 				hdr.Release()
 			}
-			h, ok = pkt.Data().PullUp(int(it.HeaderOffset()) + tcpSrcDstPortLen)
+			v, ok = pkt.Data().PullUpView(int(it.HeaderOffset()) + tcpSrcDstPortLen)
 			if !ok {
 				return cid, true
 			}
-			tcpHdr = header.TCP(h[it.HeaderOffset():][:tcpSrcDstPortLen])
+			tcpHdr = header.TCP(v.AsSlice()[it.HeaderOffset():][:tcpSrcDstPortLen])
 		}
 		cid.srcAddr = ipHdr.SourceAddressSlice()
 		cid.dstAddr = ipHdr.DestinationAddressSlice()

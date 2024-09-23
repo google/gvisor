@@ -202,7 +202,8 @@ func LogPacket(prefix string, dir Direction, protocol tcpip.NetworkProtocolNumbe
 			return
 		}
 
-		ipv4 := header.IPv4(clone.NetworkHeader().Slice())
+		v := clone.NetworkHeader().View()
+		ipv4 := header.IPv4Buffer{View: &v}
 		fragmentOffset = ipv4.FragmentOffset()
 		moreFragments = ipv4.Flags()&header.IPv4FlagMoreFragments == header.IPv4FlagMoreFragments
 		src = ipv4.SourceAddress()

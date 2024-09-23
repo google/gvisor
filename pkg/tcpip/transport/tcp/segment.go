@@ -98,7 +98,8 @@ func newIncomingSegment(id stack.TransportEndpointID, clock tcpip.Clock, pkt *st
 	var dstAddr tcpip.Address
 	switch netProto := pkt.NetworkProtocolNumber; netProto {
 	case header.IPv4ProtocolNumber:
-		hdr := header.IPv4(pkt.NetworkHeader().Slice())
+		v := pkt.NetworkHeader().View()
+		hdr := header.IPv4Buffer{View: &v}
 		srcAddr = hdr.SourceAddress()
 		dstAddr = hdr.DestinationAddress()
 	case header.IPv6ProtocolNumber:

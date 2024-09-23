@@ -876,8 +876,9 @@ func getPayloadBuffer(pkt *stack.PacketBuffer, base payloadBase) []byte {
 		// Note: Assumes L4 protocol is present and valid for necessary use cases.
 
 		// Errors if the packet is fragmented for IPv4 only.
-		if net := pkt.NetworkHeader().Slice(); len(net) > 0 && pkt.NetworkProtocolNumber == header.IPv4ProtocolNumber {
-			if h := header.IPv4(net); h.More() || h.FragmentOffset() != 0 {
+		if net := pkt.NetworkHeader().View(); net.Size() > 0 && pkt.NetworkProtocolNumber == header.IPv4ProtocolNumber {
+			h := header.IPv4Buffer{View: &net}
+			if h.More() || h.FragmentOffset() != 0 {
 				break // packet is fragmented
 			}
 		}
@@ -1654,7 +1655,7 @@ func (op metaLoad) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *Ru
 	// Network EtherType Protocol (16-bit, network order).
 	case linux.NFT_META_PROTOCOL:
 		// Only valid if network header is present.
-		if pkt.NetworkHeader().View() == nil {
+		if v := pkt.NetworkHeader().View(); v.Size() == 0 {
 			break
 		}
 		target = binary.BigEndian.AppendUint16(nil, uint16(pkt.NetworkProtocolNumber))
@@ -1694,7 +1695,7 @@ func (op metaLoad) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *Ru
 		if pkt.NetworkProtocolNumber != header.IPv6ProtocolNumber {
 			break
 		}
-		if pkt.NetworkHeader().View() != nil {
+		if v := pkt.NetworkHeader().View(); v.Size() != 0 {
 			tcid, _ := pkt.Network().TOS()
 			target = binary.NativeEndian.AppendUint32(nil, uint32(tcid))
 		}

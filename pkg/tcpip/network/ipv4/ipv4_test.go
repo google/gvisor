@@ -2010,7 +2010,7 @@ func compareFragments(packets []*stack.PacketBuffer, sourcePacket *stack.PacketB
 		} else {
 			sourceCopy.SetFlagsFragmentOffset(sourceCopy.Flags()&^header.IPv4FlagMoreFragments, wantFragments[i].offset)
 		}
-		reassembledPayload.Append(packet.TransportHeader().View())
+		reassembledPayload.Append(packet.TransportHeader().OwnedView())
 		reassembledPayload.Append(packet.Data().AsRange().ToView())
 		// Clear out the checksum and length from the ip because we can't compare
 		// it.

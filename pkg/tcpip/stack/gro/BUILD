@@ -26,6 +26,7 @@ go_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
+        "//pkg/buffer",
         "//pkg/ilist",
         "//pkg/tcpip",
         "//pkg/tcpip/header",

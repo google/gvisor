@@ -334,7 +334,8 @@ func (igmp *igmpState) isSourceIPValidLocked(src tcpip.Address, messageType head
 // +checklocks:igmp.ep.mu
 func (igmp *igmpState) isPacketValidLocked(pkt *stack.PacketBuffer, messageType header.IGMPType, hasRouterAlertOption bool) bool {
 	// We can safely assume that the IP header is valid if we got this far.
-	iph := header.IPv4(pkt.NetworkHeader().Slice())
+	v := pkt.NetworkHeader().View()
+	iph := header.IPv4Buffer{View: &v}
 
 	// As per RFC 2236 section 2,
 	//
