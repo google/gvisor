@@ -80,6 +80,12 @@ steps:
       GLIBC_TUNABLES: glibc.pthread.rseq=0
     label: ":fire: Smoke race tests"
     command: make smoke-race-tests
+  - <<: *common
+    <<: *source_test
+    label: ":speedboat: Compile runsc-plugin-stack (AMD64)"
+    command: make runsc-plugin-stack
+    agents:
+      arch: "amd64"
 
   # Build runsc and pkg (presubmits only).
   - <<: *common

@@ -199,6 +199,7 @@ register_toolchains("//:cc_toolchain_k8", "//:cc_toolchain_aarch64")
 
 # Load LLVM dependencies.
 LLVM_COMMIT = "926f85db98aae66ab8f57b9981f47ddddb868c51"
+
 LLVM_SHA256 = "c78c94b2a03b2cf6ef1ba035c31a6f1b0bb7913da8af5aa8d5c2061f6499d589"
 
 http_archive(
@@ -239,12 +240,12 @@ maybe(
 
 # Load other C++ dependencies.
 http_archive(
-  name = "nlohmann_json",
-  sha256 = "ba6e7817353793d13e5214ed819ea5b0defc0ffb2a348f4e34b10ac6f1c50154",
-  strip_prefix = "json-960b763ecd144f156d05ec61f577b04107290137",
-  urls = [
-    "https://github.com/nlohmann/json/archive/960b763ecd144f156d05ec61f577b04107290137.tar.gz"
-  ]
+    name = "nlohmann_json",
+    sha256 = "ba6e7817353793d13e5214ed819ea5b0defc0ffb2a348f4e34b10ac6f1c50154",
+    strip_prefix = "json-960b763ecd144f156d05ec61f577b04107290137",
+    urls = [
+        "https://github.com/nlohmann/json/archive/960b763ecd144f156d05ec61f577b04107290137.tar.gz",
+    ],
 )
 
 http_archive(
@@ -3355,6 +3356,6 @@ go_repository(
 
 new_local_repository(
     name = "libpluginstack",
-    path = "tools/plugin-stack",
     build_file = "tools/plugin-stack/plugin-stack.BUILD",
+    path = "external/tools/plugin-stack",
 )

@@ -200,6 +200,10 @@ runsc: ## Builds the runsc binary.
 	@$(call build,-c opt //runsc)
 .PHONY: runsc
 
+runsc-plugin-stack:
+	@$(call build,-c opt $(PLUGIN_STACK_FLAGS) //runsc:runsc-plugin-stack)
+.PHONY: runsc-plugin-stack
+
 debian: ## Builds the debian packages.
 	@$(call build,-c opt //debian:debian)
 .PHONY: debian
