@@ -144,11 +144,10 @@ line options before starting the container:
 
 Then restart docker to refresh the runtime options. While the container is
 running, execute `runsc debug` to collect profile information and save to a
-file. Here are the options available:
+file. These are a couple of the options available:
 
-*   **--profile-heap:** Generates heap profile to the speficied file.
-*   **--profile-cpu:** Enables CPU profiler, waits for `--duration` seconds and
-    generates CPU profile to the speficied file.
+*   **--profile-heap:** Writes heap profile to the given file.
+*   **--profile-cpu:** Writes CPU profile to the given file.
 
 For example:
 
