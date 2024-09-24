@@ -4,8 +4,8 @@
 [Freedom of the Press Foundation](https://freedom.press) and
 [cross-posted on the Dangerzone blog](https://dangerzone.rocks/news/2024-09-23-gvisor).*
 
-One of the oft-repeated sound bites of computer security advice is: “Don't open
-random attachments from strangers.” If you are a journalist, however, opening
+One of the oft-repeated sound bites of computer security advice is: "Don't open
+random attachments from strangers." If you are a journalist, however, opening
 attachments and documents is part of your job description. Since journalists
 already have a lot of security threats to worry about in dealing with sources,
 the safe opening of documents should not be one of them.
@@ -22,19 +22,19 @@ attachments for viruses, etc.
 
 <!--/excerpt-->
 
-If you’re an existing Dangerzone user on 0.7.0 scratching your head and thinking
-“Well, I haven’t noticed anything different,” then first of all, “yay!” That was
+If you're an existing Dangerzone user on 0.7.0 scratching your head and thinking
+"Well, I haven't noticed anything different," then first of all, "yay!" That was
 the plan. And second, because the plan worked so deviously well, this change has
 probably flown under the radar, so here are more than 3,000 words to amend this.
 
-The rest of the article dives deep into Dangerzone’s security, describes how
-gVisor works as a technology, and explains how Dangerzone’s security profile has
+The rest of the article dives deep into Dangerzone's security, describes how
+gVisor works as a technology, and explains how Dangerzone's security profile has
 changed after this integration. Expect some technical terms and nerdery.
 
 ## How Dangerzone works
 
 Dangerzone's purpose is to sanitize documents of any elements that can
-compromise your computer or the source’s identity (think malware and document
+compromise your computer or the source's identity (think malware and document
 metadata). To do this, it first renders the document into visual data (pixels)
 and then turns this visual representation back into a readable document file.
 The first part of this process (rendering the document into pixel data) is the
@@ -42,20 +42,20 @@ most security-critical part and, for the purpose of this article, we will zoom
 in on just this.
 
 > 💡 For a broader understanding of how Dangerzone works, we encourage you to
-> read the [“About Dangerzone”](https://dangerzone.rocks/about/) section on the
+> read the ["About Dangerzone"](https://dangerzone.rocks/about/) section on the
 > Dangerzone website. Props to the [Qubes OS](https://www.qubes-os.org/) team,
 > who first popularized the concept that is now their
 > [TrustedPDF feature](https://blog.invisiblethings.org/2013/02/21/converting-untrusted-pdfs-into-trusted.html).
 
 In order to support a wide variety of document formats (PDF, office documents,
 image formats, etc.), Dangerzone needs to open them with software that
-potentially has security bugs. That may result in compromise of the user’s
+potentially has security bugs. That may result in compromise of the user's
 device, personal files, and communication. This is the same risk you face when
 you use your computer to open attachments from unknown sources. Dangerzone needs
 to somehow isolate this process from the rest of your computer, so that anything
 it does cannot "get out of the box".
 
-Dangerzone’s isolation relies on **Linux containers**. Containers are very handy
+Dangerzone's isolation relies on **Linux containers**. Containers are very handy
 for two things: ensuring that they work the same way across operating systems
 and separating the container from the rest of the machine.
 
@@ -78,13 +78,13 @@ the "guest" (inner) virtual machine. This is why the TrustedPDF feature of
 QubesOS uses disposable VMs as its isolation mechanism. Dangerzone also tried to
 use VMs in the past, but implementing them in a multiplatform way proved
 high-maintenance. Thus, Dangerzone switched back to containers, but the team
-always wanted to improve Dangerzone’s security properties.
+always wanted to improve Dangerzone's security properties.
 
 > 💡 How does Dangerzone use Linux containers on Windows and Mac OS? It requires
 > [Docker Desktop](https://www.docker.com/products/docker-desktop/), which runs
 > Linux inside a virtual machine and then runs Linux containers in it.
 
-## Dangerzone’s attack surface
+## Dangerzone's attack surface
 
 To understand how to protect Dangerzone users from exploits, it's useful to
 think like an attacker. When Dangerzone processes a malicious document within a
@@ -99,7 +99,7 @@ protections for the container or directly compromise the Linux kernel.
 
 The Linux kernel, even in Docker Desktop VMs, is a very privileged component. It
 has access to sensitive data, such as other files on the user's machine or the
-user's browser history, and to your computer’s network.
+user's browser history, and to your computer's network.
 
 Processes in containers interface with the Linux kernel through
 [**system calls**](https://en.wikipedia.org/wiki/System_call) and
@@ -127,7 +127,7 @@ to Linux containers:
     other than the Dangerzone user on the same computer.
 
 > 💡 Check out the above protection measures in
-> [Dangerzone’s codebase](https://github.com/freedomofpress/dangerzone/blob/88a2d151ab4a3cb2f769998f27f251518d93bb45/dangerzone/isolation_provider/container.py#L188-L213).
+> [Dangerzone's codebase](https://github.com/freedomofpress/dangerzone/blob/88a2d151ab4a3cb2f769998f27f251518d93bb45/dangerzone/isolation_provider/container.py#L188-L213).
 
 <figure>
 <img src="/assets/images/2024-09-23-dangerzone-protections.svg" alt="Diagram showing that the renderer and LibreOffice make system calls to the Linux kernel, to which several filters are applied.">
@@ -137,8 +137,8 @@ to Linux containers:
 This provides the container with a fair degree of isolation from the Linux
 kernel. However, some attack surface remains, since:
 
-*   The computer’s user is still mapped in the container. This means that a
-    container escape would allow the attacker to access the user’s personal
+*   The computer's user is still mapped in the container. This means that a
+    container escape would allow the attacker to access the user's personal
     files (browser data, documents, etc.); it would be more isolated if that
     were not the case.
 *   The system call filter is still relatively permissive. The specific system
@@ -150,8 +150,8 @@ kernel. However, some attack surface remains, since:
     settings). It does not block containers from opening arbitrary files or
     interacting with the network stack, which can still be vectors for security
     bugs.
-*   The container’s root filesystem, while ephemeral, is still writable. This
-    allows attackers to exploit potential vulnerabilities in Linux’s filesystem
+*   The container's root filesystem, while ephemeral, is still writable. This
+    allows attackers to exploit potential vulnerabilities in Linux's filesystem
     stack.
 *   The Linux kernel is still exposed to the container. While it is possible to
     reduce the attack surface available to the container to a minimum, this
@@ -161,7 +161,7 @@ kernel. However, some attack surface remains, since:
 
 <figure>
 <img src="/assets/images/2024-09-23-dangerzone-protections-annotated.svg" alt="Diagram highlighting how access to the Linux kernel and the relatively permissive system filter may create exposure to bugs or vulnerabilities.">
-<figcaption>Dangerzone’s attack surface prior to 0.7.0, illustrated.</figcaption>
+<figcaption>Dangerzone's attack surface prior to 0.7.0, illustrated.</figcaption>
 </figure>
 
 We've wanted to mitigate these risks for a while now, but we had to do so in a
@@ -185,42 +185,44 @@ gVisor acts as a **kernel**, but from Linux's perspective, gVisor is just a
 regular **application**. That means the container can no longer directly
 interface with the Linux kernel. This is a massive reduction in attack surface.
 
-If you’re new to gVisor, the concept of not interfacing with the Linux kernel at
-all may seem either quite vague or overly restrictive. That’s normal, so let’s
-toy with this concept a bit for fun and illustrative purposes. Here’s a
+If you're new to gVisor, the concept of not interfacing with the Linux kernel at
+all may seem either quite vague or overly restrictive. That's normal, so let's
+toy with this concept a bit for fun and illustrative purposes. Here's a
 perfectly normal sentence:
 
-> “A process opens a document on the filesystem”
+> "A process opens a document on the filesystem"
 
-And here’s how gVisor warps every single word in that sentence: * “on the
-filesystem”: Nope, no such thing. The gVisor container runs in an empty
-filesystem. * “opens a document”: Nuh-uh, the gVisor container does not even
-have the permission to perform the `open` system call. Also, there are no files
-to open in the first place. * “A process”: Amusingly, the gVisor container does
-not even have the ability to perform the `exec` system calls. From the Linux
-kernel's perspective, the gVisor “process” looks like a typical multithreaded
-program, even while many independent processes are running within the gVisor
-sandbox.
+And here's how gVisor warps every single word in that sentence:
+
+*   "on the filesystem": Nope, no such thing. The gVisor container runs in an
+    empty filesystem.
+*   "opens a document": Nuh-uh, the gVisor container does not even have the
+    permission to perform the `open` system call. Also, there are no files to
+    open in the first place.
+*   "A process": Amusingly, the gVisor container does not even have the ability
+    to perform the `exec` system calls. From the Linux kernel's perspective, the
+    gVisor "process" looks like a typical multithreaded program, even while many
+    independent processes are running within the gVisor sandbox.
 
 And yet, gVisor can containerize most applications without issue. For example,
 the Dangerzone container image was not altered at all for the gVisor
 integration.
 
-So what’s going on here?
+So what's going on here?
 
 gVisor manages to pull the above trick with the help of two components:
 
 1.  **Sentry** is the component that runs the containerized application. It
     intercepts every system call that the application makes and reimplements it
     in Go. As part of this, it may decide to do one or more system calls to the
-    host Linux kernel. However, it’s heavily restricted with a strict seccomp
-    filter (that’s why system calls like `open`, `socket`, or `exec` are not
+    host Linux kernel. However, it's heavily restricted with a strict seccomp
+    filter (that's why system calls like `open`, `socket`, or `exec` are not
     allowed).
 
 2.  **Gofer** is a component that runs outside the container and is responsible
     for filesystem operations. The sentry may make I/O requests to the gofer.
     The gofer will independently validate them, then perform these I/O
-    operations on the container’s behalf (that’s how the container can read
+    operations on the container's behalf (that's how the container can read
     files from the host filesystem, even though `open` is not allowed from the
     sentry).
 
@@ -271,7 +273,7 @@ security measures on startup, some of which are similar to regular containers:
         executing other processes. The presence of this filter does *not*
         prevent use of these system calls from within the gVisor sandbox;
         instead, the gVisor kernel *intercepts and reimplements* system calls
-        internally without needing to make a “real” system call out to the Linux
+        internally without needing to make a "real" system call out to the Linux
         kernel.
 *   The gofer also uses all of the above techniques to isolate itself as much as
     possible.
@@ -285,7 +287,7 @@ gVisor is also continuously [fuzz-tested](https://en.wikipedia.org/wiki/Fuzzing)
 for bugs using [Syzkaller](https://github.com/google/syzkaller/), an automated
 kernel security testing tool.
 
-What’s the catch here? Applications that perform lots of system calls and heavy
+What's the catch here? Applications that perform lots of system calls and heavy
 I/O will have some degraded performance. Also, applications that rely on exotic
 features by the Linux kernel may not work. In practice,
 [the majority of applications do not suffer from this issue](https://gvisor.dev/docs/user_guide/compatibility).
@@ -305,48 +307,50 @@ Windows and macOS. Integrating gVisor just for Linux would not cut it. At the
 same time, gVisor works strictly on Linux systems, so we are at an impasse.
 
 In what is, in retrospect, a classic case of
-[Maslow’s hammer](https://en.wikipedia.org/wiki/Law_of_the_instrument), we
+[Maslow's hammer](https://en.wikipedia.org/wiki/Law_of_the_instrument), we
 decided to solve our container problems with yet another container. The idea is
 simple; why not containerize gVisor and make it run on Docker Desktop? After
 all, as we already pointed out, Docker Desktop runs Linux inside a virtual
 machine.
 
 By doing so, Dangerzone now has two containers with different responsibilities:
-* The **outer** Docker/Podman container acts as the **portability** layer for
-Dangerzone. Its main responsibility is to bundle the necessary config files,
-scripts, and programs to run gVisor. It's also responsible for bundling the
-container image that gVisor will spawn a container from. * The **inner** gVisor
-container acts as the **isolation** layer for Dangerzone. Its sole
-responsibility is to run the actual Dangerzone logic for rendering documents to
-pixels.
+
+*   The **outer** Docker/Podman container acts as the **portability** layer for
+    Dangerzone. Its main responsibility is to bundle the necessary config files,
+    scripts, and programs to run gVisor. It's also responsible for bundling the
+    container image that gVisor will spawn a container from.
+*   The **inner** gVisor container acts as the **isolation** layer for
+    Dangerzone. Its sole responsibility is to run the actual Dangerzone logic
+    for rendering documents to pixels.
 
 <figure>
-<img src="/assets/images/2024-09-23-dangerzone-with-gvisor.svg" alt="Diagram showing the Dangerzone UI sending a document to a document renderer within an inner container, which is protected by gVisor’s Sentry. The Sentry intercepts system calls, allowing only limited system calls to pass to the Linux kernel with strict security settings. I/O system calls are handled by gVisor Gofer in an outer container, with less strict but controlled permissions">
+<img src="/assets/images/2024-09-23-dangerzone-with-gvisor.svg" alt="Diagram showing the Dangerzone UI sending a document to a document renderer within an inner container, which is protected by gVisor's Sentry. The Sentry intercepts system calls, allowing only limited system calls to pass to the Linux kernel with strict security settings. I/O system calls are handled by gVisor Gofer in an outer container, with less strict but controlled permissions">
 <figcaption>Outline of how gVisor integrates with Dangerzone. There are now two nested containers, and each one brings its own protections. Usage of LibreOffice is implied.</figcaption>
 </figure>
 
-Running gVisor inside a container came with its own set of challenges: * The
-Docker/Podman’s seccomp filter must allow the `ptrace` system call. We found
-that recent Docker Desktop versions and Podman version >= 4.0 have a seccomp
-filter that allows this system call. For older versions, we specified a custom
-seccomp filter that allowed it. * gVisor cannot run under SELinux in enforcing
-mode under default settings, so we labeled the container with
-`container_engine_t` (see GitHub issue
-[#880](https://github.com/freedomofpress/dangerzone/issues/880)). * The
-Docker/Podman container must run with the `SYS_CHROOT` capability. This is
-needed by gVisor to restrict its own access to the filesystem before it starts
-document processing. Other than that, the **outer** container drops all other
-capabilities and privileges.
+Running gVisor inside a container came with its own set of challenges:
 
-> 💡 You can find more details about this integration in the Dangerzone’s
+*   The Docker/Podman's seccomp filter must allow the `ptrace` system call. We
+    found that recent Docker Desktop versions and Podman version >= 4.0 have a
+    seccomp filter that allows this system call. For older versions, we
+    specified a custom seccomp filter that allowed it.
+*   gVisor cannot run under SELinux in enforcing mode under default settings, so
+    we labeled the container with `container_engine_t` (see GitHub issue
+    [#880](https://github.com/freedomofpress/dangerzone/issues/880)).
+*   The Docker/Podman container must run with the `SYS_CHROOT` capability. This
+    is needed by gVisor to restrict its own access to the filesystem before it
+    starts document processing. Other than that, the **outer** container drops
+    all other capabilities and privileges.
+
+> 💡 You can find more details about this integration in the Dangerzone's
 > [gVisor design doc](https://github.com/freedomofpress/dangerzone/blob/main/docs/developer/gvisor.md).
 
 ## Dangerzone protections
 
-We talked about Dangerzone’s original attack surface, and how we integrated
+We talked about Dangerzone's original attack surface, and how we integrated
 gVisor to reduce it. In practice though, in what ways is Dangerzone better off
 than before? Well, if the Matryoshka containers are giving you a headache, or
-you just skimmed to this section (no shade), here’s how the new Dangerzone
+you just skimmed to this section (no shade), here's how the new Dangerzone
 protections fare against the previous version, and the default protections of
 Linux containers:
 
@@ -386,7 +390,7 @@ with:
 
 <figure>
 <img src="/assets/images/2024-09-23-dangerzone-with-gvisor-annotated.svg" alt="Diagram highlighting how gVisor mitigates against bugs and vulnerabilities in the inner container, including exploits which escalate privileges to the outer container.">
-<figcaption>Explanation of how Dangerzone’s latest protections limit its attack surface.</figcaption>
+<figcaption>Explanation of how Dangerzone's latest protections limit its attack surface.</figcaption>
 </figure>
 
 ## Conclusion
