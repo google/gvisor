@@ -20,13 +20,26 @@ import (
 	"strings"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
 	"gvisor.dev/gvisor/runsc/config"
 )
 
-const nvdEnvVar = "NVIDIA_VISIBLE_DEVICES"
-
-// AnnotationNVProxy enables nvproxy.
-const AnnotationNVProxy = "dev.gvisor.internal.nvproxy"
+const (
+	// NVIDIA_VISIBLE_DEVICES environment variable controls which GPUs are
+	// visible and accessible to the container.
+	nvidiaVisibleDevsEnv = "NVIDIA_VISIBLE_DEVICES"
+	// NVIDIA_DRIVER_CAPABILITIES environment variable allows to fine-tune which
+	// NVIDIA driver components are mounted and accessible within a container.
+	nvidiaDriverCapsEnv = "NVIDIA_DRIVER_CAPABILITIES"
+	// CUDA_VERSION environment variable indicates the version of the CUDA
+	// toolkit installed on in the container image.
+	cudaVersionEnv = "CUDA_VERSION"
+	// NVIDIA_REQUIRE_CUDA environment variable indicates the CUDA toolkit
+	// version that a container needs.
+	requireCudaEnv = "NVIDIA_REQUIRE_CUDA"
+	// AnnotationNVProxy enables nvproxy.
+	AnnotationNVProxy = "dev.gvisor.internal.nvproxy"
+)
 
 // NVProxyEnabled checks both the nvproxy annotation and conf.NVProxy to see if nvproxy is enabled.
 func NVProxyEnabled(spec *specs.Spec, conf *config.Config) bool {
@@ -78,7 +91,7 @@ func gpuFunctionalityRequestedViaHook(spec *specs.Spec, conf *config.Config) boo
 	if spec.Process == nil {
 		return false
 	}
-	nvd, _ := EnvVar(spec.Process.Env, nvdEnvVar)
+	nvd, _ := EnvVar(spec.Process.Env, nvidiaVisibleDevsEnv)
 	// A value of "none" means "no GPU device, but still access to driver
 	// functionality", so it is not a value we check for here.
 	return nvd != "" && nvd != "void"
@@ -105,7 +118,7 @@ func isNvidiaHookPresent(spec *specs.Spec, conf *config.Config) bool {
 //
 // Precondition: conf.NVProxyDocker && GPUFunctionalityRequested(spec, conf).
 func ParseNvidiaVisibleDevices(spec *specs.Spec) (string, error) {
-	nvd, _ := EnvVar(spec.Process.Env, nvdEnvVar)
+	nvd, _ := EnvVar(spec.Process.Env, nvidiaVisibleDevsEnv)
 	if nvd == "none" {
 		return "", nil
 	}
@@ -129,4 +142,50 @@ func ParseNvidiaVisibleDevices(spec *specs.Spec) (string, error) {
 		}
 	}
 	return nvd, nil
+}
+
+// NVProxyDriverCapsFromEnv returns the driver capabilities requested by the
+// application via the NVIDIA_DRIVER_CAPABILITIES env var. See
+// nvidia-container-toolkit/cmd/nvidia-container-runtime-hook/container_config.go:getDriverCapabilities().
+func NVProxyDriverCapsFromEnv(spec *specs.Spec, conf *config.Config) (nvconf.DriverCaps, error) {
+	// Construct the set of allowed driver capabilities.
+	allowedDriverCaps := nvconf.DriverCapsFromString(conf.NVProxyAllowedDriverCapabilities)
+	// Resolve "all" to nvconf.SupportedDriverCaps.
+	if allowedDriverCaps.HasAll() {
+		delete(allowedDriverCaps, nvconf.AllCap)
+		for cap := range nvconf.SupportedDriverCaps {
+			allowedDriverCaps[cap] = struct{}{}
+		}
+	}
+
+	// Extract the set of driver capabilities requested by the application.
+	driverCapsEnvStr, ok := EnvVar(spec.Process.Env, nvidiaDriverCapsEnv)
+	if !ok {
+		// Nothing requested. Fallback to default configurations.
+		if IsLegacyCudaImage(spec) {
+			return allowedDriverCaps, nil
+		}
+		return nvconf.DefaultDriverCaps, nil
+	}
+	if len(driverCapsEnvStr) == 0 {
+		// Empty. Fallback to nvconf.DefaultDriverCaps.
+		return nvconf.DefaultDriverCaps, nil
+	}
+	envDriverCaps := nvconf.DriverCapsFromString(driverCapsEnvStr)
+
+	// Intersect what's requested with what's allowed. Since allowedDriverCaps
+	// doesn't contain "all", the result will also not contain "all".
+	driverCaps := allowedDriverCaps.Intersect(envDriverCaps)
+	if !envDriverCaps.HasAll() && len(driverCaps) != len(envDriverCaps) {
+		return nil, fmt.Errorf("disallowed driver capabilities requested: '%v' (allowed '%v'), update --nvproxy-allowed-driver-capabilities to allow them", envDriverCaps, driverCaps)
+	}
+	return driverCaps, nil
+}
+
+// IsLegacyCudaImage returns true if spec represents a legacy CUDA image.
+// See nvidia-container-toolkit/internal/config/image/cuda_image.go:IsLegacy().
+func IsLegacyCudaImage(spec *specs.Spec) bool {
+	cudaVersion, _ := EnvVar(spec.Process.Env, cudaVersionEnv)
+	requireCuda, _ := EnvVar(spec.Process.Env, requireCudaEnv)
+	return len(cudaVersion) > 0 && len(requireCuda) == 0
 }

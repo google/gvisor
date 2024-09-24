@@ -2011,12 +2011,20 @@ func nvproxySetupAfterGoferUserns(spec *specs.Spec, conf *config.Config, goferCm
 			"configure",
 			fmt.Sprintf("--ldconfig=@%s", ldconfigPath),
 			"--no-cgroups", // runsc doesn't configure device cgroups yet
-			"--utility",
-			"--compute",
 			fmt.Sprintf("--pid=%d", goferCmd.Process.Pid),
 			fmt.Sprintf("--device=%s", devices),
-			spec.Root.Path,
 		}
+		// Pass driver capabilities specified via NVIDIA_DRIVER_CAPABILITIES as flags. See
+		// nvidia-container-toolkit/cmd/nvidia-container-runtime-hook/main.go:doPrestart().
+		driverCaps, err := specutils.NVProxyDriverCapsFromEnv(spec, conf)
+		if err != nil {
+			return fmt.Errorf("failed to get driver capabilities: %w", err)
+		}
+		for cap := range driverCaps {
+			argv = append(argv, cap.ToFlag())
+		}
+		// Add rootfs path as the final argument.
+		argv = append(argv, spec.Root.Path)
 		log.Debugf("Executing %q", argv)
 		var stdout, stderr strings.Builder
 		cmd := exec.Cmd{
