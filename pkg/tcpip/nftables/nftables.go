@@ -44,12 +44,12 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
-	"math/rand"
 	"slices"
 	"sync/atomic"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/rand"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/checksum"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -229,7 +229,7 @@ type NFTables struct {
 	filters   [NumAFs]*addressFamilyFilter // Filters for each address family.
 	clock     tcpip.Clock                  // Clock for timing evaluations.
 	startTime time.Time                    // Time NFTables object was created.
-	rng       *rand.Rand                   // Random number generator.
+	rng       rand.RNG                     // Random number generator.
 }
 
 // addressFamilyFilter represents the nftables state for a specific address
@@ -2199,12 +2199,11 @@ func (r *Rule) evaluate(regs *registerSet, pkt *stack.PacketBuffer) error {
 // NewNFTables creates a new NFTables state object using the given clock for
 // timing operations.
 // Note: Expects random number generator to be initialized with a seed.
-// TODO(b/345684870): Use a secure RNG.
-func NewNFTables(clock tcpip.Clock, rng *rand.Rand) *NFTables {
+func NewNFTables(clock tcpip.Clock, rng rand.RNG) *NFTables {
 	if clock == nil {
 		panic("nftables state must be initialized with a non-nil clock")
 	}
-	if rng == nil {
+	if rng.Reader == nil {
 		panic("nftables state must be initialized with a non-nil random number generator")
 	}
 	return &NFTables{clock: clock, startTime: clock.Now(), rng: rng}

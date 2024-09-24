@@ -17,7 +17,6 @@ package nftables
 import (
 	"encoding/binary"
 	"fmt"
-	"math/rand"
 	"reflect"
 	"slices"
 	"testing"
@@ -25,6 +24,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/buffer"
+	"gvisor.dev/gvisor/pkg/rand"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/faketime"
@@ -2370,8 +2370,8 @@ func TestEvaluateLast(t *testing.T) {
 
 		// Sets up an NFTables object with a base chain and fake manual clock.
 		fakeClock := faketime.NewManualClock()
-		fixedRng := rand.New(rand.NewSource(0))
-		nf := NewNFTables(fakeClock, fixedRng)
+		fixedRNG := rand.RNGFrom(&fixedReader{})
+		nf := NewNFTables(fakeClock, fixedRNG)
 		tab, err := nf.AddTable(arbitraryFamily, "test", "test table", false)
 		if err != nil {
 			t.Fatalf("unexpected error for AddTable: %v", err)
@@ -2822,8 +2822,8 @@ func TestEvaluateMetaLoad(t *testing.T) {
 	timeNS := now.UnixNano()
 	timeDay := now.Weekday()
 	timeHour := now.Hour()*3600 + now.Minute()*60 + now.Second()
-	fixedRng := rand.New(rand.NewSource(0))
-	seededRandUint32 := fixedRng.Uint32() // fixes rng
+	fixedRNG := rand.RNGFrom(&fixedReader{})
+	seededRandUint32 := fixedRNG.Uint32() // fixes rng
 
 	for _, test := range []struct {
 		tname string
@@ -2920,7 +2920,7 @@ func TestEvaluateMetaLoad(t *testing.T) {
 		t.Run(test.tname, func(t *testing.T) {
 			// Sets up an NFTables object with a base chain and fake manual clock.
 			// Using Manual Clock sets time.Now to Unix Epoch which fixes rng seed!
-			nf := NewNFTables(fakeClock, rand.New(rand.NewSource(0)))
+			nf := NewNFTables(fakeClock, rand.RNGFrom(&fixedReader{}))
 
 			tab, err := nf.AddTable(arbitraryFamily, "test", "test table", false)
 			if err != nil {
@@ -3713,8 +3713,8 @@ func packetResultString(initial, final *stack.PacketBuffer) string {
 // newNFTablesStd creates a new NFTables object w/ a standard clock for testing.
 func newNFTablesStd() *NFTables {
 	stdClock := tcpip.NewStdClock()
-	fixedRng := rand.New(rand.NewSource(0))
-	return NewNFTables(stdClock, fixedRng)
+	fixedRNG := rand.RNGFrom(&fixedReader{})
+	return NewNFTables(stdClock, fixedRNG)
 }
 
 // mustCreateImmediate wraps the newImmediate function for brevity.
@@ -3814,4 +3814,18 @@ func mustCreateMetaSet(t *testing.T, key metaKey, sreg uint8) *metaSet {
 		t.Fatalf("failed to create meta set: %v", err)
 	}
 	return mtset
+}
+
+// A fixedReader sets all bytes to the same value (1) when Read is called.
+//
+// It is used to make the RNG deterministic for testing, i.e. it's really
+// really bad at being an RNG.
+type fixedReader struct{}
+
+// Read implements io.Reader.Read.
+func (*fixedReader) Read(buf []byte) (int, error) {
+	for i := range len(buf) {
+		buf[i] = 1
+	}
+	return len(buf), nil
 }
