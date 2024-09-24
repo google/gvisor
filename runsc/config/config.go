@@ -27,6 +27,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/refs"
+	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
 	"gvisor.dev/gvisor/pkg/sentry/watchdog"
 	"gvisor.dev/gvisor/runsc/flag"
 	"gvisor.dev/gvisor/runsc/version"
@@ -325,6 +326,10 @@ type Config struct {
 	// the latest supported NVIDIA driver ABI.
 	NVProxyDriverVersion string `flag:"nvproxy-driver-version"`
 
+	// NVProxyAllowUnsupportedCapabilities is a comma-separated list of driver
+	// capabilities that are allowed to be requested by the container.
+	NVProxyAllowedDriverCapabilities string `flag:"nvproxy-allowed-driver-capabilities"`
+
 	// TPUProxy enables support for TPUs.
 	TPUProxy bool `flag:"tpuproxy"`
 
@@ -407,6 +412,18 @@ func (c *Config) validate() error {
 	}
 	if len(c.ProfilingMetrics) > 0 && len(c.ProfilingMetricsLog) == 0 {
 		return fmt.Errorf("profiling-metrics flag requires defining a profiling-metrics-log for output")
+	}
+	for _, cap := range strings.Split(c.NVProxyAllowedDriverCapabilities, ",") {
+		nvcap := nvconf.DriverCap(cap)
+		if nvcap == nvconf.AllCap {
+			continue
+		}
+		if _, ok := nvconf.KnownDriverCapValues[nvcap]; !ok {
+			return fmt.Errorf("nvproxy-allowed-driver-capabilities contains invalid capability %q", cap)
+		}
+		if _, ok := nvconf.SupportedDriverCaps[nvcap]; !ok {
+			log.Warningf("nvproxy-allowed-driver-capabilities contains unsupported capability %q", cap)
+		}
 	}
 	return nil
 }

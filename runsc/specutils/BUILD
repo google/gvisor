@@ -19,7 +19,7 @@ go_library(
         "//pkg/abi/linux",
         "//pkg/bits",
         "//pkg/log",
-        "//pkg/sentry/devices/tpuproxy/vfio",
+        "//pkg/sentry/devices/nvproxy/nvconf",
         "//pkg/sentry/kernel/auth",
         "//runsc/config",
         "//runsc/flag",
@@ -36,5 +36,9 @@ go_test(
     size = "small",
     srcs = ["specutils_test.go"],
     library = ":specutils",
-    deps = ["@com_github_opencontainers_runtime_spec//specs-go:go_default_library"],
+    deps = [
+        "//pkg/sentry/devices/nvproxy/nvconf",
+        "//runsc/config",
+        "@com_github_opencontainers_runtime_spec//specs-go:go_default_library",
+    ],
 )

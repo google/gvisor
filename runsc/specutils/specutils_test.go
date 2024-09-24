@@ -17,11 +17,14 @@ package specutils
 import (
 	"fmt"
 	"os/exec"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
+	"gvisor.dev/gvisor/runsc/config"
 )
 
 func TestWaitForReadyHappy(t *testing.T) {
@@ -375,6 +378,95 @@ func TestSeccomp(t *testing.T) {
 				}
 			} else if tc.spec.Linux != nil && tc.spec.Linux.Seccomp != nil {
 				t.Errorf("seccomp is in the spec: %+v", tc.spec)
+			}
+		})
+	}
+}
+
+func TestNvidiaDriverCapabilities(t *testing.T) {
+	testAllowedCapsFlag := "utility,compute,graphics"
+	testAllowedCaps := nvconf.DriverCapsFromString(testAllowedCapsFlag)
+	for _, tc := range []struct {
+		name        string
+		allowedCaps string
+		envCaps     []nvconf.DriverCap
+		legacy      bool
+		want        nvconf.DriverCaps
+	}{
+		{
+			name:        "unspecified",
+			allowedCaps: testAllowedCapsFlag,
+			want:        nvconf.DefaultDriverCaps,
+		},
+		{
+			name:        "unspecified-legacy",
+			allowedCaps: testAllowedCapsFlag,
+			legacy:      true,
+			want:        testAllowedCaps,
+		},
+		{
+			name:        "empty",
+			allowedCaps: testAllowedCapsFlag,
+			envCaps:     []nvconf.DriverCap{""},
+			want:        nvconf.DefaultDriverCaps,
+		},
+		{
+			name:        "empty-legacy",
+			allowedCaps: testAllowedCapsFlag,
+			envCaps:     []nvconf.DriverCap{""},
+			legacy:      true,
+			want:        nvconf.DefaultDriverCaps,
+		},
+		{
+			name:        "compute",
+			allowedCaps: testAllowedCapsFlag,
+			envCaps:     []nvconf.DriverCap{nvconf.ComputeCap},
+			want:        nvconf.DriverCaps{nvconf.ComputeCap: struct{}{}},
+		},
+		{
+			name:        "utility,graphics-legacy",
+			allowedCaps: testAllowedCapsFlag,
+			envCaps:     []nvconf.DriverCap{nvconf.UtilityCap, nvconf.GraphicsCap},
+			legacy:      true,
+			want:        nvconf.DriverCaps{nvconf.UtilityCap: struct{}{}, nvconf.GraphicsCap: struct{}{}},
+		},
+		{
+			name:        "all",
+			allowedCaps: testAllowedCapsFlag,
+			envCaps:     []nvconf.DriverCap{nvconf.AllCap},
+			want:        testAllowedCaps,
+		},
+		{
+			name:        "all-all",
+			allowedCaps: "all",
+			envCaps:     []nvconf.DriverCap{nvconf.AllCap},
+			want:        nvconf.SupportedDriverCaps,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var env []string
+			if tc.legacy {
+				env = append(env, fmt.Sprintf("%s=%s", cudaVersionEnv, "10.2.89"))
+			}
+			if len(tc.envCaps) > 0 {
+				var sb strings.Builder
+				for i, cap := range tc.envCaps {
+					if i > 0 {
+						sb.WriteString(",")
+					}
+					sb.WriteString(string(cap))
+				}
+				env = append(env, fmt.Sprintf("%s=%s", nvidiaDriverCapsEnv, sb.String()))
+			}
+			got, err := NVProxyDriverCapsFromEnv(
+				&specs.Spec{Process: &specs.Process{Env: env}},
+				&config.Config{NVProxyAllowedDriverCapabilities: tc.allowedCaps},
+			)
+			if err != nil {
+				t.Errorf("NVProxyDriverCapsFromEnv() failed, err: %v", err)
+			}
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Errorf("NVProxyDriverCapsFromEnv() got: %v, want: %v", got, tc.want)
 			}
 		})
 	}
