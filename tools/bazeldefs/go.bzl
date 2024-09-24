@@ -85,13 +85,12 @@ def go_library(name, bazel_cgo = False, bazel_cdeps = [], bazel_clinkopts = [], 
         cgo_copts: cgo opts to pass to `go_library`.
         **kwargs: rest of the arguments are passed to `go_library`.
     """
-    if bazel_cgo == True:
-        kwargs["cgo"] = bazel_cgo
-        kwargs["cdeps"] = bazel_cdeps
-        kwargs["clinkopts"] = bazel_clinkopts
-        kwargs["copts"] = bazel_copts
     _go_library(
         name = name,
+        cgo = bazel_cgo,
+        cdeps = bazel_cdeps,
+        copts = bazel_copts,
+        clinkopts = bazel_clinkopts,
         importpath = "gvisor.dev/gvisor/" + native.package_name(),
         **kwargs
     )
