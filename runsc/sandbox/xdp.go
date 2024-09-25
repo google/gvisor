@@ -12,6 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:build xdp
+// +build xdp
+
 package sandbox
 
 import (
@@ -33,6 +36,10 @@ import (
 	"gvisor.dev/gvisor/runsc/sandbox/bpf"
 	xdpcmd "gvisor.dev/gvisor/tools/xdp/cmd"
 )
+
+// This file supports XDP in gVisor. It is not compiled in by default.
+//
+// To enable XDP support, build gVisor with `--define=gotags=xdp`.
 
 // createRedirectInterfacesAndRoutes initializes the network using an AF_XDP
 // socket on a *host* device, not a device in the container netns. It:

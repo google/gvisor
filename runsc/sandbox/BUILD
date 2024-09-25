@@ -11,6 +11,7 @@ go_library(
         "memory.go",
         "network.go",
         "network_unsafe.go",
+        "no_xdp.go",
         "sandbox.go",
         "sandbox_impl.go",
         "xdp.go",
