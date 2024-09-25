@@ -94,59 +94,63 @@ func TestWritePacketBetweenDevices(t *testing.T) {
 		vethID   = 7
 		bridgeID = 6
 	)
-
 	veth1, veth2 := veth.NewPair(1500)
-	secondStack := stack.New(stack.Options{})
-	if err := secondStack.CreateNIC(vethID, ethernet.New(veth2)); err != nil {
-		t.Fatalf("s.CreateNIC(%d, _): %s", vethID, err)
-	}
 	veth2.SetLinkAddress(localLinkAddr)
-
-	s := stack.New(stack.Options{})
-	bridgeEndpoint := stack.NewBridgeEndpoint(1500)
-	bridgeEndpoint.SetLinkAddress(bridgeLinkAddr)
-	if err := s.CreateNIC(bridgeID, bridgeEndpoint); err != nil {
-		t.Fatalf("s.CreateNIC(%d, _): %s", nicID, err)
-	}
-
 	c := channel.New(1, header.EthernetMinimumSize, localLinkAddr)
 	c.SetLinkAddress(remoteLinkAddr)
-	if err := s.CreateNIC(nicID, ethernet.New(c)); err != nil {
-		t.Fatalf("s.CreateNIC(%d, _): %s", nicID, err)
-	}
-	if err := s.SetNICCoordinator(nicID, bridgeID); err != nil {
-		t.Fatalf("s.SetNICCoordinator")
-	}
 
-	if err := s.CreateNIC(vethID, ethernet.New(veth1)); err != nil {
-		t.Fatalf("s.CreateNIC(%d, _): %s", vethID, err)
-	}
-	if err := s.SetNICCoordinator(vethID, bridgeID); err != nil {
-		t.Fatalf("s.SetNICCoordinator")
-	}
+	for _, addFDB := range []bool{true, false} {
+		bridgeEndpoint := stack.NewBridgeEndpoint(1500)
+		bridgeEndpoint.SetLinkAddress(bridgeLinkAddr)
+		s := stack.New(stack.Options{})
+		secondStack := stack.New(stack.Options{})
+		if err := s.CreateNIC(bridgeID, bridgeEndpoint); err != nil {
+			t.Fatalf("s.CreateNIC(%d, _): %s", bridgeID, err)
+		}
+		if err := s.CreateNIC(nicID, ethernet.New(c)); err != nil {
+			t.Fatalf("s.CreateNIC(%d, _): %s", nicID, err)
+		}
+		if err := s.SetNICCoordinator(nicID, bridgeID); err != nil {
+			t.Fatalf("s.SetNICCoordinator(%d, %d)", nicID, bridgeID)
+		}
+		if err := s.CreateNIC(vethID, ethernet.New(veth1)); err != nil {
+			t.Fatalf("s.CreateNIC(%d, _): %s", vethID, err)
+		}
+		if err := s.SetNICCoordinator(vethID, bridgeID); err != nil {
+			t.Fatalf("s.SetNICCoordinator")
+		}
+		if err := secondStack.CreateNIC(vethID, ethernet.New(veth2)); err != nil {
+			t.Fatalf("s.CreateNIC(%d, _): %s", vethID, err)
+		}
+		if addFDB {
+			if err := bridgeEndpoint.AddFDBEntry(veth1.LinkAddress(), nicID, 0); err != nil {
+				t.Fatalf("bridgeEndpoint.AddFDBEntry(%s, %d, _): %s", veth1.LinkAddress(), nicID, err)
+			}
+		}
 
-	n := &testNotification{ch: make(chan bool, 1)}
-	c.AddNotify(n)
-	if err := secondStack.WritePacketToRemote(vethID, remoteLinkAddr, netProto, buffer.Buffer{}); err != nil {
-		t.Fatalf("s.WritePacketToRemote(%d, %s, _): %s", bridgeID, remoteLinkAddr, err)
-	}
-	<-n.ch
-	pkt := c.Read()
-	if pkt == nil {
-		t.Fatal("expected to read a packet")
-	}
+		n := &testNotification{ch: make(chan bool, 1)}
+		c.AddNotify(n)
+		if err := secondStack.WritePacketToRemote(vethID, remoteLinkAddr, netProto, buffer.Buffer{}); err != nil {
+			t.Fatalf("s.WritePacketToRemote(%d, %s, _): %s", bridgeID, remoteLinkAddr, err)
+		}
+		<-n.ch
+		pkt := c.Read()
+		if pkt == nil {
+			t.Fatal("expected to read a packet")
+		}
 
-	pkt.LinkHeader().Consume(header.EthernetMinimumSize)
-	eth := header.Ethernet(pkt.LinkHeader().Slice())
-	pkt.DecRef()
-	if got := eth.SourceAddress(); got != localLinkAddr {
-		t.Errorf("got eth.SourceAddress() = %s, want = %s", got, localLinkAddr)
-	}
-	if got := eth.DestinationAddress(); got != remoteLinkAddr {
-		t.Errorf("got eth.DestinationAddress() = %s, want = %s", got, remoteLinkAddr)
-	}
-	if got := eth.Type(); got != netProto {
-		t.Errorf("got eth.Type() = %d, want = %d", got, netProto)
+		pkt.LinkHeader().Consume(header.EthernetMinimumSize)
+		eth := header.Ethernet(pkt.LinkHeader().Slice())
+		pkt.DecRef()
+		if got := eth.SourceAddress(); got != localLinkAddr {
+			t.Errorf("got eth.SourceAddress() = %s, want = %s", got, localLinkAddr)
+		}
+		if got := eth.DestinationAddress(); got != remoteLinkAddr {
+			t.Errorf("got eth.DestinationAddress() = %s, want = %s", got, remoteLinkAddr)
+		}
+		if got := eth.Type(); got != netProto {
+			t.Errorf("got eth.Type() = %d, want = %d", got, netProto)
+		}
 	}
 }
 
