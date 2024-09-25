@@ -172,7 +172,7 @@ func TestSandboxProcessEnv(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got) != 0 {
-		t.Errorf("sandbox process's environment is not empty: got %s", string(got))
+	if len(got) != 0 && string(got) != "GLIBC_TUNABLES=glibc.pthread.rseq=0\x00" {
+		t.Errorf("sandbox process's environment is not empty: got %s (%v)", string(got), got)
 	}
 }

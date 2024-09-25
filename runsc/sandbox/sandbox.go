@@ -851,11 +851,12 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 	if !conf.TestOnlyAllowRunAsCurrentUserWithoutChroot {
 		// Setting cmd.Env = nil causes cmd to inherit the current process's env.
 		cmd.Env = []string{}
-		// runsc-race with glibc needs to disable rseq.
-		glibcTunables := os.Getenv("GLIBC_TUNABLES")
-		if glibcTunables != "" {
-			cmd.Env = append(cmd.Env, fmt.Sprintf("GLIBC_TUNABLES=%s", glibcTunables))
-		}
+	}
+	if config.CgoEnabled {
+		// Platforms that use stub processes are not compatible with
+		// the glibc rseq, because they unmap everything from a process
+		// address space.
+		cmd.Env = append(cmd.Env, "GLIBC_TUNABLES=glibc.pthread.rseq=0")
 	}
 
 	// If there is a gofer, sends all socket ends to the sandbox.

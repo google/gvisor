@@ -369,6 +369,14 @@ steps:
       <<: *ubuntu_agents
       arch: "amd64"
   - <<: *common
+    <<: *docker
+    <<: *source_test
+    label: ":satellite: gVisor network plugin tests"
+    command: make plugin-network-tests
+    agents:
+      <<: *kvm_agents
+      arch: "amd64"
+  - <<: *common
     <<: *source_test
     label: ":coffee: Do tests"
     command: make do-tests
