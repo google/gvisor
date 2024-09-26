@@ -46,6 +46,13 @@ type Restore struct {
 	// network block device). Usually the restore is done only once, so the cost
 	// of adding the checkpoint files to the page cache can be redundant.
 	direct bool
+
+	// If background is true, the container image may continue to be read after
+	// the restore command exits. For large images, this significantly shortens
+	// the amount of time taken by the restore command. The checkpoint must be
+	// uncompressed for background to work; if the checkpoint is compressed,
+	// background has no effect.
+	background bool
 }
 
 // Name implements subcommands.Command.Name.
@@ -70,6 +77,7 @@ func (r *Restore) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&r.imagePath, "image-path", "", "directory path to saved container image")
 	f.BoolVar(&r.detach, "detach", false, "detach from the container's process")
 	f.BoolVar(&r.direct, "direct", false, "use O_DIRECT for reading checkpoint pages file")
+	f.BoolVar(&r.background, "background", false, "allow image loading to continue after restore exits (requires uncompressed checkpoint)")
 
 	// Unimplemented flags necessary for compatibility with docker.
 
@@ -146,7 +154,7 @@ func (r *Restore) Execute(_ context.Context, f *flag.FlagSet, args ...any) subco
 	}
 
 	log.Debugf("Restore: %v", r.imagePath)
-	if err := c.Restore(conf, r.imagePath, r.direct); err != nil {
+	if err := c.Restore(conf, r.imagePath, r.direct, r.background); err != nil {
 		return util.Errorf("starting container: %v", err)
 	}
 

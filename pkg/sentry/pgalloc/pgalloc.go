@@ -183,6 +183,10 @@ type MemoryFile struct {
 	// immutable.
 	stopNotifyPressure func()
 
+	// If asyncPageLoad is non-nil, it tracks the state of in-progress or
+	// failed async page loading.
+	asyncPageLoad atomic.Pointer[aplShared]
+
 	// file is the backing file. The file pointer is immutable.
 	file *os.File
 
@@ -1162,7 +1166,11 @@ func (f *MemoryFile) IncRef(fr memmap.FileRange, memCgID uint32) {
 
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.incRefLocked(fr)
+}
 
+// Preconditions: f.mu must be locked.
+func (f *MemoryFile) incRefLocked(fr memmap.FileRange) {
 	f.forEachChunk(fr, func(chunk *chunkInfo, chunkFR memmap.FileRange) bool {
 		unfree := &f.unfreeSmall
 		if chunk.huge {
@@ -1219,6 +1227,10 @@ func (f *MemoryFile) DecRef(fr memmap.FileRange) {
 					ma.wasteOrReleasing = true
 					return true
 				})
+				// Cancel any pending async load on waste pages.
+				if apl := f.asyncPageLoad.Load(); apl != nil {
+					apl.cancelWasteLoad(wasteFR)
+				}
 			}
 			return true
 		})
@@ -1416,6 +1428,12 @@ func (f *MemoryFile) MapInternal(fr memmap.FileRange, at hostarch.AccessType) (s
 	}
 	if at.Execute {
 		return safemem.BlockSeq{}, linuxerr.EACCES
+	}
+
+	if apl := f.asyncPageLoad.Load(); apl != nil {
+		if err := apl.awaitLoad(f, fr); err != nil {
+			return safemem.BlockSeq{}, err
+		}
 	}
 
 	chunks := ((fr.End + chunkMask) / chunkSize) - (fr.Start / chunkSize)
@@ -1753,6 +1771,11 @@ func (f *MemoryFile) File() *os.File {
 
 // DataFD implements memmap.File.DataFD.
 func (f *MemoryFile) DataFD(fr memmap.FileRange) (int, error) {
+	if apl := f.asyncPageLoad.Load(); apl != nil {
+		if err := apl.awaitLoad(f, fr); err != nil {
+			return -1, err
+		}
+	}
 	return f.FD(), nil
 }
 

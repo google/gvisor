@@ -233,9 +233,10 @@ func (r *Runsc) start(context context.Context, cio runc.IO, cmd *exec.Cmd) error
 
 // RestoreOpts is a set of options to runsc.Restore().
 type RestoreOpts struct {
-	ImagePath string
-	Detach    bool
-	Direct    bool
+	ImagePath  string
+	Detach     bool
+	Direct     bool
+	Background bool
 }
 
 func (o *RestoreOpts) args() []string {
@@ -248,6 +249,9 @@ func (o *RestoreOpts) args() []string {
 	}
 	if o.Direct {
 		out = append(out, "--direct")
+	}
+	if o.Background {
+		out = append(out, "--background")
 	}
 	return out
 }

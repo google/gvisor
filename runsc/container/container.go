@@ -433,11 +433,11 @@ func (c *Container) Start(conf *config.Config) error {
 
 // Restore takes a container and replaces its kernel and file system
 // to restore a container from its state file.
-func (c *Container) Restore(conf *config.Config, imagePath string, direct bool) error {
+func (c *Container) Restore(conf *config.Config, imagePath string, direct, background bool) error {
 	log.Debugf("Restore container, cid: %s", c.ID)
 
 	restore := func(conf *config.Config) error {
-		return c.Sandbox.Restore(conf, c.ID, imagePath, direct)
+		return c.Sandbox.Restore(conf, c.ID, imagePath, direct, background)
 	}
 	return c.startImpl(conf, "restore", restore, c.Sandbox.RestoreSubcontainer)
 }

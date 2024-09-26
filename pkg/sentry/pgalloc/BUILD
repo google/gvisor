@@ -8,10 +8,10 @@ package(
 )
 
 declare_mutex(
-    name = "mappings_mutex",
-    out = "mappings_mutex.go",
+    name = "apl_shared_mutex",
+    out = "apl_shared_mutex.go",
     package = "pgalloc",
-    prefix = "mappings",
+    prefix = "aplShared",
 )
 
 declare_mutex(
@@ -19,6 +19,23 @@ declare_mutex(
     out = "memory_file_mutex.go",
     package = "pgalloc",
     prefix = "memoryFile",
+)
+
+go_template_instance(
+    name = "apl_unloaded_set",
+    out = "apl_unloaded_set.go",
+    imports = {
+        "memmap": "gvisor.dev/gvisor/pkg/sentry/memmap",
+    },
+    package = "pgalloc",
+    prefix = "aplUnloaded",
+    template = "//pkg/segment:generic_set",
+    types = {
+        "Key": "uint64",
+        "Range": "memmap.FileRange",
+        "Value": "aplUnloadedInfo",
+        "Functions": "aplUnloadedSetFunctions",
+    },
 )
 
 go_template_instance(
@@ -51,7 +68,6 @@ go_template_instance(
     out = "memacct_set.go",
     consts = {
         "minDegree": "10",
-        "trackGaps": "1",
     },
     imports = {
         "memmap": "gvisor.dev/gvisor/pkg/sentry/memmap",
@@ -112,10 +128,12 @@ go_template_instance(
 go_library(
     name = "pgalloc",
     srcs = [
+        "apl_shared_mutex.go",
+        "apl_unloaded_set.go",
         "context.go",
+        "debug.go",
         "evictable_range.go",
         "evictable_range_set.go",
-        "mappings_mutex.go",
         "memacct_set.go",
         "memory_file_mutex.go",
         "pgalloc.go",
@@ -127,21 +145,26 @@ go_library(
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
+        "//pkg/aio",
         "//pkg/atomicbitops",
+        "//pkg/bitmap",
         "//pkg/context",
         "//pkg/errors/linuxerr",
+        "//pkg/fd",
+        "//pkg/goid",
         "//pkg/hostarch",
         "//pkg/log",
+        "//pkg/ringdeque",
         "//pkg/safemem",
         "//pkg/sentry/arch",
         "//pkg/sentry/hostmm",
         "//pkg/sentry/memmap",
         "//pkg/sentry/usage",
         "//pkg/state",
-        "//pkg/state/statefile",
         "//pkg/state/wire",
         "//pkg/sync",
         "//pkg/sync/locking",
+        "//pkg/syncevent",
         "//pkg/usermem",
         "@org_golang_x_sys//unix:go_default_library",
     ],

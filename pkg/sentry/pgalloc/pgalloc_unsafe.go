@@ -36,3 +36,11 @@ func mincore(s []byte, buf []byte, off uint64, wasCommitted bool) error {
 	}
 	return nil
 }
+
+func sliceFromIovec(iov unix.Iovec) []byte {
+	return unsafe.Slice(iov.Base, iov.Len)
+}
+
+func canMergeIovecAndSlice(iov unix.Iovec, bs []byte) bool {
+	return uintptr(unsafe.Pointer(iov.Base))+uintptr(iov.Len) == uintptr(unsafe.Pointer(unsafe.SliceData(bs)))
+}

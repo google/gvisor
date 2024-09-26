@@ -386,7 +386,6 @@ go_library(
         "//pkg/sentry/usage",
         "//pkg/sentry/vfs",
         "//pkg/state",
-        "//pkg/state/statefile",
         "//pkg/state/wire",
         "//pkg/sync",
         "//pkg/sync/locking",
