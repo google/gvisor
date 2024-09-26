@@ -91,6 +91,11 @@ func (mf *pciDeviceFdMemmapFile) MapInternal(fr memmap.FileRange, at hostarch.Ac
 	return mf.pfm.MapInternal(fr, int(mf.fd.hostFD), at.Write)
 }
 
+// DataFD implements memmap.File.DataFD.
+func (mf *pciDeviceFdMemmapFile) DataFD(fr memmap.FileRange) (int, error) {
+	return mf.FD(), nil
+}
+
 // FD implements memmap.File.FD.
 func (mf *pciDeviceFdMemmapFile) FD() int {
 	return int(mf.fd.hostFD)

@@ -304,8 +304,9 @@ type Systrap struct {
 	platform.UseHostGlobalMemoryBarrier
 	platform.DoesNotOwnPageTables
 
-	// memoryFile is used to create a stub sysmsg stack
-	// which is shared with the Sentry.
+	// memoryFile is used to create a stub sysmsg stack which is shared with
+	// the Sentry. Since memoryFile is platform-private, it is never restored,
+	// so it is safe to call memoryFile.FD() rather than memoryFile.DataFD().
 	memoryFile *pgalloc.MemoryFile
 }
 

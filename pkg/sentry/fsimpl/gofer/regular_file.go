@@ -960,6 +960,11 @@ func (d *dentryPlatformFile) MapInternal(fr memmap.FileRange, at hostarch.Access
 	return d.hostFileMapper.MapInternal(fr, int(d.mmapFD.RacyLoad()), at.Write)
 }
 
+// DataFD implements memmap.File.DataFD.
+func (d *dentryPlatformFile) DataFD(fr memmap.FileRange) (int, error) {
+	return d.FD(), nil
+}
+
 // FD implements memmap.File.FD.
 func (d *dentryPlatformFile) FD() int {
 	d.handleMu.RLock()

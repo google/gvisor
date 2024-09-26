@@ -72,6 +72,11 @@ func (i *inodePlatformFile) MapInternal(fr memmap.FileRange, at hostarch.AccessT
 	return i.fileMapper.MapInternal(fr, i.hostFD, at.Write)
 }
 
+// DataFD implements memmap.File.DataFD.
+func (i *inodePlatformFile) DataFD(fr memmap.FileRange) (int, error) {
+	return i.FD(), nil
+}
+
 // FD implements memmap.File.FD.
 func (i *inodePlatformFile) FD() int {
 	return i.hostFD

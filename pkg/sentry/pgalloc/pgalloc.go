@@ -1751,6 +1751,11 @@ func (f *MemoryFile) File() *os.File {
 	return f.file
 }
 
+// DataFD implements memmap.File.DataFD.
+func (f *MemoryFile) DataFD(fr memmap.FileRange) (int, error) {
+	return f.FD(), nil
+}
+
 // FD implements memmap.File.FD.
 func (f *MemoryFile) FD() int {
 	return int(f.file.Fd())

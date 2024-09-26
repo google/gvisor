@@ -440,6 +440,16 @@ type File interface {
 	// reference is held on the mapped pages.
 	MapInternal(fr FileRange, at hostarch.AccessType) (safemem.BlockSeq, error)
 
+	// DataFD blocks until offsets fr in the file contain valid data, then
+	// returns the file descriptor represented by the File.
+	//
+	// Note that fr.Start and fr.End need not be page-aligned.
+	//
+	// Preconditions:
+	//	* fr.Length() > 0.
+	//	* At least one reference must be held on all pages in fr.
+	DataFD(fr FileRange) (int, error)
+
 	// BufferReadAt reads len(dst) bytes from the file into dst, starting at
 	// file offset off. It returns the number of bytes read. Like
 	// io.ReaderAt.ReadAt(), it never returns a short read with a nil error.
@@ -466,10 +476,10 @@ type File interface {
 	//	* At least one reference must be held on all written pages.
 	BufferWriteAt(off uint64, src []byte) (uint64, error)
 
-	// FD returns the file descriptor represented by the File.
-	//
-	// The only permitted operation on the returned file descriptor is to map
-	// pages from it consistent with the requirements of AddressSpace.MapFile.
+	// FD returns the file descriptor represented by the File. The returned
+	// file descriptor should not be used to implement
+	// platform.AddressSpace.MapFile, since the contents of the File may not be
+	// valid; use DataFD instead.
 	FD() int
 }
 
