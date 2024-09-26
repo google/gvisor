@@ -2405,8 +2405,8 @@ go_repository(
     name = "com_github_containerd_containerd",
     build_file_proto_mode = "disable",
     importpath = "github.com/containerd/containerd",
-    sum = "h1:Z0CbagVdn9VN4K6htOCY/jApSw8YKP+RdLZ5dkXF8PM=",
-    version = "v1.4.13",
+    sum = "h1:Bcj0ZXqgIs6GG+YbaKkMX3Dap0JsIVG4UYFOLRo7iX4=",
+    version = "v1.6.36",
 )
 
 go_repository(
@@ -2727,10 +2727,26 @@ go_repository(
 )
 
 go_repository(
+    name = "com_github_containerd_errdefs",
+    build_file_proto_mode = "disable",
+    importpath = "github.com/containerd/errdefs",
+    sum = "h1:m0wCRBiu1WJT/Fr+iOoQHMQS/eP5myQ8lCv4Dz5ZURM=",
+    version = "v0.1.0",
+)
+
+go_repository(
     name = "com_github_containerd_fifo",
     importpath = "github.com/containerd/fifo",
     sum = "h1:6PirWBr9/L7GDamKr+XM0IeUFXu5mf3M/BPpH9gaLBU=",
     version = "v1.0.0",
+)
+
+go_repository(
+    name = "com_github_containerd_log",
+    build_file_proto_mode = "disable",
+    importpath = "github.com/containerd/log",
+    sum = "h1:TCJt7ioM2cr/tfR8GPbGf9/VRAX8D2B4PjzCpfX540I=",
+    version = "v0.1.0",
 )
 
 go_repository(

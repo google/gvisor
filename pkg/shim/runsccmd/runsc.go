@@ -178,6 +178,7 @@ func (r *Runsc) Create(context context.Context, id, bundle string, opts *CreateO
 	return err
 }
 
+// Pause will pause a running container.
 func (r *Runsc) Pause(context context.Context, id string) error {
 	if out, _, err := cmdOutput(r.command(context, "pause", id), true); err != nil {
 		return fmt.Errorf("unable to pause: %w: %s", err, out)
@@ -185,6 +186,7 @@ func (r *Runsc) Pause(context context.Context, id string) error {
 	return nil
 }
 
+// Resume will resume a paused container.
 func (r *Runsc) Resume(context context.Context, id string) error {
 	if out, _, err := cmdOutput(r.command(context, "resume", id), true); err != nil {
 		return fmt.Errorf("unable to resume: %w: %s", err, out)

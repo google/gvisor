@@ -155,7 +155,7 @@ func (p *Init) Create(ctx context.Context, r *CreateConfig) (err error) {
 		if err != nil {
 			return fmt.Errorf("failed to retrieve console master: %w", err)
 		}
-		console, err = p.Platform.CopyConsole(ctx, console, r.Stdin, r.Stdout, r.Stderr, &p.wg)
+		console, err = p.Platform.CopyConsole(ctx, console, r.ID, r.Stdin, r.Stdout, r.Stderr, &p.wg)
 		if err != nil {
 			return fmt.Errorf("failed to start console copy: %w", err)
 		}
