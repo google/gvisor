@@ -213,6 +213,11 @@ func (mf *imageMemmapFile) MapInternal(fr memmap.FileRange, at hostarch.AccessTy
 	return safemem.BlockSeqOf(safemem.BlockFromSafeSlice(bytes)), nil
 }
 
+// DataFD implements memmap.File.DataFD.
+func (mf *imageMemmapFile) DataFD(fr memmap.FileRange) (int, error) {
+	return mf.FD(), nil
+}
+
 // FD implements memmap.File.FD.
 func (mf *imageMemmapFile) FD() int {
 	return mf.image.FD()

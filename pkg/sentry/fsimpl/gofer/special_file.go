@@ -505,6 +505,11 @@ func (fd *specialFileFD) MapInternal(fr memmap.FileRange, at hostarch.AccessType
 	return fd.hostFileMapper.MapInternal(fr, int(fd.handle.fd), at.Write)
 }
 
+// DataFD implements memmap.File.DataFD.
+func (fd *specialFileFD) DataFD(fr memmap.FileRange) (int, error) {
+	return fd.FD(), nil
+}
+
 // FD implements memmap.File.FD.
 func (fd *specialFileFD) FD() int {
 	fd.requireHostFD()

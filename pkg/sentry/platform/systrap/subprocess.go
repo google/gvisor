@@ -149,8 +149,8 @@ type subprocess struct {
 	// within the sentry address space.
 	threadContextRegion uintptr
 
-	// memoryFile is used to allocate a sysmsg stack which is shared
-	// between a stub process and the Sentry.
+	// memoryFile is used to allocate a sysmsg stack which is shared between a
+	// stub process and the Sentry.
 	memoryFile *pgalloc.MemoryFile
 
 	// usertrap is the state of the usertrap table which contains syscall
@@ -967,17 +967,21 @@ func (s *subprocess) syscall(sysno uintptr, args ...arch.SyscallArgument) (uintp
 
 // MapFile implements platform.AddressSpace.MapFile.
 func (s *subprocess) MapFile(addr hostarch.Addr, f memmap.File, fr memmap.FileRange, at hostarch.AccessType, precommit bool) error {
+	fd, err := f.DataFD(fr)
+	if err != nil {
+		return err
+	}
 	var flags int
 	if precommit {
 		flags |= unix.MAP_POPULATE
 	}
-	_, err := s.syscall(
+	_, err = s.syscall(
 		unix.SYS_MMAP,
 		arch.SyscallArgument{Value: uintptr(addr)},
 		arch.SyscallArgument{Value: uintptr(fr.Length())},
 		arch.SyscallArgument{Value: uintptr(at.Prot())},
 		arch.SyscallArgument{Value: uintptr(flags | unix.MAP_SHARED | unix.MAP_FIXED)},
-		arch.SyscallArgument{Value: uintptr(f.FD())},
+		arch.SyscallArgument{Value: uintptr(fd)},
 		arch.SyscallArgument{Value: uintptr(fr.Start)})
 	return err
 }

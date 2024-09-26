@@ -80,6 +80,11 @@ func (mf *vfioFDMemmapFile) MapInternal(fr memmap.FileRange, at hostarch.AccessT
 	return safemem.BlockSeq{}, linuxerr.EINVAL
 }
 
+// DataFD implements memmap.File.DataFD.
+func (mf *vfioFDMemmapFile) DataFD(fr memmap.FileRange) (int, error) {
+	return mf.FD(), nil
+}
+
 // FD implements memmap.File.FD.
 func (mf *vfioFDMemmapFile) FD() int {
 	return int(mf.fd.hostFD)

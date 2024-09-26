@@ -85,6 +85,11 @@ func (mf *uvmFDMemmapFile) MapInternal(fr memmap.FileRange, at hostarch.AccessTy
 	return safemem.BlockSeq{}, memmap.BufferedIOFallbackErr{}
 }
 
+// DataFD implements memmap.File.DataFD.
+func (mf *uvmFDMemmapFile) DataFD(fr memmap.FileRange) (int, error) {
+	return mf.FD(), nil
+}
+
 // FD implements memmap.File.FD.
 func (mf *uvmFDMemmapFile) FD() int {
 	return int(mf.fd.hostFD)

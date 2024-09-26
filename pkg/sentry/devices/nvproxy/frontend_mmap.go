@@ -72,6 +72,11 @@ func (mf *frontendFDMemmapFile) IncRef(fr memmap.FileRange, memCgID uint32) {
 func (mf *frontendFDMemmapFile) DecRef(fr memmap.FileRange) {
 }
 
+// DataFD implements memmap.File.DataFD.
+func (mf *frontendFDMemmapFile) DataFD(fr memmap.FileRange) (int, error) {
+	return mf.FD(), nil
+}
+
 // FD implements memmap.File.FD.
 func (mf *frontendFDMemmapFile) FD() int {
 	return int(mf.fd.hostFD)

@@ -80,6 +80,11 @@ func (mf *accelFDMemmapFile) MapInternal(fr memmap.FileRange, at hostarch.Access
 	return safemem.BlockSeq{}, linuxerr.EINVAL
 }
 
+// DataFD implements memmap.File.DataFD.
+func (mf *accelFDMemmapFile) DataFD(fr memmap.FileRange) (int, error) {
+	return mf.FD(), nil
+}
+
 // FD implements memmap.File.FD.
 func (mf *accelFDMemmapFile) FD() int {
 	return int(mf.fd.hostFD)
