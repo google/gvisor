@@ -485,7 +485,8 @@ const (
 
 // From src/common/sdk/nvidia/inc/ctrl/ctrl2080/ctrl2080perf.h:
 const (
-	NV2080_CTRL_CMD_PERF_BOOST = 0x2080200a
+	NV2080_CTRL_CMD_PERF_BOOST              = 0x2080200a
+	NV2080_CTRL_CMD_PERF_GET_CURRENT_PSTATE = 0x20802068
 )
 
 // From src/common/sdk/nvidia/inc/ctrl/ctrl2080/ctrl2080rc.h:
@@ -498,7 +499,7 @@ const (
 // From src/common/sdk/nvidia/inc/ctrl/ctrl2080/ctrl2080tmr.h:
 const (
 	NV2080_CTRL_CMD_TIMER_GET_GPU_CPU_TIME_CORRELATION_INFO = 0x20800406
-	NV2080_CTRL_CMD_PERF_GET_CURRENT_PSTATE                 = 0x20802068
+	NV2080_CTRL_CMD_TIMER_SET_GR_TICK_FREQ                  = 0x20800407
 )
 
 // From src/common/sdk/nvidia/inc/ctrl/ctrl503c.h:
