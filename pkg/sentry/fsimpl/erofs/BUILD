@@ -61,6 +61,7 @@ go_library(
         "//pkg/errors/linuxerr",
         "//pkg/fspath",
         "//pkg/hostarch",
+        "//pkg/log",
         "//pkg/refs",
         "//pkg/safemem",
         "//pkg/sentry/fsimpl/lock",

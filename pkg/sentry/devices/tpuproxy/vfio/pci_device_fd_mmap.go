@@ -61,7 +61,7 @@ func (fd *pciDeviceFD) Translate(ctx context.Context, required, optional memmap.
 			Source: optional,
 			File:   &fd.memmapFile,
 			Offset: optional.Start,
-			Perms:  at,
+			Perms:  hostarch.AnyAccess,
 		},
 	}, nil
 }

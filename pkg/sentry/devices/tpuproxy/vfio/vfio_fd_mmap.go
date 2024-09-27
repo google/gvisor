@@ -50,7 +50,7 @@ func (fd *vfioFD) Translate(ctx context.Context, required, optional memmap.Mappa
 			Source: optional,
 			File:   &fd.memmapFile,
 			Offset: optional.Start,
-			Perms:  at,
+			Perms:  hostarch.AnyAccess,
 		},
 	}, nil
 }

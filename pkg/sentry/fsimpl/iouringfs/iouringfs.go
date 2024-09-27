@@ -570,7 +570,7 @@ func (sqemf *sqEntriesFile) Translate(ctx context.Context, required, optional me
 				Source: source,
 				File:   pgalloc.MemoryFileFromContext(ctx),
 				Offset: sqemf.fr.Start + source.Start,
-				Perms:  at,
+				Perms:  hostarch.AnyAccess,
 			},
 		}, nil
 	}
@@ -616,7 +616,7 @@ func (rbmf *ringsBufferFile) Translate(ctx context.Context, required, optional m
 				Source: source,
 				File:   pgalloc.MemoryFileFromContext(ctx),
 				Offset: rbmf.fr.Start + source.Start,
-				Perms:  at,
+				Perms:  hostarch.AnyAccess,
 			},
 		}, nil
 	}
