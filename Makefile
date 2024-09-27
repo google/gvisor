@@ -111,6 +111,7 @@ else
 RUNTIME     ?= $(BRANCH_NAME)
 endif
 RUNTIME_DIR     ?= $(shell dirname $(shell mktemp -u))/$(RUNTIME)
+RUNSC_TARGET    ?= //runsc
 RUNTIME_BIN     ?= $(RUNTIME_DIR)/runsc
 RUNTIME_LOG_DIR ?= $(RUNTIME_DIR)/logs
 RUNTIME_LOGS    ?= $(RUNTIME_LOG_DIR)/runsc.log.%TEST%.%TIMESTAMP%.%COMMAND%
@@ -127,7 +128,7 @@ endif
 $(RUNTIME_BIN): # See below.
 	@mkdir -p "$(RUNTIME_DIR)"
 ifeq (,$(STAGED_BINARIES))
-	@$(call copy,//runsc,$(RUNTIME_BIN))
+	@$(call copy,$(RUNSC_TARGET),$(RUNTIME_BIN))
 else
 	gsutil cat "${STAGED_BINARIES}" | \
 	  tar -C "$(RUNTIME_DIR)" -zxvf - runsc && \
@@ -199,6 +200,10 @@ PARTITIONS       := --test_env=PARTITION=$(PARTITION) --test_env=TOTAL_PARTITION
 runsc: ## Builds the runsc binary.
 	@$(call build,-c opt //runsc)
 .PHONY: runsc
+
+runsc-plugin-stack:
+	@$(call build,-c opt $(PLUGIN_STACK_FLAGS) //runsc:runsc-plugin-stack)
+.PHONY: runsc-plugin-stack
 
 debian: ## Builds the debian packages.
 	@$(call build,-c opt //debian:debian)
@@ -341,6 +346,12 @@ docker-tests: load-basic $(RUNTIME_BIN)
 	@$(call install_runtime,$(RUNTIME)-overlay,--overlay2=all:self) # Used by TestOverlay*.
 	@$(call test_runtime,$(RUNTIME),$(INTEGRATION_TARGETS) //test/e2e:integration_runtime_test)
 .PHONY: docker-tests
+
+plugin-network-tests: load-basic $(RUNTIME_BIN)
+	@$(call install_runtime,$(RUNTIME),--network=plugin)
+	@$(call test_runtime,$(RUNTIME), --test_arg=-test.run=ConnectToSelf $(INTEGRATION_TARGETS))
+
+plugin-network-tests: RUNSC_TARGET=--config plugin-tldk //runsc:runsc-plugin-stack
 
 overlay-tests: load-basic $(RUNTIME_BIN)
 	@$(call install_runtime,$(RUNTIME),--overlay2=all:dir=/tmp)

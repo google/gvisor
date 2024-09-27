@@ -6,12 +6,12 @@ config_setting(
 genrule(
     name = "pluginstack_genrule",
     outs = ["libpluginstack.a"],
-    local = 1,
     cmd = select({
         # Support IVB and later machines.
-        ":plugin_tldk_condition": "git clone git@github.com:alipay/tldk.git; cd tldk; git checkout 9efb0dacb67da1da62ca78785e8cffb0c5a82785; make -j 1 DPDK_MACHINE=ivb EXTRA_CFLAGS='-g -O3 -fPIC -fno-omit-frame-pointer -DLOOK_ASIDE_BACKEND -Wno-error' all; cd ..; cp -f tldk/libtldk.a $(RULEDIR)/libpluginstack.a",
+        ":plugin_tldk_condition": "git clone https://github.com/alipay/tldk.git; cd tldk; git checkout cec8ff773c2ee609a1fcbc389aecb4dbb4e3bb88; make -j 1 DPDK_MACHINE=ivb EXTRA_CFLAGS='-g -O3 -fPIC -fno-omit-frame-pointer -DLOOK_ASIDE_BACKEND -Wno-error -Wno-use-after-free' all; cd ..; cp -f tldk/libtldk.a $(RULEDIR)/libpluginstack.a",
         "//conditions:default": "",
     }),
+    local = 1,
     visibility = ["//visibility:public"],
 )
 

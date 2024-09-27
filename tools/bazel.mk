@@ -48,6 +48,7 @@ BRANCH_NAME := $(shell (git branch --show-current 2>/dev/null || \
   xargs -n 1 basename 2>/dev/null)
 BUILD_ROOTS := bazel-bin/ bazel-out/
 RACE_FLAGS := --config=race
+PLUGIN_STACK_FLAGS := --config=plugin-tldk
 
 # Bazel container configuration (see below).
 USER := $(shell whoami)
