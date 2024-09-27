@@ -50,6 +50,7 @@ const (
 	NV50_THIRD_PARTY_P2P             = 0x0000503c
 	NV50_MEMORY_VIRTUAL              = 0x000050a0
 	GT200_DEBUGGER                   = 0x000083de
+	GF100_PROFILER                   = 0x000090cc
 	GF100_SUBDEVICE_MASTER           = 0x000090e6
 	FERMI_CONTEXT_SHARE_A            = 0x00009067
 	FERMI_VASPACE_A                  = 0x000090f1
