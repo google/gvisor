@@ -1,4 +1,4 @@
-// Copyright 2023 The gVisor Authors.
+// Copyright 2024 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,17 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build linux && debug
-// +build linux,debug
+//go:build linux
+// +build linux
 
-package platforms
+package kvm
 
 import (
-	// Import platforms that runsc might use.
-
-	// The KVM platform is not included because it's incompatible with debug
-	// builds. Unoptimized functions grow the stack too much and fail the nosplit
-	// check.
-	_ "gvisor.dev/gvisor/pkg/sentry/platform/ptrace"
-	_ "gvisor.dev/gvisor/pkg/sentry/platform/systrap"
+	"unsafe"
 )
+
+//go:nosplit
+func seccompMmapHandler(context unsafe.Pointer) {
+	throw("seccompMmapHandler isn't implemented for debug builds")
+}

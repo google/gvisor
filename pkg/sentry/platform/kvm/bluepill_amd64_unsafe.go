@@ -74,7 +74,7 @@ func getHypercallID(addr uintptr) int {
 func bluepillStopGuest(c *vCPU) {
 	// Interrupt: we must have requested an interrupt
 	// window; set the interrupt line.
-	if _, _, errno := unix.RawSyscall(
+	if errno := kvmSyscallErrno(
 		unix.SYS_IOCTL,
 		uintptr(c.fd),
 		KVM_INTERRUPT,
@@ -89,7 +89,7 @@ func bluepillStopGuest(c *vCPU) {
 //
 //go:nosplit
 func bluepillSigBus(c *vCPU) {
-	if _, _, errno := unix.RawSyscall( // escapes: no.
+	if errno := kvmSyscallErrno(
 		unix.SYS_IOCTL,
 		uintptr(c.fd),
 		KVM_NMI, 0); errno != 0 {
@@ -188,7 +188,6 @@ func bluepillUserHandler(frame uintptr) {
 	sigframe.Sigreturn(c.bluepillSigframe)
 }
 
-//go:nosplit
 func (c *vCPU) initBluepillHandler() error {
 	stackSize := uintptr(hostarch.PageSize)
 

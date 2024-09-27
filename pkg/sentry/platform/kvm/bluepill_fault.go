@@ -40,7 +40,7 @@ var (
 //
 //go:nosplit
 func yield() {
-	unix.RawSyscall(unix.SYS_SCHED_YIELD, 0, 0, 0)
+	kvmSyscallErrno(unix.SYS_SCHED_YIELD, 0, 0, 0)
 }
 
 // calculateBluepillFault calculates the fault address range.

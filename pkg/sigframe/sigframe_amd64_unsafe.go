@@ -30,6 +30,9 @@ func callWithSignalFrame(stack uintptr, handler uintptr, sigframe *arch.UContext
 //go:linkname throw runtime.throw
 func throw(s string)
 
+// kvmSyscallErrno6 only returns errno, and 0 if successful.
+func kvmSyscallErrno6(trap, a1, a2, a3, a4, a5, a6 uintptr) unix.Errno
+
 // CallWithSignalFrame sets up a signal frame on the stack and executes a
 // user-defined callback function within that context.
 //
@@ -38,7 +41,7 @@ func throw(s string)
 //
 //go:nosplit
 func CallWithSignalFrame(stack uintptr, handlerAddr uintptr, sigframe *arch.UContext64, fpstate uintptr, sigmask *linux.SignalSet) error {
-	_, _, errno := unix.RawSyscall6(
+	errno := kvmSyscallErrno6(
 		unix.SYS_RT_SIGPROCMASK, linux.SIG_BLOCK,
 		uintptr(unsafe.Pointer(sigmask)),
 		uintptr(unsafe.Pointer(&sigframe.Sigset)),

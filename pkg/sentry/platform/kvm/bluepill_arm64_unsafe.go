@@ -88,7 +88,7 @@ func bluepillStopGuest(c *vCPU) {
 		},
 	}
 
-	if _, _, errno := unix.RawSyscall( // escapes: no.
+	if errno := kvmSyscallErrno( // escapes: no.
 		unix.SYS_IOCTL,
 		uintptr(c.fd),
 		KVM_SET_VCPU_EVENTS,
@@ -111,7 +111,7 @@ func bluepillSigBus(c *vCPU) {
 	}
 
 	// Host must support ARM64_HAS_RAS_EXTN.
-	if _, _, errno := unix.RawSyscall( // escapes: no.
+	if errno := kvmSyscallErrno( // escapes: no.
 		unix.SYS_IOCTL,
 		uintptr(c.fd),
 		KVM_SET_VCPU_EVENTS,
@@ -134,7 +134,7 @@ func bluepillExtDabt(c *vCPU) {
 		},
 	}
 
-	if _, _, errno := unix.RawSyscall( // escapes: no.
+	if errno := kvmSyscallErrno( // escapes: no.
 		unix.SYS_IOCTL,
 		uintptr(c.fd),
 		KVM_SET_VCPU_EVENTS,
