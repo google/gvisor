@@ -304,6 +304,7 @@ func Init() {
 					nvgpu.NV2080_CTRL_CMD_RC_RELEASE_WATCHDOG_REQUESTS:                     rmControlSimple,
 					nvgpu.NV2080_CTRL_CMD_RC_SOFT_DISABLE_WATCHDOG:                         rmControlSimple,
 					nvgpu.NV2080_CTRL_CMD_TIMER_GET_GPU_CPU_TIME_CORRELATION_INFO:          rmControlSimple,
+					nvgpu.NV2080_CTRL_CMD_TIMER_SET_GR_TICK_FREQ:                           rmControlSimple,
 					nvgpu.NV503C_CTRL_CMD_REGISTER_VIDMEM:                                  rmControlSimple,
 					nvgpu.NV503C_CTRL_CMD_UNREGISTER_VIDMEM:                                rmControlSimple,
 					nvgpu.NV83DE_CTRL_CMD_DEBUG_SET_EXCEPTION_MASK:                         rmControlSimple,
@@ -353,6 +354,7 @@ func Init() {
 					nvgpu.NV50_MEMORY_VIRTUAL:        rmAllocSimple[nvgpu.NV_MEMORY_ALLOCATION_PARAMS],
 					nvgpu.NV50_P2P:                   rmAllocSimple[nvgpu.NV503B_ALLOC_PARAMETERS],
 					nvgpu.NV50_THIRD_PARTY_P2P:       rmAllocSimple[nvgpu.NV503C_ALLOC_PARAMETERS],
+					nvgpu.GF100_PROFILER:             rmAllocNoParams,
 					nvgpu.GT200_DEBUGGER:             rmAllocSMDebuggerSession,
 					nvgpu.FERMI_CONTEXT_SHARE_A:      rmAllocContextShare,
 					nvgpu.FERMI_VASPACE_A:            rmAllocSimple[nvgpu.NV_VASPACE_ALLOCATION_PARAMETERS],
@@ -502,6 +504,7 @@ func Init() {
 							nvgpu.NV2080_CTRL_CMD_RC_RELEASE_WATCHDOG_REQUESTS:                     nil, // No params.
 							nvgpu.NV2080_CTRL_CMD_RC_SOFT_DISABLE_WATCHDOG:                         nil, // No params.
 							nvgpu.NV2080_CTRL_CMD_TIMER_GET_GPU_CPU_TIME_CORRELATION_INFO:          simpleIoctl("NV2080_CTRL_TIMER_GET_GPU_CPU_TIME_CORRELATION_INFO_PARAMS"),
+							nvgpu.NV2080_CTRL_CMD_TIMER_SET_GR_TICK_FREQ:                           simpleIoctl("NV2080_CTRL_CMD_TIMER_SET_GR_TICK_FREQ_PARAMS"),
 							nvgpu.NV503C_CTRL_CMD_REGISTER_VIDMEM:                                  simpleIoctl("NV503C_CTRL_REGISTER_VIDMEM_PARAMS"),
 							nvgpu.NV503C_CTRL_CMD_UNREGISTER_VIDMEM:                                simpleIoctl("NV503C_CTRL_UNREGISTER_VIDMEM_PARAMS"),
 							nvgpu.NV83DE_CTRL_CMD_DEBUG_SET_EXCEPTION_MASK:                         simpleIoctl("NV83DE_CTRL_DEBUG_SET_EXCEPTION_MASK_PARAMS"),
@@ -552,6 +555,7 @@ func Init() {
 							nvgpu.NV50_P2P:                   getStructName(nvgpu.NV503B_ALLOC_PARAMETERS{}),
 							nvgpu.NV50_THIRD_PARTY_P2P:       getStructName(nvgpu.NV503C_ALLOC_PARAMETERS{}),
 							nvgpu.GT200_DEBUGGER:             getStructName(nvgpu.NV83DE_ALLOC_PARAMETERS{}),
+							nvgpu.GF100_PROFILER:             nil, // No params
 							nvgpu.FERMI_CONTEXT_SHARE_A:      getStructName(nvgpu.NV_CTXSHARE_ALLOCATION_PARAMETERS{}),
 							nvgpu.FERMI_VASPACE_A:            getStructName(nvgpu.NV_VASPACE_ALLOCATION_PARAMETERS{}),
 							nvgpu.KEPLER_CHANNEL_GROUP_A:     getStructName(nvgpu.NV_CHANNEL_GROUP_ALLOCATION_PARAMETERS{}),
