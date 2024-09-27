@@ -17,24 +17,24 @@ import (
 // case, Key must be an unsigned integer.
 //
 // trackGaps must be 0 or 1.
-const memAccttrackGaps = 0
+const aplUnloadedtrackGaps = 0
 
-var _ = uint8(memAccttrackGaps << 7) // Will fail if not zero or one.
+var _ = uint8(aplUnloadedtrackGaps << 7) // Will fail if not zero or one.
 
 // dynamicGap is a type that disappears if trackGaps is 0.
-type memAcctdynamicGap [memAccttrackGaps]uint64
+type aplUnloadeddynamicGap [aplUnloadedtrackGaps]uint64
 
 // Get returns the value of the gap.
 //
 // Precondition: trackGaps must be non-zero.
-func (d *memAcctdynamicGap) Get() uint64 {
+func (d *aplUnloadeddynamicGap) Get() uint64 {
 	return d[:][0]
 }
 
 // Set sets the value of the gap.
 //
 // Precondition: trackGaps must be non-zero.
-func (d *memAcctdynamicGap) Set(v uint64) {
+func (d *aplUnloadeddynamicGap) Set(v uint64) {
 	d[:][0] = v
 }
 
@@ -50,9 +50,9 @@ const (
 	//
 	// Our implementation requires minDegree >= 3. Higher values of minDegree
 	// usually improve performance, but increase memory usage for small sets.
-	memAcctminDegree = 10
+	aplUnloadedminDegree = 3
 
-	memAcctmaxDegree = 2 * memAcctminDegree
+	aplUnloadedmaxDegree = 2 * aplUnloadedminDegree
 )
 
 // A Set is a mapping of segments with non-overlapping Range keys. The zero
@@ -60,19 +60,19 @@ const (
 // copyable. Set is thread-compatible.
 //
 // +stateify savable
-type memAcctSet struct {
-	root memAcctnode `state:".([]memAcctFlatSegment)"`
+type aplUnloadedSet struct {
+	root aplUnloadednode `state:".([]aplUnloadedFlatSegment)"`
 }
 
 // IsEmpty returns true if the set contains no segments.
-func (s *memAcctSet) IsEmpty() bool {
+func (s *aplUnloadedSet) IsEmpty() bool {
 	return s.root.nrSegments == 0
 }
 
 // IsEmptyRange returns true iff no segments in the set overlap the given
 // range. This is semantically equivalent to s.SpanRange(r) == 0, but may be
 // more efficient.
-func (s *memAcctSet) IsEmptyRange(r __generics_imported0.FileRange) bool {
+func (s *aplUnloadedSet) IsEmptyRange(r __generics_imported0.FileRange) bool {
 	switch {
 	case r.Length() < 0:
 		panic(fmt.Sprintf("invalid range %v", r))
@@ -87,7 +87,7 @@ func (s *memAcctSet) IsEmptyRange(r __generics_imported0.FileRange) bool {
 }
 
 // Span returns the total size of all segments in the set.
-func (s *memAcctSet) Span() uint64 {
+func (s *aplUnloadedSet) Span() uint64 {
 	var sz uint64
 	for seg := s.FirstSegment(); seg.Ok(); seg = seg.NextSegment() {
 		sz += seg.Range().Length()
@@ -97,7 +97,7 @@ func (s *memAcctSet) Span() uint64 {
 
 // SpanRange returns the total size of the intersection of segments in the set
 // with the given range.
-func (s *memAcctSet) SpanRange(r __generics_imported0.FileRange) uint64 {
+func (s *aplUnloadedSet) SpanRange(r __generics_imported0.FileRange) uint64 {
 	switch {
 	case r.Length() < 0:
 		panic(fmt.Sprintf("invalid range %v", r))
@@ -113,45 +113,45 @@ func (s *memAcctSet) SpanRange(r __generics_imported0.FileRange) uint64 {
 
 // FirstSegment returns the first segment in the set. If the set is empty,
 // FirstSegment returns a terminal iterator.
-func (s *memAcctSet) FirstSegment() memAcctIterator {
+func (s *aplUnloadedSet) FirstSegment() aplUnloadedIterator {
 	if s.root.nrSegments == 0 {
-		return memAcctIterator{}
+		return aplUnloadedIterator{}
 	}
 	return s.root.firstSegment()
 }
 
 // LastSegment returns the last segment in the set. If the set is empty,
 // LastSegment returns a terminal iterator.
-func (s *memAcctSet) LastSegment() memAcctIterator {
+func (s *aplUnloadedSet) LastSegment() aplUnloadedIterator {
 	if s.root.nrSegments == 0 {
-		return memAcctIterator{}
+		return aplUnloadedIterator{}
 	}
 	return s.root.lastSegment()
 }
 
 // FirstGap returns the first gap in the set.
-func (s *memAcctSet) FirstGap() memAcctGapIterator {
+func (s *aplUnloadedSet) FirstGap() aplUnloadedGapIterator {
 	n := &s.root
 	for n.hasChildren {
 		n = n.children[0]
 	}
-	return memAcctGapIterator{n, 0}
+	return aplUnloadedGapIterator{n, 0}
 }
 
 // LastGap returns the last gap in the set.
-func (s *memAcctSet) LastGap() memAcctGapIterator {
+func (s *aplUnloadedSet) LastGap() aplUnloadedGapIterator {
 	n := &s.root
 	for n.hasChildren {
 		n = n.children[n.nrSegments]
 	}
-	return memAcctGapIterator{n, n.nrSegments}
+	return aplUnloadedGapIterator{n, n.nrSegments}
 }
 
 // Find returns the segment or gap whose range contains the given key. If a
 // segment is found, the returned Iterator is non-terminal and the
 // returned GapIterator is terminal. Otherwise, the returned Iterator is
 // terminal and the returned GapIterator is non-terminal.
-func (s *memAcctSet) Find(key uint64) (memAcctIterator, memAcctGapIterator) {
+func (s *aplUnloadedSet) Find(key uint64) (aplUnloadedIterator, aplUnloadedGapIterator) {
 	n := &s.root
 	for {
 
@@ -161,7 +161,7 @@ func (s *memAcctSet) Find(key uint64) (memAcctIterator, memAcctGapIterator) {
 			i := lower + (upper-lower)/2
 			if r := n.keys[i]; key < r.End {
 				if key >= r.Start {
-					return memAcctIterator{n, i}, memAcctGapIterator{}
+					return aplUnloadedIterator{n, i}, aplUnloadedGapIterator{}
 				}
 				upper = i
 			} else {
@@ -170,7 +170,7 @@ func (s *memAcctSet) Find(key uint64) (memAcctIterator, memAcctGapIterator) {
 		}
 		i := lower
 		if !n.hasChildren {
-			return memAcctIterator{}, memAcctGapIterator{n, i}
+			return aplUnloadedIterator{}, aplUnloadedGapIterator{n, i}
 		}
 		n = n.children[i]
 	}
@@ -178,7 +178,7 @@ func (s *memAcctSet) Find(key uint64) (memAcctIterator, memAcctGapIterator) {
 
 // FindSegment returns the segment whose range contains the given key. If no
 // such segment exists, FindSegment returns a terminal iterator.
-func (s *memAcctSet) FindSegment(key uint64) memAcctIterator {
+func (s *aplUnloadedSet) FindSegment(key uint64) aplUnloadedIterator {
 	seg, _ := s.Find(key)
 	return seg
 }
@@ -186,7 +186,7 @@ func (s *memAcctSet) FindSegment(key uint64) memAcctIterator {
 // LowerBoundSegment returns the segment with the lowest range that contains a
 // key greater than or equal to min. If no such segment exists,
 // LowerBoundSegment returns a terminal iterator.
-func (s *memAcctSet) LowerBoundSegment(min uint64) memAcctIterator {
+func (s *aplUnloadedSet) LowerBoundSegment(min uint64) aplUnloadedIterator {
 	seg, gap := s.Find(min)
 	if seg.Ok() {
 		return seg
@@ -197,7 +197,7 @@ func (s *memAcctSet) LowerBoundSegment(min uint64) memAcctIterator {
 // UpperBoundSegment returns the segment with the highest range that contains a
 // key less than or equal to max. If no such segment exists, UpperBoundSegment
 // returns a terminal iterator.
-func (s *memAcctSet) UpperBoundSegment(max uint64) memAcctIterator {
+func (s *aplUnloadedSet) UpperBoundSegment(max uint64) aplUnloadedIterator {
 	seg, gap := s.Find(max)
 	if seg.Ok() {
 		return seg
@@ -208,14 +208,14 @@ func (s *memAcctSet) UpperBoundSegment(max uint64) memAcctIterator {
 // FindGap returns the gap containing the given key. If no such gap exists
 // (i.e. the set contains a segment containing that key), FindGap returns a
 // terminal iterator.
-func (s *memAcctSet) FindGap(key uint64) memAcctGapIterator {
+func (s *aplUnloadedSet) FindGap(key uint64) aplUnloadedGapIterator {
 	_, gap := s.Find(key)
 	return gap
 }
 
 // LowerBoundGap returns the gap with the lowest range that is greater than or
 // equal to min.
-func (s *memAcctSet) LowerBoundGap(min uint64) memAcctGapIterator {
+func (s *aplUnloadedSet) LowerBoundGap(min uint64) aplUnloadedGapIterator {
 	seg, gap := s.Find(min)
 	if gap.Ok() {
 		return gap
@@ -225,7 +225,7 @@ func (s *memAcctSet) LowerBoundGap(min uint64) memAcctGapIterator {
 
 // UpperBoundGap returns the gap with the highest range that is less than or
 // equal to max.
-func (s *memAcctSet) UpperBoundGap(max uint64) memAcctGapIterator {
+func (s *aplUnloadedSet) UpperBoundGap(max uint64) aplUnloadedGapIterator {
 	seg, gap := s.Find(max)
 	if gap.Ok() {
 		return gap
@@ -238,8 +238,8 @@ func (s *memAcctSet) UpperBoundGap(max uint64) memAcctGapIterator {
 // iterator.
 //
 // Precondition: trackGaps must be 1.
-func (s *memAcctSet) FirstLargeEnoughGap(minSize uint64) memAcctGapIterator {
-	if memAccttrackGaps != 1 {
+func (s *aplUnloadedSet) FirstLargeEnoughGap(minSize uint64) aplUnloadedGapIterator {
+	if aplUnloadedtrackGaps != 1 {
 		panic("set is not tracking gaps")
 	}
 	gap := s.FirstGap()
@@ -254,8 +254,8 @@ func (s *memAcctSet) FirstLargeEnoughGap(minSize uint64) memAcctGapIterator {
 // iterator.
 //
 // Precondition: trackGaps must be 1.
-func (s *memAcctSet) LastLargeEnoughGap(minSize uint64) memAcctGapIterator {
-	if memAccttrackGaps != 1 {
+func (s *aplUnloadedSet) LastLargeEnoughGap(minSize uint64) aplUnloadedGapIterator {
+	if aplUnloadedtrackGaps != 1 {
 		panic("set is not tracking gaps")
 	}
 	gap := s.LastGap()
@@ -270,8 +270,8 @@ func (s *memAcctSet) LastLargeEnoughGap(minSize uint64) memAcctGapIterator {
 // no such gap exists, LowerBoundLargeEnoughGap returns a terminal iterator.
 //
 // Precondition: trackGaps must be 1.
-func (s *memAcctSet) LowerBoundLargeEnoughGap(min, minSize uint64) memAcctGapIterator {
-	if memAccttrackGaps != 1 {
+func (s *aplUnloadedSet) LowerBoundLargeEnoughGap(min, minSize uint64) aplUnloadedGapIterator {
+	if aplUnloadedtrackGaps != 1 {
 		panic("set is not tracking gaps")
 	}
 	gap := s.LowerBoundGap(min)
@@ -286,8 +286,8 @@ func (s *memAcctSet) LowerBoundLargeEnoughGap(min, minSize uint64) memAcctGapIte
 // such gap exists, UpperBoundLargeEnoughGap returns a terminal iterator.
 //
 // Precondition: trackGaps must be 1.
-func (s *memAcctSet) UpperBoundLargeEnoughGap(max, minSize uint64) memAcctGapIterator {
-	if memAccttrackGaps != 1 {
+func (s *aplUnloadedSet) UpperBoundLargeEnoughGap(max, minSize uint64) aplUnloadedGapIterator {
+	if aplUnloadedtrackGaps != 1 {
 		panic("set is not tracking gaps")
 	}
 	gap := s.UpperBoundGap(max)
@@ -309,7 +309,7 @@ func (s *memAcctSet) UpperBoundLargeEnoughGap(max, minSize uint64) memAcctGapIte
 // Merge, but may be more efficient. Note that there is no unchecked variant of
 // Insert since Insert must retrieve and inspect gap's predecessor and
 // successor segments regardless.
-func (s *memAcctSet) Insert(gap memAcctGapIterator, r __generics_imported0.FileRange, val memAcctInfo) memAcctIterator {
+func (s *aplUnloadedSet) Insert(gap aplUnloadedGapIterator, r __generics_imported0.FileRange, val aplUnloadedInfo) aplUnloadedIterator {
 	if r.Length() <= 0 {
 		panic(fmt.Sprintf("invalid segment range %v", r))
 	}
@@ -321,8 +321,8 @@ func (s *memAcctSet) Insert(gap memAcctGapIterator, r __generics_imported0.FileR
 		panic(fmt.Sprintf("new segment %v overlaps successor %v", r, next.Range()))
 	}
 	if prev.Ok() && prev.End() == r.Start {
-		if mval, ok := (memAcctSetFunctions{}).Merge(prev.Range(), prev.Value(), r, val); ok {
-			shrinkMaxGap := memAccttrackGaps != 0 && gap.Range().Length() == gap.node.maxGap.Get()
+		if mval, ok := (aplUnloadedSetFunctions{}).Merge(prev.Range(), prev.Value(), r, val); ok {
+			shrinkMaxGap := aplUnloadedtrackGaps != 0 && gap.Range().Length() == gap.node.maxGap.Get()
 			prev.SetEndUnchecked(r.End)
 			prev.SetValue(mval)
 			if shrinkMaxGap {
@@ -330,7 +330,7 @@ func (s *memAcctSet) Insert(gap memAcctGapIterator, r __generics_imported0.FileR
 			}
 			if next.Ok() && next.Start() == r.End {
 				val = mval
-				if mval, ok := (memAcctSetFunctions{}).Merge(prev.Range(), val, next.Range(), next.Value()); ok {
+				if mval, ok := (aplUnloadedSetFunctions{}).Merge(prev.Range(), val, next.Range(), next.Value()); ok {
 					prev.SetEndUnchecked(next.End())
 					prev.SetValue(mval)
 					return s.Remove(next).PrevSegment()
@@ -340,8 +340,8 @@ func (s *memAcctSet) Insert(gap memAcctGapIterator, r __generics_imported0.FileR
 		}
 	}
 	if next.Ok() && next.Start() == r.End {
-		if mval, ok := (memAcctSetFunctions{}).Merge(r, val, next.Range(), next.Value()); ok {
-			shrinkMaxGap := memAccttrackGaps != 0 && gap.Range().Length() == gap.node.maxGap.Get()
+		if mval, ok := (aplUnloadedSetFunctions{}).Merge(r, val, next.Range(), next.Value()); ok {
+			shrinkMaxGap := aplUnloadedtrackGaps != 0 && gap.Range().Length() == gap.node.maxGap.Get()
 			next.SetStartUnchecked(r.Start)
 			next.SetValue(mval)
 			if shrinkMaxGap {
@@ -360,7 +360,7 @@ func (s *memAcctSet) Insert(gap memAcctGapIterator, r __generics_imported0.FileR
 //
 // If the gap cannot accommodate the segment, or if r is invalid,
 // InsertWithoutMerging panics.
-func (s *memAcctSet) InsertWithoutMerging(gap memAcctGapIterator, r __generics_imported0.FileRange, val memAcctInfo) memAcctIterator {
+func (s *aplUnloadedSet) InsertWithoutMerging(gap aplUnloadedGapIterator, r __generics_imported0.FileRange, val aplUnloadedInfo) aplUnloadedIterator {
 	if r.Length() <= 0 {
 		panic(fmt.Sprintf("invalid segment range %v", r))
 	}
@@ -377,9 +377,9 @@ func (s *memAcctSet) InsertWithoutMerging(gap memAcctGapIterator, r __generics_i
 // Preconditions:
 //   - r.Start >= gap.Start().
 //   - r.End <= gap.End().
-func (s *memAcctSet) InsertWithoutMergingUnchecked(gap memAcctGapIterator, r __generics_imported0.FileRange, val memAcctInfo) memAcctIterator {
+func (s *aplUnloadedSet) InsertWithoutMergingUnchecked(gap aplUnloadedGapIterator, r __generics_imported0.FileRange, val aplUnloadedInfo) aplUnloadedIterator {
 	gap = gap.node.rebalanceBeforeInsert(gap)
-	splitMaxGap := memAccttrackGaps != 0 && (gap.node.nrSegments == 0 || gap.Range().Length() == gap.node.maxGap.Get())
+	splitMaxGap := aplUnloadedtrackGaps != 0 && (gap.node.nrSegments == 0 || gap.Range().Length() == gap.node.maxGap.Get())
 	copy(gap.node.keys[gap.index+1:], gap.node.keys[gap.index:gap.node.nrSegments])
 	copy(gap.node.values[gap.index+1:], gap.node.values[gap.index:gap.node.nrSegments])
 	gap.node.keys[gap.index] = r
@@ -388,7 +388,7 @@ func (s *memAcctSet) InsertWithoutMergingUnchecked(gap memAcctGapIterator, r __g
 	if splitMaxGap {
 		gap.node.updateMaxGapLeaf()
 	}
-	return memAcctIterator{gap.node, gap.index}
+	return aplUnloadedIterator{gap.node, gap.index}
 }
 
 // InsertRange inserts the given segment into the set. If the new segment can
@@ -403,7 +403,7 @@ func (s *memAcctSet) InsertWithoutMergingUnchecked(gap memAcctGapIterator, r __g
 // InsertRange searches the set to find the gap to insert into. If the caller
 // already has the appropriate GapIterator, or if the caller needs to do
 // additional work between finding the gap and insertion, use Insert instead.
-func (s *memAcctSet) InsertRange(r __generics_imported0.FileRange, val memAcctInfo) memAcctIterator {
+func (s *aplUnloadedSet) InsertRange(r __generics_imported0.FileRange, val aplUnloadedInfo) aplUnloadedIterator {
 	if r.Length() <= 0 {
 		panic(fmt.Sprintf("invalid segment range %v", r))
 	}
@@ -428,7 +428,7 @@ func (s *memAcctSet) InsertRange(r __generics_imported0.FileRange, val memAcctIn
 // If the caller already has the appropriate GapIterator, or if the caller
 // needs to do additional work between finding the gap and insertion, use
 // InsertWithoutMerging instead.
-func (s *memAcctSet) InsertWithoutMergingRange(r __generics_imported0.FileRange, val memAcctInfo) memAcctIterator {
+func (s *aplUnloadedSet) InsertWithoutMergingRange(r __generics_imported0.FileRange, val aplUnloadedInfo) aplUnloadedIterator {
 	if r.Length() <= 0 {
 		panic(fmt.Sprintf("invalid segment range %v", r))
 	}
@@ -454,16 +454,16 @@ func (s *memAcctSet) InsertWithoutMergingRange(r __generics_imported0.FileRange,
 // TryInsertRange searches the set to find the gap to insert into. If the
 // caller already has the appropriate GapIterator, or if the caller needs to do
 // additional work between finding the gap and insertion, use Insert instead.
-func (s *memAcctSet) TryInsertRange(r __generics_imported0.FileRange, val memAcctInfo) memAcctIterator {
+func (s *aplUnloadedSet) TryInsertRange(r __generics_imported0.FileRange, val aplUnloadedInfo) aplUnloadedIterator {
 	if r.Length() <= 0 {
 		panic(fmt.Sprintf("invalid segment range %v", r))
 	}
 	seg, gap := s.Find(r.Start)
 	if seg.Ok() {
-		return memAcctIterator{}
+		return aplUnloadedIterator{}
 	}
 	if gap.End() < r.End {
-		return memAcctIterator{}
+		return aplUnloadedIterator{}
 	}
 	return s.Insert(gap, r, val)
 }
@@ -478,16 +478,16 @@ func (s *memAcctSet) TryInsertRange(r __generics_imported0.FileRange, val memAcc
 // into. If the caller already has the appropriate GapIterator, or if the
 // caller needs to do additional work between finding the gap and insertion,
 // use InsertWithoutMerging instead.
-func (s *memAcctSet) TryInsertWithoutMergingRange(r __generics_imported0.FileRange, val memAcctInfo) memAcctIterator {
+func (s *aplUnloadedSet) TryInsertWithoutMergingRange(r __generics_imported0.FileRange, val aplUnloadedInfo) aplUnloadedIterator {
 	if r.Length() <= 0 {
 		panic(fmt.Sprintf("invalid segment range %v", r))
 	}
 	seg, gap := s.Find(r.Start)
 	if seg.Ok() {
-		return memAcctIterator{}
+		return aplUnloadedIterator{}
 	}
 	if gap.End() < r.End {
-		return memAcctIterator{}
+		return aplUnloadedIterator{}
 	}
 	return s.InsertWithoutMerging(gap, r, val)
 }
@@ -495,7 +495,7 @@ func (s *memAcctSet) TryInsertWithoutMergingRange(r __generics_imported0.FileRan
 // Remove removes the given segment and returns an iterator to the vacated gap.
 // All existing iterators (including seg, but not including the returned
 // iterator) are invalidated.
-func (s *memAcctSet) Remove(seg memAcctIterator) memAcctGapIterator {
+func (s *aplUnloadedSet) Remove(seg aplUnloadedIterator) aplUnloadedGapIterator {
 
 	if seg.node.hasChildren {
 
@@ -505,25 +505,25 @@ func (s *memAcctSet) Remove(seg memAcctIterator) memAcctGapIterator {
 		seg.SetValue(victim.Value())
 
 		nextAdjacentNode := seg.NextSegment().node
-		if memAccttrackGaps != 0 {
+		if aplUnloadedtrackGaps != 0 {
 			nextAdjacentNode.updateMaxGapLeaf()
 		}
 		return s.Remove(victim).NextGap()
 	}
 	copy(seg.node.keys[seg.index:], seg.node.keys[seg.index+1:seg.node.nrSegments])
 	copy(seg.node.values[seg.index:], seg.node.values[seg.index+1:seg.node.nrSegments])
-	memAcctSetFunctions{}.ClearValue(&seg.node.values[seg.node.nrSegments-1])
+	aplUnloadedSetFunctions{}.ClearValue(&seg.node.values[seg.node.nrSegments-1])
 	seg.node.nrSegments--
-	if memAccttrackGaps != 0 {
+	if aplUnloadedtrackGaps != 0 {
 		seg.node.updateMaxGapLeaf()
 	}
-	return seg.node.rebalanceAfterRemove(memAcctGapIterator{seg.node, seg.index})
+	return seg.node.rebalanceAfterRemove(aplUnloadedGapIterator{seg.node, seg.index})
 }
 
 // RemoveAll removes all segments from the set. All existing iterators are
 // invalidated.
-func (s *memAcctSet) RemoveAll() {
-	s.root = memAcctnode{}
+func (s *aplUnloadedSet) RemoveAll() {
+	s.root = aplUnloadednode{}
 }
 
 // RemoveRange removes all segments in the given range. An iterator to the
@@ -533,13 +533,13 @@ func (s *memAcctSet) RemoveAll() {
 // already has an iterator to either end of the range of segments to remove, or
 // if the caller needs to do additional work before removing each segment,
 // iterate segments and call Remove in a loop instead.
-func (s *memAcctSet) RemoveRange(r __generics_imported0.FileRange) memAcctGapIterator {
+func (s *aplUnloadedSet) RemoveRange(r __generics_imported0.FileRange) aplUnloadedGapIterator {
 	return s.RemoveRangeWith(r, nil)
 }
 
 // RemoveFullRange is equivalent to RemoveRange, except that if any key in the
 // given range does not correspond to a segment, RemoveFullRange panics.
-func (s *memAcctSet) RemoveFullRange(r __generics_imported0.FileRange) memAcctGapIterator {
+func (s *aplUnloadedSet) RemoveFullRange(r __generics_imported0.FileRange) aplUnloadedGapIterator {
 	return s.RemoveFullRangeWith(r, nil)
 }
 
@@ -557,7 +557,7 @@ func (s *memAcctSet) RemoveFullRange(r __generics_imported0.FileRange) memAcctGa
 // iterate segments and call Remove in a loop instead.
 //
 // N.B. f must not invalidate iterators into s.
-func (s *memAcctSet) RemoveRangeWith(r __generics_imported0.FileRange, f func(seg memAcctIterator)) memAcctGapIterator {
+func (s *aplUnloadedSet) RemoveRangeWith(r __generics_imported0.FileRange, f func(seg aplUnloadedIterator)) aplUnloadedGapIterator {
 	seg, gap := s.Find(r.Start)
 	if seg.Ok() {
 		seg = s.Isolate(seg, r)
@@ -579,7 +579,7 @@ func (s *memAcctSet) RemoveRangeWith(r __generics_imported0.FileRange, f func(se
 // RemoveFullRangeWith is equivalent to RemoveRangeWith, except that if any key
 // in the given range does not correspond to a segment, RemoveFullRangeWith
 // panics.
-func (s *memAcctSet) RemoveFullRangeWith(r __generics_imported0.FileRange, f func(seg memAcctIterator)) memAcctGapIterator {
+func (s *aplUnloadedSet) RemoveFullRangeWith(r __generics_imported0.FileRange, f func(seg aplUnloadedIterator)) aplUnloadedGapIterator {
 	seg := s.FindSegment(r.Start)
 	if !seg.Ok() {
 		panic(fmt.Sprintf("missing segment at %v", r.Start))
@@ -607,7 +607,7 @@ func (s *memAcctSet) RemoveFullRangeWith(r __generics_imported0.FileRange, f fun
 // invalidated. Otherwise, Merge returns a terminal iterator.
 //
 // If first is not the predecessor of second, Merge panics.
-func (s *memAcctSet) Merge(first, second memAcctIterator) memAcctIterator {
+func (s *aplUnloadedSet) Merge(first, second aplUnloadedIterator) aplUnloadedIterator {
 	if first.NextSegment() != second {
 		panic(fmt.Sprintf("attempt to merge non-neighboring segments %v, %v", first.Range(), second.Range()))
 	}
@@ -621,9 +621,9 @@ func (s *memAcctSet) Merge(first, second memAcctIterator) memAcctIterator {
 //
 // Precondition: first is the predecessor of second: first.NextSegment() ==
 // second, first == second.PrevSegment().
-func (s *memAcctSet) MergeUnchecked(first, second memAcctIterator) memAcctIterator {
+func (s *aplUnloadedSet) MergeUnchecked(first, second aplUnloadedIterator) aplUnloadedIterator {
 	if first.End() == second.Start() {
-		if mval, ok := (memAcctSetFunctions{}).Merge(first.Range(), first.Value(), second.Range(), second.Value()); ok {
+		if mval, ok := (aplUnloadedSetFunctions{}).Merge(first.Range(), first.Value(), second.Range(), second.Value()); ok {
 
 			first.SetEndUnchecked(second.End())
 			first.SetValue(mval)
@@ -631,7 +631,7 @@ func (s *memAcctSet) MergeUnchecked(first, second memAcctIterator) memAcctIterat
 			return s.Remove(second).PrevSegment()
 		}
 	}
-	return memAcctIterator{}
+	return aplUnloadedIterator{}
 }
 
 // MergePrev attempts to merge the given segment with its predecessor if
@@ -644,7 +644,7 @@ func (s *memAcctSet) MergeUnchecked(first, second memAcctIterator) memAcctIterat
 // its previously-mutated predecessor. In such cases, merging a mutated segment
 // with its unmutated successor would incorrectly cause the latter to be
 // skipped.
-func (s *memAcctSet) MergePrev(seg memAcctIterator) memAcctIterator {
+func (s *aplUnloadedSet) MergePrev(seg aplUnloadedIterator) aplUnloadedIterator {
 	if prev := seg.PrevSegment(); prev.Ok() {
 		if mseg := s.MergeUnchecked(prev, seg); mseg.Ok() {
 			seg = mseg
@@ -663,7 +663,7 @@ func (s *memAcctSet) MergePrev(seg memAcctIterator) memAcctIterator {
 // its previously-mutated successor. In such cases, merging a mutated segment
 // with its unmutated predecessor would incorrectly cause the latter to be
 // skipped.
-func (s *memAcctSet) MergeNext(seg memAcctIterator) memAcctIterator {
+func (s *aplUnloadedSet) MergeNext(seg aplUnloadedIterator) aplUnloadedIterator {
 	if next := seg.NextSegment(); next.Ok() {
 		if mseg := s.MergeUnchecked(seg, next); mseg.Ok() {
 			seg = mseg
@@ -681,7 +681,7 @@ func (s *memAcctSet) MergeNext(seg memAcctIterator) memAcctIterator {
 // a single segment in a way that may affect its mergeability. For the reasons
 // described by MergePrev and MergeNext, it is usually incorrect to use the
 // return value of Unisolate in a loop variable.
-func (s *memAcctSet) Unisolate(seg memAcctIterator) memAcctIterator {
+func (s *aplUnloadedSet) Unisolate(seg aplUnloadedIterator) aplUnloadedIterator {
 	if prev := seg.PrevSegment(); prev.Ok() {
 		if mseg := s.MergeUnchecked(prev, seg); mseg.Ok() {
 			seg = mseg
@@ -697,7 +697,7 @@ func (s *memAcctSet) Unisolate(seg memAcctIterator) memAcctIterator {
 
 // MergeAll merges all mergeable adjacent segments in the set. All existing
 // iterators are invalidated.
-func (s *memAcctSet) MergeAll() {
+func (s *aplUnloadedSet) MergeAll() {
 	seg := s.FirstSegment()
 	if !seg.Ok() {
 		return
@@ -719,7 +719,7 @@ func (s *memAcctSet) MergeAll() {
 // change the mergeability of modified segments; callers should prefer to use
 // MergePrev or MergeNext during the mutating loop instead (depending on the
 // direction of iteration), in order to avoid a redundant search.
-func (s *memAcctSet) MergeInsideRange(r __generics_imported0.FileRange) {
+func (s *aplUnloadedSet) MergeInsideRange(r __generics_imported0.FileRange) {
 	seg := s.LowerBoundSegment(r.Start)
 	if !seg.Ok() {
 		return
@@ -741,7 +741,7 @@ func (s *memAcctSet) MergeInsideRange(r __generics_imported0.FileRange) {
 // change the mergeability of modified segments; callers should prefer to use
 // MergePrev or MergeNext during the mutating loop instead (depending on the
 // direction of iteration), in order to avoid two redundant searches.
-func (s *memAcctSet) MergeOutsideRange(r __generics_imported0.FileRange) {
+func (s *aplUnloadedSet) MergeOutsideRange(r __generics_imported0.FileRange) {
 	first := s.FindSegment(r.Start)
 	if first.Ok() {
 		if prev := first.PrevSegment(); prev.Ok() {
@@ -764,7 +764,7 @@ func (s *memAcctSet) MergeOutsideRange(r __generics_imported0.FileRange) {
 // end of the segment's range, so splitting would produce a segment with zero
 // length, or because split falls outside the segment's range altogether),
 // Split panics.
-func (s *memAcctSet) Split(seg memAcctIterator, split uint64) (memAcctIterator, memAcctIterator) {
+func (s *aplUnloadedSet) Split(seg aplUnloadedIterator, split uint64) (aplUnloadedIterator, aplUnloadedIterator) {
 	if !seg.Range().CanSplitAt(split) {
 		panic(fmt.Sprintf("can't split %v at %v", seg.Range(), split))
 	}
@@ -776,8 +776,8 @@ func (s *memAcctSet) Split(seg memAcctIterator, split uint64) (memAcctIterator, 
 // seg, but not including the returned iterators) are invalidated.
 //
 // Preconditions: seg.Start() < key < seg.End().
-func (s *memAcctSet) SplitUnchecked(seg memAcctIterator, split uint64) (memAcctIterator, memAcctIterator) {
-	val1, val2 := (memAcctSetFunctions{}).Split(seg.Range(), seg.Value(), split)
+func (s *aplUnloadedSet) SplitUnchecked(seg aplUnloadedIterator, split uint64) (aplUnloadedIterator, aplUnloadedIterator) {
+	val1, val2 := (aplUnloadedSetFunctions{}).Split(seg.Range(), seg.Value(), split)
 	end2 := seg.End()
 	seg.SetEndUnchecked(split)
 	seg.SetValue(val1)
@@ -800,7 +800,7 @@ func (s *memAcctSet) SplitUnchecked(seg memAcctIterator, split uint64) (memAcctI
 // SplitAfter only needs to be invoked on the first.
 //
 // Preconditions: start < seg.End().
-func (s *memAcctSet) SplitBefore(seg memAcctIterator, start uint64) memAcctIterator {
+func (s *aplUnloadedSet) SplitBefore(seg aplUnloadedIterator, start uint64) aplUnloadedIterator {
 	if seg.Range().CanSplitAt(start) {
 		_, seg = s.SplitUnchecked(seg, start)
 	}
@@ -821,7 +821,7 @@ func (s *memAcctSet) SplitBefore(seg memAcctIterator, start uint64) memAcctItera
 // segment, while SplitAfter only needs to be invoked on the first.
 //
 // Preconditions: seg.Start() < end.
-func (s *memAcctSet) SplitAfter(seg memAcctIterator, end uint64) memAcctIterator {
+func (s *aplUnloadedSet) SplitAfter(seg aplUnloadedIterator, end uint64) aplUnloadedIterator {
 	if seg.Range().CanSplitAt(end) {
 		seg, _ = s.SplitUnchecked(seg, end)
 	}
@@ -838,7 +838,7 @@ func (s *memAcctSet) SplitAfter(seg memAcctIterator, end uint64) memAcctIterator
 // split, making use of SplitBefore/SplitAfter complex.
 //
 // Preconditions: seg.Range().Overlaps(r).
-func (s *memAcctSet) Isolate(seg memAcctIterator, r __generics_imported0.FileRange) memAcctIterator {
+func (s *aplUnloadedSet) Isolate(seg aplUnloadedIterator, r __generics_imported0.FileRange) aplUnloadedIterator {
 	if seg.Range().CanSplitAt(r.Start) {
 		_, seg = s.SplitUnchecked(seg, r.Start)
 	}
@@ -854,7 +854,7 @@ func (s *memAcctSet) Isolate(seg memAcctIterator, r __generics_imported0.FileRan
 // range while iterating them in order of increasing keys. In such cases,
 // LowerBoundSegmentSplitBefore provides an iterator to the first segment to be
 // mutated, suitable as the initial value for a loop variable.
-func (s *memAcctSet) LowerBoundSegmentSplitBefore(min uint64) memAcctIterator {
+func (s *aplUnloadedSet) LowerBoundSegmentSplitBefore(min uint64) aplUnloadedIterator {
 	seg, gap := s.Find(min)
 	if seg.Ok() {
 		return s.SplitBefore(seg, min)
@@ -868,7 +868,7 @@ func (s *memAcctSet) LowerBoundSegmentSplitBefore(min uint64) memAcctIterator {
 // range while iterating them in order of decreasing keys. In such cases,
 // UpperBoundSegmentSplitAfter provides an iterator to the first segment to be
 // mutated, suitable as the initial value for a loop variable.
-func (s *memAcctSet) UpperBoundSegmentSplitAfter(max uint64) memAcctIterator {
+func (s *aplUnloadedSet) UpperBoundSegmentSplitAfter(max uint64) aplUnloadedIterator {
 	seg, gap := s.Find(max)
 	if seg.Ok() {
 		return s.SplitAfter(seg, max)
@@ -883,7 +883,7 @@ func (s *memAcctSet) UpperBoundSegmentSplitAfter(max uint64) memAcctIterator {
 // immediately.
 //
 // N.B. f must not invalidate iterators into s.
-func (s *memAcctSet) VisitRange(r __generics_imported0.FileRange, f func(seg memAcctIterator) bool) {
+func (s *aplUnloadedSet) VisitRange(r __generics_imported0.FileRange, f func(seg aplUnloadedIterator) bool) {
 	for seg := s.LowerBoundSegment(r.Start); seg.Ok() && seg.Start() < r.End; seg = seg.NextSegment() {
 		if !f(seg) {
 			return
@@ -894,7 +894,7 @@ func (s *memAcctSet) VisitRange(r __generics_imported0.FileRange, f func(seg mem
 // VisitFullRange is equivalent to VisitRange, except that if any key in r that
 // is visited before f returns false does not correspond to a segment,
 // VisitFullRange panics.
-func (s *memAcctSet) VisitFullRange(r __generics_imported0.FileRange, f func(seg memAcctIterator) bool) {
+func (s *aplUnloadedSet) VisitFullRange(r __generics_imported0.FileRange, f func(seg aplUnloadedIterator) bool) {
 	pos := r.Start
 	seg := s.FindSegment(r.Start)
 	for {
@@ -922,7 +922,7 @@ func (s *memAcctSet) VisitFullRange(r __generics_imported0.FileRange, f func(seg
 // MutateRange invalidates all existing iterators.
 //
 // N.B. f must not invalidate iterators into s.
-func (s *memAcctSet) MutateRange(r __generics_imported0.FileRange, f func(seg memAcctIterator) bool) {
+func (s *aplUnloadedSet) MutateRange(r __generics_imported0.FileRange, f func(seg aplUnloadedIterator) bool) {
 	seg := s.LowerBoundSegmentSplitBefore(r.Start)
 	for seg.Ok() && seg.Start() < r.End {
 		seg = s.SplitAfter(seg, r.End)
@@ -942,7 +942,7 @@ func (s *memAcctSet) MutateRange(r __generics_imported0.FileRange, f func(seg me
 // MutateFullRange is equivalent to MutateRange, except that if any key in r
 // that is visited before f returns false does not correspond to a segment,
 // MutateFullRange panics.
-func (s *memAcctSet) MutateFullRange(r __generics_imported0.FileRange, f func(seg memAcctIterator) bool) {
+func (s *aplUnloadedSet) MutateFullRange(r __generics_imported0.FileRange, f func(seg aplUnloadedIterator) bool) {
 	seg := s.FindSegment(r.Start)
 	if !seg.Ok() {
 		panic(fmt.Sprintf("missing segment at %v", r.Start))
@@ -965,7 +965,7 @@ func (s *memAcctSet) MutateFullRange(r __generics_imported0.FileRange, f func(se
 }
 
 // +stateify savable
-type memAcctnode struct {
+type aplUnloadednode struct {
 	// An internal binary tree node looks like:
 	//
 	//   K
@@ -987,7 +987,7 @@ type memAcctnode struct {
 
 	// parent is a pointer to this node's parent. If this node is root, parent
 	// is nil.
-	parent *memAcctnode
+	parent *aplUnloadednode
 
 	// parentIndex is the index of this node in parent.children.
 	parentIndex int
@@ -1001,43 +1001,43 @@ type memAcctnode struct {
 	// maximum gap among all the (nrSegments+1) gaps formed by its nrSegments keys
 	// including the 0th and nrSegments-th gap possibly shared with its upper-level
 	// nodes; if it's a non-leaf node, it's the max of all children's maxGap.
-	maxGap memAcctdynamicGap
+	maxGap aplUnloadeddynamicGap
 
 	// Nodes store keys and values in separate arrays to maximize locality in
 	// the common case (scanning keys for lookup).
-	keys     [memAcctmaxDegree - 1]__generics_imported0.FileRange
-	values   [memAcctmaxDegree - 1]memAcctInfo
-	children [memAcctmaxDegree]*memAcctnode
+	keys     [aplUnloadedmaxDegree - 1]__generics_imported0.FileRange
+	values   [aplUnloadedmaxDegree - 1]aplUnloadedInfo
+	children [aplUnloadedmaxDegree]*aplUnloadednode
 }
 
 // firstSegment returns the first segment in the subtree rooted by n.
 //
 // Preconditions: n.nrSegments != 0.
-func (n *memAcctnode) firstSegment() memAcctIterator {
+func (n *aplUnloadednode) firstSegment() aplUnloadedIterator {
 	for n.hasChildren {
 		n = n.children[0]
 	}
-	return memAcctIterator{n, 0}
+	return aplUnloadedIterator{n, 0}
 }
 
 // lastSegment returns the last segment in the subtree rooted by n.
 //
 // Preconditions: n.nrSegments != 0.
-func (n *memAcctnode) lastSegment() memAcctIterator {
+func (n *aplUnloadednode) lastSegment() aplUnloadedIterator {
 	for n.hasChildren {
 		n = n.children[n.nrSegments]
 	}
-	return memAcctIterator{n, n.nrSegments - 1}
+	return aplUnloadedIterator{n, n.nrSegments - 1}
 }
 
-func (n *memAcctnode) prevSibling() *memAcctnode {
+func (n *aplUnloadednode) prevSibling() *aplUnloadednode {
 	if n.parent == nil || n.parentIndex == 0 {
 		return nil
 	}
 	return n.parent.children[n.parentIndex-1]
 }
 
-func (n *memAcctnode) nextSibling() *memAcctnode {
+func (n *aplUnloadednode) nextSibling() *aplUnloadednode {
 	if n.parent == nil || n.parentIndex == n.parent.nrSegments {
 		return nil
 	}
@@ -1047,8 +1047,8 @@ func (n *memAcctnode) nextSibling() *memAcctnode {
 // rebalanceBeforeInsert splits n and its ancestors if they are full, as
 // required for insertion, and returns an updated iterator to the position
 // represented by gap.
-func (n *memAcctnode) rebalanceBeforeInsert(gap memAcctGapIterator) memAcctGapIterator {
-	if n.nrSegments < memAcctmaxDegree-1 {
+func (n *aplUnloadednode) rebalanceBeforeInsert(gap aplUnloadedGapIterator) aplUnloadedGapIterator {
+	if n.nrSegments < aplUnloadedmaxDegree-1 {
 		return gap
 	}
 	if n.parent != nil {
@@ -1056,29 +1056,29 @@ func (n *memAcctnode) rebalanceBeforeInsert(gap memAcctGapIterator) memAcctGapIt
 	}
 	if n.parent == nil {
 
-		left := &memAcctnode{
-			nrSegments:  memAcctminDegree - 1,
+		left := &aplUnloadednode{
+			nrSegments:  aplUnloadedminDegree - 1,
 			parent:      n,
 			parentIndex: 0,
 			hasChildren: n.hasChildren,
 		}
-		right := &memAcctnode{
-			nrSegments:  memAcctminDegree - 1,
+		right := &aplUnloadednode{
+			nrSegments:  aplUnloadedminDegree - 1,
 			parent:      n,
 			parentIndex: 1,
 			hasChildren: n.hasChildren,
 		}
-		copy(left.keys[:memAcctminDegree-1], n.keys[:memAcctminDegree-1])
-		copy(left.values[:memAcctminDegree-1], n.values[:memAcctminDegree-1])
-		copy(right.keys[:memAcctminDegree-1], n.keys[memAcctminDegree:])
-		copy(right.values[:memAcctminDegree-1], n.values[memAcctminDegree:])
-		n.keys[0], n.values[0] = n.keys[memAcctminDegree-1], n.values[memAcctminDegree-1]
-		memAcctzeroValueSlice(n.values[1:])
+		copy(left.keys[:aplUnloadedminDegree-1], n.keys[:aplUnloadedminDegree-1])
+		copy(left.values[:aplUnloadedminDegree-1], n.values[:aplUnloadedminDegree-1])
+		copy(right.keys[:aplUnloadedminDegree-1], n.keys[aplUnloadedminDegree:])
+		copy(right.values[:aplUnloadedminDegree-1], n.values[aplUnloadedminDegree:])
+		n.keys[0], n.values[0] = n.keys[aplUnloadedminDegree-1], n.values[aplUnloadedminDegree-1]
+		aplUnloadedzeroValueSlice(n.values[1:])
 		if n.hasChildren {
-			copy(left.children[:memAcctminDegree], n.children[:memAcctminDegree])
-			copy(right.children[:memAcctminDegree], n.children[memAcctminDegree:])
-			memAcctzeroNodeSlice(n.children[2:])
-			for i := 0; i < memAcctminDegree; i++ {
+			copy(left.children[:aplUnloadedminDegree], n.children[:aplUnloadedminDegree])
+			copy(right.children[:aplUnloadedminDegree], n.children[aplUnloadedminDegree:])
+			aplUnloadedzeroNodeSlice(n.children[2:])
+			for i := 0; i < aplUnloadedminDegree; i++ {
 				left.children[i].parent = left
 				left.children[i].parentIndex = i
 				right.children[i].parent = right
@@ -1090,48 +1090,48 @@ func (n *memAcctnode) rebalanceBeforeInsert(gap memAcctGapIterator) memAcctGapIt
 		n.children[0] = left
 		n.children[1] = right
 
-		if memAccttrackGaps != 0 {
+		if aplUnloadedtrackGaps != 0 {
 			left.updateMaxGapLocal()
 			right.updateMaxGapLocal()
 		}
 		if gap.node != n {
 			return gap
 		}
-		if gap.index < memAcctminDegree {
-			return memAcctGapIterator{left, gap.index}
+		if gap.index < aplUnloadedminDegree {
+			return aplUnloadedGapIterator{left, gap.index}
 		}
-		return memAcctGapIterator{right, gap.index - memAcctminDegree}
+		return aplUnloadedGapIterator{right, gap.index - aplUnloadedminDegree}
 	}
 
 	copy(n.parent.keys[n.parentIndex+1:], n.parent.keys[n.parentIndex:n.parent.nrSegments])
 	copy(n.parent.values[n.parentIndex+1:], n.parent.values[n.parentIndex:n.parent.nrSegments])
-	n.parent.keys[n.parentIndex], n.parent.values[n.parentIndex] = n.keys[memAcctminDegree-1], n.values[memAcctminDegree-1]
+	n.parent.keys[n.parentIndex], n.parent.values[n.parentIndex] = n.keys[aplUnloadedminDegree-1], n.values[aplUnloadedminDegree-1]
 	copy(n.parent.children[n.parentIndex+2:], n.parent.children[n.parentIndex+1:n.parent.nrSegments+1])
 	for i := n.parentIndex + 2; i < n.parent.nrSegments+2; i++ {
 		n.parent.children[i].parentIndex = i
 	}
-	sibling := &memAcctnode{
-		nrSegments:  memAcctminDegree - 1,
+	sibling := &aplUnloadednode{
+		nrSegments:  aplUnloadedminDegree - 1,
 		parent:      n.parent,
 		parentIndex: n.parentIndex + 1,
 		hasChildren: n.hasChildren,
 	}
 	n.parent.children[n.parentIndex+1] = sibling
 	n.parent.nrSegments++
-	copy(sibling.keys[:memAcctminDegree-1], n.keys[memAcctminDegree:])
-	copy(sibling.values[:memAcctminDegree-1], n.values[memAcctminDegree:])
-	memAcctzeroValueSlice(n.values[memAcctminDegree-1:])
+	copy(sibling.keys[:aplUnloadedminDegree-1], n.keys[aplUnloadedminDegree:])
+	copy(sibling.values[:aplUnloadedminDegree-1], n.values[aplUnloadedminDegree:])
+	aplUnloadedzeroValueSlice(n.values[aplUnloadedminDegree-1:])
 	if n.hasChildren {
-		copy(sibling.children[:memAcctminDegree], n.children[memAcctminDegree:])
-		memAcctzeroNodeSlice(n.children[memAcctminDegree:])
-		for i := 0; i < memAcctminDegree; i++ {
+		copy(sibling.children[:aplUnloadedminDegree], n.children[aplUnloadedminDegree:])
+		aplUnloadedzeroNodeSlice(n.children[aplUnloadedminDegree:])
+		for i := 0; i < aplUnloadedminDegree; i++ {
 			sibling.children[i].parent = sibling
 			sibling.children[i].parentIndex = i
 		}
 	}
-	n.nrSegments = memAcctminDegree - 1
+	n.nrSegments = aplUnloadedminDegree - 1
 
-	if memAccttrackGaps != 0 {
+	if aplUnloadedtrackGaps != 0 {
 		n.updateMaxGapLocal()
 		sibling.updateMaxGapLocal()
 	}
@@ -1139,10 +1139,10 @@ func (n *memAcctnode) rebalanceBeforeInsert(gap memAcctGapIterator) memAcctGapIt
 	if gap.node != n {
 		return gap
 	}
-	if gap.index < memAcctminDegree {
+	if gap.index < aplUnloadedminDegree {
 		return gap
 	}
-	return memAcctGapIterator{sibling, gap.index - memAcctminDegree}
+	return aplUnloadedGapIterator{sibling, gap.index - aplUnloadedminDegree}
 }
 
 // rebalanceAfterRemove "unsplits" n and its ancestors if they are deficient
@@ -1151,9 +1151,9 @@ func (n *memAcctnode) rebalanceBeforeInsert(gap memAcctGapIterator) memAcctGapIt
 //
 // Precondition: n is the only node in the tree that may currently violate a
 // B-tree invariant.
-func (n *memAcctnode) rebalanceAfterRemove(gap memAcctGapIterator) memAcctGapIterator {
+func (n *aplUnloadednode) rebalanceAfterRemove(gap aplUnloadedGapIterator) aplUnloadedGapIterator {
 	for {
-		if n.nrSegments >= memAcctminDegree-1 {
+		if n.nrSegments >= aplUnloadedminDegree-1 {
 			return gap
 		}
 		if n.parent == nil {
@@ -1161,14 +1161,14 @@ func (n *memAcctnode) rebalanceAfterRemove(gap memAcctGapIterator) memAcctGapIte
 			return gap
 		}
 
-		if sibling := n.prevSibling(); sibling != nil && sibling.nrSegments >= memAcctminDegree {
+		if sibling := n.prevSibling(); sibling != nil && sibling.nrSegments >= aplUnloadedminDegree {
 			copy(n.keys[1:], n.keys[:n.nrSegments])
 			copy(n.values[1:], n.values[:n.nrSegments])
 			n.keys[0] = n.parent.keys[n.parentIndex-1]
 			n.values[0] = n.parent.values[n.parentIndex-1]
 			n.parent.keys[n.parentIndex-1] = sibling.keys[sibling.nrSegments-1]
 			n.parent.values[n.parentIndex-1] = sibling.values[sibling.nrSegments-1]
-			memAcctSetFunctions{}.ClearValue(&sibling.values[sibling.nrSegments-1])
+			aplUnloadedSetFunctions{}.ClearValue(&sibling.values[sibling.nrSegments-1])
 			if n.hasChildren {
 				copy(n.children[1:], n.children[:n.nrSegments+1])
 				n.children[0] = sibling.children[sibling.nrSegments]
@@ -1182,26 +1182,26 @@ func (n *memAcctnode) rebalanceAfterRemove(gap memAcctGapIterator) memAcctGapIte
 			n.nrSegments++
 			sibling.nrSegments--
 
-			if memAccttrackGaps != 0 {
+			if aplUnloadedtrackGaps != 0 {
 				n.updateMaxGapLocal()
 				sibling.updateMaxGapLocal()
 			}
 			if gap.node == sibling && gap.index == sibling.nrSegments {
-				return memAcctGapIterator{n, 0}
+				return aplUnloadedGapIterator{n, 0}
 			}
 			if gap.node == n {
-				return memAcctGapIterator{n, gap.index + 1}
+				return aplUnloadedGapIterator{n, gap.index + 1}
 			}
 			return gap
 		}
-		if sibling := n.nextSibling(); sibling != nil && sibling.nrSegments >= memAcctminDegree {
+		if sibling := n.nextSibling(); sibling != nil && sibling.nrSegments >= aplUnloadedminDegree {
 			n.keys[n.nrSegments] = n.parent.keys[n.parentIndex]
 			n.values[n.nrSegments] = n.parent.values[n.parentIndex]
 			n.parent.keys[n.parentIndex] = sibling.keys[0]
 			n.parent.values[n.parentIndex] = sibling.values[0]
 			copy(sibling.keys[:sibling.nrSegments-1], sibling.keys[1:])
 			copy(sibling.values[:sibling.nrSegments-1], sibling.values[1:])
-			memAcctSetFunctions{}.ClearValue(&sibling.values[sibling.nrSegments-1])
+			aplUnloadedSetFunctions{}.ClearValue(&sibling.values[sibling.nrSegments-1])
 			if n.hasChildren {
 				n.children[n.nrSegments+1] = sibling.children[0]
 				copy(sibling.children[:sibling.nrSegments], sibling.children[1:])
@@ -1215,15 +1215,15 @@ func (n *memAcctnode) rebalanceAfterRemove(gap memAcctGapIterator) memAcctGapIte
 			n.nrSegments++
 			sibling.nrSegments--
 
-			if memAccttrackGaps != 0 {
+			if aplUnloadedtrackGaps != 0 {
 				n.updateMaxGapLocal()
 				sibling.updateMaxGapLocal()
 			}
 			if gap.node == sibling {
 				if gap.index == 0 {
-					return memAcctGapIterator{n, n.nrSegments}
+					return aplUnloadedGapIterator{n, n.nrSegments}
 				}
-				return memAcctGapIterator{sibling, gap.index - 1}
+				return aplUnloadedGapIterator{sibling, gap.index - 1}
 			}
 			return gap
 		}
@@ -1253,10 +1253,10 @@ func (n *memAcctnode) rebalanceAfterRemove(gap memAcctGapIterator) memAcctGapIte
 			}
 
 			if gap.node == left {
-				return memAcctGapIterator{p, gap.index}
+				return aplUnloadedGapIterator{p, gap.index}
 			}
 			if gap.node == right {
-				return memAcctGapIterator{p, gap.index + left.nrSegments + 1}
+				return aplUnloadedGapIterator{p, gap.index + left.nrSegments + 1}
 			}
 			return gap
 		}
@@ -1264,7 +1264,7 @@ func (n *memAcctnode) rebalanceAfterRemove(gap memAcctGapIterator) memAcctGapIte
 		// two, into whichever of the two nodes comes first. This is the
 		// reverse of the non-root splitting case in
 		// node.rebalanceBeforeInsert.
-		var left, right *memAcctnode
+		var left, right *aplUnloadednode
 		if n.parentIndex > 0 {
 			left = n.prevSibling()
 			right = n
@@ -1274,7 +1274,7 @@ func (n *memAcctnode) rebalanceAfterRemove(gap memAcctGapIterator) memAcctGapIte
 		}
 
 		if gap.node == right {
-			gap = memAcctGapIterator{left, gap.index + left.nrSegments + 1}
+			gap = aplUnloadedGapIterator{left, gap.index + left.nrSegments + 1}
 		}
 		left.keys[left.nrSegments] = p.keys[left.parentIndex]
 		left.values[left.nrSegments] = p.values[left.parentIndex]
@@ -1290,7 +1290,7 @@ func (n *memAcctnode) rebalanceAfterRemove(gap memAcctGapIterator) memAcctGapIte
 		left.nrSegments += right.nrSegments + 1
 		copy(p.keys[left.parentIndex:], p.keys[left.parentIndex+1:p.nrSegments])
 		copy(p.values[left.parentIndex:], p.values[left.parentIndex+1:p.nrSegments])
-		memAcctSetFunctions{}.ClearValue(&p.values[p.nrSegments-1])
+		aplUnloadedSetFunctions{}.ClearValue(&p.values[p.nrSegments-1])
 		copy(p.children[left.parentIndex+1:], p.children[left.parentIndex+2:p.nrSegments+1])
 		for i := 0; i < p.nrSegments; i++ {
 			p.children[i].parentIndex = i
@@ -1298,7 +1298,7 @@ func (n *memAcctnode) rebalanceAfterRemove(gap memAcctGapIterator) memAcctGapIte
 		p.children[p.nrSegments] = nil
 		p.nrSegments--
 
-		if memAccttrackGaps != 0 {
+		if aplUnloadedtrackGaps != 0 {
 			left.updateMaxGapLocal()
 		}
 
@@ -1310,7 +1310,7 @@ func (n *memAcctnode) rebalanceAfterRemove(gap memAcctGapIterator) memAcctGapIte
 // necessary update.
 //
 // Preconditions: n must be a leaf node, trackGaps must be 1.
-func (n *memAcctnode) updateMaxGapLeaf() {
+func (n *aplUnloadednode) updateMaxGapLeaf() {
 	if n.hasChildren {
 		panic(fmt.Sprintf("updateMaxGapLeaf should always be called on leaf node: %v", n))
 	}
@@ -1354,7 +1354,7 @@ func (n *memAcctnode) updateMaxGapLeaf() {
 // propagation to ancestor nodes.
 //
 // Precondition: trackGaps must be 1.
-func (n *memAcctnode) updateMaxGapLocal() {
+func (n *aplUnloadednode) updateMaxGapLocal() {
 	if !n.hasChildren {
 
 		n.maxGap.Set(n.calculateMaxGapLeaf())
@@ -1368,10 +1368,10 @@ func (n *memAcctnode) updateMaxGapLocal() {
 // max.
 //
 // Preconditions: n must be a leaf node.
-func (n *memAcctnode) calculateMaxGapLeaf() uint64 {
-	max := memAcctGapIterator{n, 0}.Range().Length()
+func (n *aplUnloadednode) calculateMaxGapLeaf() uint64 {
+	max := aplUnloadedGapIterator{n, 0}.Range().Length()
 	for i := 1; i <= n.nrSegments; i++ {
-		if current := (memAcctGapIterator{n, i}).Range().Length(); current > max {
+		if current := (aplUnloadedGapIterator{n, i}).Range().Length(); current > max {
 			max = current
 		}
 	}
@@ -1382,7 +1382,7 @@ func (n *memAcctnode) calculateMaxGapLeaf() uint64 {
 // and calculate the max.
 //
 // Preconditions: n must be a non-leaf node.
-func (n *memAcctnode) calculateMaxGapInternal() uint64 {
+func (n *aplUnloadednode) calculateMaxGapInternal() uint64 {
 	max := n.children[0].maxGap.Get()
 	for i := 1; i <= n.nrSegments; i++ {
 		if current := n.children[i].maxGap.Get(); current > max {
@@ -1394,9 +1394,9 @@ func (n *memAcctnode) calculateMaxGapInternal() uint64 {
 
 // searchFirstLargeEnoughGap returns the first gap having at least minSize length
 // in the subtree rooted by n. If not found, return a terminal gap iterator.
-func (n *memAcctnode) searchFirstLargeEnoughGap(minSize uint64) memAcctGapIterator {
+func (n *aplUnloadednode) searchFirstLargeEnoughGap(minSize uint64) aplUnloadedGapIterator {
 	if n.maxGap.Get() < minSize {
-		return memAcctGapIterator{}
+		return aplUnloadedGapIterator{}
 	}
 	if n.hasChildren {
 		for i := 0; i <= n.nrSegments; i++ {
@@ -1406,7 +1406,7 @@ func (n *memAcctnode) searchFirstLargeEnoughGap(minSize uint64) memAcctGapIterat
 		}
 	} else {
 		for i := 0; i <= n.nrSegments; i++ {
-			currentGap := memAcctGapIterator{n, i}
+			currentGap := aplUnloadedGapIterator{n, i}
 			if currentGap.Range().Length() >= minSize {
 				return currentGap
 			}
@@ -1417,9 +1417,9 @@ func (n *memAcctnode) searchFirstLargeEnoughGap(minSize uint64) memAcctGapIterat
 
 // searchLastLargeEnoughGap returns the last gap having at least minSize length
 // in the subtree rooted by n. If not found, return a terminal gap iterator.
-func (n *memAcctnode) searchLastLargeEnoughGap(minSize uint64) memAcctGapIterator {
+func (n *aplUnloadednode) searchLastLargeEnoughGap(minSize uint64) aplUnloadedGapIterator {
 	if n.maxGap.Get() < minSize {
-		return memAcctGapIterator{}
+		return aplUnloadedGapIterator{}
 	}
 	if n.hasChildren {
 		for i := n.nrSegments; i >= 0; i-- {
@@ -1429,7 +1429,7 @@ func (n *memAcctnode) searchLastLargeEnoughGap(minSize uint64) memAcctGapIterato
 		}
 	} else {
 		for i := n.nrSegments; i >= 0; i-- {
-			currentGap := memAcctGapIterator{n, i}
+			currentGap := aplUnloadedGapIterator{n, i}
 			if currentGap.Range().Length() >= minSize {
 				return currentGap
 			}
@@ -1450,10 +1450,10 @@ func (n *memAcctnode) searchLastLargeEnoughGap(minSize uint64) memAcctGapIterato
 //
 // Unless otherwise specified, any mutation of a set invalidates all existing
 // iterators into the set.
-type memAcctIterator struct {
+type aplUnloadedIterator struct {
 	// node is the node containing the iterated segment. If the iterator is
 	// terminal, node is nil.
-	node *memAcctnode
+	node *aplUnloadednode
 
 	// index is the index of the segment in node.keys/values.
 	index int
@@ -1461,24 +1461,24 @@ type memAcctIterator struct {
 
 // Ok returns true if the iterator is not terminal. All other methods are only
 // valid for non-terminal iterators.
-func (seg memAcctIterator) Ok() bool {
+func (seg aplUnloadedIterator) Ok() bool {
 	return seg.node != nil
 }
 
 // Range returns the iterated segment's range key.
-func (seg memAcctIterator) Range() __generics_imported0.FileRange {
+func (seg aplUnloadedIterator) Range() __generics_imported0.FileRange {
 	return seg.node.keys[seg.index]
 }
 
 // Start is equivalent to Range().Start, but should be preferred if only the
 // start of the range is needed.
-func (seg memAcctIterator) Start() uint64 {
+func (seg aplUnloadedIterator) Start() uint64 {
 	return seg.node.keys[seg.index].Start
 }
 
 // End is equivalent to Range().End, but should be preferred if only the end of
 // the range is needed.
-func (seg memAcctIterator) End() uint64 {
+func (seg aplUnloadedIterator) End() uint64 {
 	return seg.node.keys[seg.index].End
 }
 
@@ -1490,7 +1490,7 @@ func (seg memAcctIterator) End() uint64 {
 // - The new range must not overlap an existing one:
 //   - If seg.NextSegment().Ok(), then r.end <= seg.NextSegment().Start().
 //   - If seg.PrevSegment().Ok(), then r.start >= seg.PrevSegment().End().
-func (seg memAcctIterator) SetRangeUnchecked(r __generics_imported0.FileRange) {
+func (seg aplUnloadedIterator) SetRangeUnchecked(r __generics_imported0.FileRange) {
 	seg.node.keys[seg.index] = r
 }
 
@@ -1498,7 +1498,7 @@ func (seg memAcctIterator) SetRangeUnchecked(r __generics_imported0.FileRange) {
 // cause the iterated segment to overlap another segment, or if the new range
 // is invalid, SetRange panics. This operation does not invalidate any
 // iterators.
-func (seg memAcctIterator) SetRange(r __generics_imported0.FileRange) {
+func (seg aplUnloadedIterator) SetRange(r __generics_imported0.FileRange) {
 	if r.Length() <= 0 {
 		panic(fmt.Sprintf("invalid segment range %v", r))
 	}
@@ -1517,7 +1517,7 @@ func (seg memAcctIterator) SetRange(r __generics_imported0.FileRange) {
 // Preconditions: The new start must be valid:
 //   - start < seg.End()
 //   - If seg.PrevSegment().Ok(), then start >= seg.PrevSegment().End().
-func (seg memAcctIterator) SetStartUnchecked(start uint64) {
+func (seg aplUnloadedIterator) SetStartUnchecked(start uint64) {
 	seg.node.keys[seg.index].Start = start
 }
 
@@ -1525,7 +1525,7 @@ func (seg memAcctIterator) SetStartUnchecked(start uint64) {
 // cause the iterated segment to overlap another segment, or would result in an
 // invalid range, SetStart panics. This operation does not invalidate any
 // iterators.
-func (seg memAcctIterator) SetStart(start uint64) {
+func (seg aplUnloadedIterator) SetStart(start uint64) {
 	if start >= seg.End() {
 		panic(fmt.Sprintf("new start %v would invalidate segment range %v", start, seg.Range()))
 	}
@@ -1541,7 +1541,7 @@ func (seg memAcctIterator) SetStart(start uint64) {
 // Preconditions: The new end must be valid:
 //   - end > seg.Start().
 //   - If seg.NextSegment().Ok(), then end <= seg.NextSegment().Start().
-func (seg memAcctIterator) SetEndUnchecked(end uint64) {
+func (seg aplUnloadedIterator) SetEndUnchecked(end uint64) {
 	seg.node.keys[seg.index].End = end
 }
 
@@ -1549,7 +1549,7 @@ func (seg memAcctIterator) SetEndUnchecked(end uint64) {
 // the iterated segment to overlap another segment, or would result in an
 // invalid range, SetEnd panics. This operation does not invalidate any
 // iterators.
-func (seg memAcctIterator) SetEnd(end uint64) {
+func (seg aplUnloadedIterator) SetEnd(end uint64) {
 	if end <= seg.Start() {
 		panic(fmt.Sprintf("new end %v would invalidate segment range %v", end, seg.Range()))
 	}
@@ -1560,68 +1560,68 @@ func (seg memAcctIterator) SetEnd(end uint64) {
 }
 
 // Value returns a copy of the iterated segment's value.
-func (seg memAcctIterator) Value() memAcctInfo {
+func (seg aplUnloadedIterator) Value() aplUnloadedInfo {
 	return seg.node.values[seg.index]
 }
 
 // ValuePtr returns a pointer to the iterated segment's value. The pointer is
 // invalidated if the iterator is invalidated. This operation does not
 // invalidate any iterators.
-func (seg memAcctIterator) ValuePtr() *memAcctInfo {
+func (seg aplUnloadedIterator) ValuePtr() *aplUnloadedInfo {
 	return &seg.node.values[seg.index]
 }
 
 // SetValue mutates the iterated segment's value. This operation does not
 // invalidate any iterators.
-func (seg memAcctIterator) SetValue(val memAcctInfo) {
+func (seg aplUnloadedIterator) SetValue(val aplUnloadedInfo) {
 	seg.node.values[seg.index] = val
 }
 
 // PrevSegment returns the iterated segment's predecessor. If there is no
 // preceding segment, PrevSegment returns a terminal iterator.
-func (seg memAcctIterator) PrevSegment() memAcctIterator {
+func (seg aplUnloadedIterator) PrevSegment() aplUnloadedIterator {
 	if seg.node.hasChildren {
 		return seg.node.children[seg.index].lastSegment()
 	}
 	if seg.index > 0 {
-		return memAcctIterator{seg.node, seg.index - 1}
+		return aplUnloadedIterator{seg.node, seg.index - 1}
 	}
 	if seg.node.parent == nil {
-		return memAcctIterator{}
+		return aplUnloadedIterator{}
 	}
-	return memAcctsegmentBeforePosition(seg.node.parent, seg.node.parentIndex)
+	return aplUnloadedsegmentBeforePosition(seg.node.parent, seg.node.parentIndex)
 }
 
 // NextSegment returns the iterated segment's successor. If there is no
 // succeeding segment, NextSegment returns a terminal iterator.
-func (seg memAcctIterator) NextSegment() memAcctIterator {
+func (seg aplUnloadedIterator) NextSegment() aplUnloadedIterator {
 	if seg.node.hasChildren {
 		return seg.node.children[seg.index+1].firstSegment()
 	}
 	if seg.index < seg.node.nrSegments-1 {
-		return memAcctIterator{seg.node, seg.index + 1}
+		return aplUnloadedIterator{seg.node, seg.index + 1}
 	}
 	if seg.node.parent == nil {
-		return memAcctIterator{}
+		return aplUnloadedIterator{}
 	}
-	return memAcctsegmentAfterPosition(seg.node.parent, seg.node.parentIndex)
+	return aplUnloadedsegmentAfterPosition(seg.node.parent, seg.node.parentIndex)
 }
 
 // PrevGap returns the gap immediately before the iterated segment.
-func (seg memAcctIterator) PrevGap() memAcctGapIterator {
+func (seg aplUnloadedIterator) PrevGap() aplUnloadedGapIterator {
 	if seg.node.hasChildren {
 
 		return seg.node.children[seg.index].lastSegment().NextGap()
 	}
-	return memAcctGapIterator{seg.node, seg.index}
+	return aplUnloadedGapIterator{seg.node, seg.index}
 }
 
 // NextGap returns the gap immediately after the iterated segment.
-func (seg memAcctIterator) NextGap() memAcctGapIterator {
+func (seg aplUnloadedIterator) NextGap() aplUnloadedGapIterator {
 	if seg.node.hasChildren {
 		return seg.node.children[seg.index+1].firstSegment().PrevGap()
 	}
-	return memAcctGapIterator{seg.node, seg.index + 1}
+	return aplUnloadedGapIterator{seg.node, seg.index + 1}
 }
 
 // PrevNonEmpty returns the iterated segment's predecessor if it is adjacent,
@@ -1629,11 +1629,11 @@ func (seg memAcctIterator) NextGap() memAcctGapIterator {
 // Functions.MinKey(), PrevNonEmpty will return two terminal iterators.
 // Otherwise, exactly one of the iterators returned by PrevNonEmpty will be
 // non-terminal.
-func (seg memAcctIterator) PrevNonEmpty() (memAcctIterator, memAcctGapIterator) {
+func (seg aplUnloadedIterator) PrevNonEmpty() (aplUnloadedIterator, aplUnloadedGapIterator) {
 	if prev := seg.PrevSegment(); prev.Ok() && prev.End() == seg.Start() {
-		return prev, memAcctGapIterator{}
+		return prev, aplUnloadedGapIterator{}
 	}
-	return memAcctIterator{}, seg.PrevGap()
+	return aplUnloadedIterator{}, seg.PrevGap()
 }
 
 // NextNonEmpty returns the iterated segment's successor if it is adjacent, or
@@ -1641,11 +1641,11 @@ func (seg memAcctIterator) PrevNonEmpty() (memAcctIterator, memAcctGapIterator) 
 // Functions.MaxKey(), NextNonEmpty will return two terminal iterators.
 // Otherwise, exactly one of the iterators returned by NextNonEmpty will be
 // non-terminal.
-func (seg memAcctIterator) NextNonEmpty() (memAcctIterator, memAcctGapIterator) {
+func (seg aplUnloadedIterator) NextNonEmpty() (aplUnloadedIterator, aplUnloadedGapIterator) {
 	if next := seg.NextSegment(); next.Ok() && next.Start() == seg.End() {
-		return next, memAcctGapIterator{}
+		return next, aplUnloadedGapIterator{}
 	}
-	return memAcctIterator{}, seg.NextGap()
+	return aplUnloadedIterator{}, seg.NextGap()
 }
 
 // A GapIterator is conceptually one of:
@@ -1666,77 +1666,77 @@ func (seg memAcctIterator) NextNonEmpty() (memAcctIterator, memAcctGapIterator) 
 //
 // Unless otherwise specified, any mutation of a set invalidates all existing
 // iterators into the set.
-type memAcctGapIterator struct {
+type aplUnloadedGapIterator struct {
 	// The representation of a GapIterator is identical to that of an Iterator,
 	// except that index corresponds to positions between segments in the same
 	// way as for node.children (see comment for node.nrSegments).
-	node  *memAcctnode
+	node  *aplUnloadednode
 	index int
 }
 
 // Ok returns true if the iterator is not terminal. All other methods are only
 // valid for non-terminal iterators.
-func (gap memAcctGapIterator) Ok() bool {
+func (gap aplUnloadedGapIterator) Ok() bool {
 	return gap.node != nil
 }
 
 // Range returns the range spanned by the iterated gap.
-func (gap memAcctGapIterator) Range() __generics_imported0.FileRange {
+func (gap aplUnloadedGapIterator) Range() __generics_imported0.FileRange {
 	return __generics_imported0.FileRange{gap.Start(), gap.End()}
 }
 
 // Start is equivalent to Range().Start, but should be preferred if only the
 // start of the range is needed.
-func (gap memAcctGapIterator) Start() uint64 {
+func (gap aplUnloadedGapIterator) Start() uint64 {
 	if ps := gap.PrevSegment(); ps.Ok() {
 		return ps.End()
 	}
-	return memAcctSetFunctions{}.MinKey()
+	return aplUnloadedSetFunctions{}.MinKey()
 }
 
 // End is equivalent to Range().End, but should be preferred if only the end of
 // the range is needed.
-func (gap memAcctGapIterator) End() uint64 {
+func (gap aplUnloadedGapIterator) End() uint64 {
 	if ns := gap.NextSegment(); ns.Ok() {
 		return ns.Start()
 	}
-	return memAcctSetFunctions{}.MaxKey()
+	return aplUnloadedSetFunctions{}.MaxKey()
 }
 
 // IsEmpty returns true if the iterated gap is empty (that is, the "gap" is
 // between two adjacent segments.)
-func (gap memAcctGapIterator) IsEmpty() bool {
+func (gap aplUnloadedGapIterator) IsEmpty() bool {
 	return gap.Range().Length() == 0
 }
 
 // PrevSegment returns the segment immediately before the iterated gap. If no
 // such segment exists, PrevSegment returns a terminal iterator.
-func (gap memAcctGapIterator) PrevSegment() memAcctIterator {
-	return memAcctsegmentBeforePosition(gap.node, gap.index)
+func (gap aplUnloadedGapIterator) PrevSegment() aplUnloadedIterator {
+	return aplUnloadedsegmentBeforePosition(gap.node, gap.index)
 }
 
 // NextSegment returns the segment immediately after the iterated gap. If no
 // such segment exists, NextSegment returns a terminal iterator.
-func (gap memAcctGapIterator) NextSegment() memAcctIterator {
-	return memAcctsegmentAfterPosition(gap.node, gap.index)
+func (gap aplUnloadedGapIterator) NextSegment() aplUnloadedIterator {
+	return aplUnloadedsegmentAfterPosition(gap.node, gap.index)
 }
 
 // PrevGap returns the iterated gap's predecessor. If no such gap exists,
 // PrevGap returns a terminal iterator.
-func (gap memAcctGapIterator) PrevGap() memAcctGapIterator {
+func (gap aplUnloadedGapIterator) PrevGap() aplUnloadedGapIterator {
 	seg := gap.PrevSegment()
 	if !seg.Ok() {
-		return memAcctGapIterator{}
+		return aplUnloadedGapIterator{}
 	}
 	return seg.PrevGap()
 }
 
 // NextGap returns the iterated gap's successor. If no such gap exists, NextGap
 // returns a terminal iterator.
-func (gap memAcctGapIterator) NextGap() memAcctGapIterator {
+func (gap aplUnloadedGapIterator) NextGap() aplUnloadedGapIterator {
 	seg := gap.NextSegment()
 	if !seg.Ok() {
-		return memAcctGapIterator{}
+		return aplUnloadedGapIterator{}
 	}
 	return seg.NextGap()
 }
@@ -1746,8 +1746,8 @@ func (gap memAcctGapIterator) NextGap() memAcctGapIterator {
 // include this gap itself).
 //
 // Precondition: trackGaps must be 1.
-func (gap memAcctGapIterator) NextLargeEnoughGap(minSize uint64) memAcctGapIterator {
-	if memAccttrackGaps != 1 {
+func (gap aplUnloadedGapIterator) NextLargeEnoughGap(minSize uint64) aplUnloadedGapIterator {
+	if aplUnloadedtrackGaps != 1 {
 		panic("set is not tracking gaps")
 	}
 	if gap.node != nil && gap.node.hasChildren && gap.index == gap.node.nrSegments {
@@ -1763,7 +1763,7 @@ func (gap memAcctGapIterator) NextLargeEnoughGap(minSize uint64) memAcctGapItera
 // to do the real recursions.
 //
 // Preconditions: gap is NOT the trailing gap of a non-leaf node.
-func (gap memAcctGapIterator) nextLargeEnoughGapHelper(minSize uint64) memAcctGapIterator {
+func (gap aplUnloadedGapIterator) nextLargeEnoughGapHelper(minSize uint64) aplUnloadedGapIterator {
 	for {
 
 		for gap.node != nil &&
@@ -1772,7 +1772,7 @@ func (gap memAcctGapIterator) nextLargeEnoughGapHelper(minSize uint64) memAcctGa
 		}
 
 		if gap.node == nil {
-			return memAcctGapIterator{}
+			return aplUnloadedGapIterator{}
 		}
 
 		gap.index++
@@ -1801,8 +1801,8 @@ func (gap memAcctGapIterator) nextLargeEnoughGapHelper(minSize uint64) memAcctGa
 // (does NOT include this gap itself).
 //
 // Precondition: trackGaps must be 1.
-func (gap memAcctGapIterator) PrevLargeEnoughGap(minSize uint64) memAcctGapIterator {
-	if memAccttrackGaps != 1 {
+func (gap aplUnloadedGapIterator) PrevLargeEnoughGap(minSize uint64) aplUnloadedGapIterator {
+	if aplUnloadedtrackGaps != 1 {
 		panic("set is not tracking gaps")
 	}
 	if gap.node != nil && gap.node.hasChildren && gap.index == 0 {
@@ -1818,7 +1818,7 @@ func (gap memAcctGapIterator) PrevLargeEnoughGap(minSize uint64) memAcctGapItera
 // to do the real recursions.
 //
 // Preconditions: gap is NOT the first gap of a non-leaf node.
-func (gap memAcctGapIterator) prevLargeEnoughGapHelper(minSize uint64) memAcctGapIterator {
+func (gap aplUnloadedGapIterator) prevLargeEnoughGapHelper(minSize uint64) aplUnloadedGapIterator {
 	for {
 
 		for gap.node != nil &&
@@ -1827,7 +1827,7 @@ func (gap memAcctGapIterator) prevLargeEnoughGapHelper(minSize uint64) memAcctGa
 		}
 
 		if gap.node == nil {
-			return memAcctGapIterator{}
+			return aplUnloadedGapIterator{}
 		}
 
 		gap.index--
@@ -1854,55 +1854,55 @@ func (gap memAcctGapIterator) prevLargeEnoughGapHelper(minSize uint64) memAcctGa
 // segmentBeforePosition returns the predecessor segment of the position given
 // by n.children[i], which may or may not contain a child. If no such segment
 // exists, segmentBeforePosition returns a terminal iterator.
-func memAcctsegmentBeforePosition(n *memAcctnode, i int) memAcctIterator {
+func aplUnloadedsegmentBeforePosition(n *aplUnloadednode, i int) aplUnloadedIterator {
 	for i == 0 {
 		if n.parent == nil {
-			return memAcctIterator{}
+			return aplUnloadedIterator{}
 		}
 		n, i = n.parent, n.parentIndex
 	}
-	return memAcctIterator{n, i - 1}
+	return aplUnloadedIterator{n, i - 1}
 }
 
 // segmentAfterPosition returns the successor segment of the position given by
 // n.children[i], which may or may not contain a child. If no such segment
 // exists, segmentAfterPosition returns a terminal iterator.
-func memAcctsegmentAfterPosition(n *memAcctnode, i int) memAcctIterator {
+func aplUnloadedsegmentAfterPosition(n *aplUnloadednode, i int) aplUnloadedIterator {
 	for i == n.nrSegments {
 		if n.parent == nil {
-			return memAcctIterator{}
+			return aplUnloadedIterator{}
 		}
 		n, i = n.parent, n.parentIndex
 	}
-	return memAcctIterator{n, i}
+	return aplUnloadedIterator{n, i}
 }
 
-func memAcctzeroValueSlice(slice []memAcctInfo) {
+func aplUnloadedzeroValueSlice(slice []aplUnloadedInfo) {
 
 	for i := range slice {
-		memAcctSetFunctions{}.ClearValue(&slice[i])
+		aplUnloadedSetFunctions{}.ClearValue(&slice[i])
 	}
 }
 
-func memAcctzeroNodeSlice(slice []*memAcctnode) {
+func aplUnloadedzeroNodeSlice(slice []*aplUnloadednode) {
 	for i := range slice {
 		slice[i] = nil
 	}
 }
 
 // String stringifies a Set for debugging.
-func (s *memAcctSet) String() string {
+func (s *aplUnloadedSet) String() string {
 	return s.root.String()
 }
 
 // String stringifies a node (and all of its children) for debugging.
-func (n *memAcctnode) String() string {
+func (n *aplUnloadednode) String() string {
 	var buf bytes.Buffer
 	n.writeDebugString(&buf, "")
 	return buf.String()
 }
 
-func (n *memAcctnode) writeDebugString(buf *bytes.Buffer, prefix string) {
+func (n *aplUnloadednode) writeDebugString(buf *bytes.Buffer, prefix string) {
 	if n.hasChildren != (n.nrSegments > 0 && n.children[0] != nil) {
 		buf.WriteString(prefix)
 		buf.WriteString(fmt.Sprintf("WARNING: inconsistent value of hasChildren: got %v, want %v\n", n.hasChildren, !n.hasChildren))
@@ -1918,7 +1918,7 @@ func (n *memAcctnode) writeDebugString(buf *bytes.Buffer, prefix string) {
 		}
 		buf.WriteString(prefix)
 		if n.hasChildren {
-			if memAccttrackGaps != 0 {
+			if aplUnloadedtrackGaps != 0 {
 				buf.WriteString(fmt.Sprintf("- % 3d: %v => %v, maxGap: %d\n", i, n.keys[i], n.values[i], n.maxGap.Get()))
 			} else {
 				buf.WriteString(fmt.Sprintf("- % 3d: %v => %v\n", i, n.keys[i], n.values[i]))
@@ -1936,18 +1936,18 @@ func (n *memAcctnode) writeDebugString(buf *bytes.Buffer, prefix string) {
 // an intermediate representation for save/restore and tests.
 //
 // +stateify savable
-type memAcctFlatSegment struct {
+type aplUnloadedFlatSegment struct {
 	Start uint64
 	End   uint64
-	Value memAcctInfo
+	Value aplUnloadedInfo
 }
 
 // ExportSlice returns a copy of all segments in the given set, in ascending
 // key order.
-func (s *memAcctSet) ExportSlice() []memAcctFlatSegment {
-	var fs []memAcctFlatSegment
+func (s *aplUnloadedSet) ExportSlice() []aplUnloadedFlatSegment {
+	var fs []aplUnloadedFlatSegment
 	for seg := s.FirstSegment(); seg.Ok(); seg = seg.NextSegment() {
-		fs = append(fs, memAcctFlatSegment{
+		fs = append(fs, aplUnloadedFlatSegment{
 			Start: seg.Start(),
 			End:   seg.End(),
 			Value: seg.Value(),
@@ -1963,7 +1963,7 @@ func (s *memAcctSet) ExportSlice() []memAcctFlatSegment {
 //   - fs must represent a valid set (the segments in fs must have valid
 //     lengths that do not overlap).
 //   - The segments in fs must be sorted in ascending key order.
-func (s *memAcctSet) ImportSlice(fs []memAcctFlatSegment) error {
+func (s *aplUnloadedSet) ImportSlice(fs []aplUnloadedFlatSegment) error {
 	if !s.IsEmpty() {
 		return fmt.Errorf("cannot import into non-empty set %v", s)
 	}
@@ -1985,7 +1985,7 @@ func (s *memAcctSet) ImportSlice(fs []memAcctFlatSegment) error {
 //
 // This should be used only for testing, and has been added to this package for
 // templating convenience.
-func (s *memAcctSet) segmentTestCheck(expectedSegments int, segFunc func(int, __generics_imported0.FileRange, memAcctInfo) error) error {
+func (s *aplUnloadedSet) segmentTestCheck(expectedSegments int, segFunc func(int, __generics_imported0.FileRange, aplUnloadedInfo) error) error {
 	havePrev := false
 	prev := uint64(0)
 	nrSegments := 0
@@ -2012,20 +2012,20 @@ func (s *memAcctSet) segmentTestCheck(expectedSegments int, segFunc func(int, __
 // countSegments counts the number of segments in the set.
 //
 // Similar to Check, this should only be used for testing.
-func (s *memAcctSet) countSegments() (segments int) {
+func (s *aplUnloadedSet) countSegments() (segments int) {
 	for seg := s.FirstSegment(); seg.Ok(); seg = seg.NextSegment() {
 		segments++
 	}
 	return segments
 }
-func (s *memAcctSet) saveRoot() []memAcctFlatSegment {
+func (s *aplUnloadedSet) saveRoot() []aplUnloadedFlatSegment {
 	fs := s.ExportSlice()
 
 	fs = fs[:len(fs):len(fs)]
 	return fs
 }
 
-func (s *memAcctSet) loadRoot(_ context.Context, fs []memAcctFlatSegment) {
+func (s *aplUnloadedSet) loadRoot(_ context.Context, fs []aplUnloadedFlatSegment) {
 	if err := s.ImportSlice(fs); err != nil {
 		panic(err)
 	}

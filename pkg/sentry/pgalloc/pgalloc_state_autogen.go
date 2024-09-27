@@ -8,6 +8,110 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
+func (s *aplUnloadedSet) StateTypeName() string {
+	return "pkg/sentry/pgalloc.aplUnloadedSet"
+}
+
+func (s *aplUnloadedSet) StateFields() []string {
+	return []string{
+		"root",
+	}
+}
+
+func (s *aplUnloadedSet) beforeSave() {}
+
+// +checklocksignore
+func (s *aplUnloadedSet) StateSave(stateSinkObject state.Sink) {
+	s.beforeSave()
+	var rootValue []aplUnloadedFlatSegment
+	rootValue = s.saveRoot()
+	stateSinkObject.SaveValue(0, rootValue)
+}
+
+func (s *aplUnloadedSet) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (s *aplUnloadedSet) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.LoadValue(0, new([]aplUnloadedFlatSegment), func(y any) { s.loadRoot(ctx, y.([]aplUnloadedFlatSegment)) })
+}
+
+func (n *aplUnloadednode) StateTypeName() string {
+	return "pkg/sentry/pgalloc.aplUnloadednode"
+}
+
+func (n *aplUnloadednode) StateFields() []string {
+	return []string{
+		"nrSegments",
+		"parent",
+		"parentIndex",
+		"hasChildren",
+		"maxGap",
+		"keys",
+		"values",
+		"children",
+	}
+}
+
+func (n *aplUnloadednode) beforeSave() {}
+
+// +checklocksignore
+func (n *aplUnloadednode) StateSave(stateSinkObject state.Sink) {
+	n.beforeSave()
+	stateSinkObject.Save(0, &n.nrSegments)
+	stateSinkObject.Save(1, &n.parent)
+	stateSinkObject.Save(2, &n.parentIndex)
+	stateSinkObject.Save(3, &n.hasChildren)
+	stateSinkObject.Save(4, &n.maxGap)
+	stateSinkObject.Save(5, &n.keys)
+	stateSinkObject.Save(6, &n.values)
+	stateSinkObject.Save(7, &n.children)
+}
+
+func (n *aplUnloadednode) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (n *aplUnloadednode) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &n.nrSegments)
+	stateSourceObject.Load(1, &n.parent)
+	stateSourceObject.Load(2, &n.parentIndex)
+	stateSourceObject.Load(3, &n.hasChildren)
+	stateSourceObject.Load(4, &n.maxGap)
+	stateSourceObject.Load(5, &n.keys)
+	stateSourceObject.Load(6, &n.values)
+	stateSourceObject.Load(7, &n.children)
+}
+
+func (a *aplUnloadedFlatSegment) StateTypeName() string {
+	return "pkg/sentry/pgalloc.aplUnloadedFlatSegment"
+}
+
+func (a *aplUnloadedFlatSegment) StateFields() []string {
+	return []string{
+		"Start",
+		"End",
+		"Value",
+	}
+}
+
+func (a *aplUnloadedFlatSegment) beforeSave() {}
+
+// +checklocksignore
+func (a *aplUnloadedFlatSegment) StateSave(stateSinkObject state.Sink) {
+	a.beforeSave()
+	stateSinkObject.Save(0, &a.Start)
+	stateSinkObject.Save(1, &a.End)
+	stateSinkObject.Save(2, &a.Value)
+}
+
+func (a *aplUnloadedFlatSegment) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (a *aplUnloadedFlatSegment) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &a.Start)
+	stateSourceObject.Load(1, &a.End)
+	stateSourceObject.Load(2, &a.Value)
+}
+
 func (r *EvictableRange) StateTypeName() string {
 	return "pkg/sentry/pgalloc.EvictableRange"
 }
@@ -561,6 +665,9 @@ func (u *unwasteFlatSegment) StateLoad(ctx context.Context, stateSourceObject st
 }
 
 func init() {
+	state.Register((*aplUnloadedSet)(nil))
+	state.Register((*aplUnloadednode)(nil))
+	state.Register((*aplUnloadedFlatSegment)(nil))
 	state.Register((*EvictableRange)(nil))
 	state.Register((*evictableRangeSet)(nil))
 	state.Register((*evictableRangenode)(nil))

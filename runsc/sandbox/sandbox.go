@@ -461,7 +461,7 @@ func (s *Sandbox) StartSubcontainer(spec *specs.Spec, conf *config.Config, cid s
 }
 
 // Restore sends the restore call for a container in the sandbox.
-func (s *Sandbox) Restore(conf *config.Config, cid string, imagePath string, direct bool) error {
+func (s *Sandbox) Restore(conf *config.Config, cid string, imagePath string, direct, background bool) error {
 	log.Debugf("Restore sandbox %q from path %q", s.ID, imagePath)
 
 	stateFileName := path.Join(imagePath, boot.CheckpointStateFileName)
@@ -475,6 +475,7 @@ func (s *Sandbox) Restore(conf *config.Config, cid string, imagePath string, dir
 		FilePayload: urpc.FilePayload{
 			Files: []*os.File{sf},
 		},
+		Background: background,
 	}
 
 	// If the pages file exists, we must pass it in.

@@ -50,7 +50,7 @@ func (fd *accelFD) Translate(ctx context.Context, required, optional memmap.Mapp
 			Source: optional,
 			File:   &fd.memmapFile,
 			Offset: optional.Start,
-			Perms:  at,
+			Perms:  hostarch.AnyAccess,
 		},
 	}, nil
 }

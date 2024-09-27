@@ -488,6 +488,7 @@ type RestoreOpts struct {
 	urpc.FilePayload
 	HavePagesFile  bool
 	HaveDeviceFile bool
+	Background     bool
 }
 
 // Restore loads a container from a statefile.
@@ -524,7 +525,11 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 		return fmt.Errorf("statefile cannot be empty")
 	}
 
-	cm.restorer = &restorer{restoreDone: cm.onRestoreDone, stateFile: stateFile}
+	cm.restorer = &restorer{
+		restoreDone: cm.onRestoreDone,
+		stateFile:   stateFile,
+		background:  o.Background,
+	}
 	cm.l.restoreWaiters = sync.NewCond(&cm.l.mu)
 	cm.l.state = restoring
 	// Release `cm.l.mu`.

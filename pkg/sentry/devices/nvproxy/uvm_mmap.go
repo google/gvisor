@@ -54,9 +54,7 @@ func (fd *uvmFD) Translate(ctx context.Context, required, optional memmap.Mappab
 			Source: optional,
 			File:   &fd.memmapFile,
 			Offset: optional.Start,
-			// kernel-open/nvidia-uvm/uvm.c:uvm_mmap() requires mappings to be
-			// PROT_READ|PROT_WRITE.
-			Perms: hostarch.ReadWrite,
+			Perms:  hostarch.AnyAccess,
 		},
 	}, nil
 }

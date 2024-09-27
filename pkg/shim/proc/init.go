@@ -155,7 +155,7 @@ func (p *Init) Create(ctx context.Context, r *CreateConfig) (err error) {
 		if err != nil {
 			return fmt.Errorf("failed to retrieve console master: %w", err)
 		}
-		console, err = p.Platform.CopyConsole(ctx, console, r.Stdin, r.Stdout, r.Stderr, &p.wg)
+		console, err = p.Platform.CopyConsole(ctx, console, r.ID, r.Stdin, r.Stdout, r.Stderr, &p.wg)
 		if err != nil {
 			return fmt.Errorf("failed to start console copy: %w", err)
 		}
@@ -240,9 +240,10 @@ func (p *Init) start(ctx context.Context, restoreConf *extension.RestoreConfig) 
 		}
 	} else {
 		if err := p.runtime.Restore(ctx, p.id, cio, &runsccmd.RestoreOpts{
-			ImagePath: restoreConf.ImagePath,
-			Detach:    true,
-			Direct:    restoreConf.Direct,
+			ImagePath:  restoreConf.ImagePath,
+			Detach:     true,
+			Direct:     restoreConf.Direct,
+			Background: restoreConf.Background,
 		}); err != nil {
 			return p.runtimeError(err, "OCI runtime restore failed")
 		}

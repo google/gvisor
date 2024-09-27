@@ -42,8 +42,9 @@ type Process interface {
 
 // RestoreConfig is the configuration for a restore request.
 type RestoreConfig struct {
-	ImagePath string
-	Direct    bool
+	ImagePath  string
+	Direct     bool
+	Background bool
 }
 
 // TaskServiceExt extends TaskRequest with extra functionality required by the shim.

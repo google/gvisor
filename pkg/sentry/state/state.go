@@ -144,12 +144,25 @@ type LoadOpts struct {
 	// PagesFile is non-nil. Otherwise this content is stored in Source.
 	PagesFile *fd.FD
 
+	// If Background is true, the sentry may read from PagesFile after Load has
+	// returned.
+	Background bool
+
 	// Key is used for state integrity check.
 	Key []byte
 }
 
 // Load loads the given kernel, setting the provided platform and stack.
+//
+// Load takes ownership of (and unsets) opts.PagesFile.
 func (opts LoadOpts) Load(ctx context.Context, k *kernel.Kernel, timeReady chan struct{}, n inet.Stack, clocks time.Clocks, vfsOpts *vfs.CompleteRestoreOptions, saveRestoreNet bool) error {
+	defer func() {
+		if opts.PagesFile != nil {
+			opts.PagesFile.Close()
+			opts.PagesFile = nil
+		}
+	}()
+
 	// Open the file.
 	r, m, err := statefile.NewReader(opts.Source, opts.Key)
 	if err != nil {
@@ -167,5 +180,7 @@ func (opts LoadOpts) Load(ctx context.Context, k *kernel.Kernel, timeReady chan 
 	previousMetadata = m
 
 	// Restore the Kernel object graph.
-	return k.LoadFrom(ctx, r, pagesMetadata, opts.PagesFile, timeReady, n, clocks, vfsOpts, saveRestoreNet)
+	err = k.LoadFrom(ctx, r, pagesMetadata, opts.PagesFile, opts.Background, timeReady, n, clocks, vfsOpts, saveRestoreNet)
+	opts.PagesFile = nil // transferred to k.LoadFrom()
+	return err
 }

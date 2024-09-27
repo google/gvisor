@@ -26,6 +26,7 @@ import (
 	"github.com/containerd/containerd/namespaces"
 	"github.com/containerd/containerd/runtime/v2/shim"
 	taskapi "github.com/containerd/containerd/runtime/v2/task"
+	"github.com/containerd/containerd/sys"
 	"github.com/gogo/protobuf/types"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/cleanup"
@@ -39,6 +40,8 @@ const (
 	// shimAddressPath is the relative path to a file that contains the address
 	// to the shim UDS. See service.shimAddress.
 	shimAddressPath = "address"
+	// oomScoreMaxKillable is the maximum score keeping the process killable by the oom killer
+	oomScoreMaxKillable = -999
 )
 
 // New returns a new shim service that can be used via gRPC.
@@ -149,14 +152,14 @@ func (s *service) newCommand(ctx context.Context, containerdBinary, containerdAd
 	return cmd, nil
 }
 
-func (s *service) StartShim(ctx context.Context, id, containerdBinary, containerdAddress, containerdTTRPCAddress string) (string, error) {
-	log.L.Debugf("StartShim, id: %s, binary: %q, address: %q", id, containerdBinary, containerdAddress)
+func (s *service) StartShim(ctx context.Context, opts shim.StartOpts) (string, error) {
+	log.L.Debugf("StartShim, id: %s, binary: %q, address: %q", opts.ID, opts.ContainerdBinary, opts.Address)
 
-	cmd, err := s.newCommand(ctx, containerdBinary, containerdAddress)
+	cmd, err := s.newCommand(ctx, opts.ContainerdBinary, opts.Address)
 	if err != nil {
 		return "", err
 	}
-	address, err := shim.SocketAddress(ctx, containerdAddress, id)
+	address, err := shim.SocketAddress(ctx, opts.Address, opts.ID)
 	if err != nil {
 		return "", err
 	}
@@ -210,7 +213,7 @@ func (s *service) StartShim(ctx context.Context, id, containerdBinary, container
 	if err := shim.WriteAddress(shimAddressPath, address); err != nil {
 		return "", err
 	}
-	if err := shim.SetScore(cmd.Process.Pid); err != nil {
+	if err := sys.SetOOMScore(cmd.Process.Pid, oomScoreMaxKillable); err != nil {
 		return "", fmt.Errorf("failed to set OOM Score on shim: %w", err)
 	}
 	cu.Release()

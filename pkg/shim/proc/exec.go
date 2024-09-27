@@ -238,7 +238,7 @@ func (e *execProcess) start(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("failed to retrieve console master: %w", err)
 		}
-		if e.console, err = e.parent.Platform.CopyConsole(ctx, console, e.stdio.Stdin, e.stdio.Stdout, e.stdio.Stderr, &e.wg); err != nil {
+		if e.console, err = e.parent.Platform.CopyConsole(ctx, console, e.id, e.stdio.Stdin, e.stdio.Stdout, e.stdio.Stderr, &e.wg); err != nil {
 			return fmt.Errorf("failed to start console copy: %w", err)
 		}
 	} else if !e.stdio.IsNull() {

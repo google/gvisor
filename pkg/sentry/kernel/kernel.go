@@ -75,7 +75,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/uniqueid"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/state"
-	"gvisor.dev/gvisor/pkg/state/statefile"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 )
@@ -597,7 +596,7 @@ func savePrivateMFs(ctx context.Context, w io.Writer, pw io.Writer, mfsToSave ma
 	return nil
 }
 
-func loadPrivateMFs(ctx context.Context, r io.Reader, pr *statefile.AsyncReader) error {
+func loadPrivateMFs(ctx context.Context, r io.Reader, opts *pgalloc.LoadOpts) error {
 	// Load the metadata.
 	var meta privateMemoryFileMetadata
 	if _, err := state.Load(ctx, r, &meta); err != nil {
@@ -614,7 +613,7 @@ func loadPrivateMFs(ctx context.Context, r io.Reader, pr *statefile.AsyncReader)
 		if !ok {
 			return fmt.Errorf("saved memory file for %q was not configured on restore", fsID)
 		}
-		if err := mf.LoadFrom(ctx, r, pr); err != nil {
+		if err := mf.LoadFrom(ctx, r, opts); err != nil {
 			return err
 		}
 	}
@@ -767,9 +766,16 @@ func (k *Kernel) invalidateUnsavableMappings(ctx context.Context) error {
 }
 
 // LoadFrom returns a new Kernel loaded from args.
-func (k *Kernel) LoadFrom(ctx context.Context, r, pagesMetadata io.Reader, pagesFile *fd.FD, timeReady chan struct{}, net inet.Stack, clocks sentrytime.Clocks, vfsOpts *vfs.CompleteRestoreOptions, saveRestoreNet bool) error {
+//
+// LoadFrom takes ownership of pagesFile.
+func (k *Kernel) LoadFrom(ctx context.Context, r, pagesMetadata io.Reader, pagesFile *fd.FD, background bool, timeReady chan struct{}, net inet.Stack, clocks sentrytime.Clocks, vfsOpts *vfs.CompleteRestoreOptions, saveRestoreNet bool) error {
 	loadStart := time.Now()
 
+	defer func() {
+		if pagesFile != nil {
+			pagesFile.Close()
+		}
+	}()
 	var (
 		mfLoadWg  sync.WaitGroup
 		mfLoadErr error
@@ -780,7 +786,8 @@ func (k *Kernel) LoadFrom(ctx context.Context, r, pagesMetadata io.Reader, pages
 		mfLoadWg.Add(1)
 		go func() {
 			defer mfLoadWg.Done()
-			mfLoadErr = k.loadMemoryFiles(ctx, r, pagesMetadata, pagesFile)
+			mfLoadErr = k.loadMemoryFiles(ctx, r, pagesMetadata, pagesFile, background)
+			pagesFile = nil // transferred to k.loadMemoryFiles()
 		}()
 		// Defer a Wait() so we wait for k.loadMemoryFiles() to complete even if we
 		// error out without reaching the other Wait() below.
@@ -824,7 +831,8 @@ func (k *Kernel) LoadFrom(ctx context.Context, r, pagesMetadata io.Reader, pages
 	if parallelMfLoad {
 		mfLoadWg.Wait()
 	} else {
-		mfLoadErr = k.loadMemoryFiles(ctx, r, pagesMetadata, pagesFile)
+		mfLoadErr = k.loadMemoryFiles(ctx, r, pagesMetadata, pagesFile, background)
+		pagesFile = nil // transferred to k.loadMemoryFiles()
 	}
 	if mfLoadErr != nil {
 		return mfLoadErr
@@ -869,28 +877,40 @@ func (k *Kernel) LoadFrom(ctx context.Context, r, pagesMetadata io.Reader, pages
 	return nil
 }
 
-func (k *Kernel) loadMemoryFiles(ctx context.Context, r, pagesMetadata io.Reader, pagesFile *fd.FD) error {
-	// Load the memory files' state.
+// loadMemoryFiles takes ownership of pagesFile.
+func (k *Kernel) loadMemoryFiles(ctx context.Context, r, pagesMetadata io.Reader, pagesFile *fd.FD, background bool) error {
 	memoryStart := time.Now()
 	pmr := r
 	if pagesMetadata != nil {
 		pmr = pagesMetadata
 	}
-	var pr *statefile.AsyncReader
-	if pagesFile != nil {
-		pr = statefile.NewAsyncReader(pagesFile, 0 /* off */)
-		defer pr.Close()
+	var (
+		pagesFileUsers  atomicbitops.Int64
+		asyncPageLoadWG sync.WaitGroup
+	)
+	opts := pgalloc.LoadOpts{
+		PagesFile: pagesFile,
+		OnAsyncPageLoadStart: func() {
+			pagesFileUsers.Add(1)
+			asyncPageLoadWG.Add(1)
+		},
+		OnAsyncPageLoadDone: func(error) {
+			if n := pagesFileUsers.Add(-1); n == 0 {
+				pagesFile.Close()
+			} else if n < 0 {
+				panic("pagesFileUsers < 0")
+			}
+			asyncPageLoadWG.Done()
+		},
 	}
-	if err := k.mf.LoadFrom(ctx, pmr, pr); err != nil {
+	if err := k.mf.LoadFrom(ctx, pmr, &opts); err != nil {
 		return err
 	}
-	if err := loadPrivateMFs(ctx, pmr, pr); err != nil {
+	if err := loadPrivateMFs(ctx, pmr, &opts); err != nil {
 		return err
 	}
-	if pr != nil {
-		if err := pr.Wait(); err != nil {
-			return err
-		}
+	if !background {
+		asyncPageLoadWG.Wait()
 	}
 	log.Infof("Memory files load took [%s].", time.Since(memoryStart))
 	return nil

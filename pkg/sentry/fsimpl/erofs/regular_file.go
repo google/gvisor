@@ -23,6 +23,7 @@ import (
 	"gvisor.dev/gvisor/pkg/erofs"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
@@ -126,6 +127,9 @@ func (fd *regularFileFD) Seek(ctx context.Context, offset int64, whence int32) (
 
 // ConfigureMMap implements vfs.FileDescriptionImpl.ConfigureMMap.
 func (fd *regularFileFD) ConfigureMMap(ctx context.Context, opts *memmap.MMapOpts) error {
+	if opts.MaxPerms.Write && !opts.Private {
+		return linuxerr.EINVAL
+	}
 	return vfs.GenericConfigureMMap(&fd.vfsfd, fd.inode(), opts)
 }
 
@@ -163,6 +167,10 @@ func (i *inode) Translate(ctx context.Context, required, optional memmap.Mappabl
 		optional.End = pgend
 	}
 	if at.Write {
+		// This shouldn't be possible due to the check in ConfigureMMap().
+		inodeTranslateWriteWarnOnce.Do(func() {
+			log.Traceback("erofs.inode.Translate: unexpected access type %v", at)
+		})
 		return nil, &memmap.BusError{linuxerr.EROFS}
 	}
 	offset, err := i.DataOffset()
@@ -175,10 +183,12 @@ func (i *inode) Translate(ctx context.Context, required, optional memmap.Mappabl
 			Source: mr,
 			File:   &i.fs.mf,
 			Offset: mr.Start + offset,
-			Perms:  at,
+			Perms:  hostarch.ReadExecute,
 		},
 	}, nil
 }
+
+var inodeTranslateWriteWarnOnce sync.Once
 
 // InvalidateUnsavable implements memmap.Mappable.InvalidateUnsavable.
 func (i *inode) InvalidateUnsavable(ctx context.Context) error {

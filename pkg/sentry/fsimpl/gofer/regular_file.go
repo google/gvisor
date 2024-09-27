@@ -809,10 +809,7 @@ func (d *dentry) Translate(ctx context.Context, required, optional memmap.Mappab
 		segMR := seg.Range().Intersect(optional)
 		// TODO(jamieliu): Make Translations writable even if writability is
 		// not required if already kept-dirty by another writable translation.
-		perms := hostarch.AccessType{
-			Read:    true,
-			Execute: true,
-		}
+		perms := hostarch.ReadExecute
 		if at.Write {
 			// From this point forward, this memory can be dirtied through the
 			// mapping at any time.

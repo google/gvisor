@@ -76,6 +76,10 @@ type restorer struct {
 	pagesMetadata *fd.FD
 	pagesFile     *fd.FD
 
+	// If background is true, pagesFile may continue to be read after
+	// restorer.restore() returns.
+	background bool
+
 	// deviceFile is the required to start the platform.
 	deviceFile *fd.FD
 
@@ -231,8 +235,15 @@ func (r *restorer) restore(l *Loader) error {
 	ctx = context.WithValue(ctx, devutil.CtxDevGoferClientProvider, l.k)
 
 	// Load the state.
-	loadOpts := state.LoadOpts{Source: r.stateFile, PagesMetadata: r.pagesMetadata, PagesFile: r.pagesFile}
-	if err := loadOpts.Load(ctx, l.k, nil, oldInetStack, time.NewCalibratedClocks(), &vfs.CompleteRestoreOptions{}, l.saveRestoreNet); err != nil {
+	loadOpts := state.LoadOpts{
+		Source:        r.stateFile,
+		PagesMetadata: r.pagesMetadata,
+		PagesFile:     r.pagesFile,
+		Background:    r.background,
+	}
+	err = loadOpts.Load(ctx, l.k, nil, oldInetStack, time.NewCalibratedClocks(), &vfs.CompleteRestoreOptions{}, l.saveRestoreNet)
+	r.pagesFile = nil // transferred to loadOpts.Load()
+	if err != nil {
 		return err
 	}
 
