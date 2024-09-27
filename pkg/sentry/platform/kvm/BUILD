@@ -17,30 +17,6 @@ go_template_instance(
     },
 )
 
-config_setting(
-    name = "debug_build",
-    values = {
-        "compilation_mode": "dbg",
-    },
-)
-
-# @unused
-glaze_ignore = [
-    "seccomp_mmap_dbg.go",
-    "seccomp_mmap_real.go",
-]
-
-# Use either seccomp_mmap_dbg.go or seccomp_mmap_real.go as seccomp_mmap.go.
-genrule(
-    name = "seccomp_mmap",
-    srcs = select({
-        ":debug_build": ["seccomp_mmap_dbg.go"],
-        "//conditions:default": ["seccomp_mmap_real.go"],
-    }),
-    outs = ["seccomp_mmap_unsafe.go"],
-    cmd = "cat < $(SRCS) > $(OUTS)",
-)
-
 go_library(
     name = "kvm",
     srcs = [
@@ -81,7 +57,6 @@ go_library(
         "physical_map.go",
         "physical_map_amd64.go",
         "physical_map_arm64.go",
-        "seccomp_mmap_unsafe.go",
         "virtual_map.go",
     ],
     visibility = ["//pkg/sentry:internal"],
@@ -96,6 +71,7 @@ go_library(
         "//pkg/hosttid",
         "//pkg/log",
         "//pkg/metric",
+        "//pkg/rawsyscall",
         "//pkg/ring0",
         "//pkg/ring0/pagetables",
         "//pkg/seccomp",

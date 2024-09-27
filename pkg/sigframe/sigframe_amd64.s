@@ -88,22 +88,3 @@ TEXT ·retjmp(SB),NOSPLIT,$0-0
 	MOVQ 8(SP), BP
 	ADDQ    $0x10,SP
 	RET
-
-// func kvmSyscallErrno6(trap, a1, a2, a3, a4, a5, a6 uintptr) (ret unix.Errno)
-TEXT ·kvmSyscallErrno6(SB),NOSPLIT,$0-64
-	MOVQ a1+8(FP), DI
-	MOVQ a2+16(FP), SI
-	MOVQ a3+24(FP), DX
-	MOVQ a4+32(FP), R10
-	MOVQ a5+40(FP), R8
-	MOVQ a6+48(FP), R9
-	MOVQ trap+0(FP), AX  // syscall entry
-	SYSCALL
-	CMPQ AX, $0xfffffffffffff001
-	JLS ok
-	NEGQ AX
-	MOVQ AX, ret+56(FP)  // ret
-	RET
-ok:
-	MOVQ $0, ret+56(FP)  // ret
-	RET

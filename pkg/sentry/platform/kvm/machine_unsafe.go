@@ -31,6 +31,7 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
+	"gvisor.dev/gvisor/pkg/rawsyscall"
 )
 
 //go:linkname entersyscall runtime.entersyscall
@@ -55,7 +56,7 @@ func (m *machine) setMemoryRegion(slot int, physical, length, virtual uintptr, f
 	}
 
 	// Set the region.
-	errno := kvmSyscallErrno(
+	errno := rawsyscall.SyscallErrno(
 		unix.SYS_IOCTL,
 		uintptr(m.fd),
 		KVM_SET_USER_MEMORY_REGION,
@@ -119,7 +120,7 @@ func (a *atomicAddressSpace) get() *addressSpace {
 //
 //go:nosplit
 func (c *vCPU) notify() {
-	errno := kvmSyscallErrno6( // escapes: no.
+	errno := rawsyscall.SyscallErrno6( // escapes: no.
 		unix.SYS_FUTEX,
 		uintptr(unsafe.Pointer(&c.state)),
 		linux.FUTEX_WAKE|linux.FUTEX_PRIVATE_FLAG,
@@ -178,7 +179,7 @@ func (c *vCPU) setSignalMask() error {
 // instances.
 var seccompMmapHandlerCnt atomicbitops.Int64
 
-// seccompMmapSync waits for all currently runnuing seccompMmapHandler
+// seccompMmapSync waits for all currently running seccompMmapHandler
 // instances.
 //
 // The standard locking primitives can't be used in this case since
@@ -192,6 +193,72 @@ func seccompMmapSync() {
 	for seccompMmapHandlerCnt.Load() != 0 {
 		runtime.Gosched()
 	}
+}
+
+// seccompMmapHandler is a signal handler for runtime mmap system calls
+// that are trapped by seccomp.
+//
+// It executes the mmap syscall with specified arguments and maps a new region
+// to the guest.
+//
+//go:nosplit
+func seccompMmapHandler(context unsafe.Pointer) {
+	mmapCallCounter.Increment()
+
+	addr, length, errno := seccompMmapSyscall(context)
+	if errno != 0 {
+		return
+	}
+
+	seccompMmapHandlerCnt.Add(1)
+	for i := uint32(0); i < machinePoolLen.Load(); i++ {
+		m := machinePool[i].Load()
+		if m == nil {
+			continue
+		}
+
+		// Map the new region to the guest.
+		vr := region{
+			virtual: addr,
+			length:  length,
+		}
+		for virtual := vr.virtual; virtual < vr.virtual+vr.length; {
+			physical, length, ok := translateToPhysical(virtual)
+			if !ok {
+				// This must be an invalid region that was
+				// knocked out by creation of the physical map.
+				return
+			}
+			if virtual+length > vr.virtual+vr.length {
+				// Cap the length to the end of the area.
+				length = vr.virtual + vr.length - virtual
+			}
+
+			// Ensure the physical range is mapped.
+			// Note: This is m.mapPhysical inlined to make this
+			//       function fit into the nosplit stack space on
+			//       dbg builds.
+			for end := physical + length; physical < end; {
+				_, physicalStart, length, pr := calculateBluepillFault(physical, physicalRegions)
+				if pr == nil {
+					// Should never happen.
+					throw("mapPhysical on unknown physical address")
+				}
+
+				// Is this already mapped? Check the usedSlots.
+				if !m.hasSlot(physicalStart) {
+					if _, ok := handleBluepillFault(m, physical, physicalRegions); !ok {
+						throw("handleBluepillFault failed")
+					}
+				}
+
+				// Move to the next chunk.
+				physical = physicalStart + length
+			}
+			virtual += length
+		}
+	}
+	seccompMmapHandlerCnt.Add(-1)
 }
 
 // disableAsyncPreemption disables asynchronous preemption of go-routines.

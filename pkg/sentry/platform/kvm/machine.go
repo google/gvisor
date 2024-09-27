@@ -436,6 +436,8 @@ func (m *machine) hasSlot(physical uintptr) bool {
 //
 // This throws on error.
 //
+// Note: See seccompMmapHandler when modifying this function.
+//
 //go:nosplit
 func (m *machine) mapPhysical(physical, length uintptr, phyRegions []physicalRegion) {
 	for end := physical + length; physical < end; {
