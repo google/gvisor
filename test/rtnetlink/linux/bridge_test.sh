@@ -31,6 +31,10 @@ ip link add hveth1 type veth peer name veth1 netns test1
 ip link set up dev hveth0
 ip link set up dev hveth1
 
+if ip link set br0 master br0; then
+  exit 1
+fi
+
 ip link set hveth0 master br0
 ip link set hveth1 master br0
 

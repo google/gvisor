@@ -48,7 +48,7 @@ func TestWritePacketFromBridge(t *testing.T) {
 	bridgeEndpoint := stack.NewBridgeEndpoint(1500)
 	bridgeEndpoint.SetLinkAddress(bridgeLinkAddr)
 	if err := s.CreateNIC(bridgeID, bridgeEndpoint); err != nil {
-		t.Fatalf("s.CreateNIC(%d, _): %s", nicID, err)
+		t.Fatalf("s.CreateNIC(%d, _): %s", bridgeID, err)
 	}
 	if err := s.SetNICCoordinator(nicID, bridgeID); err != nil {
 		t.Fatalf("s.SetNICCoordinator")
@@ -106,7 +106,7 @@ func TestWritePacketBetweenDevices(t *testing.T) {
 	bridgeEndpoint := stack.NewBridgeEndpoint(1500)
 	bridgeEndpoint.SetLinkAddress(bridgeLinkAddr)
 	if err := s.CreateNIC(bridgeID, bridgeEndpoint); err != nil {
-		t.Fatalf("s.CreateNIC(%d, _): %s", nicID, err)
+		t.Fatalf("s.CreateNIC(%d, _): %s", bridgeID, err)
 	}
 
 	c := channel.New(1, header.EthernetMinimumSize, localLinkAddr)
@@ -147,6 +147,23 @@ func TestWritePacketBetweenDevices(t *testing.T) {
 	}
 	if got := eth.Type(); got != netProto {
 		t.Errorf("got eth.Type() = %d, want = %d", got, netProto)
+	}
+}
+
+func TestSetCoordinator(t *testing.T) {
+	const (
+		bridgeLinkAddr = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x08")
+		bridgeID       = 6
+	)
+
+	s := stack.New(stack.Options{})
+	bridgeEndpoint := stack.NewBridgeEndpoint(1500)
+	bridgeEndpoint.SetLinkAddress(bridgeLinkAddr)
+	if err := s.CreateNIC(bridgeID, bridgeEndpoint); err != nil {
+		t.Fatalf("s.CreateNIC(%d, _): %s", bridgeID, err)
+	}
+	if err := s.SetNICCoordinator(bridgeID, bridgeID); err == nil {
+		t.Fatalf("s.SetNICCoordinator(%d, %d) = %s, want = %s", bridgeID, bridgeID, err, tcpip.ErrNoSuchFile{})
 	}
 }
 
