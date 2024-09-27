@@ -36,7 +36,7 @@ func initAarch64FPState(data *State) {
 }
 
 func newAarch64FPStateSlice() []byte {
-	return alignedBytes(4096, 16)[:fpsimdContextSize]
+	return alignedBytes(4096, 16)
 }
 
 // NewState returns an initialized floating point state.

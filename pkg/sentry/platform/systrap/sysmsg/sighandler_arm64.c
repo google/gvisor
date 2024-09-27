@@ -95,6 +95,20 @@ void __export_start(struct sysmsg *sysmsg, void *_ucontext) {
   panic(0x11111111, 0);
 }
 
+uint32_t fpsize(uint8_t *base)
+{
+	size_t offset = 0;
+
+	while (1) {
+		struct _aarch64_ctx *head = (struct _aarch64_ctx*)(base + offset);
+
+		if (head->magic == 0)
+			break;
+		offset += head->size;
+	}
+	return offset + sizeof(struct _aarch64_ctx);
+}
+
 void __export_sighandler(int signo, siginfo_t *siginfo, void *_ucontext) {
   ucontext_t *ucontext = _ucontext;
   void *sp = sysmsg_sp();
@@ -118,20 +132,10 @@ void __export_sighandler(int signo, siginfo_t *siginfo, void *_ucontext) {
 
   gregs_to_ptregs(ucontext, &ctx->ptregs);
 
-  // Signal frames for ARM64 include 8 byte magic header before the floating
-  // point context.
-  //
-  // See: arch/arm64/include/uapi/asm/sigcontext.h
-  const uint64_t kSigframeMagicHeaderLen = sizeof(struct _aarch64_ctx);
-  // Verify the header.
-  if (((uint32_t *)&ucontext->uc_mcontext.__reserved)[0] != FPSIMD_MAGIC) {
-    panic(STUB_ERROR_FPSTATE_BAD_HEADER,
-          ((uint32_t *)&ucontext->uc_mcontext.__reserved)[0]);
-  }
   uint8_t *fpStatePointer =
-      (uint8_t *)&ucontext->uc_mcontext.__reserved + kSigframeMagicHeaderLen;
+      (uint8_t *)&ucontext->uc_mcontext.__reserved;
 
-  memcpy(ctx->fpstate, fpStatePointer, __export_arch_state.fp_len);
+  memcpy(ctx->fpstate, fpStatePointer, fpsize(fpStatePointer)); //__export_arch_state.fp_len);
   ctx->tls = get_tls();
   ctx->siginfo = *siginfo;
   switch (signo) {
@@ -186,13 +190,11 @@ init:
 void restore_state(struct sysmsg *sysmsg, struct thread_context *ctx,
                    void *_ucontext) {
   ucontext_t *ucontext = _ucontext;
-  struct fpsimd_context *fpctx =
-      (struct fpsimd_context *)&ucontext->uc_mcontext.__reserved;
-  uint8_t *fpStatePointer = (uint8_t *)&fpctx->fpsr;
+  void *fpctx = &ucontext->uc_mcontext.__reserved;
 
-  if (atomic_load(&ctx->fpstate_changed)) {
-    memcpy(fpStatePointer, ctx->fpstate, __export_arch_state.fp_len);
-  }
+  //if (atomic_load(&ctx->fpstate_changed)) {
+    memcpy(fpctx, ctx->fpstate, fpsize(ctx->fpstate));//__export_arch_state.fp_len);
+  //}
   ptregs_to_gregs(ucontext, &ctx->ptregs);
   set_tls(ctx->tls);
   atomic_store(&sysmsg->state, THREAD_STATE_NONE);

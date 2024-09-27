@@ -82,7 +82,7 @@ func (fs FeatureSet) ExtendedStateSize() (size, align uint) {
 	//        __u32           fpcr;
 	//        __u32           __reserved[2];
 	// };
-	return 528, 16
+	return 4096, 16
 }
 
 // HasFeature checks for the presence of a feature.
