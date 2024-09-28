@@ -18,11 +18,13 @@ import (
 	goContext "context"
 	"sync"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
@@ -186,16 +188,17 @@ type connection struct {
 }
 
 func connError(err error) error {
-	errno, ok := linuxerr.TranslateError(err)
-	if !ok {
-		log.Warningf("fuse: failed with invalid error: %v", err)
-		return linuxerr.EINVAL
+	// The error may contain arbitrary errno values that can't be converted.
+	switch e := err.(type) {
+	case unix.Errno:
+		if syserr.IsValid(e) {
+			return err
+		}
+	default:
+		return err
 	}
-	if !linuxerr.IsValid(linuxerr.ToUnix(errno)) {
-		log.Warningf("fuse: failed with invalid error: %v", err)
-		return linuxerr.EINVAL
-	}
-	return err
+	log.Warningf("fusefs: failed with invalid error: %v", err)
+	return unix.EINVAL
 }
 
 func (conn *connection) saveInitializedChan() bool {
@@ -294,8 +297,7 @@ func (conn *connection) Call(ctx context.Context, r *Request) (*Response, error)
 		return nil, connError(err)
 	}
 
-	var res *Response
-	res, err = fut.resolve(ctx)
+	res, err := fut.resolve(ctx)
 	if err != nil {
 		return res, connError(err)
 	}

@@ -51,8 +51,8 @@ func AddErrorUnwrapper(unwrap func(e error) (*errors.Error, bool)) {
 	errorUnwrappers = append(errorUnwrappers, unwrap)
 }
 
-// TranslateError translates errors to errnos, it will return false if
-// the error was not registered.
+// TranslateError translates errors to errnos for registered internal errors.
+// It will return false if the error was not registered.
 func TranslateError(from error) (*errors.Error, bool) {
 	if err, ok := errorMap[from]; ok {
 		return err, true

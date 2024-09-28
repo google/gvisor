@@ -224,6 +224,21 @@ var (
 	ErrWouldBlock = New("operation would block", errno.EWOULDBLOCK)
 )
 
+// FromHost translates a unix.Errno to a corresponding Error value.
+func FromHost(err unix.Errno) *Error {
+	got := getHostTranslation(err)
+	if got == nil {
+		panic(fmt.Sprintf("unknown host errno %q (%d)", err.Error(), err))
+	}
+	return got
+}
+
+// IsValid checks if the given errno is a valid errno which can be translated
+// to an Error.
+func IsValid(err unix.Errno) bool {
+	return getHostTranslation(err) != nil
+}
+
 // FromError converts a generic error to an *Error.
 //
 // TODO(b/34162363): Remove this function.

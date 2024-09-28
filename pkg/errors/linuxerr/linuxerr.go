@@ -366,8 +366,3 @@ func Equals(e *errors.Error, err error) bool {
 	}
 	return e == err || unixErr == err
 }
-
-// IsValid returns whether err is a valid error number.
-func IsValid(errno unix.Errno) bool {
-	return errno < unix.Errno(maxErrno)
-}
