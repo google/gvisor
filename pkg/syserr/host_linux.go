@@ -28,10 +28,9 @@ const maxErrno = 134
 
 var linuxHostTranslations [maxErrno]*Error
 
-// FromHost translates a unix.Errno to a corresponding Error value.
-func FromHost(err unix.Errno) *Error {
-	if int(err) >= len(linuxHostTranslations) || linuxHostTranslations[err] == nil {
-		panic(fmt.Sprintf("unknown host errno %q (%d)", err.Error(), err))
+func getHostTranslation(err unix.Errno) *Error {
+	if int(err) >= len(linuxHostTranslations) {
+		return nil
 	}
 	return linuxHostTranslations[err]
 }

@@ -158,14 +158,20 @@ func (p *PTE) IsSect() bool {
 //go:nosplit
 func (p *PTE) Set(addr uintptr, opts MapOpts) {
 	v := (addr &^ optionMask) | nG | readOnly | protDefault
-	if p.IsSect() {
+	// Note: p.IsSect is manually inlined to reduce stack size for
+	//       nosplit-ness.
+	isSect := atomic.LoadUintptr((*uintptr)(p))&pteTypeMask == typeSect
+	if isSect {
 		// Note that this is inherited from the previous instance. Set
 		// does not change the value of Sect. See above.
 		v |= typeSect
 	} else {
 		v |= typePage
 	}
-	if !opts.AccessType.Any() {
+	// Note: AccessType.Any() is manually inlined to reduce stack size for
+	//       nosplit-ness.
+	accessTypeAny := opts.AccessType.Read || opts.AccessType.Write || opts.AccessType.Execute
+	if !accessTypeAny {
 		// Leave as non-valid if no access is available.
 		v &^= pteValid
 	}

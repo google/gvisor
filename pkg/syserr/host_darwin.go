@@ -27,10 +27,9 @@ const maxErrno = 107
 
 var darwinHostTranslations [maxErrno]*Error
 
-// FromHost translates a unix.Errno to a corresponding Error value.
-func FromHost(err unix.Errno) *Error {
-	if int(err) >= len(darwinHostTranslations) || darwinHostTranslations[err] == nil {
-		panic(fmt.Sprintf("unknown host errno %q (%d)", err.Error(), err))
+func getHostTranslation(err unix.Errno) *Error {
+	if int(err) >= len(darwinHostTranslations) {
+		return nil
 	}
 	return darwinHostTranslations[err]
 }

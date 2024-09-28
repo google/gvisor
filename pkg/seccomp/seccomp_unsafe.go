@@ -113,6 +113,8 @@ func isKillProcessAvailable() (bool, error) {
 //
 //go:nosplit
 func seccomp(op, flags uint32, ptr unsafe.Pointer) (uintptr, unix.Errno) {
-	n, _, errno := unix.RawSyscall(SYS_SECCOMP, uintptr(op), uintptr(flags), uintptr(ptr))
+	// Note: Usage of RawSyscall6 over RawSyscall is intentional in order to
+	//       reduce stack-growth.
+	n, _, errno := unix.RawSyscall6(SYS_SECCOMP, uintptr(op), uintptr(flags), uintptr(ptr), 0, 0, 0)
 	return n, errno
 }

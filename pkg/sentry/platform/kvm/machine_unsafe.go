@@ -26,7 +26,6 @@ import (
 	"math"
 	"runtime"
 	"sync/atomic"
-	"syscall"
 	"unsafe"
 
 	"golang.org/x/sys/unix"
@@ -56,8 +55,7 @@ func (m *machine) setMemoryRegion(slot int, physical, length, virtual uintptr, f
 	}
 
 	// Set the region.
-	// Note: syscall.RawSyscall is used to fit the nosplit stack limit.
-	_, _, errno := syscall.RawSyscall(
+	errno := kvmSyscallErrno(
 		unix.SYS_IOCTL,
 		uintptr(m.fd),
 		KVM_SET_USER_MEMORY_REGION,
@@ -121,7 +119,7 @@ func (a *atomicAddressSpace) get() *addressSpace {
 //
 //go:nosplit
 func (c *vCPU) notify() {
-	_, _, errno := unix.RawSyscall6( // escapes: no.
+	errno := kvmSyscallErrno6( // escapes: no.
 		unix.SYS_FUTEX,
 		uintptr(unsafe.Pointer(&c.state)),
 		linux.FUTEX_WAKE|linux.FUTEX_PRIVATE_FLAG,
@@ -194,53 +192,6 @@ func seccompMmapSync() {
 	for seccompMmapHandlerCnt.Load() != 0 {
 		runtime.Gosched()
 	}
-}
-
-// seccompMmapHandler is a signal handler for runtime mmap system calls
-// that are trapped by seccomp.
-//
-// It executes the mmap syscall with specified arguments and maps a new region
-// to the guest.
-//
-//go:nosplit
-func seccompMmapHandler(context unsafe.Pointer) {
-	mmapCallCounter.Increment()
-
-	addr, length, errno := seccompMmapSyscall(context)
-	if errno != 0 {
-		return
-	}
-
-	seccompMmapHandlerCnt.Add(1)
-	for i := uint32(0); i < machinePoolLen.Load(); i++ {
-		m := machinePool[i].Load()
-		if m == nil {
-			continue
-		}
-
-		// Map the new region to the guest.
-		vr := region{
-			virtual: addr,
-			length:  length,
-		}
-		for virtual := vr.virtual; virtual < vr.virtual+vr.length; {
-			physical, length, ok := translateToPhysical(virtual)
-			if !ok {
-				// This must be an invalid region that was
-				// knocked out by creation of the physical map.
-				return
-			}
-			if virtual+length > vr.virtual+vr.length {
-				// Cap the length to the end of the area.
-				length = vr.virtual + vr.length - virtual
-			}
-
-			// Ensure the physical range is mapped.
-			m.mapPhysical(physical, length, physicalRegions)
-			virtual += length
-		}
-	}
-	seccompMmapHandlerCnt.Add(-1)
 }
 
 // disableAsyncPreemption disables asynchronous preemption of go-routines.

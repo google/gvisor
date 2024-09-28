@@ -132,7 +132,7 @@ func (c *vCPU) setTSC(value uint64) error {
 //
 //go:nosplit
 func (c *vCPU) setUserRegisters(uregs *userRegs) unix.Errno {
-	if _, _, errno := unix.RawSyscall(
+	if errno := kvmSyscallErrno(
 		unix.SYS_IOCTL,
 		uintptr(c.fd),
 		KVM_SET_REGS,
@@ -148,7 +148,7 @@ func (c *vCPU) setUserRegisters(uregs *userRegs) unix.Errno {
 //
 //go:nosplit
 func (c *vCPU) getUserRegisters(uregs *userRegs) unix.Errno {
-	if _, _, errno := unix.RawSyscall( // escapes: no.
+	if errno := kvmSyscallErrno( // escapes: no.
 		unix.SYS_IOCTL,
 		uintptr(c.fd),
 		KVM_GET_REGS,
@@ -160,7 +160,7 @@ func (c *vCPU) getUserRegisters(uregs *userRegs) unix.Errno {
 
 // setSystemRegisters sets system registers.
 func (c *vCPU) setSystemRegisters(sregs *systemRegs) error {
-	if _, _, errno := unix.RawSyscall(
+	if errno := kvmSyscallErrno(
 		unix.SYS_IOCTL,
 		uintptr(c.fd),
 		KVM_SET_SREGS,
@@ -174,7 +174,7 @@ func (c *vCPU) setSystemRegisters(sregs *systemRegs) error {
 //
 //go:nosplit
 func (c *vCPU) getSystemRegisters(sregs *systemRegs) unix.Errno {
-	if _, _, errno := unix.RawSyscall(
+	if errno := kvmSyscallErrno(
 		unix.SYS_IOCTL,
 		uintptr(c.fd),
 		KVM_GET_SREGS,

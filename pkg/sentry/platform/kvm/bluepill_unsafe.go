@@ -28,6 +28,14 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 )
 
+// Local variants of unix.RawSyscall that use slightly less stack space.
+
+// kvmSyscallErrno6 only returns errno, and 0 if successful.
+func kvmSyscallErrno6(trap, a1, a2, a3, a4, a5, a6 uintptr) unix.Errno
+
+// kvmSyscallErrno only returns errno, and 0 if successful.
+func kvmSyscallErrno(trap, a1, a2, a3 uintptr) unix.Errno
+
 //go:linkname throw runtime.throw
 func throw(s string)
 
@@ -91,8 +99,8 @@ func printHex(title []byte, val uint64) {
 	}
 	str[0] = ' '
 	str[17] = '\n'
-	unix.RawSyscall(unix.SYS_WRITE, uintptr(unix.Stderr), uintptr(unsafe.Pointer(&title[0])), uintptr(len(title)))
-	unix.RawSyscall(unix.SYS_WRITE, uintptr(unix.Stderr), uintptr(unsafe.Pointer(&str)), 18)
+	kvmSyscallErrno(unix.SYS_WRITE, uintptr(unix.Stderr), uintptr(unsafe.Pointer(&title[0])), uintptr(len(title)))
+	kvmSyscallErrno(unix.SYS_WRITE, uintptr(unix.Stderr), uintptr(unsafe.Pointer(&str)), 18)
 }
 
 // bluepillHandler is called from the signal stub.

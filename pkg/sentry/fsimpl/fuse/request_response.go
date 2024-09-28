@@ -23,6 +23,7 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/marshal"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/syserr"
 )
 
 // fuseInitRes is a variable-length wrapper of linux.FUSEInitOut. The FUSE
@@ -197,7 +198,7 @@ func (r *Response) Error() error {
 
 	// If we get a bad error in the response, warn and convert it to EINVAL.
 	sysErrNo := unix.Errno(-errno)
-	if !linuxerr.IsValid(sysErrNo) {
+	if !syserr.IsValid(sysErrNo) {
 		log.Warningf("fusefs: invalid response error %d does not correspond to a Linux error", sysErrNo)
 		sysErrNo = unix.Errno(unix.EINVAL)
 	}

@@ -114,7 +114,7 @@ type mapVisitor struct {
 //
 //go:nosplit
 func (v *mapVisitor) visit(start uintptr, pte *PTE, align uintptr) bool {
-	p := v.physical + (start - uintptr(v.target))
+	p := v.physical + (start - v.target)
 	if pte.Valid() && (pte.Address() != p || pte.Opts() != v.opts) {
 		v.prev = true
 	}

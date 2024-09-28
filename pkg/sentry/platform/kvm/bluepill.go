@@ -70,7 +70,7 @@ const _SYS_KVM_RETURN_TO_HOST = ^uintptr(0)
 //
 //go:nosplit
 func redpill() {
-	unix.RawSyscall(_SYS_KVM_RETURN_TO_HOST, 0, 0, 0)
+	kvmSyscallErrno(_SYS_KVM_RETURN_TO_HOST, 0, 0, 0)
 }
 
 // dieHandler is called by dieTrampoline.
