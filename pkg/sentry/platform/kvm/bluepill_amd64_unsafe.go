@@ -25,6 +25,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/cpuid"
 	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/hostsyscall"
 	"gvisor.dev/gvisor/pkg/ring0"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sigframe"
@@ -74,7 +75,7 @@ func getHypercallID(addr uintptr) int {
 func bluepillStopGuest(c *vCPU) {
 	// Interrupt: we must have requested an interrupt
 	// window; set the interrupt line.
-	if errno := kvmSyscallErrno(
+	if errno := hostsyscall.RawSyscallErrno(
 		unix.SYS_IOCTL,
 		uintptr(c.fd),
 		KVM_INTERRUPT,
@@ -89,7 +90,7 @@ func bluepillStopGuest(c *vCPU) {
 //
 //go:nosplit
 func bluepillSigBus(c *vCPU) {
-	if errno := kvmSyscallErrno(
+	if errno := hostsyscall.RawSyscallErrno(
 		unix.SYS_IOCTL,
 		uintptr(c.fd),
 		KVM_NMI, 0); errno != 0 {

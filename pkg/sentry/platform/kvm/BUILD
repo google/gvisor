@@ -93,6 +93,7 @@ go_library(
         "//pkg/fd",
         "//pkg/hostarch",
         "//pkg/hostos",
+        "//pkg/hostsyscall",
         "//pkg/hosttid",
         "//pkg/log",
         "//pkg/metric",

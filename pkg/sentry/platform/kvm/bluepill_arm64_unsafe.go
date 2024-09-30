@@ -21,6 +21,7 @@ import (
 	"unsafe"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/hostsyscall"
 	"gvisor.dev/gvisor/pkg/ring0"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 )
@@ -88,7 +89,7 @@ func bluepillStopGuest(c *vCPU) {
 		},
 	}
 
-	if errno := kvmSyscallErrno( // escapes: no.
+	if errno := hostsyscall.RawSyscallErrno( // escapes: no.
 		unix.SYS_IOCTL,
 		uintptr(c.fd),
 		KVM_SET_VCPU_EVENTS,
@@ -111,7 +112,7 @@ func bluepillSigBus(c *vCPU) {
 	}
 
 	// Host must support ARM64_HAS_RAS_EXTN.
-	if errno := kvmSyscallErrno( // escapes: no.
+	if errno := hostsyscall.RawSyscallErrno( // escapes: no.
 		unix.SYS_IOCTL,
 		uintptr(c.fd),
 		KVM_SET_VCPU_EVENTS,
@@ -134,7 +135,7 @@ func bluepillExtDabt(c *vCPU) {
 		},
 	}
 
-	if errno := kvmSyscallErrno( // escapes: no.
+	if errno := hostsyscall.RawSyscallErrno( // escapes: no.
 		unix.SYS_IOCTL,
 		uintptr(c.fd),
 		KVM_SET_VCPU_EVENTS,
