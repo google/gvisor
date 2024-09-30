@@ -29,7 +29,7 @@ const maxErrno = 134
 var linuxHostTranslations [maxErrno]*Error
 
 func getHostTranslation(err unix.Errno) *Error {
-	if int(err) >= len(linuxHostTranslations) {
+	if uint64(err) >= uint64(len(linuxHostTranslations)) {
 		return nil
 	}
 	return linuxHostTranslations[err]

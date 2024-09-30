@@ -20,6 +20,7 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
+	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 )
 
@@ -175,6 +176,14 @@ func (mm *MemoryManager) mapASLocked(pseg pmaIterator, ar hostarch.AddrRange, pl
 	// By default, map entire pmas at a time, under the assumption that there
 	// is no cost to mapping more of a pma than necessary.
 	mapAR := hostarch.AddrRange{0, ^hostarch.Addr(hostarch.PageSize - 1)}
+	setMapUnit := func(mapUnit uint64) {
+		mapMask := hostarch.Addr(mapUnit - 1)
+		mapAR.Start = ar.Start &^ mapMask
+		// If rounding ar.End up overflows, just keep the existing mapAR.End.
+		if end := (ar.End + mapMask) &^ mapMask; end >= ar.End {
+			mapAR.End = end
+		}
+	}
 	if platformEffect != memmap.PlatformEffectDefault {
 		// When explicitly committing, only map ar, since overmapping may incur
 		// unexpected resource usage. When explicitly populating, do the same
@@ -183,12 +192,13 @@ func (mm *MemoryManager) mapASLocked(pseg pmaIterator, ar hostarch.AddrRange, pl
 		mapAR = ar
 	} else if mapUnit := mm.p.MapUnit(); mapUnit != 0 {
 		// Limit the range we map to ar, aligned to mapUnit.
-		mapMask := hostarch.Addr(mapUnit - 1)
-		mapAR.Start = ar.Start &^ mapMask
-		// If rounding ar.End up overflows, just keep the existing mapAR.End.
-		if end := (ar.End + mapMask) &^ mapMask; end >= ar.End {
-			mapAR.End = end
-		}
+		setMapUnit(mapUnit)
+	} else if mf, ok := pseg.ValuePtr().file.(*pgalloc.MemoryFile); ok && mf.IsAsyncLoading() {
+		// Impose an arbitrary mapUnit in order to avoid calling
+		// platform.AddressSpace.MapFile() => mf.DataFD() or mf.MapInternal()
+		// with unnecessarily large ranges, resulting in unnecessarily long
+		// waits.
+		setMapUnit(32 << 20)
 	}
 	if checkInvariants {
 		if !mapAR.IsSupersetOf(ar) {

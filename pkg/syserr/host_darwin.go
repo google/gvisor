@@ -28,7 +28,7 @@ const maxErrno = 107
 var darwinHostTranslations [maxErrno]*Error
 
 func getHostTranslation(err unix.Errno) *Error {
-	if int(err) >= len(darwinHostTranslations) {
+	if uint64(err) >= uint64(len(darwinHostTranslations)) {
 		return nil
 	}
 	return darwinHostTranslations[err]
