@@ -494,6 +494,12 @@ var aplWaiterPool = sync.Pool{
 	},
 }
 
+// IsAsyncLoading returns true if async page loading is in progress or has
+// failed permanently.
+func (f *MemoryFile) IsAsyncLoading() bool {
+	return f.asyncPageLoad.Load() != nil
+}
+
 // AwaitLoadAll blocks until async page loading has completed. If async page
 // loading is not in progress, AwaitLoadAll returns immediately.
 func (f *MemoryFile) AwaitLoadAll() error {
