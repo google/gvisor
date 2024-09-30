@@ -31,6 +31,7 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
+	"gvisor.dev/gvisor/pkg/hostsyscall"
 )
 
 //go:linkname entersyscall runtime.entersyscall
@@ -55,7 +56,7 @@ func (m *machine) setMemoryRegion(slot int, physical, length, virtual uintptr, f
 	}
 
 	// Set the region.
-	errno := kvmSyscallErrno(
+	errno := hostsyscall.RawSyscallErrno(
 		unix.SYS_IOCTL,
 		uintptr(m.fd),
 		KVM_SET_USER_MEMORY_REGION,
@@ -119,7 +120,7 @@ func (a *atomicAddressSpace) get() *addressSpace {
 //
 //go:nosplit
 func (c *vCPU) notify() {
-	errno := kvmSyscallErrno6( // escapes: no.
+	errno := hostsyscall.RawSyscallErrno6( // escapes: no.
 		unix.SYS_FUTEX,
 		uintptr(unsafe.Pointer(&c.state)),
 		linux.FUTEX_WAKE|linux.FUTEX_PRIVATE_FLAG,
@@ -178,7 +179,7 @@ func (c *vCPU) setSignalMask() error {
 // instances.
 var seccompMmapHandlerCnt atomicbitops.Int64
 
-// seccompMmapSync waits for all currently runnuing seccompMmapHandler
+// seccompMmapSync waits for all currently running seccompMmapHandler
 // instances.
 //
 // The standard locking primitives can't be used in this case since

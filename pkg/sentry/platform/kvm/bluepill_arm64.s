@@ -145,38 +145,3 @@ TEXT ·addrOfDieTrampoline(SB), $0-8
 	MOVD	$·dieTrampoline(SB), R0
 	MOVD	R0, ret+0(FP)
 	RET
-
-// func kvmSyscallErrno6(trap, a1, a2, a3, a4, a5, a6 uintptr) (errno unix.Errno)
-TEXT	·kvmSyscallErrno6(SB),NOSPLIT,$0-64
-	MOVD trap+0(FP), R8   // syscall entry
-	MOVD a1+8(FP), R0
-	MOVD a2+16(FP), R1
-	MOVD a3+24(FP), R2
-	MOVD a4+32(FP), R3
-	MOVD a5+40(FP), R4
-	MOVD a6+48(FP), R5
-	SVC
-	CMN $4095, R0
-	BCC ok
-	NEG R0, R0
-	MOVD R0, ret+56(FP)
-	RET
-ok:
-	MOVD $0, ret+56(FP)
-	RET
-
-// func kvmSyscallErrno(trap, a1, a2, a3 uintptr) (errno unix.Errno)
-TEXT ·kvmSyscallErrno(SB),NOSPLIT,$0-40
-	MOVD trap+0(FP), R8   // syscall entry
-	MOVD a1+8(FP), R0
-	MOVD a2+16(FP), R1
-	MOVD a3+24(FP), R2
-	SVC
-	CMN $4095, R0
-	BCC ok
-	NEG R0, R0
-	MOVD R0, ret+32(FP)
-	RET
-ok:
-	MOVD ZR, ret+32(FP)
-	RET

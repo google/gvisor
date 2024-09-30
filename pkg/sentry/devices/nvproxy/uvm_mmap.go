@@ -27,10 +27,7 @@ func (fd *uvmFD) ConfigureMMap(ctx context.Context, opts *memmap.MMapOpts) error
 	// UVM_VALIDATE_VA_RANGE, and probably other ioctls, expect that
 	// application mmaps of /dev/nvidia-uvm are immediately visible to the
 	// driver.
-	if opts.PlatformEffect < memmap.PlatformEffectPopulate {
-		opts.PlatformEffect = memmap.PlatformEffectPopulate
-	}
-	return vfs.GenericConfigureMMap(&fd.vfsfd, fd, opts)
+	return vfs.GenericProxyDeviceConfigureMMap(&fd.vfsfd, fd, opts)
 }
 
 // AddMapping implements memmap.Mappable.AddMapping.

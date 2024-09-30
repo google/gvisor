@@ -19,6 +19,7 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/hostsyscall"
 )
 
 var (
@@ -40,7 +41,7 @@ var (
 //
 //go:nosplit
 func yield() {
-	kvmSyscallErrno(unix.SYS_SCHED_YIELD, 0, 0, 0)
+	hostsyscall.RawSyscallErrno(unix.SYS_SCHED_YIELD, 0, 0, 0)
 }
 
 // calculateBluepillFault calculates the fault address range.

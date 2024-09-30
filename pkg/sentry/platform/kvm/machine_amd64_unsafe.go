@@ -23,6 +23,7 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/hostsyscall"
 )
 
 // loadSegments copies the current segments.
@@ -132,7 +133,7 @@ func (c *vCPU) setTSC(value uint64) error {
 //
 //go:nosplit
 func (c *vCPU) setUserRegisters(uregs *userRegs) unix.Errno {
-	if errno := kvmSyscallErrno(
+	if errno := hostsyscall.RawSyscallErrno(
 		unix.SYS_IOCTL,
 		uintptr(c.fd),
 		KVM_SET_REGS,
@@ -148,7 +149,7 @@ func (c *vCPU) setUserRegisters(uregs *userRegs) unix.Errno {
 //
 //go:nosplit
 func (c *vCPU) getUserRegisters(uregs *userRegs) unix.Errno {
-	if errno := kvmSyscallErrno( // escapes: no.
+	if errno := hostsyscall.RawSyscallErrno( // escapes: no.
 		unix.SYS_IOCTL,
 		uintptr(c.fd),
 		KVM_GET_REGS,
@@ -160,7 +161,7 @@ func (c *vCPU) getUserRegisters(uregs *userRegs) unix.Errno {
 
 // setSystemRegisters sets system registers.
 func (c *vCPU) setSystemRegisters(sregs *systemRegs) error {
-	if errno := kvmSyscallErrno(
+	if errno := hostsyscall.RawSyscallErrno(
 		unix.SYS_IOCTL,
 		uintptr(c.fd),
 		KVM_SET_SREGS,
@@ -174,7 +175,7 @@ func (c *vCPU) setSystemRegisters(sregs *systemRegs) error {
 //
 //go:nosplit
 func (c *vCPU) getSystemRegisters(sregs *systemRegs) unix.Errno {
-	if errno := kvmSyscallErrno(
+	if errno := hostsyscall.RawSyscallErrno(
 		unix.SYS_IOCTL,
 		uintptr(c.fd),
 		KVM_GET_SREGS,
@@ -189,9 +190,9 @@ func seccompMmapSyscall(context unsafe.Pointer) (uintptr, uintptr, unix.Errno) {
 	ctx := bluepillArchContext(context)
 
 	// MAP_DENYWRITE is deprecated and ignored by kernel. We use it only for seccomp filters.
-	addr, _, e := unix.RawSyscall6(uintptr(ctx.Rax), uintptr(ctx.Rdi), uintptr(ctx.Rsi),
+	addr, _, e := hostsyscall.RawSyscall6(uintptr(ctx.Rax), uintptr(ctx.Rdi), uintptr(ctx.Rsi),
 		uintptr(ctx.Rdx), uintptr(ctx.R10)|unix.MAP_DENYWRITE, uintptr(ctx.R8), uintptr(ctx.R9))
 	ctx.Rax = uint64(addr)
 
-	return addr, uintptr(ctx.Rsi), e
+	return addr, uintptr(ctx.Rsi), unix.Errno(e)
 }
