@@ -426,6 +426,19 @@ func GenericConfigureMMap(fd *FileDescription, m memmap.Mappable, opts *memmap.M
 	return nil
 }
 
+// GenericProxyDeviceConfigureMMap may be used by most implementations of
+// FileDescriptionImpl.ConfigureMMap for which the underlying memmap.File is a
+// host device file, whose implementation of mmap() may have unusual
+// requirements and so should be called immediately (during application mmap())
+// to propagate any errors.
+func GenericProxyDeviceConfigureMMap(fd *FileDescription, m memmap.Mappable, opts *memmap.MMapOpts) error {
+	if opts.PlatformEffect < memmap.PlatformEffectPopulate {
+		opts.PlatformEffect = memmap.PlatformEffectPopulate
+	}
+	opts.RequirePlatformEffect = true
+	return GenericConfigureMMap(fd, m, opts)
+}
+
 // LockFD may be used by most implementations of FileDescriptionImpl.Lock*
 // functions. Caller must call Init().
 //

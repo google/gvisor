@@ -360,6 +360,8 @@ type MMapOpts struct {
 	// Linux.
 	Stack bool
 
+	// PlatformEffect controls the synchronous effect of this call on the
+	// underlying platform.AddressSpace.
 	PlatformEffect MMapPlatformEffect
 
 	// MLockMode specifies the memory locking behavior of the mapping.
@@ -377,6 +379,13 @@ type MMapOpts struct {
 	//
 	// If Force is true, Unmap and Fixed must be true.
 	Force bool
+
+	// If RequirePlatformEffect is false, PlatformEffect is best-effort;
+	// failure to create mappings in the platform.AddressSpace are silently
+	// ignored. If RequirePlatformEffect is true, failure to create mappings in
+	// the platform.AddressSpace cause MMap() to fail. (If PlatformEffect is
+	// PlatformEffectDefault, RequirePlatformEffect is ignored.)
+	RequirePlatformEffect bool
 
 	// SentryOwnedContent indicates the sentry exclusively controls the
 	// underlying memory backing the mapping thus the memory content is

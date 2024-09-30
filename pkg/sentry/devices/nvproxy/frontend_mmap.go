@@ -26,10 +26,7 @@ func (fd *frontendFD) ConfigureMMap(ctx context.Context, opts *memmap.MMapOpts) 
 	// Nvidia kernel driver: kernel-open/nvidia/nv-mmap.c:nvidia_mmap_helper()
 	// requires vm_pgoff == 0, so trying to lazily fault any subset of the
 	// mapping that doesn't include the beginning will fail.
-	if opts.PlatformEffect < memmap.PlatformEffectPopulate {
-		opts.PlatformEffect = memmap.PlatformEffectPopulate
-	}
-	return vfs.GenericConfigureMMap(&fd.vfsfd, fd, opts)
+	return vfs.GenericProxyDeviceConfigureMMap(&fd.vfsfd, fd, opts)
 }
 
 // AddMapping implements memmap.Mappable.AddMapping.

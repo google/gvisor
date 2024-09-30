@@ -114,12 +114,16 @@ func (mm *MemoryManager) MMap(ctx context.Context, opts memmap.MMapOpts) (hostar
 	}
 
 	// Get the new vma.
-	var droppedIDs []memmap.MappingIdentity
 	mm.mappingMu.Lock()
 	if opts.MLockMode < mm.defMLockMode {
 		opts.MLockMode = mm.defMLockMode
 	}
-	vseg, ar, droppedIDs, err := mm.createVMALocked(ctx, opts, droppedIDs)
+	vseg, ar, droppedIDs, err := mm.createVMALocked(ctx, opts, nil /* droppedIDs */)
+	defer func() {
+		for _, id := range droppedIDs {
+			id.DecRef(ctx)
+		}
+	}()
 	if err != nil {
 		mm.mappingMu.Unlock()
 		return 0, err
@@ -131,7 +135,19 @@ func (mm *MemoryManager) MMap(ctx context.Context, opts memmap.MMapOpts) (hostar
 	// mm/util.c:vm_mmap_pgoff() => mm/gup.c:__mm_populate() =>
 	// populate_vma_page_range(). Confirm this behavior.
 	switch {
-	case opts.PlatformEffect >= memmap.PlatformEffectPopulate || opts.MLockMode == memmap.MLockEager:
+	case opts.PlatformEffect >= memmap.PlatformEffectPopulate:
+		if opts.RequirePlatformEffect {
+			if err := mm.populateVMA(ctx, vseg, ar, opts.PlatformEffect); err != nil {
+				_, droppedIDs = mm.unmapLocked(ctx, ar, droppedIDs)
+				mm.mappingMu.Unlock()
+				return 0, err
+			}
+			mm.mappingMu.Unlock()
+			break
+		}
+		fallthrough
+
+	case opts.MLockMode == memmap.MLockEager:
 		// Get pmas and map as requested.
 		mm.populateVMAAndUnlock(ctx, vseg, ar, opts.PlatformEffect)
 
@@ -148,10 +164,6 @@ func (mm *MemoryManager) MMap(ctx context.Context, opts memmap.MMapOpts) (hostar
 		mm.mappingMu.Unlock()
 	}
 
-	for _, id := range droppedIDs {
-		id.DecRef(ctx)
-	}
-
 	return ar.Start, nil
 }
 
@@ -161,11 +173,11 @@ func (mm *MemoryManager) MMap(ctx context.Context, opts memmap.MMapOpts) (hostar
 // Preconditions:
 //   - mm.mappingMu must be locked.
 //   - vseg.Range().IsSupersetOf(ar).
-func (mm *MemoryManager) populateVMA(ctx context.Context, vseg vmaIterator, ar hostarch.AddrRange, platformEffect memmap.MMapPlatformEffect) {
+func (mm *MemoryManager) populateVMA(ctx context.Context, vseg vmaIterator, ar hostarch.AddrRange, platformEffect memmap.MMapPlatformEffect) error {
 	if !vseg.ValuePtr().effectivePerms.Any() {
-		// Linux doesn't populate inaccessible pages. See
-		// mm/gup.c:populate_vma_page_range.
-		return
+		// mm.mapASLocked() will no-op due to platform.AddressSpace.MapFile()
+		// precondition.
+		return nil
 	}
 
 	mm.activeMu.Lock()
@@ -175,32 +187,29 @@ func (mm *MemoryManager) populateVMA(ctx context.Context, vseg vmaIterator, ar h
 	// AddressSpace.
 	if mm.as == nil {
 		mm.activeMu.Unlock()
-		return
+		return nil
 	}
 
 	// Ensure that we have usable pmas.
 	pseg, _, err := mm.getPMAsLocked(ctx, vseg, ar, hostarch.NoAccess, platformEffect == memmap.PlatformEffectCommit)
 	if err != nil {
-		// mm/util.c:vm_mmap_pgoff() ignores the error, if any, from
-		// mm/gup.c:mm_populate(). If it matters, we'll get it again when
-		// userspace actually tries to use the failing page.
 		mm.activeMu.Unlock()
-		return
+		return err
 	}
 
 	// Downgrade to a read-lock on activeMu since we don't need to mutate pmas
 	// anymore.
 	mm.activeMu.DowngradeLock()
-
-	// As above, errors are silently ignored.
-	mm.mapASLocked(pseg, ar, platformEffect)
+	err = mm.mapASLocked(pseg, ar, platformEffect)
 	mm.activeMu.RUnlock()
+	return err
 }
 
 // populateVMAAndUnlock is equivalent to populateVMA, but also unconditionally
-// unlocks mm.mappingMu. In cases where populateVMAAndUnlock is usable, it is
-// preferable to populateVMA since it unlocks mm.mappingMu before performing
-// expensive operations that don't require it to be locked.
+// unlocks mm.mappingMu and discards errors. In cases where
+// populateVMAAndUnlock is usable, it is preferable to populateVMA since it
+// unlocks mm.mappingMu before performing expensive operations that don't
+// require it to be locked.
 //
 // Preconditions:
 //   - mm.mappingMu must be locked for writing.
@@ -209,13 +218,15 @@ func (mm *MemoryManager) populateVMA(ctx context.Context, vseg vmaIterator, ar h
 // Postconditions: mm.mappingMu will be unlocked.
 // +checklocksrelease:mm.mappingMu
 func (mm *MemoryManager) populateVMAAndUnlock(ctx context.Context, vseg vmaIterator, ar hostarch.AddrRange, platformEffect memmap.MMapPlatformEffect) {
-	// See populateVMA above for commentary.
 	if !vseg.ValuePtr().effectivePerms.Any() {
+		// Linux doesn't populate inaccessible pages. See
+		// mm/gup.c:populate_vma_page_range.
 		mm.mappingMu.Unlock()
 		return
 	}
 
 	mm.activeMu.Lock()
+	// Can't defer mm.activeMu.Unlock(); see below.
 
 	if mm.as == nil {
 		mm.activeMu.Unlock()
@@ -229,10 +240,14 @@ func (mm *MemoryManager) populateVMAAndUnlock(ctx context.Context, vseg vmaItera
 	pseg, _, err := mm.getPMAsLocked(ctx, vseg, ar, hostarch.NoAccess, platformEffect == memmap.PlatformEffectCommit)
 	mm.mappingMu.RUnlock()
 	if err != nil {
+		// mm/util.c:vm_mmap_pgoff() ignores the error, if any, from
+		// mm/gup.c:mm_populate(). If it matters, we'll get it again when
+		// userspace actually tries to use the failing page.
 		mm.activeMu.Unlock()
 		return
 	}
 
+	// As above, errors are silently ignored.
 	mm.activeMu.DowngradeLock()
 	mm.mapASLocked(pseg, ar, platformEffect)
 	mm.activeMu.RUnlock()
@@ -268,11 +283,8 @@ func (mm *MemoryManager) MapStack(ctx context.Context) (hostarch.AddrRange, erro
 		return hostarch.AddrRange{}, linuxerr.ENOMEM
 	}
 	stackStart := stackEnd - szaddr
-	var droppedIDs []memmap.MappingIdentity
-	var ar hostarch.AddrRange
-	var err error
 	mm.mappingMu.Lock()
-	_, ar, droppedIDs, err = mm.createVMALocked(ctx, memmap.MMapOpts{
+	_, ar, droppedIDs, err := mm.createVMALocked(ctx, memmap.MMapOpts{
 		Length:    sz,
 		Addr:      stackStart,
 		Perms:     hostarch.ReadWrite,
@@ -281,7 +293,7 @@ func (mm *MemoryManager) MapStack(ctx context.Context) (hostarch.AddrRange, erro
 		GrowsDown: true,
 		MLockMode: mm.defMLockMode,
 		Hint:      "[stack]",
-	}, droppedIDs)
+	}, nil /* droppedIDs */)
 	mm.mappingMu.Unlock()
 	for _, id := range droppedIDs {
 		id.DecRef(ctx)
@@ -306,9 +318,8 @@ func (mm *MemoryManager) MUnmap(ctx context.Context, addr hostarch.Addr, length 
 		return linuxerr.EINVAL
 	}
 
-	var droppedIDs []memmap.MappingIdentity
 	mm.mappingMu.Lock()
-	_, droppedIDs = mm.unmapLocked(ctx, ar, droppedIDs)
+	_, droppedIDs := mm.unmapLocked(ctx, ar, nil /* droppedIDs */)
 	mm.mappingMu.Unlock()
 
 	for _, id := range droppedIDs {
