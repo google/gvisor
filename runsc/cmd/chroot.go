@@ -85,21 +85,30 @@ func copyFile(dst, src string) error {
 // setUpChroot creates an empty directory with runsc mounted at /runsc and proc
 // mounted at /proc.
 func setUpChroot(spec *specs.Spec, conf *config.Config) error {
-	// We are a new mount namespace, so we can use /tmp as a directory to
-	// construct a new root.
-	chroot := os.TempDir()
-
-	log.Infof("Setting up sandbox chroot in %q", chroot)
-
 	// Convert all shared mounts into slave to be sure that nothing will be
 	// propagated outside of our namespace.
 	if err := specutils.SafeMount("", "/", "", unix.MS_SLAVE|unix.MS_REC, "", "/proc"); err != nil {
 		return fmt.Errorf("error converting mounts: %v", err)
 	}
 
+	// We are a new mount namespace. So create a tmpfs mount over /tmp, which
+	// will be released when this sandbox exits. Then create a chroot directory
+	// inside this new tmpfs mount at /tmp.
+	// NOTE(gvisor.dev/issue/10965): We do not use /tmp as the chroot directory
+	// because the runtime or other libraries could have open FDs to it, which
+	// would fail some of the below operations with EBUSY.
+	tmpDir := os.TempDir()
+	if err := specutils.SafeMount("runsc-root", tmpDir, "tmpfs", unix.MS_NOSUID|unix.MS_NODEV|unix.MS_NOEXEC, "", "/proc"); err != nil {
+		return fmt.Errorf("error mounting tmpfs in %q: %v", tmpDir, err)
+	}
+	chroot, err := os.MkdirTemp(tmpDir, "runsc-chroot-")
+	if err != nil {
+		return fmt.Errorf("error creating chroot directory: %w", err)
+	}
 	if err := specutils.SafeMount("runsc-root", chroot, "tmpfs", unix.MS_NOSUID|unix.MS_NODEV|unix.MS_NOEXEC, "", "/proc"); err != nil {
 		return fmt.Errorf("error mounting tmpfs in chroot: %v", err)
 	}
+	log.Infof("Setting up sandbox chroot in %q", chroot)
 
 	if err := os.Mkdir(filepath.Join(chroot, "etc"), 0755); err != nil {
 		return fmt.Errorf("error creating /etc in chroot: %v", err)
