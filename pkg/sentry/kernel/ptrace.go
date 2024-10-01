@@ -567,10 +567,10 @@ func (t *Task) ptraceDetach(target *Task, sig linux.Signal) error {
 	return nil
 }
 
-// exitPtrace is called in the exit path to detach all of t's tracees.
-func (t *Task) exitPtrace() {
-	t.tg.pidns.owner.mu.Lock()
-	defer t.tg.pidns.owner.mu.Unlock()
+// exitPtraceLocked is called in the exit path to detach all of t's tracees.
+//
+// Preconditions: The TaskSet mutex must be locked for writing.
+func (t *Task) exitPtraceLocked() {
 	for target := range t.ptraceTracees {
 		if target.ptraceOpts.ExitKill {
 			target.tg.signalHandlers.mu.Lock()
