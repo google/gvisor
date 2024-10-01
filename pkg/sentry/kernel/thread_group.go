@@ -204,7 +204,11 @@ type ThreadGroup struct {
 	nextTimerID linux.TimerID
 
 	// exitedCPUStats is the CPU usage for all exited tasks in the thread
-	// group. exitedCPUStats is protected by the TaskSet mutex.
+	// group. exitedCPUStats is protected by both the TaskSet mutex and the
+	// signal mutex. Mutating it requires that the TaskSet mutex is locked for
+	// writing *and* that the signal mutex is locked. Reading it requires
+	// locking the TaskSet mutex (for reading or writing) *or* locking the
+	// signal mutex.
 	exitedCPUStats usage.CPUStats
 
 	// childCPUStats is the CPU usage of all joined descendants of this thread

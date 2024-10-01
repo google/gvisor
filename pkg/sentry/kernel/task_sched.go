@@ -204,7 +204,7 @@ func (tg *ThreadGroup) CPUStats() usage.CPUStats {
 }
 
 // Preconditions: Same as TaskGoroutineSchedInfo.userTicksAt, plus:
-//   - The TaskSet mutex must be locked.
+//   - Either the TaskSet mutex or the signal mutex must be locked.
 func (tg *ThreadGroup) cpuStatsAtLocked(now uint64) usage.CPUStats {
 	stats := tg.exitedCPUStats
 	// Account for live tasks.
@@ -375,12 +375,8 @@ func (k *Kernel) runCPUClockTicker() {
 				continue
 			}
 
-			k.tasks.mu.RLock()
-			if tg.leader == nil {
-				// No tasks have ever run in this thread group.
-				k.tasks.mu.RUnlock()
-				continue
-			}
+			sh := tg.signalLock()
+
 			// Accumulate thread group CPU stats, and randomly select running tasks
 			// using reservoir sampling to receive CPU timer signals.
 			var virtReceiver *Task
@@ -415,7 +411,6 @@ func (k *Kernel) runCPUClockTicker() {
 
 			// All of the following are standard (not real-time) signals, which are
 			// automatically deduplicated, so we ignore the number of expirations.
-			tg.signalHandlers.mu.Lock()
 			// It should only be possible for these timers to advance if we found
 			// at least one running task.
 			if virtReceiver != nil {
@@ -445,9 +440,8 @@ func (k *Kernel) runCPUClockTicker() {
 					profReceiver.sendSignalLocked(SignalInfoPriv(linux.SIGKILL), true)
 				}
 			}
-			tg.signalHandlers.mu.Unlock()
 
-			k.tasks.mu.RUnlock()
+			sh.mu.Unlock()
 		}
 
 		k.cpuClockMu.Unlock()
