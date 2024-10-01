@@ -127,7 +127,7 @@ func bluepillHandler(context unsafe.Pointer) {
 
 	for {
 		hostExitCounter.Increment()
-		_, _, errno := unix.RawSyscall(unix.SYS_IOCTL, uintptr(c.fd), KVM_RUN, 0) // escapes: no.
+		errno := hostsyscall.RawSyscallErrno(unix.SYS_IOCTL, uintptr(c.fd), KVM_RUN, 0) // escapes: no.
 		switch errno {
 		case 0: // Expected case.
 		case unix.EINTR:
@@ -137,7 +137,7 @@ func bluepillHandler(context unsafe.Pointer) {
 			// currently, all signals are masked and the signal
 			// must have been delivered directly to this thread.
 			timeout := unix.Timespec{}
-			sig, _, errno := unix.RawSyscall6( // escapes: no.
+			sig, errno := hostsyscall.RawSyscall6( // escapes: no.
 				unix.SYS_RT_SIGTIMEDWAIT,
 				uintptr(unsafe.Pointer(&bounceSignalMask)),
 				0,                                 // siginfo.

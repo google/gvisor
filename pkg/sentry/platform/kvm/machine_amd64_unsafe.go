@@ -32,14 +32,14 @@ import (
 //
 //go:nosplit
 func (c *vCPU) loadSegments(tid uint64) {
-	if _, _, errno := unix.RawSyscall(
+	if errno := hostsyscall.RawSyscallErrno(
 		unix.SYS_ARCH_PRCTL,
 		linux.ARCH_GET_FS,
 		uintptr(unsafe.Pointer(&c.CPU.Registers().Fs_base)),
 		0); errno != 0 {
 		throw("getting FS segment")
 	}
-	if _, _, errno := unix.RawSyscall(
+	if errno := hostsyscall.RawSyscallErrno(
 		unix.SYS_ARCH_PRCTL,
 		linux.ARCH_GET_GS,
 		uintptr(unsafe.Pointer(&c.CPU.Registers().Gs_base)),
@@ -51,7 +51,7 @@ func (c *vCPU) loadSegments(tid uint64) {
 
 // setCPUID sets the CPUID to be used by the guest.
 func (c *vCPU) setCPUID() error {
-	if _, _, errno := unix.RawSyscall(
+	if errno := hostsyscall.RawSyscallErrno(
 		unix.SYS_IOCTL,
 		uintptr(c.fd),
 		KVM_SET_CPUID2,
@@ -65,7 +65,7 @@ func (c *vCPU) setCPUID() error {
 //
 // If mustSucceed is true, then this function panics on error.
 func (c *vCPU) getTSCFreq() (uintptr, error) {
-	rawFreq, _, errno := unix.RawSyscall(
+	rawFreq, errno := hostsyscall.RawSyscall(
 		unix.SYS_IOCTL,
 		uintptr(c.fd),
 		KVM_GET_TSC_KHZ,
@@ -78,7 +78,7 @@ func (c *vCPU) getTSCFreq() (uintptr, error) {
 
 // setTSCFreq sets the TSC frequency.
 func (c *vCPU) setTSCFreq(freq uintptr) error {
-	if _, _, errno := unix.RawSyscall(
+	if errno := hostsyscall.RawSyscallErrno(
 		unix.SYS_IOCTL,
 		uintptr(c.fd),
 		KVM_SET_TSC_KHZ,
@@ -101,7 +101,7 @@ func (c *vCPU) setTSCOffset() error {
 		attr:  _KVM_VCPU_TSC_OFFSET,
 		addr:  unsafe.Pointer(&offset),
 	}
-	if _, _, errno := unix.RawSyscall(
+	if errno := hostsyscall.RawSyscallErrno(
 		unix.SYS_IOCTL,
 		uintptr(c.fd),
 		KVM_SET_DEVICE_ATTR,
@@ -119,7 +119,7 @@ func (c *vCPU) setTSC(value uint64) error {
 	}
 	registers.entries[0].index = _MSR_IA32_TSC
 	registers.entries[0].data = value
-	if _, _, errno := unix.RawSyscall(
+	if errno := hostsyscall.RawSyscallErrno(
 		unix.SYS_IOCTL,
 		uintptr(c.fd),
 		KVM_SET_MSRS,

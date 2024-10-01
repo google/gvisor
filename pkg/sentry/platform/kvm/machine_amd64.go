@@ -28,6 +28,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/cpuid"
 	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/hostsyscall"
 	"gvisor.dev/gvisor/pkg/ring0"
 	"gvisor.dev/gvisor/pkg/ring0/pagetables"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
@@ -39,7 +40,7 @@ import (
 func (m *machine) initArchState() error {
 	// Set the legacy TSS address. This address is covered by the reserved
 	// range (up to 4GB). In fact, this is a main reason it exists.
-	if _, _, errno := unix.RawSyscall(
+	if errno := hostsyscall.RawSyscallErrno(
 		unix.SYS_IOCTL,
 		uintptr(m.fd),
 		KVM_SET_TSS_ADDR,
@@ -495,7 +496,7 @@ func (m *machine) mapUpperHalf(pageTable *pagetables.PageTables) {
 
 // getMaxVCPU get max vCPU number
 func (m *machine) getMaxVCPU() {
-	maxVCPUs, _, errno := unix.RawSyscall(unix.SYS_IOCTL, uintptr(m.fd), KVM_CHECK_EXTENSION, _KVM_CAP_MAX_VCPUS)
+	maxVCPUs, errno := hostsyscall.RawSyscall(unix.SYS_IOCTL, uintptr(m.fd), KVM_CHECK_EXTENSION, _KVM_CAP_MAX_VCPUS)
 	if errno != 0 {
 		m.maxVCPUs = _KVM_NR_VCPUS
 	} else {

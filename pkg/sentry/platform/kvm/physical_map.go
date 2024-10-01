@@ -20,6 +20,7 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/hostsyscall"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/ring0"
 )
@@ -93,7 +94,7 @@ func fillAddressSpace() (excludedRegions []region) {
 	required := uintptr(requiredAddr)
 	current := required // Attempted mmap size.
 	for filled := uintptr(0); filled < required && current > 0; {
-		addr, _, errno := unix.RawSyscall6(
+		addr, errno := hostsyscall.RawSyscall6(
 			unix.SYS_MMAP,
 			0, // Suggested address.
 			current,
