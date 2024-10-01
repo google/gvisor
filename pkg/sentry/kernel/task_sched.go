@@ -521,9 +521,7 @@ func (tg *ThreadGroup) updateCPUTimersEnabledLocked() {
 func (t *Task) StateStatus() string {
 	switch s := t.TaskGoroutineSchedInfo().State; s {
 	case TaskGoroutineNonexistent, TaskGoroutineRunningSys:
-		t.tg.pidns.owner.mu.RLock()
-		defer t.tg.pidns.owner.mu.RUnlock()
-		switch t.exitState {
+		switch t.ExitState() {
 		case TaskExitZombie:
 			return "Z (zombie)"
 		case TaskExitDead:
@@ -544,8 +542,8 @@ func (t *Task) StateStatus() string {
 	case TaskGoroutineBlockedInterruptible:
 		return "S (sleeping)"
 	case TaskGoroutineStopped:
-		t.tg.signalHandlers.mu.Lock()
-		defer t.tg.signalHandlers.mu.Unlock()
+		sh := t.tg.signalLock()
+		defer sh.mu.Unlock()
 		switch t.stop.(type) {
 		case *groupStop:
 			return "T (stopped)"

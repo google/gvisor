@@ -170,12 +170,13 @@ func (r *runSyscallAfterExecStop) execute(t *Task) taskRunState {
 	// we're about to change. Note that we have to stop and destroy timers
 	// without holding any mutexes to avoid circular lock ordering.
 	var its []*IntervalTimer
-	t.tg.signalHandlers.mu.Lock()
+	oldSignalHandlers := t.tg.signalHandlers
+	oldSignalHandlers.mu.Lock()
 	for _, it := range t.tg.timers {
 		its = append(its, it)
 	}
 	clear(t.tg.timers)
-	t.tg.signalHandlers.mu.Unlock()
+	oldSignalHandlers.mu.Unlock()
 	t.tg.pidns.owner.mu.Unlock()
 	for _, it := range its {
 		it.DestroyTimer()
@@ -196,8 +197,10 @@ func (r *runSyscallAfterExecStop) execute(t *Task) taskRunState {
 	//	- "Disposition" only means sigaction::sa_handler/sa_sigaction; flags,
 	//		restorer (if present), and mask are always reset. (See Linux's
 	//		fs/exec.c:setup_new_exec => kernel/signal.c:flush_signal_handlers.)
-	t.tg.signalHandlers = t.tg.signalHandlers.CopyForExec()
+	oldSignalHandlers.mu.Lock() // to ensure ThreadGroup.signalLock()'s correctness
+	t.tg.setSignalHandlersLocked(oldSignalHandlers.copyForExecLocked())
 	t.endStopCond.L = &t.tg.signalHandlers.mu
+	oldSignalHandlers.mu.Unlock()
 	// "Any alternate signal stack is not preserved (sigaltstack(2))." - execve(2)
 	t.signalStack = linux.SignalStack{Flags: linux.SS_DISABLE}
 	// "The termination signal is reset to SIGCHLD (see clone(2))."

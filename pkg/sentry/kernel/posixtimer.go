@@ -76,10 +76,8 @@ func (it *IntervalTimer) timerSettingChanged() {
 	if it.target == nil {
 		return
 	}
-	it.target.tg.pidns.owner.mu.RLock()
-	defer it.target.tg.pidns.owner.mu.RUnlock()
-	it.target.tg.signalHandlers.mu.Lock()
-	defer it.target.tg.signalHandlers.mu.Unlock()
+	sh := it.target.tg.signalLock()
+	defer sh.mu.Unlock()
 	it.sigorphan = true
 	it.overrunCur = 0
 	it.overrunLast = 0
@@ -121,10 +119,8 @@ func (it *IntervalTimer) NotifyTimer(exp uint64, setting ktime.Setting) (ktime.S
 		return ktime.Setting{}, false
 	}
 
-	it.target.tg.pidns.owner.mu.RLock()
-	defer it.target.tg.pidns.owner.mu.RUnlock()
-	it.target.tg.signalHandlers.mu.Lock()
-	defer it.target.tg.signalHandlers.mu.Unlock()
+	sh := it.target.tg.signalLock()
+	defer sh.mu.Unlock()
 
 	if it.sigpending {
 		it.overrunCur += exp

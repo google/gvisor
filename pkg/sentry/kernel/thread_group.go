@@ -49,14 +49,23 @@ type ThreadGroup struct {
 	// signalHandlers. (This is analogous to Linux's use of struct
 	// sighand_struct::siglock.)
 	//
-	// The signalHandlers pointer can only be mutated during an execve
-	// (Task.finishExec). Consequently, when it's possible for a task in the
-	// thread group to be completing an execve, signalHandlers is protected by
-	// the owning TaskSet.mu. Otherwise, it is possible to read the
-	// signalHandlers pointer without synchronization. In particular,
-	// completing an execve requires that all other tasks in the thread group
-	// have exited, so task goroutines do not need the owning TaskSet.mu to
-	// read the signalHandlers pointer of their thread groups.
+	// The signalHandlers pointer is only mutated during execve
+	// (Task.finishExec), which occurs with TaskSet.mu and (the previous)
+	// signalHandlers.mu locked. Consequently:
+	//
+	// - Completing an execve requires that all other tasks in the thread group
+	// have exited, so task goroutines for non-exiting tasks in the thread
+	// group can read signalHandlers without a race condition.
+	//
+	// - If TaskSet.mu is locked (for reading or writing), any goroutine may
+	// read signalHandlers without a race condition.
+	//
+	// - If it is impossible for a task in the thread group to be completing an
+	// execve for another reason, any goroutine may read signalHandlers without
+	// a race condition.
+	//
+	// - Otherwise, ThreadGroup.signalLock() should be used to non-racily lock
+	// signalHandlers.mu; it also returns the locked signalHandlers.
 	signalHandlers *SignalHandlers
 
 	// pendingSignals is the set of pending signals that may be handled by any
@@ -298,12 +307,19 @@ func (tg *ThreadGroup) loadOldRSeqCritical(_ goContext.Context, r *OldRSeqCritic
 	tg.oldRSeqCritical.Store(r)
 }
 
-// SignalHandlers returns the signal handlers used by tg.
-//
-// Preconditions: The caller must provide the synchronization required to read
-// tg.signalHandlers, as described in the field's comment.
-func (tg *ThreadGroup) SignalHandlers() *SignalHandlers {
-	return tg.signalHandlers
+// signalLock atomically locks tg.SignalHandlers().mu and returns the
+// SignalHandlers.
+func (tg *ThreadGroup) signalLock() *SignalHandlers {
+	sh := tg.SignalHandlers()
+	for {
+		sh.mu.Lock()
+		sh2 := tg.SignalHandlers()
+		if sh == sh2 {
+			return sh
+		}
+		sh.mu.Unlock()
+		sh = sh2
+	}
 }
 
 // Limits returns tg's limits.
@@ -317,7 +333,6 @@ func (tg *ThreadGroup) Release(ctx context.Context) {
 	// since timers send signals with Timer.mu locked.
 	tg.itimerRealTimer.Destroy()
 	var its []*IntervalTimer
-	tg.pidns.owner.mu.Lock()
 	tg.signalHandlers.mu.Lock()
 	for _, it := range tg.timers {
 		its = append(its, it)
@@ -325,7 +340,7 @@ func (tg *ThreadGroup) Release(ctx context.Context) {
 	clear(tg.timers) // nil maps can't be saved
 	// Disassociate from the tty if we have one.
 	if tg.tty != nil {
-		tg.tty.mu.Lock()
+		tg.tty.mu.Lock() // FIXME(b/370763686)
 		if tg.tty.tg == tg {
 			tg.tty.tg = nil
 		}
@@ -333,7 +348,6 @@ func (tg *ThreadGroup) Release(ctx context.Context) {
 		tg.tty = nil
 	}
 	tg.signalHandlers.mu.Unlock()
-	tg.pidns.owner.mu.Unlock()
 	for _, it := range its {
 		it.DestroyTimer()
 	}
@@ -500,8 +514,8 @@ func (tg *ThreadGroup) ForegroundProcessGroupID(tty *TTY) (ProcessGroupID, error
 	tty.mu.Lock()
 	defer tty.mu.Unlock()
 
-	tg.pidns.owner.mu.Lock()
-	defer tg.pidns.owner.mu.Unlock()
+	tg.pidns.owner.mu.RLock()
+	defer tg.pidns.owner.mu.RUnlock()
 	tg.signalHandlers.mu.Lock()
 	defer tg.signalHandlers.mu.Unlock()
 

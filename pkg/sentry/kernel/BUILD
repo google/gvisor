@@ -304,6 +304,7 @@ go_library(
         "taskset_mutex.go",
         "thread_group.go",
         "thread_group_timer_mutex.go",
+        "thread_group_unsafe.go",
         "threads.go",
         "threads_impl.go",
         "timekeeper.go",

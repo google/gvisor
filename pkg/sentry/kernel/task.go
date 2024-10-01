@@ -292,7 +292,7 @@ type Task struct {
 	//
 	// exitState is protected by the TaskSet mutex. exitState is owned by the
 	// task goroutine.
-	exitState TaskExitState
+	exitState atomicbitops.Uint32
 
 	// exitTracerNotified is true if the exit path has either signaled the
 	// task's tracer to indicate the exit, or determined that no such signal is
