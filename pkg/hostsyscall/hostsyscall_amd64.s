@@ -14,8 +14,8 @@
 
 #include "textflag.h"
 
-// func RawSyscall6(trap, a1, a2, a3, a4, a5, a6 uintptr) (r1, r2, errno)
-TEXT ·RawSyscall6(SB),NOSPLIT,$0-80
+// func RawSyscall6(trap, a1, a2, a3, a4, a5, a6 uintptr) (r1, errno)
+TEXT ·RawSyscall6(SB),NOSPLIT,$0-72
 	MOVQ a1+8(FP), DI
 	MOVQ a2+16(FP), SI
 	MOVQ a3+24(FP), DX
@@ -27,18 +27,16 @@ TEXT ·RawSyscall6(SB),NOSPLIT,$0-80
 	CMPQ AX, $0xfffffffffffff001
 	JLS ok
 	MOVQ $-1, r1+56(FP)
-	MOVQ $0, r2+64(FP)
 	NEGQ AX
-	MOVQ AX, errno+72(FP)
+	MOVQ AX, errno+64(FP)
 	RET
 ok:
 	MOVQ AX, r1+56(FP)
-	MOVQ DX, r2+64(FP)
-	MOVQ $0, errno+72(FP)
+	MOVQ $0, errno+64(FP)
 	RET
 
-// func RawSyscall(trap, a1, a2, a3 uintptr) (r1, r2, errno)
-TEXT ·RawSyscall(SB),NOSPLIT,$0-56
+// func RawSyscall(trap, a1, a2, a3 uintptr) (r1, errno)
+TEXT ·RawSyscall(SB),NOSPLIT,$0-48
 	MOVQ a1+8(FP), DI
 	MOVQ a2+16(FP), SI
 	MOVQ a3+24(FP), DX
@@ -50,14 +48,12 @@ TEXT ·RawSyscall(SB),NOSPLIT,$0-56
 	CMPQ AX, $0xfffffffffffff001
 	JLS ok
 	MOVQ $-1, r1+32(FP)
-	MOVQ $0, r2+40(FP)
 	NEGQ AX
-	MOVQ AX, errno+48(FP)
+	MOVQ AX, errno+40(FP)
 	RET
 ok:
 	MOVQ AX, r1+32(FP)
-	MOVQ DX, r2+40(FP)
-	MOVQ $0, errno+48(FP)
+	MOVQ $0, errno+40(FP)
 	RET
 
 

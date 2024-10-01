@@ -28,10 +28,10 @@ import (
 )
 
 // RawSyscall6 is a copy of runtime.Syscall6.
-func RawSyscall6(trap, a1, a2, a3, a4, a5, a6 uintptr) (r1, r2 uintptr, errno unix.Errno)
+func RawSyscall6(trap, a1, a2, a3, a4, a5, a6 uintptr) (r1 uintptr, errno unix.Errno)
 
 // RawSyscall is a copy of runtime.Syscall6, but only uses the first three arguments.
-func RawSyscall(trap, a1, a2, a3 uintptr) (r1, r2 uintptr, errno unix.Errno)
+func RawSyscall(trap, a1, a2, a3 uintptr) (r1 uintptr, errno unix.Errno)
 
 // Variants of runtime.Syscall6 that use slightly less stack space by only
 // returning errno.

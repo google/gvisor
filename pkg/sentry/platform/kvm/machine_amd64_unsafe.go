@@ -190,7 +190,7 @@ func seccompMmapSyscall(context unsafe.Pointer) (uintptr, uintptr, unix.Errno) {
 	ctx := bluepillArchContext(context)
 
 	// MAP_DENYWRITE is deprecated and ignored by kernel. We use it only for seccomp filters.
-	addr, _, e := hostsyscall.RawSyscall6(uintptr(ctx.Rax), uintptr(ctx.Rdi), uintptr(ctx.Rsi),
+	addr, e := hostsyscall.RawSyscall6(uintptr(ctx.Rax), uintptr(ctx.Rdi), uintptr(ctx.Rsi),
 		uintptr(ctx.Rdx), uintptr(ctx.R10)|unix.MAP_DENYWRITE, uintptr(ctx.R8), uintptr(ctx.R9))
 	ctx.Rax = uint64(addr)
 
