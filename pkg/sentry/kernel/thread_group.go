@@ -343,15 +343,22 @@ func (tg *ThreadGroup) Release(ctx context.Context) {
 	}
 	clear(tg.timers) // nil maps can't be saved
 	// Disassociate from the tty if we have one.
+	var tty *TTY
 	if tg.tty != nil {
-		tg.tty.mu.Lock() // FIXME(b/370763686)
-		if tg.tty.tg == tg {
-			tg.tty.tg = nil
-		}
-		tg.tty.mu.Unlock()
-		tg.tty = nil
+		// Can't lock tty.mu due to lock ordering.
+		tty = tg.tty
 	}
 	tg.signalHandlers.mu.Unlock()
+	if tty != nil {
+		tty.mu.Lock()
+		tg.signalHandlers.mu.Lock()
+		tg.tty = nil
+		if tty.tg == tg {
+			tty.tg = nil
+		}
+		tg.signalHandlers.mu.Unlock()
+		tty.mu.Unlock()
+	}
 	for _, it := range its {
 		it.DestroyTimer()
 	}

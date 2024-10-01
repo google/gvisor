@@ -19,12 +19,13 @@
 // Lock order (outermost locks must be taken first):
 //
 //	Kernel.extMu
-//		ThreadGroup.timerMu
-//		  ktime.Timer.mu (for IntervalTimer) and Kernel.cpuClockMu
-//		    TaskSet.mu
-//		      SignalHandlers.mu
-//		        Task.mu
-//		    runningTasksMu
+//	  TTY.mu
+//	  ThreadGroup.timerMu
+//	    ktime.Timer.mu (for IntervalTimer) and Kernel.cpuClockMu
+//	      TaskSet.mu
+//	        SignalHandlers.mu
+//	          Task.mu
+//	      runningTasksMu
 //
 // Locking SignalHandlers.mu in multiple SignalHandlers requires locking
 // TaskSet.mu exclusively first. Locking Task.mu in multiple Tasks at the same
