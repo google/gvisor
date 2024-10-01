@@ -315,14 +315,15 @@ func (*runExitMain) execute(t *Task) taskRunState {
 		t.tg.Release(t)
 	}
 
+	t.tg.pidns.owner.mu.Lock()
 	// Detach tracees.
-	t.exitPtrace()
-
+	t.exitPtraceLocked()
 	// Reparent the task's children.
-	t.exitChildren()
+	t.exitChildrenLocked()
+	t.tg.pidns.owner.mu.Unlock()
 
-	// Don't tail-call runExitNotify, as exitChildren may have initiated a stop
-	// to wait for a PID namespace to die.
+	// Don't tail-call runExitNotify, as exitChildrenLocked may have initiated
+	// a stop to wait for a PID namespace to die.
 	return (*runExitNotify)(nil)
 }
 
@@ -360,9 +361,8 @@ func (t *Task) exitThreadGroup() bool {
 	return last
 }
 
-func (t *Task) exitChildren() {
-	t.tg.pidns.owner.mu.Lock()
-	defer t.tg.pidns.owner.mu.Unlock()
+// Preconditions: The TaskSet mutex must be locked for writing.
+func (t *Task) exitChildrenLocked() {
 	newParent := t.findReparentTargetLocked()
 	if newParent == nil {
 		// "If the init process of a PID namespace terminates, the kernel
