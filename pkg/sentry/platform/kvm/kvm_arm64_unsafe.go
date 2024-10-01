@@ -21,6 +21,7 @@ import (
 	"fmt"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/hostsyscall"
 )
 
 var (
@@ -30,7 +31,7 @@ var (
 
 func updateSystemValues(fd int) error {
 	// Extract the mmap size.
-	sz, _, errno := unix.RawSyscall(unix.SYS_IOCTL, uintptr(fd), KVM_GET_VCPU_MMAP_SIZE, 0)
+	sz, errno := hostsyscall.RawSyscall(unix.SYS_IOCTL, uintptr(fd), KVM_GET_VCPU_MMAP_SIZE, 0)
 	if errno != 0 {
 		return fmt.Errorf("getting VCPU mmap size: %v", errno)
 	}

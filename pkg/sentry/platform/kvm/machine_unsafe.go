@@ -66,7 +66,7 @@ func (m *machine) setMemoryRegion(slot int, physical, length, virtual uintptr, f
 
 // mapRunData maps the vCPU run data.
 func mapRunData(fd int) (*runData, error) {
-	r, _, errno := unix.RawSyscall6(
+	r, errno := hostsyscall.RawSyscall6(
 		unix.SYS_MMAP,
 		0,
 		uintptr(runDataSize),
@@ -82,7 +82,7 @@ func mapRunData(fd int) (*runData, error) {
 
 // unmapRunData unmaps the vCPU run data.
 func unmapRunData(r *runData) error {
-	if _, _, errno := unix.RawSyscall(
+	if errno := hostsyscall.RawSyscallErrno(
 		unix.SYS_MUNMAP,
 		uintptr(unsafe.Pointer(r)),
 		uintptr(runDataSize),
@@ -120,12 +120,12 @@ func (a *atomicAddressSpace) get() *addressSpace {
 //
 //go:nosplit
 func (c *vCPU) notify() {
-	errno := hostsyscall.RawSyscallErrno6( // escapes: no.
+	errno := hostsyscall.RawSyscallErrno( // escapes: no.
 		unix.SYS_FUTEX,
 		uintptr(unsafe.Pointer(&c.state)),
 		linux.FUTEX_WAKE|linux.FUTEX_PRIVATE_FLAG,
-		math.MaxInt32, // Number of waiters.
-		0, 0, 0)
+		// Number of waiters.
+		math.MaxInt32)
 	if errno != 0 {
 		throw("futex wake error")
 	}
@@ -138,12 +138,11 @@ func (c *vCPU) notify() {
 //
 // This panics on error.
 func (c *vCPU) waitUntilNot(state uint32) {
-	_, _, errno := unix.Syscall6(
+	errno := hostsyscall.RawSyscallErrno(
 		unix.SYS_FUTEX,
 		uintptr(unsafe.Pointer(&c.state)),
 		linux.FUTEX_WAIT|linux.FUTEX_PRIVATE_FLAG,
-		uintptr(state),
-		0, 0, 0)
+		uintptr(state))
 	if errno != 0 && errno != unix.EINTR && errno != unix.EAGAIN {
 		panic("futex wait error")
 	}
@@ -164,7 +163,7 @@ func (c *vCPU) setSignalMask() error {
 	data.length = 8 // Fixed sigset size.
 	data.mask1 = ^uint32(bounceSignalMask & 0xffffffff)
 	data.mask2 = ^uint32(bounceSignalMask >> 32)
-	if _, _, errno := unix.RawSyscall(
+	if errno := hostsyscall.RawSyscallErrno(
 		unix.SYS_IOCTL,
 		uintptr(c.fd),
 		KVM_SET_SIGNAL_MASK,
@@ -198,7 +197,7 @@ func seccompMmapSync() {
 // disableAsyncPreemption disables asynchronous preemption of go-routines.
 func disableAsyncPreemption() {
 	set := linux.MakeSignalSet(linux.SIGURG)
-	_, _, errno := unix.RawSyscall6(unix.SYS_RT_SIGPROCMASK, linux.SIG_BLOCK,
+	errno := hostsyscall.RawSyscallErrno6(unix.SYS_RT_SIGPROCMASK, linux.SIG_BLOCK,
 		uintptr(unsafe.Pointer(&set)), 0, linux.SignalSetSize, 0, 0)
 	if errno != 0 {
 		panic(fmt.Sprintf("sigprocmask failed: %d", errno))
@@ -208,7 +207,7 @@ func disableAsyncPreemption() {
 // enableAsyncPreemption enables asynchronous preemption of go-routines.
 func enableAsyncPreemption() {
 	set := linux.MakeSignalSet(linux.SIGURG)
-	_, _, errno := unix.RawSyscall6(unix.SYS_RT_SIGPROCMASK, linux.SIG_UNBLOCK,
+	errno := hostsyscall.RawSyscallErrno6(unix.SYS_RT_SIGPROCMASK, linux.SIG_UNBLOCK,
 		uintptr(unsafe.Pointer(&set)), 0, linux.SignalSetSize, 0, 0)
 	if errno != 0 {
 		panic(fmt.Sprintf("sigprocmask failed: %d", errno))

@@ -41,7 +41,7 @@ var vcpuInit kvmVcpuInit
 
 // initArchState initializes architecture-specific state.
 func (m *machine) initArchState() error {
-	if _, _, errno := unix.RawSyscall(
+	if errno := hostsyscall.RawSyscallErrno(
 		unix.SYS_IOCTL,
 		uintptr(m.fd),
 		_KVM_ARM_PREFERRED_TARGET,
@@ -74,7 +74,7 @@ func (c *vCPU) initArchState() error {
 	regGet.addr = uint64(reflect.ValueOf(&dataGet).Pointer())
 
 	vcpuInit.features[0] |= (1 << _KVM_ARM_VCPU_PSCI_0_2)
-	if _, _, errno := unix.RawSyscall(
+	if errno := hostsyscall.RawSyscallErrno(
 		unix.SYS_IOCTL,
 		uintptr(c.fd),
 		_KVM_ARM_VCPU_INIT,
@@ -260,7 +260,7 @@ func (c *vCPU) loadSegments(tid uint64) {
 }
 
 func (c *vCPU) setOneRegister(reg *kvmOneReg) error {
-	if _, _, errno := unix.RawSyscall(
+	if errno := hostsyscall.RawSyscallErrno(
 		unix.SYS_IOCTL,
 		uintptr(c.fd),
 		_KVM_SET_ONE_REG,
@@ -271,7 +271,7 @@ func (c *vCPU) setOneRegister(reg *kvmOneReg) error {
 }
 
 func (c *vCPU) getOneRegister(reg *kvmOneReg) error {
-	if _, _, errno := unix.RawSyscall(
+	if errno := hostsyscall.RawSyscallErrno(
 		unix.SYS_IOCTL,
 		uintptr(c.fd),
 		_KVM_GET_ONE_REG,

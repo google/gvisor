@@ -737,13 +737,13 @@ func (t *Task) exitNotifyLocked(fromPtraceDetach bool) {
 			ns.deleteTask(t)
 		}
 		t.userCounters.decRLimitNProc()
-		t.tg.exitedCPUStats.Accumulate(t.CPUStats())
-		t.tg.ioUsage.Accumulate(t.ioUsage)
 		t.tg.signalHandlers.mu.Lock()
 		t.tg.tasks.Remove(t)
 		t.tg.tasksCount--
 		tc := t.tg.tasksCount
+		t.tg.exitedCPUStats.Accumulate(t.CPUStats())
 		t.tg.signalHandlers.mu.Unlock()
+		t.tg.ioUsage.Accumulate(t.ioUsage)
 		if tc == 1 && t != t.tg.leader {
 			// Our fromPtraceDetach doesn't matter here (in Linux terms, this
 			// is via a call to release_task()).
