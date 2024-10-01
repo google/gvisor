@@ -102,8 +102,6 @@ type TaskStop interface {
 //   - The caller must be running on the task goroutine.
 //   - The task must not already be in an internal stop (i.e. t.stop == nil).
 func (t *Task) beginInternalStop(s TaskStop) {
-	t.tg.pidns.owner.mu.RLock()
-	defer t.tg.pidns.owner.mu.RUnlock()
 	t.tg.signalHandlers.mu.Lock()
 	defer t.tg.signalHandlers.mu.Unlock()
 	t.beginInternalStopLocked(s)
@@ -143,10 +141,8 @@ func (t *Task) endInternalStopLocked() {
 // BeginExternalStop indicates the start of an external stop that applies to t.
 // BeginExternalStop does not wait for t's task goroutine to stop.
 func (t *Task) BeginExternalStop() {
-	t.tg.pidns.owner.mu.RLock()
-	defer t.tg.pidns.owner.mu.RUnlock()
-	t.tg.signalHandlers.mu.Lock()
-	defer t.tg.signalHandlers.mu.Unlock()
+	sh := t.tg.signalLock()
+	defer sh.mu.Unlock()
 	t.beginStopLocked()
 	t.interrupt()
 }
@@ -155,10 +151,8 @@ func (t *Task) BeginExternalStop() {
 // call to Task.BeginExternalStop. EndExternalStop does not wait for t's task
 // goroutine to resume.
 func (t *Task) EndExternalStop() {
-	t.tg.pidns.owner.mu.RLock()
-	defer t.tg.pidns.owner.mu.RUnlock()
-	t.tg.signalHandlers.mu.Lock()
-	defer t.tg.signalHandlers.mu.Unlock()
+	sh := t.tg.signalLock()
+	defer sh.mu.Unlock()
 	t.endStopLocked()
 }
 

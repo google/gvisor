@@ -396,8 +396,8 @@ func getCloneSeccheckInfo(t, nt *Task, flags uint64) (seccheck.FieldSet, *pb.Clo
 //
 // Preconditions: The caller must be running on t's task goroutine.
 func (t *Task) maybeBeginVforkStop(child *Task) {
-	t.tg.pidns.owner.mu.RLock()
-	defer t.tg.pidns.owner.mu.RUnlock()
+	t.tg.pidns.owner.mu.Lock()
+	defer t.tg.pidns.owner.mu.Unlock()
 	t.tg.signalHandlers.mu.Lock()
 	defer t.tg.signalHandlers.mu.Unlock()
 	if t.killedLocked() {
@@ -410,8 +410,8 @@ func (t *Task) maybeBeginVforkStop(child *Task) {
 }
 
 func (t *Task) unstopVforkParent() {
-	t.tg.pidns.owner.mu.RLock()
-	defer t.tg.pidns.owner.mu.RUnlock()
+	t.tg.pidns.owner.mu.Lock()
+	defer t.tg.pidns.owner.mu.Unlock()
 	if p := t.vforkParent; p != nil {
 		p.tg.signalHandlers.mu.Lock()
 		defer p.tg.signalHandlers.mu.Unlock()

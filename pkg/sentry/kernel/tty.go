@@ -37,10 +37,8 @@ type TTY struct {
 // TTY returns the thread group's controlling terminal. If nil, there is no
 // controlling terminal.
 func (tg *ThreadGroup) TTY() *TTY {
-	tg.pidns.owner.mu.RLock()
-	defer tg.pidns.owner.mu.RUnlock()
-	tg.signalHandlers.mu.Lock()
-	defer tg.signalHandlers.mu.Unlock()
+	sh := tg.signalLock()
+	defer sh.mu.Unlock()
 	return tg.tty
 }
 
@@ -60,9 +58,7 @@ func (tty *TTY) SignalForegroundProcessGroup(info *linux.SignalInfo) {
 	}
 
 	tg.pidns.owner.mu.Lock()
-	tg.signalHandlers.mu.Lock()
 	fg := tg.processGroup.session.foreground
-	tg.signalHandlers.mu.Unlock()
 	tg.pidns.owner.mu.Unlock()
 
 	if fg == nil {
@@ -70,8 +66,6 @@ func (tty *TTY) SignalForegroundProcessGroup(info *linux.SignalInfo) {
 		return
 	}
 
-	// SendSignal will take TaskSet.mu and signalHandlers.mu, so we cannot
-	// hold them here.
 	if err := fg.SendSignal(info); err != nil {
 		log.Warningf("failed to signal foreground process group (pgid=%d): %v", fg.id, err)
 	}

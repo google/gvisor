@@ -14,8 +14,8 @@
 
 #include "textflag.h"
 
-// func RawSyscall6(trap, a1, a2, a3, a4, a5, a6 uintptr) (r1, r2, errno uintptr)
-TEXT ·RawSyscall6(SB),NOSPLIT,$0-80
+// func RawSyscall6(trap, a1, a2, a3, a4, a5, a6 uintptr) (r1, errno)
+TEXT ·RawSyscall6(SB),NOSPLIT,$0-72
 	MOVD trap+0(FP), R8   // syscall entry
 	MOVD a1+8(FP), R0
 	MOVD a2+16(FP), R1
@@ -28,18 +28,16 @@ TEXT ·RawSyscall6(SB),NOSPLIT,$0-80
 	BCC ok
 	MOVD $-1, R4
 	MOVD R4, r1+56(FP)
-	MOVD ZR, r2+64(FP)
 	NEG R0, R0
-	MOVD R0, errno+72(FP)
+	MOVD R0, errno+64(FP)
 	RET
 ok:
 	MOVD R0, r1+56(FP)
-	MOVD R1, r2+64(FP)
-	MOVD ZR, errno+72(FP)
+	MOVD ZR, errno+64(FP)
 	RET
 
-// func RawSyscall(trap, a1, a2, a3 uintptr) (r1, r2, errno uintptr)
-TEXT ·RawSyscall(SB),NOSPLIT,$0-56
+// func RawSyscall(trap, a1, a2, a3 uintptr) (r1, errno)
+TEXT ·RawSyscall(SB),NOSPLIT,$0-48
 	MOVD trap+0(FP), R8   // syscall entry
 	MOVD a1+8(FP), R0
 	MOVD a2+16(FP), R1
@@ -52,14 +50,12 @@ TEXT ·RawSyscall(SB),NOSPLIT,$0-56
 	BCC ok
 	MOVD $-1, R4
 	MOVD R4, r1+32(FP)
-	MOVD ZR, r2+40(FP)
 	NEG R0, R0
-	MOVD R0, errno+48(FP)
+	MOVD R0, errno+40(FP)
 	RET
 ok:
 	MOVD R0, r1+32(FP)
-	MOVD R1, r2+40(FP)
-	MOVD ZR, errno+48(FP)
+	MOVD ZR, errno+40(FP)
 	RET
 
 // func RawSyscallErrno6(trap, a1, a2, a3, a4, a5, a6 uintptr) (errno unix.Errno)

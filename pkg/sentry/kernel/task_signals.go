@@ -146,10 +146,8 @@ func (tg *ThreadGroup) discardSpecificLocked(sig linux.Signal) {
 
 // PendingSignals returns the set of pending signals.
 func (t *Task) PendingSignals() linux.SignalSet {
-	t.tg.pidns.owner.mu.RLock()
-	defer t.tg.pidns.owner.mu.RUnlock()
-	t.tg.signalHandlers.mu.Lock()
-	defer t.tg.signalHandlers.mu.Unlock()
+	sh := t.tg.signalLock()
+	defer sh.mu.Unlock()
 	return t.pendingSignals.pendingSet | t.tg.pendingSignals.pendingSet
 }
 
@@ -377,19 +375,15 @@ func (t *Task) Sigtimedwait(set linux.SignalSet, timeout time.Duration) (*linux.
 //	linuxerr.EINVAL - The signal is not valid.
 //	linuxerr.EAGAIN - THe signal is realtime, and cannot be queued.
 func (t *Task) SendSignal(info *linux.SignalInfo) error {
-	t.tg.pidns.owner.mu.RLock()
-	defer t.tg.pidns.owner.mu.RUnlock()
-	t.tg.signalHandlers.mu.Lock()
-	defer t.tg.signalHandlers.mu.Unlock()
+	sh := t.tg.signalLock()
+	defer sh.mu.Unlock()
 	return t.sendSignalLocked(info, false /* group */)
 }
 
 // SendGroupSignal sends the given signal to t's thread group.
 func (t *Task) SendGroupSignal(info *linux.SignalInfo) error {
-	t.tg.pidns.owner.mu.RLock()
-	defer t.tg.pidns.owner.mu.RUnlock()
-	t.tg.signalHandlers.mu.Lock()
-	defer t.tg.signalHandlers.mu.Unlock()
+	sh := t.tg.signalLock()
+	defer sh.mu.Unlock()
 	return t.sendSignalLocked(info, true /* group */)
 }
 
@@ -403,12 +397,14 @@ func (tg *ThreadGroup) SendSignal(info *linux.SignalInfo) error {
 	return tg.leader.sendSignalLocked(info, true /* group */)
 }
 
+// Preconditions: The signal mutex must be locked.
 func (t *Task) sendSignalLocked(info *linux.SignalInfo, group bool) error {
 	return t.sendSignalTimerLocked(info, group, nil)
 }
 
+// Preconditions: The signal mutex must be locked.
 func (t *Task) sendSignalTimerLocked(info *linux.SignalInfo, group bool, timer *IntervalTimer) error {
-	if t.exitState == TaskExitDead {
+	if t.ExitState() == TaskExitDead {
 		return linuxerr.ESRCH
 	}
 	sig := linux.Signal(info.Signo)
@@ -482,6 +478,7 @@ func (t *Task) sendSignalTimerLocked(info *linux.SignalInfo, group bool, timer *
 	return nil
 }
 
+// Preconditions: The signal mutex must be locked.
 func (tg *ThreadGroup) applySignalSideEffectsLocked(sig linux.Signal) {
 	switch {
 	case linux.SignalSetOf(sig)&StopSignals != 0:
@@ -572,6 +569,7 @@ func (t *Task) forceSignal(sig linux.Signal, unconditional bool) {
 	t.forceSignalLocked(sig, unconditional)
 }
 
+// Preconditions: The signal mutex must be locked.
 func (t *Task) forceSignalLocked(sig linux.Signal, unconditional bool) {
 	blocked := linux.SignalSetOf(sig)&linux.SignalSet(t.signalMask.RacyLoad()) != 0
 	act := t.tg.signalHandlers.actions[sig]
@@ -790,7 +788,7 @@ func (t *Task) initiateGroupStop(info *linux.SignalInfo) {
 	}
 	t.tg.groupStopPendingCount = 0
 	for t2 := t.tg.tasks.Front(); t2 != nil; t2 = t2.Next() {
-		if t2.killedLocked() || t2.exitState >= TaskExitInitiated {
+		if t2.killedLocked() || t2.exitStateLocked() >= TaskExitInitiated {
 			t2.groupStopPending = false
 			continue
 		}
