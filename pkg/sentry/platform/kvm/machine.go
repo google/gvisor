@@ -371,7 +371,7 @@ func newMachine(vm int) (*machine, error) {
 			}
 
 			// Ensure the physical range is mapped.
-			m.mapPhysical(physical, length, physicalRegions)
+			m.mapPhysical(physical, length)
 			virtual += length
 		}
 	}
@@ -396,7 +396,7 @@ func newMachine(vm int) (*machine, error) {
 	})
 	if mapEntireAddressSpace {
 		for _, r := range physicalRegions {
-			m.mapPhysical(r.physical, r.length, physicalRegions)
+			m.mapPhysical(r.physical, r.length)
 		}
 	}
 	enableAsyncPreemption()
@@ -438,9 +438,9 @@ func (m *machine) hasSlot(physical uintptr) bool {
 // This throws on error.
 //
 //go:nosplit
-func (m *machine) mapPhysical(physical, length uintptr, phyRegions []physicalRegion) {
+func (m *machine) mapPhysical(physical, length uintptr) {
 	for end := physical + length; physical < end; {
-		_, physicalStart, length, pr := calculateBluepillFault(physical, phyRegions)
+		virtualStart, physicalStart, length, pr := calculateBluepillFault(physical)
 		if pr == nil {
 			// Should never happen.
 			throw("mapPhysical on unknown physical address")
@@ -448,9 +448,7 @@ func (m *machine) mapPhysical(physical, length uintptr, phyRegions []physicalReg
 
 		// Is this already mapped? Check the usedSlots.
 		if !m.hasSlot(physicalStart) {
-			if _, ok := handleBluepillFault(m, physical, phyRegions); !ok {
-				throw("handleBluepillFault failed")
-			}
+			m.mapMemorySlot(virtualStart, physicalStart, length, pr.readOnly)
 		}
 
 		// Move to the next chunk.

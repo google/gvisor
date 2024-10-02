@@ -73,7 +73,7 @@ func (a *allocator) PhysicalFor(ptes *pagetables.PTEs) uintptr {
 //
 //go:nosplit
 func (a *allocator) LookupPTEs(physical uintptr) *pagetables.PTEs {
-	virtualStart, physicalStart, _, pr := calculateBluepillFault(physical, physicalRegions)
+	virtualStart, physicalStart, _, pr := calculateBluepillFault(physical)
 	if pr == nil {
 		panic(fmt.Sprintf("LookupPTEs failed for 0x%x", physical)) // escapes: panic.
 	}
