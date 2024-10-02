@@ -131,7 +131,7 @@ func New(t *kernel.Task, skType linux.SockType, protocol Protocol) (*Socket, *sy
 	}
 
 	// Create a connection from which the kernel can write messages.
-	connection, err := ep.(transport.BoundEndpoint).UnidirectionalConnect(t)
+	connection, err := ep.(transport.BoundEndpoint).UnidirectionalConnect(t, t.Kernel().UnixSocketOpts)
 	if err != nil {
 		ep.Close(t)
 		return nil, err
