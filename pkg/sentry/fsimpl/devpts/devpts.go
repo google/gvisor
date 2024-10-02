@@ -27,6 +27,7 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
+	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
@@ -265,7 +266,13 @@ func (i *rootInode) allocateTerminal(ctx context.Context, creds *auth.Credential
 	}
 
 	// Create the new terminal and replica.
-	t := newTerminal(idx)
+	t := &Terminal{
+		n:    idx,
+		root: i,
+	}
+	t.masterKTTY = kernel.NewTTY(idx, t)
+	t.replicaKTTY = kernel.NewTTY(idx, t)
+	t.ld = newLineDiscipline(linux.DefaultReplicaTermios, t)
 	replica := &replicaInode{
 		root: i,
 		t:    t,

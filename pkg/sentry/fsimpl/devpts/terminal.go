@@ -16,10 +16,15 @@ package devpts
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
 
 // Terminal is a pseudoterminal.
+//
+// Terminal implements kernel.TTYOperations.
 //
 // +stateify savable
 type Terminal struct {
@@ -28,6 +33,9 @@ type Terminal struct {
 
 	// ld is the line discipline of the terminal. It is immutable.
 	ld *lineDiscipline
+
+	// root is the rootInode for this devpts mount. It is immutable.
+	root *rootInode
 
 	// masterKTTY contains the controlling process of the master end of
 	// this terminal. This field is immutable.
@@ -38,13 +46,33 @@ type Terminal struct {
 	replicaKTTY *kernel.TTY
 }
 
-func newTerminal(n uint32) *Terminal {
-	t := &Terminal{
-		n:           n,
-		masterKTTY:  &kernel.TTY{Index: n},
-		replicaKTTY: &kernel.TTY{Index: n},
-	}
-	t.ld = newLineDiscipline(linux.DefaultReplicaTermios, t)
+var _ kernel.TTYOperations = (*Terminal)(nil)
 
-	return t
+// Open implements kernel.TTYOperations.Open.
+func (t *Terminal) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
+	tsk := kernel.TaskFromContext(ctx)
+	if tsk == nil {
+		return nil, linuxerr.EIO
+	}
+	t.root.mu.Lock()
+	ri, ok := t.root.replicas[t.replicaKTTY.Index()]
+	t.root.mu.Unlock()
+	if !ok {
+		return nil, linuxerr.EIO
+	}
+	fd := &replicaFileDescription{
+		inode: ri,
+	}
+	fd.LockFD.Init(&ri.locks)
+	if err := fd.vfsfd.Init(fd, opts.Flags, mnt, vfsd, &vfs.FileDescriptionOptions{}); err != nil {
+		return nil, err
+	}
+	if opts.Flags&linux.O_NOCTTY == 0 {
+		// Opening a replica sets the process' controlling TTY when
+		// possible. An error indicates it cannot be set, and is
+		// ignored silently. See Linux tty_open().
+		_ = tsk.ThreadGroup().SetControllingTTY(t.replicaKTTY, false /* steal */, fd.vfsfd.IsReadable())
+	}
+	ri.t.ld.replicaOpen()
+	return &fd.vfsfd, nil
 }

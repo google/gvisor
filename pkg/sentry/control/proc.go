@@ -469,7 +469,7 @@ func ttyName(tty *kernel.TTY) string {
 	if tty == nil {
 		return "?"
 	}
-	return fmt.Sprintf("pts/%d", tty.Index)
+	return fmt.Sprintf("pts/%d", tty.Index())
 }
 
 // ContainerUsage retrieves per-container CPU usage.

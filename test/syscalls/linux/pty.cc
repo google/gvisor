@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <errno.h>
 #include <fcntl.h>
 #include <linux/capability.h>
 #include <linux/major.h>
@@ -45,7 +46,9 @@
 #include "test/util/file_descriptor.h"
 #include "test/util/fs_util.h"
 #include "test/util/linux_capability_util.h"
+#include "test/util/logging.h"
 #include "test/util/mount_util.h"
+#include "test/util/multiprocess_util.h"
 #include "test/util/posix_error.h"
 #include "test/util/pty_util.h"
 #include "test/util/signal_util.h"
@@ -636,6 +639,53 @@ TEST(BasicPtyTest, SetMode) {
   EXPECT_EQ(st.st_mode, 0600 | S_IFDIR);
   ASSERT_THAT(fstatat(fd.get(), "ptmx", &st, 0), SyscallSucceeds());
   EXPECT_EQ(st.st_mode, 0620 | S_IFCHR);
+}
+
+TEST(BasicPtyTest, OpenDevTTY) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  // Run in forked process so we don't pollute the controlling terminal of the
+  // main test process, which other tests expect to be unset.
+  const auto rest = [&] {
+    // We must be session leader to set controlling terminal,
+    // which will be opened by /dev/tty.
+    setsid();
+
+    FileDescriptor master =
+        TEST_CHECK_NO_ERRNO_AND_VALUE(Open("/dev/ptmx", O_RDWR));
+
+    // Opening the replica without O_NOCTTY will set controlling terminal.
+    FileDescriptor replica =
+        TEST_CHECK_NO_ERRNO_AND_VALUE(OpenReplica(master, O_RDWR | O_NONBLOCK));
+
+    // Terminal now available at /dev/tty.
+    FileDescriptor devtty =
+        TEST_CHECK_NO_ERRNO_AND_VALUE(Open("/dev/tty", O_RDWR | O_NONBLOCK));
+  };
+
+  EXPECT_THAT(InForkedProcess(rest), IsPosixErrorOkAndHolds(0));
+}
+
+TEST(BasicPtyTest, OpenDevTTYNoCTTY) {
+  // Become session leader, otherwise we will never have hope of setting a
+  // controlling terminal. This test verifies that we fail to open /dev/tty for
+  // other (expected) reasons.
+  setsid();
+
+  // No controlling terminal, so can't open /dev/tty.
+  EXPECT_THAT(open("/dev/tty", O_RDWR | O_NONBLOCK),
+              SyscallFailsWithErrno(ENXIO));
+
+  // Open a master, but still no terminal available.
+  FileDescriptor master = ASSERT_NO_ERRNO_AND_VALUE(Open("/dev/ptmx", O_RDWR));
+  EXPECT_THAT(open("/dev/tty", O_RDWR | O_NONBLOCK),
+              SyscallFailsWithErrno(ENXIO));
+
+  // Open terminal with NOCTTY. Still can't open /dev/tty.
+  FileDescriptor replica_noctty = ASSERT_NO_ERRNO_AND_VALUE(
+      OpenReplica(master, O_RDWR | O_NONBLOCK | O_NOCTTY));
+  EXPECT_THAT(open("/dev/tty", O_RDWR | O_NONBLOCK),
+              SyscallFailsWithErrno(ENXIO));
 }
 
 class PtyTest : public ::testing::Test {
