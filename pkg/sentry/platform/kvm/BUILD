@@ -24,23 +24,6 @@ config_setting(
     },
 )
 
-# @unused
-glaze_ignore = [
-    "seccomp_mmap_dbg.go",
-    "seccomp_mmap_real.go",
-]
-
-# Use either seccomp_mmap_dbg.go or seccomp_mmap_real.go as seccomp_mmap.go.
-genrule(
-    name = "seccomp_mmap",
-    srcs = select({
-        ":debug_build": ["seccomp_mmap_dbg.go"],
-        "//conditions:default": ["seccomp_mmap_real.go"],
-    }),
-    outs = ["seccomp_mmap_unsafe.go"],
-    cmd = "cat < $(SRCS) > $(OUTS)",
-)
-
 go_library(
     name = "kvm",
     srcs = [

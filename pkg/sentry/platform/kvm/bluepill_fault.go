@@ -47,9 +47,9 @@ func yield() {
 // calculateBluepillFault calculates the fault address range.
 //
 //go:nosplit
-func calculateBluepillFault(physical uintptr, phyRegions []physicalRegion) (virtualStart, physicalStart, length uintptr, pr *physicalRegion) {
+func calculateBluepillFault(physical uintptr) (virtualStart, physicalStart, length uintptr, pr *physicalRegion) {
 	alignedPhysical := physical &^ uintptr(hostarch.PageSize-1)
-	for i, pr := range phyRegions {
+	for i, pr := range physicalRegions {
 		end := pr.physical + pr.length
 		if physical < pr.physical || physical >= end {
 			continue
@@ -63,27 +63,14 @@ func calculateBluepillFault(physical uintptr, phyRegions []physicalRegion) (virt
 			physicalEnd = end
 		}
 		length = physicalEnd - physicalStart
-		return virtualStart, physicalStart, length, &phyRegions[i]
+		return virtualStart, physicalStart, length, &physicalRegions[i]
 	}
 
 	return 0, 0, 0, nil
 }
 
-// handleBluepillFault handles a physical fault.
-//
-// The corresponding virtual address is returned. This may throw on error.
-//
 //go:nosplit
-func handleBluepillFault(m *machine, physical uintptr, phyRegions []physicalRegion) (uintptr, bool) {
-	// Paging fault: we need to map the underlying physical pages for this
-	// fault. This all has to be done in this function because we're in a
-	// signal handler context. (We can't call any functions that might
-	// split the stack.)
-	virtualStart, physicalStart, length, pr := calculateBluepillFault(physical, phyRegions)
-	if pr == nil {
-		return 0, false
-	}
-
+func (m *machine) mapMemorySlot(virtualStart, physicalStart, length uintptr, readOnly bool) {
 	// Set the KVM slot.
 	//
 	// First, we need to acquire the exclusive right to set a slot.  See
@@ -94,7 +81,7 @@ func handleBluepillFault(m *machine, physical uintptr, phyRegions []physicalRegi
 		slot = m.nextSlot.Swap(^uint32(0))
 	}
 	flags := _KVM_MEM_FLAGS_NONE
-	if pr.readOnly {
+	if readOnly {
 		flags |= _KVM_MEM_READONLY
 	}
 	errno := m.setMemoryRegion(int(slot), physicalStart, length, virtualStart, flags)
@@ -106,7 +93,7 @@ func handleBluepillFault(m *machine, physical uintptr, phyRegions []physicalRegi
 		// Successfully added region; we can increment nextSlot and
 		// allow another set to proceed here.
 		m.nextSlot.Store(slot + 1)
-		return virtualStart + (physical - physicalStart), true
+		return
 	}
 
 	// Release our slot (still available).
@@ -117,7 +104,7 @@ func handleBluepillFault(m *machine, physical uintptr, phyRegions []physicalRegi
 		// The region already exists. It's possible that we raced with
 		// another vCPU here. We just revert nextSlot and return true,
 		// because this must have been satisfied by some other vCPU.
-		return virtualStart + (physical - physicalStart), true
+		return
 	case unix.EINVAL:
 		throw("set memory region failed; out of slots")
 	case unix.ENOMEM:
@@ -125,8 +112,9 @@ func handleBluepillFault(m *machine, physical uintptr, phyRegions []physicalRegi
 	case unix.EFAULT:
 		throw("set memory region failed: invalid physical range")
 	default:
+		printHex([]byte("set memory region failed:"), uint64(errno))
 		throw("set memory region failed: unknown reason")
 	}
 
-	panic("unreachable")
+	throw("unreachable")
 }
