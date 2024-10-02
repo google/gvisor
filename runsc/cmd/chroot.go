@@ -109,9 +109,42 @@ func setUpChroot(spec *specs.Spec, conf *config.Config) error {
 		log.Warningf("Failed to copy /etc/localtime: %v. UTC timezone will be used.", err)
 	}
 
+	if err := os.Mkdir(filepath.Join(chroot, "/proc"), 0755); err != nil {
+		return fmt.Errorf("error creating /proc in chroot: %v", err)
+	}
+	if err := specutils.SafeMount("runsc-proc", filepath.Join(chroot, "/proc"), "tmpfs",
+		unix.MS_NOSUID|unix.MS_NODEV|unix.MS_NOEXEC, "", "/proc"); err != nil {
+		return fmt.Errorf("error mounting tmpfs in /proc: %v", err)
+	}
+	for _, d := range []string{
+		"/proc/sys",
+		"/proc/sys/kernel",
+		"/proc/sys/vm",
+	} {
+		if err := os.Mkdir(filepath.Join(chroot, d), 0755); err != nil {
+			return fmt.Errorf("error creating %s in chroot: %v", d, err)
+		}
+	}
+	for _, f := range []string{
+		"/proc/sys/vm/mmap_min_addr",
+		"/proc/sys/kernel/cap_last_cap",
+	} {
+		if err := copyFile(filepath.Join(chroot, f), f); err != nil {
+			return fmt.Errorf("Failed to copy %s: %w", f, err)
+		}
+	}
 	flags := uint32(unix.MS_NOSUID | unix.MS_NODEV | unix.MS_NOEXEC | unix.MS_RDONLY)
-	if err := mountInChroot(chroot, "proc", "/proc", "proc", flags); err != nil {
-		return fmt.Errorf("error mounting proc in chroot: %v", err)
+	procPath := "sandbox-proc"
+	if err := mountInChroot(chroot, "proc", "/proc/"+procPath, "proc", flags); err != nil {
+		log.Warningf("Unable to mount a new instance of the proc file system.")
+		procPath = "host-proc"
+		if err := mountInChroot(chroot, "/proc", "/proc/"+procPath, "bind",
+			unix.MS_BIND|unix.MS_REC|flags); err != nil {
+			return fmt.Errorf("error mounting proc in chroot: %v", err)
+		}
+	}
+	if err := os.Symlink(procPath+"/self", filepath.Join(chroot, "proc/self")); err != nil {
+		return fmt.Errorf("error creating symlink /proc/self: %w", err)
 	}
 
 	if err := tpuProxyUpdateChroot("/", chroot, spec, conf); err != nil {
