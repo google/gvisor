@@ -21,8 +21,8 @@ import (
 	"gvisor.dev/gvisor/pkg/test/dockerutil"
 )
 
-// TestFffmpegGPU runs ffmpeg in a GPU container using NVENC.
-func TestFffmpegGPU(t *testing.T) {
+// TestFffmpegEncodeGPU runs ffmpeg in a GPU container using NVENC.
+func TestFffmpegEncodeGPU(t *testing.T) {
 	ctx := context.Background()
 	isGVisor, err := dockerutil.IsGVisorRuntime(ctx, t)
 	if err != nil {
@@ -42,6 +42,34 @@ func TestFffmpegGPU(t *testing.T) {
 	}
 	opts.Image = "benchmarks/ffmpeg"
 	cmd := strings.Split("ffmpeg -i video.mp4 -c:v h264_nvenc -preset fast output.mp4", " ")
+	if output, err := container.Run(ctx, opts, cmd...); err != nil {
+		t.Errorf("failed to run container: %v; output:\n%s", err, output)
+	}
+}
+
+// TestFffmpegDecodeGPU runs ffmpeg in a GPU container using NVDEC.
+func TestFffmpegDecodeGPU(t *testing.T) {
+	ctx := context.Background()
+	isGVisor, err := dockerutil.IsGVisorRuntime(ctx, t)
+	if err != nil {
+		t.Fatalf("Failed to determine if runtime is gVisor: %v", err)
+	}
+	if isGVisor {
+		t.Skip("This test is currently broken in gVisor")
+	}
+	container := dockerutil.MakeContainer(ctx, t)
+	defer container.CleanUp(ctx)
+	opts, err := dockerutil.GPURunOpts(dockerutil.SniffGPUOpts{
+		Capabilities:           "NVIDIA_DRIVER_CAPABILITIES=video",
+		AllowIncompatibleIoctl: true,
+	})
+	if err != nil {
+		t.Fatalf("Failed to get GPU run options: %v", err)
+	}
+	opts.Image = "benchmarks/ffmpeg"
+	// h264_cuvid refers to NVDEC. See Section 4.2 in
+	// https://docs.nvidia.com/video-technologies/video-codec-sdk/pdf/Using_FFmpeg_with_NVIDIA_GPU_Hardware_Acceleration.pdf
+	cmd := strings.Split("ffmpeg -y -vsync 0 -c:v h264_cuvid -i video.mp4 output.yuv", " ")
 	if output, err := container.Run(ctx, opts, cmd...); err != nil {
 		t.Errorf("failed to run container: %v; output:\n%s", err, output)
 	}
