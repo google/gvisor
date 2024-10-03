@@ -14,6 +14,12 @@
 
 // Package pgalloc contains the page allocator subsystem, which provides
 // allocatable memory that may be mapped into application address spaces.
+//
+// Lock order:
+//
+//	AsyncPagesFileLoad.amflsMu
+//	  MemoryFile.mu
+//	    AsyncPagesFileLoad.mu
 package pgalloc
 
 import (
@@ -190,7 +196,7 @@ type MemoryFile struct {
 
 	// If asyncPageLoad is non-nil, it tracks the state of in-progress or
 	// failed async page loading.
-	asyncPageLoad atomic.Pointer[aplShared]
+	asyncPageLoad atomic.Pointer[asyncMemoryFileLoad]
 
 	// file is the backing file. The file pointer is immutable.
 	file *os.File
@@ -1435,8 +1441,8 @@ func (f *MemoryFile) MapInternal(fr memmap.FileRange, at hostarch.AccessType) (s
 		return safemem.BlockSeq{}, linuxerr.EACCES
 	}
 
-	if apl := f.asyncPageLoad.Load(); apl != nil {
-		if err := apl.awaitLoad(f, fr); err != nil {
+	if amfl := f.asyncPageLoad.Load(); amfl != nil {
+		if err := amfl.awaitLoad(fr); err != nil {
 			return safemem.BlockSeq{}, err
 		}
 	}
@@ -1799,8 +1805,8 @@ func (f *MemoryFile) File() *os.File {
 
 // DataFD implements memmap.File.DataFD.
 func (f *MemoryFile) DataFD(fr memmap.FileRange) (int, error) {
-	if apl := f.asyncPageLoad.Load(); apl != nil {
-		if err := apl.awaitLoad(f, fr); err != nil {
+	if amfl := f.asyncPageLoad.Load(); amfl != nil {
+		if err := amfl.awaitLoad(fr); err != nil {
 			return -1, err
 		}
 	}
