@@ -241,9 +241,8 @@ func (t *TTYFileDescription) StateTypeName() string {
 func (t *TTYFileDescription) StateFields() []string {
 	return []string{
 		"fileDescription",
-		"session",
-		"fgProcessGroup",
 		"termios",
+		"tty",
 	}
 }
 
@@ -253,9 +252,8 @@ func (t *TTYFileDescription) beforeSave() {}
 func (t *TTYFileDescription) StateSave(stateSinkObject state.Sink) {
 	t.beforeSave()
 	stateSinkObject.Save(0, &t.fileDescription)
-	stateSinkObject.Save(1, &t.session)
-	stateSinkObject.Save(2, &t.fgProcessGroup)
-	stateSinkObject.Save(3, &t.termios)
+	stateSinkObject.Save(1, &t.termios)
+	stateSinkObject.Save(2, &t.tty)
 }
 
 func (t *TTYFileDescription) afterLoad(context.Context) {}
@@ -263,9 +261,8 @@ func (t *TTYFileDescription) afterLoad(context.Context) {}
 // +checklocksignore
 func (t *TTYFileDescription) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &t.fileDescription)
-	stateSourceObject.Load(1, &t.session)
-	stateSourceObject.Load(2, &t.fgProcessGroup)
-	stateSourceObject.Load(3, &t.termios)
+	stateSourceObject.Load(1, &t.termios)
+	stateSourceObject.Load(2, &t.tty)
 }
 
 func init() {

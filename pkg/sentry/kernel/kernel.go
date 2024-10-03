@@ -992,7 +992,7 @@ type CreateProcessArgs struct {
 	// Origin indicates how the task was first created.
 	Origin TaskOrigin
 
-	// TTY is the optional TTY to associate with this process.
+	// TTY is the optional controlling TTY to associate with this process.
 	TTY *TTY
 }
 
@@ -1227,8 +1227,9 @@ func (k *Kernel) CreateProcess(args CreateProcessArgs) (*ThreadGroup, ThreadID, 
 
 	// Set TTY if configured.
 	if args.TTY != nil {
-		t.tg.tty = args.TTY
-		args.TTY.tg = t.tg
+		if err := t.tg.SetControllingTTY(ctx, args.TTY, false /* steal */, true /* isReadable */); err != nil {
+			return nil, 0, fmt.Errorf("setting controlling tty: %w", err)
+		}
 	}
 
 	// Success.

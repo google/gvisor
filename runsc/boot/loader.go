@@ -1111,10 +1111,7 @@ func (l *Loader) createContainerProcess(info *containerInfo) (*kernel.ThreadGrou
 	info.procArgs.FDTable = fdTable
 
 	if ttyFile != nil {
-		// Index does not matter here. This tty is not coming from a
-		// devpts mount, so it won't collide with any of the ptys
-		// created there.
-		info.procArgs.TTY = kernel.NewTTY(0, ttyFile)
+		info.procArgs.TTY = ttyFile.TTY()
 	}
 
 	if info.execFD != nil {
@@ -1175,12 +1172,6 @@ func (l *Loader) createContainerProcess(info *containerInfo) (*kernel.ThreadGrou
 	}
 	// CreateProcess takes a reference on FDTable if successful.
 	info.procArgs.FDTable.DecRef(ctx)
-
-	// Set the foreground process group on the TTY to the global init process
-	// group, since that is what we are about to start running.
-	if ttyFile != nil {
-		ttyFile.InitForegroundProcessGroup(tg.ProcessGroup())
-	}
 
 	// Install seccomp filters with the new task if there are any.
 	if info.conf.OCISeccomp {
@@ -1667,7 +1658,7 @@ func (l *Loader) signalForegrondProcessGroup(cid string, tgid kernel.ThreadID, s
 	if tty == nil {
 		return fmt.Errorf("no TTY attached")
 	}
-	pg := tty.ForegroundProcessGroup()
+	pg, _ := tty.ThreadGroup().ForegroundProcessGroup(tty.TTY())
 	si := &linux.SignalInfo{Signo: signo}
 	if pg == nil {
 		// No foreground process group has been set. Signal the

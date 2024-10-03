@@ -177,7 +177,7 @@ func (mfd *masterFileDescription) Ioctl(ctx context.Context, io usermem.IO, sysn
 		// Make the given terminal the controlling terminal of the
 		// calling process.
 		steal := args[2].Int() == 1
-		return 0, t.ThreadGroup().SetControllingTTY(mfd.t.masterKTTY, steal, mfd.vfsfd.IsReadable())
+		return 0, t.ThreadGroup().SetControllingTTY(ctx, mfd.t.masterKTTY, steal, mfd.vfsfd.IsReadable())
 	case linux.TIOCNOTTY:
 		// Release this process's controlling terminal.
 		return 0, t.ThreadGroup().ReleaseControllingTTY(mfd.t.masterKTTY)

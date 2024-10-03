@@ -273,10 +273,7 @@ func (proc *Proc) execAsync(args *ExecArgs) (*kernel.ThreadGroup, kernel.ThreadI
 	}
 
 	if ttyFile != nil {
-		// Index does not matter here. This tty is not coming from a
-		// devpts mount, so it won't collide with any of the ptys
-		// created there.
-		initArgs.TTY = kernel.NewTTY(0, ttyFile)
+		initArgs.TTY = ttyFile.TTY()
 	}
 
 	// Set cgroups to the new exec task if cgroups are mounted.
@@ -297,11 +294,6 @@ func (proc *Proc) execAsync(args *ExecArgs) (*kernel.ThreadGroup, kernel.ThreadI
 	tg, tid, err := proc.Kernel.CreateProcess(initArgs)
 	if err != nil {
 		return nil, 0, nil, err
-	}
-
-	// Set the foreground process group on the TTY before starting the process.
-	if ttyFile != nil {
-		ttyFile.InitForegroundProcessGroup(tg.ProcessGroup())
 	}
 
 	// Start the newly created process.

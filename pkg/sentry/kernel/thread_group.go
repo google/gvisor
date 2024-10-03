@@ -397,8 +397,16 @@ func (tg *ThreadGroup) walkDescendantThreadGroupsLocked(visitor func(*ThreadGrou
 	}
 }
 
+// TTY returns the thread group's controlling terminal. If nil, there is no
+// controlling terminal.
+func (tg *ThreadGroup) TTY() *TTY {
+	sh := tg.signalLock()
+	defer sh.mu.Unlock()
+	return tg.tty
+}
+
 // SetControllingTTY sets tty as the controlling terminal of tg.
-func (tg *ThreadGroup) SetControllingTTY(tty *TTY, steal bool, isReadable bool) error {
+func (tg *ThreadGroup) SetControllingTTY(ctx context.Context, tty *TTY, steal bool, isReadable bool) error {
 	tty.mu.Lock()
 	defer tty.mu.Unlock()
 
@@ -416,11 +424,9 @@ func (tg *ThreadGroup) SetControllingTTY(tty *TTY, steal bool, isReadable bool) 
 	}
 	if tg.tty == tty {
 		return nil
-	} else if tg.tty != nil {
-		return linuxerr.EINVAL
 	}
 
-	creds := auth.CredentialsFromContext(tg.leader)
+	creds := auth.CredentialsFromContext(ctx)
 	hasAdmin := creds.HasCapabilityIn(linux.CAP_SYS_ADMIN, creds.UserNamespace.Root())
 
 	// "If this terminal is already the controlling terminal of a different
@@ -519,9 +525,9 @@ func (tg *ThreadGroup) ReleaseControllingTTY(tty *TTY) error {
 	return lastErr
 }
 
-// ForegroundProcessGroupID returns the foreground process group ID of the
-// thread group.
-func (tg *ThreadGroup) ForegroundProcessGroupID(tty *TTY) (ProcessGroupID, error) {
+// ForegroundProcessGroup returns the foreground process group of the thread
+// group.
+func (tg *ThreadGroup) ForegroundProcessGroup(tty *TTY) (*ProcessGroup, error) {
 	tty.mu.Lock()
 	defer tty.mu.Unlock()
 
@@ -533,10 +539,20 @@ func (tg *ThreadGroup) ForegroundProcessGroupID(tty *TTY) (ProcessGroupID, error
 	// fd must refer to the controlling terminal of the calling process.
 	// See tcgetpgrp(3)
 	if tg.tty != tty {
-		return 0, linuxerr.ENOTTY
+		return nil, linuxerr.ENOTTY
 	}
 
-	return tg.processGroup.session.foreground.id, nil
+	return tg.processGroup.session.foreground, nil
+}
+
+// ForegroundProcessGroupID returns the foreground process group ID of the
+// thread group.
+func (tg *ThreadGroup) ForegroundProcessGroupID(tty *TTY) (ProcessGroupID, error) {
+	pg, err := tg.ForegroundProcessGroup(tty)
+	if err != nil {
+		return 0, err
+	}
+	return pg.id, nil
 }
 
 // SetForegroundProcessGroupID sets the foreground process group of tty to

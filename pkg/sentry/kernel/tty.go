@@ -34,11 +34,11 @@ type TTYOperations interface {
 //
 // +stateify savable
 type TTY struct {
-	// index is the terminal index. It is immutable.
-	index uint32
-
 	// TTYOperations holds operations on the tty. It is immutable.
 	TTYOperations
+
+	// index is the terminal index. It is immutable.
+	index uint32
 
 	mu sync.Mutex `state:"nosave"`
 
@@ -59,12 +59,11 @@ func (tty *TTY) Index() uint32 {
 	return tty.index
 }
 
-// TTY returns the thread group's controlling terminal. If nil, there is no
-// controlling terminal.
-func (tg *ThreadGroup) TTY() *TTY {
-	sh := tg.signalLock()
-	defer sh.mu.Unlock()
-	return tg.tty
+// ThreadGroup returns the ThreadGroup this TTY is associated with.
+func (tty *TTY) ThreadGroup() *ThreadGroup {
+	tty.mu.Lock()
+	defer tty.mu.Unlock()
+	return tty.tg
 }
 
 // SignalForegroundProcessGroup sends the signal to the foreground process

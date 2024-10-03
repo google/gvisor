@@ -2430,8 +2430,8 @@ func (tty *TTY) StateTypeName() string {
 
 func (tty *TTY) StateFields() []string {
 	return []string{
-		"index",
 		"TTYOperations",
+		"index",
 		"tg",
 	}
 }
@@ -2441,8 +2441,8 @@ func (tty *TTY) beforeSave() {}
 // +checklocksignore
 func (tty *TTY) StateSave(stateSinkObject state.Sink) {
 	tty.beforeSave()
-	stateSinkObject.Save(0, &tty.index)
-	stateSinkObject.Save(1, &tty.TTYOperations)
+	stateSinkObject.Save(0, &tty.TTYOperations)
+	stateSinkObject.Save(1, &tty.index)
 	stateSinkObject.Save(2, &tty.tg)
 }
 
@@ -2450,8 +2450,8 @@ func (tty *TTY) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (tty *TTY) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &tty.index)
-	stateSourceObject.Load(1, &tty.TTYOperations)
+	stateSourceObject.Load(0, &tty.TTYOperations)
+	stateSourceObject.Load(1, &tty.index)
 	stateSourceObject.Load(2, &tty.tg)
 }
 
