@@ -71,7 +71,7 @@ func (t *Terminal) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dentry, o
 		// Opening a replica sets the process' controlling TTY when
 		// possible. An error indicates it cannot be set, and is
 		// ignored silently. See Linux tty_open().
-		_ = tsk.ThreadGroup().SetControllingTTY(t.replicaKTTY, false /* steal */, fd.vfsfd.IsReadable())
+		_ = tsk.ThreadGroup().SetControllingTTY(ctx, t.replicaKTTY, false /* steal */, fd.vfsfd.IsReadable())
 	}
 	ri.t.ld.replicaOpen()
 	return &fd.vfsfd, nil

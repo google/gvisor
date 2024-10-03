@@ -167,7 +167,7 @@ func (rfd *replicaFileDescription) Ioctl(ctx context.Context, io usermem.IO, sys
 		// Make the given terminal the controlling terminal of the
 		// calling process.
 		steal := args[2].Int() == 1
-		return 0, t.ThreadGroup().SetControllingTTY(rfd.inode.t.replicaKTTY, steal, rfd.vfsfd.IsReadable())
+		return 0, t.ThreadGroup().SetControllingTTY(ctx, rfd.inode.t.replicaKTTY, steal, rfd.vfsfd.IsReadable())
 	case linux.TIOCNOTTY:
 		// Release this process's controlling terminal.
 		return 0, t.ThreadGroup().ReleaseControllingTTY(rfd.inode.t.replicaKTTY)
