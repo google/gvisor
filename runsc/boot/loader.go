@@ -1110,6 +1110,13 @@ func (l *Loader) createContainerProcess(info *containerInfo) (*kernel.ThreadGrou
 	// ours either way.
 	info.procArgs.FDTable = fdTable
 
+	if ttyFile != nil {
+		// Index does not matter here. This tty is not coming from a
+		// devpts mount, so it won't collide with any of the ptys
+		// created there.
+		info.procArgs.TTY = kernel.NewTTY(0, ttyFile)
+	}
+
 	if info.execFD != nil {
 		if info.procArgs.Filename != "" {
 			return nil, nil, fmt.Errorf("process must either be started from a file or a filename, not both")

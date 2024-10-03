@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/hostsyscall"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/sentry/platform/systrap/sysmsg"
@@ -140,7 +141,7 @@ func (sc *sharedContext) NotifyInterrupt() {
 	}
 
 	t := sysmsgThread.thread
-	if _, _, e := unix.RawSyscall(unix.SYS_TGKILL, uintptr(t.tgid), uintptr(t.tid), uintptr(platform.SignalInterrupt)); e != 0 {
+	if e := hostsyscall.RawSyscallErrno(unix.SYS_TGKILL, uintptr(t.tgid), uintptr(t.tid), uintptr(platform.SignalInterrupt)); e != 0 {
 		panic(fmt.Sprintf("failed to interrupt the child process %d: %v", t.tid, e))
 	}
 }

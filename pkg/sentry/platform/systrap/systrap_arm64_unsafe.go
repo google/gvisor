@@ -22,6 +22,7 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/hostsyscall"
 )
 
 // getTLS gets the thread local storage register.
@@ -30,7 +31,7 @@ func (t *thread) getTLS(tls *uint64) error {
 		Base: (*byte)(unsafe.Pointer(tls)),
 		Len:  uint64(unsafe.Sizeof(*tls)),
 	}
-	_, _, errno := unix.RawSyscall6(
+	errno := hostsyscall.RawSyscallErrno6(
 		unix.SYS_PTRACE,
 		unix.PTRACE_GETREGSET,
 		uintptr(t.tid),
@@ -49,7 +50,7 @@ func (t *thread) setTLS(tls *uint64) error {
 		Base: (*byte)(unsafe.Pointer(tls)),
 		Len:  uint64(unsafe.Sizeof(*tls)),
 	}
-	_, _, errno := unix.RawSyscall6(
+	errno := hostsyscall.RawSyscallErrno6(
 		unix.SYS_PTRACE,
 		unix.PTRACE_SETREGSET,
 		uintptr(t.tid),

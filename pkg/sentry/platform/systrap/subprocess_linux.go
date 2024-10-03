@@ -23,6 +23,7 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/bpf"
+	"gvisor.dev/gvisor/pkg/hostsyscall"
 	"gvisor.dev/gvisor/pkg/seccomp"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 )
@@ -167,13 +168,13 @@ func forkStub(flags uintptr, instrs []bpf.Instruction) (*thread, error) {
 	)
 
 	// Remember the current ppid for the pdeathsig race.
-	ppid, _, _ = unix.RawSyscall(unix.SYS_GETPID, 0, 0, 0)
+	ppid, _ = hostsyscall.RawSyscall(unix.SYS_GETPID, 0, 0, 0)
 
 	// Among other things, beforeFork masks all signals.
 	beforeFork()
 
 	// Do the clone.
-	pid, _, errno = unix.RawSyscall6(unix.SYS_CLONE, flags, 0, 0, 0, 0, 0)
+	pid, errno = hostsyscall.RawSyscall(unix.SYS_CLONE, flags, 0, 0)
 	if errno != 0 {
 		afterFork()
 		return nil, errno
@@ -210,8 +211,8 @@ func forkStub(flags uintptr, instrs []bpf.Instruction) (*thread, error) {
 	// prevents the stub from getting PTY job control signals intended only
 	// for the sentry process. We must call this before restoring signal
 	// mask.
-	if _, _, errno := unix.RawSyscall(unix.SYS_SETSID, 0, 0, 0); errno != 0 {
-		unix.RawSyscall(unix.SYS_EXIT, uintptr(errno), 0, 0)
+	if errno := hostsyscall.RawSyscallErrno(unix.SYS_SETSID, 0, 0, 0); errno != 0 {
+		hostsyscall.RawSyscall(unix.SYS_EXIT, uintptr(errno), 0, 0)
 	}
 
 	// afterForkInChild resets all signals to their default dispositions
@@ -219,19 +220,19 @@ func forkStub(flags uintptr, instrs []bpf.Instruction) (*thread, error) {
 	afterForkInChild()
 
 	if errno := sysmsgSigactions(stubSysmsgStart); errno != 0 {
-		unix.RawSyscall(unix.SYS_EXIT, uintptr(errno), 0, 0)
+		hostsyscall.RawSyscall(unix.SYS_EXIT, uintptr(errno), 0, 0)
 	}
 
 	// Explicitly unmask all signals to ensure that the tracer can see
 	// them.
 	if errno := unmaskAllSignals(); errno != 0 {
-		unix.RawSyscall(unix.SYS_EXIT, uintptr(errno), 0, 0)
+		hostsyscall.RawSyscall(unix.SYS_EXIT, uintptr(errno), 0, 0)
 	}
 
 	// Set an aggressive BPF filter for the stub and all it's children. See
 	// the description of the BPF program built above.
 	if errno := seccomp.SetFilterInChild(instrs); errno != 0 {
-		unix.RawSyscall(unix.SYS_EXIT, uintptr(errno), 0, 0)
+		hostsyscall.RawSyscall(unix.SYS_EXIT, uintptr(errno), 0, 0)
 	}
 
 	// Enable cpuid-faulting.

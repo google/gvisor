@@ -22,6 +22,7 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/hostsyscall"
 	"gvisor.dev/gvisor/pkg/seccomp"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
@@ -105,7 +106,7 @@ func (t *syscallThread) init(seccompNotify bool) error {
 	}
 
 	// Map the stack into the sentry.
-	sentryAddr, _, errno := unix.RawSyscall6(
+	sentryAddr, errno := hostsyscall.RawSyscall6(
 		unix.SYS_MMAP,
 		0,
 		syscallThreadMessageSize,
@@ -124,11 +125,11 @@ func (t *syscallThread) init(seccompNotify bool) error {
 
 func (t *syscallThread) destroy() {
 	if t.sentryAddr != 0 {
-		_, _, errno := unix.RawSyscall6(
+		errno := hostsyscall.RawSyscallErrno(
 			unix.SYS_MUNMAP,
 			t.sentryAddr,
 			syscallThreadMessageSize,
-			0, 0, 0, 0)
+			0)
 		if errno != 0 {
 			panic(fmt.Sprintf("mumap failed: %v", errno))
 		}
@@ -153,7 +154,7 @@ func (t *syscallThread) installSeccompNotify() (*os.File, error) {
 	if err != nil {
 		return nil, err
 	}
-	_, _, errno := unix.RawSyscall(unix.SYS_IOCTL, fd, linux.SECCOMP_IOCTL_NOTIF_SET_FLAGS, linux.SECCOMP_USER_NOTIF_FD_SYNC_WAKE_UP)
+	errno := hostsyscall.RawSyscallErrno(unix.SYS_IOCTL, fd, linux.SECCOMP_IOCTL_NOTIF_SET_FLAGS, linux.SECCOMP_USER_NOTIF_FD_SYNC_WAKE_UP)
 	if errno != 0 {
 		t.thread.Debugf("failed to set SECCOMP_USER_NOTIF_FD_SYNC_WAKE_UP")
 	}

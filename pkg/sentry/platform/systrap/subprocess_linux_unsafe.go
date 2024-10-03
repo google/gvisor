@@ -23,6 +23,7 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/hostsyscall"
 )
 
 // maskPool contains reusable CPU masks for setting affinity. Unfortunately,
@@ -47,6 +48,6 @@ var maskPool = sync.Pool{
 //go:norace
 func unmaskAllSignals() unix.Errno {
 	var set linux.SignalSet
-	_, _, errno := unix.RawSyscall6(unix.SYS_RT_SIGPROCMASK, linux.SIG_SETMASK, uintptr(unsafe.Pointer(&set)), 0, linux.SignalSetSize, 0, 0)
+	errno := hostsyscall.RawSyscallErrno6(unix.SYS_RT_SIGPROCMASK, linux.SIG_SETMASK, uintptr(unsafe.Pointer(&set)), 0, linux.SignalSetSize, 0, 0)
 	return errno
 }

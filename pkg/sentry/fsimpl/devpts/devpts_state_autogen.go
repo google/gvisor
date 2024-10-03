@@ -484,6 +484,7 @@ func (t *Terminal) StateFields() []string {
 	return []string{
 		"n",
 		"ld",
+		"root",
 		"masterKTTY",
 		"replicaKTTY",
 	}
@@ -496,8 +497,9 @@ func (t *Terminal) StateSave(stateSinkObject state.Sink) {
 	t.beforeSave()
 	stateSinkObject.Save(0, &t.n)
 	stateSinkObject.Save(1, &t.ld)
-	stateSinkObject.Save(2, &t.masterKTTY)
-	stateSinkObject.Save(3, &t.replicaKTTY)
+	stateSinkObject.Save(2, &t.root)
+	stateSinkObject.Save(3, &t.masterKTTY)
+	stateSinkObject.Save(4, &t.replicaKTTY)
 }
 
 func (t *Terminal) afterLoad(context.Context) {}
@@ -506,8 +508,9 @@ func (t *Terminal) afterLoad(context.Context) {}
 func (t *Terminal) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &t.n)
 	stateSourceObject.Load(1, &t.ld)
-	stateSourceObject.Load(2, &t.masterKTTY)
-	stateSourceObject.Load(3, &t.replicaKTTY)
+	stateSourceObject.Load(2, &t.root)
+	stateSourceObject.Load(3, &t.masterKTTY)
+	stateSourceObject.Load(4, &t.replicaKTTY)
 }
 
 func init() {

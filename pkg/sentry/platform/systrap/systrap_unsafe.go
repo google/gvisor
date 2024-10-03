@@ -20,6 +20,7 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/hostsyscall"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 )
 
@@ -29,7 +30,7 @@ func (t *thread) getRegs(regs *arch.Registers) error {
 		Base: (*byte)(unsafe.Pointer(regs)),
 		Len:  uint64(unsafe.Sizeof(*regs)),
 	}
-	_, _, errno := unix.RawSyscall6(
+	errno := hostsyscall.RawSyscallErrno6(
 		unix.SYS_PTRACE,
 		unix.PTRACE_GETREGSET,
 		uintptr(t.tid),
@@ -48,7 +49,7 @@ func (t *thread) setRegs(regs *arch.Registers) error {
 		Base: (*byte)(unsafe.Pointer(regs)),
 		Len:  uint64(unsafe.Sizeof(*regs)),
 	}
-	_, _, errno := unix.RawSyscall6(
+	errno := hostsyscall.RawSyscallErrno6(
 		unix.SYS_PTRACE,
 		unix.PTRACE_SETREGSET,
 		uintptr(t.tid),
@@ -63,7 +64,7 @@ func (t *thread) setRegs(regs *arch.Registers) error {
 
 // getSignalInfo retrieves information about the signal that caused the stop.
 func (t *thread) getSignalInfo(si *linux.SignalInfo) error {
-	_, _, errno := unix.RawSyscall6(
+	errno := hostsyscall.RawSyscallErrno6(
 		unix.SYS_PTRACE,
 		unix.PTRACE_GETSIGINFO,
 		uintptr(t.tid),
@@ -126,7 +127,7 @@ func (t *thread) clone() (*thread, error) {
 // getEventMessage retrieves a message about the ptrace event that just happened.
 func (t *thread) getEventMessage() (uintptr, error) {
 	var msg uintptr
-	_, _, errno := unix.RawSyscall6(
+	errno := hostsyscall.RawSyscallErrno6(
 		unix.SYS_PTRACE,
 		unix.PTRACE_GETEVENTMSG,
 		uintptr(t.tid),

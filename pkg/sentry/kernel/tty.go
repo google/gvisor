@@ -16,22 +16,47 @@ package kernel
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
 )
+
+// TTYOperations handle tty operations. It is analogous to (a small subset) of
+// Linux's struct tty_operations and exists to avoid a circular dependency.
+type TTYOperations interface {
+	// Open opens the tty.
+	Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error)
+}
 
 // TTY defines the relationship between a thread group and its controlling
 // terminal.
 //
 // +stateify savable
 type TTY struct {
-	// Index is the terminal index. It is immutable.
-	Index uint32
+	// index is the terminal index. It is immutable.
+	index uint32
+
+	// TTYOperations holds operations on the tty. It is immutable.
+	TTYOperations
 
 	mu sync.Mutex `state:"nosave"`
 
 	// tg is protected by mu.
 	tg *ThreadGroup
+}
+
+// NewTTY constructs a new TTY.
+func NewTTY(index uint32, ttyOps TTYOperations) *TTY {
+	return &TTY{
+		TTYOperations: ttyOps,
+		index:         index,
+	}
+}
+
+// Index returns the tty's index.
+func (tty *TTY) Index() uint32 {
+	return tty.index
 }
 
 // TTY returns the thread group's controlling terminal. If nil, there is no

@@ -27,6 +27,7 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/hostsyscall"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
@@ -64,7 +65,7 @@ func mmapContextQueueForSentry(memoryFile *pgalloc.MemoryFile, opts pgalloc.Allo
 	if err != nil {
 		panic(fmt.Sprintf("failed to allocate a new subprocess context memory region"))
 	}
-	addr, _, errno := unix.RawSyscall6(
+	addr, errno := hostsyscall.RawSyscall6(
 		unix.SYS_MMAP,
 		0,
 		uintptr(fr.Length()),

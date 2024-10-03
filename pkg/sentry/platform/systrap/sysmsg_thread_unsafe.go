@@ -20,12 +20,13 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/hostsyscall"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/platform/systrap/sysmsg"
 )
 
 func (p *sysmsgThread) unmapStackFromSentry() {
-	_, _, errno := unix.RawSyscall(unix.SYS_MUNMAP, sysmsg.MsgToStackAddr(uintptr(unsafe.Pointer(p.msg))), sysmsg.PerThreadSharedStackSize, 0)
+	errno := hostsyscall.RawSyscallErrno(unix.SYS_MUNMAP, sysmsg.MsgToStackAddr(uintptr(unsafe.Pointer(p.msg))), sysmsg.PerThreadSharedStackSize, 0)
 	if errno != 0 {
 		panic("failed to unmap: " + errno.Error())
 	}
@@ -85,7 +86,7 @@ func sysmsgSigactions(stubSysmsgStart uintptr) unix.Errno {
 		unix.SIGTRAP,
 		unix.SIGSEGV,
 	} {
-		_, _, errno := unix.RawSyscall6(unix.SYS_RT_SIGACTION, uintptr(s), uintptr(unsafe.Pointer(&act)), 0, 8, 0, 0)
+		errno := hostsyscall.RawSyscallErrno6(unix.SYS_RT_SIGACTION, uintptr(s), uintptr(unsafe.Pointer(&act)), 0, 8, 0, 0)
 		if errno != 0 {
 			return errno
 		}

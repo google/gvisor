@@ -31,6 +31,8 @@ import (
 // TTYFileDescription implements vfs.FileDescriptionImpl for a host file
 // descriptor that wraps a TTY FD.
 //
+// It implements kernel.TTYOperations.
+//
 // +stateify savable
 type TTYFileDescription struct {
 	fileDescription
@@ -47,6 +49,13 @@ type TTYFileDescription struct {
 
 	// termios contains the terminal attributes for this TTY.
 	termios linux.KernelTermios
+}
+
+// Open re-opens the tty fd, for example via open(/dev/tty). See Linux's
+// tty_repoen().
+func (t *TTYFileDescription) Open(_ context.Context, _ *vfs.Mount, _ *vfs.Dentry, _ vfs.OpenOptions) (*vfs.FileDescription, error) {
+	t.vfsfd.IncRef()
+	return &t.vfsfd, nil
 }
 
 // InitForegroundProcessGroup sets the foreground process group and session for

@@ -272,6 +272,13 @@ func (proc *Proc) execAsync(args *ExecArgs) (*kernel.ThreadGroup, kernel.ThreadI
 		return nil, 0, nil, err
 	}
 
+	if ttyFile != nil {
+		// Index does not matter here. This tty is not coming from a
+		// devpts mount, so it won't collide with any of the ptys
+		// created there.
+		initArgs.TTY = kernel.NewTTY(0, ttyFile)
+	}
+
 	// Set cgroups to the new exec task if cgroups are mounted.
 	cgroupRegistry := proc.Kernel.CgroupRegistry()
 	initialCgrps := map[kernel.Cgroup]struct{}{}
@@ -469,7 +476,7 @@ func ttyName(tty *kernel.TTY) string {
 	if tty == nil {
 		return "?"
 	}
-	return fmt.Sprintf("pts/%d", tty.Index)
+	return fmt.Sprintf("pts/%d", tty.Index())
 }
 
 // ContainerUsage retrieves per-container CPU usage.

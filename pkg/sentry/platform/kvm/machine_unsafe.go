@@ -138,11 +138,12 @@ func (c *vCPU) notify() {
 //
 // This panics on error.
 func (c *vCPU) waitUntilNot(state uint32) {
-	errno := hostsyscall.RawSyscallErrno(
+	_, _, errno := unix.Syscall6(
 		unix.SYS_FUTEX,
 		uintptr(unsafe.Pointer(&c.state)),
 		linux.FUTEX_WAIT|linux.FUTEX_PRIVATE_FLAG,
-		uintptr(state))
+		uintptr(state),
+		0, 0, 0)
 	if errno != 0 && errno != unix.EINTR && errno != unix.EAGAIN {
 		panic("futex wait error")
 	}

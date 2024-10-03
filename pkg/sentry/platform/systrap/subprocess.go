@@ -25,6 +25,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/hostsyscall"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/pool"
 	"gvisor.dev/gvisor/pkg/seccomp"
@@ -181,7 +182,7 @@ type subprocess struct {
 var seccompNotifyIsSupported = false
 
 func initSeccompNotify() {
-	_, _, errno := unix.Syscall(seccomp.SYS_SECCOMP, linux.SECCOMP_SET_MODE_FILTER, linux.SECCOMP_FILTER_FLAG_NEW_LISTENER, 0)
+	errno := hostsyscall.RawSyscallErrno(seccomp.SYS_SECCOMP, linux.SECCOMP_SET_MODE_FILTER, linux.SECCOMP_FILTER_FLAG_NEW_LISTENER, 0)
 	switch errno {
 	case unix.EFAULT:
 		// seccomp unotify is supported.
@@ -285,7 +286,7 @@ func (s *subprocess) handlePtraceSyscallRequest(req any) {
 		}
 		t.sysmsgStackID = id
 
-		if _, _, e := unix.RawSyscall(unix.SYS_TGKILL, uintptr(t.tgid), uintptr(t.tid), uintptr(unix.SIGSTOP)); e != 0 {
+		if e := hostsyscall.RawSyscallErrno(unix.SYS_TGKILL, uintptr(t.tgid), uintptr(t.tid), uintptr(unix.SIGSTOP)); e != 0 {
 			handlePtraceSyscallRequestError(req, "tkill failed: %v", e)
 			return
 		}
@@ -423,7 +424,7 @@ func (s *subprocess) mapSharedRegions() {
 	if err != nil {
 		panic(fmt.Sprintf("failed to allocate a new subprocess context memory region"))
 	}
-	sentryThreadContextRegionAddr, _, errno := unix.RawSyscall6(
+	sentryThreadContextRegionAddr, errno := hostsyscall.RawSyscall6(
 		unix.SYS_MMAP,
 		0,
 		uintptr(threadContextFR.Length()),
@@ -503,7 +504,7 @@ func (s *subprocess) release() {
 
 // attach attaches to the thread.
 func (t *thread) attach() error {
-	if _, _, errno := unix.RawSyscall6(unix.SYS_PTRACE, unix.PTRACE_ATTACH, uintptr(t.tid), 0, 0, 0, 0); errno != 0 {
+	if errno := hostsyscall.RawSyscallErrno(unix.SYS_PTRACE, unix.PTRACE_ATTACH, uintptr(t.tid), 0); errno != 0 {
 		return fmt.Errorf("unable to attach: %v", errno)
 	}
 
@@ -537,7 +538,7 @@ func (t *thread) grabInitRegs() {
 //
 // Because the SIGSTOP is not suppressed, the thread will enter group-stop.
 func (t *thread) detach() {
-	if _, _, errno := unix.RawSyscall6(unix.SYS_PTRACE, unix.PTRACE_DETACH, uintptr(t.tid), 0, uintptr(unix.SIGSTOP), 0, 0); errno != 0 {
+	if errno := hostsyscall.RawSyscallErrno6(unix.SYS_PTRACE, unix.PTRACE_DETACH, uintptr(t.tid), 0, uintptr(unix.SIGSTOP), 0, 0); errno != 0 {
 		panic(fmt.Sprintf("can't detach new clone: %v", errno))
 	}
 }
@@ -682,7 +683,7 @@ func (t *thread) init() {
 	// Set the TRACESYSGOOD option to differentiate real SIGTRAP.
 	// set PTRACE_O_EXITKILL to ensure that the unexpected exit of the
 	// sentry will immediately kill the associated stubs.
-	_, _, errno := unix.RawSyscall6(
+	errno := hostsyscall.RawSyscallErrno6(
 		unix.SYS_PTRACE,
 		unix.PTRACE_SETOPTIONS,
 		uintptr(t.tid),
@@ -709,7 +710,7 @@ func (t *thread) syscall(regs *arch.Registers) (uintptr, error) {
 		// Execute the syscall instruction. The task has to stop on the
 		// trap instruction which is right after the syscall
 		// instruction.
-		if _, _, errno := unix.RawSyscall6(unix.SYS_PTRACE, unix.PTRACE_CONT, uintptr(t.tid), 0, 0, 0, 0); errno != 0 {
+		if errno := hostsyscall.RawSyscallErrno(unix.SYS_PTRACE, unix.PTRACE_CONT, uintptr(t.tid), 0); errno != 0 {
 			panic(fmt.Sprintf("ptrace syscall-enter failed: %v", errno))
 		}
 
@@ -1061,7 +1062,7 @@ func (s *subprocess) createSysmsgThread() error {
 	}
 
 	// Skip SIGSTOP.
-	if _, _, errno := unix.RawSyscall6(unix.SYS_PTRACE, unix.PTRACE_CONT, uintptr(p.tid), 0, 0, 0, 0); errno != 0 {
+	if errno := hostsyscall.RawSyscallErrno(unix.SYS_PTRACE, unix.PTRACE_CONT, uintptr(p.tid), 0); errno != 0 {
 		panic(fmt.Sprintf("ptrace cont failed: %v", errno))
 	}
 	sig := p.wait(stopped)
@@ -1089,7 +1090,7 @@ func (s *subprocess) createSysmsgThread() error {
 	threadID := uint32(p.sysmsgStackID)
 
 	// Map the stack into the sentry.
-	sentryStackAddr, _, errno := unix.RawSyscall6(
+	sentryStackAddr, errno := hostsyscall.RawSyscall6(
 		unix.SYS_MMAP,
 		0,
 		sysmsg.PerThreadSharedStackSize,
@@ -1169,11 +1170,11 @@ func (s *subprocess) createSysmsgThread() error {
 	}
 	archSpecificSysmsgThreadInit(sysThread)
 	// Skip SIGSTOP.
-	if _, _, e := unix.RawSyscall(unix.SYS_TGKILL, uintptr(p.tgid), uintptr(p.tid), uintptr(unix.SIGCONT)); e != 0 {
+	if e := hostsyscall.RawSyscallErrno(unix.SYS_TGKILL, uintptr(p.tgid), uintptr(p.tid), uintptr(unix.SIGCONT)); e != 0 {
 		panic(fmt.Sprintf("tkill failed: %v", e))
 	}
 	// Resume the BPF process.
-	if _, _, errno := unix.RawSyscall6(unix.SYS_PTRACE, unix.PTRACE_DETACH, uintptr(p.tid), 0, 0, 0, 0); errno != 0 {
+	if errno := hostsyscall.RawSyscallErrno(unix.SYS_PTRACE, unix.PTRACE_DETACH, uintptr(p.tid), 0); errno != 0 {
 		panic(fmt.Sprintf("can't detach new clone: %v", errno))
 	}
 
