@@ -318,8 +318,11 @@ func (b *Buffer) PullUp(offset, length int) (View, bool) {
 		if x := curr.Intersect(tgt); x.Len() == tgt.Len() {
 			// buf covers the whole requested target range.
 			sub := x.Offset(-curr.begin)
-			// Don't increment the reference count of the underlying chunk. Views
-			// returned by PullUp are explicitly unowned and read only
+			if v.sharesChunk() {
+				old := v.chunk
+				v.chunk = v.chunk.Clone()
+				old.DecRef()
+			}
 			new := View{
 				read:  v.read + sub.begin,
 				write: v.read + sub.end,

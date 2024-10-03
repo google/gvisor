@@ -130,7 +130,7 @@ func newIncomingSegment(id stack.TransportEndpointID, clock tcpip.Clock, pkt *st
 	s.window = seqnum.Size(hdr.WindowSize())
 	s.rcvdTime = clock.NowMonotonic()
 	s.dataMemSize = pkt.MemSize()
-	s.pkt = pkt.IncRef()
+	s.pkt = pkt.Clone()
 	s.csumValid = csumValid
 
 	if !s.pkt.RXChecksumValidated {

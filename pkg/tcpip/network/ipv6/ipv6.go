@@ -1140,6 +1140,9 @@ func (e *endpoint) HandlePacket(pkt *stack.PacketBuffer) {
 		}
 	}
 
+	// CheckPrerouting can modify the backing storage of the packet, so refresh
+	// the header.
+	h = header.IPv6(pkt.NetworkHeader().Slice())
 	e.handleValidatedPacket(h, pkt, e.nic.Name() /* inNICName */)
 }
 
@@ -1495,6 +1498,7 @@ func (e *endpoint) processExtensionHeaders(h header.IPv6, pkt *stack.PacketBuffe
 		routerAlert       *header.IPv6RouterAlertOption
 	)
 	for {
+		h := header.IPv6(pkt.NetworkHeader().Slice())
 		if done, err := e.processExtensionHeader(&it, &pkt, h, &routerAlert, &hasFragmentHeader, forwarding); err != nil || done {
 			return err
 		}
