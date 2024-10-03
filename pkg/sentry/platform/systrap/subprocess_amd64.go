@@ -23,6 +23,7 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/hostsyscall"
 	"gvisor.dev/gvisor/pkg/seccomp"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/platform/systrap/sysmsg"
@@ -174,7 +175,7 @@ func maybePatchSignalInfo(regs *arch.Registers, signalInfo *linux.SignalInfo) bo
 //go:nosplit
 //go:norace
 func enableCpuidFault() {
-	unix.RawSyscall6(unix.SYS_ARCH_PRCTL, linux.ARCH_SET_CPUID, 0, 0, 0, 0, 0)
+	hostsyscall.RawSyscall(unix.SYS_ARCH_PRCTL, linux.ARCH_SET_CPUID, 0, 0)
 }
 
 // appendArchSeccompRules append architecture specific seccomp rules when creating BPF program.

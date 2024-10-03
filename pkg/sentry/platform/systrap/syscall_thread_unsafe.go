@@ -21,6 +21,7 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/hostsyscall"
 )
 
 func (t *syscallThread) initRequestReplyAddresses(sentryStackAddr uintptr) {
@@ -38,7 +39,7 @@ func (t *syscallThread) maskAllSignalsAttached() {
 	p := t.thread
 
 	mask := ^uint64(0)
-	if _, _, errno := unix.RawSyscall6(unix.SYS_PTRACE, linux.PTRACE_SETSIGMASK, uintptr(p.tid), 8, uintptr(unsafe.Pointer(&mask)), 0, 0); errno != 0 {
+	if errno := hostsyscall.RawSyscallErrno6(unix.SYS_PTRACE, linux.PTRACE_SETSIGMASK, uintptr(p.tid), 8, uintptr(unsafe.Pointer(&mask)), 0, 0); errno != 0 {
 		panic(fmt.Sprintf("unable to setmask: %v", errno))
 	}
 }
@@ -47,13 +48,13 @@ func (t *syscallThread) maskAllSignalsAttached() {
 func (t *syscallThread) unmaskAllSignalsAttached() {
 	p := t.thread
 	mask := uint64(0)
-	if _, _, errno := unix.RawSyscall6(unix.SYS_PTRACE, linux.PTRACE_SETSIGMASK, uintptr(p.tid), 8, uintptr(unsafe.Pointer(&mask)), 0, 0); errno != 0 {
+	if errno := hostsyscall.RawSyscallErrno6(unix.SYS_PTRACE, linux.PTRACE_SETSIGMASK, uintptr(p.tid), 8, uintptr(unsafe.Pointer(&mask)), 0, 0); errno != 0 {
 		panic(fmt.Sprintf("unable to setmask: %v", errno))
 	}
 }
 
 func futexWakeUint32(addr *uint32) error {
-	if _, _, e := unix.RawSyscall6(unix.SYS_FUTEX, uintptr(unsafe.Pointer(addr)), linux.FUTEX_WAKE, 1, 0, 0, 0); e != 0 {
+	if e := hostsyscall.RawSyscallErrno(unix.SYS_FUTEX, uintptr(unsafe.Pointer(addr)), linux.FUTEX_WAKE, 1); e != 0 {
 		return fmt.Errorf("failed to FUTEX_WAKE: %v", e)
 	}
 	return nil
@@ -91,7 +92,7 @@ func futexWaitWake(futexAddr *uint32, futexValue uint32) error {
 }
 
 func (t *syscallThread) kickSeccompNotify() unix.Errno {
-	_, _, errno := unix.RawSyscall(unix.SYS_IOCTL, uintptr(t.seccompNotify.Fd()),
+	errno := hostsyscall.RawSyscallErrno(unix.SYS_IOCTL, uintptr(t.seccompNotify.Fd()),
 		uintptr(linux.SECCOMP_IOCTL_NOTIF_SEND),
 		uintptr(unsafe.Pointer(&t.seccompNotifyResp)))
 	return errno
@@ -100,7 +101,7 @@ func (t *syscallThread) kickSeccompNotify() unix.Errno {
 func (t *syscallThread) waitForSeccompNotify() error {
 	for {
 		req := linux.SeccompNotif{}
-		_, _, errno := unix.RawSyscall(unix.SYS_IOCTL, uintptr(t.seccompNotify.Fd()),
+		errno := hostsyscall.RawSyscallErrno(unix.SYS_IOCTL, uintptr(t.seccompNotify.Fd()),
 			uintptr(linux.SECCOMP_IOCTL_NOTIF_RECV),
 			uintptr(unsafe.Pointer(&req)))
 		if errno == 0 {

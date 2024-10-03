@@ -19,10 +19,11 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/hostsyscall"
 )
 
 func (q *contextQueue) wakeupSysmsgThread() {
-	unix.RawSyscall6(unix.SYS_FUTEX,
+	hostsyscall.RawSyscall(unix.SYS_FUTEX,
 		uintptr(unsafe.Pointer(&q.numThreadsToWakeup)),
-		linux.FUTEX_WAKE, 1, 0, 0, 0)
+		linux.FUTEX_WAKE, 1)
 }

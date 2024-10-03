@@ -23,6 +23,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/bpf"
 	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/hostsyscall"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/safecopy"
 	"gvisor.dev/gvisor/pkg/sentry/platform/systrap/sysmsg"
@@ -88,7 +89,7 @@ func copySeccompRulesToStub(instrs []bpf.Instruction, stubAddr, size uintptr) {
 	sockProg.Len = uint16(len(instrs))
 	sockProg.Filter = (*linux.BPFInstruction)(unsafe.Pointer(progPtr))
 	// Make the seccomp rules stub read-only.
-	if _, _, errno := unix.RawSyscall(
+	if errno := hostsyscall.RawSyscallErrno(
 		unix.SYS_MPROTECT,
 		stubAddr,
 		size,
@@ -176,7 +177,7 @@ func stubInit() {
 		// something that may have been there already. We just walk
 		// down the address space until we find a place where the stub
 		// can be placed.
-		addr, _, _ := unix.RawSyscall6(
+		addr, _ := hostsyscall.RawSyscall6(
 			unix.SYS_MMAP,
 			stubStart,
 			stubROMapEnd,
@@ -188,7 +189,7 @@ func stubInit() {
 		}
 		if addr != 0 {
 			// Unmap the region we've mapped accidentally.
-			unix.RawSyscall(unix.SYS_MUNMAP, addr, stubROMapEnd, 0)
+			hostsyscall.RawSyscall(unix.SYS_MUNMAP, addr, stubROMapEnd, 0)
 		}
 		stubStart = uintptr(0)
 	}
@@ -246,7 +247,7 @@ func stubInit() {
 		stubSyscallRules, stubSyscallRulesLen)
 
 	// Make the stub executable.
-	if _, _, errno := unix.RawSyscall(
+	if errno := hostsyscall.RawSyscallErrno(
 		unix.SYS_MPROTECT,
 		stubStart,
 		stubROMapEnd-stubStart,

@@ -82,6 +82,7 @@ go_library(
         "//pkg/cpuid",
         "//pkg/fd",
         "//pkg/hostarch",
+        "//pkg/hostsyscall",
         "//pkg/log",
         "//pkg/memutil",
         "//pkg/metric",

@@ -22,6 +22,7 @@ import (
 	"runtime"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/hostsyscall"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 )
 
@@ -47,7 +48,7 @@ func (t *syscallThread) detach() {
 		panic(fmt.Sprintf("ptrace set regs failed: %v", err))
 	}
 	p.detach()
-	if _, _, e := unix.RawSyscall(unix.SYS_TGKILL, uintptr(p.tgid), uintptr(p.tid), uintptr(unix.SIGCONT)); e != 0 {
+	if e := hostsyscall.RawSyscallErrno(unix.SYS_TGKILL, uintptr(p.tgid), uintptr(p.tid), uintptr(unix.SIGCONT)); e != 0 {
 		panic(fmt.Sprintf("tkill failed: %v", e))
 	}
 	runtime.UnlockOSThread()

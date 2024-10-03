@@ -20,6 +20,7 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/hostsyscall"
 )
 
 // SleepOnState makes the caller sleep on the ThreadContext.State futex.
@@ -37,6 +38,6 @@ func (m *Msg) WakeSysmsgThread() (bool, syscall.Errno) {
 	if !m.State.CompareAndSwap(ThreadStateAsleep, ThreadStatePrep) {
 		return false, 0
 	}
-	_, _, e := unix.RawSyscall6(unix.SYS_FUTEX, uintptr(unsafe.Pointer(&m.State)), linux.FUTEX_WAKE, 1, 0, 0, 0)
+	e := hostsyscall.RawSyscallErrno(unix.SYS_FUTEX, uintptr(unsafe.Pointer(&m.State)), linux.FUTEX_WAKE, 1)
 	return true, e
 }
