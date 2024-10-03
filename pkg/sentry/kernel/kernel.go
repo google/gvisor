@@ -991,6 +991,9 @@ type CreateProcessArgs struct {
 
 	// Origin indicates how the task was first created.
 	Origin TaskOrigin
+
+	// TTY is the optional TTY to associate with this process.
+	TTY *TTY
 }
 
 // NewContext returns a context.Context that represents the task that will be
@@ -1221,6 +1224,12 @@ func (k *Kernel) CreateProcess(args CreateProcessArgs) (*ThreadGroup, ThreadID, 
 		return nil, 0, err
 	}
 	t.traceExecEvent(image) // Simulate exec for tracing.
+
+	// Set TTY if configured.
+	if args.TTY != nil {
+		t.tg.tty = args.TTY
+		args.TTY.tg = t.tg
+	}
 
 	// Success.
 	cu.Release()
