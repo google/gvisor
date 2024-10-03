@@ -952,7 +952,9 @@ func (e *endpoint) HandlePacket(id stack.TransportEndpointID, pkt *stack.PacketB
 			Addr: id.LocalAddress,
 			Port: hdr.DestinationPort(),
 		},
-		pkt: pkt.IncRef(),
+		// We need to clone the packet because ReadTo modifies the write index of
+		// the underlying buffer. Clone does not copy the data, just the metadata.
+		pkt: pkt.Clone(),
 	}
 	e.rcvList.PushBack(packet)
 	e.rcvBufSize += pkt.Data().Size()

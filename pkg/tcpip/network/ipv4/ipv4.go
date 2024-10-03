@@ -868,7 +868,9 @@ func (e *endpoint) HandlePacket(pkt *stack.PacketBuffer) {
 			return
 		}
 	}
-
+	// CheckPrerouting can modify the backing storage of the packet, so refresh
+	// the header.
+	h = header.IPv4(pkt.NetworkHeader().Slice())
 	e.handleValidatedPacket(h, pkt, e.nic.Name() /* inNICName */)
 }
 
