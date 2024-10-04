@@ -304,7 +304,7 @@ cos-gpu-smoke-tests: gpu-smoke-images $(RUNTIME_BIN)
 # This is a superset of those needed for smoke tests.
 # It includes non-GPU images that are used as part of GPU tests,
 # e.g. busybox and python.
-gpu-images: gpu-smoke-images load-gpu_pytorch load-gpu_ollama load-gpu_ollama_client load-basic_busybox load-basic_python load-gpu_stable-diffusion-xl load-gpu_vllm load-gpu_nccl-tests
+gpu-images: gpu-smoke-images load-gpu_pytorch load-gpu_ollama load-gpu_ollama_client load-basic_busybox load-basic_alpine load-basic_python load-gpu_stable-diffusion-xl load-gpu_vllm load-gpu_nccl-tests load-benchmarks_ffmpeg
 .PHONY: gpu-images
 
 gpu-all-tests: gpu-images gpu-smoke-tests $(RUNTIME_BIN)
@@ -314,6 +314,7 @@ gpu-all-tests: gpu-images gpu-smoke-tests $(RUNTIME_BIN)
 	@$(call sudo,test/gpu:imagegen_test,--runtime=$(RUNTIME) -test.v $(ARGS))
 	@$(call sudo,test/gpu:sr_test,--runtime=$(RUNTIME) -test.v $(ARGS))
 	@$(call sudo,test/gpu:nccl_test,--runtime=$(RUNTIME) -test.v $(ARGS))
+	@$(call sudo,test/gpu:ffmpeg_test,--runtime=$(RUNTIME) -test.v $(ARGS))
 	@$(call sudo,test/gpu:sniffer_test,--runtime=$(RUNTIME) -test.v $(ARGS))
 .PHONY: gpu-all-tests
 
@@ -324,6 +325,7 @@ cos-gpu-all-tests: gpu-images cos-gpu-smoke-tests $(RUNTIME_BIN)
 	@$(call sudo,test/gpu:imagegen_test,--runtime=$(RUNTIME) -test.v --cos-gpu $(ARGS))
 	@$(call sudo,test/gpu:sr_test,--runtime=$(RUNTIME) -test.v --cos-gpu $(ARGS))
 	@$(call sudo,test/gpu:nccl_test,--runtime=$(RUNTIME) -test.v --cos-gpu $(ARGS))
+	@$(call sudo,test/gpu:ffmpeg_test,--runtime=$(RUNTIME) -test.v --cos-gpu $(ARGS))
 	@$(call sudo,test/gpu:sniffer_test,--runtime=$(RUNTIME) -test.v --cos-gpu $(ARGS))
 .PHONY: cos-gpu-all-tests
 

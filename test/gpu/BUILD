@@ -90,6 +90,20 @@ go_test(
 )
 
 go_test(
+    name = "ffmpeg_test",
+    srcs = ["ffmpeg_test.go"],
+    # runsc is needed to invalidate the bazel cache in case of any code changes.
+    data = ["//runsc"],
+    tags = [
+        "manual",
+        "noguitar",
+        "notap",
+    ],
+    visibility = ["//:sandbox"],
+    deps = ["//pkg/test/dockerutil"],
+)
+
+go_test(
     name = "imagegen_test",
     srcs = ["imagegen_test.go"],
     # runsc is needed to invalidate the bazel cache in case of any code changes.
