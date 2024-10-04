@@ -52,6 +52,26 @@ go_test(
     ],
 )
 
+go_test(
+    name = "runtime_in_docker_test",
+    size = "large",
+    srcs = [
+        "runtime_in_docker_test.go",
+    ],
+    library = ":integration",
+    tags = [
+        # Requires docker and runsc to be configured before the test runs.
+        "local",
+        "manual",
+    ],
+    visibility = ["//:sandbox"],
+    deps = [
+        "//pkg/test/dockerutil",
+        "//pkg/test/testutil",
+        "@com_github_docker_docker//api/types/mount:go_default_library",
+    ],
+)
+
 go_library(
     name = "integration",
     srcs = ["integration.go"],

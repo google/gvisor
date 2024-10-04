@@ -104,7 +104,7 @@ func TestDentryCacheLimit(t *testing.T) {
 		}
 	}
 
-	// Run the container. Open a bunch of files simutaneously and sleep a bit
+	// Run the container. Open a bunch of files simultaneously and sleep a bit
 	// to give time for everything to start. We shouldn't hit the FD limit
 	// because the dentry cache is small.
 	cmd := `for file in /tmp/foo/*; do (cat > "${file}") & done && sleep 10`

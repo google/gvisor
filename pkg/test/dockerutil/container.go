@@ -116,6 +116,9 @@ type RunOpts struct {
 
 	Devices []container.DeviceMapping
 
+	// SecurityOpts are security options to set on the container.
+	SecurityOpts []string
+
 	// sniffGPUOpts, if set, sets the rules for GPU sniffing during this test.
 	// Must be set via `RunOpts.SniffGPU`.
 	sniffGPUOpts *SniffGPUOpts
@@ -347,6 +350,7 @@ func (c *Container) hostConfig(r RunOpts) *container.HostConfig {
 		CapAdd:          r.CapAdd,
 		CapDrop:         r.CapDrop,
 		Privileged:      r.Privileged,
+		SecurityOpt:     r.SecurityOpts,
 		ReadonlyRootfs:  r.ReadOnly,
 		NetworkMode:     container.NetworkMode(r.NetworkMode),
 		Resources: container.Resources{
