@@ -160,11 +160,16 @@ func (e *endpoint) Abort() {
 // associated with it.
 func (e *endpoint) Close() {
 	e.mu.Lock()
+	e.closeLocked()
+	e.mu.Unlock()
+}
 
+// Preconditions: e.mu is locked.
+// +checklocks:e.mu
+func (e *endpoint) closeLocked() {
 	switch state := e.net.State(); state {
 	case transport.DatagramEndpointStateInitial:
 	case transport.DatagramEndpointStateClosed:
-		e.mu.Unlock()
 		return
 	case transport.DatagramEndpointStateBound, transport.DatagramEndpointStateConnected:
 		id := e.net.Info().ID
@@ -201,7 +206,6 @@ func (e *endpoint) Close() {
 	e.net.Shutdown()
 	e.net.Close()
 	e.readShutdown = true
-	e.mu.Unlock()
 
 	e.waiterQueue.Notify(waiter.EventHUp | waiter.EventErr | waiter.ReadableEvents | waiter.WritableEvents)
 }
