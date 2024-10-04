@@ -160,8 +160,8 @@ func (e *endpoint) Abort() {
 // associated with it.
 func (e *endpoint) Close() {
 	e.mu.Lock()
+	defer e.mu.Unlock()
 	e.closeLocked()
-	e.mu.Unlock()
 }
 
 // Preconditions: e.mu is locked.
