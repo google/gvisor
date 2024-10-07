@@ -1023,6 +1023,7 @@ func (l *Loader) startSubcontainer(spec *specs.Spec, conf *config.Config, cid st
 	}
 
 	containerName := l.registerContainerLocked(spec, cid)
+	l.k.RegisterContainerName(cid, containerName)
 	info := &containerInfo{
 		cid:                 cid,
 		containerName:       containerName,
@@ -1091,7 +1092,6 @@ func (l *Loader) startSubcontainer(spec *specs.Spec, conf *config.Config, cid st
 		})
 	}
 
-	l.k.RegisterContainerName(cid, info.containerName)
 	l.k.StartProcess(ep.tg)
 	// No more failures from this point on.
 	cu.Release()
