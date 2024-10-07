@@ -108,6 +108,9 @@ type Config struct {
 	// HostFifo controls permission to access host FIFO (or named pipes).
 	HostFifo HostFifo `flag:"host-fifo"`
 
+	// HostSettings controls how host settings are handled.
+	HostSettings HostSettingsPolicy `flag:"host-settings"`
+
 	// Network indicates what type of network to use.
 	Network NetworkType `flag:"network"`
 
@@ -969,6 +972,86 @@ func (o *Overlay2) SubMountOverlayMedium() OverlayMedium {
 		return NoOverlay
 	}
 	return o.medium
+}
+
+// HostSettingsPolicy dictates how host settings should be handled.
+type HostSettingsPolicy int
+
+// HostSettingsPolicy values.
+const (
+	// HostSettingsCheck checks the host settings. If any are not optimal, it
+	// will fail if any of them are mandatory, but will otherwise only log
+	// warnings. It never attempts to modify host settings.
+	HostSettingsCheck HostSettingsPolicy = iota
+
+	// HostSettingsCheck checks the host settings. If any are not optimal, it
+	// will fail if any of them are mandatory, but will otherwise not log
+	// anything about non-mandatory settings.
+	// It never attempts to modify host settings.
+	HostSettingsCheckMandatory
+
+	// HostSettingsIgnore does not check nor adjust any host settings.
+	// This is useful in case the host settings are already known to be
+	// optimal, or to avoid errors if `runsc` is running within a seccomp
+	// or AppArmor policy that prevents it from checking host settings.
+	HostSettingsIgnore
+
+	// HostSettingsAdjust automatically adjusts host settings if they are not
+	// optimal. It will fail if any setting is mandatory but cannot be adjusted.
+	// For non-mandatory settings, it logs a warning if adjustment fails.
+	HostSettingsAdjust
+
+	// HostSettingsEnforce automatically adjusts host settings if they are not
+	// optimal, and fails if adjustment of any setting fails.
+	HostSettingsEnforce
+)
+
+// Set implements flag.Value. Set(String()) should be idempotent.
+func (p *HostSettingsPolicy) Set(v string) error {
+	switch v {
+	case "check":
+		*p = HostSettingsCheck
+	case "check_mandatory":
+		*p = HostSettingsCheckMandatory
+	case "ignore":
+		*p = HostSettingsIgnore
+	case "adjust":
+		*p = HostSettingsAdjust
+	case "enforce":
+		*p = HostSettingsEnforce
+	default:
+		return fmt.Errorf("invalid host settings policy %q", v)
+	}
+	return nil
+}
+
+// Ptr returns a pointer to `p`.
+// Useful in flag declaration line.
+func (p HostSettingsPolicy) Ptr() *HostSettingsPolicy {
+	return &p
+}
+
+// Get implements flag.Get.
+func (p *HostSettingsPolicy) Get() any {
+	return *p
+}
+
+// String implements flag.String.
+func (p HostSettingsPolicy) String() string {
+	switch p {
+	case HostSettingsCheck:
+		return "check"
+	case HostSettingsCheckMandatory:
+		return "check_mandatory"
+	case HostSettingsAdjust:
+		return "adjust"
+	case HostSettingsIgnore:
+		return "ignore"
+	case HostSettingsEnforce:
+		return "enforce"
+	default:
+		panic(fmt.Sprintf("Invalid host settings policy %d", p))
+	}
 }
 
 // XDP holds configuration for whether and how to use XDP.
