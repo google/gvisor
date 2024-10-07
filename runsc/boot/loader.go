@@ -1248,6 +1248,7 @@ func (l *Loader) startGoferMonitor(info *containerInfo) {
 			if err := l.signalAllProcesses(info.cid, int32(linux.SIGKILL)); err != nil {
 				log.Warningf("Error killing container %q after gofer stopped: %s", info.cid, err)
 			}
+			l.k.RemoveDevGofer(info.containerName)
 		}
 	}()
 }
