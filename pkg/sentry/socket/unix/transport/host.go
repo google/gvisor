@@ -98,7 +98,6 @@ func (c *HostConnectedEndpoint) init() *syserr.Error {
 }
 
 func (c *HostConnectedEndpoint) initFromOptions() *syserr.Error {
-
 	if c.fd < 0 {
 		// There is no underlying FD to restore; nothing to do
 		return nil
@@ -207,7 +206,6 @@ func (c *HostConnectedEndpoint) CloseSend() {
 
 // Preconditions: c.mu must be held.
 func (c *HostConnectedEndpoint) closeSendLocked() {
-
 	if c.IsSendClosed() {
 		return
 	}
@@ -328,7 +326,6 @@ func (c *HostConnectedEndpoint) CloseRecv() {
 
 // Preconditions: c.mu must be held.
 func (c *HostConnectedEndpoint) closeRecvLocked() {
-
 	if c.IsRecvClosed() {
 		return
 	}
@@ -455,7 +452,7 @@ func (e *SCMConnectedEndpoint) Release(ctx context.Context) {
 		e.mu.Lock()
 		defer e.mu.Unlock()
 
-		if e.fd == -1 {
+		if e.fd < 0 {
 			return
 		}
 
@@ -464,7 +461,6 @@ func (e *SCMConnectedEndpoint) Release(ctx context.Context) {
 			log.Warningf("Failed to close host fd %d: %v", err)
 		}
 		e.destroyLocked()
-
 	})
 }
 

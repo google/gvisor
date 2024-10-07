@@ -70,7 +70,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netlink/port"
-	unixsocket "gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
+	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
 	sentrytime "gvisor.dev/gvisor/pkg/sentry/time"
 	"gvisor.dev/gvisor/pkg/sentry/unimpl"
 	uspb "gvisor.dev/gvisor/pkg/sentry/unimpl/unimplemented_syscall_go_proto"
@@ -390,7 +390,7 @@ type Kernel struct {
 	lastCheckpointStatus error `state:"nosave"`
 
 	// UnixSocketOpts stores configuration options for management of unix sockets.
-	UnixSocketOpts unixsocket.UnixSocketOpts
+	UnixSocketOpts transport.UnixSocketOpts
 }
 
 // Saver is an interface for saving the kernel.
@@ -451,14 +451,14 @@ type InitKernelArgs struct {
 	MaxFDLimit int32
 
 	// UnixSocketOpts contains configuration options for unix sockets.
-	UnixSocketOpts unixsocket.UnixSocketOpts
+	UnixSocketOpts transport.UnixSocketOpts
 }
 
 // Init initialize the Kernel with no tasks.
 //
 // Callers must manually set Kernel.Platform and call Kernel.SetMemoryFile
 // before calling Init.
-func (k *Kernel) Init(args InitKernelArgs) error { // TODO (colin) propagate up
+func (k *Kernel) Init(args InitKernelArgs) error {
 	if args.Timekeeper == nil {
 		return fmt.Errorf("args.Timekeeper is nil")
 	}
