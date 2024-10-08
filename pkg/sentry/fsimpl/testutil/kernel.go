@@ -66,7 +66,7 @@ func Boot() (*kernel.Kernel, error) {
 	if err != nil {
 		return nil, fmt.Errorf("creating platform: %v", err)
 	}
-	plat, err := platformCtr.New(deviceFile)
+	plat, err := platformCtr.New(platform.ConstructorOpts{DeviceFile: deviceFile})
 	if err != nil {
 		return nil, fmt.Errorf("creating platform: %v", err)
 	}
