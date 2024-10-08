@@ -162,6 +162,9 @@ type Boot struct {
 	// Value of /sys/kernel/mm/transparent_hugepage/shmem_enabled on the host.
 	hostShmemHuge string
 
+	// Value of MSR_IA32_SPEC_CTRL on the host.
+	hostMSRSpecCtrl uint64
+
 	// FDs for profile data.
 	profileFDs profile.FDArgs
 
@@ -214,6 +217,7 @@ func (b *Boot) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&b.productName, "product-name", "", "value to show in /sys/devices/virtual/dmi/id/product_name")
 	f.StringVar(&b.nvidiaDriverVersion, "nvidia-driver-version", "", "Nvidia driver version on the host")
 	f.StringVar(&b.hostShmemHuge, "host-shmem-huge", "", "value of /sys/kernel/mm/transparent_hugepage/shmem_enabled on the host")
+	f.Uint64Var(&b.hostMSRSpecCtrl, "host-msr-spec-ctrl", 0, "value of MSR_IA32_SPEC_CTRL on the host")
 
 	// Open FDs that are donated to the sandbox.
 	f.IntVar(&b.specFD, "spec-fd", -1, "required fd with the container spec")
@@ -500,6 +504,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 		ProfileOpts:         b.profileFDs.ToOpts(),
 		NvidiaDriverVersion: b.nvidiaDriverVersion,
 		HostShmemHuge:       b.hostShmemHuge,
+		HostMSRSpecCtrl:     b.hostMSRSpecCtrl,
 		SaveFDs:             b.saveFDs.GetFDs(),
 	}
 	l, err := boot.New(bootArgs)

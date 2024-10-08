@@ -21,6 +21,7 @@ import (
 	"gvisor.dev/gvisor/pkg/cpuid"
 	"gvisor.dev/gvisor/pkg/ring0"
 	"gvisor.dev/gvisor/pkg/sentry/arch/fpu"
+	"gvisor.dev/gvisor/pkg/sentry/platform"
 )
 
 // userRegs represents KVM user registers.
@@ -219,10 +220,11 @@ func (c *cpuidEntries) Set(in cpuid.In, out cpuid.Out) {
 }
 
 // updateGlobalOnce does global initialization. It has to be called only once.
-func updateGlobalOnce(fd int) error {
+func updateGlobalOnce(opts platform.ConstructorOpts) error {
+	ring0.SetHostMSRSpecCtrl(opts.HostMSRSpecCtrl)
 	fpu.InitHostState()
 	bitsForScaling = getBitsForScaling()
-	if err := updateSystemValues(int(fd)); err != nil {
+	if err := updateSystemValues(opts.DeviceFile.FD()); err != nil {
 		return err
 	}
 	fs := cpuid.FeatureSet{
