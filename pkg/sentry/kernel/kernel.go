@@ -855,6 +855,7 @@ func (k *Kernel) LoadFrom(ctx context.Context, r, pagesMetadata io.Reader, pages
 	}
 
 	if net != nil {
+		net.RestoreClock(k.Timekeeper())
 		net.Restore()
 	}
 
