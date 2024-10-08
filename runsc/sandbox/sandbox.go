@@ -1077,7 +1077,10 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 				// CAP_SETPCAP is required to clear the bounding set.
 				uintptr(capability.CAP_SETPCAP),
 			)
-
+			if gPlatform.Requirements().RequiresCapSysPtrace {
+				cmd.SysProcAttr.AmbientCaps = append(cmd.SysProcAttr.AmbientCaps,
+					uintptr(capability.CAP_SYS_PTRACE))
+			}
 		} else {
 			return fmt.Errorf("can't run sandbox process as user nobody since we don't have CAP_SETUID or CAP_SETGID")
 		}

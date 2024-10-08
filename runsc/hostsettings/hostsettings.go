@@ -213,24 +213,6 @@ func check(conf *config.Config) ([]*Delta, []error) {
 			},
 		},
 		{
-			path:          "/proc/sys/kernel/yama/ptrace_scope",
-			mightNotExist: true,
-			purpose:       "ptrace_scope=1 enables the systrap and ptrace platforms to work, as well as --directfs=false",
-			delta: func(conf *config.Config, current string) (string, bool, error) {
-				// systrap and ptrace require this because they use ptrace.
-				// DirectFS=false requires this as well: https://github.com/google/gvisor/issues/9006
-				if conf.Platform != "systrap" && conf.Platform != "ptrace" && conf.DirectFS {
-					// Setting not required.
-					return "", false, nil
-				}
-				current = strings.TrimSpace(current)
-				if current == "0" || current == "1" {
-					return "", false, nil
-				}
-				return "1", true, nil
-			},
-		},
-		{
 			path:    "/proc/sys/user/max_user_namespaces",
 			purpose: "runsc requires creating at least 2 new user namespaces and may run into the limit when creating multiple containers",
 			delta: func(conf *config.Config, current string) (string, bool, error) {
