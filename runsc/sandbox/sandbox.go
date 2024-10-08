@@ -60,6 +60,7 @@ import (
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/console"
 	"gvisor.dev/gvisor/runsc/donation"
+	"gvisor.dev/gvisor/runsc/hostsettings"
 	"gvisor.dev/gvisor/runsc/profile"
 	"gvisor.dev/gvisor/runsc/specutils"
 	"gvisor.dev/gvisor/runsc/starttime"
@@ -401,6 +402,9 @@ func (s *Sandbox) CreateSubcontainer(conf *config.Config, cid string, tty *os.Fi
 
 // StartRoot starts running the root container process inside the sandbox.
 func (s *Sandbox) StartRoot(conf *config.Config) error {
+	if err := hostsettings.Handle(conf); err != nil {
+		return fmt.Errorf("host settings: %w (use --host-settings=ignore to bypass)", err)
+	}
 	pid := s.Pid.load()
 	log.Debugf("Start root sandbox %q, PID: %d", s.ID, pid)
 	conn, err := s.sandboxConnect()
@@ -462,6 +466,10 @@ func (s *Sandbox) StartSubcontainer(spec *specs.Spec, conf *config.Config, cid s
 
 // Restore sends the restore call for a container in the sandbox.
 func (s *Sandbox) Restore(conf *config.Config, cid string, imagePath string, direct, background bool) error {
+	if err := hostsettings.Handle(conf); err != nil {
+		return fmt.Errorf("host settings: %w (use --host-settings=ignore to bypass)", err)
+	}
+
 	log.Debugf("Restore sandbox %q from path %q", s.ID, imagePath)
 
 	stateFileName := path.Join(imagePath, boot.CheckpointStateFileName)
@@ -1069,7 +1077,10 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 				// CAP_SETPCAP is required to clear the bounding set.
 				uintptr(capability.CAP_SETPCAP),
 			)
-
+			if gPlatform.Requirements().RequiresCapSysPtrace {
+				cmd.SysProcAttr.AmbientCaps = append(cmd.SysProcAttr.AmbientCaps,
+					uintptr(capability.CAP_SYS_PTRACE))
+			}
 		} else {
 			return fmt.Errorf("can't run sandbox process as user nobody since we don't have CAP_SETUID or CAP_SETGID")
 		}
