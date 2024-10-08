@@ -16,6 +16,7 @@ benchmark_test(
     name = "redis_test",
     srcs = ["redis_test.go"],
     library = ":database",
+    use_for_pgo = False,
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/test/dockerutil",
