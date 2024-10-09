@@ -586,8 +586,10 @@ func pcapAndNAT(args *boot.CreateLinksAndRoutesArgs, conf *config.Config) error 
 		if err != nil {
 			return fmt.Errorf("failed to write NAT blob: %v", err)
 		}
-		args.NATBlob = true
-		args.FilePayload.Files = append(args.FilePayload.Files, f)
+		if f != nil {
+			args.NATBlob = true
+			args.FilePayload.Files = append(args.FilePayload.Files, f)
+		}
 	}
 
 	return nil
@@ -622,6 +624,8 @@ const emptyNatRules = `-P PREROUTING ACCEPT
 -P POSTROUTING ACCEPT
 `
 
+// checkNftables can return a nil file and error if it finds only
+// emptyNatRules.
 func checkNftables() (*os.File, error) {
 	// Use iptables (not iptables-save) to test table emptiness because it
 	// gives predictable results: no counters and no comments.
@@ -633,7 +637,7 @@ func checkNftables() (*os.File, error) {
 
 	// Is the nftables table empty?
 	if out, err := exec.Command("iptables-nft", "-t", "nat", "-S").Output(); err != nil || string(out) == emptyNatRules {
-		return nil, fmt.Errorf("no rules to scrape: %v", err)
+		return nil, nil
 	}
 
 	// Get the current (empty) legacy rules.
