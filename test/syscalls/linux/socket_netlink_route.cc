@@ -302,13 +302,11 @@ TEST_P(NetlinkSetLinkTest, ChangeMTU) {
   req.ifm.ifi_index = loopback_link.index;
   req.rtattr.rta_type = IFLA_MTU;
   req.rtattr.rta_len = RTA_LENGTH(sizeof(uint32_t));
-  req.mtu = 1500;
-  ASSERT_NE(req.mtu, loopback_link.mtu);
+  req.mtu = loopback_link.mtu + 10;
   EXPECT_NO_ERRNO(NetlinkRequestAckOrError(fd, kSeq, &req, sizeof(req)));
 
-  // See b/348220986, this is a known issue. The interface MTU is slightly
-  // different because of the package header size.
-  loopback_link.mtu = 1486;
+  // Update the local loopback_link's MTU to the requested value.
+  loopback_link.mtu = req.mtu;
   // Verify the new MTU.
   struct searchrequest {
     struct nlmsghdr hdr;
