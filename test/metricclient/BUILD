@@ -12,7 +12,7 @@ go_library(
         "metricclient.go",
     ],
     data = [
-        "//runsc/cmd/metricserver:metricserver_bin",
+        "//runsc/cmd/metricserver:runsc-metric-server",
     ],
     visibility = [
         "//runsc:__subpackages__",

@@ -179,9 +179,9 @@ func (c *MetricClient) HealthCheck(ctx context.Context) error {
 // A running server must be stopped before a new one can be successfully started.
 // baseConf is used for passing other flags to the server, e.g. debug log directory.
 func (c *MetricClient) SpawnServer(ctx context.Context, baseConf *config.Config, extraArgs ...string) error {
-	metricServerBinPath, err := testutil.FindFile("runsc/cmd/metricserver/metricserver_bin")
+	metricServerBinPath, err := testutil.FindFile("runsc/cmd/metricserver/runsc-metric-server")
 	if err != nil {
-		return fmt.Errorf("cannot find metricserver_bin: %w", err)
+		return fmt.Errorf("cannot find runsc-metric-server: %w", err)
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()

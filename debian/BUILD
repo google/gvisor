@@ -10,6 +10,7 @@ pkg_tar(
     name = "debian-bin",
     srcs = [
         "//runsc",
+        "//runsc/cmd/metricserver:runsc-metric-server",
         "//shim:containerd-shim-runsc-v1",
     ],
     mode = "0755",

@@ -663,6 +663,7 @@ $(RELEASE_KEY):
 $(RELEASE_ARTIFACTS)/%:
 	@mkdir -p $@
 	@$(call copy,//runsc:runsc,$@)
+	@$(call copy,//runsc/cmd/metricserver:runsc-metric-server,$@)
 	@$(call copy,//shim:containerd-shim-runsc-v1,$@)
 	@$(call copy,//debian:debian,$@)
 
