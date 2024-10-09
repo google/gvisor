@@ -98,6 +98,11 @@ func (c *HostConnectedEndpoint) init() *syserr.Error {
 }
 
 func (c *HostConnectedEndpoint) initFromOptions() *syserr.Error {
+	if c.fd < 0 {
+		// There is no underlying FD to restore; nothing to do
+		return nil
+	}
+
 	family, err := unix.GetsockoptInt(c.fd, unix.SOL_SOCKET, unix.SO_DOMAIN)
 	if err != nil {
 		return syserr.FromError(err)
@@ -163,6 +168,10 @@ func (c *HostConnectedEndpoint) Send(ctx context.Context, data [][]byte, control
 		return 0, false, syserr.ErrInvalidEndpointState
 	}
 
+	if c.IsSendClosed() {
+		return 0, false, syserr.ErrClosedForSend
+	}
+
 	// Since stream sockets don't preserve message boundaries, we can write
 	// only as much of the message as fits in the send buffer.
 	truncate := c.stype == linux.SOCK_STREAM
@@ -192,6 +201,14 @@ func (c *HostConnectedEndpoint) SendNotify() {}
 func (c *HostConnectedEndpoint) CloseSend() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	c.closeSendLocked()
+}
+
+// Preconditions: c.mu must be held.
+func (c *HostConnectedEndpoint) closeSendLocked() {
+	if c.IsSendClosed() {
+		return
+	}
 
 	if err := unix.Shutdown(c.fd, unix.SHUT_WR); err != nil {
 		// A well-formed UDS shutdown can't fail. See
@@ -300,6 +317,14 @@ func (c *HostConnectedEndpoint) RecvNotify() {}
 func (c *HostConnectedEndpoint) CloseRecv() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	c.closeRecvLocked()
+}
+
+// Preconditions: c.mu must be held.
+func (c *HostConnectedEndpoint) closeRecvLocked() {
+	if c.IsRecvClosed() {
+		return
+	}
 
 	if err := unix.Shutdown(c.fd, unix.SHUT_RD); err != nil {
 		// A well-formed UDS shutdown can't fail. See
@@ -382,13 +407,34 @@ func (c *HostConnectedEndpoint) SetReceiveBufferSize(v int64) (newSz int64) {
 // SCMConnectedEndpoint represents an endpoint backed by a host fd that was
 // passed through a gofer Unix socket. It resembles HostConnectedEndpoint, with the
 // following differences:
-//   - SCMConnectedEndpoint is not saveable, because the host cannot guarantee
-//     the same descriptor number across S/R.
+//   - SCMConnectedEndpoint is not saveable by default, because the host
+//     cannot guarantee the same descriptor number across S/R.
+//     However, it can optionally be placed in a closed state before save.
 //   - SCMConnectedEndpoint holds ownership of its fd and notification queue.
+//
+// +stateify savable
 type SCMConnectedEndpoint struct {
 	HostConnectedEndpoint
 
 	queue *waiter.Queue
+	opts  UnixSocketOpts
+}
+
+// beforeSave is invoked by stateify.
+func (e *SCMConnectedEndpoint) beforeSave() {
+	if !e.opts.DisconnectOnSave {
+		panic("socket cannot be saved in a connected state")
+	}
+
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	fdnotifier.RemoveFD(int32(e.fd))
+	e.closeRecvLocked()
+	e.closeSendLocked()
+	if err := unix.Close(e.fd); err != nil {
+		log.Warningf("Failed to close host fd %d: %v", err)
+	}
+	e.destroyLocked()
 }
 
 // Init will do the initialization required without holding other locks.
@@ -400,12 +446,17 @@ func (e *SCMConnectedEndpoint) Init() error {
 func (e *SCMConnectedEndpoint) Release(ctx context.Context) {
 	e.DecRef(func() {
 		e.mu.Lock()
+		defer e.mu.Unlock()
+
+		if e.fd < 0 {
+			return
+		}
+
 		fdnotifier.RemoveFD(int32(e.fd))
 		if err := unix.Close(e.fd); err != nil {
 			log.Warningf("Failed to close host fd %d: %v", err)
 		}
 		e.destroyLocked()
-		e.mu.Unlock()
 	})
 }
 
@@ -415,13 +466,14 @@ func (e *SCMConnectedEndpoint) Release(ctx context.Context) {
 // The caller is responsible for calling Init(). Additionally, Release needs to
 // be called twice because ConnectedEndpoint is both a Receiver and
 // ConnectedEndpoint.
-func NewSCMEndpoint(hostFD int, queue *waiter.Queue, addr string) (*SCMConnectedEndpoint, *syserr.Error) {
+func NewSCMEndpoint(hostFD int, queue *waiter.Queue, addr string, opts UnixSocketOpts) (*SCMConnectedEndpoint, *syserr.Error) {
 	e := SCMConnectedEndpoint{
 		HostConnectedEndpoint: HostConnectedEndpoint{
 			fd:   hostFD,
 			addr: addr,
 		},
 		queue: queue,
+		opts:  opts,
 	}
 
 	if err := e.init(); err != nil {

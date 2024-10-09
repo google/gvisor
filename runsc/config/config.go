@@ -367,9 +367,8 @@ type Config struct {
 	// present, and reproduce them in the sandbox.
 	ReproduceNftables bool `flag:"reproduce-nftables"`
 
-	// NetDisconnectOk indicates whether the link endpoint capability
-	// CapabilityDisconnectOk should be set. This allows open connections to be
-	// disconnected upon save.
+	// Indicates whether open network connections and open unix domain
+	// sockets should be disconnected upon save."
 	NetDisconnectOk bool `flag:"net-disconnect-ok"`
 
 	// TestOnlyAutosaveImagePath if not empty enables auto save for syscall tests

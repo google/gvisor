@@ -56,6 +56,7 @@ import (
 	pb "gvisor.dev/gvisor/pkg/sentry/seccheck/points/points_go_proto"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netfilter"
 	"gvisor.dev/gvisor/pkg/sentry/socket/plugin"
+	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.dev/gvisor/pkg/sentry/time"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
@@ -583,6 +584,9 @@ func New(args Args) (*Loader, error) {
 	}
 	// Initiate the Kernel object, which is required by the Context passed
 	// to createVFS in order to mount (among other things) procfs.
+	unixSocketOpts := transport.UnixSocketOpts{
+		DisconnectOnSave: args.Conf.NetDisconnectOk,
+	}
 	if err = l.k.Init(kernel.InitKernelArgs{
 		FeatureSet:           cpuid.HostFeatureSet().Fixed(),
 		Timekeeper:           tk,
@@ -595,6 +599,7 @@ func New(args Args) (*Loader, error) {
 		RootIPCNamespace:     kernel.NewIPCNamespace(creds.UserNamespace),
 		PIDNamespace:         kernel.NewRootPIDNamespace(creds.UserNamespace),
 		MaxFDLimit:           maxFDLimit,
+		UnixSocketOpts:       unixSocketOpts,
 	}); err != nil {
 		return nil, fmt.Errorf("initializing kernel: %w", err)
 	}

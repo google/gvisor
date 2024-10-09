@@ -149,7 +149,7 @@ func (s *Socket) blockingAccept(t *kernel.Task, peerAddr *transport.Address) (tr
 	// Try to accept the connection; if it fails, then wait until we get a
 	// notification.
 	for {
-		if ep, err := s.ep.Accept(t, peerAddr); err != syserr.ErrWouldBlock {
+		if ep, err := s.ep.Accept(t, peerAddr, t.Kernel().UnixSocketOpts); err != syserr.ErrWouldBlock {
 			return ep, err
 		}
 
@@ -166,7 +166,7 @@ func (s *Socket) Accept(t *kernel.Task, peerRequested bool, flags int, blocking 
 	if peerRequested {
 		peerAddr = &transport.Address{}
 	}
-	ep, err := s.ep.Accept(t, peerAddr)
+	ep, err := s.ep.Accept(t, peerAddr, t.Kernel().UnixSocketOpts)
 	if err != nil {
 		if err != syserr.ErrWouldBlock || !blocking {
 			return 0, nil, 0, err
@@ -582,7 +582,7 @@ func (s *Socket) Connect(t *kernel.Task, sockaddr []byte, blocking bool) *syserr
 	defer ep.Release(t)
 
 	// Connect the server endpoint.
-	err = s.ep.Connect(t, ep)
+	err = s.ep.Connect(t, ep, t.Kernel().UnixSocketOpts)
 
 	if err == syserr.ErrWrongProtocolForSocket {
 		// Linux for abstract sockets returns ErrConnectionRefused
