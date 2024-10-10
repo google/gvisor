@@ -396,7 +396,7 @@ type Kernel struct {
 // Saver is an interface for saving the kernel.
 type Saver interface {
 	SaveAsync() error
-	OCIEnviron(containerName string) []string
+	SpecEnviron(containerName string) []string
 }
 
 // InitKernelArgs holds arguments to Init.
