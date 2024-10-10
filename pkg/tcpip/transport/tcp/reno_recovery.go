@@ -51,6 +51,7 @@ func (rr *renoRecovery) DoRecovery(rcvdSeg *segment, fastRetransmit bool) {
 		// inflating cwnd on duplicate ACKs.
 		if snd.SndCwnd < snd.FastRecovery.MaxCwnd {
 			snd.SndCwnd++
+			snd.ep.stack.Stats().TCP.CongestionWindow.Set(uint64(snd.SndCwnd))
 		}
 		return
 	}
