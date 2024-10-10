@@ -25,7 +25,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -102,7 +102,7 @@ func runHTTPRequest(ip string, port int) error {
 		return fmt.Errorf("Wrong response code, got: %d, want: %d", resp.StatusCode, want)
 	}
 
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return fmt.Errorf("Error reading http response: %v", err)
 	}
@@ -309,7 +309,7 @@ func TestRuby(t *testing.T) {
 	if want := http.StatusOK; resp.StatusCode != want {
 		t.Errorf("wrong response code, got: %d, want: %d", resp.StatusCode, want)
 	}
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		t.Fatalf("error reading body: %v", err)
 	}

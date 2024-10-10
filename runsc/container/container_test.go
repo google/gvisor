@@ -18,7 +18,6 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"math"
 	"math/rand"
 	"os"
@@ -102,10 +101,10 @@ func executeCombinedOutput(conf *config.Config, cont *Container, execFile *os.Fi
 	if err != nil {
 		return nil, err
 	}
-	out, err := ioutil.ReadAll(r)
+	out, err := io.ReadAll(r)
 	switch {
 	case ws != 0 && err != nil:
-		err = fmt.Errorf("exec failed, status: %v, ioutil.ReadAll failed: %v", ws, err)
+		err = fmt.Errorf("exec failed, status: %v, io.ReadAll failed: %v", ws, err)
 	case ws != 0:
 		err = fmt.Errorf("exec failed, status: %v", ws)
 	}
@@ -357,7 +356,7 @@ func readOutputNum(file string, position int) (int, error) {
 		return 0, fmt.Errorf("error waiting for output file: %v", err)
 	}
 
-	b, err := ioutil.ReadAll(f)
+	b, err := io.ReadAll(f)
 	if err != nil {
 		return 0, fmt.Errorf("error reading file: %v", err)
 	}
@@ -589,12 +588,12 @@ func TestLifecycle(t *testing.T) {
 // Test the we can execute the application with different path formats.
 func TestExePath(t *testing.T) {
 	// Create two directories that will be prepended to PATH.
-	firstPath, err := ioutil.TempDir(testutil.TmpDir(), "first")
+	firstPath, err := os.MkdirTemp(testutil.TmpDir(), "first")
 	if err != nil {
 		t.Fatalf("error creating temporary directory: %v", err)
 	}
 	defer os.RemoveAll(firstPath)
-	secondPath, err := ioutil.TempDir(testutil.TmpDir(), "second")
+	secondPath, err := os.MkdirTemp(testutil.TmpDir(), "second")
 	if err != nil {
 		t.Fatalf("error creating temporary directory: %v", err)
 	}
@@ -739,7 +738,7 @@ func TestAppExitStatus(t *testing.T) {
 func TestExec(t *testing.T) {
 	for name, conf := range configs(t, false /* noOverlay */) {
 		t.Run(name, func(t *testing.T) {
-			dir, err := ioutil.TempDir(testutil.TmpDir(), "exec-test")
+			dir, err := os.MkdirTemp(testutil.TmpDir(), "exec-test")
 			if err != nil {
 				t.Fatalf("error creating temporary directory: %v", err)
 			}
@@ -1026,9 +1025,9 @@ func TestKillPid(t *testing.T) {
 // printed from these containers is checked. Both should be the next consecutive
 // number after the last number from the checkpointed container.
 func testCheckpointRestore(t *testing.T, conf *config.Config, compression statefile.CompressionLevel, newSpecWithScript func(string) *specs.Spec) {
-	dir, err := ioutil.TempDir(testutil.TmpDir(), "checkpoint-test")
+	dir, err := os.MkdirTemp(testutil.TmpDir(), "checkpoint-test")
 	if err != nil {
-		t.Fatalf("ioutil.TempDir failed: %v", err)
+		t.Fatalf("os.MkdirTemp failed: %v", err)
 	}
 	defer os.RemoveAll(dir)
 	if err := os.Chmod(dir, 0777); err != nil {
@@ -1242,9 +1241,9 @@ func TestCheckpointRestoreExecKilled(t *testing.T) {
 	}
 
 	// Set the image path, which is where the checkpoint image will be saved.
-	dir, err := ioutil.TempDir(testutil.TmpDir(), "checkpoint-test")
+	dir, err := os.MkdirTemp(testutil.TmpDir(), "checkpoint-test")
 	if err != nil {
-		t.Fatalf("ioutil.TempDir failed: %v", err)
+		t.Fatalf("os.MkdirTemp failed: %v", err)
 	}
 	defer os.RemoveAll(dir)
 	if err := os.Chmod(dir, 0777); err != nil {
@@ -1370,9 +1369,9 @@ func TestUnixDomainSockets(t *testing.T) {
 			// UDS path is limited to 108 chars for compatibility with older systems.
 			// Use '/tmp' (instead of testutil.TmpDir) to ensure the size limit is
 			// not exceeded. Assumes '/tmp' exists in the system.
-			dir, err := ioutil.TempDir("/tmp", "uds-test")
+			dir, err := os.MkdirTemp("/tmp", "uds-test")
 			if err != nil {
-				t.Fatalf("ioutil.TempDir failed: %v", err)
+				t.Fatalf("os.MkdirTemp failed: %v", err)
 			}
 			defer os.RemoveAll(dir)
 
@@ -1493,7 +1492,7 @@ func TestUnixDomainSockets(t *testing.T) {
 func TestPauseResume(t *testing.T) {
 	for name, conf := range configs(t, true /* noOverlay */) {
 		t.Run(name, func(t *testing.T) {
-			tmpDir, err := ioutil.TempDir(testutil.TmpDir(), "lock")
+			tmpDir, err := os.MkdirTemp(testutil.TmpDir(), "lock")
 			if err != nil {
 				t.Fatalf("error creating temp dir: %v", err)
 			}
@@ -1669,7 +1668,7 @@ func TestCapabilities(t *testing.T) {
 			// This shouldn't be callable within the container until we add the
 			// CAP_DAC_OVERRIDE capability to skip the access check.
 			exePath := filepath.Join(rootDir, "exe")
-			if err := ioutil.WriteFile(exePath, []byte("#!/bin/sh\necho hello"), 0770); err != nil {
+			if err := os.WriteFile(exePath, []byte("#!/bin/sh\necho hello"), 0770); err != nil {
 				t.Fatalf("couldn't create executable: %v", err)
 			}
 			defer os.Remove(exePath)
@@ -1719,9 +1718,9 @@ func TestRunNonRoot(t *testing.T) {
 
 			// User running inside container can't list '$TMP/blocked' and would fail to
 			// mount it.
-			dir, err := ioutil.TempDir(testutil.TmpDir(), "blocked")
+			dir, err := os.MkdirTemp(testutil.TmpDir(), "blocked")
 			if err != nil {
-				t.Fatalf("ioutil.TempDir() failed: %v", err)
+				t.Fatalf("os.MkdirTemp() failed: %v", err)
 			}
 			if err := os.Chmod(dir, 0700); err != nil {
 				t.Fatalf("os.MkDir(%q) failed: %v", dir, err)
@@ -1731,9 +1730,9 @@ func TestRunNonRoot(t *testing.T) {
 				t.Fatalf("os.MkDir(%q) failed: %v", dir, err)
 			}
 
-			src, err := ioutil.TempDir(testutil.TmpDir(), "src")
+			src, err := os.MkdirTemp(testutil.TmpDir(), "src")
 			if err != nil {
-				t.Fatalf("ioutil.TempDir() failed: %v", err)
+				t.Fatalf("os.MkdirTemp() failed: %v", err)
 			}
 
 			spec.Mounts = append(spec.Mounts, specs.Mount{
@@ -1754,9 +1753,9 @@ func TestRunNonRoot(t *testing.T) {
 func TestMountNewDir(t *testing.T) {
 	for name, conf := range configs(t, false /* noOverlay */) {
 		t.Run(name, func(t *testing.T) {
-			root, err := ioutil.TempDir(testutil.TmpDir(), "root")
+			root, err := os.MkdirTemp(testutil.TmpDir(), "root")
 			if err != nil {
-				t.Fatal("ioutil.TempDir() failed:", err)
+				t.Fatal("os.MkdirTemp() failed:", err)
 			}
 
 			srcDir := path.Join(root, "src", "dir", "anotherdir")
@@ -1833,9 +1832,9 @@ func TestReadonlyRoot(t *testing.T) {
 func TestReadonlyMount(t *testing.T) {
 	for name, conf := range configs(t, false /* noOverlay */) {
 		t.Run(name, func(t *testing.T) {
-			dir, err := ioutil.TempDir(testutil.TmpDir(), "ro-mount")
+			dir, err := os.MkdirTemp(testutil.TmpDir(), "ro-mount")
 			if err != nil {
-				t.Fatalf("ioutil.TempDir() failed: %v", err)
+				t.Fatalf("os.MkdirTemp() failed: %v", err)
 			}
 			spec, _ := sleepSpecConf(t)
 			spec.Mounts = append(spec.Mounts, specs.Mount{
@@ -1892,9 +1891,9 @@ func TestReadonlyMount(t *testing.T) {
 func TestUIDMap(t *testing.T) {
 	for name, conf := range configs(t, true /* noOverlay */) {
 		t.Run(name, func(t *testing.T) {
-			testDir, err := ioutil.TempDir(testutil.TmpDir(), "test-mount")
+			testDir, err := os.MkdirTemp(testutil.TmpDir(), "test-mount")
 			if err != nil {
-				t.Fatalf("ioutil.TempDir() failed: %v", err)
+				t.Fatalf("os.MkdirTemp() failed: %v", err)
 			}
 			defer os.RemoveAll(testDir)
 			testFile := path.Join(testDir, "testfile")
@@ -2127,7 +2126,7 @@ func TestUserLog(t *testing.T) {
 	}
 	defer cleanup()
 
-	dir, err := ioutil.TempDir(testutil.TmpDir(), "user_log_test")
+	dir, err := os.MkdirTemp(testutil.TmpDir(), "user_log_test")
 	if err != nil {
 		t.Fatalf("error creating tmp dir: %v", err)
 	}
@@ -2149,7 +2148,7 @@ func TestUserLog(t *testing.T) {
 		t.Fatalf("container failed, waitStatus: %v", ws)
 	}
 
-	out, err := ioutil.ReadFile(userLog)
+	out, err := os.ReadFile(userLog)
 	if err != nil {
 		t.Fatalf("error opening user log file %q: %v", userLog, err)
 	}
@@ -2283,9 +2282,9 @@ func TestDestroyStarting(t *testing.T) {
 func TestCreateWorkingDir(t *testing.T) {
 	for name, conf := range configs(t, false /* noOverlay */) {
 		t.Run(name, func(t *testing.T) {
-			tmpDir, err := ioutil.TempDir(testutil.TmpDir(), "cwd-create")
+			tmpDir, err := os.MkdirTemp(testutil.TmpDir(), "cwd-create")
 			if err != nil {
-				t.Fatalf("ioutil.TempDir() failed: %v", err)
+				t.Fatalf("os.MkdirTemp() failed: %v", err)
 			}
 			dir := path.Join(tmpDir, "new/working/dir")
 
@@ -2308,9 +2307,9 @@ func TestMountPropagation(t *testing.T) {
 	//   - src: is mounted as shared and is used as source for both private and
 	//     slave mounts
 	//   - dir: will be bind mounted inside src and should propagate to slave
-	tmpDir, err := ioutil.TempDir(testutil.TmpDir(), "mount")
+	tmpDir, err := os.MkdirTemp(testutil.TmpDir(), "mount")
 	if err != nil {
-		t.Fatalf("ioutil.TempDir() failed: %v", err)
+		t.Fatalf("os.MkdirTemp() failed: %v", err)
 	}
 	src := filepath.Join(tmpDir, "src")
 	srcMnt := filepath.Join(src, "mnt")
@@ -2397,9 +2396,9 @@ func TestMountPropagation(t *testing.T) {
 func TestMountSymlink(t *testing.T) {
 	for name, conf := range configs(t, false /* noOverlay */) {
 		t.Run(name, func(t *testing.T) {
-			dir, err := ioutil.TempDir(testutil.TmpDir(), "mount-symlink")
+			dir, err := os.MkdirTemp(testutil.TmpDir(), "mount-symlink")
 			if err != nil {
-				t.Fatalf("ioutil.TempDir() failed: %v", err)
+				t.Fatalf("os.MkdirTemp() failed: %v", err)
 			}
 			defer os.RemoveAll(dir)
 
@@ -2588,7 +2587,7 @@ func TestCreateWithCorruptedStateFile(t *testing.T) {
 	// Create corrupted state file.
 	corruptID := testutil.RandomContainerID()
 	corruptState := buildPath(conf.RootDir, FullID{SandboxID: corruptID, ContainerID: corruptID}, stateFileExtension)
-	if err := ioutil.WriteFile(corruptState, []byte("this{file(is;not[valid.json"), 0777); err != nil {
+	if err := os.WriteFile(corruptState, []byte("this{file(is;not[valid.json"), 0777); err != nil {
 		t.Fatalf("createCorruptStateFile(): %v", err)
 	}
 	defer os.Remove(corruptState)
@@ -2613,10 +2612,10 @@ func TestCreateWithCorruptedStateFile(t *testing.T) {
 func TestBindMountByOption(t *testing.T) {
 	for name, conf := range configs(t, false /* noOverlay */) {
 		t.Run(name, func(t *testing.T) {
-			dir, err := ioutil.TempDir(testutil.TmpDir(), "bind-mount")
+			dir, err := os.MkdirTemp(testutil.TmpDir(), "bind-mount")
 			spec := testutil.NewSpecWithArgs("/bin/touch", path.Join(dir, "file"))
 			if err != nil {
-				t.Fatalf("ioutil.TempDir(): %v", err)
+				t.Fatalf("os.MkdirTemp(): %v", err)
 			}
 			spec.Mounts = append(spec.Mounts, specs.Mount{
 				Destination: dir,
@@ -2634,7 +2633,7 @@ func TestBindMountByOption(t *testing.T) {
 // TestRlimits sets limit to number of open files and checks that the limit
 // is propagated to the container.
 func TestRlimits(t *testing.T) {
-	file, err := ioutil.TempFile(testutil.TmpDir(), "ulimit")
+	file, err := os.CreateTemp(testutil.TmpDir(), "ulimit")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2649,7 +2648,7 @@ func TestRlimits(t *testing.T) {
 	if err := run(spec, conf); err != nil {
 		t.Fatalf("Error running container: %v", err)
 	}
-	got, err := ioutil.ReadFile(file.Name())
+	got, err := os.ReadFile(file.Name())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2789,9 +2788,9 @@ func TestUsageFD(t *testing.T) {
 	}
 
 	// Set the image path, which is where the checkpoint image will be saved.
-	dir, err := ioutil.TempDir(testutil.TmpDir(), "checkpoint")
+	dir, err := os.MkdirTemp(testutil.TmpDir(), "checkpoint")
 	if err != nil {
-		t.Fatalf("ioutil.TempDir failed: %v", err)
+		t.Fatalf("os.MkdirTemp failed: %v", err)
 	}
 	defer os.RemoveAll(dir)
 	if err := os.Chmod(dir, 0777); err != nil {
@@ -3263,9 +3262,9 @@ func TestMountEROFS(t *testing.T) {
 	skipIfNotAvailable(t, "mkfs.erofs")
 
 	// Create a temporary directory to save the test files.
-	testDir, err := ioutil.TempDir(testutil.TmpDir(), "erofs_mount_test_")
+	testDir, err := os.MkdirTemp(testutil.TmpDir(), "erofs_mount_test_")
 	if err != nil {
-		t.Fatalf("ioutil.TempDir() failed: %v", err)
+		t.Fatalf("os.MkdirTemp() failed: %v", err)
 	}
 	defer os.RemoveAll(testDir)
 
@@ -3280,7 +3279,7 @@ func TestMountEROFS(t *testing.T) {
 	for _, c := range []byte("!#$%&()*+,-:;<=>?@[]^_`{|}~") {
 		name := fmt.Sprintf("%s/%c_file", sourceDir, c)
 		// Create the file with random data.
-		if err := ioutil.WriteFile(name, []byte(fmt.Sprintf("%v", rand.Uint64())), 0644); err != nil {
+		if err := os.WriteFile(name, []byte(fmt.Sprintf("%v", rand.Uint64())), 0644); err != nil {
 			t.Fatalf("error creating %q: %v", name, err)
 		}
 	}
@@ -3433,9 +3432,9 @@ func TestRootfsEROFS(t *testing.T) {
 	// Skip this test if mkfs.erofs or busybox are not available.
 	skipIfNotAvailable(t, "mkfs.erofs", "busybox")
 
-	testDir, err := ioutil.TempDir(testutil.TmpDir(), "erofs_rootfs_test_")
+	testDir, err := os.MkdirTemp(testutil.TmpDir(), "erofs_rootfs_test_")
 	if err != nil {
-		t.Fatalf("ioutil.TempDir() failed: %v", err)
+		t.Fatalf("os.MkdirTemp() failed: %v", err)
 	}
 	defer os.RemoveAll(testDir)
 
@@ -3502,9 +3501,9 @@ func TestCheckpointRestoreEROFS(t *testing.T) {
 	// Skip this test if mkfs.erofs or busybox are not available.
 	skipIfNotAvailable(t, "mkfs.erofs", "busybox")
 
-	testDir, err := ioutil.TempDir(testutil.TmpDir(), "erofs_checkpoint_restore_test_")
+	testDir, err := os.MkdirTemp(testutil.TmpDir(), "erofs_checkpoint_restore_test_")
 	if err != nil {
-		t.Fatalf("ioutil.TempDir() failed: %v", err)
+		t.Fatalf("os.MkdirTemp() failed: %v", err)
 	}
 	defer os.RemoveAll(testDir)
 
@@ -3545,9 +3544,9 @@ func TestLookupEROFS(t *testing.T) {
 	skipIfNotAvailable(t, "mkfs.erofs")
 
 	// Create a temporary directory to save the test files.
-	testDir, err := ioutil.TempDir(testutil.TmpDir(), "erofs_lookup_test_")
+	testDir, err := os.MkdirTemp(testutil.TmpDir(), "erofs_lookup_test_")
 	if err != nil {
-		t.Fatalf("ioutil.TempDir() failed: %v", err)
+		t.Fatalf("os.MkdirTemp() failed: %v", err)
 	}
 	defer os.RemoveAll(testDir)
 
@@ -3608,9 +3607,9 @@ func TestLookupEROFS(t *testing.T) {
 		}
 		randomFiles := make([]string, 0, size)
 		for i := 0; i < size; i++ {
-			file, err := ioutil.TempFile(sourceDir, "")
+			file, err := os.CreateTemp(sourceDir, "")
 			if err != nil {
-				t.Fatalf("ioutil.TempFile() failed: %v", err)
+				t.Fatalf("os.CreateTemp() failed: %v", err)
 			}
 			name := filepath.Base(file.Name())
 			if _, err := file.Write([]byte(name)); err != nil {

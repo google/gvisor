@@ -18,7 +18,6 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
@@ -40,7 +39,7 @@ func TestSharedVolume(t *testing.T) {
 	// the filesystem.
 	spec := testutil.NewSpecWithArgs("sleep", "1000")
 
-	dir, err := ioutil.TempDir(testutil.TmpDir(), "shared-volume-test")
+	dir, err := os.MkdirTemp(testutil.TmpDir(), "shared-volume-test")
 	if err != nil {
 		t.Fatalf("TempDir failed: %v", err)
 	}
@@ -81,7 +80,7 @@ func TestSharedVolume(t *testing.T) {
 	}
 
 	// Create the file from outside of the sandbox.
-	if err := ioutil.WriteFile(filename, []byte("foobar"), 0777); err != nil {
+	if err := os.WriteFile(filename, []byte("foobar"), 0777); err != nil {
 		t.Fatalf("error writing to file %q: %v", filename, err)
 	}
 
@@ -168,7 +167,7 @@ func checkFile(conf *config.Config, c *Container, filename string, want []byte) 
 	if _, err := execute(conf, c, "/bin/cp", "-f", filename, cpy); err != nil {
 		return fmt.Errorf("unexpected error copying file %q to %q: %v", filename, cpy, err)
 	}
-	got, err := ioutil.ReadFile(cpy)
+	got, err := os.ReadFile(cpy)
 	if err != nil {
 		return fmt.Errorf("error reading file %q: %v", filename, err)
 	}
@@ -189,7 +188,7 @@ func TestSharedVolumeFile(t *testing.T) {
 	// the filesystem.
 	spec := testutil.NewSpecWithArgs("sleep", "1000")
 
-	dir, err := ioutil.TempDir(testutil.TmpDir(), "shared-volume-test")
+	dir, err := os.MkdirTemp(testutil.TmpDir(), "shared-volume-test")
 	if err != nil {
 		t.Fatalf("TempDir failed: %v", err)
 	}
@@ -221,7 +220,7 @@ func TestSharedVolumeFile(t *testing.T) {
 	// Write file from outside the container and check that the same content is
 	// read inside.
 	want := []byte("host-")
-	if err := ioutil.WriteFile(filename, []byte(want), 0666); err != nil {
+	if err := os.WriteFile(filename, []byte(want), 0666); err != nil {
 		t.Fatalf("Error writing to %q: %v", filename, err)
 	}
 	if err := checkFile(conf, c, filename, want); err != nil {

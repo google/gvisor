@@ -15,7 +15,6 @@
 package unet
 
 import (
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"slices"
@@ -28,7 +27,7 @@ import (
 
 func randomFilename() (string, error) {
 	// Return a randomly generated file in the test dir.
-	f, err := ioutil.TempFile("", "unet-test")
+	f, err := os.CreateTemp("", "unet-test")
 	if err != nil {
 		return "", err
 	}
@@ -427,7 +426,7 @@ func recvFDs(t *testing.T, s *Socket, enableSize int, origFDs []int) {
 	expected := len(origFDs)
 
 	// Count the number of FDs.
-	preEntries, err := ioutil.ReadDir("/proc/self/fd")
+	preEntries, err := os.ReadDir("/proc/self/fd")
 	if err != nil {
 		t.Fatalf("Can't readdir, got err %v expected nil", err)
 	}
@@ -446,7 +445,7 @@ func recvFDs(t *testing.T, s *Socket, enableSize int, origFDs []int) {
 	}
 
 	// Count the new number of FDs.
-	postEntries, err := ioutil.ReadDir("/proc/self/fd")
+	postEntries, err := os.ReadDir("/proc/self/fd")
 	if err != nil {
 		t.Fatalf("Can't readdir, got err %v expected nil", err)
 	}
@@ -479,7 +478,7 @@ func recvFDs(t *testing.T, s *Socket, enableSize int, origFDs []int) {
 	r.CloseFDs()
 
 	// Make sure the count is back to normal.
-	finalEntries, err := ioutil.ReadDir("/proc/self/fd")
+	finalEntries, err := os.ReadDir("/proc/self/fd")
 	if err != nil {
 		t.Fatalf("Can't readdir, got err %v expected nil", err)
 	}

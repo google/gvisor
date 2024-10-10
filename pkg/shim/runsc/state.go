@@ -16,7 +16,7 @@ package runsc
 
 import (
 	"encoding/json"
-	"io/ioutil"
+	"os"
 	"path/filepath"
 )
 
@@ -32,7 +32,7 @@ type state struct {
 }
 
 func (s state) load(path string) error {
-	data, err := ioutil.ReadFile(filepath.Join(path, filename))
+	data, err := os.ReadFile(filepath.Join(path, filename))
 	if err != nil {
 		return err
 	}
@@ -44,5 +44,5 @@ func (s state) save(path string) error {
 	if err != nil {
 		return err
 	}
-	return ioutil.WriteFile(filepath.Join(path, filename), data, 0644)
+	return os.WriteFile(filepath.Join(path, filename), data, 0644)
 }

@@ -15,7 +15,6 @@
 package lib
 
 import (
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -38,7 +37,7 @@ func touch(t *testing.T, name string) {
 }
 
 func TestSearchEmptyDir(t *testing.T) {
-	td, err := ioutil.TempDir(testutil.TmpDir(), "searchtest")
+	td, err := os.MkdirTemp(testutil.TmpDir(), "searchtest")
 	if err != nil {
 		t.Fatalf("error creating searchtest: %v", err)
 	}
@@ -58,7 +57,7 @@ func TestSearchEmptyDir(t *testing.T) {
 }
 
 func TestSearch(t *testing.T) {
-	td, err := ioutil.TempDir(testutil.TmpDir(), "searchtest")
+	td, err := os.MkdirTemp(testutil.TmpDir(), "searchtest")
 	if err != nil {
 		t.Fatalf("error creating searchtest: %v", err)
 	}

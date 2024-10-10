@@ -18,7 +18,7 @@
 package cpuid
 
 import (
-	"io/ioutil"
+	"os"
 	"runtime"
 	"strconv"
 	"strings"
@@ -51,7 +51,7 @@ func initCPUInfo() {
 		// warn about them not existing.
 		return
 	}
-	cpuinfob, err := ioutil.ReadFile("/proc/cpuinfo")
+	cpuinfob, err := os.ReadFile("/proc/cpuinfo")
 	if err != nil {
 		// Leave everything at 0, nothing can be done.
 		log.Warningf("Could not read /proc/cpuinfo: %v", err)

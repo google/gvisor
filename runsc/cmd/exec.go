@@ -18,7 +18,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -212,7 +211,7 @@ func (ex *Exec) exec(conf *config.Config, c *container.Container, e *control.Exe
 	// Write the sandbox-internal pid if required.
 	if ex.internalPidFile != "" {
 		pidStr := []byte(strconv.Itoa(int(pid)))
-		if err := ioutil.WriteFile(ex.internalPidFile, pidStr, 0644); err != nil {
+		if err := os.WriteFile(ex.internalPidFile, pidStr, 0644); err != nil {
 			return util.Errorf("writing internal pid file %q: %v", ex.internalPidFile, err)
 		}
 	}
@@ -221,7 +220,7 @@ func (ex *Exec) exec(conf *config.Config, c *container.Container, e *control.Exe
 	// users can safely assume that the internal pid file is ready after
 	// `runsc exec -d` returns.
 	if ex.pidFile != "" {
-		if err := ioutil.WriteFile(ex.pidFile, []byte(strconv.Itoa(os.Getpid())), 0644); err != nil {
+		if err := os.WriteFile(ex.pidFile, []byte(strconv.Itoa(os.Getpid())), 0644); err != nil {
 			return util.Errorf("writing pid file: %v", err)
 		}
 	}
@@ -248,7 +247,7 @@ func (ex *Exec) execChildAndWait(waitStatus *unix.WaitStatus) subcommands.ExitSt
 	// filename in a temp directory.
 	pidFile := ex.pidFile
 	if pidFile == "" {
-		tmpDir, err := ioutil.TempDir("", "exec-pid-")
+		tmpDir, err := os.MkdirTemp("", "exec-pid-")
 		if err != nil {
 			util.Fatalf("creating TempDir: %v", err)
 		}
@@ -300,7 +299,7 @@ func (ex *Exec) execChildAndWait(waitStatus *unix.WaitStatus) subcommands.ExitSt
 	// '--process' file is deleted as soon as this process returns and the child
 	// may fail to read it.
 	ready := func() (bool, error) {
-		pidb, err := ioutil.ReadFile(pidFile)
+		pidb, err := os.ReadFile(pidFile)
 		if err == nil {
 			// File appeared, check whether pid is fully written.
 			pid, err := strconv.Atoi(string(pidb))

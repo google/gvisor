@@ -20,7 +20,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"math/rand"
 	"net"
@@ -433,7 +432,7 @@ func (c *capability) Execute(ctx context.Context, f *flag.FlagSet, args ...any) 
 		return subcommands.ExitUsageError
 	}
 
-	status, err := ioutil.ReadFile("/proc/self/status")
+	status, err := os.ReadFile("/proc/self/status")
 	if err != nil {
 		fmt.Printf("Error reading %q: %v\n", "proc/self/status", err)
 		return subcommands.ExitFailure
