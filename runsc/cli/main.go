@@ -19,7 +19,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"os/signal"
 	"runtime"
@@ -153,7 +152,7 @@ func Main() {
 	} else {
 		// Stderr is reserved for the application, just discard the logs if no debug
 		// log is specified.
-		emitters = append(emitters, newEmitter("text", ioutil.Discard))
+		emitters = append(emitters, newEmitter("text", io.Discard))
 	}
 
 	if *panicLogFD > -1 || *debugLogFD > -1 {

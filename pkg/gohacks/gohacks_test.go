@@ -15,7 +15,6 @@
 package gohacks
 
 import (
-	"io/ioutil"
 	"math/rand"
 	"os"
 	"runtime"
@@ -75,7 +74,7 @@ func TestSigbusOnMemmove(t *testing.T) {
 	// Test that SIGBUS received by runtime.memmove when *not* doing
 	// CopyIn or CopyOut work gets propagated to the runtime.
 	const bufLen = pageSize
-	f, err := ioutil.TempFile("", "sigbus_test")
+	f, err := os.CreateTemp("", "sigbus_test")
 	if err != nil {
 		t.Fatalf("TempFile failed: %v", err)
 	}

@@ -18,7 +18,7 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"math"
 	"net"
 	"reflect"
@@ -1096,7 +1096,7 @@ func TestReceiveIPv6ExtHdrs(t *testing.T) {
 			}
 
 			// Should not have any more UDP packets.
-			res, err := ep.Read(ioutil.Discard, tcpip.ReadOptions{})
+			res, err := ep.Read(io.Discard, tcpip.ReadOptions{})
 			if _, ok := err.(*tcpip.ErrWouldBlock); !ok {
 				t.Fatalf("got Read = (%v, %v), want = (_, %s)", res, err, &tcpip.ErrWouldBlock{})
 			}
@@ -1931,7 +1931,7 @@ func TestReceiveIPv6Fragments(t *testing.T) {
 				}
 			}
 
-			res, err := ep.Read(ioutil.Discard, tcpip.ReadOptions{})
+			res, err := ep.Read(io.Discard, tcpip.ReadOptions{})
 			if _, ok := err.(*tcpip.ErrWouldBlock); !ok {
 				t.Fatalf("(last) got Read = (%v, %v), want = (_, %s)", res, err, &tcpip.ErrWouldBlock{})
 			}

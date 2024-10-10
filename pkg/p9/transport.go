@@ -18,7 +18,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/fd"
@@ -223,7 +222,7 @@ func recv(s *unet.Socket, msize uint32, lookup lookupTagAndType) (Tag, message, 
 	if err != nil {
 		// Throw away the contents of this message.
 		if remaining > 0 {
-			io.Copy(ioutil.Discard, &io.LimitedReader{R: s, N: int64(remaining)})
+			io.Copy(io.Discard, &io.LimitedReader{R: s, N: int64(remaining)})
 		}
 		return tag, nil, err
 	}
@@ -260,7 +259,7 @@ func recv(s *unet.Socket, msize uint32, lookup lookupTagAndType) (Tag, message, 
 		if fixedSize > remaining {
 			// This is not a valid message.
 			if remaining > 0 {
-				io.Copy(ioutil.Discard, &io.LimitedReader{R: s, N: int64(remaining)})
+				io.Copy(io.Discard, &io.LimitedReader{R: s, N: int64(remaining)})
 			}
 			return NoTag, nil, ErrNoValidMessage
 		}

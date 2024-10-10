@@ -16,7 +16,6 @@ package cmd
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path"
 	"path/filepath"
@@ -55,9 +54,9 @@ func construct(root string, dirs []dir) error {
 }
 
 func TestResolveSymlinks(t *testing.T) {
-	root, err := ioutil.TempDir(tmpDir(), "root")
+	root, err := os.MkdirTemp(tmpDir(), "root")
 	if err != nil {
-		t.Fatal("ioutil.TempDir() failed:", err)
+		t.Fatal("os.MkdirTemp() failed:", err)
 	}
 	dirs := []dir{
 		{"dir1/dir11/dir111/dir1111", ""}, // Just a boring dir
@@ -146,9 +145,9 @@ func TestResolveSymlinks(t *testing.T) {
 }
 
 func TestResolveSymlinksLoop(t *testing.T) {
-	root, err := ioutil.TempDir(tmpDir(), "root")
+	root, err := os.MkdirTemp(tmpDir(), "root")
 	if err != nil {
-		t.Fatal("ioutil.TempDir() failed:", err)
+		t.Fatal("os.MkdirTemp() failed:", err)
 	}
 	dirs := []dir{
 		{"loop1", "loop2"},

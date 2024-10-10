@@ -18,7 +18,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"math"
 	"math/rand"
 	"os"
@@ -303,7 +303,7 @@ func TestV4ReadSelfSource(t *testing.T) {
 				t.Errorf("c.Stack.Stats().IP.InvalidSourceAddressesReceived got %d, want %d", got, tt.wantInvalidSource)
 			}
 
-			if _, err := c.EP.Read(ioutil.Discard, tcpip.ReadOptions{}); err != tt.wantErr {
+			if _, err := c.EP.Read(io.Discard, tcpip.ReadOptions{}); err != tt.wantErr {
 				t.Errorf("got c.EP.Read = %s, want = %s", err, tt.wantErr)
 			}
 		})

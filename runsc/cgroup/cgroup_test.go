@@ -16,7 +16,6 @@ package cgroup
 
 import (
 	"encoding/json"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
@@ -143,7 +142,7 @@ func createDir(dir string, contents map[string]string) error {
 }
 
 func checkDir(t *testing.T, dir string, contents map[string]string) {
-	all, err := ioutil.ReadDir(dir)
+	all, err := os.ReadDir(dir)
 	if err != nil {
 		t.Fatalf("ReadDir(%q): %v", dir, err)
 	}
@@ -160,7 +159,7 @@ func checkDir(t *testing.T, dir string, contents map[string]string) {
 			t.Errorf("file not expected: %q", file.Name())
 			continue
 		}
-		gotBytes, err := ioutil.ReadFile(filepath.Join(dir, file.Name()))
+		gotBytes, err := os.ReadFile(filepath.Join(dir, file.Name()))
 		if err != nil {
 			t.Fatal(err.Error())
 		}
@@ -262,7 +261,7 @@ func TestBlockIO(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			dir, err := ioutil.TempDir(testutil.TmpDir(), "cgroup")
+			dir, err := os.MkdirTemp(testutil.TmpDir(), "cgroup")
 			if err != nil {
 				t.Fatalf("error creating temporary directory: %v", err)
 			}
@@ -315,7 +314,7 @@ func TestCPU(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			dir, err := ioutil.TempDir(testutil.TmpDir(), "cgroup")
+			dir, err := os.MkdirTemp(testutil.TmpDir(), "cgroup")
 			if err != nil {
 				t.Fatalf("error creating temporary directory: %v", err)
 			}
@@ -357,7 +356,7 @@ func TestCPUSet(t *testing.T) {
 		// See TestCPUSetAncestor().
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			dir, err := ioutil.TempDir(testutil.TmpDir(), "cgroup")
+			dir, err := os.MkdirTemp(testutil.TmpDir(), "cgroup")
 			if err != nil {
 				t.Fatalf("error creating temporary directory: %v", err)
 			}
@@ -383,17 +382,17 @@ func TestCPUSet(t *testing.T) {
 func TestCPUSetAncestor(t *testing.T) {
 	// Prepare master directory with cgroup files that will be propagated to
 	// children.
-	grandpa, err := ioutil.TempDir(testutil.TmpDir(), "cgroup")
+	grandpa, err := os.MkdirTemp(testutil.TmpDir(), "cgroup")
 	if err != nil {
 		t.Fatalf("error creating temporary directory: %v", err)
 	}
 	defer os.RemoveAll(grandpa)
 
-	if err := ioutil.WriteFile(filepath.Join(grandpa, "cpuset.cpus"), []byte("parent-cpus"), 0666); err != nil {
-		t.Fatalf("ioutil.WriteFile(): %v", err)
+	if err := os.WriteFile(filepath.Join(grandpa, "cpuset.cpus"), []byte("parent-cpus"), 0666); err != nil {
+		t.Fatalf("os.WriteFile(): %v", err)
 	}
-	if err := ioutil.WriteFile(filepath.Join(grandpa, "cpuset.mems"), []byte("parent-mems"), 0666); err != nil {
-		t.Fatalf("ioutil.WriteFile(): %v", err)
+	if err := os.WriteFile(filepath.Join(grandpa, "cpuset.mems"), []byte("parent-mems"), 0666); err != nil {
+		t.Fatalf("os.WriteFile(): %v", err)
 	}
 
 	for _, tc := range []struct {
@@ -411,7 +410,7 @@ func TestCPUSetAncestor(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			// Create empty files in intermediate directory. They should be ignored
 			// when reading, and then populated from parent.
-			parent, err := ioutil.TempDir(grandpa, "parent")
+			parent, err := os.MkdirTemp(grandpa, "parent")
 			if err != nil {
 				t.Fatalf("error creating temporary directory: %v", err)
 			}
@@ -424,7 +423,7 @@ func TestCPUSetAncestor(t *testing.T) {
 			}
 
 			// cgroup files mmust exist.
-			dir, err := ioutil.TempDir(parent, "child")
+			dir, err := os.MkdirTemp(parent, "child")
 			if err != nil {
 				t.Fatalf("error creating temporary directory: %v", err)
 			}
@@ -498,7 +497,7 @@ func TestHugeTlb(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			dir, err := ioutil.TempDir(testutil.TmpDir(), "cgroup")
+			dir, err := os.MkdirTemp(testutil.TmpDir(), "cgroup")
 			if err != nil {
 				t.Fatalf("error creating temporary directory: %v", err)
 			}
@@ -562,7 +561,7 @@ func TestMemory(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			dir, err := ioutil.TempDir(testutil.TmpDir(), "cgroup")
+			dir, err := os.MkdirTemp(testutil.TmpDir(), "cgroup")
 			if err != nil {
 				t.Fatalf("error creating temporary directory: %v", err)
 			}
@@ -607,7 +606,7 @@ func TestNetworkClass(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			dir, err := ioutil.TempDir(testutil.TmpDir(), "cgroup")
+			dir, err := os.MkdirTemp(testutil.TmpDir(), "cgroup")
 			if err != nil {
 				t.Fatalf("error creating temporary directory: %v", err)
 			}
@@ -657,7 +656,7 @@ func TestNetworkPriority(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			dir, err := ioutil.TempDir(testutil.TmpDir(), "cgroup")
+			dir, err := os.MkdirTemp(testutil.TmpDir(), "cgroup")
 			if err != nil {
 				t.Fatalf("error creating temporary directory: %v", err)
 			}
@@ -700,7 +699,7 @@ func TestPids(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			dir, err := ioutil.TempDir(testutil.TmpDir(), "cgroup")
+			dir, err := os.MkdirTemp(testutil.TmpDir(), "cgroup")
 			if err != nil {
 				t.Fatalf("error creating temporary directory: %v", err)
 			}

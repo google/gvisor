@@ -26,7 +26,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"net"
 	"net/http"
 	"os"
@@ -438,12 +437,12 @@ func TestTmpFile(t *testing.T) {
 
 // TestTmpMount checks that mounts inside '/tmp' are not overridden.
 func TestTmpMount(t *testing.T) {
-	dir, err := ioutil.TempDir(testutil.TmpDir(), "tmp-mount")
+	dir, err := os.MkdirTemp(testutil.TmpDir(), "tmp-mount")
 	if err != nil {
 		t.Fatalf("TempDir(): %v", err)
 	}
 	const want = "123"
-	if err := ioutil.WriteFile(filepath.Join(dir, "file.txt"), []byte("123"), 0666); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "file.txt"), []byte("123"), 0666); err != nil {
 		t.Fatalf("WriteFile(): %v", err)
 	}
 	ctx := context.Background()
@@ -472,9 +471,9 @@ func TestTmpMount(t *testing.T) {
 // Test that it is allowed to mount a file on top of /dev files, e.g.
 // /dev/random.
 func TestMountOverDev(t *testing.T) {
-	random, err := ioutil.TempFile(testutil.TmpDir(), "random")
+	random, err := os.CreateTemp(testutil.TmpDir(), "random")
 	if err != nil {
-		t.Fatal("ioutil.TempFile() failed:", err)
+		t.Fatal("os.CreateTemp() failed:", err)
 	}
 	const want = "123"
 	if _, err := random.WriteString(want); err != nil {
@@ -755,7 +754,7 @@ func TestUnmount(t *testing.T) {
 	d := dockerutil.MakeContainer(ctx, t)
 	defer d.CleanUp(ctx)
 
-	dir, err := ioutil.TempDir(testutil.TmpDir(), "sub-mount")
+	dir, err := os.MkdirTemp(testutil.TmpDir(), "sub-mount")
 	if err != nil {
 		t.Fatalf("TempDir(): %v", err)
 	}
@@ -818,7 +817,7 @@ func TestDeleteInterface(t *testing.T) {
 }
 
 func TestProductName(t *testing.T) {
-	want, err := ioutil.ReadFile("/sys/devices/virtual/dmi/id/product_name")
+	want, err := os.ReadFile("/sys/devices/virtual/dmi/id/product_name")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -857,7 +856,7 @@ func TestRevalidateSymlinkChain(t *testing.T) {
 	//  + sym1 -> sym2
 	//  + sym2 -> gen1
 	//
-	dir, err := ioutil.TempDir(testutil.TmpDir(), "sub-mount")
+	dir, err := os.MkdirTemp(testutil.TmpDir(), "sub-mount")
 	if err != nil {
 		t.Fatalf("TempDir(): %v", err)
 	}

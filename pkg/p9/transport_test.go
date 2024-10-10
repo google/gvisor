@@ -15,7 +15,6 @@
 package p9
 
 import (
-	"io/ioutil"
 	"os"
 	"testing"
 
@@ -113,7 +112,7 @@ func TestSendRecvWithFile(t *testing.T) {
 	defer client.Close()
 
 	// Create a tempfile.
-	osf, err := ioutil.TempFile("", "p9")
+	osf, err := os.CreateTemp("", "p9")
 	if err != nil {
 		t.Fatalf("tempfile got err %v expected nil", err)
 	}

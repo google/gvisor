@@ -18,7 +18,6 @@ import (
 	"bufio"
 	"context"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -114,7 +113,7 @@ func TestMemCgroup(t *testing.T) {
 			}
 		}
 		// Read the cgroup memory limit.
-		outRaw, err := ioutil.ReadFile(path)
+		outRaw, err := os.ReadFile(path)
 		if err != nil {
 			// It's possible that the container does not exist yet.
 			continue
@@ -139,7 +138,7 @@ func TestMemCgroup(t *testing.T) {
 			}
 		}
 		// Read the cgroup memory usage.
-		outRaw, err = ioutil.ReadFile(path)
+		outRaw, err = os.ReadFile(path)
 		if err != nil {
 			t.Fatalf("error reading usage: %v", err)
 		}
@@ -300,7 +299,7 @@ func TestCgroupV1(t *testing.T) {
 	// Check list of attributes defined above.
 	for _, attr := range attrs {
 		path := cgroupPath(attr.ctrl, "docker", gid, attr.file)
-		out, err := ioutil.ReadFile(path)
+		out, err := os.ReadFile(path)
 		if err != nil {
 			if os.IsNotExist(err) && attr.skipIfNotFound {
 				t.Logf("skipped %s/%s", attr.ctrl, attr.file)
@@ -448,7 +447,7 @@ func TestCgroupV2(t *testing.T) {
 			hostconf.Resources.MemorySwappiness = &val
 		case "blkio-weight":
 			// detect existence of io.bfq.weight as this is not always loaded
-			_, err := ioutil.ReadFile(filepath.Join(baseCgroupPath, attr.file))
+			_, err := os.ReadFile(filepath.Join(baseCgroupPath, attr.file))
 			if err == nil || !attr.skipIfNotFound {
 				hostconf.Resources.BlkioWeight = uint16(attr.value)
 			}
@@ -478,7 +477,7 @@ func TestCgroupV2(t *testing.T) {
 		if useSystemd {
 			path = filepath.Join(baseCgroupPath, "docker-"+gid+".scope", attr.file)
 		}
-		out, err := ioutil.ReadFile(path)
+		out, err := os.ReadFile(path)
 		if err != nil {
 			if os.IsNotExist(err) && attr.skipIfNotFound {
 				t.Logf("skipped %s", attr.file)

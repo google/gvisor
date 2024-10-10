@@ -18,7 +18,7 @@ package hostcpu
 
 import (
 	"fmt"
-	"io/ioutil"
+	"os"
 	"strconv"
 	"strings"
 	"unicode"
@@ -33,7 +33,7 @@ func GetCPU() uint32
 // not to change for the lifetime of the host kernel.
 func MaxPossibleCPU() (uint32, error) {
 	const path = "/sys/devices/system/cpu/possible"
-	data, err := ioutil.ReadFile(path)
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return 0, err
 	}

@@ -66,7 +66,6 @@ import (
 	"go/token"
 	"go/types"
 	"io"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -374,13 +373,13 @@ func loadObjdump(binary io.Reader) (finalResults map[string][]string, finalErr e
 	if ok {
 		// Ensure that the file is seekable and that the offset is
 		// zero, since we can't control that.
-		if offset, err := input.Seek(0, os.SEEK_CUR); err != nil || offset != 0 {
+		if offset, err := input.Seek(0, io.SeekCurrent); err != nil || offset != 0 {
 			ok = false // Not usable.
 		}
 	}
 	if !ok {
 		// Copy to a temporary path.
-		f, err := ioutil.TempFile("", "")
+		f, err := os.CreateTemp("", "")
 		if err != nil {
 			return nil, fmt.Errorf("unable to create temp file: %w", err)
 		}
