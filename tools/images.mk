@@ -47,6 +47,7 @@ NON_TEST_IMAGES     := gpu/ollama/bench\|gpu/vllm
 TEST_IMAGES         := $(subst /,_,$(subst images/,,$(shell find images/ -name Dockerfile -o -name Dockerfile.$(ARCH) | xargs -n 1 dirname | uniq | grep -v "$(NON_TEST_IMAGES)")))
 SUB_IMAGES          := $(foreach image,$(ALL_IMAGES),$(if $(findstring _,$(image)),$(image),))
 IMAGE_GROUPS        := $(sort $(foreach image,$(SUB_IMAGES),$(firstword $(subst _, ,$(image)))))
+SKIP_IMAGE_LOAD     ?=
 
 define expand_group =
 load-$(1): $$(patsubst $(1)_%, load-$(1)_%, $$(filter $(1)_%,$$(ALL_IMAGES)))
@@ -129,6 +130,8 @@ local_tag = \
   docker tag $(call remote_image,$(1)):$(call tag,$(1)) $(call local_image,$(1)):$(call tag,$(1)) >&2
 latest_tag = \
   docker tag $(call local_image,$(1)):$(call tag,$(1)) $(call local_image,$(1)):latest >&2
+tag_exists = \
+  docker image inspect $(call local_image,$(1)):$(call tag,$(1)) &>/dev/null
 tag-%: ## Tag a local image.
 	@$(call header,TAG $*)
 	@$(call local_tag,$*) && $(call latest_tag,$*)
@@ -170,13 +173,23 @@ rebuild-%: register-cross ## Force rebuild an image locally.
 # If the image is not available for the current architecture, it is not loaded.
 load-%: register-cross ## Pull or build an image locally.
 	@if [ -f "$(call path,$*)/$(call dockerfile,$*)" ]; then \
-	  ($(call pull,$*)) || ($(call rebuild,$*)); \
+	  if [ "$(SKIP_IMAGE_LOAD)" == true ]; then \
+	    if ! $(call tag_exists,$*); then \
+	      echo "Image $* does not exist locally and SKIP_IMAGE_LOAD is set so cannot pull it. Failing." >&2; \
+	      exit 1; \
+	    fi; \
+	  else \
+	    ($(call pull,$*)) || ($(call rebuild,$*)); \
+	  fi; \
 	else \
 	  echo "Image $* is not available on $$(uname -m), ignoring it." >&2; \
 	fi
 
 test-%: register-cross ## Build an image locally if the remote doesn't exist.
 	@($(call image_manifest,$*)) >&2 || ($(call rebuild,$*))
+
+local-image-%: register-cross ## Print current 'image:tag' for a local image.
+	echo "$(call local_image,$*):$(call tag,$*)"
 
 # push pushes the remote image, after validating that the tag doesn't exist
 # yet. Note that this generic rule will match the fully-expanded remote image

@@ -59,10 +59,15 @@ DOCKER_NAME := gvisor-bazel-$(HASH)-$(ARCH)
 DOCKER_HOSTNAME := $(DOCKER_NAME)
 DOCKER_PRIVILEGED := --privileged
 UNSANDBOXED_RUNTIME ?= runc
-BAZEL_CACHE := $(HOME)/.cache/bazel/
+BAZEL_CACHE   ?= $(HOME)/.cache/bazel/
+GO_REPOSITORY_USE_HOST_CACHE ?=
+GOPATH ?=
+GOCACHE ?=
+GOMODCACHE ?=
 GCLOUD_CONFIG := $(HOME)/.config/gcloud/
-DOCKER_SOCKET := /var/run/docker.sock
-DOCKER_CONFIG := /etc/docker
+DOCKER_HOST   ?= unix:///var/run/docker.sock
+DOCKER_SOCKET ?= $(patsubst unix://%,%,$(DOCKER_HOST))
+DOCKER_CONFIG ?= /etc/docker
 DEVICE_FILE ?=
 PRE_BAZEL_INIT ?=
 
@@ -103,6 +108,30 @@ ifneq (,$(UNSANDBOXED_RUNTIME))
 DOCKER_RUN_OPTIONS += --runtime=$(UNSANDBOXED_RUNTIME)
 endif
 DOCKER_RUN_OPTIONS += -v "$(shell realpath -m $(BAZEL_CACHE)):$(BAZEL_CACHE)"
+ifneq ($(BAZEL_CACHE),$(HOME)/.cache/bazel)
+ifneq ($(BAZEL_CACHE),$(HOME)/.cache/bazel/)
+DOCKER_RUN_OPTIONS += -v "$(shell realpath -m $(BAZEL_CACHE)):$(HOME)/.cache/bazel"
+endif
+endif
+ifneq ($(GO_REPOSITORY_USE_HOST_CACHE),)
+DOCKER_RUN_OPTIONS  += -e GO_REPOSITORY_USE_HOST_CACHE=$(GO_REPOSITORY_USE_HOST_CACHE)
+DOCKER_EXEC_OPTIONS += -e GO_REPOSITORY_USE_HOST_CACHE=$(GO_REPOSITORY_USE_HOST_CACHE)
+ifneq ($(GOPATH),)
+DOCKER_RUN_OPTIONS  += -e GOPATH=$(GOPATH)
+DOCKER_EXEC_OPTIONS += -e GOPATH=$(GOPATH)
+DOCKER_RUN_OPTIONS  += -v "$(shell realpath -m $(GOPATH)):$(GOPATH)"
+endif
+ifneq ($(GOCACHE),)
+DOCKER_RUN_OPTIONS  += -e GOCACHE=$(GOCACHE)
+DOCKER_EXEC_OPTIONS += -e GOCACHE=$(GOCACHE)
+DOCKER_RUN_OPTIONS  += -v "$(shell realpath -m $(GOCACHE)):$(GOCACHE)"
+endif
+ifneq ($(GOMODCACHE),)
+DOCKER_RUN_OPTIONS  += -e GOMODCACHE=$(GOMODCACHE)
+DOCKER_EXEC_OPTIONS += -e GOMODCACHE=$(GOMODCACHE)
+DOCKER_RUN_OPTIONS  += -v "$(shell realpath -m $(GOMODCACHE)):$(GOMODCACHE)"
+endif
+endif
 DOCKER_RUN_OPTIONS += -v "$(shell realpath -m $(GCLOUD_CONFIG)):$(GCLOUD_CONFIG)"
 DOCKER_RUN_OPTIONS += -v "/tmp:/tmp"
 DOCKER_EXEC_OPTIONS := --user $(UID):$(GID)
@@ -110,7 +139,6 @@ DOCKER_EXEC_OPTIONS += --interactive
 ifeq (true,$(shell test -t 1 && echo true))
 DOCKER_EXEC_OPTIONS += --tty
 endif
-
 # If kernel headers are available, mount them too.
 ifneq (,$(wildcard /lib/modules))
 DOCKER_RUN_OPTIONS += -v "/lib/modules:/lib/modules"
