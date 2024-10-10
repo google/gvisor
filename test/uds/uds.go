@@ -19,7 +19,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"time"
@@ -292,7 +291,7 @@ type socketCreatorSpec struct {
 // createSocketTree creates a local tree of unix domain sockets for use in
 // testing as per specs.
 func createSocketTree(baseDir string, specs []socketCreatorSpec) (string, func(), error) {
-	dir, err := ioutil.TempDir(baseDir, "sockets")
+	dir, err := os.MkdirTemp(baseDir, "sockets")
 	if err != nil {
 		return "", nil, fmt.Errorf("error creating temp dir: %v", err)
 	}
@@ -390,7 +389,7 @@ type pipeCreator func(path string) (cleanup func(), err error)
 //   - /in
 //   - /out
 func CreateFifoTree(baseDir string) (string, func(), error) {
-	dir, err := ioutil.TempDir(baseDir, "pipes")
+	dir, err := os.MkdirTemp(baseDir, "pipes")
 	if err != nil {
 		return "", nil, fmt.Errorf("error creating temp dir: %v", err)
 	}

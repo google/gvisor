@@ -19,7 +19,6 @@ package testsuite
 import (
 	"bytes"
 	"fmt"
-	"io/ioutil"
 	"math/rand"
 	"os"
 	"testing"
@@ -54,7 +53,7 @@ type Tester interface {
 // RunAllLocalFSTests runs all local FS tests as subtests.
 func RunAllLocalFSTests(t *testing.T, tester Tester) {
 	for name, testFn := range localFSTests {
-		mountPath, err := ioutil.TempDir(os.Getenv("TEST_TMPDIR"), "")
+		mountPath, err := os.MkdirTemp(os.Getenv("TEST_TMPDIR"), "")
 		if err != nil {
 			t.Fatalf("creation of temporary mountpoint failed: %v", err)
 		}

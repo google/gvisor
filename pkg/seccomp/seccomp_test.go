@@ -19,7 +19,6 @@ import (
 	_ "embed"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"math"
 	"math/rand"
 	"os"
@@ -27,7 +26,6 @@ import (
 	"reflect"
 	"strings"
 	"testing"
-	"time"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -39,7 +37,7 @@ var victimData []byte
 
 // newVictim makes a victim binary.
 func newVictim() (string, error) {
-	f, err := ioutil.TempFile("", "victim")
+	f, err := os.CreateTemp("", "victim")
 	if err != nil {
 		return "", err
 	}
@@ -1078,7 +1076,6 @@ func TestBasic(t *testing.T) {
 
 // TestRandom tests that randomly generated rules are encoded correctly.
 func TestRandom(t *testing.T) {
-	rand.Seed(time.Now().UnixNano())
 	size := rand.Intn(50) + 1
 	syscallRules := NewSyscallRules()
 	for syscallRules.Size() < size {

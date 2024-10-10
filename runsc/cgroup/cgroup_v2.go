@@ -22,7 +22,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"math"
 	"math/big"
 	"os"
@@ -79,7 +78,7 @@ type cgroupV2 struct {
 }
 
 func newCgroupV2(mountpoint, group string, useSystemd bool) (Cgroup, error) {
-	data, err := ioutil.ReadFile(filepath.Join(mountpoint, "cgroup.controllers"))
+	data, err := os.ReadFile(filepath.Join(mountpoint, "cgroup.controllers"))
 	if err != nil {
 		return nil, err
 	}

@@ -18,7 +18,7 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"math"
 	"net"
 	"testing"
@@ -3342,7 +3342,7 @@ func TestReceiveFragments(t *testing.T) {
 				}
 			}
 
-			res, err := ep.Read(ioutil.Discard, tcpip.ReadOptions{})
+			res, err := ep.Read(io.Discard, tcpip.ReadOptions{})
 			if _, ok := err.(*tcpip.ErrWouldBlock); !ok {
 				t.Fatalf("(last) got Read = (%#v, %v), want = (_, %s)", res, err, &tcpip.ErrWouldBlock{})
 			}

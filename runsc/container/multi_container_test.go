@@ -16,7 +16,7 @@ package container
 
 import (
 	"fmt"
-	"io/ioutil"
+	"io"
 	"math"
 	"os"
 	"path"
@@ -206,9 +206,9 @@ func testSharedMount(t *testing.T, tester func(t *testing.T, conf *config.Config
 					defer cleanup()
 					conf.RootDir = rootDir
 
-					sourceDir, err := ioutil.TempDir(testutil.TmpDir(), "mntSrc")
+					sourceDir, err := os.MkdirTemp(testutil.TmpDir(), "mntSrc")
 					if err != nil {
-						t.Fatalf("ioutil.TempDir() failed: %v", err)
+						t.Fatalf("os.MkdirTemp() failed: %v", err)
 					}
 					defer os.RemoveAll(sourceDir)
 
@@ -741,9 +741,9 @@ func TestExecWait(t *testing.T) {
 func TestMultiContainerMount(t *testing.T) {
 	// 'src != dst' ensures that 'dst' doesn't exist in the host and must be
 	// properly mapped inside the container to work.
-	src, err := ioutil.TempDir(testutil.TmpDir(), "container")
+	src, err := os.MkdirTemp(testutil.TmpDir(), "container")
 	if err != nil {
-		t.Fatal("ioutil.TempDir failed:", err)
+		t.Fatal("os.MkdirTemp failed:", err)
 	}
 	dst := src + ".dst"
 	cmd2 := []string{"touch", filepath.Join(dst, "file")}
@@ -1286,9 +1286,9 @@ func TestMultiContainerContainerDestroyStress(t *testing.T) {
 	cmds := [][]string{{app, "reaper"}}
 	const batchSize = 10
 	for i := 0; i < 3*batchSize; i++ {
-		dir, err := ioutil.TempDir(testutil.TmpDir(), "gofer-stop-test")
+		dir, err := os.MkdirTemp(testutil.TmpDir(), "gofer-stop-test")
 		if err != nil {
-			t.Fatal("ioutil.TempDir failed:", err)
+			t.Fatal("os.MkdirTemp failed:", err)
 		}
 		defer os.RemoveAll(dir)
 
@@ -2085,9 +2085,9 @@ func TestMultiContainerRunNonRoot(t *testing.T) {
 
 	// User running inside container can't list '$TMP/blocked' and would fail to
 	// mount it.
-	blocked, err := ioutil.TempDir(testutil.TmpDir(), "blocked")
+	blocked, err := os.MkdirTemp(testutil.TmpDir(), "blocked")
 	if err != nil {
-		t.Fatalf("ioutil.TempDir() failed: %v", err)
+		t.Fatalf("os.MkdirTemp() failed: %v", err)
 	}
 	if err := os.Chmod(blocked, 0700); err != nil {
 		t.Fatalf("os.MkDir(%q) failed: %v", blocked, err)
@@ -2097,9 +2097,9 @@ func TestMultiContainerRunNonRoot(t *testing.T) {
 		t.Fatalf("os.MkDir(%q) failed: %v", dir, err)
 	}
 
-	src, err := ioutil.TempDir(testutil.TmpDir(), "src")
+	src, err := os.MkdirTemp(testutil.TmpDir(), "src")
 	if err != nil {
-		t.Fatalf("ioutil.TempDir() failed: %v", err)
+		t.Fatalf("os.MkdirTemp() failed: %v", err)
 	}
 
 	// Set a random user/group with no access to "blocked" dir.
@@ -2157,7 +2157,7 @@ func TestMultiContainerHomeEnvDir(t *testing.T) {
 			// Create temp files we can write the value of $HOME to.
 			homeDirs := map[string]*os.File{}
 			for _, name := range []string{"root", "sub", "exec"} {
-				homeFile, err := ioutil.TempFile(testutil.TmpDir(), name)
+				homeFile, err := os.CreateTemp(testutil.TmpDir(), name)
 				if err != nil {
 					t.Fatalf("creating temp file: %v", err)
 				}
@@ -2197,7 +2197,7 @@ func TestMultiContainerHomeEnvDir(t *testing.T) {
 
 			// Check the written files.
 			for name, tmpFile := range homeDirs {
-				dirBytes, err := ioutil.ReadAll(tmpFile)
+				dirBytes, err := io.ReadAll(tmpFile)
 				if err != nil {
 					t.Fatalf("reading %s temp file: %v", name, err)
 				}
@@ -2354,7 +2354,7 @@ func TestDuplicateEnvVariable(t *testing.T) {
 	files := [3]*os.File{}
 	for i := 0; i < len(files); i++ {
 		var err error
-		files[i], err = ioutil.TempFile(testutil.TmpDir(), "env-var-test")
+		files[i], err = os.CreateTemp(testutil.TmpDir(), "env-var-test")
 		if err != nil {
 			t.Fatalf("creating temp file: %v", err)
 		}
@@ -2398,7 +2398,7 @@ func TestDuplicateEnvVariable(t *testing.T) {
 
 	// Now read and check that none of the env has repeated values.
 	for _, file := range files {
-		out, err := ioutil.ReadAll(file)
+		out, err := io.ReadAll(file)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -2564,12 +2564,12 @@ func TestMultiContainerOverlayLeaks(t *testing.T) {
 }
 
 func copyFile(src, dst string) error {
-	bytesRead, err := ioutil.ReadFile(src)
+	bytesRead, err := os.ReadFile(src)
 	if err != nil {
 		return err
 	}
 
-	return ioutil.WriteFile(dst, bytesRead, 0755)
+	return os.WriteFile(dst, bytesRead, 0755)
 }
 
 // Test that spawning many subcontainers that do a lot of filesystem operations

@@ -18,7 +18,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"math"
 	"net"
 	"os"
@@ -322,7 +321,7 @@ func portCopy(ctx context.Context, c *container.Container, localConn net.Conn, p
 
 // tmpUDS generates a temporary UDS addr.
 func tmpUDSAddr() (string, error) {
-	tmpFile, err := ioutil.TempFile("", "runsc-port-forward")
+	tmpFile, err := os.CreateTemp("", "runsc-port-forward")
 	if err != nil {
 		return "", err
 	}

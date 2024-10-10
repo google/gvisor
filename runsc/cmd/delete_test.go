@@ -15,7 +15,7 @@
 package cmd
 
 import (
-	"io/ioutil"
+	"os"
 	"testing"
 
 	"gvisor.dev/gvisor/runsc/config"
@@ -23,7 +23,7 @@ import (
 
 func TestNotFound(t *testing.T) {
 	ids := []string{"123"}
-	dir, err := ioutil.TempDir("", "metadata")
+	dir, err := os.MkdirTemp("", "metadata")
 	if err != nil {
 		t.Fatalf("error creating dir: %v", err)
 	}

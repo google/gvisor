@@ -20,7 +20,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"path"
@@ -416,7 +415,7 @@ func New(conf *config.Config, args Args) (*Container, error) {
 	// Write the PID file. Containerd considers the call to create complete after
 	// this file is created, so it must be the last thing we do.
 	if args.PIDFile != "" {
-		if err := ioutil.WriteFile(args.PIDFile, []byte(strconv.Itoa(c.SandboxPid())), 0644); err != nil {
+		if err := os.WriteFile(args.PIDFile, []byte(strconv.Itoa(c.SandboxPid())), 0644); err != nil {
 			return nil, fmt.Errorf("error writing PID file: %v", err)
 		}
 	}

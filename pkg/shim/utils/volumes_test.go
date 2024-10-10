@@ -16,7 +16,6 @@ package utils
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 	"reflect"
 	"testing"
@@ -25,7 +24,7 @@ import (
 )
 
 func TestUpdateVolumeAnnotations(t *testing.T) {
-	dir, err := ioutil.TempDir("", "test-update-volume-annotations")
+	dir, err := os.MkdirTemp("", "test-update-volume-annotations")
 	if err != nil {
 		t.Fatalf("create tempdir: %v", err)
 	}

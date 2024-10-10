@@ -19,7 +19,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"math/rand"
 	"os"
 	"strconv"
@@ -91,9 +90,9 @@ func TestFsstressGofer(t *testing.T) {
 }
 
 func TestFsstressGoferShared(t *testing.T) {
-	dir, err := ioutil.TempDir(testutil.TmpDir(), "fsstress")
+	dir, err := os.MkdirTemp(testutil.TmpDir(), "fsstress")
 	if err != nil {
-		t.Fatalf("ioutil.TempDir() failed: %v", err)
+		t.Fatalf("os.MkdirTemp() failed: %v", err)
 	}
 	defer os.RemoveAll(dir)
 

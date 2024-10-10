@@ -15,7 +15,6 @@
 package cgroup
 
 import (
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -97,7 +96,7 @@ func TestIO(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			testutil.TmpDir()
-			dir, err := ioutil.TempDir(testutil.TmpDir(), "cgroup")
+			dir, err := os.MkdirTemp(testutil.TmpDir(), "cgroup")
 			if err != nil {
 				t.Fatalf("error creating temporary directory: %v", err)
 			}
@@ -117,7 +116,7 @@ func TestIO(t *testing.T) {
 				t.Fatalf("ctrlr.set(): %v", err)
 			}
 
-			gotBytes, err := ioutil.ReadFile(filepath.Join(dir, tc.path))
+			gotBytes, err := os.ReadFile(filepath.Join(dir, tc.path))
 			if err != nil {
 				t.Fatal(err.Error())
 			}
@@ -222,7 +221,7 @@ func TestGetLimits(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			testutil.TmpDir()
-			dir, err := ioutil.TempDir(testutil.TmpDir(), "cgroup")
+			dir, err := os.MkdirTemp(testutil.TmpDir(), "cgroup")
 			if err != nil {
 				t.Fatalf("error creating temporary directory: %v", err)
 			}

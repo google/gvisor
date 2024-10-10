@@ -20,7 +20,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"net"
 	"os"
 	"path"
@@ -504,9 +503,9 @@ func (c *Container) FindPort(ctx context.Context, sandboxPort int) (int, error) 
 
 // CopyFiles copies in and mounts the given files. They are always ReadOnly.
 func (c *Container) CopyFiles(opts *RunOpts, target string, sources ...string) {
-	dir, err := ioutil.TempDir("", c.Name)
+	dir, err := os.MkdirTemp("", c.Name)
 	if err != nil {
-		c.copyErr = fmt.Errorf("ioutil.TempDir failed: %v", err)
+		c.copyErr = fmt.Errorf("os.MkdirTemp failed: %v", err)
 		return
 	}
 	c.cleanups = append(c.cleanups, func() { os.RemoveAll(dir) })

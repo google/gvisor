@@ -20,7 +20,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"os"
 
@@ -67,7 +66,7 @@ func initBenchmarks(ctx context.Context) error {
 // adds some custom data for the commit, and sends the data to BigQuery.
 func parseBenchmarks(ctx context.Context) error {
 	debugLog("Reading file: %s", *file)
-	data, err := ioutil.ReadFile(*file)
+	data, err := os.ReadFile(*file)
 	if err != nil {
 		return fmt.Errorf("failed to read file %s: %v", *file, err)
 	}

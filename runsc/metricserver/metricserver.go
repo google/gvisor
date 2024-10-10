@@ -19,7 +19,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"math/rand"
 	"net"
 	"net/http"
@@ -849,7 +848,7 @@ func (s *Server) Run(ctx context.Context) error {
 	}
 	// container.ListSandboxes uses a glob pattern, which doesn't error out on
 	// permission errors. Double-check by actually listing the directory.
-	if _, err := ioutil.ReadDir(conf.RootDir); err != nil {
+	if _, err := os.ReadDir(conf.RootDir); err != nil {
 		if !m.allowUnknownRoot {
 			return fmt.Errorf("invalid root directory %q: tried to list all entries within it and got: %w", conf.RootDir, err)
 		}
@@ -930,7 +929,7 @@ func (s *Server) Run(ctx context.Context) error {
 		return fmt.Errorf("cannot start background loop: %w", err)
 	}
 	if m.pidFile != "" {
-		if err := ioutil.WriteFile(m.pidFile, []byte(fmt.Sprintf("%d", m.pid)), 0644); err != nil {
+		if err := os.WriteFile(m.pidFile, []byte(fmt.Sprintf("%d", m.pid)), 0644); err != nil {
 			return fmt.Errorf("cannot write PID to file %q: %w", m.pidFile, err)
 		}
 		defer os.Remove(m.pidFile)

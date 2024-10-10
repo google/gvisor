@@ -18,7 +18,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -118,7 +117,7 @@ func sandboxPid(pid int) (int, error) {
 			return 0, err
 		}
 
-		cmdline, err := ioutil.ReadFile(filepath.Join("/proc", line, "cmdline"))
+		cmdline, err := os.ReadFile(filepath.Join("/proc", line, "cmdline"))
 		if err != nil {
 			if os.IsNotExist(err) {
 				// Raced with process exit.

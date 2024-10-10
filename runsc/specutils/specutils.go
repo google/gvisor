@@ -20,7 +20,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"path"
 	"path/filepath"
@@ -193,7 +192,7 @@ func ReadSpecFromFile(bundleDir string, specFile *os.File, conf *config.Config) 
 	if _, err := specFile.Seek(0, io.SeekStart); err != nil {
 		return nil, fmt.Errorf("error seeking to beginning of file %q: %v", specFile.Name(), err)
 	}
-	specBytes, err := ioutil.ReadAll(specFile)
+	specBytes, err := io.ReadAll(specFile)
 	if err != nil {
 		return nil, fmt.Errorf("error reading spec from file %q: %v", specFile.Name(), err)
 	}
@@ -273,7 +272,7 @@ func fixSpec(spec *specs.Spec, bundleDir string, conf *config.Config) error {
 
 // ReadMounts reads mount list from a file.
 func ReadMounts(f *os.File) ([]specs.Mount, error) {
-	bytes, err := ioutil.ReadAll(f)
+	bytes, err := io.ReadAll(f)
 	if err != nil {
 		return nil, fmt.Errorf("error reading mounts: %v", err)
 	}
@@ -695,7 +694,7 @@ func RetryEintr(f func() (uintptr, uintptr, error)) (uintptr, uintptr, error) {
 
 // GetOOMScoreAdj reads the given process' oom_score_adj
 func GetOOMScoreAdj(pid int) (int, error) {
-	data, err := ioutil.ReadFile(fmt.Sprintf("/proc/%d/oom_score_adj", pid))
+	data, err := os.ReadFile(fmt.Sprintf("/proc/%d/oom_score_adj", pid))
 	if err != nil {
 		return 0, err
 	}

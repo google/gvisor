@@ -16,7 +16,6 @@ package container
 
 import (
 	"encoding/json"
-	"io/ioutil"
 	"os"
 	"strings"
 	"testing"
@@ -56,7 +55,7 @@ func TestTraceStartup(t *testing.T) {
 			}
 			defer server.Close()
 
-			podInitConfig, err := ioutil.TempFile(testutil.TmpDir(), "config")
+			podInitConfig, err := os.CreateTemp(testutil.TmpDir(), "config")
 			if err != nil {
 				t.Fatalf("error creating tmp file: %v", err)
 			}

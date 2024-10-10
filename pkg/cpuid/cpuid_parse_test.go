@@ -15,7 +15,6 @@
 package cpuid
 
 import (
-	"io/ioutil"
 	"os"
 	"regexp"
 	"strings"
@@ -38,7 +37,7 @@ func TestHostFeatureFlags(t *testing.T) {
 	}
 
 	// Extract all cpuinfo flags.
-	cpuinfoBytes, _ := ioutil.ReadFile("/proc/cpuinfo")
+	cpuinfoBytes, _ := os.ReadFile("/proc/cpuinfo")
 	cpuinfo := string(cpuinfoBytes)
 	re := regexp.MustCompile(`(?m)^flags\s+: (.*)$`)
 	m := re.FindStringSubmatch(cpuinfo)
