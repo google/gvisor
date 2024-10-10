@@ -17,7 +17,6 @@ package container
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -771,7 +770,7 @@ func TestMetricServerChecksRootDirectoryAccess(t *testing.T) {
 		t.Fatalf("cannot chmod %q as 000: %v", te.sleepConf.RootDir, err)
 	}
 	defer os.Chmod(te.sleepConf.RootDir, prevStat.Mode())
-	if _, err := ioutil.ReadDir(te.sleepConf.RootDir); err == nil {
+	if _, err := os.ReadDir(te.sleepConf.RootDir); err == nil {
 		t.Logf("Can still read directory %v despite chmodding it to 0. Maybe we are running as root? Skipping test.", te.sleepConf.RootDir)
 		return
 	}

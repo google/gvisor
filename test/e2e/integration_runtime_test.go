@@ -25,7 +25,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"net"
 	"os"
 	"path/filepath"
@@ -64,7 +63,7 @@ func TestRlimitNoFile(t *testing.T) {
 	const nfiles = 5000
 	tmpDir := testutil.TmpDir()
 	for i := 0; i < nfiles; i++ {
-		if _, err := ioutil.TempFile(tmpDir, "tmp"); err != nil {
+		if _, err := os.CreateTemp(tmpDir, "tmp"); err != nil {
 			t.Fatalf("TempFile(): %v", err)
 		}
 	}
@@ -99,7 +98,7 @@ func TestDentryCacheLimit(t *testing.T) {
 	const nfiles = 5000
 	tmpDir := testutil.TmpDir()
 	for i := 0; i < nfiles; i++ {
-		if _, err := ioutil.TempFile(tmpDir, "tmp"); err != nil {
+		if _, err := os.CreateTemp(tmpDir, "tmp"); err != nil {
 			t.Fatalf("TempFile(): %v", err)
 		}
 	}

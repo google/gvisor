@@ -15,7 +15,6 @@
 package fdchannel
 
 import (
-	"io/ioutil"
 	"os"
 	"syscall"
 	"testing"
@@ -26,7 +25,7 @@ import (
 )
 
 func TestSendRecvFD(t *testing.T) {
-	sendFile, err := ioutil.TempFile("", "fdchannel_test_")
+	sendFile, err := os.CreateTemp("", "fdchannel_test_")
 	if err != nil {
 		t.Fatalf("failed to create temporary file: %v", err)
 	}
@@ -82,7 +81,7 @@ func TestSendRecvFD(t *testing.T) {
 }
 
 func TestShutdownThenRecvFD(t *testing.T) {
-	sendFile, err := ioutil.TempFile("", "fdchannel_test_")
+	sendFile, err := os.CreateTemp("", "fdchannel_test_")
 	if err != nil {
 		t.Fatalf("failed to create temporary file: %v", err)
 	}
@@ -104,7 +103,7 @@ func TestShutdownThenRecvFD(t *testing.T) {
 }
 
 func TestRecvFDThenShutdown(t *testing.T) {
-	sendFile, err := ioutil.TempFile("", "fdchannel_test_")
+	sendFile, err := os.CreateTemp("", "fdchannel_test_")
 	if err != nil {
 		t.Fatalf("failed to create temporary file: %v", err)
 	}

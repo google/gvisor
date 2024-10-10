@@ -16,7 +16,7 @@ package injector
 
 import (
 	"fmt"
-	"io/ioutil"
+	"os"
 )
 
 var (
@@ -33,10 +33,10 @@ func init() {
 		serverKeyErr  error
 		serverCertErr error
 	)
-	caKey, caKeyErr = ioutil.ReadFile("caKey.pem")
-	caCert, caCertErr = ioutil.ReadFile("caCert.pem")
-	serverKey, serverKeyErr = ioutil.ReadFile("serverKey.pem")
-	serverCert, serverCertErr = ioutil.ReadFile("serverCert.pem")
+	caKey, caKeyErr = os.ReadFile("caKey.pem")
+	caCert, caCertErr = os.ReadFile("caCert.pem")
+	serverKey, serverKeyErr = os.ReadFile("serverKey.pem")
+	serverCert, serverCertErr = os.ReadFile("serverCert.pem")
 	for _, err := range []error{caKeyErr, caCertErr, serverKeyErr, serverCertErr} {
 		if err != nil {
 			panic(fmt.Errorf("unable to create certificates: %v", err))

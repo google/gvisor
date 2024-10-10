@@ -19,7 +19,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"os"
 	"os/exec"
@@ -312,7 +311,7 @@ disabled_plugins = ["io.containerd.internal.v1.restart"]
 func setup(t *testing.T) (*criutil.Crictl, func(), error) {
 	// Create temporary containerd root and state directories, and a socket
 	// via which crictl and containerd communicate.
-	containerdRoot, err := ioutil.TempDir(testutil.TmpDir(), "containerd-root")
+	containerdRoot, err := os.MkdirTemp(testutil.TmpDir(), "containerd-root")
 	if err != nil {
 		t.Fatalf("failed to create containerd root: %v", err)
 	}
@@ -320,14 +319,14 @@ func setup(t *testing.T) (*criutil.Crictl, func(), error) {
 	defer cu.Clean()
 	t.Logf("Using containerd root: %s", containerdRoot)
 
-	containerdState, err := ioutil.TempDir(testutil.TmpDir(), "containerd-state")
+	containerdState, err := os.MkdirTemp(testutil.TmpDir(), "containerd-state")
 	if err != nil {
 		t.Fatalf("failed to create containerd state: %v", err)
 	}
 	cu.Add(func() { os.RemoveAll(containerdState) })
 	t.Logf("Using containerd state: %s", containerdState)
 
-	sockDir, err := ioutil.TempDir(testutil.TmpDir(), "containerd-sock")
+	sockDir, err := os.MkdirTemp(testutil.TmpDir(), "containerd-sock")
 	if err != nil {
 		t.Fatalf("failed to create containerd socket directory: %v", err)
 	}
@@ -446,7 +445,7 @@ func setup(t *testing.T) (*criutil.Crictl, func(), error) {
 	}
 
 	// Discard all subsequent data.
-	go io.Copy(ioutil.Discard, startupR)
+	go io.Copy(io.Discard, startupR)
 
 	// Create the crictl interface.
 	cc := criutil.NewCrictl(t, sockAddr)

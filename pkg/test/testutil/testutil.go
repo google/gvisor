@@ -23,7 +23,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"math"
 	"math/rand"
@@ -304,7 +303,7 @@ func NewSpecWithArgs(args ...string) *specs.Spec {
 
 // SetupRootDir creates a root directory for containers.
 func SetupRootDir() (string, func(), error) {
-	rootDir, err := ioutil.TempDir(TmpDir(), "containers")
+	rootDir, err := os.MkdirTemp(TmpDir(), "containers")
 	if err != nil {
 		return "", nil, fmt.Errorf("error creating root dir: %v", err)
 	}
@@ -332,7 +331,7 @@ func SetupContainer(spec *specs.Spec, conf *config.Config) (rootDir, bundleDir s
 
 // SetupBundleDir creates a bundle dir and writes the spec to config.json.
 func SetupBundleDir(spec *specs.Spec) (string, func(), error) {
-	bundleDir, err := ioutil.TempDir(TmpDir(), "bundle")
+	bundleDir, err := os.MkdirTemp(TmpDir(), "bundle")
 	if err != nil {
 		return "", nil, fmt.Errorf("error creating bundle dir: %v", err)
 	}
@@ -350,7 +349,7 @@ func writeSpec(dir string, spec *specs.Spec) error {
 	if err != nil {
 		return err
 	}
-	return ioutil.WriteFile(filepath.Join(dir, "config.json"), b, 0755)
+	return os.WriteFile(filepath.Join(dir, "config.json"), b, 0755)
 }
 
 // idRandomSrc is a pseudo random generator used to in RandomID.
@@ -588,7 +587,7 @@ func KillCommand(cmd *exec.Cmd) error {
 // WriteTmpFile writes text to a temporary file, closes the file, and returns
 // the name of the file. A cleanup function is also returned.
 func WriteTmpFile(pattern, text string) (string, func(), error) {
-	file, err := ioutil.TempFile(TmpDir(), pattern)
+	file, err := os.CreateTemp(TmpDir(), pattern)
 	if err != nil {
 		return "", nil, err
 	}

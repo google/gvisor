@@ -17,8 +17,8 @@ package safecopy
 import (
 	"bytes"
 	"fmt"
-	"io/ioutil"
 	"math/rand"
+	"os"
 	"testing"
 	"unsafe"
 
@@ -239,7 +239,7 @@ func withSegvErrorTestMapping(t *testing.T, fn func(m []byte)) {
 // withBusErrorTestMapping calls fn with a two-page mapping. The first page
 // contains random data, and the second page generates SIGBUS when accessed.
 func withBusErrorTestMapping(t *testing.T, fn func(m []byte)) {
-	f, err := ioutil.TempFile("", "sigbus_test")
+	f, err := os.CreateTemp("", "sigbus_test")
 	if err != nil {
 		t.Fatalf("TempFile failed: %v", err)
 	}

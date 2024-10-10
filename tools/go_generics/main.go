@@ -98,7 +98,6 @@ import (
 	"go/format"
 	"go/parser"
 	"go/token"
-	"io/ioutil"
 	"os"
 	"regexp"
 	"strings"
@@ -296,7 +295,7 @@ func main() {
 		byteBuf = bytes.ReplaceAll(byteBuf, []byte(old), []byte(new))
 	}
 
-	if err := ioutil.WriteFile(*output, byteBuf, 0644); err != nil {
+	if err := os.WriteFile(*output, byteBuf, 0644); err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
 		os.Exit(1)
 	}

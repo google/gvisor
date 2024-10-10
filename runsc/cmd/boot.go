@@ -17,7 +17,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -262,7 +261,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 
 	// Do these before chroot takes effect, otherwise we can't read /sys.
 	if len(b.productName) == 0 {
-		if product, err := ioutil.ReadFile("/sys/devices/virtual/dmi/id/product_name"); err != nil {
+		if product, err := os.ReadFile("/sys/devices/virtual/dmi/id/product_name"); err != nil {
 			log.Warningf("Not setting product_name: %v", err)
 		} else {
 			b.productName = strings.TrimSpace(string(product))

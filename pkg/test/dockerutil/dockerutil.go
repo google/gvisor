@@ -21,7 +21,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"os"
 	"os/exec"
@@ -68,7 +67,7 @@ var (
 
 // PrintDockerConfig prints the whole Docker configuration file to the log.
 func PrintDockerConfig() {
-	configBytes, err := ioutil.ReadFile(*config)
+	configBytes, err := os.ReadFile(*config)
 	if err != nil {
 		log.Fatalf("Cannot read Docker config at %v: %v", *config, err)
 	}
@@ -168,7 +167,7 @@ func IsGVisorRuntime(ctx context.Context, t *testing.T) (bool, error) {
 // system is using cgroupv2, in which case systemd is the default driver.
 func UsingSystemdCgroup() (bool, error) {
 	// Read the configuration data; the file must exist.
-	configBytes, err := ioutil.ReadFile(*config)
+	configBytes, err := os.ReadFile(*config)
 	if err != nil {
 		return false, err
 	}
@@ -198,7 +197,7 @@ func UsingSystemdCgroup() (bool, error) {
 
 func runtimeMap() (map[string]any, error) {
 	// Read the configuration data; the file must exist.
-	configBytes, err := ioutil.ReadFile(*config)
+	configBytes, err := os.ReadFile(*config)
 	if err != nil {
 		return nil, err
 	}

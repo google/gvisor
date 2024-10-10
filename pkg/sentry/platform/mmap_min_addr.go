@@ -16,7 +16,7 @@ package platform
 
 import (
 	"fmt"
-	"io/ioutil"
+	"os"
 	"strconv"
 	"strings"
 
@@ -47,7 +47,7 @@ func (*MMapMinAddr) MinUserAddress() hostarch.Addr {
 
 func init() {
 	// Open the source file.
-	b, err := ioutil.ReadFile(systemMMapMinAddrSource)
+	b, err := os.ReadFile(systemMMapMinAddrSource)
 	if err != nil {
 		panic(fmt.Sprintf("couldn't open %s: %v", systemMMapMinAddrSource, err))
 	}
