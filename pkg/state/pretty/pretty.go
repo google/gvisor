@@ -18,7 +18,6 @@ package pretty
 import (
 	"fmt"
 	"io"
-	"io/ioutil"
 	"reflect"
 	"strings"
 
@@ -231,7 +230,7 @@ func (p *printer) printStream(w io.Writer, r io.Reader) (err error) {
 			graph++ // Increment the graph.
 			if length > 0 {
 				fmt.Fprintf(w, "(%d bytes non-object data)\n", length)
-				io.Copy(ioutil.Discard, &io.LimitedReader{
+				io.Copy(io.Discard, &io.LimitedReader{
 					R: r,
 					N: int64(length),
 				})

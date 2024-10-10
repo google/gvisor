@@ -18,7 +18,7 @@
 package cpuid
 
 import (
-	"io/ioutil"
+	"os"
 	"strconv"
 	"strings"
 
@@ -180,7 +180,7 @@ var (
 // filter installation. This value is used to create the fake /proc/cpuinfo
 // from a FeatureSet.
 func readMaxCPUFreq() {
-	cpuinfob, err := ioutil.ReadFile("/proc/cpuinfo")
+	cpuinfob, err := os.ReadFile("/proc/cpuinfo")
 	if err != nil {
 		// Leave it as 0... the VDSO bails out in the same way.
 		log.Warningf("Could not read /proc/cpuinfo: %v", err)

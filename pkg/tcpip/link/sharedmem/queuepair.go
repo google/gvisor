@@ -19,7 +19,7 @@ package sharedmem
 
 import (
 	"fmt"
-	"io/ioutil"
+	"os"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/eventfd"
@@ -186,7 +186,7 @@ func createFile(sharedMemPath string, size int64, initQueue bool) (fd int, err e
 	if sharedMemPath != "" {
 		tmpDir = sharedMemPath
 	}
-	f, err := ioutil.TempFile(tmpDir, "sharedmem_test")
+	f, err := os.CreateTemp(tmpDir, "sharedmem_test")
 	if err != nil {
 		return -1, fmt.Errorf("TempFile failed: %v", err)
 	}

@@ -22,7 +22,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -319,7 +318,7 @@ func (o *ExecOpts) args() (out []string, err error) {
 // Exec executes an additional process inside the container based on a full OCI
 // Process specification.
 func (r *Runsc) Exec(context context.Context, id string, spec specs.Process, opts *ExecOpts) error {
-	f, err := ioutil.TempFile(os.Getenv("XDG_RUNTIME_DIR"), "runsc-process")
+	f, err := os.CreateTemp(os.Getenv("XDG_RUNTIME_DIR"), "runsc-process")
 	if err != nil {
 		return err
 	}

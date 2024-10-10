@@ -17,7 +17,7 @@ package coretag
 
 import (
 	"fmt"
-	"io/ioutil"
+	"os"
 	"strconv"
 
 	"golang.org/x/sys/unix"
@@ -77,7 +77,7 @@ func GetAllCoreTags(pid int) ([]uint64, error) {
 // getTids returns set of tids as reported by /proc/<pid>/task.
 func getTids(pid int) (map[int]struct{}, error) {
 	tids := make(map[int]struct{})
-	files, err := ioutil.ReadDir("/proc/" + strconv.Itoa(pid) + "/task")
+	files, err := os.ReadDir("/proc/" + strconv.Itoa(pid) + "/task")
 	if err != nil {
 		return nil, err
 	}
