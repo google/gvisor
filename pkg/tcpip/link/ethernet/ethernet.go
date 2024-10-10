@@ -54,10 +54,7 @@ func (e *Endpoint) LinkAddress() tcpip.LinkAddress {
 
 // MTU implements stack.LinkEndpoint.
 func (e *Endpoint) MTU() uint32 {
-	if mtu := e.Endpoint.MTU(); mtu > header.EthernetMinimumSize {
-		return mtu - header.EthernetMinimumSize
-	}
-	return 0
+	return e.Endpoint.MTU()
 }
 
 // DeliverNetworkPacket implements stack.NetworkDispatcher.
