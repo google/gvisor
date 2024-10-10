@@ -18,7 +18,7 @@ exempt_go_library(
     # used to choose deps.
     stateify = False,
     visibility = [
-        "//runsc:__subpackages__",
+        "//:sandbox",
     ],
     deps = select_system(
         darwin = [],
