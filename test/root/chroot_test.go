@@ -18,7 +18,6 @@ package root
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -78,7 +77,7 @@ func TestChroot(t *testing.T) {
 		t.Errorf("sandbox current dir is wrong, want: %q, got: %q", chroot, path)
 	}
 
-	fi, err := ioutil.ReadDir(procRoot)
+	fi, err := os.ReadDir(procRoot)
 	if err != nil {
 		t.Fatalf("error listing %q: %v", chroot, err)
 	}

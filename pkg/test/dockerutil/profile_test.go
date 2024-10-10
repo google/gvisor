@@ -17,7 +17,6 @@ package dockerutil
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
@@ -32,7 +31,7 @@ type testCase struct {
 
 func TestProfile(t *testing.T) {
 	// Basepath and expected file names for each type of profile.
-	tmpDir, err := ioutil.TempDir("", "")
+	tmpDir, err := os.MkdirTemp("", "")
 	if err != nil {
 		t.Fatalf("unable to create temporary directory: %v", err)
 	}

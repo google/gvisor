@@ -23,7 +23,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -117,7 +116,7 @@ func setValue(path, name, data string) error {
 	return writeFile(fullpath, []byte(data), 0700)
 }
 
-// writeFile is similar to ioutil.WriteFile() but doesn't create the file if it
+// writeFile is similar to os.WriteFile() but doesn't create the file if it
 // doesn't exist.
 func writeFile(path string, data []byte, perm os.FileMode) error {
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_TRUNC, perm)
@@ -132,7 +131,7 @@ func writeFile(path string, data []byte, perm os.FileMode) error {
 
 func getValue(path, name string) (string, error) {
 	fullpath := filepath.Join(path, name)
-	out, err := ioutil.ReadFile(fullpath)
+	out, err := os.ReadFile(fullpath)
 	if err != nil {
 		return "", err
 	}
@@ -150,7 +149,7 @@ func getInt(path, name string) (int, error) {
 // fillFromAncestor sets the value of a cgroup file from the first ancestor
 // that has content. It does nothing if the file in 'path' has already been set.
 func fillFromAncestor(path string) (string, error) {
-	out, err := ioutil.ReadFile(path)
+	out, err := os.ReadFile(path)
 	if err != nil {
 		return "", err
 	}

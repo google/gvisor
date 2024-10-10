@@ -18,7 +18,7 @@
 package mitigate
 
 import (
-	"io/ioutil"
+	"os"
 	"strings"
 	"testing"
 )
@@ -216,7 +216,7 @@ power management:
 
 // TestReadFile is a smoke test for parsing methods.
 func TestReadFile(t *testing.T) {
-	data, err := ioutil.ReadFile("/proc/cpuinfo")
+	data, err := os.ReadFile("/proc/cpuinfo")
 	if err != nil {
 		t.Fatalf("Failed to read cpuinfo: %v", err)
 	}

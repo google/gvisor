@@ -16,7 +16,6 @@
 package test
 
 import (
-	"io/ioutil"
 	"os"
 	"path/filepath"
 
@@ -53,7 +52,7 @@ type Message struct {
 // NewServer creates a new server that listens to a UDS that it creates under
 // os.TempDir.
 func NewServer() (*Server, error) {
-	dir, err := ioutil.TempDir(os.TempDir(), "remote")
+	dir, err := os.MkdirTemp(os.TempDir(), "remote")
 	if err != nil {
 		return nil, err
 	}

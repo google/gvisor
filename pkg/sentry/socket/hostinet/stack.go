@@ -17,7 +17,6 @@ package hostinet
 import (
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"reflect"
 	"strconv"
@@ -93,7 +92,7 @@ func (s *Stack) Configure(allowRawSockets bool) error {
 	// SACK is important for performance and even compatibility, assume it's
 	// enabled if we can't find the actual value.
 	s.tcpSACKEnabled = true
-	if sack, err := ioutil.ReadFile("/proc/sys/net/ipv4/tcp_sack"); err == nil {
+	if sack, err := os.ReadFile("/proc/sys/net/ipv4/tcp_sack"); err == nil {
 		s.tcpSACKEnabled = strings.TrimSpace(string(sack)) != "0"
 	} else {
 		log.Warningf("Failed to read if TCP SACK if enabled, setting to true")
@@ -120,7 +119,7 @@ func (s *Stack) Configure(allowRawSockets bool) error {
 }
 
 func readTCPBufferSizeFile(filename string) (inet.TCPBufferSize, error) {
-	contents, err := ioutil.ReadFile(filename)
+	contents, err := os.ReadFile(filename)
 	if err != nil {
 		return inet.TCPBufferSize{}, fmt.Errorf("failed to read %s: %v", filename, err)
 	}

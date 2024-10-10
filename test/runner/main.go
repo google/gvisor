@@ -22,7 +22,6 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -97,7 +96,7 @@ func getSetupContainerPath() string {
 func runTestCaseNative(testBin string, tc *gtest.TestCase, args []string, t *testing.T) {
 	// These tests might be running in parallel, so make sure they have a
 	// unique test temp dir.
-	tmpDir, err := ioutil.TempDir(testutil.TmpDir(), "")
+	tmpDir, err := os.MkdirTemp(testutil.TmpDir(), "")
 	if err != nil {
 		t.Fatalf("could not create temp dir: %v", err)
 	}
@@ -388,7 +387,7 @@ func runRunsc(tc *gtest.TestCase, spec *specs.Spec) error {
 		if err := os.MkdirAll(testLogDir, 0755); err != nil {
 			return fmt.Errorf("could not create test dir: %v", err)
 		}
-		tmpDir, err := ioutil.TempDir(testLogDir, "runsc")
+		tmpDir, err := os.MkdirTemp(testLogDir, "runsc")
 		if err != nil {
 			return fmt.Errorf("could not create temp dir: %v", err)
 		}
@@ -860,7 +859,7 @@ func runTestCaseRunsc(testBin string, tc *gtest.TestCase, args []string, t *test
 		//
 		// Some tests (e.g., sticky) access this mount from other
 		// users, so make sure it is world-accessible.
-		tmpDir, err := ioutil.TempDir(testutil.TmpDir(), "")
+		tmpDir, err := os.MkdirTemp(testutil.TmpDir(), "")
 		if err != nil {
 			t.Fatalf("could not create temp dir: %v", err)
 		}

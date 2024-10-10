@@ -29,7 +29,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"math"
 	"reflect"
 	"time"
@@ -2745,7 +2744,7 @@ func (s *sock) nonBlockingRead(ctx context.Context, dst usermem.IOSequence, peek
 
 	if !isPacket && trunc {
 		w = &tcpip.LimitedWriter{
-			W: ioutil.Discard,
+			W: io.Discard,
 			N: dst.NumBytes(),
 		}
 		res, err = s.Endpoint.Read(w, readOptions)

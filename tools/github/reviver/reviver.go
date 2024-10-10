@@ -19,7 +19,6 @@ package reviver
 import (
 	"bufio"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -105,7 +104,7 @@ func (r *Reviver) Run() []error {
 
 func (r *Reviver) processPath(path string, wg *sync.WaitGroup) {
 	fmt.Printf("Processing dir %q\n", path)
-	fis, err := ioutil.ReadDir(path)
+	fis, err := os.ReadDir(path)
 	if err != nil {
 		r.addErr(fmt.Errorf("error processing dir %q: %v", path, err))
 		return
@@ -114,14 +113,14 @@ func (r *Reviver) processPath(path string, wg *sync.WaitGroup) {
 	for _, fi := range fis {
 		childPath := filepath.Join(path, fi.Name())
 		switch {
-		case fi.Mode().IsDir():
+		case fi.IsDir():
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
 				r.processPath(childPath, wg)
 			}()
 
-		case fi.Mode().IsRegular():
+		case fi.Type().IsRegular():
 			file, err := os.Open(childPath)
 			if err != nil {
 				r.addErr(err)

@@ -18,7 +18,6 @@ import (
 	"bytes"
 	"errors"
 	"io"
-	"io/ioutil"
 	"math"
 	"testing"
 )
@@ -63,7 +62,7 @@ func newBufferString(s string) *buffer {
 func TestOffsetReader(t *testing.T) {
 	buf := newBufferString("foobar")
 	r := NewOffsetReader(buf, 3)
-	dst, err := ioutil.ReadAll(r)
+	dst, err := io.ReadAll(r)
 	if want := []byte("bar"); !bytes.Equal(dst, want) || err != nil {
 		t.Errorf("ReadAll: got (%q, %v), wanted (%q, nil)", dst, err, want)
 	}
@@ -72,7 +71,7 @@ func TestOffsetReader(t *testing.T) {
 func TestSectionReader(t *testing.T) {
 	buf := newBufferString("foobarbaz")
 	r := NewSectionReader(buf, 3, 3)
-	dst, err := ioutil.ReadAll(r)
+	dst, err := io.ReadAll(r)
 	if want, wantErr := []byte("bar"), ErrReachedLimit; !bytes.Equal(dst, want) || err != wantErr {
 		t.Errorf("ReadAll: got (%q, %v), wanted (%q, %v)", dst, err, want, wantErr)
 	}
@@ -82,7 +81,7 @@ func TestSectionReaderLimitOverflow(t *testing.T) {
 	// SectionReader behaves like OffsetReader when limit overflows int64.
 	buf := newBufferString("foobar")
 	r := NewSectionReader(buf, 3, math.MaxInt64)
-	dst, err := ioutil.ReadAll(r)
+	dst, err := io.ReadAll(r)
 	if want := []byte("bar"); !bytes.Equal(dst, want) || err != nil {
 		t.Errorf("ReadAll: got (%q, %v), wanted (%q, nil)", dst, err, want)
 	}
