@@ -70,6 +70,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netlink/port"
+	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
 	sentrytime "gvisor.dev/gvisor/pkg/sentry/time"
 	"gvisor.dev/gvisor/pkg/sentry/unimpl"
 	uspb "gvisor.dev/gvisor/pkg/sentry/unimpl/unimplemented_syscall_go_proto"
@@ -387,6 +388,9 @@ type Kernel struct {
 	// attempt succeeded, after which at least one more checkpoint attempt was
 	// made and failed with this error. It's protected by checkpointMu.
 	lastCheckpointStatus error `state:"nosave"`
+
+	// UnixSocketOpts stores configuration options for management of unix sockets.
+	UnixSocketOpts transport.UnixSocketOpts
 }
 
 // Saver is an interface for saving the kernel.
@@ -445,6 +449,9 @@ type InitKernelArgs struct {
 	// used by processes.  If it is zero, the limit will be set to
 	// unlimited.
 	MaxFDLimit int32
+
+	// UnixSocketOpts contains configuration options for unix sockets.
+	UnixSocketOpts transport.UnixSocketOpts
 }
 
 // Init initialize the Kernel with no tasks.
@@ -567,6 +574,7 @@ func (k *Kernel) Init(args InitKernelArgs) error {
 	k.sockets = make(map[*vfs.FileDescription]*SocketRecord)
 
 	k.cgroupRegistry = newCgroupRegistry()
+	k.UnixSocketOpts = args.UnixSocketOpts
 	return nil
 }
 

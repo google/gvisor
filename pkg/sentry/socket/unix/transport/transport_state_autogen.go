@@ -110,6 +110,35 @@ func (c *HostConnectedEndpoint) StateLoad(ctx context.Context, stateSourceObject
 	stateSourceObject.AfterLoad(func() { c.afterLoad(ctx) })
 }
 
+func (e *SCMConnectedEndpoint) StateTypeName() string {
+	return "pkg/sentry/socket/unix/transport.SCMConnectedEndpoint"
+}
+
+func (e *SCMConnectedEndpoint) StateFields() []string {
+	return []string{
+		"HostConnectedEndpoint",
+		"queue",
+		"opts",
+	}
+}
+
+// +checklocksignore
+func (e *SCMConnectedEndpoint) StateSave(stateSinkObject state.Sink) {
+	e.beforeSave()
+	stateSinkObject.Save(0, &e.HostConnectedEndpoint)
+	stateSinkObject.Save(1, &e.queue)
+	stateSinkObject.Save(2, &e.opts)
+}
+
+func (e *SCMConnectedEndpoint) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (e *SCMConnectedEndpoint) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &e.HostConnectedEndpoint)
+	stateSourceObject.Load(1, &e.queue)
+	stateSourceObject.Load(2, &e.opts)
+}
+
 func (r *HostConnectedEndpointRefs) StateTypeName() string {
 	return "pkg/sentry/socket/unix/transport.HostConnectedEndpointRefs"
 }
@@ -286,6 +315,31 @@ func (c *ControlMessages) afterLoad(context.Context) {}
 func (c *ControlMessages) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &c.Rights)
 	stateSourceObject.Load(1, &c.Credentials)
+}
+
+func (u *UnixSocketOpts) StateTypeName() string {
+	return "pkg/sentry/socket/unix/transport.UnixSocketOpts"
+}
+
+func (u *UnixSocketOpts) StateFields() []string {
+	return []string{
+		"DisconnectOnSave",
+	}
+}
+
+func (u *UnixSocketOpts) beforeSave() {}
+
+// +checklocksignore
+func (u *UnixSocketOpts) StateSave(stateSinkObject state.Sink) {
+	u.beforeSave()
+	stateSinkObject.Save(0, &u.DisconnectOnSave)
+}
+
+func (u *UnixSocketOpts) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (u *UnixSocketOpts) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &u.DisconnectOnSave)
 }
 
 func (m *message) StateTypeName() string {
@@ -478,12 +532,14 @@ func init() {
 	state.Register((*connectionedEndpoint)(nil))
 	state.Register((*connectionlessEndpoint)(nil))
 	state.Register((*HostConnectedEndpoint)(nil))
+	state.Register((*SCMConnectedEndpoint)(nil))
 	state.Register((*HostConnectedEndpointRefs)(nil))
 	state.Register((*queue)(nil))
 	state.Register((*queueRefs)(nil))
 	state.Register((*messageList)(nil))
 	state.Register((*messageEntry)(nil))
 	state.Register((*ControlMessages)(nil))
+	state.Register((*UnixSocketOpts)(nil))
 	state.Register((*message)(nil))
 	state.Register((*Address)(nil))
 	state.Register((*queueReceiver)(nil))

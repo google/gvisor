@@ -137,6 +137,15 @@ type RecvOutput struct {
 	UnusedRights []RightsControlMessage
 }
 
+// UnixSocketOpts is a container for configuration options for gvisor's management of
+// unix sockets.
+// +stateify savable
+type UnixSocketOpts struct {
+	// If true, the endpoint will be put in a closed state before save; if false, an attempt to save
+	// will throw.
+	DisconnectOnSave bool
+}
+
 // Endpoint is the interface implemented by Unix transport protocol
 // implementations that expose functionality like sendmsg, recvmsg, connect,
 // etc. to Unix socket implementations.
@@ -169,7 +178,7 @@ type Endpoint interface {
 	// endpoint passed in as a parameter.
 	//
 	// The error codes are the same as Connect.
-	Connect(ctx context.Context, server BoundEndpoint) *syserr.Error
+	Connect(ctx context.Context, server BoundEndpoint, opts UnixSocketOpts) *syserr.Error
 
 	// Shutdown closes the read and/or write end of the endpoint connection
 	// to its peer.
@@ -187,7 +196,7 @@ type Endpoint interface {
 	//
 	// peerAddr if not nil will be populated with the address of the connected
 	// peer on a successful accept.
-	Accept(ctx context.Context, peerAddr *Address) (Endpoint, *syserr.Error)
+	Accept(ctx context.Context, peerAddr *Address, opts UnixSocketOpts) (Endpoint, *syserr.Error)
 
 	// Bind binds the endpoint to a specific local address and port.
 	// Specifying a NIC is optional.
@@ -262,7 +271,7 @@ type BoundEndpoint interface {
 	//
 	// This method will return syserr.ErrConnectionRefused on endpoints with a
 	// type that isn't SockStream or SockSeqpacket.
-	BidirectionalConnect(ctx context.Context, ep ConnectingEndpoint, returnConnect func(Receiver, ConnectedEndpoint)) *syserr.Error
+	BidirectionalConnect(ctx context.Context, ep ConnectingEndpoint, returnConnect func(Receiver, ConnectedEndpoint), opts UnixSocketOpts) *syserr.Error
 
 	// UnidirectionalConnect establishes a write-only connection to a unix
 	// endpoint.
@@ -272,7 +281,7 @@ type BoundEndpoint interface {
 	//
 	// This method will return syserr.ErrConnectionRefused on a non-SockDgram
 	// endpoint.
-	UnidirectionalConnect(ctx context.Context) (ConnectedEndpoint, *syserr.Error)
+	UnidirectionalConnect(ctx context.Context, opts UnixSocketOpts) (ConnectedEndpoint, *syserr.Error)
 
 	// Passcred returns whether or not the SO_PASSCRED socket option is
 	// enabled on this end.

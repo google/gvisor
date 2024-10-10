@@ -54,7 +54,7 @@ type endpoint struct {
 }
 
 // BidirectionalConnect implements BoundEndpoint.BidirectionalConnect.
-func (e *endpoint) BidirectionalConnect(ctx context.Context, ce transport.ConnectingEndpoint, returnConnect func(transport.Receiver, transport.ConnectedEndpoint)) *syserr.Error {
+func (e *endpoint) BidirectionalConnect(ctx context.Context, ce transport.ConnectingEndpoint, returnConnect func(transport.Receiver, transport.ConnectedEndpoint), opts transport.UnixSocketOpts) *syserr.Error {
 	// No lock ordering required as only the ConnectingEndpoint has a mutex.
 	ce.Lock()
 
@@ -68,7 +68,7 @@ func (e *endpoint) BidirectionalConnect(ctx context.Context, ce transport.Connec
 		return syserr.ErrInvalidEndpointState
 	}
 
-	c, err := e.newConnectedEndpoint(ctx, ce.Type(), ce.WaiterQueue())
+	c, err := e.newConnectedEndpoint(ctx, ce.Type(), ce.WaiterQueue(), opts)
 	if err != nil {
 		ce.Unlock()
 		return err
@@ -85,8 +85,8 @@ func (e *endpoint) BidirectionalConnect(ctx context.Context, ce transport.Connec
 
 // UnidirectionalConnect implements
 // transport.BoundEndpoint.UnidirectionalConnect.
-func (e *endpoint) UnidirectionalConnect(ctx context.Context) (transport.ConnectedEndpoint, *syserr.Error) {
-	c, err := e.newConnectedEndpoint(ctx, linux.SOCK_DGRAM, &waiter.Queue{})
+func (e *endpoint) UnidirectionalConnect(ctx context.Context, opts transport.UnixSocketOpts) (transport.ConnectedEndpoint, *syserr.Error) {
+	c, err := e.newConnectedEndpoint(ctx, linux.SOCK_DGRAM, &waiter.Queue{}, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -102,7 +102,7 @@ func (e *endpoint) UnidirectionalConnect(ctx context.Context) (transport.Connect
 	return c, nil
 }
 
-func (e *endpoint) newConnectedEndpoint(ctx context.Context, sockType linux.SockType, queue *waiter.Queue) (*transport.SCMConnectedEndpoint, *syserr.Error) {
+func (e *endpoint) newConnectedEndpoint(ctx context.Context, sockType linux.SockType, queue *waiter.Queue, opts transport.UnixSocketOpts) (*transport.SCMConnectedEndpoint, *syserr.Error) {
 	e.dentry.fs.renameMu.RLock()
 	hostSockFD, err := e.dentry.connect(ctx, sockType)
 	e.dentry.fs.renameMu.RUnlock()
@@ -110,7 +110,7 @@ func (e *endpoint) newConnectedEndpoint(ctx context.Context, sockType linux.Sock
 		return nil, syserr.ErrConnectionRefused
 	}
 
-	c, serr := transport.NewSCMEndpoint(hostSockFD, queue, e.path)
+	c, serr := transport.NewSCMEndpoint(hostSockFD, queue, e.path, opts)
 	if serr != nil {
 		unix.Close(hostSockFD)
 		log.Warningf("NewSCMEndpoint failed: path=%q, err=%v", e.path, serr)
