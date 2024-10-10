@@ -304,6 +304,13 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 		util.Fatalf("reading spec: %v", err)
 	}
 
+	if spec.Linux == nil {
+		spec.Linux = &specs.Linux{}
+	}
+	// Don't force the use of cgroups in tests because they lack permission to do so.
+	if spec.Linux.CgroupsPath == "" && !conf.TestOnlyAllowRunAsCurrentUserWithoutChroot {
+		spec.Linux.CgroupsPath = "/" + f.Arg(0)
+	}
 	if b.setUpRoot {
 		if err := setUpChroot(spec, conf); err != nil {
 			util.Fatalf("error setting up chroot: %v", err)
