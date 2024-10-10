@@ -1212,3 +1212,86 @@ func TestCheckpointResume(t *testing.T) {
 		t.Fatalf("docker kill failed: %v", err)
 	}
 }
+
+// Test to check restore of a TCP listening connection.
+func TestCheckpointRestoreListeningConnection(t *testing.T) {
+	if !testutil.IsCheckpointSupported() {
+		t.Skip("Checkpoint is not supported.")
+	}
+	dockerutil.EnsureDockerExperimentalEnabled()
+
+	ctx := context.Background()
+	d := dockerutil.MakeContainer(ctx, t)
+	defer d.CleanUp(ctx)
+
+	const port = 9000
+	opts := dockerutil.RunOpts{
+		Image: "basic/integrationtest",
+		Ports: []int{port},
+	}
+
+	// Start the tcp server.
+	if err := d.Spawn(ctx, opts, "./tcp_server"); err != nil {
+		t.Fatalf("docker run failed: %v", err)
+	}
+
+	var (
+		ip   net.IP
+		err  error
+		conn net.Conn
+	)
+	ip, err = d.FindIP(ctx, false)
+	if err != nil {
+		t.Fatalf("docker.FindIP failed: %v", err)
+	}
+	serverIP := ip.String() + ":" + strconv.Itoa(port)
+	const timeout = 1 * time.Minute
+	for {
+		conn, err = net.DialTimeout("tcp", serverIP, timeout)
+		if err == nil {
+			break
+		}
+	}
+	conn.Close()
+
+	// Create a snapshot.
+	const checkpointFile = "networktest"
+	if err := d.Checkpoint(ctx, checkpointFile); err != nil {
+		t.Fatalf("docker checkpoint failed: %v", err)
+	}
+	if err := d.WaitTimeout(ctx, defaultWait); err != nil {
+		t.Fatalf("wait failed: %v", err)
+	}
+	// TODO(b/143498576): Remove Poll after github.com/moby/moby/issues/38963 is fixed.
+	if err := testutil.Poll(func() error { return d.Restore(ctx, checkpointFile) }, defaultWait); err != nil {
+		t.Fatalf("docker restore failed: %v", err)
+	}
+
+	var (
+		newIP   net.IP
+		newConn net.Conn
+	)
+	newIP, err = d.FindIP(ctx, false)
+	if err != nil {
+		t.Fatalf("docker.FindIP failed: %v", err)
+	}
+	newserverIP := newIP.String() + ":" + strconv.Itoa(port)
+	newConn, err = net.DialTimeout("tcp", newserverIP, timeout)
+	if err != nil {
+		t.Fatalf("Error connecting to server: %v", err)
+	}
+	defer newConn.Close()
+
+	readBuf := make([]byte, 32)
+	if _, err := newConn.Read(readBuf); err != nil {
+		t.Fatalf("Read failed: %v", err)
+	}
+
+	if _, err := newConn.Write([]byte("Hello!")); err != nil {
+		t.Fatalf("Write failed: %v", err)
+	}
+
+	if err := d.Wait(ctx); err != nil {
+		t.Fatalf("Wait failed: %v", err)
+	}
+}
