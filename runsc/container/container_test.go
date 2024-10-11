@@ -3653,3 +3653,211 @@ func TestLookupEROFS(t *testing.T) {
 		}
 	}
 }
+
+func TestSpecValidation(t *testing.T) {
+	// TODO(b/359591006): Add more tests.
+	tests := []struct {
+		name    string
+		mutate  func(spec, restoreSpec *specs.Spec)
+		wantErr string
+	}{
+		{
+			name: "Terminal",
+			mutate: func(_, restoreSpec *specs.Spec) {
+				restoreSpec.Process.Terminal = true
+			},
+			wantErr: "Terminal does not match across checkpoint restore",
+		},
+		{
+			name: "Args",
+			mutate: func(_, restoreSpec *specs.Spec) {
+				restoreSpec.Process.Args = append(restoreSpec.Process.Args, "new arg")
+			},
+			wantErr: "Args does not match across checkpoint restore",
+		},
+		{
+			name: "Device",
+			mutate: func(spec, restoreSpec *specs.Spec) {
+				spec.Linux = &specs.Linux{}
+				restoreSpec.Linux = &specs.Linux{}
+				mode := os.FileMode(0666)
+				dev := specs.LinuxDevice{
+					Path:     "/dev/nvidiactl",
+					Type:     "c",
+					Major:    195, // nvgpu.NV_MAJOR_DEVICE_NUMBER,
+					Minor:    255, // nvgpu.NV_CONTROL_DEVICE_MINOR,
+					FileMode: &mode,
+				}
+				restoreSpec.Linux.Devices = append(restoreSpec.Linux.Devices, dev)
+			},
+			wantErr: "Devices does not match across checkpoint restore",
+		},
+		{
+			name: "Namespace",
+			mutate: func(spec, restoreSpec *specs.Spec) {
+				spec.Linux = &specs.Linux{}
+				restoreSpec.Linux = &specs.Linux{}
+				restoreSpec.Linux.Namespaces = append(restoreSpec.Linux.Namespaces, specs.LinuxNamespace{
+					Type: "network",
+					Path: fmt.Sprintf("/proc/%d/ns/net", os.Getpid()),
+				})
+			},
+			wantErr: "Namespace does not match across checkpoint restore",
+		},
+		{
+			name: "Seccomp",
+			mutate: func(spec, restoreSpec *specs.Spec) {
+				spec.Linux = &specs.Linux{}
+				restoreSpec.Linux = &specs.Linux{}
+				restoreSpec.Linux.Seccomp = &specs.LinuxSeccomp{
+					DefaultAction: specs.ActAllow,
+				}
+			},
+			wantErr: "Seccomp does not match across checkpoint restore",
+		},
+		{
+			name:    "RestoreDupMountsSuccess",
+			mutate:  func(_, _ *specs.Spec) {},
+			wantErr: "",
+		},
+		{
+			name:    "RestoreDupMountsFail",
+			mutate:  func(_, _ *specs.Spec) {},
+			wantErr: "invalid mount",
+		},
+		{
+			name:    "RestoreMountsFail",
+			mutate:  func(_, _ *specs.Spec) {},
+			wantErr: "Mounts does not match across checkpoint restore",
+		},
+		{
+			name: "FlagAnnotations",
+			mutate: func(spec, restoreSpec *specs.Spec) {
+				spec.Annotations = make(map[string]string)
+				spec.Annotations["dev.gvisor.net-disconnect-ok"] = strconv.FormatBool(true)
+			},
+			wantErr: "Annotations does not match across checkpoint restore",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			spec, _ := sleepSpecConf(t)
+			restoreSpec, _ := sleepSpecConf(t)
+			test.mutate(spec, restoreSpec)
+
+			mountDir, err := os.MkdirTemp(testutil.TmpDir(), "mount-test")
+			if err != nil {
+				t.Fatalf("os.MkdirTemp() failed: %v", err)
+			}
+			if err := os.Chmod(mountDir, 0777); err != nil {
+				t.Fatalf("error chmoding file: %q, %v", mountDir, err)
+			}
+			defer os.RemoveAll(mountDir)
+			mountDest := filepath.Join(mountDir, "/foo-dir")
+			mnt := specs.Mount{
+				Source:      mountDest,
+				Destination: mountDest,
+				Type:        "tmpfs",
+			}
+			spec.Mounts = append(spec.Mounts, mnt)
+
+			conf := testutil.TestConfig(t)
+			_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+			if err != nil {
+				t.Fatalf("error setting up container: %v", err)
+			}
+			defer cleanup()
+
+			args := Args{
+				ID:        testutil.RandomContainerID(),
+				Spec:      spec,
+				BundleDir: bundleDir,
+			}
+			cont, err := New(conf, args)
+			if err != nil {
+				t.Fatalf("error creating container: %v", err)
+			}
+
+			if err := cont.Start(conf); err != nil {
+				t.Fatalf("error starting container: %v", err)
+			}
+
+			// Set the image path, which is where the checkpoint image will be saved.
+			dir, err := os.MkdirTemp(testutil.TmpDir(), "checkpoint")
+			if err != nil {
+				t.Fatalf("os.MkdirTemp failed: %v", err)
+			}
+			defer os.RemoveAll(dir)
+			if err := os.Chmod(dir, 0777); err != nil {
+				t.Fatalf("error chmoding file: %q, %v", dir, err)
+			}
+			// Checkpoint running container; save state into new file.
+			if err := cont.Checkpoint(dir, false /* direct */, statefile.Options{Compression: statefile.CompressionLevelFlateBestSpeed}, pgalloc.SaveOpts{}); err != nil {
+				t.Fatalf("error checkpointing container to empty file: %v", err)
+			}
+
+			restoreDir, err := os.MkdirTemp(testutil.TmpDir(), "restore-test")
+			if err != nil {
+				t.Fatalf("os.MkdirTemp() failed: %v", err)
+			}
+			if err := os.Chmod(restoreDir, 0777); err != nil {
+				t.Fatalf("error chmoding file: %q, %v", restoreDir, err)
+			}
+			defer os.RemoveAll(restoreDir)
+
+			restoreSrc := filepath.Join(restoreDir, "/restore-dir")
+			restoreMnt := specs.Mount{
+				Source:      restoreSrc,
+				Destination: mountDest,
+				Type:        "tmpfs",
+			}
+			switch test.name {
+			case "RestoreDupMountsSuccess":
+				restoreSpec.Mounts = append(restoreSpec.Mounts, restoreMnt)
+			case "RestoreDupMountsFail":
+				restoreMnt1 := specs.Mount{
+					Source:      filepath.Join(restoreDir, "/restore-dir2"),
+					Destination: mountDest,
+					Type:        "tmpfs",
+				}
+				restoreSpec.Mounts = append(restoreSpec.Mounts, restoreMnt1)
+			case "RestoreMountsFail":
+				restoreMnt.Destination = restoreSrc
+			}
+			restoreSpec.Mounts = append(restoreSpec.Mounts, restoreMnt)
+
+			// Change the spec for the validation to fail.
+			_, bundleDir2, cleanup2, err := testutil.SetupContainer(restoreSpec, conf)
+			if err != nil {
+				t.Fatalf("error setting up container: %v", err)
+			}
+			defer cleanup2()
+
+			// Restore into a new container with different ID (e.g. clone). Keep the
+			// initial container running to ensure no conflict with it.
+			args2 := Args{
+				ID:        testutil.RandomContainerID(),
+				Spec:      restoreSpec,
+				BundleDir: bundleDir2,
+			}
+			cont2, err := New(conf, args2)
+			if err != nil {
+				t.Fatalf("error creating container: %v", err)
+			}
+			defer cont2.Destroy()
+
+			err = cont2.Restore(conf, dir, false /* direct */, false /* background */)
+			if err == nil {
+				if test.wantErr == "" {
+					return
+				}
+				t.Fatalf("spec validation failed for test %v, got: nil, want: %v", test, test.wantErr)
+			}
+
+			got := err.Error()
+			if !strings.Contains(got, test.wantErr) {
+				t.Fatalf("wrong error message, got: %v, want: %v", got, test.wantErr)
+			}
+		})
+	}
+}

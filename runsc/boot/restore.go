@@ -18,7 +18,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"reflect"
+	"slices"
+	"sort"
 	"strconv"
+	"strings"
 	time2 "time"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
@@ -43,6 +47,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/runsc/boot/pprof"
 	"gvisor.dev/gvisor/runsc/config"
+	"gvisor.dev/gvisor/runsc/version"
 )
 
 const (
@@ -141,13 +146,248 @@ func createNetworkStackForRestore(l *Loader) (*stack.Stack, inet.Stack) {
 	return nil, hostinet.NewStack()
 }
 
-// Validate OCI specs before restoring the containers.
-func validateSpecs(oldSpecs, newSpecs map[string]*specs.Spec) error {
-	for name := range newSpecs {
-		if _, ok := oldSpecs[name]; !ok {
-			return fmt.Errorf("checkpoint image does not contain spec for container: %q", name)
+func validateErrorWithMsg(field, cName string, oldV, newV any, msg string) error {
+	return fmt.Errorf("%v does not match across checkpoint restore for container: %v, checkpoint %v restore %v, got error %v", field, cName, oldV, newV, msg)
+}
+
+func validateError(field, cName string, oldV, newV any) error {
+	return fmt.Errorf("%v does not match across checkpoint restore for container: %v, checkpoint %v restore %v", field, cName, oldV, newV)
+}
+
+// validateMounts validates the mounts in the checkpoint and restore spec.
+// Duplicate mounts are allowed iff all the fields in the mount are same.
+func validateMounts(field, cName string, o, n []specs.Mount) error {
+	// Create a new mount map without source as source path can vary
+	// across checkpoint restore.
+	oldMnts := make(map[string]specs.Mount)
+	for _, m := range o {
+		mnt := specs.Mount{
+			Destination: m.Destination,
+			Type:        m.Type,
+			Source:      m.Source,
+		}
+		mnt.Options = make([]string, len(m.Options))
+		copy(mnt.Options, m.Options)
+		sort.Strings(mnt.Options)
+		oldMnts[mnt.Destination] = mnt
+	}
+	newMnts := make(map[string]specs.Mount)
+	for _, m := range n {
+		mnt := specs.Mount{
+			Destination: m.Destination,
+			Type:        m.Type,
+			Source:      m.Source,
+		}
+		mnt.Options = make([]string, len(m.Options))
+		copy(mnt.Options, m.Options)
+		sort.Strings(mnt.Options)
+
+		// Source can vary during restore.
+		oldMnt, ok := oldMnts[mnt.Destination]
+		if !ok {
+			return validateError(field, cName, o, n)
+		}
+		if oldMnt.Destination != mnt.Destination || oldMnt.Type != mnt.Type || !slices.Equal(oldMnt.Options, mnt.Options) {
+			return validateError(field, cName, o, n)
+		}
+
+		// Duplicate mounts are allowed iff all fields in specs.Mount are same.
+		if val, ok := newMnts[mnt.Destination]; ok {
+			if !reflect.DeepEqual(val, mnt) {
+				return validateErrorWithMsg(field, cName, o, n, "invalid mount in the restore spec")
+			}
+			continue
+		}
+		newMnts[mnt.Destination] = mnt
+	}
+	if len(oldMnts) != len(newMnts) {
+		return validateError(field, cName, o, n)
+	}
+	return nil
+}
+
+func validateDevices(field, cName string, o, n []specs.LinuxDevice) error {
+	if len(o) != len(n) {
+		return validateErrorWithMsg(field, cName, o, n, "length mismatch")
+	}
+	if len(o) == 0 {
+		return nil
+	}
+
+	// Create with only Path and Type fields as other fields can vary during restore.
+	devs := make(map[specs.LinuxDevice]struct{})
+	for _, d := range o {
+		dev := specs.LinuxDevice{
+			Path: d.Path,
+			Type: d.Type,
+		}
+		if _, ok := devs[dev]; ok {
+			return fmt.Errorf("duplicate device found in the spec %v before checkpoint for container %v", o, cName)
+		}
+		devs[dev] = struct{}{}
+	}
+	for _, d := range n {
+		dev := specs.LinuxDevice{
+			Path: d.Path,
+			Type: d.Type,
+		}
+		if _, ok := devs[dev]; !ok {
+			return validateError(field, cName, o, n)
+		}
+		delete(devs, dev)
+	}
+	if len(devs) != 0 {
+		return validateError(field, cName, o, n)
+	}
+	return nil
+}
+
+func validateAnnotations(cName string, oldMap, newMap map[string]string) error {
+	const (
+		gvisorStr   = "dev.gvisor"
+		internalStr = "dev.gvisor.internal"
+		mntStr      = "dev.gvisor.spec.mount.source"
+	)
+	copyMap := func(o map[string]string) map[string]string {
+		n := make(map[string]string)
+		for key, val := range o {
+			if strings.HasPrefix(key, internalStr) || strings.HasPrefix(key, mntStr) {
+				continue
+			}
+			if strings.HasPrefix(key, gvisorStr) {
+				n[key] = val
+			}
+		}
+		return n
+	}
+
+	oldM := copyMap(oldMap)
+	newM := copyMap(newMap)
+	if !reflect.DeepEqual(oldM, newM) {
+		return validateError("Annotations", cName, oldM, newM)
+	}
+	return nil
+}
+
+// validateArray performs a deep comparison of two arrays, checking for equality
+// at every level of nesting. Note that this method:
+// * does not allow duplicates in the arrays.
+// * does not depend on the order of the elements in the arrays.
+func validateArray[T any](field, cName string, oldArr, newArr []T) error {
+	if len(oldArr) != len(newArr) {
+		return validateErrorWithMsg(field, cName, oldArr, newArr, "length mismatch")
+	}
+	if len(oldArr) == 0 {
+		return nil
+	}
+	oldMap := make(map[any]struct{})
+	newMap := make(map[any]struct{})
+	for i := 0; i < len(oldArr); i++ {
+		key := oldArr[i]
+		if _, ok := oldMap[key]; ok {
+			return validateErrorWithMsg(field, cName, oldArr, newArr, "duplicate value")
+		}
+		oldMap[key] = struct{}{}
+
+		key = newArr[i]
+		if _, ok := newMap[key]; ok {
+			return validateErrorWithMsg(field, cName, oldArr, newArr, "duplicate value")
+		}
+		newMap[key] = struct{}{}
+	}
+	if !reflect.DeepEqual(oldMap, newMap) {
+		return validateError(field, cName, oldArr, newArr)
+	}
+
+	return nil
+}
+
+func validateStruct(field, cName string, oldS, newS any) error {
+	if !reflect.DeepEqual(oldS, newS) {
+		return validateError(field, cName, oldS, newS)
+	}
+	return nil
+}
+
+func ifNil[T any](v *T) *T {
+	if v != nil {
+		return v
+	}
+	var t T
+	return &t
+}
+
+func validateSpecForContainer(oldSpec, newSpec *specs.Spec, cName string) error {
+	oldLinux, newLinux := ifNil(oldSpec.Linux), ifNil(newSpec.Linux)
+	oldProcess, newProcess := ifNil(oldSpec.Process), ifNil(newSpec.Process)
+	oldRoot, newRoot := ifNil(oldSpec.Root), ifNil(newSpec.Root)
+
+	if oldSpec.Version != newSpec.Version {
+		return validateError("OCI Version", cName, oldSpec.Version, newSpec.Version)
+	}
+	validateStructMap := make(map[string][2]any)
+	validateStructMap["Root"] = [2]any{oldRoot, newRoot}
+	if err := validateMounts("Mounts", cName, oldSpec.Mounts, newSpec.Mounts); err != nil {
+		return err
+	}
+
+	// Validate specs.Process.
+	if oldProcess.Terminal != newProcess.Terminal {
+		return validateError("Terminal", cName, oldProcess.Terminal, newProcess.Terminal)
+	}
+	if oldProcess.Cwd != newProcess.Cwd {
+		return validateError("Cwd", cName, oldProcess.Cwd, newProcess.Cwd)
+	}
+	validateStructMap["User"] = [2]any{oldProcess.User, newProcess.User}
+	validateStructMap["Rlimits"] = [2]any{oldProcess.Rlimits, newProcess.Rlimits}
+	if ok := slices.Equal(oldProcess.Args, newProcess.Args); !ok {
+		return validateError("Args", cName, oldProcess.Args, newProcess.Args)
+	}
+
+	// Validate specs.Linux.
+	if oldLinux.CgroupsPath != newLinux.CgroupsPath {
+		return validateError("CgroupsPath", cName, oldLinux.CgroupsPath, newLinux.CgroupsPath)
+	}
+	validateStructMap["Sysctl"] = [2]any{oldLinux.Sysctl, newLinux.Sysctl}
+	validateStructMap["Seccomp"] = [2]any{oldLinux.Seccomp, newLinux.Seccomp}
+	if err := validateDevices("Devices", cName, oldLinux.Devices, newLinux.Devices); err != nil {
+		return err
+	}
+	if err := validateArray("UIDMappings", cName, oldLinux.UIDMappings, newLinux.UIDMappings); err != nil {
+		return err
+	}
+	if err := validateArray("GIDMappings", cName, oldLinux.GIDMappings, newLinux.GIDMappings); err != nil {
+		return err
+	}
+	if err := validateArray("Namespace", cName, oldLinux.Namespaces, newLinux.Namespaces); err != nil {
+		return err
+	}
+
+	for key, val := range validateStructMap {
+		if err := validateStruct(key, cName, val[0], val[1]); err != nil {
+			return err
 		}
 	}
+
+	if err := validateAnnotations(cName, oldSpec.Annotations, newSpec.Annotations); err != nil {
+		return err
+	}
+
+	// TODO(b/359591006): Validate Linux.Resources, Process.Capabilities and Annotations.
+	// TODO(b/359591006): Check other remaining fields for equality.
+	return nil
+}
+
+// Validate OCI specs before restoring the containers.
+func validateSpecs(oldSpecs, newSpecs map[string]*specs.Spec) error {
+	for cName, newSpec := range newSpecs {
+		oldSpec, ok := oldSpecs[cName]
+		if !ok {
+			return fmt.Errorf("checkpoint image does not contain spec for container: %q", cName)
+		}
+		return validateSpecForContainer(oldSpec, newSpec, cName)
+	}
+
 	return nil
 }
 
@@ -245,6 +485,12 @@ func (r *restorer) restore(l *Loader) error {
 	r.pagesFile = nil // transferred to loadOpts.Load()
 	if err != nil {
 		return err
+	}
+
+	checkpointVersion := popVersionFromCheckpoint(l.k)
+	restoreVersion := version.Version()
+	if checkpointVersion != restoreVersion {
+		return fmt.Errorf("runsc version does not match across checkpoint restore, checkpoint: %v restore: %v", checkpointVersion, restoreVersion)
 	}
 
 	oldSpecs, err := popContainerSpecsFromCheckpoint(l.k)
@@ -360,6 +606,9 @@ func (l *Loader) save(o *control.SaveOpts) (err error) {
 		o.Metadata = make(map[string]string)
 	}
 	o.Metadata["container_count"] = strconv.Itoa(l.containerCount())
+
+	// Save runsc version.
+	l.addVersionToCheckpoint()
 
 	// Save container specs.
 	l.addContainerSpecsToCheckpoint()
