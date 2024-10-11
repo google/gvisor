@@ -122,16 +122,21 @@ void __export_sighandler(int signo, siginfo_t *siginfo, void *_ucontext) {
   // point context.
   //
   // See: arch/arm64/include/uapi/asm/sigcontext.h
-  const uint64_t kSigframeMagicHeaderLen = sizeof(struct _aarch64_ctx);
+  const uint64_t kFpsimdContextSize =
+      sizeof(struct fpsimd_context) - sizeof(struct _aarch64_ctx);
+  struct fpsimd_context *fpctx =
+      (struct fpsimd_context *)&ucontext->uc_mcontext.__reserved;
+  uint8_t *fpStatePointer = (uint8_t *)&fpctx->fpsr;
+
   // Verify the header.
-  if (((uint32_t *)&ucontext->uc_mcontext.__reserved)[0] != FPSIMD_MAGIC) {
+  if (fpctx->head.magic != FPSIMD_MAGIC ||
+      __export_arch_state.fp_len < kFpsimdContextSize ||
+      fpctx->head.size != sizeof(struct fpsimd_context)) {
     panic(STUB_ERROR_FPSTATE_BAD_HEADER,
           ((uint32_t *)&ucontext->uc_mcontext.__reserved)[0]);
   }
-  uint8_t *fpStatePointer =
-      (uint8_t *)&ucontext->uc_mcontext.__reserved + kSigframeMagicHeaderLen;
 
-  memcpy(ctx->fpstate, fpStatePointer, __export_arch_state.fp_len);
+  memcpy(ctx->fpstate, fpStatePointer, kFpsimdContextSize);
   ctx->tls = get_tls();
   ctx->siginfo = *siginfo;
   switch (signo) {
@@ -192,6 +197,8 @@ void restore_state(struct sysmsg *sysmsg, struct thread_context *ctx,
 
   if (atomic_load(&ctx->fpstate_changed)) {
     memcpy(fpStatePointer, ctx->fpstate, __export_arch_state.fp_len);
+    fpctx[1].head.size = 0;
+    fpctx[1].head.magic = 0;
   }
   ptregs_to_gregs(ucontext, &ctx->ptregs);
   set_tls(ctx->tls);
