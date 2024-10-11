@@ -703,13 +703,18 @@ func createProcessArgs(id string, spec *specs.Spec, conf *config.Config, creds *
 		wd = "/"
 	}
 
+	umask := uint(0022)
+	if spec.Process.User.Umask != nil {
+		umask = uint(*spec.Process.User.Umask) & 0777
+	}
+
 	// Create the process arguments.
 	procArgs := kernel.CreateProcessArgs{
 		Argv:                 spec.Process.Args,
 		Envv:                 env,
 		WorkingDirectory:     wd,
 		Credentials:          creds,
-		Umask:                0022,
+		Umask:                umask,
 		Limits:               ls,
 		MaxSymlinkTraversals: linux.MaxSymlinkTraversals,
 		UTSNamespace:         k.RootUTSNamespace(),
