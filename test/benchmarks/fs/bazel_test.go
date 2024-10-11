@@ -47,7 +47,7 @@ func runBuildBenchmark(b *testing.B, image, workDir, target string) {
 	fsbench.RunWithDifferentFilesystems(ctx, b, machine, fsbench.FSBenchmark{
 		Image:      image,
 		WorkDir:    workDir,
-		RunCmd:     []string{"bazel", "build", "-c", "opt", target},
+		RunCmd:     []string{"bazel", "build", "-c", "opt", "--host_cxxopt=-std=c++14", "--cxxopt=-std=c++14", target},
 		WantOutput: "Build completed successfully",
 		CleanCmd:   []string{"blaze", "clean"},
 	})
