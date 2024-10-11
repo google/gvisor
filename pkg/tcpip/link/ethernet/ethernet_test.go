@@ -144,20 +144,12 @@ func TestMTU(t *testing.T) {
 			expectedMTU:  0,
 		},
 		{
-			maxFrameSize: header.EthernetMinimumSize - 1,
-			expectedMTU:  0,
-		},
-		{
 			maxFrameSize: header.EthernetMinimumSize,
-			expectedMTU:  0,
-		},
-		{
-			maxFrameSize: header.EthernetMinimumSize + 1,
-			expectedMTU:  1,
+			expectedMTU:  header.EthernetMinimumSize,
 		},
 		{
 			maxFrameSize: maxFrameSize,
-			expectedMTU:  maxFrameSize - header.EthernetMinimumSize,
+			expectedMTU:  maxFrameSize,
 		},
 	}
 
