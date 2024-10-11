@@ -48,13 +48,10 @@
 // Caller-Save: RAX, RCX, RDX, RSI, RDI, and R8-R11 are free to be used by
 // the called function and may be overwritten.
 // retjmp has to be updated when the stack frame size is changed.
-TEXT ·callWithSignalFrame(SB),NOSPLIT,$8-32
+TEXT ·callWithSignalFrame(SB),NOSPLIT,$8-24
 	MOVQ stack+0(FP), DI
 	MOVQ handler+8(FP), AX
 	MOVQ sigframe+16(FP), R8
-
-	MOVQ fpstate+24(FP), R9
-	MOVQ R9, SIGCTX_FPSTATE(R8)
 
 	MOVQ BX, SIGCTX_RBX(R8)
 	MOVQ BP, SIGCTX_RBP(R8)

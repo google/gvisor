@@ -22,11 +22,12 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/hostsyscall"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 )
 
-func callWithSignalFrame(stack uintptr, handler uintptr, sigframe *arch.UContext64, fpstate uintptr)
+func callWithSignalFrame(stack uintptr, handler uintptr, sigframe *arch.UContext64)
 
 //go:linkname throw runtime.throw
 func throw(s string)
@@ -38,17 +39,33 @@ func throw(s string)
 // These registers must be pre-set within the signal frame.
 //
 //go:nosplit
-func CallWithSignalFrame(stack uintptr, handlerAddr uintptr, sigframe *arch.UContext64, fpstate uintptr, sigmask *linux.SignalSet) error {
+func CallWithSignalFrame(signalStack *linux.SignalStack, handlerAddr uintptr, sigmask *linux.SignalSet, rax uint64) error {
+	var oldSigMask linux.SignalSet
 	errno := hostsyscall.RawSyscallErrno6(
 		unix.SYS_RT_SIGPROCMASK, linux.SIG_BLOCK,
 		uintptr(unsafe.Pointer(sigmask)),
-		uintptr(unsafe.Pointer(&sigframe.Sigset)),
+		uintptr(unsafe.Pointer(&oldSigMask)),
 		linux.SignalSetSize,
 		0, 0)
 	if errno != 0 {
 		return errno
 	}
-	callWithSignalFrame(stack, handlerAddr, sigframe, fpstate)
+	const minStackSize = uintptr(hostarch.PageSize)
+	ctxOffset := (unsafe.Sizeof(arch.UContext64{}) + 7) &^ 7
+
+	if ctxOffset+minStackSize > uintptr(signalStack.Size) {
+		return unix.ENOMEM
+	}
+
+	p := uintptr(signalStack.Addr + signalStack.Size)
+	stack := p - ctxOffset
+	sigframe := (*arch.UContext64)(unsafe.Pointer(stack))
+	sigframe.MContext.Rax = rax
+	sigframe.Stack = *signalStack
+	sigframe.Sigset = oldSigMask
+	sigframe.MContext.Fpstate = 0
+
+	callWithSignalFrame(stack, handlerAddr, sigframe)
 	return nil
 }
 

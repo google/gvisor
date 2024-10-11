@@ -91,3 +91,13 @@ TEXT ·currentCPU(SB), $0-8
 	MOVQ ENTRY_CPU_SELF(GS), AX
 	MOVQ AX, ret+0(FP)
 	RET
+
+TEXT ·rdfsbase(SB), $0-8
+	BYTE $0xf3; BYTE $0x48; BYTE $0x0f; BYTE $0xae; BYTE $0xc0;
+	MOVQ AX, ret+0(FP)
+	RET
+
+TEXT ·rdgsbase(SB), $0-8
+	BYTE $0xf3; BYTE $0x48; BYTE $0x0f; BYTE $0xae; BYTE $0xc8;
+	MOVQ AX, ret+0(FP)
+	RET
