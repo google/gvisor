@@ -26,25 +26,36 @@ import (
 	"gvisor.dev/gvisor/pkg/hostsyscall"
 )
 
+func rdfsbase() uint64
+func rdgsbase() uint64
+
 // loadSegments copies the current segments.
 //
 // This may be called from within the signal context and throws on error.
 //
 //go:nosplit
 func (c *vCPU) loadSegments(tid uint64) {
-	if errno := hostsyscall.RawSyscallErrno(
-		unix.SYS_ARCH_PRCTL,
-		linux.ARCH_GET_FS,
-		uintptr(unsafe.Pointer(&c.CPU.Registers().Fs_base)),
-		0); errno != 0 {
-		throw("getting FS segment")
+	if errno := hostsyscall.RawSyscallErrno(unix.SYS_SIGALTSTACK, 0, uintptr(unsafe.Pointer(&c.signalStack)), 0); errno != 0 {
+		throw("sigaltstack")
 	}
-	if errno := hostsyscall.RawSyscallErrno(
-		unix.SYS_ARCH_PRCTL,
-		linux.ARCH_GET_GS,
-		uintptr(unsafe.Pointer(&c.CPU.Registers().Gs_base)),
-		0); errno != 0 {
-		throw("getting GS segment")
+	if hasFSGSBASE {
+		c.CPU.Registers().Fs_base = rdfsbase()
+		c.CPU.Registers().Gs_base = rdgsbase()
+	} else {
+		if errno := hostsyscall.RawSyscallErrno(
+			unix.SYS_ARCH_PRCTL,
+			linux.ARCH_GET_FS,
+			uintptr(unsafe.Pointer(&c.CPU.Registers().Fs_base)),
+			0); errno != 0 {
+			throw("getting FS segment")
+		}
+		if errno := hostsyscall.RawSyscallErrno(
+			unix.SYS_ARCH_PRCTL,
+			linux.ARCH_GET_GS,
+			uintptr(unsafe.Pointer(&c.CPU.Registers().Gs_base)),
+			0); errno != 0 {
+			throw("getting GS segment")
+		}
 	}
 	c.tid.Store(tid)
 }

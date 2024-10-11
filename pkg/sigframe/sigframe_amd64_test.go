@@ -19,7 +19,6 @@ package sigframe
 
 import (
 	"testing"
-	"unsafe"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -31,19 +30,25 @@ func TestUserSignalHandler(t *testing.T) {
 	addr, _, _ := unix.Syscall6(unix.SYS_MMAP, 0, hostarch.PageSize*4, uintptr(unix.PROT_READ|unix.PROT_WRITE),
 		uintptr(unix.MAP_PRIVATE|unix.MAP_ANONYMOUS),
 		0, 0)
+	stack := linux.SignalStack{
+		Addr: uint64(addr),
+		Size: hostarch.PageSize * 4,
+	}
 	set := linux.MakeSignalSet(linux.SIGURG)
-	sigframe := (*arch.UContext64)(unsafe.Pointer(addr + hostarch.PageSize))
-	CallWithSignalFrame(addr+hostarch.PageSize, addrOfUserHandler(), sigframe, 0, &set)
+	CallWithSignalFrame(&stack, addrOfUserHandler(), &set, 0)
 }
 
 func BenchmarkUserSigHandler(b *testing.B) {
 	addr, _, _ := unix.Syscall6(unix.SYS_MMAP, 0, hostarch.PageSize*4, uintptr(unix.PROT_READ|unix.PROT_WRITE),
 		uintptr(unix.MAP_PRIVATE|unix.MAP_ANONYMOUS),
 		0, 0)
+	stack := linux.SignalStack{
+		Addr: uint64(addr),
+		Size: hostarch.PageSize * 4,
+	}
 	set := linux.MakeSignalSet(linux.SIGURG)
-	sigframe := (*arch.UContext64)(unsafe.Pointer(addr + hostarch.PageSize))
 	for i := 0; i < b.N; i++ {
-		CallWithSignalFrame(addr+hostarch.PageSize, addrOfUserHandler(), sigframe, 0, &set)
+		CallWithSignalFrame(&stack, addrOfUserHandler(), &set, 0)
 	}
 }
 

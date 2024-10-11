@@ -205,6 +205,7 @@ analyzers:
         - pkg/sentry/platform/safecopy/safecopy_unsafe.go          # Special case.
         - pkg/sentry/usage/memory_unsafe.go                        # Special case.
         - pkg/sentry/vfs/mount_unsafe.go                           # Special case.
+        - pkg/sigframe/sigframe_amd64_unsafe.go                    # Special case.
         - pkg/state/decode_unsafe.go                               # Special case.
   unusedresult:
     external: # Enabled.

@@ -31,7 +31,6 @@ import (
 	"gvisor.dev/gvisor/pkg/hostsyscall"
 	"gvisor.dev/gvisor/pkg/ring0"
 	"gvisor.dev/gvisor/pkg/ring0/pagetables"
-	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	ktime "gvisor.dev/gvisor/pkg/sentry/time"
 )
@@ -80,9 +79,8 @@ type vCPUArchState struct {
 	// This starts above fixedKernelPCID.
 	PCIDs *pagetables.PCIDs
 
-	bluepillStack           uintptr
-	bluepillSigframe        *arch.UContext64
-	bluepillSigframeFPState uintptr
+	// signalStack is the signal stack of the last thread bound to this vCPU.
+	signalStack linux.SignalStack
 }
 
 const (
@@ -101,10 +99,6 @@ const (
 
 // initArchState initializes architecture-specific state.
 func (c *vCPU) initArchState() error {
-	if err := c.initBluepillHandler(); err != nil {
-		return err
-	}
-
 	var (
 		kernelSystemRegs systemRegs
 		kernelUserRegs   userRegs

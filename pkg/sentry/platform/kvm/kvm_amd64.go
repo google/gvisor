@@ -218,9 +218,13 @@ func (c *cpuidEntries) Set(in cpuid.In, out cpuid.Out) {
 	}
 }
 
+var hasFSGSBASE bool
+
 // updateGlobalOnce does global initialization. It has to be called only once.
 func updateGlobalOnce(fd int) error {
+	hasFSGSBASE = cpuid.HostFeatureSet().UseFSGSBASE()
 	fpu.InitHostState()
+
 	bitsForScaling = getBitsForScaling()
 	if err := updateSystemValues(int(fd)); err != nil {
 		return err

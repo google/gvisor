@@ -14,6 +14,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/abi/linux",
+        "//pkg/hostarch",
         "//pkg/hostsyscall",
         "//pkg/sentry/arch",
         "@org_golang_x_sys//unix:go_default_library",
