@@ -25,12 +25,10 @@ import (
 	"flag"
 	"io"
 	"log"
-	"math/rand"
 	"net"
 	"os"
 	"strconv"
 	"strings"
-	"time"
 
 	"gvisor.dev/gvisor/pkg/rawfile"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -112,8 +110,6 @@ func main() {
 	tunName := flag.Arg(0)
 	addrName := flag.Arg(1)
 	portName := flag.Arg(2)
-
-	rand.Seed(time.Now().UnixNano())
 
 	// Parse the mac address.
 	maddr, err := net.ParseMAC(*mac)

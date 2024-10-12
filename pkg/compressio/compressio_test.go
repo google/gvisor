@@ -154,8 +154,6 @@ func doTest(t harness, opts testOpts) {
 var hashKey = []byte("01234567890123456789012345678901")
 
 func TestCompress(t *testing.T) {
-	rand.Seed(time.Now().Unix())
-
 	var (
 		data  = initTest(t, 10*1024*1024)
 		data0 = data[:0]

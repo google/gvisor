@@ -24,16 +24,11 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/docker/docker/api/types/mount"
 	"gvisor.dev/gvisor/pkg/test/dockerutil"
 	"gvisor.dev/gvisor/pkg/test/testutil"
 )
-
-func init() {
-	rand.Seed(int64(time.Now().Nanosecond()))
-}
 
 func TestMain(m *testing.M) {
 	dockerutil.EnsureSupportedDockerVersion()

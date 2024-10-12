@@ -398,10 +398,6 @@ func main() {
 	if *forward == "" {
 		log.Fatalf("no forward provided")
 	}
-	// Seed the random number generator to ensure that we are given MAC addresses that don't
-	// for the case of the client and server stack.
-	rand.Seed(time.Now().UTC().UnixNano())
-
 	if *cpuprofile != "" {
 		f, err := os.Create(*cpuprofile)
 		if err != nil {

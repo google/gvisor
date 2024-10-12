@@ -45,11 +45,9 @@ import (
 	"bytes"
 	"fmt"
 	"log"
-	"math/rand"
 	"net"
 	"os"
 	"strconv"
-	"time"
 
 	"gvisor.dev/gvisor/pkg/rawfile"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -99,8 +97,6 @@ func main() {
 	portName := os.Args[3]
 	remoteAddrName := os.Args[4]
 	remotePortName := os.Args[5]
-
-	rand.Seed(time.Now().UnixNano())
 
 	addr := tcpip.AddrFromSlice(net.ParseIP(addrName).To4())
 	remote := tcpip.FullAddress{

@@ -22,7 +22,6 @@ import (
 	"math/rand"
 	"runtime"
 	"testing"
-	"time"
 
 	"gvisor.dev/gvisor/pkg/compressio"
 )
@@ -44,8 +43,6 @@ type testCase struct {
 }
 
 func TestStatefile(t *testing.T) {
-	rand.Seed(time.Now().Unix())
-
 	compression := map[string]CompressionLevel{
 		"none":       CompressionLevelNone,
 		"compressed": CompressionLevelFlateBestSpeed,

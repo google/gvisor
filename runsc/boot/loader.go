@@ -19,7 +19,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	mrand "math/rand"
 	"os"
 	"runtime"
 	"strconv"
@@ -292,11 +291,6 @@ type fdMapping struct {
 type FDMapping struct {
 	Guest int
 	Host  int
-}
-
-func init() {
-	// Initialize the random number generator.
-	mrand.Seed(gtime.Now().UnixNano())
 }
 
 // Args are the arguments for New().

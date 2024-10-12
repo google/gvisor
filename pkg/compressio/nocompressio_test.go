@@ -18,14 +18,10 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"math/rand"
 	"testing"
-	"time"
 )
 
 func TestNoCompress(t *testing.T) {
-	rand.Seed(time.Now().Unix())
-
 	var (
 		data  = initTest(t, 10*1024*1024)
 		data0 = data[:0]
