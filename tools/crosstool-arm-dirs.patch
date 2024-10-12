@@ -2,11 +2,12 @@ diff --git a/cc_toolchain_config.bzl.tpl b/cc_toolchain_config.bzl.tpl
 index e864fa2..3de0405 100644
 --- a/cc_toolchain_config.bzl.tpl
 +++ b/cc_toolchain_config.bzl.tpl
-@@ -76,6 +76,7 @@ CXX_BUILTIN_INCLUDE_DIRECTORIES = {
+@@ -76,6 +76,8 @@ CXX_BUILTIN_INCLUDE_DIRECTORIES = {
          "/usr/lib/gcc/x86_64-linux-gnu/%d/include-fixed" % GCC_VERSION,
          "/usr/include/x86_64-linux-gnu",
          "/usr/include",
 +        "/usr/x86_64-linux-gnu/include/",
++        "/usr/lib/gcc-cross/x86_64-linux-gnu/%d/include/" % GCC_VERSION,
      ],
      "armv7a": [
          "/usr/arm-linux-gnueabihf/include/c++/%d" % GCC_VERSION,
