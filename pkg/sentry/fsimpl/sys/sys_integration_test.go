@@ -218,28 +218,28 @@ func TestEnableTPUProxyPathsV5(t *testing.T) {
 	}
 
 	devices := []PCIDeviceInfo{
-		PCIDeviceInfo{
+		{
 			group:             "0",
 			pciPath:           pciPath0,
 			pciAddress:        "0000:00:04.0",
 			name:              "vfio0",
 			nestedDeviceIndex: -1,
 		},
-		PCIDeviceInfo{
+		{
 			group:             "1",
 			pciPath:           pciPath0,
 			pciAddress:        "0000:00:05.0",
 			name:              "vfio1",
 			nestedDeviceIndex: -1,
 		},
-		PCIDeviceInfo{
+		{
 			group:             "2",
 			pciPath:           pciPath1,
 			pciAddress:        "0000:10:05.0",
 			name:              "vfio2",
 			nestedDeviceIndex: 3,
 		},
-		PCIDeviceInfo{
+		{
 			group:             "3",
 			pciPath:           pciPath1,
 			pciAddress:        "0000:10:05.0/0000:03:00.1",

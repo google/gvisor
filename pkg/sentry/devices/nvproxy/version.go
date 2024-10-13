@@ -696,7 +696,7 @@ func Init() {
 // have a struct defined in nvproxy, but we know the driver struct name.
 func simpleIoctl(structName string) []DriverStruct {
 	return []DriverStruct{
-		DriverStruct{
+		{
 			Name: structName,
 			Type: nil,
 		},
@@ -740,7 +740,7 @@ func getStructName(params any) []DriverStruct {
 	}
 
 	return []DriverStruct{
-		DriverStruct{
+		{
 			Name: driverName,
 			Type: paramType,
 		},

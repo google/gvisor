@@ -99,7 +99,7 @@ func (p *sysmsgThread) Debugf(format string, v ...any) {
 
 func sysmsgSyscallNotifyRules() []bpf.Instruction {
 	rules := []seccomp.RuleSet{
-		seccomp.RuleSet{
+		{
 			Rules: seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 				unix.SYS_EXIT_GROUP: seccomp.MatchAll{},
 			}),

@@ -1310,8 +1310,8 @@ func createDeviceFiles(ctx context.Context, creds *auth.Credentials, info *conta
 		// spec.Linux.Devices. So manually create appropriate device files.
 		mode := os.FileMode(0666)
 		nvidiaDevs := []specs.LinuxDevice{
-			specs.LinuxDevice{Path: "/dev/nvidiactl", Type: "c", Major: nvgpu.NV_MAJOR_DEVICE_NUMBER, Minor: nvgpu.NV_CONTROL_DEVICE_MINOR, FileMode: &mode},
-			specs.LinuxDevice{Path: "/dev/nvidia-uvm", Type: "c", Major: int64(info.nvidiaUVMDevMajor), Minor: nvgpu.NVIDIA_UVM_PRIMARY_MINOR_NUMBER, FileMode: &mode},
+			{Path: "/dev/nvidiactl", Type: "c", Major: nvgpu.NV_MAJOR_DEVICE_NUMBER, Minor: nvgpu.NV_CONTROL_DEVICE_MINOR, FileMode: &mode},
+			{Path: "/dev/nvidia-uvm", Type: "c", Major: int64(info.nvidiaUVMDevMajor), Minor: nvgpu.NVIDIA_UVM_PRIMARY_MINOR_NUMBER, FileMode: &mode},
 		}
 		devClient := devutil.GoferClientFromContext(ctx)
 		if devClient == nil {

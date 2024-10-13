@@ -236,12 +236,12 @@ func TestProgramBuilderOutcomes(t *testing.T) {
 			},
 			wantLocal: FragmentOutcomes{
 				MayJumpToUnresolvedLabels: map[string]struct{}{
-					"label1": struct{}{},
+					"label1": {},
 				},
 			},
 			wantOverall: FragmentOutcomes{
 				MayJumpToUnresolvedLabels: map[string]struct{}{
-					"label1": struct{}{},
+					"label1": {},
 				},
 			},
 		},
@@ -255,7 +255,7 @@ func TestProgramBuilderOutcomes(t *testing.T) {
 			},
 			wantOverall: FragmentOutcomes{
 				MayJumpToUnresolvedLabels: map[string]struct{}{
-					"label1": struct{}{},
+					"label1": {},
 				},
 				MayFallThrough: true,
 			},
@@ -291,14 +291,14 @@ func TestProgramBuilderOutcomes(t *testing.T) {
 			},
 			wantLocal: FragmentOutcomes{
 				MayJumpToUnresolvedLabels: map[string]struct{}{
-					"truelabel":  struct{}{},
-					"falselabel": struct{}{},
+					"truelabel":  {},
+					"falselabel": {},
 				},
 			},
 			wantOverall: FragmentOutcomes{
 				MayJumpToUnresolvedLabels: map[string]struct{}{
-					"truelabel":  struct{}{},
-					"falselabel": struct{}{},
+					"truelabel":  {},
+					"falselabel": {},
 				},
 			},
 		},
@@ -312,7 +312,7 @@ func TestProgramBuilderOutcomes(t *testing.T) {
 			},
 			wantOverall: FragmentOutcomes{
 				MayJumpToUnresolvedLabels: map[string]struct{}{
-					"falselabel": struct{}{},
+					"falselabel": {},
 				},
 				MayFallThrough: true,
 			},
@@ -327,7 +327,7 @@ func TestProgramBuilderOutcomes(t *testing.T) {
 			},
 			wantOverall: FragmentOutcomes{
 				MayJumpToUnresolvedLabels: map[string]struct{}{
-					"falselabel": struct{}{},
+					"falselabel": {},
 				},
 				MayJumpToKnownOffsetBeyondFragment: true,
 			},
@@ -339,17 +339,17 @@ func TestProgramBuilderOutcomes(t *testing.T) {
 			},
 			wantLocal: FragmentOutcomes{
 				MayReturnImmediate: map[linux.BPFAction]struct{}{
-					1337: struct{}{},
+					1337: {},
 				},
 			},
 			wantLocalMayReturn: true,
 			wantOverall: FragmentOutcomes{
 				MayJumpToUnresolvedLabels: map[string]struct{}{
-					"falselabel": struct{}{},
+					"falselabel": {},
 				},
 				MayFallThrough: true, // From jump in previous test.
 				MayReturnImmediate: map[linux.BPFAction]struct{}{
-					1337: struct{}{},
+					1337: {},
 				},
 			},
 		},
@@ -364,11 +364,11 @@ func TestProgramBuilderOutcomes(t *testing.T) {
 			wantLocalMayReturn: true,
 			wantOverall: FragmentOutcomes{
 				MayJumpToUnresolvedLabels: map[string]struct{}{
-					"falselabel": struct{}{},
+					"falselabel": {},
 				},
 				MayFallThrough: false, // Jump no longer pointing at end of fragment.
 				MayReturnImmediate: map[linux.BPFAction]struct{}{
-					1337: struct{}{},
+					1337: {},
 				},
 				MayReturnRegisterA: true,
 			},
@@ -383,10 +383,10 @@ func TestProgramBuilderOutcomes(t *testing.T) {
 			},
 			wantOverall: FragmentOutcomes{
 				MayJumpToUnresolvedLabels: map[string]struct{}{
-					"falselabel": struct{}{},
+					"falselabel": {},
 				},
 				MayReturnImmediate: map[linux.BPFAction]struct{}{
-					1337: struct{}{},
+					1337: {},
 				},
 				MayReturnRegisterA: true,
 				MayFallThrough:     true,
@@ -402,10 +402,10 @@ func TestProgramBuilderOutcomes(t *testing.T) {
 			},
 			wantOverall: FragmentOutcomes{
 				MayJumpToUnresolvedLabels: map[string]struct{}{
-					"falselabel": struct{}{},
+					"falselabel": {},
 				},
 				MayReturnImmediate: map[linux.BPFAction]struct{}{
-					1337: struct{}{},
+					1337: {},
 				},
 				MayReturnRegisterA: true,
 				MayFallThrough:     true,
@@ -424,10 +424,10 @@ func TestProgramBuilderOutcomes(t *testing.T) {
 			},
 			wantOverall: FragmentOutcomes{
 				MayJumpToUnresolvedLabels: map[string]struct{}{
-					"falselabel": struct{}{},
+					"falselabel": {},
 				},
 				MayReturnImmediate: map[linux.BPFAction]struct{}{
-					1337: struct{}{},
+					1337: {},
 				},
 				MayReturnRegisterA: true,
 				MayFallThrough:     true,
@@ -440,17 +440,17 @@ func TestProgramBuilderOutcomes(t *testing.T) {
 			},
 			wantLocal: FragmentOutcomes{
 				MayJumpToUnresolvedLabels: map[string]struct{}{
-					"falselabel": struct{}{},
+					"falselabel": {},
 				},
 				MayJumpToKnownOffsetBeyondFragment: true,
 			},
 			wantOverall: FragmentOutcomes{
 				MayJumpToKnownOffsetBeyondFragment: true,
 				MayJumpToUnresolvedLabels: map[string]struct{}{
-					"falselabel": struct{}{},
+					"falselabel": {},
 				},
 				MayReturnImmediate: map[linux.BPFAction]struct{}{
-					1337: struct{}{},
+					1337: {},
 				},
 				MayReturnRegisterA: true,
 			},
@@ -466,7 +466,7 @@ func TestProgramBuilderOutcomes(t *testing.T) {
 			wantOverall: FragmentOutcomes{
 				MayJumpToKnownOffsetBeyondFragment: true,
 				MayReturnImmediate: map[linux.BPFAction]struct{}{
-					1337: struct{}{},
+					1337: {},
 				},
 				MayReturnRegisterA: true,
 				MayFallThrough:     true,

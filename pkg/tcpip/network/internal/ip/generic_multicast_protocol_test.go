@@ -458,7 +458,7 @@ func TestLeaveGroup(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			for _, subTest := range subTests {
 				t.Run(subTest.name, func(t *testing.T) {
-					for _, queryAddr := range []tcpip.Address{test.addr, tcpip.Address{}} {
+					for _, queryAddr := range []tcpip.Address{test.addr, {}} {
 						t.Run(fmt.Sprintf("QueryAddr=%s", queryAddr), func(t *testing.T) {
 							mgp := mockMulticastGroupProtocol{t: t, skipProtocolAddress: addr2}
 							clock := faketime.NewManualClock()
@@ -1435,7 +1435,7 @@ func TestMakeAllNonMemberCancelsDelayedReportJob(t *testing.T) {
 				if leave {
 					recordType = ip.MulticastGroupProtocolV2ReportRecordChangeToIncludeMode
 				}
-				return checkFields{sentV2Reports: []mockReportV2{{records: []mockReportV2Record{mockReportV2Record{
+				return checkFields{sentV2Reports: []mockReportV2{{records: []mockReportV2Record{{
 					recordType:   recordType,
 					groupAddress: addr,
 				}}}}}

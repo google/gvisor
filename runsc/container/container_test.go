@@ -3462,7 +3462,7 @@ func TestRootfsEROFS(t *testing.T) {
 		nil,
 
 		// Case 2: EROFS rootfs with a LISAFS backed gofer mount.
-		[]specs.Mount{
+		{
 			{
 				Type:        "bind",
 				Destination: "/tmp",

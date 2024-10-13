@@ -3068,9 +3068,9 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 		{
 			tname: "jump to non-existent chain",
 			chains: map[string]*Chain{
-				"base_chain": &Chain{
+				"base_chain": {
 					baseChainInfo: arbitraryInfoPolicyAccept,
-					rules: []*Rule{&Rule{
+					rules: []*Rule{{
 						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_JUMP), ChainName: "non_existent_chain"}))},
 					}},
 				},
@@ -3080,9 +3080,9 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 		{
 			tname: "goto to non-existent chain",
 			chains: map[string]*Chain{
-				"base_chain": &Chain{
+				"base_chain": {
 					baseChainInfo: arbitraryInfoPolicyAccept,
-					rules: []*Rule{&Rule{
+					rules: []*Rule{{
 						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_GOTO), ChainName: "non_existent_chain"}))},
 					}},
 				},
@@ -3092,9 +3092,9 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 		{
 			tname: "jump to itself",
 			chains: map[string]*Chain{
-				"base_chain": &Chain{
+				"base_chain": {
 					baseChainInfo: arbitraryInfoPolicyAccept,
-					rules: []*Rule{&Rule{
+					rules: []*Rule{{
 						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_JUMP), ChainName: "base_chain"}))},
 					}},
 				},
@@ -3104,9 +3104,9 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 		{
 			tname: "goto to itself",
 			chains: map[string]*Chain{
-				"base_chain": &Chain{
+				"base_chain": {
 					baseChainInfo: arbitraryInfoPolicyAccept,
-					rules: []*Rule{&Rule{
+					rules: []*Rule{{
 						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_GOTO), ChainName: "base_chain"}))},
 					}},
 				},
@@ -3116,14 +3116,14 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 		{
 			tname: "simple 2-chain loop",
 			chains: map[string]*Chain{
-				"base_chain": &Chain{
+				"base_chain": {
 					baseChainInfo: arbitraryInfoPolicyAccept,
-					rules: []*Rule{&Rule{
+					rules: []*Rule{{
 						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"}))},
 					}},
 				},
-				"aux_chain": &Chain{
-					rules: []*Rule{&Rule{
+				"aux_chain": {
+					rules: []*Rule{{
 						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_GOTO), ChainName: "base_chain"}))},
 					}},
 				},
@@ -3133,19 +3133,19 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 		{
 			tname: "2-chain loop with entry point outside loop",
 			chains: map[string]*Chain{
-				"base_chain": &Chain{
+				"base_chain": {
 					baseChainInfo: arbitraryInfoPolicyAccept,
-					rules: []*Rule{&Rule{
+					rules: []*Rule{{
 						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"}))},
 					}},
 				},
-				"aux_chain": &Chain{
-					rules: []*Rule{&Rule{
+				"aux_chain": {
+					rules: []*Rule{{
 						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_GOTO), ChainName: "aux_chain2"}))},
 					}},
 				},
-				"aux_chain2": &Chain{
-					rules: []*Rule{&Rule{
+				"aux_chain2": {
+					rules: []*Rule{{
 						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_GOTO), ChainName: "aux_chain"}))},
 					}},
 				},
@@ -3155,19 +3155,19 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 		{
 			tname: "simple 3-chain loop",
 			chains: map[string]*Chain{
-				"base_chain": &Chain{
+				"base_chain": {
 					baseChainInfo: arbitraryInfoPolicyAccept,
-					rules: []*Rule{&Rule{
+					rules: []*Rule{{
 						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"}))},
 					}},
 				},
-				"aux_chain": &Chain{
-					rules: []*Rule{&Rule{
+				"aux_chain": {
+					rules: []*Rule{{
 						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain2"}))},
 					}},
 				},
-				"aux_chain2": &Chain{
-					rules: []*Rule{&Rule{
+				"aux_chain2": {
+					rules: []*Rule{{
 						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_GOTO), ChainName: "base_chain"}))},
 					}},
 				},
@@ -3177,29 +3177,29 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 		{
 			tname: "3-chain loop with entry point 2 points outside loop",
 			chains: map[string]*Chain{
-				"base_chain": &Chain{
+				"base_chain": {
 					baseChainInfo: arbitraryInfoPolicyAccept,
-					rules: []*Rule{&Rule{
+					rules: []*Rule{{
 						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"}))},
 					}},
 				},
-				"aux_chain": &Chain{
-					rules: []*Rule{&Rule{
+				"aux_chain": {
+					rules: []*Rule{{
 						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_GOTO), ChainName: "aux_chain2"}))},
 					}},
 				},
-				"aux_chain2": &Chain{
-					rules: []*Rule{&Rule{
+				"aux_chain2": {
+					rules: []*Rule{{
 						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain3"}))},
 					}},
 				},
-				"aux_chain3": &Chain{
-					rules: []*Rule{&Rule{
+				"aux_chain3": {
+					rules: []*Rule{{
 						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_GOTO), ChainName: "aux_chain4"}))},
 					}},
 				},
-				"aux_chain4": &Chain{
-					rules: []*Rule{&Rule{
+				"aux_chain4": {
+					rules: []*Rule{{
 						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain2"}))},
 					}},
 				},
@@ -3209,24 +3209,24 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 		{
 			tname: "simple 4-chain loop",
 			chains: map[string]*Chain{
-				"base_chain": &Chain{
+				"base_chain": {
 					baseChainInfo: arbitraryInfoPolicyAccept,
-					rules: []*Rule{&Rule{
+					rules: []*Rule{{
 						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"}))},
 					}},
 				},
-				"aux_chain": &Chain{
-					rules: []*Rule{&Rule{
+				"aux_chain": {
+					rules: []*Rule{{
 						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_GOTO), ChainName: "aux_chain2"}))},
 					}},
 				},
-				"aux_chain2": &Chain{
-					rules: []*Rule{&Rule{
+				"aux_chain2": {
+					rules: []*Rule{{
 						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain3"}))},
 					}},
 				},
-				"aux_chain3": &Chain{
-					rules: []*Rule{&Rule{
+				"aux_chain3": {
+					rules: []*Rule{{
 						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_GOTO), ChainName: "base_chain"}))},
 					}},
 				},
@@ -3236,24 +3236,24 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 		{
 			tname: "simple 5-chain loop",
 			chains: map[string]*Chain{
-				"base_chain": &Chain{
+				"base_chain": {
 					baseChainInfo: arbitraryInfoPolicyAccept,
-					rules: []*Rule{&Rule{
+					rules: []*Rule{{
 						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"}))},
 					}},
 				},
-				"aux_chain": &Chain{
-					rules: []*Rule{&Rule{
+				"aux_chain": {
+					rules: []*Rule{{
 						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_GOTO), ChainName: "aux_chain2"}))},
 					}},
 				},
-				"aux_chain2": &Chain{
-					rules: []*Rule{&Rule{
+				"aux_chain2": {
+					rules: []*Rule{{
 						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain3"}))},
 					}},
 				},
-				"aux_chain3": &Chain{
-					rules: []*Rule{&Rule{
+				"aux_chain3": {
+					rules: []*Rule{{
 						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_GOTO), ChainName: "base_chain"}))},
 					}},
 				},
@@ -3267,31 +3267,31 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 			//   1 <- 2 <-> 3
 			tname: "complex 2-3 loop",
 			chains: map[string]*Chain{
-				"base_chain": &Chain{
+				"base_chain": {
 					baseChainInfo: arbitraryInfoPolicyAccept,
-					rules: []*Rule{&Rule{
+					rules: []*Rule{{
 						ops: []operation{
 							mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"})),
 							mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain2"})),
 						},
 					}},
 				},
-				"aux_chain": &Chain{
+				"aux_chain": {
 					comment: "strictly target",
-					rules: []*Rule{&Rule{
+					rules: []*Rule{{
 						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NF_DROP)}))},
 					}},
 				},
-				"aux_chain2": &Chain{
-					rules: []*Rule{&Rule{
+				"aux_chain2": {
+					rules: []*Rule{{
 						ops: []operation{
 							mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"})),
 							mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain3"})),
 						},
 					}},
 				},
-				"aux_chain3": &Chain{
-					rules: []*Rule{&Rule{
+				"aux_chain3": {
+					rules: []*Rule{{
 						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_GOTO), ChainName: "aux_chain2"}))},
 					}},
 				},
@@ -3301,32 +3301,32 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 		{
 			tname: "simple loop amongst other rules and operations",
 			chains: map[string]*Chain{
-				"base_chain": &Chain{
+				"base_chain": {
 					baseChainInfo: arbitraryInfoPolicyAccept,
 					rules: []*Rule{
-						&Rule{ops: []operation{mustCreateImmediate(t, linux.NFT_REG_1, newBytesData([]byte{0, 1, 2, 3}))}},
-						&Rule{ops: []operation{mustCreateImmediate(t, linux.NFT_REG32_14, newBytesData([]byte{0, 1, 2, 3}))}},
-						&Rule{ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"}))}},
+						{ops: []operation{mustCreateImmediate(t, linux.NFT_REG_1, newBytesData([]byte{0, 1, 2, 3}))}},
+						{ops: []operation{mustCreateImmediate(t, linux.NFT_REG32_14, newBytesData([]byte{0, 1, 2, 3}))}},
+						{ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"}))}},
 					},
 				},
-				"aux_chain": &Chain{
-					rules: []*Rule{&Rule{
+				"aux_chain": {
+					rules: []*Rule{{
 						ops: []operation{
 							mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NF_DROP)})),
 							mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_GOTO), ChainName: "aux_chain2"})),
 						},
 					}},
 				},
-				"aux_chain2": &Chain{
-					rules: []*Rule{&Rule{
+				"aux_chain2": {
+					rules: []*Rule{{
 						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain3"}))},
 					}},
 				},
-				"aux_chain3": &Chain{
+				"aux_chain3": {
 					rules: []*Rule{
-						&Rule{ops: []operation{mustCreateImmediate(t, linux.NFT_REG_1, newBytesData([]byte{0, 1, 2, 3}))}},
-						&Rule{ops: []operation{mustCreateImmediate(t, linux.NFT_REG32_14, newBytesData([]byte{0, 1, 2, 3}))}},
-						&Rule{ops: []operation{
+						{ops: []operation{mustCreateImmediate(t, linux.NFT_REG_1, newBytesData([]byte{0, 1, 2, 3}))}},
+						{ops: []operation{mustCreateImmediate(t, linux.NFT_REG32_14, newBytesData([]byte{0, 1, 2, 3}))}},
+						{ops: []operation{
 							mustCreateImmediate(t, linux.NFT_REG_4, newBytesData([]byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15})),
 							mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_GOTO), ChainName: "aux_chain"})),
 							mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NF_DROP)})),
@@ -3339,33 +3339,33 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 		{
 			tname: "base chain jump to 3 other chains",
 			chains: map[string]*Chain{
-				"base_chain": &Chain{
+				"base_chain": {
 					baseChainInfo: arbitraryInfoPolicyAccept,
 					rules: []*Rule{
-						&Rule{
+						{
 							ops: []operation{
 								mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"})),
 								mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain2"})),
 							},
 						},
-						&Rule{ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain3"}))}},
+						{ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain3"}))}},
 					},
 				},
-				"aux_chain": &Chain{
+				"aux_chain": {
 					comment: "strictly target",
-					rules: []*Rule{&Rule{
+					rules: []*Rule{{
 						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_2, newBytesData([]byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}))},
 					}},
 				},
-				"aux_chain2": &Chain{
+				"aux_chain2": {
 					comment: "strictly target",
-					rules: []*Rule{&Rule{
+					rules: []*Rule{{
 						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_3, newBytesData([]byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}))},
 					}},
 				},
-				"aux_chain3": &Chain{
+				"aux_chain3": {
 					comment: "strictly target",
-					rules: []*Rule{&Rule{
+					rules: []*Rule{{
 						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_4, newBytesData([]byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}))},
 					}},
 				},
@@ -3375,33 +3375,33 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 		{
 			tname: "base chain jump to 3 other chains with last chain dropping",
 			chains: map[string]*Chain{
-				"base_chain": &Chain{
+				"base_chain": {
 					baseChainInfo: arbitraryInfoPolicyAccept,
 					rules: []*Rule{
-						&Rule{
+						{
 							ops: []operation{
 								mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"})),
 								mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain2"})),
 							},
 						},
-						&Rule{ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain3"}))}},
+						{ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain3"}))}},
 					},
 				},
-				"aux_chain": &Chain{
+				"aux_chain": {
 					comment: "strictly target",
-					rules: []*Rule{&Rule{
+					rules: []*Rule{{
 						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_2, newBytesData([]byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}))},
 					}},
 				},
-				"aux_chain2": &Chain{
+				"aux_chain2": {
 					comment: "strictly target",
-					rules: []*Rule{&Rule{
+					rules: []*Rule{{
 						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_3, newBytesData([]byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}))},
 					}},
 				},
-				"aux_chain3": &Chain{
+				"aux_chain3": {
 					comment: "strictly target",
-					rules: []*Rule{&Rule{
+					rules: []*Rule{{
 						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NF_DROP)}))},
 					}},
 				},
@@ -3411,34 +3411,34 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 		{
 			tname: "base chain jump to 3 other chains with last rule in base chain dropping",
 			chains: map[string]*Chain{
-				"base_chain": &Chain{
+				"base_chain": {
 					baseChainInfo: arbitraryInfoPolicyAccept,
 					rules: []*Rule{
-						&Rule{
+						{
 							ops: []operation{
 								mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"})),
 								mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain2"})),
 							},
 						},
-						&Rule{ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain3"}))}},
-						&Rule{ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NF_DROP)}))}},
+						{ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain3"}))}},
+						{ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NF_DROP)}))}},
 					},
 				},
-				"aux_chain": &Chain{
+				"aux_chain": {
 					comment: "strictly target",
-					rules: []*Rule{&Rule{
+					rules: []*Rule{{
 						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_2, newBytesData([]byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}))},
 					}},
 				},
-				"aux_chain2": &Chain{
+				"aux_chain2": {
 					comment: "strictly target",
-					rules: []*Rule{&Rule{
+					rules: []*Rule{{
 						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_3, newBytesData([]byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}))},
 					}},
 				},
-				"aux_chain3": &Chain{
+				"aux_chain3": {
 					comment: "strictly target",
-					rules: []*Rule{&Rule{
+					rules: []*Rule{{
 						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_4, newBytesData([]byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}))},
 					}},
 				},
@@ -3448,10 +3448,10 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 		{
 			tname: "jump to the same chain",
 			chains: map[string]*Chain{
-				"base_chain": &Chain{
+				"base_chain": {
 					baseChainInfo: arbitraryInfoPolicyAccept,
 					rules: []*Rule{
-						&Rule{
+						{
 							ops: []operation{
 								mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"})),
 								mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"})),
@@ -3459,9 +3459,9 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 						},
 					},
 				},
-				"aux_chain": &Chain{
+				"aux_chain": {
 					comment: "strictly target",
-					rules:   []*Rule{&Rule{}},
+					rules:   []*Rule{{}},
 				},
 			},
 			verdict: Verdict{Code: VC(linux.NF_ACCEPT)}, // from base chain policy

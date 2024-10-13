@@ -211,16 +211,16 @@ var typeMap = map[string]reflect.Type{
 
 // typeAllowlist is a set of types that are allowed on the nvproxy side.
 var typeAllowlist = map[reflect.Kind]struct{}{
-	reflect.Int8:   struct{}{},
-	reflect.Uint8:  struct{}{},
-	reflect.Int16:  struct{}{},
-	reflect.Uint16: struct{}{},
-	reflect.Int32:  struct{}{},
-	reflect.Uint32: struct{}{},
-	reflect.Int64:  struct{}{},
-	reflect.Uint64: struct{}{},
-	reflect.Array:  struct{}{},
-	reflect.Struct: struct{}{},
+	reflect.Int8:   {},
+	reflect.Uint8:  {},
+	reflect.Int16:  {},
+	reflect.Uint16: {},
+	reflect.Int32:  {},
+	reflect.Uint32: {},
+	reflect.Int64:  {},
+	reflect.Uint64: {},
+	reflect.Array:  {},
+	reflect.Struct: {},
 }
 
 func isDriverBaseType(t string) bool {

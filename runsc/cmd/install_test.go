@@ -52,15 +52,15 @@ func (r *runtimeDef) UnmarshalJSON(data []byte) error {
 
 var defaultInput = map[string]any{
 	"runtimes": map[string]*runtimeDef{
-		"runtime1": &runtimeDef{
+		"runtime1": {
 			path:        "runtime1_path",
 			runtimeArgs: []string{"some", "args"},
 		},
-		"other runtime": &runtimeDef{
+		"other runtime": {
 			path:        "other_runtime_path",
 			runtimeArgs: []string{"some", "other", "args"},
 		},
-		"myRuntime": &runtimeDef{
+		"myRuntime": {
 			path:        "myRuntimePath",
 			runtimeArgs: []string{"super", "cool", "args"},
 		},
@@ -89,15 +89,15 @@ func TestInstall(t *testing.T) {
 			input: defaultInput,
 			output: map[string]any{
 				"runtimes": map[string]*runtimeDef{
-					"runtime1": &runtimeDef{
+					"runtime1": {
 						path:        "runtime1_path",
 						runtimeArgs: []string{"some", "args"},
 					},
-					"other runtime": &runtimeDef{
+					"other runtime": {
 						path:        "other_runtime_path",
 						runtimeArgs: []string{"some", "other", "args"},
 					},
-					"myRuntime": &runtimeDef{
+					"myRuntime": {
 						path:        "some_runsc_path",
 						runtimeArgs: []string{"new", "cool", "args"},
 					},
@@ -119,15 +119,15 @@ func TestInstall(t *testing.T) {
 			input: defaultInput,
 			output: map[string]any{
 				"runtimes": map[string]*runtimeDef{
-					"runtime1": &runtimeDef{
+					"runtime1": {
 						path:        "runtime1_path",
 						runtimeArgs: []string{"some", "args"},
 					},
-					"other runtime": &runtimeDef{
+					"other runtime": {
 						path:        "other_runtime_path",
 						runtimeArgs: []string{"some", "other", "args"},
 					},
-					"myRuntime": &runtimeDef{
+					"myRuntime": {
 						path:        "myRuntimePath",
 						runtimeArgs: []string{"super", "cool", "args"},
 					},
@@ -147,19 +147,19 @@ func TestInstall(t *testing.T) {
 			input: defaultInput,
 			output: map[string]any{
 				"runtimes": map[string]*runtimeDef{
-					"runtime1": &runtimeDef{
+					"runtime1": {
 						path:        "runtime1_path",
 						runtimeArgs: []string{"some", "args"},
 					},
-					"newRuntime": &runtimeDef{
+					"newRuntime": {
 						path:        "newPath",
 						runtimeArgs: []string{"new", "cool", "args"},
 					},
-					"other runtime": &runtimeDef{
+					"other runtime": {
 						path:        "other_runtime_path",
 						runtimeArgs: []string{"some", "other", "args"},
 					},
-					"myRuntime": &runtimeDef{
+					"myRuntime": {
 						path:        "myRuntimePath",
 						runtimeArgs: []string{"super", "cool", "args"},
 					},
@@ -222,11 +222,11 @@ func TestUninstall(t *testing.T) {
 			input: defaultInput,
 			output: map[string]any{
 				"runtimes": map[string]*runtimeDef{
-					"runtime1": &runtimeDef{
+					"runtime1": {
 						path:        "runtime1_path",
 						runtimeArgs: []string{"some", "args"},
 					},
-					"myRuntime": &runtimeDef{
+					"myRuntime": {
 						path:        "myRuntimePath",
 						runtimeArgs: []string{"super", "cool", "args"},
 					},

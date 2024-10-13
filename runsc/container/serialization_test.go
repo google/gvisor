@@ -33,7 +33,7 @@ import (
 var ignoreList = map[string]struct{}{
 	// Part of the OCI runtime spec, it uses an `interface{}` type which it
 	// promises is JSON-serializable in the comments.
-	"Container.Spec.Windows.CredentialSpec": struct{}{},
+	"Container.Spec.Windows.CredentialSpec": {},
 }
 
 // implementsSerializableInterface returns true if the given type implements

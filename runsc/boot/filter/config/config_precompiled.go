@@ -57,7 +57,7 @@ func allPrecompiledPlatforms() ([]platform.SeccompInfo, error) {
 // precompile seccomp filters.
 func optionsToPrecompile() ([]Options, error) {
 	type expandFn func(opt Options) ([]Options, error)
-	opts := []Options{Options{}}
+	opts := []Options{{}}
 	for _, fn := range []expandFn{
 		// Expand all platforms.
 		func(opt Options) ([]Options, error) {
