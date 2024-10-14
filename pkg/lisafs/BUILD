@@ -125,6 +125,7 @@ go_test(
     library = ":lisafs",
     deps = [
         "//pkg/marshal",
+        "//pkg/rand",
         "//pkg/sync",
         "//pkg/unet",
         "@org_golang_x_sys//unix:go_default_library",

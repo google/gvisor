@@ -281,6 +281,7 @@ packetimpact_testbench(
     name = "ipv4_fragment_reassembly",
     srcs = ["ipv4_fragment_reassembly_test.go"],
     deps = [
+        "//pkg/rand",
         "//pkg/tcpip/checksum",
         "//pkg/tcpip/header",
         "//test/packetimpact/testbench",
@@ -293,6 +294,7 @@ packetimpact_testbench(
     name = "ipv6_fragment_reassembly",
     srcs = ["ipv6_fragment_reassembly_test.go"],
     deps = [
+        "//pkg/rand",
         "//pkg/tcpip",
         "//pkg/tcpip/checksum",
         "//pkg/tcpip/header",

@@ -20,7 +20,6 @@ package fdbased
 import (
 	"bytes"
 	"fmt"
-	"math/rand"
 	"os"
 	"slices"
 	"testing"
@@ -30,6 +29,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/buffer"
+	"gvisor.dev/gvisor/pkg/rand"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
