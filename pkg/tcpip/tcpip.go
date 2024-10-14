@@ -35,7 +35,6 @@ import (
 	"io"
 	"math"
 	"math/bits"
-	"math/rand"
 	"net"
 	"reflect"
 	"strconv"
@@ -43,6 +42,7 @@ import (
 	"time"
 
 	"gvisor.dev/gvisor/pkg/atomicbitops"
+	"gvisor.dev/gvisor/pkg/rand"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/waiter"
 )

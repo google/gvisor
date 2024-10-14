@@ -26,10 +26,11 @@ package analysis
 
 import (
 	"fmt"
-	"math/rand"
 	"reflect"
 	"testing"
 	"unsafe"
+
+	"gvisor.dev/gvisor/pkg/rand"
 )
 
 // RandomizeValue assigns random value(s) to an abitrary type. This is intended
