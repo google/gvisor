@@ -85,7 +85,7 @@ func TestMetricsvizCLI(t *testing.T) {
 							[]byte("some log with a newline\n"),
 							[]byte("a log with\rcarriage return in the middle"),
 							[]byte("a log with\nmultiple\nnewlines"),
-							[]byte{0x01, 0x02, 0x00, 0x03}, // Non-ASCII bytes.
+							{0x01, 0x02, 0x00, 0x03}, // Non-ASCII bytes.
 						}
 						if _, err := logFile.Write(randomLogs[rand.IntN(len(randomLogs))]); err != nil {
 							t.Fatalf("Failed to write random log: %v", err)

@@ -63,7 +63,7 @@ func verifyPrometheusParsing(t *testing.T) {
 	}
 	var buf bytes.Buffer
 	if _, err := prometheus.Write(&buf, prometheus.ExportOptions{}, map[*prometheus.Snapshot]prometheus.SnapshotExportOptions{
-		snapshot: prometheus.SnapshotExportOptions{},
+		snapshot: {},
 	}); err != nil {
 		t.Errorf("failed to get Prometheus snapshot: %v", err)
 		return

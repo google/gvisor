@@ -27,34 +27,34 @@ import (
 
 func TestIoctlFirstArgumentIsNonNegativeFD(t *testing.T) {
 	for name, options := range map[string]Options{
-		"default systrap": Options{
+		"default systrap": {
 			Platform: (&systrap.Systrap{}).SeccompInfo(),
 		},
-		"default kvm": Options{
+		"default kvm": {
 			Platform: (&kvm.KVM{}).SeccompInfo(),
 		},
-		"nvproxy": Options{
+		"nvproxy": {
 			Platform: (&systrap.Systrap{}).SeccompInfo(),
 			NVProxy:  true,
 		},
-		"tpuproxy": Options{
+		"tpuproxy": {
 			Platform: (&systrap.Systrap{}).SeccompInfo(),
 			TPUProxy: true,
 		},
-		"host network": Options{
+		"host network": {
 			Platform:    (&systrap.Systrap{}).SeccompInfo(),
 			HostNetwork: true,
 		},
-		"host network with raw sockets": Options{
+		"host network with raw sockets": {
 			Platform:              (&systrap.Systrap{}).SeccompInfo(),
 			HostNetwork:           true,
 			HostNetworkRawSockets: true,
 		},
-		"profiling": Options{
+		"profiling": {
 			Platform:      (&systrap.Systrap{}).SeccompInfo(),
 			ProfileEnable: true,
 		},
-		"host filesystem": Options{
+		"host filesystem": {
 			Platform:       (&systrap.Systrap{}).SeccompInfo(),
 			HostFilesystem: true,
 		},

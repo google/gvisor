@@ -1254,7 +1254,7 @@ func MLDMulticastAddressUnordered(expectedGroups map[tcpip.Address]struct{}) Tra
 // containing a valid MLD message as far as the size is concerned.
 func MLDMulticastAddress(want tcpip.Address) TransportChecker {
 	return MLDMulticastAddressUnordered(map[tcpip.Address]struct{}{
-		want: struct{}{},
+		want: {},
 	})
 }
 
@@ -1626,7 +1626,7 @@ func IGMPGroupAddressUnordered(expectedGroups map[tcpip.Address]struct{}) Transp
 // IGMPGroupAddress creates a checker that checks the IGMP Group Address field.
 func IGMPGroupAddress(want tcpip.Address) TransportChecker {
 	return IGMPGroupAddressUnordered(map[tcpip.Address]struct{}{
-		want: struct{}{},
+		want: {},
 	})
 }
 

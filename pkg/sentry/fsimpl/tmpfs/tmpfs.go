@@ -182,10 +182,10 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	// also supports "security" and (if configured) POSIX ACL namespaces
 	// "system.posix_acl_access" and "system.posix_acl_default".
 	allowXattrPrefix := map[string]struct{}{
-		linux.XATTR_TRUSTED_PREFIX: struct{}{},
-		linux.XATTR_USER_PREFIX:    struct{}{},
+		linux.XATTR_TRUSTED_PREFIX: {},
+		linux.XATTR_USER_PREFIX:    {},
 		// The "security" namespace is allowed, but it always returns an error.
-		linux.XATTR_SECURITY_PREFIX: struct{}{},
+		linux.XATTR_SECURITY_PREFIX: {},
 	}
 
 	tmpfsOpts, tmpfsOptsOk := opts.InternalData.(FilesystemOpts)

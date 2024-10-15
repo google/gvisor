@@ -375,7 +375,7 @@ func TestProcfsDump(t *testing.T) {
 		t.Errorf("expected at least 3 FDs for the sleep process, got %+v", procfsDump[0].FDs)
 	} else {
 		modes := [3]uint32{}
-		for i, _ := range []*os.File{os.Stdin, os.Stdout, os.Stderr} {
+		for i := range []*os.File{os.Stdin, os.Stdout, os.Stderr} {
 			stat := unix.Stat_t{}
 			err := unix.Fstat(i, &stat)
 			if err != nil {
@@ -412,13 +412,13 @@ func TestProcfsDump(t *testing.T) {
 	}
 
 	wantCgroup := []kernel.TaskCgroupEntry{
-		kernel.TaskCgroupEntry{HierarchyID: 7, Controllers: "pids", Path: "/"},
-		kernel.TaskCgroupEntry{HierarchyID: 6, Controllers: "memory", Path: "/"},
-		kernel.TaskCgroupEntry{HierarchyID: 5, Controllers: "job", Path: "/"},
-		kernel.TaskCgroupEntry{HierarchyID: 4, Controllers: "devices", Path: "/"},
-		kernel.TaskCgroupEntry{HierarchyID: 3, Controllers: "cpuset", Path: "/"},
-		kernel.TaskCgroupEntry{HierarchyID: 2, Controllers: "cpuacct", Path: "/"},
-		kernel.TaskCgroupEntry{HierarchyID: 1, Controllers: "cpu", Path: "/"},
+		{HierarchyID: 7, Controllers: "pids", Path: "/"},
+		{HierarchyID: 6, Controllers: "memory", Path: "/"},
+		{HierarchyID: 5, Controllers: "job", Path: "/"},
+		{HierarchyID: 4, Controllers: "devices", Path: "/"},
+		{HierarchyID: 3, Controllers: "cpuset", Path: "/"},
+		{HierarchyID: 2, Controllers: "cpuacct", Path: "/"},
+		{HierarchyID: 1, Controllers: "cpu", Path: "/"},
 	}
 	if len(procfsDump[0].Cgroup) != len(wantCgroup) {
 		t.Errorf("expected 7 cgroup controllers, got %+v", procfsDump[0].Cgroup)

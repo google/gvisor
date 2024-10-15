@@ -417,8 +417,8 @@ func TestRemoveAllInstalledRoutes(t *testing.T) {
 	}
 
 	routes := map[stack.UnicastSourceAndMulticastDestination]stack.MulticastRoute{
-		defaultRouteKey: defaultRoute,
-		stack.UnicastSourceAndMulticastDestination{otherAddress, otherAddress}: defaultRoute,
+		defaultRouteKey:              defaultRoute,
+		{otherAddress, otherAddress}: defaultRoute,
 	}
 
 	for key, route := range routes {

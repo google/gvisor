@@ -33,7 +33,7 @@ import (
 
 // outOfRangeSyscallNumber is used to represent a syscall number that is out of the
 // range [0, maxSyscallNum] in monitoring.
-var outOfRangeSyscallNumber = []*metric.FieldValue{&metric.FieldValue{"-1"}}
+var outOfRangeSyscallNumber = []*metric.FieldValue{{"-1"}}
 
 // SyscallSupportLevel is a syscall support levels.
 type SyscallSupportLevel int

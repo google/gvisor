@@ -58,8 +58,8 @@ func TestChecksumer(t *testing.T) {
 		{
 			name: "TwoEvenViews",
 			data: [][]byte{
-				[]byte{98, 1, 9, 0},
-				[]byte{9, 0, 5, 4},
+				{98, 1, 9, 0},
+				{9, 0, 5, 4},
 			},
 			want: 30981,
 		},

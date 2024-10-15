@@ -1741,10 +1741,10 @@ func TestGroupSameNameMetrics(t *testing.T) {
 
 func TestNumberPacker(t *testing.T) {
 	interestingIntegers := map[uint64]struct{}{
-		uint64(0):                  struct{}{},
-		uint64(0x5555555555555555): struct{}{},
-		uint64(0xaaaaaaaaaaaaaaaa): struct{}{},
-		uint64(0xffffffffffffffff): struct{}{},
+		uint64(0):                  {},
+		uint64(0x5555555555555555): {},
+		uint64(0xaaaaaaaaaaaaaaaa): {},
+		uint64(0xffffffffffffffff): {},
 	}
 	for numBits := 0; numBits < 2; numBits++ {
 		newIntegers := map[uint64]struct{}{}

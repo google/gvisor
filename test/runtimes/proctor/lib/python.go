@@ -38,21 +38,21 @@ import (
 // generate a command to run all un-excluded tests from that library together.
 var exclude = map[string][]string{
 	// TODO(b/271473320): Un-exclude once this bug is fixed. Fails with overlay.
-	"test_os": []string{"TestScandir.test_attributes"},
+	"test_os": {"TestScandir.test_attributes"},
 	// Broken test. Fails with runc too.
-	"test_asyncio.test_base_events": []string{
+	"test_asyncio.test_base_events": {
 		"BaseEventLoopWithSelectorTests.test_create_connection_service_name",
 	},
 	// TODO(b/162978767): Un-exclude once this bug is fixed.
-	"test_fcntl": []string{"TestFcntl.test_fcntl_64_bit"},
+	"test_fcntl": {"TestFcntl.test_fcntl_64_bit"},
 	// TODO(b/341776233): Un-exclude once this bug is fixed.
-	"test_pathlib": []string{
+	"test_pathlib": {
 		"PathSubclassTest.test_is_mount",
 		"PathTest.test_is_mount",
 		"PosixPathTest.test_is_mount",
 	},
 	// TODO(b/76174079): Un-exclude once this bug is fixed.
-	"test_posix": []string{
+	"test_posix": {
 		"PosixTester.test_sched_priority",
 		"PosixTester.test_sched_rr_get_interval",
 		"PosixTester.test_get_and_set_scheduler_and_param", // sched_setparam(2) is not supported.
@@ -60,9 +60,9 @@ var exclude = map[string][]string{
 		"TestPosixSpawnP.test_setscheduler_only_param",
 	},
 	// TODO(b/76174079): Un-exclude once this bug is fixed.
-	"test_resource": []string{"ResourceTest.test_prlimit"},
+	"test_resource": {"ResourceTest.test_prlimit"},
 	// TODO(b/271949964): Un-exclude test cases as they are fixed.
-	"test_socket": []string{
+	"test_socket": {
 		"BasicUDPLITETest.testRecvFrom",
 		"BasicUDPLITETest.testRecvFromNegative",
 		"BasicUDPLITETest.testSendtoAndRecv",
@@ -108,7 +108,7 @@ var exclude = map[string][]string{
 		"UDPLITETimeoutTest.testUDPLITETimeout",
 	},
 	// TODO(b/341780803): Un-exclude once this bug is fixed.
-	"test_termios": []string{
+	"test_termios": {
 		"TestFunctions.test_tcdrain",
 		"TestFunctions.test_tcflow",
 		"TestFunctions.test_tcflush",
