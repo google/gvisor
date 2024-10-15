@@ -452,7 +452,7 @@ func (ssrs singleSyscallRuleSet) Render(program *syscallProgram, ls *labelSet, n
 		ruleFrag.MustHaveJumpedToOrReturned(
 			[]label{nextRule},
 			map[linux.BPFAction]struct{}{
-				ra.action: struct{}{},
+				ra.action: {},
 			})
 		program.Label(nextRule)
 	}

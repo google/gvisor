@@ -90,10 +90,10 @@ func NewPair(mtu uint32) (*Endpoint, *Endpoint) {
 		backlogQueue: make(chan vethPacket, backlogQueueSize),
 		mtu:          mtu,
 		endpoints: [2]Endpoint{
-			Endpoint{
+			{
 				linkAddr: tcpip.GetRandMacAddr(),
 			},
-			Endpoint{
+			{
 				linkAddr: tcpip.GetRandMacAddr(),
 			},
 		},
