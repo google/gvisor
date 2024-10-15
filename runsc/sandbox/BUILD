@@ -12,6 +12,7 @@ go_library(
         "network.go",
         "network_unsafe.go",
         "no_xdp.go",
+        "notify_unsafe.go",
         "sandbox.go",
         "sandbox_impl.go",
         "xdp.go",
