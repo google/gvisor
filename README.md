@@ -81,6 +81,12 @@ make copy TARGETS=runsc DESTINATION=bin/
 sudo cp ./bin/runsc /usr/local/bin
 ```
 
+To build specific libraries or binaries, you can specify the target:
+
+```sh
+make build TARGETS="//pkg/tcpip:tcpip"
+```
+
 ### Testing
 
 To run standard test suites, you can use:
