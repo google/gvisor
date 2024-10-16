@@ -14,6 +14,7 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install --yes \
       golang
 
 RUN python3 -m pip install --ignore-installed \
+      "clang~=$(clang --version | grep -oP 'clang version [.0-9]+' | cut -d' ' -f3)" \
       diffusers \
       transformers \
       accelerate \

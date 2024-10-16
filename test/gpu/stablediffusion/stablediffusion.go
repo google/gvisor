@@ -34,8 +34,8 @@ import (
 // ContainerRunner is an interface to run containers.
 type ContainerRunner interface {
 	// Run runs a container with the given image and arguments to completion,
-	// and returns its combined output as a byte string.
-	Run(ctx context.Context, image string, argv []string) ([]byte, error)
+	// and returns its stdout/stderr streams as two byte strings.
+	Run(ctx context.Context, image string, argv []string) ([]byte, []byte, error)
 }
 
 // dockerRunner runs Docker containers on the local machine.
@@ -44,31 +44,29 @@ type dockerRunner struct {
 }
 
 // Run implements `ContainerRunner.Run`.
-func (dr *dockerRunner) Run(ctx context.Context, image string, argv []string) ([]byte, error) {
+func (dr *dockerRunner) Run(ctx context.Context, image string, argv []string) ([]byte, []byte, error) {
 	cont := dockerutil.MakeContainer(ctx, dr.logger)
 	defer cont.CleanUp(ctx)
-	opts, err := dockerutil.GPURunOpts(dockerutil.SniffGPUOpts{
-		DisableSnifferReason: "TODO(gvisor.dev/issue/10885): Verify that this test works",
-	})
+	opts, err := dockerutil.GPURunOpts(dockerutil.SniffGPUOpts{})
 	if err != nil {
-		return nil, fmt.Errorf("failed to get GPU run options: %w", err)
+		return nil, nil, fmt.Errorf("failed to get GPU run options: %w", err)
 	}
 	opts.Image = image
 	if err := cont.Spawn(ctx, opts, argv...); err != nil {
-		return nil, fmt.Errorf("could not start Stable Diffusion container: %v", err)
+		return nil, nil, fmt.Errorf("could not start Stable Diffusion container: %v", err)
 	}
 	waitErr := cont.Wait(ctx)
-	logs, logsErr := cont.Logs(ctx)
+	stdout, stderr, streamsErr := cont.OutputStreams(ctx)
 	if waitErr != nil {
-		if logsErr == nil {
-			return nil, fmt.Errorf("container exited with error: %v; logs: %v", waitErr, logs)
+		if streamsErr == nil {
+			return nil, nil, fmt.Errorf("container exited with error: %v; stderr: %v", waitErr, stderr)
 		}
-		return nil, fmt.Errorf("container exited with error: %v (cannot get logs: %v)", waitErr, logsErr)
+		return nil, nil, fmt.Errorf("container exited with error: %v (cannot get output streams: %v)", waitErr, streamsErr)
 	}
-	if logsErr != nil {
-		return nil, fmt.Errorf("could not get container logs: %v", logsErr)
+	if streamsErr != nil {
+		return nil, nil, fmt.Errorf("could not get container output streams: %v", streamsErr)
 	}
-	return []byte(logs), nil
+	return []byte(stdout), []byte(stderr), nil
 }
 
 // XL generates images using Stable Diffusion XL.
@@ -209,13 +207,13 @@ func (xl *XL) Generate(ctx context.Context, prompt *XLPrompt) (*XLImage, error) 
 		argv = append(argv, "--warm")
 	}
 	argv = append(argv, prompt.Query)
-	output, err := xl.runner.Run(ctx, xl.image, argv)
+	stdout, stderr, err := xl.runner.Run(ctx, xl.image, argv)
 	if err != nil {
 		return nil, err
 	}
 	xlImage := &XLImage{Prompt: prompt}
-	if err := json.Unmarshal(output, &xlImage.data); err != nil {
-		return nil, fmt.Errorf("malformed JSON output %q: %w", string(output), err)
+	if err := json.Unmarshal(stdout, &xlImage.data); err != nil {
+		return nil, fmt.Errorf("malformed JSON output %q: %w; stderr: %v", string(stdout), err, string(stderr))
 	}
 	return xlImage, nil
 }
