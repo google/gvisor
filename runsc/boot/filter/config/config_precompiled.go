@@ -24,7 +24,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 
 	// Import platforms that we need to precompile filters for.
-	_ "gvisor.dev/gvisor/runsc/boot/platforms"
+	_ "gvisor.dev/gvisor/pkg/sentry/platform/platforms"
 )
 
 // Variable names used in precompiled filters.

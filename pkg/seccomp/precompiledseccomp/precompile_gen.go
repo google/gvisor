@@ -39,6 +39,7 @@ const (
 	packageNameStandin            = "precompiled"
 	precompiledseccompPackageName = "precompiledseccomp"
 	registrationComment           = "PROGRAM_REGISTRATION_GOES_HERE_THIS_IS_A_LOAD_BEARING_COMMENT"
+	disabledAtBuildtimeComment    = "PRECOMPILATION_DISABLED_AT_BUILD_TIME_THIS_IS_A_LOAD_BEARING_COMMENT"
 	programsMapVarName            = "programs"
 )
 
@@ -57,7 +58,8 @@ func main() {
 
 	// Get a sorted list of programs.
 	var programs []precompiledseccomp.Program
-	if loadProgramsFn != nil {
+	disabledAtBuildTime := loadProgramsFn == nil
+	if !disabledAtBuildTime {
 		var err error
 		programs, err = loadProgramsFn()
 		if err != nil {
@@ -114,6 +116,8 @@ func main() {
 			for _, program := range programs {
 				fmt.Fprint(outFile, program.Registration(indent, precompiledseccompPackageName, programsMapVarName))
 			}
+		case strings.Contains(line, disabledAtBuildtimeComment):
+			fmt.Fprintf(outFile, "const PrecompilationDisabledAtBuildTime = %t\n", disabledAtBuildTime)
 		default:
 			fmt.Fprintf(outFile, "%s\n", line)
 		}

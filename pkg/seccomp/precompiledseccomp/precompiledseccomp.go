@@ -19,6 +19,7 @@ package precompiledseccomp
 import (
 	"encoding/binary"
 	"fmt"
+	"maps"
 	"sort"
 	"strings"
 
@@ -70,7 +71,42 @@ func (v Values) SetUint64(varName string, value uint64) {
 // GetUint64 retrieves the value of a 64-bit variable set using
 // `Values.SetUint64(varName)`.
 func (v Values) GetUint64(varName string) uint64 {
-	return uint64(v[varName+"_high32bits"])<<32 | uint64(v[varName+"_low32bits"])
+	return uint64(v[varName+uint64VarSuffixHigh])<<32 | uint64(v[varName+uint64VarSuffixLow])
+}
+
+// PopUint64 retrieves the value of a 64-bit variable and removes it from `v`.
+func (v Values) PopUint64(varName string) uint64 {
+	val := v.GetUint64(varName)
+	delete(v, varName+uint64VarSuffixHigh)
+	delete(v, varName+uint64VarSuffixLow)
+	return val
+}
+
+// Uint64VarName turns a suffixed 32-bit variable name into a 64-bit variable
+// name by stripping the underlying prefixes.
+// Returns the empty string if the variable name is not a suffixed 32-bit
+// variable name.
+func (v Values) Uint64VarName(varName string) string {
+	if strings.HasSuffix(varName, uint64VarSuffixHigh) {
+		varName = strings.TrimSuffix(varName, uint64VarSuffixHigh)
+	} else if strings.HasSuffix(varName, uint64VarSuffixLow) {
+		varName = strings.TrimSuffix(varName, uint64VarSuffixLow)
+	} else {
+		return "" // Not a suffixed variable.
+	}
+	_, okHigh := v[varName+uint64VarSuffixHigh]
+	_, okLow := v[varName+uint64VarSuffixLow]
+	if !okHigh || !okLow {
+		return "" // We don't have values for this variable.
+	}
+	return varName
+}
+
+// Copy returns a copy of `v`.
+func (v Values) Copy() Values {
+	v2 := Values(make(map[string]uint32, len(v)))
+	maps.Copy(v2, v)
+	return v2
 }
 
 // Precompile compiles a `ProgramDesc` with the given values.
