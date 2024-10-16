@@ -58,6 +58,9 @@ type Container struct {
 
 	// profile is the profiling hook associated with this container.
 	profile *profile
+
+	// sniffGPUOpts, if set, sets the rules for GPU sniffing for this container.
+	sniffGPUOpts *SniffGPUOpts
 }
 
 // RunOpts are options for running a container.
@@ -207,6 +210,7 @@ func (c *Container) SpawnProcess(ctx context.Context, r RunOpts, args ...string)
 	}
 
 	c.cleanups = append(c.cleanups, func() { stream.Close() })
+	c.sniffGPUOpts = r.sniffGPUOpts
 
 	if err := c.Start(ctx); err != nil {
 		return Process{}, err
@@ -310,15 +314,19 @@ func (c *Container) config(ctx context.Context, r RunOpts, args []string) (*cont
 		c.cleanups = append(c.cleanups, func() {
 			r.sniffGPUOpts.cleanup()
 		})
-		if len(entrypoint) == 0 && len(args) == 0 {
+		if len(entrypoint) == 0 || len(args) == 0 {
 			// Need to look up the image's default entrypoint/args so we can prepend to them.
 			// If we don't, then we will end up overwriting them.
 			imageInfo, _, err := c.client.ImageInspectWithRaw(ctx, image)
 			if err != nil {
 				return nil, fmt.Errorf("cannot inspect image %q: %w", image, err)
 			}
-			entrypoint = []string(imageInfo.Config.Entrypoint)
-			args = []string(imageInfo.Config.Cmd)
+			if len(entrypoint) == 0 {
+				entrypoint = []string(imageInfo.Config.Entrypoint)
+			}
+			if len(args) == 0 {
+				args = []string(imageInfo.Config.Cmd)
+			}
 		}
 		if len(entrypoint) != 0 {
 			entrypoint = r.sniffGPUOpts.prepend(entrypoint)
@@ -411,6 +419,14 @@ func (c *Container) Logs(ctx context.Context) (string, error) {
 	var out bytes.Buffer
 	err := c.logs(ctx, &out, &out)
 	return out.String(), err
+}
+
+// OutputStreams gets the container's stdout and stderr streams separately.
+func (c *Container) OutputStreams(ctx context.Context) (string, string, error) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	err := c.logs(ctx, &stdout, &stderr)
+	return stdout.String(), stderr.String(), err
 }
 
 func (c *Container) logs(ctx context.Context, stdout, stderr *bytes.Buffer) error {

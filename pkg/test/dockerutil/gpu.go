@@ -188,8 +188,10 @@ func (sgo *SniffGPUOpts) prepend(argv []string) []string {
 	snifferArgv := []string{
 		ioctlSnifferMountPath,
 		"--verbose=true",
-		fmt.Sprintf("--enforce_compatibility=%t", !sgo.AllowIncompatibleIoctl),
 		// TODO(eperot): Add flag to enforce capability set here once implemented.
+	}
+	if !sgo.AllowIncompatibleIoctl {
+		snifferArgv = append(snifferArgv, "--enforce_compatibility=INSTANT")
 	}
 	return append(snifferArgv, argv...)
 }

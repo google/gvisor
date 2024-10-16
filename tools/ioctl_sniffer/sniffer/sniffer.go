@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"regexp"
 	"strings"
 
@@ -71,7 +72,8 @@ func (c ioctlClass) String() string {
 type ioctlSubclass uint32
 
 var (
-	supportedIoctls [_numClasses]map[uint32]struct{}
+	supportedIoctls         [_numClasses]map[uint32]struct{}
+	crashOnUnsupportedIoctl bool
 )
 
 // Ioctl contains the parsed ioctl protobuf information.
@@ -186,7 +188,7 @@ func Init() error {
 		return fmt.Errorf("failed to parse host driver version: %w", err)
 	}
 
-	log.Infof("Host driver version: %v", driverVer)
+	log.Debugf("Host driver version: %v", driverVer)
 
 	suppFrontendIoctls, suppUvmIoctls, suppControlCmds, suppAllocClasses, ok := nvproxy.SupportedIoctls(driverVer)
 	if !ok {
@@ -198,6 +200,9 @@ func Init() error {
 		control:  suppControlCmds,
 		alloc:    suppAllocClasses,
 		unknown:  make(map[uint32]struct{}),
+	}
+	if os.Getenv("GVISOR_IOCTL_SNIFFER_ENFORCE_COMPATIBILITY") != "" {
+		crashOnUnsupportedIoctl = true
 	}
 
 	return nil
@@ -226,6 +231,11 @@ func (c Connection) ReadHookOutput(ctx context.Context) *Results {
 
 		if !ioctl.IsSupported() {
 			res.AddUnsupportedIoctl(ioctl)
+			if crashOnUnsupportedIoctl {
+				log.Warningf("Unsupported ioctl found; crashing immediately: %v", ioctl)
+				_ = os.Stderr.Sync()
+				os.Exit(1)
+			}
 		}
 	}
 	return res
