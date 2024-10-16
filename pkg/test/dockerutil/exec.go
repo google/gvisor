@@ -40,6 +40,11 @@ type ExecOpts struct {
 
 	// WorkDir is the working directory of the process.
 	WorkDir string
+
+	// NoWrap, if true, indicates that no command-line wrapping may be performed
+	// on the command line being exec'd. Otherwise, settings are inherited from
+	// the container.
+	NoWrap bool
 }
 
 // ExecError is returned when a process terminated with a non-zero exit status.
@@ -111,6 +116,9 @@ func (c *Container) doExec(ctx context.Context, r ExecOpts, args []string) (Proc
 
 func (c *Container) execConfig(r ExecOpts, cmd []string) types.ExecConfig {
 	env := append(r.Env, fmt.Sprintf("RUNSC_TEST_NAME=%s", c.Name))
+	if !r.NoWrap && c.sniffGPUOpts != nil {
+		cmd = c.sniffGPUOpts.prepend(cmd)
+	}
 	return types.ExecConfig{
 		AttachStdin:  r.UseTTY,
 		AttachStderr: true,
