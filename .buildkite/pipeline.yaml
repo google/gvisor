@@ -181,6 +181,7 @@ steps:
     commands:
       - make sudo TARGETS=//tools/gpu:main ARGS="install --latest" || cat /var/log/nvidia-installer.log
       - make gpu-all-tests
+    timeout_in_minutes: 60
     agents:
       queue: gpu
   - <<: *common
@@ -188,6 +189,7 @@ steps:
     label: ":female_supervillain: COS GPU Tests"
     commands:
       - make cos-gpu-all-tests
+    timeout_in_minutes: 60
     agents:
       queue: cos-canary-gpu
   - <<: *common

@@ -28,7 +28,7 @@ import (
 	_ "embed" // Necessary to use go:embed.
 )
 
-var enforceCompatability = flag.Bool("enforce_compatibility", false, "If true, the sniffer will fail if it detects an unsupported ioctl.")
+var enforceCompatibility = flag.String("enforce_compatibility", "", "May be set to 'INSTANT' or 'REPORT'. If set, the sniffer will return a non-zero error code if it detects an unsupported ioctl. 'INSTANT' causes the sniffer to exit immediately when this happens. 'REPORT' causes the sniffer to report all unsupported ioctls at the end of execution.")
 var verbose = flag.Bool("verbose", false, "If true, the sniffer will print all Nvidia ioctls it sees.")
 
 //go:embed libioctl_hook.so
@@ -58,6 +58,10 @@ func Main(ctx context.Context) error {
 	flag.Parse()
 	if len(flag.Args()) == 0 {
 		return fmt.Errorf("no command specified")
+	}
+
+	if *enforceCompatibility != "" && *enforceCompatibility != "INSTANT" && *enforceCompatibility != "REPORT" {
+		return fmt.Errorf("invalid value for --enforce_compatibility: %q", *enforceCompatibility)
 	}
 
 	if *verbose {
@@ -102,6 +106,9 @@ func Main(ctx context.Context) error {
 	// longer exists.
 	cmd.Env = append(os.Environ(), fmt.Sprintf("LD_PRELOAD=/proc/%d/fd/%d", os.Getpid(), hookFile.Fd()))
 	cmd.Env = append(cmd.Env, fmt.Sprintf("GVISOR_IOCTL_SNIFFER_SOCKET_PATH=%v", server.Addr()))
+	if *enforceCompatibility == "INSTANT" {
+		cmd.Env = append(cmd.Env, "GVISOR_IOCTL_SNIFFER_ENFORCE_COMPATIBILITY=true")
+	}
 
 	// Run the command and start reading the output.
 	if err := cmd.Start(); err != nil {
@@ -115,13 +122,13 @@ func Main(ctx context.Context) error {
 
 	// Merge results from each connection.
 	finalResults := server.AllResults()
-	if *enforceCompatability && finalResults.HasUnsupportedIoctl() {
+	if *enforceCompatibility != "" && finalResults.HasUnsupportedIoctl() {
 		return fmt.Errorf("unsupported ioctls found: %v", finalResults)
 	}
-
-	log.Infof("============== Unsupported ioctls ==============")
-	log.Infof("%v", finalResults)
-
+	if *enforceCompatibility == "" {
+		log.Infof("============== Unsupported ioctls ==============")
+		log.Infof("%v", finalResults)
+	}
 	if cmdErr != nil {
 		return fmt.Errorf("command exited with error: %w", cmdErr)
 	}

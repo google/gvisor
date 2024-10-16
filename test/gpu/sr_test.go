@@ -16,6 +16,7 @@
 package sr_test
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -34,21 +35,26 @@ func TestGPUCheckpointRestore(t *testing.T) {
 	c := dockerutil.MakeContainer(ctx, t)
 	defer c.CleanUp(ctx)
 
-	opts, err := dockerutil.GPURunOpts(dockerutil.SniffGPUOpts{
-		DisableSnifferReason: "TODO(gvisor.dev/issue/10885): Verify that this test works",
-	})
+	opts, err := dockerutil.GPURunOpts(dockerutil.SniffGPUOpts{})
 	if err != nil {
 		t.Fatalf("failed to get GPU run options: %v", err)
 	}
-	opts.Image = "basic/cuda-vector-add"
+	opts.Image = "gpu/cuda-tests"
 	if err := c.Spawn(ctx, opts, "sleep", "infinity"); err != nil {
-		t.Fatalf("could not run cuda-vector-add: %v", err)
+		t.Fatalf("could not start cuda-tests container: %v", err)
 	}
+	defer func() {
+		logs, err := c.Logs(ctx)
+		if err != nil {
+			t.Errorf("Could not get container logs: %v", err)
+		}
+		t.Logf("Container logs:\n%v", logs)
+	}()
 
 	// Run the vector add program.
-	vectorAddCmd := []string{"/bin/sh", "-c", "./vectorAdd"}
-	if _, err := c.Exec(ctx, dockerutil.ExecOpts{}, vectorAddCmd...); err != nil {
-		t.Fatalf("docker exec failed: %v", err)
+	vectorAddCmd := []string{"/run_sample", "--timeout=20s", "0_Introduction/vectorAdd"}
+	if output, err := c.Exec(ctx, dockerutil.ExecOpts{}, vectorAddCmd...); err != nil {
+		t.Fatalf("docker exec failed: %v; output: %v", err, strings.TrimSpace(output))
 	}
 
 	// Create a snapshot.
