@@ -36,6 +36,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"path/filepath"
 	"time"
 
@@ -1445,12 +1446,26 @@ func (k *Kernel) decRunningTasks() {
 // WaitExited blocks until all tasks in k have exited. No tasks can be created
 // after WaitExited returns.
 func (k *Kernel) WaitExited() {
-	k.tasks.mu.Lock()
-	defer k.tasks.mu.Unlock()
-	k.tasks.noNewTasksIfZeroLive = true
-	for k.tasks.liveTasks != 0 {
-		k.tasks.zeroLiveTasksCond.Wait()
+	// Ensure that the most significant bit of k.tasks.liveTasks is unset,
+	// preventing k.tasks.newTask() from transitioning k.tasks.liveTasks out of
+	// 0.
+	for {
+		liveTasks := k.tasks.liveTasks.Load()
+		if liveTasks == 0 {
+			return
+		}
+		if liveTasks > 0 {
+			break
+		}
+		newLiveTasks := liveTasks &^ math.MinInt64
+		if k.tasks.liveTasks.CompareAndSwap(liveTasks, newLiveTasks) {
+			if newLiveTasks == 0 {
+				close(k.tasks.zeroLiveTasksC)
+			}
+			break
+		}
 	}
+	<-k.tasks.zeroLiveTasksC
 }
 
 // Kill requests that all tasks in k immediately exit as if group exiting with

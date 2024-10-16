@@ -226,19 +226,23 @@ func (ts *TaskSet) newTask(ctx context.Context, cfg *TaskConfig) (*Task, error) 
 		// we're in uncharted territory and can return whatever we want.
 		return nil, linuxerr.EINTR
 	}
-	if ts.liveTasks == 0 && ts.noNewTasksIfZeroLive {
+	if ts.liveTasks.Add(1) == 1 {
+		// ts.mu is locked, so this can't race with concurrent calls to
+		// ts.newTask().
+		ts.liveTasks.Add(-1)
 		// Since liveTasks == 0, our caller cannot be a task goroutine invoking
 		// a syscall, so it's safe to return a non-errno error that is more
 		// explanatory.
 		return nil, fmt.Errorf("task creation disabled after Kernel.WaitExited() may have returned")
 	}
 	if err := ts.assignTIDsLocked(t); err != nil {
+		if ts.liveTasks.Add(-1) == 0 {
+			close(ts.zeroLiveTasksC)
+		}
 		return nil, err
 	}
 	// Below this point, newTask is expected not to fail (there is no rollback
 	// of assignTIDsLocked or any of the following).
-
-	ts.liveTasks++
 
 	// Logging on t's behalf will panic if t.logPrefix hasn't been
 	// initialized. This is the earliest point at which we can do so
