@@ -103,12 +103,9 @@ func (t *Task) run(threadID uintptr) {
 			t.p.Release()
 
 			ts := t.tg.pidns.owner
-			ts.mu.Lock()
-			ts.liveTasks--
-			if ts.liveTasks == 0 {
-				ts.zeroLiveTasksCond.Broadcast()
+			if ts.liveTasks.Add(-1) == 0 {
+				close(ts.zeroLiveTasksC)
 			}
-			ts.mu.Unlock()
 			ts.runningGoroutines.Done()
 
 			// Deferring this store triggers a false positive in the race
