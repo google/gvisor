@@ -1253,6 +1253,9 @@ func TestCheckpointRestoreListeningConnection(t *testing.T) {
 	}
 	conn.Close()
 
+	// Make sure that the connection is closed before calling Checkpoint.
+	time.Sleep(timeout)
+
 	// Create a snapshot.
 	const checkpointFile = "networktest"
 	if err := d.Checkpoint(ctx, checkpointFile); err != nil {
