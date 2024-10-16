@@ -16,13 +16,27 @@ package kernel
 
 import (
 	"context"
+	"math"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
 )
 
+// saveLiveTasks is invoked by stateify.
+func (ts *TaskSet) saveLiveTasks() int64 {
+	// The MSB, which is cleared by Kernel.WaitExited(), is never saved and is
+	// always set again after restore, since whether Kernel.WaitExited() was
+	// called before checkpointing is not intended to apply after restore.
+	return ts.liveTasks.Load() &^ math.MinInt64
+}
+
+// loadLiveTasks is invoked by stateify.
+func (ts *TaskSet) loadLiveTasks(_ context.Context, liveTasks int64) {
+	ts.liveTasks.Store(liveTasks | math.MinInt64)
+}
+
 // afterLoad is invoked by stateify.
 func (ts *TaskSet) afterLoad(_ context.Context) {
-	ts.zeroLiveTasksCond.L = &ts.mu
+	ts.zeroLiveTasksC = make(chan struct{}, 0)
 }
 
 // saveDanglingEndpoints is invoked by stateify.

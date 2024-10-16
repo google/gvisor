@@ -16,6 +16,7 @@ package kernel
 
 import (
 	"fmt"
+	"math"
 
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -77,16 +78,12 @@ type TaskSet struct {
 	stopCount int32 `state:"nosave"`
 
 	// liveTasks is the number of tasks in the TaskSet whose goroutines have
-	// not exited. liveTasks is protected by mu.
-	liveTasks uint32
+	// not exited.
+	liveTasks atomicbitops.Int64 `state:".(int64)"`
 
-	// If noNewTasksIfZeroLive is true and liveTasks is zero, calls to
-	// Kernel.NewTask() will fail. noNewTasksIfZeroLive is protected by mu.
-	noNewTasksIfZeroLive bool
-
-	// zeroLiveTasksCond is broadcast when liveTasks transitions from non-zero
-	// to zero.
-	zeroLiveTasksCond sync.Cond `state:"nosave"`
+	// zeroLiveTasksC is closed when liveTasks transitions from non-zero to
+	// zero.
+	zeroLiveTasksC chan struct{} `state:"manual"`
 
 	// runningGoroutines is the number of running task goroutines in the
 	// TaskSet.
@@ -106,8 +103,14 @@ type TaskSet struct {
 
 // newTaskSet returns a new, empty TaskSet.
 func newTaskSet(pidns *PIDNamespace) *TaskSet {
-	ts := &TaskSet{Root: pidns}
-	ts.zeroLiveTasksCond.L = &ts.mu
+	ts := &TaskSet{
+		Root:           pidns,
+		zeroLiveTasksC: make(chan struct{}, 0),
+	}
+	// Set the most significant bit of ts.liveTasks to make it non-zero, and
+	// therefore allow TaskSet.newTask() to proceed even if there are no live
+	// tasks; it will be cleared by Kernel.WaitExited().
+	ts.liveTasks.Store(math.MinInt64)
 	pidns.owner = ts
 	return ts
 }
