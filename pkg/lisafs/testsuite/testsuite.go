@@ -19,7 +19,6 @@ package testsuite
 import (
 	"bytes"
 	"fmt"
-	"math/rand"
 	"os"
 	"testing"
 	"time"
@@ -29,6 +28,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/lisafs"
+	"gvisor.dev/gvisor/pkg/rand"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/unet"
 )

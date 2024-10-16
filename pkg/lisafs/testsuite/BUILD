@@ -14,6 +14,7 @@ go_library(
         "//pkg/abi/linux",
         "//pkg/context",
         "//pkg/lisafs",
+        "//pkg/rand",
         "//pkg/refs",
         "//pkg/unet",
         "@com_github_syndtr_gocapability//capability:go_default_library",

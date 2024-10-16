@@ -21,6 +21,7 @@ go_library(
         "//pkg/binary",
         "//pkg/buffer",
         "//pkg/hostarch",
+        "//pkg/rand",
         "//pkg/tcpip",
         "//pkg/tcpip/checksum",
         "//pkg/tcpip/header",
