@@ -45,6 +45,11 @@ func New(config *rest.Config) (*Cluster, error) {
 	return &Cluster{clientSet}, nil
 }
 
+// Client returns the underlying Kubernetes client.
+func (c *Cluster) Client() kubernetes.Interface {
+	return c.client
+}
+
 // CreateDaemonset creates a daemonset with default options.
 func (c *Cluster) CreateDaemonset(ctx context.Context, ds *appsv1.DaemonSet) (*appsv1.DaemonSet, error) {
 	if ds.GetObjectMeta().GetNamespace() == "" {

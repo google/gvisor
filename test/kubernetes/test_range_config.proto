@@ -1,0 +1,66 @@
+syntax = "proto3";
+
+package k8s_tester.test_cluster_config;
+
+import "google/container/v1/cluster_service.proto";
+
+// TestRangeSpec is a description of the test environment to be created. It is
+// the input of the setup step which creates the required clusters.
+message TestRangeSpec {
+  // Name for clusters. This name will be used as a template for all created
+  // clusters (e.g. my-cluster will have clusters named something like
+  // "my-cluster-0" with an ascending index). Cluster names are limited to
+  // 40 charecters, so names will be truncated to fit this constraint.
+  string name = 1;
+
+  // A nodepool built with the runtime under test.
+  google.container.v1.NodePool test_runtime = 2;
+
+  // clients is another nodepool in the cluster to use against the test_runtime.
+  // For example, in most client-server tests, the runtime under test is the
+  // server and the clients are the client. Clients always use the default
+  // runtime runc.
+  google.container.v1.NodePool clients = 3;
+
+  // tertiary is a third nodepool in the cluster, used by some benchmarks that
+  // need it for isolation.
+  // For example, the WordPress benchmark needs to run the MySQL database on
+  // a separate machine in order to force network traffic to flow across the
+  // host's non-local network stack for a fair comparison between runsc/runc.
+  // The tertiary nodepool may use gVisor or runc as a runtime, depending on
+  // user configuration.
+  google.container.v1.NodePool tertiary = 8;
+
+  // versions are the GKE patch versions to use for the clusters. The number
+  // of clusters created will be num(versions) * replicas.
+  repeated string versions = 4;
+
+  // zones are the availability zones in which to create clusters. clusters will
+  // be created in each zone in a round robin fashion until the requested amount
+  // of clusters is created. This is provided to expand quota.
+  // Note: please check that given zones actual have resources available (e.g
+  // ARM machines are not available in all zones).
+  repeated string zones = 5;
+
+  // project is the project under which clusters should be created.
+  string project = 6;
+
+  // project service account to use to create clusters.
+  string gke_service_account = 7;
+}
+
+// TestRange contains the created clusters. This is an output from the setup
+// phase and an input for the test phase.
+message TestRange {
+  repeated Cluster clusters = 1;
+}
+
+// Cluster holds the created cluster and its credential file.
+message Cluster {
+  // Created Cluster proto.
+  google.container.v1.Cluster cluster = 1;
+
+  // The setup step will create individual credential files for each created
+  // cluster.
+  string credential_file = 2;
+}

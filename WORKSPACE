@@ -63,10 +63,10 @@ http_archive(
 
 http_archive(
     name = "googleapis",
-    sha256 = "9d1a930e767c93c825398b8f8692eca3fe353b9aaadedfbcf1fca2282c85df88",
-    strip_prefix = "googleapis-64926d52febbf298cb82a8f472ade4a3969ba922",
+    sha256 = "fd9e4d17b92be6b6718ee9b40062a4ce81feb6ea6cdd80fc723daf127ce3f350",
+    strip_prefix = "googleapis-3effbf23b1a1d1fe1306356e94397e20d01d31a0",
     urls = [
-        "https://github.com/googleapis/googleapis/archive/64926d52febbf298cb82a8f472ade4a3969ba922.zip",
+        "https://github.com/googleapis/googleapis/archive/3effbf23b1a1d1fe1306356e94397e20d01d31a0.zip",
     ],
 )
 
@@ -74,6 +74,7 @@ load("@googleapis//:repository_rules.bzl", "switched_rules_by_language")
 
 switched_rules_by_language(
     name = "com_google_googleapis_imports",
+    go = True,  # Enable go_proto_library BUILD rules inside @googleapis repo.
 )
 
 http_archive(
@@ -270,13 +271,6 @@ http_archive(
 )
 
 load("@rules_proto//proto:repositories.bzl", "rules_proto_dependencies", "rules_proto_toolchains")
-
-go_repository(
-    name = "com_github_google_martian_v3",
-    importpath = "github.com/google/martian/v3",
-    sum = "h1:d8MncMlErDFTwQGBK1xhv026j9kqhvw1Qv9IbWT1VLQ=",
-    version = "v3.2.1",
-)
 
 go_repository(
     name = "org_golang_x_term",
