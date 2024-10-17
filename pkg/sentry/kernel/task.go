@@ -286,7 +286,7 @@ type Task struct {
 	// this TaskImage is released.
 	//
 	// vforkParent is protected by the TaskSet mutex.
-	vforkParent *Task
+	vforkParent atomic.Pointer[Task] `state:".(*Task)"`
 
 	// exitState is the task's progress through the exit path.
 	//
@@ -630,6 +630,14 @@ var (
 			Description: "The number of faults the sentry has handled.",
 		})
 )
+
+func (t *Task) saveVforkParent() *Task {
+	return t.vforkParent.Load()
+}
+
+func (t *Task) loadVforkParent(_ gocontext.Context, vforkParent *Task) {
+	t.vforkParent.Store(vforkParent)
+}
 
 func (t *Task) savePtraceTracer() *Task {
 	return t.ptraceTracer.Load()
