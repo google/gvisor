@@ -2986,7 +2986,7 @@ go_repository(
     name = "com_github_google_pprof",
     importpath = "github.com/google/pprof",
     sum = "h1:wORs2YN3R3ona/CXYuTvLM31QlgoNKHvlCNuArCDDCU=",
-    version = "v0.0.0-20221219190121-3cb0bae90811",
+    version = "v0.0.0-20240710211743-f6c9dda6c6da",
 )
 
 go_repository(
