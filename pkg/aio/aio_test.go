@@ -17,12 +17,12 @@ package aio
 import (
 	"bytes"
 	"io"
-	"math/rand"
 	"os"
 	"testing"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/bitmap"
+	"gvisor.dev/gvisor/pkg/rand"
 )
 
 func TestRead(t *testing.T) {

@@ -19,6 +19,7 @@ go_library(
     ],
     deps = [
         "//pkg/buffer",
+        "//pkg/rand",
         "//pkg/tcpip",
         "//pkg/tcpip/checker",
         "//pkg/tcpip/header",
