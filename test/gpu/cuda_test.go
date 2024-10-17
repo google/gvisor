@@ -396,9 +396,7 @@ func (*FullyCompatible) IsExpectedFailure(ctx context.Context, env *TestEnvironm
 
 // getContainerOpts returns the container run options to run CUDA tests.
 func getContainerOpts() (dockerutil.RunOpts, error) {
-	opts, err := dockerutil.GPURunOpts(dockerutil.SniffGPUOpts{
-		DisableSnifferReason: "TODO(gvisor.dev/issue/10885): Verify that this test works",
-	})
+	opts, err := dockerutil.GPURunOpts(dockerutil.SniffGPUOpts{})
 	if err != nil {
 		return dockerutil.RunOpts{}, fmt.Errorf("failed to get GPU run options: %w", err)
 	}

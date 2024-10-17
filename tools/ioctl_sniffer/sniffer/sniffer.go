@@ -188,7 +188,7 @@ func Init() error {
 		return fmt.Errorf("failed to parse host driver version: %w", err)
 	}
 
-	log.Infof("Host driver version: %v", driverVer)
+	log.Debugf("Host driver version: %v", driverVer)
 
 	suppFrontendIoctls, suppUvmIoctls, suppControlCmds, suppAllocClasses, ok := nvproxy.SupportedIoctls(driverVer)
 	if !ok {
