@@ -53,6 +53,7 @@ go_library(
         "//pkg/metric",
         "//pkg/rand",
         "//pkg/refs",
+        "//pkg/atomicbitops",
         "//pkg/sentry/arch",
         "//pkg/sentry/arch:registers_go_proto",
         "//pkg/sentry/control",

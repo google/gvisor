@@ -24,6 +24,7 @@ import (
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/control/server"
@@ -255,6 +256,9 @@ type containerManager struct {
 	// restorer is set when the sandbox in being restored. It stores the state
 	// of all containers and perform all actions required by restore.
 	restorer *restorer
+
+	// inCheckpointing indicates that the sandbox is in checkpointing
+	inCheckpointing atomicbitops.Int32
 }
 
 // StartRoot will start the root container process.
@@ -452,6 +456,9 @@ func (cm *containerManager) ExecuteAsync(args *control.ExecArgs, pid *int32) err
 // Checkpoint pauses a sandbox and saves its state.
 func (cm *containerManager) Checkpoint(o *control.SaveOpts, _ *struct{}) error {
 	log.Debugf("containerManager.Checkpoint")
+	cm.inCheckpointing.CompareAndSwap(0, -1)
+	defer cm.inCheckpointing.CompareAndSwap(-1, 0)
+
 	return cm.l.save(o)
 }
 
@@ -788,6 +795,9 @@ type SignalArgs struct {
 // process group.
 func (cm *containerManager) Signal(args *SignalArgs, _ *struct{}) error {
 	log.Debugf("containerManager.Signal: cid: %s, PID: %d, signal: %d, mode: %v", args.CID, args.PID, args.Signo, args.Mode)
+	if cm.inCheckpointing.Load() != 0 {
+		return nil
+	}
 	return cm.l.signal(args.CID, args.PID, args.Signo, args.Mode)
 }
 
