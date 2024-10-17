@@ -105,6 +105,7 @@ var allowedSyscalls = seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 	unix.SYS_GETRANDOM:    seccomp.MatchAll{},
 	unix.SYS_GETTID:       seccomp.MatchAll{},
 	unix.SYS_GETTIMEOFDAY: seccomp.MatchAll{},
+	unix.SYS_LGETXATTR:    seccomp.MatchAll{},
 	unix.SYS_LSEEK:        seccomp.MatchAll{},
 	unix.SYS_MADVISE:      seccomp.MatchAll{},
 	unix.SYS_MEMFD_CREATE: seccomp.MatchAll{}, // Used by flipcall.PacketWindowAllocator.Init().

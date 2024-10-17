@@ -923,6 +923,12 @@ func (fd *controlFDLisa) Renamed() {
 // GetXattr implements lisafs.ControlFDImpl.GetXattr.
 func (fd *controlFDLisa) GetXattr(name string, size uint32, getValueBuf func(uint32) []byte) (uint16, error) {
 	data := getValueBuf(size)
+	if fd.IsSocket() || fd.IsSymlink() {
+		// Sockets and symlinks use O_PATH host FDs. However, fgetxattr(2) fails
+		// with EBADF for O_PATH FDs. Use lgetxattr(2) instead.
+		xattrSize, err := unix.Lgetxattr(fd.Node().FilePath(), name, data)
+		return uint16(xattrSize), err
+	}
 	xattrSize, err := unix.Fgetxattr(fd.hostFD, name, data)
 	return uint16(xattrSize), err
 }
