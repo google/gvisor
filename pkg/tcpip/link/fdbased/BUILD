@@ -42,6 +42,7 @@ go_test(
     library = ":fdbased",
     deps = [
         "//pkg/buffer",
+        "//pkg/rand",
         "//pkg/refs",
         "//pkg/tcpip",
         "//pkg/tcpip/header",

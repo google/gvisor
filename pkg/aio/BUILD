@@ -25,6 +25,7 @@ go_test(
     library = ":aio",
     deps = [
         "//pkg/bitmap",
+        "//pkg/rand",
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )
