@@ -307,7 +307,7 @@ func (d *dentry) getXattrImpl(ctx context.Context, opts *vfs.GetXattrOptions) (s
 	case *lisafsDentry:
 		return dt.controlFD.GetXattr(ctx, opts.Name, opts.Size)
 	case *directfsDentry:
-		return dt.getXattr(opts.Name, opts.Size)
+		return dt.getXattr(ctx, opts.Name, opts.Size)
 	default:
 		panic("unknown dentry implementation")
 	}
