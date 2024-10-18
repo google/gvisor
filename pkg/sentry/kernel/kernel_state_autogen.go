@@ -1345,6 +1345,9 @@ func (t *Task) beforeSave() {}
 // +checklocksignore
 func (t *Task) StateSave(stateSinkObject state.Sink) {
 	t.beforeSave()
+	var vforkParentValue *Task
+	vforkParentValue = t.saveVforkParent()
+	stateSinkObject.SaveValue(26, vforkParentValue)
 	var ptraceTracerValue *Task
 	ptraceTracerValue = t.savePtraceTracer()
 	stateSinkObject.SaveValue(32, ptraceTracerValue)
@@ -1377,7 +1380,6 @@ func (t *Task) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(23, &t.image)
 	stateSinkObject.Save(24, &t.fsContext)
 	stateSinkObject.Save(25, &t.fdTable)
-	stateSinkObject.Save(26, &t.vforkParent)
 	stateSinkObject.Save(27, &t.exitState)
 	stateSinkObject.Save(28, &t.exitTracerNotified)
 	stateSinkObject.Save(29, &t.exitTracerAcked)
@@ -1447,7 +1449,6 @@ func (t *Task) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(23, &t.image)
 	stateSourceObject.Load(24, &t.fsContext)
 	stateSourceObject.Load(25, &t.fdTable)
-	stateSourceObject.Load(26, &t.vforkParent)
 	stateSourceObject.Load(27, &t.exitState)
 	stateSourceObject.Load(28, &t.exitTracerNotified)
 	stateSourceObject.Load(29, &t.exitTracerAcked)
@@ -1487,6 +1488,7 @@ func (t *Task) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(65, &t.userCounters)
 	stateSourceObject.Load(66, &t.sessionKeyring)
 	stateSourceObject.Load(67, &t.Origin)
+	stateSourceObject.LoadValue(26, new(*Task), func(y any) { t.loadVforkParent(ctx, y.(*Task)) })
 	stateSourceObject.LoadValue(32, new(*Task), func(y any) { t.loadPtraceTracer(ctx, y.(*Task)) })
 	stateSourceObject.LoadValue(48, new(*taskSeccomp), func(y any) { t.loadSeccomp(ctx, y.(*taskSeccomp)) })
 	stateSourceObject.AfterLoad(func() { t.afterLoad(ctx) })

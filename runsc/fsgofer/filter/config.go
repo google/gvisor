@@ -43,6 +43,7 @@ var allowedSyscalls = seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 	unix.SYS_EXIT:       seccomp.MatchAll{},
 	unix.SYS_EXIT_GROUP: seccomp.MatchAll{},
 	unix.SYS_FCHMOD:     seccomp.MatchAll{},
+	unix.SYS_FCHMODAT:   seccomp.MatchAll{},
 	unix.SYS_FCHOWNAT:   seccomp.MatchAll{},
 	unix.SYS_FCNTL: seccomp.Or{
 		seccomp.PerArg{
@@ -221,7 +222,6 @@ var lisafsFilters = seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 		seccomp.AnyValue{},
 		seccomp.EqualTo(0),
 	},
-	unix.SYS_FCHMODAT:   seccomp.MatchAll{},
 	unix.SYS_FGETXATTR:  seccomp.MatchAll{},
 	unix.SYS_FSTATFS:    seccomp.MatchAll{},
 	unix.SYS_GETDENTS64: seccomp.MatchAll{},

@@ -25,7 +25,6 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/hostarch"
-	"gvisor.dev/gvisor/pkg/hostos"
 	"gvisor.dev/gvisor/pkg/hostsyscall"
 	"gvisor.dev/gvisor/pkg/hosttid"
 	"gvisor.dev/gvisor/pkg/log"
@@ -263,14 +262,9 @@ func (m *machine) createVCPU(id int) *vCPU {
 	return c // Done.
 }
 
-// AllowMappingEntireAddressSpace enables mapping the entire process address
+// forceMappingEntireAddressSpace forces mapping the entire process address
 // space to the VM.
-//
-// On x86_64, kernels before 6.9 with enabled
-// CONFIG_KVM_EXTERNAL_WRITE_TRACKING didn't allow us to map the entire
-// process address space to the VM, because the memory tracking was always
-// enabled and it has a significant memory overhead.
-var AllowMappingEntireAddressSpace bool
+var forceMappingEntireAddressSpace = false
 
 // newMachine returns a new VM context.
 func newMachine(vm int) (*machine, error) {
@@ -307,16 +301,22 @@ func newMachine(vm int) (*machine, error) {
 	m.upperSharedPageTables.MarkReadOnlyShared()
 	m.kernel.PageTables = pagetables.NewWithUpper(newAllocator(), m.upperSharedPageTables, ring0.KernelStartAddress)
 
-	// Before the 6.9 kernel we couldn't map the entire sentry
-	// address space into VM, because there were a two-byte overhead
-	// per page in the kernel. This issue was fixed by a364c014a2c1
-	// ("kvm/x86: allocate the write-tracking metadata on-demand").
-	kernelVersion, err := hostos.KernelVersion()
-	if err != nil {
-		return nil, err
-	}
-	mapEntireAddressSpace := AllowMappingEntireAddressSpace ||
-		runtime.GOARCH != "amd64" || kernelVersion.AtLeast(6, 9)
+	// On x86_64, we prefer not to map the entire sentry address space into
+	// the VM due to memory overhead. It is about 3MB for a 40-bit address
+	// space and about 250MB for 46-bit address spaces (modern CPUs).
+	//
+	// Before version 6.9, the memory overhead was two bytes per page.
+	// This issue was fixed by commit a364c014a2c1 ("kvm/x86: allocate the
+	// write-tracking metadata on-demand").
+	//
+	// If the entire address space isn't mapped into the VM, we need to
+	// trap mmap system calls and map sentry memory regions on demand. This
+	// introduces some overhead for mmap system calls, but considering that
+	// mmap isn't called frequently, it seems better than the memory and
+	// startup time overhead introduced by mapping the entire address
+	// space.
+	mapEntireAddressSpace := forceMappingEntireAddressSpace ||
+		runtime.GOARCH != "amd64"
 	if mapEntireAddressSpace {
 		// Increase faultBlockSize to be sure that we will not reach the limit.
 		// faultBlockSize has to equal or less than KVM_MEM_MAX_NR_PAGES.
