@@ -525,7 +525,7 @@ TEST_P(TcpSocketTest, PollWithFullBufferBlocks) {
 
 TEST_P(TcpSocketTest, ClosedWriteBlockingSocket) {
   FillSocketBuffers(connected_.get(), accepted_.get());
-  constexpr int timeout = 10;
+  constexpr int timeout = 3;
   struct timeval tv = {.tv_sec = timeout, .tv_usec = 0};
   EXPECT_THAT(
       setsockopt(connected_.get(), SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv)),
@@ -558,7 +558,7 @@ TEST_P(TcpSocketTest, ClosedWriteBlockingSocket) {
 }
 
 TEST_P(TcpSocketTest, ClosedReadBlockingSocket) {
-  constexpr int timeout = 10;
+  constexpr int timeout = 3;
   struct timeval tv = {.tv_sec = timeout, .tv_usec = 0};
   EXPECT_THAT(
       setsockopt(connected_.get(), SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)),
