@@ -332,7 +332,7 @@ func (t *Task) Clone(args *linux.CloneArgs) (ThreadID, *SyscallControl, error) {
 		nt.seccomp.Store(nil)
 	}
 	if args.Flags&linux.CLONE_VFORK != 0 {
-		nt.vforkParent = t
+		nt.vforkParent.Store(t)
 	}
 
 	if args.Flags&linux.CLONE_CHILD_CLEARTID != 0 {
@@ -396,30 +396,36 @@ func getCloneSeccheckInfo(t, nt *Task, flags uint64) (seccheck.FieldSet, *pb.Clo
 //
 // Preconditions: The caller must be running on t's task goroutine.
 func (t *Task) maybeBeginVforkStop(child *Task) {
+	if child.vforkParent.Load() != t {
+		return
+	}
 	t.tg.pidns.owner.mu.Lock()
 	defer t.tg.pidns.owner.mu.Unlock()
 	t.tg.signalHandlers.mu.Lock()
 	defer t.tg.signalHandlers.mu.Unlock()
-	if t.killedLocked() {
-		child.vforkParent = nil
+	if child.vforkParent.Load() != t {
 		return
 	}
-	if child.vforkParent == t {
-		t.beginInternalStopLocked((*vforkStop)(nil))
+	if t.killedLocked() {
+		child.vforkParent.Store(nil)
+		return
 	}
+	t.beginInternalStopLocked((*vforkStop)(nil))
 }
 
 func (t *Task) unstopVforkParent() {
+	if t.vforkParent.Load() == nil {
+		return
+	}
 	t.tg.pidns.owner.mu.Lock()
 	defer t.tg.pidns.owner.mu.Unlock()
-	if p := t.vforkParent; p != nil {
+	if p := t.vforkParent.Load(); p != nil {
+		t.vforkParent.Store(nil)
 		p.tg.signalHandlers.mu.Lock()
 		defer p.tg.signalHandlers.mu.Unlock()
 		if _, ok := p.stop.(*vforkStop); ok {
 			p.endInternalStopLocked()
 		}
-		// Parent no longer needs to be unstopped.
-		t.vforkParent = nil
 	}
 }
 
