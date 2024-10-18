@@ -125,8 +125,7 @@ func ParseNvidiaVisibleDevices(spec *specs.Spec) (string, error) {
 	if nvd == "all" {
 		return "all", nil
 	}
-	// Expect nvd to be a list of indices; UUIDs aren't supported
-	// yet.
+
 	for _, gpuDev := range strings.Split(nvd, ",") {
 		// Validate gpuDev. We only support the following formats for now:
 		// * GPU indices (e.g. 0,1,2)
