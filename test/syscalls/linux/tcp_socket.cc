@@ -137,7 +137,7 @@ static void FillSocketBuffers(int sender, int receiver) {
   while (RetryEINTR(send)(sender, buf.data(), buf.size(), 0) != -1) {
     // Sleep to give linux a chance to move data from the send buffer to the
     // receive buffer.
-    absl::SleepFor(absl::Milliseconds(100));  // 100ms.
+    absl::SleepFor(absl::Milliseconds(200));  // 200ms.
   }
   // The last error should have been EWOULDBLOCK.
   ASSERT_EQ(errno, EWOULDBLOCK);
