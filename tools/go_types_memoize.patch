@@ -1,7 +1,7 @@
-diff --git a/go/src/go/types/scope.go b/src/go/types/scope.go
+diff --git a/src/go/types/scope.go b/src/go/types/scope.go
 index 010727eb72..0f134b872e 100644
---- a/go/src/go/types/scope.go
-+++ b/go/src/go/types/scope.go
+--- a/src/go/types/scope.go
++++ b/src/go/types/scope.go
 @@ -25,6 +25,7 @@ type Scope struct {
  	children []*Scope
  	number   int               // parent.children[number-1] is this scope; 0 if there is no parent
