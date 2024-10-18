@@ -29,6 +29,7 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/p9"
+	gvisorrand "gvisor.dev/gvisor/pkg/rand"
 	"gvisor.dev/gvisor/pkg/sync"
 )
 
@@ -2192,7 +2193,7 @@ func TestReadWriteConcurrent(t *testing.T) {
 
 	// Initialize random data for each instance.
 	for i := 0; i < instances; i++ {
-		if _, err := rand.Read(dataSets[i][:]); err != nil {
+		if _, err := gvisorrand.Read(dataSets[i][:]); err != nil {
 			t.Fatalf("error initializing dataSet#%d, got %v", i, err)
 		}
 	}

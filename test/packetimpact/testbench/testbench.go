@@ -20,10 +20,11 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"math/rand"
 	"net"
 	"testing"
 	"time"
+
+	"gvisor.dev/gvisor/pkg/rand"
 )
 
 var (
