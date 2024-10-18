@@ -266,24 +266,25 @@ func (d *directfsDentry) updateMetadataLocked(h handle) error {
 
 // Precondition: fs.renameMu is locked if d is a socket.
 func (d *directfsDentry) chmod(ctx context.Context, mode uint16) error {
+	if d.isSymlink() {
+		// Linux does not support changing the mode of symlinks. See
+		// fs/attr.c:notify_change().
+		return unix.EOPNOTSUPP
+	}
 	if !d.isSocket() {
 		return unix.Fchmod(d.controlFD, uint32(mode))
 	}
 
-	// fchmod(2) on socket files created via bind(2) fails. We need to
-	// fchmodat(2) it from its parent.
+	// Sockets use O_PATH control FDs. However, fchmod(2) fails with EBADF for
+	// O_PATH FDs. Try to fchmodat(2) it from its parent.
 	if parent := d.parent.Load(); parent != nil {
-		// We have parent FD, just use that. Note that AT_SYMLINK_NOFOLLOW flag is
-		// currently not supported. So we don't use it.
 		return unix.Fchmodat(parent.impl.(*directfsDentry).controlFD, d.name, uint32(mode), 0 /* flags */)
 	}
 
-	// This is a mount point socket. We don't have a parent FD. Fallback to using
-	// lisafs.
-	if !d.controlFDLisa.Ok() {
-		panic("directfsDentry.controlFDLisa is not set for mount point socket")
+	// This is a mount point socket (no parent). Fallback to using lisafs.
+	if err := d.ensureLisafsControlFD(ctx); err != nil {
+		return err
 	}
-
 	return chmod(ctx, d.controlFDLisa, mode)
 }
 
