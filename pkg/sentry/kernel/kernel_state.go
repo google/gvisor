@@ -22,7 +22,9 @@ import (
 
 // afterLoad is invoked by stateify.
 func (ts *TaskSet) afterLoad(_ context.Context) {
-	ts.zeroLiveTasksCond.L = &ts.mu
+	if ts.liveTasks.Load() != 0 {
+		ts.zeroLiveTasksC = make(chan struct{}, 0)
+	}
 }
 
 // saveDanglingEndpoints is invoked by stateify.
