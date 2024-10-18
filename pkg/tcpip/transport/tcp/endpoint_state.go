@@ -19,12 +19,22 @@ import (
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/atomicbitops"
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/ports"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
+
+// logDisconnectOnce ensures we don't spam logs when many connections are terminated.
+var logDisconnectOnce sync.Once
+
+func logDisconnect() {
+	logDisconnectOnce.Do(func() {
+		log.Infof("One or more TCP connections terminated during save")
+	})
+}
 
 // beforeSave is invoked by stateify.
 func (e *Endpoint) beforeSave() {
@@ -44,6 +54,7 @@ func (e *Endpoint) beforeSave() {
 					Err: fmt.Errorf("endpoint cannot be saved in connected state: local %s:%d, remote %s:%d", e.TransportEndpointInfo.ID.LocalAddress, e.TransportEndpointInfo.ID.LocalPort, e.TransportEndpointInfo.ID.RemoteAddress, e.TransportEndpointInfo.ID.RemotePort),
 				})
 			}
+			logDisconnect()
 			e.resetConnectionLocked(&tcpip.ErrConnectionAborted{})
 			e.mu.Unlock()
 			e.Close()

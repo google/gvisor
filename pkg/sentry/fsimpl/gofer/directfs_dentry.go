@@ -423,7 +423,15 @@ func (d *directfsDentry) getHostChild(name string) (*dentry, error) {
 	return d.fs.newDirectfsDentry(childFD)
 }
 
-func (d *directfsDentry) getXattr(name string, size uint64) (string, error) {
+func (d *directfsDentry) getXattr(ctx context.Context, name string, size uint64) (string, error) {
+	if ftype := d.fileType(); ftype == linux.S_IFSOCK || ftype == linux.S_IFLNK {
+		// Sockets and symlinks use O_PATH control FDs. However, fgetxattr(2) fails
+		// with EBADF for O_PATH FDs. Fallback to lisafs.
+		if err := d.ensureLisafsControlFD(ctx); err != nil {
+			return "", err
+		}
+		return d.controlFDLisa.GetXattr(ctx, name, size)
+	}
 	data := make([]byte, size)
 	if _, err := unix.Fgetxattr(d.controlFD, name, data); err != nil {
 		return "", err

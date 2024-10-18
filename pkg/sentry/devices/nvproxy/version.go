@@ -589,7 +589,8 @@ func Init() {
 		// branch at 535.113.01.
 		v535_161_07 := addDriverABI(535, 161, 07, "edc527f1dcfa0212a3bf815ebf302d45ef9663834a41e11a851dd38da159a8cd", v535_113_01)
 		v535_161_08 := addDriverABI(535, 161, 8 /*08*/, "0f026c2e6161c0bd453830903c55569e402eb1cf0c5a8e56c39e7998df55565c", v535_161_07)
-		_ = addDriverABI(535, 183, 01, "f6707afbdda9407e3cbc2e5128e60bcbcdbf02fae29958c72fafb5d405e8b883", v535_161_08)
+		v535_183_01 := addDriverABI(535, 183, 01, "f6707afbdda9407e3cbc2e5128e60bcbcdbf02fae29958c72fafb5d405e8b883", v535_161_08)
+		_ = addDriverABI(535, 183, 06, "c7bb0a0569c5347845479ed4e3e4d885c6ee3b8adf068c3401cdf754d5ba3d3b", v535_183_01)
 
 		// 545.23.06 is an intermediate unqualified version from the main branch.
 		v545_23_06 := func() *driverABI {

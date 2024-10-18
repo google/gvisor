@@ -31,6 +31,10 @@ var (
 	registerPrecompiledProgramsOnce sync.Once
 )
 
+// PrecompilationDisabledAtBuildTime is a constant that is used to
+// indicate that precompilation was disabled at build time.
+const PrecompilationDisabledAtBuildTime = true
+
 // GetPrecompiled returns the precompiled program for the given name,
 // and whether that program name exists.
 func GetPrecompiled(programName string) (precompiledseccomp.Program, bool) {
