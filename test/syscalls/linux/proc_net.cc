@@ -224,9 +224,6 @@ PosixErrorOr<uint64_t> GetSNMPMetricFromProc(const std::string snmp,
 TEST(ProcNetSnmp, TcpReset) {
   SKIP_IF(IsRunningWithHostinet());
 
-  // TODO(gvisor.dev/issue/866): epsocket metrics are not savable.
-  DisableSave ds;
-
   uint64_t oldAttemptFails;
   uint64_t oldActiveOpens;
   uint64_t oldOutRsts;
@@ -280,9 +277,6 @@ TEST(ProcNetSnmp, TcpEstab) {
   // per RFC 1213. Hence, it becomes infeasible to test this when system-wide
   // statistics have noise.
   SKIP_IF(GetMibsAllocationSysctl() == 0);
-
-  // TODO(gvisor.dev/issue/866): epsocket metrics are not savable.
-  DisableSave ds;
 
   uint64_t oldEstabResets;
   uint64_t oldActiveOpens;
@@ -377,9 +371,6 @@ TEST(ProcNetSnmp, TcpEstab) {
 TEST(ProcNetSnmp, UdpNoPorts) {
   SKIP_IF(IsRunningWithHostinet());
 
-  // TODO(gvisor.dev/issue/866): epsocket metrics are not savable.
-  DisableSave ds;
-
   uint64_t oldOutDatagrams;
   uint64_t oldNoPorts;
   auto snmp = ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/net/snmp"));
@@ -419,9 +410,6 @@ TEST(ProcNetSnmp, UdpNoPorts) {
 
 TEST(ProcNetSnmp, UdpIn) {
   SKIP_IF(IsRunningWithHostinet());
-
-  // TODO(gvisor.dev/issue/866): epsocket metrics are not savable.
-  const DisableSave ds;
 
   uint64_t oldOutDatagrams;
   uint64_t oldInDatagrams;
@@ -550,10 +538,6 @@ TEST(ProcSysNetIpv4Recovery, Exists) {
 }
 
 TEST(ProcSysNetIpv4Recovery, CanReadAndWrite) {
-  // TODO(b/162988252): Enable save/restore for this test after the bug is
-  // fixed.
-  DisableSave ds;
-
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability((CAP_NET_ADMIN))) ||
           IsRunningWithHostinet());
 
