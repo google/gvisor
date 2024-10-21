@@ -1,1 +1,1 @@
-FROM ubuntu:trusty
+FROM ubuntu:jammy
