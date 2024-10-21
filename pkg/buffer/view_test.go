@@ -16,10 +16,10 @@ package buffer
 
 import (
 	"bytes"
-	"math/rand"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"gvisor.dev/gvisor/pkg/rand"
 )
 
 func TestNewView(t *testing.T) {
