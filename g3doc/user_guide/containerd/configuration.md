@@ -100,3 +100,49 @@ log_level = "debug"
   debug-log = "/var/log/runsc/%ID%/gvisor.%COMMAND%.log"
 EOF
 ```
+
+## NVIDIA Container Runtime
+
+If you want to use
+[`nvidia-container-runtime`](https://developer.nvidia.com/container-runtime)
+with runsc through containerd, you might need to configure `nvidia` runtime in
+containerd via `sudo nvidia-ctk runtime configure --runtime=containerd` command.
+This will update `/etc/containerd/config.toml` with a new runtime named
+`nvidia`. However, this runtime's configuration is not compatible with runsc:
+
+-   Its `runtime_type` is set to runc. You will need to manually update this
+    field to specify runsc so that containerd tries to invoke
+    `containerd-shim-runsc-v1` when using `nvidia` runtime.
+-   Its `options` attempts to specify `BinaryName =
+    "/usr/bin/nvidia-container-runtime"`. However, runsc shim takes
+    configuration via `ConfigPath` as shown above. So the `options` needs to be
+    updated to specify `ConfigPath` and in the config.toml file needs to specify
+    the `BinaryName`.
+
+The `/etc/containerd/config.toml` file should look like:
+
+```
+...
+[plugins."io.containerd.grpc.v1.cri".containerd.runtimes.nvidia]
+  runtime_type = "io.containerd.runsc.v1"
+
+[plugins."io.containerd.grpc.v1.cri".containerd.runtimes.nvidia.options]
+  TypeUrl = "io.containerd.runsc.v1.options"
+  ConfigPath = "/etc/containerd/runsc.toml"
+...
+```
+
+And `/etc/containerd/runsc.toml` should look something like:
+
+```
+log_path = "/var/log/runsc/%ID%/shim.log"
+log_level = "debug"
+binary_name = "/usr/bin/nvidia-container-runtime"
+[runsc_config]
+  debug = "true"
+  debug-log = "/var/log/runsc/%ID%/gvisor.%COMMAND%.log"
+  nvproxy = "true"
+```
+
+See [this section](../gpu.md#nvidia-container-runtime) for information about
+configuring `nvidia-container-runtime` to use `runsc` as its low-level runtime.
