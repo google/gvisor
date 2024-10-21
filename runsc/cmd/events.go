@@ -22,6 +22,7 @@ import (
 
 	"github.com/google/subcommands"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/runsc/boot"
 	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/container"
@@ -80,32 +81,55 @@ func (evs *Events) Execute(_ context.Context, f *flag.FlagSet, args ...any) subc
 		util.Fatalf("loading sandbox: %v", err)
 	}
 
-	// Repeatedly get stats from the container. Sleep a bit after every loop
-	// except the first one.
-	for dur := time.Duration(evs.intervalSec) * time.Second; true; time.Sleep(dur) {
-		// Get the event and print it as JSON.
+	if evs.stats {
 		ev, err := c.Event()
 		if err != nil {
 			log.Warningf("Error getting events for container: %v", err)
-			if evs.stats {
-				return subcommands.ExitFailure
-			}
-			continue
+			return subcommands.ExitFailure
 		}
 		log.Debugf("Events: %+v", ev)
-
 		if err := json.NewEncoder(os.Stdout).Encode(ev.Event); err != nil {
 			log.Warningf("Error encoding event %+v: %v", ev.Event, err)
-			if evs.stats {
-				return subcommands.ExitFailure
+			return subcommands.ExitFailure
+		}
+		return subcommands.ExitSuccess
+	}
+
+	oomNotif, err := c.Sandbox.NotifyOOM()
+	if err != nil {
+		util.Fatalf("notifying on OOM: %v", err)
+	}
+
+	t := time.NewTicker(time.Duration(evs.intervalSec) * time.Second)
+	for {
+		var ev *boot.EventOut
+		var err error
+		select {
+		case <-t.C:
+			ev, err = c.Event()
+		case _, ok := <-oomNotif:
+			if ok {
+				ev = &boot.EventOut{Event: boot.Event{Type: "oom", ID: id}}
+			} else {
+				oomNotif = nil
 			}
+			err = nil
+		}
+		if err != nil {
+			log.Warningf("Error getting events for container: %v", err)
 			continue
 		}
 
-		// Break if we're only running once. If we got this far it was a success.
-		if evs.stats {
-			return subcommands.ExitSuccess
+		log.Debugf("Events: %+v", ev)
+		if err := json.NewEncoder(os.Stdout).Encode(ev.Event); err != nil {
+			log.Warningf("Error encoding event %+v: %v", ev.Event, err)
+			continue
+		}
+		// If the OOM notification channel is closed the container and its cgroups
+		// have been destroyed.
+		if oomNotif == nil {
+			break
 		}
 	}
-	panic("should never get here")
+	return subcommands.ExitSuccess
 }

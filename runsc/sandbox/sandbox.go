@@ -1992,6 +1992,155 @@ func setCloExeOnAllFDs() error {
 	return nil
 }
 
+// NotifyOOM returns a read-only channel signaling when the container receives
+// an OOM notification.
+func (s *Sandbox) NotifyOOM() (<-chan struct{}, error) {
+	cg, err := s.NewCGroup()
+	if err != nil {
+		return nil, err
+	}
+	if cgroup.IsOnlyV2() {
+		return notifyOOMV2(cg)
+	}
+	return notifyOOM(cg)
+}
+
+func notifyOOMV2(cg cgroup.Cgroup) (<-chan struct{}, error) {
+	memEventsFile := "memory.events"
+	cgEventsFile := "cgroup.events"
+	cgPath := cg.MakePath("")
+	fd, err := unix.InotifyInit()
+	if err != nil {
+		return nil, fmt.Errorf("unable to init inotify: %w", err)
+	}
+	// watching oom kill
+	memEvPath := filepath.Join(cgPath, memEventsFile)
+	evFd, err := unix.InotifyAddWatch(fd, memEvPath, unix.IN_MODIFY)
+	if err != nil {
+		unix.Close(fd)
+		// Skip if we're in a test environment where the cgroup doesn't exist.
+		if errors.Is(err, unix.ENOENT) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("unable to add inotify watch at %q: %w", memEvPath, err)
+	}
+	// Because no `unix.IN_DELETE|unix.IN_DELETE_SELF` event for cgroup file system, so watching all process exited
+	cgEvPath := filepath.Join(cgPath, cgEventsFile)
+	cgFd, err := unix.InotifyAddWatch(fd, cgEvPath, unix.IN_MODIFY)
+	if err != nil {
+		unix.Close(fd)
+		return nil, fmt.Errorf("unable to add inotify watch at %q: %w", cgEvPath, err)
+	}
+	ch := make(chan struct{})
+	go func() {
+		var (
+			buffer [unix.SizeofInotifyEvent + unix.PathMax + 1]byte
+			offset uint32
+		)
+		defer func() {
+			unix.Close(fd)
+			close(ch)
+		}()
+
+		for {
+			n, err := unix.Read(fd, buffer[:])
+			if err != nil {
+				log.Warningf("unable to read event data from inotify, got error: %v", err)
+				return
+			}
+			if n < unix.SizeofInotifyEvent {
+				log.Warningf("unable to read event data from inotify, got %d bytes, want at least %d bytes", n, unix.SizeofInotifyEvent)
+				return
+			}
+			offset = 0
+			for offset <= uint32(n-unix.SizeofInotifyEvent) {
+				rawEvent := rawEventFromBuffer(buffer[:], offset)
+				offset += unix.SizeofInotifyEvent + rawEvent.Len
+				if rawEvent.Mask&unix.IN_MODIFY != unix.IN_MODIFY {
+					continue
+				}
+				switch int(rawEvent.Wd) {
+				case evFd:
+					oom, err := getValueByKey(cgPath, memEventsFile, "oom_kill")
+					if err != nil || oom > 0 {
+						ch <- struct{}{}
+					}
+				case cgFd:
+					pids, err := getValueByKey(cgPath, cgEventsFile, "populated")
+					if err != nil || pids == 0 {
+						return
+					}
+				}
+			}
+		}
+	}()
+	return ch, nil
+}
+
+func notifyOOM(cg cgroup.Cgroup) (<-chan struct{}, error) {
+	evFile, err := os.OpenFile(filepath.Join(cg.MakePath("memory"), "memory.oom_control"), os.O_RDONLY, 0o700)
+	if err != nil {
+		// Skip if we're in a test environment where the cgroup doesn't exist.
+		if errors.Is(err, unix.ENOENT) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	fd, err := unix.Eventfd(0, unix.EFD_CLOEXEC)
+	if err != nil {
+		evFile.Close()
+		return nil, err
+	}
+
+	eventfd := os.NewFile(uintptr(fd), "eventfd")
+
+	eventControlPath := filepath.Join(cg.MakePath("memory"), "cgroup.event_control")
+	data := fmt.Sprintf("%d %d", eventfd.Fd(), evFile.Fd())
+	if err := os.WriteFile(eventControlPath, []byte(data), 0o700); err != nil {
+		eventfd.Close()
+		evFile.Close()
+		return nil, err
+	}
+	ch := make(chan struct{})
+	go func() {
+		defer func() {
+			eventfd.Close()
+			evFile.Close()
+			close(ch)
+		}()
+		buf := make([]byte, 8)
+		for {
+			if _, err := eventfd.Read(buf); err != nil {
+				return
+			}
+			// When a cgroup is destroyed, an event is sent to eventfd.
+			// So if the control path is gone, return instead of notifying.
+			if _, err := os.Lstat(eventControlPath); os.IsNotExist(err) {
+				return
+			}
+			ch <- struct{}{}
+		}
+	}()
+	return ch, nil
+}
+
+func getValueByKey(path, file, key string) (uint64, error) {
+	content, err := os.ReadFile(filepath.Join(path, file))
+	if err != nil {
+		return 0, err
+	}
+	lines := strings.Split(string(content), "\n")
+	for _, line := range lines {
+		arr := strings.Split(line, " ")
+		if len(arr) == 2 && arr[0] == key {
+			val, err := strconv.ParseUint(arr[1], 10, 64)
+			return val, err
+		}
+	}
+
+	return 0, nil
+}
+
 var setCloseExecOnce sync.Once
 
 // SetCloExeOnAllFDs sets CLOEXEC on all FDs in /proc/self/fd. This avoids
