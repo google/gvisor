@@ -18,11 +18,14 @@
 package cpuid
 
 import (
+	"bufio"
+	"bytes"
 	"os"
 	"strconv"
-	"strings"
+	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // cpuididFunction is a useful type wrapper. The format is eax | (ecx << 32).
@@ -172,47 +175,80 @@ func HostFeatureSet() FeatureSet {
 }
 
 var (
-	// cpuFreqMHz is the native CPU frequency.
-	cpuFreqMHz float64
+	cpuFreqMHzMu   sync.CrossGoroutineMutex
+	cpuFreqMHzDone atomic.Bool
+
+	// cpuFreqMHzCached is the native CPU frequency.
+	cpuFreqMHzCached float64
 )
+
+func getCPUFreqMHz() float64 {
+	if !cpuFreqMHzDone.Load() {
+		cpuFreqMHzMu.Lock()
+		defer cpuFreqMHzMu.Unlock()
+		if !cpuFreqMHzDone.Load() {
+			panic("getCPUFreqMHz called before InitializeStart")
+		}
+	}
+	return cpuFreqMHzCached
+}
+
+// startReadMaxCPUFreq initiates concurrent reading of /proc/cpuinfo. Prior to
+// Linux 5.19, 7d84c1ebf9dd ("x86/aperfmperf: Replace aperfmperf_get_khz()"),
+// opening /proc/cpuinfo sleeps for 10ms.
+func startReadMaxCPUFreq() {
+	cpuFreqMHzMu.Lock()
+	go func() {
+		defer func() {
+			cpuFreqMHzDone.Store(true)
+			cpuFreqMHzMu.Unlock()
+		}()
+		readMaxCPUFreq()
+	}()
+}
 
 // Reads max cpu frequency from host /proc/cpuinfo. Must run before syscall
 // filter installation. This value is used to create the fake /proc/cpuinfo
 // from a FeatureSet.
 func readMaxCPUFreq() {
-	cpuinfob, err := os.ReadFile("/proc/cpuinfo")
+	cpuinfoFile, err := os.Open("/proc/cpuinfo")
 	if err != nil {
 		// Leave it as 0... the VDSO bails out in the same way.
-		log.Warningf("Could not read /proc/cpuinfo: %v", err)
+		log.Warningf("Could not open /proc/cpuinfo: %v", err)
 		return
 	}
-	cpuinfo := string(cpuinfob)
+	defer cpuinfoFile.Close()
 
 	// We get the value straight from host /proc/cpuinfo. On machines with
 	// frequency scaling enabled, this will only get the current value
 	// which will likely be inaccurate. This is fine on machines with
 	// frequency scaling disabled.
-	for _, line := range strings.Split(cpuinfo, "\n") {
-		if strings.Contains(line, "cpu MHz") {
-			splitMHz := strings.Split(line, ":")
+	s := bufio.NewScanner(cpuinfoFile)
+	for s.Scan() {
+		line := s.Bytes()
+		if bytes.Contains(line, []byte("cpu MHz")) {
+			splitMHz := bytes.Split(line, []byte(":"))
 			if len(splitMHz) < 2 {
-				log.Warningf("Could not read /proc/cpuinfo: malformed cpu MHz line")
+				log.Warningf("Could not parse /proc/cpuinfo: malformed cpu MHz line: %q", line)
 				return
 			}
 
-			// If there was a problem, leave cpuFreqMHz as 0.
 			var err error
-			cpuFreqMHz, err = strconv.ParseFloat(strings.TrimSpace(splitMHz[1]), 64)
+			splitMHzStr := string(bytes.TrimSpace(splitMHz[1]))
+			f64MHz, err := strconv.ParseFloat(splitMHzStr, 64)
 			if err != nil {
-				log.Warningf("Could not parse cpu MHz value %v: %v", splitMHz[1], err)
-				cpuFreqMHz = 0
+				log.Warningf("Could not parse cpu MHz value %q: %v", splitMHzStr, err)
 				return
 			}
+			cpuFreqMHzCached = f64MHz
 			return
 		}
 	}
+	if err := s.Err(); err != nil {
+		log.Warningf("Could not read /proc/cpuinfo: %v", err)
+		return
+	}
 	log.Warningf("Could not parse /proc/cpuinfo, it is empty or does not contain cpu MHz")
-
 }
 
 // xgetbv reads an extended control register.
@@ -220,10 +256,14 @@ func xgetbv(reg uintptr) uint64
 
 // archInitialize initializes hostFeatureSet.
 func archInitialize() {
+	startReadMaxCPUFreq()
 	hostFeatureSet = FeatureSet{
 		Function: &Native{},
 	}.Fixed()
-
-	readMaxCPUFreq()
 	initHWCap()
+}
+
+func archInitializeBeforeSyscallFilters() {
+	// Ensure that readMaxCPUFreq() has completed.
+	_ = getCPUFreqMHz()
 }
