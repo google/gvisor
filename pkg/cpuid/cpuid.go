@@ -255,10 +255,23 @@ func initHWCap() {
 	}
 }
 
-var initOnce sync.Once
+var (
+	initOnce              sync.Once
+	initBeforeFiltersOnce sync.Once
+)
 
 // Initialize initializes the global data structures used by this package.
 // Must be called prior to using anything else in this package.
 func Initialize() {
 	initOnce.Do(archInitialize)
+}
+
+// InitializeBeforeSyscallFilters must be called before installing syscall
+// filters, to ensure that any concurrent work started by Initialize has
+// completed.
+//
+// InitializeBeforeSyscallFilters does not need to be called if syscall filters
+// are never installed.
+func InitializeBeforeSyscallFilters() {
+	initBeforeFiltersOnce.Do(archInitializeBeforeSyscallFilters)
 }

@@ -315,6 +315,7 @@ func (fs FeatureSet) WriteCPUInfoTo(cpu, numCPU uint, w io.Writer) {
 	ax, _, _, _ := fs.query(featureInfo)
 	ef, em, _, f, m, _ := signatureSplit(ax)
 	vendor := fs.VendorID()
+	cpuFreqMHz := getCPUFreqMHz()
 	fmt.Fprintf(w, "processor\t: %d\n", cpu)
 	fmt.Fprintf(w, "vendor_id\t: %s\n", string(vendor[:]))
 	fmt.Fprintf(w, "cpu family\t: %d\n", ((ef<<4)&0xff)|f)

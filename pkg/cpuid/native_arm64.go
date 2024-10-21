@@ -155,3 +155,7 @@ func archInitialize() {
 	initCPUInfo()
 	initHWCap()
 }
+
+func archInitializeBeforeSyscallFilters() {
+	// no-op
+}
