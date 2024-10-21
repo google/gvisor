@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -1631,14 +1632,18 @@ func TestWriteMultipleSnapshots(t *testing.T) {
 		snapshot1: {ExporterPrefix: "export_"},
 		snapshot2: {ExporterPrefix: "export_"},
 	})
+	fooIntName := "export_" + fooInt.PB.GetPrometheusName()
 	gotData, err := (&expfmt.TextParser{}).TextToMetricFamilies(&buf)
 	if err != nil {
 		t.Fatalf("cannot parse data written from snapshots: %v", err)
 	}
-	if len(gotData) != 1 || gotData["export_"+fooInt.PB.GetPrometheusName()] == nil {
+	if len(gotData) != 1 || gotData[fooIntName] == nil {
 		t.Fatalf("unexpected data: %v", gotData)
 	}
-	got := reflectProto(gotData["export_"+fooInt.PB.GetPrometheusName()])
+	sort.Slice(gotData[fooIntName].Metric, func(i, j int) bool {
+		return gotData[fooIntName].Metric[i].GetTimestampMs() < gotData[fooIntName].Metric[j].GetTimestampMs()
+	})
+	got := reflectProto(gotData[fooIntName])
 	var wantBuf bytes.Buffer
 	io.WriteString(&wantBuf, fmt.Sprintf(`
 		# HELP export_foo_int An integer about foo
@@ -1650,10 +1655,13 @@ func TestWriteMultipleSnapshots(t *testing.T) {
 	if err != nil {
 		t.Fatalf("cannot parse reference data: %v", err)
 	}
-	if len(wantData) != 1 || wantData["export_"+fooInt.PB.GetPrometheusName()] == nil {
+	if len(wantData) != 1 || wantData[fooIntName] == nil {
 		t.Fatalf("unexpected reference data: %v", gotData)
 	}
-	want := reflectProto(wantData["export_"+fooInt.PB.GetPrometheusName()])
+	sort.Slice(wantData[fooIntName].Metric, func(i, j int) bool {
+		return wantData[fooIntName].Metric[i].GetTimestampMs() < wantData[fooIntName].Metric[j].GetTimestampMs()
+	})
+	want := reflectProto(wantData[fooIntName])
 	if diff := cmp.Diff(want, got, protocmp.Transform()); diff != "" {
 		multiLineFormatter := &prototext.MarshalOptions{Multiline: true, Indent: "  ", EmitUnknown: true}
 		wantText, err := multiLineFormatter.Marshal(want)
