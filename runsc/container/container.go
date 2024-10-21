@@ -1937,7 +1937,7 @@ func nvproxyLoadKernelModules() {
 
 // nvproxySetupAfterGoferUserns runs `nvidia-container-cli configure`.
 // This sets up the container filesystem with bind mounts that allow it to
-// use NVIDIA devices.
+// use NVIDIA devices and libraries.
 //
 // This should be called during the Gofer setup process, as the bind mounts
 // are created in the Gofer's mount namespace.
@@ -1953,14 +1953,8 @@ func nvproxyLoadKernelModules() {
 // defined, such that nvidia-container-runtime-hook and existing runsc
 // hooks differ in their expected environment.
 //
-// Note that nvidia-container-cli will set up files in /dev and /proc which
-// are useless, since they will be hidden by sentry devtmpfs and procfs
-// respectively (and some device files will have the wrong device numbers
-// from the application's perspective since nvproxy may register device
-// numbers in sentry VFS that differ from those on the host, e.g. for
-// nvidia-uvm). These files are separately created during sandbox VFS
-// construction. For this reason, we don't need to parse
-// NVIDIA_VISIBLE_DEVICES or pass --device to nvidia-container-cli.
+// Note that nvidia-container-cli will set up files /proc which
+// are useless, since they will be hidden by sentry procfs.
 func nvproxySetupAfterGoferUserns(spec *specs.Spec, conf *config.Config, goferCmd *exec.Cmd, goferDonations *donation.Agency) (func() error, error) {
 	if !specutils.GPUFunctionalityRequestedViaHook(spec, conf) {
 		return func() error { return nil }, nil
