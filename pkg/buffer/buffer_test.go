@@ -19,11 +19,11 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"math/rand"
 	"slices"
 	"strings"
 	"testing"
 
+	"gvisor.dev/gvisor/pkg/rand"
 	"gvisor.dev/gvisor/pkg/state"
 	"gvisor.dev/gvisor/pkg/tcpip/checksum"
 )

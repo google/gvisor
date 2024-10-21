@@ -25,7 +25,6 @@ import (
 	"io"
 	"log"
 	"math"
-	"math/rand"
 	"net/http"
 	"os"
 	"os/exec"
@@ -40,6 +39,7 @@ import (
 	"github.com/cenkalti/backoff"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/rand"
 	"gvisor.dev/gvisor/pkg/sentry/watchdog"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/runsc/config"
@@ -352,28 +352,13 @@ func writeSpec(dir string, spec *specs.Spec) error {
 	return os.WriteFile(filepath.Join(dir, "config.json"), b, 0755)
 }
 
-// idRandomSrc is a pseudo random generator used to in RandomID.
-var idRandomSrc = rand.New(rand.NewSource(time.Now().UnixNano()))
-
-// idRandomSrcMtx is the mutex protecting idRandomSrc.Read from being used
-// concurrently in different goroutines.
-var idRandomSrcMtx sync.Mutex
-
 // RandomID returns 20 random bytes following the given prefix.
 func RandomID(prefix string) string {
-	// Read 20 random bytes.
 	b := make([]byte, 20)
-	// Rand.Read is not safe for concurrent use. Packetimpact tests can be run in
-	// parallel now, so we have to protect the Read with a mutex. Otherwise we'll
-	// run into name conflicts.
-	// https://golang.org/pkg/math/rand/#Rand.Read
-	idRandomSrcMtx.Lock()
 	// "[Read] always returns len(p) and a nil error." --godoc
-	if _, err := idRandomSrc.Read(b); err != nil {
-		idRandomSrcMtx.Unlock()
+	if _, err := rand.Read(b); err != nil {
 		panic("rand.Read failed: " + err.Error())
 	}
-	idRandomSrcMtx.Unlock()
 	if prefix != "" {
 		prefix = prefix + "-"
 	}

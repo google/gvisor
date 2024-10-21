@@ -62,6 +62,7 @@ go_test(
     ],
     library = ":buffer",
     deps = [
+        "//pkg/rand",
         "//pkg/state",
         "//pkg/tcpip/checksum",
         "@com_github_google_go_cmp//cmp:go_default_library",

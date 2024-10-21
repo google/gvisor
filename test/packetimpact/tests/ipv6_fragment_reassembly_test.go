@@ -16,11 +16,11 @@ package ipv6_fragment_reassembly_test
 
 import (
 	"flag"
-	"math/rand"
 	"testing"
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"gvisor.dev/gvisor/pkg/rand"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/checksum"
 	"gvisor.dev/gvisor/pkg/tcpip/header"

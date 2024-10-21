@@ -34,6 +34,7 @@ import (
 
 	"github.com/google/subcommands"
 	"github.com/kr/pty"
+	gvisorrand "gvisor.dev/gvisor/pkg/rand"
 	"gvisor.dev/gvisor/pkg/test/testutil"
 	"gvisor.dev/gvisor/runsc/flag"
 )
@@ -104,7 +105,7 @@ func (c *fsTreeCreator) Execute(ctx context.Context, f *flag.FlagSet, args ...an
 	}
 
 	data := make([]byte, fileSize)
-	rand.Read(data)
+	gvisorrand.Read(data)
 	for i := uint(0); i < depth; i++ {
 		for j := uint(0); j < numFilesPerLevel; j++ {
 			filePath := filepath.Join(curDir, fmt.Sprintf("file%d", j))
