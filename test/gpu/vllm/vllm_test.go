@@ -51,9 +51,7 @@ func doVLLMTest(b *testing.B) {
 	}
 
 	// Run vllm.
-	runOpts, err := dockerutil.GPURunOpts(dockerutil.SniffGPUOpts{
-		DisableSnifferReason: "TODO(gvisor.dev/issue/10885): Verify that this test works",
-	})
+	runOpts, err := dockerutil.GPURunOpts(dockerutil.SniffGPUOpts{})
 	if err != nil {
 		b.Fatalf("failed to get GPU run options: %v", err)
 	}

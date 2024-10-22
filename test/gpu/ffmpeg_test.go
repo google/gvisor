@@ -35,7 +35,7 @@ func TestFffmpegEncodeGPU(t *testing.T) {
 	defer container.CleanUp(ctx)
 	opts, err := dockerutil.GPURunOpts(dockerutil.SniffGPUOpts{
 		Capabilities:           "NVIDIA_DRIVER_CAPABILITIES=video",
-		AllowIncompatibleIoctl: true,
+		AllowIncompatibleIoctl: true, // TODO(gvisor.dev/issue/9452): Remove once supported in gVisor.
 	})
 	if err != nil {
 		t.Fatalf("Failed to get GPU run options: %v", err)
@@ -61,7 +61,7 @@ func TestFffmpegDecodeGPU(t *testing.T) {
 	defer container.CleanUp(ctx)
 	opts, err := dockerutil.GPURunOpts(dockerutil.SniffGPUOpts{
 		Capabilities:           "NVIDIA_DRIVER_CAPABILITIES=video",
-		AllowIncompatibleIoctl: true,
+		AllowIncompatibleIoctl: true, // TODO(gvisor.dev/issue/9452): Remove once supported in gVisor.
 	})
 	if err != nil {
 		t.Fatalf("Failed to get GPU run options: %v", err)

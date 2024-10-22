@@ -56,7 +56,7 @@ type kubernetesPodRunner struct {
 }
 
 // Run implements `stablediffusion.ContainerRunner.Run`.
-func (r *kubernetesPodRunner) Run(ctx context.Context, image string, argv []string) ([]byte, error) {
+func (r *kubernetesPodRunner) Run(ctx context.Context, image string, argv []string) ([]byte, []byte, error) {
 	// Build pod spec.
 	const stableDiffusionXLPodName = "stable-diffusion-xl"
 	stableDiffusionXLPod := &v13.Pod{
@@ -81,11 +81,11 @@ func (r *kubernetesPodRunner) Run(ctx context.Context, image string, argv []stri
 	}
 	stableDiffusionXLPod, err := r.cluster.ConfigurePodForRuntimeTestNodepool(stableDiffusionXLPod)
 	if err != nil {
-		return nil, fmt.Errorf("failed to configure pod: %v", err)
+		return nil, nil, fmt.Errorf("failed to configure pod: %v", err)
 	}
 	stableDiffusionXLPod, err = testcluster.MaybeSetContainerResources(stableDiffusionXLPod, stableDiffusionXLPod.ObjectMeta.Name, testcluster.ContainerResourcesRequest{GPU: true})
 	if err != nil {
-		return nil, fmt.Errorf("failed to set container resources: %v", err)
+		return nil, nil, fmt.Errorf("failed to set container resources: %v", err)
 	}
 
 	// Delete pod that may possibly exist from a previous iteration.
@@ -95,27 +95,27 @@ func (r *kubernetesPodRunner) Run(ctx context.Context, image string, argv []stri
 	// Start new client pod and wait for it.
 	stableDiffusionXLPod, err = r.cluster.CreatePod(ctx, stableDiffusionXLPod)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create stable diffusion XL pod: %v", err)
+		return nil, nil, fmt.Errorf("failed to create stable diffusion XL pod: %v", err)
 	}
 	defer r.cluster.DeletePod(ctx, stableDiffusionXLPod)
 	if err := r.cluster.WaitForPodCompleted(ctx, stableDiffusionXLPod); err != nil {
 		logs, logsErr := r.cluster.ReadPodLogs(ctx, stableDiffusionXLPod)
 		logs = strings.TrimSpace(logs)
 		if logsErr != nil {
-			return nil, fmt.Errorf("failed to run Stable Diffusion XL (%w) and to read logs from the pod: %v", err, logsErr)
+			return nil, nil, fmt.Errorf("failed to run Stable Diffusion XL (%w) and to read logs from the pod: %v", err, logsErr)
 		}
 		if logs == "" {
-			return nil, fmt.Errorf("failed to run Stable Diffusion XL: %w (pod logs are empty)", err)
+			return nil, nil, fmt.Errorf("failed to run Stable Diffusion XL: %w (pod logs are empty)", err)
 		}
-		return nil, fmt.Errorf("failed to run Stable Diffusion XL: %w (pod logs: %v)", err, logs)
+		return nil, nil, fmt.Errorf("failed to run Stable Diffusion XL: %w (pod logs: %v)", err, logs)
 	}
 
 	// All good, get logs.
 	logs, err := r.cluster.ReadPodLogs(ctx, stableDiffusionXLPod)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read logs from pod %q: %v", stableDiffusionXLPod.GetName(), err)
+		return nil, nil, fmt.Errorf("failed to read logs from pod %q: %v", stableDiffusionXLPod.GetName(), err)
 	}
-	return []byte(logs), nil
+	return []byte(logs), nil, nil
 }
 
 // doStableDiffusionXLTest runs Stable Diffusion XL benchmarks for a single cluster.

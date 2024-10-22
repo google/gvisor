@@ -149,9 +149,7 @@ type dockerServer struct {
 // NewDocker returns a new Ollama client talking to an Ollama server that runs
 // in a local Docker container.
 func NewDocker(ctx context.Context, cont *dockerutil.Container, logger testutil.Logger) (*Ollama, error) {
-	opts, err := dockerutil.GPURunOpts(dockerutil.SniffGPUOpts{
-		DisableSnifferReason: "TODO(gvisor.dev/issue/10885): Verify that this test works",
-	})
+	opts, err := dockerutil.GPURunOpts(dockerutil.SniffGPUOpts{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get GPU run options: %w", err)
 	}

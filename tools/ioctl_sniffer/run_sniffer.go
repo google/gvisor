@@ -121,12 +121,13 @@ func Main(ctx context.Context) error {
 
 	// Merge results from each connection.
 	finalResults := server.AllResults()
-	if *enforceCompatibility != "" && finalResults.HasUnsupportedIoctl() {
-		return fmt.Errorf("unsupported ioctls found: %v", finalResults)
+	if finalResults.HasUnsupportedIoctl() {
+		if *enforceCompatibility != "" {
+			return fmt.Errorf("unsupported ioctls found: %v", finalResults)
+		}
+		log.Infof("============== Unsupported ioctls ==============")
+		log.Infof("%v", finalResults)
 	}
-
-	log.Infof("============== Unsupported ioctls ==============")
-	log.Infof("%v", finalResults)
 
 	if cmdErr != nil {
 		return fmt.Errorf("command exited with error: %w", cmdErr)

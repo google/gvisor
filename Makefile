@@ -285,7 +285,7 @@ simple-tests: unit-tests # Compatibility target.
 .PHONY: simple-tests
 
 # Images needed for GPU smoke tests.
-gpu-smoke-images: load-basic_cuda-vector-add load-gpu_cuda-tests
+gpu-smoke-images: load-gpu_cuda-tests
 .PHONY: gpu-smoke-images
 
 gpu-smoke-tests: gpu-smoke-images $(RUNTIME_BIN)

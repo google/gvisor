@@ -1,4 +1,4 @@
-FROM nvidia/cuda:12.2.0-devel-ubuntu20.04
+FROM nvidia/cuda:12.2.0-devel-ubuntu22.04
 
 RUN apt-get update && apt-get install --yes \
       python3 \
@@ -10,7 +10,7 @@ RUN apt-get update && apt-get install --yes \
       git
 
 RUN python3 -m pip install --ignore-installed \
-      "clang~=$(clang --version | grep -oP '10\.[^-]+')" \
+      "clang~=$(clang --version | grep -oP 'clang version [.0-9]+' | cut -d' ' -f3)" \
       torch \
       torchvision \
       lightning \

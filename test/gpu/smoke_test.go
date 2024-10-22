@@ -27,17 +27,15 @@ func TestGPUHello(t *testing.T) {
 	c := dockerutil.MakeContainer(ctx, t)
 	defer c.CleanUp(ctx)
 
-	opts, err := dockerutil.GPURunOpts(dockerutil.SniffGPUOpts{
-		DisableSnifferReason: "image has too old version of libc vs sniffer",
-	})
+	opts, err := dockerutil.GPURunOpts(dockerutil.SniffGPUOpts{})
 	if err != nil {
 		t.Fatalf("failed to get GPU run options: %v", err)
 	}
-	opts.Image = "basic/cuda-vector-add"
-	out, err := c.Run(ctx, opts)
-	t.Logf("cuda-vector-add output: %s", string(out))
+	opts.Image = "gpu/cuda-tests"
+	out, err := c.Run(ctx, opts, "/run_sample", "--timeout=120s", "0_Introduction/vectorAdd")
+	t.Logf("0_Introduction/vectorAdd output: %s", string(out))
 	if err != nil {
-		t.Fatalf("could not run cuda-vector-add: %v", err)
+		t.Fatalf("could not run 0_Introduction/vectorAdd: %v", err)
 	}
 }
 
