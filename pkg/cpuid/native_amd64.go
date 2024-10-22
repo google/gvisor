@@ -18,9 +18,10 @@
 package cpuid
 
 import (
+	"bufio"
+	"bytes"
 	"os"
 	"strconv"
-	"strings"
 
 	"gvisor.dev/gvisor/pkg/log"
 )
@@ -180,39 +181,44 @@ var (
 // filter installation. This value is used to create the fake /proc/cpuinfo
 // from a FeatureSet.
 func readMaxCPUFreq() {
-	cpuinfob, err := os.ReadFile("/proc/cpuinfo")
+	cpuinfoFile, err := os.Open("/proc/cpuinfo")
 	if err != nil {
 		// Leave it as 0... the VDSO bails out in the same way.
-		log.Warningf("Could not read /proc/cpuinfo: %v", err)
+		log.Warningf("Could not open /proc/cpuinfo: %v", err)
 		return
 	}
-	cpuinfo := string(cpuinfob)
+	defer cpuinfoFile.Close()
 
 	// We get the value straight from host /proc/cpuinfo. On machines with
 	// frequency scaling enabled, this will only get the current value
 	// which will likely be inaccurate. This is fine on machines with
 	// frequency scaling disabled.
-	for _, line := range strings.Split(cpuinfo, "\n") {
-		if strings.Contains(line, "cpu MHz") {
-			splitMHz := strings.Split(line, ":")
+	s := bufio.NewScanner(cpuinfoFile)
+	for s.Scan() {
+		line := s.Bytes()
+		if bytes.Contains(line, []byte("cpu MHz")) {
+			splitMHz := bytes.Split(line, []byte(":"))
 			if len(splitMHz) < 2 {
-				log.Warningf("Could not read /proc/cpuinfo: malformed cpu MHz line")
+				log.Warningf("Could not parse /proc/cpuinfo: malformed cpu MHz line: %q", line)
 				return
 			}
 
-			// If there was a problem, leave cpuFreqMHz as 0.
 			var err error
-			cpuFreqMHz, err = strconv.ParseFloat(strings.TrimSpace(splitMHz[1]), 64)
+			splitMHzStr := string(bytes.TrimSpace(splitMHz[1]))
+			f64MHz, err := strconv.ParseFloat(splitMHzStr, 64)
 			if err != nil {
-				log.Warningf("Could not parse cpu MHz value %v: %v", splitMHz[1], err)
-				cpuFreqMHz = 0
+				log.Warningf("Could not parse cpu MHz value %q: %v", splitMHzStr, err)
 				return
 			}
+			cpuFreqMHz = f64MHz
 			return
 		}
 	}
+	if err := s.Err(); err != nil {
+		log.Warningf("Could not read /proc/cpuinfo: %v", err)
+		return
+	}
 	log.Warningf("Could not parse /proc/cpuinfo, it is empty or does not contain cpu MHz")
-
 }
 
 // xgetbv reads an extended control register.
