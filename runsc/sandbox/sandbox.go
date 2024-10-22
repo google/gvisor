@@ -807,7 +807,7 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 
 	// Open the log files to pass to the sandbox as FDs.
 	if err := donations.OpenAndDonate("log-fd", conf.LogFilename, os.O_CREATE|os.O_WRONLY|os.O_APPEND); err != nil {
-		return err
+		return fmt.Errorf("failed to opening or donating log file %q: %w", conf.LogFilename, err)
 	}
 
 	test := ""
@@ -819,11 +819,11 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 	}
 	if specutils.IsDebugCommand(conf, "boot") {
 		if err := donations.DonateDebugLogFile("debug-log-fd", conf.DebugLog, "boot", test, s.StartTime); err != nil {
-			return err
+			return fmt.Errorf("donating debug log file: %w", err)
 		}
 	}
 	if err := donations.DonateDebugLogFile("panic-log-fd", conf.PanicLog, "panic", test, s.StartTime); err != nil {
-		return err
+		return fmt.Errorf("donating panic log file: %w", err)
 	}
 	covFilename := conf.CoverageReport
 	if covFilename == "" {
@@ -831,7 +831,7 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 	}
 	if covFilename != "" && coverage.Available() {
 		if err := donations.DonateDebugLogFile("coverage-fd", covFilename, "cov", test, s.StartTime); err != nil {
-			return err
+			return fmt.Errorf("donating coverage log file: %w", err)
 		}
 	}
 
@@ -880,19 +880,22 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 	const profFlags = os.O_CREATE | os.O_WRONLY | os.O_TRUNC
 	profile.UpdatePaths(conf, s.StartTime)
 	if err := donations.OpenAndDonate("profile-block-fd", conf.ProfileBlock, profFlags); err != nil {
-		return err
+		return fmt.Errorf("donating profile block file: %w", err)
 	}
 	if err := donations.OpenAndDonate("profile-cpu-fd", conf.ProfileCPU, profFlags); err != nil {
-		return err
+		return fmt.Errorf("donating profile cpu file: %w", err)
 	}
 	if err := donations.OpenAndDonate("profile-heap-fd", conf.ProfileHeap, profFlags); err != nil {
-		return err
+		return fmt.Errorf("donating profile heap file: %w", err)
 	}
 	if err := donations.OpenAndDonate("profile-mutex-fd", conf.ProfileMutex, profFlags); err != nil {
-		return err
+		return fmt.Errorf("donating profile mutex file: %w", err)
 	}
 	if err := donations.OpenAndDonate("trace-fd", conf.TraceFile, profFlags); err != nil {
-		return err
+		return fmt.Errorf("donating trace file: %w", err)
+	}
+	if err := donations.OpenAndDonate("final-metrics-log-fd", conf.FinalMetricsLog, profFlags); err != nil {
+		return fmt.Errorf("donating final metrics log file: %w", err)
 	}
 
 	// Pass gofer mount configs.
@@ -985,7 +988,7 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 	}
 
 	// These are set to the uid/gid that the sandbox process will use. May be
-	// overriden below.
+	// overridden below.
 	s.UID = os.Getuid()
 	s.GID = os.Getgid()
 

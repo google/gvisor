@@ -12,7 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package prometheus contains Prometheus-compliant metric data structures and utilities.
+// Package prometheus contains Prometheus-compliant metric data structures and
+// utilities in pure Go. This should not have external dependencies as it is
+// linked into the Sentry.
 // It can export data in Prometheus data format, documented at:
 // https://prometheus.io/docs/instrumenting/exposition_formats/
 package prometheus

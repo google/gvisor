@@ -35,6 +35,7 @@ import (
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/metric"
+	"gvisor.dev/gvisor/pkg/prometheus"
 	"gvisor.dev/gvisor/pkg/ring0"
 	"gvisor.dev/gvisor/pkg/sentry/hostmm"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
@@ -164,6 +165,10 @@ type Boot struct {
 	// FDs for profile data.
 	profileFDs profile.FDArgs
 
+	// finalMetricsFD is a file descriptor to write metric data to upon sandbox
+	// termination.
+	finalMetricsFD int
+
 	// profilingMetricsFD is a file descriptor to write Sentry metrics data to.
 	profilingMetricsFD int
 
@@ -234,6 +239,7 @@ func (b *Boot) SetFlags(f *flag.FlagSet) {
 
 	// Profiling flags.
 	b.profileFDs.SetFromFlags(f)
+	f.IntVar(&b.finalMetricsFD, "final-metrics-log-fd", -1, "file descriptor to write metrics to upon sandbox termination.")
 	f.IntVar(&b.profilingMetricsFD, "profiling-metrics-fd", -1, "file descriptor to write sentry profiling metrics.")
 	f.BoolVar(&b.profilingMetricsLossy, "profiling-metrics-fd-lossy", false, "if true, treat the sentry profiling metrics FD as lossy and write a checksum to it.")
 }
@@ -523,6 +529,10 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 	// but before the start-sync file is notified, as the parent process needs to query for
 	// registered metrics prior to sending the start signal.
 	metric.Initialize()
+	var finalMetricsFile *os.File
+	if b.finalMetricsFD != -1 {
+		finalMetricsFile = os.NewFile(uintptr(b.finalMetricsFD), "final metrics file")
+	}
 	if b.profilingMetricsFD != -1 {
 		if err := metric.StartProfilingMetrics(metric.ProfilingMetricsOptions[*os.File]{
 			Sink:    os.NewFile(uintptr(b.profilingMetricsFD), "metrics file"),
@@ -560,6 +570,14 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 	log.Infof("application exiting with %+v", ws)
 	waitStatus := args[1].(*unix.WaitStatus)
 	*waitStatus = unix.WaitStatus(ws)
+
+	if finalMetricsFile != nil {
+		if err := exportFinalMetrics(finalMetricsFile); err != nil {
+			l.Destroy()
+			util.Fatalf("unable to export final metrics: %v", err)
+		}
+	}
+
 	l.Destroy()
 	return subcommands.ExitSuccess
 }
@@ -687,4 +705,25 @@ func validateOpenFDs(passFDs []boot.FDMapping) {
 	}); err != nil {
 		util.Fatalf("WalkDir(%s) failed: %v", selfFDDir, err)
 	}
+}
+
+// exportFinalMetrics exports all metrics to the given file.
+// The file is closed as part of this function.
+func exportFinalMetrics(f *os.File) error {
+	snapshot, err := metric.GetSnapshot(metric.SnapshotOptions{})
+	if err != nil {
+		return fmt.Errorf("getting metrics snapshot: %w", err)
+	}
+	_, err = prometheus.Write(f, prometheus.ExportOptions{}, map[*prometheus.Snapshot]prometheus.SnapshotExportOptions{
+		snapshot: {
+			ExporterPrefix: "runsc_",
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("writing metrics snapshot: %w", err)
+	}
+	if err = f.Close(); err != nil {
+		return fmt.Errorf("closing metrics snapshot file: %w", err)
+	}
+	return nil
 }

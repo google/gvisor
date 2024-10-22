@@ -167,6 +167,10 @@ type Config struct {
 	// The value of this flag must also match across the two command lines.
 	MetricServer string `flag:"metric-server"`
 
+	// FinalMetricsLog is the file to which all metric data should be written
+	// upon sandbox termination.
+	FinalMetricsLog string `flag:"final-metrics-log"`
+
 	// ProfilingMetrics is a comma separated list of metric names which are
 	// going to be written to the ProfilingMetricsLog file from within the
 	// sentry in CSV format. ProfilingMetrics will be snapshotted at a rate
