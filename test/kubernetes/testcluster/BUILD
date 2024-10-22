@@ -16,7 +16,6 @@ go_library(
     ],
     deps = [
         "//test/kubernetes:test_range_config_go_proto",
-        "@googleapis//google/container/v1:container_go_proto",
         "@io_k8s_api//apps/v1:go_default_library",
         "@io_k8s_api//core/v1:go_default_library",
         "@io_k8s_apimachinery//pkg/api/resource:go_default_library",
@@ -25,6 +24,7 @@ go_library(
         "@io_k8s_apimachinery//pkg/watch:go_default_library",
         "@io_k8s_client_go//kubernetes:go_default_library",
         "@io_k8s_client_go//tools/clientcmd:go_default_library",
+        "@org_golang_google_genproto//googleapis/container/v1:container",
         "@org_golang_google_protobuf//proto:go_default_library",
         "@org_golang_x_sync//errgroup:go_default_library",
     ],

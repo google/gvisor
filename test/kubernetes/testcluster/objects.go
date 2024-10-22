@@ -16,10 +16,12 @@ package testcluster
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"reflect"
 	"strconv"
 
-	cspb "cloud.google.com/go/container/apiv1/containerpb"
+	cspb "google.golang.org/genproto/googleapis/container/v1"
 	"google.golang.org/protobuf/proto"
 	v13 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -224,11 +226,9 @@ func (t RuntimeType) ApplyNodepool(nodepool *cspb.NodePool, accelType Accelerato
 		nodepool.Config.Labels[NodepoolNumAcceleratorsKey] = strconv.Itoa(accelCount)
 	case RuntimeTypeGVisorTPU:
 		nodepool.Config.MachineType = TPUAcceleratorMachineTypeMap[accelType]
-		nodepool.PlacementPolicy = &cspb.NodePool_PlacementPolicy{
-			TpuTopology: accelShape,
-			Type:        cspb.NodePool_PlacementPolicy_COMPACT,
+		if err := setNodePlacementPolicyCompact(nodepool, accelShape); err != nil {
+			panic(fmt.Sprintf("failed to set node placement policy: %v", err))
 		}
-
 		nodepool.Config.Labels[gvisorNodepoolKey] = gvisorRuntimeClass
 		nodepool.Config.Labels[NodepoolRuntimeKey] = string(RuntimeTypeGVisorTPU)
 		nodepool.Config.Labels[NodepoolTPUTopologyKey] = accelShape
@@ -256,9 +256,8 @@ func (t RuntimeType) ApplyNodepool(nodepool *cspb.NodePool, accelType Accelerato
 		nodepool.Config.Labels[NodepoolNumAcceleratorsKey] = strconv.Itoa(accelCount)
 	case RuntimeTypeUnsandboxedTPU:
 		nodepool.Config.MachineType = TPUAcceleratorMachineTypeMap[accelType]
-		nodepool.PlacementPolicy = &cspb.NodePool_PlacementPolicy{
-			TpuTopology: accelShape,
-			Type:        cspb.NodePool_PlacementPolicy_COMPACT,
+		if err := setNodePlacementPolicyCompact(nodepool, accelShape); err != nil {
+			panic(fmt.Sprintf("failed to set node placement policy: %v", err))
 		}
 		nodepool.Config.Labels[NodepoolRuntimeKey] = string(RuntimeTypeUnsandboxedTPU)
 		nodepool.Config.Labels[NodepoolTPUTopologyKey] = accelShape
@@ -272,6 +271,32 @@ func (t RuntimeType) ApplyNodepool(nodepool *cspb.NodePool, accelType Accelerato
 			Values:                 []string{accelRes},
 		}
 	}
+}
+
+// setNodePlacementPolicyCompact sets the node placement policy to COMPACT
+// and with the given TPU topology.
+// This is done by reflection because the NodePool_PlacementPolicy proto
+// message isn't available in the latest exported version of the genproto API.
+// This is only used for TPU nodepools so not critical for most benchmarks.
+func setNodePlacementPolicyCompact(nodepool *cspb.NodePool, tpuTopology string) error {
+	placementPolicyField := reflect.ValueOf(nodepool).Elem().FieldByName("PlacementPolicy")
+	if !placementPolicyField.IsValid() {
+		return errors.New("nodepool does not have a PlacementPolicy field")
+	}
+	nodePlacementPolicy := reflect.New(placementPolicyField.Type().Elem()).Elem()
+	tpuTopologyField := nodePlacementPolicy.FieldByName("TpuTopology")
+	if !tpuTopologyField.IsValid() {
+		return errors.New("nodepool.PlacementPolicy does not have a TpuTopology field")
+	}
+	tpuTopologyField.SetString(tpuTopology)
+	typeField := nodePlacementPolicy.FieldByName("Type")
+	if !typeField.IsValid() {
+		return errors.New("nodepool.PlacementPolicy does not have a Type field")
+	}
+	typeField.SetInt(1 /* cspb.NodePool_PlacementPolicy_COMPACT */)
+	// Done.
+	placementPolicyField.Set(nodePlacementPolicy.Addr())
+	return nil
 }
 
 // ApplyPodSpec modifies a PodSpec to use this runtime.

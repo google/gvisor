@@ -8,11 +8,11 @@ package(
 proto_library(
     name = "test_range_config",
     srcs = ["test_range_config.proto"],
-    has_services = 1,
+    has_services = 0,
     visibility = [
         "//visibility:public",
     ],
     deps = [
-        "@googleapis//google/container/v1:container_proto",
+        "@com_google_protobuf//:any_proto",
     ],
 )

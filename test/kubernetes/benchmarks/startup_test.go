@@ -87,13 +87,13 @@ func TestStartup(t *testing.T) {
 			}
 			reader, err := cluster.GetLogReader(ctx, p, v13.PodLogOptions{})
 			if err != nil {
-				t.Fatalf("Failed to get log reader on cluster %q: %v", cluster.Cluster().GetCluster().GetName(), err)
+				t.Fatalf("Failed to get log reader on cluster %q: %v", cluster.GetName(), err)
 			}
 			defer reader.Close()
 
 			buf := new(bytes.Buffer)
 			if _, err := io.Copy(buf, reader); err != nil {
-				t.Fatalf("Failed to read log on cluster %q: %v", cluster.Cluster().GetCluster().GetName(), err)
+				t.Fatalf("Failed to read log on cluster %q: %v", cluster.GetName(), err)
 			}
 			if strings.TrimSpace(buf.String()) != "hello" {
 				t.Fatalf("Mistmatch output: got: %q want: %q", buf.String(), "hello")

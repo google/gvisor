@@ -63,10 +63,11 @@ http_archive(
 
 http_archive(
     name = "googleapis",
-    sha256 = "fd9e4d17b92be6b6718ee9b40062a4ce81feb6ea6cdd80fc723daf127ce3f350",
-    strip_prefix = "googleapis-3effbf23b1a1d1fe1306356e94397e20d01d31a0",
+    sha256 = "134f5a38940615c3248964a86f7faf7fed5ba9d0d4afbd3cafc5038aac172bd1",
+    strip_prefix = "googleapis-beea48a164c2a8cc8485185c3a4f56c587090e1a",
     urls = [
-        "https://github.com/googleapis/googleapis/archive/3effbf23b1a1d1fe1306356e94397e20d01d31a0.zip",
+        # Released on 2024-10-21.
+        "https://github.com/googleapis/googleapis/archive/beea48a164c2a8cc8485185c3a4f56c587090e1a.zip",
     ],
 )
 
@@ -74,7 +75,7 @@ load("@googleapis//:repository_rules.bzl", "switched_rules_by_language")
 
 switched_rules_by_language(
     name = "com_google_googleapis_imports",
-    go = True,  # Enable go_proto_library BUILD rules inside @googleapis repo.
+    go = False,  # Disable building proto Go libraries; use org_golang_google_genproto instead.
 )
 
 http_archive(
@@ -105,7 +106,8 @@ gazelle_dependencies()
 
 # Some repository below has a transitive dependency on these repositories.
 # These declarations must precede any later declarations that transitively
-# depend on older versions, since only the first declaration is considered.  go_repository(
+# depend on older versions, since only the first declaration is considered.
+
 go_repository(
     name = "org_golang_x_tools",
     importpath = "golang.org/x/tools",
@@ -167,6 +169,42 @@ go_repository(
     importpath = "github.com/opencontainers/runtime-spec",
     sum = "h1:wHa9jroFfKGQqFHj0I1fMRKLl0pfj+ynAqBxo3v6u9w=",
     version = "v1.1.0-rc.1",
+)
+
+go_repository(
+    name = "com_google_cloud_go_container",
+    importpath = "cloud.google.com/go/container",
+    sum = "h1:JVoEg/4RvoGW37r2Eja/cTBc3X9c2loGWYq7QDsRDuI=",
+    version = "v1.40.0",
+)
+
+go_repository(
+    name = "org_golang_google_genproto",
+    importpath = "google.golang.org/genproto",
+    sum = "h1:Q3nlH8iSQSRUwOskjbcSMcF2jiYMNiQYZ0c2KEJLKKU=",
+    version = "v0.0.0-20241021214115-324edc3d5d38",
+)
+
+go_repository(
+    name = "org_golang_google_genproto_googleapis_api",
+    importpath = "google.golang.org/genproto/googleapis/api",
+    sum = "h1:2oV8dfuIkM1Ti7DwXc0BJfnwr9csz4TDXI9EmiI+Rbw=",
+    version = "v0.0.0-20241021214115-324edc3d5d38",
+)
+
+go_repository(
+    name = "org_golang_google_genproto_googleapis_rpc",
+    importpath = "google.golang.org/genproto/googleapis/rpc",
+    sum = "h1:zciRKQ4kBpFgpfC5QQCVtnnNAcLIqweL7plyZRQHVpI=",
+    version = "v0.0.0-20241021214115-324edc3d5d38",
+)
+
+go_repository(
+    name = "org_golang_google_grpc",
+    build_file_proto_mode = "disable",
+    importpath = "google.golang.org/grpc",
+    sum = "h1:zWnc1Vrcno+lHZCOofnIMvycFcc0QRGIzm9dhnDX68E=",
+    version = "v1.67.1",
 )
 
 # Load C++ rules.
@@ -802,13 +840,6 @@ go_repository(
     importpath = "cloud.google.com/go/contactcenterinsights",
     sum = "h1:tTQLI/ZvguUf9Hv+36BkG2+/PeC8Ol1q4pBW+tgCx0A=",
     version = "v1.4.0",
-)
-
-go_repository(
-    name = "com_google_cloud_go_container",
-    importpath = "cloud.google.com/go/container",
-    sum = "h1:nbEK/59GyDRKKlo1SqpohY1TK8LmJ2XNcvS9Gyom2A0=",
-    version = "v1.7.0",
 )
 
 go_repository(
@@ -2482,14 +2513,6 @@ go_repository(
 )
 
 go_repository(
-    name = "org_golang_google_grpc",
-    build_file_proto_mode = "disable",
-    importpath = "google.golang.org/grpc",
-    sum = "h1:qq9WB3Dez2tMAKtZTVtZsZSmTkDgPeXx+FRPt5kLEkM=",
-    version = "v1.53.0-dev.0.20230123225046-4075ef07c5d5",
-)
-
-go_repository(
     name = "in_gopkg_check_v1",
     importpath = "gopkg.in/check.v1",
     sum = "h1:BLraFXnmrev5lT+xlilqcH8XK9/i0At2xKjWk4p6zsU=",
@@ -2924,13 +2947,6 @@ go_repository(
     importpath = "google.golang.org/appengine",
     sum = "h1:FZR1q0exgwxzPzp/aF+VccGrSfxfPpkBqjIIEq3ru6c=",
     version = "v1.6.7",
-)
-
-go_repository(
-    name = "org_golang_google_genproto",
-    importpath = "google.golang.org/genproto",
-    sum = "h1:BWUVssLB0HVOSY78gIdvk1dTVYtT1y8SBWtPYuTJ/6w=",
-    version = "v0.0.0-20230110181048-76db0878b65f",
 )
 
 go_repository(

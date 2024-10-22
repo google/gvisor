@@ -137,12 +137,12 @@ func doRubyDevTest(ctx context.Context, t *testing.T, k8sCtx k8sctx.KubernetesCo
 
 			reader, err := cluster.GetLogReader(ctx, pod, v13.PodLogOptions{})
 			if err != nil {
-				t.Fatalf("Failed to get log reader on cluster %q: %v", cluster.Cluster().GetCluster().GetName(), err)
+				t.Fatalf("Failed to get log reader on cluster %q: %v", cluster.GetName(), err)
 			}
 			defer reader.Close()
 			buf := new(bytes.Buffer)
 			if _, err := io.Copy(buf, reader); err != nil {
-				t.Fatalf("Failed to read log on cluster %q: %v", cluster.Cluster().GetCluster().GetName(), err)
+				t.Fatalf("Failed to read log on cluster %q: %v", cluster.GetName(), err)
 			}
 
 			output := buf.String()

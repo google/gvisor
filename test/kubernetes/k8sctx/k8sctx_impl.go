@@ -24,8 +24,8 @@ import (
 	"os"
 	"testing"
 
-	cspb "cloud.google.com/go/container/apiv1/containerpb"
 	"google.golang.org/protobuf/encoding/prototext"
+	"google.golang.org/protobuf/types/known/anypb"
 	"gvisor.dev/gvisor/runsc/flag"
 	testpb "gvisor.dev/gvisor/test/kubernetes/test_range_config_go_proto"
 	"gvisor.dev/gvisor/test/kubernetes/testcluster"
@@ -55,7 +55,7 @@ func newKubectlContext(ctx context.Context) (KubernetesContext, error) {
 	if err != nil {
 		return nil, fmt.Errorf("cannot initialize cluster %q: %w", *kubectlContextName, err)
 	}
-	var clusterPB cspb.Cluster
+	var clusterPB anypb.Any
 	clusterBytes, err := os.ReadFile(*clusterProtoPath)
 	if err != nil {
 		return nil, fmt.Errorf("cannot read cluster textproto file %q: %w", *clusterProtoPath, err)

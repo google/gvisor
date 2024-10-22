@@ -15,13 +15,18 @@ def _go_proto_or_grpc_library(go_library_func, name, **kwargs):
         go_library_func(name = name, **kwargs)
         return
     deps = []
+    com_google_protobuf = "@com_google_protobuf//"
+    org_golang_google_protobuf = "@org_golang_google_protobuf//"
     for d in (kwargs.pop("deps", []) or []):
-        if d == "@com_google_protobuf//:timestamp_proto":
-            # Special case: this proto has its Go definitions in a different
-            # repository.
-            deps.append("@org_golang_google_protobuf//" +
-                        "types/known/timestamppb")
+        # Special cases: these protos have their Go definitions in a different
+        # repository.
+        if d == com_google_protobuf + ":timestamp_proto":
+            deps.append(org_golang_google_protobuf + "types/known/timestamppb")
             continue
+        if d == com_google_protobuf + ":any_proto":
+            deps.append(org_golang_google_protobuf + "types/known/anypb")
+            continue
+
         if "//" in d:
             repo, path = d.split("//", 1)
             deps.append(repo + "//" + path.replace("_proto", "_go_proto"))

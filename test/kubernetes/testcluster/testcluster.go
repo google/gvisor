@@ -24,8 +24,8 @@ import (
 	"strings"
 	"time"
 
-	cspb "cloud.google.com/go/container/apiv1/containerpb"
 	"golang.org/x/sync/errgroup"
+	cspb "google.golang.org/genproto/googleapis/container/v1"
 	testpb "gvisor.dev/gvisor/test/kubernetes/test_range_config_go_proto"
 	appsv1 "k8s.io/api/apps/v1"
 	v13 "k8s.io/api/core/v1"
@@ -159,9 +159,20 @@ func (t *TestCluster) Cluster() *testpb.Cluster {
 	return t.cluster
 }
 
+// ContainerCluster returns the underlying container cluster proto.
+func (t *TestCluster) ContainerCluster() (*cspb.Cluster, error) {
+	var cluster cspb.Cluster
+	err := t.cluster.GetCluster().UnmarshalTo(&cluster)
+	return &cluster, err
+}
+
 // GetName returns this cluster's name.
 func (t *TestCluster) GetName() string {
-	return t.cluster.GetCluster().GetName()
+	cluster, err := t.ContainerCluster()
+	if err != nil {
+		return fmt.Sprintf("[error:%v]", err)
+	}
+	return cluster.GetName()
 }
 
 // GetGVisorRuntimeLabelMap returns the gVisor runtime key-value pair used
@@ -424,12 +435,16 @@ func (t *TestCluster) ConfigurePodForTertiaryNodepool(pod *v13.Pod) (*v13.Pod, e
 }
 
 func (t *TestCluster) getNodePoolByName(name string) (*cspb.NodePool, error) {
-	for _, np := range t.cluster.GetCluster().GetNodePools() {
+	cluster, err := t.ContainerCluster()
+	if err != nil {
+		return nil, err
+	}
+	for _, np := range cluster.GetNodePools() {
 		if np.GetName() == name {
 			return np, nil
 		}
 	}
-	return nil, fmt.Errorf("failed to find nodepool %q: %+v", name, t.cluster.GetCluster().GetNodePools())
+	return nil, fmt.Errorf("failed to find nodepool %q: %+v", name, cluster.GetNodePools())
 }
 
 func (t *TestCluster) applyCommonPodConfigurations(np *cspb.NodePool, podSpec *v13.PodSpec) error {

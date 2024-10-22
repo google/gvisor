@@ -46,25 +46,25 @@ func TestHello(t *testing.T) {
 	pod := ns.NewAlpinePod(fmt.Sprintf("hello-%d", time.Now().UnixNano()), image, []string{"/bin/sh", "-c", "echo hello"})
 	pod, err = cluster.ConfigurePodForRuntimeTestNodepool(pod)
 	if err != nil {
-		t.Fatalf("Failed to set pod on cluster %q: %v", cluster.Cluster().GetCluster().GetName(), err)
+		t.Fatalf("Failed to set pod on cluster %q: %v", cluster.GetName(), err)
 	}
 	pod, err = cluster.CreatePod(ctx, pod)
 	if err != nil {
-		t.Fatalf("Failed to create pod on cluster %q: %v", cluster.Cluster().GetCluster().GetName(), err)
+		t.Fatalf("Failed to create pod on cluster %q: %v", cluster.GetName(), err)
 	}
 	defer cluster.DeletePod(ctx, pod)
 	if err := cluster.WaitForPodCompleted(ctx, pod); err != nil {
-		t.Fatalf("Failed to wait for pod on cluster %q: %v", cluster.Cluster().GetCluster().GetName(), err)
+		t.Fatalf("Failed to wait for pod on cluster %q: %v", cluster.GetName(), err)
 	}
 	reader, err := cluster.GetLogReader(ctx, pod, v13.PodLogOptions{})
 	if err != nil {
-		t.Fatalf("Failed to get log reader on cluster %q: %v", cluster.Cluster().GetCluster().GetName(), err)
+		t.Fatalf("Failed to get log reader on cluster %q: %v", cluster.GetName(), err)
 	}
 	defer reader.Close()
 
 	buf := new(bytes.Buffer)
 	if _, err := io.Copy(buf, reader); err != nil {
-		t.Fatalf("Failed to read log on cluster %q: %v", cluster.Cluster().GetCluster().GetName(), err)
+		t.Fatalf("Failed to read log on cluster %q: %v", cluster.GetName(), err)
 	}
 	if strings.TrimSpace(buf.String()) != "hello" {
 		t.Fatalf("Mistmatch output: got: %q want: %q", buf.String(), "hello")
