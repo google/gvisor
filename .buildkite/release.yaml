@@ -73,3 +73,12 @@ steps:
       - tools/gpu/all_drivers_test.sh
     agents:
       queue: gpu
+  - <<: *common
+    label: ":fish: CUDA tests in compatibility-verifying mode"
+    # This is its own test rather than being part of the GPU tests,
+    # because it takes around an hour to run.
+    commands:
+      - make sudo TARGETS=//tools/gpu:main ARGS="install --latest" || cat /var/log/nvidia-installer.log
+      - make sudo TARGETS=//test/gpu:cuda_test ARGS="--cuda_verify_compatibility=true"
+    agents:
+      queue: gpu
