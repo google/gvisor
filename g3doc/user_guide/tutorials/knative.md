@@ -12,46 +12,56 @@ workloads. This could be a
 cluster on Google Cloud Platform or one you have set up yourself using
 [containerd Quick Start](https://gvisor.dev/docs/user_guide/containerd/quick_start/).
 
-This guide will also assume you have Knative installed using
-[Istio](https://istio.io/) as the network layer. You can follow the
+Follow the
 [Knative installation guide](https://knative.dev/docs/install/install-serving-with-yaml/)
 to install Knative.
 
-## Enable the RuntimeClass feature flag
+## Enable the RuntimeClassName deployment config
 
 Knative allows the use of various parameters on Pods via
-[feature flags](https://knative.dev/docs/serving/feature-flags/). We will enable
-the
-[runtimeClassName](https://knative.dev/docs/serving/feature-flags/#kubernetes-runtime-class)
-feature flag to enable the use of the Kubernetes
-[Runtime Class](https://kubernetes.io/docs/concepts/containers/runtime-class/).
+[deployment configs](https://knative.dev/docs/serving/configuration/deployment) amongst other things. We will set
+the [runtime-class-name](https://knative.dev/docs/serving/configuration/deployment/#configuring-selectable-runtimeclassname) property to configure the Kubernetes deployments created by Knative.
 
-Edit the feature flags ConfigMap.
+Edit the deployment ConfigMap.
 
 ```bash
-kubectl edit configmap config-features -n knative-serving
+kubectl edit configmap config-deployment -n knative-serving
 ```
 
-Add the `kubernetes.podspec-runtimeclassname: enabled` to the `data` field. Once
-you are finished the ConfigMap will look something like this (minus all the
-system fields).
+Setting the `runtime-class-name` configures the Pod field by label selectors.
+
+Enforce all Pods run through Knative to use gVisor as the Runtime Class:
 
 ```yaml
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: config-features
+  name: config-deployment
   namespace: knative-serving
-  labels:
-    serving.knative.dev/release: v0.22.0
 data:
-  kubernetes.podspec-runtimeclassname: enabled
+  runtime-class-name: |
+    gvisor: {}
+```
+
+Allow exception for Pods to run without gVisor as the Runtime Class when a label is set:
+
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: config-deployment
+  namespace: knative-serving
+data:
+  runtime-class-name: |
+    "":
+      selector:
+        no-isolation-here: "true"
+    gvisor: {}
 ```
 
 ## Deploy the Service
 
-After you have set the Runtime Class feature flag you can now create Knative
-services that specify a `runtimeClassName` in the spec.
+After you have set the Runtime Class deployment config you can now create Knative Service.
 
 ```bash
 cat <<EOF | kubectl apply -f -
@@ -62,7 +72,6 @@ metadata:
 spec:
   template:
     spec:
-      runtimeClassName: gvisor
       containers:
         - image: gcr.io/knative-samples/helloworld-go
           env:
