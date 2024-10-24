@@ -104,6 +104,9 @@ type TaskConfig struct {
 	// It may be nil.
 	SessionKeyring *auth.Key
 
+	// Personality is the personality of the parent task.
+	Personality uint32
+
 	Origin TaskOrigin
 }
 
@@ -174,6 +177,7 @@ func (ts *TaskSet) newTask(ctx context.Context, cfg *TaskConfig) (*Task, error) 
 		cgroups:        make(map[Cgroup]struct{}),
 		userCounters:   cfg.UserCounters,
 		sessionKeyring: cfg.SessionKeyring,
+		personality:    atomicbitops.FromUint32(cfg.Personality),
 		Origin:         cfg.Origin,
 	}
 	t.netns = cfg.NetworkNamespace

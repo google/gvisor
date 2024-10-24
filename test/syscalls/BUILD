@@ -480,6 +480,10 @@ syscall_test(
 )
 
 syscall_test(
+    test = "//test/syscalls/linux:personality_test",
+)
+
+syscall_test(
     size = "medium",
     add_hostinet = True,
     # Takes too long under gotsan to run.
