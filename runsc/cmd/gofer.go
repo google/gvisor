@@ -32,9 +32,11 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/devices/tpuproxy/vfio"
 	"gvisor.dev/gvisor/pkg/unet"
+	"gvisor.dev/gvisor/pkg/urpc"
 	"gvisor.dev/gvisor/runsc/boot"
 	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/config"
+	"gvisor.dev/gvisor/runsc/container"
 	"gvisor.dev/gvisor/runsc/flag"
 	"gvisor.dev/gvisor/runsc/fsgofer"
 	"gvisor.dev/gvisor/runsc/fsgofer/filter"
@@ -91,6 +93,7 @@ type Gofer struct {
 
 	specFD        int
 	mountsFD      int
+	rpcFD         int
 	profileFDs    profile.FDArgs
 	syncFDs       goferSyncFDs
 	stopProfiling func()
@@ -123,6 +126,7 @@ func (g *Gofer) SetFlags(f *flag.FlagSet) {
 	f.IntVar(&g.devIoFD, "dev-io-fd", -1, "optional FD to connect /dev gofer server")
 	f.IntVar(&g.specFD, "spec-fd", -1, "required fd with the container spec")
 	f.IntVar(&g.mountsFD, "mounts-fd", -1, "mountsFD is the file descriptor to write list of mounts after they have been resolved (direct paths, no symlinks).")
+	f.IntVar(&g.rpcFD, "rpc-fd", -1, "mountsFD is the RPC file descriptor.")
 
 	// Add synchronization FD flags.
 	g.syncFDs.setFlags(f)
@@ -153,8 +157,16 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomm
 	g.syncFDs.syncNVProxy()
 	g.syncFDs.syncUsernsForRootless()
 
+	rpcClntSock, err := unet.NewSocket(g.rpcFD)
+	if err != nil {
+		util.Fatalf("creating rpc socket: %v", err)
+	}
+
+	rpcClnt := urpc.NewClient(rpcClntSock)
+	defer rpcClnt.Close()
+
 	if g.setUpRoot {
-		if err := g.setupRootFS(spec, conf); err != nil {
+		if err := g.setupRootFS(spec, conf, rpcClnt); err != nil {
 			util.Fatalf("Error setting up root FS: %v", err)
 		}
 		if !conf.TestOnlyAllowRunAsCurrentUserWithoutChroot {
@@ -162,6 +174,7 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomm
 			defer cleanupUnmounter()
 		}
 	}
+	rpcClnt.Close()
 	if g.applyCaps {
 		overrides := g.syncFDs.flags()
 		overrides["apply-caps"] = "false"
@@ -369,7 +382,7 @@ func (g *Gofer) writeMounts(mounts []specs.Mount) error {
 // It is protected by selinux rules.
 const procFDBindMount = "/proc/fs"
 
-func (g *Gofer) setupRootFS(spec *specs.Spec, conf *config.Config) error {
+func (g *Gofer) setupRootFS(spec *specs.Spec, conf *config.Config, rpcClnt *urpc.Client) error {
 	// Convert all shared mounts into slaves to be sure that nothing will be
 	// propagated outside of our namespace.
 	procPath := "/proc"
@@ -437,7 +450,7 @@ func (g *Gofer) setupRootFS(spec *specs.Spec, conf *config.Config) error {
 	}
 
 	// Replace the current spec, with the clean spec with symlinks resolved.
-	if err := g.setupMounts(conf, spec.Mounts, root, procPath); err != nil {
+	if err := g.setupMounts(conf, spec.Mounts, root, procPath, rpcClnt); err != nil {
 		util.Fatalf("error setting up FS: %v", err)
 	}
 
@@ -487,7 +500,7 @@ func (g *Gofer) setupRootFS(spec *specs.Spec, conf *config.Config) error {
 // setupMounts bind mounts all mounts specified in the spec in their correct
 // location inside root. It will resolve relative paths and symlinks. It also
 // creates directories as needed.
-func (g *Gofer) setupMounts(conf *config.Config, mounts []specs.Mount, root, procPath string) error {
+func (g *Gofer) setupMounts(conf *config.Config, mounts []specs.Mount, root, procPath string, rpcClnt *urpc.Client) error {
 	mountIdx := 1 // First index is for rootfs.
 	for _, m := range mounts {
 		if !specutils.IsGoferMount(m) {
@@ -511,7 +524,19 @@ func (g *Gofer) setupMounts(conf *config.Config, mounts []specs.Mount, root, pro
 		}
 
 		log.Infof("Mounting src: %q, dst: %q, flags: %#x", m.Source, dst, flags)
-		if err := specutils.SafeSetupAndMount(m.Source, dst, m.Type, flags, procPath); err != nil {
+		src := m.Source
+		var fd *os.File
+		if unix.Access(src, unix.R_OK); err != nil {
+			var res container.OpenMountResult
+			if err := rpcClnt.Call("goferRPC.OpenMount", &m, &res); err != nil {
+				return fmt.Errorf("opening %s: %w", m.Source, err)
+			}
+			fd = res.Files[0]
+			src = fmt.Sprintf("%s/self/fd/%d", procPath, fd)
+		}
+		err = specutils.SafeSetupAndMount(src, dst, m.Type, flags, procPath)
+		fd.Close()
+		if err != nil {
 			return fmt.Errorf("mounting %+v: %v", m, err)
 		}
 

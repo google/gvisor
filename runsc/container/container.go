@@ -24,8 +24,10 @@ import (
 	"os/exec"
 	"path"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -41,6 +43,8 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sighandling"
 	"gvisor.dev/gvisor/pkg/state/statefile"
+	"gvisor.dev/gvisor/pkg/unet"
+	"gvisor.dev/gvisor/pkg/urpc"
 	"gvisor.dev/gvisor/runsc/boot"
 	"gvisor.dev/gvisor/runsc/cgroup"
 	"gvisor.dev/gvisor/runsc/config"
@@ -1179,6 +1183,79 @@ func shouldSpawnGofer(spec *specs.Spec, conf *config.Config, goferConfs []boot.G
 	return shouldCreateDeviceGofer(spec, conf)
 }
 
+type openMountRequest struct {
+	mount  *specs.Mount
+	result *OpenMountResult
+	done   chan error
+}
+
+type goferRPC struct {
+	mu                sync.Mutex
+	openMountRequests chan *openMountRequest
+	goferPID          int
+}
+
+type OpenMountResult struct {
+	urpc.FilePayload
+}
+
+func (rpc *goferRPC) handleRequest(req *openMountRequest) {
+	defer close(req.done)
+	fd, err := os.OpenFile(req.mount.Source, unix.O_PATH|unix.O_CLOEXEC, 0)
+	if err != nil {
+		req.done <- err
+		return
+	}
+	req.result.Files = []*os.File{fd}
+}
+
+func (rpc *goferRPC) openMountLoop() error {
+	if err := unix.Unshare(unix.CLONE_FS); err != nil {
+		return fmt.Errorf("open mount thread: %w", err)
+	}
+	nsFd, err := os.Open(fmt.Sprintf("/proc/%d/ns/mnt", rpc.goferPID))
+	if err != nil {
+		return fmt.Errorf("open mount thread: open container mntns: %w", err)
+	}
+	defer nsFd.Close()
+	if err := unix.Setns(int(nsFd.Fd()), unix.CLONE_NEWNS); err != nil {
+		return fmt.Errorf("open mount thread: join container mntns: %w", err)
+	}
+	for req := range rpc.openMountRequests {
+		rpc.handleRequest(req)
+	}
+	return nil
+}
+
+func (rpc *goferRPC) OpenMount(m *specs.Mount, res *OpenMountResult) error {
+	rpc.mu.Lock()
+	defer rpc.mu.Unlock()
+
+	if rpc.openMountRequests == nil {
+		rpc.openMountRequests = make(chan *openMountRequest)
+		go func() {
+			// This goroutine holds the current threads forever. It
+			// never exits, because child proccesses can set
+			// PDEATHSIG.
+			runtime.LockOSThread()
+			if err := rpc.openMountLoop(); err != nil {
+				for req := range rpc.openMountRequests {
+					req.done <- err
+				}
+			}
+			panic("unreachable")
+		}()
+	}
+	req := openMountRequest{
+		mount:  m,
+		result: res,
+		done:   make(chan error),
+	}
+	rpc.openMountRequests <- &req
+	err := <-req.done
+	return err
+}
+
 // createGoferProcess returns an IO file list and a mounts file on success.
 // The IO file list consists of image files and/or socket files to connect to
 // a gofer endpoint for the mount points using Gofers. The mounts file is the
@@ -1271,6 +1348,25 @@ func (c *Container) createGoferProcess(spec *specs.Spec, conf *config.Config, bu
 		return nil, nil, nil, err
 	}
 	donations.DonateAndClose("mounts-fd", mountsGofer)
+
+	rpcServ, rpcClnt, err := unet.SocketPair(false)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to create an rpc socket pair: %w", err)
+	}
+	rpcClntFD, _ := rpcClnt.Release()
+	donations.DonateAndClose("rpc-fd", os.NewFile(uintptr(rpcClntFD), "gofer-rpc"))
+	rpcPidCh := make(chan int, 1)
+	defer close(rpcPidCh)
+	go func() {
+		pid := <-rpcPidCh
+		if pid == 0 {
+			rpcServ.Close()
+			return
+		}
+		s := urpc.NewServer()
+		s.Register(&goferRPC{goferPID: pid})
+		s.StartHandling(rpcServ)
+	}()
 
 	// Count the number of mounts that needs an IO file.
 	ioFileCount := 0
@@ -1370,6 +1466,7 @@ func (c *Container) createGoferProcess(spec *specs.Spec, conf *config.Config, bu
 	log.Infof("Gofer started, PID: %d", cmd.Process.Pid)
 	c.GoferPid = cmd.Process.Pid
 	c.goferIsChild = true
+	rpcPidCh <- cmd.Process.Pid
 
 	// Set up and synchronize rootless mode userns mappings.
 	if rootlessEUID {

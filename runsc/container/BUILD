@@ -28,6 +28,8 @@ go_library(
         "//pkg/sighandling",
         "//pkg/state/statefile",
         "//pkg/sync",
+        "//pkg/unet",
+        "//pkg/urpc",
         "//runsc/boot",
         "//runsc/cgroup",
         "//runsc/config",
