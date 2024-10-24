@@ -192,6 +192,16 @@ steps:
       queue: cos-canary-gpu
   - <<: *common
     <<: *source_test_continuous
+    label: ":fish: CUDA tests"
+    # This is its own test rather than being part of the GPU tests,
+    # because it takes around 15 minutes to run.
+    commands:
+      - make sudo TARGETS=//tools/gpu:main ARGS="install --latest" || cat /var/log/nvidia-installer.log
+      - make cuda-tests
+    agents:
+      queue: gpu
+  - <<: *common
+    <<: *source_test_continuous
     label: ":screwdriver: All GPU Drivers Test"
     commands:
       - tools/gpu/all_drivers_test.sh

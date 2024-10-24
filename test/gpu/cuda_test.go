@@ -745,7 +745,7 @@ func TestCUDA(t *testing.T) {
 		durationPct := 100.0 * float64(startedAgo) / float64(testDeadline.Sub(testStart))
 		testLog(t, "[Timing] %d/%d tests (%.1f%%) finished executing. Test started %v ago, deadline in %v (%.1f%%).", testsDone, numTests, donePct, startedAgo.Truncate(time.Second), deadlineIn.Truncate(time.Second), durationPct)
 		if len(failedTests) > 0 {
-			testLog(t, "[Failed] %d test failed: %v", len(failedTests), strings.Join(failedTests, ", "))
+			testLog(t, "[Failed] %d test(s) failed: %v", len(failedTests), strings.Join(failedTests, ", "))
 		}
 		testLog(t, "[Pool] %v", cp.String())
 	}
