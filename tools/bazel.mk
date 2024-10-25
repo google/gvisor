@@ -39,7 +39,7 @@
 ##   To opt out of these wrappers, set DOCKER_BUILD=false.
 DOCKER_BUILD := true
 ifeq ($(DOCKER_BUILD),true)
--include bazel-server
+-include bazel-server-inc
 endif
 
 # See base Makefile.
@@ -255,6 +255,10 @@ bazel-server:
 	@
 endif
 .PHONY: bazel-server
+
+# As of version 4.4, Make will ignore phony targets in include statements, so
+# we make a non-phony version of bazel-server that can be included.
+bazel-server-inc: bazel-server
 
 # build_paths extracts the built binary from the bazel stderr output.
 #
