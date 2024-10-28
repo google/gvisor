@@ -56,6 +56,7 @@ func getSaveOpts(l *Loader, k *kernel.Kernel, isResume bool) state.SaveOpts {
 
 func getTargetForSaveResume(l *Loader) func(k *kernel.Kernel) {
 	return func(k *kernel.Kernel) {
+		l.addVersionToCheckpoint()
 		l.addContainerSpecsToCheckpoint()
 		saveOpts := getSaveOpts(l, k, true /* isResume */)
 		// Store the state file contents in a buffer for save-resume.
@@ -75,6 +76,7 @@ func getTargetForSaveRestore(l *Loader, files []*fd.FD) func(k *kernel.Kernel) {
 	var once sync.Once
 	return func(k *kernel.Kernel) {
 		once.Do(func() {
+			l.addVersionToCheckpoint()
 			l.addContainerSpecsToCheckpoint()
 			saveOpts := getSaveOpts(l, k, false /* isResume */)
 			saveOpts.Destination = files[0]

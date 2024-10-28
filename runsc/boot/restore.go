@@ -46,6 +46,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/runsc/boot/pprof"
 	"gvisor.dev/gvisor/runsc/config"
+	"gvisor.dev/gvisor/runsc/version"
 )
 
 const (
@@ -350,7 +351,7 @@ func validateSpecForContainer(oldSpec, newSpec *specs.Spec, cName string) error 
 		}
 	}
 
-	// TODO(b/359591006): Validate runsc version, Linux.Resources, Process.Capabilities and Annotations.
+	// TODO(b/359591006): Validate Linux.Resources, Process.Capabilities and Annotations.
 	// TODO(b/359591006): Check other remaining fields for equality.
 	return nil
 }
@@ -462,6 +463,12 @@ func (r *restorer) restore(l *Loader) error {
 	r.pagesFile = nil // transferred to loadOpts.Load()
 	if err != nil {
 		return err
+	}
+
+	checkpointVersion := popVersionFromCheckpoint(l.k)
+	currentVersion := version.Version()
+	if checkpointVersion != currentVersion {
+		return fmt.Errorf("runsc version does not match across checkpoint restore, checkpoint: %v current: %v", checkpointVersion, currentVersion)
 	}
 
 	oldSpecs, err := popContainerSpecsFromCheckpoint(l.k)
@@ -577,6 +584,9 @@ func (l *Loader) save(o *control.SaveOpts) (err error) {
 		o.Metadata = make(map[string]string)
 	}
 	o.Metadata["container_count"] = strconv.Itoa(l.containerCount())
+
+	// Save runsc version.
+	l.addVersionToCheckpoint()
 
 	// Save container specs.
 	l.addContainerSpecsToCheckpoint()
