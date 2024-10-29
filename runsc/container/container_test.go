@@ -3773,6 +3773,25 @@ func TestSpecValidation(t *testing.T) {
 			},
 			wantErr: "Mounts does not match across checkpoint restore",
 		},
+		{
+			name: "AnnotationsFail",
+			mutate: func(spec, restoreSpec *specs.Spec, _, _ string) {
+				spec.Annotations = make(map[string]string)
+				spec.Annotations["dev.gvisor.net-disconnect-ok"] = strconv.FormatBool(true)
+			},
+			wantErr: "Annotations does not match across checkpoint restore",
+		},
+		{
+			name: "InternalAnnotationsSuccess",
+			mutate: func(spec, restoreSpec *specs.Spec, _, _ string) {
+				spec.Annotations = make(map[string]string)
+				spec.Annotations["dev.gvisor.internal.foo"] = "foo"
+
+				restoreSpec.Annotations = make(map[string]string)
+				restoreSpec.Annotations["dev.gvisor.internal.foo"] = "bar"
+			},
+			wantErr: "",
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

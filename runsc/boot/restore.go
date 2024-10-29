@@ -22,6 +22,7 @@ import (
 	"slices"
 	"sort"
 	"strconv"
+	"strings"
 	time2 "time"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
@@ -251,6 +252,35 @@ func validateDevices(field, cName string, o, n []specs.LinuxDevice) error {
 	return nil
 }
 
+func extractAnnotationsToValidate(o map[string]string) map[string]string {
+	const (
+		gvisorPrefix   = "dev.gvisor."
+		internalPrefix = "dev.gvisor.internal."
+
+		mntSrcAnnotation = "dev.gvisor.spec.mount.source"
+	)
+
+	n := make(map[string]string)
+	for key, val := range o {
+		if strings.HasPrefix(key, internalPrefix) || key == mntSrcAnnotation {
+			continue
+		}
+		if strings.HasPrefix(key, gvisorPrefix) {
+			n[key] = val
+		}
+	}
+	return n
+}
+
+func validateAnnotations(cName string, before, after map[string]string) error {
+	oldM := extractAnnotationsToValidate(before)
+	newM := extractAnnotationsToValidate(after)
+	if !reflect.DeepEqual(oldM, newM) {
+		return validateError("Annotations", cName, oldM, newM)
+	}
+	return nil
+}
+
 // validateArray performs a deep comparison of two arrays, checking for equality
 // at every level of nesting. Note that this method:
 // * does not allow duplicates in the arrays.
@@ -351,7 +381,11 @@ func validateSpecForContainer(oldSpec, newSpec *specs.Spec, cName string) error 
 		}
 	}
 
-	// TODO(b/359591006): Validate Linux.Resources, Process.Capabilities and Annotations.
+	if err := validateAnnotations(cName, oldSpec.Annotations, newSpec.Annotations); err != nil {
+		return err
+	}
+
+	// TODO(b/359591006): Validate Linux.Resources and Process.Capabilities.
 	// TODO(b/359591006): Check other remaining fields for equality.
 	return nil
 }
