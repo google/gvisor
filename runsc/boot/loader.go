@@ -82,6 +82,7 @@ import (
 	"gvisor.dev/gvisor/runsc/profile"
 	"gvisor.dev/gvisor/runsc/specutils"
 	"gvisor.dev/gvisor/runsc/specutils/seccomp"
+	"gvisor.dev/gvisor/runsc/version"
 
 	// Top-level inet providers.
 	"gvisor.dev/gvisor/pkg/sentry/socket/hostinet"
@@ -369,6 +370,10 @@ const (
 	// containerSpecsKey is the key used to add and pop the container specs to the
 	// kernel during save/restore.
 	containerSpecsKey = "container_specs"
+
+	// versionKey is the key used to add and pop runsc version to the kernel
+	// during save/restore.
+	versionKey = "runsc_version"
 )
 
 func getRootCredentials(spec *specs.Spec, conf *config.Config, userNs *auth.UserNamespace) *auth.Credentials {
@@ -1988,4 +1993,14 @@ func popContainerSpecsFromCheckpoint(k *kernel.Kernel) (map[string]*specs.Spec, 
 		oldSpecs[k] = &s
 	}
 	return oldSpecs, nil
+}
+
+// addVersionToCheckpoint adds the runsc version to the kernel.
+func (l *Loader) addVersionToCheckpoint() {
+	l.k.AddStateToCheckpoint(versionKey, version.Version())
+}
+
+// popVersionFromCheckpoint pops the runsc version from the kernel.
+func popVersionFromCheckpoint(k *kernel.Kernel) string {
+	return (k.PopCheckpointState(versionKey)).(string)
 }
