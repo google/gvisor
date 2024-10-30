@@ -252,6 +252,7 @@ go_library(
         "kcov_unsafe.go",
         "kernel.go",
         "kernel_opts.go",
+        "kernel_restore.go",
         "kernel_state.go",
         "pending_signals.go",
         "pending_signals_list.go",
