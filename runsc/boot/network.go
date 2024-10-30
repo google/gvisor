@@ -392,7 +392,7 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 			case config.QDiscNone:
 			case config.QDiscFIFO:
 				log.Infof("Enabling FIFO QDisc on %q", link.Name)
-				qDisc = fifo.New(linkEP, runtime.GOMAXPROCS(0), 1000)
+				qDisc = fifo.NewCh(linkEP, runtime.GOMAXPROCS(0), 1000)
 			}
 
 			log.Infof("Enabling interface %q with id %d on addresses %+v (%v) w/ %d channels", link.Name, nicID, link.Addresses, mac, link.NumChannels)
