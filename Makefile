@@ -331,6 +331,11 @@ cos-gpu-all-tests: gpu-images cos-gpu-smoke-tests $(RUNTIME_BIN)
 	@$(call sudo,test/gpu:sniffer_test,--runtime=$(RUNTIME) -test.v --cos-gpu $(ARGS))
 .PHONY: cos-gpu-all-tests
 
+cuda-tests: load-gpu_cuda-tests
+	@$(call install_runtime,$(RUNTIME),--nvproxy=true --nvproxy-docker=true)
+	@$(call sudo,test/gpu:cuda_test,--runtime=$(RUNTIME) -test.v $(ARGS))
+.PHONY: cuda-tests
+
 portforward-tests: load-basic_redis load-basic_nginx $(RUNTIME_BIN)
 	@$(call install_runtime,$(RUNTIME),--network=sandbox)
 	@$(call sudo,test/root:portforward_test,--runtime=$(RUNTIME) -test.v $(ARGS))
