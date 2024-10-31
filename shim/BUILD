@@ -8,7 +8,7 @@ package(
 go_binary(
     name = "containerd-shim-runsc-v1",
     srcs = ["main.go"],
-    static = True,
+    features = ["fully_static_link"],
     tags = ["staging"],
     visibility = [
         "//visibility:public",
