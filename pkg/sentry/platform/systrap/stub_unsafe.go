@@ -15,8 +15,12 @@
 package systrap
 
 import (
+	"fmt"
+	"io/ioutil"
 	"math/rand"
 	"reflect"
+	"strconv"
+	"strings"
 	"unsafe"
 
 	"golang.org/x/sys/unix"
@@ -98,6 +102,73 @@ func copySeccompRulesToStub(instrs []bpf.Instruction, stubAddr, size uintptr) {
 	}
 }
 
+type mapsRegion struct {
+	start, end uintptr
+}
+
+// parseMaps parses the /proc/self/maps file and returns regions where the stub
+// region can be mapped.
+func parseMaps(stubAreaStart, stubAreaEnd, minLen uintptr) ([]mapsRegion, error) {
+	data, err := ioutil.ReadFile(fmt.Sprintf("/proc/self/maps"))
+	if err != nil {
+		return nil, err
+	}
+
+	regions := []mapsRegion{}
+	rstart := stubAreaStart
+	for _, line := range strings.Split(string(data), "\n") {
+		if line == "" {
+			continue
+		}
+
+		fields := strings.Fields(line)
+		if len(fields) < 1 {
+			continue
+		}
+
+		addrRange := strings.Split(fields[0], "-")
+		if len(addrRange) != 2 {
+			continue
+		}
+
+		start, err := strconv.ParseUint(addrRange[0], 16, 64)
+		if err != nil {
+			return nil, err
+		}
+
+		end, err := strconv.ParseUint(addrRange[1], 16, 64)
+		if err != nil {
+			return nil, err
+		}
+
+		if uintptr(end) < rstart {
+			continue
+		}
+		if uintptr(start) > stubAreaEnd {
+			break
+		}
+		if rstart+minLen < uintptr(start) {
+			regions = append(regions, mapsRegion{
+				start: uintptr(rstart),
+				end:   uintptr(start),
+			})
+		}
+		rstart = uintptr(end)
+	}
+	if rstart+minLen <= stubAreaEnd {
+		regions = append(regions, mapsRegion{
+			start: uintptr(rstart),
+			end:   uintptr(stubAreaEnd),
+		})
+	}
+	log.Debugf("Stub regions:")
+	for _, r := range regions {
+		log.Debugf("%16x-%016x", r.start, r.end)
+	}
+
+	return regions, nil
+}
+
 // stubInit allocates and  initializes the stub memory region which includes:
 //   - the stub code to do initial initialization of a stub process.
 //   - the sysmsg signal handler code to notify sentry about new events such as
@@ -165,31 +236,35 @@ func stubInit() {
 	stubContextRegionLen = sysmsg.AllocatedSizeofThreadContextStruct * (maxGuestContexts + 1)
 	mapLen, _ = hostarch.PageRoundUp(mapLen + stubContextRegionLen)
 
-	// Randomize stubStart address.
-	randomOffset := uintptr(rand.Uint64() * hostarch.PageSize)
-	maxRandomOffset := maxRandomOffsetOfStubAddress - mapLen
-	stubStart = uintptr(0)
-	for offset := uintptr(0); offset < maxRandomOffset; offset += hostarch.PageSize {
-		stubStart = maxStubUserAddress + (randomOffset+offset)%maxRandomOffset
+	// Try a few times to avoid cases when new mappings are created.
+	for i := 0; i < 32; i++ {
+		if i == 0 { // fast path
+			// Randomize stubStart address.
+			randomOffset := uintptr(rand.Uint64() * hostarch.PageSize)
+			maxRandomOffset := maxRandomOffsetOfStubAddress - mapLen
+			stubStart = maxStubUserAddress + randomOffset%maxRandomOffset
+		} else {
+			regions, err := parseMaps(maxStubUserAddress, maximumUserAddress-mapLen+stubROMapEnd, stubROMapEnd)
+			if err != nil {
+				panic(fmt.Sprintf("failed to parse /proc/self/maps: %s", err))
+			}
+			n := len(regions)
+			if n == 0 {
+				panic("failed to map stub code")
+			}
+			r := regions[rand.Int()%n]
+			stubStart = r.start + uintptr(rand.Uint64())*hostarch.PageSize%(r.end-r.start-stubROMapEnd)
+		}
 		// Map the target address for the stub.
-		//
-		// We don't use FIXED here because we don't want to unmap
-		// something that may have been there already. We just walk
-		// down the address space until we find a place where the stub
-		// can be placed.
 		addr, _ := hostsyscall.RawSyscall6(
 			unix.SYS_MMAP,
 			stubStart,
 			stubROMapEnd,
 			unix.PROT_WRITE|unix.PROT_READ,
-			unix.MAP_PRIVATE|unix.MAP_ANONYMOUS,
+			unix.MAP_PRIVATE|unix.MAP_ANONYMOUS|unix.MAP_FIXED_NOREPLACE,
 			0 /* fd */, 0 /* offset */)
 		if addr == stubStart {
 			break
-		}
-		if addr != 0 {
-			// Unmap the region we've mapped accidentally.
-			hostsyscall.RawSyscall(unix.SYS_MUNMAP, addr, stubROMapEnd, 0)
 		}
 		stubStart = uintptr(0)
 	}
