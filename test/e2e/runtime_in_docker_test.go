@@ -74,18 +74,6 @@ func (test testVariant) run(ctx context.Context, logger testutil.Logger, runscPa
 			ReadOnly: false,
 		})
 	}
-	// Mount an unobstructed view of procfs at /proc2 so that the runtime
-	// can mount a fresh procfs.
-	// TODO(gvisor.dev/issue/10944): Remove this once issue is fixed.
-	opts.Mounts = append(opts.Mounts, mount.Mount{
-		Type:     mount.TypeBind,
-		Source:   "/proc",
-		Target:   "/proc2",
-		ReadOnly: false,
-		BindOptions: &mount.BindOptions{
-			NonRecursive: true,
-		},
-	})
 	const wantMessage = "It became a jumble of words, a litany, almost a kind of glossolalia."
 	args := []string{
 		"/runtime",

@@ -41,6 +41,7 @@ func Enable() error {
 }
 
 // GetAllCoreTags returns the core tag of all the threads in the thread group.
+// PID 0 means the current pid.
 func GetAllCoreTags(pid int) ([]uint64, error) {
 	// prctl(PR_SCHED_CORE_GET, PR_SCHED_CORE_SCOPE_THREAD_GROUP, ...) is not supported
 	// in linux. So instead we get all threads from /proc/<pid>/task and get all the
@@ -75,9 +76,14 @@ func GetAllCoreTags(pid int) ([]uint64, error) {
 }
 
 // getTids returns set of tids as reported by /proc/<pid>/task.
+// PID 0 means the current PID.
 func getTids(pid int) (map[int]struct{}, error) {
 	tids := make(map[int]struct{})
-	files, err := os.ReadDir("/proc/" + strconv.Itoa(pid) + "/task")
+	path := "/proc/self/task"
+	if pid != 0 {
+		path = fmt.Sprintf("/proc/%d/task", pid)
+	}
+	files, err := os.ReadDir(path)
 	if err != nil {
 		return nil, err
 	}

@@ -245,7 +245,7 @@ func TestStartSignal(t *testing.T) {
 func TestHostnetWithRawSockets(t *testing.T) {
 	// Drop CAP_NET_RAW from effective capabilities, if we have it.
 	pid := os.Getpid()
-	caps, err := capability.NewPid2(os.Getpid())
+	caps, err := capability.NewPid2(0)
 	if err != nil {
 		t.Fatalf("error getting capabilities for pid %d: %v", pid, err)
 	}

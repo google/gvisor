@@ -16,6 +16,7 @@ package coretag
 
 import (
 	"os"
+	"reflect"
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/hostos"
@@ -36,11 +37,19 @@ func TestEnable(t *testing.T) {
 		t.Fatalf("Enable() got error %v, wanted nil", err)
 	}
 
-	coreTags, err := GetAllCoreTags(os.Getpid())
+	pid := os.Getpid()
+	coreTags, err := GetAllCoreTags(pid)
 	if err != nil {
 		t.Fatalf("GetAllCoreTags() got error %v, wanted nil", err)
 	}
 	if len(coreTags) != 1 {
 		t.Fatalf("Got coreTags %v, wanted len(coreTags)=1", coreTags)
+	}
+	coreTagsSelf, err := GetAllCoreTags(0)
+	if err != nil {
+		t.Fatalf("GetAllCoreTags(0) got error %v, wanted nil", err)
+	}
+	if !reflect.DeepEqual(coreTags, coreTagsSelf) {
+		t.Fatalf("Got different coreTags for PID %d vs self: %v vs %v", pid, coreTags, coreTagsSelf)
 	}
 }

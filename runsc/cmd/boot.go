@@ -471,7 +471,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 
 		// Verify that all sentry threads are properly core tagged, and log
 		// current core tag.
-		coreTags, err := coretag.GetAllCoreTags(os.Getpid())
+		coreTags, err := coretag.GetAllCoreTags(0)
 		if err != nil {
 			util.Fatalf("Failed read current core tags: %v", err)
 		}
