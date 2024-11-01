@@ -694,6 +694,21 @@ func TestCUDA(t *testing.T) {
 		}
 	})
 
+	// Filter tests if partitioning is enabled.
+	testIndices, err := testutil.TestIndicesForShard(numTests)
+	if err != nil {
+		t.Fatalf("Failed to get test indices for shard: %v", err)
+	}
+	if len(testIndices) != numTests {
+		filteredTests := make([]string, 0, len(testIndices))
+		for _, testIndex := range testIndices {
+			filteredTests = append(filteredTests, allTests[testIndex])
+		}
+		testLog(t, "Filtered tests from sharding; %d -> %d tests.", numTests, len(filteredTests))
+		allTests = filteredTests
+		numTests = len(allTests)
+	}
+
 	// In order to go through tests efficiently, we reuse containers.
 	// However, running tests serially within the same container would also be
 	// slow. So this test spawns a pool of containers, one per CPU.

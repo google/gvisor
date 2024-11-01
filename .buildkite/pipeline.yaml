@@ -1,12 +1,14 @@
 _templates:
+  retry_settings: &retry_settings
+    automatic:
+      - exit_status: -1
+        limit: 10
+      - exit_status: "*"
+        limit: 2
   common: &common
     timeout_in_minutes: 30
     retry:
-      automatic:
-        - exit_status: -1
-          limit: 10
-        - exit_status: "*"
-          limit: 2
+      <<: *retry_settings
   source_test: &source_test
     if: build.env("STAGED_BINARIES") == null
   source_test_presubmit: &source_test_presubmit
@@ -190,6 +192,19 @@ steps:
       - make cos-gpu-all-tests
     agents:
       queue: cos-canary-gpu
+  - <<: *source_test_continuous
+    label: ":fish: CUDA tests"
+    # This is its own test rather than being part of the GPU tests,
+    # because it takes around 30 minutes to run.
+    parallelism: 8
+    timeout_in_minutes: 60
+    retry:
+      <<: *retry_settings
+    commands:
+      - make sudo TARGETS=//tools/gpu:main ARGS="install --latest" || cat /var/log/nvidia-installer.log
+      - make cuda-tests
+    agents:
+      queue: gpu
   - <<: *common
     <<: *source_test_continuous
     label: ":screwdriver: All GPU Drivers Test"
