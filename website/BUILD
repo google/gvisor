@@ -165,6 +165,7 @@ docs(
         "//g3doc/user_guide:platforms",
         "//g3doc/user_guide:production",
         "//g3doc/user_guide:runtime_monitoring",
+        "//g3doc/user_guide:systemd",
         "//g3doc/user_guide/containerd:configuration",
         "//g3doc/user_guide/containerd:containerd_11",
         "//g3doc/user_guide/containerd:quick_start",

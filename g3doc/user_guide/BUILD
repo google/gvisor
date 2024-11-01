@@ -104,3 +104,11 @@ doc(
     permalink = "/docs/user_guide/faq/",
     weight = "90",
 )
+
+doc(
+    name = "systemd",
+    src = "systemd.md",
+    category = "User Guide",
+    permalink = "/docs/user_guide/systemd/",
+    weight = "91",
+)
