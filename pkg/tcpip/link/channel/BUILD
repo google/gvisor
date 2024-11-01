@@ -1,3 +1,4 @@
+load("//pkg/sync/locking:locking.bzl", "declare_rwmutex")
 load("//tools:defs.bzl", "go_library", "go_test")
 
 package(
@@ -5,12 +6,31 @@ package(
     licenses = ["notice"],
 )
 
+declare_rwmutex(
+    name = "endpoint_mutex",
+    out = "endpoint_mutex.go",
+    package = "channel",
+    prefix = "endpoint",
+)
+
+declare_rwmutex(
+    name = "queue_mutex",
+    out = "queue_mutex.go",
+    package = "channel",
+    prefix = "queue",
+)
+
 go_library(
     name = "channel",
-    srcs = ["channel.go"],
+    srcs = [
+        "channel.go",
+        "endpoint_mutex.go",
+        "queue_mutex.go",
+    ],
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/sync",
+        "//pkg/sync/locking",
         "//pkg/tcpip",
         "//pkg/tcpip/header",
         "//pkg/tcpip/stack",

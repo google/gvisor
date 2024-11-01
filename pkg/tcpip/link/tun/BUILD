@@ -1,3 +1,4 @@
+load("//pkg/sync/locking:locking.bzl", "declare_rwmutex")
 load("//tools:defs.bzl", "go_library")
 load("//tools/go_generics:defs.bzl", "go_template_instance")
 
@@ -17,10 +18,18 @@ go_template_instance(
     },
 )
 
+declare_rwmutex(
+    name = "device_mutex",
+    out = "device_mutex.go",
+    package = "tun",
+    prefix = "device",
+)
+
 go_library(
     name = "tun",
     srcs = [
         "device.go",
+        "device_mutex.go",
         "protocol.go",
         "tun_endpoint_refs.go",
         "tun_unsafe.go",
@@ -35,6 +44,7 @@ go_library(
         "//pkg/log",
         "//pkg/refs",
         "//pkg/sync",
+        "//pkg/sync/locking",
         "//pkg/tcpip",
         "//pkg/tcpip/header",
         "//pkg/tcpip/link/channel",

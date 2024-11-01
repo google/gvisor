@@ -1,3 +1,4 @@
+load("//pkg/sync/locking:locking.bzl", "declare_rwmutex")
 load("//tools:defs.bzl", "go_library", "go_test")
 
 package(
@@ -5,12 +6,24 @@ package(
     licenses = ["notice"],
 )
 
+declare_rwmutex(
+    name = "endpoint_mutex",
+    out = "endpoint_mutex.go",
+    package = "muxed",
+    prefix = "endpoint",
+)
+
 go_library(
     name = "muxed",
-    srcs = ["injectable.go"],
+    srcs = [
+        "endpoint_mutex.go",
+        "injectable.go",
+    ],
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/buffer",
+        "//pkg/sync",
+        "//pkg/sync/locking",
         "//pkg/tcpip",
         "//pkg/tcpip/header",
         "//pkg/tcpip/stack",

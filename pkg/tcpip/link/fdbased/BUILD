@@ -1,3 +1,4 @@
+load("//pkg/sync/locking:locking.bzl", "declare_mutex", "declare_rwmutex")
 load("//tools:defs.bzl", "go_library", "go_test")
 
 package(
@@ -5,15 +6,39 @@ package(
     licenses = ["notice"],
 )
 
+declare_mutex(
+    name = "processor_mutex",
+    out = "processor_mutex.go",
+    package = "fdbased",
+    prefix = "processor",
+)
+
+declare_rwmutex(
+    name = "endpoint_mutex",
+    out = "endpoint_mutex.go",
+    package = "fdbased",
+    prefix = "endpoint",
+)
+
+declare_rwmutex(
+    name = "injectable_endpoint_mutex",
+    out = "injectable_endpoint_mutex.go",
+    package = "fdbased",
+    prefix = "injectableEndpoint",
+)
+
 go_library(
     name = "fdbased",
     srcs = [
         "endpoint.go",
+        "endpoint_mutex.go",
         "endpoint_unsafe.go",
+        "injectable_endpoint_mutex.go",
         "mmap.go",
         "mmap_nonlinux.go",
         "mmap_unsafe.go",
         "packet_dispatchers.go",
+        "processor_mutex.go",
         "processors.go",
         "save_restore.go",
     ],
@@ -25,6 +50,7 @@ go_library(
         "//pkg/rawfile",
         "//pkg/sleep",
         "//pkg/sync",
+        "//pkg/sync/locking",
         "//pkg/tcpip",
         "//pkg/tcpip/hash/jenkins",
         "//pkg/tcpip/header",

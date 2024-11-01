@@ -1,3 +1,4 @@
+load("//pkg/sync/locking:locking.bzl", "declare_rwmutex")
 load("//tools:defs.bzl", "go_library", "go_test")
 
 package(
@@ -5,11 +6,27 @@ package(
     licenses = ["notice"],
 )
 
+declare_rwmutex(
+    name = "endpoint_mutex",
+    out = "endpoint_mutex.go",
+    package = "sharedmem",
+    prefix = "endpoint",
+)
+
+declare_rwmutex(
+    name = "server_endpoint_mutex",
+    out = "server_endpoint_mutex.go",
+    package = "sharedmem",
+    prefix = "serverEndpoint",
+)
+
 go_library(
     name = "sharedmem",
     srcs = [
+        "endpoint_mutex.go",
         "queuepair.go",
         "rx.go",
+        "server_endpoint_mutex.go",
         "server_rx.go",
         "server_tx.go",
         "sharedmem.go",
@@ -29,6 +46,7 @@ go_library(
         "//pkg/memutil",
         "//pkg/rawfile",
         "//pkg/sync",
+        "//pkg/sync/locking",
         "//pkg/tcpip",
         "//pkg/tcpip/header",
         "//pkg/tcpip/link/sharedmem/pipe",

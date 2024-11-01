@@ -1,3 +1,4 @@
+load("//pkg/sync/locking:locking.bzl", "declare_rwmutex")
 load("//tools:defs.bzl", "go_library", "go_test")
 
 package(
@@ -5,12 +6,31 @@ package(
     licenses = ["notice"],
 )
 
+declare_rwmutex(
+    name = "veth_mutex",
+    out = "veth_mutex.go",
+    package = "veth",
+    prefix = "veth",
+)
+
+declare_rwmutex(
+    name = "endpoint_mutex",
+    out = "endpoint_mutex.go",
+    package = "veth",
+    prefix = "endpoint",
+)
+
 go_library(
     name = "veth",
-    srcs = ["veth.go"],
+    srcs = [
+        "endpoint_mutex.go",
+        "veth.go",
+        "veth_mutex.go",
+    ],
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/sync",
+        "//pkg/sync/locking",
         "//pkg/tcpip",
         "//pkg/tcpip/header",
         "//pkg/tcpip/stack",

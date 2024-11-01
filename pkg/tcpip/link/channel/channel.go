@@ -20,7 +20,6 @@ package channel
 import (
 	"context"
 
-	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
@@ -44,7 +43,7 @@ type NotificationHandle struct {
 type queue struct {
 	// c is the outbound packet channel.
 	c  chan *stack.PacketBuffer
-	mu sync.RWMutex
+	mu queueRWMutex
 	// +checklocks:mu
 	notify []*NotificationHandle
 	// +checklocks:mu
@@ -142,7 +141,7 @@ type Endpoint struct {
 	LinkEPCapabilities stack.LinkEndpointCapabilities
 	SupportedGSOKind   stack.SupportedGSO
 
-	mu sync.RWMutex `state:"nosave"`
+	mu endpointRWMutex `state:"nosave"`
 	// +checklocks:mu
 	dispatcher stack.NetworkDispatcher
 	// +checklocks:mu

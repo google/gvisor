@@ -20,7 +20,6 @@ import (
 	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
-	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
@@ -46,7 +45,7 @@ var zeroMAC [6]byte
 type Device struct {
 	waiter.Queue
 
-	mu           sync.RWMutex `state:"nosave"`
+	mu           deviceRWMutex `state:"nosave"`
 	endpoint     *tunEndpoint
 	notifyHandle *channel.NotificationHandle
 	flags        Flags

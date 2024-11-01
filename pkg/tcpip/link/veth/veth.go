@@ -16,7 +16,6 @@
 package veth
 
 import (
-	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
@@ -27,7 +26,7 @@ var _ stack.GSOEndpoint = (*Endpoint)(nil)
 
 // +stateify savable
 type veth struct {
-	mu           sync.RWMutex `state:"nosave"`
+	mu           vethRWMutex `state:"nosave"`
 	closed       bool
 	backlogQueue chan vethPacket `state:"nosave"`
 	mtu          uint32
@@ -73,7 +72,7 @@ type Endpoint struct {
 
 	veth *veth
 
-	mu sync.RWMutex `state:"nosave"`
+	mu endpointRWMutex `state:"nosave"`
 	// +checklocks:mu
 	dispatcher stack.NetworkDispatcher
 	// linkAddr is the local address of this endpoint.

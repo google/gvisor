@@ -21,8 +21,6 @@
 package loopback
 
 import (
-	"sync"
-
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
@@ -34,7 +32,7 @@ const (
 
 // +stateify savable
 type endpoint struct {
-	mu sync.RWMutex `state:"nosave"`
+	mu endpointRWMutex `state:"nosave"`
 	// +checklocks:mu
 	dispatcher stack.NetworkDispatcher
 	// +checklocks:mu

@@ -32,7 +32,7 @@ import (
 
 // +stateify savable
 type processor struct {
-	mu sync.Mutex `state:"nosave"`
+	mu processorMutex `state:"nosave"`
 	// +checklocks:mu
 	pkts stack.PacketBufferList
 

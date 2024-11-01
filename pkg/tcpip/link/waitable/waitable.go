@@ -37,7 +37,7 @@ var _ stack.LinkEndpoint = (*Endpoint)(nil)
 type Endpoint struct {
 	dispatchGate sync.Gate
 
-	mu sync.RWMutex `state:"nosave"`
+	mu endpointRWMutex `state:"nosave"`
 	// +checklocks:mu
 	dispatcher stack.NetworkDispatcher
 

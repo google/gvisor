@@ -63,7 +63,7 @@ type serverEndpoint struct {
 	onClosed func(tcpip.Error) `state:"nosave"`
 
 	// mu protects the following fields.
-	mu sync.RWMutex `state:"nosave"`
+	mu serverEndpointRWMutex `state:"nosave"`
 
 	// tx is the transmit queue.
 	// +checklocks:mu

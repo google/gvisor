@@ -133,7 +133,7 @@ type endpoint struct {
 
 	inboundDispatchers []linkDispatcher
 
-	mu sync.RWMutex `state:"nosave"`
+	mu endpointRWMutex `state:"nosave"`
 	// +checklocks:mu
 	dispatcher stack.NetworkDispatcher
 
@@ -863,7 +863,7 @@ func (*endpoint) SetOnCloseAction(func()) {}
 type InjectableEndpoint struct {
 	endpoint
 
-	mu sync.RWMutex `state:"nosave"`
+	mu injectableEndpointRWMutex `state:"nosave"`
 	// +checklocks:mu
 	dispatcher stack.NetworkDispatcher
 }
