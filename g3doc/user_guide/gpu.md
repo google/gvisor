@@ -203,7 +203,7 @@ Occasionally, you may also need to dig into the Nvidia GPU Driver itself. To do
 so, you can install the OSS Driver repo and checkout the appropriate driver
 version.
 
-```
+```bash
 DRIVER_VERSION=550.54.15
 git clone https://github.com/NVIDIA/open-gpu-kernel-modules.git
 cd open-gpu-kernel-modules
@@ -218,7 +218,7 @@ should be able to see the prints via `dmesg(1)`.
 Then uninstall the existing Nvidia driver, build kernel module from local source
 files and reinstall it.
 
-```
+```bash
 sudo /usr/bin/nvidia-uninstall
 make modules -j$(nproc)
 sudo make modules_install -j$(nproc)
@@ -230,6 +230,22 @@ sudo insmod kernel-open/nvidia-modeset.ko
 # Install the user-space NVIDIA GPU driver components using the .run file.
 sudo sh NVIDIA-Linux-x86_64-$DRIVER_VERSION.run --no-kernel-modules
 ```
+
+### Host Configurations
+
+<!---
+TODO(b/324257702): Remove this section once this is fixed.
+-->
+
+When downloading large models within gVisor, you might encounter application
+segmentation faults due to host VMA exhaustion. To workaround this, you can set
+the value of `/proc/sys/vm/max_map_count` to a large number.
+
+```bash
+echo 1000000 | sudo tee /proc/sys/vm/max_map_count
+```
+
+Alternatively, you can also just pass the runsc flag `--host-settings=enforce`.
 
 ## Security
 
