@@ -58,7 +58,7 @@ type discipline struct {
 type queueDispatcher struct {
 	lower stack.LinkWriter
 
-	mu sync.Mutex `state:"nosave"`
+	mu queueDispatcherMutex `state:"nosave"`
 	// +checklocks:mu
 	queue packetBufferCircularList
 

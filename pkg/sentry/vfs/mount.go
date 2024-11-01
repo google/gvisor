@@ -1366,17 +1366,20 @@ func (vfs *VirtualFilesystem) GenerateProcMounts(ctx context.Context, taskRootDi
 			mount:  mnt,
 			dentry: mnt.root,
 		}
+		if mp := vfs.getMountPromise(mntRootVD); mp != nil && !mp.resolved.Load() {
+			// Skip unresolved mount promises for consistency with
+			// GenerateProcMountInfo.
+			continue
+		}
 		path, err := vfs.PathnameReachable(ctx, taskRootDir, mntRootVD)
 		if err != nil {
-			// For some reason we didn't get a path. Log a warning
-			// and run with empty path.
+			// For some reason we didn't get a path.
 			ctx.Warningf("VFS.GenerateProcMounts: error getting pathname for mount root: %v", err)
-			path = ""
+			continue
 		}
 		if path == "" {
-			// Either an error occurred, or path is not reachable
-			// from root.
-			break
+			// The path is not reachable from root.
+			continue
 		}
 
 		mntOpts := mnt.Options()
@@ -1433,10 +1436,14 @@ func (vfs *VirtualFilesystem) GenerateProcMountInfo(ctx context.Context, taskRoo
 			mount:  mnt,
 			dentry: mnt.root,
 		}
+		if mp := vfs.getMountPromise(mntRootVD); mp != nil && !mp.resolved.Load() {
+			// Skip unresolved mount promises to prevent mounters from
+			// deadlocking by reading /proc/*/mountinfo.
+			continue
+		}
 		pathFromRoot, err := vfs.PathnameReachable(ctx, taskRootDir, mntRootVD)
 		if err != nil {
-			// For some reason we didn't get a path. Log a warning
-			// and run with empty path.
+			// For some reason we didn't get a path.
 			ctx.Warningf("VFS.GenerateProcMountInfo: error getting pathname for mount root: %v", err)
 			continue
 		}

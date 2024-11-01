@@ -16,8 +16,6 @@
 package muxed
 
 import (
-	"sync"
-
 	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -33,7 +31,7 @@ import (
 type InjectableEndpoint struct {
 	routes map[tcpip.Address]stack.InjectableLinkEndpoint
 
-	mu sync.RWMutex `state:"nosave"`
+	mu endpointRWMutex `state:"nosave"`
 	// +checklocks:mu
 	dispatcher stack.NetworkDispatcher
 }
