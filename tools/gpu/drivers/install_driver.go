@@ -273,6 +273,13 @@ func installDriver(driverPath string) error {
 	cmd := exec.Command(driverPath, driverArgs...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
+	if osIsUbuntu2204() {
+		// As of this writing (2024), current Ubuntu 22.04 kernels are built
+		// with gcc-12, but Ubuntu 22.04 defaults to gcc-11, so unless we force
+		// the former, building the kernel driver will fail with
+		// `cc: error: unrecognized command-line option '-ftrivial-auto-var-init=zero'`.
+		cmd.Env = append(cmd.Environ(), "CC=/usr/bin/gcc-12")
+	}
 	if err := cmd.Run(); err != nil {
 		tryToPrintFailureLogs()
 		return fmt.Errorf("failed to run nvidia-install: %w out: %s", err, string(out))
@@ -306,4 +313,28 @@ func tryToPrintFailureLogs() {
 	for _, line := range strings.Split(string(out), "\n") {
 		fmt.Printf("[nvidia-installer]: %s\n", line)
 	}
+}
+
+func osIsUbuntu2204() bool {
+	m, err := getOSRelease()
+	if err != nil {
+		log.Warningf("Failed to determine Linux distribution: %v", err)
+		return false
+	}
+	return m["ID"] == "ubuntu" && m["VERSION_ID"] == "22.04"
+}
+
+func getOSRelease() (map[string]string, error) {
+	const path = "/etc/os-release"
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read %s: %v", path, err)
+	}
+	m := make(map[string]string)
+	for _, line := range strings.Split(string(data), "\n") {
+		if kv := strings.SplitN(line, "=", 2); len(kv) == 2 {
+			m[kv[0]] = strings.Trim(kv[1], "\"")
+		}
+	}
+	return m, nil
 }
