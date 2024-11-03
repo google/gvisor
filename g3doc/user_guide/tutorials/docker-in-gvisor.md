@@ -6,6 +6,24 @@ applications.
 In gVisor, all basic docker commands should function as expected. The host
 network driver and the bridge network driver are tested and supported.
 
+### NOTE on runsc setup
+
+To run docker within gvisor, runsc must be enable to to allow raw sockets. This is
+not the default, `--net-raw` must be passed to runsc. To use the following tutorial,
+that means having the following configuration in `/etc/docker/daemon.json`:
+
+```json
+        "runsc": {
+            "path": "/usr/local/bin/runsc",
+            "runtimeArgs": [
+                "--net-raw"
+            ]
+        }
+```
+
+If you have an existing entry for `runsc`, likely created by `runsc install`, then
+edit the entry and add the `"runtimeArgs"` key and value to the existing entry.
+
 ## How to run Docker in a gVisor container
 
 First, prepare a container image with pre-installed Docker:
