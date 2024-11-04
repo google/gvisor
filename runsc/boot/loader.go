@@ -1667,8 +1667,15 @@ func (l *Loader) signalForegrondProcessGroup(cid string, tgid kernel.ThreadID, s
 	if tty == nil {
 		return fmt.Errorf("no TTY attached")
 	}
-	pg, _ := tty.ThreadGroup().ForegroundProcessGroup(tty.TTY())
 	si := &linux.SignalInfo{Signo: signo}
+	ttyTg := tty.ThreadGroup()
+	if ttyTg == nil {
+		// No thread group has been set. Signal the original thread
+		// group.
+		log.Warningf("No thread group for container %q and PID %d. Sending signal directly to PID %d.", cid, tgid, tgid)
+		return l.k.SendExternalSignalThreadGroup(tg, si)
+	}
+	pg, _ := ttyTg.ForegroundProcessGroup(tty.TTY())
 	if pg == nil {
 		// No foreground process group has been set. Signal the
 		// original thread group.

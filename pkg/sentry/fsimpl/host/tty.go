@@ -334,11 +334,12 @@ func (t *TTYFileDescription) checkChange(ctx context.Context, sig linux.Signal) 
 
 	tg := task.ThreadGroup()
 	pg := tg.ProcessGroup()
+	ttyTg := t.tty.ThreadGroup()
 
 	// If the session for the task is different than the session for the
 	// controlling TTY, then the change is allowed. Seems like a bad idea,
 	// but that's exactly what linux does.
-	if tg.Session() != t.tty.ThreadGroup().Session() {
+	if ttyTg == nil || tg.Session() != ttyTg.Session() {
 		return nil
 	}
 
