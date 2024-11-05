@@ -3792,6 +3792,13 @@ func TestSpecValidation(t *testing.T) {
 			},
 			wantErr: "",
 		},
+		{
+			name: "Capabilities",
+			mutate: func(spec, restoreSpec *specs.Spec, _, _ string) {
+				restoreSpec.Process.Capabilities.Bounding = append(restoreSpec.Process.Capabilities.Bounding, "CAP_NET_RAW")
+			},
+			wantErr: "Capabilities does not match across checkpoint restore",
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

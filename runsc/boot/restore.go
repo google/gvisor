@@ -314,6 +314,29 @@ func validateArray[T any](field, cName string, oldArr, newArr []T) error {
 	return nil
 }
 
+func sortCapabilities(o *specs.LinuxCapabilities) {
+	sort.Strings(o.Bounding)
+	sort.Strings(o.Effective)
+	sort.Strings(o.Inheritable)
+	sort.Strings(o.Permitted)
+	sort.Strings(o.Ambient)
+}
+
+func validateCapabilities(field, cName string, oldCaps, newCaps *specs.LinuxCapabilities) error {
+	if oldCaps == nil && newCaps == nil {
+		return nil
+	}
+	if oldCaps == nil || newCaps == nil {
+		return validateError(field, cName, oldCaps, newCaps)
+	}
+	sortCapabilities(oldCaps)
+	sortCapabilities(newCaps)
+	if !reflect.DeepEqual(oldCaps, newCaps) {
+		return validateError(field, cName, oldCaps, newCaps)
+	}
+	return nil
+}
+
 func validateStruct(field, cName string, oldS, newS any) error {
 	if !reflect.DeepEqual(oldS, newS) {
 		return validateError(field, cName, oldS, newS)
@@ -355,6 +378,9 @@ func validateSpecForContainer(oldSpec, newSpec *specs.Spec, cName string) error 
 	if ok := slices.Equal(oldProcess.Args, newProcess.Args); !ok {
 		return validateError("Args", cName, oldProcess.Args, newProcess.Args)
 	}
+	if err := validateCapabilities("Capabilities", cName, oldProcess.Capabilities, newProcess.Capabilities); err != nil {
+		return err
+	}
 
 	// Validate specs.Linux.
 	validateStructMap["Sysctl"] = [2]any{oldLinux.Sysctl, newLinux.Sysctl}
@@ -382,7 +408,7 @@ func validateSpecForContainer(oldSpec, newSpec *specs.Spec, cName string) error 
 		return err
 	}
 
-	// TODO(b/359591006): Validate Linux.Resources and Process.Capabilities.
+	// TODO(b/359591006): Validate Linux.Resources.
 	// TODO(b/359591006): Check other remaining fields for equality.
 	return nil
 }
