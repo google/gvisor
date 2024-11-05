@@ -337,6 +337,31 @@ func validateCapabilities(field, cName string, oldCaps, newCaps *specs.LinuxCapa
 	return nil
 }
 
+func validateResources(field, cName string, oldR, newR *specs.LinuxResources) error {
+	if oldR == nil && newR == nil {
+		return nil
+	}
+	if oldR == nil || newR == nil {
+		return validateError(field, cName, oldR, newR)
+	}
+	before := *oldR
+	after := *newR
+	if err := validateArray(field+".HugepageLimits", cName, before.HugepageLimits, after.HugepageLimits); err != nil {
+		return validateError(field, cName, oldR, newR)
+	}
+	before.HugepageLimits, after.HugepageLimits = nil, nil
+
+	// LinuxResources.Devices is not used in gVisor, also the major and minor
+	// versions of the devices can change across checkpoint restore. Mark them
+	// to nil as there is no need to validate each device.
+	before.Devices, after.Devices = nil, nil
+
+	if !reflect.DeepEqual(before, after) {
+		return validateError(field, cName, oldR, newR)
+	}
+	return nil
+}
+
 func validateStruct(field, cName string, oldS, newS any) error {
 	if !reflect.DeepEqual(oldS, newS) {
 		return validateError(field, cName, oldS, newS)
@@ -388,6 +413,9 @@ func validateSpecForContainer(oldSpec, newSpec *specs.Spec, cName string) error 
 	if err := validateDevices("Devices", cName, oldLinux.Devices, newLinux.Devices); err != nil {
 		return err
 	}
+	if err := validateResources("Resources", cName, oldLinux.Resources, newLinux.Resources); err != nil {
+		return err
+	}
 	if err := validateArray("UIDMappings", cName, oldLinux.UIDMappings, newLinux.UIDMappings); err != nil {
 		return err
 	}
@@ -408,7 +436,6 @@ func validateSpecForContainer(oldSpec, newSpec *specs.Spec, cName string) error 
 		return err
 	}
 
-	// TODO(b/359591006): Validate Linux.Resources.
 	// TODO(b/359591006): Check other remaining fields for equality.
 	return nil
 }
