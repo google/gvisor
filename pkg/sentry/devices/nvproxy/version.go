@@ -655,7 +655,7 @@ func Init() {
 			return abi
 		}
 
-		v550_54_14 := func() *driverABI {
+		v550_54_14 := addDriverABI(550, 54, 14, "8c497ff1cfc7c310fb875149bc30faa4fd26d2237b2cba6cd2e8b0780157cfe3", func() *driverABI {
 			abi := v550_40_07()
 			abi.uvmIoctl[nvgpu.UVM_ALLOC_SEMAPHORE_POOL] = uvmIoctlSimple[nvgpu.UVM_ALLOC_SEMAPHORE_POOL_PARAMS_V550]
 			abi.uvmIoctl[nvgpu.UVM_MAP_EXTERNAL_ALLOCATION] = uvmIoctlHasFrontendFD[nvgpu.UVM_MAP_EXTERNAL_ALLOCATION_PARAMS_V550]
@@ -670,12 +670,11 @@ func Init() {
 			}
 
 			return abi
-		}
-		_ = addDriverABI(550, 54, 14, "8c497ff1cfc7c310fb875149bc30faa4fd26d2237b2cba6cd2e8b0780157cfe3", v550_54_14)
+		})
 
 		v550_54_15 := addDriverABI(550, 54, 15, "2e859ae5f912a9a47aaa9b2d40a94a14f6f486b5d3b67c0ddf8b72c1c9650385", v550_54_14)
 
-		v550_90_07 := func() *driverABI {
+		v550_90_07 := addDriverABI(550, 90, 07, "51acf579d5a9884f573a1d3f522e7fafa5e7841e22a9cec0b4bbeae31b0b9733", func() *driverABI {
 			abi := v550_54_15()
 			abi.controlCmd[nvgpu.NV_CONF_COMPUTE_CTRL_CMD_GPU_GET_KEY_ROTATION_STATE] = rmControlSimple
 
@@ -688,8 +687,24 @@ func Init() {
 			}
 
 			return abi
+		})
+
+		// 555.42.02 is an intermediate unqualified version.
+		v555_42_02 := func() *driverABI {
+			abi := v550_90_07()
+			// NVC36F_CTRL_GET_CLASS_ENGINEID was deleted in 555.42.02:
+			// https://github.com/NVIDIA/open-gpu-kernel-modules/commit/5a1c474040e1c3ed20760267510cc9d9332898f1
+			delete(abi.controlCmd, nvgpu.NVC36F_CTRL_GET_CLASS_ENGINEID)
+			prevNames := abi.getStructNames
+			abi.getStructNames = func() *driverStructNames {
+				names := prevNames()
+				delete(names.controlNames, nvgpu.NVC36F_CTRL_GET_CLASS_ENGINEID)
+				return names
+			}
+			return abi
 		}
-		_ = addDriverABI(550, 90, 07, "51acf579d5a9884f573a1d3f522e7fafa5e7841e22a9cec0b4bbeae31b0b9733", v550_90_07)
+
+		_ = addDriverABI(560, 35, 03, "f2932c92fadd43c5b2341be453fc4f73f0ad7185c26bb7a43fbde81ae29f1fe3", v555_42_02)
 	})
 }
 

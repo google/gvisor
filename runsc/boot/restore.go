@@ -357,9 +357,6 @@ func validateSpecForContainer(oldSpec, newSpec *specs.Spec, cName string) error 
 	}
 
 	// Validate specs.Linux.
-	if oldLinux.CgroupsPath != newLinux.CgroupsPath {
-		return validateError("CgroupsPath", cName, oldLinux.CgroupsPath, newLinux.CgroupsPath)
-	}
 	validateStructMap["Sysctl"] = [2]any{oldLinux.Sysctl, newLinux.Sysctl}
 	validateStructMap["Seccomp"] = [2]any{oldLinux.Seccomp, newLinux.Seccomp}
 	if err := validateDevices("Devices", cName, oldLinux.Devices, newLinux.Devices); err != nil {

@@ -28,6 +28,22 @@ type bridgePort struct {
 	nic    *nic
 }
 
+// BridgeFDBKey is the MAC address of a device which a bridge port is associated with.
+type BridgeFDBKey tcpip.LinkAddress
+
+// BridgeFDBEntry consists of all metadata for a FDB record.
+type BridgeFDBEntry struct {
+	port *bridgePort
+}
+
+// PortLinkAddress returns the mac address of the device that is bound to the bridge port.
+func (e BridgeFDBEntry) PortLinkAddress() tcpip.LinkAddress {
+	if e.port == nil {
+		return ""
+	}
+	return e.port.nic.LinkAddress()
+}
+
 // ParseHeader implements stack.LinkEndpoint.
 func (p *bridgePort) ParseHeader(pkt *PacketBuffer) bool {
 	_, ok := pkt.LinkHeader().Consume(header.EthernetMinimumSize)
@@ -37,23 +53,49 @@ func (p *bridgePort) ParseHeader(pkt *PacketBuffer) bool {
 // DeliverNetworkPacket implements stack.NetworkDispatcher.
 func (p *bridgePort) DeliverNetworkPacket(protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer) {
 	bridge := p.bridge
+	eth := header.Ethernet(pkt.LinkHeader().Slice())
+	updateFDB := false
 	bridge.mu.RLock()
-
-	// Send the packet to all other ports.
-	for _, port := range bridge.ports {
-		if p == port {
-			continue
+	// Add an entry at the bridge FDB, it maps a MAC address
+	// to a bridge port where the traffic is received when
+	// the MAC address is not multicast.
+	// Network packets that are sent to the learned MAC address
+	// will be forwarded to the bridge port that is stored in
+	// the FDB table.
+	sourceAddress := eth.SourceAddress()
+	if _, hasSourceFDB := bridge.fdbTable[BridgeFDBKey(sourceAddress)]; !header.IsMulticastEthernetAddress(sourceAddress) && !hasSourceFDB {
+		updateFDB = true
+	}
+	if entry, exist := bridge.fdbTable[BridgeFDBKey(eth.DestinationAddress())]; !exist {
+		// When no FDB entry is found, send the packet to all ports.
+		for _, port := range bridge.ports {
+			if p == port {
+				continue
+			}
+			newPkt := NewPacketBuffer(PacketBufferOptions{
+				ReserveHeaderBytes: int(port.nic.MaxHeaderLength()),
+				Payload:            pkt.ToBuffer(),
+			})
+			port.nic.writeRawPacket(newPkt)
+			newPkt.DecRef()
 		}
+	} else if entry.port != p {
+		destPort := entry.port
 		newPkt := NewPacketBuffer(PacketBufferOptions{
-			ReserveHeaderBytes: int(port.nic.MaxHeaderLength()),
+			ReserveHeaderBytes: int(destPort.nic.MaxHeaderLength()),
 			Payload:            pkt.ToBuffer(),
 		})
-		port.nic.writeRawPacket(newPkt)
+		destPort.nic.writeRawPacket(newPkt)
 		newPkt.DecRef()
 	}
 
 	d := bridge.dispatcher
 	bridge.mu.RUnlock()
+	if updateFDB {
+		bridge.mu.Lock()
+		bridge.addFDBEntryLocked(eth.SourceAddress(), p, 0)
+		bridge.mu.Unlock()
+	}
 	if d != nil {
 		// The dispatcher may acquire Stack.mu in DeliverNetworkPacket(), which is
 		// ordered above bridge.mu. So call DeliverNetworkPacket() without holding
@@ -72,6 +114,7 @@ func NewBridgeEndpoint(mtu uint32) *BridgeEndpoint {
 		addr: tcpip.GetRandMacAddr(),
 	}
 	b.ports = make(map[tcpip.NICID]*bridgePort)
+	b.fdbTable = make(map[BridgeFDBKey]BridgeFDBEntry)
 	return b
 }
 
@@ -89,7 +132,9 @@ type BridgeEndpoint struct {
 	// +checklocks:mu
 	attached bool
 	// +checklocks:mu
-	mtu             uint32
+	mtu uint32
+	// +checklocks:mu
+	fdbTable        map[BridgeFDBKey]BridgeFDBEntry
 	maxHeaderLength atomicbitops.Uint32
 }
 
@@ -143,6 +188,12 @@ func (b *BridgeEndpoint) DelNIC(nic *nic) tcpip.Error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
+	port := b.ports[nic.id]
+	for k, e := range b.fdbTable {
+		if e.port == port {
+			delete(b.fdbTable, k)
+		}
+	}
 	delete(b.ports, nic.id)
 	nic.NetworkLinkEndpoint.Attach(nic)
 	return nil
@@ -198,6 +249,7 @@ func (b *BridgeEndpoint) Attach(dispatcher NetworkDispatcher) {
 	}
 	b.dispatcher = dispatcher
 	b.ports = make(map[tcpip.NICID]*bridgePort)
+	b.fdbTable = make(map[BridgeFDBKey]BridgeFDBEntry)
 }
 
 // IsAttached implements stack.LinkEndpoint.IsAttached.
@@ -230,3 +282,25 @@ func (b *BridgeEndpoint) Close() {}
 
 // SetOnCloseAction implements stack.LinkEndpoint.Close.
 func (b *BridgeEndpoint) SetOnCloseAction(func()) {}
+
+// Add a new FDBEntry by learning. The learning happens when a packaet
+// is recevied by a bridge port, the bridge will use the port for the future
+// deliveries to the NIC device.
+// The addr is the key when it looks for the entry.
+//
+// +checklocks:b.mu
+func (b *BridgeEndpoint) addFDBEntryLocked(addr tcpip.LinkAddress, source *bridgePort, flags uint64) bool {
+	// TODO(b/376924093): limit bridge FDB size.
+	b.fdbTable[BridgeFDBKey(addr)] = BridgeFDBEntry{
+		port: source,
+	}
+	return true
+}
+
+// FindFDBEntry find the FDB entry for the given address. If it doesn't exist,
+// it will return an empty entry.
+func (b *BridgeEndpoint) FindFDBEntry(addr tcpip.LinkAddress) BridgeFDBEntry {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.fdbTable[BridgeFDBKey(addr)]
+}

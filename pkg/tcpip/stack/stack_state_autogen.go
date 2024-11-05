@@ -173,6 +173,7 @@ func (b *BridgeEndpoint) StateFields() []string {
 		"addr",
 		"attached",
 		"mtu",
+		"fdbTable",
 		"maxHeaderLength",
 	}
 }
@@ -187,7 +188,8 @@ func (b *BridgeEndpoint) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(2, &b.addr)
 	stateSinkObject.Save(3, &b.attached)
 	stateSinkObject.Save(4, &b.mtu)
-	stateSinkObject.Save(5, &b.maxHeaderLength)
+	stateSinkObject.Save(5, &b.fdbTable)
+	stateSinkObject.Save(6, &b.maxHeaderLength)
 }
 
 func (b *BridgeEndpoint) afterLoad(context.Context) {}
@@ -199,7 +201,8 @@ func (b *BridgeEndpoint) StateLoad(ctx context.Context, stateSourceObject state.
 	stateSourceObject.Load(2, &b.addr)
 	stateSourceObject.Load(3, &b.attached)
 	stateSourceObject.Load(4, &b.mtu)
-	stateSourceObject.Load(5, &b.maxHeaderLength)
+	stateSourceObject.Load(5, &b.fdbTable)
+	stateSourceObject.Load(6, &b.maxHeaderLength)
 }
 
 func (t *tuple) StateTypeName() string {

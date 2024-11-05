@@ -82,6 +82,73 @@ func copyFile(dst, src string) error {
 	return err
 }
 
+// setupMinimalProcfs creates a minimal procfs-like tree at `${chroot}/proc`.
+func setupMinimalProcfs(chroot string) error {
+	// We can't always directly mount procfs because it may be obstructed
+	// by submounts within it. See https://gvisor.dev/issue/10944.
+	// All we really need from procfs is /proc/self and a few kernel
+	// parameter files, which are typically not obstructed.
+	// So we create a tmpfs at /proc and manually copy the kernel parameter
+	// files into it. Then, to get /proc/self, we mount either a new
+	// instance of procfs (if possible), or a recursive bind mount of the
+	// procfs we do have access to (which still contains the obstructed
+	// submounts but /proc/self is not obstructed), and we symlink
+	// our /proc/self to the one in that mount.
+	//
+	// Why not try to mount the new procfs instance at /proc directly?
+	// Because that would cause the set of files at /proc to differ
+	// between the "new procfs instance" case and the "recursive bind
+	// mount" case. Thus, this could introduce a bug whereby gVisor starts
+	// to depend on a /proc file that is present in one case but not the
+	// other, without decent test coverage to catch it.
+	procRoot := filepath.Join(chroot, "/proc")
+	if err := os.Mkdir(procRoot, 0755); err != nil {
+		return fmt.Errorf("error creating /proc in chroot: %v", err)
+	}
+	if err := specutils.SafeMount("runsc-proc", procRoot, "tmpfs",
+		unix.MS_NOSUID|unix.MS_NODEV|unix.MS_NOEXEC, "", "/proc"); err != nil {
+		return fmt.Errorf("error mounting tmpfs in /proc: %v", err)
+	}
+	flags := uint32(unix.MS_NOSUID | unix.MS_NODEV | unix.MS_NOEXEC | unix.MS_RDONLY)
+	procSubmountDir := "sandbox-proc"
+	if newProcfsErr := mountInChroot(chroot, "proc", "/proc/"+procSubmountDir, "proc", flags); newProcfsErr != nil {
+		log.Debugf("Unable to mount a new instance of the procfs file system at %q (%v); trying a recursive bind mount instead.", filepath.Join(procRoot, procSubmountDir), newProcfsErr)
+		procSubmountDir = "host-proc"
+		if bindErr := mountInChroot(chroot, "/proc", "/proc/"+procSubmountDir, "bind",
+			unix.MS_BIND|unix.MS_REC|flags); bindErr != nil {
+			return fmt.Errorf("error recursively bind-mounting proc at %q (%w) after also failing to mount a new procfs instance there (%v)", filepath.Join(procRoot, procSubmountDir), bindErr, newProcfsErr)
+		}
+		log.Debugf("Successfully mounted a recursive bind mount of procfs at %q; continuing.", filepath.Join(procRoot, procSubmountDir))
+	}
+	// Create needed directories.
+	for _, d := range []string{
+		"/proc/sys",
+		"/proc/sys/kernel",
+		"/proc/sys/vm",
+	} {
+		if err := os.Mkdir(filepath.Join(chroot, d), 0755); err != nil {
+			return fmt.Errorf("error creating directory %q: %v", filepath.Join(chroot, d), err)
+		}
+	}
+	// Copy needed files.
+	for _, f := range []string{
+		"/proc/sys/vm/mmap_min_addr",
+		"/proc/sys/kernel/cap_last_cap",
+	} {
+		if err := copyFile(filepath.Join(chroot, f), f); err != nil {
+			return fmt.Errorf("failed to copy %q -> %q: %w", f, filepath.Join(chroot, f), err)
+		}
+	}
+	// Create symlink for /proc/self.
+	if err := os.Symlink(procSubmountDir+"/self", filepath.Join(procRoot, "self")); err != nil {
+		return fmt.Errorf("error creating symlink %q -> %q: %w", filepath.Join(procRoot, "self"), procSubmountDir+"/self", err)
+	}
+	if err := os.Chmod(procRoot, 0o111); err != nil {
+		return fmt.Errorf("error chmodding %q: %v", procRoot, err)
+	}
+	return nil
+}
+
 // setUpChroot creates an empty directory with runsc mounted at /runsc and proc
 // mounted at /proc.
 func setUpChroot(spec *specs.Spec, conf *config.Config) error {
@@ -109,9 +176,8 @@ func setUpChroot(spec *specs.Spec, conf *config.Config) error {
 		log.Warningf("Failed to copy /etc/localtime: %v. UTC timezone will be used.", err)
 	}
 
-	flags := uint32(unix.MS_NOSUID | unix.MS_NODEV | unix.MS_NOEXEC | unix.MS_RDONLY)
-	if err := mountInChroot(chroot, "proc", "/proc", "proc", flags); err != nil {
-		return fmt.Errorf("error mounting proc in chroot: %v", err)
+	if err := setupMinimalProcfs(chroot); err != nil {
+		return fmt.Errorf("error setting up minimal procfs in chroot %q: %v", chroot, err)
 	}
 
 	if err := tpuProxyUpdateChroot("/", chroot, spec, conf); err != nil {
