@@ -314,6 +314,54 @@ func validateArray[T any](field, cName string, oldArr, newArr []T) error {
 	return nil
 }
 
+func sortCapabilities(o *specs.LinuxCapabilities) {
+	sort.Strings(o.Bounding)
+	sort.Strings(o.Effective)
+	sort.Strings(o.Inheritable)
+	sort.Strings(o.Permitted)
+	sort.Strings(o.Ambient)
+}
+
+func validateCapabilities(field, cName string, oldCaps, newCaps *specs.LinuxCapabilities) error {
+	if oldCaps == nil && newCaps == nil {
+		return nil
+	}
+	if oldCaps == nil || newCaps == nil {
+		return validateError(field, cName, oldCaps, newCaps)
+	}
+	sortCapabilities(oldCaps)
+	sortCapabilities(newCaps)
+	if !reflect.DeepEqual(oldCaps, newCaps) {
+		return validateError(field, cName, oldCaps, newCaps)
+	}
+	return nil
+}
+
+func validateResources(field, cName string, oldR, newR *specs.LinuxResources) error {
+	if oldR == nil && newR == nil {
+		return nil
+	}
+	if oldR == nil || newR == nil {
+		return validateError(field, cName, oldR, newR)
+	}
+	before := *oldR
+	after := *newR
+	if err := validateArray(field+".HugepageLimits", cName, before.HugepageLimits, after.HugepageLimits); err != nil {
+		return validateError(field, cName, oldR, newR)
+	}
+	before.HugepageLimits, after.HugepageLimits = nil, nil
+
+	// LinuxResources.Devices is not used in gVisor, also the major and minor
+	// versions of the devices can change across checkpoint restore. Mark them
+	// to nil as there is no need to validate each device.
+	before.Devices, after.Devices = nil, nil
+
+	if !reflect.DeepEqual(before, after) {
+		return validateError(field, cName, oldR, newR)
+	}
+	return nil
+}
+
 func validateStruct(field, cName string, oldS, newS any) error {
 	if !reflect.DeepEqual(oldS, newS) {
 		return validateError(field, cName, oldS, newS)
@@ -355,11 +403,17 @@ func validateSpecForContainer(oldSpec, newSpec *specs.Spec, cName string) error 
 	if ok := slices.Equal(oldProcess.Args, newProcess.Args); !ok {
 		return validateError("Args", cName, oldProcess.Args, newProcess.Args)
 	}
+	if err := validateCapabilities("Capabilities", cName, oldProcess.Capabilities, newProcess.Capabilities); err != nil {
+		return err
+	}
 
 	// Validate specs.Linux.
 	validateStructMap["Sysctl"] = [2]any{oldLinux.Sysctl, newLinux.Sysctl}
 	validateStructMap["Seccomp"] = [2]any{oldLinux.Seccomp, newLinux.Seccomp}
 	if err := validateDevices("Devices", cName, oldLinux.Devices, newLinux.Devices); err != nil {
+		return err
+	}
+	if err := validateResources("Resources", cName, oldLinux.Resources, newLinux.Resources); err != nil {
 		return err
 	}
 	if err := validateArray("UIDMappings", cName, oldLinux.UIDMappings, newLinux.UIDMappings); err != nil {
@@ -382,7 +436,6 @@ func validateSpecForContainer(oldSpec, newSpec *specs.Spec, cName string) error 
 		return err
 	}
 
-	// TODO(b/359591006): Validate Linux.Resources and Process.Capabilities.
 	// TODO(b/359591006): Check other remaining fields for equality.
 	return nil
 }
