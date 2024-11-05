@@ -662,9 +662,7 @@ func New(args Args) (*Loader, error) {
 		enableAutosave(l, args.Conf.TestOnlyAutosaveResume, l.saveFDs)
 	}
 
-	if err := l.kernelInitExtra(); err != nil {
-		return nil, err
-	}
+	l.kernelInitExtra()
 
 	// Create the control server using the provided FD.
 	//

@@ -291,7 +291,7 @@ func (f *MemoryFile) LoadFrom(ctx context.Context, r io.Reader, opts *LoadOpts) 
 	f.chunks.Store(&chunks)
 	log.Infof("MemoryFile(%p): loaded metadata in %s", f, time.Since(timeMetadataStart))
 	if err := f.file.Truncate(int64(len(chunks)) * chunkSize); err != nil {
-		return err
+		return fmt.Errorf("failed to truncate MemoryFile: %w", err)
 	}
 	// Obtain chunk mappings, then madvise them concurrently with loading data.
 	var (
@@ -385,7 +385,7 @@ func (f *MemoryFile) LoadFrom(ctx context.Context, r io.Reader, opts *LoadOpts) 
 		// Verify header.
 		length, object, err := state.ReadHeader(&wr)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to read header: %w", err)
 		}
 		if object {
 			// Not expected.
@@ -419,7 +419,7 @@ func (f *MemoryFile) LoadFrom(ctx context.Context, r io.Reader, opts *LoadOpts) 
 				_, ioErr = io.ReadFull(r, s)
 			})
 			if ioErr != nil {
-				return ioErr
+				return fmt.Errorf("failed to read pages: %w", ioErr)
 			}
 		}
 

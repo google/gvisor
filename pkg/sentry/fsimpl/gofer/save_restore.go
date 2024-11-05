@@ -196,7 +196,7 @@ func (fs *filesystem) CompleteRestore(ctx context.Context, opts vfs.CompleteRest
 	fs.inoByKey = make(map[inoKey]uint64)
 
 	if err := fs.restoreRoot(ctx, &opts); err != nil {
-		return err
+		return vfs.PrependErrMsg("failed to restore root", err)
 	}
 
 	// Restore remaining dentries.
@@ -260,7 +260,7 @@ func (fd *specialFileFD) completeRestore(ctx context.Context) error {
 	d := fd.dentry()
 	h, err := d.openHandle(ctx, fd.vfsfd.IsReadable(), fd.vfsfd.IsWritable(), false /* trunc */)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to open handle for specialFileFD for %q: %w", genericDebugPathname(d), err)
 	}
 	fd.handle = h
 
@@ -268,7 +268,7 @@ func (fd *specialFileFD) completeRestore(ctx context.Context) error {
 	fd.haveQueue = (ftype == linux.S_IFIFO || ftype == linux.S_IFSOCK) && fd.handle.fd >= 0
 	if fd.haveQueue {
 		if err := fdnotifier.AddFD(fd.handle.fd, &fd.queue); err != nil {
-			return err
+			return fmt.Errorf("failed to add FD to fdnotified for %q: %w", genericDebugPathname(d), err)
 		}
 	}
 
