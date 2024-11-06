@@ -41,6 +41,4 @@ func newProcInternalData(*specs.Spec) *proc.InternalData {
 	return &proc.InternalData{}
 }
 
-func (l *Loader) kernelInitExtra() error {
-	return nil
-}
+func (l *Loader) kernelInitExtra() {}

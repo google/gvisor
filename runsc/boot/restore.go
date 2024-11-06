@@ -546,7 +546,7 @@ func (r *restorer) restore(l *Loader) error {
 	err = loadOpts.Load(ctx, l.k, nil, oldInetStack, time.NewCalibratedClocks(), &vfs.CompleteRestoreOptions{}, l.saveRestoreNet)
 	r.pagesFile = nil // transferred to loadOpts.Load()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to load kernel: %w", err)
 	}
 
 	checkpointVersion := popVersionFromCheckpoint(l.k)
@@ -557,10 +557,10 @@ func (r *restorer) restore(l *Loader) error {
 
 	oldSpecs, err := popContainerSpecsFromCheckpoint(l.k)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to pop container specs from checkpoint: %w", err)
 	}
 	if err := validateSpecs(oldSpecs, l.containerSpecs); err != nil {
-		return err
+		return fmt.Errorf("failed to validate restore spec: %w", err)
 	}
 
 	// Since we have a new kernel we also must make a new watchdog.
@@ -613,9 +613,7 @@ func (r *restorer) restore(l *Loader) error {
 
 	l.k.RestoreContainerMapping(l.containerIDs)
 
-	if err := l.kernelInitExtra(); err != nil {
-		return err
-	}
+	l.kernelInitExtra()
 
 	// Refresh the control server with the newly created kernel.
 	l.ctrl.refreshHandlers()
@@ -625,7 +623,7 @@ func (r *restorer) restore(l *Loader) error {
 
 	// r.restoreDone() signals and waits for the sandbox to start.
 	if err := r.restoreDone(); err != nil {
-		return err
+		return fmt.Errorf("restorer.restoreDone callback failed: %w", err)
 	}
 
 	r.stateFile.Close()

@@ -645,13 +645,12 @@ func (d *directfsDentry) statfs() (linux.Statfs, error) {
 
 func (d *directfsDentry) restoreFile(ctx context.Context, controlFD int, opts *vfs.CompleteRestoreOptions) error {
 	if controlFD < 0 {
-		log.Warningf("directfsDentry.restoreFile called with invalid controlFD")
-		return unix.EINVAL
+		return fmt.Errorf("directfsDentry.restoreFile called with invalid controlFD")
 	}
 	var stat unix.Stat_t
 	if err := unix.Fstat(controlFD, &stat); err != nil {
 		_ = unix.Close(controlFD)
-		return err
+		return fmt.Errorf("failed to stat %q: %w", genericDebugPathname(&d.dentry), err)
 	}
 
 	d.controlFD = controlFD
@@ -688,7 +687,7 @@ func (d *directfsDentry) restoreFile(ctx context.Context, controlFD int, opts *v
 
 	if rw, ok := d.fs.savedDentryRW[&d.dentry]; ok {
 		if err := d.ensureSharedHandle(ctx, rw.read, rw.write, false /* trunc */); err != nil {
-			return err
+			return fmt.Errorf("failed to restore file handles (read=%t, write=%t) for %q: %w", rw.read, rw.write, genericDebugPathname(&d.dentry), err)
 		}
 	}
 

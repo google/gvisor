@@ -23,6 +23,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/buffer"
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -68,6 +69,8 @@ const (
 	forwardingDisabled = 0
 	forwardingEnabled  = 1
 )
+
+var martianPacketLogger = log.BasicRateLimitedLogger(time.Minute)
 
 var ipv4BroadcastAddr = header.IPv4Broadcast.WithPrefix()
 
@@ -839,11 +842,13 @@ func (e *endpoint) HandlePacket(pkt *stack.PacketBuffer) {
 	if !e.nic.IsLoopback() {
 		if !e.protocol.options.AllowExternalLoopbackTraffic {
 			if header.IsV4LoopbackAddress(h.SourceAddress()) {
+				martianPacketLogger.Infof("Martian packet dropped with loopback source address. If your traffic is unexpectedly dropped, you may want to allow martian packets.")
 				stats.InvalidSourceAddressesReceived.Increment()
 				return
 			}
 
 			if header.IsV4LoopbackAddress(h.DestinationAddress()) {
+				martianPacketLogger.Infof("Martian packet dropped with loopback destination address. If your traffic is unexpectedly dropped, you may want to allow martian packets.")
 				stats.InvalidDestinationAddressesReceived.Increment()
 				return
 			}

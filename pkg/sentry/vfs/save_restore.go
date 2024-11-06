@@ -36,6 +36,18 @@ func (e ErrCorruption) Error() string {
 	return "restore failed due to external file system state in corruption: " + e.Err.Error()
 }
 
+// PrependErrMsg prepends the passed prefix to the error while preserving
+// special vfs errors as the outer most error.
+func PrependErrMsg(prefix string, err error) error {
+	switch terr := err.(type) {
+	case ErrCorruption:
+		terr.Err = fmt.Errorf("%s: %w", prefix, terr.Err)
+		return terr
+	default:
+		return fmt.Errorf("%s: %w", prefix, err)
+	}
+}
+
 // FilesystemImplSaveRestoreExtension is an optional extension to
 // FilesystemImpl.
 type FilesystemImplSaveRestoreExtension interface {
@@ -68,7 +80,7 @@ func (vfs *VirtualFilesystem) CompleteRestore(ctx context.Context, opts *Complet
 		if ext, ok := fs.impl.(FilesystemImplSaveRestoreExtension); ok {
 			if err := ext.CompleteRestore(ctx, *opts); err != nil {
 				fs.DecRef(ctx)
-				return err
+				return PrependErrMsg(fmt.Sprintf("failed to complete restore for filesystem type %q", fs.fsType.Name()), err)
 			}
 		}
 		fs.DecRef(ctx)

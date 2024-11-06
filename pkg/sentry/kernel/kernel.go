@@ -839,7 +839,7 @@ func (k *Kernel) LoadFrom(ctx context.Context, r, pagesMetadata io.Reader, pages
 		pagesFile = nil // transferred to k.loadMemoryFiles()
 	}
 	if mfLoadErr != nil {
-		return mfLoadErr
+		return fmt.Errorf("failed to load memory files: %w", mfLoadErr)
 	}
 
 	if !saveRestoreNet {
@@ -861,7 +861,7 @@ func (k *Kernel) LoadFrom(ctx context.Context, r, pagesMetadata io.Reader, pages
 	}
 
 	if err := k.vfs.CompleteRestore(ctx, vfsOpts); err != nil {
-		return err
+		return vfs.PrependErrMsg("vfs.CompleteRestore() failed", err)
 	}
 
 	tcpip.AsyncLoading.Wait()
