@@ -1,0 +1,54 @@
+// Copyright 2024 The gVisor Authors.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//  http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+// This proto file is copied from
+// https://cos.googlesource.com/cos/tools/+/refs/heads/master/src/pkg/gpuconfig/proto/gpu_driver_versions.proto
+
+// gpu_driver_versions.proto schema
+syntax = "proto3";
+
+package cos_gpu;
+
+// Represents all the information about a GPU driver version.
+// It contains the GPU driver version label (e.g., "default", "latest"), and the
+// GPU driver version that is associated with that label.
+message DriverVersion {
+  // GPU driver version label.
+  string label = 1;
+
+  // The driver version that is associated with this label.
+  string version = 2;
+  // more metadata about the driver version.
+}
+// Represents the information about a GPU device.
+message GPUDevice {
+  // GPU type.
+  string gpu_type = 1;
+  // reserved for other GPU Device info needed to be included in the proto
+  // e.g. string pci_value = 2; // PCI identifier for the GPU
+}
+// Represents GPU driver version information for a specific GPU type, mapping
+// from GPU type to GPU driver version information.
+message GPUDriverVersionInfo {
+  // Encapsulated GPU device info
+  GPUDevice gpu_device = 1;
+  // A repeated field to hold list of GPU driver versions with the associated
+  // labels that are built by cos. it is something like:
+  // <{"latest","535.129.11"}, ...>
+  repeated DriverVersion supported_driver_versions = 2;
+}
+// Represents a list of GPU driver version information.
+message GPUDriverVersionInfoList {
+  repeated GPUDriverVersionInfo gpu_driver_version_info = 1;
+}

@@ -179,6 +179,11 @@ steps:
       queue: gpu
   - <<: *common
     <<: *source_test_continuous
+    label: ":bun: COS Latest Driver Compatibility Test"
+    commands:
+      - tools/gpu/cos_drivers_test.sh
+  - <<: *common
+    <<: *source_test_continuous
     label: ":screwdriver: GPU Tests"
     commands:
       - make sudo TARGETS=//tools/gpu:main ARGS="install --latest" || cat /var/log/nvidia-installer.log
@@ -212,7 +217,6 @@ steps:
       - tools/gpu/all_drivers_test.sh
     agents:
       queue: gpu
-
   # Release workflow.
   - <<: *common
     <<: *source_test

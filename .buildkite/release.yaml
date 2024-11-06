@@ -55,6 +55,10 @@ steps:
       # The built website image must be x86_64.
       - make BAZEL_OPTIONS=--config=x86_64 website-deploy
   - <<: *common
+    label: ":bun: COS Latest Driver Compatibility Test"
+    commands:
+      - tools/gpu/cos_drivers_test.sh
+  - <<: *common
     label: ":female_supervillain: COS GPU Tests"
     commands:
       - make cos-gpu-all-tests

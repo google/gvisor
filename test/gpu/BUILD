@@ -1,4 +1,4 @@
-load("//tools:defs.bzl", "go_test")
+load("//tools:defs.bzl", "go_test", "proto_library")
 
 package(
     default_applicable_licenses = ["//:license"],
@@ -139,4 +139,24 @@ go_test(
     ],
     visibility = ["//:sandbox"],
     deps = ["//pkg/test/dockerutil"],
+)
+
+proto_library(
+    name = "gpu_driver_versions",
+    srcs = ["gpu_driver_versions.proto"],
+)
+
+go_test(
+    name = "cos_gpu_compatibility_test",
+    srcs = ["cos_gpu_compatibility_test.go"],
+    tags = [
+        "manual",
+        "noguitar",
+        "notap",
+    ],
+    deps = [
+        ":gpu_driver_versions_go_proto",
+        "//pkg/sentry/devices/nvproxy",
+        "@org_golang_google_protobuf//encoding/prototext:go_default_library",
+    ],
 )
