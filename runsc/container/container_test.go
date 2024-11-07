@@ -3697,7 +3697,7 @@ func TestSpecValidation(t *testing.T) {
 			wantErr: "Devices does not match across checkpoint restore",
 		},
 		{
-			name: "Namespace",
+			name: "NamespaceFail",
 			mutate: func(spec, restoreSpec *specs.Spec, _, _ string) {
 				spec.Linux = &specs.Linux{}
 				restoreSpec.Linux = &specs.Linux{}
@@ -3707,6 +3707,22 @@ func TestSpecValidation(t *testing.T) {
 				})
 			},
 			wantErr: "Namespace does not match across checkpoint restore",
+		},
+		{
+			name: "NamespaceSuccess",
+			mutate: func(spec, restoreSpec *specs.Spec, _, _ string) {
+				spec.Linux = &specs.Linux{}
+				spec.Linux.Namespaces = append(spec.Linux.Namespaces, specs.LinuxNamespace{
+					Type: "network",
+					Path: fmt.Sprintf("/proc/%d/ns/net1", os.Getpid()),
+				})
+				restoreSpec.Linux = &specs.Linux{}
+				restoreSpec.Linux.Namespaces = append(restoreSpec.Linux.Namespaces, specs.LinuxNamespace{
+					Type: "network",
+					Path: fmt.Sprintf("/proc/%d/ns/net2", os.Getpid()),
+				})
+			},
+			wantErr: "",
 		},
 		{
 			name: "Seccomp",

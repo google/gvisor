@@ -362,6 +362,21 @@ func validateResources(field, cName string, oldR, newR *specs.LinuxResources) er
 	return nil
 }
 
+func copyNamespaceArr(namespaceArr []specs.LinuxNamespace) []specs.LinuxNamespace {
+	arr := make([]specs.LinuxNamespace, 0, len(namespaceArr))
+	for _, n := range namespaceArr {
+		// Namespace path can change during restore.
+		arr = append(arr, specs.LinuxNamespace{Type: n.Type})
+	}
+	return arr
+}
+
+func validateNamespaces(field, cName string, oldN, newN []specs.LinuxNamespace) error {
+	oldArr := copyNamespaceArr(oldN)
+	newArr := copyNamespaceArr(newN)
+	return validateArray(field, cName, oldArr, newArr)
+}
+
 func validateStruct(field, cName string, oldS, newS any) error {
 	if !reflect.DeepEqual(oldS, newS) {
 		return validateError(field, cName, oldS, newS)
@@ -422,7 +437,7 @@ func validateSpecForContainer(oldSpec, newSpec *specs.Spec, cName string) error 
 	if err := validateArray("GIDMappings", cName, oldLinux.GIDMappings, newLinux.GIDMappings); err != nil {
 		return err
 	}
-	if err := validateArray("Namespace", cName, oldLinux.Namespaces, newLinux.Namespaces); err != nil {
+	if err := validateNamespaces("Namespace", cName, oldLinux.Namespaces, newLinux.Namespaces); err != nil {
 		return err
 	}
 
