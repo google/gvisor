@@ -24,4 +24,4 @@ trap "rm -f ${json_file}" EXIT
 gcloud compute images list --project cos-cloud \
   --filter="family:cos*"  --format json > "${json_file}"
 
-make run TARGETS=test/gpu:cos_gpu_compatibility_test ARGS="--image_json=${json_file}"
+make run TARGETS=test/gpu:cos_gpu_compatibility_test ARGS="-test.v --image_json=${json_file}"
