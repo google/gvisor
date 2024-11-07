@@ -114,9 +114,9 @@ func (it *IntervalTimer) signalRejectedLocked() {
 }
 
 // NotifyTimer implements ktime.TimerListener.NotifyTimer.
-func (it *IntervalTimer) NotifyTimer(exp uint64, setting ktime.Setting) (ktime.Setting, bool) {
+func (it *IntervalTimer) NotifyTimer(exp uint64) {
 	if it.target == nil {
-		return ktime.Setting{}, false
+		return
 	}
 
 	sh := it.target.tg.signalLock()
@@ -124,7 +124,7 @@ func (it *IntervalTimer) NotifyTimer(exp uint64, setting ktime.Setting) (ktime.S
 
 	if it.sigpending {
 		it.overrunCur += exp
-		return ktime.Setting{}, false
+		return
 	}
 
 	// sigpending must be set before sendSignalTimerLocked() so that it can be
@@ -143,8 +143,6 @@ func (it *IntervalTimer) NotifyTimer(exp uint64, setting ktime.Setting) (ktime.S
 	if err := it.target.sendSignalTimerLocked(si, it.group, it); err != nil {
 		it.signalRejectedLocked()
 	}
-
-	return ktime.Setting{}, false
 }
 
 // IntervalTimerCreate implements timer_create(2).

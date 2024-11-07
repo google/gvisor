@@ -142,8 +142,7 @@ func (tfd *TimerFileDescription) Release(context.Context) {
 }
 
 // NotifyTimer implements ktime.TimerListener.NotifyTimer.
-func (tfd *TimerFileDescription) NotifyTimer(exp uint64, setting ktime.Setting) (ktime.Setting, bool) {
+func (tfd *TimerFileDescription) NotifyTimer(exp uint64) {
 	tfd.val.Add(exp)
 	tfd.events.Notify(waiter.ReadableEvents)
-	return ktime.Setting{}, false
 }

@@ -122,7 +122,6 @@ type functionNotifier struct {
 }
 
 // NotifyTimer implements ktime.TimerListener.NotifyTimer.
-func (f *functionNotifier) NotifyTimer(uint64, Setting) (Setting, bool) {
+func (f *functionNotifier) NotifyTimer(uint64) {
 	f.fn()
-	return Setting{}, false
 }

@@ -298,11 +298,8 @@ type Listener interface {
 	// Notify is called with the associated Timer's mutex locked, so Notify
 	// must not take any locks that precede Timer.mu in lock order.
 	//
-	// If Notify returns true, the timer will use the returned setting
-	// rather than the passed one.
-	//
 	// Preconditions: exp > 0.
-	NotifyTimer(exp uint64, setting Setting) (newSetting Setting, update bool)
+	NotifyTimer(exp uint64)
 }
 
 // Setting contains user-controlled mutable Timer properties.
@@ -551,9 +548,7 @@ func (t *Timer) Tick() {
 	s, exp := t.setting.At(now)
 	t.setting = s
 	if exp > 0 {
-		if newS, ok := t.listener.NotifyTimer(exp, t.setting); ok {
-			t.setting = newS
-		}
+		t.listener.NotifyTimer(exp)
 	}
 	t.resetKickerLocked(now)
 }
@@ -617,9 +612,7 @@ func (t *Timer) Get() (Time, Setting) {
 	s, exp := t.setting.At(now)
 	t.setting = s
 	if exp > 0 {
-		if newS, ok := t.listener.NotifyTimer(exp, t.setting); ok {
-			t.setting = newS
-		}
+		t.listener.NotifyTimer(exp)
 	}
 	t.resetKickerLocked(now)
 	return now, s
@@ -659,9 +652,7 @@ func (t *Timer) SwapAnd(s Setting, f func()) (Time, Setting) {
 	}
 	oldS, oldExp := t.setting.At(now)
 	if oldExp > 0 {
-		t.listener.NotifyTimer(oldExp, oldS)
-		// N.B. The returned Setting doesn't matter because we're about
-		// to overwrite.
+		t.listener.NotifyTimer(oldExp)
 	}
 	if f != nil {
 		f()
@@ -669,9 +660,7 @@ func (t *Timer) SwapAnd(s Setting, f func()) (Time, Setting) {
 	newS, newExp := s.At(now)
 	t.setting = newS
 	if newExp > 0 {
-		if newS, ok := t.listener.NotifyTimer(newExp, t.setting); ok {
-			t.setting = newS
-		}
+		t.listener.NotifyTimer(newExp)
 	}
 	t.resetKickerLocked(now)
 	return now, oldS
@@ -730,11 +719,9 @@ func NewChannelNotifier() (Listener, <-chan struct{}) {
 }
 
 // NotifyTimer implements Listener.NotifyTimer.
-func (c ChannelNotifier) NotifyTimer(uint64, Setting) (Setting, bool) {
+func (c ChannelNotifier) NotifyTimer(uint64) {
 	select {
 	case c <- struct{}{}:
 	default:
 	}
-
-	return Setting{}, false
 }

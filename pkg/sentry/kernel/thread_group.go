@@ -658,7 +658,6 @@ type itimerRealListener struct {
 }
 
 // NotifyTimer implements ktime.TimerListener.NotifyTimer.
-func (l *itimerRealListener) NotifyTimer(exp uint64, setting ktime.Setting) (ktime.Setting, bool) {
+func (l *itimerRealListener) NotifyTimer(exp uint64) {
 	l.tg.SendSignal(SignalInfoPriv(linux.SIGALRM))
-	return ktime.Setting{}, false
 }
