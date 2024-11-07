@@ -9,7 +9,7 @@ package(
 go_template_instance(
     name = "seqatomic_clock",
     out = "seqatomic_clock_unsafe.go",
-    package = "time",
+    package = "ktime",
     suffix = "Clock",
     template = "//pkg/sync/seqatomic:generic_seqatomic",
     types = {
@@ -18,11 +18,11 @@ go_template_instance(
 )
 
 go_library(
-    name = "time",
+    name = "ktime",
     srcs = [
         "context.go",
+        "ktime.go",
         "seqatomic_clock_unsafe.go",
-        "time.go",
         "util.go",
     ],
     visibility = ["//pkg/sentry:internal"],

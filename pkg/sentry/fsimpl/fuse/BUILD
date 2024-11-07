@@ -32,13 +32,13 @@ go_template_instance(
     name = "seqatomic_time",
     out = "seqatomic_time_unsafe.go",
     imports = {
-        "time": "gvisor.dev/gvisor/pkg/sentry/kernel/time",
+        "ktime": "gvisor.dev/gvisor/pkg/sentry/ktime",
     },
     package = "fuse",
     suffix = "Time",
     template = "//pkg/sync/seqatomic:generic_seqatomic",
     types = {
-        "Value": "time.Time",
+        "Value": "ktime.Time",
     },
 )
 
@@ -80,7 +80,7 @@ go_library(
         "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/kernel/pipe",
-        "//pkg/sentry/kernel/time",
+        "//pkg/sentry/ktime",
         "//pkg/sentry/memmap",
         "//pkg/sentry/vfs",
         "//pkg/sync",

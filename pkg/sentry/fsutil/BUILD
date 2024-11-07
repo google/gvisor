@@ -136,7 +136,7 @@ go_library(
         "//pkg/log",
         "//pkg/safemem",
         "//pkg/sentry/arch",
-        "//pkg/sentry/kernel/time",
+        "//pkg/sentry/ktime",
         "//pkg/sentry/memmap",
         "//pkg/sentry/mm",
         "//pkg/sentry/pgalloc",

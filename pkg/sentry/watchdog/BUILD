@@ -14,7 +14,7 @@ go_library(
         "//pkg/log",
         "//pkg/metric",
         "//pkg/sentry/kernel",
-        "//pkg/sentry/kernel/time",
+        "//pkg/sentry/ktime",
         "//pkg/sync",
     ],
 )

@@ -20,7 +20,7 @@ import (
 	"time"
 
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
-	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
+	"gvisor.dev/gvisor/pkg/sentry/ktime"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/waiter"
 )

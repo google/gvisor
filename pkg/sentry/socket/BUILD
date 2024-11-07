@@ -19,7 +19,7 @@ go_library(
         "//pkg/hostarch",
         "//pkg/marshal",
         "//pkg/sentry/kernel",
-        "//pkg/sentry/kernel/time",
+        "//pkg/sentry/ktime",
         "//pkg/sentry/socket/unix/transport",
         "//pkg/sentry/vfs",
         "//pkg/syserr",

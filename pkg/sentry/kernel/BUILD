@@ -370,7 +370,7 @@ go_library(
         "//pkg/sentry/kernel/sched",
         "//pkg/sentry/kernel/semaphore",
         "//pkg/sentry/kernel/shm",
-        "//pkg/sentry/kernel/time",
+        "//pkg/sentry/ktime",
         "//pkg/sentry/limits",
         "//pkg/sentry/loader",
         "//pkg/sentry/memmap",

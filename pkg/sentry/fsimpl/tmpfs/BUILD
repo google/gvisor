@@ -107,7 +107,7 @@ go_library(
         "//pkg/sentry/hostfd",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/kernel/pipe",
-        "//pkg/sentry/kernel/time",
+        "//pkg/sentry/ktime",
         "//pkg/sentry/memmap",
         "//pkg/sentry/pgalloc",
         "//pkg/sentry/platform",

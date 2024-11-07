@@ -20,7 +20,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/lisafs"
 	"gvisor.dev/gvisor/pkg/sentry/contexttest"
-	"gvisor.dev/gvisor/pkg/sentry/kernel/time"
+	"gvisor.dev/gvisor/pkg/sentry/ktime"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 )
 
@@ -29,7 +29,7 @@ func TestDestroyIdempotent(t *testing.T) {
 	fs := filesystem{
 		mf:       pgalloc.MemoryFileFromContext(ctx),
 		inoByKey: make(map[inoKey]uint64),
-		clock:    time.RealtimeClockFromContext(ctx),
+		clock:    ktime.RealtimeClockFromContext(ctx),
 		// Test relies on no dentry being held in the cache.
 		dentryCache: &dentryCache{maxCachedDentries: 0},
 		client:      &lisafs.Client{},

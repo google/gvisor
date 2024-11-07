@@ -18,7 +18,7 @@ import (
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/log"
-	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
+	"gvisor.dev/gvisor/pkg/sentry/ktime"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
 )
 

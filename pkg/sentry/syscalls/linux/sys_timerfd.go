@@ -20,7 +20,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/timerfd"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
-	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
+	"gvisor.dev/gvisor/pkg/sentry/ktime"
 )
 
 // TimerfdCreate implements Linux syscall timerfd_create(2).

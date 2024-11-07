@@ -133,7 +133,7 @@ go_library(
         "//pkg/sentry/fsimpl/lock",
         "//pkg/sentry/fsutil",
         "//pkg/sentry/kernel/auth",
-        "//pkg/sentry/kernel/time",
+        "//pkg/sentry/ktime",
         "//pkg/sentry/memmap",
         "//pkg/sentry/socket/unix/transport",
         "//pkg/sentry/vfs",

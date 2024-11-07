@@ -13,7 +13,7 @@ go_library(
         "//pkg/context",
         "//pkg/errors/linuxerr",
         "//pkg/hostarch",
-        "//pkg/sentry/kernel/time",
+        "//pkg/sentry/ktime",
         "//pkg/sentry/vfs",
         "//pkg/usermem",
         "//pkg/waiter",

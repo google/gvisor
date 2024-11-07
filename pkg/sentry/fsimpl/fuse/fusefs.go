@@ -26,7 +26,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
-	"gvisor.dev/gvisor/pkg/sentry/kernel/time"
+	"gvisor.dev/gvisor/pkg/sentry/ktime"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
 
@@ -95,7 +95,7 @@ type filesystem struct {
 	opts *filesystemOptions
 
 	// clock is a real-time clock used to set timestamps in file operations.
-	clock time.Clock
+	clock ktime.Clock
 }
 
 // Name implements vfs.FilesystemType.Name.
@@ -271,7 +271,7 @@ func newFUSEFilesystem(ctx context.Context, vfsObj *vfs.VirtualFilesystem, fsTyp
 		devMinor: devMinor,
 		opts:     opts,
 		conn:     fuseFD.conn,
-		clock:    time.RealtimeClockFromContext(ctx),
+		clock:    ktime.RealtimeClockFromContext(ctx),
 	}
 	fs.VFSFilesystem().Init(vfsObj, fsType, fs)
 	return fs, nil

@@ -15,7 +15,7 @@
 package fuse
 
 import (
-	gotime "time"
+	"time"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
@@ -28,7 +28,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
-	"gvisor.dev/gvisor/pkg/sentry/kernel/time"
+	"gvisor.dev/gvisor/pkg/sentry/ktime"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
 )
@@ -65,13 +65,13 @@ type inode struct {
 	// that attrMu is locked. Writing entryTime requires that attrMu is locked
 	// and that entryTimeSeq is in a writer critical section.
 	entryTimeSeq sync.SeqCount `state:"nosave"`
-	entryTime    time.Time
+	entryTime    ktime.Time
 
 	// attrVersion is the version of the last attribute change.
 	attrVersion atomicbitops.Uint64
 
 	// attrTime is the time at which the attributes become invalid.
-	attrTime time.Time
+	attrTime ktime.Time
 
 	// link is result of following a symbolic link.
 	link string
@@ -189,7 +189,7 @@ func (i *inode) init(creds *auth.Credentials, devMajor, devMinor uint32, nodeid 
 
 // +checklocks:i.attrMu
 func (i *inode) updateEntryTime(entrySec, entryNSec int64) {
-	entryTime := time.FromTimespec(linux.Timespec{Sec: entrySec, Nsec: entryNSec})
+	entryTime := ktime.FromTimespec(linux.Timespec{Sec: entrySec, Nsec: entryNSec})
 	SeqAtomicStoreTime(&i.entryTimeSeq, &i.entryTime, i.fs.clock.Now().AddTime(entryTime))
 }
 
@@ -595,7 +595,7 @@ func (i *inode) Readlink(ctx context.Context, mnt *vfs.Mount) (string, error) {
 		}
 		i.link = string(res.data[res.hdr.SizeBytes():])
 		if !mnt.Options().ReadOnly {
-			i.attrTime = time.ZeroTime
+			i.attrTime = ktime.ZeroTime
 		}
 	}
 	return i.link, nil
@@ -605,7 +605,7 @@ func (i *inode) Readlink(ctx context.Context, mnt *vfs.Mount) (string, error) {
 //
 // +checklocks:i.attrMu
 func (i *inode) getFUSEAttr() linux.FUSEAttr {
-	ns := gotime.Second.Nanoseconds()
+	ns := time.Second.Nanoseconds()
 	return linux.FUSEAttr{
 		Ino:       i.nodeID,
 		UID:       i.uid.Load(),
@@ -869,7 +869,7 @@ func (i *inode) updateAttrs(attr linux.FUSEAttr, validSec, validNSec int64) {
 	i.fs.conn.mu.Lock()
 	i.attrVersion.Store(i.fs.conn.attributeVersion.Add(1))
 	i.fs.conn.mu.Unlock()
-	i.attrTime = i.fs.clock.Now().AddTime(time.FromTimespec(linux.Timespec{Sec: validSec, Nsec: validNSec}))
+	i.attrTime = i.fs.clock.Now().AddTime(ktime.FromTimespec(linux.Timespec{Sec: validSec, Nsec: validNSec}))
 
 	i.ino.Store(attr.Ino)
 

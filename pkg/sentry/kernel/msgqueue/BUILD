@@ -31,7 +31,7 @@ go_library(
         "//pkg/errors/linuxerr",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/kernel/ipc",
-        "//pkg/sentry/kernel/time",
+        "//pkg/sentry/ktime",
         "//pkg/sentry/vfs",
         "//pkg/sync",
         "//pkg/waiter",

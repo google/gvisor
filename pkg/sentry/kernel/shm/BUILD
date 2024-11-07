@@ -38,7 +38,7 @@ go_library(
         "//pkg/refs",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/kernel/ipc",
-        "//pkg/sentry/kernel/time",
+        "//pkg/sentry/ktime",
         "//pkg/sentry/memmap",
         "//pkg/sentry/pgalloc",
         "//pkg/sentry/usage",

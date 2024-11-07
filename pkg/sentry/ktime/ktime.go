@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package time defines the Timer type, which provides a periodic timer that
+// Package ktime defines the Timer type, which provides a periodic timer that
 // works by sampling a user-provided clock.
-package time
+package ktime
 
 import (
 	"fmt"

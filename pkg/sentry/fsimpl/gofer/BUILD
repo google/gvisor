@@ -102,7 +102,7 @@ go_library(
         "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/kernel/pipe",
-        "//pkg/sentry/kernel/time",
+        "//pkg/sentry/ktime",
         "//pkg/sentry/memmap",
         "//pkg/sentry/pgalloc",
         "//pkg/sentry/platform",
@@ -128,7 +128,7 @@ go_test(
         "//pkg/abi/linux",
         "//pkg/lisafs",
         "//pkg/sentry/contexttest",
-        "//pkg/sentry/kernel/time",
+        "//pkg/sentry/ktime",
         "//pkg/sentry/pgalloc",
     ],
 )

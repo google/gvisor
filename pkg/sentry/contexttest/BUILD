@@ -15,7 +15,7 @@ go_library(
         "//pkg/context",
         "//pkg/memutil",
         "//pkg/sentry/kernel/auth",
-        "//pkg/sentry/kernel/time",
+        "//pkg/sentry/ktime",
         "//pkg/sentry/limits",
         "//pkg/sentry/pgalloc",
         "//pkg/sentry/platform",

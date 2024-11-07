@@ -39,7 +39,7 @@ go_library(
         "//pkg/log",
         "//pkg/metric",
         "//pkg/sentry/arch",
-        "//pkg/sentry/kernel/time",
+        "//pkg/sentry/ktime",
         "//pkg/sentry/seccheck/points:points_go_proto",
         "//pkg/sync",
         "@org_golang_google_protobuf//proto:go_default_library",

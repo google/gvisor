@@ -39,7 +39,7 @@ go_library(
         "//pkg/sentry/inet",
         "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/auth",
-        "//pkg/sentry/kernel/time",
+        "//pkg/sentry/ktime",
         "//pkg/sentry/socket",
         "//pkg/sentry/socket/netfilter",
         "//pkg/sentry/socket/netlink/nlmsg",
