@@ -20,7 +20,7 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
-	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
+	"gvisor.dev/gvisor/pkg/sentry/ktime"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
@@ -142,8 +142,7 @@ func (tfd *TimerFileDescription) Release(context.Context) {
 }
 
 // NotifyTimer implements ktime.TimerListener.NotifyTimer.
-func (tfd *TimerFileDescription) NotifyTimer(exp uint64, setting ktime.Setting) (ktime.Setting, bool) {
+func (tfd *TimerFileDescription) NotifyTimer(exp uint64) {
 	tfd.val.Add(exp)
 	tfd.events.Notify(waiter.ReadableEvents)
-	return ktime.Setting{}, false
 }

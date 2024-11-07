@@ -362,6 +362,21 @@ func validateResources(field, cName string, oldR, newR *specs.LinuxResources) er
 	return nil
 }
 
+func copyNamespaceArr(namespaceArr []specs.LinuxNamespace) []specs.LinuxNamespace {
+	arr := make([]specs.LinuxNamespace, 0, len(namespaceArr))
+	for _, n := range namespaceArr {
+		// Namespace path can change during restore.
+		arr = append(arr, specs.LinuxNamespace{Type: n.Type})
+	}
+	return arr
+}
+
+func validateNamespaces(field, cName string, oldN, newN []specs.LinuxNamespace) error {
+	oldArr := copyNamespaceArr(oldN)
+	newArr := copyNamespaceArr(newN)
+	return validateArray(field, cName, oldArr, newArr)
+}
+
 func validateStruct(field, cName string, oldS, newS any) error {
 	if !reflect.DeepEqual(oldS, newS) {
 		return validateError(field, cName, oldS, newS)
@@ -378,20 +393,26 @@ func ifNil[T any](v *T) *T {
 }
 
 func validateSpecForContainer(oldSpec, newSpec *specs.Spec, cName string) error {
-	oldLinux, newLinux := ifNil(oldSpec.Linux), ifNil(newSpec.Linux)
-	oldProcess, newProcess := ifNil(oldSpec.Process), ifNil(newSpec.Process)
-	oldRoot, newRoot := ifNil(oldSpec.Root), ifNil(newSpec.Root)
+	validateStructMap := make(map[string][2]any)
 
+	// Validate OCI version.
 	if oldSpec.Version != newSpec.Version {
 		return validateError("OCI Version", cName, oldSpec.Version, newSpec.Version)
 	}
-	validateStructMap := make(map[string][2]any)
-	validateStructMap["Root"] = [2]any{oldRoot, newRoot}
+
+	// Validate specs.Spec.Root. Note that Root.Path can change during restore.
+	oldRoot, newRoot := ifNil(oldSpec.Root), ifNil(newSpec.Root)
+	if oldRoot.Readonly != newRoot.Readonly {
+		return validateError("Root.Readonly", cName, oldRoot.Readonly, newRoot.Readonly)
+	}
+
+	// Validate specs.Spec.Mounts.
 	if err := validateMounts("Mounts", cName, oldSpec.Mounts, newSpec.Mounts); err != nil {
 		return err
 	}
 
-	// Validate specs.Process.
+	// Validate specs.Spec.Process.
+	oldProcess, newProcess := ifNil(oldSpec.Process), ifNil(newSpec.Process)
 	if oldProcess.Terminal != newProcess.Terminal {
 		return validateError("Terminal", cName, oldProcess.Terminal, newProcess.Terminal)
 	}
@@ -407,7 +428,8 @@ func validateSpecForContainer(oldSpec, newSpec *specs.Spec, cName string) error 
 		return err
 	}
 
-	// Validate specs.Linux.
+	// Validate specs.Spec.Linux.
+	oldLinux, newLinux := ifNil(oldSpec.Linux), ifNil(newSpec.Linux)
 	validateStructMap["Sysctl"] = [2]any{oldLinux.Sysctl, newLinux.Sysctl}
 	validateStructMap["Seccomp"] = [2]any{oldLinux.Seccomp, newLinux.Seccomp}
 	if err := validateDevices("Devices", cName, oldLinux.Devices, newLinux.Devices); err != nil {
@@ -422,18 +444,20 @@ func validateSpecForContainer(oldSpec, newSpec *specs.Spec, cName string) error 
 	if err := validateArray("GIDMappings", cName, oldLinux.GIDMappings, newLinux.GIDMappings); err != nil {
 		return err
 	}
-	if err := validateArray("Namespace", cName, oldLinux.Namespaces, newLinux.Namespaces); err != nil {
+	if err := validateNamespaces("Namespace", cName, oldLinux.Namespaces, newLinux.Namespaces); err != nil {
 		return err
 	}
 
+	// Validate specs.Spec.Annotations.
+	if err := validateAnnotations(cName, oldSpec.Annotations, newSpec.Annotations); err != nil {
+		return err
+	}
+
+	// Validate all the structs collected in validateStructMap above.
 	for key, val := range validateStructMap {
 		if err := validateStruct(key, cName, val[0], val[1]); err != nil {
 			return err
 		}
-	}
-
-	if err := validateAnnotations(cName, oldSpec.Annotations, newSpec.Annotations); err != nil {
-		return err
 	}
 
 	// TODO(b/359591006): Check other remaining fields for equality.

@@ -1,7 +1,7 @@
 package fuse
 
 import (
-	__generics_imported0 "gvisor.dev/gvisor/pkg/sentry/kernel/time"
+	__generics_imported0 "gvisor.dev/gvisor/pkg/sentry/ktime"
 )
 
 import (

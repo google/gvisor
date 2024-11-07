@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package time
+package ktime
 
 import (
 	"sync"
@@ -122,7 +122,6 @@ type functionNotifier struct {
 }
 
 // NotifyTimer implements ktime.TimerListener.NotifyTimer.
-func (f *functionNotifier) NotifyTimer(uint64, Setting) (Setting, bool) {
+func (f *functionNotifier) NotifyTimer(uint64) {
 	f.fn()
-	return Setting{}, false
 }

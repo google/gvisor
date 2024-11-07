@@ -41,7 +41,7 @@ import (
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
-	"gvisor.dev/gvisor/pkg/sentry/kernel/time"
+	"gvisor.dev/gvisor/pkg/sentry/ktime"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
@@ -67,7 +67,7 @@ type filesystem struct {
 	mf *pgalloc.MemoryFile `state:".(string)"`
 
 	// clock is a realtime clock used to set timestamps in file operations.
-	clock time.Clock
+	clock ktime.Clock
 
 	// devMinor is the filesystem's minor device number. devMinor is immutable.
 	devMinor uint32
@@ -279,7 +279,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	if err != nil {
 		return nil, nil, err
 	}
-	clock := time.RealtimeClockFromContext(ctx)
+	clock := ktime.RealtimeClockFromContext(ctx)
 	memUsage := usage.Tmpfs
 	if tmpfsOpts.Usage != nil {
 		memUsage = *tmpfsOpts.Usage
