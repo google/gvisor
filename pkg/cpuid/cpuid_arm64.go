@@ -20,6 +20,8 @@ package cpuid
 import (
 	"fmt"
 	"io"
+
+	"gvisor.dev/gvisor/pkg/abi/linux"
 )
 
 // FeatureSet for ARM64 is defined as a static set of bits.
@@ -107,4 +109,44 @@ func (fs FeatureSet) WriteCPUInfoTo(cpu, numCPU uint, w io.Writer) {
 // archCheckHostCompatible is a noop on arm64.
 func (FeatureSet) archCheckHostCompatible(FeatureSet) error {
 	return nil
+}
+
+// AllowedHWCap1 returns the HWCAP1 bits that the guest is allowed to depend
+// on.
+func (fs FeatureSet) AllowedHWCap1() uint64 {
+	// Pick a set of safe HWCAPS to expose. This could probably be relaxed
+	// a bit more.
+	allowed := linux.HWCAP_ASIMD |
+		linux.HWCAP_EVTSTRM |
+		linux.HWCAP_AES |
+		linux.HWCAP_PMULL |
+		linux.HWCAP_SHA1 |
+		linux.HWCAP_SHA2 |
+		linux.HWCAP_CRC32 |
+		linux.HWCAP_ATOMICS |
+		linux.HWCAP_ASIMDHP |
+		linux.HWCAP_ASIMDRDM |
+		linux.HWCAP_JSCVT |
+		linux.HWCAP_FCMA |
+		linux.HWCAP_LRCPC |
+		linux.HWCAP_SHA3 |
+		linux.HWCAP_SM3 |
+		linux.HWCAP_SM4 |
+		linux.HWCAP_ASIMDDP |
+		linux.HWCAP_SHA512 |
+		linux.HWCAP_ASIMDFHM |
+		linux.HWCAP_DIT |
+		linux.HWCAP_USCAT |
+		linux.HWCAP_ILRCPC
+
+	return fs.hwCap.hwCap1 & uint64(allowed)
+}
+
+// AllowedHWCap2 returns the HWCAP2 bits that the guest is allowed to depend
+// on.
+func (fs FeatureSet) AllowedHWCap2() uint64 {
+	// Pick a set of safe HWCAPS to expose. This could certainly be relaxed
+	// a bit more.
+	allowed := 0
+	return fs.hwCap.hwCap2 & uint64(allowed)
 }
