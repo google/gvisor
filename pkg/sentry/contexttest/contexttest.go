@@ -92,7 +92,7 @@ func (*globalUniqueIDProvider) UniqueID() uint64 {
 // inotify cookies.
 var lastInotifyCookie atomicbitops.Uint32
 
-// hostClock implements ktime.Clock.
+// hostClock implements ktime.SampledClock.
 type hostClock struct {
 	ktime.WallRateClock
 	ktime.NoClockEvents
@@ -101,6 +101,16 @@ type hostClock struct {
 // Now implements ktime.Clock.Now.
 func (*hostClock) Now() ktime.Time {
 	return ktime.FromNanoseconds(time.Now().UnixNano())
+}
+
+// SupportsTimers implements ktime.Clock.Now.
+func (*hostClock) SupportsTimers() bool {
+	return true
+}
+
+// NewTimer implements ktime.Clock.NewTimer.
+func (c *hostClock) NewTimer(l ktime.Listener) ktime.Timer {
+	return ktime.NewSampledTimer(c, l)
 }
 
 // RegisterValue registers additional values with this test context. Useful for

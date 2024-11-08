@@ -65,10 +65,9 @@ func (t *Task) run(threadID uintptr) {
 	// Construct t.blockingTimer here. We do this here because we can't
 	// reconstruct t.blockingTimer during restore in Task.afterLoad(), because
 	// kernel.timekeeper.SetClocks() hasn't been called yet.
-	blockingTimerNotifier, blockingTimerChan := ktime.NewChannelNotifier()
-	t.blockingTimer = ktime.NewTimer(t.k.MonotonicClock(), blockingTimerNotifier)
+	t.blockingTimerListener, t.blockingTimerChan = ktime.NewChannelNotifier()
+	t.blockingTimer = ktime.NewSampledTimer(t.k.MonotonicClock(), t.blockingTimerListener)
 	defer t.blockingTimer.Destroy()
-	t.blockingTimerChan = blockingTimerChan
 
 	// Activate our address space.
 	t.Activate()

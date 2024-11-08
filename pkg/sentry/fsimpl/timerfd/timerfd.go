@@ -37,7 +37,7 @@ type TimerFileDescription struct {
 	vfs.NoLockFD
 
 	events waiter.Queue
-	timer  *ktime.Timer
+	timer  ktime.Timer
 
 	// val is the number of timer expirations since the last successful
 	// call to PRead, or SetTime. val must be accessed using atomic memory
@@ -53,7 +53,7 @@ func New(ctx context.Context, vfsObj *vfs.VirtualFilesystem, clock ktime.Clock, 
 	vd := vfsObj.NewAnonVirtualDentry("[timerfd]")
 	defer vd.DecRef(ctx)
 	tfd := &TimerFileDescription{}
-	tfd.timer = ktime.NewTimer(clock, tfd)
+	tfd.timer = clock.NewTimer(tfd)
 	if err := tfd.vfsfd.Init(tfd, flags, vd.Mount(), vd.Dentry(), &vfs.FileDescriptionOptions{
 		UseDentryMetadata: true,
 		DenyPRead:         true,
@@ -98,7 +98,7 @@ func (tfd *TimerFileDescription) GetTime() (ktime.Time, ktime.Setting) {
 // of expirations to 0, and returns the previous setting and the time at which
 // it was observed.
 func (tfd *TimerFileDescription) SetTime(s ktime.Setting) (ktime.Time, ktime.Setting) {
-	return tfd.timer.SwapAnd(s, func() { tfd.val.Store(0) })
+	return tfd.timer.Set(s, func() { tfd.val.Store(0) })
 }
 
 // Readiness implements waiter.Waitable.Readiness.

@@ -7,13 +7,13 @@ package(
 )
 
 go_template_instance(
-    name = "seqatomic_clock",
-    out = "seqatomic_clock_unsafe.go",
+    name = "seqatomic_sampled_clock",
+    out = "seqatomic_sampled_clock_unsafe.go",
     package = "ktime",
-    suffix = "Clock",
+    suffix = "SampledClock",
     template = "//pkg/sync/seqatomic:generic_seqatomic",
     types = {
-        "Value": "Clock",
+        "Value": "SampledClock",
     },
 )
 
@@ -22,7 +22,8 @@ go_library(
     srcs = [
         "context.go",
         "ktime.go",
-        "seqatomic_clock_unsafe.go",
+        "sampled_timer.go",
+        "seqatomic_sampled_clock_unsafe.go",
         "util.go",
     ],
     visibility = ["//pkg/sentry:internal"],

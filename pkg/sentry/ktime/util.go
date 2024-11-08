@@ -81,7 +81,7 @@ type VariableTimer struct {
 	// called since Timer cannot be restarted once it has been Destroyed by Stop.
 	//
 	// This field is nil iff Stop has been called.
-	t *Timer
+	t Timer
 }
 
 // Stop implements tcpip.Timer.Stop.
@@ -92,7 +92,7 @@ func (r *VariableTimer) Stop() bool {
 	if r.t == nil {
 		return false
 	}
-	_, lastSetting := r.t.Swap(Setting{})
+	_, lastSetting := r.t.Set(Setting{}, nil)
 	r.t.Destroy()
 	r.t = nil
 	return lastSetting.Enabled
@@ -104,14 +104,14 @@ func (r *VariableTimer) Reset(d time.Duration) {
 	defer r.mu.Unlock()
 
 	if r.t == nil {
-		r.t = NewTimer(r.clock, &r.notifier)
+		r.t = r.clock.NewTimer(&r.notifier)
 	}
 
-	r.t.Swap(Setting{
+	r.t.Set(Setting{
 		Enabled: true,
 		Period:  0,
 		Next:    r.clock.Now().Add(d),
-	})
+	}, nil)
 }
 
 // functionNotifier is a TimerListener that runs a function.

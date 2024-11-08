@@ -27,7 +27,7 @@ import (
 //
 // +stateify savable
 type IntervalTimer struct {
-	timer *ktime.Timer
+	timer ktime.Timer
 
 	// If target is not nil, it receives signo from timer expirations. If group
 	// is true, these signals are thread-group-directed. These fields are
@@ -215,7 +215,7 @@ func (t *Task) IntervalTimerCreate(c ktime.Clock, sigev *linux.Sigevent) (linux.
 			return 0, linuxerr.EINVAL
 		}
 	}
-	it.timer = ktime.NewTimer(c, it)
+	it.timer = c.NewTimer(it)
 
 	t.tg.timers[id] = it
 	return id, nil
@@ -247,7 +247,7 @@ func (t *Task) IntervalTimerSettime(id linux.TimerID, its linux.Itimerspec, abs 
 	if err != nil {
 		return linux.Itimerspec{}, err
 	}
-	tm, oldS := it.timer.SwapAnd(newS, it.timerSettingChanged)
+	tm, oldS := it.timer.Set(newS, it.timerSettingChanged)
 	its = ktime.ItimerspecFromSetting(tm, oldS)
 	return its, nil
 }

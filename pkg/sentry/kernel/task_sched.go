@@ -271,6 +271,11 @@ func (tc *taskClock) Now() ktime.Time {
 	return ktime.FromNanoseconds(stats.UserTime.Nanoseconds())
 }
 
+// NewTimer implements ktime.Clock.NewTimer.
+func (tc *taskClock) NewTimer(l ktime.Listener) ktime.Timer {
+	return ktime.NewSampledTimer(tc, l)
+}
+
 // tgClock is a ktime.Clock that measures the time a thread group has spent
 // executing. tgClock is primarily used to implement CLOCK_PROCESS_CPUTIME_ID.
 //
@@ -294,6 +299,11 @@ func (tgc *tgClock) Now() ktime.Time {
 		return ktime.FromNanoseconds((stats.UserTime + stats.SysTime).Nanoseconds())
 	}
 	return ktime.FromNanoseconds(stats.UserTime.Nanoseconds())
+}
+
+// NewTimer implements ktime.Clock.NewTimer.
+func (tgc *tgClock) NewTimer(l ktime.Listener) ktime.Timer {
+	return ktime.NewSampledTimer(tgc, l)
 }
 
 // WallTimeUntil implements ktime.Clock.WallTimeUntil.

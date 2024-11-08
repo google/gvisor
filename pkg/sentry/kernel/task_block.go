@@ -44,7 +44,7 @@ func (t *Task) BlockWithTimeout(C chan struct{}, haveTimeout bool, timeout time.
 	clock := t.Kernel().MonotonicClock()
 	start := clock.Now()
 	deadline := start.Add(timeout)
-	err := t.BlockWithDeadlineFrom(C, clock, true, deadline)
+	err := t.blockWithDeadlineFromSampledClock(C, clock, deadline)
 
 	// Timeout, explicitly return a remaining duration of 0.
 	if linuxerr.Equals(linuxerr.ETIMEDOUT, err) {
@@ -81,7 +81,10 @@ func (t *Task) BlockWithTimeoutOn(w waiter.Waitable, mask waiter.EventMask, time
 //
 // Preconditions: The caller must be running on the task goroutine.
 func (t *Task) BlockWithDeadline(C <-chan struct{}, haveDeadline bool, deadline ktime.Time) error {
-	return t.BlockWithDeadlineFrom(C, t.Kernel().MonotonicClock(), haveDeadline, deadline)
+	if !haveDeadline {
+		return t.block(C, nil)
+	}
+	return t.blockWithDeadlineFromSampledClock(C, t.Kernel().MonotonicClock(), deadline)
 }
 
 // BlockWithDeadlineFrom is similar to BlockWithDeadline, except it uses the
@@ -95,6 +98,33 @@ func (t *Task) BlockWithDeadlineFrom(C <-chan struct{}, clock ktime.Clock, haveD
 		return t.block(C, nil)
 	}
 
+	if c, ok := clock.(ktime.SampledClock); ok {
+		return t.blockWithDeadlineFromSampledClock(C, c, deadline)
+	}
+
+	// Start the timeout timer.
+	timer := clock.NewTimer(t.blockingTimerListener)
+	defer timer.Destroy()
+	timer.Set(ktime.Setting{
+		Enabled: true,
+		Next:    deadline,
+	}, nil)
+
+	err := t.block(C, t.blockingTimerChan)
+
+	// Stop the timeout timer and drain the channel. If s.Enabled is true, the
+	// timer didn't fire yet, so t.blockingTimerChan must be empty.
+	if _, s := timer.Set(ktime.Setting{}, nil); !s.Enabled {
+		select {
+		case <-t.blockingTimerChan:
+		default:
+		}
+	}
+
+	return err
+}
+
+func (t *Task) blockWithDeadlineFromSampledClock(C <-chan struct{}, clock ktime.SampledClock, deadline ktime.Time) error {
 	// Start the timeout timer.
 	t.blockingTimer.SetClock(clock, ktime.Setting{
 		Enabled: true,
@@ -103,11 +133,13 @@ func (t *Task) BlockWithDeadlineFrom(C <-chan struct{}, clock ktime.Clock, haveD
 
 	err := t.block(C, t.blockingTimerChan)
 
-	// Stop the timeout timer and drain the channel.
-	t.blockingTimer.Swap(ktime.Setting{})
-	select {
-	case <-t.blockingTimerChan:
-	default:
+	// Stop the timeout timer and drain the channel. If s.Enabled is true, the
+	// timer didn't fire yet, so t.blockingTimerChan must be empty.
+	if _, s := t.blockingTimer.Set(ktime.Setting{}, nil); !s.Enabled {
+		select {
+		case <-t.blockingTimerChan:
+		default:
+		}
 	}
 
 	return err
