@@ -3794,6 +3794,17 @@ func TestSpecValidation(t *testing.T) {
 			wantErr: "Mounts does not match across checkpoint restore",
 		},
 		{
+			name: "AnnotationsMountsSuccess",
+			mutate: func(spec, restoreSpec *specs.Spec, _, _ string) {
+				spec.Annotations = make(map[string]string)
+				spec.Annotations["dev.gvisor.spec.mount.mnt1.source"] = "path1"
+
+				restoreSpec.Annotations = make(map[string]string)
+				restoreSpec.Annotations["dev.gvisor.spec.mount.mnt2.source"] = "path2"
+			},
+			wantErr: "",
+		},
+		{
 			name: "AnnotationsFail",
 			mutate: func(spec, restoreSpec *specs.Spec, _, _ string) {
 				spec.Annotations = make(map[string]string)
