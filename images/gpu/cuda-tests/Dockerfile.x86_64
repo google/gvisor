@@ -1,8 +1,8 @@
-FROM nvidia/cuda:12.3.2-devel-ubuntu22.04
+FROM nvidia/cuda:12.2.2-devel-ubuntu22.04
 
 # From: https://github.com/NVIDIA/cuda-samples/releases
 # Ideally, pick a release that matches the CUDA version of the image above.
-ARG CUDA_SAMPLES_VERSION=v12.3
+ARG CUDA_SAMPLES_VERSION=v12.2
 
 WORKDIR /
 COPY *.cu *.h *.sh *.go *.cc /
