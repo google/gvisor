@@ -56,6 +56,8 @@ steps:
     commands:
       # The built website image must be x86_64.
       - make BAZEL_OPTIONS=--config=x86_64 website-deploy
+    agents:
+      arch: "amd64"
   - <<: *common
     label: ":bun: COS Latest Driver Compatibility Test"
     commands:
