@@ -7,10 +7,12 @@ package(
 
 go_library(
     name = "k8sctx",
+    testonly = True,
     srcs = [
         "k8sctx.go",
         "k8sctx_impl.go",
     ],
+    nogo = False,
     visibility = [
         "//visibility:public",
     ],
