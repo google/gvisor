@@ -9,6 +9,7 @@ go_library(
     name = "container",
     srcs = [
         "container.go",
+        "gofer_to_host_rpc.go",
         "hook.go",
         "state_file.go",
         "status.go",
@@ -28,6 +29,8 @@ go_library(
         "//pkg/sighandling",
         "//pkg/state/statefile",
         "//pkg/sync",
+        "//pkg/unet",
+        "//pkg/urpc",
         "//runsc/boot",
         "//runsc/cgroup",
         "//runsc/config",
