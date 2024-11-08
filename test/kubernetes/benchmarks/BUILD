@@ -8,6 +8,7 @@ package(
 go_test(
     name = "abslbuild_test",
     srcs = ["abslbuild_test.go"],
+    nogo = False,
     tags = [
         "local",
         "noguitar",
@@ -26,6 +27,7 @@ go_test(
 go_test(
     name = "startup_test",
     srcs = ["startup_test.go"],
+    nogo = False,
     tags = [
         "local",
         "noguitar",
@@ -43,6 +45,7 @@ go_test(
 go_test(
     name = "redis_test",
     srcs = ["redis_test.go"],
+    nogo = False,
     tags = [
         "local",
         "noguitar",
@@ -61,6 +64,7 @@ go_test(
 go_test(
     name = "ruby_dev_test",
     srcs = ["ruby_dev_test.go"],
+    nogo = False,
     tags = [
         "local",
         "noguitar",
@@ -80,6 +84,7 @@ go_test(
 go_test(
     name = "ffmpeg_test",
     srcs = ["ffmpeg_test.go"],
+    nogo = False,
     tags = [
         "local",
         "noguitar",
@@ -98,6 +103,7 @@ go_test(
 go_test(
     name = "grpc_test",
     srcs = ["grpc_test.go"],
+    nogo = False,
     tags = [
         "local",
         "noguitar",
@@ -116,6 +122,7 @@ go_test(
 go_test(
     name = "nginx_test",
     srcs = ["nginx_test.go"],
+    nogo = False,
     tags = [
         "local",
         "noguitar",
@@ -135,6 +142,7 @@ go_test(
 go_test(
     name = "postgresql_test",
     srcs = ["postgresql_test.go"],
+    nogo = False,
     tags = [
         "local",
         "noguitar",
@@ -153,6 +161,7 @@ go_test(
 go_test(
     name = "tensorflow_test",
     srcs = ["tensorflow_test.go"],
+    nogo = False,
     tags = [
         "local",
         "noguitar",
@@ -171,6 +180,7 @@ go_test(
 go_test(
     name = "wordpress_test",
     srcs = ["wordpress_test.go"],
+    nogo = False,
     tags = [
         "local",
         "noguitar",
@@ -190,6 +200,7 @@ go_test(
 go_test(
     name = "pytorch_test",
     srcs = ["pytorch_test.go"],
+    nogo = False,
     tags = [
         "local",
         "noguitar",
@@ -210,6 +221,7 @@ go_test(
     embedsrcs = [
         "//test/kubernetes/benchmarks/resources:files",  # keep
     ],
+    nogo = False,
     tags = [
         "local",
         "noguitar",
@@ -230,6 +242,7 @@ go_test(
 go_test(
     name = "stablediffusion_test",
     srcs = ["stablediffusion_test.go"],
+    nogo = False,
     tags = [
         "local",
         "noguitar",
@@ -248,6 +261,7 @@ go_test(
 go_test(
     name = "gsutil_test",
     srcs = ["gsutil_test.go"],
+    nogo = False,
     tags = [
         "local",
         "noguitar",
