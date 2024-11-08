@@ -171,7 +171,7 @@ type ThreadGroup struct {
 	timerMu threadGroupTimerMutex `state:"nosave"`
 
 	// itimerRealTimer implements ITIMER_REAL for the thread group.
-	itimerRealTimer *ktime.Timer
+	itimerRealTimer *ktime.SampledTimer
 
 	// itimerVirtSetting is the ITIMER_VIRTUAL setting for the thread group.
 	//
@@ -295,7 +295,7 @@ func (k *Kernel) NewThreadGroup(pidns *PIDNamespace, sh *SignalHandlers, termina
 		ioUsage:           &usage.IO{},
 		limits:            limits,
 	}
-	tg.itimerRealTimer = ktime.NewTimer(k.timekeeper.monotonicClock, &itimerRealListener{tg: tg})
+	tg.itimerRealTimer = ktime.NewSampledTimer(k.timekeeper.monotonicClock, &itimerRealListener{tg: tg})
 	tg.timers = make(map[linux.TimerID]*IntervalTimer)
 	tg.oldRSeqCritical.Store(&OldRSeqCriticalRegion{})
 	return tg

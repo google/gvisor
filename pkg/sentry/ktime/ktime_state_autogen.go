@@ -64,11 +64,11 @@ func (s *Setting) StateLoad(ctx context.Context, stateSourceObject state.Source)
 	stateSourceObject.Load(2, &s.Period)
 }
 
-func (t *Timer) StateTypeName() string {
-	return "pkg/sentry/ktime.Timer"
+func (t *SampledTimer) StateTypeName() string {
+	return "pkg/sentry/ktime.SampledTimer"
 }
 
-func (t *Timer) StateFields() []string {
+func (t *SampledTimer) StateFields() []string {
 	return []string{
 		"clock",
 		"listener",
@@ -77,10 +77,10 @@ func (t *Timer) StateFields() []string {
 	}
 }
 
-func (t *Timer) beforeSave() {}
+func (t *SampledTimer) beforeSave() {}
 
 // +checklocksignore
-func (t *Timer) StateSave(stateSinkObject state.Sink) {
+func (t *SampledTimer) StateSave(stateSinkObject state.Sink) {
 	t.beforeSave()
 	stateSinkObject.Save(0, &t.clock)
 	stateSinkObject.Save(1, &t.listener)
@@ -88,10 +88,10 @@ func (t *Timer) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(3, &t.pauseState)
 }
 
-func (t *Timer) afterLoad(context.Context) {}
+func (t *SampledTimer) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (t *Timer) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+func (t *SampledTimer) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &t.clock)
 	stateSourceObject.Load(1, &t.listener)
 	stateSourceObject.Load(2, &t.setting)
@@ -101,5 +101,5 @@ func (t *Timer) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 func init() {
 	state.Register((*Time)(nil))
 	state.Register((*Setting)(nil))
-	state.Register((*Timer)(nil))
+	state.Register((*SampledTimer)(nil))
 }

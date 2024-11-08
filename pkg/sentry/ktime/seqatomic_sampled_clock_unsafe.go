@@ -11,9 +11,9 @@ import (
 // with any writer critical sections in seq.
 //
 //go:nosplit
-func SeqAtomicLoadClock(seq *sync.SeqCount, ptr *Clock) Clock {
+func SeqAtomicLoadSampledClock(seq *sync.SeqCount, ptr *SampledClock) SampledClock {
 	for {
-		if val, ok := SeqAtomicTryLoadClock(seq, seq.BeginRead(), ptr); ok {
+		if val, ok := SeqAtomicTryLoadSampledClock(seq, seq.BeginRead(), ptr); ok {
 			return val
 		}
 	}
@@ -25,7 +25,7 @@ func SeqAtomicLoadClock(seq *sync.SeqCount, ptr *Clock) Clock {
 // (unspecified, false).
 //
 //go:nosplit
-func SeqAtomicTryLoadClock(seq *sync.SeqCount, epoch sync.SeqCountEpoch, ptr *Clock) (val Clock, ok bool) {
+func SeqAtomicTryLoadSampledClock(seq *sync.SeqCount, epoch sync.SeqCountEpoch, ptr *SampledClock) (val SampledClock, ok bool) {
 	if sync.RaceEnabled {
 
 		gohacks.Memmove(unsafe.Pointer(&val), unsafe.Pointer(ptr), unsafe.Sizeof(val))
@@ -41,9 +41,9 @@ func SeqAtomicTryLoadClock(seq *sync.SeqCount, epoch sync.SeqCountEpoch, ptr *Cl
 // critical sections are forced to retry.
 //
 //go:nosplit
-func SeqAtomicStoreClock(seq *sync.SeqCount, ptr *Clock, val Clock) {
+func SeqAtomicStoreSampledClock(seq *sync.SeqCount, ptr *SampledClock, val SampledClock) {
 	seq.BeginWrite()
-	SeqAtomicStoreSeqedClock(ptr, val)
+	SeqAtomicStoreSeqedSampledClock(ptr, val)
 	seq.EndWrite()
 }
 
@@ -53,7 +53,7 @@ func SeqAtomicStoreClock(seq *sync.SeqCount, ptr *Clock, val Clock) {
 // critical section throughout the call to SeqAtomicStore.
 //
 //go:nosplit
-func SeqAtomicStoreSeqedClock(ptr *Clock, val Clock) {
+func SeqAtomicStoreSeqedSampledClock(ptr *SampledClock, val SampledClock) {
 	if sync.RaceEnabled {
 		gohacks.Memmove(unsafe.Pointer(ptr), unsafe.Pointer(&val), unsafe.Sizeof(val))
 	} else {

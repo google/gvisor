@@ -1634,12 +1634,12 @@ func (k *Kernel) ApplicationCores() uint {
 }
 
 // RealtimeClock returns the application CLOCK_REALTIME clock.
-func (k *Kernel) RealtimeClock() ktime.Clock {
+func (k *Kernel) RealtimeClock() ktime.SampledClock {
 	return k.timekeeper.realtimeClock
 }
 
 // MonotonicClock returns the application CLOCK_MONOTONIC clock.
-func (k *Kernel) MonotonicClock() ktime.Clock {
+func (k *Kernel) MonotonicClock() ktime.SampledClock {
 	return k.timekeeper.monotonicClock
 }
 

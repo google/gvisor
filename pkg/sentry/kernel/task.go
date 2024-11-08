@@ -560,12 +560,14 @@ type Task struct {
 	// copyScratchBuffer is exclusive to the task goroutine.
 	copyScratchBuffer [copyScratchBufferLen]byte `state:"nosave"`
 
-	// blockingTimer is used for blocking timeouts. blockingTimerChan is the
-	// channel that is sent to when blockingTimer fires.
+	// blockingTimer is used for blocking timeouts from ktime.SampledClocks.
+	// blockingTimerListener sends to blockingTimerChan when blockingTimer
+	// expires.
 	//
 	// blockingTimer is exclusive to the task goroutine.
-	blockingTimer     *ktime.Timer    `state:"nosave"`
-	blockingTimerChan <-chan struct{} `state:"nosave"`
+	blockingTimer         *ktime.SampledTimer `state:"nosave"`
+	blockingTimerListener ktime.Listener      `state:"nosave"`
+	blockingTimerChan     <-chan struct{}     `state:"nosave"`
 
 	// futexWaiter is used for futex(FUTEX_WAIT) syscalls.
 	//

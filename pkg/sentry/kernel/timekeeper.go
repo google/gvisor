@@ -325,7 +325,7 @@ func (t *Timekeeper) BootTime() ktime.Time {
 	return t.bootTime
 }
 
-// timekeeperClock is a ktime.Clock that reads time from a
+// timekeeperClock is a ktime.SampledClock that reads time from a
 // kernel.Timekeeper-managed clock.
 //
 // +stateify savable
@@ -333,7 +333,7 @@ type timekeeperClock struct {
 	tk *Timekeeper
 	c  sentrytime.ClockID
 
-	// Implements ktime.Clock.WallTimeUntil.
+	// Implements ktime.SampledClock.WallTimeUntil.
 	ktime.WallRateClock `state:"nosave"`
 
 	// Implements waiter.Waitable. (We have no ability to detect
@@ -348,4 +348,9 @@ func (tc *timekeeperClock) Now() ktime.Time {
 		panic(fmt.Sprintf("timekeeperClock(ClockID=%v)).Now: %v", tc.c, err))
 	}
 	return ktime.FromNanoseconds(now)
+}
+
+// NewTimer implements ktime.Clock.NewTimer.
+func (tc *timekeeperClock) NewTimer(l ktime.Listener) ktime.Timer {
+	return ktime.NewSampledTimer(tc, l)
 }

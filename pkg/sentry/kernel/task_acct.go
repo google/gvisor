@@ -65,7 +65,7 @@ func (t *Task) Setitimer(id int32, newitv linux.ItimerVal) (linux.ItimerVal, err
 		if err != nil {
 			return linux.ItimerVal{}, err
 		}
-		tm, olds = t.tg.itimerRealTimer.Swap(news)
+		tm, olds = t.tg.itimerRealTimer.Set(news, nil)
 	case linux.ITIMER_VIRTUAL:
 		c := t.tg.UserCPUClock()
 		t.k.cpuClockMu.Lock()
