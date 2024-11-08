@@ -24,6 +24,7 @@ steps:
     if: build.branch == "master" && build.tag == null
     commands:
       - make ARCH=x86_64 DOCKER_PUSH_AS_LATEST=true push-all-images
+      - make ARCH=x86_64 REMOTE_IMAGE_PREFIX=gcr.io/gvisor-presubmit DOCKER_PUSH_AS_LATEST=true push-all-images
     agents:
       arch: "amd64"
   - <<: *common
@@ -31,6 +32,7 @@ steps:
     if: build.branch == "master" && build.tag == null
     commands:
       - make ARCH=aarch64 DOCKER_PUSH_AS_LATEST=true push-all-images
+      - make ARCH=aarch64 REMOTE_IMAGE_PREFIX=gcr.io/gvisor-presubmit DOCKER_PUSH_AS_LATEST=true push-all-images
     agents:
       arch: "arm64"
   - <<: *common

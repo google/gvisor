@@ -52,9 +52,8 @@ if available.
 ## Building and pushing images
 
 All images can be built manually by running `build-<image>` and pushed using
-`push-<image>`. Note that you can also use `build-all-images` and
-`push-all-images`. Note that pushing will require appropriate permissions in the
-project.
+`push-<image>`. Note that you can also use `push-all-images`. Note that pushing
+will require appropriate permissions in the project.
 
 The continuous integration system can either take fine-grained dependencies on
 individual `push` targets, or ensure all images are up-to-date with a single
