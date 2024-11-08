@@ -114,38 +114,25 @@ func (ex *Exec) SetFlags(f *flag.FlagSet) {
 // already created container.
 func (ex *Exec) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
 	conf := args[0].(*config.Config)
-	e, id, err := ex.parseArgs(f, conf.EnableRaw)
-	if err != nil {
-		util.Fatalf("parsing process spec: %v", err)
-	}
 	waitStatus := args[1].(*unix.WaitStatus)
 
+	if f.NArg() < 1 {
+		f.Usage()
+		util.Fatalf("a container-id is required")
+	}
+	id := f.Arg(0)
 	c, err := container.Load(conf.RootDir, container.FullID{ContainerID: id}, container.LoadOpts{})
 	if err != nil {
 		util.Fatalf("loading sandbox: %v", err)
 	}
 
+	e, err := ex.parseArgs(f, c.Spec.Process, conf.EnableRaw)
+	if err != nil {
+		util.Fatalf("parsing process spec: %v", err)
+	}
+
 	log.Debugf("Exec arguments: %+v", e)
 	log.Debugf("Exec capabilities: %+v", e.Capabilities)
-
-	// Replace empty settings with defaults from container.
-	if e.WorkingDirectory == "" {
-		e.WorkingDirectory = c.Spec.Process.Cwd
-	}
-	if e.Envv == nil {
-		e.Envv, err = specutils.ResolveEnvs(c.Spec.Process.Env, ex.env)
-		if err != nil {
-			util.Fatalf("getting environment variables: %v", err)
-		}
-	}
-
-	if e.Capabilities == nil {
-		e.Capabilities, err = specutils.Capabilities(conf.EnableRaw, c.Spec.Process.Capabilities)
-		if err != nil {
-			util.Fatalf("creating capabilities: %v", err)
-		}
-		log.Infof("Using exec capabilities from container: %+v", e.Capabilities)
-	}
 
 	// Create the file descriptor map for the process in the container.
 	fdMap := map[int]*os.File{
@@ -326,29 +313,30 @@ func (ex *Exec) execChildAndWait(waitStatus *unix.WaitStatus) subcommands.ExitSt
 }
 
 // parseArgs parses exec information from the command line or a JSON file
-// depending on whether the --process flag was used. Returns an ExecArgs and
-// the ID of the container to be used.
-func (ex *Exec) parseArgs(f *flag.FlagSet, enableRaw bool) (*control.ExecArgs, string, error) {
+// depending on whether the --process flag was used.
+func (ex *Exec) parseArgs(f *flag.FlagSet, p *specs.Process, enableRaw bool) (*control.ExecArgs, error) {
 	if ex.processPath == "" {
 		// Requires at least a container ID and command.
 		if f.NArg() < 2 {
 			f.Usage()
-			return nil, "", fmt.Errorf("both a container-id and command are required")
+			return nil, fmt.Errorf("both a container-id and command are required")
 		}
-		e, err := ex.argsFromCLI(f.Args()[1:], enableRaw)
-		return e, f.Arg(0), err
+		return ex.argsFromCLI(p, f.Args()[1:], enableRaw)
 	}
 	// Requires only the container ID.
 	if f.NArg() != 1 {
 		f.Usage()
-		return nil, "", fmt.Errorf("a container-id is required")
+		return nil, fmt.Errorf("only the container-id is required")
 	}
-	e, err := ex.argsFromProcessFile(enableRaw)
-	return e, f.Arg(0), err
+	e, err := ex.argsFromProcessFile(p, enableRaw)
+	return e, err
 }
 
-func (ex *Exec) argsFromCLI(argv []string, enableRaw bool) (*control.ExecArgs, error) {
-	extraKGIDs := make([]auth.KGID, 0, len(ex.extraKGIDs))
+func (ex *Exec) argsFromCLI(p *specs.Process, argv []string, enableRaw bool) (*control.ExecArgs, error) {
+	extraKGIDs := make([]auth.KGID, 0, len(p.User.AdditionalGids)+len(ex.extraKGIDs))
+	for _, kgid := range p.User.AdditionalGids {
+		extraKGIDs = append(extraKGIDs, auth.KGID(kgid))
+	}
 	for _, s := range ex.extraKGIDs {
 		kgid, err := strconv.Atoi(s)
 		if err != nil {
@@ -357,20 +345,34 @@ func (ex *Exec) argsFromCLI(argv []string, enableRaw bool) (*control.ExecArgs, e
 		extraKGIDs = append(extraKGIDs, auth.KGID(kgid))
 	}
 
-	var caps *auth.TaskCapabilities
-	if len(ex.caps) > 0 {
-		var err error
-		caps, err = capabilities(ex.caps, enableRaw)
-		if err != nil {
-			return nil, fmt.Errorf("capabilities error: %v", err)
-		}
+	caps, err := capabilities(p, ex.caps, enableRaw)
+	if err != nil {
+		return nil, fmt.Errorf("capabilities error: %v", err)
+	}
+
+	cwd := p.Cwd
+	if ex.cwd != "" {
+		cwd = ex.cwd
+	}
+
+	envv := append(p.Env, ex.env...)
+
+	kuid := auth.KUID(p.User.UID)
+	if ex.user.kuidSet {
+		kuid = ex.user.kuid
+	}
+
+	kgid := auth.KGID(p.User.GID)
+	if ex.user.kgidSet {
+		kgid = ex.user.kgid
 	}
 
 	return &control.ExecArgs{
 		Argv:             argv,
-		WorkingDirectory: ex.cwd,
-		KUID:             ex.user.kuid,
-		KGID:             ex.user.kgid,
+		Envv:             envv,
+		WorkingDirectory: cwd,
+		KUID:             kuid,
+		KGID:             kgid,
 		ExtraKGIDs:       extraKGIDs,
 		Capabilities:     caps,
 		StdioIsPty:       ex.consoleSocket != "" || console.IsPty(os.Stdin.Fd()),
@@ -382,7 +384,7 @@ func (ex *Exec) argsFromCLI(argv []string, enableRaw bool) (*control.ExecArgs, e
 	}, nil
 }
 
-func (ex *Exec) argsFromProcessFile(enableRaw bool) (*control.ExecArgs, error) {
+func (ex *Exec) argsFromProcessFile(specProc *specs.Process, enableRaw bool) (*control.ExecArgs, error) {
 	f, err := os.Open(ex.processPath)
 	if err != nil {
 		return nil, fmt.Errorf("error opening process file: %s, %v", ex.processPath, err)
@@ -392,24 +394,42 @@ func (ex *Exec) argsFromProcessFile(enableRaw bool) (*control.ExecArgs, error) {
 	if err := json.NewDecoder(f).Decode(&p); err != nil {
 		return nil, fmt.Errorf("error parsing process file: %s, %v", ex.processPath, err)
 	}
-	return argsFromProcess(&p, enableRaw)
+	if validateProcessSpec(&p) != nil {
+		return nil, fmt.Errorf("invalid process spec: %w", err)
+	}
+	return argsFromProcess(specProc, &p, enableRaw)
+}
+
+func validateProcessSpec(p *specs.Process) error {
+	if p.Cwd == "" {
+		return fmt.Errorf("cwd must not be empty")
+	}
+	if !filepath.IsAbs(p.Cwd) {
+		return fmt.Errorf("cwd %q must be an absolute path", p.Cwd)
+	}
+	if len(p.Args) == 0 {
+		return fmt.Errorf("args must not be empty")
+	}
+	return nil
 }
 
 // argsFromProcess performs all the non-IO conversion from the Process struct
 // to ExecArgs.
-func argsFromProcess(p *specs.Process, enableRaw bool) (*control.ExecArgs, error) {
+func argsFromProcess(specProc *specs.Process, p *specs.Process, enableRaw bool) (*control.ExecArgs, error) {
 	// Create capabilities.
-	var caps *auth.TaskCapabilities
-	if p.Capabilities != nil {
-		var err error
-		// Starting from Docker 19, capabilities are explicitly set for exec (instead
-		// of nil like before). So we can't distinguish 'exec' from
-		// 'exec --privileged', as both specify CAP_NET_RAW. Therefore, filter
-		// CAP_NET_RAW in the same way as container start.
-		caps, err = specutils.Capabilities(enableRaw, p.Capabilities)
-		if err != nil {
-			return nil, fmt.Errorf("error creating capabilities: %v", err)
-		}
+	procCaps := p.Capabilities
+	if procCaps == nil {
+		// If p doesn't have capabilities specified, fallback to the capabilities
+		// specified in the container spec.
+		procCaps = specProc.Capabilities
+	}
+	// Starting from Docker 19, capabilities are explicitly set for exec (instead
+	// of nil like before). So we can't distinguish 'exec' from
+	// 'exec --privileged', as both specify CAP_NET_RAW. Therefore, filter
+	// CAP_NET_RAW in the same way as container start.
+	caps, err := specutils.Capabilities(enableRaw, procCaps)
+	if err != nil {
+		return nil, fmt.Errorf("error creating capabilities: %v", err)
 	}
 
 	// Convert the spec's additional GIDs to KGIDs.
@@ -438,14 +458,17 @@ func argsFromProcess(p *specs.Process, enableRaw bool) (*control.ExecArgs, error
 // capabilities takes a list of capabilities as strings and returns an
 // auth.TaskCapabilities struct with those capabilities in every capability set.
 // This mimics runc's behavior.
-func capabilities(cs []string, enableRaw bool) (*auth.TaskCapabilities, error) {
-	var specCaps specs.LinuxCapabilities
+func capabilities(p *specs.Process, cs []string, enableRaw bool) (*auth.TaskCapabilities, error) {
+	specCaps := *p.Capabilities
 	for _, cap := range cs {
-		specCaps.Ambient = append(specCaps.Ambient, cap)
 		specCaps.Bounding = append(specCaps.Bounding, cap)
 		specCaps.Effective = append(specCaps.Effective, cap)
-		specCaps.Inheritable = append(specCaps.Inheritable, cap)
 		specCaps.Permitted = append(specCaps.Permitted, cap)
+		// Consistent with runc, don't set inheritable. Only set ambient if we
+		// already have some inheritable bits set from spec.
+		if specCaps.Inheritable != nil {
+			specCaps.Ambient = append(specCaps.Ambient, cap)
+		}
 	}
 	// Starting from Docker 19, capabilities are explicitly set for exec (instead
 	// of nil like before). So we can't distinguish 'exec' from
@@ -479,8 +502,10 @@ func (ss *stringSlice) Set(s string) error {
 // user allows -user to convey a UID and, optionally, a GID separated by a
 // colon.
 type user struct {
-	kuid auth.KUID
-	kgid auth.KGID
+	kuid    auth.KUID
+	kuidSet bool
+	kgid    auth.KGID
+	kgidSet bool
 }
 
 // String implements flag.Value.String.
@@ -501,12 +526,14 @@ func (u *user) Set(s string) error {
 		return fmt.Errorf("couldn't parse UID: %s", parts[0])
 	}
 	u.kuid = auth.KUID(kuid)
+	u.kuidSet = true
 	if len(parts) > 1 {
 		kgid, err := strconv.Atoi(parts[1])
 		if err != nil {
 			return fmt.Errorf("couldn't parse GID: %s", parts[1])
 		}
 		u.kgid = auth.KGID(kgid)
+		u.kgidSet = true
 	}
 	return nil
 }

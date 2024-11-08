@@ -32,10 +32,10 @@ func TestUser(t *testing.T) {
 		want    user
 		wantErr bool
 	}{
-		{input: "0", want: user{kuid: 0, kgid: 0}},
-		{input: "7", want: user{kuid: 7, kgid: 0}},
-		{input: "49:343", want: user{kuid: 49, kgid: 343}},
-		{input: "0:2401", want: user{kuid: 0, kgid: 2401}},
+		{input: "0", want: user{kuid: 0, kuidSet: true, kgid: 0, kgidSet: false}},
+		{input: "7", want: user{kuid: 7, kuidSet: true, kgid: 0, kgidSet: false}},
+		{input: "49:343", want: user{kuid: 49, kuidSet: true, kgid: 343, kgidSet: true}},
+		{input: "0:2401", want: user{kuid: 0, kuidSet: true, kgid: 2401, kgidSet: true}},
 		{input: "", wantErr: true},
 		{input: "foo", wantErr: true},
 		{input: ":123", wantErr: true},
@@ -59,64 +59,114 @@ func TestUser(t *testing.T) {
 
 func TestCLIArgs(t *testing.T) {
 	testCases := []struct {
+		name     string
 		ex       Exec
+		spec     specs.Process
 		argv     []string
 		expected control.ExecArgs
 	}{
 		{
-			ex: Exec{
-				cwd:         "/foo/bar",
-				user:        user{kuid: 0, kgid: 0},
-				extraKGIDs:  []string{"1", "2", "3"},
-				caps:        []string{"CAP_DAC_OVERRIDE"},
-				processPath: "",
+			name: "spec used by default",
+			ex:   Exec{},
+			spec: specs.Process{
+				User:         specs.User{UID: 2, GID: 2, AdditionalGids: []uint32{1, 2, 3}},
+				Capabilities: &specs.LinuxCapabilities{Bounding: []string{"CAP_DAC_OVERRIDE"}, Inheritable: []string{"CAP_DAC_OVERRIDE"}},
+				Cwd:          "/foo/bar",
+				Env:          []string{"FOO=bar"},
 			},
 			argv: []string{"ls", "/"},
 			expected: control.ExecArgs{
 				Argv:             []string{"ls", "/"},
+				Envv:             []string{"FOO=bar"},
 				WorkingDirectory: "/foo/bar",
 				FilePayload: control.NewFilePayload(map[int]*os.File{
 					0: os.Stdin,
 					1: os.Stdout,
 					2: os.Stderr,
 				}, nil),
-				KUID:       0,
-				KGID:       0,
+				KUID:       2,
+				KGID:       2,
 				ExtraKGIDs: []auth.KGID{1, 2, 3},
 				Capabilities: &auth.TaskCapabilities{
 					BoundingCaps:    auth.CapabilitySetOf(linux.CAP_DAC_OVERRIDE),
-					EffectiveCaps:   auth.CapabilitySetOf(linux.CAP_DAC_OVERRIDE),
 					InheritableCaps: auth.CapabilitySetOf(linux.CAP_DAC_OVERRIDE),
-					PermittedCaps:   auth.CapabilitySetOf(linux.CAP_DAC_OVERRIDE),
+				},
+			},
+		},
+		{
+			name: "spec overridden by CLI",
+			ex: Exec{
+				cwd:        "/baz",
+				user:       user{kuid: 4, kuidSet: true, kgid: 4, kgidSet: true},
+				extraKGIDs: []string{"4", "5", "6"},
+				caps:       []string{"CAP_DAC_READ_SEARCH"},
+				env:        []string{"BAZ=new"},
+			},
+			spec: specs.Process{
+				User:         specs.User{UID: 2, GID: 2, AdditionalGids: []uint32{1, 2, 3}},
+				Capabilities: &specs.LinuxCapabilities{Bounding: []string{"CAP_DAC_OVERRIDE"}, Inheritable: []string{"CAP_DAC_OVERRIDE"}},
+				Cwd:          "/foo/bar",
+				Env:          []string{"FOO=bar"},
+			},
+			argv: []string{"ls", "/"},
+			expected: control.ExecArgs{
+				Argv:             []string{"ls", "/"},
+				Envv:             []string{"FOO=bar", "BAZ=new"},
+				WorkingDirectory: "/baz",
+				FilePayload: control.NewFilePayload(map[int]*os.File{
+					0: os.Stdin,
+					1: os.Stdout,
+					2: os.Stderr,
+				}, nil),
+				KUID:       4,
+				KGID:       4,
+				ExtraKGIDs: []auth.KGID{1, 2, 3, 4, 5, 6},
+				Capabilities: &auth.TaskCapabilities{
+					BoundingCaps:    auth.CapabilitySetOfMany([]linux.Capability{linux.CAP_DAC_OVERRIDE, linux.CAP_DAC_READ_SEARCH}),
+					EffectiveCaps:   auth.CapabilitySetOfMany([]linux.Capability{linux.CAP_DAC_READ_SEARCH}),
+					PermittedCaps:   auth.CapabilitySetOfMany([]linux.Capability{linux.CAP_DAC_READ_SEARCH}),
+					InheritableCaps: auth.CapabilitySetOfMany([]linux.Capability{linux.CAP_DAC_OVERRIDE}),
+					// TODO(gvisor.dev/issue/3166): Once ambient capabilities is
+					// supported, AmbientCaps should be CAP_DAC_READ_SEARCH.
+					AmbientCaps: 0,
 				},
 			},
 		},
 	}
 
 	for _, tc := range testCases {
-		e, err := tc.ex.argsFromCLI(tc.argv, true)
-		if err != nil {
-			t.Errorf("argsFromCLI(%+v): got error: %+v", tc.ex, err)
-		} else if !cmp.Equal(*e, tc.expected, cmpopts.IgnoreUnexported(os.File{})) {
-			t.Errorf("argsFromCLI(%+v): got %+v, but expected %+v", tc.ex, *e, tc.expected)
-		}
+		t.Run(tc.name, func(t *testing.T) {
+			e, err := tc.ex.argsFromCLI(&tc.spec, tc.argv, true)
+			if err != nil {
+				t.Errorf("argsFromCLI(%+v): got error: %+v", tc.ex, err)
+				return
+			}
+			if diff := cmp.Diff(*e, tc.expected, cmpopts.IgnoreUnexported(os.File{})); diff != "" {
+				t.Errorf("argsFromCLI(%+v): diff (+want -got):\n%s", tc.ex, diff)
+			}
+		})
 	}
 }
 
 func TestJSONArgs(t *testing.T) {
 	testCases := []struct {
-		// ex is provided to make sure it is overridden by p.
+		name     string
 		ex       Exec
+		spec     specs.Process
 		p        specs.Process
 		expected control.ExecArgs
 	}{
 		{
+			name: "flags overridden by process file",
 			ex: Exec{
 				cwd:         "/baz/quux",
 				user:        user{kuid: 1, kgid: 1},
 				extraKGIDs:  []string{"4", "5", "6"},
 				caps:        []string{"CAP_SETGID"},
 				processPath: "/bin/foo",
+			},
+			spec: specs.Process{
+				Capabilities: &specs.LinuxCapabilities{Bounding: []string{"CAP_DAC_READ_SEARCH"}},
 			},
 			p: specs.Process{
 				User: specs.User{UID: 0, GID: 0, AdditionalGids: []uint32{1, 2, 3}},
@@ -148,14 +198,47 @@ func TestJSONArgs(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "capabilities fallback to spec",
+			ex:   Exec{},
+			spec: specs.Process{
+				Capabilities: &specs.LinuxCapabilities{
+					Bounding: []string{"CAP_DAC_READ_SEARCH"}},
+			},
+			p: specs.Process{
+				User: specs.User{UID: 0, GID: 0},
+				Args: []string{"ls", "/"},
+				Cwd:  "/foo/bar",
+				// Does not specify capabilities.
+			},
+			expected: control.ExecArgs{
+				Argv:             []string{"ls", "/"},
+				WorkingDirectory: "/foo/bar",
+				FilePayload: control.NewFilePayload(map[int]*os.File{
+					0: os.Stdin,
+					1: os.Stdout,
+					2: os.Stderr,
+				}, nil),
+				KUID:       0,
+				KGID:       0,
+				ExtraKGIDs: []auth.KGID{},
+				Capabilities: &auth.TaskCapabilities{
+					BoundingCaps: auth.CapabilitySetOf(linux.CAP_DAC_READ_SEARCH),
+				},
+			},
+		},
 	}
 
 	for _, tc := range testCases {
-		e, err := argsFromProcess(&tc.p, true)
-		if err != nil {
-			t.Errorf("argsFromProcess(%+v): got error: %+v", tc.p, err)
-		} else if !cmp.Equal(*e, tc.expected, cmpopts.IgnoreUnexported(os.File{})) {
-			t.Errorf("argsFromProcess(%+v): got %+v, but expected %+v", tc.p, *e, tc.expected)
-		}
+		t.Run(tc.name, func(t *testing.T) {
+			e, err := argsFromProcess(&tc.spec, &tc.p, true)
+			if err != nil {
+				t.Errorf("argsFromProcess(%+v): got error: %+v", tc.p, err)
+				return
+			}
+			if diff := cmp.Diff(*e, tc.expected, cmpopts.IgnoreUnexported(os.File{})); diff != "" {
+				t.Errorf("argsFromProcess(%+v): diff (+want -got):\n%s", tc.p, diff)
+			}
+		})
 	}
 }
