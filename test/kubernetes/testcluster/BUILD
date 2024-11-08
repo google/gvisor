@@ -15,6 +15,7 @@ go_library(
         "//visibility:public",
     ],
     deps = [
+        "//pkg/log",
         "//test/kubernetes:test_range_config_go_proto",
         "@io_k8s_api//apps/v1:go_default_library",
         "@io_k8s_api//core/v1:go_default_library",
