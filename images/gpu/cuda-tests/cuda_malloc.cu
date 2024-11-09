@@ -68,6 +68,7 @@ void TestMallocHostReadWrite(int device) {
   // Copy the array to the device, mutate it there, and copy it back.
   CHECK_CUDA(cudaMemcpy(gpu_data, cpu_data, kNumBytes, cudaMemcpyHostToDevice));
   addKernel<<<kNumBlocks, kNumThreads>>>(gpu_data);
+  CHECK_CUDA(cudaGetLastError());
   CHECK_CUDA(cudaDeviceSynchronize());
   CHECK_CUDA(cudaMemcpy(cpu_data, gpu_data, kNumBytes, cudaMemcpyDeviceToHost));
 
@@ -111,6 +112,7 @@ void TestMallocHostReadWrite(int device) {
   // Mutate the array on the device again.
   CHECK_CUDA(cudaMemcpy(gpu_data, cpu_data, kNumBytes, cudaMemcpyHostToDevice));
   addKernel<<<kNumBlocks, kNumThreads>>>(gpu_data);
+  CHECK_CUDA(cudaGetLastError());
   CHECK_CUDA(cudaDeviceSynchronize());
   CHECK_CUDA(cudaMemcpy(cpu_data, gpu_data, kNumBytes, cudaMemcpyDeviceToHost));
 
@@ -153,6 +155,7 @@ void TestMallocManagedRoundTrip(int device, unsigned int malloc_flags,
 
   // Mutate the array on the device.
   addKernel<<<kNumBlocks, kNumThreads>>>(data);
+  CHECK_CUDA(cudaGetLastError());
   CHECK_CUDA(cudaDeviceSynchronize());
 
   if (prefetch) {
@@ -208,6 +211,7 @@ void TestMallocManagedReadWrite(int device) {
 
   // Mutate the array on the device.
   addKernel<<<kNumBlocks, kNumThreads>>>(data);
+  CHECK_CUDA(cudaGetLastError());
   CHECK_CUDA(cudaDeviceSynchronize());
 
   // Check that the array has the expected result.
@@ -249,6 +253,7 @@ void TestMallocManagedReadWrite(int device) {
 
   // Mutate the array on the device again.
   addKernel<<<kNumBlocks, kNumThreads>>>(data);
+  CHECK_CUDA(cudaGetLastError());
   CHECK_CUDA(cudaDeviceSynchronize());
 
   // Check that the array has the expected result again.
