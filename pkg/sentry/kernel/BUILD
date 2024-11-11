@@ -106,6 +106,13 @@ declare_mutex(
 )
 
 declare_mutex(
+    name = "timekeeper_tcpip_timer_mutex",
+    out = "timekeeper_tcpip_timer_mutex.go",
+    package = "kernel",
+    prefix = "timekeeperTcpipTimer",
+)
+
+declare_mutex(
     name = "cgroup_mounts_mutex",
     out = "cgroup_mounts_mutex.go",
     package = "kernel",
@@ -290,6 +297,7 @@ go_library(
         "threads_impl.go",
         "timekeeper.go",
         "timekeeper_state.go",
+        "timekeeper_tcpip_timer_mutex.go",
         "tty.go",
         "user_counters_mutex.go",
         "uts_namespace.go",

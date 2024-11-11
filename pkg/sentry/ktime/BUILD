@@ -65,7 +65,6 @@ go_library(
         "synthetic_timer_list.go",
         "synthetic_timer_set.go",
         "uint64_range.go",
-        "util.go",
     ],
     visibility = ["//pkg/sentry:internal"],
     deps = [

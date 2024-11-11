@@ -20,6 +20,7 @@
 //
 //	Kernel.extMu
 //	  TTY.mu
+//	  timekeeperTcpipTimer.mu
 //	  ThreadGroup.timerMu
 //	    Locks acquired by ktime.Timer methods
 //	      TaskSet.mu
