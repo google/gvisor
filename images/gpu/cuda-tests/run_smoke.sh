@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 # Copyright 2021 The gVisor Authors.
 #
@@ -14,8 +14,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-set -eux
+set -euxo pipefail
 
 cd /
 nvcc cuda_malloc.cu -o cuda_malloc
 ./cuda_malloc
+echo 'All tests passed'
