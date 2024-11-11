@@ -741,7 +741,6 @@ func (t *Task) exitNotifyLocked(fromPtraceDetach bool) {
 		t.tg.tasks.Remove(t)
 		t.tg.tasksCount--
 		tc := t.tg.tasksCount
-		t.tg.exitedCPUStats.Accumulate(t.CPUStats())
 		t.tg.signalHandlers.mu.Unlock()
 		t.tg.ioUsage.Accumulate(t.ioUsage)
 		if tc == 1 && t != t.tg.leader {
@@ -1126,14 +1125,7 @@ func (t *Task) waitCollectZombieLocked(target *Task, opts *WaitOptions, asPtrace
 	if target.parent != nil && target.parent.tg == t.tg && target.exitParentNotified {
 		target.exitParentAcked = true
 		if target == target.tg.leader {
-			// target.tg.exitedCPUStats doesn't include target.CPUStats() yet,
-			// and won't until after target.exitNotifyLocked() (maybe). Include
-			// target.CPUStats() explicitly. This is consistent with Linux,
-			// which accounts an exited task's cputime to its thread group in
-			// kernel/exit.c:release_task() => __exit_signal(), and uses
-			// thread_group_cputime_adjusted() in wait_task_zombie().
-			t.tg.childCPUStats.Accumulate(target.CPUStats())
-			t.tg.childCPUStats.Accumulate(target.tg.exitedCPUStats)
+			t.tg.childCPUStats.Accumulate(target.tg.CPUStats())
 			t.tg.childCPUStats.Accumulate(target.tg.childCPUStats)
 			// Update t's child max resident set size. The size will be the maximum
 			// of this thread's size and all its childrens' sizes.

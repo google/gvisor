@@ -41,6 +41,8 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sighandling"
 	"gvisor.dev/gvisor/pkg/state/statefile"
+	"gvisor.dev/gvisor/pkg/unet"
+	"gvisor.dev/gvisor/pkg/urpc"
 	"gvisor.dev/gvisor/runsc/boot"
 	"gvisor.dev/gvisor/runsc/cgroup"
 	"gvisor.dev/gvisor/runsc/config"
@@ -1272,6 +1274,25 @@ func (c *Container) createGoferProcess(spec *specs.Spec, conf *config.Config, bu
 	}
 	donations.DonateAndClose("mounts-fd", mountsGofer)
 
+	rpcServ, rpcClnt, err := unet.SocketPair(false)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to create an rpc socket pair: %w", err)
+	}
+	rpcClntFD, _ := rpcClnt.Release()
+	donations.DonateAndClose("rpc-fd", os.NewFile(uintptr(rpcClntFD), "gofer-rpc"))
+	rpcPidCh := make(chan int, 1)
+	defer close(rpcPidCh)
+	go func() {
+		pid := <-rpcPidCh
+		if pid == 0 {
+			rpcServ.Close()
+			return
+		}
+		s := urpc.NewServer()
+		s.Register(&goferToHostRPC{goferPID: pid})
+		s.StartHandling(rpcServ)
+	}()
+
 	// Count the number of mounts that needs an IO file.
 	ioFileCount := 0
 	for _, cfg := range c.GoferMountConfs {
@@ -1370,6 +1391,7 @@ func (c *Container) createGoferProcess(spec *specs.Spec, conf *config.Config, bu
 	log.Infof("Gofer started, PID: %d", cmd.Process.Pid)
 	c.GoferPid = cmd.Process.Pid
 	c.goferIsChild = true
+	rpcPidCh <- cmd.Process.Pid
 
 	// Set up and synchronize rootless mode userns mappings.
 	if rootlessEUID {

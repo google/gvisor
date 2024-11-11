@@ -98,8 +98,292 @@ func (t *SampledTimer) StateLoad(ctx context.Context, stateSourceObject state.So
 	stateSourceObject.Load(3, &t.pauseState)
 }
 
+func (t *SyntheticTimer) StateTypeName() string {
+	return "pkg/sentry/ktime.SyntheticTimer"
+}
+
+func (t *SyntheticTimer) StateFields() []string {
+	return []string{
+		"clock",
+		"listener",
+		"setting",
+		"syntheticTimerEntry",
+	}
+}
+
+func (t *SyntheticTimer) beforeSave() {}
+
+// +checklocksignore
+func (t *SyntheticTimer) StateSave(stateSinkObject state.Sink) {
+	t.beforeSave()
+	stateSinkObject.Save(0, &t.clock)
+	stateSinkObject.Save(1, &t.listener)
+	stateSinkObject.Save(2, &t.setting)
+	stateSinkObject.Save(3, &t.syntheticTimerEntry)
+}
+
+func (t *SyntheticTimer) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (t *SyntheticTimer) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &t.clock)
+	stateSourceObject.Load(1, &t.listener)
+	stateSourceObject.Load(2, &t.setting)
+	stateSourceObject.Load(3, &t.syntheticTimerEntry)
+}
+
+func (c *SyntheticClock) StateTypeName() string {
+	return "pkg/sentry/ktime.SyntheticClock"
+}
+
+func (c *SyntheticClock) StateFields() []string {
+	return []string{
+		"now",
+		"timers",
+	}
+}
+
+func (c *SyntheticClock) beforeSave() {}
+
+// +checklocksignore
+func (c *SyntheticClock) StateSave(stateSinkObject state.Sink) {
+	c.beforeSave()
+	stateSinkObject.Save(0, &c.now)
+	stateSinkObject.Save(1, &c.timers)
+}
+
+func (c *SyntheticClock) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (c *SyntheticClock) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &c.now)
+	stateSourceObject.Load(1, &c.timers)
+}
+
+func (s *syntheticTimerQueue) StateTypeName() string {
+	return "pkg/sentry/ktime.syntheticTimerQueue"
+}
+
+func (s *syntheticTimerQueue) StateFields() []string {
+	return []string{
+		"timers",
+	}
+}
+
+func (s *syntheticTimerQueue) beforeSave() {}
+
+// +checklocksignore
+func (s *syntheticTimerQueue) StateSave(stateSinkObject state.Sink) {
+	s.beforeSave()
+	stateSinkObject.Save(0, &s.timers)
+}
+
+func (s *syntheticTimerQueue) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (s *syntheticTimerQueue) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &s.timers)
+}
+
+func (l *syntheticTimerList) StateTypeName() string {
+	return "pkg/sentry/ktime.syntheticTimerList"
+}
+
+func (l *syntheticTimerList) StateFields() []string {
+	return []string{
+		"head",
+		"tail",
+	}
+}
+
+func (l *syntheticTimerList) beforeSave() {}
+
+// +checklocksignore
+func (l *syntheticTimerList) StateSave(stateSinkObject state.Sink) {
+	l.beforeSave()
+	stateSinkObject.Save(0, &l.head)
+	stateSinkObject.Save(1, &l.tail)
+}
+
+func (l *syntheticTimerList) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (l *syntheticTimerList) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &l.head)
+	stateSourceObject.Load(1, &l.tail)
+}
+
+func (e *syntheticTimerEntry) StateTypeName() string {
+	return "pkg/sentry/ktime.syntheticTimerEntry"
+}
+
+func (e *syntheticTimerEntry) StateFields() []string {
+	return []string{
+		"next",
+		"prev",
+	}
+}
+
+func (e *syntheticTimerEntry) beforeSave() {}
+
+// +checklocksignore
+func (e *syntheticTimerEntry) StateSave(stateSinkObject state.Sink) {
+	e.beforeSave()
+	stateSinkObject.Save(0, &e.next)
+	stateSinkObject.Save(1, &e.prev)
+}
+
+func (e *syntheticTimerEntry) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (e *syntheticTimerEntry) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &e.next)
+	stateSourceObject.Load(1, &e.prev)
+}
+
+func (s *syntheticTimerSet) StateTypeName() string {
+	return "pkg/sentry/ktime.syntheticTimerSet"
+}
+
+func (s *syntheticTimerSet) StateFields() []string {
+	return []string{
+		"root",
+	}
+}
+
+func (s *syntheticTimerSet) beforeSave() {}
+
+// +checklocksignore
+func (s *syntheticTimerSet) StateSave(stateSinkObject state.Sink) {
+	s.beforeSave()
+	var rootValue []syntheticTimerFlatSegment
+	rootValue = s.saveRoot()
+	stateSinkObject.SaveValue(0, rootValue)
+}
+
+func (s *syntheticTimerSet) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (s *syntheticTimerSet) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.LoadValue(0, new([]syntheticTimerFlatSegment), func(y any) { s.loadRoot(ctx, y.([]syntheticTimerFlatSegment)) })
+}
+
+func (n *syntheticTimernode) StateTypeName() string {
+	return "pkg/sentry/ktime.syntheticTimernode"
+}
+
+func (n *syntheticTimernode) StateFields() []string {
+	return []string{
+		"nrSegments",
+		"parent",
+		"parentIndex",
+		"hasChildren",
+		"maxGap",
+		"keys",
+		"values",
+		"children",
+	}
+}
+
+func (n *syntheticTimernode) beforeSave() {}
+
+// +checklocksignore
+func (n *syntheticTimernode) StateSave(stateSinkObject state.Sink) {
+	n.beforeSave()
+	stateSinkObject.Save(0, &n.nrSegments)
+	stateSinkObject.Save(1, &n.parent)
+	stateSinkObject.Save(2, &n.parentIndex)
+	stateSinkObject.Save(3, &n.hasChildren)
+	stateSinkObject.Save(4, &n.maxGap)
+	stateSinkObject.Save(5, &n.keys)
+	stateSinkObject.Save(6, &n.values)
+	stateSinkObject.Save(7, &n.children)
+}
+
+func (n *syntheticTimernode) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (n *syntheticTimernode) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &n.nrSegments)
+	stateSourceObject.Load(1, &n.parent)
+	stateSourceObject.Load(2, &n.parentIndex)
+	stateSourceObject.Load(3, &n.hasChildren)
+	stateSourceObject.Load(4, &n.maxGap)
+	stateSourceObject.Load(5, &n.keys)
+	stateSourceObject.Load(6, &n.values)
+	stateSourceObject.Load(7, &n.children)
+}
+
+func (s *syntheticTimerFlatSegment) StateTypeName() string {
+	return "pkg/sentry/ktime.syntheticTimerFlatSegment"
+}
+
+func (s *syntheticTimerFlatSegment) StateFields() []string {
+	return []string{
+		"Start",
+		"End",
+		"Value",
+	}
+}
+
+func (s *syntheticTimerFlatSegment) beforeSave() {}
+
+// +checklocksignore
+func (s *syntheticTimerFlatSegment) StateSave(stateSinkObject state.Sink) {
+	s.beforeSave()
+	stateSinkObject.Save(0, &s.Start)
+	stateSinkObject.Save(1, &s.End)
+	stateSinkObject.Save(2, &s.Value)
+}
+
+func (s *syntheticTimerFlatSegment) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (s *syntheticTimerFlatSegment) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &s.Start)
+	stateSourceObject.Load(1, &s.End)
+	stateSourceObject.Load(2, &s.Value)
+}
+
+func (r *uint64Range) StateTypeName() string {
+	return "pkg/sentry/ktime.uint64Range"
+}
+
+func (r *uint64Range) StateFields() []string {
+	return []string{
+		"Start",
+		"End",
+	}
+}
+
+func (r *uint64Range) beforeSave() {}
+
+// +checklocksignore
+func (r *uint64Range) StateSave(stateSinkObject state.Sink) {
+	r.beforeSave()
+	stateSinkObject.Save(0, &r.Start)
+	stateSinkObject.Save(1, &r.End)
+}
+
+func (r *uint64Range) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (r *uint64Range) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &r.Start)
+	stateSourceObject.Load(1, &r.End)
+}
+
 func init() {
 	state.Register((*Time)(nil))
 	state.Register((*Setting)(nil))
 	state.Register((*SampledTimer)(nil))
+	state.Register((*SyntheticTimer)(nil))
+	state.Register((*SyntheticClock)(nil))
+	state.Register((*syntheticTimerQueue)(nil))
+	state.Register((*syntheticTimerList)(nil))
+	state.Register((*syntheticTimerEntry)(nil))
+	state.Register((*syntheticTimerSet)(nil))
+	state.Register((*syntheticTimernode)(nil))
+	state.Register((*syntheticTimerFlatSegment)(nil))
+	state.Register((*uint64Range)(nil))
 }

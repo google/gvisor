@@ -33,7 +33,6 @@ import (
 	"fmt"
 	"time"
 
-	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/metric"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
@@ -280,7 +279,7 @@ func (w *Watchdog) runTurn() {
 
 	newOffenders := make(map[*kernel.Task]*offender)
 	newTaskFound := false
-	now := ktime.FromNanoseconds(int64(w.k.CPUClockNow() * uint64(linux.ClockTick)))
+	now := w.k.CPUClockNow()
 
 	// The process may be running with low CPU limit making tasks appear stuck because
 	// are starved of CPU cycles. An estimate is that Tasks could have been starved
@@ -294,11 +293,9 @@ func (w *Watchdog) runTurn() {
 
 	log.Infof("Watchdog starting loop, tasks: %d, discount: %v", len(tasks), discount)
 	for _, t := range tasks {
-		tsched := t.TaskGoroutineSchedInfo()
-
 		// An offender is a task running inside the kernel for longer than the specified timeout.
-		if tsched.State == kernel.TaskGoroutineRunningSys {
-			lastUpdateTime := ktime.FromNanoseconds(int64(tsched.Timestamp * uint64(linux.ClockTick)))
+		tstate, lastUpdateTime := t.TaskGoroutineStateTime()
+		if tstate == kernel.TaskGoroutineRunningSys {
 			elapsed := now.Sub(lastUpdateTime) - discount
 			if elapsed > w.TaskTimeout {
 				tc, ok := w.offenders[t]

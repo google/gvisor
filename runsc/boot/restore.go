@@ -256,15 +256,15 @@ func extractAnnotationsToValidate(o map[string]string) map[string]string {
 	const (
 		gvisorPrefix   = "dev.gvisor."
 		internalPrefix = "dev.gvisor.internal."
-
-		mntSrcAnnotation = "dev.gvisor.spec.mount.source"
+		mntPrefix      = "dev.gvisor.spec.mount."
 	)
 
 	n := make(map[string]string)
 	for key, val := range o {
-		if strings.HasPrefix(key, internalPrefix) || key == mntSrcAnnotation {
+		if strings.HasPrefix(key, internalPrefix) || (strings.HasPrefix(key, mntPrefix) && strings.HasSuffix(key, ".source")) {
 			continue
 		}
+
 		if strings.HasPrefix(key, gvisorPrefix) {
 			n[key] = val
 		}

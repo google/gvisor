@@ -587,9 +587,7 @@ func Init() {
 
 		// The following exist on the "535" branch. They branched off the main
 		// branch at 535.113.01.
-		v535_161_07 := addDriverABI(535, 161, 07, "edc527f1dcfa0212a3bf815ebf302d45ef9663834a41e11a851dd38da159a8cd", v535_113_01)
-		v535_161_08 := addDriverABI(535, 161, 8 /*08*/, "0f026c2e6161c0bd453830903c55569e402eb1cf0c5a8e56c39e7998df55565c", v535_161_07)
-		v535_183_01 := addDriverABI(535, 183, 01, "f6707afbdda9407e3cbc2e5128e60bcbcdbf02fae29958c72fafb5d405e8b883", v535_161_08)
+		v535_183_01 := addDriverABI(535, 183, 01, "f6707afbdda9407e3cbc2e5128e60bcbcdbf02fae29958c72fafb5d405e8b883", v535_113_01)
 		v535_183_06 := addDriverABI(535, 183, 06, "c7bb0a0569c5347845479ed4e3e4d885c6ee3b8adf068c3401cdf754d5ba3d3b", v535_183_01)
 		_ = addDriverABI(535, 216, 01, "5ddea1147810012e33967c3181341bcd6624bd3d654c63f845df833b4ece6af7", v535_183_06)
 
@@ -673,10 +671,8 @@ func Init() {
 			return abi
 		})
 
-		v550_54_15 := addDriverABI(550, 54, 15, "2e859ae5f912a9a47aaa9b2d40a94a14f6f486b5d3b67c0ddf8b72c1c9650385", v550_54_14)
-
 		v550_90_07 := addDriverABI(550, 90, 07, "51acf579d5a9884f573a1d3f522e7fafa5e7841e22a9cec0b4bbeae31b0b9733", func() *driverABI {
-			abi := v550_54_15()
+			abi := v550_54_14()
 			abi.controlCmd[nvgpu.NV_CONF_COMPUTE_CTRL_CMD_GPU_GET_KEY_ROTATION_STATE] = rmControlSimple
 
 			prevNames := abi.getStructNames

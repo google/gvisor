@@ -299,13 +299,17 @@ func (ns *PIDNamespace) IDOfThreadGroup(tg *ThreadGroup) ThreadID {
 
 // Tasks returns a snapshot of the tasks in ns.
 func (ns *PIDNamespace) Tasks() []*Task {
+	return ns.TasksAppend(nil)
+}
+
+// TasksAppend appends a snapshot of the tasks in ns to ts.
+func (ns *PIDNamespace) TasksAppend(ts []*Task) []*Task {
 	ns.owner.mu.RLock()
 	defer ns.owner.mu.RUnlock()
-	tasks := make([]*Task, 0, len(ns.tasks))
 	for t := range ns.tids {
-		tasks = append(tasks, t)
+		ts = append(ts, t)
 	}
-	return tasks
+	return ts
 }
 
 // NumTasks returns the number of tasks in ns.
@@ -487,7 +491,7 @@ func (tg *ThreadGroup) ID() ThreadID {
 type taskNode struct {
 	// tg is the thread group that this task belongs to. The tg pointer is
 	// immutable.
-	tg *ThreadGroup `state:"wait"`
+	tg *ThreadGroup
 
 	// taskEntry links into tg.tasks. Note that this means that
 	// Task.Next/Prev/SetNext/SetPrev refer to sibling tasks in the same thread

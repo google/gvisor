@@ -21,7 +21,7 @@
 //	Kernel.extMu
 //	  TTY.mu
 //	  ThreadGroup.timerMu
-//	    ktime.Timer.mu (for IntervalTimer) and Kernel.cpuClockMu
+//	    Locks acquired by ktime.Timer methods
 //	      TaskSet.mu
 //	        SignalHandlers.mu
 //	          Task.mu
@@ -197,30 +197,11 @@ type Kernel struct {
 	// Invariant: runningTasksCond.L == &runningTasksMu.
 	runningTasksCond sync.Cond `state:"nosave"`
 
-	// cpuClock is incremented every linux.ClockTick by a goroutine running
-	// kernel.runCPUClockTicker() while runningTasks != 0.
-	//
-	// cpuClock is used to measure task CPU usage, since sampling monotonicClock
-	// twice on every syscall turns out to be unreasonably expensive. This is
-	// similar to how Linux does task CPU accounting on x86
-	// (CONFIG_IRQ_TIME_ACCOUNTING), although Linux also uses scheduler timing
-	// information to improve resolution
-	// (kernel/sched/cputime.c:cputime_adjust()), which we can't do since
-	// "preeemptive" scheduling is managed by the Go runtime, which doesn't
-	// provide this information.
-	//
-	// cpuClock is mutable, and is accessed using atomic memory operations.
-	cpuClock atomicbitops.Uint64
-
 	// cpuClockTickTimer drives increments of cpuClock.
 	cpuClockTickTimer *time.Timer `state:"nosave"`
 
-	// cpuClockMu is used to make increments of cpuClock, and updates of timers
-	// based on cpuClock, atomic.
-	cpuClockMu cpuClockMutex `state:"nosave"`
-
 	// cpuClockTickerRunning is true if the goroutine that increments cpuClock is
-	// running and false if it is blocked in runningTasksCond.Wait() or if it
+	// running, and false if it is blocked in runningTasksCond.Wait() or if it
 	// never started.
 	//
 	// cpuClockTickerRunning is protected by runningTasksMu.
@@ -235,6 +216,13 @@ type Kernel struct {
 	//
 	// Invariant: cpuClockTickerStopCond.L == &runningTasksMu.
 	cpuClockTickerStopCond sync.Cond `state:"nosave"`
+
+	// cpuClock is a coarse monotonic clock that is advanced by the CPU clock
+	// ticker and thus approximates wall time when tasks are running (but is
+	// strictly slower due to CPU clock ticker goroutine wakeup latency). This
+	// does not use ktime.SyntheticClock since this clock currently does not
+	// need to support timers.
+	cpuClock atomicbitops.Int64
 
 	// uniqueID is used to generate unique identifiers.
 	//
@@ -1641,11 +1629,6 @@ func (k *Kernel) RealtimeClock() ktime.SampledClock {
 // MonotonicClock returns the application CLOCK_MONOTONIC clock.
 func (k *Kernel) MonotonicClock() ktime.SampledClock {
 	return k.timekeeper.monotonicClock
-}
-
-// CPUClockNow returns the current value of k.cpuClock.
-func (k *Kernel) CPUClockNow() uint64 {
-	return k.cpuClock.Load()
 }
 
 // Syslog returns the syslog.
