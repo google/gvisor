@@ -15,7 +15,6 @@
 package kernel
 
 import (
-	goContext "context"
 	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -170,31 +169,19 @@ type ThreadGroup struct {
 
 	timerMu threadGroupTimerMutex `state:"nosave"`
 
-	// itimerRealTimer implements ITIMER_REAL for the thread group.
-	itimerRealTimer *ktime.SampledTimer
+	// ITIMER_* timers:
+	itimerRealTimer    *ktime.SampledTimer
+	itimerRealListener itimerRealListener
+	itimerVirtTimer    ktime.SyntheticTimer
+	itimerVirtListener itimerVirtListener
+	itimerProfTimer    ktime.SyntheticTimer
+	itimerProfListener itimerProfListener
 
-	// itimerVirtSetting is the ITIMER_VIRTUAL setting for the thread group.
-	//
-	// itimerVirtSetting is protected by the signal mutex.
-	itimerVirtSetting ktime.Setting
-
-	// itimerProfSetting is the ITIMER_PROF setting for the thread group.
-	//
-	// itimerProfSetting is protected by the signal mutex.
-	itimerProfSetting ktime.Setting
-
-	// rlimitCPUSoftSetting is the setting for RLIMIT_CPU soft limit
-	// notifications for the thread group.
-	//
-	// rlimitCPUSoftSetting is protected by the signal mutex.
-	rlimitCPUSoftSetting ktime.Setting
-
-	// cpuTimersEnabled is non-zero if itimerVirtSetting.Enabled is true,
-	// itimerProfSetting.Enabled is true, rlimitCPUSoftSetting.Enabled is true,
-	// or limits.Get(CPU) is finite.
-	//
-	// cpuTimersEnabled is protected by the signal mutex.
-	cpuTimersEnabled atomicbitops.Uint32
+	// RLIMIT_CPU timers:
+	rlimitCPUSoftTimer    ktime.SyntheticTimer
+	rlimitCPUSoftListener rlimitCPUSoftListener
+	rlimitCPUHardTimer    ktime.SyntheticTimer
+	rlimitCPUHardListener rlimitCPUHardListener
 
 	// timers is the thread group's POSIX interval timers. nextTimerID is the
 	// TimerID at which allocation should begin searching for an unused ID.
@@ -203,13 +190,25 @@ type ThreadGroup struct {
 	timers      map[linux.TimerID]*IntervalTimer
 	nextTimerID linux.TimerID
 
-	// exitedCPUStats is the CPU usage for all exited tasks in the thread
-	// group. exitedCPUStats is protected by both the TaskSet mutex and the
-	// signal mutex. Mutating it requires that the TaskSet mutex is locked for
-	// writing *and* that the signal mutex is locked. Reading it requires
-	// locking the TaskSet mutex (for reading or writing) *or* locking the
-	// signal mutex.
-	exitedCPUStats usage.CPUStats
+	// appCPUClockLast is the last task to have incremented appCPUClock or set
+	// a timer dependent on appCPUClock.
+	appCPUClockLast atomic.Pointer[Task] `state:".(*Task)"`
+
+	// appCPUClock is the sum of Task.appCPUClock for all past and present
+	// tasks in the thread group.
+	appCPUClock ktime.SyntheticClock
+
+	// appSysCPUClockLast is the last task to have incremented appSysCPUClock
+	// or set a timer dependent on appSysCPUClock.
+	appSysCPUClockLast atomic.Pointer[Task] `state:".(*Task)"`
+
+	// appSysCPUClock is the sum of Task.appSysCPUClock for all past and
+	// present tasks in the thread group.
+	appSysCPUClock ktime.SyntheticClock
+
+	// yieldCount is the sum of Task.yieldCount for all past and present tasks
+	// in the thread group.
+	yieldCount atomicbitops.Uint64
 
 	// childCPUStats is the CPU usage of all joined descendants of this thread
 	// group. childCPUStats is protected by the TaskSet mutex.
@@ -292,23 +291,22 @@ func (k *Kernel) NewThreadGroup(pidns *PIDNamespace, sh *SignalHandlers, termina
 		},
 		signalHandlers:    sh,
 		terminationSignal: terminationSignal,
+		timers:            make(map[linux.TimerID]*IntervalTimer),
 		ioUsage:           &usage.IO{},
 		limits:            limits,
 	}
-	tg.itimerRealTimer = ktime.NewSampledTimer(k.timekeeper.monotonicClock, &itimerRealListener{tg: tg})
-	tg.timers = make(map[linux.TimerID]*IntervalTimer)
+	tg.itimerRealTimer = ktime.NewSampledTimer(k.timekeeper.monotonicClock, &tg.itimerRealListener)
+	tg.itimerRealListener.tg = tg
+	tg.itimerVirtTimer.Init(&tg.appCPUClock, &tg.itimerVirtListener)
+	tg.itimerVirtListener.tg = tg
+	tg.itimerProfTimer.Init(&tg.appSysCPUClock, &tg.itimerProfListener)
+	tg.itimerProfListener.tg = tg
+	tg.rlimitCPUSoftTimer.Init(&tg.appSysCPUClock, &tg.rlimitCPUSoftListener)
+	tg.rlimitCPUSoftListener.tg = tg
+	tg.rlimitCPUHardTimer.Init(&tg.appSysCPUClock, &tg.rlimitCPUHardListener)
+	tg.rlimitCPUHardListener.tg = tg
 	tg.oldRSeqCritical.Store(&OldRSeqCriticalRegion{})
 	return tg
-}
-
-// saveOldRSeqCritical is invoked by stateify.
-func (tg *ThreadGroup) saveOldRSeqCritical() *OldRSeqCriticalRegion {
-	return tg.oldRSeqCritical.Load()
-}
-
-// loadOldRSeqCritical is invoked by stateify.
-func (tg *ThreadGroup) loadOldRSeqCritical(_ goContext.Context, r *OldRSeqCriticalRegion) {
-	tg.oldRSeqCritical.Store(r)
 }
 
 // signalLock atomically locks tg.SignalHandlers().mu and returns the
@@ -336,6 +334,10 @@ func (tg *ThreadGroup) Release(ctx context.Context) {
 	// Timers must be destroyed without holding the TaskSet or signal mutexes
 	// since timers send signals with Timer.mu locked.
 	tg.itimerRealTimer.Destroy()
+	tg.itimerVirtTimer.Destroy()
+	tg.itimerProfTimer.Destroy()
+	tg.rlimitCPUSoftTimer.Destroy()
+	tg.rlimitCPUHardTimer.Destroy()
 	var its []*IntervalTimer
 	tg.signalHandlers.mu.Lock()
 	for _, it := range tg.timers {
@@ -648,16 +650,4 @@ func (tg *ThreadGroup) IsInitIn(pidns *PIDNamespace) bool {
 // Preconditions: TaskSet.mu must be locked.
 func (tg *ThreadGroup) isInitInLocked(pidns *PIDNamespace) bool {
 	return pidns.tgids[tg] == initTID
-}
-
-// itimerRealListener implements ktime.Listener for ITIMER_REAL expirations.
-//
-// +stateify savable
-type itimerRealListener struct {
-	tg *ThreadGroup
-}
-
-// NotifyTimer implements ktime.TimerListener.NotifyTimer.
-func (l *itimerRealListener) NotifyTimer(exp uint64) {
-	l.tg.SendSignal(SignalInfoPriv(linux.SIGALRM))
 }

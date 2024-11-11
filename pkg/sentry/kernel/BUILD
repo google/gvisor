@@ -41,13 +41,6 @@ go_template_instance(
 )
 
 declare_mutex(
-    name = "cpu_clock_mutex",
-    out = "cpu_clock_mutex.go",
-    package = "kernel",
-    prefix = "cpuClock",
-)
-
-declare_mutex(
     name = "user_counters_mutex",
     out = "user_counters_mutex.go",
     package = "kernel",
@@ -144,17 +137,6 @@ go_template_instance(
 )
 
 go_template_instance(
-    name = "seqatomic_taskgoroutineschedinfo",
-    out = "seqatomic_taskgoroutineschedinfo_unsafe.go",
-    package = "kernel",
-    suffix = "TaskGoroutineSchedInfo",
-    template = "//pkg/sync/seqatomic:generic_seqatomic",
-    types = {
-        "Value": "TaskGoroutineSchedInfo",
-    },
-)
-
-go_template_instance(
     name = "session_list",
     out = "session_list.go",
     package = "kernel",
@@ -240,7 +222,6 @@ go_library(
         "cgroup_mounts_mutex.go",
         "cgroup_mutex.go",
         "context.go",
-        "cpu_clock_mutex.go",
         "fd_table.go",
         "fd_table_mutex.go",
         "fd_table_refs.go",
@@ -267,7 +248,6 @@ go_library(
         "running_tasks_mutex.go",
         "seccheck.go",
         "seccomp.go",
-        "seqatomic_taskgoroutineschedinfo_unsafe.go",
         "session_list.go",
         "session_refs.go",
         "sessions.go",

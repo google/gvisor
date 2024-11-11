@@ -391,5 +391,6 @@ func (tg *ThreadGroup) WaitExited() {
 // Yield yields the processor for the calling task.
 func (t *Task) Yield() {
 	t.yieldCount.Add(1)
+	t.tg.yieldCount.Add(1)
 	runtime.Gosched()
 }

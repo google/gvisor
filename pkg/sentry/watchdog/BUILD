@@ -10,7 +10,6 @@ go_library(
     srcs = ["watchdog.go"],
     visibility = ["//:sandbox"],
     deps = [
-        "//pkg/abi/linux",
         "//pkg/log",
         "//pkg/metric",
         "//pkg/sentry/kernel",

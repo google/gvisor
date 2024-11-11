@@ -106,12 +106,30 @@ type Task struct {
 	// interruptChan is always notified after restore (see Task.run).
 	interruptChan chan struct{} `state:"nosave"`
 
-	// gosched contains the current scheduling state of the task goroutine.
+	// gostateSeq allows Task.TaskGoroutineStateTime() to read gostate and
+	// gostateTime atomically.
 	//
-	// gosched is protected by goschedSeq. gosched is owned by the task
-	// goroutine.
-	goschedSeq sync.SeqCount `state:"nosave"`
-	gosched    TaskGoroutineSchedInfo
+	// gostateSeq is owned by the task goroutine.
+	gostateSeq sync.SeqCount `state:"nosave"`
+
+	// gostate is the current scheduling state of the task goroutine.
+	//
+	// gostate is owned by the task goroutine.
+	gostate atomicbitops.Uint32
+
+	// gostateTime was the value of Kernel.cpuClock when gostate was last
+	// updated or refreshed.
+	//
+	// gostateTime is owned by the task goroutine.
+	gostateTime atomicbitops.Int64
+
+	// appCPUClock approximates the amount of time the task goroutine has spent
+	// in TaskGoroutineRunningApp.
+	appCPUClock ktime.SyntheticClock
+
+	// appSysCPUClock approximates the amount of time the task goroutine has
+	// spent in TaskGoroutineRunningApp or TaskGoroutineRunningSys.
+	appSysCPUClock ktime.SyntheticClock
 
 	// yieldCount is the number of times the task goroutine has called
 	// Task.InterruptibleSleepStart, Task.UninterruptibleSleepStart, or
@@ -633,30 +651,6 @@ var (
 		})
 )
 
-func (t *Task) saveVforkParent() *Task {
-	return t.vforkParent.Load()
-}
-
-func (t *Task) loadVforkParent(_ gocontext.Context, vforkParent *Task) {
-	t.vforkParent.Store(vforkParent)
-}
-
-func (t *Task) savePtraceTracer() *Task {
-	return t.ptraceTracer.Load()
-}
-
-func (t *Task) loadPtraceTracer(_ gocontext.Context, tracer *Task) {
-	t.ptraceTracer.Store(tracer)
-}
-
-func (t *Task) saveSeccomp() *taskSeccomp {
-	return t.seccomp.Load()
-}
-
-func (t *Task) loadSeccomp(_ gocontext.Context, seccompData *taskSeccomp) {
-	t.seccomp.Store(seccompData)
-}
-
 // afterLoad is invoked by stateify.
 func (t *Task) afterLoad(gocontext.Context) {
 	t.updateInfoLocked()
@@ -664,7 +658,7 @@ func (t *Task) afterLoad(gocontext.Context) {
 		ts.populateCache(t)
 	}
 	t.interruptChan = make(chan struct{}, 1)
-	t.gosched.State = TaskGoroutineNonexistent
+	t.gostate.Store(uint32(TaskGoroutineNonexistent))
 	if t.stop != nil {
 		t.stopCount = atomicbitops.FromInt32(1)
 	}
