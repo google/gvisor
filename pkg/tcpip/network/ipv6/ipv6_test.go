@@ -516,7 +516,7 @@ func TestReceiveIPv6ExtHdrs(t *testing.T) {
 
 					// Discard & send ICMP if option is unknown.
 					191, 6, 1, 2, 3, 4, 5, 6,
-					//^ Unknown option.
+					// Unknown option.
 				}, hopByHopExtHdrID
 			},
 			shouldAccept: false,
@@ -536,7 +536,7 @@ func TestReceiveIPv6ExtHdrs(t *testing.T) {
 
 					// Discard & send ICMP if option is unknown.
 					191, 6, 1, 2, 3, 4, 5, 6,
-					//^ Unknown option.
+					// Unknown option.
 				}, hopByHopExtHdrID
 			},
 			multicast:    true,
@@ -558,7 +558,7 @@ func TestReceiveIPv6ExtHdrs(t *testing.T) {
 					// Discard & send ICMP unless packet is for multicast destination if
 					// option is unknown.
 					255, 6, 1, 2, 3, 4, 5, 6,
-					//^ Unknown option.
+					// Unknown option.
 				}, hopByHopExtHdrID
 			},
 			expectICMP: true,
@@ -578,7 +578,7 @@ func TestReceiveIPv6ExtHdrs(t *testing.T) {
 					// Discard & send ICMP unless packet is for multicast destination if
 					// option is unknown.
 					255, 6, 1, 2, 3, 4, 5, 6,
-					//^ Unknown option.
+					// Unknown option.
 				}, hopByHopExtHdrID
 			},
 			multicast:    true,
@@ -719,7 +719,7 @@ func TestReceiveIPv6ExtHdrs(t *testing.T) {
 
 					// Discard & send ICMP if option is unknown.
 					191, 6, 1, 2, 3, 4, 5, 6,
-					//^  191 is an unknown option.
+					//  191 is an unknown option.
 				}, destinationExtHdrID
 			},
 			shouldAccept: false,
@@ -739,7 +739,7 @@ func TestReceiveIPv6ExtHdrs(t *testing.T) {
 
 					// Discard & send ICMP if option is unknown.
 					191, 6, 1, 2, 3, 4, 5, 6,
-					//^  191 is an unknown option.
+					//  191 is an unknown option.
 				}, destinationExtHdrID
 			},
 			multicast:    true,
@@ -761,7 +761,7 @@ func TestReceiveIPv6ExtHdrs(t *testing.T) {
 					// Discard & send ICMP unless packet is for multicast destination if
 					// option is unknown.
 					255, 6, 1, 2, 3, 4, 5, 6,
-					//^ 255 is unknown.
+					// 255 is unknown.
 				}, destinationExtHdrID
 			},
 			shouldAccept: false,
@@ -782,7 +782,7 @@ func TestReceiveIPv6ExtHdrs(t *testing.T) {
 					// Discard & send ICMP unless packet is for multicast destination if
 					// option is unknown.
 					255, 6, 1, 2, 3, 4, 5, 6,
-					//^ 255 is unknown.
+					// 255 is unknown.
 				}, destinationExtHdrID
 			},
 			shouldAccept: false,
@@ -2961,22 +2961,24 @@ var (
 
 func TestForwarding(t *testing.T) {
 	tests := []struct {
-		name                             string
-		extHdr                           func(nextHdr uint8) ([]byte, uint8, checker.NetworkChecker)
-		TTL                              uint8
-		payloadLength                    int
-		srcAddr                          tcpip.Address
-		dstAddr                          tcpip.Address
-		expectedPacketUnrouteableErrors  uint64
-		expectedInitializingSourceErrors uint64
-		expectedLinkLocalSourceErrors    uint64
-		expectedLinkLocalDestErrors      uint64
-		expectedExtensionHeaderErrors    uint64
-		expectedPacketTooBigErrors       uint64
-		expectedExhaustedTTLErrors       uint64
-		expectPacketForwarded            bool
-		expectedFragmentsForwarded       []fragmentInfo
-		expectedICMPError                *icmpError
+		name                                 string
+		extHdr                               func(nextHdr uint8) ([]byte, uint8, checker.NetworkChecker)
+		TTL                                  uint8
+		payloadLength                        int
+		srcAddr                              tcpip.Address
+		dstAddr                              tcpip.Address
+		closeOutgoingEndpoint                bool
+		expectedPacketUnrouteableErrors      uint64
+		expectedInitializingSourceErrors     uint64
+		expectedLinkLocalSourceErrors        uint64
+		expectedLinkLocalDestErrors          uint64
+		expectedExtensionHeaderErrors        uint64
+		expectedPacketTooBigErrors           uint64
+		expectedExhaustedTTLErrors           uint64
+		expectedOutgoingEndpointClosedErrors uint64
+		expectPacketForwarded                bool
+		expectedFragmentsForwarded           []fragmentInfo
+		expectedICMPError                    *icmpError
 	}{
 		{
 			name:    "TTL of zero",
@@ -3190,6 +3192,15 @@ func TestForwarding(t *testing.T) {
 			expectedPacketTooBigErrors: 1,
 			expectPacketForwarded:      false,
 		},
+		{
+			name:                                 "close outgoing endpoint",
+			TTL:                                  2,
+			srcAddr:                              remoteIPv6Addr1,
+			dstAddr:                              remoteIPv6Addr2,
+			expectedOutgoingEndpointClosedErrors: 1,
+			closeOutgoingEndpoint:                true,
+			expectPacketForwarded:                false,
+		},
 	}
 
 	for _, test := range tests {
@@ -3279,15 +3290,19 @@ func TestForwarding(t *testing.T) {
 				t.Fatalf("endpoints[%d] = (_, false), want (_, true)", incomingNICID)
 			}
 
-			incomingEndpoint.InjectInbound(ProtocolNumber, request)
-			request.DecRef()
-
-			reply := incomingEndpoint.Read()
-
 			outgoingEndpoint, ok := endpoints[outgoingNICID]
 			if !ok {
 				t.Fatalf("endpoints[%d] = (_, false), want (_, true)", outgoingNICID)
 			}
+
+			if test.closeOutgoingEndpoint {
+				outgoingEndpoint.Close()
+			}
+
+			incomingEndpoint.InjectInbound(ProtocolNumber, request)
+			request.DecRef()
+
+			reply := incomingEndpoint.Read()
 
 			if test.expectedICMPError != nil {
 				if reply == nil {
@@ -3384,7 +3399,11 @@ func TestForwarding(t *testing.T) {
 				t.Errorf("s.Stats().IP.Forwarding.PacketTooBig.Value() = %d, want = %d", got, want)
 			}
 
-			totalExpectedErrors := test.expectedPacketUnrouteableErrors + test.expectedPacketTooBigErrors + test.expectedExtensionHeaderErrors + test.expectedLinkLocalSourceErrors + test.expectedLinkLocalDestErrors + test.expectedExhaustedTTLErrors + test.expectedInitializingSourceErrors
+			if got, want := s.Stats().IP.Forwarding.OutgoingDeviceClosedForSend.Value(), test.expectedOutgoingEndpointClosedErrors; got != want {
+				t.Errorf("s.Stats().IP.Forwarding.OutgoingDeviceClosedForSend.Value() = %d, want = %d", got, want)
+			}
+
+			totalExpectedErrors := test.expectedPacketUnrouteableErrors + test.expectedPacketTooBigErrors + test.expectedExtensionHeaderErrors + test.expectedLinkLocalSourceErrors + test.expectedLinkLocalDestErrors + test.expectedExhaustedTTLErrors + test.expectedInitializingSourceErrors + test.expectedOutgoingEndpointClosedErrors
 			if got, want := s.Stats().IP.Forwarding.Errors.Value(), totalExpectedErrors; got != want {
 				t.Errorf("s.Stats().IP.Forwarding.Errors.Value() = %d, want = %d", got, want)
 			}
