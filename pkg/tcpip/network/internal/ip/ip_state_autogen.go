@@ -294,6 +294,7 @@ func (m *MultiCounterIPForwardingStats) StateFields() []string {
 		"NoMulticastPendingQueueBufferSpace",
 		"OutgoingDeviceNoBufferSpace",
 		"Errors",
+		"OutgoingDeviceClosedForSend",
 	}
 }
 
@@ -315,6 +316,7 @@ func (m *MultiCounterIPForwardingStats) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(10, &m.NoMulticastPendingQueueBufferSpace)
 	stateSinkObject.Save(11, &m.OutgoingDeviceNoBufferSpace)
 	stateSinkObject.Save(12, &m.Errors)
+	stateSinkObject.Save(13, &m.OutgoingDeviceClosedForSend)
 }
 
 func (m *MultiCounterIPForwardingStats) afterLoad(context.Context) {}
@@ -334,6 +336,7 @@ func (m *MultiCounterIPForwardingStats) StateLoad(ctx context.Context, stateSour
 	stateSourceObject.Load(10, &m.NoMulticastPendingQueueBufferSpace)
 	stateSourceObject.Load(11, &m.OutgoingDeviceNoBufferSpace)
 	stateSourceObject.Load(12, &m.Errors)
+	stateSourceObject.Load(13, &m.OutgoingDeviceClosedForSend)
 }
 
 func (m *MultiCounterIPStats) StateTypeName() string {

@@ -78,6 +78,10 @@ type MultiCounterIPForwardingStats struct {
 	// Errors is the number of IP packets received which could not be
 	// successfully forwarded.
 	Errors tcpip.MultiCounterStat
+
+	// OutgoingDeviceClosedForSend is the number of packets that were dropped due
+	// to the outgoing device being closed for send.
+	OutgoingDeviceClosedForSend tcpip.MultiCounterStat
 }
 
 // Init sets internal counters to track a and b counters.
@@ -95,9 +99,10 @@ func (m *MultiCounterIPForwardingStats) Init(a, b *tcpip.IPForwardingStats) {
 	m.UnknownOutputEndpoint.Init(a.UnknownOutputEndpoint, b.UnknownOutputEndpoint)
 	m.NoMulticastPendingQueueBufferSpace.Init(a.NoMulticastPendingQueueBufferSpace, b.NoMulticastPendingQueueBufferSpace)
 	m.OutgoingDeviceNoBufferSpace.Init(a.OutgoingDeviceNoBufferSpace, b.OutgoingDeviceNoBufferSpace)
+	m.OutgoingDeviceClosedForSend.Init(a.OutgoingDeviceClosedForSend, b.OutgoingDeviceClosedForSend)
 }
 
-// LINT.ThenChange(:MultiCounterIPForwardingStats, ../../../tcpip.go:IPForwardingStats)
+// LINT.ThenChange(../../../tcpip.go:IPForwardingStats)
 
 // LINT.IfChange(MultiCounterIPStats)
 
@@ -211,4 +216,4 @@ func (m *MultiCounterIPStats) Init(a, b *tcpip.IPStats) {
 	m.Forwarding.Init(&a.Forwarding, &b.Forwarding)
 }
 
-// LINT.ThenChange(:MultiCounterIPStats, ../../../tcpip.go:IPStats)
+// LINT.ThenChange(../../../tcpip.go:IPStats)

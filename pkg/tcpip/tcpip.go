@@ -1981,6 +1981,10 @@ type IPForwardingStats struct {
 	// successfully forwarded.
 	Errors *StatCounter
 
+	// OutgoingDeviceClosedForSend is the number of packets that were dropped due
+	// to the outgoing device being closed for send.
+	OutgoingDeviceClosedForSend *StatCounter
+
 	// LINT.ThenChange(network/internal/ip/stats.go:MultiCounterIPForwardingStats)
 }
 

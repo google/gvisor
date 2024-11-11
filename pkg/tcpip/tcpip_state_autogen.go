@@ -2362,6 +2362,7 @@ func (i *IPForwardingStats) StateFields() []string {
 		"NoMulticastPendingQueueBufferSpace",
 		"OutgoingDeviceNoBufferSpace",
 		"Errors",
+		"OutgoingDeviceClosedForSend",
 	}
 }
 
@@ -2383,6 +2384,7 @@ func (i *IPForwardingStats) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(10, &i.NoMulticastPendingQueueBufferSpace)
 	stateSinkObject.Save(11, &i.OutgoingDeviceNoBufferSpace)
 	stateSinkObject.Save(12, &i.Errors)
+	stateSinkObject.Save(13, &i.OutgoingDeviceClosedForSend)
 }
 
 func (i *IPForwardingStats) afterLoad(context.Context) {}
@@ -2402,6 +2404,7 @@ func (i *IPForwardingStats) StateLoad(ctx context.Context, stateSourceObject sta
 	stateSourceObject.Load(10, &i.NoMulticastPendingQueueBufferSpace)
 	stateSourceObject.Load(11, &i.OutgoingDeviceNoBufferSpace)
 	stateSourceObject.Load(12, &i.Errors)
+	stateSourceObject.Load(13, &i.OutgoingDeviceClosedForSend)
 }
 
 func (i *IPStats) StateTypeName() string {
