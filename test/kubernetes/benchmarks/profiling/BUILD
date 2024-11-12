@@ -16,6 +16,7 @@ go_library(
     deps = [
         "//pkg/atomicbitops",
         "//runsc/flag",
+        "//test/kubernetes",
         "//test/kubernetes/testcluster",
         "//test/metricsviz",
         "@com_github_google_pprof//profile:go_default_library",

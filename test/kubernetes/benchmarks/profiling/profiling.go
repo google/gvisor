@@ -42,6 +42,7 @@ import (
 	"google.golang.org/protobuf/proto"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/runsc/flag"
+	k8s "gvisor.dev/gvisor/test/kubernetes"
 	"gvisor.dev/gvisor/test/kubernetes/testcluster"
 	"gvisor.dev/gvisor/test/metricsviz"
 	appsv1 "k8s.io/api/apps/v1"
@@ -61,10 +62,10 @@ var (
 
 const (
 	setupPodName            = "runsc-profiling-setup"
-	profileHelperImageAMD64 = "gcr.io/gvisor-presubmit/benchmarks/profile-helper_x86_64:latest"
-	profileHelperImageARM64 = "gcr.io/gvisor-presubmit/benchmarks/profile-helper_aarch64:latest"
 	k8sApp                  = "k8s-app"
 	hostMountDir            = "/host"
+	profileHelperImageAMD64 = k8s.ImageRepoPrefix + "benchmarks/profile-helper_x86_64:latest"
+	profileHelperImageARM64 = k8s.ImageRepoPrefix + "benchmarks/profile-helper_aarch64:latest"
 )
 
 // postProcessor is a function that is called after a profiling run completes.

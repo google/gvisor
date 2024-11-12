@@ -21,6 +21,7 @@ import (
 	"strings"
 	"testing"
 
+	k8s "gvisor.dev/gvisor/test/kubernetes"
 	"gvisor.dev/gvisor/test/kubernetes/benchmarks/profiling"
 	"gvisor.dev/gvisor/test/kubernetes/benchmetric"
 	"gvisor.dev/gvisor/test/kubernetes/k8sctx"
@@ -30,8 +31,8 @@ import (
 )
 
 const (
-	imageAMD = "gcr.io/gvisor-presubmit/benchmarks/build-grpc_x86_64:latest"
-	imageARM = "gcr.io/gvisor-presubmit/benchmarks/build-grpc_aarch64:latest"
+	imageAMD = k8s.ImageRepoPrefix + "benchmarks/build-grpc_x86_64:latest"
+	imageARM = k8s.ImageRepoPrefix + "benchmarks/build-grpc_aarch64:latest"
 )
 
 func TestGRPCBuild(t *testing.T) {

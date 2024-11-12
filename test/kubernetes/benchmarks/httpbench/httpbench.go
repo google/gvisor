@@ -25,6 +25,7 @@ import (
 	"testing"
 	"time"
 
+	k8s "gvisor.dev/gvisor/test/kubernetes"
 	"gvisor.dev/gvisor/test/kubernetes/benchmetric"
 	"gvisor.dev/gvisor/test/kubernetes/testcluster"
 	v13 "k8s.io/api/core/v1"
@@ -37,7 +38,7 @@ import (
 // the HTTP server with load on a single connection.
 const InfiniteQPS = 1 << 16
 
-const wrk2ImageAMD = "gcr.io/gvisor-presubmit/benchmarks/wrk2_x86_64:latest"
+const wrk2ImageAMD = k8s.ImageRepoPrefix + "benchmarks/wrk2_x86_64:latest"
 
 // MetricType is a type of metric to report.
 type MetricType int

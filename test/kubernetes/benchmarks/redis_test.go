@@ -27,6 +27,7 @@ import (
 	"testing"
 	"time"
 
+	k8s "gvisor.dev/gvisor/test/kubernetes"
 	"gvisor.dev/gvisor/test/kubernetes/benchmarks/profiling"
 	"gvisor.dev/gvisor/test/kubernetes/benchmetric"
 	"gvisor.dev/gvisor/test/kubernetes/k8sctx"
@@ -39,12 +40,12 @@ const (
 	redisPort                    = 6379
 	defaultRequestsPerConnection = 50000
 
-	redisImageAMD         = "gcr.io/gvisor-presubmit/benchmarks/redis_x86_64:latest"
-	redisImageARM         = "gcr.io/gvisor-presubmit/benchmarks/redis_aarch64:latest"
 	redisServerLabelKey   = "app.kubernetes.io/name"
 	redisServerLabelValue = "redis-server"
 	redisVolumeName       = "redis-data"
 	redisDataDirectory    = "/redis-data"
+	redisImageAMD         = k8s.ImageRepoPrefix + "benchmarks/redis_x86_64:latest"
+	redisImageARM         = k8s.ImageRepoPrefix + "benchmarks/redis_aarch64:latest"
 )
 
 var (

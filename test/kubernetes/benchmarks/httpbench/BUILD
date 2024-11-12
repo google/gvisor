@@ -14,6 +14,7 @@ go_library(
         "//test/kubernetes/benchmarks:__subpackages__",
     ],
     deps = [
+        "//test/kubernetes",
         "//test/kubernetes/benchmetric",
         "//test/kubernetes/testcluster",
         "@io_k8s_api//core/v1:go_default_library",

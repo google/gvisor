@@ -28,6 +28,7 @@ import (
 	"unicode"
 
 	"gvisor.dev/gvisor/test/gpu/ollama"
+	k8s "gvisor.dev/gvisor/test/kubernetes"
 	"gvisor.dev/gvisor/test/kubernetes/benchmetric"
 	"gvisor.dev/gvisor/test/kubernetes/k8sctx"
 	"gvisor.dev/gvisor/test/kubernetes/testcluster"
@@ -816,11 +817,11 @@ func doOllamaTest(ctx context.Context, t *testing.T, k8sCtx k8sctx.KubernetesCon
 const (
 	ollamaServerLabelKey   = "app.kubernetes.io/name"
 	ollamaServerLabelValue = "ollama-server"
-	ollamaBenchImage       = "gcr.io/gvisor-presubmit/benchmarks/gpu/ollama/bench:latest"
-	ollamaBenchClientImage = "gcr.io/gvisor-presubmit/benchmarks/gpu/ollama/client:latest"
 	ollamaPort             = 11434
 	ollamaPodName          = "ollama-server"
 	ollamaServiceName      = "ollama-service"
+	ollamaBenchImage       = k8s.ImageRepoPrefix + "benchmarks/gpu/ollama/bench:latest"
+	ollamaBenchClientImage = k8s.ImageRepoPrefix + "benchmarks/gpu/ollama/client:latest"
 )
 
 // newOllamaServerPod returns the pod spec for an ollama server.

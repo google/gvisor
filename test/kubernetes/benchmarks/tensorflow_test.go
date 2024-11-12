@@ -21,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	k8s "gvisor.dev/gvisor/test/kubernetes"
 	"gvisor.dev/gvisor/test/kubernetes/benchmarks/profiling"
 	"gvisor.dev/gvisor/test/kubernetes/benchmetric"
 	"gvisor.dev/gvisor/test/kubernetes/k8sctx"
@@ -30,8 +31,8 @@ import (
 )
 
 const (
-	imageAMD = "gcr.io/gvisor-presubmit/benchmarks/tensorflow_x86_64:latest"
-	imageARM = "gcr.io/gvisor-presubmit/benchmarks/tensorflow_aarch64:latest"
+	imageAMD = k8s.ImageRepoPrefix + "benchmarks/tensorflow_x86_64:latest"
+	imageARM = k8s.ImageRepoPrefix + "benchmarks/tensorflow_aarch64:latest"
 )
 
 var workloads = map[string]string{

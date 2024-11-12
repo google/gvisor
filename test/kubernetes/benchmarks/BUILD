@@ -14,6 +14,7 @@ go_test(
         "notap",
     ],
     deps = [
+        "//test/kubernetes",
         "//test/kubernetes/benchmarks/profiling",
         "//test/kubernetes/benchmetric",
         "//test/kubernetes/k8sctx",
@@ -49,6 +50,7 @@ go_test(
         "notap",
     ],
     deps = [
+        "//test/kubernetes",
         "//test/kubernetes/benchmarks/profiling",
         "//test/kubernetes/benchmetric",
         "//test/kubernetes/k8sctx",
@@ -68,6 +70,7 @@ go_test(
     ],
     deps = [
         "//test/benchmarks/tools",
+        "//test/kubernetes",
         "//test/kubernetes/benchmarks/profiling",
         "//test/kubernetes/benchmetric",
         "//test/kubernetes/k8sctx",
@@ -86,6 +89,7 @@ go_test(
         "notap",
     ],
     deps = [
+        "//test/kubernetes",
         "//test/kubernetes/benchmarks/profiling",
         "//test/kubernetes/benchmetric",
         "//test/kubernetes/k8sctx",
@@ -104,6 +108,7 @@ go_test(
         "notap",
     ],
     deps = [
+        "//test/kubernetes",
         "//test/kubernetes/benchmarks/profiling",
         "//test/kubernetes/benchmetric",
         "//test/kubernetes/k8sctx",
@@ -122,6 +127,7 @@ go_test(
         "notap",
     ],
     deps = [
+        "//test/kubernetes",
         "//test/kubernetes/benchmarks/httpbench",
         "//test/kubernetes/benchmarks/profiling",
         "//test/kubernetes/k8sctx",
@@ -159,6 +165,7 @@ go_test(
         "notap",
     ],
     deps = [
+        "//test/kubernetes",
         "//test/kubernetes/benchmarks/profiling",
         "//test/kubernetes/benchmetric",
         "//test/kubernetes/k8sctx",
@@ -196,6 +203,7 @@ go_test(
         "notap",
     ],
     deps = [
+        "//test/kubernetes",
         "//test/kubernetes/benchmarks/profiling",
         "//test/kubernetes/benchmetric",
         "//test/kubernetes/k8sctx",
@@ -217,6 +225,7 @@ go_test(
     ],
     deps = [
         "//test/gpu/ollama",
+        "//test/kubernetes",
         "//test/kubernetes/benchmetric",
         "//test/kubernetes/k8sctx",
         "//test/kubernetes/testcluster",
@@ -237,6 +246,7 @@ go_test(
     ],
     deps = [
         "//test/gpu/stablediffusion",
+        "//test/kubernetes",
         "//test/kubernetes/benchmetric",
         "//test/kubernetes/k8sctx",
         "//test/kubernetes/testcluster",

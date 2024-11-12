@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"gvisor.dev/gvisor/test/gpu/stablediffusion"
+	k8s "gvisor.dev/gvisor/test/kubernetes"
 	"gvisor.dev/gvisor/test/kubernetes/benchmetric"
 	"gvisor.dev/gvisor/test/kubernetes/k8sctx"
 	"gvisor.dev/gvisor/test/kubernetes/testcluster"
@@ -32,7 +33,7 @@ import (
 
 const (
 	// Container image for Stable Diffusion XL.
-	stableDiffusionImage = "gcr.io/gvisor-presubmit/gpu/stable-diffusion-xl"
+	stableDiffusionImage = k8s.ImageRepoPrefix + "gpu/stable-diffusion-xl"
 )
 
 func TestStableDiffusionXL(t *testing.T) {

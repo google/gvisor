@@ -34,6 +34,7 @@ import (
 	"testing"
 	"time"
 
+	k8s "gvisor.dev/gvisor/test/kubernetes"
 	"gvisor.dev/gvisor/test/kubernetes/benchmarks/profiling"
 	"gvisor.dev/gvisor/test/kubernetes/benchmetric"
 	"gvisor.dev/gvisor/test/kubernetes/k8sctx"
@@ -42,16 +43,14 @@ import (
 	v13 "k8s.io/api/core/v1"
 )
 
-const (
-	pytorchImage = "gcr.io/gvisor-presubmit/benchmarks/pytorch_x86_64:f6f280aeb1b07989"
-)
-
 // pytorchTestType is the method used, either training or evaluation, for the model.
 type pytorchTestType string
 
 const (
 	train = pytorchTestType("train")
 	eval  = pytorchTestType("eval")
+
+	pytorchImage = k8s.ImageRepoPrefix + "benchmarks/pytorch_x86_64:f6f280aeb1b07989"
 )
 
 type pytorchMode string

@@ -1,4 +1,4 @@
-load("//tools:defs.bzl", "proto_library")
+load("//tools:defs.bzl", "go_library", "proto_library")
 
 package(
     default_applicable_licenses = ["//:license"],
@@ -14,5 +14,13 @@ proto_library(
     ],
     deps = [
         "@com_google_protobuf//:any_proto",
+    ],
+)
+
+go_library(
+    name = "kubernetes",
+    srcs = ["helpers.go"],
+    visibility = [
+        "//visibility:public",
     ],
 )

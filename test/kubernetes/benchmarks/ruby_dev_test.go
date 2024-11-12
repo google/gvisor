@@ -25,6 +25,7 @@ import (
 	"testing"
 
 	"gvisor.dev/gvisor/test/benchmarks/tools"
+	k8s "gvisor.dev/gvisor/test/kubernetes"
 	"gvisor.dev/gvisor/test/kubernetes/benchmarks/profiling"
 	"gvisor.dev/gvisor/test/kubernetes/benchmetric"
 	"gvisor.dev/gvisor/test/kubernetes/k8sctx"
@@ -34,9 +35,9 @@ import (
 )
 
 const (
-	imageAMD             = "gcr.io/gvisor-presubmit/benchmarks/rubydev_x86_64:latest"
-	imageARM             = "gcr.io/gvisor-presubmit/benchmarks/rubydev_aarch64:latest"
 	builderContainerName = "builder"
+	imageAMD             = k8s.ImageRepoPrefix + "benchmarks/rubydev_x86_64:latest"
+	imageARM             = k8s.ImageRepoPrefix + "benchmarks/rubydev_aarch64:latest"
 )
 
 // TestRubyDev benchmarks a build job on k8s clusters.

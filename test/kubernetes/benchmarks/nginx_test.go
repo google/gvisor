@@ -21,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	k8s "gvisor.dev/gvisor/test/kubernetes"
 	"gvisor.dev/gvisor/test/kubernetes/benchmarks/httpbench"
 	"gvisor.dev/gvisor/test/kubernetes/benchmarks/profiling"
 	"gvisor.dev/gvisor/test/kubernetes/k8sctx"
@@ -31,8 +32,6 @@ import (
 )
 
 const (
-	nginxImageAMD          = "gcr.io/gvisor-presubmit/benchmarks/nginx_x86_64:latest"
-	nginxImageARM          = "gcr.io/gvisor-presubmit/benchmarks/nginx_aarch64:latest"
 	nginxPort              = 80
 	nginxBenchmarkDuration = 70 * time.Second
 	nginxRequestTimeout    = 3 * time.Second
@@ -40,6 +39,8 @@ const (
 
 	nginxServerLabelKey   = "app.kubernetes.io/name"
 	nginxServerLabelValue = "nginx-server"
+	nginxImageAMD         = k8s.ImageRepoPrefix + "benchmarks/nginx_x86_64:latest"
+	nginxImageARM         = k8s.ImageRepoPrefix + "benchmarks/nginx_aarch64:latest"
 )
 
 var (
