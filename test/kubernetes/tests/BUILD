@@ -8,6 +8,7 @@ package(
 go_test(
     name = "hello_test",
     srcs = ["hello_test.go"],
+    nogo = False,
     tags = [
         "local",
         "noguitar",
