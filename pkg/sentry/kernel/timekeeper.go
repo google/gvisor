@@ -170,32 +170,6 @@ func (t *Timekeeper) SetClocks(c sentrytime.Clocks, params *VDSOParamPage) {
 	}
 }
 
-var _ tcpip.Clock = (*Timekeeper)(nil)
-
-// Now implements tcpip.Clock.
-func (t *Timekeeper) Now() time.Time {
-	nsec, err := t.GetTime(sentrytime.Realtime)
-	if err != nil {
-		panic("timekeeper.GetTime(sentrytime.Realtime): " + err.Error())
-	}
-	return time.Unix(0, nsec)
-}
-
-// NowMonotonic implements tcpip.Clock.
-func (t *Timekeeper) NowMonotonic() tcpip.MonotonicTime {
-	nsec, err := t.GetTime(sentrytime.Monotonic)
-	if err != nil {
-		panic("timekeeper.GetTime(sentrytime.Monotonic): " + err.Error())
-	}
-	var mt tcpip.MonotonicTime
-	return mt.Add(time.Duration(nsec) * time.Nanosecond)
-}
-
-// AfterFunc implements tcpip.Clock.
-func (t *Timekeeper) AfterFunc(d time.Duration, f func()) tcpip.Timer {
-	return ktime.AfterFunc(t.realtimeClock, d, f)
-}
-
 // startUpdater starts an update goroutine that keeps the clocks updated.
 //
 // mu must be held.
@@ -353,4 +327,117 @@ func (tc *timekeeperClock) Now() ktime.Time {
 // NewTimer implements ktime.Clock.NewTimer.
 func (tc *timekeeperClock) NewTimer(l ktime.Listener) ktime.Timer {
 	return ktime.NewSampledTimer(tc, l)
+}
+
+var _ tcpip.Clock = (*Timekeeper)(nil)
+
+// Now implements tcpip.Clock.
+func (t *Timekeeper) Now() time.Time {
+	nsec, err := t.GetTime(sentrytime.Realtime)
+	if err != nil {
+		panic("timekeeper.GetTime(sentrytime.Realtime): " + err.Error())
+	}
+	return time.Unix(0, nsec)
+}
+
+// NowMonotonic implements tcpip.Clock.
+func (t *Timekeeper) NowMonotonic() tcpip.MonotonicTime {
+	nsec, err := t.GetTime(sentrytime.Monotonic)
+	if err != nil {
+		panic("timekeeper.GetTime(sentrytime.Monotonic): " + err.Error())
+	}
+	var mt tcpip.MonotonicTime
+	return mt.Add(time.Duration(nsec) * time.Nanosecond)
+}
+
+// AfterFunc implements tcpip.Clock.
+func (t *Timekeeper) AfterFunc(d time.Duration, f func()) tcpip.Timer {
+	timer := &timekeeperTcpipTimer{
+		clock: t.monotonicClock,
+		fn:    f,
+	}
+	timer.Reset(d)
+	return timer
+}
+
+// timekeeperTcpipTimer implements tcpip.Timer by wrapping a ktime.SampledTimer.
+// tcpip.Timer does not define a Destroy method, so each timer expiration and
+// each call to Timer.Stop() must release all resources by calling
+// ktime.SampledTimer.Destroy().
+type timekeeperTcpipTimer struct {
+	// immutable
+	clock *timekeeperClock
+	fn    func()
+
+	// mu protects t.
+	mu timekeeperTcpipTimerMutex
+
+	// t stores the latest running Timer. This is replaced whenever Reset is
+	// called since Timer cannot be restarted once it has been Destroyed by Stop.
+	//
+	// This field is nil iff Stop has been called.
+	t *ktime.SampledTimer
+
+	// resets is the number of times Reset has been called. resets is written
+	// with both mu and ktime.SampledTimer locks held, so it may be read with
+	// either or both locks held.
+	resets int
+}
+
+// Stop implements tcpip.Timer.Stop.
+func (r *timekeeperTcpipTimer) Stop() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.t == nil {
+		return false
+	}
+	_, lastSetting := r.t.Set(ktime.Setting{}, nil)
+	r.t.Destroy()
+	r.t = nil
+	return lastSetting.Enabled
+}
+
+// stopExpired is equivalent to Stop, but is called when the timer expires.
+func (r *timekeeperTcpipTimer) stopExpired(reset int) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.t == nil || r.resets != reset {
+		return
+	}
+	r.t.Destroy()
+	r.t = nil
+}
+
+// Reset implements tcpip.Timer.Reset.
+func (r *timekeeperTcpipTimer) Reset(d time.Duration) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.t == nil {
+		r.t = ktime.NewSampledTimer(r.clock, r)
+	}
+	r.t.Set(ktime.Setting{
+		Enabled: true,
+		Next:    r.clock.Now().Add(d),
+	}, r.incResets)
+}
+
+func (r *timekeeperTcpipTimer) incResets() {
+	r.resets++
+}
+
+// NotifyTimer implements ktime.Listener.NotifyTimer.
+func (r *timekeeperTcpipTimer) NotifyTimer(exp uint64) {
+	// Implementations of ktime.Listener.NotifyTimer() can't call Timer methods
+	// due to lock ordering, so we must call r.t.Destroy() from another
+	// goroutine. We also must call r.stopExpired() rather than r.Stop(), since
+	// the latter might cancel an unrelated call to r.Reset() that happens
+	// between now and when this goroutine runs.
+	thisReset := r.resets
+	go func() {
+		r.stopExpired(thisReset)
+		r.fn()
+	}()
 }

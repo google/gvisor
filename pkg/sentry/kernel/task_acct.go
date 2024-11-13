@@ -90,18 +90,22 @@ func (t *Task) Setitimer(id int32, newitv linux.ItimerVal) (linux.ItimerVal, err
 //
 // Preconditions: The caller must be running on the task goroutine.
 func (t *Task) NotifyRlimitCPUUpdated() {
-	// Lock t.tg.timerMu to synchronize updates to these timers between tasks
-	// in t.tg.
-	t.tg.timerMu.Lock()
-	defer t.tg.timerMu.Unlock()
-	rlimitCPU := t.tg.limits.Get(limits.CPU)
-	t.tg.appSysCPUClockLast.Store(t)
-	t.tg.rlimitCPUSoftTimer.Set(ktime.Setting{
+	t.tg.notifyRlimitCPUUpdated(t)
+}
+
+func (tg *ThreadGroup) notifyRlimitCPUUpdated(t *Task) {
+	// Lock tg.timerMu to synchronize updates to these timers between tasks in
+	// tg.
+	tg.timerMu.Lock()
+	defer tg.timerMu.Unlock()
+	rlimitCPU := tg.limits.Get(limits.CPU)
+	tg.appSysCPUClockLast.Store(t)
+	tg.rlimitCPUSoftTimer.Set(ktime.Setting{
 		Enabled: rlimitCPU.Cur != limits.Infinity,
 		Next:    ktime.FromSeconds(int64(min(rlimitCPU.Cur, math.MaxInt64))),
 		Period:  time.Second,
 	}, nil)
-	t.tg.rlimitCPUHardTimer.Set(ktime.Setting{
+	tg.rlimitCPUHardTimer.Set(ktime.Setting{
 		Enabled: rlimitCPU.Max != limits.Infinity,
 		Next:    ktime.FromSeconds(int64(min(rlimitCPU.Max, math.MaxInt64))),
 	}, nil)

@@ -305,6 +305,7 @@ func (k *Kernel) NewThreadGroup(pidns *PIDNamespace, sh *SignalHandlers, termina
 	tg.rlimitCPUSoftListener.tg = tg
 	tg.rlimitCPUHardTimer.Init(&tg.appSysCPUClock, &tg.rlimitCPUHardListener)
 	tg.rlimitCPUHardListener.tg = tg
+	tg.notifyRlimitCPUUpdated(nil)
 	tg.oldRSeqCritical.Store(&OldRSeqCriticalRegion{})
 	return tg
 }
