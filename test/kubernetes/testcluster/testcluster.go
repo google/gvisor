@@ -20,12 +20,14 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
 
 	"golang.org/x/sync/errgroup"
 	cspb "google.golang.org/genproto/googleapis/container/v1"
+	"gvisor.dev/gvisor/pkg/log"
 	testpb "gvisor.dev/gvisor/test/kubernetes/test_range_config_go_proto"
 	appsv1 "k8s.io/api/apps/v1"
 	v13 "k8s.io/api/core/v1"
@@ -132,8 +134,31 @@ type TestCluster struct {
 	testNodepoolRuntimeOverride RuntimeType
 }
 
+type testClusterConstructorKey int
+
+const (
+	// testClusterConstructor is the key for the context value that holds the
+	// constructor function for TestCluster.
+	// Defaults to newTestCluster.
+	testClusterConstructor testClusterConstructorKey = iota
+)
+
+// WithTestClusterConstructor returns a context that contains a custom
+// constructor for TestCluster.
+func WithTestClusterConstructor(ctx context.Context, constructor func(context.Context, *testpb.Cluster) (*TestCluster, error)) context.Context {
+	return context.WithValue(ctx, testClusterConstructor, constructor)
+}
+
 // NewTestCluster returns a new TestCluster client.
-func NewTestCluster(cluster *testpb.Cluster) (*TestCluster, error) {
+func NewTestCluster(ctx context.Context, cluster *testpb.Cluster) (*TestCluster, error) {
+	constructor, ok := ctx.Value(testClusterConstructor).(func(context.Context, *testpb.Cluster) (*TestCluster, error))
+	if !ok || constructor == nil || reflect.ValueOf(constructor).IsNil() {
+		constructor = newTestCluster
+	}
+	return constructor(ctx, cluster)
+}
+
+func newTestCluster(_ context.Context, cluster *testpb.Cluster) (*TestCluster, error) {
 	config, err := clientcmd.BuildConfigFromFlags("" /*masterURL*/, cluster.GetCredentialFile())
 	if err != nil {
 		return nil, fmt.Errorf("BuildConfigFromFlags: %w", err)
@@ -335,22 +360,38 @@ func (t *TestCluster) doWaitForPod(ctx context.Context, pod *v13.Pod, phase v13.
 	if err != nil {
 		return fmt.Errorf("watch: %w", err)
 	}
+	podLogger := log.BasicRateLimitedLogger(5 * time.Minute)
+	incompatibleTypeLogger := log.BasicRateLimitedLogger(5 * time.Minute)
+	startLogTime := time.Now().Add(3 * time.Minute)
 
 	var p *v13.Pod
+	incompatibleType := false
+	pollCh := time.NewTicker(10 * time.Second)
+	defer pollCh.Stop()
+pollLoop:
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
+		case <-pollCh.C:
+			p, err = t.GetPod(ctx, pod)
+			if err != nil {
+				return fmt.Errorf("failed to poll pod: %w", err)
+			}
 		case e := <-w.ResultChan():
 			var ok bool
 			p, ok = e.Object.(*v13.Pod)
 			if !ok {
-				return fmt.Errorf("invalid object watched: %T", p)
-			}
-		case <-time.After(10 * time.Second):
-			p, err = t.GetPod(ctx, pod)
-			if err != nil {
-				return fmt.Errorf("failed to poll pod: %w", err)
+				if !incompatibleType {
+					log.Warningf("Received unexpected type of watched pod: got %T (%v), expected %T; falling back to polling-based wait.", e.Object, e.Object, p)
+					incompatibleType = true
+					pollCh.Stop()
+					pollCh = time.NewTicker(250 * time.Millisecond)
+				} else {
+					incompatibleTypeLogger.Infof("Received another unexpected type of watched pod: got %T (%v), expected %T.", e.Object, e.Object, p)
+				}
+				time.Sleep(10 * time.Millisecond)
+				continue pollLoop
 			}
 		}
 		if ctx.Err() != nil {
@@ -371,6 +412,9 @@ func (t *TestCluster) doWaitForPod(ctx context.Context, pod *v13.Pod, phase v13.
 			return fmt.Errorf("pod %q failed: %s", pod.GetName(), p.Status.Message)
 		case phase:
 			return nil
+		}
+		if time.Now().After(startLogTime) {
+			podLogger.Infof("Still waiting for pod %q after %v; pod status: %v", pod.GetName(), time.Since(startLogTime), p.Status)
 		}
 	}
 }

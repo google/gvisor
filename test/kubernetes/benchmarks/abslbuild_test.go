@@ -20,6 +20,7 @@ import (
 	"path"
 	"strings"
 	"testing"
+	"time"
 
 	k8s "gvisor.dev/gvisor/test/kubernetes"
 	"gvisor.dev/gvisor/test/kubernetes/benchmarks/profiling"
@@ -127,7 +128,9 @@ func doABSLBuild(ctx context.Context, t *testing.T, k8sCtx k8sctx.KubernetesCont
 			}
 			defer cluster.DeletePod(ctx, pod)
 
-			containerDuration, err := benchmetric.GetTimedContainerDuration(ctx, cluster, pod, name)
+			waitDeadlineCtx, cancel := context.WithTimeout(ctx, 30*time.Minute)
+			containerDuration, err := benchmetric.GetTimedContainerDuration(waitDeadlineCtx, cluster, pod, name)
+			cancel()
 			if err != nil {
 				t.Fatalf("Failed to get container duration: %v", err)
 			}
