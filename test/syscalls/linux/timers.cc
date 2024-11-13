@@ -13,7 +13,9 @@
 // limitations under the License.
 
 #include <errno.h>
+#include <poll.h>
 #include <signal.h>
+#include <stdint.h>
 #include <sys/resource.h>
 #include <sys/time.h>
 #include <syscall.h>
@@ -50,13 +52,15 @@ namespace {
 #define CPUCLOCK_PROF 0
 #endif  // CPUCLOCK_PROF
 
-PosixErrorOr<absl::Duration> ProcessCPUTime(pid_t pid) {
+clockid_t ProcessCPUClock(pid_t pid) {
   // Use pid-specific CPUCLOCK_PROF, which is the clock used to enforce
   // RLIMIT_CPU.
-  clockid_t clockid = (~static_cast<clockid_t>(pid) << 3) | CPUCLOCK_PROF;
+  return (~static_cast<clockid_t>(pid) << 3) | CPUCLOCK_PROF;
+}
 
+PosixErrorOr<absl::Duration> ProcessCPUTime(pid_t pid) {
   struct timespec ts;
-  int ret = clock_gettime(clockid, &ts);
+  int ret = clock_gettime(ProcessCPUClock(pid), &ts);
   if (ret < 0) {
     return PosixError(errno, "clock_gettime failed");
   }
@@ -221,6 +225,77 @@ TEST(TimerTest, ProcessKilledOnCPUHardLimit) {
 
   absl::Duration cpu = ASSERT_NO_ERRNO_AND_VALUE(ProcessCPUTime(pid));
   EXPECT_GE(cpu, kHardLimit);
+}
+
+TEST(TimerTest, RlimitCpuInheritedAcrossFork) {
+  pid_t child_pid = fork();
+  MaybeSave();
+  if (child_pid == 0) {
+    // Ignore SIGXCPU from the RLIMIT_CPU soft limit.
+    struct sigaction new_action;
+    new_action.sa_handler = NoopSignalHandler;
+    new_action.sa_flags = 0;
+    sigemptyset(&new_action.sa_mask);
+    TEST_PCHECK(sigaction(SIGXCPU, &new_action, nullptr) == 0);
+
+    // Set both soft and hard limits to expire a short time from now. (Since we
+    // may not be able to raise RLIMIT_CPU again, this must happen in a
+    // disposable child of the test process.)
+    constexpr int kDelaySeconds = 2;
+    struct timespec ts;
+    TEST_PCHECK(clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &ts) == 0);
+    struct rlimit cpu_limits;
+    // +1 to round up, presuming that ts.tv_nsec > 0.
+    cpu_limits.rlim_cur = cpu_limits.rlim_max = ts.tv_sec + kDelaySeconds + 1;
+    TEST_PCHECK(setrlimit(RLIMIT_CPU, &cpu_limits) == 0);
+    MaybeSave();
+
+    pid_t grandchild_pid = fork();
+    MaybeSave();
+    if (grandchild_pid == 0) {
+      int pipefd[2];
+      TEST_PCHECK(pipe(pipefd) == 0);
+      struct pollfd pfd;
+      pfd.fd = pipefd[0];
+      pfd.events = POLLIN;
+      struct timespec timeout;
+      timeout.tv_sec = 0;
+      timeout.tv_nsec = 1000;
+
+      // Burn CPU.
+      uint64_t x = 0;
+      for (;;) {
+        x++;
+        benchmark::DoNotOptimize(x);  // Don't optimize this loop away.
+        // Periodically block to ensure that child_pid gets a chance to run and
+        // block in waitid().
+        // TODO: b/315388929 - remove this
+        if (x % 16384 == 0) {
+          TEST_PCHECK(ppoll(&pfd, 1, &timeout, nullptr) == 0);
+        }
+      }
+    }
+    TEST_PCHECK(grandchild_pid > 0);
+
+    // Wait for the grandchild to exit, but do not reap it. This will allow us
+    // to check its CPU usage while it is zombied.
+    TEST_PCHECK(waitid(P_PID, grandchild_pid, nullptr, WEXITED | WNOWAIT) == 0);
+    MaybeSave();
+    TEST_PCHECK(clock_gettime(ProcessCPUClock(grandchild_pid), &ts) == 0);
+    TEST_CHECK(ts.tv_sec >= static_cast<long>(cpu_limits.rlim_max));
+    // Reap the grandchild and check that it was SIGKILLed by the RLIMIT_CPU
+    // hard limit.
+    int status;
+    TEST_PCHECK(waitpid(grandchild_pid, &status, 0) == grandchild_pid);
+    TEST_CHECK(WIFSIGNALED(status) && (WTERMSIG(status) == SIGKILL));
+    _exit(0);
+  }
+
+  int status;
+  ASSERT_THAT(waitpid(child_pid, &status, 0),
+              SyscallSucceedsWithValue(child_pid));
+  EXPECT_TRUE(WIFEXITED(status) && (WEXITSTATUS(status) == 0))
+      << "status = " << status;
 }
 
 // See timerfd.cc:TimerSlack() for rationale.
