@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -132,8 +133,31 @@ type TestCluster struct {
 	testNodepoolRuntimeOverride RuntimeType
 }
 
+type testClusterConstructorKey int
+
+const (
+	// testClusterConstructor is the key for the context value that holds the
+	// constructor function for TestCluster.
+	// Defaults to newTestCluster.
+	testClusterConstructor testClusterConstructorKey = iota
+)
+
+// WithTestClusterConstructor returns a context that contains a custom
+// constructor for TestCluster.
+func WithTestClusterConstructor(ctx context.Context, constructor func(context.Context, *testpb.Cluster) (*TestCluster, error)) context.Context {
+	return context.WithValue(ctx, testClusterConstructor, constructor)
+}
+
 // NewTestCluster returns a new TestCluster client.
-func NewTestCluster(cluster *testpb.Cluster) (*TestCluster, error) {
+func NewTestCluster(ctx context.Context, cluster *testpb.Cluster) (*TestCluster, error) {
+	constructor, ok := ctx.Value(testClusterConstructor).(func(context.Context, *testpb.Cluster) (*TestCluster, error))
+	if !ok || constructor == nil || reflect.ValueOf(constructor).IsNil() {
+		constructor = newTestCluster
+	}
+	return constructor(ctx, cluster)
+}
+
+func newTestCluster(_ context.Context, cluster *testpb.Cluster) (*TestCluster, error) {
 	config, err := clientcmd.BuildConfigFromFlags("" /*masterURL*/, cluster.GetCredentialFile())
 	if err != nil {
 		return nil, fmt.Errorf("BuildConfigFromFlags: %w", err)
