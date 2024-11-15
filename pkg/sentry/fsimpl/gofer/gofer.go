@@ -1544,13 +1544,13 @@ func (d *dentry) InotifyWithParent(ctx context.Context, events, cookie uint32, e
 		events |= linux.IN_ISDIR
 	}
 
-	d.fs.renameMu.RLock()
+	d.fs.ancestryMu.RLock()
 	// The ordering below is important, Linux always notifies the parent first.
 	if parent := d.parent.Load(); parent != nil {
 		parent.watches.Notify(ctx, d.name, events, cookie, et, d.isDeleted())
 	}
 	d.watches.Notify(ctx, "", events, cookie, et, d.isDeleted())
-	d.fs.renameMu.RUnlock()
+	d.fs.ancestryMu.RUnlock()
 }
 
 // Watches implements vfs.DentryImpl.Watches.
