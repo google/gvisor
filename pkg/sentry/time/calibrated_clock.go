@@ -126,16 +126,13 @@ func (c *CalibratedClock) updateParams(actual Parameters) {
 		c.resetLocked("Unable to update params: %v.", err)
 		return
 	}
-	logErrorAdjustment(c.ref.clockID, errorNS, c.params, newParams)
 
 	if errorNS.Magnitude() >= MaxClockError {
 		// We should never get such extreme error, something is very
 		// wrong. Reset everything and start again.
 		//
-		// N.B. logErrorAdjustment will have already logged the error
-		// at warning level.
-		//
 		// TODO(mpratt): We could allow Realtime clock jumps here.
+		log.Warningf("Clock(%v): error: %v ns, adjusted frequency from %v Hz to %v Hz", c.ref.clockID, errorNS, c.params.Frequency, newParams.Frequency)
 		c.resetLocked("Extreme clock error.")
 		return
 	}
