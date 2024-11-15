@@ -17,4 +17,4 @@ package kubernetes
 
 // ImageRepoPrefix is the image repository prefix of images that are
 // used by gVisor tests.
-const ImageRepoPrefix = "us-central1-docker.pkg.dev/gvisor-presubmit/"
+const ImageRepoPrefix = "us-central1-docker.pkg.dev/gvisor-presubmit/gvisor-presubmit-images/"
