@@ -26,6 +26,7 @@ go_template_instance(
     template = "//pkg/sentry/vfs/genericfstree:generic_fstree",
     types = {
         "Dentry": "dentry",
+        "Filesystem": "filesystem",
     },
 )
 
@@ -40,25 +41,11 @@ go_template_instance(
     },
 )
 
-declare_mutex(
-    name = "inode_mutex",
-    out = "inode_mutex.go",
+declare_rwmutex(
+    name = "ancestry_mutex",
+    out = "ancestry_mutex.go",
     package = "tmpfs",
-    prefix = "inode",
-)
-
-declare_mutex(
-    name = "pages_used_mutex",
-    out = "pages_used_mutex.go",
-    package = "tmpfs",
-    prefix = "pagesUsed",
-)
-
-declare_mutex(
-    name = "iter_mutex",
-    out = "iter_mutex.go",
-    package = "tmpfs",
-    prefix = "iter",
+    prefix = "ancestry",
 )
 
 declare_rwmutex(
@@ -68,9 +55,31 @@ declare_rwmutex(
     prefix = "filesystem",
 )
 
+declare_mutex(
+    name = "inode_mutex",
+    out = "inode_mutex.go",
+    package = "tmpfs",
+    prefix = "inode",
+)
+
+declare_mutex(
+    name = "iter_mutex",
+    out = "iter_mutex.go",
+    package = "tmpfs",
+    prefix = "iter",
+)
+
+declare_mutex(
+    name = "pages_used_mutex",
+    out = "pages_used_mutex.go",
+    package = "tmpfs",
+    prefix = "pagesUsed",
+)
+
 go_library(
     name = "tmpfs",
     srcs = [
+        "ancestry_mutex.go",
         "dentry_list.go",
         "device_file.go",
         "directory.go",

@@ -23,10 +23,11 @@
 //			dentry.dirMu
 //		    dentry.copyMu
 //		      filesystem.devMu
-//		      *** "memmap.Mappable locks" below this point
+//		      *** "memmap.Mappable/MappingIdentity locks" below this point
 //		      dentry.mapsMu
 //		        *** "memmap.Mappable locks taken by Translate" below this point
 //		        dentry.dataMu
+//		      filesystem.ancestryMu
 //
 // Locking dentry.dirMu in multiple dentries requires that parent dentries are
 // locked before child dentries, and that filesystem.renameMu is locked to
@@ -116,6 +117,10 @@ type filesystem struct {
 	// ensure consistent lock ordering between dentry.dirMu in different
 	// dentries.
 	renameMu renameRWMutex `state:"nosave"`
+
+	// ancestryMu additionally protects dentry.parent and dentry.name as
+	// required by genericfstree.
+	ancestryMu ancestryRWMutex `state:"nosave"`
 
 	// dirInoCache caches overlay-private directory inode numbers by mapped
 	// bottommost device numbers and inode number. dirInoCache is protected by
@@ -480,11 +485,6 @@ func (fs *filesystem) getLowerDevMinor(layerMajor, layerMinor uint32) (uint32, e
 	}
 	fs.lowerDevMinors[orig] = minor
 	return minor, nil
-}
-
-// IsDescendant implements vfs.FilesystemImpl.IsDescendant.
-func (fs *filesystem) IsDescendant(vfsroot, vd vfs.VirtualDentry) bool {
-	return genericIsDescendant(vfsroot.Dentry(), vd.Dentry().Impl().(*dentry))
 }
 
 // dentry implements vfs.DentryImpl.

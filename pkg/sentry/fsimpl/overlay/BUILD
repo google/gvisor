@@ -6,6 +6,13 @@ package(default_applicable_licenses = ["//:license"])
 
 licenses(["notice"])
 
+declare_rwmutex(
+    name = "ancestry_rwmutex",
+    out = "ancestry_rwmutex.go",
+    package = "overlay",
+    prefix = "ancestry",
+)
+
 declare_mutex(
     name = "dir_mutex",
     out = "dir_mutex.go",
@@ -75,12 +82,14 @@ go_template_instance(
     template = "//pkg/sentry/vfs/genericfstree:generic_fstree",
     types = {
         "Dentry": "dentry",
+        "Filesystem": "filesystem",
     },
 )
 
 go_library(
     name = "overlay",
     srcs = [
+        "ancestry_rwmutex.go",
         "copy_up.go",
         "data_rwmutex.go",
         "dev_mutex.go",

@@ -14,6 +14,7 @@ go_template_instance(
     template = "//pkg/sentry/vfs/genericfstree:generic_fstree",
     types = {
         "Dentry": "dentry",
+        "Filesystem": "filesystem",
     },
 )
 
@@ -70,6 +71,7 @@ go_library(
         "//pkg/sentry/memmap",
         "//pkg/sentry/socket/unix/transport",
         "//pkg/sentry/vfs",
+        "//pkg/sync",
         "//pkg/usermem",
     ],
 )

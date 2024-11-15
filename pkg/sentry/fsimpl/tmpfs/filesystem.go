@@ -580,7 +580,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 	// mount point then we want to rename the mount point, not anything in the
 	// mounted filesystem.
 	if renamed.inode.isDir() {
-		if renamed == &newParentDir.dentry || genericIsAncestorDentry(renamed, &newParentDir.dentry) {
+		if renamed == &newParentDir.dentry || genericIsAncestorDentry(fs, renamed, &newParentDir.dentry) {
 			return linuxerr.EINVAL
 		}
 		if oldParentDir != newParentDir {
@@ -936,47 +936,36 @@ func (fs *filesystem) RemoveXattrAt(ctx context.Context, rp *vfs.ResolvingPath, 
 
 // PrependPath implements vfs.FilesystemImpl.PrependPath.
 func (fs *filesystem) PrependPath(ctx context.Context, vfsroot, vd vfs.VirtualDentry, b *fspath.Builder) error {
-	fs.mu.RLock()
-	defer fs.mu.RUnlock()
-	mnt := vd.Mount()
 	d := vd.Dentry().Impl().(*dentry)
-	for {
-		if mnt == vfsroot.Mount() && &d.vfsd == vfsroot.Dentry() {
-			return vfs.PrependPathAtVFSRootError{}
+	if d.parent.Load() == nil {
+		fs.ancestryMu.Lock()
+		name := d.name
+		fs.ancestryMu.Unlock()
+		if name != "" {
+			// This file must have been created by
+			// newUnlinkedRegularFileDescription(). In Linux,
+			// mm/shmem.c:__shmem_file_setup() =>
+			// fs/file_table.c:alloc_file_pseudo() sets the created
+			// dentry's dentry_operations to anon_ops, for which d_dname ==
+			// simple_dname. fs/d_path.c:simple_dname() defines the
+			// dentry's pathname to be its name, prefixed with "/" and
+			// suffixed with " (deleted)".
+			b.PrependComponent("/" + name)
+			b.AppendString(" (deleted)")
+			return vfs.PrependPathSyntheticError{}
 		}
-		if mnt != nil && &d.vfsd == mnt.Root() {
-			return nil
-		}
-		parent := d.parent.Load()
-		if parent == nil {
-			if d.name != "" {
-				// This file must have been created by
-				// newUnlinkedRegularFileDescription(). In Linux,
-				// mm/shmem.c:__shmem_file_setup() =>
-				// fs/file_table.c:alloc_file_pseudo() sets the created
-				// dentry's dentry_operations to anon_ops, for which d_dname ==
-				// simple_dname. fs/d_path.c:simple_dname() defines the
-				// dentry's pathname to be its name, prefixed with "/" and
-				// suffixed with " (deleted)".
-				b.PrependComponent("/" + d.name)
-				b.AppendString(" (deleted)")
-				return vfs.PrependPathSyntheticError{}
-			}
-			return vfs.PrependPathAtNonMountRootError{}
-		}
-		b.PrependComponent(d.name)
-		d = parent
 	}
+	return genericPrependPath(fs, vfsroot, vd.Mount(), d, b)
+}
+
+// IsDescendant implements vfs.FilesystemImpl.IsDescendant.
+func (fs *filesystem) IsDescendant(vfsroot, vd vfs.VirtualDentry) bool {
+	return genericIsDescendant(fs, vfsroot.Dentry(), vd.Dentry().Impl().(*dentry))
 }
 
 // MountOptions implements vfs.FilesystemImpl.MountOptions.
 func (fs *filesystem) MountOptions() string {
 	return fs.mopts
-}
-
-// IsDescendant implements vfs.FilesystemImpl.IsDescendant.
-func (fs *filesystem) IsDescendant(vfsroot, vd vfs.VirtualDentry) bool {
-	return genericIsDescendant(vfsroot.Dentry(), vd.Dentry().Impl().(*dentry))
 }
 
 // adjustPageAcct adjusts the accounting done against filesystem size limit in

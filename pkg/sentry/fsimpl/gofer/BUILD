@@ -49,6 +49,7 @@ go_template_instance(
     template = "//pkg/sentry/vfs/genericfstree:generic_fstree",
     types = {
         "Dentry": "dentry",
+        "Filesystem": "filesystem",
     },
 )
 

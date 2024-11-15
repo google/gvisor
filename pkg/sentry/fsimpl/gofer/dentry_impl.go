@@ -538,14 +538,14 @@ func (d *dentry) restoreFile(ctx context.Context, opts *vfs.CompleteRestoreOptio
 		inode, err := controlFD.Walk(ctx, d.name)
 		if err != nil {
 			if !dt.isDir() || !dt.forMountpoint {
-				return fmt.Errorf("failed to walk %q of type %x: %w", genericDebugPathname(d), dt.fileType(), err)
+				return fmt.Errorf("failed to walk %q of type %x: %w", genericDebugPathname(d.fs, d), dt.fileType(), err)
 			}
 
 			// Recreate directories that were created during volume mounting, since
 			// during restore we don't attempt to remount them.
 			inode, err = controlFD.MkdirAt(ctx, d.name, linux.FileMode(d.mode.Load()), lisafs.UID(d.uid.Load()), lisafs.GID(d.gid.Load()))
 			if err != nil {
-				return fmt.Errorf("failed to create mountpoint directory at %q: %w", genericDebugPathname(d), err)
+				return fmt.Errorf("failed to create mountpoint directory at %q: %w", genericDebugPathname(d.fs, d), err)
 			}
 		}
 		return dt.restoreFile(ctx, &inode, opts)
@@ -558,13 +558,13 @@ func (d *dentry) restoreFile(ctx context.Context, opts *vfs.CompleteRestoreOptio
 		})
 		if err != nil {
 			if !dt.isDir() || !dt.forMountpoint {
-				return fmt.Errorf("failed to walk %q of type %x: %w", genericDebugPathname(d), dt.fileType(), err)
+				return fmt.Errorf("failed to walk %q of type %x: %w", genericDebugPathname(d.fs, d), dt.fileType(), err)
 			}
 
 			// Recreate directories that were created during volume mounting, since
 			// during restore we don't attempt to remount them.
 			if err := unix.Mkdirat(controlFD, d.name, d.mode.Load()); err != nil {
-				return fmt.Errorf("failed to create mountpoint directory at %q: %w", genericDebugPathname(d), err)
+				return fmt.Errorf("failed to create mountpoint directory at %q: %w", genericDebugPathname(d.fs, d), err)
 			}
 
 			// Try again...
@@ -572,7 +572,7 @@ func (d *dentry) restoreFile(ctx context.Context, opts *vfs.CompleteRestoreOptio
 				return unix.Openat(controlFD, d.name, flags, 0)
 			})
 			if err != nil {
-				return fmt.Errorf("failed to open %q: %w", genericDebugPathname(d), err)
+				return fmt.Errorf("failed to open %q: %w", genericDebugPathname(d.fs, d), err)
 			}
 		}
 		return dt.restoreFile(ctx, childFD, opts)

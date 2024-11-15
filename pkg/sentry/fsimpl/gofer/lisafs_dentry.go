@@ -547,18 +547,18 @@ func (d *lisafsDentry) restoreFile(ctx context.Context, inode *lisafs.Inode, opt
 	if d.isRegularFile() {
 		if opts.ValidateFileSizes {
 			if inode.Stat.Mask&linux.STATX_SIZE == 0 {
-				return vfs.ErrCorruption{fmt.Errorf("gofer.dentry(%q).restoreFile: file size validation failed: file size not available", genericDebugPathname(&d.dentry))}
+				return vfs.ErrCorruption{fmt.Errorf("gofer.dentry(%q).restoreFile: file size validation failed: file size not available", genericDebugPathname(d.fs, &d.dentry))}
 			}
 			if d.size.RacyLoad() != inode.Stat.Size {
-				return vfs.ErrCorruption{fmt.Errorf("gofer.dentry(%q).restoreFile: file size validation failed: size changed from %d to %d", genericDebugPathname(&d.dentry), d.size.Load(), inode.Stat.Size)}
+				return vfs.ErrCorruption{fmt.Errorf("gofer.dentry(%q).restoreFile: file size validation failed: size changed from %d to %d", genericDebugPathname(d.fs, &d.dentry), d.size.Load(), inode.Stat.Size)}
 			}
 		}
 		if opts.ValidateFileModificationTimestamps {
 			if inode.Stat.Mask&linux.STATX_MTIME == 0 {
-				return vfs.ErrCorruption{fmt.Errorf("gofer.dentry(%q).restoreFile: mtime validation failed: mtime not available", genericDebugPathname(&d.dentry))}
+				return vfs.ErrCorruption{fmt.Errorf("gofer.dentry(%q).restoreFile: mtime validation failed: mtime not available", genericDebugPathname(d.fs, &d.dentry))}
 			}
 			if want := dentryTimestamp(inode.Stat.Mtime); d.mtime.RacyLoad() != want {
-				return vfs.ErrCorruption{fmt.Errorf("gofer.dentry(%q).restoreFile: mtime validation failed: mtime changed from %+v to %+v", genericDebugPathname(&d.dentry), linux.NsecToStatxTimestamp(d.mtime.RacyLoad()), linux.NsecToStatxTimestamp(want))}
+				return vfs.ErrCorruption{fmt.Errorf("gofer.dentry(%q).restoreFile: mtime validation failed: mtime changed from %+v to %+v", genericDebugPathname(d.fs, &d.dentry), linux.NsecToStatxTimestamp(d.mtime.RacyLoad()), linux.NsecToStatxTimestamp(want))}
 			}
 		}
 	}
@@ -568,7 +568,7 @@ func (d *lisafsDentry) restoreFile(ctx context.Context, inode *lisafs.Inode, opt
 
 	if rw, ok := d.fs.savedDentryRW[&d.dentry]; ok {
 		if err := d.ensureSharedHandle(ctx, rw.read, rw.write, false /* trunc */); err != nil {
-			return fmt.Errorf("failed to restore file handles (read=%t, write=%t) for %q: %w", rw.read, rw.write, genericDebugPathname(&d.dentry), err)
+			return fmt.Errorf("failed to restore file handles (read=%t, write=%t) for %q: %w", rw.read, rw.write, genericDebugPathname(d.fs, &d.dentry), err)
 		}
 	}
 

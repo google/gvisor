@@ -13,5 +13,6 @@ go_template(
     ],
     types = [
         "Dentry",
+        "Filesystem",
     ],
 )

@@ -111,6 +111,10 @@ type Filesystem struct {
 	//   fs.deferDecRef(dentry)
 	mu filesystemRWMutex `state:"nosave"`
 
+	// ancestryMu additionally protects dentry.parent and dentry.name as
+	// required by genericfstree.
+	ancestryMu ancestryRWMutex `state:"nosave"`
+
 	// nextInoMinusOne is used to to allocate inode numbers on this
 	// filesystem. Must be accessed by atomic operations.
 	nextInoMinusOne atomicbitops.Uint64
@@ -597,7 +601,7 @@ func (d *Dentry) Inode() Inode {
 // filesystem.
 func (d *Dentry) FSLocalPath() string {
 	var b fspath.Builder
-	_ = genericPrependPath(vfs.VirtualDentry{}, nil, d, &b)
+	_ = genericPrependPath(d.fs, vfs.VirtualDentry{}, nil, d, &b)
 	b.PrependByte('/')
 	return b.String()
 }

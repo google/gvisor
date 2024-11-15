@@ -211,8 +211,4 @@ loop:
 //	- d_absolute_path(), which returns EINVAL if (effectively) any call to
 //		FilesystemImpl.PrependPath() would return PrependPathAtNonMountRootError.
 //
-//	- dentry_path(), which does not walk up mounts (and only returns the path
-//		relative to Filesystem root), but also appends "//deleted" for disowned
-//		Dentries.
-//
 // These should be added as necessary.

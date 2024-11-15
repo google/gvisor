@@ -1089,9 +1089,12 @@ func (fs *Filesystem) RemoveXattrAt(ctx context.Context, rp *vfs.ResolvingPath, 
 
 // PrependPath implements vfs.FilesystemImpl.PrependPath.
 func (fs *Filesystem) PrependPath(ctx context.Context, vfsroot, vd vfs.VirtualDentry, b *fspath.Builder) error {
-	fs.mu.RLock()
-	defer fs.mu.RUnlock()
-	return genericPrependPath(vfsroot, vd.Mount(), vd.Dentry().Impl().(*Dentry), b)
+	return genericPrependPath(fs, vfsroot, vd.Mount(), vd.Dentry().Impl().(*Dentry), b)
+}
+
+// IsDescendant implements vfs.FilesystemImpl.IsDescendant.
+func (fs *Filesystem) IsDescendant(vfsroot, vd vfs.VirtualDentry) bool {
+	return genericIsDescendant(fs, vfsroot.Dentry(), vd.Dentry().Impl().(*Dentry))
 }
 
 func (fs *Filesystem) deferDecRefVD(ctx context.Context, vd vfs.VirtualDentry) {
@@ -1105,9 +1108,4 @@ func (fs *Filesystem) deferDecRefVD(ctx context.Context, vd vfs.VirtualDentry) {
 	} else {
 		vd.DecRef(ctx)
 	}
-}
-
-// IsDescendant implements vfs.FilesystemImpl.IsDescendant.
-func (fs *Filesystem) IsDescendant(vfsroot, vd vfs.VirtualDentry) bool {
-	return genericIsDescendant(vfsroot.Dentry(), vd.Dentry().Impl().(*Dentry))
 }
