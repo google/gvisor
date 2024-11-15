@@ -183,9 +183,12 @@ test-%: register-cross ## Build an image locally if the remote doesn't exist.
 # tag.
 # If DOCKER_PUSH_AS_LATEST is set to true, this also marks this image as being
 # the latest one on the remote repository.
+# When DOCKER_FORCE_PUSH is true, it always pushes the image regardless of
+# whether the image already exists on the remote.
 DOCKER_PUSH_AS_LATEST ?= false
+DOCKER_FORCE_PUSH ?= false
 push-%:
-	$(call image_manifest,$*) >&2 || \
+	($(call image_manifest,$*) >&2 && test $(DOCKER_FORCE_PUSH) '!=' true) || \
 	( $(call rebuild,$*) && \
 	  docker image push $(call remote_image,$*):$(call tag,$*) >&2 && \
 	  ( test $(DOCKER_PUSH_AS_LATEST) '!=' true || \
