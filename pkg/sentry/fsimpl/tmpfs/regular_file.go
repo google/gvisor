@@ -80,6 +80,15 @@ type regularFile struct {
 	// Protected by dataMu.
 	seals uint32
 
+	// initiallyUnlinked is true if this file was created using NewZeroFile or
+	// NewMemfd => newUnlinkedRegularFileDescription. initiallyUnlinked should
+	// be true when the equivalent shmem file in Linux would use
+	// shmem_anon_vm_ops rather than shmem_vm_ops.
+	//
+	// initiallyUnlinked is immutable, but stored here since it fits into
+	// alignment padding.
+	initiallyUnlinked bool
+
 	// size is the size of data.
 	//
 	// Protected by both dataMu and inode.mu; reading it requires holding
@@ -114,6 +123,7 @@ func newUnlinkedRegularFileDescription(ctx context.Context, creds *auth.Credenti
 	}
 
 	inode := fs.newRegularFile(creds.EffectiveKUID, creds.EffectiveKGID, 0777, nil /* parentDir */)
+	inode.impl.(*regularFile).initiallyUnlinked = true
 	d := fs.newDentry(inode)
 	defer d.DecRef(ctx)
 	d.name = name
@@ -588,6 +598,9 @@ func (fd *regularFileFD) Seek(ctx context.Context, offset int64, whence int32) (
 func (fd *regularFileFD) ConfigureMMap(ctx context.Context, opts *memmap.MMapOpts) error {
 	file := fd.inode().impl.(*regularFile)
 	opts.SentryOwnedContent = true
+	if file.initiallyUnlinked {
+		opts.NameMut = memmap.NameMutAnonShmem
+	}
 	return vfs.GenericConfigureMMap(&fd.vfsfd, file, opts)
 }
 

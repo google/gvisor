@@ -123,8 +123,8 @@ func (mm *MemoryManager) appendVMAMapsEntryLocked(ctx context.Context, vseg vmaI
 
 	// Figure out our filename or hint.
 	var path string
-	if vma.hint != "" {
-		path = vma.hint
+	if vma.name != "" {
+		path = vma.name
 	} else if vma.id != nil {
 		path = vma.id.MappedName(ctx)
 	}

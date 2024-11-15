@@ -292,7 +292,8 @@ func (mm *MemoryManager) MapStack(ctx context.Context) (hostarch.AddrRange, erro
 		Private:   true,
 		GrowsDown: true,
 		MLockMode: mm.defMLockMode,
-		Hint:      "[stack]",
+		Name:      "[stack]",
+		NameMut:   memmap.NameMutAnon,
 	}, nil /* droppedIDs */)
 	mm.mappingMu.Unlock()
 	for _, id := range droppedIDs {
@@ -462,7 +463,8 @@ func (mm *MemoryManager) MRemap(ctx context.Context, oldAddr hostarch.Addr, oldS
 			GrowsDown:       vma.growsDown,
 			Stack:           vma.isStack,
 			MLockMode:       vma.mlockMode,
-			Hint:            vma.hint,
+			Name:            vma.name,
+			NameMut:         vma.nameMut,
 		}, droppedIDs)
 		if err == nil {
 			if vma.mlockMode == memmap.MLockEager {
@@ -799,7 +801,8 @@ func (mm *MemoryManager) Brk(ctx context.Context, addr hostarch.Addr) (hostarch.
 			// Linux: mm/mmap.c:sys_brk() => do_brk_flags() includes
 			// mm->def_flags.
 			MLockMode: mm.defMLockMode,
-			Hint:      "[heap]",
+			Name:      "[heap]",
+			NameMut:   memmap.NameMutAnon,
 		}, droppedIDs)
 		if err != nil {
 			addr = mm.brk.End
@@ -1069,37 +1072,41 @@ func (mm *MemoryManager) SetNumaPolicy(addr hostarch.Addr, length uint64, policy
 	}
 }
 
-// SetDontFork implements the semantics of madvise MADV_DONTFORK.
-func (mm *MemoryManager) SetDontFork(addr hostarch.Addr, length uint64, dontfork bool) error {
-	ar, ok := addr.ToRange(length)
+// madviseAddrRange converts addr and length to an AddrRange as for madvise(2)
+// (and prctl(PR_SET_VMA, PR_SET_VMA_ANON_NAME) =>
+// mm/madvise.c:madvise_vma_anon_name().)
+func madviseAddrRange(addr hostarch.Addr, length uint64) (hostarch.AddrRange, error) {
+	// All quotes from the man page:
+	// "madvise() only operates on whole pages, therefore addr must be
+	// page-aligned."
+	if !addr.IsPageAligned() {
+		// "EINVAL: addr is not page-aligned or length is negative." Note that
+		// length is size_t which is unsigned, so "length is negative" is
+		// impossible, but we take this as referring to the next check (for
+		// which Linux also returns EINVAL).
+		return hostarch.AddrRange{}, linuxerr.EINVAL
+	}
+	// "The value of length is rounded up to a multiple of page size."
+	lengthRounded, ok := hostarch.PageRoundUp(length)
 	if !ok {
-		return linuxerr.EINVAL
+		return hostarch.AddrRange{}, linuxerr.EINVAL
 	}
-
-	mm.mappingMu.Lock()
-	defer mm.mappingMu.Unlock()
-	defer func() {
-		mm.vmas.MergeInsideRange(ar)
-		mm.vmas.MergeOutsideRange(ar)
-	}()
-
-	for vseg := mm.vmas.LowerBoundSegment(ar.Start); vseg.Ok() && vseg.Start() < ar.End; vseg = vseg.NextSegment() {
-		vseg = mm.vmas.Isolate(vseg, ar)
-		vma := vseg.ValuePtr()
-		vma.dontfork = dontfork
+	ar, ok := addr.ToRange(lengthRounded)
+	if !ok {
+		// Not specified, but Linux also returns EINVAL in this case.
+		return hostarch.AddrRange{}, linuxerr.EINVAL
 	}
-
-	if mm.vmas.SpanRange(ar) != ar.Length() {
-		return linuxerr.ENOMEM
-	}
-	return nil
+	return ar, nil
 }
 
 // Decommit implements the semantics of Linux's madvise(MADV_DONTNEED).
 func (mm *MemoryManager) Decommit(addr hostarch.Addr, length uint64) error {
-	ar, ok := addr.ToRange(length)
-	if !ok {
-		return linuxerr.EINVAL
+	ar, err := madviseAddrRange(addr, length)
+	if err != nil {
+		return err
+	}
+	if length == 0 {
+		return nil
 	}
 
 	mm.mappingMu.RLock()
@@ -1224,6 +1231,102 @@ func (mm *MemoryManager) Decommit(addr hostarch.Addr, length uint64) error {
 		return linuxerr.ENOMEM
 	}
 	return nil
+}
+
+// madviseMutateVMAs is similar to mm.vmas.MutateRange(), but:
+//
+// - madviseMutateVMAs locks mm.mappingMu for writing, as required to mutate
+// mm.vmas.
+//
+// - If f returns a non-nil error, madviseMutateVMAs stops iteration and
+// returns the error.
+//
+// - Consistent with Linux madvise(): "If there are some parts of the specified
+// address range that are not mapped, the Linux version of madvise() ignores
+// them and applies the call to the rest (but returns ENOMEM from the system
+// call, as it should)."
+func (mm *MemoryManager) madviseMutateVMAs(addr hostarch.Addr, length uint64, f func(vseg vmaIterator) error) error {
+	ar, err := madviseAddrRange(addr, length)
+	if err != nil {
+		return err
+	}
+	if length == 0 {
+		return nil
+	}
+
+	mm.mappingMu.Lock()
+	defer mm.mappingMu.Unlock()
+	vseg := mm.vmas.LowerBoundSegmentSplitBefore(ar.Start)
+	if !vseg.Ok() {
+		return linuxerr.ENOMEM
+	}
+	hadvgap := ar.Start < vseg.Start()
+	for vseg.Start() < ar.End {
+		vseg = mm.vmas.SplitAfter(vseg, ar.End)
+		err := f(vseg)
+		vseg = mm.vmas.MergePrev(vseg)
+		if err != nil {
+			mm.vmas.MergeNext(vseg)
+			return err
+		}
+		if ar.End <= vseg.End() {
+			break
+		}
+		vgap := vseg.NextGap()
+		if !vgap.IsEmpty() {
+			hadvgap = true
+		}
+		vseg = vgap.NextSegment()
+	}
+	mm.vmas.MergePrev(vseg)
+	if hadvgap {
+		return linuxerr.ENOMEM
+	}
+	return nil
+}
+
+// SetDontFork implements the semantics of madvise MADV_DONTFORK.
+//
+// Preconditions: addr and length are page-aligned.
+func (mm *MemoryManager) SetDontFork(addr hostarch.Addr, length uint64, dontfork bool) error {
+	return mm.madviseMutateVMAs(addr, length, func(vseg vmaIterator) error {
+		vseg.ValuePtr().dontfork = dontfork
+		return nil
+	})
+}
+
+// SetVMAAnonName implements the semantics of Linux's
+// prctl(PR_SET_VMA, PR_SET_VMA_ANON_NAME).
+func (mm *MemoryManager) SetVMAAnonName(addr hostarch.Addr, length uint64, name string, nameIsNil bool) error {
+	// Check that name contains only valid characters; compare Linux
+	// kernel/sys.c:is_valid_name_char(). `for ... := range string`
+	// iterates Unicode runes, not bytes.
+	for i := 0; i < len(name); i++ {
+		c := name[i]
+		if c <= 0x1f || c >= 0x7f || c == '\\' || c == '`' || c == '$' || c == '[' || c == ']' {
+			return linuxerr.EINVAL
+		}
+	}
+
+	return mm.madviseMutateVMAs(addr, length, func(vseg vmaIterator) error {
+		vma := vseg.ValuePtr()
+		if vma.nameMut == memmap.NameMutDisallowed {
+			return linuxerr.EBADF
+		}
+		if nameIsNil {
+			vma.name = ""
+			return nil
+		}
+		switch vma.nameMut {
+		case memmap.NameMutAnon:
+			vma.name = fmt.Sprintf("[anon:%s]", name)
+		case memmap.NameMutAnonShmem:
+			vma.name = fmt.Sprintf("[anon_shmem:%s]", name)
+		default:
+			panic(fmt.Sprintf("unknown memmap.NameMut: %d", vma.nameMut))
+		}
+		return nil
+	})
 }
 
 // MSyncOpts holds options to MSync.
@@ -1406,7 +1509,7 @@ func (mm *MemoryManager) IsMembarrierRSeqEnabled() bool {
 }
 
 // FindVMAByName finds a vma with the specified name and returns its start address and offset.
-func (mm *MemoryManager) FindVMAByName(ar hostarch.AddrRange, hint string) (hostarch.Addr, uint64, error) {
+func (mm *MemoryManager) FindVMAByName(ar hostarch.AddrRange, name string) (hostarch.Addr, uint64, error) {
 	mm.mappingMu.RLock()
 	defer mm.mappingMu.RUnlock()
 
@@ -1417,9 +1520,9 @@ func (mm *MemoryManager) FindVMAByName(ar hostarch.AddrRange, hint string) (host
 		}
 		vma := vseg.ValuePtr()
 
-		if vma.hint == hint {
+		if vma.name == name {
 			return start, vma.off, nil
 		}
 	}
-	return 0, 0, fmt.Errorf("could not find \"%s\" in %s", hint, ar)
+	return 0, 0, fmt.Errorf("could not find %q in %s", name, ar)
 }

@@ -96,7 +96,7 @@ func (s *State) newTrapLocked(ctx context.Context, mm memoryManager) (hostarch.A
 	// nextTrap is saved on the usertrap vma to handle the third and second
 	// cases.
 	if s.nextTrap == 0 {
-		addr, off, err := mm.FindVMAByName(trapTableAddrRange, tableHint)
+		addr, off, err := mm.FindVMAByName(trapTableAddrRange, tableVMAName)
 		if off != 0 {
 			return 0, fmt.Errorf("the usertrap vma has been overmounted")
 		}
@@ -152,7 +152,7 @@ var trapTableAddrRange = hostarch.AddrRange{Start: 0x60000, End: 0x70000}
 const (
 	trapTableSize = hostarch.Addr(trapNR * trapSize)
 
-	tableHint = "[usertrap]"
+	tableVMAName = "[usertrap]"
 )
 
 // LoadUsertrap maps the usertrap table into the address space.
@@ -166,7 +166,7 @@ func loadUsertrap(ctx context.Context, mm memoryManager, addr hostarch.Addr) err
 		Addr:      addr,
 		Length:    uint64(size),
 		Private:   true,
-		Hint:      tableHint,
+		Name:      tableVMAName,
 		MLockMode: memmap.MLockEager,
 		Perms: hostarch.AccessType{
 			Write:   false,

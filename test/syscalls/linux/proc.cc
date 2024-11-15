@@ -1127,22 +1127,122 @@ TEST(ProcSelfMaps, Mprotect) {
                                                    3 * kPageSize, PROT_READ)));
 }
 
+// Expected pathname for MAP_SHARED | MAP_ANONYMOUS mappings. See proc(5),
+// "/proc/[pid]/map_files/".
+constexpr char kSharedAnonPath[] = "/dev/zero (deleted)";
+
 TEST(ProcSelfMaps, SharedAnon) {
   const Mapping m = ASSERT_NO_ERRNO_AND_VALUE(
       MmapAnon(kPageSize, PROT_READ, MAP_SHARED | MAP_ANONYMOUS));
 
   const auto proc_self_maps =
       ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/self/maps"));
-  for (const auto& line : absl::StrSplit(proc_self_maps, '\n')) {
-    const auto entry = ASSERT_NO_ERRNO_AND_VALUE(ParseProcMapsLine(line));
-    if (entry.start <= m.addr() && m.addr() < entry.end) {
-      // cf. proc(5), "/proc/[pid]/map_files/"
-      EXPECT_EQ(entry.filename, "/dev/zero (deleted)");
-      return;
-    }
-  }
-  FAIL() << "no maps entry containing mapping at " << m.ptr();
+  const auto entries = ASSERT_NO_ERRNO_AND_VALUE(ParseProcMaps(proc_self_maps));
+  const auto entry =
+      ASSERT_NO_ERRNO_AND_VALUE(FindUniqueMapsEntry(entries, m.addr()));
+  EXPECT_EQ(entry.filename, kSharedAnonPath);
 }
+
+#ifndef PR_SET_VMA
+#define PR_SET_VMA 0x53564d41
+#endif
+#ifndef PR_SET_VMA_ANON_NAME
+#define PR_SET_VMA_ANON_NAME 0
+#endif
+
+TEST(ProcSelfMaps, AnonNamePrivateAnon) {
+  const Mapping m = ASSERT_NO_ERRNO_AND_VALUE(
+      MmapAnon(kPageSize, PROT_READ, MAP_PRIVATE | MAP_ANONYMOUS));
+
+  int rv = prctl(PR_SET_VMA, PR_SET_VMA_ANON_NAME, m.addr(), m.len(), "test");
+  SKIP_IF(rv < 0 && errno == EINVAL);
+  ASSERT_THAT(rv, SyscallSucceeds());
+  auto proc_self_maps =
+      ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/self/maps"));
+  auto entries = ASSERT_NO_ERRNO_AND_VALUE(ParseProcMaps(proc_self_maps));
+  auto entry =
+      ASSERT_NO_ERRNO_AND_VALUE(FindUniqueMapsEntry(entries, m.addr()));
+  EXPECT_EQ(entry.filename, "[anon:test]");
+
+  ASSERT_THAT(prctl(PR_SET_VMA, PR_SET_VMA_ANON_NAME, m.addr(), m.len(), ""),
+              SyscallSucceeds());
+  proc_self_maps = ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/self/maps"));
+  entries = ASSERT_NO_ERRNO_AND_VALUE(ParseProcMaps(proc_self_maps));
+  entry = ASSERT_NO_ERRNO_AND_VALUE(FindUniqueMapsEntry(entries, m.addr()));
+  EXPECT_EQ(entry.filename, "[anon:]");
+
+  ASSERT_THAT(
+      prctl(PR_SET_VMA, PR_SET_VMA_ANON_NAME, m.addr(), m.len(), nullptr),
+      SyscallSucceeds());
+  proc_self_maps = ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/self/maps"));
+  entries = ASSERT_NO_ERRNO_AND_VALUE(ParseProcMaps(proc_self_maps));
+  entry = ASSERT_NO_ERRNO_AND_VALUE(FindUniqueMapsEntry(entries, m.addr()));
+  EXPECT_EQ(entry.filename, "");
+}
+
+TEST(ProcSelfMaps, AnonNameSharedAnon) {
+  const Mapping m = ASSERT_NO_ERRNO_AND_VALUE(
+      MmapAnon(kPageSize, PROT_READ, MAP_SHARED | MAP_ANONYMOUS));
+
+  int rv = prctl(PR_SET_VMA, PR_SET_VMA_ANON_NAME, m.addr(), m.len(), "test");
+  SKIP_IF(rv < 0 && errno == EINVAL);
+  // Using PR_SET_VMA_ANON_NAME on shared anonymous mappings isn't permitted
+  // until d09e8ca6cb93 ("mm: anonymous shared memory naming"), Linux 6.2+.
+  SKIP_IF(rv < 0 && errno == EBADF);
+  ASSERT_THAT(rv, SyscallSucceeds());
+  auto proc_self_maps =
+      ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/self/maps"));
+  auto entries = ASSERT_NO_ERRNO_AND_VALUE(ParseProcMaps(proc_self_maps));
+  auto entry =
+      ASSERT_NO_ERRNO_AND_VALUE(FindUniqueMapsEntry(entries, m.addr()));
+  EXPECT_EQ(entry.filename, "[anon_shmem:test]");
+
+  ASSERT_THAT(prctl(PR_SET_VMA, PR_SET_VMA_ANON_NAME, m.addr(), m.len(), ""),
+              SyscallSucceeds());
+  proc_self_maps = ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/self/maps"));
+  entries = ASSERT_NO_ERRNO_AND_VALUE(ParseProcMaps(proc_self_maps));
+  entry = ASSERT_NO_ERRNO_AND_VALUE(FindUniqueMapsEntry(entries, m.addr()));
+  EXPECT_EQ(entry.filename, "[anon_shmem:]");
+
+  ASSERT_THAT(
+      prctl(PR_SET_VMA, PR_SET_VMA_ANON_NAME, m.addr(), m.len(), nullptr),
+      SyscallSucceeds());
+  proc_self_maps = ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/self/maps"));
+  entries = ASSERT_NO_ERRNO_AND_VALUE(ParseProcMaps(proc_self_maps));
+  entry = ASSERT_NO_ERRNO_AND_VALUE(FindUniqueMapsEntry(entries, m.addr()));
+  EXPECT_EQ(entry.filename, kSharedAnonPath);
+}
+
+// Test parameterized by mmap flags.
+class ProcSelfMapsMmapFileTest : public ::testing::TestWithParam<int> {};
+
+TEST_P(ProcSelfMapsMmapFileTest, AnonNameFile) {
+  const auto f = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  const auto fd = ASSERT_NO_ERRNO_AND_VALUE(Open(f.path(), O_RDONLY));
+  const Mapping m = ASSERT_NO_ERRNO_AND_VALUE(
+      Mmap(nullptr, kPageSize, PROT_READ, GetParam(), fd.get(), 0));
+
+  int rv = prctl(PR_SET_VMA, PR_SET_VMA_ANON_NAME, m.addr(), m.len(), "test");
+  SKIP_IF(rv < 0 && errno == EINVAL);
+  ASSERT_THAT(rv, SyscallFailsWithErrno(EBADF));
+  auto proc_self_maps =
+      ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/self/maps"));
+  auto entries = ASSERT_NO_ERRNO_AND_VALUE(ParseProcMaps(proc_self_maps));
+  auto entry =
+      ASSERT_NO_ERRNO_AND_VALUE(FindUniqueMapsEntry(entries, m.addr()));
+  EXPECT_EQ(entry.filename, f.path());
+
+  ASSERT_THAT(
+      prctl(PR_SET_VMA, PR_SET_VMA_ANON_NAME, m.addr(), m.len(), nullptr),
+      SyscallFailsWithErrno(EBADF));
+  proc_self_maps = ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/self/maps"));
+  entries = ASSERT_NO_ERRNO_AND_VALUE(ParseProcMaps(proc_self_maps));
+  entry = ASSERT_NO_ERRNO_AND_VALUE(FindUniqueMapsEntry(entries, m.addr()));
+  EXPECT_EQ(entry.filename, f.path());
+}
+
+INSTANTIATE_TEST_SUITE_P(SelfAndNumericPid, ProcSelfMapsMmapFileTest,
+                         ::testing::Values(MAP_SHARED, MAP_PRIVATE));
 
 TEST(ProcSelfFd, OpenFd) {
   int pipe_fds[2];

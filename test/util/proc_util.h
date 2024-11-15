@@ -84,6 +84,10 @@ PosixErrorOr<ProcMapsEntry> ParseProcMapsLine(absl::string_view line);
 PosixErrorOr<std::vector<ProcMapsEntry>> ParseProcMaps(
     absl::string_view contents);
 
+// Returns the unique entry in entries containing the given address.
+PosixErrorOr<ProcMapsEntry> FindUniqueMapsEntry(
+    std::vector<ProcMapsEntry> const&, uintptr_t);
+
 // Returns true if vsyscall (emmulation or not) is enabled.
 PosixErrorOr<bool> IsVsyscallEnabled();
 

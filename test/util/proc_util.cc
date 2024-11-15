@@ -14,6 +14,7 @@
 
 #include "test/util/proc_util.h"
 
+#include <stdint.h>
 #include <sys/prctl.h>
 
 #include <algorithm>
@@ -24,6 +25,7 @@
 #include "absl/container/flat_hash_set.h"
 #include "absl/strings/ascii.h"
 #include "absl/strings/str_cat.h"
+#include "absl/strings/str_format.h"
 #include "absl/strings/str_split.h"
 #include "absl/strings/string_view.h"
 #include "test/util/fs_util.h"
@@ -97,6 +99,27 @@ PosixErrorOr<std::vector<ProcMapsEntry>> ParseProcMaps(
     entries.push_back(entry);
   }
   return entries;
+}
+
+PosixErrorOr<ProcMapsEntry> FindUniqueMapsEntry(
+    std::vector<ProcMapsEntry> const& entries, uintptr_t addr) {
+  auto const pred = [&](ProcMapsEntry const& entry) {
+    return entry.start <= addr && addr < entry.end;
+  };
+  auto const it = absl::c_find_if(entries, pred);
+  if (it == entries.end()) {
+    return PosixError(EINVAL,
+                      absl::StrFormat("no entry contains address %#x", addr));
+  }
+  auto const it2 = std::find_if(it + 1, entries.end(), pred);
+  if (it2 != entries.end()) {
+    return PosixError(
+        EINVAL,
+        absl::StrFormat("overlapping entries [%#x-%#x) and [%#x-%#x) both "
+                        "contain address %#x",
+                        it->start, it->end, it2->start, it2->end, addr));
+  }
+  return *it;
 }
 
 PosixErrorOr<bool> IsVsyscallEnabled() {
