@@ -308,7 +308,8 @@ func (v *vma) StateFields() []string {
 		"numaPolicy",
 		"numaNodemask",
 		"id",
-		"hint",
+		"name",
+		"nameMut",
 		"lastFault",
 	}
 }
@@ -328,8 +329,9 @@ func (v *vma) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(5, &v.numaPolicy)
 	stateSinkObject.Save(6, &v.numaNodemask)
 	stateSinkObject.Save(7, &v.id)
-	stateSinkObject.Save(8, &v.hint)
-	stateSinkObject.Save(9, &v.lastFault)
+	stateSinkObject.Save(8, &v.name)
+	stateSinkObject.Save(9, &v.nameMut)
+	stateSinkObject.Save(10, &v.lastFault)
 }
 
 func (v *vma) afterLoad(context.Context) {}
@@ -343,8 +345,9 @@ func (v *vma) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(5, &v.numaPolicy)
 	stateSourceObject.Load(6, &v.numaNodemask)
 	stateSourceObject.Load(7, &v.id)
-	stateSourceObject.Load(8, &v.hint)
-	stateSourceObject.Load(9, &v.lastFault)
+	stateSourceObject.Load(8, &v.name)
+	stateSourceObject.Load(9, &v.nameMut)
+	stateSourceObject.Load(10, &v.lastFault)
 	stateSourceObject.LoadValue(2, new(int), func(y any) { v.loadRealPerms(ctx, y.(int)) })
 }
 

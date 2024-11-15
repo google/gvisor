@@ -418,6 +418,7 @@ func (s *sender) updateRTO(rtt time.Duration) {
 	}
 
 	s.RTO = s.rtt.TCPRTTState.SRTT + 4*s.rtt.TCPRTTState.RTTVar
+	s.RTTState = s.rtt.TCPRTTState
 	s.rtt.Unlock()
 	if s.RTO < s.minRTO {
 		s.RTO = s.minRTO

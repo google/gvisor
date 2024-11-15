@@ -19,7 +19,6 @@ import (
 	"os"
 	"runtime"
 	"strconv"
-	"sync"
 	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -30,6 +29,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // Name is the filesystem name. It is part of the interface used by users,
@@ -72,6 +72,9 @@ type filesystem struct {
 	// reduce the lock contention. Bucket is chosen based on the hash calculation
 	// on nid in filesystem.inodeBucket.
 	inodeBuckets []inodeBucket
+
+	// ancestryMu is required by genericfstree.
+	ancestryMu sync.RWMutex `state:"nosave"`
 }
 
 // InternalFilesystemOptions may be passed as

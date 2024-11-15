@@ -78,13 +78,10 @@ func (mm *MemoryManager) MapsCallbackFuncForBuffer(buf *bytes.Buffer) MapsCallba
 // ReadMapsDataInto is called by fsimpl/proc.mapsData.Generate to
 // implement /proc/[pid]/maps.
 func (mm *MemoryManager) ReadMapsDataInto(ctx context.Context, fn MapsCallbackFunc) {
-	// FIXME(b/235153601): Need to replace RLockBypass with RLockBypass
-	// after fixing b/235153601.
-	mm.mappingMu.RLockBypass()
-	defer mm.mappingMu.RUnlockBypass()
-	var start hostarch.Addr
+	mm.mappingMu.RLock()
+	defer mm.mappingMu.RUnlock()
 
-	for vseg := mm.vmas.LowerBoundSegment(start); vseg.Ok(); vseg = vseg.NextSegment() {
+	for vseg := mm.vmas.FirstSegment(); vseg.Ok(); vseg = vseg.NextSegment() {
 		mm.appendVMAMapsEntryLocked(ctx, vseg, fn)
 	}
 
@@ -95,11 +92,7 @@ func (mm *MemoryManager) ReadMapsDataInto(ctx context.Context, fn MapsCallbackFu
 	// something is really mapped in the tiny ~10 MiB segment afterwards, we'll
 	// get the sorting on the maps file wrong at worst; but that's not possible
 	// on any current platform).
-	//
-	// Artificially adjust the seqfile handle so we only output vsyscall entry once.
-	if start != vsyscallEnd {
-		fn(hostarch.Addr(0xffffffffff600000), hostarch.Addr(0xffffffffff601000), hostarch.ReadExecute, "p", 0, 0, 0, 0, "[vsyscall]")
-	}
+	fn(hostarch.Addr(0xffffffffff600000), hostarch.Addr(0xffffffffff601000), hostarch.ReadExecute, "p", 0, 0, 0, 0, "[vsyscall]")
 }
 
 // vmaMapsEntryLocked returns a /proc/[pid]/maps entry for the vma iterated by
@@ -130,14 +123,9 @@ func (mm *MemoryManager) appendVMAMapsEntryLocked(ctx context.Context, vseg vmaI
 
 	// Figure out our filename or hint.
 	var path string
-	if vma.hint != "" {
-		path = vma.hint
+	if vma.name != "" {
+		path = vma.name
 	} else if vma.id != nil {
-		// FIXME(jamieliu): We are holding mm.mappingMu here, which is
-		// consistent with Linux's holding mmap_sem in
-		// fs/proc/task_mmu.c:show_map_vma() => fs/seq_file.c:seq_file_path().
-		// However, it's not clear that fs.File.MappedName() is actually
-		// consistent with this lock order.
 		path = vma.id.MappedName(ctx)
 	}
 	fn(vseg.Start(), vseg.End(), vma.realPerms, private, vma.off, devMajor, devMinor, ino, path)
@@ -146,21 +134,16 @@ func (mm *MemoryManager) appendVMAMapsEntryLocked(ctx context.Context, vseg vmaI
 // ReadSmapsDataInto is called by fsimpl/proc.smapsData.Generate to
 // implement /proc/[pid]/maps.
 func (mm *MemoryManager) ReadSmapsDataInto(ctx context.Context, buf *bytes.Buffer) {
-	// FIXME(b/235153601): Need to replace RLockBypass with RLockBypass
-	// after fixing b/235153601.
-	mm.mappingMu.RLockBypass()
-	defer mm.mappingMu.RUnlockBypass()
-	var start hostarch.Addr
+	mm.mappingMu.RLock()
+	defer mm.mappingMu.RUnlock()
 
-	for vseg := mm.vmas.LowerBoundSegment(start); vseg.Ok(); vseg = vseg.NextSegment() {
+	for vseg := mm.vmas.FirstSegment(); vseg.Ok(); vseg = vseg.NextSegment() {
 		mm.vmaSmapsEntryIntoLocked(ctx, vseg, buf)
 	}
 
 	// We always emulate vsyscall, so advertise it here. See
 	// ReadMapsSeqFileData for additional commentary.
-	if start != vsyscallEnd {
-		buf.WriteString(vsyscallSmapsEntry)
-	}
+	buf.WriteString(vsyscallSmapsEntry)
 }
 
 // vmaSmapsEntryLocked returns a /proc/[pid]/smaps entry for the vma iterated

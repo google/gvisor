@@ -1418,7 +1418,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 		return err
 	}
 	if renamed.isDir() {
-		if renamed == newParent || genericIsAncestorDentry(renamed, newParent) {
+		if renamed == newParent || genericIsAncestorDentry(fs, renamed, newParent) {
 			return linuxerr.EINVAL
 		}
 		if oldParent != newParent {
@@ -1456,7 +1456,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 			if !renamed.isDir() {
 				return linuxerr.EISDIR
 			}
-			if genericIsAncestorDentry(replaced, renamed) {
+			if genericIsAncestorDentry(fs, replaced, renamed) {
 				return linuxerr.ENOTEMPTY
 			}
 		} else {
@@ -1738,9 +1738,12 @@ func (fs *filesystem) RemoveXattrAt(ctx context.Context, rp *vfs.ResolvingPath, 
 
 // PrependPath implements vfs.FilesystemImpl.PrependPath.
 func (fs *filesystem) PrependPath(ctx context.Context, vfsroot, vd vfs.VirtualDentry, b *fspath.Builder) error {
-	fs.renameMu.RLock()
-	defer fs.renameMu.RUnlock()
-	return genericPrependPath(vfsroot, vd.Mount(), vd.Dentry().Impl().(*dentry), b)
+	return genericPrependPath(fs, vfsroot, vd.Mount(), vd.Dentry().Impl().(*dentry), b)
+}
+
+// IsDescendant implements vfs.FilesystemImpl.IsDescendant.
+func (fs *filesystem) IsDescendant(vfsroot, vd vfs.VirtualDentry) bool {
+	return genericIsDescendant(fs, vfsroot.Dentry(), vd.Dentry().Impl().(*dentry))
 }
 
 type mopt struct {
@@ -1803,9 +1806,4 @@ func (fs *filesystem) MountOptions() string {
 		opts = append(opts, opt.String())
 	}
 	return strings.Join(opts, ",")
-}
-
-// IsDescendant implements vfs.FilesystemImpl.IsDescendant.
-func (fs *filesystem) IsDescendant(vfsroot, vd vfs.VirtualDentry) bool {
-	return genericIsDescendant(vfsroot.Dentry(), vd.Dentry().Impl().(*dentry))
 }

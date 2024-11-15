@@ -18,10 +18,11 @@
 //
 //	EpollInstance.interestMu
 //		FileDescription.epollMu
-//		  Locks acquired by FilesystemImpl/FileDescriptionImpl methods (except IsDescendant)
+//		  Locks acquired by FilesystemImpl/FileDescriptionImpl methods (except FilesystemImpl.PrependPath and IsDescendant)
 //		    VirtualFilesystem.mountMu
 //		      Dentry.mu
 //		        Locks acquired by FilesystemImpls between Prepare{Delete,Rename}Dentry and Commit{Delete,Rename*}Dentry
+//		          Locks acquired by FilesystemImpl.PrependPath and IsDescendant (typically genericfstree.Filesystem.ancestryMu)
 //		      VirtualFilesystem.filesystemsMu
 //		    fdnotifier.notifier.mu
 //		      EpollInstance.readyMu
@@ -33,11 +34,6 @@
 // Locking Dentry.mu in multiple Dentries requires holding
 // VirtualFilesystem.mountMu. Locking EpollInstance.interestMu in multiple
 // EpollInstances requires holding epollCycleMu.
-//
-// FilesystemImpl locks are not held during calls to FilesystemImpl.IsDescendant
-// since it's called under mountMu. It's possible for concurrent mutation
-// to dentry ancestors during calls IsDescendant. Callers should take
-// appropriate caution when using this method.
 package vfs
 
 import (

@@ -367,11 +367,15 @@ type MMapOpts struct {
 	// MLockMode specifies the memory locking behavior of the mapping.
 	MLockMode MLockMode
 
-	// Hint is the name used for the mapping in /proc/[pid]/maps. If Hint is
+	// Name is the name used for the mapping in /proc/[pid]/maps. If Name is
 	// empty, MappingIdentity.MappedName() will be used instead.
 	//
 	// TODO(jamieliu): Replace entirely with MappingIdentity?
-	Hint string
+	Name string
+
+	// NameMut controls the effect of prctl(PR_SET_VMA, PR_SET_VMA_ANON_NAME)
+	// on this mapping.
+	NameMut NameMut
 
 	// Force means to skip validation checks of Addr and Length. It can be
 	// used to create special mappings below mm.layout.MinAddr and
@@ -392,6 +396,23 @@ type MMapOpts struct {
 	// guaranteed not to be modified outside the sentry's purview.
 	SentryOwnedContent bool
 }
+
+// NameMut is the type of MMapOpts.NameMut.
+type NameMut uint8
+
+// Possible values for MMapOpts.NameMut:
+const (
+	// NameMutDisallowed indicates that PR_SET_VMA_ANON_NAME should fail.
+	NameMutDisallowed NameMut = iota
+
+	// NameMutAnon indicates that PR_SET_VMA_ANON_NAME should succeed, and
+	// treat the mapping as private anonymous memory.
+	NameMutAnon
+
+	// NameMutAnonShmem indicates that PR_SET_VMA_ANON_NAME should succeed, and
+	// treat the mapping as shared anonymous memory.
+	NameMutAnonShmem
+)
 
 // MMapPlatformEffect is the type of MMapOpts.PlatformEffect.
 type MMapPlatformEffect uint8

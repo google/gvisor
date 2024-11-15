@@ -42,10 +42,8 @@ func (mm *MemoryManager) String() string {
 func (mm *MemoryManager) DebugString(ctx context.Context) string {
 	var b bytes.Buffer
 
-	// FIXME(b/235153601): Need to replace RLockBypass with RLockBypass
-	// after fixing b/235153601.
-	mm.mappingMu.RLockBypass()
-	defer mm.mappingMu.RUnlockBypass()
+	mm.mappingMu.RLock()
+	defer mm.mappingMu.RUnlock()
 	b.WriteString("VMAs:\n")
 	for vseg := mm.vmas.FirstSegment(); vseg.Ok(); vseg = vseg.NextSegment() {
 		b.Write(mm.vmaMapsEntryLocked(ctx, vseg))

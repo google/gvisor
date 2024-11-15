@@ -312,9 +312,11 @@ type vma struct {
 	// metadata shown in /proc/[pid]/maps, and the vma holds a reference.
 	id memmap.MappingIdentity
 
-	// If hint is non-empty, it is a description of the vma printed in
-	// /proc/[pid]/maps. hint takes priority over id.MappedName().
-	hint string
+	// If name is non-empty, it is a description of the vma printed in
+	// /proc/[pid]/maps. name takes priority over id.MappedName().
+	name string
+
+	nameMut memmap.NameMut
 
 	// lastFault records the last address that was paged faulted. It hints at
 	// which direction addresses in this vma are being accessed.
@@ -339,7 +341,8 @@ func (v *vma) copy() vma {
 		numaPolicy:     v.numaPolicy,
 		numaNodemask:   v.numaNodemask,
 		id:             v.id,
-		hint:           v.hint,
+		name:           v.name,
+		nameMut:        v.nameMut,
 		lastFault:      atomic.LoadUintptr(&v.lastFault),
 	}
 }

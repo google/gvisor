@@ -496,12 +496,18 @@ type FilesystemImpl interface {
 	// an arbitrary descriptive string to b and then return a
 	// PrependPathSyntheticError.
 	//
-	// Most implementations can acquire the appropriate locks to ensure that
-	// Dentry.Name() and Dentry.Parent() are fixed for vd.Dentry() and all of
-	// its ancestors, then call GenericPrependPath.
+	// Most implementations can use genericfstree.PrependPath.
 	//
 	// Preconditions: vd.Mount().Filesystem().Impl() == this FilesystemImpl.
 	PrependPath(ctx context.Context, vfsroot, vd VirtualDentry, b *fspath.Builder) error
+
+	// IsDescendant returns true if vd is a descendant of vfsroot or if vd and
+	// vfsroot are the same dentry.
+	//
+	// Most implementations can use genericfstree.IsDescendant.
+	//
+	// Preconditions: vd.Mount().Filesystem().Impl() == this FilesystemImpl.
+	IsDescendant(vfsroot, vd VirtualDentry) bool
 
 	// MountOptions returns mount options for the current filesystem. This
 	// should only return options specific to the filesystem (i.e. don't return
@@ -511,15 +517,6 @@ type FilesystemImpl interface {
 	// If the implementation has no filesystem-specific options, it should
 	// return the empty string.
 	MountOptions() string
-
-	// IsDescendant returns true if vd is a descendant of vfsroot or if vd and
-	// vfsroot are the same dentry. The method does not take filesystem locks when
-	// accessing the parents of each dentry, so it's possible for parents to be
-	// mutated concurrently during a call to IsDescendant. Callers should take
-	// appropriate caution when using this method.
-	//
-	// Preconditions: vd.Mount().Filesystem().Impl() == this FilesystemImpl.
-	IsDescendant(vfsroot, vd VirtualDentry) bool
 }
 
 // PrependPathAtVFSRootError is returned by implementations of

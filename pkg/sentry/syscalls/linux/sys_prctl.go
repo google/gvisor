@@ -237,6 +237,25 @@ func Prctl(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, 
 		_, err := primitive.CopyInt32Out(t, args[1].Pointer(), isSubreaper)
 		return 0, nil, err
 
+	case linux.PR_SET_VMA:
+		if args[1].Int() != linux.PR_SET_VMA_ANON_NAME {
+			return 0, nil, linuxerr.EINVAL
+		}
+		var (
+			name      string
+			nameIsNil bool
+		)
+		if nameAddr := args[4].Pointer(); nameAddr == 0 {
+			nameIsNil = true
+		} else {
+			var err error
+			name, err = t.CopyInString(nameAddr, linux.ANON_VMA_NAME_MAX_LEN)
+			if err != nil {
+				return 0, nil, err
+			}
+		}
+		return 0, nil, t.MemoryManager().SetVMAAnonName(args[2].Pointer(), args[3].Uint64(), name, nameIsNil)
+
 	case linux.PR_GET_TIMING,
 		linux.PR_SET_TIMING,
 		linux.PR_GET_TSC,

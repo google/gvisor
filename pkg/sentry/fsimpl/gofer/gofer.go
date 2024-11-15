@@ -25,11 +25,12 @@
 //	        dentry.childrenMu
 //	        filesystem.syncMu
 //	        dentry.metadataMu
-//	          *** "memmap.Mappable locks" below this point
+//	          *** "memmap.Mappable/MappingIdentity locks" below this point
 //	          dentry.mapsMu
 //	            *** "memmap.Mappable locks taken by Translate" below this point
 //	            dentry.handleMu
 //	              dentry.dataMu
+//	          filesystem.ancestryMu
 //	          filesystem.inoMu
 //	specialFileFD.mu
 //	  specialFileFD.bufMu
@@ -217,6 +218,10 @@ type filesystem struct {
 	//		is reachable from its children), or if it is a child dentry (such that
 	//		it is reachable from its parent).
 	renameMu sync.RWMutex `state:"nosave"`
+
+	// ancestryMu additionally protects dentry.parent and dentry.name as
+	// required by genericfstree.
+	ancestryMu sync.RWMutex `state:"nosave"`
 
 	dentryCache *dentryCache
 

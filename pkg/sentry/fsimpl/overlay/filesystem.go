@@ -1152,7 +1152,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 		return err
 	}
 	if renamed.isDir() {
-		if renamed == newParent || genericIsAncestorDentry(renamed, newParent) {
+		if renamed == newParent || genericIsAncestorDentry(fs, renamed, newParent) {
 			return linuxerr.EINVAL
 		}
 		if oldParent != newParent {
@@ -1195,7 +1195,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 			if !renamed.isDir() {
 				return linuxerr.EISDIR
 			}
-			if genericIsAncestorDentry(replaced, renamed) {
+			if genericIsAncestorDentry(fs, replaced, renamed) {
 				return linuxerr.ENOTEMPTY
 			}
 			replaced.dirMu.NestedLock(dirLockReplaced)
@@ -1336,9 +1336,8 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 		oldParent.DecRef(ctx)
 		ds = appendDentry(ds, oldParent)
 		newParent.IncRef()
-		renamed.parent.Store(newParent)
 	}
-	renamed.name = newName
+	genericSetParentAndName(fs, renamed, newParent, newName)
 	if newParent.children == nil {
 		newParent.children = make(map[string]*dentry)
 	}
@@ -1879,9 +1878,12 @@ func (fs *filesystem) removeXattrLocked(ctx context.Context, d *dentry, mnt *vfs
 
 // PrependPath implements vfs.FilesystemImpl.PrependPath.
 func (fs *filesystem) PrependPath(ctx context.Context, vfsroot, vd vfs.VirtualDentry, b *fspath.Builder) error {
-	fs.renameMu.RLock()
-	defer fs.renameMu.RUnlock()
-	return genericPrependPath(vfsroot, vd.Mount(), vd.Dentry().Impl().(*dentry), b)
+	return genericPrependPath(fs, vfsroot, vd.Mount(), vd.Dentry().Impl().(*dentry), b)
+}
+
+// IsDescendant implements vfs.FilesystemImpl.IsDescendant.
+func (fs *filesystem) IsDescendant(vfsroot, vd vfs.VirtualDentry) bool {
+	return genericIsDescendant(fs, vfsroot.Dentry(), vd.Dentry().Impl().(*dentry))
 }
 
 // MountOptions implements vfs.FilesystemImpl.MountOptions.

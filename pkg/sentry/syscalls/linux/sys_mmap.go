@@ -112,6 +112,8 @@ func Mmap(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *
 		if err := file.ConfigureMMap(t, &opts); err != nil {
 			return 0, nil, err
 		}
+	} else {
+		opts.NameMut = memmap.NameMutAnon
 	}
 
 	rv, err := t.MemoryManager().MMap(t, opts)
@@ -174,21 +176,6 @@ func Madvise(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr
 	addr := args[0].Pointer()
 	length := uint64(args[1].SizeT())
 	adv := args[2].Int()
-
-	// "The Linux implementation requires that the address addr be
-	// page-aligned, and allows length to be zero." - madvise(2)
-	if addr.RoundDown() != addr {
-		return 0, nil, linuxerr.EINVAL
-	}
-	if length == 0 {
-		return 0, nil, nil
-	}
-	// Not explicitly stated: length need not be page-aligned.
-	lenAddr, ok := hostarch.Addr(length).RoundUp()
-	if !ok {
-		return 0, nil, linuxerr.EINVAL
-	}
-	length = uint64(lenAddr)
 
 	switch adv {
 	case linux.MADV_DONTNEED:

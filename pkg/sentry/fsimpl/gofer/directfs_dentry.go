@@ -452,7 +452,7 @@ func (d *directfsDentry) getCreatedChild(name string, uid, gid int, isDir bool) 
 	deleteChild := func() {
 		// Best effort attempt to remove the newly created child on failure.
 		if err := unix.Unlinkat(d.controlFD, name, unlinkFlags); err != nil {
-			log.Warningf("error unlinking newly created child %q after failure: %v", filepath.Join(genericDebugPathname(&d.dentry), name), err)
+			log.Warningf("error unlinking newly created child %q after failure: %v", filepath.Join(genericDebugPathname(d.fs, &d.dentry), name), err)
 		}
 	}
 
@@ -518,7 +518,7 @@ func (d *directfsDentry) bindAt(ctx context.Context, name string, creds *auth.Cr
 	hbep := opts.Endpoint.(transport.HostBoundEndpoint)
 	if err := hbep.SetBoundSocketFD(ctx, boundSocketFD); err != nil {
 		if err := unix.Unlinkat(d.controlFD, name, 0); err != nil {
-			log.Warningf("error unlinking newly created socket %q after failure: %v", filepath.Join(genericDebugPathname(&d.dentry), name), err)
+			log.Warningf("error unlinking newly created socket %q after failure: %v", filepath.Join(genericDebugPathname(d.fs, &d.dentry), name), err)
 		}
 		return nil, err
 	}
@@ -593,7 +593,7 @@ func (d *directfsDentry) getDirentsLocked(recordDirent func(name string, key ino
 		// TODO(gvisor.dev/issue/6665): Get rid of per-dirent stat.
 		stat, err := fsutil.StatAt(d.controlFD, name)
 		if err != nil {
-			log.Warningf("Getdent64: skipping file %q with failed stat, err: %v", path.Join(genericDebugPathname(&d.dentry), name), err)
+			log.Warningf("Getdent64: skipping file %q with failed stat, err: %v", path.Join(genericDebugPathname(d.fs, &d.dentry), name), err)
 			return
 		}
 		recordDirent(name, inoKeyFromStat(&stat), ftype)
@@ -650,7 +650,7 @@ func (d *directfsDentry) restoreFile(ctx context.Context, controlFD int, opts *v
 	var stat unix.Stat_t
 	if err := unix.Fstat(controlFD, &stat); err != nil {
 		_ = unix.Close(controlFD)
-		return fmt.Errorf("failed to stat %q: %w", genericDebugPathname(&d.dentry), err)
+		return fmt.Errorf("failed to stat %q: %w", genericDebugPathname(d.fs, &d.dentry), err)
 	}
 
 	d.controlFD = controlFD
@@ -672,12 +672,12 @@ func (d *directfsDentry) restoreFile(ctx context.Context, controlFD int, opts *v
 	if d.isRegularFile() {
 		if opts.ValidateFileSizes {
 			if d.size.RacyLoad() != uint64(stat.Size) {
-				return vfs.ErrCorruption{fmt.Errorf("gofer.dentry(%q).restoreFile: file size validation failed: size changed from %d to %d", genericDebugPathname(&d.dentry), d.size.Load(), stat.Size)}
+				return vfs.ErrCorruption{fmt.Errorf("gofer.dentry(%q).restoreFile: file size validation failed: size changed from %d to %d", genericDebugPathname(d.fs, &d.dentry), d.size.Load(), stat.Size)}
 			}
 		}
 		if opts.ValidateFileModificationTimestamps {
 			if want := dentryTimestampFromUnix(stat.Mtim); d.mtime.RacyLoad() != want {
-				return vfs.ErrCorruption{fmt.Errorf("gofer.dentry(%q).restoreFile: mtime validation failed: mtime changed from %+v to %+v", genericDebugPathname(&d.dentry), linux.NsecToStatxTimestamp(d.mtime.RacyLoad()), linux.NsecToStatxTimestamp(want))}
+				return vfs.ErrCorruption{fmt.Errorf("gofer.dentry(%q).restoreFile: mtime validation failed: mtime changed from %+v to %+v", genericDebugPathname(d.fs, &d.dentry), linux.NsecToStatxTimestamp(d.mtime.RacyLoad()), linux.NsecToStatxTimestamp(want))}
 			}
 		}
 	}
@@ -687,7 +687,7 @@ func (d *directfsDentry) restoreFile(ctx context.Context, controlFD int, opts *v
 
 	if rw, ok := d.fs.savedDentryRW[&d.dentry]; ok {
 		if err := d.ensureSharedHandle(ctx, rw.read, rw.write, false /* trunc */); err != nil {
-			return fmt.Errorf("failed to restore file handles (read=%t, write=%t) for %q: %w", rw.read, rw.write, genericDebugPathname(&d.dentry), err)
+			return fmt.Errorf("failed to restore file handles (read=%t, write=%t) for %q: %w", rw.read, rw.write, genericDebugPathname(d.fs, &d.dentry), err)
 		}
 	}
 

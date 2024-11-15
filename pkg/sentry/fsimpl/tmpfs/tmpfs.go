@@ -20,11 +20,12 @@
 //	filesystem.mu
 //		inode.mu
 //		  regularFileFD.offMu
-//		    *** "memmap.Mappable locks" below this point
+//		    *** "memmap.Mappable/MappingIdentity locks" below this point
 //		    regularFile.mapsMu
 //		      *** "memmap.Mappable locks taken by Translate" below this point
 //		      regularFile.dataMu
 //		        fs.pagesUsedMu
+//		    filesystem.ancestryMu
 //		  directory.iterMu
 package tmpfs
 
@@ -46,6 +47,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/usage"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sentry/vfs/memxattr"
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // Name is the default filesystem name.
@@ -82,6 +84,10 @@ type filesystem struct {
 
 	// mu serializes changes to the Dentry tree.
 	mu filesystemRWMutex `state:"nosave"`
+
+	// ancestryMu additionally protects dentry.parent and dentry.name as
+	// required by genericfstree.
+	ancestryMu sync.RWMutex `state:"nosave"`
 
 	nextInoMinusOne atomicbitops.Uint64 // accessed using atomic memory operations
 

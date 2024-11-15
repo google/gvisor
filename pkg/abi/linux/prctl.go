@@ -149,6 +149,12 @@ const (
 	PR_SCHED_CORE_SCOPE_THREAD       = 0
 	PR_SCHED_CORE_SCOPE_THREAD_GROUP = 1
 
+	// PR_SET_VMA sets VMA attributes.
+	PR_SET_VMA           = 0x53564d41
+	PR_SET_VMA_ANON_NAME = 0
+	// From kernel/sys.c:
+	ANON_VMA_NAME_MAX_LEN = 80
+
 	// PR_SET_PTRACER allows a specific process (or any, if PR_SET_PTRACER_ANY is
 	// specified) to ptrace the current task.
 	PR_SET_PTRACER     = 0x59616d61

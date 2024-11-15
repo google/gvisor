@@ -126,7 +126,8 @@ func (mm *MemoryManager) createVMALocked(ctx context.Context, opts memmap.MMapOp
 		mlockMode:      opts.MLockMode,
 		numaPolicy:     linux.MPOL_DEFAULT,
 		id:             opts.MappingIdentity,
-		hint:           opts.Hint,
+		name:           opts.Name,
+		nameMut:        opts.NameMut,
 	}
 
 	vseg := mm.vmas.Insert(vgap, ar, v)
@@ -455,7 +456,7 @@ func (vmaSetFunctions) MaxKey() hostarch.Addr {
 func (vmaSetFunctions) ClearValue(vma *vma) {
 	vma.mappable = nil
 	vma.id = nil
-	vma.hint = ""
+	vma.name = ""
 	atomic.StoreUintptr(&vma.lastFault, 0)
 }
 
@@ -472,7 +473,8 @@ func (vmaSetFunctions) Merge(ar1 hostarch.AddrRange, vma1 vma, ar2 hostarch.Addr
 		vma1.numaNodemask != vma2.numaNodemask ||
 		vma1.dontfork != vma2.dontfork ||
 		vma1.id != vma2.id ||
-		vma1.hint != vma2.hint {
+		vma1.name != vma2.name ||
+		vma1.nameMut != vma2.nameMut {
 		return vma{}, false
 	}
 
