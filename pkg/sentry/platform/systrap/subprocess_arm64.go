@@ -23,6 +23,7 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/hostsyscall"
 	"gvisor.dev/gvisor/pkg/seccomp"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
@@ -194,4 +195,8 @@ func archSpecificSysmsgThreadInit(sysThread *sysmsgThread) {
 	if e := hostsyscall.RawSyscallErrno(unix.SYS_TGKILL, uintptr(sysThread.thread.tgid), uintptr(sysThread.thread.tid), uintptr(unix.SIGSEGV)); e != 0 {
 		panic(fmt.Sprintf("tkill failed: %v", e))
 	}
+}
+
+func sigErrorToAccessType(sigError uint64) hostarch.AccessType {
+	return hostarch.ESRAccessType(sigError)
 }

@@ -782,7 +782,7 @@ func (s *subprocess) decAwakeContexts() {
 // This function returns true on a system call, false on a signal.
 // The second return value is true if a syscall instruction can be replaced on
 // a function call.
-func (s *subprocess) switchToApp(c *platformContext, ac *arch.Context64) (isSyscall bool, shouldPatchSyscall bool, err *platform.ContextError) {
+func (s *subprocess) switchToApp(c *platformContext, ac *arch.Context64) (isSyscall bool, shouldPatchSyscall bool, at hostarch.AccessType, err *platform.ContextError) {
 	// Reset necessary registers.
 	regs := &ac.StateData().Regs
 	s.resetSysemuRegs(regs)
@@ -795,7 +795,7 @@ func (s *subprocess) switchToApp(c *platformContext, ac *arch.Context64) (isSysc
 		// Pending interrupt; simulate.
 		ctx.clearInterrupt()
 		c.signalInfo = linux.SignalInfo{Signo: int32(platform.SignalInterrupt)}
-		return false, false, nil
+		return false, false, hostarch.NoAccess, nil
 	}
 	defer func() {
 		ctx.clearInterrupt()
@@ -811,20 +811,20 @@ func (s *subprocess) switchToApp(c *platformContext, ac *arch.Context64) (isSysc
 	}
 	ctx.setState(sysmsg.ContextStateNone)
 	if err := s.contextQueue.add(ctx); err != nil {
-		return false, false, err
+		return false, false, hostarch.NoAccess, err
 	}
 
 	if err := s.waitOnState(ctx); err != nil {
-		return false, false, corruptedSharedMemoryErr(err.Error())
+		return false, false, hostarch.NoAccess, corruptedSharedMemoryErr(err.Error())
 	}
 
 	// Check if there's been an error.
 	threadID := ctx.threadID()
 	if threadID != invalidThreadID {
 		if sysThread, ok := s.sysmsgThreads[threadID]; ok && sysThread.msg.Err != 0 {
-			return false, false, sysThread.msg.ConvertSysmsgErr()
+			return false, false, hostarch.NoAccess, sysThread.msg.ConvertSysmsgErr()
 		}
-		return false, false, corruptedSharedMemoryErr(fmt.Sprintf("found unexpected ThreadContext.ThreadID field, expected %d found %d", invalidThreadID, threadID))
+		return false, false, hostarch.NoAccess, corruptedSharedMemoryErr(fmt.Sprintf("found unexpected ThreadContext.ThreadID field, expected %d found %d", invalidThreadID, threadID))
 	}
 
 	// Copy register state locally.
@@ -843,15 +843,19 @@ func (s *subprocess) switchToApp(c *platformContext, ac *arch.Context64) (isSysc
 
 	if ctxState == sysmsg.ContextStateSyscall || ctxState == sysmsg.ContextStateSyscallTrap {
 		if maybePatchSignalInfo(regs, &c.signalInfo) {
-			return false, false, nil
+			return false, false, hostarch.Execute, nil
 		}
 		updateSyscallRegs(regs)
-		return true, shouldPatchSyscall, nil
+		return true, shouldPatchSyscall, hostarch.NoAccess, nil
 	} else if ctxState != sysmsg.ContextStateFault {
-		return false, false, corruptedSharedMemoryErr(fmt.Sprintf("unknown context state: %v", ctxState))
+		return false, false, hostarch.NoAccess, corruptedSharedMemoryErr(fmt.Sprintf("unknown context state: %v", ctxState))
 	}
 
-	return false, false, nil
+	at = hostarch.NoAccess
+	if c.signalInfo.Signo == int32(linux.SIGSEGV) {
+		at = sigErrorToAccessType(ctx.shared.SigError)
+	}
+	return false, false, at, nil
 }
 
 func (s *subprocess) waitOnState(ctx *sharedContext) error {
@@ -989,24 +993,6 @@ func (s *subprocess) MapFile(addr hostarch.Addr, f memmap.File, fr memmap.FileRa
 
 // Unmap implements platform.AddressSpace.Unmap.
 func (s *subprocess) Unmap(addr hostarch.Addr, length uint64) {
-	ar, ok := addr.ToRange(length)
-	if !ok {
-		panic(fmt.Sprintf("addr %#x + length %#x overflows", addr, length))
-	}
-	s.mu.Lock()
-	for c := range s.faultedContexts {
-		c.mu.Lock()
-		if c.lastFaultSP == s && ar.Contains(c.lastFaultAddr) {
-			// Forget the last fault so that if c faults again, the fault isn't
-			// incorrectly reported as a write fault. If this is being called
-			// due to munmap() of the corresponding vma, handling of the second
-			// fault will fail anyway.
-			c.lastFaultSP = nil
-			delete(s.faultedContexts, c)
-		}
-		c.mu.Unlock()
-	}
-	s.mu.Unlock()
 	_, err := s.syscall(
 		unix.SYS_MUNMAP,
 		arch.SyscallArgument{Value: uintptr(addr)},

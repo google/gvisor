@@ -32,6 +32,10 @@
 #include "sysmsg_offsets.h"
 #include "sysmsg_offsets_amd64.h"
 
+#ifndef X86_TRAP_PF
+#define X86_TRAP_PF 14
+#endif
+
 // TODO(b/271631387): These globals are shared between AMD64 and ARM64; move to
 // sysmsg_lib.c.
 struct arch_state __export_arch_state;
@@ -230,6 +234,7 @@ void __export_sighandler(int signo, siginfo_t *siginfo, void *_ucontext) {
   if (signo != SIGCHLD ||
       ucontext->uc_mcontext.gregs[REG_RIP] < __export_stub_start) {
     ctx->ptregs.fs_base = fs_base;
+    ctx->err = 0;
     gregs_to_ptregs(ucontext, &ctx->ptregs);
     memcpy(ctx->fpstate, (uint8_t *)ucontext->uc_mcontext.fpregs,
            __export_arch_state.fp_len);
@@ -307,8 +312,12 @@ void __export_sighandler(int signo, siginfo_t *siginfo, void *_ucontext) {
         ctx->ptregs.orig_rax += 0x86000000;
       break;
     }
-    case SIGCHLD:
     case SIGSEGV:
+      if (ucontext->uc_mcontext.gregs[REG_TRAPNO] == X86_TRAP_PF) {
+        ctx->err = ucontext->uc_mcontext.gregs[REG_ERR];
+      }
+    // fallthrough
+    case SIGCHLD:
     case SIGBUS:
     case SIGFPE:
     case SIGTRAP:

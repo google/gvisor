@@ -139,6 +139,7 @@ void __export_sighandler(int signo, siginfo_t *siginfo, void *_ucontext) {
   memcpy(ctx->fpstate, fpStatePointer, kFpsimdContextSize);
   ctx->tls = get_tls();
   ctx->siginfo = *siginfo;
+  ctx->err = 0;
   switch (signo) {
     case SIGSYS: {
       ctx_state = CONTEXT_STATE_SYSCALL;
@@ -151,9 +152,22 @@ void __export_sighandler(int signo, siginfo_t *siginfo, void *_ucontext) {
       }
       break;
     }
-    case SIGCHLD:
-    case SIGSEGV:
+    case SIGSEGV: {
+      unsigned char *base = &ucontext->uc_mcontext.__reserved[0];
+      size_t offset = 0;
+      while (1) {
+        struct _aarch64_ctx *head = (struct _aarch64_ctx *)(base + offset);
+        if (head->magic == ESR_MAGIC) {
+          ctx->err = ((struct esr_context *)head)->esr;
+          break;
+        }
+        if (head->magic == 0 || head->magic == EXTRA_MAGIC) break;
+        offset += head->size;
+      }
+    }
+    // fallthrough
     case SIGBUS:
+    case SIGCHLD:
     case SIGFPE:
     case SIGTRAP:
     case SIGILL:

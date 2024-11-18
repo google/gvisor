@@ -98,6 +98,7 @@ struct thread_context {
   uint64_t state_changed_time;
   uint64_t tls;
   uint64_t debug;
+  uint64_t err;
 };
 
 enum stub_error {

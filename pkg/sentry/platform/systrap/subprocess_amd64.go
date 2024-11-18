@@ -23,6 +23,7 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/hostsyscall"
 	"gvisor.dev/gvisor/pkg/seccomp"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
@@ -222,4 +223,17 @@ func retrieveArchSpecificState(ctx *sysmsg.ThreadContext, ac *arch.Context64) {
 }
 
 func archSpecificSysmsgThreadInit(sysThread *sysmsgThread) {
+}
+
+func sigErrorToAccessType(sigError uint64) hostarch.AccessType {
+	switch {
+	case sigError&linux.X86_PF_WRITE != 0:
+		return hostarch.Write
+	case sigError&linux.X86_PF_INSTR != 0:
+		return hostarch.Execute
+	case sigError&linux.X86_PF_USER != 0:
+		return hostarch.Read
+	default:
+		return hostarch.NoAccess
+	}
 }
