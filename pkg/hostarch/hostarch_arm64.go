@@ -53,6 +53,39 @@ var (
 	ByteOrder = binary.LittleEndian
 )
 
+// Arm64: Exception Syndrome Register EL1.
+const (
+	_ESR_ELx_EC_SHIFT = 26
+	_ESR_ELx_EC_MASK  = 0x3F << _ESR_ELx_EC_SHIFT
+
+	_ESR_ELx_EC_IABT_LOW = 0x20
+	_ESR_ELx_EC_DABT_LOW = 0x24
+
+	_ESR_ELx_WNR = 1 << 6
+	_ESR_ELx_CM  = 1 << 8
+)
+
+// ESRAccessType returns the memory access type for the given ESR (Exception
+// Syndrome Register) code. If code does not represent an invalid memory
+// access from a lower exception level, ESRAccessType returns NoAccess.
+//
+//go:nosplit
+func ESRAccessType(code uint64) AccessType {
+	switch (code & _ESR_ELx_EC_MASK) >> _ESR_ELx_EC_SHIFT {
+	case _ESR_ELx_EC_IABT_LOW:
+		return Execute
+	case _ESR_ELx_EC_DABT_LOW:
+		// For faults on cache maintenance and address translation
+		// instructions, _ESR_ELx_WNR is always set.
+		if code&(_ESR_ELx_WNR|_ESR_ELx_CM) == _ESR_ELx_WNR {
+			return Write
+		}
+		return Read
+	default:
+		return NoAccess
+	}
+}
+
 func init() {
 	// Make sure the page size is 4K on arm64 platform.
 	if size := unix.Getpagesize(); size != PageSize {

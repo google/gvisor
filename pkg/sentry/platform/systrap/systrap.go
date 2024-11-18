@@ -129,22 +129,6 @@ type platformContext struct {
 	// mutex protected.
 	sharedContext *sharedContext
 
-	// mu protects the following fields.
-	mu sync.Mutex
-
-	// If lastFaultSP is non-nil, the last platformContext switch was due to a fault
-	// received while executing lastFaultSP. Only platformContext.Switch may set
-	// lastFaultSP to a non-nil value.
-	lastFaultSP *subprocess
-
-	// lastFaultAddr is the last faulting address; this is only meaningful if
-	// lastFaultSP is non-nil.
-	lastFaultAddr hostarch.Addr
-
-	// lastFaultIP is the address of the last faulting instruction;
-	// this is also only meaningful if lastFaultSP is non-nil.
-	lastFaultIP hostarch.Addr
-
 	// needRestoreFPState indicates that the FPU state has been changed by
 	// the Sentry and has to be updated on the stub thread.
 	needRestoreFPState bool
@@ -182,7 +166,7 @@ func (c *platformContext) Switch(ctx pkgcontext.Context, mm platform.MemoryManag
 	}
 
 restart:
-	isSyscall, needPatch, err := s.switchToApp(c, ac)
+	isSyscall, needPatch, at, err := s.switchToApp(c, ac)
 	if err != nil {
 		return nil, hostarch.NoAccess, err
 	}
@@ -199,74 +183,16 @@ restart:
 			ctx.Warningf("usertrap.HandleFault failed: %v", err)
 		}
 	}
-	var (
-		faultSP   *subprocess
-		faultAddr hostarch.Addr
-		faultIP   hostarch.Addr
-	)
-	if !isSyscall && linux.Signal(c.signalInfo.Signo) == linux.SIGSEGV {
-		faultSP = s
-		faultAddr = hostarch.Addr(c.signalInfo.Addr())
-		faultIP = hostarch.Addr(ac.IP())
-	}
-
-	// Update the platformContext to reflect the outcome of this context switch.
-	c.mu.Lock()
-	lastFaultSP := c.lastFaultSP
-	lastFaultAddr := c.lastFaultAddr
-	lastFaultIP := c.lastFaultIP
-	// At this point, c may not yet be in s.faultedContexts, so c.lastFaultSP won't
-	// be updated by s.Unmap(). This is fine; we only need to synchronize with
-	// calls to s.Unmap() that occur after the handling of this fault.
-	c.lastFaultSP = faultSP
-	c.lastFaultAddr = faultAddr
-	c.lastFaultIP = faultIP
-	c.mu.Unlock()
-
-	// Update subprocesses to reflect the outcome of this context switch.
-	if lastFaultSP != faultSP {
-		if lastFaultSP != nil {
-			lastFaultSP.mu.Lock()
-			delete(lastFaultSP.faultedContexts, c)
-			lastFaultSP.mu.Unlock()
-		}
-		if faultSP != nil {
-			faultSP.mu.Lock()
-			faultSP.faultedContexts[c] = struct{}{}
-			faultSP.mu.Unlock()
-		}
-	}
 
 	if isSyscall {
 		return nil, hostarch.NoAccess, nil
 	}
 
 	si := c.signalInfo
-	if faultSP == nil {
-		// Non-fault signal.
-		return &si, hostarch.NoAccess, platform.ErrContextSignal
-	}
 
 	// See if this can be handled as a CPUID exception.
 	if linux.Signal(si.Signo) == linux.SIGSEGV && platform.TryCPUIDEmulate(ctx, mm, ac) {
 		goto restart
-	}
-
-	// Got a page fault. Ideally, we'd get real fault type here, but ptrace
-	// doesn't expose this information. Instead, we use a simple heuristic:
-	//
-	// It was an instruction fault iff the faulting addr == instruction
-	// pointer.
-	//
-	// It was a write fault if the fault is immediately repeated.
-	at := hostarch.Read
-	if faultAddr == faultIP {
-		at.Execute = true
-	}
-	if lastFaultSP == faultSP &&
-		lastFaultAddr == faultAddr &&
-		lastFaultIP == faultIP {
-		at.Write = true
 	}
 
 	// Handle as a signal.

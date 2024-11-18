@@ -148,25 +148,6 @@ func nonCanonical(addr uint64, signal int32, info *linux.SignalInfo) (hostarch.A
 	return hostarch.NoAccess, platform.ErrContextSignal
 }
 
-// isInstructionAbort returns true if it is an instruction abort.
-//
-//go:nosplit
-func isInstructionAbort(code uint64) bool {
-	value := (code & _ESR_ELx_EC_MASK) >> _ESR_ELx_EC_SHIFT
-	return value == _ESR_ELx_EC_IABT_LOW
-}
-
-// isWriteFault returns whether it is a write fault.
-//
-//go:nosplit
-func isWriteFault(code uint64) bool {
-	if isInstructionAbort(code) {
-		return false
-	}
-
-	return (code & _ESR_ELx_WNR) != 0
-}
-
 // fault generates an appropriate fault return.
 //
 //go:nosplit
@@ -186,11 +167,7 @@ func (c *vCPU) fault(signal int32, info *linux.SignalInfo) (hostarch.AccessType,
 	info.SetAddr(uint64(faultAddr))
 	accessType := hostarch.AccessType{}
 	if signal == int32(unix.SIGSEGV) {
-		accessType = hostarch.AccessType{
-			Read:    !isWriteFault(uint64(code)),
-			Write:   isWriteFault(uint64(code)),
-			Execute: isInstructionAbort(uint64(code)),
-		}
+		accessType = hostarch.ESRAccessType(uint64(code))
 	}
 
 	ret := code & _ESR_ELx_FSC

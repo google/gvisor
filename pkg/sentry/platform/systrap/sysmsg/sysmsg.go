@@ -269,6 +269,8 @@ type ThreadContext struct {
 	TLS uint64
 	// Debug is a variable to use to get visibility into the stub from the sentry.
 	Debug uint64
+	// SigError is an error code that clarifies the nature of the signal.
+	SigError uint64
 }
 
 // StubError are values that represent known stub-thread failure modes.

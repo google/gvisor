@@ -18,11 +18,11 @@
 //
 //	EpollInstance.interestMu
 //		FileDescription.epollMu
-//		  Locks acquired by FilesystemImpl/FileDescriptionImpl methods (except FilesystemImpl.PrependPath and IsDescendant)
+//		  Locks acquired by FilesystemImpl/DentryImpl/FileDescriptionImpl methods (except FilesystemImpl.PrependPath, FilesystemImpl.IsDescendant, DentryImpl.InotifyWithParent)
 //		    VirtualFilesystem.mountMu
 //		      Dentry.mu
 //		        Locks acquired by FilesystemImpls between Prepare{Delete,Rename}Dentry and Commit{Delete,Rename*}Dentry
-//		          Locks acquired by FilesystemImpl.PrependPath and IsDescendant (typically genericfstree.Filesystem.ancestryMu)
+//		          Locks acquired by FilesystemImpl.PrependPath, FilesystemImpl.IsDescendant, DentryImpl.InotifyWithParent (typically genericfstree.Filesystem.ancestryMu)
 //		      VirtualFilesystem.filesystemsMu
 //		    fdnotifier.notifier.mu
 //		      EpollInstance.readyMu

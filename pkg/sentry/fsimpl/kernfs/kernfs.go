@@ -541,11 +541,11 @@ func (d *Dentry) InotifyWithParent(ctx context.Context, events, cookie uint32, e
 	// Don't bother looking for a parent if the inode is anonymous. It
 	// won't have one.
 	if !d.inode.Anonymous() {
-		d.fs.mu.RLock()
+		d.fs.ancestryMu.RLock()
 		if parent := d.parent.Load(); parent != nil {
 			parent.inode.Watches().Notify(ctx, d.name, events, cookie, et, d.isDeleted())
 		}
-		d.fs.mu.RUnlock()
+		d.fs.ancestryMu.RUnlock()
 	}
 
 	d.inode.Watches().Notify(ctx, "", events, cookie, et, d.isDeleted())
