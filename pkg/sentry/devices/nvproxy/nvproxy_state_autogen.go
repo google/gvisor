@@ -129,6 +129,7 @@ func (nvp *nvproxy) StateTypeName() string {
 func (nvp *nvproxy) StateFields() []string {
 	return []string{
 		"version",
+		"capsEnabled",
 		"frontendFDs",
 		"clients",
 	}
@@ -138,15 +139,17 @@ func (nvp *nvproxy) StateFields() []string {
 func (nvp *nvproxy) StateSave(stateSinkObject state.Sink) {
 	nvp.beforeSave()
 	stateSinkObject.Save(0, &nvp.version)
-	stateSinkObject.Save(1, &nvp.frontendFDs)
-	stateSinkObject.Save(2, &nvp.clients)
+	stateSinkObject.Save(1, &nvp.capsEnabled)
+	stateSinkObject.Save(2, &nvp.frontendFDs)
+	stateSinkObject.Save(3, &nvp.clients)
 }
 
 // +checklocksignore
 func (nvp *nvproxy) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &nvp.version)
-	stateSourceObject.Load(1, &nvp.frontendFDs)
-	stateSourceObject.Load(2, &nvp.clients)
+	stateSourceObject.Load(1, &nvp.capsEnabled)
+	stateSourceObject.Load(2, &nvp.frontendFDs)
+	stateSourceObject.Load(3, &nvp.clients)
 	stateSourceObject.AfterLoad(func() { nvp.afterLoad(ctx) })
 }
 

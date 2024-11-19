@@ -20,6 +20,7 @@ import (
 	"strings"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
 	"gvisor.dev/gvisor/runsc/config"
 )
@@ -148,13 +149,15 @@ func ParseNvidiaVisibleDevices(spec *specs.Spec) (string, error) {
 // nvidia-container-toolkit/cmd/nvidia-container-runtime-hook/container_config.go:getDriverCapabilities().
 func NVProxyDriverCapsFromEnv(spec *specs.Spec, conf *config.Config) (nvconf.DriverCaps, error) {
 	// Construct the set of allowed driver capabilities.
-	allowedDriverCaps := nvconf.DriverCapsFromString(conf.NVProxyAllowedDriverCapabilities)
+	// allowedDriverCaps is already a subset of nvconf.SupportedDriverCaps
+	// as this was checked by `config.Config.validate`.
+	allowedDriverCaps, hasAll, err := nvconf.DriverCapsFromString(conf.NVProxyAllowedDriverCapabilities)
+	if err != nil {
+		return 0, fmt.Errorf("invalid set of allowed NVIDIA driver capabilities %q: %w", conf.NVProxyAllowedDriverCapabilities, err)
+	}
 	// Resolve "all" to nvconf.SupportedDriverCaps.
-	if allowedDriverCaps.HasAll() {
-		delete(allowedDriverCaps, nvconf.AllCap)
-		for cap := range nvconf.SupportedDriverCaps {
-			allowedDriverCaps[cap] = struct{}{}
-		}
+	if hasAll {
+		allowedDriverCaps |= nvconf.SupportedDriverCaps
 	}
 
 	// Extract the set of driver capabilities requested by the application.
@@ -164,21 +167,37 @@ func NVProxyDriverCapsFromEnv(spec *specs.Spec, conf *config.Config) (nvconf.Dri
 		if IsLegacyCudaImage(spec) {
 			return allowedDriverCaps, nil
 		}
-		return nvconf.DefaultDriverCaps, nil
+		return nvconf.DefaultDriverCaps & allowedDriverCaps, nil
 	}
 	if len(driverCapsEnvStr) == 0 {
 		// Empty. Fallback to nvconf.DefaultDriverCaps.
-		return nvconf.DefaultDriverCaps, nil
+		return nvconf.DefaultDriverCaps & allowedDriverCaps, nil
 	}
-	envDriverCaps := nvconf.DriverCapsFromString(driverCapsEnvStr)
-
-	// Intersect what's requested with what's allowed. Since allowedDriverCaps
-	// doesn't contain "all", the result will also not contain "all".
-	driverCaps := allowedDriverCaps.Intersect(envDriverCaps)
-	if !envDriverCaps.HasAll() && len(driverCaps) != len(envDriverCaps) {
-		return nil, fmt.Errorf("disallowed driver capabilities requested: '%v' (allowed '%v'), update --nvproxy-allowed-driver-capabilities to allow them", envDriverCaps, driverCaps)
+	envDriverCaps, enableAll, err := nvconf.DriverCapsFromString(driverCapsEnvStr)
+	if err != nil {
+		return 0, fmt.Errorf("invalid set of requested NVIDIA driver capabilities %q: %w", driverCapsEnvStr, err)
 	}
-	return driverCaps, nil
+	if enableAll {
+		// The "all" keyword here is confusing but we need to match the behavior of
+		// nvidia-container-toolkit:cmd/nvidia-container-runtime-hook/container_config.go:getDriverCapabilities.
+		// If the environment variable contains "all", the intuitive thing to do
+		// would be to expand it to mean "all allowed capabilities". Rather, in
+		// nvidia-container-toolkit, it means "expand to the entire set of
+		// capabilities, then silently drop all disallowed or unsupported
+		// capabilities from this set".
+		// We aim to be drop-in compatible with this behavior so we need to
+		// implement it too, but log a warning when these behaviors result in a
+		// different outcome.
+		if intuitiveCaps := envDriverCaps | allowedDriverCaps; intuitiveCaps != allowedDriverCaps {
+			log.Warningf("Container requested NVIDIA driver capabilities %q; this expands to %v which is a larger set than allowed capabilities (%v). The extra capabilities (%v) will be dropped.", driverCapsEnvStr, intuitiveCaps, allowedDriverCaps, intuitiveCaps&^allowedDriverCaps)
+		}
+		return allowedDriverCaps, nil
+	}
+	// Intersect what's requested with what's allowed.
+	if driverCaps := allowedDriverCaps & envDriverCaps; driverCaps != envDriverCaps {
+		return 0, fmt.Errorf(`disallowed driver capabilities requested: "%v" (allowed "%v"), update --nvproxy-allowed-driver-capabilities to allow them`, envDriverCaps, driverCaps)
+	}
+	return envDriverCaps, nil
 }
 
 // IsLegacyCudaImage returns true if spec represents a legacy CUDA image.

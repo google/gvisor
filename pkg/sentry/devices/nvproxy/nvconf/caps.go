@@ -14,94 +14,151 @@
 
 package nvconf
 
-import "strings"
-
-// DriverCap is a GPU driver capability (like compute, graphics, etc.).
-type DriverCap string
-
-// Driver capabilities understood by nvproxy.
-const (
-	// AllCap is a special value that means all supported driver capabilities.
-	AllCap DriverCap = "all"
-
-	Compat32Cap DriverCap = "compat32"
-	ComputeCap  DriverCap = "compute"
-	DisplayCap  DriverCap = "display"
-	GraphicsCap DriverCap = "graphics"
-	NGXCap      DriverCap = "ngx"
-	UtilityCap  DriverCap = "utility"
-	VideoCap    DriverCap = "video"
+import (
+	"fmt"
+	"strings"
 )
 
-// ToFlag converts the driver capability to a flag for nvidia-container-cli.
-// See nvidia-container-toolkit/cmd/nvidia-container-runtime-hook/capabilities.go:capabilityToCLI().
-func (c DriverCap) ToFlag() string {
-	return "--" + string(c)
+// DriverCaps is a set of NVIDIA driver capabilities as a bitmask.
+type DriverCaps uint8
+
+// Individual NVIDIA driver capabilities.
+const (
+	CapCompute DriverCaps = 1 << iota
+	CapDisplay
+	CapGraphics
+	CapNGX
+	CapUtility
+	CapVideo
+	CapCompat32
+	numValidCaps int = iota
+)
+
+const (
+	// AllCapabilitiesName is a special capability name
+	// that can be used to represent all capabilities.
+	AllCapabilitiesName = "all"
+
+	// ValidCapabilities is the set of all valid capabilities.
+	ValidCapabilities = DriverCaps(1<<numValidCaps - 1)
+
+	// SupportedDriverCaps is the set of driver capabilities that are supported by
+	// nvproxy. Similar to
+	// nvidia-container-toolkit/internal/config/image/capabilities.go:SupportedDriverCapabilities.
+	SupportedDriverCaps = DriverCaps(CapCompute | CapUtility)
+
+	// DefaultDriverCaps is the set of driver capabilities that are enabled by
+	// default in the absence of any other configuration. See
+	// nvidia-container-toolkit/internal/config/image/capabilities.go:DefaultDriverCapabilities.
+	DefaultDriverCaps = DriverCaps(CapCompute | CapUtility)
+)
+
+// individualString returns the string representation of the given capability.
+// It must be one of the individual capabilities, or this will panic.
+func (c DriverCaps) individualString() string {
+	switch c {
+	case CapCompute:
+		return "compute"
+	case CapDisplay:
+		return "display"
+	case CapGraphics:
+		return "graphics"
+	case CapNGX:
+		return "ngx"
+	case CapUtility:
+		return "utility"
+	case CapVideo:
+		return "video"
+	case CapCompat32:
+		return "compat32"
+	default:
+		panic(fmt.Sprintf("capability has no string mapping: %x", uint8(c)))
+	}
 }
 
-// DriverCaps is a set of GPU driver capabilities.
-type DriverCaps map[DriverCap]struct{}
-
-// DefaultDriverCaps is the set of driver capabilities that are enabled by
-// default in the absence of any other configuration. See
-// nvidia-container-toolkit/internal/config/image/capabilities.go:DefaultDriverCapabilities.
-var DefaultDriverCaps = DriverCaps{
-	ComputeCap: struct{}{},
-	UtilityCap: struct{}{},
+// individualNVIDIAFlag returns the flag that can be passed to
+// nvidia-container-cli to enable the given capability.
+// See nvidia-container-toolkit/blob/main/cmd/nvidia-container-runtime-hook/capabilities.go:capabilityToCLI
+func (c DriverCaps) individualNVIDIAFlag() string {
+	switch c {
+	case CapCompute, CapDisplay, CapGraphics, CapNGX, CapUtility, CapVideo, CapCompat32:
+		return fmt.Sprintf("--%s", c.individualString())
+	default:
+		panic(fmt.Sprintf("capability has no NVIDIA flag mapping: %x", uint8(c)))
+	}
 }
 
-// SupportedDriverCaps is the set of driver capabilities that are supported by
-// nvproxy. Similar to
-// nvidia-container-toolkit/internal/config/image/capabilities.go:SupportedDriverCapabilities.
-var SupportedDriverCaps = DriverCaps{
-	ComputeCap: struct{}{},
-	UtilityCap: struct{}{},
+// individualCapabilityFromString returns the individual capability for the
+// given string.
+func individualCapabilityFromString(capName string) (DriverCaps, bool) {
+	for i := 0; i < numValidCaps; i++ {
+		cap := DriverCaps(1 << i)
+		if cap.String() == capName {
+			return cap, true
+		}
+	}
+	return 0, false
 }
 
-// KnownDriverCapValues is the set of understood driver capability values.
-var KnownDriverCapValues = DriverCaps{
-	Compat32Cap: struct{}{},
-	ComputeCap:  struct{}{},
-	DisplayCap:  struct{}{},
-	GraphicsCap: struct{}{},
-	NGXCap:      struct{}{},
-	UtilityCap:  struct{}{},
-	VideoCap:    struct{}{},
-}
-
-// DriverCapsFromString constructs NvidiaDriverCaps from a comma-separated list
-// of driver capabilities.
-func DriverCapsFromString(caps string) DriverCaps {
-	res := make(DriverCaps)
-	for _, cap := range strings.Split(caps, ",") {
-		trimmed := strings.TrimSpace(cap)
-		if len(trimmed) == 0 {
+// DriverCapsFromString creates a new capability set from the given
+// comma-separated list of capability names.
+// The returned boolean represents whether the "all" keyword was used.
+// Note that the "all" keyword is not actually expanded into the set of
+// capabilities returned here; it is up to the caller to decide how to
+// handle it.
+func DriverCapsFromString(commaSeparatedCaps string) (DriverCaps, bool, error) {
+	cs := DriverCaps(0)
+	hasAll := false
+	for _, capName := range strings.Split(commaSeparatedCaps, ",") {
+		capName = strings.TrimSpace(capName)
+		if capName == "" {
 			continue
 		}
-		res[DriverCap(trimmed)] = struct{}{}
+		if capName == AllCapabilitiesName {
+			hasAll = true
+			continue
+		}
+		cap, ok := individualCapabilityFromString(capName)
+		if !ok {
+			return 0, false, fmt.Errorf("invalid capability: %q", capName)
+		}
+		cs |= DriverCaps(cap)
 	}
-	return res
+	return cs, hasAll, nil
 }
 
-// HasAll returns true if the set of driver capabilities contains "all".
-func (c DriverCaps) HasAll() bool {
-	_, ok := c[AllCap]
-	return ok
-}
-
-// Intersect returns the intersection of two sets of driver capabilities.
-func (c DriverCaps) Intersect(c2 DriverCaps) DriverCaps {
-	if c2.HasAll() {
-		return c
+// String returns the string representation of the capability set.
+func (c DriverCaps) String() string {
+	if c == 0 {
+		return ""
 	}
-	if c.HasAll() {
-		return c2
-	}
-	res := make(DriverCaps)
-	for cap := range c2 {
-		if _, ok := c[cap]; ok {
-			res[cap] = struct{}{}
+	firstCap := true
+	var sb strings.Builder
+	for i := 0; i < numValidCaps; i++ {
+		cap := DriverCaps(1 << i)
+		if c&cap != 0 {
+			if !firstCap {
+				sb.WriteString(",")
+			}
+			firstCap = false
+			sb.WriteString(cap.individualString())
 		}
 	}
-	return res
+	return sb.String()
+}
+
+// NVIDIAFlags returns the nvidia-container-cli flags that can be passed to
+// enable the capabilities in the set.
+func (c DriverCaps) NVIDIAFlags() []string {
+	if c == 0 {
+		return nil
+	}
+	caps := make([]string, 0, numValidCaps)
+	for i := 0; i < numValidCaps; i++ {
+		cap := DriverCaps(1 << i)
+		if c&cap != 0 {
+			caps = append(caps, cap.individualNVIDIAFlag())
+		}
+	}
+	return caps
 }

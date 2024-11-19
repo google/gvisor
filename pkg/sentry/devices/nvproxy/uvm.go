@@ -143,12 +143,14 @@ func (fd *uvmFD) Ioctl(ctx context.Context, uio usermem.IO, sysno uintptr, args 
 		cmd:             cmd,
 		ioctlParamsAddr: argPtr,
 	}
-	handler := fd.dev.nvp.abi.uvmIoctl[cmd]
-	if handler == nil {
-		ctx.Warningf("nvproxy: unknown uvm ioctl %d = %#x", cmd, cmd)
-		return 0, linuxerr.EINVAL
+	result, err := fd.dev.nvp.abi.uvmIoctl[cmd].handle(&ui)
+	if err != nil {
+		if handleErr, ok := err.(*errHandler); ok {
+			ctx.Warningf("nvproxy: %v for uvm ioctl %d = %#x", handleErr, cmd, cmd)
+			return 0, linuxerr.EINVAL
+		}
 	}
-	return handler(&ui)
+	return result, err
 }
 
 // IsNvidiaDeviceFD implements NvidiaDeviceFD.IsNvidiaDeviceFD.

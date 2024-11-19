@@ -847,7 +847,7 @@ func (l *Loader) installSeccompFilters() error {
 			HostNetworkRawSockets: hostnet && l.root.conf.EnableRaw,
 			HostFilesystem:        l.root.conf.DirectFS,
 			ProfileEnable:         l.root.conf.ProfileEnable,
-			NVProxy:               specutils.NVProxyEnabled(l.root.spec, l.root.conf),
+			NVProxy:               specutils.NVProxyEnabled(l.root.spec, l.root.conf), // TODO(gvisor.dev/issues/10856): Plumb capabilities here.
 			TPUProxy:              specutils.TPUProxyIsEnabled(l.root.spec, l.root.conf),
 			ControllerFD:          uint32(l.ctrl.srv.FD()),
 			CgoEnabled:            config.CgoEnabled,

@@ -419,17 +419,12 @@ func (c *Config) validate() error {
 	if len(c.ProfilingMetrics) > 0 && len(c.ProfilingMetricsLog) == 0 {
 		return fmt.Errorf("profiling-metrics flag requires defining a profiling-metrics-log for output")
 	}
-	for _, cap := range strings.Split(c.NVProxyAllowedDriverCapabilities, ",") {
-		nvcap := nvconf.DriverCap(cap)
-		if nvcap == nvconf.AllCap {
-			continue
-		}
-		if _, ok := nvconf.KnownDriverCapValues[nvcap]; !ok {
-			return fmt.Errorf("nvproxy-allowed-driver-capabilities contains invalid capability %q", cap)
-		}
-		if _, ok := nvconf.SupportedDriverCaps[nvcap]; !ok {
-			log.Warningf("nvproxy-allowed-driver-capabilities contains unsupported capability %q", cap)
-		}
+	allowedCaps, _, err := nvconf.DriverCapsFromString(c.NVProxyAllowedDriverCapabilities)
+	if err != nil {
+		return fmt.Errorf("--nvproxy-allowed-driver-capabilities=%q: %w", c.NVProxyAllowedDriverCapabilities, err)
+	}
+	if unsupported := allowedCaps & ^nvconf.SupportedDriverCaps; unsupported != 0 {
+		return fmt.Errorf("--nvproxy-allowed-driver-capabilities=%q: unsupported capabilities: %v", c.NVProxyAllowedDriverCapabilities, unsupported)
 	}
 	return nil
 }

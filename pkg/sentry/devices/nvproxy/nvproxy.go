@@ -25,6 +25,7 @@ import (
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/marshal"
+	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
 
@@ -44,6 +45,7 @@ func Register(vfsObj *vfs.VirtualFilesystem, versionStr string, uvmDevMajor uint
 	nvp := &nvproxy{
 		abi:         abiCons.cons(),
 		version:     version,
+		capsEnabled: nvconf.SupportedDriverCaps, // TODO(gvisor.dev/issues/10856): Let the user specify this.
 		frontendFDs: make(map[*frontendFD]struct{}),
 		clients:     make(map[nvgpu.Handle]*rootClient),
 		objsFreeSet: make(map[*object]struct{}),
@@ -70,8 +72,9 @@ func Register(vfsObj *vfs.VirtualFilesystem, versionStr string, uvmDevMajor uint
 
 // +stateify savable
 type nvproxy struct {
-	abi     *driverABI `state:"nosave"`
-	version DriverVersion
+	abi         *driverABI `state:"nosave"`
+	version     DriverVersion
+	capsEnabled nvconf.DriverCaps
 
 	fdsMu       fdsMutex `state:"nosave"`
 	frontendFDs map[*frontendFD]struct{}
