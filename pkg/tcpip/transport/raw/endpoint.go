@@ -73,7 +73,7 @@ type endpoint struct {
 
 	// The following fields are initialized at creation time and are
 	// immutable.
-	stack       *stack.Stack `state:"manual"`
+	stack       *stack.Stack
 	transProto  tcpip.TransportProtocolNumber
 	waiterQueue *waiter.Queue
 	associated  bool
