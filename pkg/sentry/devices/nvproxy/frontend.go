@@ -260,12 +260,14 @@ func (fd *frontendFD) Ioctl(ctx context.Context, uio usermem.IO, sysno uintptr, 
 	// - Add symbol and parameter type definitions to //pkg/abi/nvgpu.
 	// - Add filter to seccomp_filters.go.
 	// - Add handling below.
-	handler := fd.dev.nvp.abi.frontendIoctl[nr]
-	if handler == nil {
-		ctx.Warningf("nvproxy: unknown frontend ioctl %d == %#x (argSize=%d, cmd=%#x)", nr, nr, argSize, cmd)
-		return 0, linuxerr.EINVAL
+	result, err := fd.dev.nvp.abi.frontendIoctl[nr].handle(&fi)
+	if err != nil {
+		if handleErr, ok := err.(*errHandler); ok {
+			fi.ctx.Warningf("nvproxy: %v for frontend ioctl %d == %#x (argSize=%d, cmd=%#x)", handleErr, nr, nr, argSize, cmd)
+			return 0, linuxerr.EINVAL
+		}
 	}
-	return handler(&fi)
+	return result, err
 }
 
 // IsNvidiaDeviceFD implements NvidiaDeviceFD.IsNvidiaDeviceFD.
@@ -558,12 +560,14 @@ func rmControl(fi *frontendIoctlState) (uintptr, error) {
 	// - Add symbol definition to //pkg/abi/nvgpu. Parameter type definition is
 	// only required for non-simple commands.
 	// - Add handling below.
-	handler := fi.fd.dev.nvp.abi.controlCmd[ioctlParams.Cmd]
-	if handler == nil {
-		fi.ctx.Warningf("nvproxy: unknown control command %#x (paramsSize=%d)", ioctlParams.Cmd, ioctlParams.ParamsSize)
-		return 0, linuxerr.EINVAL
+	result, err := fi.fd.dev.nvp.abi.controlCmd[ioctlParams.Cmd].handle(fi, &ioctlParams)
+	if err != nil {
+		if handleErr, ok := err.(*errHandler); ok {
+			fi.ctx.Warningf("nvproxy: %v for control command %#x (paramsSize=%d)", handleErr, ioctlParams.Cmd, ioctlParams.ParamsSize)
+			return 0, linuxerr.EINVAL
+		}
 	}
-	return handler(fi, &ioctlParams)
+	return result, err
 }
 
 func rmControlSimple(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54Parameters) (uintptr, error) {
@@ -830,22 +834,24 @@ func rmAlloc(fi *frontendIoctlState) (uintptr, error) {
 	// sessionAddDependant(), or sessionAddDependency(), which need to be
 	// mirrored by dependencies in the call to nvproxy.objAddLocked().
 	// - Add handling below.
-	handler := fi.fd.dev.nvp.abi.allocationClass[ioctlParams.HClass]
-	if handler == nil {
-		fi.ctx.Warningf("nvproxy: unknown allocation class %v", ioctlParams.HClass)
-		// Compare
-		// src/nvidia/src/kernel/rmapi/alloc_free.c:serverAllocResourceUnderLock(),
-		// when RsResInfoByExternalClassId() is null.
-		ioctlParams.Status = nvgpu.NV_ERR_INVALID_CLASS
-		outIoctlParams := nvgpu.GetRmAllocParamObj(isNVOS64)
-		outIoctlParams.FromOS64(ioctlParams)
-		// Any copy-out error from
-		// src/nvidia/src/kernel/rmapi/alloc_free.c:serverAllocApiCopyOut() is
-		// discarded.
-		outIoctlParams.CopyOut(fi.t, fi.ioctlParamsAddr)
-		return 0, nil
+	result, err := fi.fd.dev.nvp.abi.allocationClass[ioctlParams.HClass].handle(fi, &ioctlParams, isNVOS64)
+	if err != nil {
+		if handleErr, ok := err.(*errHandler); ok {
+			fi.ctx.Warningf("nvproxy: %v for allocation class %v", handleErr, ioctlParams.HClass)
+			// Compare
+			// src/nvidia/src/kernel/rmapi/alloc_free.c:serverAllocResourceUnderLock(),
+			// when RsResInfoByExternalClassId() is null.
+			ioctlParams.Status = nvgpu.NV_ERR_INVALID_CLASS
+			outIoctlParams := nvgpu.GetRmAllocParamObj(isNVOS64)
+			outIoctlParams.FromOS64(ioctlParams)
+			// Any copy-out error from
+			// src/nvidia/src/kernel/rmapi/alloc_free.c:serverAllocApiCopyOut() is
+			// discarded.
+			outIoctlParams.CopyOut(fi.t, fi.ioctlParamsAddr)
+			return 0, nil
+		}
 	}
-	return handler(fi, &ioctlParams, isNVOS64)
+	return result, err
 }
 
 // rmAllocSimple implements NV_ESC_RM_ALLOC for classes whose parameters don't

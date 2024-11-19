@@ -2035,9 +2035,7 @@ func nvproxySetupAfterGoferUserns(spec *specs.Spec, conf *config.Config, goferCm
 		if err != nil {
 			return fmt.Errorf("failed to get driver capabilities: %w", err)
 		}
-		for cap := range driverCaps {
-			argv = append(argv, cap.ToFlag())
-		}
+		argv = append(argv, driverCaps.NVIDIAFlags()...)
 		// Add rootfs path as the final argument.
 		argv = append(argv, spec.Root.Path)
 		log.Debugf("Executing %q", argv)

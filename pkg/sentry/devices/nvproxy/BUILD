@@ -48,6 +48,7 @@ go_library(
         "frontend_mmap_mutex.go",
         "frontend_mmap_unsafe.go",
         "frontend_unsafe.go",
+        "handlers.go",
         "nvproxy.go",
         "nvproxy_unsafe.go",
         "object.go",
@@ -82,6 +83,7 @@ go_library(
         "//pkg/safemem",
         "//pkg/seccomp",
         "//pkg/sentry/arch",
+        "//pkg/sentry/devices/nvproxy/nvconf",
         "//pkg/sentry/kernel",
         "//pkg/sentry/memmap",
         "//pkg/sentry/mm",
@@ -98,6 +100,10 @@ go_test(
     name = "nvproxy_test",
     srcs = ["nvproxy_test.go"],
     library = ":nvproxy",
+    deps = [
+        "//pkg/abi/nvgpu",
+        "//pkg/sentry/devices/nvproxy/nvconf",
+    ],
 )
 
 go_test(
