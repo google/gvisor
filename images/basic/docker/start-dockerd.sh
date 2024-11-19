@@ -17,7 +17,7 @@
 set -xe -o pipefail
 
 dev=$(ip route show default | sed 's/.*\sdev\s\(\S*\)\s.*$/\1/')
-addr=$(ip addr show dev "$dev"  | grep inet | sed 's/^\s*inet\s\(\S*\)\/.*$/\1/')
+addr=$(ip addr show dev "$dev"  | grep -w inet | sed 's/^\s*inet\s\(\S*\)\/.*$/\1/')
 
 echo 1 > /proc/sys/net/ipv4/ip_forward
 iptables-legacy -t nat -A POSTROUTING -o "$dev" -j SNAT --to-source "$addr" -p tcp
