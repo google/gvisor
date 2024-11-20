@@ -2,10 +2,10 @@
     <meta charset="utf-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    {% if page.title %}
+    {% if page.title and page.title != "" %}
     <title>{{ page.title }} - gVisor</title>
     {% else %}
-    <title>The Container Security Platform | gVisor</title>
+    <title>The Container Security Platform - gVisor</title>
     {% endif %}
     <link rel="canonical" href="{{ page.url | replace:'index.html','' | prepend: site_root }}">
 
