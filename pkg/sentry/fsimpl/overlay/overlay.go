@@ -365,7 +365,12 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		root.devMinor = atomicbitops.FromUint32(fs.dirDevMinor)
 		// For root dir, it is okay to use top most level's stat to compute inode
 		// number because we don't allow copy ups on root dentries.
-		root.ino.Store(fs.newDirIno(rootStat.DevMajor, rootStat.DevMinor, rootStat.Ino))
+		orig := layerDevNoAndIno{
+			layerDevNumber: layerDevNumber{rootStat.DevMajor, rootStat.DevMinor},
+			ino:            rootStat.Ino,
+		}
+		root.ino.Store(fs.newDirIno(orig))
+		root.dirInoHash = orig
 	} else if !root.upperVD.Ok() {
 		root.devMajor = atomicbitops.FromUint32(linux.UNNAMED_MAJOR)
 		rootDevMinor, err := fs.getLowerDevMinor(rootStat.DevMajor, rootStat.DevMinor)
@@ -456,13 +461,9 @@ func (fs *filesystem) statFS(ctx context.Context) (linux.Statfs, error) {
 	return fsstat, nil
 }
 
-func (fs *filesystem) newDirIno(layerMajor, layerMinor uint32, layerIno uint64) uint64 {
+func (fs *filesystem) newDirIno(orig layerDevNoAndIno) uint64 {
 	fs.dirInoCacheMu.Lock()
 	defer fs.dirInoCacheMu.Unlock()
-	orig := layerDevNoAndIno{
-		layerDevNumber: layerDevNumber{layerMajor, layerMinor},
-		ino:            layerIno,
-	}
 	if ino, ok := fs.dirInoCache[orig]; ok {
 		return ino
 	}
@@ -470,6 +471,12 @@ func (fs *filesystem) newDirIno(layerMajor, layerMinor uint32, layerIno uint64) 
 	newIno := fs.lastDirIno
 	fs.dirInoCache[orig] = newIno
 	return newIno
+}
+
+func (fs *filesystem) releaseDirIno(orig layerDevNoAndIno) {
+	fs.dirInoCacheMu.Lock()
+	defer fs.dirInoCacheMu.Unlock()
+	delete(fs.dirInoCache, orig)
 }
 
 func (fs *filesystem) getLowerDevMinor(layerMajor, layerMinor uint32) (uint32, error) {
@@ -587,6 +594,10 @@ type dentry struct {
 	// watches, due to the fact that we do not have inode structures in this
 	// overlay implementation.
 	watches vfs.Watches
+
+	// dirInoHash is the entry hash in fs.dirInoCache. This is only set for
+	// directories.
+	dirInoHash layerDevNoAndIno
 }
 
 // newDentry creates a new dentry. The dentry initially has no references; it
