@@ -65,8 +65,7 @@ func (n *Network) networkCreate() types.NetworkCreate {
 	}
 
 	return types.NetworkCreate{
-		CheckDuplicate: true,
-		IPAM:           &ipam,
+		IPAM: &ipam,
 	}
 }
 

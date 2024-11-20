@@ -388,10 +388,24 @@ go_repository(
 )
 
 go_repository(
+    name = "com_github_distribution_reference",
+    importpath = "github.com/distribution/reference",
+    sum = "h1:0IXCQ5g4/QMHHkarYzh5l+u8T3t73zM5QvfrDyIgxBk=",
+    version = "v0.6.0",
+)
+
+go_repository(
     name = "com_github_docopt_docopt_go",
     importpath = "github.com/docopt/docopt-go",
     sum = "h1:bWDMxwH3px2JBh6AyO7hdCn/PkvCZXii8TGj7sbtEbQ=",
     version = "v0.0.0-20180111231733-ee0de3bc6815",
+)
+
+go_repository(
+    name = "com_github_felixge_httpsnoop",
+    importpath = "github.com/felixge/httpsnoop",
+    sum = "h1:+nS9g82KMXccJ/wp0zyRW9ZBHFETmMGtkk+2CTTrW4o=",
+    version = "v1.0.2",
 )
 
 go_repository(
@@ -560,6 +574,34 @@ go_repository(
     importpath = "go.etcd.io/bbolt",
     sum = "h1:MUGmc65QhB3pIlaQ5bB4LwqSj6GIonVJXpZiaKNyaKk=",
     version = "v1.3.3",
+)
+
+go_repository(
+    name = "io_opentelemetry_go_contrib_instrumentation_net_http_otelhttp",
+    importpath = "go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp",
+    sum = "h1:4K4tsIXefpVJtvA/8srF4V4y0akAoPHkIslgAkjixJA=",
+    version = "v0.53.0",
+)
+
+go_repository(
+    name = "io_opentelemetry_go_otel",
+    importpath = "go.opentelemetry.io/otel",
+    sum = "h1:/SqNcYk+idO0CxKEUOtKQClMK/MimZihKYMruSMViUo=",
+    version = "v1.28.0",
+)
+
+go_repository(
+    name = "io_opentelemetry_go_otel_metric",
+    importpath = "go.opentelemetry.io/otel/metric",
+    sum = "h1:f0HGvSl1KRAU1DLgLGFjrwVyismPlnuU6JD6bOeuA5Q=",
+    version = "v1.28.0",
+)
+
+go_repository(
+    name = "io_opentelemetry_go_otel_trace",
+    importpath = "go.opentelemetry.io/otel/trace",
+    sum = "h1:GhQ9cUuQGmNDd5BTCP2dAvv75RdMxEfTmYejp+lkx9g=",
+    version = "v1.28.0",
 )
 
 go_repository(
@@ -2576,17 +2618,24 @@ go_repository(
 )
 
 go_repository(
+    name = "com_github_moby_docker_image_spec",
+    importpath = "github.com/moby/docker-image-spec",
+    sum = "h1:jMKff3w6PgbfSa69GfNg+zN/XLhfXJGnEx3Nl2EsFP0=",
+    version = "v1.3.1",
+)
+
+go_repository(
     name = "com_github_moby_moby",
     importpath = "github.com/moby/moby",
-    sum = "h1:uUbydai/Y9J7Ybt+lFI3zBdnsMYXnXE9vEcfZDoEE8Q=",
-    version = "v24.0.5+incompatible",
+    sum = "h1:AhSu/R7C5uiyd+JCts3kxrKyTzXa3FilBJ0KCLUHXqA=",
+    version = "v27.3.0+incompatible",
 )
 
 go_repository(
     name = "com_github_docker_docker",
     importpath = "github.com/docker/docker",
-    sum = "h1:WmgcE4fxyI6EEXxBRxsHnZXrO1pQ3smi0k/jho4HLeY=",
-    version = "v24.0.5+incompatible",
+    sum = "h1:BNb1QY6o4JdKpqwi9IB+HUYcRRrVN4aGFUTvDmWYK1A=",
+    version = "v27.3.0+incompatible",
 )
 
 go_repository(
@@ -3177,8 +3226,15 @@ go_repository(
 go_repository(
     name = "com_github_go_logr_logr",
     importpath = "github.com/go-logr/logr",
-    sum = "h1:QK40JKJyMdUDz+h+xvCsru/bJhvG0UxvePV0ufL/AcE=",
-    version = "v1.2.0",
+    sum = "h1:6pFjapn8bFcIbiKo3XT4j/BhANplGihG6tvd+8rYgrY=",
+    version = "v1.4.2",
+)
+
+go_repository(
+    name = "com_github_go_logr_stdr",
+    importpath = "github.com/go-logr/stdr",
+    sum = "h1:hSWxHoqTgW2S2qGc0LTAI563KZ5YKYRhT3MFKZMbjag=",
+    version = "v1.2.2",
 )
 
 go_repository(

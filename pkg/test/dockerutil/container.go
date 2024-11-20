@@ -31,6 +31,7 @@ import (
 	"time"
 
 	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/api/types/checkpoint"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/mount"
 	"github.com/docker/docker/api/types/network"
@@ -199,7 +200,7 @@ func (c *Container) SpawnProcess(ctx context.Context, r RunOpts, args ...string)
 
 	// Open a connection to the container for parsing logs and for TTY.
 	stream, err := c.client.ContainerAttach(ctx, c.id,
-		types.ContainerAttachOptions{
+		container.AttachOptions{
 			Stream: true,
 			Stdin:  true,
 			Stdout: true,
@@ -371,7 +372,7 @@ func (c *Container) hostConfig(r RunOpts) *container.HostConfig {
 
 // Start is analogous to 'docker start'.
 func (c *Container) Start(ctx context.Context) error {
-	if err := c.client.ContainerStart(ctx, c.id, types.ContainerStartOptions{}); err != nil {
+	if err := c.client.ContainerStart(ctx, c.id, container.StartOptions{}); err != nil {
 		return fmt.Errorf("ContainerStart failed: %v", err)
 	}
 
@@ -401,17 +402,17 @@ func (c *Container) Unpause(ctx context.Context) error {
 
 // Checkpoint is analogous to 'docker checkpoint'.
 func (c *Container) Checkpoint(ctx context.Context, name string) error {
-	return c.client.CheckpointCreate(ctx, c.Name, types.CheckpointCreateOptions{CheckpointID: name, Exit: true})
+	return c.client.CheckpointCreate(ctx, c.Name, checkpoint.CreateOptions{CheckpointID: name, Exit: true})
 }
 
 // Restore is analogous to 'docker start --checkpoint [name]'.
 func (c *Container) Restore(ctx context.Context, name string) error {
-	return c.client.ContainerStart(ctx, c.id, types.ContainerStartOptions{CheckpointID: name})
+	return c.client.ContainerStart(ctx, c.id, container.StartOptions{CheckpointID: name})
 }
 
 // CheckpointResume is analogous to 'docker checkpoint'.
 func (c *Container) CheckpointResume(ctx context.Context, name string) error {
-	return c.client.CheckpointCreate(ctx, c.Name, types.CheckpointCreateOptions{CheckpointID: name, Exit: false})
+	return c.client.CheckpointCreate(ctx, c.Name, checkpoint.CreateOptions{CheckpointID: name, Exit: false})
 }
 
 // Logs is analogous 'docker logs'.
@@ -430,7 +431,7 @@ func (c *Container) OutputStreams(ctx context.Context) (string, string, error) {
 }
 
 func (c *Container) logs(ctx context.Context, stdout, stderr *bytes.Buffer) error {
-	opts := types.ContainerLogsOptions{ShowStdout: true, ShowStderr: true}
+	opts := container.LogsOptions{ShowStdout: true, ShowStderr: true}
 	writer, err := c.client.ContainerLogs(ctx, c.id, opts)
 	if err != nil {
 		return err
@@ -663,7 +664,7 @@ func (c *Container) Kill(ctx context.Context) error {
 // Remove is analogous to 'docker rm'.
 func (c *Container) Remove(ctx context.Context) error {
 	// Remove the image.
-	remove := types.ContainerRemoveOptions{
+	remove := container.RemoveOptions{
 		RemoveVolumes: c.mounts != nil,
 		RemoveLinks:   c.links != nil,
 		Force:         true,
