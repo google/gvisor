@@ -29,6 +29,8 @@ const (
 )
 
 // NeighborEntry describes a neighboring device in the local network.
+//
+// +stateify savable
 type NeighborEntry struct {
 	Addr      tcpip.Address
 	LinkAddr  tcpip.LinkAddress
@@ -76,17 +78,38 @@ const (
 	Unreachable
 )
 
+// +stateify savable
 type timer struct {
 	// done indicates to the timer that the timer was stopped.
 	done *bool
 
-	timer tcpip.Timer
+	timer tcpip.Timer `state:"nosave"`
+}
+
+// +stateify savable
+type neighborEntryMu struct {
+	neighborEntryRWMutex `state:"nosave"`
+
+	neigh NeighborEntry
+
+	// done is closed when address resolution is complete. It is nil iff s is
+	// incomplete and resolution is not yet in progress.
+	done chan struct{} `state:"nosave"`
+
+	// onResolve is called with the result of address resolution.
+	onResolve []func(LinkResolutionResult) `state:"nosave"`
+
+	isRouter bool
+
+	timer timer
 }
 
 // neighborEntry implements a neighbor entry's individual node behavior, as per
 // RFC 4861 section 7.3.3. Neighbor Unreachability Detection operates in
 // parallel with the sending of packets to a neighbor, necessitating the
 // entry's lock to be acquired for all operations.
+//
+// +stateify savable
 type neighborEntry struct {
 	neighborEntryEntry
 
@@ -95,22 +118,7 @@ type neighborEntry struct {
 	// nudState points to the Neighbor Unreachability Detection configuration.
 	nudState *NUDState
 
-	mu struct {
-		neighborEntryRWMutex
-
-		neigh NeighborEntry
-
-		// done is closed when address resolution is complete. It is nil iff s is
-		// incomplete and resolution is not yet in progress.
-		done chan struct{}
-
-		// onResolve is called with the result of address resolution.
-		onResolve []func(LinkResolutionResult)
-
-		isRouter bool
-
-		timer timer
-	}
+	mu neighborEntryMu
 }
 
 // newNeighborEntry creates a neighbor cache entry starting at the default

@@ -79,7 +79,7 @@ func (q *epQueue) empty() bool {
 // +stateify savable
 type processor struct {
 	epQ     epQueue
-	sleeper sleep.Sleeper
+	sleeper sleep.Sleeper `state:"nosave"`
 	// TODO(b/341946753): Restore them when netstack is savable.
 	newEndpointWaker sleep.Waker   `state:"nosave"`
 	closeWaker       sleep.Waker   `state:"nosave"`
@@ -381,9 +381,18 @@ func (d *dispatcher) init(rng *rand.Rand, nProcessors int) {
 
 	d.mu.Lock()
 	defer d.mu.Unlock()
+
 	d.closed = false
 	d.processors = make([]processor, nProcessors)
 	d.hasher = jenkinsHasher{seed: rng.Uint32()}
+	d.startLocked()
+}
+
+// +checklocks:d.mu
+func (d *dispatcher) startLocked() {
+	if d.closed {
+		return
+	}
 	for i := range d.processors {
 		p := &d.processors[i]
 		p.sleeper.AddWaker(&p.newEndpointWaker)
@@ -397,6 +406,13 @@ func (d *dispatcher) init(rng *rand.Rand, nProcessors int) {
 		// that results in a heap-allocated function literal.
 		go p.start(&d.wg)
 	}
+}
+
+func (d *dispatcher) start() {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	d.startLocked()
 }
 
 // close closes a dispatcher and its processors.

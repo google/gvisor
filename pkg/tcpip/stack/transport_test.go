@@ -337,6 +337,9 @@ func (*fakeTransportProtocol) Pause() {}
 // Resume implements TransportProtocol.Resume.
 func (*fakeTransportProtocol) Resume() {}
 
+// Restore implements TransportProtocol.Restore.
+func (*fakeTransportProtocol) Restore() {}
+
 // Parse implements TransportProtocol.Parse.
 func (*fakeTransportProtocol) Parse(pkt *stack.PacketBuffer) bool {
 	if _, ok := pkt.TransportHeader().Consume(fakeTransHeaderLen); ok {

@@ -34,7 +34,7 @@ func (s *sock) loadTimestamp(_ context.Context, nsec int64) {
 }
 
 func (s *Stack) saveStack() *stack.Stack {
-	if s.shouldSaveRestoreStack {
+	if s.IsSaveRestoreEnabled() {
 		return s.Stack
 	}
 

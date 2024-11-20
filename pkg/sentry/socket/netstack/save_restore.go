@@ -22,7 +22,7 @@ import (
 
 // afterLoad is invoked by stateify.
 func (s *Stack) afterLoad(ctx context.Context) {
-	if s.shouldSaveRestoreStack {
+	if s.IsSaveRestoreEnabled() {
 		// This indicates that netstack s/r is enabled and the stack
 		// should not be replaced with the new stack from context.
 		return

@@ -244,6 +244,9 @@ type TransportProtocol interface {
 	// previously paused by Pause.
 	Resume()
 
+	// Restore starts any protocol level background workers during restore.
+	Restore()
+
 	// Parse sets pkt.TransportHeader and trims pkt.Data appropriately. It does
 	// neither and returns false if pkt.Data is too small, i.e. pkt.Data.Size() <
 	// MinimumPacketSize()

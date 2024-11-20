@@ -54,11 +54,11 @@ var (
 
 	// Flags controlling features for sandbox under test, prefixed with
 	// "test-" to avoid potential conflicts with runsc flags.
-	checkpointSupported  = flag.Bool("test-checkpoint", BoolFromEnv("TEST_CHECKPOINT", true), "control checkpoint/restore support")
-	isRunningWithOverlay = flag.Bool("test-overlay", BoolFromEnv("TEST_OVERLAY", false), "whether test is running with --overlay2")
-	isRunningWithNetRaw  = flag.Bool("test-net-raw", BoolFromEnv("TEST_NET_RAW", false), "whether test is running with raw socket support")
-	isRunningWithHostNet = flag.Bool("test-hostnet", BoolFromEnv("TEST_HOSTNET", false), "whether test is running with hostnet")
-
+	checkpointSupported              = flag.Bool("test-checkpoint", BoolFromEnv("TEST_CHECKPOINT", true), "control checkpoint/restore support")
+	isRunningWithOverlay             = flag.Bool("test-overlay", BoolFromEnv("TEST_OVERLAY", false), "whether test is running with --overlay2")
+	isRunningWithNetRaw              = flag.Bool("test-net-raw", BoolFromEnv("TEST_NET_RAW", false), "whether test is running with raw socket support")
+	isRunningWithHostNet             = flag.Bool("test-hostnet", BoolFromEnv("TEST_HOSTNET", false), "whether test is running with hostnet")
+	isRunningWithSaveRestoreNetstack = flag.Bool("test-save-restore-netstack", BoolFromEnv("TEST_SAVE_RESTORE_NETSTACK", false), "whether test is running with --TESTONLY-save-restore-netstack")
 	// TestEnvSupportsNetAdmin indicates whether a test sandbox can perform
 	// all net admin tasks. Note that some test environments cannot perform
 	// some tasks despite the presence of CAP_NET_ADMIN.
@@ -136,6 +136,11 @@ func IsRunningWithNetRaw() bool {
 // IsRunningWithOverlay returns the relevant command line flag.
 func IsRunningWithOverlay() bool {
 	return *isRunningWithOverlay
+}
+
+// IsRunningWithSaveRestoreNetstack returns the relevant command line flag.
+func IsRunningWithSaveRestoreNetstack() bool {
+	return *isRunningWithSaveRestoreNetstack
 }
 
 // ImageByName mangles the image name used locally. This depends on the image

@@ -398,6 +398,9 @@ func (*Stack) Pause() {}
 // Restore implements inet.Stack.Restore.
 func (*Stack) Restore() {}
 
+// ReplaceConfig implements inet.Stack.ReplaceConfig.
+func (s *Stack) ReplaceConfig(_ inet.Stack) {}
+
 // Resume implements inet.Stack.Resume.
 func (*Stack) Resume() {}
 
@@ -429,4 +432,9 @@ func (*Stack) SetPortRange(uint16, uint16) error {
 // EnableSaveRestore implements inet.Stack.EnableSaveRestore.
 func (*Stack) EnableSaveRestore() error {
 	return fmt.Errorf("s/r is not supported for hostinet")
+}
+
+// IsSaveRestoreEnabled implements inet.Stack.IsSaveRestoreEnabled.
+func (s *Stack) IsSaveRestoreEnabled() bool {
+	return false
 }

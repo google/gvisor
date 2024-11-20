@@ -175,6 +175,9 @@ func (s *TestStack) Pause() {}
 // Restore implements Stack.
 func (s *TestStack) Restore() {}
 
+// ReplaceConfig implements Stack.
+func (s *TestStack) ReplaceConfig(_ Stack) {}
+
 // Resume implements Stack.
 func (s *TestStack) Resume() {}
 
@@ -225,4 +228,10 @@ func (*TestStack) SetGROTimeout(NICID int32, timeout time.Duration) error {
 func (*TestStack) EnableSaveRestore() error {
 	// No-op.
 	return nil
+}
+
+// IsSaveRestoreEnabled implements Stack.
+func (*TestStack) IsSaveRestoreEnabled() bool {
+	// No-op.
+	return false
 }

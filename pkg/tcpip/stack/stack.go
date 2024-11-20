@@ -90,16 +90,16 @@ type Stack struct {
 
 	// routeTable is a list of routes sorted by prefix length, longest (most specific) first.
 	// +checklocks:routeMu
-	routeTable tcpip.RouteList
+	routeTable tcpip.RouteList `state:"nosave"`
 
 	mu stackRWMutex `state:"nosave"`
 	// +checklocks:mu
-	nics map[tcpip.NICID]*nic
+	nics map[tcpip.NICID]*nic `state:"nosave"`
 	// +checklocks:mu
 	defaultForwardingEnabled map[tcpip.NetworkProtocolNumber]struct{}
 
 	// nicIDGen is used to generate NIC IDs.
-	nicIDGen atomicbitops.Int32
+	nicIDGen atomicbitops.Int32 `state:"nosave"`
 
 	// cleanupEndpointsMu protects cleanupEndpoints.
 	cleanupEndpointsMu cleanupEndpointsMutex `state:"nosave"`
@@ -180,6 +180,9 @@ type Stack struct {
 	// tsOffsetSecret is the secret key for generating timestamp offsets
 	// initialized at stack startup.
 	tsOffsetSecret uint32
+
+	// saveRestoreEnabled indicates whether the stack is saved and restored.
+	saveRestoreEnabled bool
 }
 
 // NetworkProtocolFactory instantiates a network protocol.
@@ -1966,6 +1969,28 @@ func (s *Stack) Pause() {
 	}
 }
 
+// ReplaceConfig replaces config in the loaded stack.
+func (s *Stack) ReplaceConfig(st *Stack) {
+	if st == nil {
+		panic("stack.Stack cannot be nil when netstack s/r is enabled")
+	}
+
+	// Update route table.
+	s.SetRouteTable(st.GetRouteTable())
+
+	// Update NICs.
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.nics = make(map[tcpip.NICID]*nic)
+	for id, nic := range st.nics {
+		nic.stack = s
+		s.nics[id] = nic
+		_ = s.NextNICID()
+	}
+}
+
 // Restore restarts the stack after a restore. This must be called after the
 // entire system has been restored.
 func (s *Stack) Restore() {
@@ -1974,13 +1999,18 @@ func (s *Stack) Restore() {
 	s.mu.Lock()
 	eps := s.restoredEndpoints
 	s.restoredEndpoints = nil
+	saveRestoreEnabled := s.saveRestoreEnabled
 	s.mu.Unlock()
 	for _, e := range eps {
 		e.Restore(s)
 	}
 	// Now resume any protocol level background workers.
 	for _, p := range s.transportProtocols {
-		p.proto.Resume()
+		if saveRestoreEnabled {
+			p.proto.Restore()
+		} else {
+			p.proto.Resume()
+		}
 	}
 }
 
@@ -2405,4 +2435,20 @@ func (s *Stack) SetNICStack(id tcpip.NICID, peer *Stack) (tcpip.NICID, tcpip.Err
 
 	id = tcpip.NICID(peer.NextNICID())
 	return id, peer.CreateNICWithOptions(id, ne, NICOptions{Name: nic.Name()})
+}
+
+// EnableSaveRestore marks the saveRestoreEnabled to true.
+func (s *Stack) EnableSaveRestore() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.saveRestoreEnabled = true
+}
+
+// IsSaveRestoreEnabled returns true if save restore is enabled for the stack.
+func (s *Stack) IsSaveRestoreEnabled() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	return s.saveRestoreEnabled
 }
