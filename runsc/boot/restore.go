@@ -392,16 +392,19 @@ func ifNil[T any](v *T) *T {
 	return &t
 }
 
-func validateSpecForContainer(oldSpec, newSpec *specs.Spec, cName string) error {
-	validateStructMap := make(map[string][2]any)
+func validateSpecForContainer(oSpec, nSpec *specs.Spec, cName string) error {
+	oldSpec := *oSpec
+	newSpec := *nSpec
 
 	// Validate OCI version.
 	if oldSpec.Version != newSpec.Version {
 		return validateError("OCI Version", cName, oldSpec.Version, newSpec.Version)
 	}
+	oldSpec.Version, newSpec.Version = "", ""
 
 	// Validate specs.Spec.Root. Note that Root.Path can change during restore.
-	oldRoot, newRoot := ifNil(oldSpec.Root), ifNil(newSpec.Root)
+	oldSpec.Root, newSpec.Root = ifNil(oldSpec.Root), ifNil(newSpec.Root)
+	oldRoot, newRoot := *oldSpec.Root, *newSpec.Root
 	if oldRoot.Readonly != newRoot.Readonly {
 		return validateError("Root.Readonly", cName, oldRoot.Readonly, newRoot.Readonly)
 	}
@@ -410,48 +413,62 @@ func validateSpecForContainer(oldSpec, newSpec *specs.Spec, cName string) error 
 	if err := validateMounts("Mounts", cName, oldSpec.Mounts, newSpec.Mounts); err != nil {
 		return err
 	}
+	oldSpec.Mounts, newSpec.Mounts = nil, nil
 
-	// Validate specs.Spec.Process.
-	oldProcess, newProcess := ifNil(oldSpec.Process), ifNil(newSpec.Process)
+	// Validate specs.Annotations.
+	if err := validateAnnotations(cName, oldSpec.Annotations, newSpec.Annotations); err != nil {
+		return err
+	}
+	oldSpec.Annotations, newSpec.Annotations = nil, nil
+
+	// Validate specs.Process.
+	oldSpec.Process, newSpec.Process = ifNil(oldSpec.Process), ifNil(newSpec.Process)
+	oldProcess, newProcess := *oldSpec.Process, *newSpec.Process
 	if oldProcess.Terminal != newProcess.Terminal {
 		return validateError("Terminal", cName, oldProcess.Terminal, newProcess.Terminal)
 	}
+	oldProcess.Terminal, newProcess.Terminal = false, false
 	if oldProcess.Cwd != newProcess.Cwd {
 		return validateError("Cwd", cName, oldProcess.Cwd, newProcess.Cwd)
 	}
+	oldProcess.Cwd, newProcess.Cwd = "", ""
+	validateStructMap := make(map[string][2]any)
 	validateStructMap["User"] = [2]any{oldProcess.User, newProcess.User}
 	validateStructMap["Rlimits"] = [2]any{oldProcess.Rlimits, newProcess.Rlimits}
 	if ok := slices.Equal(oldProcess.Args, newProcess.Args); !ok {
 		return validateError("Args", cName, oldProcess.Args, newProcess.Args)
 	}
+	oldProcess.Args, newProcess.Args = nil, nil
 	if err := validateCapabilities("Capabilities", cName, oldProcess.Capabilities, newProcess.Capabilities); err != nil {
 		return err
 	}
+	oldProcess.Capabilities, newProcess.Capabilities = nil, nil
 
-	// Validate specs.Spec.Linux.
-	oldLinux, newLinux := ifNil(oldSpec.Linux), ifNil(newSpec.Linux)
+	// Validate specs.Linux.
+	oldSpec.Linux, newSpec.Linux = ifNil(oldSpec.Linux), ifNil(newSpec.Linux)
+	oldLinux, newLinux := *oldSpec.Linux, *newSpec.Linux
 	validateStructMap["Sysctl"] = [2]any{oldLinux.Sysctl, newLinux.Sysctl}
 	validateStructMap["Seccomp"] = [2]any{oldLinux.Seccomp, newLinux.Seccomp}
 	if err := validateDevices("Devices", cName, oldLinux.Devices, newLinux.Devices); err != nil {
 		return err
 	}
+	oldLinux.Devices, newLinux.Devices = nil, nil
 	if err := validateResources("Resources", cName, oldLinux.Resources, newLinux.Resources); err != nil {
 		return err
 	}
+	oldLinux.Resources, newLinux.Resources = nil, nil
 	if err := validateArray("UIDMappings", cName, oldLinux.UIDMappings, newLinux.UIDMappings); err != nil {
 		return err
 	}
+	oldLinux.UIDMappings, newLinux.UIDMappings = nil, nil
 	if err := validateArray("GIDMappings", cName, oldLinux.GIDMappings, newLinux.GIDMappings); err != nil {
 		return err
 	}
+	oldLinux.GIDMappings, newLinux.GIDMappings = nil, nil
 	if err := validateNamespaces("Namespace", cName, oldLinux.Namespaces, newLinux.Namespaces); err != nil {
 		return err
 	}
-
-	// Validate specs.Spec.Annotations.
-	if err := validateAnnotations(cName, oldSpec.Annotations, newSpec.Annotations); err != nil {
-		return err
-	}
+	oldLinux.Namespaces, newLinux.Namespaces = nil, nil
 
 	// Validate all the structs collected in validateStructMap above.
 	for key, val := range validateStructMap {
@@ -459,8 +476,44 @@ func validateSpecForContainer(oldSpec, newSpec *specs.Spec, cName string) error 
 			return err
 		}
 	}
+	// Set the fields in validateStructMap to nil after validation.
+	oldProcess.User, newProcess.User = specs.User{}, specs.User{}
+	oldProcess.Rlimits, newProcess.Rlimits = nil, nil
+	oldLinux.Sysctl, newLinux.Sysctl = nil, nil
+	oldLinux.Seccomp, newLinux.Seccomp = nil, nil
+	oldSpec.Root, newSpec.Root = nil, nil
 
-	// TODO(b/359591006): Check other remaining fields for equality.
+	// These fields can change across checkpoint restore and do not need
+	// validation.
+	oldSpec.Hostname, newSpec.Hostname = "", ""
+	oldSpec.Domainname, newSpec.Domainname = "", ""
+	// Hooks contain callbacks for lifecycle of the container such as
+	// prestart and teardown, and can change across C/R.
+	oldSpec.Hooks, newSpec.Hooks = nil, nil
+	// Environment variables and CgroupsPath can change during restore.
+	oldProcess.Env, newProcess.Env = nil, nil
+	oldLinux.CgroupsPath, newLinux.CgroupsPath = "", ""
+
+	// Validate remaining fields of specs.Process.
+	if ok := reflect.DeepEqual(oldProcess, newProcess); !ok {
+		return validateError("Process", cName, oSpec, nSpec)
+	}
+	oldSpec.Process, newSpec.Process = nil, nil
+
+	// Validate remaining fields of specs.Linux.
+	if ok := reflect.DeepEqual(oldLinux, newLinux); !ok {
+		return validateError("Linux", cName, oSpec, nSpec)
+	}
+	oldSpec.Linux, newSpec.Linux = nil, nil
+
+	if err := validateAnnotations(cName, oldSpec.Annotations, newSpec.Annotations); err != nil {
+		return err
+	}
+	oldSpec.Annotations, newSpec.Annotations = nil, nil
+
+	if ok := reflect.DeepEqual(oldSpec, newSpec); !ok {
+		return validateError("Spec", cName, oSpec, nSpec)
+	}
 	return nil
 }
 
