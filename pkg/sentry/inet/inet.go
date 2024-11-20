@@ -100,6 +100,14 @@ type Stack interface {
 	// Restore restarts the network stack after restore.
 	Restore()
 
+	// ReplaceConfig replaces the new network stack configuration to the
+	// loaded or saved network stack after restore.
+	// TODO(b/379115439): This method is a workaround to update netstack config
+	// during restore. It should be removed after a new method is added to
+	// extract the complete config from the spec and update it in the loaded
+	// stack during restore.
+	ReplaceConfig(st Stack)
+
 	// Destroy the network stack.
 	Destroy()
 
@@ -126,6 +134,9 @@ type Stack interface {
 
 	// EnableSaveRestore enables netstack s/r.
 	EnableSaveRestore() error
+
+	// IsSaveRestoreEnabled returns true when netstack s/r is enabled.
+	IsSaveRestoreEnabled() bool
 }
 
 // Interface contains information about a network interface.

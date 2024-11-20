@@ -967,6 +967,130 @@ func (n *neighborCache) StateLoad(ctx context.Context, stateSourceObject state.S
 	stateSourceObject.Load(3, &n.mu)
 }
 
+func (n *NeighborEntry) StateTypeName() string {
+	return "pkg/tcpip/stack.NeighborEntry"
+}
+
+func (n *NeighborEntry) StateFields() []string {
+	return []string{
+		"Addr",
+		"LinkAddr",
+		"State",
+		"UpdatedAt",
+	}
+}
+
+func (n *NeighborEntry) beforeSave() {}
+
+// +checklocksignore
+func (n *NeighborEntry) StateSave(stateSinkObject state.Sink) {
+	n.beforeSave()
+	stateSinkObject.Save(0, &n.Addr)
+	stateSinkObject.Save(1, &n.LinkAddr)
+	stateSinkObject.Save(2, &n.State)
+	stateSinkObject.Save(3, &n.UpdatedAt)
+}
+
+func (n *NeighborEntry) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (n *NeighborEntry) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &n.Addr)
+	stateSourceObject.Load(1, &n.LinkAddr)
+	stateSourceObject.Load(2, &n.State)
+	stateSourceObject.Load(3, &n.UpdatedAt)
+}
+
+func (t *timer) StateTypeName() string {
+	return "pkg/tcpip/stack.timer"
+}
+
+func (t *timer) StateFields() []string {
+	return []string{
+		"done",
+	}
+}
+
+func (t *timer) beforeSave() {}
+
+// +checklocksignore
+func (t *timer) StateSave(stateSinkObject state.Sink) {
+	t.beforeSave()
+	stateSinkObject.Save(0, &t.done)
+}
+
+func (t *timer) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (t *timer) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &t.done)
+}
+
+func (n *neighborEntryMu) StateTypeName() string {
+	return "pkg/tcpip/stack.neighborEntryMu"
+}
+
+func (n *neighborEntryMu) StateFields() []string {
+	return []string{
+		"neigh",
+		"isRouter",
+		"timer",
+	}
+}
+
+func (n *neighborEntryMu) beforeSave() {}
+
+// +checklocksignore
+func (n *neighborEntryMu) StateSave(stateSinkObject state.Sink) {
+	n.beforeSave()
+	stateSinkObject.Save(0, &n.neigh)
+	stateSinkObject.Save(1, &n.isRouter)
+	stateSinkObject.Save(2, &n.timer)
+}
+
+func (n *neighborEntryMu) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (n *neighborEntryMu) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &n.neigh)
+	stateSourceObject.Load(1, &n.isRouter)
+	stateSourceObject.Load(2, &n.timer)
+}
+
+func (e *neighborEntry) StateTypeName() string {
+	return "pkg/tcpip/stack.neighborEntry"
+}
+
+func (e *neighborEntry) StateFields() []string {
+	return []string{
+		"neighborEntryEntry",
+		"cache",
+		"nudState",
+		"mu",
+	}
+}
+
+func (e *neighborEntry) beforeSave() {}
+
+// +checklocksignore
+func (e *neighborEntry) StateSave(stateSinkObject state.Sink) {
+	e.beforeSave()
+	stateSinkObject.Save(0, &e.neighborEntryEntry)
+	stateSinkObject.Save(1, &e.cache)
+	stateSinkObject.Save(2, &e.nudState)
+	stateSinkObject.Save(3, &e.mu)
+}
+
+func (e *neighborEntry) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (e *neighborEntry) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &e.neighborEntryEntry)
+	stateSourceObject.Load(1, &e.cache)
+	stateSourceObject.Load(2, &e.nudState)
+	stateSourceObject.Load(3, &e.mu)
+}
+
 func (l *neighborEntryList) StateTypeName() string {
 	return "pkg/tcpip/stack.neighborEntryList"
 }
@@ -1639,34 +1763,6 @@ func (p *pendingPacket) StateLoad(ctx context.Context, stateSourceObject state.S
 	stateSourceObject.Load(1, &p.pkt)
 }
 
-func (p *packetsPendingLinkResolutionMu) StateTypeName() string {
-	return "pkg/tcpip/stack.packetsPendingLinkResolutionMu"
-}
-
-func (p *packetsPendingLinkResolutionMu) StateFields() []string {
-	return []string{
-		"packets",
-		"cancelChans",
-	}
-}
-
-func (p *packetsPendingLinkResolutionMu) beforeSave() {}
-
-// +checklocksignore
-func (p *packetsPendingLinkResolutionMu) StateSave(stateSinkObject state.Sink) {
-	p.beforeSave()
-	stateSinkObject.Save(0, &p.packets)
-	stateSinkObject.Save(1, &p.cancelChans)
-}
-
-func (p *packetsPendingLinkResolutionMu) afterLoad(context.Context) {}
-
-// +checklocksignore
-func (p *packetsPendingLinkResolutionMu) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &p.packets)
-	stateSourceObject.Load(1, &p.cancelChans)
-}
-
 func (f *packetsPendingLinkResolution) StateTypeName() string {
 	return "pkg/tcpip/stack.packetsPendingLinkResolution"
 }
@@ -1674,7 +1770,6 @@ func (f *packetsPendingLinkResolution) StateTypeName() string {
 func (f *packetsPendingLinkResolution) StateFields() []string {
 	return []string{
 		"nic",
-		"mu",
 	}
 }
 
@@ -1684,7 +1779,6 @@ func (f *packetsPendingLinkResolution) beforeSave() {}
 func (f *packetsPendingLinkResolution) StateSave(stateSinkObject state.Sink) {
 	f.beforeSave()
 	stateSinkObject.Save(0, &f.nic)
-	stateSinkObject.Save(1, &f.mu)
 }
 
 func (f *packetsPendingLinkResolution) afterLoad(context.Context) {}
@@ -1692,7 +1786,6 @@ func (f *packetsPendingLinkResolution) afterLoad(context.Context) {}
 // +checklocksignore
 func (f *packetsPendingLinkResolution) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &f.nic)
-	stateSourceObject.Load(1, &f.mu)
 }
 
 func (t *TransportEndpointID) StateTypeName() string {
@@ -1997,10 +2090,7 @@ func (s *Stack) StateFields() []string {
 		"packetEndpointWriteSupported",
 		"demux",
 		"stats",
-		"routeTable",
-		"nics",
 		"defaultForwardingEnabled",
-		"nicIDGen",
 		"cleanupEndpoints",
 		"PortManager",
 		"clock",
@@ -2015,6 +2105,7 @@ func (s *Stack) StateFields() []string {
 		"receiveBufferSize",
 		"tcpInvalidRateLimit",
 		"tsOffsetSecret",
+		"saveRestoreEnabled",
 	}
 }
 
@@ -2029,24 +2120,22 @@ func (s *Stack) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(3, &s.packetEndpointWriteSupported)
 	stateSinkObject.Save(4, &s.demux)
 	stateSinkObject.Save(5, &s.stats)
-	stateSinkObject.Save(6, &s.routeTable)
-	stateSinkObject.Save(7, &s.nics)
-	stateSinkObject.Save(8, &s.defaultForwardingEnabled)
-	stateSinkObject.Save(9, &s.nicIDGen)
-	stateSinkObject.Save(10, &s.cleanupEndpoints)
-	stateSinkObject.Save(11, &s.PortManager)
-	stateSinkObject.Save(12, &s.clock)
-	stateSinkObject.Save(13, &s.handleLocal)
-	stateSinkObject.Save(14, &s.restoredEndpoints)
-	stateSinkObject.Save(15, &s.resumableEndpoints)
-	stateSinkObject.Save(16, &s.icmpRateLimiter)
-	stateSinkObject.Save(17, &s.seed)
-	stateSinkObject.Save(18, &s.nudConfigs)
-	stateSinkObject.Save(19, &s.nudDisp)
-	stateSinkObject.Save(20, &s.sendBufferSize)
-	stateSinkObject.Save(21, &s.receiveBufferSize)
-	stateSinkObject.Save(22, &s.tcpInvalidRateLimit)
-	stateSinkObject.Save(23, &s.tsOffsetSecret)
+	stateSinkObject.Save(6, &s.defaultForwardingEnabled)
+	stateSinkObject.Save(7, &s.cleanupEndpoints)
+	stateSinkObject.Save(8, &s.PortManager)
+	stateSinkObject.Save(9, &s.clock)
+	stateSinkObject.Save(10, &s.handleLocal)
+	stateSinkObject.Save(11, &s.restoredEndpoints)
+	stateSinkObject.Save(12, &s.resumableEndpoints)
+	stateSinkObject.Save(13, &s.icmpRateLimiter)
+	stateSinkObject.Save(14, &s.seed)
+	stateSinkObject.Save(15, &s.nudConfigs)
+	stateSinkObject.Save(16, &s.nudDisp)
+	stateSinkObject.Save(17, &s.sendBufferSize)
+	stateSinkObject.Save(18, &s.receiveBufferSize)
+	stateSinkObject.Save(19, &s.tcpInvalidRateLimit)
+	stateSinkObject.Save(20, &s.tsOffsetSecret)
+	stateSinkObject.Save(21, &s.saveRestoreEnabled)
 }
 
 // +checklocksignore
@@ -2057,24 +2146,22 @@ func (s *Stack) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(3, &s.packetEndpointWriteSupported)
 	stateSourceObject.Load(4, &s.demux)
 	stateSourceObject.Load(5, &s.stats)
-	stateSourceObject.Load(6, &s.routeTable)
-	stateSourceObject.Load(7, &s.nics)
-	stateSourceObject.Load(8, &s.defaultForwardingEnabled)
-	stateSourceObject.Load(9, &s.nicIDGen)
-	stateSourceObject.Load(10, &s.cleanupEndpoints)
-	stateSourceObject.Load(11, &s.PortManager)
-	stateSourceObject.Load(12, &s.clock)
-	stateSourceObject.Load(13, &s.handleLocal)
-	stateSourceObject.Load(14, &s.restoredEndpoints)
-	stateSourceObject.Load(15, &s.resumableEndpoints)
-	stateSourceObject.Load(16, &s.icmpRateLimiter)
-	stateSourceObject.Load(17, &s.seed)
-	stateSourceObject.Load(18, &s.nudConfigs)
-	stateSourceObject.Load(19, &s.nudDisp)
-	stateSourceObject.Load(20, &s.sendBufferSize)
-	stateSourceObject.Load(21, &s.receiveBufferSize)
-	stateSourceObject.Load(22, &s.tcpInvalidRateLimit)
-	stateSourceObject.Load(23, &s.tsOffsetSecret)
+	stateSourceObject.Load(6, &s.defaultForwardingEnabled)
+	stateSourceObject.Load(7, &s.cleanupEndpoints)
+	stateSourceObject.Load(8, &s.PortManager)
+	stateSourceObject.Load(9, &s.clock)
+	stateSourceObject.Load(10, &s.handleLocal)
+	stateSourceObject.Load(11, &s.restoredEndpoints)
+	stateSourceObject.Load(12, &s.resumableEndpoints)
+	stateSourceObject.Load(13, &s.icmpRateLimiter)
+	stateSourceObject.Load(14, &s.seed)
+	stateSourceObject.Load(15, &s.nudConfigs)
+	stateSourceObject.Load(16, &s.nudDisp)
+	stateSourceObject.Load(17, &s.sendBufferSize)
+	stateSourceObject.Load(18, &s.receiveBufferSize)
+	stateSourceObject.Load(19, &s.tcpInvalidRateLimit)
+	stateSourceObject.Load(20, &s.tsOffsetSecret)
+	stateSourceObject.Load(21, &s.saveRestoreEnabled)
 	stateSourceObject.AfterLoad(func() { s.afterLoad(ctx) })
 }
 
@@ -2937,6 +3024,10 @@ func init() {
 	state.Register((*dynamicCacheEntry)(nil))
 	state.Register((*neighborCacheMu)(nil))
 	state.Register((*neighborCache)(nil))
+	state.Register((*NeighborEntry)(nil))
+	state.Register((*timer)(nil))
+	state.Register((*neighborEntryMu)(nil))
+	state.Register((*neighborEntry)(nil))
 	state.Register((*neighborEntryList)(nil))
 	state.Register((*neighborEntryEntry)(nil))
 	state.Register((*linkResolver)(nil))
@@ -2956,7 +3047,6 @@ func init() {
 	state.Register((*PacketBufferList)(nil))
 	state.Register((*packetBufferRefs)(nil))
 	state.Register((*pendingPacket)(nil))
-	state.Register((*packetsPendingLinkResolutionMu)(nil))
 	state.Register((*packetsPendingLinkResolution)(nil))
 	state.Register((*TransportEndpointID)(nil))
 	state.Register((*NetworkPacketInfo)(nil))

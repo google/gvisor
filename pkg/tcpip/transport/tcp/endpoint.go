@@ -364,8 +364,8 @@ type Endpoint struct {
 
 	// The following fields are initialized at creation time and do not
 	// change throughout the lifetime of the endpoint.
-	stack       *stack.Stack  `state:"manual"`
-	protocol    *protocol     `state:"manual"`
+	stack       *stack.Stack
+	protocol    *protocol
 	waiterQueue *waiter.Queue `state:"wait"`
 
 	// hardError is meaningful only when state is stateError. It stores the
@@ -416,8 +416,8 @@ type Endpoint struct {
 	// state.
 	origEndpointState uint32 `state:"nosave"`
 
-	isPortReserved    bool `state:"manual"`
-	isRegistered      bool `state:"manual"`
+	isPortReserved    bool
+	isRegistered      bool
 	boundNICID        tcpip.NICID
 	route             *stack.Route `state:"manual"`
 	ipv4TTL           uint8

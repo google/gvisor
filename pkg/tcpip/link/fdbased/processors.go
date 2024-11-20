@@ -18,6 +18,7 @@
 package fdbased
 
 import (
+	"context"
 	"encoding/binary"
 
 	"gvisor.dev/gvisor/pkg/rand"
@@ -124,6 +125,12 @@ func (m *processorManager) start() {
 			go p.start(&m.wg)
 		}
 	}
+}
+
+// afterLoad is invoked by stateify.
+func (m *processorManager) afterLoad(context.Context) {
+	m.wg.Add(len(m.processors))
+	m.start()
 }
 
 func (m *processorManager) connectionHash(cid *connectionID) uint32 {

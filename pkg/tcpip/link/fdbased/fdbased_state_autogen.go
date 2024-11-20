@@ -415,14 +415,13 @@ func (m *processorManager) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(3, &m.ready)
 }
 
-func (m *processorManager) afterLoad(context.Context) {}
-
 // +checklocksignore
 func (m *processorManager) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &m.processors)
 	stateSourceObject.Load(1, &m.seed)
 	stateSourceObject.Load(2, &m.e)
 	stateSourceObject.Load(3, &m.ready)
+	stateSourceObject.AfterLoad(func() { m.afterLoad(ctx) })
 }
 
 func init() {

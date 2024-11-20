@@ -40,14 +40,21 @@ import (
 //
 // +stateify savable
 type Stack struct {
-	Stack                  *stack.Stack `state:".(*stack.Stack)"`
-	shouldSaveRestoreStack bool
+	Stack *stack.Stack `state:".(*stack.Stack)"`
 }
 
 // EnableSaveRestore enables netstack s/r.
 func (s *Stack) EnableSaveRestore() error {
-	s.shouldSaveRestoreStack = true
+	s.Stack.EnableSaveRestore()
 	return nil
+}
+
+// IsSaveRestoreEnabled implements inet.Stack.IsSaveRestoreEnabled.
+func (s *Stack) IsSaveRestoreEnabled() bool {
+	if s.Stack == nil {
+		return false
+	}
+	return s.Stack.IsSaveRestoreEnabled()
 }
 
 // Destroy implements inet.Stack.Destroy.
@@ -910,6 +917,14 @@ func (s *Stack) Pause() {
 // Restore implements inet.Stack.Restore.
 func (s *Stack) Restore() {
 	s.Stack.Restore()
+}
+
+// ReplaceConfig implements inet.Stack.ReplaceConfig.
+func (s *Stack) ReplaceConfig(st inet.Stack) {
+	if _, ok := st.(*Stack); !ok {
+		panic("netstack.Stack cannot be nil when netstack s/r is enabled")
+	}
+	s.Stack.ReplaceConfig(st.(*Stack).Stack)
 }
 
 // Resume implements inet.Stack.Resume.

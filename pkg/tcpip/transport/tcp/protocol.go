@@ -508,6 +508,11 @@ func (p *protocol) Resume() {
 	p.dispatcher.resume()
 }
 
+// Restore implements stack.TransportProtocol.Restore.
+func (p *protocol) Restore() {
+	p.dispatcher.start()
+}
+
 // Parse implements stack.TransportProtocol.Parse.
 func (*protocol) Parse(pkt *stack.PacketBuffer) bool {
 	return parse.TCP(pkt)

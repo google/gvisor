@@ -845,7 +845,17 @@ func (k *Kernel) LoadFrom(ctx context.Context, r, pagesMetadata io.Reader, pages
 		close(timeReady)
 	}
 
-	if net != nil {
+	if saveRestoreNet {
+		log.Infof("netstack save restore is enabled")
+		s := k.rootNetworkNamespace.Stack()
+		if s == nil {
+			panic("inet.Stack cannot be nil when netstack s/r is enabled")
+		}
+		if net != nil {
+			s.ReplaceConfig(net)
+		}
+		s.Restore()
+	} else if net != nil {
 		net.Restore()
 	}
 
