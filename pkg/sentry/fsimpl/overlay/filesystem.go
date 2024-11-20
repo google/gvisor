@@ -330,7 +330,12 @@ func (fs *filesystem) lookupLocked(ctx context.Context, parent *dentry, name str
 	// directories. Override them if necessary. We can use RacyLoad() because
 	// child is still being initialized.
 	if child.isDir() {
-		child.ino.Store(fs.newDirIno(child.devMajor.RacyLoad(), child.devMinor.RacyLoad(), child.ino.RacyLoad()))
+		orig := layerDevNoAndIno{
+			layerDevNumber: layerDevNumber{child.devMajor.RacyLoad(), child.devMinor.RacyLoad()},
+			ino:            child.ino.RacyLoad(),
+		}
+		child.ino.Store(fs.newDirIno(orig))
+		child.dirInoHash = orig
 		child.devMajor = atomicbitops.FromUint32(linux.UNNAMED_MAJOR)
 		child.devMinor = atomicbitops.FromUint32(fs.dirDevMinor)
 	} else if !child.upperVD.Ok() {
@@ -1486,6 +1491,7 @@ func (fs *filesystem) RmdirAt(ctx context.Context, rp *vfs.ResolvingPath) error 
 
 	toDecRef = vfsObj.CommitDeleteDentry(ctx, &child.vfsd)
 	delete(parent.children, name)
+	fs.releaseDirIno(child.dirInoHash)
 	ds = appendDentry(ds, child)
 	parent.dirents = nil
 	parent.watches.Notify(ctx, name, linux.IN_DELETE|linux.IN_ISDIR, 0 /* cookie */, vfs.InodeEvent, true /* unlinked */)

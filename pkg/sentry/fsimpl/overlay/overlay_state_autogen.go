@@ -224,6 +224,7 @@ func (d *dentry) StateFields() []string {
 		"isMappable",
 		"locks",
 		"watches",
+		"dirInoHash",
 	}
 }
 
@@ -256,6 +257,7 @@ func (d *dentry) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(19, &d.isMappable)
 	stateSinkObject.Save(20, &d.locks)
 	stateSinkObject.Save(21, &d.watches)
+	stateSinkObject.Save(22, &d.dirInoHash)
 }
 
 // +checklocksignore
@@ -281,6 +283,7 @@ func (d *dentry) StateLoad(ctx context.Context, stateSourceObject state.Source) 
 	stateSourceObject.Load(19, &d.isMappable)
 	stateSourceObject.Load(20, &d.locks)
 	stateSourceObject.Load(21, &d.watches)
+	stateSourceObject.Load(22, &d.dirInoHash)
 	stateSourceObject.LoadValue(7, new(*dentry), func(y any) { d.loadParent(ctx, y.(*dentry)) })
 	stateSourceObject.AfterLoad(func() { d.afterLoad(ctx) })
 }
