@@ -1270,6 +1270,7 @@ func (mm *MemoryManager) madviseMutateVMAs(addr hostarch.Addr, length uint64, f 
 			return err
 		}
 		if ar.End <= vseg.End() {
+			mm.vmas.MergeNext(vseg)
 			break
 		}
 		vgap := vseg.NextGap()
@@ -1277,8 +1278,11 @@ func (mm *MemoryManager) madviseMutateVMAs(addr hostarch.Addr, length uint64, f 
 			hadvgap = true
 		}
 		vseg = vgap.NextSegment()
+		if !vseg.Ok() {
+			// No VMA reaching to the end of ar.
+			return linuxerr.ENOMEM
+		}
 	}
-	mm.vmas.MergePrev(vseg)
 	if hadvgap {
 		return linuxerr.ENOMEM
 	}
