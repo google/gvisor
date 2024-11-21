@@ -334,6 +334,9 @@ type FileDescriptionImpl interface {
 	OnClose(ctx context.Context) error
 
 	// Stat returns metadata for the file represented by the FileDescription.
+	//
+	// If opts.Sync == linux.AT_STATX_SYNC_DONT_SYNC, Stat cannot take locks
+	// preceding memmap.MappingIdentity locks.
 	Stat(ctx context.Context, opts StatOptions) (linux.Statx, error)
 
 	// SetStat updates metadata for the file represented by the

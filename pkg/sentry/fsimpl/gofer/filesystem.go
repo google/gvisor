@@ -1578,6 +1578,12 @@ func (fs *filesystem) SetStatAt(ctx context.Context, rp *vfs.ResolvingPath, opts
 
 // StatAt implements vfs.FilesystemImpl.StatAt.
 func (fs *filesystem) StatAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.StatOptions) (linux.Statx, error) {
+	if rp.Done() && opts.Sync == linux.AT_STATX_DONT_SYNC {
+		var stat linux.Statx
+		rp.Start().Impl().(*dentry).statTo(&stat)
+		return stat, nil
+	}
+
 	var ds *[]*dentry
 	fs.renameMu.RLock()
 	defer fs.renameMuRUnlockAndCheckCaching(ctx, &ds)

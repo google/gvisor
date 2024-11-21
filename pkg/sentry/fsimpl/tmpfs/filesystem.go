@@ -757,11 +757,17 @@ func (fs *filesystem) SetStatAt(ctx context.Context, rp *vfs.ResolvingPath, opts
 
 // StatAt implements vfs.FilesystemImpl.StatAt.
 func (fs *filesystem) StatAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.StatOptions) (linux.Statx, error) {
-	fs.mu.RLock()
-	defer fs.mu.RUnlock()
-	d, err := resolveLocked(ctx, rp)
-	if err != nil {
-		return linux.Statx{}, err
+	var d *dentry
+	if rp.Done() {
+		d = rp.Start().Impl().(*dentry)
+	} else {
+		fs.mu.RLock()
+		defer fs.mu.RUnlock()
+		var err error
+		d, err = resolveLocked(ctx, rp)
+		if err != nil {
+			return linux.Statx{}, err
+		}
 	}
 	var stat linux.Statx
 	d.inode.statTo(&stat)
