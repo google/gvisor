@@ -32,6 +32,7 @@ go_library(
         "//pkg/seccomp",
         "//pkg/seccomp/precompiledseccomp",
         "//pkg/sentry/devices/nvproxy",
+        "//pkg/sentry/devices/nvproxy/nvconf",
         "//pkg/sentry/devices/tpuproxy",
         "//pkg/sentry/platform",
         "//pkg/sentry/platform/platforms",
@@ -49,6 +50,7 @@ go_test(
     library = ":config",
     deps = [
         "//pkg/seccomp",
+        "//pkg/sentry/devices/nvproxy/nvconf",
         "//pkg/sentry/platform/kvm",
         "//pkg/sentry/platform/systrap",
         "@org_golang_x_sys//unix:go_default_library",

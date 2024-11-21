@@ -41,6 +41,7 @@ import (
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy"
+	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
 	"gvisor.dev/gvisor/pkg/sentry/fdimport"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/host"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/tmpfs"
@@ -841,13 +842,20 @@ func (l *Loader) installSeccompFilters() error {
 		log.Warningf("*** SECCOMP WARNING: syscall filter is DISABLED. Running in less secure mode.")
 	} else {
 		hostnet := l.root.conf.Network == config.NetworkHost
+		var nvproxyCaps nvconf.DriverCaps
+		nvproxyEnabled := specutils.NVProxyEnabled(l.root.spec, l.root.conf)
+		if nvproxyEnabled {
+			// TODO(gvisor.dev/issues/10856): Plumb capabilities here.
+			nvproxyCaps = nvconf.DefaultDriverCaps
+		}
 		opts := filter.Options{
 			Platform:              l.k.Platform.SeccompInfo(),
 			HostNetwork:           hostnet,
 			HostNetworkRawSockets: hostnet && l.root.conf.EnableRaw,
 			HostFilesystem:        l.root.conf.DirectFS,
 			ProfileEnable:         l.root.conf.ProfileEnable,
-			NVProxy:               specutils.NVProxyEnabled(l.root.spec, l.root.conf), // TODO(gvisor.dev/issues/10856): Plumb capabilities here.
+			NVProxy:               nvproxyEnabled,
+			NVProxyCaps:           nvproxyCaps,
 			TPUProxy:              specutils.TPUProxyIsEnabled(l.root.spec, l.root.conf),
 			ControllerFD:          uint32(l.ctrl.srv.FD()),
 			CgoEnabled:            config.CgoEnabled,

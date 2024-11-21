@@ -16,6 +16,8 @@ package nvconf
 
 import (
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 )
 
@@ -161,4 +163,24 @@ func (c DriverCaps) NVIDIAFlags() []string {
 		}
 	}
 	return caps
+}
+
+// PopularCapabilitySets returns the most commonly used capability sets.
+func PopularCapabilitySets() []DriverCaps {
+	capSets := make(map[DriverCaps]struct{})
+	capSets[SupportedDriverCaps] = struct{}{}
+	capSets[DefaultDriverCaps] = struct{}{}
+	// Add every individual supported capability together with CapUtility.
+	for i := 0; i < numValidCaps; i++ {
+		cap := DriverCaps(1 << i)
+		if cap == CapUtility {
+			continue
+		}
+		if cap&SupportedDriverCaps == 0 {
+			continue
+		}
+		capSets[cap|CapUtility] = struct{}{}
+	}
+	// Return as a sorted list.
+	return slices.Sorted(maps.Keys(capSets))
 }

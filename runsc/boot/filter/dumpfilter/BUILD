@@ -16,6 +16,7 @@ go_binary(
         "//pkg/bpf",
         "//pkg/log",
         "//pkg/seccomp",
+        "//pkg/sentry/devices/nvproxy/nvconf",
         "//pkg/sentry/platform/systrap",
         "//runsc/boot/filter/config",
         "//runsc/flag",

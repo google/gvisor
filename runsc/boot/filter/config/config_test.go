@@ -21,6 +21,7 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/seccomp"
+	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
 	"gvisor.dev/gvisor/pkg/sentry/platform/kvm"
 	"gvisor.dev/gvisor/pkg/sentry/platform/systrap"
 )
@@ -33,9 +34,15 @@ func TestIoctlFirstArgumentIsNonNegativeFD(t *testing.T) {
 		"default kvm": {
 			Platform: (&kvm.KVM{}).SeccompInfo(),
 		},
-		"nvproxy": {
-			Platform: (&systrap.Systrap{}).SeccompInfo(),
-			NVProxy:  true,
+		"nvproxy default": {
+			Platform:    (&systrap.Systrap{}).SeccompInfo(),
+			NVProxy:     true,
+			NVProxyCaps: nvconf.DefaultDriverCaps,
+		},
+		"nvproxy all": {
+			Platform:    (&systrap.Systrap{}).SeccompInfo(),
+			NVProxy:     true,
+			NVProxyCaps: nvconf.ValidCapabilities,
 		},
 		"tpuproxy": {
 			Platform: (&systrap.Systrap{}).SeccompInfo(),
@@ -102,6 +109,7 @@ func TestOptionsConfigKey(t *testing.T) {
 		"HostFilesystem":        func(opt *Options) { opt.HostFilesystem = !opt.HostFilesystem },
 		"ProfileEnable":         func(opt *Options) { opt.ProfileEnable = !opt.ProfileEnable },
 		"NVProxy":               func(opt *Options) { opt.NVProxy = !opt.NVProxy },
+		"NVProxyCaps":           func(opt *Options) { opt.NVProxyCaps = ^opt.NVProxyCaps },
 		"TPUProxy":              func(opt *Options) { opt.TPUProxy = !opt.TPUProxy },
 		"CgoEnabled":            func(opt *Options) { opt.CgoEnabled = !opt.CgoEnabled },
 		"PluginNetwork":         func(opt *Options) { opt.PluginNetwork = !opt.PluginNetwork },

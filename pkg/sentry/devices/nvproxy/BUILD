@@ -102,7 +102,9 @@ go_test(
     library = ":nvproxy",
     deps = [
         "//pkg/abi/nvgpu",
+        "//pkg/seccomp",
         "//pkg/sentry/devices/nvproxy/nvconf",
+        "@org_golang_x_sys//unix:go_default_library",
     ],
 )
 

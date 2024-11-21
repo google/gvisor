@@ -23,6 +23,7 @@ import (
 	"gvisor.dev/gvisor/pkg/bpf"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/seccomp"
+	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
 	"gvisor.dev/gvisor/pkg/sentry/platform/systrap"
 	"gvisor.dev/gvisor/runsc/boot/filter/config"
 	"gvisor.dev/gvisor/runsc/flag"
@@ -31,7 +32,7 @@ import (
 // Flags.
 var (
 	output        = flag.String("output", "fancy", "Output type: 'fancy' (human-readable with line numbers resolved), 'plain' (diffable but still human-readable output), 'bytecode' (dump raw bytecode)")
-	nvproxy       = flag.Bool("nvproxy", false, "Enable nvproxy in filter configuration")
+	nvproxyCaps   = flag.String("nvproxy-caps", "", "If set, enable NVProxy with the given set of NVIDIA driver capabilities")
 	optimize      = flag.Bool("optimize", true, "Enable seccomp optimizations")
 	denyAction    = flag.String("deny-action", "default", "What to do if the syscall matches the 'deny' ruleset (one of: errno, kill_process, kill_thread)")
 	defaultAction = flag.String("default-action", "default", "What to do if all the syscall rules fail to match (one of: errno, kill_process, kill_thread)")
@@ -63,9 +64,22 @@ func action(s string) linux.BPFAction {
 
 func main() {
 	flag.Parse()
+	var nvCaps nvconf.DriverCaps
+	if *nvproxyCaps != "" {
+		flagCaps, isAll, err := nvconf.DriverCapsFromString(*nvproxyCaps)
+		if err != nil {
+			log.Warningf("cannot parse NVProxy capabilities: %v", err)
+			os.Exit(1)
+		}
+		if isAll {
+			flagCaps |= nvconf.ValidCapabilities
+		}
+		nvCaps = flagCaps
+	}
 	opt := config.Options{
-		Platform: (&systrap.Systrap{}).SeccompInfo(),
-		NVProxy:  *nvproxy,
+		Platform:    (&systrap.Systrap{}).SeccompInfo(),
+		NVProxy:     *nvproxyCaps != "",
+		NVProxyCaps: nvCaps,
 	}
 	rules, denyRules := config.Rules(opt)
 

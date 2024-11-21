@@ -22,6 +22,7 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/seccomp"
+	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
 	"gvisor.dev/gvisor/pkg/sentry/platform/kvm"
 	"gvisor.dev/gvisor/pkg/sentry/platform/systrap"
 	"gvisor.dev/gvisor/runsc/boot/filter/config"
@@ -102,8 +103,9 @@ func BenchmarkSentryKVM(b *testing.B) {
 
 func BenchmarkNVProxyIoctl(b *testing.B) {
 	opts := config.Options{
-		Platform: (&systrap.Systrap{}).SeccompInfo(),
-		NVProxy:  true,
+		Platform:    (&systrap.Systrap{}).SeccompInfo(),
+		NVProxy:     true,
+		NVProxyCaps: nvconf.ValidCapabilities,
 	}
 	rules, denyRules := config.Rules(opts)
 	var sequences []secbenchdef.Sequence

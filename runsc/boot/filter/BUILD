@@ -42,6 +42,7 @@ secbench_test(
         ":filter",
         "//pkg/abi/linux",
         "//pkg/seccomp",
+        "//pkg/sentry/devices/nvproxy/nvconf",
         "//pkg/sentry/platform/kvm",
         "//pkg/sentry/platform/systrap",
         "//runsc/boot/filter/config",
