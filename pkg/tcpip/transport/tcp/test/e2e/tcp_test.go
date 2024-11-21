@@ -863,7 +863,7 @@ func TestClosingWithEnqueuedSegments(t *testing.T) {
 		t.Errorf("unexpected endpoint state: want %s, got %s", want, got)
 	}
 
-	// Pause the endpoint`s protocolMainLoop.
+	// Pause the endpoint.
 	ep.(interface{ StopWork() }).StopWork()
 
 	// Enqueue last ACK followed by an ACK matching the endpoint
@@ -889,10 +889,10 @@ func TestClosingWithEnqueuedSegments(t *testing.T) {
 		RcvWnd:  30000,
 	})
 
-	// Unpause endpoint`s protocolMainLoop.
+	// Unpause endpoint.
 	ep.(interface{ ResumeWork() }).ResumeWork()
 
-	// Wait for the protocolMainLoop to resume and update state.
+	// Wait for the endpoint to resume and update state.
 	time.Sleep(10 * time.Millisecond)
 
 	// Expect the endpoint to be closed.

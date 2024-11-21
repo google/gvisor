@@ -287,10 +287,6 @@ func (*Stats) IsEndpointStats() {}
 type sndQueueInfo struct {
 	sndQueueMu sync.Mutex `state:"nosave"`
 	stack.TCPSndBufState
-
-	// sndWaker is used to signal the protocol goroutine when there may be
-	// segments that need to be sent.
-	sndWaker sleep.Waker `state:"manual"`
 }
 
 // CloneState clones sq into other. It is not thread safe
@@ -524,8 +520,6 @@ type Endpoint struct {
 	// +checklocks:acceptMu
 	acceptQueue acceptQueue
 
-	// The following are only used from the protocol goroutine, and
-	// therefore don't need locks to protect them.
 	rcv *receiver `state:"wait"`
 	snd *sender   `state:"wait"`
 
@@ -1450,8 +1444,7 @@ func (e *Endpoint) Read(dst io.Writer, opts tcpip.ReadOptions) (tcpip.ReadResult
 			if memDelta > 0 {
 				// If the window was small before this read and if the read freed up
 				// enough buffer space, to either fit an aMSS or half a receive buffer
-				// (whichever smaller), then notify the protocol goroutine to send a
-				// window update.
+				// (whichever smaller), then send a window update.
 				if crossed, above := e.windowCrossedACKThresholdLocked(memDelta, int(e.ops.GetReceiveBufferSize())); crossed && above {
 					sendNonZeroWindowUpdate = true
 				}
@@ -2475,7 +2468,6 @@ func (e *Endpoint) connect(addr tcpip.FullAddress, handshake bool) tcpip.Error {
 		for _, l := range []segmentList{e.segmentQueue.list, e.snd.writeList} {
 			for s := l.Front(); s != nil; s = s.Next() {
 				s.id = e.TransportEndpointInfo.ID
-				e.sndQueueInfo.sndWaker.Assert()
 			}
 		}
 		e.segmentQueue.mu.Unlock()
@@ -2962,8 +2954,8 @@ func (e *Endpoint) HandleError(transErr stack.TransportError, pkt *stack.PacketB
 	}
 }
 
-// updateSndBufferUsage is called by the protocol goroutine when room opens up
-// in the send buffer. The number of newly available bytes is v.
+// updateSndBufferUsage is called by when room opens up in the send buffer. The
+// number of newly available bytes is v.
 func (e *Endpoint) updateSndBufferUsage(v int) {
 	sendBufferSize := e.getSendBufferSize()
 	e.sndQueueInfo.sndQueueMu.Lock()
@@ -2987,9 +2979,8 @@ func (e *Endpoint) updateSndBufferUsage(v int) {
 	}
 }
 
-// readyToRead is called by the protocol goroutine when a new segment is ready
-// to be read, or when the connection is closed for receiving (in which case
-// s will be nil).
+// readyToRead is called when a new segment is ready to be read, or when the
+// connection is closed for receiving (in which case s will be nil).
 //
 // +checklocks:e.mu
 func (e *Endpoint) readyToRead(s *segment) {

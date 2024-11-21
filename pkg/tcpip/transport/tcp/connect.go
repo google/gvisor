@@ -40,10 +40,10 @@ const (
 	// https://github.com/torvalds/linux/blob/7c636d4d20f/include/net/tcp.h#L142
 	InitialRTO = time.Second
 
-	// maxSegmentsPerWake is the maximum number of segments to process in the main
-	// protocol goroutine per wake-up. Yielding [after this number of segments are
-	// processed] allows other events to be processed as well (e.g., timeouts,
-	// resets, etc.).
+	// maxSegmentsPerWake is the maximum number of segments to process per
+	// wake-up. Yielding [after this number of segments are processed]
+	// allows other events to be processed as well (e.g., timeouts, resets,
+	// etc.).
 	maxSegmentsPerWake = 100
 )
 
@@ -543,7 +543,7 @@ func (h *handshake) processSegments() tcpip.Error {
 
 		// We stop processing packets once the handshake is completed,
 		// otherwise we may process packets meant to be processed by
-		// the main protocol goroutine.
+		// the TCP processor goroutine.
 		if h.state == handshakeCompleted {
 			break
 		}
@@ -1032,8 +1032,7 @@ func (e *Endpoint) sendData(next *segment) {
 
 // resetConnectionLocked puts the endpoint in an error state with the given
 // error code and sends a RST if and only if the error is not ErrConnectionReset
-// indicating that the connection is being reset due to receiving a RST. This
-// method must only be called from the protocol goroutine.
+// indicating that the connection is being reset due to receiving a RST.
 // +checklocks:e.mu
 func (e *Endpoint) resetConnectionLocked(err tcpip.Error) {
 	// Only send a reset if the connection is being aborted for a reason
@@ -1167,10 +1166,6 @@ func (e *Endpoint) handleReset(s *segment) (ok bool, err tcpip.Error) {
 			// except SYN-SENT, all reset (RST) segments are
 			// validated by checking their SEQ-fields." So
 			// we only process it if it's acceptable.
-
-			// Notify protocol goroutine. This is required when
-			// handleSegment is invoked from the processor goroutine
-			// rather than the worker goroutine.
 			return false, &tcpip.ErrConnectionReset{}
 		}
 	}
@@ -1292,12 +1287,7 @@ func (e *Endpoint) handleSegmentLocked(s *segment) (cont bool, err tcpip.Error) 
 		state := e.EndpointState()
 		if state == StateClose {
 			// When we get into StateClose while processing from the queue,
-			// return immediately and let the protocolMainloop handle it.
-			//
-			// We can reach StateClose only while processing a previous segment
-			// or a notification from the protocolMainLoop (caller goroutine).
-			// This means that with this return, the segment dequeue below can
-			// never occur on a closed endpoint.
+			// return immediately and let the TCP processors handle it.
 			return false, nil
 		}
 
