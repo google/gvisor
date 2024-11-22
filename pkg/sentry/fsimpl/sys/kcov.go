@@ -43,6 +43,7 @@ type kcovInode struct {
 	kernfs.InodeNotDirectory
 	kernfs.InodeNotSymlink
 	kernfs.InodeWatches
+	kernfs.InodeFSOwned
 	implStatFS
 }
 

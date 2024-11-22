@@ -95,6 +95,7 @@ type inode struct {
 	kernfs.InodeNotSymlink
 	kernfs.InodeNoopRefCount
 	kernfs.InodeWatches
+	kernfs.InodeFSOwned
 
 	locks  vfs.FileLocks
 	pipe   *pipe.VFSPipe
