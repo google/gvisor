@@ -1013,16 +1013,13 @@ func (e *Endpoint) purgeWriteQueue() {
 		e.sndQueueInfo.sndQueueMu.Lock()
 		defer e.sndQueueInfo.sndQueueMu.Unlock()
 		e.snd.updateWriteNext(nil)
-		for {
-			s := e.snd.writeList.Front()
-			if s == nil {
-				break
-			}
+		for s := e.snd.writeList.Front(); s != nil; s = e.snd.writeList.Front() {
 			e.snd.writeList.Remove(s)
 			s.DecRef()
 		}
 		e.sndQueueInfo.SndBufUsed = 0
 		e.sndQueueInfo.SndClosed = true
+		e.snd.SndNxt = e.snd.SndUna
 	}
 }
 
