@@ -1,0 +1,34 @@
+ARG HF_USERNAME=""
+ARG HF_TOKEN=""
+ARG MODEL="Qwen/Qwen2.5-1.5B-Instruct"
+ARG VLLM_COMMIT_HASH="1dbae0329c6d907b72b373667b4d5716bae4415f"
+
+FROM ubuntu:22.04 AS downloader
+ARG HF_USERNAME
+ARG HF_TOKEN
+ARG MODEL
+ARG VLLM_COMMIT_HASH
+
+RUN apt-get update && apt-get install -y \
+    git git-lfs \
+    ffmpeg libsm6 libxext6 libgl1
+
+RUN git lfs install
+RUN if [ -z "$HF_TOKEN" ]; then git clone "https://huggingface.co/$MODEL" /model; else git clone "https://$HF_USERNAME:$HF_TOKEN@huggingface.co/$MODEL" /model; fi
+
+RUN git clone https://github.com/vllm-project/vllm.git /vllm && cd /vllm && git checkout "$VLLM_COMMIT_HASH"
+RUN GIT_CLONE_PROTECTION_ACTIVE=false git clone https://huggingface.co/datasets/anon8231489123/ShareGPT_Vicuna_unfiltered /dataset
+
+FROM us-central1-docker.pkg.dev/tpu-pytorch-releases/docker/xla:nightly_3.10_tpuvm_20241112
+
+COPY --from=downloader /model /model
+COPY --from=downloader /vllm /vllm
+COPY --from=downloader /dataset/ShareGPT_V3_unfiltered_cleaned_split.json /ShareGPT_V3_unfiltered_cleaned_split.json
+
+WORKDIR /vllm
+
+ENV VLLM_TARGET_DEVICE="tpu"
+RUN python3 -m pip install -r requirements-tpu.txt
+RUN python3 setup.py develop
+
+CMD ["python3", "-m", "vllm.entrypoints.openai.api_server", "--model", "/model", "--chat-template", "/vllm/examples/template_chatml.jinja", "--tensor-parallel-size=4", "--max-model-len=512", "--enforce-eager"]
