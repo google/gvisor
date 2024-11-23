@@ -29,7 +29,6 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/seqnum"
-	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp/test/e2e"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp/testing/context"
@@ -356,18 +355,7 @@ func TestTrimSackBlockList(t *testing.T) {
 }
 
 func TestSACKRecovery(t *testing.T) {
-	const maxPayload = 10
-	// See: tcp.makeOptions for why tsOptionSize is set to 12 here.
-	const tsOptionSize = 12
-	// Enabling SACK means the payload size is reduced to account
-	// for the extra space required for the TCP options.
-	//
-	// We increase the MTU by e2e.MaxTCPOptionSize bytes to account for SACK
-	// and Timestamp options.
-	c := context.New(t, uint32(header.TCPMinimumSize+header.IPv4MinimumSize+e2e.MaxTCPOptionSize+maxPayload))
-	defer c.Cleanup()
-
-	c.Stack().AddTCPProbe(func(s *stack.TCPEndpointState) {
+	probe := func(s *tcp.TCPEndpointState) {
 		// We use log.Printf instead of t.Logf here because this probe
 		// can fire even when the test function has finished. This is
 		// because closing the endpoint in cleanup() does not mean the
@@ -376,7 +364,18 @@ func TestSACKRecovery(t *testing.T) {
 		// before the shutdown is done. Using t.Logf in such a case
 		// causes the test to panic due to logging after test finished.
 		log.Printf("state: %+v\n", s)
-	})
+	}
+	const maxPayload = 10
+	// See: tcp.makeOptions for why tsOptionSize is set to 12 here.
+	const tsOptionSize = 12
+	// Enabling SACK means the payload size is reduced to account
+	// for the extra space required for the TCP options.
+	//
+	// We increase the MTU by e2e.MaxTCPOptionSize bytes to account for SACK
+	// and Timestamp options.
+	c := context.NewWithProbe(t, uint32(header.TCPMinimumSize+header.IPv4MinimumSize+e2e.MaxTCPOptionSize+maxPayload), probe)
+	defer c.Cleanup()
+
 	e2e.SetStackSACKPermitted(t, c, true)
 	e2e.SetStackTCPRecovery(t, c, 0)
 	e2e.CreateConnectedWithSACKAndTS(c)
@@ -741,11 +740,8 @@ func buildTSOptionFromHeader(tcpHdr header.TCP) []byte {
 }
 
 func TestDetectSpuriousRecoveryWithRTO(t *testing.T) {
-	c := context.New(t, uint32(mtu))
-	defer c.Cleanup()
-
 	probeDone := make(chan struct{})
-	c.Stack().AddTCPProbe(func(s *stack.TCPEndpointState) {
+	probe := func(s *tcp.TCPEndpointState) {
 		if s.Sender.RetransmitTS == 0 {
 			t.Fatalf("RetransmitTS did not get updated, got: 0 want > 0")
 		}
@@ -753,7 +749,10 @@ func TestDetectSpuriousRecoveryWithRTO(t *testing.T) {
 			t.Fatalf("Spurious recovery was not detected")
 		}
 		close(probeDone)
-	})
+	}
+
+	c := context.NewWithProbe(t, uint32(mtu), probe)
+	defer c.Cleanup()
 
 	e2e.SetStackSACKPermitted(t, c, true)
 	e2e.CreateConnectedWithSACKAndTS(c)
@@ -822,12 +821,9 @@ func TestDetectSpuriousRecoveryWithRTO(t *testing.T) {
 }
 
 func TestSACKDetectSpuriousRecoveryWithDupACK(t *testing.T) {
-	c := context.New(t, uint32(mtu))
-	defer c.Cleanup()
-
 	numAck := 0
 	probeDone := make(chan struct{})
-	c.Stack().AddTCPProbe(func(s *stack.TCPEndpointState) {
+	probe := func(s *tcp.TCPEndpointState) {
 		if numAck < 3 {
 			numAck++
 			return
@@ -840,7 +836,10 @@ func TestSACKDetectSpuriousRecoveryWithDupACK(t *testing.T) {
 			t.Fatalf("Spurious recovery was not detected")
 		}
 		close(probeDone)
-	})
+	}
+
+	c := context.NewWithProbe(t, uint32(mtu), probe)
+	defer c.Cleanup()
 
 	e2e.SetStackSACKPermitted(t, c, true)
 	e2e.CreateConnectedWithSACKAndTS(c)

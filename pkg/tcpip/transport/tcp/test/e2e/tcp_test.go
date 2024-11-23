@@ -5769,11 +5769,9 @@ func TestPathMTUDiscovery(t *testing.T) {
 }
 
 func TestTCPEndpointProbe(t *testing.T) {
-	c := context.New(t, 1500)
-	defer c.Cleanup()
-
 	invoked := make(chan struct{})
-	c.Stack().AddTCPProbe(func(state *stack.TCPEndpointState) {
+	var port uint16
+	probe := func(state *tcp.TCPEndpointState) {
 		// Validate that the endpoint ID is what we expect.
 		//
 		// We don't do an extensive validation of every field but a
@@ -5781,7 +5779,7 @@ func TestTCPEndpointProbe(t *testing.T) {
 		if got, want := state.ID.LocalAddress, tcpip.Address(context.StackAddr); got != want {
 			t.Fatalf("got LocalAddress: %q, want: %q", got, want)
 		}
-		if got, want := state.ID.LocalPort, c.Port; got != want {
+		if got, want := state.ID.LocalPort, port; got != want {
 			t.Fatalf("got LocalPort: %d, want: %d", got, want)
 		}
 		if got, want := state.ID.RemoteAddress, tcpip.Address(context.TestAddr); got != want {
@@ -5792,9 +5790,13 @@ func TestTCPEndpointProbe(t *testing.T) {
 		}
 
 		invoked <- struct{}{}
-	})
+	}
+
+	c := context.NewWithProbe(t, 1500, probe)
+	defer c.Cleanup()
 
 	c.CreateConnected(context.TestInitialSequenceNumber, 30000, -1 /* epRcvBuf */)
+	port = c.Port // c.Port is set during CreateConnected.
 
 	data := []byte{1, 2, 3}
 	iss := seqnum.Value(context.TestInitialSequenceNumber).Add(1)

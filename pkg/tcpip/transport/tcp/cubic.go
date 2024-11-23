@@ -19,7 +19,6 @@ import (
 	"time"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
 // effectivelyInfinity is an initialization value used for round-trip times
@@ -58,7 +57,7 @@ const (
 // See: https://tools.ietf.org/html/rfc8312.
 // +stateify savable
 type cubicState struct {
-	stack.TCPCubicState
+	TCPCubicState
 
 	// numCongestionEvents tracks the number of congestion events since last
 	// RTO.
@@ -72,7 +71,7 @@ type cubicState struct {
 func newCubicCC(s *sender) *cubicState {
 	now := s.ep.stack.Clock().NowMonotonic()
 	return &cubicState{
-		TCPCubicState: stack.TCPCubicState{
+		TCPCubicState: TCPCubicState{
 			T:    now,
 			Beta: 0.7,
 			C:    0.4,

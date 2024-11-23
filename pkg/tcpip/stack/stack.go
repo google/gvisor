@@ -20,11 +20,11 @@
 package stack
 
 import (
+	"context"
 	"encoding/binary"
 	"fmt"
 	"io"
 	"math/rand"
-	"sync/atomic"
 	"time"
 
 	"golang.org/x/time/rate"
@@ -107,11 +107,6 @@ type Stack struct {
 	cleanupEndpoints map[TransportEndpoint]struct{}
 
 	*ports.PortManager
-
-	// If not nil, then any new endpoints will have this probe function
-	// invoked everytime they receive a TCP segment.
-	// TODO(b/341946753): Restore them when netstack is savable.
-	tcpProbeFunc atomic.Value `state:"nosave"` // TCPProbeFunc
 
 	// clock is used to generate user-visible times.
 	clock tcpip.Clock
@@ -2139,41 +2134,6 @@ func (s *Stack) TransportProtocolInstance(num tcpip.TransportProtocolNumber) Tra
 	return nil
 }
 
-// AddTCPProbe installs a probe function that will be invoked on every segment
-// received by a given TCP endpoint. The probe function is passed a copy of the
-// TCP endpoint state before and after processing of the segment.
-//
-// NOTE: TCPProbe is added only to endpoints created after this call. Endpoints
-// created prior to this call will not call the probe function.
-//
-// Further, installing two different probes back to back can result in some
-// endpoints calling the first one and some the second one. There is no
-// guarantee provided on which probe will be invoked. Ideally this should only
-// be called once per stack.
-func (s *Stack) AddTCPProbe(probe TCPProbeFunc) {
-	s.tcpProbeFunc.Store(probe)
-}
-
-// GetTCPProbe returns the TCPProbeFunc if installed with AddTCPProbe, nil
-// otherwise.
-func (s *Stack) GetTCPProbe() TCPProbeFunc {
-	p := s.tcpProbeFunc.Load()
-	if p == nil {
-		return nil
-	}
-	return p.(TCPProbeFunc)
-}
-
-// RemoveTCPProbe removes an installed TCP probe.
-//
-// NOTE: This only ensures that endpoints created after this call do not
-// have a probe attached. Endpoints already created will continue to invoke
-// TCP probe.
-func (s *Stack) RemoveTCPProbe() {
-	// This must be TCPProbeFunc(nil) because atomic.Value.Store(nil) panics.
-	s.tcpProbeFunc.Store(TCPProbeFunc(nil))
-}
-
 // JoinGroup joins the given multicast group on the given NIC.
 func (s *Stack) JoinGroup(protocol tcpip.NetworkProtocolNumber, nicID tcpip.NICID, multicastAddr tcpip.Address) tcpip.Error {
 	s.mu.RLock()
@@ -2451,4 +2411,17 @@ func (s *Stack) IsSaveRestoreEnabled() bool {
 	defer s.mu.Unlock()
 
 	return s.saveRestoreEnabled
+}
+
+// contextID is this package's type for context.Context.Value keys.
+type contextID int
+
+const (
+	// CtxRestoreStack is a Context.Value key for the stack to be used in restore.
+	CtxRestoreStack contextID = iota
+)
+
+// RestoreStackFromContext returns the stack to be used during restore.
+func RestoreStackFromContext(ctx context.Context) *Stack {
+	return ctx.Value(CtxRestoreStack).(*Stack)
 }

@@ -159,7 +159,7 @@ func setupNetwork(ifaceName string, numChannels int) (fds []int, err error) {
 	return nil, fmt.Errorf("failed to find interface: %v", ifaceName)
 }
 
-func newNetstackImpl(mode string) (impl, error) {
+func newNetstackImpl(mode, probeFileName string) (impl, func() error, error) {
 	// Parse details.
 	var parsedAddr tcpip.Address
 	if *useIpv6 {
@@ -190,12 +190,23 @@ func newNetstackImpl(mode string) (impl, error) {
 		parsedMask6 = tcpip.MaskFromBytes(append([]byte{0xff, 0xff, 0xff}, make([]byte, 13)...))
 	default:
 		// This is just laziness; we don't expect a different mask.
-		return nil, fmt.Errorf("mask %d not supported", mask)
+		return nil, func() error { return nil }, fmt.Errorf("mask %d not supported", mask)
+	}
+
+	// Create Probe to dump out end point state.
+	probeFile, err := os.Create(probeFileName)
+	if err != nil {
+		log.Fatalf("failed to create tcp_probe file %s: %v", probeFileName, err)
+	}
+	probeEncoder := gob.NewEncoder(probeFile)
+	// Install a TCP Probe.
+	probe := func(state *tcp.TCPEndpointState) {
+		probeEncoder.Encode(state)
 	}
 
 	// Create a new network stack.
 	netProtos := []stack.NetworkProtocolFactory{ipv6.NewProtocol, ipv4.NewProtocol, arp.NewProtocol}
-	transProtos := []stack.TransportProtocolFactory{tcp.NewProtocol, udp.NewProtocol, icmp.NewProtocol4, icmp.NewProtocol6}
+	transProtos := []stack.TransportProtocolFactory{tcp.NewProtocolProbe(probe), udp.NewProtocol, icmp.NewProtocol4, icmp.NewProtocol6}
 	s := stack.New(stack.Options{
 		NetworkProtocols:   netProtos,
 		TransportProtocols: transProtos,
@@ -207,14 +218,13 @@ func newNetstackImpl(mode string) (impl, error) {
 	mac[0] &^= 0x1 // Clear multicast bit.
 	mac[0] |= 0x2  // Set local assignment bit (IEEE802).
 	var ep stack.LinkEndpoint
-	var err error
 	if *useXDP {
 		ep, err = newXDPEndpoint(*iface, mac)
 	} else {
 		var fds []int
 		fds, err = setupNetwork(*iface, runtime.GOMAXPROCS(0))
 		if err != nil {
-			return nil, err
+			return nil, probeFile.Close, err
 		}
 		ep, err = fdbased.New(&fdbased.Options{
 			FDs:            fds,
@@ -236,7 +246,7 @@ func newNetstackImpl(mode string) (impl, error) {
 		})
 	}
 	if err != nil {
-		return nil, fmt.Errorf("failed to create endpoint: %v", err)
+		return nil, probeFile.Close, fmt.Errorf("failed to create endpoint: %v", err)
 	}
 
 	if *sniff {
@@ -246,7 +256,7 @@ func newNetstackImpl(mode string) (impl, error) {
 	qDisc := fifo.New(ep, runtime.GOMAXPROCS(0), 1000)
 	opts := stack.NICOptions{QDisc: qDisc}
 	if err := s.CreateNICWithOptions(nicID, ep, opts); err != nil {
-		return nil, fmt.Errorf("error creating NIC %q: %v", *iface, err)
+		return nil, probeFile.Close, fmt.Errorf("error creating NIC %q: %v", *iface, err)
 	}
 	proto := ipv4.ProtocolNumber
 	if *useIpv6 {
@@ -257,16 +267,16 @@ func newNetstackImpl(mode string) (impl, error) {
 		AddressWithPrefix: parsedAddr.WithPrefix(),
 	}
 	if err := s.AddProtocolAddress(nicID, protocolAddr, stack.AddressProperties{}); err != nil {
-		return nil, fmt.Errorf("error adding IP address %+v to %q: %s", protocolAddr, *iface, err)
+		return nil, probeFile.Close, fmt.Errorf("error adding IP address %+v to %q: %s", protocolAddr, *iface, err)
 	}
 
 	subnet4, err := tcpip.NewSubnet(parsedDest, parsedMask)
 	if err != nil {
-		return nil, fmt.Errorf("tcpip.Subnet(%s, %s): %s", parsedDest, parsedMask, err)
+		return nil, probeFile.Close, fmt.Errorf("tcpip.Subnet(%s, %s): %s", parsedDest, parsedMask, err)
 	}
 	subnet6, err := tcpip.NewSubnet(parsedDest6, parsedMask6)
 	if err != nil {
-		return nil, fmt.Errorf("tcpip.Subnet(%s, %s): %s", parsedDest, parsedMask, err)
+		return nil, probeFile.Close, fmt.Errorf("tcpip.Subnet(%s, %s): %s", parsedDest, parsedMask, err)
 	}
 
 	// Add default route; we only support
@@ -285,7 +295,7 @@ func newNetstackImpl(mode string) (impl, error) {
 	{
 		opt := tcpip.TCPSACKEnabled(*sack)
 		if err := s.SetTransportProtocolOption(tcp.ProtocolNumber, &opt); err != nil {
-			return nil, fmt.Errorf("SetTransportProtocolOption(%d, &%T(%t)): %s", tcp.ProtocolNumber, opt, opt, err)
+			return nil, probeFile.Close, fmt.Errorf("SetTransportProtocolOption(%d, &%T(%t)): %s", tcp.ProtocolNumber, opt, opt, err)
 		}
 	}
 
@@ -293,7 +303,7 @@ func newNetstackImpl(mode string) (impl, error) {
 	if !*rack {
 		opt := tcpip.TCPRecovery(0)
 		if err := s.SetTransportProtocolOption(tcp.ProtocolNumber, &opt); err != nil {
-			return nil, fmt.Errorf("disabling RACK failed: %v", err)
+			return nil, probeFile.Close, fmt.Errorf("disabling RACK failed: %v", err)
 		}
 	}
 
@@ -301,7 +311,7 @@ func newNetstackImpl(mode string) (impl, error) {
 	{
 		opt := tcpip.TCPModerateReceiveBufferOption(*moderateRecvBuf)
 		if err := s.SetTransportProtocolOption(tcp.ProtocolNumber, &opt); err != nil {
-			return nil, fmt.Errorf("SetTransportProtocolOption(%d, &%T(%t)): %s", tcp.ProtocolNumber, opt, opt, err)
+			return nil, probeFile.Close, fmt.Errorf("SetTransportProtocolOption(%d, &%T(%t)): %s", tcp.ProtocolNumber, opt, opt, err)
 		}
 	}
 
@@ -309,7 +319,7 @@ func newNetstackImpl(mode string) (impl, error) {
 	if *cubic {
 		opt := tcpip.CongestionControlOption("cubic")
 		if err := s.SetTransportProtocolOption(tcp.ProtocolNumber, &opt); err != nil {
-			return nil, fmt.Errorf("SetTransportProtocolOption(%d, &%T(%s)): %s", tcp.ProtocolNumber, opt, opt, err)
+			return nil, probeFile.Close, fmt.Errorf("SetTransportProtocolOption(%d, &%T(%s)): %s", tcp.ProtocolNumber, opt, opt, err)
 		}
 	}
 
@@ -317,7 +327,7 @@ func newNetstackImpl(mode string) (impl, error) {
 		s:    s,
 		addr: parsedAddr,
 		mode: mode,
-	}, nil
+	}, probeFile.Close, nil
 }
 
 func (n netstackImpl) dial(address string) (net.Conn, error) {
@@ -371,23 +381,6 @@ func (n netstackImpl) printStats() {
 	// Don't show zero fields.
 	stats := zeroFieldsRegexp.ReplaceAllString(fmt.Sprintf("%+v", n.s.Stats()), "")
 	log.Printf("netstack %s Stats: %+v\n", n.mode, stats)
-}
-
-// installProbe installs a TCP Probe function that will dump endpoint
-// state to the specified file. It also returns a close func() that
-// can be used to close the probeFile.
-func (n netstackImpl) installProbe(probeFileName string) (close func()) {
-	// Install Probe to dump out end point state.
-	probeFile, err := os.Create(probeFileName)
-	if err != nil {
-		log.Fatalf("failed to create tcp_probe file %s: %v", probeFileName, err)
-	}
-	probeEncoder := gob.NewEncoder(probeFile)
-	// Install a TCP Probe.
-	n.s.AddTCPProbe(func(state *stack.TCPEndpointState) {
-		probeEncoder.Encode(state)
-	})
-	return func() { probeFile.Close() }
 }
 
 func main() {
@@ -444,15 +437,14 @@ func main() {
 	}
 
 	var (
-		in  impl
-		out impl
-		err error
+		in      impl
+		out     impl
+		err     error
+		cleanup func() error
 	)
 	if *server {
-		in, err = newNetstackImpl("server")
-		if *serverTCPProbeFile != "" {
-			defer in.(netstackImpl).installProbe(*serverTCPProbeFile)()
-		}
+		in, cleanup, err = newNetstackImpl("server", *serverTCPProbeFile)
+		defer cleanup()
 
 	} else {
 		in = netImpl{}
@@ -461,10 +453,8 @@ func main() {
 		log.Fatalf("netstack error: %v", err)
 	}
 	if *client {
-		out, err = newNetstackImpl("client")
-		if *clientTCPProbeFile != "" {
-			defer out.(netstackImpl).installProbe(*clientTCPProbeFile)()
-		}
+		out, cleanup, err = newNetstackImpl("client", *clientTCPProbeFile)
+		defer cleanup()
 	} else {
 		out = netImpl{}
 	}

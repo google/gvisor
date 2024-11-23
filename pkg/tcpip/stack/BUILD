@@ -252,7 +252,6 @@ go_library(
         "stack_mutex.go",
         "stack_options.go",
         "state_conn_mutex.go",
-        "tcp.go",
         "transport_demuxer.go",
         "transport_endpoints_mutex.go",
         "tuple_list.go",

@@ -286,11 +286,11 @@ func (*Stats) IsEndpointStats() {}
 // +stateify savable
 type sndQueueInfo struct {
 	sndQueueMu sync.Mutex `state:"nosave"`
-	stack.TCPSndBufState
+	TCPSndBufState
 }
 
 // CloneState clones sq into other. It is not thread safe
-func (sq *sndQueueInfo) CloneState(other *stack.TCPSndBufState) {
+func (sq *sndQueueInfo) CloneState(other *TCPSndBufState) {
 	other.SndBufSize = sq.SndBufSize
 	other.SndBufUsed = sq.SndBufUsed
 	other.SndClosed = sq.SndClosed
@@ -340,7 +340,7 @@ func (sq *sndQueueInfo) CloneState(other *stack.TCPSndBufState) {
 //
 // +stateify savable
 type Endpoint struct {
-	stack.TCPEndpointStateInner
+	TCPEndpointStateInner
 	stack.TransportEndpointInfo
 	tcpip.DefaultSocketOptionsHandler
 
@@ -377,7 +377,7 @@ type Endpoint struct {
 	rcvQueueMu sync.Mutex `state:"nosave"`
 
 	// +checklocks:rcvQueueMu
-	stack.TCPRcvBufState
+	TCPRcvBufState
 
 	// rcvMemUsed tracks the total amount of memory in use by received segments
 	// held in rcvQueue, pendingRcvdSegments and the segment queue. This is used to
@@ -535,7 +535,7 @@ type Endpoint struct {
 
 	// probe if not nil is invoked on every received segment. It is passed
 	// a copy of the current state of the endpoint.
-	probe stack.TCPProbeFunc `state:"nosave"`
+	probe TCPProbeFunc `state:"nosave"`
 
 	// The following are only used to assist the restore run to re-connect.
 	connectingAddress tcpip.Address
@@ -843,7 +843,7 @@ func newEndpoint(s *stack.Stack, protocol *protocol, netProto tcpip.NetworkProto
 			TransProto: header.TCPProtocolNumber,
 		},
 		sndQueueInfo: sndQueueInfo{
-			TCPSndBufState: stack.TCPSndBufState{
+			TCPSndBufState: TCPSndBufState{
 				SndMTU: math.MaxInt32,
 			},
 		},
@@ -904,10 +904,7 @@ func newEndpoint(s *stack.Stack, protocol *protocol, netProto tcpip.NetworkProto
 		e.maxSynRetries = uint8(synRetries)
 	}
 
-	if p := s.GetTCPProbe(); p != nil {
-		e.probe = p
-	}
-
+	e.probe = protocol.probe
 	e.segmentQueue.ep = e
 
 	// TODO(https://gvisor.dev/issues/7493): Defer creating the timer until TCP connection becomes
@@ -3134,9 +3131,9 @@ func (e *Endpoint) maxOptionSize() (size int) {
 // used before invoking the probe.
 //
 // +checklocks:e.mu
-func (e *Endpoint) completeStateLocked(s *stack.TCPEndpointState) {
+func (e *Endpoint) completeStateLocked(s *TCPEndpointState) {
 	s.TCPEndpointStateInner = e.TCPEndpointStateInner
-	s.ID = stack.TCPEndpointID(e.TransportEndpointInfo.ID)
+	s.ID = TCPEndpointID(e.TransportEndpointInfo.ID)
 	s.SegTime = e.stack.Clock().NowMonotonic()
 	s.Receiver = e.rcv.TCPReceiverState
 	s.Sender = e.snd.TCPSenderState

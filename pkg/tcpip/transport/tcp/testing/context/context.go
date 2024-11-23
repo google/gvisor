@@ -129,6 +129,9 @@ type Options struct {
 
 	// Clock that is used by Stack.
 	Clock tcpip.Clock
+
+	// Probe is a probe function to attach to the stack.
+	Probe tcp.TCPProbeFunc
 }
 
 // Context provides an initialized Network stack and a link layer endpoint
@@ -180,6 +183,16 @@ func New(t *testing.T, mtu uint32) *Context {
 	})
 }
 
+// NewWithProbe is like New, but also attaches a TCP probe function.
+func NewWithProbe(t *testing.T, mtu uint32, probe tcp.TCPProbeFunc) *Context {
+	return NewWithOpts(t, Options{
+		EnableV4: true,
+		EnableV6: true,
+		MTU:      mtu,
+		Probe:    probe,
+	})
+}
+
 // NewWithOpts allocates and initializes a test context containing a new
 // stack and a link-layer endpoint with specific options.
 func NewWithOpts(t *testing.T, opts Options) *Context {
@@ -188,7 +201,7 @@ func NewWithOpts(t *testing.T, opts Options) *Context {
 	}
 
 	stackOpts := stack.Options{
-		TransportProtocols: []stack.TransportProtocolFactory{tcp.NewProtocol},
+		TransportProtocols: []stack.TransportProtocolFactory{tcp.NewProtocolProbe(opts.Probe)},
 		Clock:              opts.Clock,
 	}
 	if opts.EnableV4 {

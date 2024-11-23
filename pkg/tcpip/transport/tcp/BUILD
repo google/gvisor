@@ -66,6 +66,7 @@ go_library(
         "segment_state.go",
         "segment_unsafe.go",
         "snd.go",
+        "state.go",
         "tcp_endpoint_list.go",
         "tcp_segment_list.go",
         "tcp_segment_refs.go",

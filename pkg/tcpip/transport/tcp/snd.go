@@ -99,7 +99,7 @@ type lossRecovery interface {
 //
 // +stateify savable
 type sender struct {
-	stack.TCPSenderState
+	TCPSenderState
 	ep *Endpoint
 
 	// lr is the loss recovery algorithm used by the sender.
@@ -235,7 +235,7 @@ func (wl *protectedWriteList) InsertAfter(before, seg *segment) {
 type rtt struct {
 	sync.Mutex `state:"nosave"`
 
-	stack.TCPRTTState
+	TCPRTTState
 }
 
 // +checklocks:ep.mu
@@ -247,7 +247,7 @@ func newSender(ep *Endpoint, iss, irs seqnum.Value, sndWnd seqnum.Size, mss uint
 
 	s := &sender{
 		ep: ep,
-		TCPSenderState: stack.TCPSenderState{
+		TCPSenderState: TCPSenderState{
 			SndWnd:           sndWnd,
 			SndUna:           iss + 1,
 			SndNxt:           iss + 1,
@@ -255,7 +255,7 @@ func newSender(ep *Endpoint, iss, irs seqnum.Value, sndWnd seqnum.Size, mss uint
 			LastSendTime:     ep.stack.Clock().NowMonotonic(),
 			MaxPayloadSize:   maxPayloadSize,
 			MaxSentAck:       irs + 1,
-			FastRecovery: stack.TCPFastRecoveryState{
+			FastRecovery: TCPFastRecoveryState{
 				// See: https://tools.ietf.org/html/rfc6582#section-3.2 Step 1.
 				Last:      iss,
 				HighRxt:   iss,

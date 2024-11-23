@@ -40,7 +40,7 @@ func TestHyStartAckTrainOK(t *testing.T) {
 	iss := seqnum.Value(0)
 	snd := &sender{
 		ep: ep,
-		TCPSenderState: stack.TCPSenderState{
+		TCPSenderState: TCPSenderState{
 			SndUna:   iss + 1,
 			SndNxt:   iss + 1,
 			Ssthresh: InitialSsthresh,
@@ -121,7 +121,7 @@ func TestHyStartAckTrainTooSpread(t *testing.T) {
 	iss := seqnum.Value(0)
 	snd := &sender{
 		ep: ep,
-		TCPSenderState: stack.TCPSenderState{
+		TCPSenderState: TCPSenderState{
 			SndUna:   iss + 1,
 			SndNxt:   iss + 1,
 			Ssthresh: InitialSsthresh,
@@ -190,7 +190,7 @@ func TestHyStartDelayOK(t *testing.T) {
 	iss := seqnum.Value(0)
 	snd := &sender{
 		ep: ep,
-		TCPSenderState: stack.TCPSenderState{
+		TCPSenderState: TCPSenderState{
 			SndUna:   iss + 1,
 			SndNxt:   iss + 1,
 			Ssthresh: InitialSsthresh,
@@ -241,7 +241,7 @@ func TestHyStartDelay_BelowThresh(t *testing.T) {
 	iss := seqnum.Value(0)
 	snd := &sender{
 		ep: ep,
-		TCPSenderState: stack.TCPSenderState{
+		TCPSenderState: TCPSenderState{
 			SndUna:   iss + 1,
 			SndNxt:   iss + 1,
 			Ssthresh: InitialSsthresh,
