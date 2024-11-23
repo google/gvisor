@@ -238,15 +238,18 @@ TEST(TimerTest, RlimitCpuInheritedAcrossFork) {
     sigemptyset(&new_action.sa_mask);
     TEST_PCHECK(sigaction(SIGXCPU, &new_action, nullptr) == 0);
 
-    // Set both soft and hard limits to expire a short time from now. (Since we
-    // may not be able to raise RLIMIT_CPU again, this must happen in a
-    // disposable child of the test process.)
     constexpr int kDelaySeconds = 2;
     struct timespec ts;
     TEST_PCHECK(clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &ts) == 0);
     struct rlimit cpu_limits;
+    // Set soft limit to 0 to expire immediately. This should cause
+    // a SIGXCPU to be sent to the grandchild immediately on fork.
+    cpu_limits.rlim_cur = 0;
+    // Set hard limit to expire a short time from now. (Since we
+    // may not be able to raise RLIMIT_CPU again, this must happen in a
+    // disposable child of the test process.)
     // +1 to round up, presuming that ts.tv_nsec > 0.
-    cpu_limits.rlim_cur = cpu_limits.rlim_max = ts.tv_sec + kDelaySeconds + 1;
+    cpu_limits.rlim_max = ts.tv_sec + kDelaySeconds + 1;
     TEST_PCHECK(setrlimit(RLIMIT_CPU, &cpu_limits) == 0);
     MaybeSave();
 
@@ -271,7 +274,7 @@ TEST(TimerTest, RlimitCpuInheritedAcrossFork) {
         // block in waitid().
         // TODO: b/315388929 - remove this
         if (x % 16384 == 0) {
-          TEST_PCHECK(ppoll(&pfd, 1, &timeout, nullptr) == 0);
+          TEST_PCHECK(RetryEINTR(ppoll)(&pfd, 1, &timeout, nullptr) == 0);
         }
       }
     }
