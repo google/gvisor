@@ -370,9 +370,6 @@ TEST_P(CookedPacketTest, DoubleBindSucceeds) {
 
 // Bind and verify we do not receive data on interface which is not bound
 TEST_P(CookedPacketTest, BindDrop) {
-  // TOOD(b/379932042): This is flakey and blocking submissions.
-  GTEST_SKIP();
-
   // Let's use a simple IP payload: a UDP datagram.
   FileDescriptor udp_sock =
       ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_DGRAM, 0));
@@ -430,9 +427,6 @@ TEST_P(CookedPacketTest, BindDrop) {
 // Verify that we receive outbound packets. This test requires at least one
 // non loopback interface so that we can actually capture an outgoing packet.
 TEST_P(CookedPacketTest, ReceiveOutbound) {
-  // TOOD(b/379932042): This is flakey and blocking submissions.
-  GTEST_SKIP();
-
   // Only ETH_P_ALL sockets can receive outbound packets on linux.
   SKIP_IF(GetParam() != ETH_P_ALL);
 
