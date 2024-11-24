@@ -96,29 +96,28 @@ func parseLine(line string) (*bigquery.Benchmark, error) {
 
 // parseNameParams parses the Name, GOMAXPROCS, and Params from the test.
 // Field here should be of the format TESTNAME/PARAMS-GOMAXPROCS.
+// GOMAXPROCS is optional.
 // Parameters will be separated by a "/" with individual params being
 // "name.value".
 func parseNameParams(field string) (string, []*tools.Parameter, error) {
 	var params []*tools.Parameter
-	// Remove GOMAXPROCS from end.
-	maxIndex := strings.LastIndex(field, "-")
-	if maxIndex < 0 {
-		return "", nil, fmt.Errorf("GOMAXPROCS not found: %s", field)
-	}
-	maxProcs := field[maxIndex+1:]
-	params = append(params, &tools.Parameter{
-		Name:  "GOMAXPROCS",
-		Value: maxProcs,
-	})
-
-	remainder := field[0:maxIndex]
-	index := strings.Index(remainder, "/")
-	if index == -1 {
-		return remainder, params, nil
+	// Remove GOMAXPROCS from end if it exists.
+	if dashIndex := strings.LastIndex(field, "-"); dashIndex > 0 {
+		maxProcs := field[dashIndex+1:]
+		params = append(params, &tools.Parameter{
+			Name:  "GOMAXPROCS",
+			Value: maxProcs,
+		})
+		field = field[0:dashIndex]
 	}
 
-	name := remainder[0:index]
-	p := remainder[index+1:]
+	slashIndex := strings.Index(field, "/")
+	if slashIndex == -1 {
+		return field, params, nil
+	}
+
+	name := field[0:slashIndex]
+	p := field[slashIndex+1:]
 
 	ps, err := tools.NameToParameters(p)
 	if err != nil {

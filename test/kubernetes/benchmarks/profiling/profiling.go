@@ -342,10 +342,10 @@ func MaybeSetup(ctx context.Context, t *testing.T, c *testcluster.TestCluster, n
 		defer setupCancel()
 		ds, err := startOperations(setupCtx, c, ns, setupCommands)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to start profiling setup operations: %w", err)
 		}
 		if err := c.WaitForDaemonset(setupCtx, ds); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to wait for daemonset: %w", err)
 		}
 	}
 	return cleanup, nil

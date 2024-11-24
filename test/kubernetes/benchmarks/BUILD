@@ -24,12 +24,6 @@ genquery(
     scope = _ALL_BENCHMARK_TARGETS,
 )
 
-filegroup(
-    name = "all_benchmark_test_binaries",
-    testonly = True,
-    srcs = _ALL_BENCHMARK_TARGETS,
-)
-
 [pkg_tar(
     name = "%s_tar" % (src[src.index(":") + 1:],),
     testonly = True,

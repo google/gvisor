@@ -51,20 +51,37 @@ func ParametersToName(params ...Parameter) (string, error) {
 // it as a set of Parameters.
 // Example: BenchmarkRuby/server_threads.1/doc_size.16KB-6
 // The parameter part of this benchmark is:
-// "server_threads.1/doc_size.16KB" (BenchmarkRuby is the name, and 6 is GOMAXPROCS)
+// "server_threads.1/doc_size.16KB"
+// "BenchmarkRuby" is the name, and "6" is GOMAXPROCS (optional).
 // This function will return a slice with two parameters ->
 // {Name: server_threads, Value: 1}, {Name: doc_size, Value: 16KB}
+// The separator between the name and value may either be '.' or '='.
 func NameToParameters(name string) ([]*Parameter, error) {
 	var params []*Parameter
+	var separator string
+	switch {
+	case strings.IndexRune(name, '.') != -1 && strings.IndexRune(name, '=') != -1:
+		return nil, fmt.Errorf("ambiguity while parsing parameters from benchmark name %q: multiple types of parameter separators are present", name)
+	case strings.IndexRune(name, '.') != -1:
+		separator = "."
+	case strings.IndexRune(name, '=') != -1:
+		separator = "="
+	default:
+		// Nothing.
+	}
 	for _, cond := range strings.Split(name, "/") {
-		cs := strings.Split(cond, ".")
-		switch len(cs) {
-		case 1:
+		if separator == "" {
 			params = append(params, &Parameter{Name: cond, Value: cond})
-		case 2:
-			params = append(params, &Parameter{Name: cs[0], Value: cs[1]})
-		default:
-			return nil, fmt.Errorf("failed to parse param: %s", cond)
+		} else {
+			cs := strings.Split(cond, separator)
+			switch len(cs) {
+			case 1:
+				params = append(params, &Parameter{Name: cond, Value: cond})
+			case 2:
+				params = append(params, &Parameter{Name: cs[0], Value: cs[1]})
+			default:
+				return nil, fmt.Errorf("failed to parse params from %q: %s", name, cond)
+			}
 		}
 	}
 	return params, nil
