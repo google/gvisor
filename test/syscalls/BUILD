@@ -1263,3 +1263,8 @@ syscall_test(
     save = False,
     test = "//test/syscalls/linux:close_range_test",
 )
+
+syscall_test(
+    save = False,
+    test = "//test/syscalls/linux:socketopt_test",
+)

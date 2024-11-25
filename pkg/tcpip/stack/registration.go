@@ -322,6 +322,10 @@ type NetworkHeaderParams struct {
 
 	// DF indicates whether the DF bit should be set.
 	DF bool
+
+	// ExperimentOptionValue is a 16 bit value that is set for the IP experiment
+	// option headers if it is not zero.
+	ExperimentOptionValue uint16
 }
 
 // GroupAddressableEndpoint is an endpoint that supports group addressing.

@@ -51,6 +51,7 @@ generic = [
     "_unsafe",
     "_opts",
     "_testonly",
+    "_custom",
 ]
 
 # State explosion? Sure. This is approximately:

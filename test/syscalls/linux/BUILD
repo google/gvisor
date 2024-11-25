@@ -2558,6 +2558,22 @@ cc_library(
 )
 
 cc_binary(
+    name = "socketopt_test",
+    testonly = 1,
+    srcs = ["socketopt_test.cc"],
+    linkstatic = 1,
+    deps = select_gtest() + [
+        "//test/util:capability_util",
+        "//test/util:file_descriptor",
+        "//test/util:posix_error",
+        "//test/util:socket_util",
+        "//test/util:test_main",
+        "//test/util:test_util",
+        "@com_google_absl//absl/strings:str_format",
+    ],
+)
+
+cc_binary(
     name = "socket_stress_test",
     testonly = 1,
     srcs = [

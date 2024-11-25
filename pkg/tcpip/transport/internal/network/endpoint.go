@@ -345,9 +345,10 @@ func (c *WriteContext) WritePacket(pkt *stack.PacketBuffer, headerIncluded bool)
 	}
 
 	err := c.route.WritePacket(stack.NetworkHeaderParams{
-		Protocol: c.e.transProto,
-		TTL:      c.ttl,
-		TOS:      c.tos,
+		Protocol:              c.e.transProto,
+		TTL:                   c.ttl,
+		TOS:                   c.tos,
+		ExperimentOptionValue: c.e.ops.GetExperimentOptionValue(),
 	}, pkt)
 
 	if _, ok := err.(*tcpip.ErrNoBufferSpace); ok {

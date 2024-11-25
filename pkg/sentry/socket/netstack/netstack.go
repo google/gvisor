@@ -1107,6 +1107,10 @@ func getSockOptSocket(t *kernel.Task, s socket.Socket, ep commonEndpoint, family
 
 		v := primitive.Int32(ep.SocketOptions().GetRcvlowat())
 		return &v, nil
+	default:
+		if v, err, handled := getSockOptSocketCustom(t, s, ep, name, outLen); handled {
+			return v, err
+		}
 	}
 	return nil, syserr.ErrProtocolNotAvailable
 }
@@ -2028,6 +2032,10 @@ func setSockOptSocket(t *kernel.Task, s socket.Socket, ep commonEndpoint, name i
 		v := hostarch.ByteOrder.Uint32(optVal)
 		ep.SocketOptions().SetRcvlowat(int32(v))
 		return nil
+	default:
+		if err, handled := setSockOptSocketCustom(t, s, ep, name, optVal); handled {
+			return err
+		}
 	}
 
 	return nil

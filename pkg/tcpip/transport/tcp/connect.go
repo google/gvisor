@@ -364,13 +364,14 @@ func (h *handshake) synSentState(s *segment) tcpip.Error {
 		ttl = h.ep.route.DefaultTTL()
 	}
 	h.ep.sendSynTCP(h.ep.route, tcpFields{
-		id:     h.ep.TransportEndpointInfo.ID,
-		ttl:    ttl,
-		tos:    h.ep.sendTOS,
-		flags:  h.flags,
-		seq:    h.iss,
-		ack:    h.ackNum,
-		rcvWnd: h.rcvWnd,
+		id:        h.ep.TransportEndpointInfo.ID,
+		ttl:       ttl,
+		tos:       h.ep.sendTOS,
+		flags:     h.flags,
+		seq:       h.iss,
+		ack:       h.ackNum,
+		rcvWnd:    h.rcvWnd,
+		expOptVal: h.ep.SocketOptions().GetExperimentOptionValue(),
 	}, synOpts)
 	return nil
 }
@@ -450,13 +451,14 @@ func (h *handshake) synRcvdState(s *segment) tcpip.Error {
 			MSS:           h.ep.amss,
 		}
 		h.ep.sendSynTCP(h.ep.route, tcpFields{
-			id:     h.ep.TransportEndpointInfo.ID,
-			ttl:    calculateTTL(h.ep.route, h.ep.ipv4TTL, h.ep.ipv6HopLimit),
-			tos:    h.ep.sendTOS,
-			flags:  h.flags,
-			seq:    h.iss,
-			ack:    h.ackNum,
-			rcvWnd: h.rcvWnd,
+			id:        h.ep.TransportEndpointInfo.ID,
+			ttl:       calculateTTL(h.ep.route, h.ep.ipv4TTL, h.ep.ipv6HopLimit),
+			tos:       h.ep.sendTOS,
+			flags:     h.flags,
+			seq:       h.iss,
+			ack:       h.ackNum,
+			rcvWnd:    h.rcvWnd,
+			expOptVal: h.ep.SocketOptions().GetExperimentOptionValue(),
 		}, synOpts)
 		return nil
 	}
@@ -587,13 +589,14 @@ func (h *handshake) start() {
 
 	h.sendSYNOpts = synOpts
 	h.ep.sendSynTCP(h.ep.route, tcpFields{
-		id:     h.ep.TransportEndpointInfo.ID,
-		ttl:    calculateTTL(h.ep.route, h.ep.ipv4TTL, h.ep.ipv6HopLimit),
-		tos:    h.ep.sendTOS,
-		flags:  h.flags,
-		seq:    h.iss,
-		ack:    h.ackNum,
-		rcvWnd: h.rcvWnd,
+		id:        h.ep.TransportEndpointInfo.ID,
+		ttl:       calculateTTL(h.ep.route, h.ep.ipv4TTL, h.ep.ipv6HopLimit),
+		tos:       h.ep.sendTOS,
+		flags:     h.flags,
+		seq:       h.iss,
+		ack:       h.ackNum,
+		rcvWnd:    h.rcvWnd,
+		expOptVal: h.ep.SocketOptions().GetExperimentOptionValue(),
 	}, synOpts)
 }
 
@@ -623,13 +626,14 @@ func (h *handshake) retransmitHandlerLocked() tcpip.Error {
 	// retransmitted on their own).
 	if h.active || !h.acked || h.deferAccept != 0 && e.stack.Clock().NowMonotonic().Sub(h.startTime) > h.deferAccept {
 		e.sendSynTCP(e.route, tcpFields{
-			id:     e.TransportEndpointInfo.ID,
-			ttl:    calculateTTL(e.route, e.ipv4TTL, e.ipv6HopLimit),
-			tos:    e.sendTOS,
-			flags:  h.flags,
-			seq:    h.iss,
-			ack:    h.ackNum,
-			rcvWnd: h.rcvWnd,
+			id:        e.TransportEndpointInfo.ID,
+			ttl:       calculateTTL(e.route, e.ipv4TTL, e.ipv6HopLimit),
+			tos:       e.sendTOS,
+			flags:     h.flags,
+			seq:       h.iss,
+			ack:       h.ackNum,
+			rcvWnd:    h.rcvWnd,
+			expOptVal: e.SocketOptions().GetExperimentOptionValue(),
 		}, h.sendSYNOpts)
 		// If we have ever retransmitted the SYN-ACK or
 		// SYN segment, we should only measure RTT if
@@ -800,16 +804,17 @@ func makeSynOptions(opts header.TCPSynOptions) []byte {
 // tcpFields is a struct to carry different parameters required by the
 // send*TCP variant functions below.
 type tcpFields struct {
-	id     stack.TransportEndpointID
-	ttl    uint8
-	tos    uint8
-	flags  header.TCPFlags
-	seq    seqnum.Value
-	ack    seqnum.Value
-	rcvWnd seqnum.Size
-	opts   []byte
-	txHash uint32
-	df     bool
+	id        stack.TransportEndpointID
+	ttl       uint8
+	tos       uint8
+	flags     header.TCPFlags
+	seq       seqnum.Value
+	ack       seqnum.Value
+	rcvWnd    seqnum.Size
+	opts      []byte
+	txHash    uint32
+	df        bool
+	expOptVal uint16
 }
 
 func (e *Endpoint) sendSynTCP(r *stack.Route, tf tcpFields, opts header.TCPSynOptions) tcpip.Error {
@@ -897,7 +902,13 @@ func sendTCPBatch(r *stack.Route, tf tcpFields, pkt *stack.PacketBuffer, gso sta
 		buildTCPHdr(r, tf, pkt, gso)
 		tf.seq = tf.seq.Add(seqnum.Size(packetSize))
 		pkt.GSOOptions = gso
-		if err := r.WritePacket(stack.NetworkHeaderParams{Protocol: ProtocolNumber, TTL: tf.ttl, TOS: tf.tos, DF: tf.df}, pkt); err != nil {
+		if err := r.WritePacket(stack.NetworkHeaderParams{
+			Protocol:              ProtocolNumber,
+			TTL:                   tf.ttl,
+			TOS:                   tf.tos,
+			DF:                    tf.df,
+			ExperimentOptionValue: tf.expOptVal,
+		}, pkt); err != nil {
 			r.Stats().TCP.SegmentSendErrors.Increment()
 			if shouldSplitPacket {
 				pkt.DecRef()
@@ -929,7 +940,13 @@ func sendTCP(r *stack.Route, tf tcpFields, pkt *stack.PacketBuffer, gso stack.GS
 	pkt.Owner = owner
 	buildTCPHdr(r, tf, pkt, gso)
 
-	if err := r.WritePacket(stack.NetworkHeaderParams{Protocol: ProtocolNumber, TTL: tf.ttl, TOS: tf.tos, DF: tf.df}, pkt); err != nil {
+	if err := r.WritePacket(stack.NetworkHeaderParams{
+		Protocol:              ProtocolNumber,
+		TTL:                   tf.ttl,
+		TOS:                   tf.tos,
+		DF:                    tf.df,
+		ExperimentOptionValue: tf.expOptVal,
+	}, pkt); err != nil {
 		r.Stats().TCP.SegmentSendErrors.Increment()
 		return err
 	}
