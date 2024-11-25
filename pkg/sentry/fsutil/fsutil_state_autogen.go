@@ -33,6 +33,34 @@ func (d *DirtyInfo) StateLoad(ctx context.Context, stateSourceObject state.Sourc
 	stateSourceObject.Load(0, &d.Keep)
 }
 
+func (f *FrameRefSegInfo) StateTypeName() string {
+	return "pkg/sentry/fsutil.FrameRefSegInfo"
+}
+
+func (f *FrameRefSegInfo) StateFields() []string {
+	return []string{
+		"refs",
+		"memCgID",
+	}
+}
+
+func (f *FrameRefSegInfo) beforeSave() {}
+
+// +checklocksignore
+func (f *FrameRefSegInfo) StateSave(stateSinkObject state.Sink) {
+	f.beforeSave()
+	stateSinkObject.Save(0, &f.refs)
+	stateSinkObject.Save(1, &f.memCgID)
+}
+
+func (f *FrameRefSegInfo) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (f *FrameRefSegInfo) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &f.refs)
+	stateSourceObject.Load(1, &f.memCgID)
+}
+
 func (f *HostFileMapper) StateTypeName() string {
 	return "pkg/sentry/fsutil.HostFileMapper"
 }
@@ -295,6 +323,7 @@ func (r *refsFlatSegment) StateLoad(ctx context.Context, stateSourceObject state
 
 func init() {
 	state.Register((*DirtyInfo)(nil))
+	state.Register((*FrameRefSegInfo)(nil))
 	state.Register((*HostFileMapper)(nil))
 	state.Register((*mappingSet)(nil))
 	state.Register((*mappingnode)(nil))

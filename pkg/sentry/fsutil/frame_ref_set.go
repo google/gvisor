@@ -22,6 +22,8 @@ import (
 )
 
 // FrameRefSegInfo holds reference count and memory cgroup id of the segment.
+//
+// +stateify savable
 type FrameRefSegInfo struct {
 	// refs indicates the reference count of the segment.
 	refs uint64

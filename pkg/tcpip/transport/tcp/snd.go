@@ -99,7 +99,7 @@ type lossRecovery interface {
 //
 // +stateify savable
 type sender struct {
-	stack.TCPSenderState
+	TCPSenderState
 	ep *Endpoint
 
 	// lr is the loss recovery algorithm used by the sender.
@@ -124,7 +124,7 @@ type sender struct {
 	// writeList holds all writable data: both unsent data and
 	// sent-but-unacknowledged data. Alternatively: it holds all bytes
 	// starting from SND.UNA.
-	writeList segmentList
+	writeList protectedWriteList
 
 	// resendTimer is used for RTOs.
 	resendTimer timer `state:"nosave"`
@@ -180,6 +180,54 @@ type sender struct {
 	corkTimer timer `state:"nosave"`
 }
 
+// protectedWriteList wraps the write list, checking for invalid state when
+// segments are added or removed.
+//
+// TODO(b/339664055): Revert once bug is fixed.
+//
+// +stateify savable
+type protectedWriteList struct {
+	writeList segmentList
+	set       map[*segment]struct{}
+}
+
+// Front returns the front of the write list.
+func (wl *protectedWriteList) Front() *segment {
+	return wl.writeList.Front()
+}
+
+// Back returns the back of the write list.
+func (wl *protectedWriteList) Back() *segment {
+	return wl.writeList.Back()
+}
+
+// Remove removes seg from the write list.
+func (wl *protectedWriteList) Remove(seg *segment) {
+	if _, ok := wl.set[seg]; !ok {
+		panic("segment not found write list")
+	}
+	wl.writeList.Remove(seg)
+	delete(wl.set, seg)
+}
+
+// PushBack pushes seg onto the back of the write list.
+func (wl *protectedWriteList) PushBack(seg *segment) {
+	if _, ok := wl.set[seg]; ok {
+		panic("segment already in write list")
+	}
+	wl.writeList.PushBack(seg)
+	wl.set[seg] = struct{}{}
+}
+
+// InsertAfter inserts seg after before.
+func (wl *protectedWriteList) InsertAfter(before, seg *segment) {
+	if _, ok := wl.set[seg]; ok {
+		panic("segment already in write list")
+	}
+	wl.writeList.InsertAfter(before, seg)
+	wl.set[seg] = struct{}{}
+}
+
 // rtt is a synchronization wrapper used to appease stateify. See the comment
 // in sender, where it is used.
 //
@@ -187,7 +235,7 @@ type sender struct {
 type rtt struct {
 	sync.Mutex `state:"nosave"`
 
-	stack.TCPRTTState
+	TCPRTTState
 }
 
 // +checklocks:ep.mu
@@ -199,7 +247,7 @@ func newSender(ep *Endpoint, iss, irs seqnum.Value, sndWnd seqnum.Size, mss uint
 
 	s := &sender{
 		ep: ep,
-		TCPSenderState: stack.TCPSenderState{
+		TCPSenderState: TCPSenderState{
 			SndWnd:           sndWnd,
 			SndUna:           iss + 1,
 			SndNxt:           iss + 1,
@@ -207,7 +255,7 @@ func newSender(ep *Endpoint, iss, irs seqnum.Value, sndWnd seqnum.Size, mss uint
 			LastSendTime:     ep.stack.Clock().NowMonotonic(),
 			MaxPayloadSize:   maxPayloadSize,
 			MaxSentAck:       irs + 1,
-			FastRecovery: stack.TCPFastRecoveryState{
+			FastRecovery: TCPFastRecoveryState{
 				// See: https://tools.ietf.org/html/rfc6582#section-3.2 Step 1.
 				Last:      iss,
 				HighRxt:   iss,
@@ -216,6 +264,9 @@ func newSender(ep *Endpoint, iss, irs seqnum.Value, sndWnd seqnum.Size, mss uint
 			RTO: 1 * time.Second,
 		},
 		gso: ep.gso.Type != stack.GSONone,
+		writeList: protectedWriteList{
+			set: make(map[*segment]struct{}),
+		},
 	}
 
 	if s.gso {
@@ -912,6 +963,13 @@ func (s *sender) maybeSendSegment(seg *segment, limit int, end seqnum.Value) (se
 		segEnd = seg.sequenceNumber.Add(seqnum.Size(seg.payloadSize()))
 	}
 
+	// TODO(b/379932042): Below is the only place we update SND.NXT besides
+	// initialization. It's possible that we're increasing SND.NXT by
+	// trying to write a segment that isn't in the write list.
+	if _, ok := s.writeList.set[seg]; !ok {
+		panic("attempted to send segment not in write list")
+	}
+
 	s.sendSegment(seg)
 
 	// Update sndNxt if we actually sent new data (as opposed to
@@ -1568,7 +1626,8 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 			// have no data, but do consume a sequence number.
 			seg := s.writeList.Front()
 			if seg == nil {
-				panic(fmt.Sprintf("invalid state: there are %d unacknowledged bytes left, but the write list is empty:\n%+v", ackLeft, s.TCPSenderState))
+				panic(fmt.Sprintf("invalid state: there are %d unacknowledged bytes left, but the write list is empty:\n"+
+					"TCPSenderState: %+v\nsender: %+v\nendpoint: %+v", ackLeft, s.TCPSenderState, s, s.ep))
 			}
 
 			datalen := seg.logicalLen()

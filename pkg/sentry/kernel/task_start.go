@@ -213,6 +213,17 @@ func (ts *TaskSet) newTask(ctx context.Context, cfg *TaskConfig) (*Task, error) 
 		}
 	}
 
+	// If the task was the first to be added to the thread group, check if
+	// it needs to be notified of CPU limits being exceeded.
+	// We use a defer here because we need to do this without holding the
+	// TaskSet or signalHandlers lock.
+	var isFirstTask bool
+	defer func() {
+		if isFirstTask {
+			tg.notifyRlimitCPUUpdated(t)
+		}
+	}()
+
 	// Make the new task (and possibly thread group) visible to the rest of
 	// the system atomically.
 	ts.mu.Lock()
@@ -259,7 +270,7 @@ func (ts *TaskSet) newTask(ctx context.Context, cfg *TaskConfig) (*Task, error) 
 	t.EnterInitialCgroups(srcT, cfg.InitialCgroups)
 	committed = true
 
-	if tg.leader == nil {
+	if isFirstTask = tg.leader == nil; isFirstTask {
 		// New thread group.
 		tg.leader = t
 		if parentPG := tg.parentPG(); parentPG == nil {

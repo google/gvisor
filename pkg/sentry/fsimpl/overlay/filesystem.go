@@ -1548,17 +1548,24 @@ func (d *dentry) setStatLocked(ctx context.Context, rp *vfs.ResolvingPath, opts 
 
 // StatAt implements vfs.FilesystemImpl.StatAt.
 func (fs *filesystem) StatAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.StatOptions) (linux.Statx, error) {
-	var ds *[]*dentry
-	fs.renameMu.RLock()
-	defer fs.renameMuRUnlockAndCheckDrop(ctx, &ds)
-	d, err := fs.resolveLocked(ctx, rp, &ds)
-	if err != nil {
-		return linux.Statx{}, err
+	var d *dentry
+	if rp.Done() {
+		d = rp.Start().Impl().(*dentry)
+	} else {
+		var ds *[]*dentry
+		fs.renameMu.RLock()
+		defer fs.renameMuRUnlockAndCheckDrop(ctx, &ds)
+		var err error
+		d, err = fs.resolveLocked(ctx, rp, &ds)
+		if err != nil {
+			return linux.Statx{}, err
+		}
 	}
 
 	var stat linux.Statx
 	if layerMask := opts.Mask &^ statInternalMask; layerMask != 0 {
 		layerVD := d.topLayer()
+		var err error
 		stat, err = fs.vfsfs.VirtualFilesystem().StatAt(ctx, fs.creds, &vfs.PathOperation{
 			Root:  layerVD,
 			Start: layerVD,

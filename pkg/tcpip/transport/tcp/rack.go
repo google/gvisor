@@ -19,7 +19,6 @@ import (
 
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/seqnum"
-	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
 const (
@@ -47,7 +46,7 @@ const (
 //
 // +stateify savable
 type rackControl struct {
-	stack.TCPRACKState
+	TCPRACKState
 
 	// exitedRecovery indicates if the connection is exiting loss recovery.
 	// This flag is set if the sender is leaving the recovery after

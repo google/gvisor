@@ -26,6 +26,7 @@ import (
 	"gvisor.dev/gvisor/pkg/seccomp"
 	"gvisor.dev/gvisor/pkg/seccomp/precompiledseccomp"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy"
+	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
 	"gvisor.dev/gvisor/pkg/sentry/devices/tpuproxy"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/sentry/socket/plugin"
@@ -39,6 +40,7 @@ type Options struct {
 	HostFilesystem        bool
 	ProfileEnable         bool
 	NVProxy               bool
+	NVProxyCaps           nvconf.DriverCaps
 	TPUProxy              bool
 	ControllerFD          uint32
 	CgoEnabled            bool
@@ -67,6 +69,7 @@ func (opt Options) ConfigKey() string {
 	sb.WriteString(fmt.Sprintf("ProfileEnable=%t ", opt.ProfileEnable))
 	sb.WriteString(fmt.Sprintf("Instrumentation=%t ", isInstrumentationEnabled()))
 	sb.WriteString(fmt.Sprintf("NVProxy=%t ", opt.NVProxy))
+	sb.WriteString(fmt.Sprintf("NVProxyCaps=%v ", opt.NVProxyCaps))
 	sb.WriteString(fmt.Sprintf("TPUProxy=%t ", opt.TPUProxy))
 	sb.WriteString(fmt.Sprintf("CgoEnabled=%t ", opt.CgoEnabled))
 	sb.WriteString(fmt.Sprintf("PluginNetwork=%t ", opt.PluginNetwork))
@@ -147,7 +150,7 @@ func rules(opt Options, vars precompiledseccomp.Values) (seccomp.SyscallRules, s
 		s.Merge(hostFilesystemFilters())
 	}
 	if opt.NVProxy {
-		s.Merge(nvproxy.Filters())
+		s.Merge(nvproxy.Filters(opt.NVProxyCaps))
 	}
 	if opt.TPUProxy {
 		s.Merge(tpuproxy.Filters())

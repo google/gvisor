@@ -915,6 +915,10 @@ func (fs *Filesystem) SetStatAt(ctx context.Context, rp *vfs.ResolvingPath, opts
 
 // StatAt implements vfs.FilesystemImpl.StatAt.
 func (fs *Filesystem) StatAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.StatOptions) (linux.Statx, error) {
+	if rp.Done() && opts.Sync == linux.AT_STATX_DONT_SYNC {
+		return rp.Start().Impl().(*Dentry).inode.Stat(ctx, fs.VFSFilesystem(), opts)
+	}
+
 	fs.mu.RLock()
 	defer fs.processDeferredDecRefs(ctx)
 	defer fs.mu.RUnlock()

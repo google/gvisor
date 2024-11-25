@@ -109,6 +109,12 @@ type protocol struct {
 	synRetries                 uint8
 	dispatcher                 dispatcher
 
+	// probe, if not nil, will be invoked any time an endpoint receives a
+	// TCP segment.
+	//
+	// This is immutable after creation.
+	probe TCPProbeFunc `state:"nosave"`
+
 	// The following secrets are initialized once and stay unchanged after.
 	seqnumSecret   [16]byte
 	tsOffsetSecret [16]byte
@@ -520,7 +526,19 @@ func (*protocol) Parse(pkt *stack.PacketBuffer) bool {
 
 // NewProtocol returns a TCP transport protocol with Reno congestion control.
 func NewProtocol(s *stack.Stack) stack.TransportProtocol {
-	return newProtocol(s, ccReno)
+	return newProtocol(s, ccReno, nil)
+}
+
+// NewProtocolProbe returns a TCP transport protocol with Reno congestion
+// control and the given probe.
+//
+// The probe will be invoked on every segment received by TCP endpoints. The
+// probe function is passed a copy of the TCP endpoint state before and after
+// processing of the segment.
+func NewProtocolProbe(probe TCPProbeFunc) func(*stack.Stack) stack.TransportProtocol {
+	return func(s *stack.Stack) stack.TransportProtocol {
+		return newProtocol(s, ccReno, probe)
+	}
 }
 
 // NewProtocolCUBIC returns a TCP transport protocol with CUBIC congestion
@@ -528,10 +546,10 @@ func NewProtocol(s *stack.Stack) stack.TransportProtocol {
 //
 // TODO(b/345835636): Remove this and make CUBIC the default across the board.
 func NewProtocolCUBIC(s *stack.Stack) stack.TransportProtocol {
-	return newProtocol(s, ccCubic)
+	return newProtocol(s, ccCubic, nil)
 }
 
-func newProtocol(s *stack.Stack, cc string) stack.TransportProtocol {
+func newProtocol(s *stack.Stack, cc string, probe TCPProbeFunc) stack.TransportProtocol {
 	rng := s.SecureRNG()
 	var seqnumSecret [16]byte
 	var tsOffsetSecret [16]byte
@@ -567,6 +585,7 @@ func newProtocol(s *stack.Stack, cc string) stack.TransportProtocol {
 		recovery:                   tcpip.TCPRACKLossDetection,
 		seqnumSecret:               seqnumSecret,
 		tsOffsetSecret:             tsOffsetSecret,
+		probe:                      probe,
 	}
 	p.dispatcher.init(s.InsecureRNG(), runtime.GOMAXPROCS(0))
 	return &p

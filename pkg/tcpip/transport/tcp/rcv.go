@@ -21,7 +21,6 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/seqnum"
-	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
 // receiver holds the state necessary to receive TCP segments and turn them
@@ -29,7 +28,7 @@ import (
 //
 // +stateify savable
 type receiver struct {
-	stack.TCPReceiverState
+	TCPReceiverState
 	ep *Endpoint
 
 	// rcvWnd is the non-scaled receive window last advertised to the peer.
@@ -55,7 +54,7 @@ type receiver struct {
 func newReceiver(ep *Endpoint, irs seqnum.Value, rcvWnd seqnum.Size, rcvWndScale uint8) *receiver {
 	return &receiver{
 		ep: ep,
-		TCPReceiverState: stack.TCPReceiverState{
+		TCPReceiverState: TCPReceiverState{
 			RcvNxt:      irs + 1,
 			RcvAcc:      irs.Add(rcvWnd + 1),
 			RcvWndScale: rcvWndScale,

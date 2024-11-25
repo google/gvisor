@@ -22,7 +22,6 @@ import (
 	"strings"
 
 	"gvisor.dev/gvisor/pkg/abi/nvgpu"
-	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
 	"gvisor.dev/gvisor/pkg/sync"
 )
 
@@ -172,11 +171,6 @@ func addDriverABI(major, minor, patch int, runfileChecksum string, cons driverAB
 // Init initializes abis global map.
 func Init() {
 	abisOnce.Do(func() {
-		// Shorthands for capabilities, to keep the code below readable.
-		const (
-			compUtil = nvconf.CapCompute | nvconf.CapUtility
-		)
-
 		v535_104_05 := func() *driverABI {
 			// Since there is no parent to inherit from, the driverABI needs to be
 			// constructed with the entirety of the nvproxy functionality.

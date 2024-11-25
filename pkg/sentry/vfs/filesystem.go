@@ -365,6 +365,10 @@ type FilesystemImpl interface {
 	SetStatAt(ctx context.Context, rp *ResolvingPath, opts SetStatOptions) error
 
 	// StatAt returns metadata for the file at rp.
+	//
+	// If rp.Done() (i.e. rp refers to the dentry rp.Start()) and opts.Sync ==
+	// linux.AT_STATX_DONT_SYNC, StatAt cannot take locks preceding
+	// memmap.MappingIdentity locks.
 	StatAt(ctx context.Context, rp *ResolvingPath, opts StatOptions) (linux.Statx, error)
 
 	// StatFSAt returns metadata for the filesystem containing the file at rp.
