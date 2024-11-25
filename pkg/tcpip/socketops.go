@@ -263,6 +263,10 @@ type SocketOptions struct {
 	// rcvlowat specifies the minimum number of bytes which should be
 	// received to indicate the socket as readable.
 	rcvlowat atomicbitops.Int32
+
+	// experimentOptionValue is the value set for the IP option experiment header
+	// if it is not zero.
+	experimentOptionValue atomicbitops.Uint32
 }
 
 // InitHandler initializes the handler. This must be called before using the
@@ -537,6 +541,17 @@ func (so *SocketOptions) SetLinger(linger LingerOption) {
 	so.mu.Lock()
 	so.linger = linger
 	so.mu.Unlock()
+}
+
+// GetExperimentOptionValue gets value for the experiment IP option header.
+func (so *SocketOptions) GetExperimentOptionValue() uint16 {
+	v := so.experimentOptionValue.Load()
+	return uint16(v)
+}
+
+// SetExperimentOptionValue sets the value for the experiment IP option header.
+func (so *SocketOptions) SetExperimentOptionValue(v uint16) {
+	so.experimentOptionValue.Store(uint32(v))
 }
 
 // SockErrOrigin represents the constants for error origin.

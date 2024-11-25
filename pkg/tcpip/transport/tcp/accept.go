@@ -526,13 +526,14 @@ func (e *Endpoint) handleListenSegment(ctx *listenContext, s *segment) tcpip.Err
 		}
 		cookie := ctx.createCookie(s.id, s.sequenceNumber, encodeMSS(opts.MSS))
 		fields := tcpFields{
-			id:     s.id,
-			ttl:    calculateTTL(route, e.ipv4TTL, e.ipv6HopLimit),
-			tos:    e.sendTOS,
-			flags:  header.TCPFlagSyn | header.TCPFlagAck,
-			seq:    cookie,
-			ack:    s.sequenceNumber + 1,
-			rcvWnd: ctx.rcvWnd,
+			id:        s.id,
+			ttl:       calculateTTL(route, e.ipv4TTL, e.ipv6HopLimit),
+			tos:       e.sendTOS,
+			flags:     header.TCPFlagSyn | header.TCPFlagAck,
+			seq:       cookie,
+			ack:       s.sequenceNumber + 1,
+			rcvWnd:    ctx.rcvWnd,
+			expOptVal: e.SocketOptions().GetExperimentOptionValue(),
 		}
 		if err := e.sendSynTCP(route, fields, synOpts); err != nil {
 			return err

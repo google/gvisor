@@ -235,14 +235,19 @@ func replyWithReset(st *stack.Stack, s *segment, tos, ipv4TTL uint8, ipv6HopLimi
 
 	p := stack.NewPacketBuffer(stack.PacketBufferOptions{ReserveHeaderBytes: header.TCPMinimumSize + int(route.MaxHeaderLength())})
 	defer p.DecRef()
+	var expOptVal uint16
+	if s.ep != nil {
+		expOptVal = s.ep.SocketOptions().GetExperimentOptionValue()
+	}
 	return sendTCP(route, tcpFields{
-		id:     s.id,
-		ttl:    ttl,
-		tos:    tos,
-		flags:  flags,
-		seq:    seq,
-		ack:    ack,
-		rcvWnd: 0,
+		id:        s.id,
+		ttl:       ttl,
+		tos:       tos,
+		flags:     flags,
+		seq:       seq,
+		ack:       ack,
+		rcvWnd:    0,
+		expOptVal: expOptVal,
 	}, p, stack.GSO{}, nil /* PacketOwner */)
 }
 
