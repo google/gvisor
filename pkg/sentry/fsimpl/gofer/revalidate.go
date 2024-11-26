@@ -239,6 +239,9 @@ func (d *dentry) invalidate(ctx context.Context, vfsObj *vfs.VirtualFilesystem, 
 			rc.DecRef(ctx)
 		}
 		d.decRefNoCaching()
+		if d.isSynthetic() || d.endpoint != nil {
+			d.decRefNoCaching()
+		}
 
 		// Re-evaluate its caching status (i.e. if it has 0 references, drop it).
 		// The dentry will be reloaded next time it's accessed.
@@ -253,7 +256,6 @@ func (d *dentry) invalidate(ctx context.Context, vfsObj *vfs.VirtualFilesystem, 
 // +checklocks:parent.childrenMu
 func (d *dentry) deleteSynthetic(parent *dentry, ds **[]*dentry) {
 	d.setDeleted()
-	d.decRefNoCaching()
 	*ds = appendDentry(*ds, d)
 	parent.syntheticChildren--
 	parent.clearDirentsLocked()

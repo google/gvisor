@@ -528,8 +528,10 @@ func (d *directfsDentry) bindAt(ctx context.Context, name string, creds *auth.Cr
 		hbep.ResetBoundSocketFD(ctx)
 		return nil, err
 	}
-	// Set the endpoint on the newly created child dentry.
+	// Set the endpoint on the newly created child dentry, and take the
+	// corresponding extra dentry reference.
 	child.endpoint = opts.Endpoint
+	child.IncRef()
 	return child, nil
 }
 

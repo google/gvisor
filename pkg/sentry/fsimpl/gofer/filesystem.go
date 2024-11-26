@@ -717,6 +717,8 @@ func (fs *filesystem) unlinkAt(ctx context.Context, rp *vfs.ResolvingPath, dir b
 		if child.isSynthetic() {
 			parent.syntheticChildren--
 			child.decRefNoCaching()
+		} else if child.endpoint != nil {
+			child.decRefNoCaching()
 		}
 		ds = appendDentry(ds, child)
 	}
@@ -1507,6 +1509,8 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 		replaced.setDeleted()
 		if replaced.isSynthetic() {
 			newParent.syntheticChildren--
+			replaced.decRefNoCaching()
+		} else if replaced.endpoint != nil {
 			replaced.decRefNoCaching()
 		}
 		ds = appendDentry(ds, replaced)

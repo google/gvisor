@@ -722,7 +722,7 @@ func (fs *filesystem) Release(ctx context.Context) {
 	// root dentry failed in GetFilesystem.
 	if refs.GetLeakMode() != refs.NoLeakChecking && fs.root != nil {
 		fs.renameMu.Lock()
-		fs.root.releaseSyntheticRecursiveLocked(ctx)
+		fs.root.releaseExtraRefsRecursiveLocked(ctx)
 		fs.evictAllCachedDentriesLocked(ctx)
 		fs.renameMu.Unlock()
 
@@ -741,13 +741,14 @@ func (fs *filesystem) Release(ctx context.Context) {
 	fs.vfsfs.VirtualFilesystem().PutAnonBlockDevMinor(fs.devMinor)
 }
 
-// releaseSyntheticRecursiveLocked traverses the tree with root d and decrements
-// the reference count on every synthetic dentry. Synthetic dentries have one
-// reference for existence that should be dropped during filesystem.Release.
+// releaseExtraRefsRecursiveLocked traverses the tree with root d and
+// decrements the reference count on every synthetic dentry and dentry with
+// endpoint != nil. Such dentries have one reference for existence that should
+// be dropped during filesystem.Release.
 //
 // Precondition: d.fs.renameMu is locked for writing.
-func (d *dentry) releaseSyntheticRecursiveLocked(ctx context.Context) {
-	if d.isSynthetic() {
+func (d *dentry) releaseExtraRefsRecursiveLocked(ctx context.Context) {
+	if d.isSynthetic() || d.endpoint != nil {
 		d.decRefNoCaching()
 		d.checkCachingLocked(ctx, true /* renameMuWriteLocked */)
 	}
@@ -760,7 +761,7 @@ func (d *dentry) releaseSyntheticRecursiveLocked(ctx context.Context) {
 		d.childrenMu.Unlock()
 		for _, child := range children {
 			if child != nil {
-				child.releaseSyntheticRecursiveLocked(ctx)
+				child.releaseExtraRefsRecursiveLocked(ctx)
 			}
 		}
 	}
@@ -799,10 +800,12 @@ type dentry struct {
 
 	// refs is the reference count. Each dentry holds a reference on its
 	// parent, even if disowned. An additional reference is held on all
-	// synthetic dentries until they are unlinked or invalidated. When refs
-	// reaches 0, the dentry may be added to the cache or destroyed. If refs ==
-	// -1, the dentry has already been destroyed. refs is accessed using atomic
-	// memory operations.
+	// synthetic dentries, and all dentries for which endpoint is non-nil,
+	// until they are unlinked or invalidated. (Only a single additional
+	// reference is held on synthetic dentries that also have endpoint != nil.)
+	// When refs reaches 0, the dentry may be added to the cache or destroyed.
+	// If refs == -1, the dentry has already been destroyed. refs is accessed
+	// using atomic memory operations.
 	refs atomicbitops.Int64
 
 	// fs is the owning filesystem. fs is immutable.
@@ -984,8 +987,13 @@ type dentry struct {
 	haveTarget bool
 	target     string
 
-	// If this dentry represents a synthetic socket file, endpoint is the
-	// transport endpoint bound to this file.
+	// If this dentry represents a socket file, endpoint is the transport
+	// endpoint bound to this file.
+	//
+	// endpoint often originates from vfs.MknodOptions.Endpoint, in which case
+	// it can't be recovered if the dentry is evicted from the dentry cache.
+	// Consequently, an extra reference is held on dentries for which endpoint
+	// is non-nil to prevent eviction.
 	endpoint transport.BoundEndpoint
 
 	// If this dentry represents a synthetic named pipe, pipe is the pipe
