@@ -11,7 +11,9 @@ go_library(
         "path.go",
         "user.go",
     ],
-    visibility = ["//pkg/sentry:internal"],
+    visibility = [
+        "//visibility:public",
+    ],
     deps = [
         "//pkg/abi/linux",
         "//pkg/context",
