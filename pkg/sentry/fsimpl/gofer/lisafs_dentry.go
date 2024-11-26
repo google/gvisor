@@ -415,8 +415,10 @@ func (d *lisafsDentry) mknod(ctx context.Context, name string, creds *auth.Crede
 		hbep.ResetBoundSocketFD(ctx)
 		return nil, err
 	}
-	// Set the endpoint on the newly created child dentry.
+	// Set the endpoint on the newly created child dentry, and take the
+	// corresponding extra dentry reference.
 	child.endpoint = opts.Endpoint
+	child.IncRef()
 	return child, nil
 }
 
