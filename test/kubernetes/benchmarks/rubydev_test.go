@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package stablediffusion
+package rubydev
 
 import (
 	"context"
@@ -22,22 +22,23 @@ import (
 	"gvisor.dev/gvisor/test/kubernetes/testcluster"
 )
 
-func TestStableDiffusionXL(t *testing.T) {
+// TestRubyDev benchmarks a build job on k8s clusters.
+func TestRubyDev(t *testing.T) {
 	ctx := context.Background()
 	k8sCtx, err := k8sctx.Context(ctx)
 	if err != nil {
 		t.Fatalf("Failed to get kubernetes context: %v", err)
 	}
 	k8sCtx.ForEachCluster(ctx, t, func(cluster *testcluster.TestCluster) {
-		t.Run("stable_diffusion_xl", func(t *testing.T) {
+		t.Run("RubyDev", func(t *testing.T) {
 			t.Parallel()
-			RunStableDiffusionXL(ctx, t, k8sCtx, cluster)
+			RunRubyDev(ctx, t, k8sCtx, cluster)
 		})
 	})
 }
 
 func TestMain(m *testing.M) {
 	k8sctx.TestMain(m, map[string]k8sctx.TestFunc{
-		"TestStableDiffusionXL": TestStableDiffusionXL,
+		"TestRubyDev": TestRubyDev,
 	})
 }

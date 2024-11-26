@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package ruby_dev_test holds a benchmark to time a build job of a ruby application.
-package ruby_dev_test
+// Package rubydev holds a benchmark to time a build job of a ruby application.
+package rubydev
 
 import (
 	"bytes"
@@ -40,22 +40,9 @@ const (
 	imageARM             = k8s.ImageRepoPrefix + "benchmarks/rubydev_aarch64:latest"
 )
 
-// TestRubyDev benchmarks a build job on k8s clusters.
-func TestRubyDev(t *testing.T) {
-	ctx := context.Background()
-	k8sCtx, err := k8sctx.Context(ctx)
-	if err != nil {
-		t.Fatalf("Failed to get kubernetes context: %v", err)
-	}
-	k8sCtx.ForEachCluster(ctx, t, func(cluster *testcluster.TestCluster) {
-		t.Run("RubyDev", func(t *testing.T) {
-			t.Parallel()
-			doRubyDevTest(ctx, t, k8sCtx, cluster)
-		})
-	})
-}
-
-func doRubyDevTest(ctx context.Context, t *testing.T, k8sCtx k8sctx.KubernetesContext, cluster *testcluster.TestCluster) {
+// RunRubyDev runs a benchmark measuring the time to build and test a
+// popular Ruby library.
+func RunRubyDev(ctx context.Context, t *testing.T, k8sCtx k8sctx.KubernetesContext, cluster *testcluster.TestCluster) {
 	benchmarkNS := cluster.Namespace(testcluster.NamespaceBenchmark)
 	if err := benchmarkNS.Reset(ctx); err != nil {
 		t.Fatalf("cannot reset namespace: %v", err)
@@ -217,10 +204,4 @@ func newRubyDevPod(namespace *testcluster.Namespace, name, image string, volume 
 			RestartPolicy: v13.RestartPolicyNever,
 		},
 	}
-}
-
-func TestMain(m *testing.M) {
-	k8sctx.TestMain(m, map[string]k8sctx.TestFunc{
-		"TestRubyDev": TestRubyDev,
-	})
 }

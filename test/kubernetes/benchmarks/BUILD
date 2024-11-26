@@ -1,4 +1,4 @@
-load("//tools:defs.bzl", "go_test", "pkg_tar")
+load("//tools:defs.bzl", "go_library", "go_test")
 
 package(
     default_applicable_licenses = ["//:license"],
@@ -30,28 +30,11 @@ filegroup(
     srcs = _ALL_BENCHMARK_TARGETS,
 )
 
-[pkg_tar(
-    name = "%s_tar" % (src[src.index(":") + 1:],),
+go_library(
+    name = "abslbuild",
     testonly = True,
-    srcs = [src],
-    extension = "tar.bz2",
-) for src in _ALL_BENCHMARK_TARGETS]
-
-filegroup(
-    name = "all_benchmark_test_binaries_tar",
-    testonly = True,
-    srcs = ["%s_tar" % (src[src.index(":") + 1:],) for src in _ALL_BENCHMARK_TARGETS],
-)
-
-go_test(
-    name = "abslbuild_test",
-    srcs = ["abslbuild_test.go"],
+    srcs = ["abslbuild.go"],
     nogo = False,
-    tags = [
-        "local",
-        "noguitar",
-        "notap",
-    ],
     deps = [
         "//test/kubernetes",
         "//test/kubernetes/benchmarks/profiling",
@@ -64,14 +47,26 @@ go_test(
 )
 
 go_test(
-    name = "startup_test",
-    srcs = ["startup_test.go"],
+    name = "abslbuild_test",
+    srcs = ["abslbuild_test.go"],
+    library = ":abslbuild",
     nogo = False,
     tags = [
         "local",
         "noguitar",
         "notap",
     ],
+    deps = [
+        "//test/kubernetes/k8sctx",
+        "//test/kubernetes/testcluster",
+    ],
+)
+
+go_library(
+    name = "startup",
+    testonly = True,
+    srcs = ["startup.go"],
+    nogo = False,
     deps = [
         "//test/kubernetes/benchmarks/profiling",
         "//test/kubernetes/benchmetric",
@@ -82,14 +77,26 @@ go_test(
 )
 
 go_test(
-    name = "redis_test",
-    srcs = ["redis_test.go"],
+    name = "startup_test",
+    srcs = ["startup_test.go"],
+    library = ":startup",
     nogo = False,
     tags = [
         "local",
         "noguitar",
         "notap",
     ],
+    deps = [
+        "//test/kubernetes/k8sctx",
+        "//test/kubernetes/testcluster",
+    ],
+)
+
+go_library(
+    name = "redis",
+    testonly = True,
+    srcs = ["redis.go"],
+    nogo = False,
     deps = [
         "//test/kubernetes",
         "//test/kubernetes/benchmarks/profiling",
@@ -102,8 +109,9 @@ go_test(
 )
 
 go_test(
-    name = "ruby_dev_test",
-    srcs = ["ruby_dev_test.go"],
+    name = "redis_test",
+    srcs = ["redis_test.go"],
+    library = ":redis",
     nogo = False,
     tags = [
         "local",
@@ -111,7 +119,17 @@ go_test(
         "notap",
     ],
     deps = [
-        "//test/benchmarks/tools",
+        "//test/kubernetes/k8sctx",
+        "//test/kubernetes/testcluster",
+    ],
+)
+
+go_library(
+    name = "ffmpeg",
+    testonly = True,
+    srcs = ["ffmpeg.go"],
+    nogo = False,
+    deps = [
         "//test/kubernetes",
         "//test/kubernetes/benchmarks/profiling",
         "//test/kubernetes/benchmetric",
@@ -125,12 +143,24 @@ go_test(
 go_test(
     name = "ffmpeg_test",
     srcs = ["ffmpeg_test.go"],
+    library = ":ffmpeg",
     nogo = False,
     tags = [
         "local",
         "noguitar",
         "notap",
     ],
+    deps = [
+        "//test/kubernetes/k8sctx",
+        "//test/kubernetes/testcluster",
+    ],
+)
+
+go_library(
+    name = "grpc",
+    testonly = True,
+    srcs = ["grpc.go"],
+    nogo = False,
     deps = [
         "//test/kubernetes",
         "//test/kubernetes/benchmarks/profiling",
@@ -145,6 +175,7 @@ go_test(
 go_test(
     name = "grpc_test",
     srcs = ["grpc_test.go"],
+    library = ":grpc",
     nogo = False,
     tags = [
         "local",
@@ -152,25 +183,16 @@ go_test(
         "notap",
     ],
     deps = [
-        "//test/kubernetes",
-        "//test/kubernetes/benchmarks/profiling",
-        "//test/kubernetes/benchmetric",
         "//test/kubernetes/k8sctx",
         "//test/kubernetes/testcluster",
-        "@io_k8s_api//core/v1:go_default_library",
-        "@io_k8s_apimachinery//pkg/apis/meta/v1:go_default_library",
     ],
 )
 
-go_test(
-    name = "nginx_test",
-    srcs = ["nginx_test.go"],
+go_library(
+    name = "nginx",
+    testonly = True,
+    srcs = ["nginx.go"],
     nogo = False,
-    tags = [
-        "local",
-        "noguitar",
-        "notap",
-    ],
     deps = [
         "//test/kubernetes",
         "//test/kubernetes/benchmarks/httpbench",
@@ -179,6 +201,37 @@ go_test(
         "//test/kubernetes/testcluster",
         "@io_k8s_api//core/v1:go_default_library",
         "@io_k8s_apimachinery//pkg/apis/meta/v1:go_default_library",
+        "@io_k8s_apimachinery//pkg/util/intstr:go_default_library",
+    ],
+)
+
+go_test(
+    name = "nginx_test",
+    srcs = ["nginx_test.go"],
+    library = ":nginx",
+    nogo = False,
+    tags = [
+        "local",
+        "noguitar",
+        "notap",
+    ],
+    deps = [
+        "//test/kubernetes/k8sctx",
+        "//test/kubernetes/testcluster",
+    ],
+)
+
+go_library(
+    name = "postgresql",
+    testonly = True,
+    srcs = ["postgresql.go"],
+    nogo = False,
+    deps = [
+        "//test/kubernetes/benchmarks/profiling",
+        "//test/kubernetes/benchmetric",
+        "//test/kubernetes/k8sctx",
+        "//test/kubernetes/testcluster",
+        "@io_k8s_api//core/v1:go_default_library",
         "@io_k8s_apimachinery//pkg/util/intstr:go_default_library",
     ],
 )
@@ -186,6 +239,7 @@ go_test(
 go_test(
     name = "postgresql_test",
     srcs = ["postgresql_test.go"],
+    library = ":postgresql",
     nogo = False,
     tags = [
         "local",
@@ -193,24 +247,16 @@ go_test(
         "notap",
     ],
     deps = [
-        "//test/kubernetes/benchmarks/profiling",
-        "//test/kubernetes/benchmetric",
         "//test/kubernetes/k8sctx",
         "//test/kubernetes/testcluster",
-        "@io_k8s_api//core/v1:go_default_library",
-        "@io_k8s_apimachinery//pkg/util/intstr:go_default_library",
     ],
 )
 
-go_test(
-    name = "tensorflow_test",
-    srcs = ["tensorflow_test.go"],
+go_library(
+    name = "tensorflow",
+    testonly = True,
+    srcs = ["tensorflow.go"],
     nogo = False,
-    tags = [
-        "local",
-        "noguitar",
-        "notap",
-    ],
     deps = [
         "//test/kubernetes",
         "//test/kubernetes/benchmarks/profiling",
@@ -223,14 +269,26 @@ go_test(
 )
 
 go_test(
-    name = "wordpress_test",
-    srcs = ["wordpress_test.go"],
+    name = "tensorflow_test",
+    srcs = ["tensorflow_test.go"],
+    library = ":tensorflow",
     nogo = False,
     tags = [
         "local",
         "noguitar",
         "notap",
     ],
+    deps = [
+        "//test/kubernetes/k8sctx",
+        "//test/kubernetes/testcluster",
+    ],
+)
+
+go_library(
+    name = "wordpress",
+    testonly = True,
+    srcs = ["wordpress.go"],
+    nogo = False,
     deps = [
         "//test/kubernetes/benchmarks/httpbench",
         "//test/kubernetes/benchmarks/profiling",
@@ -243,14 +301,26 @@ go_test(
 )
 
 go_test(
-    name = "pytorch_test",
-    srcs = ["pytorch_test.go"],
+    name = "wordpress_test",
+    srcs = ["wordpress_test.go"],
+    library = ":wordpress",
     nogo = False,
     tags = [
         "local",
         "noguitar",
         "notap",
     ],
+    deps = [
+        "//test/kubernetes/k8sctx",
+        "//test/kubernetes/testcluster",
+    ],
+)
+
+go_library(
+    name = "pytorch",
+    testonly = True,
+    srcs = ["pytorch.go"],
+    nogo = False,
     deps = [
         "//test/kubernetes",
         "//test/kubernetes/benchmarks/profiling",
@@ -262,17 +332,29 @@ go_test(
 )
 
 go_test(
-    name = "ollama_test",
-    srcs = ["ollama_test.go"],
-    embedsrcs = [
-        "//test/kubernetes/benchmarks/resources:files",  # keep
-    ],
+    name = "pytorch_test",
+    srcs = ["pytorch_test.go"],
+    library = ":pytorch",
     nogo = False,
     tags = [
         "local",
         "noguitar",
         "notap",
     ],
+    deps = [
+        "//test/kubernetes/k8sctx",
+        "//test/kubernetes/testcluster",
+    ],
+)
+
+go_library(
+    name = "ollama",
+    testonly = True,
+    srcs = ["ollama.go"],
+    embedsrcs = [
+        "//test/kubernetes/benchmarks/resources:files",  # keep
+    ],
+    nogo = False,
     deps = [
         "//test/gpu/ollama",
         "//test/kubernetes",
@@ -287,14 +369,26 @@ go_test(
 )
 
 go_test(
-    name = "stablediffusion_test",
-    srcs = ["stablediffusion_test.go"],
+    name = "ollama_test",
+    srcs = ["ollama_test.go"],
+    library = ":ollama",
     nogo = False,
     tags = [
         "local",
         "noguitar",
         "notap",
     ],
+    deps = [
+        "//test/kubernetes/k8sctx",
+        "//test/kubernetes/testcluster",
+    ],
+)
+
+go_library(
+    name = "stablediffusion",
+    testonly = True,
+    srcs = ["stablediffusion.go"],
+    nogo = False,
     deps = [
         "//test/gpu/stablediffusion",
         "//test/kubernetes",
@@ -307,8 +401,9 @@ go_test(
 )
 
 go_test(
-    name = "gsutil_test",
-    srcs = ["gsutil_test.go"],
+    name = "stablediffusion_test",
+    srcs = ["stablediffusion_test.go"],
+    library = ":stablediffusion",
     nogo = False,
     tags = [
         "local",
@@ -316,11 +411,70 @@ go_test(
         "notap",
     ],
     deps = [
+        "//test/kubernetes/k8sctx",
+        "//test/kubernetes/testcluster",
+    ],
+)
+
+go_library(
+    name = "gsutil",
+    testonly = True,
+    srcs = ["gsutil.go"],
+    nogo = False,
+    deps = [
         "//test/kubernetes/benchmarks/profiling",
         "//test/kubernetes/benchmetric",
         "//test/kubernetes/k8sctx",
         "//test/kubernetes/testcluster",
         "@io_k8s_api//core/v1:go_default_library",
         "@io_k8s_apimachinery//pkg/apis/meta/v1:go_default_library",
+    ],
+)
+
+go_test(
+    name = "gsutil_test",
+    srcs = ["gsutil_test.go"],
+    library = ":gsutil",
+    nogo = False,
+    tags = [
+        "local",
+        "noguitar",
+        "notap",
+    ],
+    deps = [
+        "//test/kubernetes/k8sctx",
+        "//test/kubernetes/testcluster",
+    ],
+)
+
+go_library(
+    name = "rubydev",
+    testonly = True,
+    srcs = ["rubydev.go"],
+    nogo = False,
+    deps = [
+        "//test/benchmarks/tools",
+        "//test/kubernetes",
+        "//test/kubernetes/benchmarks/profiling",
+        "//test/kubernetes/benchmetric",
+        "//test/kubernetes/k8sctx",
+        "//test/kubernetes/testcluster",
+        "@io_k8s_api//core/v1:go_default_library",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1:go_default_library",
+    ],
+)
+
+go_test(
+    name = "rubydev_test",
+    srcs = ["rubydev_test.go"],
+    library = ":rubydev",
+    tags = [
+        "local",
+        "noguitar",
+        "notap",
+    ],
+    deps = [
+        "//test/kubernetes/k8sctx",
+        "//test/kubernetes/testcluster",
     ],
 )
