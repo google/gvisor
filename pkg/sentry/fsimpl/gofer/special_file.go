@@ -482,6 +482,10 @@ func (fd *specialFileFD) Translate(ctx context.Context, required, optional memma
 
 // InvalidateUnsavable implements memmap.Mappable.InvalidateUnsavable.
 func (fd *specialFileFD) InvalidateUnsavable(ctx context.Context) error {
+	d := fd.dentry()
+	d.mapsMu.Lock()
+	defer d.mapsMu.Unlock()
+	d.mappings.InvalidateAll(memmap.InvalidateOpts{})
 	return nil
 }
 
