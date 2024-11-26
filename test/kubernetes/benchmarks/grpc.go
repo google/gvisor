@@ -53,9 +53,18 @@ func BuildGRPC(ctx context.Context, t *testing.T, k8sCtx k8sctx.KubernetesContex
 	}
 	defer cluster.DeletePersistentVolume(ctx, persistentVol)
 
-	image := imageAMD
-	if cluster.RuntimeTestNodepoolIsARM() {
+	testCPUArch, err := cluster.RuntimeTestNodepoolArchitecture(ctx)
+	if err != nil {
+		t.Fatalf("Failed to get runtime test nodepool architecture: %v", err)
+	}
+	var image string
+	switch testCPUArch {
+	case testcluster.CPUArchitectureX86:
+		image = imageAMD
+	case testcluster.CPUArchitectureARM:
 		image = imageARM
+	default:
+		t.Fatalf("Unsupported CPU architecture: %v", testCPUArch)
 	}
 	if image, err = k8sCtx.ResolveImage(ctx, image); err != nil {
 		t.Fatalf("Failed to resolve image: %v", err)
@@ -91,14 +100,14 @@ func BuildGRPC(ctx context.Context, t *testing.T, k8sCtx k8sctx.KubernetesContex
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			endProfiling, err := profiling.MaybeSetup(ctx, t, cluster, benchmarkNS)
+			endProfiling, err := profiling.MaybeSetup(ctx, t, k8sCtx, cluster, benchmarkNS)
 			if err != nil {
 				t.Fatalf("Failed to setup profiling: %v", err)
 			}
 			defer endProfiling()
 
 			pod := newGRPCPod(benchmarkNS, name, image, test.volume)
-			pod, err = cluster.ConfigurePodForRuntimeTestNodepool(pod)
+			pod, err = cluster.ConfigurePodForRuntimeTestNodepool(ctx, pod)
 			if err != nil {
 				t.Fatalf("Failed to set pod for test runtime: %v", err)
 			}

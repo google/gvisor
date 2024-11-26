@@ -43,6 +43,7 @@ import (
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/runsc/flag"
 	k8s "gvisor.dev/gvisor/test/kubernetes"
+	"gvisor.dev/gvisor/test/kubernetes/k8sctx"
 	"gvisor.dev/gvisor/test/kubernetes/testcluster"
 	"gvisor.dev/gvisor/test/metricsviz"
 	appsv1 "k8s.io/api/apps/v1"
@@ -203,17 +204,29 @@ func streamDir(dirPath string) operation {
 }
 
 // startsOperations starts the given operations in a DaemonSet.
-func startOperations(ctx context.Context, c *testcluster.TestCluster, ns *testcluster.Namespace, operations []operation) (*appsv1.DaemonSet, error) {
+func startOperations(ctx context.Context, k8sCtx k8sctx.KubernetesContext, c *testcluster.TestCluster, ns *testcluster.Namespace, operations []operation) (*appsv1.DaemonSet, error) {
 	ds := profileDSTemplate(c)
 	ds.Namespace = ns.Namespace
 	ds.ObjectMeta.Namespace = ns.Namespace
 	ds.Spec.Template.Namespace = ns.Namespace
 	ds.Spec.Template.ObjectMeta.Namespace = ns.Namespace
-	c.ConfigureDaemonSetForRuntimeTestNodepool(&ds)
+	c.ConfigureDaemonSetForRuntimeTestNodepool(ctx, &ds)
 	ds.Spec.Template.Spec.RuntimeClassName = nil // Must run unsandboxed.
-	image := profileHelperImageAMD64
-	if c.RuntimeTestNodepoolIsARM() {
+	var image string
+	testCPUArch, err := c.RuntimeTestNodepoolArchitecture(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to determine test CPU architecture: %w", err)
+	}
+	switch testCPUArch {
+	case testcluster.CPUArchitectureX86:
+		image = profileHelperImageAMD64
+	case testcluster.CPUArchitectureARM:
 		image = profileHelperImageARM64
+	default:
+		return nil, fmt.Errorf("unsupported CPU architecture: %q", testCPUArch)
+	}
+	if image, err = k8sCtx.ResolveImage(ctx, image); err != nil {
+		return nil, fmt.Errorf("failed to resolve image %q: %w", image, err)
 	}
 	for i, op := range operations {
 		name := op.name
@@ -247,6 +260,7 @@ func startOperations(ctx context.Context, c *testcluster.TestCluster, ns *testcl
 // profileRun encapsulates data about a profiling run.
 // It is used after the run completes so that profiles can be retrieved.
 type profileRun struct {
+	k8sCtx                k8sctx.KubernetesContext
 	c                     *testcluster.TestCluster
 	ns                    *testcluster.Namespace
 	localProfileDir       string
@@ -256,7 +270,7 @@ type profileRun struct {
 // MaybeSetup sets up profiling if requested. It returns a cleanup function.
 // If the returned error is nil, the cleanup function is non-nil and should be
 // called regardless of whether profiling is actually enabled or not.
-func MaybeSetup(ctx context.Context, t *testing.T, c *testcluster.TestCluster, ns *testcluster.Namespace) (func(), error) {
+func MaybeSetup(ctx context.Context, t *testing.T, k8sCtx k8sctx.KubernetesContext, c *testcluster.TestCluster, ns *testcluster.Namespace) (func(), error) {
 	profileDirName := fmt.Sprintf("%s.%s", t.Name(), time.Now().Format("20060102-150405"))
 	profileDirName = regexp.MustCompile("[^-_=.\\w]+").ReplaceAllString(profileDirName, ".")
 	hasGVisorRuntime, err := c.HasGVisorTestRuntime(ctx)
@@ -316,6 +330,7 @@ func MaybeSetup(ctx context.Context, t *testing.T, c *testcluster.TestCluster, n
 		}
 		cleanup = func() {
 			err := processProfileRun(ctx, t, &profileRun{
+				k8sCtx:                k8sCtx,
 				c:                     c,
 				ns:                    ns,
 				localProfileDir:       localProfileDir,
@@ -340,7 +355,7 @@ func MaybeSetup(ctx context.Context, t *testing.T, c *testcluster.TestCluster, n
 	if len(setupCommands) > 0 {
 		setupCtx, setupCancel := context.WithTimeout(ctx, 2*time.Minute)
 		defer setupCancel()
-		ds, err := startOperations(setupCtx, c, ns, setupCommands)
+		ds, err := startOperations(setupCtx, k8sCtx, c, ns, setupCommands)
 		if err != nil {
 			return nil, err
 		}
@@ -359,7 +374,7 @@ func processProfileRun(ctx context.Context, t *testing.T, run *profileRun) error
 	beforeSpawn := metav1.NewTime(time.Now())
 	retrievalCtx, retrievalCancel := context.WithCancel(ctx)
 	defer retrievalCancel()
-	ds, err := startOperations(retrievalCtx, run.c, run.ns, []operation{
+	ds, err := startOperations(retrievalCtx, run.k8sCtx, run.c, run.ns, []operation{
 		dirOp,
 		setFlag("profile", "false"),
 		removeFlag("profile-cpu"),

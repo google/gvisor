@@ -66,7 +66,7 @@ func (r *kubernetesPodRunner) Run(ctx context.Context, image string, argv []stri
 			RestartPolicy: v13.RestartPolicyNever,
 		},
 	}
-	stableDiffusionXLPod, err := r.cluster.ConfigurePodForRuntimeTestNodepool(stableDiffusionXLPod)
+	stableDiffusionXLPod, err := r.cluster.ConfigurePodForRuntimeTestNodepool(ctx, stableDiffusionXLPod)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to configure pod: %v", err)
 	}

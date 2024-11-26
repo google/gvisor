@@ -62,12 +62,20 @@ func BenchmarkNginx(ctx context.Context, t *testing.T, k8sCtx k8sctx.KubernetesC
 	}
 	defer benchmarkNS.Cleanup(ctx)
 
-	nginxImage := nginxImageAMD
-	if cluster.RuntimeTestNodepoolIsARM() {
-		nginxImage = nginxImageARM
-	}
-	nginxImage, err := k8sCtx.ResolveImage(ctx, nginxImage)
+	testCPUArch, err := cluster.RuntimeTestNodepoolArchitecture(ctx)
 	if err != nil {
+		t.Fatalf("Failed to get runtime test nodepool architecture: %v", err)
+	}
+	var nginxImage string
+	switch testCPUArch {
+	case testcluster.CPUArchitectureX86:
+		nginxImage = nginxImageAMD
+	case testcluster.CPUArchitectureARM:
+		nginxImage = nginxImageARM
+	default:
+		t.Fatalf("Unsupported CPU architecture: %v", testCPUArch)
+	}
+	if nginxImage, err = k8sCtx.ResolveImage(ctx, nginxImage); err != nil {
 		t.Fatalf("Failed to resolve image: %v", err)
 	}
 
@@ -114,7 +122,7 @@ func BenchmarkNginx(ctx context.Context, t *testing.T, k8sCtx k8sctx.KubernetesC
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			endProfiling, err := profiling.MaybeSetup(ctx, t, cluster, benchmarkNS)
+			endProfiling, err := profiling.MaybeSetup(ctx, t, k8sCtx, cluster, benchmarkNS)
 			if err != nil {
 				t.Fatalf("Failed to setup profiling: %v", err)
 			}
@@ -123,7 +131,7 @@ func BenchmarkNginx(ctx context.Context, t *testing.T, k8sCtx k8sctx.KubernetesC
 			name := fmt.Sprintf("nginx-%s", test.suffix)
 
 			server := newNginxServer(benchmarkNS, name, nginxImage, test.volume)
-			server, err = cluster.ConfigurePodForRuntimeTestNodepool(server)
+			server, err = cluster.ConfigurePodForRuntimeTestNodepool(ctx, server)
 			if err != nil {
 				t.Fatalf("Failed to configure pod for runtime nodepool: %v", err)
 			}

@@ -164,7 +164,7 @@ func (ops *ollamaPodServer) InstrumentedRequest(ctx context.Context, argvFn func
 			RestartPolicy: v13.RestartPolicyNever,
 		},
 	}
-	clientPod, err := ops.cluster.ConfigurePodForClientNodepool(clientPod)
+	clientPod, err := ops.cluster.ConfigurePodForClientNodepool(ctx, clientPod)
 	if err != nil {
 		return nil, fmt.Errorf("failed to configure pod: %v", err)
 	}
@@ -245,7 +245,7 @@ func BenchmarkOllama(ctx context.Context, t *testing.T, k8sCtx k8sctx.Kubernetes
 	if err != nil {
 		t.Fatalf("Failed to resolve image: %v", err)
 	}
-	ollamaPod, err := cluster.ConfigurePodForRuntimeTestNodepool(newOllamaServerPod(benchmarkNS, serverImage))
+	ollamaPod, err := cluster.ConfigurePodForRuntimeTestNodepool(ctx, newOllamaServerPod(benchmarkNS, serverImage))
 	if err != nil {
 		t.Fatalf("Failed to configure pod for runtime nodepool: %v", err)
 	}

@@ -48,7 +48,7 @@ var workloads = map[string]string{
 // RunTensorflowOnCPU runs the Tensorflow example workloads on CPU.
 func RunTensorflowOnCPU(ctx context.Context, t *testing.T, k8sCtx k8sctx.KubernetesContext, cluster *testcluster.TestCluster) {
 	benchmarkNS := cluster.Namespace(testcluster.NamespaceBenchmark)
-	endProfiling, err := profiling.MaybeSetup(ctx, t, cluster, benchmarkNS)
+	endProfiling, err := profiling.MaybeSetup(ctx, t, k8sCtx, cluster, benchmarkNS)
 	if err != nil {
 		t.Fatalf("Failed to setup profiling: %v", err)
 	}
@@ -64,9 +64,18 @@ func RunTensorflowOnCPU(ctx context.Context, t *testing.T, k8sCtx k8sctx.Kuberne
 		t.Fatalf("Failed to initialize benchmark recorder: %v", err)
 	}
 
-	image := imageAMD
-	if cluster.RuntimeTestNodepoolIsARM() {
+	testCPUArch, err := cluster.RuntimeTestNodepoolArchitecture(ctx)
+	if err != nil {
+		t.Fatalf("Failed to get runtime test nodepool architecture: %v", err)
+	}
+	var image string
+	switch testCPUArch {
+	case testcluster.CPUArchitectureX86:
+		image = imageAMD
+	case testcluster.CPUArchitectureARM:
 		image = imageARM
+	default:
+		t.Fatalf("Unsupported CPU architecture: %v", testCPUArch)
 	}
 	if image, err = k8sCtx.ResolveImage(ctx, image); err != nil {
 		t.Fatalf("Failed to resolve image: %v", err)
@@ -85,7 +94,7 @@ func RunTensorflowOnCPU(ctx context.Context, t *testing.T, k8sCtx k8sctx.Kuberne
 		workloadName := workloadPathToName[workloadPath]
 		t.Run(workloadName, func(t *testing.T) {
 			pod := newTensorflowOnCPUPod(benchmarkNS, name, image, workloadPath)
-			pod, err := cluster.ConfigurePodForRuntimeTestNodepool(pod)
+			pod, err := cluster.ConfigurePodForRuntimeTestNodepool(ctx, pod)
 			if err != nil {
 				t.Fatalf("Failed to set pod for test runtime: %v", err)
 			}

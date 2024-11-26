@@ -59,9 +59,18 @@ func RunRubyDev(ctx context.Context, t *testing.T, k8sCtx k8sctx.KubernetesConte
 	}
 	defer cluster.DeletePersistentVolume(ctx, persistentVol)
 
-	image := imageAMD
-	if cluster.RuntimeTestNodepoolIsARM() {
+	testCPUArch, err := cluster.RuntimeTestNodepoolArchitecture(ctx)
+	if err != nil {
+		t.Fatalf("Failed to get runtime test nodepool architecture: %v", err)
+	}
+	var image string
+	switch testCPUArch {
+	case testcluster.CPUArchitectureX86:
+		image = imageAMD
+	case testcluster.CPUArchitectureARM:
 		image = imageARM
+	default:
+		t.Fatalf("Unsupported CPU architecture: %v", testCPUArch)
 	}
 	if image, err = k8sCtx.ResolveImage(ctx, image); err != nil {
 		t.Fatalf("failed to resolve image: %v", err)
@@ -96,14 +105,14 @@ func RunRubyDev(ctx context.Context, t *testing.T, k8sCtx k8sctx.KubernetesConte
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			endProfiling, err := profiling.MaybeSetup(ctx, t, cluster, benchmarkNS)
+			endProfiling, err := profiling.MaybeSetup(ctx, t, k8sCtx, cluster, benchmarkNS)
 			if err != nil {
 				t.Fatalf("Failed to setup profiling: %v", err)
 			}
 			defer endProfiling()
 			// create a new RubyDevPod and set it to run on the runtime under test nodepool.
 			pod := newRubyDevPod(benchmarkNS, name, image, test.volume)
-			pod, err = cluster.ConfigurePodForRuntimeTestNodepool(pod)
+			pod, err = cluster.ConfigurePodForRuntimeTestNodepool(ctx, pod)
 			if err != nil {
 				t.Fatalf("failed to configure pod for test runtime node: %v", err)
 			}

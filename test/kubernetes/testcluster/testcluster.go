@@ -20,13 +20,13 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"reflect"
 	"strconv"
 	"strings"
 	"time"
 
 	"golang.org/x/sync/errgroup"
 	cspb "google.golang.org/genproto/googleapis/container/v1"
+	"gvisor.dev/gvisor/pkg/sync"
 	testpb "gvisor.dev/gvisor/test/kubernetes/test_range_config_go_proto"
 	appsv1 "k8s.io/api/apps/v1"
 	v13 "k8s.io/api/core/v1"
@@ -40,8 +40,6 @@ import (
 const (
 	// archKey is given to nodepools to mark their architecture. Used here to mark ARM nodepools.
 	archKey = "kubernetes.io/arch"
-	// armValue marks an ARM nodepool.
-	armValue = "arm64"
 
 	// k8sApp is used as a label to distinguish between applications.
 	k8sApp = "k8s-app"
@@ -59,18 +57,21 @@ const (
 	NamespaceBenchmark = "benchmark"
 )
 
+// NodePoolType is the type of a NodePool.
+type NodePoolType string
+
 // Nodepool names.
 const (
 	// TestRuntimeNodepoolName is the value that marks a "test-runtime-nodepool", or a nodepool where
 	// w/ the runtime under test.
-	TestRuntimeNodepoolName = "test-runtime-nodepool"
+	TestRuntimeNodepoolName NodePoolType = "test-runtime-nodepool"
 	// ClientNodepoolName is the value that marks a client nodepool. Usually this is a plain GKE
 	// nodepool
-	ClientNodepoolName = "client-nodepool"
+	ClientNodepoolName NodePoolType = "client-nodepool"
 	// TertiaryNodepoolName is the value that marks the tertiary nodepool.
 	// This could either be a plain GKE nodepool or could be gVisor-enabled,
 	// as configured during test range creation.
-	TertiaryNodepoolName = "tertiary-nodepool"
+	TertiaryNodepoolName NodePoolType = "tertiary-nodepool"
 )
 
 // Nodepool keys.
@@ -83,8 +84,8 @@ const (
 	NodepoolNumAcceleratorsKey = "num-accelerators"
 	// NodepoolTPUTopologyKey is the key to mark the TPU topology used by a nodepool.
 	NodepoolTPUTopologyKey = "tpu-topology"
-	// Name of the nodepool key used in Pod.Spec.NodeSelector.
-	NodePoolSelectorKey = "cloud.google.com/gke-nodepool"
+	// NodepoolInstanceTypeKey is the key to mark the instance type used by a nodepool.
+	NodepoolInstanceTypeKey = "node.kubernetes.io/instance-type"
 	// Name of the TPU accelerator key used in Pod.Spec.NodeSelector.
 	NodepoolTPUAcceleratorSelectorKey = "cloud.google.com/gke-tpu-accelerator"
 	// Name of the TPU topology key used in Pod.Spec.NodeSelector.
@@ -111,6 +112,17 @@ const (
 	gvisorRuntimeClass = "gvisor"
 )
 
+// CPUArchitecture is the CPU architecture of a node.
+// It is stored under the archKey label in node labels.
+type CPUArchitecture string
+
+const (
+	// CPUArchitectureX86 is the x86 CPU architecture.
+	CPUArchitectureX86 = CPUArchitecture("amd64")
+	// CPUArchitectureARM is the ARM CPU architecture.
+	CPUArchitectureARM = CPUArchitecture("arm64")
+)
+
 // AcceleratorType is the gpu type to be used.
 type AcceleratorType string
 
@@ -124,40 +136,58 @@ const (
 
 // TestCluster wraps clusters with their individual ClientSets so that helper methods can be called.
 type TestCluster struct {
-	cluster *testpb.Cluster
-	client  kubernetes.Interface
+	clusterName string
+	client      kubernetes.Interface
 
 	// testNodepoolRuntimeOverride, if set, overrides the runtime used for pods
 	// running on the test nodepool. If unset, the test nodepool's default
 	// runtime is used.
 	testNodepoolRuntimeOverride RuntimeType
+
+	// nodepoolsMu controls the initialization of `nodepools`.
+	nodepoolsMu sync.Mutex
+
+	// nodepools is a map of NodePools that exist in this cluster.
+	// It is nil by default and initialized lazily.
+	nodepools map[NodePoolType]*NodePool
 }
 
-type testClusterConstructorKey int
+// NodePool is a set of nodes in a TestCluster.
+// These nodes share a set of relevant labels and are used to segment the
+// set of nodes in a Kubernetes cluster.
+// In the context of Kubernetes tests and benchmarks, these pools are used
+// to separate where workloads of each type schedule and run.
+// NodePools are expected to be uniform (i.e. same amount of resources and
+// reasonably similar hardware) so that simple pod scheduling can determine
+// where to consume resources.
+type NodePool struct {
+	// nodePoolType is the type of the nodepool.
+	// It is used to identify the nodes in the cluster, and therefore as a
+	// scheduling constraint for pods to run exclusively on these nodes.
+	nodePooltype NodePoolType
 
-const (
-	// testClusterConstructor is the key for the context value that holds the
-	// constructor function for TestCluster.
-	// Defaults to newTestCluster.
-	testClusterConstructor testClusterConstructorKey = iota
-)
+	// runtime is the container runtime to use when scheduling pods on this
+	// nodepool by default.
+	runtime RuntimeType
 
-// WithTestClusterConstructor returns a context that contains a custom
-// constructor for TestCluster.
-func WithTestClusterConstructor(ctx context.Context, constructor func(context.Context, *testpb.Cluster) (*TestCluster, error)) context.Context {
-	return context.WithValue(ctx, testClusterConstructor, constructor)
+	// cpuArchitecture is the CPU architecture of nodes in the nodepool.
+	cpuArchitecture CPUArchitecture
+
+	// acceleratorType is the accelerator type present on nodes in the nodepool.
+	// Empty string if the nodes have no accelerators.
+	acceleratorType AcceleratorType
+
+	// numAccelerators is the number of accelerators present on nodes in the
+	// nodepool.
+	numAccelerators int
+
+	// tpuTopology is the TPU topology used by the nodepool.
+	// Empty string if the nodepool has no TPU-based accelerators.
+	tpuTopology string
 }
 
-// NewTestCluster returns a new TestCluster client.
-func NewTestCluster(ctx context.Context, cluster *testpb.Cluster) (*TestCluster, error) {
-	constructor, ok := ctx.Value(testClusterConstructor).(func(context.Context, *testpb.Cluster) (*TestCluster, error))
-	if !ok || constructor == nil || reflect.ValueOf(constructor).IsNil() {
-		constructor = newTestCluster
-	}
-	return constructor(ctx, cluster)
-}
-
-func newTestCluster(_ context.Context, cluster *testpb.Cluster) (*TestCluster, error) {
+// NewTestClusterFromProto returns a new TestCluster client from a proto.
+func NewTestClusterFromProto(ctx context.Context, cluster *testpb.Cluster) (*TestCluster, error) {
 	config, err := clientcmd.BuildConfigFromFlags("" /*masterURL*/, cluster.GetCredentialFile())
 	if err != nil {
 		return nil, fmt.Errorf("BuildConfigFromFlags: %w", err)
@@ -166,37 +196,26 @@ func newTestCluster(_ context.Context, cluster *testpb.Cluster) (*TestCluster, e
 	if err != nil {
 		return nil, fmt.Errorf("kubernetes.NewForConfig: %w", err)
 	}
-	return NewTestClusterWithClient(cluster, client), nil
+	var clusterPB cspb.Cluster
+	if err := cluster.GetCluster().UnmarshalTo(&clusterPB); err != nil {
+		return nil, fmt.Errorf("cannot unmarshal cluster: %w", err)
+	}
+	clusterName := clusterPB.GetName()
+	return NewTestClusterFromClient(clusterName, client), nil
 }
 
-// NewTestClusterWithClient returns a new TestCluster client with a given client.
-func NewTestClusterWithClient(cluster *testpb.Cluster, client kubernetes.Interface) *TestCluster {
+// NewTestClusterFromClient returns a new TestCluster client with a given client.
+func NewTestClusterFromClient(clusterName string, client kubernetes.Interface) *TestCluster {
 	return &TestCluster{
-		cluster:                     cluster,
+		clusterName:                 clusterName,
 		client:                      client,
 		testNodepoolRuntimeOverride: "",
 	}
 }
 
-// Cluster returns the underlying cluster proto for tests.
-func (t *TestCluster) Cluster() *testpb.Cluster {
-	return t.cluster
-}
-
-// ContainerCluster returns the underlying container cluster proto.
-func (t *TestCluster) ContainerCluster() (*cspb.Cluster, error) {
-	var cluster cspb.Cluster
-	err := t.cluster.GetCluster().UnmarshalTo(&cluster)
-	return &cluster, err
-}
-
 // GetName returns this cluster's name.
 func (t *TestCluster) GetName() string {
-	cluster, err := t.ContainerCluster()
-	if err != nil {
-		return fmt.Sprintf("[error:%v]", err)
-	}
-	return cluster.GetName()
+	return t.clusterName
 }
 
 // GetGVisorRuntimeLabelMap returns the gVisor runtime key-value pair used
@@ -253,36 +272,95 @@ func (t *TestCluster) deleteNamespace(ctx context.Context, namespaceName string)
 	return ctx.Err()
 }
 
-// ListNodes is a helper method to list nodes in a cluster.
-func (t *TestCluster) ListNodes(ctx context.Context) (*v13.NodeList, error) {
-	return t.client.CoreV1().Nodes().List(ctx, v1.ListOptions{})
+// getNodePool returns the NodePool of the given type.
+// If nodepools have not been initialized yet, this method will initialize
+// them.
+func (t *TestCluster) getNodePool(ctx context.Context, nodepoolType NodePoolType) (*NodePool, error) {
+	t.nodepoolsMu.Lock()
+	defer t.nodepoolsMu.Unlock()
+	if t.nodepools == nil {
+		nodes, err := t.client.CoreV1().Nodes().List(ctx, v1.ListOptions{})
+		if err != nil {
+			return nil, fmt.Errorf("cannot list nodes: %w", err)
+		}
+		nodepools := make(map[NodePoolType]*NodePool, len(nodes.Items))
+		for _, node := range nodes.Items {
+			npType := NodePoolType(node.Labels[NodePoolTypeKey])
+			if npType == "" {
+				continue
+			}
+			npRuntime := RuntimeType(node.Labels[NodepoolRuntimeKey])
+			if npRuntime == "" {
+				continue
+			}
+			npArchitecture := CPUArchitecture(node.Labels[archKey])
+			if npArchitecture == "" {
+				continue
+			}
+			npAcceleratorType := AcceleratorType(node.Labels[NodepoolTPUAcceleratorSelectorKey])
+			if npAcceleratorType == "" {
+				// Attempt to derive it from instance type if possible.
+				if instanceType, hasInstanceType := node.Labels[NodepoolInstanceTypeKey]; hasInstanceType {
+					for accelType, machineType := range TPUAcceleratorMachineTypeMap {
+						if machineType == instanceType {
+							npAcceleratorType = accelType
+							break
+						}
+					}
+				}
+			}
+			npNumAccelerators := 0
+			if countStr, hasCount := node.Labels[NodepoolNumAcceleratorsKey]; hasCount {
+				if npNumAccelerators, err = strconv.Atoi(countStr); err != nil {
+					return nil, fmt.Errorf("cannot parse accelerator count (%q) value %q as an integer: %w", NodepoolNumAcceleratorsKey, countStr, err)
+				}
+			}
+			npTPUTopology := node.Labels[NodepoolTPUTopologyKey]
+			existingNodepool, ok := nodepools[npType]
+			if !ok {
+				nodepools[npType] = &NodePool{
+					nodePooltype:    npType,
+					runtime:         npRuntime,
+					cpuArchitecture: npArchitecture,
+					acceleratorType: npAcceleratorType,
+					numAccelerators: npNumAccelerators,
+					tpuTopology:     npTPUTopology,
+				}
+				continue
+			}
+			if existingNodepool.runtime != npRuntime {
+				return nil, fmt.Errorf("nodes in nodepool %q have conflicting runtimes: %v vs %v", npType, existingNodepool.runtime, npRuntime)
+			}
+			if existingNodepool.cpuArchitecture != npArchitecture {
+				return nil, fmt.Errorf("nodes in nodepool %q have conflicting architectures: %v vs %v", npType, existingNodepool.cpuArchitecture, npArchitecture)
+			}
+			if existingNodepool.acceleratorType != npAcceleratorType {
+				return nil, fmt.Errorf("nodes in nodepool %q have conflicting accelerator types: %v vs %v", npType, existingNodepool.acceleratorType, npAcceleratorType)
+			}
+			if existingNodepool.numAccelerators != npNumAccelerators {
+				return nil, fmt.Errorf("nodes in nodepool %q have conflicting accelerator counts: %v vs %v", npType, existingNodepool.numAccelerators, npNumAccelerators)
+			}
+			if existingNodepool.tpuTopology != npTPUTopology {
+				return nil, fmt.Errorf("nodes in nodepool %q have conflicting TPU topologies: %v vs %v", npType, existingNodepool.tpuTopology, npTPUTopology)
+			}
+		}
+		t.nodepools = nodepools
+	}
+	np, ok := t.nodepools[nodepoolType]
+	if !ok {
+		return nil, fmt.Errorf("cluster %q contains no %q nodepool", t.GetName(), nodepoolType)
+	}
+	return np, nil
 }
 
 // HasGVisorTestRuntime returns whether the test nodes in this cluster
 // use the gVisor runtime.
 func (t *TestCluster) HasGVisorTestRuntime(ctx context.Context) (bool, error) {
-	nodes, err := t.ListNodes(ctx)
+	testNodePool, err := t.getNodePool(ctx, TestRuntimeNodepoolName)
 	if err != nil {
-		return false, fmt.Errorf("cannot list nodes: %w", err)
+		return false, err
 	}
-	var foundRuntime RuntimeType
-	for _, n := range nodes.Items {
-		if n.Labels[NodePoolTypeKey] != TestRuntimeNodepoolName {
-			continue
-		}
-		nodeRuntime := RuntimeType(n.Labels[NodepoolRuntimeKey])
-		if nodeRuntime == "" {
-			return false, fmt.Errorf("node %q has no runtime label", n.GetName())
-		}
-		if foundRuntime == "" {
-			foundRuntime = nodeRuntime
-			continue
-		}
-		if nodeRuntime != foundRuntime {
-			return false, fmt.Errorf("found conflicting runtimes in the same cluster: %q vs %q", foundRuntime, nodeRuntime)
-		}
-	}
-	return foundRuntime == RuntimeTypeGVisor || foundRuntime == RuntimeTypeGVisorNvidia, nil
+	return testNodePool.runtime == RuntimeTypeGVisor || testNodePool.runtime == RuntimeTypeGVisorNvidia, nil
 }
 
 // CreatePod is a helper to create a pod.
@@ -399,37 +477,37 @@ func (t *TestCluster) doWaitForPod(ctx context.Context, pod *v13.Pod, phase v13.
 	}
 }
 
-// RuntimeTestNodepoolIsARM returns true if the runtime undertest nodepool is an ARM nodepool.
-func (t *TestCluster) RuntimeTestNodepoolIsARM() bool {
-	np, err := t.getNodePoolByName(TestRuntimeNodepoolName)
+// RuntimeTestNodepoolArchitecture returns the CPU architecture of the test nodepool.
+func (t *TestCluster) RuntimeTestNodepoolArchitecture(ctx context.Context) (CPUArchitecture, error) {
+	np, err := t.getNodePool(ctx, TestRuntimeNodepoolName)
 	if err != nil {
-		return false
+		return "", err
 	}
-	return strings.HasPrefix(np.GetConfig().GetMachineType(), "t2a")
+	return np.cpuArchitecture, nil
 }
 
 // configureDaemonSetForNodepool configures the DaemonSet to run on a given nodepool.
-func (t *TestCluster) configureDaemonSetForNodepool(ds *appsv1.DaemonSet, nodepoolName string) error {
-	np, err := t.getNodePoolByName(nodepoolName)
+func (t *TestCluster) configureDaemonSetForNodepool(ctx context.Context, ds *appsv1.DaemonSet, nodepoolType NodePoolType) error {
+	np, err := t.getNodePool(ctx, nodepoolType)
 	if err != nil {
 		return err
 	}
 	if ds.Labels == nil {
 		ds.Labels = make(map[string]string)
 	}
-	return t.applyCommonPodConfigurations(np, &ds.Spec.Template.Spec)
+	return t.applyCommonPodConfigurations(ctx, np, &ds.Spec.Template.Spec)
 }
 
 // configurePodForNodepool configures the pod to run on a given nodepool.
-func (t *TestCluster) configurePodForNodepool(pod *v13.Pod, nodepoolName string) (*v13.Pod, error) {
-	np, err := t.getNodePoolByName(nodepoolName)
+func (t *TestCluster) configurePodForNodepool(ctx context.Context, pod *v13.Pod, nodepoolType NodePoolType) (*v13.Pod, error) {
+	np, err := t.getNodePool(ctx, nodepoolType)
 	if err != nil {
 		return nil, err
 	}
 	if pod.Labels == nil {
 		pod.Labels = make(map[string]string)
 	}
-	if err := t.applyCommonPodConfigurations(np, &pod.Spec); err != nil {
+	if err := t.applyCommonPodConfigurations(ctx, np, &pod.Spec); err != nil {
 		return nil, err
 	}
 	return pod, nil
@@ -437,60 +515,40 @@ func (t *TestCluster) configurePodForNodepool(pod *v13.Pod, nodepoolName string)
 
 // ConfigureDaemonSetForRuntimeTestNodepool configures the DaemonSet to run
 // on the test runtime.
-func (t *TestCluster) ConfigureDaemonSetForRuntimeTestNodepool(ds *appsv1.DaemonSet) error {
-	return t.configureDaemonSetForNodepool(ds, TestRuntimeNodepoolName)
+func (t *TestCluster) ConfigureDaemonSetForRuntimeTestNodepool(ctx context.Context, ds *appsv1.DaemonSet) error {
+	return t.configureDaemonSetForNodepool(ctx, ds, TestRuntimeNodepoolName)
 }
 
 // ConfigurePodForRuntimeTestNodepool configures the pod to run on the test runtime.
-func (t *TestCluster) ConfigurePodForRuntimeTestNodepool(pod *v13.Pod) (*v13.Pod, error) {
-	return t.configurePodForNodepool(pod, TestRuntimeNodepoolName)
+func (t *TestCluster) ConfigurePodForRuntimeTestNodepool(ctx context.Context, pod *v13.Pod) (*v13.Pod, error) {
+	return t.configurePodForNodepool(ctx, pod, TestRuntimeNodepoolName)
 }
 
 // ConfigurePodForClientNodepool configures the pod to run on the client
 // nodepool.
-func (t *TestCluster) ConfigurePodForClientNodepool(pod *v13.Pod) (*v13.Pod, error) {
-	return t.configurePodForNodepool(pod, ClientNodepoolName)
+func (t *TestCluster) ConfigurePodForClientNodepool(ctx context.Context, pod *v13.Pod) (*v13.Pod, error) {
+	return t.configurePodForNodepool(ctx, pod, ClientNodepoolName)
 }
 
 // ConfigurePodForTertiaryNodepool configures the pod to run on the tertiary
 // nodepool.
-func (t *TestCluster) ConfigurePodForTertiaryNodepool(pod *v13.Pod) (*v13.Pod, error) {
-	return t.configurePodForNodepool(pod, TertiaryNodepoolName)
+func (t *TestCluster) ConfigurePodForTertiaryNodepool(ctx context.Context, pod *v13.Pod) (*v13.Pod, error) {
+	return t.configurePodForNodepool(ctx, pod, TertiaryNodepoolName)
 }
 
-func (t *TestCluster) getNodePoolByName(name string) (*cspb.NodePool, error) {
-	cluster, err := t.ContainerCluster()
-	if err != nil {
-		return nil, err
-	}
-	for _, np := range cluster.GetNodePools() {
-		if np.GetName() == name {
-			return np, nil
-		}
-	}
-	return nil, fmt.Errorf("failed to find nodepool %q: %+v", name, cluster.GetNodePools())
-}
-
-func (t *TestCluster) applyCommonPodConfigurations(np *cspb.NodePool, podSpec *v13.PodSpec) error {
-	// Apply GKE Sandbox configurations if the nodepool is a GKE Sandbox nodepool.
+func (t *TestCluster) applyCommonPodConfigurations(ctx context.Context, np *NodePool, podSpec *v13.PodSpec) error {
 	if podSpec.NodeSelector == nil {
 		podSpec.NodeSelector = make(map[string]string)
 	}
-
-	np.GetConfig().GetLabels()[NodePoolTypeKey] = np.GetName()
-
 	// Force the pod to run on this nodepool.
-	podSpec.NodeSelector[NodePoolSelectorKey] = np.GetName()
+	podSpec.NodeSelector[NodePoolTypeKey] = string(np.nodePooltype)
 
 	// Figure out which runtime to use for this pod, either by flag override or
 	// autodetection based on the nodepool configuration.
-	var applyRuntime = RuntimeTypeUnsandboxed
-	if np.GetName() == TestRuntimeNodepoolName && t.testNodepoolRuntimeOverride != "" {
+	var applyRuntime = np.runtime
+	if np.nodePooltype == TestRuntimeNodepoolName && t.testNodepoolRuntimeOverride != "" {
 		applyRuntime = t.testNodepoolRuntimeOverride
-	} else if nodePoolRuntime, ok := np.GetConfig().GetLabels()[NodepoolRuntimeKey]; ok {
-		applyRuntime = RuntimeType(nodePoolRuntime)
 	}
-
 	// Apply the runtime we've chosen, whether by override or autodetection.
 	applyRuntime.ApplyPodSpec(podSpec)
 
@@ -498,39 +556,25 @@ func (t *TestCluster) applyCommonPodConfigurations(np *cspb.NodePool, podSpec *v
 	// selector option.
 	// This doesn't really constrain the pod further, but allows
 	// this number to be carried over when setting pod resources.
-	if len(np.GetConfig().GetAccelerators()) > 0 {
-		totalAccels := 0
-		for _, accelCfg := range np.GetConfig().GetAccelerators() {
-			totalAccels += int(accelCfg.GetAcceleratorCount())
-		}
-		if accelCount, ok := np.GetConfig().GetLabels()[NodepoolNumAcceleratorsKey]; !ok || accelCount != strconv.Itoa(totalAccels) {
-			return fmt.Errorf("unexpected %s=%q label on nodepool with %d total accelerators", NodepoolNumAcceleratorsKey, accelCount, totalAccels)
-		}
-		podSpec.NodeSelector[NodepoolNumAcceleratorsKey] = strconv.Itoa(totalAccels)
-	} else {
-		for accelType, machineType := range TPUAcceleratorMachineTypeMap {
-			if machineType == np.GetConfig().GetMachineType() {
-				topology, ok := np.GetConfig().GetLabels()[NodepoolTPUTopologyKey]
-				if !ok {
-					return fmt.Errorf("unexpected %s=%q label on nodepool with no accelerators", NodepoolTPUTopologyKey, topology)
-				}
-				podSpec.NodeSelector[NodepoolTPUAcceleratorSelectorKey] = string(accelType)
-				podSpec.NodeSelector[NodepoolTPUTopologySelectorKey] = np.GetConfig().GetLabels()[NodepoolTPUTopologyKey]
-			}
-		}
+	if np.numAccelerators > 0 {
+		podSpec.NodeSelector[NodepoolNumAcceleratorsKey] = strconv.Itoa(np.numAccelerators)
+	}
+	if np.acceleratorType != "" {
+		podSpec.NodeSelector[NodepoolTPUAcceleratorSelectorKey] = string(np.acceleratorType)
+	}
+	if np.tpuTopology != "" {
+		podSpec.NodeSelector[NodepoolTPUTopologySelectorKey] = np.tpuTopology
 	}
 
 	// If the nodepool is an ARM nodepool, apply ARM tolerations.
-	for key, val := range np.GetConfig().GetLabels() {
-		if key == archKey && val == armValue {
-			podSpec.NodeSelector[archKey] = armValue
-			podSpec.Tolerations = append(podSpec.Tolerations, v13.Toleration{
-				Key:      archKey,
-				Value:    armValue,
-				Operator: v13.TolerationOpEqual,
-				Effect:   v13.TaintEffectNoSchedule,
-			})
-		}
+	if np.cpuArchitecture == CPUArchitectureARM {
+		podSpec.NodeSelector[archKey] = string(CPUArchitectureARM)
+		podSpec.Tolerations = append(podSpec.Tolerations, v13.Toleration{
+			Key:      archKey,
+			Value:    string(CPUArchitectureARM),
+			Operator: v13.TolerationOpEqual,
+			Effect:   v13.TaintEffectNoSchedule,
+		})
 	}
 	return nil
 }

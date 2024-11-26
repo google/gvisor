@@ -257,7 +257,7 @@ func RunPytorch(ctx context.Context, t *testing.T, k8sCtx k8sctx.KubernetesConte
 // doPytorchRun runs a single PyTorch test.
 func doPytorchRun(ctx context.Context, t *testing.T, k8sCtx k8sctx.KubernetesContext, cluster *testcluster.TestCluster, params pytorchTest) {
 	benchmarkNS := cluster.Namespace(testcluster.NamespaceBenchmark)
-	endProfiling, err := profiling.MaybeSetup(ctx, t, cluster, benchmarkNS)
+	endProfiling, err := profiling.MaybeSetup(ctx, t, k8sCtx, cluster, benchmarkNS)
 	if err != nil {
 		t.Fatalf("Failed to setup profiling: %v", err)
 	}
@@ -276,7 +276,7 @@ func doPytorchRun(ctx context.Context, t *testing.T, k8sCtx k8sctx.KubernetesCon
 		t.Fatalf("Failed to create pod: %v", err)
 	}
 
-	pod, err = cluster.ConfigurePodForRuntimeTestNodepool(pod)
+	pod, err = cluster.ConfigurePodForRuntimeTestNodepool(ctx, pod)
 	if err != nil {
 		t.Fatalf("Failed to configure pod for test-nodepool: %v", err)
 	}

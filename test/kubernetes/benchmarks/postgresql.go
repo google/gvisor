@@ -56,7 +56,7 @@ func BenchmarkPostgresPGBench(ctx context.Context, t *testing.T, k8sCtx k8sctx.K
 		t.Fatalf("cannot reset namespace: %v", err)
 	}
 	defer benchmarkNS.Cleanup(ctx)
-	endProfiling, err := profiling.MaybeSetup(ctx, t, cluster, benchmarkNS)
+	endProfiling, err := profiling.MaybeSetup(ctx, t, k8sCtx, cluster, benchmarkNS)
 	if err != nil {
 		t.Fatalf("Failed to setup profiling: %v", err)
 	}
@@ -80,7 +80,7 @@ func BenchmarkPostgresPGBench(ctx context.Context, t *testing.T, k8sCtx k8sctx.K
 		server.ObjectMeta.Labels = make(map[string]string)
 	}
 	server.ObjectMeta.Labels[postgresServerLabelKey] = postgresServerLabelValue
-	server, err = cluster.ConfigurePodForRuntimeTestNodepool(server)
+	server, err = cluster.ConfigurePodForRuntimeTestNodepool(ctx, server)
 	if err != nil {
 		t.Fatalf("ConfigurePodForRuntimeTestNodepool on cluster %q: %v", cluster.GetName(), err)
 	}
@@ -127,7 +127,7 @@ func BenchmarkPostgresPGBench(ctx context.Context, t *testing.T, k8sCtx k8sctx.K
 			fmt.Sprintf("--username=%s", postgresUser),
 			fmt.Sprintf("--dbname=%s", postgresDatabase),
 		}, false /* withPort */, nil /* pvc */)
-		pgIsReady, err = cluster.ConfigurePodForClientNodepool(pgIsReady)
+		pgIsReady, err = cluster.ConfigurePodForClientNodepool(ctx, pgIsReady)
 		if err != nil {
 			return fmt.Errorf("ConfigurePodForClientNodepool on cluster %q: pod: %q: %v", cluster.GetName(), pgIsReadyName, err)
 		}
@@ -170,7 +170,7 @@ func BenchmarkPostgresPGBench(ctx context.Context, t *testing.T, k8sCtx k8sctx.K
 			fmt.Sprintf("--username=%s", postgresUser),
 			postgresDatabase,
 		}, false /* withPort */, nil /* pvc */)
-		initDB, err = cluster.ConfigurePodForClientNodepool(initDB)
+		initDB, err = cluster.ConfigurePodForClientNodepool(ctx, initDB)
 		if err != nil {
 			return fmt.Errorf("ConfigurePodForClientNodepool on cluster %q: pod: %q: %v", cluster.GetName(), initDBName, err)
 		}
@@ -206,7 +206,7 @@ func BenchmarkPostgresPGBench(ctx context.Context, t *testing.T, k8sCtx k8sctx.K
 				postgresDatabase,
 			}
 			client := newPostgresPod(benchmarkNS, "pgbench", image, clientCmd, false /* withPort */, nil /* pvc */)
-			client, err = cluster.ConfigurePodForClientNodepool(client)
+			client, err = cluster.ConfigurePodForClientNodepool(ctx, client)
 			if err != nil {
 				t.Fatalf("ConfigurePodForClientNodepool on cluster %q: pod: %q: %v", cluster.GetName(), client.GetName(), err)
 			}

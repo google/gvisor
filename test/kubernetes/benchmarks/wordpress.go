@@ -60,7 +60,7 @@ var (
 // BenchmarkWordpress runs a benchmark of WordPress performance.
 func BenchmarkWordpress(ctx context.Context, t *testing.T, k8sCtx k8sctx.KubernetesContext, cluster *testcluster.TestCluster) {
 	benchmarkNS := cluster.Namespace(testcluster.NamespaceBenchmark)
-	endProfiling, err := profiling.MaybeSetup(ctx, t, cluster, benchmarkNS)
+	endProfiling, err := profiling.MaybeSetup(ctx, t, k8sCtx, cluster, benchmarkNS)
 	if err != nil {
 		t.Fatalf("Failed to setup profiling: %v", err)
 	}
@@ -84,7 +84,7 @@ func BenchmarkWordpress(ctx context.Context, t *testing.T, k8sCtx k8sctx.Kuberne
 		t.Fatalf("failed to resolve image: %v", err)
 	}
 	database := newMariaDBServer(benchmarkNS, databaseName, mariaDBImg, dbVolume)
-	database, err = cluster.ConfigurePodForTertiaryNodepool(database)
+	database, err = cluster.ConfigurePodForTertiaryNodepool(ctx, database)
 	if err != nil {
 		t.Fatalf("Failed to configure pod for tertiary nodepool: %v", err)
 	}
@@ -110,7 +110,7 @@ func BenchmarkWordpress(ctx context.Context, t *testing.T, k8sCtx k8sctx.Kuberne
 		t.Fatalf("Failed to resolve image: %v", err)
 	}
 	server := newWordpressServer(benchmarkNS, name, wordpressImg, mariaDBIP)
-	server, err = cluster.ConfigurePodForRuntimeTestNodepool(server)
+	server, err = cluster.ConfigurePodForRuntimeTestNodepool(ctx, server)
 	if err != nil {
 		t.Fatalf("Failed to configure pod for runtime nodepool: %v", err)
 	}
@@ -138,7 +138,7 @@ func BenchmarkWordpress(ctx context.Context, t *testing.T, k8sCtx k8sctx.Kuberne
 
 	// Install WordPress.
 	installWordpressPod := newWordpressInstall(benchmarkNS, "install-wordpress", wordpressIP)
-	installWordpressPod, err = cluster.ConfigurePodForClientNodepool(installWordpressPod)
+	installWordpressPod, err = cluster.ConfigurePodForClientNodepool(ctx, installWordpressPod)
 	if err != nil {
 		t.Fatalf("Failed to configure pod for client nodepool: %v", err)
 	}

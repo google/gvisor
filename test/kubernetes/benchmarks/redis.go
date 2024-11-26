@@ -69,9 +69,18 @@ func BenchmarkRedis(ctx context.Context, t *testing.T, k8sCtx k8sctx.KubernetesC
 	}
 	defer cluster.DeletePersistentVolume(ctx, persistentVol)
 
-	image := redisImageAMD
-	if cluster.RuntimeTestNodepoolIsARM() {
+	testCPUArch, err := cluster.RuntimeTestNodepoolArchitecture(ctx)
+	if err != nil {
+		t.Fatalf("Failed to get runtime test nodepool architecture: %v", err)
+	}
+	var image string
+	switch testCPUArch {
+	case testcluster.CPUArchitectureX86:
+		image = redisImageAMD
+	case testcluster.CPUArchitectureARM:
 		image = redisImageARM
+	default:
+		t.Fatalf("Unsupported CPU architecture: %v", testCPUArch)
 	}
 	if image, err = k8sCtx.ResolveImage(ctx, image); err != nil {
 		t.Fatalf("Failed to resolve image: %v", err)
@@ -110,7 +119,7 @@ func BenchmarkRedis(ctx context.Context, t *testing.T, k8sCtx k8sctx.KubernetesC
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			endProfiling, err := profiling.MaybeSetup(ctx, t, cluster, benchmarkNS)
+			endProfiling, err := profiling.MaybeSetup(ctx, t, k8sCtx, cluster, benchmarkNS)
 			if err != nil {
 				t.Fatalf("Failed to setup profiling: %v", err)
 			}
@@ -122,7 +131,7 @@ func BenchmarkRedis(ctx context.Context, t *testing.T, k8sCtx k8sctx.KubernetesC
 				server.ObjectMeta.Labels = make(map[string]string)
 			}
 			server.ObjectMeta.Labels[redisServerLabelKey] = redisServerLabelValue
-			server, err = cluster.ConfigurePodForRuntimeTestNodepool(server)
+			server, err = cluster.ConfigurePodForRuntimeTestNodepool(ctx, server)
 			if err != nil {
 				t.Fatalf("ConfigurePodForRuntimeTestNodepool on cluster %q: %v", cluster.GetName(), err)
 			}
@@ -164,7 +173,7 @@ func BenchmarkRedis(ctx context.Context, t *testing.T, k8sCtx k8sctx.KubernetesC
 			pingCmd := []string{"redis-cli", "-h", ip, "-r", "5", "-i", "1", "ping"}
 			ensureUp := func() error {
 				pinger := newRedisPod(benchmarkNS, fmt.Sprintf("rpinger-%s", test.suffix), image, pingCmd)
-				pinger, err = cluster.ConfigurePodForClientNodepool(pinger)
+				pinger, err = cluster.ConfigurePodForClientNodepool(ctx, pinger)
 				if err != nil {
 					return fmt.Errorf("ConfigurePodForClientNodepool on cluster %q: pod: %q: %v", cluster.GetName(), pinger.GetName(), err)
 				}
@@ -226,7 +235,7 @@ func BenchmarkRedis(ctx context.Context, t *testing.T, k8sCtx k8sctx.KubernetesC
 								"--precision", "4", // Floating-point precision for reporting latency (in ms)
 							}
 							client := newRedisPod(benchmarkNS, "client", image, clientCmd)
-							client, err = cluster.ConfigurePodForClientNodepool(client)
+							client, err = cluster.ConfigurePodForClientNodepool(ctx, client)
 							if err != nil {
 								t.Fatalf("ConfigurePodForClientNodepool on cluster %q: pod: %q: %v", cluster.GetName(), client.GetName(), err)
 							}

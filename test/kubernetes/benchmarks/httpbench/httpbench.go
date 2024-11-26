@@ -135,7 +135,7 @@ func (h *HTTPBenchmark) runRound(ctx context.Context, t *testing.T, round Round,
 	}
 	name := fmt.Sprintf("wrk2-%dthreads-%sqps", round.NumThreads, qpsText)
 	client := h.newWrk2Client(name, ip, round)
-	client, err := h.Cluster.ConfigurePodForClientNodepool(client)
+	client, err := h.Cluster.ConfigurePodForClientNodepool(ctx, client)
 	if err != nil {
 		t.Fatalf("failed to configure wrk2 pod for client nodepool: %v", err)
 	}
@@ -243,7 +243,7 @@ func (h *HTTPBenchmark) getWgetPod(ip string) *v13.Pod {
 // waitForServer waits for an HTTP server to start responding on the given
 // IP and port.
 func (h *HTTPBenchmark) waitForServer(ctx context.Context, ip string) error {
-	wget, err := h.Cluster.ConfigurePodForClientNodepool(h.getWgetPod(ip))
+	wget, err := h.Cluster.ConfigurePodForClientNodepool(ctx, h.getWgetPod(ip))
 	if err != nil {
 		return fmt.Errorf("failed to configure wget pod for client nodepool: %v", err)
 	}

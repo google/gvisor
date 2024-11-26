@@ -36,7 +36,7 @@ func RunHello(ctx context.Context, t *testing.T, k8sCtx k8sctx.KubernetesContext
 		t.Fatalf("Failed to resolve image: %v", err)
 	}
 	pod := ns.NewAlpinePod(fmt.Sprintf("hello-%d", time.Now().UnixNano()), image, []string{"/bin/sh", "-c", "echo hello"})
-	pod, err = cluster.ConfigurePodForRuntimeTestNodepool(pod)
+	pod, err = cluster.ConfigurePodForRuntimeTestNodepool(ctx, pod)
 	if err != nil {
 		t.Fatalf("Failed to set pod on cluster %q: %v", cluster.GetName(), err)
 	}

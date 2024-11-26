@@ -48,7 +48,7 @@ func MeasureStartup(ctx context.Context, t *testing.T, k8sCtx k8sctx.KubernetesC
 	t.Logf("Warning: This is not a meaningful benchmark. Read the comments.")
 
 	benchmarkNS := cluster.Namespace(testcluster.NamespaceBenchmark)
-	endProfiling, err := profiling.MaybeSetup(ctx, t, cluster, benchmarkNS)
+	endProfiling, err := profiling.MaybeSetup(ctx, t, k8sCtx, cluster, benchmarkNS)
 	if err != nil {
 		t.Fatalf("Failed to setup profiling: %v", err)
 	}
@@ -63,7 +63,7 @@ func MeasureStartup(ctx context.Context, t *testing.T, k8sCtx k8sctx.KubernetesC
 	if err != nil {
 		t.Fatalf("Failed to resolve image: %v", err)
 	}
-	p, err := cluster.ConfigurePodForRuntimeTestNodepool(benchmarkNS.NewAlpinePod(podName, image, command))
+	p, err := cluster.ConfigurePodForRuntimeTestNodepool(ctx, benchmarkNS.NewAlpinePod(podName, image, command))
 	if err != nil {
 		t.Fatalf("failed to set pod for test nodepool: %v", err)
 	}

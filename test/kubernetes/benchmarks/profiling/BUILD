@@ -17,6 +17,7 @@ go_library(
         "//pkg/atomicbitops",
         "//runsc/flag",
         "//test/kubernetes",
+        "//test/kubernetes/k8sctx",
         "//test/kubernetes/testcluster",
         "//test/metricsviz",
         "@com_github_google_pprof//profile:go_default_library",

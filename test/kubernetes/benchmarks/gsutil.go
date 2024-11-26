@@ -56,9 +56,18 @@ func RunGSUtil(ctx context.Context, t *testing.T, k8sCtx k8sctx.KubernetesContex
 	}
 	defer cluster.DeletePersistentVolume(ctx, persistentVol)
 
-	image := imageAMD
-	if cluster.RuntimeTestNodepoolIsARM() {
+	testCPUArch, err := cluster.RuntimeTestNodepoolArchitecture(ctx)
+	if err != nil {
+		t.Fatalf("Failed to get runtime test nodepool architecture: %v", err)
+	}
+	var image string
+	switch testCPUArch {
+	case testcluster.CPUArchitectureX86:
+		image = imageAMD
+	case testcluster.CPUArchitectureARM:
 		image = imageARM
+	default:
+		t.Fatalf("Unsupported CPU architecture: %v", testCPUArch)
 	}
 	if image, err = k8sCtx.ResolveImage(ctx, image); err != nil {
 		t.Fatalf("Failed to resolve image: %v", err)
@@ -113,7 +122,7 @@ func RunGSUtil(ctx context.Context, t *testing.T, k8sCtx k8sctx.KubernetesContex
 			} {
 				t.Run(slicing.name, func(t *testing.T) {
 					// Setup profiling if requested by the user.
-					endProfiling, err := profiling.MaybeSetup(ctx, t, cluster, benchmarkNS)
+					endProfiling, err := profiling.MaybeSetup(ctx, t, k8sCtx, cluster, benchmarkNS)
 					if err != nil {
 						t.Fatalf("Failed to setup profiling: %v", err)
 					}
@@ -122,7 +131,7 @@ func RunGSUtil(ctx context.Context, t *testing.T, k8sCtx k8sctx.KubernetesContex
 					// Create a pod that performs setup, then times
 					// downloading.
 					p := newGSUtilDevPod(benchmarkNS, name, image, storage.volume, slicing.option)
-					p, err = cluster.ConfigurePodForRuntimeTestNodepool(p)
+					p, err = cluster.ConfigurePodForRuntimeTestNodepool(ctx, p)
 					if err != nil {
 						t.Fatalf("Failed to configure pod for runtime: %v", err)
 					}
