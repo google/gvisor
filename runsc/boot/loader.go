@@ -845,8 +845,16 @@ func (l *Loader) installSeccompFilters() error {
 		var nvproxyCaps nvconf.DriverCaps
 		nvproxyEnabled := specutils.NVProxyEnabled(l.root.spec, l.root.conf)
 		if nvproxyEnabled {
-			// TODO(gvisor.dev/issues/10856): Plumb capabilities here.
-			nvproxyCaps = nvconf.DefaultDriverCaps
+			var err error
+			// We use the set of allowed capabilities here, not the subset of them
+			// that the root container requests. This is because we need to support
+			// subsequent containers being able to execute with a wider set than the
+			// set that the root container requests. Seccomp filters are only
+			// applied once at sandbox startup, so they need to be as wide as the
+			// set of capabilities that may ever be requested.
+			if nvproxyCaps, err = specutils.NVProxyDriverCapsAllowed(l.root.conf); err != nil {
+				return fmt.Errorf("NVIDIA capabilities: %w", err)
+			}
 		}
 		opts := filter.Options{
 			Platform:              l.k.Platform.SeccompInfo(),
