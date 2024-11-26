@@ -2,7 +2,7 @@ load("//tools:defs.bzl", "go_library")
 
 package(
     default_applicable_licenses = ["//:license"],
-    default_visibility = ["//test/kubernetes:__subpackages__"],
+    default_visibility = ["//:sandbox"],
     licenses = ["notice"],
 )
 

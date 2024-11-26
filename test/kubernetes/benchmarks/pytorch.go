@@ -181,6 +181,16 @@ var (
 			mode:   eager,
 		},
 	}
+
+	// AllTests is a map of test names to the tests.
+	AllTests = map[string][]pytorchTest{
+		"FastNLPBert":       FastNLPBert,
+		"BigBird":           BigBird,
+		"SpeechTransformer": SpeechTransformer,
+		"LearningToPaint":   LearningToPaint,
+		"MobileNetV2":       MobileNetV2,
+		"BackgroundMatting": BackgroundMatting,
+	}
 )
 
 // Name returns the name of the test with the argument parameters included. It is formatted so

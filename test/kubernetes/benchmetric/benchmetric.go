@@ -178,8 +178,20 @@ var (
 	recorderOnce sync.Once
 )
 
+type recorderContextKeyType int
+
+const recorderContextKey recorderContextKeyType = iota
+
+// WithRecorder returns a context with the given `Recorder`.
+func WithRecorder(ctx context.Context, recorder Recorder) context.Context {
+	return context.WithValue(ctx, recorderContextKey, recorder)
+}
+
 // GetRecorder returns the benchmark's `Recorder` singleton.
 func GetRecorder(ctx context.Context) (Recorder, error) {
+	if ctx.Value(recorderContextKey) != nil {
+		return ctx.Value(recorderContextKey).(Recorder), nil
+	}
 	recorderOnce.Do(func() {
 		recorder, recorderErr = recorderFn(ctx)
 	})
