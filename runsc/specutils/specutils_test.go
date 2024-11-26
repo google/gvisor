@@ -391,64 +391,81 @@ func TestNvidiaDriverCapabilities(t *testing.T) {
 	for _, tc := range []struct {
 		name        string
 		allowedCaps string
-		noEnv       bool // If true, no env variable is set.
+		wantAllowed nvconf.DriverCaps // Capabilities allowed at the sandbox configuration level.
+		noEnv       bool              // If true, no env variable is set.
 		envCaps     string
 		legacy      bool
-		want        nvconf.DriverCaps
+		wantActual  nvconf.DriverCaps // Capabilities allowed for the container.
 	}{
 		{
 			name:        "unspecified",
 			allowedCaps: testAllowedCapsFlag,
+			wantAllowed: testAllowedCaps,
 			noEnv:       true,
-			want:        nvconf.DefaultDriverCaps,
+			wantActual:  nvconf.DefaultDriverCaps,
 		},
 		{
 			name:        "unspecified-legacy",
 			allowedCaps: testAllowedCapsFlag,
+			wantAllowed: testAllowedCaps,
 			noEnv:       true,
 			legacy:      true,
-			want:        testAllowedCaps,
+			wantActual:  testAllowedCaps,
 		},
 		{
 			name:        "empty",
 			allowedCaps: testAllowedCapsFlag,
+			wantAllowed: testAllowedCaps,
 			envCaps:     "",
-			want:        nvconf.DefaultDriverCaps,
+			wantActual:  nvconf.DefaultDriverCaps,
 		},
 		{
 			name:        "empty-legacy",
 			allowedCaps: testAllowedCapsFlag,
+			wantAllowed: testAllowedCaps,
 			envCaps:     "",
 			legacy:      true,
-			want:        nvconf.DefaultDriverCaps,
+			wantActual:  nvconf.DefaultDriverCaps,
 		},
 		{
 			name:        "compute",
 			allowedCaps: testAllowedCapsFlag,
+			wantAllowed: testAllowedCaps,
 			envCaps:     nvconf.CapCompute.String(),
-			want:        nvconf.CapCompute,
+			wantActual:  nvconf.CapCompute,
 		},
 		{
 			name:        "utility,graphics-legacy",
 			allowedCaps: testAllowedCapsFlag,
+			wantAllowed: testAllowedCaps,
 			envCaps:     (nvconf.CapUtility | nvconf.CapGraphics).String(),
 			legacy:      true,
-			want:        nvconf.CapUtility | nvconf.CapGraphics,
+			wantActual:  nvconf.CapUtility | nvconf.CapGraphics,
 		},
 		{
 			name:        "all",
 			allowedCaps: testAllowedCapsFlag,
+			wantAllowed: testAllowedCaps,
 			envCaps:     nvconf.AllCapabilitiesName,
-			want:        testAllowedCaps,
+			wantActual:  testAllowedCaps,
 		},
 		{
 			name:        "all-all",
-			allowedCaps: "all",
+			allowedCaps: nvconf.AllCapabilitiesName,
+			wantAllowed: nvconf.SupportedDriverCaps,
 			envCaps:     nvconf.AllCapabilitiesName,
-			want:        nvconf.SupportedDriverCaps,
+			wantActual:  nvconf.SupportedDriverCaps,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			conf := config.Config{NVProxyAllowedDriverCapabilities: tc.allowedCaps}
+			allowed, err := NVProxyDriverCapsAllowed(&conf)
+			if err != nil {
+				t.Errorf("NVProxyDriverCapsAllowed() failed, err: %v", err)
+			}
+			if allowed != tc.wantAllowed {
+				t.Fatalf("NVProxyDriverCapsAllowed() got: %v, want: %v", allowed, tc.wantAllowed)
+			}
 			var env []string
 			if tc.legacy {
 				env = append(env, fmt.Sprintf("%s=%s", cudaVersionEnv, "10.2.89"))
@@ -456,15 +473,17 @@ func TestNvidiaDriverCapabilities(t *testing.T) {
 			if tc.envCaps != "" || !tc.noEnv {
 				env = append(env, fmt.Sprintf("%s=%s", nvidiaDriverCapsEnv, tc.envCaps))
 			}
-			got, err := NVProxyDriverCapsFromEnv(
-				&specs.Spec{Process: &specs.Process{Env: env}},
-				&config.Config{NVProxyAllowedDriverCapabilities: tc.allowedCaps},
-			)
+			spec := specs.Spec{Process: &specs.Process{Env: env}}
+			got, err := NVProxyDriverCapsFromEnv(&spec, &conf)
 			if err != nil {
 				t.Errorf("NVProxyDriverCapsFromEnv() failed, err: %v", err)
 			}
-			if got != tc.want {
-				t.Errorf("NVProxyDriverCapsFromEnv() got: %v, want: %v", got, tc.want)
+			if got != tc.wantActual {
+				t.Errorf("NVProxyDriverCapsFromEnv() got: %v, want: %v", got, tc.wantActual)
+			}
+			// Check invariant: `got` must always be a subset of `allowed`.
+			if gotButNotAllowed := got & ^allowed; gotButNotAllowed != 0 {
+				t.Errorf("caps from env (%v) is not a subset of allowed caps (%v); diff: %v", got, allowed, gotButNotAllowed)
 			}
 		})
 	}

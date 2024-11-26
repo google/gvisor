@@ -144,20 +144,32 @@ func ParseNvidiaVisibleDevices(spec *specs.Spec) (string, error) {
 	return nvd, nil
 }
 
-// NVProxyDriverCapsFromEnv returns the driver capabilities requested by the
-// application via the NVIDIA_DRIVER_CAPABILITIES env var. See
-// nvidia-container-toolkit/cmd/nvidia-container-runtime-hook/container_config.go:getDriverCapabilities().
-func NVProxyDriverCapsFromEnv(spec *specs.Spec, conf *config.Config) (nvconf.DriverCaps, error) {
+// NVProxyDriverCapsAllowed returns the driver capabilities allowed by the
+// configuration, irrespective of what a container requests.
+// This should be used to determine the bounding set of driver capabilities
+// that a container can request.
+func NVProxyDriverCapsAllowed(conf *config.Config) (nvconf.DriverCaps, error) {
 	// Construct the set of allowed driver capabilities.
-	// allowedDriverCaps is already a subset of nvconf.SupportedDriverCaps
-	// as this was checked by `config.Config.validate`.
 	allowedDriverCaps, hasAll, err := nvconf.DriverCapsFromString(conf.NVProxyAllowedDriverCapabilities)
 	if err != nil {
 		return 0, fmt.Errorf("invalid set of allowed NVIDIA driver capabilities %q: %w", conf.NVProxyAllowedDriverCapabilities, err)
 	}
-	// Resolve "all" to nvconf.SupportedDriverCaps.
+	// Resolve "all" to `nvconf.SupportedDriverCaps`.
+	// allowedDriverCaps is already a subset of `nvconf.SupportedDriverCaps`
+	// as this was checked by `config.Config.validate`.
 	if hasAll {
-		allowedDriverCaps |= nvconf.SupportedDriverCaps
+		return nvconf.SupportedDriverCaps, nil
+	}
+	return allowedDriverCaps, nil
+}
+
+// NVProxyDriverCapsFromEnv returns the driver capabilities requested by the
+// application via the NVIDIA_DRIVER_CAPABILITIES env var. See
+// nvidia-container-toolkit/cmd/nvidia-container-runtime-hook/container_config.go:getDriverCapabilities().
+func NVProxyDriverCapsFromEnv(spec *specs.Spec, conf *config.Config) (nvconf.DriverCaps, error) {
+	allowedDriverCaps, err := NVProxyDriverCapsAllowed(conf)
+	if err != nil {
+		return 0, err
 	}
 
 	// Extract the set of driver capabilities requested by the application.

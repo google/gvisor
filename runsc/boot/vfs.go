@@ -1395,11 +1395,15 @@ func nvproxyRegisterDevices(info *containerInfo, vfsObj *vfs.VirtualFilesystem) 
 	if !specutils.NVProxyEnabled(info.spec, info.conf) {
 		return nil
 	}
+	driverCaps, err := specutils.NVProxyDriverCapsAllowed(info.conf)
+	if err != nil {
+		return fmt.Errorf("NVIDIA driver capabilities: %w", err)
+	}
 	uvmDevMajor, err := vfsObj.GetDynamicCharDevMajor()
 	if err != nil {
 		return fmt.Errorf("reserving device major number for nvidia-uvm: %w", err)
 	}
-	if err := nvproxy.Register(vfsObj, info.nvidiaDriverVersion, uvmDevMajor); err != nil {
+	if err := nvproxy.Register(vfsObj, info.nvidiaDriverVersion, driverCaps, uvmDevMajor); err != nil {
 		return fmt.Errorf("registering nvproxy driver: %w", err)
 	}
 	info.nvidiaUVMDevMajor = uvmDevMajor

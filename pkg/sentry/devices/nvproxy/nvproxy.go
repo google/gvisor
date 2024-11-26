@@ -30,7 +30,7 @@ import (
 )
 
 // Register registers all devices implemented by this package in vfsObj.
-func Register(vfsObj *vfs.VirtualFilesystem, versionStr string, uvmDevMajor uint32) error {
+func Register(vfsObj *vfs.VirtualFilesystem, versionStr string, driverCaps nvconf.DriverCaps, uvmDevMajor uint32) error {
 	// The kernel driver's interface is unstable, so only allow versions of the
 	// driver that are known to be supported.
 	log.Infof("NVIDIA driver version: %s", versionStr)
@@ -42,10 +42,13 @@ func Register(vfsObj *vfs.VirtualFilesystem, versionStr string, uvmDevMajor uint
 	if !ok {
 		return fmt.Errorf("unsupported Nvidia driver version: %s", versionStr)
 	}
+	if driverCaps == 0 {
+		log.Warningf("nvproxy: NVIDIA driver capability set is empty; all GPU operations will fail")
+	}
 	nvp := &nvproxy{
 		abi:         abiCons.cons(),
 		version:     version,
-		capsEnabled: nvconf.SupportedDriverCaps, // TODO(gvisor.dev/issues/10856): Let the user specify this.
+		capsEnabled: driverCaps,
 		frontendFDs: make(map[*frontendFD]struct{}),
 		clients:     make(map[nvgpu.Handle]*rootClient),
 		objsFreeSet: make(map[*object]struct{}),

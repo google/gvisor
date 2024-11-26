@@ -2029,7 +2029,7 @@ func nvproxySetupAfterGoferUserns(spec *specs.Spec, conf *config.Config, goferCm
 			fmt.Sprintf("--pid=%d", goferCmd.Process.Pid),
 			fmt.Sprintf("--device=%s", devices),
 		}
-		// Pass driver capabilities specified via NVIDIA_DRIVER_CAPABILITIES as flags. See
+		// Pass driver capabilities allowed by configuration as flags. See
 		// nvidia-container-toolkit/cmd/nvidia-container-runtime-hook/main.go:doPrestart().
 		driverCaps, err := specutils.NVProxyDriverCapsFromEnv(spec, conf)
 		if err != nil {
