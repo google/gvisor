@@ -3050,8 +3050,8 @@ go_repository(
 go_repository(
     name = "com_github_google_pprof",
     importpath = "github.com/google/pprof",
-    sum = "h1:wORs2YN3R3ona/CXYuTvLM31QlgoNKHvlCNuArCDDCU=",
-    version = "v0.0.0-20221219190121-3cb0bae90811",
+    sum = "h1:xRmpO92tb8y+Z85iUOMOicpCfaYcv7o3Cg3wKrIpg8g=",
+    version = "v0.0.0-20240711041743-f6c9dda6c6da",
 )
 
 go_repository(
@@ -3072,8 +3072,8 @@ go_repository(
 go_repository(
     name = "com_github_ianlancetaylor_demangle",
     importpath = "github.com/ianlancetaylor/demangle",
-    sum = "h1:rcanfLhLDA8nozr/K289V1zcntHr3V+SHlXwzz1ZI2g=",
-    version = "v0.0.0-20220319035150-800ac71e25c2",
+    sum = "h1:EVX1s+XNss9jkRW9K6XGJn2jL2lB1h5H804oKPsxOec=",
+    version = "v0.0.0-20240912202439-0a2b6291aafd",
 )
 
 go_repository(
