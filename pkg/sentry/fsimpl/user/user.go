@@ -188,26 +188,15 @@ func openFile(ctx context.Context, mns *vfs.MountNamespace, path string) (*vfs.F
 	return fd, nil
 }
 
-// findGroupInGroupFile parses a group file and returns the given group's
+// FindGroupInGroupFile parses a group file and returns the given group's
 // gid. If the gid is a number, we don't need to read the file.
 //
 // If we don't find the group, we return 0.
-func findGroupInGroupFile(ctx context.Context, mns *vfs.MountNamespace, gidString string) auth.KGID {
+func FindGroupInGroupFile(group io.Reader, gidString string) auth.KGID {
 	// gid is a number, we don't need to read the file.
 	gidInt, err := strconv.Atoi(gidString)
 	if err == nil {
 		return auth.KGID(gidInt)
-	}
-
-	fd, err := openFile(ctx, mns, "/etc/group")
-	if err != nil {
-		return defaultGID
-	}
-	defer fd.DecRef(ctx)
-
-	r := &fileReader{
-		ctx: ctx,
-		fd:  fd,
 	}
 
 	// Group file format:
@@ -218,7 +207,7 @@ func findGroupInGroupFile(ctx context.Context, mns *vfs.MountNamespace, gidStrin
 		gidIdx    = 2
 	)
 
-	s := bufio.NewScanner(r)
+	s := bufio.NewScanner(group)
 	for s.Scan() {
 		if err := s.Err(); err != nil {
 			return defaultGID
@@ -241,7 +230,8 @@ func findGroupInGroupFile(ctx context.Context, mns *vfs.MountNamespace, gidStrin
 	return defaultGID
 }
 
-func findUIDGIDInPasswd(passwd io.Reader, user string) (auth.KUID, auth.KGID) {
+// FindUIDGIDInPasswd parses a passwd file and returns the given user's uid and gid.
+func FindUIDGIDInPasswd(passwd io.Reader, user string) (auth.KUID, auth.KGID) {
 	uid := defaultUID
 	gid := defaultGID
 
@@ -357,13 +347,24 @@ func getExecUIDGID(ctx context.Context, mns *vfs.MountNamespace, user string) (a
 	}
 	// This return kGid from the passwd file (if we find one). We might have recieved a group id
 	// string or numeric from the user.
-	kUID, kGID := findUIDGIDInPasswd(r, user)
+	kUID, kGID := FindUIDGIDInPasswd(r, user)
 	usergroup := strings.SplitN(user, ":", 2)
+
+	// If we have a group id string, try to resolve it.
 	if len(usergroup) == 2 {
-		kGID = findGroupInGroupFile(ctx, mns, usergroup[1])
+		fdg, err := openFile(ctx, mns, "/etc/group")
+		if err != nil {
+			kGID = defaultGID
+			return kUID, kGID
+		}
+		defer fdg.DecRef(ctx)
+		r = &fileReader{
+			ctx: ctx,
+			fd:  fdg,
+		}
+		kGID = FindGroupInGroupFile(r, usergroup[1])
 	}
 	return kUID, kGID
-
 }
 
 // GetExecUIDGIDFromUser retrieves the UID and GID from /etc/passwd file for
