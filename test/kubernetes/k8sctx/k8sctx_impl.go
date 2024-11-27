@@ -27,7 +27,6 @@ import (
 	"google.golang.org/protobuf/encoding/prototext"
 	"google.golang.org/protobuf/types/known/anypb"
 	"gvisor.dev/gvisor/runsc/flag"
-	testpb "gvisor.dev/gvisor/test/kubernetes/test_range_config_go_proto"
 	"gvisor.dev/gvisor/test/kubernetes/testcluster"
 	"gvisor.dev/gvisor/tools/gvisor_k8s_tool/provider/kubectl"
 )
@@ -63,7 +62,7 @@ func newKubectlContext(ctx context.Context) (KubernetesContext, error) {
 	if err = prototext.Unmarshal(clusterBytes, &clusterPB); err != nil {
 		return nil, fmt.Errorf("cannot unmarshal cluster textproto file %q: %w", *clusterProtoPath, err)
 	}
-	testCluster := testcluster.NewTestClusterWithClient(&testpb.Cluster{Cluster: &clusterPB}, cluster.Client())
+	testCluster := testcluster.NewTestClusterFromClient(*kubectlContextName, cluster.Client())
 	if *testNodepoolRuntime != "" {
 		testCluster.OverrideTestNodepoolRuntime(testcluster.RuntimeType(*testNodepoolRuntime))
 	}

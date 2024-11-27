@@ -18,7 +18,6 @@ go_library(
     ],
     deps = [
         "//runsc/flag",
-        "//test/kubernetes:test_range_config_go_proto",
         "//test/kubernetes/testcluster",
         "//tools/gvisor_k8s_tool/provider/kubectl",
         "@org_golang_google_protobuf//encoding/prototext:go_default_library",
