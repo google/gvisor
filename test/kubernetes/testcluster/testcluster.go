@@ -26,6 +26,7 @@ import (
 
 	"golang.org/x/sync/errgroup"
 	cspb "google.golang.org/genproto/googleapis/container/v1"
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sync"
 	testpb "gvisor.dev/gvisor/test/kubernetes/test_range_config_go_proto"
 	appsv1 "k8s.io/api/apps/v1"
@@ -437,22 +438,38 @@ func (t *TestCluster) doWaitForPod(ctx context.Context, pod *v13.Pod, phase v13.
 	if err != nil {
 		return fmt.Errorf("watch: %w", err)
 	}
+	podLogger := log.BasicRateLimitedLogger(5 * time.Minute)
+	incompatibleTypeLogger := log.BasicRateLimitedLogger(5 * time.Minute)
+	startLogTime := time.Now().Add(3 * time.Minute)
 
 	var p *v13.Pod
+	gotIncompatibleType := false
+	pollCh := time.NewTicker(10 * time.Second)
+	defer pollCh.Stop()
+pollLoop:
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
+		case <-pollCh.C:
+			p, err = t.GetPod(ctx, pod)
+			if err != nil {
+				return fmt.Errorf("failed to poll pod: %w", err)
+			}
 		case e := <-w.ResultChan():
 			var ok bool
 			p, ok = e.Object.(*v13.Pod)
 			if !ok {
-				return fmt.Errorf("invalid object watched: %T", p)
-			}
-		case <-time.After(10 * time.Second):
-			p, err = t.GetPod(ctx, pod)
-			if err != nil {
-				return fmt.Errorf("failed to poll pod: %w", err)
+				if !gotIncompatibleType {
+					log.Warningf("Received unexpected type of watched pod: got %T (%v), expected %T; falling back to polling-based wait.", e.Object, e.Object, p)
+					gotIncompatibleType = true
+					pollCh = time.NewTicker(250 * time.Millisecond)
+					defer pollCh.Stop()
+				} else {
+					incompatibleTypeLogger.Infof("Received another unexpected type of watched pod: got %T (%v), expected %T.", e.Object, e.Object, p)
+				}
+				time.Sleep(10 * time.Millisecond) // Avoid busy-looping when `w.ResultChan()` is closed.
+				continue pollLoop
 			}
 		}
 		if ctx.Err() != nil {
@@ -473,6 +490,9 @@ func (t *TestCluster) doWaitForPod(ctx context.Context, pod *v13.Pod, phase v13.
 			return fmt.Errorf("pod %q failed: %s", pod.GetName(), p.Status.Message)
 		case phase:
 			return nil
+		}
+		if time.Now().After(startLogTime) {
+			podLogger.Infof("Still waiting for pod %q after %v; pod status: %v", pod.GetName(), time.Since(startLogTime), p.Status)
 		}
 	}
 }
