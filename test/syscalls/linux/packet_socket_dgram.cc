@@ -30,6 +30,8 @@
 
 #include "gtest/gtest.h"
 #include "absl/base/internal/endian.h"
+#include "absl/time/clock.h"
+#include "absl/time/time.h"
 #include "test/syscalls/linux/ip_socket_test_util.h"
 #include "test/syscalls/linux/unix_domain_socket_test_util.h"
 #include "test/util/capability_util.h"
@@ -370,9 +372,6 @@ TEST_P(CookedPacketTest, DoubleBindSucceeds) {
 
 // Bind and verify we do not receive data on interface which is not bound
 TEST_P(CookedPacketTest, BindDrop) {
-  // TOOD(b/379932042): This is flakey and blocking submissions.
-  GTEST_SKIP();
-
   // Let's use a simple IP payload: a UDP datagram.
   FileDescriptor udp_sock =
       ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_DGRAM, 0));
@@ -415,16 +414,45 @@ TEST_P(CookedPacketTest, BindDrop) {
   dest.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
   dest.sin_family = AF_INET;
   dest.sin_port = kPort;
+
   EXPECT_THAT(sendto(udp_sock.get(), kMessage, sizeof(kMessage), 0,
                      reinterpret_cast<struct sockaddr*>(&dest), sizeof(dest)),
               SyscallSucceedsWithValue(sizeof(kMessage)));
 
   // Wait and make sure the socket never receives any data.
-  struct pollfd pfd = {};
-  pfd.fd = socket_;
-  pfd.events = POLLIN;
-  EXPECT_THAT(RetryEINTR(poll)(&pfd, 1, kTimeoutMS),
-              SyscallSucceedsWithValue(0));
+  for (const auto start = absl::Now();
+       absl::Now() <= start + absl::Milliseconds(kTimeoutMS);) {
+    struct pollfd pfd = {};
+    pfd.fd = socket_;
+    pfd.events = POLLIN;
+    int polled = RetryEINTR(poll)(&pfd, 1, kTimeoutMS);
+    ASSERT_GE(polled, 0);
+    if (polled > 0) {
+      ASSERT_EQ(polled, 1);
+      // We got a packet. It could be from the outside world, so ensure it's not
+      // the one we just sent.
+      constexpr size_t packet_size =
+          sizeof(struct iphdr) + sizeof(struct udphdr) + sizeof(kMessage);
+      char buf[64];
+      struct sockaddr_ll src = {};
+      socklen_t src_len = sizeof(src);
+      int n;
+      ASSERT_THAT(n = RetryEINTR(recvfrom)(
+                      socket_, buf, sizeof(buf), 0,
+                      reinterpret_cast<struct sockaddr*>(&src), &src_len),
+                  SyscallSucceeds());
+      ASSERT_GE(n, 1);
+      // Is the packet the same size as ours?
+      if (n != packet_size) {
+        continue;
+      }
+      // Does it contain our magic payload?
+      ASSERT_NE(
+          memcmp(kMessage, buf + sizeof(struct iphdr) + sizeof(struct udphdr),
+                 sizeof(kMessage)),
+          0);
+    }
+  }
 }
 
 // Verify that we receive outbound packets. This test requires at least one
