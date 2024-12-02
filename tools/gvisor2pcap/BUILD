@@ -10,7 +10,7 @@ go_binary(
     srcs = [
         "main.go",
     ],
-    static = True,
+    features = ["fully_static_link"],
     deps = [
         "//pkg/buffer",
         "//pkg/log",

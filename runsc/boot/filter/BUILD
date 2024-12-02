@@ -38,6 +38,7 @@ go_library(
 secbench_test(
     name = "filter_bench_test",
     srcs = ["filter_bench_test.go"],
+    features = ["no_default_linker_script"],
     deps = [
         ":filter",
         "//pkg/abi/linux",

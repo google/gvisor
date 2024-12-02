@@ -44,9 +44,9 @@ go_binary(
         # `:ioctl_hook`'s actual output file.
         ":ioctl_hook",  # keep
     ],
+    features = ["fully_static_link"],
     # Disable nogo tests because this has C++ dependencies.
     nogo = False,
-    static = True,
     visibility = [
         "//:sandbox",
     ],

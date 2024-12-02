@@ -14,6 +14,6 @@ def benchmark_test(name, tags = [], **kwargs):
         # Benchmark test binaries are built inside a bazel docker container in
         # OSS but are executed directly on the host. Use static binaries to
         # avoid hitting glibc incompatibility.
-        static = True,
+        features = ["fully_static_link"],
         **kwargs
     )
