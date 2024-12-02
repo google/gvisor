@@ -23,7 +23,7 @@ steps:
     label: ":ship: Push all images (x86_64)"
     if: build.branch == "master" && build.tag == null
     commands:
-      - make ARCH=x86_64 DOCKER_PUSH_AS_LATEST=true DOCKER_FORCE_PUSH=true push-all-images
+      - make ARCH=x86_64 DOCKER_PUSH_AS_LATEST=true push-all-images
       - make ARCH=x86_64 REMOTE_IMAGE_PREFIX=gcr.io/gvisor-presubmit DOCKER_PUSH_AS_LATEST=true push-all-images
     agents:
       arch: "amd64"
@@ -31,7 +31,7 @@ steps:
     label: ":ship: Push all images (aarch64)"
     if: build.branch == "master" && build.tag == null
     commands:
-      - make ARCH=aarch64 DOCKER_PUSH_AS_LATEST=true DOCKER_FORCE_PUSH=true push-all-images
+      - make ARCH=aarch64 DOCKER_PUSH_AS_LATEST=true push-all-images
       - make ARCH=aarch64 REMOTE_IMAGE_PREFIX=gcr.io/gvisor-presubmit DOCKER_PUSH_AS_LATEST=true push-all-images
     agents:
       arch: "arm64"
