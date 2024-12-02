@@ -288,6 +288,7 @@ steps:
       <<: *kvm_agents
       cgroup: "v2"
       arch: "amd64"
+
   # All system call tests.
   - <<: *common
     label: ":toolbox: System call tests (AMD64)"
@@ -304,7 +305,7 @@ steps:
     parallelism: 10
     agents:
       arch: "arm64"
-  # All Save Restore system call tests.
+  # With Save Restore on AMD64.
   - <<: *common
     <<: *source_test_continuous
     label: ":muscle: System call save restore tests (AMD64)"
@@ -312,21 +313,7 @@ steps:
     parallelism: 20
     agents:
       arch: "amd64"
-  - <<: *common
-    <<: *source_test_continuous
-    label: ":muscle: System call save restore tests (ARM64)"
-    command: make BAZEL_OPTIONS=--test_tag_filters=save_restore syscall-tests
-    parallelism: 10
-    agents:
-      arch: "arm64"
-  # All Save Resume system call tests.
-  - <<: *common
-    <<: *source_test_continuous
-    label: ":muscle: System call save resume tests (AMD64)"
-    command: make BAZEL_OPTIONS=--test_tag_filters=save_resume syscall-tests
-    parallelism: 20
-    agents:
-      arch: "amd64"
+  # With Save Resume on ARM64.
   - <<: *common
     <<: *source_test_continuous
     label: ":muscle: System call save resume tests (ARM64)"
