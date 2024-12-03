@@ -449,6 +449,9 @@ func (e *endpoint) getID() uint16 {
 }
 
 func (e *endpoint) addIPHeader(srcAddr, dstAddr tcpip.Address, pkt *stack.PacketBuffer, params stack.NetworkHeaderParams, options header.IPv4OptionsSerializer) tcpip.Error {
+	if expVal := params.ExperimentOptionValue; expVal != 0 {
+		options = append(options, &header.IPv4SerializableExperimentOption{Tag: expVal})
+	}
 	hdrLen := header.IPv4MinimumSize
 	var optLen int
 	if options != nil {

@@ -132,6 +132,10 @@ type Options struct {
 
 	// Probe is a probe function to attach to the stack.
 	Probe tcp.TCPProbeFunc
+
+	// EnableExperimentIPOption indicates whether the NIC is responsible for
+	// passing the experiment IP option.
+	EnableExperimentIPOption bool
 }
 
 // Context provides an initialized Network stack and a link layer endpoint
@@ -247,7 +251,7 @@ func NewWithOpts(t *testing.T, opts Options) *Context {
 	if testing.Verbose() {
 		wep = sniffer.New(ep)
 	}
-	nicOpts := stack.NICOptions{Name: "nic1"}
+	nicOpts := stack.NICOptions{Name: "nic1", EnableExperimentIPOption: opts.EnableExperimentIPOption}
 	if err := s.CreateNICWithOptions(1, wep, nicOpts); err != nil {
 		t.Fatalf("CreateNICWithOptions(_, _, %+v) failed: %v", opts, err)
 	}
@@ -255,7 +259,7 @@ func NewWithOpts(t *testing.T, opts Options) *Context {
 	if testing.Verbose() {
 		wep2 = sniffer.New(channel.New(1000, opts.MTU, ""))
 	}
-	opts2 := stack.NICOptions{Name: "nic2"}
+	opts2 := stack.NICOptions{Name: "nic2", EnableExperimentIPOption: opts.EnableExperimentIPOption}
 	if err := s.CreateNICWithOptions(2, wep2, opts2); err != nil {
 		t.Fatalf("CreateNICWithOptions(_, _, %+v) failed: %v", opts2, err)
 	}

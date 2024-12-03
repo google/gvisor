@@ -75,6 +75,10 @@ type Options struct {
 	// HandleLocal specifies if non-loopback interfaces are allowed to loop
 	// packets.
 	HandleLocal bool
+
+	// EnableExperimentIPOption indicates whether the NIC is responsible for
+	// passing the experiment IP option.
+	EnableExperimentIPOption bool
 }
 
 // New allocates and initializes a test context containing a configured stack.
@@ -112,7 +116,7 @@ func NewWithOptions(t *testing.T, transportProtocols []stack.TransportProtocolFa
 	if testing.Verbose() {
 		wep = sniffer.New(ep)
 	}
-	if err := s.CreateNIC(NICID, wep); err != nil {
+	if err := s.CreateNICWithOptions(NICID, wep, stack.NICOptions{Name: "nic1", EnableExperimentIPOption: options.EnableExperimentIPOption}); err != nil {
 		t.Fatalf("CreateNIC(%d, _): %s", NICID, err)
 	}
 

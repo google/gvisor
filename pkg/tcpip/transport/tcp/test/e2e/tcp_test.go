@@ -9421,6 +9421,63 @@ func TestLateSynCookieAck(t *testing.T) {
 	}
 }
 
+func TestSetExperimentOption(t *testing.T) {
+	c := context.NewWithOpts(t, context.Options{
+		EnableV4:                 true,
+		MTU:                      e2e.DefaultMTU,
+		EnableExperimentIPOption: true,
+	})
+	defer c.Cleanup()
+
+	c.CreateConnected(context.TestInitialSequenceNumber, 30000, -1 /* epRcvBuf */)
+
+	var expval uint16 = 99
+	c.EP.SocketOptions().SetExperimentOptionValue(expval)
+
+	var r bytes.Reader
+	r.Reset(make([]byte, 1))
+	_, err := c.EP.Write(&r, tcpip.WriteOptions{})
+	if err != nil {
+		t.Fatalf("Write failed: %s", err)
+	}
+
+	v := c.GetPacket()
+	defer v.Release()
+	want := header.IPv4Options{
+		byte(header.IPv4OptionExperimentType),
+		byte(header.IPv4OptionExperimentLength),
+		0,
+		byte(expval),
+	}
+	checker.IPv4(t, v, checker.IPv4Options(want))
+}
+
+func TestSetExperimentOptionWithOptionDisabled(t *testing.T) {
+	c := context.NewWithOpts(t, context.Options{
+		EnableV4:                 true,
+		MTU:                      e2e.DefaultMTU,
+		EnableExperimentIPOption: false,
+	})
+	defer c.Cleanup()
+
+	c.CreateConnected(context.TestInitialSequenceNumber, 30000, -1 /* epRcvBuf */)
+
+	var expval uint16 = 99
+	c.EP.SocketOptions().SetExperimentOptionValue(expval)
+
+	var r bytes.Reader
+	r.Reset(make([]byte, 1))
+	_, err := c.EP.Write(&r, tcpip.WriteOptions{})
+	if err != nil {
+		t.Fatalf("Write failed: %s", err)
+	}
+
+	v := c.GetPacket()
+	defer v.Release()
+	want := header.IPv4Options{}
+	checker.IPv4(t, v, checker.IPv4Options(want))
+}
+
 func TestMain(m *testing.M) {
 	refs.SetLeakMode(refs.LeaksPanic)
 	code := m.Run()

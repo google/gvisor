@@ -1020,15 +1020,16 @@ func (e *Endpoint) sendRaw(pkt *stack.PacketBuffer, flags header.TCPFlags, seq, 
 	defer putOptions(options)
 	pkt.ReserveHeaderBytes(header.TCPMinimumSize + int(e.route.MaxHeaderLength()) + len(options))
 	return e.sendTCP(e.route, tcpFields{
-		id:     e.TransportEndpointInfo.ID,
-		ttl:    calculateTTL(e.route, e.ipv4TTL, e.ipv6HopLimit),
-		tos:    e.sendTOS,
-		flags:  flags,
-		seq:    seq,
-		ack:    ack,
-		rcvWnd: rcvWnd,
-		opts:   options,
-		df:     e.pmtud == tcpip.PMTUDiscoveryWant || e.pmtud == tcpip.PMTUDiscoveryDo,
+		id:        e.TransportEndpointInfo.ID,
+		ttl:       calculateTTL(e.route, e.ipv4TTL, e.ipv6HopLimit),
+		tos:       e.sendTOS,
+		flags:     flags,
+		seq:       seq,
+		ack:       ack,
+		rcvWnd:    rcvWnd,
+		opts:      options,
+		df:        e.pmtud == tcpip.PMTUDiscoveryWant || e.pmtud == tcpip.PMTUDiscoveryDo,
+		expOptVal: e.getExperimentOptionValue(e.route),
 	}, pkt, e.gso)
 }
 
