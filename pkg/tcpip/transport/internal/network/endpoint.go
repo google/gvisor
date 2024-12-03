@@ -344,11 +344,16 @@ func (c *WriteContext) WritePacket(pkt *stack.PacketBuffer, headerIncluded bool)
 		return c.route.WriteHeaderIncludedPacket(pkt)
 	}
 
+	var expOptVal uint16
+	if nic, err := c.e.stack.GetNICByID(c.route.OutgoingNIC()); err == nil && nic.ExperimentIPOptionEnabled() {
+		expOptVal = c.e.ops.GetExperimentOptionValue()
+	}
+
 	err := c.route.WritePacket(stack.NetworkHeaderParams{
 		Protocol:              c.e.transProto,
 		TTL:                   c.ttl,
 		TOS:                   c.tos,
-		ExperimentOptionValue: c.e.ops.GetExperimentOptionValue(),
+		ExperimentOptionValue: expOptVal,
 	}, pkt)
 
 	if _, ok := err.(*tcpip.ErrNoBufferSpace); ok {

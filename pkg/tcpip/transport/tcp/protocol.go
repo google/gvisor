@@ -237,7 +237,7 @@ func replyWithReset(st *stack.Stack, s *segment, tos, ipv4TTL uint8, ipv6HopLimi
 	defer p.DecRef()
 	var expOptVal uint16
 	if s.ep != nil {
-		expOptVal = s.ep.SocketOptions().GetExperimentOptionValue()
+		expOptVal = s.ep.getExperimentOptionValue(route)
 	}
 	return sendTCP(route, tcpFields{
 		id:        s.id,
