@@ -20,7 +20,10 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#include <set>
+
 #include "gtest/gtest.h"
+#include "absl/strings/str_format.h"
 #include "test/util/capability_util.h"
 #include "test/util/fs_util.h"
 #include "test/util/temp_path.h"
@@ -111,6 +114,29 @@ TEST_F(AccessTest, AbsDoesNotExist) {
 TEST_F(AccessTest, InvalidMode) {
   EXPECT_THAT(access(relfile_.c_str(), 0xffffffff),
               SyscallFailsWithErrno(EINVAL));
+}
+
+TEST_F(AccessTest, InvalidModeRoot) {
+  EXPECT_THAT(access("/", R_OK | 0x8000'0000), SyscallFailsWithErrno(EINVAL));
+}
+
+TEST_F(AccessTest, InvalidModes) {
+  // The only valid modes are:
+  // * F_OK
+  // * bitwise or combinations of R_OK, W_OK, and X_OK
+  std::set<int> valid_modes = {
+      F_OK,        R_OK,        W_OK,        X_OK,
+      R_OK | W_OK, R_OK | X_OK, W_OK | X_OK, R_OK | W_OK | X_OK};
+  for (size_t i = 0; i < 32; i++) {
+    int mode_bit = 1 << i;
+    for (int valid_mode : valid_modes) {
+      int mode = valid_mode | mode_bit;
+      if (valid_modes.find(mode) != valid_modes.end()) continue;
+      SCOPED_TRACE(absl::StrFormat("mode=%08x", mode));
+      EXPECT_THAT(access(relfile_.c_str(), mode),
+                  SyscallFailsWithErrno(EINVAL));
+    }
+  }
 }
 
 TEST_F(AccessTest, NoPerms) {
