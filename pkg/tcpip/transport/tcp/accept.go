@@ -533,7 +533,7 @@ func (e *Endpoint) handleListenSegment(ctx *listenContext, s *segment) tcpip.Err
 			seq:       cookie,
 			ack:       s.sequenceNumber + 1,
 			rcvWnd:    ctx.rcvWnd,
-			expOptVal: e.SocketOptions().GetExperimentOptionValue(),
+			expOptVal: e.getExperimentOptionValue(route),
 		}
 		if err := e.sendSynTCP(route, fields, synOpts); err != nil {
 			return err

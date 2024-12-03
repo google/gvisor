@@ -127,7 +127,7 @@ func openat(t *kernel.Task, dirfd int32, pathAddr hostarch.Addr, flags uint32, m
 // Access implements Linux syscall access(2).
 func Access(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	addr := args[0].Pointer()
-	mode := args[1].ModeT()
+	mode := args[1].Uint()
 
 	return 0, nil, accessAt(t, linux.AT_FDCWD, addr, mode, 0 /* flags */)
 }
@@ -136,7 +136,7 @@ func Access(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr,
 func Faccessat(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	dirfd := args[0].Int()
 	addr := args[1].Pointer()
-	mode := args[2].ModeT()
+	mode := args[2].Uint()
 
 	return 0, nil, accessAt(t, dirfd, addr, mode, 0 /* flags */)
 }
@@ -145,13 +145,13 @@ func Faccessat(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintp
 func Faccessat2(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	dirfd := args[0].Int()
 	addr := args[1].Pointer()
-	mode := args[2].ModeT()
+	mode := args[2].Uint()
 	flags := args[3].Int()
 
 	return 0, nil, accessAt(t, dirfd, addr, mode, flags)
 }
 
-func accessAt(t *kernel.Task, dirfd int32, pathAddr hostarch.Addr, mode uint, flags int32) error {
+func accessAt(t *kernel.Task, dirfd int32, pathAddr hostarch.Addr, mode uint32, flags int32) error {
 	const rOK = 4
 	const wOK = 2
 	const xOK = 1

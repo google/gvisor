@@ -371,7 +371,7 @@ func (h *handshake) synSentState(s *segment) tcpip.Error {
 		seq:       h.iss,
 		ack:       h.ackNum,
 		rcvWnd:    h.rcvWnd,
-		expOptVal: h.ep.SocketOptions().GetExperimentOptionValue(),
+		expOptVal: h.ep.getExperimentOptionValue(h.ep.route),
 	}, synOpts)
 	return nil
 }
@@ -458,7 +458,7 @@ func (h *handshake) synRcvdState(s *segment) tcpip.Error {
 			seq:       h.iss,
 			ack:       h.ackNum,
 			rcvWnd:    h.rcvWnd,
-			expOptVal: h.ep.SocketOptions().GetExperimentOptionValue(),
+			expOptVal: h.ep.getExperimentOptionValue(h.ep.route),
 		}, synOpts)
 		return nil
 	}
@@ -596,7 +596,7 @@ func (h *handshake) start() {
 		seq:       h.iss,
 		ack:       h.ackNum,
 		rcvWnd:    h.rcvWnd,
-		expOptVal: h.ep.SocketOptions().GetExperimentOptionValue(),
+		expOptVal: h.ep.getExperimentOptionValue(h.ep.route),
 	}, synOpts)
 }
 
@@ -633,7 +633,7 @@ func (h *handshake) retransmitHandlerLocked() tcpip.Error {
 			seq:       h.iss,
 			ack:       h.ackNum,
 			rcvWnd:    h.rcvWnd,
-			expOptVal: e.SocketOptions().GetExperimentOptionValue(),
+			expOptVal: e.getExperimentOptionValue(e.route),
 		}, h.sendSYNOpts)
 		// If we have ever retransmitted the SYN-ACK or
 		// SYN segment, we should only measure RTT if

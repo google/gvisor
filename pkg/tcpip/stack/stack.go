@@ -880,6 +880,10 @@ type NICOptions struct {
 	// DeliverLinkPackets specifies whether the NIC is responsible for
 	// delivering raw packets to packet sockets.
 	DeliverLinkPackets bool
+
+	// EnableExperimentIPOption specifies whether the NIC is responsible for
+	// passing the experiment IP option.
+	EnableExperimentIPOption bool
 }
 
 // GetNICByID return a network device associated with the specified ID.

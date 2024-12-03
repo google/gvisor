@@ -90,6 +90,10 @@ type nic struct {
 
 	// Primary is the main controlling interface in a bonded setup.
 	Primary *nic
+
+	// experimentIPOptionEnabled indicates whether the NIC supports the
+	// experiment IP option.
+	experimentIPOptionEnabled bool
 }
 
 // makeNICStats initializes the NIC statistics and associates them to the global
@@ -188,6 +192,7 @@ func newNIC(stack *Stack, id tcpip.NICID, ep LinkEndpoint, opts NICOptions) *nic
 		duplicateAddressDetectors: make(map[tcpip.NetworkProtocolNumber]DuplicateAddressDetector),
 		qDisc:                     qDisc,
 		deliverLinkPackets:        opts.DeliverLinkPackets,
+		experimentIPOptionEnabled: opts.EnableExperimentIPOption,
 	}
 	nic.linkResQueue.init(nic)
 
@@ -1093,6 +1098,12 @@ func (n *nic) multicastForwarding(protocol tcpip.NetworkProtocolNumber) (bool, t
 	}
 
 	return ep.MulticastForwarding(), nil
+}
+
+// ExperimentIPOptionEnabled returns whether the NIC is responsible for
+// passing the experiment IP option.
+func (n *nic) ExperimentIPOptionEnabled() bool {
+	return n.experimentIPOptionEnabled
 }
 
 // CoordinatorNIC represents NetworkLinkEndpoint that can join multiple network devices.

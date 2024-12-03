@@ -1198,6 +1198,7 @@ func (n *nic) StateFields() []string {
 		"qDisc",
 		"deliverLinkPackets",
 		"Primary",
+		"experimentIPOptionEnabled",
 	}
 }
 
@@ -1223,6 +1224,7 @@ func (n *nic) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(14, &n.qDisc)
 	stateSinkObject.Save(15, &n.deliverLinkPackets)
 	stateSinkObject.Save(16, &n.Primary)
+	stateSinkObject.Save(17, &n.experimentIPOptionEnabled)
 }
 
 func (n *nic) afterLoad(context.Context) {}
@@ -1246,6 +1248,7 @@ func (n *nic) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(14, &n.qDisc)
 	stateSourceObject.Load(15, &n.deliverLinkPackets)
 	stateSourceObject.Load(16, &n.Primary)
+	stateSourceObject.Load(17, &n.experimentIPOptionEnabled)
 }
 
 func (p *packetEndpointList) StateTypeName() string {
