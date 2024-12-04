@@ -44,6 +44,16 @@ const (
 	tcpWMem
 )
 
+const (
+	// maxNamespaces is used to represent the maximum number of namespaces
+	// that any user in the current user namespace may create. This stub value
+	// was randomly picked from a Linux system. To implement this properly, we
+	// would need add counters in auth.UserNamespace and implement the limit
+	// correctly in namespace implementations.
+	// See include/linux/user_namespace.h:user_namespace.ucount_max.
+	maxNamespaces = "385836\n"
+)
+
 // newSysDir returns the dentry corresponding to /proc/sys directory.
 func (fs *filesystem) newSysDir(ctx context.Context, root *auth.Credentials, k *kernel.Kernel) kernfs.Inode {
 	return fs.newStaticDir(ctx, root, map[string]kernfs.Inode{
@@ -69,6 +79,16 @@ func (fs *filesystem) newSysDir(ctx context.Context, root *auth.Credentials, k *
 		}),
 		"fs": fs.newStaticDir(ctx, root, map[string]kernfs.Inode{
 			"nr_open": fs.newInode(ctx, root, 0644, &atomicInt32File{val: &k.MaxFDLimit, min: 8, max: kernel.MaxFdLimit}),
+		}),
+		"user": fs.newStaticDir(ctx, root, map[string]kernfs.Inode{
+			"max_cgroup_namespaces": newStaticFile(maxNamespaces),
+			"max_ipc_namespaces":    newStaticFile(maxNamespaces),
+			"max_mnt_namespaces":    newStaticFile(maxNamespaces),
+			"max_net_namespaces":    newStaticFile(maxNamespaces),
+			"max_pid_namespaces":    newStaticFile(maxNamespaces),
+			"max_time_namespaces":   newStaticFile(maxNamespaces),
+			"max_user_namespaces":   newStaticFile(maxNamespaces),
+			"max_uts_namespaces":    newStaticFile(maxNamespaces),
 		}),
 		"vm": fs.newStaticDir(ctx, root, map[string]kernfs.Inode{
 			"max_map_count":     fs.newInode(ctx, root, 0444, newStaticFile("2147483647\n")),
