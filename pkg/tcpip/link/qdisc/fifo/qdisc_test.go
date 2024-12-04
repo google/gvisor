@@ -17,6 +17,7 @@ package qdisc_test
 import (
 	"math/rand"
 	"os"
+	"runtime"
 	"testing"
 	"time"
 
@@ -111,6 +112,36 @@ func TestWriteMorePacketsThanBatchSize(t *testing.T) {
 			t.Fatalf("expected %d packets, but got only %d", want, lower.packetsWritten)
 		}
 		linkEp.Close()
+	}
+}
+
+type noopWriter struct{}
+
+func (*noopWriter) WritePackets(pkts stack.PacketBufferList) (int, tcpip.Error) {
+	return pkts.Len(), nil
+}
+
+// TODO: multiple goroutines writing to one qdisc, wait for linkwriter
+func BenchmarkFIFOs(b *testing.B) {
+	tcs := []struct {
+		name      string
+		construct func(lower stack.LinkWriter, n int, queueLen int) stack.QueueingDiscipline
+	}{
+		{name: "fifo", construct: fifo.New},
+		{name: "fifo_channel", construct: fifo.NewCh},
+	}
+
+	data := make([]byte, 1500)
+	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{Payload: buffer.MakeWithData(data)})
+	defer pkt.DecRef()
+	for _, tc := range tcs {
+		qdisc := tc.construct(&noopWriter{}, runtime.GOMAXPROCS(0), 1_000)
+		b.Run(tc.name, func(b *testing.B) {
+			for range b.N {
+				qdisc.WritePacket(pkt)
+			}
+
+		})
 	}
 }
 
