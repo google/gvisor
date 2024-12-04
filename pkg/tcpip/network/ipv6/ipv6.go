@@ -738,6 +738,9 @@ func (e *endpoint) MaxHeaderLength() uint16 {
 }
 
 func addIPHeader(srcAddr, dstAddr tcpip.Address, pkt *stack.PacketBuffer, params stack.NetworkHeaderParams, extensionHeaders header.IPv6ExtHdrSerializer) tcpip.Error {
+	if params.ExperimentOptionValue != 0 {
+		extensionHeaders = append(extensionHeaders, &header.IPv6ExperimentExtHdr{Value: params.ExperimentOptionValue})
+	}
 	extHdrsLen := extensionHeaders.Length()
 	length := pkt.Size() + extensionHeaders.Length()
 	if length > math.MaxUint16 {
@@ -1463,6 +1466,7 @@ func (e *endpoint) processExtensionHeader(it *header.IPv6PayloadIterator, pkt **
 		if err := e.processIPv6RawPayloadHeader(&extHdr, it, *pkt, *routerAlert, previousHeaderStart, *hasFragmentHeader); err != nil {
 			return true, err
 		}
+	case header.IPv6ExperimentExtHdr:
 	default:
 		// Since the iterator returns IPv6RawPayloadHeader for unknown Extension
 		// Header IDs this should never happen unless we missed a supported type

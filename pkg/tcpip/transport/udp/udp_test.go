@@ -2336,6 +2336,42 @@ func TestSetExperimentOption(t *testing.T) {
 	checker.IPv4(t, v, checker.IPv4Options(want))
 }
 
+func TestSetExperimentOptionIPv6(t *testing.T) {
+	opts := context.Options{
+		EnableExperimentIPOption: true,
+		MTU:                      context.DefaultMTU,
+		HandleLocal:              true,
+	}
+	c := context.NewWithOptions(t, []stack.TransportProtocolFactory{udp.NewProtocol, icmp.NewProtocol6, icmp.NewProtocol4}, opts)
+	defer c.Cleanup()
+
+	c.CreateEndpoint(ipv6.ProtocolNumber, udp.ProtocolNumber)
+
+	if err := c.EP.Connect(tcpip.FullAddress{Addr: context.TestV6Addr, Port: context.TestPort}); err != nil {
+		c.T.Fatalf("Connect failed: %s", err)
+	}
+
+	var expval uint16 = 99
+	c.EP.SocketOptions().SetExperimentOptionValue(expval)
+
+	var r bytes.Reader
+	r.Reset(make([]byte, 1))
+	_, err := c.EP.Write(&r, tcpip.WriteOptions{})
+	if err != nil {
+		t.Fatalf("Write failed: %s", err)
+	}
+
+	pkt := c.LinkEP.Read()
+	if pkt == nil {
+		t.Fatal("Packet wasn't written out")
+	}
+	defer pkt.DecRef()
+
+	v := stack.PayloadSince(pkt.LinkHeader())
+	defer v.Release()
+	checker.IPv6WithExtHdr(t, v, checker.IPv6ExtHdr(checker.IPv6ExperimentHeader(expval)))
+}
+
 func TestMain(m *testing.M) {
 	refs.SetLeakMode(refs.LeaksPanic)
 	code := m.Run()

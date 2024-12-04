@@ -1882,6 +1882,20 @@ func IPv6HopByHopExtensionHeader(checkers ...IPv6ExtHdrOptionChecker) IPv6ExtHdr
 	}
 }
 
+// IPv6ExperimentHeader checks the extension header is an Experiment extension
+// header and validates the value.
+func IPv6ExperimentHeader(want uint16) IPv6ExtHdrChecker {
+	return func(t *testing.T, payloadHeader header.IPv6PayloadHeader) {
+		h, ok := payloadHeader.(header.IPv6ExperimentExtHdr)
+		if !ok {
+			t.Errorf("got = %T, want = header.IPv6UnknownExtHdrOption", payloadHeader)
+		}
+		if h.Value != want {
+			t.Errorf("got = %d, want = %d", h.Value, want)
+		}
+	}
+}
+
 // IPv6RouterAlert validates that an extension header option is the RouterAlert
 // option and matches on its value.
 func IPv6RouterAlert(want header.IPv6RouterAlertValue) IPv6ExtHdrOptionChecker {

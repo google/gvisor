@@ -310,6 +310,13 @@ func (c *WriteContext) newPacketBufferLocked(reserveHdrBytes int, data buffer.Bu
 	// This matches Linux behaviour:
 	// https://github.com/torvalds/linux/blob/38d741cb70b/include/net/sock.h#L2519
 	// https://github.com/torvalds/linux/blob/38d741cb70b/net/core/sock.c#L2588
+	var expOptVal uint16
+	if nic, err := c.e.stack.GetNICByID(c.route.OutgoingNIC()); err == nil && nic.ExperimentIPOptionEnabled() {
+		expOptVal = c.e.ops.GetExperimentOptionValue()
+	}
+	if c.route.NetProto() == header.IPv6ProtocolNumber && expOptVal != 0 {
+		reserveHdrBytes += header.IPv6ExperimentHdrLength
+	}
 	pktSize := int64(reserveHdrBytes) + int64(data.Size())
 	e.sendBufferSizeInUse += pktSize
 

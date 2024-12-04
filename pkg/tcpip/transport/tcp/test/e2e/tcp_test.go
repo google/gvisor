@@ -9452,6 +9452,104 @@ func TestSetExperimentOption(t *testing.T) {
 	checker.IPv4(t, v, checker.IPv4Options(want))
 }
 
+func TestSetExperimentOptionIPv6(t *testing.T) {
+	c := context.NewWithOpts(t, context.Options{
+		EnableV4:                 false,
+		EnableV6:                 true,
+		MTU:                      e2e.DefaultMTU,
+		EnableExperimentIPOption: true,
+	})
+	defer c.Cleanup()
+
+	ep, err := c.Stack().NewEndpoint(tcp.ProtocolNumber, ipv6.ProtocolNumber, &c.WQ)
+	if err != nil {
+		t.Fatalf("NewEndpoint failed: %v", err)
+	}
+	c.EP = ep
+
+	// Start connection attempt.
+	waitEntry, notifyCh := waiter.NewChannelEntry(waiter.WritableEvents)
+	c.WQ.EventRegister(&waitEntry)
+	defer c.WQ.EventUnregister(&waitEntry)
+
+	err = c.EP.Connect(tcpip.FullAddress{Addr: context.TestV6Addr, Port: context.TestPort})
+	if _, ok := err.(*tcpip.ErrConnectStarted); !ok {
+		t.Fatalf("Unexpected return value from Connect: %v", err)
+	}
+
+	// Receive SYN packet.
+	b := c.GetV6Packet()
+	defer b.Release()
+	checker.IPv6(t, b,
+		checker.TCP(
+			checker.DstPort(context.TestPort),
+			checker.TCPFlags(header.TCPFlagSyn),
+		),
+	)
+	if got, want := tcp.EndpointState(c.EP.State()), tcp.StateSynSent; got != want {
+		t.Fatalf("Unexpected endpoint state: want %v, got %v", want, got)
+	}
+
+	iss := seqnum.Value(context.TestInitialSequenceNumber)
+	rcvWnd := seqnum.Size(30000)
+	tcpHdr := header.TCP(header.IPv6(b.AsSlice()).Payload())
+	synOpts := header.ParseSynOptions(tcpHdr.Options(), false /* isAck */)
+	c.IRS = seqnum.Value(tcpHdr.SequenceNumber())
+
+	c.SendV6Packet(nil, &context.Headers{
+		SrcPort: tcpHdr.DestinationPort(),
+		DstPort: tcpHdr.SourcePort(),
+		Flags:   header.TCPFlagSyn | header.TCPFlagAck,
+		SeqNum:  iss,
+		AckNum:  c.IRS.Add(1),
+		RcvWnd:  rcvWnd,
+		TCPOpts: nil,
+	})
+
+	// Receive ACK packet.
+	b = c.GetV6Packet()
+	defer b.Release()
+	checker.IPv6(t, b,
+		checker.TCP(
+			checker.DstPort(context.TestPort),
+			checker.TCPFlags(header.TCPFlagAck),
+			checker.TCPSeqNum(uint32(c.IRS)+1),
+			checker.TCPAckNum(uint32(iss)+1),
+		),
+	)
+
+	// Wait for connection to be established.
+	select {
+	case <-notifyCh:
+		if err := c.EP.LastError(); err != nil {
+			t.Fatalf("Unexpected error when connecting: %v", err)
+		}
+	case <-time.After(1 * time.Second):
+		t.Fatalf("Timed out waiting for connection")
+	}
+	if got, want := tcp.EndpointState(c.EP.State()), tcp.StateEstablished; got != want {
+		t.Fatalf("Unexpected endpoint state: want %v, got %v", want, got)
+	}
+
+	c.RcvdWindowScale = uint8(synOpts.WS)
+	c.Port = tcpHdr.SourcePort()
+
+	var expval uint16 = 99
+	c.EP.SocketOptions().SetExperimentOptionValue(expval)
+
+	var r bytes.Reader
+	r.Reset(make([]byte, 1))
+	_, err = c.EP.Write(&r, tcpip.WriteOptions{})
+	if err != nil {
+		t.Fatalf("Write failed: %s", err)
+	}
+
+	v := c.GetV6Packet()
+	defer v.Release()
+
+	checker.IPv6WithExtHdr(t, v, checker.IPv6ExtHdr(checker.IPv6ExperimentHeader(expval)))
+}
+
 func TestSetExperimentOptionWithOptionDisabled(t *testing.T) {
 	c := context.NewWithOpts(t, context.Options{
 		EnableV4:                 true,

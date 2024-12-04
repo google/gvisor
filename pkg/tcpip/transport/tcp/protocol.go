@@ -233,12 +233,17 @@ func replyWithReset(st *stack.Stack, s *segment, tos, ipv4TTL uint8, ipv6HopLimi
 		ack = s.sequenceNumber.Add(s.logicalLen())
 	}
 
-	p := stack.NewPacketBuffer(stack.PacketBufferOptions{ReserveHeaderBytes: header.TCPMinimumSize + int(route.MaxHeaderLength())})
-	defer p.DecRef()
 	var expOptVal uint16
 	if s.ep != nil {
 		expOptVal = s.ep.getExperimentOptionValue(route)
 	}
+	hdrSize := header.TCPMinimumSize + int(route.MaxHeaderLength())
+	if route.NetProto() == header.IPv6ProtocolNumber && expOptVal != 0 {
+		hdrSize += header.IPv6ExperimentHdrLength
+	}
+	p := stack.NewPacketBuffer(stack.PacketBufferOptions{ReserveHeaderBytes: hdrSize})
+	defer p.DecRef()
+
 	return sendTCP(route, tcpFields{
 		id:        s.id,
 		ttl:       ttl,

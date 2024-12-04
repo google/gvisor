@@ -820,7 +820,11 @@ type tcpFields struct {
 func (e *Endpoint) sendSynTCP(r *stack.Route, tf tcpFields, opts header.TCPSynOptions) tcpip.Error {
 	tf.opts = makeSynOptions(opts)
 	// We ignore SYN send errors and let the callers re-attempt send.
-	p := stack.NewPacketBuffer(stack.PacketBufferOptions{ReserveHeaderBytes: header.TCPMinimumSize + int(r.MaxHeaderLength()) + len(tf.opts)})
+	hdrSize := header.TCPMinimumSize + int(r.MaxHeaderLength()) + len(tf.opts)
+	if r.NetProto() == header.IPv6ProtocolNumber && tf.expOptVal != 0 {
+		hdrSize += header.IPv6ExperimentHdrLength
+	}
+	p := stack.NewPacketBuffer(stack.PacketBufferOptions{ReserveHeaderBytes: hdrSize})
 	defer p.DecRef()
 	if err := e.sendTCP(r, tf, p, stack.GSO{}); err != nil {
 		e.stats.SendErrors.SynSendToNetworkFailed.Increment()
@@ -892,6 +896,10 @@ func sendTCPBatch(r *stack.Route, tf tcpFields, pkt *stack.PacketBuffer, gso sta
 		// packet already has the truncated data.
 		shouldSplitPacket := i != n-1
 		if shouldSplitPacket {
+			if r.NetProto() == header.IPv6ProtocolNumber && tf.expOptVal != 0 {
+				// Reserve extra bytes for the experiment option.
+				hdrSize += header.IPv6ExperimentHdrLength
+			}
 			splitPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{ReserveHeaderBytes: hdrSize})
 			splitPkt.Data().ReadFromPacketData(pkt.Data(), packetSize)
 			pkt = splitPkt
@@ -1018,7 +1026,11 @@ func (e *Endpoint) sendRaw(pkt *stack.PacketBuffer, flags header.TCPFlags, seq, 
 	}
 	options := e.makeOptions(sackBlocks)
 	defer putOptions(options)
-	pkt.ReserveHeaderBytes(header.TCPMinimumSize + int(e.route.MaxHeaderLength()) + len(options))
+	hdrSize := header.TCPMinimumSize + int(e.route.MaxHeaderLength()) + len(options)
+	if e.route.NetProto() == header.IPv6ProtocolNumber && e.getExperimentOptionValue(e.route) != 0 {
+		hdrSize += header.IPv6ExperimentHdrLength
+	}
+	pkt.ReserveHeaderBytes(hdrSize)
 	return e.sendTCP(e.route, tcpFields{
 		id:        e.TransportEndpointInfo.ID,
 		ttl:       calculateTTL(e.route, e.ipv4TTL, e.ipv6HopLimit),
