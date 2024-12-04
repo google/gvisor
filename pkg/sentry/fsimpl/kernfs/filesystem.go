@@ -120,6 +120,7 @@ func (fs *Filesystem) revalidateChildLocked(ctx context.Context, vfsObj *vfs.Vir
 		parent.dirMu.Lock()
 		// Check for concurrent insertion of a new cached dentry.
 		child = parent.children[name]
+
 	}
 	if child == nil {
 		// Dentry isn't cached; it either doesn't exist or failed revalidation.
@@ -155,6 +156,11 @@ func (fs *Filesystem) invalidateRemovedChildLocked(ctx context.Context, vfsObj *
 		d := toInvalidate[len(toInvalidate)-1]
 		toInvalidate = toInvalidate[:len(toInvalidate)-1]
 
+		if d.cached {
+			d.fs.cachedDentries.Remove(d)
+			d.fs.cachedDentriesLen--
+			d.cached = false
+		}
 		if d.inode.Keep() {
 			fs.deferDecRef(d)
 		}
@@ -170,6 +176,12 @@ func (fs *Filesystem) invalidateRemovedChildLocked(ctx context.Context, vfsObj *
 				delete(d.children, name)
 			}
 			d.dirMu.Unlock()
+		}
+		if d.refs.Load() == 0 {
+			d.destroy(ctx)
+			if parent := d.parent.Load(); parent != nil {
+				parent.decRefLocked(ctx)
+			}
 		}
 	}
 }
