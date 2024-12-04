@@ -32,8 +32,6 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	v13 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/fields"
-	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 )
@@ -44,6 +42,10 @@ const (
 
 	// k8sApp is used as a label to distinguish between applications.
 	k8sApp = "k8s-app"
+
+	// pollInterval is the interval at which we poll for status when waiting for
+	// Kubernetes objects.
+	pollInterval = 250 * time.Millisecond
 )
 
 // Common namespace names.
@@ -432,56 +434,29 @@ func (t *TestCluster) WaitForPodCompleted(ctx context.Context, pod *v13.Pod) err
 
 // doWaitForPod waits for a pod to complete based on a given v13.PodPhase.
 func (t *TestCluster) doWaitForPod(ctx context.Context, pod *v13.Pod, phase v13.PodPhase) error {
-	w, err := t.client.CoreV1().Pods(pod.GetNamespace()).Watch(ctx, v1.ListOptions{
-		FieldSelector: fields.SelectorFromSet(fields.Set{v1.ObjectNameField: pod.GetName()}).String(),
-	})
-	if err != nil {
-		return fmt.Errorf("watch: %w", err)
-	}
 	podLogger := log.BasicRateLimitedLogger(5 * time.Minute)
-	incompatibleTypeLogger := log.BasicRateLimitedLogger(5 * time.Minute)
 	startLogTime := time.Now().Add(3 * time.Minute)
 
 	var p *v13.Pod
-	gotIncompatibleType := false
-	pollCh := time.NewTicker(10 * time.Second)
+	var err error
+	pollCh := time.NewTicker(pollInterval)
 	defer pollCh.Stop()
-pollLoop:
 	for {
 		select {
-		case <-ctx.Done():
-			return ctx.Err()
 		case <-pollCh.C:
-			p, err = t.GetPod(ctx, pod)
-			if err != nil {
+			if p, err = t.GetPod(ctx, pod); err != nil {
 				return fmt.Errorf("failed to poll pod: %w", err)
 			}
-		case e := <-w.ResultChan():
-			var ok bool
-			p, ok = e.Object.(*v13.Pod)
-			if !ok {
-				if !gotIncompatibleType {
-					log.Warningf("Received unexpected type of watched pod: got %T (%v), expected %T; falling back to polling-based wait.", e.Object, e.Object, p)
-					gotIncompatibleType = true
-					pollCh = time.NewTicker(250 * time.Millisecond)
-					defer pollCh.Stop()
-				} else {
-					incompatibleTypeLogger.Infof("Received another unexpected type of watched pod: got %T (%v), expected %T.", e.Object, e.Object, p)
-				}
-				time.Sleep(10 * time.Millisecond) // Avoid busy-looping when `w.ResultChan()` is closed.
-				continue pollLoop
-			}
+		case <-ctx.Done():
+			return fmt.Errorf("context expired waiting for pod %q: %w", pod.GetName(), ctx.Err())
 		}
-		if ctx.Err() != nil {
-			return fmt.Errorf("context expired waiting for pod %q failed: %s", pod.GetName(), ctx.Err())
-		}
-		if pod.Status.Reason == v13.PodReasonUnschedulable {
-			return fmt.Errorf("pod %q failed: reason: %q message: %q", pod.GetName(), pod.Status.Reason, pod.Status.Message)
+		if p.Status.Reason == v13.PodReasonUnschedulable {
+			return fmt.Errorf("pod %q failed: reason: %q message: %q", pod.GetName(), p.Status.Reason, p.Status.Message)
 		}
 
 		for _, c := range p.Status.Conditions {
-			if strings.Contains(c.Reason, "Unschedulable") {
-				return fmt.Errorf("pod %q failed: reason: %q message: %q", pod.GetName(), c.Reason, c.Message)
+			if strings.Contains(c.Reason, v13.PodReasonUnschedulable) {
+				return fmt.Errorf("pod %q failed: reason: %q message: %q", p.GetName(), c.Reason, c.Message)
 			}
 		}
 
@@ -656,24 +631,23 @@ func (t *TestCluster) DeleteService(ctx context.Context, service *v13.Service) e
 
 // WaitForServiceReady waits until a service is ready.
 func (t *TestCluster) WaitForServiceReady(ctx context.Context, service *v13.Service) error {
-	w, err := t.client.CoreV1().Services(service.GetNamespace()).Watch(ctx, v1.ListOptions{
-		FieldSelector: fields.SelectorFromSet(fields.Set{v1.ObjectNameField: service.GetName()}).String(),
-	})
-	if err != nil {
-		return fmt.Errorf("watch: %w", err)
-	}
+	pollCh := time.NewTicker(pollInterval)
+	var lastService *v13.Service
+	defer pollCh.Stop()
 	for {
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
-		case e := <-w.ResultChan():
-			s, ok := e.Object.(*v13.Service)
-			if !ok {
-				return fmt.Errorf("invalid object watched: %T", s)
+			return fmt.Errorf("context expired waiting for service %q: %w (last: %v)", service.GetName(), ctx.Err(), lastService)
+		case <-pollCh.C:
+			s, err := t.client.CoreV1().Services(service.GetNamespace()).Get(ctx, service.GetName(), v1.GetOptions{})
+			if err != nil {
+				return fmt.Errorf("cannot look up service %q: %w", service.GetName(), err)
 			}
-			if e.Type == watch.Added {
+			hasIP := s.Spec.ClusterIP != "" || (len(s.Spec.ClusterIPs) > 0 && s.Spec.ClusterIPs[0] != "")
+			if hasIP {
 				return nil
 			}
+			lastService = s
 		}
 	}
 }
@@ -731,52 +705,23 @@ func (t *TestCluster) GetPodsInDaemonSet(ctx context.Context, ds *appsv1.DaemonS
 
 // WaitForDaemonset waits until a daemonset has propagated containers across the affected nodes.
 func (t *TestCluster) WaitForDaemonset(ctx context.Context, ds *appsv1.DaemonSet) error {
-	w, err := t.client.AppsV1().DaemonSets(ds.GetNamespace()).Watch(ctx, v1.ListOptions{
-		FieldSelector: fields.SelectorFromSet(fields.Set{v1.ObjectNameField: ds.ObjectMeta.Name}).String(),
-	})
-
-	if err != nil {
-		return fmt.Errorf("failed to watch daemon: %v", err)
-	}
-	defer w.Stop()
-	var lastDS *appsv1.DaemonSet
-
-	// Wait up to 15 seconds before the context deadline.
-	// We don't wait all the way up to the context deadline, because we
-	// want to have enough time to do a manual poll after the watch loop
-	// in order to get the current state of the DaemonSet and provide a
-	// better error message in case the API server is down or slow.
-	const watchTimeoutEarly = 15 * time.Second
-	readyCtx := ctx
-	ctxDeadline, hasDeadline := readyCtx.Deadline()
-	if hasDeadline && ctxDeadline.Sub(time.Now()) > watchTimeoutEarly {
-		var cancel context.CancelFunc
-		readyCtx, cancel = context.WithDeadline(ctx, ctxDeadline.Add(-watchTimeoutEarly))
-		defer cancel()
-	}
-
-watchLoop:
+	pollCh := time.NewTicker(pollInterval)
+	defer pollCh.Stop()
+	// Poll-based loop to wait for the DaemonSet to be ready.
 	for {
+		d, err := t.client.AppsV1().DaemonSets(ds.GetNamespace()).Get(ctx, ds.GetName(), v1.GetOptions{})
+		if err != nil {
+			return fmt.Errorf("failed to get daemonset %q: %v", ds.GetName(), err)
+		}
+		if d.Status.NumberReady == d.Status.DesiredNumberScheduled && d.Status.DesiredNumberScheduled > 0 && d.Status.NumberUnavailable == 0 {
+			break
+		}
 		select {
-		case <-readyCtx.Done():
-			// Give up the watch loop. Most likely the API server is down or the
-			// DaemonSet can't schedule. Either way, the poll-based loop below
-			// will provide a better error message.
-			log.Infof("Watching DaemonSet %q: watch loop timed out (%v); falling back to poll-based loop.", ds.GetName(), readyCtx.Err())
-			break watchLoop
-		case e, ok := <-w.ResultChan():
-			d, ok := e.Object.(*appsv1.DaemonSet)
-			if !ok {
-				return fmt.Errorf("invalid object type: %T", d)
-			}
-			lastDS = d
-			if d.Status.NumberReady == d.Status.DesiredNumberScheduled && d.Status.DesiredNumberScheduled > 0 && d.Status.NumberUnavailable == 0 {
-				break watchLoop
-			}
+		case <-ctx.Done():
+			return fmt.Errorf("context expired waiting for daemonset %q: %w; last daemonset status: NumberReady=%d DesiredNumberScheduled=%d NumberUnavailable=%d; full: %v", ds.GetName(), ctx.Err(), d.Status.NumberReady, d.Status.DesiredNumberScheduled, d.Status.NumberUnavailable, d)
+		case <-pollCh.C:
 		}
 	}
-
-	// Poll-based loop to wait for the DaemonSet to be ready.
 	var lastBadPod v13.Pod
 	for {
 		pods, err := t.GetPodsInDaemonSet(ctx, ds)
@@ -784,7 +729,7 @@ watchLoop:
 			return fmt.Errorf("failed to get pods in daemonset: %v", err)
 		}
 		if len(pods) == 0 {
-			return fmt.Errorf("DaemonSet has no pods: %v", lastDS)
+			return fmt.Errorf("no pods found in daemonset %q", ds.GetName())
 		}
 		allOK := true
 		for _, pod := range pods {
@@ -802,7 +747,7 @@ watchLoop:
 		select {
 		case <-ctx.Done():
 			return fmt.Errorf("context expired waiting for daemonset %q: %w; last bad pod: %v", ds.GetName(), ctx.Err(), lastBadPod)
-		case <-time.After(100 * time.Millisecond):
+		case <-pollCh.C:
 		}
 	}
 }
@@ -851,18 +796,8 @@ func (t *TestCluster) StreamDaemonSetLogs(ctx context.Context, ds *appsv1.Daemon
 		return nil
 	}
 
-	// Watch the DaemonSet.
-	// We'll periodically refresh pods: either when the DaemonSet changes
-	// state, or periodically every second.
-	dsWatch, err := t.client.AppsV1().DaemonSets(ds.GetNamespace()).Watch(ctx, v1.ListOptions{
-		FieldSelector: fields.SelectorFromSet(fields.Set{v1.ObjectNameField: ds.ObjectMeta.Name}).String(),
-	})
-	if err != nil {
-		return fmt.Errorf("failed to watch DaemonSet: %v", err)
-	}
-	timeTicker := time.NewTicker(time.Second)
+	timeTicker := time.NewTicker(pollInterval)
 	defer timeTicker.Stop()
-	defer dsWatch.Stop()
 
 	// Iterate and stop once the DaemonSet is fully Ready.
 	var loopError error
@@ -878,14 +813,9 @@ Outer:
 			}
 			break Outer
 		case <-timeTicker.C:
-			if err := refreshPods(); err != nil {
-				loopError = err
-				break Outer
-			}
-		case e, ok := <-dsWatch.ResultChan():
-			d, ok := e.Object.(*appsv1.DaemonSet)
-			if !ok {
-				loopError = fmt.Errorf("invalid object type: %T", d)
+			d, err := t.client.AppsV1().DaemonSets(ds.GetNamespace()).Get(ctx, ds.GetName(), v1.GetOptions{})
+			if err != nil {
+				loopError = fmt.Errorf("failed to get DaemonSet: %v", err)
 				break Outer
 			}
 			lastDS = d

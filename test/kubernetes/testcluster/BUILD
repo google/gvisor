@@ -22,8 +22,6 @@ go_library(
         "@io_k8s_api//core/v1:go_default_library",
         "@io_k8s_apimachinery//pkg/api/resource:go_default_library",
         "@io_k8s_apimachinery//pkg/apis/meta/v1:go_default_library",
-        "@io_k8s_apimachinery//pkg/fields:go_default_library",
-        "@io_k8s_apimachinery//pkg/watch:go_default_library",
         "@io_k8s_client_go//kubernetes:go_default_library",
         "@io_k8s_client_go//tools/clientcmd:go_default_library",
         "@org_golang_google_genproto//googleapis/container/v1:container",
