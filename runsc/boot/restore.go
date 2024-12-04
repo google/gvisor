@@ -454,7 +454,9 @@ func validateSpecForContainer(oSpec, nSpec *specs.Spec, cName string) error {
 	}
 	oldLinux.Devices, newLinux.Devices = nil, nil
 	if err := validateResources("Resources", cName, oldLinux.Resources, newLinux.Resources); err != nil {
-		return err
+		// Resource limits can be changed during restore, log a warning and do not
+		// return error.
+		log.Warningf("specs.Linux.Resources has been changed during restore, err %v", err)
 	}
 	oldLinux.Resources, newLinux.Resources = nil, nil
 	if err := validateArray("UIDMappings", cName, oldLinux.UIDMappings, newLinux.UIDMappings); err != nil {
