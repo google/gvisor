@@ -21,6 +21,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/metric"
@@ -630,6 +631,10 @@ type Task struct {
 
 	// Origin is the origin of the task.
 	Origin TaskOrigin
+
+	// onDestroyAction is a set of callbacks that are executed when the
+	// task is destroyed.
+	onDestroyAction map[any]func(ctx context.Context) `state:"nosave"`
 }
 
 // Task related metrics

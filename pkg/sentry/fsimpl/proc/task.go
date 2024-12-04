@@ -113,6 +113,18 @@ func (fs *filesystem) newTaskInode(ctx context.Context, task *kernel.Task, pidns
 	return inode, nil
 }
 
+// AddInvalidateCallback implements kernfs.Inode.AddInvalidateCallback.
+func (i *taskInode) AddInvalidateCallback(d *kernfs.Dentry) {
+	if !i.task.RegisterOnDestroyAction(d, d.Invalidate) {
+		go func() { d.Invalidate(context.Background()) }()
+	}
+}
+
+// RemoveInvalidateCallback implements kernfs.Inode.AddInvalidateCallback.
+func (i *taskInode) RemoveInvalidateCallback(d *kernfs.Dentry) {
+	i.task.UnregisterOnDestroyAction(d)
+}
+
 // Valid implements kernfs.Inode.Valid. This inode remains valid as long
 // as the task is still running. When it's dead, another tasks with the same
 // PID could replace it.

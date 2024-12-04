@@ -30,6 +30,7 @@ import (
 	"strconv"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -756,7 +757,54 @@ func (t *Task) exitNotifyLocked(fromPtraceDetach bool) {
 			// Do not clear t.parent. It may be still be needed after the task has exited
 			// (for example, to perform ptrace access checks on /proc/[pid] files).
 		}
+		t.execOnDestroyActions()
 	}
+}
+
+// RegisterOnDestroyAction registers a callback to be executed when the task
+// is destroyed.
+//
+// The 'key' parameter provides a way to identify and unregister the action.
+//
+// Note: These actions are not preserved across S/R.
+func (t *Task) RegisterOnDestroyAction(key any, act func(ctx context.Context)) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.onDestroyAction == nil {
+		t.onDestroyAction = make(map[any]func(ctx context.Context))
+	}
+	t.onDestroyAction[key] = act
+	return true
+}
+
+// UnregisterOnDestroyAction unregisters a function previously registered with
+// RegisterOnDestroyAction using the same key.
+func (t *Task) UnregisterOnDestroyAction(key any) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	delete(t.onDestroyAction, key)
+}
+
+func (t *Task) execOnDestroyActions() {
+	t.mu.Lock()
+	actions := t.onDestroyAction
+	t.onDestroyAction = nil
+	t.mu.Unlock()
+
+	if len(actions) == 0 {
+		return
+	}
+	extMu := &t.k.extMu
+	// Run in another goroutine to avoid extra lock dependencies.
+	go func() {
+		// extMu is taken to avoid races with S/R.
+		extMu.Lock()
+		defer extMu.Unlock()
+
+		for _, act := range actions {
+			act(t)
+		}
+	}()
 }
 
 // Preconditions: The TaskSet mutex must be locked.

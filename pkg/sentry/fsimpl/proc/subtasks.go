@@ -40,6 +40,7 @@ type subtasksInode struct {
 	kernfs.InodeTemporary
 	kernfs.InodeWatches
 	kernfs.OrderedChildren
+	kernfs.InodeFSOwned
 	subtasksInodeRefs
 
 	locks vfs.FileLocks
