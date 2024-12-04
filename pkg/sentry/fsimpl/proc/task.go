@@ -17,6 +17,7 @@ package proc
 import (
 	"bytes"
 	"fmt"
+	"sync"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
@@ -45,6 +46,10 @@ type taskInode struct {
 	locks vfs.FileLocks
 
 	task *kernel.Task
+
+	dentriesMu sync.RWMutex `state:"nosave"`
+	// dentries is a list of dentries to be invalidated when the task is destoyed.
+	dentries map[*kernfs.Dentry]struct{}
 }
 
 var _ kernfs.Inode = (*taskInode)(nil)
@@ -99,7 +104,10 @@ func (fs *filesystem) newTaskInode(ctx context.Context, task *kernel.Task, pidns
 		contents["cgroup"] = fs.newTaskOwnedInode(ctx, task, fs.NextIno(), 0444, &taskCgroupData{task: task})
 	}
 
-	taskInode := &taskInode{task: task}
+	taskInode := &taskInode{
+		task:     task,
+		dentries: make(map[*kernfs.Dentry]struct{}),
+	}
 	// Note: credentials are overridden by taskOwnedInode.
 	taskInode.InodeAttrs.Init(ctx, task.Credentials(), linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), linux.ModeDirectory|0555)
 	taskInode.InitRefs()
@@ -111,6 +119,44 @@ func (fs *filesystem) newTaskInode(ctx context.Context, task *kernel.Task, pidns
 	taskInode.IncLinks(links)
 
 	return inode, nil
+}
+
+func (i *taskInode) TaskDestroyAction(ctx context.Context) {
+	i.dentriesMu.Lock()
+	dentries := i.dentries
+	i.dentries = nil
+	i.dentriesMu.Unlock()
+
+	for d := range dentries {
+		d.Invalidate(ctx)
+	}
+}
+
+// AddInvalidateCallback implements kernfs.Inode.AddInvalidateCallback.
+func (i *taskInode) AddInvalidateCallback(d *kernfs.Dentry) {
+	i.dentriesMu.Lock()
+	defer i.dentriesMu.Unlock()
+
+	if i.dentries == nil {
+		return
+	}
+	if len(i.dentries) == 0 && !i.task.RegisterOnDestroyAction(i) {
+		// The task has been destroyed.
+		i.dentries = nil
+		return
+	}
+	i.dentries[d] = struct{}{}
+}
+
+// RemoveInvalidateCallback implements kernfs.Inode.AddInvalidateCallback.
+func (i *taskInode) RemoveInvalidateCallback(d *kernfs.Dentry) {
+	i.dentriesMu.Lock()
+	defer i.dentriesMu.Unlock()
+
+	delete(i.dentries, d)
+	if len(i.dentries) == 0 {
+		i.task.UnregisterOnDestroyAction(i)
+	}
 }
 
 // Valid implements kernfs.Inode.Valid. This inode remains valid as long
@@ -139,6 +185,17 @@ func (*taskInode) SetStat(context.Context, *vfs.Filesystem, *auth.Credentials, v
 // DecRef implements kernfs.Inode.DecRef.
 func (i *taskInode) DecRef(ctx context.Context) {
 	i.taskInodeRefs.DecRef(func() { i.Destroy(ctx) })
+}
+
+func (i *taskInode) Lookup(ctx context.Context, name string) (kernfs.Inode, error) {
+	i.dentriesMu.RLock()
+	if i.dentries == nil {
+		// The task has been destroyed and the inode invalidate callback has been executed.
+		i.dentriesMu.RUnlock()
+		return nil, linuxerr.ESRCH
+	}
+	i.dentriesMu.RUnlock()
+	return i.OrderedChildren.Lookup(ctx, name)
 }
 
 // taskOwnedInode implements kernfs.Inode and overrides inode owner with task

@@ -630,6 +630,10 @@ type Task struct {
 
 	// Origin is the origin of the task.
 	Origin TaskOrigin
+
+	// onDestroyAction is a set of callbacks that are executed when the
+	// task is destroyed.
+	onDestroyAction map[TaskDestroyAction]struct{}
 }
 
 // Task related metrics

@@ -109,6 +109,7 @@ type readonlyDir struct {
 	kernfs.InodeTemporary
 	kernfs.InodeWatches
 	kernfs.OrderedChildren
+	kernfs.InodeFSOwned
 
 	locks vfs.FileLocks
 }
@@ -146,6 +147,7 @@ type dir struct {
 	kernfs.InodeTemporary
 	kernfs.InodeWatches
 	kernfs.OrderedChildren
+	kernfs.InodeFSOwned
 
 	locks vfs.FileLocks
 
