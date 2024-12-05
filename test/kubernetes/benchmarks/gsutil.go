@@ -32,10 +32,9 @@ import (
 )
 
 const (
-	imageAMD      = "us-central1-docker.pkg.dev/gvisor-presubmit/gvisor-presubmit-images/benchmarks/gsutil_x86_64:7eba9c02d11172d4"
-	imageARM      = "us-central1-docker.pkg.dev/gvisor-presubmit/gvisor-presubmit-images/benchmarks/gsutil_aarch64:7eba9c02d11172d4"
-	bigfile       = "gs://gvisor-benchmark-testdata/bigrandomfile"
-	containerName = "gsutil"
+	imageAMD = "us-central1-docker.pkg.dev/gvisor-presubmit/gvisor-presubmit-images/benchmarks/gsutil_x86_64:7eba9c02d11172d4"
+	imageARM = "us-central1-docker.pkg.dev/gvisor-presubmit/gvisor-presubmit-images/benchmarks/gsutil_aarch64:7eba9c02d11172d4"
+	bigfile  = "gs://gvisor-benchmark-testdata/bigrandomfile"
 )
 
 // RunGSUtil runs a series of gsutil speed benchmarks.
@@ -135,10 +134,15 @@ func RunGSUtil(ctx context.Context, t *testing.T, k8sCtx k8sctx.KubernetesContex
 					if err != nil {
 						t.Fatalf("Failed to configure pod for runtime: %v", err)
 					}
-					p, err = testcluster.MaybeSetContainerResources(p, containerName, testcluster.ContainerResourcesRequest{})
+					p, err = testcluster.MaybeSetContainerResources(p, name, testcluster.ContainerResourcesRequest{})
 					if err != nil {
 						t.Fatalf("Failed to set container resources: %v", err)
 					}
+					p, err = cluster.CreatePod(ctx, p)
+					if err != nil {
+						t.Fatalf("Failed to create pod: %v", err)
+					}
+					defer cluster.DeletePod(ctx, p)
 
 					// GetTimedContainerDuration waits for the container to
 					// finish.
@@ -146,7 +150,7 @@ func RunGSUtil(ctx context.Context, t *testing.T, k8sCtx k8sctx.KubernetesContex
 					if err != nil {
 						t.Fatalf("Failed to initialize benchmark recorder: %v", err)
 					}
-					containerDuration, err := benchmetric.GetTimedContainerDuration(ctx, cluster, p, containerName)
+					containerDuration, err := benchmetric.GetTimedContainerDuration(ctx, cluster, p, name)
 					if err != nil {
 						t.Fatalf("Failed to get container duration: %v", err)
 					}
@@ -197,7 +201,7 @@ func newGSUtilDevPod(namespace *testcluster.Namespace, name, image string, volum
 			Volumes: volumes,
 			Containers: []v13.Container{
 				{
-					Name:         containerName,
+					Name:         name,
 					Image:        image,
 					Command:      benchmetric.CommandThenTimed(initCommand, "", command),
 					VolumeMounts: volumeMounts,
