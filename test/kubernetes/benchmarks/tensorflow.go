@@ -48,15 +48,15 @@ var workloads = map[string]string{
 // RunTensorflowOnCPU runs the Tensorflow example workloads on CPU.
 func RunTensorflowOnCPU(ctx context.Context, t *testing.T, k8sCtx k8sctx.KubernetesContext, cluster *testcluster.TestCluster) {
 	benchmarkNS := cluster.Namespace(testcluster.NamespaceBenchmark)
+	if err := benchmarkNS.Reset(ctx); err != nil {
+		t.Fatalf("cannot reset namespace: %v", err)
+	}
+	defer benchmarkNS.Cleanup(ctx)
 	endProfiling, err := profiling.MaybeSetup(ctx, t, k8sCtx, cluster, benchmarkNS)
 	if err != nil {
 		t.Fatalf("Failed to setup profiling: %v", err)
 	}
 	defer endProfiling()
-	if err := benchmarkNS.Reset(ctx); err != nil {
-		t.Fatalf("cannot reset namespace: %v", err)
-	}
-	defer benchmarkNS.Cleanup(ctx)
 
 	const name = "tensorflow"
 	recorder, err := benchmetric.GetRecorder(ctx)

@@ -60,15 +60,15 @@ var (
 // BenchmarkWordpress runs a benchmark of WordPress performance.
 func BenchmarkWordpress(ctx context.Context, t *testing.T, k8sCtx k8sctx.KubernetesContext, cluster *testcluster.TestCluster) {
 	benchmarkNS := cluster.Namespace(testcluster.NamespaceBenchmark)
+	if err := benchmarkNS.Reset(ctx); err != nil {
+		t.Fatalf("cannot reset namespace: %v", err)
+	}
+	defer benchmarkNS.Cleanup(ctx)
 	endProfiling, err := profiling.MaybeSetup(ctx, t, k8sCtx, cluster, benchmarkNS)
 	if err != nil {
 		t.Fatalf("Failed to setup profiling: %v", err)
 	}
 	defer endProfiling()
-	if err := benchmarkNS.Reset(ctx); err != nil {
-		t.Fatalf("cannot reset namespace: %v", err)
-	}
-	defer benchmarkNS.Cleanup(ctx)
 
 	// Create a persistent volume on which to store the database data.
 	dbVolume := benchmarkNS.GetPersistentVolume(mariaDBVolumeName, "30Gi")
