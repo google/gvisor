@@ -156,18 +156,19 @@ func (mfd *masterFileDescription) Ioctl(ctx context.Context, io usermem.IO, sysn
 		// of the replica end.
 		return mfd.t.ld.setTermios(t, args)
 	case linux.TCSETSW:
-		// TODO(b/29356795): This should drain the output queue first.
+		// Note that this should drain the output queue first, but we
+		// don't implement that yet.
 		return mfd.t.ld.setTermios(t, args)
 	case linux.TCSETSF:
-		// TODO(b/29356795): This should drain the output queue and
-		// clear the input queue first.
+		// This should drain the output queue and clear the input queue
+		// first, but we don't implement that yet.
 		return mfd.t.ld.setTermios(t, args)
 	case linux.TIOCGPTN:
 		nP := primitive.Uint32(mfd.t.n)
 		_, err := nP.CopyOut(t, args[2].Pointer())
 		return 0, err
 	case linux.TIOCSPTLCK:
-		// TODO(b/29356795): Implement pty locking. For now just pretend we do.
+		// For now just pretend we implement pty locking.
 		return 0, nil
 	case linux.TIOCGWINSZ:
 		return 0, mfd.t.ld.windowSize(t, args)

@@ -450,6 +450,7 @@ func (gd *GRO) dispatch6(pkt *stack.PacketBuffer) {
 		case header.IPv6HopByHopOptionsExtHdr:
 		case header.IPv6RoutingExtHdr:
 		case header.IPv6DestinationOptionsExtHdr:
+		case header.IPv6ExperimentExtHdr:
 		default:
 			// This is either a TCP header or something we can't handle.
 			ipHdrSize = int(it.HeaderOffset())

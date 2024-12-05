@@ -408,6 +408,7 @@ func validateSpecForContainer(oSpec, nSpec *specs.Spec, cName string) error {
 	if oldRoot.Readonly != newRoot.Readonly {
 		return validateError("Root.Readonly", cName, oldRoot.Readonly, newRoot.Readonly)
 	}
+	oldSpec.Root.Path, newSpec.Root.Path = "", ""
 
 	// Validate specs.Spec.Mounts.
 	if err := validateMounts("Mounts", cName, oldSpec.Mounts, newSpec.Mounts); err != nil {
@@ -427,18 +428,15 @@ func validateSpecForContainer(oSpec, nSpec *specs.Spec, cName string) error {
 	if oldProcess.Terminal != newProcess.Terminal {
 		return validateError("Terminal", cName, oldProcess.Terminal, newProcess.Terminal)
 	}
-	oldProcess.Terminal, newProcess.Terminal = false, false
 	if oldProcess.Cwd != newProcess.Cwd {
 		return validateError("Cwd", cName, oldProcess.Cwd, newProcess.Cwd)
 	}
-	oldProcess.Cwd, newProcess.Cwd = "", ""
 	validateStructMap := make(map[string][2]any)
 	validateStructMap["User"] = [2]any{oldProcess.User, newProcess.User}
 	validateStructMap["Rlimits"] = [2]any{oldProcess.Rlimits, newProcess.Rlimits}
 	if ok := slices.Equal(oldProcess.Args, newProcess.Args); !ok {
 		return validateError("Args", cName, oldProcess.Args, newProcess.Args)
 	}
-	oldProcess.Args, newProcess.Args = nil, nil
 	if err := validateCapabilities("Capabilities", cName, oldProcess.Capabilities, newProcess.Capabilities); err != nil {
 		return err
 	}
@@ -481,18 +479,16 @@ func validateSpecForContainer(oSpec, nSpec *specs.Spec, cName string) error {
 	oldProcess.Rlimits, newProcess.Rlimits = nil, nil
 	oldLinux.Sysctl, newLinux.Sysctl = nil, nil
 	oldLinux.Seccomp, newLinux.Seccomp = nil, nil
-	oldSpec.Root, newSpec.Root = nil, nil
 
-	// These fields can change across checkpoint restore and do not need
-	// validation.
+	// Hostname, Domainname, Environment variables and CgroupsPath are
+	// allowed to change during restore. Hooks contain callbacks for
+	// lifecycle of the container such as prestart and teardown, and can
+	// change. Do not validate these fields.
 	oldSpec.Hostname, newSpec.Hostname = "", ""
 	oldSpec.Domainname, newSpec.Domainname = "", ""
-	// Hooks contain callbacks for lifecycle of the container such as
-	// prestart and teardown, and can change across C/R.
-	oldSpec.Hooks, newSpec.Hooks = nil, nil
-	// Environment variables and CgroupsPath can change during restore.
 	oldProcess.Env, newProcess.Env = nil, nil
 	oldLinux.CgroupsPath, newLinux.CgroupsPath = "", ""
+	oldSpec.Hooks, newSpec.Hooks = nil, nil
 
 	// Validate remaining fields of specs.Process.
 	if ok := reflect.DeepEqual(oldProcess, newProcess); !ok {
@@ -505,11 +501,6 @@ func validateSpecForContainer(oSpec, nSpec *specs.Spec, cName string) error {
 		return validateError("Linux", cName, oSpec, nSpec)
 	}
 	oldSpec.Linux, newSpec.Linux = nil, nil
-
-	if err := validateAnnotations(cName, oldSpec.Annotations, newSpec.Annotations); err != nil {
-		return err
-	}
-	oldSpec.Annotations, newSpec.Annotations = nil, nil
 
 	if ok := reflect.DeepEqual(oldSpec, newSpec); !ok {
 		return validateError("Spec", cName, oSpec, nSpec)

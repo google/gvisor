@@ -335,9 +335,9 @@ func (it *IPTables) shouldSkipOrPopulateTables(tables []checkTable, pkt *PacketB
 // This is called in the hot path even when iptables are disabled, so we ensure
 // that it does not allocate. Note that called functions (e.g.
 // getConnAndUpdate) can allocate.
-// TODO(b/233951539): checkescape fails on arm sometimes. Fix and re-add.
+// +checkescape
 func (it *IPTables) CheckPrerouting(pkt *PacketBuffer, addressEP AddressableEndpoint, inNicName string) bool {
-	tables := [...]checkTable{
+	tables := [...]checkTable{ // escapes: on arm this causes an allocation.
 		{
 			fn:      check,
 			tableID: MangleID,
@@ -373,9 +373,9 @@ func (it *IPTables) CheckPrerouting(pkt *PacketBuffer, addressEP AddressableEndp
 // This is called in the hot path even when iptables are disabled, so we ensure
 // that it does not allocate. Note that called functions (e.g.
 // getConnAndUpdate) can allocate.
-// TODO(b/233951539): checkescape fails on arm sometimes. Fix and re-add.
+// +checkescape
 func (it *IPTables) CheckInput(pkt *PacketBuffer, inNicName string) bool {
-	tables := [...]checkTable{
+	tables := [...]checkTable{ // escapes: on arm this causes an allocation.
 		{
 			fn:      checkNAT,
 			tableID: NATID,
@@ -413,9 +413,9 @@ func (it *IPTables) CheckInput(pkt *PacketBuffer, inNicName string) bool {
 // This is called in the hot path even when iptables are disabled, so we ensure
 // that it does not allocate. Note that called functions (e.g.
 // getConnAndUpdate) can allocate.
-// TODO(b/233951539): checkescape fails on arm sometimes. Fix and re-add.
+// +checkescape
 func (it *IPTables) CheckForward(pkt *PacketBuffer, inNicName, outNicName string) bool {
-	tables := [...]checkTable{
+	tables := [...]checkTable{ // escapes: on arm this causes an allocation.
 		{
 			fn:      check,
 			tableID: FilterID,
@@ -445,9 +445,9 @@ func (it *IPTables) CheckForward(pkt *PacketBuffer, inNicName, outNicName string
 // This is called in the hot path even when iptables are disabled, so we ensure
 // that it does not allocate. Note that called functions (e.g.
 // getConnAndUpdate) can allocate.
-// TODO(b/233951539): checkescape fails on arm sometimes. Fix and re-add.
+// +checkescape
 func (it *IPTables) CheckOutput(pkt *PacketBuffer, r *Route, outNicName string) bool {
-	tables := [...]checkTable{
+	tables := [...]checkTable{ // escapes: on arm this causes an allocation.
 		{
 			fn:      check,
 			tableID: MangleID,
@@ -489,9 +489,9 @@ func (it *IPTables) CheckOutput(pkt *PacketBuffer, r *Route, outNicName string) 
 // This is called in the hot path even when iptables are disabled, so we ensure
 // that it does not allocate. Note that called functions (e.g.
 // getConnAndUpdate) can allocate.
-// TODO(b/233951539): checkescape fails on arm sometimes. Fix and re-add.
+// +checkescape
 func (it *IPTables) CheckPostrouting(pkt *PacketBuffer, r *Route, addressEP AddressableEndpoint, outNicName string) bool {
-	tables := [...]checkTable{
+	tables := [...]checkTable{ // escapes: on arm this causes an allocation.
 		{
 			fn:      check,
 			tableID: MangleID,
