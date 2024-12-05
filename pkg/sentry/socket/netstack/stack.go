@@ -298,7 +298,7 @@ func (s *Stack) newVeth(ctx context.Context, linkAttrs map[uint16]nlmsg.BytesVie
 			}
 		}
 	}
-	ep, peerEP := veth.NewPair(defaultMTU)
+	ep, peerEP := veth.NewPair(defaultMTU, veth.DefaultBacklogSize)
 	id := s.Stack.NextNICID()
 	peerID := peerStack.Stack.NextNICID()
 	if ifname == "" {
