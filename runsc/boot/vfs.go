@@ -98,9 +98,7 @@ func registerFilesystems(k *kernel.Kernel, info *containerInfo) error {
 		AllowUserList:  true,
 	})
 	vfsObj.MustRegisterFilesystemType(devpts.Name, &devpts.FilesystemType{}, &vfs.RegisterFilesystemTypeOptions{
-		AllowUserList: true,
-		// TODO(b/29356795): Users may mount this once the terminals are in a
-		//  usable state.
+		AllowUserList:  true,
 		AllowUserMount: true,
 	})
 	vfsObj.MustRegisterFilesystemType(dev.Name, &dev.FilesystemType{}, &vfs.RegisterFilesystemTypeOptions{})

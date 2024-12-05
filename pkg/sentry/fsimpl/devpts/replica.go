@@ -149,11 +149,12 @@ func (rfd *replicaFileDescription) Ioctl(ctx context.Context, io usermem.IO, sys
 	case linux.TCSETS:
 		return rfd.inode.t.ld.setTermios(t, args)
 	case linux.TCSETSW:
-		// TODO(b/29356795): This should drain the output queue first.
+		// Note that this should drain the output queue first, but we
+		// don't implement that yet.
 		return rfd.inode.t.ld.setTermios(t, args)
 	case linux.TCSETSF:
-		// TODO(b/29356795): This should drain the output queue and
-		// clear the input queue first.
+		// This should drain the output queue and clear the input queue
+		// first, but we don't implement that yet.
 		return rfd.inode.t.ld.setTermios(t, args)
 	case linux.TIOCGPTN:
 		nP := primitive.Uint32(rfd.inode.t.n)

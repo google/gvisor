@@ -243,8 +243,6 @@ type rootInode struct {
 	replicas map[uint32]*replicaInode
 
 	// nextIdx is the next pty index to use. Must be accessed atomically.
-	//
-	// TODO(b/29356795): reuse indices when ptys are closed.
 	nextIdx uint32
 }
 
