@@ -358,6 +358,7 @@ go_library(
     deps = [
         "//test/gpu/ollama",
         "//test/kubernetes",
+        "//test/kubernetes/benchmarks/profiling",
         "//test/kubernetes/benchmetric",
         "//test/kubernetes/k8sctx",
         "//test/kubernetes/testcluster",
@@ -392,6 +393,7 @@ go_library(
     deps = [
         "//test/gpu/stablediffusion",
         "//test/kubernetes",
+        "//test/kubernetes/benchmarks/profiling",
         "//test/kubernetes/benchmetric",
         "//test/kubernetes/k8sctx",
         "//test/kubernetes/testcluster",

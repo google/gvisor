@@ -24,6 +24,7 @@ import (
 
 	"gvisor.dev/gvisor/test/gpu/stablediffusion"
 	k8s "gvisor.dev/gvisor/test/kubernetes"
+	"gvisor.dev/gvisor/test/kubernetes/benchmarks/profiling"
 	"gvisor.dev/gvisor/test/kubernetes/benchmetric"
 	"gvisor.dev/gvisor/test/kubernetes/k8sctx"
 	"gvisor.dev/gvisor/test/kubernetes/testcluster"
@@ -112,6 +113,11 @@ func RunStableDiffusionXL(ctx context.Context, t *testing.T, k8sCtx k8sctx.Kuber
 		t.Fatalf("cannot reset namespace: %v", err)
 	}
 	defer benchmarkNS.Cleanup(ctx)
+	endProfiling, err := profiling.MaybeSetup(ctx, t, k8sCtx, cluster, benchmarkNS)
+	if err != nil {
+		t.Fatalf("Failed to setup profiling: %v", err)
+	}
+	defer endProfiling()
 
 	imageName, err := k8sCtx.ResolveImage(ctx, stableDiffusionImage)
 	if err != nil {
