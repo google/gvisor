@@ -29,72 +29,56 @@ func (d *dentry) isDir() bool {
 // Preconditions:
 //   - d.dirMu must be locked.
 //   - d.isDir().
-func (d *dentry) collectWhiteoutsForRmdirLocked(ctx context.Context) (map[string]bool, error) {
+func (d *dentry) collectWhiteoutsForRmdirLocked(ctx context.Context) ([]string, error) {
+	if !d.isCopiedUp() {
+		return nil, nil
+	}
 	vfsObj := d.fs.vfsfs.VirtualFilesystem()
-	var readdirErr error
-	whiteouts := make(map[string]bool)
-	var maybeWhiteouts []string
-	d.iterLayers(func(layerVD vfs.VirtualDentry, isUpper bool) bool {
-		layerFD, err := vfsObj.OpenAt(ctx, d.fs.creds, &vfs.PathOperation{
-			Root:  layerVD,
-			Start: layerVD,
-		}, &vfs.OpenOptions{
-			Flags: linux.O_RDONLY | linux.O_DIRECTORY,
-		})
-		if err != nil {
-			readdirErr = err
-			return false
-		}
-		defer layerFD.DecRef(ctx)
-
-		// Reuse slice allocated for maybeWhiteouts from a previous layer to
-		// reduce allocations.
-		maybeWhiteouts = maybeWhiteouts[:0]
-		err = layerFD.IterDirents(ctx, vfs.IterDirentsCallbackFunc(func(dirent vfs.Dirent) error {
-			if dirent.Name == "." || dirent.Name == ".." {
-				return nil
-			}
-			if _, ok := whiteouts[dirent.Name]; ok {
-				// This file has been whited-out in a previous layer.
-				return nil
-			}
-			if dirent.Type == linux.DT_CHR {
-				// We have to determine if this is a whiteout, which doesn't
-				// count against the directory's emptiness. However, we can't
-				// do so while holding locks held by layerFD.IterDirents().
-				maybeWhiteouts = append(maybeWhiteouts, dirent.Name)
-				return nil
-			}
-			// Non-whiteout file in the directory prevents rmdir.
-			return linuxerr.ENOTEMPTY
-		}))
-		if err != nil {
-			readdirErr = err
-			return false
-		}
-
-		for _, maybeWhiteoutName := range maybeWhiteouts {
-			stat, err := vfsObj.StatAt(ctx, d.fs.creds, &vfs.PathOperation{
-				Root:  layerVD,
-				Start: layerVD,
-				Path:  fspath.Parse(maybeWhiteoutName),
-			}, &vfs.StatOptions{})
-			if err != nil {
-				readdirErr = err
-				return false
-			}
-			if stat.RdevMajor != 0 || stat.RdevMinor != 0 {
-				// This file is a real character device, not a whiteout.
-				readdirErr = linuxerr.ENOTEMPTY
-				return false
-			}
-			whiteouts[maybeWhiteoutName] = isUpper
-		}
-		// Continue iteration since we haven't found any non-whiteout files in
-		// this directory yet.
-		return true
+	var whiteouts []string
+	layerFD, err := vfsObj.OpenAt(ctx, d.fs.creds, &vfs.PathOperation{
+		Root:  d.upperVD,
+		Start: d.upperVD,
+	}, &vfs.OpenOptions{
+		Flags: linux.O_RDONLY | linux.O_DIRECTORY,
 	})
-	return whiteouts, readdirErr
+	if err != nil {
+		return nil, err
+	}
+	defer layerFD.DecRef(ctx)
+
+	err = layerFD.IterDirents(ctx, vfs.IterDirentsCallbackFunc(func(dirent vfs.Dirent) error {
+		if dirent.Name == "." || dirent.Name == ".." {
+			return nil
+		}
+		if dirent.Type == linux.DT_CHR {
+			// We have to determine if this is a whiteout, which doesn't
+			// count against the directory's emptiness. However, we can't
+			// do so while holding locks held by layerFD.IterDirents().
+			whiteouts = append(whiteouts, dirent.Name)
+			return nil
+		}
+		// Non-whiteout file in the directory prevents rmdir.
+		return linuxerr.ENOTEMPTY
+	}))
+	if err != nil {
+		return nil, err
+	}
+
+	for _, maybeWhiteoutName := range whiteouts {
+		stat, err := vfsObj.StatAt(ctx, d.fs.creds, &vfs.PathOperation{
+			Root:  d.upperVD,
+			Start: d.upperVD,
+			Path:  fspath.Parse(maybeWhiteoutName),
+		}, &vfs.StatOptions{})
+		if err != nil {
+			return nil, err
+		}
+		if stat.RdevMajor != 0 || stat.RdevMinor != 0 {
+			// This file is a real character device, not a whiteout.
+			return nil, linuxerr.ENOTEMPTY
+		}
+	}
+	return whiteouts, nil
 }
 
 // +stateify savable

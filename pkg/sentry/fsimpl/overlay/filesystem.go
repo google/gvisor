@@ -1185,7 +1185,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 		replaced      *dentry
 		replacedVFSD  *vfs.Dentry
 		replacedLayer lookupLayer
-		whiteouts     map[string]bool
+		whiteouts     []string
 	)
 	replaced, replacedLayer, err = fs.getChildLocked(ctx, newParent, newName, &ds)
 	if err != nil && !linuxerr.Equals(linuxerr.ENOENT, err) {
@@ -1263,10 +1263,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 		if !needRecreateWhiteouts {
 			return
 		}
-		for whiteoutName, whiteoutUpper := range whiteouts {
-			if !whiteoutUpper {
-				continue
-			}
+		for _, whiteoutName := range whiteouts {
 			if err := CreateWhiteout(ctx, vfsObj, fs.creds, &vfs.PathOperation{
 				Root:  replaced.upperVD,
 				Start: replaced.upperVD,
@@ -1280,10 +1277,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 		if replacedLayer == lookupLayerUpper {
 			// Remove whiteouts from the directory being replaced.
 			needRecreateWhiteouts = true
-			for whiteoutName, whiteoutUpper := range whiteouts {
-				if !whiteoutUpper {
-					continue
-				}
+			for _, whiteoutName := range whiteouts {
 				if err := vfsObj.UnlinkAt(ctx, fs.creds, &vfs.PathOperation{
 					Root:  replaced.upperVD,
 					Start: replaced.upperVD,
@@ -1443,10 +1437,7 @@ func (fs *filesystem) RmdirAt(ctx context.Context, rp *vfs.ResolvingPath) error 
 			if !child.upperVD.Ok() {
 				return
 			}
-			for whiteoutName, whiteoutUpper := range whiteouts {
-				if !whiteoutUpper {
-					continue
-				}
+			for _, whiteoutName := range whiteouts {
 				if err := CreateWhiteout(ctx, vfsObj, fs.creds, &vfs.PathOperation{
 					Root:  child.upperVD,
 					Start: child.upperVD,
@@ -1457,10 +1448,7 @@ func (fs *filesystem) RmdirAt(ctx context.Context, rp *vfs.ResolvingPath) error 
 			}
 		}
 		// Remove existing whiteouts on the upper layer.
-		for whiteoutName, whiteoutUpper := range whiteouts {
-			if !whiteoutUpper {
-				continue
-			}
+		for _, whiteoutName := range whiteouts {
 			if err := vfsObj.UnlinkAt(ctx, fs.creds, &vfs.PathOperation{
 				Root:  child.upperVD,
 				Start: child.upperVD,
