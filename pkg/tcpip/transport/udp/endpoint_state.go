@@ -16,7 +16,6 @@ package udp
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -36,7 +35,11 @@ func (p *udpPacket) loadReceivedAt(_ context.Context, nsec int64) {
 
 // afterLoad is invoked by stateify.
 func (e *endpoint) afterLoad(ctx context.Context) {
-	stack.RestoreStackFromContext(ctx).RegisterRestoredEndpoint(e)
+	if e.stack.IsSaveRestoreEnabled() {
+		e.stack.RegisterRestoredEndpoint(e)
+	} else {
+		stack.RestoreStackFromContext(ctx).RegisterRestoredEndpoint(e)
+	}
 }
 
 // beforeSave is invoked by stateify.
@@ -47,34 +50,39 @@ func (e *endpoint) beforeSave() {
 
 // Restore implements tcpip.RestoredEndpoint.Restore.
 func (e *endpoint) Restore(s *stack.Stack) {
+	saveRestoreEnabled := e.stack.IsSaveRestoreEnabled()
 	e.thaw()
 
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
-	e.net.Resume(s)
+	if saveRestoreEnabled {
+		e.net.Resume(s)
+		e.ops.InitHandler(e, e.stack, tcpip.GetStackSendBufferLimits, tcpip.GetStackReceiveBufferLimits)
+	} else {
+		e.net.Resume(s)
+		e.stack = s
+		e.ops.InitHandler(e, e.stack, tcpip.GetStackSendBufferLimits, tcpip.GetStackReceiveBufferLimits)
 
-	e.stack = s
-	e.ops.InitHandler(e, e.stack, tcpip.GetStackSendBufferLimits, tcpip.GetStackReceiveBufferLimits)
-
-	switch state := e.net.State(); state {
-	case transport.DatagramEndpointStateInitial, transport.DatagramEndpointStateClosed:
-	case transport.DatagramEndpointStateBound, transport.DatagramEndpointStateConnected:
-		// Our saved state had a port, but we don't actually have a
-		// reservation. We need to remove the port from our state, but still
-		// pass it to the reservation machinery.
-		var err tcpip.Error
-		id := e.net.Info().ID
-		id.LocalPort = e.localPort
-		id.RemotePort = e.remotePort
-		id, e.boundBindToDevice, err = e.registerWithStack(e.effectiveNetProtos, id)
-		if err != nil {
-			panic(err)
+		switch state := e.net.State(); state {
+		case transport.DatagramEndpointStateInitial, transport.DatagramEndpointStateClosed:
+		case transport.DatagramEndpointStateBound, transport.DatagramEndpointStateConnected:
+			// Our saved state had a port, but we don't actually have a
+			// reservation. We need to remove the port from our state, but still
+			// pass it to the reservation machinery.
+			var err tcpip.Error
+			id := e.net.Info().ID
+			id.LocalPort = e.localPort
+			id.RemotePort = e.remotePort
+			id, e.boundBindToDevice, err = e.registerWithStack(e.effectiveNetProtos, id)
+			if err != nil {
+				panic("registering udp endpoint with the stack failed during restore")
+			}
+			e.localPort = id.LocalPort
+			e.remotePort = id.RemotePort
+		default:
+			panic("unhandled state")
 		}
-		e.localPort = id.LocalPort
-		e.remotePort = id.RemotePort
-	default:
-		panic(fmt.Sprintf("unhandled state = %s", state))
 	}
 }
 
