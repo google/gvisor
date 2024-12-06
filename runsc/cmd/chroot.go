@@ -20,6 +20,7 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"time"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
@@ -187,8 +188,19 @@ func setUpChroot(spec *specs.Spec, conf *config.Config) error {
 		return fmt.Errorf("error configuring chroot for TPU devices: %w", err)
 	}
 
-	if err := specutils.SafeMount("", chroot, "", unix.MS_REMOUNT|unix.MS_RDONLY|unix.MS_BIND, "", "/proc"); err != nil {
-		return fmt.Errorf("error remounting chroot in read-only: %v", err)
+	// NOTE(gvisor.dev/issue/10965): Some systems have intermittent EBUSY errors
+	// when trying to remount the chroot as read-only. Retry a few times to
+	// work around this.
+	for i := 0; i < 3; i++ {
+		if err := specutils.SafeMount("", chroot, "", unix.MS_REMOUNT|unix.MS_RDONLY|unix.MS_BIND, "", "/proc"); err != nil {
+			if err == unix.EBUSY && i < 2 {
+				log.Warningf("chroot mount was busy when trying to remount it as read-only, retrying...")
+				time.Sleep(50 * time.Millisecond)
+				continue
+			}
+			return fmt.Errorf("error remounting chroot in read-only: %v", err)
+		}
+		break
 	}
 
 	return pivotRoot(chroot)
