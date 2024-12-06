@@ -330,6 +330,9 @@ func NewSuite(name string, official bool) *Suite {
 
 // SendBenchmarks sends the slice of benchmarks to the BigQuery dataset/table.
 func SendBenchmarks(ctx context.Context, suite *Suite, projectID, datasetID, tableID string, opts []option.ClientOption) error {
+	if len(suite.Benchmarks) == 0 {
+		return nil // Nothing to upload.
+	}
 	client, err := bq.NewClient(ctx, projectID, opts...)
 	if err != nil {
 		return fmt.Errorf("failed to initialize client on project: %s: %v", projectID, err)
