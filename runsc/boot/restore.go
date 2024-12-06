@@ -314,6 +314,19 @@ func validateArray[T any](field, cName string, oldArr, newArr []T) error {
 	return nil
 }
 
+func validateMap[K comparable, V comparable](field, cName string, oldM map[K]V, newM map[K]V) error {
+	if len(oldM) != len(newM) {
+		return validateError(field, cName, oldM, newM)
+	}
+	for k, v1 := range oldM {
+		v2, ok := newM[k]
+		if !ok || v1 != v2 {
+			return validateError(field, cName, oldM, newM)
+		}
+	}
+	return nil
+}
+
 func sortCapabilities(o *specs.LinuxCapabilities) {
 	sort.Strings(o.Bounding)
 	sort.Strings(o.Effective)
@@ -431,9 +444,14 @@ func validateSpecForContainer(oSpec, nSpec *specs.Spec, cName string) error {
 	if oldProcess.Cwd != newProcess.Cwd {
 		return validateError("Cwd", cName, oldProcess.Cwd, newProcess.Cwd)
 	}
-	validateStructMap := make(map[string][2]any)
-	validateStructMap["User"] = [2]any{oldProcess.User, newProcess.User}
-	validateStructMap["Rlimits"] = [2]any{oldProcess.Rlimits, newProcess.Rlimits}
+	if err := validateStruct("User", cName, oldProcess.User, newProcess.User); err != nil {
+		return err
+	}
+	oldProcess.User, newProcess.User = specs.User{}, specs.User{}
+	if err := validateArray("Rlimits", cName, oldProcess.Rlimits, newProcess.Rlimits); err != nil {
+		return err
+	}
+	oldProcess.Rlimits, newProcess.Rlimits = nil, nil
 	if ok := slices.Equal(oldProcess.Args, newProcess.Args); !ok {
 		return validateError("Args", cName, oldProcess.Args, newProcess.Args)
 	}
@@ -445,8 +463,14 @@ func validateSpecForContainer(oSpec, nSpec *specs.Spec, cName string) error {
 	// Validate specs.Linux.
 	oldSpec.Linux, newSpec.Linux = ifNil(oldSpec.Linux), ifNil(newSpec.Linux)
 	oldLinux, newLinux := *oldSpec.Linux, *newSpec.Linux
-	validateStructMap["Sysctl"] = [2]any{oldLinux.Sysctl, newLinux.Sysctl}
-	validateStructMap["Seccomp"] = [2]any{oldLinux.Seccomp, newLinux.Seccomp}
+	if err := validateMap("Sysctl", cName, oldLinux.Sysctl, newLinux.Sysctl); err != nil {
+		return err
+	}
+	oldLinux.Sysctl, newLinux.Sysctl = nil, nil
+	if err := validateStruct("Seccomp", cName, oldLinux.Seccomp, newLinux.Seccomp); err != nil {
+		return err
+	}
+	oldLinux.Seccomp, newLinux.Seccomp = nil, nil
 	if err := validateDevices("Devices", cName, oldLinux.Devices, newLinux.Devices); err != nil {
 		return err
 	}
@@ -467,18 +491,6 @@ func validateSpecForContainer(oSpec, nSpec *specs.Spec, cName string) error {
 		return err
 	}
 	oldLinux.Namespaces, newLinux.Namespaces = nil, nil
-
-	// Validate all the structs collected in validateStructMap above.
-	for key, val := range validateStructMap {
-		if err := validateStruct(key, cName, val[0], val[1]); err != nil {
-			return err
-		}
-	}
-	// Set the fields in validateStructMap to nil after validation.
-	oldProcess.User, newProcess.User = specs.User{}, specs.User{}
-	oldProcess.Rlimits, newProcess.Rlimits = nil, nil
-	oldLinux.Sysctl, newLinux.Sysctl = nil, nil
-	oldLinux.Seccomp, newLinux.Seccomp = nil, nil
 
 	// Hostname, Domainname, Environment variables and CgroupsPath are
 	// allowed to change during restore. Hooks contain callbacks for
