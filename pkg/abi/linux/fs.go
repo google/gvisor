@@ -121,3 +121,9 @@ const (
 	RENAME_EXCHANGE  = (1 << 1) // Exchange src and dst.
 	RENAME_WHITEOUT  = (1 << 2) // Whiteout src.
 )
+
+// Overlayfs constants from include/linux/fs.h.
+const (
+	WHITEOUT_MODE = 0
+	WHITEOUT_DEV  = 0
+)
