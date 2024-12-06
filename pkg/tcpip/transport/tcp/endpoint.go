@@ -3319,7 +3319,7 @@ func (e *Endpoint) GetAcceptConn() bool {
 // getExperimentOptionValue returns the experiment option value set on the
 // endpoint if experiment IP options are enabled on outgoing NIC of the route.
 func (e *Endpoint) getExperimentOptionValue(route *stack.Route) uint16 {
-	if nic, err := e.stack.GetNICByID(route.OutgoingNIC()); err == nil && nic.ExperimentIPOptionEnabled() {
+	if nic, err := e.stack.GetNICByID(route.OutgoingNIC()); err == nil && nic.GetExperimentIPOptionEnabled() {
 		return e.ops.GetExperimentOptionValue()
 	}
 	return 0
