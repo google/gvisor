@@ -1215,6 +1215,7 @@ func (k *Kernel) CreateProcess(args CreateProcessArgs) (*ThreadGroup, ThreadID, 
 		InitialCgroups:   args.InitialCgroups,
 		UserCounters:     k.GetUserCounters(args.Credentials.RealKUID),
 		Origin:           args.Origin,
+		Personality:      linux.PER_LINUX,
 		// A task with no parent starts out with no session keyring.
 		SessionKeyring: nil,
 	}
