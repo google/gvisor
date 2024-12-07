@@ -647,6 +647,7 @@ func (h *handshake) retransmitHandlerLocked() tcpip.Error {
 // to an established state given the last segment received from peer. It also
 // initializes sender/receiver.
 // +checklocks:h.ep.mu
+// +checklocksalias:h.ep.snd.ep.mu=h.ep.mu
 func (h *handshake) transitionToStateEstablishedLocked(s *segment) {
 	// Stop the SYN retransmissions now that handshake is complete.
 	if h.retransmitTimer != nil {
@@ -1064,6 +1065,7 @@ func (e *Endpoint) sendData(next *segment) {
 // error code and sends a RST if and only if the error is not ErrConnectionReset
 // indicating that the connection is being reset due to receiving a RST.
 // +checklocks:e.mu
+// +checklocksalias:e.snd.ep.mu=e.mu
 func (e *Endpoint) resetConnectionLocked(err tcpip.Error) {
 	// Only send a reset if the connection is being aborted for a reason
 	// other than receiving a reset.
@@ -1371,6 +1373,9 @@ func (e *Endpoint) keepaliveTimerExpired() tcpip.Error {
 
 // resetKeepaliveTimer restarts or stops the keepalive timer, depending on
 // whether it is enabled for this endpoint.
+//
+// +checklocks:e.mu
+// +checklocksalias:e.snd.ep.mu=e.mu
 func (e *Endpoint) resetKeepaliveTimer(receivedData bool) {
 	e.keepalive.Lock()
 	defer e.keepalive.Unlock()

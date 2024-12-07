@@ -46,7 +46,9 @@ func TestHyStartAckTrainOK(t *testing.T) {
 			Ssthresh: InitialSsthresh,
 		},
 	}
+	snd.ep.mu.Lock()
 	uut := newCubicCC(snd)
+	snd.ep.mu.Unlock()
 	snd.cc = uut
 
 	if uut.LastRTT != effectivelyInfinity {
@@ -57,6 +59,8 @@ func TestHyStartAckTrainOK(t *testing.T) {
 	}
 
 	d0 := 4 * time.Millisecond
+	uut.s.ep.mu.Lock()
+	defer uut.s.ep.mu.Unlock()
 	uut.updateHyStart(d0)
 	if uut.CurrRTT != d0 {
 		t.Fatal()
@@ -127,7 +131,9 @@ func TestHyStartAckTrainTooSpread(t *testing.T) {
 			Ssthresh: InitialSsthresh,
 		},
 	}
+	snd.ep.mu.Lock()
 	uut := newCubicCC(snd)
+	snd.ep.mu.Unlock()
 	snd.cc = uut
 
 	if uut.LastRTT != effectivelyInfinity {
@@ -137,6 +143,8 @@ func TestHyStartAckTrainTooSpread(t *testing.T) {
 		t.Fatal()
 	}
 	d0 := 4 * time.Millisecond
+	uut.s.ep.mu.Lock()
+	defer uut.s.ep.mu.Unlock()
 	uut.updateHyStart(d0)
 	if uut.CurrRTT != d0 {
 		t.Fatal()
@@ -196,10 +204,14 @@ func TestHyStartDelayOK(t *testing.T) {
 			Ssthresh: InitialSsthresh,
 		},
 	}
+	snd.ep.mu.Lock()
 	uut := newCubicCC(snd)
+	snd.ep.mu.Unlock()
 	snd.cc = uut
 
 	d0 := 4 * time.Millisecond
+	uut.s.ep.mu.Lock()
+	defer uut.s.ep.mu.Unlock()
 	uut.updateHyStart(d0)
 
 	// Move SndNext and SndUna to advance to a new round.
@@ -247,10 +259,14 @@ func TestHyStartDelay_BelowThresh(t *testing.T) {
 			Ssthresh: InitialSsthresh,
 		},
 	}
+	snd.ep.mu.Lock()
 	uut := newCubicCC(snd)
+	snd.ep.mu.Unlock()
 	snd.cc = uut
 
 	d0 := 4 * time.Millisecond
+	uut.s.ep.mu.Lock()
+	defer uut.s.ep.mu.Unlock()
 	uut.updateHyStart(d0)
 
 	// Move SndNext and SndUna to advance to a new round.
