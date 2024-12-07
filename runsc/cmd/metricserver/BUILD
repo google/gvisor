@@ -11,6 +11,7 @@ go_binary(
     srcs = [
         "metricserver_main.go",
     ],
+    static = True,
     visibility = [
         "//:sandbox",
     ],
