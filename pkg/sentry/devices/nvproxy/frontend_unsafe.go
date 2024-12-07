@@ -112,18 +112,73 @@ func ctrlIoctlHasInfoList[Params any, PtrParams hasCtrlInfoListPtr[Params]](fi *
 	return n, nil
 }
 
-func ctrlDevGpuGetClasslistInvoke(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54Parameters, ctrlParams *nvgpu.NV0080_CTRL_GPU_GET_CLASSLIST_PARAMS, classList []uint32) (uintptr, error) {
-	origClassList := ctrlParams.ClassList
-	ctrlParams.ClassList = p64FromPtr(unsafe.Pointer(&classList[0]))
-	n, err := rmControlInvoke(fi, ioctlParams, ctrlParams)
-	ctrlParams.ClassList = origClassList
+func ctrlGetNvU32ListInvoke(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54Parameters, ctrlParams *nvgpu.RmapiParamNvU32List, list []uint32) (uintptr, error) {
+	sentryCtrlParams := *ctrlParams
+	sentryCtrlParams.List = p64FromPtr(unsafe.Pointer(&list[0]))
+	n, err := rmControlInvoke(fi, ioctlParams, &sentryCtrlParams)
 	if err != nil {
 		return n, err
 	}
-	if _, err := primitive.CopyUint32SliceOut(fi.t, addrFromP64(origClassList), classList); err != nil {
+	if _, err := primitive.CopyUint32SliceOut(fi.t, addrFromP64(ctrlParams.List), list); err != nil {
 		return 0, err
 	}
-	if _, err := ctrlParams.CopyOut(fi.t, addrFromP64(ioctlParams.Params)); err != nil {
+	outCtrlParams := sentryCtrlParams
+	outCtrlParams.List = ctrlParams.List
+	if _, err := outCtrlParams.CopyOut(fi.t, addrFromP64(ioctlParams.Params)); err != nil {
+		return n, err
+	}
+	return n, nil
+}
+
+func ctrlDevGRGetCapsInvoke(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54Parameters, ctrlParams *nvgpu.NV0080_CTRL_GET_CAPS_PARAMS, capsTbl []byte) (uintptr, error) {
+	sentryCtrlParams := *ctrlParams
+	sentryCtrlParams.CapsTbl = p64FromPtr(unsafe.Pointer(&capsTbl[0]))
+	n, err := rmControlInvoke(fi, ioctlParams, &sentryCtrlParams)
+	if err != nil {
+		return n, err
+	}
+	if _, err := primitive.CopyByteSliceOut(fi.t, addrFromP64(ctrlParams.CapsTbl), capsTbl); err != nil {
+		return 0, err
+	}
+	outCtrlParams := sentryCtrlParams
+	outCtrlParams.CapsTbl = ctrlParams.CapsTbl
+	if _, err := outCtrlParams.CopyOut(fi.t, addrFromP64(ioctlParams.Params)); err != nil {
+		return n, err
+	}
+	return n, nil
+}
+
+func ctrlXxxGetInfoInvoke(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54Parameters, ctrlParams *nvgpu.NvxxxCtrlXxxGetInfoParams, infoList []nvgpu.NVXXXX_CTRL_XXX_INFO) (uintptr, error) {
+	sentryCtrlParams := *ctrlParams
+	sentryCtrlParams.GRInfoList = p64FromPtr(unsafe.Pointer(&infoList[0]))
+	n, err := rmControlInvoke(fi, ioctlParams, &sentryCtrlParams)
+	if err != nil {
+		return n, err
+	}
+	if _, err := nvgpu.CopyCtrlXxxInfoSliceOut(fi.t, addrFromP64(ctrlParams.GRInfoList), infoList); err != nil {
+		return 0, err
+	}
+	outCtrlParams := sentryCtrlParams
+	outCtrlParams.GRInfoList = ctrlParams.GRInfoList
+	if _, err := outCtrlParams.CopyOut(fi.t, addrFromP64(ioctlParams.Params)); err != nil {
+		return n, err
+	}
+	return n, nil
+}
+
+func ctrlSubdevGRGetInfoInvoke(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54Parameters, ctrlParams *nvgpu.NV2080_CTRL_GR_GET_INFO_PARAMS, infoList []nvgpu.NVXXXX_CTRL_XXX_INFO) (uintptr, error) {
+	sentryCtrlParams := *ctrlParams
+	sentryCtrlParams.GRInfoList = p64FromPtr(unsafe.Pointer(&infoList[0]))
+	n, err := rmControlInvoke(fi, ioctlParams, &sentryCtrlParams)
+	if err != nil {
+		return n, err
+	}
+	if _, err := nvgpu.CopyCtrlXxxInfoSliceOut(fi.t, addrFromP64(ctrlParams.GRInfoList), infoList); err != nil {
+		return 0, err
+	}
+	outCtrlParams := sentryCtrlParams
+	outCtrlParams.GRInfoList = ctrlParams.GRInfoList
+	if _, err := outCtrlParams.CopyOut(fi.t, addrFromP64(ioctlParams.Params)); err != nil {
 		return n, err
 	}
 	return n, nil
@@ -150,25 +205,25 @@ func ctrlDevFIFOGetChannelList(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54
 	if _, err := primitive.CopyUint32SliceIn(fi.t, addrFromP64(ctrlParams.PChannelList), channelList); err != nil {
 		return 0, err
 	}
+	sentryCtrlParams := ctrlParams
+	sentryCtrlParams.PChannelHandleList = p64FromPtr(unsafe.Pointer(&channelHandleList[0]))
+	sentryCtrlParams.PChannelList = p64FromPtr(unsafe.Pointer(&channelList[0]))
 
-	origPChannelHandleList := ctrlParams.PChannelHandleList
-	origPChannelList := ctrlParams.PChannelList
-	ctrlParams.PChannelHandleList = p64FromPtr(unsafe.Pointer(&channelHandleList[0]))
-	ctrlParams.PChannelList = p64FromPtr(unsafe.Pointer(&channelList[0]))
-	n, err := rmControlInvoke(fi, ioctlParams, &ctrlParams)
-	ctrlParams.PChannelHandleList = origPChannelHandleList
-	ctrlParams.PChannelList = origPChannelList
+	n, err := rmControlInvoke(fi, ioctlParams, &sentryCtrlParams)
 	if err != nil {
 		return n, err
 	}
 
-	if _, err := primitive.CopyUint32SliceOut(fi.t, addrFromP64(origPChannelHandleList), channelHandleList); err != nil {
+	if _, err := primitive.CopyUint32SliceOut(fi.t, addrFromP64(ctrlParams.PChannelHandleList), channelHandleList); err != nil {
 		return 0, err
 	}
-	if _, err := primitive.CopyUint32SliceOut(fi.t, addrFromP64(origPChannelList), channelList); err != nil {
+	if _, err := primitive.CopyUint32SliceOut(fi.t, addrFromP64(ctrlParams.PChannelList), channelList); err != nil {
 		return 0, err
 	}
-	if _, err := ctrlParams.CopyOut(fi.t, addrFromP64(ioctlParams.Params)); err != nil {
+	outCtrlParams := sentryCtrlParams
+	outCtrlParams.PChannelHandleList = ctrlParams.PChannelHandleList
+	outCtrlParams.PChannelList = ctrlParams.PChannelList
+	if _, err := outCtrlParams.CopyOut(fi.t, addrFromP64(ioctlParams.Params)); err != nil {
 		return n, err
 	}
 
@@ -305,6 +360,25 @@ func rmAllocInvoke[Params any](fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64
 			return n, err
 		}
 	}
+	if _, err := outIoctlParams.CopyOut(fi.t, fi.ioctlParamsAddr); err != nil {
+		return n, err
+	}
+	return n, nil
+}
+
+func rmIdleChannelsInvoke(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS30Parameters, clientsBuf, devicesBuf, channelsBuf *byte) (uintptr, error) {
+	sentryIoctlParams := *ioctlParams
+	sentryIoctlParams.Clients = p64FromPtr(unsafe.Pointer(clientsBuf))
+	sentryIoctlParams.Devices = p64FromPtr(unsafe.Pointer(devicesBuf))
+	sentryIoctlParams.Channels = p64FromPtr(unsafe.Pointer(channelsBuf))
+	n, err := frontendIoctlInvoke(fi, &sentryIoctlParams)
+	if err != nil {
+		return n, err
+	}
+	outIoctlParams := sentryIoctlParams
+	outIoctlParams.Clients = ioctlParams.Clients
+	outIoctlParams.Devices = ioctlParams.Devices
+	outIoctlParams.Channels = ioctlParams.Channels
 	if _, err := outIoctlParams.CopyOut(fi.t, fi.ioctlParamsAddr); err != nil {
 		return n, err
 	}
