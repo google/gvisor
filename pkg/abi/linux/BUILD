@@ -35,6 +35,8 @@ go_library(
         "fs.go",
         "fuse.go",
         "futex.go",
+        "hwcap_amd64.go",
+        "hwcap_arm64.go",
         "inotify.go",
         "ioctl.go",
         "ioctl_tun.go",
