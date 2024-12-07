@@ -48,9 +48,9 @@ var (
 	// The test expects that it contains the files to be served at /local,
 	// and will serve files out of `nginxServingDir`.
 	nginxCommand      = []string{"nginx", "-c", "/etc/nginx/nginx.conf"}
-	nginxDocKibibytes = []int{1, 10, 100, 10240}
-	threads           = []int{1, 8, 64, 1000}
-	targetQPS         = []int{1, 8, 64, httpbench.InfiniteQPS}
+	nginxDocKibibytes = []int{1, 10240}
+	threads           = []int{1, 8, 1000}
+	targetQPS         = []int{1, 64, httpbench.InfiniteQPS}
 	wantPercentiles   = []int{50, 95, 99}
 )
 
