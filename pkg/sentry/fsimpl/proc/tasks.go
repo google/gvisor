@@ -46,6 +46,7 @@ type tasksInode struct {
 	kernfs.InodeTemporary // This holds no meaning as this inode can't be Looked up and is always valid.
 	kernfs.InodeWatches
 	kernfs.OrderedChildren
+	kernfs.InodeFSOwned
 	tasksInodeRefs
 
 	locks vfs.FileLocks
