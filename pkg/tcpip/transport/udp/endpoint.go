@@ -61,7 +61,7 @@ type endpoint struct {
 
 	// The following fields are initialized at creation time and do not
 	// change throughout the lifetime of the endpoint.
-	stack       *stack.Stack `state:"manual"`
+	stack       *stack.Stack
 	waiterQueue *waiter.Queue
 	net         network.Endpoint
 	stats       tcpip.TransportEndpointStats

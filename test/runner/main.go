@@ -280,6 +280,7 @@ func prepareSave(args []string, undeclaredOutputsDir string, dirs []string, inde
 	// Pass the directory path of the state file to the sandbox.
 	args = append(args, "-TESTONLY-autosave-image-path", dir)
 	dirs = append(dirs, dir)
+	args = append(args, "-TESTONLY-save-restore-netstack=true")
 	return args, dirs, nil
 }
 
