@@ -169,7 +169,7 @@ func uvmIoctlNoParams(ui *uvmIoctlState) (uintptr, error) {
 	return uvmIoctlInvoke[byte](ui, nil)
 }
 
-func uvmIoctlSimple[Params any, PtrParams marshalPtr[Params]](ui *uvmIoctlState) (uintptr, error) {
+func uvmIoctlSimple[Params any, PtrParams hasStatusPtr[Params]](ui *uvmIoctlState) (uintptr, error) {
 	var ioctlParamsValue Params
 	ioctlParams := PtrParams(&ioctlParamsValue)
 	if _, err := ioctlParams.CopyIn(ui.t, ui.ioctlParamsAddr); err != nil {
@@ -178,6 +178,11 @@ func uvmIoctlSimple[Params any, PtrParams marshalPtr[Params]](ui *uvmIoctlState)
 	n, err := uvmIoctlInvoke(ui, ioctlParams)
 	if err != nil {
 		return n, err
+	}
+	if log.IsLogging(log.Debug) {
+		if status := ioctlParams.GetStatus(); status != nvgpu.NV_OK {
+			ui.ctx.Debugf("nvproxy: uvm ioctl with ioctlParams=%T failed: status=%#x", ioctlParamsValue, status)
+		}
 	}
 	if _, err := ioctlParams.CopyOut(ui.t, ui.ioctlParamsAddr); err != nil {
 		return n, err
@@ -200,6 +205,9 @@ func uvmInitialize(ui *uvmIoctlState) (uintptr, error) {
 	if err != nil {
 		return n, err
 	}
+	if ioctlParams.RMStatus != nvgpu.NV_OK && log.IsLogging(log.Debug) {
+		ui.ctx.Debugf("nvproxy: UVM_INITIALIZE failed: status=%#x", ioctlParams.RMStatus)
+	}
 	if _, err := ioctlParams.CopyOut(ui.t, ui.ioctlParamsAddr); err != nil {
 		return n, err
 	}
@@ -213,8 +221,11 @@ func uvmMMInitialize(ui *uvmIoctlState) (uintptr, error) {
 	}
 
 	failWithStatus := func(status uint32) error {
+		if log.IsLogging(log.Debug) {
+			ui.ctx.Debugf("nvproxy: UVM_MM_INITIALIZE failed internally: status=%#x", status)
+		}
 		outIoctlParams := ioctlParams
-		outIoctlParams.Status = status
+		outIoctlParams.RMStatus = status
 		_, err := outIoctlParams.CopyOut(ui.t, ui.ioctlParamsAddr)
 		return err
 	}
@@ -236,13 +247,16 @@ func uvmMMInitialize(ui *uvmIoctlState) (uintptr, error) {
 	if err != nil {
 		return n, err
 	}
+	if ioctlParams.RMStatus != nvgpu.NV_OK && log.IsLogging(log.Debug) {
+		ui.ctx.Debugf("nvproxy: UVM_MM_INITIALIZE failed: status=%#x", ioctlParams.RMStatus)
+	}
 	if _, err := ioctlParams.CopyOut(ui.t, ui.ioctlParamsAddr); err != nil {
 		return n, err
 	}
 	return n, nil
 }
 
-func uvmIoctlHasFrontendFD[Params any, PtrParams hasFrontendFDPtr[Params]](ui *uvmIoctlState) (uintptr, error) {
+func uvmIoctlHasFrontendFD[Params any, PtrParams hasFrontendFDAndStatusPtr[Params]](ui *uvmIoctlState) (uintptr, error) {
 	var ioctlParamsValue Params
 	ioctlParams := PtrParams(&ioctlParamsValue)
 	if _, err := ioctlParams.CopyIn(ui.t, ui.ioctlParamsAddr); err != nil {
@@ -276,6 +290,11 @@ func uvmIoctlHasFrontendFD[Params any, PtrParams hasFrontendFDPtr[Params]](ui *u
 	ioctlParams.SetFrontendFD(origFD)
 	if err != nil {
 		return n, err
+	}
+	if log.IsLogging(log.Debug) {
+		if status := ioctlParams.GetStatus(); status != nvgpu.NV_OK {
+			ui.ctx.Debugf("nvproxy: uvm ioctl with ioctlParams=%T failed: status=%#x", ioctlParamsValue, status)
+		}
 	}
 	if _, err := ioctlParams.CopyOut(ui.t, ui.ioctlParamsAddr); err != nil {
 		return n, err
