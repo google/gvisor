@@ -30,7 +30,7 @@ import (
 
 func TestSetLinkAddress(t *testing.T) {
 	addrs := []tcpip.LinkAddress{"abc", "def"}
-	e, e2 := veth.NewPair(1500)
+	e, e2 := veth.NewPair(1500, veth.DefaultBacklogSize)
 	defer e.Close()
 	defer e2.Close()
 	for _, addr := range addrs {
@@ -64,7 +64,7 @@ func TestWritePacket(t *testing.T) {
 		nicID    = 5
 	)
 
-	veth1, veth2 := veth.NewPair(1500)
+	veth1, veth2 := veth.NewPair(1500, veth.DefaultBacklogSize)
 	veth1.SetLinkAddress(localLinkAddr)
 	veth2.SetLinkAddress(remoteLinkAddr)
 
@@ -98,13 +98,63 @@ func TestWritePacket(t *testing.T) {
 	}
 }
 
+func TestVethOverflows(t *testing.T) {
+	const (
+		localLinkAddr  = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x06")
+		remoteLinkAddr = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x07")
+
+		netProto = 55
+		nicID    = 5
+	)
+
+	backlogSize := uint32(1)
+	veth1, veth2 := veth.NewPair(1500, backlogSize)
+	veth1.SetLinkAddress(localLinkAddr)
+	veth2.SetLinkAddress(remoteLinkAddr)
+
+	s := stack.New(stack.Options{})
+	if err := s.CreateNIC(nicID, ethernet.New(veth1)); err != nil {
+		t.Fatalf("s.CreateNIC(%d, _): %s", nicID, err)
+	}
+
+	// Use a unbuffered channel in the dispatcher so that the received packet won't be processed.
+	sink := &testNetworkDispatcher{ch: make(chan *stack.PacketBuffer)}
+	veth2Ethernet := ethernet.New(veth2)
+	veth2Ethernet.Attach(sink)
+
+	// Send 2 packets, the second packet overflows the veth device's backlog queue, whose
+	// size is 1.
+	if err := s.WritePacketToRemote(nicID, remoteLinkAddr, netProto, buffer.Buffer{}); err != nil {
+		t.Fatalf("s.WritePacketToRemote(%d, %s, _): %s", nicID, remoteLinkAddr, err)
+	}
+	if err := s.WritePacketToRemote(nicID, remoteLinkAddr, netProto, buffer.Buffer{}); err == nil {
+		t.Fatalf("s.WritePacketToRemote(%d, %s, _) got: %v, want: %v", nicID, remoteLinkAddr, err, &tcpip.ErrNoBufferSpace{})
+	}
+	pkt := <-sink.ch
+	if pkt == nil {
+		t.Fatal("expected to read a packet")
+	}
+
+	eth := header.Ethernet(pkt.LinkHeader().Slice())
+	pkt.DecRef()
+	if got := eth.SourceAddress(); got != localLinkAddr {
+		t.Errorf("got eth.SourceAddress() = %s, want = %s", got, localLinkAddr)
+	}
+	if got := eth.DestinationAddress(); got != remoteLinkAddr {
+		t.Errorf("got eth.DestinationAddress() = %s, want = %s", got, remoteLinkAddr)
+	}
+	if got := eth.Type(); got != netProto {
+		t.Errorf("got eth.Type() = %d, want = %d", got, netProto)
+	}
+}
+
 func TestDestroyDevices(t *testing.T) {
 	const (
 		vethFirstID  = 5
 		vethSecondID = 6
 	)
 
-	veth1, veth2 := veth.NewPair(1500)
+	veth1, veth2 := veth.NewPair(1500, veth.DefaultBacklogSize)
 
 	s1 := stack.New(stack.Options{})
 	if err := s1.CreateNIC(vethFirstID, ethernet.New(veth1)); err != nil {
@@ -129,7 +179,7 @@ func TestDestroyDevices(t *testing.T) {
 
 func TestMTU(t *testing.T) {
 	mtus := []uint32{100, 200}
-	e, e2 := veth.NewPair(1500)
+	e, e2 := veth.NewPair(1500, veth.DefaultBacklogSize)
 	defer e.Close()
 	defer e2.Close()
 	for _, mtu := range mtus {
