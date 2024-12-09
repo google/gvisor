@@ -72,9 +72,8 @@ func RunGSUtil(ctx context.Context, t *testing.T, k8sCtx k8sctx.KubernetesContex
 		t.Fatalf("Failed to resolve image: %v", err)
 	}
 
-	// Run tests with different volume types.
-	// TODO(b/361182379): Use gsutil parallel sliced downloads as a test
-	// dimension.
+	// Run tests with different volume types. We could also use gsutil
+	// parallel sliced downloads as a test dimension.
 	for _, storage := range []struct {
 		name   string
 		volume *v13.Volume
