@@ -338,6 +338,9 @@ func (sq *sndQueueInfo) CloneState(other *TCPSndBufState) {
 // For more details please see the detailed documentation on
 // e.LockUser/e.UnlockUser methods.
 //
+// TODO(b/339664055): Checklocks should be used more extensively here. Coverage
+// is currently sparse.
+//
 // +stateify savable
 type Endpoint struct {
 	TCPEndpointStateInner
@@ -521,7 +524,8 @@ type Endpoint struct {
 	acceptQueue acceptQueue
 
 	rcv *receiver `state:"wait"`
-	snd *sender   `state:"wait"`
+
+	snd *sender `state:"wait"`
 
 	// The goroutine drain completion notification channel.
 	drainDone chan struct{} `state:"nosave"`
@@ -632,6 +636,7 @@ func (e *Endpoint) isOwnedByUser() bool {
 // should not be holding the lock for long and spinning reduces latency as we
 // avoid an expensive sleep/wakeup of the syscall goroutine).
 // +checklocksacquire:e.mu
+// +checklocksacquire:e.snd.ep.mu
 func (e *Endpoint) LockUser() {
 	const iterations = 5
 	for i := 0; i < iterations; i++ {
@@ -644,14 +649,14 @@ func (e *Endpoint) LockUser() {
 			if e.ownedByUser.Load() == 1 {
 				e.mu.Lock()
 				e.ownedByUser.Store(1)
-				return
+				return // +checklocksforce: this locks e.snd.ep.mu
 			}
 			// Spin but don't yield the processor since the lower half
 			// should yield the lock soon.
 			continue
 		}
 		e.ownedByUser.Store(1)
-		return
+		return // +checklocksforce: this locks e.snd.ep.mu
 	}
 
 	for i := 0; i < iterations; i++ {
@@ -664,7 +669,7 @@ func (e *Endpoint) LockUser() {
 			if e.ownedByUser.Load() == 1 {
 				e.mu.Lock()
 				e.ownedByUser.Store(1)
-				return
+				return // +checklocksforce: this locks e.snd.ep.mu
 			}
 			// Spin but yield the processor since the lower half
 			// should yield the lock soon.
@@ -672,7 +677,7 @@ func (e *Endpoint) LockUser() {
 			continue
 		}
 		e.ownedByUser.Store(1)
-		return
+		return // +checklocksforce: this locks e.snd.ep.mu
 	}
 
 	// Finally just give up and wait for the Lock.
@@ -1005,6 +1010,7 @@ func (e *Endpoint) purgeReadQueue() {
 }
 
 // +checklocks:e.mu
+// +checklocksalias:e.snd.ep.mu=e.mu
 func (e *Endpoint) purgeWriteQueue() {
 	if e.snd != nil {
 		e.sndQueueInfo.sndQueueMu.Lock()
@@ -1582,6 +1588,7 @@ func (e *Endpoint) readFromPayloader(p tcpip.Payloader, opts tcpip.WriteOptions,
 
 // queueSegment reads data from the payloader and returns a segment to be sent.
 // +checklocks:e.mu
+// +checklocksalias:e.snd.ep.mu=e.mu
 func (e *Endpoint) queueSegment(p tcpip.Payloader, opts tcpip.WriteOptions) (*segment, int, tcpip.Error) {
 	e.sndQueueInfo.sndQueueMu.Lock()
 	defer e.sndQueueInfo.sndQueueMu.Unlock()
@@ -2372,6 +2379,7 @@ func (e *Endpoint) registerEndpoint(addr tcpip.FullAddress, netProto tcpip.Netwo
 
 // connect connects the endpoint to its peer.
 // +checklocks:e.mu
+// +checklocksalias:e.snd.ep.mu=e.mu
 func (e *Endpoint) connect(addr tcpip.FullAddress, handshake bool) tcpip.Error {
 	connectingAddr := addr.Addr
 
@@ -2465,7 +2473,6 @@ func (e *Endpoint) connect(addr tcpip.FullAddress, handshake bool) tcpip.Error {
 			}
 		}
 		e.segmentQueue.mu.Unlock()
-		e.snd.ep.AssertLockHeld(e)
 		e.snd.updateMaxPayloadSize(int(e.route.MTU()), 0)
 		e.setEndpointState(StateEstablished)
 		// Set the new auto tuned send buffer size after entering
@@ -2508,6 +2515,7 @@ func (e *Endpoint) Shutdown(flags tcpip.ShutdownFlags) tcpip.Error {
 }
 
 // +checklocks:e.mu
+// +checklocksalias:e.snd.ep.mu=e.mu
 func (e *Endpoint) shutdownLocked(flags tcpip.ShutdownFlags) tcpip.Error {
 	e.shutdownFlags |= flags
 	switch {
@@ -2950,6 +2958,9 @@ func (e *Endpoint) HandleError(transErr stack.TransportError, pkt *stack.PacketB
 
 // updateSndBufferUsage is called by when room opens up in the send buffer. The
 // number of newly available bytes is v.
+//
+// +checklocks:e.mu
+// +checklocksalias:e.snd.ep.mu=e.mu
 func (e *Endpoint) updateSndBufferUsage(v int) {
 	sendBufferSize := e.getSendBufferSize()
 	e.sndQueueInfo.sndQueueMu.Lock()
@@ -3131,6 +3142,7 @@ func (e *Endpoint) maxOptionSize() (size int) {
 // used before invoking the probe.
 //
 // +checklocks:e.mu
+// +checklocksalias:e.snd.ep.mu=e.mu
 func (e *Endpoint) completeStateLocked(s *TCPEndpointState) {
 	s.TCPEndpointStateInner = e.TCPEndpointStateInner
 	s.ID = TCPEndpointID(e.TransportEndpointInfo.ID)
@@ -3280,6 +3292,9 @@ func GetTCPReceiveBufferLimits(s tcpip.StackHandler) tcpip.ReceiveBufferSizeOpti
 
 // computeTCPSendBufferSize implements auto tuning of send buffer size and
 // returns the new send buffer size.
+//
+// +checklocks:e.mu
+// +checklocksalias:e.snd.ep.mu=e.mu
 func (e *Endpoint) computeTCPSendBufferSize() int64 {
 	curSndBufSz := int64(e.getSendBufferSize())
 

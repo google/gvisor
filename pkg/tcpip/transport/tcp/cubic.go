@@ -68,6 +68,8 @@ type cubicState struct {
 
 // newCubicCC returns a partially initialized cubic state with the constants
 // beta and c set and t set to current time.
+//
+// +checklocks:s.ep.mu
 func newCubicCC(s *sender) *cubicState {
 	now := s.ep.stack.Clock().NowMonotonic()
 	return &cubicState{
@@ -93,6 +95,8 @@ func newCubicCC(s *sender) *cubicState {
 // previously lowered ssThresh without experiencing packet loss.
 //
 // Refer: https://tools.ietf.org/html/rfc8312#section-4.8
+//
+// +checklocks:c.s.ep.mu
 func (c *cubicState) enterCongestionAvoidance() {
 	// See: https://tools.ietf.org/html/rfc8312#section-4.7 &
 	// https://tools.ietf.org/html/rfc8312#section-4.8
@@ -116,6 +120,8 @@ func (c *cubicState) enterCongestionAvoidance() {
 // increase').  The RFC version includes only the latter algorithm and adds an
 // intermediate phase called Conservative Slow Start, which is not implemented
 // here.
+//
+// +checklocks:c.s.ep.mu
 func (c *cubicState) updateHyStart(rtt time.Duration) {
 	if rtt < 0 {
 		// negative indicates unknown
@@ -151,6 +157,7 @@ func (c *cubicState) updateHyStart(rtt time.Duration) {
 	}
 }
 
+// +checklocks:c.s.ep.mu
 func (c *cubicState) beginHyStartRound(now tcpip.MonotonicTime) {
 	c.EndSeq = c.s.SndNxt
 	c.SampleCount = 0
@@ -164,6 +171,8 @@ func (c *cubicState) beginHyStartRound(now tcpip.MonotonicTime) {
 // algorithm used by NewReno. If after adjusting the congestion window we cross
 // the ssThresh then it will return the number of packets that must be consumed
 // in congestion avoidance mode.
+//
+// +checklocks:c.s.ep.mu
 func (c *cubicState) updateSlowStart(packetsAcked int) int {
 	// Don't let the congestion window cross into the congestion
 	// avoidance range.
@@ -186,6 +195,8 @@ func (c *cubicState) updateSlowStart(packetsAcked int) int {
 // Update updates cubic's internal state variables. It must be called on every
 // ACK received.
 // Refer: https://tools.ietf.org/html/rfc8312#section-4
+//
+// +checklocks:c.s.ep.mu
 func (c *cubicState) Update(packetsAcked int, rtt time.Duration) {
 	if c.s.Ssthresh == InitialSsthresh && c.s.SndCwnd < c.s.Ssthresh {
 		c.updateHyStart(rtt)
@@ -246,6 +257,8 @@ func (c *cubicState) getCwnd(packetsAcked, sndCwnd int, srtt time.Duration) int 
 }
 
 // HandleLossDetected implements congestionControl.HandleLossDetected.
+//
+// +checklocks:c.s.ep.mu
 func (c *cubicState) HandleLossDetected() {
 	// See: https://tools.ietf.org/html/rfc8312#section-4.5
 	c.numCongestionEvents++
@@ -258,6 +271,8 @@ func (c *cubicState) HandleLossDetected() {
 }
 
 // HandleRTOExpired implements congestionContrl.HandleRTOExpired.
+//
+// +checklocks:c.s.ep.mu
 func (c *cubicState) HandleRTOExpired() {
 	// See: https://tools.ietf.org/html/rfc8312#section-4.6
 	c.T = c.s.ep.stack.Clock().NowMonotonic()
@@ -296,6 +311,8 @@ func (c *cubicState) PostRecovery() {
 
 // reduceSlowStartThreshold returns new SsThresh as described in
 // https://tools.ietf.org/html/rfc8312#section-4.7.
+//
+// +checklocks:c.s.ep.mu
 func (c *cubicState) reduceSlowStartThreshold() {
 	c.s.Ssthresh = int(math.Max(float64(c.s.SndCwnd)*c.Beta, 2.0))
 }

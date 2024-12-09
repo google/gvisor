@@ -35,6 +35,8 @@ func newRenoCC(s *sender) *renoState {
 // algorithm used by NewReno. If after adjusting the congestion window
 // we cross the SSthreshold then it will return the number of packets that
 // must be consumed in congestion avoidance mode.
+//
+// +checklocks:r.s.ep.mu
 func (r *renoState) updateSlowStart(packetsAcked int) int {
 	// Don't let the congestion window cross into the congestion
 	// avoidance range.
@@ -51,6 +53,8 @@ func (r *renoState) updateSlowStart(packetsAcked int) int {
 
 // updateCongestionAvoidance will update congestion window in congestion
 // avoidance mode as described in RFC5681 section 3.1
+//
+// +checklocks:r.s.ep.mu
 func (r *renoState) updateCongestionAvoidance(packetsAcked int) {
 	// Consume the packets in congestion avoidance mode.
 	r.s.SndCAAckCount += packetsAcked
@@ -62,6 +66,8 @@ func (r *renoState) updateCongestionAvoidance(packetsAcked int) {
 
 // reduceSlowStartThreshold reduces the slow-start threshold per RFC 5681,
 // page 6, eq. 4. It is called when we detect congestion in the network.
+//
+// +checklocks:r.s.ep.mu
 func (r *renoState) reduceSlowStartThreshold() {
 	r.s.Ssthresh = r.s.Outstanding / 2
 	if r.s.Ssthresh < 2 {
@@ -73,6 +79,8 @@ func (r *renoState) reduceSlowStartThreshold() {
 // Update updates the congestion state based on the number of packets that
 // were acknowledged.
 // Update implements congestionControl.Update.
+//
+// +checklocks:r.s.ep.mu
 func (r *renoState) Update(packetsAcked int, _ time.Duration) {
 	if r.s.SndCwnd < r.s.Ssthresh {
 		packetsAcked = r.updateSlowStart(packetsAcked)
@@ -84,6 +92,8 @@ func (r *renoState) Update(packetsAcked int, _ time.Duration) {
 }
 
 // HandleLossDetected implements congestionControl.HandleLossDetected.
+//
+// +checklocks:r.s.ep.mu
 func (r *renoState) HandleLossDetected() {
 	// A retransmit was triggered due to nDupAckThreshold or when RACK
 	// detected loss. Reduce our slow start threshold.
@@ -91,6 +101,8 @@ func (r *renoState) HandleLossDetected() {
 }
 
 // HandleRTOExpired implements congestionControl.HandleRTOExpired.
+//
+// +checklocks:r.s.ep.mu
 func (r *renoState) HandleRTOExpired() {
 	// We lost a packet, so reduce ssthresh.
 	r.reduceSlowStartThreshold()

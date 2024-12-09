@@ -161,6 +161,8 @@ func (s *sender) shouldSchedulePTO() bool {
 
 // schedulePTO schedules the probe timeout as defined in
 // https://tools.ietf.org/html/draft-ietf-tcpm-rack-08#section-7.5.1.
+//
+// +checklocks:s.ep.mu
 func (s *sender) schedulePTO() {
 	pto := time.Second
 	s.rtt.Lock()
@@ -236,6 +238,8 @@ func (s *sender) probeTimerExpired() tcpip.Error {
 // detectTLPRecovery detects if recovery was accomplished by the loss probes
 // and updates TLP state accordingly.
 // See https://tools.ietf.org/html/draft-ietf-tcpm-rack-08#section-7.6.3.
+//
+// +checklocks:s.ep.mu
 func (s *sender) detectTLPRecovery(ack seqnum.Value, rcvdSeg *segment) {
 	if !(s.ep.SACKPermitted && s.rc.tlpRxtOut) {
 		return
@@ -279,6 +283,8 @@ func (s *sender) detectTLPRecovery(ack seqnum.Value, rcvdSeg *segment) {
 //     been observed RACK uses reo_wnd of zero during loss recovery, in order to
 //     retransmit quickly, or when the number of DUPACKs exceeds the classic
 //     DUPACKthreshold.
+//
+// +checklocks:rc.snd.ep.mu
 func (rc *rackControl) updateRACKReorderWindow() {
 	dsackSeen := rc.DSACKSeen
 	snd := rc.snd
@@ -352,6 +358,8 @@ func (rc *rackControl) exitRecovery() {
 // detectLoss marks the segment as lost if the reordering window has elapsed
 // and the ACK is not received. It will also arm the reorder timer.
 // See: https://tools.ietf.org/html/draft-ietf-tcpm-rack-08#section-7.2 Step 5.
+//
+// +checklocks:rc.snd.ep.mu
 func (rc *rackControl) detectLoss(rcvTime tcpip.MonotonicTime) int {
 	var timeout time.Duration
 	numLost := 0
