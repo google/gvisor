@@ -36,7 +36,7 @@ func (mf *frontendFDMemmapFile) MapInternal(fr memmap.FileRange, at hostarch.Acc
 	if mf.fd.mmapInternal == 0 {
 		if mf.fd.mmapLength == 0 {
 			// This shouldn't be possible.
-			log.Traceback("nvproxy: frontendFDMemmapFile.MapInternal() called before NV_ESC_RM_MAP_MEMORY")
+			log.Traceback("nvproxy: frontendFDMemmapFile.MapInternal() called before NV_ESC_RM_MAP_MEMORY or NV_ESC_RM_ALLOC_MEMORY+NV01_MEMORY_SYSTEM")
 			return safemem.BlockSeq{}, linuxerr.EINVAL
 		}
 		// Nvidia kernel driver:
