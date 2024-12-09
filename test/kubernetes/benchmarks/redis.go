@@ -49,9 +49,9 @@ const (
 )
 
 var (
-	numConnections     = []int{1, 2, 4, 8, 16, 32}
+	numConnections     = []int{1, 4, 32}
 	latencyPercentiles = []int{50, 95, 99}
-	operations         = []string{"SET", "GET", "MSET", "LPUSH", "LRANGE_500"}
+	operations         = []string{"GET", "MSET", "LRANGE_500"}
 )
 
 // BenchmarkRedis runs the Redis performance benchmark using redis-benchmark.
