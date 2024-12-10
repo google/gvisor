@@ -19,7 +19,6 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
-	"strconv"
 
 	cspb "google.golang.org/genproto/googleapis/container/v1"
 	"google.golang.org/protobuf/proto"
@@ -181,16 +180,14 @@ type RuntimeType string
 
 // List of known runtime types.
 const (
-	RuntimeTypeGVisor            = RuntimeType("gvisor")
-	RuntimeTypeUnsandboxed       = RuntimeType("runc")
-	RuntimeTypeGVisorNvidia      = RuntimeType("gvisor-nvidia")
-	RuntimeTypeGVisorTPU         = RuntimeType("gvisor-tpu")
-	RuntimeTypeUnsandboxedNvidia = RuntimeType("runc-nvidia")
-	RuntimeTypeUnsandboxedTPU    = RuntimeType("runc-tpu")
+	RuntimeTypeGVisor         = RuntimeType("gvisor")
+	RuntimeTypeUnsandboxed    = RuntimeType("runc")
+	RuntimeTypeGVisorTPU      = RuntimeType("gvisor-tpu")
+	RuntimeTypeUnsandboxedTPU = RuntimeType("runc-tpu")
 )
 
 // ApplyNodepool modifies the nodepool to configure it to use the runtime.
-func (t RuntimeType) ApplyNodepool(nodepool *cspb.NodePool, accelType AcceleratorType, accelShape string, accelRes string) {
+func (t RuntimeType) ApplyNodepool(nodepool *cspb.NodePool) {
 	if nodepool.GetConfig().GetLabels() == nil {
 		nodepool.GetConfig().Labels = map[string]string{}
 	}
@@ -204,81 +201,27 @@ func (t RuntimeType) ApplyNodepool(nodepool *cspb.NodePool, accelType Accelerato
 	case RuntimeTypeUnsandboxed:
 		nodepool.GetConfig().Labels[NodepoolRuntimeKey] = string(RuntimeTypeUnsandboxed)
 		// Do nothing.
-	case RuntimeTypeGVisorNvidia:
-		nodepool.Config.SandboxConfig = &cspb.SandboxConfig{
-			Type: cspb.SandboxConfig_GVISOR,
-		}
-		accelCount, err := strconv.Atoi(accelShape)
-		if err != nil {
-			panic(fmt.Sprintf("GPU count must be a valid number, got %v", accelShape))
-		}
-		if accelCount == 0 {
-			panic("GPU count needs to be >=1")
-		}
-		nodepool.Config.MachineType = DefaultNvidiaMachineType
-		nodepool.Config.Accelerators = []*cspb.AcceleratorConfig{
-			{
-				AcceleratorType:  string(accelType),
-				AcceleratorCount: int64(accelCount),
-			},
-		}
-		nodepool.Config.Labels[NodepoolRuntimeKey] = string(RuntimeTypeGVisorNvidia)
-		nodepool.Config.Labels[NodepoolNumAcceleratorsKey] = strconv.Itoa(accelCount)
 	case RuntimeTypeGVisorTPU:
-		nodepool.Config.MachineType = TPUAcceleratorMachineTypeMap[accelType]
-		if err := setNodePlacementPolicyCompact(nodepool, accelShape); err != nil {
-			panic(fmt.Sprintf("failed to set node placement policy: %v", err))
-		}
 		nodepool.Config.Labels[gvisorNodepoolKey] = gvisorRuntimeClass
 		nodepool.Config.Labels[NodepoolRuntimeKey] = string(RuntimeTypeGVisorTPU)
-		nodepool.Config.Labels[NodepoolTPUTopologyKey] = accelShape
 		nodepool.Config.Taints = append(nodepool.Config.Taints, &cspb.NodeTaint{
 			Key:    gvisorNodepoolKey,
 			Value:  gvisorRuntimeClass,
 			Effect: cspb.NodeTaint_NO_SCHEDULE,
 		})
-	case RuntimeTypeUnsandboxedNvidia:
-		accelCount, err := strconv.Atoi(accelShape)
-		if err != nil {
-			panic(fmt.Sprintf("GPU count must be a valid number, got %v", accelShape))
-		}
-		if accelCount == 0 {
-			panic("GPU count needs to be >=1")
-		}
-		nodepool.Config.MachineType = DefaultNvidiaMachineType
-		nodepool.Config.Accelerators = []*cspb.AcceleratorConfig{
-			{
-				AcceleratorType:  string(accelType),
-				AcceleratorCount: int64(accelCount),
-			},
-		}
-		nodepool.Config.Labels[NodepoolRuntimeKey] = string(RuntimeTypeUnsandboxedNvidia)
-		nodepool.Config.Labels[NodepoolNumAcceleratorsKey] = strconv.Itoa(accelCount)
 	case RuntimeTypeUnsandboxedTPU:
-		nodepool.Config.MachineType = TPUAcceleratorMachineTypeMap[accelType]
-		if err := setNodePlacementPolicyCompact(nodepool, accelShape); err != nil {
-			panic(fmt.Sprintf("failed to set node placement policy: %v", err))
-		}
 		nodepool.Config.Labels[NodepoolRuntimeKey] = string(RuntimeTypeUnsandboxedTPU)
-		nodepool.Config.Labels[NodepoolTPUTopologyKey] = accelShape
 	default:
 		panic(fmt.Sprintf("unsupported runtime %q", t))
 	}
-	if accelRes != "" {
-		nodepool.Config.ReservationAffinity = &cspb.ReservationAffinity{
-			ConsumeReservationType: cspb.ReservationAffinity_SPECIFIC_RESERVATION,
-			Key:                    "compute.googleapis.com/reservation-name",
-			Values:                 []string{accelRes},
-		}
-	}
 }
 
-// setNodePlacementPolicyCompact sets the node placement policy to COMPACT
+// SetNodePlacementPolicyCompact sets the node placement policy to COMPACT
 // and with the given TPU topology.
 // This is done by reflection because the NodePool_PlacementPolicy proto
 // message isn't available in the latest exported version of the genproto API.
 // This is only used for TPU nodepools so not critical for most benchmarks.
-func setNodePlacementPolicyCompact(nodepool *cspb.NodePool, tpuTopology string) error {
+func SetNodePlacementPolicyCompact(nodepool *cspb.NodePool, tpuTopology string) error {
 	placementPolicyField := reflect.ValueOf(nodepool).Elem().FieldByName("PlacementPolicy")
 	if !placementPolicyField.IsValid() {
 		return errors.New("nodepool does not have a PlacementPolicy field")
@@ -305,7 +248,15 @@ func (t RuntimeType) ApplyPodSpec(podSpec *v13.PodSpec) {
 	case RuntimeTypeGVisor:
 		podSpec.RuntimeClassName = proto.String(gvisorRuntimeClass)
 		podSpec.NodeSelector[NodepoolRuntimeKey] = string(RuntimeTypeGVisor)
+		podSpec.Tolerations = append(podSpec.Tolerations, v13.Toleration{
+			Key:      "nvidia.com/gpu",
+			Operator: v13.TolerationOpExists,
+		})
 	case RuntimeTypeUnsandboxed:
+		podSpec.Tolerations = append(podSpec.Tolerations, v13.Toleration{
+			Key:      "nvidia.com/gpu",
+			Operator: v13.TolerationOpExists,
+		})
 		// Allow the pod to schedule on gVisor nodes as well.
 		// This enables the use of `--test-nodepool-runtime=runc` to run
 		// unsandboxed benchmarks on gVisor test clusters.
@@ -315,33 +266,12 @@ func (t RuntimeType) ApplyPodSpec(podSpec *v13.PodSpec) {
 			Operator: v13.TolerationOpEqual,
 			Value:    gvisorRuntimeClass,
 		})
-	case RuntimeTypeGVisorNvidia:
-		podSpec.RuntimeClassName = proto.String(gvisorRuntimeClass)
-		podSpec.NodeSelector[NodepoolRuntimeKey] = string(RuntimeTypeGVisorNvidia)
-		podSpec.Tolerations = append(podSpec.Tolerations, v13.Toleration{
-			Key:      "nvidia.com/gpu",
-			Operator: v13.TolerationOpExists,
-		})
 	case RuntimeTypeGVisorTPU:
 		podSpec.RuntimeClassName = proto.String(gvisorRuntimeClass)
 		podSpec.NodeSelector[NodepoolRuntimeKey] = string(RuntimeTypeGVisorTPU)
 		podSpec.Tolerations = append(podSpec.Tolerations, v13.Toleration{
 			Key:      "google.com/tpu",
 			Operator: v13.TolerationOpExists,
-		})
-	case RuntimeTypeUnsandboxedNvidia:
-		podSpec.Tolerations = append(podSpec.Tolerations, v13.Toleration{
-			Key:      "nvidia.com/gpu",
-			Operator: v13.TolerationOpExists,
-		})
-		// Allow the pod to schedule on gVisor nodes as well.
-		// This enables the use of `--test-nodepool-runtime=runc-nvidia` to run
-		// unsandboxed benchmarks on gVisor test clusters.
-		podSpec.Tolerations = append(podSpec.Tolerations, v13.Toleration{
-			Effect:   v13.TaintEffectNoSchedule,
-			Key:      gvisorNodepoolKey,
-			Operator: v13.TolerationOpEqual,
-			Value:    gvisorRuntimeClass,
 		})
 	case RuntimeTypeUnsandboxedTPU:
 		podSpec.Tolerations = append(podSpec.Tolerations, v13.Toleration{
