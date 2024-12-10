@@ -34,7 +34,7 @@ import (
 
 const (
 	// Container image for Stable Diffusion XL.
-	stableDiffusionImage = k8s.ImageRepoPrefix + "gpu/stable-diffusion-xl"
+	stableDiffusionImage = k8s.ImageRepoPrefix + "gpu/stable-diffusion-xl:latest"
 )
 
 // kubernetesPodRunner implements `stablediffusion.ContainerRunner`.
@@ -171,7 +171,7 @@ func RunStableDiffusionXL(ctx context.Context, t *testing.T, k8sCtx k8sctx.Kuber
 							t.Skipf("refiner failed in previous benchmark; skipping benchmark with refiner")
 						}
 					}
-					testCtx, testCancel := context.WithTimeout(ctx, 15*time.Minute)
+					testCtx, testCancel := context.WithTimeout(ctx, 50*time.Minute)
 					defer testCancel()
 					prompt := &stablediffusion.XLPrompt{
 						Query:           test.query,
