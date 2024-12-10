@@ -339,25 +339,65 @@ func TestStdio(t *testing.T) {
 	}
 }
 
+func dockerInGvisorCapabilities() []string {
+	return []string{
+		"audit_write",
+		"chown",
+		"dac_override",
+		"fowner",
+		"fsetid",
+		"kill",
+		"mknod",
+		"net_admin",
+		"net_bind_service",
+		"net_raw",
+		"setfcap",
+		"setgid",
+		"setpcap",
+		"setuid",
+		"sys_admin",
+		"sys_chroot",
+		"sys_ptrace",
+	}
+}
+
 func TestDockerOverlayWithHostNetwork(t *testing.T) {
-	testDocker(t, true, true)
+	testDocker(t, true, true, false)
+}
+
+func TestPrivilegedDockerOverlayWithHostNetwork(t *testing.T) {
+	testDocker(t, true, true, true)
 }
 
 func TestDockerOverlay(t *testing.T) {
-	testDocker(t, true, false)
+	testDocker(t, true, false, false)
+}
+
+func TestPrivilegedDockerOverlay(t *testing.T) {
+	testDocker(t, true, false, true)
 }
 
 func TestDockerWithHostNetwork(t *testing.T) {
-	testDocker(t, false, true)
+	testDocker(t, false, true, false)
+}
+
+func TestPrivilegedDockerWithHostNetwork(t *testing.T) {
+	testDocker(t, false, true, true)
 }
 
 func TestDocker(t *testing.T) {
 	// Overlayfs can't be built on top of another overlayfs, so docket has
 	// to fall back to the vfs driver.
-	testDocker(t, false, false)
+	testDocker(t, false, false, false)
 }
 
-func testDocker(t *testing.T, overlay, hostNetwork bool) {
+func TestPrivilegedDocker(t *testing.T) {
+	// Overlayfs can't be built on top of another overlayfs, so docket has
+	// to fall back to the vfs driver.
+	testDocker(t, false, false, true)
+}
+
+func testDocker(t *testing.T, overlay, hostNetwork, startPrivilegedContainer bool) {
 	if testutil.IsRunningWithHostNet() {
 		t.Skip("docker doesn't work with hostinet")
 	}
@@ -367,8 +407,8 @@ func testDocker(t *testing.T, overlay, hostNetwork bool) {
 
 	// Start the container.
 	opts := dockerutil.RunOpts{
-		Image:      "basic/docker",
-		Privileged: true,
+		Image:  "basic/docker",
+		CapAdd: dockerInGvisorCapabilities(),
 	}
 	if overlay {
 		opts.Mounts = []mount.Mount{
@@ -403,10 +443,14 @@ func testDocker(t *testing.T, overlay, hostNetwork bool) {
 		}
 		break
 	}
-	cmd := []string{"docker", "run", "--rm", "alpine", "sh", "-c", "apk add curl && curl -h"}
+	cmd := []string{"docker", "run", "--rm"}
 	if hostNetwork {
-		cmd = []string{"docker", "run", "--network", "host", "--rm", "alpine", "sh", "-c", "apk add curl && curl -h"}
+		cmd = append(cmd, "--network", "host")
 	}
+	if startPrivilegedContainer {
+		cmd = append(cmd, "--privileged")
+	}
+	cmd = append(cmd, "alpine", "sh", "-c", "apk add curl && curl -h")
 	_, err := d.ExecProcess(ctx, dockerutil.ExecOpts{}, cmd...)
 	if err != nil {
 		t.Fatalf("docker exec failed: %v", err)

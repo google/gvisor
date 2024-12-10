@@ -31,15 +31,17 @@ entry.
 First, prepare a container image with pre-installed Docker:
 
 ```shell
-$ cd images/basic/docker/
-$ docker build -t docker-in-gvisor .
+$ docker build -t docker-in-gvisor images/basic/docker
 ```
 
-Since Docker requires root privileges and a full set of capabilities, a gVisor
-sandbox needs to be started in privileged mode:
+In a gVisor sandbox, Docker containers can be started with a set of capabilities
+as `audit_write`, `chown`, `dac_override`, `fowner`, `fsetid`, `kill`, `mknod`,
+`net_bind_service`, `net_admin`, `net_raw`, `setfcap`, `setgid`, `setpcap`,
+`setuid`, `sys_admin`, `sys_chroot`, `sys_ptrace`. For the simplicity, let's
+start the sandbox with all capabilities:
 
 ```shell
-$ docker run --runtime runsc -d --rm --privileged --name docker-in-gvisor docker-in-gvisor
+$ docker run --runtime runsc -d --rm --cap-add all --name docker-in-gvisor docker-in-gvisor
 ```
 
 Now, we can build and run Docker containers.
@@ -78,3 +80,6 @@ $ docker run -it --rm whalesay "Containers do not contain, but gVisor-s do!"
           \____\______/
 
 ```
+
+> In the sandbox, we can also run privileged containers by `docker run -it
+> --privileged --rm whalesay "Containers do not contain, but gVisor-s do!"`
