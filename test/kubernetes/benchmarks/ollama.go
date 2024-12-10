@@ -809,8 +809,8 @@ const (
 	ollamaPort             = 11434
 	ollamaPodName          = "ollama-server"
 	ollamaServiceName      = "ollama-service"
-	ollamaBenchImage       = k8s.ImageRepoPrefix + "benchmarks/gpu/ollama/bench:latest"
-	ollamaBenchClientImage = k8s.ImageRepoPrefix + "benchmarks/gpu/ollama/client:latest"
+	ollamaBenchImage       = k8s.ImageRepoPrefix + "gpu/ollama/bench:latest"
+	ollamaBenchClientImage = k8s.ImageRepoPrefix + "gpu/ollama/client:latest"
 )
 
 // newOllamaServerPod returns the pod spec for an ollama server.
