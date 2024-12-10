@@ -21,6 +21,7 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/nvgpu"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 )
 
@@ -40,6 +41,9 @@ func rmControlInvoke[Params any](fi *frontendIoctlState, ioctlParams *nvgpu.NVOS
 	ioctlParams.Params = origParams
 	if err != nil {
 		return n, err
+	}
+	if ioctlParams.Status != nvgpu.NV_OK && log.IsLogging(log.Debug) {
+		fi.ctx.Debugf("nvproxy: NV_ESC_RM_CONTROL failed: cmd=%#x, status=%#x", ioctlParams.Cmd, ioctlParams.Status)
 	}
 	if _, err := ioctlParams.CopyOut(fi.t, fi.ioctlParamsAddr); err != nil {
 		return n, err
@@ -305,6 +309,9 @@ func rmAllocInvoke[Params any](fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64
 			return n, err
 		}
 	}
+	if status := outIoctlParams.GetStatus(); status != nvgpu.NV_OK && log.IsLogging(log.Debug) {
+		fi.ctx.Debugf("nvproxy: NV_ESC_RM_ALLOC failed: class=%#x, status=%#x", outIoctlParams.GetHClass(), status)
+	}
 	if _, err := outIoctlParams.CopyOut(fi.t, fi.ioctlParamsAddr); err != nil {
 		return n, err
 	}
@@ -338,6 +345,9 @@ func rmVidHeapControlAllocSize(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS32
 		if _, err := primitive.CopyUint64Out(fi.t, addrFromP64(allocSizeParams.Address), addr); err != nil {
 			return n, err
 		}
+	}
+	if ioctlParams.Status != nvgpu.NV_OK && log.IsLogging(log.Debug) {
+		fi.ctx.Debugf("nvproxy: VID_HEAP_CONTROL with function=NVOS32_FUNCTION_ALLOC_SIZE failed: status=%#x", ioctlParams.Status)
 	}
 	if _, err := ioctlParams.CopyOut(fi.t, fi.ioctlParamsAddr); err != nil {
 		return n, err

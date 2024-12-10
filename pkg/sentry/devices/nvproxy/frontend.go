@@ -339,7 +339,32 @@ func frontendRegisterFD(fi *frontendIoctlState) (uintptr, error) {
 	return frontendIoctlInvoke(fi, &ioctlParams)
 }
 
-func frontendIoctHasFD[Params any, PtrParams hasFrontendFDPtr[Params]](fi *frontendIoctlState) (uintptr, error) {
+func frontendIoctHasStatus[Params any, PtrParams hasStatusPtr[Params]](fi *frontendIoctlState) (uintptr, error) {
+	var ioctlParamsValue Params
+	ioctlParams := PtrParams(&ioctlParamsValue)
+	if int(fi.ioctlParamsSize) != ioctlParams.SizeBytes() {
+		return 0, linuxerr.EINVAL
+	}
+	if _, err := ioctlParams.CopyIn(fi.t, fi.ioctlParamsAddr); err != nil {
+		return 0, err
+	}
+
+	n, err := frontendIoctlInvoke(fi, ioctlParams)
+	if err != nil {
+		return n, err
+	}
+	if log.IsLogging(log.Debug) {
+		if status := ioctlParams.GetStatus(); status != nvgpu.NV_OK {
+			fi.ctx.Debugf("nvproxy: frontend ioctl with ioctlParams=%T failed: status=%#x", ioctlParamsValue, status)
+		}
+	}
+	if _, err := ioctlParams.CopyOut(fi.t, fi.ioctlParamsAddr); err != nil {
+		return n, err
+	}
+	return n, nil
+}
+
+func frontendIoctHasFD[Params any, PtrParams hasFrontendFDAndStatusPtr[Params]](fi *frontendIoctlState) (uintptr, error) {
 	var ioctlParamsValue Params
 	ioctlParams := PtrParams(&ioctlParamsValue)
 	if int(fi.ioctlParamsSize) != ioctlParams.SizeBytes() {
@@ -365,6 +390,11 @@ func frontendIoctHasFD[Params any, PtrParams hasFrontendFDPtr[Params]](fi *front
 	ioctlParams.SetFrontendFD(origFD)
 	if err != nil {
 		return n, err
+	}
+	if log.IsLogging(log.Debug) {
+		if status := ioctlParams.GetStatus(); status != nvgpu.NV_OK {
+			fi.ctx.Debugf("nvproxy: frontend ioctl with ioctlParams=%T failed: status=%#x", ioctlParamsValue, status)
+		}
 	}
 	if _, err := ioctlParams.CopyOut(fi.t, fi.ioctlParamsAddr); err != nil {
 		return n, err
@@ -400,6 +430,9 @@ func rmAllocOSDescriptor(fi *frontendIoctlState, ioctlParams *nvgpu.IoctlNVOS02P
 	// Compare src/nvidia/arch/nvalloc/unix/src/escape.c:RmAllocOsDescriptor()
 	// => RmCreateOsDescriptor().
 	failWithStatus := func(status uint32) error {
+		if log.IsLogging(log.Debug) {
+			fi.ctx.Debugf("nvproxy: NV_ESC_RM_ALLOC_MEMORY with class=NV01_MEMORY_SYSTEM_OS_DESCRIPTOR failed internally: status=%#x", status)
+		}
 		ioctlParams.Params.Status = status
 		_, err := ioctlParams.CopyOut(fi.t, fi.ioctlParamsAddr)
 		return err
@@ -485,7 +518,9 @@ func rmAllocOSDescriptor(fi *frontendIoctlState, ioctlParams *nvgpu.IoctlNVOS02P
 	if err != nil {
 		return n, err
 	}
-
+	if ioctlParams.Params.Status != nvgpu.NV_OK && log.IsLogging(log.Debug) {
+		fi.ctx.Debugf("nvproxy: NV_ESC_RM_ALLOC_MEMORY with class=NV01_MEMORY_SYSTEM_OS_DESCRIPTOR failed: status=%#x", ioctlParams.Params.Status)
+	}
 	if _, err := ioctlParams.CopyOut(fi.t, fi.ioctlParamsAddr); err != nil {
 		return n, err
 	}
@@ -511,7 +546,9 @@ func rmFree(fi *frontendIoctlState) (uintptr, error) {
 	if err != nil {
 		return n, err
 	}
-
+	if ioctlParams.Status != nvgpu.NV_OK && log.IsLogging(log.Debug) {
+		fi.ctx.Debugf("nvproxy: NV_ESC_RM_FREE failed: status=%#x", ioctlParams.Status)
+	}
 	if _, err := ioctlParams.CopyOut(fi.t, fi.ioctlParamsAddr); err != nil {
 		return n, err
 	}
@@ -1055,6 +1092,9 @@ func rmMapMemory(fi *frontendIoctlState) (uintptr, error) {
 	mapFile.mmapLength = ioctlParams.Params.Length
 
 	ioctlParams.FD = origFD
+	if ioctlParams.Params.Status != nvgpu.NV_OK && log.IsLogging(log.Debug) {
+		fi.ctx.Debugf("nvproxy: NV_ESC_RM_MAP_MEMORY failed: status=%#x", ioctlParams.Params.Status)
+	}
 	if _, err := ioctlParams.CopyOut(fi.t, fi.ioctlParamsAddr); err != nil {
 		return n, err
 	}
