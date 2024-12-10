@@ -6,7 +6,7 @@ spec:
   runtimeClassName: gvisor
   containers:
   - name: docker-in-gvisor
-    image: avagin/docker-in-gvisor:0.1
+    image: us-central1-docker.pkg.dev/gvisor-presubmit/gvisor-presubmit-images/basic/docker_x86_64:latest
     securityContext:
       capabilities:
         add: ["all"]
