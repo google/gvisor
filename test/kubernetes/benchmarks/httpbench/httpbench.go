@@ -317,17 +317,19 @@ func getMeasurements(data string, onlyReport []MetricType, wantPercentiles []int
 		return false
 	}
 	var metricValues []benchmetric.MetricValue
-	var totalRequests int
+	totalRequests := 0
+	totalRequestsFound := false
 	for _, line := range strings.Split(data, "\n") {
 		if match := wrk2TotalRequestsRe.FindStringSubmatch(line); match != nil {
 			gotRequests, err := strconv.ParseInt(strings.ReplaceAll(match[1], ",", ""), 10, 64)
 			if err != nil {
 				return 0, nil, fmt.Errorf("failed to parse %q from line %q: %v", match[1], line, err)
 			}
-			if totalRequests != 0 {
+			if totalRequestsFound {
 				return 0, nil, fmt.Errorf("found multiple lines matching 'total requests' regex: %d vs %d (%q)", totalRequests, gotRequests, line)
 			}
 			totalRequests = int(gotRequests)
+			totalRequestsFound = true
 			continue
 		}
 		if match := wrk2LatencyPercentileRE.FindStringSubmatch(line); match != nil {
@@ -375,7 +377,7 @@ func getMeasurements(data string, onlyReport []MetricType, wantPercentiles []int
 			continue
 		}
 	}
-	if totalRequests == 0 {
+	if !totalRequestsFound {
 		return 0, nil, fmt.Errorf("could not find total requests in output: %q", data)
 	}
 	return totalRequests, metricValues, nil
