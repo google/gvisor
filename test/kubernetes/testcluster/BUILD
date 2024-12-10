@@ -8,6 +8,7 @@ package(
 go_library(
     name = "testcluster",
     srcs = [
+        "client.go",
         "objects.go",
         "testcluster.go",
     ],
@@ -16,6 +17,7 @@ go_library(
     ],
     deps = [
         "//pkg/log",
+        "//pkg/rand",
         "//pkg/sync",
         "//test/kubernetes:test_range_config_go_proto",
         "@io_k8s_api//apps/v1:go_default_library",
