@@ -47,8 +47,7 @@ type testNetworkDispatcher struct {
 }
 
 func (d *testNetworkDispatcher) DeliverNetworkPacket(_ tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
-	pkt.IncRef()
-	d.ch <- pkt
+	d.ch <- pkt.Clone()
 }
 
 func (*testNetworkDispatcher) DeliverLinkPacket(tcpip.NetworkProtocolNumber, *stack.PacketBuffer) {

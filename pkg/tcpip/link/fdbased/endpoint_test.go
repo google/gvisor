@@ -133,8 +133,7 @@ func (c *testContext) cleanup() {
 }
 
 func (c *testContext) DeliverNetworkPacket(protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
-	pkt.IncRef()
-	c.ch <- packetInfo{protocol, pkt}
+	c.ch <- packetInfo{protocol, pkt.Clone()}
 }
 
 func (c *testContext) DeliverLinkPacket(tcpip.NetworkProtocolNumber, *stack.PacketBuffer) {
@@ -597,8 +596,7 @@ type fakeNetworkDispatcher struct {
 }
 
 func (d *fakeNetworkDispatcher) DeliverNetworkPacket(_ tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
-	pkt.IncRef()
-	d.pkts = append(d.pkts, pkt)
+	d.pkts = append(d.pkts, pkt.Clone())
 }
 
 func (*fakeNetworkDispatcher) DeliverLinkPacket(tcpip.NetworkProtocolNumber, *stack.PacketBuffer) {

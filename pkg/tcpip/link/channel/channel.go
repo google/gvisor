@@ -87,7 +87,7 @@ func (q *queue) Write(pkt *stack.PacketBuffer) tcpip.Error {
 
 	wrote := false
 	select {
-	case q.c <- pkt.IncRef():
+	case q.c <- pkt.Clone():
 		wrote = true
 	default:
 		pkt.DecRef()
