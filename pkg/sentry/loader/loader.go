@@ -329,8 +329,9 @@ func Load(ctx context.Context, args LoadArgs, extraAuxv []arch.AuxEntry, vdso *V
 		arch.AuxEntry{linux.AT_RANDOM, random},
 		arch.AuxEntry{linux.AT_PAGESZ, hostarch.PageSize},
 		arch.AuxEntry{linux.AT_SYSINFO_EHDR, vdsoAddr},
+		arch.AuxEntry{linux.AT_HWCAP, hostarch.Addr(args.Features.AllowedHWCap1())},
+		arch.AuxEntry{linux.AT_HWCAP2, hostarch.Addr(args.Features.AllowedHWCap2())},
 	}...)
-	auxv = append(auxv, extraAuxv...)
 
 	sl, err := stack.Load(newArgv, args.Envv, auxv)
 	if err != nil {

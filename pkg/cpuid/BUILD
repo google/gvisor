@@ -13,6 +13,8 @@ go_library(
         "cpuid_arm64.go",
         "features_amd64.go",
         "features_arm64.go",
+        "hwcap_amd64.go",
+        "hwcap_arm64.go",
         "native_amd64.go",
         "native_amd64.s",
         "native_arm64.go",
