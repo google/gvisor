@@ -1100,9 +1100,9 @@ func (n *nic) multicastForwarding(protocol tcpip.NetworkProtocolNumber) (bool, t
 	return ep.MulticastForwarding(), nil
 }
 
-// ExperimentIPOptionEnabled returns whether the NIC is responsible for
+// GetExperimentIPOptionEnabled returns whether the NIC is responsible for
 // passing the experiment IP option.
-func (n *nic) ExperimentIPOptionEnabled() bool {
+func (n *nic) GetExperimentIPOptionEnabled() bool {
 	return n.experimentIPOptionEnabled
 }
 

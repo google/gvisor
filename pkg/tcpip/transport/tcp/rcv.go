@@ -96,6 +96,7 @@ func (r *receiver) currentWindow() (curWnd seqnum.Size) {
 // getSendParams returns the parameters needed by the sender when building
 // segments to send.
 // +checklocks:r.ep.mu
+// +checklocksalias:r.ep.snd.ep.mu=r.ep.mu
 func (r *receiver) getSendParams() (RcvNxt seqnum.Value, rcvWnd seqnum.Size) {
 	newWnd := r.ep.selectWindow()
 	curWnd := r.currentWindow()

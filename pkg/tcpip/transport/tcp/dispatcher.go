@@ -78,9 +78,8 @@ func (q *epQueue) empty() bool {
 //
 // +stateify savable
 type processor struct {
-	epQ     epQueue
-	sleeper sleep.Sleeper `state:"nosave"`
-	// TODO(b/341946753): Restore them when netstack is savable.
+	epQ              epQueue
+	sleeper          sleep.Sleeper `state:"nosave"`
 	newEndpointWaker sleep.Waker   `state:"nosave"`
 	closeWaker       sleep.Waker   `state:"nosave"`
 	pauseWaker       sleep.Waker   `state:"nosave"`

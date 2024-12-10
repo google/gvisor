@@ -223,8 +223,8 @@ func (b *BridgeEndpoint) MaxHeaderLength() uint16 {
 
 // LinkAddress implements stack.LinkEndpoint.LinkAddress.
 func (b *BridgeEndpoint) LinkAddress() tcpip.LinkAddress {
-	b.mu.Lock()
-	defer b.mu.Unlock()
+	b.mu.RLock()
+	defer b.mu.RUnlock()
 	return b.addr
 }
 

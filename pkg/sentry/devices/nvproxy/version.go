@@ -684,6 +684,13 @@ func Init() {
 		// This version does not belong on any branch, but it is a child of 550.90.07.
 		_ = addDriverABI(550, 90, 12, "391883846713b9e700af2ae87f8ac671f5527508ce3f9f60058deb363e05162a", v550_90_07)
 
+		// 550.100 is an intermediate unqualified version from the main branch.
+		v550_100 := v550_90_07
+
+		// The following exist on the "550" branch. They branched off the main
+		// branch at 550.100.
+		_ = addDriverABI(550, 127, 05, "d384f34f5d2a896bd7536d3deb6a6d973d8094a3ad485a1c2ee3bf5192086ae9", v550_100)
+
 		// 555.42.02 is an intermediate unqualified version.
 		v555_42_02 := func() *driverABI {
 			abi := v550_90_07()
