@@ -46,7 +46,7 @@ const (
 )
 
 var (
-	numConnections = []int{1, 2, 6, 16, 32, 64}
+	numConnections = []int{1, 2, 12, 64}
 )
 
 // BenchmarkPostgresPGBench runs a PostgreSQL pgbench test.

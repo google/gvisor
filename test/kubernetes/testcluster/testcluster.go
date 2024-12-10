@@ -140,7 +140,8 @@ const (
 // TestCluster wraps clusters with their individual ClientSets so that helper methods can be called.
 type TestCluster struct {
 	clusterName string
-	client      kubernetes.Interface
+
+	client KubernetesClient
 
 	// testNodepoolRuntimeOverride, if set, overrides the runtime used for pods
 	// running on the test nodepool. If unset, the test nodepool's default
@@ -209,6 +210,12 @@ func NewTestClusterFromProto(ctx context.Context, cluster *testpb.Cluster) (*Tes
 
 // NewTestClusterFromClient returns a new TestCluster client with a given client.
 func NewTestClusterFromClient(clusterName string, client kubernetes.Interface) *TestCluster {
+	return NewTestClusterFromKubernetesClient(clusterName, &simpleClient{client})
+}
+
+// NewTestClusterFromKubernetesClient returns a new TestCluster client with a
+// given KubernetesClient.
+func NewTestClusterFromKubernetesClient(clusterName string, client KubernetesClient) *TestCluster {
 	return &TestCluster{
 		clusterName:                 clusterName,
 		client:                      client,
@@ -248,17 +255,24 @@ func (t *TestCluster) OverrideTestNodepoolRuntime(testRuntime RuntimeType) {
 
 // createNamespace creates a namespace.
 func (t *TestCluster) createNamespace(ctx context.Context, namespace *v13.Namespace) (*v13.Namespace, error) {
-	return t.client.CoreV1().Namespaces().Create(ctx, namespace, v1.CreateOptions{})
+	return request(ctx, t.client, func(ctx context.Context, client kubernetes.Interface) (*v13.Namespace, error) {
+		return client.CoreV1().Namespaces().Create(ctx, namespace, v1.CreateOptions{})
+	})
 }
 
 // getNamespace returns the given namespace in the cluster if it exists.
 func (t *TestCluster) getNamespace(ctx context.Context, namespaceName string) (*v13.Namespace, error) {
-	return t.client.CoreV1().Namespaces().Get(ctx, namespaceName, v1.GetOptions{})
+	return request(ctx, t.client, func(ctx context.Context, client kubernetes.Interface) (*v13.Namespace, error) {
+		return client.CoreV1().Namespaces().Get(ctx, namespaceName, v1.GetOptions{})
+	})
 }
 
 // deleteNamespace is a helper method to delete a namespace.
 func (t *TestCluster) deleteNamespace(ctx context.Context, namespaceName string) error {
-	if err := t.client.CoreV1().Namespaces().Delete(ctx, namespaceName, v1.DeleteOptions{}); err != nil {
+	err := t.client.Do(ctx, func(ctx context.Context, client kubernetes.Interface) error {
+		return client.CoreV1().Namespaces().Delete(ctx, namespaceName, v1.DeleteOptions{})
+	})
+	if err != nil {
 		return err
 	}
 	// Wait for the namespace to disappear or for the context to expire.
@@ -282,7 +296,9 @@ func (t *TestCluster) getNodePool(ctx context.Context, nodepoolType NodePoolType
 	t.nodepoolsMu.Lock()
 	defer t.nodepoolsMu.Unlock()
 	if t.nodepools == nil {
-		nodes, err := t.client.CoreV1().Nodes().List(ctx, v1.ListOptions{})
+		nodes, err := request(ctx, t.client, func(ctx context.Context, client kubernetes.Interface) (*v13.NodeList, error) {
+			return client.CoreV1().Nodes().List(ctx, v1.ListOptions{})
+		})
 		if err != nil {
 			return nil, fmt.Errorf("cannot list nodes: %w", err)
 		}
@@ -363,7 +379,7 @@ func (t *TestCluster) HasGVisorTestRuntime(ctx context.Context) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return testNodePool.runtime == RuntimeTypeGVisor || testNodePool.runtime == RuntimeTypeGVisorNvidia, nil
+	return testNodePool.runtime == RuntimeTypeGVisor || testNodePool.runtime == RuntimeTypeGVisorTPU, nil
 }
 
 // CreatePod is a helper to create a pod.
@@ -371,22 +387,31 @@ func (t *TestCluster) CreatePod(ctx context.Context, pod *v13.Pod) (*v13.Pod, er
 	if pod.GetObjectMeta().GetNamespace() == "" {
 		pod.SetNamespace(NamespaceDefault)
 	}
-	return t.client.CoreV1().Pods(pod.GetNamespace()).Create(ctx, pod, v1.CreateOptions{})
+	return request(ctx, t.client, func(ctx context.Context, client kubernetes.Interface) (*v13.Pod, error) {
+		return client.CoreV1().Pods(pod.GetNamespace()).Create(ctx, pod, v1.CreateOptions{})
+	})
 }
 
 // GetPod is a helper method to Get a pod's metadata.
 func (t *TestCluster) GetPod(ctx context.Context, pod *v13.Pod) (*v13.Pod, error) {
-	return t.client.CoreV1().Pods(pod.GetNamespace()).Get(ctx, pod.GetName(), v1.GetOptions{})
+	return request(ctx, t.client, func(ctx context.Context, client kubernetes.Interface) (*v13.Pod, error) {
+		return client.CoreV1().Pods(pod.GetNamespace()).Get(ctx, pod.GetName(), v1.GetOptions{})
+	})
 }
 
 // ListPods is a helper method to List pods in a cluster.
 func (t *TestCluster) ListPods(ctx context.Context, namespace string) (*v13.PodList, error) {
-	return t.client.CoreV1().Pods(namespace).List(ctx, v1.ListOptions{})
+	return request(ctx, t.client, func(ctx context.Context, client kubernetes.Interface) (*v13.PodList, error) {
+		return client.CoreV1().Pods(namespace).List(ctx, v1.ListOptions{})
+	})
 }
 
 // DeletePod is a helper method to delete a pod.
 func (t *TestCluster) DeletePod(ctx context.Context, pod *v13.Pod) error {
-	if err := t.client.CoreV1().Pods(pod.GetNamespace()).Delete(ctx, pod.GetName(), v1.DeleteOptions{}); err != nil {
+	err := t.client.Do(ctx, func(ctx context.Context, client kubernetes.Interface) error {
+		return client.CoreV1().Pods(pod.GetNamespace()).Delete(ctx, pod.GetName(), v1.DeleteOptions{})
+	})
+	if err != nil {
 		return err
 	}
 	// Wait for the pod to disappear or for the context to expire.
@@ -406,7 +431,9 @@ func (t *TestCluster) DeletePod(ctx context.Context, pod *v13.Pod) error {
 // GetLogReader gets an io.ReadCloser from which logs can be read. It is the caller's
 // responsibility to close it.
 func (t *TestCluster) GetLogReader(ctx context.Context, pod *v13.Pod, opts v13.PodLogOptions) (io.ReadCloser, error) {
-	return t.client.CoreV1().Pods(pod.GetNamespace()).GetLogs(pod.GetName(), &opts).Stream(ctx)
+	return request(ctx, t.client, func(ctx context.Context, client kubernetes.Interface) (io.ReadCloser, error) {
+		return client.CoreV1().Pods(pod.GetNamespace()).GetLogs(pod.GetName(), &opts).Stream(ctx)
+	})
 }
 
 // ReadPodLogs reads logs from a pod.
@@ -602,22 +629,36 @@ func (t *TestCluster) ContainerDurationSecondsByName(ctx context.Context, pod *v
 
 // CreateService is a helper method to create a service in a cluster.
 func (t *TestCluster) CreateService(ctx context.Context, service *v13.Service) (*v13.Service, error) {
-	return t.client.CoreV1().Services(service.GetNamespace()).Create(ctx, service, v1.CreateOptions{})
+	return request(ctx, t.client, func(ctx context.Context, client kubernetes.Interface) (*v13.Service, error) {
+		return client.CoreV1().Services(service.GetNamespace()).Create(ctx, service, v1.CreateOptions{})
+	})
+}
+
+// GetService is a helper method to get a service in a cluster.
+func (t *TestCluster) GetService(ctx context.Context, service *v13.Service) (*v13.Service, error) {
+	return request(ctx, t.client, func(ctx context.Context, client kubernetes.Interface) (*v13.Service, error) {
+		return client.CoreV1().Services(service.GetNamespace()).Get(ctx, service.GetName(), v1.GetOptions{})
+	})
 }
 
 // ListServices is a helper method to List services in a cluster.
 func (t *TestCluster) ListServices(ctx context.Context, namespace string) (*v13.ServiceList, error) {
-	return t.client.CoreV1().Services(namespace).List(ctx, v1.ListOptions{})
+	return request(ctx, t.client, func(ctx context.Context, client kubernetes.Interface) (*v13.ServiceList, error) {
+		return client.CoreV1().Services(namespace).List(ctx, v1.ListOptions{})
+	})
 }
 
 // DeleteService is a helper to delete a given service.
 func (t *TestCluster) DeleteService(ctx context.Context, service *v13.Service) error {
-	if err := t.client.CoreV1().Services(service.GetNamespace()).Delete(ctx, service.GetName(), v1.DeleteOptions{}); err != nil {
+	err := t.client.Do(ctx, func(ctx context.Context, client kubernetes.Interface) error {
+		return client.CoreV1().Services(service.GetNamespace()).Delete(ctx, service.GetName(), v1.DeleteOptions{})
+	})
+	if err != nil {
 		return err
 	}
 	// Wait for the service to disappear or for the context to expire.
 	for ctx.Err() == nil {
-		if _, err := t.client.CoreV1().Services(service.GetNamespace()).Get(ctx, service.GetName(), v1.GetOptions{}); err != nil {
+		if _, err := t.GetService(ctx, service); err != nil {
 			return nil
 		}
 		select {
@@ -639,7 +680,7 @@ func (t *TestCluster) WaitForServiceReady(ctx context.Context, service *v13.Serv
 		case <-ctx.Done():
 			return fmt.Errorf("context expired waiting for service %q: %w (last: %v)", service.GetName(), ctx.Err(), lastService)
 		case <-pollCh.C:
-			s, err := t.client.CoreV1().Services(service.GetNamespace()).Get(ctx, service.GetName(), v1.GetOptions{})
+			s, err := t.GetService(ctx, service)
 			if err != nil {
 				return fmt.Errorf("cannot look up service %q: %w", service.GetName(), err)
 			}
@@ -662,12 +703,16 @@ func (t *TestCluster) CreatePersistentVolume(ctx context.Context, volume *v13.Pe
 	if volume.GetObjectMeta().GetNamespace() == "" {
 		volume.SetNamespace(NamespaceDefault)
 	}
-	return t.client.CoreV1().PersistentVolumeClaims(volume.GetNamespace()).Create(ctx, volume, v1.CreateOptions{})
+	return request(ctx, t.client, func(ctx context.Context, client kubernetes.Interface) (*v13.PersistentVolumeClaim, error) {
+		return client.CoreV1().PersistentVolumeClaims(volume.GetNamespace()).Create(ctx, volume, v1.CreateOptions{})
+	})
 }
 
 // DeletePersistentVolume deletes a persistent volume.
 func (t *TestCluster) DeletePersistentVolume(ctx context.Context, volume *v13.PersistentVolumeClaim) error {
-	return t.client.CoreV1().PersistentVolumeClaims(volume.GetNamespace()).Delete(ctx, volume.GetName(), v1.DeleteOptions{})
+	return t.client.Do(ctx, func(ctx context.Context, client kubernetes.Interface) error {
+		return client.CoreV1().PersistentVolumeClaims(volume.GetNamespace()).Delete(ctx, volume.GetName(), v1.DeleteOptions{})
+	})
 }
 
 // CreateDaemonset creates a daemonset with default options.
@@ -675,12 +720,23 @@ func (t *TestCluster) CreateDaemonset(ctx context.Context, ds *appsv1.DaemonSet)
 	if ds.GetObjectMeta().GetNamespace() == "" {
 		ds.SetNamespace(NamespaceDefault)
 	}
-	return t.client.AppsV1().DaemonSets(ds.GetNamespace()).Create(ctx, ds, v1.CreateOptions{})
+	return request(ctx, t.client, func(ctx context.Context, client kubernetes.Interface) (*appsv1.DaemonSet, error) {
+		return client.AppsV1().DaemonSets(ds.GetNamespace()).Create(ctx, ds, v1.CreateOptions{})
+	})
+}
+
+// GetDaemonset gets a daemonset.
+func (t *TestCluster) GetDaemonset(ctx context.Context, ds *appsv1.DaemonSet) (*appsv1.DaemonSet, error) {
+	return request(ctx, t.client, func(ctx context.Context, client kubernetes.Interface) (*appsv1.DaemonSet, error) {
+		return client.AppsV1().DaemonSets(ds.GetNamespace()).Get(ctx, ds.GetName(), v1.GetOptions{})
+	})
 }
 
 // DeleteDaemonset deletes a daemonset from this cluster.
 func (t *TestCluster) DeleteDaemonset(ctx context.Context, ds *appsv1.DaemonSet) error {
-	return t.client.AppsV1().DaemonSets(ds.GetNamespace()).Delete(ctx, ds.GetName(), v1.DeleteOptions{})
+	return t.client.Do(ctx, func(ctx context.Context, client kubernetes.Interface) error {
+		return client.AppsV1().DaemonSets(ds.GetNamespace()).Delete(ctx, ds.GetName(), v1.DeleteOptions{})
+	})
 }
 
 // GetPodsInDaemonSet returns the list of pods of the given DaemonSet.
@@ -689,7 +745,9 @@ func (t *TestCluster) GetPodsInDaemonSet(ctx context.Context, ds *appsv1.DaemonS
 	if appLabel, found := ds.Spec.Template.Labels[k8sApp]; found {
 		listOptions.LabelSelector = fmt.Sprintf("%s=%s", k8sApp, appLabel)
 	}
-	pods, err := t.client.CoreV1().Pods(ds.ObjectMeta.Namespace).List(ctx, listOptions)
+	pods, err := request(ctx, t.client, func(ctx context.Context, client kubernetes.Interface) (*v13.PodList, error) {
+		return client.CoreV1().Pods(ds.ObjectMeta.Namespace).List(ctx, listOptions)
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -709,7 +767,7 @@ func (t *TestCluster) WaitForDaemonset(ctx context.Context, ds *appsv1.DaemonSet
 	defer pollCh.Stop()
 	// Poll-based loop to wait for the DaemonSet to be ready.
 	for {
-		d, err := t.client.AppsV1().DaemonSets(ds.GetNamespace()).Get(ctx, ds.GetName(), v1.GetOptions{})
+		d, err := t.GetDaemonset(ctx, ds)
 		if err != nil {
 			return fmt.Errorf("failed to get daemonset %q: %v", ds.GetName(), err)
 		}
@@ -778,7 +836,7 @@ func (t *TestCluster) StreamDaemonSetLogs(ctx context.Context, ds *appsv1.Daemon
 			if _, seen := nodesSeen[pod.Spec.NodeName]; seen {
 				continue // Node already seen.
 			}
-			logReader, err := t.client.CoreV1().Pods(pod.GetNamespace()).GetLogs(pod.GetName(), &opts).Stream(ctx)
+			logReader, err := t.GetLogReader(ctx, &pod, opts)
 			if err != nil {
 				// This can happen if the container hasn't run yet, for example
 				// because other init containers that run earlier are still executing.
@@ -813,7 +871,7 @@ Outer:
 			}
 			break Outer
 		case <-timeTicker.C:
-			d, err := t.client.AppsV1().DaemonSets(ds.GetNamespace()).Get(ctx, ds.GetName(), v1.GetOptions{})
+			d, err := t.GetDaemonset(ctx, ds)
 			if err != nil {
 				loopError = fmt.Errorf("failed to get DaemonSet: %v", err)
 				break Outer
