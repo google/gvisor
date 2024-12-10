@@ -9,13 +9,14 @@ network driver and the bridge network driver are tested and supported.
 ## How to run Docker in a GKE Sandbox
 
 First, install a GKE cluster (1.29.0 or higher) and deploy a node pool with
-gVisor enabled. You can view the full documentation [here][gke-sandbox-docs].
+gVisor enabled. You can view the full documentation
+[here](https://cloud.google.com/kubernetes-engine/docs/how-to/sandbox-pods#enabling).
 
 Prepare a container image with pre-installed Docker:
 
 ```shell
-$ cd g3doc/user_guide/tutorials/docker-in-gke-sandbox/
-$ docker build -t {registry_url}/docker-in-gvisor:latest .
+$ cd images/basic/docker/
+$ docker build -t docker-in-gvisor .
 $ docker push {registry_url}/docker-in-gvisor:latest
 ```
 
