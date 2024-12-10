@@ -180,7 +180,7 @@ func Init() {
 					nvgpu.NV_ESC_CHECK_VERSION_STR:             feHandler(frontendIoctlSimple, compUtil), // nv_rm_api_version_t
 					nvgpu.NV_ESC_ATTACH_GPUS_TO_FD:             feHandler(frontendIoctlSimple, compUtil), // NvU32 array containing GPU IDs
 					nvgpu.NV_ESC_SYS_PARAMS:                    feHandler(frontendIoctlSimple, compUtil), // nv_ioctl_sys_params_t
-					nvgpu.NV_ESC_RM_DUP_OBJECT:                 feHandler(frontendIoctlSimple, compUtil), // NVOS55_PARAMETERS
+					nvgpu.NV_ESC_RM_DUP_OBJECT:                 feHandler(rmDupObject, compUtil),         // NVOS55_PARAMETERS
 					nvgpu.NV_ESC_RM_SHARE:                      feHandler(frontendIoctlSimple, compUtil), // NVOS57_PARAMETERS
 					nvgpu.NV_ESC_RM_UNMAP_MEMORY:               feHandler(frontendIoctlSimple, compUtil), // NVOS34_PARAMETERS
 					nvgpu.NV_ESC_RM_UPDATE_DEVICE_MAPPING_INFO: feHandler(frontendIoctlSimple, compUtil), // NVOS56_PARAMETERS
