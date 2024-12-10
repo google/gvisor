@@ -312,6 +312,26 @@ type NVOS32AllocSize struct {
 	CtagOffset      uint32
 }
 
+// Flags in NVOS32AllocSize.Flags:
+const (
+	NVOS32_ALLOC_FLAGS_VIRTUAL = 0x00080000
+)
+
+// Bitfields in NVOS32AllocSize.Attr:
+const (
+	NVOS32_ATTR_LOCATION_SHIFT  = 25
+	NVOS32_ATTR_LOCATION_MASK   = 0x3
+	NVOS32_ATTR_LOCATION_VIDMEM = 0
+)
+
+// Bitfields in NVOS32AllocSize.Attr2:
+const (
+	NVOS32_ATTR2_USE_EGM_SHIFT = 24
+	NVOS32_ATTR2_USE_EGM_MASK  = 0x1
+	NVOS32_ATTR2_USE_EGM_FALSE = 0
+	NVOS32_ATTR2_USE_EGM_TRUE  = 1
+)
+
 // IoctlNVOS33ParametersWithFD is the parameter type for NV_ESC_RM_MAP_MEMORY,
 // from src/nvidia/arch/nvalloc/unix/include/nv-unix-nvos-params-wrappers.h.
 //
