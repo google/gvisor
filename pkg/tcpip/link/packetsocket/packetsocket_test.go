@@ -92,7 +92,7 @@ func (t *testNetworkDispatcher) reset() {
 
 func (t *testNetworkDispatcher) DeliverNetworkPacket(protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
 	networkPacket := networkPacketInfo{
-		pkt:      pkt.IncRef(),
+		pkt:      pkt.Clone(),
 		protocol: protocol,
 	}
 
@@ -105,7 +105,7 @@ func (t *testNetworkDispatcher) DeliverNetworkPacket(protocol tcpip.NetworkProto
 
 func (t *testNetworkDispatcher) DeliverLinkPacket(protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
 	linkPacket := linkPacketInfo{
-		pkt:      pkt.IncRef(),
+		pkt:      pkt.Clone(),
 		protocol: protocol,
 	}
 
