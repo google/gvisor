@@ -31,6 +31,7 @@ type object struct {
 	client *rootClient // may be == impl
 	class  nvgpu.ClassID
 	handle nvgpu.Handle // in client.resources, and also nvp.clients if impl is rootClient
+	parent nvgpu.Handle
 	impl   objectImpl
 
 	// The driver tracks parent/child relationships and "arbitrary dependency"
@@ -73,13 +74,15 @@ func (nvp *nvproxy) objsUnlock() {
 
 // objAdd records the allocation of a driver object with class c and handle h,
 // in the client with handle clientH, represented by oi. Each non-zero handle
-// in deps is a dependency of the created object, such that the freeing of any
-// of those objects also results in the freeing of the recorded object.
-func (nvp *nvproxy) objAdd(ctx context.Context, clientH, h nvgpu.Handle, c nvgpu.ClassID, oi objectImpl, deps ...nvgpu.Handle) {
-	if h.Val == 0 {
-		log.Traceback("nvproxy: new object (class %v) has invalid handle 0", c)
+// in parentH and deps is a dependency of the created object, such that the
+// freeing of any of those objects also results in the freeing of the recorded
+// object.
+func (nvp *nvproxy) objAdd(ctx context.Context, clientH, h nvgpu.Handle, c nvgpu.ClassID, oi objectImpl, parentH nvgpu.Handle, deps ...nvgpu.Handle) {
+	if h == nvgpu.NV01_NULL_OBJECT {
+		log.Traceback("nvproxy: new object (class %v) has invalid handle %v", c, h)
 		return
 	}
+
 	var client *rootClient
 	// The driver forced NV01_ROOT and NV01_ROOT_NON_PRIV to NV01_ROOT_CLIENT,
 	// so we only need to check for the latter.
@@ -98,18 +101,29 @@ func (nvp *nvproxy) objAdd(ctx context.Context, clientH, h nvgpu.Handle, c nvgpu
 			return
 		}
 	}
+
 	o := oi.Object()
 	o.nvp = nvp
 	o.client = client
 	o.class = c
 	o.handle = h
+	o.parent = parentH
 	o.impl = oi
 	if _, ok := client.resources[h]; ok {
 		ctx.Warningf("nvproxy: handle %v:%v already in use", clientH, h)
 	}
 	client.resources[h] = o
+
+	if parentH != nvgpu.NV01_NULL_OBJECT {
+		parent, ok := client.resources[parentH]
+		if !ok {
+			log.Traceback("nvproxy: new object %v:%v (class %v) has invalid parent handle %v", clientH, h, c, parentH)
+		} else {
+			nvp.objDep(o, parent)
+		}
+	}
 	for _, depH := range deps {
-		if depH.Val == 0 /* aka NV01_NULL_OBJECT */ {
+		if depH == nvgpu.NV01_NULL_OBJECT {
 			continue
 		}
 		dep, ok := client.resources[depH]
@@ -119,8 +133,9 @@ func (nvp *nvproxy) objAdd(ctx context.Context, clientH, h nvgpu.Handle, c nvgpu
 		}
 		nvp.objDep(o, dep)
 	}
+
 	if ctx.IsLogging(log.Debug) {
-		ctx.Debugf("nvproxy: added object %v:%v (class %v) with dependencies %v", clientH, h, c, deps)
+		ctx.Debugf("nvproxy: added object %v:%v (class %v) with parent %v, dependencies %v", clientH, h, c, parentH, deps)
 	}
 }
 
@@ -159,6 +174,31 @@ func (nvp *nvproxy) objDep(o1, o2 *object) {
 		o2.rdeps = make(map[*object]struct{})
 	}
 	o2.rdeps[o1] = struct{}{}
+}
+
+// objDup records the duplication of the driver object with handle srcH in the
+// client with handle clientSrcH, to handle dstH in the client with handle
+// clientDstH, with new parent parentDstH.
+func (nvp *nvproxy) objDup(ctx context.Context, clientDstH, dstH, parentDstH, clientSrcH, srcH nvgpu.Handle) {
+	clientSrc, ok := nvp.clients[clientSrcH]
+	if !ok {
+		ctx.Warningf("nvproxy: duplicating object handle %v with unknown client handle %v", srcH, clientSrcH)
+		return
+	}
+	oSrc, ok := clientSrc.resources[srcH]
+	if !ok {
+		ctx.Warningf("nvproxy: duplicating object with unknown handle %v:%v", clientSrcH, srcH)
+		return
+	}
+	oDst := &miscObject{}
+	nvp.objAdd(ctx, clientDstH, dstH, oSrc.class, oDst, parentDstH)
+	parentSrc := clientSrc.resources[oSrc.parent]
+	// Copy all non-parent dependencies.
+	for dep := range oSrc.deps {
+		if dep != parentSrc {
+			nvp.objDep(oDst.Object(), dep)
+		}
+	}
 }
 
 // objFree marks an object and its transitive dependents as freed.
@@ -279,6 +319,18 @@ func (o *rmAllocObject) Release(ctx context.Context) {
 	// no-op
 }
 
+// miscObject is an objectImpl tracking a driver object allocated by something
+// other than an invocation of NV_ESC_RM_ALLOC, whose class is not represented
+// by a more specific type.
+type miscObject struct {
+	object
+}
+
+// Release implements objectImpl.Release.
+func (o *miscObject) Release(ctx context.Context) {
+	// no-op
+}
+
 // rootClient is an objectImpl tracking a NV01_ROOT_CLIENT.
 //
 // +stateify savable
@@ -322,24 +374,4 @@ func (o *osDescMem) Release(ctx context.Context) {
 			ctx.Debugf("nvproxy: unpinned %d bytes for released OS descriptor", total)
 		}
 	})
-}
-
-// osEvent is an objectImpl tracking a NV01_EVENT_OS_EVENT.
-type osEvent struct {
-	object
-}
-
-// Release implements objectImpl.Release.
-func (o *osEvent) Release(ctx context.Context) {
-	// no-op
-}
-
-// virtMem is an objectImpl tracking a NV50_MEMORY_VIRTUAL.
-type virtMem struct {
-	object
-}
-
-// Release implements objectImpl.Release.
-func (o *virtMem) Release(ctx context.Context) {
-	// no-op
 }

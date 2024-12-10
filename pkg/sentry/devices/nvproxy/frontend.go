@@ -493,6 +493,32 @@ func rmAllocOSDescriptor(fi *frontendIoctlState, ioctlParams *nvgpu.IoctlNVOS02P
 	return n, nil
 }
 
+func rmDupObject(fi *frontendIoctlState) (uintptr, error) {
+	var ioctlParams nvgpu.NVOS55Parameters
+	if fi.ioctlParamsSize != nvgpu.SizeofNVOS55Parameters {
+		return 0, linuxerr.EINVAL
+	}
+	if _, err := ioctlParams.CopyIn(fi.t, fi.ioctlParamsAddr); err != nil {
+		return 0, err
+	}
+
+	nvp := fi.fd.dev.nvp
+	nvp.objsLock()
+	n, err := frontendIoctlInvoke(fi, &ioctlParams)
+	if err == nil && ioctlParams.Status == nvgpu.NV_OK {
+		nvp.objDup(fi.ctx, ioctlParams.HClient, ioctlParams.HObject, ioctlParams.HParent, ioctlParams.HClientSrc, ioctlParams.HObjectSrc)
+	}
+	nvp.objsUnlock()
+	if err != nil {
+		return n, err
+	}
+
+	if _, err := ioctlParams.CopyOut(fi.t, fi.ioctlParamsAddr); err != nil {
+		return n, err
+	}
+	return n, nil
+}
+
 func rmFree(fi *frontendIoctlState) (uintptr, error) {
 	var ioctlParams nvgpu.NVOS00Parameters
 	if fi.ioctlParamsSize != nvgpu.SizeofNVOS00Parameters {
@@ -902,7 +928,7 @@ func rmAllocNoParams(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64Parameters
 
 func rmAllocRootClient(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64Parameters, isNVOS64 bool) (uintptr, error) {
 	return rmAllocSimpleParams(fi, ioctlParams, isNVOS64, func(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64Parameters, rightsRequested nvgpu.RS_ACCESS_MASK, allocParams *nvgpu.Handle) {
-		fi.fd.dev.nvp.objAdd(fi.ctx, ioctlParams.HRoot, ioctlParams.HObjectNew, ioctlParams.HClass, newRootClient(fi.fd, ioctlParams, rightsRequested, allocParams))
+		fi.fd.dev.nvp.objAdd(fi.ctx, ioctlParams.HRoot, ioctlParams.HObjectNew, ioctlParams.HClass, newRootClient(fi.fd, ioctlParams, rightsRequested, allocParams), nvgpu.NV01_NULL_OBJECT /* parentH */)
 		if fi.fd.clients == nil {
 			fi.fd.clients = make(map[nvgpu.Handle]struct{})
 		}
@@ -928,7 +954,7 @@ func rmAllocEventOSEvent(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64Parame
 	allocParams.Data = nvgpu.P64(uint64(eventFile.hostFD))
 
 	n, err := rmAllocInvoke(fi, ioctlParams, &allocParams, isNVOS64, func(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64Parameters, rightsRequested nvgpu.RS_ACCESS_MASK, allocParams *nvgpu.NV0005_ALLOC_PARAMETERS) {
-		fi.fd.dev.nvp.objAdd(fi.ctx, ioctlParams.HRoot, ioctlParams.HObjectNew, ioctlParams.HClass, &osEvent{}, ioctlParams.HObjectParent)
+		fi.fd.dev.nvp.objAdd(fi.ctx, ioctlParams.HRoot, ioctlParams.HObjectNew, ioctlParams.HClass, &miscObject{}, ioctlParams.HObjectParent)
 	})
 	if err != nil {
 		return n, err

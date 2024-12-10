@@ -180,7 +180,7 @@ func Init() {
 					nvgpu.NV_ESC_CHECK_VERSION_STR:             feHandler(frontendIoctlSimple, compUtil), // nv_rm_api_version_t
 					nvgpu.NV_ESC_ATTACH_GPUS_TO_FD:             feHandler(frontendIoctlSimple, compUtil), // NvU32 array containing GPU IDs
 					nvgpu.NV_ESC_SYS_PARAMS:                    feHandler(frontendIoctlSimple, compUtil), // nv_ioctl_sys_params_t
-					nvgpu.NV_ESC_RM_DUP_OBJECT:                 feHandler(frontendIoctlSimple, compUtil), // NVOS55_PARAMETERS
+					nvgpu.NV_ESC_RM_DUP_OBJECT:                 feHandler(rmDupObject, compUtil),         // NVOS55_PARAMETERS
 					nvgpu.NV_ESC_RM_SHARE:                      feHandler(frontendIoctlSimple, compUtil), // NVOS57_PARAMETERS
 					nvgpu.NV_ESC_RM_UNMAP_MEMORY:               feHandler(frontendIoctlSimple, compUtil), // NVOS34_PARAMETERS
 					nvgpu.NV_ESC_RM_UPDATE_DEVICE_MAPPING_INFO: feHandler(frontendIoctlSimple, compUtil), // NVOS56_PARAMETERS
@@ -666,8 +666,10 @@ func Init() {
 			return abi
 		})
 
+		v550_54_15 := addDriverABI(550, 54, 15, "2e859ae5f912a9a47aaa9b2d40a94a14f6f486b5d3b67c0ddf8b72c1c9650385", v550_54_14)
+
 		v550_90_07 := addDriverABI(550, 90, 07, "51acf579d5a9884f573a1d3f522e7fafa5e7841e22a9cec0b4bbeae31b0b9733", func() *driverABI {
-			abi := v550_54_14()
+			abi := v550_54_15()
 			abi.controlCmd[nvgpu.NV_CONF_COMPUTE_CTRL_CMD_GPU_GET_KEY_ROTATION_STATE] = ctrlHandler(rmControlSimple, compUtil)
 
 			prevNames := abi.getStructNames
