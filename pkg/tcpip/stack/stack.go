@@ -145,11 +145,9 @@ type Stack struct {
 	// randomGenerator is an injectable pseudo random generator that can be
 	// used when a random number is required. It must not be used in
 	// security-sensitive contexts.
-	// TODO(b/341946753): Restore them when netstack is savable.
 	insecureRNG *rand.Rand `state:"nosave"`
 
 	// secureRNG is a cryptographically secure random number generator.
-	// TODO(b/341946753): Restore them when netstack is savable.
 	secureRNG cryptorand.RNG `state:"nosave"`
 
 	// sendBufferSize holds the min/default/max send buffer sizes for
