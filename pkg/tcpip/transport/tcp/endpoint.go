@@ -418,7 +418,7 @@ type Endpoint struct {
 	isPortReserved    bool
 	isRegistered      bool
 	boundNICID        tcpip.NICID
-	route             *stack.Route `state:"manual"`
+	route             *stack.Route `state:"nosave"`
 	ipv4TTL           uint8
 	ipv6HopLimit      int16
 	isConnectNotified bool
