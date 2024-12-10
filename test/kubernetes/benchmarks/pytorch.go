@@ -50,7 +50,7 @@ const (
 	train = pytorchTestType("train")
 	eval  = pytorchTestType("eval")
 
-	pytorchImage = k8s.ImageRepoPrefix + "benchmarks/pytorch_x86_64:f6f280aeb1b07989"
+	pytorchImage = k8s.ImageRepoPrefix + "gpu/pytorch_x86_64:latest"
 )
 
 type pytorchMode string
