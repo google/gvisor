@@ -116,7 +116,7 @@ func TestWritePacketBetweenDevices(t *testing.T) {
 	)
 	// Creates a pair of veth devices which will be attached to different
 	// network stacks.
-	veth1, veth2 := veth.NewPair(1500)
+	veth1, veth2 := veth.NewPair(1500, veth.DefaultBacklogSize)
 	veth1.SetLinkAddress(vethLinkAddr1)
 	veth2.SetLinkAddress(vethLinkAddr2)
 	ch1 := channel.New(1, header.EthernetMinimumSize, channelLinkAddr1)
@@ -199,7 +199,7 @@ func TestBridgeFDB(t *testing.T) {
 		vethID2  = 8
 		bridgeID = 9
 	)
-	veth1, veth2 := veth.NewPair(1500)
+	veth1, veth2 := veth.NewPair(1500, veth.DefaultBacklogSize)
 	ch := channel.New(1, header.EthernetMinimumSize, channelLinkAddr)
 	bridgeEndpoint := stack.NewBridgeEndpoint(1500)
 	bridgeEndpoint.SetLinkAddress(bridgeLinkAddr)
