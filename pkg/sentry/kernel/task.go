@@ -628,6 +628,9 @@ type Task struct {
 	// +checklocks:mu
 	sessionKeyring *auth.Key
 
+	// personality is the task's personality(2) bits.
+	personality atomicbitops.Uint32
+
 	// Origin is the origin of the task.
 	Origin TaskOrigin
 }
@@ -872,4 +875,15 @@ func (t *Task) ResetKcov() {
 		t.kcov.OnTaskExit()
 		t.kcov = nil
 	}
+}
+
+// Personality returns the task's personality.
+func (t *Task) Personality() uint32 {
+	return t.personality.Load()
+}
+
+// SetPersonality sets the task's personality.
+// It returns the task's former personality.
+func (t *Task) SetPersonality(personality uint32) uint32 {
+	return t.personality.Swap(personality)
 }
