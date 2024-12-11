@@ -83,7 +83,7 @@ func (d *dentry) collectWhiteoutsForRmdirLocked(ctx context.Context) (map[string
 				readdirErr = err
 				return false
 			}
-			if stat.RdevMajor != 0 || stat.RdevMinor != 0 {
+			if linux.MakeDeviceID(uint16(stat.RdevMajor), stat.RdevMinor) != linux.WHITEOUT_DEV {
 				// This file is a real character device, not a whiteout.
 				readdirErr = linuxerr.ENOTEMPTY
 				return false

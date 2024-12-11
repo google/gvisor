@@ -31,21 +31,38 @@ type deviceFile struct {
 	minor uint32
 }
 
-func (fs *filesystem) newDeviceFile(kuid auth.KUID, kgid auth.KGID, mode linux.FileMode, kind vfs.DeviceKind, major, minor uint32, parentDir *directory) *inode {
+func isOvlWhiteoutDev(mode linux.FileMode, major, minor uint32) bool {
+	return mode.FileType() == linux.S_IFCHR &&
+		mode.Permissions() == linux.WHITEOUT_MODE &&
+		linux.MakeDeviceID(uint16(major), minor) == linux.WHITEOUT_DEV
+}
+
+// Precondition: fs.mu must be locked for writing.
+func (fs *filesystem) newDeviceFileLocked(kuid auth.KUID, kgid auth.KGID, mode linux.FileMode, major, minor uint32, parentDir *directory) *inode {
+	ovlWhiteout := isOvlWhiteoutDev(mode, major, minor)
+	if ovlWhiteout && fs.ovlWhiteout != nil {
+		// If reusing the same inode, acts like a hard link.
+		fs.ovlWhiteout.inode.incLinksLocked()
+		return &fs.ovlWhiteout.inode
+	}
 	file := &deviceFile{
-		kind:  kind,
 		major: major,
 		minor: minor,
 	}
-	switch kind {
-	case vfs.BlockDevice:
-		mode |= linux.S_IFBLK
-	case vfs.CharDevice:
-		mode |= linux.S_IFCHR
+	switch mode.FileType() {
+	case linux.S_IFBLK:
+		file.kind = vfs.BlockDevice
+	case linux.S_IFCHR:
+		file.kind = vfs.CharDevice
 	default:
-		panic(fmt.Sprintf("invalid DeviceKind: %v", kind))
+		panic(fmt.Sprintf("invalid file type for device file: %s", mode))
 	}
 	file.inode.init(file, fs, kuid, kgid, mode, parentDir)
 	file.inode.nlink = atomicbitops.FromUint32(1) // from parent directory
+	if ovlWhiteout {
+		fs.ovlWhiteout = file
+		// An extra link is held by fs, so nlink doesn't fall to 0.
+		file.inode.incLinksLocked()
+	}
 	return &file.inode
 }

@@ -105,6 +105,9 @@ type filesystem struct {
 	// allowXattrPrefix is a set of xattr namespace prefixes that this
 	// tmpfs mount will allow. It is immutable.
 	allowXattrPrefix map[string]struct{}
+
+	// ovlWhiteout is the shared overlay whiteout device. It is protected by mu.
+	ovlWhiteout *deviceFile
 }
 
 // Name implements vfs.FilesystemType.Name.
@@ -328,6 +331,9 @@ func (fs *filesystem) Release(ctx context.Context) {
 	if fs.root.inode.isDir() {
 		fs.root.releaseChildrenLocked(ctx)
 	}
+	if fs.ovlWhiteout != nil {
+		fs.ovlWhiteout.inode.decLinksLocked(ctx)
+	}
 	fs.mu.Unlock()
 	if fs.mf.RestoreID() != "" {
 		// If RestoreID is set, then this is a private MemoryFile which needs to be
@@ -533,7 +539,6 @@ func (i *inode) init(impl any, fs *filesystem, kuid auth.KUID, kgid auth.KGID, m
 //
 // Preconditions:
 //   - filesystem.mu must be locked for writing.
-//   - i.mu must be lcoked.
 //   - i.nlink != 0.
 //   - i.nlink < maxLinks.
 func (i *inode) incLinksLocked() {
@@ -551,7 +556,6 @@ func (i *inode) incLinksLocked() {
 //
 // Preconditions:
 //   - filesystem.mu must be locked for writing.
-//   - i.mu must be lcoked.
 //   - i.nlink != 0.
 func (i *inode) decLinksLocked(ctx context.Context) {
 	if i.nlink.RacyLoad() == 0 {
