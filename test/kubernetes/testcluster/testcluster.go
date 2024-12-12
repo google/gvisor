@@ -451,18 +451,27 @@ func (t *TestCluster) ReadPodLogs(ctx context.Context, pod *v13.Pod) (string, er
 
 // WaitForPodRunning is a helper method to wait for a pod to be running.
 func (t *TestCluster) WaitForPodRunning(ctx context.Context, pod *v13.Pod) error {
-	return t.doWaitForPod(ctx, pod, v13.PodRunning)
+	_, err := t.doWaitForPod(ctx, pod, func(p v13.PodPhase) bool { return p == v13.PodRunning })
+	return err
 }
 
 // WaitForPodCompleted is a helper method to wait for a pod to be completed.
 func (t *TestCluster) WaitForPodCompleted(ctx context.Context, pod *v13.Pod) error {
-	return t.doWaitForPod(ctx, pod, v13.PodSucceeded)
+	_, err := t.doWaitForPod(ctx, pod, func(p v13.PodPhase) bool { return p == v13.PodSucceeded })
+	return err
+}
+
+// WaitForPodTerminated is a helper method to wait for a pod to exit,
+// whether it succeeded or failed.
+func (t *TestCluster) WaitForPodTerminated(ctx context.Context, pod *v13.Pod) (v13.PodPhase, error) {
+	return t.doWaitForPod(ctx, pod, func(p v13.PodPhase) bool { return p == v13.PodRunning || p == v13.PodFailed })
 }
 
 // doWaitForPod waits for a pod to complete based on a given v13.PodPhase.
-func (t *TestCluster) doWaitForPod(ctx context.Context, pod *v13.Pod, phase v13.PodPhase) error {
+func (t *TestCluster) doWaitForPod(ctx context.Context, pod *v13.Pod, phasePredicate func(v13.PodPhase) bool) (v13.PodPhase, error) {
 	podLogger := log.BasicRateLimitedLogger(5 * time.Minute)
-	startLogTime := time.Now().Add(3 * time.Minute)
+	startTime := time.Now()
+	startLogTime := startTime.Add(3 * time.Minute)
 
 	var p *v13.Pod
 	var err error
@@ -472,29 +481,29 @@ func (t *TestCluster) doWaitForPod(ctx context.Context, pod *v13.Pod, phase v13.
 		select {
 		case <-pollCh.C:
 			if p, err = t.GetPod(ctx, pod); err != nil {
-				return fmt.Errorf("failed to poll pod: %w", err)
+				return v13.PodUnknown, fmt.Errorf("failed to poll pod: %w", err)
 			}
 		case <-ctx.Done():
-			return fmt.Errorf("context expired waiting for pod %q: %w", pod.GetName(), ctx.Err())
+			return v13.PodUnknown, fmt.Errorf("context expired waiting for pod %q: %w", pod.GetName(), ctx.Err())
 		}
 		if p.Status.Reason == v13.PodReasonUnschedulable {
-			return fmt.Errorf("pod %q failed: reason: %q message: %q", pod.GetName(), p.Status.Reason, p.Status.Message)
+			return v13.PodPending, fmt.Errorf("pod %q cannot be scheduled: reason: %q message: %q", p.GetName(), p.Status.Reason, p.Status.Message)
 		}
 
 		for _, c := range p.Status.Conditions {
 			if strings.Contains(c.Reason, v13.PodReasonUnschedulable) {
-				return fmt.Errorf("pod %q failed: reason: %q message: %q", p.GetName(), c.Reason, c.Message)
+				return v13.PodPending, fmt.Errorf("pod %q cannot be scheduled: reason: %q message: %q", p.GetName(), c.Reason, c.Message)
 			}
 		}
 
-		switch p.Status.Phase {
-		case v13.PodFailed:
-			return fmt.Errorf("pod %q failed: %s", pod.GetName(), p.Status.Message)
-		case phase:
-			return nil
+		if phasePredicate(p.Status.Phase) {
+			return p.Status.Phase, nil
+		}
+		if p.Status.Phase == v13.PodFailed {
+			return v13.PodFailed, fmt.Errorf("pod %q failed: %s", p.GetName(), p.Status.Message)
 		}
 		if time.Now().After(startLogTime) {
-			podLogger.Infof("Still waiting for pod %q after %v; pod status: %v", pod.GetName(), time.Since(startLogTime), p.Status)
+			podLogger.Infof("Still waiting for pod %q after %v; pod status: %v", p.GetName(), time.Since(startTime), p.Status)
 		}
 	}
 }

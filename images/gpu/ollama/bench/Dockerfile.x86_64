@@ -1,5 +1,5 @@
 # https://hub.docker.com/r/ollama/ollama
-FROM ollama/ollama:0.1.26
+FROM ollama/ollama:0.5.1
 
 ENV PATH=$PATH:/usr/local/nvidia/bin:/bin/nvidia/bin
 ENV OLLAMA_ORIGINS=*
@@ -8,17 +8,24 @@ ENV OLLAMA_HOST=0.0.0.0:11434
 COPY pull.sh /tmp
 
 # Pre-install models useful for benchmarking.
-# These are huge (total ~120 GiB), but necessary to benchmark
+# These are huge (total ~96 GiB), but necessary to benchmark
 # models of various sizes. They are in their own image file to
 # keep the test-only image lighter by comparison.
-RUN /tmp/pull.sh codellama:7b-instruct
-RUN /tmp/pull.sh codellama:34b-instruct
-RUN /tmp/pull.sh llama2-chinese:7b-chat
-RUN /tmp/pull.sh llama2:13b-chat
-RUN /tmp/pull.sh llama2:70b-chat
-RUN /tmp/pull.sh mistral:7b-instruct
-RUN /tmp/pull.sh mixtral:instruct
-RUN /tmp/pull.sh gemma:2b-instruct
-RUN /tmp/pull.sh gemma:7b-instruct
-RUN /tmp/pull.sh llava:7b-v1.6
-RUN /tmp/pull.sh llava:34b-v1.6
+
+# Useful as embedding model.
+RUN /tmp/pull.sh snowflake-arctic-embed2:568m-l-fp16
+
+# Useful as small model.
+RUN /tmp/pull.sh gemma2:2b-instruct-fp16
+
+# Useful as mid-size model.
+RUN /tmp/pull.sh sailor2:8b-chat-fp16
+
+# Useful as coding-specific model.
+RUN /tmp/pull.sh qwen2.5-coder:7b-instruct-q8_0
+
+# Useful as large model.
+RUN /tmp/pull.sh llama2:70b-chat-q4_K_S
+
+# Useful as vision model.
+RUN /tmp/pull.sh llama3.2-vision:11b-instruct-fp16

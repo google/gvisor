@@ -53,19 +53,9 @@ const (
 	pytorchImage = k8s.ImageRepoPrefix + "gpu/pytorch_x86_64:latest"
 )
 
-type pytorchMode string
-
-// pytorchMode is the pytorch mode used, either script mode (jit) or eager mode.
-// See: https://towardsdatascience.com/pytorch-jit-and-torchscript-c2a77bac0fff
-const (
-	jit   = pytorchMode("jit")
-	eager = pytorchMode("eager")
-)
-
 type pytorchTest struct {
 	module string
 	test   pytorchTestType
-	mode   pytorchMode
 }
 
 // Sets of tests.
@@ -81,12 +71,10 @@ var (
 		{
 			module: "fastNLP_Bert",
 			test:   train,
-			mode:   eager,
 		},
 		{
 			module: "fastNLP_Bert",
 			test:   eval,
-			mode:   eager,
 		},
 	}
 
@@ -100,12 +88,10 @@ var (
 		{
 			module: "hf_BigBird",
 			test:   train,
-			mode:   eager,
 		},
 		{
 			module: "hf_BigBird",
 			test:   eval,
-			mode:   eager,
 		},
 	}
 
@@ -119,12 +105,10 @@ var (
 		{
 			module: "speech_transformer",
 			test:   train,
-			mode:   eager,
 		},
 		{
 			module: "speech_transformer",
 			test:   eval,
-			mode:   eager,
 		},
 	}
 
@@ -138,12 +122,10 @@ var (
 		{
 			module: "LearningToPaint",
 			test:   train,
-			mode:   jit,
 		},
 		{
 			module: "LearningToPaint",
 			test:   eval,
-			mode:   jit,
 		},
 	}
 
@@ -156,12 +138,10 @@ var (
 		{
 			module: "mobilenet_v2",
 			test:   train,
-			mode:   jit,
 		},
 		{
 			module: "mobilenet_v2",
 			test:   eval,
-			mode:   jit,
 		},
 	}
 
@@ -173,13 +153,21 @@ var (
 		{
 			module: "Background_Matting",
 			test:   train,
-			mode:   eager,
 		},
 		{
 			module: "Background_Matting",
 			test:   eval,
-			mode:   eager,
 		},
+	}
+
+	// AllTests is a map of test names to the tests.
+	AllTests = map[string][]pytorchTest{
+		"FastNLPBert":       FastNLPBert,
+		"BigBird":           BigBird,
+		"SpeechTransformer": SpeechTransformer,
+		"LearningToPaint":   LearningToPaint,
+		"MobileNetV2":       MobileNetV2,
+		"BackgroundMatting": BackgroundMatting,
 	}
 )
 
@@ -188,7 +176,7 @@ var (
 func (p pytorchTest) Name() string {
 	// Kubernetes pod names cannot contain "_".
 	module := strings.ReplaceAll(strings.ToLower(p.module), "_", "-")
-	return fmt.Sprintf("%s-%s-%s", module, p.test, p.mode)
+	return fmt.Sprintf("%s-%s", module, p.test)
 }
 
 var snakeCase = regexp.MustCompile("_.")
@@ -206,16 +194,7 @@ func (p pytorchTest) BenchName() string {
 		return strings.ToUpper(strings.TrimPrefix(s, "_"))
 	})
 	test := strings.ToUpper(string(p.test)[:1]) + string(p.test[1:])
-	var mode string
-	switch p.mode {
-	case eager:
-		mode = "Eager"
-	case jit:
-		mode = "JIT"
-	default:
-		panic(fmt.Sprintf("Unknown mode: %v", p.mode))
-	}
-	return fmt.Sprintf("%s/%s/%s", moduleName, test, mode)
+	return fmt.Sprintf("%s/%s", moduleName, test)
 }
 
 func (p pytorchTest) toPod(namespace *testcluster.Namespace, image string) (*v13.Pod, error) {
@@ -235,12 +214,12 @@ func (p pytorchTest) toPod(namespace *testcluster.Namespace, image string) (*v13
 
 func (p pytorchTest) command() []string {
 	return []string{
-		"python3",
-		"run.py",
-		p.module,
-		"--device", "cuda",
-		"--test", string(p.test),
-		"--mode", string(p.mode),
+		"sh",
+		"-c",
+		strings.Join([]string{
+			"cd /pytorch-benchmark",
+			fmt.Sprintf("python3 run.py %s --device cuda --test %s", p.module, p.test),
+		}, " && "),
 	}
 }
 

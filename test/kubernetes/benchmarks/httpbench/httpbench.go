@@ -105,16 +105,18 @@ type HTTPBenchmark struct {
 // Run runs the HTTP-based benchmark.
 func (h *HTTPBenchmark) Run(ctx context.Context, t *testing.T) {
 	t.Helper()
-	if err := h.Cluster.WaitForServiceReady(ctx, h.Service); err != nil {
+	serverWaitCtx, serverWaitCancel := context.WithTimeout(ctx, 10*time.Minute)
+	if err := h.Cluster.WaitForServiceReady(serverWaitCtx, h.Service); err != nil {
 		t.Fatalf("Failed to wait for service: %v", err)
 	}
 	ip := testcluster.GetIPFromService(h.Service)
 	if ip == "" {
 		t.Fatalf("did not get valid ip: %s", ip)
 	}
-	if err := h.waitForServer(ctx, ip); err != nil {
+	if err := h.waitForServer(serverWaitCtx, ip); err != nil {
 		t.Fatalf("Failed to wait for server: %v", err)
 	}
+	serverWaitCancel()
 	for _, round := range h.Rounds {
 		qpsText := fmt.Sprintf("%d", round.TargetQPS)
 		if round.TargetQPS == InfiniteQPS {
@@ -146,7 +148,10 @@ func (h *HTTPBenchmark) runRound(ctx context.Context, t *testing.T, round Round,
 	}
 	defer h.Cluster.DeletePod(ctx, client)
 
-	if err := h.Cluster.WaitForPodCompleted(ctx, client); err != nil {
+	waitCtx, waitCancel := context.WithTimeout(ctx, round.Duration+2*time.Minute)
+	err = h.Cluster.WaitForPodCompleted(waitCtx, client)
+	waitCancel()
+	if err != nil {
 		t.Fatalf("failed to wait for wrk2 pod: %v", err)
 	}
 
@@ -243,21 +248,38 @@ func (h *HTTPBenchmark) getWgetPod(ip string) *v13.Pod {
 // waitForServer waits for an HTTP server to start responding on the given
 // IP and port.
 func (h *HTTPBenchmark) waitForServer(ctx context.Context, ip string) error {
-	wget, err := h.Cluster.ConfigurePodForClientNodepool(ctx, h.getWgetPod(ip))
-	if err != nil {
-		return fmt.Errorf("failed to configure wget pod for client nodepool: %v", err)
+	lastPhase := v13.PodUnknown
+	var lastLogs string
+	for ctx.Err() == nil {
+		wget, err := h.Cluster.ConfigurePodForClientNodepool(ctx, h.getWgetPod(ip))
+		if err != nil {
+			return fmt.Errorf("failed to configure wget pod for client nodepool: %w", err)
+		}
+		wget, err = h.Cluster.CreatePod(ctx, wget)
+		if err != nil {
+			return fmt.Errorf("failed to create wget pod: %w", err)
+		}
+		phase, waitErr := h.Cluster.WaitForPodTerminated(ctx, wget)
+		if phase != v13.PodSucceeded {
+			logs, err := h.Cluster.ReadPodLogs(ctx, wget)
+			if err != nil {
+				_ = h.Cluster.DeletePod(ctx, wget) // Best-effort delete.
+				return fmt.Errorf("failed to read wget pod logs: %w", err)
+			}
+			lastLogs = logs
+		}
+		deleteErr := h.Cluster.DeletePod(ctx, wget)
+		if waitErr != nil {
+			return fmt.Errorf("failed to wait for wget pod: %w", waitErr)
+		}
+		if deleteErr != nil {
+			return fmt.Errorf("failed to delete wget pod: %w", deleteErr)
+		}
+		if phase == v13.PodSucceeded {
+			return nil
+		}
 	}
-	wget, err = h.Cluster.CreatePod(ctx, wget)
-	if err != nil {
-		return fmt.Errorf("failed to create wget pod: %v", err)
-	}
-	defer h.Cluster.DeletePod(ctx, wget)
-	waitCtx, waitCancel := context.WithTimeout(ctx, 1*time.Minute)
-	defer waitCancel()
-	if err := h.Cluster.WaitForPodCompleted(waitCtx, wget); err != nil {
-		return fmt.Errorf("failed to wait for HTTP server %s:%d%s: %v", ip, h.Port, h.Path, err)
-	}
-	return nil
+	return fmt.Errorf("wget pod still fails after context expiry (last phase: %v; last logs: %q)", lastPhase, lastLogs)
 }
 
 /*

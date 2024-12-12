@@ -30,16 +30,10 @@ func TestPostgresPGBench(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to get kubernetes context: %v", err)
 	}
-	k8sCtx.ForEachCluster(ctx, t, func(cluster *testcluster.TestCluster) {
+	k8sctx.ForEachCluster(ctx, t, k8sCtx, func(cluster *testcluster.TestCluster) {
 		t.Run("PostgresPGBench", func(t *testing.T) {
 			t.Parallel()
 			BenchmarkPostgresPGBench(ctx, t, k8sCtx, cluster)
 		})
-	})
-}
-
-func TestMain(m *testing.M) {
-	k8sctx.TestMain(m, map[string]k8sctx.TestFunc{
-		"TestPostgresPGBench": TestPostgresPGBench,
 	})
 }

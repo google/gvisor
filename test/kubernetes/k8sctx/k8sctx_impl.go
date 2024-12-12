@@ -22,7 +22,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"testing"
 
 	"google.golang.org/protobuf/encoding/prototext"
 	"google.golang.org/protobuf/types/known/anypb"
@@ -36,12 +35,6 @@ var (
 	clusterProtoPath    = flag.String("cluter-proto-path", "", "Path to a `google.container.v1.Cluster` textproto file")
 	testNodepoolRuntime = flag.String("test-nodepool-runtime", "", "if set, override the runtime used for pods scheduled on the 'test' nodepool. If unset, the nodepool default is used")
 )
-
-// kubectlContext implements KubernetesContext using a named `kubectl` context
-// from the user's kubectl config.
-type kubectlContext struct {
-	cluster *testcluster.TestCluster
-}
 
 func newKubectlContext(ctx context.Context) (KubernetesContext, error) {
 	if *kubectlContextName == "" {
@@ -67,30 +60,6 @@ func newKubectlContext(ctx context.Context) (KubernetesContext, error) {
 		testCluster.OverrideTestNodepoolRuntime(testcluster.RuntimeType(*testNodepoolRuntime))
 	}
 	return &kubectlContext{cluster: testCluster}, nil
-}
-
-func (c *kubectlContext) AcquireCluster(ctx context.Context, t *testing.T) *testcluster.TestCluster {
-	return c.cluster
-}
-
-func (c *kubectlContext) ReleaseCluster(ctx context.Context, t *testing.T, cluster *testcluster.TestCluster) {
-	// Nothing to do.
-}
-
-func (c *kubectlContext) ForEachCluster(ctx context.Context, t *testing.T, fn func(cluster *testcluster.TestCluster)) {
-	fn(c.cluster)
-}
-
-func (c *kubectlContext) ResolveImage(ctx context.Context, imageName string) (string, error) {
-	return imageName, nil
-}
-
-func (c *kubectlContext) RegisterTest(name string, fn TestFunc) {
-	// Nothing to do here, we use the regular testing library.
-}
-
-func (c *kubectlContext) TestMain(m *testing.M) {
-	os.Exit(m.Run())
 }
 
 func init() {

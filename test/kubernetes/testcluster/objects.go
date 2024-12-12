@@ -19,6 +19,8 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"strings"
+	"time"
 
 	cspb "google.golang.org/genproto/googleapis/container/v1"
 	"google.golang.org/protobuf/proto"
@@ -55,7 +57,9 @@ func (t *TestCluster) Namespace(namespace string) *Namespace {
 // This should be used in the beginning of tests, such that the namespace
 // is empty and ready to be used.
 func (n *Namespace) Reset(ctx context.Context) error {
-	n.Cleanup(ctx)
+	if err := n.Cleanup(ctx); err != nil {
+		return fmt.Errorf("failed to clean up namespace %q: %w", n.Namespace, err)
+	}
 	_, err := n.testCluster.createNamespace(ctx, &v13.Namespace{
 		TypeMeta: v1.TypeMeta{
 			Kind:       "namespace",
@@ -70,7 +74,27 @@ func (n *Namespace) Reset(ctx context.Context) error {
 
 // Cleanup deletes this namespace if it exists.
 func (n *Namespace) Cleanup(ctx context.Context) error {
-	return n.testCluster.deleteNamespace(ctx, n.Namespace)
+	if _, err := n.testCluster.getNamespace(ctx, n.Namespace); err != nil && strings.Contains(err.Error(), "not found") {
+		return nil
+	}
+	if err := n.testCluster.deleteNamespace(ctx, n.Namespace); err != nil && !strings.Contains(err.Error(), "object is being deleted") {
+		return fmt.Errorf("failed to delete namespace %q: %w", n.Namespace, err)
+	}
+	var ns *v13.Namespace
+	var err error
+	for ctx.Err() == nil {
+		if ns, err = n.testCluster.getNamespace(ctx, n.Namespace); err != nil && strings.Contains(err.Error(), "not found") {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+		case <-time.After(pollInterval):
+		}
+	}
+	if err == nil {
+		return fmt.Errorf("failed to delete namespace %q (context: %v); last error: %w", n.Namespace, ctx.Err(), err)
+	}
+	return fmt.Errorf("failed to delete namespace %q (context: %w); last namespace status: %v", n.Namespace, ctx.Err(), ns)
 }
 
 // NewAlpinePod returns an alpine pod template.
@@ -185,6 +209,21 @@ const (
 	RuntimeTypeGVisorTPU      = RuntimeType("gvisor-tpu")
 	RuntimeTypeUnsandboxedTPU = RuntimeType("runc-tpu")
 )
+
+// IsValid returns true if the runtime type is valid.
+func (t RuntimeType) IsValid() bool {
+	switch t {
+	case RuntimeTypeGVisor, RuntimeTypeUnsandboxed, RuntimeTypeGVisorTPU, RuntimeTypeUnsandboxedTPU:
+		return true
+	default:
+		return false
+	}
+}
+
+// IsGVisor returns true if the runtime is a gVisor-based runtime.
+func (t RuntimeType) IsGVisor() bool {
+	return t == RuntimeTypeGVisor || t == RuntimeTypeGVisorTPU
+}
 
 // ApplyNodepool modifies the nodepool to configure it to use the runtime.
 func (t RuntimeType) ApplyNodepool(nodepool *cspb.NodePool) {

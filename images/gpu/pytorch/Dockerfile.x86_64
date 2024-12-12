@@ -1,29 +1,38 @@
-FROM nvidia/cuda:12.2.0-devel-ubuntu22.04
-
-RUN apt-get update && apt-get install --yes \
-      python3 \
-      python3-distutils \
-      python3-pip \
-      clang \
-      wget \
-      vim \
-      git
-
-RUN python3 -m pip install --ignore-installed \
-      "clang~=$(clang --version | grep -oP 'clang version [.0-9]+' | cut -d' ' -f3)" \
-      torch \
-      torchvision \
-      lightning \
-      numpy \
-      memory_profiler
+FROM nvidia/cuda:12.4.0-devel-ubuntu22.04
 
 ENV PYTORCH_DATASETS_DIR=/pytorch-data
 ENV TORCH_HOME=/pytorch-home
+RUN mkdir -p "$TORCH_HOME" && \
+    mkdir -p "$PYTORCH_DATASETS_DIR"
+
+RUN apt-get update && \
+    apt-get install --yes \
+        libgl1-mesa-glx libglib2.0-0 \
+        pkg-config \
+        python3 \
+        python3-distutils \
+        python3-pip \
+        clang \
+        wget \
+        vim \
+        git
+
+RUN python3 -m pip install --ignore-installed \
+        boto3 \
+        "clang~=$(clang --version | grep -oP 'clang version [.0-9]+' | cut -d' ' -f3)" \
+        lightning \
+        matplotlib \
+        memory_profiler \
+        numba && \
+    python3 -m pip install --ignore-installed \
+        torch \
+        torchvision \
+        torchaudio \
+        numpy \
+        --index-url https://download.pytorch.org/whl/cu124
+
 COPY download_pytorch_datasets.py /tmp/
-# Some PyTorch examples hardcode the data directory to "data", so
-# make a symlink for that too.
-RUN mkdir "$PYTORCH_DATASETS_DIR" && \
-    python3 /tmp/download_pytorch_datasets.py && \
+RUN python3 /tmp/download_pytorch_datasets.py && \
     rm /tmp/download_pytorch_datasets.py
 
 RUN PYTORCH_EXAMPLES_COMMIT=30b310a977a82dbfc3d8e4a820f3b14d876d3bd2 && \
@@ -38,3 +47,46 @@ RUN PYTORCH_EXAMPLES_COMMIT=30b310a977a82dbfc3d8e4a820f3b14d876d3bd2 && \
 
 COPY *.py /
 RUN rm /download_pytorch_datasets.py
+
+RUN PYTORCH_BENCHMARKS_COMMIT=675fb8f537d302a4fef3ed2a67349209e65046ac && \
+    mkdir /pytorch-benchmark && \
+    cd /pytorch-benchmark && \
+    git init && \
+    git remote add origin https://github.com/pytorch/benchmark.git && \
+    git fetch --depth 1 origin "$PYTORCH_BENCHMARKS_COMMIT" && \
+    git checkout FETCH_HEAD
+
+# Note that mobilenet_v2 does not have a requirements.txt file.
+RUN cd /pytorch-benchmark && \
+    python3 -m pip install --ignore-installed \
+        -r requirements.txt \
+        -r torchbenchmark/models/LearningToPaint/requirements.txt \
+        -r torchbenchmark/models/fastNLP_Bert/requirements.txt \
+        -r torchbenchmark/models/hf_BigBird/requirements.txt \
+        -r torchbenchmark/models/speech_transformer/requirements.txt \
+        -r torchbenchmark/models/Background_Matting/requirements.txt
+
+# These benchmarks are chosen based on diversity of the type of model and their
+# profile with respect to using the GPU and moving data. For more context, see
+# this paper: https://arxiv.org/pdf/2304.14226.pdf
+RUN cd /pytorch-benchmark && \
+    python3 install.py \
+        LearningToPaint \
+        fastNLP_Bert \
+        hf_BigBird \
+        speech_transformer \
+        mobilenet_v2 \
+        Background_Matting
+
+# Some of these benchmarks download a dataset at runtime.
+# Run them once on CPU just to get this predownloaded into the image.
+# Background_Matting will throw a NotImplementedError when running on
+# CPU, but this is after having downloaded its dataset, so we run it
+# anyway and verify that it output contains NotImplementedError.
+RUN cd /pytorch-benchmark && \
+    python3 run.py LearningToPaint --device cpu && \
+    python3 run.py fastNLP_Bert --device cpu && \
+    python3 run.py hf_BigBird --device cpu && \
+    python3 run.py speech_transformer --device cpu && \
+    python3 run.py mobilenet_v2 --device cpu && \
+    ( ( python3 run.py Background_Matting --device cpu 2>&1 || true) | grep -q NotImplementedError)

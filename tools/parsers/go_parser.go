@@ -53,8 +53,8 @@ func ParseOutput(output string, name string, official bool) (*bigquery.Suite, er
 //		*bigquery.Benchmark{
 //			Name: BenchmarkRuby
 //		 []*bigquery.Condition{
-//				{Name: GOMAXPROCS, 6}
 //				{Name: server_threads, 1}
+//				{Name: GOMAXPROCS, 6}
 //		 }
 //		 []*bigquery.Metric{
 //				{Name: ns/op, Unit: ns/op, Sample: 1397875880}
@@ -74,12 +74,17 @@ func parseLine(line string) (*bigquery.Benchmark, error) {
 		return nil, fmt.Errorf("expecting number of runs, got %s: %v", fields[1], err)
 	}
 
-	name, params, err := parseNameParams(fields[0])
+	nameComponents, params, err := tools.NameToParameters(fields[0])
 	if err != nil {
 		return nil, fmt.Errorf("parse name/params: %v", err)
 	}
 
-	bm := bigquery.NewBenchmark(name, iters)
+	// Treat the first name component as the benchmark name, and all other
+	// components as conditions with key = value.
+	bm := bigquery.NewBenchmark(nameComponents[0], iters)
+	for _, c := range nameComponents[1:] {
+		bm.AddCondition(c, c)
+	}
 	for _, p := range params {
 		bm.AddCondition(p.Name, p.Value)
 	}
@@ -92,40 +97,6 @@ func parseLine(line string) (*bigquery.Benchmark, error) {
 		}
 	}
 	return bm, nil
-}
-
-// parseNameParams parses the Name, GOMAXPROCS, and Params from the test.
-// Field here should be of the format TESTNAME/PARAMS-GOMAXPROCS.
-// Parameters will be separated by a "/" with individual params being
-// "name.value".
-func parseNameParams(field string) (string, []*tools.Parameter, error) {
-	var params []*tools.Parameter
-	// Remove GOMAXPROCS from end.
-	maxIndex := strings.LastIndex(field, "-")
-	if maxIndex < 0 {
-		return "", nil, fmt.Errorf("GOMAXPROCS not found: %s", field)
-	}
-	maxProcs := field[maxIndex+1:]
-	params = append(params, &tools.Parameter{
-		Name:  "GOMAXPROCS",
-		Value: maxProcs,
-	})
-
-	remainder := field[0:maxIndex]
-	index := strings.Index(remainder, "/")
-	if index == -1 {
-		return remainder, params, nil
-	}
-
-	name := remainder[0:index]
-	p := remainder[index+1:]
-
-	ps, err := tools.NameToParameters(p)
-	if err != nil {
-		return "", nil, fmt.Errorf("NameToParameters %s: %v", field, err)
-	}
-	params = append(params, ps...)
-	return name, params, nil
 }
 
 // makeMetric parses metrics and adds them to the passed Benchmark.

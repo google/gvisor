@@ -28,17 +28,11 @@ func TestStartup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to get kubernetes context: %v", err)
 	}
-	k8sCtx.ForEachCluster(ctx, t, func(cluster *testcluster.TestCluster) {
+	k8sctx.ForEachCluster(ctx, t, k8sCtx, func(cluster *testcluster.TestCluster) {
 		t.Run(benchName, func(t *testing.T) {
 			cluster := cluster
 			t.Parallel()
 			MeasureStartup(ctx, t, k8sCtx, cluster)
 		})
-	})
-}
-
-func TestMain(m *testing.M) {
-	k8sctx.TestMain(m, map[string]k8sctx.TestFunc{
-		"TestStartup": TestStartup,
 	})
 }

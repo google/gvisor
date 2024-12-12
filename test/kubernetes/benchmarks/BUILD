@@ -356,6 +356,7 @@ go_library(
     ],
     nogo = False,
     deps = [
+        "//pkg/sync",
         "//test/gpu/ollama",
         "//test/kubernetes",
         "//test/kubernetes/benchmarks/profiling",
