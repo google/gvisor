@@ -103,6 +103,8 @@ var allowedSyscalls = seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 		seccomp.EqualTo(0),
 	},
 	unix.SYS_GETPID:       seccomp.MatchAll{},
+	unix.SYS_GETUID:       seccomp.MatchAll{},
+	unix.SYS_SETREUID:     seccomp.MatchAll{},
 	unix.SYS_GETRANDOM:    seccomp.MatchAll{},
 	unix.SYS_GETTID:       seccomp.MatchAll{},
 	unix.SYS_GETTIMEOFDAY: seccomp.MatchAll{},

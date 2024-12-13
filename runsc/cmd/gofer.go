@@ -51,6 +51,7 @@ var caps = []string{
 	"CAP_FOWNER",
 	"CAP_FSETID",
 	"CAP_SYS_CHROOT",
+	"CAP_SETUID",
 }
 
 // goferCaps is the minimal set of capabilities needed by the Gofer to operate
@@ -349,6 +350,10 @@ func (g *Gofer) serve(spec *specs.Spec, conf *config.Config, root string) subcom
 			util.Fatalf("starting connection on FD %d for gofer mount failed: %v", cfg.sock.FD(), err)
 		}
 		server.StartConnection(conn)
+	}
+	if unix.Getuid() == 0 {
+		log.Infof("Gofer running as root, setting the ruid and euid to %d", spec.Process.User.UID)
+		unix.Setreuid(int(spec.Process.User.UID), int(spec.Process.User.UID))
 	}
 	server.Wait()
 	server.Destroy()
