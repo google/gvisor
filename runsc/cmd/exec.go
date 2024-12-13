@@ -88,7 +88,7 @@ EXAMPLE:
 If the container is configured to run /bin/ps the following will
 output a list of processes running in the container:
 
-       # runc exec <container-id> ps
+       # runsc exec <container-id> ps
 
 OPTIONS:
 `
