@@ -135,7 +135,7 @@ func (r *reassembler) process(first, last uint16, more bool, proto uint8, pkt *s
 			last:   last,
 			filled: true,
 			final:  currentHole.final,
-			pkt:    pkt.IncRef(),
+			pkt:    pkt.Clone(),
 		}
 		r.filled++
 		// For IPv6, it is possible to have different Protocol values between
@@ -150,7 +150,7 @@ func (r *reassembler) process(first, last uint16, more bool, proto uint8, pkt *s
 			if r.pkt != nil {
 				r.pkt.DecRef()
 			}
-			r.pkt = pkt.IncRef()
+			r.pkt = pkt.Clone()
 			r.proto = proto
 		}
 		break

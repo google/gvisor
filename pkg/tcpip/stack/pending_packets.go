@@ -149,7 +149,7 @@ func (f *packetsPendingLinkResolution) enqueue(r *Route, pkt *PacketBuffer) tcpi
 	packets, ok := f.mu.packets[ch]
 	packets = append(packets, pendingPacket{
 		routeInfo: routeInfo,
-		pkt:       pkt.IncRef(),
+		pkt:       pkt.Clone(),
 	})
 
 	if len(packets) > maxPendingPacketsPerResolution {

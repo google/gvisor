@@ -582,7 +582,9 @@ type testTimeoutHandler struct {
 }
 
 func (h *testTimeoutHandler) OnReassemblyTimeout(pkt *stack.PacketBuffer) {
-	h.pkt = pkt
+	if pkt != nil {
+		h.pkt = pkt.Clone()
+	}
 }
 
 func TestTimeoutHandler(t *testing.T) {
@@ -673,6 +675,11 @@ func TestTimeoutHandler(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			handler := &testTimeoutHandler{pkt: nil}
+			defer func() {
+				if handler.pkt != nil {
+					handler.pkt.DecRef()
+				}
+			}()
 
 			f := NewFragmentation(minBlockSize, HighFragThreshold, LowFragThreshold, reassembleTimeout, &faketime.NullClock{}, handler)
 

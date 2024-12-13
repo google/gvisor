@@ -319,7 +319,7 @@ func (e *fwdTestLinkEndpoint) WritePackets(pkts PacketBufferList) (int, tcpip.Er
 	n := 0
 	for _, pkt := range pkts.AsSlice() {
 		select {
-		case e.C <- pkt:
+		case e.C <- pkt.IncRef():
 		default:
 		}
 
