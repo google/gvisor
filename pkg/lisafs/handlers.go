@@ -46,38 +46,39 @@ const (
 type RPCHandler func(c *Connection, comm Communicator, payloadLen uint32) (uint32, error)
 
 var handlers = [...]RPCHandler{
-	Error:        ErrorHandler,
-	Mount:        MountHandler,
-	Channel:      ChannelHandler,
-	FStat:        FStatHandler,
-	SetStat:      SetStatHandler,
-	Walk:         WalkHandler,
-	WalkStat:     WalkStatHandler,
-	OpenAt:       OpenAtHandler,
-	OpenCreateAt: OpenCreateAtHandler,
-	Close:        CloseHandler,
-	FSync:        FSyncHandler,
-	PWrite:       PWriteHandler,
-	PRead:        PReadHandler,
-	MkdirAt:      MkdirAtHandler,
-	MknodAt:      MknodAtHandler,
-	SymlinkAt:    SymlinkAtHandler,
-	LinkAt:       LinkAtHandler,
-	FStatFS:      FStatFSHandler,
-	FAllocate:    FAllocateHandler,
-	ReadLinkAt:   ReadLinkAtHandler,
-	Flush:        FlushHandler,
-	UnlinkAt:     UnlinkAtHandler,
-	RenameAt:     RenameAtHandler,
-	Getdents64:   Getdents64Handler,
-	FGetXattr:    FGetXattrHandler,
-	FSetXattr:    FSetXattrHandler,
-	FListXattr:   FListXattrHandler,
-	FRemoveXattr: FRemoveXattrHandler,
-	Connect:      ConnectHandler,
-	BindAt:       BindAtHandler,
-	Listen:       ListenHandler,
-	Accept:       AcceptHandler,
+	Error:            ErrorHandler,
+	Mount:            MountHandler,
+	Channel:          ChannelHandler,
+	FStat:            FStatHandler,
+	SetStat:          SetStatHandler,
+	Walk:             WalkHandler,
+	WalkStat:         WalkStatHandler,
+	OpenAt:           OpenAtHandler,
+	OpenCreateAt:     OpenCreateAtHandler,
+	Close:            CloseHandler,
+	FSync:            FSyncHandler,
+	PWrite:           PWriteHandler,
+	PRead:            PReadHandler,
+	MkdirAt:          MkdirAtHandler,
+	MknodAt:          MknodAtHandler,
+	SymlinkAt:        SymlinkAtHandler,
+	LinkAt:           LinkAtHandler,
+	FStatFS:          FStatFSHandler,
+	FAllocate:        FAllocateHandler,
+	ReadLinkAt:       ReadLinkAtHandler,
+	Flush:            FlushHandler,
+	UnlinkAt:         UnlinkAtHandler,
+	RenameAt:         RenameAtHandler,
+	Getdents64:       Getdents64Handler,
+	FGetXattr:        FGetXattrHandler,
+	FSetXattr:        FSetXattrHandler,
+	FListXattr:       FListXattrHandler,
+	FRemoveXattr:     FRemoveXattrHandler,
+	Connect:          ConnectHandler,
+	BindAt:           BindAtHandler,
+	Listen:           ListenHandler,
+	Accept:           AcceptHandler,
+	ConnectWithCreds: ConnectWithCredsHandler,
 }
 
 // ErrorHandler handles Error message.
@@ -1060,6 +1061,36 @@ func ConnectHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32
 			return unix.EINVAL
 		}
 		sock, err = fd.impl.Connect(req.SockType)
+		return err
+	}); err != nil {
+		return 0, err
+	}
+
+	comm.DonateFD(sock)
+	return 0, nil
+}
+
+// ConnectWithCredsHandler handles the ConnectWithCreds RPC.
+func ConnectWithCredsHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32, error) {
+	var req ConnectWithCredsReq
+	if _, ok := req.CheckedUnmarshal(comm.PayloadBuf(payloadLen)); !ok {
+		return 0, unix.EIO
+	}
+
+	fd, err := c.lookupControlFD(req.FD)
+	if err != nil {
+		return 0, err
+	}
+	defer fd.DecRef(nil)
+	if !fd.IsSocket() {
+		return 0, unix.ENOTSOCK
+	}
+	var sock int
+	if err := fd.safelyRead(func() error {
+		if fd.node.isDeleted() {
+			return unix.EINVAL
+		}
+		sock, err = fd.impl.ConnectWithCreds(req.SockType, req.UID, req.GID)
 		return err
 	}); err != nil {
 		return 0, err
