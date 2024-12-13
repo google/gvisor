@@ -24,6 +24,7 @@ import (
 func (d *Dentry) afterLoad(context.Context) {
 	if d.refs.Load() >= 0 {
 		refs.Register(d)
+		d.inode.AddInvalidateCallback(d)
 	}
 }
 

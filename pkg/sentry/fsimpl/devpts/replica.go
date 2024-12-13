@@ -39,6 +39,7 @@ type replicaInode struct {
 	kernfs.InodeNotDirectory
 	kernfs.InodeNotSymlink
 	kernfs.InodeWatches
+	kernfs.InodeFSOwned
 
 	locks vfs.FileLocks
 
