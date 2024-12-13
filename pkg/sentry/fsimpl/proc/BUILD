@@ -1,3 +1,4 @@
+load("//pkg/sync/locking:locking.bzl", "declare_rwmutex")
 load("//tools:defs.bzl", "go_library", "go_test")
 load("//tools/go_generics:defs.bzl", "go_template_instance")
 
@@ -60,9 +61,17 @@ go_template_instance(
     },
 )
 
+declare_rwmutex(
+    name = "dentries_mutex",
+    out = "dentries_mutex.go",
+    package = "proc",
+    prefix = "dentries",
+)
+
 go_library(
     name = "proc",
     srcs = [
+        "dentries_mutex.go",
         "fd_dir_inode_refs.go",
         "fd_info_dir_inode_refs.go",
         "filesystem.go",
@@ -106,6 +115,7 @@ go_library(
         "//pkg/sentry/usage",
         "//pkg/sentry/vfs",
         "//pkg/sync",
+        "//pkg/sync/locking",
         "//pkg/tcpip/header",
         "//pkg/tcpip/network/ipv4",
         "//pkg/usermem",

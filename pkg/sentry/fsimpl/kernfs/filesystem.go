@@ -155,6 +155,14 @@ func (fs *Filesystem) invalidateRemovedChildLocked(ctx context.Context, vfsObj *
 		d := toInvalidate[len(toInvalidate)-1]
 		toInvalidate = toInvalidate[:len(toInvalidate)-1]
 
+		if d.cached {
+			// The dentry is removed from the cache when its
+			// reference counter drops to 0. It can't be removed
+			// from the cache here, because fs.mu isn't locked for
+			// write.
+			d.IncRef()
+			fs.deferDecRef(d)
+		}
 		if d.inode.Keep() {
 			fs.deferDecRef(d)
 		}

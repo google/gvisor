@@ -33,6 +33,7 @@ type StaticSymlink struct {
 	InodeSymlink
 	InodeNoStatFS
 	InodeWatches
+	InodeFSOwned
 
 	target string
 }

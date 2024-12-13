@@ -83,6 +83,7 @@ type Inode struct {
 	kernfs.InodeNotDirectory
 	kernfs.InodeNotSymlink
 	kernfs.InodeWatches
+	kernfs.InodeFSOwned
 	inodeRefs
 
 	locks     vfs.FileLocks
