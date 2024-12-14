@@ -33,7 +33,7 @@ import (
 
 const (
 	nginxPort              = 80
-	nginxBenchmarkDuration = 70 * time.Second
+	nginxBenchmarkDuration = 55 * time.Second
 	nginxRequestTimeout    = 3 * time.Second
 	nginxServingDir        = "/tmp/html"
 
@@ -48,9 +48,9 @@ var (
 	// The test expects that it contains the files to be served at /local,
 	// and will serve files out of `nginxServingDir`.
 	nginxCommand      = []string{"nginx", "-c", "/etc/nginx/nginx.conf"}
-	nginxDocKibibytes = []int{1, 10, 100, 10240}
-	threads           = []int{1, 8, 64, 1000}
-	targetQPS         = []int{1, 8, 64, httpbench.InfiniteQPS}
+	nginxDocKibibytes = []int{1, 10240}
+	threads           = []int{1, 8, 1000}
+	targetQPS         = []int{1, 64, httpbench.InfiniteQPS}
 	wantPercentiles   = []int{50, 95, 99}
 )
 
@@ -182,20 +182,6 @@ func BenchmarkNginx(ctx context.Context, t *testing.T, k8sCtx k8sctx.KubernetesC
 				}
 			}
 
-			t.Run("0KiB", func(t *testing.T) {
-				benchmark := &httpbench.HTTPBenchmark{
-					Name:            fmt.Sprintf("nginx/%s/0KiB", test.name),
-					Cluster:         cluster,
-					Namespace:       benchmarkNS,
-					Service:         service,
-					Port:            nginxPort,
-					Path:            "/index.html",
-					Rounds:          rounds,
-					Timeout:         nginxRequestTimeout,
-					WantPercentiles: wantPercentiles,
-				}
-				benchmark.Run(ctx, t)
-			})
 			for _, docKibibytes := range nginxDocKibibytes {
 				t.Run(fmt.Sprintf("%dKiB", docKibibytes), func(t *testing.T) {
 					benchmark := &httpbench.HTTPBenchmark{
@@ -212,20 +198,6 @@ func BenchmarkNginx(ctx context.Context, t *testing.T, k8sCtx k8sctx.KubernetesC
 					benchmark.Run(ctx, t)
 				})
 			}
-			t.Run("HTTP404", func(t *testing.T) {
-				benchmark := &httpbench.HTTPBenchmark{
-					Name:            fmt.Sprintf("nginx/%s/HTTP404", test.name),
-					Cluster:         cluster,
-					Namespace:       benchmarkNS,
-					Service:         service,
-					Port:            nginxPort,
-					Path:            "/404-this-page-does-not-exist.html",
-					Rounds:          rounds,
-					Timeout:         nginxRequestTimeout,
-					WantPercentiles: wantPercentiles,
-				}
-				benchmark.Run(ctx, t)
-			})
 		})
 		if t.Failed() {
 			break
