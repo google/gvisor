@@ -46,7 +46,7 @@ const (
 )
 
 var (
-	numConnections = []int{1, 2, 6, 16, 32, 64}
+	numConnections = []int{1, 2, 12, 64}
 )
 
 // BenchmarkPostgresPGBench runs a PostgreSQL pgbench test.
@@ -85,9 +85,9 @@ func BenchmarkPostgresPGBench(ctx context.Context, t *testing.T, k8sCtx k8sctx.K
 		t.Fatalf("ConfigurePodForRuntimeTestNodepool on cluster %q: %v", cluster.GetName(), err)
 	}
 
-	server, err = testcluster.MaybeSetContainerResources(server, server.Spec.Containers[0].Name, testcluster.ContainerResourcesRequest{})
+	server, err = testcluster.SetContainerResources(server, "", testcluster.ContainerResourcesRequest{})
 	if err != nil {
-		t.Fatalf("MaybeSetContainerResources on cluster %q: %v", cluster.GetName(), err)
+		t.Fatalf("SetContainerResources on cluster %q: %v", cluster.GetName(), err)
 	}
 
 	server, err = cluster.CreatePod(ctx, server)

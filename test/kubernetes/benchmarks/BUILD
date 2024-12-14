@@ -58,6 +58,7 @@ go_test(
     ],
     deps = [
         "//test/kubernetes/k8sctx",
+        "//test/kubernetes/k8sctx/kubectlctx",
         "//test/kubernetes/testcluster",
     ],
 )
@@ -88,6 +89,7 @@ go_test(
     ],
     deps = [
         "//test/kubernetes/k8sctx",
+        "//test/kubernetes/k8sctx/kubectlctx",
         "//test/kubernetes/testcluster",
     ],
 )
@@ -120,6 +122,7 @@ go_test(
     ],
     deps = [
         "//test/kubernetes/k8sctx",
+        "//test/kubernetes/k8sctx/kubectlctx",
         "//test/kubernetes/testcluster",
     ],
 )
@@ -152,6 +155,7 @@ go_test(
     ],
     deps = [
         "//test/kubernetes/k8sctx",
+        "//test/kubernetes/k8sctx/kubectlctx",
         "//test/kubernetes/testcluster",
     ],
 )
@@ -184,6 +188,7 @@ go_test(
     ],
     deps = [
         "//test/kubernetes/k8sctx",
+        "//test/kubernetes/k8sctx/kubectlctx",
         "//test/kubernetes/testcluster",
     ],
 )
@@ -217,6 +222,7 @@ go_test(
     ],
     deps = [
         "//test/kubernetes/k8sctx",
+        "//test/kubernetes/k8sctx/kubectlctx",
         "//test/kubernetes/testcluster",
     ],
 )
@@ -248,6 +254,7 @@ go_test(
     ],
     deps = [
         "//test/kubernetes/k8sctx",
+        "//test/kubernetes/k8sctx/kubectlctx",
         "//test/kubernetes/testcluster",
     ],
 )
@@ -280,6 +287,7 @@ go_test(
     ],
     deps = [
         "//test/kubernetes/k8sctx",
+        "//test/kubernetes/k8sctx/kubectlctx",
         "//test/kubernetes/testcluster",
     ],
 )
@@ -312,6 +320,7 @@ go_test(
     ],
     deps = [
         "//test/kubernetes/k8sctx",
+        "//test/kubernetes/k8sctx/kubectlctx",
         "//test/kubernetes/testcluster",
     ],
 )
@@ -343,6 +352,7 @@ go_test(
     ],
     deps = [
         "//test/kubernetes/k8sctx",
+        "//test/kubernetes/k8sctx/kubectlctx",
         "//test/kubernetes/testcluster",
     ],
 )
@@ -356,6 +366,7 @@ go_library(
     ],
     nogo = False,
     deps = [
+        "//pkg/sync",
         "//test/gpu/ollama",
         "//test/kubernetes",
         "//test/kubernetes/benchmarks/profiling",
@@ -381,6 +392,7 @@ go_test(
     ],
     deps = [
         "//test/kubernetes/k8sctx",
+        "//test/kubernetes/k8sctx/kubectlctx",
         "//test/kubernetes/testcluster",
     ],
 )
@@ -414,6 +426,7 @@ go_test(
     ],
     deps = [
         "//test/kubernetes/k8sctx",
+        "//test/kubernetes/k8sctx/kubectlctx",
         "//test/kubernetes/testcluster",
     ],
 )
@@ -445,6 +458,7 @@ go_test(
     ],
     deps = [
         "//test/kubernetes/k8sctx",
+        "//test/kubernetes/k8sctx/kubectlctx",
         "//test/kubernetes/testcluster",
     ],
 )
@@ -477,6 +491,7 @@ go_test(
     ],
     deps = [
         "//test/kubernetes/k8sctx",
+        "//test/kubernetes/k8sctx/kubectlctx",
         "//test/kubernetes/testcluster",
     ],
 )

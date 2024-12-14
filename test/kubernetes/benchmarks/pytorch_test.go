@@ -19,6 +19,7 @@ import (
 	"testing"
 
 	"gvisor.dev/gvisor/test/kubernetes/k8sctx"
+	"gvisor.dev/gvisor/test/kubernetes/k8sctx/kubectlctx"
 	"gvisor.dev/gvisor/test/kubernetes/testcluster"
 )
 
@@ -47,31 +48,15 @@ func TestMobileNetV2(t *testing.T) {
 	runTests(ctx, t, MobileNetV2)
 }
 
-func TestBackgroundMatting(t *testing.T) {
-	ctx := context.Background()
-	runTests(ctx, t, BackgroundMatting)
-}
-
 func runTests(ctx context.Context, t *testing.T, tests []pytorchTest) {
-	k8sCtx, err := k8sctx.Context(ctx)
+	k8sCtx, err := kubectlctx.New(ctx)
 	if err != nil {
 		t.Fatalf("Failed to get kubernetes context: %v", err)
 	}
-	k8sCtx.ForEachCluster(ctx, t, func(cluster *testcluster.TestCluster) {
+	k8sctx.ForEachCluster(ctx, t, k8sCtx, func(cluster *testcluster.TestCluster) {
 		t.Run("PyTorch", func(t *testing.T) {
 			t.Parallel()
 			RunPytorch(ctx, t, k8sCtx, cluster, tests)
 		})
-	})
-}
-
-func TestMain(m *testing.M) {
-	k8sctx.TestMain(m, map[string]k8sctx.TestFunc{
-		"TestFastNLPBert":       TestFastNLPBert,
-		"TestBigBird":           TestBigBird,
-		"TestSpeechTransformer": TestSpeechTransformer,
-		"TestLearningToPaint":   TestLearningToPaint,
-		"TestMobileNetV2":       TestMobileNetV2,
-		"TestBackgroundMatting": TestBackgroundMatting,
 	})
 }

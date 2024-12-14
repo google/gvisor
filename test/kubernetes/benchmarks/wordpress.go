@@ -35,7 +35,7 @@ const (
 	mariaDBImage               = "mariadb:10.11.3-jammy"
 	wordpressPort              = 80
 	mariaDBPort                = 3306
-	wordpressBenchmarkDuration = 70 * time.Second
+	wordpressBenchmarkDuration = 55 * time.Second
 	wordpressRequestTimeout    = 10 * time.Second
 	wordpressLoginPage         = "/wp-login.php"
 	mariaDBName                = "wpbench"
@@ -52,8 +52,8 @@ const (
 )
 
 var (
-	threads         = []int{1, 8, 64, 1000}
-	targetQPS       = []int{1, 8, 64, httpbench.InfiniteQPS}
+	threads         = []int{1, 8, 1000}
+	targetQPS       = []int{1, 64, httpbench.InfiniteQPS}
 	wantPercentiles = []int{50, 95, 99}
 )
 
@@ -114,7 +114,7 @@ func BenchmarkWordpress(ctx context.Context, t *testing.T, k8sCtx k8sctx.Kuberne
 	if err != nil {
 		t.Fatalf("Failed to configure pod for runtime nodepool: %v", err)
 	}
-	server, err = testcluster.MaybeSetContainerResources(server, name, testcluster.ContainerResourcesRequest{})
+	server, err = testcluster.SetContainerResources(server, "", testcluster.ContainerResourcesRequest{})
 	if err != nil {
 		t.Fatalf("Failed to set container resources: %v", err)
 	}

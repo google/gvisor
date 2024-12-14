@@ -18,23 +18,17 @@ import (
 	"context"
 	"testing"
 
-	"gvisor.dev/gvisor/test/kubernetes/k8sctx"
+	"gvisor.dev/gvisor/test/kubernetes/k8sctx/kubectlctx"
 )
 
 // TestHello tests that a trivial alpine container runs correctly.
 func TestHello(t *testing.T) {
 	ctx := context.Background()
-	k8sCtx, err := k8sctx.Context(ctx)
+	k8sCtx, err := kubectlctx.New(ctx)
 	if err != nil {
 		t.Fatalf("Failed to get kubernetes context: %v", err)
 	}
-	cluster := k8sCtx.AcquireCluster(ctx, t)
-	defer k8sCtx.ReleaseCluster(ctx, t, cluster)
+	cluster, releaseFn := k8sCtx.Cluster(ctx, t)
+	defer releaseFn()
 	RunHello(ctx, t, k8sCtx, cluster)
-}
-
-func TestMain(m *testing.M) {
-	k8sctx.TestMain(m, map[string]k8sctx.TestFunc{
-		"TestHello": TestHello,
-	})
 }

@@ -71,7 +71,7 @@ func (r *kubernetesPodRunner) Run(ctx context.Context, image string, argv []stri
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to configure pod: %v", err)
 	}
-	stableDiffusionXLPod, err = testcluster.MaybeSetContainerResources(stableDiffusionXLPod, stableDiffusionXLPod.ObjectMeta.Name, testcluster.ContainerResourcesRequest{GPU: true})
+	stableDiffusionXLPod, err = testcluster.SetContainerResources(stableDiffusionXLPod, "", testcluster.ContainerResourcesRequest{GPU: true})
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to set container resources: %v", err)
 	}
@@ -113,6 +113,11 @@ func RunStableDiffusionXL(ctx context.Context, t *testing.T, k8sCtx k8sctx.Kuber
 		t.Fatalf("cannot reset namespace: %v", err)
 	}
 	defer benchmarkNS.Cleanup(ctx)
+	reqWaitCtx, reqWaitCancel := context.WithTimeout(ctx, 5*time.Minute)
+	defer reqWaitCancel()
+	if err := benchmarkNS.WaitForResources(reqWaitCtx, testcluster.ContainerResourcesRequest{GPU: true}); err != nil {
+		t.Fatalf("failed to wait for resources: %v", err)
+	}
 	endProfiling, err := profiling.MaybeSetup(ctx, t, k8sCtx, cluster, benchmarkNS)
 	if err != nil {
 		t.Fatalf("Failed to setup profiling: %v", err)

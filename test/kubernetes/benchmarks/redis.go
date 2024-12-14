@@ -49,9 +49,9 @@ const (
 )
 
 var (
-	numConnections     = []int{1, 2, 4, 8, 16, 32}
+	numConnections     = []int{1, 4, 32}
 	latencyPercentiles = []int{50, 95, 99}
-	operations         = []string{"SET", "GET", "MSET", "LPUSH", "LRANGE_500"}
+	operations         = []string{"GET", "MSET", "LRANGE_500"}
 )
 
 // BenchmarkRedis runs the Redis performance benchmark using redis-benchmark.
@@ -136,9 +136,9 @@ func BenchmarkRedis(ctx context.Context, t *testing.T, k8sCtx k8sctx.KubernetesC
 				t.Fatalf("ConfigurePodForRuntimeTestNodepool on cluster %q: %v", cluster.GetName(), err)
 			}
 
-			server, err = testcluster.MaybeSetContainerResources(server, server.Spec.Containers[0].Name, testcluster.ContainerResourcesRequest{})
+			server, err = testcluster.SetContainerResources(server, "", testcluster.ContainerResourcesRequest{})
 			if err != nil {
-				t.Fatalf("MaybeSetContainerResources on cluster %q: %v", cluster.GetName(), err)
+				t.Fatalf("SetContainerResources on cluster %q: %v", cluster.GetName(), err)
 			}
 
 			server, err = cluster.CreatePod(ctx, server)

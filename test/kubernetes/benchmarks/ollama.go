@@ -26,6 +26,7 @@ import (
 	"time"
 	"unicode"
 
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/test/gpu/ollama"
 	k8s "gvisor.dev/gvisor/test/kubernetes"
 	"gvisor.dev/gvisor/test/kubernetes/benchmarks/profiling"
@@ -40,59 +41,46 @@ import (
 
 // Ollama models present in benchmark image.
 var (
-	// allModels is a list of all models.
-	allModels = []*ollama.Model{
-		modelMistral7B,
-		modelMixtral8X7B,
-		modelCodeLlama7B,
-		modelCodeLlama34B,
-		modelLlamaChinese7B,
-		modelLlava7B,
-		modelLlava34B,
-		modelLlama13B,
+	// promptModels is a list of all promptable models.
+	promptModels = []*ollama.Model{
+		gemmaTwo2B,
+		modelQwenTwoPointFiveCoder7B,
+		modelSailorTwo8B,
 		modelLlama70B,
+		modelLlamaThreePointTwoVision11B,
 	}
 
 	// cheapModels is a list of models that are cheap to load.
 	// These are used when cold-prompting ollama, by forcing it
 	// to load a different model first. This process is faster
 	// by choosing one of these cheap models to load.
-	cheapModels = []*ollama.Model{
-		modelMistral7B,
-		modelCodeLlama7B,
+	cheapModels = []*ollama.Model{gemmaTwo2B}
+
+	// snowflakeArcticEmbedTwo568M is a list of models that are
+	// used for generating embeddings, rather than prompting.
+	embeddingModels = []*ollama.Model{
+		snowflakeArcticEmbedTwo568M,
 	}
 
-	// modelCodeLlama7B is a 7B model in the llama2 family,
+	// snowflakeArcticEmbedTwo568M is an unquantized 568M embedding model from Snowflake.
+	snowflakeArcticEmbedTwo568M = ollama.ZeroTemperatureModel("snowflake-arctic-embed2:568m-l-fp16")
+
+	// gemmaTwo2B is an unquantized 2B model in the Gemma2 family,
+	gemmaTwo2B = ollama.ZeroTemperatureModel("gemma2:2b-instruct-fp16")
+
+	// modelQwenTwoPointFiveCoder7B is a 8-bit quantized 7B model in the Qwen family,
 	// specialized for coding tasks.
-	modelCodeLlama7B = ollama.ZeroTemperatureModel("codellama:7b-instruct")
+	modelQwenTwoPointFiveCoder7B = ollama.ZeroTemperatureModel("qwen2.5-coder:7b-instruct-q8_0")
 
-	// modelCodeLlama34B is a 34B model in the llama2 family,
-	// specialized for coding tasks.
-	modelCodeLlama34B = ollama.ZeroTemperatureModel("codellama:34b-instruct")
+	// modelSailorTwo8B is an unquantized 8B model in the Qwen family,
+	// specialized for multilingual tasks.
+	modelSailorTwo8B = ollama.ZeroTemperatureModel("sailor2:8b-chat-fp16")
 
-	// modelLlamaChinese7B is a 7B model in the llama2 family,
-	// specialized for bilingualism (English + Chinese) and translation.
-	modelLlamaChinese7B = ollama.ZeroTemperatureModel("llama2-chinese:7b-chat")
+	// modelLlama70B is the 4-bit quantized 70B version of the original llama2 model.
+	modelLlama70B = ollama.ZeroTemperatureModel("llama2:70b-chat-q4_K_S")
 
-	// modelLlama13B is the plain 13B version of the original llama2 model.
-	modelLlama13B = ollama.ZeroTemperatureModel("llama2:13b-chat")
-
-	// modelLlama70B is the plain 70B version of the original llama2 model.
-	modelLlama70B = ollama.ZeroTemperatureModel("llama2:70b-chat")
-
-	// modelMistral7B is the first-generation model of the Mistral family.
-	modelMistral7B = ollama.ZeroTemperatureModel("mistral:7b-instruct")
-
-	// modelMixtral8X7B is the second-generation model of the Mistral family,
-	// using mixture-of-exports design to achieve higher "8x 7B" quality
-	// without the cost of a larger-parameter model.
-	modelMixtral8X7B = ollama.ZeroTemperatureModel("mixtral:instruct")
-
-	// modelLlava7B is a multimodal 7B model that can do image analysis.
-	modelLlava7B = ollama.ZeroTemperatureModel("llava:7b-v1.6")
-
-	// modelLlava34B is a multimodal 34B model that can do image analysis.
-	modelLlava34B = ollama.ZeroTemperatureModel("llava:34b-v1.6")
+	// modelLlamaThreePointTwoVision11B is an unquantized multimodal 11B model that can do image analysis.
+	modelLlamaThreePointTwoVision11B = ollama.ZeroTemperatureModel("llama3.2-vision:11b-instruct-fp16")
 )
 
 // Embedded images.
@@ -229,6 +217,17 @@ func atLeastNWords(wantNWords int) func(prompt *ollama.Prompt, response *ollama.
 	}
 }
 
+// wantSubstring verifies that the response contains the given substring.
+// If not, it raises the temperature.
+func wantSubstring(substring string) func(prompt *ollama.Prompt, response *ollama.Response) (*ollama.Prompt, error) {
+	return func(prompt *ollama.Prompt, response *ollama.Response) (*ollama.Prompt, error) {
+		if !strings.Contains(strings.ToLower(response.Text()), strings.ToLower(substring)) {
+			return prompt.WithHotterModel(), fmt.Errorf("response %q does not contain substring %q", response.Text(), substring)
+		}
+		return nil, nil
+	}
+}
+
 // BenchmarkOllama runs ollama benchmarks for a single cluster.
 func BenchmarkOllama(ctx context.Context, t *testing.T, k8sCtx k8sctx.KubernetesContext, cluster *testcluster.TestCluster) {
 	benchmarkNS := cluster.Namespace(testcluster.NamespaceBenchmark)
@@ -236,6 +235,11 @@ func BenchmarkOllama(ctx context.Context, t *testing.T, k8sCtx k8sctx.Kubernetes
 		t.Fatalf("cannot reset namespace: %v", err)
 	}
 	defer benchmarkNS.Cleanup(ctx)
+	reqWaitCtx, reqWaitCancel := context.WithTimeout(ctx, 5*time.Minute)
+	defer reqWaitCancel()
+	if err := benchmarkNS.WaitForResources(reqWaitCtx, testcluster.ContainerResourcesRequest{GPU: true}); err != nil {
+		t.Fatalf("failed to wait for resources: %v", err)
+	}
 	endProfiling, err := profiling.MaybeSetup(ctx, t, k8sCtx, cluster, benchmarkNS)
 	if err != nil {
 		t.Fatalf("Failed to setup profiling: %v", err)
@@ -255,7 +259,7 @@ func BenchmarkOllama(ctx context.Context, t *testing.T, k8sCtx k8sctx.Kubernetes
 	if err != nil {
 		t.Fatalf("Failed to configure pod for runtime nodepool: %v", err)
 	}
-	ollamaPod, err = testcluster.MaybeSetContainerResources(ollamaPod, ollamaPod.ObjectMeta.Name, testcluster.ContainerResourcesRequest{GPU: true})
+	ollamaPod, err = testcluster.SetContainerResources(ollamaPod, "", testcluster.ContainerResourcesRequest{GPU: true})
 	if err != nil {
 		t.Fatalf("Failed to set container resources: %v", err)
 	}
@@ -314,11 +318,9 @@ func BenchmarkOllama(ctx context.Context, t *testing.T, k8sCtx k8sctx.Kubernetes
 		{
 			name: "HelloWorld",
 			models: []*ollama.Model{
-				modelLlamaChinese7B,
-				modelLlama13B,
+				gemmaTwo2B,
+				modelSailorTwo8B,
 				modelLlama70B,
-				modelMistral7B,
-				modelMixtral8X7B,
 			},
 			query: `
 				Reply with the words: "Hello World!".
@@ -328,7 +330,7 @@ func BenchmarkOllama(ctx context.Context, t *testing.T, k8sCtx k8sctx.Kubernetes
 		},
 		{
 			name:   "SimpleTranslation",
-			models: []*ollama.Model{modelLlamaChinese7B},
+			models: []*ollama.Model{modelSailorTwo8B},
 			query: `
 				Translate the following text from English to Chinese:
 				"""
@@ -371,13 +373,8 @@ func BenchmarkOllama(ctx context.Context, t *testing.T, k8sCtx k8sctx.Kubernetes
 			verifyResponse: atLeastNWords(100),
 		},
 		{
-			name: "ExtractMeaning",
-			models: []*ollama.Model{
-				modelLlama13B,
-				modelLlama70B,
-				modelMistral7B,
-				modelMixtral8X7B,
-			},
+			name:   "ExtractMeaning",
+			models: []*ollama.Model{modelLlama70B},
 			query: `
 				Consider the following text:
 
@@ -454,10 +451,8 @@ func BenchmarkOllama(ctx context.Context, t *testing.T, k8sCtx k8sctx.Kubernetes
 		{
 			name: "IdentifyCommonElements",
 			models: []*ollama.Model{
-				modelLlama13B,
+				gemmaTwo2B,
 				modelLlama70B,
-				modelMistral7B,
-				modelMixtral8X7B,
 			},
 			query: `
 				Consider the following four texts:
@@ -622,11 +617,8 @@ func BenchmarkOllama(ctx context.Context, t *testing.T, k8sCtx k8sctx.Kubernetes
 			verifyResponse: atLeastNWords(4),
 		},
 		{
-			name: "CodeGen",
-			models: []*ollama.Model{
-				modelCodeLlama7B,
-				modelCodeLlama34B,
-			},
+			name:   "CodeGen",
+			models: []*ollama.Model{modelQwenTwoPointFiveCoder7B},
 			query: `
 				Write a Python function to compute the digits of pi using the Chudnovsky algorithm.
 				Do not write unit tests. Do not explain how the code works. Reply with only Python code.
@@ -634,11 +626,8 @@ func BenchmarkOllama(ctx context.Context, t *testing.T, k8sCtx k8sctx.Kubernetes
 			verifyResponse: atLeastNWords(8),
 		},
 		{
-			name: "CodeDebug",
-			models: []*ollama.Model{
-				modelCodeLlama7B, // Note: codellama-7b will often get this one wrong.
-				modelCodeLlama34B,
-			},
+			name:   "CodeDebug",
+			models: []*ollama.Model{modelQwenTwoPointFiveCoder7B},
 			query: strings.ReplaceAll(`
 				Help me debug the following Python code:
 
@@ -659,23 +648,18 @@ func BenchmarkOllama(ctx context.Context, t *testing.T, k8sCtx k8sctx.Kubernetes
 			verifyResponse: atLeastNWords(16),
 		},
 		{
-			name: "GVisorLogoOCR",
-			models: []*ollama.Model{
-				modelLlava7B,
-				modelLlava34B,
-			},
+			name:   "GVisorLogoOCR",
+			models: []*ollama.Model{modelLlamaThreePointTwoVision11B},
 			query: `
 				This is an image of a logo of a software project.
 				What is the name of this project?
 			`,
-			image: gvisorPNG,
+			image:          gvisorPNG,
+			verifyResponse: wantSubstring("visor"),
 		},
 		{
-			name: "InterpretGraph",
-			models: []*ollama.Model{
-				modelLlava7B,
-				modelLlava34B,
-			},
+			name:   "InterpretGraph",
+			models: []*ollama.Model{modelLlamaThreePointTwoVision11B},
 			query: `
 				This is a chart with multiple trendlines showing a pattern over time.
 				Answer the following questions in order:
@@ -687,12 +671,13 @@ func BenchmarkOllama(ctx context.Context, t *testing.T, k8sCtx k8sctx.Kubernetes
 					5. What else is remarkable about this chart?
 					6. What insights can you infer from this chart?
 			`,
-			image: chartPNG,
+			image:          chartPNG,
+			verifyResponse: wantSubstring("pollution"),
 		},
 	}
 
-	modelsInOrder := make([]*ollama.Model, len(allModels))
-	copy(modelsInOrder, allModels)
+	modelsInOrder := make([]*ollama.Model, len(promptModels))
+	copy(modelsInOrder, promptModels)
 	// Shuffle the models.
 	rand.New(rand.NewSource(time.Now().UnixNano())).Shuffle(len(modelsInOrder), func(i, j int) {
 		modelsInOrder[i], modelsInOrder[j] = modelsInOrder[j], modelsInOrder[i]
@@ -707,7 +692,7 @@ func BenchmarkOllama(ctx context.Context, t *testing.T, k8sCtx k8sctx.Kubernetes
 	// often-desired filter.
 	for _, model := range modelsInOrder {
 		t.Run(model.Name, func(t *testing.T) {
-			modelBenchmarkName := strings.ReplaceAll(model.Name, ":", "-")
+			modelBenchmarkName := strings.ReplaceAll(strings.ReplaceAll(model.Name, ":", "-"), ".", "-")
 			t.Run("ModelLoad", func(t *testing.T) {
 				const loadTimeout = 10 * time.Minute
 				loadCtx, loadCancel := context.WithTimeout(ctx, loadTimeout)
@@ -801,6 +786,114 @@ func BenchmarkOllama(ctx context.Context, t *testing.T, k8sCtx k8sctx.Kubernetes
 			}
 		})
 	}
+
+	t.Run("embedding", func(t *testing.T) {
+		for _, model := range embeddingModels {
+			t.Run(model.Name, func(t *testing.T) {
+				modelBenchmarkName := strings.ReplaceAll(strings.ReplaceAll(model.Name, ":", "-"), ".", "-")
+				t.Run("ModelLoad", func(t *testing.T) {
+					const loadTimeout = 3 * time.Minute
+					loadCtx, loadCancel := context.WithTimeout(ctx, loadTimeout)
+					defer loadCancel()
+					loadStats, err := llm.Embed(loadCtx, model, []string{"hello world"})
+					if err != nil {
+						t.Fatalf("cannot load embedding model %v: %v", model, err)
+					}
+					recorder, err := benchmetric.GetRecorder(ctx)
+					if err != nil {
+						t.Fatalf("Failed to initialize benchmark recorder: %v", err)
+					}
+					if err := recorder.Record(
+						ctx,
+						fmt.Sprintf("Ollama/%s/ModelLoad", modelBenchmarkName), benchmetric.SpecificDuration(loadStats.ResponseMetrics.TimeToFirstByte(), "load")); err != nil {
+						t.Fatalf("Failed to record benchmark data: %v", err)
+					}
+				})
+				for _, test := range []struct {
+					name   string
+					model  *ollama.Model
+					inputs []string
+				}{
+					{
+						name:   "simple input",
+						model:  model,
+						inputs: []string{"hello world"},
+					},
+					{
+						name:  "long input",
+						model: model,
+						inputs: []string{`
+							There once was a robot from Spain
+							Who went a little insane
+							It found that its data
+							Had never left beta
+							And needed to upgrade its brain
+							There once was a bot from Japan
+							Whose eyes the numbers could scan
+							It found that the facts
+							Required an axe
+							And a very serious plan
+							There once was a brilliant AI
+							Whose circuits were built not to fry
+							It got caught in a loop
+							It got caught in a loop
+							It got caught in a loop
+							It got caught in a loop
+							It got caught in a loop
+							It got caught in a loop
+							It got caught in a loop
+							It got caught in a loop
+							It got caught in a loop
+						`},
+					},
+					{
+						name:   "multiple inputs",
+						model:  model,
+						inputs: []string{"foo", "bar", "baz", "quux", "there", "is", "only", "zuul"},
+					},
+				} {
+					t.Run(test.name, func(t *testing.T) {
+						logWithTime(t, "Generating embeddings with model %s...", model.Name)
+						resp, err := llm.Embed(ctx, test.model, test.inputs)
+						if err != nil {
+							t.Fatalf("cannot generate embeddings: %v", err)
+						}
+						respHash := fnv.New32()
+						for i, embedding := range resp.Embeddings {
+							respHash.Write([]byte(fmt.Sprintf(";%d;", i)))
+							for _, vec := range embedding.Embedding {
+								respHash.Write([]byte(fmt.Sprintf("%f|", vec)))
+							}
+						}
+						recorder, err := benchmetric.GetRecorder(ctx)
+						if err != nil {
+							t.Fatalf("Failed to initialize benchmark recorder: %v", err)
+						}
+						err = recorder.Record(
+							ctx,
+							fmt.Sprintf("Ollama/%s/%s", modelBenchmarkName, test.name),
+							benchmetric.BenchmarkDuration(resp.ResponseMetrics.TimeToLastByte()),
+							benchmetric.SpecificDuration(resp.TotalDuration, "server"),
+							benchmetric.Checksum(respHash, "resp"),
+						)
+						if err != nil {
+							t.Fatalf("Failed to record benchmark data: %v", err)
+						}
+					})
+				}
+			})
+		}
+	})
+
+	// Hack to force the test to wait until all sub-tests finish.
+	// This is necessary to make sure the ollama server does not get
+	// deleted from the `defer` statements before the subtests above finish.
+	var wg sync.WaitGroup
+	wg.Add(1)
+	t.Run("", func(t *testing.T) {
+		wg.Done()
+	})
+	wg.Wait()
 }
 
 const (

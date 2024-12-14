@@ -25,7 +25,6 @@ import (
 	"time"
 
 	"golang.org/x/sync/errgroup"
-	cspb "google.golang.org/genproto/googleapis/container/v1"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sync"
 	testpb "gvisor.dev/gvisor/test/kubernetes/test_range_config_go_proto"
@@ -192,20 +191,23 @@ type NodePool struct {
 
 // NewTestClusterFromProto returns a new TestCluster client from a proto.
 func NewTestClusterFromProto(ctx context.Context, cluster *testpb.Cluster) (*TestCluster, error) {
-	config, err := clientcmd.BuildConfigFromFlags("" /*masterURL*/, cluster.GetCredentialFile())
+	kubeCfg, err := clientcmd.LoadFromFile(cluster.GetKubectlConfig())
 	if err != nil {
-		return nil, fmt.Errorf("BuildConfigFromFlags: %w", err)
+		return nil, fmt.Errorf("cannot load kubectl config at %q: %w", cluster.GetKubectlConfig(), err)
 	}
-	client, err := kubernetes.NewForConfig(config)
+	kubeContext := cluster.GetKubectlContext()
+	if kubeContext == "" {
+		kubeContext = kubeCfg.CurrentContext
+	}
+	restCfg, err := clientcmd.NewNonInteractiveClientConfig(*kubeCfg, kubeContext, nil, clientcmd.NewDefaultClientConfigLoadingRules()).ClientConfig()
+	if err != nil {
+		return nil, fmt.Errorf("kubectl config: %w", err)
+	}
+	client, err := kubernetes.NewForConfig(restCfg)
 	if err != nil {
 		return nil, fmt.Errorf("kubernetes.NewForConfig: %w", err)
 	}
-	var clusterPB cspb.Cluster
-	if err := cluster.GetCluster().UnmarshalTo(&clusterPB); err != nil {
-		return nil, fmt.Errorf("cannot unmarshal cluster: %w", err)
-	}
-	clusterName := clusterPB.GetName()
-	return NewTestClusterFromClient(clusterName, client), nil
+	return NewTestClusterFromClient(cluster.GetCluster(), client), nil
 }
 
 // NewTestClusterFromClient returns a new TestCluster client with a given client.
@@ -270,23 +272,40 @@ func (t *TestCluster) getNamespace(ctx context.Context, namespaceName string) (*
 // deleteNamespace is a helper method to delete a namespace.
 func (t *TestCluster) deleteNamespace(ctx context.Context, namespaceName string) error {
 	err := t.client.Do(ctx, func(ctx context.Context, client kubernetes.Interface) error {
-		return client.CoreV1().Namespaces().Delete(ctx, namespaceName, v1.DeleteOptions{})
+		zero := int64(0)
+		return client.CoreV1().Namespaces().Delete(ctx, namespaceName, v1.DeleteOptions{
+			GracePeriodSeconds: &zero,
+		})
 	})
 	if err != nil {
 		return err
 	}
 	// Wait for the namespace to disappear or for the context to expire.
+	waitStart := time.Now()
+	warnAfter := waitStart.Add(1 * time.Minute)
+	nsLogger := log.BasicRateLimitedLogger(5 * time.Minute)
 	for ctx.Err() == nil {
-		if _, err := t.getNamespace(ctx, namespaceName); err != nil {
+		deleteCtx, deleteCancel := context.WithTimeout(ctx, 15*time.Second)
+		ns, err := t.getNamespace(ctx, namespaceName)
+		if err != nil && deleteCtx.Err() == nil {
+			deleteCancel()
 			return nil
+		}
+		deleteCancel()
+		if time.Now().After(warnAfter) {
+			if ns != nil {
+				nsLogger.Warningf("Still waiting for namespace %q to be actually deleted (after sending deletion request); waiting %v so far, namespace status: %v", namespaceName, time.Since(waitStart), ns.Status)
+			} else {
+				nsLogger.Warningf("Still waiting for namespace %q to be actually deleted (after sending deletion request); waiting %v so far, namespace status: %v", namespaceName, time.Since(waitStart), "<unknown>")
+			}
 		}
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(10 * time.Millisecond):
+			return fmt.Errorf("context expired waiting for namespace %q to be deleted", namespaceName)
+		case <-time.After(pollInterval):
 		}
 	}
-	return ctx.Err()
+	return fmt.Errorf("context expired waiting for namespace %q to be deleted", namespaceName)
 }
 
 // getNodePool returns the NodePool of the given type.
@@ -409,23 +428,40 @@ func (t *TestCluster) ListPods(ctx context.Context, namespace string) (*v13.PodL
 // DeletePod is a helper method to delete a pod.
 func (t *TestCluster) DeletePod(ctx context.Context, pod *v13.Pod) error {
 	err := t.client.Do(ctx, func(ctx context.Context, client kubernetes.Interface) error {
-		return client.CoreV1().Pods(pod.GetNamespace()).Delete(ctx, pod.GetName(), v1.DeleteOptions{})
+		zero := int64(0)
+		return client.CoreV1().Pods(pod.GetNamespace()).Delete(ctx, pod.GetName(), v1.DeleteOptions{
+			GracePeriodSeconds: &zero,
+		})
 	})
 	if err != nil {
 		return err
 	}
 	// Wait for the pod to disappear or for the context to expire.
+	waitStart := time.Now()
+	warnAfter := waitStart.Add(1 * time.Minute)
+	podLogger := log.BasicRateLimitedLogger(5 * time.Minute)
 	for ctx.Err() == nil {
-		if _, err := t.GetPod(ctx, pod); err != nil {
+		deleteCtx, deleteCancel := context.WithTimeout(ctx, 15*time.Second)
+		p, err := t.GetPod(deleteCtx, pod)
+		if err != nil && deleteCtx.Err() == nil {
+			deleteCancel()
 			return nil
+		}
+		deleteCancel()
+		if time.Now().After(warnAfter) {
+			if p != nil {
+				podLogger.Warningf("Still waiting for pod %q to be actually deleted (after sending deletion request); waiting %v so far, pod status: %v", pod.GetName(), time.Since(waitStart), p.Status)
+			} else {
+				podLogger.Warningf("Still waiting for pod %q to be actually deleted (after sending deletion request); waiting %v so far, pod status: %v", pod.GetName(), time.Since(waitStart), "<unknown>")
+			}
 		}
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(10 * time.Millisecond):
+			return fmt.Errorf("context expired waiting for pod %q to be deleted; last pod info: %v", pod.GetName(), p)
+		case <-time.After(pollInterval):
 		}
 	}
-	return ctx.Err()
+	return fmt.Errorf("context expired waiting for pod %q to be deleted", pod.GetName())
 }
 
 // GetLogReader gets an io.ReadCloser from which logs can be read. It is the caller's
@@ -451,50 +487,82 @@ func (t *TestCluster) ReadPodLogs(ctx context.Context, pod *v13.Pod) (string, er
 
 // WaitForPodRunning is a helper method to wait for a pod to be running.
 func (t *TestCluster) WaitForPodRunning(ctx context.Context, pod *v13.Pod) error {
-	return t.doWaitForPod(ctx, pod, v13.PodRunning)
+	// We also accept pods in the PodSucceeded state, because short-lived pods
+	// may have already ran and succeeded by the time we poll them.
+	_, err := t.doWaitForPod(ctx, pod, func(p v13.PodPhase) bool { return p == v13.PodRunning || p == v13.PodSucceeded })
+	return err
 }
 
 // WaitForPodCompleted is a helper method to wait for a pod to be completed.
 func (t *TestCluster) WaitForPodCompleted(ctx context.Context, pod *v13.Pod) error {
-	return t.doWaitForPod(ctx, pod, v13.PodSucceeded)
+	_, err := t.doWaitForPod(ctx, pod, func(p v13.PodPhase) bool { return p == v13.PodSucceeded })
+	return err
+}
+
+// WaitForPodTerminated is a helper method to wait for a pod to exit,
+// whether it succeeded or failed.
+func (t *TestCluster) WaitForPodTerminated(ctx context.Context, pod *v13.Pod) (v13.PodPhase, error) {
+	return t.doWaitForPod(ctx, pod, func(p v13.PodPhase) bool { return p == v13.PodSucceeded || p == v13.PodFailed })
 }
 
 // doWaitForPod waits for a pod to complete based on a given v13.PodPhase.
-func (t *TestCluster) doWaitForPod(ctx context.Context, pod *v13.Pod, phase v13.PodPhase) error {
+func (t *TestCluster) doWaitForPod(ctx context.Context, pod *v13.Pod, phasePredicate func(v13.PodPhase) bool) (v13.PodPhase, error) {
 	podLogger := log.BasicRateLimitedLogger(5 * time.Minute)
-	startLogTime := time.Now().Add(3 * time.Minute)
+	startTime := time.Now()
+	startLogTime := startTime.Add(3 * time.Minute)
+	var emitLogsAt time.Time
+	emitLogs := false
+	if ctxDeadline, hasDeadline := ctx.Deadline(); hasDeadline && time.Until(ctxDeadline) > 10*time.Second {
+		emitLogsAt = ctxDeadline.Add(-10 * time.Second)
+		emitLogs = true
+	}
 
 	var p *v13.Pod
-	var err error
 	pollCh := time.NewTicker(pollInterval)
 	defer pollCh.Stop()
 	for {
 		select {
 		case <-pollCh.C:
-			if p, err = t.GetPod(ctx, pod); err != nil {
-				return fmt.Errorf("failed to poll pod: %w", err)
+			polled, pollErr := t.GetPod(ctx, pod)
+			if ctx.Err() != nil {
+				return v13.PodUnknown, fmt.Errorf("context expired waiting for pod %q: %w; last pod data: %v", pod.GetName(), ctx.Err(), p)
 			}
+			if pollErr != nil {
+				return v13.PodUnknown, fmt.Errorf("failed to poll pod: %w", pollErr)
+			}
+			p = polled
 		case <-ctx.Done():
-			return fmt.Errorf("context expired waiting for pod %q: %w", pod.GetName(), ctx.Err())
+			return v13.PodUnknown, fmt.Errorf("context expired waiting for pod %q: %w; last pod data: %v", pod.GetName(), ctx.Err(), p)
 		}
 		if p.Status.Reason == v13.PodReasonUnschedulable {
-			return fmt.Errorf("pod %q failed: reason: %q message: %q", pod.GetName(), p.Status.Reason, p.Status.Message)
+			return v13.PodPending, fmt.Errorf("pod %q cannot be scheduled: reason: %q message: %q", p.GetName(), p.Status.Reason, p.Status.Message)
 		}
 
 		for _, c := range p.Status.Conditions {
 			if strings.Contains(c.Reason, v13.PodReasonUnschedulable) {
-				return fmt.Errorf("pod %q failed: reason: %q message: %q", p.GetName(), c.Reason, c.Message)
+				return v13.PodPending, fmt.Errorf("pod %q cannot be scheduled: reason: %q message: %q", p.GetName(), c.Reason, c.Message)
 			}
 		}
 
-		switch p.Status.Phase {
-		case v13.PodFailed:
-			return fmt.Errorf("pod %q failed: %s", pod.GetName(), p.Status.Message)
-		case phase:
-			return nil
+		if phasePredicate(p.Status.Phase) {
+			return p.Status.Phase, nil
 		}
-		if time.Now().After(startLogTime) {
-			podLogger.Infof("Still waiting for pod %q after %v; pod status: %v", pod.GetName(), time.Since(startLogTime), p.Status)
+		if p.Status.Phase == v13.PodFailed {
+			logs, err := t.ReadPodLogs(ctx, p)
+			if err != nil {
+				return v13.PodFailed, fmt.Errorf("pod %q failed (status: %s); also failed to read pod logs: %w", p.GetName(), p.Status.Message, err)
+			}
+			return v13.PodFailed, fmt.Errorf("pod %q failed (status: %s); logs:\n%s\n(end of logs)", p.GetName(), p.Status.Message, logs)
+		}
+		if now := time.Now(); emitLogs && p.Status.Phase == v13.PodRunning && now.After(emitLogsAt) {
+			emitLogs = false
+			if logs, err := t.ReadPodLogs(ctx, p); err != nil {
+				log.Infof("Still waiting for pod %q after %v; pod status: %v; failed to read pod logs: %v", p.GetName(), time.Since(startTime), p.Status, err)
+			} else {
+				log.Infof("Still waiting for pod %q after %v; pod status: %v; pod logs:\n%s\n(end of logs)", p.GetName(), time.Since(startTime), p.Status, logs)
+			}
+		} else if now.After(startLogTime) {
+			podLogger.Infof("Still waiting for pod %q after %v; pod status: %v", p.GetName(), time.Since(startTime), p.Status)
 		}
 	}
 }

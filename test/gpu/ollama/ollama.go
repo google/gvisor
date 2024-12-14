@@ -119,9 +119,9 @@ func New(ctx context.Context, server Server, logger testutil.Logger) (*Ollama, e
 		return nil, fmt.Errorf("could not get logs: %w", err)
 	}
 	switch {
-	case strings.Contains(logs, "no GPU detected"):
+	case strings.Contains(logs, "library=cpu"):
 		llm.HasGPU = false
-	case strings.Contains(logs, "Nvidia GPU detected"):
+	case strings.Contains(logs, "library=cuda"):
 		llm.HasGPU = true
 	default:
 		return nil, fmt.Errorf("cannot determine whether ollama is using GPU from logs:\n%s", logs)
@@ -202,6 +202,18 @@ type ResponseMetrics struct {
 	FirstByteRead time.Time `json:"first_byte_read"`
 	// LastByteRead is the time when the last HTTP response body byte was read.
 	LastByteRead time.Time `json:"last_byte_read"`
+}
+
+// TimeToFirstByte returns the duration it took between the request being sent
+// and the first byte of the response being read.
+func (rm *ResponseMetrics) TimeToFirstByte() time.Duration {
+	return rm.FirstByteRead.Sub(rm.RequestSent)
+}
+
+// TimeToLastByte returns the duration it took between the request being sent
+// and the last byte of the response being read.
+func (rm *ResponseMetrics) TimeToLastByte() time.Duration {
+	return rm.LastByteRead.Sub(rm.RequestSent)
 }
 
 // apiResponse represents a JSON response from the ollama API.
@@ -539,8 +551,8 @@ func (p *Prompt) WithHotterModel() *Prompt {
 	return &promptCopy
 }
 
-// PromptJSON encodes the JSON data for a query.
-type PromptJSON struct {
+// promptJSON encodes the JSON data for a query.
+type promptJSON struct {
 	Model     string              `json:"model"`
 	Prompt    string              `json:"prompt,omitempty"`
 	Images    []string            `json:"images"`
@@ -551,7 +563,7 @@ type PromptJSON struct {
 }
 
 // json encodes this prompt to the JSON format expected by Ollama.
-func (p *Prompt) json() PromptJSON {
+func (p *Prompt) json() promptJSON {
 	keepAlive := ""
 	if p.KeepModelAlive != 0 {
 		keepAlive = p.KeepModelAlive.String()
@@ -560,7 +572,7 @@ func (p *Prompt) json() PromptJSON {
 	for i, image := range p.images {
 		images[i] = base64.StdEncoding.EncodeToString(image)
 	}
-	return PromptJSON{
+	return promptJSON{
 		Model:     p.Model.Name,
 		Prompt:    p.CleanQuery(),
 		Images:    images,
@@ -571,11 +583,11 @@ func (p *Prompt) json() PromptJSON {
 	}
 }
 
-// ResponseJSON is the JSON-format response from ollama about a prompt.
+// responseJSON is the JSON-format response from ollama about a prompt.
 // Note that in `streamed` mode, the `Response` field contains a single token.
 // To recover the whole response, all `Response` fields must be concatenated
-// until the last `ResponseJSON`, identified as such by the `Done` field.
-type ResponseJSON struct {
+// until the last `responseJSON`, identified as such by the `Done` field.
+type responseJSON struct {
 	Model           string              `json:"model"`
 	CreatedAt       time.Time           `json:"created_at"`
 	Response        string              `json:"response"`
@@ -591,7 +603,7 @@ type ResponseJSON struct {
 
 // Response represents a response to a query from Ollama.
 type Response struct {
-	data    []*ResponseJSON
+	data    []*responseJSON
 	metrics ResponseMetrics
 }
 
@@ -837,13 +849,13 @@ func (llm *Ollama) WarmModel(ctx context.Context, model *Model, keepWarmFor time
 		return nil, llm.withServerLogsErr(ctx, fmt.Errorf("warmup prompt for model %s failed: %w", model.Name, err))
 	}
 	return &ModelLoadStats{
-		ClientReportedDuration: resp.metrics.LastByteRead.Sub(resp.metrics.RequestSent),
+		ClientReportedDuration: resp.metrics.TimeToFirstByte(),
 	}, nil
 }
 
 // Prompt returns the result of prompting the given `model` with `prompt`.
 func (llm *Ollama) Prompt(ctx context.Context, prompt *Prompt) (*Response, error) {
-	resp, err := jsonPost[PromptJSON, ResponseJSON](ctx, llm, "/api/generate", prompt.json())
+	resp, err := jsonPost[promptJSON, responseJSON](ctx, llm, "/api/generate", prompt.json())
 	if err != nil {
 		return nil, llm.withServerLogsErr(ctx, fmt.Errorf("prompt (%s %q) request failed: %w", prompt.Model.Name, prompt.CleanQuery(), err))
 	}
@@ -874,4 +886,81 @@ func (llm *Ollama) PromptUntil(ctx context.Context, prompt *Prompt, iterate func
 		lastError = err
 	}
 	return nil, fmt.Errorf("response %q (attempt #%d with prompt %v) did not match predicate: %v", lastResponse, attempts, prompt, lastError)
+}
+
+// Embedding holds the result of running an embedding model on a single input.
+type Embedding struct {
+	Input     string
+	Embedding []float64
+}
+
+// EmbeddingResponse represents the result of running an embedding model
+// on a set of inputs.
+type EmbeddingResponse struct {
+	// Model is the model used to generate the embeddings.
+	Model *Model
+
+	// Embeddings is the list of embeddings generated for the given inputs.
+	Embeddings []Embedding
+
+	// TotalDuration is the total duration of the embedding request as
+	// measured by the server, not the client.
+	TotalDuration time.Duration
+
+	// LoadDuration is the duration of the embedding model load time as measured
+	// by the server, not the client.
+	LoadDuration time.Duration
+
+	// PromptEvalCount is the number of prompt evaluations performed by the
+	// server.
+	PromptEvalCount int
+
+	// ResponseMetrics contains HTTP response metrics as perceived by the
+	// client.
+	ResponseMetrics ResponseMetrics
+}
+
+// Embed generates embeddings for each of the given inputs.
+func (llm *Ollama) Embed(ctx context.Context, model *Model, inputs []string) (*EmbeddingResponse, error) {
+	// embeddingRequestJSON is the JSON format of an embedding request.
+	type embeddingRequestJSON struct {
+		Model string   `json:"model"`
+		Input []string `json:"input"`
+	}
+
+	// embeddingResponseJSON is the JSON format of an embedding response.
+	type embeddingResponseJSON struct {
+		Model           string      `json:"model"`
+		Embeddings      [][]float64 `json:"embeddings"`
+		TotalDuration   int64       `json:"total_duration"`
+		LoadDuration    int64       `json:"load_duration"`
+		PromptEvalCount int         `json:"prompt_eval_count"`
+	}
+
+	resp, err := jsonPost[embeddingRequestJSON, embeddingResponseJSON](ctx, llm, "/api/embed", embeddingRequestJSON{Model: model.Name, Input: inputs})
+	if err != nil {
+		return nil, llm.withServerLogsErr(ctx, fmt.Errorf("embedding request failed: %w", err))
+	}
+	obj, err := resp.Obj()
+	if err != nil {
+		return nil, fmt.Errorf("malformed embedding response: %w", err)
+	}
+	if len(obj.Embeddings) != len(inputs) {
+		return nil, fmt.Errorf("embedding response has %d embeddings, but %d inputs were provided", len(obj.Embeddings), len(inputs))
+	}
+	embeddings := make([]Embedding, len(inputs))
+	for i, embedding := range obj.Embeddings {
+		embeddings[i] = Embedding{
+			Input:     inputs[i],
+			Embedding: embedding,
+		}
+	}
+	return &EmbeddingResponse{
+		Model:           model,
+		Embeddings:      embeddings,
+		TotalDuration:   time.Duration(obj.TotalDuration) * time.Nanosecond,
+		LoadDuration:    time.Duration(obj.LoadDuration) * time.Nanosecond,
+		PromptEvalCount: obj.PromptEvalCount,
+		ResponseMetrics: resp.Metrics,
+	}, nil
 }

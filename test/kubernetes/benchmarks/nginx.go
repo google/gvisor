@@ -33,7 +33,7 @@ import (
 
 const (
 	nginxPort              = 80
-	nginxBenchmarkDuration = 70 * time.Second
+	nginxBenchmarkDuration = 55 * time.Second
 	nginxRequestTimeout    = 3 * time.Second
 	nginxServingDir        = "/tmp/html"
 
@@ -48,9 +48,9 @@ var (
 	// The test expects that it contains the files to be served at /local,
 	// and will serve files out of `nginxServingDir`.
 	nginxCommand      = []string{"nginx", "-c", "/etc/nginx/nginx.conf"}
-	nginxDocKibibytes = []int{1, 10, 100, 10240}
-	threads           = []int{1, 8, 64, 1000}
-	targetQPS         = []int{1, 8, 64, httpbench.InfiniteQPS}
+	nginxDocKibibytes = []int{1, 10240}
+	threads           = []int{1, 8, 1000}
+	targetQPS         = []int{1, 64, httpbench.InfiniteQPS}
 	wantPercentiles   = []int{50, 95, 99}
 )
 
@@ -135,7 +135,7 @@ func BenchmarkNginx(ctx context.Context, t *testing.T, k8sCtx k8sctx.KubernetesC
 			if err != nil {
 				t.Fatalf("Failed to configure pod for runtime nodepool: %v", err)
 			}
-			server, err = testcluster.MaybeSetContainerResources(server, name, testcluster.ContainerResourcesRequest{})
+			server, err = testcluster.SetContainerResources(server, "", testcluster.ContainerResourcesRequest{})
 			if err != nil {
 				t.Fatalf("Failed to set container resources: %v", err)
 			}
@@ -212,20 +212,6 @@ func BenchmarkNginx(ctx context.Context, t *testing.T, k8sCtx k8sctx.KubernetesC
 					benchmark.Run(ctx, t)
 				})
 			}
-			t.Run("HTTP404", func(t *testing.T) {
-				benchmark := &httpbench.HTTPBenchmark{
-					Name:            fmt.Sprintf("nginx/%s/HTTP404", test.name),
-					Cluster:         cluster,
-					Namespace:       benchmarkNS,
-					Service:         service,
-					Port:            nginxPort,
-					Path:            "/404-this-page-does-not-exist.html",
-					Rounds:          rounds,
-					Timeout:         nginxRequestTimeout,
-					WantPercentiles: wantPercentiles,
-				}
-				benchmark.Run(ctx, t)
-			})
 		})
 		if t.Failed() {
 			break

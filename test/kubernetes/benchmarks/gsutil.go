@@ -133,7 +133,7 @@ func RunGSUtil(ctx context.Context, t *testing.T, k8sCtx k8sctx.KubernetesContex
 					if err != nil {
 						t.Fatalf("Failed to configure pod for runtime: %v", err)
 					}
-					p, err = testcluster.MaybeSetContainerResources(p, name, testcluster.ContainerResourcesRequest{})
+					p, err = testcluster.SetContainerResources(p, "", testcluster.ContainerResourcesRequest{})
 					if err != nil {
 						t.Fatalf("Failed to set container resources: %v", err)
 					}

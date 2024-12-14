@@ -117,7 +117,7 @@ func RunRubyDev(ctx context.Context, t *testing.T, k8sCtx k8sctx.KubernetesConte
 				t.Fatalf("failed to configure pod for test runtime node: %v", err)
 			}
 
-			pod, err = testcluster.MaybeSetContainerResources(pod, builderContainerName, testcluster.ContainerResourcesRequest{})
+			pod, err = testcluster.SetContainerResources(pod, "", testcluster.ContainerResourcesRequest{})
 			if err != nil {
 				t.Fatalf("failed to set container resources: %v", err)
 			}
