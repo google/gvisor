@@ -727,3 +727,63 @@ const (
 	// packets do not have an associated socket.
 	XT_OWNER_SOCKET = 1 << 2
 )
+
+// XT_MULTI_PORTS is the maximum number of ports that the
+// multiport match can handle.
+const XT_MULTI_PORTS = 15
+
+// Flags in XTMultiport{,V1}.Flags; values from "enum xt_multiport_flags"
+// in "include/uapi/linux/netfilter/xt_multiport.h".
+const (
+	XT_MULTIPORT_SOURCE      uint8 = 0x0 // Match against source ports.
+	XT_MULTIPORT_DESTINATION uint8 = 0x1 // Match against destination ports.
+	XT_MULTIPORT_EITHER      uint8 = 0x2 // Match against either ports.
+)
+
+// XTMultiport holds data for matching packets against a set
+// of ports. It corresponds to "struct xt_multiport" defined
+// in "include/uapi/linux/netfilter/xt_multiport.h".
+//
+// +marshal
+type XTMultiport struct {
+	// Flags indicates whether the match applies to
+	// source ports, destination ports, or either, as
+	// defined by "enum xt_multiport_flags".
+	Flags uint8
+
+	// Count is the number of ports in the "Ports"
+	// slice that the match will check. It must be
+	// between 1 and "XT_MULTI_PORTS" (inclusive).
+	Count uint8
+
+	// Ports is the set of ports that will be matched.
+	// Only the first "Count" entries are considered.
+	Ports [XT_MULTI_PORTS]uint16
+}
+
+// XTMultiportV1 holds data for matching packets against a set
+// of ports. It corresponds to "struct xt_multiport_v1" defined
+// in "include/uapi/linux/netfilter/xt_multiport.h".
+//
+// +marshal
+type XTMultiportV1 struct {
+	// Fields same as "XTMultiport".
+	Flags uint8
+	Count uint8
+	Ports [XT_MULTI_PORTS]uint16
+
+	// Pflags is an array of port-specific flags. Each entry
+	// in "Pflags" corresponds to the port at the same index
+	// in "Ports".
+	Pflags [XT_MULTI_PORTS]uint8
+
+	// Invert is a flag that, if nonzero, indicates
+	// that the match result should be inverted.
+	Invert uint8
+}
+
+// SizeOfXTMultiport is the size of XTMultiport (in bytes).
+const SizeOfXTMultiport = 2 + (XT_MULTI_PORTS * 2)
+
+// SizeOfXTMultiportV1 is the size of XTMultiportV1 (in bytes).
+const SizeOfXTMultiportV1 = SizeOfXTMultiport + XT_MULTI_PORTS + 1
