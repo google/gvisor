@@ -273,6 +273,7 @@ func newFUSEFilesystem(ctx context.Context, vfsObj *vfs.VirtualFilesystem, fsTyp
 		conn:     fuseFD.conn,
 		clock:    ktime.RealtimeClockFromContext(ctx),
 	}
+	fs.Init(kernfs.FusefsLockClass)
 	fs.VFSFilesystem().Init(vfsObj, fsType, fs)
 	return fs, nil
 }
