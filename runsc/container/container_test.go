@@ -3659,7 +3659,6 @@ func int64Ptr(v int64) *int64 {
 }
 
 func TestSpecValidation(t *testing.T) {
-	// TODO(b/359591006): Add more tests.
 	tests := []struct {
 		name    string
 		mutate  func(spec, restoreSpec *specs.Spec, mountPath, restoreMntPath string)
