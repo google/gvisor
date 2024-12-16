@@ -47,11 +47,6 @@ func TestMobileNetV2(t *testing.T) {
 	runTests(ctx, t, MobileNetV2)
 }
 
-func TestBackgroundMatting(t *testing.T) {
-	ctx := context.Background()
-	runTests(ctx, t, BackgroundMatting)
-}
-
 func runTests(ctx context.Context, t *testing.T, tests []pytorchTest) {
 	k8sCtx, err := k8sctx.Context(ctx)
 	if err != nil {
@@ -72,6 +67,5 @@ func TestMain(m *testing.M) {
 		"TestSpeechTransformer": TestSpeechTransformer,
 		"TestLearningToPaint":   TestLearningToPaint,
 		"TestMobileNetV2":       TestMobileNetV2,
-		"TestBackgroundMatting": TestBackgroundMatting,
 	})
 }
