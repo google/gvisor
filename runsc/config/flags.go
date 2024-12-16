@@ -144,6 +144,7 @@ func RegisterFlags(flagSet *flag.FlagSet) {
 	flagSet.Bool("reproduce-nat", false, "Scrape the host netns NAT table and reproduce it in the sandbox.")
 	flagSet.Bool(flagReproduceNFTables, false, "Attempt to scrape and reproduce nftable rules inside the sandbox. Overrides reproduce-nat when true.")
 	flagSet.Bool(flagNetDisconnectOK, true, "Indicates whether open network connections and open unix domain sockets should be disconnected upon save.")
+	flagSet.Bool("save-restore-netstack", true, "Enable save/restore for netstack.")
 
 	// Flags that control sandbox runtime behavior: accelerator related.
 	flagSet.Bool("nvproxy", false, "EXPERIMENTAL: enable support for Nvidia GPUs")

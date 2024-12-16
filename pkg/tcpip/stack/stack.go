@@ -1986,6 +1986,7 @@ func (s *Stack) ReplaceConfig(st *Stack) {
 		s.nics[id] = nic
 		_ = s.NextNICID()
 	}
+	s.tables = st.tables
 }
 
 // Restore restarts the stack after a restore. This must be called after the
