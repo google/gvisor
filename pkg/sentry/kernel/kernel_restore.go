@@ -14,10 +14,26 @@
 
 package kernel
 
+import (
+	"gvisor.dev/gvisor/pkg/sync"
+)
+
 // Saver is an interface for saving the kernel.
 type Saver interface {
 	SaveAsync() error
 	SpecEnviron(containerName string) []string
+}
+
+// CheckpointGeneration stores information about the last checkpoint taken.
+//
+// +stateify savable
+type CheckpointGeneration struct {
+	// Count is incremented every time a checkpoint is triggered, even if the
+	// chekpoint failed.
+	Count uint32
+	// Restore indicates if the current instance resumed after the checkpoint or
+	// it was restored from a checkpoint.
+	Restore bool
 }
 
 // AddStateToCheckpoint adds a key-value pair to be additionally checkpointed.
@@ -58,19 +74,23 @@ func (k *Kernel) Saver() Saver {
 	return k.saver
 }
 
-// IncCheckpointCount increments the checkpoint counter.
-func (k *Kernel) IncCheckpointCount() {
+// CheckpointGen returns the current checkpoint generation.
+func (k *Kernel) CheckpointGen() CheckpointGeneration {
 	k.checkpointMu.Lock()
 	defer k.checkpointMu.Unlock()
-	k.checkpointCounter++
+
+	return k.checkpointGen
 }
 
-// CheckpointCount returns the current checkpoint count. Note that the result
-// may be stale by the time the caller uses it.
-func (k *Kernel) CheckpointCount() uint32 {
+// OnRestoreDone is called to notify the kernel that a checkpoint restore has been
+// completed successfully.
+func (k *Kernel) OnRestoreDone() {
 	k.checkpointMu.Lock()
 	defer k.checkpointMu.Unlock()
-	return k.checkpointCounter
+
+	k.checkpointGen.Count++
+	k.checkpointGen.Restore = true
+	k.CheckpointWait.signal(k.checkpointGen.Count, nil)
 }
 
 // OnCheckpointAttempt is called when a checkpoint attempt is completed. err is
@@ -78,42 +98,103 @@ func (k *Kernel) CheckpointCount() uint32 {
 func (k *Kernel) OnCheckpointAttempt(err error) {
 	k.checkpointMu.Lock()
 	defer k.checkpointMu.Unlock()
-	if err == nil {
-		k.checkpointCounter++
-	}
-	k.lastCheckpointStatus = err
-	k.checkpointCond.Broadcast()
+
+	k.checkpointGen.Count++
+	k.checkpointGen.Restore = false
+	k.CheckpointWait.signal(k.checkpointGen.Count, err)
 }
 
-// ResetCheckpointStatus resets the last checkpoint status, indicating a new
-// checkpoint is in progress. Caller must call OnCheckpointAttempt when the
-// checkpoint attempt is completed.
-func (k *Kernel) ResetCheckpointStatus() {
-	k.checkpointMu.Lock()
-	defer k.checkpointMu.Unlock()
-	k.lastCheckpointStatus = nil
+// WaitForCheckpoint waits for the Kernel to have been successfully checkpointed.
+func (k *Kernel) WaitForCheckpoint() error {
+	// Wait for the next checkpoint to complete.
+	ch := k.CheckpointWait.Register(k.CheckpointGen().Count + 1)
+	defer k.CheckpointWait.Unregister(ch)
+
+	<-ch
+	return k.CheckpointWait.result(ch)
 }
 
-// WaitCheckpoint waits for the Kernel to have been successfully checkpointed
-// n-1 times, then waits for either the n-th successful checkpoint (in which
-// case it returns nil) or any number of failed checkpoints (in which case it
-// returns an error returned by any such failure).
-func (k *Kernel) WaitCheckpoint(n uint32) error {
-	if n == 0 {
-		return nil
+type checkpointWaiter struct {
+	// count indicates the checkpoint generation that this waiter is interested in.
+	count uint32
+	// ch is the channel that will be signalled when the checkpoint generation
+	// reaches count.
+	ch chan struct{}
+	// err is the error (if any) that occurred during the checkpoint operation.
+	err error
+}
+
+// CheckpointWaitable is a waitable object that waits for a
+// checkpoint to complete.
+//
+// +stateify savable
+type CheckpointWaitable struct {
+	k *Kernel
+
+	mu sync.Mutex `state:"nosave"`
+
+	// Don't save the waiters, because they are repopulated after restore. It also
+	// allows for external entities to wait for the checkpoint.
+	waiters []checkpointWaiter `state:"nosave"`
+}
+
+// Register registers a waiter for the next checkpoint generation.
+//
+// Returns a channel that will be signalled when the checkpoint generation
+// reaches count.
+func (w *CheckpointWaitable) Register(count uint32) chan struct{} {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	waiter := checkpointWaiter{
+		count: count,
+		ch:    make(chan struct{}, 1),
 	}
-	k.checkpointMu.Lock()
-	defer k.checkpointMu.Unlock()
-	if k.checkpointCounter >= n {
-		// n-th checkpoint already completed successfully.
-		return nil
+	if count <= w.k.CheckpointGen().Count {
+		// The checkpoint has already occurred. Signal immediately.
+		waiter.ch <- struct{}{}
 	}
-	for k.checkpointCounter < n {
-		if k.checkpointCounter == n-1 && k.lastCheckpointStatus != nil {
-			// n-th checkpoint was attempted but it had failed.
-			return k.lastCheckpointStatus
+	w.waiters = append(w.waiters, waiter)
+	return waiter.ch
+}
+
+// Unregister unregisters a waiter. It must be called even if the channel
+// was signalled.
+func (w *CheckpointWaitable) Unregister(ch chan struct{}) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	for i, waiter := range w.waiters {
+		if waiter.ch == ch {
+			w.waiters = append(w.waiters[:i], w.waiters[i+1:]...)
+			return
 		}
-		k.checkpointCond.Wait()
 	}
-	return nil
+	panic("Unregistering a waiter that was not registered")
+}
+
+func (w *CheckpointWaitable) signal(count uint32, err error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	for _, c := range w.waiters {
+		if c.count <= count {
+			c.err = err
+			c.ch <- struct{}{}
+		}
+	}
+}
+
+// result returns the error (or nil) of the checkpoint that signalled `ch`.
+// Note: it will return nil if `ch` was never signalled.
+func (w *CheckpointWaitable) result(ch chan struct{}) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	for _, waiter := range w.waiters {
+		if waiter.ch == ch {
+			return waiter.err
+		}
+	}
+	panic("Unregistering a waiter that was never registered")
 }
