@@ -3852,7 +3852,7 @@ func TestSpecValidation(t *testing.T) {
 					},
 				}
 			},
-			wantErr: "Resources does not match across checkpoint restore",
+			wantErr: "",
 		},
 	}
 	for _, test := range tests {

@@ -360,7 +360,7 @@ func validateResources(field, cName string, oldR, newR *specs.LinuxResources) er
 	before := *oldR
 	after := *newR
 	if err := validateArray(field+".HugepageLimits", cName, before.HugepageLimits, after.HugepageLimits); err != nil {
-		return validateError(field, cName, oldR, newR)
+		return validateError(field+".HugepageLimits", cName, oldR, newR)
 	}
 	before.HugepageLimits, after.HugepageLimits = nil, nil
 
@@ -368,6 +368,15 @@ func validateResources(field, cName string, oldR, newR *specs.LinuxResources) er
 	// versions of the devices can change across checkpoint restore. Mark them
 	// to nil as there is no need to validate each device.
 	before.Devices, after.Devices = nil, nil
+
+	if err := validateMap(field+".Rdma", cName, before.Rdma, after.Rdma); err != nil {
+		return err
+	}
+	before.Rdma, after.Rdma = nil, nil
+	if err := validateMap(field+".Unified", cName, before.Unified, after.Unified); err != nil {
+		return err
+	}
+	before.Unified, after.Unified = nil, nil
 
 	if !reflect.DeepEqual(before, after) {
 		return validateError(field, cName, oldR, newR)
@@ -476,7 +485,9 @@ func validateSpecForContainer(oSpec, nSpec *specs.Spec, cName string) error {
 	}
 	oldLinux.Devices, newLinux.Devices = nil, nil
 	if err := validateResources("Resources", cName, oldLinux.Resources, newLinux.Resources); err != nil {
-		return err
+		// Resource limits can be changed during restore, log a warning and do not
+		// return error.
+		log.Warningf("specs.Linux.Resources has been changed during restore, err %v", err)
 	}
 	oldLinux.Resources, newLinux.Resources = nil, nil
 	if err := validateArray("UIDMappings", cName, oldLinux.UIDMappings, newLinux.UIDMappings); err != nil {
