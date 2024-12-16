@@ -197,6 +197,7 @@ func (i *subtasksInode) StateFields() []string {
 		"InodeTemporary",
 		"InodeWatches",
 		"OrderedChildren",
+		"InodeFSOwned",
 		"subtasksInodeRefs",
 		"locks",
 		"fs",
@@ -220,12 +221,13 @@ func (i *subtasksInode) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(6, &i.InodeTemporary)
 	stateSinkObject.Save(7, &i.InodeWatches)
 	stateSinkObject.Save(8, &i.OrderedChildren)
-	stateSinkObject.Save(9, &i.subtasksInodeRefs)
-	stateSinkObject.Save(10, &i.locks)
-	stateSinkObject.Save(11, &i.fs)
-	stateSinkObject.Save(12, &i.task)
-	stateSinkObject.Save(13, &i.pidns)
-	stateSinkObject.Save(14, &i.cgroupControllers)
+	stateSinkObject.Save(9, &i.InodeFSOwned)
+	stateSinkObject.Save(10, &i.subtasksInodeRefs)
+	stateSinkObject.Save(11, &i.locks)
+	stateSinkObject.Save(12, &i.fs)
+	stateSinkObject.Save(13, &i.task)
+	stateSinkObject.Save(14, &i.pidns)
+	stateSinkObject.Save(15, &i.cgroupControllers)
 }
 
 func (i *subtasksInode) afterLoad(context.Context) {}
@@ -241,12 +243,13 @@ func (i *subtasksInode) StateLoad(ctx context.Context, stateSourceObject state.S
 	stateSourceObject.Load(6, &i.InodeTemporary)
 	stateSourceObject.Load(7, &i.InodeWatches)
 	stateSourceObject.Load(8, &i.OrderedChildren)
-	stateSourceObject.Load(9, &i.subtasksInodeRefs)
-	stateSourceObject.Load(10, &i.locks)
-	stateSourceObject.Load(11, &i.fs)
-	stateSourceObject.Load(12, &i.task)
-	stateSourceObject.Load(13, &i.pidns)
-	stateSourceObject.Load(14, &i.cgroupControllers)
+	stateSourceObject.Load(9, &i.InodeFSOwned)
+	stateSourceObject.Load(10, &i.subtasksInodeRefs)
+	stateSourceObject.Load(11, &i.locks)
+	stateSourceObject.Load(12, &i.fs)
+	stateSourceObject.Load(13, &i.task)
+	stateSourceObject.Load(14, &i.pidns)
+	stateSourceObject.Load(15, &i.cgroupControllers)
 }
 
 func (fd *subtasksFD) StateTypeName() string {
@@ -318,6 +321,7 @@ func (i *taskInode) StateFields() []string {
 		"taskInodeRefs",
 		"locks",
 		"task",
+		"dentries",
 	}
 }
 
@@ -337,6 +341,7 @@ func (i *taskInode) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(8, &i.taskInodeRefs)
 	stateSinkObject.Save(9, &i.locks)
 	stateSinkObject.Save(10, &i.task)
+	stateSinkObject.Save(11, &i.dentries)
 }
 
 func (i *taskInode) afterLoad(context.Context) {}
@@ -354,6 +359,7 @@ func (i *taskInode) StateLoad(ctx context.Context, stateSourceObject state.Sourc
 	stateSourceObject.Load(8, &i.taskInodeRefs)
 	stateSourceObject.Load(9, &i.locks)
 	stateSourceObject.Load(10, &i.task)
+	stateSourceObject.Load(11, &i.dentries)
 }
 
 func (i *taskOwnedInode) StateTypeName() string {
@@ -435,6 +441,7 @@ func (i *fdDirInode) StateFields() []string {
 		"InodeTemporary",
 		"InodeWatches",
 		"OrderedChildren",
+		"InodeFSOwned",
 	}
 }
 
@@ -454,6 +461,7 @@ func (i *fdDirInode) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(8, &i.InodeTemporary)
 	stateSinkObject.Save(9, &i.InodeWatches)
 	stateSinkObject.Save(10, &i.OrderedChildren)
+	stateSinkObject.Save(11, &i.InodeFSOwned)
 }
 
 func (i *fdDirInode) afterLoad(context.Context) {}
@@ -471,6 +479,7 @@ func (i *fdDirInode) StateLoad(ctx context.Context, stateSourceObject state.Sour
 	stateSourceObject.Load(8, &i.InodeTemporary)
 	stateSourceObject.Load(9, &i.InodeWatches)
 	stateSourceObject.Load(10, &i.OrderedChildren)
+	stateSourceObject.Load(11, &i.InodeFSOwned)
 }
 
 func (s *fdSymlink) StateTypeName() string {
@@ -485,6 +494,7 @@ func (s *fdSymlink) StateFields() []string {
 		"InodeNotAnonymous",
 		"InodeSymlink",
 		"InodeWatches",
+		"InodeFSOwned",
 		"fs",
 		"task",
 		"fd",
@@ -502,9 +512,10 @@ func (s *fdSymlink) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(3, &s.InodeNotAnonymous)
 	stateSinkObject.Save(4, &s.InodeSymlink)
 	stateSinkObject.Save(5, &s.InodeWatches)
-	stateSinkObject.Save(6, &s.fs)
-	stateSinkObject.Save(7, &s.task)
-	stateSinkObject.Save(8, &s.fd)
+	stateSinkObject.Save(6, &s.InodeFSOwned)
+	stateSinkObject.Save(7, &s.fs)
+	stateSinkObject.Save(8, &s.task)
+	stateSinkObject.Save(9, &s.fd)
 }
 
 func (s *fdSymlink) afterLoad(context.Context) {}
@@ -517,9 +528,10 @@ func (s *fdSymlink) StateLoad(ctx context.Context, stateSourceObject state.Sourc
 	stateSourceObject.Load(3, &s.InodeNotAnonymous)
 	stateSourceObject.Load(4, &s.InodeSymlink)
 	stateSourceObject.Load(5, &s.InodeWatches)
-	stateSourceObject.Load(6, &s.fs)
-	stateSourceObject.Load(7, &s.task)
-	stateSourceObject.Load(8, &s.fd)
+	stateSourceObject.Load(6, &s.InodeFSOwned)
+	stateSourceObject.Load(7, &s.fs)
+	stateSourceObject.Load(8, &s.task)
+	stateSourceObject.Load(9, &s.fd)
 }
 
 func (i *fdInfoDirInode) StateTypeName() string {
@@ -539,6 +551,7 @@ func (i *fdInfoDirInode) StateFields() []string {
 		"InodeTemporary",
 		"InodeWatches",
 		"OrderedChildren",
+		"InodeFSOwned",
 	}
 }
 
@@ -558,6 +571,7 @@ func (i *fdInfoDirInode) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(8, &i.InodeTemporary)
 	stateSinkObject.Save(9, &i.InodeWatches)
 	stateSinkObject.Save(10, &i.OrderedChildren)
+	stateSinkObject.Save(11, &i.InodeFSOwned)
 }
 
 func (i *fdInfoDirInode) afterLoad(context.Context) {}
@@ -575,6 +589,7 @@ func (i *fdInfoDirInode) StateLoad(ctx context.Context, stateSourceObject state.
 	stateSourceObject.Load(8, &i.InodeTemporary)
 	stateSourceObject.Load(9, &i.InodeWatches)
 	stateSourceObject.Load(10, &i.OrderedChildren)
+	stateSourceObject.Load(11, &i.InodeFSOwned)
 }
 
 func (d *fdInfoData) StateTypeName() string {
@@ -770,6 +785,7 @@ func (f *memInode) StateFields() []string {
 		"InodeNotDirectory",
 		"InodeNotSymlink",
 		"InodeWatches",
+		"InodeFSOwned",
 		"task",
 		"locks",
 	}
@@ -787,8 +803,9 @@ func (f *memInode) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(4, &f.InodeNotDirectory)
 	stateSinkObject.Save(5, &f.InodeNotSymlink)
 	stateSinkObject.Save(6, &f.InodeWatches)
-	stateSinkObject.Save(7, &f.task)
-	stateSinkObject.Save(8, &f.locks)
+	stateSinkObject.Save(7, &f.InodeFSOwned)
+	stateSinkObject.Save(8, &f.task)
+	stateSinkObject.Save(9, &f.locks)
 }
 
 func (f *memInode) afterLoad(context.Context) {}
@@ -802,8 +819,9 @@ func (f *memInode) StateLoad(ctx context.Context, stateSourceObject state.Source
 	stateSourceObject.Load(4, &f.InodeNotDirectory)
 	stateSourceObject.Load(5, &f.InodeNotSymlink)
 	stateSourceObject.Load(6, &f.InodeWatches)
-	stateSourceObject.Load(7, &f.task)
-	stateSourceObject.Load(8, &f.locks)
+	stateSourceObject.Load(7, &f.InodeFSOwned)
+	stateSourceObject.Load(8, &f.task)
+	stateSourceObject.Load(9, &f.locks)
 }
 
 func (fd *memFD) StateTypeName() string {
@@ -1002,6 +1020,7 @@ func (s *statusInode) StateFields() []string {
 		"InodeNotDirectory",
 		"InodeNotSymlink",
 		"InodeWatches",
+		"InodeFSOwned",
 		"task",
 		"pidns",
 		"locks",
@@ -1020,9 +1039,10 @@ func (s *statusInode) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(4, &s.InodeNotDirectory)
 	stateSinkObject.Save(5, &s.InodeNotSymlink)
 	stateSinkObject.Save(6, &s.InodeWatches)
-	stateSinkObject.Save(7, &s.task)
-	stateSinkObject.Save(8, &s.pidns)
-	stateSinkObject.Save(9, &s.locks)
+	stateSinkObject.Save(7, &s.InodeFSOwned)
+	stateSinkObject.Save(8, &s.task)
+	stateSinkObject.Save(9, &s.pidns)
+	stateSinkObject.Save(10, &s.locks)
 }
 
 func (s *statusInode) afterLoad(context.Context) {}
@@ -1036,9 +1056,10 @@ func (s *statusInode) StateLoad(ctx context.Context, stateSourceObject state.Sou
 	stateSourceObject.Load(4, &s.InodeNotDirectory)
 	stateSourceObject.Load(5, &s.InodeNotSymlink)
 	stateSourceObject.Load(6, &s.InodeWatches)
-	stateSourceObject.Load(7, &s.task)
-	stateSourceObject.Load(8, &s.pidns)
-	stateSourceObject.Load(9, &s.locks)
+	stateSourceObject.Load(7, &s.InodeFSOwned)
+	stateSourceObject.Load(8, &s.task)
+	stateSourceObject.Load(9, &s.pidns)
+	stateSourceObject.Load(10, &s.locks)
 }
 
 func (s *statusFD) StateTypeName() string {
@@ -1180,6 +1201,7 @@ func (s *exeSymlink) StateFields() []string {
 		"InodeNotAnonymous",
 		"InodeSymlink",
 		"InodeWatches",
+		"InodeFSOwned",
 		"fs",
 		"task",
 	}
@@ -1196,8 +1218,9 @@ func (s *exeSymlink) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(3, &s.InodeNotAnonymous)
 	stateSinkObject.Save(4, &s.InodeSymlink)
 	stateSinkObject.Save(5, &s.InodeWatches)
-	stateSinkObject.Save(6, &s.fs)
-	stateSinkObject.Save(7, &s.task)
+	stateSinkObject.Save(6, &s.InodeFSOwned)
+	stateSinkObject.Save(7, &s.fs)
+	stateSinkObject.Save(8, &s.task)
 }
 
 func (s *exeSymlink) afterLoad(context.Context) {}
@@ -1210,8 +1233,9 @@ func (s *exeSymlink) StateLoad(ctx context.Context, stateSourceObject state.Sour
 	stateSourceObject.Load(3, &s.InodeNotAnonymous)
 	stateSourceObject.Load(4, &s.InodeSymlink)
 	stateSourceObject.Load(5, &s.InodeWatches)
-	stateSourceObject.Load(6, &s.fs)
-	stateSourceObject.Load(7, &s.task)
+	stateSourceObject.Load(6, &s.InodeFSOwned)
+	stateSourceObject.Load(7, &s.fs)
+	stateSourceObject.Load(8, &s.task)
 }
 
 func (s *cwdSymlink) StateTypeName() string {
@@ -1226,6 +1250,7 @@ func (s *cwdSymlink) StateFields() []string {
 		"InodeNotAnonymous",
 		"InodeSymlink",
 		"InodeWatches",
+		"InodeFSOwned",
 		"fs",
 		"task",
 	}
@@ -1242,8 +1267,9 @@ func (s *cwdSymlink) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(3, &s.InodeNotAnonymous)
 	stateSinkObject.Save(4, &s.InodeSymlink)
 	stateSinkObject.Save(5, &s.InodeWatches)
-	stateSinkObject.Save(6, &s.fs)
-	stateSinkObject.Save(7, &s.task)
+	stateSinkObject.Save(6, &s.InodeFSOwned)
+	stateSinkObject.Save(7, &s.fs)
+	stateSinkObject.Save(8, &s.task)
 }
 
 func (s *cwdSymlink) afterLoad(context.Context) {}
@@ -1256,8 +1282,9 @@ func (s *cwdSymlink) StateLoad(ctx context.Context, stateSourceObject state.Sour
 	stateSourceObject.Load(3, &s.InodeNotAnonymous)
 	stateSourceObject.Load(4, &s.InodeSymlink)
 	stateSourceObject.Load(5, &s.InodeWatches)
-	stateSourceObject.Load(6, &s.fs)
-	stateSourceObject.Load(7, &s.task)
+	stateSourceObject.Load(6, &s.InodeFSOwned)
+	stateSourceObject.Load(7, &s.fs)
+	stateSourceObject.Load(8, &s.task)
 }
 
 func (s *rootSymlink) StateTypeName() string {
@@ -1272,6 +1299,7 @@ func (s *rootSymlink) StateFields() []string {
 		"InodeNotAnonymous",
 		"InodeSymlink",
 		"InodeWatches",
+		"InodeFSOwned",
 		"fs",
 		"task",
 	}
@@ -1288,8 +1316,9 @@ func (s *rootSymlink) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(3, &s.InodeNotAnonymous)
 	stateSinkObject.Save(4, &s.InodeSymlink)
 	stateSinkObject.Save(5, &s.InodeWatches)
-	stateSinkObject.Save(6, &s.fs)
-	stateSinkObject.Save(7, &s.task)
+	stateSinkObject.Save(6, &s.InodeFSOwned)
+	stateSinkObject.Save(7, &s.fs)
+	stateSinkObject.Save(8, &s.task)
 }
 
 func (s *rootSymlink) afterLoad(context.Context) {}
@@ -1302,8 +1331,9 @@ func (s *rootSymlink) StateLoad(ctx context.Context, stateSourceObject state.Sou
 	stateSourceObject.Load(3, &s.InodeNotAnonymous)
 	stateSourceObject.Load(4, &s.InodeSymlink)
 	stateSourceObject.Load(5, &s.InodeWatches)
-	stateSourceObject.Load(6, &s.fs)
-	stateSourceObject.Load(7, &s.task)
+	stateSourceObject.Load(6, &s.InodeFSOwned)
+	stateSourceObject.Load(7, &s.fs)
+	stateSourceObject.Load(8, &s.task)
 }
 
 func (i *mountInfoData) StateTypeName() string {
@@ -1412,6 +1442,7 @@ func (i *namespaceInode) StateFields() []string {
 		"InodeNotDirectory",
 		"InodeNotSymlink",
 		"InodeWatches",
+		"InodeFSOwned",
 		"locks",
 	}
 }
@@ -1428,7 +1459,8 @@ func (i *namespaceInode) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(4, &i.InodeNotDirectory)
 	stateSinkObject.Save(5, &i.InodeNotSymlink)
 	stateSinkObject.Save(6, &i.InodeWatches)
-	stateSinkObject.Save(7, &i.locks)
+	stateSinkObject.Save(7, &i.InodeFSOwned)
+	stateSinkObject.Save(8, &i.locks)
 }
 
 func (i *namespaceInode) afterLoad(context.Context) {}
@@ -1442,7 +1474,8 @@ func (i *namespaceInode) StateLoad(ctx context.Context, stateSourceObject state.
 	stateSourceObject.Load(4, &i.InodeNotDirectory)
 	stateSourceObject.Load(5, &i.InodeNotSymlink)
 	stateSourceObject.Load(6, &i.InodeWatches)
-	stateSourceObject.Load(7, &i.locks)
+	stateSourceObject.Load(7, &i.InodeFSOwned)
+	stateSourceObject.Load(8, &i.locks)
 }
 
 func (fd *namespaceFD) StateTypeName() string {
@@ -1857,6 +1890,7 @@ func (i *tasksInode) StateFields() []string {
 		"InodeTemporary",
 		"InodeWatches",
 		"OrderedChildren",
+		"InodeFSOwned",
 		"tasksInodeRefs",
 		"locks",
 		"fs",
@@ -1879,11 +1913,12 @@ func (i *tasksInode) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(6, &i.InodeTemporary)
 	stateSinkObject.Save(7, &i.InodeWatches)
 	stateSinkObject.Save(8, &i.OrderedChildren)
-	stateSinkObject.Save(9, &i.tasksInodeRefs)
-	stateSinkObject.Save(10, &i.locks)
-	stateSinkObject.Save(11, &i.fs)
-	stateSinkObject.Save(12, &i.pidns)
-	stateSinkObject.Save(13, &i.fakeCgroupControllers)
+	stateSinkObject.Save(9, &i.InodeFSOwned)
+	stateSinkObject.Save(10, &i.tasksInodeRefs)
+	stateSinkObject.Save(11, &i.locks)
+	stateSinkObject.Save(12, &i.fs)
+	stateSinkObject.Save(13, &i.pidns)
+	stateSinkObject.Save(14, &i.fakeCgroupControllers)
 }
 
 func (i *tasksInode) afterLoad(context.Context) {}
@@ -1899,11 +1934,12 @@ func (i *tasksInode) StateLoad(ctx context.Context, stateSourceObject state.Sour
 	stateSourceObject.Load(6, &i.InodeTemporary)
 	stateSourceObject.Load(7, &i.InodeWatches)
 	stateSourceObject.Load(8, &i.OrderedChildren)
-	stateSourceObject.Load(9, &i.tasksInodeRefs)
-	stateSourceObject.Load(10, &i.locks)
-	stateSourceObject.Load(11, &i.fs)
-	stateSourceObject.Load(12, &i.pidns)
-	stateSourceObject.Load(13, &i.fakeCgroupControllers)
+	stateSourceObject.Load(9, &i.InodeFSOwned)
+	stateSourceObject.Load(10, &i.tasksInodeRefs)
+	stateSourceObject.Load(11, &i.locks)
+	stateSourceObject.Load(12, &i.fs)
+	stateSourceObject.Load(13, &i.pidns)
+	stateSourceObject.Load(14, &i.fakeCgroupControllers)
 }
 
 func (s *staticFileSetStat) StateTypeName() string {
@@ -1946,6 +1982,7 @@ func (s *selfSymlink) StateFields() []string {
 		"InodeNotAnonymous",
 		"InodeSymlink",
 		"InodeWatches",
+		"InodeFSOwned",
 		"pidns",
 	}
 }
@@ -1961,7 +1998,8 @@ func (s *selfSymlink) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(3, &s.InodeNotAnonymous)
 	stateSinkObject.Save(4, &s.InodeSymlink)
 	stateSinkObject.Save(5, &s.InodeWatches)
-	stateSinkObject.Save(6, &s.pidns)
+	stateSinkObject.Save(6, &s.InodeFSOwned)
+	stateSinkObject.Save(7, &s.pidns)
 }
 
 func (s *selfSymlink) afterLoad(context.Context) {}
@@ -1974,7 +2012,8 @@ func (s *selfSymlink) StateLoad(ctx context.Context, stateSourceObject state.Sou
 	stateSourceObject.Load(3, &s.InodeNotAnonymous)
 	stateSourceObject.Load(4, &s.InodeSymlink)
 	stateSourceObject.Load(5, &s.InodeWatches)
-	stateSourceObject.Load(6, &s.pidns)
+	stateSourceObject.Load(6, &s.InodeFSOwned)
+	stateSourceObject.Load(7, &s.pidns)
 }
 
 func (s *threadSelfSymlink) StateTypeName() string {
@@ -1989,6 +2028,7 @@ func (s *threadSelfSymlink) StateFields() []string {
 		"InodeNotAnonymous",
 		"InodeSymlink",
 		"InodeWatches",
+		"InodeFSOwned",
 		"pidns",
 	}
 }
@@ -2004,7 +2044,8 @@ func (s *threadSelfSymlink) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(3, &s.InodeNotAnonymous)
 	stateSinkObject.Save(4, &s.InodeSymlink)
 	stateSinkObject.Save(5, &s.InodeWatches)
-	stateSinkObject.Save(6, &s.pidns)
+	stateSinkObject.Save(6, &s.InodeFSOwned)
+	stateSinkObject.Save(7, &s.pidns)
 }
 
 func (s *threadSelfSymlink) afterLoad(context.Context) {}
@@ -2017,7 +2058,8 @@ func (s *threadSelfSymlink) StateLoad(ctx context.Context, stateSourceObject sta
 	stateSourceObject.Load(3, &s.InodeNotAnonymous)
 	stateSourceObject.Load(4, &s.InodeSymlink)
 	stateSourceObject.Load(5, &s.InodeWatches)
-	stateSourceObject.Load(6, &s.pidns)
+	stateSourceObject.Load(6, &s.InodeFSOwned)
+	stateSourceObject.Load(7, &s.pidns)
 }
 
 func (d *dynamicBytesFileSetAttr) StateTypeName() string {

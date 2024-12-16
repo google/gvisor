@@ -390,6 +390,7 @@ func (fs *filesystem) StateFields() []string {
 		"maxSizeInPages",
 		"pagesUsed",
 		"allowXattrPrefix",
+		"ovlWhiteout",
 	}
 }
 
@@ -412,6 +413,7 @@ func (fs *filesystem) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(9, &fs.maxSizeInPages)
 	stateSinkObject.Save(10, &fs.pagesUsed)
 	stateSinkObject.Save(11, &fs.allowXattrPrefix)
+	stateSinkObject.Save(12, &fs.ovlWhiteout)
 }
 
 func (fs *filesystem) afterLoad(context.Context) {}
@@ -429,6 +431,7 @@ func (fs *filesystem) StateLoad(ctx context.Context, stateSourceObject state.Sou
 	stateSourceObject.Load(9, &fs.maxSizeInPages)
 	stateSourceObject.Load(10, &fs.pagesUsed)
 	stateSourceObject.Load(11, &fs.allowXattrPrefix)
+	stateSourceObject.Load(12, &fs.ovlWhiteout)
 	stateSourceObject.LoadValue(1, new(string), func(y any) { fs.loadMf(ctx, y.(string)) })
 }
 

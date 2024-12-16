@@ -44,6 +44,7 @@ func (i *kcovInode) StateFields() []string {
 		"InodeNotDirectory",
 		"InodeNotSymlink",
 		"InodeWatches",
+		"InodeFSOwned",
 		"implStatFS",
 	}
 }
@@ -59,7 +60,8 @@ func (i *kcovInode) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(3, &i.InodeNotDirectory)
 	stateSinkObject.Save(4, &i.InodeNotSymlink)
 	stateSinkObject.Save(5, &i.InodeWatches)
-	stateSinkObject.Save(6, &i.implStatFS)
+	stateSinkObject.Save(6, &i.InodeFSOwned)
+	stateSinkObject.Save(7, &i.implStatFS)
 }
 
 func (i *kcovInode) afterLoad(context.Context) {}
@@ -72,7 +74,8 @@ func (i *kcovInode) StateLoad(ctx context.Context, stateSourceObject state.Sourc
 	stateSourceObject.Load(3, &i.InodeNotDirectory)
 	stateSourceObject.Load(4, &i.InodeNotSymlink)
 	stateSourceObject.Load(5, &i.InodeWatches)
-	stateSourceObject.Load(6, &i.implStatFS)
+	stateSourceObject.Load(6, &i.InodeFSOwned)
+	stateSourceObject.Load(7, &i.implStatFS)
 }
 
 func (fd *kcovFD) StateTypeName() string {
@@ -206,6 +209,7 @@ func (d *dir) StateFields() []string {
 		"InodeNotSymlink",
 		"InodeTemporary",
 		"InodeWatches",
+		"InodeFSOwned",
 		"OrderedChildren",
 		"locks",
 	}
@@ -224,8 +228,9 @@ func (d *dir) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(5, &d.InodeNotSymlink)
 	stateSinkObject.Save(6, &d.InodeTemporary)
 	stateSinkObject.Save(7, &d.InodeWatches)
-	stateSinkObject.Save(8, &d.OrderedChildren)
-	stateSinkObject.Save(9, &d.locks)
+	stateSinkObject.Save(8, &d.InodeFSOwned)
+	stateSinkObject.Save(9, &d.OrderedChildren)
+	stateSinkObject.Save(10, &d.locks)
 }
 
 func (d *dir) afterLoad(context.Context) {}
@@ -240,8 +245,9 @@ func (d *dir) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(5, &d.InodeNotSymlink)
 	stateSourceObject.Load(6, &d.InodeTemporary)
 	stateSourceObject.Load(7, &d.InodeWatches)
-	stateSourceObject.Load(8, &d.OrderedChildren)
-	stateSourceObject.Load(9, &d.locks)
+	stateSourceObject.Load(8, &d.InodeFSOwned)
+	stateSourceObject.Load(9, &d.OrderedChildren)
+	stateSourceObject.Load(10, &d.locks)
 }
 
 func (d *cgroupDir) StateTypeName() string {

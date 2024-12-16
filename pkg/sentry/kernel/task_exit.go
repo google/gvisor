@@ -30,6 +30,7 @@ import (
 	"strconv"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -756,7 +757,57 @@ func (t *Task) exitNotifyLocked(fromPtraceDetach bool) {
 			// Do not clear t.parent. It may be still be needed after the task has exited
 			// (for example, to perform ptrace access checks on /proc/[pid] files).
 		}
+		t.execOnDestroyActions()
 	}
+}
+
+// TaskDestroyAction defines an action to be executed when a task is destroyed.
+type TaskDestroyAction interface {
+	TaskDestroyAction(ctx context.Context)
+}
+
+// RegisterOnDestroyAction registers an action to be executed when the task
+// is destroyed.
+//
+// It returns true if the action was successfully registered.
+// If the task is already terminated, it returns false.
+func (t *Task) RegisterOnDestroyAction(act TaskDestroyAction) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.onDestroyAction == nil {
+		return false
+	}
+	t.onDestroyAction[act] = struct{}{}
+	return true
+}
+
+// UnregisterOnDestroyAction unregisters an action previously registered with
+// RegisterOnDestroyAction.
+func (t *Task) UnregisterOnDestroyAction(key TaskDestroyAction) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	delete(t.onDestroyAction, key)
+}
+
+func (t *Task) execOnDestroyActions() {
+	t.mu.Lock()
+	actions := t.onDestroyAction
+	t.onDestroyAction = nil
+	t.mu.Unlock()
+
+	if len(actions) == 0 {
+		return
+	}
+	ctx := t.k.SupervisorContext()
+	// Block S/R until all actions is executed.
+	t.k.tasks.aioGoroutines.Add(1)
+	// Run in another goroutine to avoid extra lock dependencies.
+	go func() {
+		defer t.k.tasks.aioGoroutines.Done()
+		for act := range actions {
+			act.TaskDestroyAction(ctx)
+		}
+	}()
 }
 
 // Preconditions: The TaskSet mutex must be locked.

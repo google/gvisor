@@ -118,6 +118,7 @@ type fdDirInode struct {
 	kernfs.InodeTemporary
 	kernfs.InodeWatches
 	kernfs.OrderedChildren
+	kernfs.InodeFSOwned
 }
 
 var _ kernfs.Inode = (*fdDirInode)(nil)
@@ -202,6 +203,7 @@ type fdSymlink struct {
 	kernfs.InodeNotAnonymous
 	kernfs.InodeSymlink
 	kernfs.InodeWatches
+	kernfs.InodeFSOwned
 
 	fs   *filesystem
 	task *kernel.Task
@@ -264,6 +266,7 @@ type fdInfoDirInode struct {
 	kernfs.InodeTemporary
 	kernfs.InodeWatches
 	kernfs.OrderedChildren
+	kernfs.InodeFSOwned
 }
 
 var _ kernfs.Inode = (*fdInfoDirInode)(nil)

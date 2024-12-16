@@ -77,6 +77,7 @@ func (f *DynamicBytesFile) StateFields() []string {
 		"InodeNotDirectory",
 		"InodeNotSymlink",
 		"InodeWatches",
+		"InodeFSOwned",
 		"locks",
 		"data",
 	}
@@ -94,8 +95,9 @@ func (f *DynamicBytesFile) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(4, &f.InodeNotDirectory)
 	stateSinkObject.Save(5, &f.InodeNotSymlink)
 	stateSinkObject.Save(6, &f.InodeWatches)
-	stateSinkObject.Save(7, &f.locks)
-	stateSinkObject.Save(8, &f.data)
+	stateSinkObject.Save(7, &f.InodeFSOwned)
+	stateSinkObject.Save(8, &f.locks)
+	stateSinkObject.Save(9, &f.data)
 }
 
 func (f *DynamicBytesFile) afterLoad(context.Context) {}
@@ -109,8 +111,9 @@ func (f *DynamicBytesFile) StateLoad(ctx context.Context, stateSourceObject stat
 	stateSourceObject.Load(4, &f.InodeNotDirectory)
 	stateSourceObject.Load(5, &f.InodeNotSymlink)
 	stateSourceObject.Load(6, &f.InodeWatches)
-	stateSourceObject.Load(7, &f.locks)
-	stateSourceObject.Load(8, &f.data)
+	stateSourceObject.Load(7, &f.InodeFSOwned)
+	stateSourceObject.Load(8, &f.locks)
+	stateSourceObject.Load(9, &f.data)
 }
 
 func (fd *DynamicBytesFD) StateTypeName() string {
@@ -504,6 +507,7 @@ func (s *StaticDirectory) StateFields() []string {
 		"InodeWatches",
 		"OrderedChildren",
 		"StaticDirectoryRefs",
+		"InodeFSOwned",
 		"locks",
 		"fdOpts",
 	}
@@ -524,8 +528,9 @@ func (s *StaticDirectory) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(7, &s.InodeWatches)
 	stateSinkObject.Save(8, &s.OrderedChildren)
 	stateSinkObject.Save(9, &s.StaticDirectoryRefs)
-	stateSinkObject.Save(10, &s.locks)
-	stateSinkObject.Save(11, &s.fdOpts)
+	stateSinkObject.Save(10, &s.InodeFSOwned)
+	stateSinkObject.Save(11, &s.locks)
+	stateSinkObject.Save(12, &s.fdOpts)
 }
 
 func (s *StaticDirectory) afterLoad(context.Context) {}
@@ -542,8 +547,9 @@ func (s *StaticDirectory) StateLoad(ctx context.Context, stateSourceObject state
 	stateSourceObject.Load(7, &s.InodeWatches)
 	stateSourceObject.Load(8, &s.OrderedChildren)
 	stateSourceObject.Load(9, &s.StaticDirectoryRefs)
-	stateSourceObject.Load(10, &s.locks)
-	stateSourceObject.Load(11, &s.fdOpts)
+	stateSourceObject.Load(10, &s.InodeFSOwned)
+	stateSourceObject.Load(11, &s.locks)
+	stateSourceObject.Load(12, &s.fdOpts)
 }
 
 func (i *InodeAlwaysValid) StateTypeName() string {
@@ -674,6 +680,27 @@ func (i *InodeNotAnonymous) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (i *InodeNotAnonymous) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+}
+
+func (i *InodeFSOwned) StateTypeName() string {
+	return "pkg/sentry/fsimpl/kernfs.InodeFSOwned"
+}
+
+func (i *InodeFSOwned) StateFields() []string {
+	return []string{}
+}
+
+func (i *InodeFSOwned) beforeSave() {}
+
+// +checklocksignore
+func (i *InodeFSOwned) StateSave(stateSinkObject state.Sink) {
+	i.beforeSave()
+}
+
+func (i *InodeFSOwned) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (i *InodeFSOwned) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 }
 
 func (fs *Filesystem) StateTypeName() string {
@@ -928,6 +955,7 @@ func (s *StaticSymlink) StateFields() []string {
 		"InodeSymlink",
 		"InodeNoStatFS",
 		"InodeWatches",
+		"InodeFSOwned",
 		"target",
 	}
 }
@@ -943,7 +971,8 @@ func (s *StaticSymlink) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(3, &s.InodeSymlink)
 	stateSinkObject.Save(4, &s.InodeNoStatFS)
 	stateSinkObject.Save(5, &s.InodeWatches)
-	stateSinkObject.Save(6, &s.target)
+	stateSinkObject.Save(6, &s.InodeFSOwned)
+	stateSinkObject.Save(7, &s.target)
 }
 
 func (s *StaticSymlink) afterLoad(context.Context) {}
@@ -956,7 +985,8 @@ func (s *StaticSymlink) StateLoad(ctx context.Context, stateSourceObject state.S
 	stateSourceObject.Load(3, &s.InodeSymlink)
 	stateSourceObject.Load(4, &s.InodeNoStatFS)
 	stateSourceObject.Load(5, &s.InodeWatches)
-	stateSourceObject.Load(6, &s.target)
+	stateSourceObject.Load(6, &s.InodeFSOwned)
+	stateSourceObject.Load(7, &s.target)
 }
 
 func (dir *syntheticDirectory) StateTypeName() string {
@@ -973,6 +1003,7 @@ func (dir *syntheticDirectory) StateFields() []string {
 		"InodeWatches",
 		"OrderedChildren",
 		"syntheticDirectoryRefs",
+		"InodeFSOwned",
 		"locks",
 	}
 }
@@ -990,7 +1021,8 @@ func (dir *syntheticDirectory) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(5, &dir.InodeWatches)
 	stateSinkObject.Save(6, &dir.OrderedChildren)
 	stateSinkObject.Save(7, &dir.syntheticDirectoryRefs)
-	stateSinkObject.Save(8, &dir.locks)
+	stateSinkObject.Save(8, &dir.InodeFSOwned)
+	stateSinkObject.Save(9, &dir.locks)
 }
 
 func (dir *syntheticDirectory) afterLoad(context.Context) {}
@@ -1005,7 +1037,8 @@ func (dir *syntheticDirectory) StateLoad(ctx context.Context, stateSourceObject 
 	stateSourceObject.Load(5, &dir.InodeWatches)
 	stateSourceObject.Load(6, &dir.OrderedChildren)
 	stateSourceObject.Load(7, &dir.syntheticDirectoryRefs)
-	stateSourceObject.Load(8, &dir.locks)
+	stateSourceObject.Load(8, &dir.InodeFSOwned)
+	stateSourceObject.Load(9, &dir.locks)
 }
 
 func (r *syntheticDirectoryRefs) StateTypeName() string {
@@ -1056,6 +1089,7 @@ func init() {
 	state.Register((*InodeWatches)(nil))
 	state.Register((*InodeAnonymous)(nil))
 	state.Register((*InodeNotAnonymous)(nil))
+	state.Register((*InodeFSOwned)(nil))
 	state.Register((*Filesystem)(nil))
 	state.Register((*Dentry)(nil))
 	state.Register((*inodePlatformFile)(nil))

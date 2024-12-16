@@ -381,6 +381,7 @@ func (pk *PacketBuffer) Clone() *PacketBuffer {
 	newPk.Hash = pk.Hash
 	newPk.Owner = pk.Owner
 	newPk.GSOOptions = pk.GSOOptions
+	newPk.EgressRoute = pk.EgressRoute
 	newPk.NetworkProtocolNumber = pk.NetworkProtocolNumber
 	newPk.dnatDone = pk.dnatDone
 	newPk.snatDone = pk.snatDone

@@ -167,8 +167,7 @@ func (m *processorManager) queuePacket(pkt *stack.PacketBuffer, hasEthHeader boo
 	p := &m.processors[pIdx]
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	pkt.IncRef()
-	p.pkts.PushBack(pkt)
+	p.pkts.PushBack(pkt.IncRef())
 	m.ready[pIdx] = true
 }
 

@@ -100,6 +100,7 @@ type inode struct {
 	kernfs.InodeNotDirectory
 	kernfs.InodeNotSymlink
 	kernfs.InodeWatches
+	kernfs.InodeFSOwned
 }
 
 // Open implements kernfs.Inode.Open.

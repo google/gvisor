@@ -86,11 +86,12 @@ func (q *queue) Write(pkt *stack.PacketBuffer) tcpip.Error {
 	}
 
 	wrote := false
+	p := pkt.Clone()
 	select {
-	case q.c <- pkt.IncRef():
+	case q.c <- p:
 		wrote = true
 	default:
-		pkt.DecRef()
+		p.DecRef()
 	}
 	notify := q.notify
 	q.mu.RUnlock()

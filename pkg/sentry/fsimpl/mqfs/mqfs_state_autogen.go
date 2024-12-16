@@ -171,6 +171,7 @@ func (i *rootInode) StateFields() []string {
 		"InodeTemporary",
 		"InodeWatches",
 		"OrderedChildren",
+		"InodeFSOwned",
 		"locks",
 	}
 }
@@ -189,7 +190,8 @@ func (i *rootInode) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(6, &i.InodeTemporary)
 	stateSinkObject.Save(7, &i.InodeWatches)
 	stateSinkObject.Save(8, &i.OrderedChildren)
-	stateSinkObject.Save(9, &i.locks)
+	stateSinkObject.Save(9, &i.InodeFSOwned)
+	stateSinkObject.Save(10, &i.locks)
 }
 
 func (i *rootInode) afterLoad(context.Context) {}
@@ -205,7 +207,8 @@ func (i *rootInode) StateLoad(ctx context.Context, stateSourceObject state.Sourc
 	stateSourceObject.Load(6, &i.InodeTemporary)
 	stateSourceObject.Load(7, &i.InodeWatches)
 	stateSourceObject.Load(8, &i.OrderedChildren)
-	stateSourceObject.Load(9, &i.locks)
+	stateSourceObject.Load(9, &i.InodeFSOwned)
+	stateSourceObject.Load(10, &i.locks)
 }
 
 func (r *rootInodeRefs) StateTypeName() string {

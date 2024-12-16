@@ -296,6 +296,7 @@ func (d *dir) StateFields() []string {
 		"InodeNotSymlink",
 		"InodeWatches",
 		"OrderedChildren",
+		"InodeFSOwned",
 		"implStatFS",
 		"locks",
 		"fs",
@@ -316,10 +317,11 @@ func (d *dir) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(5, &d.InodeNotSymlink)
 	stateSinkObject.Save(6, &d.InodeWatches)
 	stateSinkObject.Save(7, &d.OrderedChildren)
-	stateSinkObject.Save(8, &d.implStatFS)
-	stateSinkObject.Save(9, &d.locks)
-	stateSinkObject.Save(10, &d.fs)
-	stateSinkObject.Save(11, &d.cgi)
+	stateSinkObject.Save(8, &d.InodeFSOwned)
+	stateSinkObject.Save(9, &d.implStatFS)
+	stateSinkObject.Save(10, &d.locks)
+	stateSinkObject.Save(11, &d.fs)
+	stateSinkObject.Save(12, &d.cgi)
 }
 
 func (d *dir) afterLoad(context.Context) {}
@@ -334,10 +336,11 @@ func (d *dir) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(5, &d.InodeNotSymlink)
 	stateSourceObject.Load(6, &d.InodeWatches)
 	stateSourceObject.Load(7, &d.OrderedChildren)
-	stateSourceObject.Load(8, &d.implStatFS)
-	stateSourceObject.Load(9, &d.locks)
-	stateSourceObject.Load(10, &d.fs)
-	stateSourceObject.Load(11, &d.cgi)
+	stateSourceObject.Load(8, &d.InodeFSOwned)
+	stateSourceObject.Load(9, &d.implStatFS)
+	stateSourceObject.Load(10, &d.locks)
+	stateSourceObject.Load(11, &d.fs)
+	stateSourceObject.Load(12, &d.cgi)
 }
 
 func (f *controllerFile) StateTypeName() string {

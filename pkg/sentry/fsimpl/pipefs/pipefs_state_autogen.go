@@ -68,6 +68,7 @@ func (i *inode) StateFields() []string {
 		"InodeNotSymlink",
 		"InodeNoopRefCount",
 		"InodeWatches",
+		"InodeFSOwned",
 		"locks",
 		"pipe",
 		"ino",
@@ -87,12 +88,13 @@ func (i *inode) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(2, &i.InodeNotSymlink)
 	stateSinkObject.Save(3, &i.InodeNoopRefCount)
 	stateSinkObject.Save(4, &i.InodeWatches)
-	stateSinkObject.Save(5, &i.locks)
-	stateSinkObject.Save(6, &i.pipe)
-	stateSinkObject.Save(7, &i.ino)
-	stateSinkObject.Save(8, &i.uid)
-	stateSinkObject.Save(9, &i.gid)
-	stateSinkObject.Save(10, &i.ctime)
+	stateSinkObject.Save(5, &i.InodeFSOwned)
+	stateSinkObject.Save(6, &i.locks)
+	stateSinkObject.Save(7, &i.pipe)
+	stateSinkObject.Save(8, &i.ino)
+	stateSinkObject.Save(9, &i.uid)
+	stateSinkObject.Save(10, &i.gid)
+	stateSinkObject.Save(11, &i.ctime)
 }
 
 func (i *inode) afterLoad(context.Context) {}
@@ -104,12 +106,13 @@ func (i *inode) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(2, &i.InodeNotSymlink)
 	stateSourceObject.Load(3, &i.InodeNoopRefCount)
 	stateSourceObject.Load(4, &i.InodeWatches)
-	stateSourceObject.Load(5, &i.locks)
-	stateSourceObject.Load(6, &i.pipe)
-	stateSourceObject.Load(7, &i.ino)
-	stateSourceObject.Load(8, &i.uid)
-	stateSourceObject.Load(9, &i.gid)
-	stateSourceObject.Load(10, &i.ctime)
+	stateSourceObject.Load(5, &i.InodeFSOwned)
+	stateSourceObject.Load(6, &i.locks)
+	stateSourceObject.Load(7, &i.pipe)
+	stateSourceObject.Load(8, &i.ino)
+	stateSourceObject.Load(9, &i.uid)
+	stateSourceObject.Load(10, &i.gid)
+	stateSourceObject.Load(11, &i.ctime)
 }
 
 func init() {

@@ -480,3 +480,17 @@ func (fs FeatureSet) archCheckHostCompatible(hfs FeatureSet) error {
 
 	return nil
 }
+
+// AllowedHWCap1 returns the HWCAP1 bits that the guest is allowed to depend
+// on.
+func (fs FeatureSet) AllowedHWCap1() uint64 {
+	// HWCAPS are not supported on amd64.
+	return 0
+}
+
+// AllowedHWCap2 returns the HWCAP2 bits that the guest is allowed to depend
+// on.
+func (fs FeatureSet) AllowedHWCap2() uint64 {
+	// HWCAPS are not supported on amd64.
+	return 0
+}

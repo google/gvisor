@@ -26,7 +26,9 @@ type Static map[In]Out
 
 // Fixed converts the FeatureSet to a fixed set.
 func (fs FeatureSet) Fixed() FeatureSet {
-	return fs.ToStatic().ToFeatureSet()
+	sfs := fs.ToStatic().ToFeatureSet()
+	sfs.hwCap = fs.hwCap
+	return sfs
 }
 
 // ToStatic converts a FeatureSet to a Static function.

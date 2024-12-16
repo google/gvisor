@@ -92,6 +92,7 @@ func (i *Inode) StateFields() []string {
 		"InodeNotDirectory",
 		"InodeNotSymlink",
 		"InodeWatches",
+		"InodeFSOwned",
 		"inodeRefs",
 		"locks",
 		"namespace",
@@ -109,10 +110,11 @@ func (i *Inode) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(2, &i.InodeNotDirectory)
 	stateSinkObject.Save(3, &i.InodeNotSymlink)
 	stateSinkObject.Save(4, &i.InodeWatches)
-	stateSinkObject.Save(5, &i.inodeRefs)
-	stateSinkObject.Save(6, &i.locks)
-	stateSinkObject.Save(7, &i.namespace)
-	stateSinkObject.Save(8, &i.mnt)
+	stateSinkObject.Save(5, &i.InodeFSOwned)
+	stateSinkObject.Save(6, &i.inodeRefs)
+	stateSinkObject.Save(7, &i.locks)
+	stateSinkObject.Save(8, &i.namespace)
+	stateSinkObject.Save(9, &i.mnt)
 }
 
 func (i *Inode) afterLoad(context.Context) {}
@@ -124,10 +126,11 @@ func (i *Inode) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(2, &i.InodeNotDirectory)
 	stateSourceObject.Load(3, &i.InodeNotSymlink)
 	stateSourceObject.Load(4, &i.InodeWatches)
-	stateSourceObject.Load(5, &i.inodeRefs)
-	stateSourceObject.Load(6, &i.locks)
-	stateSourceObject.Load(7, &i.namespace)
-	stateSourceObject.Load(8, &i.mnt)
+	stateSourceObject.Load(5, &i.InodeFSOwned)
+	stateSourceObject.Load(6, &i.inodeRefs)
+	stateSourceObject.Load(7, &i.locks)
+	stateSourceObject.Load(8, &i.namespace)
+	stateSourceObject.Load(9, &i.mnt)
 }
 
 func (fd *namespaceFD) StateTypeName() string {

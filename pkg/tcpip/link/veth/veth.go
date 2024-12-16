@@ -21,6 +21,9 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
+// DefaultBacklogSize is the default size of a veth device's buffer.
+const DefaultBacklogSize = 1000
+
 var _ stack.LinkEndpoint = (*Endpoint)(nil)
 var _ stack.GSOEndpoint = (*Endpoint)(nil)
 
@@ -62,8 +65,6 @@ type vethPacket struct {
 	pkt      *stack.PacketBuffer
 }
 
-const backlogQueueSize = 64
-
 // Endpoint is link layer endpoint that redirects packets to a pair veth endpoint.
 //
 // +stateify savable
@@ -84,7 +85,7 @@ type Endpoint struct {
 }
 
 // NewPair creates a new veth pair.
-func NewPair(mtu uint32) (*Endpoint, *Endpoint) {
+func NewPair(mtu, backlogQueueSize uint32) (*Endpoint, *Endpoint) {
 	veth := veth{
 		backlogQueue: make(chan vethPacket, backlogQueueSize),
 		mtu:          mtu,
@@ -219,14 +220,18 @@ func (e *Endpoint) WritePackets(pkts stack.PacketBufferList) (int, tcpip.Error) 
 			Payload: payload.DeepClone(),
 		})
 		payload.Release()
-		(e.veth.backlogQueue) <- vethPacket{
+		select {
+		case (e.veth.backlogQueue) <- vethPacket{
 			e:        e.peer,
 			protocol: pkt.NetworkProtocolNumber,
 			pkt:      newPkt,
+		}:
+			n++
+		default:
+			newPkt.DecRef()
+			return n, &tcpip.ErrNoBufferSpace{}
 		}
-		n++
 	}
-
 	return n, nil
 }
 

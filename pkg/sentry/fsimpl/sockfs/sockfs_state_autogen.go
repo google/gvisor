@@ -69,6 +69,7 @@ func (i *inode) StateFields() []string {
 		"InodeNotDirectory",
 		"InodeNotSymlink",
 		"InodeWatches",
+		"InodeFSOwned",
 	}
 }
 
@@ -83,6 +84,7 @@ func (i *inode) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(3, &i.InodeNotDirectory)
 	stateSinkObject.Save(4, &i.InodeNotSymlink)
 	stateSinkObject.Save(5, &i.InodeWatches)
+	stateSinkObject.Save(6, &i.InodeFSOwned)
 }
 
 func (i *inode) afterLoad(context.Context) {}
@@ -95,6 +97,7 @@ func (i *inode) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(3, &i.InodeNotDirectory)
 	stateSourceObject.Load(4, &i.InodeNotSymlink)
 	stateSourceObject.Load(5, &i.InodeWatches)
+	stateSourceObject.Load(6, &i.InodeFSOwned)
 }
 
 func init() {

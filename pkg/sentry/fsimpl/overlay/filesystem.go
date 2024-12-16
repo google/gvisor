@@ -574,9 +574,11 @@ func (fs *filesystem) doCreateAt(ctx context.Context, rp *vfs.ResolvingPath, ct 
 //
 // Preconditions: pop's parent directory has been copied up.
 func CreateWhiteout(ctx context.Context, vfsObj *vfs.VirtualFilesystem, creds *auth.Credentials, pop *vfs.PathOperation) error {
+	major, minor := linux.DecodeDeviceID(linux.WHITEOUT_DEV)
 	return vfsObj.MknodAt(ctx, creds, pop, &vfs.MknodOptions{
-		Mode: linux.S_IFCHR, // permissions == include/linux/fs.h:WHITEOUT_MODE == 0
-		// DevMajor == DevMinor == 0, from include/linux/fs.h:WHITEOUT_DEV
+		Mode:     linux.S_IFCHR | linux.WHITEOUT_MODE,
+		DevMajor: uint32(major),
+		DevMinor: minor,
 	})
 }
 
