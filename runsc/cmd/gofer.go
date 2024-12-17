@@ -64,11 +64,12 @@ var goferCaps = &specs.LinuxCapabilities{
 // goferSyncFDs contains file descriptors that are used for synchronization
 // of the Gofer startup process against other processes.
 type goferSyncFDs struct {
-	// nvproxyFD is a file descriptor that is used to wait until
-	// nvproxy-related setup is done. This setup involves creating mounts in the
-	// Gofer process's mount namespace.
+	// chrootFD is a file descriptor that is used to wait until container
+	// filesystem related setup is done. This setup involves creating files and
+	// mounts in the Gofer process's mount namespace and needs to be done before
+	// the Gofer chroots.
 	// If this is set, this FD is the first that the Gofer waits for.
-	nvproxyFD int
+	chrootFD int
 	// usernsFD is a file descriptor that is used to wait until
 	// user namespace ID mappings are established in the Gofer's userns.
 	// If this is set, this FD is the second that the Gofer waits for.
@@ -154,7 +155,7 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomm
 		util.Fatalf("reading spec: %v", err)
 	}
 
-	g.syncFDs.syncNVProxy()
+	g.syncFDs.syncChroot()
 	g.syncFDs.syncUsernsForRootless()
 
 	goferToHostRPCSock, err := unet.NewSocket(g.goferToHostRPCFD)
@@ -728,7 +729,7 @@ func adjustMountOptions(conf *config.Config, path string, opts []string) ([]stri
 
 // setFlags sets sync FD flags on the given FlagSet.
 func (g *goferSyncFDs) setFlags(f *flag.FlagSet) {
-	f.IntVar(&g.nvproxyFD, "sync-nvproxy-fd", -1, "file descriptor that the gofer waits on until nvproxy setup is done")
+	f.IntVar(&g.chrootFD, "sync-chroot-fd", -1, "file descriptor that the gofer waits on until container filesystem setup is done")
 	f.IntVar(&g.usernsFD, "sync-userns-fd", -1, "file descriptor the gofer waits on until userns mappings are set up")
 	f.IntVar(&g.procMountFD, "proc-mount-sync-fd", -1, "file descriptor that the gofer writes to when /proc isn't needed anymore and can be unmounted")
 }
@@ -737,7 +738,7 @@ func (g *goferSyncFDs) setFlags(f *flag.FlagSet) {
 // to a re-executed version of this process.
 func (g *goferSyncFDs) flags() map[string]string {
 	return map[string]string{
-		"sync-nvproxy-fd":    fmt.Sprintf("%d", g.nvproxyFD),
+		"sync-chroot-fd":     fmt.Sprintf("%d", g.chrootFD),
 		"sync-userns-fd":     fmt.Sprintf("%d", g.usernsFD),
 		"proc-mount-sync-fd": fmt.Sprintf("%d", g.procMountFD),
 	}
@@ -827,16 +828,16 @@ func syncUsernsForRootless(fd int) {
 	}
 }
 
-// syncNVProxy waits on nvproxyFD to be closed.
-// Used for synchronization during nvproxy setup which is done from the
-// non-gofer process.
-// This function is a no-op if nvProxySyncFD is -1.
-func (g *goferSyncFDs) syncNVProxy() {
-	if g.nvproxyFD < 0 {
+// syncChroot waits on chrootFD to be closed.
+// Used for synchronization during container filesystem setup which is done
+// from the non-gofer process.
+// This function is a no-op if chrootFD is -1.
+func (g *goferSyncFDs) syncChroot() {
+	if g.chrootFD < 0 {
 		return
 	}
-	if err := waitForFD(g.nvproxyFD, "nvproxy sync FD"); err != nil {
-		util.Fatalf("failed to sync on NVProxy FD: %v", err)
+	if err := waitForFD(g.chrootFD, "chroot sync FD"); err != nil {
+		util.Fatalf("failed to sync on chroot FD: %v", err)
 	}
-	g.nvproxyFD = -1
+	g.chrootFD = -1
 }

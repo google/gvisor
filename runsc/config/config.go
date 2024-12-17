@@ -972,6 +972,11 @@ func (o *Overlay2) SubMountOverlayMedium() OverlayMedium {
 	return o.medium
 }
 
+// Medium returns the overlay medium config.
+func (o Overlay2) Medium() OverlayMedium {
+	return o.medium
+}
+
 // HostSettingsPolicy dictates how host settings should be handled.
 type HostSettingsPolicy int
 
