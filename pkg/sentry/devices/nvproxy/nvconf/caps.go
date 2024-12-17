@@ -47,7 +47,7 @@ const (
 	// SupportedDriverCaps is the set of driver capabilities that are supported by
 	// nvproxy. Similar to
 	// nvidia-container-toolkit/internal/config/image/capabilities.go:SupportedDriverCapabilities.
-	SupportedDriverCaps = DriverCaps(CapCompute | CapUtility)
+	SupportedDriverCaps = DriverCaps(CapCompute | CapUtility | CapGraphics)
 
 	// DefaultDriverCaps is the set of driver capabilities that are enabled by
 	// default in the absence of any other configuration. See

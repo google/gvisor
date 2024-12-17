@@ -40,9 +40,6 @@ func (h Handle) String() string {
 	return fmt.Sprintf("%#x", h.Val)
 }
 
-// NV01_NULL_OBJECT is a Handle representing no object.
-var NV01_NULL_OBJECT = Handle{0}
-
 // P64 is NvP64, from src/common/sdk/nvidia/inc/nvtypes.h.
 //
 // +marshal
@@ -87,3 +84,8 @@ type RS_SHARE_POLICY struct {
 //
 // +marshal
 type NvUUID [16]uint8
+
+// HasStatus is an interface for parameter structs that have a Status field.
+type HasStatus interface {
+	GetStatus() uint32
+}

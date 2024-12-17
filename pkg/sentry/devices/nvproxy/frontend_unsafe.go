@@ -21,10 +21,24 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/nvgpu"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 )
 
-func frontendIoctlInvoke[Params any](fi *frontendIoctlState, sentryParams *Params) (uintptr, error) {
+func frontendIoctlInvoke[Params any, PtrParams hasStatusPtr[Params]](fi *frontendIoctlState, ioctlParams PtrParams) (uintptr, error) {
+	n, _, errno := unix.RawSyscall(unix.SYS_IOCTL, uintptr(fi.fd.hostFD), frontendIoctlCmd(fi.nr, fi.ioctlParamsSize), uintptr(unsafe.Pointer(ioctlParams)))
+	if errno != 0 {
+		return n, errno
+	}
+	if log.IsLogging(log.Debug) {
+		if status := ioctlParams.GetStatus(); status != nvgpu.NV_OK {
+			fi.ctx.Debugf("nvproxy: frontend ioctl failed: status=%#x", status)
+		}
+	}
+	return n, nil
+}
+
+func frontendIoctlBytesInvoke(fi *frontendIoctlState, sentryParams *byte) (uintptr, error) {
 	n, _, errno := unix.RawSyscall(unix.SYS_IOCTL, uintptr(fi.fd.hostFD), frontendIoctlCmd(fi.nr, fi.ioctlParamsSize), uintptr(unsafe.Pointer(sentryParams)))
 	if errno != 0 {
 		return n, errno
@@ -112,15 +126,66 @@ func ctrlIoctlHasInfoList[Params any, PtrParams hasCtrlInfoListPtr[Params]](fi *
 	return n, nil
 }
 
-func ctrlDevGpuGetClasslistInvoke(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54Parameters, ctrlParams *nvgpu.NV0080_CTRL_GPU_GET_CLASSLIST_PARAMS, classList []uint32) (uintptr, error) {
-	origClassList := ctrlParams.ClassList
-	ctrlParams.ClassList = p64FromPtr(unsafe.Pointer(&classList[0]))
-	n, err := rmControlInvoke(fi, ioctlParams, ctrlParams)
-	ctrlParams.ClassList = origClassList
+func ctrlGetNvU32ListInvoke(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54Parameters, ctrlParams *nvgpu.RmapiParamNvU32List, list []uint32) (uintptr, error) {
+	origList := ctrlParams.List
+	ctrlParams.List = p64FromPtr(unsafe.Pointer(&list[0]))
+	n, err := rmControlInvoke(fi, ioctlParams, &ctrlParams)
+	ctrlParams.List = origList
 	if err != nil {
 		return n, err
 	}
-	if _, err := primitive.CopyUint32SliceOut(fi.t, addrFromP64(origClassList), classList); err != nil {
+	if _, err := primitive.CopyUint32SliceOut(fi.t, addrFromP64(ctrlParams.List), list); err != nil {
+		return 0, err
+	}
+	if _, err := ctrlParams.CopyOut(fi.t, addrFromP64(ioctlParams.Params)); err != nil {
+		return n, err
+	}
+	return n, nil
+}
+
+func ctrlDevGRGetCapsInvoke(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54Parameters, ctrlParams *nvgpu.NV0080_CTRL_GET_CAPS_PARAMS, capsTbl []byte) (uintptr, error) {
+	origCapsTbl := ctrlParams.CapsTbl
+	ctrlParams.CapsTbl = p64FromPtr(unsafe.Pointer(&capsTbl[0]))
+	n, err := rmControlInvoke(fi, ioctlParams, &ctrlParams)
+	ctrlParams.CapsTbl = origCapsTbl
+	if err != nil {
+		return n, err
+	}
+	if _, err := primitive.CopyByteSliceOut(fi.t, addrFromP64(ctrlParams.CapsTbl), capsTbl); err != nil {
+		return 0, err
+	}
+	if _, err := ctrlParams.CopyOut(fi.t, addrFromP64(ioctlParams.Params)); err != nil {
+		return n, err
+	}
+	return n, nil
+}
+
+func ctrlXxxGetInfoInvoke(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54Parameters, ctrlParams *nvgpu.NvxxxCtrlXxxGetInfoParams, infoList []nvgpu.NVXXXX_CTRL_XXX_INFO) (uintptr, error) {
+	orginGRInfoList := ctrlParams.GRInfoList
+	ctrlParams.GRInfoList = p64FromPtr(unsafe.Pointer(&infoList[0]))
+	n, err := rmControlInvoke(fi, ioctlParams, &ctrlParams)
+	ctrlParams.GRInfoList = orginGRInfoList
+	if err != nil {
+		return n, err
+	}
+	if _, err := nvgpu.CopyCtrlXxxInfoSliceOut(fi.t, addrFromP64(ctrlParams.GRInfoList), infoList); err != nil {
+		return 0, err
+	}
+	if _, err := ctrlParams.CopyOut(fi.t, addrFromP64(ioctlParams.Params)); err != nil {
+		return n, err
+	}
+	return n, nil
+}
+
+func ctrlSubdevGRGetInfoInvoke(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54Parameters, ctrlParams *nvgpu.NV2080_CTRL_GR_GET_INFO_PARAMS, infoList []nvgpu.NVXXXX_CTRL_XXX_INFO) (uintptr, error) {
+	origGRInfoList := ctrlParams.GRInfoList
+	ctrlParams.GRInfoList = p64FromPtr(unsafe.Pointer(&infoList[0]))
+	n, err := rmControlInvoke(fi, ioctlParams, &ctrlParams)
+	ctrlParams.GRInfoList = origGRInfoList
+	if err != nil {
+		return n, err
+	}
+	if _, err := nvgpu.CopyCtrlXxxInfoSliceOut(fi.t, addrFromP64(ctrlParams.GRInfoList), infoList); err != nil {
 		return 0, err
 	}
 	if _, err := ctrlParams.CopyOut(fi.t, addrFromP64(ioctlParams.Params)); err != nil {
@@ -285,16 +350,19 @@ func rmAllocInvoke[Params any](fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64
 	// identically to the equivalent NVOS21Parameters; compare
 	// src/nvidia/src/kernel/rmapi/entry_points.c:_nv04AllocWithSecInfo() and
 	// _nv04AllocWithAccessSecInfo().
+	origParamsSize := fi.ioctlParamsSize
+	fi.ioctlParamsSize = nvgpu.SizeofNVOS64Parameters
 	fi.fd.dev.nvp.objsLock()
-	n, _, errno := unix.RawSyscall(unix.SYS_IOCTL, uintptr(fi.fd.hostFD), frontendIoctlCmd(nvgpu.NV_ESC_RM_ALLOC, nvgpu.SizeofNVOS64Parameters), uintptr(unsafe.Pointer(ioctlParams)))
-	if errno == 0 && ioctlParams.Status == nvgpu.NV_OK {
+	n, err := frontendIoctlInvoke(fi, ioctlParams)
+	fi.ioctlParamsSize = origParamsSize
+	if err == nil && ioctlParams.Status == nvgpu.NV_OK {
 		addObjLocked(fi, ioctlParams, rightsRequested, allocParams)
 	}
 	fi.fd.dev.nvp.objsUnlock()
 	ioctlParams.PAllocParms = origPAllocParms
 	ioctlParams.PRightsRequested = origPRightsRequested
-	if errno != 0 {
-		return n, errno
+	if err != nil {
+		return n, err
 	}
 
 	// Copy updated params out to the application.
@@ -306,6 +374,26 @@ func rmAllocInvoke[Params any](fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64
 		}
 	}
 	if _, err := outIoctlParams.CopyOut(fi.t, fi.ioctlParamsAddr); err != nil {
+		return n, err
+	}
+	return n, nil
+}
+
+func rmIdleChannelsInvoke(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS30Parameters, clientsBuf, devicesBuf, channelsBuf *byte) (uintptr, error) {
+	origClients := ioctlParams.Clients
+	origDevices := ioctlParams.Devices
+	origChannels := ioctlParams.Channels
+	ioctlParams.Clients = p64FromPtr(unsafe.Pointer(clientsBuf))
+	ioctlParams.Devices = p64FromPtr(unsafe.Pointer(devicesBuf))
+	ioctlParams.Channels = p64FromPtr(unsafe.Pointer(channelsBuf))
+	n, err := frontendIoctlInvoke(fi, ioctlParams)
+	ioctlParams.Clients = origClients
+	ioctlParams.Devices = origDevices
+	ioctlParams.Channels = origChannels
+	if err != nil {
+		return n, err
+	}
+	if _, err := ioctlParams.CopyOut(fi.t, fi.ioctlParamsAddr); err != nil {
 		return n, err
 	}
 	return n, nil

@@ -107,6 +107,17 @@ type hasFrontendFDPtr[T any] interface {
 	nvgpu.HasFrontendFD
 }
 
+type hasStatusPtr[T any] interface {
+	marshalPtr[T]
+	nvgpu.HasStatus
+}
+
+type hasFrontendFDAndStatusPtr[T any] interface {
+	marshalPtr[T]
+	nvgpu.HasFrontendFD
+	nvgpu.HasStatus
+}
+
 type hasCtrlInfoListPtr[T any] interface {
 	marshalPtr[T]
 	nvgpu.HasCtrlInfoList
