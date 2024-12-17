@@ -42,6 +42,7 @@ const (
 	flagNetDisconnectOK   = "net-disconnect-ok"
 	flagReproduceNFTables = "reproduce-nftables"
 	flagOCISeccomp        = "oci-seccomp"
+	flagOverlay2          = "overlay2"
 )
 
 // RegisterFlags registers flags used to populate Config.
@@ -112,7 +113,7 @@ func RegisterFlags(flagSet *flag.FlagSet) {
 	flagSet.Var(fileAccessTypePtr(FileAccessExclusive), "file-access", "specifies which filesystem validation to use for the root mount: exclusive (default), shared.")
 	flagSet.Var(fileAccessTypePtr(FileAccessShared), "file-access-mounts", "specifies which filesystem validation to use for volumes other than the root mount: shared (default), exclusive.")
 	flagSet.Bool("overlay", false, "DEPRECATED: use --overlay2=all:memory to achieve the same effect")
-	flagSet.Var(defaultOverlay2(), "overlay2", "wrap mounts with overlayfs. Format is {mount}:{medium}, where 'mount' can be 'root' or 'all' and medium can be 'memory', 'self' or 'dir=/abs/dir/path' in which filestore will be created. 'none' will turn overlay mode off.")
+	flagSet.Var(defaultOverlay2(), flagOverlay2, "wrap mounts with overlayfs. Format is {mount}:{medium}, where 'mount' can be 'root' or 'all' and medium can be 'memory', 'self' or 'dir=/abs/dir/path' in which filestore will be created. 'none' will turn overlay mode off.")
 	flagSet.Bool("fsgofer-host-uds", false, "DEPRECATED: use host-uds=all")
 	flagSet.Var(hostUDSPtr(HostUDSNone), flagHostUDS, "controls permission to access host Unix-domain sockets. Values: none|open|create|all, default: none")
 	flagSet.Var(hostFifoPtr(HostFifoNone), "host-fifo", "controls permission to access host FIFOs (or named pipes). Values: none|open, default: none")
@@ -177,6 +178,7 @@ var overrideAllowlist = map[string]struct {
 	flagHostUDS:           {},
 	flagNetDisconnectOK:   {},
 	flagReproduceNFTables: {},
+	flagOverlay2:          {},
 
 	flagOCISeccomp: {check: checkOciSeccomp},
 }
