@@ -213,6 +213,7 @@ steps:
   - <<: *common
     <<: *source_test_continuous
     label: ":screwdriver: All GPU Drivers Test"
+    parallelism: 8
     commands:
       - tools/gpu/all_drivers_test.sh
     agents:

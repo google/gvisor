@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"sort"
 	"strings"
 
 	"gvisor.dev/gvisor/pkg/log"
@@ -219,6 +220,7 @@ func ListSupportedDrivers(outfile string) error {
 	nvproxy.ForEachSupportDriver(func(version nvproxy.DriverVersion, checksum string) {
 		list = append(list, version.String())
 	})
+	sort.Strings(list)
 	if _, err := out.WriteString(strings.Join(list, " ") + "\n"); err != nil {
 		return fmt.Errorf("failed to write to outfile: %w", err)
 	}
