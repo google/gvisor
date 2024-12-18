@@ -19,6 +19,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fdnotifier"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/uniqueid"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -275,7 +276,7 @@ func (e *connectionedEndpoint) Close(ctx context.Context) {
 }
 
 // BidirectionalConnect implements BoundEndpoint.BidirectionalConnect.
-func (e *connectionedEndpoint) BidirectionalConnect(ctx context.Context, ce ConnectingEndpoint, returnConnect func(Receiver, ConnectedEndpoint), opts UnixSocketOpts) *syserr.Error {
+func (e *connectionedEndpoint) BidirectionalConnect(ctx context.Context, ce ConnectingEndpoint, returnConnect func(Receiver, ConnectedEndpoint), opts UnixSocketOpts, kuidptr *auth.KUID) *syserr.Error {
 	if ce.Type() != e.stype {
 		return syserr.ErrWrongProtocolForSocket
 	}
@@ -378,13 +379,13 @@ func (e *connectionedEndpoint) BidirectionalConnect(ctx context.Context, ce Conn
 }
 
 // UnidirectionalConnect implements BoundEndpoint.UnidirectionalConnect.
-func (e *connectionedEndpoint) UnidirectionalConnect(ctx context.Context, opts UnixSocketOpts) (ConnectedEndpoint, *syserr.Error) {
+func (e *connectionedEndpoint) UnidirectionalConnect(ctx context.Context, opts UnixSocketOpts, kuidptr *auth.KUID) (ConnectedEndpoint, *syserr.Error) {
 	return nil, syserr.ErrConnectionRefused
 }
 
 // Connect attempts to directly connect to another Endpoint.
 // Implements Endpoint.Connect.
-func (e *connectionedEndpoint) Connect(ctx context.Context, server BoundEndpoint, opts UnixSocketOpts) *syserr.Error {
+func (e *connectionedEndpoint) Connect(ctx context.Context, server BoundEndpoint, opts UnixSocketOpts, kuid auth.KUID) *syserr.Error {
 	returnConnect := func(r Receiver, ce ConnectedEndpoint) {
 		e.receiver = r
 		e.connected = ce
@@ -396,7 +397,7 @@ func (e *connectionedEndpoint) Connect(ctx context.Context, server BoundEndpoint
 		}
 	}
 
-	return server.BidirectionalConnect(ctx, e, returnConnect, opts)
+	return server.BidirectionalConnect(ctx, e, returnConnect, opts, &kuid)
 }
 
 // Listen starts listening on the connection.

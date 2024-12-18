@@ -98,6 +98,7 @@ go_library(
         "//pkg/refs",
         "//pkg/sentry/hostfd",
         "//pkg/sentry/uniqueid",
+        "//pkg/sentry/kernel/auth",
         "//pkg/sync",
         "//pkg/sync/locking",
         "//pkg/syserr",

@@ -19,6 +19,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/waiter"
@@ -54,7 +55,7 @@ type endpoint struct {
 }
 
 // BidirectionalConnect implements BoundEndpoint.BidirectionalConnect.
-func (e *endpoint) BidirectionalConnect(ctx context.Context, ce transport.ConnectingEndpoint, returnConnect func(transport.Receiver, transport.ConnectedEndpoint), opts transport.UnixSocketOpts) *syserr.Error {
+func (e *endpoint) BidirectionalConnect(ctx context.Context, ce transport.ConnectingEndpoint, returnConnect func(transport.Receiver, transport.ConnectedEndpoint), opts transport.UnixSocketOpts, kuidptr *auth.KUID) *syserr.Error {
 	// No lock ordering required as only the ConnectingEndpoint has a mutex.
 	ce.Lock()
 
@@ -85,7 +86,7 @@ func (e *endpoint) BidirectionalConnect(ctx context.Context, ce transport.Connec
 
 // UnidirectionalConnect implements
 // transport.BoundEndpoint.UnidirectionalConnect.
-func (e *endpoint) UnidirectionalConnect(ctx context.Context, opts transport.UnixSocketOpts) (transport.ConnectedEndpoint, *syserr.Error) {
+func (e *endpoint) UnidirectionalConnect(ctx context.Context, opts transport.UnixSocketOpts, kuidptr *auth.KUID) (transport.ConnectedEndpoint, *syserr.Error) {
 	c, err := e.newConnectedEndpoint(ctx, linux.SOCK_DGRAM, &waiter.Queue{}, opts)
 	if err != nil {
 		return nil, err

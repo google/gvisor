@@ -17,6 +17,7 @@ package transport
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -78,12 +79,12 @@ func (e *connectionlessEndpoint) Close(ctx context.Context) {
 }
 
 // BidirectionalConnect implements BoundEndpoint.BidirectionalConnect.
-func (e *connectionlessEndpoint) BidirectionalConnect(ctx context.Context, ce ConnectingEndpoint, returnConnect func(Receiver, ConnectedEndpoint), opts UnixSocketOpts) *syserr.Error {
+func (e *connectionlessEndpoint) BidirectionalConnect(ctx context.Context, ce ConnectingEndpoint, returnConnect func(Receiver, ConnectedEndpoint), opts UnixSocketOpts, kuidptr *auth.KUID) *syserr.Error {
 	return syserr.ErrConnectionRefused
 }
 
 // UnidirectionalConnect implements BoundEndpoint.UnidirectionalConnect.
-func (e *connectionlessEndpoint) UnidirectionalConnect(ctx context.Context, opts UnixSocketOpts) (ConnectedEndpoint, *syserr.Error) {
+func (e *connectionlessEndpoint) UnidirectionalConnect(ctx context.Context, opts UnixSocketOpts, kuidptr *auth.KUID) (ConnectedEndpoint, *syserr.Error) {
 	e.Lock()
 	r := e.receiver
 	e.Unlock()
@@ -108,7 +109,7 @@ func (e *connectionlessEndpoint) SendMsg(ctx context.Context, data [][]byte, c C
 	}
 
 	opts := UnixSocketOpts{}
-	connected, err := to.UnidirectionalConnect(ctx, opts)
+	connected, err := to.UnidirectionalConnect(ctx, opts, nil)
 	if err != nil {
 		return 0, nil, syserr.ErrInvalidEndpointState
 	}
@@ -132,8 +133,8 @@ func (e *connectionlessEndpoint) Type() linux.SockType {
 }
 
 // Connect attempts to connect directly to server.
-func (e *connectionlessEndpoint) Connect(ctx context.Context, server BoundEndpoint, opts UnixSocketOpts) *syserr.Error {
-	connected, err := server.UnidirectionalConnect(ctx, opts)
+func (e *connectionlessEndpoint) Connect(ctx context.Context, server BoundEndpoint, opts UnixSocketOpts, kuid auth.KUID) *syserr.Error {
+	connected, err := server.UnidirectionalConnect(ctx, opts, &kuid)
 	if err != nil {
 		return err
 	}

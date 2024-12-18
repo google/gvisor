@@ -582,7 +582,7 @@ func (s *Socket) Connect(t *kernel.Task, sockaddr []byte, blocking bool) *syserr
 	defer ep.Release(t)
 
 	// Connect the server endpoint.
-	err = s.ep.Connect(t, ep, t.Kernel().UnixSocketOpts)
+	err = s.ep.Connect(t, ep, t.Kernel().UnixSocketOpts, t.Credentials().EffectiveKUID)
 
 	if err == syserr.ErrWrongProtocolForSocket {
 		// Linux for abstract sockets returns ErrConnectionRefused
