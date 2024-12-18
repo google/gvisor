@@ -451,7 +451,9 @@ func (t *TestCluster) ReadPodLogs(ctx context.Context, pod *v13.Pod) (string, er
 
 // WaitForPodRunning is a helper method to wait for a pod to be running.
 func (t *TestCluster) WaitForPodRunning(ctx context.Context, pod *v13.Pod) error {
-	_, err := t.doWaitForPod(ctx, pod, func(p v13.PodPhase) bool { return p == v13.PodRunning })
+	// We also accept pods in the PodSucceeded state, because short-lived pods
+	// may have already ran and succeeded by the time we poll them.
+	_, err := t.doWaitForPod(ctx, pod, func(p v13.PodPhase) bool { return p == v13.PodRunning || p == v13.PodSucceeded })
 	return err
 }
 
