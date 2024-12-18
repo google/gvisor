@@ -823,6 +823,10 @@ func (fd *controlFDLisa) Connect(sockType uint32, appUid uint32) (int, error) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
+	if err = unix.Prctl(unix.PR_SET_KEEPCAPS, 1, 0, 0, 0); err != nil {
+		return -1, err
+	}
+
 	_, _, err = unix.Syscall(unix.SYS_SETREUID, uintptr(goferRuid), uintptr(appUid), 0)
 	if err != nil {
 		log.Warningf("Failed to seteuid: %v", err)
