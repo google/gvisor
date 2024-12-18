@@ -270,23 +270,40 @@ func (t *TestCluster) getNamespace(ctx context.Context, namespaceName string) (*
 // deleteNamespace is a helper method to delete a namespace.
 func (t *TestCluster) deleteNamespace(ctx context.Context, namespaceName string) error {
 	err := t.client.Do(ctx, func(ctx context.Context, client kubernetes.Interface) error {
-		return client.CoreV1().Namespaces().Delete(ctx, namespaceName, v1.DeleteOptions{})
+		var zero int64
+		return client.CoreV1().Namespaces().Delete(ctx, namespaceName, v1.DeleteOptions{
+			GracePeriodSeconds: &zero,
+		})
 	})
 	if err != nil {
 		return err
 	}
 	// Wait for the namespace to disappear or for the context to expire.
+	waitStart := time.Now()
+	warnAfter := waitStart.Add(1 * time.Minute)
+	nsLogger := log.BasicRateLimitedLogger(5 * time.Minute)
 	for ctx.Err() == nil {
-		if _, err := t.getNamespace(ctx, namespaceName); err != nil {
+		deleteCtx, deleteCancel := context.WithTimeout(ctx, 15*time.Second)
+		ns, err := t.getNamespace(ctx, namespaceName)
+		if err != nil && deleteCtx.Err() == nil {
+			deleteCancel()
 			return nil
+		}
+		deleteCancel()
+		if time.Now().After(warnAfter) {
+			if ns != nil {
+				nsLogger.Warningf("Still waiting for namespace %q to be actually deleted (after sending deletion request); waiting %v so far, namespace status: %v", namespaceName, time.Since(waitStart), ns.Status)
+			} else {
+				nsLogger.Warningf("Still waiting for namespace %q to be actually deleted (after sending deletion request); waiting %v so far, namespace status: %v", namespaceName, time.Since(waitStart), "<unknown>")
+			}
 		}
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(10 * time.Millisecond):
+			return fmt.Errorf("context expired waiting for namespace %q to be deleted", namespaceName)
+		case <-time.After(pollInterval):
 		}
 	}
-	return ctx.Err()
+	return fmt.Errorf("context expired waiting for namespace %q to be deleted", namespaceName)
 }
 
 // getNodePool returns the NodePool of the given type.
@@ -409,23 +426,40 @@ func (t *TestCluster) ListPods(ctx context.Context, namespace string) (*v13.PodL
 // DeletePod is a helper method to delete a pod.
 func (t *TestCluster) DeletePod(ctx context.Context, pod *v13.Pod) error {
 	err := t.client.Do(ctx, func(ctx context.Context, client kubernetes.Interface) error {
-		return client.CoreV1().Pods(pod.GetNamespace()).Delete(ctx, pod.GetName(), v1.DeleteOptions{})
+		var zero int64
+		return client.CoreV1().Pods(pod.GetNamespace()).Delete(ctx, pod.GetName(), v1.DeleteOptions{
+			GracePeriodSeconds: &zero,
+		})
 	})
 	if err != nil {
 		return err
 	}
 	// Wait for the pod to disappear or for the context to expire.
+	waitStart := time.Now()
+	warnAfter := waitStart.Add(1 * time.Minute)
+	podLogger := log.BasicRateLimitedLogger(5 * time.Minute)
 	for ctx.Err() == nil {
-		if _, err := t.GetPod(ctx, pod); err != nil {
+		deleteCtx, deleteCancel := context.WithTimeout(ctx, 15*time.Second)
+		p, err := t.GetPod(deleteCtx, pod)
+		if err != nil && deleteCtx.Err() == nil {
+			deleteCancel()
 			return nil
+		}
+		deleteCancel()
+		if time.Now().After(warnAfter) {
+			if p != nil {
+				podLogger.Warningf("Still waiting for pod %q to be actually deleted (after sending deletion request); waiting %v so far, pod status: %v", pod.GetName(), time.Since(waitStart), p.Status)
+			} else {
+				podLogger.Warningf("Still waiting for pod %q to be actually deleted (after sending deletion request); waiting %v so far, pod status: %v", pod.GetName(), time.Since(waitStart), "<unknown>")
+			}
 		}
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(10 * time.Millisecond):
+			return fmt.Errorf("context expired waiting for pod %q to be deleted; last pod info: %v", pod.GetName(), p)
+		case <-time.After(pollInterval):
 		}
 	}
-	return ctx.Err()
+	return fmt.Errorf("context expired waiting for pod %q to be deleted", pod.GetName())
 }
 
 // GetLogReader gets an io.ReadCloser from which logs can be read. It is the caller's
