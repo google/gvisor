@@ -290,16 +290,39 @@ type frontendIoctlState struct {
 // frontendIoctlSimple implements a frontend ioctl whose parameters don't
 // contain any pointers requiring translation, file descriptors, or special
 // cases or effects, and consequently don't need to be typed by the sentry.
-func frontendIoctlSimple(fi *frontendIoctlState) (uintptr, error) {
+func frontendIoctlSimple[Params any, PtrParams hasStatusPtr[Params]](fi *frontendIoctlState) (uintptr, error) {
+	var ioctlParamsValue Params
+	ioctlParams := PtrParams(&ioctlParamsValue)
+	if int(fi.ioctlParamsSize) != ioctlParams.SizeBytes() {
+		return 0, linuxerr.EINVAL
+	}
+	if _, err := ioctlParams.CopyIn(fi.t, fi.ioctlParamsAddr); err != nil {
+		return 0, err
+	}
+
+	n, err := frontendIoctlInvoke(fi, ioctlParams)
+	if err != nil {
+		return n, err
+	}
+	if _, err := ioctlParams.CopyOut(fi.t, fi.ioctlParamsAddr); err != nil {
+		return n, err
+	}
+	return n, nil
+}
+
+// frontendIoctlBytes is like frontendIoctlSimple, but for ioctls whose
+// parameters don't contain any NvStatus field either. So these can be directly
+// copied into byte buffers and proxied to the host.
+func frontendIoctlBytes(fi *frontendIoctlState) (uintptr, error) {
 	if fi.ioctlParamsSize == 0 {
-		return frontendIoctlInvoke[byte](fi, nil)
+		return frontendIoctlBytesInvoke(fi, nil)
 	}
 
 	ioctlParams := make([]byte, fi.ioctlParamsSize)
 	if _, err := fi.t.CopyInBytes(fi.ioctlParamsAddr, ioctlParams); err != nil {
 		return 0, err
 	}
-	n, err := frontendIoctlInvoke(fi, &ioctlParams[0])
+	n, err := frontendIoctlBytesInvoke(fi, &ioctlParams[0])
 	if err != nil {
 		return n, err
 	}
@@ -339,7 +362,7 @@ func frontendRegisterFD(fi *frontendIoctlState) (uintptr, error) {
 	return frontendIoctlInvoke(fi, &ioctlParams)
 }
 
-func frontendIoctHasFD[Params any, PtrParams hasFrontendFDPtr[Params]](fi *frontendIoctlState) (uintptr, error) {
+func frontendIoctlHasFD[Params any, PtrParams hasFrontendFDAndStatusPtr[Params]](fi *frontendIoctlState) (uintptr, error) {
 	var ioctlParamsValue Params
 	ioctlParams := PtrParams(&ioctlParamsValue)
 	if int(fi.ioctlParamsSize) != ioctlParams.SizeBytes() {
@@ -400,6 +423,9 @@ func rmAllocOSDescriptor(fi *frontendIoctlState, ioctlParams *nvgpu.IoctlNVOS02P
 	// Compare src/nvidia/arch/nvalloc/unix/src/escape.c:RmAllocOsDescriptor()
 	// => RmCreateOsDescriptor().
 	failWithStatus := func(status uint32) error {
+		if log.IsLogging(log.Debug) {
+			fi.ctx.Debugf("nvproxy: NV_ESC_RM_ALLOC_MEMORY with class=NV01_MEMORY_SYSTEM_OS_DESCRIPTOR internally failed: status=%#x", status)
+		}
 		ioctlParams.Params.Status = status
 		_, err := ioctlParams.CopyOut(fi.t, fi.ioctlParamsAddr)
 		return err

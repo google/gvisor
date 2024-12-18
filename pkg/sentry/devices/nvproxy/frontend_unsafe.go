@@ -21,10 +21,24 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/nvgpu"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 )
 
-func frontendIoctlInvoke[Params any](fi *frontendIoctlState, sentryParams *Params) (uintptr, error) {
+func frontendIoctlInvoke[Params any, PtrParams hasStatusPtr[Params]](fi *frontendIoctlState, ioctlParams PtrParams) (uintptr, error) {
+	n, _, errno := unix.RawSyscall(unix.SYS_IOCTL, uintptr(fi.fd.hostFD), frontendIoctlCmd(fi.nr, fi.ioctlParamsSize), uintptr(unsafe.Pointer(ioctlParams)))
+	if errno != 0 {
+		return n, errno
+	}
+	if log.IsLogging(log.Debug) {
+		if status := ioctlParams.GetStatus(); status != nvgpu.NV_OK {
+			fi.ctx.Debugf("nvproxy: frontend ioctl failed: status=%#x", status)
+		}
+	}
+	return n, nil
+}
+
+func frontendIoctlBytesInvoke(fi *frontendIoctlState, sentryParams *byte) (uintptr, error) {
 	n, _, errno := unix.RawSyscall(unix.SYS_IOCTL, uintptr(fi.fd.hostFD), frontendIoctlCmd(fi.nr, fi.ioctlParamsSize), uintptr(unsafe.Pointer(sentryParams)))
 	if errno != 0 {
 		return n, errno
@@ -285,16 +299,19 @@ func rmAllocInvoke[Params any](fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64
 	// identically to the equivalent NVOS21Parameters; compare
 	// src/nvidia/src/kernel/rmapi/entry_points.c:_nv04AllocWithSecInfo() and
 	// _nv04AllocWithAccessSecInfo().
+	origParamsSize := fi.ioctlParamsSize
+	fi.ioctlParamsSize = nvgpu.SizeofNVOS64Parameters
 	fi.fd.dev.nvp.objsLock()
-	n, _, errno := unix.RawSyscall(unix.SYS_IOCTL, uintptr(fi.fd.hostFD), frontendIoctlCmd(nvgpu.NV_ESC_RM_ALLOC, nvgpu.SizeofNVOS64Parameters), uintptr(unsafe.Pointer(ioctlParams)))
-	if errno == 0 && ioctlParams.Status == nvgpu.NV_OK {
+	n, err := frontendIoctlInvoke(fi, ioctlParams)
+	fi.ioctlParamsSize = origParamsSize
+	if err == nil && ioctlParams.Status == nvgpu.NV_OK {
 		addObjLocked(fi, ioctlParams, rightsRequested, allocParams)
 	}
 	fi.fd.dev.nvp.objsUnlock()
 	ioctlParams.PAllocParms = origPAllocParms
 	ioctlParams.PRightsRequested = origPRightsRequested
-	if errno != 0 {
-		return n, errno
+	if err != nil {
+		return n, err
 	}
 
 	// Copy updated params out to the application.

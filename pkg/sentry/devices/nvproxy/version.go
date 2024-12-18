@@ -176,17 +176,17 @@ func Init() {
 			// constructed with the entirety of the nvproxy functionality.
 			return &driverABI{
 				frontendIoctl: map[uint32]frontendIoctlHandler{
-					nvgpu.NV_ESC_CARD_INFO:                     feHandler(frontendIoctlSimple, compUtil), // nv_ioctl_card_info_t array
-					nvgpu.NV_ESC_CHECK_VERSION_STR:             feHandler(frontendIoctlSimple, compUtil), // nv_rm_api_version_t
-					nvgpu.NV_ESC_ATTACH_GPUS_TO_FD:             feHandler(frontendIoctlSimple, compUtil), // NvU32 array containing GPU IDs
-					nvgpu.NV_ESC_SYS_PARAMS:                    feHandler(frontendIoctlSimple, compUtil), // nv_ioctl_sys_params_t
-					nvgpu.NV_ESC_RM_DUP_OBJECT:                 feHandler(rmDupObject, compUtil),         // NVOS55_PARAMETERS
-					nvgpu.NV_ESC_RM_SHARE:                      feHandler(frontendIoctlSimple, compUtil), // NVOS57_PARAMETERS
-					nvgpu.NV_ESC_RM_UNMAP_MEMORY:               feHandler(frontendIoctlSimple, compUtil), // NVOS34_PARAMETERS
-					nvgpu.NV_ESC_RM_UPDATE_DEVICE_MAPPING_INFO: feHandler(frontendIoctlSimple, compUtil), // NVOS56_PARAMETERS
+					nvgpu.NV_ESC_CARD_INFO:                     feHandler(frontendIoctlBytes, compUtil), // nv_ioctl_card_info_t array
+					nvgpu.NV_ESC_CHECK_VERSION_STR:             feHandler(frontendIoctlSimple[nvgpu.RMAPIVersion], compUtil),
+					nvgpu.NV_ESC_ATTACH_GPUS_TO_FD:             feHandler(frontendIoctlBytes, compUtil), // NvU32 array containing GPU IDs
+					nvgpu.NV_ESC_SYS_PARAMS:                    feHandler(frontendIoctlSimple[nvgpu.IoctlSysParams], compUtil),
+					nvgpu.NV_ESC_RM_DUP_OBJECT:                 feHandler(rmDupObject, compUtil),
+					nvgpu.NV_ESC_RM_SHARE:                      feHandler(frontendIoctlSimple[nvgpu.NVOS57Parameters], compUtil),
+					nvgpu.NV_ESC_RM_UNMAP_MEMORY:               feHandler(frontendIoctlSimple[nvgpu.NVOS34Parameters], compUtil),
+					nvgpu.NV_ESC_RM_UPDATE_DEVICE_MAPPING_INFO: feHandler(frontendIoctlSimple[nvgpu.NVOS56Parameters], compUtil),
 					nvgpu.NV_ESC_REGISTER_FD:                   feHandler(frontendRegisterFD, compUtil),
-					nvgpu.NV_ESC_ALLOC_OS_EVENT:                feHandler(frontendIoctHasFD[nvgpu.IoctlAllocOSEvent], compUtil),
-					nvgpu.NV_ESC_FREE_OS_EVENT:                 feHandler(frontendIoctHasFD[nvgpu.IoctlFreeOSEvent], compUtil),
+					nvgpu.NV_ESC_ALLOC_OS_EVENT:                feHandler(frontendIoctlHasFD[nvgpu.IoctlAllocOSEvent], compUtil),
+					nvgpu.NV_ESC_FREE_OS_EVENT:                 feHandler(frontendIoctlHasFD[nvgpu.IoctlFreeOSEvent], compUtil),
 					nvgpu.NV_ESC_NUMA_INFO:                     feHandler(rmNumaInfo, compUtil),
 					nvgpu.NV_ESC_RM_ALLOC_MEMORY:               feHandler(rmAllocMemory, compUtil),
 					nvgpu.NV_ESC_RM_FREE:                       feHandler(rmFree, compUtil),
@@ -615,7 +615,7 @@ func Init() {
 		// 550.40.07 is an intermediate unqualified version from the main branch.
 		v550_40_07 := func() *driverABI {
 			abi := v545_23_06()
-			abi.frontendIoctl[nvgpu.NV_ESC_WAIT_OPEN_COMPLETE] = feHandler(frontendIoctlSimple, compUtil) // nv_ioctl_wait_open_complete_t
+			abi.frontendIoctl[nvgpu.NV_ESC_WAIT_OPEN_COMPLETE] = feHandler(frontendIoctlSimple[nvgpu.IoctlWaitOpenComplete], compUtil)
 			abi.controlCmd[nvgpu.NV0000_CTRL_CMD_GPU_ASYNC_ATTACH_ID] = ctrlHandler(rmControlSimple, compUtil)
 			abi.controlCmd[nvgpu.NV0000_CTRL_CMD_GPU_WAIT_ATTACH_ID] = ctrlHandler(rmControlSimple, compUtil)
 			abi.controlCmd[nvgpu.NV0080_CTRL_CMD_PERF_CUDA_LIMIT_SET_CONTROL] = ctrlHandler(rmControlSimple, compUtil) // NV0080_CTRL_PERF_CUDA_LIMIT_CONTROL_PARAMS
@@ -630,7 +630,7 @@ func Init() {
 			prevNames := abi.getStructNames
 			abi.getStructNames = func() *driverStructNames {
 				names := prevNames()
-				names.frontendNames[nvgpu.NV_ESC_WAIT_OPEN_COMPLETE] = simpleIoctl("nv_ioctl_wait_open_complete_t")
+				names.frontendNames[nvgpu.NV_ESC_WAIT_OPEN_COMPLETE] = getStructName(nvgpu.IoctlWaitOpenComplete{})
 				names.controlNames[nvgpu.NV0000_CTRL_CMD_GPU_ASYNC_ATTACH_ID] = simpleIoctl("NV0000_CTRL_GPU_ASYNC_ATTACH_ID_PARAMS")
 				names.controlNames[nvgpu.NV0000_CTRL_CMD_GPU_WAIT_ATTACH_ID] = simpleIoctl("NV0000_CTRL_GPU_WAIT_ATTACH_ID_PARAMS")
 				names.controlNames[nvgpu.NV0080_CTRL_CMD_PERF_CUDA_LIMIT_SET_CONTROL] = simpleIoctl("NV0080_CTRL_PERF_CUDA_LIMIT_CONTROL_PARAMS")

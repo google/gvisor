@@ -62,6 +62,15 @@ type IoctlRegisterFD struct {
 	CtlFD int32 `nvproxy:"nv_ioctl_register_fd_t"`
 }
 
+// GetStatus implements HasStatus.GetStatus.
+func (p *IoctlRegisterFD) GetStatus() uint32 {
+	// nv_ioctl_register_fd_t doesn't have a NvStatus field. Any failures are
+	// returned from src/nvidia/arch/nvalloc/unix/src/escape.c:nvidia_ioctl()'s
+	// NV_ESC_REGISTER_FD case to kernel-open/nvidia/nv.c:nvidia_ioctl()'s
+	// default case, which converts it to an ioctl(2) syscall error.
+	return NV_OK
+}
+
 // IoctlAllocOSEvent is the parameter type for NV_ESC_ALLOC_OS_EVENT.
 //
 // +marshal
@@ -80,6 +89,11 @@ func (p *IoctlAllocOSEvent) GetFrontendFD() int32 {
 // SetFrontendFD implements HasFrontendFD.SetFrontendFD.
 func (p *IoctlAllocOSEvent) SetFrontendFD(fd int32) {
 	p.FD = uint32(fd)
+}
+
+// GetStatus implements HasStatus.GetStatus.
+func (p *IoctlAllocOSEvent) GetStatus() uint32 {
+	return p.Status
 }
 
 // IoctlFreeOSEvent is the parameter type for NV_ESC_FREE_OS_EVENT.
@@ -102,6 +116,11 @@ func (p *IoctlFreeOSEvent) SetFrontendFD(fd int32) {
 	p.FD = uint32(fd)
 }
 
+// GetStatus implements HasStatus.GetStatus.
+func (p *IoctlFreeOSEvent) GetStatus() uint32 {
+	return p.Status
+}
+
 // RMAPIVersion is the parameter type for NV_ESC_CHECK_VERSION_STR.
 //
 // +marshal
@@ -111,11 +130,27 @@ type RMAPIVersion struct {
 	VersionString [64]byte
 }
 
+// GetStatus implements HasStatus.GetStatus.
+func (p *RMAPIVersion) GetStatus() uint32 {
+	// nv_ioctl_rm_api_version_t doesn't have a NvStatus field. The driver
+	// translates the rmStatus to an ioctl(2) failure. See
+	// kernel-open/nvidia/nv.c:nvidia_ioctl() => case NV_ESC_CHECK_VERSION_STR.
+	return NV_OK
+}
+
 // IoctlSysParams is the parameter type for NV_ESC_SYS_PARAMS.
 //
 // +marshal
 type IoctlSysParams struct {
 	MemblockSize uint64 `nvproxy:"nv_ioctl_sys_params_t"`
+}
+
+// GetStatus implements HasStatus.GetStatus.
+func (p *IoctlSysParams) GetStatus() uint32 {
+	// nv_ioctl_sys_params_t doesn't have a NvStatus field. The driver fails the
+	// ioctl(2) syscall in case of any failure. See
+	// kernel-open/nvidia/nv.c:nvidia_ioctl() => case NV_ESC_SYS_PARAMS.
+	return NV_OK
 }
 
 // IoctlWaitOpenComplete is the parameter type for NV_ESC_WAIT_OPEN_COMPLETE.
@@ -126,6 +161,11 @@ type IoctlWaitOpenComplete struct {
 	AdapterStatus uint32
 }
 
+// GetStatus implements HasStatus.GetStatus.
+func (p *IoctlWaitOpenComplete) GetStatus() uint32 {
+	return p.AdapterStatus
+}
+
 // IoctlNVOS02ParametersWithFD is the parameter type for NV_ESC_RM_ALLOC_MEMORY.
 //
 // +marshal
@@ -133,6 +173,11 @@ type IoctlNVOS02ParametersWithFD struct {
 	Params NVOS02Parameters `nvproxy:"nv_ioctl_nvos02_parameters_with_fd"`
 	FD     int32
 	Pad0   [4]byte
+}
+
+// GetStatus implements HasStatus.GetStatus.
+func (p *IoctlNVOS02ParametersWithFD) GetStatus() uint32 {
+	return p.Params.Status
 }
 
 // +marshal
@@ -159,6 +204,11 @@ type NVOS00Parameters struct {
 	Status        uint32
 }
 
+// GetStatus implements HasStatus.GetStatus.
+func (p *NVOS00Parameters) GetStatus() uint32 {
+	return p.Status
+}
+
 // RmAllocParamType should be implemented by all possible parameter types for
 // NV_ESC_RM_ALLOC.
 type RmAllocParamType interface {
@@ -170,6 +220,7 @@ type RmAllocParamType interface {
 	FromOS64(other NVOS64Parameters)
 	ToOS64() NVOS64Parameters
 	GetPointer() uintptr
+	HasStatus
 	marshal.Marshallable
 }
 
@@ -242,6 +293,11 @@ func (n *NVOS21Parameters) ToOS64() NVOS64Parameters {
 	}
 }
 
+// GetStatus implements RmAllocParamType.GetStatus.
+func (n *NVOS21Parameters) GetStatus() uint32 {
+	return n.Status
+}
+
 // NVOS55Parameters is the parameter type for NV_ESC_RM_DUP_OBJECT.
 //
 // +marshal
@@ -255,6 +311,11 @@ type NVOS55Parameters struct {
 	Status     uint32
 }
 
+// GetStatus implements HasStatus.GetStatus.
+func (n *NVOS55Parameters) GetStatus() uint32 {
+	return n.Status
+}
+
 // NVOS57Parameters is the parameter type for NV_ESC_RM_SHARE.
 //
 // +marshal
@@ -263,6 +324,11 @@ type NVOS57Parameters struct {
 	HObject     Handle
 	SharePolicy RS_SHARE_POLICY
 	Status      uint32
+}
+
+// GetStatus implements HasStatus.GetStatus.
+func (n *NVOS57Parameters) GetStatus() uint32 {
+	return n.Status
 }
 
 // NVOS32Parameters is the parameter type for NV_ESC_RM_VID_HEAP_CONTROL.
@@ -279,6 +345,11 @@ type NVOS32Parameters struct {
 	Total         uint64
 	Free          uint64
 	Data          [144]byte // union
+}
+
+// GetStatus implements HasStatus.GetStatus.
+func (n *NVOS32Parameters) GetStatus() uint32 {
+	return n.Status
 }
 
 // Possible values for NVOS32Parameters.Function:
@@ -342,6 +413,11 @@ type IoctlNVOS33ParametersWithFD struct {
 	Pad0   [4]byte
 }
 
+// GetStatus implements HasStatus.GetStatus.
+func (p *IoctlNVOS33ParametersWithFD) GetStatus() uint32 {
+	return p.Params.Status
+}
+
 // +marshal
 type NVOS33Parameters struct {
 	HClient        Handle `nvproxy:"NVOS33_PARAMETERS"`
@@ -368,6 +444,11 @@ type NVOS34Parameters struct {
 	Flags          uint32
 }
 
+// GetStatus implements HasStatus.GetStatus.
+func (n *NVOS34Parameters) GetStatus() uint32 {
+	return n.Status
+}
+
 // NVOS54Parameters is the parameter type for NV_ESC_RM_CONTROL.
 //
 // +marshal
@@ -379,6 +460,11 @@ type NVOS54Parameters struct {
 	Params     P64
 	ParamsSize uint32
 	Status     uint32
+}
+
+// GetStatus implements HasStatus.GetStatus.
+func (n *NVOS54Parameters) GetStatus() uint32 {
+	return n.Status
 }
 
 // NVOS56Parameters is the parameter type for NV_ESC_RM_UPDATE_DEVICE_MAPPING_INFO.
@@ -393,6 +479,11 @@ type NVOS56Parameters struct {
 	PNewCPUAddress P64
 	Status         uint32
 	Pad1           [4]byte
+}
+
+// GetStatus implements HasStatus.GetStatus.
+func (n *NVOS56Parameters) GetStatus() uint32 {
+	return n.Status
 }
 
 // NVOS64Parameters is one possible parameter type for NV_ESC_RM_ALLOC.
@@ -438,6 +529,11 @@ func (n *NVOS64Parameters) FromOS64(other NVOS64Parameters) { *n = other }
 
 // ToOS64 implements RmAllocParamType.ToOS64.
 func (n *NVOS64Parameters) ToOS64() NVOS64Parameters { return *n }
+
+// GetStatus implements RmAllocParamType.GetStatus.
+func (n *NVOS64Parameters) GetStatus() uint32 {
+	return n.Status
+}
 
 // HasFrontendFD is a type constraint for parameter structs containing a
 // frontend FD field. This is necessary because, as of this writing (Go 1.20),

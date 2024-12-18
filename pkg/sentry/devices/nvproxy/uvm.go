@@ -166,10 +166,14 @@ type uvmIoctlState struct {
 }
 
 func uvmIoctlNoParams(ui *uvmIoctlState) (uintptr, error) {
-	return uvmIoctlInvoke[byte](ui, nil)
+	n, _, errno := unix.RawSyscall(unix.SYS_IOCTL, uintptr(ui.fd.hostFD), uintptr(ui.cmd), 0 /* params */)
+	if errno != 0 {
+		return n, errno
+	}
+	return n, nil
 }
 
-func uvmIoctlSimple[Params any, PtrParams marshalPtr[Params]](ui *uvmIoctlState) (uintptr, error) {
+func uvmIoctlSimple[Params any, PtrParams hasStatusPtr[Params]](ui *uvmIoctlState) (uintptr, error) {
 	var ioctlParamsValue Params
 	ioctlParams := PtrParams(&ioctlParamsValue)
 	if _, err := ioctlParams.CopyIn(ui.t, ui.ioctlParamsAddr); err != nil {
@@ -213,8 +217,11 @@ func uvmMMInitialize(ui *uvmIoctlState) (uintptr, error) {
 	}
 
 	failWithStatus := func(status uint32) error {
+		if log.IsLogging(log.Debug) {
+			ui.ctx.Debugf("nvproxy: UVM_MM_INITIALIZE internally failed: status=%#x", status)
+		}
 		outIoctlParams := ioctlParams
-		outIoctlParams.Status = status
+		outIoctlParams.RMStatus = status
 		_, err := outIoctlParams.CopyOut(ui.t, ui.ioctlParamsAddr)
 		return err
 	}
@@ -242,7 +249,7 @@ func uvmMMInitialize(ui *uvmIoctlState) (uintptr, error) {
 	return n, nil
 }
 
-func uvmIoctlHasFrontendFD[Params any, PtrParams hasFrontendFDPtr[Params]](ui *uvmIoctlState) (uintptr, error) {
+func uvmIoctlHasFrontendFD[Params any, PtrParams hasFrontendFDAndStatusPtr[Params]](ui *uvmIoctlState) (uintptr, error) {
 	var ioctlParamsValue Params
 	ioctlParams := PtrParams(&ioctlParamsValue)
 	if _, err := ioctlParams.CopyIn(ui.t, ui.ioctlParamsAddr); err != nil {
