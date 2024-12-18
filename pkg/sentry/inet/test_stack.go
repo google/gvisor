@@ -235,3 +235,9 @@ func (*TestStack) IsSaveRestoreEnabled() bool {
 	// No-op.
 	return false
 }
+
+// Stats implements Stack.
+func (*TestStack) Stats() tcpip.Stats {
+	// No-op.
+	return tcpip.Stats{}
+}

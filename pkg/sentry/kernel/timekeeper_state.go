@@ -26,6 +26,11 @@ func (t *Timekeeper) beforeSave() {
 		panic("pauseUpdates must be called before Save")
 	}
 
+	if t.clocks == nil {
+		t.restored = nil
+		return
+	}
+
 	// N.B. we want the *offset* monotonic time.
 	var err error
 	if t.saveMonotonic, err = t.GetTime(time.Monotonic); err != nil {

@@ -35,7 +35,7 @@ import (
 // +stateify savable
 type Endpoint struct {
 	// The following fields must only be set once then never changed.
-	stack       *stack.Stack `state:"manual"`
+	stack       *stack.Stack
 	ops         *tcpip.SocketOptions
 	netProto    tcpip.NetworkProtocolNumber
 	transProto  tcpip.TransportProtocolNumber
@@ -53,7 +53,7 @@ type Endpoint struct {
 	// +checklocks:mu
 	effectiveNetProto tcpip.NetworkProtocolNumber
 	// +checklocks:mu
-	connectedRoute *stack.Route `state:"manual"`
+	connectedRoute *stack.Route `state:"nosave"`
 	// +checklocks:mu
 	multicastMemberships map[multicastMembership]struct{}
 	// +checklocks:mu

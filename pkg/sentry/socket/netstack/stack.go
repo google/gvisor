@@ -592,6 +592,7 @@ func (s *Stack) SetTCPRecovery(recovery inet.TCPLossRecovery) error {
 
 // Statistics implements inet.Stack.Statistics.
 func (s *Stack) Statistics(stat any, arg string) error {
+	netStats := s.Stats()
 	switch stats := stat.(type) {
 	case *inet.StatDev:
 		for _, ni := range s.Stack.NICInfo() {
@@ -622,7 +623,7 @@ func (s *Stack) Statistics(stat any, arg string) error {
 			break
 		}
 	case *inet.StatSNMPIP:
-		ip := Metrics.IP
+		ip := netStats.IP
 		// TODO(gvisor.dev/issue/969) Support stubbed stats.
 		*stats = inet.StatSNMPIP{
 			0,                          // Ip/Forwarding.
@@ -646,8 +647,8 @@ func (s *Stack) Statistics(stat any, arg string) error {
 			0,                               // Support Ip/FragCreates.
 		}
 	case *inet.StatSNMPICMP:
-		in := Metrics.ICMP.V4.PacketsReceived.ICMPv4PacketStats
-		out := Metrics.ICMP.V4.PacketsSent.ICMPv4PacketStats
+		in := netStats.ICMP.V4.PacketsReceived.ICMPv4PacketStats
+		out := netStats.ICMP.V4.PacketsSent.ICMPv4PacketStats
 		// TODO(gvisor.dev/issue/969) Support stubbed stats.
 		*stats = inet.StatSNMPICMP{
 			0, // Icmp/InMsgs.
@@ -679,7 +680,7 @@ func (s *Stack) Statistics(stat any, arg string) error {
 			out.InfoReply.Value(),                           // OutAddrMaskReps.
 		}
 	case *inet.StatSNMPTCP:
-		tcp := Metrics.TCP
+		tcp := netStats.TCP
 		// RFC 2012 (updates 1213):  SNMPv2-MIB-TCP.
 		*stats = inet.StatSNMPTCP{
 			1,                                     // RtoAlgorithm.
@@ -699,7 +700,7 @@ func (s *Stack) Statistics(stat any, arg string) error {
 			tcp.ChecksumErrors.Value(),            // InCsumErrors.
 		}
 	case *inet.StatSNMPUDP:
-		udp := Metrics.UDP
+		udp := netStats.UDP
 		// TODO(gvisor.dev/issue/969) Support stubbed stats.
 		*stats = inet.StatSNMPUDP{
 			udp.PacketsReceived.Value(),     // InDatagrams.
@@ -715,6 +716,11 @@ func (s *Stack) Statistics(stat any, arg string) error {
 		return syserr.ErrEndpointOperation.ToError()
 	}
 	return nil
+}
+
+// Stats implements inet.Stack.Stats.
+func (s *Stack) Stats() tcpip.Stats {
+	return s.Stack.Stats()
 }
 
 // RouteTable implements inet.Stack.RouteTable.

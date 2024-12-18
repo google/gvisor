@@ -137,6 +137,9 @@ type Stack interface {
 
 	// IsSaveRestoreEnabled returns true when netstack s/r is enabled.
 	IsSaveRestoreEnabled() bool
+
+	// Stats returns the network stats.
+	Stats() tcpip.Stats
 }
 
 // Interface contains information about a network interface.
