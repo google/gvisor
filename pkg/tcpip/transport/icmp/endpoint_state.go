@@ -36,7 +36,11 @@ func (p *icmpPacket) loadReceivedAt(_ context.Context, nsec int64) {
 
 // afterLoad is invoked by stateify.
 func (e *endpoint) afterLoad(ctx context.Context) {
-	stack.RestoreStackFromContext(ctx).RegisterRestoredEndpoint(e)
+	if e.stack.IsSaveRestoreEnabled() {
+		e.stack.RegisterRestoredEndpoint(e)
+	} else {
+		stack.RestoreStackFromContext(ctx).RegisterRestoredEndpoint(e)
+	}
 }
 
 // beforeSave is invoked by stateify.
@@ -50,6 +54,10 @@ func (e *endpoint) Restore(s *stack.Stack) {
 	e.thaw()
 
 	e.net.Resume(s)
+	if e.stack.IsSaveRestoreEnabled() {
+		e.ops.InitHandler(e, e.stack, tcpip.GetStackSendBufferLimits, tcpip.GetStackReceiveBufferLimits)
+		return
+	}
 
 	e.stack = s
 	e.ops.InitHandler(e, e.stack, tcpip.GetStackSendBufferLimits, tcpip.GetStackReceiveBufferLimits)

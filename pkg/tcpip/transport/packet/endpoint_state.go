@@ -43,12 +43,20 @@ func (ep *endpoint) beforeSave() {
 
 // afterLoad is invoked by stateify.
 func (ep *endpoint) afterLoad(ctx context.Context) {
+	if !ep.stack.IsSaveRestoreEnabled() {
+		ep.mu.Lock()
+		ep.stack = stack.RestoreStackFromContext(ctx)
+		ep.mu.Unlock()
+	}
+	ep.stack.RegisterRestoredEndpoint(ep)
+}
+
+// Restore implements tcpip.RestoredEndpoint.Restore.
+func (ep *endpoint) Restore(_ *stack.Stack) {
 	ep.mu.Lock()
 	defer ep.mu.Unlock()
 
-	ep.stack = stack.RestoreStackFromContext(ctx)
 	ep.ops.InitHandler(ep, ep.stack, tcpip.GetStackSendBufferLimits, tcpip.GetStackReceiveBufferLimits)
-
 	if err := ep.stack.RegisterPacketEndpoint(ep.boundNIC, ep.boundNetProto, ep); err != nil {
 		panic(fmt.Sprintf("RegisterPacketEndpoint(%d, %d, _): %s", ep.boundNIC, ep.boundNetProto, err))
 	}

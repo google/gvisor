@@ -60,6 +60,7 @@ func (e *endpoint) StateTypeName() string {
 func (e *endpoint) StateFields() []string {
 	return []string{
 		"DefaultSocketOptionsHandler",
+		"stack",
 		"transProto",
 		"waiterQueue",
 		"associated",
@@ -79,35 +80,37 @@ func (e *endpoint) StateFields() []string {
 func (e *endpoint) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
 	stateSinkObject.Save(0, &e.DefaultSocketOptionsHandler)
-	stateSinkObject.Save(1, &e.transProto)
-	stateSinkObject.Save(2, &e.waiterQueue)
-	stateSinkObject.Save(3, &e.associated)
-	stateSinkObject.Save(4, &e.net)
-	stateSinkObject.Save(5, &e.stats)
-	stateSinkObject.Save(6, &e.ops)
-	stateSinkObject.Save(7, &e.rcvList)
-	stateSinkObject.Save(8, &e.rcvBufSize)
-	stateSinkObject.Save(9, &e.rcvClosed)
-	stateSinkObject.Save(10, &e.rcvDisabled)
-	stateSinkObject.Save(11, &e.ipv6ChecksumOffset)
-	stateSinkObject.Save(12, &e.icmpv6Filter)
+	stateSinkObject.Save(1, &e.stack)
+	stateSinkObject.Save(2, &e.transProto)
+	stateSinkObject.Save(3, &e.waiterQueue)
+	stateSinkObject.Save(4, &e.associated)
+	stateSinkObject.Save(5, &e.net)
+	stateSinkObject.Save(6, &e.stats)
+	stateSinkObject.Save(7, &e.ops)
+	stateSinkObject.Save(8, &e.rcvList)
+	stateSinkObject.Save(9, &e.rcvBufSize)
+	stateSinkObject.Save(10, &e.rcvClosed)
+	stateSinkObject.Save(11, &e.rcvDisabled)
+	stateSinkObject.Save(12, &e.ipv6ChecksumOffset)
+	stateSinkObject.Save(13, &e.icmpv6Filter)
 }
 
 // +checklocksignore
 func (e *endpoint) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &e.DefaultSocketOptionsHandler)
-	stateSourceObject.Load(1, &e.transProto)
-	stateSourceObject.Load(2, &e.waiterQueue)
-	stateSourceObject.Load(3, &e.associated)
-	stateSourceObject.Load(4, &e.net)
-	stateSourceObject.Load(5, &e.stats)
-	stateSourceObject.Load(6, &e.ops)
-	stateSourceObject.Load(7, &e.rcvList)
-	stateSourceObject.Load(8, &e.rcvBufSize)
-	stateSourceObject.Load(9, &e.rcvClosed)
-	stateSourceObject.Load(10, &e.rcvDisabled)
-	stateSourceObject.Load(11, &e.ipv6ChecksumOffset)
-	stateSourceObject.Load(12, &e.icmpv6Filter)
+	stateSourceObject.Load(1, &e.stack)
+	stateSourceObject.Load(2, &e.transProto)
+	stateSourceObject.Load(3, &e.waiterQueue)
+	stateSourceObject.Load(4, &e.associated)
+	stateSourceObject.Load(5, &e.net)
+	stateSourceObject.Load(6, &e.stats)
+	stateSourceObject.Load(7, &e.ops)
+	stateSourceObject.Load(8, &e.rcvList)
+	stateSourceObject.Load(9, &e.rcvBufSize)
+	stateSourceObject.Load(10, &e.rcvClosed)
+	stateSourceObject.Load(11, &e.rcvDisabled)
+	stateSourceObject.Load(12, &e.ipv6ChecksumOffset)
+	stateSourceObject.Load(13, &e.icmpv6Filter)
 	stateSourceObject.AfterLoad(func() { e.afterLoad(ctx) })
 }
 

@@ -438,3 +438,8 @@ func (*Stack) EnableSaveRestore() error {
 func (s *Stack) IsSaveRestoreEnabled() bool {
 	return false
 }
+
+// Stats implements inet.Stack.Stats.
+func (s *Stack) Stats() tcpip.Stats {
+	return tcpip.Stats{}
+}

@@ -85,55 +85,6 @@ func (a *AddressableEndpointStateOptions) StateLoad(ctx context.Context, stateSo
 	stateSourceObject.Load(0, &a.HiddenWhileDisabled)
 }
 
-func (a *addressState) StateTypeName() string {
-	return "pkg/tcpip/stack.addressState"
-}
-
-func (a *addressState) StateFields() []string {
-	return []string{
-		"addressableEndpointState",
-		"addr",
-		"subnet",
-		"temporary",
-		"refs",
-		"kind",
-		"configType",
-		"lifetimes",
-		"disp",
-	}
-}
-
-func (a *addressState) beforeSave() {}
-
-// +checklocksignore
-func (a *addressState) StateSave(stateSinkObject state.Sink) {
-	a.beforeSave()
-	stateSinkObject.Save(0, &a.addressableEndpointState)
-	stateSinkObject.Save(1, &a.addr)
-	stateSinkObject.Save(2, &a.subnet)
-	stateSinkObject.Save(3, &a.temporary)
-	stateSinkObject.Save(4, &a.refs)
-	stateSinkObject.Save(5, &a.kind)
-	stateSinkObject.Save(6, &a.configType)
-	stateSinkObject.Save(7, &a.lifetimes)
-	stateSinkObject.Save(8, &a.disp)
-}
-
-func (a *addressState) afterLoad(context.Context) {}
-
-// +checklocksignore
-func (a *addressState) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &a.addressableEndpointState)
-	stateSourceObject.Load(1, &a.addr)
-	stateSourceObject.Load(2, &a.subnet)
-	stateSourceObject.Load(3, &a.temporary)
-	stateSourceObject.Load(4, &a.refs)
-	stateSourceObject.Load(5, &a.kind)
-	stateSourceObject.Load(6, &a.configType)
-	stateSourceObject.Load(7, &a.lifetimes)
-	stateSourceObject.Load(8, &a.disp)
-}
-
 func (p *bridgePort) StateTypeName() string {
 	return "pkg/tcpip/stack.bridgePort"
 }
@@ -2420,7 +2371,6 @@ func init() {
 	state.Register((*addressStateRefs)(nil))
 	state.Register((*AddressableEndpointState)(nil))
 	state.Register((*AddressableEndpointStateOptions)(nil))
-	state.Register((*addressState)(nil))
 	state.Register((*bridgePort)(nil))
 	state.Register((*BridgeEndpoint)(nil))
 	state.Register((*tuple)(nil))
