@@ -49,6 +49,7 @@ go_library(
         "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/memmap",
+        "//pkg/sentry/platform",
         "//pkg/sentry/socket/control",
         "//pkg/sentry/socket/unix",
         "//pkg/sentry/socket/unix/transport",
