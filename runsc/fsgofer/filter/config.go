@@ -104,7 +104,6 @@ var allowedSyscalls = seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 	},
 	unix.SYS_GETPID:       seccomp.MatchAll{},
 	unix.SYS_GETUID:       seccomp.MatchAll{},
-	unix.SYS_SETREUID:     seccomp.MatchAll{},
 	unix.SYS_GETRANDOM:    seccomp.MatchAll{},
 	unix.SYS_GETTID:       seccomp.MatchAll{},
 	unix.SYS_GETTIMEOFDAY: seccomp.MatchAll{},
@@ -210,7 +209,8 @@ var udsCommonSyscalls = seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule
 })
 
 var udsOpenSyscalls = seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
-	unix.SYS_CONNECT: seccomp.MatchAll{},
+	unix.SYS_CONNECT:  seccomp.MatchAll{},
+	unix.SYS_SETREUID: seccomp.MatchAll{},
 })
 
 var udsCreateSyscalls = seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{

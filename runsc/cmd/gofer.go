@@ -345,15 +345,11 @@ func (g *Gofer) serve(spec *specs.Spec, conf *config.Config, root string) subcom
 	}
 
 	for _, cfg := range cfgs {
-		conn, err := server.CreateConnection(cfg.sock, cfg.mountPath, cfg.readonly)
+		conn, err := server.CreateConnection(cfg.sock, cfg.mountPath, cfg.readonly, spec.Process.User.UID)
 		if err != nil {
 			util.Fatalf("starting connection on FD %d for gofer mount failed: %v", cfg.sock.FD(), err)
 		}
 		server.StartConnection(conn)
-	}
-	if unix.Getuid() == 0 {
-		log.Infof("Gofer running as root, setting the ruid and euid to %d", spec.Process.User.UID)
-		unix.Setreuid(int(spec.Process.User.UID), int(spec.Process.User.UID))
 	}
 	server.Wait()
 	server.Destroy()

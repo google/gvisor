@@ -1059,7 +1059,7 @@ func ConnectHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32
 		if fd.node.isDeleted() {
 			return unix.EINVAL
 		}
-		sock, err = fd.impl.Connect(req.SockType)
+		sock, err = fd.impl.Connect(req.SockType, c.appUid)
 		return err
 	}); err != nil {
 		return 0, err

@@ -789,7 +789,7 @@ func isSockTypeSupported(sockType uint32) bool {
 }
 
 // Connect implements lisafs.ControlFDImpl.Connect.
-func (fd *controlFDLisa) Connect(sockType uint32) (int, error) {
+func (fd *controlFDLisa) Connect(sockType uint32, appUid uint32) (int, error) {
 	if !fd.Conn().ServerImpl().(*LisafsServer).config.HostUDS.AllowOpen() {
 		logRejectedUdsConnectOnce.Do(func() {
 			log.Warningf("Rejecting attempt to connect to unix domain socket from host filesystem: %q. If you want to allow this, set flag --host-uds=open", fd.ControlFD.Node().FilePath())
@@ -816,9 +816,17 @@ func (fd *controlFDLisa) Connect(sockType uint32) (int, error) {
 	}
 
 	sa := unix.SockaddrUnix{Name: hostPath}
+
+	if err := unix.Setreuid(-1, int(appUid)); err != nil {
+		log.Debugf("Failed to seteuid: %v", err)
+	}
 	if err := unix.Connect(sock, &sa); err != nil {
 		unix.Close(sock)
 		return -1, err
+	}
+
+	if err := unix.Setreuid(0, 0); err != nil {
+		log.Debugf("Failed to regain root euid: %v", err)
 	}
 	return sock, nil
 }
