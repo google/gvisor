@@ -95,7 +95,7 @@ func RunTest(t *testing.T, tester Tester, testName string, testFn TestFunc, moun
 	}
 
 	server := tester.NewServer(t)
-	conn, err := server.CreateConnection(serverSocket, mountPath, false /* readonly */)
+	conn, err := server.CreateConnection(serverSocket, mountPath, false /* readonly */, 1000)
 	if err != nil {
 		t.Fatalf("starting connection failed: %v", err)
 		return

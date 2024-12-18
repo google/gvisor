@@ -818,11 +818,12 @@ func (fd *controlFDLisa) Connect(sockType uint32, appUid uint32) (int, error) {
 
 	sa := unix.SockaddrUnix{Name: hostPath}
 
+	goferRuid := unix.Getuid()
 	goferEuid := unix.Geteuid()
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
-	_, _, err = unix.Syscall(unix.SYS_SETREUID, uintptr(-1), uintptr(appUid), 0)
+	_, _, err = unix.Syscall(unix.SYS_SETREUID, uintptr(goferRuid), uintptr(appUid), 0)
 	if err != nil {
 		log.Warningf("Failed to seteuid: %v", err)
 	}
@@ -832,7 +833,7 @@ func (fd *controlFDLisa) Connect(sockType uint32, appUid uint32) (int, error) {
 		return -1, err
 	}
 
-	_, _, err = unix.Syscall(unix.SYS_SETREUID, uintptr(-1), uintptr(goferEuid), 0)
+	_, _, err = unix.Syscall(unix.SYS_SETREUID, uintptr(goferRuid), uintptr(goferEuid), 0)
 	if err != nil {
 		log.Warningf("Failed to restore uid: %v", err)
 	}

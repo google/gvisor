@@ -95,7 +95,7 @@ func startGofer(root string, conf *config.Config) (int, func(), error) {
 		HostFifo:           conf.HostFifo,
 		DonateMountPointFD: conf.DirectFS,
 	})
-	c, err := server.CreateConnection(socket, root, true /* readonly */)
+	c, err := server.CreateConnection(socket, root, true /* readonly */, 1000)
 	if err != nil {
 		return 0, nil, err
 	}
