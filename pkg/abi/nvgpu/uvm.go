@@ -58,6 +58,11 @@ type UVM_INITIALIZE_PARAMS struct {
 	Pad0     [4]byte
 }
 
+// GetStatus implements HasStatus.GetStatus.
+func (p *UVM_INITIALIZE_PARAMS) GetStatus() uint32 {
+	return p.RMStatus
+}
+
 // UVM_INITIALIZE_PARAMS flags, from kernel-open/nvidia-uvm/uvm_types.h.
 const (
 	UVM_INIT_FLAGS_MULTI_PROCESS_SHARING_MODE = 0x2
@@ -70,11 +75,21 @@ type UVM_CREATE_RANGE_GROUP_PARAMS struct {
 	Pad0         [4]byte
 }
 
+// GetStatus implements HasStatus.GetStatus.
+func (p *UVM_CREATE_RANGE_GROUP_PARAMS) GetStatus() uint32 {
+	return p.RMStatus
+}
+
 // +marshal
 type UVM_DESTROY_RANGE_GROUP_PARAMS struct {
 	RangeGroupID uint64 `nvproxy:"same"`
 	RMStatus     uint32
 	Pad0         [4]byte
+}
+
+// GetStatus implements HasStatus.GetStatus.
+func (p *UVM_DESTROY_RANGE_GROUP_PARAMS) GetStatus() uint32 {
+	return p.RMStatus
 }
 
 // +marshal
@@ -96,10 +111,20 @@ func (p *UVM_REGISTER_GPU_VASPACE_PARAMS) SetFrontendFD(fd int32) {
 	p.RMCtrlFD = fd
 }
 
+// GetStatus implements HasStatus.GetStatus.
+func (p *UVM_REGISTER_GPU_VASPACE_PARAMS) GetStatus() uint32 {
+	return p.RMStatus
+}
+
 // +marshal
 type UVM_UNREGISTER_GPU_VASPACE_PARAMS struct {
 	GPUUUID  NvUUID `nvproxy:"same"`
 	RMStatus uint32
+}
+
+// GetStatus implements HasStatus.GetStatus.
+func (p *UVM_UNREGISTER_GPU_VASPACE_PARAMS) GetStatus() uint32 {
+	return p.RMStatus
 }
 
 // +marshal
@@ -125,12 +150,22 @@ func (p *UVM_REGISTER_CHANNEL_PARAMS) SetFrontendFD(fd int32) {
 	p.RMCtrlFD = fd
 }
 
+// GetStatus implements HasStatus.GetStatus.
+func (p *UVM_REGISTER_CHANNEL_PARAMS) GetStatus() uint32 {
+	return p.RMStatus
+}
+
 // +marshal
 type UVM_UNREGISTER_CHANNEL_PARAMS struct {
 	GPUUUID  NvUUID `nvproxy:"same"`
 	HClient  Handle
 	HChannel Handle
 	RMStatus uint32
+}
+
+// GetStatus implements HasStatus.GetStatus.
+func (p *UVM_UNREGISTER_CHANNEL_PARAMS) GetStatus() uint32 {
+	return p.RMStatus
 }
 
 // +marshal
@@ -140,11 +175,21 @@ type UVM_ENABLE_PEER_ACCESS_PARAMS struct {
 	RMStatus uint32
 }
 
+// GetStatus implements HasStatus.GetStatus.
+func (p *UVM_ENABLE_PEER_ACCESS_PARAMS) GetStatus() uint32 {
+	return p.RMStatus
+}
+
 // +marshal
 type UVM_DISABLE_PEER_ACCESS_PARAMS struct {
 	GPUUUIDA NvUUID `nvproxy:"same"`
 	GPUUUIDB NvUUID
 	RMStatus uint32
+}
+
+// GetStatus implements HasStatus.GetStatus.
+func (p *UVM_DISABLE_PEER_ACCESS_PARAMS) GetStatus() uint32 {
+	return p.RMStatus
 }
 
 // +marshal
@@ -154,6 +199,11 @@ type UVM_SET_RANGE_GROUP_PARAMS struct {
 	Length        uint64
 	RMStatus      uint32
 	Pad0          [4]byte
+}
+
+// GetStatus implements HasStatus.GetStatus.
+func (p *UVM_SET_RANGE_GROUP_PARAMS) GetStatus() uint32 {
+	return p.RMStatus
 }
 
 // +marshal
@@ -179,6 +229,11 @@ func (p *UVM_MAP_EXTERNAL_ALLOCATION_PARAMS) SetFrontendFD(fd int32) {
 	p.RMCtrlFD = fd
 }
 
+// GetStatus implements HasStatus.GetStatus.
+func (p *UVM_MAP_EXTERNAL_ALLOCATION_PARAMS) GetStatus() uint32 {
+	return p.RMStatus
+}
+
 // +marshal
 type UVM_MAP_EXTERNAL_ALLOCATION_PARAMS_V550 struct {
 	Base               uint64 `nvproxy:"UVM_MAP_EXTERNAL_ALLOCATION_PARAMS"`
@@ -202,12 +257,22 @@ func (p *UVM_MAP_EXTERNAL_ALLOCATION_PARAMS_V550) SetFrontendFD(fd int32) {
 	p.RMCtrlFD = fd
 }
 
+// GetStatus implements HasStatus.GetStatus.
+func (p *UVM_MAP_EXTERNAL_ALLOCATION_PARAMS_V550) GetStatus() uint32 {
+	return p.RMStatus
+}
+
 // +marshal
 type UVM_FREE_PARAMS struct {
 	Base     uint64 `nvproxy:"same"`
 	Length   uint64
 	RMStatus uint32
 	Pad0     [4]byte
+}
+
+// GetStatus implements HasStatus.GetStatus.
+func (p *UVM_FREE_PARAMS) GetStatus() uint32 {
+	return p.RMStatus
 }
 
 // +marshal
@@ -232,10 +297,20 @@ func (p *UVM_REGISTER_GPU_PARAMS) SetFrontendFD(fd int32) {
 	p.RMCtrlFD = fd
 }
 
+// GetStatus implements HasStatus.GetStatus.
+func (p *UVM_REGISTER_GPU_PARAMS) GetStatus() uint32 {
+	return p.RMStatus
+}
+
 // +marshal
 type UVM_UNREGISTER_GPU_PARAMS struct {
 	GPUUUID  NvUUID `nvproxy:"same"`
 	RMStatus uint32
+}
+
+// GetStatus implements HasStatus.GetStatus.
+func (p *UVM_UNREGISTER_GPU_PARAMS) GetStatus() uint32 {
+	return p.RMStatus
 }
 
 // +marshal
@@ -243,6 +318,11 @@ type UVM_PAGEABLE_MEM_ACCESS_PARAMS struct {
 	PageableMemAccess uint8 `nvproxy:"same"`
 	Pad               [3]byte
 	RMStatus          uint32
+}
+
+// GetStatus implements HasStatus.GetStatus.
+func (p *UVM_PAGEABLE_MEM_ACCESS_PARAMS) GetStatus() uint32 {
+	return p.RMStatus
 }
 
 // +marshal
@@ -254,6 +334,11 @@ type UVM_SET_PREFERRED_LOCATION_PARAMS struct {
 	Pad0              [4]byte
 }
 
+// GetStatus implements HasStatus.GetStatus.
+func (p *UVM_SET_PREFERRED_LOCATION_PARAMS) GetStatus() uint32 {
+	return p.RMStatus
+}
+
 // +marshal
 type UVM_SET_PREFERRED_LOCATION_PARAMS_V550 struct {
 	RequestedBase        uint64 `nvproxy:"UVM_SET_PREFERRED_LOCATION_PARAMS"`
@@ -261,6 +346,11 @@ type UVM_SET_PREFERRED_LOCATION_PARAMS_V550 struct {
 	PreferredLocation    NvUUID
 	PreferredCPUNumaNode int32
 	RMStatus             uint32
+}
+
+// GetStatus implements HasStatus.GetStatus.
+func (p *UVM_SET_PREFERRED_LOCATION_PARAMS_V550) GetStatus() uint32 {
+	return p.RMStatus
 }
 
 // +marshal
@@ -271,12 +361,22 @@ type UVM_UNSET_PREFERRED_LOCATION_PARAMS struct {
 	Pad0          [4]byte
 }
 
+// GetStatus implements HasStatus.GetStatus.
+func (p *UVM_UNSET_PREFERRED_LOCATION_PARAMS) GetStatus() uint32 {
+	return p.RMStatus
+}
+
 // +marshal
 type UVM_DISABLE_READ_DUPLICATION_PARAMS struct {
 	RequestedBase uint64 `nvproxy:"same"`
 	Length        uint64
 	RMStatus      uint32
 	Pad0          [4]byte
+}
+
+// GetStatus implements HasStatus.GetStatus.
+func (p *UVM_DISABLE_READ_DUPLICATION_PARAMS) GetStatus() uint32 {
+	return p.RMStatus
 }
 
 // +marshal
@@ -286,6 +386,11 @@ type UVM_UNSET_ACCESSED_BY_PARAMS struct {
 	AccessedByUUID NvUUID
 	RMStatus       uint32
 	Pad0           [4]byte
+}
+
+// GetStatus implements HasStatus.GetStatus.
+func (p *UVM_UNSET_ACCESSED_BY_PARAMS) GetStatus() uint32 {
+	return p.RMStatus
 }
 
 // +marshal
@@ -302,6 +407,11 @@ type UVM_MIGRATE_PARAMS struct {
 	UserSpaceLength  uint64
 	RMStatus         uint32
 	_                [4]byte
+}
+
+// GetStatus implements HasStatus.GetStatus.
+func (p *UVM_MIGRATE_PARAMS) GetStatus() uint32 {
+	return p.RMStatus
 }
 
 // UVM_MIGRATE_PARAMS_V550 is the updated version of
@@ -323,12 +433,22 @@ type UVM_MIGRATE_PARAMS_V550 struct {
 	_                [4]byte
 }
 
+// GetStatus implements HasStatus.GetStatus.
+func (p *UVM_MIGRATE_PARAMS_V550) GetStatus() uint32 {
+	return p.RMStatus
+}
+
 // +marshal
 type UVM_MIGRATE_RANGE_GROUP_PARAMS struct {
 	RangeGroupID    uint64 `nvproxy:"same"`
 	DestinationUUID NvUUID
 	RMStatus        uint32
 	Pad0            [4]byte
+}
+
+// GetStatus implements HasStatus.GetStatus.
+func (p *UVM_MIGRATE_RANGE_GROUP_PARAMS) GetStatus() uint32 {
+	return p.RMStatus
 }
 
 // +marshal
@@ -360,6 +480,11 @@ type UVM_MAP_DYNAMIC_PARALLELISM_REGION_PARAMS struct {
 	Pad0     [4]byte
 }
 
+// GetStatus implements HasStatus.GetStatus.
+func (p *UVM_MAP_DYNAMIC_PARALLELISM_REGION_PARAMS) GetStatus() uint32 {
+	return p.RMStatus
+}
+
 // +marshal
 type UVM_UNMAP_EXTERNAL_PARAMS struct {
 	Base     uint64 `nvproxy:"same"`
@@ -367,6 +492,11 @@ type UVM_UNMAP_EXTERNAL_PARAMS struct {
 	GPUUUID  NvUUID
 	RMStatus uint32
 	Pad0     [4]byte
+}
+
+// GetStatus implements HasStatus.GetStatus.
+func (p *UVM_UNMAP_EXTERNAL_PARAMS) GetStatus() uint32 {
+	return p.RMStatus
 }
 
 // +marshal
@@ -379,6 +509,11 @@ type UVM_ALLOC_SEMAPHORE_POOL_PARAMS struct {
 	Pad0               [4]byte
 }
 
+// GetStatus implements HasStatus.GetStatus.
+func (p *UVM_ALLOC_SEMAPHORE_POOL_PARAMS) GetStatus() uint32 {
+	return p.RMStatus
+}
+
 // +marshal
 type UVM_ALLOC_SEMAPHORE_POOL_PARAMS_V550 struct {
 	Base               uint64 `nvproxy:"UVM_ALLOC_SEMAPHORE_POOL_PARAMS"`
@@ -389,12 +524,22 @@ type UVM_ALLOC_SEMAPHORE_POOL_PARAMS_V550 struct {
 	Pad0               [4]byte
 }
 
+// GetStatus implements HasStatus.GetStatus.
+func (p *UVM_ALLOC_SEMAPHORE_POOL_PARAMS_V550) GetStatus() uint32 {
+	return p.RMStatus
+}
+
 // +marshal
 type UVM_VALIDATE_VA_RANGE_PARAMS struct {
 	Base     uint64 `nvproxy:"same"`
 	Length   uint64
 	RMStatus uint32
 	Pad0     [4]byte
+}
+
+// GetStatus implements HasStatus.GetStatus.
+func (p *UVM_VALIDATE_VA_RANGE_PARAMS) GetStatus() uint32 {
+	return p.RMStatus
 }
 
 // +marshal
@@ -405,10 +550,20 @@ type UVM_CREATE_EXTERNAL_RANGE_PARAMS struct {
 	Pad0     [4]byte
 }
 
+// GetStatus implements HasStatus.GetStatus.
+func (p *UVM_CREATE_EXTERNAL_RANGE_PARAMS) GetStatus() uint32 {
+	return p.RMStatus
+}
+
 // +marshal
 type UVM_MM_INITIALIZE_PARAMS struct {
-	UvmFD  int32 `nvproxy:"same"`
-	Status uint32
+	UvmFD    int32 `nvproxy:"same"`
+	RMStatus uint32
+}
+
+// GetStatus implements HasStatus.GetStatus.
+func (p *UVM_MM_INITIALIZE_PARAMS) GetStatus() uint32 {
+	return p.RMStatus
 }
 
 // From kernel-open/nvidia-uvm/uvm_types.h:
