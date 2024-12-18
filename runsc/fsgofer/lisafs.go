@@ -818,30 +818,25 @@ func (fd *controlFDLisa) Connect(sockType uint32, appUid uint32) (int, error) {
 
 	sa := unix.SockaddrUnix{Name: hostPath}
 
-	var uidChanged = false
-	if unix.Getuid() == 0 {
-		log.Infof("Gofer running as root; changing to app UID %d to connect to socket", appUid)
-		runtime.LockOSThread()
-		defer runtime.UnlockOSThread()
+	goferEuid := unix.Geteuid()
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
 
-		_, _, err = unix.Syscall(unix.SYS_SETREUID, uintptr(-1), uintptr(appUid), 0)
-		if err != nil {
-			log.Warningf("Failed to seteuid: %v", err)
-		} else {
-			uidChanged = true
-		}
+	_, _, err = unix.Syscall(unix.SYS_SETREUID, uintptr(-1), uintptr(appUid), 0)
+	if err != nil {
+		log.Warningf("Failed to seteuid: %v", err)
 	}
+
 	if err := unix.Connect(sock, &sa); err != nil {
 		unix.Close(sock)
 		return -1, err
 	}
 
-	if uidChanged {
-		_, _, err = unix.Syscall(unix.SYS_SETREUID, 0, 0, 0)
-		if err != nil {
-			log.Warningf("Failed to restore uid: %v", err)
-		}
+	_, _, err = unix.Syscall(unix.SYS_SETREUID, uintptr(-1), uintptr(goferEuid), 0)
+	if err != nil {
+		log.Warningf("Failed to restore uid: %v", err)
 	}
+
 	return sock, nil
 }
 
