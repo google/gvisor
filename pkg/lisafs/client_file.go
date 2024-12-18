@@ -23,6 +23,7 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 )
 
 // ClientFD is a wrapper around FDID that provides client-side utilities
@@ -467,7 +468,7 @@ func (f *ClientFD) BindAt(ctx context.Context, sockType linux.SockType, name str
 }
 
 // Connect makes the Connect RPC.
-func (f *ClientFD) Connect(ctx context.Context, sockType linux.SockType) (int, error) {
+func (f *ClientFD) Connect(ctx context.Context, sockType linux.SockType, kuidptr *auth.KUID) (int, error) {
 	req := ConnectReq{FD: f.fd, SockType: uint32(sockType)}
 	var resp ConnectResp
 	var sockFD [1]int

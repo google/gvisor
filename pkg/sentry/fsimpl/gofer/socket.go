@@ -69,7 +69,7 @@ func (e *endpoint) BidirectionalConnect(ctx context.Context, ce transport.Connec
 		return syserr.ErrInvalidEndpointState
 	}
 
-	c, err := e.newConnectedEndpoint(ctx, ce.Type(), ce.WaiterQueue(), opts)
+	c, err := e.newConnectedEndpoint(ctx, ce.Type(), ce.WaiterQueue(), opts, kuidptr)
 	if err != nil {
 		ce.Unlock()
 		return err
@@ -87,7 +87,7 @@ func (e *endpoint) BidirectionalConnect(ctx context.Context, ce transport.Connec
 // UnidirectionalConnect implements
 // transport.BoundEndpoint.UnidirectionalConnect.
 func (e *endpoint) UnidirectionalConnect(ctx context.Context, opts transport.UnixSocketOpts, kuidptr *auth.KUID) (transport.ConnectedEndpoint, *syserr.Error) {
-	c, err := e.newConnectedEndpoint(ctx, linux.SOCK_DGRAM, &waiter.Queue{}, opts)
+	c, err := e.newConnectedEndpoint(ctx, linux.SOCK_DGRAM, &waiter.Queue{}, opts, kuidptr)
 	if err != nil {
 		return nil, err
 	}
@@ -103,9 +103,9 @@ func (e *endpoint) UnidirectionalConnect(ctx context.Context, opts transport.Uni
 	return c, nil
 }
 
-func (e *endpoint) newConnectedEndpoint(ctx context.Context, sockType linux.SockType, queue *waiter.Queue, opts transport.UnixSocketOpts) (*transport.SCMConnectedEndpoint, *syserr.Error) {
+func (e *endpoint) newConnectedEndpoint(ctx context.Context, sockType linux.SockType, queue *waiter.Queue, opts transport.UnixSocketOpts, kuidptr *auth.KUID) (*transport.SCMConnectedEndpoint, *syserr.Error) {
 	e.dentry.fs.renameMu.RLock()
-	hostSockFD, err := e.dentry.connect(ctx, sockType)
+	hostSockFD, err := e.dentry.connect(ctx, sockType, kuidptr)
 	e.dentry.fs.renameMu.RUnlock()
 	if err != nil {
 		return nil, syserr.ErrConnectionRefused

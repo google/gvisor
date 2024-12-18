@@ -88,7 +88,10 @@ go_library(
         "user_namespace_mutex.go",
     ],
     marshal = True,
-    visibility = ["//pkg/sentry:internal"],
+    visibility = [
+        # TODO: Remove this once we have a better way to handle visibility.
+        "//visibility:public",
+    ],
     deps = [
         "//pkg/abi/linux",
         "//pkg/bits",
