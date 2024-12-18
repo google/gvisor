@@ -99,7 +99,7 @@ func RunTensorflowOnCPU(ctx context.Context, t *testing.T, k8sCtx k8sctx.Kuberne
 				t.Fatalf("Failed to set pod for test runtime: %v", err)
 			}
 
-			pod, err = testcluster.MaybeSetContainerResources(pod, name, testcluster.ContainerResourcesRequest{})
+			pod, err = testcluster.SetContainerResources(pod, "", testcluster.ContainerResourcesRequest{})
 			if err != nil {
 				t.Fatalf("Failed to set container resources: %v", err)
 			}

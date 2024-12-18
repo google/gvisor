@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"time"
 
 	cspb "google.golang.org/genproto/googleapis/container/v1"
 	"google.golang.org/protobuf/proto"
@@ -142,9 +143,16 @@ type ContainerResourcesRequest struct {
 	GPU             bool
 }
 
-// MaybeSetContainerResources sets container resources if flags are given. Sets both the resource
-// limits and requests as container runtimes honor them differently.
-func MaybeSetContainerResources(pod *v13.Pod, containerName string, requests ContainerResourcesRequest) (*v13.Pod, error) {
+// String returns a string representation of the `ContainerResourcesRequest`.
+func (crr ContainerResourcesRequest) String() string {
+	return fmt.Sprintf("cpu=%q memory=%q gpu=%v", crr.CPUResources, crr.MemoryResources, crr.GPU)
+}
+
+// SetContainerResources sets container resources.
+// Sets both the resource limits and requests as container runtimes honor
+// them differently.
+// `containerName` is optional if the pod has exactly one container.
+func SetContainerResources(pod *v13.Pod, containerName string, requests ContainerResourcesRequest) (*v13.Pod, error) {
 	resourceList := v13.ResourceList{}
 	if requests.CPUResources != "" {
 		resourceList[v13.ResourceCPU] = resource.MustParse(requests.CPUResources)
@@ -166,13 +174,102 @@ func MaybeSetContainerResources(pod *v13.Pod, containerName string, requests Con
 		Requests: resourceList,
 	}
 
-	for i := range pod.Spec.Containers {
-		if pod.Spec.Containers[i].Name == containerName {
-			pod.Spec.Containers[i].Resources = requirements
-			return pod, nil
+	var containerToChange *v13.Container
+	if containerName == "" {
+		switch len(pod.Spec.Containers) {
+		case 0:
+			return nil, fmt.Errorf("no containers found in pod")
+		case 1:
+			containerToChange = &pod.Spec.Containers[0]
+		default:
+			return nil, fmt.Errorf("multiple containers found in pod %v, please specify a container name", pod)
+		}
+	} else {
+		for i := range pod.Spec.Containers {
+			if pod.Spec.Containers[i].Name == containerName {
+				containerToChange = &pod.Spec.Containers[i]
+			}
 		}
 	}
-	return nil, fmt.Errorf("container %q not found", containerName)
+	if containerToChange == nil {
+		return nil, fmt.Errorf("container %q not found", containerName)
+	}
+	containerToChange.Resources = requirements
+	return pod, nil
+}
+
+// ProbeResources verifies that a pod requesting the given resources can be
+// scheduled.
+func (n *Namespace) ProbeResources(ctx context.Context, requests ContainerResourcesRequest) error {
+	// Configure the pod.
+	probe := n.NewAlpinePod("resource-probe", "alpine", []string{"/bin/true"})
+	probe, err := n.testCluster.ConfigurePodForRuntimeTestNodepool(ctx, probe)
+	if err != nil {
+		return fmt.Errorf("failed to configure pod for runtime test nodepool: %w", err)
+	}
+	if probe, err = SetContainerResources(probe, "", requests); err != nil {
+		return fmt.Errorf("failed to set container resources: %w", err)
+	}
+	resources := probe.Spec.Containers[0].Resources
+
+	// If a pod already exists (e.g. from a past probe), best-effort attempt to delete it:
+	deleteCtx, deleteCancel := context.WithTimeout(ctx, 20*time.Second)
+	_ = n.testCluster.DeletePod(deleteCtx, probe)
+	deleteCancel()
+
+	// Create the pod.
+	if _, err := n.testCluster.CreatePod(ctx, probe); err != nil {
+		return fmt.Errorf("failed to create probe pod with resources %v: %w", resources, err)
+	}
+
+	// Wait up to (ctx - 30 seconds) for the pod to run.
+	waitCtx := ctx
+	if ctxDeadline, hasDeadline := waitCtx.Deadline(); hasDeadline {
+		var waitCancel context.CancelFunc
+		waitCtx, waitCancel = context.WithDeadline(ctx, ctxDeadline.Add(-30*time.Second))
+		defer waitCancel()
+	}
+	if err := n.testCluster.WaitForPodRunning(waitCtx, probe); err != nil {
+		// Best-effort time-limited deletion.
+		deleteCtx, deleteCancel := context.WithTimeout(ctx, 30*time.Second)
+		_ = n.testCluster.DeletePod(deleteCtx, probe)
+		deleteCancel()
+
+		return fmt.Errorf("probe pod with resources %v did not run: %w", resources, err)
+	}
+
+	// Delete the pod.
+	if err := n.testCluster.DeletePod(ctx, probe); err != nil {
+		return fmt.Errorf("failed to delete probe pod: %w", err)
+	}
+	return nil
+}
+
+// WaitForResources checks that a pod requesting the given resources can be
+// scheduled. If they cannot, it will loop until the given context expire or
+// the resources become available.
+func (n *Namespace) WaitForResources(ctx context.Context, requests ContainerResourcesRequest) error {
+	var lastErr error
+	for {
+		probeCtx, probeCancel := context.WithTimeout(ctx, 90*time.Second)
+		err := n.ProbeResources(probeCtx, requests)
+		probeCtxErr := probeCtx.Err()
+		probeCancel()
+		if err == nil {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			if lastErr != nil {
+				return fmt.Errorf("context expired while waiting for resources %v to be available; last error: %w", requests, lastErr)
+			}
+			return fmt.Errorf("context expired before ever checking that resources %v are available: %w", requests, err)
+		case <-time.After(pollInterval):
+			if lastErr == nil || !errors.Is(probeCtxErr, context.DeadlineExceeded) {
+				lastErr = err
+			}
+		}
+	}
 }
 
 // RuntimeType is a supported runtime for the test nodepool.

@@ -111,7 +111,7 @@ func RunFFMPEG(ctx context.Context, t *testing.T, k8sCtx k8sctx.KubernetesContex
 			if err != nil {
 				t.Fatalf("Failed to configure pod for runtime: %v", err)
 			}
-			p, err = testcluster.MaybeSetContainerResources(p, ffmpegContainerName, testcluster.ContainerResourcesRequest{})
+			p, err = testcluster.SetContainerResources(p, ffmpegContainerName, testcluster.ContainerResourcesRequest{})
 			if err != nil {
 				t.Fatalf("Failed to set container resources: %v", err)
 			}

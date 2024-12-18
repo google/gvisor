@@ -215,6 +215,12 @@ func doPytorchRun(ctx context.Context, t *testing.T, k8sCtx k8sctx.KubernetesCon
 		t.Fatalf("Failed to reset namespace: %v", err)
 	}
 	defer benchmarkNS.Cleanup(ctx)
+	reqWaitCtx, reqWaitCancel := context.WithTimeout(ctx, 5*time.Minute)
+	defer reqWaitCancel()
+	if err := benchmarkNS.WaitForResources(reqWaitCtx, testcluster.ContainerResourcesRequest{GPU: true}); err != nil {
+		t.Fatalf("failed to wait for resources: %v", err)
+	}
+
 	endProfiling, err := profiling.MaybeSetup(ctx, t, k8sCtx, cluster, benchmarkNS)
 	if err != nil {
 		t.Fatalf("Failed to setup profiling: %v", err)
@@ -235,7 +241,7 @@ func doPytorchRun(ctx context.Context, t *testing.T, k8sCtx k8sctx.KubernetesCon
 		t.Fatalf("Failed to configure pod for test-nodepool: %v", err)
 	}
 
-	pod, err = testcluster.MaybeSetContainerResources(pod, pod.Name, testcluster.ContainerResourcesRequest{GPU: true})
+	pod, err = testcluster.SetContainerResources(pod, "", testcluster.ContainerResourcesRequest{GPU: true})
 	if err != nil {
 		t.Fatalf("Failed to set container resources: %v", err)
 	}

@@ -135,7 +135,7 @@ func BenchmarkNginx(ctx context.Context, t *testing.T, k8sCtx k8sctx.KubernetesC
 			if err != nil {
 				t.Fatalf("Failed to configure pod for runtime nodepool: %v", err)
 			}
-			server, err = testcluster.MaybeSetContainerResources(server, name, testcluster.ContainerResourcesRequest{})
+			server, err = testcluster.SetContainerResources(server, "", testcluster.ContainerResourcesRequest{})
 			if err != nil {
 				t.Fatalf("Failed to set container resources: %v", err)
 			}

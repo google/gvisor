@@ -235,6 +235,11 @@ func BenchmarkOllama(ctx context.Context, t *testing.T, k8sCtx k8sctx.Kubernetes
 		t.Fatalf("cannot reset namespace: %v", err)
 	}
 	defer benchmarkNS.Cleanup(ctx)
+	reqWaitCtx, reqWaitCancel := context.WithTimeout(ctx, 5*time.Minute)
+	defer reqWaitCancel()
+	if err := benchmarkNS.WaitForResources(reqWaitCtx, testcluster.ContainerResourcesRequest{GPU: true}); err != nil {
+		t.Fatalf("failed to wait for resources: %v", err)
+	}
 	endProfiling, err := profiling.MaybeSetup(ctx, t, k8sCtx, cluster, benchmarkNS)
 	if err != nil {
 		t.Fatalf("Failed to setup profiling: %v", err)
@@ -254,7 +259,7 @@ func BenchmarkOllama(ctx context.Context, t *testing.T, k8sCtx k8sctx.Kubernetes
 	if err != nil {
 		t.Fatalf("Failed to configure pod for runtime nodepool: %v", err)
 	}
-	ollamaPod, err = testcluster.MaybeSetContainerResources(ollamaPod, ollamaPod.ObjectMeta.Name, testcluster.ContainerResourcesRequest{GPU: true})
+	ollamaPod, err = testcluster.SetContainerResources(ollamaPod, "", testcluster.ContainerResourcesRequest{GPU: true})
 	if err != nil {
 		t.Fatalf("Failed to set container resources: %v", err)
 	}
