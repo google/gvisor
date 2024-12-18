@@ -23,6 +23,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"sync"
 
@@ -817,16 +818,29 @@ func (fd *controlFDLisa) Connect(sockType uint32, appUid uint32) (int, error) {
 
 	sa := unix.SockaddrUnix{Name: hostPath}
 
-	if err := unix.Setreuid(-1, int(appUid)); err != nil {
-		log.Debugf("Failed to seteuid: %v", err)
+	var uidChanged = false
+	if unix.Getuid() == 0 {
+		log.Infof("Gofer running as root; changing to app UID %d to connect to socket", appUid)
+		runtime.LockOSThread()
+		defer runtime.UnlockOSThread()
+
+		_, _, err = unix.Syscall(unix.SYS_SETREUID, uintptr(-1), uintptr(appUid), 0)
+		if err != nil {
+			log.Warningf("Failed to seteuid: %v", err)
+		} else {
+			uidChanged = true
+		}
 	}
 	if err := unix.Connect(sock, &sa); err != nil {
 		unix.Close(sock)
 		return -1, err
 	}
 
-	if err := unix.Setreuid(0, 0); err != nil {
-		log.Debugf("Failed to regain root euid: %v", err)
+	if uidChanged {
+		_, _, err = unix.Syscall(unix.SYS_SETREUID, 0, 0, 0)
+		if err != nil {
+			log.Warningf("Failed to restore uid: %v", err)
+		}
 	}
 	return sock, nil
 }
