@@ -165,6 +165,7 @@ static void set_fsbase(uint64_t fsbase) {
 struct thread_context *switch_context_amd64(
     struct sysmsg *sysmsg, struct thread_context *ctx,
     enum context_state new_context_state) {
+  // NOTE: Both ctx and old_ctx may not be valid and should not be dereferenced.
   struct thread_context *old_ctx = sysmsg->context;
 
   for (;;) {
@@ -238,8 +239,6 @@ void __export_sighandler(int signo, siginfo_t *siginfo, void *_ucontext) {
     gregs_to_ptregs(ucontext, &ctx->ptregs);
     memcpy(ctx->fpstate, (uint8_t *)ucontext->uc_mcontext.fpregs,
            __export_arch_state.fp_len);
-
-    atomic_store(&ctx->fpstate_changed, 0);
   }
 
   enum context_state ctx_state = CONTEXT_STATE_INVALID;
@@ -329,6 +328,7 @@ void __export_sighandler(int signo, siginfo_t *siginfo, void *_ucontext) {
       return;
   }
 
+  atomic_store(&ctx->fpstate_changed, 0);
   ctx = switch_context_amd64(sysmsg, ctx, ctx_state);
   if (fs_base != ctx->ptregs.fs_base) {
     set_fsbase(ctx->ptregs.fs_base);
@@ -362,6 +362,7 @@ void __syshandler() {
   long fs_base = get_fsbase();
   ctx->ptregs.fs_base = fs_base;
 
+  atomic_store(&ctx->fpstate_changed, 0);
   ctx = switch_context_amd64(sysmsg, ctx, ctx_state);
   // switch_context_amd64 changed sysmsg->state to THREAD_STATE_NONE, so we can
   // only resume the current process, all other actions are
