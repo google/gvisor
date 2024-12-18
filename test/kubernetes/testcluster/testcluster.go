@@ -472,19 +472,29 @@ func (t *TestCluster) doWaitForPod(ctx context.Context, pod *v13.Pod, phasePredi
 	podLogger := log.BasicRateLimitedLogger(5 * time.Minute)
 	startTime := time.Now()
 	startLogTime := startTime.Add(3 * time.Minute)
+	var emitLogsAt time.Time
+	emitLogs := false
+	if ctxDeadline, hasDeadline := ctx.Deadline(); hasDeadline && time.Until(ctxDeadline) > 10*time.Second {
+		emitLogsAt = ctxDeadline.Add(-10 * time.Second)
+		emitLogs = true
+	}
 
 	var p *v13.Pod
-	var err error
 	pollCh := time.NewTicker(pollInterval)
 	defer pollCh.Stop()
 	for {
 		select {
 		case <-pollCh.C:
-			if p, err = t.GetPod(ctx, pod); err != nil {
-				return v13.PodUnknown, fmt.Errorf("failed to poll pod: %w", err)
+			polled, pollErr := t.GetPod(ctx, pod)
+			if ctx.Err() != nil {
+				return v13.PodUnknown, fmt.Errorf("context expired waiting for pod %q: %w; last pod data: %v", pod.GetName(), ctx.Err(), p)
 			}
+			if pollErr != nil {
+				return v13.PodUnknown, fmt.Errorf("failed to poll pod: %w", pollErr)
+			}
+			p = polled
 		case <-ctx.Done():
-			return v13.PodUnknown, fmt.Errorf("context expired waiting for pod %q: %w", pod.GetName(), ctx.Err())
+			return v13.PodUnknown, fmt.Errorf("context expired waiting for pod %q: %w; last pod data: %v", pod.GetName(), ctx.Err(), p)
 		}
 		if p.Status.Reason == v13.PodReasonUnschedulable {
 			return v13.PodPending, fmt.Errorf("pod %q cannot be scheduled: reason: %q message: %q", p.GetName(), p.Status.Reason, p.Status.Message)
@@ -500,9 +510,20 @@ func (t *TestCluster) doWaitForPod(ctx context.Context, pod *v13.Pod, phasePredi
 			return p.Status.Phase, nil
 		}
 		if p.Status.Phase == v13.PodFailed {
-			return v13.PodFailed, fmt.Errorf("pod %q failed: %s", p.GetName(), p.Status.Message)
+			logs, err := t.ReadPodLogs(ctx, p)
+			if err != nil {
+				return v13.PodFailed, fmt.Errorf("pod %q failed (status: %s); also failed to read pod logs: %w", p.GetName(), p.Status.Message, err)
+			}
+			return v13.PodFailed, fmt.Errorf("pod %q failed (status: %s); logs:\n%s\n(end of logs)", p.GetName(), p.Status.Message, logs)
 		}
-		if time.Now().After(startLogTime) {
+		if now := time.Now(); emitLogs && p.Status.Phase == v13.PodRunning && now.After(emitLogsAt) {
+			emitLogs = false
+			if logs, err := t.ReadPodLogs(ctx, p); err != nil {
+				log.Infof("Still waiting for pod %q after %v; pod status: %v; failed to read pod logs: %v", p.GetName(), time.Since(startTime), p.Status, err)
+			} else {
+				log.Infof("Still waiting for pod %q after %v; pod status: %v; pod logs:\n%s\n(end of logs)", p.GetName(), time.Since(startTime), p.Status, logs)
+			}
+		} else if now.After(startLogTime) {
 			podLogger.Infof("Still waiting for pod %q after %v; pod status: %v", p.GetName(), time.Since(startTime), p.Status)
 		}
 	}
