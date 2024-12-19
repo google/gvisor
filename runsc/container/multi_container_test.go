@@ -2763,7 +2763,7 @@ func testMultiContainerCheckpointRestore(t *testing.T, conf *config.Config, comp
 	checkpointWaiter := make(chan struct{}, 1)
 	go func() {
 		// WaitCheckpoint on the second container.
-		if err := conts[1].WaitCheckpoint(1); err != nil {
+		if err := conts[1].WaitCheckpoint(); err != nil {
 			t.Errorf("error waiting for checkpoint to complete: %v", err)
 		}
 		checkpointWaiter <- struct{}{}

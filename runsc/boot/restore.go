@@ -735,7 +735,8 @@ func (r *restorer) restore(l *Loader) error {
 		// Restore was successful, so increment the checkpoint count manually. The
 		// count was saved while the previous kernel was being saved and checkpoint
 		// success was unknown at that time. Now we know the checkpoint succeeded.
-		l.k.IncCheckpointCount()
+		l.k.OnRestoreDone()
+
 		log.Infof("Restore successful")
 	}()
 	return nil
@@ -746,7 +747,6 @@ func (l *Loader) save(o *control.SaveOpts) (err error) {
 		// This closure is required to capture the final value of err.
 		l.k.OnCheckpointAttempt(err)
 	}()
-	l.k.ResetCheckpointStatus()
 
 	// TODO(gvisor.dev/issues/6243): save/restore not supported w/ hostinet
 	if l.root.conf.Network == config.NetworkHost {

@@ -1329,13 +1329,10 @@ func (s *Sandbox) WaitPID(cid string, pid int32) (unix.WaitStatus, error) {
 	return ws, nil
 }
 
-// WaitCheckpoint waits for the Kernel to have been successfully checkpointed
-// n-1 times, then waits for either the n-th successful checkpoint (in which
-// case it returns nil) or any number of failed checkpoints (in which case it
-// returns an error returned by any such failure).
-func (s *Sandbox) WaitCheckpoint(n uint32) error {
-	log.Debugf("Waiting for %d-th checkpoint to complete in sandbox %q", n, s.ID)
-	return s.call(boot.ContMgrWaitCheckpoint, &n, nil)
+// WaitCheckpoint waits for the Kernel to have been successfully checkpointed.
+func (s *Sandbox) WaitCheckpoint() error {
+	log.Debugf("Waiting for checkpoint to complete in sandbox %q", s.ID)
+	return s.call(boot.ContMgrWaitCheckpoint, nil, nil)
 }
 
 // IsRootContainer returns true if the specified container ID belongs to the
