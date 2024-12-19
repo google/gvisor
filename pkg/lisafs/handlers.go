@@ -1079,7 +1079,7 @@ func ConnectHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32
 // ConnectWithCredsHandler handles the ConnectWithCreds RPC.
 func ConnectWithCredsHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32, error) {
 	var req ConnectWithCredsReq
-	var err error
+	var switchUIDError error
 	if _, ok := req.CheckedUnmarshal(comm.PayloadBuf(payloadLen)); !ok {
 		return 0, unix.EIO
 	}
@@ -1088,23 +1088,23 @@ func ConnectWithCredsHandler(c *Connection, comm Communicator, payloadLen uint32
 	goferRuid := unix.Getuid()
 	goferEuid := unix.Geteuid()
 
-	if err = unix.Prctl(unix.PR_SET_KEEPCAPS, 1, 0, 0, 0); err != nil {
+	if err := unix.Prctl(unix.PR_SET_KEEPCAPS, 1, 0, 0, 0); err != nil {
 		return 0, err
 	}
-	_, _, err = unix.Syscall(unix.SYS_SETREUID, uintptr(goferRuid), uintptr(req.UID), 0)
-	if !errors.Is(err, syscall.Errno(0)) {
-		log.Warningf("failed to set euid; err: %v", err)
+
+	_, _, switchUIDError = unix.Syscall(unix.SYS_SETREUID, uintptr(goferRuid), uintptr(req.UID), 0)
+	if !errors.Is(switchUIDError, syscall.Errno(0)) {
+		log.Warningf("failed to set euid; err: %v", switchUIDError)
 	}
 
-	var respPayloadLen uint32
-	respPayloadLen, err = connect0(c, comm, req.FD, req.SockType)
+	defer func() {
+		_, _, switchUIDError = unix.Syscall(unix.SYS_SETREUID, uintptr(goferRuid), uintptr(goferEuid), 0)
+		if !errors.Is(switchUIDError, syscall.Errno(0)) {
+			log.Warningf("failed to restore euid; err: %v", switchUIDError)
+		}
+	}()
 
-	_, _, err = unix.Syscall(unix.SYS_SETREUID, uintptr(goferRuid), uintptr(goferEuid), 0)
-	if !errors.Is(err, syscall.Errno(0)) {
-		log.Warningf("failed to restore euid; err: %v", err)
-	}
-
-	return respPayloadLen, err
+	return connect0(c, comm, req.FD, req.SockType)
 }
 
 // BindAtHandler handles the BindAt RPC.
