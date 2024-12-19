@@ -17,6 +17,7 @@ package lisafs
 import (
 	"fmt"
 	"math"
+	"runtime"
 	"strings"
 
 	"golang.org/x/sys/unix"
@@ -46,38 +47,39 @@ const (
 type RPCHandler func(c *Connection, comm Communicator, payloadLen uint32) (uint32, error)
 
 var handlers = [...]RPCHandler{
-	Error:        ErrorHandler,
-	Mount:        MountHandler,
-	Channel:      ChannelHandler,
-	FStat:        FStatHandler,
-	SetStat:      SetStatHandler,
-	Walk:         WalkHandler,
-	WalkStat:     WalkStatHandler,
-	OpenAt:       OpenAtHandler,
-	OpenCreateAt: OpenCreateAtHandler,
-	Close:        CloseHandler,
-	FSync:        FSyncHandler,
-	PWrite:       PWriteHandler,
-	PRead:        PReadHandler,
-	MkdirAt:      MkdirAtHandler,
-	MknodAt:      MknodAtHandler,
-	SymlinkAt:    SymlinkAtHandler,
-	LinkAt:       LinkAtHandler,
-	FStatFS:      FStatFSHandler,
-	FAllocate:    FAllocateHandler,
-	ReadLinkAt:   ReadLinkAtHandler,
-	Flush:        FlushHandler,
-	UnlinkAt:     UnlinkAtHandler,
-	RenameAt:     RenameAtHandler,
-	Getdents64:   Getdents64Handler,
-	FGetXattr:    FGetXattrHandler,
-	FSetXattr:    FSetXattrHandler,
-	FListXattr:   FListXattrHandler,
-	FRemoveXattr: FRemoveXattrHandler,
-	Connect:      ConnectHandler,
-	BindAt:       BindAtHandler,
-	Listen:       ListenHandler,
-	Accept:       AcceptHandler,
+	Error:            ErrorHandler,
+	Mount:            MountHandler,
+	Channel:          ChannelHandler,
+	FStat:            FStatHandler,
+	SetStat:          SetStatHandler,
+	Walk:             WalkHandler,
+	WalkStat:         WalkStatHandler,
+	OpenAt:           OpenAtHandler,
+	OpenCreateAt:     OpenCreateAtHandler,
+	Close:            CloseHandler,
+	FSync:            FSyncHandler,
+	PWrite:           PWriteHandler,
+	PRead:            PReadHandler,
+	MkdirAt:          MkdirAtHandler,
+	MknodAt:          MknodAtHandler,
+	SymlinkAt:        SymlinkAtHandler,
+	LinkAt:           LinkAtHandler,
+	FStatFS:          FStatFSHandler,
+	FAllocate:        FAllocateHandler,
+	ReadLinkAt:       ReadLinkAtHandler,
+	Flush:            FlushHandler,
+	UnlinkAt:         UnlinkAtHandler,
+	RenameAt:         RenameAtHandler,
+	Getdents64:       Getdents64Handler,
+	FGetXattr:        FGetXattrHandler,
+	FSetXattr:        FSetXattrHandler,
+	FListXattr:       FListXattrHandler,
+	FRemoveXattr:     FRemoveXattrHandler,
+	Connect:          ConnectHandler,
+	BindAt:           BindAtHandler,
+	Listen:           ListenHandler,
+	Accept:           AcceptHandler,
+	ConnectWithCreds: ConnectWithCredsHandler,
 }
 
 // ErrorHandler handles Error message.
@@ -1039,27 +1041,21 @@ func FlushHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32, 
 	})
 }
 
-// ConnectHandler handles the Connect RPC.
-func ConnectHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32, error) {
-	var req ConnectReq
-	if _, ok := req.CheckedUnmarshal(comm.PayloadBuf(payloadLen)); !ok {
-		return 0, unix.EIO
-	}
-
-	fd, err := c.lookupControlFD(req.FD)
+func connect0(c *Connection, comm Communicator, fd FDID, sockType uint32) (uint32, error) {
+	cfd, err := c.lookupControlFD(fd)
 	if err != nil {
 		return 0, err
 	}
-	defer fd.DecRef(nil)
-	if !fd.IsSocket() {
+	defer cfd.DecRef(nil)
+	if !cfd.IsSocket() {
 		return 0, unix.ENOTSOCK
 	}
 	var sock int
-	if err := fd.safelyRead(func() error {
-		if fd.node.isDeleted() {
+	if err := cfd.safelyRead(func() error {
+		if cfd.node.isDeleted() {
 			return unix.EINVAL
 		}
-		sock, err = fd.impl.Connect(req.SockType, c.appUid)
+		sock, err = cfd.impl.Connect(sockType)
 		return err
 	}); err != nil {
 		return 0, err
@@ -1067,6 +1063,46 @@ func ConnectHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32
 
 	comm.DonateFD(sock)
 	return 0, nil
+}
+
+// ConnectHandler handles the Connect RPC.
+func ConnectHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32, error) {
+	var req ConnectReq
+	if _, ok := req.CheckedUnmarshal(comm.PayloadBuf(payloadLen)); !ok {
+		return 0, unix.EIO
+	}
+	return connect0(c, comm, req.FD, req.SockType)
+}
+
+// ConnectWithCredsHandler handles the ConnectWithCreds RPC.
+func ConnectWithCredsHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32, error) {
+	var req ConnectWithCredsReq
+	var err error
+	if _, ok := req.CheckedUnmarshal(comm.PayloadBuf(payloadLen)); !ok {
+		return 0, unix.EIO
+	}
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	goferRuid := unix.Getuid()
+	goferEuid := unix.Geteuid()
+
+	if err = unix.Prctl(unix.PR_SET_KEEPCAPS, 1, 0, 0, 0); err != nil {
+		return 0, err
+	}
+	_, _, err = unix.Syscall(unix.SYS_SETREUID, uintptr(goferRuid), uintptr(req.UID), 0)
+	if err != nil {
+		log.Warningf("Failed to seteuid: %v", err)
+	}
+
+	var respPayloadLen uint32
+	respPayloadLen, err = connect0(c, comm, req.FD, req.SockType)
+
+	_, _, err = unix.Syscall(unix.SYS_SETREUID, uintptr(goferRuid), uintptr(goferEuid), 0)
+	if err != nil {
+		log.Warningf("Failed to restore uid: %v", err)
+	}
+
+	return respPayloadLen, err
 }
 
 // BindAtHandler handles the BindAt RPC.

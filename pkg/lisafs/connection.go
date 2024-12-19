@@ -81,13 +81,11 @@ type Connection struct {
 	fds map[FDID]genericFD
 	// nextFDID is the next available FDID. It is protected by fdsMu.
 	nextFDID FDID
-	// the user id of the sandboxed application, specified in the Spec for the container.
-	appUid uint32
 }
 
 // CreateConnection initializes a new connection which will be mounted at
 // mountPath. The connection must be started separately.
-func (s *Server) CreateConnection(sock *unet.Socket, mountPath string, readonly bool, appUid uint32) (*Connection, error) {
+func (s *Server) CreateConnection(sock *unet.Socket, mountPath string, readonly bool) (*Connection, error) {
 	mountPath = path.Clean(mountPath)
 	if !filepath.IsAbs(mountPath) {
 		log.Warningf("mountPath %q is not absolute", mountPath)
@@ -103,7 +101,6 @@ func (s *Server) CreateConnection(sock *unet.Socket, mountPath string, readonly 
 		channels:       make([]*channel, 0, maxChannels()),
 		fds:            make(map[FDID]genericFD),
 		nextFDID:       InvalidFDID + 1,
-		appUid:         appUid,
 	}
 
 	alloc, err := flipcall.NewPacketWindowAllocator()

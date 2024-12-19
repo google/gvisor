@@ -23,7 +23,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"sync"
 
@@ -790,7 +789,7 @@ func isSockTypeSupported(sockType uint32) bool {
 }
 
 // Connect implements lisafs.ControlFDImpl.Connect.
-func (fd *controlFDLisa) Connect(sockType uint32, appUid uint32) (int, error) {
+func (fd *controlFDLisa) Connect(sockType uint32) (int, error) {
 	if !fd.Conn().ServerImpl().(*LisafsServer).config.HostUDS.AllowOpen() {
 		logRejectedUdsConnectOnce.Do(func() {
 			log.Warningf("Rejecting attempt to connect to unix domain socket from host filesystem: %q. If you want to allow this, set flag --host-uds=open", fd.ControlFD.Node().FilePath())
@@ -818,28 +817,9 @@ func (fd *controlFDLisa) Connect(sockType uint32, appUid uint32) (int, error) {
 
 	sa := unix.SockaddrUnix{Name: hostPath}
 
-	goferRuid := unix.Getuid()
-	goferEuid := unix.Geteuid()
-	runtime.LockOSThread()
-	defer runtime.UnlockOSThread()
-
-	if err = unix.Prctl(unix.PR_SET_KEEPCAPS, 1, 0, 0, 0); err != nil {
-		return -1, err
-	}
-
-	_, _, err = unix.Syscall(unix.SYS_SETREUID, uintptr(goferRuid), uintptr(appUid), 0)
-	if err != nil {
-		log.Warningf("Failed to seteuid: %v", err)
-	}
-
 	if err := unix.Connect(sock, &sa); err != nil {
 		unix.Close(sock)
 		return -1, err
-	}
-
-	_, _, err = unix.Syscall(unix.SYS_SETREUID, uintptr(goferRuid), uintptr(goferEuid), 0)
-	if err != nil {
-		log.Warningf("Failed to restore uid: %v", err)
 	}
 
 	return sock, nil

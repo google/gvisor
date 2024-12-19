@@ -345,7 +345,7 @@ func (g *Gofer) serve(spec *specs.Spec, conf *config.Config, root string) subcom
 	}
 
 	for _, cfg := range cfgs {
-		conn, err := server.CreateConnection(cfg.sock, cfg.mountPath, cfg.readonly, spec.Process.User.UID)
+		conn, err := server.CreateConnection(cfg.sock, cfg.mountPath, cfg.readonly)
 		if err != nil {
 			util.Fatalf("starting connection on FD %d for gofer mount failed: %v", cfg.sock.FD(), err)
 		}
