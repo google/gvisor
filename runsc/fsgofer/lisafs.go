@@ -178,6 +178,7 @@ func (s *LisafsServer) SupportedMessages() []lisafs.MID {
 		lisafs.BindAt,
 		lisafs.Listen,
 		lisafs.Accept,
+		lisafs.ConnectWithCreds,
 	}
 }
 
@@ -816,12 +817,10 @@ func (fd *controlFDLisa) Connect(sockType uint32) (int, error) {
 	}
 
 	sa := unix.SockaddrUnix{Name: hostPath}
-
 	if err := unix.Connect(sock, &sa); err != nil {
 		unix.Close(sock)
 		return -1, err
 	}
-
 	return sock, nil
 }
 

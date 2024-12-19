@@ -88,7 +88,7 @@ func runServerClient(t testing.TB, clientFn func(c *lisafs.Client)) {
 	ts := &testServer{}
 	ts.Init(ts, lisafs.ServerOpts{})
 	ts.SetHandlers(handlers[:])
-	conn, err := ts.CreateConnection(serverSocket, "/" /* mountPath */, false /* readonly */, 1000)
+	conn, err := ts.CreateConnection(serverSocket, "/" /* mountPath */, false /* readonly */)
 	if err != nil {
 		t.Fatalf("starting connection failed: %v", err)
 		return

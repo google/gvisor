@@ -1086,21 +1086,21 @@ func ConnectWithCredsHandler(c *Connection, comm Communicator, payloadLen uint32
 	goferRuid := unix.Getuid()
 	goferEuid := unix.Geteuid()
 
-	if err = unix.Prctl(unix.PR_SET_KEEPCAPS, 1, 0, 0, 0); err != nil {
-		return 0, err
-	}
-	_, _, err = unix.Syscall(unix.SYS_SETREUID, uintptr(goferRuid), uintptr(req.UID), 0)
-	if err != nil {
-		log.Warningf("Failed to seteuid: %v", err)
-	}
+	//if err = unix.Prctl(unix.PR_SET_KEEPCAPS, 1, 0, 0, 0); err != nil {
+	//	return 0, err
+	//}
+	//_, _, err = unix.Syscall(unix.SYS_SETREUID, uintptr(goferRuid), uintptr(req.UID), 0)
+	//if err != nil {
+	//	log.Warningf("Failed to seteuid: %v", err)
+	//}
 
 	var respPayloadLen uint32
 	respPayloadLen, err = connect0(c, comm, req.FD, req.SockType)
 
-	_, _, err = unix.Syscall(unix.SYS_SETREUID, uintptr(goferRuid), uintptr(goferEuid), 0)
-	if err != nil {
-		log.Warningf("Failed to restore uid: %v", err)
-	}
+	//_, _, err = unix.Syscall(unix.SYS_SETREUID, uintptr(goferRuid), uintptr(goferEuid), 0)
+	//if err != nil {
+	//	log.Warningf("Failed to restore uid: %v", err)
+	//}
 
 	return respPayloadLen, err
 }
