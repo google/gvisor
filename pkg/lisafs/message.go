@@ -172,6 +172,10 @@ const (
 
 	// Accept is analogous to accept4(2).
 	Accept MID = 31
+
+	// ConnectWithCreds is analogous to connect(2) but it asks the server
+	// to connect with the provided effective credentials.
+	ConnectWithCreds MID = 32
 )
 
 const (
@@ -1316,6 +1320,34 @@ type ConnectResp struct{ EmptyMessage }
 // String implements fmt.Stringer.String.
 func (*ConnectResp) String() string {
 	return "ConnectResp{}"
+}
+
+// ConnectWithCredsReq is used to make a ConnectWithCreds request.
+//
+// +marshal boundCheck
+type ConnectWithCredsReq struct {
+	FD FDID
+	// SockType is used to specify the socket type to connect to. As a special
+	// case, SockType = 0 means that the socket type does not matter and the
+	// requester will accept any socket type.
+	SockType uint32
+	// UID and GID are used to specify the credentials to connect with.
+	UID UID
+	GID GID
+	_   uint32 // Need to make struct packed.
+}
+
+// String implements fmt.Stringer.String.
+func (c *ConnectWithCredsReq) String() string {
+	return fmt.Sprintf("ConnectWithCredsReq{FD: %d, SockType: %d, UID: %d, GID: %d}", c.FD, c.SockType, c.UID, c.GID)
+}
+
+// ConnectWithCredsResp is an empty response to ConnectWithCredsReq.
+type ConnectWithCredsResp struct{ EmptyMessage }
+
+// String implements fmt.Stringer.String.
+func (*ConnectWithCredsResp) String() string {
+	return "ConnectWithCredsResp{}"
 }
 
 // BindAtReq is used to make BindAt requests.

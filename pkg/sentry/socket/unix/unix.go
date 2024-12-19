@@ -26,6 +26,7 @@ import (
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/lisafs"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/marshal"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
@@ -581,8 +582,13 @@ func (s *Socket) Connect(t *kernel.Task, sockaddr []byte, blocking bool) *syserr
 	}
 	defer ep.Release(t)
 
+	kUidGidPtr := &lisafs.KUIDGID{
+		KUID: t.Credentials().EffectiveKUID,
+		KGID: t.Credentials().EffectiveKGID,
+	}
+
 	// Connect the server endpoint.
-	err = s.ep.Connect(t, ep, t.Kernel().UnixSocketOpts)
+	err = s.ep.Connect(t, ep, t.Kernel().UnixSocketOpts, kUidGidPtr)
 
 	if err == syserr.ErrWrongProtocolForSocket {
 		// Linux for abstract sockets returns ErrConnectionRefused

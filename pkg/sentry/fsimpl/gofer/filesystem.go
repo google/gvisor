@@ -28,6 +28,7 @@ import (
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/refs"
+	"gvisor.dev/gvisor/pkg/lisafs"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/host"
 	"gvisor.dev/gvisor/pkg/sentry/fsmetric"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
@@ -1132,7 +1133,7 @@ func (d *dentry) open(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.Open
 			return nil, linuxerr.ENXIO
 		}
 		if d.fs.iopts.OpenSocketsByConnecting {
-			return d.openSocketByConnecting(ctx, opts)
+			return d.openSocketByConnecting(ctx, rp, opts)
 		}
 	case linux.S_IFIFO:
 		if d.isSynthetic() {
@@ -1167,14 +1168,19 @@ func (d *dentry) open(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.Open
 }
 
 // Precondition: fs.renameMu is locked.
-func (d *dentry) openSocketByConnecting(ctx context.Context, opts *vfs.OpenOptions) (*vfs.FileDescription, error) {
+func (d *dentry) openSocketByConnecting(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.OpenOptions) (*vfs.FileDescription, error) {
 	fsmetric.GoferOpensByConnecting.Increment()
 	if opts.Flags&linux.O_DIRECT != 0 {
 		return nil, linuxerr.EINVAL
 	}
 	// Note that special value of linux.SockType = 0 is interpreted by lisafs
 	// as "do not care about the socket type". Analogous to p9.AnonymousSocket.
-	sockFD, err := d.connect(ctx, 0 /* sockType */)
+
+	kUidGidPtr := &lisafs.KUIDGID{
+		KUID: rp.Credentials().EffectiveKUID,
+		KGID: rp.Credentials().EffectiveKGID,
+	}
+	sockFD, err := d.connect(ctx, 0 /* sockType */, kUidGidPtr)
 	if err != nil {
 		return nil, err
 	}
