@@ -28,6 +28,7 @@ import (
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/refs"
+	"gvisor.dev/gvisor/pkg/lisafs"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/host"
 	"gvisor.dev/gvisor/pkg/sentry/fsmetric"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
@@ -1174,7 +1175,12 @@ func (d *dentry) openSocketByConnecting(ctx context.Context, rp *vfs.ResolvingPa
 	}
 	// Note that special value of linux.SockType = 0 is interpreted by lisafs
 	// as "do not care about the socket type". Analogous to p9.AnonymousSocket.
-	sockFD, err := d.connect(ctx, 0 /* sockType */, &rp.Credentials().EffectiveKUID)
+
+	kUidGidPtr := &lisafs.KUIDGID{
+		KUID: rp.Credentials().EffectiveKUID,
+		KGID: rp.Credentials().EffectiveKGID,
+	}
+	sockFD, err := d.connect(ctx, 0 /* sockType */, kUidGidPtr)
 	if err != nil {
 		return nil, err
 	}

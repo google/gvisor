@@ -473,11 +473,11 @@ func (f *ClientFD) BindAt(ctx context.Context, sockType linux.SockType, name str
 }
 
 // Connect makes the Connect RPC.
-func (f *ClientFD) Connect(ctx context.Context, sockType linux.SockType, kuidptr *auth.KUID) (int, error) {
+func (f *ClientFD) Connect(ctx context.Context, sockType linux.SockType, kUidGidPtr *KUIDGID) (int, error) {
 	var err error
 	var sockFD [1]int
-	if kuidptr != nil && f.client.IsSupported(ConnectWithCreds) {
-		req := ConnectWithCredsReq{FD: f.fd, SockType: uint32(sockType), UID: UID(*kuidptr)}
+	if kUidGidPtr != nil && f.client.IsSupported(ConnectWithCreds) {
+		req := ConnectWithCredsReq{FD: f.fd, SockType: uint32(sockType), UID: UID(kUidGidPtr.KUID), GID: GID(kUidGidPtr.KGID)}
 		var resp ConnectWithCredsResp
 
 		ctx.UninterruptibleSleepStart(false)

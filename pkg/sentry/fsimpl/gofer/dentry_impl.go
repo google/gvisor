@@ -451,12 +451,12 @@ func (d *dentry) allocate(ctx context.Context, mode, offset, length uint64) erro
 // Preconditions:
 //   - !d.isSynthetic().
 //   - fs.renameMu is locked.
-func (d *dentry) connect(ctx context.Context, sockType linux.SockType, kuidptr *auth.KUID) (int, error) {
+func (d *dentry) connect(ctx context.Context, sockType linux.SockType, kUidGidPtr *lisafs.KUIDGID) (int, error) {
 	switch dt := d.impl.(type) {
 	case *lisafsDentry:
-		return dt.controlFD.Connect(ctx, sockType, kuidptr)
+		return dt.controlFD.Connect(ctx, sockType, kUidGidPtr)
 	case *directfsDentry:
-		return dt.connect(ctx, sockType, kuidptr)
+		return dt.connect(ctx, sockType, kUidGidPtr)
 	default:
 		panic("unknown dentry implementation")
 	}

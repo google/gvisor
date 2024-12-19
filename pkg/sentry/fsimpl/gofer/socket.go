@@ -20,7 +20,6 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/lisafs"
 	"gvisor.dev/gvisor/pkg/log"
-	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/waiter"
@@ -70,7 +69,7 @@ func (e *endpoint) BidirectionalConnect(ctx context.Context, ce transport.Connec
 		return syserr.ErrInvalidEndpointState
 	}
 
-	c, err := e.newConnectedEndpoint(ctx, ce.Type(), ce.WaiterQueue(), opts, &(kUidGidPtr.KUID))
+	c, err := e.newConnectedEndpoint(ctx, ce.Type(), ce.WaiterQueue(), opts, kUidGidPtr)
 	if err != nil {
 		ce.Unlock()
 		return err
@@ -88,7 +87,7 @@ func (e *endpoint) BidirectionalConnect(ctx context.Context, ce transport.Connec
 // UnidirectionalConnect implements
 // transport.BoundEndpoint.UnidirectionalConnect.
 func (e *endpoint) UnidirectionalConnect(ctx context.Context, opts transport.UnixSocketOpts, kUidGidPtr *lisafs.KUIDGID) (transport.ConnectedEndpoint, *syserr.Error) {
-	c, err := e.newConnectedEndpoint(ctx, linux.SOCK_DGRAM, &waiter.Queue{}, opts, &(kUidGidPtr.KUID))
+	c, err := e.newConnectedEndpoint(ctx, linux.SOCK_DGRAM, &waiter.Queue{}, opts, kUidGidPtr)
 	if err != nil {
 		return nil, err
 	}
@@ -104,9 +103,9 @@ func (e *endpoint) UnidirectionalConnect(ctx context.Context, opts transport.Uni
 	return c, nil
 }
 
-func (e *endpoint) newConnectedEndpoint(ctx context.Context, sockType linux.SockType, queue *waiter.Queue, opts transport.UnixSocketOpts, kuidptr *auth.KUID) (*transport.SCMConnectedEndpoint, *syserr.Error) {
+func (e *endpoint) newConnectedEndpoint(ctx context.Context, sockType linux.SockType, queue *waiter.Queue, opts transport.UnixSocketOpts, kUidGidPtr *lisafs.KUIDGID) (*transport.SCMConnectedEndpoint, *syserr.Error) {
 	e.dentry.fs.renameMu.RLock()
-	hostSockFD, err := e.dentry.connect(ctx, sockType, kuidptr)
+	hostSockFD, err := e.dentry.connect(ctx, sockType, kUidGidPtr)
 	e.dentry.fs.renameMu.RUnlock()
 	if err != nil {
 		return nil, syserr.ErrConnectionRefused
