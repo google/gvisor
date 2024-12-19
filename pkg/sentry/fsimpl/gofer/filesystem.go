@@ -1132,7 +1132,7 @@ func (d *dentry) open(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.Open
 			return nil, linuxerr.ENXIO
 		}
 		if d.fs.iopts.OpenSocketsByConnecting {
-			return d.openSocketByConnecting(ctx, opts)
+			return d.openSocketByConnecting(ctx, rp, opts)
 		}
 	case linux.S_IFIFO:
 		if d.isSynthetic() {
@@ -1167,14 +1167,14 @@ func (d *dentry) open(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.Open
 }
 
 // Precondition: fs.renameMu is locked.
-func (d *dentry) openSocketByConnecting(ctx context.Context, opts *vfs.OpenOptions) (*vfs.FileDescription, error) {
+func (d *dentry) openSocketByConnecting(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.OpenOptions) (*vfs.FileDescription, error) {
 	fsmetric.GoferOpensByConnecting.Increment()
 	if opts.Flags&linux.O_DIRECT != 0 {
 		return nil, linuxerr.EINVAL
 	}
 	// Note that special value of linux.SockType = 0 is interpreted by lisafs
 	// as "do not care about the socket type". Analogous to p9.AnonymousSocket.
-	sockFD, err := d.connect(ctx, 0 /* sockType */, nil)
+	sockFD, err := d.connect(ctx, 0 /* sockType */, &rp.Credentials().EffectiveKUID)
 	if err != nil {
 		return nil, err
 	}
