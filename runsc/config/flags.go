@@ -43,6 +43,7 @@ const (
 	flagReproduceNFTables = "reproduce-nftables"
 	flagOCISeccomp        = "oci-seccomp"
 	flagOverlay2          = "overlay2"
+	flagAllowFlagOverride = "allow-flag-override"
 )
 
 // RegisterFlags registers flags used to populate Config.
@@ -71,7 +72,7 @@ func RegisterFlags(flagSet *flag.FlagSet) {
 	if flagSet.Lookup("alsologtostderr") == nil {
 		flagSet.Bool("alsologtostderr", false, "send log messages to stderr.")
 	}
-	flagSet.Bool("allow-flag-override", false, "allow OCI annotations (dev.gvisor.flag.<name>) to override flags for debugging.")
+	flagSet.Bool(flagAllowFlagOverride, false, "allow OCI annotations (dev.gvisor.flag.<name>) to override flags for debugging.")
 	flagSet.String("traceback", "system", "golang runtime's traceback level")
 
 	// Metrics flags.
@@ -178,9 +179,23 @@ var overrideAllowlist = map[string]struct {
 	flagHostUDS:           {},
 	flagNetDisconnectOK:   {},
 	flagReproduceNFTables: {},
-	flagOverlay2:          {},
+	flagOverlay2:          {check: checkOverlay2},
+	flagOCISeccomp:        {check: checkOciSeccomp},
+}
 
-	flagOCISeccomp: {check: checkOciSeccomp},
+// checkOverlay2 ensures that overlay2 can only be enabled using "memory" or
+// "self" mediums.
+func checkOverlay2(name string, value string) error {
+	var o Overlay2
+	if err := o.Set(value); err != nil {
+		return fmt.Errorf("invalid overlay2 annotation: %w", err)
+	}
+	switch o.medium {
+	case NoOverlay, MemoryOverlay, SelfOverlay:
+		return nil
+	default:
+		return fmt.Errorf("%q overlay medium requires flag %q to be enabled", value, flagAllowFlagOverride)
+	}
 }
 
 // checkOciSeccomp ensures that seccomp can be enabled but not disabled.
@@ -190,7 +205,7 @@ func checkOciSeccomp(name string, value string) error {
 		return err
 	}
 	if !enable {
-		return fmt.Errorf("disabling %q requires flag %q to be enabled", name, "allow-flag-override")
+		return fmt.Errorf("disabling %q requires flag %q to be enabled", name, flagAllowFlagOverride)
 	}
 	return nil
 }
