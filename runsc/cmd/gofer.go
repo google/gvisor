@@ -51,6 +51,7 @@ var caps = []string{
 	"CAP_FOWNER",
 	"CAP_FSETID",
 	"CAP_SYS_CHROOT",
+	"CAP_SETUID",
 }
 
 // goferCaps is the minimal set of capabilities needed by the Gofer to operate
