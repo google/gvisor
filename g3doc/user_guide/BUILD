@@ -66,6 +66,14 @@ doc(
 )
 
 doc(
+    name = "tpu",
+    src = "tpu.md",
+    category = "User Guide",
+    permalink = "/docs/user_guide/tpu/",
+    weight = "51",
+)
+
+doc(
     name = "runtime_monitoring",
     src = "runtime_monitoring.md",
     category = "User Guide",
