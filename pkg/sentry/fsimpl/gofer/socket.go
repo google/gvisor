@@ -18,6 +18,7 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/lisafs"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
@@ -55,7 +56,7 @@ type endpoint struct {
 }
 
 // BidirectionalConnect implements BoundEndpoint.BidirectionalConnect.
-func (e *endpoint) BidirectionalConnect(ctx context.Context, ce transport.ConnectingEndpoint, returnConnect func(transport.Receiver, transport.ConnectedEndpoint), opts transport.UnixSocketOpts, kuidptr *auth.KUID) *syserr.Error {
+func (e *endpoint) BidirectionalConnect(ctx context.Context, ce transport.ConnectingEndpoint, returnConnect func(transport.Receiver, transport.ConnectedEndpoint), opts transport.UnixSocketOpts, kUidGidPtr *lisafs.KUIDGID) *syserr.Error {
 	// No lock ordering required as only the ConnectingEndpoint has a mutex.
 	ce.Lock()
 
@@ -69,7 +70,7 @@ func (e *endpoint) BidirectionalConnect(ctx context.Context, ce transport.Connec
 		return syserr.ErrInvalidEndpointState
 	}
 
-	c, err := e.newConnectedEndpoint(ctx, ce.Type(), ce.WaiterQueue(), opts, kuidptr)
+	c, err := e.newConnectedEndpoint(ctx, ce.Type(), ce.WaiterQueue(), opts, &(kUidGidPtr.KUID))
 	if err != nil {
 		ce.Unlock()
 		return err
@@ -86,8 +87,8 @@ func (e *endpoint) BidirectionalConnect(ctx context.Context, ce transport.Connec
 
 // UnidirectionalConnect implements
 // transport.BoundEndpoint.UnidirectionalConnect.
-func (e *endpoint) UnidirectionalConnect(ctx context.Context, opts transport.UnixSocketOpts, kuidptr *auth.KUID) (transport.ConnectedEndpoint, *syserr.Error) {
-	c, err := e.newConnectedEndpoint(ctx, linux.SOCK_DGRAM, &waiter.Queue{}, opts, kuidptr)
+func (e *endpoint) UnidirectionalConnect(ctx context.Context, opts transport.UnixSocketOpts, kUidGidPtr *lisafs.KUIDGID) (transport.ConnectedEndpoint, *syserr.Error) {
+	c, err := e.newConnectedEndpoint(ctx, linux.SOCK_DGRAM, &waiter.Queue{}, opts, &(kUidGidPtr.KUID))
 	if err != nil {
 		return nil, err
 	}

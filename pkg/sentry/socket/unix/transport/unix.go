@@ -18,8 +18,8 @@ package transport
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/lisafs"
 	"gvisor.dev/gvisor/pkg/log"
-	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/waiter"
@@ -179,7 +179,7 @@ type Endpoint interface {
 	// endpoint passed in as a parameter.
 	//
 	// The error codes are the same as Connect.
-	Connect(ctx context.Context, server BoundEndpoint, opts UnixSocketOpts, kuid auth.KUID) *syserr.Error
+	Connect(ctx context.Context, server BoundEndpoint, opts UnixSocketOpts, kUidGidPtr *lisafs.KUIDGID) *syserr.Error
 
 	// Shutdown closes the read and/or write end of the endpoint connection
 	// to its peer.
@@ -272,7 +272,7 @@ type BoundEndpoint interface {
 	//
 	// This method will return syserr.ErrConnectionRefused on endpoints with a
 	// type that isn't SockStream or SockSeqpacket.
-	BidirectionalConnect(ctx context.Context, ep ConnectingEndpoint, returnConnect func(Receiver, ConnectedEndpoint), opts UnixSocketOpts, kuidptr *auth.KUID) *syserr.Error
+	BidirectionalConnect(ctx context.Context, ep ConnectingEndpoint, returnConnect func(Receiver, ConnectedEndpoint), opts UnixSocketOpts, kUidGidPtr *lisafs.KUIDGID) *syserr.Error
 
 	// UnidirectionalConnect establishes a write-only connection to a unix
 	// endpoint.
@@ -282,7 +282,7 @@ type BoundEndpoint interface {
 	//
 	// This method will return syserr.ErrConnectionRefused on a non-SockDgram
 	// endpoint.
-	UnidirectionalConnect(ctx context.Context, opts UnixSocketOpts, kuidptr *auth.KUID) (ConnectedEndpoint, *syserr.Error)
+	UnidirectionalConnect(ctx context.Context, opts UnixSocketOpts, kUidGidPtr *lisafs.KUIDGID) (ConnectedEndpoint, *syserr.Error)
 
 	// Passcred returns whether or not the SO_PASSCRED socket option is
 	// enabled on this end.

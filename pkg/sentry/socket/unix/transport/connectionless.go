@@ -17,7 +17,7 @@ package transport
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
-	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/lisafs"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -79,12 +79,12 @@ func (e *connectionlessEndpoint) Close(ctx context.Context) {
 }
 
 // BidirectionalConnect implements BoundEndpoint.BidirectionalConnect.
-func (e *connectionlessEndpoint) BidirectionalConnect(ctx context.Context, ce ConnectingEndpoint, returnConnect func(Receiver, ConnectedEndpoint), opts UnixSocketOpts, kuidptr *auth.KUID) *syserr.Error {
+func (e *connectionlessEndpoint) BidirectionalConnect(ctx context.Context, ce ConnectingEndpoint, returnConnect func(Receiver, ConnectedEndpoint), opts UnixSocketOpts, kUidGidPtr *lisafs.KUIDGID) *syserr.Error {
 	return syserr.ErrConnectionRefused
 }
 
 // UnidirectionalConnect implements BoundEndpoint.UnidirectionalConnect.
-func (e *connectionlessEndpoint) UnidirectionalConnect(ctx context.Context, opts UnixSocketOpts, kuidptr *auth.KUID) (ConnectedEndpoint, *syserr.Error) {
+func (e *connectionlessEndpoint) UnidirectionalConnect(ctx context.Context, opts UnixSocketOpts, kUidGidPtr *lisafs.KUIDGID) (ConnectedEndpoint, *syserr.Error) {
 	e.Lock()
 	r := e.receiver
 	e.Unlock()
@@ -133,8 +133,8 @@ func (e *connectionlessEndpoint) Type() linux.SockType {
 }
 
 // Connect attempts to connect directly to server.
-func (e *connectionlessEndpoint) Connect(ctx context.Context, server BoundEndpoint, opts UnixSocketOpts, kuid auth.KUID) *syserr.Error {
-	connected, err := server.UnidirectionalConnect(ctx, opts, &kuid)
+func (e *connectionlessEndpoint) Connect(ctx context.Context, server BoundEndpoint, opts UnixSocketOpts, kUidGidPtr *lisafs.KUIDGID) *syserr.Error {
+	connected, err := server.UnidirectionalConnect(ctx, opts, kUidGidPtr)
 	if err != nil {
 		return err
 	}

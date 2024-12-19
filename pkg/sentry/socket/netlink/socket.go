@@ -25,6 +25,7 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/lisafs"
 	"gvisor.dev/gvisor/pkg/marshal"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
@@ -130,8 +131,13 @@ func New(t *kernel.Task, skType linux.SockType, protocol Protocol) (*Socket, *sy
 		return nil, err
 	}
 
+	kUidGidPtr := &lisafs.KUIDGID{
+		KUID: t.Credentials().EffectiveKUID,
+		KGID: t.Credentials().EffectiveKGID,
+	}
+
 	// Create a connection from which the kernel can write messages.
-	connection, err := ep.(transport.BoundEndpoint).UnidirectionalConnect(t, t.Kernel().UnixSocketOpts, &t.Credentials().EffectiveKUID)
+	connection, err := ep.(transport.BoundEndpoint).UnidirectionalConnect(t, t.Kernel().UnixSocketOpts, kUidGidPtr)
 	if err != nil {
 		ep.Close(t)
 		return nil, err

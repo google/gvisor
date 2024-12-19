@@ -33,6 +33,11 @@ type ClientFD struct {
 	client *Client
 }
 
+type KUIDGID struct {
+	KUID auth.KUID
+	KGID auth.KGID
+}
+
 // ID returns the underlying FDID.
 func (f *ClientFD) ID() FDID {
 	return f.fd
@@ -486,7 +491,7 @@ func (f *ClientFD) Connect(ctx context.Context, sockType linux.SockType, kuidptr
 		err = f.client.SndRcvMessage(Connect, uint32(req.SizeBytes()), req.MarshalUnsafe, resp.CheckedUnmarshal, sockFD[:], req.String, resp.String)
 		ctx.UninterruptibleSleepFinish(false)
 	}
-	
+
 	if err == nil && sockFD[0] < 0 {
 		err = unix.EBADF
 	}
