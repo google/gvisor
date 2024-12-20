@@ -17,14 +17,17 @@
 package fsgofer
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"math"
 	"os"
 	"path"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"sync"
+	"syscall"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -798,8 +801,7 @@ func isSockTypeSupported(sockType uint32) bool {
 }
 
 // Connect implements lisafs.ControlFDImpl.Connect.
-func (fd *controlFDLisa) Connect(sockType uint32,
-	maybeSwitchCreds func(int, int, int, int), maybeRestoreCreds func(int, int, int, int)) (int, error) {
+func (fd *controlFDLisa) Connect(sockType uint32) (int, error) {
 	serverConfig := fd.Conn().ServerImpl().(*LisafsServer).config
 	if !serverConfig.HostUDS.AllowOpen() {
 		logRejectedUdsConnectOnce.Do(func() {
@@ -807,9 +809,6 @@ func (fd *controlFDLisa) Connect(sockType uint32,
 		})
 		return -1, unix.EPERM
 	}
-
-	maybeSwitchCreds(serverConfig.RUID, serverConfig.EUID, serverConfig.RGID, serverConfig.EGID)
-	defer maybeRestoreCreds(serverConfig.RUID, serverConfig.EUID, serverConfig.RGID, serverConfig.EGID)
 
 	// TODO(gvisor.dev/issue/1003): Due to different app vs replacement
 	// mappings, the app path may have fit in the sockaddr, but we can't fit
@@ -835,6 +834,33 @@ func (fd *controlFDLisa) Connect(sockType uint32,
 		return -1, err
 	}
 	return sock, nil
+}
+
+func (fd *controlFDLisa) ConnectWithCreds(sockType uint32, uid lisafs.UID, gid lisafs.GID) (int, error) {
+	serverConfig := fd.Conn().ServerImpl().(*LisafsServer).config
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
+	_, _, err := unix.Syscall(unix.SYS_SETREUID, uintptr(serverConfig.RUID), uintptr(uid), 0)
+	if !errors.Is(err, syscall.Errno(0)) {
+		log.Warningf("failed to set euid; err: %v", err)
+	}
+	_, _, err = unix.Syscall(unix.SYS_SETREGID, uintptr(serverConfig.RGID), uintptr(gid), 0)
+	if !errors.Is(err, syscall.Errno(0)) {
+		log.Warningf("failed to set egid; err: %v", err)
+	}
+	defer func() {
+		_, _, err := unix.Syscall(unix.SYS_SETREUID, uintptr(serverConfig.RUID), uintptr(serverConfig.EUID), 0)
+		if !errors.Is(err, syscall.Errno(0)) {
+			log.Warningf("failed to restore euid; err: %v", err)
+		}
+		_, _, err = unix.Syscall(unix.SYS_SETREGID, uintptr(serverConfig.RGID), uintptr(serverConfig.EGID), 0)
+		if !errors.Is(err, syscall.Errno(0)) {
+			log.Warningf("failed to restore egid; err: %v", err)
+		}
+	}()
+
+	return fd.Connect(sockType)
 }
 
 // BindAt implements lisafs.ControlFDImpl.BindAt.
