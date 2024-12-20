@@ -253,6 +253,12 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomm
 	}
 	log.Infof("Process chroot'd to %q", root)
 
+	ruid := unix.Getuid()
+	euid := unix.Geteuid()
+	rgid := unix.Getgid()
+	egid := unix.Getegid()
+	log.Infof("Process running as uid=%d euid=%d gid=%d egid=%d", ruid, euid, rgid, egid)
+
 	// Initialize filters.
 	opts := filter.Options{
 		UDSOpenEnabled:   conf.GetHostUDS().AllowOpen(),
@@ -265,7 +271,7 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomm
 		util.Fatalf("installing seccomp filters: %v", err)
 	}
 
-	return g.serve(spec, conf, root)
+	return g.serve(spec, conf, root, ruid, euid, rgid, egid)
 }
 
 func newSocket(ioFD int) *unet.Socket {
@@ -276,7 +282,7 @@ func newSocket(ioFD int) *unet.Socket {
 	return socket
 }
 
-func (g *Gofer) serve(spec *specs.Spec, conf *config.Config, root string) subcommands.ExitStatus {
+func (g *Gofer) serve(spec *specs.Spec, conf *config.Config, root string, ruid int, euid int, rgid int, egid int) subcommands.ExitStatus {
 	type connectionConfig struct {
 		sock      *unet.Socket
 		mountPath string
@@ -289,6 +295,10 @@ func (g *Gofer) serve(spec *specs.Spec, conf *config.Config, root string) subcom
 		HostUDS:            conf.GetHostUDS(),
 		HostFifo:           conf.HostFifo,
 		DonateMountPointFD: conf.DirectFS,
+		RUID:               ruid,
+		EUID:               euid,
+		RGID:               rgid,
+		EGID:               egid,
 	})
 
 	ioFDs := g.ioFDs

@@ -64,6 +64,14 @@ type Config struct {
 	// DonateMountPointFD indicates whether a host FD to the mount point should
 	// be donated to the client on Mount RPC.
 	DonateMountPointFD bool
+
+	RUID int
+
+	EUID int
+
+	RGID int
+
+	EGID int
 }
 
 var procSelfFD *rwfd.FD
