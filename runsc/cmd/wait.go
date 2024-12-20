@@ -36,7 +36,7 @@ const (
 type Wait struct {
 	rootPID    int
 	pid        int
-	checkpoint uint
+	checkpoint bool
 }
 
 // Name implements subcommands.Command.Name.
@@ -58,7 +58,7 @@ func (*Wait) Usage() string {
 func (wt *Wait) SetFlags(f *flag.FlagSet) {
 	f.IntVar(&wt.rootPID, "rootpid", unsetPID, "select a PID in the sandbox root PID namespace to wait on instead of the container's root process")
 	f.IntVar(&wt.pid, "pid", unsetPID, "select a PID in the container's PID namespace to wait on instead of the container's root process")
-	f.UintVar(&wt.checkpoint, "checkpoint", 0, "wait for (n-1)th checkpoint to complete successfully, then waits for the next checkpoint attempt and returns its status. When set to 0, it disables checkpoint waiting.")
+	f.BoolVar(&wt.checkpoint, "checkpoint", false, "wait for the next checkpoint to complete")
 }
 
 // Execute implements subcommands.Command.Execute. It waits for a process in a
@@ -81,12 +81,12 @@ func (wt *Wait) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomm
 		util.Fatalf("loading container: %v", err)
 	}
 
-	if wt.checkpoint > 0 {
+	if wt.checkpoint {
 		if wt.rootPID != unsetPID || wt.pid != unsetPID {
 			log.Warningf("waiting for checkpoint to complete, ignoring -pid and -rootpid")
 		}
-		if err := c.WaitCheckpoint(uint32(wt.checkpoint)); err != nil {
-			util.Fatalf("waiting for %d-th checkpoint to complete: %v", wt.checkpoint, err)
+		if err := c.WaitCheckpoint(); err != nil {
+			util.Fatalf("waiting for checkpoint to complete: %v", err)
 		}
 		return subcommands.ExitSuccess
 	}

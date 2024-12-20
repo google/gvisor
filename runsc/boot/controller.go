@@ -722,13 +722,11 @@ func (cm *containerManager) WaitPID(args *WaitPIDArgs, waitStatus *uint32) error
 	return err
 }
 
-// WaitCheckpoint waits for the Kernel to have been successfully checkpointed
-// n-1 times, then waits for either the n-th successful checkpoint (in which
-// case it returns nil) or any number of failed checkpoints (in which case it
-// returns an error returned by any such failure).
-func (cm *containerManager) WaitCheckpoint(n *uint32, _ *struct{}) error {
-	err := cm.l.k.WaitCheckpoint(*n)
-	log.Debugf("containerManager.WaitCheckpoint, n = %d, err = %v", *n, err)
+// WaitCheckpoint waits for the Kernel to have been successfully checkpointed.
+func (cm *containerManager) WaitCheckpoint(*struct{}, *struct{}) error {
+	log.Debugf("containerManager.WaitCheckpoint")
+	err := cm.l.k.WaitForCheckpoint()
+	log.Debugf("containerManager.WaitCheckpoint done, err = %v", err)
 	return err
 }
 

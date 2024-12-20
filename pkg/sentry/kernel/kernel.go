@@ -352,10 +352,6 @@ type Kernel struct {
 	// checkpointMu is used to protect the checkpointing related fields below.
 	checkpointMu sync.Mutex `state:"nosave"`
 
-	// checkpointCond is used to wait for a checkpoint to complete. It uses
-	// checkpointMu as its mutex.
-	checkpointCond sync.Cond `state:"nosave"`
-
 	// additionalCheckpointState stores additional state that needs
 	// to be checkpointed. It's protected by checkpointMu.
 	additionalCheckpointState map[any]any
@@ -364,19 +360,13 @@ type Kernel struct {
 	// asynchronous checkpointing. It's protected by checkpointMu.
 	saver Saver `state:"nosave"`
 
-	// checkpointCounter aims to track the number of times the kernel has been
-	// successfully checkpointed. It's updated via calls to OnCheckpointAttempt()
-	// and IncCheckpointCount(). Kernel checkpoint-ers must call these methods
-	// appropriately so the counter is accurate. It's protected by checkpointMu.
-	checkpointCounter uint32
+	// CheckpointWait is used to wait for a checkpoint to complete.
+	CheckpointWait CheckpointWaitable
 
-	// lastCheckpointStatus is the error value returned from the most recent
-	// checkpoint attempt. If this value is nil, then the `checkpointCounter`-th
-	// checkpoint attempt succeeded and no checkpoint attempt has completed since.
-	// If this value is non-nil, then the `checkpointCounter`-th checkpoint
-	// attempt succeeded, after which at least one more checkpoint attempt was
-	// made and failed with this error. It's protected by checkpointMu.
-	lastCheckpointStatus error `state:"nosave"`
+	// checkpointGen aims to track the number of times the kernel has been
+	// successfully checkpointed. Callers of checkpoint must notify the kernel
+	// when checkpoint/restore are done. It's protected by checkpointMu.
+	checkpointGen CheckpointGeneration
 
 	// UnixSocketOpts stores configuration options for management of unix sockets.
 	UnixSocketOpts transport.UnixSocketOpts
@@ -466,7 +456,6 @@ func (k *Kernel) Init(args InitKernelArgs) error {
 		k.rootNetworkNamespace = inet.NewRootNamespace(nil, nil, args.RootUserNamespace)
 	}
 	k.runningTasksCond.L = &k.runningTasksMu
-	k.checkpointCond.L = &k.checkpointMu
 	k.cpuClockTickerWakeCh = make(chan struct{}, 1)
 	k.cpuClockTickerStopCond.L = &k.runningTasksMu
 	k.applicationCores = args.ApplicationCores
@@ -495,6 +484,7 @@ func (k *Kernel) Init(args InitKernelArgs) error {
 	}
 	k.MaxFDLimit.Store(args.MaxFDLimit)
 	k.containerNames = make(map[string]string)
+	k.CheckpointWait.k = k
 
 	ctx := k.SupervisorContext()
 	if err := k.vfs.Init(ctx); err != nil {
@@ -788,7 +778,6 @@ func (k *Kernel) LoadFrom(ctx context.Context, r, pagesMetadata io.Reader, pages
 	}
 
 	k.runningTasksCond.L = &k.runningTasksMu
-	k.checkpointCond.L = &k.checkpointMu
 	k.cpuClockTickerWakeCh = make(chan struct{}, 1)
 	k.cpuClockTickerStopCond.L = &k.runningTasksMu
 
