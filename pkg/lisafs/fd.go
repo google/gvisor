@@ -482,7 +482,7 @@ type ControlFDImpl interface {
 	// argument to socket(2).
 	//
 	// On the server, Connect has a read concurrency guarantee.
-	Connect(sockType uint32) (int, error)
+	Connect(sockType uint32, maybeSwitchCreds func(int, int, int, int), maybeRestoreCreds func(int, int, int, int)) (int, error)
 
 	// BindAt creates a host unix domain socket of type sockType, bound to
 	// the given namt of type sockType, bound to the given name. It returns

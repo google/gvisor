@@ -798,13 +798,18 @@ func isSockTypeSupported(sockType uint32) bool {
 }
 
 // Connect implements lisafs.ControlFDImpl.Connect.
-func (fd *controlFDLisa) Connect(sockType uint32) (int, error) {
-	if !fd.Conn().ServerImpl().(*LisafsServer).config.HostUDS.AllowOpen() {
+func (fd *controlFDLisa) Connect(sockType uint32,
+	maybeSwitchCreds func(int, int, int, int), maybeRestoreCreds func(int, int, int, int)) (int, error) {
+	serverConfig := fd.Conn().ServerImpl().(*LisafsServer).config
+	if !serverConfig.HostUDS.AllowOpen() {
 		logRejectedUdsConnectOnce.Do(func() {
 			log.Warningf("Rejecting attempt to connect to unix domain socket from host filesystem: %q. If you want to allow this, set flag --host-uds=open", fd.ControlFD.Node().FilePath())
 		})
 		return -1, unix.EPERM
 	}
+
+	maybeSwitchCreds(serverConfig.RUID, serverConfig.EUID, serverConfig.RGID, serverConfig.EGID)
+	defer maybeRestoreCreds(serverConfig.RUID, serverConfig.EUID, serverConfig.RGID, serverConfig.EGID)
 
 	// TODO(gvisor.dev/issue/1003): Due to different app vs replacement
 	// mappings, the app path may have fit in the sockaddr, but we can't fit
