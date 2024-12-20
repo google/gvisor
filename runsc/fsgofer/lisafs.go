@@ -68,12 +68,16 @@ type Config struct {
 	// be donated to the client on Mount RPC.
 	DonateMountPointFD bool
 
+	// Gofer process's RUID.
 	RUID int
 
+	// Gofer process's EUID.
 	EUID int
 
+	// Gofer process's RGID.
 	RGID int
 
+	// Gofer process's EGID.
 	EGID int
 }
 
@@ -835,6 +839,7 @@ func (fd *controlFDLisa) Connect(sockType uint32) (int, error) {
 	return sock, nil
 }
 
+// ConnectWithCreds implements lisafs.ControlFDImpl.ConnectWithCreds.
 func (fd *controlFDLisa) ConnectWithCreds(sockType uint32, uid lisafs.UID, gid lisafs.GID) (int, error) {
 	serverConfig := fd.Conn().ServerImpl().(*LisafsServer).config
 	runtime.LockOSThread()
