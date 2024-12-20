@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"strings"
 	"time"
 
 	cspb "google.golang.org/genproto/googleapis/container/v1"
@@ -56,7 +57,9 @@ func (t *TestCluster) Namespace(namespace string) *Namespace {
 // This should be used in the beginning of tests, such that the namespace
 // is empty and ready to be used.
 func (n *Namespace) Reset(ctx context.Context) error {
-	n.Cleanup(ctx)
+	if err := n.Cleanup(ctx); err != nil {
+		return fmt.Errorf("failed to clean up namespace %q: %w", n.Namespace, err)
+	}
 	_, err := n.testCluster.createNamespace(ctx, &v13.Namespace{
 		TypeMeta: v1.TypeMeta{
 			Kind:       "namespace",
@@ -71,7 +74,42 @@ func (n *Namespace) Reset(ctx context.Context) error {
 
 // Cleanup deletes this namespace if it exists.
 func (n *Namespace) Cleanup(ctx context.Context) error {
-	return n.testCluster.deleteNamespace(ctx, n.Namespace)
+	namespaceExists := func() (*v13.Namespace, bool, error) {
+		ns, err := n.testCluster.getNamespace(ctx, n.Namespace)
+		switch {
+		case err == nil:
+			return ns, true, nil
+		case strings.Contains(err.Error(), "not found"):
+			return nil, false, nil
+		default:
+			return nil, false, err
+		}
+	}
+	_, exists, err := namespaceExists()
+	if err != nil {
+		return fmt.Errorf("failed to check if namespace %q exists: %w", n.Namespace, err)
+	}
+	if !exists {
+		return nil
+	}
+	if err := n.testCluster.deleteNamespace(ctx, n.Namespace); err != nil && !strings.Contains(err.Error(), "object is being deleted") {
+		return fmt.Errorf("failed to delete namespace %q: %w", n.Namespace, err)
+	}
+	var ns *v13.Namespace
+	for ctx.Err() == nil {
+		ns, exists, err = namespaceExists()
+		if err != nil {
+			return fmt.Errorf("failed to check if namespace %q exists: %w", n.Namespace, err)
+		}
+		if !exists {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+		case <-time.After(pollInterval):
+		}
+	}
+	return fmt.Errorf("failed to delete namespace %q (context: %w); last namespace status: %v", n.Namespace, ctx.Err(), ns)
 }
 
 // NewAlpinePod returns an alpine pod template.
