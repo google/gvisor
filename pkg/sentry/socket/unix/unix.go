@@ -583,8 +583,8 @@ func (s *Socket) Connect(t *kernel.Task, sockaddr []byte, blocking bool) *syserr
 	defer ep.Release(t)
 
 	kUidGidPtr := &lisafs.KUIDGID{
-		KUID: t.Credentials().EffectiveKUID,
-		KGID: t.Credentials().EffectiveKGID,
+		KUID: lisafs.UID(t.Credentials().EffectiveKUID),
+		KGID: lisafs.GID(t.Credentials().EffectiveKGID),
 	}
 
 	// Connect the server endpoint.

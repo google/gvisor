@@ -26,9 +26,9 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fspath"
+	"gvisor.dev/gvisor/pkg/lisafs"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/refs"
-	"gvisor.dev/gvisor/pkg/lisafs"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/host"
 	"gvisor.dev/gvisor/pkg/sentry/fsmetric"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
@@ -1177,8 +1177,8 @@ func (d *dentry) openSocketByConnecting(ctx context.Context, rp *vfs.ResolvingPa
 	// as "do not care about the socket type". Analogous to p9.AnonymousSocket.
 
 	kUidGidPtr := &lisafs.KUIDGID{
-		KUID: rp.Credentials().EffectiveKUID,
-		KGID: rp.Credentials().EffectiveKGID,
+		KUID: lisafs.UID(rp.Credentials().EffectiveKUID),
+		KGID: lisafs.GID(rp.Credentials().EffectiveKGID),
 	}
 	sockFD, err := d.connect(ctx, 0 /* sockType */, kUidGidPtr)
 	if err != nil {

@@ -23,7 +23,6 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
-	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 )
 
 // ClientFD is a wrapper around FDID that provides client-side utilities
@@ -34,8 +33,8 @@ type ClientFD struct {
 }
 
 type KUIDGID struct {
-	KUID auth.KUID
-	KGID auth.KGID
+	KUID UID
+	KGID GID
 }
 
 // ID returns the underlying FDID.
@@ -477,7 +476,7 @@ func (f *ClientFD) Connect(ctx context.Context, sockType linux.SockType, kUidGid
 	var err error
 	var sockFD [1]int
 	if kUidGidPtr != nil && f.client.IsSupported(ConnectWithCreds) {
-		req := ConnectWithCredsReq{FD: f.fd, SockType: uint32(sockType), UID: UID(kUidGidPtr.KUID), GID: GID(kUidGidPtr.KGID)}
+		req := ConnectWithCredsReq{FD: f.fd, SockType: uint32(sockType), UID: kUidGidPtr.KUID, GID: kUidGidPtr.KGID}
 		var resp ConnectWithCredsResp
 
 		ctx.UninterruptibleSleepStart(false)

@@ -802,8 +802,7 @@ func isSockTypeSupported(sockType uint32) bool {
 
 // Connect implements lisafs.ControlFDImpl.Connect.
 func (fd *controlFDLisa) Connect(sockType uint32) (int, error) {
-	serverConfig := fd.Conn().ServerImpl().(*LisafsServer).config
-	if !serverConfig.HostUDS.AllowOpen() {
+	if !fd.Conn().ServerImpl().(*LisafsServer).config.HostUDS.AllowOpen() {
 		logRejectedUdsConnectOnce.Do(func() {
 			log.Warningf("Rejecting attempt to connect to unix domain socket from host filesystem: %q. If you want to allow this, set flag --host-uds=open", fd.ControlFD.Node().FilePath())
 		})

@@ -132,8 +132,8 @@ func New(t *kernel.Task, skType linux.SockType, protocol Protocol) (*Socket, *sy
 	}
 
 	kUidGidPtr := &lisafs.KUIDGID{
-		KUID: t.Credentials().EffectiveKUID,
-		KGID: t.Credentials().EffectiveKGID,
+		KUID: lisafs.UID(t.Credentials().EffectiveKUID),
+		KGID: lisafs.GID(t.Credentials().EffectiveKGID),
 	}
 
 	// Create a connection from which the kernel can write messages.
