@@ -35,10 +35,13 @@ func (id ClassID) String() string {
 const (
 	NV01_ROOT                        = 0x00000000
 	NV01_ROOT_NON_PRIV               = 0x00000001
+	NV01_EVENT                       = 0x00000005
 	NV01_MEMORY_SYSTEM               = 0x0000003e
+	NV01_MEMORY_LOCAL_PRIVILEGED     = 0x0000003f
 	NV01_MEMORY_LOCAL_USER           = 0x00000040
 	NV01_ROOT_CLIENT                 = 0x00000041
 	NV_MEMORY_EXTENDED_USER          = 0x00000042
+	NV01_MEMORY_VIRTUAL              = 0x00000070
 	NV01_MEMORY_SYSTEM_OS_DESCRIPTOR = 0x00000071
 	NV01_EVENT_OS_EVENT              = 0x00000079
 	NV01_DEVICE_0                    = 0x00000080
@@ -51,14 +54,20 @@ const (
 	NV50_THIRD_PARTY_P2P             = 0x0000503c
 	NV50_MEMORY_VIRTUAL              = 0x000050a0
 	GT200_DEBUGGER                   = 0x000083de
+	FERMI_TWOD_A                     = 0x0000902d
+	FERMI_CONTEXT_SHARE_A            = 0x00009067
+	GF100_DISP_SW                    = 0x00009072
+	GF100_ZBC_CLEAR                  = 0x00009096
 	GF100_PROFILER                   = 0x000090cc
 	GF100_SUBDEVICE_MASTER           = 0x000090e6
-	FERMI_CONTEXT_SHARE_A            = 0x00009067
 	FERMI_VASPACE_A                  = 0x000090f1
 	KEPLER_CHANNEL_GROUP_A           = 0x0000a06c
+	KEPLER_INLINE_TO_MEMORY_B        = 0x0000a140
+	VOLTA_USERMODE_A                 = 0x0000c361
 	TURING_USERMODE_A                = 0x0000c461
 	TURING_CHANNEL_GPFIFO_A          = 0x0000c46f
 	AMPERE_CHANNEL_GPFIFO_A          = 0x0000c56f
+	TURING_A                         = 0x0000c597
 	TURING_DMA_COPY_A                = 0x0000c5b5
 	TURING_COMPUTE_A                 = 0x0000c5c0
 	HOPPER_USERMODE_A                = 0x0000c661
@@ -74,6 +83,11 @@ const (
 	HOPPER_COMPUTE_A                 = 0x0000cbc0
 )
 
+// From src/common/sdk/nvidia/inc/class/cl0000.h:
+const (
+	NV01_NULL_OBJECT = 0x0
+)
+
 // NV2081_ALLOC_PARAMETERS is the alloc params type for NV2081_BINAPI, from
 // src/common/sdk/nvidia/inc/class/cl2081.h.
 //
@@ -82,16 +96,32 @@ type NV2081_ALLOC_PARAMETERS struct {
 	Reserved uint32 `nvproxy:"same"`
 }
 
-// NV0005_ALLOC_PARAMETERS is the alloc params type for NV01_EVENT_OS_EVENT,
+// NV0005_ALLOC_PARAMETERS is the alloc params type for NV01_EVENT* classes
 // from src/common/sdk/nvidia/inc/class/cl0005.h.
 //
 // +marshal
 type NV0005_ALLOC_PARAMETERS struct {
 	HParentClient Handle `nvproxy:"same"`
 	HSrcResource  Handle
-	HClass        uint32
+	HClass        ClassID
 	NotifyIndex   uint32
 	Data          P64 // actually FD for NV01_EVENT_OS_EVENT, see src/nvidia/src/kernel/rmapi/event.c:eventConstruct_IMPL() => src/nvidia/arch/nvalloc/unix/src/os.c:osUserHandleToKernelPtr()
+}
+
+// From src/common/sdk/nvidia/inc/class/cl0070.h:
+const (
+	NV_MEMORY_VIRTUAL_SYSMEM_DYNAMIC_HVASPACE = 0xffffffff
+)
+
+// NV_MEMORY_VIRTUAL_ALLOCATION_PARAMS is the alloc params type for
+// NV01_MEMORY_VIRTUAL, from src/common/sdk/nvidia/inc/class/cl0070.h.
+//
+// +marshal
+type NV_MEMORY_VIRTUAL_ALLOCATION_PARAMS struct {
+	Offset   uint64 `nvproxy:"same"`
+	Limit    uint64
+	HVASpace Handle
+	Pad0     [4]byte
 }
 
 // NV0080_ALLOC_PARAMETERS is the alloc params type for NV01_DEVICE_0, from
@@ -315,6 +345,16 @@ type NV_GR_ALLOCATION_PARAMETERS struct {
 type NV_HOPPER_USERMODE_A_PARAMS struct {
 	Bar1Mapping uint8 `nvproxy:"same"`
 	Priv        uint8
+}
+
+// NV9072_ALLOCATION_PARAMETERS is the alloc param type for GF100_DISP_SW,
+// from src/common/sdk/nvidia/inc/class/cl9072.h.
+//
+// +marshal
+type NV9072_ALLOCATION_PARAMETERS struct {
+	LogicalHeadID uint32 `nvproxy:"same"`
+	DisplayMask   uint32
+	Caps          uint32
 }
 
 // NV00DE_ALLOC_PARAMETERS is the alloc param type for RM_USER_SHARED_DATA,

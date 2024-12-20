@@ -96,6 +96,9 @@ func ctrlIoctlHasInfoList[Params any, PtrParams hasCtrlInfoListPtr[Params]](fi *
 	}
 	var infoList []byte
 	if listSize := ctrlParams.ListSize(); listSize > 0 {
+		if !rmapiParamsSizeCheck(listSize, nvgpu.CtrlXxxInfoSize) {
+			return 0, ctrlCmdFailWithStatus(fi, ioctlParams, nvgpu.NV_ERR_INVALID_ARGUMENT)
+		}
 		infoList = make([]byte, listSize*nvgpu.CtrlXxxInfoSize)
 		if _, err := fi.t.CopyInBytes(addrFromP64(ctrlParams.CtrlInfoList()), infoList); err != nil {
 			return 0, err
@@ -126,16 +129,33 @@ func ctrlIoctlHasInfoList[Params any, PtrParams hasCtrlInfoListPtr[Params]](fi *
 	return n, nil
 }
 
-func ctrlDevGpuGetClasslistInvoke(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54Parameters, ctrlParams *nvgpu.NV0080_CTRL_GPU_GET_CLASSLIST_PARAMS, classList []uint32) (uintptr, error) {
-	origClassList := ctrlParams.ClassList
-	ctrlParams.ClassList = p64FromPtr(unsafe.Pointer(&classList[0]))
+func ctrlGetNvU32ListInvoke(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54Parameters, ctrlParams *nvgpu.RmapiParamNvU32List, list []uint32) (uintptr, error) {
+	origList := ctrlParams.List
+	ctrlParams.List = p64FromPtr(unsafe.Pointer(&list[0]))
 	n, err := rmControlInvoke(fi, ioctlParams, ctrlParams)
-	ctrlParams.ClassList = origClassList
+	ctrlParams.List = origList
 	if err != nil {
 		return n, err
 	}
-	if _, err := primitive.CopyUint32SliceOut(fi.t, addrFromP64(origClassList), classList); err != nil {
-		return 0, err
+	if _, err := primitive.CopyUint32SliceOut(fi.t, addrFromP64(ctrlParams.List), list); err != nil {
+		return n, err
+	}
+	if _, err := ctrlParams.CopyOut(fi.t, addrFromP64(ioctlParams.Params)); err != nil {
+		return n, err
+	}
+	return n, nil
+}
+
+func ctrlDevGRGetCapsInvoke(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54Parameters, ctrlParams *nvgpu.NV0080_CTRL_GET_CAPS_PARAMS, capsTbl []byte) (uintptr, error) {
+	origCapsTbl := ctrlParams.CapsTbl
+	ctrlParams.CapsTbl = p64FromPtr(unsafe.Pointer(&capsTbl[0]))
+	n, err := rmControlInvoke(fi, ioctlParams, ctrlParams)
+	ctrlParams.CapsTbl = origCapsTbl
+	if err != nil {
+		return n, err
+	}
+	if _, err := primitive.CopyByteSliceOut(fi.t, addrFromP64(ctrlParams.CapsTbl), capsTbl); err != nil {
+		return n, err
 	}
 	if _, err := ctrlParams.CopyOut(fi.t, addrFromP64(ioctlParams.Params)); err != nil {
 		return n, err
@@ -177,10 +197,10 @@ func ctrlDevFIFOGetChannelList(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54
 	}
 
 	if _, err := primitive.CopyUint32SliceOut(fi.t, addrFromP64(origPChannelHandleList), channelHandleList); err != nil {
-		return 0, err
+		return n, err
 	}
 	if _, err := primitive.CopyUint32SliceOut(fi.t, addrFromP64(origPChannelList), channelList); err != nil {
-		return 0, err
+		return n, err
 	}
 	if _, err := ctrlParams.CopyOut(fi.t, addrFromP64(ioctlParams.Params)); err != nil {
 		return n, err
@@ -323,6 +343,26 @@ func rmAllocInvoke[Params any](fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64
 		}
 	}
 	if _, err := outIoctlParams.CopyOut(fi.t, fi.ioctlParamsAddr); err != nil {
+		return n, err
+	}
+	return n, nil
+}
+
+func rmIdleChannelsInvoke(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS30Parameters, clientsBuf, devicesBuf, channelsBuf *byte) (uintptr, error) {
+	origClients := ioctlParams.Clients
+	origDevices := ioctlParams.Devices
+	origChannels := ioctlParams.Channels
+	ioctlParams.Clients = p64FromPtr(unsafe.Pointer(clientsBuf))
+	ioctlParams.Devices = p64FromPtr(unsafe.Pointer(devicesBuf))
+	ioctlParams.Channels = p64FromPtr(unsafe.Pointer(channelsBuf))
+	n, err := frontendIoctlInvoke(fi, ioctlParams)
+	ioctlParams.Clients = origClients
+	ioctlParams.Devices = origDevices
+	ioctlParams.Channels = origChannels
+	if err != nil {
+		return n, err
+	}
+	if _, err := ioctlParams.CopyOut(fi.t, fi.ioctlParamsAddr); err != nil {
 		return n, err
 	}
 	return n, nil
