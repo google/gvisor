@@ -350,11 +350,15 @@ TEST(ProcessVMInvalidTest, NULLRemoteIovec) {
 }
 
 TEST(ProcessVMInvalidTest, ProcessNoExist) {
+  std::string contents = "3263827";
   struct iovec iov;
+  iov.iov_base = contents.data();
+  iov.iov_len = contents.size();
+
   EXPECT_THAT(process_vm_readv(-1, &iov, 1, &iov, 1, 0),
-              SyscallFailsWithErrno(::testing::AnyOf(ESRCH, EFAULT)));
+              SyscallFailsWithErrno(ESRCH));
   EXPECT_THAT(process_vm_writev(-1, &iov, 1, &iov, 1, 0),
-              SyscallFailsWithErrno(::testing::AnyOf(ESRCH, EFAULT)));
+              SyscallFailsWithErrno(ESRCH));
 }
 
 TEST(ProcessVMInvalidTest, GreaterThanIOV_MAX) {
