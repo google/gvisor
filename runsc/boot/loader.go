@@ -542,7 +542,7 @@ func New(args Args) (*Loader, error) {
 	}
 
 	// S/R is not supported for hostinet.
-	if l.root.conf.Network != config.NetworkHost && args.Conf.TestOnlySaveRestoreNetstack {
+	if l.root.conf.Network != config.NetworkHost && args.Conf.SaveRestoreNetstack {
 		l.saveRestoreNet = true
 		if err := netns.Stack().EnableSaveRestore(); err != nil {
 			return nil, fmt.Errorf("enable s/r: %w", err)
