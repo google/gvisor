@@ -105,7 +105,7 @@ func marshalEntryMatch(name string, data []byte) []byte {
 	return buf
 }
 
-func unmarshalMatcher(mapper IDMapper, match linux.XTEntryMatch, filter stack.IPHeaderFilter, buf []byte) (stack.Matcher, error) {
+func unmarshalMatcher(mapper IDMapper, match *linux.XTEntryMatch, filter stack.IPHeaderFilter, buf []byte) (stack.Matcher, error) {
 	key := matchKey{
 		name:     match.Name.String(),
 		revision: match.Revision,
@@ -115,6 +115,25 @@ func unmarshalMatcher(mapper IDMapper, match linux.XTEntryMatch, filter stack.IP
 		return nil, fmt.Errorf("unsupported matcher with name %q and revision %d", match.Name.String(), match.Revision)
 	}
 	return matchMaker.unmarshal(mapper, buf, filter)
+}
+
+// matchMakerRevision returns the maximum supported version of the
+// matcher with "name" up to "rev" and whether any such matcher
+// with that name exists.
+func matchMakerRevision(name string, rev uint8) (uint8, bool) {
+	var found bool
+	var ret uint8
+
+	for matcher := range matchMakers {
+		if name == matcher.name {
+			found = true
+			if matcher.revision > ret {
+				ret = matcher.revision
+			}
+		}
+	}
+
+	return ret, found
 }
 
 // targetMaker knows how to (un)marshal a target. Once registered,
