@@ -282,12 +282,12 @@ func (nvp *nvproxy) enqueueCleanup(f func()) {
 // +stateify savable
 type capturedRmAllocParams struct {
 	fd              *frontendFD
-	ioctlParams     nvgpu.NVOS64Parameters
+	ioctlParams     nvgpu.NVOS64_PARAMETERS
 	rightsRequested nvgpu.RS_ACCESS_MASK
 	allocParams     []byte
 }
 
-func captureRmAllocParams[Params any](fd *frontendFD, ioctlParams *nvgpu.NVOS64Parameters, rightsRequested nvgpu.RS_ACCESS_MASK, allocParams *Params) capturedRmAllocParams {
+func captureRmAllocParams[Params any](fd *frontendFD, ioctlParams *nvgpu.NVOS64_PARAMETERS, rightsRequested nvgpu.RS_ACCESS_MASK, allocParams *Params) capturedRmAllocParams {
 	var allocParamsBuf []byte
 	if allocParams != nil {
 		if allocParamsMarshal, ok := any(allocParams).(marshal.Marshallable); ok {
@@ -316,7 +316,7 @@ type rmAllocObject struct {
 	params capturedRmAllocParams
 }
 
-func newRmAllocObject[Params any](fd *frontendFD, ioctlParams *nvgpu.NVOS64Parameters, rightsRequested nvgpu.RS_ACCESS_MASK, allocParams *Params) *rmAllocObject {
+func newRmAllocObject[Params any](fd *frontendFD, ioctlParams *nvgpu.NVOS64_PARAMETERS, rightsRequested nvgpu.RS_ACCESS_MASK, allocParams *Params) *rmAllocObject {
 	return &rmAllocObject{
 		params: captureRmAllocParams(fd, ioctlParams, rightsRequested, allocParams),
 	}
@@ -351,7 +351,7 @@ type rootClient struct {
 	params capturedRmAllocParams
 }
 
-func newRootClient(fd *frontendFD, ioctlParams *nvgpu.NVOS64Parameters, rightsRequested nvgpu.RS_ACCESS_MASK, allocParams *nvgpu.Handle) *rootClient {
+func newRootClient(fd *frontendFD, ioctlParams *nvgpu.NVOS64_PARAMETERS, rightsRequested nvgpu.RS_ACCESS_MASK, allocParams *nvgpu.Handle) *rootClient {
 	return &rootClient{
 		resources: make(map[nvgpu.Handle]*object),
 		params:    captureRmAllocParams(fd, ioctlParams, rightsRequested, allocParams),

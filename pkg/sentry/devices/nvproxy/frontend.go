@@ -397,7 +397,7 @@ func frontendIoctlHasFD[Params any, PtrParams hasFrontendFDAndStatusPtr[Params]]
 }
 
 func rmAllocContextDMA2(fi *frontendIoctlState) (uintptr, error) {
-	var ioctlParams nvgpu.NVOS39Parameters
+	var ioctlParams nvgpu.NVOS39_PARAMETERS
 	if fi.ioctlParamsSize != nvgpu.SizeofNVOS39Parameters {
 		return 0, linuxerr.EINVAL
 	}
@@ -627,7 +627,7 @@ func rmAllocOSDescriptor(fi *frontendIoctlState, ioctlParams *nvgpu.IoctlNVOS02P
 }
 
 func rmDupObject(fi *frontendIoctlState) (uintptr, error) {
-	var ioctlParams nvgpu.NVOS55Parameters
+	var ioctlParams nvgpu.NVOS55_PARAMETERS
 	if fi.ioctlParamsSize != nvgpu.SizeofNVOS55Parameters {
 		return 0, linuxerr.EINVAL
 	}
@@ -653,7 +653,7 @@ func rmDupObject(fi *frontendIoctlState) (uintptr, error) {
 }
 
 func rmFree(fi *frontendIoctlState) (uintptr, error) {
-	var ioctlParams nvgpu.NVOS00Parameters
+	var ioctlParams nvgpu.NVOS00_PARAMETERS
 	if fi.ioctlParamsSize != nvgpu.SizeofNVOS00Parameters {
 		return 0, linuxerr.EINVAL
 	}
@@ -678,7 +678,7 @@ func rmFree(fi *frontendIoctlState) (uintptr, error) {
 }
 
 func rmControl(fi *frontendIoctlState) (uintptr, error) {
-	var ioctlParams nvgpu.NVOS54Parameters
+	var ioctlParams nvgpu.NVOS54_PARAMETERS
 	if fi.ioctlParamsSize != nvgpu.SizeofNVOS54Parameters {
 		return 0, linuxerr.EINVAL
 	}
@@ -729,7 +729,7 @@ func rmControl(fi *frontendIoctlState) (uintptr, error) {
 	return result, err
 }
 
-func rmControlSimple(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54Parameters) (uintptr, error) {
+func rmControlSimple(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54_PARAMETERS) (uintptr, error) {
 	if ioctlParams.ParamsSize == 0 {
 		if ioctlParams.Params != 0 {
 			return 0, linuxerr.EINVAL
@@ -754,13 +754,13 @@ func rmControlSimple(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54Parameters
 	return n, nil
 }
 
-func ctrlCmdFailWithStatus(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54Parameters, status uint32) error {
+func ctrlCmdFailWithStatus(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54_PARAMETERS, status uint32) error {
 	ioctlParams.Status = status
 	_, err := ioctlParams.CopyOut(fi.t, fi.ioctlParamsAddr)
 	return err
 }
 
-func ctrlHasFrontendFD[Params any, PtrParams hasFrontendFDPtr[Params]](fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54Parameters) (uintptr, error) {
+func ctrlHasFrontendFD[Params any, PtrParams hasFrontendFDPtr[Params]](fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54_PARAMETERS) (uintptr, error) {
 	var ctrlParamsValue Params
 	ctrlParams := PtrParams(&ctrlParamsValue)
 	if ctrlParams.SizeBytes() != int(ioctlParams.ParamsSize) {
@@ -793,7 +793,7 @@ func ctrlHasFrontendFD[Params any, PtrParams hasFrontendFDPtr[Params]](fi *front
 	return n, nil
 }
 
-func ctrlMemoryMulticastFabricAttachGPU(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54Parameters) (uintptr, error) {
+func ctrlMemoryMulticastFabricAttachGPU(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54_PARAMETERS) (uintptr, error) {
 	var ctrlParams nvgpu.NV00FD_CTRL_ATTACH_GPU_PARAMS
 	if ctrlParams.SizeBytes() != int(ioctlParams.ParamsSize) {
 		return 0, linuxerr.EINVAL
@@ -841,7 +841,7 @@ func rmapiParamsSizeCheck(numElems uint32, sizeOfElem uint32) bool {
 	return uint64(numElems)*uint64(sizeOfElem) <= nvgpu.RMAPI_PARAM_COPY_MAX_PARAMS_SIZE
 }
 
-func ctrlClientSystemGetBuildVersion(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54Parameters) (uintptr, error) {
+func ctrlClientSystemGetBuildVersion(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54_PARAMETERS) (uintptr, error) {
 	var ctrlParams nvgpu.NV0000_CTRL_SYSTEM_GET_BUILD_VERSION_PARAMS
 	if ctrlParams.SizeBytes() != int(ioctlParams.ParamsSize) {
 		return 0, linuxerr.EINVAL
@@ -879,7 +879,7 @@ func ctrlClientSystemGetBuildVersion(fi *frontendIoctlState, ioctlParams *nvgpu.
 	return n, nil
 }
 
-func ctrlGetNvU32List(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54Parameters) (uintptr, error) {
+func ctrlGetNvU32List(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54_PARAMETERS) (uintptr, error) {
 	var ctrlParams nvgpu.RmapiParamNvU32List
 	if ctrlParams.SizeBytes() != int(ioctlParams.ParamsSize) {
 		return 0, linuxerr.EINVAL
@@ -903,7 +903,7 @@ func ctrlGetNvU32List(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54Parameter
 	return ctrlGetNvU32ListInvoke(fi, ioctlParams, &ctrlParams, list)
 }
 
-func ctrlDevGetCaps(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54Parameters) (uintptr, error) {
+func ctrlDevGetCaps(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54_PARAMETERS) (uintptr, error) {
 	var ctrlParams nvgpu.NV0080_CTRL_GET_CAPS_PARAMS
 	if ctrlParams.SizeBytes() != int(ioctlParams.ParamsSize) {
 		return 0, linuxerr.EINVAL
@@ -921,7 +921,7 @@ func ctrlDevGetCaps(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54Parameters)
 	return ctrlDevGRGetCapsInvoke(fi, ioctlParams, &ctrlParams, capsTbl)
 }
 
-func ctrlRegisterVASpace(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54Parameters) (uintptr, error) {
+func ctrlRegisterVASpace(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54_PARAMETERS) (uintptr, error) {
 	var ctrlParams nvgpu.NV503C_CTRL_REGISTER_VA_SPACE_PARAMS
 	if ctrlParams.SizeBytes() != int(ioctlParams.ParamsSize) {
 		return 0, linuxerr.EINVAL
@@ -946,7 +946,7 @@ func ctrlRegisterVASpace(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54Parame
 	return n, nil
 }
 
-func ctrlSubdevFIFODisableChannels(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54Parameters) (uintptr, error) {
+func ctrlSubdevFIFODisableChannels(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54_PARAMETERS) (uintptr, error) {
 	var ctrlParams nvgpu.NV2080_CTRL_FIFO_DISABLE_CHANNELS_PARAMS
 	if ctrlParams.SizeBytes() != int(ioctlParams.ParamsSize) {
 		return 0, linuxerr.EINVAL
@@ -971,7 +971,7 @@ func ctrlSubdevFIFODisableChannels(fi *frontendIoctlState, ioctlParams *nvgpu.NV
 	return n, nil
 }
 
-func ctrlGpuGetIDInfo(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54Parameters) (uintptr, error) {
+func ctrlGpuGetIDInfo(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54_PARAMETERS) (uintptr, error) {
 	var ctrlParams nvgpu.NV0000_CTRL_GPU_GET_ID_INFO_PARAMS
 	if ctrlParams.SizeBytes() != int(ioctlParams.ParamsSize) {
 		return 0, linuxerr.EINVAL
@@ -1048,7 +1048,7 @@ func rmAlloc(fi *frontendIoctlState) (uintptr, error) {
 }
 
 // See src/nvidia/src/kernel/rmapi/alloc_free.c:_fixupAllocParams().
-func fixupHClass(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64Parameters) error {
+func fixupHClass(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64_PARAMETERS) error {
 	// "NV01_EVENT isn't a valid class to allocate so overwrite it with the
 	// subclass from the event params."
 	if ioctlParams.HClass == nvgpu.NV01_EVENT {
@@ -1072,17 +1072,17 @@ func fixupHClass(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64Parameters) er
 //
 // Unlike frontendIoctlSimple and rmControlSimple, rmAllocSimple requires the
 // parameter type since the parameter's size is otherwise unknown.
-func rmAllocSimple[Params any, PtrParams marshalPtr[Params]](fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64Parameters, isNVOS64 bool) (uintptr, error) {
+func rmAllocSimple[Params any, PtrParams marshalPtr[Params]](fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64_PARAMETERS, isNVOS64 bool) (uintptr, error) {
 	return rmAllocSimpleParams[Params, PtrParams](fi, ioctlParams, isNVOS64, addSimpleObjDepParentLocked)
 }
 
 // addSimpleObjDepParentLocked implements rmAllocInvoke.addObjLocked for
 // classes that require no special handling and depend only on their parents.
-func addSimpleObjDepParentLocked[Params any](fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64Parameters, rightsRequested nvgpu.RS_ACCESS_MASK, allocParams *Params) {
+func addSimpleObjDepParentLocked[Params any](fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64_PARAMETERS, rightsRequested nvgpu.RS_ACCESS_MASK, allocParams *Params) {
 	fi.fd.dev.nvp.objAdd(fi.ctx, ioctlParams.HRoot, ioctlParams.HObjectNew, ioctlParams.HClass, newRmAllocObject(fi.fd, ioctlParams, rightsRequested, allocParams), ioctlParams.HObjectParent)
 }
 
-func rmAllocSimpleParams[Params any, PtrParams marshalPtr[Params]](fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64Parameters, isNVOS64 bool, objAddLocked func(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64Parameters, rightsRequested nvgpu.RS_ACCESS_MASK, allocParams *Params)) (uintptr, error) {
+func rmAllocSimpleParams[Params any, PtrParams marshalPtr[Params]](fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64_PARAMETERS, isNVOS64 bool, objAddLocked func(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64_PARAMETERS, rightsRequested nvgpu.RS_ACCESS_MASK, allocParams *Params)) (uintptr, error) {
 	if ioctlParams.PAllocParms == 0 {
 		return rmAllocInvoke[Params](fi, ioctlParams, nil, isNVOS64, objAddLocked)
 	}
@@ -1108,12 +1108,12 @@ func rmAllocSimpleParams[Params any, PtrParams marshalPtr[Params]](fi *frontendI
 	return n, nil
 }
 
-func rmAllocNoParams(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64Parameters, isNVOS64 bool) (uintptr, error) {
+func rmAllocNoParams(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64_PARAMETERS, isNVOS64 bool) (uintptr, error) {
 	return rmAllocInvoke[byte](fi, ioctlParams, nil, isNVOS64, addSimpleObjDepParentLocked)
 }
 
-func rmAllocRootClient(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64Parameters, isNVOS64 bool) (uintptr, error) {
-	return rmAllocSimpleParams(fi, ioctlParams, isNVOS64, func(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64Parameters, rightsRequested nvgpu.RS_ACCESS_MASK, allocParams *nvgpu.Handle) {
+func rmAllocRootClient(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64_PARAMETERS, isNVOS64 bool) (uintptr, error) {
+	return rmAllocSimpleParams(fi, ioctlParams, isNVOS64, func(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64_PARAMETERS, rightsRequested nvgpu.RS_ACCESS_MASK, allocParams *nvgpu.Handle) {
 		fi.fd.dev.nvp.objAdd(fi.ctx, ioctlParams.HRoot, ioctlParams.HObjectNew, ioctlParams.HClass, newRootClient(fi.fd, ioctlParams, rightsRequested, allocParams), nvgpu.Handle{Val: nvgpu.NV01_NULL_OBJECT} /* parentH */)
 		if fi.fd.clients == nil {
 			fi.fd.clients = make(map[nvgpu.Handle]struct{})
@@ -1122,7 +1122,7 @@ func rmAllocRootClient(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64Paramete
 	})
 }
 
-func rmAllocEventOSEvent(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64Parameters, isNVOS64 bool) (uintptr, error) {
+func rmAllocEventOSEvent(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64_PARAMETERS, isNVOS64 bool) (uintptr, error) {
 	var allocParams nvgpu.NV0005_ALLOC_PARAMETERS
 	if _, err := allocParams.CopyIn(fi.t, addrFromP64(ioctlParams.PAllocParms)); err != nil {
 		return 0, err
@@ -1139,7 +1139,7 @@ func rmAllocEventOSEvent(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64Parame
 	origData := allocParams.Data
 	allocParams.Data = nvgpu.P64(uint64(eventFile.hostFD))
 
-	n, err := rmAllocInvoke(fi, ioctlParams, &allocParams, isNVOS64, func(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64Parameters, rightsRequested nvgpu.RS_ACCESS_MASK, allocParams *nvgpu.NV0005_ALLOC_PARAMETERS) {
+	n, err := rmAllocInvoke(fi, ioctlParams, &allocParams, isNVOS64, func(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64_PARAMETERS, rightsRequested nvgpu.RS_ACCESS_MASK, allocParams *nvgpu.NV0005_ALLOC_PARAMETERS) {
 		fi.fd.dev.nvp.objAdd(fi.ctx, ioctlParams.HRoot, ioctlParams.HObjectNew, ioctlParams.HClass, &miscObject{}, ioctlParams.HObjectParent)
 	})
 	if err != nil {
@@ -1153,8 +1153,8 @@ func rmAllocEventOSEvent(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64Parame
 	return n, nil
 }
 
-func rmAllocMemoryVirtual(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64Parameters, isNVOS64 bool) (uintptr, error) {
-	return rmAllocSimpleParams(fi, ioctlParams, isNVOS64, func(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64Parameters, rightsRequested nvgpu.RS_ACCESS_MASK, allocParams *nvgpu.NV_MEMORY_VIRTUAL_ALLOCATION_PARAMS) {
+func rmAllocMemoryVirtual(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64_PARAMETERS, isNVOS64 bool) (uintptr, error) {
+	return rmAllocSimpleParams(fi, ioctlParams, isNVOS64, func(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64_PARAMETERS, rightsRequested nvgpu.RS_ACCESS_MASK, allocParams *nvgpu.NV_MEMORY_VIRTUAL_ALLOCATION_PARAMS) {
 		// See
 		// src/nvidia/src/kernel/mem_mgr/virt_mem_range.c:vmrangeConstruct_IMPL()
 		// => refAddDependant().
@@ -1169,8 +1169,8 @@ func rmAllocMemoryVirtual(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64Param
 	})
 }
 
-func rmAllocSMDebuggerSession(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64Parameters, isNVOS64 bool) (uintptr, error) {
-	return rmAllocSimpleParams(fi, ioctlParams, isNVOS64, func(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64Parameters, rightsRequested nvgpu.RS_ACCESS_MASK, allocParams *nvgpu.NV83DE_ALLOC_PARAMETERS) {
+func rmAllocSMDebuggerSession(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64_PARAMETERS, isNVOS64 bool) (uintptr, error) {
+	return rmAllocSimpleParams(fi, ioctlParams, isNVOS64, func(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64_PARAMETERS, rightsRequested nvgpu.RS_ACCESS_MASK, allocParams *nvgpu.NV83DE_ALLOC_PARAMETERS) {
 		// Compare
 		// src/nvidia/src/kernel/gpu/gr/kernel_sm_debugger_session.c:ksmdbgssnConstruct_IMPL()
 		// => _ShareDebugger() => sessionAddDependency/sessionAddDependant();
@@ -1180,8 +1180,8 @@ func rmAllocSMDebuggerSession(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64P
 	})
 }
 
-func rmAllocChannelGroup(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64Parameters, isNVOS64 bool) (uintptr, error) {
-	return rmAllocSimpleParams(fi, ioctlParams, isNVOS64, func(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64Parameters, rightsRequested nvgpu.RS_ACCESS_MASK, allocParams *nvgpu.NV_CHANNEL_GROUP_ALLOCATION_PARAMETERS) {
+func rmAllocChannelGroup(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64_PARAMETERS, isNVOS64 bool) (uintptr, error) {
+	return rmAllocSimpleParams(fi, ioctlParams, isNVOS64, func(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64_PARAMETERS, rightsRequested nvgpu.RS_ACCESS_MASK, allocParams *nvgpu.NV_CHANNEL_GROUP_ALLOCATION_PARAMETERS) {
 		// See
 		// src/nvidia/src/kernel/gpu/fifo/kernel_channel_group_api.c:kchangrpapiConstruct_IMPL()
 		// => refAddDependant().
@@ -1198,8 +1198,8 @@ func rmAllocChannelGroup(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64Parame
 	})
 }
 
-func rmAllocChannel(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64Parameters, isNVOS64 bool) (uintptr, error) {
-	return rmAllocSimpleParams(fi, ioctlParams, isNVOS64, func(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64Parameters, rightsRequested nvgpu.RS_ACCESS_MASK, allocParams *nvgpu.NV_CHANNEL_ALLOC_PARAMS) {
+func rmAllocChannel(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64_PARAMETERS, isNVOS64 bool) (uintptr, error) {
+	return rmAllocSimpleParams(fi, ioctlParams, isNVOS64, func(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64_PARAMETERS, rightsRequested nvgpu.RS_ACCESS_MASK, allocParams *nvgpu.NV_CHANNEL_ALLOC_PARAMS) {
 		// See
 		// src/nvidia/src/kernel/gpu/fifo/kernel_channel.c:kchannelConstruct_IMPL()
 		// => refAddDependant(). The channel's parent may be a device or
@@ -1212,8 +1212,8 @@ func rmAllocChannel(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64Parameters,
 	})
 }
 
-func rmAllocContextShare(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64Parameters, isNVOS64 bool) (uintptr, error) {
-	return rmAllocSimpleParams(fi, ioctlParams, isNVOS64, func(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64Parameters, rightsRequested nvgpu.RS_ACCESS_MASK, allocParams *nvgpu.NV_CTXSHARE_ALLOCATION_PARAMETERS) {
+func rmAllocContextShare(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64_PARAMETERS, isNVOS64 bool) (uintptr, error) {
+	return rmAllocSimpleParams(fi, ioctlParams, isNVOS64, func(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64_PARAMETERS, rightsRequested nvgpu.RS_ACCESS_MASK, allocParams *nvgpu.NV_CTXSHARE_ALLOCATION_PARAMETERS) {
 		// See
 		// src/nvidia/src/kernel/gpu/fifo/kernel_ctxshare.c:kctxshareapiConstruct_IMPL()
 		// => refAddDependant(). The context share's parent is the channel
@@ -1226,7 +1226,7 @@ func rmAllocContextShare(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64Parame
 
 // See src/nvidia/interface/deprecated/rmapi_deprecated_misc.c:RmDeprecatedIdleChannels().
 func rmIdleChannels(fi *frontendIoctlState) (uintptr, error) {
-	var ioctlParams nvgpu.NVOS30Parameters
+	var ioctlParams nvgpu.NVOS30_PARAMETERS
 	if fi.ioctlParamsSize != nvgpu.SizeofNVOS30Parameters {
 		return 0, linuxerr.EINVAL
 	}
@@ -1270,7 +1270,7 @@ func rmIdleChannels(fi *frontendIoctlState) (uintptr, error) {
 }
 
 func rmVidHeapControl(fi *frontendIoctlState) (uintptr, error) {
-	var ioctlParams nvgpu.NVOS32Parameters
+	var ioctlParams nvgpu.NVOS32_PARAMETERS
 	if fi.ioctlParamsSize != nvgpu.SizeofNVOS32Parameters {
 		return 0, linuxerr.EINVAL
 	}

@@ -260,7 +260,7 @@ func ParseIoctlOutput(ioctl *pb.Ioctl) (Ioctl, error) {
 			if uint32(len(data)) != nvgpu.SizeofNVOS54Parameters {
 				return parsedIoctl, fmt.Errorf("unexpected number of bytes")
 			}
-			var ioctlParams nvgpu.NVOS54Parameters
+			var ioctlParams nvgpu.NVOS54_PARAMETERS
 			ioctlParams.UnmarshalBytes(data)
 
 			parsedIoctl.class = control
