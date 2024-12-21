@@ -51,25 +51,25 @@ func TestABIStructNamesInSync(t *testing.T) {
 	for version, abiCons := range abis {
 		t.Run(version.String(), func(t *testing.T) {
 			abi := abiCons.cons()
-			structNames := abi.getStructNames()
+			structNames := abi.getStructs()
 
 			for ioctl := range abi.frontendIoctl {
-				if _, ok := structNames.frontendNames[ioctl]; !ok {
+				if _, ok := structNames.frontendStructs[ioctl]; !ok {
 					t.Errorf("Frontend ioctl %#x not found in struct names for version %v", ioctl, version.String())
 				}
 			}
 			for ioctl := range abi.uvmIoctl {
-				if _, ok := structNames.uvmNames[ioctl]; !ok {
+				if _, ok := structNames.uvmStructs[ioctl]; !ok {
 					t.Errorf("UVM ioctl %#x not found in struct names for version %v", ioctl, version.String())
 				}
 			}
 			for ioctl := range abi.controlCmd {
-				if _, ok := structNames.controlNames[ioctl]; !ok {
+				if _, ok := structNames.controlStructs[ioctl]; !ok {
 					t.Errorf("Control command %#x not found in struct names for version %v", ioctl, version.String())
 				}
 			}
 			for ioctl := range abi.allocationClass {
-				if _, ok := structNames.allocationNames[ioctl]; !ok {
+				if _, ok := structNames.allocationStructs[ioctl]; !ok {
 					t.Errorf("Alloc class %#x not found in struct names for version %v", ioctl, version.String())
 				}
 			}
@@ -159,14 +159,14 @@ func TestHandlers(t *testing.T) {
 	t.Run("control command", func(t *testing.T) {
 		type controlCmdInput struct {
 			fi     *frontendIoctlState
-			params *nvgpu.NVOS54Parameters
+			params *nvgpu.NVOS54_PARAMETERS
 		}
 		testHandler(
 			t,
 			func(handler controlCmdHandler, input controlCmdInput) (uintptr, error) {
 				return handler.handle(input.fi, input.params)
 			},
-			ctrlHandler(func(*frontendIoctlState, *nvgpu.NVOS54Parameters) (uintptr, error) {
+			ctrlHandler(func(*frontendIoctlState, *nvgpu.NVOS54_PARAMETERS) (uintptr, error) {
 				return 42, nil
 			}, capCompute),
 			controlCmdInput{fi: capComputeState},
@@ -176,7 +176,7 @@ func TestHandlers(t *testing.T) {
 	t.Run("allocation class", func(t *testing.T) {
 		type allocClassInput struct {
 			fi          *frontendIoctlState
-			ioctlParams *nvgpu.NVOS64Parameters
+			ioctlParams *nvgpu.NVOS64_PARAMETERS
 			isNVOS64    bool
 		}
 		testHandler(
@@ -184,7 +184,7 @@ func TestHandlers(t *testing.T) {
 			func(handler allocationClassHandler, input allocClassInput) (uintptr, error) {
 				return handler.handle(input.fi, input.ioctlParams, input.isNVOS64)
 			},
-			allocHandler(func(*frontendIoctlState, *nvgpu.NVOS64Parameters, bool) (uintptr, error) {
+			allocHandler(func(*frontendIoctlState, *nvgpu.NVOS64_PARAMETERS, bool) (uintptr, error) {
 				return 42, nil
 			}, capCompute),
 			allocClassInput{fi: capComputeState},
