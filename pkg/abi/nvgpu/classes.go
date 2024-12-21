@@ -93,7 +93,7 @@ const (
 //
 // +marshal
 type NV2081_ALLOC_PARAMETERS struct {
-	Reserved uint32 `nvproxy:"same"`
+	Reserved uint32
 }
 
 // NV0005_ALLOC_PARAMETERS is the alloc params type for NV01_EVENT* classes
@@ -101,7 +101,7 @@ type NV2081_ALLOC_PARAMETERS struct {
 //
 // +marshal
 type NV0005_ALLOC_PARAMETERS struct {
-	HParentClient Handle `nvproxy:"same"`
+	HParentClient Handle
 	HSrcResource  Handle
 	HClass        ClassID
 	NotifyIndex   uint32
@@ -118,7 +118,7 @@ const (
 //
 // +marshal
 type NV_MEMORY_VIRTUAL_ALLOCATION_PARAMS struct {
-	Offset   uint64 `nvproxy:"same"`
+	Offset   uint64
 	Limit    uint64
 	HVASpace Handle
 	Pad0     [4]byte
@@ -129,7 +129,7 @@ type NV_MEMORY_VIRTUAL_ALLOCATION_PARAMS struct {
 //
 // +marshal
 type NV0080_ALLOC_PARAMETERS struct {
-	DeviceID        uint32 `nvproxy:"same"`
+	DeviceID        uint32
 	HClientShare    Handle
 	HTargetClient   Handle
 	HTargetDevice   Handle
@@ -147,7 +147,7 @@ type NV0080_ALLOC_PARAMETERS struct {
 //
 // +marshal
 type NV2080_ALLOC_PARAMETERS struct {
-	SubDeviceID uint32 `nvproxy:"same"`
+	SubDeviceID uint32
 }
 
 // NV_MEMORY_ALLOCATION_PARAMS is the alloc params type for various NV*_MEMORY*
@@ -155,7 +155,7 @@ type NV2080_ALLOC_PARAMETERS struct {
 //
 // +marshal
 type NV_MEMORY_ALLOCATION_PARAMS struct {
-	Owner         uint32 `nvproxy:"same"`
+	Owner         uint32
 	Type          uint32
 	Flags         uint32
 	Width         uint32
@@ -185,16 +185,16 @@ type NV_MEMORY_ALLOCATION_PARAMS struct {
 //
 // +marshal
 type NV_MEMORY_ALLOCATION_PARAMS_V545 struct {
-	NV_MEMORY_ALLOCATION_PARAMS `nvproxy:"NV_MEMORY_ALLOCATION_PARAMS"`
-	NumaNode                    int32
-	_                           uint32
+	NV_MEMORY_ALLOCATION_PARAMS
+	NumaNode int32
+	_        uint32
 }
 
 // NV503B_BAR1_P2P_DMA_INFO from src/common/sdk/nvidia/inc/class/cl503b.h.
 //
 // +marshal
 type NV503B_BAR1_P2P_DMA_INFO struct {
-	DmaAddress uint64 `nvproxy:"same"`
+	DmaAddress uint64
 	DmaSize    uint64
 }
 
@@ -203,7 +203,7 @@ type NV503B_BAR1_P2P_DMA_INFO struct {
 //
 // +marshal
 type NV503B_ALLOC_PARAMETERS struct {
-	HSubDevice                 Handle `nvproxy:"same"`
+	HSubDevice                 Handle
 	HPeerSubDevice             Handle
 	SubDevicePeerIDMask        uint32
 	PeerSubDevicePeerIDMask    uint32
@@ -221,7 +221,7 @@ type NV503B_ALLOC_PARAMETERS struct {
 //
 // +marshal
 type NV503C_ALLOC_PARAMETERS struct {
-	Flags uint32 `nvproxy:"same"`
+	Flags uint32
 }
 
 // NV83DE_ALLOC_PARAMETERS is the alloc params type for GT200_DEBUGGER,
@@ -229,7 +229,7 @@ type NV503C_ALLOC_PARAMETERS struct {
 //
 // +marshal
 type NV83DE_ALLOC_PARAMETERS struct {
-	HDebuggerClient_Obsolete Handle `nvproxy:"same"`
+	HDebuggerClient_Obsolete Handle
 	HAppClient               Handle
 	HClass3DObject           Handle
 }
@@ -239,7 +239,7 @@ type NV83DE_ALLOC_PARAMETERS struct {
 //
 // +marshal
 type NV_CTXSHARE_ALLOCATION_PARAMETERS struct {
-	HVASpace Handle `nvproxy:"same"`
+	HVASpace Handle
 	Flags    uint32
 	SubctxID uint32
 }
@@ -249,7 +249,7 @@ type NV_CTXSHARE_ALLOCATION_PARAMETERS struct {
 //
 // +marshal
 type NV_VASPACE_ALLOCATION_PARAMETERS struct {
-	Index           uint32 `nvproxy:"same"`
+	Index           uint32
 	Flags           uint32
 	VASize          uint64
 	VAStartInternal uint64
@@ -264,7 +264,7 @@ type NV_VASPACE_ALLOCATION_PARAMETERS struct {
 //
 // +marshal
 type NV_CHANNEL_GROUP_ALLOCATION_PARAMETERS struct {
-	HObjectError                Handle `nvproxy:"same"`
+	HObjectError                Handle
 	HObjectECCError             Handle
 	HVASpace                    Handle
 	EngineType                  uint32
@@ -277,7 +277,7 @@ type NV_CHANNEL_GROUP_ALLOCATION_PARAMETERS struct {
 //
 // +marshal
 type NV_MEMORY_DESC_PARAMS struct {
-	Base         uint64 `nvproxy:"same"`
+	Base         uint64
 	Size         uint64
 	AddressSpace uint32
 	CacheAttrib  uint32
@@ -289,7 +289,7 @@ type NV_MEMORY_DESC_PARAMS struct {
 //
 // +marshal
 type NV_CHANNEL_ALLOC_PARAMS struct {
-	HObjectError        Handle `nvproxy:"same"`
+	HObjectError        Handle
 	HObjectBuffer       Handle
 	GPFIFOOffset        uint64
 	GPFIFOEntries       uint32
@@ -323,7 +323,7 @@ type NV_CHANNEL_ALLOC_PARAMS struct {
 //
 // +marshal
 type NVB0B5_ALLOCATION_PARAMETERS struct {
-	Version    uint32 `nvproxy:"same"`
+	Version    uint32
 	EngineType uint32
 }
 
@@ -332,7 +332,7 @@ type NVB0B5_ALLOCATION_PARAMETERS struct {
 //
 // +marshal
 type NV_GR_ALLOCATION_PARAMETERS struct {
-	Version uint32 `nvproxy:"same"`
+	Version uint32
 	Flags   uint32
 	Size    uint32
 	Caps    uint32
@@ -343,7 +343,7 @@ type NV_GR_ALLOCATION_PARAMETERS struct {
 //
 // +marshal
 type NV_HOPPER_USERMODE_A_PARAMS struct {
-	Bar1Mapping uint8 `nvproxy:"same"`
+	Bar1Mapping uint8
 	Priv        uint8
 }
 
@@ -352,7 +352,7 @@ type NV_HOPPER_USERMODE_A_PARAMS struct {
 //
 // +marshal
 type NV9072_ALLOCATION_PARAMETERS struct {
-	LogicalHeadID uint32 `nvproxy:"same"`
+	LogicalHeadID uint32
 	DisplayMask   uint32
 	Caps          uint32
 }
@@ -362,7 +362,7 @@ type NV9072_ALLOCATION_PARAMETERS struct {
 //
 // +marshal
 type NV00DE_ALLOC_PARAMETERS struct {
-	Reserved uint32 `nvproxy:"same"`
+	Reserved uint32
 }
 
 // NV00DE_ALLOC_PARAMETERS_V545 is the updated version of
@@ -370,7 +370,7 @@ type NV00DE_ALLOC_PARAMETERS struct {
 //
 // +marshal
 type NV00DE_ALLOC_PARAMETERS_V545 struct {
-	PolledDataMask uint64 `nvproxy:"NV00DE_ALLOC_PARAMETERS"`
+	PolledDataMask uint64
 }
 
 // +marshal
@@ -385,7 +385,7 @@ type nv00f8Map struct {
 //
 // +marshal
 type NV00F8_ALLOCATION_PARAMETERS struct {
-	Alignment  uint64 `nvproxy:"same"`
+	Alignment  uint64
 	AllocSize  uint64
 	PageSize   uint64
 	AllocFlags uint32
@@ -412,7 +412,7 @@ type NV_EXPORT_MEM_PACKET struct {
 //
 // +marshal
 type NV00FD_ALLOCATION_PARAMETERS struct {
-	Alignment  uint64 `nvproxy:"same"`
+	Alignment  uint64
 	AllocSize  uint64
 	PageSize   uint32
 	AllocFlags uint32
@@ -426,7 +426,7 @@ type NV00FD_ALLOCATION_PARAMETERS struct {
 //
 // +marshal
 type NV00FD_ALLOCATION_PARAMETERS_V545 struct {
-	ExpPacket NV_EXPORT_MEM_PACKET `nvproxy:"NV00FD_ALLOCATION_PARAMETERS"`
+	ExpPacket NV_EXPORT_MEM_PACKET
 	Index     uint16
 	_         [6]byte
 	NV00FD_ALLOCATION_PARAMETERS
@@ -437,5 +437,5 @@ type NV00FD_ALLOCATION_PARAMETERS_V545 struct {
 //
 // +marshal
 type NV_CONFIDENTIAL_COMPUTE_ALLOC_PARAMS struct {
-	Handle Handle `nvproxy:"same"`
+	Handle Handle
 }
