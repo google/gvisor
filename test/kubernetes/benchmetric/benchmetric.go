@@ -148,7 +148,7 @@ func Count(numberOfTimes uint64, thingBeingCounted string) MetricValue {
 	if !strings.HasSuffix(thingBeingCounted, "s") {
 		panic("`thingBeingCounted` must be plural")
 	}
-	return value(float64(numberOfTimes), thingBeingCounted)
+	return value(float64(numberOfTimes), fmt.Sprintf("%s-num", thingBeingCounted))
 }
 
 // Checksum is a MetricValue for a checksum that is not expected to change

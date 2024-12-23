@@ -64,10 +64,24 @@ message TestRange {
 
 // Cluster holds the created cluster and its credential file.
 message Cluster {
-  // Created cluster proto.
-  google.protobuf.Any cluster = 1;
+  // Cluster name.
+  string cluster = 1;
 
-  // The setup step will create individual credential files for each created
-  // cluster.
-  string credential_file = 2;
+  // A kubectl config file that can be used to connect to the cluster.
+  string kubectl_config = 2;
+
+  // The kubectl context name within `kubectl_config` to use to connect
+  // to the cluster.
+  // If empty, the default context will be used.
+  string kubectl_context = 3;
+
+  // The GCP project ID that the cluster is in.
+  // Optional; only used for cluster management tasks (e.g. deletion).
+  // Leave empty for non-GCP clusters.
+  string gcp_project_id = 4;
+
+  // The GCP location that the cluster is created in.
+  // Optional; only used for cluster management tasks (e.g. deletion).
+  // Leave empty for non-GCP clusters.
+  string gcp_location = 5;
 }

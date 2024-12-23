@@ -25,7 +25,6 @@ import (
 	"time"
 
 	"golang.org/x/sync/errgroup"
-	cspb "google.golang.org/genproto/googleapis/container/v1"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sync"
 	testpb "gvisor.dev/gvisor/test/kubernetes/test_range_config_go_proto"
@@ -192,20 +191,23 @@ type NodePool struct {
 
 // NewTestClusterFromProto returns a new TestCluster client from a proto.
 func NewTestClusterFromProto(ctx context.Context, cluster *testpb.Cluster) (*TestCluster, error) {
-	config, err := clientcmd.BuildConfigFromFlags("" /*masterURL*/, cluster.GetCredentialFile())
+	kubeCfg, err := clientcmd.LoadFromFile(cluster.GetKubectlConfig())
 	if err != nil {
-		return nil, fmt.Errorf("BuildConfigFromFlags: %w", err)
+		return nil, fmt.Errorf("cannot load kubectl config at %q: %w", cluster.GetKubectlConfig(), err)
 	}
-	client, err := kubernetes.NewForConfig(config)
+	kubeContext := cluster.GetKubectlContext()
+	if kubeContext == "" {
+		kubeContext = kubeCfg.CurrentContext
+	}
+	restCfg, err := clientcmd.NewNonInteractiveClientConfig(*kubeCfg, kubeContext, nil, clientcmd.NewDefaultClientConfigLoadingRules()).ClientConfig()
+	if err != nil {
+		return nil, fmt.Errorf("kubectl config: %w", err)
+	}
+	client, err := kubernetes.NewForConfig(restCfg)
 	if err != nil {
 		return nil, fmt.Errorf("kubernetes.NewForConfig: %w", err)
 	}
-	var clusterPB cspb.Cluster
-	if err := cluster.GetCluster().UnmarshalTo(&clusterPB); err != nil {
-		return nil, fmt.Errorf("cannot unmarshal cluster: %w", err)
-	}
-	clusterName := clusterPB.GetName()
-	return NewTestClusterFromClient(clusterName, client), nil
+	return NewTestClusterFromClient(cluster.GetCluster(), client), nil
 }
 
 // NewTestClusterFromClient returns a new TestCluster client with a given client.

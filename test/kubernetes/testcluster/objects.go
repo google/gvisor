@@ -310,6 +310,47 @@ func (n *Namespace) WaitForResources(ctx context.Context, requests ContainerReso
 	}
 }
 
+// SanityCheck ensures that the cluster is working.
+// It does so by creating sanity-check pod in the sanity namespace and ensure
+// it runs successfully.
+func (t *TestCluster) SanityCheck(ctx context.Context) error {
+	sanityNS := t.Namespace(NamespaceSanity)
+	resetCtx, resetCancel := context.WithTimeout(ctx, 6*time.Minute)
+	defer resetCancel()
+	defer sanityNS.Cleanup(resetCtx)
+	sanityCtx, resetCancel := context.WithTimeout(ctx, 5*time.Minute)
+	defer resetCancel()
+	var lastErr error
+	for sanityCtx.Err() == nil {
+		err := func() error {
+			if err := sanityNS.Reset(ctx); err != nil {
+				return fmt.Errorf("cannot reset %v namespace: %w", NamespaceSanity, err)
+			}
+			defer sanityNS.Cleanup(ctx)
+			sanityPod := sanityNS.NewAlpinePod("check", "alpine", []string{"/bin/sh", "-c", "echo", "hello"})
+			sanityPod, err := t.CreatePod(ctx, sanityPod)
+			if err != nil {
+				return fmt.Errorf("cannot create sanity check pod: %w", err)
+			}
+			if err := t.WaitForPodCompleted(ctx, sanityPod); err != nil {
+				_ = t.DeletePod(ctx, sanityPod)
+				return fmt.Errorf("failed waiting for sanity check pod to complete: %w", err)
+			}
+			if err := t.DeletePod(ctx, sanityPod); err != nil {
+				return fmt.Errorf("cannot delete sanity check pod: %w", err)
+			}
+			return nil
+		}()
+		if err == nil {
+			return nil
+		}
+		if sanityCtx.Err() == nil {
+			lastErr = err
+		}
+	}
+	return fmt.Errorf("cannot ensure cluster %v is working: %w", t.GetName(), lastErr)
+}
+
 // RuntimeType is a supported runtime for the test nodepool.
 type RuntimeType string
 
@@ -320,6 +361,21 @@ const (
 	RuntimeTypeGVisorTPU      = RuntimeType("gvisor-tpu")
 	RuntimeTypeUnsandboxedTPU = RuntimeType("runc-tpu")
 )
+
+// IsValid returns true if the runtime type is valid.
+func (t RuntimeType) IsValid() bool {
+	switch t {
+	case RuntimeTypeGVisor, RuntimeTypeUnsandboxed, RuntimeTypeGVisorTPU, RuntimeTypeUnsandboxedTPU:
+		return true
+	default:
+		return false
+	}
+}
+
+// IsGVisor returns true if the runtime is a gVisor-based runtime.
+func (t RuntimeType) IsGVisor() bool {
+	return t == RuntimeTypeGVisor || t == RuntimeTypeGVisorTPU
+}
 
 // ApplyNodepool modifies the nodepool to configure it to use the runtime.
 func (t RuntimeType) ApplyNodepool(nodepool *cspb.NodePool) {

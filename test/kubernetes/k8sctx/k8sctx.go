@@ -21,9 +21,6 @@ package k8sctx
 
 import (
 	"context"
-	"errors"
-	"fmt"
-	"sync"
 	"testing"
 
 	"gvisor.dev/gvisor/test/kubernetes/testcluster"
@@ -34,29 +31,11 @@ import (
 // Tests are expected to call `RegisterTest` for every of their test function,
 // then `TestMain`.
 type KubernetesContext interface {
-	// TestMain should be called inside tests' `TestMain` function, after having
-	// registered all tests with `RegisterTest`.
-	TestMain(m *testing.M)
-
-	// RegisterTest registers a test.
-	// It should be called for every `Test*(*testing.T)` function in the test.
-	// Note that the `k8sctx.TestMain` helper function below will call this for
-	// you given a map of tests.
-	RegisterTest(name string, fn TestFunc)
-
-	// AcquireCluster returns a single cluster for the test or benchmark to use.
+	// Cluster returns a single cluster for the test or benchmark to use.
 	// The cluster is guaranteed to not be in use by other tests or benchmarks
-	// until the `ReleaseCluster` method is called.
-	// This method should block if there are no available clusters.
-	AcquireCluster(ctx context.Context, t *testing.T) *testcluster.TestCluster
-
-	// ReleaseCluster unlocks the given cluster for use by other tests or
-	// benchmarks.
-	ReleaseCluster(ctx context.Context, t *testing.T, cluster *testcluster.TestCluster)
-
-	// ForEachCluster reserves as many test clusters as are available, calls
-	// `fn` on each of them, and releases each of them when `fn` finishes.
-	ForEachCluster(ctx context.Context, t *testing.T, fn func(cluster *testcluster.TestCluster))
+	// until the returned function is called.
+	// If there are no available clusters, it returns a nil TestCluster.
+	Cluster(ctx context.Context, t *testing.T) (*testcluster.TestCluster, func())
 
 	// ResolveImage resolves a container image name (possibly with a label)
 	// to a fully-qualified image name. It can also return an `image:label`
@@ -65,47 +44,54 @@ type KubernetesContext interface {
 	ResolveImage(ctx context.Context, imageName string) (string, error)
 }
 
-// TestFunc is a test function that is expected to call `Context` and run a
-// test or benchmark within a Kubernetes context.
-type TestFunc func(t *testing.T)
-
-var (
-	kubernetesCtxMu   sync.Mutex
-	kubernetesCtxOnce sync.Once
-	kubernetesCtxFn   func(context.Context) (KubernetesContext, error)
-	kubernetesCtx     KubernetesContext
-	kubernetesCtxErr  error
-)
-
-// Context gets the global Kubernetes context.
-// It must be called after SetContext has already been called.
-func Context(ctx context.Context) (KubernetesContext, error) {
-	kubernetesCtxMu.Lock()
-	defer kubernetesCtxMu.Unlock()
-	if kubernetesCtxFn == nil {
-		return nil, errors.New("k8sctx.Context called prior to k8sctx.SetContextConstructor")
+// ForEachCluster calls the given function for each available cluster
+// sequentially.
+// In order to run per-cluster subtests in parallel, call `t.Run` inside
+// `fn` and then `t.Parallel` inside that.
+func ForEachCluster(ctx context.Context, t *testing.T, k8sCtx KubernetesContext, fn func(cluster *testcluster.TestCluster)) {
+	var clusterFns []func()
+	for {
+		cluster, releaseFn := k8sCtx.Cluster(ctx, t)
+		if cluster == nil {
+			break
+		}
+		clusterFns = append(clusterFns, func() {
+			defer releaseFn()
+			fn(cluster)
+		})
 	}
-	kubernetesCtxOnce.Do(func() {
-		kubernetesCtx, kubernetesCtxErr = kubernetesCtxFn(ctx)
-	})
-	return kubernetesCtx, kubernetesCtxErr
+	for _, clusterFn := range clusterFns {
+		clusterFn()
+	}
 }
 
-// SetContextConstructor sets the global Kubernetes context constructor.
-func SetContextConstructor(fn func(context.Context) (KubernetesContext, error)) {
-	kubernetesCtxMu.Lock()
-	defer kubernetesCtxMu.Unlock()
-	kubernetesCtxFn = fn
+// clusters implements KubernetesContext using a set of clusters.
+type clusters struct {
+	clustersCh chan *testcluster.TestCluster
 }
 
-// TestMain is a helper to write the TestMain function of tests.
-func TestMain(m *testing.M, testFuncs map[string]TestFunc) {
-	k8sCtx, err := Context(context.Background())
-	if err != nil {
-		panic(fmt.Sprintf("failed to get k8sctx: %v", err))
+// Cluster implements KubernetesContext.Cluster.
+func (cs *clusters) Cluster(ctx context.Context, t *testing.T) (*testcluster.TestCluster, func()) {
+	select {
+	case cluster := <-cs.clustersCh:
+		return cluster, func() {
+			cs.clustersCh <- cluster
+		}
+	default:
+		return nil, func() {}
 	}
-	for name, fn := range testFuncs {
-		k8sCtx.RegisterTest(name, fn)
+}
+
+// ResolveImage implements KubernetesContext.ResolveImage.
+func (*clusters) ResolveImage(ctx context.Context, imageName string) (string, error) {
+	return imageName, nil
+}
+
+// New creates a KubernetesContext that set of test clusters.
+func New(testClusters ...*testcluster.TestCluster) KubernetesContext {
+	clustersCh := make(chan *testcluster.TestCluster, len(testClusters))
+	for _, cluster := range testClusters {
+		clustersCh <- cluster
 	}
-	k8sCtx.TestMain(m)
+	return &clusters{clustersCh: clustersCh}
 }
