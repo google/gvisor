@@ -60,8 +60,8 @@ func frontendIoctlFilters(enabledCaps nvconf.DriverCaps) []seccomp.SyscallRule {
 		{seccomp.EqualTo(frontendIoctlCmd(nvgpu.NV_ESC_RM_MAP_MEMORY, nvgpu.SizeofIoctlNVOS33ParametersWithFD)), compUtil},
 		{seccomp.EqualTo(frontendIoctlCmd(nvgpu.NV_ESC_RM_UNMAP_MEMORY, nvgpu.SizeofNVOS34Parameters)), compUtil},
 		{seccomp.EqualTo(frontendIoctlCmd(nvgpu.NV_ESC_RM_ALLOC_CONTEXT_DMA2, nvgpu.SizeofNVOS39Parameters)), nvconf.CapGraphics},
-		{seccomp.EqualTo(frontendIoctlCmd(nvgpu.NV_ESC_RM_MAP_MEMORY_DMA, nvgpu.SizeofNVOS46Parameters)), nvconf.CapGraphics},
-		{seccomp.MaskedEqual(notIocSizeMask, frontendIoctlCmd(nvgpu.NV_ESC_RM_UNMAP_MEMORY_DMA, 0)), nvconf.CapGraphics},
+		{seccomp.EqualTo(frontendIoctlCmd(nvgpu.NV_ESC_RM_MAP_MEMORY_DMA, nvgpu.SizeofNVOS46Parameters)), nvconf.CapGraphics | nvconf.CapVideo},
+		{seccomp.MaskedEqual(notIocSizeMask, frontendIoctlCmd(nvgpu.NV_ESC_RM_UNMAP_MEMORY_DMA, 0)), nvconf.CapGraphics | nvconf.CapVideo},
 		{seccomp.EqualTo(frontendIoctlCmd(nvgpu.NV_ESC_RM_UPDATE_DEVICE_MAPPING_INFO, nvgpu.SizeofNVOS56Parameters)), compUtil},
 	} {
 		if feIoctl.caps&enabledCaps != 0 {
@@ -107,6 +107,7 @@ func uvmIoctlFilters(enabledCaps nvconf.DriverCaps) []seccomp.SyscallRule {
 		{seccomp.EqualTo(nvgpu.UVM_TOOLS_WRITE_PROCESS_MEMORY), nvconf.ValidCapabilities},
 		{seccomp.EqualTo(nvgpu.UVM_MAP_DYNAMIC_PARALLELISM_REGION), compUtil},
 		{seccomp.EqualTo(nvgpu.UVM_UNMAP_EXTERNAL), compUtil},
+		{seccomp.EqualTo(nvgpu.UVM_PAGEABLE_MEM_ACCESS_ON_GPU), nvconf.CapVideo},
 		{seccomp.EqualTo(nvgpu.UVM_ALLOC_SEMAPHORE_POOL), compUtil},
 		{seccomp.EqualTo(nvgpu.UVM_VALIDATE_VA_RANGE), compUtil},
 		{seccomp.EqualTo(nvgpu.UVM_CREATE_EXTERNAL_RANGE), compUtil},
