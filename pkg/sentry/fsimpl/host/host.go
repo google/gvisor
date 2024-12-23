@@ -334,6 +334,7 @@ func NewFilesystem(vfsObj *vfs.VirtualFilesystem) (*vfs.Filesystem, error) {
 	fs := &filesystem{
 		devMinor: devMinor,
 	}
+	fs.Init(kernfs.HostfsLockClass)
 	fs.VFSFilesystem().Init(vfsObj, filesystemType{}, fs)
 	return fs.VFSFilesystem(), nil
 }
