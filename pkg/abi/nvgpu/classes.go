@@ -35,6 +35,7 @@ func (id ClassID) String() string {
 const (
 	NV01_ROOT                        = 0x00000000
 	NV01_ROOT_NON_PRIV               = 0x00000001
+	NV01_CONTEXT_DMA                 = 0x00000002
 	NV01_EVENT                       = 0x00000005
 	NV01_MEMORY_SYSTEM               = 0x0000003e
 	NV01_MEMORY_LOCAL_PRIVILEGED     = 0x0000003f
@@ -62,10 +63,20 @@ const (
 	GF100_SUBDEVICE_MASTER           = 0x000090e6
 	FERMI_VASPACE_A                  = 0x000090f1
 	KEPLER_CHANNEL_GROUP_A           = 0x0000a06c
+	NVENC_SW_SESSION                 = 0x0000a0bc
 	KEPLER_INLINE_TO_MEMORY_B        = 0x0000a140
 	VOLTA_USERMODE_A                 = 0x0000c361
 	TURING_USERMODE_A                = 0x0000c461
 	TURING_CHANNEL_GPFIFO_A          = 0x0000c46f
+	NVB8B0_VIDEO_DECODER             = 0x0000b8b0 // Hopper
+	NVC4B0_VIDEO_DECODER             = 0x0000c4b0 // Turing
+	NVC6B0_VIDEO_DECODER             = 0x0000c6b0 // Ampere
+	NVC7B0_VIDEO_DECODER             = 0x0000c7b0 // Ampere
+	NVC9B0_VIDEO_DECODER             = 0x0000c9b0 // Ada
+	NVCDB0_VIDEO_DECODER             = 0x0000cdb0 // Blackwell
+	NVC4B7_VIDEO_ENCODER             = 0x0000c4b7
+	NVC7B7_VIDEO_ENCODER             = 0x0000c7b7
+	NVC9B7_VIDEO_ENCODER             = 0x0000c9b7
 	AMPERE_CHANNEL_GPFIFO_A          = 0x0000c56f
 	TURING_A                         = 0x0000c597
 	TURING_DMA_COPY_A                = 0x0000c5b5
@@ -148,6 +159,19 @@ type NV0080_ALLOC_PARAMETERS struct {
 // +marshal
 type NV2080_ALLOC_PARAMETERS struct {
 	SubDeviceID uint32
+}
+
+// NV_CONTEXT_DMA_ALLOCATION_PARAMS is the alloc params type for various NV01_CONTEXT_DMA
+// allocation classes, from src/common/sdk/nvidia/inc/nvos.h.
+//
+// +marshal
+type NV_CONTEXT_DMA_ALLOCATION_PARAMS struct {
+	HSubDevice Handle
+	Flags      uint32
+	HMemory    Handle
+	_          uint32
+	Offset     uint64
+	Limit      uint64
 }
 
 // NV_MEMORY_ALLOCATION_PARAMS is the alloc params type for various NV*_MEMORY*
@@ -281,6 +305,26 @@ type NV_MEMORY_DESC_PARAMS struct {
 	Size         uint64
 	AddressSpace uint32
 	CacheAttrib  uint32
+}
+
+// NV_BSP_ALLOCATION_PARAMETERS is the alloc params type for
+// NV*VIDEO_DECODER, from src/common/sdk/nvidia/inc/nvos.h.
+//
+// +marshal
+type NV_BSP_ALLOCATION_PARAMETERS struct {
+	Size                      uint32
+	ProhibitMultipleInstances uint32
+	EngineInstance            uint32
+}
+
+// NV_MSENC_ALLOCATION_PARAMETERS is the alloc params type for
+// NV*_VIDEO_ENCODER, from src/common/sdk/nvidia/inc/nvos.h.
+//
+// +marshal
+type NV_MSENC_ALLOCATION_PARAMETERS struct {
+	Size                      uint32
+	ProhibitMultipleInstances uint32
+	EngineInstance            uint32
 }
 
 // NV_CHANNEL_ALLOC_PARAMS is the alloc params type for TURING_CHANNEL_GPFIFO_A
@@ -438,4 +482,16 @@ type NV00FD_ALLOCATION_PARAMETERS_V545 struct {
 // +marshal
 type NV_CONFIDENTIAL_COMPUTE_ALLOC_PARAMS struct {
 	Handle Handle
+}
+
+// NVA0BC_ALLOC_PARAMETERS is the alloc param type for
+// NVENC_SW_SESSION, from src/common/sdk/nvidia/inc/class/cla0bc.h
+//
+// +marshal
+type NVA0BC_ALLOC_PARAMETERS struct {
+	CodecType   uint32
+	HResolution uint32
+	VResolution uint32
+	Version     uint32
+	HMem        Handle
 }

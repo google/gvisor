@@ -903,6 +903,28 @@ func ctrlGetNvU32List(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54_PARAMETE
 	return ctrlGetNvU32ListInvoke(fi, ioctlParams, &ctrlParams, list)
 }
 
+func ctrlBusGetInfo(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54_PARAMETERS) (uintptr, error) {
+	var ctrlParams nvgpu.NV2080_CTRL_BUS_GET_INFO_PARAMS
+	if ctrlParams.SizeBytes() != int(ioctlParams.ParamsSize) {
+		return 0, linuxerr.EINVAL
+	}
+	if _, err := ctrlParams.CopyIn(fi.t, addrFromP64(ioctlParams.Params)); err != nil {
+		return 0, err
+	}
+	if ctrlParams.BusInfoListSize == 0 || ctrlParams.BusInfoList == 0 {
+		// For NV2080_CTRL_CMD_BUS_GET_INFO, this command has two modes. If
+		// the BusInfoList pointer is NULL or BusInfoListSize is zero, only simple command handling is required;
+		// see src/nvidia/src/kernel/gpu/bus/kern_bus_ctrl.c:subdeviceCtrlCmdBusGetInfo_IMPL.
+		return rmControlSimple(fi, ioctlParams)
+	}
+	if !rmapiParamsSizeCheck(ctrlParams.BusInfoListSize, nvgpu.CtrlXxxInfoSize) {
+		return 0, ctrlCmdFailWithStatus(fi, ioctlParams, nvgpu.NV_ERR_INVALID_ARGUMENT)
+	}
+	busInfoBuf := make([]byte, ctrlParams.BusInfoListSize*nvgpu.CtrlXxxInfoSize)
+
+	return ctrlBusGetInfoInvoke(fi, ioctlParams, &ctrlParams, busInfoBuf)
+}
+
 func ctrlDevGetCaps(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54_PARAMETERS) (uintptr, error) {
 	var ctrlParams nvgpu.NV0080_CTRL_GET_CAPS_PARAMS
 	if ctrlParams.SizeBytes() != int(ioctlParams.ParamsSize) {
@@ -1177,6 +1199,15 @@ func rmAllocSMDebuggerSession(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64_
 		// the driver indirects through a per-KernelGraphicsObject
 		// RmDebuggerSession, which we elide for dependency tracking.
 		fi.fd.dev.nvp.objAdd(fi.ctx, ioctlParams.HRoot, ioctlParams.HObjectNew, ioctlParams.HClass, newRmAllocObject(fi.fd, ioctlParams, rightsRequested, allocParams), ioctlParams.HObjectParent, allocParams.HClass3DObject)
+	})
+}
+
+func rmAllocContextDMA(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64_PARAMETERS, isNVOS64 bool) (uintptr, error) {
+	return rmAllocSimpleParams(fi, ioctlParams, isNVOS64, func(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64_PARAMETERS, rightsRequested nvgpu.RS_ACCESS_MASK, allocParams *nvgpu.NV_CONTEXT_DMA_ALLOCATION_PARAMS) {
+		// See
+		// src/nvidia/src/kernel/gpu/mem_mgr/context_dma.c:ctxdmaConstruct_IMPL()
+		// => refAddDependant().
+		fi.fd.dev.nvp.objAdd(fi.ctx, ioctlParams.HRoot, ioctlParams.HObjectNew, ioctlParams.HClass, newRmAllocObject(fi.fd, ioctlParams, rightsRequested, allocParams), ioctlParams.HObjectParent, allocParams.HMemory)
 	})
 }
 
