@@ -19,26 +19,21 @@ import (
 	"testing"
 
 	"gvisor.dev/gvisor/test/kubernetes/k8sctx"
+	"gvisor.dev/gvisor/test/kubernetes/k8sctx/kubectlctx"
 	"gvisor.dev/gvisor/test/kubernetes/testcluster"
 )
 
 // TestRedis benchmarks redis servers on k8s clusters.
 func TestRedis(t *testing.T) {
 	ctx := context.Background()
-	k8sCtx, err := k8sctx.Context(ctx)
+	k8sCtx, err := kubectlctx.New(ctx)
 	if err != nil {
 		t.Fatalf("Failed to get kubernetes context: %v", err)
 	}
-	k8sCtx.ForEachCluster(ctx, t, func(cluster *testcluster.TestCluster) {
+	k8sctx.ForEachCluster(ctx, t, k8sCtx, func(cluster *testcluster.TestCluster) {
 		t.Run("Redis", func(t *testing.T) {
 			t.Parallel()
 			BenchmarkRedis(ctx, t, k8sCtx, cluster)
 		})
-	})
-}
-
-func TestMain(m *testing.M) {
-	k8sctx.TestMain(m, map[string]k8sctx.TestFunc{
-		"TestRedis": TestRedis,
 	})
 }

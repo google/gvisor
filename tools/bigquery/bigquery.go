@@ -85,9 +85,12 @@ func (s *Suite) debugString(sb *strings.Builder, prefix string) {
 
 // Benchstat returns a benchstat-formatted output string.
 // See https://pkg.go.dev/golang.org/x/perf/cmd/benchstat
-// `includeConditions` contains names of `Condition`s that should be included
-// as part of the benchmark name.
-func (s *Suite) Benchstat(includeConditions []string) string {
+// `includeCondition` returns whether a `Condition` name should be included
+// as part of the benchmark name. If nil, all conditions are included.
+func (s *Suite) Benchstat(includeCondition func(string) bool) string {
+	if includeCondition == nil {
+		includeCondition = func(string) bool { return true }
+	}
 	var sb strings.Builder
 	benchmarkNames := make([]string, 0, len(s.Benchmarks))
 	benchmarks := make(map[string]*Benchmark, len(s.Benchmarks))
@@ -98,12 +101,8 @@ func (s *Suite) Benchstat(includeConditions []string) string {
 		}
 	}
 	sort.Strings(benchmarkNames)
-	includeConditionsMap := make(map[string]bool, len(includeConditions))
-	for _, condName := range includeConditions {
-		includeConditionsMap[condName] = true
-	}
 	for _, bmName := range benchmarkNames {
-		benchmarks[bmName].benchstat(&sb, s.Name, includeConditionsMap, s.Conditions)
+		benchmarks[bmName].benchstat(&sb, s.Name, includeCondition, s.Conditions)
 	}
 	return sb.String()
 }
@@ -153,20 +152,20 @@ func noSpace(s string) string {
 }
 
 // benchstat produces benchmark-formatted output for this Benchmark.
-func (bm *Benchmark) benchstat(sb *strings.Builder, suiteName string, includeConditions map[string]bool, suiteConditions []*Condition) {
+func (bm *Benchmark) benchstat(sb *strings.Builder, suiteName string, includeCondition func(string) bool, suiteConditions []*Condition) {
 	var conditionsStr string
 	conditionNames := make([]string, 0, len(suiteConditions)+len(bm.Condition))
 	conditionMap := make(map[string]string, len(suiteConditions)+len(bm.Condition))
 	for _, c := range suiteConditions {
 		cName := noSpace(c.Name)
-		if _, found := conditionMap[cName]; !found && includeConditions[cName] {
+		if _, found := conditionMap[cName]; !found && includeCondition(cName) {
 			conditionNames = append(conditionNames, cName)
 			conditionMap[cName] = noSpace(c.Value)
 		}
 	}
 	for _, c := range bm.Condition {
 		cName := noSpace(c.Name)
-		if _, found := conditionMap[cName]; !found && includeConditions[cName] {
+		if _, found := conditionMap[cName]; !found && includeCondition(cName) {
 			conditionNames = append(conditionNames, cName)
 			conditionMap[cName] = noSpace(c.Value)
 		}
