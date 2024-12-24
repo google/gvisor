@@ -112,6 +112,7 @@ go_library(
         "//pkg/marshal/primitive",
         "//pkg/p9",
         "//pkg/refs",
+        "//pkg/sentry/kernel/auth",
         "//pkg/sync",
         "//pkg/unet",
         "@org_golang_x_sys//unix:go_default_library",

@@ -18,6 +18,7 @@ go_library(
         "//pkg/context",
         "//pkg/errors/linuxerr",
         "//pkg/hostarch",
+        "//pkg/lisafs",
         "//pkg/marshal",
         "//pkg/marshal/primitive",
         "//pkg/sentry/arch",
