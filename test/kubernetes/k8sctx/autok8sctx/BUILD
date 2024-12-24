@@ -6,16 +6,17 @@ package(
 )
 
 go_library(
-    name = "k8sctx",
+    name = "autok8sctx",
     testonly = True,
-    srcs = [
-        "k8sctx.go",
-    ],
+    srcs = ["kubectlctx.go"],
     nogo = False,
     visibility = [
         "//visibility:public",
     ],
     deps = [
+        "//runsc/flag",
+        "//test/kubernetes/k8sctx",
         "//test/kubernetes/testcluster",
+        "//tools/gvisor_k8s_tool/provider/kubectl",
     ],
 )
