@@ -67,14 +67,14 @@ func (h frontendIoctlHandler) handle(fi *frontendIoctlState) (uintptr, error) {
 
 type controlCmdHandler struct {
 	// handler is the function to call if a capability in capSet is enabled.
-	handler func(*frontendIoctlState, *nvgpu.NVOS54Parameters) (uintptr, error)
+	handler func(*frontendIoctlState, *nvgpu.NVOS54_PARAMETERS) (uintptr, error)
 	// capSet is a bitmask of capabilities that this handler is available for.
 	capSet nvconf.DriverCaps
 }
 
 // ctrlHandler returns a controlCmdHandler that wraps the given function.
 // The handler will be called if any of the given capabilities are enabled.
-func ctrlHandler(handler func(*frontendIoctlState, *nvgpu.NVOS54Parameters) (uintptr, error), caps nvconf.DriverCaps) controlCmdHandler {
+func ctrlHandler(handler func(*frontendIoctlState, *nvgpu.NVOS54_PARAMETERS) (uintptr, error), caps nvconf.DriverCaps) controlCmdHandler {
 	return controlCmdHandler{
 		handler: handler,
 		capSet:  caps,
@@ -85,7 +85,7 @@ func ctrlHandler(handler func(*frontendIoctlState, *nvgpu.NVOS54Parameters) (uin
 // Returns errMissingCapability if the caller is missing the required
 // capabilities for this handler.
 // Returns errUndefinedHandler if the handler does not exist.
-func (h controlCmdHandler) handle(fi *frontendIoctlState, params *nvgpu.NVOS54Parameters) (uintptr, error) {
+func (h controlCmdHandler) handle(fi *frontendIoctlState, params *nvgpu.NVOS54_PARAMETERS) (uintptr, error) {
 	if h.handler == nil {
 		return 0, &errUndefinedHandler
 	}
@@ -97,14 +97,14 @@ func (h controlCmdHandler) handle(fi *frontendIoctlState, params *nvgpu.NVOS54Pa
 
 type allocationClassHandler struct {
 	// handler is the function to call if a capability in capSet is enabled.
-	handler func(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64Parameters, isNVOS64 bool) (uintptr, error)
+	handler func(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64_PARAMETERS, isNVOS64 bool) (uintptr, error)
 	// capSet is a bitmask of capabilities that this handler is available for.
 	capSet nvconf.DriverCaps
 }
 
 // allocHandler returns a allocationClassHandler that wraps the given function.
 // The handler will be called if any of the given capabilities are enabled.
-func allocHandler(handler func(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64Parameters, isNVOS64 bool) (uintptr, error), caps nvconf.DriverCaps) allocationClassHandler {
+func allocHandler(handler func(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64_PARAMETERS, isNVOS64 bool) (uintptr, error), caps nvconf.DriverCaps) allocationClassHandler {
 	return allocationClassHandler{
 		handler: handler,
 		capSet:  caps,
@@ -115,7 +115,7 @@ func allocHandler(handler func(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64
 // Returns errMissingCapability if the caller is missing the required
 // capabilities for this handler.
 // Returns errUndefinedHandler if the handler does not exist.
-func (h allocationClassHandler) handle(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64Parameters, isNVOS64 bool) (uintptr, error) {
+func (h allocationClassHandler) handle(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64_PARAMETERS, isNVOS64 bool) (uintptr, error) {
 	if h.handler == nil {
 		return 0, &errUndefinedHandler
 	}
