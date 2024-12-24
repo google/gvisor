@@ -1180,6 +1180,16 @@ func rmAllocSMDebuggerSession(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64P
 	})
 }
 
+func rmAllocContextDMA(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64Parameters, isNVOS64 bool) (uintptr, error) {
+	return rmAllocSimpleParams(fi, ioctlParams, isNVOS64, func(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64Parameters, rightsRequested nvgpu.RS_ACCESS_MASK, allocParams *nvgpu.NV_CONTEXT_DMA_ALLOCATION_PARAMS) {
+		// HMemory's parent acts as the parent of the new object. HObjectParent
+		// acts as the client.
+		if _, hMemory := fi.fd.dev.nvp.getObject(fi.ctx, ioctlParams.HObjectParent, allocParams.HMemory); hMemory != nil {
+			fi.fd.dev.nvp.objAdd(fi.ctx, ioctlParams.HObjectParent, ioctlParams.HObjectNew, ioctlParams.HClass, &miscObject{}, hMemory.parent, allocParams.HMemory)
+		}
+	})
+}
+
 func rmAllocChannelGroup(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64Parameters, isNVOS64 bool) (uintptr, error) {
 	return rmAllocSimpleParams(fi, ioctlParams, isNVOS64, func(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64Parameters, rightsRequested nvgpu.RS_ACCESS_MASK, allocParams *nvgpu.NV_CHANNEL_GROUP_ALLOCATION_PARAMETERS) {
 		// See
