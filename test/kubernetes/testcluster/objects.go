@@ -321,6 +321,21 @@ const (
 	RuntimeTypeUnsandboxedTPU = RuntimeType("runc-tpu")
 )
 
+// IsValid returns true if the runtime type is valid.
+func (t RuntimeType) IsValid() bool {
+	switch t {
+	case RuntimeTypeGVisor, RuntimeTypeUnsandboxed, RuntimeTypeGVisorTPU, RuntimeTypeUnsandboxedTPU:
+		return true
+	default:
+		return false
+	}
+}
+
+// IsGVisor returns true if the runtime is a gVisor-based runtime.
+func (t RuntimeType) IsGVisor() bool {
+	return t == RuntimeTypeGVisor || t == RuntimeTypeGVisorTPU
+}
+
 // ApplyNodepool modifies the nodepool to configure it to use the runtime.
 func (t RuntimeType) ApplyNodepool(nodepool *cspb.NodePool) {
 	if nodepool.GetConfig().GetLabels() == nil {
