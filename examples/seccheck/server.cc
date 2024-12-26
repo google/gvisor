@@ -72,8 +72,9 @@ void unpackSyscall(absl::string_view buf) {
   if (!evt.ParseFromArray(buf.data(), buf.size())) {
     err(1, "ParseFromString(): %.*s", static_cast<int>(buf.size()), buf.data());
   }
-  log("%s %s %s\n", evt.has_exit() ? "X" : "E",
-      evt.GetDescriptor()->name().c_str(), shortfmt(evt).c_str());
+  absl::string_view name = evt.GetDescriptor()->name();
+  log("%s %.*s %s\n", evt.has_exit() ? "X" : "E", static_cast<int>(name.size()),
+      name.data(), shortfmt(evt).c_str());
 }
 
 template <class T>
@@ -82,7 +83,9 @@ void unpack(absl::string_view buf) {
   if (!evt.ParseFromArray(buf.data(), buf.size())) {
     err(1, "ParseFromString(): %.*s", static_cast<int>(buf.size()), buf.data());
   }
-  log("%s => %s\n", evt.GetDescriptor()->name().c_str(), shortfmt(evt).c_str());
+  absl::string_view name = evt.GetDescriptor()->name();
+  log("%.*s => %s\n", static_cast<int>(name.size()), name.data(),
+      shortfmt(evt).c_str());
 }
 
 // List of dispatchers indexed based on MessageType enum values.
