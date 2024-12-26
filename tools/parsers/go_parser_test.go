@@ -23,9 +23,10 @@ import (
 
 func TestParseLine(t *testing.T) {
 	testCases := []struct {
-		name string
-		data string
-		want *bigquery.Benchmark
+		name    string
+		data    string
+		want    *bigquery.Benchmark
+		wantErr bool
 	}{
 		{
 			name: "Iperf",
@@ -38,12 +39,12 @@ func TestParseLine(t *testing.T) {
 						Value: "1",
 					},
 					{
-						Name:  "GOMAXPROCS",
-						Value: "6",
-					},
-					{
 						Name:  "Upload",
 						Value: "Upload",
+					},
+					{
+						Name:  "GOMAXPROCS",
+						Value: "6",
 					},
 				},
 				Metric: []*bigquery.Metric{
@@ -71,12 +72,12 @@ func TestParseLine(t *testing.T) {
 						Value: "1",
 					},
 					{
-						Name:  "GOMAXPROCS",
-						Value: "6",
-					},
-					{
 						Name:  "server_threads",
 						Value: "1",
+					},
+					{
+						Name:  "GOMAXPROCS",
+						Value: "6",
 					},
 				},
 				Metric: []*bigquery.Metric{
@@ -87,7 +88,7 @@ func TestParseLine(t *testing.T) {
 					},
 					{
 						Name:   "average_latency",
-						Unit:   "s",
+						Unit:   "sec",
 						Sample: 0.00710,
 					},
 					{
@@ -98,16 +99,103 @@ func TestParseLine(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "Ruby with alternate parameter syntax",
+			data: "BenchmarkRuby/SubTest/server_threads=1/clients=8-6 1	1397875880 ns/op	0.00710 average_latency.s 140 requests_per_second.QPS",
+			want: &bigquery.Benchmark{
+				Name: "BenchmarkRuby",
+				Condition: []*bigquery.Condition{
+					{
+						Name:  "iterations",
+						Value: "1",
+					},
+					{
+						Name:  "SubTest",
+						Value: "SubTest",
+					},
+					{
+						Name:  "server_threads",
+						Value: "1",
+					},
+					{
+						Name:  "clients",
+						Value: "8",
+					},
+					{
+						Name:  "GOMAXPROCS",
+						Value: "6",
+					},
+				},
+				Metric: []*bigquery.Metric{
+					{
+						Name:   "ns/op",
+						Unit:   "ns/op",
+						Sample: 1397875880.0,
+					},
+					{
+						Name:   "average_latency",
+						Unit:   "sec",
+						Sample: 0.00710,
+					},
+					{
+						Name:   "requests_per_second",
+						Unit:   "QPS",
+						Sample: 140.0,
+					},
+				},
+			},
+		},
+		{
+			name: "No GOMAXPROCS is allowed",
+			data: "BenchmarkRuby/server_threads.1/clients.8 1	1397875880 ns/op	0.00710 average_latency.s",
+			want: &bigquery.Benchmark{
+				Name: "BenchmarkRuby",
+				Condition: []*bigquery.Condition{
+					{
+						Name:  "iterations",
+						Value: "1",
+					},
+					{
+						Name:  "server_threads",
+						Value: "1",
+					},
+					{
+						Name:  "clients",
+						Value: "8",
+					},
+				},
+				Metric: []*bigquery.Metric{
+					{
+						Name:   "ns/op",
+						Unit:   "ns/op",
+						Sample: 1397875880.0,
+					},
+					{
+						Name:   "average_latency",
+						Unit:   "sec",
+						Sample: 0.00710,
+					},
+				},
+			},
+		},
+		{
+			name:    "Ambiguous parameter separator",
+			data:    "BenchmarkRuby/server_threads.4/clients=8 1	1397875880 ns/op	0.00710 average_latency.s",
+			wantErr: true,
+		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			got, err := parseLine(tc.data)
-			if err != nil {
+			if err != nil && !tc.wantErr {
 				t.Fatalf("parseLine failed with: %v", err)
 			}
+			if err == nil && tc.wantErr {
+				t.Fatal("parseLine unexpectedly succeeded")
+			}
 
-			if !cmp.Equal(tc.want, got, nil) {
+			if err == nil && !cmp.Equal(tc.want, got, nil) {
 				for i := range got.Condition {
 					t.Logf("Metric: want: %+v got:%+v", got.Condition[i], tc.want.Condition[i])
 				}
@@ -146,13 +234,13 @@ func TestParseOutput(t *testing.T) {
 		{
 			name: "Ruby",
 			data: `BenchmarkRuby
-BenchmarkRuby/server_threads.1
-BenchmarkRuby/server_threads.1-6 1	1397875880 ns/op 0.00710 average_latency.s 140 requests_per_second.QPS
-BenchmarkRuby/server_threads.5
-BenchmarkRuby/server_threads.5-6 1	1416003331 ns/op	0.00950 average_latency.s 465 requests_per_second.QPS`,
+BenchmarkRuby/server_threads=1
+BenchmarkRuby/server_threads=1 1	1397875880 ns/op 0.00710 average_latency.s 140 requests_per_second.QPS
+BenchmarkRuby/server_threads=5
+BenchmarkRuby/server_threads=5 1	1416003331 ns/op	0.00950 average_latency.s 465 requests_per_second.QPS`,
 			numBenchmarks: 2,
 			numMetrics:    3,
-			numConditions: 3,
+			numConditions: 2,
 		},
 	}
 

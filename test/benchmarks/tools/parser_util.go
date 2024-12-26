@@ -48,26 +48,80 @@ func ParametersToName(params ...Parameter) (string, error) {
 }
 
 // NameToParameters parses the string created by ParametersToName and returns
-// it as a set of Parameters.
-// Example: BenchmarkRuby/server_threads.1/doc_size.16KB-6
-// The parameter part of this benchmark is:
-// "server_threads.1/doc_size.16KB" (BenchmarkRuby is the name, and 6 is GOMAXPROCS)
-// This function will return a slice with two parameters ->
-// {Name: server_threads, Value: 1}, {Name: doc_size, Value: 16KB}
-func NameToParameters(name string) ([]*Parameter, error) {
+// the name components and parameters contained within.
+// The separator between the name and value may either be '.' or '='.
+//
+// Example: "BenchmarkRuby/SubTest/LevelTwo/server_threads.1/doc_size.16KB-6"
+// The parameter part of this benchmark is "server_threads.1/doc_size.16KB",
+// whereas "BenchmarkRuby/SubTest/LevelTwo" is the name, and the "-6" suffix is
+// GOMAXPROCS (optional, may be omitted).
+// This function will return a slice of the name components of the benchmark:
+//
+//	[
+//	  "BenchmarkRuby",
+//	  "SubTest",
+//	  "LevelTwo",
+//	]
+//
+// and a slice of the parameters:
+//
+//	[
+//	  {Name: "server_threads", Value: "1"},
+//	  {Name: "doc_size", Value: "16KB"},
+//	  {Name: "GOMAXPROCS", Value: "6"},
+//	]
+//
+// (and a nil error).
+func NameToParameters(name string) ([]string, []*Parameter, error) {
 	var params []*Parameter
-	for _, cond := range strings.Split(name, "/") {
-		cs := strings.Split(cond, ".")
+	var separator string
+	switch {
+	case strings.IndexRune(name, '.') != -1 && strings.IndexRune(name, '=') != -1:
+		return nil, nil, fmt.Errorf("ambiguity while parsing parameters from benchmark name %q: multiple types of parameter separators are present", name)
+	case strings.IndexRune(name, '.') != -1:
+		separator = "."
+	case strings.IndexRune(name, '=') != -1:
+		separator = "="
+	default:
+		// No separator; use '=' which we know is not present in the name,
+		// but we still need to process the name (even if unparameterized) in
+		// order to possibly extract GOMAXPROCS.
+		separator = "="
+	}
+	var nameComponents []string
+	var firstParameterCond string
+	var goMaxProcs *Parameter
+	split := strings.Split(name, "/")
+	for i, cond := range split {
+		if isLast := i == len(split)-1; isLast {
+			// On the last component, if it contains a dash, it is a GOMAXPROCS value.
+			if dashSplit := strings.Split(cond, "-"); len(dashSplit) >= 2 {
+				goMaxProcs = &Parameter{Name: "GOMAXPROCS", Value: dashSplit[len(dashSplit)-1]}
+				cond = strings.Join(dashSplit[:len(dashSplit)-1], "-")
+			}
+		}
+		cs := strings.Split(cond, separator)
 		switch len(cs) {
 		case 1:
-			params = append(params, &Parameter{Name: cond, Value: cond})
+			if firstParameterCond != "" {
+				return nil, nil, fmt.Errorf("failed to parse params from %q: a non-parametrized component %q was found after a parametrized one %q", name, cond, firstParameterCond)
+			}
+			nameComponents = append(nameComponents, cond)
 		case 2:
+			if firstParameterCond == "" {
+				firstParameterCond = cond
+			}
 			params = append(params, &Parameter{Name: cs[0], Value: cs[1]})
 		default:
-			return nil, fmt.Errorf("failed to parse param: %s", cond)
+			return nil, nil, fmt.Errorf("failed to parse params from %q: %s", name, cond)
 		}
 	}
-	return params, nil
+	if goMaxProcs != nil {
+		// GOMAXPROCS should always be last in order to match the ordering of the
+		// benchmark name.
+		params = append(params, goMaxProcs)
+	}
+	return nameComponents, params, nil
 }
 
 // ReportCustomMetric reports a metric in a set format for parsing.
@@ -93,9 +147,52 @@ func ParseCustomMetric(value, metric string) (*Metric, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse value: %v", err)
 	}
-	nameUnit := strings.Split(metric, ".")
-	if len(nameUnit) != 2 {
-		return nil, fmt.Errorf("failed to parse metric: %s", metric)
+	separators := []rune{'-', '.'}
+	var separator string
+	for _, sep := range separators {
+		if strings.ContainsRune(metric, sep) {
+			if separator != "" {
+				return nil, fmt.Errorf("failed to parse metric: ambiguous unit separator: %q (is the separator %q or %q?)", metric, separator, string(sep))
+			}
+			separator = string(sep)
+		}
 	}
-	return &Metric{Name: nameUnit[0], Unit: nameUnit[1], Sample: sample}, nil
+	var name, unit string
+	switch separator {
+	case "":
+		unit = metric
+	default:
+		components := strings.Split(metric, separator)
+		name, unit = strings.Join(components[:len(components)-1], ""), components[len(components)-1]
+	}
+	// Normalize some unit names to benchstat defaults.
+	switch unit {
+	case "":
+		return nil, fmt.Errorf("failed to parse metric %q: no unit specified", metric)
+	case "s":
+		unit = "sec"
+	case "nanos":
+		unit = "ns"
+	case "byte":
+		unit = "B"
+	case "bit":
+		unit = "b"
+	default:
+		// Otherwise, leave unit as-is.
+	}
+	// If the metric name is unspecified, it can sometimes be inferred from
+	// the unit.
+	if name == "" {
+		switch unit {
+		case "sec":
+			name = "duration"
+		case "req/sec", "tok/sec":
+			name = "throughput"
+		case "B/sec":
+			name = "bandwidth"
+		default:
+			return nil, fmt.Errorf("failed to parse metric %q: ambiguous metric name, please format the unit as 'name.unit' or 'name-unit'", metric)
+		}
+	}
+	return &Metric{Name: name, Unit: unit, Sample: sample}, nil
 }
