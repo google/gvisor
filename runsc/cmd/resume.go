@@ -39,8 +39,7 @@ func (*Resume) Synopsis() string {
 
 // Usage implements subcommands.Command.Usage.
 func (*Resume) Usage() string {
-	return `resume <container id> - resume a paused container.
-`
+	return "resume <container id> - resume a paused container.\n"
 }
 
 // SetFlags implements subcommands.Command.SetFlags.

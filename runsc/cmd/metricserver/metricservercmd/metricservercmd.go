@@ -39,8 +39,7 @@ func (*Cmd) Synopsis() string {
 
 // Usage implements subcommands.Command.Usage.
 func (*Cmd) Usage() string {
-	return `-root=<root dir> -metric-server=<addr> metric-server [-exporter-prefix=<runsc_>]
-`
+	return "-root=<root dir> -metric-server=<addr> metric-server [-exporter-prefix=<runsc_>]\n"
 }
 
 // SetFlags implements subcommands.Command.SetFlags.

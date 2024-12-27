@@ -56,8 +56,7 @@ func (*Run) Synopsis() string {
 
 // Usage implements subcommands.Command.Usage.
 func (*Run) Usage() string {
-	return `run [flags] <container id> - create and run a secure container.
-`
+	return "run [flags] <container id> - create and run a secure container.\n"
 }
 
 // SetFlags implements subcommands.Command.SetFlags.

@@ -52,8 +52,7 @@ func (*Install) Synopsis() string {
 
 // Usage implements subcommands.Command.Usage.
 func (*Install) Usage() string {
-	return `install [--runtime=<name>] [flags] [-- [args...]] -- if provided, args are passed to the runtime
-`
+	return "install [--runtime=<name>] [flags] [-- [args...]] -- if provided, args are passed to the runtime\n"
 }
 
 // SetFlags implements subcommands.Command.SetFlags.
@@ -212,8 +211,7 @@ func (*Uninstall) Synopsis() string {
 
 // Usage implements subcommands.Command.Usage.
 func (*Uninstall) Usage() string {
-	return `uninstall [flags] <name>
-`
+	return "uninstall [flags] <name>\n"
 }
 
 // SetFlags implements subcommands.Command.SetFlags.

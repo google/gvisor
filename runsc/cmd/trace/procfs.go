@@ -43,8 +43,7 @@ func (*procfs) Synopsis() string {
 
 // Usage implements subcommands.Command.
 func (*procfs) Usage() string {
-	return `procfs <sandbox id> - get procfs dump for a trace session
-`
+	return "procfs <sandbox id> - get procfs dump for a trace session\n"
 }
 
 // SetFlags implements subcommands.Command.

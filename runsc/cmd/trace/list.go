@@ -40,8 +40,7 @@ func (*list) Synopsis() string {
 
 // Usage implements subcommands.Command.
 func (*list) Usage() string {
-	return `list - list all trace sessions
-`
+	return "list - list all trace sessions\n"
 }
 
 // SetFlags implements subcommands.Command.

@@ -55,8 +55,7 @@ func (*Checkpoint) Synopsis() string {
 
 // Usage implements subcommands.Command.Usage.
 func (*Checkpoint) Usage() string {
-	return `checkpoint [flags] <container id> - save current state of container.
-`
+	return "checkpoint [flags] <container id> - save current state of container.\n"
 }
 
 // SetFlags implements subcommands.Command.SetFlags.

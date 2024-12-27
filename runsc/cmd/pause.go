@@ -39,7 +39,7 @@ func (*Pause) Synopsis() string {
 
 // Usage implements subcommands.Command.Usage.
 func (*Pause) Usage() string {
-	return `pause <container id> - pause process in instance of container.`
+	return "pause <container id> - pause process in instance of container.\n"
 }
 
 // SetFlags implements subcommands.Command.SetFlags.

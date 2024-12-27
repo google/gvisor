@@ -64,7 +64,7 @@ func (*Debug) Synopsis() string {
 
 // Usage implements subcommands.Command.
 func (*Debug) Usage() string {
-	return `debug [flags] <container id>`
+	return "debug [flags] <container id>\n"
 }
 
 // SetFlags implements subcommands.Command.
