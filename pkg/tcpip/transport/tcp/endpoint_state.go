@@ -186,7 +186,7 @@ func (e *Endpoint) Restore(s *stack.Stack) {
 
 	epState := EndpointState(e.origEndpointState)
 	switch {
-	case epState.connected():
+	case epState.connected() || epState == StateTimeWait:
 		bind()
 		if e.connectingAddress.BitLen() == 0 {
 			e.connectingAddress = e.TransportEndpointInfo.ID.RemoteAddress
