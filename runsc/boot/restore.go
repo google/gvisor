@@ -132,7 +132,7 @@ func (r *restorer) restoreContainerInfo(l *Loader, info *containerInfo) error {
 
 	if len(r.containers) == r.totalContainers {
 		// Trigger the restore if this is the last container.
-		return r.restore(l)
+		return r.restore(l, info.conf.UnsafeSkipRestoreSpecValidation)
 	}
 	return nil
 }
@@ -544,7 +544,7 @@ func validateSpecs(oldSpecs, newSpecs map[string]*specs.Spec) error {
 	return nil
 }
 
-func (r *restorer) restore(l *Loader) error {
+func (r *restorer) restore(l *Loader, unsafeSkipRestoreSpecValidation bool) error {
 	log.Infof("Starting to restore %d containers", len(r.containers))
 
 	// Create a new root network namespace with the network stack of the
@@ -650,8 +650,10 @@ func (r *restorer) restore(l *Loader) error {
 	if err != nil {
 		return fmt.Errorf("failed to pop container specs from checkpoint: %w", err)
 	}
-	if err := validateSpecs(oldSpecs, l.containerSpecs); err != nil {
-		return fmt.Errorf("failed to validate restore spec: %w", err)
+	if !unsafeSkipRestoreSpecValidation {
+		if err := validateSpecs(oldSpecs, l.containerSpecs); err != nil {
+			return fmt.Errorf("failed to validate restore spec: %w", err)
+		}
 	}
 
 	// Since we have a new kernel we also must make a new watchdog.

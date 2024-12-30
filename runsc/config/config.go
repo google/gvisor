@@ -384,6 +384,10 @@ type Config struct {
 
 	// TestOnlySaveRestoreNetstack indicates netstack should be saved and restored.
 	TestOnlySaveRestoreNetstack bool `flag:"TESTONLY-save-restore-netstack"`
+
+	// UnsafeSkipRestoreSpecValidation optionally skips validation of the container spec for restored
+	// containers.
+	UnsafeSkipRestoreSpecValidation bool `flag:"unsafe-skip-restore-spec-validation"`
 }
 
 func (c *Config) validate() error {
