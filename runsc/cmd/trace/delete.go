@@ -42,8 +42,7 @@ func (*delete) Synopsis() string {
 
 // Usage implements subcommands.Command.
 func (*delete) Usage() string {
-	return `delete [flags] <sandbox id> - delete a trace session
-`
+	return "delete [flags] <sandbox id> - delete a trace session\n"
 }
 
 // SetFlags implements subcommands.Command.

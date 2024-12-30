@@ -43,8 +43,7 @@ func (*Usage) Synopsis() string {
 
 // Usage implements subcommands.Command.Usage.
 func (*Usage) Usage() string {
-	return `usage [flags] <container id> - print memory usages to standard output.
-`
+	return "usage [flags] <container id> - print memory usages to standard output.\n"
 }
 
 // SetFlags implements subcommands.Command.SetFlags.

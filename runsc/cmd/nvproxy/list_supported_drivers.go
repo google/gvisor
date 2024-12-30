@@ -39,8 +39,7 @@ func (*listSupportedDrivers) Synopsis() string {
 
 // Usage implements subcommands.Command.
 func (*listSupportedDrivers) Usage() string {
-	return `list-supported-drivers - list all nvidia driver versions supported by nvproxy
-`
+	return "list-supported-drivers - list all nvidia driver versions supported by nvproxy\n"
 }
 
 // SetFlags implements subcommands.Command.

@@ -42,7 +42,7 @@ func (*State) Synopsis() string {
 
 // Usage implements subcommands.Command.Usage.
 func (*State) Usage() string {
-	return `state [flags] <container id> - get the state of a container`
+	return "state [flags] <container id> - get the state of a container\n"
 }
 
 // SetFlags implements subcommands.Command.SetFlags.

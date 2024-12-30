@@ -62,8 +62,7 @@ func (*Create) Synopsis() string {
 
 // Usage implements subcommands.Command.Usage.
 func (*Create) Usage() string {
-	return `create [flags] <container id> - create a secure container
-`
+	return "create [flags] <container id> - create a secure container\n"
 }
 
 // SetFlags implements subcommands.Command.SetFlags.

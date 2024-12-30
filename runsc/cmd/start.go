@@ -40,7 +40,7 @@ func (*Start) Synopsis() string {
 
 // Usage implements subcommands.Command.Usage.
 func (*Start) Usage() string {
-	return `start <container id> - start a secure container.`
+	return "start <container id> - start a secure container.\n"
 }
 
 // SetFlags implements subcommands.Command.SetFlags.

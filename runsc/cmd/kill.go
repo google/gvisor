@@ -46,7 +46,7 @@ func (*Kill) Synopsis() string {
 
 // Usage implements subcommands.Command.Usage.
 func (*Kill) Usage() string {
-	return `kill <container id> [signal]`
+	return "kill <container id> [signal]\n"
 }
 
 // SetFlags implements subcommands.Command.SetFlags.

@@ -45,7 +45,7 @@ func (*Delete) Synopsis() string {
 
 // Usage implements subcommands.Command.Usage.
 func (*Delete) Usage() string {
-	return `delete [flags] <container ids>`
+	return "delete [flags] <container ids>\n"
 }
 
 // SetFlags implements subcommands.Command.SetFlags.

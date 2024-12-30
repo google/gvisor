@@ -44,7 +44,7 @@ func (*Umount) Synopsis() string {
 
 // Usage implements subcommands.Command.Usage.
 func (*Umount) Usage() string {
-	return `umount --sync-fd=FD <directory path>`
+	return "umount --sync-fd=FD <directory path>\n"
 }
 
 // SetFlags implements subcommands.Command.SetFlags.

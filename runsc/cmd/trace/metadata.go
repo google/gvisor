@@ -40,8 +40,7 @@ func (*metadata) Synopsis() string {
 
 // Usage implements subcommands.Command.
 func (*metadata) Usage() string {
-	return `metadata - list all trace points configuration information
-`
+	return "metadata - list all trace points configuration information\n"
 }
 
 // SetFlags implements subcommands.Command.

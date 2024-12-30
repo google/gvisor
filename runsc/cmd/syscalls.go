@@ -91,8 +91,7 @@ func (*Syscalls) Synopsis() string {
 
 // Usage implements subcommands.Command.Usage.
 func (*Syscalls) Usage() string {
-	return `syscalls [options] - Print compatibility information for syscalls.
-`
+	return "syscalls [options] - Print compatibility information for syscalls.\n"
 }
 
 // SetFlags implements subcommands.Command.SetFlags.

@@ -48,8 +48,7 @@ func (*create) Synopsis() string {
 
 // Usage implements subcommands.Command.
 func (*create) Usage() string {
-	return `create [flags] <sandbox id> - create a trace session
-`
+	return "create [flags] <sandbox id> - create a trace session\n"
 }
 
 // SetFlags implements subcommands.Command.

@@ -39,8 +39,7 @@ func (*Platforms) Synopsis() string {
 
 // Usage implements subcommands.Command.Usage.
 func (*Platforms) Usage() string {
-	return `platforms [options] - Print available platforms.
-`
+	return "platforms [options] - Print available platforms.\n"
 }
 
 // SetFlags implements subcommands.Command.SetFlags.
