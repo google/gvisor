@@ -7,7 +7,6 @@ package(
 
 go_library(
     name = "k8sctx",
-    testonly = True,
     srcs = [
         "k8sctx.go",
     ],

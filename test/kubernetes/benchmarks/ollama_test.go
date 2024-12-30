@@ -22,7 +22,7 @@ import (
 	"testing"
 
 	"gvisor.dev/gvisor/test/kubernetes/k8sctx"
-	"gvisor.dev/gvisor/test/kubernetes/k8sctx/autok8sctx"
+	"gvisor.dev/gvisor/test/kubernetes/k8sctx/kubectlctx"
 	"gvisor.dev/gvisor/test/kubernetes/testcluster"
 )
 
@@ -30,7 +30,7 @@ func TestOllama(t *testing.T) {
 	fmt.Fprint(os.Stderr, "HEADS UP: This test uses a huge container image which may take up to 30 minutes to download onto nodes the first time you run it.\n")
 
 	ctx := context.Background()
-	k8sCtx, err := autok8sctx.New(ctx)
+	k8sCtx, err := kubectlctx.New(ctx)
 	if err != nil {
 		t.Fatalf("Failed to get kubernetes context: %v", err)
 	}

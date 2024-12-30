@@ -27,5 +27,5 @@ go_test(
         "noguitar",
         "notap",
     ],
-    deps = ["//test/kubernetes/k8sctx/autok8sctx"],
+    deps = ["//test/kubernetes/k8sctx/kubectlctx"],
 )

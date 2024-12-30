@@ -19,14 +19,14 @@ import (
 	"testing"
 
 	"gvisor.dev/gvisor/test/kubernetes/k8sctx"
-	"gvisor.dev/gvisor/test/kubernetes/k8sctx/autok8sctx"
+	"gvisor.dev/gvisor/test/kubernetes/k8sctx/kubectlctx"
 	"gvisor.dev/gvisor/test/kubernetes/testcluster"
 )
 
 // TestRedis benchmarks redis servers on k8s clusters.
 func TestRedis(t *testing.T) {
 	ctx := context.Background()
-	k8sCtx, err := autok8sctx.New(ctx)
+	k8sCtx, err := kubectlctx.New(ctx)
 	if err != nil {
 		t.Fatalf("Failed to get kubernetes context: %v", err)
 	}

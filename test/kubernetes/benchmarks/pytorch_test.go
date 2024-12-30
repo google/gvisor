@@ -19,7 +19,7 @@ import (
 	"testing"
 
 	"gvisor.dev/gvisor/test/kubernetes/k8sctx"
-	"gvisor.dev/gvisor/test/kubernetes/k8sctx/autok8sctx"
+	"gvisor.dev/gvisor/test/kubernetes/k8sctx/kubectlctx"
 	"gvisor.dev/gvisor/test/kubernetes/testcluster"
 )
 
@@ -49,7 +49,7 @@ func TestMobileNetV2(t *testing.T) {
 }
 
 func runTests(ctx context.Context, t *testing.T, tests []pytorchTest) {
-	k8sCtx, err := autok8sctx.New(ctx)
+	k8sCtx, err := kubectlctx.New(ctx)
 	if err != nil {
 		t.Fatalf("Failed to get kubernetes context: %v", err)
 	}

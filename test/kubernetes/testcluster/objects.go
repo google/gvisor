@@ -310,6 +310,47 @@ func (n *Namespace) WaitForResources(ctx context.Context, requests ContainerReso
 	}
 }
 
+// SanityCheck ensures that the cluster is working.
+// It does so by creating sanity-check pod in the sanity namespace and ensure
+// it runs successfully.
+func (t *TestCluster) SanityCheck(ctx context.Context) error {
+	sanityNS := t.Namespace(NamespaceSanity)
+	resetCtx, resetCancel := context.WithTimeout(ctx, 6*time.Minute)
+	defer resetCancel()
+	defer sanityNS.Cleanup(resetCtx)
+	sanityCtx, sanityCancel := context.WithTimeout(resetCtx, 5*time.Minute)
+	defer sanityCancel()
+	var lastErr error
+	for sanityCtx.Err() == nil {
+		err := func() error {
+			if err := sanityNS.Reset(sanityCtx); err != nil {
+				return fmt.Errorf("cannot reset %v namespace: %w", NamespaceSanity, err)
+			}
+			defer sanityNS.Cleanup(sanityCtx)
+			sanityPod := sanityNS.NewAlpinePod("check", "alpine", []string{"/bin/sh", "-c", "echo", "hello"})
+			sanityPod, err := t.CreatePod(sanityCtx, sanityPod)
+			if err != nil {
+				return fmt.Errorf("cannot create sanity check pod: %w", err)
+			}
+			if err := t.WaitForPodCompleted(sanityCtx, sanityPod); err != nil {
+				_ = t.DeletePod(resetCtx, sanityPod)
+				return fmt.Errorf("failed waiting for sanity check pod to complete: %w", err)
+			}
+			if err := t.DeletePod(sanityCtx, sanityPod); err != nil {
+				return fmt.Errorf("cannot delete sanity check pod: %w", err)
+			}
+			return nil
+		}()
+		if err == nil {
+			return nil
+		}
+		if sanityCtx.Err() == nil {
+			lastErr = err
+		}
+	}
+	return fmt.Errorf("cannot ensure cluster %v is working: %w", t.GetName(), lastErr)
+}
+
 // RuntimeType is a supported runtime for the test nodepool.
 type RuntimeType string
 

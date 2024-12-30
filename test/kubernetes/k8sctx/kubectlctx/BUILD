@@ -6,8 +6,7 @@ package(
 )
 
 go_library(
-    name = "autok8sctx",
-    testonly = True,
+    name = "kubectlctx",
     srcs = ["kubectlctx.go"],
     nogo = False,
     visibility = [
@@ -15,8 +14,13 @@ go_library(
     ],
     deps = [
         "//runsc/flag",
+        "//test/kubernetes:test_range_config_go_proto",
         "//test/kubernetes/k8sctx",
         "//test/kubernetes/testcluster",
         "//tools/gvisor_k8s_tool/provider/kubectl",
+        "@io_k8s_client_go//kubernetes:go_default_library",
+        "@io_k8s_client_go//tools/clientcmd:go_default_library",
+        "@org_golang_google_protobuf//encoding/prototext:go_default_library",
+        "@org_golang_x_sync//errgroup:go_default_library",
     ],
 )

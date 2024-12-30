@@ -21,7 +21,6 @@ package k8sctx
 
 import (
 	"context"
-	"sync"
 	"testing"
 
 	"gvisor.dev/gvisor/test/kubernetes/testcluster"
@@ -66,34 +65,33 @@ func ForEachCluster(ctx context.Context, t *testing.T, k8sCtx KubernetesContext,
 	}
 }
 
-// singleCluster implements KubernetesContext using a single cluster.
-type singleCluster struct {
-	mu      sync.Mutex
-	cluster *testcluster.TestCluster
+// clusters implements KubernetesContext using a set of clusters.
+type clusters struct {
+	clustersCh chan *testcluster.TestCluster
 }
 
 // Cluster implements KubernetesContext.Cluster.
-func (sc *singleCluster) Cluster(ctx context.Context, t *testing.T) (*testcluster.TestCluster, func()) {
-	sc.mu.Lock()
-	defer sc.mu.Unlock()
-	cl := sc.cluster
-	sc.cluster = nil
-	return cl, func() {
-		if cl != nil {
-			sc.mu.Lock()
-			defer sc.mu.Unlock()
-			sc.cluster = cl
+func (cs *clusters) Cluster(ctx context.Context, t *testing.T) (*testcluster.TestCluster, func()) {
+	select {
+	case cluster := <-cs.clustersCh:
+		return cluster, func() {
+			cs.clustersCh <- cluster
 		}
+	default:
+		return nil, func() {}
 	}
 }
 
 // ResolveImage implements KubernetesContext.ResolveImage.
-func (*singleCluster) ResolveImage(ctx context.Context, imageName string) (string, error) {
+func (*clusters) ResolveImage(ctx context.Context, imageName string) (string, error) {
 	return imageName, nil
 }
 
-// NewSingleCluster creates a KubernetesContext that uses a single, static
-// test cluster.
-func NewSingleCluster(cluster *testcluster.TestCluster) KubernetesContext {
-	return &singleCluster{cluster: cluster}
+// New creates a KubernetesContext that set of test clusters.
+func New(testClusters ...*testcluster.TestCluster) KubernetesContext {
+	clustersCh := make(chan *testcluster.TestCluster, len(testClusters))
+	for _, cluster := range testClusters {
+		clustersCh <- cluster
+	}
+	return &clusters{clustersCh: clustersCh}
 }
