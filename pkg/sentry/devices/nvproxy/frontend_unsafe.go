@@ -46,7 +46,7 @@ func frontendIoctlBytesInvoke(fi *frontendIoctlState, sentryParams *byte) (uintp
 	return n, nil
 }
 
-func rmControlInvoke[Params any](fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54Parameters, ctrlParams *Params) (uintptr, error) {
+func rmControlInvoke[Params any](fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54_PARAMETERS, ctrlParams *Params) (uintptr, error) {
 	defer runtime.KeepAlive(ctrlParams) // since we convert to non-pointer-typed P64
 	origParams := ioctlParams.Params
 	ioctlParams.Params = p64FromPtr(unsafe.Pointer(ctrlParams))
@@ -61,7 +61,7 @@ func rmControlInvoke[Params any](fi *frontendIoctlState, ioctlParams *nvgpu.NVOS
 	return n, nil
 }
 
-func ctrlClientSystemGetBuildVersionInvoke(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54Parameters, ctrlParams *nvgpu.NV0000_CTRL_SYSTEM_GET_BUILD_VERSION_PARAMS, driverVersionBuf, versionBuf, titleBuf *byte) (uintptr, error) {
+func ctrlClientSystemGetBuildVersionInvoke(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54_PARAMETERS, ctrlParams *nvgpu.NV0000_CTRL_SYSTEM_GET_BUILD_VERSION_PARAMS, driverVersionBuf, versionBuf, titleBuf *byte) (uintptr, error) {
 	// *Buf arguments don't need runtime.KeepAlive() since our caller
 	// ctrlClientSystemGetBuildVersion() copies them out, keeping them alive
 	// during this function.
@@ -84,7 +84,7 @@ func ctrlClientSystemGetBuildVersionInvoke(fi *frontendIoctlState, ioctlParams *
 	return n, nil
 }
 
-func ctrlIoctlHasInfoList[Params any, PtrParams hasCtrlInfoListPtr[Params]](fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54Parameters) (uintptr, error) {
+func ctrlIoctlHasInfoList[Params any, PtrParams hasCtrlInfoListPtr[Params]](fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54_PARAMETERS) (uintptr, error) {
 	var ctrlParamsValue Params
 	ctrlParams := PtrParams(&ctrlParamsValue)
 
@@ -129,7 +129,7 @@ func ctrlIoctlHasInfoList[Params any, PtrParams hasCtrlInfoListPtr[Params]](fi *
 	return n, nil
 }
 
-func ctrlGetNvU32ListInvoke(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54Parameters, ctrlParams *nvgpu.RmapiParamNvU32List, list []uint32) (uintptr, error) {
+func ctrlGetNvU32ListInvoke(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54_PARAMETERS, ctrlParams *nvgpu.RmapiParamNvU32List, list []uint32) (uintptr, error) {
 	origList := ctrlParams.List
 	ctrlParams.List = p64FromPtr(unsafe.Pointer(&list[0]))
 	n, err := rmControlInvoke(fi, ioctlParams, ctrlParams)
@@ -146,7 +146,7 @@ func ctrlGetNvU32ListInvoke(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54Par
 	return n, nil
 }
 
-func ctrlDevGRGetCapsInvoke(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54Parameters, ctrlParams *nvgpu.NV0080_CTRL_GET_CAPS_PARAMS, capsTbl []byte) (uintptr, error) {
+func ctrlDevGRGetCapsInvoke(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54_PARAMETERS, ctrlParams *nvgpu.NV0080_CTRL_GET_CAPS_PARAMS, capsTbl []byte) (uintptr, error) {
 	origCapsTbl := ctrlParams.CapsTbl
 	ctrlParams.CapsTbl = p64FromPtr(unsafe.Pointer(&capsTbl[0]))
 	n, err := rmControlInvoke(fi, ioctlParams, ctrlParams)
@@ -163,7 +163,7 @@ func ctrlDevGRGetCapsInvoke(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54Par
 	return n, nil
 }
 
-func ctrlDevFIFOGetChannelList(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54Parameters) (uintptr, error) {
+func ctrlDevFIFOGetChannelList(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54_PARAMETERS) (uintptr, error) {
 	var ctrlParams nvgpu.NV0080_CTRL_FIFO_GET_CHANNELLIST_PARAMS
 	if ctrlParams.SizeBytes() != int(ioctlParams.ParamsSize) {
 		return 0, linuxerr.EINVAL
@@ -227,7 +227,7 @@ func ctrlClientSystemGetP2PCapsInitializeArray(origArr nvgpu.P64, gpuCount uint3
 	return p64FromPtr(unsafe.Pointer(&arr[0])), arr, true
 }
 
-func ctrlClientSystemGetP2PCaps(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54Parameters) (uintptr, error) {
+func ctrlClientSystemGetP2PCaps(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54_PARAMETERS) (uintptr, error) {
 	var ctrlParams nvgpu.NV0000_CTRL_SYSTEM_GET_P2P_CAPS_PARAMS
 	if ctrlParams.SizeBytes() != int(ioctlParams.ParamsSize) {
 		return 0, linuxerr.EINVAL
@@ -257,7 +257,7 @@ func ctrlClientSystemGetP2PCaps(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS5
 	return n, err
 }
 
-func ctrlClientSystemGetP2PCapsV550(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54Parameters) (uintptr, error) {
+func ctrlClientSystemGetP2PCapsV550(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54_PARAMETERS) (uintptr, error) {
 	var ctrlParams nvgpu.NV0000_CTRL_SYSTEM_GET_P2P_CAPS_PARAMS_V550
 	if ctrlParams.SizeBytes() != int(ioctlParams.ParamsSize) {
 		return 0, linuxerr.EINVAL
@@ -299,7 +299,7 @@ func ctrlClientSystemGetP2PCapsV550(fi *frontendIoctlState, ioctlParams *nvgpu.N
 	return n, err
 }
 
-func rmAllocInvoke[Params any](fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64Parameters, allocParams *Params, isNVOS64 bool, addObjLocked func(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64Parameters, rightsRequested nvgpu.RS_ACCESS_MASK, allocParams *Params)) (uintptr, error) {
+func rmAllocInvoke[Params any](fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64_PARAMETERS, allocParams *Params, isNVOS64 bool, addObjLocked func(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64_PARAMETERS, rightsRequested nvgpu.RS_ACCESS_MASK, allocParams *Params)) (uintptr, error) {
 	defer runtime.KeepAlive(allocParams) // since we convert to non-pointer-typed P64
 
 	// Temporarily replace application pointers with sentry pointers.
@@ -348,7 +348,7 @@ func rmAllocInvoke[Params any](fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64
 	return n, nil
 }
 
-func rmIdleChannelsInvoke(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS30Parameters, clientsBuf, devicesBuf, channelsBuf *byte) (uintptr, error) {
+func rmIdleChannelsInvoke(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS30_PARAMETERS, clientsBuf, devicesBuf, channelsBuf *byte) (uintptr, error) {
 	origClients := ioctlParams.Clients
 	origDevices := ioctlParams.Devices
 	origChannels := ioctlParams.Channels
@@ -368,7 +368,7 @@ func rmIdleChannelsInvoke(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS30Param
 	return n, nil
 }
 
-func rmVidHeapControlAllocSize(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS32Parameters) (uintptr, error) {
+func rmVidHeapControlAllocSize(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS32_PARAMETERS) (uintptr, error) {
 	allocSizeParams := (*nvgpu.NVOS32AllocSize)(unsafe.Pointer(&ioctlParams.Data))
 	origAddress := allocSizeParams.Address
 	var addr uint64

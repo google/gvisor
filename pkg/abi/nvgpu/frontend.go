@@ -63,7 +63,7 @@ const (
 //
 // +marshal
 type IoctlRegisterFD struct {
-	CtlFD int32 `nvproxy:"nv_ioctl_register_fd_t"`
+	CtlFD int32
 }
 
 // GetStatus implements HasStatus.GetStatus.
@@ -79,7 +79,7 @@ func (p *IoctlRegisterFD) GetStatus() uint32 {
 //
 // +marshal
 type IoctlAllocOSEvent struct {
-	HClient Handle `nvproxy:"nv_ioctl_alloc_os_event_t"`
+	HClient Handle
 	HDevice Handle
 	FD      uint32
 	Status  uint32
@@ -104,7 +104,7 @@ func (p *IoctlAllocOSEvent) GetStatus() uint32 {
 //
 // +marshal
 type IoctlFreeOSEvent struct {
-	HClient Handle `nvproxy:"nv_ioctl_free_os_event_t"`
+	HClient Handle
 	HDevice Handle
 	FD      uint32
 	Status  uint32
@@ -129,7 +129,7 @@ func (p *IoctlFreeOSEvent) GetStatus() uint32 {
 //
 // +marshal
 type RMAPIVersion struct {
-	Cmd           uint32 `nvproxy:"nv_ioctl_rm_api_version_t"`
+	Cmd           uint32
 	Reply         uint32
 	VersionString [64]byte
 }
@@ -146,7 +146,7 @@ func (p *RMAPIVersion) GetStatus() uint32 {
 //
 // +marshal
 type IoctlSysParams struct {
-	MemblockSize uint64 `nvproxy:"nv_ioctl_sys_params_t"`
+	MemblockSize uint64
 }
 
 // GetStatus implements HasStatus.GetStatus.
@@ -161,7 +161,7 @@ func (p *IoctlSysParams) GetStatus() uint32 {
 //
 // +marshal
 type IoctlWaitOpenComplete struct {
-	Rc            int32 `nvproxy:"nv_ioctl_wait_open_complete_t"`
+	Rc            int32
 	AdapterStatus uint32
 }
 
@@ -174,7 +174,7 @@ func (p *IoctlWaitOpenComplete) GetStatus() uint32 {
 //
 // +marshal
 type IoctlNVOS02ParametersWithFD struct {
-	Params NVOS02Parameters `nvproxy:"nv_ioctl_nvos02_parameters_with_fd"`
+	Params NVOS02_PARAMETERS
 	FD     int32
 	Pad0   [4]byte
 }
@@ -185,8 +185,8 @@ func (p *IoctlNVOS02ParametersWithFD) GetStatus() uint32 {
 }
 
 // +marshal
-type NVOS02Parameters struct {
-	HRoot         Handle `nvproxy:"NVOS02_PARAMETERS"`
+type NVOS02_PARAMETERS struct {
+	HRoot         Handle
 	HObjectParent Handle
 	HObjectNew    Handle
 	HClass        ClassID
@@ -209,18 +209,18 @@ const (
 	NVOS02_FLAGS_MAPPING_NO_MAP = 0x00000001
 )
 
-// NVOS00Parameters is the parameter type for NV_ESC_RM_FREE.
+// NVOS00_PARAMETERS is the parameter type for NV_ESC_RM_FREE.
 //
 // +marshal
-type NVOS00Parameters struct {
-	HRoot         Handle `nvproxy:"NVOS00_PARAMETERS"`
+type NVOS00_PARAMETERS struct {
+	HRoot         Handle
 	HObjectParent Handle
 	HObjectOld    Handle
 	Status        uint32
 }
 
 // GetStatus implements HasStatus.GetStatus.
-func (p *NVOS00Parameters) GetStatus() uint32 {
+func (p *NVOS00_PARAMETERS) GetStatus() uint32 {
 	return p.Status
 }
 
@@ -232,8 +232,8 @@ type RmAllocParamType interface {
 	GetPRightsRequested() P64
 	SetPAllocParms(p P64)
 	SetPRightsRequested(p P64)
-	FromOS64(other NVOS64Parameters)
-	ToOS64() NVOS64Parameters
+	FromOS64(other NVOS64_PARAMETERS)
+	ToOS64() NVOS64_PARAMETERS
 	GetPointer() uintptr
 	HasStatus
 	marshal.Marshallable
@@ -243,16 +243,16 @@ type RmAllocParamType interface {
 // RmAllocParamType based on passed parameters.
 func GetRmAllocParamObj(isNVOS64 bool) RmAllocParamType {
 	if isNVOS64 {
-		return &NVOS64Parameters{}
+		return &NVOS64_PARAMETERS{}
 	}
-	return &NVOS21Parameters{}
+	return &NVOS21_PARAMETERS{}
 }
 
-// NVOS21Parameters is one possible parameter type for NV_ESC_RM_ALLOC.
+// NVOS21_PARAMETERS is one possible parameter type for NV_ESC_RM_ALLOC.
 //
 // +marshal
-type NVOS21Parameters struct {
-	HRoot         Handle `nvproxy:"NVOS21_PARAMETERS"`
+type NVOS21_PARAMETERS struct {
+	HRoot         Handle
 	HObjectParent Handle
 	HObjectNew    Handle
 	HClass        ClassID
@@ -262,30 +262,30 @@ type NVOS21Parameters struct {
 }
 
 // GetHClass implements RmAllocParamType.GetHClass.
-func (n *NVOS21Parameters) GetHClass() ClassID {
+func (n *NVOS21_PARAMETERS) GetHClass() ClassID {
 	return n.HClass
 }
 
 // GetPAllocParms implements RmAllocParamType.GetPAllocParms.
-func (n *NVOS21Parameters) GetPAllocParms() P64 {
+func (n *NVOS21_PARAMETERS) GetPAllocParms() P64 {
 	return n.PAllocParms
 }
 
 // GetPRightsRequested implements RmAllocParamType.GetPRightsRequested.
-func (n *NVOS21Parameters) GetPRightsRequested() P64 {
+func (n *NVOS21_PARAMETERS) GetPRightsRequested() P64 {
 	return 0
 }
 
 // SetPAllocParms implements RmAllocParamType.SetPAllocParms.
-func (n *NVOS21Parameters) SetPAllocParms(p P64) { n.PAllocParms = p }
+func (n *NVOS21_PARAMETERS) SetPAllocParms(p P64) { n.PAllocParms = p }
 
 // SetPRightsRequested implements RmAllocParamType.SetPRightsRequested.
-func (n *NVOS21Parameters) SetPRightsRequested(p P64) {
+func (n *NVOS21_PARAMETERS) SetPRightsRequested(p P64) {
 	panic("impossible")
 }
 
 // FromOS64 implements RmAllocParamType.FromOS64.
-func (n *NVOS21Parameters) FromOS64(other NVOS64Parameters) {
+func (n *NVOS21_PARAMETERS) FromOS64(other NVOS64_PARAMETERS) {
 	n.HRoot = other.HRoot
 	n.HObjectParent = other.HObjectParent
 	n.HObjectNew = other.HObjectNew
@@ -296,8 +296,8 @@ func (n *NVOS21Parameters) FromOS64(other NVOS64Parameters) {
 }
 
 // ToOS64 implements RmAllocParamType.ToOS64.
-func (n *NVOS21Parameters) ToOS64() NVOS64Parameters {
-	return NVOS64Parameters{
+func (n *NVOS21_PARAMETERS) ToOS64() NVOS64_PARAMETERS {
+	return NVOS64_PARAMETERS{
 		HRoot:         n.HRoot,
 		HObjectParent: n.HObjectParent,
 		HObjectNew:    n.HObjectNew,
@@ -309,15 +309,15 @@ func (n *NVOS21Parameters) ToOS64() NVOS64Parameters {
 }
 
 // GetStatus implements RmAllocParamType.GetStatus.
-func (n *NVOS21Parameters) GetStatus() uint32 {
+func (n *NVOS21_PARAMETERS) GetStatus() uint32 {
 	return n.Status
 }
 
-// NVOS55Parameters is the parameter type for NV_ESC_RM_DUP_OBJECT.
+// NVOS55_PARAMETERS is the parameter type for NV_ESC_RM_DUP_OBJECT.
 //
 // +marshal
-type NVOS55Parameters struct {
-	HClient    Handle `nvproxy:"NVOS55_PARAMETERS"`
+type NVOS55_PARAMETERS struct {
+	HClient    Handle
 	HParent    Handle
 	HObject    Handle
 	HClientSrc Handle
@@ -327,31 +327,30 @@ type NVOS55Parameters struct {
 }
 
 // GetStatus implements HasStatus.GetStatus.
-func (n *NVOS55Parameters) GetStatus() uint32 {
+func (n *NVOS55_PARAMETERS) GetStatus() uint32 {
 	return n.Status
 }
 
-// NVOS57Parameters is the parameter type for NV_ESC_RM_SHARE.
+// NVOS57_PARAMETERS is the parameter type for NV_ESC_RM_SHARE.
 //
 // +marshal
-type NVOS57Parameters struct {
-	HClient     Handle `nvproxy:"NVOS57_PARAMETERS"`
+type NVOS57_PARAMETERS struct {
+	HClient     Handle
 	HObject     Handle
 	SharePolicy RS_SHARE_POLICY
 	Status      uint32
 }
 
 // GetStatus implements HasStatus.GetStatus.
-func (n *NVOS57Parameters) GetStatus() uint32 {
+func (n *NVOS57_PARAMETERS) GetStatus() uint32 {
 	return n.Status
 }
 
-// NVOS30Parameters is NVOS30_PARAMETERS, the parameter type for
-// NV_ESC_RM_IDLE_CHANNELS.
+// NVOS30_PARAMETERS is the parameter type for NV_ESC_RM_IDLE_CHANNELS.
 //
 // +marshal
-type NVOS30Parameters struct {
-	Client      Handle `nvproxy:"NVOS30_PARAMETERS"`
+type NVOS30_PARAMETERS struct {
+	Client      Handle
 	Device      Handle
 	Channel     Handle
 	NumChannels uint32
@@ -367,15 +366,15 @@ type NVOS30Parameters struct {
 }
 
 // GetStatus implements HasStatus.GetStatus.
-func (n *NVOS30Parameters) GetStatus() uint32 {
+func (n *NVOS30_PARAMETERS) GetStatus() uint32 {
 	return n.Status
 }
 
-// NVOS32Parameters is the parameter type for NV_ESC_RM_VID_HEAP_CONTROL.
+// NVOS32_PARAMETERS is the parameter type for NV_ESC_RM_VID_HEAP_CONTROL.
 //
 // +marshal
-type NVOS32Parameters struct {
-	HRoot         Handle `nvproxy:"NVOS32_PARAMETERS"`
+type NVOS32_PARAMETERS struct {
+	HRoot         Handle
 	HObjectParent Handle
 	Function      uint32
 	HVASpace      Handle
@@ -388,7 +387,7 @@ type NVOS32Parameters struct {
 }
 
 // GetStatus implements HasStatus.GetStatus.
-func (n *NVOS32Parameters) GetStatus() uint32 {
+func (n *NVOS32_PARAMETERS) GetStatus() uint32 {
 	return n.Status
 }
 
@@ -448,7 +447,7 @@ const (
 //
 // +marshal
 type IoctlNVOS33ParametersWithFD struct {
-	Params NVOS33Parameters `nvproxy:"nv_ioctl_nvos33_parameters_with_fd"`
+	Params NVOS33_PARAMETERS
 	FD     int32
 	Pad0   [4]byte
 }
@@ -459,8 +458,8 @@ func (p *IoctlNVOS33ParametersWithFD) GetStatus() uint32 {
 }
 
 // +marshal
-type NVOS33Parameters struct {
-	HClient        Handle `nvproxy:"NVOS33_PARAMETERS"`
+type NVOS33_PARAMETERS struct {
+	HClient        Handle
 	HDevice        Handle
 	HMemory        Handle
 	Pad0           [4]byte
@@ -471,11 +470,11 @@ type NVOS33Parameters struct {
 	Flags          uint32
 }
 
-// NVOS34Parameters is the parameter type for NV_ESC_RM_UNMAP_MEMORY.
+// NVOS34_PARAMETERS is the parameter type for NV_ESC_RM_UNMAP_MEMORY.
 //
 // +marshal
-type NVOS34Parameters struct {
-	HClient        Handle `nvproxy:"NVOS34_PARAMETERS"`
+type NVOS34_PARAMETERS struct {
+	HClient        Handle
 	HDevice        Handle
 	HMemory        Handle
 	Pad0           [4]byte
@@ -485,16 +484,15 @@ type NVOS34Parameters struct {
 }
 
 // GetStatus implements HasStatus.GetStatus.
-func (n *NVOS34Parameters) GetStatus() uint32 {
+func (n *NVOS34_PARAMETERS) GetStatus() uint32 {
 	return n.Status
 }
 
-// NVOS39Parameters is NVOS39_PARAMETERS, the parameter type for
-// NV_ESC_RM_ALLOC_CONTEXT_DMA2.
+// NVOS39_PARAMETERS is the parameter type for NV_ESC_RM_ALLOC_CONTEXT_DMA2.
 //
 // +marshal
-type NVOS39Parameters struct {
-	HObjectParent Handle `nvproxy:"NVOS39_PARAMETERS"`
+type NVOS39_PARAMETERS struct {
+	HObjectParent Handle
 	HSubDevice    Handle
 	HObjectNew    Handle
 	HClass        ClassID
@@ -509,16 +507,15 @@ type NVOS39Parameters struct {
 }
 
 // GetStatus implements HasStatus.GetStatus.
-func (n *NVOS39Parameters) GetStatus() uint32 {
+func (n *NVOS39_PARAMETERS) GetStatus() uint32 {
 	return n.Status
 }
 
-// NVOS46Parameters is NVOS46_PARAMETERS, the parameter type for
-// NV_ESC_RM_MAP_MEMORY_DMA.
+// NVOS46_PARAMETERS is the parameter type for NV_ESC_RM_MAP_MEMORY_DMA.
 //
 // +marshal
-type NVOS46Parameters struct {
-	Client    Handle `nvproxy:"NVOS46_PARAMETERS"`
+type NVOS46_PARAMETERS struct {
+	Client    Handle
 	Device    Handle
 	Dma       Handle
 	Memory    Handle
@@ -532,16 +529,15 @@ type NVOS46Parameters struct {
 }
 
 // GetStatus implements HasStatus.GetStatus.
-func (n *NVOS46Parameters) GetStatus() uint32 {
+func (n *NVOS46_PARAMETERS) GetStatus() uint32 {
 	return n.Status
 }
 
-// NVOS47Parameters is NVOS47_PARAMETERS, the parameter type for
-// NV_ESC_RM_UNMAP_MEMORY_DMA.
+// NVOS47_PARAMETERS is the parameter type for NV_ESC_RM_UNMAP_MEMORY_DMA.
 //
 // +marshal
-type NVOS47Parameters struct {
-	Client    Handle `nvproxy:"NVOS47_PARAMETERS"`
+type NVOS47_PARAMETERS struct {
+	Client    Handle
 	Device    Handle
 	Dma       Handle
 	Memory    Handle
@@ -553,16 +549,16 @@ type NVOS47Parameters struct {
 }
 
 // GetStatus implements HasStatus.GetStatus.
-func (n *NVOS47Parameters) GetStatus() uint32 {
+func (n *NVOS47_PARAMETERS) GetStatus() uint32 {
 	return n.Status
 }
 
-// NVOS47ParametersV550 is the updated version of NVOS47Parameters since
+// NVOS47_PARAMETERS_V550 is the updated version of NVOS47_PARAMETERS since
 // 550.54.04.
 //
 // +marshal
-type NVOS47ParametersV550 struct {
-	Client    Handle `nvproxy:"NVOS47_PARAMETERS"`
+type NVOS47_PARAMETERS_V550 struct {
+	Client    Handle
 	Device    Handle
 	Dma       Handle
 	Memory    Handle
@@ -575,15 +571,15 @@ type NVOS47ParametersV550 struct {
 }
 
 // GetStatus implements HasStatus.GetStatus.
-func (n *NVOS47ParametersV550) GetStatus() uint32 {
+func (n *NVOS47_PARAMETERS_V550) GetStatus() uint32 {
 	return n.Status
 }
 
-// NVOS54Parameters is the parameter type for NV_ESC_RM_CONTROL.
+// NVOS54_PARAMETERS is the parameter type for NV_ESC_RM_CONTROL.
 //
 // +marshal
-type NVOS54Parameters struct {
-	HClient    Handle `nvproxy:"NVOS54_PARAMETERS"`
+type NVOS54_PARAMETERS struct {
+	HClient    Handle
 	HObject    Handle
 	Cmd        uint32
 	Flags      uint32
@@ -593,15 +589,15 @@ type NVOS54Parameters struct {
 }
 
 // GetStatus implements HasStatus.GetStatus.
-func (n *NVOS54Parameters) GetStatus() uint32 {
+func (n *NVOS54_PARAMETERS) GetStatus() uint32 {
 	return n.Status
 }
 
-// NVOS56Parameters is the parameter type for NV_ESC_RM_UPDATE_DEVICE_MAPPING_INFO.
+// NVOS56_PARAMETERS is the parameter type for NV_ESC_RM_UPDATE_DEVICE_MAPPING_INFO.
 //
 // +marshal
-type NVOS56Parameters struct {
-	HClient        Handle `nvproxy:"NVOS56_PARAMETERS"`
+type NVOS56_PARAMETERS struct {
+	HClient        Handle
 	HDevice        Handle
 	HMemory        Handle
 	Pad0           [4]byte
@@ -612,16 +608,16 @@ type NVOS56Parameters struct {
 }
 
 // GetStatus implements HasStatus.GetStatus.
-func (n *NVOS56Parameters) GetStatus() uint32 {
+func (n *NVOS56_PARAMETERS) GetStatus() uint32 {
 	return n.Status
 }
 
-// NVOS64Parameters is one possible parameter type for NV_ESC_RM_ALLOC.
+// NVOS64_PARAMETERS is one possible parameter type for NV_ESC_RM_ALLOC.
 //
 // +marshal
 // +stateify savable
-type NVOS64Parameters struct {
-	HRoot            Handle `nvproxy:"NVOS64_PARAMETERS"`
+type NVOS64_PARAMETERS struct {
+	HRoot            Handle
 	HObjectParent    Handle
 	HObjectNew       Handle
 	HClass           ClassID
@@ -634,34 +630,34 @@ type NVOS64Parameters struct {
 }
 
 // GetHClass implements RmAllocParamType.GetHClass.
-func (n *NVOS64Parameters) GetHClass() ClassID {
+func (n *NVOS64_PARAMETERS) GetHClass() ClassID {
 	return n.HClass
 }
 
 // GetPAllocParms implements RmAllocParamType.GetPAllocParms.
-func (n *NVOS64Parameters) GetPAllocParms() P64 {
+func (n *NVOS64_PARAMETERS) GetPAllocParms() P64 {
 	return n.PAllocParms
 }
 
 // GetPRightsRequested implements RmAllocParamType.GetPRightsRequested.
-func (n *NVOS64Parameters) GetPRightsRequested() P64 {
+func (n *NVOS64_PARAMETERS) GetPRightsRequested() P64 {
 	return n.PRightsRequested
 }
 
 // SetPAllocParms implements RmAllocParamType.SetPAllocParms.
-func (n *NVOS64Parameters) SetPAllocParms(p P64) { n.PAllocParms = p }
+func (n *NVOS64_PARAMETERS) SetPAllocParms(p P64) { n.PAllocParms = p }
 
 // SetPRightsRequested implements RmAllocParamType.SetPRightsRequested.
-func (n *NVOS64Parameters) SetPRightsRequested(p P64) { n.PRightsRequested = p }
+func (n *NVOS64_PARAMETERS) SetPRightsRequested(p P64) { n.PRightsRequested = p }
 
 // FromOS64 implements RmAllocParamType.FromOS64.
-func (n *NVOS64Parameters) FromOS64(other NVOS64Parameters) { *n = other }
+func (n *NVOS64_PARAMETERS) FromOS64(other NVOS64_PARAMETERS) { *n = other }
 
 // ToOS64 implements RmAllocParamType.ToOS64.
-func (n *NVOS64Parameters) ToOS64() NVOS64Parameters { return *n }
+func (n *NVOS64_PARAMETERS) ToOS64() NVOS64_PARAMETERS { return *n }
 
 // GetStatus implements RmAllocParamType.GetStatus.
-func (n *NVOS64Parameters) GetStatus() uint32 {
+func (n *NVOS64_PARAMETERS) GetStatus() uint32 {
 	return n.Status
 }
 
@@ -682,17 +678,17 @@ var (
 	SizeofIoctlSysParams              = uint32((*IoctlSysParams)(nil).SizeBytes())
 	SizeofIoctlWaitOpenComplete       = uint32((*IoctlWaitOpenComplete)(nil).SizeBytes())
 	SizeofIoctlNVOS02ParametersWithFD = uint32((*IoctlNVOS02ParametersWithFD)(nil).SizeBytes())
-	SizeofNVOS00Parameters            = uint32((*NVOS00Parameters)(nil).SizeBytes())
-	SizeofNVOS21Parameters            = uint32((*NVOS21Parameters)(nil).SizeBytes())
+	SizeofNVOS00Parameters            = uint32((*NVOS00_PARAMETERS)(nil).SizeBytes())
+	SizeofNVOS21Parameters            = uint32((*NVOS21_PARAMETERS)(nil).SizeBytes())
 	SizeofIoctlNVOS33ParametersWithFD = uint32((*IoctlNVOS33ParametersWithFD)(nil).SizeBytes())
-	SizeofNVOS30Parameters            = uint32((*NVOS30Parameters)(nil).SizeBytes())
-	SizeofNVOS32Parameters            = uint32((*NVOS32Parameters)(nil).SizeBytes())
-	SizeofNVOS34Parameters            = uint32((*NVOS34Parameters)(nil).SizeBytes())
-	SizeofNVOS39Parameters            = uint32((*NVOS39Parameters)(nil).SizeBytes())
-	SizeofNVOS46Parameters            = uint32((*NVOS46Parameters)(nil).SizeBytes())
-	SizeofNVOS54Parameters            = uint32((*NVOS54Parameters)(nil).SizeBytes())
-	SizeofNVOS55Parameters            = uint32((*NVOS55Parameters)(nil).SizeBytes())
-	SizeofNVOS56Parameters            = uint32((*NVOS56Parameters)(nil).SizeBytes())
-	SizeofNVOS57Parameters            = uint32((*NVOS57Parameters)(nil).SizeBytes())
-	SizeofNVOS64Parameters            = uint32((*NVOS64Parameters)(nil).SizeBytes())
+	SizeofNVOS30Parameters            = uint32((*NVOS30_PARAMETERS)(nil).SizeBytes())
+	SizeofNVOS32Parameters            = uint32((*NVOS32_PARAMETERS)(nil).SizeBytes())
+	SizeofNVOS34Parameters            = uint32((*NVOS34_PARAMETERS)(nil).SizeBytes())
+	SizeofNVOS39Parameters            = uint32((*NVOS39_PARAMETERS)(nil).SizeBytes())
+	SizeofNVOS46Parameters            = uint32((*NVOS46_PARAMETERS)(nil).SizeBytes())
+	SizeofNVOS54Parameters            = uint32((*NVOS54_PARAMETERS)(nil).SizeBytes())
+	SizeofNVOS55Parameters            = uint32((*NVOS55_PARAMETERS)(nil).SizeBytes())
+	SizeofNVOS56Parameters            = uint32((*NVOS56_PARAMETERS)(nil).SizeBytes())
+	SizeofNVOS57Parameters            = uint32((*NVOS57_PARAMETERS)(nil).SizeBytes())
+	SizeofNVOS64Parameters            = uint32((*NVOS64_PARAMETERS)(nil).SizeBytes())
 )
