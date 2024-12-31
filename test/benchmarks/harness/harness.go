@@ -28,7 +28,7 @@ var (
 	debug = flag.Bool("debug", false, "turns on debug messages for individual benchmarks")
 )
 
-// Init performs any harness initilialization before runs.
+// Init performs any harness initialization before runs.
 func Init() error {
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: %s -- --test.bench=<regex>\n", os.Args[0])
