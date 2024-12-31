@@ -18,6 +18,7 @@ go_library(
     srcs = [
         "dispatcher_mutex.go",
         "fifo.go",
+        "fifo_channel.go",
         "packet_buffer_circular_list.go",
     ],
     visibility = ["//visibility:public"],
