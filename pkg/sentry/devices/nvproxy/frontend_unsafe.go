@@ -61,6 +61,23 @@ func rmControlInvoke[Params any](fi *frontendIoctlState, ioctlParams *nvgpu.NVOS
 	return n, nil
 }
 
+func ctrlBusGetInfoInvoke(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54_PARAMETERS, ctrlParams *nvgpu.NV2080_CTRL_BUS_GET_INFO_PARAMS, busInfoBuf []byte) (uintptr, error) {
+	origBusInfoList := ctrlParams.BusInfoList
+	ctrlParams.BusInfoList = p64FromPtr(unsafe.Pointer(&busInfoBuf[0]))
+	n, err := rmControlInvoke(fi, ioctlParams, ctrlParams)
+	ctrlParams.BusInfoList = origBusInfoList
+	if err != nil {
+		return n, err
+	}
+	if _, err := primitive.CopyByteSliceOut(fi.t, addrFromP64(ctrlParams.BusInfoList), busInfoBuf); err != nil {
+		return n, err
+	}
+	if _, err := ctrlParams.CopyOut(fi.t, addrFromP64(ioctlParams.Params)); err != nil {
+		return n, err
+	}
+	return n, nil
+}
+
 func ctrlClientSystemGetBuildVersionInvoke(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54_PARAMETERS, ctrlParams *nvgpu.NV0000_CTRL_SYSTEM_GET_BUILD_VERSION_PARAMS, driverVersionBuf, versionBuf, titleBuf *byte) (uintptr, error) {
 	// *Buf arguments don't need runtime.KeepAlive() since our caller
 	// ctrlClientSystemGetBuildVersion() copies them out, keeping them alive
