@@ -18,8 +18,11 @@ RUN gcc -O2 -o tcp_server tcp_server.c
 
 # Add nonprivileged regular user named "nonroot".
 RUN groupadd --gid 1337 nonroot && \
-    useradd --uid 1337 --gid 1337 \
+    useradd --uid 1338 --gid 1337 \
         --create-home \
         --shell $(which bash) \
         --password '' \
         nonroot
+
+# Copy host_connect to /home/nonroot so that "nonroot" can execute it.
+RUN cp host_connect /home/nonroot/host_connect

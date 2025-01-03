@@ -17,14 +17,17 @@
 package fsgofer
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"math"
 	"os"
 	"path"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"sync"
+	"syscall"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -64,6 +67,18 @@ type Config struct {
 	// DonateMountPointFD indicates whether a host FD to the mount point should
 	// be donated to the client on Mount RPC.
 	DonateMountPointFD bool
+
+	// Gofer process's RUID.
+	RUID int
+
+	// Gofer process's EUID.
+	EUID int
+
+	// Gofer process's RGID.
+	RGID int
+
+	// Gofer process's EGID.
+	EGID int
 }
 
 var procSelfFD *rwfd.FD
@@ -178,6 +193,7 @@ func (s *LisafsServer) SupportedMessages() []lisafs.MID {
 		lisafs.BindAt,
 		lisafs.Listen,
 		lisafs.Accept,
+		lisafs.ConnectWithCreds,
 	}
 }
 
@@ -821,6 +837,50 @@ func (fd *controlFDLisa) Connect(sockType uint32) (int, error) {
 		return -1, err
 	}
 	return sock, nil
+}
+
+// ConnectWithCreds implements lisafs.ControlFDImpl.ConnectWithCreds.
+func (fd *controlFDLisa) ConnectWithCreds(sockType uint32, uid lisafs.UID, gid lisafs.GID) (int, error) {
+	serverConfig := fd.Conn().ServerImpl().(*LisafsServer).config
+	if !serverConfig.HostUDS.AllowOpen() {
+		logRejectedUdsConnectOnce.Do(func() {
+			log.Warningf("Rejecting attempt to connect to unix domain socket from host filesystem: %q. If you want to allow this, set flag --host-uds=open", fd.ControlFD.Node().FilePath())
+		})
+		return -1, unix.EPERM
+	}
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
+	_, _, err := unix.Syscall(unix.SYS_SETREGID, uintptr(serverConfig.RGID), uintptr(gid), 0)
+	if !errors.Is(err, syscall.Errno(0)) {
+		log.Warningf("Failed to set egid; err: %v", err)
+	} else {
+		log.Debugf("Successfully set egid to %d", gid)
+	}
+
+	_, _, err = unix.Syscall(unix.SYS_SETREUID, uintptr(serverConfig.RUID), uintptr(uid), 0)
+	if !errors.Is(err, syscall.Errno(0)) {
+		log.Warningf("Failed to set euid; err: %v", err)
+	} else {
+		log.Debugf("Successfully set euid to %d", uid)
+	}
+
+	defer func() {
+		_, _, err := unix.Syscall(unix.SYS_SETREUID, uintptr(serverConfig.RUID), uintptr(serverConfig.EUID), 0)
+		if !errors.Is(err, unix.Errno(0)) {
+			log.Warningf("Failed to restore euid; err: %v", err)
+		} else {
+			log.Debugf("Successfully restored euid to %d", serverConfig.EUID)
+		}
+		_, _, err = unix.Syscall(unix.SYS_SETREGID, uintptr(serverConfig.RGID), uintptr(serverConfig.EGID), 0)
+		if !errors.Is(err, unix.Errno(0)) {
+			log.Warningf("Failed to restore egid; err: %v", err)
+		} else {
+			log.Debugf("Successfully restored egid to %d", serverConfig.EGID)
+		}
+	}()
+
+	return fd.Connect(sockType)
 }
 
 // BindAt implements lisafs.ControlFDImpl.BindAt.

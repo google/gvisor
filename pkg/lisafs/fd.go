@@ -484,6 +484,13 @@ type ControlFDImpl interface {
 	// On the server, Connect has a read concurrency guarantee.
 	Connect(sockType uint32) (int, error)
 
+	// ConnectWithCreds is a wrapper around Connect but first changes the gofer's
+	// euid and egid to the given uid and gid before calling Connect. It restores
+	// the euid and egid after Connect.
+	//
+	// On the server, ConnectWithCreds has a read concurrency guarantee.
+	ConnectWithCreds(sockType uint32, uid UID, gid GID) (int, error)
+
 	// BindAt creates a host unix domain socket of type sockType, bound to
 	// the given namt of type sockType, bound to the given name. It returns
 	// a ControlFD that can be used for path operations on the socket, a
