@@ -532,7 +532,7 @@ func (g *Gofer) setupMounts(conf *config.Config, mounts []specs.Mount, root, pro
 			// to open the mount, so let's try to open it in the
 			// parent user namespace.
 			var res container.OpenMountResult
-			if err := goferToHostRPC.Call("goferRPC.OpenMount", &m, &res); err != nil {
+			if err := goferToHostRPC.Call("goferToHostRPC.OpenMount", &m, &res); err != nil {
 				return fmt.Errorf("opening %s: %w", m.Source, err)
 			}
 			srcFile = res.Files[0]
