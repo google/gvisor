@@ -49,4 +49,15 @@ int main(int argc, char *argv[]) {
                            CU_DEVICE_ATTRIBUTE_GENERIC_COMPRESSION_SUPPORTED,
                            cuda_device));
   printFeature("COMPRESSIBLE_MEMORY", isCompressionAvailable != 0);
+  bool p2pAvailable = false;
+  int gpuCount = -1;
+  CHECK_CUDA(cudaGetDeviceCount(&gpuCount));
+  if (gpuCount >= 2) {
+    int canAccessAToB = -1;
+    CHECK_CUDA(cudaDeviceCanAccessPeer(&canAccessAToB, 0, 1));
+    int canAccessBToA = -1;
+    CHECK_CUDA(cudaDeviceCanAccessPeer(&canAccessBToA, 1, 0));
+    p2pAvailable = canAccessAToB > 0 && canAccessBToA > 0;
+  }
+  printFeature("P2P", p2pAvailable);
 }

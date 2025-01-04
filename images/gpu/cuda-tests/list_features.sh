@@ -20,6 +20,13 @@
 
 set -euo pipefail
 
+if [[ "${NVIDIA_DRIVER_CAPABILITIES:-}" != "all" ]]; then
+  echo "NVIDIA_DRIVER_CAPABILITIES is not set to 'all'." >&2
+  echo "It is set to: '${NVIDIA_DRIVER_CAPABILITIES:-}'" >&2
+  echo "Please set it to 'all' and try again." >&2
+  exit 1
+fi
+
 cd /
 nvcc list_features.cu -lcuda -o list_features
 ./list_features

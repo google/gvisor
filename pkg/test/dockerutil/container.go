@@ -1000,7 +1000,8 @@ func (cp *ContainerPool) String() string {
 			sb.WriteString(", ")
 		}
 		status := cp.statuses[container]
-		sb.WriteString(container.Name)
+		sb.WriteString("#")
+		sb.WriteString(strconv.Itoa(i))
 		sb.WriteString("[")
 		sb.WriteString(status.state.String())
 		sb.WriteString("]")
