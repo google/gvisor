@@ -997,6 +997,9 @@ func (st *SampleTest) RunLibNVVMTest(ctx context.Context) error {
 // Main is the main method of this program.
 func Main(ctx context.Context) (int, error) {
 	flag.Parse()
+	if nvCaps := os.Getenv("NVIDIA_DRIVER_CAPABILITIES"); nvCaps != "all" {
+		return 1, fmt.Errorf("NVIDIA_DRIVER_CAPABILITIES is not set to 'all' (got %q); please set it to 'all' and try again", nvCaps)
+	}
 	cleanupCtx, cleanupCancel := context.WithTimeout(ctx, *timeoutFlag)
 	defer cleanupCancel()
 	deadline, _ := cleanupCtx.Deadline()
