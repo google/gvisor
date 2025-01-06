@@ -47,8 +47,7 @@ func (*MetricExport) Synopsis() string {
 
 // Usage implements subcommands.Command.Usage.
 func (*MetricExport) Usage() string {
-	return `export-metrics [-exporter-prefix=<runsc_>] <container id> - prints sandbox metric data in Prometheus metric format
-`
+	return "export-metrics [-exporter-prefix=<runsc_>] <container id> - prints sandbox metric data in Prometheus metric format\n"
 }
 
 // SetFlags implements subcommands.Command.SetFlags.

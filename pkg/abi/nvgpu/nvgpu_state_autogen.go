@@ -8,11 +8,11 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (n *NVOS64Parameters) StateTypeName() string {
-	return "pkg/abi/nvgpu.NVOS64Parameters"
+func (n *NVOS64_PARAMETERS) StateTypeName() string {
+	return "pkg/abi/nvgpu.NVOS64_PARAMETERS"
 }
 
-func (n *NVOS64Parameters) StateFields() []string {
+func (n *NVOS64_PARAMETERS) StateFields() []string {
 	return []string{
 		"HRoot",
 		"HObjectParent",
@@ -26,10 +26,10 @@ func (n *NVOS64Parameters) StateFields() []string {
 	}
 }
 
-func (n *NVOS64Parameters) beforeSave() {}
+func (n *NVOS64_PARAMETERS) beforeSave() {}
 
 // +checklocksignore
-func (n *NVOS64Parameters) StateSave(stateSinkObject state.Sink) {
+func (n *NVOS64_PARAMETERS) StateSave(stateSinkObject state.Sink) {
 	n.beforeSave()
 	stateSinkObject.Save(0, &n.HRoot)
 	stateSinkObject.Save(1, &n.HObjectParent)
@@ -42,10 +42,10 @@ func (n *NVOS64Parameters) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(8, &n.Status)
 }
 
-func (n *NVOS64Parameters) afterLoad(context.Context) {}
+func (n *NVOS64_PARAMETERS) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (n *NVOS64Parameters) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+func (n *NVOS64_PARAMETERS) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &n.HRoot)
 	stateSourceObject.Load(1, &n.HObjectParent)
 	stateSourceObject.Load(2, &n.HObjectNew)
@@ -108,7 +108,7 @@ func (r *RS_ACCESS_MASK) StateLoad(ctx context.Context, stateSourceObject state.
 }
 
 func init() {
-	state.Register((*NVOS64Parameters)(nil))
+	state.Register((*NVOS64_PARAMETERS)(nil))
 	state.Register((*Handle)(nil))
 	state.Register((*RS_ACCESS_MASK)(nil))
 }

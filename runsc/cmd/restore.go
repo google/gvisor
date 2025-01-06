@@ -67,8 +67,7 @@ func (*Restore) Synopsis() string {
 
 // Usage implements subcommands.Command.Usage.
 func (*Restore) Usage() string {
-	return `restore [flags] <container id> - restore saved state of container.
-`
+	return "restore [flags] <container id> - restore saved state of container.\n"
 }
 
 // SetFlags implements subcommands.Command.SetFlags.

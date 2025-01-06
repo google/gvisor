@@ -51,7 +51,7 @@ func (*List) Synopsis() string {
 
 // Usage implements subcommands.Command.Usage.
 func (*List) Usage() string {
-	return `list [flags]`
+	return "list [flags]\n"
 }
 
 // SetFlags implements subcommands.Command.SetFlags.

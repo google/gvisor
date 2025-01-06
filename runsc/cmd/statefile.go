@@ -47,7 +47,7 @@ func (*Statefile) Synopsis() string {
 
 // Usage implements subcommands.Command.
 func (*Statefile) Usage() string {
-	return `statefile [flags] <statefile>`
+	return "statefile [flags] <statefile>\n"
 }
 
 // SetFlags implements subcommands.Command.

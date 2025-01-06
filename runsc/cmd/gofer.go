@@ -112,7 +112,7 @@ func (g *Gofer) Synopsis() string {
 
 // Usage implements subcommands.Command.
 func (*Gofer) Usage() string {
-	return `gofer [flags]`
+	return "gofer [flags]\n"
 }
 
 // SetFlags implements subcommands.Command.

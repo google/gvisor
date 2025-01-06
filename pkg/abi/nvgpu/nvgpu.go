@@ -32,7 +32,7 @@ const (
 // +marshal
 // +stateify savable
 type Handle struct {
-	Val uint32 `nvproxy:"NvHandle"`
+	Val uint32
 }
 
 // String implements fmt.Stringer.String.

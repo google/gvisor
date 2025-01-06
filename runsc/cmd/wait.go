@@ -51,7 +51,7 @@ func (*Wait) Synopsis() string {
 
 // Usage implements subcommands.Command.Usage.
 func (*Wait) Usage() string {
-	return `wait [flags] <container id>`
+	return "wait [flags] <container id>\n"
 }
 
 // SetFlags implements subcommands.Command.SetFlags.

@@ -53,22 +53,22 @@ var _ marshal.Marshallable = (*NV503C_CTRL_REGISTER_VA_SPACE_PARAMS)(nil)
 var _ marshal.Marshallable = (*NV83DE_ALLOC_PARAMETERS)(nil)
 var _ marshal.Marshallable = (*NV9072_ALLOCATION_PARAMETERS)(nil)
 var _ marshal.Marshallable = (*NVB0B5_ALLOCATION_PARAMETERS)(nil)
-var _ marshal.Marshallable = (*NVOS00Parameters)(nil)
-var _ marshal.Marshallable = (*NVOS02Parameters)(nil)
-var _ marshal.Marshallable = (*NVOS21Parameters)(nil)
-var _ marshal.Marshallable = (*NVOS30Parameters)(nil)
-var _ marshal.Marshallable = (*NVOS32Parameters)(nil)
-var _ marshal.Marshallable = (*NVOS33Parameters)(nil)
-var _ marshal.Marshallable = (*NVOS34Parameters)(nil)
-var _ marshal.Marshallable = (*NVOS39Parameters)(nil)
-var _ marshal.Marshallable = (*NVOS46Parameters)(nil)
-var _ marshal.Marshallable = (*NVOS47Parameters)(nil)
-var _ marshal.Marshallable = (*NVOS47ParametersV550)(nil)
-var _ marshal.Marshallable = (*NVOS54Parameters)(nil)
-var _ marshal.Marshallable = (*NVOS55Parameters)(nil)
-var _ marshal.Marshallable = (*NVOS56Parameters)(nil)
-var _ marshal.Marshallable = (*NVOS57Parameters)(nil)
-var _ marshal.Marshallable = (*NVOS64Parameters)(nil)
+var _ marshal.Marshallable = (*NVOS00_PARAMETERS)(nil)
+var _ marshal.Marshallable = (*NVOS02_PARAMETERS)(nil)
+var _ marshal.Marshallable = (*NVOS21_PARAMETERS)(nil)
+var _ marshal.Marshallable = (*NVOS30_PARAMETERS)(nil)
+var _ marshal.Marshallable = (*NVOS32_PARAMETERS)(nil)
+var _ marshal.Marshallable = (*NVOS33_PARAMETERS)(nil)
+var _ marshal.Marshallable = (*NVOS34_PARAMETERS)(nil)
+var _ marshal.Marshallable = (*NVOS39_PARAMETERS)(nil)
+var _ marshal.Marshallable = (*NVOS46_PARAMETERS)(nil)
+var _ marshal.Marshallable = (*NVOS47_PARAMETERS)(nil)
+var _ marshal.Marshallable = (*NVOS47_PARAMETERS_V550)(nil)
+var _ marshal.Marshallable = (*NVOS54_PARAMETERS)(nil)
+var _ marshal.Marshallable = (*NVOS55_PARAMETERS)(nil)
+var _ marshal.Marshallable = (*NVOS56_PARAMETERS)(nil)
+var _ marshal.Marshallable = (*NVOS57_PARAMETERS)(nil)
+var _ marshal.Marshallable = (*NVOS64_PARAMETERS)(nil)
 var _ marshal.Marshallable = (*NVXXXX_CTRL_XXX_INFO)(nil)
 var _ marshal.Marshallable = (*NV_CHANNEL_ALLOC_PARAMS)(nil)
 var _ marshal.Marshallable = (*NV_CHANNEL_GROUP_ALLOCATION_PARAMETERS)(nil)
@@ -6828,7 +6828,7 @@ func (p *IoctlFreeOSEvent) WriteTo(writer io.Writer) (int64, error) {
 // SizeBytes implements marshal.Marshallable.SizeBytes.
 func (p *IoctlNVOS02ParametersWithFD) SizeBytes() int {
     return 4 +
-        (*NVOS02Parameters)(nil).SizeBytes() +
+        (*NVOS02_PARAMETERS)(nil).SizeBytes() +
         1*4
 }
 
@@ -6970,7 +6970,7 @@ func (p *IoctlNVOS02ParametersWithFD) WriteTo(writer io.Writer) (int64, error) {
 // SizeBytes implements marshal.Marshallable.SizeBytes.
 func (p *IoctlNVOS33ParametersWithFD) SizeBytes() int {
     return 4 +
-        (*NVOS33Parameters)(nil).SizeBytes() +
+        (*NVOS33_PARAMETERS)(nil).SizeBytes() +
         1*4
 }
 
@@ -7405,7 +7405,7 @@ func (p *IoctlWaitOpenComplete) WriteTo(writer io.Writer) (int64, error) {
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
-func (p *NVOS00Parameters) SizeBytes() int {
+func (p *NVOS00_PARAMETERS) SizeBytes() int {
     return 4 +
         (*Handle)(nil).SizeBytes() +
         (*Handle)(nil).SizeBytes() +
@@ -7413,7 +7413,7 @@ func (p *NVOS00Parameters) SizeBytes() int {
 }
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
-func (p *NVOS00Parameters) MarshalBytes(dst []byte) []byte {
+func (p *NVOS00_PARAMETERS) MarshalBytes(dst []byte) []byte {
     dst = p.HRoot.MarshalUnsafe(dst)
     dst = p.HObjectParent.MarshalUnsafe(dst)
     dst = p.HObjectOld.MarshalUnsafe(dst)
@@ -7423,7 +7423,7 @@ func (p *NVOS00Parameters) MarshalBytes(dst []byte) []byte {
 }
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (p *NVOS00Parameters) UnmarshalBytes(src []byte) []byte {
+func (p *NVOS00_PARAMETERS) UnmarshalBytes(src []byte) []byte {
     src = p.HRoot.UnmarshalUnsafe(src)
     src = p.HObjectParent.UnmarshalUnsafe(src)
     src = p.HObjectOld.UnmarshalUnsafe(src)
@@ -7434,36 +7434,36 @@ func (p *NVOS00Parameters) UnmarshalBytes(src []byte) []byte {
 
 // Packed implements marshal.Marshallable.Packed.
 //go:nosplit
-func (p *NVOS00Parameters) Packed() bool {
+func (p *NVOS00_PARAMETERS) Packed() bool {
     return p.HObjectOld.Packed() && p.HObjectParent.Packed() && p.HRoot.Packed()
 }
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
-func (p *NVOS00Parameters) MarshalUnsafe(dst []byte) []byte {
+func (p *NVOS00_PARAMETERS) MarshalUnsafe(dst []byte) []byte {
     if p.HObjectOld.Packed() && p.HObjectParent.Packed() && p.HRoot.Packed() {
         size := p.SizeBytes()
         gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(p), uintptr(size))
         return dst[size:]
     }
-    // Type NVOS00Parameters doesn't have a packed layout in memory, fallback to MarshalBytes.
+    // Type NVOS00_PARAMETERS doesn't have a packed layout in memory, fallback to MarshalBytes.
     return p.MarshalBytes(dst)
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
-func (p *NVOS00Parameters) UnmarshalUnsafe(src []byte) []byte {
+func (p *NVOS00_PARAMETERS) UnmarshalUnsafe(src []byte) []byte {
     if p.HObjectOld.Packed() && p.HObjectParent.Packed() && p.HRoot.Packed() {
         size := p.SizeBytes()
         gohacks.Memmove(unsafe.Pointer(p), unsafe.Pointer(&src[0]), uintptr(size))
         return src[size:]
     }
-    // Type NVOS00Parameters doesn't have a packed layout in memory, fallback to UnmarshalBytes.
+    // Type NVOS00_PARAMETERS doesn't have a packed layout in memory, fallback to UnmarshalBytes.
     return p.UnmarshalBytes(src)
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
-func (p *NVOS00Parameters) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
+func (p *NVOS00_PARAMETERS) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
     if !p.HObjectOld.Packed() && p.HObjectParent.Packed() && p.HRoot.Packed() {
-        // Type NVOS00Parameters doesn't have a packed layout in memory, fall back to MarshalBytes.
+        // Type NVOS00_PARAMETERS doesn't have a packed layout in memory, fall back to MarshalBytes.
         buf := cc.CopyScratchBuffer(p.SizeBytes()) // escapes: okay.
         p.MarshalBytes(buf) // escapes: fallback.
         return cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
@@ -7484,14 +7484,14 @@ func (p *NVOS00Parameters) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, 
 }
 
 // CopyOut implements marshal.Marshallable.CopyOut.
-func (p *NVOS00Parameters) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+func (p *NVOS00_PARAMETERS) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
     return p.CopyOutN(cc, addr, p.SizeBytes())
 }
 
 // CopyInN implements marshal.Marshallable.CopyInN.
-func (p *NVOS00Parameters) CopyInN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
+func (p *NVOS00_PARAMETERS) CopyInN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
     if !p.HObjectOld.Packed() && p.HObjectParent.Packed() && p.HRoot.Packed() {
-        // Type NVOS00Parameters doesn't have a packed layout in memory, fall back to UnmarshalBytes.
+        // Type NVOS00_PARAMETERS doesn't have a packed layout in memory, fall back to UnmarshalBytes.
         buf := cc.CopyScratchBuffer(p.SizeBytes()) // escapes: okay.
         length, err := cc.CopyInBytes(addr, buf[:limit]) // escapes: okay.
         // Unmarshal unconditionally. If we had a short copy-in, this results in a
@@ -7515,14 +7515,14 @@ func (p *NVOS00Parameters) CopyInN(cc marshal.CopyContext, addr hostarch.Addr, l
 }
 
 // CopyIn implements marshal.Marshallable.CopyIn.
-func (p *NVOS00Parameters) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+func (p *NVOS00_PARAMETERS) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
     return p.CopyInN(cc, addr, p.SizeBytes())
 }
 
 // WriteTo implements io.WriterTo.WriteTo.
-func (p *NVOS00Parameters) WriteTo(writer io.Writer) (int64, error) {
+func (p *NVOS00_PARAMETERS) WriteTo(writer io.Writer) (int64, error) {
     if !p.HObjectOld.Packed() && p.HObjectParent.Packed() && p.HRoot.Packed() {
-        // Type NVOS00Parameters doesn't have a packed layout in memory, fall back to MarshalBytes.
+        // Type NVOS00_PARAMETERS doesn't have a packed layout in memory, fall back to MarshalBytes.
         buf := make([]byte, p.SizeBytes())
         p.MarshalBytes(buf)
         length, err := writer.Write(buf)
@@ -7544,7 +7544,7 @@ func (p *NVOS00Parameters) WriteTo(writer io.Writer) (int64, error) {
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
-func (n *NVOS02Parameters) SizeBytes() int {
+func (n *NVOS02_PARAMETERS) SizeBytes() int {
     return 16 +
         (*Handle)(nil).SizeBytes() +
         (*Handle)(nil).SizeBytes() +
@@ -7556,7 +7556,7 @@ func (n *NVOS02Parameters) SizeBytes() int {
 }
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
-func (n *NVOS02Parameters) MarshalBytes(dst []byte) []byte {
+func (n *NVOS02_PARAMETERS) MarshalBytes(dst []byte) []byte {
     dst = n.HRoot.MarshalUnsafe(dst)
     dst = n.HObjectParent.MarshalUnsafe(dst)
     dst = n.HObjectNew.MarshalUnsafe(dst)
@@ -7580,7 +7580,7 @@ func (n *NVOS02Parameters) MarshalBytes(dst []byte) []byte {
 }
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (n *NVOS02Parameters) UnmarshalBytes(src []byte) []byte {
+func (n *NVOS02_PARAMETERS) UnmarshalBytes(src []byte) []byte {
     src = n.HRoot.UnmarshalUnsafe(src)
     src = n.HObjectParent.UnmarshalUnsafe(src)
     src = n.HObjectNew.UnmarshalUnsafe(src)
@@ -7605,36 +7605,36 @@ func (n *NVOS02Parameters) UnmarshalBytes(src []byte) []byte {
 
 // Packed implements marshal.Marshallable.Packed.
 //go:nosplit
-func (n *NVOS02Parameters) Packed() bool {
+func (n *NVOS02_PARAMETERS) Packed() bool {
     return n.HClass.Packed() && n.HObjectNew.Packed() && n.HObjectParent.Packed() && n.HRoot.Packed() && n.PMemory.Packed()
 }
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
-func (n *NVOS02Parameters) MarshalUnsafe(dst []byte) []byte {
+func (n *NVOS02_PARAMETERS) MarshalUnsafe(dst []byte) []byte {
     if n.HClass.Packed() && n.HObjectNew.Packed() && n.HObjectParent.Packed() && n.HRoot.Packed() && n.PMemory.Packed() {
         size := n.SizeBytes()
         gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(n), uintptr(size))
         return dst[size:]
     }
-    // Type NVOS02Parameters doesn't have a packed layout in memory, fallback to MarshalBytes.
+    // Type NVOS02_PARAMETERS doesn't have a packed layout in memory, fallback to MarshalBytes.
     return n.MarshalBytes(dst)
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
-func (n *NVOS02Parameters) UnmarshalUnsafe(src []byte) []byte {
+func (n *NVOS02_PARAMETERS) UnmarshalUnsafe(src []byte) []byte {
     if n.HClass.Packed() && n.HObjectNew.Packed() && n.HObjectParent.Packed() && n.HRoot.Packed() && n.PMemory.Packed() {
         size := n.SizeBytes()
         gohacks.Memmove(unsafe.Pointer(n), unsafe.Pointer(&src[0]), uintptr(size))
         return src[size:]
     }
-    // Type NVOS02Parameters doesn't have a packed layout in memory, fallback to UnmarshalBytes.
+    // Type NVOS02_PARAMETERS doesn't have a packed layout in memory, fallback to UnmarshalBytes.
     return n.UnmarshalBytes(src)
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
-func (n *NVOS02Parameters) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
+func (n *NVOS02_PARAMETERS) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
     if !n.HClass.Packed() && n.HObjectNew.Packed() && n.HObjectParent.Packed() && n.HRoot.Packed() && n.PMemory.Packed() {
-        // Type NVOS02Parameters doesn't have a packed layout in memory, fall back to MarshalBytes.
+        // Type NVOS02_PARAMETERS doesn't have a packed layout in memory, fall back to MarshalBytes.
         buf := cc.CopyScratchBuffer(n.SizeBytes()) // escapes: okay.
         n.MarshalBytes(buf) // escapes: fallback.
         return cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
@@ -7655,14 +7655,14 @@ func (n *NVOS02Parameters) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, 
 }
 
 // CopyOut implements marshal.Marshallable.CopyOut.
-func (n *NVOS02Parameters) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+func (n *NVOS02_PARAMETERS) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
     return n.CopyOutN(cc, addr, n.SizeBytes())
 }
 
 // CopyInN implements marshal.Marshallable.CopyInN.
-func (n *NVOS02Parameters) CopyInN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
+func (n *NVOS02_PARAMETERS) CopyInN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
     if !n.HClass.Packed() && n.HObjectNew.Packed() && n.HObjectParent.Packed() && n.HRoot.Packed() && n.PMemory.Packed() {
-        // Type NVOS02Parameters doesn't have a packed layout in memory, fall back to UnmarshalBytes.
+        // Type NVOS02_PARAMETERS doesn't have a packed layout in memory, fall back to UnmarshalBytes.
         buf := cc.CopyScratchBuffer(n.SizeBytes()) // escapes: okay.
         length, err := cc.CopyInBytes(addr, buf[:limit]) // escapes: okay.
         // Unmarshal unconditionally. If we had a short copy-in, this results in a
@@ -7686,14 +7686,14 @@ func (n *NVOS02Parameters) CopyInN(cc marshal.CopyContext, addr hostarch.Addr, l
 }
 
 // CopyIn implements marshal.Marshallable.CopyIn.
-func (n *NVOS02Parameters) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+func (n *NVOS02_PARAMETERS) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
     return n.CopyInN(cc, addr, n.SizeBytes())
 }
 
 // WriteTo implements io.WriterTo.WriteTo.
-func (n *NVOS02Parameters) WriteTo(writer io.Writer) (int64, error) {
+func (n *NVOS02_PARAMETERS) WriteTo(writer io.Writer) (int64, error) {
     if !n.HClass.Packed() && n.HObjectNew.Packed() && n.HObjectParent.Packed() && n.HRoot.Packed() && n.PMemory.Packed() {
-        // Type NVOS02Parameters doesn't have a packed layout in memory, fall back to MarshalBytes.
+        // Type NVOS02_PARAMETERS doesn't have a packed layout in memory, fall back to MarshalBytes.
         buf := make([]byte, n.SizeBytes())
         n.MarshalBytes(buf)
         length, err := writer.Write(buf)
@@ -7715,7 +7715,7 @@ func (n *NVOS02Parameters) WriteTo(writer io.Writer) (int64, error) {
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
-func (n *NVOS21Parameters) SizeBytes() int {
+func (n *NVOS21_PARAMETERS) SizeBytes() int {
     return 8 +
         (*Handle)(nil).SizeBytes() +
         (*Handle)(nil).SizeBytes() +
@@ -7725,7 +7725,7 @@ func (n *NVOS21Parameters) SizeBytes() int {
 }
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
-func (n *NVOS21Parameters) MarshalBytes(dst []byte) []byte {
+func (n *NVOS21_PARAMETERS) MarshalBytes(dst []byte) []byte {
     dst = n.HRoot.MarshalUnsafe(dst)
     dst = n.HObjectParent.MarshalUnsafe(dst)
     dst = n.HObjectNew.MarshalUnsafe(dst)
@@ -7739,7 +7739,7 @@ func (n *NVOS21Parameters) MarshalBytes(dst []byte) []byte {
 }
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (n *NVOS21Parameters) UnmarshalBytes(src []byte) []byte {
+func (n *NVOS21_PARAMETERS) UnmarshalBytes(src []byte) []byte {
     src = n.HRoot.UnmarshalUnsafe(src)
     src = n.HObjectParent.UnmarshalUnsafe(src)
     src = n.HObjectNew.UnmarshalUnsafe(src)
@@ -7754,36 +7754,36 @@ func (n *NVOS21Parameters) UnmarshalBytes(src []byte) []byte {
 
 // Packed implements marshal.Marshallable.Packed.
 //go:nosplit
-func (n *NVOS21Parameters) Packed() bool {
+func (n *NVOS21_PARAMETERS) Packed() bool {
     return n.HClass.Packed() && n.HObjectNew.Packed() && n.HObjectParent.Packed() && n.HRoot.Packed() && n.PAllocParms.Packed()
 }
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
-func (n *NVOS21Parameters) MarshalUnsafe(dst []byte) []byte {
+func (n *NVOS21_PARAMETERS) MarshalUnsafe(dst []byte) []byte {
     if n.HClass.Packed() && n.HObjectNew.Packed() && n.HObjectParent.Packed() && n.HRoot.Packed() && n.PAllocParms.Packed() {
         size := n.SizeBytes()
         gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(n), uintptr(size))
         return dst[size:]
     }
-    // Type NVOS21Parameters doesn't have a packed layout in memory, fallback to MarshalBytes.
+    // Type NVOS21_PARAMETERS doesn't have a packed layout in memory, fallback to MarshalBytes.
     return n.MarshalBytes(dst)
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
-func (n *NVOS21Parameters) UnmarshalUnsafe(src []byte) []byte {
+func (n *NVOS21_PARAMETERS) UnmarshalUnsafe(src []byte) []byte {
     if n.HClass.Packed() && n.HObjectNew.Packed() && n.HObjectParent.Packed() && n.HRoot.Packed() && n.PAllocParms.Packed() {
         size := n.SizeBytes()
         gohacks.Memmove(unsafe.Pointer(n), unsafe.Pointer(&src[0]), uintptr(size))
         return src[size:]
     }
-    // Type NVOS21Parameters doesn't have a packed layout in memory, fallback to UnmarshalBytes.
+    // Type NVOS21_PARAMETERS doesn't have a packed layout in memory, fallback to UnmarshalBytes.
     return n.UnmarshalBytes(src)
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
-func (n *NVOS21Parameters) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
+func (n *NVOS21_PARAMETERS) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
     if !n.HClass.Packed() && n.HObjectNew.Packed() && n.HObjectParent.Packed() && n.HRoot.Packed() && n.PAllocParms.Packed() {
-        // Type NVOS21Parameters doesn't have a packed layout in memory, fall back to MarshalBytes.
+        // Type NVOS21_PARAMETERS doesn't have a packed layout in memory, fall back to MarshalBytes.
         buf := cc.CopyScratchBuffer(n.SizeBytes()) // escapes: okay.
         n.MarshalBytes(buf) // escapes: fallback.
         return cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
@@ -7804,14 +7804,14 @@ func (n *NVOS21Parameters) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, 
 }
 
 // CopyOut implements marshal.Marshallable.CopyOut.
-func (n *NVOS21Parameters) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+func (n *NVOS21_PARAMETERS) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
     return n.CopyOutN(cc, addr, n.SizeBytes())
 }
 
 // CopyInN implements marshal.Marshallable.CopyInN.
-func (n *NVOS21Parameters) CopyInN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
+func (n *NVOS21_PARAMETERS) CopyInN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
     if !n.HClass.Packed() && n.HObjectNew.Packed() && n.HObjectParent.Packed() && n.HRoot.Packed() && n.PAllocParms.Packed() {
-        // Type NVOS21Parameters doesn't have a packed layout in memory, fall back to UnmarshalBytes.
+        // Type NVOS21_PARAMETERS doesn't have a packed layout in memory, fall back to UnmarshalBytes.
         buf := cc.CopyScratchBuffer(n.SizeBytes()) // escapes: okay.
         length, err := cc.CopyInBytes(addr, buf[:limit]) // escapes: okay.
         // Unmarshal unconditionally. If we had a short copy-in, this results in a
@@ -7835,14 +7835,14 @@ func (n *NVOS21Parameters) CopyInN(cc marshal.CopyContext, addr hostarch.Addr, l
 }
 
 // CopyIn implements marshal.Marshallable.CopyIn.
-func (n *NVOS21Parameters) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+func (n *NVOS21_PARAMETERS) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
     return n.CopyInN(cc, addr, n.SizeBytes())
 }
 
 // WriteTo implements io.WriterTo.WriteTo.
-func (n *NVOS21Parameters) WriteTo(writer io.Writer) (int64, error) {
+func (n *NVOS21_PARAMETERS) WriteTo(writer io.Writer) (int64, error) {
     if !n.HClass.Packed() && n.HObjectNew.Packed() && n.HObjectParent.Packed() && n.HRoot.Packed() && n.PAllocParms.Packed() {
-        // Type NVOS21Parameters doesn't have a packed layout in memory, fall back to MarshalBytes.
+        // Type NVOS21_PARAMETERS doesn't have a packed layout in memory, fall back to MarshalBytes.
         buf := make([]byte, n.SizeBytes())
         n.MarshalBytes(buf)
         length, err := writer.Write(buf)
@@ -7864,7 +7864,7 @@ func (n *NVOS21Parameters) WriteTo(writer io.Writer) (int64, error) {
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
-func (n *NVOS30Parameters) SizeBytes() int {
+func (n *NVOS30_PARAMETERS) SizeBytes() int {
     return 16 +
         (*Handle)(nil).SizeBytes() +
         (*Handle)(nil).SizeBytes() +
@@ -7876,7 +7876,7 @@ func (n *NVOS30Parameters) SizeBytes() int {
 }
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
-func (n *NVOS30Parameters) MarshalBytes(dst []byte) []byte {
+func (n *NVOS30_PARAMETERS) MarshalBytes(dst []byte) []byte {
     dst = n.Client.MarshalUnsafe(dst)
     dst = n.Device.MarshalUnsafe(dst)
     dst = n.Channel.MarshalUnsafe(dst)
@@ -7899,7 +7899,7 @@ func (n *NVOS30Parameters) MarshalBytes(dst []byte) []byte {
 }
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (n *NVOS30Parameters) UnmarshalBytes(src []byte) []byte {
+func (n *NVOS30_PARAMETERS) UnmarshalBytes(src []byte) []byte {
     src = n.Client.UnmarshalUnsafe(src)
     src = n.Device.UnmarshalUnsafe(src)
     src = n.Channel.UnmarshalUnsafe(src)
@@ -7923,36 +7923,36 @@ func (n *NVOS30Parameters) UnmarshalBytes(src []byte) []byte {
 
 // Packed implements marshal.Marshallable.Packed.
 //go:nosplit
-func (n *NVOS30Parameters) Packed() bool {
+func (n *NVOS30_PARAMETERS) Packed() bool {
     return n.Channel.Packed() && n.Channels.Packed() && n.Client.Packed() && n.Clients.Packed() && n.Device.Packed() && n.Devices.Packed()
 }
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
-func (n *NVOS30Parameters) MarshalUnsafe(dst []byte) []byte {
+func (n *NVOS30_PARAMETERS) MarshalUnsafe(dst []byte) []byte {
     if n.Channel.Packed() && n.Channels.Packed() && n.Client.Packed() && n.Clients.Packed() && n.Device.Packed() && n.Devices.Packed() {
         size := n.SizeBytes()
         gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(n), uintptr(size))
         return dst[size:]
     }
-    // Type NVOS30Parameters doesn't have a packed layout in memory, fallback to MarshalBytes.
+    // Type NVOS30_PARAMETERS doesn't have a packed layout in memory, fallback to MarshalBytes.
     return n.MarshalBytes(dst)
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
-func (n *NVOS30Parameters) UnmarshalUnsafe(src []byte) []byte {
+func (n *NVOS30_PARAMETERS) UnmarshalUnsafe(src []byte) []byte {
     if n.Channel.Packed() && n.Channels.Packed() && n.Client.Packed() && n.Clients.Packed() && n.Device.Packed() && n.Devices.Packed() {
         size := n.SizeBytes()
         gohacks.Memmove(unsafe.Pointer(n), unsafe.Pointer(&src[0]), uintptr(size))
         return src[size:]
     }
-    // Type NVOS30Parameters doesn't have a packed layout in memory, fallback to UnmarshalBytes.
+    // Type NVOS30_PARAMETERS doesn't have a packed layout in memory, fallback to UnmarshalBytes.
     return n.UnmarshalBytes(src)
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
-func (n *NVOS30Parameters) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
+func (n *NVOS30_PARAMETERS) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
     if !n.Channel.Packed() && n.Channels.Packed() && n.Client.Packed() && n.Clients.Packed() && n.Device.Packed() && n.Devices.Packed() {
-        // Type NVOS30Parameters doesn't have a packed layout in memory, fall back to MarshalBytes.
+        // Type NVOS30_PARAMETERS doesn't have a packed layout in memory, fall back to MarshalBytes.
         buf := cc.CopyScratchBuffer(n.SizeBytes()) // escapes: okay.
         n.MarshalBytes(buf) // escapes: fallback.
         return cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
@@ -7973,14 +7973,14 @@ func (n *NVOS30Parameters) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, 
 }
 
 // CopyOut implements marshal.Marshallable.CopyOut.
-func (n *NVOS30Parameters) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+func (n *NVOS30_PARAMETERS) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
     return n.CopyOutN(cc, addr, n.SizeBytes())
 }
 
 // CopyInN implements marshal.Marshallable.CopyInN.
-func (n *NVOS30Parameters) CopyInN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
+func (n *NVOS30_PARAMETERS) CopyInN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
     if !n.Channel.Packed() && n.Channels.Packed() && n.Client.Packed() && n.Clients.Packed() && n.Device.Packed() && n.Devices.Packed() {
-        // Type NVOS30Parameters doesn't have a packed layout in memory, fall back to UnmarshalBytes.
+        // Type NVOS30_PARAMETERS doesn't have a packed layout in memory, fall back to UnmarshalBytes.
         buf := cc.CopyScratchBuffer(n.SizeBytes()) // escapes: okay.
         length, err := cc.CopyInBytes(addr, buf[:limit]) // escapes: okay.
         // Unmarshal unconditionally. If we had a short copy-in, this results in a
@@ -8004,14 +8004,14 @@ func (n *NVOS30Parameters) CopyInN(cc marshal.CopyContext, addr hostarch.Addr, l
 }
 
 // CopyIn implements marshal.Marshallable.CopyIn.
-func (n *NVOS30Parameters) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+func (n *NVOS30_PARAMETERS) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
     return n.CopyInN(cc, addr, n.SizeBytes())
 }
 
 // WriteTo implements io.WriterTo.WriteTo.
-func (n *NVOS30Parameters) WriteTo(writer io.Writer) (int64, error) {
+func (n *NVOS30_PARAMETERS) WriteTo(writer io.Writer) (int64, error) {
     if !n.Channel.Packed() && n.Channels.Packed() && n.Client.Packed() && n.Clients.Packed() && n.Device.Packed() && n.Devices.Packed() {
-        // Type NVOS30Parameters doesn't have a packed layout in memory, fall back to MarshalBytes.
+        // Type NVOS30_PARAMETERS doesn't have a packed layout in memory, fall back to MarshalBytes.
         buf := make([]byte, n.SizeBytes())
         n.MarshalBytes(buf)
         length, err := writer.Write(buf)
@@ -8033,7 +8033,7 @@ func (n *NVOS30Parameters) WriteTo(writer io.Writer) (int64, error) {
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
-func (n *NVOS32Parameters) SizeBytes() int {
+func (n *NVOS32_PARAMETERS) SizeBytes() int {
     return 26 +
         (*Handle)(nil).SizeBytes() +
         (*Handle)(nil).SizeBytes() +
@@ -8043,7 +8043,7 @@ func (n *NVOS32Parameters) SizeBytes() int {
 }
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
-func (n *NVOS32Parameters) MarshalBytes(dst []byte) []byte {
+func (n *NVOS32_PARAMETERS) MarshalBytes(dst []byte) []byte {
     dst = n.HRoot.MarshalUnsafe(dst)
     dst = n.HObjectParent.MarshalUnsafe(dst)
     hostarch.ByteOrder.PutUint32(dst[:4], uint32(n.Function))
@@ -8069,7 +8069,7 @@ func (n *NVOS32Parameters) MarshalBytes(dst []byte) []byte {
 }
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (n *NVOS32Parameters) UnmarshalBytes(src []byte) []byte {
+func (n *NVOS32_PARAMETERS) UnmarshalBytes(src []byte) []byte {
     src = n.HRoot.UnmarshalUnsafe(src)
     src = n.HObjectParent.UnmarshalUnsafe(src)
     n.Function = uint32(hostarch.ByteOrder.Uint32(src[:4]))
@@ -8096,36 +8096,36 @@ func (n *NVOS32Parameters) UnmarshalBytes(src []byte) []byte {
 
 // Packed implements marshal.Marshallable.Packed.
 //go:nosplit
-func (n *NVOS32Parameters) Packed() bool {
+func (n *NVOS32_PARAMETERS) Packed() bool {
     return n.HObjectParent.Packed() && n.HRoot.Packed() && n.HVASpace.Packed()
 }
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
-func (n *NVOS32Parameters) MarshalUnsafe(dst []byte) []byte {
+func (n *NVOS32_PARAMETERS) MarshalUnsafe(dst []byte) []byte {
     if n.HObjectParent.Packed() && n.HRoot.Packed() && n.HVASpace.Packed() {
         size := n.SizeBytes()
         gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(n), uintptr(size))
         return dst[size:]
     }
-    // Type NVOS32Parameters doesn't have a packed layout in memory, fallback to MarshalBytes.
+    // Type NVOS32_PARAMETERS doesn't have a packed layout in memory, fallback to MarshalBytes.
     return n.MarshalBytes(dst)
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
-func (n *NVOS32Parameters) UnmarshalUnsafe(src []byte) []byte {
+func (n *NVOS32_PARAMETERS) UnmarshalUnsafe(src []byte) []byte {
     if n.HObjectParent.Packed() && n.HRoot.Packed() && n.HVASpace.Packed() {
         size := n.SizeBytes()
         gohacks.Memmove(unsafe.Pointer(n), unsafe.Pointer(&src[0]), uintptr(size))
         return src[size:]
     }
-    // Type NVOS32Parameters doesn't have a packed layout in memory, fallback to UnmarshalBytes.
+    // Type NVOS32_PARAMETERS doesn't have a packed layout in memory, fallback to UnmarshalBytes.
     return n.UnmarshalBytes(src)
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
-func (n *NVOS32Parameters) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
+func (n *NVOS32_PARAMETERS) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
     if !n.HObjectParent.Packed() && n.HRoot.Packed() && n.HVASpace.Packed() {
-        // Type NVOS32Parameters doesn't have a packed layout in memory, fall back to MarshalBytes.
+        // Type NVOS32_PARAMETERS doesn't have a packed layout in memory, fall back to MarshalBytes.
         buf := cc.CopyScratchBuffer(n.SizeBytes()) // escapes: okay.
         n.MarshalBytes(buf) // escapes: fallback.
         return cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
@@ -8146,14 +8146,14 @@ func (n *NVOS32Parameters) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, 
 }
 
 // CopyOut implements marshal.Marshallable.CopyOut.
-func (n *NVOS32Parameters) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+func (n *NVOS32_PARAMETERS) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
     return n.CopyOutN(cc, addr, n.SizeBytes())
 }
 
 // CopyInN implements marshal.Marshallable.CopyInN.
-func (n *NVOS32Parameters) CopyInN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
+func (n *NVOS32_PARAMETERS) CopyInN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
     if !n.HObjectParent.Packed() && n.HRoot.Packed() && n.HVASpace.Packed() {
-        // Type NVOS32Parameters doesn't have a packed layout in memory, fall back to UnmarshalBytes.
+        // Type NVOS32_PARAMETERS doesn't have a packed layout in memory, fall back to UnmarshalBytes.
         buf := cc.CopyScratchBuffer(n.SizeBytes()) // escapes: okay.
         length, err := cc.CopyInBytes(addr, buf[:limit]) // escapes: okay.
         // Unmarshal unconditionally. If we had a short copy-in, this results in a
@@ -8177,14 +8177,14 @@ func (n *NVOS32Parameters) CopyInN(cc marshal.CopyContext, addr hostarch.Addr, l
 }
 
 // CopyIn implements marshal.Marshallable.CopyIn.
-func (n *NVOS32Parameters) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+func (n *NVOS32_PARAMETERS) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
     return n.CopyInN(cc, addr, n.SizeBytes())
 }
 
 // WriteTo implements io.WriterTo.WriteTo.
-func (n *NVOS32Parameters) WriteTo(writer io.Writer) (int64, error) {
+func (n *NVOS32_PARAMETERS) WriteTo(writer io.Writer) (int64, error) {
     if !n.HObjectParent.Packed() && n.HRoot.Packed() && n.HVASpace.Packed() {
-        // Type NVOS32Parameters doesn't have a packed layout in memory, fall back to MarshalBytes.
+        // Type NVOS32_PARAMETERS doesn't have a packed layout in memory, fall back to MarshalBytes.
         buf := make([]byte, n.SizeBytes())
         n.MarshalBytes(buf)
         length, err := writer.Write(buf)
@@ -8206,7 +8206,7 @@ func (n *NVOS32Parameters) WriteTo(writer io.Writer) (int64, error) {
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
-func (n *NVOS33Parameters) SizeBytes() int {
+func (n *NVOS33_PARAMETERS) SizeBytes() int {
     return 24 +
         (*Handle)(nil).SizeBytes() +
         (*Handle)(nil).SizeBytes() +
@@ -8216,7 +8216,7 @@ func (n *NVOS33Parameters) SizeBytes() int {
 }
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
-func (n *NVOS33Parameters) MarshalBytes(dst []byte) []byte {
+func (n *NVOS33_PARAMETERS) MarshalBytes(dst []byte) []byte {
     dst = n.HClient.MarshalUnsafe(dst)
     dst = n.HDevice.MarshalUnsafe(dst)
     dst = n.HMemory.MarshalUnsafe(dst)
@@ -8237,7 +8237,7 @@ func (n *NVOS33Parameters) MarshalBytes(dst []byte) []byte {
 }
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (n *NVOS33Parameters) UnmarshalBytes(src []byte) []byte {
+func (n *NVOS33_PARAMETERS) UnmarshalBytes(src []byte) []byte {
     src = n.HClient.UnmarshalUnsafe(src)
     src = n.HDevice.UnmarshalUnsafe(src)
     src = n.HMemory.UnmarshalUnsafe(src)
@@ -8259,36 +8259,36 @@ func (n *NVOS33Parameters) UnmarshalBytes(src []byte) []byte {
 
 // Packed implements marshal.Marshallable.Packed.
 //go:nosplit
-func (n *NVOS33Parameters) Packed() bool {
+func (n *NVOS33_PARAMETERS) Packed() bool {
     return n.HClient.Packed() && n.HDevice.Packed() && n.HMemory.Packed() && n.PLinearAddress.Packed()
 }
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
-func (n *NVOS33Parameters) MarshalUnsafe(dst []byte) []byte {
+func (n *NVOS33_PARAMETERS) MarshalUnsafe(dst []byte) []byte {
     if n.HClient.Packed() && n.HDevice.Packed() && n.HMemory.Packed() && n.PLinearAddress.Packed() {
         size := n.SizeBytes()
         gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(n), uintptr(size))
         return dst[size:]
     }
-    // Type NVOS33Parameters doesn't have a packed layout in memory, fallback to MarshalBytes.
+    // Type NVOS33_PARAMETERS doesn't have a packed layout in memory, fallback to MarshalBytes.
     return n.MarshalBytes(dst)
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
-func (n *NVOS33Parameters) UnmarshalUnsafe(src []byte) []byte {
+func (n *NVOS33_PARAMETERS) UnmarshalUnsafe(src []byte) []byte {
     if n.HClient.Packed() && n.HDevice.Packed() && n.HMemory.Packed() && n.PLinearAddress.Packed() {
         size := n.SizeBytes()
         gohacks.Memmove(unsafe.Pointer(n), unsafe.Pointer(&src[0]), uintptr(size))
         return src[size:]
     }
-    // Type NVOS33Parameters doesn't have a packed layout in memory, fallback to UnmarshalBytes.
+    // Type NVOS33_PARAMETERS doesn't have a packed layout in memory, fallback to UnmarshalBytes.
     return n.UnmarshalBytes(src)
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
-func (n *NVOS33Parameters) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
+func (n *NVOS33_PARAMETERS) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
     if !n.HClient.Packed() && n.HDevice.Packed() && n.HMemory.Packed() && n.PLinearAddress.Packed() {
-        // Type NVOS33Parameters doesn't have a packed layout in memory, fall back to MarshalBytes.
+        // Type NVOS33_PARAMETERS doesn't have a packed layout in memory, fall back to MarshalBytes.
         buf := cc.CopyScratchBuffer(n.SizeBytes()) // escapes: okay.
         n.MarshalBytes(buf) // escapes: fallback.
         return cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
@@ -8309,14 +8309,14 @@ func (n *NVOS33Parameters) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, 
 }
 
 // CopyOut implements marshal.Marshallable.CopyOut.
-func (n *NVOS33Parameters) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+func (n *NVOS33_PARAMETERS) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
     return n.CopyOutN(cc, addr, n.SizeBytes())
 }
 
 // CopyInN implements marshal.Marshallable.CopyInN.
-func (n *NVOS33Parameters) CopyInN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
+func (n *NVOS33_PARAMETERS) CopyInN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
     if !n.HClient.Packed() && n.HDevice.Packed() && n.HMemory.Packed() && n.PLinearAddress.Packed() {
-        // Type NVOS33Parameters doesn't have a packed layout in memory, fall back to UnmarshalBytes.
+        // Type NVOS33_PARAMETERS doesn't have a packed layout in memory, fall back to UnmarshalBytes.
         buf := cc.CopyScratchBuffer(n.SizeBytes()) // escapes: okay.
         length, err := cc.CopyInBytes(addr, buf[:limit]) // escapes: okay.
         // Unmarshal unconditionally. If we had a short copy-in, this results in a
@@ -8340,14 +8340,14 @@ func (n *NVOS33Parameters) CopyInN(cc marshal.CopyContext, addr hostarch.Addr, l
 }
 
 // CopyIn implements marshal.Marshallable.CopyIn.
-func (n *NVOS33Parameters) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+func (n *NVOS33_PARAMETERS) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
     return n.CopyInN(cc, addr, n.SizeBytes())
 }
 
 // WriteTo implements io.WriterTo.WriteTo.
-func (n *NVOS33Parameters) WriteTo(writer io.Writer) (int64, error) {
+func (n *NVOS33_PARAMETERS) WriteTo(writer io.Writer) (int64, error) {
     if !n.HClient.Packed() && n.HDevice.Packed() && n.HMemory.Packed() && n.PLinearAddress.Packed() {
-        // Type NVOS33Parameters doesn't have a packed layout in memory, fall back to MarshalBytes.
+        // Type NVOS33_PARAMETERS doesn't have a packed layout in memory, fall back to MarshalBytes.
         buf := make([]byte, n.SizeBytes())
         n.MarshalBytes(buf)
         length, err := writer.Write(buf)
@@ -8369,7 +8369,7 @@ func (n *NVOS33Parameters) WriteTo(writer io.Writer) (int64, error) {
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
-func (n *NVOS34Parameters) SizeBytes() int {
+func (n *NVOS34_PARAMETERS) SizeBytes() int {
     return 8 +
         (*Handle)(nil).SizeBytes() +
         (*Handle)(nil).SizeBytes() +
@@ -8379,7 +8379,7 @@ func (n *NVOS34Parameters) SizeBytes() int {
 }
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
-func (n *NVOS34Parameters) MarshalBytes(dst []byte) []byte {
+func (n *NVOS34_PARAMETERS) MarshalBytes(dst []byte) []byte {
     dst = n.HClient.MarshalUnsafe(dst)
     dst = n.HDevice.MarshalUnsafe(dst)
     dst = n.HMemory.MarshalUnsafe(dst)
@@ -8396,7 +8396,7 @@ func (n *NVOS34Parameters) MarshalBytes(dst []byte) []byte {
 }
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (n *NVOS34Parameters) UnmarshalBytes(src []byte) []byte {
+func (n *NVOS34_PARAMETERS) UnmarshalBytes(src []byte) []byte {
     src = n.HClient.UnmarshalUnsafe(src)
     src = n.HDevice.UnmarshalUnsafe(src)
     src = n.HMemory.UnmarshalUnsafe(src)
@@ -8414,36 +8414,36 @@ func (n *NVOS34Parameters) UnmarshalBytes(src []byte) []byte {
 
 // Packed implements marshal.Marshallable.Packed.
 //go:nosplit
-func (n *NVOS34Parameters) Packed() bool {
+func (n *NVOS34_PARAMETERS) Packed() bool {
     return n.HClient.Packed() && n.HDevice.Packed() && n.HMemory.Packed() && n.PLinearAddress.Packed()
 }
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
-func (n *NVOS34Parameters) MarshalUnsafe(dst []byte) []byte {
+func (n *NVOS34_PARAMETERS) MarshalUnsafe(dst []byte) []byte {
     if n.HClient.Packed() && n.HDevice.Packed() && n.HMemory.Packed() && n.PLinearAddress.Packed() {
         size := n.SizeBytes()
         gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(n), uintptr(size))
         return dst[size:]
     }
-    // Type NVOS34Parameters doesn't have a packed layout in memory, fallback to MarshalBytes.
+    // Type NVOS34_PARAMETERS doesn't have a packed layout in memory, fallback to MarshalBytes.
     return n.MarshalBytes(dst)
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
-func (n *NVOS34Parameters) UnmarshalUnsafe(src []byte) []byte {
+func (n *NVOS34_PARAMETERS) UnmarshalUnsafe(src []byte) []byte {
     if n.HClient.Packed() && n.HDevice.Packed() && n.HMemory.Packed() && n.PLinearAddress.Packed() {
         size := n.SizeBytes()
         gohacks.Memmove(unsafe.Pointer(n), unsafe.Pointer(&src[0]), uintptr(size))
         return src[size:]
     }
-    // Type NVOS34Parameters doesn't have a packed layout in memory, fallback to UnmarshalBytes.
+    // Type NVOS34_PARAMETERS doesn't have a packed layout in memory, fallback to UnmarshalBytes.
     return n.UnmarshalBytes(src)
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
-func (n *NVOS34Parameters) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
+func (n *NVOS34_PARAMETERS) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
     if !n.HClient.Packed() && n.HDevice.Packed() && n.HMemory.Packed() && n.PLinearAddress.Packed() {
-        // Type NVOS34Parameters doesn't have a packed layout in memory, fall back to MarshalBytes.
+        // Type NVOS34_PARAMETERS doesn't have a packed layout in memory, fall back to MarshalBytes.
         buf := cc.CopyScratchBuffer(n.SizeBytes()) // escapes: okay.
         n.MarshalBytes(buf) // escapes: fallback.
         return cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
@@ -8464,14 +8464,14 @@ func (n *NVOS34Parameters) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, 
 }
 
 // CopyOut implements marshal.Marshallable.CopyOut.
-func (n *NVOS34Parameters) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+func (n *NVOS34_PARAMETERS) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
     return n.CopyOutN(cc, addr, n.SizeBytes())
 }
 
 // CopyInN implements marshal.Marshallable.CopyInN.
-func (n *NVOS34Parameters) CopyInN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
+func (n *NVOS34_PARAMETERS) CopyInN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
     if !n.HClient.Packed() && n.HDevice.Packed() && n.HMemory.Packed() && n.PLinearAddress.Packed() {
-        // Type NVOS34Parameters doesn't have a packed layout in memory, fall back to UnmarshalBytes.
+        // Type NVOS34_PARAMETERS doesn't have a packed layout in memory, fall back to UnmarshalBytes.
         buf := cc.CopyScratchBuffer(n.SizeBytes()) // escapes: okay.
         length, err := cc.CopyInBytes(addr, buf[:limit]) // escapes: okay.
         // Unmarshal unconditionally. If we had a short copy-in, this results in a
@@ -8495,14 +8495,14 @@ func (n *NVOS34Parameters) CopyInN(cc marshal.CopyContext, addr hostarch.Addr, l
 }
 
 // CopyIn implements marshal.Marshallable.CopyIn.
-func (n *NVOS34Parameters) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+func (n *NVOS34_PARAMETERS) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
     return n.CopyInN(cc, addr, n.SizeBytes())
 }
 
 // WriteTo implements io.WriterTo.WriteTo.
-func (n *NVOS34Parameters) WriteTo(writer io.Writer) (int64, error) {
+func (n *NVOS34_PARAMETERS) WriteTo(writer io.Writer) (int64, error) {
     if !n.HClient.Packed() && n.HDevice.Packed() && n.HMemory.Packed() && n.PLinearAddress.Packed() {
-        // Type NVOS34Parameters doesn't have a packed layout in memory, fall back to MarshalBytes.
+        // Type NVOS34_PARAMETERS doesn't have a packed layout in memory, fall back to MarshalBytes.
         buf := make([]byte, n.SizeBytes())
         n.MarshalBytes(buf)
         length, err := writer.Write(buf)
@@ -8524,7 +8524,7 @@ func (n *NVOS34Parameters) WriteTo(writer io.Writer) (int64, error) {
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
-func (n *NVOS39Parameters) SizeBytes() int {
+func (n *NVOS39_PARAMETERS) SizeBytes() int {
     return 28 +
         (*Handle)(nil).SizeBytes() +
         (*Handle)(nil).SizeBytes() +
@@ -8536,7 +8536,7 @@ func (n *NVOS39Parameters) SizeBytes() int {
 }
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
-func (n *NVOS39Parameters) MarshalBytes(dst []byte) []byte {
+func (n *NVOS39_PARAMETERS) MarshalBytes(dst []byte) []byte {
     dst = n.HObjectParent.MarshalUnsafe(dst)
     dst = n.HSubDevice.MarshalUnsafe(dst)
     dst = n.HObjectNew.MarshalUnsafe(dst)
@@ -8564,7 +8564,7 @@ func (n *NVOS39Parameters) MarshalBytes(dst []byte) []byte {
 }
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (n *NVOS39Parameters) UnmarshalBytes(src []byte) []byte {
+func (n *NVOS39_PARAMETERS) UnmarshalBytes(src []byte) []byte {
     src = n.HObjectParent.UnmarshalUnsafe(src)
     src = n.HSubDevice.UnmarshalUnsafe(src)
     src = n.HObjectNew.UnmarshalUnsafe(src)
@@ -8593,36 +8593,36 @@ func (n *NVOS39Parameters) UnmarshalBytes(src []byte) []byte {
 
 // Packed implements marshal.Marshallable.Packed.
 //go:nosplit
-func (n *NVOS39Parameters) Packed() bool {
+func (n *NVOS39_PARAMETERS) Packed() bool {
     return n.HClass.Packed() && n.HMemory.Packed() && n.HObjectNew.Packed() && n.HObjectParent.Packed() && n.HSubDevice.Packed()
 }
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
-func (n *NVOS39Parameters) MarshalUnsafe(dst []byte) []byte {
+func (n *NVOS39_PARAMETERS) MarshalUnsafe(dst []byte) []byte {
     if n.HClass.Packed() && n.HMemory.Packed() && n.HObjectNew.Packed() && n.HObjectParent.Packed() && n.HSubDevice.Packed() {
         size := n.SizeBytes()
         gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(n), uintptr(size))
         return dst[size:]
     }
-    // Type NVOS39Parameters doesn't have a packed layout in memory, fallback to MarshalBytes.
+    // Type NVOS39_PARAMETERS doesn't have a packed layout in memory, fallback to MarshalBytes.
     return n.MarshalBytes(dst)
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
-func (n *NVOS39Parameters) UnmarshalUnsafe(src []byte) []byte {
+func (n *NVOS39_PARAMETERS) UnmarshalUnsafe(src []byte) []byte {
     if n.HClass.Packed() && n.HMemory.Packed() && n.HObjectNew.Packed() && n.HObjectParent.Packed() && n.HSubDevice.Packed() {
         size := n.SizeBytes()
         gohacks.Memmove(unsafe.Pointer(n), unsafe.Pointer(&src[0]), uintptr(size))
         return src[size:]
     }
-    // Type NVOS39Parameters doesn't have a packed layout in memory, fallback to UnmarshalBytes.
+    // Type NVOS39_PARAMETERS doesn't have a packed layout in memory, fallback to UnmarshalBytes.
     return n.UnmarshalBytes(src)
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
-func (n *NVOS39Parameters) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
+func (n *NVOS39_PARAMETERS) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
     if !n.HClass.Packed() && n.HMemory.Packed() && n.HObjectNew.Packed() && n.HObjectParent.Packed() && n.HSubDevice.Packed() {
-        // Type NVOS39Parameters doesn't have a packed layout in memory, fall back to MarshalBytes.
+        // Type NVOS39_PARAMETERS doesn't have a packed layout in memory, fall back to MarshalBytes.
         buf := cc.CopyScratchBuffer(n.SizeBytes()) // escapes: okay.
         n.MarshalBytes(buf) // escapes: fallback.
         return cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
@@ -8643,14 +8643,14 @@ func (n *NVOS39Parameters) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, 
 }
 
 // CopyOut implements marshal.Marshallable.CopyOut.
-func (n *NVOS39Parameters) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+func (n *NVOS39_PARAMETERS) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
     return n.CopyOutN(cc, addr, n.SizeBytes())
 }
 
 // CopyInN implements marshal.Marshallable.CopyInN.
-func (n *NVOS39Parameters) CopyInN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
+func (n *NVOS39_PARAMETERS) CopyInN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
     if !n.HClass.Packed() && n.HMemory.Packed() && n.HObjectNew.Packed() && n.HObjectParent.Packed() && n.HSubDevice.Packed() {
-        // Type NVOS39Parameters doesn't have a packed layout in memory, fall back to UnmarshalBytes.
+        // Type NVOS39_PARAMETERS doesn't have a packed layout in memory, fall back to UnmarshalBytes.
         buf := cc.CopyScratchBuffer(n.SizeBytes()) // escapes: okay.
         length, err := cc.CopyInBytes(addr, buf[:limit]) // escapes: okay.
         // Unmarshal unconditionally. If we had a short copy-in, this results in a
@@ -8674,14 +8674,14 @@ func (n *NVOS39Parameters) CopyInN(cc marshal.CopyContext, addr hostarch.Addr, l
 }
 
 // CopyIn implements marshal.Marshallable.CopyIn.
-func (n *NVOS39Parameters) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+func (n *NVOS39_PARAMETERS) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
     return n.CopyInN(cc, addr, n.SizeBytes())
 }
 
 // WriteTo implements io.WriterTo.WriteTo.
-func (n *NVOS39Parameters) WriteTo(writer io.Writer) (int64, error) {
+func (n *NVOS39_PARAMETERS) WriteTo(writer io.Writer) (int64, error) {
     if !n.HClass.Packed() && n.HMemory.Packed() && n.HObjectNew.Packed() && n.HObjectParent.Packed() && n.HSubDevice.Packed() {
-        // Type NVOS39Parameters doesn't have a packed layout in memory, fall back to MarshalBytes.
+        // Type NVOS39_PARAMETERS doesn't have a packed layout in memory, fall back to MarshalBytes.
         buf := make([]byte, n.SizeBytes())
         n.MarshalBytes(buf)
         length, err := writer.Write(buf)
@@ -8703,7 +8703,7 @@ func (n *NVOS39Parameters) WriteTo(writer io.Writer) (int64, error) {
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
-func (n *NVOS46Parameters) SizeBytes() int {
+func (n *NVOS46_PARAMETERS) SizeBytes() int {
     return 32 +
         (*Handle)(nil).SizeBytes() +
         (*Handle)(nil).SizeBytes() +
@@ -8714,7 +8714,7 @@ func (n *NVOS46Parameters) SizeBytes() int {
 }
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
-func (n *NVOS46Parameters) MarshalBytes(dst []byte) []byte {
+func (n *NVOS46_PARAMETERS) MarshalBytes(dst []byte) []byte {
     dst = n.Client.MarshalUnsafe(dst)
     dst = n.Device.MarshalUnsafe(dst)
     dst = n.Dma.MarshalUnsafe(dst)
@@ -8741,7 +8741,7 @@ func (n *NVOS46Parameters) MarshalBytes(dst []byte) []byte {
 }
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (n *NVOS46Parameters) UnmarshalBytes(src []byte) []byte {
+func (n *NVOS46_PARAMETERS) UnmarshalBytes(src []byte) []byte {
     src = n.Client.UnmarshalUnsafe(src)
     src = n.Device.UnmarshalUnsafe(src)
     src = n.Dma.UnmarshalUnsafe(src)
@@ -8769,36 +8769,36 @@ func (n *NVOS46Parameters) UnmarshalBytes(src []byte) []byte {
 
 // Packed implements marshal.Marshallable.Packed.
 //go:nosplit
-func (n *NVOS46Parameters) Packed() bool {
+func (n *NVOS46_PARAMETERS) Packed() bool {
     return n.Client.Packed() && n.Device.Packed() && n.Dma.Packed() && n.Memory.Packed()
 }
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
-func (n *NVOS46Parameters) MarshalUnsafe(dst []byte) []byte {
+func (n *NVOS46_PARAMETERS) MarshalUnsafe(dst []byte) []byte {
     if n.Client.Packed() && n.Device.Packed() && n.Dma.Packed() && n.Memory.Packed() {
         size := n.SizeBytes()
         gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(n), uintptr(size))
         return dst[size:]
     }
-    // Type NVOS46Parameters doesn't have a packed layout in memory, fallback to MarshalBytes.
+    // Type NVOS46_PARAMETERS doesn't have a packed layout in memory, fallback to MarshalBytes.
     return n.MarshalBytes(dst)
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
-func (n *NVOS46Parameters) UnmarshalUnsafe(src []byte) []byte {
+func (n *NVOS46_PARAMETERS) UnmarshalUnsafe(src []byte) []byte {
     if n.Client.Packed() && n.Device.Packed() && n.Dma.Packed() && n.Memory.Packed() {
         size := n.SizeBytes()
         gohacks.Memmove(unsafe.Pointer(n), unsafe.Pointer(&src[0]), uintptr(size))
         return src[size:]
     }
-    // Type NVOS46Parameters doesn't have a packed layout in memory, fallback to UnmarshalBytes.
+    // Type NVOS46_PARAMETERS doesn't have a packed layout in memory, fallback to UnmarshalBytes.
     return n.UnmarshalBytes(src)
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
-func (n *NVOS46Parameters) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
+func (n *NVOS46_PARAMETERS) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
     if !n.Client.Packed() && n.Device.Packed() && n.Dma.Packed() && n.Memory.Packed() {
-        // Type NVOS46Parameters doesn't have a packed layout in memory, fall back to MarshalBytes.
+        // Type NVOS46_PARAMETERS doesn't have a packed layout in memory, fall back to MarshalBytes.
         buf := cc.CopyScratchBuffer(n.SizeBytes()) // escapes: okay.
         n.MarshalBytes(buf) // escapes: fallback.
         return cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
@@ -8819,14 +8819,14 @@ func (n *NVOS46Parameters) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, 
 }
 
 // CopyOut implements marshal.Marshallable.CopyOut.
-func (n *NVOS46Parameters) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+func (n *NVOS46_PARAMETERS) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
     return n.CopyOutN(cc, addr, n.SizeBytes())
 }
 
 // CopyInN implements marshal.Marshallable.CopyInN.
-func (n *NVOS46Parameters) CopyInN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
+func (n *NVOS46_PARAMETERS) CopyInN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
     if !n.Client.Packed() && n.Device.Packed() && n.Dma.Packed() && n.Memory.Packed() {
-        // Type NVOS46Parameters doesn't have a packed layout in memory, fall back to UnmarshalBytes.
+        // Type NVOS46_PARAMETERS doesn't have a packed layout in memory, fall back to UnmarshalBytes.
         buf := cc.CopyScratchBuffer(n.SizeBytes()) // escapes: okay.
         length, err := cc.CopyInBytes(addr, buf[:limit]) // escapes: okay.
         // Unmarshal unconditionally. If we had a short copy-in, this results in a
@@ -8850,14 +8850,14 @@ func (n *NVOS46Parameters) CopyInN(cc marshal.CopyContext, addr hostarch.Addr, l
 }
 
 // CopyIn implements marshal.Marshallable.CopyIn.
-func (n *NVOS46Parameters) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+func (n *NVOS46_PARAMETERS) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
     return n.CopyInN(cc, addr, n.SizeBytes())
 }
 
 // WriteTo implements io.WriterTo.WriteTo.
-func (n *NVOS46Parameters) WriteTo(writer io.Writer) (int64, error) {
+func (n *NVOS46_PARAMETERS) WriteTo(writer io.Writer) (int64, error) {
     if !n.Client.Packed() && n.Device.Packed() && n.Dma.Packed() && n.Memory.Packed() {
-        // Type NVOS46Parameters doesn't have a packed layout in memory, fall back to MarshalBytes.
+        // Type NVOS46_PARAMETERS doesn't have a packed layout in memory, fall back to MarshalBytes.
         buf := make([]byte, n.SizeBytes())
         n.MarshalBytes(buf)
         length, err := writer.Write(buf)
@@ -8879,7 +8879,7 @@ func (n *NVOS46Parameters) WriteTo(writer io.Writer) (int64, error) {
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
-func (n *NVOS47Parameters) SizeBytes() int {
+func (n *NVOS47_PARAMETERS) SizeBytes() int {
     return 16 +
         (*Handle)(nil).SizeBytes() +
         (*Handle)(nil).SizeBytes() +
@@ -8890,7 +8890,7 @@ func (n *NVOS47Parameters) SizeBytes() int {
 }
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
-func (n *NVOS47Parameters) MarshalBytes(dst []byte) []byte {
+func (n *NVOS47_PARAMETERS) MarshalBytes(dst []byte) []byte {
     dst = n.Client.MarshalUnsafe(dst)
     dst = n.Device.MarshalUnsafe(dst)
     dst = n.Dma.MarshalUnsafe(dst)
@@ -8913,7 +8913,7 @@ func (n *NVOS47Parameters) MarshalBytes(dst []byte) []byte {
 }
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (n *NVOS47Parameters) UnmarshalBytes(src []byte) []byte {
+func (n *NVOS47_PARAMETERS) UnmarshalBytes(src []byte) []byte {
     src = n.Client.UnmarshalUnsafe(src)
     src = n.Device.UnmarshalUnsafe(src)
     src = n.Dma.UnmarshalUnsafe(src)
@@ -8937,36 +8937,36 @@ func (n *NVOS47Parameters) UnmarshalBytes(src []byte) []byte {
 
 // Packed implements marshal.Marshallable.Packed.
 //go:nosplit
-func (n *NVOS47Parameters) Packed() bool {
+func (n *NVOS47_PARAMETERS) Packed() bool {
     return n.Client.Packed() && n.Device.Packed() && n.Dma.Packed() && n.Memory.Packed()
 }
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
-func (n *NVOS47Parameters) MarshalUnsafe(dst []byte) []byte {
+func (n *NVOS47_PARAMETERS) MarshalUnsafe(dst []byte) []byte {
     if n.Client.Packed() && n.Device.Packed() && n.Dma.Packed() && n.Memory.Packed() {
         size := n.SizeBytes()
         gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(n), uintptr(size))
         return dst[size:]
     }
-    // Type NVOS47Parameters doesn't have a packed layout in memory, fallback to MarshalBytes.
+    // Type NVOS47_PARAMETERS doesn't have a packed layout in memory, fallback to MarshalBytes.
     return n.MarshalBytes(dst)
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
-func (n *NVOS47Parameters) UnmarshalUnsafe(src []byte) []byte {
+func (n *NVOS47_PARAMETERS) UnmarshalUnsafe(src []byte) []byte {
     if n.Client.Packed() && n.Device.Packed() && n.Dma.Packed() && n.Memory.Packed() {
         size := n.SizeBytes()
         gohacks.Memmove(unsafe.Pointer(n), unsafe.Pointer(&src[0]), uintptr(size))
         return src[size:]
     }
-    // Type NVOS47Parameters doesn't have a packed layout in memory, fallback to UnmarshalBytes.
+    // Type NVOS47_PARAMETERS doesn't have a packed layout in memory, fallback to UnmarshalBytes.
     return n.UnmarshalBytes(src)
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
-func (n *NVOS47Parameters) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
+func (n *NVOS47_PARAMETERS) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
     if !n.Client.Packed() && n.Device.Packed() && n.Dma.Packed() && n.Memory.Packed() {
-        // Type NVOS47Parameters doesn't have a packed layout in memory, fall back to MarshalBytes.
+        // Type NVOS47_PARAMETERS doesn't have a packed layout in memory, fall back to MarshalBytes.
         buf := cc.CopyScratchBuffer(n.SizeBytes()) // escapes: okay.
         n.MarshalBytes(buf) // escapes: fallback.
         return cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
@@ -8987,14 +8987,14 @@ func (n *NVOS47Parameters) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, 
 }
 
 // CopyOut implements marshal.Marshallable.CopyOut.
-func (n *NVOS47Parameters) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+func (n *NVOS47_PARAMETERS) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
     return n.CopyOutN(cc, addr, n.SizeBytes())
 }
 
 // CopyInN implements marshal.Marshallable.CopyInN.
-func (n *NVOS47Parameters) CopyInN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
+func (n *NVOS47_PARAMETERS) CopyInN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
     if !n.Client.Packed() && n.Device.Packed() && n.Dma.Packed() && n.Memory.Packed() {
-        // Type NVOS47Parameters doesn't have a packed layout in memory, fall back to UnmarshalBytes.
+        // Type NVOS47_PARAMETERS doesn't have a packed layout in memory, fall back to UnmarshalBytes.
         buf := cc.CopyScratchBuffer(n.SizeBytes()) // escapes: okay.
         length, err := cc.CopyInBytes(addr, buf[:limit]) // escapes: okay.
         // Unmarshal unconditionally. If we had a short copy-in, this results in a
@@ -9018,14 +9018,14 @@ func (n *NVOS47Parameters) CopyInN(cc marshal.CopyContext, addr hostarch.Addr, l
 }
 
 // CopyIn implements marshal.Marshallable.CopyIn.
-func (n *NVOS47Parameters) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+func (n *NVOS47_PARAMETERS) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
     return n.CopyInN(cc, addr, n.SizeBytes())
 }
 
 // WriteTo implements io.WriterTo.WriteTo.
-func (n *NVOS47Parameters) WriteTo(writer io.Writer) (int64, error) {
+func (n *NVOS47_PARAMETERS) WriteTo(writer io.Writer) (int64, error) {
     if !n.Client.Packed() && n.Device.Packed() && n.Dma.Packed() && n.Memory.Packed() {
-        // Type NVOS47Parameters doesn't have a packed layout in memory, fall back to MarshalBytes.
+        // Type NVOS47_PARAMETERS doesn't have a packed layout in memory, fall back to MarshalBytes.
         buf := make([]byte, n.SizeBytes())
         n.MarshalBytes(buf)
         length, err := writer.Write(buf)
@@ -9047,7 +9047,7 @@ func (n *NVOS47Parameters) WriteTo(writer io.Writer) (int64, error) {
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
-func (n *NVOS47ParametersV550) SizeBytes() int {
+func (n *NVOS47_PARAMETERS_V550) SizeBytes() int {
     return 24 +
         (*Handle)(nil).SizeBytes() +
         (*Handle)(nil).SizeBytes() +
@@ -9058,7 +9058,7 @@ func (n *NVOS47ParametersV550) SizeBytes() int {
 }
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
-func (n *NVOS47ParametersV550) MarshalBytes(dst []byte) []byte {
+func (n *NVOS47_PARAMETERS_V550) MarshalBytes(dst []byte) []byte {
     dst = n.Client.MarshalUnsafe(dst)
     dst = n.Device.MarshalUnsafe(dst)
     dst = n.Dma.MarshalUnsafe(dst)
@@ -9083,7 +9083,7 @@ func (n *NVOS47ParametersV550) MarshalBytes(dst []byte) []byte {
 }
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (n *NVOS47ParametersV550) UnmarshalBytes(src []byte) []byte {
+func (n *NVOS47_PARAMETERS_V550) UnmarshalBytes(src []byte) []byte {
     src = n.Client.UnmarshalUnsafe(src)
     src = n.Device.UnmarshalUnsafe(src)
     src = n.Dma.UnmarshalUnsafe(src)
@@ -9109,36 +9109,36 @@ func (n *NVOS47ParametersV550) UnmarshalBytes(src []byte) []byte {
 
 // Packed implements marshal.Marshallable.Packed.
 //go:nosplit
-func (n *NVOS47ParametersV550) Packed() bool {
+func (n *NVOS47_PARAMETERS_V550) Packed() bool {
     return n.Client.Packed() && n.Device.Packed() && n.Dma.Packed() && n.Memory.Packed()
 }
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
-func (n *NVOS47ParametersV550) MarshalUnsafe(dst []byte) []byte {
+func (n *NVOS47_PARAMETERS_V550) MarshalUnsafe(dst []byte) []byte {
     if n.Client.Packed() && n.Device.Packed() && n.Dma.Packed() && n.Memory.Packed() {
         size := n.SizeBytes()
         gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(n), uintptr(size))
         return dst[size:]
     }
-    // Type NVOS47ParametersV550 doesn't have a packed layout in memory, fallback to MarshalBytes.
+    // Type NVOS47_PARAMETERS_V550 doesn't have a packed layout in memory, fallback to MarshalBytes.
     return n.MarshalBytes(dst)
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
-func (n *NVOS47ParametersV550) UnmarshalUnsafe(src []byte) []byte {
+func (n *NVOS47_PARAMETERS_V550) UnmarshalUnsafe(src []byte) []byte {
     if n.Client.Packed() && n.Device.Packed() && n.Dma.Packed() && n.Memory.Packed() {
         size := n.SizeBytes()
         gohacks.Memmove(unsafe.Pointer(n), unsafe.Pointer(&src[0]), uintptr(size))
         return src[size:]
     }
-    // Type NVOS47ParametersV550 doesn't have a packed layout in memory, fallback to UnmarshalBytes.
+    // Type NVOS47_PARAMETERS_V550 doesn't have a packed layout in memory, fallback to UnmarshalBytes.
     return n.UnmarshalBytes(src)
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
-func (n *NVOS47ParametersV550) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
+func (n *NVOS47_PARAMETERS_V550) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
     if !n.Client.Packed() && n.Device.Packed() && n.Dma.Packed() && n.Memory.Packed() {
-        // Type NVOS47ParametersV550 doesn't have a packed layout in memory, fall back to MarshalBytes.
+        // Type NVOS47_PARAMETERS_V550 doesn't have a packed layout in memory, fall back to MarshalBytes.
         buf := cc.CopyScratchBuffer(n.SizeBytes()) // escapes: okay.
         n.MarshalBytes(buf) // escapes: fallback.
         return cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
@@ -9159,14 +9159,14 @@ func (n *NVOS47ParametersV550) CopyOutN(cc marshal.CopyContext, addr hostarch.Ad
 }
 
 // CopyOut implements marshal.Marshallable.CopyOut.
-func (n *NVOS47ParametersV550) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+func (n *NVOS47_PARAMETERS_V550) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
     return n.CopyOutN(cc, addr, n.SizeBytes())
 }
 
 // CopyInN implements marshal.Marshallable.CopyInN.
-func (n *NVOS47ParametersV550) CopyInN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
+func (n *NVOS47_PARAMETERS_V550) CopyInN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
     if !n.Client.Packed() && n.Device.Packed() && n.Dma.Packed() && n.Memory.Packed() {
-        // Type NVOS47ParametersV550 doesn't have a packed layout in memory, fall back to UnmarshalBytes.
+        // Type NVOS47_PARAMETERS_V550 doesn't have a packed layout in memory, fall back to UnmarshalBytes.
         buf := cc.CopyScratchBuffer(n.SizeBytes()) // escapes: okay.
         length, err := cc.CopyInBytes(addr, buf[:limit]) // escapes: okay.
         // Unmarshal unconditionally. If we had a short copy-in, this results in a
@@ -9190,14 +9190,14 @@ func (n *NVOS47ParametersV550) CopyInN(cc marshal.CopyContext, addr hostarch.Add
 }
 
 // CopyIn implements marshal.Marshallable.CopyIn.
-func (n *NVOS47ParametersV550) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+func (n *NVOS47_PARAMETERS_V550) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
     return n.CopyInN(cc, addr, n.SizeBytes())
 }
 
 // WriteTo implements io.WriterTo.WriteTo.
-func (n *NVOS47ParametersV550) WriteTo(writer io.Writer) (int64, error) {
+func (n *NVOS47_PARAMETERS_V550) WriteTo(writer io.Writer) (int64, error) {
     if !n.Client.Packed() && n.Device.Packed() && n.Dma.Packed() && n.Memory.Packed() {
-        // Type NVOS47ParametersV550 doesn't have a packed layout in memory, fall back to MarshalBytes.
+        // Type NVOS47_PARAMETERS_V550 doesn't have a packed layout in memory, fall back to MarshalBytes.
         buf := make([]byte, n.SizeBytes())
         n.MarshalBytes(buf)
         length, err := writer.Write(buf)
@@ -9219,7 +9219,7 @@ func (n *NVOS47ParametersV550) WriteTo(writer io.Writer) (int64, error) {
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
-func (n *NVOS54Parameters) SizeBytes() int {
+func (n *NVOS54_PARAMETERS) SizeBytes() int {
     return 16 +
         (*Handle)(nil).SizeBytes() +
         (*Handle)(nil).SizeBytes() +
@@ -9227,7 +9227,7 @@ func (n *NVOS54Parameters) SizeBytes() int {
 }
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
-func (n *NVOS54Parameters) MarshalBytes(dst []byte) []byte {
+func (n *NVOS54_PARAMETERS) MarshalBytes(dst []byte) []byte {
     dst = n.HClient.MarshalUnsafe(dst)
     dst = n.HObject.MarshalUnsafe(dst)
     hostarch.ByteOrder.PutUint32(dst[:4], uint32(n.Cmd))
@@ -9243,7 +9243,7 @@ func (n *NVOS54Parameters) MarshalBytes(dst []byte) []byte {
 }
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (n *NVOS54Parameters) UnmarshalBytes(src []byte) []byte {
+func (n *NVOS54_PARAMETERS) UnmarshalBytes(src []byte) []byte {
     src = n.HClient.UnmarshalUnsafe(src)
     src = n.HObject.UnmarshalUnsafe(src)
     n.Cmd = uint32(hostarch.ByteOrder.Uint32(src[:4]))
@@ -9260,36 +9260,36 @@ func (n *NVOS54Parameters) UnmarshalBytes(src []byte) []byte {
 
 // Packed implements marshal.Marshallable.Packed.
 //go:nosplit
-func (n *NVOS54Parameters) Packed() bool {
+func (n *NVOS54_PARAMETERS) Packed() bool {
     return n.HClient.Packed() && n.HObject.Packed() && n.Params.Packed()
 }
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
-func (n *NVOS54Parameters) MarshalUnsafe(dst []byte) []byte {
+func (n *NVOS54_PARAMETERS) MarshalUnsafe(dst []byte) []byte {
     if n.HClient.Packed() && n.HObject.Packed() && n.Params.Packed() {
         size := n.SizeBytes()
         gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(n), uintptr(size))
         return dst[size:]
     }
-    // Type NVOS54Parameters doesn't have a packed layout in memory, fallback to MarshalBytes.
+    // Type NVOS54_PARAMETERS doesn't have a packed layout in memory, fallback to MarshalBytes.
     return n.MarshalBytes(dst)
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
-func (n *NVOS54Parameters) UnmarshalUnsafe(src []byte) []byte {
+func (n *NVOS54_PARAMETERS) UnmarshalUnsafe(src []byte) []byte {
     if n.HClient.Packed() && n.HObject.Packed() && n.Params.Packed() {
         size := n.SizeBytes()
         gohacks.Memmove(unsafe.Pointer(n), unsafe.Pointer(&src[0]), uintptr(size))
         return src[size:]
     }
-    // Type NVOS54Parameters doesn't have a packed layout in memory, fallback to UnmarshalBytes.
+    // Type NVOS54_PARAMETERS doesn't have a packed layout in memory, fallback to UnmarshalBytes.
     return n.UnmarshalBytes(src)
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
-func (n *NVOS54Parameters) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
+func (n *NVOS54_PARAMETERS) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
     if !n.HClient.Packed() && n.HObject.Packed() && n.Params.Packed() {
-        // Type NVOS54Parameters doesn't have a packed layout in memory, fall back to MarshalBytes.
+        // Type NVOS54_PARAMETERS doesn't have a packed layout in memory, fall back to MarshalBytes.
         buf := cc.CopyScratchBuffer(n.SizeBytes()) // escapes: okay.
         n.MarshalBytes(buf) // escapes: fallback.
         return cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
@@ -9310,14 +9310,14 @@ func (n *NVOS54Parameters) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, 
 }
 
 // CopyOut implements marshal.Marshallable.CopyOut.
-func (n *NVOS54Parameters) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+func (n *NVOS54_PARAMETERS) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
     return n.CopyOutN(cc, addr, n.SizeBytes())
 }
 
 // CopyInN implements marshal.Marshallable.CopyInN.
-func (n *NVOS54Parameters) CopyInN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
+func (n *NVOS54_PARAMETERS) CopyInN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
     if !n.HClient.Packed() && n.HObject.Packed() && n.Params.Packed() {
-        // Type NVOS54Parameters doesn't have a packed layout in memory, fall back to UnmarshalBytes.
+        // Type NVOS54_PARAMETERS doesn't have a packed layout in memory, fall back to UnmarshalBytes.
         buf := cc.CopyScratchBuffer(n.SizeBytes()) // escapes: okay.
         length, err := cc.CopyInBytes(addr, buf[:limit]) // escapes: okay.
         // Unmarshal unconditionally. If we had a short copy-in, this results in a
@@ -9341,14 +9341,14 @@ func (n *NVOS54Parameters) CopyInN(cc marshal.CopyContext, addr hostarch.Addr, l
 }
 
 // CopyIn implements marshal.Marshallable.CopyIn.
-func (n *NVOS54Parameters) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+func (n *NVOS54_PARAMETERS) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
     return n.CopyInN(cc, addr, n.SizeBytes())
 }
 
 // WriteTo implements io.WriterTo.WriteTo.
-func (n *NVOS54Parameters) WriteTo(writer io.Writer) (int64, error) {
+func (n *NVOS54_PARAMETERS) WriteTo(writer io.Writer) (int64, error) {
     if !n.HClient.Packed() && n.HObject.Packed() && n.Params.Packed() {
-        // Type NVOS54Parameters doesn't have a packed layout in memory, fall back to MarshalBytes.
+        // Type NVOS54_PARAMETERS doesn't have a packed layout in memory, fall back to MarshalBytes.
         buf := make([]byte, n.SizeBytes())
         n.MarshalBytes(buf)
         length, err := writer.Write(buf)
@@ -9370,7 +9370,7 @@ func (n *NVOS54Parameters) WriteTo(writer io.Writer) (int64, error) {
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
-func (n *NVOS55Parameters) SizeBytes() int {
+func (n *NVOS55_PARAMETERS) SizeBytes() int {
     return 8 +
         (*Handle)(nil).SizeBytes() +
         (*Handle)(nil).SizeBytes() +
@@ -9380,7 +9380,7 @@ func (n *NVOS55Parameters) SizeBytes() int {
 }
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
-func (n *NVOS55Parameters) MarshalBytes(dst []byte) []byte {
+func (n *NVOS55_PARAMETERS) MarshalBytes(dst []byte) []byte {
     dst = n.HClient.MarshalUnsafe(dst)
     dst = n.HParent.MarshalUnsafe(dst)
     dst = n.HObject.MarshalUnsafe(dst)
@@ -9394,7 +9394,7 @@ func (n *NVOS55Parameters) MarshalBytes(dst []byte) []byte {
 }
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (n *NVOS55Parameters) UnmarshalBytes(src []byte) []byte {
+func (n *NVOS55_PARAMETERS) UnmarshalBytes(src []byte) []byte {
     src = n.HClient.UnmarshalUnsafe(src)
     src = n.HParent.UnmarshalUnsafe(src)
     src = n.HObject.UnmarshalUnsafe(src)
@@ -9409,36 +9409,36 @@ func (n *NVOS55Parameters) UnmarshalBytes(src []byte) []byte {
 
 // Packed implements marshal.Marshallable.Packed.
 //go:nosplit
-func (n *NVOS55Parameters) Packed() bool {
+func (n *NVOS55_PARAMETERS) Packed() bool {
     return n.HClient.Packed() && n.HClientSrc.Packed() && n.HObject.Packed() && n.HObjectSrc.Packed() && n.HParent.Packed()
 }
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
-func (n *NVOS55Parameters) MarshalUnsafe(dst []byte) []byte {
+func (n *NVOS55_PARAMETERS) MarshalUnsafe(dst []byte) []byte {
     if n.HClient.Packed() && n.HClientSrc.Packed() && n.HObject.Packed() && n.HObjectSrc.Packed() && n.HParent.Packed() {
         size := n.SizeBytes()
         gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(n), uintptr(size))
         return dst[size:]
     }
-    // Type NVOS55Parameters doesn't have a packed layout in memory, fallback to MarshalBytes.
+    // Type NVOS55_PARAMETERS doesn't have a packed layout in memory, fallback to MarshalBytes.
     return n.MarshalBytes(dst)
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
-func (n *NVOS55Parameters) UnmarshalUnsafe(src []byte) []byte {
+func (n *NVOS55_PARAMETERS) UnmarshalUnsafe(src []byte) []byte {
     if n.HClient.Packed() && n.HClientSrc.Packed() && n.HObject.Packed() && n.HObjectSrc.Packed() && n.HParent.Packed() {
         size := n.SizeBytes()
         gohacks.Memmove(unsafe.Pointer(n), unsafe.Pointer(&src[0]), uintptr(size))
         return src[size:]
     }
-    // Type NVOS55Parameters doesn't have a packed layout in memory, fallback to UnmarshalBytes.
+    // Type NVOS55_PARAMETERS doesn't have a packed layout in memory, fallback to UnmarshalBytes.
     return n.UnmarshalBytes(src)
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
-func (n *NVOS55Parameters) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
+func (n *NVOS55_PARAMETERS) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
     if !n.HClient.Packed() && n.HClientSrc.Packed() && n.HObject.Packed() && n.HObjectSrc.Packed() && n.HParent.Packed() {
-        // Type NVOS55Parameters doesn't have a packed layout in memory, fall back to MarshalBytes.
+        // Type NVOS55_PARAMETERS doesn't have a packed layout in memory, fall back to MarshalBytes.
         buf := cc.CopyScratchBuffer(n.SizeBytes()) // escapes: okay.
         n.MarshalBytes(buf) // escapes: fallback.
         return cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
@@ -9459,14 +9459,14 @@ func (n *NVOS55Parameters) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, 
 }
 
 // CopyOut implements marshal.Marshallable.CopyOut.
-func (n *NVOS55Parameters) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+func (n *NVOS55_PARAMETERS) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
     return n.CopyOutN(cc, addr, n.SizeBytes())
 }
 
 // CopyInN implements marshal.Marshallable.CopyInN.
-func (n *NVOS55Parameters) CopyInN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
+func (n *NVOS55_PARAMETERS) CopyInN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
     if !n.HClient.Packed() && n.HClientSrc.Packed() && n.HObject.Packed() && n.HObjectSrc.Packed() && n.HParent.Packed() {
-        // Type NVOS55Parameters doesn't have a packed layout in memory, fall back to UnmarshalBytes.
+        // Type NVOS55_PARAMETERS doesn't have a packed layout in memory, fall back to UnmarshalBytes.
         buf := cc.CopyScratchBuffer(n.SizeBytes()) // escapes: okay.
         length, err := cc.CopyInBytes(addr, buf[:limit]) // escapes: okay.
         // Unmarshal unconditionally. If we had a short copy-in, this results in a
@@ -9490,14 +9490,14 @@ func (n *NVOS55Parameters) CopyInN(cc marshal.CopyContext, addr hostarch.Addr, l
 }
 
 // CopyIn implements marshal.Marshallable.CopyIn.
-func (n *NVOS55Parameters) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+func (n *NVOS55_PARAMETERS) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
     return n.CopyInN(cc, addr, n.SizeBytes())
 }
 
 // WriteTo implements io.WriterTo.WriteTo.
-func (n *NVOS55Parameters) WriteTo(writer io.Writer) (int64, error) {
+func (n *NVOS55_PARAMETERS) WriteTo(writer io.Writer) (int64, error) {
     if !n.HClient.Packed() && n.HClientSrc.Packed() && n.HObject.Packed() && n.HObjectSrc.Packed() && n.HParent.Packed() {
-        // Type NVOS55Parameters doesn't have a packed layout in memory, fall back to MarshalBytes.
+        // Type NVOS55_PARAMETERS doesn't have a packed layout in memory, fall back to MarshalBytes.
         buf := make([]byte, n.SizeBytes())
         n.MarshalBytes(buf)
         length, err := writer.Write(buf)
@@ -9519,7 +9519,7 @@ func (n *NVOS55Parameters) WriteTo(writer io.Writer) (int64, error) {
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
-func (n *NVOS56Parameters) SizeBytes() int {
+func (n *NVOS56_PARAMETERS) SizeBytes() int {
     return 4 +
         (*Handle)(nil).SizeBytes() +
         (*Handle)(nil).SizeBytes() +
@@ -9531,7 +9531,7 @@ func (n *NVOS56Parameters) SizeBytes() int {
 }
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
-func (n *NVOS56Parameters) MarshalBytes(dst []byte) []byte {
+func (n *NVOS56_PARAMETERS) MarshalBytes(dst []byte) []byte {
     dst = n.HClient.MarshalUnsafe(dst)
     dst = n.HDevice.MarshalUnsafe(dst)
     dst = n.HMemory.MarshalUnsafe(dst)
@@ -9551,7 +9551,7 @@ func (n *NVOS56Parameters) MarshalBytes(dst []byte) []byte {
 }
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (n *NVOS56Parameters) UnmarshalBytes(src []byte) []byte {
+func (n *NVOS56_PARAMETERS) UnmarshalBytes(src []byte) []byte {
     src = n.HClient.UnmarshalUnsafe(src)
     src = n.HDevice.UnmarshalUnsafe(src)
     src = n.HMemory.UnmarshalUnsafe(src)
@@ -9572,36 +9572,36 @@ func (n *NVOS56Parameters) UnmarshalBytes(src []byte) []byte {
 
 // Packed implements marshal.Marshallable.Packed.
 //go:nosplit
-func (n *NVOS56Parameters) Packed() bool {
+func (n *NVOS56_PARAMETERS) Packed() bool {
     return n.HClient.Packed() && n.HDevice.Packed() && n.HMemory.Packed() && n.PNewCPUAddress.Packed() && n.POldCPUAddress.Packed()
 }
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
-func (n *NVOS56Parameters) MarshalUnsafe(dst []byte) []byte {
+func (n *NVOS56_PARAMETERS) MarshalUnsafe(dst []byte) []byte {
     if n.HClient.Packed() && n.HDevice.Packed() && n.HMemory.Packed() && n.PNewCPUAddress.Packed() && n.POldCPUAddress.Packed() {
         size := n.SizeBytes()
         gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(n), uintptr(size))
         return dst[size:]
     }
-    // Type NVOS56Parameters doesn't have a packed layout in memory, fallback to MarshalBytes.
+    // Type NVOS56_PARAMETERS doesn't have a packed layout in memory, fallback to MarshalBytes.
     return n.MarshalBytes(dst)
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
-func (n *NVOS56Parameters) UnmarshalUnsafe(src []byte) []byte {
+func (n *NVOS56_PARAMETERS) UnmarshalUnsafe(src []byte) []byte {
     if n.HClient.Packed() && n.HDevice.Packed() && n.HMemory.Packed() && n.PNewCPUAddress.Packed() && n.POldCPUAddress.Packed() {
         size := n.SizeBytes()
         gohacks.Memmove(unsafe.Pointer(n), unsafe.Pointer(&src[0]), uintptr(size))
         return src[size:]
     }
-    // Type NVOS56Parameters doesn't have a packed layout in memory, fallback to UnmarshalBytes.
+    // Type NVOS56_PARAMETERS doesn't have a packed layout in memory, fallback to UnmarshalBytes.
     return n.UnmarshalBytes(src)
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
-func (n *NVOS56Parameters) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
+func (n *NVOS56_PARAMETERS) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
     if !n.HClient.Packed() && n.HDevice.Packed() && n.HMemory.Packed() && n.PNewCPUAddress.Packed() && n.POldCPUAddress.Packed() {
-        // Type NVOS56Parameters doesn't have a packed layout in memory, fall back to MarshalBytes.
+        // Type NVOS56_PARAMETERS doesn't have a packed layout in memory, fall back to MarshalBytes.
         buf := cc.CopyScratchBuffer(n.SizeBytes()) // escapes: okay.
         n.MarshalBytes(buf) // escapes: fallback.
         return cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
@@ -9622,14 +9622,14 @@ func (n *NVOS56Parameters) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, 
 }
 
 // CopyOut implements marshal.Marshallable.CopyOut.
-func (n *NVOS56Parameters) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+func (n *NVOS56_PARAMETERS) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
     return n.CopyOutN(cc, addr, n.SizeBytes())
 }
 
 // CopyInN implements marshal.Marshallable.CopyInN.
-func (n *NVOS56Parameters) CopyInN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
+func (n *NVOS56_PARAMETERS) CopyInN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
     if !n.HClient.Packed() && n.HDevice.Packed() && n.HMemory.Packed() && n.PNewCPUAddress.Packed() && n.POldCPUAddress.Packed() {
-        // Type NVOS56Parameters doesn't have a packed layout in memory, fall back to UnmarshalBytes.
+        // Type NVOS56_PARAMETERS doesn't have a packed layout in memory, fall back to UnmarshalBytes.
         buf := cc.CopyScratchBuffer(n.SizeBytes()) // escapes: okay.
         length, err := cc.CopyInBytes(addr, buf[:limit]) // escapes: okay.
         // Unmarshal unconditionally. If we had a short copy-in, this results in a
@@ -9653,14 +9653,14 @@ func (n *NVOS56Parameters) CopyInN(cc marshal.CopyContext, addr hostarch.Addr, l
 }
 
 // CopyIn implements marshal.Marshallable.CopyIn.
-func (n *NVOS56Parameters) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+func (n *NVOS56_PARAMETERS) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
     return n.CopyInN(cc, addr, n.SizeBytes())
 }
 
 // WriteTo implements io.WriterTo.WriteTo.
-func (n *NVOS56Parameters) WriteTo(writer io.Writer) (int64, error) {
+func (n *NVOS56_PARAMETERS) WriteTo(writer io.Writer) (int64, error) {
     if !n.HClient.Packed() && n.HDevice.Packed() && n.HMemory.Packed() && n.PNewCPUAddress.Packed() && n.POldCPUAddress.Packed() {
-        // Type NVOS56Parameters doesn't have a packed layout in memory, fall back to MarshalBytes.
+        // Type NVOS56_PARAMETERS doesn't have a packed layout in memory, fall back to MarshalBytes.
         buf := make([]byte, n.SizeBytes())
         n.MarshalBytes(buf)
         length, err := writer.Write(buf)
@@ -9682,7 +9682,7 @@ func (n *NVOS56Parameters) WriteTo(writer io.Writer) (int64, error) {
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
-func (n *NVOS57Parameters) SizeBytes() int {
+func (n *NVOS57_PARAMETERS) SizeBytes() int {
     return 4 +
         (*Handle)(nil).SizeBytes() +
         (*Handle)(nil).SizeBytes() +
@@ -9690,7 +9690,7 @@ func (n *NVOS57Parameters) SizeBytes() int {
 }
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
-func (n *NVOS57Parameters) MarshalBytes(dst []byte) []byte {
+func (n *NVOS57_PARAMETERS) MarshalBytes(dst []byte) []byte {
     dst = n.HClient.MarshalUnsafe(dst)
     dst = n.HObject.MarshalUnsafe(dst)
     dst = n.SharePolicy.MarshalUnsafe(dst)
@@ -9700,7 +9700,7 @@ func (n *NVOS57Parameters) MarshalBytes(dst []byte) []byte {
 }
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (n *NVOS57Parameters) UnmarshalBytes(src []byte) []byte {
+func (n *NVOS57_PARAMETERS) UnmarshalBytes(src []byte) []byte {
     src = n.HClient.UnmarshalUnsafe(src)
     src = n.HObject.UnmarshalUnsafe(src)
     src = n.SharePolicy.UnmarshalUnsafe(src)
@@ -9711,36 +9711,36 @@ func (n *NVOS57Parameters) UnmarshalBytes(src []byte) []byte {
 
 // Packed implements marshal.Marshallable.Packed.
 //go:nosplit
-func (n *NVOS57Parameters) Packed() bool {
+func (n *NVOS57_PARAMETERS) Packed() bool {
     return n.HClient.Packed() && n.HObject.Packed() && n.SharePolicy.Packed()
 }
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
-func (n *NVOS57Parameters) MarshalUnsafe(dst []byte) []byte {
+func (n *NVOS57_PARAMETERS) MarshalUnsafe(dst []byte) []byte {
     if n.HClient.Packed() && n.HObject.Packed() && n.SharePolicy.Packed() {
         size := n.SizeBytes()
         gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(n), uintptr(size))
         return dst[size:]
     }
-    // Type NVOS57Parameters doesn't have a packed layout in memory, fallback to MarshalBytes.
+    // Type NVOS57_PARAMETERS doesn't have a packed layout in memory, fallback to MarshalBytes.
     return n.MarshalBytes(dst)
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
-func (n *NVOS57Parameters) UnmarshalUnsafe(src []byte) []byte {
+func (n *NVOS57_PARAMETERS) UnmarshalUnsafe(src []byte) []byte {
     if n.HClient.Packed() && n.HObject.Packed() && n.SharePolicy.Packed() {
         size := n.SizeBytes()
         gohacks.Memmove(unsafe.Pointer(n), unsafe.Pointer(&src[0]), uintptr(size))
         return src[size:]
     }
-    // Type NVOS57Parameters doesn't have a packed layout in memory, fallback to UnmarshalBytes.
+    // Type NVOS57_PARAMETERS doesn't have a packed layout in memory, fallback to UnmarshalBytes.
     return n.UnmarshalBytes(src)
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
-func (n *NVOS57Parameters) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
+func (n *NVOS57_PARAMETERS) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
     if !n.HClient.Packed() && n.HObject.Packed() && n.SharePolicy.Packed() {
-        // Type NVOS57Parameters doesn't have a packed layout in memory, fall back to MarshalBytes.
+        // Type NVOS57_PARAMETERS doesn't have a packed layout in memory, fall back to MarshalBytes.
         buf := cc.CopyScratchBuffer(n.SizeBytes()) // escapes: okay.
         n.MarshalBytes(buf) // escapes: fallback.
         return cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
@@ -9761,14 +9761,14 @@ func (n *NVOS57Parameters) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, 
 }
 
 // CopyOut implements marshal.Marshallable.CopyOut.
-func (n *NVOS57Parameters) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+func (n *NVOS57_PARAMETERS) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
     return n.CopyOutN(cc, addr, n.SizeBytes())
 }
 
 // CopyInN implements marshal.Marshallable.CopyInN.
-func (n *NVOS57Parameters) CopyInN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
+func (n *NVOS57_PARAMETERS) CopyInN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
     if !n.HClient.Packed() && n.HObject.Packed() && n.SharePolicy.Packed() {
-        // Type NVOS57Parameters doesn't have a packed layout in memory, fall back to UnmarshalBytes.
+        // Type NVOS57_PARAMETERS doesn't have a packed layout in memory, fall back to UnmarshalBytes.
         buf := cc.CopyScratchBuffer(n.SizeBytes()) // escapes: okay.
         length, err := cc.CopyInBytes(addr, buf[:limit]) // escapes: okay.
         // Unmarshal unconditionally. If we had a short copy-in, this results in a
@@ -9792,14 +9792,14 @@ func (n *NVOS57Parameters) CopyInN(cc marshal.CopyContext, addr hostarch.Addr, l
 }
 
 // CopyIn implements marshal.Marshallable.CopyIn.
-func (n *NVOS57Parameters) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+func (n *NVOS57_PARAMETERS) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
     return n.CopyInN(cc, addr, n.SizeBytes())
 }
 
 // WriteTo implements io.WriterTo.WriteTo.
-func (n *NVOS57Parameters) WriteTo(writer io.Writer) (int64, error) {
+func (n *NVOS57_PARAMETERS) WriteTo(writer io.Writer) (int64, error) {
     if !n.HClient.Packed() && n.HObject.Packed() && n.SharePolicy.Packed() {
-        // Type NVOS57Parameters doesn't have a packed layout in memory, fall back to MarshalBytes.
+        // Type NVOS57_PARAMETERS doesn't have a packed layout in memory, fall back to MarshalBytes.
         buf := make([]byte, n.SizeBytes())
         n.MarshalBytes(buf)
         length, err := writer.Write(buf)
@@ -9821,7 +9821,7 @@ func (n *NVOS57Parameters) WriteTo(writer io.Writer) (int64, error) {
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
-func (n *NVOS64Parameters) SizeBytes() int {
+func (n *NVOS64_PARAMETERS) SizeBytes() int {
     return 16 +
         (*Handle)(nil).SizeBytes() +
         (*Handle)(nil).SizeBytes() +
@@ -9832,7 +9832,7 @@ func (n *NVOS64Parameters) SizeBytes() int {
 }
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
-func (n *NVOS64Parameters) MarshalBytes(dst []byte) []byte {
+func (n *NVOS64_PARAMETERS) MarshalBytes(dst []byte) []byte {
     dst = n.HRoot.MarshalUnsafe(dst)
     dst = n.HObjectParent.MarshalUnsafe(dst)
     dst = n.HObjectNew.MarshalUnsafe(dst)
@@ -9851,7 +9851,7 @@ func (n *NVOS64Parameters) MarshalBytes(dst []byte) []byte {
 }
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (n *NVOS64Parameters) UnmarshalBytes(src []byte) []byte {
+func (n *NVOS64_PARAMETERS) UnmarshalBytes(src []byte) []byte {
     src = n.HRoot.UnmarshalUnsafe(src)
     src = n.HObjectParent.UnmarshalUnsafe(src)
     src = n.HObjectNew.UnmarshalUnsafe(src)
@@ -9871,36 +9871,36 @@ func (n *NVOS64Parameters) UnmarshalBytes(src []byte) []byte {
 
 // Packed implements marshal.Marshallable.Packed.
 //go:nosplit
-func (n *NVOS64Parameters) Packed() bool {
+func (n *NVOS64_PARAMETERS) Packed() bool {
     return n.HClass.Packed() && n.HObjectNew.Packed() && n.HObjectParent.Packed() && n.HRoot.Packed() && n.PAllocParms.Packed() && n.PRightsRequested.Packed()
 }
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
-func (n *NVOS64Parameters) MarshalUnsafe(dst []byte) []byte {
+func (n *NVOS64_PARAMETERS) MarshalUnsafe(dst []byte) []byte {
     if n.HClass.Packed() && n.HObjectNew.Packed() && n.HObjectParent.Packed() && n.HRoot.Packed() && n.PAllocParms.Packed() && n.PRightsRequested.Packed() {
         size := n.SizeBytes()
         gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(n), uintptr(size))
         return dst[size:]
     }
-    // Type NVOS64Parameters doesn't have a packed layout in memory, fallback to MarshalBytes.
+    // Type NVOS64_PARAMETERS doesn't have a packed layout in memory, fallback to MarshalBytes.
     return n.MarshalBytes(dst)
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
-func (n *NVOS64Parameters) UnmarshalUnsafe(src []byte) []byte {
+func (n *NVOS64_PARAMETERS) UnmarshalUnsafe(src []byte) []byte {
     if n.HClass.Packed() && n.HObjectNew.Packed() && n.HObjectParent.Packed() && n.HRoot.Packed() && n.PAllocParms.Packed() && n.PRightsRequested.Packed() {
         size := n.SizeBytes()
         gohacks.Memmove(unsafe.Pointer(n), unsafe.Pointer(&src[0]), uintptr(size))
         return src[size:]
     }
-    // Type NVOS64Parameters doesn't have a packed layout in memory, fallback to UnmarshalBytes.
+    // Type NVOS64_PARAMETERS doesn't have a packed layout in memory, fallback to UnmarshalBytes.
     return n.UnmarshalBytes(src)
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
-func (n *NVOS64Parameters) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
+func (n *NVOS64_PARAMETERS) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
     if !n.HClass.Packed() && n.HObjectNew.Packed() && n.HObjectParent.Packed() && n.HRoot.Packed() && n.PAllocParms.Packed() && n.PRightsRequested.Packed() {
-        // Type NVOS64Parameters doesn't have a packed layout in memory, fall back to MarshalBytes.
+        // Type NVOS64_PARAMETERS doesn't have a packed layout in memory, fall back to MarshalBytes.
         buf := cc.CopyScratchBuffer(n.SizeBytes()) // escapes: okay.
         n.MarshalBytes(buf) // escapes: fallback.
         return cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
@@ -9921,14 +9921,14 @@ func (n *NVOS64Parameters) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, 
 }
 
 // CopyOut implements marshal.Marshallable.CopyOut.
-func (n *NVOS64Parameters) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+func (n *NVOS64_PARAMETERS) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
     return n.CopyOutN(cc, addr, n.SizeBytes())
 }
 
 // CopyInN implements marshal.Marshallable.CopyInN.
-func (n *NVOS64Parameters) CopyInN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
+func (n *NVOS64_PARAMETERS) CopyInN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
     if !n.HClass.Packed() && n.HObjectNew.Packed() && n.HObjectParent.Packed() && n.HRoot.Packed() && n.PAllocParms.Packed() && n.PRightsRequested.Packed() {
-        // Type NVOS64Parameters doesn't have a packed layout in memory, fall back to UnmarshalBytes.
+        // Type NVOS64_PARAMETERS doesn't have a packed layout in memory, fall back to UnmarshalBytes.
         buf := cc.CopyScratchBuffer(n.SizeBytes()) // escapes: okay.
         length, err := cc.CopyInBytes(addr, buf[:limit]) // escapes: okay.
         // Unmarshal unconditionally. If we had a short copy-in, this results in a
@@ -9952,14 +9952,14 @@ func (n *NVOS64Parameters) CopyInN(cc marshal.CopyContext, addr hostarch.Addr, l
 }
 
 // CopyIn implements marshal.Marshallable.CopyIn.
-func (n *NVOS64Parameters) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+func (n *NVOS64_PARAMETERS) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
     return n.CopyInN(cc, addr, n.SizeBytes())
 }
 
 // WriteTo implements io.WriterTo.WriteTo.
-func (n *NVOS64Parameters) WriteTo(writer io.Writer) (int64, error) {
+func (n *NVOS64_PARAMETERS) WriteTo(writer io.Writer) (int64, error) {
     if !n.HClass.Packed() && n.HObjectNew.Packed() && n.HObjectParent.Packed() && n.HRoot.Packed() && n.PAllocParms.Packed() && n.PRightsRequested.Packed() {
-        // Type NVOS64Parameters doesn't have a packed layout in memory, fall back to MarshalBytes.
+        // Type NVOS64_PARAMETERS doesn't have a packed layout in memory, fall back to MarshalBytes.
         buf := make([]byte, n.SizeBytes())
         n.MarshalBytes(buf)
         length, err := writer.Write(buf)

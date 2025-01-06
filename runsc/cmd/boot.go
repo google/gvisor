@@ -201,7 +201,7 @@ func (*Boot) Synopsis() string {
 
 // Usage implements subcommands.Command.Usage.
 func (*Boot) Usage() string {
-	return `boot [flags] <container id>`
+	return "boot [flags] <container id>\n"
 }
 
 // SetFlags implements subcommands.Command.SetFlags.

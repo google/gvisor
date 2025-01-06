@@ -17,11 +17,11 @@ package nvgpu
 import "unsafe"
 
 // GetPointer implements RmAllocParamType.GetPointer.
-func (n *NVOS21Parameters) GetPointer() uintptr {
+func (n *NVOS21_PARAMETERS) GetPointer() uintptr {
 	return uintptr(unsafe.Pointer(n))
 }
 
 // GetPointer implements RmAllocParamType.GetPointer.
-func (n *NVOS64Parameters) GetPointer() uintptr {
+func (n *NVOS64_PARAMETERS) GetPointer() uintptr {
 	return uintptr(unsafe.Pointer(n))
 }
