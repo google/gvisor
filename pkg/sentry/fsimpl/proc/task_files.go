@@ -1201,8 +1201,7 @@ func (i *mountInfoData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 		return nil
 	}
 	defer i.fs.SafeDecRef(ctx, rootDir)
-	i.task.Kernel().VFS().GenerateProcMountInfo(ctx, rootDir, buf)
-	return nil
+	return i.task.Kernel().VFS().GenerateProcMountInfo(ctx, rootDir, buf)
 }
 
 // mountsData is used to implement /proc/[pid]/mounts.
@@ -1233,8 +1232,7 @@ func (i *mountsData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 		return nil
 	}
 	defer i.fs.SafeDecRef(ctx, rootDir)
-	i.task.Kernel().VFS().GenerateProcMounts(ctx, rootDir, buf)
-	return nil
+	return i.task.Kernel().VFS().GenerateProcMounts(ctx, rootDir, buf)
 }
 
 // +stateify savable
