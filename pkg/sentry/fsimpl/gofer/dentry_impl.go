@@ -452,11 +452,18 @@ func (d *dentry) allocate(ctx context.Context, mode, offset, length uint64) erro
 //   - !d.isSynthetic().
 //   - fs.renameMu is locked.
 func (d *dentry) connect(ctx context.Context, sockType linux.SockType) (int, error) {
+	creds := auth.CredentialsOrNilFromContext(ctx)
+	euid := lisafs.NoUID
+	egid := lisafs.NoGID
+	if creds != nil {
+		euid = lisafs.UID(creds.EffectiveKUID)
+		egid = lisafs.GID(creds.EffectiveKGID)
+	}
 	switch dt := d.impl.(type) {
 	case *lisafsDentry:
-		return dt.controlFD.Connect(ctx, sockType)
+		return dt.controlFD.Connect(ctx, sockType, euid, egid)
 	case *directfsDentry:
-		return dt.connect(ctx, sockType)
+		return dt.connect(ctx, sockType, euid, egid)
 	default:
 		panic("unknown dentry implementation")
 	}

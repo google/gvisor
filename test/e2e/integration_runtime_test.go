@@ -44,7 +44,9 @@ import (
 const (
 	// defaultWait is the default wait time used for tests.
 	defaultWait = time.Minute
-
+	// nonRootUID and nonRootGID correspond to the uid/gid defined in images/basic/integrationtest/Dockerfile.
+	nonRootUID = 1338
+	nonRootGID = 1337
 	memInfoCmd = "cat /proc/meminfo | grep MemTotal: | awk '{print $2}'"
 )
 
@@ -68,7 +70,7 @@ func TestRlimitNoFile(t *testing.T) {
 		}
 	}
 
-	// Run the container. Open a bunch of files simutaneously and sleep a bit
+	// Run the container. Open a bunch of files simultaneously and sleep a bit
 	// to give time for everything to start. We should hit the FD limit and
 	// fail rather than waiting the full sleep duration.
 	cmd := `for file in /tmp/foo/*; do (cat > "${file}") & done && sleep 60`
@@ -122,6 +124,26 @@ func TestDentryCacheLimit(t *testing.T) {
 	}
 }
 
+func checkPeerCreds(conn net.Conn) error {
+	unixConn, ok := conn.(*net.UnixConn)
+	if !ok {
+		return fmt.Errorf("expected *net.UnixConn, got %T", conn)
+	}
+	file, err := unixConn.File()
+	if err != nil {
+		return fmt.Errorf("file error: %v", err)
+	}
+	defer file.Close()
+	cred, err := unix.GetsockoptUcred(int(file.Fd()), unix.SOL_SOCKET, unix.SO_PEERCRED)
+	if err != nil {
+		return fmt.Errorf("getsockopt error: %v", err)
+	}
+	if cred.Uid != nonRootUID || cred.Gid != nonRootGID {
+		return fmt.Errorf("expected uid/gid %d/%d, got %d/%d", nonRootUID, nonRootGID, cred.Uid, cred.Gid)
+	}
+	return nil
+}
+
 // NOTE(gvisor.dev/issue/8126): Regression test.
 func TestHostSocketConnect(t *testing.T) {
 	ctx := context.Background()
@@ -135,11 +157,16 @@ func TestHostSocketConnect(t *testing.T) {
 	}
 	defer unix.Close(tmpDirFD)
 	// Use /proc/self/fd to generate path to avoid EINVAL on large path.
-	l, err := net.Listen("unix", filepath.Join("/proc/self/fd", strconv.Itoa(tmpDirFD), "test.sock"))
+	socketPath := filepath.Join("/proc/self/fd", strconv.Itoa(tmpDirFD), "test.sock")
+	l, err := net.Listen("unix", socketPath)
 	if err != nil {
 		t.Fatalf("listen error: %v", err)
 	}
 	defer l.Close()
+	// Change the socket's permission so that "nonroot" can connect to it.
+	if err := os.Chmod(socketPath, 0777); err != nil {
+		t.Errorf("chmod error: %v", err)
+	}
 
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -150,7 +177,10 @@ func TestHostSocketConnect(t *testing.T) {
 			t.Errorf("accept error: %v", err)
 			return
 		}
-
+		if err := checkPeerCreds(conn); err != nil {
+			t.Errorf("peer creds check failed: %v", err)
+			return
+		}
 		conn.SetReadDeadline(time.Now().Add(30 * time.Second))
 		var buf [5]byte
 		if _, err := conn.Read(buf[:]); err != nil {
@@ -165,16 +195,17 @@ func TestHostSocketConnect(t *testing.T) {
 
 	opts := dockerutil.RunOpts{
 		Image:   "basic/integrationtest",
-		WorkDir: "/root",
+		WorkDir: "/home/nonroot",
+		User:    "nonroot",
 		Mounts: []mount.Mount{
 			{
 				Type:   mount.TypeBind,
 				Source: filepath.Join(tmpDir, "test.sock"),
-				Target: "/test.sock",
+				Target: "/home/nonroot/test.sock",
 			},
 		},
 	}
-	if _, err := d.Run(ctx, opts, "./host_connect", "/test.sock"); err != nil {
+	if _, err := d.Run(ctx, opts, "./host_connect", "./test.sock"); err != nil {
 		t.Fatalf("docker run failed: %v", err)
 	}
 	wg.Wait()
