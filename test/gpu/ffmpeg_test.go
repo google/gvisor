@@ -34,7 +34,7 @@ func TestFffmpegEncodeGPU(t *testing.T) {
 	container := dockerutil.MakeContainer(ctx, t)
 	defer container.CleanUp(ctx)
 	opts, err := dockerutil.GPURunOpts(dockerutil.SniffGPUOpts{
-		Capabilities:           "NVIDIA_DRIVER_CAPABILITIES=video",
+		Capabilities:           "video",
 		AllowIncompatibleIoctl: true, // TODO(gvisor.dev/issue/9452): Remove once supported in gVisor.
 	})
 	if err != nil {
@@ -60,7 +60,7 @@ func TestFffmpegDecodeGPU(t *testing.T) {
 	container := dockerutil.MakeContainer(ctx, t)
 	defer container.CleanUp(ctx)
 	opts, err := dockerutil.GPURunOpts(dockerutil.SniffGPUOpts{
-		Capabilities:           "NVIDIA_DRIVER_CAPABILITIES=video",
+		Capabilities:           "video",
 		AllowIncompatibleIoctl: true, // TODO(gvisor.dev/issue/9452): Remove once supported in gVisor.
 	})
 	if err != nil {

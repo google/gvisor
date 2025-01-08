@@ -41,13 +41,12 @@ const (
 )
 
 const (
-	// AllGPUCapabilities is the environment variable that enables all NVIDIA
+	// AllGPUCapabilitiesEnv is the environment variable that enables all NVIDIA
 	// GPU capabilities within a container.
-	AllGPUCapabilities = "NVIDIA_DRIVER_CAPABILITIES=all"
+	AllGPUCapabilitiesEnv = "NVIDIA_DRIVER_CAPABILITIES=all"
 
-	// DefaultGPUCapabilities is the environment variable that enables default
-	// NVIDIA GPU capabilities within a container.
-	DefaultGPUCapabilities = "NVIDIA_DRIVER_CAPABILITIES=compute,utility"
+	// DefaultGPUCapabilities are the driver capabilities enabled by default.
+	DefaultGPUCapabilities = "compute,utility"
 )
 
 // GPURunOpts returns Docker run options with GPU support enabled.
@@ -79,7 +78,7 @@ func GPURunOpts(sniffGPUOpts SniffGPUOpts) (RunOpts, error) {
 			ReadOnly: true,
 		})
 	}
-	gpuEnv := []string{sniffGPUOpts.GPUCapabilities()}
+	gpuEnv := []string{"NVIDIA_DRIVER_CAPABILITIES=" + sniffGPUOpts.GPUCapabilities()}
 
 	if !*setCOSGPU {
 		return RunOpts{
