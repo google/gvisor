@@ -23,6 +23,7 @@ import (
 	"math"
 	"os"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -73,9 +74,7 @@ var (
 var testCompatibility = map[string]Compatibility{
 	"0_Introduction/simpleAttributes": RequiresFeatures(FeaturePersistentL2Caching),
 	"0_Introduction/simpleCUDA2GL":    RequiresFeatures(FeatureGL),
-	"0_Introduction/simpleIPC":        &BrokenInGVisor{OnlyWhenMultipleGPU: true},
-	"0_Introduction/simpleP2P":        MultiCompatibility(&RequiresMultiGPU{}, &BrokenInGVisor{}),
-	"0_Introduction/vectorAddMMAP":    &BrokenInGVisor{OnlyWhenMultipleGPU: true},
+	"0_Introduction/simpleP2P":        &RequiresP2P{},
 	"2_Concepts_and_Techniques/cuHook": &BrokenEverywhere{
 		Reason: "Requires ancient version of glibc (<=2.33)",
 	},
@@ -90,12 +89,12 @@ var testCompatibility = map[string]Compatibility{
 	),
 	"2_Concepts_and_Techniques/EGLSync_CUDAEvent_Interop":  &OnlyOnWindows{},
 	"2_Concepts_and_Techniques/streamOrderedAllocationIPC": &BrokenInGVisor{},
-	"2_Concepts_and_Techniques/streamOrderedAllocationP2P": MultiCompatibility(&RequiresMultiGPU{}, &BrokenInGVisor{}),
+	"2_Concepts_and_Techniques/streamOrderedAllocationP2P": &RequiresP2P{},
 	"3_CUDA_Features/bf16TensorCoreGemm":                   RequiresFeatures(FeatureTensorCores),
 	"3_CUDA_Features/cdpAdvancedQuicksort":                 RequiresFeatures(FeatureDynamicParallelism),
 	"3_CUDA_Features/cudaCompressibleMemory":               RequiresFeatures(FeatureCompressibleMemory),
 	"3_CUDA_Features/dmmaTensorCoreGemm":                   RequiresFeatures(FeatureTensorCores),
-	"3_CUDA_Features/memMapIPCDrv":                         MultiCompatibility(&RequiresMultiGPU{}, &BrokenInGVisor{}),
+	"3_CUDA_Features/memMapIPCDrv":                         &RequiresMultiGPU{},
 	"3_CUDA_Features/tf32TensorCoreGemm":                   RequiresFeatures(FeatureTensorCores),
 	"4_CUDA_Libraries/conjugateGradientMultiDeviceCG":      MultiCompatibility(&RequiresMultiGPU{}, &BrokenInGVisor{}),
 	"4_CUDA_Libraries/cudaNvSci":                           &RequiresNvSci{},
@@ -105,14 +104,14 @@ var testCompatibility = map[string]Compatibility{
 	"4_CUDA_Libraries/cuDLAStandaloneMode":                 &OnlyOnWindows{},
 	"4_CUDA_Libraries/cuDLALayerwiseStatsHybrid":           &OnlyOnWindows{},
 	"4_CUDA_Libraries/cuDLALayerwiseStatsStandalone":       &OnlyOnWindows{},
-	"4_CUDA_Libraries/simpleCUFFT_2d_MGPU":                 MultiCompatibility(&RequiresMultiGPU{}, &BrokenInGVisor{}),
-	"4_CUDA_Libraries/simpleCUFFT_MGPU":                    MultiCompatibility(&RequiresMultiGPU{}, &BrokenInGVisor{}),
+	"4_CUDA_Libraries/simpleCUFFT_2d_MGPU":                 &RequiresMultiGPU{},
+	"4_CUDA_Libraries/simpleCUFFT_MGPU":                    &RequiresMultiGPU{},
 	"5_Domain_Specific/fluidsD3D9":                         &OnlyOnWindows{},
 	"5_Domain_Specific/fluidsGL":                           RequiresFeatures(FeatureGL),
 	"5_Domain_Specific/fluidsGLES":                         &OnlyOnWindows{},
 	"5_Domain_Specific/nbody_opengles":                     &OnlyOnWindows{},
 	"5_Domain_Specific/nbody_screen":                       &OnlyOnWindows{},
-	"5_Domain_Specific/p2pBandwidthLatencyTest":            &BrokenInGVisor{OnlyWhenMultipleGPU: true},
+	"5_Domain_Specific/p2pBandwidthLatencyTest":            &RequiresP2P{},
 	"5_Domain_Specific/postProcessGL":                      RequiresFeatures(FeatureGL),
 	"5_Domain_Specific/simpleD3D10":                        &OnlyOnWindows{},
 	"5_Domain_Specific/simpleD3D10RenderTarget":            &OnlyOnWindows{},
@@ -133,8 +132,11 @@ var testCompatibility = map[string]Compatibility{
 }
 
 // flakyTests is a list of tests that are flaky.
-// These will be retried up to 3 times in parallel before running serially.
-var flakyTests = map[string]struct{}{}
+// These will be retried up to 3 times in parallel before running 3 times
+// serially.
+var flakyTests = map[string]struct{}{
+	"3_CUDA_Features/cdpAdvancedQuicksort": {},
+}
 
 // exclusiveTests is a list of tests that must run exclusively (i.e. with
 // no other test running on the machine at the same time), or they will
@@ -145,6 +147,13 @@ var flakyTests = map[string]struct{}{}
 // causing spurious failures for the tests that happen to be running in
 // parallel with them.
 var exclusiveTests = map[string]struct{}{
+	// Can fail due to
+	// "launch failed because launch would exceed cudaLimitDevRuntimePendingLaunchCount"
+	// when running in parallel with other tests.
+	"3_CUDA_Features/cdpAdvancedQuicksort": {},
+
+	// Performance-intensive tests that tend to make other concurrent tests
+	// flake due to their high resource usage.
 	"6_Performance/alignedTypes":      {},
 	"6_Performance/transpose":         {},
 	"6_Performance/UnifiedMemoryPerf": {},
@@ -153,12 +162,7 @@ var exclusiveTests = map[string]struct{}{
 // alwaysSkippedTests don't run at all, ever, and are not verified when
 // --cuda_verify_compatibility is set.
 // Each test is mapped to a reason why it should be skipped.
-var alwaysSkippedTests = map[string]string{
-	// These tests seem to flake in gVisor, but consistently within the same
-	// run of the overall test, so they cannot be included in `flakyTests`.
-	"0_Introduction/simpleAssert":       "Flaky in gVisor",
-	"0_Introduction/simpleAssert_nvrtc": "Flaky in gVisor",
-}
+var alwaysSkippedTests = map[string]string{}
 
 // Feature is a feature as listed by /list_features.sh.
 type Feature string
@@ -170,6 +174,7 @@ const (
 	FeatureGL                  Feature = "GL"
 	FeatureTensorCores         Feature = "TENSOR_CORES"
 	FeatureCompressibleMemory  Feature = "COMPRESSIBLE_MEMORY"
+	FeatureP2P                 Feature = "P2P"
 )
 
 // allFeatures is a list of all CUDA features above.
@@ -179,6 +184,7 @@ var allFeatures = []Feature{
 	FeatureGL,
 	FeatureTensorCores,
 	FeatureCompressibleMemory,
+	FeatureP2P,
 }
 
 // TestEnvironment represents the environment in which a sample test runs.
@@ -228,10 +234,6 @@ type BrokenInGVisor struct {
 	// This is for tests that can run on a single or multiple GPUs alike,
 	// but specifically fail in gVisor when run with multiple GPUs.
 	OnlyWhenMultipleGPU bool
-
-	// KnownToHang may be set to true for short tests which can hang instead
-	// of failing. This avoids waiting ~forever for them to finish.
-	KnownToHang bool
 }
 
 // WillFail implements `Compatibility.WillFail`.
@@ -273,6 +275,34 @@ func (*RequiresMultiGPU) IsExpectedFailure(ctx context.Context, env *TestEnviron
 	return nil
 }
 
+// RequiresMultiGPU implements `Compatibility` for tests that require
+// peer-to-peer communication between GPUs.
+// Implies RequiresMultiGPU, so tests do not need to specify both.
+type RequiresP2P struct{}
+
+// WillFail implements `Compatibility.WillFail`.
+func (*RequiresP2P) WillFail(ctx context.Context, env *TestEnvironment) string {
+	if notEnoughGPUs := (&RequiresMultiGPU{}).WillFail(ctx, env); notEnoughGPUs != "" {
+		return notEnoughGPUs
+	}
+	if hasP2P := env.Features[FeatureP2P]; !hasP2P {
+		return "Requires P2P support"
+	}
+	return ""
+}
+
+// IsExpectedFailure implements `Compatibility.IsExpectedFailure`.
+func (*RequiresP2P) IsExpectedFailure(ctx context.Context, env *TestEnvironment, logs string, exitCode int) error {
+	if err := (&RequiresMultiGPU{}).IsExpectedFailure(ctx, env, logs, exitCode); err == nil {
+		return nil
+	}
+	const wantLog = "Peer to Peer access is not available amongst GPUs in the system, waiving test"
+	if strings.Contains(logs, wantLog) {
+		return nil
+	}
+	return fmt.Errorf("exit code %d and logs %q, expected EXIT_WAIVED (%d) or log message %q", exitCode, logs, exitCodeWaived, wantLog)
+}
+
 // requiresFeatures implements `Compatibility` for tests that require
 // specific features.
 type requiresFeatures struct {
@@ -294,7 +324,13 @@ func (r *requiresFeatures) WillFail(ctx context.Context, env *TestEnvironment) s
 }
 
 // IsExpectedFailure implements `Compatibility.IsExpectedFailure`.
-func (*requiresFeatures) IsExpectedFailure(ctx context.Context, env *TestEnvironment, logs string, exitCode int) error {
+func (r *requiresFeatures) IsExpectedFailure(ctx context.Context, env *TestEnvironment, logs string, exitCode int) error {
+	if slices.Contains(r.features, FeatureGL) && !env.Features[FeatureGL] && strings.Contains(logs, `code=999(cudaErrorUnknown) "cudaGraphicsGLRegisterBuffer(&cuda_vbo_resource, vbo, cudaGraphicsMapFlagsNone)"`) {
+		// Some GL-requiring tests such as `5_Domain_Specific/postProcessGL`
+		// and `5_Domain_Specific/fluidsGL` will incorrectly detect that GL
+		// is supported, and fail with this error message rather than waiving.
+		return nil
+	}
 	if exitCode != exitCodeWaived {
 		return fmt.Errorf("exit code %d, expected EXIT_WAIVED (%d)", exitCode, exitCodeWaived)
 	}
@@ -396,7 +432,9 @@ func (*FullyCompatible) IsExpectedFailure(ctx context.Context, env *TestEnvironm
 
 // getContainerOpts returns the container run options to run CUDA tests.
 func getContainerOpts() (dockerutil.RunOpts, error) {
-	opts, err := dockerutil.GPURunOpts(dockerutil.SniffGPUOpts{})
+	opts, err := dockerutil.GPURunOpts(dockerutil.SniffGPUOpts{
+		Capabilities: dockerutil.AllGPUCapabilities,
+	})
 	if err != nil {
 		return dockerutil.RunOpts{}, fmt.Errorf("failed to get GPU run options: %w", err)
 	}
@@ -444,8 +482,27 @@ func GetEnvironment(ctx context.Context, t *testing.T) (*TestEnvironment, error)
 	}
 	if runtimeIsGVisor {
 		testLog(t, "Runtime is detected as gVisor")
+		runtimeArgs, err := dockerutil.RuntimeArgs()
+		if err != nil {
+			t.Fatalf("Failed to get runtime arguments: %v", err)
+		}
+		foundNVCaps := ""
+		const nvCapsPrefixFlag = "--nvproxy-allowed-driver-capabilities"
+		for i, arg := range runtimeArgs {
+			if strings.HasPrefix(arg, nvCapsPrefixFlag+"=") {
+				foundNVCaps = strings.TrimPrefix(arg, nvCapsPrefixFlag+"=")
+			} else if arg == "--nvproxy-allowed-driver-capabilities" && i < len(runtimeArgs)-1 {
+				foundNVCaps = runtimeArgs[i+1]
+			}
+		}
+		if foundNVCaps == "" {
+			return nil, fmt.Errorf("did not find --nvproxy-allowed-driver-capabilities=all flag in gVisor runtime arguments, please specify it for this test")
+		}
+		if foundNVCaps != "all" {
+			return nil, fmt.Errorf("found --nvproxy-allowed-driver-capabilities=%q flag in gVisor runtime arguments, please specify --nvproxy-allowed-driver-capabilities=all for this test", foundNVCaps)
+		}
 	} else {
-		testLog(t, "Runtime is detected as not gVisor")
+		testLog(t, "Runtime is detected as non-gVisor")
 	}
 	featuresContainer := dockerutil.MakeContainer(ctx, t)
 	defer featuresContainer.CleanUp(ctx)
@@ -461,6 +518,10 @@ func GetEnvironment(ctx context.Context, t *testing.T) (*TestEnvironment, error)
 	for _, line := range strings.Split(featuresList, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" {
+			continue
+		}
+		if strings.HasPrefix(line, "//") {
+			testLog(t, "/list_features.sh: %s", line)
 			continue
 		}
 		featureAvailable := false
@@ -719,8 +780,13 @@ func TestCUDA(t *testing.T) {
 	// for some reason (e.g. out of GPU memory).
 	// To address this, the test first runs every test in parallel. Then, if
 	// any of them failed, it will run only the failed ones serially.
-	numContainers := getDesiredTestParallelism()
-	testLog(t, "Number of cores is %d, spawning %.1f CUDA containers for each (%d containers total)...", runtime.NumCPU(), *containersPerCPU, numContainers)
+	numParallel := getDesiredTestParallelism()
+	numContainers := min(numParallel, max(numTests, 1))
+	if numContainers == numParallel {
+		testLog(t, "Number of cores is %d, spawning %.1f CUDA containers for each (%d containers total)...", runtime.NumCPU(), *containersPerCPU, numContainers)
+	} else {
+		testLog(t, "%d tests to run, spawning %d CUDA containers...", numTests, numContainers)
+	}
 	spawnGroup, spawnCtx := errgroup.WithContext(ctx)
 	containers := make([]*dockerutil.Container, numContainers)
 	for i := 0; i < numContainers; i++ {
@@ -825,7 +891,7 @@ func TestCUDA(t *testing.T) {
 			)
 		}
 	} else if poolUtilization := cp.Utilization(); poolUtilization < 0.6 {
-		testLog(t, "WARNING: Pool utilization was only %.1f%%.", poolUtilization*100.0)
+		testLog(t, "WARNING: Container pool utilization was only %.1f%% during the test.", poolUtilization*100.0)
 		testLog(t, "This test can be made faster and more efficient with proper test categorization,")
 		testLog(t, "by identifying flaky tests and exclusive-requiring tests.")
 		testLog(t, "Consider going over the logs to identify such tests and categorize them accordingly.")

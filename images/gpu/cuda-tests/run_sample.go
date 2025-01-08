@@ -997,6 +997,9 @@ func (st *SampleTest) RunLibNVVMTest(ctx context.Context) error {
 // Main is the main method of this program.
 func Main(ctx context.Context) (int, error) {
 	flag.Parse()
+	if nvCaps := os.Getenv("NVIDIA_DRIVER_CAPABILITIES"); nvCaps != "all" {
+		return 1, fmt.Errorf("NVIDIA_DRIVER_CAPABILITIES is not set to 'all' (got %q); please set it to 'all' and try again", nvCaps)
+	}
 	cleanupCtx, cleanupCancel := context.WithTimeout(ctx, *timeoutFlag)
 	defer cleanupCancel()
 	deadline, _ := cleanupCtx.Deadline()
@@ -1007,15 +1010,15 @@ func Main(ctx context.Context) (int, error) {
 	defer x.Shutdown(cleanupCtx)
 	testsCtx, testsCancel := context.WithDeadline(cleanupCtx, deadline.Add(-10*time.Second))
 	defer testsCancel()
-	failed := false
 	numTests := 0
 	exitCode := 1
+	var lastErr error
 	for _, testName := range flag.Args() {
 		numTests++
 		st, err := NewSampleTest(testName, x)
 		if err != nil {
 			log("> Invalid test %q: %s", testName, err)
-			failed = true
+			lastErr = fmt.Errorf("invalid test %q: %w", testName, err)
 			continue
 		}
 		log("> Running test: %s", testName)
@@ -1024,7 +1027,7 @@ func Main(ctx context.Context) (int, error) {
 		testCancel()
 		if err != nil {
 			log("> Test failed: %s (%s)", testName, err)
-			failed = true
+			lastErr = fmt.Errorf("test %q failed: %w", testName, err)
 			if exitErr := (*exec.ExitError)(nil); errors.As(err, &exitErr) && exitErr.ExitCode() > 0 {
 				exitCode = exitErr.ExitCode()
 			}
@@ -1035,14 +1038,19 @@ func Main(ctx context.Context) (int, error) {
 	if numTests == 0 {
 		return 1, fmt.Errorf("no tests to run, failing vacuously; specify test names as positional arguments")
 	}
-	if failed {
-		if numTests == 1 {
-			// If there was a single test to run, pass along its error code.
-			return exitCode, fmt.Errorf("test failed")
-		}
-		return 1, errors.New("one or more tests failed")
+	if lastErr == nil {
+		return 0, nil
 	}
-	return 0, nil
+	if numTests != 1 {
+		return 1, fmt.Errorf("one or more tests failed (last error: %w)", lastErr)
+	}
+	// If there was a single test to run, pass along its error code if it
+	// had one. (It may not have had one in case the test failed for another
+	// reason, e.g. error setting up the test prior to running it.)
+	if exitCode == 0 {
+		exitCode = 1
+	}
+	return exitCode, fmt.Errorf("test failed: %w", lastErr)
 }
 
 func main() {

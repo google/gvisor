@@ -27,7 +27,9 @@ func TestGPUHello(t *testing.T) {
 	c := dockerutil.MakeContainer(ctx, t)
 	defer c.CleanUp(ctx)
 
-	opts, err := dockerutil.GPURunOpts(dockerutil.SniffGPUOpts{})
+	opts, err := dockerutil.GPURunOpts(dockerutil.SniffGPUOpts{
+		Capabilities: dockerutil.AllGPUCapabilities,
+	})
 	if err != nil {
 		t.Fatalf("failed to get GPU run options: %v", err)
 	}
