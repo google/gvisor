@@ -467,13 +467,32 @@ func (f *ClientFD) BindAt(ctx context.Context, sockType linux.SockType, name str
 }
 
 // Connect makes the Connect RPC.
-func (f *ClientFD) Connect(ctx context.Context, sockType linux.SockType) (int, error) {
-	req := ConnectReq{FD: f.fd, SockType: uint32(sockType)}
-	var resp ConnectResp
-	var sockFD [1]int
-	ctx.UninterruptibleSleepStart(false)
-	err := f.client.SndRcvMessage(Connect, uint32(req.SizeBytes()), req.MarshalUnsafe, resp.CheckedUnmarshal, sockFD[:], req.String, resp.String)
-	ctx.UninterruptibleSleepFinish(false)
+func (f *ClientFD) Connect(ctx context.Context, sockType linux.SockType, euid UID, egid GID) (int, error) {
+	credsAvailable := euid != NoUID && egid != NoGID
+	var (
+		err    error
+		sockFD [1]int
+		resp   ConnectResp
+		req    = ConnectReq{
+			FD:       f.fd,
+			SockType: uint32(sockType),
+		}
+	)
+	if credsAvailable && f.client.IsSupported(ConnectWithCreds) {
+		reqWithCreds := ConnectWithCredsReq{
+			ConnectReq: req,
+			UID:        euid,
+			GID:        egid,
+		}
+		ctx.UninterruptibleSleepStart(false)
+		err = f.client.SndRcvMessage(ConnectWithCreds, uint32(reqWithCreds.SizeBytes()), reqWithCreds.MarshalUnsafe, resp.CheckedUnmarshal, sockFD[:], reqWithCreds.String, resp.String)
+		ctx.UninterruptibleSleepFinish(false)
+	} else {
+		ctx.UninterruptibleSleepStart(false)
+		err = f.client.SndRcvMessage(Connect, uint32(req.SizeBytes()), req.MarshalUnsafe, resp.CheckedUnmarshal, sockFD[:], req.String, resp.String)
+		ctx.UninterruptibleSleepFinish(false)
+	}
+
 	if err == nil && sockFD[0] < 0 {
 		err = unix.EBADF
 	}

@@ -1966,6 +1966,14 @@ func (s *Stack) Pause() {
 	}
 }
 
+func (s *Stack) getNICs() map[tcpip.NICID]*nic {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	nics := s.nics
+	return nics
+}
+
 // ReplaceConfig replaces config in the loaded stack.
 func (s *Stack) ReplaceConfig(st *Stack) {
 	if st == nil {
@@ -1976,12 +1984,11 @@ func (s *Stack) ReplaceConfig(st *Stack) {
 	s.SetRouteTable(st.GetRouteTable())
 
 	// Update NICs.
-	st.mu.Lock()
-	defer st.mu.Unlock()
+	nics := st.getNICs()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.nics = make(map[tcpip.NICID]*nic)
-	for id, nic := range st.nics {
+	for id, nic := range nics {
 		nic.stack = s
 		s.nics[id] = nic
 		_ = s.NextNICID()

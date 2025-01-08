@@ -18,6 +18,7 @@ var _ marshal.Marshallable = (*AcceptReq)(nil)
 var _ marshal.Marshallable = (*BindAtResp)(nil)
 var _ marshal.Marshallable = (*ChannelResp)(nil)
 var _ marshal.Marshallable = (*ConnectReq)(nil)
+var _ marshal.Marshallable = (*ConnectWithCredsReq)(nil)
 var _ marshal.Marshallable = (*ErrorResp)(nil)
 var _ marshal.Marshallable = (*FAllocateReq)(nil)
 var _ marshal.Marshallable = (*FDID)(nil)
@@ -940,6 +941,157 @@ func (c *ConnectReq) CheckedMarshal(dst []byte) ([]byte, bool) {
 
 // CheckedUnmarshal implements marshal.CheckedMarshallable.CheckedUnmarshal.
 func (c *ConnectReq) CheckedUnmarshal(src []byte) ([]byte, bool) {
+    if c.SizeBytes() > len(src) {
+        return src, false
+    }
+    return c.UnmarshalUnsafe(src), true
+}
+
+// SizeBytes implements marshal.Marshallable.SizeBytes.
+func (c *ConnectWithCredsReq) SizeBytes() int {
+    return 0 +
+        (*ConnectReq)(nil).SizeBytes() +
+        (*UID)(nil).SizeBytes() +
+        (*GID)(nil).SizeBytes()
+}
+
+// MarshalBytes implements marshal.Marshallable.MarshalBytes.
+func (c *ConnectWithCredsReq) MarshalBytes(dst []byte) []byte {
+    dst = c.ConnectReq.MarshalUnsafe(dst)
+    dst = c.UID.MarshalUnsafe(dst)
+    dst = c.GID.MarshalUnsafe(dst)
+    return dst
+}
+
+// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
+func (c *ConnectWithCredsReq) UnmarshalBytes(src []byte) []byte {
+    src = c.ConnectReq.UnmarshalUnsafe(src)
+    src = c.UID.UnmarshalUnsafe(src)
+    src = c.GID.UnmarshalUnsafe(src)
+    return src
+}
+
+// Packed implements marshal.Marshallable.Packed.
+//go:nosplit
+func (c *ConnectWithCredsReq) Packed() bool {
+    return c.ConnectReq.Packed() && c.GID.Packed() && c.UID.Packed()
+}
+
+// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
+func (c *ConnectWithCredsReq) MarshalUnsafe(dst []byte) []byte {
+    if c.ConnectReq.Packed() && c.GID.Packed() && c.UID.Packed() {
+        size := c.SizeBytes()
+        gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(c), uintptr(size))
+        return dst[size:]
+    }
+    // Type ConnectWithCredsReq doesn't have a packed layout in memory, fallback to MarshalBytes.
+    return c.MarshalBytes(dst)
+}
+
+// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
+func (c *ConnectWithCredsReq) UnmarshalUnsafe(src []byte) []byte {
+    if c.ConnectReq.Packed() && c.GID.Packed() && c.UID.Packed() {
+        size := c.SizeBytes()
+        gohacks.Memmove(unsafe.Pointer(c), unsafe.Pointer(&src[0]), uintptr(size))
+        return src[size:]
+    }
+    // Type ConnectWithCredsReq doesn't have a packed layout in memory, fallback to UnmarshalBytes.
+    return c.UnmarshalBytes(src)
+}
+
+// CopyOutN implements marshal.Marshallable.CopyOutN.
+func (c *ConnectWithCredsReq) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
+    if !c.ConnectReq.Packed() && c.GID.Packed() && c.UID.Packed() {
+        // Type ConnectWithCredsReq doesn't have a packed layout in memory, fall back to MarshalBytes.
+        buf := cc.CopyScratchBuffer(c.SizeBytes()) // escapes: okay.
+        c.MarshalBytes(buf) // escapes: fallback.
+        return cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
+    }
+
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(c)))
+    hdr.Len = c.SizeBytes()
+    hdr.Cap = c.SizeBytes()
+
+    length, err := cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that c
+    // must live until the use above.
+    runtime.KeepAlive(c) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// CopyOut implements marshal.Marshallable.CopyOut.
+func (c *ConnectWithCredsReq) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+    return c.CopyOutN(cc, addr, c.SizeBytes())
+}
+
+// CopyInN implements marshal.Marshallable.CopyInN.
+func (c *ConnectWithCredsReq) CopyInN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
+    if !c.ConnectReq.Packed() && c.GID.Packed() && c.UID.Packed() {
+        // Type ConnectWithCredsReq doesn't have a packed layout in memory, fall back to UnmarshalBytes.
+        buf := cc.CopyScratchBuffer(c.SizeBytes()) // escapes: okay.
+        length, err := cc.CopyInBytes(addr, buf[:limit]) // escapes: okay.
+        // Unmarshal unconditionally. If we had a short copy-in, this results in a
+        // partially unmarshalled struct.
+        c.UnmarshalBytes(buf) // escapes: fallback.
+        return length, err
+    }
+
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(c)))
+    hdr.Len = c.SizeBytes()
+    hdr.Cap = c.SizeBytes()
+
+    length, err := cc.CopyInBytes(addr, buf[:limit]) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that c
+    // must live until the use above.
+    runtime.KeepAlive(c) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// CopyIn implements marshal.Marshallable.CopyIn.
+func (c *ConnectWithCredsReq) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+    return c.CopyInN(cc, addr, c.SizeBytes())
+}
+
+// WriteTo implements io.WriterTo.WriteTo.
+func (c *ConnectWithCredsReq) WriteTo(writer io.Writer) (int64, error) {
+    if !c.ConnectReq.Packed() && c.GID.Packed() && c.UID.Packed() {
+        // Type ConnectWithCredsReq doesn't have a packed layout in memory, fall back to MarshalBytes.
+        buf := make([]byte, c.SizeBytes())
+        c.MarshalBytes(buf)
+        length, err := writer.Write(buf)
+        return int64(length), err
+    }
+
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(c)))
+    hdr.Len = c.SizeBytes()
+    hdr.Cap = c.SizeBytes()
+
+    length, err := writer.Write(buf)
+    // Since we bypassed the compiler's escape analysis, indicate that c
+    // must live until the use above.
+    runtime.KeepAlive(c) // escapes: replaced by intrinsic.
+    return int64(length), err
+}
+
+// CheckedMarshal implements marshal.CheckedMarshallable.CheckedMarshal.
+func (c *ConnectWithCredsReq) CheckedMarshal(dst []byte) ([]byte, bool) {
+    if c.SizeBytes() > len(dst) {
+        return dst, false
+    }
+    return c.MarshalUnsafe(dst), true
+}
+
+// CheckedUnmarshal implements marshal.CheckedMarshallable.CheckedUnmarshal.
+func (c *ConnectWithCredsReq) CheckedUnmarshal(src []byte) ([]byte, bool) {
     if c.SizeBytes() > len(src) {
         return src, false
     }

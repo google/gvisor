@@ -39,6 +39,15 @@ func CredentialsFromContext(ctx context.Context) *Credentials {
 	return NewAnonymousCredentials()
 }
 
+// CredentialsOrNilFromContext returns a copy of the Credentials used by ctx,
+// or nil if ctx does not have Credentials.
+func CredentialsOrNilFromContext(ctx context.Context) *Credentials {
+	if v := ctx.Value(CtxCredentials); v != nil {
+		return v.(*Credentials)
+	}
+	return nil
+}
+
 // ThreadGroupIDFromContext returns the current thread group ID when ctx
 // represents a task context.
 func ThreadGroupIDFromContext(ctx context.Context) (tgid int32, ok bool) {

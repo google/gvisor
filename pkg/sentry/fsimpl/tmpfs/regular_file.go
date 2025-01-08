@@ -309,6 +309,19 @@ func (rf *regularFile) Translate(ctx context.Context, required, optional memmap.
 	if optional.End > pgend {
 		optional.End = pgend
 	}
+	// Constrain allocation to at most maxOptionalBytes or required.Length(),
+	// whichever is greater.
+	const maxOptionalBytes = 64 << 10 // 64 KB, arbitrarily matches Linux's default fault_around_pages
+	if required.Length() >= maxOptionalBytes {
+		optional = required
+	} else {
+		if optional.Length() > maxOptionalBytes {
+			optional.Start = required.Start
+			if optional.Length() > maxOptionalBytes {
+				optional.End = optional.Start + maxOptionalBytes
+			}
+		}
+	}
 	pagesToFill := rf.data.PagesToFill(required, optional)
 	if !rf.inode.fs.accountPages(pagesToFill) {
 		// If we can not accommodate pagesToFill pages, then retry with just

@@ -1342,7 +1342,7 @@ func (mnt *Mount) Root() *Dentry {
 // GenerateProcMounts emits the contents of /proc/[pid]/mounts for vfs to buf.
 //
 // Preconditions: taskRootDir.Ok().
-func (vfs *VirtualFilesystem) GenerateProcMounts(ctx context.Context, taskRootDir VirtualDentry, buf *bytes.Buffer) {
+func (vfs *VirtualFilesystem) GenerateProcMounts(ctx context.Context, taskRootDir VirtualDentry, buf *bytes.Buffer) error {
 	rootMnt := taskRootDir.mount
 
 	vfs.lockMounts()
@@ -1361,6 +1361,9 @@ func (vfs *VirtualFilesystem) GenerateProcMounts(ctx context.Context, taskRootDi
 	sort.Slice(mounts, func(i, j int) bool { return mounts[i].ID < mounts[j].ID })
 
 	for _, mnt := range mounts {
+		if ctx.Interrupted() {
+			return linuxerr.ErrInterrupted
+		}
 		// Get the path to this mount relative to task root.
 		mntRootVD := VirtualDentry{
 			mount:  mnt,
@@ -1404,13 +1407,14 @@ func (vfs *VirtualFilesystem) GenerateProcMounts(ctx context.Context, taskRootDi
 		// is allowed.
 		fmt.Fprintf(buf, "%s %s %s %s %d %d\n", "none", path, mnt.fs.FilesystemType().Name(), opts, 0, 0)
 	}
+	return nil
 }
 
 // GenerateProcMountInfo emits the contents of /proc/[pid]/mountinfo for vfs to
 // buf.
 //
 // Preconditions: taskRootDir.Ok().
-func (vfs *VirtualFilesystem) GenerateProcMountInfo(ctx context.Context, taskRootDir VirtualDentry, buf *bytes.Buffer) {
+func (vfs *VirtualFilesystem) GenerateProcMountInfo(ctx context.Context, taskRootDir VirtualDentry, buf *bytes.Buffer) error {
 	rootMnt := taskRootDir.mount
 
 	vfs.lockMounts()
@@ -1431,6 +1435,9 @@ func (vfs *VirtualFilesystem) GenerateProcMountInfo(ctx context.Context, taskRoo
 
 	creds := auth.CredentialsFromContext(ctx)
 	for _, mnt := range mounts {
+		if ctx.Interrupted() {
+			return linuxerr.ErrInterrupted
+		}
 		// Get the path to this mount relative to task root.
 		mntRootVD := VirtualDentry{
 			mount:  mnt,
@@ -1530,6 +1537,7 @@ func (vfs *VirtualFilesystem) GenerateProcMountInfo(ctx context.Context, taskRoo
 		// (11) Superblock options, and final newline.
 		fmt.Fprintf(buf, "%s\n", superBlockOpts(pathFromRoot, mnt))
 	}
+	return nil
 }
 
 // manglePath replaces ' ', '\t', '\n', and '\\' with their octal equivalents.
