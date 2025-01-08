@@ -29,7 +29,10 @@ import (
 // If you suspect the Sentry is getting killed due to a seccomp violation,
 // change this to `true` to get a panic stack trace when there is a
 // violation.
-const debugFilter = false
+const (
+	debugFilterPanic = false // Panic on seccomp violation with stack trace.
+	debugFilterWarn  = false // Log seccomp violation, but continue program execution.
+)
 
 // Options is a re-export of the config Options type under this package.
 type Options = config.Options
@@ -41,7 +44,7 @@ func Install(opt Options) error {
 	}
 	key := opt.ConfigKey()
 	precompiled, usePrecompiled := GetPrecompiled(key)
-	if usePrecompiled && !debugFilter {
+	if usePrecompiled && !debugFilterPanic && !debugFilterWarn {
 		vars := opt.Vars()
 		log.Debugf("Loaded precompiled seccomp instructions for options %v, using variables: %v", key, vars)
 		insns, err := precompiled.RenderInstructions(vars)
@@ -51,9 +54,13 @@ func Install(opt Options) error {
 		return seccomp.SetFilter(insns)
 	}
 	seccompOpts := config.SeccompOptions(opt)
-	if debugFilter {
+	if debugFilterPanic {
 		log.Infof("Seccomp filter debugging is enabled; seccomp failures will result in a panic stack trace.")
 		seccompOpts.DefaultAction = linux.SECCOMP_RET_TRAP
+	} else if debugFilterWarn {
+		log.Infof("Seccomp filter debugging is enabled; seccomp failures will be logged")
+		seccompOpts.DefaultAction = linux.SECCOMP_RET_USER_NOTIF
+		seccompOpts.LogNotifications = true
 	} else {
 		log.Infof("No precompiled program found for config options %v, building seccomp program from scratch. This may slow down container startup.", key)
 		if log.IsLogging(log.Debug) {
