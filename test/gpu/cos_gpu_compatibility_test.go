@@ -53,6 +53,8 @@ func TestGPUDriversCompatibility(t *testing.T) {
 		t.Fatalf("Failed to unmarshal image JSON file: %v", err)
 	}
 
+	executedTests := 0
+
 	for _, image := range images {
 		name := image["name"].(string)
 		family := image["family"].(string)
@@ -95,7 +97,7 @@ func TestGPUDriversCompatibility(t *testing.T) {
 					default:
 						continue
 					}
-
+					executedTests++
 					if !supportedDrivers[driver.GetVersion()] {
 						t.Errorf("Unsupported driver patch: %q gpu: %q version: %q", driver.GetVersion(), info.GetGpuDevice().GetGpuType(), driver.GetLabel())
 						continue
@@ -105,6 +107,9 @@ func TestGPUDriversCompatibility(t *testing.T) {
 				}
 			}
 		})
+	}
+	if !t.Failed() && executedTests <= 0 {
+		t.Fatalf("No successful tests: check logs for details")
 	}
 }
 
@@ -128,6 +133,12 @@ func listedDriverVersions(cosVersion string) ([]byte, error) {
 	// See: https://cloud.google.com/container-optimized-os/docs/release-notes
 	url := fmt.Sprintf("https://storage.googleapis.com/cos-tools/%s/lakitu/gpu_driver_versions.textproto", cosVersion)
 	resp, err := http.Get(url)
+	// When COS versions are newly released, they will often show up in projects but not the release
+	// page. In this case, we return an empty list of driver versions.
+	if resp.StatusCode == 404 {
+		resp.Body.Close()
+		return []byte("gpu_driver_version_info: []"), nil
+	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to get driver versions for release %q: %w", cosVersion, err)
 	}
