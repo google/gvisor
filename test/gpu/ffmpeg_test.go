@@ -24,19 +24,9 @@ import (
 // TestFffmpegEncodeGPU runs ffmpeg in a GPU container using NVENC.
 func TestFffmpegEncodeGPU(t *testing.T) {
 	ctx := context.Background()
-	isGVisor, err := dockerutil.IsGVisorRuntime(ctx, t)
-	if err != nil {
-		t.Fatalf("Failed to determine if runtime is gVisor: %v", err)
-	}
-	if isGVisor {
-		t.Skip("This test is currently broken in gVisor")
-	}
 	container := dockerutil.MakeContainer(ctx, t)
 	defer container.CleanUp(ctx)
-	opts, err := dockerutil.GPURunOpts(dockerutil.SniffGPUOpts{
-		Capabilities:           "video",
-		AllowIncompatibleIoctl: true, // TODO(gvisor.dev/issue/9452): Remove once supported in gVisor.
-	})
+	opts, err := dockerutil.GPURunOpts(dockerutil.SniffGPUOpts{Capabilities: "compute,video"})
 	if err != nil {
 		t.Fatalf("Failed to get GPU run options: %v", err)
 	}
@@ -50,26 +40,16 @@ func TestFffmpegEncodeGPU(t *testing.T) {
 // TestFffmpegDecodeGPU runs ffmpeg in a GPU container using NVDEC.
 func TestFffmpegDecodeGPU(t *testing.T) {
 	ctx := context.Background()
-	isGVisor, err := dockerutil.IsGVisorRuntime(ctx, t)
-	if err != nil {
-		t.Fatalf("Failed to determine if runtime is gVisor: %v", err)
-	}
-	if isGVisor {
-		t.Skip("This test is currently broken in gVisor")
-	}
 	container := dockerutil.MakeContainer(ctx, t)
 	defer container.CleanUp(ctx)
-	opts, err := dockerutil.GPURunOpts(dockerutil.SniffGPUOpts{
-		Capabilities:           "video",
-		AllowIncompatibleIoctl: true, // TODO(gvisor.dev/issue/9452): Remove once supported in gVisor.
-	})
+	opts, err := dockerutil.GPURunOpts(dockerutil.SniffGPUOpts{Capabilities: "compute,video"})
 	if err != nil {
 		t.Fatalf("Failed to get GPU run options: %v", err)
 	}
 	opts.Image = "benchmarks/ffmpeg"
 	// h264_cuvid refers to NVDEC. See Section 4.2 in
 	// https://docs.nvidia.com/video-technologies/video-codec-sdk/pdf/Using_FFmpeg_with_NVIDIA_GPU_Hardware_Acceleration.pdf
-	cmd := strings.Split("ffmpeg -y -vsync 0 -c:v h264_cuvid -i video.mp4 output.yuv", " ")
+	cmd := strings.Split("ffmpeg -y -vsync 0 -c:v h264_cuvid -i encoded.mp4 output.mp4", " ")
 	if output, err := container.Run(ctx, opts, cmd...); err != nil {
 		t.Errorf("failed to run container: %v; output:\n%s", err, output)
 	}

@@ -7,3 +7,4 @@ RUN set -x \
         && rm -rf /var/lib/apt/lists/*
 WORKDIR /media
 ADD https://samples.ffmpeg.org/MPEG-4/video.mp4 video.mp4
+ADD https://samples.ffmpeg.org/A-codecs/Nelly_Moser/h264_NellyMoser.mp4 encoded.mp4
