@@ -40,6 +40,9 @@ var (
 	// default used by the installations.
 	runtime = flag.String("runtime", os.Getenv("RUNTIME"), "specify which runtime to use")
 
+	// dockerCLI is the path to the docker CLI binary.
+	dockerCLI = flag.String("docker_cli", os.Getenv("DOCKER_CLI_PATH"), "path to the docker client command-line binary")
+
 	// config is the default Docker daemon configuration path.
 	config = flag.String("config_path", "/etc/docker/daemon.json", "configuration file for reading paths")
 
@@ -65,6 +68,14 @@ var (
 	useSystemdRgx = regexp.MustCompile("\\s*(native\\.cgroupdriver)\\s*=\\s*(systemd)\\s*")
 )
 
+// dockerCLIPath returns the path to the docker CLI binary.
+func dockerCLIPath() string {
+	if *dockerCLI != "" {
+		return *dockerCLI
+	}
+	return "docker"
+}
+
 // PrintDockerConfig prints the whole Docker configuration file to the log.
 func PrintDockerConfig() {
 	configBytes, err := os.ReadFile(*config)
@@ -78,10 +89,10 @@ func PrintDockerConfig() {
 //
 // This logs directly to stderr, as it is typically called from a Main wrapper.
 func EnsureSupportedDockerVersion() {
-	cmd := exec.Command("docker", "version")
+	cmd := exec.Command(dockerCLIPath(), "version")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		log.Fatalf("error running %q: %v", "docker version", err)
+		log.Fatalf("error running %q: %v", dockerCLIPath()+" version", err)
 	}
 	re := regexp.MustCompile(`Version:\s+(\d+)\.(\d+)\.\d.*`)
 	matches := re.FindStringSubmatch(string(out))
@@ -97,10 +108,10 @@ func EnsureSupportedDockerVersion() {
 
 // EnsureDockerExperimentalEnabled ensures that Docker has experimental features enabled.
 func EnsureDockerExperimentalEnabled() {
-	cmd := exec.Command("docker", "version", "--format={{.Server.Experimental}}")
+	cmd := exec.Command(dockerCLIPath(), "version", "--format={{.Server.Experimental}}")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		log.Fatalf("error running %s: %v", "docker version --format='{{.Server.Experimental}}'", err)
+		log.Fatalf("error running %s: %v", dockerCLIPath()+" version --format='{{.Server.Experimental}}'", err)
 	}
 	if strings.TrimSpace(string(out)) != "true" {
 		PrintDockerConfig()
@@ -239,7 +250,7 @@ func runtimeMap() (map[string]any, error) {
 //
 // This is called by criutil in order to import imports.
 func Save(logger testutil.Logger, image string, w io.Writer) error {
-	cmd := testutil.Command(logger, "docker", "save", testutil.ImageByName(image))
+	cmd := testutil.Command(logger, dockerCLIPath(), "save", testutil.ImageByName(image))
 	cmd.Stdout = w // Send directly to the writer.
 	return cmd.Run()
 }

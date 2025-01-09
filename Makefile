@@ -57,11 +57,11 @@ help: ## Shows all targets and help from the Makefile (this message).
 		}'
 
 build: ## Builds the given $(TARGETS) with the given $(OPTIONS). E.g. make build TARGETS=runsc
-	@$(call build,$(OPTIONS) $(TARGETS))
+	@$(call build,$(OPTIONS) -- $(TARGETS))
 .PHONY: build
 
 test: ## Tests the given $(TARGETS) with the given $(OPTIONS). E.g. make test TARGETS=pkg/buffer:buffer_test
-	@$(call test,$(OPTIONS) $(TARGETS))
+	@$(call test,$(OPTIONS) -- $(TARGETS))
 .PHONY: test
 
 copy: ## Copies the given $(TARGETS) to the given $(DESTINATION). E.g. make copy TARGETS=runsc DESTINATION=/tmp
@@ -116,6 +116,7 @@ RUNTIME_BIN     ?= $(RUNTIME_DIR)/runsc
 RUNTIME_LOG_DIR ?= $(RUNTIME_DIR)/logs
 RUNTIME_LOGS    ?= $(RUNTIME_LOG_DIR)/runsc.log.%TEST%.%TIMESTAMP%.%COMMAND%
 RUNTIME_ARGS    ?=
+DOCKER_DAEMON_CONFIG_PATH ?= /etc/docker/daemon.json
 DOCKER_RELOAD_COMMAND ?= sudo systemctl reload docker
 
 SYSFS_GROUP_PATH := /sys/fs/cgroup
@@ -139,7 +140,7 @@ endif
 # Configure helpers for below.
 configure_noreload = \
   $(call header,CONFIGURE $(1) → $(RUNTIME_BIN) $(RUNTIME_ARGS) $(2)); \
-  sudo $(RUNTIME_BIN) install --experimental=true --runtime="$(1)" -- $(RUNTIME_ARGS) --debug-log "$(RUNTIME_LOGS)" $(2) && \
+  sudo $(RUNTIME_BIN) install --config_file="$(DOCKER_DAEMON_CONFIG_PATH)" --experimental=true --runtime="$(1)" -- $(RUNTIME_ARGS) --debug-log "$(RUNTIME_LOGS)" $(2) && \
   sudo rm -rf "$(RUNTIME_LOG_DIR)" && mkdir -p "$(RUNTIME_LOG_DIR)"
 
 reload_docker = \

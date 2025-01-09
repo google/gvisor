@@ -26,6 +26,7 @@
 ##     DOCKER_NAME         - The container name (default: gvisor-bazel-HASH).
 ##     DOCKER_HOSTNAME     - The container name (default: same as DOCKER_NAME).
 ##     DOCKER_PRIVILEGED   - Docker privileged flags (default: --privileged).
+##     DOCKER_CLI_PATH     - The path to the docker CLI binary.
 ##     UNSANDBOXED_RUNTIME - Name of the Docker runtime to use for the
 ##                           unsandboxed build container. Defaults to runc.
 ##     PRE_BAZEL_INIT      - If set, run this command with bash outside the Bazel
@@ -59,12 +60,23 @@ DOCKER_NAME := gvisor-bazel-$(HASH)-$(ARCH)
 DOCKER_HOSTNAME := $(DOCKER_NAME)
 DOCKER_PRIVILEGED := --privileged
 UNSANDBOXED_RUNTIME ?= runc
-BAZEL_CACHE := $(HOME)/.cache/bazel/
+BAZEL_CACHE ?= $(HOME)/.cache/bazel/
 GCLOUD_CONFIG := $(HOME)/.config/gcloud/
-DOCKER_SOCKET := /var/run/docker.sock
-DOCKER_CONFIG := /etc/docker
+DOCKER_HOST   ?= unix:///var/run/docker.sock
+DOCKER_SOCKET ?= $(patsubst unix://%,%,$(DOCKER_HOST))
+DOCKER_CONFIG ?= /etc/docker
+DOCKER_CLI_PATH ?= docker
 DEVICE_FILE ?=
 PRE_BAZEL_INIT ?=
+
+# If `GO_REPOSITORY_USE_HOST_CACHE` is set to `1`, Go environment variables
+# are passed through to the build container and work as they do with
+# regular Bazel. See documentation on this feature here:
+# https://github.com/bazelbuild/bazel-gazelle/blob/089096315dcaa0aea52e87ecc2bd6b89b531da1e/repository.md?plain=1#L117
+GO_REPOSITORY_USE_HOST_CACHE ?=
+GOPATH ?=
+GOCACHE ?=
+GOMODCACHE ?=
 
 ##
 ## Bazel helpers.
@@ -94,23 +106,44 @@ TEST_OPTIONS       += $(BASE_OPTIONS) \
 UID := $(shell id -u ${USER})
 GID := $(shell id -g ${USER})
 USERADD_OPTIONS :=
-DOCKER_RUN_OPTIONS :=
-DOCKER_RUN_OPTIONS += --rm
-DOCKER_RUN_OPTIONS += --user $(UID):$(GID)
-DOCKER_RUN_OPTIONS += --entrypoint ""
-DOCKER_RUN_OPTIONS += --init
+DOCKER_RUN_OPTIONS  :=
+DOCKER_RUN_OPTIONS  += --rm
+DOCKER_RUN_OPTIONS  += --user $(UID):$(GID)
+DOCKER_RUN_OPTIONS  += --entrypoint ""
+DOCKER_RUN_OPTIONS  += --init
+DOCKER_EXEC_OPTIONS := --user $(UID):$(GID)
 ifneq (,$(UNSANDBOXED_RUNTIME))
 DOCKER_RUN_OPTIONS += --runtime=$(UNSANDBOXED_RUNTIME)
 endif
 DOCKER_RUN_OPTIONS += -v "$(shell realpath -m $(BAZEL_CACHE)):$(BAZEL_CACHE)"
+ifneq ($(patsubst %/,%,$(BAZEL_CACHE)),$(HOME)/.cache/bazel)
+DOCKER_RUN_OPTIONS += -v "$(shell realpath -m $(BAZEL_CACHE)):$(HOME)/.cache/bazel"
+endif
+ifneq ($(GO_REPOSITORY_USE_HOST_CACHE),)
+DOCKER_RUN_OPTIONS  += -e GO_REPOSITORY_USE_HOST_CACHE=$(GO_REPOSITORY_USE_HOST_CACHE)
+DOCKER_EXEC_OPTIONS += -e GO_REPOSITORY_USE_HOST_CACHE=$(GO_REPOSITORY_USE_HOST_CACHE)
+ifneq ($(GOPATH),)
+DOCKER_RUN_OPTIONS  += -e GOPATH=$(GOPATH)
+DOCKER_EXEC_OPTIONS += -e GOPATH=$(GOPATH)
+DOCKER_RUN_OPTIONS  += -v "$(shell realpath -m $(GOPATH)):$(GOPATH)"
+endif
+ifneq ($(GOCACHE),)
+DOCKER_RUN_OPTIONS  += -e GOCACHE=$(GOCACHE)
+DOCKER_EXEC_OPTIONS += -e GOCACHE=$(GOCACHE)
+DOCKER_RUN_OPTIONS  += -v "$(shell realpath -m $(GOCACHE)):$(GOCACHE)"
+endif
+ifneq ($(GOMODCACHE),)
+DOCKER_RUN_OPTIONS  += -e GOMODCACHE=$(GOMODCACHE)
+DOCKER_EXEC_OPTIONS += -e GOMODCACHE=$(GOMODCACHE)
+DOCKER_RUN_OPTIONS  += -v "$(shell realpath -m $(GOMODCACHE)):$(GOMODCACHE)"
+endif
+endif
 DOCKER_RUN_OPTIONS += -v "$(shell realpath -m $(GCLOUD_CONFIG)):$(GCLOUD_CONFIG)"
 DOCKER_RUN_OPTIONS += -v "/tmp:/tmp"
-DOCKER_EXEC_OPTIONS := --user $(UID):$(GID)
 DOCKER_EXEC_OPTIONS += --interactive
 ifeq (true,$(shell test -t 1 && echo true))
 DOCKER_EXEC_OPTIONS += --tty
 endif
-
 # If kernel headers are available, mount them too.
 ifneq (,$(wildcard /lib/modules))
 DOCKER_RUN_OPTIONS += -v "/lib/modules:/lib/modules"
@@ -177,7 +210,7 @@ endif
 # Check if Docker API version supports cgroupns (supported in >=1.41).
 # If not, don't include it in options.
 ifeq ($(DOCKER_BUILD),true)
-DOCKER_API_VERSION := $(shell docker version --format='{{.Server.APIVersion}}')
+DOCKER_API_VERSION := $(shell $(DOCKER_CLI_PATH) version --format='{{.Server.APIVersion}}')
 ifeq ($(shell echo $(DOCKER_API_VERSION) | tr '.' '\n' | wc -l),2)
 ifeq ($(shell test $(shell echo $(DOCKER_API_VERSION) | cut -d. -f1) -gt 1 && echo true),true)
 DOCKER_RUN_OPTIONS += --cgroupns=host
@@ -211,10 +244,10 @@ ifeq ($(DOCKER_BUILD),true)
 # already having been terminated. So this uses multiple ways to try to get the
 # container to exit, and ignores which ones work and which ones don't.
 # Instead, it just checks that the container no longer exists by the end of it.
-	@timeout --signal=KILL 10s docker wait $(DOCKER_NAME) 2>/dev/null || true
-	@docker stop --time=10 $(DOCKER_NAME) 2>/dev/null || true
+	@timeout --signal=KILL 10s $(DOCKER_CLI_PATH) wait $(DOCKER_NAME) 2>/dev/null || true
+	@$(DOCKER_CLI_PATH) stop --time=10 $(DOCKER_NAME) 2>/dev/null || true
 # Double check that the container isn't running.
-	@bash -c "! docker inspect $(DOCKER_NAME) &>/dev/null"
+	@bash -c "! $(DOCKER_CLI_PATH) inspect $(DOCKER_NAME) &>/dev/null"
 endif
 .PHONY: bazel-shutdown
 
@@ -224,13 +257,13 @@ bazel-alias: ## Emits an alias that can be used within the shell.
 
 bazel-image: load-default ## Ensures that the local builder exists.
 	@$(call header,DOCKER BUILD)
-	@docker rm -f $(BUILDER_NAME) 2>/dev/null || true
-	@docker run --user 0:0 --entrypoint "" \
+	@$(DOCKER_CLI_PATH) rm -f $(BUILDER_NAME) 2>/dev/null || true
+	@$(DOCKER_CLI_PATH) run --user 0:0 --entrypoint "" \
     --name $(BUILDER_NAME) --hostname $(BUILDER_HOSTNAME) \
     $(shell test -n "$(UNSANDBOXED_RUNTIME)" && echo "--runtime=$(UNSANDBOXED_RUNTIME)") \
     gvisor.dev/images/default \
 	  bash -c "$(GROUPADD_DOCKER) $(USERADD_DOCKER) if test -e /dev/kvm; then chmod a+rw /dev/kvm; fi" >&2
-	@docker commit $(BUILDER_NAME) gvisor.dev/images/builder >&2
+	@$(DOCKER_CLI_PATH) commit $(BUILDER_NAME) gvisor.dev/images/builder >&2
 .PHONY: bazel-image
 
 ifneq (true,$(shell $(wrapper echo true)))
@@ -240,10 +273,12 @@ ifneq (,$(PRE_BAZEL_INIT))
 	@bash -euxo pipefail -c "$(PRE_BAZEL_INIT)"
 endif
 	@$(call header,DOCKER RUN)
-	@docker rm -f $(DOCKER_NAME) 2>/dev/null || true
-	@mkdir -p $(BAZEL_CACHE)
-	@mkdir -p $(GCLOUD_CONFIG)
-	@docker run -d --name $(DOCKER_NAME) --hostname $(DOCKER_HOSTNAME) \
+	@set -x
+	@$(DOCKER_CLI_PATH) rm -f $(DOCKER_NAME) 2>/dev/null || true
+	@mkdir -p "$(BAZEL_CACHE)"
+	@mkdir -p "$(GCLOUD_CONFIG)"
+	@$(DOCKER_CLI_PATH) run -d \
+	  --name $(DOCKER_NAME) --hostname $(DOCKER_HOSTNAME) \
 	  -v "$(CURDIR):$(CURDIR)" \
 	  --workdir "$(CURDIR)" \
 	  --pid=host \
@@ -266,16 +301,18 @@ bazel-server-inc: bazel-server
 build_paths = \
   (set -euo pipefail; \
   $(call wrapper,$(BAZEL) build $(BASE_OPTIONS) $(BAZEL_OPTIONS) $(1)) && \
-  $(call wrapper,$(BAZEL) cquery $(BASE_OPTIONS) $(BAZEL_OPTIONS) $(1) --output=starlark --starlark:file=tools/show_paths.bzl) \
+  $(call wrapper,$(BAZEL) cquery $(BASE_OPTIONS) $(BAZEL_OPTIONS) --output=starlark --starlark:file=tools/show_paths.bzl $(1)) \
+  | $(call wrapper,xargs -r -I {} bash -c 'test -e "{}" || exit 0; realpath -m "{}"') \
+  | sed 's~^$(HOME)/\.cache/bazel/~$(patsubst %/,%,$(BAZEL_CACHE))/~' \
   | xargs -r -I {} bash -c 'test -e "{}" || exit 0; realpath -m "{}"' \
   | xargs -r -I {} bash -c 'set -euo pipefail; $(2)')
 
-clean    = $(call header,CLEAN) && $(call wrapper,$(BAZEL) clean)
-build    = $(call header,BUILD $(1)) && $(call build_paths,$(1),echo {})
-copy     = $(call header,COPY $(1) $(2)) && $(call build_paths,$(1),cp -fa {} $(2))
-run      = $(call header,RUN $(1) $(2)) && $(call build_paths,$(1),{} $(2))
-sudo     = $(call header,SUDO $(1) $(2)) && $(call build_paths,$(1),sudo -E {} $(2))
-test     = $(call header,TEST $(1)) && $(call wrapper,$(BAZEL) test --strip=never $(BAZEL_OPTIONS) $(TEST_OPTIONS) $(1))
+clean = $(call header,CLEAN) && $(call wrapper,$(BAZEL) clean)
+build = $(call header,BUILD $(1)) && $(call build_paths,$(1),echo {})
+copy  = $(call header,COPY $(1) $(2)) && $(call build_paths,$(1),cp -fa {} $(2))
+run   = $(call header,RUN $(1) $(2)) && $(call build_paths,$(1),{} $(2))
+sudo  = $(call header,SUDO $(1) $(2)) && $(call build_paths,$(1),sudo -E {} $(2))
+test  = $(call header,TEST $(1)) && $(call wrapper,$(BAZEL) test --strip=never $(BAZEL_OPTIONS) $(TEST_OPTIONS) $(1))
 
 clean: ## Cleans the bazel cache.
 	@$(call clean)
