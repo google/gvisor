@@ -198,6 +198,7 @@ analyzers:
         - pkg/sentry/platform/kvm/machine_unsafe.go                # Special case.
         - pkg/sentry/platform/kvm/bluepill_amd64_unsafe.go         # Special case.
         - pkg/sentry/platform/pgalloc/pgalloc_unsafe.go            # Special case.
+        - pkg/sentry/platform/ptrace/stub_unsafe.go                # Special case.
         - pkg/sentry/platform/systrap/stub_unsafe.go               # Special case.
         - pkg/sentry/platform/systrap/syscall_thread_unsafe.go     # Special case.
         - pkg/sentry/platform/systrap/sysmsg_thread_unsafe.go      # Special case.

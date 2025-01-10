@@ -15,7 +15,6 @@
 package ptrace
 
 import (
-	"reflect"
 	"unsafe"
 
 	"golang.org/x/sys/unix"
@@ -36,21 +35,12 @@ func addrOfStub() uintptr
 // stubCall calls the stub at the given address with the given pid.
 func stubCall(addr, pid uintptr)
 
-// unsafeSlice returns a slice for the given address and length.
-func unsafeSlice(addr uintptr, length int) (slice []byte) {
-	sh := (*reflect.SliceHeader)(unsafe.Pointer(&slice))
-	sh.Data = addr
-	sh.Len = length
-	sh.Cap = length
-	return
-}
-
 // stubInit initializes the stub.
 func stubInit() {
 	// Grab the existing stub.
 	stubBegin := addrOfStub()
 	stubLen := int(safecopy.FindEndAddress(stubBegin) - stubBegin)
-	stubSlice := unsafeSlice(stubBegin, stubLen)
+	stubSlice := unsafe.Slice((*byte)(unsafe.Pointer(stubBegin)), stubLen)
 	mapLen := uintptr(stubLen)
 	if offset := mapLen % hostarch.PageSize; offset != 0 {
 		mapLen += hostarch.PageSize - offset
@@ -82,7 +72,7 @@ func stubInit() {
 		}
 
 		// Copy the stub to the address.
-		targetSlice := unsafeSlice(addr, stubLen)
+		targetSlice := unsafe.Slice((*byte)(unsafe.Pointer(addr)), stubLen)
 		copy(targetSlice, stubSlice)
 
 		// Make the stub executable.
