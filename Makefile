@@ -309,7 +309,7 @@ gpu-images: gpu-smoke-images load-gpu_pytorch load-gpu_ollama load-gpu_ollama_cl
 .PHONY: gpu-images
 
 gpu-all-tests: gpu-images gpu-smoke-tests $(RUNTIME_BIN)
-	@$(call install_runtime,$(RUNTIME),--nvproxy=true --nvproxy-docker=true)
+	@$(call install_runtime,$(RUNTIME),--nvproxy=true --nvproxy-docker=true --nvproxy-allowed-driver-capabilities=all)
 	@$(call sudo,test/gpu:pytorch_test,--runtime=$(RUNTIME) -test.v $(ARGS))
 	@$(call sudo,test/gpu:textgen_test,--runtime=$(RUNTIME) -test.v $(ARGS))
 	@$(call sudo,test/gpu:imagegen_test,--runtime=$(RUNTIME) -test.v $(ARGS))
