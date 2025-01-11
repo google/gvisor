@@ -111,7 +111,6 @@ var testCompatibility = map[string]Compatibility{
 	"5_Domain_Specific/fluidsGLES":                         &OnlyOnWindows{},
 	"5_Domain_Specific/nbody_opengles":                     &OnlyOnWindows{},
 	"5_Domain_Specific/nbody_screen":                       &OnlyOnWindows{},
-	"5_Domain_Specific/p2pBandwidthLatencyTest":            &RequiresP2P{},
 	"5_Domain_Specific/postProcessGL":                      RequiresFeatures(FeatureGL),
 	"5_Domain_Specific/simpleD3D10":                        &OnlyOnWindows{},
 	"5_Domain_Specific/simpleD3D10RenderTarget":            &OnlyOnWindows{},
