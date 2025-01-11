@@ -22,6 +22,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/google/pprof/profile"
@@ -34,14 +35,16 @@ var (
 	mergeOut              = mergeCmd.String("out", "/dev/stdout", "file to write the merged profile to")
 	compactCmd            = flag.NewFlagSet("compact", flag.ContinueOnError)
 	compactOut            = compactCmd.String("out", "/dev/stdout", "file to write the compacted profile to")
+	runtimeInfoCmd        = flag.NewFlagSet("runtime-info", flag.ContinueOnError)
 	checkSimilarCmd       = flag.NewFlagSet("check-similar", flag.ContinueOnError)
 	checkSimilarQuiet     = checkSimilarCmd.Bool("quiet", false, "if set, do not print any output; comparison result is still provided as exit code")
 	checkSimilarThreshold = checkSimilarCmd.Float64("threshold", 0.7, "threshold (between 0.0 and 1.0) above which the profiles are considered similar")
 
-	allCommands = []*flag.FlagSet{mergeCmd, compactCmd, checkSimilarCmd}
+	allCommands = []*flag.FlagSet{mergeCmd, compactCmd, runtimeInfoCmd, checkSimilarCmd}
 	commandSet  = map[*flag.FlagSet]string{
 		mergeCmd:        "merge two or more profile files into one",
 		compactCmd:      "minimize the size of a profile",
+		runtimeInfoCmd:  "print a runtime information key that identifies dimensions impacting profiles (Go version, CPU architecture)",
 		checkSimilarCmd: "check if two profiles are similar",
 	}
 )
@@ -174,6 +177,15 @@ func writeMaxCompressionProfile(p *profile.Profile, out *os.File) error {
 	if err := writer.Close(); err != nil {
 		return fmt.Errorf("cannot close zlib writer: %w", err)
 	}
+	return nil
+}
+
+func runtimeInfo() error {
+	goVersion := runtime.Version()
+	if strings.Contains(goVersion, " ") {
+		goVersion = strings.Split(goVersion, " ")[0]
+	}
+	fmt.Fprintf(os.Stdout, "%s-%s-%s", goVersion, runtime.GOOS, runtime.GOARCH)
 	return nil
 }
 
@@ -379,6 +391,10 @@ func main() {
 		os.Exit(1)
 	}
 	switch os.Args[1] {
+	case runtimeInfoCmd.Name():
+		if err := runtimeInfo(); err != nil {
+			fail(err.Error())
+		}
 	case mergeCmd.Name():
 		if err := mergeProfiles(); err != nil {
 			fail(err.Error())
