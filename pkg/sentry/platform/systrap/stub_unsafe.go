@@ -46,15 +46,6 @@ func addrOfInitStubProcess() uintptr
 // stubCall calls the stub at the given address with the given pid.
 func stubCall(addr, pid uintptr)
 
-// unsafeSlice returns a slice for the given address and length.
-func unsafeSlice(addr uintptr, length int) (slice []byte) {
-	sh := (*reflect.SliceHeader)(unsafe.Pointer(&slice))
-	sh.Data = addr
-	sh.Len = length
-	sh.Cap = length
-	return
-}
-
 // prepareSeccompRules compiles stub process seccomp filters and fill
 // the sock_fprog structure. So the stub process will only need to call
 // seccomp system call to apply these filters.
@@ -199,7 +190,7 @@ func stubInit() {
 	// Grab the existing stub.
 	procStubBegin := addrOfInitStubProcess()
 	procStubLen := int(safecopy.FindEndAddress(procStubBegin) - procStubBegin)
-	procStubSlice := unsafeSlice(procStubBegin, procStubLen)
+	procStubSlice := unsafe.Slice((*byte)(unsafe.Pointer(procStubBegin)), procStubLen)
 	mapLen, _ := hostarch.PageRoundUp(uintptr(procStubLen))
 
 	stubSysmsgStart = mapLen
@@ -281,7 +272,7 @@ func stubInit() {
 	stubContextRegion += uintptr(gap)
 
 	// Copy the stub to the address.
-	targetSlice := unsafeSlice(stubStart, procStubLen)
+	targetSlice := unsafe.Slice((*byte)(unsafe.Pointer(stubStart)), procStubLen)
 	copy(targetSlice, procStubSlice)
 	stubInitProcess = stubStart
 
@@ -299,8 +290,7 @@ func stubInit() {
 	}
 	stubSysmsgRules += stubStart
 	stubSyscallRules += stubStart
-
-	targetSlice = unsafeSlice(stubSysmsgStart, stubSysmsgLen)
+	targetSlice = unsafe.Slice((*byte)(unsafe.Pointer(stubSysmsgStart)), stubSysmsgLen)
 	copy(targetSlice, sysmsg.SighandlerBlob)
 
 	// Initialize stub globals

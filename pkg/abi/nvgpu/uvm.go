@@ -46,6 +46,7 @@ const (
 	UVM_MAP_DYNAMIC_PARALLELISM_REGION = 65
 	UVM_UNMAP_EXTERNAL                 = 66
 	UVM_ALLOC_SEMAPHORE_POOL           = 68
+	UVM_PAGEABLE_MEM_ACCESS_ON_GPU     = 70
 	UVM_VALIDATE_VA_RANGE              = 72
 	UVM_CREATE_EXTERNAL_RANGE          = 73
 	UVM_MM_INITIALIZE                  = 75
@@ -526,6 +527,19 @@ type UVM_ALLOC_SEMAPHORE_POOL_PARAMS_V550 struct {
 
 // GetStatus implements HasStatus.GetStatus.
 func (p *UVM_ALLOC_SEMAPHORE_POOL_PARAMS_V550) GetStatus() uint32 {
+	return p.RMStatus
+}
+
+// +marshal
+type UVM_PAGEABLE_MEM_ACCESS_ON_GPU_PARAMS struct {
+	GPUUUID           NvUUID
+	PageableMemAccess uint8
+	Pad               [3]byte
+	RMStatus          uint32
+}
+
+// GetStatus implements HasStatus.GetStatus.
+func (p *UVM_PAGEABLE_MEM_ACCESS_ON_GPU_PARAMS) GetStatus() uint32 {
 	return p.RMStatus
 }
 

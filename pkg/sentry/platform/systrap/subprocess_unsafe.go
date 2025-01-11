@@ -81,7 +81,7 @@ func mmapContextQueueForSentry(memoryFile *pgalloc.MemoryFile, opts pgalloc.Allo
 
 func saveFPState(ctx *sharedContext, ac *arch.Context64) {
 	fpState := ac.FloatingPointData().BytePointer()
-	dst := unsafeSlice(uintptr(unsafe.Pointer(fpState)), archState.FpLen())
+	dst := unsafe.Slice(fpState, archState.FpLen())
 	src := ctx.shared.FPState[:]
 	copy(dst, src)
 }
@@ -96,7 +96,7 @@ func restoreFPState(ctx *sharedContext, c *platformContext, ac *arch.Context64) 
 	ctx.setFPStateChanged()
 
 	fpState := ac.FloatingPointData().BytePointer()
-	src := unsafeSlice(uintptr(unsafe.Pointer(fpState)), archState.FpLen())
+	src := unsafe.Slice(fpState, archState.FpLen())
 	dst := ctx.shared.FPState[:]
 	copy(dst, src)
 }
