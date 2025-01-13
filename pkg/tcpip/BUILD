@@ -49,7 +49,10 @@ go_library(
     deps = [
         "//pkg/atomicbitops",
         "//pkg/buffer",
+        "//pkg/context",
+        "//pkg/hostarch",
         "//pkg/rand",
+        "//pkg/sentry/memmap",
         "//pkg/sync",
         "//pkg/waiter",
         "@org_golang_x_sys//unix:go_default_library",

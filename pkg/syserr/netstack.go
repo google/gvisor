@@ -55,6 +55,7 @@ var (
 	ErrMulticastInputCannotBeOutput = New((&tcpip.ErrMulticastInputCannotBeOutput{}).String(), errno.EINVAL)
 	ErrMissingRequiredFields        = New((&tcpip.ErrMissingRequiredFields{}).String(), errno.EINVAL)
 	ErrNoNet                        = New((&tcpip.ErrNoNet{}).String(), errno.ENONET)
+	ErrEndpointBusy                 = New((&tcpip.ErrEndpointBusy{}).String(), errno.EBUSY)
 )
 
 // TranslateNetstackError converts an error from the tcpip package to a sentry
@@ -149,6 +150,8 @@ func TranslateNetstackError(err tcpip.Error) *Error {
 		return ErrMulticastInputCannotBeOutput
 	case *tcpip.ErrMissingRequiredFields:
 		return ErrMissingRequiredFields
+	case *tcpip.ErrEndpointBusy:
+		return ErrEndpointBusy
 	default:
 		panic(fmt.Sprintf("unknown error %T", err))
 	}

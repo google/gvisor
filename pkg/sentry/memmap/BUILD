@@ -51,7 +51,10 @@ go_library(
         "mapping_set_impl.go",
         "memmap.go",
     ],
-    visibility = ["//pkg/sentry:internal"],
+    visibility = [
+        "//pkg/sentry:internal",
+        "//pkg/tcpip:__subpackages__",
+    ],
     deps = [
         "//pkg/context",
         "//pkg/hostarch",

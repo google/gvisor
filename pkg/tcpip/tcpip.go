@@ -42,7 +42,10 @@ import (
 	"time"
 
 	"gvisor.dev/gvisor/pkg/atomicbitops"
+	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/rand"
+	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -868,6 +871,28 @@ type Endpoint interface {
 	SocketOptions() *SocketOptions
 }
 
+// MappableEndpoint is the interface implemented by endpoints that support
+// mmap.
+type MappableEndpoint interface {
+	// ConfigureMMap implements vfs.FileDescriptionImpl.ConfigureMMap.
+	ConfigureMMap(ctx context.Context, opts *memmap.MMapOpts) error
+
+	// AddMapping implements memmap.Mappable.AddMapping.
+	AddMapping(context.Context, memmap.MappingSpace, hostarch.AddrRange, uint64, bool) error
+
+	// RemoveMapping implements memmap.Mappable.RemoveMapping.
+	RemoveMapping(context.Context, memmap.MappingSpace, hostarch.AddrRange, uint64, bool)
+
+	// CopyMapping implements memmap.Mappable.CopyMapping.
+	CopyMapping(context.Context, memmap.MappingSpace, hostarch.AddrRange, hostarch.AddrRange, uint64, bool) error
+
+	// Translate implements memmap.Mappable.Translate.
+	Translate(context.Context, memmap.MappableRange, memmap.MappableRange, hostarch.AccessType) ([]memmap.Translation, error)
+
+	// InvalidateUnsavable implements memmap.Mappable.InvalidateUnsavable.
+	InvalidateUnsavable(context.Context) error
+}
+
 // EndpointWithPreflight is the interface implemented by endpoints that need
 // to expose the `Preflight` method for preparing the endpoint prior to
 // calling `Write`.
@@ -1184,6 +1209,19 @@ func (f *ICMPv6Filter) ShouldDeny(icmpType uint8) bool {
 func (*ICMPv6Filter) isGettableSocketOption() {}
 
 func (*ICMPv6Filter) isSettableSocketOption() {}
+
+// TpacketReq is the tpacket_req structure as described in
+// https://www.kernel.org/doc/Documentation/networking/packet_mmap.txt
+//
+// +stateify savable
+type TpacketReq struct {
+	TpBlockSize uint32
+	TpBlockNr   uint32
+	TpFrameSize uint32
+	TpFrameNr   uint32
+}
+
+func (*TpacketReq) isSettableSocketOption() {}
 
 // EndpointState represents the state of an endpoint.
 type EndpointState uint8
