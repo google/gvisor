@@ -34,7 +34,10 @@ cc_binary(
 
 go_binary(
     name = "run_sniffer",
-    srcs = ["run_sniffer.go"],
+    srcs = [
+        "ld.go",
+        "run_sniffer.go",
+    ],
     embedsrcs = [
         # The 'keep' comment is needed to prevent glaze from removing this
         # dependency. This is because the `:ioctl_hook` `cc_binary` rule

@@ -126,6 +126,7 @@ func GPURunOpts(sniffGPUOpts SniffGPUOpts) (RunOpts, error) {
 				Type:     mount.TypeBind,
 				ReadOnly: true,
 			})
+			break
 		}
 	}
 	for _, nvidiaLib64 := range []string{
@@ -139,6 +140,8 @@ func GPURunOpts(sniffGPUOpts SniffGPUOpts) (RunOpts, error) {
 				Type:     mount.TypeBind,
 				ReadOnly: true,
 			})
+			sniffGPUOpts.addLDPath = "/usr/local/nvidia/lib64"
+			break
 		}
 	}
 
@@ -166,6 +169,10 @@ type SniffGPUOpts struct {
 	// If unset, defaults to `DefaultGPUCapabilities`.
 	Capabilities string
 
+	// If set, add the given directory to the ld cache.
+	// Must be a directory visible from within the container.
+	addLDPath string
+
 	// The fields below are set internally.
 	runSniffer *os.File
 }
@@ -190,6 +197,9 @@ func (sgo *SniffGPUOpts) prepend(argv []string) []string {
 	}
 	if !sgo.AllowIncompatibleIoctl {
 		snifferArgv = append(snifferArgv, "--enforce_compatibility=INSTANT")
+	}
+	if sgo.addLDPath != "" {
+		snifferArgv = append(snifferArgv, fmt.Sprintf("--add_ld_path=%s", sgo.addLDPath))
 	}
 	return append(snifferArgv, argv...)
 }

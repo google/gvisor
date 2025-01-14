@@ -28,8 +28,11 @@ import (
 	_ "embed" // Necessary to use go:embed.
 )
 
-var enforceCompatibility = flag.String("enforce_compatibility", "", "May be set to 'INSTANT' or 'REPORT'. If set, the sniffer will return a non-zero error code if it detects an unsupported ioctl. 'INSTANT' causes the sniffer to exit immediately when this happens. 'REPORT' causes the sniffer to report all unsupported ioctls at the end of execution.")
-var verbose = flag.Bool("verbose", false, "If true, the sniffer will print all Nvidia ioctls it sees.")
+var (
+	enforceCompatibility = flag.String("enforce_compatibility", "", "May be set to 'INSTANT' or 'REPORT'. If set, the sniffer will return a non-zero error code if it detects an unsupported ioctl. 'INSTANT' causes the sniffer to exit immediately when this happens. 'REPORT' causes the sniffer to report all unsupported ioctls at the end of execution.")
+	verbose              = flag.Bool("verbose", false, "If true, the sniffer will print all Nvidia ioctls it sees.")
+	addLdPath            = flag.String("add_ld_path", "", "If set, reconfigure the ld cache to include the given directory")
+)
 
 //go:embed libioctl_hook.so
 var ioctlHookSharedObject []byte
@@ -66,6 +69,12 @@ func Main(ctx context.Context) error {
 
 	if *verbose {
 		log.SetLevel(log.Debug)
+	}
+
+	if *addLdPath != "" {
+		if err := addPathToLd(ctx, *addLdPath); err != nil {
+			return fmt.Errorf("failed to add path %q to ld: %w", *addLdPath, err)
+		}
 	}
 
 	// Init our sniffer
