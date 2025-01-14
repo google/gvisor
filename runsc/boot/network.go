@@ -605,3 +605,39 @@ func ipMaskToAddressMask(ipMask net.IPMask) tcpip.AddressMask {
 	addr := ipToAddress(net.IP(ipMask))
 	return tcpip.MaskFromBytes(addr.AsSlice())
 }
+
+func (n *Network) SetupNetworkSandbox(netConf *NetworkConfig, _ *struct{}) error {
+	switch netConf.XDPMode {
+	case config.XDPModeOff:
+	case config.XDPModeNS:
+	case config.XDPModeRedirect:
+		if err := n.SetupXDPModeRedirect(netConf, nil); err != nil {
+			return fmt.Errorf("failed to create XDP tunnel interface: %w", err)
+		}
+		return nil
+	case config.XDPModeTunnel:
+		if err := n.SetupXDPModeTunnel(netConf, nil); err != nil {
+			return fmt.Errorf("failed to create XDP tunnel interface: %w", err)
+		}
+		return nil
+	default:
+		return fmt.Errorf("unknown XDP mode: %v", netConf.XDPMode)
+	}
+	return n.CreateLinksAndRoutes(netConf.Args, nil)
+}
+
+func (n *Network) SetupNetwork(netConf *NetworkConfig, _ *struct{}) error {
+	switch netConf.Network {
+	case config.NetworkNone:
+		return n.CreateLinksAndRoutes(netConf.Args, nil)
+	case config.NetworkHost:
+		/* nothing to do */
+		return nil
+	case config.NetworkPlugin:
+		return n.InitPluginStack(netConf.InitArgs, nil)
+	case config.NetworkSandbox:
+		return n.SetupNetworkSandbox(netConf, nil)
+	default:
+		return fmt.Errorf("unknown network type")
+	}
+}

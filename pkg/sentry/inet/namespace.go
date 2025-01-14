@@ -36,7 +36,7 @@ type Namespace struct {
 	//
 	// At afterLoad(), creator will be used to create network stack. Stateify
 	// needs to wait for this field to be loaded before calling afterLoad().
-	creator NetworkStackCreator `state:"wait"`
+	creator NetworkStackCreator `state:"nosave"`
 
 	// isRoot indicates whether this is the root network namespace.
 	isRoot bool

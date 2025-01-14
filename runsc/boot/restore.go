@@ -708,11 +708,31 @@ func (r *restorer) restore(l *Loader, unsafeSkipRestoreSpecValidation bool) erro
 
 	l.kernelInitExtra()
 
+	if eps, ok := l.k.RootNetworkNamespace().Stack().(*netstack.Stack); ok {
+		// The network stack will be loaded from the state file, we do
+		// not need this network stack anymore.
+		oldInetStack.Destroy()
+
+		n := &Network{
+			Stack: eps.Stack,
+		}
+		log.Infof("network config: %+v", l.netConf)
+		if err := n.SetupNetwork(l.netConf, nil); err != nil {
+			return fmt.Errorf("restore network error: %w", err)
+		}
+	} else {
+		l.k.RootNetworkNamespace().RestoreRootStack(hostinet.NewStack())
+	}
+
 	// Refresh the control server with the newly created kernel.
 	l.ctrl.refreshHandlers()
 
 	// Release `l.mu` before calling into callbacks.
 	cu.Clean()
+
+	if _, ok := l.k.RootNetworkNamespace().Stack().(*netstack.Stack); ok {
+		l.k.RootNetworkNamespace().Stack().Restore()
+	}
 
 	// r.restoreDone() signals and waits for the sandbox to start.
 	if err := r.restoreDone(); err != nil {
