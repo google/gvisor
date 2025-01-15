@@ -214,6 +214,7 @@ func Mincore(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr
 	length := args[1].SizeT()
 	vec := args[2].Pointer()
 
+	addr = hostarch.UntaggedUserAddr(addr)
 	if addr != addr.RoundDown() {
 		return 0, nil, linuxerr.EINVAL
 	}

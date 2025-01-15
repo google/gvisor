@@ -14,6 +14,7 @@
 
 #define _GNU_SOURCE 1
 #include <signal.h>
+#include <sys/mman.h>
 #include <ucontext.h>
 #include <unistd.h>
 
@@ -62,6 +63,20 @@ void sigact_handler(int sig, siginfo_t* siginfo, void* context) {
     exit(0);
   }
 }
+
+#if defined(__aarch64__)
+#define APPLY_ADDRESS_TAG(addr) ((void*)((uint64_t)addr | (1ULL << 57)))
+
+TEST(TaggedAddressesTest, MemoryFault) {
+  void* addr = mmap(0, kPageSize, PROT_READ | PROT_WRITE,
+                    MAP_ANONYMOUS | MAP_PRIVATE, 0, 0);
+  ASSERT_NE(addr, MAP_FAILED);
+  addr = APPLY_ADDRESS_TAG(addr);
+  ((uint64_t*)addr)[0] =
+      5;  // trigger a memory fault that is handled in the Sentry.
+  EXPECT_THAT(munmap(addr, kPageSize), SyscallSucceeds());
+}
+#endif
 
 TEST(FaultTest, InRange) {
   // Reset the signal handler to do nothing so that it doesn't freak out

@@ -328,6 +328,7 @@ const (
 
 // getKey returns a Key representing address addr in c.
 func getKey(t Target, addr hostarch.Addr, private bool) (Key, error) {
+	addr = hostarch.UntaggedUserAddr(addr)
 	// Ensure the address is aligned.
 	// It must be a DWORD boundary.
 	if addr&0x3 != 0 {
