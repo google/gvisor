@@ -83,7 +83,8 @@ func (c *vCPU) initArchState() error {
 	}
 
 	// tcr_el1
-	data = _TCR_TXSZ_VA48 | _TCR_CACHE_FLAGS | _TCR_SHARED | _TCR_TG_FLAGS | _TCR_ASID16 | _TCR_IPS_40BITS
+	data = _TCR_TXSZ_VA48 | _TCR_CACHE_FLAGS | _TCR_SHARED | _TCR_TG_FLAGS |
+		_TCR_ASID16 | _TCR_IPS_40BITS | _TCR_TBI0
 	reg.id = _KVM_ARM64_REGS_TCR_EL1
 	if err := c.setOneRegister(&reg); err != nil {
 		return err

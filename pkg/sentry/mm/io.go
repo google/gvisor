@@ -70,6 +70,7 @@ const (
 //
 // Preconditions: length >= 0.
 func (mm *MemoryManager) CheckIORange(addr hostarch.Addr, length int64) (hostarch.AddrRange, bool) {
+	addr = hostarch.UntaggedUserAddr(addr)
 	// Note that access_ok() constrains end even if length == 0.
 	ar, ok := addr.ToRange(uint64(length))
 	return ar, (ok && ar.End <= mm.layout.MaxAddr)

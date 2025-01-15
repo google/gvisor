@@ -43,3 +43,8 @@ var (
 	// ByteOrder is the native byte order (little endian).
 	ByteOrder = binary.LittleEndian
 )
+
+// UntaggedUserAddr is no-op on x86.
+func UntaggedUserAddr(addr Addr) Addr {
+	return addr
+}

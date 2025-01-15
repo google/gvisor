@@ -86,6 +86,12 @@ func ESRAccessType(code uint64) AccessType {
 	}
 }
 
+// UntaggedUserAddr clears the tag from the address pointer. Top-Byte-Ignore (TBI0)
+// is enabled in Linux, so bits[63:56] of user space addresses are ignored.
+func UntaggedUserAddr(addr Addr) Addr {
+	return Addr(int64(addr<<8) >> 8)
+}
+
 func init() {
 	// Make sure the page size is 4K on arm64 platform.
 	if size := unix.Getpagesize(); size != PageSize {

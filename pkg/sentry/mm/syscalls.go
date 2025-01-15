@@ -33,6 +33,7 @@ import (
 //
 // Preconditions: mm.as != nil.
 func (mm *MemoryManager) HandleUserFault(ctx context.Context, addr hostarch.Addr, at hostarch.AccessType, sp hostarch.Addr) error {
+	addr = hostarch.UntaggedUserAddr(addr)
 	ar, ok := addr.RoundDown().ToRange(hostarch.PageSize)
 	if !ok {
 		return linuxerr.EFAULT
@@ -304,6 +305,7 @@ func (mm *MemoryManager) MapStack(ctx context.Context) (hostarch.AddrRange, erro
 
 // MUnmap implements the semantics of Linux's munmap(2).
 func (mm *MemoryManager) MUnmap(ctx context.Context, addr hostarch.Addr, length uint64) error {
+	addr = hostarch.UntaggedUserAddr(addr)
 	if addr != addr.RoundDown() {
 		return linuxerr.EINVAL
 	}
@@ -358,6 +360,8 @@ const (
 
 // MRemap implements the semantics of Linux's mremap(2).
 func (mm *MemoryManager) MRemap(ctx context.Context, oldAddr hostarch.Addr, oldSize uint64, newSize uint64, opts MRemapOpts) (hostarch.Addr, error) {
+	oldAddr = hostarch.UntaggedUserAddr(oldAddr)
+
 	// "Note that old_address has to be page aligned." - mremap(2)
 	if oldAddr.RoundDown() != oldAddr {
 		return 0, linuxerr.EINVAL
@@ -627,6 +631,7 @@ func (mm *MemoryManager) MRemap(ctx context.Context, oldAddr hostarch.Addr, oldS
 
 // MProtect implements the semantics of Linux's mprotect(2).
 func (mm *MemoryManager) MProtect(addr hostarch.Addr, length uint64, realPerms hostarch.AccessType, growsDown bool) error {
+	addr = hostarch.UntaggedUserAddr(addr)
 	if addr.RoundDown() != addr {
 		return linuxerr.EINVAL
 	}
@@ -831,6 +836,7 @@ func (mm *MemoryManager) Brk(ctx context.Context, addr hostarch.Addr) (hostarch.
 // MLock implements the semantics of Linux's mlock()/mlock2()/munlock(),
 // depending on mode.
 func (mm *MemoryManager) MLock(ctx context.Context, addr hostarch.Addr, length uint64, mode memmap.MLockMode) error {
+	addr = hostarch.UntaggedUserAddr(addr)
 	// Linux allows this to overflow.
 	la, _ := hostarch.Addr(length + addr.PageOffset()).RoundUp()
 	ar, ok := addr.RoundDown().ToRange(uint64(la))
@@ -1101,6 +1107,7 @@ func madviseAddrRange(addr hostarch.Addr, length uint64) (hostarch.AddrRange, er
 
 // Decommit implements the semantics of Linux's madvise(MADV_DONTNEED).
 func (mm *MemoryManager) Decommit(addr hostarch.Addr, length uint64) error {
+	addr = hostarch.UntaggedUserAddr(addr)
 	ar, err := madviseAddrRange(addr, length)
 	if err != nil {
 		return err
@@ -1293,6 +1300,7 @@ func (mm *MemoryManager) madviseMutateVMAs(addr hostarch.Addr, length uint64, f 
 //
 // Preconditions: addr and length are page-aligned.
 func (mm *MemoryManager) SetDontFork(addr hostarch.Addr, length uint64, dontfork bool) error {
+	addr = hostarch.UntaggedUserAddr(addr)
 	return mm.madviseMutateVMAs(addr, length, func(vseg vmaIterator) error {
 		vseg.ValuePtr().dontfork = dontfork
 		return nil
@@ -1344,6 +1352,7 @@ type MSyncOpts struct {
 
 // MSync implements the semantics of Linux's msync().
 func (mm *MemoryManager) MSync(ctx context.Context, addr hostarch.Addr, length uint64, opts MSyncOpts) error {
+	addr = hostarch.UntaggedUserAddr(addr)
 	if addr != addr.RoundDown() {
 		return linuxerr.EINVAL
 	}
