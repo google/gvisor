@@ -202,6 +202,9 @@ func (c *CPU) CR4() uint64 {
 	if hasFSGSBASE {
 		cr4 |= _CR4_FSGSBASE
 	}
+	if hasUMIP {
+		cr4 |= _CR4_UMIP
+	}
 	return cr4
 }
 
