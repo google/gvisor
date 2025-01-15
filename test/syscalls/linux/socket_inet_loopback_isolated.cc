@@ -210,6 +210,13 @@ TEST_P(SocketInetLoopbackIsolatedTest, TCPFinWait2Test) {
   ASSERT_THAT(bind(conn_fd2.get(), AsSockAddr(&conn_bound_addr), conn_addrlen),
               SyscallSucceeds());
 
+  // Close the `accepted` end otherwise connect can return ECONNREFUSED.
+  constexpr int kTCPLingerTimeout0 = 0;
+  EXPECT_THAT(setsockopt(accepted.get(), IPPROTO_TCP, TCP_LINGER2,
+                         &kTCPLingerTimeout0, sizeof(kTCPLingerTimeout0)),
+              SyscallSucceedsWithValue(0));
+  shutdown(accepted.get(), SHUT_WR);
+
   ASSERT_THAT(
       RetryEINTR(connect)(conn_fd2.get(), AsSockAddr(&conn_addr), conn_addrlen),
       SyscallSucceeds());

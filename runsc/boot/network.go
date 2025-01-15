@@ -295,7 +295,11 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 		nicID := n.Stack.NextNICID()
 		nicids[link.Name] = nicID
 
-		linkEP := ethernet.New(loopback.New())
+		var linkEP stack.LinkEndpoint
+		linkEP = ethernet.New(loopback.New())
+		if args.LogPackets {
+			linkEP = sniffer.New(linkEP)
+		}
 
 		log.Infof("Enabling loopback interface %q with id %d on addresses %+v", link.Name, nicID, link.Addresses)
 		opts := stack.NICOptions{
