@@ -921,8 +921,8 @@ func (s *Stack) Pause() {
 }
 
 // Restore implements inet.Stack.Restore.
-func (s *Stack) Restore() {
-	s.Stack.Restore()
+func (s *Stack) Restore(clock tcpip.Clock) {
+	s.Stack.Restore(clock)
 }
 
 // ReplaceConfig implements inet.Stack.ReplaceConfig.
