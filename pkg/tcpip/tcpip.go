@@ -1185,6 +1185,19 @@ func (*ICMPv6Filter) isGettableSocketOption() {}
 
 func (*ICMPv6Filter) isSettableSocketOption() {}
 
+// TpacketReq is the tpacket_req structure as described in
+// https://www.kernel.org/doc/Documentation/networking/packet_mmap.txt
+//
+// +stateify savable
+type TpacketReq struct {
+	TpBlockSize uint32
+	TpBlockNr   uint32
+	TpFrameSize uint32
+	TpFrameNr   uint32
+}
+
+func (*TpacketReq) isSettableSocketOption() {}
+
 // EndpointState represents the state of an endpoint.
 type EndpointState uint8
 

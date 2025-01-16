@@ -144,6 +144,72 @@ const (
 	PACKET_OUTGOING  = 4 // Outgoing of any type
 )
 
+// Packet socket options from <linux/if_packet.h>
+const (
+	PACKET_RX_RING = 5
+)
+
+// Statuses for a frame in a packet_mmap ring buffer from <linux/if_packet.h>.
+const (
+	TP_STATUS_KERNEL          = 0
+	TP_STATUS_USER            = 0x1
+	TP_STATUS_COPY            = 0x2
+	TP_STATUS_LOSING          = 0x4
+	TP_STATUS_CSUM_NOT_READY  = 0x8
+	TP_STATUS_VLAN_VALID      = 0x10
+	TP_STATUS_BLK_TMO         = 0x20
+	TP_STATUS_VLAN_TPID_VALID = 0x40
+	TP_STATUS_CSUM_VALID      = 0x80
+	TP_STATUS_GSO_TCP         = 0x100
+)
+
+// TpacketReq is the request for a packet_mmap ring buffer from
+// <linux/if_packet.h>.
+//
+// +marshal
+type TpacketReq struct {
+	TpBlockSize uint32
+	TpBlockNr   uint32
+	TpFrameSize uint32
+	TpFrameNr   uint32
+}
+
+// TpacketHdr is the header for a frame in a packet_mmap ring buffer from
+// <linux/if_packet.h>.
+//
+// +marshal
+type TpacketHdr struct {
+	TpStatus  uint64
+	TpLen     uint32
+	TpSnaplen uint32
+	TpMac     uint16
+	TpNet     uint16
+	TpSec     uint32
+	TpUsec    uint32 `marshal:"unaligned"`
+}
+
+// TpacketAlignment is the alignment of a frame in a packet_mmap ring buffer
+// from <linux/if_packet.h>.
+const (
+	TPACKET_ALIGNMENT = 16
+)
+
+// TPACKET_V1 is the version of a packet_mmap ring buffer from
+// <linux/if_packet.h> that is implemented in gVisor.
+const (
+	TPACKET_V1 = iota
+)
+
+// TPACKET_HDRLEN is the length of a TpacketHdr from <linux/if_packet.h>.
+var (
+	TPACKET_HDRLEN = TPacketAlign(uint32((*TpacketHdr)(nil).SizeBytes()) + uint32((*SockAddrLink)(nil).SizeBytes()))
+)
+
+// TPacketAlign aligns a value to the alignment of a TPacket.
+func TPacketAlign(x uint32) uint32 {
+	return (x + TPACKET_ALIGNMENT - 1) &^ (TPACKET_ALIGNMENT - 1)
+}
+
 // Socket options from socket.h.
 const (
 	SO_DEBUG                 = 1
