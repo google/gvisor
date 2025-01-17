@@ -375,12 +375,7 @@ func (ex *Exec) argsFromCLI(p *specs.Process, argv []string, enableRaw bool) (*c
 		KGID:             kgid,
 		ExtraKGIDs:       extraKGIDs,
 		Capabilities:     caps,
-		StdioIsPty:       ex.consoleSocket != "" || console.IsPty(os.Stdin.Fd()),
-		FilePayload: control.NewFilePayload(map[int]*os.File{
-			0: os.Stdin,
-			1: os.Stdout,
-			2: os.Stderr,
-		}, nil),
+		StdioIsPty:       ex.consoleSocket != "" || console.StdioIsPty(),
 	}, nil
 }
 
@@ -447,11 +442,6 @@ func argsFromProcess(specProc *specs.Process, p *specs.Process, enableRaw bool) 
 		ExtraKGIDs:       extraKGIDs,
 		Capabilities:     caps,
 		StdioIsPty:       p.Terminal,
-		FilePayload: control.NewFilePayload(map[int]*os.File{
-			0: os.Stdin,
-			1: os.Stdout,
-			2: os.Stderr,
-		}, nil),
 	}, nil
 }
 

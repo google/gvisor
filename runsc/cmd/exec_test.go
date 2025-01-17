@@ -79,14 +79,9 @@ func TestCLIArgs(t *testing.T) {
 				Argv:             []string{"ls", "/"},
 				Envv:             []string{"FOO=bar"},
 				WorkingDirectory: "/foo/bar",
-				FilePayload: control.NewFilePayload(map[int]*os.File{
-					0: os.Stdin,
-					1: os.Stdout,
-					2: os.Stderr,
-				}, nil),
-				KUID:       2,
-				KGID:       2,
-				ExtraKGIDs: []auth.KGID{1, 2, 3},
+				KUID:             2,
+				KGID:             2,
+				ExtraKGIDs:       []auth.KGID{1, 2, 3},
 				Capabilities: &auth.TaskCapabilities{
 					BoundingCaps:    auth.CapabilitySetOf(linux.CAP_DAC_OVERRIDE),
 					InheritableCaps: auth.CapabilitySetOf(linux.CAP_DAC_OVERRIDE),
@@ -113,14 +108,9 @@ func TestCLIArgs(t *testing.T) {
 				Argv:             []string{"ls", "/"},
 				Envv:             []string{"FOO=bar", "BAZ=new"},
 				WorkingDirectory: "/baz",
-				FilePayload: control.NewFilePayload(map[int]*os.File{
-					0: os.Stdin,
-					1: os.Stdout,
-					2: os.Stderr,
-				}, nil),
-				KUID:       4,
-				KGID:       4,
-				ExtraKGIDs: []auth.KGID{1, 2, 3, 4, 5, 6},
+				KUID:             4,
+				KGID:             4,
+				ExtraKGIDs:       []auth.KGID{1, 2, 3, 4, 5, 6},
 				Capabilities: &auth.TaskCapabilities{
 					BoundingCaps:    auth.CapabilitySetOfMany([]linux.Capability{linux.CAP_DAC_OVERRIDE, linux.CAP_DAC_READ_SEARCH}),
 					EffectiveCaps:   auth.CapabilitySetOfMany([]linux.Capability{linux.CAP_DAC_READ_SEARCH}),
@@ -182,14 +172,9 @@ func TestJSONArgs(t *testing.T) {
 			expected: control.ExecArgs{
 				Argv:             []string{"ls", "/"},
 				WorkingDirectory: "/foo/bar",
-				FilePayload: control.NewFilePayload(map[int]*os.File{
-					0: os.Stdin,
-					1: os.Stdout,
-					2: os.Stderr,
-				}, nil),
-				KUID:       0,
-				KGID:       0,
-				ExtraKGIDs: []auth.KGID{1, 2, 3},
+				KUID:             0,
+				KGID:             0,
+				ExtraKGIDs:       []auth.KGID{1, 2, 3},
 				Capabilities: &auth.TaskCapabilities{
 					BoundingCaps:    auth.CapabilitySetOf(linux.CAP_DAC_OVERRIDE),
 					EffectiveCaps:   auth.CapabilitySetOf(linux.CAP_DAC_OVERRIDE),
@@ -214,14 +199,9 @@ func TestJSONArgs(t *testing.T) {
 			expected: control.ExecArgs{
 				Argv:             []string{"ls", "/"},
 				WorkingDirectory: "/foo/bar",
-				FilePayload: control.NewFilePayload(map[int]*os.File{
-					0: os.Stdin,
-					1: os.Stdout,
-					2: os.Stderr,
-				}, nil),
-				KUID:       0,
-				KGID:       0,
-				ExtraKGIDs: []auth.KGID{},
+				KUID:             0,
+				KGID:             0,
+				ExtraKGIDs:       []auth.KGID{},
 				Capabilities: &auth.TaskCapabilities{
 					BoundingCaps: auth.CapabilitySetOf(linux.CAP_DAC_READ_SEARCH),
 				},
