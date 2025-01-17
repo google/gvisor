@@ -310,11 +310,14 @@ func parseMatchers(mapper IDMapper, filter stack.IPHeaderFilter, optVal []byte) 
 			return nil, fmt.Errorf("optVal has insufficient size for match: %d", len(optVal))
 		}
 
-		// Parse the specific matcher.
-		matcher, err := unmarshalMatcher(mapper, match, filter, optVal[linux.SizeOfXTEntryMatch:match.MatchSize])
+		// Starting with the highest supported revision, try to unmarshal
+		// with each revision down to 0; if all revisions fail, give up.
+		matcher, err := unmarshalMatcherRevs(mapper, &match, filter, optVal)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create matcher: %v", err)
+			return nil, fmt.Errorf("failed to create matcher: %v", match)
 		}
+
+		nflog("set entries: found matcher for: %+v", match)
 		matchers = append(matchers, matcher)
 
 		// TODO(gvisor.dev/issue/6167): Check the revision field.
@@ -326,6 +329,49 @@ func parseMatchers(mapper IDMapper, filter stack.IPHeaderFilter, optVal []byte) 
 	}
 
 	return matchers, nil
+}
+
+// unmarshalMatcherRevs tries to unmarshal matchers with the same name,
+// starting with the highest revision down to 0. If all revisions fail,
+// it returns the most recent (lowest revision's) "unmarshalMatcher"
+// error.
+func unmarshalMatcherRevs(mapper IDMapper, match *linux.XTEntryMatch, filter stack.IPHeaderFilter, optVal []byte) (stack.Matcher, error) {
+	var (
+		matcher stack.Matcher
+		err     error
+	)
+
+	// Get the highest supported revision for the matcher.
+	maxRev, found := matchMakerRevision(match.Name.String(), 0)
+	if !found {
+		return nil, fmt.Errorf(
+			"unmarshalMatcherRevs: failed to find matcher with name: %s",
+			match.Name,
+		)
+	}
+
+	for {
+		match.Revision = maxRev
+
+		nflog("unmarshalMatcherRevs: attempting to find matcher: %+v", match)
+		matcher, err = unmarshalMatcher(
+			mapper, match, filter,
+			optVal[linux.SizeOfXTEntryMatch:match.MatchSize],
+		)
+
+		// A match was found.
+		if err == nil {
+			break
+		}
+
+		if maxRev == 0 {
+			break
+		}
+
+		maxRev--
+	}
+
+	return matcher, err
 }
 
 func validUnderflow(rule stack.Rule, ipv6 bool) bool {
@@ -365,6 +411,31 @@ func hookFromLinux(hook int) stack.Hook {
 		return stack.Postrouting
 	}
 	panic(fmt.Sprintf("Unknown hook %d does not correspond to a builtin chain", hook))
+}
+
+// MatchRevision returns a "linux.XTGetRevision" for a given
+// matcher. It sets "Revision" to the highest supported value,
+// unless the provided revision number is higher.
+func MatchRevision(t *kernel.Task, revPtr hostarch.Addr) (linux.XTGetRevision, *syserr.Error) {
+	// Read in the matcher name and version.
+	var rev linux.XTGetRevision
+
+	if _, err := rev.CopyIn(t, revPtr); err != nil {
+		return linux.XTGetRevision{}, syserr.FromError(err)
+	}
+
+	maxSupported, ok := matchMakerRevision(rev.Name.String(), rev.Revision)
+	if !ok {
+		// Return ENOENT if there's no matcher with that name.
+		return linux.XTGetRevision{}, syserr.ErrNoFileOrDir
+	}
+
+	if maxSupported < rev.Revision {
+		// Return EPROTONOSUPPORT if we have an insufficient revision.
+		return linux.XTGetRevision{}, syserr.ErrProtocolNotSupported
+	}
+
+	return rev, nil
 }
 
 // TargetRevision returns a linux.XTGetRevision for a given target. It sets

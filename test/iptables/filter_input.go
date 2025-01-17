@@ -59,6 +59,8 @@ func init() {
 	RegisterTestCase(&FilterInputInterfaceInvertAccept{})
 	RegisterTestCase(&FilterInputInvertDportAccept{})
 	RegisterTestCase(&FilterInputInvertDportDrop{})
+	RegisterTestCase(&FilterInputDropAllSrcPorts{})
+	RegisterTestCase(&FilterInputDropAllExceptOneDstPort{})
 }
 
 // FilterInputDropUDP tests that we can drop UDP traffic.
@@ -1052,6 +1054,188 @@ func (*FilterInputInvertDportDrop) LocalAction(ctx context.Context, ip net.IP, i
 	defer cancel()
 	if err := connectTCP(timedCtx, ip, dropPort, ipv6); err == nil {
 		return fmt.Errorf("connection on %d port was accepted when it should have been dropped", dropPort)
+	}
+
+	return nil
+}
+
+// FilterInputDropAllSrcPorts tests that all TCP packets, regardless
+// of source port, are dropped. The rule covers all the source ports
+// so that no incoming TCP packet on INPUT is accepted.
+//
+// Rule(s):
+//
+//	-A INPUT -p tcp -m multiport --sports 0,1,2:32000,32001:65535 -j DROP
+type FilterInputDropAllSrcPorts struct {
+	containerCase
+}
+
+var _ TestCase = (*FilterInputDropAllSrcPorts)(nil)
+
+// Name implements TestCase.Name.
+func (*FilterInputDropAllSrcPorts) Name() string {
+	return "FilterInputDropAllSrcPorts"
+}
+
+// ContainerAction implements TestCase.ContainerAction.
+// The container will then attempt to receive a UDP packet,
+// which should never arrive due to the DROP rule.
+func (*FilterInputDropAllSrcPorts) ContainerAction(ctx context.Context, ip net.IP, ipv6 bool) error {
+	// Add the multiport rule that drops all TCP packets from any source port.
+	err := filterTable(
+		ipv6,
+		"-A", "INPUT", "-p", "tcp", "-m", "multiport",
+		"--sports", "0,1,2:32000,32001:65535", "-j", "DROP",
+	)
+	if err != nil {
+		return err
+	}
+
+	testPort := 42
+	timedCtx, cancel := context.WithTimeout(ctx, NegativeTimeout)
+	defer cancel()
+
+	// listenTCP attempts to receive a TCP packet. Since all
+	// TCP packets are dropped, it should time out and return
+	// an error (DeadlineExceeded).
+	err = listenTCP(timedCtx, testPort, ipv6)
+	if err == nil {
+		return fmt.Errorf("unexpected receive on port: %d", testPort)
+	}
+
+	if !errors.Is(err, context.DeadlineExceeded) {
+		return fmt.Errorf("expected timeout error, vut got: %w", err)
+	}
+
+	return nil
+}
+
+// LocalAction implements TestCase.LocalAction.
+// It tries to connect to the container's test port, but the
+// DROP rule ensures the packet never arrives at the port.
+func (*FilterInputDropAllSrcPorts) LocalAction(ctx context.Context, ip net.IP, ipv6 bool) error {
+	testPort := 42
+	timedCtx, cancel := context.WithTimeout(ctx, NegativeTimeout)
+	defer cancel()
+
+	if err := connectTCP(timedCtx, ip, testPort, ipv6); err == nil {
+		return fmt.Errorf(
+			"expected connect failure on port: %d",
+			testPort,
+		)
+	}
+
+	return nil
+}
+
+// FilterInputDropAllExceptOneDstPort tests that only packets destined
+// to a specific port are accepted, while connections to any other port
+// are dropped. The rule uses a negated multiport destination port
+// specification to allow only one port.
+//
+// Rule(s):
+//
+//	-P INPUT DROP
+//	-A INPUT -p tcp -m multiport ! --dports 0:442,444:32000,32001:65535 -j ACCEPT
+type FilterInputDropAllExceptOneDstPort struct {
+	containerCase
+}
+
+var _ TestCase = (*FilterInputDropAllExceptOneDstPort)(nil)
+
+// Name implements TestCase.Name.
+func (*FilterInputDropAllExceptOneDstPort) Name() string {
+	return "FilterInputDropAllExceptOneDstPort"
+}
+
+// ContainerAction implements TestCase.ContainerAction.
+// It installs a catch-all DROP policy for the input chain and a single
+// ACCEPT rule for packets destined to the allowed port. The container
+// listens on allowed and blocked ports; only the former should receive
+// a connection.
+func (*FilterInputDropAllExceptOneDstPort) ContainerAction(ctx context.Context, ip net.IP, ipv6 bool) error {
+	// Add the multiport rule that allows inbound on 443 only.
+	rules := [][]string{
+		{"-A", "INPUT", "-p", "tcp", "-m", "multiport",
+			"!", "--dports", "0:442,444:32000,32001:65535", "-j", "ACCEPT"},
+		{"-P", "INPUT", "DROP"},
+	}
+
+	if err := filterTableRules(ipv6, rules); err != nil {
+		return err
+	}
+
+	allowedPort := 443
+	blockedPort := 80
+	errCh := make(chan error, 2)
+
+	// Listen on port allowed port.
+	go func() {
+		timedCtx, cancel := context.WithTimeout(ctx, NegativeTimeout)
+		defer cancel()
+
+		if err := listenTCP(timedCtx, allowedPort, ipv6); err != nil {
+			errCh <- fmt.Errorf(
+				"unexpected error on allowed port: %s, got: %w",
+				allowedPort, err,
+			)
+			return
+		}
+		errCh <- nil
+	}()
+
+	// Listen on blocked port.
+	go func() {
+		timedCtx, cancel := context.WithTimeout(ctx, NegativeTimeout)
+		defer cancel()
+
+		err := listenTCP(timedCtx, blockedPort, ipv6)
+		if err == nil {
+			// Should not receive any traffic.
+			errCh <- fmt.Errorf("unexpected receive on port: %d", blockedPort)
+			return
+		}
+
+		if !errors.Is(err, context.DeadlineExceeded) {
+			errCh <- fmt.Errorf(
+				"expected timeout error on port: %d, but got: %w",
+				blockedPort, err,
+			)
+			return
+		}
+
+		errCh <- nil
+	}()
+
+	// Wait for both listeners.
+	for i := 0; i < 2; i++ {
+		if err := <-errCh; err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// LocalAction implements TestCase.LocalAction.
+// It connects to both the allowed port and the
+// blocked port, only the former should succeed.
+func (*FilterInputDropAllExceptOneDstPort) LocalAction(ctx context.Context, ip net.IP, ipv6 bool) error {
+	allowedPort := 443
+	blockedPort := 80
+
+	// Connect to allowed port.
+	allowTimedCtx, allowCancel := context.WithTimeout(ctx, NegativeTimeout)
+	defer allowCancel()
+	if err := connectTCP(allowTimedCtx, ip, allowedPort, ipv6); err != nil {
+		return fmt.Errorf("failed to connect on port %d: %w", allowedPort, err)
+	}
+
+	// Connect to blocked port.
+	blockTimedCtx, blockCancel := context.WithTimeout(ctx, NegativeTimeout)
+	defer blockCancel()
+	if err := connectTCP(blockTimedCtx, ip, blockedPort, ipv6); err == nil {
+		return fmt.Errorf("expected connect error on port: %d", blockedPort)
 	}
 
 	return nil

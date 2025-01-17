@@ -12,6 +12,8 @@ go_library(
         "extensions.go",
         "ipv4.go",
         "ipv6.go",
+        "multiport_matcher.go",
+        "multiport_matcher_v1.go",
         "netfilter.go",
         "owner_matcher.go",
         "owner_matcher_v1.go",
