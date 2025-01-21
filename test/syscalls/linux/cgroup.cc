@@ -28,6 +28,7 @@
 #include "gtest/gtest.h"
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/flat_hash_set.h"
+#include "absl/strings/ascii.h"
 #include "absl/strings/str_split.h"
 #include "absl/synchronization/notification.h"
 #include "absl/time/time.h"
@@ -784,12 +785,12 @@ TEST(CpusetCgroup, SetEmptyMask) {
   SKIP_IF(!CgroupsAvailable());
   Cgroup c = Cgroup::RootCgroup("/sys/fs/cgroup/cpuset");
   ASSERT_NO_ERRNO(c.WriteControlFile("cpuset.cpus", ""));
-  std::string_view cpus = absl::StripAsciiWhitespace(
-      ASSERT_NO_ERRNO_AND_VALUE(c.ReadControlFile("cpuset.cpus")));
+  std::string cpus = std::string(absl::StripAsciiWhitespace(
+      ASSERT_NO_ERRNO_AND_VALUE(c.ReadControlFile("cpuset.cpus"))));
   EXPECT_EQ(cpus, "");
   ASSERT_NO_ERRNO(c.WriteControlFile("cpuset.mems", ""));
-  std::string_view mems = absl::StripAsciiWhitespace(
-      ASSERT_NO_ERRNO_AND_VALUE(c.ReadControlFile("cpuset.mems")));
+  std::string mems = std::string(absl::StripAsciiWhitespace(
+      ASSERT_NO_ERRNO_AND_VALUE(c.ReadControlFile("cpuset.mems"))));
   EXPECT_EQ(mems, "");
 }
 
