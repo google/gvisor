@@ -109,13 +109,13 @@ func RunGSUtil(ctx context.Context, t *testing.T, k8sCtx k8sctx.KubernetesContex
 				option string
 			}{
 				{
-					name:   "slicing=false",
+					name:   "SingleThreaded",
 					option: `-o "GSUtil:sliced_object_download_threshold=0"`,
 				},
 				{
-					// Slicing is enabled by default, so we
-					// don't set any extra options.
-					name: "slicing=true",
+					// Multithreaded downloading is enabled by default, so we don't set
+					// any extra options.
+					name: "MultiThreaded",
 				},
 			} {
 				t.Run(slicing.name, func(t *testing.T) {
