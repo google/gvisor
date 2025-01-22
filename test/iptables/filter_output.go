@@ -44,7 +44,14 @@ func init() {
 	RegisterTestCase(&FilterOutputInterfaceInvertAccept{})
 	RegisterTestCase(&FilterOutputInvertSportAccept{})
 	RegisterTestCase(&FilterOutputInvertSportDrop{})
+	RegisterTestCase(&FilterOutputAcceptInvertSrcPorts{})
+	RegisterTestCase(&FilterOutputDropSrcPorts{})
+	RegisterTestCase(&FilterOutputAcceptInvertPorts{})
 }
+
+// multiportPortCountLimit is the maximum number of
+// ports that can be specified for a multiport match.
+const multiportPortCountLimit = 15
 
 // FilterOutputDropTCPDestPort tests that connections are not accepted on
 // specified source ports.
@@ -776,6 +783,276 @@ func (*FilterOutputInvertSportDrop) LocalAction(ctx context.Context, ip net.IP, 
 	defer cancel()
 	if err := connectTCP(timedCtx, ip, dropPort, ipv6); err == nil {
 		return fmt.Errorf("connection on %d port was accepted when it should have been dropped", dropPort)
+	}
+
+	return nil
+}
+
+// FilterOutputAcceptInvertSrcPorts tests that all UDP outbound connections
+// are allowed except those going to specific source ports. The rule uses
+// a negated multiport match to ACCEPT traffic for any destination port not
+// listed.
+//
+// Rule(s):
+//
+//	-A OUTPUT -p udp -m multiport ! --sports 53,15008,32000 -j ACCEPT
+type FilterOutputAcceptInvertSrcPorts struct {
+	containerCase
+}
+
+var _ TestCase = (*FilterOutputAcceptInvertSrcPorts)(nil)
+
+// Name implements TestCase.Name.
+func (*FilterOutputAcceptInvertSrcPorts) Name() string {
+	return "FilterOutputAcceptInvertSrcPorts"
+}
+
+// ContainerAction implements TestCase.ContainerAction.
+// It installs the single ACCEPT rule with negation and then
+// attempts to connect to a local UDP server listening on a
+// blocked port.
+func (*FilterOutputAcceptInvertSrcPorts) ContainerAction(ctx context.Context, ip net.IP, ipv6 bool) error {
+	// Add the multiport rule that accepts all but the blocked ports.
+	err := filterTable(
+		ipv6,
+		"-A", "OUTPUT", "-p", "udp", "-m", "multiport",
+		"!", "--sports", "53,15008", "-j", "ACCEPT",
+	)
+	if err != nil {
+		return err
+	}
+
+	testPort := 53
+	timedCtx, cancel := context.WithTimeout(ctx, NegativeTimeout)
+	defer cancel()
+
+	// No response will be sent.
+	if err = listenUDP(timedCtx, testPort, ipv6); err != nil {
+		if !errors.Is(err, context.DeadlineExceeded) {
+			return fmt.Errorf("expected timeout error, vut got: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// LocalAction implements TestCase.LocalAction.
+// It attempts to connect to the container on the specified port.
+// Since the container cannot send back responses, the connection
+// attempt will fail or time out.
+func (*FilterOutputAcceptInvertSrcPorts) LocalAction(ctx context.Context, ip net.IP, ipv6 bool) error {
+	testPort := 53
+	timedCtx, cancel := context.WithTimeout(ctx, NegativeTimeout)
+	defer cancel()
+
+	// This should time out.
+	if err := sendUDPLoop(timedCtx, ip, testPort, ipv6); err == nil {
+		return fmt.Errorf("expected connect failure on port: %d", testPort)
+	}
+
+	return nil
+}
+
+// FilterOutputDropSrcPorts tests that any TCP packet leaving the
+// container from a source port in set is dropped, preventing the
+// container from making outbound responses on these ports.
+//
+// Rule(s):
+//
+//	-A OUTPUT -p tcp -m multiport --sports 22,53,80:443 -j DROP
+type FilterOutputDropSrcPorts struct {
+	containerCase
+}
+
+var _ TestCase = (*FilterOutputDropSrcPorts)(nil)
+
+// Name implements TestCase.Name.
+func (*FilterOutputDropSrcPorts) Name() string {
+	return "FilterOutputDropSrcPorts"
+}
+
+// ContainerAction implements TestCase.ContainerAction.
+// It installs the DROP rule for outbound packets with the specified
+// source ports. The container then listens on those ports, expecting
+// connection attempts from the local side. Because responses from
+// these ports are dropped, no handshake completes.
+func (*FilterOutputDropSrcPorts) ContainerAction(ctx context.Context, ip net.IP, ipv6 bool) error {
+	// Add the DROP rule for outbound packets from the specified source ports.
+	err := filterTable(
+		ipv6,
+		"-A", "OUTPUT", "-p", "tcp", "-m", "multiport",
+		"--sports", "22,53,80:443", "-j", "DROP",
+	)
+	if err != nil {
+		return err
+	}
+
+	// Listen on a set of ports within the blocked range.
+	ports := []int{22, 53, 80, 443}
+	errCh := make(chan error, len(ports))
+
+	for _, p := range ports {
+		go func(port int) {
+			// Attempt to accept connections. Even if an inbound
+			// connection is created, it won't receive are reply.
+			timedCtx, cancel := context.WithTimeout(ctx, NegativeTimeout)
+			defer cancel()
+
+			if err := listenTCP(timedCtx, port, ipv6); err != nil {
+				if !errors.Is(err, context.DeadlineExceeded) {
+					errCh <- fmt.Errorf(
+						"unexpected error on port %d: %w",
+						port, err,
+					)
+					return
+				}
+			}
+			// Timing out or no successful connection is expected.
+			errCh <- nil
+		}(p)
+	}
+
+	// Wait for all listeners to report.
+	for i := 0; i < len(ports); i++ {
+		if err := <-errCh; err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// LocalAction implements TestCase.LocalAction.
+// It attempts to connect to the container on each of the blocked
+// source ports. Since the container cannot send back responses,
+// the connection attempts will fail or time out.
+func (*FilterOutputDropSrcPorts) LocalAction(ctx context.Context, ip net.IP, ipv6 bool) error {
+	ports := []int{22, 53, 80, 443}
+	errCh := make(chan error, len(ports))
+
+	for _, p := range ports {
+		go func(port int) {
+			// Attempt to connect, but it will time out.
+			timedCtx, cancel := context.WithTimeout(ctx, NegativeTimeout)
+			defer cancel()
+
+			if err := connectTCP(timedCtx, ip, port, ipv6); err == nil {
+				errCh <- fmt.Errorf(
+					"expected timout error on port %d, but got: %w",
+					port, err,
+				)
+				return
+			}
+			errCh <- nil
+		}(p)
+	}
+
+	// Wait for all client to report.
+	for i := 0; i < len(ports); i++ {
+		if err := <-errCh; err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// FilterOutputAcceptInvertPorts tests a negation of either ports
+// matching on OUTPUT. The rule accepts all UDP packets if either
+// their source and destination ports fall into the matched set.
+//
+// Rule(s):
+//
+//	-A OUTPUT -p tcp -m multiport ! --ports 22,53:80,443 -j ACCEPT
+type FilterOutputAcceptInvertPorts struct {
+	containerCase
+}
+
+var _ TestCase = (*FilterOutputAcceptInvertPorts)(nil)
+
+// Name implements TestCase.Name.
+func (*FilterOutputAcceptInvertPorts) Name() string {
+	return "FilterOutputAcceptInvertPorts"
+}
+
+// ContainerAction implements TestCase.ContainerAction.
+// It installs the single ACCEPT rule with negation. The container then
+// listens on those ports, expecting connection attempts from the local
+// side, which will all succeed.
+func (*FilterOutputAcceptInvertPorts) ContainerAction(ctx context.Context, ip net.IP, ipv6 bool) error {
+	err := filterTable(
+		ipv6,
+		"-A", "OUTPUT", "-p", "tcp", "-m", "multiport",
+		"!", "--ports", "53:80,22,443", "-j", "ACCEPT",
+	)
+	if err != nil {
+		return err
+	}
+
+	// Even though some of the ports belong to the inverted set, the
+	// combination of the source and destination port will not match.
+	// Since the listener ports "low" ports, the chances of this failing
+	// is low.
+	testPorts := []int{22, 27017}
+	errCh := make(chan error, len(testPorts))
+
+	for _, p := range testPorts {
+		go func(port int) {
+			timedCtx, cancel := context.WithTimeout(ctx, NegativeTimeout)
+			defer cancel()
+
+			if err := listenTCP(timedCtx, port, ipv6); err != nil {
+				errCh <- fmt.Errorf(
+					"unexpected error on allowed port: %d, got: %w",
+					port, err,
+				)
+				return
+			}
+
+			errCh <- nil
+		}(p)
+	}
+
+	// Wait for listeners.
+	for i := 0; i < 2; i++ {
+		if err := <-errCh; err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// LocalAction implements TestCase.LocalAction.
+// It attempts to connect to the container on each ports
+// being listened on. Since this is an either port match,
+// both connections should succeed.
+func (*FilterOutputAcceptInvertPorts) LocalAction(ctx context.Context, ip net.IP, ipv6 bool) error {
+	testPorts := []int{22, 27017}
+	errCh := make(chan error, len(testPorts))
+
+	// All connections should succeed.
+	for _, p := range testPorts {
+		go func(port int) {
+			timedCtx, cancel := context.WithTimeout(ctx, NegativeTimeout)
+			defer cancel()
+			if err := connectTCP(timedCtx, ip, port, ipv6); err != nil {
+				errCh <- fmt.Errorf(
+					"failed to connect on port %d: %w",
+					port, err,
+				)
+				return
+			}
+
+			errCh <- nil
+		}(p)
+	}
+
+	// Wait for clients.
+	for i := 0; i < len(testPorts); i++ {
+		if err := <-errCh; err != nil {
+			return err
+		}
 	}
 
 	return nil

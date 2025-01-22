@@ -498,3 +498,22 @@ func TestNATPostSNATUDP(t *testing.T) {
 func TestNATPostSNATTCP(t *testing.T) {
 	singleTest(t, &NATPostSNATTCP{})
 }
+
+func TestFilterInputDropAllSrcPorts(t *testing.T) {
+	singleTest(t, &FilterInputDropAllSrcPorts{})
+}
+func TestFilterInputDropAllExceptOneDstPort(t *testing.T) {
+	singleTest(t, &FilterInputDropAllExceptOneDstPort{})
+}
+
+func TestFilterOutputAcceptInvertSrcPorts(t *testing.T) {
+	singleTest(t, &FilterOutputAcceptInvertSrcPorts{})
+}
+
+func TestFilterOutputDropSrcPorts(t *testing.T) {
+	singleTest(t, &FilterOutputDropSrcPorts{})
+}
+
+func TestFilterOutputAcceptInvertPorts(t *testing.T) {
+	singleTest(t, &FilterOutputAcceptInvertPorts{})
+}

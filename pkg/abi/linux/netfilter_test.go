@@ -38,6 +38,8 @@ func TestSizes(t *testing.T) {
 		{IP6TReplace{}, SizeOfIP6TReplace},
 		{IP6TEntry{}, SizeOfIP6TEntry},
 		{IP6TIP{}, SizeOfIP6TIP},
+		{XTMultiport{}, SizeOfXTMultiport},
+		{XTMultiportV1{}, SizeOfXTMultiportV1},
 	}
 
 	for _, tc := range testCases {
