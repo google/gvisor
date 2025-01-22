@@ -353,6 +353,23 @@ TEST_F(CloseRangeTest, RangeFirstGreaterThanLast) {
               SyscallFailsWithErrno(EINVAL));
 }
 
+// Test that calling with maximum last argument succeeds and closes all fds in
+// the range.
+TEST_F(CloseRangeTest, RangeMaxLast) {
+  SKIP_IF(!IsRunningOnGvisor() && close_range(1, 0, 0) < 0 && errno == ENOSYS);
+  int num_files_in_range = 10;
+  unsigned int flags = 0;
+
+  CreateFiles(num_files_in_range);
+  OpenFilesRdwr();
+
+  EXPECT_THAT(close_range(fds_[0], -1, flags), SyscallSucceeds());
+  for (int fd : fds_) {
+    auto ret = ReadAllFd(fd);
+    EXPECT_THAT(ret, PosixErrorIs(EBADF));
+  }
+}
+
 // Test that calling with invalid flags does not succeed.
 TEST_F(CloseRangeTest, InvalidFlags) {
   SKIP_IF(!IsRunningOnGvisor() && close_range(1, 0, 0) < 0 && errno == ENOSYS);

@@ -15,8 +15,6 @@
 package linux
 
 import (
-	"math"
-
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fspath"
@@ -455,12 +453,18 @@ func CloseRange(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uint
 	last := args[1].Uint()
 	flags := args[2].Uint()
 
-	if (first > last) || (last > math.MaxInt32) {
+	if first > last {
 		return 0, nil, linuxerr.EINVAL
 	}
 
 	if (flags & ^(linux.CLOSE_RANGE_CLOEXEC | linux.CLOSE_RANGE_UNSHARE)) != 0 {
 		return 0, nil, linuxerr.EINVAL
+	}
+
+	// close_range allows fd arguments to be up to MaxUint32, but only fds
+	// up to kernel.MaxFdLimit are valid, so cap it here.
+	if last > uint32(kernel.MaxFdLimit) {
+		last = uint32(kernel.MaxFdLimit)
 	}
 
 	cloexec := flags & linux.CLOSE_RANGE_CLOEXEC
@@ -474,7 +478,7 @@ func CloseRange(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uint
 		if cloexec == 0 && int32(last) >= t.FDTable().GetLastFd() {
 			t.UnshareFdTable(int32(first))
 		} else {
-			t.UnshareFdTable(math.MaxInt32)
+			t.UnshareFdTable(kernel.MaxFdLimit)
 		}
 	}
 
