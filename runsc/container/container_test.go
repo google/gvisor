@@ -3949,3 +3949,22 @@ func TestSpecValidation(t *testing.T) {
 		})
 	}
 }
+
+func TestSpecValidationIgnore(t *testing.T) {
+	conf := testutil.TestConfig(t)
+	if err := conf.RestoreSpecValidation.Set("ignore"); err != nil {
+		t.Fatalf("error in setting restore-spec-validation flag: %v", err)
+	}
+	oldSpecs := make(map[string]*specs.Spec)
+	spec, _ := sleepSpecConf(t)
+	oldSpecs["container1"] = spec
+
+	newSpecs := make(map[string]*specs.Spec)
+	restoreSpec, _ := sleepSpecConf(t)
+	restoreSpec.Process.Terminal = true
+	newSpecs["container1"] = restoreSpec
+
+	if err := specutils.RestoreValidateSpec(oldSpecs, newSpecs, conf); err != nil {
+		t.Fatalf("spec validation was not ignored, got: %v, want: nil", err)
+	}
+}

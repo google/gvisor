@@ -385,9 +385,9 @@ type Config struct {
 	// TestOnlySaveRestoreNetstack indicates netstack should be saved and restored.
 	TestOnlySaveRestoreNetstack bool `flag:"TESTONLY-save-restore-netstack"`
 
-	// UnsafeSkipRestoreSpecValidation optionally skips validation of the container spec for restored
-	// containers.
-	UnsafeSkipRestoreSpecValidation bool `flag:"unsafe-skip-restore-spec-validation"`
+	// RestoreSpecValidation indicates the level of spec validation to be
+	// performed during restore.
+	RestoreSpecValidation RestoreSpecValidationPolicy `flag:"restore-spec-validation"`
 }
 
 func (c *Config) validate() error {
@@ -1058,6 +1058,63 @@ func (p HostSettingsPolicy) String() string {
 		return "enforce"
 	default:
 		panic(fmt.Sprintf("Invalid host settings policy %d", p))
+	}
+}
+
+// RestoreSpecValidationPolicy dictates how spec validation should be handled.
+type RestoreSpecValidationPolicy int
+
+// RestoreSpecValidationPolicy values.
+const (
+	// RestoreSpecValidationIgnore does not validate the spec during restore.
+	RestoreSpecValidationIgnore RestoreSpecValidationPolicy = iota
+
+	// RestoreSpecValidationWarning will perform spec validation and logs a warning
+	// if the validation fails, however the restore will continue.
+	RestoreSpecValidationWarning
+
+	// RestoreSpecValidationEnforce will perform spec validation and returns an
+	// error if the validation fails and aborts restoring the containers.
+	RestoreSpecValidationEnforce
+)
+
+// Set implements flag.Value. Set(String()) should be idempotent.
+func (p *RestoreSpecValidationPolicy) Set(v string) error {
+	switch v {
+	case "ignore":
+		*p = RestoreSpecValidationIgnore
+	case "warning":
+		*p = RestoreSpecValidationWarning
+	case "enforce":
+		*p = RestoreSpecValidationEnforce
+	default:
+		return fmt.Errorf("invalid restore spec validation policy %q", v)
+	}
+	return nil
+}
+
+// Ptr returns a pointer to `p`.
+// Useful in flag declaration line.
+func (p RestoreSpecValidationPolicy) Ptr() *RestoreSpecValidationPolicy {
+	return &p
+}
+
+// Get implements flag.Get.
+func (p *RestoreSpecValidationPolicy) Get() any {
+	return *p
+}
+
+// String implements flag.String.
+func (p RestoreSpecValidationPolicy) String() string {
+	switch p {
+	case RestoreSpecValidationIgnore:
+		return "ignore"
+	case RestoreSpecValidationWarning:
+		return "warning"
+	case RestoreSpecValidationEnforce:
+		return "enforce"
+	default:
+		panic(fmt.Sprintf("invalid restore spec validation policy %d", p))
 	}
 }
 
