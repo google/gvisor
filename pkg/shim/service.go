@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package shim implements Containerd Shim v2 interface.
+// Package shim implements Containerd shim v2 interface.
 package shim
 
 import (
