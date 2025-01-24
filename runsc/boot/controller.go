@@ -120,6 +120,9 @@ const (
 
 	// ContMgrContainerRuntimeState returns the runtime state of a container.
 	ContMgrContainerRuntimeState = "containerManager.ContainerRuntimeState"
+
+	// ContMgrStoreNetworkConfig stores the network configuration in the loader.
+	ContMgrStoreNetworkConfig = "containerManager.StoreNetworkConfig"
 )
 
 const (
@@ -131,6 +134,9 @@ const (
 
 	// DebugStacks collects sandbox stacks for debugging.
 	DebugStacks = "debug.Stacks"
+
+	// NetworkSetupNetwork sets up network.
+	NetworkSetupNetwork = "Network.SetupNetwork"
 )
 
 // Profiling related commands (see pprof.go for more details).
@@ -941,5 +947,11 @@ func (cm *containerManager) Mount(args *MountArgs, _ *struct{}) error {
 func (cm *containerManager) ContainerRuntimeState(cid *string, state *ContainerRuntimeState) error {
 	log.Debugf("containerManager.ContainerRuntimeState: cid: %s", *cid)
 	*state = cm.l.containerRuntimeState(*cid)
+	return nil
+}
+
+// StoreNetworkConfig stores the network configuration.
+func (cm *containerManager) StoreNetworkConfig(netConf *NetworkConfig, _ *struct{}) error {
+	cm.l.netConf = netConf
 	return nil
 }

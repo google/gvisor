@@ -255,6 +255,9 @@ type Loader struct {
 	// saveRestoreNet indicates if the saved network stack should be used
 	// during restore.
 	saveRestoreNet bool
+
+	// netConf contains the network configuration required during restore.
+	netConf *NetworkConfig
 }
 
 // execID uniquely identifies a sentry process that is executed in a container.
