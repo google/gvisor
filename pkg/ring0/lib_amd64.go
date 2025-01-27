@@ -106,7 +106,9 @@ func Init(fs cpuid.FeatureSet) {
 	if VirtualAddressBits > 48 {
 		VirtualAddressBits = 48
 	}
-	PhysicalAddressBits = uintptr(fs.PhysicalAddressBits())
+	if PhysicalAddressBits == 0 {
+		PhysicalAddressBits = uintptr(fs.PhysicalAddressBits())
+	}
 	UserspaceSize = uintptr(1) << (VirtualAddressBits - 1)
 	MaximumUserAddress = (UserspaceSize - 1) & ^uintptr(hostarch.PageSize-1)
 	KernelStartAddress = ^uintptr(0) - (UserspaceSize - 1)
