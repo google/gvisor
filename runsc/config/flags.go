@@ -106,7 +106,7 @@ func RegisterFlags(flagSet *flag.FlagSet) {
 	flagSet.Bool("enable-core-tags", false, "enables core tagging. Requires host linux kernel >= 5.14.")
 	flagSet.String("pod-init-config", "", "path to configuration file with additional steps to take during pod creation.")
 	flagSet.Var(HostSettingsCheck.Ptr(), "host-settings", "how to handle non-optimal host kernel settings: check (default, advisory-only), ignore (do not check), adjust (best-effort auto-adjustment), or enforce (auto-adjustment must succeed).")
-	flagSet.Bool("unsafe-skip-restore-spec-validation", false, "Enables skipping validation of the restore-time container spec when restoring checkpoints.")
+	flagSet.Var(RestoreSpecValidationEnforce.Ptr(), "restore-spec-validation", "how to handle spec validation during restore.")
 
 	// Flags that control sandbox runtime behavior: MM related.
 	flagSet.Bool("app-huge-pages", true, "enable use of huge pages for application memory; requires /sys/kernel/mm/transparent_hugepage/shmem_enabled = advise")
@@ -123,7 +123,7 @@ func RegisterFlags(flagSet *flag.FlagSet) {
 	flagSet.Bool("vfs2", true, "DEPRECATED: this flag has no effect.")
 	flagSet.Bool("fuse", true, "DEPRECATED: this flag has no effect.")
 	flagSet.Bool("lisafs", true, "DEPRECATED: this flag has no effect.")
-	flagSet.Bool("cgroupfs", false, "Automatically mount cgroupfs.")
+	flagSet.Bool("cgroupfs", false, "DEPRECATED: this flag has no effect.")
 	flagSet.Bool("ignore-cgroups", false, "don't configure cgroups.")
 	flagSet.Int("fdlimit", -1, "Specifies a limit on the number of host file descriptors that can be open. Applies separately to the sentry and gofer. Note: each file in the sandbox holds more than one host FD open.")
 	flagSet.Int("dcache", -1, "Set the global dentry cache size. This acts as a coarse-grained control on the number of host FDs simultaneously open by the sentry. If negative, per-mount caches are used.")

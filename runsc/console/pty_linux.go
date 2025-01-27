@@ -17,10 +17,18 @@
 
 package console
 
-import "golang.org/x/sys/unix"
+import (
+	"os"
 
-// IsPty returns true if FD is a PTY.
-func IsPty(fd uintptr) bool {
-	_, err := unix.IoctlGetTermios(int(fd), unix.TCGETS)
-	return err == nil
+	"golang.org/x/sys/unix"
+)
+
+// StdioIsPty returns true if all stdio FDs are ptys.
+func StdioIsPty() bool {
+	for _, f := range []*os.File{os.Stdin, os.Stdout, os.Stderr} {
+		if _, err := unix.IoctlGetTermios(int(f.Fd()), unix.TCGETS); err != nil {
+			return false
+		}
+	}
+	return true
 }

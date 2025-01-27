@@ -177,7 +177,7 @@ func (c *Do) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcommand
 			Args:         f.Args(),
 			Env:          os.Environ(),
 			Capabilities: specutils.AllCapabilities(),
-			Terminal:     console.IsPty(os.Stdin.Fd()),
+			Terminal:     console.StdioIsPty(),
 		},
 		Hostname: hostname,
 	}

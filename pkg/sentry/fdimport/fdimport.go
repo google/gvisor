@@ -17,6 +17,8 @@ package fdimport
 
 import (
 	"fmt"
+	"maps"
+	"slices"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/context"
@@ -50,8 +52,11 @@ func Import(ctx context.Context, fdTable *kernel.FDTable, console bool, uid auth
 		}
 	}
 
+	// We iterate through the FDs in sorted order for better determinancy
+	// in startup, but it shouldn't matter.
 	var ttyFile *vfs.FileDescription
-	for appFD, hostFD := range fds {
+	for _, appFD := range slices.Sorted(maps.Keys(fds)) {
+		hostFD := fds[appFD]
 		fdOpts := host.NewFDOptions{
 			Savable: true,
 		}

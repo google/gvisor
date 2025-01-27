@@ -932,6 +932,27 @@ func (e *ErrMulticastInputCannotBeOutput) afterLoad(context.Context) {}
 func (e *ErrMulticastInputCannotBeOutput) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 }
 
+func (e *ErrEndpointBusy) StateTypeName() string {
+	return "pkg/tcpip.ErrEndpointBusy"
+}
+
+func (e *ErrEndpointBusy) StateFields() []string {
+	return []string{}
+}
+
+func (e *ErrEndpointBusy) beforeSave() {}
+
+// +checklocksignore
+func (e *ErrEndpointBusy) StateSave(stateSinkObject state.Sink) {
+	e.beforeSave()
+}
+
+func (e *ErrEndpointBusy) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (e *ErrEndpointBusy) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+}
+
 func (l *RouteList) StateTypeName() string {
 	return "pkg/tcpip.RouteList"
 }
@@ -1645,6 +1666,40 @@ func (f *ICMPv6Filter) afterLoad(context.Context) {}
 // +checklocksignore
 func (f *ICMPv6Filter) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &f.DenyType)
+}
+
+func (t *TpacketReq) StateTypeName() string {
+	return "pkg/tcpip.TpacketReq"
+}
+
+func (t *TpacketReq) StateFields() []string {
+	return []string{
+		"TpBlockSize",
+		"TpBlockNr",
+		"TpFrameSize",
+		"TpFrameNr",
+	}
+}
+
+func (t *TpacketReq) beforeSave() {}
+
+// +checklocksignore
+func (t *TpacketReq) StateSave(stateSinkObject state.Sink) {
+	t.beforeSave()
+	stateSinkObject.Save(0, &t.TpBlockSize)
+	stateSinkObject.Save(1, &t.TpBlockNr)
+	stateSinkObject.Save(2, &t.TpFrameSize)
+	stateSinkObject.Save(3, &t.TpFrameNr)
+}
+
+func (t *TpacketReq) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (t *TpacketReq) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &t.TpBlockSize)
+	stateSourceObject.Load(1, &t.TpBlockNr)
+	stateSourceObject.Load(2, &t.TpFrameSize)
+	stateSourceObject.Load(3, &t.TpFrameNr)
 }
 
 func (l *LingerOption) StateTypeName() string {
@@ -3236,6 +3291,7 @@ func init() {
 	state.Register((*ErrWouldBlock)(nil))
 	state.Register((*ErrMissingRequiredFields)(nil))
 	state.Register((*ErrMulticastInputCannotBeOutput)(nil))
+	state.Register((*ErrEndpointBusy)(nil))
 	state.Register((*RouteList)(nil))
 	state.Register((*RouteEntry)(nil))
 	state.Register((*sockErrorList)(nil))
@@ -3256,6 +3312,7 @@ func init() {
 	state.Register((*TCPSendBufferSizeRangeOption)(nil))
 	state.Register((*TCPReceiveBufferSizeRangeOption)(nil))
 	state.Register((*ICMPv6Filter)(nil))
+	state.Register((*TpacketReq)(nil))
 	state.Register((*LingerOption)(nil))
 	state.Register((*IPPacketInfo)(nil))
 	state.Register((*IPv6PacketInfo)(nil))

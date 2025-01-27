@@ -620,4 +620,22 @@ func (*ErrMulticastInputCannotBeOutput) IgnoreStats() bool {
 }
 func (*ErrMulticastInputCannotBeOutput) String() string { return "output cannot contain input" }
 
+// ErrEndpointBusy indicates that the operation cannot be completed because the
+// endpoint is busy.
+//
+// +stateify savable
+type ErrEndpointBusy struct{}
+
+// isError implements Error.
+func (*ErrEndpointBusy) isError() {}
+
+// IgnoreStats implements Error.
+func (*ErrEndpointBusy) IgnoreStats() bool {
+	return true
+}
+
+func (*ErrEndpointBusy) String() string {
+	return "operation cannot be completed because the endpoint is busy"
+}
+
 // LINT.ThenChange(../syserr/netstack.go)

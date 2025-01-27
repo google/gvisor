@@ -1549,6 +1549,29 @@ func getSockOptIPv6(t *kernel.Task, s socket.Socket, ep commonEndpoint, name int
 		}
 		return &entries, nil
 
+	case linux.IP6T_SO_GET_REVISION_MATCH:
+		if outLen < linux.SizeOfXTGetRevision {
+			return nil, syserr.ErrInvalidArgument
+		}
+
+		// Only valid for raw IPv6 sockets.
+		if skType != linux.SOCK_RAW {
+			return nil, syserr.ErrProtocolNotAvailable
+		}
+
+		stk := inet.StackFromContext(t)
+		if stk == nil {
+			return nil, syserr.ErrNoDevice
+		}
+
+		// Get the highest support matcher revision.
+		ret, err := netfilter.MatchRevision(t, outPtr)
+		if err != nil {
+			return nil, err
+		}
+
+		return &ret, nil
+
 	case linux.IP6T_SO_GET_REVISION_TARGET:
 		if outLen < linux.SizeOfXTGetRevision {
 			return nil, syserr.ErrInvalidArgument
@@ -1753,6 +1776,30 @@ func getSockOptIP(t *kernel.Task, s socket.Socket, ep commonEndpoint, name int, 
 			return nil, err
 		}
 		return &entries, nil
+
+	case linux.IPT_SO_GET_REVISION_MATCH:
+		if outLen < linux.SizeOfXTGetRevision {
+			return nil, syserr.ErrInvalidArgument
+		}
+
+		// Only valid for raw IPv4 sockets.
+		family, skType, _ := s.Type()
+		if family != linux.AF_INET || skType != linux.SOCK_RAW {
+			return nil, syserr.ErrProtocolNotAvailable
+		}
+
+		stk := inet.StackFromContext(t)
+		if stk == nil {
+			return nil, syserr.ErrNoDevice
+		}
+
+		// Get the highest support matcher revision.
+		ret, err := netfilter.MatchRevision(t, outPtr)
+		if err != nil {
+			return nil, err
+		}
+
+		return &ret, nil
 
 	case linux.IPT_SO_GET_REVISION_TARGET:
 		if outLen < linux.SizeOfXTGetRevision {
