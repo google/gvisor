@@ -42,7 +42,7 @@ jobs:
       uses: actions/checkout@v4
 
     - if: ${{ matrix.language == 'go' }}
-      uses: actions/setup-go@v5.2.0
+      uses: actions/setup-go@v5.3.0
       with:
         go-version-file: 'go.mod'
 
