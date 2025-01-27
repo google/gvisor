@@ -99,7 +99,9 @@ var (
 // another time with a  different FeatureSet.
 func Init(fs cpuid.FeatureSet) {
 	// Initialize all sizes.
-	VirtualAddressBits = uintptr(fs.VirtualAddressBits())
+	if VirtualAddressBits == 0 {
+		VirtualAddressBits = uintptr(fs.VirtualAddressBits())
+	}
 	// TODO(gvisor.dev/issue/7349): introduce support for 5-level paging.
 	// Four-level page tables allows to address up to 48-bit virtual
 	// addresses.
