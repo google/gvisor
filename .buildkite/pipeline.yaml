@@ -191,7 +191,7 @@ steps:
     agents:
       queue: gpu
   - <<: *common
-    <<: *source_test_continuous
+    <<: *source_test_presubmit
     label: ":female_supervillain: COS GPU Tests"
     commands:
       - make cos-gpu-all-tests

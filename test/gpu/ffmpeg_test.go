@@ -26,7 +26,7 @@ func TestFffmpegEncodeGPU(t *testing.T) {
 	ctx := context.Background()
 	container := dockerutil.MakeContainer(ctx, t)
 	defer container.CleanUp(ctx)
-	opts, err := dockerutil.GPURunOpts(dockerutil.SniffGPUOpts{Capabilities: "compute,video"})
+	opts, err := dockerutil.GPURunOpts(dockerutil.SniffGPUOpts{Capabilities: "all"})
 	if err != nil {
 		t.Fatalf("Failed to get GPU run options: %v", err)
 	}
@@ -42,7 +42,7 @@ func TestFffmpegDecodeGPU(t *testing.T) {
 	ctx := context.Background()
 	container := dockerutil.MakeContainer(ctx, t)
 	defer container.CleanUp(ctx)
-	opts, err := dockerutil.GPURunOpts(dockerutil.SniffGPUOpts{Capabilities: "compute,video"})
+	opts, err := dockerutil.GPURunOpts(dockerutil.SniffGPUOpts{Capabilities: "all"})
 	if err != nil {
 		t.Fatalf("Failed to get GPU run options: %v", err)
 	}
