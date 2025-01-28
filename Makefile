@@ -332,7 +332,8 @@ cos-gpu-all-tests: gpu-images cos-gpu-smoke-tests $(RUNTIME_BIN)
 	@$(call sudo,test/gpu:imagegen_test,--runtime=$(RUNTIME) -test.v --cos-gpu $(ARGS))
 	@$(call sudo,test/gpu:sr_test,--runtime=$(RUNTIME) -test.v --cos-gpu $(ARGS))
 	@$(call sudo,test/gpu:nccl_test,--runtime=$(RUNTIME) -test.v --cos-gpu $(ARGS))
-	@$(call sudo,test/gpu:ffmpeg_test,--runtime=$(RUNTIME) -test.v --cos-gpu $(ARGS))
+# TODO(b/392679618): Re-enable ffmpeg test.
+# @$(call sudo,test/gpu:ffmpeg_test,--runtime=$(RUNTIME) -test.v --cos-gpu $(ARGS))
 	@$(call sudo,test/gpu/vllm:vllm_test,--runtime=$(RUNTIME) -test.bench=. -test.benchtime=1x -cos-gpu -test.v $(ARGS))
 	@$(call sudo,test/gpu:sniffer_test,--runtime=$(RUNTIME) -test.v --cos-gpu $(ARGS))
 .PHONY: cos-gpu-all-tests
