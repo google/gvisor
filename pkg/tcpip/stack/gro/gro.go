@@ -24,17 +24,16 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
-// TODO(b/256037250): Enable by default.
-// TODO(b/256037250): We parse headers here. We should save those headers in
-// PacketBuffers so they don't have to be re-parsed later.
-// TODO(b/256037250): I still see the occasional SACK block in the zero-loss
-// benchmark, which should not happen.
-// TODO(b/256037250): Some dispatchers, e.g. XDP and RecvMmsg, can receive
-// multiple packets at a time. Even if the GRO interval is 0, there is an
-// opportunity for coalescing.
-// TODO(b/256037250): We're doing some header parsing here, which presents the
-// opportunity to skip it later.
-// TODO(b/256037250): Can we pass a packet list up the stack too?
+// There is room for improvement to the GRO engine:
+//   - We should save those headers in
+//     PacketBuffers so they don't have to be re-parsed later.
+//   - We still see the occasional SACK block in the zero-loss
+//     benchmark, which should not happen.
+//   - Some dispatchers, e.g. XDP and RecvMmsg, can receive
+//     multiple packets at a time. Even if the GRO interval is 0, there is an
+//     opportunity for coalescing.
+//   - We could pass a packet list up the stack to reduce traversals up the
+//     stack.
 
 const (
 	// groNBuckets is the number of GRO buckets.
@@ -515,8 +514,7 @@ func (gd *GRO) dispatch6(pkt *stack.PacketBuffer) {
 }
 
 func (gd *GRO) bucketForPacket4(ipHdr header.IPv4, tcpHdr header.TCP) int {
-	// TODO(b/256037250): Use jenkins or checksum. Write a test to print
-	// distribution.
+	// It would be better to use jenkins or checksum.
 	var sum int
 	srcAddr := ipHdr.SourceAddress()
 	for _, val := range srcAddr.AsSlice() {
@@ -532,8 +530,7 @@ func (gd *GRO) bucketForPacket4(ipHdr header.IPv4, tcpHdr header.TCP) int {
 }
 
 func (gd *GRO) bucketForPacket6(ipHdr header.IPv6, tcpHdr header.TCP) int {
-	// TODO(b/256037250): Use jenkins or checksum. Write a test to print
-	// distribution.
+	// It would be better to use jenkins or checksum.
 	var sum int
 	srcAddr := ipHdr.SourceAddress()
 	for _, val := range srcAddr.AsSlice() {
