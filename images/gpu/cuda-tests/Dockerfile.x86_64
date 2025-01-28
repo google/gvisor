@@ -6,7 +6,7 @@ ARG CUDA_SAMPLES_VERSION=v12.2
 
 WORKDIR /
 COPY *.cu *.h *.sh *.go *.cc /
-ENV PATH=$PATH:/usr/local/nvidia/bin:/bin/nvidia/bin
+ENV PATH=$PATH:/usr/local/nvidia/bin
 RUN export DEBIAN_FRONTEND=noninteractive; \
     apt-get update && \
     apt-get install -y \
