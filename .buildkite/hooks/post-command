@@ -100,3 +100,7 @@ fi
 if [[ -n "${BUILDKITE_STAGED_BINARIES_DIRECTORY:-}" ]]; then
   rm -rf "$BUILDKITE_STAGED_BINARIES_DIRECTORY" || true
 fi
+
+if ps -C runsc; then
+  killall -9 buildkite-agent
+fi

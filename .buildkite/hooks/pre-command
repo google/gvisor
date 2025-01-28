@@ -1,5 +1,10 @@
 set -euo pipefail
 
+ps axf
+if ps -C runsc; then
+  killall -9 buildkite-agent
+fi
+
 # Use a per-day bazel remote cache. As the cache object's TTL expires, they are
 # deleted on an ongoing basis. Such partial deletion can break the cache state.
 # Using per day cache will ensure that builds triggered on a certain day have
