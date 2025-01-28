@@ -81,14 +81,6 @@ PosixErrorOr<std::pair<gid_t, gid_t>> Groups() {
       // There aren't enough groups.
       break;
     }
-
-    // TODO(b/181878080): Read /proc/sys/fs/overflowgid once it is supported in
-    // gVisor.
-    if (groups[0] == kNobody || groups[1] == kNobody) {
-      // These groups aren't mapped into our user namespace, so we can't use
-      // them.
-      break;
-    }
     return std::pair<gid_t, gid_t>(groups[0], groups[1]);
   }
 
