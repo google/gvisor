@@ -175,6 +175,7 @@ steps:
     commands:
       - make sudo TARGETS=//tools/gpu:main ARGS="install --latest" || cat /var/log/nvidia-installer.log
       - make gpu-smoke-tests
+      - make sudo TARGETS=//tools/gpu:main ARGS="validate_checksum"
     agents:
       queue: gpu
   - <<: *common
