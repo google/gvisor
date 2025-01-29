@@ -29,16 +29,21 @@ import (
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
-func testMemoryManager(ctx context.Context) *MemoryManager {
+func testMemoryManagerWithMmapDirection(ctx context.Context, mmapDirection arch.MmapDirection) *MemoryManager {
 	p := platform.FromContext(ctx)
 	mm := NewMemoryManager(p, pgalloc.MemoryFileFromContext(ctx), false)
 	mm.layout = arch.MmapLayout{
-		MinAddr:      p.MinUserAddress(),
-		MaxAddr:      p.MaxUserAddress(),
-		BottomUpBase: p.MinUserAddress(),
-		TopDownBase:  p.MaxUserAddress(),
+		MinAddr:          p.MinUserAddress(),
+		MaxAddr:          p.MaxUserAddress(),
+		BottomUpBase:     p.MinUserAddress(),
+		TopDownBase:      p.MaxUserAddress(),
+		DefaultDirection: mmapDirection,
 	}
 	return mm
+}
+
+func testMemoryManager(ctx context.Context) *MemoryManager {
+	return testMemoryManagerWithMmapDirection(ctx, arch.MmapBottomUp)
 }
 
 func (mm *MemoryManager) realUsageAS() uint64 {
@@ -270,5 +275,68 @@ func TestAIOLookupAfterDestroy(t *testing.T) {
 
 	if _, ok := mm.LookupAIOContext(ctx, id); ok {
 		t.Errorf("AIOContext found even after AIOContext manager is destroyed")
+	}
+}
+
+func TestGetAllocationDirection(t *testing.T) {
+	testCases := []struct {
+		name          string
+		mmapDirection arch.MmapDirection
+		ar            hostarch.AddrRange
+		vma           *vma
+		expected      pgalloc.Direction
+	}{
+		{
+			"No last fault in vma with mmap direction BottomUp",
+			arch.MmapBottomUp,
+			hostarch.AddrRange{123, 456},
+			&vma{lastFault: 0},
+			pgalloc.BottomUp,
+		},
+		{
+			"No last fault in vma with mmap direction TopDown",
+			arch.MmapTopDown,
+			hostarch.AddrRange{123, 456},
+			&vma{lastFault: 0},
+			pgalloc.TopDown,
+		},
+		{
+			"Last fault in vma equals to addr range, with mmap direction BottomUp",
+			arch.MmapBottomUp,
+			hostarch.AddrRange{123, 456},
+			&vma{lastFault: 123},
+			pgalloc.BottomUp,
+		},
+		{
+			"Last fault in vma equals to addr range, with mmap direction TopDown",
+			arch.MmapTopDown,
+			hostarch.AddrRange{123, 456},
+			&vma{lastFault: 123},
+			pgalloc.TopDown,
+		},
+		{
+			"Last fault in vma greater than addr range",
+			arch.MmapTopDown,
+			hostarch.AddrRange{123, 456},
+			&vma{lastFault: 456},
+			pgalloc.TopDown,
+		},
+		{
+			"Last fault in vma smaller than addr range",
+			arch.MmapTopDown,
+			hostarch.AddrRange{123, 456},
+			&vma{lastFault: 100},
+			pgalloc.BottomUp,
+		},
+	}
+	for _, test := range testCases {
+		t.Run(test.name, func(t *testing.T) {
+			ctx := contexttest.Context(t)
+			mm := testMemoryManagerWithMmapDirection(ctx, test.mmapDirection)
+			actual := mm.getAllocationDirection(test.ar, test.vma)
+			if actual != test.expected {
+				t.Errorf("Unexpected allocation direction. Expected: %s, Actual: %s", test.expected, actual)
+			}
+		})
 	}
 }

@@ -484,6 +484,13 @@ func (vmaSetFunctions) Merge(ar1 hostarch.AddrRange, vma1 vma, ar2 hostarch.Addr
 		// need to worry about whether we're in a mm.mappingMu critical section.
 		vma2.id.DecRef(context.Background())
 	}
+
+	// If the existing vma (vma2) has non-zero lastFault address,
+	// we should preserve it to the resulting merged-VMA
+	if vma1.lastFault == 0 {
+		vma1.lastFault = vma2.lastFault
+	}
+
 	return vma1, true
 }
 
