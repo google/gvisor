@@ -98,6 +98,15 @@ func Mmap(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *
 			opts.MaxPerms.Write = false
 		}
 
+		// mmap requires volume NO_EXEC be false if request has PROT_EXEC flag.
+		if file.Mount().MountFlags()&linux.ST_NOEXEC != 0 {
+			if opts.Perms.Execute {
+				return 0, nil, linuxerr.EPERM
+			}
+
+			opts.MaxPerms.Execute = false
+		}
+
 		if err := file.ConfigureMMap(t, &opts); err != nil {
 			return 0, nil, err
 		}

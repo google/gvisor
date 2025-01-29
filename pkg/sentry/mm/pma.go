@@ -24,6 +24,7 @@ import (
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/safecopy"
 	"gvisor.dev/gvisor/pkg/safemem"
+	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
@@ -185,6 +186,33 @@ func (mm *MemoryManager) getVecPMAsLocked(ctx context.Context, ars hostarch.Addr
 	return ars, nil
 }
 
+// Gets the default memory file offset allocation direction aligned with
+// default address space allocation direction.
+func (mm *MemoryManager) getDefaultAllocationDirection() pgalloc.Direction {
+	if mm.layout.DefaultDirection == arch.MmapTopDown {
+		return pgalloc.TopDown
+	}
+	return pgalloc.BottomUp
+}
+
+// Gets the memory file offset allocation direction based on address space allocation direction
+// and memory access order.
+func (mm *MemoryManager) getAllocationDirection(ar hostarch.AddrRange, vma *vma) pgalloc.Direction {
+	lastFault := atomic.LoadUintptr(&vma.lastFault)
+	arStart := uintptr(ar.Start)
+	// If this VMA does not have last page fault or last page fault equals to arStart,
+	// use the default allocation direction.
+	if lastFault == 0 || lastFault == arStart {
+		return mm.getDefaultAllocationDirection()
+	}
+	// Detect cases where memory is accessed downwards and change memory file
+	// allocation order to increase the chances that pages are coalesced.
+	if arStart < lastFault {
+		return pgalloc.TopDown
+	}
+	return pgalloc.BottomUp
+}
+
 // getPMAsInternalLocked is equivalent to getPMAsLocked, with the following
 // exceptions:
 //
@@ -220,12 +248,7 @@ func (mm *MemoryManager) getPMAsInternalLocked(ctx context.Context, vseg vmaIter
 
 	vma := vseg.ValuePtr()
 	memCgID := pgalloc.MemoryCgroupIDFromContext(ctx)
-	allocDir := pgalloc.BottomUp
-	if uintptr(ar.Start) < atomic.LoadUintptr(&vma.lastFault) {
-		// Detect cases where memory is accessed downwards and change memory file
-		// allocation order to increase the chances that pages are coalesced.
-		allocDir = pgalloc.TopDown
-	}
+	allocDir := mm.getAllocationDirection(ar, vma)
 	atomic.StoreUintptr(&vma.lastFault, uintptr(ar.Start))
 
 	// Limit the range we allocate to ar, aligned to hugepage boundaries.
