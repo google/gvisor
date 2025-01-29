@@ -23,12 +23,12 @@
 ##   targets.
 ##
 ##   (*) Note that you may provide an ARCH parameter in order to build
-##   and load images from an alternate archiecture (using qemu). When
+##   and load images from an alternate architecture (using qemu). When
 ##   bazel is run as a server, this has the effect of running an full
 ##   cross-architecture chain, and can produce cross-compiled binaries.
 ##
 
-# ARCH is the architecture used for the build. This may be overriden at the
+# ARCH is the architecture used for the build. This may be overridden at the
 # command line in order to perform a cross-build (in a limited capacity).
 ARCH := $(shell uname -m)
 ifneq ($(ARCH),$(shell uname -m))

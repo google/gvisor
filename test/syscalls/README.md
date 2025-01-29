@@ -89,7 +89,7 @@ SyscallFailsWithErrno(...)
 
 ### Use test utilities (RAII classes)
 
-The test utilties are written as RAII classes. These utilities should be
+The test utilities are written as RAII classes. These utilities should be
 preferred over custom test harnesses.
 
 Local class instances should be preferred, wherever possible, over full test

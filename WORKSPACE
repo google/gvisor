@@ -3,7 +3,7 @@ load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive", "http_file"
 
 # Root certificates.
 #
-# Note that the sha256 hash is ommitted here intentionally. This should not be
+# Note that the sha256 hash is omitted here intentionally. This should not be
 # used in any part of the build other than as certificates present in images.
 http_file(
     name = "google_root_pem",

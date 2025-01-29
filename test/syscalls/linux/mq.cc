@@ -239,7 +239,7 @@ TEST(MqTest, ChangeIpcNamespace) {
 
   // As mq_unlink(2) uses queue's name, it should fail after changing IPC
   // namespace. To clean the queue, we should unlink it now, this should not
-  // cause a problem, as the queue presists until the last mq_close(2).
+  // cause a problem, as the queue persists until the last mq_close(2).
   ASSERT_NO_ERRNO(MqUnlink(queue.name()));
 
   ASSERT_THAT(unshare(CLONE_NEWIPC), SyscallSucceeds());

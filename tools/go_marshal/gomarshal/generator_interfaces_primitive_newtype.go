@@ -38,7 +38,7 @@ func (g *interfaceGenerator) marshalPrimitiveScalar(accessor, typ, bufVar string
 		g.recordUsedImport("hostarch")
 		g.emit("hostarch.ByteOrder.PutUint64(%s[:8], uint64(*%s))\n", bufVar, accessor)
 	default:
-		g.emit("// Explicilty cast to the underlying type before dispatching to\n")
+		g.emit("// Explicitly cast to the underlying type before dispatching to\n")
 		g.emit("// MarshalBytes, so we don't recursively call %s.MarshalBytes\n", accessor)
 		g.emit("inner := (*%s)(%s)\n", typ, accessor)
 		g.emit("inner.MarshalBytes(%s[:%s.SizeBytes()])\n", bufVar, accessor)
@@ -62,7 +62,7 @@ func (g *interfaceGenerator) unmarshalPrimitiveScalar(accessor, typ, bufVar, typ
 		g.recordUsedImport("hostarch")
 		g.emit("*%s = %s(%s(hostarch.ByteOrder.Uint64(%s[:8])))\n", accessor, typeCast, typ, bufVar)
 	default:
-		g.emit("// Explicilty cast to the underlying type before dispatching to\n")
+		g.emit("// Explicitly cast to the underlying type before dispatching to\n")
 		g.emit("// UnmarshalBytes, so we don't recursively call %s.UnmarshalBytes\n", accessor)
 		g.emit("inner := (*%s)(%s)\n", typ, accessor)
 		g.emit("inner.UnmarshalBytes(%s[:%s.SizeBytes()])\n", bufVar, accessor)

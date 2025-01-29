@@ -1008,7 +1008,7 @@ TEST(Inotify, ReadWithTooSmallBufferFails) {
   // outright without the event being dequeued.
   EXPECT_THAT(read(fd.get(), buf.data(), sizeof(struct inotify_event) - 1),
               SyscallFailsWithErrno(EINVAL));
-  // Try a buffer just large enough. This should succeeed.
+  // Try a buffer just large enough. This should succeed.
   EXPECT_THAT(
       readlen = read(fd.get(), buf.data(), sizeof(struct inotify_event)),
       SyscallSucceeds());
@@ -2017,7 +2017,7 @@ TEST(Inotify, Exec) {
 // descriptors after their corresponding files have been unlinked.
 //
 // We need to disable S/R because there are filesystems where we cannot re-open
-// fds to an unlinked file across S/R, e.g. gofer-backed filesytems.
+// fds to an unlinked file across S/R, e.g. gofer-backed filesystems.
 TEST(Inotify, IncludeUnlinkedFile) {
   const DisableSave ds;
 
@@ -2070,7 +2070,7 @@ TEST(Inotify, IncludeUnlinkedFile) {
 // children that have already been unlinked.
 //
 // We need to disable S/R because there are filesystems where we cannot re-open
-// fds to an unlinked file across S/R, e.g. gofer-backed filesytems.
+// fds to an unlinked file across S/R, e.g. gofer-backed filesystems.
 TEST(Inotify, ExcludeUnlink) {
   const DisableSave ds;
   const TempPath dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
@@ -2108,7 +2108,7 @@ TEST(Inotify, ExcludeUnlink) {
 }
 
 // We need to disable S/R because there are filesystems where we cannot re-open
-// fds to an unlinked file across S/R, e.g. gofer-backed filesytems.
+// fds to an unlinked file across S/R, e.g. gofer-backed filesystems.
 TEST(Inotify, ExcludeUnlinkDirectory) {
   const DisableSave ds;
   const TempPath parent = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
@@ -2148,7 +2148,7 @@ TEST(Inotify, ExcludeUnlinkDirectory) {
 // for fds on "dir/child" but not "dir/child2".
 //
 // We need to disable S/R because there are filesystems where we cannot re-open
-// fds to an unlinked file across S/R, e.g. gofer-backed filesytems.
+// fds to an unlinked file across S/R, e.g. gofer-backed filesystems.
 TEST(Inotify, ExcludeUnlinkMultipleChildren) {
   // Inotify does not work properly with hard links in gofer and overlay fs.
   SKIP_IF(IsRunningOnGvisor() &&
@@ -2192,7 +2192,7 @@ TEST(Inotify, ExcludeUnlinkMultipleChildren) {
 // events include changes to metadata and extended attributes.
 //
 // We need to disable S/R because there are filesystems where we cannot re-open
-// fds to an unlinked file across S/R, e.g. gofer-backed filesytems.
+// fds to an unlinked file across S/R, e.g. gofer-backed filesystems.
 TEST(Inotify, ExcludeUnlinkInodeEvents) {
   // NOTE(gvisor.dev/issue/3654): In the gofer filesystem, we do not allow
   // setting attributes through an fd if the file at the open path has been

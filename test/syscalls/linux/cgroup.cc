@@ -1080,7 +1080,7 @@ TEST(DevicesCgroup, IgnorePartialMatchRule) {
               IsPosixErrorOkAndHolds("c 7:* rw\n"));
 
   // Expect no change to the allow list since minor device matches partially a
-  // exsting rule for character devices 7:*.
+  // existing rule for character devices 7:*.
   ASSERT_NO_ERRNO(c.WriteControlFile("devices.deny", "c 7:0 w"));
   EXPECT_THAT(c.ReadControlFile("devices.list"),
               IsPosixErrorOkAndHolds("c 7:* rw\n"));

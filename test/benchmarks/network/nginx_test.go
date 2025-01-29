@@ -40,7 +40,7 @@ func BenchmarkNginxDocSize(b *testing.B) {
 	benchmarkNginxDocSize(b, false /* tmpfs */)
 }
 
-// BenchmarkContinuousNginx runs specific benchmarks for continous jobs.
+// BenchmarkContinuousNginx runs specific benchmarks for continuous jobs.
 // The runtime under test is the sever serving a runc client.
 func BenchmarkContinuousNginx(b *testing.B) {
 	sizes := []string{"10Kb", "100Kb", "1Mb"}

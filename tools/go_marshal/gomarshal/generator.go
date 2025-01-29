@@ -35,7 +35,7 @@ import (
 // This only applies to import aliases at the moment. All other identifiers
 // are qualified by a receiver argument, since they're struct fields.
 //
-// All recievers are single letters, so we don't allow import aliases to be a
+// All receivers are single letters, so we don't allow import aliases to be a
 // single letter.
 var badIdents = []string{
 	"addr", "blk", "buf", "cc", "dst", "dsts", "count", "err", "hdr", "idx",
@@ -43,7 +43,7 @@ var badIdents = []string{
 	// All single-letter identifiers.
 }
 
-// Constructed fromt badIdents in init().
+// Constructed from badIdents in init().
 var badIdentsMap map[string]struct{}
 
 func init() {
@@ -277,7 +277,7 @@ func newMarshallableType(fset *token.FileSet, tagLine *ast.Comment, spec *ast.Ty
 // collectMarshallableTypes walks the parsed AST and collects a list of type
 // declarations for which we need to generate the Marshallable interface.
 func (g *Generator) collectMarshallableTypes(a *ast.File, f *token.FileSet) map[*ast.TypeSpec]*marshallableType {
-	recv := make(map[string]string) // Type name to recevier name.
+	recv := make(map[string]string) // Type name to receiver name.
 	types := make(map[*ast.TypeSpec]*marshallableType)
 	for _, decl := range a.Decls {
 		gdecl, ok := decl.(*ast.GenDecl)

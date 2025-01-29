@@ -885,7 +885,7 @@ func TestExec(t *testing.T) {
 }
 
 // TestExecProcList verifies that a container can exec a new program and it
-// shows correcly in the process list.
+// shows correctly in the process list.
 func TestExecProcList(t *testing.T) {
 	for name, conf := range configs(t, false /* noOverlay */) {
 		t.Run(name, func(t *testing.T) {
@@ -2007,7 +2007,7 @@ func TestAbbreviatedIDs(t *testing.T) {
 		defer cont.Destroy()
 	}
 
-	// These should all be unambigious.
+	// These should all be unambiguous.
 	unambiguous := map[string]string{
 		"f":     cids[0],
 		cids[0]: cids[0],

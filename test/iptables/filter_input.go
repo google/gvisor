@@ -1040,7 +1040,7 @@ func (*FilterInputInvertDportDrop) ContainerAction(ctx context.Context, ip net.I
 	timedCtx, cancel := context.WithTimeout(ctx, NegativeTimeout)
 	defer cancel()
 	if err := listenTCP(timedCtx, dropPort, ipv6); err == nil {
-		return fmt.Errorf("connection was established when it shouldnt have been")
+		return fmt.Errorf("connection was established when it shouldn't have been")
 	} else if !errors.Is(err, context.DeadlineExceeded) {
 		return fmt.Errorf("error reading: %v", err)
 	}

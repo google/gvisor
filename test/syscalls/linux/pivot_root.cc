@@ -233,7 +233,7 @@ TEST(PivotRootTest, DotDot) {
   const auto rest = [&] {
     TEST_CHECK_SUCCESS(chroot(root.path().c_str()));
     TEST_CHECK_SUCCESS(chdir(new_root_path.c_str()));
-    // pivot_root should be able to stack put_old ontop of new_root. This allows
+    // pivot_root should be able to stack put_old on top of new_root. This allows
     // users to pivot_root without creating a temp directory.
     TEST_CHECK_SUCCESS(syscall(__NR_pivot_root, ".", "."));
     TEST_CHECK_SUCCESS(umount2(".", MNT_DETACH));

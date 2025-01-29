@@ -92,7 +92,7 @@ func (i *Install) Execute(_ context.Context, f *flag.FlagSet, _ ...any) subcomma
 	// Extract the executable.
 	path, err := os.Executable()
 	if err != nil {
-		log.Fatalf("Error reading current exectuable: %v", err)
+		log.Fatalf("Error reading current executable: %v", err)
 	}
 
 	i.executablePath = path

@@ -28,8 +28,8 @@ import (
 
 // BenchmarkNode runs requests using 'hey' against a Node server run on
 // 'runtime'. The server responds to requests by grabbing some data in a
-// redis instance and returns the data in its reponse. The test loops through
-// increasing amounts of concurency for requests.
+// redis instance and returns the data in its response. The test loops through
+// increasing amounts of concurrency for requests.
 func BenchmarkNode(b *testing.B) {
 	concurrency := []int{1, 5, 10, 25}
 	for _, c := range concurrency {

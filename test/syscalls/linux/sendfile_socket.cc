@@ -182,7 +182,7 @@ TEST_P(SendFileTest, Shutdown) {
       ASSERT_NO_ERRNO_AND_VALUE(Open(in_file.path(), O_RDONLY));
 
   // Read some data, then shutdown the socket. We don't actually care about
-  // checking the contents (other tests do that), so we just re-use the same
+  // checking the contents (other tests do that), so we just reuse the same
   // buffer as above.
   ScopedThread t([&]() {
     size_t done = 0;

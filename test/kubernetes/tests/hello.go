@@ -59,6 +59,6 @@ func RunHello(ctx context.Context, t *testing.T, k8sCtx k8sctx.KubernetesContext
 		t.Fatalf("Failed to read log on cluster %q: %v", cluster.GetName(), err)
 	}
 	if strings.TrimSpace(buf.String()) != "hello" {
-		t.Fatalf("Mistmatch output: got: %q want: %q", buf.String(), "hello")
+		t.Fatalf("Mismatch output: got: %q want: %q", buf.String(), "hello")
 	}
 }

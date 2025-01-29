@@ -74,7 +74,7 @@ var (
 	traceprofile       = flag.String("traceprofile", "", "write a 5s trace of the benchmark to the specified file.")
 	useIpv6            = flag.Bool("ipv6", false, "use ipv6 instead of ipv4.")
 	sniff              = flag.Bool("sniff", false, "log sniffed packets")
-	useXDP             = flag.Bool("xdp", false, "use AF_XDP as a link enpoint instead of fdbased")
+	useXDP             = flag.Bool("xdp", false, "use AF_XDP as a link endpoint instead of fdbased")
 )
 
 type impl interface {

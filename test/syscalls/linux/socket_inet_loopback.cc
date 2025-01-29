@@ -321,7 +321,7 @@ void tcpSimpleConnectTest(TestAddress const& listener,
 
   // Accept the connection.
   //
-  // We have to assign a name to the accepted socket, as unamed temporary
+  // We have to assign a name to the accepted socket, as unnamed temporary
   // objects are destructed upon full evaluation of the expression it is in,
   // potentially causing the connecting socket to fail to shutdown properly.
   auto accepted =
@@ -965,7 +965,7 @@ TEST_P(SocketInetLoopbackTest, TCPNonBlockingConnectClose) {
         .fd = accepted.get(),
         .events = POLLIN | POLLRDHUP,
     };
-    // Use a large timeout to accomodate for retransmitted FINs.
+    // Use a large timeout to accommodate for retransmitted FINs.
     constexpr int kTimeout = 120000;
     int n = poll(&pfd, 1, kTimeout);
     ASSERT_GE(n, 0) << strerror(errno);
@@ -1046,7 +1046,7 @@ TEST_P(SocketInetLoopbackTest, TCPBacklog) {
     if (pfd.revents == POLLIN) {
       // Accept the connection.
       //
-      // We have to assign a name to the accepted socket, as unamed temporary
+      // We have to assign a name to the accepted socket, as unnamed temporary
       // objects are destructed upon full evaluation of the expression it is in,
       // potentially causing the connecting socket to fail to shutdown properly.
       auto accepted =
@@ -1126,7 +1126,7 @@ TEST_P(SocketInetLoopbackTest, TCPBacklogAcceptAll) {
     ASSERT_EQ(pfd.revents, POLLIN);
     // Accept the connection.
     //
-    // We have to assign a name to the accepted socket, as unamed temporary
+    // We have to assign a name to the accepted socket, as unnamed temporary
     // objects are destructed upon full evaluation of the expression it is in,
     // potentially causing the connecting socket to fail to shutdown properly.
     auto accepted =
@@ -1222,7 +1222,7 @@ TEST_P(SocketInetLoopbackTest, TCPResetAfterClose) {
 
   // Trying to read should return zero as the other end did send
   // us a FIN. We do it twice to verify that the RST does not cause an
-  // ECONNRESET on the read after EOF has been read by applicaiton.
+  // ECONNRESET on the read after EOF has been read by application.
   EXPECT_THAT(RetryEINTR(recv)(accepted.get(), &data, sizeof(data), 0),
               SyscallSucceedsWithValue(0));
   EXPECT_THAT(RetryEINTR(recv)(accepted.get(), &data, sizeof(data), 0),
@@ -1315,7 +1315,7 @@ TEST_P(SocketInetLoopbackTest, TCPAcceptAfterReset) {
   sockaddr_storage conn_addr = connector.addr;
   ASSERT_NO_ERRNO(SetAddrPort(connector.family(), &conn_addr, port));
 
-  // TODO(b/153489135): Reenable Cooperative S/R once bug is fixed.
+  // TODO(b/153489135): Re-enable Cooperative S/R once bug is fixed.
   DisableSave ds;
   ASSERT_THAT(RetryEINTR(connect)(conn_fd.get(), AsSockAddr(&conn_addr),
                                   connector.addr_len),

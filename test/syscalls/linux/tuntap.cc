@@ -357,7 +357,7 @@ PosixErrorOr<TunTapInterface> OpenAndAttachTunTap(const std::string& dev_name,
 //   * Assign IP address 10.0.0.1/24 to kernel.
 //   * MAC address: kMacA
 //   * Bring up the interface.
-// * Send an ICMP echo reqest (ping) packet from 10.0.0.2 (kMacB) to kernel.
+// * Send an ICMP echo request (ping) packet from 10.0.0.2 (kMacB) to kernel.
 // * Loop to receive packets from TAP device/fd:
 //   * If packet is an ICMP echo reply, it stops and passes the test.
 //   * If packet is an ARP request, it responds with canned reply and resends

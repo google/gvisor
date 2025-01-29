@@ -145,7 +145,7 @@ TEST_F(RawSocketICMPTest, SendAndReceiveBadChecksum) {
   icmp.un.echo.id = 2014;
   ASSERT_NO_FATAL_FAILURE(SendEmptyICMP(icmp));
 
-  // Veryify that we get the echo, then that there's nothing else to read.
+  // Verify that we get the echo, then that there's nothing else to read.
   char recv_buf[kEmptyICMPSize];
   struct sockaddr_in src;
   ASSERT_NO_FATAL_FAILURE(
@@ -296,7 +296,7 @@ TEST_F(RawSocketICMPTest, RawAndPingSockets) {
 }
 
 // A raw ICMP socket should be able to send a malformed short ICMP Echo Request,
-// while a ping socket should not. Neither should be able to receieve a short
+// while a ping socket should not. Neither should be able to receive a short
 // malformed packet.
 TEST_F(RawSocketICMPTest, ShortEchoRawAndPingSockets) {
   // By default, ping sockets cannot be created on Linux, even with root privs.
@@ -343,7 +343,7 @@ TEST_F(RawSocketICMPTest, ShortEchoRawAndPingSockets) {
 
 // A raw ICMP socket should be able to send a malformed short ICMP Echo Reply,
 // while ping socket should not.
-// Neither should be able to receieve a short malformed packet.
+// Neither should be able to receive a short malformed packet.
 TEST_F(RawSocketICMPTest, ShortEchoReplyRawAndPingSockets) {
   // By default, ping sockets cannot be created on Linux, even with root privs.
   // So we only run the test with gVisor and not hostinet, and even then require

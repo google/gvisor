@@ -793,7 +793,7 @@ func checkSyscallClone(msg test.Message) error {
 	if err := checkContextData(p.ContextData); err != nil {
 		return err
 	}
-	// Flags used by default in system calls that use clone(2) in the underying.
+	// Flags used by default in system calls that use clone(2) in the underlying.
 	rawFlags := unix.CLONE_CHILD_CLEARTID | unix.CLONE_CHILD_SETTID | uint64(unix.SIGCHLD)
 	// Flags used for clone(2) syscall in workload.cc
 	cloneFlags := uint64(unix.SIGCHLD) | unix.CLONE_VFORK | unix.CLONE_FILES

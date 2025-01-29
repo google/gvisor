@@ -138,7 +138,7 @@ void runReadWrite() {
   if (!fd_or.ok()) {
     err(1, "open(O_CREAT): %s", fd_or.error().ToString().c_str());
   }
-  auto cleaup = absl::MakeCleanup([path] { unlink(path.c_str()); });
+  auto cleanup = absl::MakeCleanup([path] { unlink(path.c_str()); });
 
   auto fd = std::move(fd_or.ValueOrDie());
 

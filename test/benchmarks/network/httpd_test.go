@@ -39,7 +39,7 @@ func BenchmarkHttpd(b *testing.B) {
 	benchmarkHttpdDocSize(b)
 }
 
-// BenchmarkContinuousHttpd runs specific benchmarks for continous jobs.
+// BenchmarkContinuousHttpd runs specific benchmarks for continuous jobs.
 // The runtime under test is the server serving a runc client.
 func BenchmarkContinuousHttpd(b *testing.B) {
 	sizes := []string{"10Kb", "100Kb", "1Mb"}

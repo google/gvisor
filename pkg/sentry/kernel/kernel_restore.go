@@ -30,7 +30,7 @@ type Saver interface {
 // +stateify savable
 type CheckpointGeneration struct {
 	// Count is incremented every time a checkpoint is triggered, even if the
-	// chekpoint failed.
+	// checkpoint failed.
 	Count uint32
 	// Restore indicates if the current instance resumed after the checkpoint or
 	// it was restored from a checkpoint.

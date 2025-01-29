@@ -123,7 +123,7 @@ go_template_instance = rule(
         "imports": attr.string_dict(doc = "the map from imports used in types/consts to their import paths"),
         "input_substrs": attr.string_dict(doc = "the map from sub-strings to their replacements, applied just after reading the template code"),
         "substrs": attr.string_dict(doc = "the map from sub-strings to their replacements, applied just before writing the template instance code"),
-        "anon": attr.bool(doc = "whether anoymous fields should be processed", mandatory = False, default = False),
+        "anon": attr.bool(doc = "whether anonymous fields should be processed", mandatory = False, default = False),
         "package": attr.string(doc = "the package for the generated source file", mandatory = False),
         "out": attr.output(doc = "output file", mandatory = True),
         "_tool": attr.label(executable = True, cfg = "exec", default = Label("//tools/go_generics")),

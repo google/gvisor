@@ -35,7 +35,7 @@ TEST(SocketTest, UnixConnectNeedsWritePerm) {
               SyscallSucceeds());
   ASSERT_THAT(listen(bound.get(), 1), SyscallSucceeds());
 
-  // Drop capabilites that allow us to override permision checks. Otherwise if
+  // Drop capabilities that allow us to override permission checks. Otherwise if
   // the test is run as root, the connect below will bypass permission checks
   // and succeed unexpectedly.
   AutoCapability cap(CAP_DAC_OVERRIDE, false);

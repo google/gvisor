@@ -478,7 +478,7 @@ func TestMultiPIDNSKill(t *testing.T) {
 			// Wait until all processes are created.
 			for _, c := range containers {
 				if err := waitForProcessCount(c, processes); err != nil {
-					t.Fatalf("error waitting for processes: %v", err)
+					t.Fatalf("error waiting for processes: %v", err)
 				}
 			}
 
@@ -496,7 +496,7 @@ func TestMultiPIDNSKill(t *testing.T) {
 				}
 				// Wait for the process to get killed.
 				if err := waitForProcessCount(c, processes-1); err != nil {
-					t.Fatalf("error waitting for processes: %v", err)
+					t.Fatalf("error waiting for processes: %v", err)
 				}
 				procs, err = c.Processes()
 				if err != nil {
@@ -1038,7 +1038,7 @@ func TestMultiContainerKillAll(t *testing.T) {
 		// Wait until all processes are created.
 		rootProcCount := int(math.Pow(2, 3) - 1)
 		if err := waitForProcessCount(containers[0], rootProcCount); err != nil {
-			t.Fatalf("error waitting for processes: %v", err)
+			t.Fatalf("error waiting for processes: %v", err)
 		}
 		procCount := int(math.Pow(2, 5) - 1)
 		if err := waitForProcessCount(containers[1], procCount); err != nil {

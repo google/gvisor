@@ -1,0 +1,3 @@
+[codespell]
+skip = ./.git,tags,go.mod,go.sum,./test/image/latin10k.txt,./website/assets/images
+ignore-words-list = savable,adin

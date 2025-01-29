@@ -1,4 +1,4 @@
-// Copyright 2019 Google LLC
+// Copyright 2019 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -149,7 +149,7 @@ TEST(ProcNetTCP, Exists) {
     // Should be just the header since we don't have any tcp sockets yet.
     EXPECT_EQ(content, header_line);
   } else {
-    // On a general linux machine, we could have abitrary sockets on the system,
+    // On a general linux machine, we could have arbitrary sockets on the system,
     // so just check the header.
     EXPECT_THAT(content, ::testing::StartsWith(header_line));
   }
@@ -385,7 +385,7 @@ TEST(ProcNetTCP6, Exists) {
     // Should be just the header since we don't have any tcp sockets yet.
     EXPECT_EQ(content, header_line);
   } else {
-    // On a general linux machine, we could have abitrary sockets on the system,
+    // On a general linux machine, we could have arbitrary sockets on the system,
     // so just check the header.
     EXPECT_THAT(content, ::testing::StartsWith(header_line));
   }

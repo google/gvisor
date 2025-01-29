@@ -142,7 +142,7 @@ TEST_P(StreamUnixSocketPairTest, SetSocketSendBuf) {
   int max = 0;
   int min = 0;
   {
-    // Discover maxmimum buffer size by setting to a really large value.
+    // Discover maximum buffer size by setting to a really large value.
     constexpr int kRcvBufSz = INT_MAX;
     ASSERT_THAT(
         setsockopt(s, SOL_SOCKET, SO_SNDBUF, &kRcvBufSz, sizeof(kRcvBufSz)),

@@ -10,7 +10,7 @@ message TestRangeSpec {
   // Name for clusters. This name will be used as a template for all created
   // clusters (e.g. my-cluster will have clusters named something like
   // "my-cluster-0" with an ascending index). Cluster names are limited to
-  // 40 charecters, so names will be truncated to fit this constraint.
+  // 40 characters, so names will be truncated to fit this constraint.
   string name = 1;
 
   // A nodepool built with the runtime under test.

@@ -2073,7 +2073,7 @@ TEST_P(IPv4UDPUnboundSocketTest, SetSocketRecvBufBelowMin) {
 TEST_P(IPv4UDPUnboundSocketTest, SetSocketRecvBufAboveMax) {
   auto s = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
 
-  // Discover maxmimum buffer size by setting to a really large value.
+  // Discover maximum buffer size by setting to a really large value.
   constexpr int kRcvBufSz = 0xffffffff;
   ASSERT_THAT(setsockopt(s->get(), SOL_SOCKET, SO_RCVBUF, &kRcvBufSz,
                          sizeof(kRcvBufSz)),
@@ -2103,7 +2103,7 @@ TEST_P(IPv4UDPUnboundSocketTest, SetSocketRecvBuf) {
   int max = 0;
   int min = 0;
   {
-    // Discover maxmimum buffer size by setting to a really large value.
+    // Discover maximum buffer size by setting to a really large value.
     constexpr int kRcvBufSz = 0xffffffff;
     ASSERT_THAT(setsockopt(s->get(), SOL_SOCKET, SO_RCVBUF, &kRcvBufSz,
                            sizeof(kRcvBufSz)),
@@ -2178,7 +2178,7 @@ TEST_P(IPv4UDPUnboundSocketTest, SetSocketSendBufBelowMin) {
 TEST_P(IPv4UDPUnboundSocketTest, SetSocketSendBufAboveMax) {
   auto s = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
 
-  // Discover maxmimum buffer size by setting to a really large value.
+  // Discover maximum buffer size by setting to a really large value.
   constexpr int kSndBufSz = 0xffffffff;
   ASSERT_THAT(setsockopt(s->get(), SOL_SOCKET, SO_SNDBUF, &kSndBufSz,
                          sizeof(kSndBufSz)),
@@ -2208,7 +2208,7 @@ TEST_P(IPv4UDPUnboundSocketTest, SetSocketSendBuf) {
   int max = 0;
   int min = 0;
   {
-    // Discover maxmimum buffer size by setting to a really large value.
+    // Discover maximum buffer size by setting to a really large value.
     constexpr int kSndBufSz = 0xffffffff;
     ASSERT_THAT(setsockopt(s->get(), SOL_SOCKET, SO_SNDBUF, &kSndBufSz,
                            sizeof(kSndBufSz)),

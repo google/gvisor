@@ -847,7 +847,7 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 	// shown as `exe`.
 	cmd.Args[0] = "runsc-sandbox"
 
-	// Tranfer FDs that need to be present before the "boot" command.
+	// Transfer FDs that need to be present before the "boot" command.
 	// Start at 3 because 0, 1, and 2 are taken by stdin/out/err.
 	nextFD := donations.Transfer(cmd, 3)
 

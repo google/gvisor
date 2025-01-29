@@ -91,7 +91,7 @@ def bpf_program(name, src, bpf_object, visibility, hdrs):
 
     Args:
       name: target name for BPF program.
-      src: BPF program souce code in C.
+      src: BPF program source code in C.
       bpf_object: name of generated bpf object code.
       visibility: target visibility.
       hdrs: header files, but currently unsupported.

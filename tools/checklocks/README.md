@@ -69,7 +69,7 @@ type foo struct {
 }
 ```
 
-These semantics are enforcable on `sync.Mutex`, `sync.RWMutex` and `sync.Locker`
+These semantics are enforceable on `sync.Mutex`, `sync.RWMutex` and `sync.Locker`
 fields. Semantics with respect to reading and writing are automatically detected
 and enforced. If an access is read-only, then the lock need only be held as a
 read lock, in the case of an `sync.RWMutex`.
@@ -142,7 +142,7 @@ func foo(ts *testStruct) {
 }
 ```
 
-This pattern often applies to defer usage, which allows defered functions to be
+This pattern often applies to defer usage, which allows deferred functions to be
 fully analyzed with the lock state at time of execution.
 
 However, if a closure is passed to another function, the anonymous function

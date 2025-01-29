@@ -88,7 +88,7 @@ func MeasureStartup(ctx context.Context, t *testing.T, k8sCtx k8sctx.KubernetesC
 		t.Fatalf("Failed to read log on cluster %q: %v", cluster.GetName(), err)
 	}
 	if strings.TrimSpace(buf.String()) != "hello" {
-		t.Fatalf("Mistmatch output: got: %q want: %q", buf.String(), "hello")
+		t.Fatalf("Mismatched output: got: %q want: %q", buf.String(), "hello")
 	}
 
 	// For longer running containers, and where the desired duration to

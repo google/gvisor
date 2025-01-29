@@ -99,7 +99,7 @@ func (n *Notifier) UpdateFD(fd uint32) {
 // object. Once notifications arrive, they are dispatched to the
 // registered queue.
 func (n *Notifier) waitAndNotify(ioInit chan int32) error {
-	// plugin stack leverages TLS varaibles, so bind this goroutine with
+	// plugin stack leverages TLS variables, so bind this goroutine with
 	// one specific OS thread
 	runtime.LockOSThread()
 

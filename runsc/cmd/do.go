@@ -206,7 +206,7 @@ func (c *Do) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcommand
 			conf.Network = config.NetworkHost
 
 		case nil:
-			// Setup successfull.
+			// Setup successful.
 			defer clean()
 
 		default:

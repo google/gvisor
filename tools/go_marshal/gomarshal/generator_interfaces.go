@@ -188,7 +188,7 @@ func (g *interfaceGenerator) emitCastToByteSlice(srcPtr, dstVar, lenExpr string)
 	g.emit("hdr.Cap = %s\n\n", lenExpr)
 }
 
-// emitCastToByteSlice unsafely casts a slice with elements of an abitrary type
+// emitCastToByteSlice unsafely casts a slice with elements of an arbitrary type
 // to a byte slice. As part of the cast, the byte slice is made to look
 // independent of the src slice by bypassing escape analysis. This means the
 // byte slice can be used without causing the source to escape. The caller is

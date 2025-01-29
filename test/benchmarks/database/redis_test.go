@@ -117,7 +117,7 @@ func doBenchmarkRedis(b *testing.B, ops []string) {
 		}
 		name, err := tools.ParametersToName(param)
 		if err != nil {
-			b.Fatalf("Failed to parse paramaters: %v", err)
+			b.Fatalf("Failed to parse parameters: %v", err)
 		}
 
 		b.Run(name, func(b *testing.B) {

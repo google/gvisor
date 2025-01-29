@@ -22,7 +22,7 @@ import (
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 )
 
-// capsEquals returns trun when the given creds' capabilities match the given caps.
+// capsEquals returns true when the given creds' capabilities match the given caps.
 func capsEquals(creds *Credentials, caps TaskCapabilities) bool {
 	return creds.PermittedCaps == caps.PermittedCaps &&
 		creds.InheritableCaps == caps.InheritableCaps &&

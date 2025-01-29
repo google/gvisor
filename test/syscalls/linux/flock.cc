@@ -83,7 +83,7 @@ TEST_F(FlockTest, TestLockableAnyMode) {
 }
 
 TEST_F(FlockTest, TestUnlockWithNoHolders) {
-  // Test that unlocking when no one holds a lock succeeeds.
+  // Test that unlocking when no one holds a lock succeeds.
   ASSERT_THAT(flock(test_file_fd_.get(), LOCK_UN), SyscallSucceedsWithValue(0));
 }
 
@@ -176,7 +176,7 @@ TEST_F(FlockTest, TestMultipleHolderSharedExclusive) {
   const FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(Open(test_file_name_, O_RDWR));
 
-  // Verify We're unable to get an exlcusive lock via the second FD.
+  // Verify We're unable to get an exclusive lock via the second FD.
   // because someone is holding a shared lock.
   ASSERT_THAT(flock(fd.get(), LOCK_EX | LOCK_NB),
               SyscallFailsWithErrno(EWOULDBLOCK));
@@ -518,7 +518,7 @@ TEST_F(FlockTest, BlockingLockNoBlockingForSharedLocks) {
 
     // Only a single shared lock is held, the lock will be granted immediately.
     // This should be granted without any blocking. Don't save here to avoid
-    // wild discrepencies on timing.
+    // wild discrepancies on timing.
     timer.Start();
     ASSERT_THAT(flock(fd.get(), LOCK_SH), SyscallSucceeds());
 
@@ -535,7 +535,7 @@ TEST_F(FlockTest, BlockingLockNoBlockingForSharedLocks) {
   absl::SleepFor(kHoldLockTime);
 
   // Release the first shared lock. Don't save in this situation to avoid
-  // discrepencies in timing.
+  // discrepancies in timing.
   EXPECT_THAT(flock(test_file_fd_.get(), LOCK_UN), SyscallSucceeds());
 }
 
@@ -557,7 +557,7 @@ TEST_F(FlockTest, BlockingLockFirstSharedSecondExclusive) {
         ASSERT_NO_ERRNO_AND_VALUE(Open(test_file_name_, O_RDWR));
 
     // This exclusive lock should block because someone is already holding a
-    // shared lock. We don't save here to avoid wild discrepencies on timing.
+    // shared lock. We don't save here to avoid wild discrepancies on timing.
     timer.Start();
     ASSERT_THAT(RetryEINTR(flock)(fd.get(), LOCK_EX), SyscallSucceeds());
 
@@ -572,7 +572,7 @@ TEST_F(FlockTest, BlockingLockFirstSharedSecondExclusive) {
   absl::SleepFor(kHoldLockTime);
 
   // Release the shared lock allowing the thread to proceed.
-  // We don't save here to avoid wild discrepencies in timing.
+  // We don't save here to avoid wild discrepancies in timing.
   EXPECT_THAT(flock(test_file_fd_.get(), LOCK_UN), SyscallSucceeds());
 }
 
@@ -594,7 +594,7 @@ TEST_F(FlockTest, BlockingLockFirstExclusiveSecondShared) {
         ASSERT_NO_ERRNO_AND_VALUE(Open(test_file_name_, O_RDWR));
 
     // This shared lock should block because someone is already holding an
-    // exclusive lock. We don't save here to avoid wild discrepencies on timing.
+    // exclusive lock. We don't save here to avoid wild discrepancies on timing.
     timer.Start();
     ASSERT_THAT(RetryEINTR(flock)(fd.get(), LOCK_SH), SyscallSucceeds());
 
@@ -609,7 +609,7 @@ TEST_F(FlockTest, BlockingLockFirstExclusiveSecondShared) {
   absl::SleepFor(kHoldLockTime);
 
   // Release the exclusive lock allowing the blocked thread to proceed.
-  // We don't save here to avoid wild discrepencies in timing.
+  // We don't save here to avoid wild discrepancies in timing.
   EXPECT_THAT(flock(test_file_fd_.get(), LOCK_UN), SyscallSucceeds());
 }
 
@@ -646,7 +646,7 @@ TEST_F(FlockTest, BlockingLockFirstExclusiveSecondExclusive) {
   absl::SleepFor(kHoldLockTime);
 
   // Release the exclusive lock allowing the blocked thread to proceed.
-  // We don't save to avoid wild discrepencies in timing.
+  // We don't save to avoid wild discrepancies in timing.
   EXPECT_THAT(flock(test_file_fd_.get(), LOCK_UN), SyscallSucceeds());
 }
 

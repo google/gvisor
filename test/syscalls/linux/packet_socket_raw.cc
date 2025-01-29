@@ -189,7 +189,7 @@ TEST_P(RawPacketTest, Receive) {
   }
   EXPECT_EQ(eth.h_proto, htons(ETH_P_IP));
 
-  // Verify the IP header. We memcpy to deal with pointer aligment.
+  // Verify the IP header. We memcpy to deal with pointer alignment.
   struct iphdr ip = {};
   memcpy(&ip, buf + sizeof(ethhdr), sizeof(ip));
   EXPECT_EQ(ip.ihl, 5);
@@ -199,7 +199,7 @@ TEST_P(RawPacketTest, Receive) {
   EXPECT_EQ(ip.daddr, htonl(INADDR_LOOPBACK));
   EXPECT_EQ(ip.saddr, htonl(INADDR_LOOPBACK));
 
-  // Verify the UDP header. We memcpy to deal with pointer aligment.
+  // Verify the UDP header. We memcpy to deal with pointer alignment.
   struct udphdr udp = {};
   memcpy(&udp, buf + sizeof(eth) + sizeof(iphdr), sizeof(udp));
   EXPECT_EQ(udp.dest, kPort);
@@ -317,7 +317,7 @@ TEST_P(RawPacketTest, SendFromLoopback) {
 }
 
 TEST_P(RawPacketTest, SendFromUnspec) {
-  // TOOD(b/379932042): This is flakey and blocking submissions.
+  // TODO(b/379932042): This is flaky and blocking submissions.
   GTEST_SKIP();
 
   ASSERT_NO_FATAL_FAILURE(ValidateSend(s_, INADDR_ANY, GetLoopbackIndex()));

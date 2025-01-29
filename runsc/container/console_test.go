@@ -33,7 +33,7 @@ import (
 )
 
 // socketPath creates a path inside bundleDir and ensures that the returned
-// path is under 108 charactors (the unix socket path length limit),
+// path is under 108 characters (the unix socket path length limit),
 // relativizing the path if necessary.
 func socketPath(bundleDir string) (string, error) {
 	num := rand.Intn(10000)

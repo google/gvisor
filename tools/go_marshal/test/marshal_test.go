@@ -77,7 +77,7 @@ func (t *mockCopyContext) CopyOutBytes(_ hostarch.Addr, b []byte) (int, error) {
 }
 
 // CopyInBytes implements marshal.CopyContext.CopyInBytes. The implementation
-// completely ignores the source address and always fills b from the begining of
+// completely ignores the source address and always fills b from the beginning of
 // its internal buffer.
 func (t *mockCopyContext) CopyInBytes(_ hostarch.Addr, b []byte) (int, error) {
 	return t.taskMem.CopyIn(nil, 0, b, usermem.IOOpts{})
@@ -158,7 +158,7 @@ func isZeroes(buf []byte) bool {
 	return true
 }
 
-// compareMemory compares the first n bytes of two chuncks of memory represented
+// compareMemory compares the first n bytes of two chunks of memory represented
 // by expected and actual.
 func compareMemory(t *testing.T, expected, actual []byte, n int) {
 	t.Logf("Expected (%d): %v (%d) + (%d) %v\n", len(expected), expected[:n], n, len(expected)-n, expected[n:])
@@ -273,7 +273,7 @@ func copyOutN(t *testing.T, src marshal.Marshallable, limit int) {
 }
 
 // TestLimitedMarshalling verifies marshalling/unmarshalling succeeds when the
-// underyling copy in/out operations partially succeed.
+// underlying copy in/out operations partially succeed.
 func TestLimitedMarshalling(t *testing.T) {
 	types := []reflect.Type{
 		// Packed types.
@@ -334,7 +334,7 @@ func TestLimitedMarshalling(t *testing.T) {
 }
 
 // TestLimitedMarshalling verifies marshalling/unmarshalling of slices of
-// marshallable types succeed when the underyling copy in/out operations
+// marshallable types succeed when the underlying copy in/out operations
 // partially succeed.
 func TestLimitedSliceMarshalling(t *testing.T) {
 	types := []struct {
@@ -559,7 +559,7 @@ func TestDynamicTypeStruct(t *testing.T) {
 	cc.setLimit(t12.SizeBytes())
 
 	if _, err := t12.CopyOut(&cc, hostarch.Addr(0)); err != nil {
-		t.Fatalf("cc.CopyOut faile: %v", err)
+		t.Fatalf("cc.CopyOut failed: %v", err)
 	}
 
 	res := test.Type12Dynamic{
@@ -577,7 +577,7 @@ func TestDynamicTypeIdentifier(t *testing.T) {
 	cc.setLimit(s.SizeBytes())
 
 	if _, err := s.CopyOut(&cc, hostarch.Addr(0)); err != nil {
-		t.Fatalf("cc.CopyOut faile: %v", err)
+		t.Fatalf("cc.CopyOut failed: %v", err)
 	}
 
 	res := test.Type13Dynamic(make([]byte, len(s)))

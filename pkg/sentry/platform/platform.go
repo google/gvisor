@@ -273,7 +273,7 @@ type Context interface {
 	// Release() releases any resources associated with this context.
 	Release()
 
-	// PrepareSleep() is called when the tread switches to the
+	// PrepareSleep() is called when the thread switches to the
 	// interruptible sleep state.
 	PrepareSleep()
 }

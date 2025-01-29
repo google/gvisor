@@ -247,7 +247,7 @@ type elemType interface {
 func (l *lockState) valueAndObject(v ssa.Value) (string, types.Object) {
 	switch x := v.(type) {
 	case *ssa.Parameter:
-		// Was this provided as a paramter for a local anonymous
+		// Was this provided as a parameter for a local anonymous
 		// function invocation?
 		v, ok := l.stored[x]
 		if ok {

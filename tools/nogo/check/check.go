@@ -338,7 +338,7 @@ func (i *errorImporter) Import(path string) (*types.Package, error) {
 
 // checkPackage is the backing implementation for CheckPackage and others.
 //
-// The implementation was adapted from [1], which was in turn adpated from [2].
+// The implementation was adapted from [1], which was in turn adapted from [2].
 // This returns a list of matching analysis issues, or an error if the analysis
 // could not be completed.
 //

@@ -1236,7 +1236,7 @@ PosixErrorOr<FileDescriptor> nonBlockingConnectNoListener(
   // We will first create a socket and bind to ensure we bind a port but will
   // not call listen on this socket.
   // Then we will create a new socket that will connect to the port bound by
-  // the first socket and that shoud fail.
+  // the first socket and that should fail.
   constexpr int sock_type = SOCK_STREAM | SOCK_NONBLOCK;
   int b_sock;
   RETURN_ERROR_IF_SYSCALL_FAIL(b_sock = socket(family, sock_type, IPPROTO_TCP));

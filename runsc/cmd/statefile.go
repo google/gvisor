@@ -52,7 +52,7 @@ func (*Statefile) Usage() string {
 
 // SetFlags implements subcommands.Command.
 func (s *Statefile) SetFlags(f *flag.FlagSet) {
-	f.BoolVar(&s.list, "list", false, "lists the metdata in the statefile.")
+	f.BoolVar(&s.list, "list", false, "lists the metadata in the statefile.")
 	f.StringVar(&s.get, "get", "", "extracts the given metadata key.")
 	f.StringVar(&s.key, "key", "", "the integrity key for the file.")
 	f.StringVar(&s.output, "output", "", "target to write the result.")
