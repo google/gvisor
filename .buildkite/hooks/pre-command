@@ -1,5 +1,9 @@
 set -euo pipefail
 
+source .buildkite/hooks/libhook
+
+clear_docker_containers
+
 # Use a per-day bazel remote cache. As the cache object's TTL expires, they are
 # deleted on an ongoing basis. Such partial deletion can break the cache state.
 # Using per day cache will ensure that builds triggered on a certain day have
