@@ -361,6 +361,41 @@ type NV_CHANNEL_ALLOC_PARAMS struct {
 	HmacNonce           [CC_CHAN_ALLOC_NONCE_SIZE_DWORD]uint32
 }
 
+// NV_CHANNEL_ALLOC_PARAMS_V570 is the alloc params type for TURING_CHANNEL_GPFIFO_A
+// and AMPERE_CHANNEL_GPFIFO_A, from
+// src/common/sdk/nvidia/inc/alloc/alloc_channel.h.
+//
+// +marshal
+type NV_CHANNEL_ALLOC_PARAMS_V570 struct {
+	HObjectError        Handle
+	HObjectBuffer       Handle
+	GPFIFOOffset        uint64
+	GPFIFOEntries       uint32
+	Flags               uint32
+	HContextShare       Handle
+	HVASpace            Handle
+	HUserdMemory        [NV_MAX_SUBDEVICES]Handle
+	UserdOffset         [NV_MAX_SUBDEVICES]uint64
+	EngineType          uint32
+	CID                 uint32
+	SubDeviceID         uint32
+	HObjectECCError     Handle
+	InstanceMem         NV_MEMORY_DESC_PARAMS
+	UserdMem            NV_MEMORY_DESC_PARAMS
+	RamfcMem            NV_MEMORY_DESC_PARAMS
+	MthdbufMem          NV_MEMORY_DESC_PARAMS
+	HPhysChannelGroup   Handle
+	InternalFlags       uint32
+	ErrorNotifierMem    NV_MEMORY_DESC_PARAMS
+	ECCErrorNotifierMem NV_MEMORY_DESC_PARAMS
+	ProcessID           uint32
+	SubProcessID        uint32
+	EncryptIv           [CC_CHAN_ALLOC_IV_SIZE_DWORD]uint32
+	DecryptIv           [CC_CHAN_ALLOC_IV_SIZE_DWORD]uint32
+	HmacNonce           [CC_CHAN_ALLOC_NONCE_SIZE_DWORD]uint32
+	TCPConfigID         uint32
+}
+
 // NVB0B5_ALLOCATION_PARAMETERS is the alloc param type for TURING_DMA_COPY_A,
 // AMPERE_DMA_COPY_A, and AMPERE_DMA_COPY_B from
 // src/common/sdk/nvidia/inc/class/clb0b5sw.h.
