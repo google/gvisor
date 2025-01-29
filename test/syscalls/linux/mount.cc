@@ -62,6 +62,7 @@
 #include "test/util/fs_util.h"
 #include "test/util/linux_capability_util.h"
 #include "test/util/logging.h"
+#include "test/util/memory_util.h"
 #include "test/util/mount_util.h"
 #include "test/util/multiprocess_util.h"
 #include "test/util/posix_error.h"
@@ -250,6 +251,83 @@ TEST(MountTest, UmountDetach) {
   // Walking outside the unmounted realm should still work, too!
   auto const dir_parent = ASSERT_NO_ERRNO_AND_VALUE(
       OpenAt(mounted_dir.get(), "..", O_DIRECTORY | O_RDONLY));
+}
+
+TEST(MountTest, MMapWithExecProtFailsOnNoExecFile) {
+  // Skips the test if test does not have needed capability to create the volume
+  // mount.
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto ret = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("", dir.path(), kTmpfs, MS_NOEXEC, "", 0));
+  auto file = ASSERT_NO_ERRNO_AND_VALUE(
+      TempPath::CreateFileWith(dir.path(), "random1", 0777));
+
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(file.path().c_str(), O_RDWR));
+  ASSERT_THAT(reinterpret_cast<uintptr_t>(
+                  mmap(0, kPageSize, PROT_EXEC, MAP_PRIVATE, fd.get(), 0)),
+              SyscallFailsWithErrno(EPERM));
+}
+
+TEST(MountTest, MMapWithExecProtSucceedsOnExecutableVolumeFile) {
+  // Capability is needed to create tmpfs.
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto ret = ASSERT_NO_ERRNO_AND_VALUE(Mount("", dir.path(), kTmpfs, 0, "", 0));
+  auto file = ASSERT_NO_ERRNO_AND_VALUE(
+      TempPath::CreateFileWith(dir.path(), "random1", 0777));
+
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(file.path().c_str(), O_RDWR));
+
+  void* address = mmap(0, kPageSize, PROT_EXEC, MAP_PRIVATE, fd.get(), 0);
+  EXPECT_NE(address, MAP_FAILED);
+
+  MunmapSafe(address, kPageSize);
+}
+
+TEST(MountTest, MMapWithoutNoExecProtSucceedsOnNoExecFile) {
+  // Capability is needed to create tmpfs.
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto ret = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("", dir.path(), kTmpfs, MS_NOEXEC, "", 0));
+  auto file = ASSERT_NO_ERRNO_AND_VALUE(
+      TempPath::CreateFileWith(dir.path(), "random1", 0777));
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(file.path().c_str(), O_RDWR));
+
+  void* address =
+      mmap(0, kPageSize, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd.get(), 0);
+  EXPECT_NE(address, MAP_FAILED);
+
+  MunmapSafe(address, kPageSize);
+}
+
+TEST(MountTest, MProtectWithNoExecProtFailsOnNoExecFile) {
+  // Capability is needed to create tmpfs.
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto ret = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("", dir.path(), kTmpfs, MS_NOEXEC, "", 0));
+  auto file = ASSERT_NO_ERRNO_AND_VALUE(
+      TempPath::CreateFileWith(dir.path(), "random1", 0777));
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(file.path().c_str(), O_RDWR));
+
+  void* address =
+      mmap(0, kPageSize, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd.get(), 0);
+  EXPECT_NE(address, MAP_FAILED);
+
+  ASSERT_THAT(mprotect(address, kPageSize, PROT_EXEC),
+              SyscallFailsWithErrno(EACCES));
+
+  MunmapSafe(address, kPageSize);
 }
 
 TEST(MountTest, UmountMountsStackedOnDot) {

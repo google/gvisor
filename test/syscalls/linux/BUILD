@@ -1432,6 +1432,7 @@ cc_binary(
         "//test/util:file_descriptor",
         "//test/util:fs_util",
         "//test/util:logging",
+        "//test/util:memory_util",
         "//test/util:mount_util",
         "//test/util:multiprocess_util",
         "//test/util:posix_error",
