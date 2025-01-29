@@ -7,7 +7,7 @@ package(
 )
 
 runtime_test(
-    name = "go1.22",
+    name = "go1.24-rc",
     exclude_file = "exclude/go1.22.csv",
     lang = "go",
     shard_count = more_shards,
