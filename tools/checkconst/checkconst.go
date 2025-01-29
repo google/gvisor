@@ -84,7 +84,7 @@ func (c *Constants) walkObject(pass *analysis.Pass, parents []string, obj types.
 		if typ == nil || typ.Underlying() == nil {
 			break
 		}
-		if _, ok := typ.(*types.TypeParam); ok {
+		if _, ok := types.Unalias(typ).(*types.TypeParam); ok {
 			break
 		}
 		// Add basic information.

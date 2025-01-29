@@ -56,7 +56,7 @@ func (pc *passContext) typeAlignment(pkg *types.Package, obj types.Object) atomi
 		}
 	case *types.Array:
 		// Export direct alignment requirements.
-		if named, ok := x.Elem().(*types.Named); ok && !hasTypeParams(named) {
+		if named, ok := types.Unalias(x.Elem()).(*types.Named); ok && !hasTypeParams(named) {
 			requiredOffset = pc.typeAlignment(pkg, named.Obj())
 		}
 	default:
