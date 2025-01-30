@@ -165,7 +165,7 @@ func run(pass *analysis.Pass) (any, error) {
 
 	// Check all alignments.
 	pc.forAllTypes(func(ts *ast.TypeSpec) {
-		typ, ok := pass.TypesInfo.TypeOf(ts.Name).(*types.Named)
+		typ, ok := types.Unalias(pass.TypesInfo.TypeOf(ts.Name)).(*types.Named)
 		if !ok {
 			return
 		}

@@ -678,7 +678,7 @@ func (pc *passContext) structLockGuardFacts(structType *types.Struct, ss *ast.St
 
 		// See above, for anonymous structure fields.
 		if ss, ok := field.Type.(*ast.StructType); ok {
-			if st, ok := fieldObj.Type().(*types.Struct); ok {
+			if st, ok := types.Unalias(fieldObj.Type()).(*types.Struct); ok {
 				pc.structLockGuardFacts(st, ss)
 			}
 		}
