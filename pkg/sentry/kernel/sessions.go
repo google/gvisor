@@ -198,7 +198,7 @@ func (pg *ProcessGroup) handleOrphan() {
 
 	// See if there are any stopped jobs.
 	hasStopped := false
-	pg.originator.pidns.owner.forEachThreadGroupLocked(func(tg *ThreadGroup) {
+	pg.originator.pidns.owner.forEachThreadGroupLocked(func(tg *ThreadGroup, _ *Task) {
 		if tg.processGroup != pg {
 			return
 		}
@@ -213,13 +213,13 @@ func (pg *ProcessGroup) handleOrphan() {
 	}
 
 	// Deliver appropriate signals to all thread groups.
-	pg.originator.pidns.owner.forEachThreadGroupLocked(func(tg *ThreadGroup) {
+	pg.originator.pidns.owner.forEachThreadGroupLocked(func(tg *ThreadGroup, tgLeader *Task) {
 		if tg.processGroup != pg {
 			return
 		}
 		tg.signalHandlers.mu.NestedLock(signalHandlersLockTg)
-		tg.leader.sendSignalLocked(SignalInfoPriv(linux.SIGHUP), true /* group */)
-		tg.leader.sendSignalLocked(SignalInfoPriv(linux.SIGCONT), true /* group */)
+		tgLeader.sendSignalLocked(SignalInfoPriv(linux.SIGHUP), true /* group */)
+		tgLeader.sendSignalLocked(SignalInfoPriv(linux.SIGCONT), true /* group */)
 		tg.signalHandlers.mu.NestedUnlock(signalHandlersLockTg)
 	})
 
