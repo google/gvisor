@@ -147,7 +147,7 @@ func (d *Debug) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomm
 		pid := c.Sandbox.Getpid()
 		util.Infof("Sending signal %d to process: %d", d.signal, pid)
 		if err := unix.Kill(pid, unix.Signal(d.signal)); err != nil {
-			return util.Errorf("failed to send signal %d to processs %d", d.signal, pid)
+			return util.Errorf("failed to send signal %d to process %d", d.signal, pid)
 		}
 	}
 	if d.stacks {

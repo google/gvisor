@@ -219,7 +219,7 @@ func emit(out io.Writer, indent int, a ...any) {
 
 // sourceBuffer represents fragments of generated go source code.
 //
-// sourceBuffer provides a convenient way to build up go souce fragments in
+// sourceBuffer provides a convenient way to build up go source fragments in
 // memory. May be safely zero-value initialized. Not thread-safe.
 type sourceBuffer struct {
 	// Current indentation level.

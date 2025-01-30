@@ -46,7 +46,7 @@ type CPUSet []*CPU
 // NewCPUSet creates a CPUSet from data read from /proc/cpuinfo.
 func NewCPUSet(data string) (CPUSet, error) {
 	// Each processor entry should start with the
-	// processor key. Find the beginings of each.
+	// processor key. Find the beginnings of each.
 	r := buildRegex(processorKey)
 	indices := r.FindAllStringIndex(data, -1)
 
@@ -59,7 +59,7 @@ func NewCPUSet(data string) (CPUSet, error) {
 
 	// Valid cpus are now defined by strings in between
 	// indexes (e.g. data[index[i], index[i+1]]).
-	// There should be len(indicies) - 1 CPUs
+	// There should be len(indices) - 1 CPUs
 	// since the last index is the end of the string.
 	var set CPUSet
 	// Find each string that represents a CPU. These begin "processor".

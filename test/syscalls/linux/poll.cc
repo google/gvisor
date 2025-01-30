@@ -268,7 +268,7 @@ TEST_F(PollTest, ImmediatelyReturnOnlyOnPollEvents) {
   // Wait for read related event on the write side of the pipe, since a write
   // is possible on fds[1] it would mean that POLLOUT would return immediately.
   // We should make sure that we're not woken up with that state that we didn't
-  // specificially request.
+  // specifically request.
   constexpr int kTimeoutMs = 100;
   struct pollfd poll_fd = {fd1.get(), POLLIN | POLLPRI | POLLRDHUP, 0};
   EXPECT_THAT(RetryEINTR(poll)(&poll_fd, 1, kTimeoutMs),

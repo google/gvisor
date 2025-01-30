@@ -223,7 +223,7 @@ func (c *Config) Merge(other *Config) {
 	// Merge all groups.
 	//
 	// Select the other first, as the order provided in the second will
-	// provide precendence over the same group defined in the first one.
+	// provide precedence over the same group defined in the first one.
 	seenGroups := make(map[GroupName]struct{})
 	newGroups := make([]Group, 0, len(c.Groups)+len(other.Groups))
 	for _, g := range other.Groups {
@@ -252,7 +252,7 @@ func (c *Config) Merge(other *Config) {
 	}
 }
 
-// Compile compiles a configuration to make it useable.
+// Compile compiles a configuration to make it usable.
 func (c *Config) Compile() error {
 	for i := 0; i < len(c.Groups); i++ {
 		if err := c.Groups[i].compile(); err != nil {

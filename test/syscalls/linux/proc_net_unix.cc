@@ -201,7 +201,7 @@ TEST(ProcNetUnix, Exists) {
   const std::string content =
       ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/net/unix"));
   const std::string header_line = StrCat(kProcNetUnixHeader, "\n");
-  // We could have abitrary sockets on the system, so just check the header.
+  // We could have arbitrary sockets on the system, so just check the header.
   EXPECT_THAT(content, ::testing::StartsWith(header_line));
 }
 

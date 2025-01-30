@@ -769,7 +769,7 @@ func (*FilterOutputInvertSportDrop) ContainerAction(ctx context.Context, ip net.
 	timedCtx, cancel := context.WithTimeout(ctx, NegativeTimeout)
 	defer cancel()
 	if err := listenTCP(timedCtx, dropPort, ipv6); err == nil {
-		return fmt.Errorf("connection was established when it shouldnt have been")
+		return fmt.Errorf("connection was established when it shouldn't have been")
 	} else if !errors.Is(err, context.DeadlineExceeded) {
 		return fmt.Errorf("error reading: %v", err)
 	}
@@ -938,7 +938,7 @@ func (*FilterOutputDropSrcPorts) LocalAction(ctx context.Context, ip net.IP, ipv
 
 			if err := connectTCP(timedCtx, ip, port, ipv6); err == nil {
 				errCh <- fmt.Errorf(
-					"expected timout error on port %d, but got: %w",
+					"expected timeout error on port %d, but got: %w",
 					port, err,
 				)
 				return

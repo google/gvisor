@@ -18,7 +18,7 @@ import (
 	"sync"
 )
 
-// badFieldsStruct verifies that refering invalid fields fails.
+// badFieldsStruct verifies that referring invalid fields fails.
 type badFieldsStruct struct {
 	// +checklocks:mu
 	x int // +checklocksfail

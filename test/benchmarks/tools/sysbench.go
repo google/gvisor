@@ -139,7 +139,7 @@ func (s *SysbenchMemory) Report(b *testing.B, output string) {
 
 var memoryOperationsRE = regexp.MustCompile(`Total\s+operations:\s+\d+\s+\((\s*\d+\.\d+\s*)\s+per\s+second\)`)
 
-// parseOperations parses memory operations per second form sysbench memory ouput.
+// parseOperations parses memory operations per second form sysbench memory output.
 func (s *SysbenchMemory) parseOperations(data string) (float64, error) {
 	match := memoryOperationsRE.FindStringSubmatch(data)
 	if len(match) < 2 {

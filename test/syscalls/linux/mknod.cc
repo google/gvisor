@@ -47,7 +47,7 @@ TEST(MknodTest, RegularFilePermissions) {
   umask(newUmask);
 
   // Attempt to open file with mode 0777. Not specifying file type should create
-  // a regualar file.
+  // a regular file.
   mode_t perms = S_IRWXU | S_IRWXG | S_IRWXO;
   EXPECT_THAT(mknod(node.c_str(), perms, 0), SyscallSucceeds());
 

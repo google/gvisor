@@ -80,7 +80,7 @@ func TestExecCapabilities(t *testing.T) {
 			t.Errorf("wrong %s, got: %q, want: %q", cap, got, want)
 		}
 		// CapBnd and CpaInh are unchanged, other capabilities will
-		// be tranformed for non-root users.
+		// be transformed for non-root users.
 		wantCaps[cap] = fmt.Sprintf("%s:\t%s\n", cap, noCap)
 		if cap == "CapBnd" || cap == "CapInh" {
 			wantCaps[cap] = got

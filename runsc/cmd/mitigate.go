@@ -88,7 +88,7 @@ func (m *Mitigate) Execute(_ context.Context, f *flag.FlagSet, args ...any) subc
 	return m.execute()
 }
 
-// execute executes mitigate operations. Seperate from Execute method for
+// execute executes mitigate operations. Separate from Execute method for
 // easier mocking.
 func (m *Mitigate) execute() subcommands.ExitStatus {
 	beforeSet, err := m.control.getCPUs()

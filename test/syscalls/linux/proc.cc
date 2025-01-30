@@ -224,7 +224,7 @@ PosixError WithSubprocess(SubprocessCallback const& running,
 
   if (running) {
     // The first arg, RSD, refers to a "running process", or a process with a
-    // state of Running (R), Interruptable Sleep (S) or Uninterruptable
+    // state of Running (R), Interruptible Sleep (S) or Uninterruptible
     // Sleep (D).
     CompareProcessState("RSD", child_pid);
     RETURN_IF_ERRNO(running(child_pid));
@@ -2216,7 +2216,7 @@ TEST(ProcPidFile, SubprocessZombie) {
   // FIXME(gvisor.dev/issue/164): Loosen requirement due to inconsistent
   // behavior on different kernels.
   //
-  // ~4.3: Succeds and returns 0.
+  // ~4.3: Succeeds and returns 0.
   // 4.17: Succeeds and returns 1.
   // gVisor: Succeeds and returns 0.
   EXPECT_THAT(ReadWhileZombied("auxv", buf, sizeof(buf)), SyscallSucceeds());

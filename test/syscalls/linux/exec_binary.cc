@@ -490,7 +490,7 @@ TEST(ElfTest, DataSegment) {
              })));
 }
 
-// Additonal pages beyond filesz honor (only) execute protections.
+// Additional pages beyond filesz honor (only) execute protections.
 //
 // N.B. Linux changed this in 4.11 (16e72e9b30986 "powerpc: do not make the
 // entire heap executable"). Previously, extra pages were always RW.

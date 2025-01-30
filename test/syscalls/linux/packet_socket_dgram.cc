@@ -202,7 +202,7 @@ void ReceiveMessage(int sock, int ifindex) {
     EXPECT_EQ(src.sll_addr[i], 0);
   }
 
-  // Verify the IP header. We memcpy to deal with pointer aligment.
+  // Verify the IP header. We memcpy to deal with pointer alignment.
   struct iphdr ip = {};
   memcpy(&ip, buf, sizeof(ip));
   EXPECT_EQ(ip.ihl, 5);
@@ -212,7 +212,7 @@ void ReceiveMessage(int sock, int ifindex) {
   EXPECT_EQ(ip.daddr, htonl(INADDR_LOOPBACK));
   EXPECT_EQ(ip.saddr, htonl(INADDR_LOOPBACK));
 
-  // Verify the UDP header. We memcpy to deal with pointer aligment.
+  // Verify the UDP header. We memcpy to deal with pointer alignment.
   struct udphdr udp = {};
   memcpy(&udp, buf + sizeof(iphdr), sizeof(udp));
   EXPECT_EQ(udp.dest, kPort);
@@ -370,7 +370,7 @@ TEST_P(CookedPacketTest, DoubleBindSucceeds) {
 
 // Bind and verify we do not receive data on interface which is not bound
 TEST_P(CookedPacketTest, BindDrop) {
-  // TOOD(b/379932042): This is flakey and blocking submissions.
+  // TODO(b/379932042): This is flaky and blocking submissions.
   GTEST_SKIP();
 
   // Let's use a simple IP payload: a UDP datagram.
@@ -430,7 +430,7 @@ TEST_P(CookedPacketTest, BindDrop) {
 // Verify that we receive outbound packets. This test requires at least one
 // non loopback interface so that we can actually capture an outgoing packet.
 TEST_P(CookedPacketTest, ReceiveOutbound) {
-  // TOOD(b/379932042): This is flakey and blocking submissions.
+  // TODO(b/379932042): This is flaky and blocking submissions.
   GTEST_SKIP();
 
   // Only ETH_P_ALL sockets can receive outbound packets on linux.

@@ -90,7 +90,7 @@ func analyze(in io.Reader, out io.Writer) error {
 }
 
 func analyzeStuckTasks(scanner *bufio.Scanner, out io.Writer) error {
-	// Look for stuck tasks goroutine. The output has the folowing format:
+	// Look for stuck tasks goroutine. The output has the following format:
 	//	Task tid: 123 (goroutine 45), entered RunSys state 3m28.77s ago.
 	ids := make(map[uint]struct{})
 	for scanner.Scan() {

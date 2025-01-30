@@ -66,7 +66,7 @@ class PartialBadBufferTest : public ::testing::Test {
     EXPECT_THAT(WriteFd(fd_, &kMessage, size), SyscallSucceedsWithValue(size));
     ASSERT_THAT(lseek(fd_, 0, SEEK_SET), SyscallSucceeds());
 
-    // Map a useable buffer.
+    // Map a usable buffer.
     addr_ = mmap(0, 2 * kPageSize, PROT_READ | PROT_WRITE,
                  MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
     ASSERT_NE(addr_, MAP_FAILED);

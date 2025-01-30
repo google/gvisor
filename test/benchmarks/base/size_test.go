@@ -150,7 +150,7 @@ func BenchmarkSizeNode(b *testing.B) {
 	cmd, args := meminfo.MakeCmd()
 	before, err := machine.RunCommand(cmd, args...)
 	if err != nil {
-		b.Fatalf("failed to run meminfo commend: %v", err)
+		b.Fatalf("failed to run meminfo command: %v", err)
 	}
 
 	// Create N Node servers.

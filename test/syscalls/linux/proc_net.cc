@@ -153,7 +153,7 @@ TEST(ProcNetDev, Format) {
   EXPECT_GT(entries.size(), 0);
 }
 
-// GetMibsAllocationSysctl retuns a value of the net.core.mibs_allocation
+// GetMibsAllocationSysctl returns a value of the net.core.mibs_allocation
 // sysctl./proc/sys/net/core/mibs_allocation
 //
 // When mibs_allocation is unset, a netns creation inherits MIB from init

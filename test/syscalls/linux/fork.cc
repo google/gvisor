@@ -102,7 +102,7 @@ class ForkTest : public ::testing::Test {
     }
   }
 
-  // Exit exits the proccess.
+  // Exit exits the process.
   void Exit(int code) {
     _exit(code);
 

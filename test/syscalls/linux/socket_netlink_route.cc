@@ -109,7 +109,7 @@ INSTANTIATE_TEST_SUITE_P(
                         absl::StrFormat("NETLINK_ROUTE (%d)", NETLINK_ROUTE)),
         std::make_tuple(SO_PASSCRED, IsEqual(0), "0")));
 
-// Validates the reponses to RTM_GETLINK + NLM_F_DUMP.
+// Validates the responses to RTM_GETLINK + NLM_F_DUMP.
 void CheckGetLinkResponse(const struct nlmsghdr* hdr, int seq, int port) {
   EXPECT_THAT(hdr->nlmsg_type, AnyOf(Eq(RTM_NEWLINK), Eq(NLMSG_DONE)));
 
@@ -944,7 +944,7 @@ TEST(NetlinkRouteTest, GetRouteDump) {
   ASSERT_NO_ERRNO(NetlinkRequestResponse(
       fd, &req, sizeof(req),
       [&](const struct nlmsghdr* hdr) {
-        // Validate the reponse to RTM_GETROUTE + NLM_F_DUMP.
+        // Validate the response to RTM_GETROUTE + NLM_F_DUMP.
         EXPECT_THAT(hdr->nlmsg_type, AnyOf(Eq(RTM_NEWROUTE), Eq(NLMSG_DONE)));
 
         EXPECT_TRUE((hdr->nlmsg_flags & NLM_F_MULTI) == NLM_F_MULTI)
@@ -1042,7 +1042,7 @@ TEST(NetlinkRouteTest, GetRouteRequest) {
   bool rtDstFound = false;
   ASSERT_NO_ERRNO(NetlinkRequestResponseSingle(
       fd, &req, sizeof(req), [&](const struct nlmsghdr* hdr) {
-        // Validate the reponse to RTM_GETROUTE request with RTM_F_LOOKUP_TABLE
+        // Validate the response to RTM_GETROUTE request with RTM_F_LOOKUP_TABLE
         // flag.
         EXPECT_THAT(hdr->nlmsg_type, RTM_NEWROUTE);
 
@@ -1154,7 +1154,7 @@ TEST_P(NetlinkRouteIpInvariantTest, NewRoute) {
   ASSERT_NO_ERRNO(NetlinkRequestResponse(
       fd, &req, sizeof(req),
       [&](const struct nlmsghdr* hdr) {
-        // Validate the reponse to RTM_GETROUTE + NLM_F_DUMP.
+        // Validate the response to RTM_GETROUTE + NLM_F_DUMP.
         EXPECT_THAT(hdr->nlmsg_type, AnyOf(Eq(RTM_NEWROUTE), Eq(NLMSG_DONE)));
         // The test should not proceed if it's not a RTM_NEWROUTE message.
         if (hdr->nlmsg_type != RTM_NEWROUTE) {
@@ -1254,7 +1254,7 @@ TEST_P(NetlinkRouteIpInvariantTest, DeleteRoute) {
   ASSERT_NO_ERRNO(NetlinkRequestResponse(
       fd, &req, sizeof(req),
       [&](const struct nlmsghdr* hdr) {
-        // Validate the reponse to RTM_GETROUTE.
+        // Validate the response to RTM_GETROUTE.
         EXPECT_THAT(hdr->nlmsg_type, AnyOf(Eq(RTM_NEWROUTE), Eq(NLMSG_DONE)));
         // The test should not proceed if it's not a RTM_NEWROUTE message.
         if (hdr->nlmsg_type != RTM_NEWROUTE) {
@@ -1292,7 +1292,7 @@ TEST_P(NetlinkRouteIpInvariantTest, DeleteRoute) {
       false));
   // No route that matches the given destination address can be found.
   EXPECT_FALSE(routeDstFound);
-  // Removing a route that doens't exist returns an error.
+  // Removing a route that doesn't exist returns an error.
   EXPECT_THAT(
       DelUnicastRoute(loopback_link.index, family, prefixlen, dst, dst_len),
       PosixErrorIs(ESRCH, _));

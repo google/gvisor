@@ -33,7 +33,7 @@ ABSL_FLAG(bool, prctl_pr_get_keepcaps, false,
           "If true the test will verify that prctl with pr_get_keepcaps"
           "returns 0. The test will exit with the result of that check.");
 
-// These tests exist seperately from prctl because we need to start
+// These tests exist separately from prctl because we need to start
 // them as root. Setuid() has the behavior that permissions are fully
 // removed if one of the UIDs were 0 before a setuid() call. This
 // behavior can be changed by using PR_SET_KEEPCAPS and that is what

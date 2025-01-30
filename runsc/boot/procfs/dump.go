@@ -96,7 +96,7 @@ type ProcessProcfsDump struct {
 	StartTime int64 `json:"clone_ts,omitempty"`
 	// Root is /proc/[pid]/root.
 	Root string `json:"root,omitempty"`
-	// Limits constains resource limits for this process. Currently only
+	// Limits constrains resource limits for this process. Currently only
 	// RLIMIT_NOFILE is supported.
 	Limits map[string]limits.Limit `json:"limits,omitempty"`
 	// Cgroup is /proc/[pid]/cgroup split into an array.

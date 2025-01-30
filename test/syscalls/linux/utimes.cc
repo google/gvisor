@@ -274,7 +274,7 @@ TEST(UtimensatTest, OnRelPath) {
 }
 
 TEST(UtimensatTest, OmitNoop) {
-  // Setting both timespecs to UTIME_OMIT on a nonexistant path should succeed.
+  // Setting both timespecs to UTIME_OMIT on a nonexistent path should succeed.
   auto path = NewTempAbsPath();
   const struct timespec times[2] = {{0, UTIME_OMIT}, {0, UTIME_OMIT}};
   EXPECT_THAT(utimensat(0, path.c_str(), times, 0), SyscallSucceeds());

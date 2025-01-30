@@ -64,7 +64,7 @@ func TestLocalHostSocket(t *testing.T) {
 		}
 
 		if !slices.Equal(data[:recLen], clientData) {
-			return fmt.Errorf("server mismatch data recieved: got: %s want: %s", data[:recLen], clientData)
+			return fmt.Errorf("server mismatch data received: got: %s want: %s", data[:recLen], clientData)
 		}
 
 		sentLen, err := conn.Write(serverData)

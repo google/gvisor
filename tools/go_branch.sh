@@ -131,7 +131,7 @@ find . -type d -exec chmod 0755 {} \;
 # Update the current working set and commit.
 # If the current working commit has already been committed to the remote go
 # branch, then we have nothing to commit here. So allow empty commit. This can
-# occur when this script is run parallely (via pull_request and push events)
+# occur when this script is run parallelly (via pull_request and push events)
 # and the push workflow finishes before the pull_request workflow can run this.
 git add --all && git commit --allow-empty -m "Merge ${head} (automated)"
 

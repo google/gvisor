@@ -419,7 +419,7 @@ TEST_P(AllSocketPairTest, SetSocketRecvBufForceAboveMax) {
   std::unique_ptr<SocketPair> sockets =
       ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
 
-  // Discover maxmimum buffer size by setting to a really large value.
+  // Discover maximum buffer size by setting to a really large value.
   constexpr int kRcvBufSz = 0xffffffff;
   ASSERT_THAT(setsockopt(sockets->first_fd(), SOL_SOCKET, SO_RCVBUF, &kRcvBufSz,
                          sizeof(kRcvBufSz)),

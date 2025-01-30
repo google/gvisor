@@ -345,7 +345,7 @@ func TestProcfsDump(t *testing.T) {
 
 	// Check that bin/sleep is part of the executable path.
 	if wantExeSubStr := "bin/sleep"; !strings.HasSuffix(procfsDump[0].Exe, wantExeSubStr) {
-		t.Errorf("expected %q to be part of execuable path %q", wantExeSubStr, procfsDump[0].Exe)
+		t.Errorf("expected %q to be part of executable path %q", wantExeSubStr, procfsDump[0].Exe)
 	}
 
 	if len(procfsDump[0].Args) != 2 {

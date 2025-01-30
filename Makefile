@@ -97,7 +97,7 @@ endif
 ##
 ## Development helpers and tooling.
 ##
-##   These targets faciliate local development by automatically
+##   These targets facilitate local development by automatically
 ##   installing and configuring a runtime. Several variables may
 ##   be used here to tweak the installation:
 ##     RUNTIME         - The name of the installed runtime (default: $BRANCH_NAME).
@@ -755,3 +755,7 @@ release: $(RELEASE_KEY) $(RELEASE_ARTIFACTS)/$(ARCH)
 tag: ## Creates and pushes a release tag.
 	@tools/tag_release.sh "$(RELEASE_COMMIT)" "$(RELEASE_NAME)" "$(RELEASE_NOTES)"
 .PHONY: tag
+
+codespell:
+	codespell
+.PHONY: codespell

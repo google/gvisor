@@ -240,7 +240,7 @@ func TestSharedVolumeFile(t *testing.T) {
 	// read inside.
 	f, err := os.OpenFile(filename, os.O_APPEND|os.O_WRONLY, 0)
 	if err != nil {
-		t.Fatalf("Error openning file %q: %v", filename, err)
+		t.Fatalf("Error opening file %q: %v", filename, err)
 	}
 	defer f.Close()
 	if _, err := f.Write([]byte("host")); err != nil {

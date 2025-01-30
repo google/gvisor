@@ -162,7 +162,7 @@ func (p *Protocol) getLink(ctx context.Context, s *netlink.Socket, msg *nlmsg.Me
 	return nil
 }
 
-// newLink handles RTM_NEWLINK reqeusts.
+// newLink handles RTM_NEWLINK requests.
 func (p *Protocol) newLink(ctx context.Context, s *netlink.Socket, msg *nlmsg.Message, ms *nlmsg.MessageSet) *syserr.Error {
 	stack := s.Stack()
 	if stack == nil {

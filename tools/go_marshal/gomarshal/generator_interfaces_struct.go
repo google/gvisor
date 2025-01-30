@@ -41,7 +41,7 @@ func (g *interfaceGenerator) areFieldsPackedExpression() (string, bool) {
 	for accessor := range g.as {
 		cs = append(cs, fmt.Sprintf("%s.Packed()", accessor))
 	}
-	// Sort expressions for determinstic build outputs.
+	// Sort expressions for deterministic build outputs.
 	sort.Strings(cs)
 	return strings.Join(cs, " && "), true
 }
@@ -229,7 +229,7 @@ func (g *interfaceGenerator) emitMarshallableForStruct(st *ast.StructType) {
 						g.emit("src = src[%d*(%s):]\n", size, lenExpr)
 					} else {
 						// We can't use shiftDynamic here because we don't have
-						// an instance of the dynamic type we can referece here
+						// an instance of the dynamic type we can reference here
 						// (since the version in this struct is anonymous). Use
 						// a typed nil pointer to call SizeBytes() instead.
 						g.emit("src = src[(*%s)(nil).SizeBytes()*(%s):]\n", t.Name, lenExpr)

@@ -207,7 +207,7 @@ func findPackage(pkg *types.Package, pkgName string) (*types.Package, error) {
 func matchRegexp(pass *analysis.Pass, pos func() token.Pos, re *regexp.Regexp, text string) ([]string, bool) {
 	m := re.FindStringSubmatch(text)
 	if m == nil && checkconstRegexp.FindString(text) != "" {
-		pass.Reportf(pos(), "potentially misformed checkconst directives")
+		pass.Reportf(pos(), "potentially malformed checkconst directives")
 	}
 	return m, m != nil
 }

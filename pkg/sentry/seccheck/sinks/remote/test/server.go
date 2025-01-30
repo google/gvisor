@@ -80,7 +80,7 @@ func (s *Server) Count() int {
 	return len(s.points)
 }
 
-// Reset throws aways all points received so far and returns the number of
+// Reset throws away all points received so far and returns the number of
 // points discarded.
 func (s *Server) Reset() int {
 	s.cond.L.Lock()

@@ -255,7 +255,7 @@ TEST_F(SigProcMaskTest, AliasedSets) {
   mask = mask2;
   ASSERT_THAT(raw_sigprocmask(SIG_SETMASK, &mask, &mask), SyscallSucceeds());
 
-  // Check that the exchange succeeeded:
+  // Check that the exchange succeeded:
   // mask should now contain the previously-set mask blocking only kTestSignal1.
   EXPECT_THAT(mask, EqualsSigset(mask1));
   // The current mask should block only kTestSignal2.

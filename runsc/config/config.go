@@ -1139,7 +1139,7 @@ const (
 	// Linux network stack.
 	XDPModeRedirect
 
-	// XDPModeTunnel uses XDP_REDIRECT to redirect packets directy from the
+	// XDPModeTunnel uses XDP_REDIRECT to redirect packets directly from the
 	// host NIC to the VETH device inside the container's network
 	// namespace. Packets are read from the VETH via AF_XDP, as in
 	// XDPModeNS.

@@ -83,7 +83,7 @@ func (rpc *goferToHostRPC) OpenMount(m *specs.Mount, res *OpenMountResult) error
 		rpc.openMountRequests = make(chan *openMountRequest)
 		go func() {
 			// This goroutine holds the current threads forever. It
-			// never exits, because child proccesses can set
+			// never exits, because child processes can set
 			// PDEATHSIG. It can't serve other go-routines, because
 			// it does unshare CLONE_FS.
 			runtime.LockOSThread()

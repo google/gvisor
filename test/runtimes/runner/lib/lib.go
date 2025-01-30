@@ -62,7 +62,7 @@ func (p ProctorSettings) ToArgs() []string {
 type Filter func(test string) bool
 
 // RunTests is a helper that is called by main. It exists so that we can run
-// defered functions before exiting. It returns an exit code that should be
+// deferred functions before exiting. It returns an exit code that should be
 // passed to os.Exit.
 func RunTests(lang, image string, filter Filter, batchSize int, timeout time.Duration, proctorSettings ProctorSettings) int {
 	// Construct the shared docker instance.

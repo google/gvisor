@@ -277,7 +277,7 @@ func (*Stdlib) Usage() string {
 	return `stdlib
 
 	Generates facts and findings for the standard library. This wraps
-	bundle with a mechansim that discovers the standard library source.
+	bundle with a mechanism that discovers the standard library source.
 
 `
 }
@@ -401,7 +401,7 @@ func loadConfigs(filenames []string) (*config.Config, error) {
 
 // Execute implements subcommands.Command.Execute.
 func (f *Filter) Execute(ctx context.Context, fs *flag.FlagSet, args ...any) subcommands.ExitStatus {
-	// Open and merge all configuations.
+	// Open and merge all configurations.
 	config, err := loadConfigs(f.Configs)
 	if err != nil {
 		return failure("unable to load configurations: %v", err)

@@ -10,7 +10,7 @@ marshalling go data structures to and from memory.
 compile-time.
 
 `go_marshal` automatically generates implementations for `marshal.Marshallable`
-interface. Data structures that require custom serialization can be accomodated
+interface. Data structures that require custom serialization can be accommodated
 through a manual implementation this interface.
 
 Data structures can be flagged for code generation by adding a struct-level
@@ -91,7 +91,7 @@ padding between short fields. However, if a field is tagged
 `marshal:"unaligned"`, `go_marshal` will fall back to a safer but slower
 mechanism to deal with potentially unaligned fields.
 
-Note that the non-packed property is inheritted by any other struct that embeds
+Note that the non-packed property is inherited by any other struct that embeds
 this struct, since the `go_marshal` tool currently can't reason about alignments
 for embedded structs that are not aligned.
 

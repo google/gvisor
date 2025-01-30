@@ -283,8 +283,8 @@ func (b *BridgeEndpoint) Close() {}
 // SetOnCloseAction implements stack.LinkEndpoint.Close.
 func (b *BridgeEndpoint) SetOnCloseAction(func()) {}
 
-// Add a new FDBEntry by learning. The learning happens when a packaet
-// is recevied by a bridge port, the bridge will use the port for the future
+// Add a new FDBEntry by learning. The learning happens when a packet
+// is received by a bridge port, the bridge will use the port for the future
 // deliveries to the NIC device.
 // The addr is the key when it looks for the entry.
 //
