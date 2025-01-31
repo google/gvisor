@@ -162,13 +162,74 @@ type PacketEndpoint interface {
 	// match the endpoint.
 	//
 	// Implementers should treat packet as immutable and should copy it
-	// before before modification.
+	// before modification.
 	//
 	// linkHeader may have a length of 0, in which case the PacketEndpoint
 	// should construct its own ethernet header for applications.
 	//
 	// HandlePacket may modify pkt.
 	HandlePacket(nicID tcpip.NICID, netProto tcpip.NetworkProtocolNumber, pkt *PacketBuffer)
+}
+
+// MappablePacketEndpoint is a packet endpoint that supports forwarding its
+// packets to a PacketMMapEndpoint.
+type MappablePacketEndpoint interface {
+	PacketEndpoint
+
+	// GetPacketMMapOpts returns the options for initializing a PacketMMapEndpoint
+	// for this endpoint.
+	GetPacketMMapOpts(req *tcpip.TpacketReq, isRx bool) PacketMMapOpts
+
+	// SetPacketMMapEndpoint sets the PacketMMapEndpoint for this endpoint. All
+	// packets received by this endpoint will be forwarded to the provided
+	// PacketMMapEndpoint.
+	SetPacketMMapEndpoint(ep PacketMMapEndpoint)
+
+	// GetPacketMMapEndpoint returns the PacketMMapEndpoint for this endpoint or
+	// nil if there is none.
+	GetPacketMMapEndpoint() PacketMMapEndpoint
+
+	// HandlePacketMMapCopy is a function that is called when a packet received is
+	// too large for the buffer size specified for the memory mapped endpoint. In
+	// this case, the packet is copied and passed to the original packet endpoint.
+	HandlePacketMMapCopy(nicID tcpip.NICID, netProto tcpip.NetworkProtocolNumber, pkt *PacketBuffer)
+}
+
+// PacketMMapOpts are the options for initializing a PacketMMapEndpoint.
+//
+// +stateify savable
+type PacketMMapOpts struct {
+	Req            *tcpip.TpacketReq
+	IsRx           bool
+	Cooked         bool
+	Stack          *Stack
+	Stats          *tcpip.TransportEndpointStats
+	Wq             *waiter.Queue
+	NICID          tcpip.NICID
+	NetProto       tcpip.NetworkProtocolNumber
+	PacketEndpoint MappablePacketEndpoint
+}
+
+// PacketMMapEndpoint is the interface implemented by endpoints to handle memory
+// mapped packets over the packet transport protocol (PACKET_MMAP).
+type PacketMMapEndpoint interface {
+	// HandlePacket is called by the stack when new packets arrive that
+	// match the endpoint.
+	//
+	// Implementers should treat packet as immutable and should copy it
+	// before modification.
+	//
+	// linkHeader may have a length of 0, in which case the PacketEndpoint
+	// should construct its own ethernet header for applications.
+	//
+	// HandlePacket may modify pkt.
+	HandlePacket(nicID tcpip.NICID, netProto tcpip.NetworkProtocolNumber, pkt *PacketBuffer)
+
+	// Close releases any resources associated with the endpoint.
+	Close()
+
+	// Readiness returns the events that the endpoint is ready for.
+	Readiness(mask waiter.EventMask) waiter.EventMask
 }
 
 // UnknownDestinationPacketDisposition enumerates the possible return values from
@@ -1149,7 +1210,7 @@ type NetworkLinkEndpoint interface {
 	// Close is called when the endpoint is removed from a stack.
 	Close()
 
-	// SetOnCloseAction sets the action that will be exected before closing the
+	// SetOnCloseAction sets the action that will be executed before closing the
 	// endpoint. It is used to destroy a network device when its endpoint
 	// is closed. Endpoints that are closed only after destroying their
 	// network devices can implement this method as no-op.

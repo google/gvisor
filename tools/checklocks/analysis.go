@@ -298,7 +298,7 @@ func (pc *passContext) checkGuards(inst almostInst, from ssa.Value, accessObj ty
 		for s, info := range ls.lockedMutexes {
 			// Is this an object for which we have facts? If there
 			// is no ability to name this object, then we don't
-			// bother with any inferrence. We also ignore any self
+			// bother with any inference. We also ignore any self
 			// references (e.g. accessing a mutex while you are
 			// holding that exact mutex).
 			if info.object == nil || accessObj == info.object {

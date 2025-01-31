@@ -53,7 +53,7 @@ import (
 // lifetime. This also means only one container can run at a time, as it
 // monopolizes the device.
 //
-// TODO(b/240191988): Enbable device sharing via XDP_SHARED_UMEM.
+// TODO(b/240191988): Enable device sharing via XDP_SHARED_UMEM.
 // TODO(b/240191988): IPv6 support.
 // TODO(b/240191988): Merge redundant code with CreateLinksAndRoutes once
 // features are finalized.
@@ -93,7 +93,7 @@ func createRedirectInterfacesAndRoutes(conn *urpc.Client, conf *config.Config) e
 	if err != nil {
 		return fmt.Errorf("failed to load pinned map %s: %w", mapPath, err)
 	}
-	// TODO(b/240191988): Updating of pinned maps should be sychronized and
+	// TODO(b/240191988): Updating of pinned maps should be synchronized and
 	// check for the existence of the key.
 	mapKey := uint32(0)
 	mapVal := uint32(xdpSockFD)
@@ -280,7 +280,7 @@ func createSocketXDP(iface net.Interface) ([]*os.File, error) {
 
 	// Insert our AF_XDP socket into the BPF map that dictates where
 	// packets are redirected to.
-	// TODO(b/240191988): Updating of pinned maps should be sychronized and
+	// TODO(b/240191988): Updating of pinned maps should be synchronized and
 	// check for the existence of the key.
 	key := uint32(0)
 	val := uint32(fd)
@@ -390,7 +390,7 @@ func createXDPTunnel(conn *urpc.Client, nsPath string, conf *config.Config) erro
 		// Insert our AF_XDP socket into the BPF map that dictates where
 		// packets are redirected to.
 		// TODO(b/240191988): Updating of pinned maps should be
-		// sychronized and check for the existence of the key.
+		// synchronized and check for the existence of the key.
 		key := uint32(0)
 		val := uint32(fd)
 		if err := objects.SockMap.Update(&key, &val, 0 /* flags */); err != nil {
@@ -448,7 +448,7 @@ func createXDPTunnel(conn *urpc.Client, nsPath string, conf *config.Config) erro
 	if err != nil {
 		return fmt.Errorf("failed to load pinned host map %s: %w", hostMapPath, err)
 	}
-	// TODO(b/240191988): Updating of pinned maps should be sychronized and
+	// TODO(b/240191988): Updating of pinned maps should be synchronized and
 	// check for the existence of the key.
 	mapKey := uint32(0)
 	mapVal := uint32(vethIface.Index)
@@ -530,7 +530,7 @@ func createXDPTunnel(conn *urpc.Client, nsPath string, conf *config.Config) erro
 	if err != nil {
 		return fmt.Errorf("failed to load pinned veth map %s: %w", vethMapPath, err)
 	}
-	// TODO(b/240191988): Updating of pinned maps should be sychronized and
+	// TODO(b/240191988): Updating of pinned maps should be synchronized and
 	// check for the existence of the key.
 	mapKey = uint32(0)
 	mapVal = uint32(hostIface.Index)

@@ -357,7 +357,7 @@ func AllCapabilitiesUint64() uint64 {
 	return rv
 }
 
-// MergeCapabilities merges the capabilites from first and second.
+// MergeCapabilities merges the capabilities from first and second.
 func MergeCapabilities(first, second *specs.LinuxCapabilities) *specs.LinuxCapabilities {
 	return &specs.LinuxCapabilities{
 		Bounding:    mergeUnique(first.Bounding, second.Bounding),
@@ -454,7 +454,7 @@ func capsFromNames(names []string, skipSet map[linux.Capability]struct{}) (auth.
 		if !ok {
 			return 0, fmt.Errorf("unknown capability %q", n)
 		}
-		// Should we skip this capabilty?
+		// Should we skip this capability?
 		if _, ok := skipSet[c]; ok {
 			continue
 		}

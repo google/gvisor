@@ -585,7 +585,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 // prepareArgs returns the args that can be used to re-execute the current
 // program. It manipulates the flags of the subcommands.Command identified by
 // subCmdName and fSet is the flag.FlagSet of this subcommand. It applies the
-// flags specified by override map. In case of conflict, flag is overriden.
+// flags specified by override map. In case of conflict, flag is overridden.
 //
 // Postcondition: prepareArgs() takes ownership of override map.
 func prepareArgs(subCmdName string, fSet *flag.FlagSet, override map[string]string) []string {

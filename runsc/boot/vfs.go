@@ -1006,7 +1006,7 @@ func (c *containerMounter) mountTmp(ctx context.Context, spec *specs.Spec, conf 
 	for _, m := range c.mounts {
 		// m.Destination has been cleaned, so it's to use equality here.
 		if m.Destination == "/tmp" {
-			log.Debugf(`Explict "/tmp" mount found, skipping internal tmpfs, mount: %+v`, m)
+			log.Debugf(`Explicit "/tmp" mount found, skipping internal tmpfs, mount: %+v`, m)
 			return nil
 		}
 	}

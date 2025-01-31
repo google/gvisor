@@ -1804,6 +1804,55 @@ func (n *NetworkPacketInfo) StateLoad(ctx context.Context, stateSourceObject sta
 	stateSourceObject.Load(1, &n.IsForwardedPacket)
 }
 
+func (p *PacketMMapOpts) StateTypeName() string {
+	return "pkg/tcpip/stack.PacketMMapOpts"
+}
+
+func (p *PacketMMapOpts) StateFields() []string {
+	return []string{
+		"Req",
+		"IsRx",
+		"Cooked",
+		"Stack",
+		"Stats",
+		"Wq",
+		"NICID",
+		"NetProto",
+		"PacketEndpoint",
+	}
+}
+
+func (p *PacketMMapOpts) beforeSave() {}
+
+// +checklocksignore
+func (p *PacketMMapOpts) StateSave(stateSinkObject state.Sink) {
+	p.beforeSave()
+	stateSinkObject.Save(0, &p.Req)
+	stateSinkObject.Save(1, &p.IsRx)
+	stateSinkObject.Save(2, &p.Cooked)
+	stateSinkObject.Save(3, &p.Stack)
+	stateSinkObject.Save(4, &p.Stats)
+	stateSinkObject.Save(5, &p.Wq)
+	stateSinkObject.Save(6, &p.NICID)
+	stateSinkObject.Save(7, &p.NetProto)
+	stateSinkObject.Save(8, &p.PacketEndpoint)
+}
+
+func (p *PacketMMapOpts) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (p *PacketMMapOpts) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &p.Req)
+	stateSourceObject.Load(1, &p.IsRx)
+	stateSourceObject.Load(2, &p.Cooked)
+	stateSourceObject.Load(3, &p.Stack)
+	stateSourceObject.Load(4, &p.Stats)
+	stateSourceObject.Load(5, &p.Wq)
+	stateSourceObject.Load(6, &p.NICID)
+	stateSourceObject.Load(7, &p.NetProto)
+	stateSourceObject.Load(8, &p.PacketEndpoint)
+}
+
 func (lifetimes *AddressLifetimes) StateTypeName() string {
 	return "pkg/tcpip/stack.AddressLifetimes"
 }
@@ -2423,6 +2472,7 @@ func init() {
 	state.Register((*packetsPendingLinkResolution)(nil))
 	state.Register((*TransportEndpointID)(nil))
 	state.Register((*NetworkPacketInfo)(nil))
+	state.Register((*PacketMMapOpts)(nil))
 	state.Register((*AddressLifetimes)(nil))
 	state.Register((*UnicastSourceAndMulticastDestination)(nil))
 	state.Register((*DADConfigurations)(nil))

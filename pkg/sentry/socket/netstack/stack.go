@@ -184,7 +184,7 @@ func (s *Stack) SetInterface(ctx context.Context, msg *nlmsg.Message) *syserr.Er
 }
 
 func (s *Stack) setLink(ctx context.Context, id tcpip.NICID, linkAttrs map[uint16]nlmsg.BytesView) *syserr.Error {
-	// IFLA_NET_NS_FD has to be handled first, because other parameters may be reseted.
+	// IFLA_NET_NS_FD has to be handled first, because other parameters may be reset.
 	if v, ok := linkAttrs[linux.IFLA_NET_NS_FD]; ok {
 		fd, ok := v.Uint32()
 		if !ok {

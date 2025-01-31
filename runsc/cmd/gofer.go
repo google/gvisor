@@ -596,7 +596,7 @@ func shouldExposeNvidiaDevice(path string) bool {
 }
 
 // shouldExposeVfioDevice returns true if path refers to an VFIO device
-// which shuold be exposed to the container.
+// which should be exposed to the container.
 func shouldExposeVFIODevice(path string) bool {
 	return strings.HasPrefix(path, filepath.Dir(vfio.VFIOPath))
 }
