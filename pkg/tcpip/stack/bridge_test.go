@@ -17,6 +17,7 @@ package bridge_test
 import (
 	"os"
 	"testing"
+	"time"
 
 	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/refs"
@@ -240,7 +241,11 @@ func TestBridgeFDB(t *testing.T) {
 	// When forwarding the packet via the bridge device, the packet's
 	// source MAC address will be used as lookup key to the bridge
 	// FDB.
-	if e := bridgeEndpoint.FindFDBEntry(veth2.LinkAddress()); e.PortLinkAddress() != veth1.LinkAddress() {
+	var e stack.BridgeFDBEntry
+	start := time.Now()
+	for e = bridgeEndpoint.FindFDBEntry(veth2.LinkAddress()); len(e.PortLinkAddress()) == 0 && time.Since(start) < 30*time.Second; {
+	}
+	if e.PortLinkAddress() != veth1.LinkAddress() {
 		t.Fatalf("bridgeEndpoint.FindFDBEntry(%s) = %s, want = %s", veth2.LinkAddress(), e.PortLinkAddress(), veth1.LinkAddress())
 	}
 	// No FDB entry is expected for devices other than veth1.
