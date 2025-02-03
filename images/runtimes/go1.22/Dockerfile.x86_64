@@ -1,4 +1,4 @@
-FROM golang:1.22
+FROM golang:1.22.11
 
 # Compile the tests during build to save time during testing.
 ENV GOROOT=/usr/local/go
