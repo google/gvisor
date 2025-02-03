@@ -327,7 +327,8 @@ func (c *vCPU) SwitchToUser(switchOpts ring0.SwitchOpts, info *linux.SignalInfo)
 		return c.fault(int32(unix.SIGBUS), info)
 	case ring0.Vector(bounce): // ring0.VirtualizationException.
 		return hostarch.NoAccess, platform.ErrContextInterrupt
-	case ring0.El0SyncUndef:
+	case ring0.El0SyncUndef,
+		ring0.El0SyncInv:
 		return c.fault(int32(unix.SIGILL), info)
 	case ring0.El0SyncDbg:
 		*info = linux.SignalInfo{
