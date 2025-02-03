@@ -70,6 +70,7 @@ var (
 	waitForPid       = flag.Duration("delay-for-debugger", 0, "Print out the sandbox PID and wait for the specified duration to start the test. This is useful for attaching a debugger to the runsc-sandbox process.")
 	save             = flag.Bool("save", false, "enables save restore")
 	saveResume       = flag.Bool("save-resume", false, "enables save resume")
+	netstackSR       = flag.Bool("netstack-sr", false, "enables netstack s/r")
 )
 
 const (
@@ -406,6 +407,9 @@ func runRunsc(tc *gtest.TestCase, spec *specs.Spec) error {
 
 		// Create the state file.
 		if *save || *saveResume {
+			if *netstackSR {
+				args = append(args, "--TESTONLY-save-restore-netstack=true")
+			}
 			saveArgs = args
 			args, dirs, err = prepareSave(args, undeclaredOutputsDir, dirs, 0)
 			if err != nil {
