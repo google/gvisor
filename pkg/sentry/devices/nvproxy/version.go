@@ -839,7 +839,24 @@ func Init() {
 		}
 
 		v560_35_03 := addDriverABI(560, 35, 03, "f2932c92fadd43c5b2341be453fc4f73f0ad7185c26bb7a43fbde81ae29f1fe3", v560_28_03)
-		_ = addDriverABI(565, 57, 01, "6eebe94e585e385e8804f5a74152df414887bf819cc21bd95b72acd0fb182c7a", v560_35_03)
+		v565_57_01 := addDriverABI(565, 57, 01, "6eebe94e585e385e8804f5a74152df414887bf819cc21bd95b72acd0fb182c7a", v560_35_03)
+
+		_ = addDriverABI(570, 86, 15, "87709c19c7401243136bc0ec9e7f147c6803070a11449ae8f0819dee7963f76b", func() *driverABI {
+			abi := v565_57_01()
+			abi.allocationClass[nvgpu.TURING_CHANNEL_GPFIFO_A] = allocHandler(rmAllocChannelV570, compUtil)
+			abi.allocationClass[nvgpu.AMPERE_CHANNEL_GPFIFO_A] = allocHandler(rmAllocChannelV570, compUtil)
+			abi.allocationClass[nvgpu.HOPPER_CHANNEL_GPFIFO_A] = allocHandler(rmAllocChannelV570, compUtil)
+
+			prevStructs := abi.getStructs
+			abi.getStructs = func() *driverABIStructs {
+				structs := prevStructs()
+				structs.allocationStructs[nvgpu.TURING_CHANNEL_GPFIFO_A] = driverStructWithName(nvgpu.NV_CHANNEL_ALLOC_PARAMS_V570{}, "NV_CHANNEL_ALLOC_PARAMS")
+				structs.allocationStructs[nvgpu.AMPERE_CHANNEL_GPFIFO_A] = driverStructWithName(nvgpu.NV_CHANNEL_ALLOC_PARAMS_V570{}, "NV_CHANNEL_ALLOC_PARAMS")
+				structs.allocationStructs[nvgpu.HOPPER_CHANNEL_GPFIFO_A] = driverStructWithName(nvgpu.NV_CHANNEL_ALLOC_PARAMS_V570{}, "NV_CHANNEL_ALLOC_PARAMS")
+				return structs
+			}
+			return abi
+		})
 	})
 }
 

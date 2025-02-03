@@ -361,6 +361,16 @@ type NV_CHANNEL_ALLOC_PARAMS struct {
 	HmacNonce           [CC_CHAN_ALLOC_NONCE_SIZE_DWORD]uint32
 }
 
+// NV_CHANNEL_ALLOC_PARAMS_V570 is the updated version of
+// NV_CHANNEL_ALLOC_PARAMS since 570.86.15.
+//
+// +marshal
+type NV_CHANNEL_ALLOC_PARAMS_V570 struct {
+	NV_CHANNEL_ALLOC_PARAMS
+	TPCConfigID uint32
+	_           uint32
+}
+
 // NVB0B5_ALLOCATION_PARAMETERS is the alloc param type for TURING_DMA_COPY_A,
 // AMPERE_DMA_COPY_A, and AMPERE_DMA_COPY_B from
 // src/common/sdk/nvidia/inc/class/clb0b5sw.h.
