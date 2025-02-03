@@ -63,7 +63,7 @@ import (
 const keySize = 32
 
 // stateFileChunkSize is the chunk size used to read/write the state file.
-const stateFileChunkSize = 1024 * 1024
+const stateFileChunkSize = 2 * 1024 * 1024
 
 // maxMetadataSize is the size limit of metadata section.
 const maxMetadataSize = 16 * 1024 * 1024
