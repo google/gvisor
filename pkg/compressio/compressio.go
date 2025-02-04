@@ -300,6 +300,16 @@ func (p *pool) stop() {
 	for i := 0; i < len(p.workers); i++ {
 		close(p.workers[i].input)
 	}
+	// Wait for all workers to finish since p.schedule(c=nil) may have returned
+	// early if any worker emitted an error.
+	if len(p.workers) != 0 {
+		for p.nextOutput < p.nextInput {
+			handleResult(<-p.workers[(p.nextOutput+1)%len(p.workers)].output, func(*chunk) error {
+				return nil
+			})
+			p.nextOutput++
+		}
+	}
 	p.workers = nil
 	p.hashPool = nil
 }
