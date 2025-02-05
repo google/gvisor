@@ -128,8 +128,9 @@ log_level = "debug"
     file-access = "shared"
 EOF
 
-# Configure CNI.
-(cd "${GOPATH}" && src/github.com/containerd/containerd/script/setup/install-cni)
+# Configure CNI, install-cni depends on go.mod to determine the version
+# of github.com/containernetworking/plugins for CNI.
+(cd "${GOPATH}"/src/github.com/containerd/containerd/ && ./script/setup/install-cni)
 tee /etc/cni/net.d/10-bridge.conf <<EOF
 {
   "cniVersion": "0.3.1",
