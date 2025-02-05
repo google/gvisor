@@ -185,7 +185,8 @@ type TpacketHdr struct {
 	TpMac     uint16
 	TpNet     uint16
 	TpSec     uint32
-	TpUsec    uint32 `marshal:"unaligned"`
+	TpUsec    uint32
+	_         [4]byte
 }
 
 // TpacketAlignment is the alignment of a frame in a packet_mmap ring buffer
@@ -202,7 +203,7 @@ const (
 
 // TPACKET_HDRLEN is the length of a TpacketHdr from <linux/if_packet.h>.
 var (
-	TPACKET_HDRLEN = TPacketAlign(uint32((*TpacketHdr)(nil).SizeBytes()) + uint32((*SockAddrLink)(nil).SizeBytes()))
+	TPACKET_HDRLEN = TPacketAlign(uint32((*TpacketHdr)(nil).SizeBytes())) + uint32((*SockAddrLink)(nil).SizeBytes())
 )
 
 // TPacketAlign aligns a value to the alignment of a TPacket.

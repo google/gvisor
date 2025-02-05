@@ -1596,6 +1596,28 @@ cc_binary(
 )
 
 cc_binary(
+    name = "packet_mmap_test",
+    testonly = 1,
+    srcs = ["packet_mmap.cc"],
+    linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
+    deps = select_gtest() + [
+        ":ip_socket_test_util",
+        "//test/util:capability_util",
+        "//test/util:cleanup",
+        "//test/util:file_descriptor",
+        "//test/util:logging",
+        "//test/util:posix_error",
+        "//test/util:socket_util",
+        "//test/util:test_util",
+        "//test/util:thread_util",
+        "@com_google_absl//absl/log",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/time",
+    ],
+)
+
+cc_binary(
     name = "pty_test",
     testonly = 1,
     srcs = ["pty.cc"],
