@@ -66,6 +66,7 @@ type Endpoint struct {
 	mode      ringBufferMode
 	nicID     tcpip.NICID
 	netProto  tcpip.NetworkProtocolNumber
+	version   int
 	headerLen uint32
 
 	stack *stack.Stack
@@ -88,7 +89,15 @@ func (m *Endpoint) Init(ctx context.Context, opts stack.PacketMMapOpts) error {
 	m.stats = opts.Stats
 	m.nicID = opts.NICID
 	m.netProto = opts.NetProto
-	m.headerLen = linux.TPACKET_HDRLEN
+	m.version = opts.Version
+	switch m.version {
+	case linux.TPACKET_V1:
+		m.headerLen = linux.TPACKET_HDRLEN
+	case linux.TPACKET_V2:
+		m.headerLen = linux.TPACKET2_HDRLEN
+	default:
+		panic(fmt.Sprintf("invalid version %d supplied to InitPacketMMap", m.version))
+	}
 	if opts.Req.TpBlockNr != 0 {
 		if opts.Req.TpBlockSize <= 0 {
 			return linuxerr.EINVAL
@@ -378,22 +387,43 @@ func (m *Endpoint) marshalSockAddr(pkt *stack.PacketBuffer, view *buffer.View) {
 		hdr := header.Ethernet(pkt.LinkHeader().Slice())
 		copy(sll.HardwareAddr[:], hdr.SourceAddress())
 	}
-	hdrSize := uint32((*linux.TpacketHdr)(nil).SizeBytes())
+	var hdrSize uint32
+	if m.version == linux.TPACKET_V2 {
+		hdrSize = uint32((*linux.Tpacket2Hdr)(nil).SizeBytes())
+	} else {
+		hdrSize = uint32((*linux.TpacketHdr)(nil).SizeBytes())
+	}
 	sll.MarshalBytes(view.AsSlice()[linux.TPacketAlign(hdrSize):])
 }
 
 func (m *Endpoint) marshalFrameHeader(pktBuf buffer.Buffer, macOffset, netOffset, dataLength uint32, view *buffer.View) {
 	t := m.stack.Clock().Now()
-	hdr := linux.TpacketHdr{
-		// The status is set separately to ensure the frame is written before the
-		// status is set.
-		TpStatus:  linux.TP_STATUS_KERNEL,
-		TpLen:     uint32(pktBuf.Size()),
-		TpSnaplen: dataLength,
-		TpMac:     uint16(macOffset),
-		TpNet:     uint16(netOffset),
-		TpSec:     uint32(t.Unix()),
-		TpUsec:    uint32(t.UnixMicro() % 1e6),
+	switch m.version {
+	case linux.TPACKET_V1:
+		hdr := linux.TpacketHdr{
+			// The status is set separately to ensure the frame is written before the
+			// status is set.
+			TpStatus:  linux.TP_STATUS_KERNEL,
+			TpLen:     uint32(pktBuf.Size()),
+			TpSnaplen: dataLength,
+			TpMac:     uint16(macOffset),
+			TpNet:     uint16(netOffset),
+			TpSec:     uint32(t.Unix()),
+			TpUsec:    uint32(t.UnixMicro() % 1e6),
+		}
+		hdr.MarshalBytes(view.AsSlice())
+	case linux.TPACKET_V2:
+		hdr := linux.Tpacket2Hdr{
+			TpStatus:  linux.TP_STATUS_KERNEL,
+			TpLen:     uint32(pktBuf.Size()),
+			TpSnaplen: dataLength,
+			TpMac:     uint16(macOffset),
+			TpNet:     uint16(netOffset),
+			TpSec:     uint32(t.Unix()),
+			TpNSec:    uint32(t.UnixNano() % 1e9),
+		}
+		hdr.MarshalBytes(view.AsSlice())
+	default:
+		panic(fmt.Sprintf("invalid version %d supplied to HandlePacket", m.version))
 	}
-	hdr.MarshalBytes(view.AsSlice())
 }

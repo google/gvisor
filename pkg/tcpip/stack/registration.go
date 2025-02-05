@@ -208,6 +208,7 @@ type PacketMMapOpts struct {
 	NICID          tcpip.NICID
 	NetProto       tcpip.NetworkProtocolNumber
 	PacketEndpoint MappablePacketEndpoint
+	Version        int
 }
 
 // PacketMMapEndpoint is the interface implemented by endpoints to handle memory

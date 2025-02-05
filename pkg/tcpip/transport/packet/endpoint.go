@@ -36,6 +36,13 @@ import (
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
+type tpacketVersion int
+
+const (
+	tpacketVersion1 tpacketVersion = iota
+	tpacketVersion2
+)
+
 var _ stack.MappablePacketEndpoint = (*endpoint)(nil)
 
 // +stateify savable
@@ -96,6 +103,7 @@ type endpoint struct {
 
 	packetMmapRxConfig *tcpip.TpacketReq
 	packetMmapTxConfig *tcpip.TpacketReq
+	packetMMapVersion  tpacketVersion
 	packetMMapEp       stack.PacketMMapEndpoint
 }
 
@@ -391,8 +399,24 @@ func (ep *endpoint) SetSockOpt(opt tcpip.SettableSocketOption) tcpip.Error {
 }
 
 // SetSockOptInt implements tcpip.Endpoint.SetSockOptInt.
-func (*endpoint) SetSockOptInt(tcpip.SockOptInt, int) tcpip.Error {
-	return &tcpip.ErrUnknownProtocolOption{}
+func (ep *endpoint) SetSockOptInt(opt tcpip.SockOptInt, v int) tcpip.Error {
+	switch opt {
+	case tcpip.PacketMMapVersionOption:
+		// We support up to TPACKET_V2.
+		version := tpacketVersion(v)
+		switch version {
+		case tpacketVersion1, tpacketVersion2:
+			if ep.packetMMapEp != nil {
+				return &tcpip.ErrEndpointBusy{}
+			}
+			ep.packetMMapVersion = version
+			return nil
+		default:
+			return &tcpip.ErrInvalidOptionValue{}
+		}
+	default:
+		return &tcpip.ErrUnknownProtocolOption{}
+	}
 }
 
 func (ep *endpoint) LastError() tcpip.Error {
@@ -544,6 +568,7 @@ func (ep *endpoint) GetPacketMMapOpts(req *tcpip.TpacketReq, isRx bool) stack.Pa
 		NICID:          ep.boundNIC,
 		NetProto:       ep.boundNetProto,
 		PacketEndpoint: ep,
+		Version:        int(ep.packetMMapVersion),
 	}
 }
 

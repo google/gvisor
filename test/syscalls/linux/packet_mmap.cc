@@ -46,7 +46,10 @@ namespace testing {
 namespace {
 
 PosixErrorOr<void*> MakePacketMmapRing(int fd, const sockaddr* bind_addr,
-                                       int bind_addr_size, tpacket_req* req) {
+                                       int bind_addr_size, tpacket_req* req,
+                                       int version = TPACKET_V1) {
+  RETURN_ERROR_IF_SYSCALL_FAIL(
+      setsockopt(fd, SOL_PACKET, PACKET_VERSION, &version, sizeof(version)));
   RETURN_ERROR_IF_SYSCALL_FAIL(
       setsockopt(fd, SOL_PACKET, PACKET_RX_RING, req, sizeof(*req)));
   RETURN_ERROR_IF_SYSCALL_FAIL(bind(fd, bind_addr, bind_addr_size));
@@ -461,6 +464,81 @@ TEST(PacketMmapTest, MmapCopy) {
   EXPECT_EQ(hdr->tp_status & (TP_STATUS_USER | TP_STATUS_COPY),
             TP_STATUS_USER | TP_STATUS_COPY);
   EXPECT_EQ(hdr->tp_snaplen, tp_frame_size - hdr->tp_mac);
+}
+
+TEST(PacketMmapTest, SetVersion) {
+  if (!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW))) {
+    ASSERT_THAT(socket(AF_PACKET, SOCK_RAW, 0), SyscallFailsWithErrno(EPERM));
+    GTEST_SKIP() << "Missing packet socket capability";
+  }
+  FileDescriptor mmap_sock =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_PACKET, SOCK_DGRAM, 0));
+
+  int version = TPACKET_V2;
+  EXPECT_THAT(setsockopt(mmap_sock.get(), SOL_PACKET, PACKET_VERSION, &version,
+                         sizeof(version)),
+              SyscallSucceeds());
+  version = TPACKET_V1;
+  EXPECT_THAT(setsockopt(mmap_sock.get(), SOL_PACKET, PACKET_VERSION, &version,
+                         sizeof(version)),
+              SyscallSucceeds());
+  version = TPACKET_V3;
+  EXPECT_THAT(setsockopt(mmap_sock.get(), SOL_PACKET, PACKET_VERSION, &version,
+                         sizeof(version)),
+              SyscallFailsWithErrno(EINVAL));
+  version = TPACKET_V1 + 100;
+  EXPECT_THAT(setsockopt(mmap_sock.get(), SOL_PACKET, PACKET_VERSION, &version,
+                         sizeof(version)),
+              SyscallFailsWithErrno(EINVAL));
+}
+
+TEST(PacketMmapTest, BasicV2) {
+  if (!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW))) {
+    ASSERT_THAT(socket(AF_PACKET, SOCK_RAW, 0), SyscallFailsWithErrno(EPERM));
+    GTEST_SKIP() << "Missing packet socket capability";
+  }
+  sockaddr_ll bind_addr = {
+      .sll_family = AF_PACKET,
+      .sll_protocol = htons(ETH_P_IP),
+      .sll_ifindex = ASSERT_NO_ERRNO_AND_VALUE(GetLoopbackIndex()),
+      .sll_halen = ETH_ALEN,
+  };
+  FileDescriptor mmap_sock =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_PACKET, SOCK_DGRAM, 0));
+
+  uint32_t tp_frame_size = 65536 + 128;
+  uint32_t tp_block_size = tp_frame_size * 32;
+  uint32_t tp_block_nr = 2;
+  uint32_t tp_frame_nr = (tp_block_size * tp_block_nr) / tp_frame_size;
+  tpacket_req req = {
+      .tp_block_size = tp_block_size,
+      .tp_block_nr = tp_block_nr,
+      .tp_frame_size = tp_frame_size,
+      .tp_frame_nr = tp_frame_nr,
+  };
+  void* ring = ASSERT_NO_ERRNO_AND_VALUE(MakePacketMmapRing(
+      mmap_sock.get(), reinterpret_cast<const sockaddr*>(&bind_addr),
+      sizeof(bind_addr), &req, TPACKET_V2));
+  auto ring_cleanup = Cleanup([ring, tp_block_size, tp_block_nr] {
+    ASSERT_THAT(munmap(ring, tp_block_size * tp_block_nr), SyscallSucceeds());
+  });
+
+  std::string kMessage = "123abc";
+  ASSERT_THAT(
+      sendto(mmap_sock.get(), kMessage.c_str(), kMessage.size(), 0 /* flags */,
+             reinterpret_cast<const sockaddr*>(&bind_addr), sizeof(bind_addr)),
+      SyscallSucceeds());
+
+  tpacket2_hdr* hdr = reinterpret_cast<tpacket2_hdr*>(ring);
+  struct pollfd pollset;
+  pollset.fd = mmap_sock.get();
+  pollset.revents = 0;
+  pollset.events = POLLIN | POLLRDNORM | POLLERR;
+  ASSERT_THAT(poll(&pollset, 1, -1), SyscallSucceeds());
+  EXPECT_EQ(hdr->tp_status & TP_STATUS_USER, 1);
+  EXPECT_EQ(hdr->tp_len, kMessage.size());
+  EXPECT_EQ(hdr->tp_snaplen, kMessage.size());
+  EXPECT_STREQ((char*)(hdr) + hdr->tp_net, kMessage.c_str());
 }
 
 }  // namespace

@@ -2749,8 +2749,13 @@ func setSockOptPacket(t *kernel.Task, s socket.Socket, ep commonEndpoint, name i
 		} else {
 			return syserr.ErrNotSupported
 		}
+		return nil
+	case linux.PACKET_VERSION:
+		v := hostarch.ByteOrder.Uint32(optVal)
+		return syserr.TranslateNetstackError(ep.SetSockOptInt(tcpip.PacketMMapVersionOption, int(v)))
+	default:
+		return syserr.ErrNotSupported
 	}
-	return nil
 }
 
 // GetSockName implements the linux syscall getsockname(2) for sockets backed by
