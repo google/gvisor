@@ -79,5 +79,4 @@ py_test(
     ],
     data = [":vdso"],
     main = "check_vdso.py",
-    python_version = "PY3",
 )
