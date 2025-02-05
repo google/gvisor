@@ -1028,7 +1028,8 @@ func (e *Endpoint) sendRaw(pkt *stack.PacketBuffer, flags header.TCPFlags, seq, 
 	options := e.makeOptions(sackBlocks)
 	defer putOptions(options)
 	hdrSize := header.TCPMinimumSize + int(e.route.MaxHeaderLength()) + len(options)
-	if e.route.NetProto() == header.IPv6ProtocolNumber && e.getExperimentOptionValue(e.route) != 0 {
+	expOptVal := e.getExperimentOptionValue(e.route)
+	if e.route.NetProto() == header.IPv6ProtocolNumber && expOptVal != 0 {
 		hdrSize += header.IPv6ExperimentHdrLength
 	}
 	pkt.ReserveHeaderBytes(hdrSize)
@@ -1042,7 +1043,7 @@ func (e *Endpoint) sendRaw(pkt *stack.PacketBuffer, flags header.TCPFlags, seq, 
 		rcvWnd:    rcvWnd,
 		opts:      options,
 		df:        e.pmtud == tcpip.PMTUDiscoveryWant || e.pmtud == tcpip.PMTUDiscoveryDo,
-		expOptVal: e.getExperimentOptionValue(e.route),
+		expOptVal: expOptVal,
 	}, pkt, e.gso)
 }
 
