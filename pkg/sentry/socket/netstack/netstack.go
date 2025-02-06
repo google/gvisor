@@ -2745,10 +2745,12 @@ func setSockOptPacket(t *kernel.Task, s socket.Socket, ep commonEndpoint, name i
 				pme = &packetmmap.Endpoint{}
 			}
 			opts := ep.GetPacketMMapOpts(&req, true /* isRx */)
-			if err := pme.Init(t, opts); err != nil {
-				return syserr.FromError(err)
+			if opts.Req.TpFrameNr != 0 || opts.Req.TpBlockNr != 0 {
+				if err := pme.Init(t, opts); err != nil {
+					return syserr.FromError(err)
+				}
+				ep.SetPacketMMapEndpoint(pme)
 			}
-			ep.SetPacketMMapEndpoint(pme)
 		} else {
 			return syserr.ErrNotSupported
 		}

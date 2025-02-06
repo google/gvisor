@@ -257,6 +257,32 @@ TEST(PacketMmapTest, FillBlocks) {
   EXPECT_STREQ((char*)(hdr) + hdr->tp_net, kNewMessage.c_str());
 }
 
+TEST(PacketMmapTest, ZeroSizeRing) {
+  if (!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW))) {
+    ASSERT_THAT(socket(AF_PACKET, SOCK_RAW, 0), SyscallFailsWithErrno(EPERM));
+    GTEST_SKIP() << "Missing packet socket capability";
+  }
+  sockaddr_ll bind_addr = {
+      .sll_family = AF_PACKET,
+      .sll_protocol = htons(ETH_P_IP),
+      .sll_ifindex = ASSERT_NO_ERRNO_AND_VALUE(GetLoopbackIndex()),
+      .sll_halen = ETH_ALEN,
+  };
+  FileDescriptor mmap_sock =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_PACKET, SOCK_DGRAM, 0));
+
+  tpacket_req req = {};
+  ASSERT_NO_ERRNO_AND_VALUE(MakePacketMmapRing(
+      mmap_sock.get(), reinterpret_cast<const sockaddr*>(&bind_addr),
+      sizeof(bind_addr), &req));
+
+  std::string kMessage = "123abc";
+  ASSERT_THAT(
+      sendto(mmap_sock.get(), kMessage.c_str(), kMessage.size(), 0 /* flags */,
+             reinterpret_cast<const sockaddr*>(&bind_addr), sizeof(bind_addr)),
+      SyscallSucceeds());
+}
+
 TEST(PacketMmapTest, ConcurrentReadWrite) {
   if (!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW))) {
     ASSERT_THAT(socket(AF_PACKET, SOCK_RAW, 0), SyscallFailsWithErrno(EPERM));
