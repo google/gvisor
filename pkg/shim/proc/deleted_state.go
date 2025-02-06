@@ -20,7 +20,7 @@ import (
 	"fmt"
 
 	"github.com/containerd/console"
-	"github.com/containerd/containerd/errdefs"
+	"github.com/containerd/errdefs"
 	runc "github.com/containerd/go-runc"
 	"gvisor.dev/gvisor/pkg/shim/extension"
 )

@@ -19,7 +19,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/containerd/containerd/errdefs"
+	"github.com/containerd/errdefs"
 	runc "github.com/containerd/go-runc"
 	"golang.org/x/sys/unix"
 

@@ -27,10 +27,10 @@ import (
 
 	"github.com/containerd/console"
 
-	"github.com/containerd/containerd/errdefs"
 	"github.com/containerd/containerd/log"
 	"github.com/containerd/containerd/mount"
 	"github.com/containerd/containerd/pkg/stdio"
+	"github.com/containerd/errdefs"
 
 	"github.com/containerd/fifo"
 	runc "github.com/containerd/go-runc"

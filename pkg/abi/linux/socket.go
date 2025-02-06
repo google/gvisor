@@ -147,6 +147,7 @@ const (
 // Packet socket options from <linux/if_packet.h>
 const (
 	PACKET_RX_RING = 5
+	PACKET_VERSION = 10
 )
 
 // Statuses for a frame in a packet_mmap ring buffer from <linux/if_packet.h>.
@@ -185,7 +186,25 @@ type TpacketHdr struct {
 	TpMac     uint16
 	TpNet     uint16
 	TpSec     uint32
-	TpUsec    uint32 `marshal:"unaligned"`
+	TpUsec    uint32
+	_         [4]byte
+}
+
+// Tpacket2Hdr is the header for a frame in a packet_mmap ring buffer from
+// <linux/if_packet.h>.
+//
+// +marshal
+type Tpacket2Hdr struct {
+	TpStatus   uint32
+	TpLen      uint32
+	TpSnaplen  uint32
+	TpMac      uint16
+	TpNet      uint16
+	TpSec      uint32
+	TpNSec     uint32
+	TpVlanTci  uint16
+	TpVlanTpid uint16
+	_          [4]uint8
 }
 
 // TpacketAlignment is the alignment of a frame in a packet_mmap ring buffer
@@ -197,12 +216,17 @@ const (
 // TPACKET_V1 is the version of a packet_mmap ring buffer from
 // <linux/if_packet.h> that is implemented in gVisor.
 const (
+	// TPACKET_V1 is the default version of PACKET_MMAP.
 	TPACKET_V1 = iota
+	// TPACKET_V2 is the version of PACKET_MMAP for tpacket2_hdr.
+	TPACKET_V2
 )
 
-// TPACKET_HDRLEN is the length of a TpacketHdr from <linux/if_packet.h>.
 var (
+	// TPACKET_HDRLEN is the length of a TpacketHdr from <linux/if_packet.h>.
 	TPACKET_HDRLEN = TPacketAlign(uint32((*TpacketHdr)(nil).SizeBytes()) + uint32((*SockAddrLink)(nil).SizeBytes()))
+	// TPACKET2_HDRLEN is the length of a Tpacket2Hdr from <linux/if_packet.h>.
+	TPACKET2_HDRLEN = TPacketAlign(uint32((*Tpacket2Hdr)(nil).SizeBytes()) + uint32((*SockAddrLink)(nil).SizeBytes()))
 )
 
 // TPacketAlign aligns a value to the alignment of a TPacket.
