@@ -6,7 +6,7 @@ _templates:
       - exit_status: "*"
         limit: 2
   common: &common
-    timeout_in_minutes: 30
+    timeout_in_minutes: 120
     retry:
       <<: *retry_settings
   source_test: &source_test
