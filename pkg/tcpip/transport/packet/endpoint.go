@@ -101,10 +101,10 @@ type endpoint struct {
 	// +checklocks:lastErrorMu
 	lastError tcpip.Error
 
-	packetMmapRxConfig *tcpip.TpacketReq
-	packetMmapTxConfig *tcpip.TpacketReq
-	packetMMapVersion  tpacketVersion
-	packetMMapEp       stack.PacketMMapEndpoint
+	// +checklocks:mu
+	packetMMapVersion tpacketVersion
+	// +checklocks:mu
+	packetMMapEp stack.PacketMMapEndpoint
 }
 
 // NewEndpoint returns a new packet endpoint.
@@ -367,9 +367,11 @@ func (ep *endpoint) Readiness(mask waiter.EventMask) waiter.EventMask {
 
 	// Determine whether the endpoint is readable.
 	if (mask & waiter.ReadableEvents) != 0 {
+		ep.mu.RLock()
 		if ep.packetMMapEp != nil {
 			result |= ep.packetMMapEp.Readiness(mask)
 		}
+		ep.mu.RUnlock()
 		ep.rcvMu.Lock()
 		if !ep.rcvList.Empty() || ep.rcvClosed {
 			result |= waiter.ReadableEvents
@@ -400,6 +402,8 @@ func (ep *endpoint) SetSockOpt(opt tcpip.SettableSocketOption) tcpip.Error {
 
 // SetSockOptInt implements tcpip.Endpoint.SetSockOptInt.
 func (ep *endpoint) SetSockOptInt(opt tcpip.SockOptInt, v int) tcpip.Error {
+	ep.mu.Lock()
+	defer ep.mu.Unlock()
 	switch opt {
 	case tcpip.PacketMMapVersionOption:
 		// We support up to TPACKET_V2.
@@ -460,6 +464,8 @@ func (ep *endpoint) GetSockOptInt(opt tcpip.SockOptInt) (int, tcpip.Error) {
 
 // handlePacket implements stack.PacketEndpoint.HandlePacket
 func (ep *endpoint) HandlePacket(nicID tcpip.NICID, netProto tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
+	ep.mu.RLock()
+	defer ep.mu.RUnlock()
 	if ep.packetMMapEp != nil {
 		ep.packetMMapEp.HandlePacket(nicID, netProto, pkt)
 		return
@@ -575,11 +581,15 @@ func (ep *endpoint) GetPacketMMapOpts(req *tcpip.TpacketReq, isRx bool) stack.Pa
 // SetPacketMMapEndpoint implements
 // stack.MappablePacketEndpoint.SetPacketMMapEndpoint.
 func (ep *endpoint) SetPacketMMapEndpoint(m stack.PacketMMapEndpoint) {
+	ep.mu.Lock()
+	defer ep.mu.Unlock()
 	ep.packetMMapEp = m
 }
 
 // GetPacketMMapEndpoint implements
 // stack.MappablePacketEndpoint.GetPacketMMapEndpoint.
 func (ep *endpoint) GetPacketMMapEndpoint() stack.PacketMMapEndpoint {
+	ep.mu.RLock()
+	defer ep.mu.RUnlock()
 	return ep.packetMMapEp
 }
