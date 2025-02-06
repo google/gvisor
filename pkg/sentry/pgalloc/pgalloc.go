@@ -43,6 +43,7 @@ const pagesPerHugePage = hostarch.HugePageSize / hostarch.PageSize
 // MemoryFile is a memmap.File whose pages may be allocated to arbitrary
 // users.
 type MemoryFile struct {
+	memmap.DefaultMemoryType
 	memmap.NoBufferedIOFallback
 
 	// MemoryFile owns a single backing file. Each page in the backing file is
