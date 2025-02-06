@@ -2721,6 +2721,9 @@ func setSockOptPacket(t *kernel.Task, s socket.Socket, ep commonEndpoint, name i
 	switch name {
 	case linux.PACKET_RX_RING:
 		var tpacketReq linux.TpacketReq
+		if len(optVal) < tpacketReq.SizeBytes() {
+			return syserr.ErrInvalidArgument
+		}
 		tpacketReq.UnmarshalBytes(optVal)
 		req := tcpip.TpacketReq{
 			TpBlockSize: tpacketReq.TpBlockSize,
@@ -2751,6 +2754,9 @@ func setSockOptPacket(t *kernel.Task, s socket.Socket, ep commonEndpoint, name i
 		}
 		return nil
 	case linux.PACKET_VERSION:
+		if len(optVal) < sizeOfInt32 {
+			return syserr.ErrInvalidArgument
+		}
 		v := hostarch.ByteOrder.Uint32(optVal)
 		return syserr.TranslateNetstackError(ep.SetSockOptInt(tcpip.PacketMMapVersionOption, int(v)))
 	default:
