@@ -22,6 +22,7 @@ import (
 	"gvisor.dev/gvisor/pkg/bitmap"
 	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
@@ -59,13 +60,21 @@ type ringBuffer struct {
 // The owning endpoint must be locked when calling this function.
 func (rb *ringBuffer) init(ctx context.Context, req *tcpip.TpacketReq) error {
 	rb.blockSize = req.TpBlockSize
-	rb.framesPerBlock = req.TpBlockSize / req.TpFrameSize
 	rb.frameMax = req.TpFrameNr - 1
 	rb.frameSize = req.TpFrameSize
 	rb.numBlocks = req.TpBlockNr
 
 	rb.rxOwnerMap = bitmap.New(req.TpFrameNr)
 	rb.head = 0
+	if req.TpBlockNr > 0 {
+		rb.framesPerBlock = req.TpBlockSize / req.TpFrameSize
+		if rb.framesPerBlock == 0 {
+			return linuxerr.EINVAL
+		}
+		if rb.framesPerBlock*req.TpBlockNr != req.TpFrameNr {
+			return linuxerr.EINVAL
+		}
+	}
 
 	rb.dataMu.Lock()
 	defer rb.dataMu.Unlock()
