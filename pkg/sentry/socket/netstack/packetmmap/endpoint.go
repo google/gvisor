@@ -53,17 +53,24 @@ const (
 //
 // +stateify savable
 type Endpoint struct {
-	// mu protects specific fields within ringBuffer, see the ringBuffer
-	// type for more details.
+	// mu protects specific fields within ringBuffer in addition to those marked
+	// with checklocks annotations in Endpoint. See the ringBuffer type for more
+	// details. The lock order for the ring buffers is:
+	//
+	//	mu
+	//	  rxRingBuffer.dataMu
+	//	  txRingBuffer.dataMu
 	mu           sync.Mutex `state:"nosave"`
 	rxRingBuffer ringBuffer
 	txRingBuffer ringBuffer
 
 	mapped atomicbitops.Uint32
 
+	// +checklocks:mu
+	mode ringBufferMode
+
 	cooked    bool
 	packetEP  stack.MappablePacketEndpoint
-	mode      ringBufferMode
 	nicID     tcpip.NICID
 	netProto  tcpip.NetworkProtocolNumber
 	version   int
@@ -82,6 +89,8 @@ type Endpoint struct {
 // during setsockopt(PACKET_(RX|TX)_RING) with the options retrieved from its
 // corresponding packet socket.
 func (m *Endpoint) Init(ctx context.Context, opts stack.PacketMMapOpts) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.stack = opts.Stack
 	m.wq = opts.Wq
 	m.cooked = opts.Cooked
@@ -302,6 +311,8 @@ func (*Endpoint) InvalidateUnsavable(context.Context) error {
 
 // Translate implements memmap.Mappable.Translate.
 func (m *Endpoint) Translate(ctx context.Context, required, optional memmap.MappableRange, at hostarch.AccessType) ([]memmap.Translation, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	translationSize := 0
 	if m.mode&rxRingBuffer != 0 {
 		translationSize++
@@ -336,6 +347,8 @@ func (m *Endpoint) Translate(ctx context.Context, required, optional memmap.Mapp
 
 // ConfigureMMap implements vfs.FileDescriptionImpl.ConfigureMMap.
 func (m *Endpoint) ConfigureMMap(ctx context.Context, opts *memmap.MMapOpts) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if opts.Offset != 0 {
 		return linuxerr.EINVAL
 	}
