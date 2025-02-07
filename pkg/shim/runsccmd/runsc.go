@@ -28,8 +28,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/containerd/containerd/log"
 	runc "github.com/containerd/go-runc"
+	"github.com/containerd/log"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
 )
