@@ -17,9 +17,10 @@ func (m *Endpoint) StateFields() []string {
 		"rxRingBuffer",
 		"txRingBuffer",
 		"mapped",
+		"mode",
 		"cooked",
 		"packetEP",
-		"mode",
+		"reserve",
 		"nicID",
 		"netProto",
 		"version",
@@ -39,17 +40,18 @@ func (m *Endpoint) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &m.rxRingBuffer)
 	stateSinkObject.Save(1, &m.txRingBuffer)
 	stateSinkObject.Save(2, &m.mapped)
-	stateSinkObject.Save(3, &m.cooked)
-	stateSinkObject.Save(4, &m.packetEP)
-	stateSinkObject.Save(5, &m.mode)
-	stateSinkObject.Save(6, &m.nicID)
-	stateSinkObject.Save(7, &m.netProto)
-	stateSinkObject.Save(8, &m.version)
-	stateSinkObject.Save(9, &m.headerLen)
-	stateSinkObject.Save(10, &m.stack)
-	stateSinkObject.Save(11, &m.stats)
-	stateSinkObject.Save(12, &m.wq)
-	stateSinkObject.Save(13, &m.mappings)
+	stateSinkObject.Save(3, &m.mode)
+	stateSinkObject.Save(4, &m.cooked)
+	stateSinkObject.Save(5, &m.packetEP)
+	stateSinkObject.Save(6, &m.reserve)
+	stateSinkObject.Save(7, &m.nicID)
+	stateSinkObject.Save(8, &m.netProto)
+	stateSinkObject.Save(9, &m.version)
+	stateSinkObject.Save(10, &m.headerLen)
+	stateSinkObject.Save(11, &m.stack)
+	stateSinkObject.Save(12, &m.stats)
+	stateSinkObject.Save(13, &m.wq)
+	stateSinkObject.Save(14, &m.mappings)
 }
 
 func (m *Endpoint) afterLoad(context.Context) {}
@@ -59,17 +61,18 @@ func (m *Endpoint) StateLoad(ctx context.Context, stateSourceObject state.Source
 	stateSourceObject.Load(0, &m.rxRingBuffer)
 	stateSourceObject.Load(1, &m.txRingBuffer)
 	stateSourceObject.Load(2, &m.mapped)
-	stateSourceObject.Load(3, &m.cooked)
-	stateSourceObject.Load(4, &m.packetEP)
-	stateSourceObject.Load(5, &m.mode)
-	stateSourceObject.Load(6, &m.nicID)
-	stateSourceObject.Load(7, &m.netProto)
-	stateSourceObject.Load(8, &m.version)
-	stateSourceObject.Load(9, &m.headerLen)
-	stateSourceObject.Load(10, &m.stack)
-	stateSourceObject.Load(11, &m.stats)
-	stateSourceObject.Load(12, &m.wq)
-	stateSourceObject.Load(13, &m.mappings)
+	stateSourceObject.Load(3, &m.mode)
+	stateSourceObject.Load(4, &m.cooked)
+	stateSourceObject.Load(5, &m.packetEP)
+	stateSourceObject.Load(6, &m.reserve)
+	stateSourceObject.Load(7, &m.nicID)
+	stateSourceObject.Load(8, &m.netProto)
+	stateSourceObject.Load(9, &m.version)
+	stateSourceObject.Load(10, &m.headerLen)
+	stateSourceObject.Load(11, &m.stack)
+	stateSourceObject.Load(12, &m.stats)
+	stateSourceObject.Load(13, &m.wq)
+	stateSourceObject.Load(14, &m.mappings)
 }
 
 func (rb *ringBuffer) StateTypeName() string {

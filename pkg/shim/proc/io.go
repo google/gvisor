@@ -22,9 +22,9 @@ import (
 	"os"
 	"sync"
 
-	"github.com/containerd/containerd/log"
 	"github.com/containerd/fifo"
 	runc "github.com/containerd/go-runc"
+	"github.com/containerd/log"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 )

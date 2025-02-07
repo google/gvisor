@@ -146,8 +146,12 @@ const (
 
 // Packet socket options from <linux/if_packet.h>
 const (
-	PACKET_RX_RING = 5
-	PACKET_VERSION = 10
+	PACKET_ADD_MEMBERSHIP = 1
+	PACKET_RX_RING        = 5
+	PACKET_AUXDATA        = 8
+	PACKET_VERSION        = 10
+	PACKET_HDRLEN         = 11
+	PACKET_RESERVE        = 12
 )
 
 // Statuses for a frame in a packet_mmap ring buffer from <linux/if_packet.h>.
@@ -187,7 +191,7 @@ type TpacketHdr struct {
 	TpNet     uint16
 	TpSec     uint32
 	TpUsec    uint32
-	_         [4]byte
+	_         [4]uint8
 }
 
 // Tpacket2Hdr is the header for a frame in a packet_mmap ring buffer from

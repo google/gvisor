@@ -19183,7 +19183,7 @@ func (t *TpacketHdr) MarshalBytes(dst []byte) []byte {
     dst = dst[4:]
     hostarch.ByteOrder.PutUint32(dst[:4], uint32(t.TpUsec))
     dst = dst[4:]
-    // Padding: dst[:sizeof(byte)*4] ~= [4]byte{0}
+    // Padding: dst[:sizeof(uint8)*4] ~= [4]uint8{0}
     dst = dst[1*(4):]
     return dst
 }
@@ -19204,7 +19204,7 @@ func (t *TpacketHdr) UnmarshalBytes(src []byte) []byte {
     src = src[4:]
     t.TpUsec = uint32(hostarch.ByteOrder.Uint32(src[:4]))
     src = src[4:]
-    // Padding: ~ copy([4]byte(t._), src[:sizeof(byte)*4])
+    // Padding: ~ copy([4]uint8(t._), src[:sizeof(uint8)*4])
     src = src[1*(4):]
     return src
 }

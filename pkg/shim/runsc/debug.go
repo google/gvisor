@@ -21,7 +21,7 @@ import (
 	"sync"
 	"syscall"
 
-	"github.com/containerd/containerd/log"
+	"github.com/containerd/log"
 )
 
 var once sync.Once

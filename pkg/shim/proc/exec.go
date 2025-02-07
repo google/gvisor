@@ -25,11 +25,11 @@ import (
 	"time"
 
 	"github.com/containerd/console"
-	"github.com/containerd/containerd/log"
 	"github.com/containerd/containerd/pkg/stdio"
 	"github.com/containerd/errdefs"
 	"github.com/containerd/fifo"
 	runc "github.com/containerd/go-runc"
+	"github.com/containerd/log"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/cleanup"

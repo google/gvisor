@@ -267,6 +267,9 @@ func (f *FDTable) NewFDs(ctx context.Context, minFD int32, files []*vfs.FileDesc
 			break
 		}
 		f.fdBitmap.Add(fd)
+		if fd == uint32(max) {
+			max = int32(fd + 1)
+		}
 		if df := f.set(int32(fd), files[len(fds)], flags); df != nil {
 			panic("file set")
 		}

@@ -67,9 +67,8 @@ func (ep *endpoint) StateFields() []string {
 		"boundNetProto",
 		"boundNIC",
 		"lastError",
-		"packetMmapRxConfig",
-		"packetMmapTxConfig",
 		"packetMMapVersion",
+		"packetMMapReserve",
 		"packetMMapEp",
 	}
 }
@@ -91,10 +90,9 @@ func (ep *endpoint) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(11, &ep.boundNetProto)
 	stateSinkObject.Save(12, &ep.boundNIC)
 	stateSinkObject.Save(13, &ep.lastError)
-	stateSinkObject.Save(14, &ep.packetMmapRxConfig)
-	stateSinkObject.Save(15, &ep.packetMmapTxConfig)
-	stateSinkObject.Save(16, &ep.packetMMapVersion)
-	stateSinkObject.Save(17, &ep.packetMMapEp)
+	stateSinkObject.Save(14, &ep.packetMMapVersion)
+	stateSinkObject.Save(15, &ep.packetMMapReserve)
+	stateSinkObject.Save(16, &ep.packetMMapEp)
 }
 
 // +checklocksignore
@@ -113,10 +111,9 @@ func (ep *endpoint) StateLoad(ctx context.Context, stateSourceObject state.Sourc
 	stateSourceObject.Load(11, &ep.boundNetProto)
 	stateSourceObject.Load(12, &ep.boundNIC)
 	stateSourceObject.Load(13, &ep.lastError)
-	stateSourceObject.Load(14, &ep.packetMmapRxConfig)
-	stateSourceObject.Load(15, &ep.packetMmapTxConfig)
-	stateSourceObject.Load(16, &ep.packetMMapVersion)
-	stateSourceObject.Load(17, &ep.packetMMapEp)
+	stateSourceObject.Load(14, &ep.packetMMapVersion)
+	stateSourceObject.Load(15, &ep.packetMMapReserve)
+	stateSourceObject.Load(16, &ep.packetMMapEp)
 	stateSourceObject.AfterLoad(func() { ep.afterLoad(ctx) })
 }
 

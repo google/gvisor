@@ -21,12 +21,12 @@ import (
 	"os"
 	"os/exec"
 
-	"github.com/containerd/containerd/log"
 	"github.com/containerd/containerd/namespaces"
 	"github.com/containerd/containerd/runtime/v2/shim"
 	taskapi "github.com/containerd/containerd/runtime/v2/task"
 	"github.com/containerd/containerd/sys"
 	"github.com/containerd/errdefs"
+	"github.com/containerd/log"
 	"github.com/gogo/protobuf/types"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/cleanup"

@@ -209,6 +209,7 @@ type PacketMMapOpts struct {
 	NetProto       tcpip.NetworkProtocolNumber
 	PacketEndpoint MappablePacketEndpoint
 	Version        int
+	Reserve        uint32
 }
 
 // PacketMMapEndpoint is the interface implemented by endpoints to handle memory

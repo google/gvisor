@@ -30,6 +30,7 @@ import (
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/eventfd"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/hostfd"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -281,6 +282,11 @@ func NewFD(ctx context.Context, mnt *vfs.Mount, hostFD int, opts *NewFDOptions) 
 	}
 
 	fileType := linux.FileMode(stat.Mode).FileType()
+	if fileType == 0 && isHostEventFdDevice(stat.Dev) {
+		// This is an event fd. No inode needed.
+		vfsObj := mnt.Filesystem().VirtualFilesystem()
+		return eventfd.NewFromHost(ctx, vfsObj, hostFD, flags)
+	}
 	i, err := newInode(ctx, fs, hostFD, opts.Savable, opts.RestoreKey, fileType, opts.IsTTY, opts.Readonly)
 	if err != nil {
 		return nil, err
@@ -1026,4 +1032,29 @@ func (f *fileDescription) Ioctl(ctx context.Context, uio usermem.IO, sysno uintp
 	}
 
 	return f.FileDescriptionDefaultImpl.Ioctl(ctx, uio, sysno, args)
+}
+
+// hostEventFdDevice is the host device that host event fds are associated
+// with. It is calculated once lazily.
+var hostEventFdDevice uint64
+var hostEventFdDeviceOnce sync.Once
+
+// isHostEventFdDevice initializes hostEventFdDevice and compares it to the
+// given host device id.
+func isHostEventFdDevice(dev uint64) bool {
+	hostEventFdDeviceOnce.Do(func() {
+		efd, _, err := unix.RawSyscall(unix.SYS_EVENTFD2, 0, 0, 0)
+		if err != 0 {
+			log.Warningf("failed to create dummy eventfd: %v. Importing eventfds will fail", error(err))
+			return
+		}
+		defer unix.Close(int(efd))
+		var stat unix.Stat_t
+		if err := unix.Fstat(int(efd), &stat); err != nil {
+			log.Warningf("failed to stat dummy eventfd: %v. Importing eventfds will fail", error(err))
+			return
+		}
+		hostEventFdDevice = stat.Dev
+	})
+	return dev == hostEventFdDevice
 }
