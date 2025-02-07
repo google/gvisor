@@ -907,9 +907,9 @@ func GetSockOpt(t *kernel.Task, s socket.Socket, ep commonEndpoint, family int, 
 	case linux.SOL_ICMPV6:
 		return getSockOptICMPv6(t, s, ep, name, outLen)
 
-	case linux.SOL_UDP,
-		linux.SOL_RAW,
-		linux.SOL_PACKET:
+	case linux.SOL_PACKET:
+		return getSockOptPacket(t, s, ep, name, outPtr, outLen)
+	case linux.SOL_UDP, linux.SOL_RAW:
 		// Not supported.
 	}
 
@@ -1850,6 +1850,29 @@ func getSockOptIP(t *kernel.Task, s socket.Socket, ep commonEndpoint, name int, 
 	return nil, syserr.ErrProtocolNotAvailable
 }
 
+func getSockOptPacket(t *kernel.Task, s socket.Socket, ep commonEndpoint, name int, outPtr hostarch.Addr, outLen int) (marshal.Marshallable, *syserr.Error) {
+	if _, ok := ep.(tcpip.Endpoint); !ok {
+		log.Warningf("SOL_PACKET options not supported on endpoints other than tcpip.Endpoint: option = %d, endpoint = %T", name, ep)
+		return nil, syserr.ErrUnknownProtocolOption
+	}
+	switch name {
+	case linux.PACKET_HDRLEN:
+		var version primitive.Int32
+		version.CopyIn(t, outPtr)
+		switch version {
+		case linux.TPACKET_V1:
+			v := primitive.Int32(uint32((*linux.TpacketHdr)(nil).SizeBytes()))
+			return &v, nil
+		case linux.TPACKET_V2:
+			v := primitive.Int32(uint32((*linux.Tpacket2Hdr)(nil).SizeBytes()))
+			return &v, nil
+		default:
+			return nil, syserr.ErrInvalidArgument
+		}
+	}
+	return nil, syserr.ErrProtocolNotAvailable
+}
+
 // SetSockOpt can be used to implement the linux syscall setsockopt(2) for
 // sockets backed by a commonEndpoint.
 func SetSockOpt(t *kernel.Task, s socket.Socket, ep commonEndpoint, level int, name int, optVal []byte) *syserr.Error {
@@ -2761,6 +2784,12 @@ func setSockOptPacket(t *kernel.Task, s socket.Socket, ep commonEndpoint, name i
 		}
 		v := hostarch.ByteOrder.Uint32(optVal)
 		return syserr.TranslateNetstackError(ep.SetSockOptInt(tcpip.PacketMMapVersionOption, int(v)))
+	case linux.PACKET_RESERVE:
+		v := hostarch.ByteOrder.Uint32(optVal)
+		return syserr.TranslateNetstackError(ep.SetSockOptInt(tcpip.PacketMMapReserveOption, int(v)))
+	case linux.PACKET_ADD_MEMBERSHIP, linux.PACKET_AUXDATA:
+		// Silently ignore these options.
+		return nil
 	default:
 		return syserr.ErrNotSupported
 	}

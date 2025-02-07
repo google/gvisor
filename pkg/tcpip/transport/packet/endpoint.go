@@ -104,6 +104,8 @@ type endpoint struct {
 	// +checklocks:mu
 	packetMMapVersion tpacketVersion
 	// +checklocks:mu
+	packetMMapReserve int
+	// +checklocks:mu
 	packetMMapEp stack.PacketMMapEndpoint
 }
 
@@ -418,6 +420,12 @@ func (ep *endpoint) SetSockOptInt(opt tcpip.SockOptInt, v int) tcpip.Error {
 		default:
 			return &tcpip.ErrInvalidOptionValue{}
 		}
+	case tcpip.PacketMMapReserveOption:
+		if ep.packetMMapEp != nil {
+			return &tcpip.ErrEndpointBusy{}
+		}
+		ep.packetMMapReserve = v
+		return nil
 	default:
 		return &tcpip.ErrUnknownProtocolOption{}
 	}
@@ -575,6 +583,7 @@ func (ep *endpoint) GetPacketMMapOpts(req *tcpip.TpacketReq, isRx bool) stack.Pa
 		NetProto:       ep.boundNetProto,
 		PacketEndpoint: ep,
 		Version:        int(ep.packetMMapVersion),
+		Reserve:        uint32(ep.packetMMapReserve),
 	}
 }
 

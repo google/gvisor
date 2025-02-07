@@ -71,6 +71,7 @@ type Endpoint struct {
 
 	cooked    bool
 	packetEP  stack.MappablePacketEndpoint
+	reserve   uint32
 	nicID     tcpip.NICID
 	netProto  tcpip.NetworkProtocolNumber
 	version   int
@@ -99,6 +100,9 @@ func (m *Endpoint) Init(ctx context.Context, opts stack.PacketMMapOpts) error {
 	m.nicID = opts.NICID
 	m.netProto = opts.NetProto
 	m.version = opts.Version
+	m.reserve = opts.Reserve
+	m.nicID = opts.NICID
+	m.netProto = opts.NetProto
 	switch m.version {
 	case linux.TPACKET_V1:
 		m.headerLen = linux.TPACKET_HDRLEN
@@ -114,7 +118,7 @@ func (m *Endpoint) Init(ctx context.Context, opts stack.PacketMMapOpts) error {
 		if opts.Req.TpBlockSize%hostarch.PageSize != 0 {
 			return linuxerr.EINVAL
 		}
-		if opts.Req.TpFrameSize < m.headerLen {
+		if opts.Req.TpFrameSize < m.headerLen+m.reserve {
 			return linuxerr.EINVAL
 		}
 		if opts.Req.TpFrameSize&(linux.TPACKET_ALIGNMENT-1) != 0 {
@@ -206,14 +210,14 @@ func (m *Endpoint) HandlePacket(nicID tcpip.NICID, netProto tcpip.NetworkProtoco
 		pktBuf.TrimFront(int64(len(pkt.LinkHeader().Slice()) + len(pkt.VirtioNetHeader().Slice())))
 		// Cooked packet endpoints don't include the link-headers in received
 		// packets.
-		netOffset = linux.TPacketAlign(m.headerLen + minMacLen)
+		netOffset = linux.TPacketAlign(m.headerLen+minMacLen) + m.reserve
 		macOffset = netOffset
 	} else {
 		virtioNetHdrLen := uint32(len(pkt.VirtioNetHeader().Slice()))
 		macLen := uint32(len(pkt.LinkHeader().Slice())) + virtioNetHdrLen
-		netOffset = linux.TPacketAlign(m.headerLen + macLen)
+		netOffset = linux.TPacketAlign(m.headerLen+macLen) + m.reserve
 		if macLen < minMacLen {
-			netOffset = linux.TPacketAlign(m.headerLen + minMacLen)
+			netOffset = linux.TPacketAlign(m.headerLen+minMacLen) + m.reserve
 		}
 		if virtioNetHdrLen > 0 {
 			netOffset += virtioNetHdrLen

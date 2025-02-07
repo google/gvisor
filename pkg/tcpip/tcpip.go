@@ -999,6 +999,10 @@ const (
 
 	// PacketMMapVersionOption is used to set the packet mmap version.
 	PacketMMapVersionOption
+
+	// PacketMMapReserveOption is used to set the packet mmap reserved space
+	// between the aligned header and the payload.
+	PacketMMapReserveOption
 )
 
 const (
