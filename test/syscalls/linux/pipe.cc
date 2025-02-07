@@ -691,6 +691,31 @@ TEST_P(PipeTest, ZeroSize) {
   ASSERT_THAT(read(rfd_.get(), nullptr, 0), SyscallSucceedsWithValue(0));
 }
 
+// Test that we can open more FDs than the max default value without crashing.
+TEST_P(PipeTest, PipeFdCount) {
+  SKIP_IF(!CreateBlocking());
+
+  // We make too many calls to go through full save cycles.
+  DisableSave ds;
+  constexpr size_t kMaxFd = 66000;
+  std::vector<int> fds;
+
+  while (true) {
+    int pipefd[2];
+    ASSERT_THAT(pipe2(pipefd, 0), SyscallSucceeds());
+    ASSERT_NE(pipefd[0], pipefd[1]);
+    fds.push_back(pipefd[0]);
+    fds.push_back(pipefd[1]);
+    if (static_cast<size_t>(pipefd[1]) > kMaxFd) {
+      break;
+    }
+  }
+
+  for (const auto fd : fds) {
+    close(fd);
+  }
+}
+
 std::string PipeCreatorName(::testing::TestParamInfo<PipeCreator> info) {
   return info.param.name_;  // Use the name specified.
 }
