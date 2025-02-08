@@ -54,6 +54,7 @@ go_library(
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/context",
+        "//pkg/errors/linuxerr",
         "//pkg/hostarch",
         "//pkg/log",
         "//pkg/safemem",

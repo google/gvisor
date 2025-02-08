@@ -105,7 +105,6 @@ func (dev *tpuDevice) Open(ctx context.Context, mnt *vfs.Mount, d *vfs.Dentry, o
 		unix.Close(hostFD)
 		return nil, err
 	}
-	fd.memmapFile.fd = fd
 	return &fd.vfsfd, nil
 }
 

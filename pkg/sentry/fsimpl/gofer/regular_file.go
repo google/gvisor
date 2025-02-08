@@ -920,6 +920,7 @@ func (d *dentry) Evict(ctx context.Context, er pgalloc.EvictableRange) {
 //
 // +stateify savable
 type dentryPlatformFile struct {
+	memmap.DefaultMemoryType
 	memmap.NoBufferedIOFallback
 
 	*dentry

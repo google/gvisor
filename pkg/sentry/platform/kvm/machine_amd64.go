@@ -141,6 +141,11 @@ func (c *vCPU) initArchState() error {
 		return err
 	}
 
+	// Set up the PAT as required by ring0/pagetables.
+	if err := c.setPAT(); err != nil {
+		return err
+	}
+
 	// Set the entrypoint for the kernel.
 	kernelUserRegs.RIP = uint64(ring0.AddrOfStart())
 	kernelUserRegs.RAX = uint64(reflect.ValueOf(&c.CPU).Pointer())

@@ -91,6 +91,13 @@ func (mf *pciDeviceFdMemmapFile) MapInternal(fr memmap.FileRange, at hostarch.Ac
 	return mf.pfm.MapInternal(fr, int(mf.fd.hostFD), at.Write)
 }
 
+// MemoryType implements memmap.File.MemoryType.
+func (mf *pciDeviceFdMemmapFile) MemoryType() hostarch.MemoryType {
+	// drivers/vfio/pci/vfio_pci_core.c:vfio_pci_core_mmap() uses
+	// pgprot_noncached().
+	return hostarch.MemoryTypeUncached
+}
+
 // DataFD implements memmap.File.DataFD.
 func (mf *pciDeviceFdMemmapFile) DataFD(fr memmap.FileRange) (int, error) {
 	return mf.FD(), nil

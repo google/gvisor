@@ -74,3 +74,13 @@ func TestSplit2MPage(t *testing.T) {
 		{0x00007f0000000000 + pmdSize - pteSize, pteSize, pmdSize*42 + pmdSize - pteSize, MapOpts{AccessType: hostarch.Read}},
 	})
 }
+
+func TestNumMemoryTypes(t *testing.T) {
+	// The PAT accommodates up to 8 entries. However, PTE.Set() currently
+	// assumes that NumMemoryTypes <= 4, since the location of the most
+	// significant bit of the PAT index in page table entries varies depending
+	// on page size (and is never bit 5 == writeThroughShift + 2).
+	if hostarch.NumMemoryTypes > 4 {
+		t.Errorf("PTE.Set() and PTE.Opts() must be altered to handle %d MemoryTypes", hostarch.NumMemoryTypes)
+	}
+}
