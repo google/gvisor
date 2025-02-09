@@ -678,7 +678,11 @@ func SafeMount(src, dst, fstype string, flags uintptr, data, procPath string) er
 		return &ErrSymlinkMount{fmt.Errorf("failed to safely mount: expected to open %s, but found %s", dst, target)}
 	}
 
-	return unix.Mount(src, safePath, fstype, flags, data)
+	mountErr := unix.Mount(src, safePath, fstype, flags, data)
+	if mountErr != nil {
+		return fmt.Errorf("mount(%q, %q, %q, %#x, %q) failed: %w", src, safePath, fstype, flags, data, mountErr)
+	}
+	return nil
 }
 
 // RetryEintr retries the function until an error different than EINTR is
