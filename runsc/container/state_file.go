@@ -383,8 +383,12 @@ func (s *StateFile) load(v any, opts LoadOpts) error {
 	}
 	defer s.UnlockOrDie()
 
-	metaBytes, err := os.ReadFile(s.statePath())
+	path := s.statePath()
+	metaBytes, err := os.ReadFile(path)
 	if err != nil {
+		// Caller of this function relies on error code, we cannot return new error,
+		// but we need to provide a message with file name.
+		log.Warningf("Error loading state file %q: %v", path, err)
 		return err
 	}
 	return json.Unmarshal(metaBytes, &v)
