@@ -148,6 +148,7 @@ const (
 const (
 	PACKET_ADD_MEMBERSHIP = 1
 	PACKET_RX_RING        = 5
+	PACKET_STATISTICS     = 6
 	PACKET_AUXDATA        = 8
 	PACKET_VERSION        = 10
 	PACKET_HDRLEN         = 11
@@ -209,6 +210,15 @@ type Tpacket2Hdr struct {
 	TpVlanTci  uint16
 	TpVlanTpid uint16
 	_          [4]uint8
+}
+
+// TpacketStats is the statistics for a packet_mmap ring buffer from
+// <linux/if_packet.h>.
+//
+// +marshal
+type TpacketStats struct {
+	Packets uint32
+	Dropped uint32
 }
 
 // TpacketAlignment is the alignment of a frame in a packet_mmap ring buffer

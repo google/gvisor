@@ -1205,6 +1205,17 @@ type TpacketReq struct {
 
 func (*TpacketReq) isSettableSocketOption() {}
 
+// TpacketStats is the statistics for a packet_mmap ring buffer from
+// <linux/if_packet.h>.
+//
+// +stateify savable
+type TpacketStats struct {
+	Packets uint32
+	Dropped uint32
+}
+
+func (*TpacketStats) isGettableSocketOption() {}
+
 // EndpointState represents the state of an endpoint.
 type EndpointState uint8
 

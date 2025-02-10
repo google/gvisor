@@ -77,8 +77,10 @@ type Endpoint struct {
 	version   int
 	headerLen uint32
 
+	received atomicbitops.Uint32
+	dropped  atomicbitops.Uint32
+
 	stack *stack.Stack
-	stats *tcpip.TransportEndpointStats
 	wq    *waiter.Queue
 
 	mappingsMu sync.Mutex `state:"nosave"`
@@ -96,7 +98,6 @@ func (m *Endpoint) Init(ctx context.Context, opts stack.PacketMMapOpts) error {
 	m.wq = opts.Wq
 	m.cooked = opts.Cooked
 	m.packetEP = opts.PacketEndpoint
-	m.stats = opts.Stats
 	m.nicID = opts.NICID
 	m.netProto = opts.NetProto
 	m.version = opts.Version
@@ -194,6 +195,7 @@ func (m *Endpoint) HandlePacket(nicID tcpip.NICID, netProto tcpip.NetworkProtoco
 	if !m.rxRingBuffer.hasRoom() {
 		m.mu.Unlock()
 		m.stack.Stats().DroppedPackets.Increment()
+		m.dropped.Add(1)
 		return
 	}
 	m.mu.Unlock()
@@ -226,6 +228,7 @@ func (m *Endpoint) HandlePacket(nicID tcpip.NICID, netProto tcpip.NetworkProtoco
 	}
 	if netOffset > uint32(^uint16(0)) {
 		m.stack.Stats().DroppedPackets.Increment()
+		m.dropped.Add(1)
 		return
 	}
 	dataLength = uint32(pktBuf.Size())
@@ -246,6 +249,7 @@ func (m *Endpoint) HandlePacket(nicID tcpip.NICID, netProto tcpip.NetworkProtoco
 	if err != nil || tpStatus != linux.TP_STATUS_KERNEL {
 		m.mu.Unlock()
 		m.stack.Stats().DroppedPackets.Increment()
+		m.dropped.Add(1)
 		return
 	}
 
@@ -253,6 +257,7 @@ func (m *Endpoint) HandlePacket(nicID tcpip.NICID, netProto tcpip.NetworkProtoco
 	if !ok {
 		m.mu.Unlock()
 		m.stack.Stats().DroppedPackets.Increment()
+		m.dropped.Add(1)
 		return
 	}
 	m.rxRingBuffer.incHead()
@@ -272,6 +277,7 @@ func (m *Endpoint) HandlePacket(nicID tcpip.NICID, netProto tcpip.NetworkProtoco
 
 	if err := m.rxRingBuffer.writeFrame(slot, hdrView, pktBuf); err != nil {
 		m.stack.Stats().DroppedPackets.Increment()
+		m.dropped.Add(1)
 		return
 	}
 
@@ -279,9 +285,10 @@ func (m *Endpoint) HandlePacket(nicID tcpip.NICID, netProto tcpip.NetworkProtoco
 	defer m.mu.Unlock()
 	if err := m.rxRingBuffer.writeStatus(slot, status); err != nil {
 		m.stack.Stats().DroppedPackets.Increment()
+		m.dropped.Add(1)
 		return
 	}
-	m.stats.PacketsReceived.Increment()
+	m.received.Add(1)
 	m.wq.Notify(waiter.ReadableEvents)
 }
 
@@ -373,6 +380,16 @@ func (m *Endpoint) ConfigureMMap(ctx context.Context, opts *memmap.MMapOpts) err
 // Mapped returns whether the endpoint has been mapped.
 func (m *Endpoint) Mapped() bool {
 	return m.mapped.Load() != 0
+}
+
+// Stats implements stack.PacketMMapEndpoint.Stats.
+func (m *Endpoint) Stats() tcpip.TpacketStats {
+	rcv := m.received.Swap(0)
+	drop := m.dropped.Swap(0)
+	return tcpip.TpacketStats{
+		Packets: uint32(rcv + drop),
+		Dropped: uint32(drop),
+	}
 }
 
 func toLinuxPacketType(pktType tcpip.PacketType) uint8 {

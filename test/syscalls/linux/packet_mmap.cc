@@ -654,6 +654,65 @@ TEST(PacketMmapTest, PacketReserve) {
       TPACKET_ALIGN(sizeof(tpacket2_hdr) + sizeof(sockaddr_ll) + 16) + reserve);
 }
 
+TEST(PacketMmapTest, PacketStatistics) {
+  if (!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW))) {
+    ASSERT_THAT(socket(AF_PACKET, SOCK_RAW, 0), SyscallFailsWithErrno(EPERM));
+    GTEST_SKIP() << "Missing packet socket capability";
+  }
+  sockaddr_ll bind_addr = {
+      .sll_family = AF_PACKET,
+      .sll_protocol = htons(ETH_P_IP),
+      .sll_ifindex = ASSERT_NO_ERRNO_AND_VALUE(GetLoopbackIndex()),
+      .sll_halen = ETH_ALEN,
+  };
+  FileDescriptor mmap_sock =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_PACKET, SOCK_DGRAM, 0));
+
+  uint32_t tp_frame_size = 65536 + 128;
+  uint32_t tp_block_size = tp_frame_size * 32;
+  uint32_t tp_block_nr = 2;
+  uint32_t tp_frame_nr = (tp_block_size * tp_block_nr) / tp_frame_size;
+  tpacket_req req = {
+      .tp_block_size = tp_block_size,
+      .tp_block_nr = tp_block_nr,
+      .tp_frame_size = tp_frame_size,
+      .tp_frame_nr = tp_frame_nr,
+  };
+  void* ring = ASSERT_NO_ERRNO_AND_VALUE(MakePacketMmapRing(
+      mmap_sock.get(), reinterpret_cast<const sockaddr*>(&bind_addr),
+      sizeof(bind_addr), &req, TPACKET_V2));
+  auto ring_cleanup = Cleanup([ring, tp_block_size, tp_block_nr] {
+    ASSERT_THAT(munmap(ring, tp_block_size * tp_block_nr), SyscallSucceeds());
+  });
+
+  std::string kMessage = "123abc";
+  for (uint32_t i = 0; i < tp_frame_nr; i++) {
+    ASSERT_THAT(
+        sendto(mmap_sock.get(), kMessage.c_str(), kMessage.size(),
+               0 /* flags */, reinterpret_cast<const sockaddr*>(&bind_addr),
+               sizeof(bind_addr)),
+        SyscallSucceeds());
+  }
+  // After sending tp_frame_nr packets the buffer is full and all future sent
+  // packets will be dropped.
+  int expected_dropped = 20;
+  for (int i = 0; i < expected_dropped; i++) {
+    ASSERT_THAT(
+        sendto(mmap_sock.get(), kMessage.c_str(), kMessage.size(),
+               0 /* flags */, reinterpret_cast<const sockaddr*>(&bind_addr),
+               sizeof(bind_addr)),
+        SyscallSucceeds());
+  }
+
+  struct tpacket_stats stats;
+  socklen_t stats_len = sizeof(stats);
+  EXPECT_THAT(getsockopt(mmap_sock.get(), SOL_PACKET, PACKET_STATISTICS, &stats,
+                         &stats_len),
+              SyscallSucceeds());
+  EXPECT_EQ(stats.tp_drops, expected_dropped);
+  EXPECT_EQ(stats.tp_packets, tp_frame_nr + expected_dropped);
+}
+
 }  // namespace
 }  // namespace testing
 }  // namespace gvisor
