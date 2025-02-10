@@ -448,8 +448,19 @@ func (ep *endpoint) UpdateLastError(err tcpip.Error) {
 }
 
 // GetSockOpt implements tcpip.Endpoint.GetSockOpt.
-func (*endpoint) GetSockOpt(tcpip.GettableSocketOption) tcpip.Error {
-	return &tcpip.ErrNotSupported{}
+func (ep *endpoint) GetSockOpt(opt tcpip.GettableSocketOption) tcpip.Error {
+	ep.mu.RLock()
+	defer ep.mu.RUnlock()
+	switch opt.(type) {
+	case *tcpip.TpacketStats:
+		if ep.packetMMapEp == nil {
+			return nil
+		}
+		*(opt.(*tcpip.TpacketStats)) = ep.packetMMapEp.Stats()
+		return nil
+	default:
+		return &tcpip.ErrUnknownProtocolOption{}
+	}
 }
 
 // GetSockOptInt implements tcpip.Endpoint.GetSockOptInt.
@@ -577,7 +588,6 @@ func (ep *endpoint) GetPacketMMapOpts(req *tcpip.TpacketReq, isRx bool) stack.Pa
 		IsRx:           isRx,
 		Cooked:         ep.cooked,
 		Stack:          ep.stack,
-		Stats:          &ep.stats,
 		Wq:             ep.waiterQueue,
 		NICID:          ep.boundNIC,
 		NetProto:       ep.boundNetProto,

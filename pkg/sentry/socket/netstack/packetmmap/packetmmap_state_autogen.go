@@ -25,8 +25,9 @@ func (m *Endpoint) StateFields() []string {
 		"netProto",
 		"version",
 		"headerLen",
+		"received",
+		"dropped",
 		"stack",
-		"stats",
 		"wq",
 		"mappings",
 	}
@@ -48,10 +49,11 @@ func (m *Endpoint) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(8, &m.netProto)
 	stateSinkObject.Save(9, &m.version)
 	stateSinkObject.Save(10, &m.headerLen)
-	stateSinkObject.Save(11, &m.stack)
-	stateSinkObject.Save(12, &m.stats)
-	stateSinkObject.Save(13, &m.wq)
-	stateSinkObject.Save(14, &m.mappings)
+	stateSinkObject.Save(11, &m.received)
+	stateSinkObject.Save(12, &m.dropped)
+	stateSinkObject.Save(13, &m.stack)
+	stateSinkObject.Save(14, &m.wq)
+	stateSinkObject.Save(15, &m.mappings)
 }
 
 func (m *Endpoint) afterLoad(context.Context) {}
@@ -69,10 +71,11 @@ func (m *Endpoint) StateLoad(ctx context.Context, stateSourceObject state.Source
 	stateSourceObject.Load(8, &m.netProto)
 	stateSourceObject.Load(9, &m.version)
 	stateSourceObject.Load(10, &m.headerLen)
-	stateSourceObject.Load(11, &m.stack)
-	stateSourceObject.Load(12, &m.stats)
-	stateSourceObject.Load(13, &m.wq)
-	stateSourceObject.Load(14, &m.mappings)
+	stateSourceObject.Load(11, &m.received)
+	stateSourceObject.Load(12, &m.dropped)
+	stateSourceObject.Load(13, &m.stack)
+	stateSourceObject.Load(14, &m.wq)
+	stateSourceObject.Load(15, &m.mappings)
 }
 
 func (rb *ringBuffer) StateTypeName() string {

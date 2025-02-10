@@ -203,7 +203,6 @@ type PacketMMapOpts struct {
 	IsRx           bool
 	Cooked         bool
 	Stack          *Stack
-	Stats          *tcpip.TransportEndpointStats
 	Wq             *waiter.Queue
 	NICID          tcpip.NICID
 	NetProto       tcpip.NetworkProtocolNumber
@@ -232,6 +231,10 @@ type PacketMMapEndpoint interface {
 
 	// Readiness returns the events that the endpoint is ready for.
 	Readiness(mask waiter.EventMask) waiter.EventMask
+
+	// Stats returns the statistics for the endpoint that can be used for
+	// getsockopt(PACKET_STATISTICS).
+	Stats() tcpip.TpacketStats
 }
 
 // UnknownDestinationPacketDisposition enumerates the possible return values from

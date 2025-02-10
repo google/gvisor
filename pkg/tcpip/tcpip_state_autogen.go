@@ -1702,6 +1702,34 @@ func (t *TpacketReq) StateLoad(ctx context.Context, stateSourceObject state.Sour
 	stateSourceObject.Load(3, &t.TpFrameNr)
 }
 
+func (t *TpacketStats) StateTypeName() string {
+	return "pkg/tcpip.TpacketStats"
+}
+
+func (t *TpacketStats) StateFields() []string {
+	return []string{
+		"Packets",
+		"Dropped",
+	}
+}
+
+func (t *TpacketStats) beforeSave() {}
+
+// +checklocksignore
+func (t *TpacketStats) StateSave(stateSinkObject state.Sink) {
+	t.beforeSave()
+	stateSinkObject.Save(0, &t.Packets)
+	stateSinkObject.Save(1, &t.Dropped)
+}
+
+func (t *TpacketStats) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (t *TpacketStats) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &t.Packets)
+	stateSourceObject.Load(1, &t.Dropped)
+}
+
 func (l *LingerOption) StateTypeName() string {
 	return "pkg/tcpip.LingerOption"
 }
@@ -3313,6 +3341,7 @@ func init() {
 	state.Register((*TCPReceiveBufferSizeRangeOption)(nil))
 	state.Register((*ICMPv6Filter)(nil))
 	state.Register((*TpacketReq)(nil))
+	state.Register((*TpacketStats)(nil))
 	state.Register((*LingerOption)(nil))
 	state.Register((*IPPacketInfo)(nil))
 	state.Register((*IPv6PacketInfo)(nil))

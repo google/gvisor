@@ -1869,6 +1869,16 @@ func getSockOptPacket(t *kernel.Task, s socket.Socket, ep commonEndpoint, name i
 		default:
 			return nil, syserr.ErrInvalidArgument
 		}
+	case linux.PACKET_STATISTICS:
+		var tps tcpip.TpacketStats
+		if err := ep.GetSockOpt(&tps); err != nil {
+			return nil, syserr.TranslateNetstackError(err)
+		}
+		v := linux.TpacketStats{
+			Packets: tps.Packets,
+			Dropped: tps.Dropped,
+		}
+		return &v, nil
 	}
 	return nil, syserr.ErrProtocolNotAvailable
 }
@@ -2785,6 +2795,9 @@ func setSockOptPacket(t *kernel.Task, s socket.Socket, ep commonEndpoint, name i
 		v := hostarch.ByteOrder.Uint32(optVal)
 		return syserr.TranslateNetstackError(ep.SetSockOptInt(tcpip.PacketMMapVersionOption, int(v)))
 	case linux.PACKET_RESERVE:
+		if len(optVal) < sizeOfInt32 {
+			return syserr.ErrInvalidArgument
+		}
 		v := hostarch.ByteOrder.Uint32(optVal)
 		return syserr.TranslateNetstackError(ep.SetSockOptInt(tcpip.PacketMMapReserveOption, int(v)))
 	case linux.PACKET_ADD_MEMBERSHIP, linux.PACKET_AUXDATA:
