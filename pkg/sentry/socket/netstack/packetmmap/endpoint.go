@@ -68,8 +68,9 @@ type Endpoint struct {
 
 	// +checklocks:mu
 	mode ringBufferMode
+	// +checklocks:mu
+	cooked bool
 
-	cooked    bool
 	packetEP  stack.MappablePacketEndpoint
 	reserve   uint32
 	nicID     tcpip.NICID
@@ -192,6 +193,7 @@ func (m *Endpoint) HandlePacket(nicID tcpip.NICID, netProto tcpip.NetworkProtoco
 	)
 
 	m.mu.Lock()
+	cooked := m.cooked
 	if !m.rxRingBuffer.hasRoom() {
 		m.mu.Unlock()
 		m.stack.Stats().DroppedPackets.Increment()
@@ -208,7 +210,7 @@ func (m *Endpoint) HandlePacket(nicID tcpip.NICID, netProto tcpip.NetworkProtoco
 	}
 
 	pktBuf := pkt.ToBuffer()
-	if m.cooked {
+	if cooked {
 		pktBuf.TrimFront(int64(len(pkt.LinkHeader().Slice()) + len(pkt.VirtioNetHeader().Slice())))
 		// Cooked packet endpoints don't include the link-headers in received
 		// packets.
