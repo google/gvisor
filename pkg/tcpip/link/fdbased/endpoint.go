@@ -422,17 +422,19 @@ func isSocketFD(fd int) (bool, error) {
 // Attach implements stack.LinkEndpoint.Attach.
 func (e *endpoint) Attach(dispatcher stack.NetworkDispatcher) {
 	e.mu.Lock()
-	defer e.mu.Unlock()
 
 	// nil means the NIC is being removed.
 	if dispatcher == nil && e.dispatcher != nil {
 		for _, dispatcher := range e.inboundDispatchers {
 			dispatcher.Stop()
 		}
-		e.Wait()
 		e.dispatcher = nil
+		// NOTE(gvisor.dev/issue/11456): Unlock e.mu before e.Wait().
+		e.mu.Unlock()
+		e.Wait()
 		return
 	}
+	defer e.mu.Unlock()
 	if dispatcher != nil && e.dispatcher == nil {
 		e.dispatcher = dispatcher
 		// Link endpoints are not savable. When transportation endpoints are
