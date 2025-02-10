@@ -49,13 +49,13 @@ import (
 	"github.com/sirupsen/logrus"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/cleanup"
-	"gvisor.dev/gvisor/pkg/shim/runtimeoptions/v14"
+	"gvisor.dev/gvisor/pkg/shim/v1/runtimeoptions/v14"
 
-	"gvisor.dev/gvisor/pkg/shim/extension"
-	"gvisor.dev/gvisor/pkg/shim/proc"
-	"gvisor.dev/gvisor/pkg/shim/runsccmd"
-	"gvisor.dev/gvisor/pkg/shim/runtimeoptions"
-	"gvisor.dev/gvisor/pkg/shim/utils"
+	"gvisor.dev/gvisor/pkg/shim/v1/extension"
+	"gvisor.dev/gvisor/pkg/shim/v1/proc"
+	"gvisor.dev/gvisor/pkg/shim/v1/runsccmd"
+	"gvisor.dev/gvisor/pkg/shim/v1/runtimeoptions"
+	"gvisor.dev/gvisor/pkg/shim/v1/utils"
 	"gvisor.dev/gvisor/runsc/specutils"
 )
 

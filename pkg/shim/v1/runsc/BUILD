@@ -20,12 +20,12 @@ go_library(
     visibility = ["//pkg/shim:__subpackages__"],
     deps = [
         "//pkg/cleanup",
-        "//pkg/shim/extension",
-        "//pkg/shim/proc",
-        "//pkg/shim/runsccmd",
-        "//pkg/shim/runtimeoptions",
-        "//pkg/shim/runtimeoptions/v14",
-        "//pkg/shim/utils",
+        "//pkg/shim/v1/extension",
+        "//pkg/shim/v1/proc",
+        "//pkg/shim/v1/runsccmd",
+        "//pkg/shim/v1/runtimeoptions",
+        "//pkg/shim/v1/runtimeoptions/v14",
+        "//pkg/shim/v1/utils",
         "//runsc/specutils",
         "@com_github_burntsushi_toml//:go_default_library",
         "@com_github_containerd_cgroups//:go_default_library",
@@ -60,7 +60,7 @@ go_test(
     srcs = ["service_test.go"],
     library = ":runsc",
     deps = [
-        "//pkg/shim/utils",
+        "//pkg/shim/v1/utils",
         "@com_github_opencontainers_runtime_spec//specs-go:go_default_library",
     ],
 )
