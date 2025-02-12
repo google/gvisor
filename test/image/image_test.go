@@ -339,6 +339,53 @@ func TestStdio(t *testing.T) {
 	}
 }
 
+func TestTcpdump(t *testing.T) {
+	if testutil.IsRunningWithHostNet() {
+		t.Skip("docker doesn't work with hostinet")
+	}
+	ctx := context.Background()
+	// The "-docker" runtime comes with the net_raw capabilities enabled which are
+	// required for tcpdump.
+	d := dockerutil.MakeContainerWithRuntime(ctx, t, "-docker")
+	defer d.CleanUp(ctx)
+
+	if err := d.Spawn(ctx, dockerutil.RunOpts{
+		Image: "basic/tcpdump",
+	}, "sleep", "infinity"); err != nil {
+		t.Fatalf("docker run failed: %v", err)
+	}
+
+	cmd := "tcpdump -c 2 -i lo port 9999"
+	tcpdumpProc, err := d.ExecProcess(ctx, dockerutil.ExecOpts{}, "/bin/sh", "-c", cmd)
+	if err != nil {
+		t.Fatalf("docker run failed: %v", err)
+	}
+	cmd = "python3 sender.py"
+	senderProc, err := d.ExecProcess(ctx, dockerutil.ExecOpts{}, "/bin/sh", "-c", cmd)
+	if err != nil {
+		t.Fatalf("docker exec failed: %v", err)
+	}
+	if status, err := senderProc.WaitExitStatus(ctx); err != nil || status != 0 {
+		t.Fatalf("docker exec failed: %v, status: %d", err, status)
+	}
+	if status, err := tcpdumpProc.WaitExitStatus(ctx); err != nil || status != 0 {
+		t.Fatalf("docker exec failed: %v, status: %d", err, status)
+	}
+
+	expectedOutputStr1 := "IP localhost.9999 > localhost.9999: UDP, length 4"
+	logs, err := tcpdumpProc.Logs()
+	if err != nil {
+		t.Fatalf("docker exec failed: %v", err)
+	}
+	if !strings.Contains(logs, expectedOutputStr1) {
+		t.Fatalf("docker didn't get output: %q, got: %q", expectedOutputStr1, logs)
+	}
+	expectedOutputStr2 := "IP localhost.9999 > localhost.9999: UDP, length 8"
+	if !strings.Contains(logs, expectedOutputStr2) {
+		t.Fatalf("docker didn't get output: %q, got: %q", expectedOutputStr2, logs)
+	}
+}
+
 func dockerInGvisorCapabilities() []string {
 	return []string{
 		"audit_write",
