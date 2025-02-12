@@ -338,9 +338,7 @@ func (m *Endpoint) Translate(ctx context.Context, required, optional memmap.Mapp
 	var err error
 
 	if m.mode&rxRingBuffer != 0 {
-		var rxTranslation memmap.Translation
-		rxTranslation, err = m.rxRingBuffer.Translate(ctx, required, optional, at)
-		ts = append(ts, rxTranslation)
+		ts, err = m.rxRingBuffer.AppendTranslation(ctx, required, optional, at, ts)
 	}
 	if m.mode&txRingBuffer != 0 {
 		// Translate went outside the bounds of the RX ring buffer, which is valid
@@ -351,9 +349,7 @@ func (m *Endpoint) Translate(ctx context.Context, required, optional memmap.Mapp
 				optional.Start = ts[len(ts)-1].Source.End
 			}
 		}
-		var txTranslation memmap.Translation
-		txTranslation, err = m.txRingBuffer.Translate(ctx, required, optional, at)
-		ts = append(ts, txTranslation)
+		ts, err = m.txRingBuffer.AppendTranslation(ctx, required, optional, at, ts)
 	}
 	return ts, err
 }

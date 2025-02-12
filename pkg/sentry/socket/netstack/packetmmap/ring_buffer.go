@@ -49,7 +49,8 @@ type ringBuffer struct {
 	size uint64
 	// +checklocks:dataMu
 	mapping memmap.MappableRange
-	data    memmap.FileRange
+	// +checklocks:dataMu
+	data memmap.FileRange
 
 	mf *pgalloc.MemoryFile `state:"nosave"`
 }
@@ -94,14 +95,16 @@ func (rb *ringBuffer) destroy() {
 	*rb = ringBuffer{}
 }
 
-// Translate implements memmap.Mappable.Translate.
-func (rb *ringBuffer) Translate(ctx context.Context, required, optional memmap.MappableRange, at hostarch.AccessType) (memmap.Translation, error) {
+// AppendTranslation essentially implements memmap.Mappable.Translate, with the
+// only difference being that it takes in a slice of translations and appends
+// this ring buffer's translation.
+func (rb *ringBuffer) AppendTranslation(ctx context.Context, required, optional memmap.MappableRange, at hostarch.AccessType, ts []memmap.Translation) ([]memmap.Translation, error) {
 	rb.dataMu.Lock()
 	defer rb.dataMu.Unlock()
 	var beyondEOF bool
 	if required.End > rb.size {
 		if required.Start >= rb.size {
-			return memmap.Translation{}, &memmap.BusError{Err: io.EOF}
+			return ts, &memmap.BusError{Err: io.EOF}
 		}
 		beyondEOF = true
 		required.End = rb.size
@@ -110,12 +113,12 @@ func (rb *ringBuffer) Translate(ctx context.Context, required, optional memmap.M
 		optional.End = rb.size
 	}
 	mappableRange := rb.mapping.Intersect(optional)
-	ts := memmap.Translation{
+	ts = append(ts, memmap.Translation{
 		Source: mappableRange,
 		File:   rb.mf,
 		Offset: rb.data.Start + (mappableRange.Start - rb.mapping.Start),
 		Perms:  hostarch.AnyAccess,
-	}
+	})
 	if beyondEOF {
 		return ts, &memmap.BusError{Err: io.EOF}
 	}
