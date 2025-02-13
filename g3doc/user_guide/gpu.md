@@ -207,8 +207,8 @@ Please
 [open a GitHub issue](https://github.com/google/gvisor/issues/new?labels=type%3A+bug,area%3A+gpu&template=bug_report.yml)
 to describe about your use case. If a missing `ioctl` implementation is the
 problem, then the [debug logs](/docs/user_guide/debugging/) will contain
-warnings with prefix `nvproxy: unknown *`. See below on how to run the
-`ioctl_sniffer` tool.
+warnings with prefix `nvproxy: handler is undefined *`. See below on how to run
+the `ioctl_sniffer` tool.
 
 ### Debugging
 
