@@ -18,7 +18,7 @@ EOF
 ```
 
 The set of options that can be configured can be found in
-[options.go](https://cs.opensource.google/gvisor/gvisor/+/master:pkg/shim/options.go).
+[options.go](https://cs.opensource.google/gvisor/gvisor/+/master:pkg/shim/runsc/options.go).
 Values under `[runsc_config]` can be used to set arbitrary flags to runsc.
 `flag = "value"` is converted to `--flag="value"` when runsc is invoked. Run
 `runsc flags` so see which flags are available
