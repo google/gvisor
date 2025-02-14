@@ -219,6 +219,12 @@ type Sandbox struct {
 	// threads to wait on sandbox and get the exit code, since Linux will return
 	// WaitStatus to one of the waiters only.
 	status unix.WaitStatus `nojson:"true"`
+
+	// Checkpointed will be true when the sandbox has been checkpointed.
+	Checkpointed bool `json:"checkpointed"`
+
+	// Restored will be true when the sandbox has been restored.
+	Restored bool `json:"restored"`
 }
 
 // Getpid returns the process ID of the sandbox process.
@@ -537,7 +543,7 @@ func (s *Sandbox) Restore(conf *config.Config, cid string, imagePath string, dir
 	if err := conn.Call(boot.ContMgrRestore, &opt, nil); err != nil {
 		return fmt.Errorf("restoring container %q: %v", cid, err)
 	}
-
+	s.Restored = true
 	return nil
 }
 
@@ -1439,6 +1445,7 @@ func (s *Sandbox) Checkpoint(cid string, imagePath string, direct bool, sfOpts s
 	if err := s.call(boot.ContMgrCheckpoint, &opt, nil); err != nil {
 		return fmt.Errorf("checkpointing container %q: %w", cid, err)
 	}
+	s.Checkpointed = true
 	return nil
 }
 

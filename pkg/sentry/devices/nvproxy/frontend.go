@@ -450,7 +450,7 @@ func rmAllocMemory(fi *frontendIoctlState) (uintptr, error) {
 	case nvgpu.NV01_MEMORY_SYSTEM_OS_DESCRIPTOR:
 		return rmAllocOSDescriptor(fi, &ioctlParams)
 	default:
-		fi.ctx.Warningf("nvproxy: unknown NV_ESC_RM_ALLOC_MEMORY class %v", ioctlParams.Params.HClass)
+		fi.ctx.Warningf("nvproxy: %s for NV_ESC_RM_ALLOC_MEMORY class %v", errUndefinedHandler.Error(), ioctlParams.Params.HClass)
 		return 0, linuxerr.EINVAL
 	}
 }
@@ -1305,7 +1305,7 @@ func rmVidHeapControl(fi *frontendIoctlState) (uintptr, error) {
 	case nvgpu.NVOS32_FUNCTION_ALLOC_SIZE:
 		return rmVidHeapControlAllocSize(fi, &ioctlParams)
 	default:
-		fi.ctx.Warningf("nvproxy: unknown VID_HEAP_CONTROL function %d", ioctlParams.Function)
+		fi.ctx.Warningf("nvproxy: %s for VID_HEAP_CONTROL function %d", errUndefinedHandler.Error(), ioctlParams.Function)
 		return 0, linuxerr.EINVAL
 	}
 }
