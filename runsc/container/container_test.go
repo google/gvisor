@@ -1106,6 +1106,14 @@ func testCheckpointRestore(t *testing.T, conf *config.Config, compression statef
 		t.Fatalf("error restoring container: %v", err)
 	}
 
+	if !cont2.Sandbox.Restored {
+		t.Fatalf("sandbox returned wrong value for Sandbox.Restored, got: false, want: true")
+	}
+
+	if cont2.Sandbox.Checkpointed {
+		t.Fatalf("sandbox returned wrong value for Sandbox.Checkpointed, got: true, want: false")
+	}
+
 	// Wait until application has ran.
 	if err := waitForFileNotEmpty(outputFile2); err != nil {
 		t.Fatalf("Failed to wait for output file: %v", err)
@@ -3966,5 +3974,71 @@ func TestSpecValidationIgnore(t *testing.T) {
 
 	if err := specutils.RestoreValidateSpec(oldSpecs, newSpecs, conf); err != nil {
 		t.Fatalf("spec validation was not ignored, got: %v, want: nil", err)
+	}
+}
+
+func TestCheckpointResume(t *testing.T) {
+	for name, conf := range configs(t, true /* noOverlay */) {
+		t.Run(name, func(t *testing.T) {
+			dir, err := os.MkdirTemp(testutil.TmpDir(), "checkpoint-test")
+			if err != nil {
+				t.Fatalf("os.MkdirTemp failed: %v", err)
+			}
+			defer os.RemoveAll(dir)
+			if err := os.Chmod(dir, 0777); err != nil {
+				t.Fatalf("error chmoding file: %q, %v", dir, err)
+			}
+
+			outputPath := filepath.Join(dir, "output")
+			outputFile, err := createWriteableOutputFile(outputPath)
+			if err != nil {
+				t.Fatalf("error creating output file: %v", err)
+			}
+			defer outputFile.Close()
+
+			script := fmt.Sprintf("i=0; while true; do echo $i >> %q; sleep 1; i=$((i+1)); done", outputPath)
+			spec := testutil.NewSpecWithArgs("bash", "-c", script)
+			_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+			if err != nil {
+				t.Fatalf("error setting up container: %v", err)
+			}
+			defer cleanup()
+
+			// Create and start the container.
+			args := Args{
+				ID:        testutil.RandomContainerID(),
+				Spec:      spec,
+				BundleDir: bundleDir,
+			}
+			cont, err := New(conf, args)
+			if err != nil {
+				t.Fatalf("error creating container: %v", err)
+			}
+			if err := cont.Start(conf); err != nil {
+				t.Fatalf("error starting container: %v", err)
+			}
+
+			// Wait until application has ran.
+			if err := waitForFileNotEmpty(outputFile); err != nil {
+				t.Fatalf("Failed to wait for output file: %v", err)
+			}
+
+			sfOpts := statefile.Options{
+				Resume: true,
+			}
+			// Checkpoint running container; save state into new file.
+			if err := cont.Checkpoint(dir, false /* direct */, sfOpts, pgalloc.SaveOpts{}); err != nil {
+				t.Fatalf("error checkpointing container to empty file: %v", err)
+			}
+
+			if !cont.Sandbox.Checkpointed {
+				t.Fatalf("sandbox returned wrong value for Sandbox.Checkpointed, got: false, want: true")
+			}
+
+			if cont.Sandbox.Restored {
+				t.Fatalf("sandbox returned wrong value for Sandbox.Restored, got: true, want: false")
+			}
+			cont.Destroy()
+		})
 	}
 }
