@@ -150,6 +150,12 @@ type inode struct {
 	// This field is initialized at creation time and is immutable.
 	savable bool
 
+	// restorable is true if hostFD may be restored. This can be set to false
+	// for host FDs that are not going to be present after restore.
+	//
+	// This field is initialized at creation time and is immutable.
+	restorable bool
+
 	// readonly is true if operations that can potentially change the host file
 	// are blocked.
 	//
@@ -220,6 +226,10 @@ type NewFDOptions struct {
 	// host FD so that a mapping to the corresponding FD can be provided during
 	// restore.
 	RestoreKey vfs.RestoreID
+
+	// Restorable is true if hostFD may be restored. This can be set to false
+	// for host FDs that are not going to be present after restore.
+	Restorable bool
 
 	// If IsTTY is true, the file descriptor is a TTY.
 	IsTTY bool
@@ -297,6 +307,7 @@ func NewFD(ctx context.Context, mnt *vfs.Mount, hostFD int, opts *NewFDOptions) 
 		i.virtualOwner.gid = atomicbitops.FromUint32(uint32(opts.GID))
 		i.virtualOwner.mode = atomicbitops.FromUint32(stat.Mode)
 	}
+	i.restorable = opts.Restorable
 
 	d := &kernfs.Dentry{}
 	d.Init(&fs.Filesystem, i)
@@ -627,11 +638,13 @@ func (i *inode) SetStat(ctx context.Context, fs *vfs.Filesystem, creds *auth.Cre
 // DecRef implements kernfs.Inode.DecRef.
 func (i *inode) DecRef(ctx context.Context) {
 	i.inodeRefs.DecRef(func() {
-		if i.epollable {
-			fdnotifier.RemoveFD(int32(i.hostFD))
-		}
-		if err := unix.Close(i.hostFD); err != nil {
-			log.Warningf("failed to close host fd %d: %v", i.hostFD, err)
+		if i.hostFD >= 0 {
+			if i.epollable {
+				fdnotifier.RemoveFD(int32(i.hostFD))
+			}
+			if err := unix.Close(i.hostFD); err != nil {
+				log.Warningf("failed to close host fd %d: %v", i.hostFD, err)
+			}
 		}
 		// We can't rely on fdnotifier when closing the fd, because the event may race
 		// with fdnotifier.RemoveFD. Instead, notify the queue explicitly.

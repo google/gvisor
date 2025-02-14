@@ -29,11 +29,20 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
 
+// ImportOptions contains options for Import().
+type ImportOptions struct {
+	Console       bool
+	Restorable    bool
+	UID           auth.KUID
+	GID           auth.KGID
+	ContainerName string
+}
+
 // Import imports a map of FDs into the given FDTable. If console is true,
 // sets up TTY for sentry stdin, stdout, and stderr FDs. Used FDs are either
 // closed or released. It's safe for the caller to close any remaining files
 // upon return.
-func Import(ctx context.Context, fdTable *kernel.FDTable, console bool, uid auth.KUID, gid auth.KGID, fds map[int]*fd.FD, containerName string) (*host.TTYFileDescription, error) {
+func Import(ctx context.Context, fdTable *kernel.FDTable, fds map[int]*fd.FD, opts ImportOptions) (*host.TTYFileDescription, error) {
 	k := kernel.KernelFromContext(ctx)
 	if k == nil {
 		return nil, fmt.Errorf("cannot find kernel from context")
@@ -52,23 +61,24 @@ func Import(ctx context.Context, fdTable *kernel.FDTable, console bool, uid auth
 		}
 	}
 
-	// We iterate through the FDs in sorted order for better determinancy
-	// in startup, but it shouldn't matter.
+	// We iterate through the FDs in sorted order to keep it deterministic
+	// during startup, but it shouldn't matter.
 	var ttyFile *vfs.FileDescription
 	for _, appFD := range slices.Sorted(maps.Keys(fds)) {
 		hostFD := fds[appFD]
 		fdOpts := host.NewFDOptions{
-			Savable: true,
+			Savable:    true,
+			Restorable: opts.Restorable,
 		}
-		if uid != auth.NoID || gid != auth.NoID {
+		if opts.UID != auth.NoID || opts.GID != auth.NoID {
 			fdOpts.VirtualOwner = true
-			fdOpts.UID = uid
-			fdOpts.GID = gid
+			fdOpts.UID = opts.UID
+			fdOpts.GID = opts.GID
 		}
 		var appFile *vfs.FileDescription
 
-		fdOpts.RestoreKey = host.MakeRestoreID(containerName, appFD)
-		if console && appFD < 3 {
+		fdOpts.RestoreKey = host.MakeRestoreID(opts.ContainerName, appFD)
+		if opts.Console && appFD < 3 {
 			// Import the file as a host TTY file.
 			if ttyFile == nil {
 				fdOpts.IsTTY = true

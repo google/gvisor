@@ -276,7 +276,13 @@ func (l *Lifecycle) StartContainer(args *StartContainerArgs, _ *uint32) error {
 		fdMap[appFD] = hostFDs[i]
 	}
 	// Use ContainerID since containers don't have names here.
-	if _, err := fdimport.Import(ctx, fdTable, false, args.KUID, args.KGID, fdMap, initArgs.ContainerID); err != nil {
+	opts := fdimport.ImportOptions{
+		Restorable:    true,
+		UID:           args.KUID,
+		GID:           args.KGID,
+		ContainerName: initArgs.ContainerID,
+	}
+	if _, err := fdimport.Import(ctx, fdTable, fdMap, opts); err != nil {
 		return fmt.Errorf("error importing host files: %w", err)
 	}
 	initArgs.FDTable = fdTable
