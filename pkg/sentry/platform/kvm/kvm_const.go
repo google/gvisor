@@ -42,6 +42,7 @@ const (
 	KVM_GET_VCPU_EVENTS        = 0x8040ae9f
 	KVM_SET_VCPU_EVENTS        = 0x4040aea0
 	KVM_SET_DEVICE_ATTR        = 0x4018aee1
+	KVM_ENABLE_CAP             = 0x4068aea3
 )
 
 // KVM exit reasons.

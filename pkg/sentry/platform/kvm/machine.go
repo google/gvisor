@@ -267,10 +267,14 @@ func (m *machine) createVCPU(id int) *vCPU {
 var forceMappingEntireAddressSpace = false
 
 // newMachine returns a new VM context.
-func newMachine(vm int) (*machine, error) {
+func newMachine(vm int, config *Config) (*machine, error) {
 	// Create the machine.
 	m := &machine{fd: vm}
 	m.available.L = &m.mu
+
+	if err := m.applyConfig(config); err != nil {
+		panic(fmt.Sprintf("error setting config parameters: %s", err))
+	}
 
 	// Pull the maximum vCPUs.
 	m.getMaxVCPU()
@@ -875,4 +879,11 @@ func seccompMmapRules(m *machine) {
 	machinePool[i].Store(m)
 	m.machinePoolIndex = i
 	machinePoolMu.Unlock()
+}
+
+type kvmEnableCap struct {
+	capability uint32
+	flags      uint32
+	args       [4]uint64
+	pad        [64]uint8
 }
