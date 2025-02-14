@@ -326,7 +326,7 @@ func (r *restorer) restore(l *Loader) error {
 
 	go func() {
 		if err := postRestoreImpl(l); err != nil {
-			log.Warningf("Killing the sandbox after post restore work failed: %w", err)
+			log.Warningf("Killing the sandbox after post restore work failed: %v", err)
 			l.k.Kill(linux.WaitStatusTerminationSignal(linux.SIGKILL))
 			return
 		}
