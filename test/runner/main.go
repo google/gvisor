@@ -27,6 +27,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
@@ -495,6 +496,7 @@ func runRunsc(tc *gtest.TestCase, spec *specs.Spec) error {
 	cmd.Stderr = os.Stderr
 	sig := make(chan os.Signal, 1)
 	defer close(sig)
+	signalled := atomic.Bool{}
 	signal.Notify(sig, unix.SIGTERM)
 	defer signal.Stop(sig)
 	go func() {
@@ -502,6 +504,7 @@ func runRunsc(tc *gtest.TestCase, spec *specs.Spec) error {
 		if !ok {
 			return
 		}
+		signalled.Store(true)
 		log.Warningf("%s: Got signal: %v", name, s)
 		done := make(chan bool, 1)
 		dArgs := append([]string{}, args...)
@@ -541,6 +544,9 @@ func runRunsc(tc *gtest.TestCase, spec *specs.Spec) error {
 
 		// Restore the sandbox with the previous state file.
 		for i := 1; ; i++ {
+			if signalled.Load() {
+				return fmt.Errorf("timeout")
+			}
 			// Check if the latest state file is valid. If the file
 			// is empty, delete it and exit the loop.
 			isEmpty, err := deleteIfEmptyFile(dirs[i-1])
