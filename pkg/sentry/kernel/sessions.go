@@ -431,13 +431,9 @@ func (tg *ThreadGroup) CreateProcessGroup() error {
 
 // JoinProcessGroup joins an existing process group.
 //
-// This function will return EACCES if an exec has been performed since fork
-// by the given ThreadGroup, and EPERM if the Sessions are not the same or the
+// This function will return EPERM if the Sessions are not the same or the
 // group does not exist.
-//
-// If checkExec is set, then the join is not permitted after the process has
-// executed exec at least once.
-func (tg *ThreadGroup) JoinProcessGroup(pidns *PIDNamespace, pgid ProcessGroupID, checkExec bool) error {
+func (tg *ThreadGroup) JoinProcessGroup(pidns *PIDNamespace, pgid ProcessGroupID) error {
 	pidns.owner.mu.Lock()
 	defer pidns.owner.mu.Unlock()
 
@@ -450,11 +446,6 @@ func (tg *ThreadGroup) JoinProcessGroup(pidns *PIDNamespace, pgid ProcessGroupID
 	pg := pidns.processGroups[pgid]
 	if pg == nil {
 		return linuxerr.EPERM
-	}
-
-	// Disallow the join if an execve has performed, per POSIX.
-	if checkExec && tg.execed {
-		return linuxerr.EACCES
 	}
 
 	// See if it's in the same session as ours.

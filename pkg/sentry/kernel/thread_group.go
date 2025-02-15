@@ -651,3 +651,11 @@ func (tg *ThreadGroup) IsInitIn(pidns *PIDNamespace) bool {
 func (tg *ThreadGroup) isInitInLocked(pidns *PIDNamespace) bool {
 	return pidns.tgids[tg] == initTID
 }
+
+// Execed returns whether this ThreadGroup has execed since creation.
+func (tg *ThreadGroup) Execed() bool {
+	ts := tg.TaskSet()
+	ts.mu.RLock()
+	defer ts.mu.RUnlock()
+	return tg.execed
+}

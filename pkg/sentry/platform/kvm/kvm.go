@@ -92,7 +92,7 @@ func OpenDevice(devicePath string) (*fd.FD, error) {
 }
 
 // New returns a new KVM-based implementation of the platform interface.
-func New(deviceFile *fd.FD) (*KVM, error) {
+func New(deviceFile *fd.FD, config Config) (*KVM, error) {
 	fd := deviceFile.FD()
 
 	// Ensure global initialization is done.
@@ -122,7 +122,7 @@ func New(deviceFile *fd.FD) (*KVM, error) {
 	deviceFile.Close()
 
 	// Create a VM context.
-	machine, err := newMachine(int(vm))
+	machine, err := newMachine(int(vm), &config)
 	if err != nil {
 		return nil, err
 	}
@@ -185,7 +185,7 @@ func (k *KVM) NewContext(pkgcontext.Context) platform.Context {
 type constructor struct{}
 
 func (*constructor) New(f *fd.FD) (platform.Platform, error) {
-	return New(f)
+	return New(f, Config{})
 }
 
 func (*constructor) OpenDevice(devicePath string) (*fd.FD, error) {

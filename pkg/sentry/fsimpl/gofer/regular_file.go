@@ -362,10 +362,10 @@ func (rw *dentryReadWriter) ReadToBlocks(dsts safemem.BlockSeq) (uint64, error) 
 	// unreliable), or if the file was opened O_DIRECT, read directly from
 	// readHandle() without locking dentry.dataMu.
 	rw.d.handleMu.RLock()
+	defer rw.d.handleMu.RUnlock()
 	h := rw.d.readHandle()
 	if (rw.d.mmapFD.RacyLoad() >= 0 && !rw.d.fs.opts.forcePageCache) || rw.d.fs.opts.interop == InteropModeShared || rw.direct {
 		n, err := h.readToBlocksAt(rw.ctx, dsts, rw.off)
-		rw.d.handleMu.RUnlock()
 		rw.off += n
 		return n, err
 	}
@@ -382,12 +382,11 @@ func (rw *dentryReadWriter) ReadToBlocks(dsts safemem.BlockSeq) (uint64, error) 
 		rw.d.dataMu.RLock()
 		dataMuUnlock = rw.d.dataMu.RUnlock
 	}
+	defer dataMuUnlock()
 
 	// Compute the range to read (limited by file size and overflow-checked).
 	end := rw.d.size.Load()
 	if rw.off >= end {
-		dataMuUnlock()
-		rw.d.handleMu.RUnlock()
 		return 0, io.EOF
 	}
 	if rend := rw.off + dsts.NumBytes(); rend > rw.off && rend < end {
@@ -403,8 +402,6 @@ func (rw *dentryReadWriter) ReadToBlocks(dsts safemem.BlockSeq) (uint64, error) 
 			// Get internal mappings from the cache.
 			ims, err := mf.MapInternal(seg.FileRangeOf(seg.Range().Intersect(mr)), hostarch.Read)
 			if err != nil {
-				dataMuUnlock()
-				rw.d.handleMu.RUnlock()
 				return done, err
 			}
 
@@ -414,8 +411,6 @@ func (rw *dentryReadWriter) ReadToBlocks(dsts safemem.BlockSeq) (uint64, error) 
 			rw.off += n
 			dsts = dsts.DropFirst64(n)
 			if err != nil {
-				dataMuUnlock()
-				rw.d.handleMu.RUnlock()
 				return done, err
 			}
 
@@ -441,8 +436,6 @@ func (rw *dentryReadWriter) ReadToBlocks(dsts safemem.BlockSeq) (uint64, error) 
 				mf.MarkEvictable(rw.d, pgalloc.EvictableRange{optMR.Start, optMR.End})
 				seg, gap = rw.d.cache.Find(rw.off)
 				if !seg.Ok() {
-					dataMuUnlock()
-					rw.d.handleMu.RUnlock()
 					return done, err
 				}
 				// err might have occurred in part of gap.Range() outside gapMR
@@ -458,8 +451,6 @@ func (rw *dentryReadWriter) ReadToBlocks(dsts safemem.BlockSeq) (uint64, error) 
 				dsts = dsts.DropFirst64(n)
 				// Partial reads are fine. But we must stop reading.
 				if n != gapDsts.NumBytes() || err != nil {
-					dataMuUnlock()
-					rw.d.handleMu.RUnlock()
 					return done, err
 				}
 
@@ -468,8 +459,6 @@ func (rw *dentryReadWriter) ReadToBlocks(dsts safemem.BlockSeq) (uint64, error) 
 			}
 		}
 	}
-	dataMuUnlock()
-	rw.d.handleMu.RUnlock()
 	return done, nil
 }
 
@@ -487,24 +476,25 @@ func (rw *dentryReadWriter) WriteFromBlocks(srcs safemem.BlockSeq) (uint64, erro
 	// opened with O_DIRECT, write directly to dentry.writeHandle()
 	// without locking dentry.dataMu.
 	rw.d.handleMu.RLock()
+	defer rw.d.handleMu.RUnlock()
 	h := rw.d.writeHandle()
 	if (rw.d.mmapFD.RacyLoad() >= 0 && !rw.d.fs.opts.forcePageCache) || rw.d.fs.opts.interop == InteropModeShared || rw.direct {
 		n, err := h.writeFromBlocksAt(rw.ctx, srcs, rw.off)
 		rw.off += n
 		rw.d.dataMu.Lock()
+		defer rw.d.dataMu.Unlock()
 		if rw.off > rw.d.size.Load() {
 			rw.d.size.Store(rw.off)
 			// The remote file's size will implicitly be extended to the correct
 			// value when we write back to it.
 		}
-		rw.d.dataMu.Unlock()
-		rw.d.handleMu.RUnlock()
 		return n, err
 	}
 
 	// Otherwise write to/through the cache.
 	mf := rw.d.fs.mf
 	rw.d.dataMu.Lock()
+	defer rw.d.dataMu.Unlock()
 
 	// Compute the range to write (overflow-checked).
 	start := rw.off
@@ -584,8 +574,6 @@ exitLoop:
 			retErr = err
 		}
 	}
-	rw.d.dataMu.Unlock()
-	rw.d.handleMu.RUnlock()
 	return done, retErr
 }
 
@@ -759,8 +747,8 @@ func (d *dentry) CopyMapping(ctx context.Context, ms memmap.MappingSpace, srcAR,
 // Translate implements memmap.Mappable.Translate.
 func (d *dentry) Translate(ctx context.Context, required, optional memmap.MappableRange, at hostarch.AccessType) ([]memmap.Translation, error) {
 	d.handleMu.RLock()
+	defer d.handleMu.RUnlock()
 	if d.mmapFD.RacyLoad() >= 0 && !d.fs.opts.forcePageCache {
-		d.handleMu.RUnlock()
 		mr := optional
 		if d.fs.opts.limitHostFDTranslation {
 			mr = maxFillRange(required, optional)
@@ -777,6 +765,7 @@ func (d *dentry) Translate(ctx context.Context, required, optional memmap.Mappab
 
 	memCgID := pgalloc.MemoryCgroupIDFromContext(ctx)
 	d.dataMu.Lock()
+	defer d.dataMu.Unlock()
 
 	// Constrain translations to d.size (rounded up) to prevent translation to
 	// pages that may be concurrently truncated.
@@ -784,8 +773,6 @@ func (d *dentry) Translate(ctx context.Context, required, optional memmap.Mappab
 	var beyondEOF bool
 	if required.End > pgend {
 		if required.Start >= pgend {
-			d.dataMu.Unlock()
-			d.handleMu.RUnlock()
 			return nil, &memmap.BusError{io.EOF}
 		}
 		beyondEOF = true
@@ -824,9 +811,6 @@ func (d *dentry) Translate(ctx context.Context, required, optional memmap.Mappab
 		})
 		translatedEnd = segMR.End
 	}
-
-	d.dataMu.Unlock()
-	d.handleMu.RUnlock()
 
 	// Don't return the error returned by c.cache.Fill if it occurred outside
 	// of required.
