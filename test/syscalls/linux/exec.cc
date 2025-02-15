@@ -17,18 +17,22 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <sys/eventfd.h>
+#include <sys/ptrace.h>
 #include <sys/resource.h>
 #include <sys/time.h>
 #include <unistd.h>
 
+#include <cassert>
+#include <csignal>
+#include <cstdint>
+#include <cstdlib>
 #include <iostream>
-#include <memory>
 #include <string>
 #include <vector>
 
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/strings/match.h"
-#include "absl/strings/numbers.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_split.h"
 #include "absl/strings/string_view.h"
@@ -811,6 +815,40 @@ TEST(GetpriorityTest, ExecveMaintainsPriority) {
   // X=getpriority(PRIO_PROCESS,0). Check that this exit value is prio.
   CheckExec(RunfilePath(kPriorityWorkload), {RunfilePath(kPriorityWorkload)},
             {}, W_EXITCODE(expected_exit_code, 0), "");
+}
+
+// Test that setpgid() fails on child processes after they call execve().
+TEST(ExecTest, Setpgid) {
+  const pid_t pid = fork();
+  int status;
+  ASSERT_NE(pid, -1);
+  if (pid == 0) {
+    ASSERT_THAT(ptrace(PTRACE_TRACEME, 0, 0, 0), SyscallSucceeds());
+    raise(SIGSTOP);
+    char* argv[] = {nullptr};
+    char* envp[] = {nullptr};
+    ASSERT_THAT(execve("/proc/self/exe", argv, envp), SyscallSucceeds());
+  }
+
+  EXPECT_THAT(setpgid(pid, pid), SyscallSucceeds())
+      << "setpgid failed before execve";
+  ASSERT_THAT(waitpid(pid, &status, 0), SyscallSucceedsWithValue(pid))
+      << "waitpid failed";
+  ASSERT_THAT(WIFSTOPPED(status), 1);
+  ASSERT_THAT(WSTOPSIG(status), SIGSTOP);
+  ASSERT_THAT(
+      ptrace(PTRACE_SETOPTIONS, pid, 0, PTRACE_O_EXITKILL | PTRACE_O_TRACEEXEC),
+      SyscallSucceeds())
+      << "ptrace failed";
+  ASSERT_THAT(ptrace(PTRACE_CONT, pid, 0, 0), SyscallSucceeds())
+      << "ptrace (PTRACE_CONT) failed";
+  ASSERT_THAT(waitpid(pid, &status, 0), SyscallSucceedsWithValue(pid))
+      << "waitpid failed";
+  ASSERT_THAT(WIFSTOPPED(status), 1);
+  ASSERT_THAT(WSTOPSIG(status), SIGTRAP);
+  EXPECT_THAT(setpgid(pid, pid), SyscallFailsWithErrno(EACCES));
+  EXPECT_THAT(setpgid(pid, getpid()), SyscallFailsWithErrno(EACCES));
+  EXPECT_THAT(setpgid(getpid(), pid), SyscallSucceeds());
 }
 
 void ExecWithThread() {

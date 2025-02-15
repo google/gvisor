@@ -205,9 +205,9 @@ func (r *runSyscallAfterExecStop) execute(t *Task) taskRunState {
 	t.signalStack = linux.SignalStack{Flags: linux.SS_DISABLE}
 	// "The termination signal is reset to SIGCHLD (see clone(2))."
 	t.tg.terminationSignal = linux.SIGCHLD
-	// execed indicates that the process can no longer join a process group
+	// execed indicates that the process's pgid cannot be changed
 	// in some scenarios (namely, the parent call setpgid(2) on the child).
-	// See the JoinProcessGroup function in sessions.go for more context.
+	// See the Setpgid function in sys_thread.go for more context.
 	t.tg.execed = true
 	// Maximum RSS is preserved across execve(2).
 	t.updateRSSLocked()

@@ -620,6 +620,13 @@ func Setpgid(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr
 		return 0, nil, linuxerr.EINVAL
 	}
 
+	// Return EACCES if an attempt was made to change the process group ID of one
+	// of the children of the calling process and the child had
+	// already performed an execve(2)
+	if tg != t.ThreadGroup() && tg.Execed() {
+		return 0, nil, linuxerr.EACCES
+	}
+
 	// If the pgid is the same as the group, then create a new one. Otherwise,
 	// we attempt to join an existing process group.
 	if pgid == defaultPGID {
@@ -635,7 +642,7 @@ func Setpgid(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr
 		}
 	} else {
 		// Same as CreateProcessGroup, above.
-		if err := tg.JoinProcessGroup(t.PIDNamespace(), pgid, tg != t.ThreadGroup()); err != nil {
+		if err := tg.JoinProcessGroup(t.PIDNamespace(), pgid); err != nil {
 			// See above.
 			if t.PIDNamespace().IDOfProcessGroup(tg.ProcessGroup()) == pgid {
 				return 0, nil, nil
