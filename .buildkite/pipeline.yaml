@@ -475,6 +475,23 @@ steps:
       <<: *ubuntu_agents
       cgroup: "v2"
   - <<: *common
+    <<: *docker
+    label: ":docker: Containerd 1.7.25 tests (cgroupv1)"
+    command: make containerd-test-1.7.25
+    agents:
+      <<: *platform_specific_agents
+      <<: *ubuntu_agents
+      cgroup: "v1"
+  # TODO(gvisor.dev/issue/11319): Re-enable once the test is fixed.
+  #- <<: *common
+  #  <<: *docker
+  #  <<: *source_test
+  #  label: ":docker: Containerd 1.7.25 tests (cgroupv2)"
+  #  command: make containerd-test-1.7.25
+  #  agents:
+  #    <<: *ubuntu_agents
+  #    cgroup: "v2"
+  - <<: *common
     <<: *source_test
     label: ":podman: Podman"
     commands:
