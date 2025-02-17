@@ -1,4 +1,4 @@
-// Copyright 2024 The gVisor Authors.
+// Copyright 2025 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -15,16 +15,12 @@
 //go:build !xdp
 // +build !xdp
 
-package sandbox
+package boot
 
 import (
 	"errors"
 	"net"
 	"os"
-
-	"gvisor.dev/gvisor/pkg/urpc"
-	"gvisor.dev/gvisor/runsc/boot"
-	"gvisor.dev/gvisor/runsc/config"
 )
 
 // This file holds placeholders for XDP support, which is not compiled in by default.
@@ -33,7 +29,7 @@ import (
 
 const noXDPMsg = "XDP support was not built into this release -- rebuild with --define=gotags=xdp"
 
-func createRedirectInterfacesAndRoutes(conn *urpc.Client, conf *config.Config) error {
+func (n *Network) SetupXDPModeRedirect(netConf *NetworkConfig, _ *struct{}) error {
 	return errors.New(noXDPMsg)
 }
 
@@ -41,10 +37,6 @@ func createSocketXDP(iface net.Interface) ([]*os.File, error) {
 	return nil, errors.New(noXDPMsg)
 }
 
-func createXDPTunnel(conn *urpc.Client, nsPath string, conf *config.Config) error {
+func (n *Network) SetupXDPModeTunnel(netConf *NetworkConfig, _ *struct{}) error {
 	return errors.New(noXDPMsg)
-}
-
-func prepareRedirectInterfaceArgs(bind boot.BindOpt, conf *config.Config) (boot.CreateLinksAndRoutesArgs, net.Interface, error) {
-	return boot.CreateLinksAndRoutesArgs{}, net.Interface{}, errors.New(noXDPMsg)
 }

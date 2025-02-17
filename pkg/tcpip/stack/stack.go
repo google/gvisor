@@ -1966,45 +1966,17 @@ func (s *Stack) Pause() {
 	}
 }
 
-func (s *Stack) getNICs() map[tcpip.NICID]*nic {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	nics := s.nics
-	return nics
-}
-
-// ReplaceConfig replaces config in the loaded stack.
-func (s *Stack) ReplaceConfig(st *Stack) {
-	if st == nil {
-		panic("stack.Stack cannot be nil when netstack s/r is enabled")
-	}
-
-	// Update route table.
-	s.SetRouteTable(st.GetRouteTable())
-
-	// Update NICs.
-	nics := st.getNICs()
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.nics = make(map[tcpip.NICID]*nic)
-	for id, nic := range nics {
-		nic.stack = s
-		s.nics[id] = nic
-		_ = s.NextNICID()
-	}
-	s.tables = st.tables
-}
-
 // Restore restarts the stack after a restore. This must be called after the
 // entire system has been restored.
-func (s *Stack) Restore() {
+func (s *Stack) Restore(defaultIPTables func(clock tcpip.Clock, rand *rand.Rand) *IPTables) {
 	// RestoredEndpoint.Restore() may call other methods on s, so we can't hold
 	// s.mu while restoring the endpoints.
 	s.mu.Lock()
 	eps := s.restoredEndpoints
 	s.restoredEndpoints = nil
 	saveRestoreEnabled := s.saveRestoreEnabled
+	s.icmpRateLimiter = NewICMPRateLimiter(s.clock)
+	s.tables = defaultIPTables(s.clock, s.insecureRNG)
 	s.mu.Unlock()
 	for _, e := range eps {
 		e.Restore(s)

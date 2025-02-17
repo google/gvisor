@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"runtime"
 	"strconv"
@@ -255,6 +256,18 @@ type Loader struct {
 	// saveRestoreNet indicates if the saved network stack should be used
 	// during restore.
 	saveRestoreNet bool
+
+	// netConf contains the network configuration required during restore.
+	netConf *NetworkConfig
+}
+
+// NetworkConfig contains the network config.
+type NetworkConfig struct {
+	Args     *CreateLinksAndRoutesArgs
+	InitArgs *InitPluginStackArgs
+	Iface    net.Interface
+	Network  config.NetworkType
+	XDPMode  config.XDPMode
 }
 
 // execID uniquely identifies a sentry process that is executed in a container.

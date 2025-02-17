@@ -398,9 +398,6 @@ func (*Stack) Pause() {}
 // Restore implements inet.Stack.Restore.
 func (*Stack) Restore() {}
 
-// ReplaceConfig implements inet.Stack.ReplaceConfig.
-func (s *Stack) ReplaceConfig(_ inet.Stack) {}
-
 // Resume implements inet.Stack.Resume.
 func (*Stack) Resume() {}
 
