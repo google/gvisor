@@ -46,6 +46,7 @@ go_library(
         "@com_github_containerd_containerd//sys/reaper:go_default_library",
         "@com_github_containerd_errdefs//:go_default_library",
         "@com_github_containerd_fifo//:go_default_library",
+        "@com_github_containerd_go_runc//:go_default_library",
         "@com_github_containerd_log//:go_default_library",
         "@com_github_containerd_typeurl//:go_default_library",
         "@com_github_gogo_protobuf//types:go_default_library",
