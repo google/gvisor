@@ -22,7 +22,7 @@ import (
 	"github.com/containerd/console"
 	"github.com/containerd/errdefs"
 	runc "github.com/containerd/go-runc"
-	"gvisor.dev/gvisor/pkg/shim/extension"
+	"gvisor.dev/gvisor/pkg/shim/v1/extension"
 )
 
 type deletedState struct{}
