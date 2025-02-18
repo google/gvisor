@@ -179,10 +179,10 @@ const (
 )
 
 const (
-	// NoUID is a sentinel used to indicate no valid UID.
+	// NoUID is a sentinel used to indicate no valid UID. See auth.NoID.
 	NoUID UID = math.MaxUint32
 
-	// NoGID is a sentinel used to indicate no valid GID.
+	// NoGID is a sentinel used to indicate no valid GID. See auth.NoID.
 	NoGID GID = math.MaxUint32
 )
 

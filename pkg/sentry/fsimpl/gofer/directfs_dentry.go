@@ -381,15 +381,13 @@ func (d *directfsDentry) setStatLocked(ctx context.Context, stat *linux.Statx) (
 	}
 
 	if stat.Mask&(unix.STATX_UID|unix.STATX_GID) != 0 {
-		// "If the owner or group is specified as -1, then that ID is not changed"
-		// - chown(2)
-		uid := -1
+		uid := auth.KUID(auth.NoID)
 		if stat.Mask&unix.STATX_UID != 0 {
-			uid = int(stat.UID)
+			uid = auth.KUID(stat.UID)
 		}
-		gid := -1
+		gid := auth.KGID(auth.NoID)
 		if stat.Mask&unix.STATX_GID != 0 {
-			gid = int(stat.GID)
+			gid = auth.KGID(stat.GID)
 		}
 		if err := fchown(d.controlFD, uid, gid); err != nil {
 			failureMask |= stat.Mask & (unix.STATX_UID | unix.STATX_GID)
@@ -399,8 +397,21 @@ func (d *directfsDentry) setStatLocked(ctx context.Context, stat *linux.Statx) (
 	return
 }
 
-func fchown(fd, uid, gid int) error {
-	return unix.Fchownat(fd, "", uid, gid, unix.AT_EMPTY_PATH|unix.AT_SYMLINK_NOFOLLOW)
+func fchown(fd int, uid auth.KUID, gid auth.KGID) error {
+	// "If the owner or group is specified as -1, then that ID is not changed"
+	// - chown(2). Only bother making the syscall if the owner is changing.
+	if !uid.Ok() && !gid.Ok() {
+		return nil
+	}
+	u := -1
+	g := -1
+	if uid.Ok() {
+		u = int(uid)
+	}
+	if gid.Ok() {
+		g = int(gid)
+	}
+	return unix.Fchownat(fd, "", u, g, unix.AT_EMPTY_PATH|unix.AT_SYMLINK_NOFOLLOW)
 }
 
 // Precondition: d.handleMu must be locked.
@@ -442,7 +453,7 @@ func (d *directfsDentry) getXattr(ctx context.Context, name string, size uint64)
 
 // getCreatedChild opens the newly created child, sets its uid/gid, constructs
 // a disconnected dentry and returns it.
-func (d *directfsDentry) getCreatedChild(name string, uid, gid int, isDir bool) (*dentry, error) {
+func (d *directfsDentry) getCreatedChild(name string, uid auth.KUID, gid auth.KGID, isDir bool) (*dentry, error) {
 	unlinkFlags := 0
 	extraOpenFlags := 0
 	if isDir {
@@ -464,15 +475,12 @@ func (d *directfsDentry) getCreatedChild(name string, uid, gid int, isDir bool) 
 		return nil, err
 	}
 
-	// "If the owner or group is specified as -1, then that ID is not changed"
-	// - chown(2). Only bother making the syscall if the owner is changing.
-	if uid != -1 || gid != -1 {
-		if err := fchown(childFD, uid, gid); err != nil {
-			deleteChild()
-			_ = unix.Close(childFD)
-			return nil, err
-		}
+	if err := fchown(childFD, uid, gid); err != nil {
+		deleteChild()
+		_ = unix.Close(childFD)
+		return nil, err
 	}
+
 	child, err := d.fs.newDirectfsDentry(childFD)
 	if err != nil {
 		// Ownership of childFD was passed to newDirectDentry(), so no need to
@@ -498,7 +506,7 @@ func (d *directfsDentry) mknod(ctx context.Context, name string, creds *auth.Cre
 	if err := unix.Mknodat(d.controlFD, name, uint32(opts.Mode), 0); err != nil {
 		return nil, err
 	}
-	return d.getCreatedChild(name, int(creds.EffectiveKUID), int(creds.EffectiveKGID), false /* isDir */)
+	return d.getCreatedChild(name, creds.EffectiveKUID, creds.EffectiveKGID, false /* isDir */)
 }
 
 // Precondition: opts.Endpoint != nil and is transport.HostBoundEndpoint type.
@@ -523,7 +531,7 @@ func (d *directfsDentry) bindAt(ctx context.Context, name string, creds *auth.Cr
 		return nil, err
 	}
 	// Socket already has the right UID/GID set, so use uid = gid = -1.
-	child, err := d.getCreatedChild(name, -1 /* uid */, -1 /* gid */, false /* isDir */)
+	child, err := d.getCreatedChild(name, auth.NoID /* uid */, auth.NoID /* gid */, false /* isDir */)
 	if err != nil {
 		hbep.ResetBoundSocketFD(ctx)
 		return nil, err
@@ -551,21 +559,21 @@ func (d *directfsDentry) link(target *directfsDentry, name string) (*dentry, err
 	// link. The original file already has the right owner.
 	// TODO(gvisor.dev/issue/6739): Hard linked dentries should share the same
 	// inode fields.
-	return d.getCreatedChild(name, -1 /* uid */, -1 /* gid */, false /* isDir */)
+	return d.getCreatedChild(name, auth.NoID /* uid */, auth.NoID /* gid */, false /* isDir */)
 }
 
 func (d *directfsDentry) mkdir(name string, mode linux.FileMode, uid auth.KUID, gid auth.KGID) (*dentry, error) {
 	if err := unix.Mkdirat(d.controlFD, name, uint32(mode)); err != nil {
 		return nil, err
 	}
-	return d.getCreatedChild(name, int(uid), int(gid), true /* isDir */)
+	return d.getCreatedChild(name, uid, gid, true /* isDir */)
 }
 
 func (d *directfsDentry) symlink(name, target string, creds *auth.Credentials) (*dentry, error) {
 	if err := unix.Symlinkat(target, d.controlFD, name); err != nil {
 		return nil, err
 	}
-	return d.getCreatedChild(name, int(creds.EffectiveKUID), int(creds.EffectiveKGID), false /* isDir */)
+	return d.getCreatedChild(name, creds.EffectiveKUID, creds.EffectiveKGID, false /* isDir */)
 }
 
 func (d *directfsDentry) openCreate(name string, accessFlags uint32, mode linux.FileMode, uid auth.KUID, gid auth.KGID) (*dentry, handle, error) {
@@ -575,7 +583,7 @@ func (d *directfsDentry) openCreate(name string, accessFlags uint32, mode linux.
 		return nil, noHandle, err
 	}
 
-	child, err := d.getCreatedChild(name, int(uid), int(gid), false /* isDir */)
+	child, err := d.getCreatedChild(name, uid, gid, false /* isDir */)
 	if err != nil {
 		_ = unix.Close(childHandleFD)
 		return nil, noHandle, err
