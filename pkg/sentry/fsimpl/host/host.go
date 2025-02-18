@@ -164,6 +164,9 @@ type inode struct {
 	// application to change these fields without affecting the host.
 	virtualOwner virtualOwner
 
+	// s/exec/restorable/ => similar to savable.
+	exec bool
+
 	// If haveBuf is non-zero, hostFD represents a pipe, and buf contains data
 	// read from the pipe from previous calls to inode.beforeSave(). haveBuf
 	// and buf are protected by bufMu.
@@ -238,6 +241,8 @@ type NewFDOptions struct {
 	// If Readonly is true, we disallow operations that can potentially change
 	// the host file associated with the file descriptor.
 	Readonly bool
+
+	Exec bool
 }
 
 // NewFD returns a vfs.FileDescription representing the given host file
@@ -297,6 +302,7 @@ func NewFD(ctx context.Context, mnt *vfs.Mount, hostFD int, opts *NewFDOptions) 
 		i.virtualOwner.gid = atomicbitops.FromUint32(uint32(opts.GID))
 		i.virtualOwner.mode = atomicbitops.FromUint32(stat.Mode)
 	}
+	i.exec = opts.Exec
 
 	d := &kernfs.Dentry{}
 	d.Init(&fs.Filesystem, i)
@@ -627,11 +633,13 @@ func (i *inode) SetStat(ctx context.Context, fs *vfs.Filesystem, creds *auth.Cre
 // DecRef implements kernfs.Inode.DecRef.
 func (i *inode) DecRef(ctx context.Context) {
 	i.inodeRefs.DecRef(func() {
-		if i.epollable {
-			fdnotifier.RemoveFD(int32(i.hostFD))
-		}
-		if err := unix.Close(i.hostFD); err != nil {
-			log.Warningf("failed to close host fd %d: %v", i.hostFD, err)
+		if i.hostFD >= 0 {
+			if i.epollable {
+				fdnotifier.RemoveFD(int32(i.hostFD))
+			}
+			if err := unix.Close(i.hostFD); err != nil {
+				log.Warningf("failed to close host fd %d: %v", i.hostFD, err)
+			}
 		}
 		// We can't rely on fdnotifier when closing the fd, because the event may race
 		// with fdnotifier.RemoveFD. Instead, notify the queue explicitly.

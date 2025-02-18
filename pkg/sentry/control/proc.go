@@ -267,7 +267,7 @@ func (proc *Proc) execAsync(args *ExecArgs) (*kernel.ThreadGroup, kernel.ThreadI
 
 	// TODO(gvisor.dev/issue/1956): Container name is not really needed because
 	// exec processes are not restored, but add it for completeness.
-	ttyFile, err := fdimport.Import(ctx, fdTable, args.StdioIsPty, args.KUID, args.KGID, fdMap, "")
+	ttyFile, err := fdimport.Import(ctx, fdTable, args.StdioIsPty, args.KUID, args.KGID, fdMap, "", true)
 	if err != nil {
 		return nil, 0, nil, err
 	}

@@ -22,6 +22,7 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/fdnotifier"
 	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/hostfd"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
@@ -74,8 +75,15 @@ func (i *inode) afterLoad(ctx context.Context) {
 	fdmap := vfs.RestoreFilesystemFDMapFromContext(ctx)
 	fd, ok := fdmap[i.restoreKey]
 	if !ok {
+		if i.exec {
+			log.Infof("Ignoring failure to restore host FD %d because it's owned by an exec'd process")
+			i.hostFD = -1
+			return
+		}
+
 		panic(fmt.Sprintf("no host FD available for %+v, map: %v", i.restoreKey, fdmap))
 	}
+	log.Debugf("Remapping host FD from %d to %d", i.hostFD, fd)
 	i.hostFD = fd
 
 	if i.epollable {

@@ -33,7 +33,7 @@ import (
 // sets up TTY for sentry stdin, stdout, and stderr FDs. Used FDs are either
 // closed or released. It's safe for the caller to close any remaining files
 // upon return.
-func Import(ctx context.Context, fdTable *kernel.FDTable, console bool, uid auth.KUID, gid auth.KGID, fds map[int]*fd.FD, containerName string) (*host.TTYFileDescription, error) {
+func Import(ctx context.Context, fdTable *kernel.FDTable, console bool, uid auth.KUID, gid auth.KGID, fds map[int]*fd.FD, containerName string, exec bool) (*host.TTYFileDescription, error) {
 	k := kernel.KernelFromContext(ctx)
 	if k == nil {
 		return nil, fmt.Errorf("cannot find kernel from context")
@@ -59,6 +59,7 @@ func Import(ctx context.Context, fdTable *kernel.FDTable, console bool, uid auth
 		hostFD := fds[appFD]
 		fdOpts := host.NewFDOptions{
 			Savable: true,
+			Exec:    exec,
 		}
 		if uid != auth.NoID || gid != auth.NoID {
 			fdOpts.VirtualOwner = true
