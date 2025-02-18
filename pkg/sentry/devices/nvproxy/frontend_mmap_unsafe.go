@@ -50,7 +50,7 @@ func (mf *frontendFDMemmapFile) MapInternal(fr memmap.FileRange, at hostarch.Acc
 		}
 		mf.fd.mmapInternal = m
 	}
-	mappedFR := memmap.FileRange{0, mf.fd.mmapLength}
+	mappedFR := memmap.FileRange{0, hostarch.MustPageRoundUp(mf.fd.mmapLength)}
 	if !mappedFR.IsSupersetOf(fr) {
 		return safemem.BlockSeq{}, linuxerr.EINVAL
 	}

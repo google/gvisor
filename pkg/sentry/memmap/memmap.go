@@ -19,7 +19,9 @@ import (
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/safemem"
 )
 
@@ -470,15 +472,14 @@ type File interface {
 	// reference is held on the mapped pages.
 	MapInternal(fr FileRange, at hostarch.AccessType) (safemem.BlockSeq, error)
 
-	// DataFD blocks until offsets fr in the file contain valid data, then
-	// returns the file descriptor represented by the File.
-	//
-	// Note that fr.Start and fr.End need not be page-aligned.
+	// MemoryType returns the memory type that must be used by page table
+	// entries mapping memory returned by MapInternal. Most implementations of
+	// File can embed DefaultMemoryType to obtain an appropriate implementation
+	// of MemoryType.
 	//
 	// Preconditions:
-	//	* fr.Length() > 0.
-	//	* At least one reference must be held on all pages in fr.
-	DataFD(fr FileRange) (int, error)
+	//	* MapInternal() returned a non-empty BlockSeq.
+	MemoryType() hostarch.MemoryType
 
 	// BufferReadAt reads len(dst) bytes from the file into dst, starting at
 	// file offset off. It returns the number of bytes read. Like
@@ -506,11 +507,30 @@ type File interface {
 	//	* At least one reference must be held on all written pages.
 	BufferWriteAt(off uint64, src []byte) (uint64, error)
 
+	// DataFD blocks until offsets fr in the file contain valid data, then
+	// returns the file descriptor represented by the File.
+	//
+	// Note that fr.Start and fr.End need not be page-aligned.
+	//
+	// Preconditions:
+	//	* fr.Length() > 0.
+	//	* At least one reference must be held on all pages in fr.
+	DataFD(fr FileRange) (int, error)
+
 	// FD returns the file descriptor represented by the File. The returned
 	// file descriptor should not be used to implement
 	// platform.AddressSpace.MapFile, since the contents of the File may not be
 	// valid; use DataFD instead.
 	FD() int
+}
+
+// DefaultMemoryType implements File.MemoryType() for implementations of File
+// backed by ordinary system memory.
+type DefaultMemoryType struct{}
+
+// MemoryType implements File.MemoryType.
+func (DefaultMemoryType) MemoryType() hostarch.MemoryType {
+	return hostarch.MemoryTypeWriteBack
 }
 
 // BufferedIOFallbackErr is returned (by value) by implementations of
@@ -536,6 +556,30 @@ func (NoBufferedIOFallback) BufferReadAt(off uint64, dst []byte) (uint64, error)
 // BufferWriteAt implements File.BufferWriteAt.
 func (NoBufferedIOFallback) BufferWriteAt(off uint64, src []byte) (uint64, error) {
 	panic("unimplemented: memmap.File.MapInternal() should not have returned BufferedIOFallbackErr")
+}
+
+// NoMapInternal implements File.MapInternal(), File.MemoryType(),
+// File.BufferReadAt(), and File.BufferWriteAt() for implementations of File
+// that do not support MapInternal.
+type NoMapInternal struct {
+	NoBufferedIOFallback
+}
+
+// MapInternal implements File.MapInternal.
+func (NoMapInternal) MapInternal(fr FileRange, at hostarch.AccessType) (safemem.BlockSeq, error) {
+	// There is no equivalent to this situation in Linux, and hence no clear
+	// errno to return. We choose ENODEV since mmap() returns this in a
+	// somewhat similar case (mmap() called on a non-mmappable file), and
+	// ENODEV is relatively uncommon (compared to e.g. EINVAL) so it should be
+	// somewhat more distinctive if it results in an application-reported
+	// error.
+	log.Traceback("no memmap.File.MapInternal implementation available, returning ENODEV")
+	return safemem.BlockSeq{}, linuxerr.ENODEV
+}
+
+// MemoryType implements File.MemoryType.
+func (NoMapInternal) MemoryType() hostarch.MemoryType {
+	panic("memmap.File.MemoryType called without MapInternal support")
 }
 
 // FileRange represents a range of uint64 offsets into a File.

@@ -502,8 +502,10 @@ func New(args Args) (*Loader, error) {
 	if err != nil {
 		return nil, fmt.Errorf("creating platform: %w", err)
 	}
-	if specutils.NVProxyEnabled(args.Spec, args.Conf) && p.OwnsPageTables() {
-		return nil, fmt.Errorf("--nvproxy is incompatible with platform %s: owns page tables", args.Conf.Platform)
+	if args.Conf.Platform == "kvm" && specutils.NVProxyEnabled(args.Spec, args.Conf) {
+		if caps, err := specutils.NVProxyDriverCapsAllowed(args.Conf); err == nil && caps&nvconf.CapCompute != 0 {
+			log.Warningf("Application cudaMallocManaged() is flaky on -platform=kvm, see #11436")
+		}
 	}
 	l.k = &kernel.Kernel{Platform: p}
 

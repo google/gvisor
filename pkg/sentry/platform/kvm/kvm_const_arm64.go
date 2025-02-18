@@ -119,12 +119,6 @@ const (
 
 // Arm64: Memory Attribute Indirection Register EL1.
 const (
-	_MT_DEVICE_nGnRnE      = 0
-	_MT_DEVICE_nGnRE       = 1
-	_MT_DEVICE_GRE         = 2
-	_MT_NORMAL_NC          = 3
-	_MT_NORMAL             = 4
-	_MT_NORMAL_WT          = 5
 	_MT_ATTR_DEVICE_nGnRnE = 0x00
 	_MT_ATTR_DEVICE_nGnRE  = 0x04
 	_MT_ATTR_DEVICE_GRE    = 0x0c
@@ -132,7 +126,6 @@ const (
 	_MT_ATTR_NORMAL_WT     = 0xbb
 	_MT_ATTR_NORMAL        = 0xff
 	_MT_ATTR_MASK          = 0xff
-	_MT_EL1_INIT           = (_MT_ATTR_DEVICE_nGnRnE << (_MT_DEVICE_nGnRnE * 8)) | (_MT_ATTR_DEVICE_nGnRE << (_MT_DEVICE_nGnRE * 8)) | (_MT_ATTR_DEVICE_GRE << (_MT_DEVICE_GRE * 8)) | (_MT_ATTR_NORMAL_NC << (_MT_NORMAL_NC * 8)) | (_MT_ATTR_NORMAL << (_MT_NORMAL * 8)) | (_MT_ATTR_NORMAL_WT << (_MT_NORMAL_WT * 8))
 )
 
 const (
