@@ -605,3 +605,27 @@ func ipMaskToAddressMask(ipMask net.IPMask) tcpip.AddressMask {
 	addr := ipToAddress(net.IP(ipMask))
 	return tcpip.MaskFromBytes(addr.AsSlice())
 }
+
+// NetworkConfig contains network configuration.
+type NetworkConfig struct {
+	Args     *CreateLinksAndRoutesArgs
+	InitArgs *InitPluginStackArgs
+	Network  config.NetworkType
+}
+
+// SetupNetwork sets up the network during start and restore.
+func (n *Network) SetupNetwork(netConf *NetworkConfig, _ *struct{}) error {
+	switch netConf.Network {
+	case config.NetworkNone, config.NetworkSandbox:
+		if err := n.CreateLinksAndRoutes(netConf.Args, nil); err != nil {
+			return err
+		}
+	case config.NetworkPlugin:
+		if err := n.InitPluginStack(netConf.InitArgs, nil); err != nil {
+			return err
+		}
+	default:
+		return fmt.Errorf("invalid network type: %v", netConf.Network)
+	}
+	return nil
+}

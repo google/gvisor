@@ -23,6 +23,7 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
+	"gvisor.dev/gvisor/pkg/sentry/socket/netfilter"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netlink/nlmsg"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -922,15 +923,8 @@ func (s *Stack) Pause() {
 
 // Restore implements inet.Stack.Restore.
 func (s *Stack) Restore() {
-	s.Stack.Restore()
-}
-
-// ReplaceConfig implements inet.Stack.ReplaceConfig.
-func (s *Stack) ReplaceConfig(st inet.Stack) {
-	if _, ok := st.(*Stack); !ok {
-		panic("netstack.Stack cannot be nil when netstack s/r is enabled")
-	}
-	s.Stack.ReplaceConfig(st.(*Stack).Stack)
+	tables := netfilter.DefaultLinuxTables
+	s.Stack.Restore(tables)
 }
 
 // Resume implements inet.Stack.Resume.
