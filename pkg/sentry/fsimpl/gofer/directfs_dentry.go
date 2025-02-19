@@ -453,7 +453,7 @@ func (d *directfsDentry) getXattr(ctx context.Context, name string, size uint64)
 
 // getCreatedChild opens the newly created child, sets its uid/gid, constructs
 // a disconnected dentry and returns it.
-func (d *directfsDentry) getCreatedChild(name string, uid auth.KUID, gid auth.KGID, isDir bool) (*dentry, error) {
+func (d *directfsDentry) getCreatedChild(name string, uid auth.KUID, gid auth.KGID, isDir bool, createDentry bool) (*dentry, error) {
 	unlinkFlags := 0
 	extraOpenFlags := 0
 	if isDir {
@@ -481,12 +481,15 @@ func (d *directfsDentry) getCreatedChild(name string, uid auth.KUID, gid auth.KG
 		return nil, err
 	}
 
-	child, err := d.fs.newDirectfsDentry(childFD)
-	if err != nil {
-		// Ownership of childFD was passed to newDirectDentry(), so no need to
-		// clean that up.
-		deleteChild()
-		return nil, err
+	var child *dentry
+	if createDentry {
+		child, err = d.fs.newDirectfsDentry(childFD)
+		if err != nil {
+			// Ownership of childFD was passed to newDirectDentry(), so no need to
+			// clean that up.
+			deleteChild()
+			return nil, err
+		}
 	}
 	return child, nil
 }
@@ -506,7 +509,7 @@ func (d *directfsDentry) mknod(ctx context.Context, name string, creds *auth.Cre
 	if err := unix.Mknodat(d.controlFD, name, uint32(opts.Mode), 0); err != nil {
 		return nil, err
 	}
-	return d.getCreatedChild(name, creds.EffectiveKUID, creds.EffectiveKGID, false /* isDir */)
+	return d.getCreatedChild(name, creds.EffectiveKUID, creds.EffectiveKGID, false /* isDir */, true /* createDentry */)
 }
 
 // Precondition: opts.Endpoint != nil and is transport.HostBoundEndpoint type.
@@ -531,7 +534,7 @@ func (d *directfsDentry) bindAt(ctx context.Context, name string, creds *auth.Cr
 		return nil, err
 	}
 	// Socket already has the right UID/GID set, so use uid = gid = -1.
-	child, err := d.getCreatedChild(name, auth.NoID /* uid */, auth.NoID /* gid */, false /* isDir */)
+	child, err := d.getCreatedChild(name, auth.NoID /* uid */, auth.NoID /* gid */, false /* isDir */, true /* createDentry */)
 	if err != nil {
 		hbep.ResetBoundSocketFD(ctx)
 		return nil, err
@@ -559,31 +562,31 @@ func (d *directfsDentry) link(target *directfsDentry, name string) (*dentry, err
 	// link. The original file already has the right owner.
 	// TODO(gvisor.dev/issue/6739): Hard linked dentries should share the same
 	// inode fields.
-	return d.getCreatedChild(name, auth.NoID /* uid */, auth.NoID /* gid */, false /* isDir */)
+	return d.getCreatedChild(name, auth.NoID /* uid */, auth.NoID /* gid */, false /* isDir */, true /* createDentry */)
 }
 
 func (d *directfsDentry) mkdir(name string, mode linux.FileMode, uid auth.KUID, gid auth.KGID) (*dentry, error) {
 	if err := unix.Mkdirat(d.controlFD, name, uint32(mode)); err != nil {
 		return nil, err
 	}
-	return d.getCreatedChild(name, uid, gid, true /* isDir */)
+	return d.getCreatedChild(name, uid, gid, true /* isDir */, true /* createDentry */)
 }
 
 func (d *directfsDentry) symlink(name, target string, creds *auth.Credentials) (*dentry, error) {
 	if err := unix.Symlinkat(target, d.controlFD, name); err != nil {
 		return nil, err
 	}
-	return d.getCreatedChild(name, creds.EffectiveKUID, creds.EffectiveKGID, false /* isDir */)
+	return d.getCreatedChild(name, creds.EffectiveKUID, creds.EffectiveKGID, false /* isDir */, true /* createDentry */)
 }
 
-func (d *directfsDentry) openCreate(name string, accessFlags uint32, mode linux.FileMode, uid auth.KUID, gid auth.KGID) (*dentry, handle, error) {
+func (d *directfsDentry) openCreate(name string, accessFlags uint32, mode linux.FileMode, uid auth.KUID, gid auth.KGID, createDentry bool) (*dentry, handle, error) {
 	createFlags := unix.O_CREAT | unix.O_EXCL | int(accessFlags) | hostOpenFlags
 	childHandleFD, err := unix.Openat(d.controlFD, name, createFlags, uint32(mode&^linux.FileTypeMask))
 	if err != nil {
 		return nil, noHandle, err
 	}
 
-	child, err := d.getCreatedChild(name, uid, gid, false /* isDir */)
+	child, err := d.getCreatedChild(name, uid, gid, false /* isDir */, createDentry)
 	if err != nil {
 		_ = unix.Close(childHandleFD)
 		return nil, noHandle, err

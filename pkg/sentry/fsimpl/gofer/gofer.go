@@ -246,6 +246,10 @@ type filesystem struct {
 	// savedDentryRW records open read/write handles during save/restore.
 	savedDentryRW map[*dentry]savedDentryRW
 
+	// savedDeletedOpenDentries records deleted dentries that are saved during
+	// save/restore. These are still accessible via open application FDs.
+	savedDeletedOpenDentries map[*dentry]struct{}
+
 	// released is nonzero once filesystem.Release has been called.
 	released atomicbitops.Int32
 }
@@ -977,6 +981,10 @@ type dentry struct {
 	// If this dentry represents a regular file that is client-cached, dirty
 	// tracks dirty segments in cache. dirty is protected by dataMu.
 	dirty fsutil.DirtySet
+
+	// If this dentry represents a deleted regular file, deletedDataSR is used to
+	// store file data for save/restore.
+	deletedDataSR []byte
 
 	// pf implements memmap.File for mappings of hostFD.
 	pf dentryPlatformFile
