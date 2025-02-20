@@ -52,21 +52,32 @@ var (
 
 // tpuFD implements vfs.FileDescriptionImpl for /dev/vfio/[0-9]+
 //
-// tpuFD is not savable until TPU save/restore is needed.
+// +stateify savable
 type tpuFD struct {
 	vfsfd vfs.FileDescription
 	vfs.FileDescriptionDefaultImpl
 	vfs.DentryMetadataFileDescriptionImpl
 	vfs.NoLockFD
 
-	hostFD     int32
+	// If hostFD is -1, this file descriptor has been restored from a save state,
+	// and should be treated as invalid. Any operations on this file descriptor
+	// will effectively be a no-op.
+	hostFD int32
+
 	device     *tpuDevice
 	queue      waiter.Queue
 	memmapFile tpuFDMemmapFile
 }
 
+func (fd *tpuFD) isRestored() bool {
+	return fd.hostFD == -1
+}
+
 // Release implements vfs.FileDescriptionImpl.Release.
 func (fd *tpuFD) Release(context.Context) {
+	if fd.isRestored() {
+		return
+	}
 	fdnotifier.RemoveFD(fd.hostFD)
 	fd.queue.Notify(waiter.EventHUp)
 	unix.Close(int(fd.hostFD))
@@ -74,6 +85,9 @@ func (fd *tpuFD) Release(context.Context) {
 
 // EventRegister implements waiter.Waitable.EventRegister.
 func (fd *tpuFD) EventRegister(e *waiter.Entry) error {
+	if fd.isRestored() {
+		return nil
+	}
 	fd.queue.EventRegister(e)
 	if err := fdnotifier.UpdateFD(fd.hostFD); err != nil {
 		fd.queue.EventUnregister(e)
@@ -84,6 +98,9 @@ func (fd *tpuFD) EventRegister(e *waiter.Entry) error {
 
 // EventUnregister implements waiter.Waitable.EventUnregister.
 func (fd *tpuFD) EventUnregister(e *waiter.Entry) {
+	if fd.isRestored() {
+		return
+	}
 	fd.queue.EventUnregister(e)
 	if err := fdnotifier.UpdateFD(fd.hostFD); err != nil {
 		panic(fmt.Sprint("UpdateFD:", err))
@@ -92,6 +109,9 @@ func (fd *tpuFD) EventUnregister(e *waiter.Entry) {
 
 // Readiness implements waiter.Waitable.Readiness.
 func (fd *tpuFD) Readiness(mask waiter.EventMask) waiter.EventMask {
+	if fd.isRestored() {
+		return 0
+	}
 	return fdnotifier.NonBlockingPoll(fd.hostFD, mask)
 }
 
@@ -102,6 +122,9 @@ func (fd *tpuFD) Epollable() bool {
 
 // Ioctl implements vfs.FileDescriptionImpl.Ioctl.
 func (fd *tpuFD) Ioctl(ctx context.Context, uio usermem.IO, sysno uintptr, args arch.SyscallArguments) (uintptr, error) {
+	if fd.isRestored() {
+		return 0, nil
+	}
 	cmd := args[1].Uint()
 
 	t := kernel.TaskFromContext(ctx)
@@ -162,6 +185,7 @@ func (fd *tpuFD) getPciDeviceFd(t *kernel.Task, arg hostarch.Addr) (uintptr, fun
 	// See drivers/vfio/group.c:vfio_device_open_file(), the PCI device
 	// is accessed for both reads and writes.
 	vd := t.Kernel().VFS().NewAnonVirtualDentry("[vfio-device]")
+	defer vd.DecRef(t)
 	if err := pciDevFD.vfsfd.Init(pciDevFD, linux.O_RDWR, vd.Mount(), vd.Dentry(), &vfs.FileDescriptionOptions{
 		UseDentryMetadata: true,
 	}); err != nil {

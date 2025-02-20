@@ -70,7 +70,10 @@ type InternalData struct {
 type filesystem struct {
 	kernfs.Filesystem
 
-	devMinor uint32
+	devMinor            uint32
+	enableTPUProxyPaths bool
+	testSysfsPathPrefix string
+	root                *dir
 }
 
 // Name implements vfs.FilesystemType.Name.
@@ -133,6 +136,8 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		idata := opts.InternalData.(*InternalData)
 		productName = idata.ProductName
 		if idata.EnableTPUProxyPaths {
+			fs.enableTPUProxyPaths = true
+			fs.testSysfsPathPrefix = idata.TestSysfsPathPrefix
 			deviceToIOMMUGroup, err := pciDeviceIOMMUGroups(path.Join(idata.TestSysfsPathPrefix, iommuGroupSysPath))
 			if err != nil {
 				return nil, nil, err
@@ -199,6 +204,7 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		"module":   fs.newDir(ctx, creds, defaultSysDirMode, nil),
 		"power":    fs.newDir(ctx, creds, defaultSysDirMode, nil),
 	})
+	fs.root = root.(*dir)
 	var rootD kernfs.Dentry
 	rootD.InitRoot(&fs.Filesystem, root)
 	return fs.VFSFilesystem(), rootD.VFSDentry(), nil
