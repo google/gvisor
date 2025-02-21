@@ -18,8 +18,6 @@ import (
 	"errors"
 	"fmt"
 
-	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/state"
@@ -84,18 +82,7 @@ func (s *State) Save(o *SaveOpts, _ *struct{}) error {
 		Key:                o.Key,
 		Metadata:           o.Metadata,
 		MemoryFileSaveOpts: o.MemoryFileSaveOpts,
-		Callback: func(err error) {
-			if err == nil {
-				log.Infof("Save succeeded: exiting...")
-				s.Kernel.SetSaveSuccess(false /* autosave */)
-			} else {
-				log.Warningf("Save failed: %v", err)
-				s.Kernel.SetSaveError(err)
-			}
-			if !o.Resume {
-				s.Kernel.Kill(linux.WaitStatusExit(0))
-			}
-		},
+		Resume:             o.Resume,
 	}
 	if o.HavePagesFile {
 		saveOpts.PagesMetadata, err = o.ReleaseFD(1)

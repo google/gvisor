@@ -18,7 +18,6 @@ import (
 	"bytes"
 	"fmt"
 
-	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
@@ -28,42 +27,19 @@ import (
 	"gvisor.dev/gvisor/pkg/sync"
 )
 
-func getSaveOpts(l *Loader, k *kernel.Kernel, isResume bool) state.SaveOpts {
-	t, _ := state.CPUTime()
-	log.Infof("Before save CPU usage: %s", t.String())
-	saveOpts := state.SaveOpts{
-		Key:    nil,
-		Resume: isResume,
-		Callback: func(err error) {
-			t1, _ := state.CPUTime()
-			log.Infof("Save CPU usage: %s", (t1 - t).String())
-			if err == nil {
-				log.Infof("Save succeeded: exiting...")
-				k.SetSaveSuccess(true)
-			} else {
-				log.Warningf("Save failed: exiting... %v", err)
-				k.SetSaveError(err)
-			}
-
-			if !isResume {
-				// Kill the sandbox.
-				k.Kill(linux.WaitStatusExit(0))
-			}
-		},
-	}
-	return saveOpts
-}
-
 func getTargetForSaveResume(l *Loader) func(k *kernel.Kernel) {
 	return func(k *kernel.Kernel) {
 		l.addVersionToCheckpoint()
 		l.addContainerSpecsToCheckpoint()
-		saveOpts := getSaveOpts(l, k, true /* isResume */)
 		// Store the state file contents in a buffer for save-resume.
 		// There is no need to verify the state file, we just need the
 		// sandbox to continue running after save.
 		var buf bytes.Buffer
-		saveOpts.Destination = &buf
+		saveOpts := state.SaveOpts{
+			Autosave:    true,
+			Resume:      true,
+			Destination: &buf,
+		}
 		saveOpts.Save(k.SupervisorContext(), k, l.watchdog)
 	}
 }
@@ -78,8 +54,11 @@ func getTargetForSaveRestore(l *Loader, files []*fd.FD) func(k *kernel.Kernel) {
 		once.Do(func() {
 			l.addVersionToCheckpoint()
 			l.addContainerSpecsToCheckpoint()
-			saveOpts := getSaveOpts(l, k, false /* isResume */)
-			saveOpts.Destination = files[0]
+			saveOpts := state.SaveOpts{
+				Autosave:    true,
+				Resume:      false,
+				Destination: files[0],
+			}
 			if len(files) == 3 {
 				saveOpts.PagesMetadata = files[1]
 				saveOpts.PagesFile = files[2]
