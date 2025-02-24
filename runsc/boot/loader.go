@@ -208,9 +208,7 @@ type Loader struct {
 	// /sys/devices/virtual/dmi/id/product_name.
 	productName string
 
-	// hostShmemHuge is the host's value of
-	// /sys/kernel/mm/transparent_hugepage/shmem_enabled.
-	hostShmemHuge string
+	hostTHP HostTHP
 
 	// mu guards the fields below.
 	mu sync.Mutex
@@ -354,12 +352,21 @@ type Args struct {
 	// NvidiaDriverVersion is the NVIDIA driver ABI version to use for
 	// communicating with NVIDIA devices on the host.
 	NvidiaDriverVersion string
-	// HostShmemHuge is the host's value of
-	// /sys/kernel/mm/transparent_hugepage/shmem_enabled, or empty if this is
-	// unknown.
-	HostShmemHuge string
+	// HostTHP contains host transparent hugepage settings.
+	HostTHP HostTHP
 
 	SaveFDs []*fd.FD
+}
+
+// HostTHP holds host transparent hugepage settings.
+type HostTHP struct {
+	// ShmemEnabled is the selected option in
+	// /sys/kernel/mm/transparent_hugepage/shmem_enabled.
+	ShmemEnabled string
+
+	// Defrag is the selected option in
+	// /sys/kernel/mm/transparent_hugepage/defrag.
+	Defrag string
 }
 
 const (
@@ -439,7 +446,7 @@ func New(args Args) (*Loader, error) {
 		sharedMounts:   make(map[string]*vfs.Mount),
 		stopProfiling:  stopProfiling,
 		productName:    args.ProductName,
-		hostShmemHuge:  args.HostShmemHuge,
+		hostTHP:        args.HostTHP,
 		containerIDs:   make(map[string]string),
 		containerSpecs: make(map[string]*specs.Spec),
 		saveFDs:        args.SaveFDs,
@@ -508,7 +515,7 @@ func New(args Args) (*Loader, error) {
 	l.k = &kernel.Kernel{Platform: p}
 
 	// Create memory file.
-	mf, err := createMemoryFile(args.Conf.AppHugePages, args.HostShmemHuge)
+	mf, err := createMemoryFile(args.Conf.AppHugePages, args.HostTHP)
 	if err != nil {
 		return nil, fmt.Errorf("creating memory file: %w", err)
 	}
@@ -787,7 +794,7 @@ func createPlatform(conf *config.Config, deviceFile *fd.FD) (platform.Platform, 
 	return p.New(deviceFile)
 }
 
-func createMemoryFile(appHugePages bool, hostShmemHuge string) (*pgalloc.MemoryFile, error) {
+func createMemoryFile(appHugePages bool, hostTHP HostTHP) (*pgalloc.MemoryFile, error) {
 	const memfileName = "runsc-memory"
 	memfd, err := memutil.CreateMemFD(memfileName, 0)
 	if err != nil {
@@ -801,27 +808,45 @@ func createMemoryFile(appHugePages bool, hostShmemHuge string) (*pgalloc.MemoryF
 		// in a mount namespace in which the relevant cgroupfs is not visible.
 	}
 	if appHugePages {
-		switch hostShmemHuge {
+		switch hostTHP.ShmemEnabled {
 		case "":
-			log.Infof("Disabling application huge pages: host shmem_huge is unknown")
+			log.Infof("Disabling application huge pages: host shmem_enabled is unknown")
 		case "never", "deny":
-			log.Infof("Disabling application huge pages: host shmem_huge is %q", hostShmemHuge)
+			log.Infof("Disabling application huge pages: host shmem_enabled is %q", hostTHP.ShmemEnabled)
 		case "advise":
-			log.Infof("Enabling application huge pages: host shmem_huge is %q", hostShmemHuge)
-			mfopts.ExpectHugepages = true
-			mfopts.AdviseHugepage = true
+			switch hostTHP.Defrag {
+			case "":
+				log.Infof("Disabling application huge pages: host shmem_enabled is %q, host defrag is unknown", hostTHP.ShmemEnabled)
+			case "always", "defer", "never":
+				// Allocations on MADV_HUGEPAGE pages will invoke direct
+				// compaction ("always"), wake kcompactd ("defer"), or do
+				// neither ("never"), consistent with host private anonymous
+				// memory mappings, so using MADV_HUGEPAGE shouldn't cause a
+				// regression vs. running natively.
+				log.Infof("Enabling application huge pages: host shmem_enabled is %q, host defrag is %q", hostTHP.ShmemEnabled, hostTHP.Defrag)
+				mfopts.ExpectHugepages = true
+				mfopts.AdviseHugepage = true
+			case "defer+madvise", "madvise":
+				// Allocations on MADV_HUGEPAGE pages may invoke direct
+				// compaction whereas allocations on host private anonymous
+				// memory mappings will not, so using MADV_HUGEPAGE may degrade
+				// performance.
+				log.Infof("Disabling application huge pages: host shmem_enabled is %q, host defrag is %q", hostTHP.ShmemEnabled, hostTHP.Defrag)
+			default:
+				log.Warningf("Disabling application huge pages: host shmem_enabled is %q, host defrag is unknown value %q", hostTHP.ShmemEnabled, hostTHP.Defrag)
+			}
 		case "always", "within_size":
-			log.Infof("Enabling application huge pages: host shmem_huge is %q", hostShmemHuge)
+			log.Infof("Enabling application huge pages: host shmem_enabled is %q", hostTHP.ShmemEnabled)
 			// In these cases, memfds will default to using huge pages, and we have to
 			// explicitly ask for small pages.
 			mfopts.ExpectHugepages = true
 			mfopts.AdviseNoHugepage = true
 		case "force":
-			log.Infof("Enabling application huge pages: host shmem_huge is %q", hostShmemHuge)
+			log.Infof("Enabling application huge pages: host shmem_enabled is %q", hostTHP.ShmemEnabled)
 			// The kernel will ignore MADV_NOHUGEPAGE, so don't bother.
 			mfopts.ExpectHugepages = true
 		default:
-			log.Infof("Disabling application huge pages: host shmem_huge is unknown value %q", hostShmemHuge)
+			log.Warningf("Disabling application huge pages: host shmem_enabled is unknown value %q", hostTHP.ShmemEnabled)
 		}
 	}
 

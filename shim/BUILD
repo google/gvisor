@@ -13,7 +13,7 @@ go_binary(
     visibility = [
         "//visibility:public",
     ],
-    deps = ["//shim/cli"],
+    deps = ["//shim/v1/cli"],
 )
 
 pkg_tar(

@@ -23,7 +23,7 @@ import (
 	runc "github.com/containerd/go-runc"
 	"golang.org/x/sys/unix"
 
-	"gvisor.dev/gvisor/pkg/shim/extension"
+	"gvisor.dev/gvisor/pkg/shim/v1/extension"
 )
 
 type stateTransition int

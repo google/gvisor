@@ -159,8 +159,7 @@ type Boot struct {
 	// /sys/devices/virtual/dmi/id/product_name.
 	productName string
 
-	// Value of /sys/kernel/mm/transparent_hugepage/shmem_enabled on the host.
-	hostShmemHuge string
+	hostTHP boot.HostTHP
 
 	// FDs for profile data.
 	profileFDs profile.FDArgs
@@ -217,7 +216,8 @@ func (b *Boot) SetFlags(f *flag.FlagSet) {
 	f.BoolVar(&b.attached, "attached", false, "if attached is true, kills the sandbox process when the parent process terminates")
 	f.StringVar(&b.productName, "product-name", "", "value to show in /sys/devices/virtual/dmi/id/product_name")
 	f.StringVar(&b.nvidiaDriverVersion, "nvidia-driver-version", "", "Nvidia driver version on the host")
-	f.StringVar(&b.hostShmemHuge, "host-shmem-huge", "", "value of /sys/kernel/mm/transparent_hugepage/shmem_enabled on the host")
+	f.StringVar(&b.hostTHP.ShmemEnabled, "host-thp-shmem-enabled", "", "value of /sys/kernel/mm/transparent_hugepage/shmem_enabled on the host")
+	f.StringVar(&b.hostTHP.Defrag, "host-thp-defrag", "", "value of /sys/kernel/mm/transparent_hugepage/defrag on the host")
 
 	// Open FDs that are donated to the sandbox.
 	f.IntVar(&b.specFD, "spec-fd", -1, "required fd with the container spec")
@@ -275,14 +275,26 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 			argOverride["product-name"] = b.productName
 		}
 	}
-	if conf.AppHugePages && len(b.hostShmemHuge) == 0 {
-		hostShmemHuge, err := hostmm.GetTransparentHugepageEnum("shmem_enabled")
-		if err != nil {
-			log.Warningf("Failed to infer --host-shmem-huge: %v", err)
-		} else {
-			b.hostShmemHuge = hostShmemHuge
-			log.Infof("Setting host-shmem-huge: %q", b.hostShmemHuge)
-			argOverride["host-shmem-huge"] = b.hostShmemHuge
+	if conf.AppHugePages {
+		if len(b.hostTHP.ShmemEnabled) == 0 {
+			val, err := hostmm.ReadTransparentHugepageEnum("shmem_enabled")
+			if err != nil {
+				log.Warningf("Failed to infer --host-thp-shmem-enabled: %v", err)
+			} else {
+				b.hostTHP.ShmemEnabled = val
+				log.Infof("Setting host-thp-shmem-enabled: %q", b.hostTHP.ShmemEnabled)
+				argOverride["host-thp-shmem-enabled"] = b.hostTHP.ShmemEnabled
+			}
+		}
+		if len(b.hostTHP.Defrag) == 0 {
+			val, err := hostmm.ReadTransparentHugepageEnum("defrag")
+			if err != nil {
+				log.Warningf("Failed to infer --host-thp-defrag", err)
+			} else {
+				b.hostTHP.Defrag = val
+				log.Infof("Setting host-thp-defrag: %q", b.hostTHP.Defrag)
+				argOverride["host-thp-defrag"] = b.hostTHP.Defrag
+			}
 		}
 	}
 
@@ -504,7 +516,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 		SinkFDs:             b.sinkFDs.GetArray(),
 		ProfileOpts:         b.profileFDs.ToOpts(),
 		NvidiaDriverVersion: b.nvidiaDriverVersion,
-		HostShmemHuge:       b.hostShmemHuge,
+		HostTHP:             b.hostTHP,
 		SaveFDs:             b.saveFDs.GetFDs(),
 	}
 	l, err := boot.New(bootArgs)

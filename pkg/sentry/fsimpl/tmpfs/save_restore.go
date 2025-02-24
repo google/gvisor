@@ -23,6 +23,8 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
 
+var _ vfs.FilesystemImplSaveRestoreExtension = (*filesystem)(nil)
+
 // saveMf is called by stateify.
 func (fs *filesystem) saveMf() string {
 	if !fs.mf.IsSavable() {
@@ -74,6 +76,9 @@ func (fs *filesystem) PrepareSave(ctx context.Context) error {
 	mfmap[restoreID] = fs.mf
 	return nil
 }
+
+// BeforeResume implements vfs.FilesystemImplSaveRestoreExtension.BeforeResume.
+func (fs *filesystem) BeforeResume(ctx context.Context) {}
 
 // CompleteRestore implements
 // vfs.FilesystemImplSaveRestoreExtension.CompleteRestore.

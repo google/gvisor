@@ -31,6 +31,8 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
 
+var _ vfs.FilesystemImplSaveRestoreExtension = (*filesystem)(nil)
+
 // +stateify savable
 type savedDentryRW struct {
 	read  bool
@@ -132,6 +134,11 @@ func (d *dentry) beforeSave() {
 	if d.vfsd.IsDead() {
 		panic(fmt.Sprintf("gofer.dentry(%q).beforeSave: deleted and invalidated dentries can't be restored", genericDebugPathname(d.fs, d)))
 	}
+}
+
+// BeforeResume implements vfs.FilesystemImplSaveRestoreExtension.BeforeResume.
+func (fs *filesystem) BeforeResume(ctx context.Context) {
+	fs.savedDentryRW = nil
 }
 
 // afterLoad is invoked by stateify.

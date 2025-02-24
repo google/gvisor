@@ -702,6 +702,11 @@ func (k *Kernel) SaveTo(ctx context.Context, w, pagesMetadata io.Writer, pagesFi
 	return nil
 }
 
+// BeforeResume is called before the kernel is resumed after save.
+func (k *Kernel) BeforeResume(ctx context.Context) {
+	k.vfs.BeforeResume(ctx)
+}
+
 func (k *Kernel) saveMemoryFiles(ctx context.Context, w, pagesMetadata io.Writer, pagesFile *fd.FD, mfsToSave map[string]*pgalloc.MemoryFile, mfOpts pgalloc.SaveOpts) error {
 	// Save the memory files' state.
 	memoryStart := time.Now()
