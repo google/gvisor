@@ -424,6 +424,12 @@ void RemoveUnstableCPUInfoFields(std::vector<std::string>& cpu_info_fields) {
   }
 }
 
+TEST(ProcTest, RootInodeNumber) {
+  struct stat s;
+  ASSERT_THAT(stat("/proc", &s), SyscallSucceeds());
+  EXPECT_EQ(s.st_ino, 1);
+}
+
 TEST(ProcTest, NotFoundInRoot) {
   struct stat s;
   EXPECT_THAT(stat("/proc/foobar", &s), SyscallFailsWithErrno(ENOENT));

@@ -22,7 +22,7 @@ import (
 	"strings"
 	"time"
 
-	"gvisor.dev/gvisor/pkg/shim/runsccmd"
+	"gvisor.dev/gvisor/pkg/shim/v1/runsccmd"
 )
 
 const (

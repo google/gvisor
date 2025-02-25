@@ -54,6 +54,10 @@ type FilesystemImplSaveRestoreExtension interface {
 	// PrepareSave prepares this filesystem for serialization.
 	PrepareSave(ctx context.Context) error
 
+	// BeforeResume is called before the kernel is resumed after save. It can be
+	// used to clean up any state that should be discarded after save.
+	BeforeResume(ctx context.Context)
+
 	// CompleteRestore completes restoration from checkpoint for this
 	// filesystem after deserialization.
 	CompleteRestore(ctx context.Context, opts CompleteRestoreOptions) error
@@ -71,6 +75,17 @@ func (vfs *VirtualFilesystem) PrepareSave(ctx context.Context) error {
 		fs.DecRef(ctx)
 	}
 	return nil
+}
+
+// BeforeResume is called before the kernel is resumed after save and allows
+// filesystems to clean up S/R state.
+func (vfs *VirtualFilesystem) BeforeResume(ctx context.Context) {
+	for fs := range vfs.getFilesystems() {
+		if ext, ok := fs.impl.(FilesystemImplSaveRestoreExtension); ok {
+			ext.BeforeResume(ctx)
+		}
+		fs.DecRef(ctx)
+	}
 }
 
 // CompleteRestore completes restoration from checkpoint for all filesystems

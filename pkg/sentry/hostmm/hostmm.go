@@ -26,23 +26,30 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 )
 
-// GetTransparentHugepageEnum returns the currently selected option for
+// ReadTransparentHugepageEnum returns the currently selected option for
 // whichever of
 // /sys/kernel/mm/transparent_hugepage/{enabled,shmem_enabled,defrag} is
 // specified by filename. (Only the basename is required, not the full path.)
-func GetTransparentHugepageEnum(filename string) (string, error) {
+func ReadTransparentHugepageEnum(filename string) (string, error) {
 	pathname := path.Join("/sys/kernel/mm/transparent_hugepage/", filename)
 	data, err := os.ReadFile(pathname)
 	if err != nil {
 		return "", err
 	}
+	return GetTransparentHugepageEnum(string(data))
+}
+
+// GetTransparentHugepageEnum returns the currently selected option given the
+// contents of any of
+// /sys/kernel/mm/transparent_hugepage/{enabled,shmem_enabled,defrag}.
+func GetTransparentHugepageEnum(data string) (string, error) {
 	// In these files, the selected option is highlighted by square brackets.
-	m := regexp.MustCompile(`\[.*\]`).Find(data)
-	if m == nil {
-		return "", fmt.Errorf("failed to parse %s: %q", pathname, data)
+	m := regexp.MustCompile(`\[.*\]`).FindString(data)
+	if m == "" {
+		return "", fmt.Errorf("failed to find selected option in %q", data)
 	}
 	// Remove the square brackets.
-	return string(m[1 : len(m)-1]), nil
+	return m[1 : len(m)-1], nil
 }
 
 // NotifyCurrentMemcgPressureCallback requests that f is called whenever the

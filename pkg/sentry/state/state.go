@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io"
 
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fd"
@@ -68,15 +69,18 @@ type SaveOpts struct {
 	// MemoryFileSaveOpts is passed to calls to pgalloc.MemoryFile.SaveTo().
 	MemoryFileSaveOpts pgalloc.SaveOpts
 
-	// Callback is called prior to unpause, with any save error.
-	Callback func(err error)
-
 	// Resume indicates if the statefile is used for save-resume.
 	Resume bool
+
+	// Autosave indicates if the statefile is used for autosave.
+	Autosave bool
 }
 
 // Save saves the system state.
 func (opts SaveOpts) Save(ctx context.Context, k *kernel.Kernel, w *watchdog.Watchdog) error {
+	t, _ := CPUTime()
+	log.Infof("Before save CPU usage: %s", t.String())
+
 	log.Infof("Sandbox save started, pausing all tasks.")
 	k.Pause()
 	k.ReceiveTaskStates()
@@ -127,7 +131,22 @@ func (opts SaveOpts) Save(ctx context.Context, k *kernel.Kernel, w *watchdog.Wat
 			}
 		}
 	}
-	opts.Callback(err)
+
+	t1, _ := CPUTime()
+	log.Infof("Save CPU usage: %s", (t1 - t).String())
+	if err == nil {
+		log.Infof("Save succeeded: exiting...")
+		k.SetSaveSuccess(opts.Autosave)
+	} else {
+		log.Warningf("Save failed: exiting... %v", err)
+		k.SetSaveError(err)
+	}
+	if opts.Resume {
+		k.BeforeResume(ctx)
+	} else {
+		// Kill the sandbox.
+		k.Kill(linux.WaitStatusExit(0))
+	}
 	return err
 }
 

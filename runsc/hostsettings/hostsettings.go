@@ -23,6 +23,7 @@ import (
 	"strings"
 
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/sentry/hostmm"
 	"gvisor.dev/gvisor/runsc/config"
 )
 
@@ -189,12 +190,48 @@ func check(conf *config.Config) ([]*Delta, []error) {
 			path:    "/sys/kernel/mm/transparent_hugepage/shmem_enabled",
 			purpose: "turning on transparent hugepages support in shmem increases memory allocation performance",
 			delta: func(conf *config.Config, current string) (string, bool, error) {
-				// /sys/kernel/mm/transparent_hugepage/shmem_enabled is formatted like:
-				// `always within_size advise [never] deny force`.
-				if strings.Contains(current, "[always]") || strings.Contains(current, "[advise]") || strings.Contains(current, "[force]") || strings.Contains(current, "[within_size]") {
+				cur, err := hostmm.GetTransparentHugepageEnum(current)
+				if err != nil {
+					return "", false, err
+				}
+				switch cur {
+				case "always", "advise", "force", "within_size":
+					return "", false, nil
+				case "never":
+					return "advise", false, nil
+				case "deny":
+					// This is a non-default setting, so assume that it's
+					// admin-intended and don't try to change it.
+					return "", false, nil
+				default:
+					// Linux can reasonably add new options, so this shouldn't
+					// be fatal.
+					log.Warningf("Unknown value for /sys/kernel/mm/transparent_hugepage/shmem_enabled: %s", cur)
 					return "", false, nil
 				}
-				return "advise", false, nil
+			},
+		},
+		{
+			path:    "/sys/kernel/mm/transparent_hugepage/defrag",
+			purpose: "disabling direct compaction improves page fault latency when hugepages are not immediately available",
+			delta: func(conf *config.Config, current string) (string, bool, error) {
+				cur, err := hostmm.GetTransparentHugepageEnum(current)
+				if err != nil {
+					return "", false, err
+				}
+				switch cur {
+				case "always", "defer", "never":
+					return "", false, nil
+				case "defer+madvise":
+					return "defer", false, nil
+				case "madvise":
+					return "never", false, nil
+				default:
+					// Linux can reasonably add new options, so this shouldn't
+					// be fatal.
+					log.Warningf("Unknown value for /sys/kernel/mm/transparent_hugepage/defrag: %s", cur)
+					return "", false, nil
+				}
 			},
 		},
 		{

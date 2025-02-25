@@ -13,6 +13,7 @@ go_library(
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/log",
+        "//pkg/sentry/hostmm",
         "//runsc/config",
     ],
 )
