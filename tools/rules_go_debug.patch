@@ -1,0 +1,83 @@
+diff --git a/go/private/actions/archive.bzl b/go/private/actions/archive.bzl
+index 3bf0bffd..7cfe2fcc 100644
+--- a/go/private/actions/archive.bzl
++++ b/go/private/actions/archive.bzl
+@@ -201,6 +201,7 @@ def emit_archive(go, source = None, _recompile_suffix = "", recompile_internal_d
+         data = data,
+         direct = direct,
+         libs = depset(direct = [out_lib], transitive = [a.libs for a in direct]),
++        export_files = depset(direct = [out_export], transitive = [a.export_files for a in direct]),
+         transitive = depset([data], transitive = [a.transitive for a in direct]),
+         x_defs = x_defs,
+         cgo_deps = depset(transitive = [cgo_deps] + [a.cgo_deps for a in direct]),
+diff --git a/go/private/rules/binary.bzl b/go/private/rules/binary.bzl
+index 40b4011e..688a90b8 100644
+--- a/go/private/rules/binary.bzl
++++ b/go/private/rules/binary.bzl
+@@ -124,6 +124,7 @@ def _go_binary_impl(ctx):
+         source,
+         archive,
+         OutputGroupInfo(
++            export_files = archive.export_files,
+             cgo_exports = archive.cgo_exports,
+             compilation_outputs = [archive.data.file],
+         ),
+diff --git a/go/private/rules/library.bzl b/go/private/rules/library.bzl
+index ac563544..23369a60 100644
+--- a/go/private/rules/library.bzl
++++ b/go/private/rules/library.bzl
+@@ -53,6 +53,7 @@ def _go_library_impl(ctx):
+             extensions = ["go"],
+         ),
+         OutputGroupInfo(
++            export_files = archive.export_files,
+             cgo_exports = archive.cgo_exports,
+             compilation_outputs = [archive.data.file],
+         ),
+@@ -102,8 +103,7 @@ go_library = rule(
+             with the same path (for example, from different vendor directories).
+             """,
+         ),
+-        "importpath_aliases": attr.string_list(
+-        ),  # experimental, undocumented
++        "importpath_aliases": attr.string_list(),  # experimental, undocumented
+         "embed": attr.label_list(
+             providers = [GoLibrary],
+             doc = """
+diff --git a/go/private/rules/test.bzl b/go/private/rules/test.bzl
+index 554cd30c..313468c7 100644
+--- a/go/private/rules/test.bzl
++++ b/go/private/rules/test.bzl
+@@ -183,6 +183,7 @@ def _go_test_impl(ctx):
+         ),
+         OutputGroupInfo(
+             compilation_outputs = [internal_archive.data.file],
++            export_files = internal_archive.export_files,
+         ),
+         coverage_common.instrumented_files_info(
+             ctx,
+@@ -697,6 +698,7 @@ def _recompile_external_deps(go, external_source, internal_archive, library_labe
+                 data = arc_data,
+                 direct = deps,
+                 libs = depset(direct = [arc_data.file], transitive = [a.libs for a in deps]),
++                export_files = depset(direct = [arc_data.export_file], transitive = [a.export_files for a in deps]),
+                 transitive = depset(direct = [arc_data], transitive = [a.transitive for a in deps]),
+                 x_defs = source.x_defs,
+                 cgo_deps = depset(direct = arc_data._cgo_deps, transitive = [a.cgo_deps for a in deps]),
+diff --git a/proto/def.bzl b/proto/def.bzl
+index 6a2a2d72..0fa8f800 100644
+--- a/proto/def.bzl
++++ b/proto/def.bzl
+@@ -136,10 +136,11 @@ def _go_proto_library_impl(ctx):
+     if valid_archive:
+         archive = go.archive(go, source)
+         output_groups["compilation_outputs"] = [archive.data.file]
++        output_groups["export_files"] = archive.export_files
+         providers.extend([
+             archive,
+             DefaultInfo(
+-                files = depset([archive.data.file]),
++                files = depset([archive.data.export_file]),
+                 runfiles = archive.runfiles,
+             ),
+         ])

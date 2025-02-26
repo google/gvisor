@@ -253,9 +253,9 @@ func (i *importer) findBinary(path string) (rc io.ReadCloser, err error) {
 		rc, err = findStdPkg(path)
 	} else {
 		xPath := realPath[:len(realPath)-1] + "x"
-		if _, err := os.Stat(xPath); err == nil {
-			realPath = xPath
-		}
+		//		if _, err := os.Stat(xPath); err == nil {
+		realPath = xPath
+		//		}
 		// Open the file.
 		rc, err = os.Open(realPath)
 	}

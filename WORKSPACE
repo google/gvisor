@@ -51,6 +51,7 @@ http_archive(
         # Allow for patching of the go_sdk.
         "//tools:rules_go_sdk.patch",
         "//tools:rules_cgo.patch",
+        "//tools:rules_go_debug.patch",
     ],
     sha256 = "af47f30e9cbd70ae34e49866e201b3f77069abb111183f2c0297e7e74ba6bbc0",
     urls = [

@@ -208,6 +208,7 @@ def _nogo_package_config(ctx, deps, importpath = None, target = None):
     binaries = []
     if target != None:
         binaries.extend(target.files.to_list())
+        binaries.extend(target.output_groups.export_files.to_list())
     target_afile, target_xfile = _select_objfile(binaries)
     if target_xfile != None:
         args.append("-archive=%s=%s" % (importpath, target_afile.path))
