@@ -72,6 +72,11 @@ func (fd *pciDeviceFD) InvalidateUnsavable(ctx context.Context) error {
 }
 
 type pciDeviceFdMemmapFile struct {
+	// FIXME(jamieliu): This is consistent with legacy behavior, but not
+	// clearly correct; drivers/vfio/pci/vfio_pci_core.c:vfio_pci_core_mmap()
+	// uses pgprot_noncached(), which would correspond to our
+	// MemoryTypeUncached.
+	memmap.DefaultMemoryType
 	memmap.NoBufferedIOFallback
 
 	fd  *pciDeviceFD

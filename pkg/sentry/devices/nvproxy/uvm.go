@@ -67,6 +67,7 @@ func (dev *uvmDevice) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dentry
 		return nil, err
 	}
 	fd.memmapFile.fd = fd
+	fd.memmapFile.pfm.RequireAddrEqualsFileOffset()
 	return &fd.vfsfd, nil
 }
 

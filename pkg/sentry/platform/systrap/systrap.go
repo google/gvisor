@@ -228,7 +228,6 @@ func (c *platformContext) PrepareSleep() {
 type Systrap struct {
 	platform.NoCPUPreemptionDetection
 	platform.UseHostGlobalMemoryBarrier
-	platform.DoesNotOwnPageTables
 
 	// memoryFile is used to create a stub sysmsg stack which is shared with
 	// the Sentry. Since memoryFile is platform-private, it is never restored,

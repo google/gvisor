@@ -16,10 +16,7 @@ package vfio
 
 import (
 	"gvisor.dev/gvisor/pkg/context"
-	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
-	"gvisor.dev/gvisor/pkg/log"
-	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
@@ -61,7 +58,7 @@ func (fd *vfioFD) InvalidateUnsavable(ctx context.Context) error {
 }
 
 type vfioFDMemmapFile struct {
-	memmap.NoBufferedIOFallback
+	memmap.NoMapInternal
 
 	fd *vfioFD
 }
@@ -72,12 +69,6 @@ func (mf *vfioFDMemmapFile) IncRef(memmap.FileRange, uint32) {
 
 // DecRef implements memmap.File.DecRef.
 func (mf *vfioFDMemmapFile) DecRef(fr memmap.FileRange) {
-}
-
-// MapInternal implements memmap.File.MapInternal.
-func (mf *vfioFDMemmapFile) MapInternal(fr memmap.FileRange, at hostarch.AccessType) (safemem.BlockSeq, error) {
-	log.Traceback("tpuproxy: rejecting vfioFdMemmapFile.MapInternal")
-	return safemem.BlockSeq{}, linuxerr.EINVAL
 }
 
 // DataFD implements memmap.File.DataFD.
