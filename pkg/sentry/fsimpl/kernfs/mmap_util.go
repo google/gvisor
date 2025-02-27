@@ -28,6 +28,7 @@ import (
 //
 // +stateify savable
 type inodePlatformFile struct {
+	memmap.DefaultMemoryType
 	memmap.NoBufferedIOFallback
 
 	// hostFD contains the host fd that this file was originally created from,

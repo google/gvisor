@@ -46,8 +46,12 @@ type frontendDevice struct {
 	minor uint32
 }
 
+func (dev *frontendDevice) isCtlDevice() bool {
+	return dev.minor == nvgpu.NV_CONTROL_DEVICE_MINOR
+}
+
 func (dev *frontendDevice) basename() string {
-	if dev.minor == nvgpu.NV_CONTROL_DEVICE_MINOR {
+	if dev.isCtlDevice() {
 		return "nvidiactl"
 	}
 	return fmt.Sprintf("nvidia%d", dev.minor)
@@ -134,8 +138,9 @@ type frontendFD struct {
 	// These fields are marked nosave since we do not automatically reinvoke
 	// NV_ESC_RM_MAP_MEMORY after restore, so restored FDs have no
 	// mmap_context.
-	mmapLength   uint64  `state:"nosave"`
-	mmapInternal uintptr `state:"nosave"`
+	mmapLength   uint64              `state:"nosave"`
+	mmapInternal uintptr             `state:"nosave"`
+	mmapMemType  hostarch.MemoryType `state:"nosave"`
 
 	// clients are handles of clients owned by this frontendFD. clients is
 	// protected by dev.nvp.objsMu.
@@ -493,6 +498,7 @@ func rmAllocMemorySystem(fi *frontendIoctlState, ioctlParams *nvgpu.IoctlNVOS02P
 		fi.fd.dev.nvp.objAdd(fi.ctx, ioctlParams.Params.HRoot, ioctlParams.Params.HObjectNew, ioctlParams.Params.HClass, &miscObject{}, ioctlParams.Params.HObjectParent)
 		if createMmapCtx {
 			mapFile.mmapLength = ioctlParams.Params.Limit + 1
+			mapFile.mmapMemType = getMemoryType(fi.ctx, mapFile.dev, nvgpu.NVOS33_FLAGS_CACHING_TYPE_DEFAULT)
 		}
 	}
 	fi.fd.dev.nvp.objsUnlock()
@@ -1343,6 +1349,15 @@ func rmMapMemory(fi *frontendIoctlState) (uintptr, error) {
 	}
 	if ioctlParams.Params.Status == nvgpu.NV_OK {
 		mapFile.mmapLength = ioctlParams.Params.Length
+		// src/nvidia/arch/nvalloc/unix/src/escape.c:RmIoctl() forces
+		// NVOS33_FLAGS_CACHING_TYPE_DEFAULT, but resMap implementations may
+		// override the "caching type", so in general the memory type depends
+		// on the mapped object. Conveniently, when this occurs, the caching
+		// type in pParms->flags must be updated for the call to
+		// rm_create_mmap_context(), and pParms is subsequently copied back out
+		// by kernel-open/nvidia/nv.c:nvidia_ioctl(), so we can get the final
+		// caching type from the updated ioctl params.
+		mapFile.mmapMemType = getMemoryType(fi.ctx, mapFile.dev, (ioctlParams.Params.Flags>>nvgpu.NVOS33_FLAGS_CACHING_TYPE_SHIFT)&nvgpu.NVOS33_FLAGS_CACHING_TYPE_MASK)
 	}
 
 	ioctlParams.FD = origFD
