@@ -45,18 +45,19 @@ index ac563544..23369a60 100644
              providers = [GoLibrary],
              doc = """
 diff --git a/go/private/rules/test.bzl b/go/private/rules/test.bzl
-index 554cd30c..313468c7 100644
+index 554cd30c..4aeab1b4 100644
 --- a/go/private/rules/test.bzl
 +++ b/go/private/rules/test.bzl
-@@ -183,6 +183,7 @@ def _go_test_impl(ctx):
+@@ -183,6 +183,8 @@ def _go_test_impl(ctx):
          ),
          OutputGroupInfo(
              compilation_outputs = [internal_archive.data.file],
 +            export_files = internal_archive.export_files,
++            libs = internal_archive.libs,
          ),
          coverage_common.instrumented_files_info(
              ctx,
-@@ -697,6 +698,7 @@ def _recompile_external_deps(go, external_source, internal_archive, library_labe
+@@ -697,6 +699,7 @@ def _recompile_external_deps(go, external_source, internal_archive, library_labe
                  data = arc_data,
                  direct = deps,
                  libs = depset(direct = [arc_data.file], transitive = [a.libs for a in deps]),
