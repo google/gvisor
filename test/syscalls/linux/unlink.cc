@@ -162,8 +162,6 @@ TEST(UnlinkTest, AtFile) {
 }
 
 TEST(UnlinkTest, OpenFile) {
-  // We can't save unlinked file unless they are on tmpfs.
-  const DisableSave ds;
   auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   int fd;
   EXPECT_THAT(fd = open(file.path().c_str(), O_RDWR, 0666), SyscallSucceeds());
