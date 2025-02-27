@@ -23,18 +23,19 @@ index 40b4011e..688a90b8 100644
              compilation_outputs = [archive.data.file],
          ),
 diff --git a/go/private/rules/library.bzl b/go/private/rules/library.bzl
-index ac563544..23369a60 100644
+index ac563544..e3dbfe81 100644
 --- a/go/private/rules/library.bzl
 +++ b/go/private/rules/library.bzl
-@@ -53,6 +53,7 @@ def _go_library_impl(ctx):
+@@ -53,6 +53,8 @@ def _go_library_impl(ctx):
              extensions = ["go"],
          ),
          OutputGroupInfo(
 +            export_files = archive.export_files,
++            libs = archive.libs,
              cgo_exports = archive.cgo_exports,
              compilation_outputs = [archive.data.file],
          ),
-@@ -102,8 +103,7 @@ go_library = rule(
+@@ -102,8 +104,7 @@ go_library = rule(
              with the same path (for example, from different vendor directories).
              """,
          ),
