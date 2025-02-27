@@ -69,6 +69,16 @@ var (
 	containersPerCPU    = flag.Float64("cuda_containers_per_cpu", defaultContainersPerCPU, "number of parallel execution containers to spawn per CPU (floating point values allowed)")
 )
 
+var testSuiteCompatibility = map[string]Compatibility{
+	"0_Introduction": &NoCrossCompile{},
+	"1_Utilities": &NoCrossCompile{},
+	"2_Concepts_and_Techniques": &NoCrossCompile{},
+	"3_CUDA_Features":           &NoCrossCompile{},
+	"4_CUDA_Libraries":      &NoCrossCompile{},
+	"5_Domain_Specific":     &NoCrossCompile{},
+	"6_Performance": &NoCrossCompile{},
+}
+
 // testCompatibility maps test names to their compatibility data.
 // Unmapped test names are assumed to be fully compatible.
 var testCompatibility = map[string]Compatibility{
@@ -371,6 +381,23 @@ func (*RequiresNvSci) IsExpectedFailure(ctx context.Context, env *TestEnvironmen
 	return nil
 }
 
+type NoCrossCompile struct{}
+
+func (*NoCrossCompile) WillFail(ctx context.Context, env *TestEnvironment) string {
+	return "Test not supported on ARM. Cross compiled libraries not supported."
+}
+
+func (*NoCrossCompile) IsExpectedFailure(ctx context.Context, env *TestEnvironment, logs string, _ int ) error {
+	if !strings.HasPrefix(runtime.GOARCH, "arm") {
+		return nil
+	}
+	crossCompileString := "cross compiling from sbsa to aarch64 is not supported!"
+	if strings.Contains(logs, "") {
+		return fmt.Errorf("found string in logs: %s", crossCompileString)
+	}
+	return nil
+}
+
 // multiCompatibility implements `Compatibility` with multiple possible
 // Compatibility implementations.
 type multiCompatibility struct {
@@ -574,8 +601,17 @@ func GetEnvironment(ctx context.Context, t *testing.T) (*TestEnvironment, error)
 // It returns a skip reason (or empty if the test was not skipped), and
 // an error if the test fails.
 func runSampleTest(ctx context.Context, t *testing.T, testName string, te *TestEnvironment, cp *dockerutil.ContainerPool) (string, error) {
-	compat, found := testCompatibility[testName]
-	if !found {
+	compatibilities := []Compatibility{}
+	if compat, found := testCompatibility[testName]; found {
+		compatibilities = append(compatibilities, compat)
+	}
+	for suite, comp := range testSuiteCompatibility {
+		if strings.HasPrefix(testName, suite) {
+			compatibilities = append(compatibilities, comp)
+		}
+	}
+	compat := MultiCompatibility(compatibilities...)
+	if len(compatibilities) == 0 {
 		compat = &FullyCompatible{}
 	}
 	willFailReason := compat.WillFail(ctx, te)
