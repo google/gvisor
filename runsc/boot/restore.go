@@ -293,8 +293,10 @@ func (r *restorer) restore(l *Loader) error {
 
 	// Kill all processes that have been exec'd since they cannot be properly
 	// restored -- the caller is no longer connected.
+	log.Debugf("Killing any exec session that existed previously")
 	for _, tg := range l.k.RootPIDNamespace().ThreadGroups() {
 		if tg.Leader().Origin == kernel.OriginExec {
+			log.Infof("Killing exec'd process, PID: %d", tg.ID())
 			if err := l.k.SendExternalSignalThreadGroup(tg, &linux.SignalInfo{Signo: int32(linux.SIGKILL)}); err != nil {
 				log.Warningf("Failed to kill exec process after restore: %v", err)
 			}
