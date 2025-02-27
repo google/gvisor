@@ -241,6 +241,7 @@ func (i *importer) findArchive(path string) (rc io.ReadCloser, err error) {
 	if !ok {
 		return i.findBinary(path)
 	}
+	realPath = realPath[:len(realPath)-1] + "a"
 	return os.Open(realPath)
 }
 
