@@ -294,6 +294,46 @@ func ifNil[T any](v *T) *T {
 	return &t
 }
 
+func validateArgs(oldArgs, newArgs []string, cwd, cName string) error {
+	if len(oldArgs) != len(newArgs) {
+		return validateError("Args", cName, oldArgs, newArgs)
+	}
+
+	if len(oldArgs) == 0 {
+		return nil
+	}
+
+	oldVal := oldArgs[0]
+	newVal := newArgs[0]
+	hasPrefixOld := strings.HasPrefix(oldVal, "./")
+	hasPrefixNew := strings.HasPrefix(newVal, "./")
+	if hasPrefixOld == hasPrefixNew {
+		if !slices.Equal(oldArgs, newArgs) {
+			return validateError("Args", cName, oldArgs, newArgs)
+		}
+		return nil
+	}
+
+	// One of the entrypoints across checkpoint restore is not resolved.
+	// Resolve the entrypoint using cwd to get the absolute path and compare.
+	if !strings.HasSuffix(cwd, "/") {
+		cwd = cwd + "/"
+	}
+	if hasPrefixOld {
+		oldVal = cwd + oldVal[2:]
+	}
+	if hasPrefixNew {
+		newVal = cwd + newVal[2:]
+	}
+	if oldVal != newVal {
+		return validateError("Args", cName, oldArgs, newArgs)
+	}
+	if !slices.Equal(oldArgs[1:], newArgs[1:]) {
+		return validateError("Args", cName, oldArgs, newArgs)
+	}
+	return nil
+}
+
 func validateSpecForContainer(oSpec, nSpec *specs.Spec, cName string) error {
 	oldSpec := *oSpec
 	newSpec := *nSpec
@@ -341,9 +381,10 @@ func validateSpecForContainer(oSpec, nSpec *specs.Spec, cName string) error {
 		return err
 	}
 	oldProcess.Rlimits, newProcess.Rlimits = nil, nil
-	if ok := slices.Equal(oldProcess.Args, newProcess.Args); !ok {
-		return validateError("Args", cName, oldProcess.Args, newProcess.Args)
+	if err := validateArgs(oldProcess.Args, newProcess.Args, oldProcess.Cwd, cName); err != nil {
+		return err
 	}
+	oldProcess.Args, newProcess.Args = nil, nil
 	if err := validateCapabilities("Capabilities", cName, oldProcess.Capabilities, newProcess.Capabilities); err != nil {
 		return err
 	}

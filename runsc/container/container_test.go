@@ -3977,6 +3977,25 @@ func TestSpecValidationIgnore(t *testing.T) {
 	}
 }
 
+func TestSpecValidationForArgs(t *testing.T) {
+	conf := testutil.TestConfig(t)
+	oldSpecs := make(map[string]*specs.Spec)
+	spec, _ := sleepSpecConf(t)
+	spec.Process.Cwd = "/bin"
+	spec.Process.Args[0] = "/bin/sleep"
+	oldSpecs["container1"] = spec
+
+	newSpecs := make(map[string]*specs.Spec)
+	restoreSpec, _ := sleepSpecConf(t)
+	restoreSpec.Process.Cwd = "/bin"
+	restoreSpec.Process.Args[0] = "./sleep"
+	newSpecs["container1"] = restoreSpec
+
+	if err := specutils.RestoreValidateSpec(oldSpecs, newSpecs, conf); err != nil {
+		t.Fatalf("spec validation failed, got: %v, want: nil", err)
+	}
+}
+
 func TestCheckpointResume(t *testing.T) {
 	for name, conf := range configs(t, true /* noOverlay */) {
 		t.Run(name, func(t *testing.T) {
