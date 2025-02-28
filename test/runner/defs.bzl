@@ -374,13 +374,14 @@ def syscall_test(
         iouring = False,
         allow_native = True,
         leak_check = True,
-        debug = True,
+        debug = None,
         container = None,
         tags = None,
-        save = True,
+        save = None,
         size = "medium",
         overlay = False,
         netstack_sr = False,
+        perf = False,
         **kwargs):
     """syscall_test is a macro that will create targets for all platforms.
 
@@ -403,10 +404,22 @@ def syscall_test(
       leak_check: enables leak check.
       save: enables save/restore and save/resume test variants.
       size: test size.
+      overlay: add overlayfs test variants.
+      netstack_sr: if save is true, add netstack save/restore test variants.
+      perf: test is a benchmark.
       **kwargs: additional test arguments.
     """
     if not tags:
         tags = []
+
+    # Debug logs and save/save_resume test variants are disabled by default for
+    # benchmarks and enabled by default otherwise.
+    if debug == None:
+        debug = not perf
+    if save == None:
+        save = not perf
+    if perf:
+        tags.append("perf")
 
     if allow_native:
         _syscall_test(
