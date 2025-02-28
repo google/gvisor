@@ -19,6 +19,8 @@ concurrency:
 jobs:
   generate:
     runs-on: ubuntu-latest
+    permissions:
+      statuses: write
     steps:
     - id: setup
       run: |
