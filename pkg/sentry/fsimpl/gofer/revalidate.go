@@ -198,21 +198,12 @@ func (fs *filesystem) revalidateStep(ctx context.Context, rp resolvingPath, d *d
 // Precondition: fs.renameMu must be locked.
 func (d *dentry) invalidate(ctx context.Context, vfsObj *vfs.VirtualFilesystem, ds **[]*dentry) {
 	// Remove d from its parent.
-	func() {
+	removed := func() bool {
 		parent := d.parent.Load()
 		parent.opMu.RLock()
 		defer parent.opMu.RUnlock()
 		parent.childrenMu.Lock()
 		defer parent.childrenMu.Unlock()
-
-		if d.isSynthetic() {
-			// Normally we don't mark invalidated dentries as deleted since
-			// they may still exist (but at a different path), and also for
-			// consistency with Linux. However, synthetic files are guaranteed
-			// to become unreachable if their dentries are invalidated, so
-			// treat their invalidation as deletion.
-			d.deleteSynthetic(parent, ds)
-		}
 
 		// Since the opMu was just reacquired above, re-check that the
 		// parent's child with this name is still the same. Do not touch it if
@@ -220,7 +211,17 @@ func (d *dentry) invalidate(ctx context.Context, vfsObj *vfs.VirtualFilesystem, 
 		if child := parent.children[d.name]; child == d {
 			// Invalidate dentry so it gets reloaded next time it's accessed.
 			delete(parent.children, d.name)
+			if d.isSynthetic() {
+				// Normally we don't mark invalidated dentries as deleted since
+				// they may still exist (but at a different path), and also for
+				// consistency with Linux. However, synthetic files are
+				// guaranteed to become unreachable if their dentries are
+				// invalidated, so treat their invalidation as deletion.
+				d.deleteSynthetic(parent, ds)
+			}
+			return true
 		}
+		return false
 	}()
 
 	// Invalidate d and its descendants.
@@ -239,7 +240,14 @@ func (d *dentry) invalidate(ctx context.Context, vfsObj *vfs.VirtualFilesystem, 
 			rc.DecRef(ctx)
 		}
 		d.decRefNoCaching()
-		if d.isSynthetic() || d.endpoint != nil {
+
+		// If an extra reference is held on d as described by the comment for
+		// dentry.refs, and d hasn't been racily removed by
+		// filesystem.unlinkAt() or another revalidation, drop that reference
+		// now. (The same would apply to racy replacement by
+		// filesystem.RenameAt(), but we can't race with rename since renameMu
+		// has been locked since entering filesystem.revalidatePath().)
+		if removed && (d.isSynthetic() || d.endpoint != nil) {
 			d.decRefNoCaching()
 		}
 
