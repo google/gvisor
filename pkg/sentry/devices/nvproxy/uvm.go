@@ -41,29 +41,39 @@ type uvmDevice struct {
 
 // Open implements vfs.Device.Open.
 func (dev *uvmDevice) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
-	devClient := devutil.GoferClientFromContext(ctx)
-	if devClient == nil {
-		log.Warningf("devutil.CtxDevGoferClient is not set")
-		return nil, linuxerr.ENOENT
-	}
-	hostFD, err := devClient.OpenAt(ctx, "nvidia-uvm", opts.Flags)
-	if err != nil {
-		ctx.Warningf("nvproxy: failed to open host /dev/nvidia-uvm: %v", err)
-		return nil, err
-	}
 	fd := &uvmFD{
-		dev:           dev,
-		containerName: devClient.ContainerName(),
-		hostFD:        int32(hostFD),
+		dev: dev,
+	}
+	if dev.nvp.useDevGofer {
+		devClient := devutil.GoferClientFromContext(ctx)
+		if devClient == nil {
+			log.Warningf("devutil.CtxDevGoferClient is not set")
+			return nil, linuxerr.ENOENT
+		}
+		fd.containerName = devClient.ContainerName()
+		hostFD, err := devClient.OpenAt(ctx, "nvidia-uvm", opts.Flags)
+		if err != nil {
+			ctx.Warningf("nvproxy: failed to open nvidia-uvm: %v", err)
+			return nil, err
+		}
+		fd.hostFD = int32(hostFD)
+	} else {
+		flags := int(opts.Flags&unix.O_ACCMODE | unix.O_NOFOLLOW)
+		hostFD, err := unix.Openat(-1, "/dev/nvidia-uvm", flags, 0)
+		if err != nil {
+			ctx.Warningf("nvproxy: failed to open host /dev/nvidia-uvm: %v", err)
+			return nil, err
+		}
+		fd.hostFD = int32(hostFD)
 	}
 	if err := fd.vfsfd.Init(fd, opts.Flags, mnt, vfsd, &vfs.FileDescriptionOptions{
 		UseDentryMetadata: true,
 	}); err != nil {
-		unix.Close(hostFD)
+		unix.Close(int(fd.hostFD))
 		return nil, err
 	}
-	if err := fdnotifier.AddFD(int32(hostFD), &fd.queue); err != nil {
-		unix.Close(hostFD)
+	if err := fdnotifier.AddFD(fd.hostFD, &fd.queue); err != nil {
+		unix.Close(int(fd.hostFD))
 		return nil, err
 	}
 	fd.memmapFile.fd = fd
