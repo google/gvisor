@@ -244,7 +244,7 @@ func (i *inode) CheckPermissions(ctx context.Context, creds *auth.Credentials, a
 	} else if ats.MayRead() || ats.MayWrite() || ats.MayExec() {
 		in := linux.FUSEAccessIn{Mask: uint32(ats)}
 		req := i.fs.conn.NewRequest(auth.CredentialsFromContext(ctx), pidFromContext(ctx), i.nodeID, linux.FUSE_ACCESS, &in)
-		res, err := i.fs.conn.Call(ctx, req)
+		res, err := i.unlockAttrAndWaitForResponse(ctx, req)
 		if err != nil {
 			return err
 		}
@@ -327,7 +327,7 @@ func (i *inode) Open(ctx context.Context, rp *vfs.ResolvingPath, d *kernfs.Dentr
 		}
 
 		req := i.fs.conn.NewRequest(auth.CredentialsFromContext(ctx), pidFromContext(ctx), i.nodeID, opcode, &in)
-		res, err := i.fs.conn.Call(ctx, req)
+		res, err := i.unlockAttrAndWaitForResponse(ctx, req)
 		if err != nil {
 			return nil, err
 		}
@@ -387,7 +387,7 @@ func (i *inode) Valid(ctx context.Context, parent *kernfs.Dentry, name string) b
 
 	in := linux.FUSELookupIn{Name: linux.CString(name)}
 	req := i.fs.conn.NewRequest(auth.CredentialsFromContext(ctx), pidFromContext(ctx), parent.Inode().(*inode).nodeID, linux.FUSE_LOOKUP, &in)
-	res, err := i.fs.conn.Call(ctx, req)
+	res, err := i.unlockAttrAndWaitForResponse(ctx, req)
 	if err != nil {
 		return false
 	}
@@ -590,7 +590,7 @@ func (i *inode) Readlink(ctx context.Context, mnt *vfs.Mount) (string, error) {
 	}
 	if len(i.link) == 0 {
 		req := i.fs.conn.NewRequest(auth.CredentialsFromContext(ctx), pidFromContext(ctx), i.nodeID, linux.FUSE_READLINK, &linux.FUSEEmptyIn{})
-		res, err := i.fs.conn.Call(ctx, req)
+		res, err := i.unlockAttrAndWaitForResponse(ctx, req)
 		if err != nil {
 			return "", err
 		}
@@ -698,7 +698,7 @@ func (i *inode) getAttr(ctx context.Context, fs *vfs.Filesystem, opts vfs.StatOp
 		Fh:           fh,
 	}
 	req := i.fs.conn.NewRequest(creds, pidFromContext(ctx), i.nodeID, linux.FUSE_GETATTR, &in)
-	res, err := i.fs.conn.Call(ctx, req)
+	res, err := i.unlockAttrAndWaitForResponse(ctx, req)
 	if err != nil {
 		return linux.FUSEAttr{}, err
 	}
@@ -849,8 +849,9 @@ func (i *inode) setAttr(ctx context.Context, fs *vfs.Filesystem, creds *auth.Cre
 		UID:       opts.Stat.UID,
 		GID:       opts.Stat.GID,
 	}
+
 	req := i.fs.conn.NewRequest(creds, pidFromContext(ctx), i.nodeID, linux.FUSE_SETATTR, &in)
-	res, err := i.fs.conn.Call(ctx, req)
+	res, err := i.unlockAttrAndWaitForResponse(ctx, req)
 	if err != nil {
 		return err
 	}
@@ -888,4 +889,15 @@ func (i *inode) updateAttrs(attr linux.FUSEAttr, validSec, validNSec int64) {
 	if !i.fs.opts.defaultPermissions {
 		i.mode.Store(i.mode.Load() & ^uint32(linux.S_ISVTX))
 	}
+}
+
+// +checklocks:i.attrMu
+func (i *inode) unlockAttrAndWaitForResponse(ctx context.Context, req *Request) (*Response, error) {
+	i.attrMu.Unlock()
+	defer i.attrMu.Lock()
+	res, err := i.fs.conn.Call(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	return res, nil
 }
