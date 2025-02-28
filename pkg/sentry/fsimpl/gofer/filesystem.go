@@ -714,6 +714,12 @@ func (fs *filesystem) unlinkAt(ctx context.Context, rp *vfs.ResolvingPath, dir b
 	if child != nil {
 		toDecRef = vfsObj.CommitDeleteDentry(ctx, &child.vfsd) // +checklocksforce: see above.
 		child.setDeleted()
+		// If an extra reference is held on child as described by the comment
+		// for dentry.refs, drop that reference now. We can't race with another
+		// fs.unlinkAt() or invalidation since parent.opMu has been locked for
+		// writing since before we obtained child, and we can't race with
+		// fs.RenameAt() since fs.renameMu has been locked since before we
+		// obtained child.
 		if child.isSynthetic() {
 			parent.syntheticChildren--
 			child.decRefNoCaching()
@@ -1507,6 +1513,10 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 	toDecRef = vfsObj.CommitRenameReplaceDentry(ctx, &renamed.vfsd, replacedVFSD)
 	if replaced != nil {
 		replaced.setDeleted()
+		// If an extra reference is held on replaced as described by the
+		// comment for dentry.refs, drop that reference now. We can't race with
+		// fs.unlinkAt() or invalidation since fs.renameMu has been locked for
+		// writing since before we obtained replaced.
 		if replaced.isSynthetic() {
 			newParent.syntheticChildren--
 			replaced.decRefNoCaching()
