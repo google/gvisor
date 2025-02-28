@@ -162,10 +162,6 @@ func runTestCaseNative(testBin string, tc *gtest.TestCase, args []string, t *tes
 		env = append(env, fmt.Sprintf("%s=%s", platformSupportEnvVar, *platformSupport))
 	}
 
-	if args == nil {
-		args = tc.Args()
-	}
-
 	args = append(args, gtest.TestFlags...)
 	log.Infof("Executing: %v", append([]string{testBin}, args...))
 	cmd := exec.Command(testBin, args...)
@@ -825,9 +821,6 @@ func setupHostFifoTree(spec *specs.Spec) (cleanup func(), err error) {
 func runTestCaseRunsc(testBin string, tc *gtest.TestCase, args []string, t *testing.T) {
 	// Run a new container with the test executable and filter for the
 	// given test suite and name.
-	if args == nil {
-		args = tc.Args()
-	}
 	args = append(args, gtest.TestFlags...)
 	var spec *specs.Spec
 	if *fusefs {
@@ -1043,24 +1036,26 @@ func main() {
 
 	var tests []testing.InternalTest
 	if *oneSandbox {
-		tc := gtest.TestCase{
-			Suite: "main",
-			Name:  "test",
-		}
+		if len(indices) != 0 {
+			tc := gtest.TestCase{
+				Suite: "main",
+				Name:  "test",
+			}
 
-		tests = append(tests, testing.InternalTest{
-			Name: fmt.Sprintf("%s_%s", tc.Suite, tc.Name),
-			F: func(t *testing.T) {
-				args := gtest.BuildTestArgs(indices, testCases)
-				if *platform == "native" {
-					// Run the test case on host.
-					runTestCaseNative(testBin, &tc, args, t)
-				} else {
-					// Run the test case in runsc.
-					runTestCaseRunsc(testBin, &tc, args, t)
-				}
-			},
-		})
+			tests = append(tests, testing.InternalTest{
+				Name: fmt.Sprintf("%s_%s", tc.Suite, tc.Name),
+				F: func(t *testing.T) {
+					args := gtest.BuildTestArgs(indices, testCases)
+					if *platform == "native" {
+						// Run the test case on host.
+						runTestCaseNative(testBin, &tc, args, t)
+					} else {
+						// Run the test case in runsc.
+						runTestCaseRunsc(testBin, &tc, args, t)
+					}
+				},
+			})
+		}
 	} else {
 		// Run the tests.
 		for _, tci := range indices {
@@ -1071,10 +1066,10 @@ func main() {
 				F: func(t *testing.T) {
 					if *platform == "native" {
 						// Run the test case on host.
-						runTestCaseNative(testBin, &tc, nil, t)
+						runTestCaseNative(testBin, &tc, tc.Args(), t)
 					} else {
 						// Run the test case in runsc.
-						runTestCaseRunsc(testBin, &tc, nil, t)
+						runTestCaseRunsc(testBin, &tc, tc.Args(), t)
 					}
 				},
 			})

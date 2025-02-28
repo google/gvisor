@@ -185,6 +185,8 @@ func ParseBenchmarks(binary string, extraArgs ...string) ([]TestCase, error) {
 
 // BuildTestArgs builds arguments to be passed to the test binary to execute
 // only the test cases in `indices`.
+//
+// Preconditions: len(indices) != 0.
 func BuildTestArgs(indices []int, testCases []TestCase) []string {
 	var testFilter, benchFilter string
 	for _, tci := range indices {
