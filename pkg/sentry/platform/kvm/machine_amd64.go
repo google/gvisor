@@ -69,6 +69,7 @@ func (m *machine) initArchState() error {
 
 	bluepill(c)
 	ring0.SetCPUIDFaulting(true)
+	c.cpuidFaultingEnable = true
 
 	return nil
 }
@@ -352,6 +353,12 @@ func (c *vCPU) SwitchToUser(switchOpts ring0.SwitchOpts, info *linux.SignalInfo)
 	// allocations occur.
 	entersyscall()
 	bluepill(c)
+
+	if !c.cpuidFaultingEnable {
+		ring0.SetCPUIDFaulting(true)
+		c.cpuidFaultingEnable = true
+	}
+
 	vector = c.CPU.SwitchToUser(switchOpts)
 	exitsyscall()
 

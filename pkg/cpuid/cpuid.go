@@ -257,6 +257,12 @@ func initHWCap() {
 
 var initOnce sync.Once
 
+// SetAllowedFeatures sets the CPU features allowed for use by user apps.
+// It should be invoked before Initialize().
+func SetAllowedFeatures(features []string) {
+	archSetAllowedFeatures(features)
+}
+
 // Initialize initializes the global data structures used by this package.
 // Must be called prior to using anything else in this package.
 func Initialize() {

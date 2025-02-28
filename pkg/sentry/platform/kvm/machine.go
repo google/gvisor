@@ -213,6 +213,9 @@ type vCPU struct {
 
 	// dieState holds state related to vCPU death.
 	dieState dieState
+
+	// cpuidFaultingEnable indicates whether this vCPU has been enabled for cpuid faulting.
+	cpuidFaultingEnable bool
 }
 
 type dieState struct {
