@@ -707,6 +707,9 @@ func isWarning(line string) bool {
 	// gsys_get_timekeeping_params hasn't been implemented for ARM.
 	case strings.Contains(line, "Error retrieving TSC snapshot, unable to save TSC: function not implemented"):
 
+	// Caused by properties of the host that runsc doesn't necessarily control.
+	case strings.Contains(line, "Host limit is lower than recommended"):
+
 	case *save:
 		// Ignore these warnings for S/R tests as we try to delete the sandbox
 		// after the sandbox has exited and before attempting to restore it.
