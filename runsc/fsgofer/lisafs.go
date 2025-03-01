@@ -395,15 +395,15 @@ func (fd *controlFDLisa) SetStat(stat lisafs.SetStatReq) (failureMask uint32, fa
 	if stat.Mask&(unix.STATX_UID|unix.STATX_GID) != 0 {
 		// "If the owner or group is specified as -1, then that ID is not changed"
 		// - chown(2)
-		uid := -1
+		uid := lisafs.NoUID
 		if stat.Mask&unix.STATX_UID != 0 {
-			uid = int(stat.UID)
+			uid = stat.UID
 		}
-		gid := -1
+		gid := lisafs.NoGID
 		if stat.Mask&unix.STATX_GID != 0 {
-			gid = int(stat.GID)
+			gid = stat.GID
 		}
-		if err := unix.Fchownat(fd.hostFD, "", uid, gid, unix.AT_EMPTY_PATH|unix.AT_SYMLINK_NOFOLLOW); err != nil {
+		if err := fchown(fd.hostFD, uid, gid); err != nil {
 			log.Warningf("SetStat fchown failed %q, err: %v", fd.Node().FilePath(), err)
 			failureMask |= stat.Mask & (unix.STATX_UID | unix.STATX_GID)
 			failureErr = err
@@ -575,7 +575,7 @@ func (fd *controlFDLisa) OpenCreate(mode linux.FileMode, uid lisafs.UID, gid lis
 	defer cu.Clean()
 
 	// Set the owners as requested by the client.
-	if err := unix.Fchownat(childHostFD, "", int(uid), int(gid), unix.AT_EMPTY_PATH|unix.AT_SYMLINK_NOFOLLOW); err != nil {
+	if err := fchown(childHostFD, uid, gid); err != nil {
 		return nil, linux.Statx{}, nil, -1, err
 	}
 
@@ -628,7 +628,7 @@ func (fd *controlFDLisa) Mkdir(mode linux.FileMode, uid lisafs.UID, gid lisafs.G
 	if err != nil {
 		return nil, linux.Statx{}, err
 	}
-	if err := unix.Fchownat(childDirFd, "", int(uid), int(gid), unix.AT_EMPTY_PATH|unix.AT_SYMLINK_NOFOLLOW); err != nil {
+	if err := fchown(childDirFd, uid, gid); err != nil {
 		unix.Close(childDirFd)
 		return nil, linux.Statx{}, err
 	}
@@ -671,7 +671,7 @@ func (fd *controlFDLisa) Mknod(mode linux.FileMode, uid lisafs.UID, gid lisafs.G
 	if err != nil {
 		return nil, linux.Statx{}, err
 	}
-	if err := unix.Fchownat(childFD, "", int(uid), int(gid), unix.AT_EMPTY_PATH|unix.AT_SYMLINK_NOFOLLOW); err != nil {
+	if err := fchown(childFD, uid, gid); err != nil {
 		unix.Close(childFD)
 		return nil, linux.Statx{}, err
 	}
@@ -705,7 +705,7 @@ func (fd *controlFDLisa) Symlink(name string, target string, uid lisafs.UID, gid
 	if err != nil {
 		return nil, linux.Statx{}, err
 	}
-	if err := unix.Fchownat(symlinkFD, "", int(uid), int(gid), unix.AT_EMPTY_PATH|unix.AT_SYMLINK_NOFOLLOW); err != nil {
+	if err := fchown(symlinkFD, uid, gid); err != nil {
 		unix.Close(symlinkFD)
 		return nil, linux.Statx{}, err
 	}
@@ -959,7 +959,7 @@ func (fd *controlFDLisa) BindAt(name string, sockType uint32, mode linux.FileMod
 		_ = unix.Close(sockFileFD)
 	})
 
-	if err := unix.Fchownat(sockFileFD, "", int(uid), int(gid), unix.AT_EMPTY_PATH|unix.AT_SYMLINK_NOFOLLOW); err != nil {
+	if err := fchown(sockFileFD, uid, gid); err != nil {
 		return nil, linux.Statx{}, nil, -1, err
 	}
 
@@ -1221,6 +1221,23 @@ func tryOpen(open func(int) (int, error)) (hostFD int, err error) {
 		}
 	}
 	return
+}
+
+func fchown(hostFD int, uid lisafs.UID, gid lisafs.GID) error {
+	// "If the owner or group is specified as -1, then that ID is not changed"
+	// - chown(2). Only bother making the syscall if the owner is changing.
+	if !uid.Ok() && !gid.Ok() {
+		return nil
+	}
+	u := -1
+	g := -1
+	if uid.Ok() {
+		u = int(uid)
+	}
+	if gid.Ok() {
+		g = int(gid)
+	}
+	return unix.Fchownat(hostFD, "", u, g, unix.AT_EMPTY_PATH|unix.AT_SYMLINK_NOFOLLOW)
 }
 
 func fstatTo(hostFD int) (linux.Statx, error) {

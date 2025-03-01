@@ -22,6 +22,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -68,6 +69,14 @@ var _ kernfs.Inode = (*tasksInode)(nil)
 func (fs *filesystem) newTasksInode(ctx context.Context, k *kernel.Kernel, pidns *kernel.PIDNamespace, internalData *InternalData) *tasksInode {
 	root := auth.NewRootCredentials(pidns.UserNamespace())
 
+	// /proc is expected to have inode number
+	// include/linux/proc_ns.h:PROC_ROOT_INO == 1; ensure that this is the case
+	// by generating its inode number before any of its descendants.
+	rootIno := fs.NextIno()
+	if rootIno != 1 {
+		log.Traceback("proc root inode has number %d", rootIno)
+	}
+
 	contents := map[string]kernfs.Inode{
 		"cmdline":        fs.newInode(ctx, root, 0444, &cmdLineData{}),
 		"cpuinfo":        fs.newInode(ctx, root, 0444, newStaticFileSetStat(cpuInfoData(k))),
@@ -99,7 +108,7 @@ func (fs *filesystem) newTasksInode(ctx context.Context, k *kernel.Kernel, pidns
 		fs:                    fs,
 		fakeCgroupControllers: internalData.Cgroups,
 	}
-	inode.InodeAttrs.Init(ctx, root, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), linux.ModeDirectory|0555)
+	inode.InodeAttrs.Init(ctx, root, linux.UNNAMED_MAJOR, fs.devMinor, rootIno, linux.ModeDirectory|0555)
 	inode.InitRefs()
 
 	inode.OrderedChildren.Init(kernfs.OrderedChildrenOptions{})

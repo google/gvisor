@@ -29,6 +29,7 @@ import (
 	"github.com/containerd/cgroups"
 	cgroupsstats "github.com/containerd/cgroups/stats/v1"
 	cgroupsv2 "github.com/containerd/cgroups/v2"
+	cgroupsv2stats "github.com/containerd/cgroups/v2/stats"
 	"github.com/containerd/console"
 	"github.com/containerd/containerd/api/events"
 	"github.com/containerd/containerd/api/types/task"
@@ -42,6 +43,7 @@ import (
 	taskAPI "github.com/containerd/containerd/runtime/v2/task"
 	"github.com/containerd/containerd/sys/reaper"
 	"github.com/containerd/errdefs"
+	runc "github.com/containerd/go-runc"
 	"github.com/containerd/log"
 	"github.com/containerd/typeurl"
 	"github.com/gogo/protobuf/types"
@@ -49,13 +51,13 @@ import (
 	"github.com/sirupsen/logrus"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/cleanup"
-	"gvisor.dev/gvisor/pkg/shim/runtimeoptions/v14"
+	"gvisor.dev/gvisor/pkg/shim/v1/runtimeoptions/v14"
 
-	"gvisor.dev/gvisor/pkg/shim/extension"
-	"gvisor.dev/gvisor/pkg/shim/proc"
-	"gvisor.dev/gvisor/pkg/shim/runsccmd"
-	"gvisor.dev/gvisor/pkg/shim/runtimeoptions"
-	"gvisor.dev/gvisor/pkg/shim/utils"
+	"gvisor.dev/gvisor/pkg/shim/v1/extension"
+	"gvisor.dev/gvisor/pkg/shim/v1/proc"
+	"gvisor.dev/gvisor/pkg/shim/v1/runsccmd"
+	"gvisor.dev/gvisor/pkg/shim/v1/runtimeoptions"
+	"gvisor.dev/gvisor/pkg/shim/v1/utils"
 	"gvisor.dev/gvisor/runsc/specutils"
 )
 
@@ -660,6 +662,18 @@ func (s *runscService) Stats(ctx context.Context, r *taskAPI.StatsRequest) (*tas
 	// as runc.
 	//
 	// [0]: https://github.com/google/gvisor/blob/277a0d5a1fbe8272d4729c01ee4c6e374d047ebc/runsc/boot/events.go#L61-L81
+	return s.getStats(stats, r)
+}
+
+func (s *runscService) getStats(stats *runc.Stats, r *taskAPI.StatsRequest) (*taskAPI.StatsResponse, error) {
+	if s.opts.RunscConfig["systemd-cgroup"] == "true" {
+		return s.getV2Stats(stats, r)
+	} else {
+		return s.getV1Stats(stats, r)
+	}
+}
+
+func (s *runscService) getV1Stats(stats *runc.Stats, r *taskAPI.StatsRequest) (*taskAPI.StatsResponse, error) {
 	metrics := &cgroupsstats.Metrics{
 		CPU: &cgroupsstats.CPUStat{
 			Usage: &cgroupsstats.CPUUsage{
@@ -708,10 +722,45 @@ func (s *runscService) Stats(ctx context.Context, r *taskAPI.StatsRequest) (*tas
 	}
 	data, err := typeurl.MarshalAny(metrics)
 	if err != nil {
-		log.L.Debugf("Stats error, id: %s: %v", r.ID, err)
+		log.L.Debugf("Stats error v1, id: %s: %v", r.ID, err)
 		return nil, err
 	}
-	log.L.Debugf("Stats success, id: %s: %+v", r.ID, data)
+	log.L.Debugf("Stats success v1, id: %s: %+v", r.ID, data)
+	return &taskAPI.StatsResponse{
+		Stats: data,
+	}, nil
+}
+
+func (s *runscService) getV2Stats(stats *runc.Stats, r *taskAPI.StatsRequest) (*taskAPI.StatsResponse, error) {
+	metrics := &cgroupsv2stats.Metrics{
+		// The CGroup V2 stats are in microseconds instead of nanoseconds so divide by 1000
+		CPU: &cgroupsv2stats.CPUStat{
+			UsageUsec:     stats.Cpu.Usage.Total / 1000,
+			UserUsec:      stats.Cpu.Usage.User / 1000,
+			SystemUsec:    stats.Cpu.Usage.Kernel / 1000,
+			NrPeriods:     stats.Cpu.Throttling.Periods,
+			NrThrottled:   stats.Cpu.Throttling.ThrottledPeriods,
+			ThrottledUsec: stats.Cpu.Throttling.ThrottledTime / 1000,
+		},
+		Memory: &cgroupsv2stats.MemoryStat{
+			Usage:      stats.Memory.Usage.Usage,
+			UsageLimit: stats.Memory.Usage.Limit,
+			SwapUsage:  stats.Memory.Swap.Usage,
+			SwapLimit:  stats.Memory.Swap.Limit,
+			Slab:       stats.Memory.Kernel.Usage,
+			File:       stats.Memory.Cache,
+		},
+		Pids: &cgroupsv2stats.PidsStat{
+			Current: stats.Pids.Current,
+			Limit:   stats.Pids.Limit,
+		},
+	}
+	data, err := typeurl.MarshalAny(metrics)
+	if err != nil {
+		log.L.Debugf("Stats error v2, id: %s: %v", r.ID, err)
+		return nil, err
+	}
+	log.L.Debugf("Stats success v2, id: %s: %+v", r.ID, data)
 	return &taskAPI.StatsResponse{
 		Stats: data,
 	}, nil
