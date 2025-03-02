@@ -29,7 +29,6 @@ import (
 	"time"
 
 	"gvisor.dev/gvisor/pkg/buffer"
-	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
@@ -79,7 +78,7 @@ type endpoint struct {
 	stats       tcpip.TransportEndpointStats
 
 	// The following fields are used to manage the receive queue.
-	rcvMu sync.Mutex `state:"nosave"`
+	rcvMu rcvMutex `state:"nosave"`
 	// +checklocks:rcvMu
 	rcvList packetList
 	// +checklocks:rcvMu
@@ -89,7 +88,7 @@ type endpoint struct {
 	// +checklocks:rcvMu
 	rcvDisabled bool
 
-	mu sync.RWMutex `state:"nosave"`
+	mu endpointRWMutex `state:"nosave"`
 	// +checklocks:mu
 	closed bool
 	// +checklocks:mu
@@ -97,7 +96,7 @@ type endpoint struct {
 	// +checklocks:mu
 	boundNIC tcpip.NICID
 
-	lastErrorMu sync.Mutex `state:"nosave"`
+	lastErrorMu lastErrorMutex `state:"nosave"`
 	// +checklocks:lastErrorMu
 	lastError tcpip.Error
 
