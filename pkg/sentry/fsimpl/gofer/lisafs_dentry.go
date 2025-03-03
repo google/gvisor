@@ -448,7 +448,7 @@ func (d *lisafsDentry) symlink(ctx context.Context, name, target string, creds *
 	return d.newChildDentry(ctx, &symlinkInode, name)
 }
 
-func (d *lisafsDentry) openCreate(ctx context.Context, name string, flags uint32, mode linux.FileMode, uid auth.KUID, gid auth.KGID) (*dentry, handle, error) {
+func (d *lisafsDentry) openCreate(ctx context.Context, name string, flags uint32, mode linux.FileMode, uid auth.KUID, gid auth.KGID, createDentry bool) (*dentry, handle, error) {
 	ino, openFD, hostFD, err := d.controlFD.OpenCreateAt(ctx, name, flags, mode, lisafs.UID(uid), lisafs.GID(gid))
 	if err != nil {
 		return nil, noHandle, err
@@ -458,10 +458,13 @@ func (d *lisafsDentry) openCreate(ctx context.Context, name string, flags uint32
 		fdLisa: d.fs.client.NewFD(openFD),
 		fd:     int32(hostFD),
 	}
-	child, err := d.fs.newLisafsDentry(ctx, &ino)
-	if err != nil {
-		h.close(ctx)
-		return nil, noHandle, err
+	var child *dentry
+	if createDentry {
+		child, err = d.fs.newLisafsDentry(ctx, &ino)
+		if err != nil {
+			h.close(ctx)
+			return nil, noHandle, err
+		}
 	}
 	return child, h, nil
 }

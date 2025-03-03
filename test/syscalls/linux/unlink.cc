@@ -21,6 +21,7 @@
 #include "test/util/capability_util.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/fs_util.h"
+#include "test/util/save_util.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
 
@@ -162,8 +163,11 @@ TEST(UnlinkTest, AtFile) {
 }
 
 TEST(UnlinkTest, OpenFile) {
-  // We can't save unlinked file unless they are on tmpfs.
-  const DisableSave ds;
+  // TODO(b/400287667): Enable save/restore for local gofer.
+  DisableSave ds;
+  if (IsRunningOnRunsc()) {
+    ds.reset();
+  }
   auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   int fd;
   EXPECT_THAT(fd = open(file.path().c_str(), O_RDWR, 0666), SyscallSucceeds());

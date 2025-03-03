@@ -892,11 +892,12 @@ func runTestCaseRunsc(testBin string, tc *gtest.TestCase, args []string, t *test
 	const (
 		platformVar = "TEST_ON_GVISOR"
 		networkVar  = "GVISOR_NETWORK"
+		runtimeVar  = "GVISOR_RUNTIME"
 		ioUringVar  = "IOURING_ENABLED"
 		fuseVar     = "GVISOR_FUSE_TEST"
 		saveVar     = "GVISOR_SAVE_TEST"
 	)
-	env := append(os.Environ(), platformVar+"="+*platform, networkVar+"="+*network)
+	env := append(os.Environ(), platformVar+"="+*platform, networkVar+"="+*network, runtimeVar+"=runsc")
 	if *platformSupport != "" {
 		env = append(env, fmt.Sprintf("%s=%s", platformSupportEnvVar, *platformSupport))
 	}

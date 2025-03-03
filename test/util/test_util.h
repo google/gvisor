@@ -204,6 +204,7 @@ namespace gvisor {
 namespace testing {
 
 constexpr char kTestOnGvisor[] = "TEST_ON_GVISOR";
+constexpr char kGvisorRuntime[] = "GVISOR_RUNTIME";
 
 // TestInit must be called prior to RUN_ALL_TESTS.
 //
@@ -231,6 +232,7 @@ constexpr char kSystrap[] = "systrap";
 }  // namespace Platform
 
 bool IsRunningOnGvisor();
+bool IsRunningOnRunsc();
 const std::string GvisorPlatform();
 bool IsRunningWithHostinet();
 bool IsIOUringEnabled();

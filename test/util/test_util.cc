@@ -54,6 +54,11 @@ const std::string GvisorPlatform() {
   return std::string(env);
 }
 
+bool IsRunningOnRunsc() {
+  const char* env = getenv(kGvisorRuntime);
+  return env && strcmp(env, "runsc") == 0;
+}
+
 bool IsRunningWithHostinet() {
   const char* env = getenv(kGvisorNetwork);
   return env && strcmp(env, "host") == 0;
