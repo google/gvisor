@@ -22,6 +22,7 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/fdnotifier"
 	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/hostfd"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
@@ -71,11 +72,18 @@ func (i *inode) beforeSave() {
 
 // afterLoad is invoked by stateify.
 func (i *inode) afterLoad(ctx context.Context) {
+	if !i.restorable {
+		log.Infof("Skipping host FD (%+v) that is not restorable", i.restoreKey)
+		i.hostFD = -1
+		return
+	}
+
 	fdmap := vfs.RestoreFilesystemFDMapFromContext(ctx)
 	fd, ok := fdmap[i.restoreKey]
 	if !ok {
 		panic(fmt.Sprintf("no host FD available for %+v, map: %v", i.restoreKey, fdmap))
 	}
+	log.Debugf("Remapping host FD from %d to %d", i.hostFD, fd)
 	i.hostFD = fd
 
 	if i.epollable {

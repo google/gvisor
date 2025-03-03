@@ -37,6 +37,7 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/bits"
+	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/erofs"
@@ -1199,11 +1200,11 @@ func TestCheckpointRestore(t *testing.T) {
 // after the container is restored.
 func TestCheckpointRestoreExecKilled(t *testing.T) {
 	spec, conf := sleepSpecConf(t)
-	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+	_, bundleDir, cu, err := testutil.SetupContainer(spec, conf)
 	if err != nil {
 		t.Fatalf("error setting up container: %v", err)
 	}
-	defer cleanup()
+	defer cu()
 
 	// Create and start the container.
 	args := Args{
@@ -1228,6 +1229,21 @@ func TestCheckpointRestoreExecKilled(t *testing.T) {
 	if err != nil {
 		t.Fatalf("error executing in container: %v", err)
 	}
+
+	// Test exec process with stdio FDs. FDs will not be present after restore and
+	// should be ignored.
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	stdioCleanup := cleanup.Make(func() {
+		r.Close()
+		w.Close()
+	})
+	defer stdioCleanup.Clean()
+
+	fdMap := map[int]*os.File{0: r, 1: w, 2: w}
+	execArgs.FilePayload = control.NewFilePayload(fdMap, nil)
 	pid2, err := cont.Execute(conf, execArgs)
 	if err != nil {
 		t.Fatalf("error executing in container: %v", err)
@@ -1264,6 +1280,7 @@ func TestCheckpointRestoreExecKilled(t *testing.T) {
 	}
 	cont.Destroy()
 	cont = nil
+	stdioCleanup.Clean()
 
 	cont2, err := New(conf, args)
 	if err != nil {
