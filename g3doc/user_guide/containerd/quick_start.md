@@ -34,7 +34,23 @@ version = 2
 EOF
 ```
 
-Restart `containerd`:
+> Consider using the version header `version = 3` if you are using containerd
+> 2.x. See the difference at
+> [containerd version header](https://github.com/containerd/containerd/blob/v2.0.2/docs/PLUGINS.md#version-header)
+
+### Install CNI plugins
+
+Typically, you will have to install CNI plugins to complete the following steps.
+
+For the quick start, it is sufficient to install the plugins with default
+settings by running the script from the containerd project:
+
+```shell
+git clone --depth=1 -b {CONTAINERD_VERSION} https://github.com/containerd/containerd.git
+cd containerd && ./script/setup/install-cni
+```
+
+### Restart `containerd`
 
 ```shell
 sudo systemctl restart containerd
@@ -42,9 +58,53 @@ sudo systemctl restart containerd
 
 ## Usage
 
-You can run containers in gVisor via containerd's CRI.
+You can run containers in gVisor via [ctr] or [crictl].
 
-### Install crictl
+[ctr]: https://github.com/projectatomic/containerd/blob/master/docs/cli.md
+[crictl]: https://github.com/kubernetes-sigs/cri-tools/blob/master/docs/crictl.md
+
+### ctr
+
+The tool `ctr` communicates directly with containerd, and it is a part of each
+containerd release.
+
+#### Running a container
+
+Now run your container using the runsc runtime:
+
+```shell
+sudo ctr image pull docker.io/library/hello-world:latest
+sudo ctr run --runtime io.containerd.runsc.v1 -t --rm docker.io/library/hello-world:latest hello-wrold
+```
+
+#### Verify the runtime
+
+You can verify that you are running in gVisor using the dmesg command.
+
+```shell
+$ sudo ctr image pull docker.io/library/busybox:latest
+$ sudo ctr run --runtime io.containerd.run.runsc.v1 -t --rm docker.io/library/busybox:latest gvisord dmesg
+[   0.000000] Starting gVisor...
+[   0.445958] Forking spaghetti code...
+[   0.794963] Feeding the init monster...
+[   0.842573] Synthesizing system calls...
+[   0.985066] Generating random numbers by fair dice roll...
+[   1.444465] Mounting deweydecimalfs...
+[   1.546130] Waiting for children...
+[   1.689078] Searching for socket adapter...
+[   2.026282] Accelerating teletypewriter to 9600 baud...
+[   2.274752] Creating process schedule...
+[   2.498083] Reticulating splines...
+[   2.675603] Setting up VFS...
+[   2.750186] Setting up FUSE...
+[   2.789133] Ready!
+```
+
+### crictl
+
+Alternatively, you can use crictl which designed for CRI-compatible containers.
+
+#### Install crictl
 
 Download and install the `crictl` binary:
 
@@ -64,7 +124,7 @@ runtime-endpoint: unix:///run/containerd/containerd.sock
 EOF
 ```
 
-### Create the nginx sandbox in gVisor
+#### Create the nginx sandbox in gVisor
 
 Pull the nginx image:
 
@@ -96,7 +156,7 @@ Create the pod in gVisor:
 SANDBOX_ID=$(sudo crictl runp --runtime runsc sandbox.json)
 ```
 
-### Run the nginx container in the sandbox
+#### Run the nginx container in the sandbox
 
 Create the nginx container creation request:
 
@@ -128,7 +188,7 @@ Start the nginx container:
 sudo crictl start ${CONTAINER_ID}
 ```
 
-### Validate the container
+#### Validate the container
 
 Inspect the created pod:
 
@@ -148,7 +208,7 @@ Verify that nginx is running in gVisor:
 sudo crictl exec ${CONTAINER_ID} dmesg | grep -i gvisor
 ```
 
-### Set up the Kubernetes RuntimeClass
+#### Set up the Kubernetes RuntimeClass
 
 Install the RuntimeClass for gVisor:
 
@@ -184,7 +244,7 @@ Verify that the Pod is running:
 kubectl get pod nginx-gvisor -o wide
 ```
 
-## What's next
+### What's next
 
 This setup is already done for you on [GKE Sandbox]. It is an easy way to get
 started with gVisor.
