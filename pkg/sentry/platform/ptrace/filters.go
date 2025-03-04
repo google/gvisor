@@ -15,6 +15,8 @@
 package ptrace
 
 import (
+	"os"
+
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/seccomp"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
@@ -26,6 +28,11 @@ func (*PTrace) SeccompInfo() platform.SeccompInfo {
 		PlatformName: "ptrace",
 		Filters: seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 			unix.SYS_PTRACE: seccomp.MatchAll{},
+			unix.SYS_RT_TGSIGQUEUEINFO: seccomp.PerArg{
+				seccomp.EqualTo(os.Getpid()),
+				seccomp.AnyValue{}, // tid
+				seccomp.EqualTo(unix.SIGKILL),
+			},
 			unix.SYS_TGKILL: seccomp.MatchAll{},
 			unix.SYS_WAIT4:  seccomp.MatchAll{},
 		}),

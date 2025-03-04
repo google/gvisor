@@ -27,6 +27,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
+	"gvisor.dev/gvisor/pkg/sighandling"
 	"gvisor.dev/gvisor/pkg/sync"
 )
 
@@ -357,8 +358,7 @@ func (t *thread) unexpectedStubExit() {
 		// these cases, we don't need to panic. There is no reasons to
 		// think that something wrong in gVisor.
 		log.Warningf("The ptrace stub process %v has been killed by SIGKILL.", t.tgid)
-		pid := os.Getpid()
-		unix.Tgkill(pid, pid, unix.Signal(unix.SIGKILL))
+		sighandling.KillItself()
 	}
 	t.dumpAndPanic(fmt.Sprintf("wait failed: the process %d:%d exited: %x (err %v)", t.tgid, t.tid, msg, err))
 }
