@@ -52,7 +52,7 @@ import (
 // Run the following container to test it:
 //
 //	docker run -di --runtime=runsc -p 8080:80 -v $PWD:/usr/local/apache2/htdocs/ httpd:2.4
-func setupNetwork(conn *urpc.Client, pid int, conf *config.Config) error {
+func setupNetwork(conn *urpc.Client, pid int, conf *config.Config, disableIPv6 bool) error {
 	log.Infof("Setting up network")
 
 	switch conf.Network {
@@ -65,7 +65,7 @@ func setupNetwork(conn *urpc.Client, pid int, conf *config.Config) error {
 		// Build the path to the net namespace of the sandbox process.
 		// This is what we will copy.
 		nsPath := filepath.Join("/proc", strconv.Itoa(pid), "ns/net")
-		if err := createInterfacesAndRoutesFromNS(conn, nsPath, conf); err != nil {
+		if err := createInterfacesAndRoutesFromNS(conn, nsPath, conf, disableIPv6); err != nil {
 			return fmt.Errorf("creating interfaces from net namespace %q: %v", nsPath, err)
 		}
 	case config.NetworkHost:
@@ -125,7 +125,7 @@ func isRootNetNS() (bool, error) {
 // createInterfacesAndRoutesFromNS scrapes the interface and routes from the
 // net namespace with the given path, creates them in the sandbox, and removes
 // them from the host.
-func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, conf *config.Config) error {
+func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, conf *config.Config, disableIPv6 bool) error {
 	switch conf.XDP.Mode {
 	case config.XDPModeOff:
 	case config.XDPModeNS:
@@ -168,6 +168,7 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, conf *con
 	args := boot.CreateLinksAndRoutesArgs{
 		DisconnectOk: conf.NetDisconnectOk,
 	}
+
 	for _, iface := range ifaces {
 		if iface.Flags&net.FlagUp == 0 {
 			log.Infof("Skipping down interface: %+v", iface)
@@ -181,7 +182,7 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, conf *con
 
 		// We build our own loopback device.
 		if iface.Flags&net.FlagLoopback != 0 {
-			link, err := loopbackLink(conf, iface, allAddrs)
+			link, err := loopbackLink(conf, iface, allAddrs, disableIPv6)
 			if err != nil {
 				return fmt.Errorf("getting loopback link for iface %q: %w", iface.Name, err)
 			}
@@ -194,6 +195,10 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, conf *con
 			ipNet, ok := ifaddr.(*net.IPNet)
 			if !ok {
 				return fmt.Errorf("address is not IPNet: %+v", ifaddr)
+			}
+			// Do not add IPv6 addresses when IPv6 is disabled.
+			if disableIPv6 && ipNet.IP.To4() == nil {
+				continue
 			}
 			ipAddrs = append(ipAddrs, ipNet)
 		}
@@ -221,7 +226,7 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, conf *con
 
 		// Scrape the routes before removing the address, since that
 		// will remove the routes as well.
-		routes, defv4, defv6, err := routesForIface(iface)
+		routes, defv4, defv6, err := routesForIface(iface, disableIPv6)
 		if err != nil {
 			return fmt.Errorf("getting routes for interface %q: %v", iface.Name, err)
 		}
@@ -460,7 +465,7 @@ func createSocket(iface net.Interface, ifaceLink netlink.Link, enableGSO bool) (
 
 // loopbackLink returns the link with addresses and routes for a loopback
 // interface.
-func loopbackLink(conf *config.Config, iface net.Interface, addrs []net.Addr) (boot.LoopbackLink, error) {
+func loopbackLink(conf *config.Config, iface net.Interface, addrs []net.Addr, disableIPv6 bool) (boot.LoopbackLink, error) {
 	link := boot.LoopbackLink{
 		Name:      iface.Name,
 		GVisorGRO: conf.GVisorGRO,
@@ -471,6 +476,9 @@ func loopbackLink(conf *config.Config, iface net.Interface, addrs []net.Addr) (b
 			return boot.LoopbackLink{}, fmt.Errorf("address is not IPNet: %+v", addr)
 		}
 
+		if disableIPv6 && ipNet.IP.To4() == nil {
+			continue
+		}
 		prefix, _ := ipNet.Mask.Size()
 		link.Addresses = append(link.Addresses, boot.IPWithPrefix{
 			Address:   ipNet.IP,
@@ -488,7 +496,7 @@ func loopbackLink(conf *config.Config, iface net.Interface, addrs []net.Addr) (b
 
 // routesForIface iterates over all routes for the given interface and converts
 // them to boot.Routes. It also returns the a default v4/v6 route if found.
-func routesForIface(iface net.Interface) ([]boot.Route, *boot.Route, *boot.Route, error) {
+func routesForIface(iface net.Interface, disableIPv6 bool) ([]boot.Route, *boot.Route, *boot.Route, error) {
 	link, err := netlink.LinkByIndex(iface.Index)
 	if err != nil {
 		return nil, nil, nil, err
@@ -524,12 +532,14 @@ func routesForIface(iface net.Interface) ([]boot.Route, *boot.Route, *boot.Route
 					return nil, nil, nil, fmt.Errorf("more than one default route found %q, def: %+v, route: %+v", iface.Name, defv6, r)
 				}
 
-				defv6 = &boot.Route{
-					Destination: net.IPNet{
-						IP:   net.IPv6zero,
-						Mask: net.IPMask(net.IPv6zero),
-					},
-					Gateway: r.Gw,
+				if !disableIPv6 {
+					defv6 = &boot.Route{
+						Destination: net.IPNet{
+							IP:   net.IPv6zero,
+							Mask: net.IPMask(net.IPv6zero),
+						},
+						Gateway: r.Gw,
+					}
 				}
 			default:
 				return nil, nil, nil, fmt.Errorf("unexpected address size for gateway: %+v for route: %+v", r.Gw, r)
@@ -538,6 +548,9 @@ func routesForIface(iface net.Interface) ([]boot.Route, *boot.Route, *boot.Route
 		}
 
 		dst := *r.Dst
+		if disableIPv6 && dst.IP.To4() == nil {
+			continue
+		}
 		dst.IP = dst.IP.Mask(dst.Mask)
 		routes = append(routes, boot.Route{
 			Destination: dst,
