@@ -343,10 +343,10 @@ func (r *restorer) restore(l *Loader) error {
 	return nil
 }
 
-func (l *Loader) save(o *control.SaveOpts) (err error) {
+func (l *Loader) save(o *control.SaveOpts) (saveErr error) {
 	defer func() {
 		// This closure is required to capture the final value of err.
-		l.k.OnCheckpointAttempt(err)
+		l.k.OnCheckpointAttempt(saveErr)
 	}()
 
 	// TODO(gvisor.dev/issues/6243): save/restore not supported w/ hostinet
