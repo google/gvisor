@@ -38,8 +38,11 @@ func TestInit(t *testing.T) {
 func TestAllSupportedHashesPresent(t *testing.T) {
 	Init()
 	for version, abi := range abis {
-		if abi.checksum == "" {
-			t.Errorf("unexpected empty value for driver %q", version.String())
+		if abi.checksumX86_64 == "" {
+			t.Errorf("unexpected empty checksumX86_64 value for driver %q", version.String())
+		}
+		if abi.checksumARM64 == "" {
+			t.Errorf("unexpected empty checksumARM64 value for driver %q", version.String())
 		}
 	}
 }

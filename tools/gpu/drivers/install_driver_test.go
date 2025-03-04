@@ -32,19 +32,21 @@ func TestVersionInstalled(t *testing.T) {
 	checksum := fmt.Sprintf("%x", sha256.Sum256(versionContent))
 	version := nvproxy.NewDriverVersion(1, 2, 3)
 	getFunction := func() (nvproxy.DriverVersion, error) { return version, nil }
-	downloadFunction := func(context.Context, string) (io.ReadCloser, error) { return nil, fmt.Errorf("should not get here") }
+	downloadFunction := func(context.Context, string, CPUArchitecture) (io.ReadCloser, error) {
+		return nil, fmt.Errorf("should not get here")
+	}
 	installer := &Installer{
 		requestedVersion: version,
-		expectedChecksumFunc: func(v nvproxy.DriverVersion) (string, bool) {
+		expectedChecksumFunc: func(v nvproxy.DriverVersion) (string, string, bool) {
 			if v == version {
-				return checksum, true
+				return checksum, checksum, true
 			}
-			return "", false
+			return "", "", false
 		},
 		getCurrentDriverFunc: getFunction,
 		downloadFunc:         downloadFunction,
 	}
-	if err := installer.MaybeInstall(ctx); err != nil {
+	if err := installer.MaybeInstall(ctx, X86_64); err != nil {
 		t.Fatalf("Installation failed: %v", err)
 	}
 }
@@ -55,11 +57,11 @@ func TestVersionNotSupported(t *testing.T) {
 	unsupportedVersion := nvproxy.NewDriverVersion(1, 2, 3)
 	installer := &Installer{
 		requestedVersion: unsupportedVersion,
-		expectedChecksumFunc: func(v nvproxy.DriverVersion) (string, bool) {
-			return "", false
+		expectedChecksumFunc: func(v nvproxy.DriverVersion) (string, string, bool) {
+			return "", "", false
 		},
 	}
-	err := installer.MaybeInstall(ctx)
+	err := installer.MaybeInstall(ctx, X86_64)
 	if err == nil {
 		t.Fatalf("Installation succeeded, want error")
 	}
@@ -72,23 +74,25 @@ func TestVersionNotSupported(t *testing.T) {
 func TestShaMismatch(t *testing.T) {
 	ctx := context.Background()
 	version := nvproxy.NewDriverVersion(1, 2, 3)
+	content := []byte("some content")
+	checksum := fmt.Sprintf("%x", sha256.Sum256(content))
 	installer := &Installer{
 		requestedVersion: version,
 		getCurrentDriverFunc: func() (nvproxy.DriverVersion, error) {
 			return nvproxy.DriverVersion{}, nil
 		},
-		expectedChecksumFunc: func(v nvproxy.DriverVersion) (string, bool) {
+		expectedChecksumFunc: func(v nvproxy.DriverVersion) (string, string, bool) {
 			if v == version {
-				return "mismatch", true
+				return "mismatch", "mismatch", true
 			}
-			return "", false
+			return checksum, checksum, false
 		},
-		downloadFunc: func(context.Context, string) (io.ReadCloser, error) {
+		downloadFunc: func(context.Context, string, CPUArchitecture) (io.ReadCloser, error) {
 			reader := bytes.NewReader([]byte("some content"))
 			return io.NopCloser(reader), nil
 		},
 	}
-	err := installer.MaybeInstall(ctx)
+	err := installer.MaybeInstall(ctx, X86_64)
 	if err == nil {
 		t.Fatalf("Installation succeeded, want error")
 	}
@@ -100,29 +104,37 @@ func TestShaMismatch(t *testing.T) {
 // TestDriverInstalls tests the successful installation of a driver.
 func TestDriverInstalls(t *testing.T) {
 	ctx := context.Background()
-	content := []byte("some content")
-	checksum := fmt.Sprintf("%x", sha256.Sum256(content))
+	for _, arch := range []CPUArchitecture{X86_64, ARM64} {
+		t.Run(fmt.Sprintf("%s", arch), func(t *testing.T) {
+			testDriverInstalls(ctx, t, arch)
+		})
+	}
+}
+
+func testDriverInstalls(ctx context.Context, t *testing.T, arch CPUArchitecture) {
 	version := nvproxy.NewDriverVersion(1, 2, 3)
 	installer := &Installer{
 		requestedVersion: version,
 		getCurrentDriverFunc: func() (nvproxy.DriverVersion, error) {
 			return nvproxy.DriverVersion{}, nil
 		},
-		expectedChecksumFunc: func(v nvproxy.DriverVersion) (string, bool) {
+		expectedChecksumFunc: func(v nvproxy.DriverVersion) (string, string, bool) {
+			checksumX86_64 := fmt.Sprintf("%x", sha256.Sum256([]byte(X86_64)))
+			checksumARM64 := fmt.Sprintf("%x", sha256.Sum256([]byte(ARM64)))
 			if v == version {
-				return checksum, true
+				return checksumX86_64, checksumARM64, true
 			}
-			return "", false
+			return "garbage", "garbage", false
 		},
-		downloadFunc: func(context.Context, string) (io.ReadCloser, error) {
-			reader := bytes.NewReader(content)
+		downloadFunc: func(context.Context, string, CPUArchitecture) (io.ReadCloser, error) {
+			reader := bytes.NewReader([]byte(arch))
 			return io.NopCloser(reader), nil
 		},
 		installFunc: func(_ string) error {
 			return nil
 		},
 	}
-	if err := installer.MaybeInstall(ctx); err != nil {
+	if err := installer.MaybeInstall(ctx, arch); err != nil {
 		t.Fatalf("Installation failed: %v", err)
 	}
 }

@@ -19,6 +19,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"sync"
 
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy"
@@ -92,7 +93,7 @@ func main() {
 			log.Warningf("Failed to create installer: %v", err.Error())
 			os.Exit(1)
 		}
-		if err := installer.MaybeInstall(ctx); err != nil {
+		if err := installer.MaybeInstall(ctx, drivers.GetArchitecture()); err != nil {
 			log.Warningf("Failed to install driver: %v", err.Error())
 			os.Exit(1)
 		}
@@ -102,30 +103,46 @@ func main() {
 			os.Exit(1)
 		}
 
-		checksum, err := drivers.ChecksumDriver(ctx, *checksumVersion)
-		if err != nil {
-			log.Warningf("Failed to compute checksum: %v", err)
-			os.Exit(1)
+		for _, arch := range []drivers.CPUArchitecture{drivers.X86_64, drivers.ARM64} {
+			checksum, err := drivers.ChecksumDriver(ctx, *checksumVersion, arch)
+			if err != nil {
+				log.Warningf("Failed to compute checksum on arch %q: %v", arch, err)
+				os.Exit(1)
+			}
+			fmt.Printf("Checksum for driver %q on %s : %q\n", *checksumVersion, arch, checksum)
 		}
-		fmt.Printf("Checksum: %q\n", checksum)
 	case validateChecksumCmdStr:
 		if err := validateChecksumCmd.Parse(os.Args[2:]); err != nil {
 			log.Warningf("%s failed with: %v", validateChecksumCmdStr, err)
 			os.Exit(1)
 		}
 
-		nvproxy.ForEachSupportDriver(func(version nvproxy.DriverVersion, checksum string) {
-			wantChecksum, err := drivers.ChecksumDriver(ctx, version.String())
-			if err != nil {
-				log.Warningf("error on version %q: %v", version.String(), err)
-				return
+		var wg sync.WaitGroup
+
+		nvproxy.ForEachSupportDriver(func(version nvproxy.DriverVersion, x86Checksum, armChecksum string) {
+			for _, arch := range []drivers.CPUArchitecture{drivers.X86_64, drivers.ARM64} {
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					gotChecksum, err := drivers.ChecksumDriver(ctx, version.String(), arch)
+					if err != nil {
+						log.Warningf("error on version %q on arch %q: %v", version.String(), arch, err)
+						return
+					}
+					checksum := x86Checksum
+					if arch == drivers.ARM64 {
+						checksum = armChecksum
+					}
+
+					if checksum != gotChecksum {
+						log.Warningf("Checksum mismatch on driver %q on arch %q: got: %q want: %q", version.String(), arch, gotChecksum, checksum)
+						return
+					}
+					log.Infof("Checksum matched on driver %q on arch %q.", version.String(), arch)
+				}()
 			}
-			if checksum != wantChecksum {
-				log.Warningf("Checksum mismatch on driver %q got: %q want: %q", version.String(), checksum, wantChecksum)
-				return
-			}
-			log.Infof("Checksum matched on driver %q.", version.String())
 		})
+		wg.Wait()
 	case listCmdStr:
 		if err := listCmd.Parse(os.Args[2:]); err != nil {
 			log.Warningf("%s failed with: %v", listCmdStr, err)

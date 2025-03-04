@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"runtime"
 	"sort"
 	"strings"
 
@@ -40,13 +41,32 @@ func init() {
 	nvproxy.Init()
 }
 
+// CPUArchitecture is the CPU architecture of the driver.
+type CPUArchitecture string
+
+const (
+	// X86_64 is the default architecture.
+	X86_64 CPUArchitecture = "x86_64"
+	// ARM64 is the architecture for ARM based GPUs.
+	ARM64 CPUArchitecture = "aarch64"
+)
+
+// GetArchitecture returns the CPU architecture of the driver. Right now, we only support X86_64 and
+// ARM64.
+func GetArchitecture() CPUArchitecture {
+	if strings.HasPrefix(runtime.GOARCH, "arm") {
+		return ARM64
+	}
+	return X86_64
+}
+
 // Installer handles the logic to install drivers.
 type Installer struct {
 	requestedVersion nvproxy.DriverVersion
 	// include functions so they can be mocked in tests.
-	expectedChecksumFunc func(nvproxy.DriverVersion) (string, bool)
+	expectedChecksumFunc func(nvproxy.DriverVersion) (string, string, bool)
 	getCurrentDriverFunc func() (nvproxy.DriverVersion, error)
-	downloadFunc         func(context.Context, string) (io.ReadCloser, error)
+	downloadFunc         func(context.Context, string, CPUArchitecture) (io.ReadCloser, error)
 	installFunc          func(string) error
 }
 
@@ -68,15 +88,14 @@ func NewInstaller(requestedVersion string, latest bool) (*Installer, error) {
 		}
 		ret.requestedVersion = d
 	}
-
 	return ret, nil
 }
 
 // MaybeInstall installs a driver if 1) no driver is present on the system already or 2) the
 // driver currently installed does not match the requested version.
-func (i *Installer) MaybeInstall(ctx context.Context) error {
+func (i *Installer) MaybeInstall(ctx context.Context, arch CPUArchitecture) error {
 	// If we don't support the driver, don't attempt to install it.
-	if _, ok := i.expectedChecksumFunc(i.requestedVersion); !ok {
+	if _, _, ok := i.expectedChecksumFunc(i.requestedVersion); !ok {
 		return fmt.Errorf("requested driver %q is not supported", i.requestedVersion)
 	}
 
@@ -98,7 +117,7 @@ func (i *Installer) MaybeInstall(ctx context.Context) error {
 	}
 
 	log.Infof("Downloading driver: %s", i.requestedVersion)
-	reader, err := i.downloadFunc(ctx, i.requestedVersion.String())
+	reader, err := i.downloadFunc(ctx, i.requestedVersion.String(), arch)
 	if err != nil {
 		return fmt.Errorf("failed to download driver: %w", err)
 	}
@@ -108,7 +127,7 @@ func (i *Installer) MaybeInstall(ctx context.Context) error {
 		return fmt.Errorf("failed to open driver file: %w", err)
 	}
 	defer os.Remove(f.Name())
-	if err := i.writeAndCheck(f, reader); err != nil {
+	if err := i.writeAndCheck(f, reader, arch); err != nil {
 		f.Close()
 		return fmt.Errorf("writeAndCheck: %w", err)
 	}
@@ -138,7 +157,7 @@ func (i *Installer) uninstallDriver(ctx context.Context, driverVersion string) e
 	return nil
 }
 
-func (i *Installer) writeAndCheck(f *os.File, reader io.ReadCloser) error {
+func (i *Installer) writeAndCheck(f *os.File, reader io.ReadCloser, arch CPUArchitecture) error {
 	checksum := sha256.New()
 	buf := make([]byte, 1024*1024)
 	for {
@@ -157,10 +176,15 @@ func (i *Installer) writeAndCheck(f *os.File, reader io.ReadCloser) error {
 		}
 	}
 	gotChecksum := fmt.Sprintf("%x", checksum.Sum(nil))
-	wantChecksum, ok := i.expectedChecksumFunc(i.requestedVersion)
+	wantChecksumX86_64, wantChecksumARM64, ok := i.expectedChecksumFunc(i.requestedVersion)
 	if !ok {
 		return fmt.Errorf("requested driver %q is not supported", i.requestedVersion)
 	}
+	wantChecksum := wantChecksumX86_64
+	if arch == ARM64 {
+		wantChecksum = wantChecksumARM64
+	}
+
 	if gotChecksum != wantChecksum {
 		return fmt.Errorf("driver %q checksum mismatch: got %q, want %q", i.requestedVersion, gotChecksum, wantChecksum)
 	}
@@ -217,7 +241,7 @@ func ListSupportedDrivers(outfile string) error {
 	}
 
 	var list []string
-	nvproxy.ForEachSupportDriver(func(version nvproxy.DriverVersion, checksum string) {
+	nvproxy.ForEachSupportDriver(func(version nvproxy.DriverVersion, _, _ string) {
 		list = append(list, version.String())
 	})
 	sort.Strings(list)
@@ -228,8 +252,8 @@ func ListSupportedDrivers(outfile string) error {
 }
 
 // ChecksumDriver downloads and returns the SHA265 checksum of the driver.
-func ChecksumDriver(ctx context.Context, driverVersion string) (string, error) {
-	f, err := DownloadDriver(ctx, driverVersion)
+func ChecksumDriver(ctx context.Context, driverVersion string, arch CPUArchitecture) (string, error) {
+	f, err := DownloadDriver(ctx, driverVersion, arch)
 	if err != nil {
 		return "", fmt.Errorf("failed to download driver: %w", err)
 	}
@@ -248,8 +272,8 @@ func ChecksumDriver(ctx context.Context, driverVersion string) (string, error) {
 
 // DownloadDriver downloads the requested driver and returns the binary as a []byte so it can be
 // checked before written to disk.
-func DownloadDriver(ctx context.Context, driverVersion string) (io.ReadCloser, error) {
-	url := fmt.Sprintf("%s%s/NVIDIA-Linux-x86_64-%s.run", nvidiaBaseURL, driverVersion, driverVersion)
+func DownloadDriver(ctx context.Context, driverVersion string, arch CPUArchitecture) (io.ReadCloser, error) {
+	url := fmt.Sprintf("%s%s/NVIDIA-Linux-%s-%s.run", nvidiaBaseURL, driverVersion, arch, driverVersion)
 	resp, err := http.Get(url)
 	if err != nil {
 		return nil, fmt.Errorf("failed to download driver: %w", err)
