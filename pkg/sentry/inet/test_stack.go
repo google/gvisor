@@ -241,3 +241,15 @@ func (*TestStack) Stats() tcpip.Stats {
 	// No-op.
 	return tcpip.Stats{}
 }
+
+// SetIPv6DisableAll implements Stack.
+func (s *TestStack) SetIPv6DisableAll(disableAll int32) error {
+	// No-op.
+	return nil
+}
+
+// IPv6DisableAll implements Stack.
+func (s *TestStack) IPv6DisableAll() (int32, error) {
+	// No-op
+	return 0, nil
+}

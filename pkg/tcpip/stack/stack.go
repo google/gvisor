@@ -176,6 +176,9 @@ type Stack struct {
 
 	// saveRestoreEnabled indicates whether the stack is saved and restored.
 	saveRestoreEnabled bool
+
+	// ipv6DisableAll indicates if the interfaces should have IPv6 address.
+	ipv6DisableAll int32
 }
 
 // NetworkProtocolFactory instantiates a network protocol.
@@ -2421,6 +2424,23 @@ func (s *Stack) IsSaveRestoreEnabled() bool {
 	defer s.mu.Unlock()
 
 	return s.saveRestoreEnabled
+}
+
+// SetIPv6DisableAll sets ipv6DisableAll to the given value.
+func (s *Stack) SetIPv6DisableAll(disableAll int32) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.ipv6DisableAll = disableAll
+	return nil
+}
+
+// IPv6DisableAll returns ipv6DisableAll.
+func (s *Stack) IPv6DisableAll() int32 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	return s.ipv6DisableAll
 }
 
 // contextID is this package's type for context.Context.Value keys.

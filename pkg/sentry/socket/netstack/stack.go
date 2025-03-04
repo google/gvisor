@@ -970,3 +970,16 @@ func (s *Stack) PortRange() (uint16, uint16) {
 func (s *Stack) SetPortRange(start uint16, end uint16) error {
 	return syserr.TranslateNetstackError(s.Stack.SetPortRange(start, end)).ToError()
 }
+
+// SetIPv6DisableAll implements inet.Stack.SetIPv6DisableAll.
+func (s *Stack) SetIPv6DisableAll(disableAll int32) error {
+	if err := s.Stack.SetIPv6DisableAll(disableAll); err != nil {
+		return fmt.Errorf("SetIPv6DisableAll(%d): %s", disableAll, err)
+	}
+	return nil
+}
+
+// IPv6DisableAll implements inet.Stack.IPv6DisableAll.
+func (s *Stack) IPv6DisableAll() (int32, error) {
+	return s.Stack.IPv6DisableAll(), nil
+}
