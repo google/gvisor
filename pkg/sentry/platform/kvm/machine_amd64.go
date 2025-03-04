@@ -22,17 +22,18 @@ import (
 	"math/big"
 	"reflect"
 	"runtime"
-	"runtime/debug"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/cpuid"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/hostsyscall"
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/ring0"
 	"gvisor.dev/gvisor/pkg/ring0/pagetables"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	ktime "gvisor.dev/gvisor/pkg/sentry/time"
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // initArchState initializes architecture-specific state.
@@ -53,22 +54,6 @@ func (m *machine) initArchState() error {
 		m.createVCPU(i)
 	}
 	m.mu.Unlock()
-
-	c := m.Get()
-	defer m.Put(c)
-	// Enable CPUID faulting, if possible. Note that this also serves as a
-	// basic platform sanity tests, since we will enter guest mode for the
-	// first time here. The recovery is necessary, since if we fail to read
-	// the platform info register, we will retry to host mode and
-	// ultimately need to handle a segmentation fault.
-	old := debug.SetPanicOnFault(true)
-	defer func() {
-		recover()
-		debug.SetPanicOnFault(old)
-	}()
-
-	bluepill(c)
-	ring0.SetCPUIDFaulting(true)
 
 	return nil
 }
@@ -96,6 +81,8 @@ const (
 	// from more than a few PCIDs past.
 	poolPCIDs = 8
 )
+
+var cpuidFaultingWarnOnce sync.Once
 
 // initArchState initializes architecture-specific state.
 func (c *vCPU) initArchState() error {
@@ -158,7 +145,22 @@ func (c *vCPU) initArchState() error {
 	}
 
 	// Set the time offset to the host native time.
-	return c.setSystemTime()
+	if err := c.setSystemTime(); err != nil {
+		return err
+	}
+
+	// Try to enable CPUID faulting. This is required to handle app CPUID
+	// correctly, since we always pass the CPUID returned by
+	// KVM_GET_SUPPORTED_CPUID to KVM_SET_CPUID2. Note that while hardware
+	// support for CPUID faulting is inconsistent, KVM always supports it after
+	// db2336a80489e ("KVM: x86: virtualize cpuid faulting"), Linux 4.12+.
+	if err := c.enableCPUIDFaulting(); err != nil {
+		cpuidFaultingWarnOnce.Do(func() {
+			log.Warningf("Application CPUID will be incorrect: %v", err)
+		})
+	}
+
+	return nil
 }
 
 // bitsForScaling returns the bits available for storing the fraction component
