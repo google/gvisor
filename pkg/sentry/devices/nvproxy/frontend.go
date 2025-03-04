@@ -16,6 +16,7 @@ package nvproxy
 
 import (
 	"fmt"
+	"path/filepath"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -55,32 +56,43 @@ func (dev *frontendDevice) basename() string {
 
 // Open implements vfs.Device.Open.
 func (dev *frontendDevice) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
-	devClient := devutil.GoferClientFromContext(ctx)
-	if devClient == nil {
-		log.Warningf("devutil.CtxDevGoferClient is not set")
-		return nil, linuxerr.ENOENT
+	fd := &frontendFD{
+		dev: dev,
 	}
 	basename := dev.basename()
-	hostFD, err := devClient.OpenAt(ctx, basename, opts.Flags)
-	if err != nil {
-		ctx.Warningf("nvproxy: failed to open host %s: %v", basename, err)
-		return nil, err
-	}
-	fd := &frontendFD{
-		dev:           dev,
-		containerName: devClient.ContainerName(),
-		hostFD:        int32(hostFD),
+	if dev.nvp.useDevGofer {
+		devClient := devutil.GoferClientFromContext(ctx)
+		if devClient == nil {
+			log.Warningf("devutil.CtxDevGoferClient is not set")
+			return nil, linuxerr.ENOENT
+		}
+		fd.containerName = devClient.ContainerName()
+		hostFD, err := devClient.OpenAt(ctx, basename, opts.Flags)
+		if err != nil {
+			ctx.Warningf("nvproxy: failed to open %s: %v", basename, err)
+			return nil, err
+		}
+		fd.hostFD = int32(hostFD)
+	} else {
+		devPath := filepath.Join("/dev", basename)
+		flags := int(opts.Flags&unix.O_ACCMODE | unix.O_NOFOLLOW)
+		hostFD, err := unix.Openat(-1, devPath, flags, 0)
+		if err != nil {
+			ctx.Warningf("nvproxy: failed to open host %s: %v", devPath, err)
+			return nil, err
+		}
+		fd.hostFD = int32(hostFD)
 	}
 	if err := fd.vfsfd.Init(fd, opts.Flags, mnt, vfsd, &vfs.FileDescriptionOptions{
 		UseDentryMetadata: true,
 	}); err != nil {
-		unix.Close(hostFD)
+		unix.Close(int(fd.hostFD))
 		return nil, err
 	}
 	fd.internalEntry.Init(fd, waiter.AllEvents)
 	fd.internalQueue.EventRegister(&fd.internalEntry)
-	if err := fdnotifier.AddFD(int32(hostFD), &fd.internalQueue); err != nil {
-		unix.Close(hostFD)
+	if err := fdnotifier.AddFD(fd.hostFD, &fd.internalQueue); err != nil {
+		unix.Close(int(fd.hostFD))
 		return nil, err
 	}
 	fd.memmapFile.fd = fd
