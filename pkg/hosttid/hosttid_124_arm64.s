@@ -1,4 +1,4 @@
-// Copyright 2020 The gVisor Authors.
+// Copyright 2018 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,15 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build go1.23 && !go1.25
+//go:build !go1.25
 
 #include "textflag.h"
 
-#define GOID_OFFSET 160 // +checkoffset runtime g.goid
+#define M_OFFSET      48 // +checkoffset runtime g.m
+#define PROCID_OFFSET 72 // +checkoffset runtime m.procid
 
-// func goid() int64
-TEXT ·goid(SB),NOSPLIT|NOFRAME,$0-8
-  MOVQ (TLS), R14
-  MOVQ GOID_OFFSET(R14), R14
-  MOVQ R14, ret+0(FP)
-  RET
+TEXT ·Current(SB),NOSPLIT,$0-8
+	// procid is in getg().m.procid.
+	MOVD g, R0      // g
+	MOVD M_OFFSET(R0), R0 // gp.m
+	MOVD PROCID_OFFSET(R0), R0 // mp.procid
+	MOVD R0, ret+0(FP)
+	RET
