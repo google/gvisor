@@ -298,6 +298,9 @@ func (s *Server) handleOne(client *unet.Socket) error {
 		// Client is dead.
 		return err
 	}
+	var result callResult
+	log.Debugf("urpc: handling RPC call for method %s", c.Method)
+	defer logRequest(c, &result)
 	if s.afterRPCCallback != nil {
 		defer s.afterRPCCallback()
 	}
@@ -319,13 +322,15 @@ func (s *Server) handleOne(client *unet.Socket) error {
 	rm, ok := s.lookup(c.Method)
 	if !ok {
 		// Try to serialize the error.
-		return marshal(client, &callResult{Err: ErrUnknownMethod.Error()}, nil)
+		result.Err = ErrUnknownMethod.Error()
+		return marshal(client, &result, nil)
 	}
 
 	// Unmarshal the arguments now that we know the type.
 	na := reflect.New(rm.argType.Elem())
 	if err := json.Unmarshal(c.Arg, na.Interface()); err != nil {
-		return marshal(client, &callResult{Err: err.Error()}, nil)
+		result.Err = err.Error()
+		return marshal(client, &result, nil)
 	}
 
 	// Set the file payload as an argument.
@@ -337,7 +342,8 @@ func (s *Server) handleOne(client *unet.Socket) error {
 	re := reflect.New(rm.resultType.Elem())
 	rValues := rm.fn.Call([]reflect.Value{rm.rcvr, na, re})
 	if errVal := rValues[0].Interface(); errVal != nil {
-		return marshal(client, &callResult{Err: errVal.(error).Error()}, nil)
+		result.Err = errVal.(error).Error()
+		return marshal(client, &result, nil)
 	}
 
 	// Set the resulting payload.
@@ -346,12 +352,25 @@ func (s *Server) handleOne(client *unet.Socket) error {
 		fs = fp.filePayload()
 		if len(fs) > maxFiles {
 			// Ugh. Send an error to the client, despite success.
-			return marshal(client, &callResult{Err: ErrTooManyFiles.Error()}, nil)
+			result.Err = ErrTooManyFiles.Error()
+			return marshal(client, &result, nil)
 		}
 	}
 
 	// Marshal the result.
-	return marshal(client, &callResult{Success: true, Result: re.Interface()}, fs)
+	result.Success = true
+	result.Result = re.Interface()
+	return marshal(client, &result, fs)
+}
+
+func logRequest(c serverCall, result *callResult) {
+	if result.Err != "" {
+		log.Warningf("urpc: RPC call for method %s failed: %s", c.Method, result.Err)
+	} else if !result.Success {
+		log.Warningf("urpc: RPC call for method %s failed with unspecified error.", c.Method)
+	} else {
+		log.Debugf("urpc: RPC call for method %s succeeded.", c.Method)
+	}
 }
 
 // clientBeginRequest begins a request.
@@ -400,6 +419,7 @@ func (s *Server) clientEndRequest(client *unet.Socket) {
 //
 // See Stop for more context.
 func (s *Server) clientRegister(client *unet.Socket) {
+	log.Debugf("urpc: registering client with FD %d", client.FD())
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.clients[client] = idle
@@ -410,6 +430,7 @@ func (s *Server) clientRegister(client *unet.Socket) {
 //
 // See Stop for more context.
 func (s *Server) clientUnregister(client *unet.Socket) {
+	log.Debugf("urpc: unregistering client with FD %d", client.FD())
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	switch state := s.clients[client]; state {
