@@ -99,6 +99,7 @@ go_library(
         "//pkg/sentry/platform/systrap/sysmsg",
         "//pkg/sentry/platform/systrap/usertrap",
         "//pkg/sentry/usage",
+        "//pkg/sighandling",
         "//pkg/sync",
         "//pkg/syncevent",
         "@org_golang_x_sys//unix:go_default_library",

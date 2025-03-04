@@ -19,6 +19,7 @@ package sighandling
 
 import (
 	"fmt"
+	"os"
 	"unsafe"
 
 	"golang.org/x/sys/unix"
@@ -73,4 +74,30 @@ func ReplaceSignalHandler(sig unix.Signal, handler uintptr, previous *uintptr) e
 	}
 
 	return nil
+}
+
+// KillItself sends SIGKILL to the current process, bypassing the init process
+// restriction.
+//
+// The standard `kill(getpid(), SIGKILL)` syscall doesn't work when the current
+// process is the init process within its PID namespace. This is a "known"
+// Linux feature.
+//
+// This function uses the rt_tgqueueinfo syscall to send a "kernel-generated"
+// SIGKILL.
+func KillItself() error {
+	pid := os.Getpid()
+	tid, _, _ := unix.RawSyscall(unix.SYS_GETTID, 0, 0, 0)
+	info := linux.SignalInfo{Code: linux.SI_KERNEL}
+	// The current thread can send a fake kernel siginfo to itself.
+	if _, _, e := unix.RawSyscall6(
+		unix.SYS_RT_TGSIGQUEUEINFO,
+		uintptr(pid), uintptr(tid),
+		uintptr(linux.SIGKILL),
+		uintptr(unsafe.Pointer(&info)),
+		0, 0,
+	); e != 0 {
+		return e
+	}
+	panic("unreachable")
 }

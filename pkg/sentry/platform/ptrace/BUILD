@@ -41,6 +41,7 @@ go_library(
         "//pkg/sentry/memmap",
         "//pkg/sentry/platform",
         "//pkg/sentry/platform/interrupt",
+        "//pkg/sighandling",
         "//pkg/sync",
         "@org_golang_x_sys//unix:go_default_library",
     ],

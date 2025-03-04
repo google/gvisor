@@ -15,6 +15,8 @@
 package systrap
 
 import (
+	"os"
+
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/seccomp"
@@ -93,7 +95,12 @@ func (systrapSeccomp) SyscallFilters(vars precompiledseccomp.Values) seccomp.Sys
 			},
 		},
 		unix.SYS_TGKILL: seccomp.MatchAll{},
-		unix.SYS_WAIT4:  seccomp.MatchAll{},
+		unix.SYS_RT_TGSIGQUEUEINFO: seccomp.PerArg{
+			seccomp.EqualTo(os.Getpid()),
+			seccomp.AnyValue{}, // tid
+			seccomp.EqualTo(unix.SIGKILL),
+		},
+		unix.SYS_WAIT4: seccomp.MatchAll{},
 		unix.SYS_IOCTL: seccomp.Or{
 			seccomp.PerArg{
 				seccomp.NonNegativeFD{},
