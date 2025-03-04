@@ -16,6 +16,7 @@ package specutils
 
 import (
 	"fmt"
+	"path"
 	"reflect"
 	"slices"
 	"sort"
@@ -294,6 +295,44 @@ func ifNil[T any](v *T) *T {
 	return &t
 }
 
+// TODO(b/397790973): Check why the exec path gets resolved inconsistently. We
+// are not resolving any paths in the spec, maybe this is happening at a higher
+// layer. Ideally we should not be resolving any paths, this is a
+// workaround fix.
+func validateArgs(oldArgs, newArgs []string, cwd, cName string) error {
+	if len(oldArgs) != len(newArgs) {
+		return validateError("Args", cName, oldArgs, newArgs)
+	}
+
+	if len(oldArgs) == 0 {
+		return nil
+	}
+
+	oldExecPath := oldArgs[0]
+	newExecPath := newArgs[0]
+	hasPrefixOld := strings.HasPrefix(oldExecPath, "./")
+	hasPrefixNew := strings.HasPrefix(newExecPath, "./")
+	if hasPrefixOld == hasPrefixNew {
+		if !slices.Equal(oldArgs, newArgs) {
+			return validateError("Args", cName, oldArgs, newArgs)
+		}
+		return nil
+	}
+
+	// One of the entrypoints across checkpoint restore is not resolved.
+	// Resolve the entrypoint using cwd to get the absolute path and compare.
+	if hasPrefixOld {
+		oldExecPath = path.Join(cwd, oldExecPath)
+	}
+	if hasPrefixNew {
+		newExecPath = path.Join(cwd, newExecPath)
+	}
+	if oldExecPath != newExecPath || !slices.Equal(oldArgs[1:], newArgs[1:]) {
+		return validateError("Args", cName, oldArgs, newArgs)
+	}
+	return nil
+}
+
 func validateSpecForContainer(oSpec, nSpec *specs.Spec, cName string) error {
 	oldSpec := *oSpec
 	newSpec := *nSpec
@@ -341,9 +380,10 @@ func validateSpecForContainer(oSpec, nSpec *specs.Spec, cName string) error {
 		return err
 	}
 	oldProcess.Rlimits, newProcess.Rlimits = nil, nil
-	if ok := slices.Equal(oldProcess.Args, newProcess.Args); !ok {
-		return validateError("Args", cName, oldProcess.Args, newProcess.Args)
+	if err := validateArgs(oldProcess.Args, newProcess.Args, oldProcess.Cwd, cName); err != nil {
+		return err
 	}
+	oldProcess.Args, newProcess.Args = nil, nil
 	if err := validateCapabilities("Capabilities", cName, oldProcess.Capabilities, newProcess.Capabilities); err != nil {
 		return err
 	}
