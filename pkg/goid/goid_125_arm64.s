@@ -12,15 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build go1.23 && !go1.25
+//go:build go1.25
 
 #include "textflag.h"
 
-#define GOID_OFFSET 160 // +checkoffset runtime g.goid
+#define GOID_OFFSET 152 // +checkoffset runtime g.goid
 
 // func goid() int64
-TEXT ·goid(SB),NOSPLIT|NOFRAME,$0-8
-  MOVQ (TLS), R14
-  MOVQ GOID_OFFSET(R14), R14
-  MOVQ R14, ret+0(FP)
-  RET
+TEXT ·goid(SB),NOSPLIT,$0-8
+        MOVD g, R0      // g
+        MOVD GOID_OFFSET(R0), R0
+        MOVD R0, ret+0(FP)
+        RET

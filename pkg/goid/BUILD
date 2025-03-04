@@ -13,6 +13,8 @@ go_library(
         "goid_122_arm64.s",
         "goid_123_amd64.s",
         "goid_123_arm64.s",
+        "goid_125_amd64.s",
+        "goid_125_arm64.s",
     ],
     stateify = False,
     visibility = ["//visibility:public"],
