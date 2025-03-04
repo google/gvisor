@@ -222,6 +222,7 @@ func (fs *filesystem) StateFields() []string {
 		"specialFileFDs",
 		"lastIno",
 		"savedDentryRW",
+		"savedDeletedOpenDentries",
 		"released",
 	}
 }
@@ -242,7 +243,8 @@ func (fs *filesystem) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(8, &fs.specialFileFDs)
 	stateSinkObject.Save(9, &fs.lastIno)
 	stateSinkObject.Save(10, &fs.savedDentryRW)
-	stateSinkObject.Save(11, &fs.released)
+	stateSinkObject.Save(11, &fs.savedDeletedOpenDentries)
+	stateSinkObject.Save(12, &fs.released)
 }
 
 // +checklocksignore
@@ -258,7 +260,8 @@ func (fs *filesystem) StateLoad(ctx context.Context, stateSourceObject state.Sou
 	stateSourceObject.Load(8, &fs.specialFileFDs)
 	stateSourceObject.Load(9, &fs.lastIno)
 	stateSourceObject.Load(10, &fs.savedDentryRW)
-	stateSourceObject.Load(11, &fs.released)
+	stateSourceObject.Load(11, &fs.savedDeletedOpenDentries)
+	stateSourceObject.Load(12, &fs.released)
 	stateSourceObject.AfterLoad(func() { fs.afterLoad(ctx) })
 }
 
@@ -449,6 +452,7 @@ func (d *dentry) StateFields() []string {
 		"mappings",
 		"cache",
 		"dirty",
+		"deletedDataSR",
 		"pf",
 		"haveTarget",
 		"target",
@@ -494,15 +498,16 @@ func (d *dentry) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(25, &d.mappings)
 	stateSinkObject.Save(26, &d.cache)
 	stateSinkObject.Save(27, &d.dirty)
-	stateSinkObject.Save(28, &d.pf)
-	stateSinkObject.Save(29, &d.haveTarget)
-	stateSinkObject.Save(30, &d.target)
-	stateSinkObject.Save(31, &d.endpoint)
-	stateSinkObject.Save(32, &d.pipe)
-	stateSinkObject.Save(33, &d.locks)
-	stateSinkObject.Save(34, &d.watches)
-	stateSinkObject.Save(35, &d.forMountpoint)
-	stateSinkObject.Save(36, &d.impl)
+	stateSinkObject.Save(28, &d.deletedDataSR)
+	stateSinkObject.Save(29, &d.pf)
+	stateSinkObject.Save(30, &d.haveTarget)
+	stateSinkObject.Save(31, &d.target)
+	stateSinkObject.Save(32, &d.endpoint)
+	stateSinkObject.Save(33, &d.pipe)
+	stateSinkObject.Save(34, &d.locks)
+	stateSinkObject.Save(35, &d.watches)
+	stateSinkObject.Save(36, &d.forMountpoint)
+	stateSinkObject.Save(37, &d.impl)
 }
 
 // +checklocksignore
@@ -534,15 +539,16 @@ func (d *dentry) StateLoad(ctx context.Context, stateSourceObject state.Source) 
 	stateSourceObject.Load(25, &d.mappings)
 	stateSourceObject.Load(26, &d.cache)
 	stateSourceObject.Load(27, &d.dirty)
-	stateSourceObject.Load(28, &d.pf)
-	stateSourceObject.Load(29, &d.haveTarget)
-	stateSourceObject.Load(30, &d.target)
-	stateSourceObject.Load(31, &d.endpoint)
-	stateSourceObject.Load(32, &d.pipe)
-	stateSourceObject.Load(33, &d.locks)
-	stateSourceObject.Load(34, &d.watches)
-	stateSourceObject.Load(35, &d.forMountpoint)
-	stateSourceObject.Load(36, &d.impl)
+	stateSourceObject.Load(28, &d.deletedDataSR)
+	stateSourceObject.Load(29, &d.pf)
+	stateSourceObject.Load(30, &d.haveTarget)
+	stateSourceObject.Load(31, &d.target)
+	stateSourceObject.Load(32, &d.endpoint)
+	stateSourceObject.Load(33, &d.pipe)
+	stateSourceObject.Load(34, &d.locks)
+	stateSourceObject.Load(35, &d.watches)
+	stateSourceObject.Load(36, &d.forMountpoint)
+	stateSourceObject.Load(37, &d.impl)
 	stateSourceObject.LoadValue(3, new(*dentry), func(y any) { d.loadParent(ctx, y.(*dentry)) })
 	stateSourceObject.AfterLoad(func() { d.afterLoad(ctx) })
 }

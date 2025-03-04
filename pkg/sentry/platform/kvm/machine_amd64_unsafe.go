@@ -140,6 +140,26 @@ func (c *vCPU) setTSC(value uint64) error {
 	return nil
 }
 
+func (c *vCPU) enableCPUIDFaulting() error {
+	const (
+		_MSR_MISC_FEATURES_ENABLE              = 0x140
+		_MSR_MISC_FEATURES_ENABLES_CPUID_FAULT = 1 << 0
+	)
+	registers := modelControlRegisters{
+		nmsrs: 1,
+	}
+	registers.entries[0].index = _MSR_MISC_FEATURES_ENABLE
+	registers.entries[0].data = _MSR_MISC_FEATURES_ENABLES_CPUID_FAULT
+	if errno := hostsyscall.RawSyscallErrno(
+		unix.SYS_IOCTL,
+		uintptr(c.fd),
+		KVM_SET_MSRS,
+		uintptr(unsafe.Pointer(&registers))); errno != 0 {
+		return fmt.Errorf("error enabling CPUID faulting: %v", errno)
+	}
+	return nil
+}
+
 // setUserRegisters sets user registers in the vCPU.
 //
 //go:nosplit

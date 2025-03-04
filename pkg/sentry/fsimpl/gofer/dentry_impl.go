@@ -393,12 +393,12 @@ func (d *dentry) symlink(ctx context.Context, name, target string, creds *auth.C
 }
 
 // Precondition: !d.isSynthetic().
-func (d *dentry) openCreate(ctx context.Context, name string, accessFlags uint32, mode linux.FileMode, uid auth.KUID, gid auth.KGID) (*dentry, handle, error) {
+func (d *dentry) openCreate(ctx context.Context, name string, accessFlags uint32, mode linux.FileMode, uid auth.KUID, gid auth.KGID, createDentry bool) (*dentry, handle, error) {
 	switch dt := d.impl.(type) {
 	case *lisafsDentry:
-		return dt.openCreate(ctx, name, accessFlags, mode, uid, gid)
+		return dt.openCreate(ctx, name, accessFlags, mode, uid, gid, createDentry)
 	case *directfsDentry:
-		return dt.openCreate(name, accessFlags, mode, uid, gid)
+		return dt.openCreate(name, accessFlags, mode, uid, gid, createDentry)
 	default:
 		panic("unknown dentry implementation")
 	}
