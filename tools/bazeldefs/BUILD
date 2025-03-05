@@ -26,17 +26,23 @@ bzl_library(
 
 config_setting(
     name = "amd64",
-    values = {"cpu": "k8"},
+    constraint_values = [
+        "@platforms//cpu:x86_64",
+    ],
 )
 
 config_setting(
     name = "arm64",
-    values = {"cpu": "aarch64"},
+    constraint_values = [
+        "@platforms//cpu:aarch64",
+    ],
 )
 
 config_setting(
     name = "riscv64",
-    values = {"cpu": "riscv64"},
+    constraint_values = [
+        "@platforms//cpu:riscv64",
+    ],
 )
 
 genrule(
