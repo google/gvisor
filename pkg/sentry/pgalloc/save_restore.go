@@ -78,12 +78,21 @@ func (f *MemoryFile) SaveTo(ctx context.Context, w io.Writer, pw io.Writer, opts
 
 	// Ensure that all pages that contain non-zero bytes are marked
 	// known-committed, since we only store known-committed pages below.
+	//
+	// f.updateUsageLocked() will unlock f.mu before calling our callback,
+	// allowing concurrent calls to f.UpdateUsage() => f.updateUsageLocked() to
+	// observe pages that we transiently commit (for comparisons to zero) or
+	// leave committed (if opts.ExcludeCommittedZeroPages is true). Bump
+	// f.isSaving to prevent this.
+	f.isSaving++
+	defer func() { f.isSaving-- }()
 	timeScanStart := time.Now()
 	zeroPage := make([]byte, hostarch.PageSize)
 	var (
 		decommitWarnOnce  sync.Once
 		decommitPendingFR memmap.FileRange
 		scanTotal         uint64
+		committedTotal    uint64
 		decommitTotal     uint64
 		decommitCount     uint64
 	)
@@ -124,13 +133,14 @@ func (f *MemoryFile) SaveTo(ctx context.Context, w io.Writer, pw io.Writer, opts
 			decommitPendingFR = memmap.FileRange{}
 		}
 	}
-	err := f.updateUsageLocked(nil, opts.ExcludeCommittedZeroPages, func(bs []byte, committed []byte, off uint64, wasCommitted bool) error {
+	err := f.updateUsageLocked(nil, opts.ExcludeCommittedZeroPages, true /* callerIsSaveTo */, func(bs []byte, committed []byte, off uint64, wasCommitted bool) error {
 		scanTotal += uint64(len(bs))
 		for pgoff := 0; pgoff < len(bs); pgoff += hostarch.PageSize {
 			i := pgoff / hostarch.PageSize
 			pg := bs[pgoff : pgoff+hostarch.PageSize]
 			if !bytes.Equal(pg, zeroPage) {
 				committed[i] = 1
+				committedTotal += hostarch.PageSize
 				continue
 			}
 			committed[i] = 0
@@ -149,7 +159,7 @@ func (f *MemoryFile) SaveTo(ctx context.Context, w io.Writer, pw io.Writer, opts
 	if err != nil {
 		return err
 	}
-	log.Infof("MemoryFile(%p): saving scanned %d bytes, decommitted %d bytes in %d syscalls, %s", f, scanTotal, decommitTotal, decommitCount, time.Since(timeScanStart))
+	log.Infof("MemoryFile(%p): saving scanned %d bytes, saw %d committed bytes (ExcludeCommittedZeroPages=%v), decommitted %d bytes in %d syscalls, %s", f, scanTotal, committedTotal, opts.ExcludeCommittedZeroPages, decommitTotal, decommitCount, time.Since(timeScanStart))
 
 	// Save metadata.
 	timeMetadataStart := time.Now()
