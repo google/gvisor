@@ -31,7 +31,6 @@ CONTAINERD_MAJOR="$(echo "${CONTAINERD_VERSION}" | awk -F '.' '{ print $1; }')"
 declare -r CONTAINERD_MAJOR
 CONTAINERD_MINOR="$(echo "${CONTAINERD_VERSION}" | awk -F '.' '{ print $2; }')"
 declare -r CONTAINERD_MINOR
-declare -r CRITOOLS_VERSION=${CRITOOLS_VERSION:-1.18.0}
 
 if [[ "${CONTAINERD_MAJOR}" -eq 1 ]] && [[ "${CONTAINERD_MINOR}" -le 4 ]]; then
   # We're running Go 1.18, but using pre-module containerd and cri-tools.
@@ -59,6 +58,23 @@ install_helper() {
       git checkout "${TAG}" && \
       make && \
       make install)
+}
+
+# Helper to get cri-tools version for the given containerd version.
+get_critools_version() {
+  declare -r CONTAINERD_PACKAGE="${1}"
+  declare -r CONTAINERD_TAG="${2}"
+  declare -r CONTAINERD_PATH="${GOPATH}"/src/"${CONTAINERD_PACKAGE}"
+  declare -r CRITOOLS_VERSION_FILE="${CONTAINERD_PATH}"/script/setup/critools-version
+
+  local CRITOOLS_VERSION="v1.18.0"
+  # If the containerd repository is already cloned, checkout the new tag.
+  if [[ -f "$CRITOOLS_VERSION_FILE" ]]; then
+    (cd "${CONTAINERD_PATH}" &&  git checkout "${CONTAINERD_TAG}")
+    CRITOOLS_VERSION=$(cat "${CRITOOLS_VERSION_FILE}" | tr -d '\r\n')
+  fi
+  echo "$CRITOOLS_VERSION"
+  return 0
 }
 
 # Figure out were btrfs headers are.
@@ -94,7 +110,9 @@ done
 GOPATH=$(mktemp -d --tmpdir gopathXXXXX)
 declare -rx GOPATH
 install_helper github.com/containerd/containerd "v${CONTAINERD_VERSION}"
-install_helper github.com/kubernetes-sigs/cri-tools "v${CRITOOLS_VERSION}"
+declare MINIMAL_CRITOOLS_VERSION
+MINIMAL_CRITOOLS_VERSION=$(get_critools_version github.com/containerd/containerd "v${CONTAINERD_VERSION}")
+install_helper github.com/kubernetes-sigs/cri-tools "${MINIMAL_CRITOOLS_VERSION}"
 
 # Configure containerd-shim.
 declare -r shim_config_path=/etc/containerd/runsc/config.toml
