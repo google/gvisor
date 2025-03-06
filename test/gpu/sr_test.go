@@ -60,7 +60,8 @@ func TestGPUCheckpointRestore(t *testing.T) {
 	}
 
 	// Create a snapshot.
-	if err := c.Checkpoint(ctx, "test"); err != nil {
+	const ckptName = "test"
+	if err := c.Checkpoint(ctx, ckptName); err != nil {
 		t.Fatalf("docker checkpoint failed: %v", err)
 	}
 	if err := c.WaitTimeout(ctx, time.Minute); err != nil {
@@ -68,10 +69,7 @@ func TestGPUCheckpointRestore(t *testing.T) {
 	}
 
 	// Restore the snapshot.
-	// TODO(b/143498576): Remove Poll after github.com/moby/moby/issues/38963 is fixed.
-	if err := testutil.Poll(func() error { return c.Restore(ctx, "test") }, time.Minute); err != nil {
-		t.Fatalf("docker restore failed: %v", err)
-	}
+	c.RestoreInTest(ctx, t, ckptName)
 
 	// Run the vector add program again to ensure GPUs are functional.
 	if _, err := c.Exec(ctx, dockerutil.ExecOpts{}, vectorAddCmd...); err != nil {

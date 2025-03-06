@@ -196,17 +196,15 @@ func TestCheckpointRestore(t *testing.T) {
 	}
 
 	// Create a snapshot.
-	if err := d.Checkpoint(ctx, "test"); err != nil {
+	const ckptName = "test"
+	if err := d.Checkpoint(ctx, ckptName); err != nil {
 		t.Fatalf("docker checkpoint failed: %v", err)
 	}
 	if err := d.WaitTimeout(ctx, defaultWait); err != nil {
 		t.Fatalf("wait failed: %v", err)
 	}
 
-	// TODO(b/143498576): Remove Poll after github.com/moby/moby/issues/38963 is fixed.
-	if err := testutil.Poll(func() error { return d.Restore(ctx, "test") }, defaultWait); err != nil {
-		t.Fatalf("docker restore failed: %v", err)
-	}
+	d.RestoreInTest(ctx, t, ckptName)
 
 	// Find container IP address.
 	ip, err := d.FindIP(ctx, false)
@@ -1253,10 +1251,7 @@ func testCheckpointRestoreListeningConnection(ctx context.Context, t *testing.T,
 	if err := d.WaitTimeout(ctx, defaultWait); err != nil {
 		t.Fatalf("wait failed: %v", err)
 	}
-	// TODO(b/143498576): Remove Poll after github.com/moby/moby/issues/38963 is fixed.
-	if err := testutil.Poll(func() error { return d.Restore(ctx, checkpointFile) }, defaultWait); err != nil {
-		t.Fatalf("docker restore failed: %v", err)
-	}
+	d.RestoreInTest(ctx, t, checkpointFile)
 
 	var (
 		newIP   net.IP

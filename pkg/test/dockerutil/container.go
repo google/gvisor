@@ -28,6 +28,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"testing"
 	"time"
 
 	"github.com/docker/docker/api/types"
@@ -408,6 +409,20 @@ func (c *Container) Checkpoint(ctx context.Context, name string) error {
 // Restore is analogous to 'docker start --checkpoint [name]'.
 func (c *Container) Restore(ctx context.Context, name string) error {
 	return c.client.ContainerStart(ctx, c.id, container.StartOptions{CheckpointID: name})
+}
+
+// RestoreInTest is the same as Restore, except that it handles known issues
+// while testing.
+func (c *Container) RestoreInTest(ctx context.Context, t *testing.T, name string) {
+	// TODO(b/143498576): Remove sleep after github.com/moby/moby/issues/38963 is fixed.
+	time.Sleep(2 * time.Second)
+	if err := c.Restore(ctx, name); err != nil {
+		if regexp.MustCompile("failed to upload checkpoint to containerd: commit failed: content sha256:.*: already exists").MatchString(err.Error()) ||
+			regexp.MustCompile("failed to create task for container: content digest .*: not found: unknown").MatchString(err.Error()) {
+			t.Skip("Skipping restore due to known issue: https://github.com/moby/moby/issues/42900")
+		}
+		t.Fatalf("docker restore failed: %v", err)
+	}
 }
 
 // CheckpointResume is analogous to 'docker checkpoint'.

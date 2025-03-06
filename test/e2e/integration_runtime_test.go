@@ -287,7 +287,8 @@ func TestOverlayCheckpointRestore(t *testing.T) {
 	}
 
 	// Create a snapshot.
-	if err := d.Checkpoint(ctx, "test"); err != nil {
+	const ckptName = "test"
+	if err := d.Checkpoint(ctx, ckptName); err != nil {
 		t.Fatalf("docker checkpoint failed: %v", err)
 	}
 	if err := d.WaitTimeout(ctx, defaultWait); err != nil {
@@ -295,10 +296,7 @@ func TestOverlayCheckpointRestore(t *testing.T) {
 	}
 
 	// Restore the snapshot.
-	// TODO(b/143498576): Remove Poll after github.com/moby/moby/issues/38963 is fixed.
-	if err := testutil.Poll(func() error { return d.Restore(ctx, "test") }, defaultWait); err != nil {
-		t.Fatalf("docker restore failed: %v", err)
-	}
+	d.RestoreInTest(ctx, t, ckptName)
 
 	// Make sure the files are restored in the overlay.
 	if got, err := d.Exec(ctx, dockerutil.ExecOpts{}, "cat", "/file"); err != nil || got != "rootfs\n" {
