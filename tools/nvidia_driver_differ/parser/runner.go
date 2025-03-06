@@ -21,6 +21,7 @@ import (
 	"os/exec"
 
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy"
+	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
 )
 
 // ParserFile is a wrapper around the driver_ast_parser binary.
@@ -120,7 +121,7 @@ func (r *Runner) runParserConfig(config []ClangASTConfig) (*OutputJSON, error) {
 
 // ParseDriver checks out the git repo for the given version, and runs the driver_ast_parser on the
 // source code.
-func (r *Runner) ParseDriver(version nvproxy.DriverVersion) (*OutputJSON, error) {
+func (r *Runner) ParseDriver(version nvconf.DriverVersion) (*OutputJSON, error) {
 	// Create a temp directory to run the parser in.
 	// This is needed to set up compile_commands.json, since it needs to be named that exactly.
 	dir, err := os.MkdirTemp(r.dir, "run_differ_*")

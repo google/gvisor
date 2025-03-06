@@ -24,6 +24,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy"
+	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
 
 	_ "embed" // Necessary to use go:embed.
 )
@@ -63,11 +64,11 @@ func createParserBinary() (*os.File, error) {
 // Main is the main function for the NVIDIA driver differ.
 func Main() error {
 	// Read driver version from command line
-	baseVersion, err := nvproxy.DriverVersionFrom(*baseVersionString)
+	baseVersion, err := nvconf.DriverVersionFrom(*baseVersionString)
 	if err != nil {
 		return fmt.Errorf("failed to parse driver version %s: %w", *baseVersionString, err)
 	}
-	nextVersion, err := nvproxy.DriverVersionFrom(*nextVersionString)
+	nextVersion, err := nvconf.DriverVersionFrom(*nextVersionString)
 	if err != nil {
 		return fmt.Errorf("failed to parse driver version %s: %w", *nextVersionString, err)
 	}

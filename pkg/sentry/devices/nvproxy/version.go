@@ -18,83 +18,11 @@ import (
 	"fmt"
 	"reflect"
 	"sort"
-	"strconv"
-	"strings"
 
 	"gvisor.dev/gvisor/pkg/abi/nvgpu"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
 	"gvisor.dev/gvisor/pkg/sync"
 )
-
-// DriverVersion represents a NVIDIA driver version patch release.
-//
-// +stateify savable
-type DriverVersion struct {
-	major int
-	minor int
-	patch int
-}
-
-// NewDriverVersion returns a new driver version.
-func NewDriverVersion(major, minor, patch int) DriverVersion {
-	return DriverVersion{major, minor, patch}
-}
-
-// DriverVersionFrom returns a DriverVersion from a string.
-func DriverVersionFrom(version string) (DriverVersion, error) {
-	parts := strings.Split(version, ".")
-	if len(parts) != 3 {
-		return DriverVersion{}, fmt.Errorf("invalid format of version string %q", version)
-	}
-	var (
-		res DriverVersion
-		err error
-	)
-	res.major, err = strconv.Atoi(parts[0])
-	if err != nil {
-		return DriverVersion{}, fmt.Errorf("invalid format for major version %q: %v", version, err)
-	}
-	res.minor, err = strconv.Atoi(parts[1])
-	if err != nil {
-		return DriverVersion{}, fmt.Errorf("invalid format for minor version %q: %v", version, err)
-	}
-	res.patch, err = strconv.Atoi(parts[2])
-	if err != nil {
-		return DriverVersion{}, fmt.Errorf("invalid format for patch version %q: %v", version, err)
-	}
-	return res, nil
-}
-
-func (v DriverVersion) String() string {
-	return fmt.Sprintf("%02d.%02d.%02d", v.major, v.minor, v.patch)
-}
-
-// Equals returns true if the two driver versions are equal.
-func (v DriverVersion) Equals(other DriverVersion) bool {
-	return v.major == other.major && v.minor == other.minor && v.patch == other.patch
-}
-
-// isGreaterThan returns true if v is greater than other.
-// isGreaterThan returns true if v is more recent than other, assuming v and other are on the same
-// dev branch.
-func (v DriverVersion) isGreaterThan(other DriverVersion) bool {
-	switch {
-	case v.major > other.major:
-		return true
-	case other.major > v.major:
-		return false
-	case v.minor > other.minor:
-		return true
-	case other.minor > v.minor:
-		return false
-	case v.patch > other.patch:
-		return true
-	case other.patch > v.patch:
-		return false
-	default:
-		return true
-	}
-}
 
 // A driverABIFunc constructs and returns a driverABI.
 // This indirection exists to avoid memory usage from unused driver ABIs.
@@ -154,7 +82,7 @@ type DriverStruct struct {
 
 // abis is a global map containing all supported Nvidia driver ABIs. This is
 // initialized on Init() and is immutable henceforth.
-var abis map[DriverVersion]abiConAndChecksum
+var abis map[nvconf.DriverVersion]abiConAndChecksum
 var abisOnce sync.Once
 
 // Note: runfileChecksum is the checksum of the .run file of the driver installer for linux from
@@ -163,9 +91,9 @@ var abisOnce sync.Once
 // Run `make sudo TARGETS=//tools/gpu:main ARGS="checksum --version={}"` to get checksum.
 func addDriverABI(major, minor, patch int, runfileChecksum string, cons driverABIFunc) driverABIFunc {
 	if abis == nil {
-		abis = make(map[DriverVersion]abiConAndChecksum)
+		abis = make(map[nvconf.DriverVersion]abiConAndChecksum)
 	}
-	version := NewDriverVersion(major, minor, patch)
+	version := nvconf.NewDriverVersion(major, minor, patch)
 	abis[version] = abiConAndChecksum{cons: cons, checksum: runfileChecksum}
 	return cons
 }
@@ -908,7 +836,7 @@ func newDriverStruct(paramType reflect.Type, name string) DriverStruct {
 
 // ForEachSupportDriver calls f on all supported drivers.
 // Precondition: Init() must have been called.
-func ForEachSupportDriver(f func(version DriverVersion, checksum string)) {
+func ForEachSupportDriver(f func(version nvconf.DriverVersion, checksum string)) {
 	for version, abi := range abis {
 		f(version, abi.checksum)
 	}
@@ -916,10 +844,10 @@ func ForEachSupportDriver(f func(version DriverVersion, checksum string)) {
 
 // LatestDriver returns the latest supported driver.
 // Precondition: Init() must have been called.
-func LatestDriver() DriverVersion {
-	var ret DriverVersion
+func LatestDriver() nvconf.DriverVersion {
+	var ret nvconf.DriverVersion
 	for version := range abis {
-		if version.isGreaterThan(ret) {
+		if version.IsGreaterThan(ret) {
 			ret = version
 		}
 	}
@@ -928,20 +856,20 @@ func LatestDriver() DriverVersion {
 
 // SupportedDrivers returns a list of all supported drivers.
 // Precondition: Init() must have been called.
-func SupportedDrivers() []DriverVersion {
-	var ret []DriverVersion
+func SupportedDrivers() []nvconf.DriverVersion {
+	var ret []nvconf.DriverVersion
 	for version := range abis {
 		ret = append(ret, version)
 	}
 	sort.Slice(ret, func(i, j int) bool {
-		return !ret[i].isGreaterThan(ret[j])
+		return !ret[i].IsGreaterThan(ret[j])
 	})
 	return ret
 }
 
 // ExpectedDriverChecksum returns the expected checksum for a given version.
 // Precondition: Init() must have been called.
-func ExpectedDriverChecksum(version DriverVersion) (string, bool) {
+func ExpectedDriverChecksum(version nvconf.DriverVersion) (string, bool) {
 	abi, ok := abis[version]
 	if !ok {
 		return "", false
@@ -951,7 +879,7 @@ func ExpectedDriverChecksum(version DriverVersion) (string, bool) {
 
 // SupportedIoctls returns the ioctl numbers that are supported by nvproxy at
 // a given version.
-func SupportedIoctls(version DriverVersion) (frontendIoctls map[uint32]struct{}, uvmIoctls map[uint32]struct{}, controlCmds map[uint32]struct{}, allocClasses map[uint32]struct{}, ok bool) {
+func SupportedIoctls(version nvconf.DriverVersion) (frontendIoctls map[uint32]struct{}, uvmIoctls map[uint32]struct{}, controlCmds map[uint32]struct{}, allocClasses map[uint32]struct{}, ok bool) {
 	abiCons, ok := abis[version]
 	if !ok {
 		return nil, nil, nil, nil, false
@@ -978,7 +906,7 @@ func SupportedIoctls(version DriverVersion) (frontendIoctls map[uint32]struct{},
 
 // SupportedStructNames returns the list of struct names supported by the given driver version.
 // It merges the frontend, uvm, control, and allocation names into one slice.
-func SupportedStructNames(version DriverVersion) ([]DriverStructName, bool) {
+func SupportedStructNames(version nvconf.DriverVersion) ([]DriverStructName, bool) {
 	namesCons, ok := abis[version]
 	if !ok {
 		return nil, false
@@ -1011,7 +939,7 @@ func SupportedStructNames(version DriverVersion) ([]DriverStructName, bool) {
 
 // SupportedStructTypes returns the list of struct types supported by the given driver version.
 // It merges the frontend, uvm, control, and allocation names into one slice.
-func SupportedStructTypes(version DriverVersion) ([]DriverStruct, bool) {
+func SupportedStructTypes(version nvconf.DriverVersion) ([]DriverStruct, bool) {
 	abiCons, ok := abis[version]
 	if !ok {
 		return nil, false

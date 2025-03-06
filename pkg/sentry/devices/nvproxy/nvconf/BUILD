@@ -9,8 +9,10 @@ go_library(
     srcs = [
         "caps.go",
         "nvconf.go",
+        "version.go",
     ],
     visibility = [
         "//pkg/sentry:internal",
+        "//tools:__subpackages__",
     ],
 )

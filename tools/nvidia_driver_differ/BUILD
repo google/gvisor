@@ -52,6 +52,7 @@ go_binary(
     deps = [
         "//pkg/log",
         "//pkg/sentry/devices/nvproxy",
+        "//pkg/sentry/devices/nvproxy/nvconf",
         "//tools/nvidia_driver_differ/parser",
     ],
 )

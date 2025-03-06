@@ -32,6 +32,7 @@ import (
 	"gvisor.dev/gvisor/pkg/test/testutil"
 
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy"
+	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
 	"gvisor.dev/gvisor/tools/nvidia_driver_differ/parser"
 )
 
@@ -56,7 +57,7 @@ func createParserRunner(t *testing.T) (*os.File, *parser.Runner) {
 	return parserFile, runner
 }
 
-func getDriverDefs(t *testing.T, runner *parser.Runner, version nvproxy.DriverVersion) ([]nvproxy.DriverStructName, *parser.OutputJSON) {
+func getDriverDefs(t *testing.T, runner *parser.Runner, version nvconf.DriverVersion) ([]nvproxy.DriverStructName, *parser.OutputJSON) {
 	t.Helper()
 
 	structNames, ok := nvproxy.SupportedStructNames(version)
@@ -84,7 +85,7 @@ func TestSupportedStructNames(t *testing.T) {
 	nvproxy.Init()
 
 	// Run the parser on all supported driver versions
-	nvproxy.ForEachSupportDriver(func(version nvproxy.DriverVersion, checksum string) {
+	nvproxy.ForEachSupportDriver(func(version nvconf.DriverVersion, checksum string) {
 		t.Run(version.String(), func(t *testing.T) {
 			t.Parallel()
 			f, runner := createParserRunner(t)
@@ -109,7 +110,7 @@ func TestSupportedStructNames(t *testing.T) {
 func TestStructDefinitionParity(t *testing.T) {
 	nvproxy.Init()
 
-	nvproxy.ForEachSupportDriver(func(version nvproxy.DriverVersion, checksum string) {
+	nvproxy.ForEachSupportDriver(func(version nvconf.DriverVersion, checksum string) {
 		t.Run(version.String(), func(t *testing.T) {
 			t.Parallel()
 			f, runner := createParserRunner(t)

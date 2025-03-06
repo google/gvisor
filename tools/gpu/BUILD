@@ -11,6 +11,7 @@ go_binary(
     deps = [
         "//pkg/log",
         "//pkg/sentry/devices/nvproxy",
+        "//pkg/sentry/devices/nvproxy/nvconf",
         "//runsc/flag",
         "//tools/gpu/drivers",
     ],

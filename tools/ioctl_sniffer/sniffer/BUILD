@@ -17,6 +17,7 @@ go_library(
         "//pkg/abi/nvgpu",
         "//pkg/log",
         "//pkg/sentry/devices/nvproxy",
+        "//pkg/sentry/devices/nvproxy/nvconf",
         "//tools/ioctl_sniffer:ioctl_go_proto",
         "@org_golang_google_protobuf//proto:go_default_library",
     ],

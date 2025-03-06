@@ -115,6 +115,7 @@ go_test(
     deps = [
         ":nvproxy",
         "//pkg/abi/nvgpu",
+        "//pkg/sentry/devices/nvproxy/nvconf",
         "//pkg/test/testutil",
         "//tools/nvidia_driver_differ/parser",
     ],

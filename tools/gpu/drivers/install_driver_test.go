@@ -22,7 +22,7 @@ import (
 	"strings"
 	"testing"
 
-	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy"
+	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
 )
 
 // TestVersionInstalled tests when the version is already installed.
@@ -30,12 +30,12 @@ func TestVersionInstalled(t *testing.T) {
 	ctx := context.Background()
 	versionContent := []byte("some cool content")
 	checksum := fmt.Sprintf("%x", sha256.Sum256(versionContent))
-	version := nvproxy.NewDriverVersion(1, 2, 3)
-	getFunction := func() (nvproxy.DriverVersion, error) { return version, nil }
+	version := nvconf.NewDriverVersion(1, 2, 3)
+	getFunction := func() (nvconf.DriverVersion, error) { return version, nil }
 	downloadFunction := func(context.Context, string) (io.ReadCloser, error) { return nil, fmt.Errorf("should not get here") }
 	installer := &Installer{
 		requestedVersion: version,
-		expectedChecksumFunc: func(v nvproxy.DriverVersion) (string, bool) {
+		expectedChecksumFunc: func(v nvconf.DriverVersion) (string, bool) {
 			if v == version {
 				return checksum, true
 			}
@@ -52,10 +52,10 @@ func TestVersionInstalled(t *testing.T) {
 // TestVersionNotSupported tests when the version is not supported.
 func TestVersionNotSupported(t *testing.T) {
 	ctx := context.Background()
-	unsupportedVersion := nvproxy.NewDriverVersion(1, 2, 3)
+	unsupportedVersion := nvconf.NewDriverVersion(1, 2, 3)
 	installer := &Installer{
 		requestedVersion: unsupportedVersion,
-		expectedChecksumFunc: func(v nvproxy.DriverVersion) (string, bool) {
+		expectedChecksumFunc: func(v nvconf.DriverVersion) (string, bool) {
 			return "", false
 		},
 	}
@@ -71,13 +71,13 @@ func TestVersionNotSupported(t *testing.T) {
 // TestShaMismatch tests when a checksum of a driver doesn't match what's in the map.
 func TestShaMismatch(t *testing.T) {
 	ctx := context.Background()
-	version := nvproxy.NewDriverVersion(1, 2, 3)
+	version := nvconf.NewDriverVersion(1, 2, 3)
 	installer := &Installer{
 		requestedVersion: version,
-		getCurrentDriverFunc: func() (nvproxy.DriverVersion, error) {
-			return nvproxy.DriverVersion{}, nil
+		getCurrentDriverFunc: func() (nvconf.DriverVersion, error) {
+			return nvconf.DriverVersion{}, nil
 		},
-		expectedChecksumFunc: func(v nvproxy.DriverVersion) (string, bool) {
+		expectedChecksumFunc: func(v nvconf.DriverVersion) (string, bool) {
 			if v == version {
 				return "mismatch", true
 			}
@@ -102,13 +102,13 @@ func TestDriverInstalls(t *testing.T) {
 	ctx := context.Background()
 	content := []byte("some content")
 	checksum := fmt.Sprintf("%x", sha256.Sum256(content))
-	version := nvproxy.NewDriverVersion(1, 2, 3)
+	version := nvconf.NewDriverVersion(1, 2, 3)
 	installer := &Installer{
 		requestedVersion: version,
-		getCurrentDriverFunc: func() (nvproxy.DriverVersion, error) {
-			return nvproxy.DriverVersion{}, nil
+		getCurrentDriverFunc: func() (nvconf.DriverVersion, error) {
+			return nvconf.DriverVersion{}, nil
 		},
-		expectedChecksumFunc: func(v nvproxy.DriverVersion) (string, bool) {
+		expectedChecksumFunc: func(v nvconf.DriverVersion) (string, bool) {
 			if v == version {
 				return checksum, true
 			}

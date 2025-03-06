@@ -37,6 +37,7 @@ import (
 	"gvisor.dev/gvisor/pkg/metric"
 	"gvisor.dev/gvisor/pkg/prometheus"
 	"gvisor.dev/gvisor/pkg/ring0"
+	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
 	"gvisor.dev/gvisor/pkg/sentry/hostmm"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/runsc/boot"
@@ -493,6 +494,14 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 		log.Infof("Core tag enabled (core tag=%d)", coreTags[0])
 	}
 
+	var nvidiaDriverVersion nvconf.DriverVersion
+	if b.nvidiaDriverVersion != "" {
+		nvidiaDriverVersion, err = nvconf.DriverVersionFrom(b.nvidiaDriverVersion)
+		if err != nil {
+			util.Fatalf("Failed to parse nvidia driver version: %v", err)
+		}
+	}
+
 	// Create the loader.
 	bootArgs := boot.Args{
 		ID:                  f.Arg(0),
@@ -515,7 +524,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 		PodInitConfigFD:     b.podInitConfigFD,
 		SinkFDs:             b.sinkFDs.GetArray(),
 		ProfileOpts:         b.profileFDs.ToOpts(),
-		NvidiaDriverVersion: b.nvidiaDriverVersion,
+		NvidiaDriverVersion: nvidiaDriverVersion,
 		HostTHP:             b.hostTHP,
 		SaveFDs:             b.saveFDs.GetFDs(),
 	}
