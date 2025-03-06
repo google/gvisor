@@ -478,6 +478,17 @@ func (tg *ThreadGroup) MemberIDs(pidns *PIDNamespace) []ThreadID {
 	return tasks
 }
 
+// ForEachTask invokes f() on each task in tg.
+func (tg *ThreadGroup) ForEachTask(f func(t *Task) bool) {
+	tg.pidns.owner.mu.RLock()
+	defer tg.pidns.owner.mu.RUnlock()
+	for t := tg.tasks.Front(); t != nil; t = t.Next() {
+		if !f(t) {
+			break
+		}
+	}
+}
+
 // ID returns tg's leader's thread ID in its own PID namespace.
 // If tg's leader is dead, ID returns 0.
 func (tg *ThreadGroup) ID() ThreadID {
