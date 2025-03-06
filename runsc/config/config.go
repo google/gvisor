@@ -388,6 +388,9 @@ type Config struct {
 	// RestoreSpecValidation indicates the level of spec validation to be
 	// performed during restore.
 	RestoreSpecValidation RestoreSpecValidationPolicy `flag:"restore-spec-validation"`
+
+	// DisableIPv6 indicates if the interfaces should have IPv6 functionality.
+	DisableIPv6 bool `flag:"disable-ipv6"`
 }
 
 func (c *Config) validate() error {

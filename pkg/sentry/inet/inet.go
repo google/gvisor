@@ -59,6 +59,14 @@ type Stack interface {
 	// settings.
 	SetTCPReceiveBufferSize(size TCPBufferSize) error
 
+	// SetIPv6DisableAll when set to non-zero value will disable IPv6
+	// functionality on all interfaces.
+	SetIPv6DisableAll(disableAll int32) error
+
+	// IPv6DisableAll returns true if IPv6 functionality has been disabled
+	// on all interfaces.
+	IPv6DisableAll() (int32, error)
+
 	// TCPSendBufferSize returns TCP send buffer size settings.
 	TCPSendBufferSize() (TCPBufferSize, error)
 

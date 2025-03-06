@@ -146,6 +146,13 @@ func (fs *filesystem) newSysNetDir(ctx context.Context, root *auth.Credentials, 
 				"wmem_default":  fs.newInode(ctx, root, 0444, newStaticFile("212992")),
 				"wmem_max":      fs.newInode(ctx, root, 0444, newStaticFile("212992")),
 			}),
+			"ipv6": fs.newStaticDir(ctx, root, map[string]kernfs.Inode{
+				"conf": fs.newStaticDir(ctx, root, map[string]kernfs.Inode{
+					"all": fs.newStaticDir(ctx, root, map[string]kernfs.Inode{
+						"disable_ipv6": fs.newInode(ctx, root, 0444, &ipv6DisableAllData{stack: stack}),
+					}),
+				}),
+			}),
 		}
 	}
 
@@ -238,6 +245,46 @@ func (d *tcpSackData) Write(ctx context.Context, _ *vfs.FileDescription, src use
 	}
 	*d.enabled = buf[0] != 0
 	return n, d.stack.SetTCPSACKEnabled(*d.enabled)
+}
+
+// ipv6DisableAllData implements vfs.WritableDynamicBytesSource for
+// /proc/sys/net/ipv6/conf/all/disable_ipv6.
+//
+// +stateify savable
+type ipv6DisableAllData struct {
+	kernfs.DynamicBytesFile
+
+	stack inet.Stack `state:"wait"`
+}
+
+var _ vfs.WritableDynamicBytesSource = (*ipv6DisableAllData)(nil)
+
+// Generate implements vfs.DynamicBytesSource.Generate.
+func (d *ipv6DisableAllData) Generate(ctx context.Context, buf *bytes.Buffer) error {
+	disableIPv6, err := d.stack.IPv6DisableAll()
+	if err != nil {
+		return err
+	}
+
+	_, err = buf.WriteString(fmt.Sprintf("%d\n", disableIPv6))
+	return err
+}
+
+// Write implements vfs.WritableDynamicBytesSource.Write.
+func (d *ipv6DisableAllData) Write(ctx context.Context, _ *vfs.FileDescription, src usermem.IOSequence, offset int64) (int64, error) {
+	if offset != 0 {
+		// No need to handle partial writes thus far.
+		return 0, linuxerr.EINVAL
+	}
+	buf := make([]int32, 1)
+	n, err := ParseInt32Vec(ctx, src, buf)
+	if err != nil || n == 0 {
+		return 0, err
+	}
+	if err := d.stack.SetIPv6DisableAll(int32(buf[0])); err != nil {
+		return 0, err
+	}
+	return n, nil
 }
 
 // tcpRecoveryData implements vfs.WritableDynamicBytesSource for
