@@ -68,6 +68,7 @@ func main() {
 		unix.SYS_NANOSLEEP:       seccomp.MatchAll{},
 		unix.SYS_OPENAT:          seccomp.MatchAll{},
 		unix.SYS_PPOLL:           seccomp.MatchAll{},
+		unix.SYS_PRCTL:           seccomp.MatchAll{},
 		unix.SYS_PREAD64:         seccomp.MatchAll{},
 		unix.SYS_PSELECT6:        seccomp.MatchAll{},
 		unix.SYS_PWRITE64:        seccomp.MatchAll{},
