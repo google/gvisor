@@ -28,6 +28,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/nvgpu"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy"
+	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
 	pb "gvisor.dev/gvisor/tools/ioctl_sniffer/ioctl_go_proto"
 )
 
@@ -183,7 +184,7 @@ func Init() error {
 	if err != nil {
 		return fmt.Errorf("failed to get host driver version: %w", err)
 	}
-	driverVer, err := nvproxy.DriverVersionFrom(driverVerStr)
+	driverVer, err := nvconf.DriverVersionFrom(driverVerStr)
 	if err != nil {
 		return fmt.Errorf("failed to parse host driver version: %w", err)
 	}

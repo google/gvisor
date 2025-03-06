@@ -22,6 +22,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy"
+	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
 	"gvisor.dev/gvisor/runsc/flag"
 	"gvisor.dev/gvisor/tools/gpu/drivers"
 )
@@ -114,7 +115,7 @@ func main() {
 			os.Exit(1)
 		}
 
-		nvproxy.ForEachSupportDriver(func(version nvproxy.DriverVersion, checksum string) {
+		nvproxy.ForEachSupportDriver(func(version nvconf.DriverVersion, checksum string) {
 			wantChecksum, err := drivers.ChecksumDriver(ctx, version.String())
 			if err != nil {
 				log.Warningf("error on version %q: %v", version.String(), err)

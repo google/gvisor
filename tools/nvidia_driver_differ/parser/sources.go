@@ -20,13 +20,13 @@ import (
 	"io"
 	"path/filepath"
 
-	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy"
+	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
 )
 
 // DriverSourceDir represents a directory containing the source code for a given driver version.
 type DriverSourceDir struct {
 	ParentDirectory string
-	Version         nvproxy.DriverVersion
+	Version         nvconf.DriverVersion
 }
 
 // Name returns the name of the driver source directory.

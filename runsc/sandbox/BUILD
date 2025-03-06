@@ -33,6 +33,7 @@ go_library(
         "//pkg/prometheus",
         "//pkg/sentry/control",
         "//pkg/sentry/devices/nvproxy",
+        "//pkg/sentry/devices/nvproxy/nvconf",
         "//pkg/sentry/fsimpl/erofs",
         "//pkg/sentry/pgalloc",
         "//pkg/sentry/platform",

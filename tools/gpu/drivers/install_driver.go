@@ -28,6 +28,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy"
+	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
 )
 
 const (
@@ -42,10 +43,10 @@ func init() {
 
 // Installer handles the logic to install drivers.
 type Installer struct {
-	requestedVersion nvproxy.DriverVersion
+	requestedVersion nvconf.DriverVersion
 	// include functions so they can be mocked in tests.
-	expectedChecksumFunc func(nvproxy.DriverVersion) (string, bool)
-	getCurrentDriverFunc func() (nvproxy.DriverVersion, error)
+	expectedChecksumFunc func(nvconf.DriverVersion) (string, bool)
+	getCurrentDriverFunc func() (nvconf.DriverVersion, error)
 	downloadFunc         func(context.Context, string) (io.ReadCloser, error)
 	installFunc          func(string) error
 }
@@ -62,7 +63,7 @@ func NewInstaller(requestedVersion string, latest bool) (*Installer, error) {
 	case latest:
 		ret.requestedVersion = nvproxy.LatestDriver()
 	default:
-		d, err := nvproxy.DriverVersionFrom(requestedVersion)
+		d, err := nvconf.DriverVersionFrom(requestedVersion)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse requested driver version: %w", err)
 		}
@@ -89,7 +90,7 @@ func (i *Installer) MaybeInstall(ctx context.Context) error {
 		return nil
 	}
 
-	if !existingDriver.Equals(nvproxy.DriverVersion{}) {
+	if !existingDriver.Equals(nvconf.DriverVersion{}) {
 		log.Infof("Uninstalling driver: %s", existingDriver)
 		if err := i.uninstallDriver(ctx, existingDriver.String()); err != nil {
 			return fmt.Errorf("failed to uninstall driver: %w", err)
@@ -167,19 +168,19 @@ func (i *Installer) writeAndCheck(f *os.File, reader io.ReadCloser) error {
 	return nil
 }
 
-func getCurrentDriver() (nvproxy.DriverVersion, error) {
+func getCurrentDriver() (nvconf.DriverVersion, error) {
 	_, err := os.Stat(nvidiaSMIPath)
 	// If the nvidia-smi executable does not exist, then we don't have a driver installed.
 	if os.IsNotExist(err) {
-		return nvproxy.DriverVersion{}, fmt.Errorf("nvidia-smi does not exist at path: %q", nvidiaSMIPath)
+		return nvconf.DriverVersion{}, fmt.Errorf("nvidia-smi does not exist at path: %q", nvidiaSMIPath)
 	}
 	if err != nil {
-		return nvproxy.DriverVersion{}, fmt.Errorf("failed to stat nvidia-smi: %w", err)
+		return nvconf.DriverVersion{}, fmt.Errorf("failed to stat nvidia-smi: %w", err)
 	}
 	out, err := exec.Command(nvidiaSMIPath, []string{"--query-gpu", "driver_version", "--format=csv,noheader"}...).CombinedOutput()
 	if err != nil {
 		log.Warningf("failed to run nvidia-smi: %v", err)
-		return nvproxy.DriverVersion{}, fmt.Errorf("failed to run nvidia-smi: %w", err)
+		return nvconf.DriverVersion{}, fmt.Errorf("failed to run nvidia-smi: %w", err)
 	}
 	// If there are multiple GPUs, there will be one version per line.
 	// Make sure they are all the same version.
@@ -194,13 +195,13 @@ func getCurrentDriver() (nvproxy.DriverVersion, error) {
 			continue
 		}
 		if line != sameVersion {
-			return nvproxy.DriverVersion{}, fmt.Errorf("multiple driver versions found: %q and %q", sameVersion, line)
+			return nvconf.DriverVersion{}, fmt.Errorf("multiple driver versions found: %q and %q", sameVersion, line)
 		}
 	}
 	if sameVersion == "" {
-		return nvproxy.DriverVersion{}, fmt.Errorf("no driver version found")
+		return nvconf.DriverVersion{}, fmt.Errorf("no driver version found")
 	}
-	return nvproxy.DriverVersionFrom(sameVersion)
+	return nvconf.DriverVersionFrom(sameVersion)
 }
 
 // ListSupportedDrivers prints the driver to stderr in a format that can be
@@ -217,7 +218,7 @@ func ListSupportedDrivers(outfile string) error {
 	}
 
 	var list []string
-	nvproxy.ForEachSupportDriver(func(version nvproxy.DriverVersion, checksum string) {
+	nvproxy.ForEachSupportDriver(func(version nvconf.DriverVersion, checksum string) {
 		list = append(list, version.String())
 	})
 	sort.Strings(list)

@@ -153,7 +153,7 @@ type containerInfo struct {
 
 	// nvidiaDriverVersion is the NVIDIA driver ABI version to use for
 	// communicating with NVIDIA devices on the host.
-	nvidiaDriverVersion string
+	nvidiaDriverVersion nvconf.DriverVersion
 }
 
 type loaderState int
@@ -351,7 +351,7 @@ type Args struct {
 	ProfileOpts profile.Opts
 	// NvidiaDriverVersion is the NVIDIA driver ABI version to use for
 	// communicating with NVIDIA devices on the host.
-	NvidiaDriverVersion string
+	NvidiaDriverVersion nvconf.DriverVersion
 	// HostTHP contains host transparent hugepage settings.
 	HostTHP HostTHP
 

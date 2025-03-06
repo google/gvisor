@@ -20,6 +20,7 @@ go_library(
     ],
     deps = [
         "//pkg/sentry/devices/nvproxy",
+        "//pkg/sentry/devices/nvproxy/nvconf",
         "@com_github_google_go_cmp//cmp:go_default_library",
     ],
 )

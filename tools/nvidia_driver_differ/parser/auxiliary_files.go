@@ -20,14 +20,14 @@ import (
 	"os/exec"
 	"path"
 
-	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy"
+	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
 )
 
 // GitRepoURL is the URL for the NVIDIA open-gpu-kernel-modules repo.
 const GitRepoURL = "https://github.com/NVIDIA/open-gpu-kernel-modules.git"
 
 // CloneDriverSource clones the given driver version into the given directory.
-func CloneDriverSource(dir string, version nvproxy.DriverVersion) (*DriverSourceDir, error) {
+func CloneDriverSource(dir string, version nvconf.DriverVersion) (*DriverSourceDir, error) {
 	// git clone -b $VERSION --depth 1 https://github.com/NVIDIA/open-gpu-kernel-modules.git $PATH
 	args := []string{
 		"clone",
