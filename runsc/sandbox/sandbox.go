@@ -47,6 +47,7 @@ import (
 	"gvisor.dev/gvisor/pkg/prometheus"
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy"
+	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/erofs"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
@@ -1747,7 +1748,7 @@ func getNvproxyDriverVersion(conf *config.Config) (string, error) {
 		nvproxy.Init()
 		return nvproxy.LatestDriver().String(), nil
 	default:
-		version, err := nvproxy.DriverVersionFrom(conf.NVProxyDriverVersion)
+		version, err := nvconf.DriverVersionFrom(conf.NVProxyDriverVersion)
 		return version.String(), err
 	}
 }

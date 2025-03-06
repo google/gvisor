@@ -447,37 +447,6 @@ func (mf *uvmFDMemmapFile) StateLoad(ctx context.Context, stateSourceObject stat
 	stateSourceObject.Load(0, &mf.fd)
 }
 
-func (v *DriverVersion) StateTypeName() string {
-	return "pkg/sentry/devices/nvproxy.DriverVersion"
-}
-
-func (v *DriverVersion) StateFields() []string {
-	return []string{
-		"major",
-		"minor",
-		"patch",
-	}
-}
-
-func (v *DriverVersion) beforeSave() {}
-
-// +checklocksignore
-func (v *DriverVersion) StateSave(stateSinkObject state.Sink) {
-	v.beforeSave()
-	stateSinkObject.Save(0, &v.major)
-	stateSinkObject.Save(1, &v.minor)
-	stateSinkObject.Save(2, &v.patch)
-}
-
-func (v *DriverVersion) afterLoad(context.Context) {}
-
-// +checklocksignore
-func (v *DriverVersion) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &v.major)
-	stateSourceObject.Load(1, &v.minor)
-	stateSourceObject.Load(2, &v.patch)
-}
-
 func init() {
 	state.Register((*frontendDevice)(nil))
 	state.Register((*frontendFD)(nil))
@@ -492,5 +461,4 @@ func init() {
 	state.Register((*uvmDevice)(nil))
 	state.Register((*uvmFD)(nil))
 	state.Register((*uvmFDMemmapFile)(nil))
-	state.Register((*DriverVersion)(nil))
 }

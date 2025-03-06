@@ -132,6 +132,10 @@ type ExecArgs struct {
 	// FilePayload determines the files to give to the new process.
 	FilePayload
 
+	// If FDTable is not nil, it is the process FD table. If Exec/ExecAsync
+	// succeeds, it takes a reference on FDTable.
+	FDTable *kernel.FDTable
+
 	// ContainerID is the container for the process being executed.
 	ContainerID string
 
@@ -178,9 +182,6 @@ func ExecAsync(proc *Proc, args *ExecArgs) (*kernel.ThreadGroup, kernel.ThreadID
 // newly created thread group and its PID. If the stdio FDs are TTYs, then a
 // TTYFileOperations that wraps the TTY is also returned.
 func (proc *Proc) execAsync(args *ExecArgs) (*kernel.ThreadGroup, kernel.ThreadID, *host.TTYFileDescription, error) {
-	// Import file descriptors.
-	fdTable := proc.Kernel.NewFDTable()
-
 	creds := auth.NewUserCredentials(
 		args.KUID,
 		args.KGID,
@@ -203,7 +204,6 @@ func (proc *Proc) execAsync(args *ExecArgs) (*kernel.ThreadGroup, kernel.ThreadI
 		WorkingDirectory:     args.WorkingDirectory,
 		MountNamespace:       args.MountNamespace,
 		Credentials:          creds,
-		FDTable:              fdTable,
 		Umask:                0022,
 		Limits:               limitSet,
 		MaxSymlinkTraversals: linux.MaxSymlinkTraversals,
@@ -219,7 +219,17 @@ func (proc *Proc) execAsync(args *ExecArgs) (*kernel.ThreadGroup, kernel.ThreadI
 		initArgs.MountNamespace.IncRef()
 	}
 	ctx := initArgs.NewContext(proc.Kernel)
-	defer fdTable.DecRef(ctx)
+
+	// Import file descriptors.
+	var fdTable *kernel.FDTable
+	if args.FDTable != nil {
+		fdTable = args.FDTable
+		// reference borrowed from the caller
+	} else {
+		fdTable = proc.Kernel.NewFDTable()
+		defer fdTable.DecRef(ctx)
+	}
+	initArgs.FDTable = fdTable
 
 	// Get the full path to the filename from the PATH env variable.
 	if initArgs.MountNamespace == nil {

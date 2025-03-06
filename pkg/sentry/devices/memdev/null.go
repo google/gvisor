@@ -31,6 +31,11 @@ type nullDevice struct{}
 
 // Open implements vfs.Device.Open.
 func (nullDevice) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
+	return NewNullFD(ctx, mnt, vfsd, opts)
+}
+
+// NewNullFD returns a vfs.FileDescription for /dev/null.
+func NewNullFD(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
 	fd := &nullFD{}
 	if err := fd.vfsfd.Init(fd, opts.Flags, mnt, vfsd, &vfs.FileDescriptionOptions{
 		UseDentryMetadata: true,

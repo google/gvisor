@@ -153,11 +153,15 @@ type MemoryFile struct {
 	// nextCommitScan is the next time at which UpdateUsage() may scan the
 	// backing file for commitment information.
 	//
+	// isSaving is non-zero during f.SaveTo() to prevent concurrent calls to
+	// f.UpdateUsage() from marking pages as committed.
+	//
 	// All of these fields are protected by mu.
 	memAcct             memAcctSet
 	knownCommittedBytes uint64
 	commitSeq           uint64
 	nextCommitScan      time.Time
+	isSaving            uint
 
 	// evictable maps EvictableMemoryUsers to eviction state.
 	//
@@ -1561,6 +1565,11 @@ func (f *MemoryFile) UpdateUsage(memCgIDs map[uint32]struct{}) error {
 		return nil
 	}
 
+	if f.isSaving != 0 {
+		log.Debugf("pgalloc.MemoryFile.UpdateUsage() inhibited during MemoryFile save")
+		return nil
+	}
+
 	// Linux updates usage values at CONFIG_HZ; throttle our scans to the same
 	// frequency.
 	startTime := time.Now()
@@ -1571,7 +1580,11 @@ func (f *MemoryFile) UpdateUsage(memCgIDs map[uint32]struct{}) error {
 		f.nextCommitScan = startTime.Add(time.Second / linux.CLOCKS_PER_SEC)
 	}
 
-	err = f.updateUsageLocked(memCgIDs, false /* alsoScanCommitted */, mincore)
+	err = f.updateUsageLocked(memCgIDs, false /* alsoScanCommitted */, false /* callerIsSaveTo */, mincore)
+	if _, ok := err.(updateUsageDuringSaveErr); ok {
+		log.Debugf("pgalloc.MemoryFile.UpdateUsage() inhibited during MemoryFile save")
+		return nil
+	}
 	if log.IsLogging(log.Debug) {
 		log.Debugf("UpdateUsage: took %v, currentUsage=%d knownCommittedBytes=%d",
 			time.Since(startTime), currentUsage, f.knownCommittedBytes)
@@ -1592,9 +1605,12 @@ func (f *MemoryFile) UpdateUsage(memCgIDs map[uint32]struct{}) error {
 // checkCommitted and false otherwise; wasCommitted can only be true if
 // alsoScanCommitted is true.
 //
+// callerIsSaveTo is true if the caller is f.SaveTo() and false if the caller
+// is f.UpdateUsage().
+//
 // Precondition: f.mu must be held; it may be unlocked and reacquired.
 // +checklocks:f.mu
-func (f *MemoryFile) updateUsageLocked(memCgIDs map[uint32]struct{}, alsoScanCommitted bool, checkCommitted func(bs []byte, committed []byte, off uint64, wasCommitted bool) error) error {
+func (f *MemoryFile) updateUsageLocked(memCgIDs map[uint32]struct{}, alsoScanCommitted, callerIsSaveTo bool, checkCommitted func(bs []byte, committed []byte, off uint64, wasCommitted bool) error) error {
 	// Track if anything changed to elide the merge.
 	changedAny := false
 	defer func() {
@@ -1666,10 +1682,14 @@ func (f *MemoryFile) updateUsageLocked(memCgIDs map[uint32]struct{}, alsoScanCom
 			}
 
 			// Reconcile internal state with buf. Since we temporarily dropped
-			// f.mu, f.memAcct may have changed, and maseg/ma are no longer
-			// valid. If wasCommitted is false, then we are marking ranges that
-			// are now committed; otherwise, we are marking ranges that are now
-			// uncommitted.
+			// f.mu, f.isSaving and f.memAcct may have changed, and maseg/ma
+			// are no longer valid. If wasCommitted is false, then we are
+			// marking ranges that are now committed; otherwise, we are marking
+			// ranges that are now uncommitted.
+			if !callerIsSaveTo && f.isSaving != 0 {
+				checkErr = updateUsageDuringSaveErr{}
+				return false
+			}
 			unchangedVal := byte(0)
 			if wasCommitted {
 				unchangedVal = 1
@@ -1741,6 +1761,13 @@ func (f *MemoryFile) updateUsageLocked(memCgIDs map[uint32]struct{}, alsoScanCom
 	}
 
 	return nil
+}
+
+type updateUsageDuringSaveErr struct{}
+
+// Error implements error.Error.
+func (updateUsageDuringSaveErr) Error() string {
+	return "pgalloc.MemoryFile.UpdateUsage() called during MemoryFile save"
 }
 
 // TotalUsage returns an aggregate usage for all memory statistics except

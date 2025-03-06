@@ -30,17 +30,13 @@ import (
 )
 
 // Register registers all devices implemented by this package in vfsObj.
-func Register(vfsObj *vfs.VirtualFilesystem, versionStr string, driverCaps nvconf.DriverCaps, uvmDevMajor uint32) error {
+func Register(vfsObj *vfs.VirtualFilesystem, version nvconf.DriverVersion, driverCaps nvconf.DriverCaps, uvmDevMajor uint32) error {
 	// The kernel driver's interface is unstable, so only allow versions of the
 	// driver that are known to be supported.
-	log.Infof("NVIDIA driver version: %s", versionStr)
-	version, err := DriverVersionFrom(versionStr)
-	if err != nil {
-		return fmt.Errorf("failed to parse Nvidia driver version %s: %w", versionStr, err)
-	}
+	log.Infof("NVIDIA driver version: %s", version)
 	abiCons, ok := abis[version]
 	if !ok {
-		return fmt.Errorf("unsupported Nvidia driver version: %s", versionStr)
+		return fmt.Errorf("unsupported Nvidia driver version: %s", version)
 	}
 	if driverCaps == 0 {
 		log.Warningf("nvproxy: NVIDIA driver capability set is empty; all GPU operations will fail")
@@ -76,7 +72,7 @@ func Register(vfsObj *vfs.VirtualFilesystem, versionStr string, driverCaps nvcon
 // +stateify savable
 type nvproxy struct {
 	abi         *driverABI `state:"nosave"`
-	version     DriverVersion
+	version     nvconf.DriverVersion
 	capsEnabled nvconf.DriverCaps
 
 	fdsMu       fdsMutex `state:"nosave"`
