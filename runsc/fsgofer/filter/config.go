@@ -135,9 +135,16 @@ var allowedSyscalls = seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 	unix.SYS_NANOSLEEP: seccomp.MatchAll{},
 	unix.SYS_OPENAT:    seccomp.MatchAll{},
 	unix.SYS_PPOLL:     seccomp.MatchAll{},
-	unix.SYS_PREAD64:   seccomp.MatchAll{},
-	unix.SYS_PWRITE64:  seccomp.MatchAll{},
-	unix.SYS_READ:      seccomp.MatchAll{},
+	unix.SYS_PRCTL: seccomp.PerArg{
+		seccomp.EqualTo(unix.PR_SET_VMA),
+		seccomp.EqualTo(unix.PR_SET_VMA_ANON_NAME),
+		seccomp.AnyValue{},
+		seccomp.AnyValue{},
+		seccomp.AnyValue{},
+	},
+	unix.SYS_PREAD64:  seccomp.MatchAll{},
+	unix.SYS_PWRITE64: seccomp.MatchAll{},
+	unix.SYS_READ:     seccomp.MatchAll{},
 	unix.SYS_RECVMSG: seccomp.Or{
 		seccomp.PerArg{
 			seccomp.AnyValue{},

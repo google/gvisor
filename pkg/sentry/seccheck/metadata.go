@@ -60,6 +60,10 @@ const (
 	// FieldSentryExecveBinaryInfo is an optional field to collect information
 	// about the binary being executed.
 	FieldSentryExecveBinaryInfo Field = iota
+
+	// FieldSentryExecveBinarySha256 is an optional field to collect the SHA-256
+	// hash of the binary being executed.
+	FieldSentryExecveBinarySha256
 )
 
 // Points is a map with all the trace points registered in the system.
@@ -239,6 +243,10 @@ func genericInit() {
 			{
 				ID:   FieldSentryExecveBinaryInfo,
 				Name: "binary_info",
+			},
+			{
+				ID:   FieldSentryExecveBinarySha256,
+				Name: "binary_sha256",
 			},
 		},
 		ContextFields: defaultContextFields,

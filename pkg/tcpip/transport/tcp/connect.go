@@ -1317,8 +1317,12 @@ func (e *Endpoint) handleSegmentLocked(s *segment) (cont bool, err tcpip.Error) 
 		// Now check if the received segment has caused us to transition
 		// to a CLOSED state, if yes then terminate processing and do
 		// not invoke the sender.
+		// It is also possible that the sender has sent a RST before
+		// which got lost and didn't reach the other side. At that time,
+		// we can still receive ACKs after the sender has purged the
+		// write list. Do not process such ACKs and return immediately.
 		state := e.EndpointState()
-		if state == StateClose {
+		if state == StateClose || state == StateError {
 			// When we get into StateClose while processing from the queue,
 			// return immediately and let the TCP processors handle it.
 			return false, nil

@@ -65,13 +65,18 @@ package kernel
 // """
 
 import (
+	"crypto/sha256"
+	"io"
+
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/mm"
 	"gvisor.dev/gvisor/pkg/sentry/seccheck"
 	pb "gvisor.dev/gvisor/pkg/sentry/seccheck/points/points_go_proto"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // execStop is a TaskStop that a task sets on itself when it wants to execve
@@ -330,6 +335,29 @@ func getExecveSeccheckInfo(t *Task, argv, env []string, executable *vfs.FileDesc
 				}
 				if stat.Mask&linux.STATX_GID != 0 {
 					info.BinaryGid = stat.GID
+				}
+			}
+		}
+
+		if fields.Local.Contains(seccheck.FieldSentryExecveBinarySha256) {
+			hash := sha256.New()
+			buf := make([]byte, 1024*1024) // Read 1MB at a time.
+			dest := usermem.BytesIOSequence(buf)
+			offset := int64(0)
+
+			for {
+				if read, err := executable.PRead(t, dest, offset, vfs.ReadOptions{}); err == nil {
+					hash.Write(buf[0:read])
+					offset += read
+
+				} else if err == io.EOF {
+					hash.Write(buf[0:read])
+					info.BinarySha256 = hash.Sum(nil)
+					break
+
+				} else {
+					log.Warningf("Failed to read executable for SHA-256 hash: %v", err)
+					break
 				}
 			}
 		}
