@@ -200,6 +200,7 @@ func (i *inode) InvalidateUnsavable(ctx context.Context) error {
 
 // +stateify savable
 type imageMemmapFile struct {
+	memmap.DefaultMemoryType
 	memmap.NoBufferedIOFallback
 
 	image *erofs.Image
