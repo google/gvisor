@@ -91,7 +91,12 @@ func (c *vCPU) initArchState() error {
 	}
 
 	// mair_el1
-	data = _MT_EL1_INIT
+	if hostarch.NumMemoryTypes != 3 {
+		panic("additional memory types must be configured in MAIR")
+	}
+	data = (_MT_ATTR_NORMAL << (hostarch.MemoryTypeWriteBack * 8)) |
+		(_MT_ATTR_NORMAL_NC << (hostarch.MemoryTypeWriteCombine * 8)) |
+		(_MT_ATTR_DEVICE_nGnRnE << (hostarch.MemoryTypeUncached * 8))
 	reg.id = _KVM_ARM64_REGS_MAIR_EL1
 	if err := c.setOneRegister(&reg); err != nil {
 		return err
