@@ -151,6 +151,7 @@ go_library(
         "//pkg/context",
         "//pkg/errors/linuxerr",
         "//pkg/fd",
+        "//pkg/gohacks",
         "//pkg/goid",
         "//pkg/hostarch",
         "//pkg/log",
