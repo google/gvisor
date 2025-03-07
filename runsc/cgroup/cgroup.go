@@ -318,6 +318,7 @@ type Cgroup interface {
 	Install(res *specs.LinuxResources) error
 	Uninstall() error
 	Join() (func(), error)
+	Set(res *specs.LinuxResources) error
 	CPUQuota() (float64, error)
 	CPUUsage() (uint64, error)
 	NumCPU() (int, error)
@@ -641,6 +642,10 @@ func (c *cgroupV1) Join() (func(), error) {
 		}
 	}
 	return cu.Release(), nil
+}
+
+func (c *cgroupV1) Set(res *specs.LinuxResources) error {
+	return errors.New("not implemented")
 }
 
 // CPUQuota returns the CFS CPU quota.
