@@ -128,31 +128,9 @@ log_level = "debug"
     file-access = "shared"
 EOF
 
-# Configure CNI.
-(cd "${GOPATH}" && src/github.com/containerd/containerd/script/setup/install-cni)
-tee /etc/cni/net.d/10-bridge.conf <<EOF
-{
-  "cniVersion": "0.3.1",
-  "name": "bridge",
-  "type": "bridge",
-  "bridge": "cnio0",
-  "isGateway": true,
-  "ipMasq": true,
-  "ipam": {
-      "type": "host-local",
-      "ranges": [
-        [{"subnet": "10.200.0.0/24"}]
-      ],
-      "routes": [{"dst": "0.0.0.0/0"}]
-  }
-}
-EOF
-tee /etc/cni/net.d/99-loopback.conf <<EOF
-{
-  "cniVersion": "0.3.1",
-  "type": "loopback"
-}
-EOF
+# Configure CNI, install-cni depends on go.mod to determine the version
+# of github.com/containernetworking/plugins for CNI.
+(cd "${GOPATH}"/src/github.com/containerd/containerd/ && ./script/setup/install-cni)
 
 # Configure crictl.
 tee /etc/crictl.yaml <<EOF
