@@ -384,18 +384,18 @@ func (*RequiresNvSci) IsExpectedFailure(ctx context.Context, env *TestEnvironmen
 type NoCrossCompile struct{}
 
 func (*NoCrossCompile) WillFail(ctx context.Context, env *TestEnvironment) string {
-	return "Test not supported on ARM. Cross compiled libraries not supported."
+	if strings.HasPrefix(runtime.GOARCH, "arm") {
+		return "Test not supported on ARM. Cross compiled libraries not supported."
+	}
+	return ""
 }
 
 func (*NoCrossCompile) IsExpectedFailure(ctx context.Context, env *TestEnvironment, logs string, _ int) error {
-	if !strings.HasPrefix(runtime.GOARCH, "arm") {
+	crossCompileString := "cross compiling from sbsa to aarch64 is not supported!"
+	if strings.Contains(logs, crossCompileString) {
 		return nil
 	}
-	crossCompileString := "cross compiling from sbsa to aarch64 is not supported!"
-	if strings.Contains(logs, "") {
-		return fmt.Errorf("found string in logs: %s", crossCompileString)
-	}
-	return nil
+	return fmt.Errorf("expected log message %q not found: logs: %q", crossCompileString, logs)
 }
 
 // multiCompatibility implements `Compatibility` with multiple possible
