@@ -1495,12 +1495,13 @@ func (e *endpoint) processExtensionHeaders(h header.IPv6, pkt *stack.PacketBuffe
 	buf.Merge(&dataBuf)
 	it := header.MakeIPv6PayloadIterator(header.IPv6ExtensionHeaderIdentifier(h.NextHeader()), buf)
 
-	// Add a reference to pkt because fragment header processing can replace this
-	// packet with a new one that has an extra reference. Adding a reference here
-	// keeps the two in parity so they can both be DecRef'd the same way.
-	pkt.IncRef()
+	// Clone the pkt here because fragment header processing can replace this
+	// packet with a new one that has an extra reference. Cloning here
+	// keeps it so this method owns the packet either way so the packet can always
+	// be DecRef'd after processing is done.
+	processingPkt := pkt.Clone()
 	defer func() {
-		pkt.DecRef()
+		processingPkt.DecRef()
 		it.Release()
 	}()
 
@@ -1510,7 +1511,7 @@ func (e *endpoint) processExtensionHeaders(h header.IPv6, pkt *stack.PacketBuffe
 	)
 	for {
 		h := header.IPv6(pkt.NetworkHeader().Slice())
-		if done, err := e.processExtensionHeader(&it, &pkt, h, &routerAlert, &hasFragmentHeader, forwarding); err != nil || done {
+		if done, err := e.processExtensionHeader(&it, &processingPkt, h, &routerAlert, &hasFragmentHeader, forwarding); err != nil || done {
 			return err
 		}
 	}
