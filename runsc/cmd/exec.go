@@ -449,7 +449,10 @@ func argsFromProcess(specProc *specs.Process, p *specs.Process, enableRaw bool) 
 // auth.TaskCapabilities struct with those capabilities in every capability set.
 // This mimics runc's behavior.
 func capabilities(p *specs.Process, cs []string, enableRaw bool) (*auth.TaskCapabilities, error) {
-	specCaps := *p.Capabilities
+	specCaps := specs.LinuxCapabilities{}
+	if p.Capabilities != nil {
+		specCaps = *p.Capabilities
+	}
 	for _, cap := range cs {
 		specCaps.Bounding = append(specCaps.Bounding, cap)
 		specCaps.Effective = append(specCaps.Effective, cap)
