@@ -556,19 +556,12 @@ func rmAllocOSDescriptor(fi *frontendIoctlState, ioctlParams *nvgpu.IoctlNVOS02P
 	}
 
 	// The host driver will collect pages from our address space starting at
-	// PMemory, so we must assemble a contiguous mapping equivalent to the
+	// PMemory, so we need a contiguous mapping equivalent to the
 	// application's.
 	at := hostarch.Read
 	if ((ioctlParams.Params.Flags >> 21) & 0x1) == 0 /* NVOS02_FLAGS_ALLOC_USER_READ_ONLY_NO */ {
 		at.Write = true
 	}
-	// Reserve a range in our address space.
-	m, _, errno := unix.RawSyscall6(unix.SYS_MMAP, 0 /* addr */, uintptr(arLen), unix.PROT_NONE, unix.MAP_PRIVATE|unix.MAP_ANONYMOUS, ^uintptr(0) /* fd */, 0 /* offset */)
-	if errno != 0 {
-		return 0, errno
-	}
-	defer unix.RawSyscall(unix.SYS_MUNMAP, m, uintptr(arLen), 0)
-	// Mirror application mappings into the reserved range.
 	prs, err := fi.t.MemoryManager().Pin(fi.ctx, appAR, at, false /* ignorePermissions */)
 	unpinCleanup := cleanup.Make(func() {
 		mm.Unpin(prs)
@@ -577,19 +570,45 @@ func rmAllocOSDescriptor(fi *frontendIoctlState, ioctlParams *nvgpu.IoctlNVOS02P
 	if err != nil {
 		return 0, err
 	}
-	sentryAddr := uintptr(m)
-	for _, pr := range prs {
+	var m uintptr
+	mOwned := false
+	if len(prs) == 1 {
+		pr := prs[0]
 		ims, err := pr.File.MapInternal(memmap.FileRange{pr.Offset, pr.Offset + uint64(pr.Source.Length())}, at)
 		if err != nil {
 			return 0, err
 		}
-		for !ims.IsEmpty() {
-			im := ims.Head()
-			if _, _, errno := unix.RawSyscall6(unix.SYS_MREMAP, im.Addr(), 0 /* old_size */, uintptr(im.Len()), linux.MREMAP_MAYMOVE|linux.MREMAP_FIXED, sentryAddr, 0); errno != 0 {
-				return 0, errno
+		if ims.NumBlocks() == 1 {
+			// We can use this singular internal mapping directly.
+			m = ims.Head().Addr()
+		}
+	}
+	if m == 0 {
+		// Reserve a range in our address space.
+		var errno unix.Errno
+		m, _, errno = unix.RawSyscall6(unix.SYS_MMAP, 0 /* addr */, uintptr(arLen), unix.PROT_NONE, unix.MAP_PRIVATE|unix.MAP_ANONYMOUS, ^uintptr(0) /* fd */, 0 /* offset */)
+		if errno != 0 {
+			return 0, errno
+		}
+		mOwned = true
+		unpinCleanup.Add(func() {
+			unix.RawSyscall(unix.SYS_MUNMAP, m, uintptr(arLen), 0)
+		})
+		// Mirror application mappings into the reserved range.
+		sentryAddr := uintptr(m)
+		for _, pr := range prs {
+			ims, err := pr.File.MapInternal(memmap.FileRange{pr.Offset, pr.Offset + uint64(pr.Source.Length())}, at)
+			if err != nil {
+				return 0, err
 			}
-			sentryAddr += uintptr(im.Len())
-			ims = ims.Tail()
+			for !ims.IsEmpty() {
+				im := ims.Head()
+				if _, _, errno := unix.RawSyscall6(unix.SYS_MREMAP, im.Addr(), 0 /* old_size */, uintptr(im.Len()), linux.MREMAP_MAYMOVE|linux.MREMAP_FIXED, sentryAddr, 0); errno != 0 {
+					return 0, errno
+				}
+				sentryAddr += uintptr(im.Len())
+				ims = ims.Tail()
+			}
 		}
 	}
 	origPMemory := ioctlParams.Params.PMemory
@@ -604,9 +623,18 @@ func rmAllocOSDescriptor(fi *frontendIoctlState, ioctlParams *nvgpu.IoctlNVOS02P
 	if err == nil && ioctlParams.Params.Status == nvgpu.NV_OK {
 		// Transfer ownership of pinned pages to an osDescMem object, to be
 		// unpinned when the driver OsDescMem is freed.
-		fi.fd.dev.nvp.objAdd(fi.ctx, ioctlParams.Params.HRoot, ioctlParams.Params.HObjectNew, ioctlParams.Params.HClass, &osDescMem{
+		obj := &osDescMem{
 			pinnedRanges: prs,
-		}, ioctlParams.Params.HObjectParent)
+		}
+		if mOwned {
+			// Transfer ownership of the temporary mapping as well. It isn't
+			// actually needed anymore, but unmapping can be very expensive and
+			// allocation tends to be a critical path, so not unmapping it
+			// until the osDescMem object is released improves performance.
+			obj.m = m
+			obj.len = uintptr(arLen)
+		}
+		fi.fd.dev.nvp.objAdd(fi.ctx, ioctlParams.Params.HRoot, ioctlParams.Params.HObjectNew, ioctlParams.Params.HClass, obj, ioctlParams.Params.HObjectParent)
 		unpinCleanup.Release()
 		if fi.ctx.IsLogging(log.Debug) {
 			fi.ctx.Debugf("nvproxy: pinned %d bytes for OS descriptor with handle %v", arLen, ioctlParams.Params.HObjectNew)
