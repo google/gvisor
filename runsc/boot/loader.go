@@ -34,6 +34,7 @@ import (
 	"gvisor.dev/gvisor/pkg/coverage"
 	"gvisor.dev/gvisor/pkg/cpuid"
 	"gvisor.dev/gvisor/pkg/fd"
+	"gvisor.dev/gvisor/pkg/gomaxprocs"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/memutil"
 	"gvisor.dev/gvisor/pkg/metric"
@@ -560,7 +561,7 @@ func New(args Args) (*Loader, error) {
 		args.NumCPU = runtime.NumCPU()
 	}
 	log.Infof("CPUs: %d", args.NumCPU)
-	runtime.GOMAXPROCS(args.NumCPU)
+	gomaxprocs.SetBase(args.NumCPU)
 
 	if args.TotalHostMem > 0 {
 		// As per tmpfs(5), the default size limit is 50% of total physical RAM.
