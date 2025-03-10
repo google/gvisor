@@ -59,10 +59,9 @@ type tpuFD struct {
 	vfs.DentryMetadataFileDescriptionImpl
 	vfs.NoLockFD
 
-	hostFD     int32
-	device     *tpuDevice
-	queue      waiter.Queue
-	memmapFile tpuFDMemmapFile
+	hostFD int32
+	device *tpuDevice
+	queue  waiter.Queue
 }
 
 // Release implements vfs.FileDescriptionImpl.Release.

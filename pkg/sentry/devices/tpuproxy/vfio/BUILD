@@ -13,7 +13,6 @@ go_library(
         "pci_device_fd.go",
         "pci_device_fd_mmap.go",
         "tpu_fd.go",
-        "tpu_fd_mmap.go",
         "vfio.go",
         "vfio_fd.go",
         "vfio_fd_mmap.go",
