@@ -416,50 +416,6 @@ steps:
       arch: "amd64"
   - <<: *common
     <<: *docker
-    label: ":docker: Containerd 1.3.9 tests (cgroupv1)"
-    command: make containerd-test-1.3.9
-    agents:
-      <<: *platform_specific_agents
-      <<: *ubuntu_agents
-      cgroup: "v1"
-      arch: "amd64"
-  - <<: *common
-    <<: *docker
-    label: ":docker: Containerd 1.4.3 tests (cgroupv1)"
-    command: make containerd-test-1.4.3
-    agents:
-      <<: *platform_specific_agents
-      <<: *ubuntu_agents
-      cgroup: "v1"
-  - <<: *common
-    <<: *docker
-    # See above: not truly a source test.
-    <<: *source_test
-    label: ":docker: Containerd 1.4.3 tests (cgroupv2)"
-    command: make containerd-test-1.4.3
-    agents:
-      <<: *platform_specific_agents
-      <<: *ubuntu_agents
-      cgroup: "v2"
-  - <<: *common
-    <<: *docker
-    label: ":docker: Containerd 1.5.11 tests (cgroupv1)"
-    command: make containerd-test-1.5.11
-    agents:
-      <<: *platform_specific_agents
-      <<: *ubuntu_agents
-      cgroup: "v1"
-  - <<: *common
-    <<: *docker
-    # See above: not truly a source test.
-    <<: *source_test
-    label: ":docker: Containerd 1.5.11 tests (cgroupv2)"
-    command: make containerd-test-1.5.11
-    agents:
-      <<: *ubuntu_agents
-      cgroup: "v2"
-  - <<: *common
-    <<: *docker
     label: ":docker: Containerd 1.6.2 tests (cgroupv1)"
     command: make containerd-test-1.6.2
     agents:
