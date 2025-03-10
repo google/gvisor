@@ -535,9 +535,29 @@ func (s *Sandbox) Restore(conf *config.Config, cid string, imagePath string, dir
 	}
 	defer conn.Close()
 
-	// Configure the network.
-	if err := setupNetwork(conn, s.Pid.load(), conf); err != nil {
-		return fmt.Errorf("setting up network: %v", err)
+	pid := s.Pid.load()
+	if !conf.TestOnlySaveRestoreNetstack || boot.IsXDP(conf) {
+		// Configure the network. Delete this when netstack s/r is
+		// enabled by default.
+		if err := setupNetwork(conn, pid, conf); err != nil {
+			return fmt.Errorf("setting up network: %w", err)
+		}
+	} else {
+		// When netstack s/r is enabled, no need to configure the
+		// network. Store the network configuration from the spec in
+		// the loader and netstack will be restored after load.
+		netConf, err := getNetworkConfig(conn, s.Pid.load(), conf)
+		if err != nil {
+			return fmt.Errorf("getNetworkConfig failed with error: %v", err)
+		}
+
+		// netConf will be nil for host network.
+		if netConf != nil {
+			if err := conn.Call(boot.ContMgrStoreNetworkConfig, netConf, nil); err != nil {
+				return fmt.Errorf("storing network config: %w", err)
+			}
+		}
+
 	}
 
 	// Restore the container and start the root container.
