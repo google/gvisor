@@ -578,6 +578,7 @@ func New(args Args) (*Loader, error) {
 	}
 
 	maxFDLimit := kernel.MaxFdLimit
+	var disableIPv6 int32
 	if args.Spec.Linux != nil && args.Spec.Linux.Sysctl != nil {
 		if val, ok := args.Spec.Linux.Sysctl["fs.nr_open"]; ok {
 			nrOpen, err := strconv.Atoi(val)
@@ -588,6 +589,16 @@ func New(args Args) (*Loader, error) {
 				return nil, fmt.Errorf("setting fs.nr_open=%s", val)
 			}
 			maxFDLimit = int32(nrOpen)
+		}
+		if val, ok := args.Spec.Linux.Sysctl["net.ipv6.conf.all.disable_ipv6"]; ok {
+			disableIPv6Str, err := strconv.Atoi(val)
+			if err != nil {
+				return nil, fmt.Errorf("setting net.ipv6.conf.all.disable_ipv6=%s: %w", val, err)
+			}
+			disableIPv6 = int32(disableIPv6Str)
+			if err := netns.Stack().SetIPv6DisableAll(disableIPv6); err != nil {
+				log.Warningf("error in setting net.ipv6.conf.all.disable_ipv6: %v", err)
+			}
 		}
 	}
 	// Initiate the Kernel object, which is required by the Context passed

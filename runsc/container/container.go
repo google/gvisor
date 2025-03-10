@@ -446,6 +446,17 @@ func (c *Container) startImpl(conf *config.Config, action string, startRoot func
 	}
 
 	if isRoot(c.Spec) {
+		if c.Spec.Linux != nil && c.Spec.Linux.Sysctl != nil {
+			if val, ok := c.Spec.Linux.Sysctl["net.ipv6.conf.all.disable_ipv6"]; ok {
+				disableIPv6, err := strconv.Atoi(val)
+				if err != nil {
+					return fmt.Errorf("getting net.ipv6.conf.all.disable_ipv6=%s: %w", val, err)
+				}
+				if disableIPv6 != 0 {
+					conf.DisableIPv6 = true
+				}
+			}
+		}
 		if err := startRoot(conf); err != nil {
 			return err
 		}

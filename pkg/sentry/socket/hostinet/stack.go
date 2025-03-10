@@ -443,3 +443,13 @@ func (s *Stack) IsSaveRestoreEnabled() bool {
 func (s *Stack) Stats() tcpip.Stats {
 	return tcpip.Stats{}
 }
+
+// SetIPv6DisableAll implements inet.Stack.SetIPv6DisableAll.
+func (s *Stack) SetIPv6DisableAll(disableAll int32) error {
+	return linuxerr.EACCES
+}
+
+// IPv6DisableAll implements inet.Stack.IPv6DisableAll.
+func (s *Stack) IPv6DisableAll() (int32, error) {
+	return 0, nil
+}

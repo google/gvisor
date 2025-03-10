@@ -662,6 +662,45 @@ TEST(ProcSysNetPortRange, CanReadAndWrite) {
   EXPECT_EQ(min + kSize, max);
 }
 
+TEST(ProcSysNetIpv6DisableAll, Exists) {
+  EXPECT_THAT(open("/proc/sys/net/ipv6/conf/all/disable_ipv6", O_RDONLY),
+              SyscallSucceeds());
+}
+
+TEST(ProcSysNetIpv6DisableAll, CanReadAndWrite) {
+  // TODO(b/162988252): Enable save/restore for this test after the bug is
+  // fixed.
+  DisableSave ds;
+
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability((CAP_NET_ADMIN))) ||
+          IsRunningWithHostinet());
+
+  auto const fd = ASSERT_NO_ERRNO_AND_VALUE(
+      Open("/proc/sys/net/ipv6/conf/all/disable_ipv6", O_RDWR));
+
+  char buf[10] = {'\0'};
+  char to_write = '1';
+
+  // Check initial value is set to 0.
+  EXPECT_THAT(PreadFd(fd.get(), &buf, sizeof(buf), 0),
+              SyscallSucceedsWithValue(sizeof(to_write) + 1));
+  EXPECT_EQ(strcmp(buf, "0\n"), 0);
+
+  // Set disable_ipv6.
+  EXPECT_THAT(PwriteFd(fd.get(), &to_write, sizeof(to_write), 0),
+              SyscallSucceedsWithValue(sizeof(to_write)));
+  EXPECT_THAT(PreadFd(fd.get(), &buf, sizeof(buf), 0),
+              SyscallSucceedsWithValue(sizeof(to_write) + 1));
+  EXPECT_EQ(strcmp(buf, "1\n"), 0);
+
+  // Set disable_ipv6 to any random value.
+  char kMessage[] = "100";
+  EXPECT_THAT(PwriteFd(fd.get(), kMessage, strlen(kMessage), 0),
+              SyscallSucceedsWithValue(strlen(kMessage)));
+  EXPECT_THAT(PreadFd(fd.get(), buf, sizeof(kMessage), 0),
+              SyscallSucceedsWithValue(sizeof(kMessage)));
+  EXPECT_EQ(strcmp(buf, "100\n"), 0);
+}
 }  // namespace
 }  // namespace testing
 }  // namespace gvisor
