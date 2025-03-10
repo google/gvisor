@@ -1,4 +1,4 @@
-// Copyright 2024 The gVisor Authors.
+// Copyright 2025 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -20,8 +20,8 @@ import (
 
 	"gvisor.dev/gvisor/pkg/shim"
 
-	"github.com/containerd/containerd/pkg/process"
-	"github.com/containerd/containerd/runtime/v2/task"
+	task "github.com/containerd/containerd/api/runtime/task/v3"
+	"github.com/containerd/containerd/v2/cmd/containerd-shim-runc-v2/process"
 )
 
 // NewExtension registers an extension constructor. It may return nil, nil to indicate that the
@@ -44,7 +44,7 @@ type Process interface {
 
 // TaskServiceExt extends TaskRequest with extra functionality required by the shim.
 type TaskServiceExt interface {
-	task.TaskService
+	task.TTRPCTaskService
 	Cleanup(ctx context.Context) (*task.DeleteResponse, error)
 	Restore(ctx context.Context, req *RestoreRequest) (*task.StartResponse, error)
 }

@@ -2650,6 +2650,22 @@ go_repository(
 )
 
 go_repository(
+    name = "com_github_containerd_containerd_api",
+    build_file_proto_mode = "disable",
+    importpath = "github.com/containerd/containerd/api",
+    sum = "h1:hVTNJKR8fMc/2Tiw60ZRijntNMd1U+JVMyTRdsD2bS0=",
+    version = "v1.8.0",
+)
+
+go_repository(
+  name = "com_github_containerd_containerd_v2",
+  build_file_proto_mode = "disable",
+  importpath = "github.com/containerd/containerd/v2",
+  sum = "h1:GmH/tRBlTvrXOLwSpWE2vNAm8+MqI6nmxKpKBNKY8Wc=",
+  version = "v2.0.2",
+)
+
+go_repository(
     name = "com_github_cenkalti_backoff",
     importpath = "github.com/cenkalti/backoff",
     sum = "h1:tNowT99t7UNflLxfYYSlKYsBpXdEet03Pg2g16Swow4=",
@@ -2801,6 +2817,13 @@ go_repository(
     importpath = "github.com/moby/moby",
     sum = "h1:AhSu/R7C5uiyd+JCts3kxrKyTzXa3FilBJ0KCLUHXqA=",
     version = "v27.3.0+incompatible",
+)
+
+go_repository(
+    name = "com_github_moby_sys_userns",
+    importpath = "github.com/moby/sys/userns",
+    sum = "h1:tVLXkFOxVu9A64/yh59slHVv9ahO9UIev4JZusOLG/g=",
+    version = "v0.1.0",
 )
 
 go_repository(
@@ -2997,9 +3020,10 @@ go_repository(
 
 go_repository(
     name = "com_github_containerd_ttrpc",
+    build_file_proto_mode = "disable_global",
     importpath = "github.com/containerd/ttrpc",
-    sum = "h1:GbtyLRxb0gOLR0TYQWt3O6B0NvT8tMdorEHqIQo/lWI=",
-    version = "v1.1.0",
+    sum = "h1:qIrroQvuOL9HQ1X6KHe2ohc7p+HP/0VE6XPU7elJRqQ=",
+    version = "v1.2.7",
 )
 
 go_repository(
