@@ -1401,7 +1401,7 @@ func nvproxyRegisterDevices(info *containerInfo, vfsObj *vfs.VirtualFilesystem) 
 	if err != nil {
 		return fmt.Errorf("reserving device major number for nvidia-uvm: %w", err)
 	}
-	if err := nvproxy.Register(vfsObj, info.nvidiaDriverVersion, driverCaps, uvmDevMajor); err != nil {
+	if err := nvproxy.Register(vfsObj, info.nvidiaDriverVersion, driverCaps, uvmDevMajor, true /* useDevGofer */); err != nil {
 		return fmt.Errorf("registering nvproxy driver: %w", err)
 	}
 	info.nvidiaUVMDevMajor = uvmDevMajor

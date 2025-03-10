@@ -30,7 +30,7 @@ import (
 )
 
 // Register registers all devices implemented by this package in vfsObj.
-func Register(vfsObj *vfs.VirtualFilesystem, version nvconf.DriverVersion, driverCaps nvconf.DriverCaps, uvmDevMajor uint32) error {
+func Register(vfsObj *vfs.VirtualFilesystem, version nvconf.DriverVersion, driverCaps nvconf.DriverCaps, uvmDevMajor uint32, useDevGofer bool) error {
 	// The kernel driver's interface is unstable, so only allow versions of the
 	// driver that are known to be supported.
 	log.Infof("NVIDIA driver version: %s", version)
@@ -45,6 +45,7 @@ func Register(vfsObj *vfs.VirtualFilesystem, version nvconf.DriverVersion, drive
 		abi:         abiCons.cons(),
 		version:     version,
 		capsEnabled: driverCaps,
+		useDevGofer: useDevGofer,
 		frontendFDs: make(map[*frontendFD]struct{}),
 		clients:     make(map[nvgpu.Handle]*rootClient),
 		objsFreeSet: make(map[*object]struct{}),
@@ -74,6 +75,7 @@ type nvproxy struct {
 	abi         *driverABI `state:"nosave"`
 	version     nvconf.DriverVersion
 	capsEnabled nvconf.DriverCaps
+	useDevGofer bool
 
 	fdsMu       fdsMutex `state:"nosave"`
 	frontendFDs map[*frontendFD]struct{}
