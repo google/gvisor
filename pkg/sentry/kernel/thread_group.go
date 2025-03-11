@@ -558,8 +558,18 @@ func (tg *ThreadGroup) ForegroundProcessGroupID(tty *TTY) (ProcessGroupID, error
 }
 
 // SetForegroundProcessGroupID sets the foreground process group of tty to
-// pgid.
-func (tg *ThreadGroup) SetForegroundProcessGroupID(tty *TTY, pgid ProcessGroupID) error {
+// pgid. It corresponds to Linux's drivers/tty/tty_io.c:tiocspgrp().
+func (tg *ThreadGroup) SetForegroundProcessGroupID(ctx context.Context, tty *TTY, pgid ProcessGroupID) error {
+	// First check that the change is allowed.
+	if err := tty.CheckChange(ctx, linux.SIGTTOU); err != nil {
+		// tiocspgrp() converts -EIO from tty_check_change() to
+		// -ENOTTY.
+		if linuxerr.Equals(linuxerr.EIO, err) {
+			return linuxerr.ENOTTY
+		}
+		return err
+	}
+
 	tty.mu.Lock()
 	defer tty.mu.Unlock()
 
@@ -570,6 +580,11 @@ func (tg *ThreadGroup) SetForegroundProcessGroupID(tty *TTY, pgid ProcessGroupID
 
 	// tty must be the controlling terminal.
 	if tg.tty != tty {
+		return linuxerr.ENOTTY
+	}
+
+	// Calling task's process group must be in the TTY session.
+	if tty.tg == nil || tty.tg.processGroup.session != tg.processGroup.session {
 		return linuxerr.ENOTTY
 	}
 
@@ -588,17 +603,6 @@ func (tg *ThreadGroup) SetForegroundProcessGroupID(tty *TTY, pgid ProcessGroupID
 	// pg must be part of this process's session.
 	if tg.processGroup.session != pg.session {
 		return linuxerr.EPERM
-	}
-
-	signalAction := tg.signalHandlers.actions[linux.SIGTTOU]
-	// If the calling process is a member of a background group, a SIGTTOU
-	// signal is sent to all members of this background process group.
-	// We need also need to check whether it is ignoring or blocking SIGTTOU.
-	ignored := signalAction.Handler == linux.SIG_IGN
-	blocked := (linux.SignalSet(tg.leader.signalMask.RacyLoad()) & linux.SignalSetOf(linux.SIGTTOU)) != 0
-	if tg.processGroup.id != tg.processGroup.session.foreground.id && !ignored && !blocked {
-		tg.leader.sendSignalLocked(SignalInfoPriv(linux.SIGTTOU), true)
-		return linuxerr.ERESTARTSYS
 	}
 
 	tg.processGroup.session.foreground = pg

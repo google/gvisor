@@ -188,7 +188,7 @@ func (rfd *replicaFileDescription) Ioctl(ctx context.Context, io usermem.IO, sys
 		if _, err := pgid.CopyIn(t, args[2].Pointer()); err != nil {
 			return 0, err
 		}
-		return 0, t.ThreadGroup().SetForegroundProcessGroupID(rfd.inode.t.replicaKTTY, kernel.ProcessGroupID(pgid))
+		return 0, t.ThreadGroup().SetForegroundProcessGroupID(ctx, rfd.inode.t.replicaKTTY, kernel.ProcessGroupID(pgid))
 	default:
 		maybeEmitUnimplementedEvent(ctx, sysno, cmd)
 		return 0, linuxerr.ENOTTY

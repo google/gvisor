@@ -198,7 +198,7 @@ func (mfd *masterFileDescription) Ioctl(ctx context.Context, io usermem.IO, sysn
 		if _, err := pgid.CopyIn(t, args[2].Pointer()); err != nil {
 			return 0, err
 		}
-		return 0, t.ThreadGroup().SetForegroundProcessGroupID(mfd.t.masterKTTY, kernel.ProcessGroupID(pgid))
+		return 0, t.ThreadGroup().SetForegroundProcessGroupID(ctx, mfd.t.masterKTTY, kernel.ProcessGroupID(pgid))
 	default:
 		maybeEmitUnimplementedEvent(ctx, sysno, cmd)
 		return 0, linuxerr.ENOTTY
