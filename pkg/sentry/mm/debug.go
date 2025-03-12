@@ -91,6 +91,6 @@ func (pseg pmaIterator) debugStringEntryLocked() []byte {
 		b.WriteByte('s')
 	}
 
-	fmt.Fprintf(&b, " %08x %T\n", pma.off, pma.file)
+	fmt.Fprintf(&b, " %s %08x %T\n", pma.file.MemoryType().ShortString(), pma.off, pma.file)
 	return b.Bytes()
 }

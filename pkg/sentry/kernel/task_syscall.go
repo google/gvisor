@@ -472,6 +472,10 @@ func ExtractErrno(err error, sysno int) int {
 		// return EFAULT. See case in task_run.go where the fault is
 		// handled (and the SIGBUS is delivered).
 		return int(unix.EFAULT)
+	case memmap.BufferedIOFallbackErr:
+		// This situation has no equivalent in Linux. Return ENODEV for
+		// consistency with memmap.NoMapInternal.MapInternal().
+		return int(unix.ENODEV)
 	case *os.PathError:
 		return ExtractErrno(err.Err, sysno)
 	case *os.LinkError:

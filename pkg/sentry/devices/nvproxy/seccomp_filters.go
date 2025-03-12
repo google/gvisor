@@ -130,6 +130,12 @@ func Filters(enabledCaps nvconf.DriverCaps) seccomp.SyscallRules {
 	ioctlRules = append(ioctlRules, uvmIoctlFilters(enabledCaps)...)
 	return seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 		unix.SYS_IOCTL: seccomp.Or(ioctlRules),
+		unix.SYS_MMAP: seccomp.PerArg{
+			seccomp.AnyValue{},
+			seccomp.AnyValue{},
+			seccomp.AnyValue{},
+			seccomp.EqualTo(unix.MAP_SHARED | unix.MAP_FIXED_NOREPLACE),
+		},
 		unix.SYS_MREMAP: seccomp.PerArg{
 			seccomp.AnyValue{},
 			seccomp.EqualTo(0), /* old_size */
