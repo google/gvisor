@@ -112,8 +112,8 @@ func (fd *specialFileFD) savePipeData(ctx context.Context) error {
 }
 
 func (d *dentry) prepareSaveDead(ctx context.Context) error {
-	if !d.isRegularFile() {
-		return fmt.Errorf("gofer.dentry(%q).prepareSaveDead: only regular deleted dentries can be saved, got %s", genericDebugPathname(d.fs, d), linux.FileMode(d.mode.Load()))
+	if !d.isRegularFile() && !d.isDir() {
+		return fmt.Errorf("gofer.dentry(%q).prepareSaveDead: only regular or directory deleted dentries can be saved, got %s", genericDebugPathname(d.fs, d), linux.FileMode(d.mode.Load()))
 	}
 	if !d.isDeleted() {
 		return fmt.Errorf("gofer.dentry(%q).prepareSaveDead: invalidated dentries can't be saved", genericDebugPathname(d.fs, d))
@@ -129,6 +129,17 @@ func (d *dentry) prepareSaveDead(ctx context.Context) error {
 			write: d.isWriteHandleOk(),
 		}
 	}
+	
+	// Directory case - no need to store the data, just mark as saved
+	if d.isDir() {
+		if d.fs.savedDeletedOpenDentries == nil {
+			d.fs.savedDeletedOpenDentries = make(map[*dentry]struct{})
+		}
+		d.fs.savedDeletedOpenDentries[d] = struct{}{}
+		return nil
+	}
+	
+	// Regular file case
 	d.handleMu.RLock()
 	defer d.handleMu.RUnlock()
 	var h handle
@@ -200,7 +211,7 @@ func (d *dentry) prepareSaveRecursive(ctx context.Context) error {
 
 // beforeSave is invoked by stateify.
 func (d *dentry) beforeSave() {
-	if d.vfsd.IsDead() && d.deletedDataSR == nil {
+	if d.vfsd.IsDead() && d.deletedDataSR == nil && !d.isDir() {
 		panic(fmt.Sprintf("gofer.dentry(%q).beforeSave: deletedDataSR is nil for dead dentry (deleted=%t, synthetic=%t)", genericDebugPathname(d.fs, d), d.isDeleted(), d.isSynthetic()))
 	}
 }
@@ -344,12 +355,84 @@ func (d *dentry) restoreDescendantsRecursive(ctx context.Context, opts *vfs.Comp
 	return nil
 }
 
-// restoreDead restores a deleted regular file.
+// verifyParentPath checks if the parent path exists and is accessible
+func verifyParentPath(ctx context.Context, parent *dentry) error {
+	if parent == nil {
+		return fmt.Errorf("parent is nil")
+	}
+
+	// Check if parent's parent is accessible if not root
+	if parent != parent.fs.root {
+		parentParent := parent.parent.Load()
+		if parentParent == nil {
+			return fmt.Errorf("parent's parent is nil and not root")
+		}
+	}
+
+	// Verify parent is a directory
+	if !parent.isDir() {
+		return fmt.Errorf("parent is not a directory")
+	}
+
+	return nil
+}
+
+// restoreDead restores a deleted regular file or directory.
 //
-// Preconditions: d.deletedDataSR != nil.
+// Preconditions: For regular files, d.deletedDataSR != nil.
 func (d *dentry) restoreDead(ctx context.Context, opts *vfs.CompleteRestoreOptions) error {
-	// Recreate the file on the host filesystem (this is temporary).
 	parent := d.parent.Load()
+	if parent == nil {
+		return fmt.Errorf("cannot restore %q: parent is nil", genericDebugPathname(d.fs, d))
+	}
+
+	// Handle directory case
+	if d.isDir() {
+		// Make sure the parent path exists and is accessible
+		if err := verifyParentPath(ctx, parent); err != nil {
+			return fmt.Errorf("failed to verify parent path for %q: %w", genericDebugPathname(d.fs, d), err)
+		}
+		
+		log.Debugf("Recreating deleted directory %q in parent %q", d.name, genericDebugPathname(d.fs, parent))
+		
+		// Recreate the directory on the host filesystem
+		_, err := parent.mkdir(ctx, d.name, linux.FileMode(d.mode.Load()), auth.KUID(d.uid.Load()), auth.KGID(d.gid.Load()))
+		if err != nil {
+			return fmt.Errorf("failed to re-create deleted directory %q: %w", genericDebugPathname(d.fs, d), err)
+		}
+
+		// In case of errors, clean up the recreated directory
+		unlinkCU := cleanup.Make(func() {
+			if err := parent.unlink(ctx, d.name, linux.AT_REMOVEDIR); err != nil {
+				log.Warningf("failed to clean up recreated deleted directory %q: %v", genericDebugPathname(d.fs, d), err)
+			}
+		})
+		defer unlinkCU.Clean()
+
+		// Restore the directory
+		recreateOpts := *opts
+		recreateOpts.ValidateFileModificationTimestamps = false
+		if err := d.restoreFile(ctx, &recreateOpts); err != nil {
+			return err
+		}
+
+		// Finally, unlink the recreated directory
+		unlinkCU.Release()
+		if err := parent.unlink(ctx, d.name, linux.AT_REMOVEDIR); err != nil {
+			return fmt.Errorf("failed to clean up recreated deleted directory %q: %v", genericDebugPathname(d.fs, d), err)
+		}
+		return nil
+	}
+
+	// Regular file case
+	// Make sure the parent path exists and is accessible
+	if err := verifyParentPath(ctx, parent); err != nil {
+		return fmt.Errorf("failed to verify parent path for %q: %w", genericDebugPathname(d.fs, d), err)
+	}
+
+	log.Debugf("Recreating deleted file %q in parent %q", d.name, genericDebugPathname(d.fs, parent))
+	
+	// Recreate the file on the host filesystem (this is temporary).
 	_, h, err := parent.openCreate(ctx, d.name, linux.O_WRONLY, linux.FileMode(d.mode.Load()), auth.KUID(d.uid.Load()), auth.KGID(d.gid.Load()), false /* createDentry */)
 	if err != nil {
 		return fmt.Errorf("failed to re-create deleted file %q: %w", genericDebugPathname(d.fs, d), err)
