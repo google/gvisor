@@ -921,24 +921,17 @@ func TestExecProcList(t *testing.T) {
 				KUID:             uid,
 			}
 
-			// Verify that "sleep 100" and "sleep 5" are running after exec. First,
-			// start running exec (which blocks).
-			ch := make(chan error)
-			go func() {
-				exitStatus, err := cont.executeSync(conf, execArgs)
-				if err != nil {
-					ch <- err
-				} else if exitStatus != 0 {
-					ch <- fmt.Errorf("failed with exit status: %v", exitStatus)
-				} else {
-					ch <- nil
-				}
-			}()
+			// Verify that "sleep 1000" and "sleep 5" are running after exec. First,
+			// start running exec asynchronously.
+			pid2, err := cont.Execute(conf, execArgs)
+			if err != nil {
+				t.Fatalf("error executing 'sleep 5' command: %v", err)
+			}
 
 			// expectedPL lists the expected process state of the container.
 			expectedPL := []*control.Process{
 				newProcessBuilder().PID(1).PPID(0).Cmd("sleep").UID(0).Process(),
-				newProcessBuilder().PID(2).PPID(0).Cmd("sleep").UID(uid).Process(),
+				newProcessBuilder().PID(kernel.ThreadID(pid2)).PPID(0).Cmd("sleep").UID(uid).Process(),
 			}
 			if err := waitForProcessList(cont, expectedPL); err != nil {
 				t.Fatalf("error waiting for processes: %v", err)
