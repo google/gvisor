@@ -6,7 +6,10 @@ licenses(["notice"])
 
 go_library(
     name = "eventfd",
-    srcs = ["eventfd.go"],
+    srcs = [
+        "eventfd.go",
+        "save_restore.go",
+    ],
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
