@@ -125,6 +125,7 @@ go_library(
         "//pkg/tcpip/transport/raw",
         "//pkg/tcpip/transport/tcp",
         "//pkg/tcpip/transport/udp",
+        "//pkg/timing",
         "//pkg/urpc",
         "//runsc/boot/filter",
         "//runsc/boot/portforward",

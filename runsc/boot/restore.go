@@ -41,6 +41,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/watchdog"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
+	"gvisor.dev/gvisor/pkg/timing"
 	"gvisor.dev/gvisor/runsc/boot/pprof"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/specutils"
@@ -94,7 +95,7 @@ type restorer struct {
 	restoreDone func() error
 }
 
-func (r *restorer) restoreSubcontainer(spec *specs.Spec, conf *config.Config, l *Loader, cid string, stdioFDs, goferFDs, goferFilestoreFDs []*fd.FD, devGoferFD *fd.FD, goferMountConfs []GoferMountConf) error {
+func (r *restorer) restoreSubcontainer(spec *specs.Spec, conf *config.Config, l *Loader, cid string, stdioFDs, goferFDs, goferFilestoreFDs []*fd.FD, devGoferFD *fd.FD, goferMountConfs []GoferMountConf, timer *timing.Timeline) error {
 	containerName := l.registerContainer(spec, cid)
 	info := &containerInfo{
 		cid:               cid,
@@ -107,12 +108,13 @@ func (r *restorer) restoreSubcontainer(spec *specs.Spec, conf *config.Config, l 
 		goferFilestoreFDs: goferFilestoreFDs,
 		goferMountConfs:   goferMountConfs,
 	}
-	return r.restoreContainerInfo(l, info)
+	return r.restoreContainerInfo(l, info, timer)
 }
 
-func (r *restorer) restoreContainerInfo(l *Loader, info *containerInfo) error {
+func (r *restorer) restoreContainerInfo(l *Loader, info *containerInfo, timer *timing.Timeline) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	timer.Reached("restorer locked")
 
 	for _, container := range r.containers {
 		if container.containerName == info.containerName {
@@ -134,7 +136,9 @@ func (r *restorer) restoreContainerInfo(l *Loader, info *containerInfo) error {
 
 	if len(r.containers) == r.totalContainers {
 		// Trigger the restore if this is the last container.
-		return r.restore(l)
+		return r.restore(l, timer)
+	} else {
+		timer.Reached("subcontainer restore skipped")
 	}
 	return nil
 }
@@ -148,29 +152,34 @@ func createNetworkStackForRestore(l *Loader) (*stack.Stack, inet.Stack) {
 	return nil, hostinet.NewStack()
 }
 
-func (r *restorer) restore(l *Loader) error {
+func (r *restorer) restore(l *Loader, timer *timing.Timeline) error {
 	log.Infof("Starting to restore %d containers", len(r.containers))
 
 	// Create a new root network namespace with the network stack of the
 	// old kernel to preserve the existing network configuration.
 	oldStack, oldInetStack := createNetworkStackForRestore(l)
+	timer.Reached("netstack created")
 
 	// Reset the network stack in the network namespace to nil before
 	// replacing the kernel. This will not free the network stack when this
 	// old kernel is released.
 	l.k.RootNetworkNamespace().ResetStack()
+	timer.Reached("netstack reset")
 
 	p, err := createPlatform(l.root.conf, r.deviceFile)
 	if err != nil {
 		return fmt.Errorf("creating platform: %v", err)
 	}
+	timer.Reached("platform created")
 
 	// Start the old watchdog before replacing it with a new one below.
 	l.watchdog.Start()
+	timer.Reached("watchdog started")
 
 	// Release the kernel and replace it with a new one that will be restored into.
 	if l.k != nil {
 		l.k.Release()
+		timer.Reached("old kernel released")
 	}
 	l.k = &kernel.Kernel{
 		Platform: p,
@@ -181,6 +190,7 @@ func (r *restorer) restore(l *Loader) error {
 		return fmt.Errorf("creating memory file: %v", err)
 	}
 	l.k.SetMemoryFile(mf)
+	timer.Reached("memory file created")
 
 	if l.root.conf.ProfileEnable {
 		// pprof.Initialize opens /proc/self/maps, so has to be called before
@@ -201,6 +211,7 @@ func (r *restorer) restore(l *Loader) error {
 	}
 
 	l.mu.Lock()
+	timer.Reached("loader locked")
 	cu := cleanup.Make(func() {
 		l.mu.Unlock()
 	})
@@ -223,6 +234,7 @@ func (r *restorer) restore(l *Loader) error {
 			key := host.MakeRestoreID(cont.containerName, customFD.guest)
 			fdmap[key] = customFD.host.FD()
 		}
+		timer.Reached(fmt.Sprintf("subcontainer mounter %v configured", cont.containerName))
 	}
 
 	log.Debugf("Restore using fdmap: %v", fdmap)
@@ -243,6 +255,7 @@ func (r *restorer) restore(l *Loader) error {
 	if err != nil {
 		return fmt.Errorf("failed to load kernel: %w", err)
 	}
+	timer.Reached("kernel loaded")
 
 	oldSpecs, err := popContainerSpecsFromCheckpoint(l.k)
 	if err != nil {
@@ -251,6 +264,7 @@ func (r *restorer) restore(l *Loader) error {
 	if err := specutils.RestoreValidateSpec(oldSpecs, l.containerSpecs, l.root.conf); err != nil {
 		return fmt.Errorf("failed to handle restore spec validation: %w", err)
 	}
+	timer.Reached("spec validated")
 
 	// Since we have a new kernel we also must make a new watchdog.
 	dogOpts := watchdog.DefaultOpts
@@ -275,6 +289,7 @@ func (r *restorer) restore(l *Loader) error {
 		}
 		task.RestoreContainerID(newCid)
 	}
+	timer.Reached("container tasks updated")
 
 	// Rebuild `processes` map with containers' root process from the restored kernel.
 	for _, tg := range l.k.RootPIDNamespace().ThreadGroups() {
@@ -289,6 +304,7 @@ func (r *restorer) restore(l *Loader) error {
 			proc.tg = tg
 		}
 	}
+	timer.Reached("processes rebuilt")
 
 	// Kill all processes that have been exec'd since they cannot be properly
 	// restored -- the caller is no longer connected.
@@ -301,16 +317,19 @@ func (r *restorer) restore(l *Loader) error {
 			}
 		}
 	}
+	timer.Reached("exec processes killed")
 
 	l.k.RestoreContainerMapping(l.containerIDs)
 
 	l.kernelInitExtra()
+	timer.Reached("extra init done")
 
 	// Refresh the control server with the newly created kernel.
 	l.ctrl.refreshHandlers()
 
 	// Release `l.mu` before calling into callbacks.
 	cu.Clean()
+	timer.Reached("post-restore cleanups")
 
 	// r.restoreDone() signals and waits for the sandbox to start.
 	if err := r.restoreDone(); err != nil {
@@ -324,18 +343,24 @@ func (r *restorer) restore(l *Loader) error {
 	if r.pagesMetadata != nil {
 		r.pagesMetadata.Close()
 	}
+	timer.Reached("files closed")
 
+	postRestoreThread := timer.Fork("postRestore")
 	go func() {
-		if err := postRestoreImpl(l); err != nil {
+		defer postRestoreThread.End()
+		postRestoreThread.Reached("scheduled")
+		if err := postRestoreImpl(l, postRestoreThread); err != nil {
 			log.Warningf("Killing the sandbox after post restore work failed: %v", err)
 			l.k.Kill(linux.WaitStatusTerminationSignal(linux.SIGKILL))
 			return
 		}
+		postRestoreThread.Reached("post restore done")
 
 		// Restore was successful, so increment the checkpoint count manually. The
 		// count was saved while the previous kernel was being saved and checkpoint
 		// success was unknown at that time. Now we know the checkpoint succeeded.
 		l.k.OnRestoreDone()
+		postRestoreThread.Reached("kernel notified")
 
 		log.Infof("Restore successful")
 	}()
@@ -377,7 +402,7 @@ func (l *Loader) save(o *control.SaveOpts) (err error) {
 	}
 
 	if o.Resume {
-		if err := postResumeImpl(l); err != nil {
+		if err := postResumeImpl(l, nil); err != nil {
 			return err
 		}
 	}

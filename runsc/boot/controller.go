@@ -38,6 +38,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/socket/plugin"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/state/statefile"
+	"gvisor.dev/gvisor/pkg/timing"
 	"gvisor.dev/gvisor/pkg/urpc"
 	"gvisor.dev/gvisor/runsc/boot/procfs"
 	"gvisor.dev/gvisor/runsc/config"
@@ -498,8 +499,11 @@ type RestoreOpts struct {
 // container then sends the signal to start.
 func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 	log.Debugf("containerManager.Restore")
+	timer := timing.New("ContainerManager.Restore", gtime.Now())
+	defer timer.Log()
 
 	cm.l.mu.Lock()
+	timer.Reached("containerManager locked")
 	cu := cleanup.Make(cm.l.mu.Unlock)
 	defer cu.Clean()
 
@@ -562,11 +566,14 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 	if fileIdx < len(o.Files) {
 		return fmt.Errorf("more files passed to Restore than expected")
 	}
+	timer.Reached("restorer created")
 
 	// Pause the kernel while we build a new one.
 	cm.l.k.Pause()
+	timer.Reached("kernel paused")
 
 	metadata, err := statefile.MetadataUnsafe(cm.restorer.stateFile)
+	timer.Reached("metadata read")
 	if err != nil {
 		return fmt.Errorf("reading metadata from statefile: %w", err)
 	}
@@ -600,7 +607,9 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 	if checkpointVersion != currentVersion {
 		return fmt.Errorf("runsc version does not match across checkpoint restore, checkpoint: %v current: %v", checkpointVersion, currentVersion)
 	}
-	return cm.restorer.restoreContainerInfo(cm.l, &cm.l.root)
+	restoreThread := timer.Fork("restorer.restoreContainerInfo")
+	defer restoreThread.End()
+	return cm.restorer.restoreContainerInfo(cm.l, &cm.l.root, restoreThread)
 }
 
 func (cm *containerManager) onRestoreDone() error {
@@ -615,8 +624,11 @@ func (cm *containerManager) onRestoreDone() error {
 
 func (cm *containerManager) RestoreSubcontainer(args *StartArgs, _ *struct{}) error {
 	log.Debugf("containerManager.RestoreSubcontainer, cid: %s, args: %+v", args.CID, args)
+	timer := timing.New("ContainerManager.RestoreSubcontainer", gtime.Now())
+	defer timer.Log()
 
 	cm.l.mu.Lock()
+	timer.Reached("containerManager locked")
 	if cm.l.state != restoring {
 		cm.l.mu.Unlock()
 		return fmt.Errorf("sandbox is not being restored, cannot restore subcontainer")
@@ -644,6 +656,7 @@ func (cm *containerManager) RestoreSubcontainer(args *StartArgs, _ *struct{}) er
 
 	// All validation passed, logs the spec for debugging.
 	specutils.LogSpecDebug(args.Spec, args.Conf.OCISeccomp)
+	timer.Reached("spec validated")
 
 	goferFiles := args.Files
 	var stdios []*fd.FD
@@ -682,8 +695,12 @@ func (cm *containerManager) RestoreSubcontainer(args *StartArgs, _ *struct{}) er
 	if err != nil {
 		return fmt.Errorf("error dup'ing gofer files: %w", err)
 	}
+	timer.Reached("gofer files done")
 
-	if err := cm.restorer.restoreSubcontainer(args.Spec, args.Conf, cm.l, args.CID, stdios, goferFDs, goferFilestoreFDs, devGoferFD, args.GoferMountConfs); err != nil {
+	restorerThread := timer.Fork("restorer.restoreSubcontainer")
+	err = cm.restorer.restoreSubcontainer(args.Spec, args.Conf, cm.l, args.CID, stdios, goferFDs, goferFilestoreFDs, devGoferFD, args.GoferMountConfs, restorerThread)
+	restorerThread.End()
+	if err != nil {
 		log.Debugf("containerManager.RestoreSubcontainer failed, cid: %s, args: %+v, err: %v", args.CID, args, err)
 		return err
 	}
@@ -700,7 +717,7 @@ func (cm *containerManager) Pause(_, _ *struct{}) error {
 // Resume resumes all tasks.
 func (cm *containerManager) Resume(_, _ *struct{}) error {
 	cm.l.k.Unpause()
-	return postResumeImpl(cm.l)
+	return postResumeImpl(cm.l, nil)
 }
 
 // Wait waits for the init process in the given container.

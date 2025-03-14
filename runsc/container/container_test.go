@@ -48,6 +48,7 @@ import (
 	"gvisor.dev/gvisor/pkg/state/statefile"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/test/testutil"
+	"gvisor.dev/gvisor/pkg/timing"
 	"gvisor.dev/gvisor/runsc/boot"
 	"gvisor.dev/gvisor/runsc/cgroup"
 	"gvisor.dev/gvisor/runsc/config"
@@ -1096,9 +1097,13 @@ func testCheckpointRestore(t *testing.T, conf *config.Config, compression statef
 	}
 	defer cont2.Destroy()
 
-	if err := cont2.Restore(conf, dir, false /* direct */, false /* background */); err != nil {
+	timer := timing.New("restore", time.Now())
+	timeline := timer.Fork("container.Restore")
+	if err := cont2.Restore(conf, dir, false /* direct */, false /* background */, timeline); err != nil {
 		t.Fatalf("error restoring container: %v", err)
 	}
+	timeline.End()
+	timer.Log()
 
 	if !cont2.Sandbox.Restored {
 		t.Fatalf("sandbox returned wrong value for Sandbox.Restored, got: false, want: true")
@@ -1147,7 +1152,7 @@ func testCheckpointRestore(t *testing.T, conf *config.Config, compression statef
 	}
 	defer cont3.Destroy()
 
-	if err := cont3.Restore(conf, dir, false /* direct */, false /* background */); err != nil {
+	if err := cont3.Restore(conf, dir, false /* direct */, false /* background */, nil); err != nil {
 		t.Fatalf("error restoring container: %v", err)
 	}
 
@@ -1281,7 +1286,7 @@ func TestCheckpointRestoreExecKilled(t *testing.T) {
 	}
 	defer cont2.Destroy()
 
-	if err := cont2.Restore(conf, dir, false /* direct */, false /* background */); err != nil {
+	if err := cont2.Restore(conf, dir, false /* direct */, false /* background */, nil); err != nil {
 		t.Fatalf("error restoring container: %v", err)
 	}
 
@@ -1366,7 +1371,7 @@ func TestCheckpointRestoreCreateMountPoint(t *testing.T) {
 	}
 	defer cont2.Destroy()
 
-	if err := cont2.Restore(conf, dir, false /* direct */, false /* background */); err != nil {
+	if err := cont2.Restore(conf, dir, false /* direct */, false /* background */, nil); err != nil {
 		t.Fatalf("error restoring container: %v", err)
 	}
 
@@ -1478,7 +1483,7 @@ func TestUnixDomainSockets(t *testing.T) {
 			}
 			defer contRestore.Destroy()
 
-			if err := contRestore.Restore(conf, dir, false /* direct */, false /* background */); err != nil {
+			if err := contRestore.Restore(conf, dir, false /* direct */, false /* background */, nil); err != nil {
 				t.Fatalf("error restoring container: %v", err)
 			}
 
@@ -2828,7 +2833,7 @@ func TestUsageFD(t *testing.T) {
 	}
 	defer cont2.Destroy()
 
-	if err := cont2.Restore(conf, dir, false /* direct */, false /* background */); err != nil {
+	if err := cont2.Restore(conf, dir, false /* direct */, false /* background */, nil); err != nil {
 		t.Fatalf("error restoring container: %v", err)
 	}
 
@@ -3952,7 +3957,7 @@ func TestSpecValidation(t *testing.T) {
 			}
 			defer cont2.Destroy()
 
-			err = cont2.Restore(conf, dir, false /* direct */, false /* background */)
+			err = cont2.Restore(conf, dir, false /* direct */, false /* background */, nil)
 			if err == nil {
 				if test.wantErr == "" {
 					return

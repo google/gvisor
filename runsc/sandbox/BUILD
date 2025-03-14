@@ -43,6 +43,7 @@ go_library(
         "//pkg/sync",
         "//pkg/tcpip/header",
         "//pkg/tcpip/stack",
+        "//pkg/timing",
         "//pkg/urpc",
         "//pkg/xdp",
         "//runsc/boot",

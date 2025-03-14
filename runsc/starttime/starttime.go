@@ -17,19 +17,42 @@
 package starttime
 
 import (
+	"os"
 	"sync"
 	"time"
+
+	"gvisor.dev/gvisor/pkg/timing"
 )
 
 var (
-	setOnce   sync.Once
-	startTime time.Time
+	setOnce      sync.Once
+	processStart time.Time
+	goStartTime  time.Time
 )
 
 // Get returns the time the `runsc` command started.
+// It tries to get the time from /proc/self/status if possible, otherwise it
+// returns the time the function was first called.
 func Get() time.Time {
 	setOnce.Do(func() {
-		startTime = time.Now()
+		goStartTime = time.Now()
+		if st, err := os.Stat("/proc/self/status"); err == nil {
+			processStart = st.ModTime()
+		}
 	})
-	return startTime
+	if processStart.IsZero() {
+		return goStartTime
+	}
+	return processStart
+}
+
+// GoStartTime returns the time the `runsc` command's Go code started.
+func GoStartTime() time.Time {
+	Get()
+	return goStartTime
+}
+
+// Timer returns a Timer object that is rooted at `runsc` execution start.
+func Timer() *timing.Timer {
+	return timing.New("runsc", Get())
 }

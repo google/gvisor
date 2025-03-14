@@ -218,7 +218,7 @@ func (f *MemoryFile) SaveTo(ctx context.Context, w io.Writer, pw io.Writer, opts
 		savedBytes += maseg.Range().Length()
 	}
 	durPages := time.Since(timePagesStart)
-	log.Infof("MemoryFile(%p): saved pages in %s (%d bytes, %f bytes/second)", f, durPages, savedBytes, float64(savedBytes)/durPages.Seconds())
+	log.Infof("MemoryFile(%p): saved pages in %s (%d bytes, %.3f MiB/s)", f, durPages, savedBytes, float64(savedBytes)/durPages.Seconds()/1048576.0)
 
 	return nil
 }

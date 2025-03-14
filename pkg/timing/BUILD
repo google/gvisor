@@ -6,10 +6,11 @@ package(
 )
 
 go_library(
-    name = "starttime",
-    srcs = [
-        "starttime.go",
+    name = "timing",
+    srcs = ["timing.go"],
+    visibility = ["//:sandbox"],
+    deps = [
+        "//pkg/atomicbitops",
+        "//pkg/log",
     ],
-    visibility = ["//runsc:__subpackages__"],
-    deps = ["//pkg/timing"],
 )
