@@ -52,29 +52,26 @@ func (p *PageTables) TTBR1_EL1(noFlush bool, asid uint16) uint64 {
 
 // Bits in page table entries.
 const (
-	typeTable   = 0x3 << 0
-	typeSect    = 0x1 << 0
-	typePage    = 0x3 << 0
-	pteValid    = 0x1 << 0
-	pteTableBit = 0x1 << 1
-	pteTypeMask = 0x3 << 0
-	present     = pteValid | pteTableBit
-	user        = 0x1 << 6 /* AP[1] */
-	readOnly    = 0x1 << 7 /* AP[2] */
-	accessed    = 0x1 << 10
-	dbm         = 0x1 << 51
-	writable    = dbm
-	cont        = 0x1 << 52
-	pxn         = 0x1 << 53
-	xn          = 0x1 << 54
-	dirty       = 0x1 << 55
-	nG          = 0x1 << 11
-	shared      = 0x3 << 8
-)
-
-const (
-	mtDevicenGnRE = 0x1 << 2
-	mtNormal      = 0x4 << 2
+	typeTable     = 0x3 << 0
+	typeSect      = 0x1 << 0
+	typePage      = 0x3 << 0
+	pteValid      = 0x1 << 0
+	pteTableBit   = 0x1 << 1
+	pteTypeMask   = 0x3 << 0
+	present       = pteValid | pteTableBit
+	attrIndxShift = 2
+	attrIndxMask  = 0x7
+	user          = 0x1 << 6 /* AP[1] */
+	readOnly      = 0x1 << 7 /* AP[2] */
+	accessed      = 0x1 << 10
+	dbm           = 0x1 << 51
+	writable      = dbm
+	cont          = 0x1 << 52
+	pxn           = 0x1 << 53
+	xn            = 0x1 << 54
+	dirty         = 0x1 << 55
+	nG            = 0x1 << 11
+	shared        = 0x3 << 8
 )
 
 const (
@@ -93,6 +90,9 @@ type MapOpts struct {
 
 	// User indicates the page is a user page.
 	User bool
+
+	// MemoryType is the memory type.
+	MemoryType hostarch.MemoryType
 }
 
 // PTE is a page table entry.
@@ -119,15 +119,15 @@ func (p *PTE) Valid() bool {
 //go:nosplit
 func (p *PTE) Opts() MapOpts {
 	v := atomic.LoadUintptr((*uintptr)(p))
-
 	return MapOpts{
 		AccessType: hostarch.AccessType{
 			Read:    true,
 			Write:   v&readOnly == 0,
 			Execute: v&xn == 0,
 		},
-		Global: v&nG == 0,
-		User:   v&user != 0,
+		Global:     v&nG == 0,
+		User:       v&user != 0,
+		MemoryType: hostarch.MemoryType((v >> attrIndxShift) & attrIndxMask),
 	}
 }
 
@@ -191,11 +191,12 @@ func (p *PTE) Set(addr uintptr, opts MapOpts) {
 
 	if opts.User {
 		v |= user
-		v |= mtNormal
 	} else {
 		v = v &^ user
-		v |= mtNormal
 	}
+
+	v |= uintptr(opts.MemoryType&attrIndxMask) << attrIndxShift
+
 	atomic.StoreUintptr((*uintptr)(p), v)
 }
 
@@ -209,7 +210,7 @@ func (p *PTE) setPageTable(pt *PageTables, ptes *PTEs) {
 		// This should never happen.
 		panic("unaligned physical address!")
 	}
-	v := addr | typeTable | protDefault | mtNormal
+	v := addr | typeTable | protDefault | (uintptr(hostarch.MemoryTypeWriteBack) << attrIndxShift)
 	atomic.StoreUintptr((*uintptr)(p), v)
 }
 
