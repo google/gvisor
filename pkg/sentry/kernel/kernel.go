@@ -79,7 +79,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/state"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/tcpip"
 )
 
 // IOUringEnabled is set to true when IO_URING is enabled. Added as a global to
@@ -841,23 +840,11 @@ func (k *Kernel) LoadFrom(ctx context.Context, r, pagesMetadata io.Reader, pages
 
 	if saveRestoreNet {
 		log.Infof("netstack save restore is enabled")
-		s := k.rootNetworkNamespace.Stack()
-		if s == nil {
-			panic("inet.Stack cannot be nil when netstack s/r is enabled")
-		}
-		if net != nil {
-			s.ReplaceConfig(net)
-		}
-		s.Restore()
-	} else if net != nil {
-		net.Restore()
 	}
 
 	if err := k.vfs.CompleteRestore(ctx, vfsOpts); err != nil {
 		return vfs.PrependErrMsg("vfs.CompleteRestore() failed", err)
 	}
-
-	tcpip.AsyncLoading.Wait()
 
 	log.Infof("Overall load took [%s] after async work", time.Since(loadStart))
 

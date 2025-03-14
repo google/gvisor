@@ -40,6 +40,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sentry/watchdog"
 	"gvisor.dev/gvisor/pkg/sync"
+	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/runsc/boot/pprof"
 	"gvisor.dev/gvisor/runsc/config"
@@ -146,6 +147,22 @@ func createNetworkStackForRestore(l *Loader) (*stack.Stack, inet.Stack) {
 		return eps.Stack, curNetwork
 	}
 	return nil, hostinet.NewStack()
+}
+
+// IsXDP returns true if the XDP mode has to be enabled in network.
+func IsXDP(conf *config.Config) bool {
+	if conf.Network != config.NetworkSandbox {
+		return false
+	}
+	switch conf.XDP.Mode {
+	case config.XDPModeOff:
+	case config.XDPModeNS:
+	case config.XDPModeRedirect, config.XDPModeTunnel:
+		return true
+	default:
+		panic("invalid XDP mode configured")
+	}
+	return false
 }
 
 func (r *restorer) restore(l *Loader) error {
@@ -311,6 +328,41 @@ func (r *restorer) restore(l *Loader) error {
 
 	// Release `l.mu` before calling into callbacks.
 	cu.Clean()
+
+	if l.saveRestoreNet {
+		// TODO(b/340617793): Delete when netstack s/r is enabled by default.
+		if oldStack == nil {
+			return fmt.Errorf("invalid network config")
+		}
+
+		curNetwork := l.k.RootNetworkNamespace().Stack()
+		if eps, ok := curNetwork.(*netstack.Stack); ok {
+			// TODO(b/340617793): Configure routes and devices in the loaded stack
+			// similar to non-XDP and remove ReplaceConfig.
+			if IsXDP(l.root.conf) {
+				eps.Stack.ReplaceConfig(oldStack)
+				l.k.RootNetworkNamespace().Stack().Restore()
+			}
+			oldStack.Destroy()
+
+			n := &Network{
+				Stack:  eps.Stack,
+				Kernel: l.k,
+			}
+			if err := n.SetupNetwork(l.netConf, nil); err != nil {
+				return fmt.Errorf("SetupNetwork failed with error: %v", err)
+			}
+			l.k.RootNetworkNamespace().Stack().Restore()
+		} else {
+			// Restore the network stack with a new hostinet stack.
+			// Save/Restore is not supported for hostinet.
+			l.k.RootNetworkNamespace().RestoreRootStack(hostinet.NewStack())
+		}
+	} else {
+		// TODO(b/340617793): Delete when netstack s/r is enabled by default.
+		l.k.RootNetworkNamespace().Stack().Restore()
+	}
+	tcpip.AsyncLoading.Wait()
 
 	// r.restoreDone() signals and waits for the sandbox to start.
 	if err := r.restoreDone(); err != nil {

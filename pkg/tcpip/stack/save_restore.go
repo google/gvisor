@@ -20,10 +20,14 @@ import (
 	"time"
 
 	cryptorand "gvisor.dev/gvisor/pkg/rand"
+	"gvisor.dev/gvisor/pkg/tcpip"
 )
 
 // afterLoad is invoked by stateify.
 func (s *Stack) afterLoad(context.Context) {
 	s.insecureRNG = rand.New(rand.NewSource(time.Now().UnixNano()))
 	s.secureRNG = cryptorand.RNGFrom(cryptorand.Reader)
+	s.mu.Lock()
+	s.nics = make(map[tcpip.NICID]*nic)
+	s.mu.Unlock()
 }
