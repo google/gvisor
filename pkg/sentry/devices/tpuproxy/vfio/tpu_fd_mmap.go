@@ -16,10 +16,7 @@ package vfio
 
 import (
 	"gvisor.dev/gvisor/pkg/context"
-	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
-	"gvisor.dev/gvisor/pkg/log"
-	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
@@ -61,7 +58,9 @@ func (fd *tpuFD) InvalidateUnsavable(ctx context.Context) error {
 }
 
 type tpuFDMemmapFile struct {
-	memmap.NoBufferedIOFallback
+	// FIXME(jamieliu): IIUC, tpuFD corresponds to Linux's
+	// drivers/vfio/vfio.c:vfio_group_fops, which does not support mmap at all.
+	memmap.NoMapInternal
 
 	fd *tpuFD
 }
@@ -72,12 +71,6 @@ func (mf *tpuFDMemmapFile) IncRef(memmap.FileRange, uint32) {
 
 // DecRef implements memmap.File.DecRef.
 func (mf *tpuFDMemmapFile) DecRef(fr memmap.FileRange) {
-}
-
-// MapInternal implements memmap.File.MapInternal.
-func (mf *tpuFDMemmapFile) MapInternal(fr memmap.FileRange, at hostarch.AccessType) (safemem.BlockSeq, error) {
-	log.Traceback("tpuproxy: rejecting tpuFdMemmapFile.MapInternal")
-	return safemem.BlockSeq{}, linuxerr.EINVAL
 }
 
 // DataFD implements memmap.File.DataFD.
