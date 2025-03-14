@@ -55,119 +55,115 @@ import (
 func setupNetwork(conn *urpc.Client, pid int, conf *config.Config) error {
 	log.Infof("Setting up network")
 
+	if conf.Network == config.NetworkHost {
+		// Nothing to do here.
+		return nil
+	}
+
+	netConf, err := getNetworkConfArgs(pid, conf)
+	if err != nil {
+		return fmt.Errorf("getNetworkConfArgs failed with error: %v", err)
+	}
+	if err := conn.Call(boot.NetworkSetupNetwork, &netConf, nil); err != nil {
+		return fmt.Errorf("setup network failed with error: %v", err)
+	}
+	return nil
+}
+
+func getNetworkConfArgs(pid int, conf *config.Config) (boot.NetworkConfig, error) {
+	var netConf boot.NetworkConfig
 	switch conf.Network {
 	case config.NetworkNone:
 		log.Infof("Network is disabled, create loopback interface only")
-		if err := createDefaultLoopbackInterface(conf, conn); err != nil {
-			return fmt.Errorf("creating default loopback interface: %v", err)
-		}
+		return getLoopbackArgs(conf), nil
 	case config.NetworkSandbox:
 		// Build the path to the net namespace of the sandbox process.
 		// This is what we will copy.
 		nsPath := filepath.Join("/proc", strconv.Itoa(pid), "ns/net")
-		if err := createInterfacesAndRoutesFromNS(conn, nsPath, conf); err != nil {
-			return fmt.Errorf("creating interfaces from net namespace %q: %v", nsPath, err)
-		}
-	case config.NetworkHost:
-		// Nothing to do here.
+		return getNSArgs(nsPath, conf)
 	case config.NetworkPlugin:
-		if err := initPluginStack(conn, pid, conf); err != nil {
-			return fmt.Errorf("failed to initialize external stack, error: %v", err)
-		}
+		return getPluginArgs(pid, conf)
 	default:
-		return fmt.Errorf("invalid network type: %v", conf.Network)
+		return netConf, fmt.Errorf("invalid network type: %v", conf.Network)
 	}
-	return nil
 }
 
-func createDefaultLoopbackInterface(conf *config.Config, conn *urpc.Client) error {
+func getLoopbackArgs(conf *config.Config) boot.NetworkConfig {
 	link := boot.DefaultLoopbackLink
 	link.GVisorGRO = conf.GVisorGRO
-	if err := conn.Call(boot.NetworkCreateLinksAndRoutes, &boot.CreateLinksAndRoutesArgs{
-		LoopbackLinks: []boot.LoopbackLink{link},
-		DisconnectOk:  conf.NetDisconnectOk,
-	}, nil); err != nil {
-		return fmt.Errorf("creating loopback link and routes: %v", err)
+	netConf := boot.NetworkConfig{
+		Args: &boot.CreateLinksAndRoutesArgs{
+			LoopbackLinks: []boot.LoopbackLink{link},
+			DisconnectOk:  conf.NetDisconnectOk,
+		},
 	}
-	return nil
+	return netConf
 }
 
-func joinNetNS(nsPath string) (func(), error) {
-	runtime.LockOSThread()
-	restoreNS, err := specutils.ApplyNS(specs.LinuxNamespace{
-		Type: specs.NetworkNamespace,
-		Path: nsPath,
-	})
+func getPluginArgs(pid int, conf *config.Config) (boot.NetworkConfig, error) {
+	pluginStack := plugin.GetPluginStack()
+	if pluginStack == nil {
+		return boot.NetworkConfig{}, fmt.Errorf("plugin stack is not registered")
+	}
+
+	initStr, fds, err := pluginStack.PreInit(&plugin.PreInitStackArgs{Pid: pid})
 	if err != nil {
-		runtime.UnlockOSThread()
-		return nil, fmt.Errorf("joining net namespace %q: %v", nsPath, err)
+		return boot.NetworkConfig{}, fmt.Errorf("plugin stack PreInit failed: %v", err)
 	}
-	return func() {
-		restoreNS()
-		runtime.UnlockOSThread()
-	}, nil
+	var args boot.InitPluginStackArgs
+	args.InitStr = initStr
+	for _, fd := range fds {
+		args.FilePayload.Files = append(args.FilePayload.Files, os.NewFile(uintptr(fd), ""))
+	}
+	netConf := boot.NetworkConfig{
+		InitArgs: &args,
+	}
+	return netConf, nil
 }
 
-// isRootNetNS determines whether we are running in the root net namespace.
-// /proc/sys/net/core/dev_weight only exists in root network namespace.
-func isRootNetNS() (bool, error) {
-	err := unix.Access("/proc/sys/net/core/dev_weight", unix.F_OK)
-	switch err {
-	case nil:
-		return true, nil
-	case unix.ENOENT:
-		return false, nil
-	default:
-		return false, fmt.Errorf("failed to access /proc/sys/net/core/dev_weight: %v", err)
-	}
-}
-
-// createInterfacesAndRoutesFromNS scrapes the interface and routes from the
-// net namespace with the given path, creates them in the sandbox, and removes
-// them from the host.
-func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, conf *config.Config) error {
+func getNSArgs(nsPath string, conf *config.Config) (boot.NetworkConfig, error) {
 	switch conf.XDP.Mode {
 	case config.XDPModeOff:
 	case config.XDPModeNS:
-	case config.XDPModeRedirect:
-		if err := createRedirectInterfacesAndRoutes(conn, conf); err != nil {
-			return fmt.Errorf("failed to create XDP redirect interface: %w", err)
+	case config.XDPModeRedirect, config.XDPModeTunnel:
+		args, iface, err := prepareRedirectInterfaceArgs(boot.BindRunsc, conf)
+		if err != nil {
+			return boot.NetworkConfig{}, fmt.Errorf("failed to create XDP redirect interface: %w", err)
 		}
-		return nil
-	case config.XDPModeTunnel:
-		if err := createXDPTunnel(conn, nsPath, conf); err != nil {
-			return fmt.Errorf("failed to create XDP tunnel: %w", err)
+		netConf := boot.NetworkConfig{
+			Args:  &args,
+			Iface: iface,
 		}
-		return nil
+		return netConf, nil
 	default:
-		return fmt.Errorf("unknown XDP mode: %v", conf.XDP.Mode)
+		return boot.NetworkConfig{}, fmt.Errorf("unknown XDP mode: %v", conf.XDP.Mode)
 	}
 
+	args := boot.CreateLinksAndRoutesArgs{}
+	netConf := boot.NetworkConfig{}
 	// Join the network namespace that we will be copying.
 	restore, err := joinNetNS(nsPath)
 	if err != nil {
-		return err
+		return netConf, err
 	}
 	defer restore()
 
 	// Get all interfaces in the namespace.
 	ifaces, err := net.Interfaces()
 	if err != nil {
-		return fmt.Errorf("querying interfaces: %w", err)
+		return netConf, fmt.Errorf("querying interfaces: %w", err)
 	}
 
 	isRoot, err := isRootNetNS()
 	if err != nil {
-		return err
+		return netConf, err
 	}
 	if isRoot {
-		return fmt.Errorf("cannot run with network enabled in root network namespace")
+		return netConf, fmt.Errorf("cannot run with network enabled in root network namespace")
 	}
 
 	// Collect addresses and routes from the interfaces.
-	args := boot.CreateLinksAndRoutesArgs{
-		DisconnectOk: conf.NetDisconnectOk,
-	}
+	args.DisconnectOk = conf.NetDisconnectOk
 	for _, iface := range ifaces {
 		if iface.Flags&net.FlagUp == 0 {
 			log.Infof("Skipping down interface: %+v", iface)
@@ -176,14 +172,14 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, conf *con
 
 		allAddrs, err := iface.Addrs()
 		if err != nil {
-			return fmt.Errorf("fetching interface addresses for %q: %w", iface.Name, err)
+			return netConf, fmt.Errorf("fetching interface addresses for %q: %w", iface.Name, err)
 		}
 
 		// We build our own loopback device.
 		if iface.Flags&net.FlagLoopback != 0 {
 			link, err := loopbackLink(conf, iface, allAddrs)
 			if err != nil {
-				return fmt.Errorf("getting loopback link for iface %q: %w", iface.Name, err)
+				return netConf, fmt.Errorf("getting loopback link for iface %q: %w", iface.Name, err)
 			}
 			args.LoopbackLinks = append(args.LoopbackLinks, link)
 			continue
@@ -193,7 +189,7 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, conf *con
 		for _, ifaddr := range allAddrs {
 			ipNet, ok := ifaddr.(*net.IPNet)
 			if !ok {
-				return fmt.Errorf("address is not IPNet: %+v", ifaddr)
+				return netConf, fmt.Errorf("address is not IPNet: %+v", ifaddr)
 			}
 			ipAddrs = append(ipAddrs, ipNet)
 		}
@@ -205,7 +201,7 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, conf *con
 		// Collect data from the ARP table.
 		dump, err := netlink.NeighList(iface.Index, 0)
 		if err != nil {
-			return fmt.Errorf("fetching ARP table for %q: %w", iface.Name, err)
+			return netConf, fmt.Errorf("fetching ARP table for %q: %w", iface.Name, err)
 		}
 
 		var neighbors []boot.Neighbor
@@ -223,11 +219,11 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, conf *con
 		// will remove the routes as well.
 		routes, defv4, defv6, err := routesForIface(iface)
 		if err != nil {
-			return fmt.Errorf("getting routes for interface %q: %v", iface.Name, err)
+			return netConf, fmt.Errorf("getting routes for interface %q: %v", iface.Name, err)
 		}
 		if defv4 != nil {
 			if !args.Defaultv4Gateway.Route.Empty() {
-				return fmt.Errorf("more than one default route found, interface: %v, route: %v, default route: %+v", iface.Name, defv4, args.Defaultv4Gateway)
+				return netConf, fmt.Errorf("more than one default route found, interface: %v, route: %v, default route: %+v", iface.Name, defv4, args.Defaultv4Gateway)
 			}
 			args.Defaultv4Gateway.Route = *defv4
 			args.Defaultv4Gateway.Name = iface.Name
@@ -235,7 +231,7 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, conf *con
 
 		if defv6 != nil {
 			if !args.Defaultv6Gateway.Route.Empty() {
-				return fmt.Errorf("more than one default route found, interface: %v, route: %v, default route: %+v", iface.Name, defv6, args.Defaultv6Gateway)
+				return netConf, fmt.Errorf("more than one default route found, interface: %v, route: %v, default route: %+v", iface.Name, defv6, args.Defaultv6Gateway)
 			}
 			args.Defaultv6Gateway.Route = *defv6
 			args.Defaultv6Gateway.Name = iface.Name
@@ -244,7 +240,7 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, conf *con
 		// Get the link for the interface.
 		ifaceLink, err := netlink.LinkByName(iface.Name)
 		if err != nil {
-			return fmt.Errorf("getting link for interface %q: %w", iface.Name, err)
+			return netConf, fmt.Errorf("getting link for interface %q: %w", iface.Name, err)
 		}
 		linkAddress := ifaceLink.Attrs().HardwareAddr
 
@@ -260,18 +256,18 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, conf *con
 				// If we encounter an error while deleting the ip,
 				// verify the ip is still present on the interface.
 				if present, err := isAddressOnInterface(iface.Name, addr); err != nil {
-					return fmt.Errorf("checking if address %v is on interface %q: %w", addr, iface.Name, err)
+					return netConf, fmt.Errorf("checking if address %v is on interface %q: %w", addr, iface.Name, err)
 				} else if !present {
 					continue
 				}
-				return fmt.Errorf("removing address %v from device %q: %w", addr, iface.Name, err)
+				return netConf, fmt.Errorf("removing address %v from device %q: %w", addr, iface.Name, err)
 			}
 		}
 
 		if conf.XDP.Mode == config.XDPModeNS {
 			xdpSockFDs, err := createSocketXDP(iface)
 			if err != nil {
-				return fmt.Errorf("failed to create XDP socket: %v", err)
+				return netConf, fmt.Errorf("failed to create XDP socket: %v", err)
 			}
 			args.FilePayload.Files = append(args.FilePayload.Files, xdpSockFDs...)
 			args.XDPLinks = append(args.XDPLinks, boot.XDPLink{
@@ -308,13 +304,13 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, conf *con
 				log.Debugf("Creating Channel %d", i)
 				socketEntry, err := createSocket(iface, ifaceLink, conf.HostGSO)
 				if err != nil {
-					return fmt.Errorf("failed to createSocket for %s : %w", iface.Name, err)
+					return netConf, fmt.Errorf("failed to createSocket for %s : %w", iface.Name, err)
 				}
 				if i == 0 {
 					link.GSOMaxSize = socketEntry.gsoMaxSize
 				} else {
 					if link.GSOMaxSize != socketEntry.gsoMaxSize {
-						return fmt.Errorf("inconsistent gsoMaxSize %d and %d when creating multiple channels for same interface: %s",
+						return netConf, fmt.Errorf("inconsistent gsoMaxSize %d and %d when creating multiple channels for same interface: %s",
 							link.GSOMaxSize, socketEntry.gsoMaxSize, iface.Name)
 					}
 				}
@@ -333,38 +329,40 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, conf *con
 	}
 
 	if err := pcapAndNAT(&args, conf); err != nil {
-		return err
+		return netConf, err
 	}
-
-	log.Debugf("Setting up network, config: %+v", args)
-	if err := conn.Call(boot.NetworkCreateLinksAndRoutes, &args, nil); err != nil {
-		return fmt.Errorf("creating links and routes: %w", err)
-	}
-	return nil
+	netConf.Args = &args
+	return netConf, nil
 }
 
-func initPluginStack(conn *urpc.Client, pid int, conf *config.Config) error {
-	pluginStack := plugin.GetPluginStack()
-	if pluginStack == nil {
-		return fmt.Errorf("plugin stack is not registered")
-	}
-
-	initStr, fds, err := pluginStack.PreInit(&plugin.PreInitStackArgs{Pid: pid})
+func joinNetNS(nsPath string) (func(), error) {
+	runtime.LockOSThread()
+	restoreNS, err := specutils.ApplyNS(specs.LinuxNamespace{
+		Type: specs.NetworkNamespace,
+		Path: nsPath,
+	})
 	if err != nil {
-		return fmt.Errorf("plugin stack PreInit failed: %v", err)
+		runtime.UnlockOSThread()
+		return nil, fmt.Errorf("joining net namespace %q: %v", nsPath, err)
 	}
-	var args boot.InitPluginStackArgs
-	args.InitStr = initStr
-	for _, fd := range fds {
-		args.FilePayload.Files = append(args.FilePayload.Files, os.NewFile(uintptr(fd), ""))
-	}
+	return func() {
+		restoreNS()
+		runtime.UnlockOSThread()
+	}, nil
+}
 
-	log.Debugf("Initializing plugin network stack, config: %+v", args)
-	if err := conn.Call(boot.NetworkInitPluginStack, &args, nil); err != nil {
-		return fmt.Errorf("error initializing plugin netstack: %v", err)
+// isRootNetNS determines whether we are running in the root net namespace.
+// /proc/sys/net/core/dev_weight only exists in root network namespace.
+func isRootNetNS() (bool, error) {
+	err := unix.Access("/proc/sys/net/core/dev_weight", unix.F_OK)
+	switch err {
+	case nil:
+		return true, nil
+	case unix.ENOENT:
+		return false, nil
+	default:
+		return false, fmt.Errorf("failed to access /proc/sys/net/core/dev_weight: %v", err)
 	}
-
-	return nil
 }
 
 // isAddressOnInterface checks if an address is on an interface
