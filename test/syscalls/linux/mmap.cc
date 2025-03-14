@@ -1481,7 +1481,7 @@ TEST_P(MMapFileParamTest, NoSigBusOnPagesBeforeEOF) {
               SyscallSucceeds());
 
   // The test passes if this survives.
-  auto* start = reinterpret_cast<volatile char*>(addr + (kPageSize / 2) + 1);
+  auto* start = reinterpret_cast<volatile char*>(addr);
   size_t len = strlen(kFileContents);
   if (prot() & PROT_WRITE) {
     std::copy(kFileContents, kFileContents + len, start);
