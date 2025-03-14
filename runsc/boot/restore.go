@@ -57,6 +57,11 @@ const (
 	// CheckpointPagesFileName is the file within the given image-path's
 	// directory containing the container's MemoryFile pages.
 	CheckpointPagesFileName = "pages.img"
+	// VersionKey is the key used to save runsc version in the save metadata and compare
+	// it across checkpoint restore.
+	VersionKey = "runsc_version"
+	// ContainerCountKey is the key used to save number of containers in the save metadata.
+	ContainerCountKey = "container_count"
 )
 
 // restorer manages a restore session for a sandbox. It stores information about
@@ -239,12 +244,6 @@ func (r *restorer) restore(l *Loader) error {
 		return fmt.Errorf("failed to load kernel: %w", err)
 	}
 
-	checkpointVersion := popVersionFromCheckpoint(l.k)
-	currentVersion := version.Version()
-	if checkpointVersion != currentVersion {
-		return fmt.Errorf("runsc version does not match across checkpoint restore, checkpoint: %v current: %v", checkpointVersion, currentVersion)
-	}
-
 	oldSpecs, err := popContainerSpecsFromCheckpoint(l.k)
 	if err != nil {
 		return fmt.Errorf("failed to pop container specs from checkpoint: %w", err)
@@ -357,10 +356,10 @@ func (l *Loader) save(o *control.SaveOpts) (err error) {
 	if o.Metadata == nil {
 		o.Metadata = make(map[string]string)
 	}
-	o.Metadata["container_count"] = strconv.Itoa(l.containerCount())
+	o.Metadata[ContainerCountKey] = strconv.Itoa(l.containerCount())
 
 	// Save runsc version.
-	l.addVersionToCheckpoint()
+	o.Metadata[VersionKey] = version.Version()
 
 	// Save container specs.
 	l.addContainerSpecsToCheckpoint()

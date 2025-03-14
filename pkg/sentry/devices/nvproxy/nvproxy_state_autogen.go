@@ -130,6 +130,7 @@ func (nvp *nvproxy) StateFields() []string {
 	return []string{
 		"version",
 		"capsEnabled",
+		"useDevGofer",
 		"frontendFDs",
 		"clients",
 	}
@@ -140,16 +141,18 @@ func (nvp *nvproxy) StateSave(stateSinkObject state.Sink) {
 	nvp.beforeSave()
 	stateSinkObject.Save(0, &nvp.version)
 	stateSinkObject.Save(1, &nvp.capsEnabled)
-	stateSinkObject.Save(2, &nvp.frontendFDs)
-	stateSinkObject.Save(3, &nvp.clients)
+	stateSinkObject.Save(2, &nvp.useDevGofer)
+	stateSinkObject.Save(3, &nvp.frontendFDs)
+	stateSinkObject.Save(4, &nvp.clients)
 }
 
 // +checklocksignore
 func (nvp *nvproxy) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &nvp.version)
 	stateSourceObject.Load(1, &nvp.capsEnabled)
-	stateSourceObject.Load(2, &nvp.frontendFDs)
-	stateSourceObject.Load(3, &nvp.clients)
+	stateSourceObject.Load(2, &nvp.useDevGofer)
+	stateSourceObject.Load(3, &nvp.frontendFDs)
+	stateSourceObject.Load(4, &nvp.clients)
 	stateSourceObject.AfterLoad(func() { nvp.afterLoad(ctx) })
 }
 
@@ -428,6 +431,7 @@ func (mf *uvmFDMemmapFile) StateTypeName() string {
 
 func (mf *uvmFDMemmapFile) StateFields() []string {
 	return []string{
+		"DefaultMemoryType",
 		"fd",
 	}
 }
@@ -437,14 +441,16 @@ func (mf *uvmFDMemmapFile) beforeSave() {}
 // +checklocksignore
 func (mf *uvmFDMemmapFile) StateSave(stateSinkObject state.Sink) {
 	mf.beforeSave()
-	stateSinkObject.Save(0, &mf.fd)
+	stateSinkObject.Save(0, &mf.DefaultMemoryType)
+	stateSinkObject.Save(1, &mf.fd)
 }
 
 func (mf *uvmFDMemmapFile) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (mf *uvmFDMemmapFile) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &mf.fd)
+	stateSourceObject.Load(0, &mf.DefaultMemoryType)
+	stateSourceObject.Load(1, &mf.fd)
 }
 
 func init() {

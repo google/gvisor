@@ -25,11 +25,11 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/state"
 	"gvisor.dev/gvisor/pkg/sentry/strace"
 	"gvisor.dev/gvisor/pkg/sync"
+	"gvisor.dev/gvisor/runsc/version"
 )
 
 func getTargetForSaveResume(l *Loader) func(k *kernel.Kernel) {
 	return func(k *kernel.Kernel) {
-		l.addVersionToCheckpoint()
 		l.addContainerSpecsToCheckpoint()
 		// Store the state file contents in a buffer for save-resume.
 		// There is no need to verify the state file, we just need the
@@ -39,6 +39,7 @@ func getTargetForSaveResume(l *Loader) func(k *kernel.Kernel) {
 			Autosave:    true,
 			Resume:      true,
 			Destination: &buf,
+			Metadata:    map[string]string{VersionKey: version.Version()},
 		}
 		saveOpts.Save(k.SupervisorContext(), k, l.watchdog)
 	}
@@ -52,18 +53,17 @@ func getTargetForSaveRestore(l *Loader, files []*fd.FD) func(k *kernel.Kernel) {
 	var once sync.Once
 	return func(k *kernel.Kernel) {
 		once.Do(func() {
-			l.addVersionToCheckpoint()
 			l.addContainerSpecsToCheckpoint()
 			saveOpts := state.SaveOpts{
 				Autosave:    true,
 				Resume:      false,
 				Destination: files[0],
+				Metadata:    map[string]string{VersionKey: version.Version()},
 			}
 			if len(files) == 3 {
 				saveOpts.PagesMetadata = files[1]
 				saveOpts.PagesFile = files[2]
 			}
-
 			saveOpts.Save(k.SupervisorContext(), k, l.watchdog)
 		})
 	}

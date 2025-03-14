@@ -42,6 +42,7 @@ import (
 	"gvisor.dev/gvisor/runsc/boot/procfs"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/specutils"
+	"gvisor.dev/gvisor/runsc/version"
 )
 
 const (
@@ -570,7 +571,7 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 		return fmt.Errorf("reading metadata from statefile: %w", err)
 	}
 	var count int
-	countStr, ok := metadata["container_count"]
+	countStr, ok := metadata[ContainerCountKey]
 	if !ok {
 		// TODO(gvisor.dev/issue/1956): Add container count with syscall save
 		// trigger. For now, assume that only a single container exists if metadata
@@ -594,6 +595,11 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 		return fmt.Errorf("rewinding state file: %w", err)
 	}
 
+	checkpointVersion := metadata[VersionKey]
+	currentVersion := version.Version()
+	if checkpointVersion != currentVersion {
+		return fmt.Errorf("runsc version does not match across checkpoint restore, checkpoint: %v current: %v", checkpointVersion, currentVersion)
+	}
 	return cm.restorer.restoreContainerInfo(cm.l, &cm.l.root)
 }
 

@@ -16,10 +16,7 @@ package accel
 
 import (
 	"gvisor.dev/gvisor/pkg/context"
-	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
-	"gvisor.dev/gvisor/pkg/log"
-	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
@@ -61,7 +58,7 @@ func (fd *accelFD) InvalidateUnsavable(ctx context.Context) error {
 }
 
 type accelFDMemmapFile struct {
-	memmap.NoBufferedIOFallback
+	memmap.NoMapInternal
 
 	fd *accelFD
 }
@@ -72,12 +69,6 @@ func (mf *accelFDMemmapFile) IncRef(memmap.FileRange, uint32) {
 
 // DecRef implements memmap.File.DecRef.
 func (mf *accelFDMemmapFile) DecRef(fr memmap.FileRange) {
-}
-
-// MapInternal implements memmap.File.MapInternal.
-func (mf *accelFDMemmapFile) MapInternal(fr memmap.FileRange, at hostarch.AccessType) (safemem.BlockSeq, error) {
-	log.Traceback("accel: rejecting accelFDMemmapFile.MapInternal")
-	return safemem.BlockSeq{}, linuxerr.EINVAL
 }
 
 // DataFD implements memmap.File.DataFD.

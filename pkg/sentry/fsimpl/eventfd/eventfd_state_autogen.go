@@ -22,10 +22,10 @@ func (efd *EventFileDescription) StateFields() []string {
 		"val",
 		"semMode",
 		"hostfd",
+		"sentryOwnedHostfd",
+		"hostfdState",
 	}
 }
-
-func (efd *EventFileDescription) beforeSave() {}
 
 // +checklocksignore
 func (efd *EventFileDescription) StateSave(stateSinkObject state.Sink) {
@@ -38,9 +38,9 @@ func (efd *EventFileDescription) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(5, &efd.val)
 	stateSinkObject.Save(6, &efd.semMode)
 	stateSinkObject.Save(7, &efd.hostfd)
+	stateSinkObject.Save(8, &efd.sentryOwnedHostfd)
+	stateSinkObject.Save(9, &efd.hostfdState)
 }
-
-func (efd *EventFileDescription) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (efd *EventFileDescription) StateLoad(ctx context.Context, stateSourceObject state.Source) {
@@ -52,6 +52,9 @@ func (efd *EventFileDescription) StateLoad(ctx context.Context, stateSourceObjec
 	stateSourceObject.Load(5, &efd.val)
 	stateSourceObject.Load(6, &efd.semMode)
 	stateSourceObject.Load(7, &efd.hostfd)
+	stateSourceObject.Load(8, &efd.sentryOwnedHostfd)
+	stateSourceObject.Load(9, &efd.hostfdState)
+	stateSourceObject.AfterLoad(func() { efd.afterLoad(ctx) })
 }
 
 func init() {

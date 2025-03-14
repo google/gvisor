@@ -58,6 +58,12 @@ type EventFileDescription struct {
 
 	// hostfd indicates whether this eventfd is passed through to the host.
 	hostfd int
+
+	// sentryOwnedHostfd indicates whether the sentry owns the hostfd.
+	sentryOwnedHostfd bool
+
+	// hostfdState is the state of the hostfd during save/restore.
+	hostfdState [8]byte
 }
 
 var _ vfs.FileDescriptionImpl = (*EventFileDescription)(nil)
@@ -127,6 +133,7 @@ func (efd *EventFileDescription) HostFD() (int, error) {
 	}
 
 	efd.hostfd = int(fd)
+	efd.sentryOwnedHostfd = true
 	return efd.hostfd, nil
 }
 
@@ -140,6 +147,7 @@ func (efd *EventFileDescription) Release(context.Context) {
 			log.Warningf("close(%d) eventfd failed: %v", efd.hostfd, closeErr)
 		}
 		efd.hostfd = -1
+		efd.sentryOwnedHostfd = false
 	}
 }
 

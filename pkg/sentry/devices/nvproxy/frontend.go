@@ -16,6 +16,7 @@ package nvproxy
 
 import (
 	"fmt"
+	"path/filepath"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -46,8 +47,12 @@ type frontendDevice struct {
 	minor uint32
 }
 
+func (dev *frontendDevice) isCtlDevice() bool {
+	return dev.minor == nvgpu.NV_CONTROL_DEVICE_MINOR
+}
+
 func (dev *frontendDevice) basename() string {
-	if dev.minor == nvgpu.NV_CONTROL_DEVICE_MINOR {
+	if dev.isCtlDevice() {
 		return "nvidiactl"
 	}
 	return fmt.Sprintf("nvidia%d", dev.minor)
@@ -55,32 +60,43 @@ func (dev *frontendDevice) basename() string {
 
 // Open implements vfs.Device.Open.
 func (dev *frontendDevice) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
-	devClient := devutil.GoferClientFromContext(ctx)
-	if devClient == nil {
-		log.Warningf("devutil.CtxDevGoferClient is not set")
-		return nil, linuxerr.ENOENT
+	fd := &frontendFD{
+		dev: dev,
 	}
 	basename := dev.basename()
-	hostFD, err := devClient.OpenAt(ctx, basename, opts.Flags)
-	if err != nil {
-		ctx.Warningf("nvproxy: failed to open host %s: %v", basename, err)
-		return nil, err
-	}
-	fd := &frontendFD{
-		dev:           dev,
-		containerName: devClient.ContainerName(),
-		hostFD:        int32(hostFD),
+	if dev.nvp.useDevGofer {
+		devClient := devutil.GoferClientFromContext(ctx)
+		if devClient == nil {
+			log.Warningf("devutil.CtxDevGoferClient is not set")
+			return nil, linuxerr.ENOENT
+		}
+		fd.containerName = devClient.ContainerName()
+		hostFD, err := devClient.OpenAt(ctx, basename, opts.Flags)
+		if err != nil {
+			ctx.Warningf("nvproxy: failed to open %s: %v", basename, err)
+			return nil, err
+		}
+		fd.hostFD = int32(hostFD)
+	} else {
+		devPath := filepath.Join("/dev", basename)
+		flags := int(opts.Flags&unix.O_ACCMODE | unix.O_NOFOLLOW)
+		hostFD, err := unix.Openat(-1, devPath, flags, 0)
+		if err != nil {
+			ctx.Warningf("nvproxy: failed to open host %s: %v", devPath, err)
+			return nil, err
+		}
+		fd.hostFD = int32(hostFD)
 	}
 	if err := fd.vfsfd.Init(fd, opts.Flags, mnt, vfsd, &vfs.FileDescriptionOptions{
 		UseDentryMetadata: true,
 	}); err != nil {
-		unix.Close(hostFD)
+		unix.Close(int(fd.hostFD))
 		return nil, err
 	}
 	fd.internalEntry.Init(fd, waiter.AllEvents)
 	fd.internalQueue.EventRegister(&fd.internalEntry)
-	if err := fdnotifier.AddFD(int32(hostFD), &fd.internalQueue); err != nil {
-		unix.Close(hostFD)
+	if err := fdnotifier.AddFD(fd.hostFD, &fd.internalQueue); err != nil {
+		unix.Close(int(fd.hostFD))
 		return nil, err
 	}
 	fd.memmapFile.fd = fd
@@ -134,8 +150,9 @@ type frontendFD struct {
 	// These fields are marked nosave since we do not automatically reinvoke
 	// NV_ESC_RM_MAP_MEMORY after restore, so restored FDs have no
 	// mmap_context.
-	mmapLength   uint64  `state:"nosave"`
-	mmapInternal uintptr `state:"nosave"`
+	mmapLength   uint64              `state:"nosave"`
+	mmapInternal uintptr             `state:"nosave"`
+	mmapMemType  hostarch.MemoryType `state:"nosave"`
 
 	// clients are handles of clients owned by this frontendFD. clients is
 	// protected by dev.nvp.objsMu.
@@ -493,6 +510,7 @@ func rmAllocMemorySystem(fi *frontendIoctlState, ioctlParams *nvgpu.IoctlNVOS02P
 		fi.fd.dev.nvp.objAdd(fi.ctx, ioctlParams.Params.HRoot, ioctlParams.Params.HObjectNew, ioctlParams.Params.HClass, &miscObject{}, ioctlParams.Params.HObjectParent)
 		if createMmapCtx {
 			mapFile.mmapLength = ioctlParams.Params.Limit + 1
+			mapFile.mmapMemType = getMemoryType(fi.ctx, mapFile.dev, nvgpu.NVOS33_FLAGS_CACHING_TYPE_DEFAULT)
 		}
 	}
 	fi.fd.dev.nvp.objsUnlock()
@@ -556,19 +574,12 @@ func rmAllocOSDescriptor(fi *frontendIoctlState, ioctlParams *nvgpu.IoctlNVOS02P
 	}
 
 	// The host driver will collect pages from our address space starting at
-	// PMemory, so we must assemble a contiguous mapping equivalent to the
+	// PMemory, so we need a contiguous mapping equivalent to the
 	// application's.
 	at := hostarch.Read
 	if ((ioctlParams.Params.Flags >> 21) & 0x1) == 0 /* NVOS02_FLAGS_ALLOC_USER_READ_ONLY_NO */ {
 		at.Write = true
 	}
-	// Reserve a range in our address space.
-	m, _, errno := unix.RawSyscall6(unix.SYS_MMAP, 0 /* addr */, uintptr(arLen), unix.PROT_NONE, unix.MAP_PRIVATE|unix.MAP_ANONYMOUS, ^uintptr(0) /* fd */, 0 /* offset */)
-	if errno != 0 {
-		return 0, errno
-	}
-	defer unix.RawSyscall(unix.SYS_MUNMAP, m, uintptr(arLen), 0)
-	// Mirror application mappings into the reserved range.
 	prs, err := fi.t.MemoryManager().Pin(fi.ctx, appAR, at, false /* ignorePermissions */)
 	unpinCleanup := cleanup.Make(func() {
 		mm.Unpin(prs)
@@ -577,19 +588,45 @@ func rmAllocOSDescriptor(fi *frontendIoctlState, ioctlParams *nvgpu.IoctlNVOS02P
 	if err != nil {
 		return 0, err
 	}
-	sentryAddr := uintptr(m)
-	for _, pr := range prs {
+	var m uintptr
+	mOwned := false
+	if len(prs) == 1 {
+		pr := prs[0]
 		ims, err := pr.File.MapInternal(memmap.FileRange{pr.Offset, pr.Offset + uint64(pr.Source.Length())}, at)
 		if err != nil {
 			return 0, err
 		}
-		for !ims.IsEmpty() {
-			im := ims.Head()
-			if _, _, errno := unix.RawSyscall6(unix.SYS_MREMAP, im.Addr(), 0 /* old_size */, uintptr(im.Len()), linux.MREMAP_MAYMOVE|linux.MREMAP_FIXED, sentryAddr, 0); errno != 0 {
-				return 0, errno
+		if ims.NumBlocks() == 1 {
+			// We can use this singular internal mapping directly.
+			m = ims.Head().Addr()
+		}
+	}
+	if m == 0 {
+		// Reserve a range in our address space.
+		var errno unix.Errno
+		m, _, errno = unix.RawSyscall6(unix.SYS_MMAP, 0 /* addr */, uintptr(arLen), unix.PROT_NONE, unix.MAP_PRIVATE|unix.MAP_ANONYMOUS, ^uintptr(0) /* fd */, 0 /* offset */)
+		if errno != 0 {
+			return 0, errno
+		}
+		mOwned = true
+		unpinCleanup.Add(func() {
+			unix.RawSyscall(unix.SYS_MUNMAP, m, uintptr(arLen), 0)
+		})
+		// Mirror application mappings into the reserved range.
+		sentryAddr := uintptr(m)
+		for _, pr := range prs {
+			ims, err := pr.File.MapInternal(memmap.FileRange{pr.Offset, pr.Offset + uint64(pr.Source.Length())}, at)
+			if err != nil {
+				return 0, err
 			}
-			sentryAddr += uintptr(im.Len())
-			ims = ims.Tail()
+			for !ims.IsEmpty() {
+				im := ims.Head()
+				if _, _, errno := unix.RawSyscall6(unix.SYS_MREMAP, im.Addr(), 0 /* old_size */, uintptr(im.Len()), linux.MREMAP_MAYMOVE|linux.MREMAP_FIXED, sentryAddr, 0); errno != 0 {
+					return 0, errno
+				}
+				sentryAddr += uintptr(im.Len())
+				ims = ims.Tail()
+			}
 		}
 	}
 	origPMemory := ioctlParams.Params.PMemory
@@ -604,9 +641,18 @@ func rmAllocOSDescriptor(fi *frontendIoctlState, ioctlParams *nvgpu.IoctlNVOS02P
 	if err == nil && ioctlParams.Params.Status == nvgpu.NV_OK {
 		// Transfer ownership of pinned pages to an osDescMem object, to be
 		// unpinned when the driver OsDescMem is freed.
-		fi.fd.dev.nvp.objAdd(fi.ctx, ioctlParams.Params.HRoot, ioctlParams.Params.HObjectNew, ioctlParams.Params.HClass, &osDescMem{
+		obj := &osDescMem{
 			pinnedRanges: prs,
-		}, ioctlParams.Params.HObjectParent)
+		}
+		if mOwned {
+			// Transfer ownership of the temporary mapping as well. It isn't
+			// actually needed anymore, but unmapping can be very expensive and
+			// allocation tends to be a critical path, so not unmapping it
+			// until the osDescMem object is released improves performance.
+			obj.m = m
+			obj.len = uintptr(arLen)
+		}
+		fi.fd.dev.nvp.objAdd(fi.ctx, ioctlParams.Params.HRoot, ioctlParams.Params.HObjectNew, ioctlParams.Params.HClass, obj, ioctlParams.Params.HObjectParent)
 		unpinCleanup.Release()
 		if fi.ctx.IsLogging(log.Debug) {
 			fi.ctx.Debugf("nvproxy: pinned %d bytes for OS descriptor with handle %v", arLen, ioctlParams.Params.HObjectNew)
@@ -1343,6 +1389,15 @@ func rmMapMemory(fi *frontendIoctlState) (uintptr, error) {
 	}
 	if ioctlParams.Params.Status == nvgpu.NV_OK {
 		mapFile.mmapLength = ioctlParams.Params.Length
+		// src/nvidia/arch/nvalloc/unix/src/escape.c:RmIoctl() forces
+		// NVOS33_FLAGS_CACHING_TYPE_DEFAULT, but resMap implementations may
+		// override the "caching type", so in general the memory type depends
+		// on the mapped object. Conveniently, when this occurs, the caching
+		// type in pParms->flags must be updated for the call to
+		// rm_create_mmap_context(), and pParms is subsequently copied back out
+		// by kernel-open/nvidia/nv.c:nvidia_ioctl(), so we can get the final
+		// caching type from the updated ioctl params.
+		mapFile.mmapMemType = getMemoryType(fi.ctx, mapFile.dev, (ioctlParams.Params.Flags>>nvgpu.NVOS33_FLAGS_CACHING_TYPE_SHIFT)&nvgpu.NVOS33_FLAGS_CACHING_TYPE_MASK)
 	}
 
 	ioctlParams.FD = origFD

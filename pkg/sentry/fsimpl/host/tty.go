@@ -95,7 +95,7 @@ func (t *TTYFileDescription) PRead(ctx context.Context, dst usermem.IOSequence, 
 
 	// Are we allowed to do the read?
 	// drivers/tty/n_tty.c:n_tty_read()=>job_control()=>tty_check_change().
-	if err := t.checkChange(ctx, linux.SIGTTIN); err != nil {
+	if err := t.tty.CheckChange(ctx, linux.SIGTTIN); err != nil {
 		return 0, err
 	}
 
@@ -113,7 +113,7 @@ func (t *TTYFileDescription) Read(ctx context.Context, dst usermem.IOSequence, o
 
 	// Are we allowed to do the read?
 	// drivers/tty/n_tty.c:n_tty_read()=>job_control()=>tty_check_change().
-	if err := t.checkChange(ctx, linux.SIGTTIN); err != nil {
+	if err := t.tty.CheckChange(ctx, linux.SIGTTIN); err != nil {
 		return 0, err
 	}
 
@@ -129,7 +129,7 @@ func (t *TTYFileDescription) PWrite(ctx context.Context, src usermem.IOSequence,
 	// Check whether TOSTOP is enabled. This corresponds to the check in
 	// drivers/tty/n_tty.c:n_tty_write().
 	if t.termios.LEnabled(linux.TOSTOP) {
-		if err := t.checkChange(ctx, linux.SIGTTOU); err != nil {
+		if err := t.tty.CheckChange(ctx, linux.SIGTTOU); err != nil {
 			return 0, err
 		}
 	}
@@ -144,7 +144,7 @@ func (t *TTYFileDescription) Write(ctx context.Context, src usermem.IOSequence, 
 	// Check whether TOSTOP is enabled. This corresponds to the check in
 	// drivers/tty/n_tty.c:n_tty_write().
 	if t.termios.LEnabled(linux.TOSTOP) {
-		if err := t.checkChange(ctx, linux.SIGTTOU); err != nil {
+		if err := t.tty.CheckChange(ctx, linux.SIGTTOU); err != nil {
 			return 0, err
 		}
 	}
@@ -185,7 +185,7 @@ func (t *TTYFileDescription) Ioctl(ctx context.Context, io usermem.IO, sysno uin
 		t.mu.Lock()
 		defer t.mu.Unlock()
 
-		if err := t.checkChange(ctx, linux.SIGTTOU); err != nil {
+		if err := t.tty.CheckChange(ctx, linux.SIGTTOU); err != nil {
 			return 0, err
 		}
 
@@ -231,27 +231,12 @@ func (t *TTYFileDescription) Ioctl(ctx context.Context, io usermem.IO, sysno uin
 		t.mu.Lock()
 		defer t.mu.Unlock()
 
-		// Check that we are allowed to set the process group.
-		if err := t.checkChange(ctx, linux.SIGTTOU); err != nil {
-			// drivers/tty/tty_io.c:tiocspgrp() converts -EIO from tty_check_change()
-			// to -ENOTTY.
-			if linuxerr.Equals(linuxerr.EIO, err) {
-				return 0, linuxerr.ENOTTY
-			}
-			return 0, err
-		}
-
-		// Check that calling task's process group is in the TTY session.
-		if task.ThreadGroup().Session() != t.tty.ThreadGroup().Session() {
-			return 0, linuxerr.ENOTTY
-		}
-
 		var pgIDP primitive.Int32
 		if _, err := pgIDP.CopyIn(task, args[2].Pointer()); err != nil {
 			return 0, err
 		}
 		pgID := kernel.ProcessGroupID(pgIDP)
-		if err := t.tty.ThreadGroup().SetForegroundProcessGroupID(t.tty, pgID); err != nil {
+		if err := t.tty.ThreadGroup().SetForegroundProcessGroupID(ctx, t.tty, pgID); err != nil {
 			return 0, err
 		}
 
@@ -313,69 +298,4 @@ func (t *TTYFileDescription) Ioctl(ctx context.Context, io usermem.IO, sysno uin
 	default:
 		return 0, linuxerr.ENOTTY
 	}
-}
-
-// checkChange checks that the process group is allowed to read, write, or
-// change the state of the TTY.
-//
-// This corresponds to Linux drivers/tty/tty_io.c:tty_check_change(). The logic
-// is a bit convoluted, but documented inline.
-//
-// Preconditions: t.mu must be held.
-func (t *TTYFileDescription) checkChange(ctx context.Context, sig linux.Signal) error {
-	task := kernel.TaskFromContext(ctx)
-	if task == nil {
-		// No task? Linux does not have an analog for this case, but
-		// tty_check_change only blocks specific cases and is
-		// surprisingly permissive. Allowing the change seems
-		// appropriate.
-		return nil
-	}
-
-	tg := task.ThreadGroup()
-	pg := tg.ProcessGroup()
-	ttyTg := t.tty.ThreadGroup()
-
-	// If the session for the task is different than the session for the
-	// controlling TTY, then the change is allowed. Seems like a bad idea,
-	// but that's exactly what linux does.
-	if ttyTg == nil || tg.Session() != ttyTg.Session() {
-		return nil
-	}
-
-	// If we are the foreground process group, then the change is allowed.
-	if fgpg, _ := t.tty.ThreadGroup().ForegroundProcessGroup(t.tty); pg == fgpg {
-		return nil
-	}
-
-	// We are not the foreground process group.
-
-	// Is the provided signal blocked or ignored?
-	if (task.SignalMask()&linux.SignalSetOf(sig) != 0) || tg.SignalHandlers().IsIgnored(sig) {
-		// If the signal is SIGTTIN, then we are attempting to read
-		// from the TTY. Don't send the signal and return EIO.
-		if sig == linux.SIGTTIN {
-			return linuxerr.EIO
-		}
-
-		// Otherwise, we are writing or changing terminal state. This is allowed.
-		return nil
-	}
-
-	// If the process group is an orphan, return EIO.
-	if pg.IsOrphan() {
-		return linuxerr.EIO
-	}
-
-	// Otherwise, send the signal to the process group and return ERESTARTSYS.
-	//
-	// Note that Linux also unconditionally sets TIF_SIGPENDING on current,
-	// but this isn't necessary in gVisor because the rationale given in
-	// 040b6362d58f "tty: fix leakage of -ERESTARTSYS to userland" doesn't
-	// apply: the sentry will handle -ERESTARTSYS in
-	// kernel.runApp.execute() even if the kernel.Task isn't interrupted.
-	//
-	// Linux ignores the result of kill_pgrp().
-	_ = pg.SendSignal(kernel.SignalInfoPriv(sig))
-	return linuxerr.ERESTARTSYS
 }

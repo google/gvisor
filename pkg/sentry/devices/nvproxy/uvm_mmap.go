@@ -63,6 +63,8 @@ func (fd *uvmFD) InvalidateUnsavable(ctx context.Context) error {
 
 // +stateify savable
 type uvmFDMemmapFile struct {
+	memmap.DefaultMemoryType
+
 	fd *uvmFD
 }
 

@@ -17,6 +17,7 @@ package kernel
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
@@ -93,4 +94,67 @@ func (tty *TTY) SignalForegroundProcessGroup(info *linux.SignalInfo) {
 	if err := fg.SendSignal(info); err != nil {
 		log.Warningf("failed to signal foreground process group (pgid=%d): %v", fg.id, err)
 	}
+}
+
+// CheckChange checks that the calling tash is allowed to read, write, or
+// change the state of the TTY.
+//
+// This corresponds to Linux drivers/tty/tty_io.c:tty_check_change().
+func (tty *TTY) CheckChange(ctx context.Context, sig linux.Signal) error {
+	task := TaskFromContext(ctx)
+	if task == nil {
+		// No task? Linux does not have an analog for this case, but
+		// tty_check_change only blocks specific cases and is
+		// surprisingly permissive. Allowing the change seems
+		// appropriate.
+		return nil
+	}
+
+	tg := task.ThreadGroup()
+	pg := tg.ProcessGroup()
+	ttyTG := tty.ThreadGroup()
+
+	// If the session for the task is different than the session for the
+	// controlling TTY, then the change is allowed. Seems like a bad idea,
+	// but that's exactly what linux does.
+	if ttyTG == nil || tg.Session() != ttyTG.Session() {
+		return nil
+	}
+
+	// If we are the foreground process group, then the change is allowed.
+	if fgpg, _ := ttyTG.ForegroundProcessGroup(tty); pg == fgpg {
+		return nil
+	}
+
+	// We are not the foreground process group.
+
+	// Is the provided signal blocked or ignored?
+	if (task.SignalMask()&linux.SignalSetOf(sig) != 0) || tg.SignalHandlers().IsIgnored(sig) {
+		// If the signal is SIGTTIN, then we are attempting to read
+		// from the TTY. Don't send the signal and return EIO.
+		if sig == linux.SIGTTIN {
+			return linuxerr.EIO
+		}
+
+		// Otherwise, we are writing or changing terminal state. This is allowed.
+		return nil
+	}
+
+	// If the process group is an orphan, return EIO.
+	if pg.IsOrphan() {
+		return linuxerr.EIO
+	}
+
+	// Otherwise, send the signal to the process group and return ERESTARTSYS.
+	//
+	// Note that Linux also unconditionally sets TIF_SIGPENDING on current,
+	// but this isn't necessary in gVisor because the rationale given in
+	// https://github.com/torvalds/linux/commit/040b6362d58f "tty: fix
+	// leakage of -ERESTARTSYS to userland" doesn't apply: the sentry will
+	// handle -ERESTARTSYS in kernel.runApp.execute() even if the
+	// kernel.Task isn't interrupted.
+	//
+	// Linux ignores the result of kill_pgrp().
+	_ = pg.SendSignal(SignalInfoPriv(sig))
+	return linuxerr.ERESTARTSYS
 }

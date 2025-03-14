@@ -15,6 +15,7 @@
 package nvproxy
 
 import (
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/nvgpu"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/log"
@@ -367,12 +368,20 @@ func (o *rootClient) Release(ctx context.Context) {
 type osDescMem struct {
 	object
 	pinnedRanges []mm.PinnedRange
+
+	// If m is non-zero, it is the start address of a mapping of length len
+	// that should be unmapped when the osDescMem is released.
+	m   uintptr
+	len uintptr
 }
 
 // Release implements objectImpl.Release.
 func (o *osDescMem) Release(ctx context.Context) {
 	// Unpin pages (which takes MM locks) without holding nvproxy locks.
 	o.nvp.enqueueCleanup(func() {
+		if o.m != 0 {
+			unix.RawSyscall(unix.SYS_MUNMAP, o.m, o.len, 0)
+		}
 		mm.Unpin(o.pinnedRanges)
 		if ctx.IsLogging(log.Debug) {
 			total := uint64(0)
