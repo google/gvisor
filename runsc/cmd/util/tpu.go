@@ -38,8 +38,11 @@ const (
 )
 
 var (
-	tpuV4DeviceIDs = map[uint64]struct{}{tpu.TPUV4DeviceID: {}, tpu.TPUV4liteDeviceID: {}}
-	tpuV5DeviceIDs = map[uint64]struct{}{tpu.TPUV5eDeviceID: {}, tpu.TPUV5pDeviceID: {}}
+	tpuV4DeviceIDs   = map[uint64]struct{}{tpu.TPUV4DeviceID: {}, tpu.TPUV4liteDeviceID: {}}
+	tpuVFIODeviceIDs = map[uint64]struct{}{
+		tpu.TPUV4DeviceID: {}, tpu.TPUV4liteDeviceID: {}, tpu.TPUV5eDeviceID: {}, tpu.TPUV5pDeviceID: {},
+		tpu.TPUV6eDeviceID: {}, tpu.TPUV6pDeviceID: {}, tpu.TPUV6ePFDeviceID: {}, tpu.TPUV6pPFDeviceID: {},
+	}
 	pciDeviceRegex = regexp.MustCompile(`0000:([[:xdigit:]]{2}|[[:xdigit:]]{4}):[[:xdigit:]]{2}\.[[:xdigit:]]{1,2}`)
 )
 
@@ -76,7 +79,7 @@ func IsTPUDeviceValid(path string) (bool, error) {
 	if valid {
 		return valid, err
 	}
-	return tpuV5DeviceValid(path)
+	return tpuVFIODeviceValid(path)
 }
 
 // tpuV4DeviceValid returns v4 and v4lite TPU device minor number for the given path.
@@ -114,12 +117,12 @@ func tpuV4DeviceValid(devPath string) (bool, error) {
 	return true, nil
 }
 
-// tpuV5DeviceValid returns the v5e TPU device minor number for te given path.
-// A valid v5 TPU device is defined as:
+// tpuVFIODeviceValid returns the v5e TPU device minor number for te given path.
+// A valid VFIO TPU device is defined as:
 // * Path is /dev/vfio/#.
 // * Vendor is googleVendorID.
-// * Device ID is one of tpuV5DeviceIDs.
-func tpuV5DeviceValid(devPath string) (bool, error) {
+// * Device ID is one of tpuVFIODeviceIDs.
+func tpuVFIODeviceValid(devPath string) (bool, error) {
 	paths, err := filepath.Glob(fmt.Sprintf(iommuGroupSysfsGlobFormat, path.Base(devPath)))
 	if err != nil {
 		return false, err
@@ -139,7 +142,7 @@ func tpuV5DeviceValid(devPath string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	if _, ok := tpuV5DeviceIDs[deviceID]; !ok {
+	if _, ok := tpuVFIODeviceIDs[deviceID]; !ok {
 		return false, nil
 	}
 	return true, nil
