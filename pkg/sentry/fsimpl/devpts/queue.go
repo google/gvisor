@@ -105,7 +105,7 @@ func (q *queue) readableSize(t *kernel.Task, io usermem.IO, args arch.SyscallArg
 //   - Whether any data was echoed back (need to notify readers).
 //
 // Preconditions: l.termiosMu must be held for reading.
-func (q *queue) read(ctx context.Context, dst usermem.IOSequence, l *lineDiscipline) (int64, bool, bool, error) {
+func (q *queue) read(ctx context.Context, dst usermem.IOSequence, l *lineDiscipline, packet bool) (int64, bool, bool, error) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
@@ -114,6 +114,18 @@ func (q *queue) read(ctx context.Context, dst usermem.IOSequence, l *lineDiscipl
 			return 0, false, false, linuxerr.EIO
 		}
 		return 0, false, false, linuxerr.ErrWouldBlock
+	}
+
+	// In packet mode, we write a leading data header byte, and this byte
+	// should be accounted for in the return value from read.
+	var pktHdrLen int
+	if packet {
+		// Write leading data header byte.
+		var err error
+		if pktHdrLen, err = dst.CopyOut(ctx, []byte{linux.TIOCPKT_DATA}); err != nil {
+			return 0, false, false, err
+		}
+		dst = dst.DropFirst(pktHdrLen)
 	}
 
 	if dst.NumBytes() > canonMaxBytes {
@@ -142,7 +154,7 @@ func (q *queue) read(ctx context.Context, dst usermem.IOSequence, l *lineDiscipl
 	// Move data from the queue's wait buffer to its read buffer.
 	nPushed, notifyEcho := q.pushWaitBufLocked(l)
 
-	return int64(n), nPushed > 0, notifyEcho, nil
+	return int64(n) + int64(pktHdrLen), nPushed > 0, notifyEcho, nil
 }
 
 // write writes to q from userspace.

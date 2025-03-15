@@ -199,6 +199,21 @@ func (mfd *masterFileDescription) Ioctl(ctx context.Context, io usermem.IO, sysn
 			return 0, err
 		}
 		return 0, t.ThreadGroup().SetForegroundProcessGroupID(ctx, mfd.t.masterKTTY, kernel.ProcessGroupID(pgid))
+	case linux.TIOCPKT:
+		// Enable or disable packet mode.
+		var mode primitive.Int32
+		if _, err := mode.CopyIn(t, args[2].Pointer()); err != nil {
+			return 0, err
+		}
+		mfd.t.ld.setPacketMode(int(mode))
+		return 0, nil
+	case linux.TIOCGPKT:
+		// Get packet mode.
+		mode := mfd.t.ld.getPacketMode()
+		ret := primitive.Int32(mode)
+		_, err := ret.CopyOut(t, args[2].Pointer())
+		return 0, err
+
 	default:
 		maybeEmitUnimplementedEvent(ctx, sysno, cmd)
 		return 0, linuxerr.ENOTTY
