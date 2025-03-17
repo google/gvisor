@@ -118,6 +118,9 @@ type lineDiscipline struct {
 
 	// terminal is the terminal linked to this lineDiscipline.
 	terminal *Terminal
+
+	// packet indicates the master is in packet mode.
+	packet bool
 }
 
 func newLineDiscipline(termios linux.KernelTermios, terminal *Terminal) *lineDiscipline {
@@ -203,7 +206,8 @@ func (l *lineDiscipline) inputQueueReadSize(t *kernel.Task, io usermem.IO, args 
 
 func (l *lineDiscipline) inputQueueRead(ctx context.Context, dst usermem.IOSequence) (int64, error) {
 	l.termiosMu.RLock()
-	n, pushed, notifyEcho, err := l.inQueue.read(ctx, dst, l)
+	// Replica never reads in packet mode.
+	n, pushed, notifyEcho, err := l.inQueue.read(ctx, dst, l, false /* packet */)
 	isCanon := l.termios.LEnabled(linux.ICANON)
 	l.termiosMu.RUnlock()
 	if err != nil {
@@ -254,7 +258,7 @@ func (l *lineDiscipline) outputQueueReadSize(t *kernel.Task, io usermem.IO, args
 func (l *lineDiscipline) outputQueueRead(ctx context.Context, dst usermem.IOSequence) (int64, error) {
 	l.termiosMu.RLock()
 	// Ignore notifyEcho, as it cannot happen when reading from the output queue.
-	n, pushed, _, err := l.outQueue.read(ctx, dst, l)
+	n, pushed, _, err := l.outQueue.read(ctx, dst, l, l.packet)
 	l.termiosMu.RUnlock()
 	if err != nil {
 		return 0, err
@@ -614,4 +618,23 @@ func (l *lineDiscipline) peek(b []byte) int {
 		_, size = utf8.DecodeRune(b)
 	}
 	return size
+}
+
+func (l *lineDiscipline) setPacketMode(mode int) {
+	l.termiosMu.Lock()
+	defer l.termiosMu.Unlock()
+	if mode == 0 {
+		l.packet = false
+	} else {
+		l.packet = true
+	}
+}
+
+func (l *lineDiscipline) getPacketMode() int {
+	l.termiosMu.RLock()
+	defer l.termiosMu.RUnlock()
+	if l.packet {
+		return 1
+	}
+	return 0
 }

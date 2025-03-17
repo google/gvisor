@@ -422,13 +422,13 @@ func (c *Container) Start(conf *config.Config) error {
 func (c *Container) Restore(conf *config.Config, imagePath string, direct, background bool) error {
 	log.Debugf("Restore container, cid: %s", c.ID)
 
-	restore := func(conf *config.Config) error {
-		return c.Sandbox.Restore(conf, c.ID, imagePath, direct, background)
+	restore := func(conf *config.Config, spec *specs.Spec) error {
+		return c.Sandbox.Restore(conf, spec, c.ID, imagePath, direct, background)
 	}
 	return c.startImpl(conf, "restore", restore, c.Sandbox.RestoreSubcontainer)
 }
 
-func (c *Container) startImpl(conf *config.Config, action string, startRoot func(conf *config.Config) error, startSub func(spec *specs.Spec, conf *config.Config, cid string, stdios, goferFiles, goferFilestores []*os.File, devIOFile *os.File, goferConfs []boot.GoferMountConf) error) error {
+func (c *Container) startImpl(conf *config.Config, action string, startRoot func(conf *config.Config, spec *specs.Spec) error, startSub func(spec *specs.Spec, conf *config.Config, cid string, stdios, goferFiles, goferFilestores []*os.File, devIOFile *os.File, goferConfs []boot.GoferMountConf) error) error {
 	if err := c.Saver.lock(BlockAcquire); err != nil {
 		return err
 	}
@@ -446,7 +446,7 @@ func (c *Container) startImpl(conf *config.Config, action string, startRoot func
 	}
 
 	if isRoot(c.Spec) {
-		if err := startRoot(conf); err != nil {
+		if err := startRoot(conf, c.Spec); err != nil {
 			return err
 		}
 	} else {

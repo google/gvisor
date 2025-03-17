@@ -38,6 +38,7 @@ const (
 	TIOCMSET    = 0x00005418
 	TIOCINQ     = 0x0000541b
 	FIONREAD    = TIOCINQ
+	TIOCPKT     = 0x00005420
 	FIONBIO     = 0x00005421
 	TIOCSETD    = 0x00005423
 	TIOCNOTTY   = 0x00005422
@@ -50,6 +51,7 @@ const (
 	TIOCSPTLCK  = 0x40045431
 	TIOCGDEV    = 0x80045432
 	TIOCVHANGUP = 0x00005437
+	TIOCGPKT    = 0x80045438
 	TCFLSH      = 0x0000540b
 	TIOCCONS    = 0x0000541d
 	TIOCSSERIAL = 0x0000541f
@@ -149,6 +151,18 @@ func IOC_NR(nr uint32) uint32 {
 func IOC_SIZE(nr uint32) uint32 {
 	return (nr >> IOC_SIZESHIFT) & ((1 << IOC_SIZEBITS) - 1)
 }
+
+/* Used for packet mode */
+const (
+	TIOCPKT_DATA       = 0
+	TIOCPKT_FLUSHREAD  = 1
+	TIOCPKT_FLUSHWRITE = 2
+	TIOCPKT_STOP       = 4
+	TIOCPKT_START      = 8
+	TIOCPKT_NOSTOP     = 16
+	TIOCPKT_DOSTOP     = 32
+	TIOCPKT_IOCTL      = 64
+)
 
 // Kcov ioctls from include/uapi/linux/kcov.h.
 var (
