@@ -79,3 +79,10 @@ func TestSplit2MPage(t *testing.T) {
 		{0x0000ff0000000000 + pmdSize - pteSize, pteSize, pmdSize*42 + pmdSize - pteSize, MapOpts{AccessType: hostarch.Read, User: true}},
 	})
 }
+
+func TestNumMemoryTypes(t *testing.T) {
+	// MAIR accommodates up to 8 entries.
+	if hostarch.NumMemoryTypes > 8 {
+		t.Errorf("PTE.Set() and PTE.Opts() must be altered to map %d MemoryTypes to a smaller set of MAIR entries", hostarch.NumMemoryTypes)
+	}
+}

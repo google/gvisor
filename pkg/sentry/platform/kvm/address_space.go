@@ -98,8 +98,9 @@ func (as *addressSpace) Touch(c *vCPU) bool {
 }
 
 type hostMapEntry struct {
-	addr   uintptr
-	length uintptr
+	addr    uintptr
+	length  uintptr
+	memType hostarch.MemoryType
 }
 
 // mapLocked maps the given host entry.
@@ -130,6 +131,7 @@ func (as *addressSpace) mapLocked(addr hostarch.Addr, m hostMapEntry, at hostarc
 		inv = as.pageTables.Map(addr, length, pagetables.MapOpts{
 			AccessType: at,
 			User:       true,
+			MemoryType: m.memType,
 		}, physical) || inv
 		m.addr += length
 		m.length -= length
@@ -161,6 +163,7 @@ func (as *addressSpace) MapFile(addr hostarch.Addr, f memmap.File, fr memmap.Fil
 	if err != nil {
 		return err
 	}
+	mt := f.MemoryType()
 
 	// See block in mapLocked.
 	as.pageTables.Allocator.(*allocator).cpu = as.machine.Get()
@@ -186,8 +189,9 @@ func (as *addressSpace) MapFile(addr hostarch.Addr, f memmap.File, fr memmap.Fil
 
 		// Perform the mapping.
 		prev := as.mapLocked(addr, hostMapEntry{
-			addr:   b.Addr(),
-			length: uintptr(b.Len()),
+			addr:    b.Addr(),
+			length:  uintptr(b.Len()),
+			memType: mt,
 		}, at)
 		inv = inv || prev
 		addr += hostarch.Addr(b.Len())

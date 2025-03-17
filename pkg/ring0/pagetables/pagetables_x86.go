@@ -49,16 +49,17 @@ func (p *PageTables) CR3(noFlush bool, pcid uint16) uint64 {
 
 // Bits in page table entries.
 const (
-	present      = 0x001
-	writable     = 0x002
-	user         = 0x004
-	writeThrough = 0x008
-	cacheDisable = 0x010
-	accessed     = 0x020
-	dirty        = 0x040
-	super        = 0x080
-	global       = 0x100
-	optionMask   = executeDisable | 0xfff
+	present    = 0x001
+	writable   = 0x002
+	user       = 0x004
+	accessed   = 0x020
+	dirty      = 0x040
+	super      = 0x080
+	global     = 0x100
+	optionMask = executeDisable | 0xfff
+
+	writeThroughShift = 3
+	patIndexMask      = 0x3
 )
 
 // MapOpts are x86 options.
@@ -71,6 +72,9 @@ type MapOpts struct {
 
 	// User indicates the page is a user page.
 	User bool
+
+	// MemoryType is the memory type.
+	MemoryType hostarch.MemoryType
 }
 
 // PTE is a page table entry.
@@ -103,8 +107,9 @@ func (p *PTE) Opts() MapOpts {
 			Write:   v&writable != 0,
 			Execute: v&executeDisable == 0,
 		},
-		Global: v&global != 0,
-		User:   v&user != 0,
+		Global:     v&global != 0,
+		User:       v&user != 0,
+		MemoryType: hostarch.MemoryType((v >> writeThroughShift) & patIndexMask),
 	}
 }
 
@@ -154,6 +159,7 @@ func (p *PTE) Set(addr uintptr, opts MapOpts) {
 	if opts.AccessType.Write {
 		v |= writable | dirty
 	}
+	v |= uintptr(opts.MemoryType&patIndexMask) << writeThroughShift
 	if p.IsSuper() {
 		// Note that this is inherited from the previous instance. Set
 		// does not change the value of Super. See above.
@@ -172,7 +178,7 @@ func (p *PTE) setPageTable(pt *PageTables, ptes *PTEs) {
 		// This should never happen.
 		panic("unaligned physical address!")
 	}
-	v := addr | present | user | writable | accessed | dirty
+	v := addr | present | user | writable | accessed | dirty | (uintptr(hostarch.MemoryTypeWriteBack) << writeThroughShift)
 	atomic.StoreUintptr((*uintptr)(p), v)
 }
 
