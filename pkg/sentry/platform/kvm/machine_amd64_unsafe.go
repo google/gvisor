@@ -23,6 +23,7 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/hostsyscall"
 )
 
@@ -68,6 +69,36 @@ func (c *vCPU) setCPUID() error {
 		KVM_SET_CPUID2,
 		uintptr(unsafe.Pointer(&cpuidSupported))); errno != 0 {
 		return fmt.Errorf("error setting CPUID: %v", errno)
+	}
+	return nil
+}
+
+func (c *vCPU) setPAT() error {
+	// See Intel SDM Vol. 3, Sec. 13.12.2 "IA32_PAT MSR", or AMD64 APM Vol. 2,
+	// Sec. 7.8.1 "PAT Register".
+	const (
+		_MSR_IA32_PAT = 0x277
+
+		_PAT_UC = 0x00
+		_PAT_WC = 0x01
+		_PAT_WB = 0x06
+	)
+	registers := modelControlRegisters{
+		nmsrs: 1,
+	}
+	registers.entries[0].index = _MSR_IA32_PAT
+	if hostarch.NumMemoryTypes != 3 {
+		panic("additional memory types must be configured in PAT")
+	}
+	registers.entries[0].data = (_PAT_WB << (hostarch.MemoryTypeWriteBack * 8)) |
+		(_PAT_WC << (hostarch.MemoryTypeWriteCombine * 8)) |
+		(_PAT_UC << (hostarch.MemoryTypeUncached * 8))
+	if errno := hostsyscall.RawSyscallErrno(
+		unix.SYS_IOCTL,
+		uintptr(c.fd),
+		KVM_SET_MSRS,
+		uintptr(unsafe.Pointer(&registers))); errno != 0 {
+		return fmt.Errorf("error setting PAT: %v", errno)
 	}
 	return nil
 }

@@ -175,6 +175,9 @@ func (fs *filesystem) StateFields() []string {
 	return []string{
 		"Filesystem",
 		"devMinor",
+		"enableTPUProxyPaths",
+		"testSysfsPathPrefix",
+		"root",
 	}
 }
 
@@ -185,6 +188,9 @@ func (fs *filesystem) StateSave(stateSinkObject state.Sink) {
 	fs.beforeSave()
 	stateSinkObject.Save(0, &fs.Filesystem)
 	stateSinkObject.Save(1, &fs.devMinor)
+	stateSinkObject.Save(2, &fs.enableTPUProxyPaths)
+	stateSinkObject.Save(3, &fs.testSysfsPathPrefix)
+	stateSinkObject.Save(4, &fs.root)
 }
 
 func (fs *filesystem) afterLoad(context.Context) {}
@@ -193,6 +199,9 @@ func (fs *filesystem) afterLoad(context.Context) {}
 func (fs *filesystem) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &fs.Filesystem)
 	stateSourceObject.Load(1, &fs.devMinor)
+	stateSourceObject.Load(2, &fs.enableTPUProxyPaths)
+	stateSourceObject.Load(3, &fs.testSysfsPathPrefix)
+	stateSourceObject.Load(4, &fs.root)
 }
 
 func (d *dir) StateTypeName() string {

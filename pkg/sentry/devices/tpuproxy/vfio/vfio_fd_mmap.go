@@ -57,6 +57,7 @@ func (fd *vfioFD) InvalidateUnsavable(ctx context.Context) error {
 	return nil
 }
 
+// +stateify savable
 type vfioFDMemmapFile struct {
 	memmap.NoMapInternal
 

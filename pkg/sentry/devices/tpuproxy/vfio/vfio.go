@@ -51,7 +51,7 @@ var (
 //
 // +stateify savable
 type tpuDevice struct {
-	mu sync.Mutex
+	mu sync.Mutex `state:"nosave"`
 
 	// minor is the device minor number.
 	minor uint32
@@ -66,29 +66,10 @@ func (dev *tpuDevice) Open(ctx context.Context, mnt *vfs.Mount, d *vfs.Dentry, o
 	dev.mu.Lock()
 	defer dev.mu.Unlock()
 
-	var hostFD int
-	if dev.useDevGofer {
-		devClient := devutil.GoferClientFromContext(ctx)
-		if devClient == nil {
-			log.Warningf("devutil.CtxDevGoferClient is not set")
-			return nil, linuxerr.ENOENT
-		}
-		devName := filepath.Join("vfio", strconv.Itoa(int(dev.num)))
-		var err error
-		hostFD, err = devClient.OpenAt(ctx, devName, opts.Flags)
-		if err != nil {
-			ctx.Warningf("tpuDevice: failed to open host %s: %v", devName, err)
-			return nil, err
-		}
-	} else {
-		devPath := filepath.Join("/", "dev", "vfio", strconv.Itoa(int(dev.num)))
-		var err error
-		flags := int(opts.Flags&unix.O_ACCMODE | unix.O_NOFOLLOW)
-		hostFD, err = unix.Openat(-1, devPath, flags, 0)
-		if err != nil {
-			ctx.Warningf("tpuDevice: failed to open host %s: %v", devPath, err)
-			return nil, err
-		}
+	devPath := filepath.Join("vfio", strconv.Itoa(int(dev.num)))
+	hostFD, err := openHostFD(ctx, devPath, opts.Flags, dev.useDevGofer)
+	if err != nil {
+		return nil, err
 	}
 
 	fd := &tpuFD{
@@ -110,6 +91,8 @@ func (dev *tpuDevice) Open(ctx context.Context, mnt *vfs.Mount, d *vfs.Dentry, o
 }
 
 // device implements vfs.Device for /dev/vfio/vfio.
+//
+// +stateify savable
 type vfioDevice struct {
 	// useDevGofer indicates whether to use device gofer to open the VFIO device.
 	useDevGofer bool
@@ -117,33 +100,11 @@ type vfioDevice struct {
 
 // Open implements vfs.Device.Open.
 func (dev *vfioDevice) Open(ctx context.Context, mnt *vfs.Mount, d *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
-	var hostFD int
-	if dev.useDevGofer {
-		client := devutil.GoferClientFromContext(ctx)
-		if client == nil {
-			log.Warningf("devutil.CtxDevGoferClient is not set")
-			return nil, linuxerr.ENOENT
-		}
-
-		name := filepath.Join("vfio", "vfio")
-		var err error
-		hostFD, err = client.OpenAt(ctx, name, opts.Flags)
-		if err != nil {
-			ctx.Warningf("failed to open host file %s: %v", name, err)
-			return nil, err
-		}
-	} else {
-		devPath := filepath.Join("/", "dev", "vfio", "vfio")
-		flags := int(opts.Flags&unix.O_ACCMODE | unix.O_NOFOLLOW)
-		var err error
-		hostFD, err = unix.Openat(-1, devPath, flags, 0)
-		if err != nil {
-			ctx.Warningf("vfioDevice: failed to open host %s: %v", devPath, err)
-			log.Infof("here failed to open %v flags", devPath, opts.Flags)
-			return nil, err
-		}
+	devPath := filepath.Join("vfio", "vfio")
+	hostFD, err := openHostFD(ctx, devPath, opts.Flags, dev.useDevGofer)
+	if err != nil {
+		return nil, err
 	}
-
 	fd := &vfioFD{
 		hostFD: int32(hostFD),
 		device: dev,
@@ -194,6 +155,20 @@ func RegisterVFIODevice(vfsObj *vfs.VirtualFilesystem, useDevGofer bool) error {
 		Pathname:  path.Join("vfio", "vfio"),
 		FilePerms: 0666,
 	})
+}
+
+func openHostFD(ctx context.Context, devName string, flags uint32, useDevGofer bool) (int, error) {
+	if useDevGofer {
+		client := devutil.GoferClientFromContext(ctx)
+		if client == nil {
+			log.Warningf("devutil.CtxDevGoferClient is not set")
+			return -1, linuxerr.ENOENT
+		}
+		return client.OpenAt(ctx, devName, flags)
+	}
+	devPath := filepath.Join("/", "dev", devName)
+	openFlags := int(flags&unix.O_ACCMODE | unix.O_NOFOLLOW)
+	return unix.Openat(-1, devPath, openFlags, 0)
 }
 
 // GetTPUDeviceMajor returns the dynamically allocated major number for the vfio

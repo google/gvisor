@@ -36,22 +36,35 @@ import (
 )
 
 // pciDeviceFD implements vfs.FileDescriptionImpl for TPU's PCI device.
+//
+// +stateify savable
 type pciDeviceFD struct {
 	vfsfd vfs.FileDescription
 	vfs.FileDescriptionDefaultImpl
 	vfs.DentryMetadataFileDescriptionImpl
 	vfs.NoLockFD
 
+	// If hostFD is -1, this file descriptor has been restored from a save state,
+	// and should be treated as invalid. Any operations on this file descriptor
+	// will effectively be a no-op.
 	hostFD int32
 	queue  waiter.Queue
 
-	mapsMu     sync.Mutex
+	mapsMu sync.Mutex `state:"nosave"`
+	// +checklocks:mapsMu
 	mappings   memmap.MappingSet
 	memmapFile pciDeviceFdMemmapFile
 }
 
+func (fd *pciDeviceFD) isRestored() bool {
+	return fd.hostFD == -1
+}
+
 // Release implements vfs.FileDescriptionImpl.Release.
 func (fd *pciDeviceFD) Release(context.Context) {
+	if fd.isRestored() {
+		return
+	}
 	fdnotifier.RemoveFD(fd.hostFD)
 	fd.queue.Notify(waiter.EventHUp)
 	unix.Close(int(fd.hostFD))
@@ -59,6 +72,9 @@ func (fd *pciDeviceFD) Release(context.Context) {
 
 // EventRegister implements waiter.Waitable.EventRegister.
 func (fd *pciDeviceFD) EventRegister(e *waiter.Entry) error {
+	if fd.isRestored() {
+		return nil
+	}
 	fd.queue.EventRegister(e)
 	if err := fdnotifier.UpdateFD(fd.hostFD); err != nil {
 		fd.queue.EventUnregister(e)
@@ -69,6 +85,9 @@ func (fd *pciDeviceFD) EventRegister(e *waiter.Entry) error {
 
 // EventUnregister implements waiter.Waitable.EventUnregister.
 func (fd *pciDeviceFD) EventUnregister(e *waiter.Entry) {
+	if fd.isRestored() {
+		return
+	}
 	fd.queue.EventUnregister(e)
 	if err := fdnotifier.UpdateFD(fd.hostFD); err != nil {
 		panic(fmt.Sprint("UpdateFD:", err))
@@ -77,6 +96,9 @@ func (fd *pciDeviceFD) EventUnregister(e *waiter.Entry) {
 
 // Readiness implements waiter.Waitable.Readiness.
 func (fd *pciDeviceFD) Readiness(mask waiter.EventMask) waiter.EventMask {
+	if fd.isRestored() {
+		return 0
+	}
 	return fdnotifier.NonBlockingPoll(fd.hostFD, mask)
 }
 
@@ -87,6 +109,9 @@ func (fd *pciDeviceFD) Epollable() bool {
 
 // Ioctl implements vfs.FileDescriptionImpl.Ioctl.
 func (fd *pciDeviceFD) Ioctl(ctx context.Context, uio usermem.IO, sysno uintptr, args arch.SyscallArguments) (uintptr, error) {
+	if fd.isRestored() {
+		return 0, nil
+	}
 	cmd := args[1].Uint()
 
 	t := kernel.TaskFromContext(ctx)
@@ -261,9 +286,11 @@ func (fd *pciDeviceFD) PRead(ctx context.Context, dst usermem.IOSequence, offset
 		return 0, linuxerr.EINVAL
 	}
 	buf := make([]byte, dst.NumBytes())
-	_, err := unix.Pread(int(fd.hostFD), buf, offset)
-	if err != nil {
-		return 0, err
+	if fd.isRestored() {
+		_, err := unix.Pread(int(fd.hostFD), buf, offset)
+		if err != nil {
+			return 0, err
+		}
 	}
 	n, err := dst.CopyOut(ctx, buf)
 	return int64(n), err
@@ -271,6 +298,9 @@ func (fd *pciDeviceFD) PRead(ctx context.Context, dst usermem.IOSequence, offset
 
 // PWrite implements vfs.FileDescriptionImpl.PWrite.
 func (fd *pciDeviceFD) PWrite(ctx context.Context, src usermem.IOSequence, offset int64, opts vfs.WriteOptions) (int64, error) {
+	if fd.isRestored() {
+		return src.NumBytes(), nil
+	}
 	if offset < 0 {
 		return 0, linuxerr.EINVAL
 	}

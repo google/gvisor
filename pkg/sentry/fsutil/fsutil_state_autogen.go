@@ -85,6 +85,34 @@ func (f *HostFileMapper) StateLoad(ctx context.Context, stateSourceObject state.
 	stateSourceObject.AfterLoad(func() { f.afterLoad(ctx) })
 }
 
+func (m *mapping) StateTypeName() string {
+	return "pkg/sentry/fsutil.mapping"
+}
+
+func (m *mapping) StateFields() []string {
+	return []string{
+		"addr",
+		"writable",
+	}
+}
+
+func (m *mapping) beforeSave() {}
+
+// +checklocksignore
+func (m *mapping) StateSave(stateSinkObject state.Sink) {
+	m.beforeSave()
+	stateSinkObject.Save(0, &m.addr)
+	stateSinkObject.Save(1, &m.writable)
+}
+
+func (m *mapping) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (m *mapping) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &m.addr)
+	stateSourceObject.Load(1, &m.writable)
+}
+
 func (s *mappingSet) StateTypeName() string {
 	return "pkg/sentry/fsutil.mappingSet"
 }
@@ -325,6 +353,7 @@ func init() {
 	state.Register((*DirtyInfo)(nil))
 	state.Register((*FrameRefSegInfo)(nil))
 	state.Register((*HostFileMapper)(nil))
+	state.Register((*mapping)(nil))
 	state.Register((*mappingSet)(nil))
 	state.Register((*mappingnode)(nil))
 	state.Register((*mappingFlatSegment)(nil))
