@@ -57,6 +57,7 @@ func (fd *tpuFD) InvalidateUnsavable(ctx context.Context) error {
 	return nil
 }
 
+// +stateify savable
 type tpuFDMemmapFile struct {
 	// FIXME(jamieliu): IIUC, tpuFD corresponds to Linux's
 	// drivers/vfio/vfio.c:vfio_group_fops, which does not support mmap at all.

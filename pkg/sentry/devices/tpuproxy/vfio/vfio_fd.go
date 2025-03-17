@@ -38,24 +38,37 @@ import (
 )
 
 // deviceFD implements vfs.FileDescriptionImpl for /dev/vfio/vfio.
+//
+// +stateify savable
 type vfioFD struct {
 	vfsfd vfs.FileDescription
 	vfs.FileDescriptionDefaultImpl
 	vfs.DentryMetadataFileDescriptionImpl
 	vfs.NoLockFD
 
-	hostFD     int32
+	// If hostFD is -1, this file descriptor has been restored from a save state,
+	// and should be treated as invalid. Any operations on this file descriptor
+	// will effectively be a no-op.
+	hostFD int32
+
 	device     *vfioDevice
 	queue      waiter.Queue
 	memmapFile vfioFDMemmapFile
 
-	mu sync.Mutex
+	mu sync.Mutex `state:"nosave"`
 	// +checklocks:mu
-	devAddrSet DevAddrSet
+	devAddrSet DevAddrSet `state:"nosave"`
+}
+
+func (fd *vfioFD) isRestored() bool {
+	return fd.hostFD == -1
 }
 
 // Release implements vfs.FileDescriptionImpl.Release.
 func (fd *vfioFD) Release(context.Context) {
+	if fd.isRestored() {
+		return
+	}
 	fd.unpinRange(DevAddrRange{0, ^uint64(0)})
 	fdnotifier.RemoveFD(fd.hostFD)
 	fd.queue.Notify(waiter.EventHUp)
@@ -64,6 +77,9 @@ func (fd *vfioFD) Release(context.Context) {
 
 // EventRegister implements waiter.Waitable.EventRegister.
 func (fd *vfioFD) EventRegister(e *waiter.Entry) error {
+	if fd.isRestored() {
+		return nil
+	}
 	fd.queue.EventRegister(e)
 	if err := fdnotifier.UpdateFD(fd.hostFD); err != nil {
 		fd.queue.EventUnregister(e)
@@ -74,6 +90,9 @@ func (fd *vfioFD) EventRegister(e *waiter.Entry) error {
 
 // EventUnregister implements waiter.Waitable.EventUnregister.
 func (fd *vfioFD) EventUnregister(e *waiter.Entry) {
+	if fd.isRestored() {
+		return
+	}
 	fd.queue.EventUnregister(e)
 	if err := fdnotifier.UpdateFD(fd.hostFD); err != nil {
 		panic(fmt.Sprint("UpdateFD:", err))
@@ -82,6 +101,9 @@ func (fd *vfioFD) EventUnregister(e *waiter.Entry) {
 
 // Readiness implements waiter.Waitable.Readiness.
 func (fd *vfioFD) Readiness(mask waiter.EventMask) waiter.EventMask {
+	if fd.isRestored() {
+		return 0
+	}
 	return fdnotifier.NonBlockingPoll(fd.hostFD, mask)
 }
 
@@ -92,6 +114,9 @@ func (fd *vfioFD) Epollable() bool {
 
 // Ioctl implements vfs.FileDescriptionImpl.Ioctl.
 func (fd *vfioFD) Ioctl(ctx context.Context, uio usermem.IO, sysno uintptr, args arch.SyscallArguments) (uintptr, error) {
+	if fd.isRestored() {
+		return 0, nil
+	}
 	cmd := args[1].Uint()
 	t := kernel.TaskFromContext(ctx)
 	if t == nil {

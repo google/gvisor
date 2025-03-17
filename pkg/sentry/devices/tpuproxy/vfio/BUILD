@@ -12,6 +12,7 @@ go_library(
         "devaddr_set.go",
         "pci_device_fd.go",
         "pci_device_fd_mmap.go",
+        "save_restore.go",
         "tpu_fd.go",
         "tpu_fd_mmap.go",
         "vfio.go",
