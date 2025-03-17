@@ -531,18 +531,19 @@ func (m *machine) Get() *vCPU {
 	m.mu.RUnlock()
 	runtime.UnlockOSThread()
 	m.mu.Lock()
-	runtime.LockOSThread()
-	tid = hosttid.Current()
-
-	// Recheck for an exact match.
-	if c := m.vCPUsByTID[tid]; c != nil {
-		c.lock()
-		m.mu.Unlock()
-		getVCPUCounter.Increment(&getVCPUAcquisitionReused)
-		return c
-	}
 
 	for {
+		runtime.LockOSThread()
+		tid = hosttid.Current()
+
+		// Recheck for an exact match.
+		if c := m.vCPUsByTID[tid]; c != nil {
+			c.lock()
+			m.mu.Unlock()
+			getVCPUCounter.Increment(&getVCPUAcquisitionReused)
+			return c
+		}
+
 		// Get vCPU from the m.vCPUsByID pool.
 		if m.usedVCPUs < m.maxVCPUs {
 			c := m.vCPUsByID[m.usedVCPUs]
@@ -594,10 +595,12 @@ func (m *machine) Get() *vCPU {
 			return c
 		}
 
-		// Everything is executing in user mode. Wait until something
-		// is available.  Note that signaling the condition variable
-		// will have the extra effect of kicking the vCPUs out of guest
-		// mode if that's where they were.
+		// Everything is executing in user mode. Wait until something is
+		// available. As with m.mu.Lock() above, unlock the OS thread while we
+		// do this to avoid spawning additional system threads. Note that
+		// signaling the condition variable will have the extra effect of
+		// kicking the vCPUs out of guest mode if that's where they were.
+		runtime.UnlockOSThread()
 		m.available.Wait()
 	}
 }
