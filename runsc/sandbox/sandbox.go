@@ -407,8 +407,23 @@ func (s *Sandbox) CreateSubcontainer(conf *config.Config, cid string, tty *os.Fi
 	return nil
 }
 
+func getDisableIPv6(spec *specs.Spec) (bool, error) {
+	if spec.Linux == nil || spec.Linux.Sysctl == nil {
+		return false, nil
+	}
+	val, ok := spec.Linux.Sysctl["net.ipv6.conf.all.disable_ipv6"]
+	if !ok {
+		return false, nil
+	}
+	valInt, err := strconv.Atoi(val)
+	if err != nil {
+		return false, fmt.Errorf("getting net.ipv6.conf.all.disable_ipv6=%s: %w", val, err)
+	}
+	return valInt != 0, nil
+}
+
 // StartRoot starts running the root container process inside the sandbox.
-func (s *Sandbox) StartRoot(conf *config.Config) error {
+func (s *Sandbox) StartRoot(conf *config.Config, spec *specs.Spec) error {
 	if err := hostsettings.Handle(conf); err != nil {
 		return fmt.Errorf("host settings: %w (use --host-settings=ignore to bypass)", err)
 	}
@@ -420,8 +435,13 @@ func (s *Sandbox) StartRoot(conf *config.Config) error {
 	}
 	defer conn.Close()
 
+	var disableIPv6 bool
+	disableIPv6, err = getDisableIPv6(spec)
+	if err != nil {
+		return err
+	}
 	// Configure the network.
-	if err := setupNetwork(conn, pid, conf); err != nil {
+	if err := setupNetwork(conn, pid, conf, disableIPv6); err != nil {
 		return fmt.Errorf("setting up network: %w", err)
 	}
 
@@ -472,7 +492,7 @@ func (s *Sandbox) StartSubcontainer(spec *specs.Spec, conf *config.Config, cid s
 }
 
 // Restore sends the restore call for a container in the sandbox.
-func (s *Sandbox) Restore(conf *config.Config, cid string, imagePath string, direct, background bool) error {
+func (s *Sandbox) Restore(conf *config.Config, spec *specs.Spec, cid string, imagePath string, direct, background bool) error {
 	if err := hostsettings.Handle(conf); err != nil {
 		return fmt.Errorf("host settings: %w (use --host-settings=ignore to bypass)", err)
 	}
@@ -535,8 +555,13 @@ func (s *Sandbox) Restore(conf *config.Config, cid string, imagePath string, dir
 	}
 	defer conn.Close()
 
+	var disableIPv6 bool
+	disableIPv6, err = getDisableIPv6(spec)
+	if err != nil {
+		return err
+	}
 	// Configure the network.
-	if err := setupNetwork(conn, s.Pid.load(), conf); err != nil {
+	if err := setupNetwork(conn, s.Pid.load(), conf, disableIPv6); err != nil {
 		return fmt.Errorf("setting up network: %v", err)
 	}
 
