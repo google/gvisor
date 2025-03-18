@@ -54,6 +54,10 @@ filesystem is important because k8s scans the container's root filesystem from
 the host to enforce local ephemeral storage limits. You can also place the
 overlay host file in another directory using `--overlay2=root:/path/dir`.
 
+Self-backed rootfs overlay (`--overlay2=root:self`) is enabled by default in
+runsc for performance. If you need to propagate rootfs changes to the host
+filesystem, then disable it with `--overlay2=none`.
+
 ## Directfs
 
 Directfs is a feature that allows the sandbox process to directly access the
