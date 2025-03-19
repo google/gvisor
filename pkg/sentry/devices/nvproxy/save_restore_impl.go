@@ -22,8 +22,8 @@ import (
 )
 
 func (nvp *nvproxy) beforeSaveImpl() {
-	nvp.objsLock()
-	defer nvp.objsUnlock()
+	nvp.clientsMu.RLock()
+	defer nvp.clientsMu.RUnlock()
 	if len(nvp.clients) != 0 {
 		panic("can't save with live nvproxy clients")
 	}
