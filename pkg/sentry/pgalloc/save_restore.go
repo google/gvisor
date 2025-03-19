@@ -29,6 +29,7 @@ import (
 	"gvisor.dev/gvisor/pkg/bitmap"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fd"
+	"gvisor.dev/gvisor/pkg/gohacks"
 	"gvisor.dev/gvisor/pkg/goid"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
@@ -362,6 +363,9 @@ func (f *MemoryFile) LoadFrom(ctx context.Context, r io.Reader, opts *LoadOpts) 
 	)
 	if opts.PagesFile != nil {
 		aplg = &aplGoroutine{
+			apl: aplShared{
+				timeStartWaiters: math.MaxInt64,
+			},
 			f:            f,
 			q:            aio.NewGoQueue(aplQueueCapacity),
 			doneCallback: opts.OnAsyncPageLoadDone,
@@ -451,8 +455,8 @@ func (f *MemoryFile) LoadFrom(ctx context.Context, r io.Reader, opts *LoadOpts) 
 	return nil
 }
 
-// aplShared holds asynchronous page loading state that is shared with
-// users of the MemoryFile.
+// aplShared holds asynchronous page loading state that is shared with other
+// goroutines.
 type aplShared struct {
 	// minUnloaded is the MemoryFile offset of the first unloaded byte.
 	minUnloaded atomicbitops.Uint64
@@ -471,6 +475,29 @@ type aplShared struct {
 	// priority contains possibly-unstarted ranges in unloaded with at least
 	// one waiter.
 	priority ringdeque.Deque[memmap.FileRange]
+
+	// numWaiters is the current number of waiting waiters.
+	numWaiters int
+
+	// totalWaiters is the number of waiters that have ever waited for pages
+	// from this MemoryFile.
+	totalWaiters int
+
+	// timeStartWaiters was the value of gohacks.Nanotime() when numWaiters
+	// most recently transitioned from 0 to 1. If numWaiters is 0,
+	// timeStartWaiters is MaxInt64.
+	timeStartWaiters int64
+
+	// nsWaitedOne is the duration for which at least one waiter was waiting
+	// for a load. nsWaitedTotal is the duration for which waiters were waiting
+	// for loads, summed across all waiters. bytesWaited is the number of bytes
+	// for which at least one waiter waited.
+	durWaitedOne   time.Duration
+	durWaitedTotal time.Duration
+	bytesWaited    uint64
+
+	// bytesLoaded is the number of bytes that have been loaded so far.
+	bytesLoaded uint64
 }
 
 // aplUnloadedInfo is the value type of aplShared.unloaded.
@@ -488,11 +515,17 @@ type aplUnloadedInfo struct {
 
 type aplWaiter struct {
 	// wakeup is used by a caller of MemoryFile.awaitLoad() to block until all
-	// pages in fr are loaded.
+	// pages in fr are loaded. wakeup is internally synchronized. fr is
+	// immutable after initialization.
 	wakeup syncevent.Waiter
 	fr     memmap.FileRange
 
+	// timeStart was the value of gohacks.Nanotime() when this waiter started
+	// waiting. timeStart is immutable after initialization.
+	timeStart int64
+
 	// pending is the number of unloaded bytes that this waiter is waiting for.
+	// pending is protected by aplShared.mu.
 	pending uint64
 }
 
@@ -552,27 +585,36 @@ func (apl *aplShared) awaitLoad(f *MemoryFile, fr memmap.FileRange) error {
 	apl.unloaded.MutateRange(fr, func(ulseg aplUnloadedIterator) bool {
 		ul := ulseg.ValuePtr()
 		ulFR := ulseg.Range()
+		ullen := ulFR.Length()
 		if len(ul.waiters) == 0 && !ul.started {
 			apl.priority.PushBack(ulFR)
+			apl.bytesWaited += ullen
 			if logAwaitedLoads {
 				log.Infof("MemoryFile(%p): prioritize %v", f, ulFR)
 			}
 		}
 		ul.waiters = append(ul.waiters, w)
-		w.pending += ulFR.Length()
+		w.pending += ullen
 		return true
 	})
 	pending := w.pending != 0
+	if pending {
+		w.timeStart = gohacks.Nanotime()
+		if apl.numWaiters == 0 {
+			apl.timeStartWaiters = w.timeStart
+		}
+		apl.numWaiters++
+		apl.totalWaiters++
+	}
 	apl.mu.Unlock()
 	if pending {
-		var startWaitTime time.Time
 		if logAwaitedLoads {
-			startWaitTime = time.Now()
 			log.Infof("MemoryFile(%p): awaitLoad goid %d start: %v (%d bytes)", f, goid.Get(), fr, fr.Length())
 		}
 		w.wakeup.WaitAndAckAll()
 		if logAwaitedLoads {
-			log.Infof("MemoryFile(%p): awaitLoad goid %d waited %v: %v (%d bytes)", f, goid.Get(), time.Since(startWaitTime), fr, fr.Length())
+			waitNS := gohacks.Nanotime() - w.timeStart
+			log.Infof("MemoryFile(%p): awaitLoad goid %d waited %v: %v (%d bytes)", f, goid.Get(), time.Duration(waitNS), fr, fr.Length())
 		}
 	}
 	return apl.err
@@ -854,9 +896,47 @@ func (g *aplGoroutine) main() {
 	}
 	defer dropDelayedDecRefs()
 
-	timeStart := time.Now()
-	loadedBytes := uint64(0)
-	log.Debugf("MemoryFile(%p): async page loading started", f)
+	timeStart := gohacks.Nanotime()
+	if log.IsLogging(log.Debug) {
+		log.Debugf("MemoryFile(%p): async page loading started", f)
+		progressTicker := time.NewTicker(5 * time.Second)
+		progressStopC := make(chan struct{})
+		defer func() { close(progressStopC) }()
+		go func() {
+			timeLast := timeStart
+			bytesLoadedLast := uint64(0)
+			for {
+				select {
+				case <-progressStopC:
+					progressTicker.Stop()
+					return
+				case <-progressTicker.C:
+					// Take a snapshot of our progress.
+					apl.mu.Lock()
+					totalWaiters := apl.totalWaiters
+					timeStartWaiters := apl.timeStartWaiters
+					durWaitedOne := apl.durWaitedOne
+					durWaitedTotal := apl.durWaitedTotal
+					bytesWaited := apl.bytesWaited
+					bytesLoaded := apl.bytesLoaded
+					apl.mu.Unlock()
+					now := gohacks.Nanotime()
+					durTotal := time.Duration(now - timeStart)
+					// apl can have at least one waiter for a very long time
+					// due to new waiters enqueueing before old ones are
+					// served; avoid apparent jumps in durWaitedOne.
+					if timeStartWaiters < now {
+						durWaitedOne += time.Duration(now - timeStartWaiters)
+					}
+					durDelta := time.Duration(now - timeLast)
+					bytesLoadedDelta := bytesLoaded - bytesLoadedLast
+					log.Infof("MemoryFile(%p): async page loading in progress for %s (%d bytes, %.3f MB/s); since last update %s ago: %d bytes, %.3f MB/s; %d waiters waited %v~%v for %d bytes", f, durTotal.Round(time.Millisecond), bytesLoaded, float64(bytesLoaded)*1e-6/durTotal.Seconds(), durDelta.Round(time.Millisecond), bytesLoadedDelta, float64(bytesLoadedDelta)*1e-6/durDelta.Seconds(), totalWaiters, durWaitedOne.Round(time.Millisecond), durWaitedTotal.Round(time.Millisecond), bytesWaited)
+					timeLast = now
+					bytesLoadedLast = bytesLoaded
+				}
+			}
+		}()
+	}
 	for {
 		// Enqueue as many reads as possible.
 		if !g.canEnqueue() {
@@ -956,8 +1036,11 @@ func (g *aplGoroutine) main() {
 				// so async page loading has completed successfully.
 				apl.minUnloaded.Store(math.MaxUint64)
 				f.asyncPageLoad.Store(nil)
-				dur := time.Since(timeStart)
-				log.Infof("MemoryFile(%p): async page loading completed in %s (%d bytes, %f bytes/second)", f, dur, loadedBytes, float64(loadedBytes)/dur.Seconds())
+				timeFinish := gohacks.Nanotime()
+				durTotal := time.Duration(timeFinish - timeStart)
+				apl.mu.Lock()
+				log.Infof("MemoryFile(%p): async page loading completed in %s (%d bytes, %.3f MB/s); %d waiters waited %v~%v for %d bytes", f, durTotal.Round(time.Millisecond), apl.bytesLoaded, float64(apl.bytesLoaded)*1e-6/durTotal.Seconds(), apl.totalWaiters, apl.durWaitedOne.Round(time.Millisecond), apl.durWaitedTotal.Round(time.Millisecond), apl.bytesWaited)
+				apl.mu.Unlock()
 				return
 			}
 			panic(fmt.Sprintf("unknown events in lfStatus: %#x", ev))
@@ -1001,6 +1084,7 @@ func (g *aplGoroutine) main() {
 				return
 			}
 			haveWaiters := false
+			now := int64(0)
 			for _, fr := range op.frs() {
 				// All pages in fr have been started and were split around fr
 				// when they were started (above), and apl.unloaded never
@@ -1009,7 +1093,7 @@ func (g *aplGoroutine) main() {
 				for ulseg := apl.unloaded.FindSegment(fr.Start); ulseg.Ok() && ulseg.Start() < fr.End; ulseg = apl.unloaded.Remove(ulseg).NextSegment() {
 					ul := ulseg.ValuePtr()
 					ullen := ulseg.Range().Length()
-					loadedBytes += ullen
+					apl.bytesLoaded += ullen
 					if !ul.started {
 						panic(fmt.Sprintf("completion of %v includes pages %v that were never started", fr, ulseg.Range()))
 					}
@@ -1018,6 +1102,18 @@ func (g *aplGoroutine) main() {
 						w.pending -= ullen
 						if w.pending == 0 {
 							wakeups = append(wakeups, w)
+							if now == 0 {
+								now = gohacks.Nanotime()
+							}
+							// This definition of "wait time" skips the time
+							// taken for w to wake up (bad), but avoids having
+							// to lock apl.mu again in apl.awaitLoad() (good).
+							apl.durWaitedTotal += time.Duration(now - w.timeStart)
+							apl.numWaiters--
+							if apl.numWaiters == 0 {
+								apl.durWaitedOne += time.Duration(now - apl.timeStartWaiters)
+								apl.timeStartWaiters = math.MaxInt64
+							}
 						}
 					}
 				}
