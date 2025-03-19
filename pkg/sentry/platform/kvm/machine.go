@@ -57,23 +57,24 @@ type machine struct {
 	// kernel is the set of global structures.
 	kernel ring0.Kernel
 
-	// mu protects vCPUs.
-	mu sync.RWMutex
-
-	// available is notified when vCPUs are available.
-	available sync.Cond
-
 	// vCPUsByTID are the machine vCPUs.
 	//
 	// These are populated dynamically.
-	vCPUsByTID map[uint64]*vCPU
+	vCPUsByTID vCPUsByTIDAtomicPtrMap
+
+	// availableWaiters is the number of goroutines waiting for a vCPU to
+	// become ready.
+	availableWaiters atomicbitops.Int32
+
+	// availableSeq is incremented whenever a vCPU becomes ready.
+	availableSeq atomicbitops.Uint32
 
 	// vCPUsByID are the machine vCPUs, can be indexed by the vCPU's ID.
 	vCPUsByID []*vCPU
 
 	// usedVCPUs is the number of vCPUs that have been used from the
 	// vCPUsByID pool.
-	usedVCPUs int
+	usedVCPUs atomicbitops.Int32
 
 	// maxVCPUs is the maximum number of vCPUs supported by the machine.
 	maxVCPUs int
@@ -88,20 +89,25 @@ type machine struct {
 	usedSlots []uintptr
 }
 
+// Bits in vCPU.state:
 const (
 	// vCPUReady is an alias for all the below clear.
-	vCPUReady uint32 = 0
+	vCPUReady = 0
 
 	// vCPUser indicates that the vCPU is in or about to enter user mode.
-	vCPUUser uint32 = 1 << 0
+	vCPUUser = 1 << 0
 
 	// vCPUGuest indicates the vCPU is in guest mode.
-	vCPUGuest uint32 = 1 << 1
+	vCPUGuest = 1 << 1
 
 	// vCPUWaiter indicates that there is a waiter.
 	//
 	// If this is set, then notify must be called on any state transitions.
-	vCPUWaiter uint32 = 1 << 2
+	vCPUWaiter = 1 << 2
+
+	vCPUTIDShift  = 32
+	vCPUStateMask = (uint64(1) << vCPUTIDShift) - 1
+	vCPUTIDMask   = ^vCPUStateMask
 )
 
 // Field values for the get_vcpu metric acquisition path used.
@@ -181,9 +187,6 @@ type vCPU struct {
 	// fd is the vCPU fd.
 	fd int
 
-	// tid is the last set tid.
-	tid atomicbitops.Uint64
-
 	// userExits is the count of user exits.
 	userExits atomicbitops.Uint64
 
@@ -193,10 +196,10 @@ type vCPU struct {
 	// faults is a count of world faults (informational only).
 	faults uint32
 
-	// state is the vCPU state.
-	//
-	// This is a bitmask of the three fields (vCPU*) described above.
-	state atomicbitops.Uint32
+	// The bottom 32 bits of state is a bitset of state fields; see vCPUUser
+	// and company above. If vCPUGuest or vCPUUser are set, then the top 32
+	// bits of state are the thread ID of the thread that has set them.
+	state atomicbitops.Uint64
 
 	// runData for this vCPU.
 	runData *runData
@@ -270,7 +273,6 @@ var forceMappingEntireAddressSpace = false
 func newMachine(vm int, config *Config) (*machine, error) {
 	// Create the machine.
 	m := &machine{fd: vm}
-	m.available.L = &m.mu
 
 	if err := m.applyConfig(config); err != nil {
 		panic(fmt.Sprintf("error setting config parameters: %s", err))
@@ -279,7 +281,6 @@ func newMachine(vm int, config *Config) (*machine, error) {
 	// Pull the maximum vCPUs.
 	m.getMaxVCPU()
 	log.Debugf("The maximum number of vCPUs is %d.", m.maxVCPUs)
-	m.vCPUsByTID = make(map[uint64]*vCPU)
 	m.vCPUsByID = make([]*vCPU, m.maxVCPUs)
 	m.kernel.Init(m.maxVCPUs)
 
@@ -510,109 +511,118 @@ func (m *machine) Destroy() {
 // the current context in guest, the vCPU of it must be the same as what
 // Get() returns.
 func (m *machine) Get() *vCPU {
-	m.mu.RLock()
 	runtime.LockOSThread()
 	tid := hosttid.Current()
 
 	// Check for an exact match.
-	if c := m.vCPUsByTID[tid]; c != nil {
-		c.lock()
-		m.mu.RUnlock()
-		getVCPUCounter.Increment(&getVCPUAcquisitionFastReused)
+	if c := m.vCPUsByTID.Load(tid); c != nil {
+		// If this succeeds, we can ignore vCPUGuest since it just indicates
+		// that we're already in guest mode.
+		if state := c.state.Load(); state>>vCPUTIDShift == tid && c.state.CompareAndSwap(state, state|vCPUUser) {
+			getVCPUCounter.Increment(&getVCPUAcquisitionFastReused)
+			return c
+		}
+	}
+
+	// Get vCPU from the m.vCPUsByID pool.
+	owned := (tid << vCPUTIDShift) | vCPUUser
+	for {
+		usedVCPUs := m.usedVCPUs.Load()
+		if int(usedVCPUs) >= m.maxVCPUs {
+			break
+		}
+		// XXX switch to Add
+		if !m.usedVCPUs.CompareAndSwap(usedVCPUs, usedVCPUs+1) {
+			continue
+		}
+		c := m.vCPUsByID[usedVCPUs]
+		c.state.Store(owned)
+		m.vCPUsByTID.Store(tid, c)
+		c.loadSegments()
+		getVCPUCounter.Increment(&getVCPUAcquisitionUnused)
 		return c
 	}
 
-	// The happy path failed. We now proceed to acquire an exclusive lock
-	// (because the vCPU map may change), and scan all available vCPUs.
-	// In this case, we first unlock the OS thread. Otherwise, if mu is
-	// not available, the current system thread will be parked and a new
-	// system thread spawned. We avoid this situation by simply refreshing
-	// tid after relocking the system thread.
-	m.mu.RUnlock()
-	runtime.UnlockOSThread()
-	m.mu.Lock()
-
-	for {
-		runtime.LockOSThread()
-		tid = hosttid.Current()
-
-		// Recheck for an exact match.
-		if c := m.vCPUsByTID[tid]; c != nil {
-			c.lock()
-			m.mu.Unlock()
-			getVCPUCounter.Increment(&getVCPUAcquisitionReused)
-			return c
-		}
-
-		// Get vCPU from the m.vCPUsByID pool.
-		if m.usedVCPUs < m.maxVCPUs {
-			c := m.vCPUsByID[m.usedVCPUs]
-			m.usedVCPUs++
-			c.lock()
-			m.vCPUsByTID[tid] = c
-			m.mu.Unlock()
-			c.loadSegments(tid)
+	// Scan for an available vCPU.
+	for origTID, c := range m.vCPUsByTID.RangeRepeatable {
+		// We can't steal vCPUs from other threads that are in guest mode.
+		if state := c.state.Load(); state&vCPUStateMask == vCPUReady && c.state.CompareAndSwap(state, owned) {
+			m.vCPUsByTID.CompareAndSwap(origTID, c, nil)
+			m.vCPUsByTID.Store(tid, c)
+			c.loadSegments()
 			getVCPUCounter.Increment(&getVCPUAcquisitionUnused)
 			return c
 		}
+	}
 
-		// Scan for an available vCPU.
-		for origTID, c := range m.vCPUsByTID {
-			if c.state.CompareAndSwap(vCPUReady, vCPUUser) {
-				delete(m.vCPUsByTID, origTID)
-				m.vCPUsByTID[tid] = c
-				m.mu.Unlock()
-				c.loadSegments(tid)
+	// Wait for an available vCPU.
+	m.availableWaiters.Add(1)
+	for {
+		epoch := m.availableSeq.Load()
+		for origTID, c := range m.vCPUsByTID.RangeRepeatable {
+			if state := c.state.Load(); state&vCPUStateMask == vCPUReady && c.state.CompareAndSwap(state, owned) {
+				m.vCPUsByTID.CompareAndSwap(origTID, c, nil)
+				m.vCPUsByTID.Store(tid, c)
+				m.availableWaiters.Add(-1)
+				c.loadSegments()
 				getVCPUCounter.Increment(&getVCPUAcquisitionUnused)
 				return c
 			}
 		}
 
-		// Scan for something not in user mode.
-		for origTID, c := range m.vCPUsByTID {
-			if !c.state.CompareAndSwap(vCPUGuest, vCPUGuest|vCPUWaiter) {
-				continue
-			}
-
-			// The vCPU is not be able to transition to
-			// vCPUGuest|vCPUWaiter or to vCPUUser because that
-			// transition requires holding the machine mutex, as we
-			// do now. There is no path to register a waiter on
-			// just the vCPUReady state.
-			for {
-				c.waitUntilNot(vCPUGuest | vCPUWaiter)
-				if c.state.CompareAndSwap(vCPUReady, vCPUUser) {
-					break
-				}
-			}
-
-			// Steal the vCPU.
-			delete(m.vCPUsByTID, origTID)
-			m.vCPUsByTID[tid] = c
-			m.mu.Unlock()
-			c.loadSegments(tid)
-			getVCPUCounter.Increment(&getVCPUAcquisitionStolen)
-			return c
-		}
-
-		// Everything is executing in user mode. Wait until something is
-		// available. As with m.mu.Lock() above, unlock the OS thread while we
-		// do this to avoid spawning additional system threads. Note that
-		// signaling the condition variable will have the extra effect of
-		// kicking the vCPUs out of guest mode if that's where they were.
+		// All vCPUs are already in guest mode. Wait until a vCPU becomes
+		// available. m.availableWait() blocks in the host, but unlocking the
+		// OS thread still makes waking up less expensive if sysmon steals our
+		// P while we're blocked.
 		runtime.UnlockOSThread()
-		m.available.Wait()
+		m.availableWait(epoch)
+		runtime.LockOSThread()
+		tid = hosttid.Current()
+		owned = (tid << vCPUTIDShift) | vCPUUser
+
+		// Recheck for an exact match.
+		if c := m.vCPUsByTID.Load(tid); c != nil {
+			if state := c.state.Load(); state>>vCPUTIDShift == tid && c.state.CompareAndSwap(state, state|vCPUUser) {
+				m.availableWaiters.Add(-1)
+				getVCPUCounter.Increment(&getVCPUAcquisitionReused)
+				return c
+			}
+		}
 	}
 }
 
 // Put puts the current vCPU.
 func (m *machine) Put(c *vCPU) {
-	c.unlock()
-	runtime.UnlockOSThread()
+	// Fast path:
+	if c.stateLower().CompareAndSwap(vCPUUser|vCPUGuest, vCPUGuest) {
+		runtime.UnlockOSThread()
+		return
+	}
 
-	m.mu.RLock()
-	m.available.Signal()
-	m.mu.RUnlock()
+	var (
+		oldState uint64
+		newState uint64
+	)
+	// Unset vCPUUser and vCPUWaiter; notify waiters. This needs to CAS since
+	// we might leave guest mode between c.state.Load() and
+	// c.state.CompareAndSwap().
+	for {
+		oldState = c.state.Load()
+		if oldState&vCPUUser == 0 {
+			panic("putting vCPU not locked by Get")
+		}
+		newState = oldState &^ (vCPUUser | vCPUWaiter)
+		if c.state.CompareAndSwap(oldState, newState) {
+			break
+		}
+	}
+	runtime.UnlockOSThread()
+	if newState&vCPUStateMask == vCPUReady {
+		m.availableNotify()
+	}
+	if oldState&vCPUWaiter != 0 {
+		c.notify()
+	}
 }
 
 // newDirtySet returns a new dirty set.
@@ -625,65 +635,11 @@ func (m *machine) newDirtySet() *dirtySet {
 
 // dropPageTables drops cached page table entries.
 func (m *machine) dropPageTables(pt *pagetables.PageTables) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
 	// Clear from all PCIDs.
 	for _, c := range m.vCPUsByID {
 		if c != nil && c.PCIDs != nil {
 			c.PCIDs.Drop(pt)
 		}
-	}
-}
-
-// lock marks the vCPU as in user mode.
-//
-// This should only be called directly when known to be safe, i.e. when
-// the vCPU is owned by the current TID with no chance of theft.
-//
-//go:nosplit
-func (c *vCPU) lock() {
-	atomicbitops.OrUint32(&c.state, vCPUUser)
-}
-
-// unlock clears the vCPUUser bit.
-//
-//go:nosplit
-func (c *vCPU) unlock() {
-	origState := atomicbitops.CompareAndSwapUint32(&c.state, vCPUUser|vCPUGuest, vCPUGuest)
-	if origState == vCPUUser|vCPUGuest {
-		// Happy path: no exits are forced, and we can continue
-		// executing on our merry way with a single atomic access.
-		return
-	}
-
-	// Clear the lock.
-	for {
-		state := atomicbitops.CompareAndSwapUint32(&c.state, origState, origState&^vCPUUser)
-		if state == origState {
-			break
-		}
-		origState = state
-	}
-	switch origState {
-	case vCPUUser:
-		// Normal state.
-	case vCPUUser | vCPUGuest | vCPUWaiter:
-		// Force a transition: this must trigger a notification when we
-		// return from guest mode. We must clear vCPUWaiter here
-		// anyways, because BounceToKernel will force a transition only
-		// from ring3 to ring0, which will not clear this bit. Halt may
-		// workaround the issue, but if there is no exception or
-		// syscall in this period, BounceToKernel will hang.
-		atomicbitops.AndUint32(&c.state, ^vCPUWaiter)
-		c.notify()
-	case vCPUUser | vCPUWaiter:
-		// Waiting for the lock to be released; the responsibility is
-		// on us to notify the waiter and clear the associated bit.
-		atomicbitops.AndUint32(&c.state, ^vCPUWaiter)
-		c.notify()
-	default:
-		panic("invalid state")
 	}
 }
 
@@ -704,7 +660,7 @@ func (c *vCPU) bounce(forceGuestExit bool) {
 	origGuestExits := c.guestExits.Load()
 	origUserExits := c.userExits.Load()
 	for {
-		switch state := c.state.Load(); state {
+		switch state := c.state.Load(); state & vCPUStateMask {
 		case vCPUReady, vCPUWaiter:
 			// There is nothing to be done, we're already in the
 			// kernel pre-acquisition. The Bounce criteria have
@@ -721,7 +677,7 @@ func (c *vCPU) bounce(forceGuestExit bool) {
 			// come from the bluepill handler.
 			c.waitUntilNot(state)
 		case vCPUGuest, vCPUUser | vCPUGuest:
-			if state == vCPUGuest && !forceGuestExit {
+			if state&vCPUStateMask == vCPUGuest && !forceGuestExit {
 				// The vCPU is already not acquired, so there's
 				// no need to do a fresh injection here.
 				return
@@ -737,7 +693,7 @@ func (c *vCPU) bounce(forceGuestExit bool) {
 				// under memory pressure. Since we already
 				// marked ourselves as a waiter, we need to
 				// ensure that a signal is actually delivered.
-				if err := unix.Tgkill(pid, int(c.tid.Load()), bounceSignal); err == nil {
+				if err := unix.Tgkill(pid, int(state>>vCPUTIDShift), bounceSignal); err == nil {
 					break
 				} else if err.(unix.Errno) == unix.EAGAIN {
 					continue
@@ -747,7 +703,7 @@ func (c *vCPU) bounce(forceGuestExit bool) {
 				}
 			}
 		case vCPUGuest | vCPUWaiter, vCPUUser | vCPUGuest | vCPUWaiter:
-			if state == vCPUGuest|vCPUWaiter && !forceGuestExit {
+			if state&vCPUStateMask == vCPUGuest|vCPUWaiter && !forceGuestExit {
 				// See above.
 				return
 			}
@@ -756,7 +712,7 @@ func (c *vCPU) bounce(forceGuestExit bool) {
 			c.waitUntilNot(state)
 		default:
 			// Should not happen: the above is exhaustive.
-			panic("invalid state")
+			panic("invalid state in kvm.vCPU.bounce")
 		}
 
 		// Check if we've missed the state transition, but

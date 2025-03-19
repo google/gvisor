@@ -35,7 +35,7 @@ func rdgsbase() uint64
 // This may be called from within the signal context and throws on error.
 //
 //go:nosplit
-func (c *vCPU) loadSegments(tid uint64) {
+func (c *vCPU) loadSegments() {
 	if errno := hostsyscall.RawSyscallErrno(unix.SYS_SIGALTSTACK, 0, uintptr(unsafe.Pointer(&c.signalStack)), 0); errno != 0 {
 		throw("sigaltstack")
 	}
@@ -58,7 +58,6 @@ func (c *vCPU) loadSegments(tid uint64) {
 			throw("getting GS segment")
 		}
 	}
-	c.tid.Store(tid)
 }
 
 // setCPUID sets the CPUID to be used by the guest.

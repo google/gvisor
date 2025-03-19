@@ -17,6 +17,7 @@ package vfs
 import (
 	"fmt"
 	"math/bits"
+	"math/rand/v2"
 	"sync/atomic"
 	"unsafe"
 
@@ -38,7 +39,7 @@ type mountKey struct {
 
 var (
 	mountKeyHasher = sync.MapKeyHasher(map[mountKey]struct{}(nil))
-	mountKeySeed   = sync.RandUintptr()
+	mountKeySeed   = uintptr(rand.Uint64())
 )
 
 func (k *mountKey) hash() uintptr {

@@ -16,6 +16,7 @@
 package kvm
 
 import (
+	"encoding/binary"
 	"fmt"
 
 	"golang.org/x/sys/unix"
@@ -76,6 +77,11 @@ type KVM struct {
 var (
 	globalOnce sync.Once
 	globalErr  error
+
+	// vCPUStateOffset is the offset in bytes from the start of vCPU.state to
+	// the start of the lower 4 bytes of vCPU.state, which varies depending on
+	// endianness.
+	vCPUStateOffset uintptr
 )
 
 // OpenDevice opens the KVM device and returns the File.
@@ -97,6 +103,18 @@ func New(deviceFile *fd.FD, config Config) (*KVM, error) {
 
 	// Ensure global initialization is done.
 	globalOnce.Do(func() {
+		var buf [8]byte
+		binary.NativeEndian.PutUint64(buf[:], 0x1122334455667788)
+		switch binary.NativeEndian.Uint32(buf[0:4]) {
+		case 0x11223344: // big endian
+			vCPUStateOffset = 4
+		case 0x55667788: // little endian
+			vCPUStateOffset = 0
+		default:
+			globalErr = fmt.Errorf("failed to determine endianness for kvm.vCPUStateOffset")
+			return
+		}
+
 		globalErr = updateGlobalOnce(int(fd))
 	})
 	if globalErr != nil {
