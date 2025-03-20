@@ -88,4 +88,5 @@ type NvUUID [16]uint8
 // HasStatus is an interface for parameter structs that have a Status field.
 type HasStatus interface {
 	GetStatus() uint32
+	SetStatus(status uint32)
 }
