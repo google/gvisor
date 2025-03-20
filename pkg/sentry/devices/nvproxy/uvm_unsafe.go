@@ -54,8 +54,8 @@ func (mf *uvmFDMemmapFile) BufferReadAt(off uint64, dst []byte) (uint64, error) 
 	if errno != 0 {
 		return 0, errno
 	}
-	if params.RMStatus != nvgpu.NV_OK {
-		log.Warningf("nvproxy: UVM_TOOLS_READ_PROCESS_MEMORY(targetVa=%#x, len=%d) returned status %d", off, len(dst), params.RMStatus)
+	if status := params.GetStatus(); status != nvgpu.NV_OK {
+		log.Warningf("nvproxy: UVM_TOOLS_READ_PROCESS_MEMORY(targetVa=%#x, len=%d) returned status %d", off, len(dst), status)
 		return params.BytesRead, linuxerr.EINVAL
 	}
 	if params.BytesRead != uint64(len(dst)) {
@@ -82,8 +82,8 @@ func (mf *uvmFDMemmapFile) BufferWriteAt(off uint64, src []byte) (uint64, error)
 	if errno != 0 {
 		return 0, errno
 	}
-	if params.RMStatus != nvgpu.NV_OK {
-		log.Warningf("nvproxy: UVM_TOOLS_WRITE_PROCESS_MEMORY(targetVa=%#x, len=%d) returned status %d", off, len(src), params.RMStatus)
+	if status := params.GetStatus(); status != nvgpu.NV_OK {
+		log.Warningf("nvproxy: UVM_TOOLS_WRITE_PROCESS_MEMORY(targetVa=%#x, len=%d) returned status %d", off, len(src), status)
 		return params.BytesWritten, linuxerr.EINVAL
 	}
 	if params.BytesWritten != uint64(len(src)) {

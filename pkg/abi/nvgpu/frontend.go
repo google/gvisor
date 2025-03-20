@@ -66,15 +66,6 @@ type IoctlRegisterFD struct {
 	CtlFD int32
 }
 
-// GetStatus implements HasStatus.GetStatus.
-func (p *IoctlRegisterFD) GetStatus() uint32 {
-	// nv_ioctl_register_fd_t doesn't have a NvStatus field. Any failures are
-	// returned from src/nvidia/arch/nvalloc/unix/src/escape.c:nvidia_ioctl()'s
-	// NV_ESC_REGISTER_FD case to kernel-open/nvidia/nv.c:nvidia_ioctl()'s
-	// default case, which converts it to an ioctl(2) syscall error.
-	return NV_OK
-}
-
 // IoctlAllocOSEvent is the parameter type for NV_ESC_ALLOC_OS_EVENT.
 //
 // +marshal
@@ -98,6 +89,11 @@ func (p *IoctlAllocOSEvent) SetFrontendFD(fd int32) {
 // GetStatus implements HasStatus.GetStatus.
 func (p *IoctlAllocOSEvent) GetStatus() uint32 {
 	return p.Status
+}
+
+// SetStatus implements HasStatus.SetStatus.
+func (p *IoctlAllocOSEvent) SetStatus(status uint32) {
+	p.Status = status
 }
 
 // IoctlFreeOSEvent is the parameter type for NV_ESC_FREE_OS_EVENT.
@@ -125,6 +121,11 @@ func (p *IoctlFreeOSEvent) GetStatus() uint32 {
 	return p.Status
 }
 
+// SetStatus implements HasStatus.SetStatus.
+func (p *IoctlFreeOSEvent) SetStatus(status uint32) {
+	p.Status = status
+}
+
 // RMAPIVersion is the parameter type for NV_ESC_CHECK_VERSION_STR.
 //
 // +marshal
@@ -134,27 +135,11 @@ type RMAPIVersion struct {
 	VersionString [64]byte
 }
 
-// GetStatus implements HasStatus.GetStatus.
-func (p *RMAPIVersion) GetStatus() uint32 {
-	// nv_ioctl_rm_api_version_t doesn't have a NvStatus field. The driver
-	// translates the rmStatus to an ioctl(2) failure. See
-	// kernel-open/nvidia/nv.c:nvidia_ioctl() => case NV_ESC_CHECK_VERSION_STR.
-	return NV_OK
-}
-
 // IoctlSysParams is the parameter type for NV_ESC_SYS_PARAMS.
 //
 // +marshal
 type IoctlSysParams struct {
 	MemblockSize uint64
-}
-
-// GetStatus implements HasStatus.GetStatus.
-func (p *IoctlSysParams) GetStatus() uint32 {
-	// nv_ioctl_sys_params_t doesn't have a NvStatus field. The driver fails the
-	// ioctl(2) syscall in case of any failure. See
-	// kernel-open/nvidia/nv.c:nvidia_ioctl() => case NV_ESC_SYS_PARAMS.
-	return NV_OK
 }
 
 // IoctlWaitOpenComplete is the parameter type for NV_ESC_WAIT_OPEN_COMPLETE.
@@ -170,6 +155,11 @@ func (p *IoctlWaitOpenComplete) GetStatus() uint32 {
 	return p.AdapterStatus
 }
 
+// SetStatus implements HasStatus.SetStatus.
+func (p *IoctlWaitOpenComplete) SetStatus(status uint32) {
+	p.AdapterStatus = status
+}
+
 // IoctlNVOS02ParametersWithFD is the parameter type for NV_ESC_RM_ALLOC_MEMORY.
 //
 // +marshal
@@ -182,6 +172,11 @@ type IoctlNVOS02ParametersWithFD struct {
 // GetStatus implements HasStatus.GetStatus.
 func (p *IoctlNVOS02ParametersWithFD) GetStatus() uint32 {
 	return p.Params.Status
+}
+
+// SetStatus implements HasStatus.SetStatus.
+func (p *IoctlNVOS02ParametersWithFD) SetStatus(status uint32) {
+	p.Params.Status = status
 }
 
 // +marshal
@@ -222,6 +217,11 @@ type NVOS00_PARAMETERS struct {
 // GetStatus implements HasStatus.GetStatus.
 func (p *NVOS00_PARAMETERS) GetStatus() uint32 {
 	return p.Status
+}
+
+// SetStatus implements HasStatus.SetStatus.
+func (p *NVOS00_PARAMETERS) SetStatus(status uint32) {
+	p.Status = status
 }
 
 // RmAllocParamType should be implemented by all possible parameter types for
@@ -308,9 +308,14 @@ func (n *NVOS21_PARAMETERS) ToOS64() NVOS64_PARAMETERS {
 	}
 }
 
-// GetStatus implements RmAllocParamType.GetStatus.
+// GetStatus implements HasStatus.GetStatus.
 func (n *NVOS21_PARAMETERS) GetStatus() uint32 {
 	return n.Status
+}
+
+// SetStatus implements HasStatus.SetStatus.
+func (n *NVOS21_PARAMETERS) SetStatus(status uint32) {
+	n.Status = status
 }
 
 // NVOS55_PARAMETERS is the parameter type for NV_ESC_RM_DUP_OBJECT.
@@ -331,6 +336,11 @@ func (n *NVOS55_PARAMETERS) GetStatus() uint32 {
 	return n.Status
 }
 
+// SetStatus implements HasStatus.SetStatus.
+func (n *NVOS55_PARAMETERS) SetStatus(status uint32) {
+	n.Status = status
+}
+
 // NVOS57_PARAMETERS is the parameter type for NV_ESC_RM_SHARE.
 //
 // +marshal
@@ -344,6 +354,11 @@ type NVOS57_PARAMETERS struct {
 // GetStatus implements HasStatus.GetStatus.
 func (n *NVOS57_PARAMETERS) GetStatus() uint32 {
 	return n.Status
+}
+
+// SetStatus implements HasStatus.SetStatus.
+func (n *NVOS57_PARAMETERS) SetStatus(status uint32) {
+	n.Status = status
 }
 
 // NVOS30_PARAMETERS is the parameter type for NV_ESC_RM_IDLE_CHANNELS.
@@ -370,6 +385,11 @@ func (n *NVOS30_PARAMETERS) GetStatus() uint32 {
 	return n.Status
 }
 
+// SetStatus implements HasStatus.SetStatus.
+func (n *NVOS30_PARAMETERS) SetStatus(status uint32) {
+	n.Status = status
+}
+
 // NVOS32_PARAMETERS is the parameter type for NV_ESC_RM_VID_HEAP_CONTROL.
 //
 // +marshal
@@ -389,6 +409,11 @@ type NVOS32_PARAMETERS struct {
 // GetStatus implements HasStatus.GetStatus.
 func (n *NVOS32_PARAMETERS) GetStatus() uint32 {
 	return n.Status
+}
+
+// SetStatus implements HasStatus.SetStatus.
+func (n *NVOS32_PARAMETERS) SetStatus(status uint32) {
+	n.Status = status
 }
 
 // Possible values for NVOS32Parameters.Function:
@@ -457,6 +482,11 @@ func (p *IoctlNVOS33ParametersWithFD) GetStatus() uint32 {
 	return p.Params.Status
 }
 
+// SetStatus implements HasStatus.SetStatus.
+func (p *IoctlNVOS33ParametersWithFD) SetStatus(status uint32) {
+	p.Params.Status = status
+}
+
 // +marshal
 type NVOS33_PARAMETERS struct {
 	HClient        Handle
@@ -500,6 +530,11 @@ func (n *NVOS34_PARAMETERS) GetStatus() uint32 {
 	return n.Status
 }
 
+// SetStatus implements HasStatus.SetStatus.
+func (n *NVOS34_PARAMETERS) SetStatus(status uint32) {
+	n.Status = status
+}
+
 // NVOS39_PARAMETERS is the parameter type for NV_ESC_RM_ALLOC_CONTEXT_DMA2.
 //
 // +marshal
@@ -521,6 +556,11 @@ type NVOS39_PARAMETERS struct {
 // GetStatus implements HasStatus.GetStatus.
 func (n *NVOS39_PARAMETERS) GetStatus() uint32 {
 	return n.Status
+}
+
+// SetStatus implements HasStatus.SetStatus.
+func (n *NVOS39_PARAMETERS) SetStatus(status uint32) {
+	n.Status = status
 }
 
 // NVOS46_PARAMETERS is the parameter type for NV_ESC_RM_MAP_MEMORY_DMA.
@@ -545,6 +585,11 @@ func (n *NVOS46_PARAMETERS) GetStatus() uint32 {
 	return n.Status
 }
 
+// SetStatus implements HasStatus.SetStatus.
+func (n *NVOS46_PARAMETERS) SetStatus(status uint32) {
+	n.Status = status
+}
+
 // NVOS47_PARAMETERS is the parameter type for NV_ESC_RM_UNMAP_MEMORY_DMA.
 //
 // +marshal
@@ -563,6 +608,11 @@ type NVOS47_PARAMETERS struct {
 // GetStatus implements HasStatus.GetStatus.
 func (n *NVOS47_PARAMETERS) GetStatus() uint32 {
 	return n.Status
+}
+
+// SetStatus implements HasStatus.SetStatus.
+func (n *NVOS47_PARAMETERS) SetStatus(status uint32) {
+	n.Status = status
 }
 
 // NVOS47_PARAMETERS_V550 is the updated version of NVOS47_PARAMETERS since
@@ -587,6 +637,11 @@ func (n *NVOS47_PARAMETERS_V550) GetStatus() uint32 {
 	return n.Status
 }
 
+// SetStatus implements HasStatus.SetStatus.
+func (n *NVOS47_PARAMETERS_V550) SetStatus(status uint32) {
+	n.Status = status
+}
+
 // NVOS54_PARAMETERS is the parameter type for NV_ESC_RM_CONTROL.
 //
 // +marshal
@@ -603,6 +658,11 @@ type NVOS54_PARAMETERS struct {
 // GetStatus implements HasStatus.GetStatus.
 func (n *NVOS54_PARAMETERS) GetStatus() uint32 {
 	return n.Status
+}
+
+// SetStatus implements HasStatus.SetStatus.
+func (n *NVOS54_PARAMETERS) SetStatus(status uint32) {
+	n.Status = status
 }
 
 // NVOS56_PARAMETERS is the parameter type for NV_ESC_RM_UPDATE_DEVICE_MAPPING_INFO.
@@ -622,6 +682,11 @@ type NVOS56_PARAMETERS struct {
 // GetStatus implements HasStatus.GetStatus.
 func (n *NVOS56_PARAMETERS) GetStatus() uint32 {
 	return n.Status
+}
+
+// SetStatus implements HasStatus.SetStatus.
+func (n *NVOS56_PARAMETERS) SetStatus(status uint32) {
+	n.Status = status
 }
 
 // NVOS64_PARAMETERS is one possible parameter type for NV_ESC_RM_ALLOC.
@@ -668,9 +733,14 @@ func (n *NVOS64_PARAMETERS) FromOS64(other NVOS64_PARAMETERS) { *n = other }
 // ToOS64 implements RmAllocParamType.ToOS64.
 func (n *NVOS64_PARAMETERS) ToOS64() NVOS64_PARAMETERS { return *n }
 
-// GetStatus implements RmAllocParamType.GetStatus.
+// GetStatus implements HasStatus.GetStatus.
 func (n *NVOS64_PARAMETERS) GetStatus() uint32 {
 	return n.Status
+}
+
+// SetStatus implements HasStatus.SetStatus.
+func (n *NVOS64_PARAMETERS) SetStatus(status uint32) {
+	n.Status = status
 }
 
 // HasFrontendFD is a type constraint for parameter structs containing a

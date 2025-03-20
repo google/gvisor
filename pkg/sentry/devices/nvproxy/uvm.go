@@ -226,24 +226,14 @@ func uvmMMInitialize(ui *uvmIoctlState) (uintptr, error) {
 		return 0, err
 	}
 
-	failWithStatus := func(status uint32) error {
-		if log.IsLogging(log.Debug) {
-			ui.ctx.Debugf("nvproxy: UVM_MM_INITIALIZE internally failed: status=%#x", status)
-		}
-		outIoctlParams := ioctlParams
-		outIoctlParams.RMStatus = status
-		_, err := outIoctlParams.CopyOut(ui.t, ui.ioctlParamsAddr)
-		return err
-	}
-
 	uvmFileGeneric, _ := ui.t.FDTable().Get(ioctlParams.UvmFD)
 	if uvmFileGeneric == nil {
-		return 0, failWithStatus(nvgpu.NV_ERR_INVALID_ARGUMENT)
+		return 0, uvmFailWithStatus(ui, &ioctlParams, nvgpu.NV_ERR_INVALID_ARGUMENT)
 	}
 	defer uvmFileGeneric.DecRef(ui.ctx)
 	uvmFile, ok := uvmFileGeneric.Impl().(*uvmFD)
 	if !ok {
-		return 0, failWithStatus(nvgpu.NV_ERR_INVALID_ARGUMENT)
+		return 0, uvmFailWithStatus(ui, &ioctlParams, nvgpu.NV_ERR_INVALID_ARGUMENT)
 	}
 
 	origFD := ioctlParams.UvmFD
@@ -298,4 +288,8 @@ func uvmIoctlHasFrontendFD[Params any, PtrParams hasFrontendFDAndStatusPtr[Param
 		return n, err
 	}
 	return n, nil
+}
+
+func uvmFailWithStatus[Params any, PtrParams hasStatusPtr[Params]](ui *uvmIoctlState, ioctlParams PtrParams, status uint32) error {
+	return failWithStatus(ui.ctx, ui.t, ui.ioctlParamsAddr, ioctlParams, status)
 }
