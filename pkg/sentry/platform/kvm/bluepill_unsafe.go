@@ -70,14 +70,18 @@ func bluepillGuestExit(c *vCPU, context unsafe.Pointer) {
 	// Copy out registers.
 	bluepillArchExit(c, bluepillArchContext(context))
 
-	// Return to the vCPUReady state; notify any waiters.
-	user := c.state.Load() & vCPUUser
-	switch c.state.Swap(user) {
-	case user | vCPUGuest: // Expected case.
-	case user | vCPUGuest | vCPUWaiter:
+	// Unset vCPUGuest and vCPUWaiter; notify any waiters.
+	oldState := c.state.Load()
+	if oldState&vCPUGuest == 0 {
+		throw("invalid state in kvm.bluepillGuestExit")
+	}
+	newState := oldState &^ (vCPUGuest | vCPUWaiter)
+	oldState = c.state.Swap(newState)
+	if newState&vCPUStateMask == vCPUReady {
+		c.machine.availableNotify()
+	}
+	if oldState&vCPUWaiter != 0 {
 		c.notify()
-	default:
-		throw("invalid state")
 	}
 }
 
@@ -116,13 +120,14 @@ func bluepillHandler(context unsafe.Pointer) {
 	// Sanitize the registers; interrupts must always be disabled.
 	c := bluepillArchEnter(bluepillArchContext(context))
 
-	// Mark this as guest mode.
-	switch c.state.Swap(vCPUGuest | vCPUUser) {
-	case vCPUUser: // Expected case.
-	case vCPUUser | vCPUWaiter:
+	// Set vCPUGuest; unset vCPUWaiter; notify waiters.
+	state := c.state.Load()
+	if state&(vCPUUser|vCPUGuest) != vCPUUser {
+		throw("invalid state in bluepillHandler")
+	}
+	state = c.state.Swap((state | vCPUGuest) &^ vCPUWaiter)
+	if state&vCPUWaiter != 0 {
 		c.notify()
-	default:
-		throw("invalid state")
 	}
 
 	for {

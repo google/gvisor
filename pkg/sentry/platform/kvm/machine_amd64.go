@@ -49,11 +49,9 @@ func (m *machine) initArchState() error {
 	}
 
 	// Initialize all vCPUs to minimize kvm ioctl-s allowed by seccomp filters.
-	m.mu.Lock()
 	for i := 0; i < m.maxVCPUs; i++ {
 		m.createVCPU(i)
 	}
-	m.mu.Unlock()
 
 	return nil
 }
@@ -497,21 +495,22 @@ func (m *machine) mapUpperHalf(pageTable *pagetables.PageTables) {
 
 // getMaxVCPU get max vCPU number
 func (m *machine) getMaxVCPU() {
-	maxVCPUs, errno := hostsyscall.RawSyscall(unix.SYS_IOCTL, uintptr(m.fd), KVM_CHECK_EXTENSION, _KVM_CAP_MAX_VCPUS)
-	if errno != 0 {
-		m.maxVCPUs = _KVM_NR_VCPUS
-	} else {
-		m.maxVCPUs = int(maxVCPUs)
+	if m.maxVCPUs == 0 {
+		// The goal here is to avoid vCPU contentions for reasonable workloads.
+		// But "reasonable" isn't defined well in this case. Let's say that CPU
+		// overcommit with factor 2 is still acceptable. We allocate a set of
+		// vCPU for each goruntime processor (P) and two sets of vCPUs to run
+		// user code.
+		m.maxVCPUs = 3 * runtime.GOMAXPROCS(0)
 	}
 
-	// The goal here is to avoid vCPU contentions for reasonable workloads.
-	// But "reasonable" isn't defined well in this case. Let's say that CPU
-	// overcommit with factor 2 is still acceptable. We allocate a set of
-	// vCPU for each goruntime processor (P) and two sets of vCPUs to run
-	// user code.
-	rCPUs := runtime.GOMAXPROCS(0)
-	if 3*rCPUs < m.maxVCPUs {
-		m.maxVCPUs = 3 * rCPUs
+	// Apply KVM limit.
+	maxVCPUs, errno := hostsyscall.RawSyscall(unix.SYS_IOCTL, uintptr(m.fd), KVM_CHECK_EXTENSION, _KVM_CAP_MAX_VCPUS)
+	if errno != 0 {
+		maxVCPUs = _KVM_NR_VCPUS
+	}
+	if m.maxVCPUs > int(maxVCPUs) {
+		m.maxVCPUs = int(maxVCPUs)
 	}
 }
 
