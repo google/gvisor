@@ -19,7 +19,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/syndtr/gocapability/capability"
+	"github.com/moby/sys/capability"
 	"gvisor.dev/gvisor/pkg/test/dockerutil"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/flag"

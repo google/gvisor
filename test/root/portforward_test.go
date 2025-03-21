@@ -31,7 +31,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/syndtr/gocapability/capability"
+	"github.com/moby/sys/capability"
 	"golang.org/x/sync/errgroup"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/test/dockerutil"

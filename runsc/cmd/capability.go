@@ -18,7 +18,7 @@ import (
 	"fmt"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
-	"github.com/syndtr/gocapability/capability"
+	"github.com/moby/sys/capability"
 	"gvisor.dev/gvisor/pkg/log"
 )
 

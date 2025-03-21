@@ -2713,10 +2713,10 @@ go_repository(
 )
 
 go_repository(
-    name = "com_github_syndtr_gocapability",
-    importpath = "github.com/syndtr/gocapability",
-    sum = "h1:kdXcSzyDtseVEc4yCz2qF8ZrQvIDBJLl4S1c3GCXmoI=",
-    version = "v0.0.0-20200815063812-42c35b437635",
+    name = "com_github_moby_sys_capability",
+    importpath = "github.com/moby/sys/capability",
+    sum = "h1:4D4mI6KlNtWMCM1Z/K0i7RV1FkX+DBDHKVJpCndZoHk=",
+    version = "v0.4.0",
 )
 
 go_repository(
