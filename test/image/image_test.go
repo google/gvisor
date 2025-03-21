@@ -29,6 +29,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/exec"
 	"strings"
 	"testing"
 	"time"
@@ -147,8 +148,21 @@ func TestHttpd(t *testing.T) {
 		Ports: []int{port},
 	}
 	d.CopyFiles(&opts, "/usr/local/apache2/htdocs", "test/image/latin10k.txt")
+	if hostname, err := os.Hostname(); err == nil {
+		t.Logf("Hostname: %v", hostname)
+	}
+	t.Logf("Current time: %v", time.Now())
 	if err := d.Spawn(ctx, opts); err != nil {
-		t.Fatalf("docker run failed: %v", err)
+		var lsofOut []byte
+		if strings.Contains(err.Error(), "bind: address already in use") {
+			lsofCmd := exec.Command("/usr/bin/sudo", "/usr/bin/lsof", "-i", "-P", "-n")
+			var lsofErr error
+			lsofOut, lsofErr = lsofCmd.CombinedOutput()
+			if lsofErr != nil {
+				lsofOut = []byte(fmt.Sprintf("<lsof failed: %v>", lsofErr))
+			}
+		}
+		t.Fatalf("docker run failed: %v; lsof:\n%s", err, lsofOut)
 	}
 
 	// Find container IP address.
@@ -177,8 +191,21 @@ func TestNginx(t *testing.T) {
 		Ports: []int{port},
 	}
 	d.CopyFiles(&opts, "/usr/share/nginx/html", "test/image/latin10k.txt")
+	if hostname, err := os.Hostname(); err == nil {
+		t.Logf("Hostname: %v", hostname)
+	}
+	t.Logf("Current time: %v", time.Now())
 	if err := d.Spawn(ctx, opts); err != nil {
-		t.Fatalf("docker run failed: %v", err)
+		var lsofOut []byte
+		if strings.Contains(err.Error(), "bind: address already in use") {
+			lsofCmd := exec.Command("/usr/bin/sudo", "/usr/bin/lsof", "-i", "-P", "-n")
+			var lsofErr error
+			lsofOut, lsofErr = lsofCmd.CombinedOutput()
+			if lsofErr != nil {
+				lsofOut = []byte(fmt.Sprintf("<lsof failed: %v>", lsofErr))
+			}
+		}
+		t.Fatalf("docker run failed: %v; lsof:\n%s", err, lsofOut)
 	}
 
 	// Find container IP address.
@@ -244,11 +271,24 @@ func TestTomcat(t *testing.T) {
 
 	// Start the server.
 	port := 8080
+	if hostname, err := os.Hostname(); err == nil {
+		t.Logf("Hostname: %v", hostname)
+	}
+	t.Logf("Current time: %v", time.Now())
 	if err := d.Spawn(ctx, dockerutil.RunOpts{
 		Image: "basic/tomcat",
 		Ports: []int{port},
 	}); err != nil {
-		t.Fatalf("docker run failed: %v", err)
+		var lsofOut []byte
+		if strings.Contains(err.Error(), "bind: address already in use") {
+			lsofCmd := exec.Command("/usr/bin/sudo", "/usr/bin/lsof", "-i", "-P", "-n")
+			var lsofErr error
+			lsofOut, lsofErr = lsofCmd.CombinedOutput()
+			if lsofErr != nil {
+				lsofOut = []byte(fmt.Sprintf("<lsof failed: %v>", lsofErr))
+			}
+		}
+		t.Fatalf("docker run failed: %v; lsof:\n%s", err, lsofOut)
 	}
 
 	// Find container IP address.
