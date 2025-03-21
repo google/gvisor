@@ -1060,7 +1060,7 @@ func (g *aplGoroutine) main() {
 		// Process completions.
 		apl.mu.Lock()
 		for _, c := range completions {
-			op := g.ops[c.ID]
+			op := &g.ops[c.ID]
 			g.opsBusy.Remove(uint32(c.ID))
 			g.qavail++
 			if op.tempRef {
