@@ -17,7 +17,7 @@ go_library(
         "//pkg/rand",
         "//pkg/refs",
         "//pkg/unet",
-        "@com_github_syndtr_gocapability//capability:go_default_library",
+        "@com_github_moby_sys_capability//:go_default_library",
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )

@@ -31,8 +31,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/moby/sys/capability"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
-	"github.com/syndtr/gocapability/capability"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/log"
