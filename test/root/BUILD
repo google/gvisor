@@ -42,8 +42,8 @@ go_test(
         "//runsc/flag",
         "//runsc/specutils",
         "@com_github_cenkalti_backoff//:go_default_library",
+        "@com_github_moby_sys_capability//:go_default_library",
         "@com_github_opencontainers_runtime_spec//specs-go:go_default_library",
-        "@com_github_syndtr_gocapability//capability:go_default_library",
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )
@@ -63,7 +63,7 @@ go_test(
         "//runsc/config",
         "//runsc/flag",
         "//runsc/specutils",
-        "@com_github_syndtr_gocapability//capability:go_default_library",
+        "@com_github_moby_sys_capability//:go_default_library",
         "@org_golang_x_sync//errgroup:go_default_library",
     ],
 )

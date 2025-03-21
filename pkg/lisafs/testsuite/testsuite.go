@@ -23,7 +23,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/syndtr/gocapability/capability"
+	"github.com/moby/sys/capability"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
