@@ -32,6 +32,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/sentry/platform/kvm/testutil"
 	ktime "gvisor.dev/gvisor/pkg/sentry/time"
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // dummyFPState is initialized in TestMain.
@@ -478,6 +479,63 @@ func TestKernelVDSO(t *testing.T) {
 		}
 		return false
 	})
+}
+
+// Regression test for b/404271139.
+func TestSingleVCPU(t *testing.T) {
+	// Create the machine.
+	deviceFile, err := OpenDevice("")
+	if err != nil {
+		t.Fatalf("error opening device file: %v", err)
+	}
+	k, err := New(deviceFile, Config{
+		MaxVCPUs: 1,
+	})
+	if err != nil {
+		t.Fatalf("error creating KVM instance: %v", err)
+	}
+	defer k.machine.Destroy()
+
+	// Ping-pong the single vCPU between two goroutines. The test passes if
+	// this does not deadlock.
+	stopC := make(chan struct{})
+	var doneWG sync.WaitGroup
+	defer func() {
+		close(stopC)
+		doneWG.Wait()
+	}()
+	var wakeC [2]chan struct{}
+	for i := range wakeC {
+		wakeC[i] = make(chan struct{}, 1)
+	}
+	for i := range wakeC {
+		doneWG.Add(1)
+		go func(i int) {
+			defer doneWG.Done()
+			for {
+				// Multiple ready channels in a select statement are chosen
+				// from randomly, so have a separate non-blocking receive from
+				// stopC first to ensure that it's honored in deterministic
+				// time.
+				select {
+				case <-stopC:
+					return
+				default:
+				}
+				select {
+				case <-stopC:
+					return
+				case <-wakeC[i]:
+					c := k.machine.Get()
+					bluepill(c)
+					wakeC[1-i] <- struct{}{}
+					k.machine.Put(c)
+				}
+			}
+		}(i)
+	}
+	wakeC[0] <- struct{}{}
+	time.Sleep(time.Second)
 }
 
 func BenchmarkApplicationSyscall(b *testing.B) {
