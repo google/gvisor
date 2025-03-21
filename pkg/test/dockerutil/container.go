@@ -570,13 +570,13 @@ func (c *Container) CopyFiles(opts *RunOpts, target string, sources ...string) {
 }
 
 // Stats returns a snapshot of container stats similar to `docker stats`.
-func (c *Container) Stats(ctx context.Context) (*types.StatsJSON, error) {
+func (c *Container) Stats(ctx context.Context) (*container.StatsResponse, error) {
 	responseBody, err := c.client.ContainerStats(ctx, c.id, false /*stream*/)
 	if err != nil {
 		return nil, fmt.Errorf("ContainerStats failed: %v", err)
 	}
 	defer responseBody.Body.Close()
-	var v types.StatsJSON
+	var v container.StatsResponse
 	if err := json.NewDecoder(responseBody.Body).Decode(&v); err != nil {
 		return nil, fmt.Errorf("failed to decode container stats: %v", err)
 	}

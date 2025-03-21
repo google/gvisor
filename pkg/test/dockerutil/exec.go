@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/api/types/container"
 	"github.com/moby/moby/pkg/stdcopy"
 )
 
@@ -102,7 +103,7 @@ func (c *Container) doExec(ctx context.Context, r ExecOpts, args []string) (Proc
 		return Process{}, fmt.Errorf("exec create failed with err: %v", err)
 	}
 
-	hijack, err := c.client.ContainerExecAttach(ctx, resp.ID, types.ExecStartCheck{})
+	hijack, err := c.client.ContainerExecAttach(ctx, resp.ID, container.ExecStartOptions{})
 	if err != nil {
 		return Process{}, fmt.Errorf("exec attach failed with err: %v", err)
 	}
@@ -114,12 +115,12 @@ func (c *Container) doExec(ctx context.Context, r ExecOpts, args []string) (Proc
 	}, nil
 }
 
-func (c *Container) execConfig(r ExecOpts, cmd []string) types.ExecConfig {
+func (c *Container) execConfig(r ExecOpts, cmd []string) container.ExecOptions {
 	env := append(r.Env, fmt.Sprintf("RUNSC_TEST_NAME=%s", c.Name))
 	if !r.NoWrap && c.sniffGPUOpts != nil {
 		cmd = c.sniffGPUOpts.prepend(cmd)
 	}
-	return types.ExecConfig{
+	return container.ExecOptions{
 		AttachStdin:  r.UseTTY,
 		AttachStderr: true,
 		AttachStdout: true,

@@ -21,7 +21,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/api/types/container"
 	"gvisor.dev/gvisor/pkg/test/dockerutil"
 	"gvisor.dev/gvisor/test/benchmarks/base"
 	"gvisor.dev/gvisor/test/benchmarks/harness"
@@ -161,7 +161,7 @@ func BenchmarkSizeNode(b *testing.B) {
 	reportMemoryUsage(b, sumMemoryUsage)
 }
 
-func validateStats(stats *types.StatsJSON) error {
+func validateStats(stats *container.StatsResponse) error {
 	// The runc empty container is on the order of multiple kB, so if this is smaller than that,
 	// there is probably something wrong.
 	var memoryAtLeast uint64 = 1000

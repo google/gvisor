@@ -18,7 +18,6 @@ import (
 	"context"
 	"net"
 
-	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/network"
 	"github.com/moby/moby/client"
 	"gvisor.dev/gvisor/pkg/test/testutil"
@@ -51,7 +50,7 @@ func NewNetwork(ctx context.Context, logger testutil.Logger) *Network {
 	}
 }
 
-func (n *Network) networkCreate() types.NetworkCreate {
+func (n *Network) networkCreate() network.CreateOptions {
 
 	var subnet string
 	if n.Subnet != nil {
@@ -64,7 +63,7 @@ func (n *Network) networkCreate() types.NetworkCreate {
 		}},
 	}
 
-	return types.NetworkCreate{
+	return network.CreateOptions{
 		IPAM: &ipam,
 	}
 }
@@ -97,8 +96,8 @@ func (n *Network) Connect(ctx context.Context, container *Container, ipv4, ipv6 
 }
 
 // Inspect returns this network's info.
-func (n *Network) Inspect(ctx context.Context) (types.NetworkResource, error) {
-	return n.client.NetworkInspect(ctx, n.id, types.NetworkInspectOptions{Verbose: true})
+func (n *Network) Inspect(ctx context.Context) (network.Inspect, error) {
+	return n.client.NetworkInspect(ctx, n.id, network.InspectOptions{Verbose: true})
 }
 
 // Cleanup cleans up the docker network.
