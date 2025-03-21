@@ -84,8 +84,21 @@ func TestLifeCycle(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("docker create failed: %v", err)
 	}
+	if hostname, err := os.Hostname(); err == nil {
+		t.Logf("Hostname: %v", hostname)
+	}
+	t.Logf("Current time: %v", time.Now())
 	if err := d.Start(ctx); err != nil {
-		t.Fatalf("docker start failed: %v", err)
+		var lsofOut []byte
+		if strings.Contains(err.Error(), "bind: address already in use") {
+			lsofCmd := exec.Command("/usr/bin/sudo", "/usr/bin/lsof", "-i", "-P", "-n")
+			var lsofErr error
+			lsofOut, lsofErr = lsofCmd.CombinedOutput()
+			if lsofErr != nil {
+				lsofOut = []byte(fmt.Sprintf("<lsof failed: %v>", lsofErr))
+			}
+		}
+		t.Fatalf("docker start failed: %v; lsof:\n%s", err, lsofOut)
 	}
 
 	ip, err := d.FindIP(ctx, false)
