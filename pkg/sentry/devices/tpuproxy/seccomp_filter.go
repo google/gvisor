@@ -94,6 +94,10 @@ func Filters() seccomp.SyscallRules {
 			},
 			seccomp.PerArg{
 				seccomp.NonNegativeFD{},
+				seccomp.EqualTo(linux.VFIO_GROUP_UNSET_CONTAINER),
+			},
+			seccomp.PerArg{
+				seccomp.NonNegativeFD{},
 				seccomp.EqualTo(linux.VFIO_IOMMU_MAP_DMA),
 			},
 			seccomp.PerArg{

@@ -23,6 +23,7 @@ import (
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fdnotifier"
 	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/devices/tpuproxy/util"
@@ -80,7 +81,9 @@ func (fd *tpuFD) Release(context.Context) {
 	}
 	fdnotifier.RemoveFD(fd.hostFD)
 	fd.queue.Notify(waiter.EventHUp)
-	unix.Close(int(fd.hostFD))
+	if err := unix.Close(int(fd.hostFD)); err != nil {
+		log.Warningf("close(%d) tpuFD failed: %v", fd.hostFD, err)
+	}
 }
 
 // EventRegister implements waiter.Waitable.EventRegister.
@@ -134,6 +137,8 @@ func (fd *tpuFD) Ioctl(ctx context.Context, uio usermem.IO, sysno uintptr, args 
 	switch cmd {
 	case linux.VFIO_GROUP_SET_CONTAINER:
 		return fd.setContainer(ctx, t, args[2].Pointer())
+	case linux.VFIO_GROUP_UNSET_CONTAINER:
+		return util.IOCTLInvoke[uint32, uintptr](fd.hostFD, linux.VFIO_GROUP_UNSET_CONTAINER, 0)
 	case linux.VFIO_GROUP_GET_DEVICE_FD:
 		ret, cleanup, err := fd.getPciDeviceFd(t, args[2].Pointer())
 		defer cleanup()
@@ -194,6 +199,7 @@ func (fd *tpuFD) getPciDeviceFd(t *kernel.Task, arg hostarch.Addr) (uintptr, fun
 	if err := fdnotifier.AddFD(int32(hostFD), &fd.queue); err != nil {
 		return 0, cleanup, err
 	}
+	defer pciDevFD.vfsfd.DecRef(t)
 	newFD, err := t.NewFDFrom(0, &pciDevFD.vfsfd, kernel.FDFlags{})
 	if err != nil {
 		return 0, cleanup, err
