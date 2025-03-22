@@ -258,6 +258,20 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 	// Set traceback level
 	debug.SetTraceback(conf.Traceback)
 
+	// Get the spec from the specFD. We *must* keep this os.File alive past
+	// the call setCapsAndCallSelf, otherwise the FD will be closed and the
+	// child process cannot read it
+	specFile := os.NewFile(uintptr(b.specFD), "spec file")
+	spec, err := specutils.ReadSpecFromFile(b.bundleDir, specFile, conf)
+	if err != nil {
+		util.Fatalf("reading spec: %v", err)
+	}
+
+	if value, ok := spec.Annotations[specutils.AnnotationCpuFeatures]; ok {
+		features := strings.Split(value, ",")
+		cpuid.SetAllowedFeatures(features)
+	}
+
 	// Initialize CPUID information.
 	cpuid.Initialize()
 
@@ -311,15 +325,6 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 	if b.syncUsernsFD >= 0 {
 		syncUsernsForRootless(b.syncUsernsFD)
 		argOverride["sync-userns-fd"] = "-1"
-	}
-
-	// Get the spec from the specFD. We *must* keep this os.File alive past
-	// the call setCapsAndCallSelf, otherwise the FD will be closed and the
-	// child process cannot read it
-	specFile := os.NewFile(uintptr(b.specFD), "spec file")
-	spec, err := specutils.ReadSpecFromFile(b.bundleDir, specFile, conf)
-	if err != nil {
-		util.Fatalf("reading spec: %v", err)
 	}
 
 	if b.setUpRoot {
