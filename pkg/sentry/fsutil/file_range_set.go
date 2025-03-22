@@ -162,7 +162,17 @@ func (s *FileRangeSet) Fill(ctx context.Context, required, optional memmap.Mappa
 				return done, nil
 			}
 		}
+
+		// We can only pass opts.Huge if the allocation is hugepage-aligned.
+		// TODO: If opts.Huge is true and gap spans at least one aligned
+		// hugepage, but either start or end are not hugepage-aligned, consider
+		// allocating small pages on either end and huge pages in the middle.
+		wantHuge := opts.Huge
+		if !hostarch.IsHugePageAligned(gr.Start) || !hostarch.IsHugePageAligned(gr.End) {
+			opts.Huge = false
+		}
 		fr, err := mf.Allocate(gr.Length(), opts)
+		opts.Huge = wantHuge
 
 		// Store anything we managed to read into the cache.
 		if done := fr.Length(); done != 0 {
