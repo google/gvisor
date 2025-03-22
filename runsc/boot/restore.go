@@ -83,8 +83,12 @@ type restorer struct {
 	pagesMetadata *fd.FD
 	pagesFile     *fd.FD
 
+	// finishRestore does the restore work once all per-container data is
+	// known. It is obtained by calling `restorer.startRestore`.
+	finishRestore func() error
+
 	// If background is true, pagesFile may continue to be read after
-	// restorer.restore() returns.
+	// `finishRestore` finishes.
 	background bool
 
 	// deviceFile is the required to start the platform.
@@ -125,6 +129,15 @@ func (r *restorer) restoreContainerInfo(l *Loader, info *containerInfo) error {
 
 	r.containers = append(r.containers, info)
 
+	if r.finishRestore == nil {
+		log.Infof("Starting kernel restore.")
+		finishRestore, err := r.restore(l)
+		if err != nil {
+			return err
+		}
+		r.finishRestore = finishRestore
+	}
+
 	log.Infof("Restored container %d of %d", len(r.containers), r.totalContainers)
 	if log.IsLogging(log.Debug) {
 		for i, fd := range info.stdioFDs {
@@ -133,8 +146,8 @@ func (r *restorer) restoreContainerInfo(l *Loader, info *containerInfo) error {
 	}
 
 	if len(r.containers) == r.totalContainers {
-		// Trigger the restore if this is the last container.
-		return r.restore(l)
+		// Finish the restore if this is the last container.
+		return r.finishRestore()
 	}
 	return nil
 }
@@ -148,7 +161,7 @@ func createNetworkStackForRestore(l *Loader) (*stack.Stack, inet.Stack) {
 	return nil, hostinet.NewStack()
 }
 
-func (r *restorer) restore(l *Loader) error {
+func (r *restorer) restore(l *Loader) (func() error, error) {
 	log.Infof("Starting to restore %d containers", len(r.containers))
 
 	// Create a new root network namespace with the network stack of the
@@ -162,7 +175,7 @@ func (r *restorer) restore(l *Loader) error {
 
 	p, err := createPlatform(l.root.conf, r.deviceFile)
 	if err != nil {
-		return fmt.Errorf("creating platform: %v", err)
+		return nil, fmt.Errorf("creating platform: %v", err)
 	}
 
 	// Start the old watchdog before replacing it with a new one below.
@@ -178,7 +191,7 @@ func (r *restorer) restore(l *Loader) error {
 
 	mf, err := createMemoryFile(l.root.conf.AppHugePages, l.hostTHP)
 	if err != nil {
-		return fmt.Errorf("creating memory file: %v", err)
+		return nil, fmt.Errorf("creating memory file: %v", err)
 	}
 	l.k.SetMemoryFile(mf)
 
@@ -188,158 +201,160 @@ func (r *restorer) restore(l *Loader) error {
 		pprof.Initialize()
 	}
 
-	// Seccomp filters have to be applied before vfs restore and before parsing
-	// the state file.
-	if err := l.installSeccompFilters(); err != nil {
-		return err
-	}
-
-	// Set up the restore environment.
-	ctx := l.k.SupervisorContext()
-	if oldStack != nil {
-		ctx = context.WithValue(ctx, stack.CtxRestoreStack, oldStack)
-	}
-
-	l.mu.Lock()
-	cu := cleanup.Make(func() {
-		l.mu.Unlock()
-	})
-	defer cu.Clean()
-
-	fdmap := make(map[vfs.RestoreID]int)
-	mfmap := make(map[string]*pgalloc.MemoryFile)
-	for _, cont := range r.containers {
-		// TODO(b/298078576): Need to process hints here probably
-		mntr := newContainerMounter(cont, l.k, l.mountHints, l.sharedMounts, l.productName, cont.cid)
-		if err = mntr.configureRestore(fdmap, mfmap); err != nil {
-			return fmt.Errorf("configuring filesystem restore: %v", err)
+	return func() error {
+		// Seccomp filters have to be applied before vfs restore and before parsing
+		// the state file.
+		if err := l.installSeccompFilters(); err != nil {
+			return err
 		}
 
-		for i, fd := range cont.stdioFDs {
-			key := host.MakeRestoreID(cont.containerName, i)
-			fdmap[key] = fd.Release()
+		// Set up the restore environment.
+		ctx := l.k.SupervisorContext()
+		if oldStack != nil {
+			ctx = context.WithValue(ctx, stack.CtxRestoreStack, oldStack)
 		}
-		for _, customFD := range cont.passFDs {
-			key := host.MakeRestoreID(cont.containerName, customFD.guest)
-			fdmap[key] = customFD.host.FD()
-		}
-	}
 
-	log.Debugf("Restore using fdmap: %v", fdmap)
-	ctx = context.WithValue(ctx, vfs.CtxRestoreFilesystemFDMap, fdmap)
-	log.Debugf("Restore using mfmap: %v", mfmap)
-	ctx = context.WithValue(ctx, pgalloc.CtxMemoryFileMap, mfmap)
-	ctx = context.WithValue(ctx, devutil.CtxDevGoferClientProvider, l.k)
+		l.mu.Lock()
+		cu := cleanup.Make(func() {
+			l.mu.Unlock()
+		})
+		defer cu.Clean()
 
-	// Load the state.
-	loadOpts := state.LoadOpts{
-		Source:        r.stateFile,
-		PagesMetadata: r.pagesMetadata,
-		PagesFile:     r.pagesFile,
-		Background:    r.background,
-	}
-	err = loadOpts.Load(ctx, l.k, nil, oldInetStack, time.NewCalibratedClocks(), &vfs.CompleteRestoreOptions{}, l.saveRestoreNet)
-	r.pagesFile = nil // transferred to loadOpts.Load()
-	if err != nil {
-		return fmt.Errorf("failed to load kernel: %w", err)
-	}
-
-	oldSpecs, err := popContainerSpecsFromCheckpoint(l.k)
-	if err != nil {
-		return fmt.Errorf("failed to pop container specs from checkpoint: %w", err)
-	}
-	if err := specutils.RestoreValidateSpec(oldSpecs, l.containerSpecs, l.root.conf); err != nil {
-		return fmt.Errorf("failed to handle restore spec validation: %w", err)
-	}
-
-	// Since we have a new kernel we also must make a new watchdog.
-	dogOpts := watchdog.DefaultOpts
-	dogOpts.TaskTimeoutAction = l.root.conf.WatchdogAction
-	dogOpts.StartupTimeout = 3 * time2.Minute // Give extra time for all containers to restore.
-	dog := watchdog.New(l.k, dogOpts)
-
-	// Change the loader fields to reflect the changes made when restoring.
-	l.watchdog.Stop()
-	l.watchdog = dog
-	l.root.procArgs = kernel.CreateProcessArgs{}
-	l.restore = true
-	l.sandboxID = l.root.cid
-
-	// Update all tasks in the system with their respective new container IDs.
-	for _, task := range l.k.TaskSet().Root.Tasks() {
-		oldCid := task.ContainerID()
-		name := l.k.ContainerName(oldCid)
-		newCid, ok := l.containerIDs[name]
-		if !ok {
-			return fmt.Errorf("unable to remap task with CID %q (name: %q). Available names: %v", task.ContainerID(), name, l.containerIDs)
-		}
-		task.RestoreContainerID(newCid)
-	}
-
-	// Rebuild `processes` map with containers' root process from the restored kernel.
-	for _, tg := range l.k.RootPIDNamespace().ThreadGroups() {
-		// Find all processes with no parent (root of execution), that were not started
-		// via a call to `exec`.
-		if tg.Leader().Parent() == nil && tg.Leader().Origin != kernel.OriginExec {
-			cid := tg.Leader().ContainerID()
-			proc := l.processes[execID{cid: cid}]
-			if proc == nil {
-				return fmt.Errorf("unable to find container root process with CID %q, processes: %v", cid, l.processes)
+		fdmap := make(map[vfs.RestoreID]int)
+		mfmap := make(map[string]*pgalloc.MemoryFile)
+		for _, cont := range r.containers {
+			// TODO(b/298078576): Need to process hints here probably
+			mntr := newContainerMounter(cont, l.k, l.mountHints, l.sharedMounts, l.productName, cont.cid)
+			if err = mntr.configureRestore(fdmap, mfmap); err != nil {
+				return fmt.Errorf("configuring filesystem restore: %v", err)
 			}
-			proc.tg = tg
-		}
-	}
 
-	// Kill all processes that have been exec'd since they cannot be properly
-	// restored -- the caller is no longer connected.
-	log.Debugf("Killing any exec session that existed previously")
-	for _, tg := range l.k.RootPIDNamespace().ThreadGroups() {
-		if tg.Leader().Origin == kernel.OriginExec {
-			log.Infof("Killing exec'd process, PID: %d", tg.ID())
-			if err := l.k.SendExternalSignalThreadGroup(tg, &linux.SignalInfo{Signo: int32(linux.SIGKILL)}); err != nil {
-				log.Warningf("Failed to kill exec process after restore: %v", err)
+			for i, fd := range cont.stdioFDs {
+				key := host.MakeRestoreID(cont.containerName, i)
+				fdmap[key] = fd.Release()
+			}
+			for _, customFD := range cont.passFDs {
+				key := host.MakeRestoreID(cont.containerName, customFD.guest)
+				fdmap[key] = customFD.host.FD()
 			}
 		}
-	}
 
-	l.k.RestoreContainerMapping(l.containerIDs)
+		log.Debugf("Restore using fdmap: %v", fdmap)
+		ctx = context.WithValue(ctx, vfs.CtxRestoreFilesystemFDMap, fdmap)
+		log.Debugf("Restore using mfmap: %v", mfmap)
+		ctx = context.WithValue(ctx, pgalloc.CtxMemoryFileMap, mfmap)
+		ctx = context.WithValue(ctx, devutil.CtxDevGoferClientProvider, l.k)
 
-	l.kernelInitExtra()
-
-	// Refresh the control server with the newly created kernel.
-	l.ctrl.refreshHandlers()
-
-	// Release `l.mu` before calling into callbacks.
-	cu.Clean()
-
-	// r.restoreDone() signals and waits for the sandbox to start.
-	if err := r.restoreDone(); err != nil {
-		return fmt.Errorf("restorer.restoreDone callback failed: %w", err)
-	}
-
-	r.stateFile.Close()
-	if r.pagesFile != nil {
-		r.pagesFile.Close()
-	}
-	if r.pagesMetadata != nil {
-		r.pagesMetadata.Close()
-	}
-
-	go func() {
-		if err := postRestoreImpl(l); err != nil {
-			log.Warningf("Killing the sandbox after post restore work failed: %v", err)
-			l.k.Kill(linux.WaitStatusTerminationSignal(linux.SIGKILL))
-			return
+		// Load the state.
+		loadOpts := state.LoadOpts{
+			Source:        r.stateFile,
+			PagesMetadata: r.pagesMetadata,
+			PagesFile:     r.pagesFile,
+			Background:    r.background,
+		}
+		err = loadOpts.Load(ctx, l.k, nil, oldInetStack, time.NewCalibratedClocks(), &vfs.CompleteRestoreOptions{}, l.saveRestoreNet)
+		r.pagesFile = nil // transferred to loadOpts.Load()
+		if err != nil {
+			return fmt.Errorf("failed to load kernel: %w", err)
 		}
 
-		// Restore was successful, so increment the checkpoint count manually. The
-		// count was saved while the previous kernel was being saved and checkpoint
-		// success was unknown at that time. Now we know the checkpoint succeeded.
-		l.k.OnRestoreDone()
+		oldSpecs, err := popContainerSpecsFromCheckpoint(l.k)
+		if err != nil {
+			return fmt.Errorf("failed to pop container specs from checkpoint: %w", err)
+		}
+		if err := specutils.RestoreValidateSpec(oldSpecs, l.containerSpecs, l.root.conf); err != nil {
+			return fmt.Errorf("failed to handle restore spec validation: %w", err)
+		}
 
-		log.Infof("Restore successful")
-	}()
-	return nil
+		// Since we have a new kernel we also must make a new watchdog.
+		dogOpts := watchdog.DefaultOpts
+		dogOpts.TaskTimeoutAction = l.root.conf.WatchdogAction
+		dogOpts.StartupTimeout = 3 * time2.Minute // Give extra time for all containers to restore.
+		dog := watchdog.New(l.k, dogOpts)
+
+		// Change the loader fields to reflect the changes made when restoring.
+		l.watchdog.Stop()
+		l.watchdog = dog
+		l.root.procArgs = kernel.CreateProcessArgs{}
+		l.restore = true
+		l.sandboxID = l.root.cid
+
+		// Update all tasks in the system with their respective new container IDs.
+		for _, task := range l.k.TaskSet().Root.Tasks() {
+			oldCid := task.ContainerID()
+			name := l.k.ContainerName(oldCid)
+			newCid, ok := l.containerIDs[name]
+			if !ok {
+				return fmt.Errorf("unable to remap task with CID %q (name: %q). Available names: %v", task.ContainerID(), name, l.containerIDs)
+			}
+			task.RestoreContainerID(newCid)
+		}
+
+		// Rebuild `processes` map with containers' root process from the restored kernel.
+		for _, tg := range l.k.RootPIDNamespace().ThreadGroups() {
+			// Find all processes with no parent (root of execution), that were not started
+			// via a call to `exec`.
+			if tg.Leader().Parent() == nil && tg.Leader().Origin != kernel.OriginExec {
+				cid := tg.Leader().ContainerID()
+				proc := l.processes[execID{cid: cid}]
+				if proc == nil {
+					return fmt.Errorf("unable to find container root process with CID %q, processes: %v", cid, l.processes)
+				}
+				proc.tg = tg
+			}
+		}
+
+		// Kill all processes that have been exec'd since they cannot be properly
+		// restored -- the caller is no longer connected.
+		log.Debugf("Killing any exec session that existed previously")
+		for _, tg := range l.k.RootPIDNamespace().ThreadGroups() {
+			if tg.Leader().Origin == kernel.OriginExec {
+				log.Infof("Killing exec'd process, PID: %d", tg.ID())
+				if err := l.k.SendExternalSignalThreadGroup(tg, &linux.SignalInfo{Signo: int32(linux.SIGKILL)}); err != nil {
+					log.Warningf("Failed to kill exec process after restore: %v", err)
+				}
+			}
+		}
+
+		l.k.RestoreContainerMapping(l.containerIDs)
+
+		l.kernelInitExtra()
+
+		// Refresh the control server with the newly created kernel.
+		l.ctrl.refreshHandlers()
+
+		// Release `l.mu` before calling into callbacks.
+		cu.Clean()
+
+		// r.restoreDone() signals and waits for the sandbox to start.
+		if err := r.restoreDone(); err != nil {
+			return fmt.Errorf("restorer.restoreDone callback failed: %w", err)
+		}
+
+		r.stateFile.Close()
+		if r.pagesFile != nil {
+			r.pagesFile.Close()
+		}
+		if r.pagesMetadata != nil {
+			r.pagesMetadata.Close()
+		}
+
+		go func() {
+			if err := postRestoreImpl(l); err != nil {
+				log.Warningf("Killing the sandbox after post restore work failed: %v", err)
+				l.k.Kill(linux.WaitStatusTerminationSignal(linux.SIGKILL))
+				return
+			}
+
+			// Restore was successful, so increment the checkpoint count manually. The
+			// count was saved while the previous kernel was being saved and checkpoint
+			// success was unknown at that time. Now we know the checkpoint succeeded.
+			l.k.OnRestoreDone()
+
+			log.Infof("Restore successful")
+		}()
+		return nil
+	}, nil
 }
 
 func (l *Loader) save(o *control.SaveOpts) (err error) {
