@@ -114,7 +114,10 @@ go_test(
         "notap",
     ],
     visibility = ["//:sandbox"],
-    deps = ["//test/gpu/stablediffusion"],
+    deps = [
+        "//pkg/test/dockerutil",
+        "//test/gpu/stablediffusion",
+    ],
 )
 
 go_test(

@@ -33,6 +33,9 @@ import (
 
 // BenchmarkVLLM runs a vLLM workload.
 func BenchmarkVLLM(b *testing.B) {
+	if dockerutil.IsRunningOnARM() {
+		b.Skipf("%s is not supported on ARM for now.", b.Name())
+	}
 	doVLLMTest(b)
 }
 
