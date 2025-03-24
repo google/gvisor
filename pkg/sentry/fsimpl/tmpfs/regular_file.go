@@ -89,6 +89,9 @@ type regularFile struct {
 	// alignment padding.
 	initiallyUnlinked bool
 
+	// huge is true if pages in this file may be hugepage-backed.
+	huge bool
+
 	// size is the size of data.
 	//
 	// Protected by both dataMu and inode.mu; reading it requires holding
@@ -150,6 +153,7 @@ func NewZeroFile(ctx context.Context, creds *auth.Credentials, mount *vfs.Mount,
 	}
 	rf := fd.inode().impl.(*regularFile)
 	rf.memoryUsageKind = usage.Anonymous
+	rf.huge = true
 	rf.size.Store(size)
 	return &fd.vfsfd, err
 }
@@ -291,6 +295,7 @@ func (rf *regularFile) CopyMapping(ctx context.Context, ms memmap.MappingSpace, 
 // Translate implements memmap.Mappable.Translate.
 func (rf *regularFile) Translate(ctx context.Context, required, optional memmap.MappableRange, at hostarch.AccessType) ([]memmap.Translation, error) {
 	memCgID := pgalloc.MemoryCgroupIDFromContext(ctx)
+	mayHuge := rf.huge && rf.inode.fs.mf.HugepagesEnabled()
 
 	rf.dataMu.Lock()
 	defer rf.dataMu.Unlock()
@@ -336,6 +341,7 @@ func (rf *regularFile) Translate(ctx context.Context, required, optional memmap.
 	pagesAlloced, cerr := rf.data.Fill(ctx, required, optional, rf.size.RacyLoad(), rf.inode.fs.mf, pgalloc.AllocOpts{
 		Kind:    rf.memoryUsageKind,
 		MemCgID: memCgID,
+		Huge:    mayHuge,
 	}, nil)
 	// rf.data.Fill() may fail mid-way. We still want to account any pages that
 	// were allocated, irrespective of an error.
@@ -461,6 +467,7 @@ func (rf *regularFile) allocateLocked(ctx context.Context, mode, newSize uint64,
 		Kind:    rf.memoryUsageKind,
 		MemCgID: memCgID,
 		Mode:    allocMode,
+		Huge:    rf.huge && rf.inode.fs.mf.HugepagesEnabled(),
 	}, nil /* r */)
 	// f.data.Fill() may fail mid-way. We still want to account any pages that
 	// were allocated, irrespective of an error.
@@ -765,6 +772,8 @@ func (rw *regularFileReadWriter) WriteFromBlocks(srcs safemem.BlockSeq) (uint64,
 	pgstartaddr := hostarch.Addr(rw.off).RoundDown()
 	pgendaddr, _ := hostarch.Addr(end).RoundUp()
 	pgMR := memmap.MappableRange{uint64(pgstartaddr), uint64(pgendaddr)}
+	fs := rw.file.inode.fs
+	mayHuge := rw.file.huge && fs.mf.HugepagesEnabled()
 
 	var (
 		done   uint64
@@ -791,7 +800,7 @@ func (rw *regularFileReadWriter) WriteFromBlocks(srcs safemem.BlockSeq) (uint64,
 			// Allocate memory for the write.
 			gapMR := gap.Range().Intersect(pgMR)
 			pagesToFill := gapMR.Length() / hostarch.PageSize
-			pagesReserved := rw.file.inode.fs.accountPagesPartial(pagesToFill)
+			pagesReserved := fs.accountPagesPartial(pagesToFill)
 			if pagesReserved == 0 {
 				if done == 0 {
 					retErr = linuxerr.ENOSPC
@@ -802,7 +811,7 @@ func (rw *regularFileReadWriter) WriteFromBlocks(srcs safemem.BlockSeq) (uint64,
 			}
 			gapMR.End = gapMR.Start + (hostarch.PageSize * pagesReserved)
 			allocMode := pgalloc.AllocateAndWritePopulate
-			if rw.file.inode.fs.mf.IsDiskBacked() {
+			if fs.mf.IsDiskBacked() {
 				// Don't populate pages for disk-backed files. Benchmarking showed that
 				// disk-backed pages are likely to be written back to disk before we
 				// can write to them. The pages fault again on write anyways. In total,
@@ -811,14 +820,19 @@ func (rw *regularFileReadWriter) WriteFromBlocks(srcs safemem.BlockSeq) (uint64,
 				// useless disk writebacks.
 				allocMode = pgalloc.AllocateCallerIndirectCommit
 			}
-			fr, err := rw.file.inode.fs.mf.Allocate(gapMR.Length(), pgalloc.AllocOpts{
+			fr, err := fs.mf.Allocate(gapMR.Length(), pgalloc.AllocOpts{
 				Kind:    rw.file.memoryUsageKind,
 				MemCgID: rw.memCgID,
 				Mode:    allocMode,
+				// TODO: If mayHuge is true and gap spans at least one aligned
+				// hugepage, but either start or end are not hugepage-aligned,
+				// consider allocating small pages on either end and huge pages
+				// in the middle.
+				Huge: mayHuge && hostarch.IsHugePageAligned(gapMR.Start) && hostarch.IsHugePageAligned(gapMR.End),
 			})
 			if err != nil {
 				retErr = err
-				rw.file.inode.fs.unaccountPages(pagesReserved)
+				fs.unaccountPages(pagesReserved)
 				goto exitLoop
 			}
 
