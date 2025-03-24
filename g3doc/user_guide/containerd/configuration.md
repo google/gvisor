@@ -146,3 +146,103 @@ binary_name = "/usr/bin/nvidia-container-runtime"
 
 See [this section](../gpu.md#nvidia-container-runtime) for information about
 configuring `nvidia-container-runtime` to use `runsc` as its low-level runtime.
+
+## Enabling inotify for Shared Volumes
+
+When multiple containers share the same volume in a gVisor sandbox, inotify may
+fail to detect cross-container file changes unless specific annotations and
+configuration are set. By default, gVisor mounts container volumes independently
+without a single view of the entire pod. As a result, changes to shared volumes
+from one container appear as external updates to other containers. While these
+updates may be detected upon access, inotify does not properly pick them up
+unless extra metadata (i.e., “mount hints”) is provided.
+
+GKE often handles these hints automatically in its control plane, but on other
+Kubernetes distributions (e.g., EKS), you must configure them manually. Below
+are the steps and annotations required.
+
+### 1. Allow Pod Annotations to Pass to gVisor
+
+In your `/etc/containerd/config.toml`, configure containerd to propagate custom
+gVisor annotations to runsc:
+
+```toml
+[plugins."io.containerd.grpc.v1.cri".containerd.runtimes.gvisor]
+  runtime_type = "io.containerd.runsc.v1"
+  pod_annotations = [ "dev.gvisor.*" ]
+```
+
+### 2. Add gVisor Volume-Mount Annotations
+
+**Mount hints** must be provided in the form of annotations that tell gVisor how
+to handle each volume:
+
+-   `dev.gvisor.spec.mount.<NAME>.share`: `container`, `pod`, or `shared`.
+    -   `container`: The volume is only used by one container.
+    -   `pod`: The volume is used by multiple containers within the pod.
+    -   `shared`: The volume is shared with outside the pod, and requires
+        frequent checks for external changes.
+-   `dev.gvisor.spec.mount.<NAME>.type`: `tmpfs` or `bind`.
+    -   `tmpfs`: The volume uses `tmpfs` inside the sandbox. For `emptyDir`
+        volumes, setting this to `tmpfs` enables better performance.
+    -   `bind`: Indicates a bind mount from the host.
+-   `dev.gvisor.spec.mount.<NAME>.options`: Comma-separated volume-mount options
+    (e.g., `rw,rprivate`).
+
+Below is an example Pod spec for a shared `emptyDir` volume named
+`shared-folder`, with annotations that enable cross-container inotify:
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: shared-folder-test
+  annotations:
+    dev.gvisor.spec.mount.shared-folder.share: "pod"
+    dev.gvisor.spec.mount.shared-folder.type: "tmpfs"
+    dev.gvisor.spec.mount.shared-folder.options: "rw,rprivate"
+spec:
+  runtimeClassName: gvisor
+  containers:
+    - name: container1
+      image: node:14
+      command: ["node", "watcher.js"]
+      volumeMounts:
+        - name: shared-folder
+          mountPath: /shared
+    - name: container2
+      image: busybox
+      command: ["/bin/sh", "-c", "while true; do echo 'hello' > /shared/test.txt; sleep 2; done"]
+      volumeMounts:
+        - name: shared-folder
+          mountPath: /shared
+  volumes:
+    - name: shared-folder
+      emptyDir: {}
+```
+
+#### Explanation of Annotations
+
+-   **`dev.gvisor.spec.mount.<NAME>.share`**: `pod` indicates that multiple
+    containers within the same sandbox share this volume. This sets up fast
+    access and allows inotify events to propagate across containers.
+-   **`dev.gvisor.spec.mount.<NAME>.type`**: `tmpfs` is often recommended when
+    using `emptyDir` to enable higher performance inside the sandbox. Although
+    this is referred to as a `tmpfs`, it may still be backed by disk if
+    configured that way.
+-   **`dev.gvisor.spec.mount.<NAME>.options`**: Typically `rw,rprivate` for a
+    shared read/write volume.
+
+Once these annotations are in place, and the Pod is scheduled with the `gvisor`
+runtime, inotify should correctly detect file changes across containers sharing
+the same volume.
+
+If you have trouble, verify:
+
+-   That the containerd config snippet (`pod_annotations`) is in place.
+-   The volume name (e.g., `shared-folder`) matches the annotation keys.
+-   Your gVisor debug logs for warnings or errors.
+
+With these configurations, shared volumes in multi-container pods using gVisor
+on EKS (or other environments) should behave similarly to GKE by enabling
+cross-container inotify-based file change detection.
