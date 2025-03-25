@@ -17,8 +17,8 @@ package cmd
 import (
 	"fmt"
 
+	"github.com/moby/sys/capability"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
-	"github.com/syndtr/gocapability/capability"
 	"gvisor.dev/gvisor/pkg/log"
 )
 

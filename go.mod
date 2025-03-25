@@ -21,10 +21,10 @@ require (
 	github.com/google/subcommands v1.0.2-0.20190508160503-636abe8753b8
 	github.com/kr/pty v1.1.5
 	github.com/mattbaird/jsonpatch v0.0.0-20171005235357-81af80346b1a
+	github.com/moby/sys/capability v0.4.0
 	github.com/mohae/deepcopy v0.0.0-20170308212314-bb9b5e7adda9
 	github.com/opencontainers/runtime-spec v1.1.0-rc.1
 	github.com/sirupsen/logrus v1.9.3
-	github.com/syndtr/gocapability v0.0.0-20200815063812-42c35b437635
 	github.com/vishvananda/netlink v1.1.1-0.20211118161826-650dca95af54
 	golang.org/x/mod v0.21.0
 	golang.org/x/sync v0.8.0

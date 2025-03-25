@@ -2713,13 +2713,6 @@ go_repository(
 )
 
 go_repository(
-    name = "com_github_syndtr_gocapability",
-    importpath = "github.com/syndtr/gocapability",
-    sum = "h1:kdXcSzyDtseVEc4yCz2qF8ZrQvIDBJLl4S1c3GCXmoI=",
-    version = "v0.0.0-20200815063812-42c35b437635",
-)
-
-go_repository(
     name = "com_github_vishvananda_netlink",
     importpath = "github.com/vishvananda/netlink",
     sum = "h1:8mhqcHPqTMhSPoslhGYihEgSfc77+7La1P6kiB6+9So=",
@@ -2787,6 +2780,13 @@ go_repository(
     importpath = "github.com/golang/protobuf",
     sum = "h1:KhyjKVUg7Usr/dYsdSqoFveMYd5ko72D+zANwlG1mmg=",
     version = "v1.5.3",
+)
+
+go_repository(
+    name = "com_github_moby_sys_capability",
+    importpath = "github.com/moby/sys/capability",
+    sum = "h1:4D4mI6KlNtWMCM1Z/K0i7RV1FkX+DBDHKVJpCndZoHk=",
+    version = "v0.4.0",
 )
 
 go_repository(
