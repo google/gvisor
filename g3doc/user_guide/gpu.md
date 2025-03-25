@@ -114,6 +114,7 @@ As a result, `nvproxy` has the following limitations:
 3.  Supports selected NVIDIA driver capabilities.
 4.  Supports selected NVIDIA device files.
 5.  Supports selected `ioctl`s on each device file.
+6.  Supports selected platforms.
 
 ### Supported GPUs {#gpu-models}
 
@@ -209,6 +210,13 @@ to describe about your use case. If a missing `ioctl` implementation is the
 problem, then the [debug logs](/docs/user_guide/debugging/) will contain
 warnings with prefix `nvproxy: handler is undefined *`. See below on how to run
 the `ioctl_sniffer` tool.
+
+### Supported Platforms {#platforms}
+
+All nvproxy functionality is supported on systrap and ptrace platforms.
+[cudaMallocManaged() is currently flaky on the KVM platform due to limitations
+regarding virtual memory layout](https://github.com/google/gvisor/issues/11436);
+all other nvproxy functionality is supported on the KVM platform.
 
 ### Debugging
 

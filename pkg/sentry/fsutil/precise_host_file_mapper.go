@@ -31,6 +31,8 @@ import (
 //
 // +stateify savable
 type PreciseHostFileMapper struct {
+	addrMustEqualFileOffset bool
+
 	refsMu refsMutex `state:"nosave"`
 
 	// +checklocks:refsMu
@@ -50,6 +52,12 @@ type PreciseHostFileMapper struct {
 func NewPreciseHostFileMapper() *PreciseHostFileMapper {
 	f := &PreciseHostFileMapper{}
 	return f
+}
+
+// RequireAddrEqualsFileOffset causes the PreciseHostFileMapper to map the host
+// file descriptor at addresses equal to the corresponding file offsets.
+func (f *PreciseHostFileMapper) RequireAddrEqualsFileOffset() {
+	f.addrMustEqualFileOffset = true
 }
 
 // IncRefOn increments the reference count on all pages in mr.
@@ -186,14 +194,36 @@ func (f *PreciseHostFileMapper) mapInternalSegment(fr *memmap.FileRange, seg map
 // +checklocks:f.mapsMu
 func (f *PreciseHostFileMapper) mapInternalGap(fr *memmap.FileRange, gap mappingGapIterator, fd int, prot int, write bool) (safemem.Block, mappingIterator, syscall.Errno) {
 	newRange := fr.Intersect(gap.Range())
-	addr, _, errno := unix.Syscall6(
-		unix.SYS_MMAP,
-		0,
-		uintptr(newRange.Length()),
-		uintptr(prot),
-		unix.MAP_SHARED,
-		uintptr(fd),
-		uintptr(newRange.Start))
+	var (
+		addr  uintptr
+		errno unix.Errno
+	)
+	if f.addrMustEqualFileOffset {
+		addr, _, errno = unix.Syscall6(
+			unix.SYS_MMAP,
+			uintptr(newRange.Start),
+			uintptr(newRange.Length()),
+			uintptr(prot),
+			unix.MAP_SHARED|unix.MAP_FIXED_NOREPLACE,
+			uintptr(fd),
+			uintptr(newRange.Start))
+		if errno == 0 && uint64(addr) != newRange.Start {
+			// The host kernel predates MAP_FIXED_NOREPLACE and the requested
+			// address would conflict with an existing mapping. Return EEXIST
+			// for consistency with MAP_FIXED_NOREPLACE.
+			errno = unix.EEXIST
+			unix.RawSyscall(unix.SYS_MUNMAP, addr, uintptr(newRange.Length()), 0)
+		}
+	} else {
+		addr, _, errno = unix.Syscall6(
+			unix.SYS_MMAP,
+			0,
+			uintptr(newRange.Length()),
+			uintptr(prot),
+			unix.MAP_SHARED,
+			uintptr(fd),
+			uintptr(newRange.Start))
+	}
 	if errno != 0 {
 		return safemem.Block{}, mappingIterator{}, errno
 	}
