@@ -72,7 +72,9 @@ func (fd *vfioFD) Release(context.Context) {
 	fd.unpinRange(DevAddrRange{0, ^uint64(0)})
 	fdnotifier.RemoveFD(fd.hostFD)
 	fd.queue.Notify(waiter.EventHUp)
-	unix.Close(int(fd.hostFD))
+	if err := unix.Close(int(fd.hostFD)); err != nil {
+		log.Warningf("close(%d) vfioFD failed: %v", fd.hostFD, err)
+	}
 }
 
 // EventRegister implements waiter.Waitable.EventRegister.

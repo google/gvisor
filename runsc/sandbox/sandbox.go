@@ -32,8 +32,8 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff"
+	"github.com/moby/sys/capability"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
-	"github.com/syndtr/gocapability/capability"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/atomicbitops"

@@ -26,20 +26,17 @@ import (
 )
 
 func frontendIoctlInvoke[Params any, PtrParams hasStatusPtr[Params]](fi *frontendIoctlState, ioctlParams PtrParams) (uintptr, error) {
-	n, _, errno := unix.RawSyscall(unix.SYS_IOCTL, uintptr(fi.fd.hostFD), frontendIoctlCmd(fi.nr, fi.ioctlParamsSize), uintptr(unsafe.Pointer(ioctlParams)))
-	if errno != 0 {
-		return n, errno
-	}
-	if log.IsLogging(log.Debug) {
+	n, err := frontendIoctlInvokeNoStatus(fi, ioctlParams)
+	if err == nil && log.IsLogging(log.Debug) {
 		if status := ioctlParams.GetStatus(); status != nvgpu.NV_OK {
 			fi.ctx.Debugf("nvproxy: frontend ioctl failed: status=%#x", status)
 		}
 	}
-	return n, nil
+	return n, err
 }
 
-func frontendIoctlBytesInvoke(fi *frontendIoctlState, sentryParams *byte) (uintptr, error) {
-	n, _, errno := unix.RawSyscall(unix.SYS_IOCTL, uintptr(fi.fd.hostFD), frontendIoctlCmd(fi.nr, fi.ioctlParamsSize), uintptr(unsafe.Pointer(sentryParams)))
+func frontendIoctlInvokeNoStatus[Params any](fi *frontendIoctlState, ioctlParams *Params) (uintptr, error) {
+	n, _, errno := unix.RawSyscall(unix.SYS_IOCTL, uintptr(fi.fd.hostFD), frontendIoctlCmd(fi.nr, fi.ioctlParamsSize), uintptr(unsafe.Pointer(ioctlParams)))
 	if errno != 0 {
 		return n, errno
 	}
@@ -97,7 +94,7 @@ func ctrlIoctlHasInfoList[Params any, PtrParams hasCtrlInfoListPtr[Params]](fi *
 	var infoList []byte
 	if listSize := ctrlParams.ListSize(); listSize > 0 {
 		if !rmapiParamsSizeCheck(listSize, nvgpu.CtrlXxxInfoSize) {
-			return 0, ctrlCmdFailWithStatus(fi, ioctlParams, nvgpu.NV_ERR_INVALID_ARGUMENT)
+			return 0, frontendFailWithStatus(fi, ioctlParams, nvgpu.NV_ERR_INVALID_ARGUMENT)
 		}
 		infoList = make([]byte, listSize*nvgpu.CtrlXxxInfoSize)
 		if _, err := fi.t.CopyInBytes(addrFromP64(ctrlParams.CtrlInfoList()), infoList); err != nil {
@@ -239,7 +236,7 @@ func ctrlClientSystemGetP2PCaps(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS5
 	origBusPeerIDs := ctrlParams.BusPeerIDs
 	busPeerIDs, busPeerIDsBuf, ok := ctrlClientSystemGetP2PCapsInitializeArray(origBusPeerIDs, ctrlParams.GpuCount)
 	if !ok {
-		return 0, ctrlCmdFailWithStatus(fi, ioctlParams, nvgpu.NV_ERR_INVALID_ARGUMENT)
+		return 0, frontendFailWithStatus(fi, ioctlParams, nvgpu.NV_ERR_INVALID_ARGUMENT)
 	}
 	ctrlParams.BusPeerIDs = busPeerIDs
 
@@ -269,14 +266,14 @@ func ctrlClientSystemGetP2PCapsV550(fi *frontendIoctlState, ioctlParams *nvgpu.N
 	origBusPeerIDs := ctrlParams.BusPeerIDs
 	busPeerIDs, busPeerIDsBuf, ok := ctrlClientSystemGetP2PCapsInitializeArray(origBusPeerIDs, ctrlParams.GpuCount)
 	if !ok {
-		return 0, ctrlCmdFailWithStatus(fi, ioctlParams, nvgpu.NV_ERR_INVALID_ARGUMENT)
+		return 0, frontendFailWithStatus(fi, ioctlParams, nvgpu.NV_ERR_INVALID_ARGUMENT)
 	}
 	ctrlParams.BusPeerIDs = busPeerIDs
 
 	origBusEgmPeerIDs := ctrlParams.BusEgmPeerIDs
 	busEgmPeerIDs, busEgmPeerIDsBuf, ok := ctrlClientSystemGetP2PCapsInitializeArray(origBusEgmPeerIDs, ctrlParams.GpuCount)
 	if !ok {
-		return 0, ctrlCmdFailWithStatus(fi, ioctlParams, nvgpu.NV_ERR_INVALID_ARGUMENT)
+		return 0, frontendFailWithStatus(fi, ioctlParams, nvgpu.NV_ERR_INVALID_ARGUMENT)
 	}
 	ctrlParams.BusEgmPeerIDs = busEgmPeerIDs
 

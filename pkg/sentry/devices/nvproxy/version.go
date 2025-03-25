@@ -107,9 +107,9 @@ func Init() {
 			return &driverABI{
 				frontendIoctl: map[uint32]frontendIoctlHandler{
 					nvgpu.NV_ESC_CARD_INFO:                     feHandler(frontendIoctlBytes, compUtil), // nv_ioctl_card_info_t array
-					nvgpu.NV_ESC_CHECK_VERSION_STR:             feHandler(frontendIoctlSimple[nvgpu.RMAPIVersion], compUtil),
+					nvgpu.NV_ESC_CHECK_VERSION_STR:             feHandler(frontendIoctlSimpleNoStatus[nvgpu.RMAPIVersion], compUtil),
 					nvgpu.NV_ESC_ATTACH_GPUS_TO_FD:             feHandler(frontendIoctlBytes, compUtil), // NvU32 array containing GPU IDs
-					nvgpu.NV_ESC_SYS_PARAMS:                    feHandler(frontendIoctlSimple[nvgpu.IoctlSysParams], compUtil),
+					nvgpu.NV_ESC_SYS_PARAMS:                    feHandler(frontendIoctlSimpleNoStatus[nvgpu.IoctlSysParams], compUtil),
 					nvgpu.NV_ESC_RM_DUP_OBJECT:                 feHandler(rmDupObject, compUtil),
 					nvgpu.NV_ESC_RM_SHARE:                      feHandler(frontendIoctlSimple[nvgpu.NVOS57_PARAMETERS], compUtil),
 					nvgpu.NV_ESC_RM_UNMAP_MEMORY:               feHandler(frontendIoctlSimple[nvgpu.NVOS34_PARAMETERS], compUtil),

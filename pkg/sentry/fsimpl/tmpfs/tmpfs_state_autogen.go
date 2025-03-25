@@ -234,6 +234,7 @@ func (rf *regularFile) StateFields() []string {
 		"data",
 		"seals",
 		"initiallyUnlinked",
+		"huge",
 		"size",
 	}
 }
@@ -250,7 +251,8 @@ func (rf *regularFile) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(4, &rf.data)
 	stateSinkObject.Save(5, &rf.seals)
 	stateSinkObject.Save(6, &rf.initiallyUnlinked)
-	stateSinkObject.Save(7, &rf.size)
+	stateSinkObject.Save(7, &rf.huge)
+	stateSinkObject.Save(8, &rf.size)
 }
 
 func (rf *regularFile) afterLoad(context.Context) {}
@@ -264,7 +266,8 @@ func (rf *regularFile) StateLoad(ctx context.Context, stateSourceObject state.So
 	stateSourceObject.Load(4, &rf.data)
 	stateSourceObject.Load(5, &rf.seals)
 	stateSourceObject.Load(6, &rf.initiallyUnlinked)
-	stateSourceObject.Load(7, &rf.size)
+	stateSourceObject.Load(7, &rf.huge)
+	stateSourceObject.Load(8, &rf.size)
 }
 
 func (fd *regularFileFD) StateTypeName() string {

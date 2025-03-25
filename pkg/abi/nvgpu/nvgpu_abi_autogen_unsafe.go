@@ -7756,196 +7756,196 @@ func (p *IoctlNVOS33ParametersWithFD) WriteTo(writer io.Writer) (int64, error) {
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
-func (p *IoctlRegisterFD) SizeBytes() int {
+func (i *IoctlRegisterFD) SizeBytes() int {
     return 4
 }
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
-func (p *IoctlRegisterFD) MarshalBytes(dst []byte) []byte {
-    hostarch.ByteOrder.PutUint32(dst[:4], uint32(p.CtlFD))
+func (i *IoctlRegisterFD) MarshalBytes(dst []byte) []byte {
+    hostarch.ByteOrder.PutUint32(dst[:4], uint32(i.CtlFD))
     dst = dst[4:]
     return dst
 }
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (p *IoctlRegisterFD) UnmarshalBytes(src []byte) []byte {
-    p.CtlFD = int32(hostarch.ByteOrder.Uint32(src[:4]))
+func (i *IoctlRegisterFD) UnmarshalBytes(src []byte) []byte {
+    i.CtlFD = int32(hostarch.ByteOrder.Uint32(src[:4]))
     src = src[4:]
     return src
 }
 
 // Packed implements marshal.Marshallable.Packed.
 //go:nosplit
-func (p *IoctlRegisterFD) Packed() bool {
+func (i *IoctlRegisterFD) Packed() bool {
     return true
 }
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
-func (p *IoctlRegisterFD) MarshalUnsafe(dst []byte) []byte {
-    size := p.SizeBytes()
-    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(p), uintptr(size))
+func (i *IoctlRegisterFD) MarshalUnsafe(dst []byte) []byte {
+    size := i.SizeBytes()
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(i), uintptr(size))
     return dst[size:]
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
-func (p *IoctlRegisterFD) UnmarshalUnsafe(src []byte) []byte {
-    size := p.SizeBytes()
-    gohacks.Memmove(unsafe.Pointer(p), unsafe.Pointer(&src[0]), uintptr(size))
+func (i *IoctlRegisterFD) UnmarshalUnsafe(src []byte) []byte {
+    size := i.SizeBytes()
+    gohacks.Memmove(unsafe.Pointer(i), unsafe.Pointer(&src[0]), uintptr(size))
     return src[size:]
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
-func (p *IoctlRegisterFD) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
+func (i *IoctlRegisterFD) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(p)))
-    hdr.Len = p.SizeBytes()
-    hdr.Cap = p.SizeBytes()
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(i)))
+    hdr.Len = i.SizeBytes()
+    hdr.Cap = i.SizeBytes()
 
     length, err := cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
-    // Since we bypassed the compiler's escape analysis, indicate that p
+    // Since we bypassed the compiler's escape analysis, indicate that i
     // must live until the use above.
-    runtime.KeepAlive(p) // escapes: replaced by intrinsic.
+    runtime.KeepAlive(i) // escapes: replaced by intrinsic.
     return length, err
 }
 
 // CopyOut implements marshal.Marshallable.CopyOut.
-func (p *IoctlRegisterFD) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
-    return p.CopyOutN(cc, addr, p.SizeBytes())
+func (i *IoctlRegisterFD) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+    return i.CopyOutN(cc, addr, i.SizeBytes())
 }
 
 // CopyInN implements marshal.Marshallable.CopyInN.
-func (p *IoctlRegisterFD) CopyInN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
+func (i *IoctlRegisterFD) CopyInN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(p)))
-    hdr.Len = p.SizeBytes()
-    hdr.Cap = p.SizeBytes()
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(i)))
+    hdr.Len = i.SizeBytes()
+    hdr.Cap = i.SizeBytes()
 
     length, err := cc.CopyInBytes(addr, buf[:limit]) // escapes: okay.
-    // Since we bypassed the compiler's escape analysis, indicate that p
+    // Since we bypassed the compiler's escape analysis, indicate that i
     // must live until the use above.
-    runtime.KeepAlive(p) // escapes: replaced by intrinsic.
+    runtime.KeepAlive(i) // escapes: replaced by intrinsic.
     return length, err
 }
 
 // CopyIn implements marshal.Marshallable.CopyIn.
-func (p *IoctlRegisterFD) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
-    return p.CopyInN(cc, addr, p.SizeBytes())
+func (i *IoctlRegisterFD) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+    return i.CopyInN(cc, addr, i.SizeBytes())
 }
 
 // WriteTo implements io.WriterTo.WriteTo.
-func (p *IoctlRegisterFD) WriteTo(writer io.Writer) (int64, error) {
+func (i *IoctlRegisterFD) WriteTo(writer io.Writer) (int64, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(p)))
-    hdr.Len = p.SizeBytes()
-    hdr.Cap = p.SizeBytes()
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(i)))
+    hdr.Len = i.SizeBytes()
+    hdr.Cap = i.SizeBytes()
 
     length, err := writer.Write(buf)
-    // Since we bypassed the compiler's escape analysis, indicate that p
+    // Since we bypassed the compiler's escape analysis, indicate that i
     // must live until the use above.
-    runtime.KeepAlive(p) // escapes: replaced by intrinsic.
+    runtime.KeepAlive(i) // escapes: replaced by intrinsic.
     return int64(length), err
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
-func (p *IoctlSysParams) SizeBytes() int {
+func (i *IoctlSysParams) SizeBytes() int {
     return 8
 }
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
-func (p *IoctlSysParams) MarshalBytes(dst []byte) []byte {
-    hostarch.ByteOrder.PutUint64(dst[:8], uint64(p.MemblockSize))
+func (i *IoctlSysParams) MarshalBytes(dst []byte) []byte {
+    hostarch.ByteOrder.PutUint64(dst[:8], uint64(i.MemblockSize))
     dst = dst[8:]
     return dst
 }
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (p *IoctlSysParams) UnmarshalBytes(src []byte) []byte {
-    p.MemblockSize = uint64(hostarch.ByteOrder.Uint64(src[:8]))
+func (i *IoctlSysParams) UnmarshalBytes(src []byte) []byte {
+    i.MemblockSize = uint64(hostarch.ByteOrder.Uint64(src[:8]))
     src = src[8:]
     return src
 }
 
 // Packed implements marshal.Marshallable.Packed.
 //go:nosplit
-func (p *IoctlSysParams) Packed() bool {
+func (i *IoctlSysParams) Packed() bool {
     return true
 }
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
-func (p *IoctlSysParams) MarshalUnsafe(dst []byte) []byte {
-    size := p.SizeBytes()
-    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(p), uintptr(size))
+func (i *IoctlSysParams) MarshalUnsafe(dst []byte) []byte {
+    size := i.SizeBytes()
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(i), uintptr(size))
     return dst[size:]
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
-func (p *IoctlSysParams) UnmarshalUnsafe(src []byte) []byte {
-    size := p.SizeBytes()
-    gohacks.Memmove(unsafe.Pointer(p), unsafe.Pointer(&src[0]), uintptr(size))
+func (i *IoctlSysParams) UnmarshalUnsafe(src []byte) []byte {
+    size := i.SizeBytes()
+    gohacks.Memmove(unsafe.Pointer(i), unsafe.Pointer(&src[0]), uintptr(size))
     return src[size:]
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
-func (p *IoctlSysParams) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
+func (i *IoctlSysParams) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(p)))
-    hdr.Len = p.SizeBytes()
-    hdr.Cap = p.SizeBytes()
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(i)))
+    hdr.Len = i.SizeBytes()
+    hdr.Cap = i.SizeBytes()
 
     length, err := cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
-    // Since we bypassed the compiler's escape analysis, indicate that p
+    // Since we bypassed the compiler's escape analysis, indicate that i
     // must live until the use above.
-    runtime.KeepAlive(p) // escapes: replaced by intrinsic.
+    runtime.KeepAlive(i) // escapes: replaced by intrinsic.
     return length, err
 }
 
 // CopyOut implements marshal.Marshallable.CopyOut.
-func (p *IoctlSysParams) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
-    return p.CopyOutN(cc, addr, p.SizeBytes())
+func (i *IoctlSysParams) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+    return i.CopyOutN(cc, addr, i.SizeBytes())
 }
 
 // CopyInN implements marshal.Marshallable.CopyInN.
-func (p *IoctlSysParams) CopyInN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
+func (i *IoctlSysParams) CopyInN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(p)))
-    hdr.Len = p.SizeBytes()
-    hdr.Cap = p.SizeBytes()
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(i)))
+    hdr.Len = i.SizeBytes()
+    hdr.Cap = i.SizeBytes()
 
     length, err := cc.CopyInBytes(addr, buf[:limit]) // escapes: okay.
-    // Since we bypassed the compiler's escape analysis, indicate that p
+    // Since we bypassed the compiler's escape analysis, indicate that i
     // must live until the use above.
-    runtime.KeepAlive(p) // escapes: replaced by intrinsic.
+    runtime.KeepAlive(i) // escapes: replaced by intrinsic.
     return length, err
 }
 
 // CopyIn implements marshal.Marshallable.CopyIn.
-func (p *IoctlSysParams) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
-    return p.CopyInN(cc, addr, p.SizeBytes())
+func (i *IoctlSysParams) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+    return i.CopyInN(cc, addr, i.SizeBytes())
 }
 
 // WriteTo implements io.WriterTo.WriteTo.
-func (p *IoctlSysParams) WriteTo(writer io.Writer) (int64, error) {
+func (i *IoctlSysParams) WriteTo(writer io.Writer) (int64, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(p)))
-    hdr.Len = p.SizeBytes()
-    hdr.Cap = p.SizeBytes()
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(i)))
+    hdr.Len = i.SizeBytes()
+    hdr.Cap = i.SizeBytes()
 
     length, err := writer.Write(buf)
-    // Since we bypassed the compiler's escape analysis, indicate that p
+    // Since we bypassed the compiler's escape analysis, indicate that i
     // must live until the use above.
-    runtime.KeepAlive(p) // escapes: replaced by intrinsic.
+    runtime.KeepAlive(i) // escapes: replaced by intrinsic.
     return int64(length), err
 }
 
@@ -10627,32 +10627,32 @@ func (n *NVOS64_PARAMETERS) WriteTo(writer io.Writer) (int64, error) {
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
-func (p *RMAPIVersion) SizeBytes() int {
+func (r *RMAPIVersion) SizeBytes() int {
     return 8 +
         1*64
 }
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
-func (p *RMAPIVersion) MarshalBytes(dst []byte) []byte {
-    hostarch.ByteOrder.PutUint32(dst[:4], uint32(p.Cmd))
+func (r *RMAPIVersion) MarshalBytes(dst []byte) []byte {
+    hostarch.ByteOrder.PutUint32(dst[:4], uint32(r.Cmd))
     dst = dst[4:]
-    hostarch.ByteOrder.PutUint32(dst[:4], uint32(p.Reply))
+    hostarch.ByteOrder.PutUint32(dst[:4], uint32(r.Reply))
     dst = dst[4:]
     for idx := 0; idx < 64; idx++ {
-        dst[0] = byte(p.VersionString[idx])
+        dst[0] = byte(r.VersionString[idx])
         dst = dst[1:]
     }
     return dst
 }
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (p *RMAPIVersion) UnmarshalBytes(src []byte) []byte {
-    p.Cmd = uint32(hostarch.ByteOrder.Uint32(src[:4]))
+func (r *RMAPIVersion) UnmarshalBytes(src []byte) []byte {
+    r.Cmd = uint32(hostarch.ByteOrder.Uint32(src[:4]))
     src = src[4:]
-    p.Reply = uint32(hostarch.ByteOrder.Uint32(src[:4]))
+    r.Reply = uint32(hostarch.ByteOrder.Uint32(src[:4]))
     src = src[4:]
     for idx := 0; idx < 64; idx++ {
-        p.VersionString[idx] = src[0]
+        r.VersionString[idx] = src[0]
         src = src[1:]
     }
     return src
@@ -10660,79 +10660,79 @@ func (p *RMAPIVersion) UnmarshalBytes(src []byte) []byte {
 
 // Packed implements marshal.Marshallable.Packed.
 //go:nosplit
-func (p *RMAPIVersion) Packed() bool {
+func (r *RMAPIVersion) Packed() bool {
     return true
 }
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
-func (p *RMAPIVersion) MarshalUnsafe(dst []byte) []byte {
-    size := p.SizeBytes()
-    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(p), uintptr(size))
+func (r *RMAPIVersion) MarshalUnsafe(dst []byte) []byte {
+    size := r.SizeBytes()
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(r), uintptr(size))
     return dst[size:]
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
-func (p *RMAPIVersion) UnmarshalUnsafe(src []byte) []byte {
-    size := p.SizeBytes()
-    gohacks.Memmove(unsafe.Pointer(p), unsafe.Pointer(&src[0]), uintptr(size))
+func (r *RMAPIVersion) UnmarshalUnsafe(src []byte) []byte {
+    size := r.SizeBytes()
+    gohacks.Memmove(unsafe.Pointer(r), unsafe.Pointer(&src[0]), uintptr(size))
     return src[size:]
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
-func (p *RMAPIVersion) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
+func (r *RMAPIVersion) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(p)))
-    hdr.Len = p.SizeBytes()
-    hdr.Cap = p.SizeBytes()
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(r)))
+    hdr.Len = r.SizeBytes()
+    hdr.Cap = r.SizeBytes()
 
     length, err := cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
-    // Since we bypassed the compiler's escape analysis, indicate that p
+    // Since we bypassed the compiler's escape analysis, indicate that r
     // must live until the use above.
-    runtime.KeepAlive(p) // escapes: replaced by intrinsic.
+    runtime.KeepAlive(r) // escapes: replaced by intrinsic.
     return length, err
 }
 
 // CopyOut implements marshal.Marshallable.CopyOut.
-func (p *RMAPIVersion) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
-    return p.CopyOutN(cc, addr, p.SizeBytes())
+func (r *RMAPIVersion) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+    return r.CopyOutN(cc, addr, r.SizeBytes())
 }
 
 // CopyInN implements marshal.Marshallable.CopyInN.
-func (p *RMAPIVersion) CopyInN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
+func (r *RMAPIVersion) CopyInN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(p)))
-    hdr.Len = p.SizeBytes()
-    hdr.Cap = p.SizeBytes()
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(r)))
+    hdr.Len = r.SizeBytes()
+    hdr.Cap = r.SizeBytes()
 
     length, err := cc.CopyInBytes(addr, buf[:limit]) // escapes: okay.
-    // Since we bypassed the compiler's escape analysis, indicate that p
+    // Since we bypassed the compiler's escape analysis, indicate that r
     // must live until the use above.
-    runtime.KeepAlive(p) // escapes: replaced by intrinsic.
+    runtime.KeepAlive(r) // escapes: replaced by intrinsic.
     return length, err
 }
 
 // CopyIn implements marshal.Marshallable.CopyIn.
-func (p *RMAPIVersion) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
-    return p.CopyInN(cc, addr, p.SizeBytes())
+func (r *RMAPIVersion) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+    return r.CopyInN(cc, addr, r.SizeBytes())
 }
 
 // WriteTo implements io.WriterTo.WriteTo.
-func (p *RMAPIVersion) WriteTo(writer io.Writer) (int64, error) {
+func (r *RMAPIVersion) WriteTo(writer io.Writer) (int64, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(p)))
-    hdr.Len = p.SizeBytes()
-    hdr.Cap = p.SizeBytes()
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(r)))
+    hdr.Len = r.SizeBytes()
+    hdr.Cap = r.SizeBytes()
 
     length, err := writer.Write(buf)
-    // Since we bypassed the compiler's escape analysis, indicate that p
+    // Since we bypassed the compiler's escape analysis, indicate that r
     // must live until the use above.
-    runtime.KeepAlive(p) // escapes: replaced by intrinsic.
+    runtime.KeepAlive(r) // escapes: replaced by intrinsic.
     return int64(length), err
 }
 
@@ -14764,44 +14764,44 @@ func (p *UVM_SET_RANGE_GROUP_PARAMS) WriteTo(writer io.Writer) (int64, error) {
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
-func (u *UVM_TOOLS_READ_PROCESS_MEMORY_PARAMS) SizeBytes() int {
+func (p *UVM_TOOLS_READ_PROCESS_MEMORY_PARAMS) SizeBytes() int {
     return 36 +
         1*4
 }
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
-func (u *UVM_TOOLS_READ_PROCESS_MEMORY_PARAMS) MarshalBytes(dst []byte) []byte {
-    hostarch.ByteOrder.PutUint64(dst[:8], uint64(u.Buffer))
+func (p *UVM_TOOLS_READ_PROCESS_MEMORY_PARAMS) MarshalBytes(dst []byte) []byte {
+    hostarch.ByteOrder.PutUint64(dst[:8], uint64(p.Buffer))
     dst = dst[8:]
-    hostarch.ByteOrder.PutUint64(dst[:8], uint64(u.Size))
+    hostarch.ByteOrder.PutUint64(dst[:8], uint64(p.Size))
     dst = dst[8:]
-    hostarch.ByteOrder.PutUint64(dst[:8], uint64(u.TargetVA))
+    hostarch.ByteOrder.PutUint64(dst[:8], uint64(p.TargetVA))
     dst = dst[8:]
-    hostarch.ByteOrder.PutUint64(dst[:8], uint64(u.BytesRead))
+    hostarch.ByteOrder.PutUint64(dst[:8], uint64(p.BytesRead))
     dst = dst[8:]
-    hostarch.ByteOrder.PutUint32(dst[:4], uint32(u.RMStatus))
+    hostarch.ByteOrder.PutUint32(dst[:4], uint32(p.RMStatus))
     dst = dst[4:]
     for idx := 0; idx < 4; idx++ {
-        dst[0] = byte(u.Pad0[idx])
+        dst[0] = byte(p.Pad0[idx])
         dst = dst[1:]
     }
     return dst
 }
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (u *UVM_TOOLS_READ_PROCESS_MEMORY_PARAMS) UnmarshalBytes(src []byte) []byte {
-    u.Buffer = uint64(hostarch.ByteOrder.Uint64(src[:8]))
+func (p *UVM_TOOLS_READ_PROCESS_MEMORY_PARAMS) UnmarshalBytes(src []byte) []byte {
+    p.Buffer = uint64(hostarch.ByteOrder.Uint64(src[:8]))
     src = src[8:]
-    u.Size = uint64(hostarch.ByteOrder.Uint64(src[:8]))
+    p.Size = uint64(hostarch.ByteOrder.Uint64(src[:8]))
     src = src[8:]
-    u.TargetVA = uint64(hostarch.ByteOrder.Uint64(src[:8]))
+    p.TargetVA = uint64(hostarch.ByteOrder.Uint64(src[:8]))
     src = src[8:]
-    u.BytesRead = uint64(hostarch.ByteOrder.Uint64(src[:8]))
+    p.BytesRead = uint64(hostarch.ByteOrder.Uint64(src[:8]))
     src = src[8:]
-    u.RMStatus = uint32(hostarch.ByteOrder.Uint32(src[:4]))
+    p.RMStatus = uint32(hostarch.ByteOrder.Uint32(src[:4]))
     src = src[4:]
     for idx := 0; idx < 4; idx++ {
-        u.Pad0[idx] = src[0]
+        p.Pad0[idx] = src[0]
         src = src[1:]
     }
     return src
@@ -14809,121 +14809,121 @@ func (u *UVM_TOOLS_READ_PROCESS_MEMORY_PARAMS) UnmarshalBytes(src []byte) []byte
 
 // Packed implements marshal.Marshallable.Packed.
 //go:nosplit
-func (u *UVM_TOOLS_READ_PROCESS_MEMORY_PARAMS) Packed() bool {
+func (p *UVM_TOOLS_READ_PROCESS_MEMORY_PARAMS) Packed() bool {
     return true
 }
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
-func (u *UVM_TOOLS_READ_PROCESS_MEMORY_PARAMS) MarshalUnsafe(dst []byte) []byte {
-    size := u.SizeBytes()
-    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(u), uintptr(size))
+func (p *UVM_TOOLS_READ_PROCESS_MEMORY_PARAMS) MarshalUnsafe(dst []byte) []byte {
+    size := p.SizeBytes()
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(p), uintptr(size))
     return dst[size:]
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
-func (u *UVM_TOOLS_READ_PROCESS_MEMORY_PARAMS) UnmarshalUnsafe(src []byte) []byte {
-    size := u.SizeBytes()
-    gohacks.Memmove(unsafe.Pointer(u), unsafe.Pointer(&src[0]), uintptr(size))
+func (p *UVM_TOOLS_READ_PROCESS_MEMORY_PARAMS) UnmarshalUnsafe(src []byte) []byte {
+    size := p.SizeBytes()
+    gohacks.Memmove(unsafe.Pointer(p), unsafe.Pointer(&src[0]), uintptr(size))
     return src[size:]
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
-func (u *UVM_TOOLS_READ_PROCESS_MEMORY_PARAMS) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
+func (p *UVM_TOOLS_READ_PROCESS_MEMORY_PARAMS) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(u)))
-    hdr.Len = u.SizeBytes()
-    hdr.Cap = u.SizeBytes()
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(p)))
+    hdr.Len = p.SizeBytes()
+    hdr.Cap = p.SizeBytes()
 
     length, err := cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
-    // Since we bypassed the compiler's escape analysis, indicate that u
+    // Since we bypassed the compiler's escape analysis, indicate that p
     // must live until the use above.
-    runtime.KeepAlive(u) // escapes: replaced by intrinsic.
+    runtime.KeepAlive(p) // escapes: replaced by intrinsic.
     return length, err
 }
 
 // CopyOut implements marshal.Marshallable.CopyOut.
-func (u *UVM_TOOLS_READ_PROCESS_MEMORY_PARAMS) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
-    return u.CopyOutN(cc, addr, u.SizeBytes())
+func (p *UVM_TOOLS_READ_PROCESS_MEMORY_PARAMS) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+    return p.CopyOutN(cc, addr, p.SizeBytes())
 }
 
 // CopyInN implements marshal.Marshallable.CopyInN.
-func (u *UVM_TOOLS_READ_PROCESS_MEMORY_PARAMS) CopyInN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
+func (p *UVM_TOOLS_READ_PROCESS_MEMORY_PARAMS) CopyInN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(u)))
-    hdr.Len = u.SizeBytes()
-    hdr.Cap = u.SizeBytes()
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(p)))
+    hdr.Len = p.SizeBytes()
+    hdr.Cap = p.SizeBytes()
 
     length, err := cc.CopyInBytes(addr, buf[:limit]) // escapes: okay.
-    // Since we bypassed the compiler's escape analysis, indicate that u
+    // Since we bypassed the compiler's escape analysis, indicate that p
     // must live until the use above.
-    runtime.KeepAlive(u) // escapes: replaced by intrinsic.
+    runtime.KeepAlive(p) // escapes: replaced by intrinsic.
     return length, err
 }
 
 // CopyIn implements marshal.Marshallable.CopyIn.
-func (u *UVM_TOOLS_READ_PROCESS_MEMORY_PARAMS) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
-    return u.CopyInN(cc, addr, u.SizeBytes())
+func (p *UVM_TOOLS_READ_PROCESS_MEMORY_PARAMS) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+    return p.CopyInN(cc, addr, p.SizeBytes())
 }
 
 // WriteTo implements io.WriterTo.WriteTo.
-func (u *UVM_TOOLS_READ_PROCESS_MEMORY_PARAMS) WriteTo(writer io.Writer) (int64, error) {
+func (p *UVM_TOOLS_READ_PROCESS_MEMORY_PARAMS) WriteTo(writer io.Writer) (int64, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(u)))
-    hdr.Len = u.SizeBytes()
-    hdr.Cap = u.SizeBytes()
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(p)))
+    hdr.Len = p.SizeBytes()
+    hdr.Cap = p.SizeBytes()
 
     length, err := writer.Write(buf)
-    // Since we bypassed the compiler's escape analysis, indicate that u
+    // Since we bypassed the compiler's escape analysis, indicate that p
     // must live until the use above.
-    runtime.KeepAlive(u) // escapes: replaced by intrinsic.
+    runtime.KeepAlive(p) // escapes: replaced by intrinsic.
     return int64(length), err
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
-func (u *UVM_TOOLS_WRITE_PROCESS_MEMORY_PARAMS) SizeBytes() int {
+func (p *UVM_TOOLS_WRITE_PROCESS_MEMORY_PARAMS) SizeBytes() int {
     return 36 +
         1*4
 }
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
-func (u *UVM_TOOLS_WRITE_PROCESS_MEMORY_PARAMS) MarshalBytes(dst []byte) []byte {
-    hostarch.ByteOrder.PutUint64(dst[:8], uint64(u.Buffer))
+func (p *UVM_TOOLS_WRITE_PROCESS_MEMORY_PARAMS) MarshalBytes(dst []byte) []byte {
+    hostarch.ByteOrder.PutUint64(dst[:8], uint64(p.Buffer))
     dst = dst[8:]
-    hostarch.ByteOrder.PutUint64(dst[:8], uint64(u.Size))
+    hostarch.ByteOrder.PutUint64(dst[:8], uint64(p.Size))
     dst = dst[8:]
-    hostarch.ByteOrder.PutUint64(dst[:8], uint64(u.TargetVA))
+    hostarch.ByteOrder.PutUint64(dst[:8], uint64(p.TargetVA))
     dst = dst[8:]
-    hostarch.ByteOrder.PutUint64(dst[:8], uint64(u.BytesWritten))
+    hostarch.ByteOrder.PutUint64(dst[:8], uint64(p.BytesWritten))
     dst = dst[8:]
-    hostarch.ByteOrder.PutUint32(dst[:4], uint32(u.RMStatus))
+    hostarch.ByteOrder.PutUint32(dst[:4], uint32(p.RMStatus))
     dst = dst[4:]
     for idx := 0; idx < 4; idx++ {
-        dst[0] = byte(u.Pad0[idx])
+        dst[0] = byte(p.Pad0[idx])
         dst = dst[1:]
     }
     return dst
 }
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (u *UVM_TOOLS_WRITE_PROCESS_MEMORY_PARAMS) UnmarshalBytes(src []byte) []byte {
-    u.Buffer = uint64(hostarch.ByteOrder.Uint64(src[:8]))
+func (p *UVM_TOOLS_WRITE_PROCESS_MEMORY_PARAMS) UnmarshalBytes(src []byte) []byte {
+    p.Buffer = uint64(hostarch.ByteOrder.Uint64(src[:8]))
     src = src[8:]
-    u.Size = uint64(hostarch.ByteOrder.Uint64(src[:8]))
+    p.Size = uint64(hostarch.ByteOrder.Uint64(src[:8]))
     src = src[8:]
-    u.TargetVA = uint64(hostarch.ByteOrder.Uint64(src[:8]))
+    p.TargetVA = uint64(hostarch.ByteOrder.Uint64(src[:8]))
     src = src[8:]
-    u.BytesWritten = uint64(hostarch.ByteOrder.Uint64(src[:8]))
+    p.BytesWritten = uint64(hostarch.ByteOrder.Uint64(src[:8]))
     src = src[8:]
-    u.RMStatus = uint32(hostarch.ByteOrder.Uint32(src[:4]))
+    p.RMStatus = uint32(hostarch.ByteOrder.Uint32(src[:4]))
     src = src[4:]
     for idx := 0; idx < 4; idx++ {
-        u.Pad0[idx] = src[0]
+        p.Pad0[idx] = src[0]
         src = src[1:]
     }
     return src
@@ -14931,79 +14931,79 @@ func (u *UVM_TOOLS_WRITE_PROCESS_MEMORY_PARAMS) UnmarshalBytes(src []byte) []byt
 
 // Packed implements marshal.Marshallable.Packed.
 //go:nosplit
-func (u *UVM_TOOLS_WRITE_PROCESS_MEMORY_PARAMS) Packed() bool {
+func (p *UVM_TOOLS_WRITE_PROCESS_MEMORY_PARAMS) Packed() bool {
     return true
 }
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
-func (u *UVM_TOOLS_WRITE_PROCESS_MEMORY_PARAMS) MarshalUnsafe(dst []byte) []byte {
-    size := u.SizeBytes()
-    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(u), uintptr(size))
+func (p *UVM_TOOLS_WRITE_PROCESS_MEMORY_PARAMS) MarshalUnsafe(dst []byte) []byte {
+    size := p.SizeBytes()
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(p), uintptr(size))
     return dst[size:]
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
-func (u *UVM_TOOLS_WRITE_PROCESS_MEMORY_PARAMS) UnmarshalUnsafe(src []byte) []byte {
-    size := u.SizeBytes()
-    gohacks.Memmove(unsafe.Pointer(u), unsafe.Pointer(&src[0]), uintptr(size))
+func (p *UVM_TOOLS_WRITE_PROCESS_MEMORY_PARAMS) UnmarshalUnsafe(src []byte) []byte {
+    size := p.SizeBytes()
+    gohacks.Memmove(unsafe.Pointer(p), unsafe.Pointer(&src[0]), uintptr(size))
     return src[size:]
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
-func (u *UVM_TOOLS_WRITE_PROCESS_MEMORY_PARAMS) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
+func (p *UVM_TOOLS_WRITE_PROCESS_MEMORY_PARAMS) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(u)))
-    hdr.Len = u.SizeBytes()
-    hdr.Cap = u.SizeBytes()
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(p)))
+    hdr.Len = p.SizeBytes()
+    hdr.Cap = p.SizeBytes()
 
     length, err := cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
-    // Since we bypassed the compiler's escape analysis, indicate that u
+    // Since we bypassed the compiler's escape analysis, indicate that p
     // must live until the use above.
-    runtime.KeepAlive(u) // escapes: replaced by intrinsic.
+    runtime.KeepAlive(p) // escapes: replaced by intrinsic.
     return length, err
 }
 
 // CopyOut implements marshal.Marshallable.CopyOut.
-func (u *UVM_TOOLS_WRITE_PROCESS_MEMORY_PARAMS) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
-    return u.CopyOutN(cc, addr, u.SizeBytes())
+func (p *UVM_TOOLS_WRITE_PROCESS_MEMORY_PARAMS) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+    return p.CopyOutN(cc, addr, p.SizeBytes())
 }
 
 // CopyInN implements marshal.Marshallable.CopyInN.
-func (u *UVM_TOOLS_WRITE_PROCESS_MEMORY_PARAMS) CopyInN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
+func (p *UVM_TOOLS_WRITE_PROCESS_MEMORY_PARAMS) CopyInN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(u)))
-    hdr.Len = u.SizeBytes()
-    hdr.Cap = u.SizeBytes()
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(p)))
+    hdr.Len = p.SizeBytes()
+    hdr.Cap = p.SizeBytes()
 
     length, err := cc.CopyInBytes(addr, buf[:limit]) // escapes: okay.
-    // Since we bypassed the compiler's escape analysis, indicate that u
+    // Since we bypassed the compiler's escape analysis, indicate that p
     // must live until the use above.
-    runtime.KeepAlive(u) // escapes: replaced by intrinsic.
+    runtime.KeepAlive(p) // escapes: replaced by intrinsic.
     return length, err
 }
 
 // CopyIn implements marshal.Marshallable.CopyIn.
-func (u *UVM_TOOLS_WRITE_PROCESS_MEMORY_PARAMS) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
-    return u.CopyInN(cc, addr, u.SizeBytes())
+func (p *UVM_TOOLS_WRITE_PROCESS_MEMORY_PARAMS) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+    return p.CopyInN(cc, addr, p.SizeBytes())
 }
 
 // WriteTo implements io.WriterTo.WriteTo.
-func (u *UVM_TOOLS_WRITE_PROCESS_MEMORY_PARAMS) WriteTo(writer io.Writer) (int64, error) {
+func (p *UVM_TOOLS_WRITE_PROCESS_MEMORY_PARAMS) WriteTo(writer io.Writer) (int64, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(u)))
-    hdr.Len = u.SizeBytes()
-    hdr.Cap = u.SizeBytes()
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(p)))
+    hdr.Len = p.SizeBytes()
+    hdr.Cap = p.SizeBytes()
 
     length, err := writer.Write(buf)
-    // Since we bypassed the compiler's escape analysis, indicate that u
+    // Since we bypassed the compiler's escape analysis, indicate that p
     // must live until the use above.
-    runtime.KeepAlive(u) // escapes: replaced by intrinsic.
+    runtime.KeepAlive(p) // escapes: replaced by intrinsic.
     return int64(length), err
 }
 
