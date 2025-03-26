@@ -72,7 +72,11 @@ func bluepillGuestExit(c *vCPU, context unsafe.Pointer) {
 
 	// Return to the vCPUReady state; notify any waiters.
 	user := c.state.Load() & vCPUUser
-	switch c.state.Swap(user) {
+	oldState := c.state.Swap(user)
+	if user == 0 {
+		c.machine.availableNotify()
+	}
+	switch oldState {
 	case user | vCPUGuest: // Expected case.
 	case user | vCPUGuest | vCPUWaiter:
 		c.notify()
