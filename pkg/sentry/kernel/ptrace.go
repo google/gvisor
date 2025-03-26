@@ -525,8 +525,8 @@ func (t *Task) ptraceAttach(target *Task, seize bool, opts uintptr) error {
 	}
 	target.ptraceTracer.Store(t)
 	t.ptraceTracees[target] = struct{}{}
-	target.ptraceSeized = seize
 	target.tg.signalHandlers.mu.Lock()
+	target.ptraceSeized = seize
 	// "Unlike PTRACE_ATTACH, PTRACE_SEIZE does not stop the process." -
 	// ptrace(2)
 	if !seize {
@@ -601,17 +601,19 @@ func (t *Task) exitPtraceLocked() {
 //
 // Preconditions: The TaskSet mutex must be locked for writing.
 func (t *Task) forgetTracerLocked() {
-	t.ptraceSeized = false
 	t.ptraceOpts = ptraceOptions{}
 	t.ptraceSyscallMode = ptraceSyscallNone
 	t.ptraceSinglestep = false
 	t.ptraceTracer.Store(nil)
 	if t.exitTracerNotified && !t.exitTracerAcked {
 		t.exitTracerAcked = true
+		// Don't hold signalHandlers.mu while calling exitNotifyLocked,
+		// since it takes that mutex in some pathways.
 		t.exitNotifyLocked(true)
 	}
 	t.tg.signalHandlers.mu.Lock()
 	defer t.tg.signalHandlers.mu.Unlock()
+	t.ptraceSeized = false
 	// Unset t.trapStopPending, which might have been set by PTRACE_INTERRUPT. If
 	// it wasn't, it will be reset via t.groupStopPending after the following.
 	t.trapStopPending = false
@@ -803,6 +805,7 @@ func (t *Task) ptraceClone(kind ptraceCloneKind, child *Task, args *linux.CloneA
 		if tracer != nil {
 			child.ptraceTracer.Store(tracer)
 			tracer.ptraceTracees[child] = struct{}{}
+			child.tg.signalHandlers.mu.Lock()
 			// "The "seized" behavior ... is inherited by children that are
 			// automatically attached using PTRACE_O_TRACEFORK,
 			// PTRACE_O_TRACEVFORK, and PTRACE_O_TRACECLONE." - ptrace(2)
@@ -811,7 +814,6 @@ func (t *Task) ptraceClone(kind ptraceCloneKind, child *Task, args *linux.CloneA
 			// via active PTRACE_O_TRACEFORK, PTRACE_O_TRACEVFORK, or
 			// PTRACE_O_TRACECLONE options." - ptrace(2)
 			child.ptraceOpts = t.ptraceOpts
-			child.tg.signalHandlers.mu.Lock()
 			// "PTRACE_SEIZE: ... Automatically attached children stop with
 			// PTRACE_EVENT_STOP and WSTOPSIG(status) returns SIGTRAP instead
 			// of having SIGSTOP signal delivered to them." - ptrace(2)
