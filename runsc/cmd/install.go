@@ -34,6 +34,7 @@ type Install struct {
 	ConfigFile     string
 	Runtime        string
 	Experimental   bool
+	UserlandProxy  bool
 	Clobber        bool
 	CgroupDriver   string
 	executablePath string
@@ -60,6 +61,7 @@ func (i *Install) SetFlags(fs *flag.FlagSet) {
 	fs.StringVar(&i.ConfigFile, "config_file", "/etc/docker/daemon.json", "path to Docker daemon config file")
 	fs.StringVar(&i.Runtime, "runtime", "runsc", "runtime name")
 	fs.BoolVar(&i.Experimental, "experimental", false, "enable/disable experimental features")
+	fs.BoolVar(&i.UserlandProxy, "userland-proxy", false, "enable/disable userland-proxy features")
 	fs.BoolVar(&i.Clobber, "clobber", true, "clobber existing runtime configuration")
 	fs.StringVar(&i.CgroupDriver, "cgroupdriver", "", "docker cgroup driver")
 }
@@ -157,6 +159,9 @@ func doInstallConfig(i *Install, rw configReaderWriter) error {
 	// Set experimental if required.
 	if i.Experimental {
 		c["experimental"] = true
+	}
+	if !i.UserlandProxy {
+		c["userland-proxy"] = false
 	}
 
 	re := regexp.MustCompile(`^native.cgroupdriver=`)

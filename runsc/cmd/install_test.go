@@ -65,7 +65,8 @@ var defaultInput = map[string]any{
 			runtimeArgs: []string{"super", "cool", "args"},
 		},
 	},
-	"exec-opts": []string{"some-cgroup-driver=something", "native.cgroupdriver=init_driver"},
+	"exec-opts":      []string{"some-cgroup-driver=something", "native.cgroupdriver=init_driver"},
+	"userland-proxy": false,
 }
 
 func TestInstall(t *testing.T) {
@@ -102,8 +103,9 @@ func TestInstall(t *testing.T) {
 						runtimeArgs: []string{"new", "cool", "args"},
 					},
 				},
-				"exec-opts":    []string{"some-cgroup-driver=something", "native.cgroupdriver=my_driver"},
-				"experimental": true,
+				"exec-opts":      []string{"some-cgroup-driver=something", "native.cgroupdriver=my_driver"},
+				"experimental":   true,
+				"userland-proxy": false,
 			},
 		},
 		{
@@ -132,8 +134,9 @@ func TestInstall(t *testing.T) {
 						runtimeArgs: []string{"super", "cool", "args"},
 					},
 				},
-				"exec-opts":    []string{"some-cgroup-driver=something", "native.cgroupdriver=init_driver", "native.cgroupdriver=my_driver"},
-				"experimental": true,
+				"exec-opts":      []string{"some-cgroup-driver=something", "native.cgroupdriver=init_driver", "native.cgroupdriver=my_driver"},
+				"experimental":   true,
+				"userland-proxy": false,
 			},
 		},
 		{
@@ -164,8 +167,9 @@ func TestInstall(t *testing.T) {
 						runtimeArgs: []string{"super", "cool", "args"},
 					},
 				},
-				"exec-opts":    []string{"some-cgroup-driver=something", "native.cgroupdriver=init_driver"},
-				"experimental": true,
+				"exec-opts":      []string{"some-cgroup-driver=something", "native.cgroupdriver=init_driver"},
+				"experimental":   true,
+				"userland-proxy": false,
 			},
 		},
 	} {
@@ -231,7 +235,8 @@ func TestUninstall(t *testing.T) {
 						runtimeArgs: []string{"super", "cool", "args"},
 					},
 				},
-				"exec-opts": []string{"some-cgroup-driver=something", "native.cgroupdriver=init_driver"},
+				"userland-proxy": false,
+				"exec-opts":      []string{"some-cgroup-driver=something", "native.cgroupdriver=init_driver"},
 			},
 		},
 		{
