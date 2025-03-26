@@ -49,6 +49,7 @@ type Do struct {
 	ip      string
 	quiet   bool
 	overlay bool
+	netns   string
 	uidMap  idMapSlice
 	gidMap  idMapSlice
 }
@@ -128,6 +129,7 @@ func (c *Do) SetFlags(f *flag.FlagSet) {
 	f.BoolVar(&c.overlay, "force-overlay", true, "use an overlay. WARNING: disabling gives the command write access to the host")
 	f.Var(&c.uidMap, "uid-map", "Add a user id mapping [ContainerID, HostID, Size]")
 	f.Var(&c.gidMap, "gid-map", "Add a group id mapping [ContainerID, HostID, Size]")
+	f.StringVar(&c.netns, "netns", "", "path to the pre-created network namespace")
 }
 
 // Execute implements subcommands.Command.Execute.
@@ -198,6 +200,12 @@ func (c *Do) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcommand
 			conf.Network = config.NetworkHost
 		}
 
+	} else if c.netns != "" {
+		netns := specs.LinuxNamespace{
+			Type: specs.NetworkNamespace,
+			Path: c.netns,
+		}
+		addNamespace(spec, netns)
 	} else {
 		switch clean, err := c.setupNet(cid, spec); err {
 		case errNoDefaultInterface:
