@@ -114,6 +114,49 @@ func (a *atomicAddressSpace) get() *addressSpace {
 	return (*addressSpace)(atomic.LoadPointer(&a.pointer))
 }
 
+// availableNotify is called when a vCPU's state transitions to vCPUReady.
+//
+//go:nosplit
+func (m *machine) availableNotify() {
+	m.availableSeq.Add(1)
+	if m.availableWaiters.Load() == 0 {
+		return
+	}
+	errno := hostsyscall.RawSyscallErrno( // escapes: no.
+		unix.SYS_FUTEX,
+		uintptr(unsafe.Pointer(&m.availableSeq)),
+		linux.FUTEX_WAKE|linux.FUTEX_PRIVATE_FLAG,
+		1)
+	if errno != 0 {
+		throw("futex wake error")
+	}
+}
+
+// availableWait blocks until availableNotify is called.
+//
+// Preconditions:
+// - epoch was the value of m.availableSeq before the caller last checked that
+// no vCPUs were in state vCPUReady.
+// - m.availableWaiters must be non-zero.
+//
+//go:nosplit
+func (m *machine) availableWait(epoch uint32) {
+	_, _, errno := unix.Syscall6(
+		unix.SYS_FUTEX,
+		uintptr(unsafe.Pointer(&m.availableSeq)),
+		linux.FUTEX_WAIT|linux.FUTEX_PRIVATE_FLAG,
+		uintptr(epoch),
+		0, 0, 0)
+	if errno != 0 && errno != unix.EINTR && errno != unix.EAGAIN {
+		panic("futex wait error")
+	}
+}
+
+// stateLower returns a pointer to the lower 32 bits of c.state.
+func (c *vCPU) stateLower() *atomicbitops.Uint32 {
+	return (*atomicbitops.Uint32)(unsafe.Pointer(uintptr(unsafe.Pointer(&c.state)) + vCPUStateOffset))
+}
+
 // notify notifies that the vCPU has transitioned modes.
 //
 // This may be called by a signal handler and therefore throws on error.
@@ -122,7 +165,7 @@ func (a *atomicAddressSpace) get() *addressSpace {
 func (c *vCPU) notify() {
 	errno := hostsyscall.RawSyscallErrno( // escapes: no.
 		unix.SYS_FUTEX,
-		uintptr(unsafe.Pointer(&c.state)),
+		uintptr(unsafe.Pointer(c.stateLower())),
 		linux.FUTEX_WAKE|linux.FUTEX_PRIVATE_FLAG,
 		// Number of waiters.
 		math.MaxInt32)
@@ -137,12 +180,12 @@ func (c *vCPU) notify() {
 // appropriate action to cause a transition (e.g. interrupt injection).
 //
 // This panics on error.
-func (c *vCPU) waitUntilNot(state uint32) {
+func (c *vCPU) waitUntilNot(state uint64) {
 	_, _, errno := unix.Syscall6(
 		unix.SYS_FUTEX,
-		uintptr(unsafe.Pointer(&c.state)),
+		uintptr(unsafe.Pointer(c.stateLower())),
 		linux.FUTEX_WAIT|linux.FUTEX_PRIVATE_FLAG,
-		uintptr(state),
+		uintptr(uint32(state)),
 		0, 0, 0)
 	if errno != 0 && errno != unix.EINTR && errno != unix.EAGAIN {
 		panic("futex wait error")
