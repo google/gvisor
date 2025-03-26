@@ -267,35 +267,38 @@ func (o *rmAllocObject) StateLoad(ctx context.Context, stateSourceObject state.S
 	stateSourceObject.Load(1, &o.params)
 }
 
-func (o *rootClient) StateTypeName() string {
+func (c *rootClient) StateTypeName() string {
 	return "pkg/sentry/devices/nvproxy.rootClient"
 }
 
-func (o *rootClient) StateFields() []string {
+func (c *rootClient) StateFields() []string {
 	return []string{
 		"object",
 		"resources",
+		"released",
 		"params",
 	}
 }
 
-func (o *rootClient) beforeSave() {}
+func (c *rootClient) beforeSave() {}
 
 // +checklocksignore
-func (o *rootClient) StateSave(stateSinkObject state.Sink) {
-	o.beforeSave()
-	stateSinkObject.Save(0, &o.object)
-	stateSinkObject.Save(1, &o.resources)
-	stateSinkObject.Save(2, &o.params)
+func (c *rootClient) StateSave(stateSinkObject state.Sink) {
+	c.beforeSave()
+	stateSinkObject.Save(0, &c.object)
+	stateSinkObject.Save(1, &c.resources)
+	stateSinkObject.Save(2, &c.released)
+	stateSinkObject.Save(3, &c.params)
 }
 
-func (o *rootClient) afterLoad(context.Context) {}
+func (c *rootClient) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (o *rootClient) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &o.object)
-	stateSourceObject.Load(1, &o.resources)
-	stateSourceObject.Load(2, &o.params)
+func (c *rootClient) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &c.object)
+	stateSourceObject.Load(1, &c.resources)
+	stateSourceObject.Load(2, &c.released)
+	stateSourceObject.Load(3, &c.params)
 }
 
 func (l *objectFreeList) StateTypeName() string {
@@ -433,6 +436,7 @@ func (mf *uvmFDMemmapFile) StateFields() []string {
 	return []string{
 		"DefaultMemoryType",
 		"fd",
+		"pfm",
 	}
 }
 
@@ -443,6 +447,7 @@ func (mf *uvmFDMemmapFile) StateSave(stateSinkObject state.Sink) {
 	mf.beforeSave()
 	stateSinkObject.Save(0, &mf.DefaultMemoryType)
 	stateSinkObject.Save(1, &mf.fd)
+	stateSinkObject.Save(2, &mf.pfm)
 }
 
 func (mf *uvmFDMemmapFile) afterLoad(context.Context) {}
@@ -451,6 +456,7 @@ func (mf *uvmFDMemmapFile) afterLoad(context.Context) {}
 func (mf *uvmFDMemmapFile) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &mf.DefaultMemoryType)
 	stateSourceObject.Load(1, &mf.fd)
+	stateSourceObject.Load(2, &mf.pfm)
 }
 
 func init() {

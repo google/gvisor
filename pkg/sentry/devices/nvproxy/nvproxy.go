@@ -16,6 +16,12 @@
 // https://github.com/NVIDIA/open-gpu-kernel-modules.
 //
 // Supported Nvidia GPUs: T4, L4, A100, A10G and H100.
+//
+// Lock ordering:
+//
+// - nvproxy.fdsMu
+// - rootClient.objsMu
+//   - nvproxy.clientsMu
 package nvproxy
 
 import (
@@ -27,6 +33,7 @@ import (
 	"gvisor.dev/gvisor/pkg/marshal"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // Register registers all devices implemented by this package in vfsObj.
@@ -48,7 +55,6 @@ func Register(vfsObj *vfs.VirtualFilesystem, version nvconf.DriverVersion, drive
 		useDevGofer: useDevGofer,
 		frontendFDs: make(map[*frontendFD]struct{}),
 		clients:     make(map[nvgpu.Handle]*rootClient),
-		objsFreeSet: make(map[*object]struct{}),
 	}
 	for minor := uint32(0); minor <= nvgpu.NV_CONTROL_DEVICE_MINOR; minor++ {
 		if err := vfsObj.RegisterDevice(vfs.CharDevice, nvgpu.NV_MAJOR_DEVICE_NUMBER, minor, &frontendDevice{
@@ -80,15 +86,8 @@ type nvproxy struct {
 	fdsMu       fdsMutex `state:"nosave"`
 	frontendFDs map[*frontendFD]struct{}
 
-	// See object.go.
-	// Users should call nvproxy.objsLock/Unlock() rather than locking objsMu
-	// directly.
-	objsMu objsMutex `state:"nosave"`
-	// These fields are protected by objsMu.
-	clients      map[nvgpu.Handle]*rootClient
-	objsCleanup  []func()             `state:"nosave"`
-	objsFreeList objectFreeList       `state:"nosave"`
-	objsFreeSet  map[*object]struct{} `state:"nosave"`
+	clientsMu sync.RWMutex `state:"nosave"`
+	clients   map[nvgpu.Handle]*rootClient
 }
 
 type marshalPtr[T any] interface {

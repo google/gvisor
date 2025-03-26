@@ -31,6 +31,16 @@ func (id ClassID) String() string {
 	return fmt.Sprintf("0x%08x", uint32(id))
 }
 
+// IsRootClient returns true if the given class ID is a root client class.
+func (id ClassID) IsRootClient() bool {
+	switch id {
+	case NV01_ROOT, NV01_ROOT_NON_PRIV, NV01_ROOT_CLIENT:
+		return true
+	default:
+		return false
+	}
+}
+
 // Class IDs, from src/nvidia/generated/g_allclasses.h.
 const (
 	NV01_ROOT                        = 0x00000000

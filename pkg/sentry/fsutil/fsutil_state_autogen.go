@@ -223,6 +223,7 @@ func (f *PreciseHostFileMapper) StateTypeName() string {
 
 func (f *PreciseHostFileMapper) StateFields() []string {
 	return []string{
+		"addrMustEqualFileOffset",
 		"refs",
 		"mappings",
 	}
@@ -233,16 +234,18 @@ func (f *PreciseHostFileMapper) beforeSave() {}
 // +checklocksignore
 func (f *PreciseHostFileMapper) StateSave(stateSinkObject state.Sink) {
 	f.beforeSave()
-	stateSinkObject.Save(0, &f.refs)
-	stateSinkObject.Save(1, &f.mappings)
+	stateSinkObject.Save(0, &f.addrMustEqualFileOffset)
+	stateSinkObject.Save(1, &f.refs)
+	stateSinkObject.Save(2, &f.mappings)
 }
 
 func (f *PreciseHostFileMapper) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (f *PreciseHostFileMapper) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &f.refs)
-	stateSourceObject.Load(1, &f.mappings)
+	stateSourceObject.Load(0, &f.addrMustEqualFileOffset)
+	stateSourceObject.Load(1, &f.refs)
+	stateSourceObject.Load(2, &f.mappings)
 }
 
 func (s *refsSet) StateTypeName() string {

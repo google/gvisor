@@ -206,7 +206,6 @@ type PTrace struct {
 	platform.MMapMinAddr
 	platform.NoCPUPreemptionDetection
 	platform.UseHostGlobalMemoryBarrier
-	platform.DoesNotOwnPageTables
 }
 
 // New returns a new ptrace-based implementation of the platform interface.
