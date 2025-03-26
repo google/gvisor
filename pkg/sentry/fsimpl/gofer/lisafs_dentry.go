@@ -432,10 +432,13 @@ func (d *lisafsDentry) link(ctx context.Context, target *lisafsDentry, name stri
 	return d.newChildDentry(ctx, &linkInode, name)
 }
 
-func (d *lisafsDentry) mkdir(ctx context.Context, name string, mode linux.FileMode, uid auth.KUID, gid auth.KGID) (*dentry, error) {
+func (d *lisafsDentry) mkdir(ctx context.Context, name string, mode linux.FileMode, uid auth.KUID, gid auth.KGID, createDentry bool) (*dentry, error) {
 	childDirInode, err := d.controlFD.MkdirAt(ctx, name, mode, lisafs.UID(uid), lisafs.GID(gid))
 	if err != nil {
 		return nil, err
+	}
+	if !createDentry {
+		return nil, nil
 	}
 	return d.newChildDentry(ctx, &childDirInode, name)
 }
@@ -458,13 +461,13 @@ func (d *lisafsDentry) openCreate(ctx context.Context, name string, flags uint32
 		fdLisa: d.fs.client.NewFD(openFD),
 		fd:     int32(hostFD),
 	}
-	var child *dentry
-	if createDentry {
-		child, err = d.fs.newLisafsDentry(ctx, &ino)
-		if err != nil {
-			h.close(ctx)
-			return nil, noHandle, err
-		}
+	if !createDentry {
+		return nil, h, nil
+	}
+	child, err := d.fs.newLisafsDentry(ctx, &ino)
+	if err != nil {
+		h.close(ctx)
+		return nil, noHandle, err
 	}
 	return child, h, nil
 }

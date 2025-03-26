@@ -168,10 +168,24 @@ TEST(UnlinkTest, OpenFile) {
   if (IsRunningOnRunsc()) {
     ds.reset();
   }
-  auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  TempPath file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   int fd;
   EXPECT_THAT(fd = open(file.path().c_str(), O_RDWR, 0666), SyscallSucceeds());
   EXPECT_THAT(unlink(file.path().c_str()), SyscallSucceeds());
+  EXPECT_THAT(close(fd), SyscallSucceeds());
+}
+
+TEST(RmdirTest, OpenDirectory) {
+  // TODO(b/400287667): Enable save/restore for local gofer.
+  DisableSave ds;
+  if (IsRunningOnRunsc()) {
+    ds.reset();
+  }
+  TempPath dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  int fd;
+  EXPECT_THAT(fd = open(dir.path().c_str(), O_RDONLY | O_DIRECTORY),
+              SyscallSucceeds());
+  EXPECT_THAT(rmdir(dir.path().c_str()), SyscallSucceeds());
   EXPECT_THAT(close(fd), SyscallSucceeds());
 }
 

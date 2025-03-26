@@ -845,7 +845,7 @@ func (fs *filesystem) MkdirAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 			mode |= linux.S_ISGID
 		}
 
-		child, err := parent.mkdir(ctx, name, mode, creds.EffectiveKUID, kgid)
+		child, err := parent.mkdir(ctx, name, mode, creds.EffectiveKUID, kgid, true /* createDentry */)
 		if err == nil {
 			if fs.opts.interop != InteropModeShared {
 				parent.incLinks()
