@@ -455,6 +455,7 @@ steps:
     command: make iptables-tests
     agents:
       <<: *ubuntu_agents
+      cgroup: "v2"
   - <<: *common
     <<: *source_test
     label: ":construction_worker: Packetdrill tests"

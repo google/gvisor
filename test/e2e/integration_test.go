@@ -80,7 +80,6 @@ func TestLifeCycle(t *testing.T) {
 	port := 80
 	if err := d.Create(ctx, dockerutil.RunOpts{
 		Image: "basic/nginx",
-		Ports: []int{port},
 	}); err != nil {
 		t.Fatalf("docker create failed: %v", err)
 	}
@@ -121,7 +120,6 @@ func TestPauseResume(t *testing.T) {
 	port := 8080
 	if err := d.Spawn(ctx, dockerutil.RunOpts{
 		Image: "basic/python",
-		Ports: []int{port}, // See Dockerfile.
 	}); err != nil {
 		t.Fatalf("docker run failed: %v", err)
 	}
@@ -190,7 +188,6 @@ func TestCheckpointRestore(t *testing.T) {
 	port := 8080
 	if err := d.Spawn(ctx, dockerutil.RunOpts{
 		Image: "basic/python",
-		Ports: []int{port}, // See Dockerfile.
 	}); err != nil {
 		t.Fatalf("docker run failed: %v", err)
 	}
@@ -1216,7 +1213,6 @@ func testCheckpointRestoreListeningConnection(ctx context.Context, t *testing.T,
 	const port = 9000
 	opts := dockerutil.RunOpts{
 		Image: "basic/integrationtest",
-		Ports: []int{port},
 	}
 
 	// Start the tcp server.

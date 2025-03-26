@@ -144,7 +144,6 @@ func TestHttpd(t *testing.T) {
 	port := 80
 	opts := dockerutil.RunOpts{
 		Image: "basic/httpd",
-		Ports: []int{port},
 	}
 	d.CopyFiles(&opts, "/usr/local/apache2/htdocs", "test/image/latin10k.txt")
 	if err := d.Spawn(ctx, opts); err != nil {
@@ -174,7 +173,6 @@ func TestNginx(t *testing.T) {
 	port := 80
 	opts := dockerutil.RunOpts{
 		Image: "basic/nginx",
-		Ports: []int{port},
 	}
 	d.CopyFiles(&opts, "/usr/share/nginx/html", "test/image/latin10k.txt")
 	if err := d.Spawn(ctx, opts); err != nil {
@@ -246,7 +244,6 @@ func TestTomcat(t *testing.T) {
 	port := 8080
 	if err := d.Spawn(ctx, dockerutil.RunOpts{
 		Image: "basic/tomcat",
-		Ports: []int{port},
 	}); err != nil {
 		t.Fatalf("docker run failed: %v", err)
 	}
@@ -282,7 +279,6 @@ func TestRuby(t *testing.T) {
 	port := 8080
 	opts := dockerutil.RunOpts{
 		Image: "basic/ruby",
-		Ports: []int{port},
 	}
 	d.CopyFiles(&opts, "/src", "test/image/ruby.rb", "test/image/ruby.sh")
 	if err := d.Spawn(ctx, opts, "/src/ruby.sh"); err != nil {
