@@ -565,11 +565,11 @@ func (d *directfsDentry) link(target *directfsDentry, name string) (*dentry, err
 	return d.getCreatedChild(name, auth.NoID /* uid */, auth.NoID /* gid */, false /* isDir */, true /* createDentry */)
 }
 
-func (d *directfsDentry) mkdir(name string, mode linux.FileMode, uid auth.KUID, gid auth.KGID) (*dentry, error) {
+func (d *directfsDentry) mkdir(name string, mode linux.FileMode, uid auth.KUID, gid auth.KGID, createDentry bool) (*dentry, error) {
 	if err := unix.Mkdirat(d.controlFD, name, uint32(mode)); err != nil {
 		return nil, err
 	}
-	return d.getCreatedChild(name, uid, gid, true /* isDir */, true /* createDentry */)
+	return d.getCreatedChild(name, uid, gid, true /* isDir */, createDentry)
 }
 
 func (d *directfsDentry) symlink(name, target string, creds *auth.Credentials) (*dentry, error) {

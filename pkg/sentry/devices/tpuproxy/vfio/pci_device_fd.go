@@ -288,12 +288,13 @@ func (fd *pciDeviceFD) PRead(ctx context.Context, dst usermem.IOSequence, offset
 	if offset < 0 {
 		return 0, linuxerr.EINVAL
 	}
-	buf := make([]byte, dst.NumBytes())
 	if fd.isRestored() {
-		_, err := unix.Pread(int(fd.hostFD), buf, offset)
-		if err != nil {
-			return 0, err
-		}
+		return int64(dst.NumBytes()), nil
+	}
+	buf := make([]byte, dst.NumBytes())
+	_, err := unix.Pread(int(fd.hostFD), buf, offset)
+	if err != nil {
+		return 0, err
 	}
 	n, err := dst.CopyOut(ctx, buf)
 	return int64(n), err
@@ -301,11 +302,11 @@ func (fd *pciDeviceFD) PRead(ctx context.Context, dst usermem.IOSequence, offset
 
 // PWrite implements vfs.FileDescriptionImpl.PWrite.
 func (fd *pciDeviceFD) PWrite(ctx context.Context, src usermem.IOSequence, offset int64, opts vfs.WriteOptions) (int64, error) {
-	if fd.isRestored() {
-		return src.NumBytes(), nil
-	}
 	if offset < 0 {
 		return 0, linuxerr.EINVAL
+	}
+	if fd.isRestored() {
+		return src.NumBytes(), nil
 	}
 	buf := make([]byte, src.NumBytes())
 	_, err := src.CopyIn(ctx, buf)

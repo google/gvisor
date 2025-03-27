@@ -982,9 +982,9 @@ type dentry struct {
 	// tracks dirty segments in cache. dirty is protected by dataMu.
 	dirty fsutil.DirtySet
 
-	// If this dentry represents a deleted regular file, deletedDataSR is used to
-	// store file data for save/restore.
-	deletedDataSR []byte
+	// If this dentry represents a deleted regular file, savedDeletedData is used
+	// to store file data for save/restore.
+	savedDeletedData []byte
 
 	// pf implements memmap.File for mappings of hostFD.
 	pf dentryPlatformFile

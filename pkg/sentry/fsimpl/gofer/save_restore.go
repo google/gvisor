@@ -112,14 +112,21 @@ func (fd *specialFileFD) savePipeData(ctx context.Context) error {
 }
 
 func (d *dentry) prepareSaveDead(ctx context.Context) error {
-	if !d.isRegularFile() {
-		return fmt.Errorf("gofer.dentry(%q).prepareSaveDead: only regular deleted dentries can be saved, got %s", genericDebugPathname(d.fs, d), linux.FileMode(d.mode.Load()))
+	if !d.isRegularFile() && !d.isDir() {
+		return fmt.Errorf("gofer.dentry(%q).prepareSaveDead: only deleted dentries for regular files and directories can be saved, got %s", genericDebugPathname(d.fs, d), linux.FileMode(d.mode.Load()))
 	}
 	if !d.isDeleted() {
 		return fmt.Errorf("gofer.dentry(%q).prepareSaveDead: invalidated dentries can't be saved", genericDebugPathname(d.fs, d))
 	}
-	if !d.cachedMetadataAuthoritative() {
-		if err := d.updateMetadata(ctx); err != nil {
+	if d.isRegularFile() {
+		if !d.cachedMetadataAuthoritative() {
+			// Get updated metadata for d in case we need to perform metadata
+			// validation during restore.
+			if err := d.updateMetadata(ctx); err != nil {
+				return err
+			}
+		}
+		if err := d.prepareSaveDeletedRegularFile(ctx); err != nil {
 			return err
 		}
 	}
@@ -129,6 +136,18 @@ func (d *dentry) prepareSaveDead(ctx context.Context) error {
 			write: d.isWriteHandleOk(),
 		}
 	}
+	if d.fs.savedDeletedOpenDentries == nil {
+		d.fs.savedDeletedOpenDentries = make(map[*dentry]struct{})
+	}
+	d.fs.savedDeletedOpenDentries[d] = struct{}{}
+	return nil
+}
+
+// Preconditions:
+//   - d.isRegularFile()
+//   - d.isDeleted()
+func (d *dentry) prepareSaveDeletedRegularFile(ctx context.Context) error {
+	// Fetch an appropriate handle to read the deleted file.
 	d.handleMu.RLock()
 	defer d.handleMu.RUnlock()
 	var h handle
@@ -142,12 +161,13 @@ func (d *dentry) prepareSaveDead(ctx context.Context) error {
 		}
 		defer h.close(ctx)
 	}
+	// Read the file data and store it in d.savedDeletedData.
 	d.dataMu.RLock()
 	defer d.dataMu.RUnlock()
-	d.deletedDataSR = make([]byte, d.size.Load())
+	d.savedDeletedData = make([]byte, d.size.Load())
 	done := uint64(0)
-	for done < uint64(len(d.deletedDataSR)) {
-		n, err := h.readToBlocksAt(ctx, safemem.BlockSeqOf(safemem.BlockFromSafeSlice(d.deletedDataSR[done:])), done)
+	for done < uint64(len(d.savedDeletedData)) {
+		n, err := h.readToBlocksAt(ctx, safemem.BlockSeqOf(safemem.BlockFromSafeSlice(d.savedDeletedData[done:])), done)
 		done += n
 		if err != nil {
 			if err == io.EOF {
@@ -156,14 +176,9 @@ func (d *dentry) prepareSaveDead(ctx context.Context) error {
 			return fmt.Errorf("failed to read deleted file %q: %w", genericDebugPathname(d.fs, d), err)
 		}
 	}
-	if done < uint64(len(d.deletedDataSR)) {
-		return fmt.Errorf("failed to read all of deleted file %q: read %d bytes, expected %d", genericDebugPathname(d.fs, d), done, len(d.deletedDataSR))
+	if done < uint64(len(d.savedDeletedData)) {
+		return fmt.Errorf("failed to read all of deleted file %q: read %d bytes, expected %d", genericDebugPathname(d.fs, d), done, len(d.savedDeletedData))
 	}
-	d.deletedDataSR = d.deletedDataSR[:done]
-	if d.fs.savedDeletedOpenDentries == nil {
-		d.fs.savedDeletedOpenDentries = make(map[*dentry]struct{})
-	}
-	d.fs.savedDeletedOpenDentries[d] = struct{}{}
 	return nil
 }
 
@@ -200,15 +215,17 @@ func (d *dentry) prepareSaveRecursive(ctx context.Context) error {
 
 // beforeSave is invoked by stateify.
 func (d *dentry) beforeSave() {
-	if d.vfsd.IsDead() && d.deletedDataSR == nil {
-		panic(fmt.Sprintf("gofer.dentry(%q).beforeSave: deletedDataSR is nil for dead dentry (deleted=%t, synthetic=%t)", genericDebugPathname(d.fs, d), d.isDeleted(), d.isSynthetic()))
+	if d.vfsd.IsDead() {
+		if _, ok := d.fs.savedDeletedOpenDentries[d]; !ok {
+			panic(fmt.Sprintf("gofer.dentry(%q).beforeSave: dead dentry is not saved in fs.savedDeletedOpenDentries (deleted=%t, synthetic=%t)", genericDebugPathname(d.fs, d), d.isDeleted(), d.isSynthetic()))
+		}
 	}
 }
 
 // BeforeResume implements vfs.FilesystemImplSaveRestoreExtension.BeforeResume.
 func (fs *filesystem) BeforeResume(ctx context.Context) {
 	for d := range fs.savedDeletedOpenDentries {
-		d.deletedDataSR = nil
+		d.savedDeletedData = nil
 	}
 	fs.savedDeletedOpenDentries = nil
 	fs.savedDentryRW = nil
@@ -310,9 +327,27 @@ func (fs *filesystem) CompleteRestore(ctx context.Context, opts vfs.CompleteRest
 	}
 
 	// Restore deleted files which are still accessible via open application FDs.
+	dirsToDelete := make(map[*dentry]struct{})
 	for d := range fs.savedDeletedOpenDentries {
-		if err := d.restoreDead(ctx, &opts); err != nil {
+		if err := d.restoreDeleted(ctx, &opts, dirsToDelete); err != nil {
 			return err
+		}
+	}
+	for len(dirsToDelete) > 0 {
+		// In case of nested deleted directories, only leaf directories can be
+		// deleted. Then repeat as parent directories become leaves.
+		leafDirectories := make(map[*dentry]struct{})
+		for d := range dirsToDelete {
+			leafDirectories[d] = struct{}{}
+		}
+		for d := range dirsToDelete {
+			delete(leafDirectories, d.parent.Load())
+		}
+		for leafD := range leafDirectories {
+			if err := leafD.parent.Load().unlink(ctx, leafD.name, linux.AT_REMOVEDIR); err != nil {
+				return fmt.Errorf("failed to clean up recreated deleted directory %q: %v", genericDebugPathname(fs, leafD), err)
+			}
+			delete(dirsToDelete, leafD)
 		}
 	}
 
@@ -344,10 +379,51 @@ func (d *dentry) restoreDescendantsRecursive(ctx context.Context, opts *vfs.Comp
 	return nil
 }
 
-// restoreDead restores a deleted regular file.
+// restoreDeleted restores a deleted dentry for a directory or regular file.
 //
-// Preconditions: d.deletedDataSR != nil.
-func (d *dentry) restoreDead(ctx context.Context, opts *vfs.CompleteRestoreOptions) error {
+// Preconditions:
+//   - d.isRegularFile() || d.isDir()
+//   - d.savedDeletedData != nil iff d.isRegularFile()
+func (d *dentry) restoreDeleted(ctx context.Context, opts *vfs.CompleteRestoreOptions, dirsToDelete map[*dentry]struct{}) error {
+	parent := d.parent.Load()
+	if _, ok := d.fs.savedDeletedOpenDentries[parent]; ok {
+		// Recursively restore the parent first if the parent is also deleted.
+		if err := parent.restoreDeleted(ctx, opts, dirsToDelete); err != nil {
+			return err
+		}
+	}
+	switch {
+	case d.isRegularFile():
+		return d.restoreDeletedRegularFile(ctx, opts)
+	case d.isDir():
+		return d.restoreDeletedDirectory(ctx, opts, dirsToDelete)
+	default:
+		return fmt.Errorf("gofer.dentry(%q).restoreDeleted: invalid file type %s", genericDebugPathname(d.fs, d), linux.FileMode(d.mode.Load()))
+	}
+}
+
+func (d *dentry) restoreDeletedDirectory(ctx context.Context, opts *vfs.CompleteRestoreOptions, dirsToDelete map[*dentry]struct{}) error {
+	// Recreate the directory on the host filesystem. This will be deleted later.
+	parent := d.parent.Load()
+	_, err := parent.mkdir(ctx, d.name, linux.FileMode(d.mode.Load()), auth.KUID(d.uid.Load()), auth.KGID(d.gid.Load()), false /* createDentry */)
+	if err != nil {
+		return fmt.Errorf("failed to re-create deleted directory %q: %w", genericDebugPathname(d.fs, d), err)
+	}
+	// Restore the directory.
+	if err := d.restoreFile(ctx, opts); err != nil {
+		if err := parent.unlink(ctx, d.name, linux.AT_REMOVEDIR); err != nil {
+			log.Warningf("failed to clean up recreated deleted directory %q: %v", genericDebugPathname(d.fs, d), err)
+		}
+		return fmt.Errorf("failed to restore deleted directory: %w", err)
+	}
+	// We will delete the directory later. We need to keep it around in case any
+	// of its children need to be restored after this.
+	dirsToDelete[d] = struct{}{}
+	delete(d.fs.savedDeletedOpenDentries, d)
+	return nil
+}
+
+func (d *dentry) restoreDeletedRegularFile(ctx context.Context, opts *vfs.CompleteRestoreOptions) error {
 	// Recreate the file on the host filesystem (this is temporary).
 	parent := d.parent.Load()
 	_, h, err := parent.openCreate(ctx, d.name, linux.O_WRONLY, linux.FileMode(d.mode.Load()), auth.KUID(d.uid.Load()), auth.KGID(d.gid.Load()), false /* createDentry */)
@@ -363,26 +439,27 @@ func (d *dentry) restoreDead(ctx context.Context, opts *vfs.CompleteRestoreOptio
 	})
 	defer unlinkCU.Clean()
 	// Write the file data to the recreated file.
-	n, err := h.writeFromBlocksAt(ctx, safemem.BlockSeqOf(safemem.BlockFromSafeSlice(d.deletedDataSR)), 0)
+	n, err := h.writeFromBlocksAt(ctx, safemem.BlockSeqOf(safemem.BlockFromSafeSlice(d.savedDeletedData)), 0)
 	if err != nil {
 		return fmt.Errorf("failed to write deleted file %q: %w", genericDebugPathname(d.fs, d), err)
 	}
-	if n != uint64(len(d.deletedDataSR)) {
-		return fmt.Errorf("failed to write all of deleted file %q: wrote %d bytes, expected %d", genericDebugPathname(d.fs, d), n, len(d.deletedDataSR))
+	if n != uint64(len(d.savedDeletedData)) {
+		return fmt.Errorf("failed to write all of deleted file %q: wrote %d bytes, expected %d", genericDebugPathname(d.fs, d), n, len(d.savedDeletedData))
 	}
-	d.deletedDataSR = nil
+	d.savedDeletedData = nil
 	// Restore the file. Note that timestamps may not match since we re-created
 	// the file on the host.
 	recreateOpts := *opts
 	recreateOpts.ValidateFileModificationTimestamps = false
 	if err := d.restoreFile(ctx, &recreateOpts); err != nil {
-		return err
+		return fmt.Errorf("failed to restore deleted regular file: %w", err)
 	}
 	// Finally, unlink the recreated file.
 	unlinkCU.Release()
 	if err := parent.unlink(ctx, d.name, 0 /* flags */); err != nil {
 		return fmt.Errorf("failed to clean up recreated deleted file %q: %v", genericDebugPathname(d.fs, d), err)
 	}
+	delete(d.fs.savedDeletedOpenDentries, d)
 	return nil
 }
 

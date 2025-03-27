@@ -369,12 +369,12 @@ func (d *dentry) link(ctx context.Context, target *dentry, name string) (*dentry
 }
 
 // Precondition: !d.isSynthetic().
-func (d *dentry) mkdir(ctx context.Context, name string, mode linux.FileMode, uid auth.KUID, gid auth.KGID) (*dentry, error) {
+func (d *dentry) mkdir(ctx context.Context, name string, mode linux.FileMode, uid auth.KUID, gid auth.KGID, createDentry bool) (*dentry, error) {
 	switch dt := d.impl.(type) {
 	case *lisafsDentry:
-		return dt.mkdir(ctx, name, mode, uid, gid)
+		return dt.mkdir(ctx, name, mode, uid, gid, createDentry)
 	case *directfsDentry:
-		return dt.mkdir(name, mode, uid, gid)
+		return dt.mkdir(name, mode, uid, gid, createDentry)
 	default:
 		panic("unknown dentry implementation")
 	}

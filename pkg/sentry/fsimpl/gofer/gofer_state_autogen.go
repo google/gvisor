@@ -452,7 +452,7 @@ func (d *dentry) StateFields() []string {
 		"mappings",
 		"cache",
 		"dirty",
-		"deletedDataSR",
+		"savedDeletedData",
 		"pf",
 		"haveTarget",
 		"target",
@@ -498,7 +498,7 @@ func (d *dentry) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(25, &d.mappings)
 	stateSinkObject.Save(26, &d.cache)
 	stateSinkObject.Save(27, &d.dirty)
-	stateSinkObject.Save(28, &d.deletedDataSR)
+	stateSinkObject.Save(28, &d.savedDeletedData)
 	stateSinkObject.Save(29, &d.pf)
 	stateSinkObject.Save(30, &d.haveTarget)
 	stateSinkObject.Save(31, &d.target)
@@ -539,7 +539,7 @@ func (d *dentry) StateLoad(ctx context.Context, stateSourceObject state.Source) 
 	stateSourceObject.Load(25, &d.mappings)
 	stateSourceObject.Load(26, &d.cache)
 	stateSourceObject.Load(27, &d.dirty)
-	stateSourceObject.Load(28, &d.deletedDataSR)
+	stateSourceObject.Load(28, &d.savedDeletedData)
 	stateSourceObject.Load(29, &d.pf)
 	stateSourceObject.Load(30, &d.haveTarget)
 	stateSourceObject.Load(31, &d.target)
