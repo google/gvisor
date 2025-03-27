@@ -27,6 +27,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/state"
 	"gvisor.dev/gvisor/pkg/sync"
+	"gvisor.dev/gvisor/pkg/timing"
 )
 
 // Saver is an interface for saving the kernel.
@@ -267,17 +268,21 @@ type AsyncMFLoader struct {
 // pagesMetadata and pagesFile. It creates a background goroutine that will
 // load all the MemoryFiles. The background goroutine immediately starts
 // loading the main MemoryFile.
-func NewAsyncMFLoader(pagesMetadata, pagesFile *fd.FD, mainMF *pgalloc.MemoryFile) *AsyncMFLoader {
+// If timeline is provided, it will be used to track async page loading.
+// It takes ownership of the timeline, and will end it when done loading all
+// pages.
+func NewAsyncMFLoader(pagesMetadata, pagesFile *fd.FD, mainMF *pgalloc.MemoryFile, timeline *timing.Timeline) *AsyncMFLoader {
 	mfl := &AsyncMFLoader{
 		privateMFsChan: make(chan map[string]*pgalloc.MemoryFile, 1),
 	}
 	mfl.metadataWg.Add(1)
 	mfl.loadWg.Add(1)
-	go mfl.backgroundGoroutine(pagesMetadata, pagesFile, mainMF)
+	go mfl.backgroundGoroutine(pagesMetadata, pagesFile, mainMF, timeline)
 	return mfl
 }
 
-func (mfl *AsyncMFLoader) backgroundGoroutine(pagesMetadataFD, pagesFileFD *fd.FD, mainMF *pgalloc.MemoryFile) {
+func (mfl *AsyncMFLoader) backgroundGoroutine(pagesMetadataFD, pagesFileFD *fd.FD, mainMF *pgalloc.MemoryFile, timeline *timing.Timeline) {
+	defer timeline.End()
 	defer pagesMetadataFD.Close()
 	defer pagesFileFD.Close()
 	cu := cleanup.Make(func() {
@@ -307,8 +312,10 @@ func (mfl *AsyncMFLoader) backgroundGoroutine(pagesMetadataFD, pagesFileFD *fd.F
 				mfl.loadErrsMu.Unlock()
 			}
 		},
+		Timeline: timeline,
 	}
 
+	timeline.Reached("loading mainMF")
 	log.Infof("Loading metadata for main MemoryFile: %p", mainMF)
 	ctx := context.Background()
 	if err := mainMF.LoadFrom(ctx, pagesMetadata, &opts); err != nil {
@@ -316,8 +323,9 @@ func (mfl *AsyncMFLoader) backgroundGoroutine(pagesMetadataFD, pagesFileFD *fd.F
 		mfl.metadataErr = err
 		return
 	}
-
+	timeline.Reached("waiting for privateMF info")
 	privateMFs := <-mfl.privateMFsChan
+	timeline.Reached("received privateMFs info")
 	log.Infof("Loading metadata for %d private MemoryFiles", len(privateMFs))
 	if err := loadPrivateMemoryFiles(ctx, pagesMetadata, privateMFs, &opts); err != nil {
 		log.Warningf("Failed to load private MemoryFiles: %v", err)
@@ -326,12 +334,14 @@ func (mfl *AsyncMFLoader) backgroundGoroutine(pagesMetadataFD, pagesFileFD *fd.F
 	}
 
 	// Report metadata load completion.
+	timeline.Reached("metadata load done")
 	log.Infof("All MemoryFile metadata has been loaded")
 	cu.Release()()
 
 	// Wait for page loads to complete and report errors.
 	mfl.loadWg.Wait()
 	if loadErr := errors.Join(mfl.loadErrs...); loadErr != nil {
+		timeline.Invalidate("page load failed")
 		log.Warningf("Failed to load MemoryFile pages: %v", loadErr)
 		return
 	}
