@@ -44,6 +44,10 @@ start the sandbox with all capabilities:
 $ docker run --runtime runsc -d --rm --cap-add all --name docker-in-gvisor docker-in-gvisor
 ```
 
+> gVisor sandbox doesn't need any extra capabilities from the host to run docker
+> inside gVisor, the listed capabilities are granted by gVisor to the docker
+> daemon that is running inside sandbox.
+
 Now, we can build and run Docker containers.
 
 Let's enter in the gvisor sandbox and run some docker commands:
