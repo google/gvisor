@@ -68,7 +68,7 @@ import (
 )
 
 const (
-	// namespaceAnnotation is a pod annotation populated by containerd.
+	// podNameAnnotation is a pod annotation populated by containerd.
 	// It contains the name of the pod that a sandbox is in when running in Kubernetes.
 	podNameAnnotation = "io.kubernetes.cri.sandbox-name"
 
@@ -407,7 +407,31 @@ func (s *Sandbox) CreateSubcontainer(conf *config.Config, cid string, tty *os.Fi
 	return nil
 }
 
+func getGvisorSysctlDisableIPv6(spec *specs.Spec) (bool, error) {
+	val, ok := spec.Annotations[specutils.SysctlAnnotation]
+	if !ok {
+		return false, nil
+	}
+	var gvSysctl specutils.GvisorSysctl
+	if err := json.Unmarshal([]byte(val), &gvSysctl); err != nil {
+		return false, fmt.Errorf("json unmarshal error for gvisor sysctl=%s: %w", val, err)
+	}
+	if gvSysctl.DisableIPv6 {
+		return true, nil
+	}
+	return false, nil
+}
+
 func getDisableIPv6(spec *specs.Spec) (bool, error) {
+	// Disable IPv6 addresses on all interfaces if `net.ipv6.conf.all.disable_ipv6`
+	// is set in gVisor sysctl annotation.
+	disableIPv6, err := getGvisorSysctlDisableIPv6(spec)
+	if err != nil || disableIPv6 {
+		return disableIPv6, err
+	}
+
+	// If gVisor sysctl for disabling IPv6 addresses is not set, then gVisor
+	// will disable IPv6 on interfaces based on the Linux sysctl.
 	if spec.Linux == nil || spec.Linux.Sysctl == nil {
 		return false, nil
 	}
@@ -415,7 +439,8 @@ func getDisableIPv6(spec *specs.Spec) (bool, error) {
 	if !ok {
 		return false, nil
 	}
-	valInt, err := strconv.Atoi(val)
+	var valInt int
+	valInt, err = strconv.Atoi(val)
 	if err != nil {
 		return false, fmt.Errorf("getting net.ipv6.conf.all.disable_ipv6=%s: %w", val, err)
 	}

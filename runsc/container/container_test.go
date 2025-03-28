@@ -16,6 +16,7 @@ package container
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -4093,6 +4094,7 @@ func TestIPv6DisableAllSysctl(t *testing.T) {
 	}{
 		{"IPv6Disabled", true},
 		{"IPv6Enabled", false},
+		{"GvisorSysctlIPv6Disabled", true},
 	}
 	for name, conf := range configs(t, true /* noOverlay */) {
 		for _, test := range tests {
@@ -4117,9 +4119,21 @@ func TestIPv6DisableAllSysctl(t *testing.T) {
 				spec := testutil.NewSpecWithArgs("bash", "-c", script)
 				conf.Network = config.NetworkSandbox
 				if test.ipv6Disabled {
-					spec.Linux = &specs.Linux{}
-					spec.Linux.Sysctl = make(map[string]string)
-					spec.Linux.Sysctl["net.ipv6.conf.all.disable_ipv6"] = "1"
+					if test.name == "GvisorSysctlIPv6Disabled" {
+						sysctl := specutils.GvisorSysctl{
+							DisableIPv6: true,
+						}
+						jsonSysctl, err := json.Marshal(sysctl)
+						if err != nil {
+							t.Fatalf("error creating sysctl json: %v", err)
+						}
+						spec.Annotations = make(map[string]string)
+						spec.Annotations[specutils.SysctlAnnotation] = string(jsonSysctl)
+					} else {
+						spec.Linux = &specs.Linux{}
+						spec.Linux.Sysctl = make(map[string]string)
+						spec.Linux.Sysctl["net.ipv6.conf.all.disable_ipv6"] = "1"
+					}
 				}
 				_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
 				if err != nil {
