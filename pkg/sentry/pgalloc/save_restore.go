@@ -871,6 +871,7 @@ func (g *aplGoroutine) main() {
 					w.wakeup.Notify(1)
 				}
 			}
+			ul.started = false
 			ul.waiters = nil
 		}
 		apl.mu.Unlock()
