@@ -2739,23 +2739,30 @@ func TestUsage(t *testing.T) {
 	}
 
 	for _, full := range []bool{false, true} {
-		m, err := cont.Sandbox.Usage(full)
-		if err != nil {
-			t.Fatalf("error usage from container: %v", err)
-		}
-		if m.Mapped == 0 {
-			t.Errorf("Usage mapped got zero")
-		}
-		if m.Total == 0 {
-			t.Errorf("Usage total got zero")
-		}
-		if full {
-			if m.System == 0 {
-				t.Errorf("Usage system got zero")
+		// Retry a few times to ensure the container has had a chance to start up and
+		// generate some memory usage.
+		if err := backoff.Retry(func() error {
+			m, err := cont.Sandbox.Usage(full)
+			if err != nil {
+				return &backoff.PermanentError{Err: fmt.Errorf("error usage from container: %v", err)}
 			}
-			if m.Anonymous == 0 {
-				t.Errorf("Usage anonymous got zero")
+			if m.Mapped == 0 {
+				return fmt.Errorf("Usage mapped got zero")
 			}
+			if m.Total == 0 {
+				return fmt.Errorf("Usage total got zero")
+			}
+			if full {
+				if m.System == 0 {
+					return fmt.Errorf("Usage system got zero")
+				}
+				if m.Anonymous == 0 {
+					return fmt.Errorf("Usage anonymous got zero")
+				}
+			}
+			return nil
+		}, backoff.WithMaxRetries(backoff.NewConstantBackOff(100*time.Millisecond), 10)); err != nil {
+			t.Errorf("error getting usage: %v", err)
 		}
 	}
 }
