@@ -50,6 +50,9 @@ const (
 const (
 	// AnnotationTPU is the annotation used to enable TPU proxy on a pod.
 	AnnotationTPU = "dev.gvisor.internal.tpuproxy"
+
+	// SysctlAnnotation is a pod annotation containing sysctls related to gVisor.
+	SysctlAnnotation = "dev.gvisor.sysctl"
 )
 
 // ExePath must point to runsc binary, which is normally the same binary. It's
@@ -58,6 +61,13 @@ var ExePath = "/proc/self/exe"
 
 // Version is the supported spec version.
 var Version = specs.Version
+
+// GvisorSysctl contains all the sysctl values which are used in gVisor during
+// the pod creation. These sysctl values when enabled will be given priority
+// over the Linux sysctl values.
+type GvisorSysctl struct {
+	DisableIPv6 bool `json:"net.ipv6.conf.all.disable_ipv6"`
+}
 
 // LogSpecDebug writes the spec in a human-friendly format to the debug log.
 func LogSpecDebug(orig *specs.Spec, logSeccomp bool) {
