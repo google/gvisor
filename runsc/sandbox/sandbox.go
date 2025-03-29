@@ -54,6 +54,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/seccheck"
 	"gvisor.dev/gvisor/pkg/state/statefile"
 	"gvisor.dev/gvisor/pkg/sync"
+	"gvisor.dev/gvisor/pkg/timing"
 	"gvisor.dev/gvisor/pkg/urpc"
 	"gvisor.dev/gvisor/runsc/boot"
 	"gvisor.dev/gvisor/runsc/boot/procfs"
@@ -492,10 +493,11 @@ func (s *Sandbox) StartSubcontainer(spec *specs.Spec, conf *config.Config, cid s
 }
 
 // Restore sends the restore call for a container in the sandbox.
-func (s *Sandbox) Restore(conf *config.Config, spec *specs.Spec, cid string, imagePath string, direct, background bool) error {
+func (s *Sandbox) Restore(conf *config.Config, spec *specs.Spec, cid string, imagePath string, direct, background bool, timeline *timing.Timeline) error {
 	if err := hostsettings.Handle(conf); err != nil {
 		return fmt.Errorf("host settings: %w (use --host-settings=ignore to bypass)", err)
 	}
+	timeline.Reached("host settings configured")
 
 	log.Debugf("Restore sandbox %q from path %q", s.ID, imagePath)
 
@@ -505,6 +507,7 @@ func (s *Sandbox) Restore(conf *config.Config, spec *specs.Spec, cid string, ima
 		return fmt.Errorf("opening state file %q failed: %v", stateFileName, err)
 	}
 	defer sf.Close()
+	timeline.Reached("state file opened")
 
 	opt := boot.RestoreOpts{
 		FilePayload: urpc.FilePayload{
@@ -521,12 +524,14 @@ func (s *Sandbox) Restore(conf *config.Config, spec *specs.Spec, cid string, ima
 		pagesReadFlags |= syscall.O_DIRECT
 	}
 	if pf, err := os.OpenFile(pagesFileName, pagesReadFlags, 0); err == nil {
+		timeline.Reached("pages file opened")
 		defer pf.Close()
 		pagesMetadataFileName := path.Join(imagePath, boot.CheckpointPagesMetadataFileName)
 		pmf, err := os.Open(pagesMetadataFileName)
 		if err != nil {
 			return fmt.Errorf("opening restore image file %q failed: %v", pagesMetadataFileName, err)
 		}
+		timeline.Reached("pages metadata file opened")
 		defer pmf.Close()
 
 		opt.HavePagesFile = true
@@ -535,7 +540,6 @@ func (s *Sandbox) Restore(conf *config.Config, spec *specs.Spec, cid string, ima
 
 	} else if !os.IsNotExist(err) {
 		return fmt.Errorf("opening restore pages file %q failed: %v", pagesFileName, err)
-
 	} else {
 		log.Infof("Using single checkpoint file for sandbox %q", s.ID)
 	}
@@ -544,6 +548,7 @@ func (s *Sandbox) Restore(conf *config.Config, spec *specs.Spec, cid string, ima
 	if deviceFile, err := deviceFileForPlatform(conf.Platform, conf.PlatformDevicePath); err != nil {
 		return err
 	} else if deviceFile != nil {
+		timeline.Reached("device file opened")
 		defer deviceFile.Close()
 		opt.HaveDeviceFile = true
 		opt.FilePayload.Files = append(opt.FilePayload.Files, deviceFile.ReleaseToFile("device file"))
@@ -554,6 +559,7 @@ func (s *Sandbox) Restore(conf *config.Config, spec *specs.Spec, cid string, ima
 		return err
 	}
 	defer conn.Close()
+	timeline.Reached("sandbox connected")
 
 	var disableIPv6 bool
 	disableIPv6, err = getDisableIPv6(spec)
@@ -564,6 +570,7 @@ func (s *Sandbox) Restore(conf *config.Config, spec *specs.Spec, cid string, ima
 	if err := setupNetwork(conn, s.Pid.load(), conf, disableIPv6); err != nil {
 		return fmt.Errorf("setting up network: %v", err)
 	}
+	timeline.Reached("network configured")
 
 	// Restore the container and start the root container.
 	if err := conn.Call(boot.ContMgrRestore, &opt, nil); err != nil {
@@ -574,7 +581,7 @@ func (s *Sandbox) Restore(conf *config.Config, spec *specs.Spec, cid string, ima
 }
 
 // RestoreSubcontainer sends the restore call for a sub-container in the sandbox.
-func (s *Sandbox) RestoreSubcontainer(spec *specs.Spec, conf *config.Config, cid string, stdios, goferFiles, goferFilestoreFiles []*os.File, devIOFile *os.File, goferMountConf []boot.GoferMountConf) error {
+func (s *Sandbox) RestoreSubcontainer(spec *specs.Spec, conf *config.Config, cid string, stdios, goferFiles, goferFilestoreFiles []*os.File, devIOFile *os.File, goferMountConf []boot.GoferMountConf, timeline *timing.Timeline) error {
 	log.Debugf("Restore sub-container %q in sandbox %q, PID: %d", cid, s.ID, s.Pid.load())
 
 	if err := s.configureStdios(conf, stdios); err != nil {
@@ -605,6 +612,7 @@ func (s *Sandbox) RestoreSubcontainer(spec *specs.Spec, conf *config.Config, cid
 		GoferMountConfs:      goferMountConf,
 		FilePayload:          payload,
 	}
+	timeline.Reached("RPC payload ready")
 	if err := s.call(boot.ContMgrRestoreSubcontainer, &args, nil); err != nil {
 		return fmt.Errorf("starting sub-container %v: %w", spec.Process.Args, err)
 	}

@@ -21,6 +21,7 @@ import (
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/proc"
+	"gvisor.dev/gvisor/pkg/timing"
 )
 
 func preSaveImpl(*Loader, *control.SaveOpts) error {
@@ -28,12 +29,12 @@ func preSaveImpl(*Loader, *control.SaveOpts) error {
 }
 
 // Precondition: The kernel should be running.
-func postRestoreImpl(*Loader) error {
+func postRestoreImpl(*Loader, *timing.Timeline) error {
 	return nil
 }
 
 // Precondition: The kernel should be running.
-func postResumeImpl(*Loader) error {
+func postResumeImpl(*Loader, *timing.Timeline) error {
 	return nil
 }
 

@@ -166,6 +166,7 @@ go_library(
         "//pkg/sync",
         "//pkg/sync/locking",
         "//pkg/syncevent",
+        "//pkg/timing",
         "//pkg/usermem",
         "@org_golang_x_sys//unix:go_default_library",
     ],

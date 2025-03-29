@@ -17,19 +17,84 @@
 package starttime
 
 import (
+	"fmt"
+	"os"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
+
+	"gvisor.dev/gvisor/pkg/timing"
 )
 
 var (
-	setOnce   sync.Once
-	startTime time.Time
+	setOnce      sync.Once
+	processStart time.Time
+	goStartTime  time.Time
+	envStartTime time.Time
 )
 
-// Get returns the time the `runsc` command started.
+// envStartTimeKey is the environment variable that holds the time the `runsc`
+// command started. This is used to track the actual start time across
+// re-execs of `runsc`.
+const envStartTimeKey = "RUNSC_START_TIME_NANOS"
+
+// Get returns the time the `runsc` command started on a best-effort basis.
+// If the RUNSC_START_TIME_NANOS environment variable is set, it is used.
+// Otherwise, it tries to get the time from /proc/self/status.
+// If neither is available, it returns the time the function was first called.
 func Get() time.Time {
 	setOnce.Do(func() {
-		startTime = time.Now()
+		goStartTime = time.Now()
+		if startTimeStr, found := os.LookupEnv(envStartTimeKey); found {
+			if startTime, err := strconv.ParseInt(startTimeStr, 10, 64); err == nil {
+				envStartTime = time.Unix(0, startTime)
+				return // No need to check /proc/self/status.
+			}
+		}
+		if st, err := os.Stat("/proc/self/status"); err == nil {
+			processStart = st.ModTime()
+		}
 	})
-	return startTime
+	if !envStartTime.IsZero() {
+		return envStartTime
+	}
+	if !processStart.IsZero() {
+		return processStart
+	}
+	return goStartTime
+}
+
+// GoStartTime returns the time the `runsc` command's Go code started.
+func GoStartTime() time.Time {
+	Get()
+	return goStartTime
+}
+
+// Timer returns a Timer object that is rooted at `runsc` execution start.
+// If `runsc` was re-exec'd, this timer will have a midpoint called "re-exec"
+// that corresponds to the time of the re-exec.
+func Timer(name string) *timing.Timer {
+	timer := timing.New(name, Get())
+	if !envStartTime.IsZero() {
+		if !processStart.IsZero() {
+			timer.ReachedAt("re-exec", processStart)
+		} else {
+			timer.ReachedAt("re-exec", goStartTime)
+		}
+	}
+	return timer
+}
+
+// AppendEnviron appends the RUNSC_START_TIME_NANOS environment variable to
+// the given environment, if it is not already present. Otherwise, it is
+// preserved.
+func AppendEnviron(env []string) []string {
+	const envVarPrefix = envStartTimeKey + "="
+	for _, e := range env {
+		if strings.HasPrefix(e, envVarPrefix) {
+			return env
+		}
+	}
+	return append(env, fmt.Sprintf("%s=%d", envStartTimeKey, Get().UnixNano()))
 }

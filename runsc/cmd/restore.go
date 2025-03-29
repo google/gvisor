@@ -27,6 +27,7 @@ import (
 	"gvisor.dev/gvisor/runsc/container"
 	"gvisor.dev/gvisor/runsc/flag"
 	"gvisor.dev/gvisor/runsc/specutils"
+	"gvisor.dev/gvisor/runsc/starttime"
 )
 
 // Restore implements subcommands.Command for the "restore" command.
@@ -89,6 +90,8 @@ func (r *Restore) SetFlags(f *flag.FlagSet) {
 
 // Execute implements subcommands.Command.Execute.
 func (r *Restore) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
+	timer := starttime.Timer("Restore")
+	defer timer.Log()
 	if f.NArg() != 1 {
 		f.Usage()
 		return subcommands.ExitUsageError
@@ -124,6 +127,7 @@ func (r *Restore) Execute(_ context.Context, f *flag.FlagSet, args ...any) subco
 	}
 
 	log.Debugf("Restore container, cid: %s, rootDir: %q", id, conf.RootDir)
+	timer.Reached("config parsed")
 	c, err := container.Load(conf.RootDir, container.FullID{ContainerID: id}, container.LoadOpts{})
 	if err != nil {
 		if err != os.ErrNotExist {
@@ -151,9 +155,13 @@ func (r *Restore) Execute(_ context.Context, f *flag.FlagSet, args ...any) subco
 	} else {
 		runArgs.Spec = c.Spec
 	}
+	timer.Reached("container loaded")
 
 	log.Debugf("Restore: %v", r.imagePath)
-	if err := c.Restore(conf, r.imagePath, r.direct, r.background); err != nil {
+	restoreThread := timer.Fork("container.Restore")
+	err = c.Restore(conf, r.imagePath, r.direct, r.background, restoreThread)
+	restoreThread.End()
+	if err != nil {
 		return util.Errorf("starting container: %v", err)
 	}
 
@@ -167,6 +175,7 @@ func (r *Restore) Execute(_ context.Context, f *flag.FlagSet, args ...any) subco
 
 	var ws unix.WaitStatus
 	if runArgs.Attached {
+		timer.Reached("attaching")
 		if ws, err = c.Wait(); err != nil {
 			return util.Errorf("running container: %v", err)
 		}

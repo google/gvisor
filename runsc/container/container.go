@@ -41,6 +41,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sighandling"
 	"gvisor.dev/gvisor/pkg/state/statefile"
+	"gvisor.dev/gvisor/pkg/timing"
 	"gvisor.dev/gvisor/pkg/unet"
 	"gvisor.dev/gvisor/pkg/urpc"
 	"gvisor.dev/gvisor/runsc/boot"
@@ -419,13 +420,16 @@ func (c *Container) Start(conf *config.Config) error {
 
 // Restore takes a container and replaces its kernel and file system
 // to restore a container from its state file.
-func (c *Container) Restore(conf *config.Config, imagePath string, direct, background bool) error {
+func (c *Container) Restore(conf *config.Config, imagePath string, direct, background bool, timeline *timing.Timeline) error {
 	log.Debugf("Restore container, cid: %s", c.ID)
 
 	restore := func(conf *config.Config, spec *specs.Spec) error {
-		return c.Sandbox.Restore(conf, spec, c.ID, imagePath, direct, background)
+		return c.Sandbox.Restore(conf, spec, c.ID, imagePath, direct, background, timeline)
 	}
-	return c.startImpl(conf, "restore", restore, c.Sandbox.RestoreSubcontainer)
+	restoreSub := func(spec *specs.Spec, conf *config.Config, cid string, stdios, goferFiles, goferFilestores []*os.File, devIOFile *os.File, goferConfs []boot.GoferMountConf) error {
+		return c.Sandbox.RestoreSubcontainer(spec, conf, cid, stdios, goferFiles, goferFilestores, devIOFile, goferConfs, timeline)
+	}
+	return c.startImpl(conf, "restore", restore, restoreSub)
 }
 
 func (c *Container) startImpl(conf *config.Config, action string, startRoot func(conf *config.Config, spec *specs.Spec) error, startSub func(spec *specs.Spec, conf *config.Config, cid string, stdios, goferFiles, goferFilestores []*os.File, devIOFile *os.File, goferConfs []boot.GoferMountConf) error) error {

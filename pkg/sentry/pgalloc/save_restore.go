@@ -40,6 +40,7 @@ import (
 	"gvisor.dev/gvisor/pkg/state/wire"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syncevent"
+	"gvisor.dev/gvisor/pkg/timing"
 )
 
 // SaveOpts provides options to MemoryFile.SaveTo().
@@ -219,7 +220,7 @@ func (f *MemoryFile) SaveTo(ctx context.Context, w io.Writer, pw io.Writer, opts
 		savedBytes += maseg.Range().Length()
 	}
 	durPages := time.Since(timePagesStart)
-	log.Infof("MemoryFile(%p): saved pages in %s (%d bytes, %f bytes/second)", f, durPages, savedBytes, float64(savedBytes)/durPages.Seconds())
+	log.Infof("MemoryFile(%p): saved pages in %s (%d bytes, %.3f MiB/s)", f, durPages, savedBytes, float64(savedBytes)/durPages.Seconds()/1048576.0)
 
 	return nil
 }
@@ -255,12 +256,20 @@ type LoadOpts struct {
 	// OnAsyncPageLoadDone is called.
 	PagesFile            *fd.FD
 	PagesFileOffset      uint64
-	OnAsyncPageLoadStart func()
-	OnAsyncPageLoadDone  func(error)
+	OnAsyncPageLoadStart func(*MemoryFile)
+	OnAsyncPageLoadDone  func(*MemoryFile, error)
+
+	// Optional timeline for the restore process.
+	// If async page loading is enabled, a forked timeline will be created for
+	// that async goroutine, so ownership of this timeline remains in the hands
+	// of the caller of LoadFrom.
+	Timeline *timing.Timeline
 }
 
 // LoadFrom loads MemoryFile state from the given stream.
 func (f *MemoryFile) LoadFrom(ctx context.Context, r io.Reader, opts *LoadOpts) error {
+	mfTimeline := opts.Timeline.Fork(fmt.Sprintf("mf:%p", f)).Lease()
+	defer mfTimeline.End()
 	timeMetadataStart := time.Now()
 
 	// Clear sets since non-empty sets will panic if loaded into.
@@ -300,6 +309,7 @@ func (f *MemoryFile) LoadFrom(ctx context.Context, r io.Reader, opts *LoadOpts) 
 		return err
 	}
 	f.chunks.Store(&chunks)
+	mfTimeline.Reached("metadata loaded")
 	log.Infof("MemoryFile(%p): loaded metadata in %s", f, time.Since(timeMetadataStart))
 	if err := f.file.Truncate(int64(len(chunks)) * chunkSize); err != nil {
 		return fmt.Errorf("failed to truncate MemoryFile: %w", err)
@@ -322,6 +332,7 @@ func (f *MemoryFile) LoadFrom(ctx context.Context, r io.Reader, opts *LoadOpts) 
 		if errno != 0 {
 			return fmt.Errorf("failed to mmap MemoryFile: %w", errno)
 		}
+		mfTimeline.Reached("mmaped chunks")
 		for i := range chunks {
 			chunk := &chunks[i]
 			chunk.mapping = m
@@ -346,10 +357,11 @@ func (f *MemoryFile) LoadFrom(ctx context.Context, r io.Reader, opts *LoadOpts) 
 	// Start async page loading if a pages file has been provided.
 	//
 	// Future work: In practice, all restored MemoryFiles in a given Kernel
-	// will share the same pages file (see Kernel.loadMemoryFiles()), so each
-	// MemoryFile will maintain its own AIO queue and async page loader. In
-	// addition to resource usage downsides, this means that awaited loads may
-	// not be consistently prioritized: they'll be prioritized by their
+	// will share the same pages file
+	// (see Kernel.multiStateFilePFL.KickoffAll()), so each MemoryFile will
+	// maintain its own AIO queue and async page loader.
+	// In addition to resource usage downsides, this means that awaited loads
+	// may not be consistently prioritized: they'll be prioritized by their
 	// originating MemoryFile, but may compete with unawaited loads from other
 	// MemoryFiles. I think the best way to fix this would be to have a single
 	// AIO queue and async page loader per pages file (still in this package),
@@ -372,6 +384,7 @@ func (f *MemoryFile) LoadFrom(ctx context.Context, r io.Reader, opts *LoadOpts) 
 			qavail:       aplQueueCapacity,
 			fd:           int32(opts.PagesFile.FD()),
 			opsBusy:      bitmap.New(aplQueueCapacity),
+			timeline:     mfTimeline.Transfer(),
 		}
 		apl = &aplg.apl
 		// Mark ops in opsBusy that don't actually exist as permanently busy.
@@ -382,7 +395,7 @@ func (f *MemoryFile) LoadFrom(ctx context.Context, r io.Reader, opts *LoadOpts) 
 		defer aplg.lfStatus.Notify(aplLFDone)
 		f.asyncPageLoad.Store(apl)
 		if opts.OnAsyncPageLoadStart != nil {
-			opts.OnAsyncPageLoadStart()
+			opts.OnAsyncPageLoadStart(f)
 		}
 		go aplg.main()
 	}
@@ -637,9 +650,9 @@ type aplGoroutine struct {
 	apl aplShared
 	_   [hostarch.CacheLineSize]byte // padding
 
-	f            *MemoryFile  // immutable
-	q            *aio.GoQueue // immutable
-	doneCallback func(error)  // immutable
+	f            *MemoryFile              // immutable
+	q            *aio.GoQueue             // immutable
+	doneCallback func(*MemoryFile, error) // immutable
 
 	// lfStatus communicates state from Memory.LoadFrom() to the goroutine.
 	lfStatus syncevent.Waiter
@@ -664,6 +677,9 @@ type aplGoroutine struct {
 
 	// ops stores all aplOps.
 	ops [aplQueueCapacity]aplOp
+
+	// Optional timeline for tracking async page loading.
+	timeline *timing.Timeline
 }
 
 // Possible events in aplGoroutine.lfStatus:
@@ -854,6 +870,9 @@ func (g *aplGoroutine) main() {
 	apl := &g.apl
 	f := g.f
 	q := g.q
+	t := g.timeline
+	defer t.End()
+	t.Reached("aplGoroutine.main")
 	defer func() {
 		// Destroy q first since this synchronously stops inflight I/O.
 		q.Destroy()
@@ -876,7 +895,7 @@ func (g *aplGoroutine) main() {
 		}
 		apl.mu.Unlock()
 		if g.doneCallback != nil {
-			g.doneCallback(apl.err)
+			g.doneCallback(f, apl.err)
 		}
 	}()
 
@@ -931,7 +950,9 @@ func (g *aplGoroutine) main() {
 					}
 					durDelta := time.Duration(now - timeLast)
 					bytesLoadedDelta := bytesLoaded - bytesLoadedLast
-					log.Infof("MemoryFile(%p): async page loading in progress for %s (%d bytes, %.3f MB/s); since last update %s ago: %d bytes, %.3f MB/s; %d waiters waited %v~%v for %d bytes", f, durTotal.Round(time.Millisecond), bytesLoaded, float64(bytesLoaded)*1e-6/durTotal.Seconds(), durDelta.Round(time.Millisecond), bytesLoadedDelta, float64(bytesLoadedDelta)*1e-6/durDelta.Seconds(), totalWaiters, durWaitedOne.Round(time.Millisecond), durWaitedTotal.Round(time.Millisecond), bytesWaited)
+					bandwidthSinceLast := float64(bytesLoadedDelta) * 1e-6 / durDelta.Seconds()
+					t.Reached(fmt.Sprintf("%.3f MB/s", bandwidthSinceLast))
+					log.Infof("MemoryFile(%p): async page loading in progress for %s (%d bytes, %.3f MB/s); since last update %s ago: %d bytes, %.3f MB/s; %d waiters waited %v~%v for %d bytes", f, durTotal.Round(time.Millisecond), bytesLoaded, float64(bytesLoaded)*1e-6/durTotal.Seconds(), durDelta.Round(time.Millisecond), bytesLoadedDelta, bandwidthSinceLast, totalWaiters, durWaitedOne.Round(time.Millisecond), durWaitedTotal.Round(time.Millisecond), bytesWaited)
 					timeLast = now
 					bytesLoadedLast = bytesLoaded
 				}
