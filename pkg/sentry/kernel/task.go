@@ -364,7 +364,10 @@ type Task struct {
 	// ptraceSeized is true if ptraceTracer attached to this task with
 	// PTRACE_SEIZE.
 	//
-	// ptraceSeized is protected by the TaskSet mutex.
+	// ptraceSeized is protected by both the TaskSet mutex and the signal
+	// mutex: Mutating ptraceSeized requires locking the TaskSet mutex for
+	// writing *and* locking the signal mutex. Reading ptraceSeized
+	// requires locking the TaskSet mutex *or* locking the signal mutex.
 	ptraceSeized bool
 
 	// ptraceOpts contains ptrace options explicitly set by the tracer. If
