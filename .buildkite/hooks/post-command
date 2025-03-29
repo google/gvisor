@@ -1,5 +1,11 @@
 set -x
 
+ps axf
+ss -an
+uname -a
+docker info
+docker ps
+
 source .buildkite/hooks/libhook
 
 # Clear any downloaded credentials.
