@@ -27,6 +27,7 @@ import (
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/runsc/specutils"
+	"gvisor.dev/gvisor/runsc/starttime"
 )
 
 // intFlags can be used with int flags that appear multiple times. It supports
@@ -90,7 +91,7 @@ func setCapsAndCallSelf(args []string, caps *specs.LinuxCapabilities) error {
 	binPath := specutils.ExePath
 
 	log.Infof("Execve %q again, bye!", binPath)
-	err := unix.Exec(binPath, args, os.Environ())
+	err := unix.Exec(binPath, args, starttime.AppendEnviron(os.Environ()))
 	return fmt.Errorf("error executing %s: %v", binPath, err)
 }
 
@@ -116,6 +117,6 @@ func callSelfAsNobody(args []string) error {
 	binPath := specutils.ExePath
 
 	log.Infof("Execve %q again, bye!", binPath)
-	err := unix.Exec(binPath, args, os.Environ())
+	err := unix.Exec(binPath, args, starttime.AppendEnviron(os.Environ()))
 	return fmt.Errorf("error executing %s: %v", binPath, err)
 }

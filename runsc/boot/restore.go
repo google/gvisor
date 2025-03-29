@@ -17,7 +17,6 @@ package boot
 import (
 	"errors"
 	"fmt"
-	"io"
 	"strconv"
 	time2 "time"
 
@@ -79,13 +78,23 @@ type restorer struct {
 	containers []*containerInfo
 
 	// Files used by restore to rehydrate the state.
-	stateFile     io.ReadCloser
+	stateFile     *fd.FD
 	pagesMetadata *fd.FD
 	pagesFile     *fd.FD
 
 	// If background is true, pagesFile may continue to be read after
 	// restorer.restore() returns.
 	background bool
+
+	// mainMF is the main MemoryFile of the sandbox.
+	// It is created as soon as possible, and may be restored to as soon as
+	// the first container is restored, which is earlier than when the sandbox's
+	// kernel object is created.
+	mainMF *pgalloc.MemoryFile
+
+	// pagesFileLoader is used to load the MemoryFile pages. It handles the
+	// possibly-asynchronous loading of the memory pages.
+	pagesFileLoader kernel.PagesFileLoader
 
 	// deviceFile is the required to start the platform.
 	deviceFile *fd.FD
@@ -131,11 +140,44 @@ func (r *restorer) restoreContainerInfo(l *Loader, info *containerInfo) error {
 			log.Debugf("Restore app FD: %d host FD: %d", i, fd.FD())
 		}
 	}
+	if err := r.maybeKickoffMainMemoryFileLoad(l); err != nil {
+		return fmt.Errorf("main memory file: %w", err)
+	}
 
 	if len(r.containers) == r.totalContainers {
 		// Trigger the restore if this is the last container.
 		return r.restore(l)
 	}
+	return nil
+}
+
+// maybeKickoffMainMemoryFileLoad kicks off loading of the main MemoryFile
+// asynchronously, if possible and if it hasn't been done yet.
+func (r *restorer) maybeKickoffMainMemoryFileLoad(l *Loader) error {
+	if r.mainMF == nil {
+		// Create the main MemoryFile.
+		mf, err := createMemoryFile(l.root.conf.AppHugePages, l.hostTHP)
+		if err != nil {
+			return fmt.Errorf("creating memory file: %v", err)
+		}
+		r.mainMF = mf
+	}
+	if r.pagesFileLoader != nil {
+		return nil // Already kicked off.
+	}
+	if r.pagesFile == nil || r.pagesMetadata == nil {
+		return nil // Asynchronous loading not possible.
+	}
+	pfl := kernel.NewMultiStateFilePagesFileLoader(r.pagesMetadata, r.pagesFile)
+	if err := pfl.KickoffMain(context.Background(), r.mainMF); err != nil {
+		return fmt.Errorf("failed to load main memory file: %w", err)
+	}
+	r.pagesFileLoader = pfl
+
+	// Ownership transferred to the pages file loader.
+	r.pagesFile = nil
+	r.pagesMetadata = nil
+
 	return nil
 }
 
@@ -175,12 +217,7 @@ func (r *restorer) restore(l *Loader) error {
 	l.k = &kernel.Kernel{
 		Platform: p,
 	}
-
-	mf, err := createMemoryFile(l.root.conf.AppHugePages, l.hostTHP)
-	if err != nil {
-		return fmt.Errorf("creating memory file: %v", err)
-	}
-	l.k.SetMemoryFile(mf)
+	l.k.SetMemoryFile(r.mainMF)
 
 	if l.root.conf.ProfileEnable {
 		// pprof.Initialize opens /proc/self/maps, so has to be called before
@@ -233,13 +270,11 @@ func (r *restorer) restore(l *Loader) error {
 
 	// Load the state.
 	loadOpts := state.LoadOpts{
-		Source:        r.stateFile,
-		PagesMetadata: r.pagesMetadata,
-		PagesFile:     r.pagesFile,
-		Background:    r.background,
+		Source:          r.stateFile,
+		PagesFileLoader: r.pagesFileLoader,
+		Background:      r.background,
 	}
 	err = loadOpts.Load(ctx, l.k, nil, oldInetStack, time.NewCalibratedClocks(), &vfs.CompleteRestoreOptions{}, l.saveRestoreNet)
-	r.pagesFile = nil // transferred to loadOpts.Load()
 	if err != nil {
 		return fmt.Errorf("failed to load kernel: %w", err)
 	}
@@ -318,12 +353,6 @@ func (r *restorer) restore(l *Loader) error {
 	}
 
 	r.stateFile.Close()
-	if r.pagesFile != nil {
-		r.pagesFile.Close()
-	}
-	if r.pagesMetadata != nil {
-		r.pagesMetadata.Close()
-	}
 
 	go func() {
 		if err := postRestoreImpl(l); err != nil {

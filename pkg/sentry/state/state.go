@@ -39,12 +39,12 @@ var previousMetadata map[string]string
 // ErrStateFile is returned when an error is encountered writing the statefile
 // (which may occur during open or close calls in addition to write).
 type ErrStateFile struct {
-	err error
+	Err error
 }
 
 // Error implements error.Error().
 func (e ErrStateFile) Error() string {
-	return fmt.Sprintf("statefile error: %v", e.err)
+	return fmt.Sprintf("statefile error: %v", e.Err)
 }
 
 // SaveOpts contains save-related options.
@@ -155,13 +155,9 @@ type LoadOpts struct {
 	// Source is the load source.
 	Source io.Reader
 
-	// PagesMetadata is the file into which MemoryFile metadata is stored if
-	// PagesMetadata is non-nil. Otherwise this content is stored in Source.
-	PagesMetadata *fd.FD
-
-	// PagesFile is the file in which all MemoryFile pages are stored if
-	// PagesFile is non-nil. Otherwise this content is stored in Source.
-	PagesFile *fd.FD
+	// PagesFileLoader is an optional PagesFileLoader.
+	// If unset, it will be created from `Source`.
+	PagesFileLoader kernel.PagesFileLoader
 
 	// If Background is true, the sentry may read from PagesFile after Load has
 	// returned.
@@ -175,31 +171,14 @@ type LoadOpts struct {
 //
 // Load takes ownership of (and unsets) opts.PagesFile.
 func (opts LoadOpts) Load(ctx context.Context, k *kernel.Kernel, timeReady chan struct{}, n inet.Stack, clocks time.Clocks, vfsOpts *vfs.CompleteRestoreOptions, saveRestoreNet bool) error {
-	defer func() {
-		if opts.PagesFile != nil {
-			opts.PagesFile.Close()
-			opts.PagesFile = nil
-		}
-	}()
-
-	// Open the file.
 	r, m, err := statefile.NewReader(opts.Source, opts.Key)
 	if err != nil {
 		return ErrStateFile{err}
 	}
-	var pagesMetadata io.Reader
-	if opts.PagesMetadata != nil {
-		// //pkg/state/wire reads one byte at a time; buffer these reads to
-		// avoid making one syscall per read. For the "main" state file, this
-		// buffering is handled by statefile.NewReader() => compressio.Reader
-		// or compressio.NewSimpleReader().
-		pagesMetadata = bufio.NewReader(opts.PagesMetadata)
+	pfl := opts.PagesFileLoader
+	if pfl == nil {
+		pfl = kernel.NewSingleStateFilePagesFileLoader(r)
 	}
-
 	previousMetadata = m
-
-	// Restore the Kernel object graph.
-	err = k.LoadFrom(ctx, r, pagesMetadata, opts.PagesFile, opts.Background, timeReady, n, clocks, vfsOpts, saveRestoreNet)
-	opts.PagesFile = nil // transferred to k.LoadFrom()
-	return err
+	return k.LoadFrom(ctx, r, pfl, opts.Background, timeReady, n, clocks, vfsOpts, saveRestoreNet)
 }
