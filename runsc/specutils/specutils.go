@@ -44,7 +44,8 @@ const (
 	annotationSeccomp               = "dev.gvisor.internal.seccomp."
 	annotationSeccompRuntimeDefault = "RuntimeDefault"
 
-	annotationContainerName = "io.kubernetes.cri.container-name"
+	annotationContainerName        = "io.kubernetes.cri.container-name"
+	annotationContainerRemapPrefix = "dev.gvisor.container-name-remap."
 )
 
 const (
@@ -753,10 +754,18 @@ func FaqErrorMsg(anchor, msg string) string {
 	return fmt.Sprintf("%s; see https://gvisor.dev/faq#%s for more details", msg, anchor)
 }
 
-// ContainerName looks for an annotation in the spec with the container name. Returns empty string
-// if no annotation is found.
+// ContainerName looks for an annotation in the spec with the container name.
+// Returns empty string if no annotation is found. If the container name is
+// remapped, the remapped name is returned.
 func ContainerName(spec *specs.Spec) string {
-	return spec.Annotations[annotationContainerName]
+	name, ok := spec.Annotations[annotationContainerName]
+	if !ok {
+		return ""
+	}
+	if newName, ok := spec.Annotations[annotationContainerRemapPrefix+name]; ok {
+		return newName
+	}
+	return name
 }
 
 // AnnotationToBool parses the annotation value as a bool. On failure, it logs a warning and

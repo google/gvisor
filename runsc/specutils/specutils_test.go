@@ -382,6 +382,47 @@ func TestSeccomp(t *testing.T) {
 	}
 }
 
+func TestContainerName(t *testing.T) {
+	name := "cont1"
+	mappedName := "cont1-new-name"
+	for _, tc := range []struct {
+		name string
+		spec specs.Spec
+		want string
+	}{
+		{
+			name: "no container name",
+			spec: specs.Spec{},
+			want: "",
+		},
+		{
+			name: "container name",
+			spec: specs.Spec{
+				Annotations: map[string]string{
+					annotationContainerName: name,
+				},
+			},
+			want: name,
+		},
+		{
+			name: "container name remapped",
+			spec: specs.Spec{
+				Annotations: map[string]string{
+					annotationContainerName:               name,
+					annotationContainerRemapPrefix + name: mappedName,
+				},
+			},
+			want: mappedName,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := ContainerName(&tc.spec); got != tc.want {
+				t.Errorf("ContainerName() got: %q, want: %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestNvidiaDriverCapabilities(t *testing.T) {
 	testAllowedCapsFlag := "utility,compute,graphics"
 	testAllowedCaps, _, err := nvconf.DriverCapsFromString(testAllowedCapsFlag)
