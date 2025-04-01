@@ -870,6 +870,11 @@ func (i *inode) setXattr(creds *auth.Credentials, opts *vfs.SetXattrOptions) err
 	if err := i.checkXattrPrefix(opts.Name); err != nil {
 		return err
 	}
+	if strings.HasPrefix(opts.Name, linux.XATTR_SECURITY_PREFIX) {
+		// TODO(b/301323819): support security extended attributes in tmpfs.
+		// Setting security extended attributes in tmpfs is a no-op.
+		return nil
+	}
 	mode := linux.FileMode(i.mode.Load())
 	kuid := auth.KUID(i.uid.Load())
 	kgid := auth.KGID(i.gid.Load())
