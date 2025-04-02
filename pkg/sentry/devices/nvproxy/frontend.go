@@ -582,6 +582,8 @@ func rmAllocMemorySimple(fi *frontendIoctlState, ioctlParams *nvgpu.IoctlNVOS02P
 	return n, nil
 }
 
+var madvPopulateWriteDisabled atomicbitops.Bool
+
 func rmAllocOSDescriptor(fi *frontendIoctlState, ioctlParams *nvgpu.IoctlNVOS02ParametersWithFD) (uintptr, error) {
 	// Compare src/nvidia/arch/nvalloc/unix/src/escape.c:RmAllocOsDescriptor()
 	// => RmCreateOsDescriptor().
@@ -656,6 +658,32 @@ func rmAllocOSDescriptor(fi *frontendIoctlState, ioctlParams *nvgpu.IoctlNVOS02P
 				}
 				sentryAddr += uintptr(im.Len())
 				ims = ims.Tail()
+			}
+		}
+	}
+	if !madvPopulateWriteDisabled.Load() {
+		// In the kernel driver,
+		// src/nvidia/arch/nvalloc/unix/src/escape.c:RmAllocOsDescriptor() =>
+		// RmCreateOsDescriptor() =>
+		// kernel-open/nvidia/os-mlock.c:os_lock_user_pages() will call
+		// NV_PIN_USER_PAGES() => (Linux) mm/gup.c:pin_user_pages() with
+		// gup_flags=FOLL_WRITE|FOLL_LONGTERM. pin_user_pages() calls
+		// is_valid_gup_args(locked=NULL), so FOLL_UNLOCKABLE is *not* added to
+		// gup_flags. Consequently, if pin_user_pages() needs to fault in
+		// pages, it will not unlock mmap_lock while doing so.
+		//
+		// If another thread attempts to lock mmap_lock for writing (in this
+		// context, this typically occurs when another process also tries to
+		// rmAllocOSDescriptor() and calls mmap or mremap above), that thread
+		// will block until mmap_lock is released, and will also prevent other
+		// threads from locking mmap_lock for reading.
+		//
+		// To avoid this, fault in these pages via MADV_POPULATE_WRITE;
+		// mm/madvise.c:madvise_populate() => mm/gup.c:faultin_page_range()
+		// does pass FOLL_UNLOCKABLE to __get_user_pages_locked().
+		if _, _, errno := unix.Syscall(unix.SYS_MADVISE, m, uintptr(arLen), unix.MADV_POPULATE_WRITE); errno != 0 {
+			if !madvPopulateWriteDisabled.Swap(true) {
+				log.Infof("nvproxy: disabling MADV_POPULATE_WRITE before NV01_MEMORY_SYSTEM_OS_DESCRIPTOR allocation: %s", errno)
 			}
 		}
 	}

@@ -62,6 +62,9 @@ const (
 	VersionKey = "runsc_version"
 	// ContainerCountKey is the key used to save number of containers in the save metadata.
 	ContainerCountKey = "container_count"
+	// ContainerSpecsKey is the key used to add and pop the container specs to the
+	// metadata during save/restore.
+	ContainerSpecsKey = "container_specs"
 )
 
 // restorer manages a restore session for a sandbox. It stores information about
@@ -92,6 +95,10 @@ type restorer struct {
 
 	// restoreDone is a callback triggered when restore is successful.
 	restoreDone func() error
+
+	// checkpointedSpecs contains the map of container specs used during
+	// checkpoint.
+	checkpointedSpecs map[string]*specs.Spec
 }
 
 func (r *restorer) restoreSubcontainer(spec *specs.Spec, conf *config.Config, l *Loader, cid string, stdioFDs, goferFDs, goferFilestoreFDs []*fd.FD, devGoferFD *fd.FD, goferMountConfs []GoferMountConf) error {
@@ -133,6 +140,10 @@ func (r *restorer) restoreContainerInfo(l *Loader, info *containerInfo) error {
 	}
 
 	if len(r.containers) == r.totalContainers {
+		if err := specutils.RestoreValidateSpec(r.checkpointedSpecs, l.GetContainerSpecs(), l.root.conf); err != nil {
+			return fmt.Errorf("failed to handle restore spec validation: %w", err)
+		}
+
 		// Trigger the restore if this is the last container.
 		return r.restore(l)
 	}
@@ -242,14 +253,6 @@ func (r *restorer) restore(l *Loader) error {
 	r.pagesFile = nil // transferred to loadOpts.Load()
 	if err != nil {
 		return fmt.Errorf("failed to load kernel: %w", err)
-	}
-
-	oldSpecs, err := popContainerSpecsFromCheckpoint(l.k)
-	if err != nil {
-		return fmt.Errorf("failed to pop container specs from checkpoint: %w", err)
-	}
-	if err := specutils.RestoreValidateSpec(oldSpecs, l.containerSpecs, l.root.conf); err != nil {
-		return fmt.Errorf("failed to handle restore spec validation: %w", err)
 	}
 
 	// Since we have a new kernel we also must make a new watchdog.
@@ -362,7 +365,11 @@ func (l *Loader) save(o *control.SaveOpts) (err error) {
 	o.Metadata[VersionKey] = version.Version()
 
 	// Save container specs.
-	l.addContainerSpecsToCheckpoint()
+	specsStr, err := specutils.ConvertSpecsToString(l.GetContainerSpecs())
+	if err != nil {
+		return err
+	}
+	o.Metadata[ContainerSpecsKey] = specsStr
 
 	if err := preSaveImpl(l, o); err != nil {
 		return err

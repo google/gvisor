@@ -16,7 +16,6 @@
 package boot
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -2014,34 +2013,9 @@ func (l *Loader) containerRuntimeState(cid string) ContainerRuntimeState {
 	return RuntimeStateStopped
 }
 
-// addContainerSpecsToCheckpoint adds the container specs to the kernel.
-func (l *Loader) addContainerSpecsToCheckpoint() {
+// GetContainerSpecs returns the container specs map.
+func (l *Loader) GetContainerSpecs() map[string]*specs.Spec {
 	l.mu.Lock()
-	s := l.containerSpecs
-	l.mu.Unlock()
-
-	specsMap := make(map[string][]byte)
-	for k, v := range s {
-		data, err := json.Marshal(v)
-		if err != nil {
-			log.Warningf("json marshal error for specs %v", err)
-			return
-		}
-		specsMap[k] = data
-	}
-	l.k.AddStateToCheckpoint(containerSpecsKey, specsMap)
-}
-
-// popContainerSpecsFromCheckpoint pops all the container specs from the kernel.
-func popContainerSpecsFromCheckpoint(k *kernel.Kernel) (map[string]*specs.Spec, error) {
-	specsMap := (k.PopCheckpointState(containerSpecsKey)).(map[string][]byte)
-	oldSpecs := make(map[string]*specs.Spec)
-	for k, v := range specsMap {
-		var s specs.Spec
-		if err := json.Unmarshal(v, &s); err != nil {
-			return nil, fmt.Errorf("json unmarshal error for specs %v", err)
-		}
-		oldSpecs[k] = &s
-	}
-	return oldSpecs, nil
+	defer l.mu.Unlock()
+	return l.containerSpecs
 }

@@ -25,12 +25,12 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/state"
 	"gvisor.dev/gvisor/pkg/sentry/strace"
 	"gvisor.dev/gvisor/pkg/sync"
+	"gvisor.dev/gvisor/runsc/specutils"
 	"gvisor.dev/gvisor/runsc/version"
 )
 
 func getTargetForSaveResume(l *Loader) func(k *kernel.Kernel) {
 	return func(k *kernel.Kernel) {
-		l.addContainerSpecsToCheckpoint()
 		// Store the state file contents in a buffer for save-resume.
 		// There is no need to verify the state file, we just need the
 		// sandbox to continue running after save.
@@ -41,6 +41,11 @@ func getTargetForSaveResume(l *Loader) func(k *kernel.Kernel) {
 			Destination: &buf,
 			Metadata:    map[string]string{VersionKey: version.Version()},
 		}
+		specsStr, err := specutils.ConvertSpecsToString(l.GetContainerSpecs())
+		if err != nil {
+			panic(fmt.Sprintf("error to get container specs from metadata, %v", err))
+		}
+		saveOpts.Metadata[ContainerSpecsKey] = specsStr
 		saveOpts.Save(k.SupervisorContext(), k, l.watchdog)
 	}
 }
@@ -53,7 +58,6 @@ func getTargetForSaveRestore(l *Loader, files []*fd.FD) func(k *kernel.Kernel) {
 	var once sync.Once
 	return func(k *kernel.Kernel) {
 		once.Do(func() {
-			l.addContainerSpecsToCheckpoint()
 			saveOpts := state.SaveOpts{
 				Autosave:    true,
 				Resume:      false,
@@ -64,6 +68,11 @@ func getTargetForSaveRestore(l *Loader, files []*fd.FD) func(k *kernel.Kernel) {
 				saveOpts.PagesMetadata = files[1]
 				saveOpts.PagesFile = files[2]
 			}
+			specsStr, err := specutils.ConvertSpecsToString(l.GetContainerSpecs())
+			if err != nil {
+				panic(fmt.Sprintf("error to get container specs from metadata, %v", err))
+			}
+			saveOpts.Metadata[ContainerSpecsKey] = specsStr
 			saveOpts.Save(k.SupervisorContext(), k, l.watchdog)
 		})
 	}
