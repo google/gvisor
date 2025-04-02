@@ -15,6 +15,7 @@
 package specutils
 
 import (
+	"encoding/json"
 	"fmt"
 	"path"
 	"reflect"
@@ -483,4 +484,23 @@ func RestoreValidateSpec(oldSpecs, newSpecs map[string]*specs.Spec, conf *config
 		return fmt.Errorf("invalid option for restore spec validation %d", conf.RestoreSpecValidation)
 	}
 	return nil
+}
+
+// ConvertSpecsToString returns the map of container specs in string format.
+func ConvertSpecsToString(specs map[string]*specs.Spec) (string, error) {
+	jsonData, err := json.Marshal(specs)
+	if err != nil {
+		return "", fmt.Errorf("json marshal error to convert container specs map to string, %v", err)
+	}
+	return string(jsonData), nil
+}
+
+// GetSpecsFromString returns the map of container specs from string.
+func GetSpecsFromString(checkpointedSpecs string) (map[string]*specs.Spec, error) {
+	var containerSpecs map[string]*specs.Spec
+	err := json.Unmarshal([]byte(checkpointedSpecs), &containerSpecs)
+	if err != nil {
+		return nil, fmt.Errorf("json unmarshal error to get container specs map, %v", err)
+	}
+	return containerSpecs, nil
 }

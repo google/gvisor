@@ -591,6 +591,16 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 	cm.restorer.totalContainers = count
 	log.Infof("Restoring a total of %d containers", cm.restorer.totalContainers)
 
+	containerSpecs, ok := metadata[ContainerSpecsKey]
+	if !ok {
+		return fmt.Errorf("container specs not found in metdata during restore")
+	}
+	specs, err := specutils.GetSpecsFromString(containerSpecs)
+	if err != nil {
+		return err
+	}
+	cm.restorer.checkpointedSpecs = specs
+
 	if _, err := unix.Seek(stateFile.FD(), 0, 0); err != nil {
 		return fmt.Errorf("rewinding state file: %w", err)
 	}
