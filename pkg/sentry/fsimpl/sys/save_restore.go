@@ -64,16 +64,14 @@ func (fs *filesystem) CompleteRestore(ctx context.Context, opts vfs.CompleteRest
 	busSub := make(map[string]kernfs.Inode)
 	kernelSub := kernelDir(ctx, fs, creds)
 
-	deviceToIOMMUGroup, err := pciDeviceIOMMUGroups(path.Join(fs.testSysfsPathPrefix, iommuGroupSysPath))
-	if err != nil {
-		return err
-	}
 	sysDevicesPath := path.Join(fs.testSysfsPathPrefix, sysDevicesMainPath)
-	pciPaths, err := pciDevicePaths(sysDevicesPath)
+	iommuGroupsPath := path.Join(fs.testSysfsPathPrefix, iommuGroupSysPath)
+	pciInfos, err := pciDeviceInfos(sysDevicesPath, iommuGroupsPath)
 	if err != nil {
 		return err
 	}
-	sysDevicesSub, err := fs.mirrorSysDevicesDir(ctx, creds, sysDevicesPath, deviceToIOMMUGroup, pciPaths)
+
+	sysDevicesSub, err := fs.mirrorSysDevicesDir(ctx, creds, sysDevicesPath, pciInfos)
 	if err != nil {
 		return err
 	}
@@ -81,23 +79,23 @@ func (fs *filesystem) CompleteRestore(ctx context.Context, opts vfs.CompleteRest
 		devicesSub[dir] = sub
 	}
 
-	deviceDirs, err := fs.newDeviceClassDir(ctx, creds, []string{accelDevice, vfioDevice}, sysDevicesPath, pciPaths)
+	deviceDirs, err := fs.newDeviceClassDir(ctx, creds, []string{accelDevice, vfioDevice}, sysDevicesPath, pciInfos)
 	if err != nil {
 		return err
 	}
-
 	for tpuDeviceType, symlinkDir := range deviceDirs {
 		classSub[tpuDeviceType] = fs.newDir(ctx, creds, defaultSysDirMode, symlinkDir)
 	}
-	pciDevicesSub, err := fs.newBusPCIDevicesDir(ctx, creds, pciPaths)
+
+	pciDevicesSub, err := fs.newBusPCIDevicesDir(ctx, creds, pciInfos)
 	if err != nil {
 		return err
 	}
 	busSub["pci"] = fs.newDir(ctx, creds, defaultSysDirMode, map[string]kernfs.Inode{
 		"devices": fs.newDir(ctx, creds, defaultSysDirMode, pciDevicesSub),
 	})
-	iommuPath := path.Join(fs.testSysfsPathPrefix, iommuGroupSysPath)
-	iommuGroups, err := fs.mirrorIOMMUGroups(ctx, creds, iommuPath, pciPaths)
+
+	iommuGroups, err := fs.mirrorIOMMUGroups(ctx, creds, iommuGroupsPath, pciInfos)
 	if err != nil {
 		return err
 	}
