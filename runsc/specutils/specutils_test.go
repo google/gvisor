@@ -357,6 +357,19 @@ func TestSeccomp(t *testing.T) {
 			},
 		},
 		{
+			name: "remap does not affect seccomp",
+			spec: specs.Spec{
+				Annotations: map[string]string{
+					annotationContainerName:            containerName,
+					annotationSeccomp + containerName:  annotationSeccompRuntimeDefault,
+					annotationContainerNameRemap + "1": containerName + "=another",
+				},
+				Linux: &specs.Linux{
+					Seccomp: &specs.LinuxSeccomp{},
+				},
+			},
+		},
+		{
 			name: "remove-nonexistent",
 			spec: specs.Spec{
 				Annotations: map[string]string{
@@ -484,6 +497,85 @@ func TestNvidiaDriverCapabilities(t *testing.T) {
 			// Check invariant: `got` must always be a subset of `allowed`.
 			if gotButNotAllowed := got & ^allowed; gotButNotAllowed != 0 {
 				t.Errorf("caps from env (%v) is not a subset of allowed caps (%v); diff: %v", got, allowed, gotButNotAllowed)
+			}
+		})
+	}
+}
+
+func TestContainerName(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		spec specs.Spec
+		want string
+	}{
+		{
+			name: "no-name",
+			spec: specs.Spec{},
+			want: "",
+		},
+		{
+			name: "container-name",
+			spec: specs.Spec{
+				Annotations: map[string]string{
+					annotationContainerName: "cont",
+				},
+			},
+			want: "cont",
+		},
+		{
+			name: "remap",
+			spec: specs.Spec{
+				Annotations: map[string]string{
+					annotationContainerName:            "cont-123",
+					annotationContainerNameRemap + "1": "cont-123=cont",
+				},
+			},
+			want: "cont",
+		},
+		{
+			name: "remap-not-found",
+			spec: specs.Spec{
+				Annotations: map[string]string{
+					annotationContainerName:            "cont",
+					annotationContainerNameRemap + "1": "another-123=another",
+				},
+			},
+			want: "cont",
+		},
+		{
+			name: "remap-invalid",
+			spec: specs.Spec{
+				Annotations: map[string]string{
+					annotationContainerName:            "cont",
+					annotationContainerNameRemap + "1": "another-123",
+				},
+			},
+			want: "cont",
+		},
+		{
+			name: "remap-invalid-empty",
+			spec: specs.Spec{
+				Annotations: map[string]string{
+					annotationContainerName:            "cont",
+					annotationContainerNameRemap + "1": "",
+				},
+			},
+			want: "cont",
+		},
+		{
+			name: "remap-empty-name",
+			spec: specs.Spec{
+				Annotations: map[string]string{
+					annotationContainerNameRemap + "1": "cont-123=cont",
+				},
+			},
+			want: "",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := ContainerName(&tc.spec)
+			if got != tc.want {
+				t.Errorf("ContainerName() got: %v, want: %v", got, tc.want)
 			}
 		})
 	}
