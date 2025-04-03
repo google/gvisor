@@ -255,8 +255,8 @@ type LoadOpts struct {
 	// OnAsyncPageLoadDone is called.
 	PagesFile            *fd.FD
 	PagesFileOffset      uint64
-	OnAsyncPageLoadStart func()
-	OnAsyncPageLoadDone  func(error)
+	OnAsyncPageLoadStart func(*MemoryFile)
+	OnAsyncPageLoadDone  func(*MemoryFile, error)
 }
 
 // LoadFrom loads MemoryFile state from the given stream.
@@ -346,10 +346,11 @@ func (f *MemoryFile) LoadFrom(ctx context.Context, r io.Reader, opts *LoadOpts) 
 	// Start async page loading if a pages file has been provided.
 	//
 	// Future work: In practice, all restored MemoryFiles in a given Kernel
-	// will share the same pages file (see Kernel.loadMemoryFiles()), so each
-	// MemoryFile will maintain its own AIO queue and async page loader. In
-	// addition to resource usage downsides, this means that awaited loads may
-	// not be consistently prioritized: they'll be prioritized by their
+	// will share the same pages file
+	// (see Kernel.multiStateFilePFL.KickoffAll()), so each MemoryFile will
+	// maintain its own AIO queue and async page loader.
+	// In addition to resource usage downsides, this means that awaited loads
+	// may not be consistently prioritized: they'll be prioritized by their
 	// originating MemoryFile, but may compete with unawaited loads from other
 	// MemoryFiles. I think the best way to fix this would be to have a single
 	// AIO queue and async page loader per pages file (still in this package),
@@ -382,7 +383,7 @@ func (f *MemoryFile) LoadFrom(ctx context.Context, r io.Reader, opts *LoadOpts) 
 		defer aplg.lfStatus.Notify(aplLFDone)
 		f.asyncPageLoad.Store(apl)
 		if opts.OnAsyncPageLoadStart != nil {
-			opts.OnAsyncPageLoadStart()
+			opts.OnAsyncPageLoadStart(f)
 		}
 		go aplg.main()
 	}
@@ -637,9 +638,9 @@ type aplGoroutine struct {
 	apl aplShared
 	_   [hostarch.CacheLineSize]byte // padding
 
-	f            *MemoryFile  // immutable
-	q            *aio.GoQueue // immutable
-	doneCallback func(error)  // immutable
+	f            *MemoryFile              // immutable
+	q            *aio.GoQueue             // immutable
+	doneCallback func(*MemoryFile, error) // immutable
 
 	// lfStatus communicates state from Memory.LoadFrom() to the goroutine.
 	lfStatus syncevent.Waiter
@@ -876,7 +877,7 @@ func (g *aplGoroutine) main() {
 		}
 		apl.mu.Unlock()
 		if g.doneCallback != nil {
-			g.doneCallback(apl.err)
+			g.doneCallback(f, apl.err)
 		}
 	}()
 
