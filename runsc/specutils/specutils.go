@@ -40,14 +40,35 @@ import (
 )
 
 const (
-	annotationFlagPrefix            = "dev.gvisor.flag."
+	// annotationFlagPrefix allows annotations to change the value of flags.
+	//
+	// Usage:
+	//	"dev.gvisor.flag.<flag-name>": "<value>"
+	//	"dev.gvisor.flag.debug": "true"
+	//
+	// Note: Only some flags can be overridden, unless `--allow-flag-override` is set. See
+	// `config.overrideAllowlist` for the list of allowed flags.
+	annotationFlagPrefix = "dev.gvisor.flag."
+
+	annotationContainerName = "io.kubernetes.cri.container-name"
+
+	// annotationContainerNameRemap allows the container name to be changed. This is useful during
+	// restore when container name has changed after it has been saved.
+	//
+	// Usage:
+	//	Remapping container name from "cont-123" (current) to "cont" (saved):
+	//	"dev.gvisor.container-name-remap.<any-unique-id>": "<from>=<to>"
+	//	"dev.gvisor.container-name-remap.1": "cont-123=cont"
+	annotationContainerNameRemap = "dev.gvisor.container-name-remap."
+
+	// annotationSeccomp indicates what seccomp rules was set to a given container.
+	//
+	// Usage:
+	//	"dev.gvisor.internal.seccomp.<container-name>": "<value>"
+	//	"dev.gvisor.internal.seccomp.cont": "RuntimeDefault"
 	annotationSeccomp               = "dev.gvisor.internal.seccomp."
 	annotationSeccompRuntimeDefault = "RuntimeDefault"
 
-	annotationContainerName = "io.kubernetes.cri.container-name"
-)
-
-const (
 	// AnnotationTPU is the annotation used to enable TPU proxy on a pod.
 	AnnotationTPU = "dev.gvisor.internal.tpuproxy"
 )
@@ -244,7 +265,7 @@ func fixSpec(spec *specs.Spec, bundleDir string, conf *config.Config) error {
 		}
 	}
 
-	containerName := ContainerName(spec)
+	containerName := containerNameNoRemap(spec)
 	for annotation, val := range spec.Annotations {
 		if strings.HasPrefix(annotation, annotationFlagPrefix) {
 			// Override flags using annotation to allow customization per sandbox
@@ -756,6 +777,28 @@ func FaqErrorMsg(anchor, msg string) string {
 // ContainerName looks for an annotation in the spec with the container name. Returns empty string
 // if no annotation is found.
 func ContainerName(spec *specs.Spec) string {
+	name := containerNameNoRemap(spec)
+	if len(name) > 0 {
+		// Check if annotations requested the container name to change.
+		for key, mapping := range spec.Annotations {
+			if strings.HasPrefix(key, annotationContainerNameRemap) {
+				// Mapping should be in the form: "current_name=new_name".
+				parts := strings.SplitN(mapping, "=", 2)
+				if len(parts) != 2 {
+					log.Warningf("Invalid annotation %q", key)
+					continue
+				}
+				if parts[0] == name {
+					name = parts[1]
+					break
+				}
+			}
+		}
+	}
+	return name
+}
+
+func containerNameNoRemap(spec *specs.Spec) string {
 	return spec.Annotations[annotationContainerName]
 }
 
