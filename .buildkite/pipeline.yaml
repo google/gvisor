@@ -193,7 +193,7 @@ steps:
       queue: gpu
   - <<: *common
     <<: *source_test_continuous
-    label: ":female_supervillain: COS GPU Tests"
+    label: ":female_supervillain: COS GPU Tests (Latest Driver)"
     commands:
       - make cos-gpu-all-tests
     agents:
@@ -211,6 +211,13 @@ steps:
       - make cuda-tests
     agents:
       queue: gpu
+  - <<: *common
+    <<: *source_test_presubmit
+    label: ":male_supervillain: COS GPU Tests (Default Driver)"
+    commands:
+      - make cos-gpu-all-tests
+    agents:
+      queue: cos-canary-gpu-default
   - <<: *common
     <<: *source_test_continuous
     label: ":screwdriver: All GPU Drivers Test"
