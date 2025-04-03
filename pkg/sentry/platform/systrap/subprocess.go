@@ -105,11 +105,11 @@ type requestStub struct {
 // maxSysmsgThreads is the maximum number of sysmsg threads that a subprocess
 // can create. It is based on GOMAXPROCS and set once, so it must be set after
 // GOMAXPROCS has been adjusted (see loader.go:Args.NumCPU).
-var maxSysmsgThreads = 0
+var maxSysmsgThreads atomicbitops.Uint32
 
 // maxChildThreads is the max number of all child system threads that a
 // subprocess can create, including sysmsg threads.
-var maxChildThreads = 0
+var maxChildThreads uint32 = 0
 
 const (
 	// maxGuestContexts specifies the maximum number of task contexts that a
@@ -169,7 +169,7 @@ type subprocess struct {
 	// numSysmsgThreads counts the number of active sysmsg threads; we use a
 	// counter instead of using len(sysmsgThreads) because we need to synchronize
 	// how many threads get created _before_ the creation happens.
-	numSysmsgThreads int
+	numSysmsgThreads uint32
 
 	// contextQueue is a queue of all contexts that are ready to switch back to
 	// user mode.
@@ -766,7 +766,7 @@ func (t *thread) NotifyInterrupt() {
 
 func (s *subprocess) incAwakeContexts() {
 	nr := atomic.AddUint32(&s.contextQueue.numAwakeContexts, 1)
-	if nr > uint32(maxSysmsgThreads) {
+	if nr > maxSysmsgThreads.Load() {
 		return
 	}
 	fastpath.nrMaxAwakeStubThreads.Add(1)
@@ -774,7 +774,7 @@ func (s *subprocess) incAwakeContexts() {
 
 func (s *subprocess) decAwakeContexts() {
 	nr := atomic.AddUint32(&s.contextQueue.numAwakeContexts, ^uint32(0))
-	if nr >= uint32(maxSysmsgThreads) {
+	if nr >= maxSysmsgThreads.Load() {
 		return
 	}
 	fastpath.nrMaxAwakeStubThreads.Add(^uint32(0))
@@ -948,7 +948,7 @@ func (s *subprocess) kickSysmsgThread() bool {
 	}
 	numTimesStubKicked.Increment()
 	atomic.AddUint32(&s.contextQueue.numThreadsToWakeup, 1)
-	if s.numSysmsgThreads < maxSysmsgThreads && s.numSysmsgThreads < int(nrThreads) {
+	if s.numSysmsgThreads < maxSysmsgThreads.Load() && s.numSysmsgThreads < nrThreads {
 		s.numSysmsgThreads++
 		s.sysmsgThreadsMu.Unlock()
 		if err := s.createSysmsgThread(); err != nil {
