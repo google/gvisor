@@ -431,6 +431,22 @@ steps:
       <<: *ubuntu_agents
       cgroup: "v2"
   - <<: *common
+    <<: *docker
+    label: ":docker: Containerd 1.7.11 tests (cgroupv1)"
+    command: make containerd-test-1.7.11
+    agents:
+      <<: *platform_specific_agents
+      <<: *ubuntu_agents
+      cgroup: "v1"
+  - <<: *common
+    <<: *docker
+    <<: *source_test
+    label: ":docker: Containerd 1.7.11 tests (cgroupv2)"
+    command: make containerd-test-1.7.11
+    agents:
+      <<: *ubuntu_agents
+      cgroup: "v2"
+  - <<: *common
     <<: *source_test
     label: ":podman: Podman"
     commands:
