@@ -27,10 +27,11 @@ import (
 	"gvisor.dev/gvisor/runsc/config"
 )
 
-// Handle deals with host settings according to the given policy.
+// Handle deals with host settings according to the given config.
 func Handle(conf *config.Config) error {
 	switch conf.HostSettings {
 	case config.HostSettingsIgnore:
+		log.Infof("Host settings not checked per config.")
 		return nil
 	case config.HostSettingsCheck, config.HostSettingsCheckMandatory:
 		deltas, errs := check(conf)
@@ -151,6 +152,7 @@ func (s pathSetting) Delta(conf *config.Config) (*Delta, error) {
 		return nil, fmt.Errorf("cannot read %q: %w", s.path, err)
 	}
 	currentValue := strings.TrimSpace(string(currentBytes))
+	log.Debugf("Host settings: Current value of %q: %q", s.path, currentValue)
 	newValue, mandatory, err := s.delta(conf, currentValue)
 	if err != nil {
 		return nil, err
@@ -320,6 +322,8 @@ func check(conf *config.Config) ([]*Delta, []error) {
 		}
 		if delta != nil {
 			deltas = append(deltas, delta)
+		} else {
+			log.Infof("Host setting %q is optimal", setting.Name())
 		}
 	}
 	return deltas, errs
