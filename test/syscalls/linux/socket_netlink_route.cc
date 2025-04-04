@@ -25,10 +25,13 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <cerrno>
 #include <cstdint>
+#include <functional>
 #include <iostream>
-#include <utility>
+#include <string>
+#include <tuple>
 #include <vector>
 
 #include "gmock/gmock.h"
@@ -1786,6 +1789,27 @@ TEST(NetlinkRouteTest, VethAdd) {
   }
   linkinfo->rta_len = (uint64_t)NLMSG_TAIL(&req.hdr) - (uint64_t)linkinfo;
   EXPECT_NO_ERRNO(NetlinkRequestAckOrError(fd, kSeq, &req, req.hdr.nlmsg_len));
+}
+
+TEST(NetlinkRouteTest, LookupAllAddrOrder) {
+  // Run the test multiple times to identify any flakiness with the order of
+  // addresses returned. The order should be IPv4(AF_INET = 2) addresses
+  // followed by IPv6(AF_INET6 = 10).
+  for (int i = 0; i < 10; i++) {
+    struct ifaddrs* if_addr_list = nullptr;
+    // Not a syscall but we can use the syscall matcher as glibc sets errno.
+    ASSERT_THAT(getifaddrs(&if_addr_list), SyscallSucceeds());
+    std::vector<int> addrs_family;
+    for (struct ifaddrs* i = if_addr_list; i; i = i->ifa_next) {
+      if (!i->ifa_addr || (i->ifa_addr->sa_family != AF_INET &&
+                           i->ifa_addr->sa_family != AF_INET6)) {
+        continue;
+      }
+      addrs_family.push_back(i->ifa_addr->sa_family);
+    }
+    ASSERT_TRUE(std::is_sorted(addrs_family.begin(), addrs_family.end()));
+    freeifaddrs(if_addr_list);
+  }
 }
 }  // namespace
 
