@@ -45,6 +45,10 @@ var exclude = map[string][]string{
 	},
 	// TODO(b/162978767): Un-exclude once this bug is fixed.
 	"test_fcntl": {"TestFcntl.test_fcntl_64_bit"},
+	// TODO(b/407570124): Un-exclude once this bug is fixed.
+	"test_httplib": {
+		"SourceAddressTest.testHTTPConnectionSourceAddress",
+	},
 	// TODO(b/341776233): Un-exclude once this bug is fixed.
 	"test_pathlib": {
 		"PathSubclassTest.test_is_mount",
