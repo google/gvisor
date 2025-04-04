@@ -32,6 +32,7 @@ go_library(
         "//pkg/seccomp/precompiledseccomp",
         "//pkg/sync",
         "//runsc/boot/filter/config",
+        "@org_golang_x_sys//unix:go_default_library",
     ],
 )
 
