@@ -140,29 +140,8 @@ func (c *cgroupV2) Install(res *specs.LinuxResources) error {
 	}
 	if created {
 		// If we created our final cgroup path then we can set the resources.
-		for controllerName, ctrlr := range controllers2 {
-			// First check if our controller is found in the system.
-			found := false
-			for _, knownController := range c.Controllers {
-				if controllerName == knownController {
-					found = true
-				}
-			}
-
-			// In case we don't have the controller.
-			if found {
-				if err := ctrlr.set(res, c.MakePath("")); err != nil {
-					return err
-				}
-				continue
-			}
-			if ctrlr.optional() {
-				if err := ctrlr.skip(res); err != nil {
-					return err
-				}
-			} else {
-				return fmt.Errorf("mandatory cgroup controller %q is missing for %q", controllerName, c.MakePath(""))
-			}
+		if err := c.Set(res); err != nil {
+			return err
 		}
 	}
 
@@ -230,6 +209,36 @@ func (c *cgroupV2) Join() (func(), error) {
 	}
 
 	return cu.Release(), nil
+}
+
+// Set sets the cgroup resources.
+func (c *cgroupV2) Set(res *specs.LinuxResources) error {
+	for controllerName, ctrlr := range controllers2 {
+		// First check if our controller is found in the system.
+		found := false
+		for _, knownController := range c.Controllers {
+			if controllerName == knownController {
+				found = true
+				break
+			}
+		}
+
+		// In case we don't have the controller.
+		if found {
+			if err := ctrlr.set(res, c.MakePath("")); err != nil {
+				return err
+			}
+			continue
+		}
+		if ctrlr.optional() {
+			if err := ctrlr.skip(res); err != nil {
+				return err
+			}
+		} else {
+			return fmt.Errorf("mandatory cgroup controller %q is missing for %q", controllerName, c.MakePath(""))
+		}
+	}
+	return nil
 }
 
 func getCPUQuota(path string) (float64, error) {

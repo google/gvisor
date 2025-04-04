@@ -552,6 +552,39 @@ func Run(conf *config.Config, args Args) (unix.WaitStatus, error) {
 	return 0, nil
 }
 
+// Set sets the resources of a running container as configured.
+func (c *Container) Set(res *specs.LinuxResources) error {
+	log.Debugf("Set resources for container, cid: %s", c.ID)
+	if err := c.requireStatus("set resources for", Created, Running); err != nil {
+		return err
+	}
+
+	if c.Sandbox == nil {
+		return fmt.Errorf("sandbox cannot be nil")
+	}
+
+	if !c.Sandbox.IsRootContainer(c.ID) {
+		return fmt.Errorf("Set can only be called on the root container")
+	}
+
+	cg := c.Sandbox.CgroupJSON.Cgroup
+	if cg == nil {
+		return fmt.Errorf("cgroup cannot be nil")
+	}
+	if err := cg.Set(res); err != nil {
+		// set back to original
+		if err2 := cg.Set(c.Spec.Linux.Resources); err2 != nil {
+			return fmt.Errorf("setting back cgroup configs failed due to error: %v, your state file and actual configs might be inconsistent.", err2)
+		}
+		return err
+	}
+	c.Spec.Linux.Resources = res
+
+	c.Saver.lock(BlockAcquire)
+	defer c.Saver.unlock()
+	return c.saveLocked()
+}
+
 // Execute runs the specified command in the container. It returns the PID of
 // the newly created process.
 func (c *Container) Execute(conf *config.Config, args *control.ExecArgs) (int32, error) {
