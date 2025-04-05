@@ -132,6 +132,11 @@ type NV0005_ALLOC_PARAMETERS struct {
 	Data          P64 // actually FD for NV01_EVENT_OS_EVENT, see src/nvidia/src/kernel/rmapi/event.c:eventConstruct_IMPL() => src/nvidia/arch/nvalloc/unix/src/os.c:osUserHandleToKernelPtr()
 }
 
+// From src/common/sdk/nvidia/inc/class/cl208f.h
+const (
+	NV20_SUBDEVICE_DIAG = 0x0000208f
+)
+
 // From src/common/sdk/nvidia/inc/class/cl0070.h:
 const (
 	NV_MEMORY_VIRTUAL_SYSMEM_DYNAMIC_HVASPACE = 0xffffffff
@@ -147,6 +152,11 @@ type NV_MEMORY_VIRTUAL_ALLOCATION_PARAMS struct {
 	HVASpace Handle
 	Pad0     [4]byte
 }
+
+// From src/common/sdk/nvidia/inc/class/cl0073.h
+const (
+	NV04_DISPLAY_COMMON = 0x00000073
+)
 
 // NV0080_ALLOC_PARAMETERS is the alloc params type for NV01_DEVICE_0, from
 // src/common/sdk/nvidia/inc/class/cl0080.h.

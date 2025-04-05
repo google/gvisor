@@ -302,6 +302,8 @@ func Init() {
 					nvgpu.NV2080_CTRL_CMD_GR_GET_INFO:                                      ctrlHandler(ctrlIoctlHasInfoList[nvgpu.NV2080_CTRL_GR_GET_INFO_PARAMS], compUtil),
 					nvgpu.NV2080_CTRL_CMD_FB_GET_INFO:                                      ctrlHandler(ctrlIoctlHasInfoList[nvgpu.NvxxxCtrlXxxGetInfoParams], nvconf.CapGraphics),
 					nvgpu.NV503C_CTRL_CMD_REGISTER_VA_SPACE:                                ctrlHandler(ctrlRegisterVASpace, compUtil),
+					nvgpu.NV208F_CTRL_CMD_GPU_VERIFY_INFOROM:                               ctrlHandler(rmControlSimple, compUtil),
+					0x20810110:                                                             ctrlHandler(rmControlSimple, compUtil), // Unknown
 				},
 				allocationClass: map[nvgpu.ClassID]allocationClassHandler{
 					nvgpu.NV01_ROOT:                  allocHandler(rmAllocRootClient, compUtil),
@@ -360,6 +362,8 @@ func Init() {
 					nvgpu.GF100_SUBDEVICE_MASTER:     allocHandler(rmAllocNoParams, compUtil),
 					nvgpu.TURING_USERMODE_A:          allocHandler(rmAllocNoParams, compUtil),
 					nvgpu.HOPPER_SEC2_WORK_LAUNCH_A:  allocHandler(rmAllocNoParams, compUtil),
+					nvgpu.NV04_DISPLAY_COMMON:        allocHandler(rmAllocNoParams, nvconf.CapGraphics),
+					nvgpu.NV20_SUBDEVICE_DIAG:        allocHandler(rmAllocNoParams, compUtil),
 				},
 
 				getStructs: func() *driverABIStructs {
@@ -561,6 +565,8 @@ func Init() {
 							nvgpu.NV2080_CTRL_CMD_GR_GET_INFO:                                      driverStructs(nvgpu.NV2080_CTRL_GR_GET_INFO_PARAMS{}),
 							nvgpu.NV2080_CTRL_CMD_FB_GET_INFO:                                      driverStructWithName(nvgpu.NvxxxCtrlXxxGetInfoParams{}, "NV2080_CTRL_FB_GET_INFO_PARAMS"),
 							nvgpu.NV503C_CTRL_CMD_REGISTER_VA_SPACE:                                driverStructs(nvgpu.NV503C_CTRL_REGISTER_VA_SPACE_PARAMS{}),
+							nvgpu.NV208F_CTRL_CMD_GPU_VERIFY_INFOROM:                               driverStructWithName(nvgpu.NV208F_CTRL_GPU_VERIFY_INFOROM_PARAMS{}, "NV208F_CTRL_GPU_VERIFY_INFOROM_PARAMS"),
+							0x20810110:                                                             nil, // no params
 						},
 						allocationStructs: map[nvgpu.ClassID][]DriverStruct{
 							nvgpu.NV01_ROOT:                  driverStructWithName(nvgpu.Handle{}, "NvHandle"),
@@ -619,6 +625,8 @@ func Init() {
 							nvgpu.GF100_SUBDEVICE_MASTER:     nil, // No params
 							nvgpu.TURING_USERMODE_A:          nil, // No params
 							nvgpu.HOPPER_SEC2_WORK_LAUNCH_A:  nil, // No params
+							nvgpu.NV04_DISPLAY_COMMON:        nil, // No params
+							nvgpu.NV20_SUBDEVICE_DIAG:        nil, // No params
 						},
 					}
 				},
@@ -777,6 +785,8 @@ func Init() {
 
 		v570_86_15 := addDriverABI(570, 86, 15, "87709c19c7401243136bc0ec9e7f147c6803070a11449ae8f0819dee7963f76b", func() *driverABI {
 			abi := v565_57_01()
+			abi.controlCmd[nvgpu.NV2080_CTRL_CMD_FB_QUERY_DRAM_ENCRYPTION_INFOROM_SUPPORT] = ctrlHandler(rmControlSimple, compUtil)
+
 			abi.allocationClass[nvgpu.TURING_CHANNEL_GPFIFO_A] = allocHandler(rmAllocChannelV570, compUtil)
 			abi.allocationClass[nvgpu.AMPERE_CHANNEL_GPFIFO_A] = allocHandler(rmAllocChannelV570, compUtil)
 			abi.allocationClass[nvgpu.HOPPER_CHANNEL_GPFIFO_A] = allocHandler(rmAllocChannelV570, compUtil)
@@ -784,6 +794,8 @@ func Init() {
 			prevStructs := abi.getStructs
 			abi.getStructs = func() *driverABIStructs {
 				structs := prevStructs()
+				structs.controlStructs[nvgpu.NV2080_CTRL_CMD_FB_QUERY_DRAM_ENCRYPTION_INFOROM_SUPPORT] = simpleDriverStruct("NV2080_CTRL_CMD_FB_QUERY_DRAM_ENCRYPTION_INFOROM_SUPPORT")
+
 				structs.allocationStructs[nvgpu.TURING_CHANNEL_GPFIFO_A] = driverStructWithName(nvgpu.NV_CHANNEL_ALLOC_PARAMS_V570{}, "NV_CHANNEL_ALLOC_PARAMS")
 				structs.allocationStructs[nvgpu.AMPERE_CHANNEL_GPFIFO_A] = driverStructWithName(nvgpu.NV_CHANNEL_ALLOC_PARAMS_V570{}, "NV_CHANNEL_ALLOC_PARAMS")
 				structs.allocationStructs[nvgpu.HOPPER_CHANNEL_GPFIFO_A] = driverStructWithName(nvgpu.NV_CHANNEL_ALLOC_PARAMS_V570{}, "NV_CHANNEL_ALLOC_PARAMS")
