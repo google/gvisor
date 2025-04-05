@@ -314,7 +314,7 @@ func metadata(r io.Reader, h hash.Hash) (map[string]string, error) {
 }
 
 // NewReader returns a reader for a statefile.
-func NewReader(r io.Reader, key []byte) (io.Reader, map[string]string, error) {
+func NewReader(r io.ReadCloser, key []byte) (io.ReadCloser, map[string]string, error) {
 	// Read the metadata with the hash.
 	h := hmac.New(sha256.New, key)
 	metadata, err := metadata(r, h)
@@ -331,7 +331,7 @@ func NewReader(r io.Reader, key []byte) (io.Reader, map[string]string, error) {
 	}
 
 	// Pick correct reader
-	var cr io.Reader
+	var cr io.ReadCloser
 
 	if compression == CompressionLevelFlateBestSpeed {
 		cr, err = compressio.NewReader(r, key)

@@ -116,7 +116,7 @@ func TestStatefile(t *testing.T) {
 								len(c.data), len(bufEncoded.Bytes()))
 
 							// Do all the reading.
-							r, metadata, err := NewReader(bytes.NewReader(bufEncoded.Bytes()), key)
+							r, metadata, err := NewReader(io.NopCloser(bytes.NewReader(bufEncoded.Bytes())), key)
 							if err != nil {
 								t.Fatalf("error creating reader: got %v, expected nil", err)
 							}
@@ -146,7 +146,7 @@ func TestStatefile(t *testing.T) {
 								i := rand.Intn(len(b))
 								b[i]++
 								bufDecoded.Reset()
-								r, _, err = NewReader(bytes.NewReader(b), key)
+								r, _, err = NewReader(io.NopCloser(bytes.NewReader(b)), key)
 								if err == nil {
 									_, err = io.Copy(&bufDecoded, r)
 								}
@@ -162,7 +162,7 @@ func TestStatefile(t *testing.T) {
 								newKey[rand.Intn(len(newKey))]++
 							}
 							bufDecoded.Reset()
-							r, _, err = NewReader(bytes.NewReader(bufEncoded.Bytes()), newKey)
+							r, _, err = NewReader(io.NopCloser(bytes.NewReader(bufEncoded.Bytes())), newKey)
 							if err == nil {
 								_, err = io.Copy(&bufDecoded, r)
 							}
@@ -232,7 +232,7 @@ func benchmark(b *testing.B, size int, write bool, compressible bool) {
 		}
 	}
 	readState := func() {
-		tmpBuf := bytes.NewBuffer(stateBuf.Bytes())
+		tmpBuf := io.NopCloser(bytes.NewBuffer(stateBuf.Bytes()))
 		r, _, err := NewReader(tmpBuf, key)
 		if err != nil {
 			b.Fatalf("error creating reader: %v", err)

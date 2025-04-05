@@ -25,11 +25,8 @@ import (
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/log"
-	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
-	"gvisor.dev/gvisor/pkg/sentry/time"
-	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sentry/watchdog"
 	"gvisor.dev/gvisor/pkg/state/statefile"
 )
@@ -150,33 +147,13 @@ func (opts SaveOpts) Save(ctx context.Context, k *kernel.Kernel, w *watchdog.Wat
 	return err
 }
 
-// LoadOpts contains load-related options.
-type LoadOpts struct {
-	// Source is the load source.
-	Source io.Reader
-
-	// PagesFileLoader is an optional PagesFileLoader.
-	// If unset, it will be created from `Source`.
-	PagesFileLoader kernel.PagesFileLoader
-
-	// If Background is true, the sentry may read from PagesFile after Load has
-	// returned.
-	Background bool
-
-	// Key is used for state integrity check.
-	Key []byte
-}
-
-// Load loads the given kernel, setting the provided platform and stack.
-func (opts LoadOpts) Load(ctx context.Context, k *kernel.Kernel, timeReady chan struct{}, n inet.Stack, clocks time.Clocks, vfsOpts *vfs.CompleteRestoreOptions, saveRestoreNet bool) error {
-	r, m, err := statefile.NewReader(opts.Source, opts.Key)
+// NewStatefileReader returns the statefile's metadata and a reader for it.
+// The ownership of source is transferred to the returned reader.
+func NewStatefileReader(source io.ReadCloser, key []byte) (io.ReadCloser, map[string]string, error) {
+	r, m, err := statefile.NewReader(source, key)
 	if err != nil {
-		return ErrStateFile{err}
-	}
-	pfl := opts.PagesFileLoader
-	if pfl == nil {
-		pfl = kernel.NewSingleStateFilePagesFileLoader(r)
+		return nil, nil, ErrStateFile{err}
 	}
 	previousMetadata = m
-	return k.LoadFrom(ctx, r, pfl, opts.Background, timeReady, n, clocks, vfsOpts, saveRestoreNet)
+	return r, m, nil
 }

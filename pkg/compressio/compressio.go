@@ -368,7 +368,7 @@ type Reader struct {
 	pool
 
 	// in is the source.
-	in io.Reader
+	in io.ReadCloser
 
 	// scratch is a temporary buffer used for marshalling. This is declared
 	// unfront here to avoid reallocation.
@@ -381,7 +381,7 @@ var _ io.Reader = (*Reader)(nil)
 // is assumed to contain expected hash values, which will be compared against
 // hash values computed from the compressed bytes. See package comments for
 // details.
-func NewReader(in io.Reader, key []byte) (*Reader, error) {
+func NewReader(in io.ReadCloser, key []byte) (*Reader, error) {
 	r := &Reader{
 		in: in,
 	}
@@ -573,6 +573,11 @@ func (r *Reader) Read(p []byte) (int, error) {
 	// Need to return done here, since it may have been adjusted by the
 	// callback to compensation for partial reads on some inline buffer.
 	return done, nil
+}
+
+// Close implements io.Closer.Close.
+func (r *Reader) Close() error {
+	return r.in.Close()
 }
 
 // Writer is a compressed writer.

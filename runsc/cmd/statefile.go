@@ -106,6 +106,7 @@ func (s *Statefile) Execute(_ context.Context, f *flag.FlagSet, args ...any) sub
 		if err != nil {
 			util.Fatalf("error parsing statefile: %v", err)
 		}
+		defer rc.Close()
 		if s.html {
 			if err := pretty.PrintHTML(output, rc); err != nil {
 				util.Fatalf("error printing state: %v", err)

@@ -229,11 +229,11 @@ func printOne(dir string, file string, html bool, postfix string) {
 	if err != nil {
 		return
 	}
-	defer f.Close()
 	r, m, err := statefile.NewReader(f, nil)
 	if err != nil {
 		return
 	}
+	defer r.Close()
 	w, err := os.Create(dir + postfix)
 	if err != nil {
 		return
