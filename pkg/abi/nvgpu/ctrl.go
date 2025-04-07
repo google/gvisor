@@ -317,6 +317,20 @@ type NV0080_CTRL_GR_ROUTE_INFO struct {
 	Route uint64
 }
 
+const (
+	// From src/common/sdk/nvidia/inc/ctrl/ctrl208f/ctrl208fgpu.h
+	NV208F_CTRL_CMD_GPU_VERIFY_INFOROM = 0x208f1105
+)
+
+// NV208F_CTRL_GPU_VERIFY_INFOROM_PARAMS is used to represent to determine if an InfoROM with a
+// valid image is present.
+//
+// +marshal
+type NV208F_CTRL_GPU_VERIFY_INFOROM_PARAMS struct {
+	Result   uint32
+	Checksum uint32
+}
+
 // NvxxxCtrlXxxGetInfoParams is used to represent the following:
 // - NV0080_CTRL_GR_GET_INFO_PARAMS
 // - NV2080_CTRL_FB_GET_INFO_PARAMS
@@ -420,11 +434,12 @@ const (
 
 // From src/common/sdk/nvidia/inc/ctrl/ctrl2080/ctrl2080fb.h:
 const (
-	NV2080_CTRL_CMD_FB_GET_INFO                     = 0x20801301
-	NV2080_CTRL_CMD_FB_GET_INFO_V2                  = 0x20801303
-	NV2080_CTRL_CMD_FB_GET_GPU_CACHE_INFO           = 0x20801315
-	NV2080_CTRL_CMD_FB_GET_FB_REGION_INFO           = 0x20801320
-	NV2080_CTRL_CMD_FB_GET_SEMAPHORE_SURFACE_LAYOUT = 0x20801352
+	NV2080_CTRL_CMD_FB_GET_INFO                              = 0x20801301
+	NV2080_CTRL_CMD_FB_GET_INFO_V2                           = 0x20801303
+	NV2080_CTRL_CMD_FB_GET_GPU_CACHE_INFO                    = 0x20801315
+	NV2080_CTRL_CMD_FB_GET_FB_REGION_INFO                    = 0x20801320
+	NV2080_CTRL_CMD_FB_GET_SEMAPHORE_SURFACE_LAYOUT          = 0x20801352
+	NV2080_CTRL_CMD_FB_QUERY_DRAM_ENCRYPTION_INFOROM_SUPPORT = 0x20801358
 )
 
 // From src/common/sdk/nvidia/inc/ctrl/ctrl2080/ctrl2080fifo.h:
