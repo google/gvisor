@@ -2446,9 +2446,52 @@ func setSockOptIPv6(t *kernel.Task, s socket.Socket, ep commonEndpoint, name int
 	case linux.IP6T_SO_SET_ADD_COUNTERS:
 		log.Infof("IP6T_SO_SET_ADD_COUNTERS is not supported")
 		return nil
+	case linux.IPV6_MULTICAST_LOOP,
+		linux.IPV6_MULTICAST_HOPS,
+		linux.IPV6_MTU,
+		linux.IPV6_MINHOPCOUNT,
+		linux.IPV6_RECVERR_RFC4884,
+		linux.IPV6_MULTICAST_ALL,
+		linux.IPV6_AUTOFLOWLABEL,
+		linux.IPV6_DONTFRAG,
+		linux.IPV6_ROUTER_ALERT_ISOLATE,
+		linux.IPV6_MTU_DISCOVER,
+		linux.IPV6_FLOWINFO_SEND,
+		linux.IPV6_ADDR_PREFERENCES,
+		linux.IPV6_MULTICAST_IF,
+		linux.IPV6_UNICAST_IF,
+		linux.IPV6_ADDRFORM,
+		linux.IPV6_2292PKTINFO,
+		linux.IPV6_2292HOPLIMIT,
+		linux.IPV6_RECVRTHDR,
+		linux.IPV6_2292RTHDR,
+		linux.IPV6_RECVHOPOPTS,
+		linux.IPV6_2292HOPOPTS,
+		linux.IPV6_RECVDSTOPTS,
+		linux.IPV6_2292DSTOPTS,
+		linux.IPV6_FLOWINFO,
+		linux.IPV6_RECVPATHMTU,
+		linux.IPV6_TRANSPARENT,
+		linux.IPV6_FREEBIND,
+		linux.IPV6_HOPOPTS,
+		linux.IPV6_RTHDRDSTOPTS,
+		linux.IPV6_RTHDR,
+		linux.IPV6_DSTOPTS,
+		linux.IPV6_2292PKTOPTIONS,
+		linux.MCAST_MSFILTER,
+		linux.IPV6_FLOWLABEL_MGR,
+		linux.IPV6_RECVFRAGSIZE:
+		// Not supported, but we choose to silently ignore these for compatibility
+		// with old gVisor behavior.
+		//
+		// FIXME(lucasmanning): Remove the silent failure once we're confident
+		// that no users are relying on it.
+		t.Kernel().EmitUnimplementedEvent(t, unix.SYS_SETSOCKOPT)
+		return nil
 	}
 
-	return nil
+	t.Kernel().EmitUnimplementedEvent(t, unix.SYS_SETSOCKOPT)
+	return syserr.ErrProtocolNotAvailable
 }
 
 var (
@@ -2717,37 +2760,45 @@ func setSockOptIP(t *kernel.Task, s socket.Socket, ep commonEndpoint, name int, 
 			return syserr.ErrNotSupported
 		}
 		return syserr.TranslateNetstackError(ep.SetSockOptInt(tcpip.MTUDiscoverOption, int(v)))
-
-	case linux.IP_ADD_SOURCE_MEMBERSHIP,
-		linux.IP_BIND_ADDRESS_NO_PORT,
-		linux.IP_BLOCK_SOURCE,
-		linux.IP_CHECKSUM,
-		linux.IP_DROP_SOURCE_MEMBERSHIP,
-		linux.IP_FREEBIND,
-		linux.IP_IPSEC_POLICY,
-		linux.IP_MINTTL,
-		linux.IP_MSFILTER,
-		linux.IP_MULTICAST_ALL,
-		linux.IP_NODEFRAG,
-		linux.IP_OPTIONS,
-		linux.IP_PASSSEC,
-		linux.IP_RECVFRAGSIZE,
-		linux.IP_RECVOPTS,
+	case linux.IP_RECVOPTS,
 		linux.IP_RETOPTS,
+		linux.IP_ROUTER_ALERT,
+		linux.IP_FREEBIND,
+		linux.IP_PASSSEC,
 		linux.IP_TRANSPARENT,
-		linux.IP_UNBLOCK_SOURCE,
+		linux.IP_MINTTL,
+		linux.IP_NODEFRAG,
+		linux.IP_BIND_ADDRESS_NO_PORT,
 		linux.IP_UNICAST_IF,
-		linux.IP_XFRM_POLICY,
-		linux.MCAST_BLOCK_SOURCE,
-		linux.MCAST_JOIN_SOURCE_GROUP,
+		linux.IP_MULTICAST_ALL,
+		linux.IP_CHECKSUM,
+		linux.IP_RECVFRAGSIZE,
+		linux.IP_RECVERR_RFC4884,
+		linux.IP_LOCAL_PORT_RANGE,
+		linux.IP_OPTIONS,
+		linux.IP_MSFILTER,
+		linux.IP_BLOCK_SOURCE,
+		linux.IP_UNBLOCK_SOURCE,
+		linux.IP_ADD_SOURCE_MEMBERSHIP,
+		linux.IP_DROP_SOURCE_MEMBERSHIP,
 		linux.MCAST_LEAVE_GROUP,
+		linux.MCAST_JOIN_SOURCE_GROUP,
 		linux.MCAST_LEAVE_SOURCE_GROUP,
+		linux.MCAST_BLOCK_SOURCE,
+		linux.MCAST_UNBLOCK_SOURCE,
 		linux.MCAST_MSFILTER,
-		linux.MCAST_UNBLOCK_SOURCE:
-		// Not supported.
+		linux.IP_IPSEC_POLICY,
+		linux.IP_XFRM_POLICY:
+		// Not supported, but we choose to silently ignore these for compatibility
+		// with old gVisor behavior.
+		//
+		// FIXME(lucasmanning): Remove the silent failure once we're confident
+		// that no users are relying on it.
+		t.Kernel().EmitUnimplementedEvent(t, unix.SYS_SETSOCKOPT)
+		return nil
 	}
-
-	return nil
+	t.Kernel().EmitUnimplementedEvent(t, unix.SYS_SETSOCKOPT)
+	return syserr.ErrProtocolNotAvailable
 }
 
 func setSockOptPacket(t *kernel.Task, s socket.Socket, ep commonEndpoint, name int, optVal []byte) *syserr.Error {
