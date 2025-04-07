@@ -17,10 +17,34 @@ package smoke_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/test/dockerutil"
 )
+
+func TestNvidiaSmi(t *testing.T) {
+	ctx := context.Background()
+	c := dockerutil.MakeContainer(ctx, t)
+	defer c.CleanUp(ctx)
+
+	opts, err := dockerutil.GPURunOpts(dockerutil.SniffGPUOpts{
+		Capabilities: "all",
+	})
+	if err != nil {
+		t.Fatalf("failed to get GPU run options: %v", err)
+	}
+	opts.Image = "gpu/cuda-tests"
+	cmd := "nvidia-smi"
+	out, err := c.Run(ctx, opts, cmd)
+	t.Logf("%q output:", cmd)
+	for _, line := range strings.Split(string(out), "\n") {
+		t.Logf("%q: %s", cmd, line)
+	}
+	if err != nil {
+		t.Fatalf("could not run %q: %v", cmd, err)
+	}
+}
 
 func TestGPUHello(t *testing.T) {
 	ctx := context.Background()
