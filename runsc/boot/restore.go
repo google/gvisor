@@ -17,6 +17,7 @@ package boot
 import (
 	"errors"
 	"fmt"
+	"io"
 	"strconv"
 	time2 "time"
 
@@ -34,7 +35,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/socket/hostinet"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netstack"
-	"gvisor.dev/gvisor/pkg/sentry/state"
 	"gvisor.dev/gvisor/pkg/sentry/time"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sentry/watchdog"
@@ -80,10 +80,8 @@ type restorer struct {
 	// containers is the list of containers restored so far.
 	containers []*containerInfo
 
-	// Files used by restore to rehydrate the state.
-	stateFile     *fd.FD
-	pagesMetadata *fd.FD
-	pagesFile     *fd.FD
+	// stateFile is a reader for the statefile.
+	stateFile io.ReadCloser
 
 	// If background is true, pagesFile may continue to be read after
 	// restorer.restore() returns.
@@ -147,9 +145,6 @@ func (r *restorer) restoreContainerInfo(l *Loader, info *containerInfo) error {
 			log.Debugf("Restore app FD: %d host FD: %d", i, fd.FD())
 		}
 	}
-	if err := r.maybeKickoffMainMemoryFileLoad(l); err != nil {
-		return fmt.Errorf("main memory file: %w", err)
-	}
 
 	if len(r.containers) == r.totalContainers {
 		if err := specutils.RestoreValidateSpec(r.checkpointedSpecs, l.GetContainerSpecs(), l.root.conf); err != nil {
@@ -159,32 +154,6 @@ func (r *restorer) restoreContainerInfo(l *Loader, info *containerInfo) error {
 		// Trigger the restore if this is the last container.
 		return r.restore(l)
 	}
-	return nil
-}
-
-// maybeKickoffMainMemoryFileLoad kicks off loading of the main MemoryFile
-// asynchronously, if possible and if it hasn't been done yet.
-func (r *restorer) maybeKickoffMainMemoryFileLoad(l *Loader) error {
-	if r.mainMF == nil {
-		// Create the main MemoryFile.
-		mf, err := createMemoryFile(l.root.conf.AppHugePages, l.hostTHP)
-		if err != nil {
-			return fmt.Errorf("creating memory file: %v", err)
-		}
-		r.mainMF = mf
-	}
-	if r.pagesFileLoader != nil {
-		return nil // Already kicked off.
-	}
-	if r.pagesFile == nil || r.pagesMetadata == nil {
-		return nil // Asynchronous loading not possible.
-	}
-	r.pagesFileLoader = kernel.NewSeparatePagesFileLoader(r.pagesMetadata, r.pagesFile, r.mainMF)
-
-	// Ownership transferred to the pages file loader.
-	r.pagesFile = nil
-	r.pagesMetadata = nil
-
 	return nil
 }
 
@@ -276,13 +245,7 @@ func (r *restorer) restore(l *Loader) error {
 	ctx = context.WithValue(ctx, devutil.CtxDevGoferClientProvider, l.k)
 
 	// Load the state.
-	loadOpts := state.LoadOpts{
-		Source:          r.stateFile,
-		PagesFileLoader: r.pagesFileLoader,
-		Background:      r.background,
-	}
-	err = loadOpts.Load(ctx, l.k, nil, oldInetStack, time.NewCalibratedClocks(), &vfs.CompleteRestoreOptions{}, l.saveRestoreNet)
-	if err != nil {
+	if err := l.k.LoadFrom(ctx, r.stateFile, r.pagesFileLoader, r.background, nil, oldInetStack, time.NewCalibratedClocks(), &vfs.CompleteRestoreOptions{}, l.saveRestoreNet); err != nil {
 		return fmt.Errorf("failed to load kernel: %w", err)
 	}
 

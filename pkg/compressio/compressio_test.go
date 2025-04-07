@@ -185,7 +185,7 @@ func TestCompress(t *testing.T) {
 							return NewWriter(b, key, blockSize, flate.BestSpeed)
 						},
 						NewReader: func(b *bytes.Buffer) (io.Reader, error) {
-							return NewReader(b, key)
+							return NewReader(io.NopCloser(b), key)
 						},
 						CorruptData: corruptData,
 					})
@@ -228,14 +228,14 @@ func benchmark(b *testing.B, compression bool, write bool, hash bool, blockSize 
 			return NewWriter(b, key, blockSize, flate.BestSpeed)
 		}
 		opts.NewReader = func(b *bytes.Buffer) (io.Reader, error) {
-			return NewReader(b, key)
+			return NewReader(io.NopCloser(b), key)
 		}
 	} else {
 		opts.NewWriter = func(b *bytes.Buffer) (io.WriteCloser, error) {
 			return NewSimpleWriter(b, key, blockSize), nil
 		}
 		opts.NewReader = func(b *bytes.Buffer) (io.Reader, error) {
-			return NewSimpleReader(b, key), nil
+			return NewSimpleReader(io.NopCloser(b), key), nil
 		}
 	}
 	if write {

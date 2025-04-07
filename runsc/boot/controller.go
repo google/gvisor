@@ -36,8 +36,8 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/seccheck"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netstack"
 	"gvisor.dev/gvisor/pkg/sentry/socket/plugin"
+	"gvisor.dev/gvisor/pkg/sentry/state"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/state/statefile"
 	"gvisor.dev/gvisor/pkg/urpc"
 	"gvisor.dev/gvisor/runsc/boot/procfs"
 	"gvisor.dev/gvisor/runsc/config"
@@ -526,10 +526,22 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 		return fmt.Errorf("statefile cannot be empty")
 	}
 
+	reader, metadata, err := state.NewStatefileReader(stateFile, nil)
+	if err != nil {
+		return fmt.Errorf("creating statefile reader: %w", err)
+	}
+
+	// Create the main MemoryFile.
+	mf, err := createMemoryFile(cm.l.root.conf.AppHugePages, cm.l.hostTHP)
+	if err != nil {
+		return fmt.Errorf("creating memory file: %v", err)
+	}
+
 	cm.restorer = &restorer{
 		restoreDone: cm.onRestoreDone,
-		stateFile:   stateFile,
+		stateFile:   reader,
 		background:  o.Background,
+		mainMF:      mf,
 	}
 	cm.l.restoreWaiters = sync.NewCond(&cm.l.mu)
 	cm.l.state = restoring
@@ -538,17 +550,21 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 
 	fileIdx := 1
 	if o.HavePagesFile {
-		cm.restorer.pagesMetadata, err = o.ReleaseFD(fileIdx)
+		pagesMetadata, err := o.ReleaseFD(fileIdx)
 		if err != nil {
 			return err
 		}
 		fileIdx++
 
-		cm.restorer.pagesFile, err = o.ReleaseFD(fileIdx)
+		pagesFile, err := o.ReleaseFD(fileIdx)
 		if err != nil {
 			return err
 		}
 		fileIdx++
+
+		cm.restorer.pagesFileLoader = kernel.NewSeparatePagesFileLoader(pagesMetadata, pagesFile, cm.restorer.mainMF)
+	} else {
+		cm.restorer.pagesFileLoader = kernel.NewSingleStateFilePagesFileLoader(reader)
 	}
 
 	if o.HaveDeviceFile {
@@ -566,10 +582,6 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 	// Pause the kernel while we build a new one.
 	cm.l.k.Pause()
 
-	metadata, err := statefile.MetadataUnsafe(cm.restorer.stateFile)
-	if err != nil {
-		return fmt.Errorf("reading metadata from statefile: %w", err)
-	}
 	var count int
 	countStr, ok := metadata[ContainerCountKey]
 	if !ok {
@@ -600,10 +612,6 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 		return err
 	}
 	cm.restorer.checkpointedSpecs = specs
-
-	if _, err := unix.Seek(stateFile.FD(), 0, 0); err != nil {
-		return fmt.Errorf("rewinding state file: %w", err)
-	}
 
 	checkpointVersion := metadata[VersionKey]
 	currentVersion := version.Version()

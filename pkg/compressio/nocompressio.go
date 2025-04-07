@@ -48,8 +48,11 @@ import (
 
 // SimpleReader is a reader for uncompressed image containing hashes.
 type SimpleReader struct {
-	// in is the source.
-	in io.Reader
+	// source is the underlying stream.
+	source io.ReadCloser
+
+	// bin is a bufio reader for the underlying stream.
+	bin *bufio.Reader
 
 	// h is the hash object.
 	h hash.Hash
@@ -76,28 +79,29 @@ const (
 // NewSimpleReader returns a new (uncompressed) reader. If key is non-nil, the
 // data stream is assumed to contain expected hash values. See package comments
 // for details.
-func NewSimpleReader(in io.Reader, key []byte) io.Reader {
+func NewSimpleReader(in io.ReadCloser, key []byte) *SimpleReader {
 	bin := bufio.NewReaderSize(in, defaultBufSize)
-	if key == nil {
-		// Since there is no key, this image doesn't use the data integrity stream
-		// format mentioned in package comments. We can just use the bufio reader.
-		return bin
+	r := &SimpleReader{
+		source: in,
+		bin:    bin,
 	}
-	return &SimpleReader{
-		in: bin,
-		h:  hmac.New(sha256.New, key),
+	if key != nil {
+		r.h = hmac.New(sha256.New, key)
 	}
+	return r
 }
 
 // Read implements io.Reader.Read.
 func (r *SimpleReader) Read(p []byte) (int, error) {
-	if len(p) == 0 {
-		return r.in.Read(p)
+	if r.h == nil || len(p) == 0 {
+		// Since there is no key, this image doesn't use the data integrity stream
+		// format mentioned in package comments. We can just use the bufio reader.
+		return r.bin.Read(p)
 	}
 
 	// need next chunk?
 	if r.done >= r.chunkSize {
-		if _, err := io.ReadFull(r.in, r.scratch[:4]); err != nil {
+		if _, err := io.ReadFull(r.bin, r.scratch[:4]); err != nil {
 			return 0, err
 		}
 
@@ -117,7 +121,7 @@ func (r *SimpleReader) Read(p []byte) (int, error) {
 		toRead = r.chunkSize - r.done
 	}
 
-	n, err := r.in.Read(p[:toRead])
+	n, err := r.bin.Read(p[:toRead])
 	if err != nil {
 		if err == io.EOF {
 			// this only can happen if storage or data size is corrupted,
@@ -145,7 +149,7 @@ func (r *SimpleReader) Read(p []byte) (int, error) {
 		r.h.Sum(r.prevHash[0:0:sha256.Size])
 
 		// Read the hash value from the stream.
-		if _, err := io.ReadFull(r.in, r.scratch[:]); err != nil {
+		if _, err := io.ReadFull(r.bin, r.scratch[:]); err != nil {
 			if err == io.EOF {
 				return n, io.ErrUnexpectedEOF
 			}
@@ -161,6 +165,11 @@ func (r *SimpleReader) Read(p []byte) (int, error) {
 	}
 
 	return n, nil
+}
+
+// Close implements io.Closer.Close.
+func (r *SimpleReader) Close() error {
+	return r.source.Close()
 }
 
 // SimpleWriter is a writer that does not compress.

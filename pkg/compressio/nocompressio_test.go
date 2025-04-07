@@ -53,7 +53,7 @@ func TestNoCompress(t *testing.T) {
 							return NewSimpleWriter(b, key, blockSize), nil
 						},
 						NewReader: func(b *bytes.Buffer) (io.Reader, error) {
-							return NewSimpleReader(b, key), nil
+							return NewSimpleReader(io.NopCloser(b), key), nil
 						},
 						CorruptData: corruptData,
 					})
