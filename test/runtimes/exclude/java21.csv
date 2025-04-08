@@ -28,6 +28,7 @@ java/lang/reflect/exeCallerAccessTest/CallerAccessTest.java,,Broken test
 java/net/DatagramSocket/AddressNotSet.java,,
 java/net/DatagramSocket/SetGetReceiveBufferSize.java,b/180507650,
 java/net/MulticastSocket/B6425815.java,b/126900872,Need support for IPV6_MULTICAST_IF
+java/net/MulticastSocket/B6427403.java,b/126900872,Need support for IPV6_MULTICAST_IF
 java/net/MulticastSocket/IPMulticastIF.java,b/126900872,Need support for IPV6_MULTICAST_IF
 java/net/MulticastSocket/MulticastTTL.java,,
 java/net/MulticastSocket/NetworkInterfaceEmptyGetInetAddressesTest.java,b/126900872,Need support for IPV6_MULTICAST_IF
