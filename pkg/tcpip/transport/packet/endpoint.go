@@ -26,6 +26,7 @@ package packet
 
 import (
 	"io"
+	"math"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/buffer"
@@ -423,6 +424,9 @@ func (ep *endpoint) SetSockOptInt(opt tcpip.SockOptInt, v int) tcpip.Error {
 	case tcpip.PacketMMapReserveOption:
 		if ep.packetMMapEp != nil {
 			return &tcpip.ErrEndpointBusy{}
+		}
+		if uint32(v) > uint32(math.MaxInt32) {
+			return &tcpip.ErrInvalidOptionValue{}
 		}
 		ep.packetMMapReserve = v
 		return nil
