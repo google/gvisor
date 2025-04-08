@@ -93,9 +93,9 @@ type restorer struct {
 	// kernel object is created.
 	mainMF *pgalloc.MemoryFile
 
-	// pagesFileLoader is used to load the MemoryFile pages. It handles the
-	// possibly-asynchronous loading of the memory pages.
-	pagesFileLoader kernel.PagesFileLoader
+	// asyncMFLoader is used to load the MemoryFile pages. It handles the
+	// asynchronous loading of the memory pages.
+	asyncMFLoader *kernel.AsyncMFLoader
 
 	// deviceFile is the required to start the platform.
 	deviceFile *fd.FD
@@ -244,9 +244,26 @@ func (r *restorer) restore(l *Loader) error {
 	ctx = context.WithValue(ctx, pgalloc.CtxMemoryFileMap, mfmap)
 	ctx = context.WithValue(ctx, devutil.CtxDevGoferClientProvider, l.k)
 
+	if r.asyncMFLoader != nil {
+		// Now that private memory files are known, kick off their loading in the
+		// background goroutine.
+		r.asyncMFLoader.KickoffPrivate(mfmap)
+	}
+
 	// Load the state.
-	if err := l.k.LoadFrom(ctx, r.stateFile, r.pagesFileLoader, r.background, nil, oldInetStack, time.NewCalibratedClocks(), &vfs.CompleteRestoreOptions{}, l.saveRestoreNet); err != nil {
+	if err := l.k.LoadFrom(ctx, r.stateFile, r.asyncMFLoader == nil, nil, oldInetStack, time.NewCalibratedClocks(), &vfs.CompleteRestoreOptions{}, l.saveRestoreNet); err != nil {
 		return fmt.Errorf("failed to load kernel: %w", err)
+	}
+
+	if r.asyncMFLoader != nil {
+		if err := r.asyncMFLoader.WaitMetadata(); err != nil {
+			return err
+		}
+		if !r.background {
+			if err := r.asyncMFLoader.WaitPages(); err != nil {
+				return err
+			}
+		}
 	}
 
 	// Since we have a new kernel we also must make a new watchdog.

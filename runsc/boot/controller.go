@@ -562,9 +562,8 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 		}
 		fileIdx++
 
-		cm.restorer.pagesFileLoader = kernel.NewSeparatePagesFileLoader(pagesMetadata, pagesFile, cm.restorer.mainMF)
-	} else {
-		cm.restorer.pagesFileLoader = kernel.NewSingleStateFilePagesFileLoader(reader)
+		// This immediately starts loading the main MemoryFile asynchronously.
+		cm.restorer.asyncMFLoader = kernel.NewAsyncMFLoader(pagesMetadata, pagesFile, cm.restorer.mainMF)
 	}
 
 	if o.HaveDeviceFile {

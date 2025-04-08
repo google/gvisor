@@ -730,12 +730,8 @@ func (k *Kernel) invalidateUnsavableMappings(ctx context.Context) error {
 }
 
 // LoadFrom returns a new Kernel loaded from args.
-func (k *Kernel) LoadFrom(ctx context.Context, r io.Reader, pfl PagesFileLoader, background bool, timeReady chan struct{}, net inet.Stack, clocks sentrytime.Clocks, vfsOpts *vfs.CompleteRestoreOptions, saveRestoreNet bool) error {
+func (k *Kernel) LoadFrom(ctx context.Context, r io.Reader, loadMFs bool, timeReady chan struct{}, net inet.Stack, clocks sentrytime.Clocks, vfsOpts *vfs.CompleteRestoreOptions, saveRestoreNet bool) error {
 	loadStart := time.Now()
-
-	if err := pfl.KickoffPrivate(ctx); err != nil {
-		return fmt.Errorf("failed to load private memory files: %w", err)
-	}
 
 	k.runningTasksCond.L = &k.runningTasksMu
 	k.cpuClockTickerWakeCh = make(chan struct{}, 1)
@@ -770,8 +766,12 @@ func (k *Kernel) LoadFrom(ctx context.Context, r io.Reader, pfl PagesFileLoader,
 	log.Infof("Kernel load stats: %s", stats.String())
 	log.Infof("Kernel load took [%s].", time.Since(kernelStart))
 
-	if err := pfl.Load(ctx, k.mf, background); err != nil {
-		return fmt.Errorf("failed to load memory files: %w", err)
+	if loadMFs {
+		mfStart := time.Now()
+		if err := k.loadMemoryFiles(ctx, r); err != nil {
+			return fmt.Errorf("failed to load memory files: %w", err)
+		}
+		log.Infof("Memory files load took [%s].", time.Since(mfStart))
 	}
 
 	if !saveRestoreNet {

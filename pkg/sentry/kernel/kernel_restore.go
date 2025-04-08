@@ -202,74 +202,18 @@ func (w *CheckpointWaitable) signal(gen CheckpointGeneration, err error) {
 	}
 }
 
-// PagesFileLoader coordinates the process of loading pages into MemoryFiles,
-// possibly asynchronously.
-//
-// It is used to load pages from checkpoint (whether through a separate file
-// or the main state file) into one or more MemoryFiles.
-//
-// Lifecycle:
-// PagesFileLoader may be created as soon as a primary MemoryFile is known
-// and a state file is opened.
-//
-// The PagesFileLoader has three jobs:
-//   - Loading the main MemoryFile as early as possible.
-//   - Loading the private MemoryFiles, also as early as possible but after
-//     the main MemoryFile.
-//   - Ensuring that the above is done by a certain point of the restore
-//     process.
-type PagesFileLoader interface {
-	// KickoffPrivate attempts to kick off loading of private MemoryFiles
-	// asynchronously, if possible. If not, this function is a no-op.
-	// The private MemoryFile data must be known and within `ctx` by the point
-	// this function is called.
-	// This function does not need to be called within the lifecycle of
-	// PagesFileLoader, but if it is, it must be called before Load.
-	KickoffPrivate(ctx context.Context) error
-
-	// Load loads the main MemoryFile and all private MemoryFiles.
-	//
-	// If loading operations were not kicked off asynchronously, this function
-	// will perform them synchronously. `background` is ignored in this case.
-	//
-	// If they were kicked off asynchronously, this function will wait for them
-	// instead, with `background` controlling how early this function returns:
-	//
-	//   - If `background` is false, this function will return after both pages
-	//     metadata and pages themselves have been loaded.
-	//   - If `background` is true, this function will return after the main
-	//     MemoryFile and all private MemoryFiles have had their metadata
-	//     loaded, but will not wait for their pages to be loaded.
-	//
-	// Load must be called exactly once, and no further functions may be called
-	// on PagesFileLoader after Load is called.
-	Load(ctx context.Context, mainMf *pgalloc.MemoryFile, background bool) error
-}
-
-// singleStateFilePFL implements PagesFileLoader by loading MemoryFiles from a
-// single state file.
-type singleStateFilePFL struct {
-	// source is the checkpoint source.
-	source io.Reader
-}
-
-// KickoffPrivate is a no-op for this implementation.
-func (*singleStateFilePFL) KickoffPrivate(ctx context.Context) error {
-	return nil
-}
-
-// loadPrivateMemoryFiles loads the private MemoryFiles from ctx, which must
-// contain MemoryFileMap metadata, and it reads private MemoryFile metadata
-// from `r`. This consumes bytes from `r`, so this must be called only once.
+// loadPrivateMemoryFiles loads the private MemoryFiles from mfmap and it reads
+// private MemoryFile metadata from `r`. This consumes bytes from `r`, so this
+// must be called only once.
 func loadPrivateMemoryFiles(ctx context.Context, r io.Reader, mfmap map[string]*pgalloc.MemoryFile, opts *pgalloc.LoadOpts) error {
 	// Load the metadata.
 	var meta privateMemoryFileMetadata
 	if _, err := state.Load(ctx, r, &meta); err != nil {
 		return err
 	}
-	// Ensure that it is consistent with CtxFilesystemMemoryFileMap.
+	// Ensure that it is consistent with mfmap.
 	if len(mfmap) != len(meta.owners) {
-		return fmt.Errorf("inconsistent private memory files on restore: savedMFOwners = %v, CtxFilesystemMemoryFileMap = %v", meta.owners, mfmap)
+		return fmt.Errorf("inconsistent private memory files on restore: savedMFOwners = %v, mfmap = %v", meta.owners, mfmap)
 	}
 	// Load all private memory files.
 	for _, fsID := range meta.owners {
@@ -285,39 +229,30 @@ func loadPrivateMemoryFiles(ctx context.Context, r io.Reader, mfmap map[string]*
 	return nil
 }
 
-// Load loads the main MemoryFile and all private MemoryFiles synchronously.
-func (pfl *singleStateFilePFL) Load(ctx context.Context, mainMf *pgalloc.MemoryFile, background bool) error {
+func (k *Kernel) loadMemoryFiles(ctx context.Context, r io.Reader) error {
 	var opts pgalloc.LoadOpts
-	if err := mainMf.LoadFrom(ctx, pfl.source, &opts); err != nil {
-		return fmt.Errorf("failed to load main MemoryFile %p: %w", mainMf, err)
+	if err := k.mf.LoadFrom(ctx, r, &opts); err != nil {
+		return fmt.Errorf("failed to load main MemoryFile %p: %w", k.mf, err)
 	}
-	if err := loadPrivateMemoryFiles(ctx, pfl.source, pgalloc.MemoryFileMapFromContext(ctx), &opts); err != nil {
+	if err := loadPrivateMemoryFiles(ctx, r, pgalloc.MemoryFileMapFromContext(ctx), &opts); err != nil {
 		return fmt.Errorf("failed to load private MemoryFiles: %w", err)
 	}
 	return nil
 }
 
-// NewSingleStateFilePagesFileLoader creates a new PagesFileLoader that loads
-// MemoryFiles from a single state file synchronously.
-// It does not take ownership of `source`, so the caller is responsible for
-// closing it.
-func NewSingleStateFilePagesFileLoader(source io.Reader) PagesFileLoader {
-	return &singleStateFilePFL{
-		source: source,
-	}
-}
-
-// separatePagesFileLoader implements PagesFileLoader by loading MemoryFiles
-// asynchronously thanks to having separate pages and page metadata files,
-// as opposed to a single state file containing everything.
-type separatePagesFileLoader struct {
-	// loadPrivateMFs is used to communicate with the background goroutine
-	// once private MemoryFiles are known.
-	loadPrivateMFs sync.Once
-
-	// privateMFsChan is used to tell the background goroutine about
-	// private MemoryFiles, once they are known.
-	// This channel is written to exactly once as part of `loadPrivateMFs`.
+// AsyncMFLoader loads all MemoryFiles asynchronously; thanks to having
+// separate pages and page metadata files, as opposed to a single state file
+// containing everything.
+//
+// The AsyncMFLoader helps achieve the following goals:
+//   - Loading the main MemoryFile as early as possible.
+//   - Loading the private MemoryFiles, also as early as possible but after
+//     the main MemoryFile.
+//   - Wait for various events to occur before proceeding.
+//   - Report errors as they occur.
+type AsyncMFLoader struct {
+	// privateMFsChan is used to tell the background goroutine about private
+	// MemoryFiles, once they are known. This channel is written to exactly once.
 	privateMFsChan chan map[string]*pgalloc.MemoryFile
 
 	// loadResultCh is the channel used by the background goroutine to report
@@ -330,24 +265,25 @@ type separatePagesFileLoader struct {
 	loadResultCh chan error
 }
 
-// NewSeparatePagesFileLoader creates a new PageFileLoader that loads
-// MemoryFiles asynchronously from separate pages and page metadata files.
-// It takes ownership of pagesMetadata and pagesFile.
-func NewSeparatePagesFileLoader(pagesMetadata, pagesFile *fd.FD, mainMF *pgalloc.MemoryFile) PagesFileLoader {
-	pfl := &separatePagesFileLoader{
+// NewAsyncMFLoader creates a new AsyncMFLoader. It takes ownership of
+// pagesMetadata and pagesFile. It creates a background goroutine that will
+// load all the MemoryFiles. The background goroutine immediately starts
+// loading the main MemoryFile.
+func NewAsyncMFLoader(pagesMetadata, pagesFile *fd.FD, mainMF *pgalloc.MemoryFile) *AsyncMFLoader {
+	mfl := &AsyncMFLoader{
 		privateMFsChan: make(chan map[string]*pgalloc.MemoryFile, 1),
 		loadResultCh:   make(chan error, 2),
 	}
 	go func() {
-		defer close(pfl.loadResultCh)
+		defer close(mfl.loadResultCh)
 		defer pagesMetadata.Close()
 		defer pagesFile.Close()
-		pfl.loadResultCh <- pfl.backgroundGoroutine(pagesMetadata, pagesFile, mainMF)
+		mfl.loadResultCh <- mfl.backgroundGoroutine(pagesMetadata, pagesFile, mainMF)
 	}()
-	return pfl
+	return mfl
 }
 
-func (pfl *separatePagesFileLoader) backgroundGoroutine(pagesMetadataFD, pagesFileFD *fd.FD, mainMF *pgalloc.MemoryFile) error {
+func (mfl *AsyncMFLoader) backgroundGoroutine(pagesMetadataFD, pagesFileFD *fd.FD, mainMF *pgalloc.MemoryFile) error {
 	ctx := context.Background()
 	var wg sync.WaitGroup
 	var loadErrsMu sync.Mutex
@@ -382,7 +318,7 @@ func (pfl *separatePagesFileLoader) backgroundGoroutine(pagesMetadataFD, pagesFi
 		return err
 	}
 
-	privateMFs := <-pfl.privateMFsChan
+	privateMFs := <-mfl.privateMFsChan
 	log.Infof("Loading metadata for %d private MemoryFiles", len(privateMFs))
 	if err := loadPrivateMemoryFiles(ctx, pagesMetadata, privateMFs, &opts); err != nil {
 		log.Warningf("Failed to load private MemoryFiles: %v", err)
@@ -391,7 +327,7 @@ func (pfl *separatePagesFileLoader) backgroundGoroutine(pagesMetadataFD, pagesFi
 
 	// Report metadata load completion.
 	log.Infof("All MemoryFile metadata has been loaded")
-	pfl.loadResultCh <- nil
+	mfl.loadResultCh <- nil
 
 	// Wait for page loads to complete and report errors.
 	wg.Wait()
@@ -404,33 +340,29 @@ func (pfl *separatePagesFileLoader) backgroundGoroutine(pagesMetadataFD, pagesFi
 	return nil
 }
 
-// KickoffPrivate implements PagesFileLoader.KickoffPrivate.
-func (pfl *separatePagesFileLoader) KickoffPrivate(ctx context.Context) error {
-	pfl.loadPrivateMFs.Do(func() {
-		pfl.privateMFsChan <- pgalloc.MemoryFileMapFromContext(ctx)
-	})
+// KickoffPrivate notifies the background goroutine of the private MemoryFiles.
+func (mfl *AsyncMFLoader) KickoffPrivate(mfmap map[string]*pgalloc.MemoryFile) {
+	mfl.privateMFsChan <- mfmap
+}
+
+// WaitMetadata waits for the background goroutine to successfully complete
+// reading all MemoryFile metadata. This consumes errors from loadResultCh, so
+// this must be called only once. WaitMetadata must be called before WaitPages.
+func (mfl *AsyncMFLoader) WaitMetadata() error {
+	// First error from loadResultCh is about MemoryFile metadata.
+	if err := <-mfl.loadResultCh; err != nil {
+		return fmt.Errorf("failed to load MemoryFile metadata: %w", err)
+	}
 	return nil
 }
 
-// Load implements PagesFileLoader.Load.
-func (pfl *separatePagesFileLoader) Load(ctx context.Context, mainMf *pgalloc.MemoryFile, background bool) error {
-	if err := pfl.KickoffPrivate(ctx); err != nil {
-		return err
-	}
-
-	// First error from loadResultCh is about MemoryFile metadata.
-	if err := <-pfl.loadResultCh; err != nil {
-		return fmt.Errorf("failed to load MemoryFile metadata: %w", err)
-	}
-
+// WaitPages waits for the background goroutine to successfully complete
+// reading all MemoryFile pages. This consumes errors from loadResultCh, so
+// this must be called only once. WaitPages must be called after WaitMetadata.
+func (mfl *AsyncMFLoader) WaitPages() error {
 	// Second error from loadResultCh is about MemoryFile pages.
-	// We only wait for it if `background=false`.
-	if !background {
-		if err := <-pfl.loadResultCh; err != nil {
-			return fmt.Errorf("failed to load MemoryFile pages: %w", err)
-		}
-		return nil
+	if err := <-mfl.loadResultCh; err != nil {
+		return fmt.Errorf("failed to load MemoryFile pages: %w", err)
 	}
-	log.Infof("All page load work has been kicked off successfully in the background.")
 	return nil
 }
