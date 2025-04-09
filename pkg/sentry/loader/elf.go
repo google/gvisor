@@ -289,12 +289,16 @@ func mapSegment(ctx context.Context, m *mm.MemoryManager, fd *vfs.FileDescriptio
 			return err
 		}
 
-		// We need to clear the end of the last page that exceeds fileSize so
-		// we don't map part of the file beyond fileSize.
+		// When phdr.Memsz > phdr.Filesz, we need to clear the end of the last page that
+		// exceeds fileSize so we don't map part of the file beyond fileSize.
 		//
-		// Note that Linux *does not* clear the portion of the first page
-		// before phdr.Off.
-		if mapSize > fileSize {
+		// Note that:
+		//   1) Linux *does not* clear the portion of the first page before phdr.Off;
+		//   2) There are cases when other sections (eg. DYNAMIC) falls outside of
+		//      LOAD's phdr.Memsz, but within the extended memory region towards
+		//      last page's ending boundary. Linux *does not* clear this portion when
+		//      phdr.Memsz <= phdr.Filesz, thus we do not as well.
+		if phdr.Memsz > phdr.Filesz && mapSize > fileSize {
 			zeroAddr, ok := addr.AddLength(fileSize)
 			if !ok {
 				panic(fmt.Sprintf("successfully mmaped address overflows? %#x + %#x", addr, fileSize))
