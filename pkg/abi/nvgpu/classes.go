@@ -528,3 +528,9 @@ type NVA0BC_ALLOC_PARAMETERS struct {
 	Version     uint32
 	HMem        Handle
 }
+
+// The following IOCTLs are not found in the OSS repo and are present to support
+// failures exclusive to the closed source driver.
+const (
+	UNKNOWN_ALLOC_IOCTL_A083 = 0xa083
+)
