@@ -256,11 +256,12 @@ func (r *restorer) restore(l *Loader) error {
 	}
 
 	if r.asyncMFLoader != nil {
-		if err := r.asyncMFLoader.WaitMetadata(); err != nil {
-			return err
-		}
-		if !r.background {
-			if err := r.asyncMFLoader.WaitPages(); err != nil {
+		if r.background {
+			if err := r.asyncMFLoader.WaitMetadata(); err != nil {
+				return err
+			}
+		} else {
+			if err := r.asyncMFLoader.Wait(); err != nil {
 				return err
 			}
 		}
@@ -344,6 +345,16 @@ func (r *restorer) restore(l *Loader) error {
 		// count was saved while the previous kernel was being saved and checkpoint
 		// success was unknown at that time. Now we know the checkpoint succeeded.
 		l.k.OnRestoreDone()
+
+		// Make sure the MemoryFile pages were loaded successfully. This is allowed
+		// to happen in the background while the application is running.
+		if r.asyncMFLoader != nil {
+			if err := r.asyncMFLoader.Wait(); err != nil {
+				log.Warningf("Killing the sandbox after MemoryFile page loading failed: %v", err)
+				l.k.Kill(linux.WaitStatusTerminationSignal(linux.SIGKILL))
+				return
+			}
+		}
 
 		log.Infof("Restore successful")
 	}()
