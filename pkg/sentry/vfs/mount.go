@@ -1468,7 +1468,11 @@ func (vfs *VirtualFilesystem) GenerateProcMountInfo(ctx context.Context, taskRoo
 			Root:  mntRootVD,
 			Start: mntRootVD,
 		}
-		statx, err := vfs.StatAt(ctx, creds, pop, &StatOptions{})
+		statx, err := vfs.StatAt(ctx, creds, pop, &StatOptions{
+			// Linux's fs/proc_namespace.c:show_mountinfo() just reads
+			// super_block::s_dev directly.
+			Sync: linux.AT_STATX_DONT_SYNC,
+		})
 		if err != nil {
 			// Well that's not good. Ignore this mount.
 			ctx.Warningf("VFS.GenerateProcMountInfo: failed to stat mount root: %v", err)

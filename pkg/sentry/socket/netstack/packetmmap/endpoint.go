@@ -95,6 +95,11 @@ type Endpoint struct {
 func (m *Endpoint) Init(ctx context.Context, opts stack.PacketMMapOpts) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+
+	if m.mapped.Load() != 0 {
+		return linuxerr.EINVAL
+	}
+
 	m.stack = opts.Stack
 	m.wq = opts.Wq
 	m.cooked = opts.Cooked
@@ -105,6 +110,7 @@ func (m *Endpoint) Init(ctx context.Context, opts stack.PacketMMapOpts) error {
 	m.reserve = opts.Reserve
 	m.nicID = opts.NICID
 	m.netProto = opts.NetProto
+
 	switch m.version {
 	case linux.TPACKET_V1:
 		m.headerLen = linux.TPACKET_HDRLEN
@@ -113,6 +119,7 @@ func (m *Endpoint) Init(ctx context.Context, opts stack.PacketMMapOpts) error {
 	default:
 		panic(fmt.Sprintf("invalid version %d supplied to InitPacketMMap", m.version))
 	}
+
 	if opts.Req.TpBlockNr != 0 {
 		if opts.Req.TpBlockSize <= 0 {
 			return linuxerr.EINVAL
@@ -139,6 +146,7 @@ func (m *Endpoint) Init(ctx context.Context, opts stack.PacketMMapOpts) error {
 	} else if opts.Req.TpFrameNr != 0 {
 		return linuxerr.EINVAL
 	}
+
 	if opts.IsRx {
 		if err := m.rxRingBuffer.init(ctx, opts.Req); err != nil {
 			return err

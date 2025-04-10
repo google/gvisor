@@ -231,7 +231,7 @@ func (m *machine) createVCPU(id int) *vCPU {
 	// Create the vCPU.
 	fd, errno := hostsyscall.RawSyscall(unix.SYS_IOCTL, uintptr(m.fd), KVM_CREATE_VCPU, uintptr(id))
 	if errno != 0 {
-		panic(fmt.Sprintf("error creating new vCPU: %v", errno))
+		panic(fmt.Sprintf("error creating new vCPU(id=%d): %v", id, errno))
 	}
 
 	c := &vCPU{
@@ -244,19 +244,19 @@ func (m *machine) createVCPU(id int) *vCPU {
 
 	// Ensure the signal mask is correct.
 	if err := c.setSignalMask(); err != nil {
-		panic(fmt.Sprintf("error setting signal mask: %v", err))
+		panic(fmt.Sprintf("error setting signal mask for vCPU(id=%d): %v", id, err))
 	}
 
 	// Map the run data.
 	runData, err := mapRunData(int(fd))
 	if err != nil {
-		panic(fmt.Sprintf("error mapping run data: %v", err))
+		panic(fmt.Sprintf("error mapping run data for vCPU(id=%d): %v", id, err))
 	}
 	c.runData = runData
 
 	// Initialize architecture state.
 	if err := c.initArchState(); err != nil {
-		panic(fmt.Sprintf("error initialization vCPU state: %v", err))
+		panic(fmt.Sprintf("error initializing vCPU(id=%d) state: %v", id, err))
 	}
 
 	return c // Done.
