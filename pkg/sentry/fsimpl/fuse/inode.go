@@ -196,24 +196,8 @@ func (i *inode) updateEntryTime(entrySec, entryNSec int64) {
 
 // CheckPermissions implements kernfs.Inode.CheckPermissions.
 func (i *inode) CheckPermissions(ctx context.Context, creds *auth.Credentials, ats vfs.AccessTypes) error {
-	// Since FUSE operations are ultimately backed by a userspace process (the
-	// fuse daemon), allowing a process to call into fusefs grants the daemon
-	// ptrace-like capabilities over the calling process. Because of this, by
-	// default FUSE only allows the mount owner to interact with the
-	// filesystem. This explicitly excludes setuid/setgid processes.
-	//
-	// This behaviour can be overridden with the 'allow_other' mount option.
-	//
-	// See fs/fuse/dir.c:fuse_allow_current_process() in Linux.
-	if !i.fs.opts.allowOther {
-		if creds.RealKUID != i.fs.opts.uid ||
-			creds.EffectiveKUID != i.fs.opts.uid ||
-			creds.SavedKUID != i.fs.opts.uid ||
-			creds.RealKGID != i.fs.opts.gid ||
-			creds.EffectiveKGID != i.fs.opts.gid ||
-			creds.SavedKGID != i.fs.opts.gid {
-			return linuxerr.EACCES
-		}
+	if !i.allowCredentials(creds) {
+		return linuxerr.EACCES
 	}
 
 	// By default, fusefs delegates all permission checks to the server.
@@ -226,7 +210,7 @@ func (i *inode) CheckPermissions(ctx context.Context, creds *auth.Credentials, a
 	if i.fs.opts.defaultPermissions || (ats.MayExec() && i.filemode().FileType() == linux.S_IFREG) {
 		if i.fs.clock.Now().After(i.attrTime) {
 			refreshed = true
-			if _, err := i.getAttr(ctx, i.fs.VFSFilesystem(), opts, 0, 0); err != nil {
+			if _, err := i.getAttr(ctx, creds, i.fs.VFSFilesystem(), opts, 0, 0); err != nil {
 				return err
 			}
 		}
@@ -235,7 +219,7 @@ func (i *inode) CheckPermissions(ctx context.Context, creds *auth.Credentials, a
 	if i.fs.opts.defaultPermissions || (ats.MayExec() && i.filemode().FileType() == linux.S_IFREG) {
 		err := vfs.GenericCheckPermissions(creds, ats, linux.FileMode(i.mode.Load()), auth.KUID(i.uid.Load()), auth.KGID(i.gid.Load()))
 		if linuxerr.Equals(linuxerr.EACCES, err) && !refreshed {
-			if _, err := i.getAttr(ctx, i.fs.VFSFilesystem(), opts, 0, 0); err != nil {
+			if _, err := i.getAttr(ctx, creds, i.fs.VFSFilesystem(), opts, 0, 0); err != nil {
 				return err
 			}
 			return vfs.GenericCheckPermissions(creds, ats, linux.FileMode(i.mode.Load()), auth.KUID(i.uid.Load()), auth.KGID(i.gid.Load()))
@@ -251,6 +235,29 @@ func (i *inode) CheckPermissions(ctx context.Context, creds *auth.Credentials, a
 		return res.Error()
 	}
 	return nil
+}
+
+func (i *inode) allowCredentials(creds *auth.Credentials) bool {
+	// Since FUSE operations are ultimately backed by a userspace process (the
+	// fuse daemon), allowing a process to call into fusefs grants the daemon
+	// ptrace-like capabilities over the calling process. Because of this, by
+	// default FUSE only allows the mount owner to interact with the
+	// filesystem. This explicitly excludes setuid/setgid processes.
+	//
+	// This behaviour can be overridden with the 'allow_other' mount option.
+	//
+	// See fs/fuse/dir.c:fuse_allow_current_process() in Linux.
+	if i.fs.opts.allowOther {
+		// FIXME: Linux requires current_in_userns(fc->user_ns) in this case,
+		// but we currently don't associate connections with a user namespace.
+		return true
+	}
+	return creds.RealKUID == i.fs.opts.uid &&
+		creds.EffectiveKUID == i.fs.opts.uid &&
+		creds.SavedKUID == i.fs.opts.uid &&
+		creds.RealKGID == i.fs.opts.gid &&
+		creds.EffectiveKGID == i.fs.opts.gid &&
+		creds.SavedKGID == i.fs.opts.gid
 }
 
 // Open implements kernfs.Inode.Open.
@@ -624,9 +631,7 @@ func (i *inode) getFUSEAttr() linux.FUSEAttr {
 	}
 }
 
-// statFromFUSEAttr makes attributes from linux.FUSEAttr to linux.Statx. The
-// opts.Sync attribute is ignored since the synchronization is handled by the
-// FUSE server.
+// statFromFUSEAttr makes attributes from linux.FUSEAttr to linux.Statx.
 func statFromFUSEAttr(attr linux.FUSEAttr, mask, devMinor uint32) linux.Statx {
 	var stat linux.Statx
 	stat.Blksize = attr.BlkSize
@@ -677,22 +682,11 @@ func statFromFUSEAttr(attr linux.FUSEAttr, mask, devMinor uint32) linux.Statx {
 	return stat
 }
 
-// getAttr gets the attribute of this inode by issuing a FUSE_GETATTR request
-// or read from local cache. It updates the corresponding attributes if
-// necessary.
+// getAttr gets the attribute of this inode by issuing a FUSE_GETATTR request.
+// It updates the corresponding attributes if necessary.
 //
 // +checklocks:i.attrMu
-func (i *inode) getAttr(ctx context.Context, fs *vfs.Filesystem, opts vfs.StatOptions, flags uint32, fh uint64) (linux.FUSEAttr, error) {
-	// TODO(gvisor.dev/issue/3679): send the request only if
-	//	- invalid local cache for fields specified in the opts.Mask
-	//	- forced update
-	//	- i.attributeTime expired
-	// If local cache is still valid, return local cache.
-	// Currently we always send a request,
-	// and we always set the metadata with the new result,
-	// unless attributeVersion has changed.
-	creds := auth.CredentialsFromContext(ctx)
-
+func (i *inode) getAttr(ctx context.Context, creds *auth.Credentials, fs *vfs.Filesystem, opts vfs.StatOptions, flags uint32, fh uint64) (linux.FUSEAttr, error) {
 	in := linux.FUSEGetAttrIn{
 		GetAttrFlags: flags,
 		Fh:           fh,
@@ -729,7 +723,7 @@ func (i *inode) getAttr(ctx context.Context, fs *vfs.Filesystem, opts vfs.StatOp
 // +checklocks:i.attrMu
 func (i *inode) reviseAttr(ctx context.Context, flags uint32, fh uint64) error {
 	// Never need atime for internal purposes.
-	_, err := i.getAttr(ctx, i.fs.VFSFilesystem(), vfs.StatOptions{
+	_, err := i.getAttr(ctx, auth.CredentialsFromContext(ctx), i.fs.VFSFilesystem(), vfs.StatOptions{
 		Mask: linux.STATX_BASIC_STATS &^ linux.STATX_ATIME,
 	}, flags, fh)
 	return err
@@ -737,14 +731,44 @@ func (i *inode) reviseAttr(ctx context.Context, flags uint32, fh uint64) error {
 
 // Stat implements kernfs.Inode.Stat.
 func (i *inode) Stat(ctx context.Context, fs *vfs.Filesystem, opts vfs.StatOptions) (linux.Statx, error) {
-	i.attrMu.Lock()
-	defer i.attrMu.Unlock()
-	attr, err := i.getAttr(ctx, fs, opts, 0, 0)
-	if err != nil {
-		return linux.Statx{}, err
+	creds := auth.CredentialsFromContext(ctx)
+	if !i.allowCredentials(creds) {
+		if opts.Mask == 0 {
+			return linux.Statx{
+				DevMajor: linux.UNNAMED_MAJOR,
+				DevMinor: i.fs.devMinor,
+			}, nil
+		}
+		return linux.Statx{}, linuxerr.EACCES
 	}
 
-	return statFromFUSEAttr(attr, opts.Mask, i.fs.devMinor), nil
+	// TODO: FUSE_STATX is currently unsupported, so btime is currently
+	// unsupported.
+	opts.Mask &= linux.STATX_BASIC_STATS
+
+	i.attrMu.Lock()
+	defer i.attrMu.Unlock()
+
+	var sync bool
+	if opts.Mask == 0 {
+		sync = false
+	} else if opts.Sync == linux.AT_STATX_FORCE_SYNC {
+		sync = true
+	} else if opts.Sync == linux.AT_STATX_DONT_SYNC {
+		sync = false
+	} else {
+		// TODO(gvisor.dev/issue/3679): support per-field cache validity
+		sync = i.attrTime.Before(i.fs.clock.Now())
+	}
+
+	if sync {
+		attr, err := i.getAttr(ctx, creds, fs, opts, 0, 0)
+		if err != nil {
+			return linux.Statx{}, err
+		}
+		return statFromFUSEAttr(attr, opts.Mask, i.fs.devMinor), nil
+	}
+	return statFromFUSEAttr(i.getFUSEAttr(), opts.Mask, i.fs.devMinor), nil
 }
 
 // DecRef implements kernfs.Inode.DecRef.
@@ -754,6 +778,12 @@ func (i *inode) DecRef(ctx context.Context) {
 
 // StatFS implements kernfs.Inode.StatFS.
 func (i *inode) StatFS(ctx context.Context, fs *vfs.Filesystem) (linux.Statfs, error) {
+	if !i.allowCredentials(auth.CredentialsFromContext(ctx)) {
+		return linux.Statfs{
+			Type: linux.FUSE_SUPER_MAGIC,
+		}, nil
+	}
+
 	req := i.fs.conn.NewRequest(auth.CredentialsFromContext(ctx), pidFromContext(ctx), i.nodeID,
 		linux.FUSE_STATFS, &linux.FUSEEmptyIn{},
 	)
@@ -806,6 +836,10 @@ func fattrMaskFromStats(mask uint32) uint32 {
 
 // SetStat implements kernfs.Inode.SetStat.
 func (i *inode) SetStat(ctx context.Context, fs *vfs.Filesystem, creds *auth.Credentials, opts vfs.SetStatOptions) error {
+	if !i.allowCredentials(creds) {
+		return linuxerr.EACCES
+	}
+
 	i.attrMu.Lock()
 	defer i.attrMu.Unlock()
 	if err := vfs.CheckSetStat(ctx, creds, &opts, i.filemode(), auth.KUID(i.uid.Load()), auth.KGID(i.gid.Load())); err != nil {
