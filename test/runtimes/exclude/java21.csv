@@ -33,6 +33,7 @@ java/net/MulticastSocket/IPMulticastIF.java,b/126900872,Need support for IPV6_MU
 java/net/MulticastSocket/MulticastTTL.java,,
 java/net/MulticastSocket/NetworkInterfaceEmptyGetInetAddressesTest.java,b/126900872,Need support for IPV6_MULTICAST_IF
 java/net/MulticastSocket/NoLoopbackPackets.java,b/126900872,Need support for IPV6_MULTICAST_IF
+java/net/MulticastSocket/NoSetNetworkInterface.java,b/126900872,Need support for IPV6_MULTICAST_IF
 java/net/MulticastSocket/Promiscuous.java,,
 java/net/MulticastSocket/SendPortZero.java,,
 java/net/MulticastSocket/SetLoopbackMode.java,,
