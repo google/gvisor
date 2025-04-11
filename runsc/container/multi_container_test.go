@@ -2786,14 +2786,15 @@ func testMultiContainerCheckpointRestore(t *testing.T, conf *config.Config, comp
 		t.Fatalf("error checkpointing container to empty file: %v", err)
 	}
 
-	// WaitCheckpoint() should return after checkpoint is complete.
+	// Wait for the checkpoint to complete. The initial sandbox not destroyed yet
+	// to check that no conflict with it occurs during restore.
 	select {
 	case waitErr := <-checkpointWaiter:
 		if waitErr != nil {
 			t.Errorf("error waiting for checkpoint to complete: %v", waitErr)
 		}
 	case <-time.After(10 * time.Second):
-		t.Errorf("timed out waiting for checkpoint to complete")
+		t.Fatalf("timed out waiting for checkpoint to complete")
 	}
 
 	lastNum, err := readOutputNum(outputPath, -1)
@@ -2801,18 +2802,7 @@ func testMultiContainerCheckpointRestore(t *testing.T, conf *config.Config, comp
 		t.Fatalf("error with outputFile: %v", err)
 	}
 
-	// Delete and recreate file before restoring.
-	if err := os.Remove(outputPath); err != nil {
-		t.Fatalf("error removing file")
-	}
-	outputFile2, err := createWriteableOutputFile(outputPath)
-	if err != nil {
-		t.Fatalf("error creating output file: %v", err)
-	}
-	defer outputFile2.Close()
-
-	// Restore into a new container with different ID (e.g. clone). Keep the
-	// initial container running to ensure no conflict with it.
+	// Restore into new containers with different IDs.
 	newIds := make([]string, 0, len(ids))
 	for range ids {
 		newIds = append(newIds, testutil.RandomContainerID())
@@ -2820,70 +2810,50 @@ func testMultiContainerCheckpointRestore(t *testing.T, conf *config.Config, comp
 	for _, specs := range testSpecs[1:] {
 		specs.Annotations[specutils.ContainerdSandboxIDAnnotation] = newIds[0]
 	}
-	conts2, cleanup2, err := restoreContainers(conf, testSpecs, newIds, dir)
-	if err != nil {
-		t.Fatalf("error restoring containers: %v", err)
-	}
-	defer cleanup2()
 
-	// Wait until application has ran.
-	if err := waitForFileNotEmpty(outputFile2); err != nil {
-		t.Fatalf("Failed to wait for output file: %v", err)
-	}
-
-	firstNum, err := readOutputNum(outputPath, 0)
-	if err != nil {
-		t.Fatalf("error with outputFile: %v", err)
-	}
-
-	// Check that lastNum is one less than firstNum and that the container
-	// picks up from where it left off.
-	if lastNum+1 != firstNum {
-		t.Errorf("error numbers not in order, previous: %d, next: %d", lastNum, firstNum)
-	}
-
-	for _, cont := range conts2 {
-		state := cont.State()
-		if state.Status != Running {
-			t.Fatalf("container %v is not running: %v", cont.ID, state.Status)
+	for range 2 {
+		// Delete and recreate file before restoring.
+		if err := os.Remove(outputPath); err != nil {
+			t.Fatalf("error removing file")
 		}
-	}
+		outputFile2, err := createWriteableOutputFile(outputPath)
+		if err != nil {
+			t.Fatalf("error creating output file: %v", err)
+		}
+		defer outputFile2.Close()
 
-	// Restore into a new container with same ID (e.g. clone). It requires the original container
-	// to cease to exist because they share the same identity.
-	cleanup2()
-	conts2 = nil
+		conts2, cleanup2, err := restoreContainers(conf, testSpecs, newIds, dir)
+		if err != nil {
+			t.Fatalf("error restoring containers: %v", err)
+		}
+		defer cleanup2()
 
-	// Delete and recreate file before restoring.
-	if err := os.Remove(outputPath); err != nil {
-		t.Fatalf("error removing file")
-	}
-	outputFile3, err := createWriteableOutputFile(outputPath)
-	if err != nil {
-		t.Fatalf("error creating output file: %v", err)
-	}
-	defer outputFile3.Close()
+		// Wait until application has ran.
+		if err := waitForFileNotEmpty(outputFile2); err != nil {
+			t.Fatalf("Failed to wait for output file: %v", err)
+		}
 
-	_, cleanup3, err := restoreContainers(conf, testSpecs, newIds, dir)
-	if err != nil {
-		t.Fatalf("error creating containers: %v", err)
-	}
-	defer cleanup3()
+		firstNum, err := readOutputNum(outputPath, 0)
+		if err != nil {
+			t.Fatalf("error with outputFile: %v", err)
+		}
 
-	// Wait until application has ran.
-	if err := waitForFileNotEmpty(outputFile3); err != nil {
-		t.Fatalf("Failed to wait for output file: %v", err)
-	}
+		// Check that lastNum is one less than firstNum and that the container
+		// picks up from where it left off.
+		if lastNum+1 != firstNum {
+			t.Errorf("error numbers not in order, previous: %d, next: %d", lastNum, firstNum)
+		}
 
-	firstNum2, err := readOutputNum(outputPath, 0)
-	if err != nil {
-		t.Fatalf("error with outputFile: %v", err)
-	}
+		for _, cont := range conts2 {
+			state := cont.State()
+			if state.Status != Running {
+				t.Fatalf("container %v is not running: %v", cont.ID, state.Status)
+			}
+		}
 
-	// Check that lastNum is one less than firstNum and that the container
-	// picks up from where it left off.
-	if lastNum+1 != firstNum2 {
-		t.Errorf("error numbers not in order, previous: %d, next: %d", lastNum, firstNum2)
+		// Future restores will reuse newIds. It requires the other containers
+		// using those IDs to cease to exist because they share the same identity.
+		cleanup2()
 	}
 }
 
