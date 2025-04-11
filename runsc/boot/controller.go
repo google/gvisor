@@ -94,12 +94,11 @@ const (
 	// return its ExitStatus.
 	ContMgrWaitPID = "containerManager.WaitPID"
 
-	// ContMgrWaitCheckpoint waits for the Kernel to have been successfully
-	// checkpointed n-1 times, then waits for either the n-th successful
-	// checkpoint (in which case it returns nil) or any number of failed
-	// checkpoints (in which case it returns an error returned by any such
-	// failure).
+	// ContMgrWaitCheckpoint waits for the next Kernel checkpoint to complete.
 	ContMgrWaitCheckpoint = "containerManager.WaitCheckpoint"
+
+	// ContMgrWaitRestore waits for the Kernel restore to complete.
+	ContMgrWaitRestore = "containerManager.WaitRestore"
 
 	// ContMgrRootContainerStart starts a new sandbox with a root container.
 	ContMgrRootContainerStart = "containerManager.StartRoot"
@@ -503,11 +502,8 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 	cu := cleanup.Make(cm.l.mu.Unlock)
 	defer cu.Clean()
 
-	if cm.l.state == restoring {
-		return fmt.Errorf("restore is already in progress")
-	}
-	if cm.l.state == started {
-		return fmt.Errorf("cannot restore a started container")
+	if cm.l.state > created {
+		return fmt.Errorf("cannot restore a container in state=%s", cm.l.state)
 	}
 	if len(o.Files) == 0 {
 		return fmt.Errorf("at least one file must be passed to Restore")
@@ -545,7 +541,7 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 		mainMF:        mf,
 	}
 	cm.l.restoreDone = sync.NewCond(&cm.l.mu)
-	cm.l.state = restoring
+	cm.l.state = restoringUnstarted
 	// Release `cm.l.mu`.
 	cu.Clean()
 
@@ -622,6 +618,9 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 }
 
 func (cm *containerManager) onRestoreDone() {
+	cm.l.mu.Lock()
+	cm.l.state = restored
+	cm.l.mu.Unlock()
 	cm.l.restoreDone.Broadcast()
 	cm.restorer = nil
 }
@@ -630,11 +629,11 @@ func (cm *containerManager) RestoreSubcontainer(args *StartArgs, _ *struct{}) er
 	log.Debugf("containerManager.RestoreSubcontainer, cid: %s, args: %+v", args.CID, args)
 
 	cm.l.mu.Lock()
-	if cm.l.state != restoring {
-		cm.l.mu.Unlock()
-		return fmt.Errorf("sandbox is not being restored, cannot restore subcontainer")
-	}
+	state := cm.l.state
 	cm.l.mu.Unlock()
+	if state != restoringUnstarted {
+		return fmt.Errorf("sandbox is not being restored, cannot restore subcontainer: state=%s", state)
+	}
 
 	// Validate arguments.
 	if args.Spec == nil {
@@ -746,6 +745,13 @@ func (cm *containerManager) WaitCheckpoint(*struct{}, *struct{}) error {
 	log.Debugf("containerManager.WaitCheckpoint")
 	err := cm.l.k.WaitForCheckpoint()
 	log.Debugf("containerManager.WaitCheckpoint done, err = %v", err)
+	return err
+}
+
+func (cm *containerManager) WaitRestore(*struct{}, *struct{}) error {
+	log.Debugf("containerManager.WaitRestore")
+	err := cm.l.waitRestore()
+	log.Debugf("containerManager.WaitRestore done, err = %v", err)
 	return err
 }
 

@@ -162,10 +162,33 @@ const (
 	created loaderState = iota
 	// started indicates that the Loader has been started.
 	started
-	// restoring indicates that the Loader has been created and is restoring
-	// containers. It will change to started after restore is completed.
-	restoring
+	// restoringUnstarted indicates that the Loader has been created and is
+	// restoring containers, but not started yet.
+	restoringUnstarted
+	// restoringStarted indicates that the Loader has been created and started,
+	// while restore continues in the background.
+	restoringStarted
+	// restored indicates that the Loader has been fully restored.
+	restored
 )
+
+// String returns a string representation of the loader state.
+func (s loaderState) String() string {
+	switch s {
+	case created:
+		return "created"
+	case started:
+		return "started"
+	case restoringUnstarted:
+		return "restoringUnstarted"
+	case restoringStarted:
+		return "restoringStarted"
+	case restored:
+		return "restored"
+	default:
+		return fmt.Sprintf("unknown(%d)", s)
+	}
+}
 
 // Loader keeps state needed to start the kernel and run the container.
 type Loader struct {
@@ -934,7 +957,7 @@ func (l *Loader) run() error {
 	}
 
 	// If we are restoring, we do not want to create a process.
-	if l.state != restoring {
+	if l.state != restoringUnstarted {
 		if l.root.conf.ProfileEnable {
 			pprof.Initialize()
 		}
@@ -1009,7 +1032,11 @@ func (l *Loader) run() error {
 	if err := l.k.Start(); err != nil {
 		return err
 	}
-	l.state = started
+	if l.state == restoringUnstarted {
+		l.state = restoringStarted
+	} else {
+		l.state = started
+	}
 	return nil
 }
 
@@ -1406,8 +1433,8 @@ func (l *Loader) waitContainer(cid string, waitStatus *uint32) error {
 	tg, err := l.threadGroupFromID(key)
 	if err != nil {
 		l.mu.Lock()
-		// Extra handling is needed if the container is restoring.
-		if l.state != restoring {
+		// Extra handling is needed if the restoring container has not started yet.
+		if l.state != restoringUnstarted {
 			l.mu.Unlock()
 			return err
 		}
@@ -1436,6 +1463,20 @@ func (l *Loader) waitContainer(cid string, waitStatus *uint32) error {
 		// All sentry-created resources should have been released at this point.
 		_ = coverage.Report()
 	}
+	return nil
+}
+
+func (l *Loader) waitRestore() error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.state == restored {
+		return nil
+	}
+	if l.state != restoringUnstarted && l.state != restoringStarted {
+		return fmt.Errorf("sandbox is not being restored, cannot wait for restore: state=%s", l.state)
+	}
+	log.Infof("Waiting for the sandbox to restore")
+	l.restoreDone.Wait()
 	return nil
 }
 
