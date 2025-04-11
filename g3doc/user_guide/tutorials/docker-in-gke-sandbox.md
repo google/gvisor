@@ -8,9 +8,24 @@ network driver and the bridge network driver are tested and supported.
 
 ## How to run Docker in a GKE Sandbox
 
-First, install a GKE cluster (1.29.0 or higher) and deploy a node pool with
-gVisor enabled. You can view the full documentation
+First, install a GKE standard cluster (1.29.0 or higher) and deploy a node pool
+with gVisor enabled. You can view the full documentation
 [here](https://cloud.google.com/kubernetes-engine/docs/how-to/sandbox-pods#enabling).
+
+You could also run docker in gVisor at GKE autopilot cluster, the GKE version
+needs to be 1.32 or higher. When creating the autopilot cluster, please add the
+option `--workload-policies=allow-net-admin` to allow NET_ADMIN capability that
+will be granted by the gVisor sandbox.
+
+An example command to start an GKE autopilot cluster will be:
+
+```sh
+gcloud container clusters create-auto [CLUTER_NAME] --workload-policies=allow-net-admin --location=[LOCATION] --cluster-version=1.32.2-gke.1182001
+```
+
+> gVisor sandbox doesn't need any extra capabilities from the host to run docker
+> inside gVisor, the listed capabilities are granted by gVisor to the docker
+> daemon that is running inside sandbox.
 
 Prepare a container image with pre-installed Docker:
 
@@ -33,7 +48,7 @@ spec:
     image: {registry_url}/docker-in-gvisor:latest
     securityContext:
       capabilities:
-        add: ["all"]
+        add: [AUDIT_WRITE,CHOWN,DAC_OVERRIDE,FOWNER,FSETID,KILL,MKNOD,NET_BIND_SERVICE,NET_RAW,SETFCAP,SETGID,SETPCAP,SETUID,SYS_CHROOT,SYS_PTRACE,NET_ADMIN,SYS_ADMIN]
     volumeMounts:
       - name: docker
         mountPath: /var/lib/docker
@@ -73,6 +88,8 @@ RUN mkdir -p /usr/share/cowsay/cows/
 RUN curl -o /usr/share/cowsay/cows/docker.cow https://raw.githubusercontent.com/docker/whalesay/master/docker.cow
 ENTRYPOINT ["/usr/games/cowsay", "-f", "docker.cow"]
 EOF
+# For a autopilot cluster, please use `docker build --network=host -t whalesay .`
+# Running with bridge network driver in GKE autopilot is not fully supported.
 $ docker build -t whalesay .
 ....
 Successfully tagged whalesay:latest
