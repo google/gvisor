@@ -88,8 +88,6 @@ RUN mkdir -p /usr/share/cowsay/cows/
 RUN curl -o /usr/share/cowsay/cows/docker.cow https://raw.githubusercontent.com/docker/whalesay/master/docker.cow
 ENTRYPOINT ["/usr/games/cowsay", "-f", "docker.cow"]
 EOF
-# For a autopilot cluster, please use `docker build --network=host -t whalesay .`
-# Running with bridge network driver in GKE autopilot is not fully supported.
 $ docker build -t whalesay .
 ....
 Successfully tagged whalesay:latest
@@ -108,3 +106,6 @@ $ docker run -it --rm whalesay "Containers do not contain, but gVisor-s do!"
           \____\______/
 
 ```
+
+> For GKE autopilot, please use `docker build --network=host -t whalesay .`
+> Running with bridge network driver in GKE autopilot is not fully supported.
