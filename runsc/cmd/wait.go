@@ -37,6 +37,7 @@ type Wait struct {
 	rootPID    int
 	pid        int
 	checkpoint bool
+	restore    bool
 }
 
 // Name implements subcommands.Command.Name.
@@ -59,6 +60,7 @@ func (wt *Wait) SetFlags(f *flag.FlagSet) {
 	f.IntVar(&wt.rootPID, "rootpid", unsetPID, "select a PID in the sandbox root PID namespace to wait on instead of the container's root process")
 	f.IntVar(&wt.pid, "pid", unsetPID, "select a PID in the container's PID namespace to wait on instead of the container's root process")
 	f.BoolVar(&wt.checkpoint, "checkpoint", false, "wait for the next checkpoint to complete")
+	f.BoolVar(&wt.restore, "restore", false, "wait for the restore to complete")
 }
 
 // Execute implements subcommands.Command.Execute. It waits for a process in a
@@ -87,6 +89,16 @@ func (wt *Wait) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomm
 		}
 		if err := c.WaitCheckpoint(); err != nil {
 			util.Fatalf("waiting for checkpoint to complete: %v", err)
+		}
+		return subcommands.ExitSuccess
+	}
+
+	if wt.restore {
+		if wt.rootPID != unsetPID || wt.pid != unsetPID {
+			log.Warningf("waiting for restore to complete, ignoring -pid and -rootpid")
+		}
+		if err := c.WaitRestore(); err != nil {
+			util.Fatalf("waiting for restore to complete: %v", err)
 		}
 		return subcommands.ExitSuccess
 	}

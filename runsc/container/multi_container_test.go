@@ -138,6 +138,21 @@ func restoreContainers(conf *config.Config, specs []*specs.Spec, ids []string, i
 		time.Sleep(100 * time.Millisecond)
 	}
 
+	restoreWaiter := make(chan error, 1)
+	go func() {
+		restoreWaiter <- containers[0].WaitRestore()
+	}()
+
+	// WaitRestore() should return after restore is complete.
+	select {
+	case waitErr := <-restoreWaiter:
+		if waitErr != nil {
+			return nil, nil, waitErr
+		}
+	case <-time.After(10 * time.Second):
+		return nil, nil, fmt.Errorf("error waiting for restore to complete")
+	}
+
 	return containers, cu.Release(), nil
 }
 
@@ -2760,13 +2775,10 @@ func testMultiContainerCheckpointRestore(t *testing.T, conf *config.Config, comp
 		t.Fatalf("Failed to wait for output file: %v", err)
 	}
 
-	checkpointWaiter := make(chan struct{}, 1)
+	checkpointWaiter := make(chan error, 1)
 	go func() {
 		// WaitCheckpoint on the second container.
-		if err := conts[1].WaitCheckpoint(); err != nil {
-			t.Errorf("error waiting for checkpoint to complete: %v", err)
-		}
-		checkpointWaiter <- struct{}{}
+		checkpointWaiter <- conts[1].WaitCheckpoint()
 	}()
 
 	// Checkpoint root container; save state into new file.
@@ -2776,7 +2788,10 @@ func testMultiContainerCheckpointRestore(t *testing.T, conf *config.Config, comp
 
 	// WaitCheckpoint() should return after checkpoint is complete.
 	select {
-	case <-checkpointWaiter:
+	case waitErr := <-checkpointWaiter:
+		if waitErr != nil {
+			t.Errorf("error waiting for checkpoint to complete: %v", waitErr)
+		}
 	case <-time.After(10 * time.Second):
 		t.Errorf("timed out waiting for checkpoint to complete")
 	}

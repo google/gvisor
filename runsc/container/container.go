@@ -642,6 +642,15 @@ func (c *Container) WaitCheckpoint() error {
 	return c.Sandbox.WaitCheckpoint()
 }
 
+// WaitRestore waits for the Kernel to have been successfully restored.
+func (c *Container) WaitRestore() error {
+	log.Debugf("Waiting for restore to complete in container, cid: %s", c.ID)
+	if !c.IsSandboxRunning() {
+		return fmt.Errorf("sandbox is not running")
+	}
+	return c.Sandbox.WaitRestore()
+}
+
 // SignalContainer sends the signal to the container. If all is true and signal
 // is SIGKILL, then waits for all processes to exit before returning.
 // SignalContainer returns an error if the container is already stopped.

@@ -1367,6 +1367,12 @@ func (s *Sandbox) WaitCheckpoint() error {
 	return s.call(boot.ContMgrWaitCheckpoint, nil, nil)
 }
 
+// WaitRestore waits for the Kernel to have been successfully restored.
+func (s *Sandbox) WaitRestore() error {
+	log.Debugf("Waiting for restore to complete in sandbox %q", s.ID)
+	return s.call(boot.ContMgrWaitRestore, nil, nil)
+}
+
 // IsRootContainer returns true if the specified container ID belongs to the
 // root container.
 func (s *Sandbox) IsRootContainer(cid string) bool {
