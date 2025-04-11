@@ -191,10 +191,10 @@ type Loader struct {
 	// PreSeccompCallback is called right before installing seccomp filters.
 	PreSeccompCallback func()
 
-	// restore is set to true if we are restoring a container.
-	restore bool
-
-	restoreWaiters *sync.Cond
+	// restoreDone is used to wait for restore to complete. Note that this may be
+	// much after the sandbox has started because under some configurations, the
+	// restore is allowed to proceed in the background while the sandbox runs.
+	restoreDone *sync.Cond
 
 	// sandboxID is the ID for the whole sandbox.
 	sandboxID string
@@ -934,8 +934,7 @@ func (l *Loader) run() error {
 	}
 
 	// If we are restoring, we do not want to create a process.
-	// l.restore is set by the container manager when a restore call is made.
-	if !l.restore {
+	if l.state != restoring {
 		if l.root.conf.ProfileEnable {
 			pprof.Initialize()
 		}
@@ -1417,8 +1416,8 @@ func (l *Loader) waitContainer(cid string, waitStatus *uint32) error {
 			l.mu.Unlock()
 			return err
 		}
-		log.Infof("Waiting for container being restored, CID: %q", cid)
-		l.restoreWaiters.Wait()
+		log.Infof("Waiting for the container to restore, CID: %q", cid)
+		l.restoreDone.Wait()
 		l.mu.Unlock()
 
 		log.Infof("Restore is completed, trying to wait for container %q again.", cid)

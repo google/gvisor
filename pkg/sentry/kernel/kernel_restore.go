@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io"
 
+	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/log"
@@ -92,9 +93,8 @@ func (k *Kernel) CheckpointGen() CheckpointGeneration {
 	return k.checkpointGen
 }
 
-// OnRestoreDone is called to notify the kernel that a checkpoint restore has been
-// completed successfully.
-func (k *Kernel) OnRestoreDone() {
+// IncCheckpointGenOnRestore increments the checkpoint generation upon restore.
+func (k *Kernel) IncCheckpointGenOnRestore() {
 	k.checkpointMu.Lock()
 	defer k.checkpointMu.Unlock()
 
@@ -255,14 +255,12 @@ type AsyncMFLoader struct {
 	// MemoryFiles, once they are known. This channel is written to exactly once.
 	privateMFsChan chan map[string]*pgalloc.MemoryFile
 
-	// loadResultCh is the channel used by the background goroutine to report
-	// load errors. In normal successful operation, this channel will be written
-	// exactly two `nil` values: one once all MemoryFile *metadata* has been
-	// loaded, and one when all MemoryFile pages have been loaded.
-	// Then the channel will be closed.
-	// If any actual error occurs, this channel will have this error written to
-	// it, and then closed.
-	loadResultCh chan error
+	metadataWg  sync.WaitGroup
+	metadataErr error
+
+	loadWg     sync.WaitGroup
+	loadErrsMu sync.Mutex
+	loadErrs   []error
 }
 
 // NewAsyncMFLoader creates a new AsyncMFLoader. It takes ownership of
@@ -272,22 +270,21 @@ type AsyncMFLoader struct {
 func NewAsyncMFLoader(pagesMetadata, pagesFile *fd.FD, mainMF *pgalloc.MemoryFile) *AsyncMFLoader {
 	mfl := &AsyncMFLoader{
 		privateMFsChan: make(chan map[string]*pgalloc.MemoryFile, 1),
-		loadResultCh:   make(chan error, 2),
 	}
-	go func() {
-		defer close(mfl.loadResultCh)
-		defer pagesMetadata.Close()
-		defer pagesFile.Close()
-		mfl.loadResultCh <- mfl.backgroundGoroutine(pagesMetadata, pagesFile, mainMF)
-	}()
+	mfl.metadataWg.Add(1)
+	mfl.loadWg.Add(1)
+	go mfl.backgroundGoroutine(pagesMetadata, pagesFile, mainMF)
 	return mfl
 }
 
-func (mfl *AsyncMFLoader) backgroundGoroutine(pagesMetadataFD, pagesFileFD *fd.FD, mainMF *pgalloc.MemoryFile) error {
-	ctx := context.Background()
-	var wg sync.WaitGroup
-	var loadErrsMu sync.Mutex
-	var loadErrs []error
+func (mfl *AsyncMFLoader) backgroundGoroutine(pagesMetadataFD, pagesFileFD *fd.FD, mainMF *pgalloc.MemoryFile) {
+	defer pagesMetadataFD.Close()
+	defer pagesFileFD.Close()
+	cu := cleanup.Make(func() {
+		mfl.metadataWg.Done()
+		mfl.loadWg.Done()
+	})
+	defer cu.Clean()
 
 	// //pkg/state/wire reads one byte at a time; buffer these reads to
 	// avoid making one syscall per read. For the "main" state file, this
@@ -298,46 +295,47 @@ func (mfl *AsyncMFLoader) backgroundGoroutine(pagesMetadataFD, pagesFileFD *fd.F
 	opts := pgalloc.LoadOpts{
 		PagesFile: pagesFileFD,
 		OnAsyncPageLoadStart: func(mf *pgalloc.MemoryFile) {
-			wg.Add(1)
+			mfl.loadWg.Add(1)
 			log.Infof("Starting async page load for %p", mf)
 		},
 		OnAsyncPageLoadDone: func(mf *pgalloc.MemoryFile, err error) {
-			defer wg.Done()
+			defer mfl.loadWg.Done()
 			if err != nil {
 				log.Warningf("Async page load error for %p: %v", mf, err)
-				loadErrsMu.Lock()
-				loadErrs = append(loadErrs, fmt.Errorf("%p: async page load: %w", mf, err))
-				loadErrsMu.Unlock()
+				mfl.loadErrsMu.Lock()
+				mfl.loadErrs = append(mfl.loadErrs, fmt.Errorf("%p: async page load: %w", mf, err))
+				mfl.loadErrsMu.Unlock()
 			}
 		},
 	}
 
 	log.Infof("Loading metadata for main MemoryFile: %p", mainMF)
+	ctx := context.Background()
 	if err := mainMF.LoadFrom(ctx, pagesMetadata, &opts); err != nil {
 		log.Warningf("Failed to load main MemoryFile %p: %v", mainMF, err)
-		return err
+		mfl.metadataErr = err
+		return
 	}
 
 	privateMFs := <-mfl.privateMFsChan
 	log.Infof("Loading metadata for %d private MemoryFiles", len(privateMFs))
 	if err := loadPrivateMemoryFiles(ctx, pagesMetadata, privateMFs, &opts); err != nil {
 		log.Warningf("Failed to load private MemoryFiles: %v", err)
-		return err
+		mfl.metadataErr = err
+		return
 	}
 
 	// Report metadata load completion.
 	log.Infof("All MemoryFile metadata has been loaded")
-	mfl.loadResultCh <- nil
+	cu.Release()()
 
 	// Wait for page loads to complete and report errors.
-	wg.Wait()
-	loadErrsMu.Lock()
-	defer loadErrsMu.Unlock()
-	if loadErr := errors.Join(loadErrs...); loadErr != nil {
-		return loadErr
+	mfl.loadWg.Wait()
+	if loadErr := errors.Join(mfl.loadErrs...); loadErr != nil {
+		log.Warningf("Failed to load MemoryFile pages: %v", loadErr)
+		return
 	}
 	log.Infof("All MemoryFile pages have been loaded.")
-	return nil
 }
 
 // KickoffPrivate notifies the background goroutine of the private MemoryFiles.
@@ -346,23 +344,18 @@ func (mfl *AsyncMFLoader) KickoffPrivate(mfmap map[string]*pgalloc.MemoryFile) {
 }
 
 // WaitMetadata waits for the background goroutine to successfully complete
-// reading all MemoryFile metadata. This consumes errors from loadResultCh, so
-// this must be called only once. WaitMetadata must be called before WaitPages.
+// reading all MemoryFile metadata and report any errors.
 func (mfl *AsyncMFLoader) WaitMetadata() error {
-	// First error from loadResultCh is about MemoryFile metadata.
-	if err := <-mfl.loadResultCh; err != nil {
-		return fmt.Errorf("failed to load MemoryFile metadata: %w", err)
-	}
-	return nil
+	mfl.metadataWg.Wait()
+	return mfl.metadataErr
 }
 
-// WaitPages waits for the background goroutine to successfully complete
-// reading all MemoryFile pages. This consumes errors from loadResultCh, so
-// this must be called only once. WaitPages must be called after WaitMetadata.
-func (mfl *AsyncMFLoader) WaitPages() error {
-	// Second error from loadResultCh is about MemoryFile pages.
-	if err := <-mfl.loadResultCh; err != nil {
-		return fmt.Errorf("failed to load MemoryFile pages: %w", err)
+// Wait waits for the background goroutine to successfully complete fully
+// loading all the MemoryFiles and report any errors.
+func (mfl *AsyncMFLoader) Wait() error {
+	if err := mfl.WaitMetadata(); err != nil {
+		return err
 	}
-	return nil
+	mfl.loadWg.Wait()
+	return errors.Join(mfl.loadErrs...)
 }

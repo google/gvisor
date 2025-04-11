@@ -538,12 +538,13 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 	}
 
 	cm.restorer = &restorer{
-		restoreDone: cm.onRestoreDone,
-		stateFile:   reader,
-		background:  o.Background,
-		mainMF:      mf,
+		readyToStart:  cm.onStart,
+		onRestoreDone: cm.onRestoreDone,
+		stateFile:     reader,
+		background:    o.Background,
+		mainMF:        mf,
 	}
-	cm.l.restoreWaiters = sync.NewCond(&cm.l.mu)
+	cm.l.restoreDone = sync.NewCond(&cm.l.mu)
 	cm.l.state = restoring
 	// Release `cm.l.mu`.
 	cu.Clean()
@@ -620,14 +621,9 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 	return cm.restorer.restoreContainerInfo(cm.l, &cm.l.root)
 }
 
-func (cm *containerManager) onRestoreDone() error {
-	if err := cm.onStart(); err != nil {
-		return err
-	}
-
-	cm.l.restoreWaiters.Broadcast()
+func (cm *containerManager) onRestoreDone() {
+	cm.l.restoreDone.Broadcast()
 	cm.restorer = nil
-	return nil
 }
 
 func (cm *containerManager) RestoreSubcontainer(args *StartArgs, _ *struct{}) error {
