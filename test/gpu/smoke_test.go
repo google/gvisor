@@ -47,6 +47,9 @@ func TestNvidiaSmi(t *testing.T) {
 }
 
 func TestGPUHello(t *testing.T) {
+	if dockerutil.IsRunningOnARM() {
+		t.Skipf("%s is not supported on ARM due to cross compile errors.", t.Name())
+	}
 	ctx := context.Background()
 	c := dockerutil.MakeContainer(ctx, t)
 	defer c.CleanUp(ctx)
