@@ -18,6 +18,16 @@
 package kvm
 
 // Config sets configuration options for each platform instance.
-type Config struct{}
+type Config struct {
+	// MaxVCPUs is the maximum number of vCPUs the platform instance will
+	// create. If MaxVCPUs is 0, the platform will choose a reasonable default.
+	MaxVCPUs int
+}
 
-func (*machine) applyConfig(config *Config) error { return nil }
+func (m *machine) applyConfig(config *Config) error {
+	if config.MaxVCPUs < 0 {
+		return fmt.Errorf("invalid Config.MaxVCPUs: %d", config.MaxVCPUs)
+	}
+	m.maxVCPUs = config.MaxVCPUs
+	return nil
+}
