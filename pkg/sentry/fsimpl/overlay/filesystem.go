@@ -1825,6 +1825,11 @@ func (fs *filesystem) SetXattrAt(ctx context.Context, rp *vfs.ResolvingPath, opt
 
 // Precondition: fs.renameMu must be locked.
 func (fs *filesystem) setXattrLocked(ctx context.Context, d *dentry, mnt *vfs.Mount, creds *auth.Credentials, opts *vfs.SetXattrOptions) error {
+	if strings.HasPrefix(opts.Name, linux.XATTR_SECURITY_PREFIX) {
+		// TODO(b/301323819): support security extended attributes in overlayfs.
+		// Setting security extended attributes in overlayfs is a no-op.
+		return nil
+	}
 	if err := d.checkXattrPermissions(creds, opts.Name, vfs.MayWrite); err != nil {
 		return err
 	}
