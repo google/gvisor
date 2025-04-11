@@ -93,9 +93,8 @@ func (k *Kernel) CheckpointGen() CheckpointGeneration {
 	return k.checkpointGen
 }
 
-// OnRestoreDone is called to notify the kernel that a checkpoint restore has been
-// completed successfully.
-func (k *Kernel) OnRestoreDone() {
+// IncCheckpointGenOnRestore increments the checkpoint generation upon restore.
+func (k *Kernel) IncCheckpointGenOnRestore() {
 	k.checkpointMu.Lock()
 	defer k.checkpointMu.Unlock()
 

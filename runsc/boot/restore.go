@@ -100,8 +100,11 @@ type restorer struct {
 	// deviceFile is the required to start the platform.
 	deviceFile *fd.FD
 
-	// restoreDone is a callback triggered when restore is successful.
-	restoreDone func() error
+	// readyToStart is a callback triggered when the sandbox is ready to start.
+	readyToStart func() error
+
+	// onRestoreDone is a callback triggered when the restore is done.
+	onRestoreDone func()
 
 	// checkpointedSpecs contains the map of container specs used during
 	// checkpoint.
@@ -277,7 +280,6 @@ func (r *restorer) restore(l *Loader) error {
 	l.watchdog.Stop()
 	l.watchdog = dog
 	l.root.procArgs = kernel.CreateProcessArgs{}
-	l.restore = true
 	l.sandboxID = l.root.cid
 
 	// Update all tasks in the system with their respective new container IDs.
@@ -327,9 +329,8 @@ func (r *restorer) restore(l *Loader) error {
 	// Release `l.mu` before calling into callbacks.
 	cu.Clean()
 
-	// r.restoreDone() signals and waits for the sandbox to start.
-	if err := r.restoreDone(); err != nil {
-		return fmt.Errorf("restorer.restoreDone callback failed: %w", err)
+	if err := r.readyToStart(); err != nil {
+		return fmt.Errorf("restorer.readyToStart callback failed: %w", err)
 	}
 
 	r.stateFile.Close()
@@ -341,13 +342,14 @@ func (r *restorer) restore(l *Loader) error {
 			return
 		}
 
-		// Restore was successful, so increment the checkpoint count manually. The
-		// count was saved while the previous kernel was being saved and checkpoint
-		// success was unknown at that time. Now we know the checkpoint succeeded.
-		l.k.OnRestoreDone()
+		// Now that post restore work succeeded, increment the checkpoint gen
+		// manually. The count was saved while the previous kernel was being saved
+		// and checkpoint success was unknown at that time. Now we know the had
+		// checkpoint succeeded. Allow the application to proceed while pages may
+		// keep loading in the background.
+		l.k.IncCheckpointGenOnRestore()
 
-		// Make sure the MemoryFile pages were loaded successfully. This is allowed
-		// to happen in the background while the application is running.
+		// Wait for page loading to complete if happening in the background.
 		if r.asyncMFLoader != nil {
 			if err := r.asyncMFLoader.Wait(); err != nil {
 				log.Warningf("Killing the sandbox after MemoryFile page loading failed: %v", err)
@@ -355,6 +357,8 @@ func (r *restorer) restore(l *Loader) error {
 				return
 			}
 		}
+
+		r.onRestoreDone()
 
 		log.Infof("Restore successful")
 	}()
