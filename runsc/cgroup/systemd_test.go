@@ -85,11 +85,14 @@ func TestExpandSlice(t *testing.T) {
 }
 
 func TestInstall(t *testing.T) {
+	const dialErr = "dial unix /var/run/dbus/system_bus_socket: connect: no such file or directory"
 	for _, tc := range []struct {
-		name      string
-		res       *specs.LinuxResources
-		wantProps []systemdDbus.Property
-		err       error
+		name             string
+		res              *specs.LinuxResources
+		wantProps        []systemdDbus.Property
+		updatedRes       *specs.LinuxResources
+		wantUpdatedProps []systemdDbus.Property
+		err              error
 	}{
 		{
 			name: "defaults",
@@ -160,6 +163,29 @@ func TestInstall(t *testing.T) {
 				{"AllowedCPUs", dbus.MakeVariant([]byte{1 << 4})},
 				{"AllowedMemoryNodes", dbus.MakeVariant([]byte{1 << 5})},
 			},
+			updatedRes: &specs.LinuxResources{
+				CPU: &specs.LinuxCPU{
+					Shares: uint64Ptr(1),
+					Period: uint64Ptr(10000),
+					Quota:  int64Ptr(300000),
+					Cpus:   "2",
+					Mems:   "3",
+				},
+			},
+			wantUpdatedProps: []systemdDbus.Property{
+				// initial properties
+				{"CPUWeight", dbus.MakeVariant(convertCPUSharesToCgroupV2Value(1))},
+				{"CPUQuotaPeriodUSec", dbus.MakeVariant(uint64(20000))},
+				{"CPUQuotaPerSecUSec", dbus.MakeVariant(uint64(15000000))},
+				{"AllowedCPUs", dbus.MakeVariant([]byte{1 << 4})},
+				{"AllowedMemoryNodes", dbus.MakeVariant([]byte{1 << 5})},
+				// updated properties
+				{"CPUWeight", dbus.MakeVariant(convertCPUSharesToCgroupV2Value(1))},
+				{"CPUQuotaPeriodUSec", dbus.MakeVariant(uint64(10000))},
+				{"CPUQuotaPerSecUSec", dbus.MakeVariant(uint64(30000000))},
+				{"AllowedCPUs", dbus.MakeVariant([]byte{1 << 2})},
+				{"AllowedMemoryNodes", dbus.MakeVariant([]byte{1 << 3})},
+			},
 		},
 		{
 			name: "cpuset",
@@ -213,9 +239,10 @@ func TestInstall(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			cg := cgroupSystemd{Name: "123", Parent: "parent.slice"}
 			cg.Controllers = mandatoryControllers
-			err := cg.Install(tc.res)
-			if !errors.Is(err, tc.err) {
-				t.Fatalf("Wrong error, got: %s, want: %s", err, tc.err)
+			if err := cg.Install(tc.res); err != nil && err.Error() != dialErr {
+				if !errors.Is(err, tc.err) {
+					t.Fatalf("Wrong error, got: %s, want: %s", err, tc.err)
+				}
 			}
 			cmper := cmp.Comparer(func(a dbus.Variant, b dbus.Variant) bool {
 				return a.String() == b.String()
@@ -226,6 +253,18 @@ func TestInstall(t *testing.T) {
 			filteredProps := filterProperties(cg.properties, tc.wantProps)
 			if diff := cmp.Diff(filteredProps, tc.wantProps, cmper, sorter); diff != "" {
 				t.Errorf("cgroup properties list diff %s", diff)
+			}
+
+			if tc.updatedRes != nil {
+				if err := cg.Set(tc.updatedRes); err != nil && err.Error() != dialErr {
+					if !errors.Is(err, tc.err) {
+						t.Fatalf("Wrong error, got: %s, want: %s", err, tc.err)
+					}
+				}
+				filteredProps = filterProperties(cg.properties, tc.wantUpdatedProps)
+				if diff := cmp.Diff(filteredProps, tc.wantUpdatedProps, cmper, sorter); diff != "" {
+					t.Errorf("cgroup properties list diff %s", diff)
+				}
 			}
 		})
 	}

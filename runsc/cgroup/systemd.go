@@ -111,12 +111,19 @@ func (c *cgroupSystemd) Install(res *specs.LinuxResources) error {
 	// For compatibility with runc.
 	c.addProp("DefaultDependencies", false)
 
+	return c.Set(res)
+}
+
+// Set sets the cgroup resources.
+func (c *cgroupSystemd) Set(res *specs.LinuxResources) error {
+	log.Debugf("Setting systemd cgroup resource controller under %v", c.Parent)
 	for controllerName, ctrlr := range controllers2 {
 		// First check if our controller is found in the system.
 		found := false
 		for _, knownController := range c.Controllers {
 			if controllerName == knownController {
 				found = true
+				break
 			}
 		}
 		if found {
@@ -135,6 +142,25 @@ func (c *cgroupSystemd) Install(res *specs.LinuxResources) error {
 			return fmt.Errorf("mandatory cgroup controller %q is missing for %q", controllerName, c.Path)
 		}
 	}
+
+	ctx := context.Background()
+	conn, err := systemdDbus.NewWithContext(ctx)
+	if err != nil {
+		return err
+	}
+	c.dbusConn = conn
+	// Our systemd units are transient, hence runtime=true.
+	if err := c.dbusConn.SetUnitPropertiesContext(ctx, c.unitName(), true /* runtime */, c.properties...); err != nil {
+		var derr dbus.Error
+		if errors.As(err, &derr) {
+			// We have not called Join() yet, so we cannot set the properties as the unit does not exist.
+			if strings.Contains(derr.Name, "org.freedesktop.systemd1.NoSuchUnit") {
+				return nil
+			}
+		}
+		return fmt.Errorf("error setting systemd unit properties: %v", err)
+	}
+
 	return nil
 }
 
