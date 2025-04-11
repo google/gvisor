@@ -157,4 +157,16 @@ if [[ -n "${BUILDKITE_PIPELINE_ID}" && "${BUILDKITE_BRANCH}" =~ ^test/ ]]; then
     echo "Skip load-all-test-images tests"
     pipeline_add_env SKIP_LOADING_IMAGES 1
   fi
+  # Skip GPU tests if the change doesn't affect GPU functionality.
+  gpu_paths=(
+    pkg/abi/nvgpu
+    pkg/sentry/devices/nvproxy
+    runsc/specutils/nvidia.go
+    runsc/cmd/nvproxy
+    tools/nvidia_driver_differ
+  )
+  if ./tools/builkite-check-paths.sh "${gpu_paths[@]}"; then
+    echo "Skipping GPU tests"
+    pipeline_add_env SKIP_GPU_TESTS 1
+  fi
 fi

@@ -170,7 +170,7 @@ steps:
 
   # GPU workflow.
   - <<: *common
-    <<: *source_test_presubmit
+    <<: *source_test
     label: ":firefighter: GPU Smoke Tests"
     commands:
       - make sudo TARGETS=//tools/gpu:main ARGS="install --latest" || cat /var/log/nvidia-installer.log
@@ -184,22 +184,22 @@ steps:
     commands:
       - tools/gpu/cos_drivers_test.sh
   - <<: *common
-    <<: *source_test_continuous
     label: ":screwdriver: GPU Tests"
+    if: build.env("STAGED_BINARIES") == null && ( build.env("SKIP_GPU_TESTS") == null || build.message =~ /nvidia|nvproxy|gpu/i )
     commands:
       - make sudo TARGETS=//tools/gpu:main ARGS="install --latest" || cat /var/log/nvidia-installer.log
       - make gpu-all-tests
     agents:
       queue: gpu
   - <<: *common
-    <<: *source_test_continuous
     label: ":female_supervillain: COS GPU Tests"
+    if: build.env("STAGED_BINARIES") == null && ( build.env("SKIP_GPU_TESTS") == null || build.message =~ /nvidia|nvproxy|gpu/i )
     commands:
       - make cos-gpu-all-tests
     agents:
       queue: cos-canary-gpu
-  - <<: *source_test_continuous
-    label: ":fish: CUDA tests"
+  - label: ":fish: CUDA tests"
+    if: build.env("STAGED_BINARIES") == null && ( build.env("SKIP_GPU_TESTS") == null || build.message =~ /nvidia|nvproxy|gpu/i )
     # This is its own test rather than being part of the GPU tests,
     # because it takes around 30 minutes to run.
     parallelism: 8
@@ -212,14 +212,15 @@ steps:
     agents:
       queue: gpu
   - <<: *common
-    <<: *source_test_continuous
     label: ":screwdriver: All GPU Drivers Test"
+    if: build.env("STAGED_BINARIES") == null && ( build.env("SKIP_GPU_TESTS") == null || build.message =~ /nvidia|nvproxy|gpu/i )
     parallelism: 8
     commands:
       - tools/gpu/all_drivers_test.sh
     agents:
       queue: gpu
-  # Release workflow.
+
+  # Release workflow test.
   - <<: *common
     <<: *source_test
     label: ":ship: Release tests"
