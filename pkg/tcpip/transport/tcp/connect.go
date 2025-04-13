@@ -205,6 +205,10 @@ func FindWndScale(wnd seqnum.Size) int {
 		max <<= 1
 	}
 
+	if s < header.MaxWndScale-2 {
+		return s + 3
+	}
+
 	return s
 }
 
