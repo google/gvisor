@@ -567,8 +567,8 @@ func (h *handshake) start() {
 	}
 
 	synOpts := header.TCPSynOptions{
-		WS:            h.rcvWndScale,
-		TS:            true,
+		WS: h.rcvWndScale,
+		//		TS:            true,
 		TSVal:         h.ep.tsValNow(),
 		TSEcr:         h.ep.recentTimestamp(),
 		SACKPermitted: bool(sackEnabled),
