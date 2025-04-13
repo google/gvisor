@@ -314,7 +314,7 @@ var Metrics = tcpip.Stats{
 
 // DefaultTTL is linux's default TTL. All network protocols in all stacks used
 // with this package must have this value set as their default TTL.
-const DefaultTTL = 64
+const DefaultTTL = 128
 
 const sizeOfInt32 int = 4
 
