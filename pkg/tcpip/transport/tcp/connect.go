@@ -771,6 +771,12 @@ func makeSynOptions(opts header.TCPSynOptions) []byte {
 	// Always encode the mss.
 	offset := header.EncodeMSSOption(uint32(opts.MSS), options)
 
+	// Initialize the WS option.
+	if opts.WS >= 0 {
+		offset += header.EncodeNOP(options[offset:])
+		offset += header.EncodeWSOption(opts.WS, options[offset:])
+	}
+
 	// Special ordering is required here. If both TS and SACK are enabled,
 	// then the SACK option precedes TS, with no padding. If they are
 	// enabled individually, then we see padding before the option.
@@ -785,12 +791,6 @@ func makeSynOptions(opts header.TCPSynOptions) []byte {
 		offset += header.EncodeNOP(options[offset:])
 		offset += header.EncodeNOP(options[offset:])
 		offset += header.EncodeSACKPermittedOption(options[offset:])
-	}
-
-	// Initialize the WS option.
-	if opts.WS >= 0 {
-		offset += header.EncodeNOP(options[offset:])
-		offset += header.EncodeWSOption(opts.WS, options[offset:])
 	}
 
 	// Padding to the end; note that this never apply unless we add a
