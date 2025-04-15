@@ -365,7 +365,6 @@ func Init() {
 					nvgpu.HOPPER_SEC2_WORK_LAUNCH_A:  allocHandler(rmAllocNoParams, compUtil),
 					nvgpu.NV04_DISPLAY_COMMON:        allocHandler(rmAllocNoParams, nvconf.CapGraphics),
 					nvgpu.NV20_SUBDEVICE_DIAG:        allocHandler(rmAllocNoParams, compUtil),
-					nvgpu.UNKNOWN_ALLOC_IOCTL_A083:   allocHandler(rmAllocHandlerWithStatus(nvgpu.NV_ERR_INVALID_CLASS), compUtil),
 				},
 
 				getStructs: func() *driverABIStructs {
@@ -630,7 +629,6 @@ func Init() {
 							nvgpu.HOPPER_SEC2_WORK_LAUNCH_A:  nil, // No params
 							nvgpu.NV04_DISPLAY_COMMON:        nil, // No params
 							nvgpu.NV20_SUBDEVICE_DIAG:        nil, // No params
-							nvgpu.UNKNOWN_ALLOC_IOCTL_A083:   nil, // unknown, paramsSize == TODO(zkoopmans)
 						},
 					}
 				},
@@ -693,7 +691,6 @@ func Init() {
 
 			// The following IOCTLS are not observed starting in 550.40.07.
 			delete(abi.controlCmd, nvgpu.UNKNOWN_CONTROL_COMMAND_A0830104)
-			delete(abi.allocationClass, nvgpu.UNKNOWN_ALLOC_IOCTL_A083)
 
 			prevStructs := abi.getStructs
 			abi.getStructs = func() *driverABIStructs {
@@ -715,7 +712,6 @@ func Init() {
 
 				// The following IOCTLS are not observed starting in 550.40.07.
 				delete(structs.controlStructs, nvgpu.UNKNOWN_CONTROL_COMMAND_A0830104)
-				delete(structs.allocationStructs, nvgpu.UNKNOWN_ALLOC_IOCTL_A083)
 				return structs
 			}
 

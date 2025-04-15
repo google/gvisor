@@ -82,6 +82,7 @@ type Ioctl struct {
 	pb       *pb.Ioctl
 	class    ioctlClass
 	subclass ioctlSubclass
+	status   uint32 // Only valid for alloc ioctlClass.
 }
 
 // IsSupported returns true if the ioctl is supported by nvproxy.
@@ -89,6 +90,12 @@ func (i Ioctl) IsSupported() bool {
 	if i.class == control && i.subclass&nvgpu.RM_GSS_LEGACY_MASK != 0 {
 		// Legacy ioctls are a special case where nvproxy passes them through unconditionally,
 		// since they are undocumented and unlikely to contain problematic arguments.
+		return true
+	}
+	if i.class == alloc && i.status == nvgpu.NV_ERR_INVALID_CLASS {
+		// The host driver failed with NV_ERR_INVALID_CLASS for this alloc class.
+		// Nvproxy also fails unsupported alloc classes with NV_ERR_INVALID_CLASS.
+		// So it will behave correctly even if it doesn't support this alloc class.
 		return true
 	}
 	_, ok := supportedIoctls[i.class][uint32(i.subclass)]
@@ -101,8 +108,8 @@ func (i Ioctl) String() string {
 		return fmt.Sprintf("%s ioctl: request=%#x [nr=NV_ESC_RM_CONTROL, cmd=%#x] => ret=%d",
 			i.class, i.pb.GetRequest(), i.subclass, i.pb.GetRet())
 	case alloc:
-		return fmt.Sprintf("%s ioctl: request=%#x [nr=NV_ESC_RM_ALLOC, hClass=%#x] => ret=%d",
-			i.class, i.pb.GetRequest(), i.subclass, i.pb.GetRet())
+		return fmt.Sprintf("%s ioctl: request=%#x [nr=NV_ESC_RM_ALLOC, hClass=%#x] => ret=%d status=%#x",
+			i.class, i.pb.GetRequest(), i.subclass, i.pb.GetRet(), i.status)
 	case frontend:
 		return fmt.Sprintf("%s ioctl: request=%#x [nr=%#x, size=%d] => ret=%d",
 			i.class, i.pb.GetRequest(), i.subclass, len(i.pb.GetArgData()), i.pb.GetRet())
@@ -281,6 +288,7 @@ func ParseIoctlOutput(ioctl *pb.Ioctl) (Ioctl, error) {
 
 			parsedIoctl.class = alloc
 			parsedIoctl.subclass = ioctlSubclass(ioctlParams.GetHClass())
+			parsedIoctl.status = ioctlParams.GetStatus()
 		}
 	default:
 		parsedIoctl.class = unknown
