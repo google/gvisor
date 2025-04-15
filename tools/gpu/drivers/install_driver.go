@@ -272,7 +272,7 @@ func installDriver(driverPath string) error {
 		return fmt.Errorf("no NVIDIA PCI device on host:\n%s", string(out))
 	}
 
-	driverArgs := strings.Split("--dkms -a -s --no-drm --install-libglvnd", " ")
+	driverArgs := strings.Split("--dkms -a -s --no-drm --install-libglvnd -m=kernel-open", " ")
 	cmd := exec.Command(driverPath, driverArgs...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
