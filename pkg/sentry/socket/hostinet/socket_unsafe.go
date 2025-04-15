@@ -107,7 +107,7 @@ func ioctl(ctx context.Context, fd int, io usermem.IO, sysno uintptr, args arch.
 		// The user's ifconf can have a nullable pointer to a buffer. Use a Sentry array if non-null.
 		ifcNested := linux.IFConf{Len: ifc.Len}
 		var ifcBuf []byte
-		if ifc.Ptr != 0 {
+		if ifc.Ptr != 0 && ifc.Len > 0 {
 			ifcBuf = make([]byte, ifc.Len)
 			ifcNested.Ptr = uint64(uintptr(unsafe.Pointer(&ifcBuf[0])))
 		}
