@@ -1232,12 +1232,6 @@ func rmAllocNoParams(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64_PARAMETER
 	return rmAllocInvoke[byte](fi, ioctlParams, nil, isNVOS64, addSimpleObjDepParentLocked)
 }
 
-func rmAllocHandlerWithStatus(status uint32) func(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64_PARAMETERS, isNVOS64 bool) (uintptr, error) {
-	return func(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64_PARAMETERS, isNVOS64 bool) (uintptr, error) {
-		return 0, frontendFailWithStatus(fi, ioctlParams, status)
-	}
-}
-
 func rmAllocRootClient(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64_PARAMETERS, isNVOS64 bool) (uintptr, error) {
 	if !ioctlParams.HClass.IsRootClient() {
 		panic(fmt.Sprintf("rmAllocRootClient() was invoked with HClass whose IsRootClient()==false: %#x", ioctlParams.HClass))
