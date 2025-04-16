@@ -51,6 +51,7 @@ const (
 	TCP_FASTOPEN_NO_COOKIE   = 34
 	TCP_ZEROCOPY_RECEIVE     = 35
 	TCP_INQ                  = 36
+	TCP_TX_DELAY             = 37
 )
 
 // Socket constants from include/net/tcp.h.

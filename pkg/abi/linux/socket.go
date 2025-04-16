@@ -307,6 +307,29 @@ const (
 	SO_PEERGROUPS            = 59
 	SO_ZEROCOPY              = 60
 	SO_TXTIME                = 61
+	SO_BINDTOIFINDEX         = 62
+	SO_TIMESTAMP_OLD         = 29
+	SO_TIMESTAMPNS_OLD       = 35
+	SO_TIMESTAMPING_OLD      = 37
+	SO_TIMESTAMP_NEW         = 63
+	SO_TIMESTAMPNS_NEW       = 64
+	SO_TIMESTAMPING_NEW      = 65
+	SO_RCVTIMEO_NEW          = 66
+	SO_SNDTIMEO_NEW          = 67
+	SO_DETACH_REUSEPORT_BPF  = 68
+	SO_PREFER_BUSY_POLL      = 69
+	SO_BUSY_POLL_BUDGET      = 70
+	SO_NETNS_COOKIE          = 71
+	SO_BUF_LOCK              = 72
+	SO_RESERVE_MEM           = 73
+	SO_TXREHASH              = 74
+	SO_RCVMARK               = 75
+	SO_PASSPIDFD             = 76
+	SO_PEERPIDFD             = 77
+	SO_DEVMEM_LINEAR         = 78
+	SO_DEVMEM_DMABUF         = 79
+	SO_DEVMEM_DONTNEED       = 80
+	SO_RCVPRIORITY           = 82
 )
 
 // enum socket_state, from uapi/linux/net.h.
