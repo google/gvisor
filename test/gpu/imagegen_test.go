@@ -20,11 +20,16 @@ import (
 	"testing"
 	"time"
 
+	"gvisor.dev/gvisor/pkg/test/dockerutil"
 	"gvisor.dev/gvisor/test/gpu/stablediffusion"
 )
 
 // TestStableDiffusionXL generates an image with Stable Diffusion XL.
 func TestStableDiffusionXL(t *testing.T) {
+	if dockerutil.IsRunningOnARM() {
+		fbIssue := "https://github.com/facebookresearch/xformers/issues/1071"
+		t.Skipf("%s does not run on ARM due to library issues: see: %q", t.Name(), fbIssue)
+	}
 	ctx := context.Background()
 	sdxl := stablediffusion.NewDockerXL(t)
 	generateCtx, generateCancel := context.WithTimeout(ctx, 15*time.Minute)

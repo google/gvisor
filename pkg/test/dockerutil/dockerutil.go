@@ -25,6 +25,7 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
+	rt "runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -240,6 +241,12 @@ func runtimeMap() (map[string]any, error) {
 		return nil, fmt.Errorf("unexpected format: %v", r)
 	}
 	return rs, nil
+}
+
+// IsRunningOnARM returns true if the current runtime is running on an ARM
+// machine.
+func IsRunningOnARM() bool {
+	return strings.HasPrefix(rt.GOARCH, "arm")
 }
 
 // Save exports a container image to the given Writer.
