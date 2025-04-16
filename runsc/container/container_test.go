@@ -2762,7 +2762,7 @@ func TestUsage(t *testing.T) {
 			}
 			return nil
 		}, backoff.WithMaxRetries(backoff.NewConstantBackOff(100*time.Millisecond), 10)); err != nil {
-			t.Errorf("error getting usage: %v", err)
+			t.Errorf("failed to get Usage after retries: %v", err)
 		}
 	}
 }
@@ -2798,19 +2798,26 @@ func TestUsageFD(t *testing.T) {
 		t.Fatalf("error usageFD from container: %v", err)
 	}
 
-	mapped, unknown, total, err := m.Fetch()
-	if err != nil {
-		t.Fatalf("error Fetch memory usage: %v", err)
-	}
+	// Retry a few times to ensure the container has had a chance to start up and
+	// generate some memory usage.
+	if err := backoff.Retry(func() error {
+		mapped, unknown, total, err := m.Fetch()
+		if err != nil {
+			return fmt.Errorf("error Fetch memory usage: %v", err)
+		}
 
-	if mapped == 0 {
-		t.Errorf("UsageFD Mapped got zero")
-	}
-	if unknown == 0 {
-		t.Errorf("UsageFD unknown got zero")
-	}
-	if total == 0 {
-		t.Errorf("UsageFD total got zero")
+		if mapped == 0 {
+			return fmt.Errorf("UsageFD Mapped got zero")
+		}
+		if unknown == 0 {
+			return fmt.Errorf("UsageFD unknown got zero")
+		}
+		if total == 0 {
+			return fmt.Errorf("UsageFD total got zero")
+		}
+		return nil
+	}, backoff.WithMaxRetries(backoff.NewConstantBackOff(100*time.Millisecond), 10)); err != nil {
+		t.Errorf("failed to get UsageFD after retries: %v", err)
 	}
 
 	// Set the image path, which is where the checkpoint image will be saved.
