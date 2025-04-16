@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Copyright 2019 The gVisor Authors.
+# Copyright 2024 The gVisor Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -21,7 +21,19 @@ set -xeo pipefail
 
 exec 1>&2
 
-git fetch origin master
-baseid=$(git merge-base origin/master "origin/${BUILDKITE_BRANCH}")
+if [[ -z "${BUILDKITE_BRANCH:-}" ]]; then
+  echo "BUILDKITE_BRANCH is not set"
+  exit 1
+fi
+
+baseid=''
+if [[ "$BUILDKITE_BRANCH" == master ]]; then
+  # If we are already on the master branch (this is a continuous test),
+  # we should diff against the previous commit.
+  baseid='master~'
+else
+  git fetch origin master
+  baseid="$(git merge-base origin/master "origin/${BUILDKITE_BRANCH}")"
+fi
 
 git diff --stat "${baseid}" --exit-code "$@"
