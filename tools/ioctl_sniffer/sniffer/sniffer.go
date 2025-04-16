@@ -82,20 +82,30 @@ type Ioctl struct {
 	pb       *pb.Ioctl
 	class    ioctlClass
 	subclass ioctlSubclass
-	status   uint32 // Only valid for alloc ioctlClass.
+	status   uint32 // Only valid for control and alloc ioctlClass.
 }
 
 // IsSupported returns true if the ioctl is supported by nvproxy.
 func (i Ioctl) IsSupported() bool {
 	if i.class == control && i.subclass&nvgpu.RM_GSS_LEGACY_MASK != 0 {
-		// Legacy ioctls are a special case where nvproxy passes them through unconditionally,
-		// since they are undocumented and unlikely to contain problematic arguments.
+		// Legacy ioctls are a special case where nvproxy passes them through.
+		return true
+	}
+	if i.class == control && (i.subclass>>16)&0xffff == nvgpu.NV2081_BINAPI {
+		// NV2081_BINAPI control commands are a special case where nvproxy passes
+		// them through.
 		return true
 	}
 	if i.class == alloc && i.status == nvgpu.NV_ERR_INVALID_CLASS {
 		// The host driver failed with NV_ERR_INVALID_CLASS for this alloc class.
 		// Nvproxy also fails unsupported alloc classes with NV_ERR_INVALID_CLASS.
 		// So it will behave correctly even if it doesn't support this alloc class.
+		return true
+	}
+	if i.class == control && i.status == nvgpu.NV_ERR_NOT_SUPPORTED {
+		// The host driver failed with NV_ERR_NOT_SUPPORTED for this control command.
+		// Nvproxy also fails unsupported control commands with NV_ERR_NOT_SUPPORTED.
+		// So it will behave correctly even if it doesn't support this control command.
 		return true
 	}
 	_, ok := supportedIoctls[i.class][uint32(i.subclass)]
@@ -105,8 +115,8 @@ func (i Ioctl) IsSupported() bool {
 func (i Ioctl) String() string {
 	switch i.class {
 	case control:
-		return fmt.Sprintf("%s ioctl: request=%#x [nr=NV_ESC_RM_CONTROL, cmd=%#x] => ret=%d",
-			i.class, i.pb.GetRequest(), i.subclass, i.pb.GetRet())
+		return fmt.Sprintf("%s ioctl: request=%#x [nr=NV_ESC_RM_CONTROL, cmd=%#x] => ret=%d status=%#x",
+			i.class, i.pb.GetRequest(), i.subclass, i.pb.GetRet(), i.status)
 	case alloc:
 		return fmt.Sprintf("%s ioctl: request=%#x [nr=NV_ESC_RM_ALLOC, hClass=%#x] => ret=%d status=%#x",
 			i.class, i.pb.GetRequest(), i.subclass, i.pb.GetRet(), i.status)
@@ -273,6 +283,7 @@ func ParseIoctlOutput(ioctl *pb.Ioctl) (Ioctl, error) {
 
 			parsedIoctl.class = control
 			parsedIoctl.subclass = ioctlSubclass(ioctlParams.Cmd)
+			parsedIoctl.status = ioctlParams.Status
 		case nvgpu.NV_ESC_RM_ALLOC:
 			data := ioctl.GetArgData()
 			var isNVOS64 bool
