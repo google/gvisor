@@ -643,11 +643,7 @@ const (
 	NV_CONF_COMPUTE_CTRL_CMD_GPU_GET_KEY_ROTATION_STATE  = 0xcb33010c
 )
 
-// The following IOCTLs are not found in the OSS repo and are present to support
-// failures exclusive to the closed source driver.
+// The following IOCTLs are not found in the OSS repo.
 const (
-	UNKNOWN_CONTROL_COMMAND_80028B   = 0x80028b
-	UNKNOWN_CONTROL_COMMAND_20810107 = 0x20810107
-	UNKNOWN_CONTROL_COMMAND_20810110 = 0x20810110
-	UNKNOWN_CONTROL_COMMAND_A0830104 = 0xa0830104
+	UNKNOWN_CONTROL_COMMAND_80028B = 0x80028b
 )

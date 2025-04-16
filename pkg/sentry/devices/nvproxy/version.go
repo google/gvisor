@@ -261,8 +261,6 @@ func Init() {
 					nvgpu.NV2080_CTRL_CMD_FIFO_DISABLE_CHANNELS:                            ctrlHandler(ctrlSubdevFIFODisableChannels, compUtil),
 					nvgpu.NV2080_CTRL_CMD_GR_GET_INFO:                                      ctrlHandler(ctrlIoctlHasInfoList[nvgpu.NV2080_CTRL_GR_GET_INFO_PARAMS], compUtil),
 					nvgpu.NV2080_CTRL_CMD_FB_GET_INFO:                                      ctrlHandler(ctrlIoctlHasInfoList[nvgpu.NvxxxCtrlXxxGetInfoParams], nvconf.CapGraphics),
-					nvgpu.UNKNOWN_CONTROL_COMMAND_20810110:                                 ctrlHandler(rmControlSimple, compUtil),
-					nvgpu.UNKNOWN_CONTROL_COMMAND_20810107:                                 ctrlHandler(rmControlSimple, nvconf.CapGraphics), // unknown, paramsSize == TODO(ayushranjan)
 					nvgpu.NV503C_CTRL_CMD_REGISTER_VIDMEM:                                  ctrlHandler(rmControlSimple, compUtil),
 					nvgpu.NV503C_CTRL_CMD_UNREGISTER_VIDMEM:                                ctrlHandler(rmControlSimple, compUtil),
 					nvgpu.NV83DE_CTRL_CMD_DEBUG_SET_EXCEPTION_MASK:                         ctrlHandler(rmControlSimple, compUtil),
@@ -304,7 +302,6 @@ func Init() {
 					nvgpu.NV00FD_CTRL_CMD_ATTACH_GPU:                                       ctrlHandler(ctrlMemoryMulticastFabricAttachGPU, compUtil),
 					nvgpu.NV503C_CTRL_CMD_REGISTER_VA_SPACE:                                ctrlHandler(ctrlRegisterVASpace, compUtil),
 					nvgpu.NV208F_CTRL_CMD_GPU_VERIFY_INFOROM:                               ctrlHandler(rmControlSimple, compUtil),
-					nvgpu.UNKNOWN_CONTROL_COMMAND_A0830104:                                 ctrlHandler(ctrlFailureWithStatus(nvgpu.NV_ERR_NOT_SUPPORTED), compUtil),
 				},
 				allocationClass: map[nvgpu.ClassID]allocationClassHandler{
 					nvgpu.NV01_ROOT:                  allocHandler(rmAllocRootClient, compUtil),
@@ -468,7 +465,6 @@ func Init() {
 							nvgpu.NV2080_CTRL_CMD_BUS_GET_C2C_INFO:                                 simpleDriverStruct("NV2080_CTRL_CMD_BUS_GET_C2C_INFO_PARAMS"),
 							nvgpu.NV2080_CTRL_CMD_CE_GET_CE_PCE_MASK:                               simpleDriverStruct("NV2080_CTRL_CE_GET_CE_PCE_MASK_PARAMS"),
 							nvgpu.NV2080_CTRL_CMD_CE_GET_CAPS_V2:                                   simpleDriverStruct("NV2080_CTRL_CE_GET_CAPS_V2_PARAMS"),
-							nvgpu.UNKNOWN_CONTROL_COMMAND_20810107:                                 nil, // unknown, paramsSize == TODO(ayushranjan)
 							nvgpu.NV2080_CTRL_CMD_CE_GET_ALL_CAPS:                                  simpleDriverStruct("NV2080_CTRL_CE_GET_ALL_CAPS_PARAMS"),
 							nvgpu.NV2080_CTRL_CMD_EVENT_SET_NOTIFICATION:                           simpleDriverStruct("NV2080_CTRL_EVENT_SET_NOTIFICATION_PARAMS"),
 							nvgpu.NV2080_CTRL_CMD_FB_GET_INFO_V2:                                   simpleDriverStruct("NV2080_CTRL_FB_GET_INFO_V2_PARAMS"),
@@ -526,7 +522,6 @@ func Init() {
 							nvgpu.NV2080_CTRL_CMD_FIFO_DISABLE_CHANNELS:                            driverStructs(nvgpu.NV2080_CTRL_FIFO_DISABLE_CHANNELS_PARAMS{}),
 							nvgpu.NV2080_CTRL_CMD_GR_GET_INFO:                                      driverStructs(nvgpu.NV2080_CTRL_GR_GET_INFO_PARAMS{}),
 							nvgpu.NV2080_CTRL_CMD_FB_GET_INFO:                                      driverStructWithName(nvgpu.NvxxxCtrlXxxGetInfoParams{}, "NV2080_CTRL_FB_GET_INFO_PARAMS"),
-							nvgpu.UNKNOWN_CONTROL_COMMAND_20810110:                                 nil, // unknown, paramsSize == TODO(zkoopmans)
 							nvgpu.NV503C_CTRL_CMD_REGISTER_VIDMEM:                                  simpleDriverStruct("NV503C_CTRL_REGISTER_VIDMEM_PARAMS"),
 							nvgpu.NV503C_CTRL_CMD_UNREGISTER_VIDMEM:                                simpleDriverStruct("NV503C_CTRL_UNREGISTER_VIDMEM_PARAMS"),
 							nvgpu.NV83DE_CTRL_CMD_DEBUG_SET_EXCEPTION_MASK:                         simpleDriverStruct("NV83DE_CTRL_DEBUG_SET_EXCEPTION_MASK_PARAMS"),
@@ -568,7 +563,6 @@ func Init() {
 							nvgpu.NV00FD_CTRL_CMD_ATTACH_GPU:                                       driverStructs(nvgpu.NV00FD_CTRL_ATTACH_GPU_PARAMS{}),
 							nvgpu.NV503C_CTRL_CMD_REGISTER_VA_SPACE:                                driverStructs(nvgpu.NV503C_CTRL_REGISTER_VA_SPACE_PARAMS{}),
 							nvgpu.NV208F_CTRL_CMD_GPU_VERIFY_INFOROM:                               driverStructs(nvgpu.NV208F_CTRL_GPU_VERIFY_INFOROM_PARAMS{}),
-							nvgpu.UNKNOWN_CONTROL_COMMAND_A0830104:                                 nil, // unknown, paramsSize == TODO(zkoopmans)
 						},
 						allocationStructs: map[nvgpu.ClassID][]DriverStruct{
 							nvgpu.NV01_ROOT:                  driverStructWithName(nvgpu.Handle{}, "NvHandle"),
@@ -681,16 +675,10 @@ func Init() {
 			abi.controlCmd[nvgpu.NV0000_CTRL_CMD_GPU_WAIT_ATTACH_ID] = ctrlHandler(rmControlSimple, compUtil)
 			abi.controlCmd[nvgpu.NV0080_CTRL_CMD_PERF_CUDA_LIMIT_SET_CONTROL] = ctrlHandler(rmControlSimple, compUtil) // NV0080_CTRL_PERF_CUDA_LIMIT_CONTROL_PARAMS
 			abi.controlCmd[nvgpu.NV2080_CTRL_CMD_PERF_GET_CURRENT_PSTATE] = ctrlHandler(rmControlSimple, compUtil)
-			// NV2081_BINAPI forwards all control commands to the GSP in
-			// src/nvidia/src/kernel/rmapi/binary_api.c:binapiControl_IMPL().
-			abi.controlCmd[(nvgpu.NV2081_BINAPI<<16)|0x0108] = ctrlHandler(rmControlSimple, compUtil)
 			abi.controlCmd[nvgpu.NV0000_CTRL_CMD_SYSTEM_GET_P2P_CAPS] = ctrlHandler(ctrlClientSystemGetP2PCapsV550, compUtil)
 			abi.uvmIoctl[nvgpu.UVM_SET_PREFERRED_LOCATION] = uvmHandler(uvmIoctlSimple[nvgpu.UVM_SET_PREFERRED_LOCATION_PARAMS_V550], compUtil)
 			abi.uvmIoctl[nvgpu.UVM_MIGRATE] = uvmHandler(uvmIoctlSimple[nvgpu.UVM_MIGRATE_PARAMS_V550], compUtil)
 			abi.allocationClass[nvgpu.NVENC_SW_SESSION] = allocHandler(rmAllocSimple[nvgpu.NVA0BC_ALLOC_PARAMETERS], nvconf.CapVideo)
-
-			// The following IOCTLS are not observed starting in 550.40.07.
-			delete(abi.controlCmd, nvgpu.UNKNOWN_CONTROL_COMMAND_A0830104)
 
 			prevStructs := abi.getStructs
 			abi.getStructs = func() *driverABIStructs {
@@ -701,17 +689,10 @@ func Init() {
 				structs.controlStructs[nvgpu.NV0000_CTRL_CMD_GPU_WAIT_ATTACH_ID] = simpleDriverStruct("NV0000_CTRL_GPU_WAIT_ATTACH_ID_PARAMS")
 				structs.controlStructs[nvgpu.NV0080_CTRL_CMD_PERF_CUDA_LIMIT_SET_CONTROL] = simpleDriverStruct("NV0080_CTRL_PERF_CUDA_LIMIT_CONTROL_PARAMS")
 				structs.controlStructs[nvgpu.NV2080_CTRL_CMD_PERF_GET_CURRENT_PSTATE] = simpleDriverStruct("NV2080_CTRL_PERF_GET_CURRENT_PSTATE_PARAMS")
-				// NV2081_BINAPI forwards all control commands to the GSP in
-				// src/nvidia/src/kernel/rmapi/binary_api.c:binapiControl_IMPL().
-				// As such, there are no structs defined in the driver for this.
-				structs.controlStructs[(nvgpu.NV2081_BINAPI<<16)|0x0108] = nil
 				structs.controlStructs[nvgpu.NV0000_CTRL_CMD_SYSTEM_GET_P2P_CAPS] = driverStructWithName(nvgpu.NV0000_CTRL_SYSTEM_GET_P2P_CAPS_PARAMS_V550{}, "NV0000_CTRL_SYSTEM_GET_P2P_CAPS_PARAMS")
 				structs.uvmStructs[nvgpu.UVM_SET_PREFERRED_LOCATION] = driverStructWithName(nvgpu.UVM_SET_PREFERRED_LOCATION_PARAMS_V550{}, "UVM_SET_PREFERRED_LOCATION_PARAMS")
 				structs.uvmStructs[nvgpu.UVM_MIGRATE] = driverStructWithName(nvgpu.UVM_MIGRATE_PARAMS_V550{}, "UVM_MIGRATE_PARAMS")
 				structs.allocationStructs[nvgpu.NVENC_SW_SESSION] = driverStructs(nvgpu.NVA0BC_ALLOC_PARAMETERS{})
-
-				// The following IOCTLS are not observed starting in 550.40.07.
-				delete(structs.controlStructs, nvgpu.UNKNOWN_CONTROL_COMMAND_A0830104)
 				return structs
 			}
 

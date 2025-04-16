@@ -820,6 +820,12 @@ func rmControl(fi *frontendIoctlState) (uintptr, error) {
 		// src/nvidia/interface/deprecated/rmapi_gss_legacy_control.c:RmGssLegacyRpcCmd().
 		return rmControlSimple(fi, &ioctlParams)
 	}
+	if (ioctlParams.Cmd>>16)&0xffff == nvgpu.NV2081_BINAPI {
+		// NV2081_BINAPI forwards all control commands to the GSP in
+		// src/nvidia/src/kernel/rmapi/binary_api.c:binapiControl_IMPL().
+		// Consequently, its parameters cannot reasonably contain pointers.
+		return rmControlSimple(fi, &ioctlParams)
+	}
 	// Implementors:
 	// - Top two bytes of Cmd specifies class; third byte specifies category;
 	// fourth byte specifies "message ID" (command within class/category).
@@ -840,7 +846,11 @@ func rmControl(fi *frontendIoctlState) (uintptr, error) {
 	if err != nil {
 		if handleErr, ok := err.(*errHandler); ok {
 			fi.ctx.Warningf("nvproxy: %v for control command %#x (paramsSize=%d)", handleErr, ioctlParams.Cmd, ioctlParams.ParamsSize)
-			return 0, linuxerr.EINVAL
+			// See src/nvidia/src/libraries/resserv/src/rs_resource.c:resControlLookup_IMPL()
+			// when pEntry is null.
+			ioctlParams.Status = nvgpu.NV_ERR_NOT_SUPPORTED
+			_, err := ioctlParams.CopyOut(fi.t, fi.ioctlParamsAddr)
+			return 0, err
 		}
 	}
 	return result, err
@@ -869,12 +879,6 @@ func rmControlSimple(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54_PARAMETER
 		return n, err
 	}
 	return n, nil
-}
-
-func ctrlFailureWithStatus(status uint32) func(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54_PARAMETERS) (uintptr, error) {
-	return func(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54_PARAMETERS) (uintptr, error) {
-		return 0, frontendFailWithStatus(fi, ioctlParams, status)
-	}
 }
 
 func ctrlHasFrontendFD[Params any, PtrParams hasFrontendFDPtr[Params]](fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54_PARAMETERS) (uintptr, error) {
