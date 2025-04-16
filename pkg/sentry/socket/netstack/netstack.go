@@ -31,6 +31,7 @@ import (
 	"io"
 	"math"
 	"reflect"
+	"strconv"
 	"time"
 
 	"golang.org/x/sys/unix"
@@ -97,6 +98,43 @@ func mustCreateGauge(name, description string) *tcpip.StatCounter {
 			Description: description,
 		}, statCounterValue(&cm))
 	return &cm
+}
+
+const (
+	maxSocketOptionNameValue = 100
+)
+
+var (
+	socketLevelSocketFieldValue = metric.FieldValue{"SOCKET"}
+	socketLevelTCPFieldValue    = metric.FieldValue{"TCP"}
+	socketLevelICMPV6FieldValue = metric.FieldValue{"ICMPV6"}
+	socketLevelIPFieldValue     = metric.FieldValue{"IP"}
+	socketLevelIPV6FieldValue   = metric.FieldValue{"IPV6"}
+	socketLevelPacketFieldValue = metric.FieldValue{"PACKET"}
+
+	allowedSocketOptionLevels     = []*metric.FieldValue{&socketLevelSocketFieldValue, &socketLevelTCPFieldValue, &socketLevelICMPV6FieldValue, &socketLevelIPFieldValue, &socketLevelIPV6FieldValue, &socketLevelPacketFieldValue}
+	allowedSocketOptionNameValues = initSocketMetricFields()
+
+	unimplementedSetSocketOptionMetric = mustCreateSocketMetric("/netstack/socket/unimplemented_set_socket_option", "Number of times SetSocketOption was called with an unimplemented option.", metric.NewField("level", allowedSocketOptionLevels[:]...), metric.NewField("name", allowedSocketOptionNameValues[:]...))
+	unknownSetSocketOptionMetric       = mustCreateSocketMetric("/netstack/socket/unknown_set_socket_option", "Number of times SetSocketOption was called with an unknown option.", metric.NewField("level", allowedSocketOptionLevels[:]...))
+)
+
+func initSocketMetricFields() []*metric.FieldValue {
+	var values []*metric.FieldValue
+	for i := 0; i < maxSocketOptionNameValue; i++ {
+		values = append(values, &metric.FieldValue{strconv.Itoa(i)})
+	}
+	return values
+}
+
+func mustCreateSocketMetric(name, description string, fields ...metric.Field) *metric.Uint64Metric {
+	return metric.MustCreateNewUint64Metric(name,
+		metric.Uint64Metadata{
+			Cumulative:  true,
+			Sync:        true,
+			Description: description,
+			Fields:      fields,
+		})
 }
 
 // Metrics contains metrics exported by netstack.
@@ -1933,6 +1971,18 @@ func clampBufSize(newSz, min, max int64, ignoreMax bool) int64 {
 	return newSz
 }
 
+func inSocketOptionRange(name int) bool {
+	return name >= 0 && name <= maxSocketOptionNameValue
+}
+
+func incrementBadSetSocketOptionMetric(fieldValue *metric.FieldValue, name int) {
+	if inSocketOptionRange(name) {
+		unimplementedSetSocketOptionMetric.Increment(fieldValue, allowedSocketOptionNameValues[name])
+	} else {
+		unknownSetSocketOptionMetric.Increment(&socketLevelSocketFieldValue)
+	}
+}
+
 // setSockOptSocket implements SetSockOpt when level is SOL_SOCKET.
 func setSockOptSocket(t *kernel.Task, s socket.Socket, ep commonEndpoint, name int, optVal []byte) *syserr.Error {
 	switch name {
@@ -2116,7 +2166,7 @@ func setSockOptSocket(t *kernel.Task, s socket.Socket, ep commonEndpoint, name i
 			return err
 		}
 	}
-
+	incrementBadSetSocketOptionMetric(&socketLevelSocketFieldValue, name)
 	return nil
 }
 
@@ -2255,7 +2305,7 @@ func setSockOptTCP(t *kernel.Task, s socket.Socket, ep commonEndpoint, name int,
 	case linux.TCP_REPAIR_OPTIONS:
 		// Not supported.
 	}
-
+	incrementBadSetSocketOptionMetric(&socketLevelTCPFieldValue, name)
 	return nil
 }
 
@@ -2278,6 +2328,9 @@ func setSockOptICMPv6(t *kernel.Task, s socket.Socket, ep commonEndpoint, name i
 
 		req.UnmarshalUnsafe(optVal)
 		return syserr.TranslateNetstackError(ep.SetSockOpt(&tcpip.ICMPv6Filter{DenyType: req.Filter}))
+	}
+	if name < maxSocketOptionNameValue {
+		unimplementedSetSocketOptionMetric.Increment(&metric.FieldValue{"ICMPV6"}, &metric.FieldValue{strconv.Itoa(name)})
 	}
 
 	return nil
@@ -2447,7 +2500,7 @@ func setSockOptIPv6(t *kernel.Task, s socket.Socket, ep commonEndpoint, name int
 		log.Infof("IP6T_SO_SET_ADD_COUNTERS is not supported")
 		return nil
 	}
-
+	incrementBadSetSocketOptionMetric(&socketLevelIPV6FieldValue, name)
 	return nil
 }
 
@@ -2746,6 +2799,7 @@ func setSockOptIP(t *kernel.Task, s socket.Socket, ep commonEndpoint, name int, 
 		linux.MCAST_UNBLOCK_SOURCE:
 		// Not supported.
 	}
+	incrementBadSetSocketOptionMetric(&socketLevelIPFieldValue, name)
 
 	return nil
 }
