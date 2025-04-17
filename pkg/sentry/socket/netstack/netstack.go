@@ -120,9 +120,9 @@ var (
 )
 
 func initSocketMetricFields() []*metric.FieldValue {
-	var values []*metric.FieldValue
-	for i := 0; i < maxSocketOptionNameValue; i++ {
-		values = append(values, &metric.FieldValue{strconv.Itoa(i)})
+	values := make([]*metric.FieldValue, maxSocketOptionNameValue+1)
+	for i := 0; i <= maxSocketOptionNameValue; i++ {
+		values[i] = &metric.FieldValue{strconv.Itoa(i)}
 	}
 	return values
 }
