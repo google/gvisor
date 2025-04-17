@@ -17,6 +17,18 @@ go_template_instance(
     },
 )
 
+go_template_instance(
+    name = "atomicptrmap_tid_vcpu",
+    out = "atomicptrmap_tid_vcpu_unsafe.go",
+    package = "kvm",
+    prefix = "vCPUsByTID",
+    template = "//pkg/sync/atomicptrmap:generic_atomicptrmap",
+    types = {
+        "Key": "uint64",
+        "Value": "vCPU",
+    },
+)
+
 config_setting(
     name = "debug_build",
     values = {
@@ -31,6 +43,7 @@ go_library(
         "address_space_amd64.go",
         "address_space_arm64.go",
         "atomicptr_machine_unsafe.go",
+        "atomicptrmap_tid_vcpu_unsafe.go",
         "bluepill.go",
         "bluepill_allocator.go",
         "bluepill_amd64.go",
@@ -76,6 +89,7 @@ go_library(
         "//pkg/context",
         "//pkg/cpuid",
         "//pkg/fd",
+        "//pkg/gohacks",
         "//pkg/hostarch",
         "//pkg/hostos",
         "//pkg/hostsyscall",
@@ -130,6 +144,7 @@ go_test(
         "//pkg/sentry/platform",
         "//pkg/sentry/platform/kvm/testutil",
         "//pkg/sentry/time",
+        "//pkg/sync",
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )
@@ -164,6 +179,7 @@ go_test(
         "//pkg/sentry/platform",
         "//pkg/sentry/platform/kvm/testutil",
         "//pkg/sentry/time",
+        "//pkg/sync",
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )

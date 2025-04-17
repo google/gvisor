@@ -17,6 +17,7 @@
 package atomicptrmap
 
 import (
+	"math/rand/v2"
 	"sync/atomic"
 	"unsafe"
 
@@ -56,7 +57,7 @@ type defaultHasher struct {
 // Init initializes the Hasher.
 func (h *defaultHasher) Init() {
 	h.fn = sync.MapKeyHasher(map[Key]*Value(nil))
-	h.seed = sync.RandUintptr()
+	h.seed = uintptr(rand.Uint64())
 }
 
 // Hash returns the hash value for the given Key.
@@ -430,15 +431,18 @@ func (shard *apmShard) rehash(oldSlots unsafe.Pointer) {
 //
 // f must not call other methods on m.
 func (m *AtomicPtrMap) Range(f func(key Key, val *Value) bool) {
+	// Randomize start position for consistency with Go maps.
+	start := uintptr(rand.Uint64())
+
 	for si := 0; si < len(m.shards); si++ {
 		shard := &m.shards[si]
-		if !shard.doRange(f) {
+		if !shard.doRange(f, start) {
 			return
 		}
 	}
 }
 
-func (shard *apmShard) doRange(f func(key Key, val *Value) bool) bool {
+func (shard *apmShard) doRange(f func(key Key, val *Value) bool, start uintptr) bool {
 	// We have to lock rehashMu because if we handled races with rehashing by
 	// retrying, f could see the same key twice.
 	shard.rehashMu.Lock()
@@ -448,14 +452,19 @@ func (shard *apmShard) doRange(f func(key Key, val *Value) bool) bool {
 		return true
 	}
 	mask := shard.mask
-	for i := uintptr(0); i <= mask; i++ {
+	start &= mask
+	i := start
+	for {
 		slot := apmSlotAt(slots, i)
 		slotVal := atomic.LoadPointer(&slot.val)
-		if slotVal == nil || slotVal == tombstone() {
-			continue
+		if slotVal != nil && slotVal != tombstone() {
+			if !f(slot.key, (*Value)(slotVal)) {
+				return false
+			}
 		}
-		if !f(slot.key, (*Value)(slotVal)) {
-			return false
+		i = (i + 1) & mask
+		if i == start {
+			break
 		}
 	}
 	return true
@@ -469,6 +478,9 @@ func (shard *apmShard) doRange(f func(key Key, val *Value) bool) bool {
 //
 //   - It is safe for f to call other methods on m.
 func (m *AtomicPtrMap) RangeRepeatable(f func(key Key, val *Value) bool) {
+	// Randomize start position for consistency with Go maps.
+	start := uintptr(rand.Uint64())
+
 	for si := 0; si < len(m.shards); si++ {
 		shard := &m.shards[si]
 
@@ -483,17 +495,22 @@ func (m *AtomicPtrMap) RangeRepeatable(f func(key Key, val *Value) bool) {
 			continue
 		}
 
-		for i := uintptr(0); i <= mask; i++ {
+		startMask := start & mask
+		i := startMask
+		for {
 			slot := apmSlotAt(slots, i)
 			slotVal := atomic.LoadPointer(&slot.val)
 			if slotVal == evacuated() {
 				goto retry
 			}
-			if slotVal == nil || slotVal == tombstone() {
-				continue
+			if slotVal != nil && slotVal != tombstone() {
+				if !f(slot.key, (*Value)(slotVal)) {
+					return
+				}
 			}
-			if !f(slot.key, (*Value)(slotVal)) {
-				return
+			i = (i + 1) & mask
+			if i == startMask {
+				break
 			}
 		}
 	}
