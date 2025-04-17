@@ -432,3 +432,88 @@ func TestParseCPUQuota(t *testing.T) {
 		}
 	}
 }
+
+func TestSet(t *testing.T) {
+	for _, tc := range []struct {
+		name             string
+		initialCPUMax    string
+		initialMemMax    string
+		updatedResources *specs.LinuxResources
+		wantCPUQuota     float64
+		wantMemory       uint64
+	}{
+		{
+			name:          "update cpu and memory",
+			initialCPUMax: "100 100",
+			initialMemMax: "1024",
+			updatedResources: &specs.LinuxResources{
+				CPU: &specs.LinuxCPU{
+					Quota:  int64Ptr(100),
+					Period: uint64Ptr(50),
+				},
+				Memory: &specs.LinuxMemory{
+					Limit: int64Ptr(2048),
+				},
+			},
+			wantCPUQuota: 2.0,
+			wantMemory:   2048,
+		},
+		{
+			name:          "update cpu only",
+			initialCPUMax: "100 100",
+			initialMemMax: "1024",
+			updatedResources: &specs.LinuxResources{
+				CPU: &specs.LinuxCPU{
+					Quota:  int64Ptr(150),
+					Period: uint64Ptr(50),
+				},
+			},
+			wantCPUQuota: 3.0,
+			wantMemory:   1024,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir, err := os.MkdirTemp(testutil.TmpDir(), "cgroup")
+			if err != nil {
+				t.Fatalf("error creating temporary directory: %v", err)
+			}
+			defer os.RemoveAll(dir)
+
+			cg := &cgroupV2{
+				Mountpoint:  dir,
+				Path:        "user.slice",
+				Controllers: mandatoryControllers,
+			}
+			if err := os.MkdirAll(filepath.Join(cg.Mountpoint, cg.Path), 0o777); err != nil {
+				t.Fatalf("os.MkdirAll(): %v", err)
+			}
+
+			if err := os.WriteFile(filepath.Join(cg.Mountpoint, cg.Path, "cpu.max"), []byte(tc.initialCPUMax), 0o777); err != nil {
+				t.Fatalf("os.WriteFile(): %v", err)
+			}
+			if err := os.WriteFile(filepath.Join(cg.Mountpoint, cg.Path, "memory.max"), []byte(tc.initialMemMax), 0o777); err != nil {
+				t.Fatalf("os.WriteFile(): %v", err)
+			}
+
+			if err := cg.Set(tc.updatedResources); err != nil {
+				t.Fatalf("Set(): %v", err)
+			}
+
+			cpuQuota, err := cg.CPUQuota()
+			if err != nil {
+				t.Fatalf("CPUQuota(): %v", err)
+			}
+			if cpuQuota != tc.wantCPUQuota {
+				t.Fatalf("After Set(), CPUQuota() = %f, want %f", cpuQuota, tc.wantCPUQuota)
+			}
+
+			mem, err := cg.MemoryLimit()
+			if err != nil {
+				t.Fatalf("MemoryLimit(): %v", err)
+			}
+			if mem != tc.wantMemory {
+				t.Fatalf("After Set(), MemoryLimit() = %d, want %d", mem, tc.wantMemory)
+			}
+		})
+	}
+}
