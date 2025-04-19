@@ -140,6 +140,7 @@ func (i *InternalData) StateTypeName() string {
 func (i *InternalData) StateFields() []string {
 	return []string{
 		"ExtraInternalData",
+		"GVisorMarkerFile",
 		"Cgroups",
 	}
 }
@@ -150,7 +151,8 @@ func (i *InternalData) beforeSave() {}
 func (i *InternalData) StateSave(stateSinkObject state.Sink) {
 	i.beforeSave()
 	stateSinkObject.Save(0, &i.ExtraInternalData)
-	stateSinkObject.Save(1, &i.Cgroups)
+	stateSinkObject.Save(1, &i.GVisorMarkerFile)
+	stateSinkObject.Save(2, &i.Cgroups)
 }
 
 func (i *InternalData) afterLoad(context.Context) {}
@@ -158,7 +160,8 @@ func (i *InternalData) afterLoad(context.Context) {}
 // +checklocksignore
 func (i *InternalData) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &i.ExtraInternalData)
-	stateSourceObject.Load(1, &i.Cgroups)
+	stateSourceObject.Load(1, &i.GVisorMarkerFile)
+	stateSourceObject.Load(2, &i.Cgroups)
 }
 
 func (i *implStatFS) StateTypeName() string {

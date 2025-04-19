@@ -872,7 +872,7 @@ func getMountNameAndOptions(spec *specs.Spec, conf *config.Config, m *mountInfo,
 		fsName = sys.Name
 
 	case proc.Name:
-		internalData = newProcInternalData(spec)
+		internalData = newProcInternalData(conf, spec)
 
 	case sys.Name:
 		sysData := &sys.InternalData{EnableTPUProxyPaths: specutils.TPUProxyIsEnabled(spec, conf)}

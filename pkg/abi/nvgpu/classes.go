@@ -92,6 +92,7 @@ const (
 	TURING_DMA_COPY_A                = 0x0000c5b5
 	TURING_COMPUTE_A                 = 0x0000c5c0
 	HOPPER_USERMODE_A                = 0x0000c661
+	BLACKWELL_USERMODE_A             = 0x0000c761
 	AMPERE_A                         = 0x0000c697
 	AMPERE_DMA_COPY_A                = 0x0000c6b5
 	AMPERE_COMPUTE_A                 = 0x0000c6c0
@@ -99,12 +100,21 @@ const (
 	AMPERE_COMPUTE_B                 = 0x0000c7c0
 	HOPPER_CHANNEL_GPFIFO_A          = 0x0000c86f
 	HOPPER_DMA_COPY_A                = 0x0000c8b5
+	BLACKWELL_CHANNEL_GPFIFO_A       = 0x0000c96f
+	BLACKWELL_DMA_COPY_A             = 0x0000c9b5
+	BLACKWELL_CHANNEL_GPFIFO_B       = 0x0000ca6f
+	BLACKWELL_DMA_COPY_B             = 0x0000cab5
 	ADA_A                            = 0x0000c997
 	ADA_COMPUTE_A                    = 0x0000c9c0
 	NV_CONFIDENTIAL_COMPUTE          = 0x0000cb33
 	HOPPER_A                         = 0x0000cb97
 	HOPPER_SEC2_WORK_LAUNCH_A        = 0x0000cba2
 	HOPPER_COMPUTE_A                 = 0x0000cbc0
+	BLACKWELL_INLINE_TO_MEMORY_A     = 0x0000cd40
+	BLACKWELL_A                      = 0x0000cd97
+	BLACKWELL_COMPUTE_A              = 0x0000cdc0
+	BLACKWELL_B                      = 0x0000ce97
+	BLACKWELL_COMPUTE_B              = 0x0000cec0
 )
 
 // From src/common/sdk/nvidia/inc/class/cl0000.h:

@@ -159,6 +159,12 @@ func (fs *filesystem) newStaticDir(ctx context.Context, creds *auth.Credentials,
 // +stateify savable
 type InternalData struct {
 	ExtraInternalData
+
+	// GVisorMarkerFile indicates whether a file named gvisor/kernel_is_gvisor
+	// should exist in the procfs.
+	GVisorMarkerFile bool
+
+	// Cgroups-internal data.
 	Cgroups map[string]string
 }
 

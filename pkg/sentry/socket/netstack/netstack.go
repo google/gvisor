@@ -31,6 +31,7 @@ import (
 	"io"
 	"math"
 	"reflect"
+	"strconv"
 	"time"
 
 	"golang.org/x/sys/unix"
@@ -97,6 +98,43 @@ func mustCreateGauge(name, description string) *tcpip.StatCounter {
 			Description: description,
 		}, statCounterValue(&cm))
 	return &cm
+}
+
+const (
+	maxSocketOptionNameValue = 100
+)
+
+var (
+	socketLevelSocketFieldValue = metric.FieldValue{"SOCKET"}
+	socketLevelTCPFieldValue    = metric.FieldValue{"TCP"}
+	socketLevelICMPV6FieldValue = metric.FieldValue{"ICMPV6"}
+	socketLevelIPFieldValue     = metric.FieldValue{"IP"}
+	socketLevelIPV6FieldValue   = metric.FieldValue{"IPV6"}
+	socketLevelPacketFieldValue = metric.FieldValue{"PACKET"}
+
+	allowedSocketOptionLevels     = []*metric.FieldValue{&socketLevelSocketFieldValue, &socketLevelTCPFieldValue, &socketLevelICMPV6FieldValue, &socketLevelIPFieldValue, &socketLevelIPV6FieldValue, &socketLevelPacketFieldValue}
+	allowedSocketOptionNameValues = initSocketMetricFields()
+
+	unimplementedSetSocketOptionMetric = mustCreateSocketMetric("/netstack/socket/unimplemented_set_socket_option", "Number of times SetSocketOption was called with an unimplemented option.", metric.NewField("level", allowedSocketOptionLevels[:]...), metric.NewField("name", allowedSocketOptionNameValues[:]...))
+	unknownSetSocketOptionMetric       = mustCreateSocketMetric("/netstack/socket/unknown_set_socket_option", "Number of times SetSocketOption was called with an unknown option.", metric.NewField("level", allowedSocketOptionLevels[:]...))
+)
+
+func initSocketMetricFields() []*metric.FieldValue {
+	values := make([]*metric.FieldValue, maxSocketOptionNameValue+1)
+	for i := 0; i <= maxSocketOptionNameValue; i++ {
+		values[i] = &metric.FieldValue{strconv.Itoa(i)}
+	}
+	return values
+}
+
+func mustCreateSocketMetric(name, description string, fields ...metric.Field) *metric.Uint64Metric {
+	return metric.MustCreateNewUint64Metric(name,
+		metric.Uint64Metadata{
+			Cumulative:  true,
+			Sync:        true,
+			Description: description,
+			Fields:      fields,
+		})
 }
 
 // Metrics contains metrics exported by netstack.
@@ -1933,6 +1971,18 @@ func clampBufSize(newSz, min, max int64, ignoreMax bool) int64 {
 	return newSz
 }
 
+func inSocketOptionRange(name int) bool {
+	return name >= 0 && name <= maxSocketOptionNameValue
+}
+
+func incrementBadSetSocketOptionMetric(fieldValue *metric.FieldValue, name int) {
+	if inSocketOptionRange(name) {
+		unimplementedSetSocketOptionMetric.Increment(fieldValue, allowedSocketOptionNameValues[name])
+	} else {
+		unknownSetSocketOptionMetric.Increment(&socketLevelSocketFieldValue)
+	}
+}
+
 // setSockOptSocket implements SetSockOpt when level is SOL_SOCKET.
 func setSockOptSocket(t *kernel.Task, s socket.Socket, ep commonEndpoint, name int, optVal []byte) *syserr.Error {
 	switch name {
@@ -2111,12 +2161,76 @@ func setSockOptSocket(t *kernel.Task, s socket.Socket, ep commonEndpoint, name i
 		v := hostarch.ByteOrder.Uint32(optVal)
 		ep.SocketOptions().SetRcvlowat(int32(v))
 		return nil
+	case linux.SO_DEBUG,
+		linux.SO_TYPE,
+		linux.SO_ERROR,
+		linux.SO_DONTROUTE,
+		linux.SO_PRIORITY,
+		linux.SO_BSDCOMPAT,
+		linux.SO_PEERCRED,
+		linux.SO_SNDLOWAT,
+		linux.SO_ATTACH_FILTER,
+		linux.SO_PEERNAME,
+		linux.SO_TIMESTAMP,
+		linux.SO_ACCEPTCONN,
+		linux.SO_PEERSEC,
+		linux.SO_SNDBUFFORCE,
+		linux.SO_PASSSEC,
+		linux.SO_TIMESTAMPNS,
+		linux.SO_MARK,
+		linux.SO_TIMESTAMPING,
+		linux.SO_PROTOCOL,
+		linux.SO_DOMAIN,
+		linux.SO_RXQ_OVFL,
+		linux.SO_WIFI_STATUS,
+		linux.SO_PEEK_OFF,
+		linux.SO_NOFCS,
+		linux.SO_LOCK_FILTER,
+		linux.SO_SELECT_ERR_QUEUE,
+		linux.SO_BUSY_POLL,
+		linux.SO_MAX_PACING_RATE,
+		linux.SO_BPF_EXTENSIONS,
+		linux.SO_INCOMING_CPU,
+		linux.SO_ATTACH_BPF,
+		linux.SO_ATTACH_REUSEPORT_CBPF,
+		linux.SO_ATTACH_REUSEPORT_EBPF,
+		linux.SO_CNX_ADVICE,
+		linux.SO_MEMINFO,
+		linux.SO_INCOMING_NAPI_ID,
+		linux.SO_COOKIE,
+		linux.SO_PEERGROUPS,
+		linux.SO_ZEROCOPY,
+		linux.SO_TXTIME,
+		linux.SO_BINDTOIFINDEX,
+		linux.SO_TIMESTAMP_NEW,
+		linux.SO_TIMESTAMPNS_NEW,
+		linux.SO_TIMESTAMPING_NEW,
+		linux.SO_RCVTIMEO_NEW,
+		linux.SO_SNDTIMEO_NEW,
+		linux.SO_DETACH_REUSEPORT_BPF,
+		linux.SO_PREFER_BUSY_POLL,
+		linux.SO_BUSY_POLL_BUDGET,
+		linux.SO_NETNS_COOKIE,
+		linux.SO_BUF_LOCK,
+		linux.SO_RESERVE_MEM,
+		linux.SO_TXREHASH,
+		linux.SO_RCVMARK,
+		linux.SO_PASSPIDFD,
+		linux.SO_PEERPIDFD,
+		linux.SO_DEVMEM_LINEAR,
+		linux.SO_DEVMEM_DMABUF,
+		linux.SO_DEVMEM_DONTNEED,
+		linux.SO_RCVPRIORITY:
+		unimplementedSetSocketOptionMetric.Increment(&socketLevelSocketFieldValue, allowedSocketOptionNameValues[name])
+		t.Kernel().EmitUnimplementedEvent(t, unix.SYS_SETSOCKOPT)
+		return nil
 	default:
 		if err, handled := setSockOptSocketCustom(t, s, ep, name, optVal); handled {
 			return err
 		}
 	}
-
+	unknownSetSocketOptionMetric.Increment(&socketLevelSocketFieldValue)
+	t.Kernel().EmitUnimplementedEvent(t, unix.SYS_SETSOCKOPT)
 	return nil
 }
 
@@ -2252,10 +2366,40 @@ func setSockOptTCP(t *kernel.Task, s socket.Socket, ep commonEndpoint, name int,
 
 		return syserr.TranslateNetstackError(ep.SetSockOptInt(tcpip.TCPWindowClampOption, int(v)))
 
-	case linux.TCP_REPAIR_OPTIONS:
+	case linux.TCP_INFO,
+		linux.TCP_MD5SIG,
+		linux.TCP_THIN_LINEAR_TIMEOUTS,
+		linux.TCP_THIN_DUPACK,
+		linux.TCP_REPAIR,
+		linux.TCP_REPAIR_QUEUE,
+		linux.TCP_QUEUE_SEQ,
+		linux.TCP_REPAIR_OPTIONS,
+		linux.TCP_FASTOPEN,
+		linux.TCP_TIMESTAMP,
+		linux.TCP_NOTSENT_LOWAT,
+		linux.TCP_CC_INFO,
+		linux.TCP_SAVE_SYN,
+		linux.TCP_SAVED_SYN,
+		linux.TCP_REPAIR_WINDOW,
+		linux.TCP_FASTOPEN_CONNECT,
+		linux.TCP_ULP,
+		linux.TCP_MD5SIG_EXT,
+		linux.TCP_FASTOPEN_KEY,
+		linux.TCP_FASTOPEN_NO_COOKIE,
+		linux.TCP_ZEROCOPY_RECEIVE,
+		linux.TCP_INQ,
+		linux.TCP_TX_DELAY:
 		// Not supported.
+		unimplementedSetSocketOptionMetric.Increment(&socketLevelTCPFieldValue, allowedSocketOptionNameValues[name])
+		t.Kernel().EmitUnimplementedEvent(t, unix.SYS_SETSOCKOPT)
+		return nil
+	default:
+		if err, handled := setSockOptTCPCustom(t, s, ep, name, optVal); handled {
+			return err
+		}
 	}
-
+	unknownSetSocketOptionMetric.Increment(&socketLevelTCPFieldValue)
+	t.Kernel().EmitUnimplementedEvent(t, unix.SYS_SETSOCKOPT)
 	return nil
 }
 
@@ -2278,6 +2422,13 @@ func setSockOptICMPv6(t *kernel.Task, s socket.Socket, ep commonEndpoint, name i
 
 		req.UnmarshalUnsafe(optVal)
 		return syserr.TranslateNetstackError(ep.SetSockOpt(&tcpip.ICMPv6Filter{DenyType: req.Filter}))
+	default:
+		if err, handled := setSockOptICMPv6Custom(t, s, ep, name, optVal); handled {
+			return err
+		}
+	}
+	if name < maxSocketOptionNameValue {
+		unimplementedSetSocketOptionMetric.Increment(&socketLevelICMPV6FieldValue, allowedSocketOptionNameValues[name])
 	}
 
 	return nil
@@ -2446,8 +2597,56 @@ func setSockOptIPv6(t *kernel.Task, s socket.Socket, ep commonEndpoint, name int
 	case linux.IP6T_SO_SET_ADD_COUNTERS:
 		log.Infof("IP6T_SO_SET_ADD_COUNTERS is not supported")
 		return nil
+	case linux.IPV6_MULTICAST_LOOP,
+		linux.IPV6_MULTICAST_HOPS,
+		linux.IPV6_MTU,
+		linux.IPV6_MINHOPCOUNT,
+		linux.IPV6_RECVERR_RFC4884,
+		linux.IPV6_MULTICAST_ALL,
+		linux.IPV6_AUTOFLOWLABEL,
+		linux.IPV6_DONTFRAG,
+		linux.IPV6_ROUTER_ALERT_ISOLATE,
+		linux.IPV6_MTU_DISCOVER,
+		linux.IPV6_FLOWINFO_SEND,
+		linux.IPV6_ADDR_PREFERENCES,
+		linux.IPV6_MULTICAST_IF,
+		linux.IPV6_UNICAST_IF,
+		linux.IPV6_ADDRFORM,
+		linux.IPV6_2292PKTINFO,
+		linux.IPV6_2292HOPLIMIT,
+		linux.IPV6_RECVRTHDR,
+		linux.IPV6_2292RTHDR,
+		linux.IPV6_RECVHOPOPTS,
+		linux.IPV6_2292HOPOPTS,
+		linux.IPV6_RECVDSTOPTS,
+		linux.IPV6_2292DSTOPTS,
+		linux.IPV6_FLOWINFO,
+		linux.IPV6_RECVPATHMTU,
+		linux.IPV6_TRANSPARENT,
+		linux.IPV6_FREEBIND,
+		linux.IPV6_HOPOPTS,
+		linux.IPV6_RTHDRDSTOPTS,
+		linux.IPV6_RTHDR,
+		linux.IPV6_DSTOPTS,
+		linux.IPV6_2292PKTOPTIONS,
+		linux.MCAST_MSFILTER,
+		linux.IPV6_FLOWLABEL_MGR,
+		linux.IPV6_RECVFRAGSIZE:
+		// Not supported, but we choose to silently ignore these for compatibility
+		// with old gVisor behavior.
+		//
+		// FIXME(lucasmanning): Remove the silent failure once we're confident
+		// that no users are relying on it.
+		unimplementedSetSocketOptionMetric.Increment(&socketLevelIPV6FieldValue, allowedSocketOptionNameValues[name])
+		t.Kernel().EmitUnimplementedEvent(t, unix.SYS_SETSOCKOPT)
+		return nil
+	default:
+		if err, handled := setSockOptIPv6Custom(t, s, ep, name, optVal); handled {
+			return err
+		}
 	}
-
+	unknownSetSocketOptionMetric.Increment(&socketLevelIPV6FieldValue)
+	t.Kernel().EmitUnimplementedEvent(t, unix.SYS_SETSOCKOPT)
 	return nil
 }
 
@@ -2690,10 +2889,6 @@ func setSockOptIP(t *kernel.Task, s socket.Socket, ep commonEndpoint, name int, 
 		// Stack must be a netstack stack.
 		return netfilter.SetEntries(t.Credentials().UserNamespace, stk.(*Stack).Stack, optVal, false)
 
-	case linux.IPT_SO_SET_ADD_COUNTERS:
-		log.Infof("IPT_SO_SET_ADD_COUNTERS is not supported")
-		return nil
-
 	case linux.IP_MTU_DISCOVER:
 		if len(optVal) == 0 {
 			return nil
@@ -2717,36 +2912,51 @@ func setSockOptIP(t *kernel.Task, s socket.Socket, ep commonEndpoint, name int, 
 			return syserr.ErrNotSupported
 		}
 		return syserr.TranslateNetstackError(ep.SetSockOptInt(tcpip.MTUDiscoverOption, int(v)))
-
-	case linux.IP_ADD_SOURCE_MEMBERSHIP,
-		linux.IP_BIND_ADDRESS_NO_PORT,
-		linux.IP_BLOCK_SOURCE,
-		linux.IP_CHECKSUM,
-		linux.IP_DROP_SOURCE_MEMBERSHIP,
-		linux.IP_FREEBIND,
-		linux.IP_IPSEC_POLICY,
-		linux.IP_MINTTL,
-		linux.IP_MSFILTER,
-		linux.IP_MULTICAST_ALL,
-		linux.IP_NODEFRAG,
-		linux.IP_OPTIONS,
-		linux.IP_PASSSEC,
-		linux.IP_RECVFRAGSIZE,
-		linux.IP_RECVOPTS,
+	case linux.IP_RECVOPTS,
 		linux.IP_RETOPTS,
+		linux.IP_ROUTER_ALERT,
+		linux.IP_FREEBIND,
+		linux.IP_PASSSEC,
 		linux.IP_TRANSPARENT,
-		linux.IP_UNBLOCK_SOURCE,
+		linux.IP_MINTTL,
+		linux.IP_NODEFRAG,
+		linux.IP_BIND_ADDRESS_NO_PORT,
 		linux.IP_UNICAST_IF,
-		linux.IP_XFRM_POLICY,
-		linux.MCAST_BLOCK_SOURCE,
-		linux.MCAST_JOIN_SOURCE_GROUP,
+		linux.IP_MULTICAST_ALL,
+		linux.IP_CHECKSUM,
+		linux.IP_RECVFRAGSIZE,
+		linux.IP_RECVERR_RFC4884,
+		linux.IP_LOCAL_PORT_RANGE,
+		linux.IP_OPTIONS,
+		linux.IP_MSFILTER,
+		linux.IP_BLOCK_SOURCE,
+		linux.IP_UNBLOCK_SOURCE,
+		linux.IP_ADD_SOURCE_MEMBERSHIP,
+		linux.IP_DROP_SOURCE_MEMBERSHIP,
 		linux.MCAST_LEAVE_GROUP,
+		linux.MCAST_JOIN_SOURCE_GROUP,
 		linux.MCAST_LEAVE_SOURCE_GROUP,
+		linux.MCAST_BLOCK_SOURCE,
+		linux.MCAST_UNBLOCK_SOURCE,
 		linux.MCAST_MSFILTER,
-		linux.MCAST_UNBLOCK_SOURCE:
-		// Not supported.
+		linux.IP_IPSEC_POLICY,
+		linux.IP_XFRM_POLICY,
+		linux.IPT_SO_SET_ADD_COUNTERS:
+		// Not supported, but we choose to silently ignore these for compatibility
+		// with old gVisor behavior.
+		//
+		// FIXME(lucasmanning): Remove the silent failure once we're confident
+		// that no users are relying on it.
+		unimplementedSetSocketOptionMetric.Increment(&socketLevelIPFieldValue, allowedSocketOptionNameValues[name])
+		t.Kernel().EmitUnimplementedEvent(t, unix.SYS_SETSOCKOPT)
+		return nil
+	default:
+		if err, handled := setSockOptIPCustom(t, s, ep, name, optVal); handled {
+			return err
+		}
 	}
-
+	unknownSetSocketOptionMetric.Increment(&socketLevelIPFieldValue)
+	t.Kernel().EmitUnimplementedEvent(t, unix.SYS_SETSOCKOPT)
 	return nil
 }
 
@@ -2802,8 +3012,12 @@ func setSockOptPacket(t *kernel.Task, s socket.Socket, ep commonEndpoint, name i
 		return syserr.TranslateNetstackError(ep.SetSockOptInt(tcpip.PacketMMapReserveOption, int(v)))
 	case linux.PACKET_ADD_MEMBERSHIP, linux.PACKET_AUXDATA:
 		// Silently ignore these options.
+		unimplementedSetSocketOptionMetric.Increment(&socketLevelPacketFieldValue, allowedSocketOptionNameValues[name])
+		t.Kernel().EmitUnimplementedEvent(t, unix.SYS_SETSOCKOPT)
 		return nil
 	default:
+		unknownSetSocketOptionMetric.Increment(&socketLevelIPFieldValue)
+		t.Kernel().EmitUnimplementedEvent(t, unix.SYS_SETSOCKOPT)
 		return syserr.ErrNotSupported
 	}
 }

@@ -37,3 +37,19 @@ func setSockOptSocketCustom(t *kernel.Task, s socket.Socket, ep commonEndpoint, 
 func getSockOptSocketCustom(t *kernel.Task, s socket.Socket, ep commonEndpoint, name int, outLen int) (marshal.Marshallable, *syserr.Error, bool) {
 	return nil, nil, false
 }
+
+func setSockOptIPCustom(t *kernel.Task, s socket.Socket, ep commonEndpoint, name int, optVal []byte) (*syserr.Error, bool) {
+	return nil, false
+}
+
+func setSockOptIPv6Custom(t *kernel.Task, s socket.Socket, ep commonEndpoint, name int, optVal []byte) (*syserr.Error, bool) {
+	return nil, false
+}
+
+func setSockOptTCPCustom(t *kernel.Task, s socket.Socket, ep commonEndpoint, name int, optVal []byte) (*syserr.Error, bool) {
+	return nil, false
+}
+
+func setSockOptICMPv6Custom(t *kernel.Task, s socket.Socket, ep commonEndpoint, name int, optVal []byte) (*syserr.Error, bool) {
+	return nil, false
+}
