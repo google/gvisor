@@ -19,6 +19,7 @@ go_binary(
         "//test/syscalls/linux:__pkg__",
     ],
     deps = [
+        "//pkg/gvisordetect",
         "//pkg/rand",
         "//pkg/test/testutil",
         "//pkg/unet",

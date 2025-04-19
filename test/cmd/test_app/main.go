@@ -34,6 +34,7 @@ import (
 
 	"github.com/google/subcommands"
 	"github.com/kr/pty"
+	"gvisor.dev/gvisor/pkg/gvisordetect"
 	gvisorrand "gvisor.dev/gvisor/pkg/rand"
 	"gvisor.dev/gvisor/pkg/test/testutil"
 	"gvisor.dev/gvisor/runsc/flag"
@@ -47,6 +48,7 @@ func main() {
 	subcommands.Register(new(fdSender), "")
 	subcommands.Register(new(forkBomb), "")
 	subcommands.Register(new(fsTreeCreator), "")
+	subcommands.Register(new(gvisorDetect), "")
 	subcommands.Register(new(ptyRunner), "")
 	subcommands.Register(new(reaper), "")
 	subcommands.Register(new(syscall), "")
@@ -273,6 +275,47 @@ func (c *taskTree) Execute(ctx context.Context, f *flag.FlagSet, args ...any) su
 	}
 
 	return subcommands.ExitSuccess
+}
+
+type gvisorDetect struct {
+	exitCodeOnGVisor    int
+	exitCodeOnNotGVisor int
+}
+
+// Name implements subcommands.Command.Name.
+func (*gvisorDetect) Name() string {
+	return "gvisor-detect"
+}
+
+// Synopsis implements subcommands.Command.Synopsys.
+func (*gvisorDetect) Synopsis() string {
+	return "checks if the process is running inside gVisor by checking for the marker file"
+}
+
+// Usage implements subcommands.Command.Usage.
+func (*gvisorDetect) Usage() string {
+	return "gvisor-detect [flags]"
+}
+
+// SetFlags implements subcommands.Command.SetFlags.
+func (c *gvisorDetect) SetFlags(f *flag.FlagSet) {
+	f.IntVar(&c.exitCodeOnGVisor, "exit-code-on-gvisor", 0, "exit code to return if running in gVisor")
+	f.IntVar(&c.exitCodeOnNotGVisor, "exit-code-on-not-gvisor", 42, "exit code to return if not running in gVisor")
+}
+
+// Execute implements subcommands.Command.Execute.
+func (c *gvisorDetect) Execute(ctx context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
+	isGVisor, err := gvisordetect.RunningInGVisor()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error checking whether we are running in gVisor: %v\n", err)
+		return subcommands.ExitFailure
+	}
+	if isGVisor {
+		fmt.Println("running with gVisor kernel")
+		return subcommands.ExitStatus(c.exitCodeOnGVisor)
+	}
+	fmt.Println("running with non-gVisor kernel")
+	return subcommands.ExitStatus(c.exitCodeOnNotGVisor)
 }
 
 type forkBomb struct {

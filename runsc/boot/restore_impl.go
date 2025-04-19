@@ -21,6 +21,7 @@ import (
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/proc"
+	"gvisor.dev/gvisor/runsc/config"
 )
 
 func preSaveImpl(*Loader, *control.SaveOpts) error {
@@ -37,8 +38,10 @@ func postResumeImpl(*Loader) error {
 	return nil
 }
 
-func newProcInternalData(*specs.Spec) *proc.InternalData {
-	return &proc.InternalData{}
+func newProcInternalData(conf *config.Config, _ *specs.Spec) *proc.InternalData {
+	return &proc.InternalData{
+		GVisorMarkerFile: conf.GVisorMarkerFile,
+	}
 }
 
 func (l *Loader) kernelInitExtra() {}

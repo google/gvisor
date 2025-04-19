@@ -388,6 +388,9 @@ type Config struct {
 	// RestoreSpecValidation indicates the level of spec validation to be
 	// performed during restore.
 	RestoreSpecValidation RestoreSpecValidationPolicy `flag:"restore-spec-validation"`
+
+	// GVisorMarkerFile enables the /proc/gvisor/kernel_is_gvisor marker file.
+	GVisorMarkerFile bool `flag:"gvisor-marker-file"`
 }
 
 func (c *Config) validate() error {

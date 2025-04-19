@@ -4093,6 +4093,26 @@ func TestCheckpointResume(t *testing.T) {
 	}
 }
 
+func TestMarkerFile(t *testing.T) {
+	app, err := testutil.FindFile("test/cmd/test_app/test_app")
+	if err != nil {
+		t.Fatal("error finding test_app:", err)
+	}
+	conf := testutil.TestConfig(t)
+
+	conf.GVisorMarkerFile = false
+	spec := testutil.NewSpecWithArgs(app, "gvisor-detect", "--exit-code-on-gvisor=1", "--exit-code-on-not-gvisor=0")
+	if err := run(spec, conf); err != nil {
+		t.Fatalf("unexpectedly detected gVisor when we expected to not be able to do so: %v", err)
+	}
+
+	conf.GVisorMarkerFile = true
+	spec = testutil.NewSpecWithArgs(app, "gvisor-detect", "--exit-code-on-gvisor=0", "--exit-code-on-not-gvisor=1")
+	if err := run(spec, conf); err != nil {
+		t.Fatalf("failed to detect gVisor when we expected to be able to do so: %v", err)
+	}
+}
+
 func TestIPv6DisableAllSysctl(t *testing.T) {
 	tests := []struct {
 		name         string
