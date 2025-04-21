@@ -145,13 +145,17 @@ func (ep *endpoint) Abort() {
 // Close implements tcpip.Endpoint.Close.
 func (ep *endpoint) Close() {
 	ep.mu.Lock()
-	defer ep.mu.Unlock()
-
 	if ep.closed {
+		ep.mu.Unlock()
 		return
 	}
-
-	ep.stack.UnregisterPacketEndpoint(ep.boundNIC, ep.boundNetProto, ep)
+	// Unregister the endpoint after releasing the lock to avoid a deadlock.
+	defer func() {
+		nic := ep.boundNIC
+		netProto := ep.boundNetProto
+		ep.mu.Unlock()
+		ep.stack.UnregisterPacketEndpoint(nic, netProto, ep)
+	}()
 
 	if ep.packetMMapEp != nil {
 		ep.packetMMapEp.Close()
