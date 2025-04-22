@@ -56,6 +56,7 @@ func forEachCmd(cb func(cmd subcommands.Command, group string), help *cli.Help) 
 	cb(new(cmd.Start), "")
 	cb(new(cmd.State), "")
 	cb(new(cmd.Tar), "")
+	cb(new(cmd.Update), "")
 	cb(new(cmd.Wait), "")
 
 	// Helpers.
