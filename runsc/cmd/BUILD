@@ -71,6 +71,7 @@ go_library(
         "symbolize.go",
         "syscalls.go",
         "umount_unsafe.go",
+        "update.go",
         "usage.go",
         "wait.go",
         "write_control.go",
