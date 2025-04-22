@@ -105,8 +105,8 @@ func (s Static) normalize() {
 	if fs.HasFeature(X86FeatureXSAVE) {
 		in := In{Eax: uint32(xSaveInfo)}
 		out := s[in]
-		out.Ecx = maxXsaveSize
-		out.Ebx = xsaveSize
+		out.Ecx = max(out.Ecx, maxXsaveSize)
+		out.Ebx = max(out.Ebx, xsaveSize)
 		s[in] = out
 	}
 }
