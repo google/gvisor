@@ -1971,16 +1971,13 @@ func clampBufSize(newSz, min, max int64, ignoreMax bool) int64 {
 	return newSz
 }
 
-func inSocketOptionRange(name int) bool {
-	return name >= 0 && name <= maxSocketOptionNameValue
-}
-
-func incrementBadSetSocketOptionMetric(fieldValue *metric.FieldValue, name int) {
-	if inSocketOptionRange(name) {
+func incrementBadSetSocketOptionMetric(t *kernel.Task, fieldValue *metric.FieldValue, name int) {
+	if name >= 0 && name <= maxSocketOptionNameValue {
 		unimplementedSetSocketOptionMetric.Increment(fieldValue, allowedSocketOptionNameValues[name])
 	} else {
 		unknownSetSocketOptionMetric.Increment(&socketLevelSocketFieldValue)
 	}
+	t.Kernel().EmitUnimplementedEvent(t, unix.SYS_SETSOCKOPT)
 }
 
 // setSockOptSocket implements SetSockOpt when level is SOL_SOCKET.
@@ -2221,16 +2218,14 @@ func setSockOptSocket(t *kernel.Task, s socket.Socket, ep commonEndpoint, name i
 		linux.SO_DEVMEM_DMABUF,
 		linux.SO_DEVMEM_DONTNEED,
 		linux.SO_RCVPRIORITY:
-		unimplementedSetSocketOptionMetric.Increment(&socketLevelSocketFieldValue, allowedSocketOptionNameValues[name])
-		t.Kernel().EmitUnimplementedEvent(t, unix.SYS_SETSOCKOPT)
+		incrementBadSetSocketOptionMetric(t, &socketLevelSocketFieldValue, name)
 		return nil
 	default:
 		if err, handled := setSockOptSocketCustom(t, s, ep, name, optVal); handled {
 			return err
 		}
 	}
-	unknownSetSocketOptionMetric.Increment(&socketLevelSocketFieldValue)
-	t.Kernel().EmitUnimplementedEvent(t, unix.SYS_SETSOCKOPT)
+	incrementBadSetSocketOptionMetric(t, &socketLevelSocketFieldValue, name)
 	return nil
 }
 
@@ -2390,16 +2385,14 @@ func setSockOptTCP(t *kernel.Task, s socket.Socket, ep commonEndpoint, name int,
 		linux.TCP_INQ,
 		linux.TCP_TX_DELAY:
 		// Not supported.
-		unimplementedSetSocketOptionMetric.Increment(&socketLevelTCPFieldValue, allowedSocketOptionNameValues[name])
-		t.Kernel().EmitUnimplementedEvent(t, unix.SYS_SETSOCKOPT)
+		incrementBadSetSocketOptionMetric(t, &socketLevelTCPFieldValue, name)
 		return nil
 	default:
 		if err, handled := setSockOptTCPCustom(t, s, ep, name, optVal); handled {
 			return err
 		}
 	}
-	unknownSetSocketOptionMetric.Increment(&socketLevelTCPFieldValue)
-	t.Kernel().EmitUnimplementedEvent(t, unix.SYS_SETSOCKOPT)
+	incrementBadSetSocketOptionMetric(t, &socketLevelTCPFieldValue, name)
 	return nil
 }
 
@@ -2427,10 +2420,7 @@ func setSockOptICMPv6(t *kernel.Task, s socket.Socket, ep commonEndpoint, name i
 			return err
 		}
 	}
-	if name < maxSocketOptionNameValue {
-		unimplementedSetSocketOptionMetric.Increment(&socketLevelICMPV6FieldValue, allowedSocketOptionNameValues[name])
-	}
-
+	incrementBadSetSocketOptionMetric(t, &socketLevelICMPV6FieldValue, name)
 	return nil
 }
 
@@ -2637,16 +2627,14 @@ func setSockOptIPv6(t *kernel.Task, s socket.Socket, ep commonEndpoint, name int
 		//
 		// FIXME(lucasmanning): Remove the silent failure once we're confident
 		// that no users are relying on it.
-		unimplementedSetSocketOptionMetric.Increment(&socketLevelIPV6FieldValue, allowedSocketOptionNameValues[name])
-		t.Kernel().EmitUnimplementedEvent(t, unix.SYS_SETSOCKOPT)
+		incrementBadSetSocketOptionMetric(t, &socketLevelIPV6FieldValue, name)
 		return nil
 	default:
 		if err, handled := setSockOptIPv6Custom(t, s, ep, name, optVal); handled {
 			return err
 		}
 	}
-	unknownSetSocketOptionMetric.Increment(&socketLevelIPV6FieldValue)
-	t.Kernel().EmitUnimplementedEvent(t, unix.SYS_SETSOCKOPT)
+	incrementBadSetSocketOptionMetric(t, &socketLevelIPV6FieldValue, name)
 	return nil
 }
 
@@ -2947,16 +2935,14 @@ func setSockOptIP(t *kernel.Task, s socket.Socket, ep commonEndpoint, name int, 
 		//
 		// FIXME(lucasmanning): Remove the silent failure once we're confident
 		// that no users are relying on it.
-		unimplementedSetSocketOptionMetric.Increment(&socketLevelIPFieldValue, allowedSocketOptionNameValues[name])
-		t.Kernel().EmitUnimplementedEvent(t, unix.SYS_SETSOCKOPT)
+		incrementBadSetSocketOptionMetric(t, &socketLevelIPFieldValue, name)
 		return nil
 	default:
 		if err, handled := setSockOptIPCustom(t, s, ep, name, optVal); handled {
 			return err
 		}
 	}
-	unknownSetSocketOptionMetric.Increment(&socketLevelIPFieldValue)
-	t.Kernel().EmitUnimplementedEvent(t, unix.SYS_SETSOCKOPT)
+	incrementBadSetSocketOptionMetric(t, &socketLevelIPFieldValue, name)
 	return nil
 }
 
@@ -3012,12 +2998,10 @@ func setSockOptPacket(t *kernel.Task, s socket.Socket, ep commonEndpoint, name i
 		return syserr.TranslateNetstackError(ep.SetSockOptInt(tcpip.PacketMMapReserveOption, int(v)))
 	case linux.PACKET_ADD_MEMBERSHIP, linux.PACKET_AUXDATA:
 		// Silently ignore these options.
-		unimplementedSetSocketOptionMetric.Increment(&socketLevelPacketFieldValue, allowedSocketOptionNameValues[name])
-		t.Kernel().EmitUnimplementedEvent(t, unix.SYS_SETSOCKOPT)
+		incrementBadSetSocketOptionMetric(t, &socketLevelPacketFieldValue, name)
 		return nil
 	default:
-		unknownSetSocketOptionMetric.Increment(&socketLevelIPFieldValue)
-		t.Kernel().EmitUnimplementedEvent(t, unix.SYS_SETSOCKOPT)
+		incrementBadSetSocketOptionMetric(t, &socketLevelIPFieldValue, name)
 		return syserr.ErrNotSupported
 	}
 }
