@@ -36,15 +36,15 @@ func (d *dentry) touchAtime(mnt *vfs.Mount) {
 	if err := mnt.CheckBeginWrite(); err != nil {
 		return
 	}
-	now := d.fs.clock.Now().Nanoseconds()
-	d.metadataMu.Lock()
-	d.atime.Store(now)
-	d.atimeDirty.Store(1)
-	d.metadataMu.Unlock()
+	now := d.inode.fs.clock.Now().Nanoseconds()
+	d.inode.metadataMu.Lock()
+	d.inode.atime.Store(now)
+	d.inode.atimeDirty.Store(1)
+	d.inode.metadataMu.Unlock()
 	mnt.EndWrite()
 }
 
-// Preconditions: d.metadataMu is locked. d.cachedMetadataAuthoritative() == true.
+// Preconditions: d.inode.metadataMu is locked. d.cachedMetadataAuthoritative() == true.
 func (d *dentry) touchAtimeLocked(mnt *vfs.Mount) {
 	if opts := mnt.Options(); opts.Flags.NoATime || opts.ReadOnly {
 		return
@@ -52,9 +52,9 @@ func (d *dentry) touchAtimeLocked(mnt *vfs.Mount) {
 	if err := mnt.CheckBeginWrite(); err != nil {
 		return
 	}
-	now := d.fs.clock.Now().Nanoseconds()
-	d.atime.Store(now)
-	d.atimeDirty.Store(1)
+	now := d.inode.fs.clock.Now().Nanoseconds()
+	d.inode.atime.Store(now)
+	d.inode.atimeDirty.Store(1)
 	mnt.EndWrite()
 }
 
@@ -62,30 +62,30 @@ func (d *dentry) touchAtimeLocked(mnt *vfs.Mount) {
 //   - d.cachedMetadataAuthoritative() == true.
 //   - The caller has successfully called vfs.Mount.CheckBeginWrite().
 func (d *dentry) touchCtime() {
-	now := d.fs.clock.Now().Nanoseconds()
-	d.metadataMu.Lock()
-	d.ctime.Store(now)
-	d.metadataMu.Unlock()
+	now := d.inode.fs.clock.Now().Nanoseconds()
+	d.inode.metadataMu.Lock()
+	d.inode.ctime.Store(now)
+	d.inode.metadataMu.Unlock()
 }
 
 // Preconditions:
 //   - d.cachedMetadataAuthoritative() == true.
 //   - The caller has successfully called vfs.Mount.CheckBeginWrite().
 func (d *dentry) touchCMtime() {
-	now := d.fs.clock.Now().Nanoseconds()
-	d.metadataMu.Lock()
-	d.mtime.Store(now)
-	d.ctime.Store(now)
-	d.mtimeDirty.Store(1)
-	d.metadataMu.Unlock()
+	now := d.inode.fs.clock.Now().Nanoseconds()
+	d.inode.metadataMu.Lock()
+	d.inode.mtime.Store(now)
+	d.inode.ctime.Store(now)
+	d.inode.mtimeDirty.Store(1)
+	d.inode.metadataMu.Unlock()
 }
 
 // Preconditions:
 //   - d.cachedMetadataAuthoritative() == true.
-//   - The caller has locked d.metadataMu.
+//   - The caller has locked d.inode.metadataMu.
 func (d *dentry) touchCMtimeLocked() {
-	now := d.fs.clock.Now().Nanoseconds()
-	d.mtime.Store(now)
-	d.ctime.Store(now)
-	d.mtimeDirty.Store(1)
+	now := d.inode.fs.clock.Now().Nanoseconds()
+	d.inode.mtime.Store(now)
+	d.inode.ctime.Store(now)
+	d.inode.mtimeDirty.Store(1)
 }

@@ -344,9 +344,6 @@ syscall_test(
     add_fusefs = True,
     add_overlay = True,
     test = "//test/syscalls/linux:link_test",
-    # TODO(gvisor.dev/issue/6739): Remove use_tmpfs=True once gofer filesystem
-    # supports hard links correctly.
-    use_tmpfs = True,
 )
 
 syscall_test(
