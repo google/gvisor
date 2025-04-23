@@ -23,6 +23,7 @@
 #include <sys/utsname.h>
 #include <unistd.h>
 
+#include <cstdint>
 #include <ctime>
 #include <iostream>
 #include <vector>
@@ -182,12 +183,14 @@ PosixErrorOr<std::vector<OpenFd>> GetOpenFDs() {
   return ret_fds;
 }
 
+PosixErrorOr<uint64_t> Permissions(const std::string& path) {
+  ASSIGN_OR_RETURN_ERRNO(auto stat_result, Stat(path));
+  return static_cast<uint64_t>(stat_result.st_mode);
+}
+
 PosixErrorOr<uint64_t> Links(const std::string& path) {
-  struct stat st;
-  if (stat(path.c_str(), &st)) {
-    return PosixError(errno, absl::StrCat("Failed to stat ", path));
-  }
-  return static_cast<uint64_t>(st.st_nlink);
+  ASSIGN_OR_RETURN_ERRNO(auto stat_result, Stat(path));
+  return static_cast<uint64_t>(stat_result.st_nlink);
 }
 
 void RandomizeBuffer(char* buffer, size_t len) {
