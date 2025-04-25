@@ -83,7 +83,7 @@ var SockOpts = []SockOpt{
 	{linux.SOL_IPV6, linux.IPV6_TCLASS, sizeofInt32, true, true},
 	{linux.SOL_IPV6, linux.IPV6_UNICAST_HOPS, sizeofInt32, true, true},
 	{linux.SOL_IPV6, linux.IPV6_V6ONLY, sizeofInt32, true, true},
-	{linux.SOL_IPV6, linux.SO_ORIGINAL_DST, 0, true, true},
+	{linux.SOL_IPV6, linux.IP6T_ORIGINAL_DST, 0, true, true},
 
 	{linux.SOL_SOCKET, linux.SO_ACCEPTCONN, sizeofInt32, true, true},
 	{linux.SOL_SOCKET, linux.SO_BINDTODEVICE, 0, true, true},
