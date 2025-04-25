@@ -16,9 +16,14 @@
 package dockerutil
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
+	"regexp"
+	"strconv"
+	"strings"
+	"testing"
 
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/mount"
@@ -225,4 +230,87 @@ func NumGPU() int {
 		numGPU++
 	}
 	return numGPU
+}
+
+// CudaVersion represents a cuda version.
+type CudaVersion struct {
+	Major int64
+	Minor int64
+}
+
+// IsAtLeast returns true if the cuda version is at least as new as the other
+// cuda version.
+func (c *CudaVersion) IsAtLeast(other *CudaVersion) bool {
+	if c.Major > other.Major {
+		return true
+	}
+
+	if c.Major < other.Major {
+		return false
+	}
+
+	return c.Minor >= other.Minor
+}
+
+func (c *CudaVersion) String() string {
+	return fmt.Sprintf("%d.%d", c.Major, c.Minor)
+}
+
+// MustParseCudaVersion returns a new CudaVersion from a string.
+func MustParseCudaVersion(version string) *CudaVersion {
+	parts := strings.Split(version, ".")
+	if len(parts) != 2 {
+		panic(fmt.Sprintf("invalid cuda version: %q", version))
+	}
+	major, err := strconv.ParseInt(parts[0], 10, 64)
+	if err != nil {
+		panic(fmt.Sprintf("failed to parse major version %q: %v", parts[0], err))
+	}
+	minor, err := strconv.ParseInt(parts[1], 10, 64)
+	if err != nil {
+		panic(fmt.Sprintf("failed to parse minor version %q: %v", parts[1], err))
+	}
+	return &CudaVersion{Major: major, Minor: minor}
+}
+
+var cudaRE = regexp.MustCompile(`CUDA\s*Version\s*:\s*(\d+)\.(\d+)`)
+
+func newCudaVersionFromOutput(out string) (*CudaVersion, error) {
+	parts := cudaRE.FindStringSubmatch(out)
+	if len(parts) != 3 {
+		return nil, fmt.Errorf("CUDA version not found in output: %v", parts)
+	}
+
+	major, err := strconv.ParseInt(parts[1], 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse major version %q: %v", parts[1], err)
+	}
+
+	minor, err := strconv.ParseInt(parts[2], 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse major version %q: %v", parts[2], err)
+	}
+
+	return &CudaVersion{Major: major, Minor: minor}, err
+}
+
+// MaxSuportedCUDAVersion returns the maximum supported by the host machine.
+func MaxSuportedCUDAVersion(ctx context.Context, t *testing.T) (*CudaVersion, error) {
+	c := MakeContainer(ctx, t)
+	defer c.CleanUp(ctx)
+	opts, err := GPURunOpts(SniffGPUOpts{
+		DisableSnifferReason: "Get CUDA Version",
+		Capabilities:         "all",
+	})
+	if err != nil {
+		return nil, fmt.Errorf("could not create opts: %w", err)
+	}
+	opts.Image = "gpu/cuda-tests"
+
+	out, err := c.Run(ctx, opts, "nvidia-smi", "--version")
+	if err != nil {
+		return nil, fmt.Errorf("failed to run container: %w", err)
+	}
+
+	return newCudaVersionFromOutput(out)
 }
