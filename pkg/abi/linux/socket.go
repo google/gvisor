@@ -731,5 +731,10 @@ type ICMP6Filter struct {
 	Filter [8]uint32
 }
 
-// SizeOfICMP6Filter is the size of ICMP6Filter struct.
-var SizeOfICMP6Filter = uint32((*ICMP6Filter)(nil).SizeBytes())
+// Size of corresponding structs.
+var (
+	ICMP6FilterSize   = (*ICMP6Filter)(nil).SizeBytes()
+	SockAddrInetSize  = (*SockAddrInet)(nil).SizeBytes()
+	SockAddrInet6Size = (*SockAddrInet6)(nil).SizeBytes()
+	SockAddrLinkSize  = (*SockAddrLink)(nil).SizeBytes()
+)

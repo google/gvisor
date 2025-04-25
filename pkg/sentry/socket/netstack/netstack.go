@@ -672,10 +672,6 @@ func (s *sock) SetSockOpt(t *kernel.Task, level int, name int, optVal []byte) *s
 	return SetSockOpt(t, s, s.Endpoint, level, name, optVal)
 }
 
-var sockAddrInetSize = (*linux.SockAddrInet)(nil).SizeBytes()
-var sockAddrInet6Size = (*linux.SockAddrInet6)(nil).SizeBytes()
-var sockAddrLinkSize = (*linux.SockAddrLink)(nil).SizeBytes()
-
 // minSockAddrLen returns the minimum length in bytes of a socket address for
 // the socket's family.
 func (s *sock) minSockAddrLen() int {
@@ -685,11 +681,11 @@ func (s *sock) minSockAddrLen() int {
 	case linux.AF_UNIX:
 		return addressFamilySize
 	case linux.AF_INET:
-		return sockAddrInetSize
+		return linux.SockAddrInetSize
 	case linux.AF_INET6:
-		return sockAddrInet6Size
+		return linux.SockAddrInet6Size
 	case linux.AF_PACKET:
-		return sockAddrLinkSize
+		return linux.SockAddrLinkSize
 	case linux.AF_UNSPEC:
 		return addressFamilySize
 	default:
@@ -807,7 +803,7 @@ func (s *sock) Bind(_ *kernel.Task, sockaddr []byte) *syserr.Error {
 	// not needed for AF_PACKET bind.
 	if family == linux.AF_PACKET {
 		var a linux.SockAddrLink
-		if len(sockaddr) < sockAddrLinkSize {
+		if len(sockaddr) < linux.SockAddrLinkSize {
 			return syserr.ErrInvalidArgument
 		}
 		a.UnmarshalBytes(sockaddr)
@@ -1537,7 +1533,7 @@ func getSockOptIPv6(t *kernel.Task, s socket.Socket, ep commonEndpoint, name int
 		return &v, nil
 
 	case linux.IP6T_ORIGINAL_DST:
-		if outLen < sockAddrInet6Size {
+		if outLen < linux.SockAddrInet6Size {
 			return nil, syserr.ErrInvalidArgument
 		}
 
@@ -1765,7 +1761,7 @@ func getSockOptIP(t *kernel.Task, s socket.Socket, ep commonEndpoint, name int, 
 		return &v, nil
 
 	case linux.SO_ORIGINAL_DST:
-		if outLen < sockAddrInetSize {
+		if outLen < linux.SockAddrInetSize {
 			return nil, syserr.ErrInvalidArgument
 		}
 
