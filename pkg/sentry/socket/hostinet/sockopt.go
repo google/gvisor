@@ -71,6 +71,7 @@ var SockOpts = []SockOpt{
 	{linux.SOL_IP, linux.IP_RECVTTL, sizeofInt32, true, true},
 	{linux.SOL_IP, linux.IP_TOS, 0 /* Can be 32, 16, or 8 bits */, true, true},
 	{linux.SOL_IP, linux.IP_TTL, sizeofInt32, true, true},
+	{linux.SOL_IP, linux.SO_ORIGINAL_DST, 0, true, true},
 
 	{linux.SOL_IPV6, linux.IPV6_CHECKSUM, sizeofInt32, true, true},
 	{linux.SOL_IPV6, linux.IPV6_MULTICAST_HOPS, sizeofInt32, true, true},
@@ -82,6 +83,7 @@ var SockOpts = []SockOpt{
 	{linux.SOL_IPV6, linux.IPV6_TCLASS, sizeofInt32, true, true},
 	{linux.SOL_IPV6, linux.IPV6_UNICAST_HOPS, sizeofInt32, true, true},
 	{linux.SOL_IPV6, linux.IPV6_V6ONLY, sizeofInt32, true, true},
+	{linux.SOL_IPV6, linux.SO_ORIGINAL_DST, 0, true, true},
 
 	{linux.SOL_SOCKET, linux.SO_ACCEPTCONN, sizeofInt32, true, true},
 	{linux.SOL_SOCKET, linux.SO_BINDTODEVICE, 0, true, true},
