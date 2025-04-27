@@ -21,6 +21,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -171,6 +172,7 @@ func TestSandboxProcessEnv(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	got = regexp.MustCompile("(^|\x00)RUNSC_START_TIME_NANOS=\\d+\x00").ReplaceAll(got, []byte("$1"))
 	if len(got) != 0 && string(got) != "GLIBC_TUNABLES=glibc.pthread.rseq=0\x00" {
 		t.Errorf("sandbox process's environment is not empty: got %s (%v)", string(got), got)
 	}

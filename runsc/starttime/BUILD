@@ -11,4 +11,5 @@ go_library(
         "starttime.go",
     ],
     visibility = ["//runsc:__subpackages__"],
+    deps = ["//pkg/timing"],
 )

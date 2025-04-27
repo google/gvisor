@@ -62,6 +62,9 @@ var (
 
 // Main is the main entrypoint.
 func Main() {
+	// Set the start time as soon as possible.
+	startTime := starttime.Get()
+
 	// Register all commands.
 	forEachCmd(subcommands.Register)
 
@@ -133,9 +136,6 @@ func Main() {
 	// case that does not occur.
 	_ = time.Local.String()
 
-	// Set the start time as soon as possible.
-	startTime := starttime.Get()
-
 	var emitters log.MultiEmitter
 	if *debugLogFD > -1 {
 		f := os.NewFile(uintptr(*debugLogFD), "debug log file")
@@ -197,6 +197,13 @@ func Main() {
 	log.Debugf("Page size: 0x%x (%d bytes)", os.Getpagesize(), os.Getpagesize())
 	log.Infof("Args: %v", os.Args)
 	conf.Log()
+	if log.IsLogging(log.Debug) {
+		if goStartTime := starttime.GoStartTime(); goStartTime.Equal(startTime) {
+			log.Debugf("Go started execution at %s. Could not measure process spawn time (no /proc/self/status?)", goStartTime.Format("15:04:05.000000"))
+		} else {
+			log.Debugf("runsc process spawned at %v, Go started execution at %s. Startup overhead: %v", startTime.Format("15:04:05.000000"), goStartTime.Format("15:04:05.000000"), goStartTime.Sub(startTime))
+		}
+	}
 	log.Infof(delimString)
 
 	if *coverageFD >= 0 {

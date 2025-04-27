@@ -103,16 +103,24 @@ func (s *Timeline) Reached(name string) {
 	if s == nil {
 		return
 	}
-	now := time.Now()
+	s.ReachedAt(name, time.Now())
+}
+
+// ReachedAt records a new midpoint on the root Timeline of the Timer with
+// the given timestamp.
+func (s *Timeline) ReachedAt(name string, when time.Time) {
+	if s == nil {
+		return
+	}
 	s.midpoints = append(s.midpoints, MidPoint{
-		when: now,
+		when: when,
 		name: name,
 	})
 	if log.IsLogging(log.Debug) {
 		if s.timer != nil {
-			log.Debugf("Timer for %s: Timeline %s reached midpoint %s at %s (unix nanos: %d)", s.timer.root.name, s.fullName, name, now.Format(fullTimestampFormat), now.UnixNano())
+			log.Debugf("Timer for %s: Timeline %s reached midpoint %s at %s (unix nanos: %d)", s.timer.root.name, s.fullName, name, when.Format(fullTimestampFormat), when.UnixNano())
 		} else {
-			log.Debugf("Orphaned timeline %s reached midpoint %s at %s (unix nanos: %d)", s.name, name, now.Format(fullTimestampFormat), now.UnixNano())
+			log.Debugf("Orphaned timeline %s reached midpoint %s at %s (unix nanos: %d)", s.name, name, when.Format(fullTimestampFormat), when.UnixNano())
 		}
 	}
 }
@@ -430,6 +438,15 @@ func (t *Timer) Reached(name string) {
 		return
 	}
 	t.root.Reached(name)
+}
+
+// ReachedAt records a new midpoint on the root Timeline of the Timer with
+// the given timestamp.
+func (t *Timer) ReachedAt(name string, when time.Time) {
+	if t == nil {
+		return
+	}
+	t.root.ReachedAt(name, when)
 }
 
 // Fork creates a new Timeline that is a child of the root Timeline of this
