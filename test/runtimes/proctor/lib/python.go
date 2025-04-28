@@ -64,9 +64,8 @@ var exclude = map[string][]string{
 	// TODO(b/271949964): Un-exclude test cases as they are fixed.
 	"test_socket": {
 		"BasicUDPLITETest\\..*",
-		"GeneralModuleTests\\.testGetServBy",                  // Broken test.
-		"GeneralModuleTests\\.testGetaddrinfo",                // Broken test.
-		"NetworkConnectionAttributesTest\\.testSourceAddress", // TODO(b/409826216): Hangs forever.
+		"GeneralModuleTests\\.testGetServBy",   // Broken test.
+		"GeneralModuleTests\\.testGetaddrinfo", // Broken test.
 		"RecvmsgIntoRFC3542AncillaryUDP6Test\\.testSecondCmsgTrunc1",
 		"RecvmsgIntoRFC3542AncillaryUDP6Test\\.testSecondCmsgTrunc2Int",
 		"RecvmsgIntoRFC3542AncillaryUDP6Test\\.testSecondCmsgTruncInData",
