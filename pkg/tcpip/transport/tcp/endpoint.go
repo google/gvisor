@@ -602,6 +602,11 @@ type Endpoint struct {
 	//
 	// +checklocks:mu
 	pmtud tcpip.PMTUDStrategy
+
+	// alsoBindToV4 indicates if `any` address was used to bind a port.
+	//
+	// +checklocks:mu
+	alsoBindToV4 bool
 }
 
 // calculateAdvertisedMSS calculates the MSS to advertise.
@@ -2461,6 +2466,19 @@ func (e *Endpoint) connect(addr tcpip.FullAddress, handshake bool) tcpip.Error {
 	e.effectiveNetProtos = []tcpip.NetworkProtocolNumber{netProto}
 	e.connectingAddress = connectingAddr
 
+	if e.alsoBindToV4 {
+		// If the endpoint was bound to `any` address the port will be
+		// reserved for both IPv4 and IPv6 addresses. Release the port
+		// reservation for the IPv4 address here so that the future bind
+		// for IPv4 socket will not fail.
+		portRes := ports.Reservation{
+			Networks:  []tcpip.NetworkProtocolNumber{header.IPv4ProtocolNumber},
+			Transport: ProtocolNumber,
+			Port:      e.TransportEndpointInfo.ID.LocalPort,
+		}
+		e.stack.ReleasePort(portRes)
+	}
+
 	e.initGSO()
 
 	// Connect in the restore phase does not perform handshake. Restore its
@@ -2749,6 +2767,7 @@ func (e *Endpoint) bindLocked(addr tcpip.FullAddress) (err tcpip.Error) {
 		alsoBindToV4 := !e.ops.GetV6Only() && addr.Addr == tcpip.Address{} && stackHasV4
 		if alsoBindToV4 {
 			netProtos = append(netProtos, header.IPv4ProtocolNumber)
+			e.alsoBindToV4 = true
 		}
 	}
 
