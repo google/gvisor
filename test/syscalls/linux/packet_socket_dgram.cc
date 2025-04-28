@@ -29,7 +29,6 @@
 #include <unistd.h>
 
 #include "gtest/gtest.h"
-#include "absl/base/internal/endian.h"
 #include "test/syscalls/linux/ip_socket_test_util.h"
 #include "test/syscalls/linux/unix_domain_socket_test_util.h"
 #include "test/util/capability_util.h"
