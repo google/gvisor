@@ -307,7 +307,7 @@ func MaxSuportedCUDAVersion(ctx context.Context, t *testing.T) (*CudaVersion, er
 	}
 	opts.Image = "gpu/cuda-tests"
 
-	out, err := c.Run(ctx, opts, "nvidia-smi", "--version")
+	out, err := c.Run(ctx, opts, "nvidia-smi")
 	if err != nil {
 		return nil, fmt.Errorf("failed to run container: %w", err)
 	}
