@@ -36,8 +36,8 @@ func (p *packet) loadReceivedAt(_ context.Context, nsec int64) {
 // beforeSave is invoked by stateify.
 func (ep *endpoint) beforeSave() {
 	ep.rcvMu.Lock()
-	defer ep.rcvMu.Unlock()
 	ep.rcvDisabled = true
+	ep.rcvMu.Unlock()
 	ep.stack.RegisterResumableEndpoint(ep)
 }
 

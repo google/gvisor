@@ -1,9 +1,38 @@
+load("//pkg/sync/locking:locking.bzl", "declare_mutex", "declare_rwmutex")
 load("//tools:defs.bzl", "go_library", "go_test")
 load("//tools/go_generics:defs.bzl", "go_template_instance")
 
 package(
     default_applicable_licenses = ["//:license"],
     licenses = ["notice"],
+)
+
+declare_rwmutex(
+    name = "endpoint_mutex",
+    out = "endpoint_mutex.go",
+    package = "packet",
+    prefix = "endpoint",
+)
+
+declare_mutex(
+    name = "endpoint_rcv_mutex",
+    out = "endpoint_rcv_mutex.go",
+    package = "packet",
+    prefix = "rcv",
+)
+
+declare_rwmutex(
+    name = "packet_mmap_mutex",
+    out = "packet_mmap_mutex.go",
+    package = "packet",
+    prefix = "packetMmap",
+)
+
+declare_mutex(
+    name = "last_error_mutex",
+    out = "last_error_mutex.go",
+    package = "packet",
+    prefix = "lastError",
 )
 
 go_template_instance(
@@ -22,8 +51,12 @@ go_library(
     name = "packet",
     srcs = [
         "endpoint.go",
+        "endpoint_mutex.go",
+        "endpoint_rcv_mutex.go",
         "endpoint_state.go",
+        "last_error_mutex.go",
         "packet_list.go",
+        "packet_mmap_mutex.go",
     ],
     visibility = ["//visibility:public"],
     deps = [
@@ -31,6 +64,7 @@ go_library(
         "//pkg/log",
         "//pkg/sleep",
         "//pkg/sync",
+        "//pkg/sync/locking",
         "//pkg/tcpip",
         "//pkg/tcpip/header",
         "//pkg/tcpip/stack",
