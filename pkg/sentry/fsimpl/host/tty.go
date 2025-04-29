@@ -24,7 +24,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/unimpl"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -36,53 +35,16 @@ import (
 // +stateify savable
 type TTYFileDescription struct {
 	fileDescription
-
-	// mu protects the fields below.
-	mu sync.Mutex `state:"nosave"`
-
-	// termios contains the terminal attributes for this TTY.
-	termios linux.KernelTermios
-
-	// tty is the kernel.TTY associated with this host tty.
-	tty *kernel.TTY
-}
-
-// NewTTYFileDescription returns a new TTYFileDescription.
-func NewTTYFileDescription(i *inode) *TTYFileDescription {
-	fd := &TTYFileDescription{
-		fileDescription: fileDescription{inode: i},
-		termios:         linux.DefaultReplicaTermios,
-	}
-	// Index does not matter here. This tty is not coming from a devpts
-	// mount, so it won't collide with any of the ptys created there.
-	fd.tty = kernel.NewTTY(0, fd)
-	return fd
-}
-
-// Open re-opens the tty fd, for example via open(/dev/tty). See Linux's
-// tty_repoen().
-func (t *TTYFileDescription) Open(_ context.Context, _ *vfs.Mount, _ *vfs.Dentry, _ vfs.OpenOptions) (*vfs.FileDescription, error) {
-	t.vfsfd.IncRef()
-	return &t.vfsfd, nil
-}
-
-// Release implements fs.FileOperations.Release.
-func (t *TTYFileDescription) Release(ctx context.Context) {
-	t.fileDescription.Release(ctx)
 }
 
 // TTY returns the kernel.TTY.
 func (t *TTYFileDescription) TTY() *kernel.TTY {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	return t.tty
+	return t.inode.tty
 }
 
 // ThreadGroup returns the kernel.ThreadGroup associated with this tty.
 func (t *TTYFileDescription) ThreadGroup() *kernel.ThreadGroup {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	return t.tty.ThreadGroup()
+	return t.inode.tty.ThreadGroup()
 }
 
 // PRead implements vfs.FileDescriptionImpl.PRead.
@@ -90,12 +52,9 @@ func (t *TTYFileDescription) ThreadGroup() *kernel.ThreadGroup {
 // Reading from a TTY is only allowed for foreground process groups. Background
 // process groups will either get EIO or a SIGTTIN.
 func (t *TTYFileDescription) PRead(ctx context.Context, dst usermem.IOSequence, offset int64, opts vfs.ReadOptions) (int64, error) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-
 	// Are we allowed to do the read?
 	// drivers/tty/n_tty.c:n_tty_read()=>job_control()=>tty_check_change().
-	if err := t.tty.CheckChange(ctx, linux.SIGTTIN); err != nil {
+	if err := t.TTY().CheckChange(ctx, linux.SIGTTIN); err != nil {
 		return 0, err
 	}
 
@@ -108,12 +67,9 @@ func (t *TTYFileDescription) PRead(ctx context.Context, dst usermem.IOSequence, 
 // Reading from a TTY is only allowed for foreground process groups. Background
 // process groups will either get EIO or a SIGTTIN.
 func (t *TTYFileDescription) Read(ctx context.Context, dst usermem.IOSequence, opts vfs.ReadOptions) (int64, error) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-
 	// Are we allowed to do the read?
 	// drivers/tty/n_tty.c:n_tty_read()=>job_control()=>tty_check_change().
-	if err := t.tty.CheckChange(ctx, linux.SIGTTIN); err != nil {
+	if err := t.TTY().CheckChange(ctx, linux.SIGTTIN); err != nil {
 		return 0, err
 	}
 
@@ -123,13 +79,12 @@ func (t *TTYFileDescription) Read(ctx context.Context, dst usermem.IOSequence, o
 
 // PWrite implements vfs.FileDescriptionImpl.PWrite.
 func (t *TTYFileDescription) PWrite(ctx context.Context, src usermem.IOSequence, offset int64, opts vfs.WriteOptions) (int64, error) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-
+	t.inode.termiosMu.Lock()
+	defer t.inode.termiosMu.Unlock()
 	// Check whether TOSTOP is enabled. This corresponds to the check in
 	// drivers/tty/n_tty.c:n_tty_write().
-	if t.termios.LEnabled(linux.TOSTOP) {
-		if err := t.tty.CheckChange(ctx, linux.SIGTTOU); err != nil {
+	if t.inode.termios.LEnabled(linux.TOSTOP) {
+		if err := t.TTY().CheckChange(ctx, linux.SIGTTOU); err != nil {
 			return 0, err
 		}
 	}
@@ -138,13 +93,12 @@ func (t *TTYFileDescription) PWrite(ctx context.Context, src usermem.IOSequence,
 
 // Write implements vfs.FileDescriptionImpl.Write.
 func (t *TTYFileDescription) Write(ctx context.Context, src usermem.IOSequence, opts vfs.WriteOptions) (int64, error) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-
+	t.inode.termiosMu.Lock()
+	defer t.inode.termiosMu.Unlock()
 	// Check whether TOSTOP is enabled. This corresponds to the check in
 	// drivers/tty/n_tty.c:n_tty_write().
-	if t.termios.LEnabled(linux.TOSTOP) {
-		if err := t.tty.CheckChange(ctx, linux.SIGTTOU); err != nil {
+	if t.inode.termios.LEnabled(linux.TOSTOP) {
+		if err := t.TTY().CheckChange(ctx, linux.SIGTTOU); err != nil {
 			return 0, err
 		}
 	}
@@ -182,10 +136,7 @@ func (t *TTYFileDescription) Ioctl(ctx context.Context, io usermem.IO, sysno uin
 		return 0, err
 
 	case linux.TCSETS, linux.TCSETSW, linux.TCSETSF:
-		t.mu.Lock()
-		defer t.mu.Unlock()
-
-		if err := t.tty.CheckChange(ctx, linux.SIGTTOU); err != nil {
+		if err := t.inode.tty.CheckChange(ctx, linux.SIGTTOU); err != nil {
 			return 0, err
 		}
 
@@ -195,7 +146,9 @@ func (t *TTYFileDescription) Ioctl(ctx context.Context, io usermem.IO, sysno uin
 		}
 		err := ioctlSetTermios(fd, ioctl, &termios)
 		if err == nil {
-			t.termios.FromTermios(termios)
+			t.inode.termiosMu.Lock()
+			t.inode.termios.FromTermios(termios)
+			t.inode.termiosMu.Unlock()
 		}
 		return 0, err
 
@@ -210,10 +163,7 @@ func (t *TTYFileDescription) Ioctl(ctx context.Context, io usermem.IO, sysno uin
 			return 0, linuxerr.ENOTTY
 		}
 
-		t.mu.Lock()
-		defer t.mu.Unlock()
-
-		fgpg, err := t.tty.ThreadGroup().ForegroundProcessGroup(t.tty)
+		fgpg, err := t.ThreadGroup().ForegroundProcessGroup(t.TTY())
 		if err != nil {
 			return 0, err
 		}
@@ -228,15 +178,12 @@ func (t *TTYFileDescription) Ioctl(ctx context.Context, io usermem.IO, sysno uin
 		// Equivalent to tcsetpgrp(fd, *argp).
 		// Set the foreground process group ID of this terminal.
 
-		t.mu.Lock()
-		defer t.mu.Unlock()
-
 		var pgIDP primitive.Int32
 		if _, err := pgIDP.CopyIn(task, args[2].Pointer()); err != nil {
 			return 0, err
 		}
 		pgID := kernel.ProcessGroupID(pgIDP)
-		if err := t.tty.ThreadGroup().SetForegroundProcessGroupID(ctx, t.tty, pgID); err != nil {
+		if err := t.ThreadGroup().SetForegroundProcessGroupID(ctx, t.TTY(), pgID); err != nil {
 			return 0, err
 		}
 

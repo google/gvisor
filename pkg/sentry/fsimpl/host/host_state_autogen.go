@@ -63,7 +63,6 @@ func (i *inode) StateFields() []string {
 		"ftype",
 		"epollable",
 		"seekable",
-		"isTTY",
 		"savable",
 		"restorable",
 		"readonly",
@@ -71,6 +70,8 @@ func (i *inode) StateFields() []string {
 		"virtualOwner",
 		"haveBuf",
 		"buf",
+		"tty",
+		"termios",
 	}
 }
 
@@ -92,14 +93,15 @@ func (i *inode) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(12, &i.ftype)
 	stateSinkObject.Save(13, &i.epollable)
 	stateSinkObject.Save(14, &i.seekable)
-	stateSinkObject.Save(15, &i.isTTY)
-	stateSinkObject.Save(16, &i.savable)
-	stateSinkObject.Save(17, &i.restorable)
-	stateSinkObject.Save(18, &i.readonly)
-	stateSinkObject.Save(19, &i.queue)
-	stateSinkObject.Save(20, &i.virtualOwner)
-	stateSinkObject.Save(21, &i.haveBuf)
-	stateSinkObject.Save(22, &i.buf)
+	stateSinkObject.Save(15, &i.savable)
+	stateSinkObject.Save(16, &i.restorable)
+	stateSinkObject.Save(17, &i.readonly)
+	stateSinkObject.Save(18, &i.queue)
+	stateSinkObject.Save(19, &i.virtualOwner)
+	stateSinkObject.Save(20, &i.haveBuf)
+	stateSinkObject.Save(21, &i.buf)
+	stateSinkObject.Save(22, &i.tty)
+	stateSinkObject.Save(23, &i.termios)
 }
 
 // +checklocksignore
@@ -119,14 +121,15 @@ func (i *inode) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(12, &i.ftype)
 	stateSourceObject.Load(13, &i.epollable)
 	stateSourceObject.Load(14, &i.seekable)
-	stateSourceObject.Load(15, &i.isTTY)
-	stateSourceObject.Load(16, &i.savable)
-	stateSourceObject.Load(17, &i.restorable)
-	stateSourceObject.Load(18, &i.readonly)
-	stateSourceObject.Load(19, &i.queue)
-	stateSourceObject.Load(20, &i.virtualOwner)
-	stateSourceObject.Load(21, &i.haveBuf)
-	stateSourceObject.Load(22, &i.buf)
+	stateSourceObject.Load(15, &i.savable)
+	stateSourceObject.Load(16, &i.restorable)
+	stateSourceObject.Load(17, &i.readonly)
+	stateSourceObject.Load(18, &i.queue)
+	stateSourceObject.Load(19, &i.virtualOwner)
+	stateSourceObject.Load(20, &i.haveBuf)
+	stateSourceObject.Load(21, &i.buf)
+	stateSourceObject.Load(22, &i.tty)
+	stateSourceObject.Load(23, &i.termios)
 	stateSourceObject.AfterLoad(func() { i.afterLoad(ctx) })
 }
 
@@ -247,8 +250,6 @@ func (t *TTYFileDescription) StateTypeName() string {
 func (t *TTYFileDescription) StateFields() []string {
 	return []string{
 		"fileDescription",
-		"termios",
-		"tty",
 	}
 }
 
@@ -258,8 +259,6 @@ func (t *TTYFileDescription) beforeSave() {}
 func (t *TTYFileDescription) StateSave(stateSinkObject state.Sink) {
 	t.beforeSave()
 	stateSinkObject.Save(0, &t.fileDescription)
-	stateSinkObject.Save(1, &t.termios)
-	stateSinkObject.Save(2, &t.tty)
 }
 
 func (t *TTYFileDescription) afterLoad(context.Context) {}
@@ -267,8 +266,6 @@ func (t *TTYFileDescription) afterLoad(context.Context) {}
 // +checklocksignore
 func (t *TTYFileDescription) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &t.fileDescription)
-	stateSourceObject.Load(1, &t.termios)
-	stateSourceObject.Load(2, &t.tty)
 }
 
 func init() {

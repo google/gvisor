@@ -26,8 +26,8 @@ import (
 // TTYOperations handle tty operations. It is analogous to (a small subset) of
 // Linux's struct tty_operations and exists to avoid a circular dependency.
 type TTYOperations interface {
-	// Open opens the tty.
-	Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error)
+	// OpenTTY opens the tty.
+	OpenTTY(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error)
 }
 
 // TTY defines the relationship between a thread group and its controlling
