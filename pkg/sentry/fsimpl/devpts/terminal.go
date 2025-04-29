@@ -48,8 +48,8 @@ type Terminal struct {
 
 var _ kernel.TTYOperations = (*Terminal)(nil)
 
-// Open implements kernel.TTYOperations.Open.
-func (t *Terminal) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
+// OpenTTY implements kernel.TTYOperations.OpenTTY.
+func (t *Terminal) OpenTTY(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
 	tsk := kernel.TaskFromContext(ctx)
 	if tsk == nil {
 		return nil, linuxerr.EIO

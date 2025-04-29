@@ -47,7 +47,7 @@ func (ttyDevice) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dentry, opt
 	// Opening /dev/tty does not set the controlling terminal. See Linux
 	// tty_open().
 	opts.Flags |= linux.O_NOCTTY
-	return tty.Open(ctx, mnt, vfsd, opts)
+	return tty.OpenTTY(ctx, mnt, vfsd, opts)
 }
 
 // Register registers all devices implemented by this package in vfsObj.

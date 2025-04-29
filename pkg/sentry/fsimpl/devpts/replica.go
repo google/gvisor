@@ -54,7 +54,7 @@ var _ kernfs.Inode = (*replicaInode)(nil)
 
 // Open implements kernfs.Inode.Open.
 func (ri *replicaInode) Open(ctx context.Context, rp *vfs.ResolvingPath, d *kernfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
-	return ri.t.Open(ctx, rp.Mount(), d.VFSDentry(), opts)
+	return ri.t.OpenTTY(ctx, rp.Mount(), d.VFSDentry(), opts)
 }
 
 // Valid implements kernfs.Inode.Valid.
