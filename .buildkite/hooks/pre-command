@@ -162,10 +162,13 @@ if [[ -n "${BUILDKITE_PIPELINE_ID}" ]]; then
 
   # Skip GPU tests if the change doesn't affect GPU functionality.
   gpu_paths=(
+    images/gpu
     pkg/abi/nvgpu
     pkg/sentry/devices/nvproxy
+    pkg/test/dockerutil/gpu.go
     runsc/specutils/nvidia.go
     runsc/cmd/nvproxy
+    test/gpu
     tools/nvidia_driver_differ
   )
   if ./tools/builkite-check-paths.sh "${gpu_paths[@]}"; then
