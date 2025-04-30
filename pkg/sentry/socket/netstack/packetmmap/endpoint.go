@@ -73,8 +73,6 @@ type Endpoint struct {
 
 	packetEP  stack.MappablePacketEndpoint
 	reserve   uint32
-	nicID     tcpip.NICID
-	netProto  tcpip.NetworkProtocolNumber
 	version   int
 	headerLen uint32
 
@@ -104,12 +102,8 @@ func (m *Endpoint) Init(ctx context.Context, opts stack.PacketMMapOpts) error {
 	m.wq = opts.Wq
 	m.cooked = opts.Cooked
 	m.packetEP = opts.PacketEndpoint
-	m.nicID = opts.NICID
-	m.netProto = opts.NetProto
 	m.version = opts.Version
 	m.reserve = opts.Reserve
-	m.nicID = opts.NICID
-	m.netProto = opts.NetProto
 
 	switch m.version {
 	case linux.TPACKET_V1:
@@ -283,7 +277,7 @@ func (m *Endpoint) HandlePacket(nicID tcpip.NICID, netProto tcpip.NetworkProtoco
 	hdrView := buffer.NewViewSize(int(macOffset))
 	m.marshalFrameHeader(pktBuf, macOffset, netOffset, dataLength, hdrView)
 	pktBuf.Truncate(int64(dataLength))
-	m.marshalSockAddr(pkt, hdrView)
+	m.marshalSockAddr(pkt, netProto, nicID, hdrView)
 
 	if err := m.rxRingBuffer.writeFrame(slot, hdrView, pktBuf); err != nil {
 		m.stack.Stats().DroppedPackets.Increment()
@@ -415,12 +409,12 @@ func toLinuxPacketType(pktType tcpip.PacketType) uint8 {
 	}
 }
 
-func (m *Endpoint) marshalSockAddr(pkt *stack.PacketBuffer, view *buffer.View) {
+func (m *Endpoint) marshalSockAddr(pkt *stack.PacketBuffer, netProto tcpip.NetworkProtocolNumber, nicID tcpip.NICID, view *buffer.View) {
 	var sll linux.SockAddrLink
 	sll.Family = linux.AF_PACKET
-	sll.Protocol = socket.Htons(uint16(m.netProto))
+	sll.Protocol = socket.Htons(uint16(netProto))
 	sll.PacketType = toLinuxPacketType(pkt.PktType)
-	sll.InterfaceIndex = int32(m.nicID)
+	sll.InterfaceIndex = int32(nicID)
 	sll.HardwareAddrLen = header.EthernetAddressSize
 
 	if len(pkt.LinkHeader().Slice()) != 0 {

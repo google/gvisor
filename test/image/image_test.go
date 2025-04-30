@@ -351,7 +351,7 @@ func TestTcpdump(t *testing.T) {
 		t.Fatalf("docker run failed: %v", err)
 	}
 
-	cmd := "tcpdump -c 2 -i lo port 9999"
+	cmd := "tcpdump -c 2 -i any port 9999"
 	tcpdumpProc, err := d.ExecProcess(ctx, dockerutil.ExecOpts{}, "/bin/sh", "-c", cmd)
 	if err != nil {
 		t.Fatalf("docker run failed: %v", err)
