@@ -158,6 +158,9 @@ type inode struct {
 	// This field is initialized at creation time and is immutable.
 	readonly bool
 
+	// devMinor is the immutable minor device number for this inode's filesystem.
+	devMinor uint32
+
 	// Event queue for blocking operations.
 	queue waiter.Queue
 
@@ -178,7 +181,7 @@ type inode struct {
 	// This pointer is initialized at creation time and is immutable.
 	tty *kernel.TTY
 	// If the inode corresponds to a TTY, termios is the cached termios
-	// struct. It is protected by termiousMu.
+	// struct. It is protected by termiosMu.
 	termiosMu sync.Mutex `state:"nosave"`
 	termios   linux.KernelTermios
 }
@@ -198,6 +201,7 @@ func newInode(ctx context.Context, fs *filesystem, hostFD int, savable bool, res
 		hostFD:     hostFD,
 		ino:        fs.NextIno(),
 		ftype:      uint16(fileType),
+		devMinor:   fs.devMinor,
 		epollable:  isEpollable(hostFD),
 		seekable:   seekable,
 		savable:    savable,
@@ -432,8 +436,6 @@ func (i *inode) Stat(ctx context.Context, vfsfs *vfs.Filesystem, opts vfs.StatOp
 		return linux.Statx{}, linuxerr.EINVAL
 	}
 
-	fs := vfsfs.Impl().(*filesystem)
-
 	// Limit our host call only to known flags.
 	mask := opts.Mask & linux.STATX_ALL
 	var s unix.Statx_t
@@ -442,7 +444,7 @@ func (i *inode) Stat(ctx context.Context, vfsfs *vfs.Filesystem, opts vfs.StatOp
 		// Fallback to fstat(2), if statx(2) is not supported on the host.
 		//
 		// TODO(b/151263641): Remove fallback.
-		return i.statxFromStat(fs)
+		return i.statxFromStat(i.devMinor)
 	}
 	if err != nil {
 		return linux.Statx{}, err
@@ -458,7 +460,7 @@ func (i *inode) Stat(ctx context.Context, vfsfs *vfs.Filesystem, opts vfs.StatOp
 		Ino:            i.ino,
 		AttributesMask: s.Attributes_mask,
 		DevMajor:       linux.UNNAMED_MAJOR,
-		DevMinor:       fs.devMinor,
+		DevMinor:       i.devMinor,
 	}
 
 	// Copy other fields that were returned by the host. RdevMajor/RdevMinor
@@ -526,7 +528,7 @@ func (i *inode) Stat(ctx context.Context, vfsfs *vfs.Filesystem, opts vfs.StatOp
 // of a mask or sync flags. fstat(2) does not provide any metadata
 // equivalent to Statx.Attributes, Statx.AttributesMask, or Statx.Btime, so
 // those fields remain empty.
-func (i *inode) statxFromStat(fs *filesystem) (linux.Statx, error) {
+func (i *inode) statxFromStat(devMinor uint32) (linux.Statx, error) {
 	var s unix.Stat_t
 	if err := i.stat(&s); err != nil {
 		return linux.Statx{}, err
@@ -548,7 +550,7 @@ func (i *inode) statxFromStat(fs *filesystem) (linux.Statx, error) {
 		Ctime:    timespecToStatxTimestamp(s.Ctim),
 		Mtime:    timespecToStatxTimestamp(s.Mtim),
 		DevMajor: linux.UNNAMED_MAJOR,
-		DevMinor: fs.devMinor,
+		DevMinor: devMinor,
 	}, nil
 }
 
@@ -678,12 +680,13 @@ func (i *inode) Open(ctx context.Context, rp *vfs.ResolvingPath, d *kernfs.Dentr
 	return i.open(ctx, d, rp.Mount(), fileType, opts.Flags)
 }
 
-func (i *inode) open(ctx context.Context, d *kernfs.Dentry, mnt *vfs.Mount, fileType linux.FileMode, flags uint32) (*vfs.FileDescription, error) {
-	// Constrain flags to a subset we can handle.
-	//
-	// TODO(gvisor.dev/issue/2601): Support O_NONBLOCK by adding RWF_NOWAIT to pread/pwrite calls.
-	flags &= unix.O_ACCMODE | unix.O_NONBLOCK | unix.O_DSYNC | unix.O_SYNC | unix.O_APPEND
+// Supported flags for Open.
+//
+// TODO(gvisor.dev/issue/2601): Support O_NONBLOCK by adding RWF_NOWAIT to pread/pwrite calls.
+const supportedOpenFlags = unix.O_ACCMODE | unix.O_NONBLOCK | unix.O_DSYNC | unix.O_SYNC | unix.O_APPEND
 
+func (i *inode) open(ctx context.Context, d *kernfs.Dentry, mnt *vfs.Mount, fileType linux.FileMode, flags uint32) (*vfs.FileDescription, error) {
+	flags &= supportedOpenFlags
 	switch fileType {
 	case unix.S_IFSOCK:
 		if i.tty != nil {
@@ -723,12 +726,13 @@ func (i *inode) OpenTTY(ctx context.Context, mnt *vfs.Mount, d *vfs.Dentry, opts
 		panic("OpenTTY called on non-TTY host inode")
 	}
 
+	flags := opts.Flags & supportedOpenFlags
 	fd := &TTYFileDescription{
 		fileDescription: fileDescription{inode: i},
 	}
 	fd.LockFD.Init(&i.locks)
 	vfsfd := &fd.vfsfd
-	if err := vfsfd.Init(fd, opts.Flags, mnt, d, &vfs.FileDescriptionOptions{}); err != nil {
+	if err := vfsfd.Init(fd, flags, mnt, d, &vfs.FileDescriptionOptions{}); err != nil {
 		return nil, err
 	}
 	return vfsfd, nil
