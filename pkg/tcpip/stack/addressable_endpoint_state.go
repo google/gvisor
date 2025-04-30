@@ -602,7 +602,7 @@ func (a *AddressableEndpointState) AcquireAssignedAddressOrMatching(localAddr tc
 
 	// Proceed to add a new temporary endpoint.
 	addr := localAddr.WithPrefix()
-	ep, err := a.addAndAcquireAddressLocked(addr, AddressProperties{PEB: tempPEB}, Temporary)
+	ep, err := a.addAndAcquireAddressLocked(addr, AddressProperties{PEB: tempPEB, Temporary: true}, Temporary)
 	if err != nil {
 		// addAndAcquireAddressLocked only returns an error if the address is
 		// already assigned but we just checked above if the address exists so we

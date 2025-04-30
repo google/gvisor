@@ -1783,6 +1783,7 @@ func (n *NetworkPacketInfo) StateTypeName() string {
 func (n *NetworkPacketInfo) StateFields() []string {
 	return []string{
 		"LocalAddressBroadcast",
+		"LocalAddressTemporary",
 		"IsForwardedPacket",
 	}
 }
@@ -1793,7 +1794,8 @@ func (n *NetworkPacketInfo) beforeSave() {}
 func (n *NetworkPacketInfo) StateSave(stateSinkObject state.Sink) {
 	n.beforeSave()
 	stateSinkObject.Save(0, &n.LocalAddressBroadcast)
-	stateSinkObject.Save(1, &n.IsForwardedPacket)
+	stateSinkObject.Save(1, &n.LocalAddressTemporary)
+	stateSinkObject.Save(2, &n.IsForwardedPacket)
 }
 
 func (n *NetworkPacketInfo) afterLoad(context.Context) {}
@@ -1801,7 +1803,8 @@ func (n *NetworkPacketInfo) afterLoad(context.Context) {}
 // +checklocksignore
 func (n *NetworkPacketInfo) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &n.LocalAddressBroadcast)
-	stateSourceObject.Load(1, &n.IsForwardedPacket)
+	stateSourceObject.Load(1, &n.LocalAddressTemporary)
+	stateSourceObject.Load(2, &n.IsForwardedPacket)
 }
 
 func (p *PacketMMapOpts) StateTypeName() string {
