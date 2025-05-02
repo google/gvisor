@@ -208,8 +208,6 @@ type PacketMMapOpts struct {
 	Cooked         bool
 	Stack          *Stack
 	Wq             *waiter.Queue
-	NICID          tcpip.NICID
-	NetProto       tcpip.NetworkProtocolNumber
 	PacketEndpoint MappablePacketEndpoint
 	Version        int
 	Reserve        uint32

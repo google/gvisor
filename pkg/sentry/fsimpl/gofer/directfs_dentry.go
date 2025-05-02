@@ -445,10 +445,11 @@ func (d *directfsDentry) getXattr(ctx context.Context, name string, size uint64)
 		return d.controlFDLisa.GetXattr(ctx, name, size)
 	}
 	data := make([]byte, size)
-	if _, err := unix.Fgetxattr(d.controlFD, name, data); err != nil {
+	n, err := unix.Fgetxattr(d.controlFD, name, data)
+	if err != nil {
 		return "", err
 	}
-	return string(data), nil
+	return string(data[:n]), nil
 }
 
 // getCreatedChild opens the newly created child, sets its uid/gid, constructs

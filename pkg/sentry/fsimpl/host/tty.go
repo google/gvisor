@@ -136,6 +136,9 @@ func (t *TTYFileDescription) Ioctl(ctx context.Context, io usermem.IO, sysno uin
 		return 0, err
 
 	case linux.TCSETS, linux.TCSETSW, linux.TCSETSF:
+		t.inode.termiosMu.Lock()
+		defer t.inode.termiosMu.Unlock()
+
 		if err := t.inode.tty.CheckChange(ctx, linux.SIGTTOU); err != nil {
 			return 0, err
 		}
@@ -146,9 +149,7 @@ func (t *TTYFileDescription) Ioctl(ctx context.Context, io usermem.IO, sysno uin
 		}
 		err := ioctlSetTermios(fd, ioctl, &termios)
 		if err == nil {
-			t.inode.termiosMu.Lock()
 			t.inode.termios.FromTermios(termios)
-			t.inode.termiosMu.Unlock()
 		}
 		return 0, err
 

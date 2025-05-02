@@ -20,6 +20,7 @@ package packetmmap
 
 import (
 	"fmt"
+	"time"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
@@ -70,19 +71,18 @@ type Endpoint struct {
 	mode ringBufferMode
 	// +checklocks:mu
 	cooked bool
+	// +checklocks:mu
+	stack *stack.Stack
 
 	packetEP  stack.MappablePacketEndpoint
 	reserve   uint32
-	nicID     tcpip.NICID
-	netProto  tcpip.NetworkProtocolNumber
 	version   int
 	headerLen uint32
 
 	received atomicbitops.Uint32
 	dropped  atomicbitops.Uint32
 
-	stack *stack.Stack
-	wq    *waiter.Queue
+	wq *waiter.Queue
 
 	mappingsMu sync.Mutex `state:"nosave"`
 	// +checklocks:mappingsMu
@@ -104,12 +104,8 @@ func (m *Endpoint) Init(ctx context.Context, opts stack.PacketMMapOpts) error {
 	m.wq = opts.Wq
 	m.cooked = opts.Cooked
 	m.packetEP = opts.PacketEndpoint
-	m.nicID = opts.NICID
-	m.netProto = opts.NetProto
 	m.version = opts.Version
 	m.reserve = opts.Reserve
-	m.nicID = opts.NICID
-	m.netProto = opts.NetProto
 
 	switch m.version {
 	case linux.TPACKET_V1:
@@ -202,9 +198,10 @@ func (m *Endpoint) HandlePacket(nicID tcpip.NICID, netProto tcpip.NetworkProtoco
 
 	m.mu.Lock()
 	cooked := m.cooked
+	stats := m.stack.Stats()
 	if !m.rxRingBuffer.hasRoom() {
 		m.mu.Unlock()
-		m.stack.Stats().DroppedPackets.Increment()
+		stats.DroppedPackets.Increment()
 		m.dropped.Add(1)
 		return
 	}
@@ -237,7 +234,7 @@ func (m *Endpoint) HandlePacket(nicID tcpip.NICID, netProto tcpip.NetworkProtoco
 		macOffset = netOffset - macLen
 	}
 	if netOffset > uint32(^uint16(0)) {
-		m.stack.Stats().DroppedPackets.Increment()
+		stats.DroppedPackets.Increment()
 		m.dropped.Add(1)
 		return
 	}
@@ -258,7 +255,7 @@ func (m *Endpoint) HandlePacket(nicID tcpip.NICID, netProto tcpip.NetworkProtoco
 	tpStatus, err := m.rxRingBuffer.currFrameStatus()
 	if err != nil || tpStatus != linux.TP_STATUS_KERNEL {
 		m.mu.Unlock()
-		m.stack.Stats().DroppedPackets.Increment()
+		stats.DroppedPackets.Increment()
 		m.dropped.Add(1)
 		return
 	}
@@ -266,7 +263,7 @@ func (m *Endpoint) HandlePacket(nicID tcpip.NICID, netProto tcpip.NetworkProtoco
 	slot, ok := m.rxRingBuffer.testAndMarkHead()
 	if !ok {
 		m.mu.Unlock()
-		m.stack.Stats().DroppedPackets.Increment()
+		stats.DroppedPackets.Increment()
 		m.dropped.Add(1)
 		return
 	}
@@ -276,17 +273,18 @@ func (m *Endpoint) HandlePacket(nicID tcpip.NICID, netProto tcpip.NetworkProtoco
 		status |= linux.TP_STATUS_COPY
 		m.packetEP.HandlePacketMMapCopy(nicID, netProto, clone)
 	}
+	t := m.stack.Clock().Now()
 	m.mu.Unlock()
 
 	// Unlock around writing to the internal mappings to allow other threads to
 	// write to the ring buffer.
 	hdrView := buffer.NewViewSize(int(macOffset))
-	m.marshalFrameHeader(pktBuf, macOffset, netOffset, dataLength, hdrView)
+	m.marshalFrameHeader(t, pktBuf, macOffset, netOffset, dataLength, hdrView)
 	pktBuf.Truncate(int64(dataLength))
-	m.marshalSockAddr(pkt, hdrView)
+	m.marshalSockAddr(pkt, netProto, nicID, hdrView)
 
 	if err := m.rxRingBuffer.writeFrame(slot, hdrView, pktBuf); err != nil {
-		m.stack.Stats().DroppedPackets.Increment()
+		stats.DroppedPackets.Increment()
 		m.dropped.Add(1)
 		return
 	}
@@ -294,7 +292,7 @@ func (m *Endpoint) HandlePacket(nicID tcpip.NICID, netProto tcpip.NetworkProtoco
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if err := m.rxRingBuffer.writeStatus(slot, status); err != nil {
-		m.stack.Stats().DroppedPackets.Increment()
+		stats.DroppedPackets.Increment()
 		m.dropped.Add(1)
 		return
 	}
@@ -415,12 +413,12 @@ func toLinuxPacketType(pktType tcpip.PacketType) uint8 {
 	}
 }
 
-func (m *Endpoint) marshalSockAddr(pkt *stack.PacketBuffer, view *buffer.View) {
+func (m *Endpoint) marshalSockAddr(pkt *stack.PacketBuffer, netProto tcpip.NetworkProtocolNumber, nicID tcpip.NICID, view *buffer.View) {
 	var sll linux.SockAddrLink
 	sll.Family = linux.AF_PACKET
-	sll.Protocol = socket.Htons(uint16(m.netProto))
+	sll.Protocol = socket.Htons(uint16(netProto))
 	sll.PacketType = toLinuxPacketType(pkt.PktType)
-	sll.InterfaceIndex = int32(m.nicID)
+	sll.InterfaceIndex = int32(nicID)
 	sll.HardwareAddrLen = header.EthernetAddressSize
 
 	if len(pkt.LinkHeader().Slice()) != 0 {
@@ -436,8 +434,7 @@ func (m *Endpoint) marshalSockAddr(pkt *stack.PacketBuffer, view *buffer.View) {
 	sll.MarshalBytes(view.AsSlice()[linux.TPacketAlign(hdrSize):])
 }
 
-func (m *Endpoint) marshalFrameHeader(pktBuf buffer.Buffer, macOffset, netOffset, dataLength uint32, view *buffer.View) {
-	t := m.stack.Clock().Now()
+func (m *Endpoint) marshalFrameHeader(t time.Time, pktBuf buffer.Buffer, macOffset, netOffset, dataLength uint32, view *buffer.View) {
 	switch m.version {
 	case linux.TPACKET_V1:
 		hdr := linux.TpacketHdr{

@@ -590,8 +590,6 @@ func (ep *endpoint) SocketOptions() *tcpip.SocketOptions {
 
 // GetPacketMMapOpts implements stack.MappablePacketEndpoint.GetPacketMMapOpts.
 func (ep *endpoint) GetPacketMMapOpts(req *tcpip.TpacketReq, isRx bool) stack.PacketMMapOpts {
-	ep.mu.RLock()
-	defer ep.mu.RUnlock()
 	ep.packetMmapMu.Lock()
 	defer ep.packetMmapMu.Unlock()
 
@@ -601,8 +599,6 @@ func (ep *endpoint) GetPacketMMapOpts(req *tcpip.TpacketReq, isRx bool) stack.Pa
 		Cooked:         ep.cooked,
 		Stack:          ep.stack,
 		Wq:             ep.waiterQueue,
-		NICID:          ep.boundNIC,
-		NetProto:       ep.boundNetProto,
 		PacketEndpoint: ep,
 		Version:        int(ep.packetMMapVersion),
 		Reserve:        uint32(ep.packetMMapReserve),
