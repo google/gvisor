@@ -15,7 +15,6 @@
 package auth
 
 import (
-	"fmt"
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -40,37 +39,62 @@ func credentialsWithCaps(creds *Credentials, permittedCaps, inheritableCaps, eff
 	return newCreds
 }
 
+func vfsNsCapDataFrom(effective bool, rootid uint32, permitted, inheritable CapabilitySet) linux.VfsNsCapData {
+	capData := vfsCapDataFrom(effective, permitted, inheritable)
+	capData.MagicEtc = linux.VFS_CAP_REVISION_3
+	if effective {
+		capData.MagicEtc |= linux.VFS_CAP_FLAGS_EFFECTIVE
+	}
+	capData.RootID = rootid
+	return capData
+}
+
+func vfsCapDataFrom(effective bool, permitted, inheritable CapabilitySet) linux.VfsNsCapData {
+	var capData linux.VfsNsCapData
+	capData.MagicEtc = linux.VFS_CAP_REVISION_2
+	if effective {
+		capData.MagicEtc |= linux.VFS_CAP_FLAGS_EFFECTIVE
+	}
+	capData.PermittedLo = uint32(permitted & 0xffffffff)
+	capData.PermittedHi = uint32(permitted >> 32)
+	capData.InheritableLo = uint32(inheritable & 0xffffffff)
+	capData.InheritableHi = uint32(inheritable >> 32)
+	return capData
+}
+
 func TestCapsFromVfsCaps(t *testing.T) {
 	for _, tst := range []struct {
 		name     string
-		capData  VfsCapData
+		capData  linux.VfsNsCapData
 		creds    *Credentials
 		wantCaps TaskCapabilities
 		wantErr  error
 	}{
 		{
 			name: "TestRootCredential",
-			capData: VfsCapData{
-				MagicEtc:    0x2000001,
-				Permitted:   CapabilitySetOf(linux.CAP_NET_ADMIN),
-				Inheritable: CapabilitySetOf(linux.CAP_NET_ADMIN),
-			},
-			creds: credentialsWithCaps(NewRootCredentials(NewRootUserNamespace()), AllCapabilities, CapabilitySetOf(linux.CAP_NET_RAW), AllCapabilities, CapabilitySetOf(linux.CAP_SYSLOG)),
+			capData: vfsCapDataFrom(
+				true,                                  // effective
+				CapabilitySetOf(linux.CAP_NET_ADMIN),  // permitted
+				CapabilitySetOf(linux.CAP_NET_ADMIN)), // inheritable
+			creds: credentialsWithCaps(
+				NewRootCredentials(NewRootUserNamespace()),
+				AllCapabilities,
+				CapabilitySetOf(linux.CAP_NET_RAW),
+				AllCapabilities,
+				CapabilitySetOf(linux.CAP_SYSLOG)),
 			wantCaps: TaskCapabilities{
 				PermittedCaps:   AllCapabilities,
 				InheritableCaps: CapabilitySetOf(linux.CAP_NET_RAW),
 				EffectiveCaps:   AllCapabilities,
 				BoundingCaps:    CapabilitySetOf(linux.CAP_SYSLOG),
 			},
-			wantErr: nil,
 		},
 		{
 			name: "TestPermittedAndInheritableCaps",
-			capData: VfsCapData{
-				MagicEtc:    0x2000001,
-				Permitted:   CapabilitySetOfMany([]linux.Capability{linux.CAP_CHOWN, linux.CAP_SETUID}),
-				Inheritable: CapabilitySetOfMany([]linux.Capability{linux.CAP_CHOWN, linux.CAP_SETGID}),
-			},
+			capData: vfsCapDataFrom(
+				true, // effective
+				CapabilitySetOfMany([]linux.Capability{linux.CAP_CHOWN, linux.CAP_SETUID}),  // permitted
+				CapabilitySetOfMany([]linux.Capability{linux.CAP_CHOWN, linux.CAP_SETGID})), // inheritable
 			creds: credentialsWithCaps(
 				NewUserCredentials(123, 321, nil, nil, NewRootUserNamespace()),
 				AllCapabilities,
@@ -83,15 +107,13 @@ func TestCapsFromVfsCaps(t *testing.T) {
 				EffectiveCaps:   CapabilitySetOfMany([]linux.Capability{linux.CAP_CHOWN, linux.CAP_SETUID, linux.CAP_SETGID}),
 				BoundingCaps:    AllCapabilities,
 			},
-			wantErr: nil,
 		},
 		{
 			name: "TestEffectiveBitOff",
-			capData: VfsCapData{
-				MagicEtc:    0x2000000,
-				Permitted:   CapabilitySetOfMany([]linux.Capability{linux.CAP_CHOWN, linux.CAP_SETUID}),
-				Inheritable: CapabilitySetOfMany([]linux.Capability{linux.CAP_CHOWN, linux.CAP_SETGID}),
-			},
+			capData: vfsCapDataFrom(
+				false, // effective
+				CapabilitySetOfMany([]linux.Capability{linux.CAP_CHOWN, linux.CAP_SETUID}),  // permitted
+				CapabilitySetOfMany([]linux.Capability{linux.CAP_CHOWN, linux.CAP_SETGID})), // inheritable
 			creds: credentialsWithCaps(
 				NewUserCredentials(123, 321, nil, nil, NewRootUserNamespace()),
 				AllCapabilities,
@@ -104,23 +126,20 @@ func TestCapsFromVfsCaps(t *testing.T) {
 				EffectiveCaps:   0,
 				BoundingCaps:    AllCapabilities,
 			},
-			wantErr: nil,
 		},
 		{
 			name: "TestInsufficientCaps",
-			capData: VfsCapData{
-				MagicEtc:    0x2000001,
-				Permitted:   CapabilitySetOfMany([]linux.Capability{linux.CAP_CHOWN, linux.CAP_SETUID}),
-				Inheritable: CapabilitySetOfMany([]linux.Capability{linux.CAP_CHOWN}),
-			},
+			capData: vfsCapDataFrom(
+				true, // effective
+				CapabilitySetOfMany([]linux.Capability{linux.CAP_CHOWN, linux.CAP_SETUID}), // permitted
+				CapabilitySetOf(linux.CAP_CHOWN)),                                          // inheritable
 			creds: credentialsWithCaps(
 				NewUserCredentials(123, 321, nil, nil, NewRootUserNamespace()),
 				AllCapabilities,
 				AllCapabilities,
 				AllCapabilities,
 				CapabilitySetOf(linux.CAP_CHOWN)),
-			wantCaps: TaskCapabilities{},
-			wantErr:  linuxerr.EPERM,
+			wantErr: linuxerr.EPERM,
 		},
 	} {
 		t.Run(tst.name, func(t *testing.T) {
@@ -150,47 +169,28 @@ func TestVfsCapData(t *testing.T) {
 	for _, tst := range []struct {
 		name    string
 		data    []byte
-		capData VfsCapData
+		capData linux.VfsNsCapData
 		wantErr error
 	}{
 		{
 			name:    "VfsCapRevision1",
-			data:    []byte{0, 0, 0, 1, 0, 16, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-			capData: VfsCapData{},
-			wantErr: fmt.Errorf("VFS_CAP_REVISION_%v with cap data size %v is not supported", 0x1000000, 20),
+			data:    []byte{0, 0, 0, 1, 0, 16, 0, 0, 0, 0, 0, 0},
+			wantErr: linuxerr.EINVAL,
 		},
 		{
-			name: "VfsCapRevision2",
-			data: []byte{1, 0, 0, 2, 0, 32, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0},
-			capData: VfsCapData{
-				MagicEtc:    0x2000001,
-				Permitted:   CapabilitySetOf(linux.CAP_NET_RAW),
-				Inheritable: CapabilitySetOf(linux.CAP_SYSLOG),
-			},
-			wantErr: nil,
+			name:    "VfsCapRevision2WithEffective",
+			data:    []byte{1, 0, 0, 2, 0, 32, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0},
+			capData: vfsCapDataFrom(true, CapabilitySetOf(linux.CAP_NET_RAW), CapabilitySetOf(linux.CAP_SYSLOG)),
 		},
 		{
-			name: "VfsCapRevision3",
-			data: []byte{0, 0, 0, 3, 0, 0, 0, 0, 0, 16, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0},
-			capData: VfsCapData{
-				MagicEtc:    0x3000000,
-				RootID:      1,
-				Permitted:   CapabilitySetOf(linux.CAP_SYSLOG),
-				Inheritable: CapabilitySetOf(linux.CAP_NET_ADMIN),
-			},
-			wantErr: nil,
+			name:    "VfsCapRevision3",
+			data:    []byte{0, 0, 0, 3, 0, 0, 0, 0, 0, 16, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0},
+			capData: vfsNsCapDataFrom(false, 1, CapabilitySetOf(linux.CAP_SYSLOG), CapabilitySetOf(linux.CAP_NET_ADMIN)),
 		},
 		{
 			name:    "VfsCapRevisionNotSupported",
 			data:    []byte{0, 0, 0, 0xf, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0},
-			capData: VfsCapData{},
-			wantErr: fmt.Errorf("VFS_CAP_REVISION_%v with cap data size %v is not supported", 0xf000000, 20),
-		},
-		{
-			name:    "VfsInvalidInput",
-			data:    []byte{0, 0, 0, 0},
-			capData: VfsCapData{},
-			wantErr: fmt.Errorf("the size of security.capability is too small, actual size: %v", 4),
+			wantErr: linuxerr.EINVAL,
 		},
 	} {
 		t.Run(tst.name, func(t *testing.T) {
@@ -200,11 +200,20 @@ func TestVfsCapData(t *testing.T) {
 					t.Errorf("VfsCapDataOf(%v) returned unexpected error %v", tst.data, tst.wantErr)
 				}
 				if tst.capData != capData {
-					t.Errorf("VfsCapDataOf(%v) = %v, want %v", tst.data, capData, tst.capData)
+					t.Errorf("VfsCapDataOf(%v) = %+v, want %+v", tst.data, capData, tst.capData)
 				}
 			} else if tst.wantErr == nil || tst.wantErr.Error() != err.Error() {
 				t.Errorf("VfsCapDataOf(%v) returned error %v, wantErr: %v", tst.data, err, tst.wantErr)
 			}
 		})
+	}
+}
+
+func TestXattrCapsSizeBytes(t *testing.T) {
+	if got := (*linux.VfsCapData)(nil).SizeBytes(); got != linux.XATTR_CAPS_SZ_2 {
+		t.Errorf("XATTR_CAPS_SZ_2 = %v, got %v", linux.XATTR_CAPS_SZ_2, got)
+	}
+	if got := (*linux.VfsNsCapData)(nil).SizeBytes(); got != linux.XATTR_CAPS_SZ_3 {
+		t.Errorf("XATTR_CAPS_SZ_3 = %v, got %v", linux.XATTR_CAPS_SZ_3, got)
 	}
 }

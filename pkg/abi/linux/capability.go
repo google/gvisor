@@ -230,11 +230,9 @@ const (
 // Constants that are used by file capability extended attributes, defined
 // in Linux's include/uapi/linux/capability.h.
 const (
-	// The flag decides the value of effective file capabilit
+	// VFS_CAP_FLAGS_EFFECTIVE allows the effective capability set to be
+	// initialized with the permitted file capabilities.
 	VFS_CAP_FLAGS_EFFECTIVE = 0x000001
-	// VFS_CAP_REVISION_1 was the original file capability implementation,
-	// which supported 32-bit masks for file capabilities.
-	VFS_CAP_REVISION_1 = 0x01000000
 	// VFS_CAP_REVISION_2 allows for file capability masks that are 64
 	// bits in size, and was necessary as the number of supported
 	// capabilities grew beyond 32.
@@ -246,13 +244,40 @@ const (
 	// extended attribute.
 	VFS_CAP_REVISION_3    = 0x03000000
 	VFS_CAP_REVISION_MASK = 0xFF000000
-	// The encoded VFS_CAP_REVISION_1 data's number of bytes.
-	XATTR_CAPS_SZ_1 = 12
-	// The encoded VFS_CAP_REVISION_2 data's number of bytes.
+	// XATTR_CAPS_SZ_2 is sizeof(struct vfs_cap_data).
 	XATTR_CAPS_SZ_2 = 20
-	// The encoded VFS_CAP_REVISION_3 data's number of bytes.
+	// XATTR_CAPS_SZ_3 is sizeof(struct vfs_ns_cap_data).
 	XATTR_CAPS_SZ_3 = 24
 )
+
+// VfsCapData is equivalent to Linux's struct vfs_cap_data.
+//
+// +marshal
+type VfsCapData struct {
+	MagicEtc      uint32
+	PermittedLo   uint32
+	InheritableLo uint32
+	PermittedHi   uint32
+	InheritableHi uint32
+}
+
+// Permitted returns the permitted capability set.
+func (c *VfsCapData) Permitted() uint64 {
+	return uint64(c.PermittedHi)<<32 | uint64(c.PermittedLo)
+}
+
+// Inheritable returns the inheritable capability set.
+func (c *VfsCapData) Inheritable() uint64 {
+	return uint64(c.InheritableHi)<<32 | uint64(c.InheritableLo)
+}
+
+// VfsNsCapData is equivalent to Linux's struct vfs_ns_cap_data.
+//
+// +marshal
+type VfsNsCapData struct {
+	VfsCapData
+	RootID uint32
+}
 
 // CapUserHeader is equivalent to Linux's cap_user_header_t.
 //
