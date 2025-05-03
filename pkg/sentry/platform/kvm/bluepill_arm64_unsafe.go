@@ -111,6 +111,14 @@ func bluepillSigBus(c *vCPU) {
 		},
 	}
 
+	if !c.switchingToUser.Load() {
+		// In the kernel mode (Sentry), Serrors are masked.
+		// DABT (Data Abort) will force the Sentry returns back
+		// to the host.
+		bluepillExtDabt(c)
+		return
+	}
+
 	// Host must support ARM64_HAS_RAS_EXTN.
 	if errno := hostsyscall.RawSyscallErrno( // escapes: no.
 		unix.SYS_IOCTL,

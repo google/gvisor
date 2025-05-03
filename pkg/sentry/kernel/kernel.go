@@ -1088,15 +1088,15 @@ func (k *Kernel) CreateProcess(args CreateProcessArgs) (*ThreadGroup, ThreadID, 
 	if se != nil {
 		return nil, 0, errors.New(se.String())
 	}
-	var capData auth.VfsCapData
+	var vfsCaps linux.VfsNsCapData
 	if len(image.FileCaps()) != 0 {
 		var err error
-		capData, err = auth.VfsCapDataOf([]byte(image.FileCaps()))
+		vfsCaps, err = auth.VfsCapDataOf([]byte(image.FileCaps()))
 		if err != nil {
 			return nil, 0, err
 		}
 	}
-	creds, err := auth.CapsFromVfsCaps(capData, args.Credentials)
+	creds, err := auth.CapsFromVfsCaps(vfsCaps, args.Credentials)
 	if err != nil {
 		return nil, 0, err
 	}

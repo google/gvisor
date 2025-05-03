@@ -23,6 +23,7 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/hostsyscall"
 	"gvisor.dev/gvisor/pkg/ring0"
@@ -35,6 +36,11 @@ type vCPUArchState struct {
 	//
 	// This starts above fixedKernelPCID.
 	PCIDs *pagetables.PCIDs
+
+	// switchingToUser indicates whether the vCPU is in the process of
+	// switching to user mode. It is set before the SwitchToUser call
+	// and unset after.
+	switchingToUser atomicbitops.Bool
 }
 
 const (
