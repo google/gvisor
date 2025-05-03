@@ -214,8 +214,8 @@ func (c *vCPU) getTSC() error {
 	reg.addr = uint64(reflect.ValueOf(&data).Pointer())
 	reg.id = _KVM_ARM64_REGS_TIMER_CNT
 
-	if err := c.getOneRegister(&reg); err != nil {
-		return err
+	if errno := c.getOneRegister(&reg); errno != 0 {
+		return fmt.Errorf("error getting KVM_ARM64_REGS_TIMER_CNT: %w", errno)
 	}
 
 	return nil
@@ -265,6 +265,7 @@ func (c *vCPU) loadSegments(tid uint64) {
 	c.tid.Store(tid)
 }
 
+//go:nosplit
 func (c *vCPU) setOneRegister(reg *kvmOneReg) error {
 	if errno := hostsyscall.RawSyscallErrno(
 		unix.SYS_IOCTL,
@@ -276,15 +277,13 @@ func (c *vCPU) setOneRegister(reg *kvmOneReg) error {
 	return nil
 }
 
-func (c *vCPU) getOneRegister(reg *kvmOneReg) error {
-	if errno := hostsyscall.RawSyscallErrno(
+//go:nosplit
+func (c *vCPU) getOneRegister(reg *kvmOneReg) unix.Errno {
+	return hostsyscall.RawSyscallErrno(
 		unix.SYS_IOCTL,
 		uintptr(c.fd),
 		_KVM_GET_ONE_REG,
-		uintptr(unsafe.Pointer(reg))); errno != 0 {
-		return fmt.Errorf("error getting one register: %v", errno)
-	}
-	return nil
+		uintptr(unsafe.Pointer(reg)))
 }
 
 // SwitchToUser unpacks architectural-details.
@@ -317,10 +316,14 @@ func (c *vCPU) SwitchToUser(switchOpts ring0.SwitchOpts, info *linux.SignalInfo)
 	appRegs := switchOpts.Registers
 	c.SetAppAddr(ring0.KernelStartAddress | uintptr(unsafe.Pointer(appRegs)))
 
+	c.switchingToUser.Store(true)
+
 	entersyscall()
 	bluepill(c)
 	vector = c.CPU.SwitchToUser(switchOpts)
 	exitsyscall()
+
+	c.switchingToUser.Store(false)
 
 	switch vector {
 	case ring0.Syscall:
