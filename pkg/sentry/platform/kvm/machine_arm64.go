@@ -191,16 +191,12 @@ func (c *vCPU) fault(signal int32, info *linux.SignalInfo) (hostarch.AccessType,
 
 // getMaxVCPU get max vCPU number
 func (m *machine) getMaxVCPU() {
-	rmaxVCPUs := runtime.NumCPU()
-	smaxVCPUs, errno := hostsyscall.RawSyscall(unix.SYS_IOCTL, uintptr(m.fd), KVM_CHECK_EXTENSION, _KVM_CAP_MAX_VCPUS)
-	// compare the max vcpu number from runtime and syscall, use smaller one.
-	if errno != 0 {
-		m.maxVCPUs = rmaxVCPUs
-	} else {
-		if rmaxVCPUs < int(smaxVCPUs) {
-			m.maxVCPUs = rmaxVCPUs
-		} else {
-			m.maxVCPUs = int(smaxVCPUs)
-		}
+	if m.maxVCPUs == 0 {
+		m.maxVCPUs = runtime.NumCPU()
+	}
+
+	// Apply KVM limit.
+	if maxVCPUs, errno := hostsyscall.RawSyscall(unix.SYS_IOCTL, uintptr(m.fd), KVM_CHECK_EXTENSION, _KVM_CAP_MAX_VCPUS); errno == 0 && m.maxVCPUs > int(maxVCPUs) {
+		m.maxVCPUs = int(maxVCPUs)
 	}
 }

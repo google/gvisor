@@ -53,11 +53,9 @@ func (m *machine) initArchState() error {
 	// The reason for the difference is that ARM64 and x86_64 have different KVM timer mechanisms.
 	// If we create vCPU dynamically on ARM64, the timer for vCPU would mess up for a short time.
 	// For more detail, please refer to https://github.com/google/gvisor/issues/5739
-	m.mu.Lock()
 	for i := 0; i < m.maxVCPUs; i++ {
 		m.createVCPU(i)
 	}
-	m.mu.Unlock()
 	return nil
 }
 
@@ -259,10 +257,9 @@ func (c *vCPU) setSystemTime() error {
 }
 
 //go:nosplit
-func (c *vCPU) loadSegments(tid uint64) {
+func (c *vCPU) loadSegments() {
 	// TODO(gvisor.dev/issue/1238):  TLS is not supported.
 	// Get TLS from tpidr_el0.
-	c.tid.Store(tid)
 }
 
 //go:nosplit
