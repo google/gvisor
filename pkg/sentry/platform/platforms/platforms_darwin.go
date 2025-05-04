@@ -17,4 +17,7 @@
 
 package platforms
 
-// This file makes the platforms package buildable on Darwin.
+import (
+	// Import platforms that runsc might use.
+	_ "gvisor.dev/gvisor/pkg/sentry/platform/vf"
+)
