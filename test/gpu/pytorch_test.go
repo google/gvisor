@@ -24,6 +24,9 @@ import (
 
 // runPytorch runs the given script and command in a PyTorch container.
 func runPytorch(ctx context.Context, t *testing.T, scriptPath string, args ...string) {
+	if dockerutil.IsRunningOnARM() {
+		t.Skipf("%s is not supported on ARM for now.", t.Name())
+	}
 	t.Helper()
 	c := dockerutil.MakeContainer(ctx, t)
 	opts, err := dockerutil.GPURunOpts(dockerutil.SniffGPUOpts{})
