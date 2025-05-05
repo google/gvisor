@@ -84,8 +84,7 @@ go_test(
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/test/dockerutil",
-        "//pkg/test/testutil",
-        "@org_golang_x_sync//errgroup:go_default_library",
+        "//test/gpu/cuda",
     ],
 )
 
