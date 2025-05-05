@@ -46,6 +46,8 @@ go_library(
         "filters.go",
         "filters_amd64.go",
         "filters_arm64.go",
+        "ioeventfd.go",
+        "ioeventfd_unsafe.go",
         "kvm.go",
         "kvm_amd64.go",
         "kvm_amd64_unsafe.go",
@@ -73,8 +75,10 @@ go_library(
     deps = [
         "//pkg/abi/linux",
         "//pkg/atomicbitops",
+        "//pkg/bitmap",
         "//pkg/context",
         "//pkg/cpuid",
+        "//pkg/eventfd",
         "//pkg/fd",
         "//pkg/hostarch",
         "//pkg/hostos",
@@ -120,6 +124,7 @@ go_test(
     deps = [
         "//pkg/abi/linux",
         "//pkg/cpuid",
+        "//pkg/eventfd",
         "//pkg/hostarch",
         "//pkg/memutil",
         "//pkg/ring0",
@@ -154,6 +159,7 @@ go_test(
     deps = [
         "//pkg/abi/linux",
         "//pkg/cpuid",
+        "//pkg/eventfd",
         "//pkg/hostarch",
         "//pkg/memutil",
         "//pkg/ring0",

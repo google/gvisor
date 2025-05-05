@@ -139,6 +139,12 @@ func (c *vCPU) KernelException(vector ring0.Vector) {
 func (c *vCPU) hltSanityCheck() {
 }
 
+func currentEL() uint64
+
+func inKernelMode() bool {
+	return currentEL() == 1
+}
+
 func init() {
 	// Install the handler.
 	if err := sighandling.ReplaceSignalHandler(bluepillSignal, addrOfSighandler(), &savedHandler); err != nil {

@@ -24,6 +24,7 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/cpuid"
+	"gvisor.dev/gvisor/pkg/eventfd"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/ring0"
 	"gvisor.dev/gvisor/pkg/ring0/pagetables"
@@ -478,6 +479,45 @@ func TestKernelVDSO(t *testing.T) {
 		}
 		return false
 	})
+}
+
+func TestIoeventfd(t *testing.T) {
+	efd, err := eventfd.Create()
+	if err != nil {
+		t.Fatalf("%v", err)
+	}
+	defer efd.Close()
+	want := uint64(0)
+	kvmTest(t, nil, func(c *vCPU) bool {
+		if err := c.machine.ioeventfdEnable(&efd); err != nil {
+			t.Errorf("failed to enable ioeventfd: %v", err)
+			return false
+		}
+		defer c.machine.ioeventfdDisable(&efd)
+		var firstErr, lastErr error
+		const n = 100
+		for i := 0; i < n; i++ {
+			bluepill(c)
+			err := efd.MMIOWrite(1)
+			if err == nil {
+				want++
+				continue
+			}
+			if firstErr == nil {
+				firstErr = err
+			}
+			lastErr = err
+		}
+		if want == 0 {
+			t.Errorf("ioeventfd failed to perform MMIO write %d times; first error: %v; last error: %v", n, firstErr, lastErr)
+		}
+		return false
+	})
+	if want != 0 {
+		if got, err := efd.Read(); err != nil || got != want {
+			t.Errorf("Eventfd.Read: got (%d, %v), want (%d, nil)", got, err, want)
+		}
+	}
 }
 
 func BenchmarkApplicationSyscall(b *testing.B) {

@@ -18,6 +18,7 @@ go_library(
     deps = [
         "//pkg/hostarch",
         "//pkg/rawfile",
+        "//pkg/safecopy",
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )

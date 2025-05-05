@@ -94,6 +94,7 @@ func New(deviceFile *fd.FD, config Config) (*KVM, error) {
 	fd := deviceFile.FD()
 
 	// Ensure global initialization is done.
+	initIoeventfdMMIO()
 	globalOnce.Do(func() {
 		globalErr = updateGlobalOnce(int(fd))
 	})

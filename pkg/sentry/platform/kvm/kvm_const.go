@@ -31,6 +31,7 @@ const (
 	KVM_INTERRUPT              = 0x4004ae86
 	KVM_SET_MSRS               = 0x4008ae89
 	KVM_SET_USER_MEMORY_REGION = 0x4020ae46
+	KVM_IOEVENTFD              = 0x4040ae79
 	KVM_SET_REGS               = 0x4090ae82
 	KVM_SET_SREGS              = 0x4138ae84
 	KVM_GET_MSRS               = 0xc008ae88
@@ -84,6 +85,11 @@ const (
 	_KVM_MEM_LOG_DIRTY_PAGES = uint32(1) << 0
 	_KVM_MEM_READONLY        = uint32(1) << 1
 	_KVM_MEM_FLAGS_NONE      = uint32(0)
+)
+
+// KVM kvm_ioeventfd::flags.
+const (
+	_KVM_IOEVENTFD_FLAG_DEASSIGN = 1 << 2
 )
 
 // KVM hypercall list.

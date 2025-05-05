@@ -36,13 +36,22 @@ type virtualRegion struct {
 // mapsLine matches a single line from /proc/PID/maps.
 var mapsLine = regexp.MustCompile("([0-9a-f]+)-([0-9a-f]+) ([r-][w-][x-][sp]) ([0-9a-f]+) [0-9a-f]{2,3}:[0-9a-f]{2,} [0-9]+\\s+(.*)")
 
-// excludeRegion returns true if these regions should be excluded from the
-// physical map. Virtual regions need to be excluded if get_user_pages will
+// excludeVirtualRegion returns true if these regions should be excluded from
+// the physical map. Virtual regions need to be excluded if get_user_pages will
 // fail on those addresses, preventing KVM from satisfying EPT faults.
 //
 // This is called by the physical map functions, not applyVirtualRegions.
 func excludeVirtualRegion(r virtualRegion) bool {
 	return false
+}
+
+// mmioVirtualRegion returns true if r should be included in the physical map,
+// but not actually mapped in the physical address space. This ensures that
+// accesses to this region cause MMIO exits.
+//
+// This is called by the physical map functions, not applyVirtualRegions.
+func mmioVirtualRegion(r virtualRegion) bool {
+	return r.virtual == ioeventfdMMIO.mapping
 }
 
 // applyVirtualRegions parses the process maps file.
