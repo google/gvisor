@@ -1149,6 +1149,22 @@ func checkLogs(logs string, oldPos int) error {
 	return nil
 }
 
+func TestUnshareUsernsWithoutSetfcap(t *testing.T) {
+	ctx := context.Background()
+	d := dockerutil.MakeContainer(ctx, t)
+	defer d.CleanUp(ctx)
+
+	if err := d.Spawn(ctx, dockerutil.RunOpts{
+		Image:   "basic/integrationtest",
+		CapDrop: []string{"setfcap"},
+	}, "unshare", "-Ur", "ls"); err != nil {
+		t.Fatalf("docker run failed: %v", err)
+	}
+	if _, err := d.WaitForOutput(ctx, "Operation not permitted", 5*time.Second); err != nil {
+		t.Errorf("WaitForOutput failed: %v", err)
+	}
+}
+
 // Checkpoint the container and continue running.
 func TestCheckpointResume(t *testing.T) {
 	if !testutil.IsCheckpointSupported() {
