@@ -1,4 +1,4 @@
-// Copyright 2021 The gVisor Authors.
+// Copyright 2025 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package eventfd
+package kvm
 
 import (
 	"unsafe"
@@ -20,21 +20,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-func (ev Eventfd) mmioPtr() unsafe.Pointer {
-	return unsafe.Pointer(ev.mmioAddr)
-}
-
-// nonBlockingWrite writes the given buffer to a file descriptor. It fails if
-// partial data is written.
-func nonBlockingWrite(fd int, buf []byte) (int, error) {
-	var ptr unsafe.Pointer
-	if len(buf) > 0 {
-		ptr = unsafe.Pointer(&buf[0])
-	}
-
-	nwritten, _, errno := unix.RawSyscall(unix.SYS_WRITE, uintptr(fd), uintptr(ptr), uintptr(len(buf)))
-	if errno != 0 {
-		return int(nwritten), errno
-	}
-	return int(nwritten), nil
+func kvmIoeventfdIoctl(vmfd int, ioeventfd *kvmIoeventfd) unix.Errno {
+	_, _, errno := unix.Syscall(unix.SYS_IOCTL, uintptr(vmfd), KVM_IOEVENTFD, uintptr(unsafe.Pointer(ioeventfd)))
+	return errno
 }

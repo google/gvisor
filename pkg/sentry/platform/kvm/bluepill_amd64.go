@@ -166,3 +166,7 @@ func bluepillArchExit(c *vCPU, context *arch.SignalContext64) {
 	// from this new pointer value.
 	context.Fpstate = uint64(uintptrValue(c.FloatingPointState().BytePointer())) // escapes: no.
 }
+
+func inKernelMode() bool {
+	return getcs()&3 == 0
+}

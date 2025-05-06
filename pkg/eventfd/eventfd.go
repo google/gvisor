@@ -22,13 +22,16 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/rawfile"
+	"gvisor.dev/gvisor/pkg/safecopy"
 )
 
 const sizeofUint64 = 8
 
 // Eventfd represents a Linux eventfd object.
 type Eventfd struct {
-	fd int
+	fd       int
+	mmioAddr uintptr
+	mmioCtrl MMIOController
 }
 
 // Create returns an initialized eventfd.
@@ -41,16 +44,19 @@ func Create() (Eventfd, error) {
 		unix.Close(int(fd))
 		return Eventfd{}, err
 	}
-	return Eventfd{int(fd)}, nil
+	return Eventfd{fd: int(fd)}, nil
 }
 
 // Wrap returns an initialized Eventfd using the provided fd.
 func Wrap(fd int) Eventfd {
-	return Eventfd{fd}
+	return Eventfd{fd: fd}
 }
 
 // Close closes the eventfd, after which it should not be used.
 func (ev Eventfd) Close() error {
+	if ev.mmioCtrl != nil {
+		ev.mmioCtrl.Close(ev)
+	}
 	return unix.Close(ev.fd)
 }
 
@@ -60,7 +66,7 @@ func (ev Eventfd) Dup() (Eventfd, error) {
 	if err != nil {
 		return Eventfd{}, fmt.Errorf("failed to dup: %v", other)
 	}
-	return Eventfd{other}, nil
+	return Eventfd{fd: other}, nil
 }
 
 // Notify alerts other users of the eventfd. Users can receive alerts by
@@ -73,6 +79,12 @@ func (ev Eventfd) Notify() error {
 func (ev Eventfd) Write(val uint64) error {
 	var buf [sizeofUint64]byte
 	hostarch.ByteOrder.PutUint64(buf[:], val)
+	if ev.mmioAddr != 0 && ev.mmioCtrl.Enabled() {
+		if _, err := safecopy.CopyOut(ev.mmioPtr(), buf[:]); err == nil {
+			return nil
+		}
+		// Fall back to using a syscall.
+	}
 	for {
 		n, err := nonBlockingWrite(ev.fd, buf[:])
 		if err == unix.EINTR {
@@ -83,6 +95,22 @@ func (ev Eventfd) Write(val uint64) error {
 		}
 		return err
 	}
+}
+
+// MMIOWrite is equivalent to Write, but returns an error if the write cannot be
+// implemented by writing to the address set by EnableMMIO. This is primarily
+// useful for testing.
+func (ev Eventfd) MMIOWrite(val uint64) error {
+	var buf [sizeofUint64]byte
+	hostarch.ByteOrder.PutUint64(buf[:], val)
+	if ev.mmioAddr == 0 {
+		return fmt.Errorf("no MMIO address set")
+	}
+	if !ev.mmioCtrl.Enabled() {
+		return fmt.Errorf("MMIO is temporarily disabled")
+	}
+	_, err := safecopy.CopyOut(ev.mmioPtr(), buf[:])
+	return err
 }
 
 // Wait blocks until eventfd is non-zero (i.e. someone calls Notify or Write).
@@ -112,4 +140,40 @@ func (ev Eventfd) Read() (uint64, error) {
 // Eventfd abstraction.
 func (ev Eventfd) FD() int {
 	return ev.fd
+}
+
+// MMIOController controls eventfd memory-mapped I/O.
+type MMIOController interface {
+	// Enabled returns true if writing to the associated MMIO address can
+	// succeed. This is inherently racy, so if the memory-mapped write faults,
+	// the eventfd will fall back to writing using a syscall.
+	Enabled() bool
+
+	// Close is called when the associated Eventfd is closed.
+	Close(ev Eventfd)
+}
+
+// EnableMMIO causes future calls to ev.Write() to use memory-mapped writes to
+// addr, subject to ctrl. EnableMMIO cannot be called concurrently with Write,
+// MMIOWrite, or MMIOAddr.
+//
+// This feature is used to support KVM ioeventfds. Since this requires that
+// addr is mapped read-only or with no permissions in the host virtual address
+// space (so that writes in host mode fault), it cannot reasonably be
+// Go-managed memory, so it's safe to type as uintptr rather than a pointer.
+func (ev *Eventfd) EnableMMIO(addr uintptr, ctrl MMIOController) {
+	ev.mmioAddr = addr
+	ev.mmioCtrl = ctrl
+}
+
+// DisableMMIO undoes the effect of a previous call to EnableMMIO. DisableMMIO
+// cannot be called concurrently with Write, MMIOWrite, or MMIOAddr.
+func (ev *Eventfd) DisableMMIO() {
+	ev.mmioAddr = 0
+	ev.mmioCtrl = nil
+}
+
+// MMIOAddr returns the address set by the last call to EnableMMIO.
+func (ev Eventfd) MMIOAddr() uintptr {
+	return ev.mmioAddr
 }

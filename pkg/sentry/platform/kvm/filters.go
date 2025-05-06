@@ -38,6 +38,10 @@ func (k *KVM) SeccompInfo() platform.SeccompInfo {
 				},
 				seccomp.PerArg{
 					seccomp.NonNegativeFD{},
+					seccomp.EqualTo(KVM_IOEVENTFD),
+				},
+				seccomp.PerArg{
+					seccomp.NonNegativeFD{},
 					seccomp.EqualTo(KVM_GET_REGS),
 				},
 				seccomp.PerArg{

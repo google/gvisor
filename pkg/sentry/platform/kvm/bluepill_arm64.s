@@ -145,3 +145,10 @@ TEXT ·addrOfDieTrampoline(SB), $0-8
 	MOVD	$·dieTrampoline(SB), R0
 	MOVD	R0, ret+0(FP)
 	RET
+
+// currentEL returns the current exception level.
+TEXT ·currentEL(SB),NOSPLIT,$0-8
+	MRS CurrentEL, R1
+	UBFX $2, R1, $2, R1
+	MOVD R1, ret+0(FP)
+	RET

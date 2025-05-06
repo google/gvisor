@@ -448,10 +448,11 @@ func (m *machine) mapPhysical(physical, length uintptr) {
 		if pr == nil {
 			// Should never happen.
 			throw("mapPhysical on unknown physical address")
+			panic("unreachable") // nogo doesn't understand throw()
 		}
 
 		// Is this already mapped? Check the usedSlots.
-		if !m.hasSlot(physicalStart) {
+		if !pr.mmio && !m.hasSlot(physicalStart) {
 			m.mapMemorySlot(virtualStart, physicalStart, length, pr.readOnly)
 		}
 

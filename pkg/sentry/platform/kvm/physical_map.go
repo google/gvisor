@@ -30,9 +30,15 @@ type region struct {
 	length  uintptr
 }
 
+type specialVirtualRegion struct {
+	region
+	mmio bool // if false, region is excluded
+}
+
 type physicalRegion struct {
 	region
 	physical uintptr
+	mmio     bool
 	readOnly bool
 }
 
@@ -47,8 +53,8 @@ var physicalRegions []physicalRegion
 // address space. This allows us to have an injective host virtual to guest
 // physical mapping.
 //
-// The excluded regions are returned.
-func fillAddressSpace() (excludedRegions []region) {
+// Excluded and MMIO regions are returned.
+func fillAddressSpace() (specialRegions []specialVirtualRegion) {
 	// We can cut vSize in half, because the kernel will be using the top
 	// half and we ignore it while constructing mappings. It's as if we've
 	// already excluded half the possible addresses.
@@ -63,9 +69,17 @@ func fillAddressSpace() (excludedRegions []region) {
 	// Add specifically excluded regions; see excludeVirtualRegion.
 	if err := applyVirtualRegions(func(vr virtualRegion) {
 		if excludeVirtualRegion(vr) {
-			excludedRegions = append(excludedRegions, vr.region)
+			specialRegions = append(specialRegions, specialVirtualRegion{
+				region: vr.region,
+			})
 			vSize -= vr.length
 			log.Infof("excluded: virtual [%x,%x)", vr.virtual, vr.virtual+vr.length)
+		} else if mmioVirtualRegion(vr) {
+			specialRegions = append(specialRegions, specialVirtualRegion{
+				region: vr.region,
+				mmio:   true,
+			})
+			log.Infof("mmio: virtual [%x,%x)", vr.virtual, vr.virtual+vr.length)
 		}
 	}); err != nil {
 		panic(fmt.Sprintf("error parsing /proc/self/maps: %v", err))
@@ -73,7 +87,7 @@ func fillAddressSpace() (excludedRegions []region) {
 
 	// Do we need any more work?
 	if vSize < pSize {
-		return excludedRegions
+		return specialRegions
 	}
 
 	// Calculate the required space and fill it.
@@ -115,23 +129,28 @@ func fillAddressSpace() (excludedRegions []region) {
 		// We filled a block.
 		filled += current
 		// Check whether a new region is merged with a previous one.
-		for i := range excludedRegions {
-			if excludedRegions[i].virtual == addr+current {
-				excludedRegions[i].virtual = addr
-				excludedRegions[i].length += current
+		for i := range specialRegions {
+			if specialRegions[i].mmio {
+				continue
+			}
+			if specialRegions[i].virtual == addr+current {
+				specialRegions[i].virtual = addr
+				specialRegions[i].length += current
 				addr = 0
 				break
 			}
-			if excludedRegions[i].virtual+excludedRegions[i].length == addr {
-				excludedRegions[i].length += current
+			if specialRegions[i].virtual+specialRegions[i].length == addr {
+				specialRegions[i].length += current
 				addr = 0
 				break
 			}
 		}
 		if addr != 0 {
-			excludedRegions = append(excludedRegions, region{
-				virtual: addr,
-				length:  current,
+			specialRegions = append(specialRegions, specialVirtualRegion{
+				region: region{
+					virtual: addr,
+					length:  current,
+				},
 			})
 			// See comment above.
 			if filled != required {
@@ -142,19 +161,19 @@ func fillAddressSpace() (excludedRegions []region) {
 	if current == 0 {
 		panic("filling address space failed")
 	}
-	sort.Slice(excludedRegions, func(i, j int) bool {
-		return excludedRegions[i].virtual < excludedRegions[j].virtual
+	sort.Slice(specialRegions, func(i, j int) bool {
+		return specialRegions[i].virtual < specialRegions[j].virtual
 	})
-	for _, r := range excludedRegions {
-		log.Infof("region: virtual [%x,%x)", r.virtual, r.virtual+r.length)
+	for _, r := range specialRegions {
+		log.Infof("special region: virtual [%x,%x)", r.virtual, r.virtual+r.length)
 	}
-	return excludedRegions
+	return specialRegions
 }
 
 // computePhysicalRegions computes physical regions.
-func computePhysicalRegions(excludedRegions []region) (physicalRegions []physicalRegion) {
+func computePhysicalRegions(specialRegions []specialVirtualRegion) (physicalRegions []physicalRegion) {
 	physical := uintptr(reservedMemory)
-	addValidRegion := func(virtual, length uintptr) {
+	addValidRegion := func(virtual, length uintptr, mmio bool) {
 		if length == 0 {
 			return
 		}
@@ -183,15 +202,19 @@ func computePhysicalRegions(excludedRegions []region) (physicalRegions []physica
 				length:  length,
 			},
 			physical: physical,
+			mmio:     mmio,
 		})
 		physical += length
 	}
-	lastExcludedEnd := uintptr(0)
-	for _, r := range excludedRegions {
-		addValidRegion(lastExcludedEnd, r.virtual-lastExcludedEnd)
-		lastExcludedEnd = r.virtual + r.length
+	lastSpecialEnd := uintptr(0)
+	for _, r := range specialRegions {
+		addValidRegion(lastSpecialEnd, r.virtual-lastSpecialEnd, false /* mmio */)
+		if r.mmio {
+			addValidRegion(r.virtual, r.length, true /* mmio */)
+		}
+		lastSpecialEnd = r.virtual + r.length
 	}
-	addValidRegion(lastExcludedEnd, ring0.MaximumUserAddress-lastExcludedEnd)
+	addValidRegion(lastSpecialEnd, ring0.MaximumUserAddress-lastSpecialEnd, false /* mmio */)
 
 	// Do arch-specific actions on physical regions.
 	physicalRegions = archPhysicalRegions(physicalRegions)

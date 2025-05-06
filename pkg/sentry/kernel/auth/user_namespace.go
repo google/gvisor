@@ -17,6 +17,7 @@ package auth
 import (
 	"math"
 
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 )
 
@@ -50,6 +51,11 @@ type UserNamespace struct {
 	uidMapToParent   idMapSet
 	gidMapFromParent idMapSet
 	gidMapToParent   idMapSet
+
+	// parentHadSetfcap is true if the parent namespace had the CAP_SETFCAP
+	// capability when this namespace was created. Similar to
+	// user_namespace.parent_could_setfcap in Linux.
+	parentHadSetfcap bool
 
 	// TODO(b/27454212): Support disabling setgroups(2).
 }
@@ -124,8 +130,9 @@ func (c *Credentials) NewChildUserNamespace() (*UserNamespace, error) {
 		return nil, linuxerr.EPERM
 	}
 	return &UserNamespace{
-		parent: c.UserNamespace,
-		owner:  c.EffectiveKUID,
+		parent:           c.UserNamespace,
+		owner:            c.EffectiveKUID,
+		parentHadSetfcap: c.HasCapability(linux.CAP_SETFCAP),
 		// "When a user namespace is created, it starts without a mapping of
 		// user IDs (group IDs) to the parent user namespace." -
 		// user_namespaces(7)
