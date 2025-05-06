@@ -111,8 +111,14 @@ TEST_F(XattrTest, SecurityCapacityXattr) {
   const char* path = test_file_name_.c_str();
   const char name[] = "security.capacity";
   const std::string val = "";
-  EXPECT_THAT(lsetxattr(path, name, &val, val.size(), 0),
-              SyscallFailsWithErrno(EOPNOTSUPP));
+  if (ASSERT_NO_ERRNO_AND_VALUE(IsTmpfs(test_file_name_)) ||
+      ASSERT_NO_ERRNO_AND_VALUE(IsOverlayfs(test_file_name_))) {
+    EXPECT_THAT(lsetxattr(path, name, &val, val.size(), 0), SyscallSucceeds());
+  } else {
+    EXPECT_THAT(lsetxattr(path, name, &val, val.size(), 0),
+                SyscallFailsWithErrno(EOPNOTSUPP));
+  }
+
   int buf = 0;
   EXPECT_THAT(lgetxattr(path, name, &buf, /*size=*/128),
               SyscallFailsWithErrno(AnyOf(ENODATA, EOPNOTSUPP)));
