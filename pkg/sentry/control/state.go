@@ -17,12 +17,25 @@ package control
 import (
 	"errors"
 	"fmt"
+	"time"
 
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/state"
 	"gvisor.dev/gvisor/pkg/sentry/watchdog"
 	"gvisor.dev/gvisor/pkg/urpc"
+)
+
+const (
+	// SaveRestoreBinTimeoutKey is the key used to save the timeout for the
+	// save/restore binary in the metadata during save/restore.
+	SaveRestoreBinTimeoutKey = "save-restore-bin-timeout"
+
+	// SaveRestoreBinPathKey is the key used to save the path to the save/restore
+	// binary in the metadata during save/restore.
+	SaveRestoreBinPathKey = "save-restore-bin-path"
+
+	defaultSaveRestoreBinTimeout = 10 * time.Second
 )
 
 // ErrInvalidFiles is returned when the urpc call to Save does not include an
@@ -96,6 +109,21 @@ func (s *State) Save(o *SaveOpts, _ *struct{}) error {
 			return err
 		}
 		defer saveOpts.PagesFile.Close()
+	}
+	if saveRestoreBinPath, ok := o.Metadata[SaveRestoreBinPathKey]; ok {
+		saveRestoreBinTimeout := defaultSaveRestoreBinTimeout
+		if saveRestoreBinTimeoutString, ok := o.Metadata[SaveRestoreBinTimeoutKey]; ok {
+			var err error
+			saveRestoreBinTimeout, err = time.ParseDuration(saveRestoreBinTimeoutString)
+			if err != nil {
+				return fmt.Errorf("failed to parse save/restore bin timeout: %w", err)
+			}
+		}
+		s.Kernel.SaveRestoreBinPath = saveRestoreBinPath
+		s.Kernel.SaveRestoreBinTimeout = saveRestoreBinTimeout
+		if _, err := s.Kernel.ExecSaveRestoreBin(kernel.SaveRestoreBinSave); err != nil {
+			return fmt.Errorf("failed to exec save/restore binary: %w", err)
+		}
 	}
 	return saveOpts.Save(s.Kernel.SupervisorContext(), s.Kernel, s.Watchdog)
 }

@@ -86,6 +86,16 @@ import (
 // allow easy access everywhere.
 var IOUringEnabled = false
 
+// SaveRestoreBinMode is the mode for the save/restore binary.
+type SaveRestoreBinMode string
+
+const (
+	// SaveRestoreBinSave is the save mode for the save/restore binary.
+	SaveRestoreBinSave SaveRestoreBinMode = "save"
+	// SaveRestoreBinRestore is the restore mode for the save/restore binary.
+	SaveRestoreBinRestore SaveRestoreBinMode = "restore"
+)
+
 // UserCounters is a set of user counters.
 //
 // +stateify savable
@@ -370,6 +380,16 @@ type Kernel struct {
 
 	// UnixSocketOpts stores configuration options for management of unix sockets.
 	UnixSocketOpts transport.UnixSocketOpts
+
+	// SaveRestoreBinPath is the path to the save/restore binary. It is executed
+	// with the argument "save" before the kernel is saved and "restore" after
+	// the kernel is restored and restarted.
+	SaveRestoreBinPath string
+
+	// SaveRestoreBinTimeout is the timeout for the save/restore binary. If the
+	// binary fails to exit within this timeout the save/restore operation will
+	// fail.
+	SaveRestoreBinTimeout time.Duration
 }
 
 // InitKernelArgs holds arguments to Init.
@@ -2071,4 +2091,86 @@ func (k *Kernel) ContainerName(cid string) string {
 	k.extMu.Lock()
 	defer k.extMu.Unlock()
 	return k.containerNames[cid]
+}
+
+// ExecSaveRestoreBin creates a new process that executes the save/restore
+// binary. If the kernel has been started, the process is immediately started
+// and the method waits for it to exit.  Otherwise, the caller is responsible
+// for starting and waiting for the process.
+func (k *Kernel) ExecSaveRestoreBin(mode SaveRestoreBinMode) (*ThreadGroup, error) {
+	if k.SaveRestoreBinPath == "" {
+		return nil, nil
+	}
+	sctx := k.SupervisorContext()
+	leader := k.GlobalInit().Leader()
+	contID := leader.ContainerID()
+	mntns := leader.MountNamespace()
+	if mntns == nil || !mntns.TryIncRef() {
+		log.Warningf("PID %d in container %q has exited, skipping CUDA checkpoint for it", leader.ThreadGroup().ID(), contID)
+		return nil, nil
+	}
+	fdTable := leader.FDTable()
+	fdTable.IncRef()
+	root := mntns.Root(sctx)
+	cu := cleanup.Make(func() {
+		root.DecRef(sctx)
+	})
+	defer cu.Clean()
+	ctx := vfs.WithRoot(sctx, root)
+	cu.Add(func() {
+		mntns.DecRef(ctx)
+	})
+
+	argv := []string{k.SaveRestoreBinPath, string(mode)}
+	leader.FDTable().IncRef()
+	cu.Add(func() {
+		fdTable.DecRef(ctx)
+	})
+	defer leader.FDTable().DecRef(ctx)
+
+	mntns.IncRef()
+	args := CreateProcessArgs{
+		Filename:       argv[0],
+		Argv:           argv,
+		ContainerID:    contID,
+		MountNamespace: mntns,
+		PIDNamespace:   k.RootPIDNamespace(),
+		UTSNamespace:   k.RootUTSNamespace(),
+		IPCNamespace:   k.RootIPCNamespace(),
+		Credentials:    leader.Credentials(),
+		Umask:          0022,
+		Limits:         limits.NewLimitSet(),
+		FDTable:        fdTable,
+		Origin:         OriginExec,
+	}
+	tg, _, err := k.CreateProcess(args)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create process: %w", err)
+	}
+	if k.started {
+		k.StartProcess(tg)
+		return nil, k.WaitForSaveRestoreBin(tg)
+	}
+	return tg, nil
+}
+
+// WaitForSaveRestoreBin waits for the save/restore binary to exit. If the
+// SaveRestoreBinTimeout is exceeded, the save/restore binary is killed and
+// the method returns an error.
+func (k *Kernel) WaitForSaveRestoreBin(saveRestoreTg *ThreadGroup) error {
+	waitC := make(chan struct{})
+	go func() {
+		saveRestoreTg.WaitExited()
+		waitC <- struct{}{}
+	}()
+	select {
+	case <-waitC:
+		if saveRestoreTg.ExitStatus() != 0 {
+			return fmt.Errorf("%v exited with non-zero status %d", k.SaveRestoreBinPath, saveRestoreTg.ExitStatus())
+		}
+	case <-time.After(k.SaveRestoreBinTimeout):
+		saveRestoreTg.SendSignal(&linux.SignalInfo{Signo: int32(linux.SIGKILL)})
+		return fmt.Errorf("%s timed out after %v", k.SaveRestoreBinPath, k.SaveRestoreBinTimeout)
+	}
+	return nil
 }
