@@ -199,6 +199,7 @@ func (m *Endpoint) HandlePacket(nicID tcpip.NICID, netProto tcpip.NetworkProtoco
 	m.mu.Lock()
 	cooked := m.cooked
 	stats := m.stack.Stats()
+	hdrLen := m.headerLen
 	if !m.rxRingBuffer.hasRoom() {
 		m.mu.Unlock()
 		stats.DroppedPackets.Increment()
@@ -219,14 +220,14 @@ func (m *Endpoint) HandlePacket(nicID tcpip.NICID, netProto tcpip.NetworkProtoco
 		pktBuf.TrimFront(int64(len(pkt.LinkHeader().Slice()) + len(pkt.VirtioNetHeader().Slice())))
 		// Cooked packet endpoints don't include the link-headers in received
 		// packets.
-		netOffset = linux.TPacketAlign(m.headerLen+minMacLen) + m.reserve
+		netOffset = linux.TPacketAlign(hdrLen+minMacLen) + m.reserve
 		macOffset = netOffset
 	} else {
 		virtioNetHdrLen := uint32(len(pkt.VirtioNetHeader().Slice()))
 		macLen := uint32(len(pkt.LinkHeader().Slice())) + virtioNetHdrLen
-		netOffset = linux.TPacketAlign(m.headerLen+macLen) + m.reserve
+		netOffset = linux.TPacketAlign(hdrLen+macLen) + m.reserve
 		if macLen < minMacLen {
-			netOffset = linux.TPacketAlign(m.headerLen+minMacLen) + m.reserve
+			netOffset = linux.TPacketAlign(hdrLen+minMacLen) + m.reserve
 		}
 		if virtioNetHdrLen > 0 {
 			netOffset += virtioNetHdrLen
@@ -274,14 +275,15 @@ func (m *Endpoint) HandlePacket(nicID tcpip.NICID, netProto tcpip.NetworkProtoco
 		m.packetEP.HandlePacketMMapCopy(nicID, netProto, clone)
 	}
 	t := m.stack.Clock().Now()
+	version := m.version
 	m.mu.Unlock()
 
 	// Unlock around writing to the internal mappings to allow other threads to
 	// write to the ring buffer.
 	hdrView := buffer.NewViewSize(int(macOffset))
-	m.marshalFrameHeader(t, pktBuf, macOffset, netOffset, dataLength, hdrView)
+	m.marshalFrameHeader(version, t, pktBuf, macOffset, netOffset, dataLength, hdrView)
 	pktBuf.Truncate(int64(dataLength))
-	m.marshalSockAddr(pkt, netProto, nicID, hdrView)
+	m.marshalSockAddr(version, pkt, netProto, nicID, hdrView)
 
 	if err := m.rxRingBuffer.writeFrame(slot, hdrView, pktBuf); err != nil {
 		stats.DroppedPackets.Increment()
@@ -413,7 +415,7 @@ func toLinuxPacketType(pktType tcpip.PacketType) uint8 {
 	}
 }
 
-func (m *Endpoint) marshalSockAddr(pkt *stack.PacketBuffer, netProto tcpip.NetworkProtocolNumber, nicID tcpip.NICID, view *buffer.View) {
+func (m *Endpoint) marshalSockAddr(version int, pkt *stack.PacketBuffer, netProto tcpip.NetworkProtocolNumber, nicID tcpip.NICID, view *buffer.View) {
 	var sll linux.SockAddrLink
 	sll.Family = linux.AF_PACKET
 	sll.Protocol = socket.Htons(uint16(netProto))
@@ -426,7 +428,7 @@ func (m *Endpoint) marshalSockAddr(pkt *stack.PacketBuffer, netProto tcpip.Netwo
 		copy(sll.HardwareAddr[:], hdr.SourceAddress())
 	}
 	var hdrSize uint32
-	if m.version == linux.TPACKET_V2 {
+	if version == linux.TPACKET_V2 {
 		hdrSize = uint32((*linux.Tpacket2Hdr)(nil).SizeBytes())
 	} else {
 		hdrSize = uint32((*linux.TpacketHdr)(nil).SizeBytes())
@@ -434,8 +436,8 @@ func (m *Endpoint) marshalSockAddr(pkt *stack.PacketBuffer, netProto tcpip.Netwo
 	sll.MarshalBytes(view.AsSlice()[linux.TPacketAlign(hdrSize):])
 }
 
-func (m *Endpoint) marshalFrameHeader(t time.Time, pktBuf buffer.Buffer, macOffset, netOffset, dataLength uint32, view *buffer.View) {
-	switch m.version {
+func (m *Endpoint) marshalFrameHeader(version int, t time.Time, pktBuf buffer.Buffer, macOffset, netOffset, dataLength uint32, view *buffer.View) {
+	switch version {
 	case linux.TPACKET_V1:
 		hdr := linux.TpacketHdr{
 			// The status is set separately to ensure the frame is written before the
