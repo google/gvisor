@@ -242,13 +242,13 @@ func (*Systrap) MinUserAddress() hostarch.Addr {
 
 // New returns a new seccomp-based implementation of the platform interface.
 func New() (*Systrap, error) {
-	if maxSysmsgThreads == 0 {
+	if maxSysmsgThreads.Load() == 0 {
 		// CPUID information has been initialized at this point.
 		archState.Init()
 		// GOMAXPROCS has been set at this point.
-		maxSysmsgThreads = runtime.GOMAXPROCS(0)
+		maxSysmsgThreads.Store(uint32(runtime.GOMAXPROCS(0)))
 		// Account for syscall thread.
-		maxChildThreads = maxSysmsgThreads + 1
+		maxChildThreads = maxSysmsgThreads.Load() + 1
 	}
 
 	mf, err := createMemoryFile()

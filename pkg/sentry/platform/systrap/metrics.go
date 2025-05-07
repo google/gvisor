@@ -15,6 +15,7 @@
 package systrap
 
 import (
+	"runtime"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/atomicbitops"
@@ -259,14 +260,15 @@ var (
 	// only thing that matters here is whether the Sentry handles syscall faster
 	// than the overhead of scheduling another stub thread.
 	//
-	// It is set after maxSysmsgThreads is initialized.
+	// Stub threads across all active subprocs are taken into account for
+	// this value.
 	fastPathContextLimit = uint32(0)
 )
 
 // controlFastPath is used to spawn a goroutine when creating the Systrap
 // platform.
 func controlFastPath() {
-	fastPathContextLimit = uint32(maxSysmsgThreads * 2)
+	fastPathContextLimit = uint32(runtime.GOMAXPROCS(0) * 2)
 
 	for {
 		time.Sleep(recordingPeriod)
@@ -297,6 +299,10 @@ func (s *fastPathState) stubFastPath() bool {
 // enableSentryFP is a wrapper to unconditionally enable sentry FP and increment
 // a debug metric.
 func (s *fastPathState) enableSentryFP() {
+	// Account for the ~1 core the dispatcher will consume processing the
+	// sentry fastpath.
+	maxSysmsgThreads.Add(^uint32(0))
+
 	s.sentryFastPathEnabled.Store(true)
 	numTimesSentryFastPathEnabled.Increment()
 }
@@ -311,6 +317,9 @@ func (s *fastPathState) disableSentryFP() bool {
 	if s.consecutiveSentryFPFailures < numConsecutiveFailsToDisableFP {
 		return false
 	}
+	// Dispatcher will no longer consume 1 core.
+	maxSysmsgThreads.Add(1)
+
 	s.consecutiveSentryFPFailures = 0
 	s.sentryFastPathEnabled.Store(false)
 	numTimesSentryFastPathDisabled.Increment()
@@ -367,8 +376,9 @@ func (s *fastPathState) shouldDisableSentryFP(stubMedian, sentryMedian cpuTicks)
 	if sentryMedian < sentryBaseline {
 		// Assume the number of productive stubs is the core count on the
 		// system, not counting the 1 core taken by the dispatcher for
-		// the fast path.
-		n := cpuTicks(maxSysmsgThreads - 1)
+		// the fastpath. maxSysmsgThreads is already adjusted based
+		// whether sentry fastpath is on or off.
+		n := cpuTicks(maxSysmsgThreads.Load())
 		// If the sentry fastpath is causing the stub latency to be
 		// higher than normal, the point at which it's considered to be
 		// too high is when the time saved via the sentry fastpath is
