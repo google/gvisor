@@ -1456,6 +1456,10 @@ func (d *dentry) checkXattrPermissions(creds *auth.Credentials, name string, ats
 	if strings.HasPrefix(name, linux.XATTR_SYSTEM_PREFIX) || strings.HasPrefix(name, linux.XATTR_TRUSTED_PREFIX) {
 		return linuxerr.EOPNOTSUPP
 	}
+	// Do not allow writes to the "security" namespace on the host filesystem.
+	if ats.MayWrite() && strings.HasPrefix(name, linux.XATTR_SECURITY_PREFIX) {
+		return linuxerr.EOPNOTSUPP
+	}
 	mode := linux.FileMode(d.mode.Load())
 	kuid := auth.KUID(d.uid.Load())
 	kgid := auth.KGID(d.gid.Load())

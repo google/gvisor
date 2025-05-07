@@ -209,13 +209,13 @@ func CheckSetStat(ctx context.Context, creds *auth.Credentials, opts *SetStatOpt
 	}
 	if stat.Mask&linux.STATX_UID != 0 {
 		if !((creds.EffectiveKUID == kuid && auth.KUID(stat.UID) == kuid) ||
-			HasCapabilityOnFile(creds, linux.CAP_CHOWN, kuid, kgid)) {
+			creds.HasCapabilityOnFile(linux.CAP_CHOWN, kuid, kgid)) {
 			return linuxerr.EPERM
 		}
 	}
 	if stat.Mask&linux.STATX_GID != 0 {
 		if !((creds.EffectiveKUID == kuid && creds.InGroup(auth.KGID(stat.GID))) ||
-			HasCapabilityOnFile(creds, linux.CAP_CHOWN, kuid, kgid)) {
+			creds.HasCapabilityOnFile(linux.CAP_CHOWN, kuid, kgid)) {
 			return linuxerr.EPERM
 		}
 	}
@@ -249,7 +249,7 @@ func CheckDeleteSticky(creds *auth.Credentials, parentMode linux.FileMode, paren
 	}
 	if creds.EffectiveKUID == childKUID ||
 		creds.EffectiveKUID == parentKUID ||
-		HasCapabilityOnFile(creds, linux.CAP_FOWNER, childKUID, childKGID) {
+		creds.HasCapabilityOnFile(linux.CAP_FOWNER, childKUID, childKGID) {
 		return nil
 	}
 	return linuxerr.EPERM
@@ -263,13 +263,6 @@ func CanActAsOwner(creds *auth.Credentials, kuid auth.KUID) bool {
 		return true
 	}
 	return creds.HasCapability(linux.CAP_FOWNER) && creds.UserNamespace.MapFromKUID(kuid).Ok()
-}
-
-// HasCapabilityOnFile returns true if creds has the given capability with
-// respect to a file with the given owning UID and GID, consistent with Linux's
-// kernel/capability.c:capable_wrt_inode_uidgid().
-func HasCapabilityOnFile(creds *auth.Credentials, cp linux.Capability, kuid auth.KUID, kgid auth.KGID) bool {
-	return creds.HasCapability(cp) && creds.UserNamespace.MapFromKUID(kuid).Ok() && creds.UserNamespace.MapFromKGID(kgid).Ok()
 }
 
 // CheckLimit enforces file size rlimits. It returns error if the write
@@ -297,6 +290,8 @@ func CheckLimit(ctx context.Context, offset, size int64) (int64, error) {
 //     must be returned by filesystem implementations.
 //   - Does not do inode permission checks. Filesystem implementations should
 //     handle inode permission checks as they may differ across implementations.
+//   - Writes in security namespace are not supported, except for writes to
+//     "security.capability", which are required to support file capabilities.
 func CheckXattrPermissions(creds *auth.Credentials, ats AccessTypes, mode linux.FileMode, kuid auth.KUID, name string) error {
 	switch {
 	case strings.HasPrefix(name, linux.XATTR_TRUSTED_PREFIX):
@@ -325,6 +320,9 @@ func CheckXattrPermissions(creds *auth.Credentials, ats AccessTypes, mode linux.
 		}
 	case strings.HasPrefix(name, linux.XATTR_SECURITY_PREFIX):
 		if ats.MayRead() {
+			return nil
+		}
+		if name == linux.XATTR_SECURITY_CAPABILITY {
 			return nil
 		}
 		return linuxerr.EOPNOTSUPP

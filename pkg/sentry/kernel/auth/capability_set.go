@@ -103,6 +103,77 @@ func CapsFromVfsCaps(capData linux.VfsNsCapData, creds *Credentials) (*Credentia
 	return newCreds, nil
 }
 
+// FixupVfsCapDataOnSet may convert the given value to v3 file capabilities. It
+// is analogous to security/commoncap.c:cap_convert_nscap().
+func FixupVfsCapDataOnSet(creds *Credentials, value string, kuid KUID, kgid KGID) (string, error) {
+	vfsCaps, err := VfsCapDataOf([]byte(value))
+	if err != nil {
+		return "", err
+	}
+	if !creds.HasCapabilityOnFile(linux.CAP_SETFCAP, kuid, kgid) {
+		return "", linuxerr.EPERM
+	}
+	if vfsCaps.IsRevision2() && creds.HasCapabilityIn(linux.CAP_SETFCAP, creds.UserNamespace.Root()) {
+		// The user is privileged, allow the v2 write.
+		return value, nil
+	}
+	// Linux does the following UID gymnastics:
+	//   1. The userspace-provided rootID is relative to the caller's user
+	//      namespace. So vfsCaps.RootID is mapped down to KUID first.
+	//   2. If this is an ID-mapped mount, the result is mapped up using the
+	//      ID-map and then down again using the filesystem's owning user
+	//      namespace (inode->i_sb->s_user_ns). We again have a KUID result.
+	//   3. The result is mapped up using the filesystem's owning user namespace.
+	//
+	// The final result is saved in the xattr value at vfs_ns_cap_data->rootid.
+	// Since gVisor does not support ID-mapped mounts and all filesystems are
+	// owned by the initial user namespace, we can skip steps 2 and 3.
+	rootID := creds.UserNamespace.MapToKUID(UID(vfsCaps.RootID))
+	if !rootID.Ok() {
+		return "", linuxerr.EINVAL
+	}
+	vfsCaps.ConvertToV3(uint32(rootID))
+	return vfsCaps.ToString(), nil
+}
+
+// FixupVfsCapDataOnGet may convert the given value to v2 file capabilities. It
+// is analogous to security/commoncap.c:cap_inode_getsecurity().
+func FixupVfsCapDataOnGet(creds *Credentials, value string) (string, error) {
+	vfsCaps, err := VfsCapDataOf([]byte(value))
+	if err != nil {
+		return "", err
+	}
+	// Linux does the steps mentioned in FixupVfsCapDataOnSet in reverse. But
+	// since gVisor does not support ID-mapped mounts and all filesystems are
+	// owned by the initial user namespace, we only need to reverse step 1 here.
+	rootID := KUID(vfsCaps.RootID)
+	mappedRoot := creds.UserNamespace.MapFromKUID(rootID)
+	if mappedRoot.Ok() && mappedRoot != RootUID {
+		// Return this as v3.
+		vfsCaps.ConvertToV3(uint32(mappedRoot))
+		return vfsCaps.ToString(), nil
+	}
+	if !rootIDOwnsCurrentUserns(creds, rootID) {
+		return "", linuxerr.EOVERFLOW
+	}
+	// Return this as v2.
+	vfsCaps.ConvertToV2()
+	return vfsCaps.ToString(), nil
+}
+
+// Analogous to security/commoncap.c:rootid_owns_currentns().
+func rootIDOwnsCurrentUserns(creds *Credentials, rootID KUID) bool {
+	if !rootID.Ok() {
+		return false
+	}
+	for ns := creds.UserNamespace; ns != nil; ns = ns.parent {
+		if ns.MapFromKUID(rootID) == RootUID {
+			return true
+		}
+	}
+	return false
+}
+
 // TaskCapabilities represents all the capability sets for a task. Each of these
 // sets is explained in greater detail in capabilities(7).
 type TaskCapabilities struct {

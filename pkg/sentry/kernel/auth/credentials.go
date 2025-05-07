@@ -196,6 +196,13 @@ func (c *Credentials) HasCapability(cp linux.Capability) bool {
 	return c.HasCapabilityIn(cp, c.UserNamespace)
 }
 
+// HasCapabilityOnFile returns true if creds has the given capability with
+// respect to a file with the given owning UID and GID, consistent with Linux's
+// kernel/capability.c:capable_wrt_inode_uidgid().
+func (c *Credentials) HasCapabilityOnFile(cp linux.Capability, kuid KUID, kgid KGID) bool {
+	return c.HasCapability(cp) && c.UserNamespace.MapFromKUID(kuid).Ok() && c.UserNamespace.MapFromKGID(kgid).Ok()
+}
+
 // UseUID checks that c can use uid in its user namespace, then translates it
 // to the root user namespace.
 //

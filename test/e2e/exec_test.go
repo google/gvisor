@@ -109,45 +109,81 @@ func TestExecCapabilities(t *testing.T) {
 }
 
 func TestFileCap(t *testing.T) {
-	ctx := context.Background()
-	d := dockerutil.MakeContainer(ctx, t)
-	defer d.CleanUp(ctx)
+	netAdminOnlyStatusCaps := fmt.Sprintf("CapInh:\t%s\nCapPrm:\t%s\nCapEff:\t%s\n", noCap, netAdminOnlyCap, netAdminOnlyCap)
+	for _, tc := range []struct {
+		name     string
+		capAdd   []string
+		useTmpfs bool
+		wantOut  string
+		err      bool
+	}{
+		{
+			name:     "success_tmpfs",
+			capAdd:   []string{"NET_ADMIN"},
+			useTmpfs: true,
+			wantOut:  netAdminOnlyStatusCaps,
+		},
+		{
+			name:    "success_gofer",
+			capAdd:  []string{"NET_ADMIN"},
+			wantOut: netAdminOnlyStatusCaps,
+		},
+		{
+			name:     "fail_tmpfs",
+			useTmpfs: true,
+			wantOut:  "operation not permitted",
+			err:      true,
+		},
+		{
+			name:    "fail_gofer",
+			wantOut: "operation not permitted",
+			err:     true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			d := dockerutil.MakeContainer(ctx, t)
+			defer d.CleanUp(ctx)
 
-	// Start the container.
-	if err := d.Spawn(ctx, dockerutil.RunOpts{
-		Image:  "basic/filecap",
-		CapAdd: []string{"NET_ADMIN"},
-	}, "sh", "-c", "cat /proc/self/status; sleep 100"); err != nil {
-		t.Fatalf("docker run failed: %v", err)
-	}
-	output, err := d.Exec(ctx, dockerutil.ExecOpts{User: "1001"}, "/mnt/cat", "/proc/self/status")
-	if err != nil {
-		t.Fatalf("docker exec failed: %v", err)
-	}
-	expectedCaps := fmt.Sprintf("CapInh:\t%s\nCapPrm:\t%s\nCapEff:\t%s\n", noCap, netAdminOnlyCap, netAdminOnlyCap)
-	if !strings.Contains(output, expectedCaps) {
-		t.Fatalf("can't find expected caps:\n %v, output: %v", expectedCaps, output)
-	}
-}
+			// Start the sleep container.
+			if err := d.Spawn(ctx, dockerutil.RunOpts{
+				Image:  "basic/filecap",
+				CapAdd: tc.capAdd,
+			}, "sleep", "infinity"); err != nil {
+				t.Fatalf("docker run failed: %v", err)
+			}
 
-func TestNoExpectedFileCap(t *testing.T) {
-	ctx := context.Background()
-	d := dockerutil.MakeContainer(ctx, t)
-	defer d.CleanUp(ctx)
+			catPath := "/mnt/cat"
+			if tc.useTmpfs {
+				// Copy /bin/cat to /tmp/cat.
+				if _, err := d.Exec(ctx, dockerutil.ExecOpts{}, "cp", "/bin/cat", "/tmp/cat"); err != nil {
+					t.Fatalf("failed to copy /bin/cat to /tmp/cat: %v", err)
+				}
+				// Set file cap on /tmp/cat.
+				if _, err := d.Exec(ctx, dockerutil.ExecOpts{}, "setcap", "cap_net_admin+ep", "/tmp/cat"); err != nil {
+					t.Fatalf("failed to set file cap on /tmp/cat: %v", err)
+				}
+				catPath = "/tmp/cat"
+			}
 
-	// Start the container.
-	if err := d.Spawn(ctx, dockerutil.RunOpts{
-		Image:  "basic/filecap",
-		CapAdd: []string{"NET_RAW"},
-	}, "sh", "-c", "cat /proc/self/status; sleep 100"); err != nil {
-		t.Fatalf("docker run failed: %v", err)
-	}
-	output, err := d.Exec(ctx, dockerutil.ExecOpts{User: "1001"}, "/mnt/cat", "/proc/self/status")
-	if err == nil {
-		t.Fatalf("error not present")
-	}
-	if !strings.Contains(output, "operation not permitted") {
-		t.Fatalf("expected error: operation not permitted, got: %v", err)
+			// Check getcap output.
+			output, err := d.Exec(ctx, dockerutil.ExecOpts{}, "getcap", catPath)
+			if err != nil {
+				t.Fatalf("failed to getcap %s: %v", catPath, err)
+			}
+			if !strings.Contains(output, "cap_net_admin=ep") {
+				t.Errorf("can't find expected cap_net_admin=ep in output: %q", output)
+			}
+
+			// Check that process credentials are properly configured.
+			output, err = d.Exec(ctx, dockerutil.ExecOpts{User: "1001"}, catPath, "/proc/self/status")
+			if (err == nil) == tc.err {
+				t.Fatalf("wanted err=%t, got=%v", tc.err, err)
+			}
+			if !strings.Contains(output, tc.wantOut) {
+				t.Errorf("can't find expected output %q in output: %q", tc.wantOut, output)
+			}
+		})
 	}
 }
 
