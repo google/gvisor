@@ -37,7 +37,6 @@ import (
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/bits"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/control"
@@ -2482,7 +2481,7 @@ func TestMountSymlink(t *testing.T) {
 
 // Check that --net-raw disables the CAP_NET_RAW capability.
 func TestNetRaw(t *testing.T) {
-	capNetRaw := strconv.FormatUint(bits.MaskOf64(int(linux.CAP_NET_RAW)), 10)
+	capNetRaw := strconv.FormatUint(uint64(auth.CapabilitySetOf(linux.CAP_NET_RAW)), 10)
 	app, err := testutil.FindFile("test/cmd/test_app/test_app")
 	if err != nil {
 		t.Fatal("error finding test_app:", err)

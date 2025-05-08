@@ -1088,18 +1088,22 @@ func (k *Kernel) CreateProcess(args CreateProcessArgs) (*ThreadGroup, ThreadID, 
 	if se != nil {
 		return nil, 0, errors.New(se.String())
 	}
-	var vfsCaps linux.VfsNsCapData
-	if len(image.FileCaps()) != 0 {
-		var err error
-		vfsCaps, err = auth.VfsCapDataOf([]byte(image.FileCaps()))
+	creds := args.Credentials
+	hasVFSCaps := false
+	// In security/commoncap.c:get_file_caps(), Linux does not apply file
+	// capabilities if ENODATA is returned. Similarly, we only apply file
+	// capabilities if they are present.
+	if fileCaps := image.FileCaps(); len(fileCaps) != 0 {
+		vfsCaps, err := auth.VfsCapDataOf([]byte(fileCaps))
+		if err != nil {
+			return nil, 0, err
+		}
+		creds, hasVFSCaps, err = auth.CapsFromVfsCaps(vfsCaps, args.Credentials)
 		if err != nil {
 			return nil, 0, err
 		}
 	}
-	creds, err := auth.CapsFromVfsCaps(vfsCaps, args.Credentials)
-	if err != nil {
-		return nil, 0, err
-	}
+	creds = auth.HandlePrivilegedRoot(creds, hasVFSCaps, args.Filename)
 	args.FDTable.IncRef()
 
 	// Create the task.

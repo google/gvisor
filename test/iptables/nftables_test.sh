@@ -32,16 +32,13 @@ expected_regex='-P PREROUTING ACCEPT
 -A DOCKER_POSTROUTING -s 127.0.0.11/32 -p tcp -m tcp --sport [0-9]+ -j SNAT --to-source :53
 -A DOCKER_POSTROUTING -s 127.0.0.11/32 -p udp -m udp --sport [0-9]+ -j SNAT --to-source :53'
 
-# The runtime name is the first and only argument.
-runtime="$1"
-
 # The image passed to docker run uses iptables-nft by default, so the above
 # rules can't be simply scraped and passed to gVisor. We test that those rules
 # are correctly translated to iptables-legacy rules.
 net_name="nftables-test-net-$(shuf -i 0-99999999 -n 1)"
 docker network create "$net_name"
 trap "docker network rm \"$net_name\"" EXIT
-got=$(docker run --network="$net_name" --rm --runtime "$runtime" --privileged gvisor.dev/images/iptables iptables-legacy -t nat -S)
+got=$(docker run --network="$net_name" --rm --runtime "$RUNTIME" --privileged gvisor.dev/images/iptables iptables-legacy -t nat -S)
 if ! [[ "$got" =~ $expected_regex ]]; then
   echo "Got incorrect rules: got on the left, want on the right"
   diff <(echo "$got") <(echo "$expected_regex")

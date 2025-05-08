@@ -143,7 +143,7 @@ func TestCapsFromVfsCaps(t *testing.T) {
 		},
 	} {
 		t.Run(tst.name, func(t *testing.T) {
-			newCreds, err := CapsFromVfsCaps(tst.capData, tst.creds)
+			newCreds, _, err := CapsFromVfsCaps(tst.capData, tst.creds)
 			if err == nil {
 				if tst.wantErr != nil {
 					t.Errorf("CapsFromVfsCaps(%v, %v) returned unexpected error %v", tst.capData, tst.creds, tst.wantErr)
