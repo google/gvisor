@@ -312,8 +312,8 @@ func (c *chart) series(ts *TimeSeries, isCumulative bool) ([]opts.LineData, erro
 func (c *chart) Charter() (components.Charter, error) {
 	lineChart := charts.NewLine()
 	yAxis := opts.YAxis{
-		Scale: true,
-		Show:  true,
+		Scale: opts.Bool(true),
+		Show:  opts.Bool(true),
 	}
 	isCumulative, err := c.isCumulative()
 	if err != nil {
@@ -331,7 +331,7 @@ func (c *chart) Charter() (components.Charter, error) {
 		lineChart.AddSeries(
 			ts.String(),
 			seriesData,
-			charts.WithLabelOpts(opts.Label{Show: false}),
+			charts.WithLabelOpts(opts.Label{Show: opts.Bool(false)}),
 		)
 	}
 	chartTitle := c.Title
@@ -344,14 +344,14 @@ func (c *chart) Charter() (components.Charter, error) {
 		charts.WithTitleOpts(opts.Title{Title: chartTitle}),
 		charts.WithInitializationOpts(opts.Initialization{Theme: echartstypes.ThemeVintage}),
 		charts.WithXAxisOpts(opts.XAxis{
-			Show:        true,
+			Show:        opts.Bool(true),
 			Data:        []string{"foo", "bar"},
 			SplitNumber: 24,
-			AxisLabel:   &opts.AxisLabel{Show: true},
+			AxisLabel:   &opts.AxisLabel{Show: opts.Bool(true)},
 		}),
 		charts.WithYAxisOpts(yAxis, 0),
 		charts.WithLegendOpts(opts.Legend{
-			Show:         true,
+			Show:         opts.Bool(true),
 			SelectedMode: "multiple",
 			Orient:       "vertical",
 			Right:        "5%",
@@ -360,13 +360,14 @@ func (c *chart) Charter() (components.Charter, error) {
 		charts.WithDataZoomOpts(opts.DataZoom{Type: "inside", XAxisIndex: 0}),
 		charts.WithDataZoomOpts(opts.DataZoom{Type: "slider", XAxisIndex: 0}),
 		charts.WithDataZoomOpts(opts.DataZoom{Type: "inside", YAxisIndex: []int{}}),
-		charts.WithTooltipOpts(opts.Tooltip{Show: true, Trigger: "axis"}),
+		charts.WithTooltipOpts(opts.Tooltip{Show: opts.Bool(true), Trigger: "axis"}),
 		charts.WithToolboxOpts(opts.Toolbox{
-			Show: true,
+			Show: opts.Bool(true),
 			Feature: &opts.ToolBoxFeature{
-				SaveAsImage: &opts.ToolBoxFeatureSaveAsImage{Name: "📸 PNG", Show: true, Type: "png"},
+				SaveAsImage: &opts.ToolBoxFeatureSaveAsImage{Name: "📸 PNG", Show: opts.Bool(true), Type: "png"},
 			},
 		}),
+		charts.WithInitializationOpts(opts.Initialization{Theme: echartstypes.ThemeVintage}),
 	)
 	lineChart.Validate()
 	return lineChart, nil
@@ -398,7 +399,6 @@ func (d *Data) ToHTML(opts HTMLOptions) (string, error) {
 		chartTitleRoot = fmt.Sprintf("%s [%s]", opts.Title, opts.ContainerName)
 		page.PageTitle = fmt.Sprintf("Metrics for %s (container %s) at %v", opts.Title, opts.ContainerName, opts.When.Format(time.DateTime))
 	}
-	page.Theme = echartstypes.ThemeVintage
 	page.SetLayout(components.PageFlexLayout)
 
 	// Find which groups contain which metrics that we're seeing in the data.
