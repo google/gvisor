@@ -42,9 +42,9 @@ endif
 # tests are using locally-defined images (that are consistent and idempotent).
 REMOTE_IMAGE_PREFIX ?= us-central1-docker.pkg.dev/gvisor-presubmit/gvisor-presubmit-images
 LOCAL_IMAGE_PREFIX  ?= gvisor.dev/images
-ALL_IMAGES          := $(subst /,_,$(subst images/,,$(shell find images/ -name Dockerfile -o -name Dockerfile.$(ARCH) | xargs -n 1 dirname | uniq)))
+ALL_IMAGES          := $(subst /,_,$(subst images/,,$(shell find -L images/ '(' -name Dockerfile -o -name Dockerfile.$(ARCH) ')' -a '!' -wholename '*.tmpl/*' | xargs -n 1 dirname | uniq)))
 NON_TEST_IMAGES     := gpu/ollama/bench\|gpu/vllm
-TEST_IMAGES         := $(subst /,_,$(subst images/,,$(shell find images/ -name Dockerfile -o -name Dockerfile.$(ARCH) | xargs -n 1 dirname | uniq | grep -v "$(NON_TEST_IMAGES)")))
+TEST_IMAGES         := $(subst /,_,$(subst images/,,$(shell find -L images/ '(' -name Dockerfile -o -name Dockerfile.$(ARCH) ')' -a '!' -wholename '*.tmpl/*' | xargs -n 1 dirname | uniq | grep -v "$(NON_TEST_IMAGES)")))
 SUB_IMAGES          := $(foreach image,$(ALL_IMAGES),$(if $(findstring _,$(image)),$(image),))
 IMAGE_GROUPS        := $(sort $(foreach image,$(SUB_IMAGES),$(firstword $(subst _, ,$(image)))))
 
@@ -94,6 +94,10 @@ push-all-test-images: $(patsubst %,push-%,$(TEST_IMAGES))
 # (depending on what's available for the given architecture).
 path = images/$(subst _,/,$(1))
 dockerfile = $$(if [ -f "$(call path,$(1))/Dockerfile.$(ARCH)" ]; then echo Dockerfile.$(ARCH); else echo Dockerfile; fi)
+
+# Extract template version from image name, if present.
+# Arguments 1 and 3 are prefix/suffix; argument 2 is the image name.
+template_version = $$(if echo "$(2)" | grep -qF '.'; then echo "$(1)$$(echo "$(2)" | cut -d. -f2-)$(3)"; fi)
 
 # The tag construct is used to memoize the image generated (see README.md).
 # This scheme is used to enable aggressive caching in a central repository, but
@@ -158,9 +162,10 @@ pull-%: register-cross ## Force a repull of the image.
 rebuild = \
   $(call header,REBUILD $(1)) && \
   (T=$$(mktemp -d) && cp -a $(call path,$(1))/* $$T && \
-  $(foreach image,$(shell grep FROM "$(call path,$(1))/$(call dockerfile,$(1))" 2>/dev/null | cut -d' ' -f2),docker pull $(DOCKER_PLATFORM_ARGS) $(image) >&2 &&) \
+  $(foreach image,$(shell grep "^FROM " "$(call path,$(1))/$(call dockerfile,$(1))" 2>/dev/null | sed "s~\$${TEMPLATE_VERSION}~$(call template_version,,$(1),)~g" | cut -d' ' -f2),docker pull $(DOCKER_PLATFORM_ARGS) $(image) >&2 &&) \
   docker build $(DOCKER_PLATFORM_ARGS) \
     -f "$$T/$(call dockerfile,$(1))" \
+    $(call template_version,--build-arg=TEMPLATE_VERSION=,$(1),) \
     -t "$(call remote_image,$(1)):$(call tag,$(1))" \
     -t "$(call remote_image,$(1))":latest \
     $$T >&2 && \

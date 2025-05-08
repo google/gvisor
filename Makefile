@@ -291,7 +291,7 @@ simple-tests: unit-tests # Compatibility target.
 .PHONY: simple-tests
 
 # Images needed for GPU smoke tests.
-gpu-smoke-images: load-gpu_cuda-tests load-gpu_cuda-tests-12-8
+gpu-smoke-images: load-gpu_cuda-tests.12.2.2 load-gpu_cuda-tests-12.8.1
 .PHONY: gpu-smoke-images
 
 gpu-smoke-tests: gpu-smoke-images $(RUNTIME_BIN)
@@ -338,7 +338,7 @@ cos-gpu-all-tests: gpu-images cos-gpu-smoke-tests $(RUNTIME_BIN)
 	@$(call sudo,test/gpu:sniffer_test,--runtime=$(RUNTIME) -test.v --cos-gpu $(ARGS))
 .PHONY: cos-gpu-all-tests
 
-cuda-tests: load-basic_alpine load-gpu_cuda-tests $(RUNTIME_BIN)
+cuda-tests: load-basic_alpine load-gpu_cuda-tests.12.2.2 $(RUNTIME_BIN)
 	@$(call install_runtime,$(RUNTIME),--nvproxy=true --nvproxy-docker=true --nvproxy-allowed-driver-capabilities=all)
 	@$(call sudo,test/gpu:cuda_test,--runtime=$(RUNTIME) -test.v $(ARGS))
 .PHONY: cuda-tests

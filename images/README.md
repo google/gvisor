@@ -67,3 +67,65 @@ achieved by specifying `ARCH` variable to make. For example:
 ```
 $ make ARCH=aarch64 rebuild-default
 ```
+
+## Templated images
+
+If an image directory ends in `.tmpl`, it will be ignored from the set of images
+that the `Makefile` recognizes. Instead, this directory can be used to
+instantiate other images.
+
+For example, given the following filesystem structure:
+
+```
+images/
+├─ my-little-image.tmpl/
+│  └─ Dockerfile
+├─ my-little-image.foo.bar → my-little-image.tmpl (symlink)
+├─ my-little-image.baz.qux → my-little-image.tmpl (symlink)
+└─ this README.md file
+```
+
+Then this will effectively create two images, `my-little-image.foo.bar` and
+`my-little-image.baz.qux`. It will not create a `my-little-image.tmpl` image.
+
+The behavior of the template instance images is determined by the
+`TEMPLATE_VERSION` build argument passed to `my-little-image.tmpl/Dockerfile`.
+This argument takes on the value of everything after the first `.` character of
+the last component of the template instance image name. For example, the image
+`my-little-image.foo.bar` will be built with `docker build
+--build-arg=TEMPLATE_VERSION=foo.bar`, whereas the `my-little-image.baz.quux`
+will be built with `docker build --build-arg=TEMPLATE_VERSION=baz.qux`. The
+`my-little-image.tmpl/Dockerfile` image definition file can use this variable to
+make the necessary tweaks to distinguish these two images.
+
+Note that build arguments do not carry over `FROM` lines in `Dockerfile` unless
+specifically passed. For example, this will not work:
+
+```dockerfile
+# You should put this line at the top of the file to clearly indicate
+# to users that don't use the `Makefile` build system that they are going
+# to be building an image that doesn't make sense:
+ARG TEMPLATE_VERSION=POPULATED_BY_BUILD_SYSTEM
+
+FROM base-image:${TEMPLATE_VERSION}-alpine
+
+# WRONG: TEMPLATE_VERSION will not be defined here!
+# This will try cloning the empty string branch.
+RUN git clone https://some-url --branch="${TEMPLATE_VERSION}"
+```
+
+This will work:
+
+```dockerfile
+ARG TEMPLATE_VERSION=POPULATED_BY_BUILD_SYSTEM
+
+FROM base-image:${TEMPLATE_VERSION}-alpine
+
+# CORRECT: This declares that TEMPLATE_VERSION should be inherited from the
+# previous build stage; the lack of value assignment means that its value
+# should be carried over as-is.
+ARG TEMPLATE_VERSION
+
+# TEMPLATE_VERSION will be defined here.
+RUN git clone https://some-url --branch="${TEMPLATE_VERSION}"
+```
