@@ -882,7 +882,11 @@ func (cn *conn) handlePacket(pkt *PacketBuffer, hook Hook, rt *Route) bool {
 		dnat = true
 	case Input:
 	case Forward:
-		panic("should not handle packet in the forwarding hook")
+		cn.stateMu.Lock()
+		if cn.tcb.State() != tcpconntrack.ResultAlive {
+			return false
+		}
+		cn.stateMu.Unlock()
 	case Output:
 		natDone = &pkt.dnatDone
 		dnat = true
