@@ -17,8 +17,10 @@ package tundev
 
 import (
 	"io"
+	"time"
 
 	"golang.org/x/sys/unix"
+	"golang.org/x/time/rate"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/context"
@@ -38,6 +40,8 @@ const (
 	netTunDevMajor = 10
 	netTunDevMinor = 200
 )
+
+var warnRateLimiter = rate.NewLimiter(rate.Every(time.Second), 1)
 
 // tunDevice implements vfs.Device for /dev/net/tun.
 //
@@ -93,11 +97,14 @@ func (fd *tunFD) Ioctl(ctx context.Context, uio usermem.IO, sysno uintptr, args 
 		}
 
 		// Validate flags.
-		flags, err := netstack.LinuxToTUNFlags(hostarch.ByteOrder.Uint16(req.Data[:]))
+		linuxFlags := hostarch.ByteOrder.Uint16(req.Data[:])
+		flags, err := netstack.LinuxToTUNFlags(linuxFlags)
 		if err != nil {
-			return 0, err
+			if warnRateLimiter.Allow() {
+				ctx.Warningf("Unsuported tun flags: %x", linuxFlags)
+			}
 		}
-		return 0, fd.device.SetIff(stack.Stack, req.Name(), flags)
+		return 0, fd.device.SetIff(ctx, stack.Stack, req.Name(), flags)
 
 	case linux.TUNGETIFF:
 		var req linux.IFReq

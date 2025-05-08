@@ -38,10 +38,6 @@ import (
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
-const (
-	securityCapability = linux.XATTR_SECURITY_PREFIX + "capability"
-)
-
 // LoadArgs holds specifications for an executable file to be loaded.
 type LoadArgs struct {
 	// MemoryManager is the memory manager to load the executable into.
@@ -268,7 +264,7 @@ func Load(ctx context.Context, args LoadArgs, extraAuxv []arch.AuxEntry, vdso *V
 		return ImageInfo{}, syserr.NewDynamic(fmt.Sprintf("failed to load %s: %v", args.Filename, err), syserr.FromError(err).ToLinux())
 	}
 	defer file.DecRef(ctx)
-	xattr, err := file.GetXattr(ctx, &vfs.GetXattrOptions{Name: securityCapability, Size: linux.XATTR_CAPS_SZ_3})
+	xattr, err := file.GetXattr(ctx, &vfs.GetXattrOptions{Name: linux.XATTR_SECURITY_CAPABILITY, Size: linux.XATTR_CAPS_SZ_3})
 	switch {
 	case linuxerr.Equals(linuxerr.ENODATA, err), linuxerr.Equals(linuxerr.ENOTSUP, err):
 		xattr = ""

@@ -271,12 +271,52 @@ func (c *VfsCapData) Inheritable() uint64 {
 	return uint64(c.InheritableHi)<<32 | uint64(c.InheritableLo)
 }
 
+// IsRevision2 returns true if c is v2.
+func (c *VfsCapData) IsRevision2() bool {
+	return (c.MagicEtc & VFS_CAP_REVISION_MASK) == VFS_CAP_REVISION_2
+}
+
+// ToString marshals c into bytes and returns it as a string.
+func (c *VfsCapData) ToString() string {
+	buf := make([]byte, c.SizeBytes())
+	c.MarshalUnsafe(buf)
+	return string(buf)
+}
+
 // VfsNsCapData is equivalent to Linux's struct vfs_ns_cap_data.
 //
 // +marshal
 type VfsNsCapData struct {
 	VfsCapData
 	RootID uint32
+}
+
+// ConvertToV3 converts c to v3 file capabilities.
+func (c *VfsNsCapData) ConvertToV3(rootid uint32) {
+	c.RootID = rootid
+	if c.IsRevision2() {
+		// Change to v3 while retaining the effective bit.
+		c.MagicEtc = VFS_CAP_REVISION_3 | c.MagicEtc&VFS_CAP_FLAGS_EFFECTIVE
+	}
+}
+
+// ConvertToV2 converts c to v2 file capabilities.
+func (c *VfsNsCapData) ConvertToV2() {
+	c.RootID = 0
+	if !c.IsRevision2() {
+		// Change to v2 while retaining the effective bit.
+		c.MagicEtc = VFS_CAP_REVISION_2 | c.MagicEtc&VFS_CAP_FLAGS_EFFECTIVE
+	}
+}
+
+// ToString marshals c into bytes and returns it as a string.
+func (c *VfsNsCapData) ToString() string {
+	if c.IsRevision2() {
+		return c.VfsCapData.ToString()
+	}
+	buf := make([]byte, c.SizeBytes())
+	c.MarshalUnsafe(buf)
+	return string(buf)
 }
 
 // CapUserHeader is equivalent to Linux's cap_user_header_t.

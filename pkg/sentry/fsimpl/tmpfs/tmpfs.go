@@ -193,7 +193,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	allowXattrPrefix := map[string]struct{}{
 		linux.XATTR_TRUSTED_PREFIX: {},
 		linux.XATTR_USER_PREFIX:    {},
-		// The "security" namespace is allowed, but it always returns an error.
+		// Only the "security.capability" xattr is supported.
 		linux.XATTR_SECURITY_PREFIX: {},
 	}
 
@@ -876,7 +876,7 @@ func (i *inode) setXattr(creds *auth.Credentials, opts *vfs.SetXattrOptions) err
 	if err := vfs.GenericCheckPermissions(creds, vfs.MayWrite, mode, kuid, kgid); err != nil {
 		return err
 	}
-	return i.xattrs.SetXattr(creds, mode, kuid, opts)
+	return i.xattrs.SetXattr(creds, mode, kuid, kgid, opts)
 }
 
 func (i *inode) removeXattr(creds *auth.Credentials, name string) error {

@@ -49,6 +49,7 @@ func (f *Flags) StateFields() []string {
 		"TUN",
 		"TAP",
 		"NoPacketInfo",
+		"Exclusive",
 	}
 }
 
@@ -60,6 +61,7 @@ func (f *Flags) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &f.TUN)
 	stateSinkObject.Save(1, &f.TAP)
 	stateSinkObject.Save(2, &f.NoPacketInfo)
+	stateSinkObject.Save(3, &f.Exclusive)
 }
 
 func (f *Flags) afterLoad(context.Context) {}
@@ -69,6 +71,7 @@ func (f *Flags) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &f.TUN)
 	stateSourceObject.Load(1, &f.TAP)
 	stateSourceObject.Load(2, &f.NoPacketInfo)
+	stateSourceObject.Load(3, &f.Exclusive)
 }
 
 func (e *tunEndpoint) StateTypeName() string {

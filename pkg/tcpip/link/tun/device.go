@@ -58,6 +58,7 @@ type Flags struct {
 	TUN          bool
 	TAP          bool
 	NoPacketInfo bool
+	Exclusive    bool
 }
 
 // beforeSave is invoked by stateify.
@@ -86,7 +87,7 @@ func (d *Device) Release(ctx context.Context) {
 }
 
 // SetIff services TUNSETIFF ioctl(2) request.
-func (d *Device) SetIff(s *stack.Stack, name string, flags Flags) error {
+func (d *Device) SetIff(ctx context.Context, s *stack.Stack, name string, flags Flags) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
@@ -95,7 +96,7 @@ func (d *Device) SetIff(s *stack.Stack, name string, flags Flags) error {
 	}
 
 	// Input validation.
-	if flags.TAP && flags.TUN || !flags.TAP && !flags.TUN {
+	if (flags.TAP && flags.TUN) || (!flags.TAP && !flags.TUN) {
 		return linuxerr.EINVAL
 	}
 
@@ -109,9 +110,9 @@ func (d *Device) SetIff(s *stack.Stack, name string, flags Flags) error {
 		linkCaps |= stack.CapabilityResolutionRequired
 	}
 
-	endpoint, err := attachOrCreateNIC(s, name, prefix, linkCaps)
+	endpoint, err := attachOrCreateNIC(ctx, s, name, prefix, linkCaps, flags)
 	if err != nil {
-		return linuxerr.EINVAL
+		return err
 	}
 
 	d.endpoint = endpoint
@@ -120,10 +121,10 @@ func (d *Device) SetIff(s *stack.Stack, name string, flags Flags) error {
 	return nil
 }
 
-func attachOrCreateNIC(s *stack.Stack, name, prefix string, linkCaps stack.LinkEndpointCapabilities) (*tunEndpoint, error) {
+func attachOrCreateNIC(ctx context.Context, s *stack.Stack, name, prefix string, linkCaps stack.LinkEndpointCapabilities, flags Flags) (*tunEndpoint, error) {
 	for {
 		// 1. Try to attach to an existing NIC.
-		if name != "" {
+		if name != "" && !flags.Exclusive {
 			if linkEP := s.GetLinkEndpointByName(name); linkEP != nil {
 				endpoint, ok := linkEP.(*tunEndpoint)
 				if !ok {
@@ -159,9 +160,14 @@ func attachOrCreateNIC(s *stack.Stack, name, prefix string, linkCaps stack.LinkE
 		case nil:
 			return endpoint, nil
 		case *tcpip.ErrDuplicateNICID:
-			// Race detected: A NIC has been created in between.
-			continue
+			endpoint.DecRef(ctx)
+			if !flags.Exclusive {
+				// Race detected: A NIC has been created in between.
+				continue
+			}
+			return nil, linuxerr.EEXIST
 		default:
+			endpoint.DecRef(ctx)
 			return nil, linuxerr.EINVAL
 		}
 	}
