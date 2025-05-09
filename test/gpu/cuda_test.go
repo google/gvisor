@@ -137,7 +137,7 @@ func TestCUDA(t *testing.T) {
 		FlakyTests:             flakyTests,
 		ExclusiveTests:         exclusiveTests,
 		AlwaysSkippedTests:     alwaysSkippedTests,
-		Image:                  "gpu/cuda-tests",
+		Image:                  "gpu/cuda-tests.12.2.2",
 	}
 	cuda.RunCudaTests(ctx, t, args)
 }

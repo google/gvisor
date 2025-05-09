@@ -1,8 +1,10 @@
-FROM nvidia/cuda:12.2.2-devel-ubuntu22.04
+ARG TEMPLATE_VERSION=PLEASE_USE_MAKEFILE_TO_BUILD_THIS_IMAGE
 
-# From: https://github.com/NVIDIA/cuda-samples/releases
-# Ideally, pick a release that matches the CUDA version of the image above.
-ARG CUDA_SAMPLES_VERSION=v12.2
+FROM nvidia/cuda:${TEMPLATE_VERSION}-devel-ubuntu22.04
+
+# Necessary to keep TEMPLATE_VERSION available for future
+# lines in this Dockerfile past the FROM.
+ARG TEMPLATE_VERSION
 
 WORKDIR /
 COPY *.cu *.h *.sh *.go *.cc /
@@ -33,7 +35,9 @@ RUN export DEBIAN_FRONTEND=noninteractive; \
       zlib1g zlib1g-dev \
     && \
     chmod 555 /*.sh && \
-    git clone --depth=1 --branch="$CUDA_SAMPLES_VERSION" --single-branch \
+    git clone --depth=1 \
+      --branch="v$(echo "${TEMPLATE_VERSION}" | cut -d. -f1-2)" \
+      --single-branch \
       https://github.com/NVIDIA/cuda-samples.git /cuda-samples && \
     go install \
       github.com/TheZoraiz/ascii-image-converter@d05a757c5e02ab23e97b6f6fca4e1fbeb10ab559 && \

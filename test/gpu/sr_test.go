@@ -41,7 +41,7 @@ func TestGPUCheckpointRestore(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to get GPU run options: %v", err)
 	}
-	opts.Image = "gpu/cuda-tests"
+	opts.Image = "gpu/cuda-tests.12.2.2"
 	if err := c.Spawn(ctx, opts, "sleep", "infinity"); err != nil {
 		t.Fatalf("could not start cuda-tests container: %v", err)
 	}

@@ -42,7 +42,7 @@ func runCUDATestsCommand(t *testing.T, cmd ...string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to get GPU run options: %w", err)
 	}
-	opts.Image = "gpu/cuda-tests"
+	opts.Image = "gpu/cuda-tests.12.2.2"
 	return container.Run(ctx, opts, cmd...)
 }
 
