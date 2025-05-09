@@ -24,46 +24,22 @@ import (
 	"gvisor.dev/gvisor/test/gpu/cuda"
 )
 
-var testSuiteCompatibility = map[string]cuda.Compatibility{
-	"0_Introduction":            &cuda.NoCrossCompile{},
-	"1_Utilities":               &cuda.NoCrossCompile{},
-	"2_Concepts_and_Techniques": &cuda.NoCrossCompile{},
-	"3_CUDA_Features":           &cuda.NoCrossCompile{},
-	"4_CUDA_Libraries":          &cuda.NoCrossCompile{},
-	"5_Domain_Specific":         &cuda.NoCrossCompile{},
-	"6_Performance":             &cuda.NoCrossCompile{},
-}
+var testSuiteCompatibility = map[string]cuda.Compatibility{}
 
 // TODO(b/388095023): Enable these tests once they are tested.
 var skippedTestSuites = map[string]string{
-	"1_Utilities":               "TODO: not yet tested",
-	"2_Concepts_and_Techniques": "TODO: not yet tested",
-	"3_CUDA_Features":           "TODO: not yet tested",
-	"4_CUDA_Libraries":          "TODO: not yet tested",
-	"5_Domain_Specific":         "TODO: not yet tested",
-	"6_Performance":             "TODO: not yet tested",
+	"3_CUDA_Features":   "TODO: not yet tested",
+	"4_CUDA_Libraries":  "TODO: not yet tested",
+	"5_Domain_Specific": "TODO: not yet tested",
+	"6_Performance":     "TODO: not yet tested",
+	"7_libNVVM":         "TODO: not yet tested",
 }
 
-var testCompatibility = map[string]cuda.Compatibility{
-	"0_Introduction/simpleAttributes": cuda.RequiresFeatures(cuda.FeaturePersistentL2Caching),
-	"0_Introduction/simpleCUDA2GL":    cuda.RequiresFeatures(cuda.FeatureGL),
-	"0_Introduction/simpleP2P":        &cuda.RequiresP2P{},
-}
+var testCompatibility = map[string]cuda.Compatibility{}
 
 var flakyTests = map[string]struct{}{}
 
-var exclusiveTests = map[string]struct{}{
-	// Can fail due to
-	// "launch failed because launch would exceed cudaLimitDevRuntimePendingLaunchCount"
-	// when running in parallel with other tests.
-	"3_CUDA_Features/cdpAdvancedQuicksort": {},
-
-	// Performance-intensive tests that tend to make other concurrent tests
-	// flake due to their high resource usage.
-	"6_Performance/alignedTypes":      {},
-	"6_Performance/transpose":         {},
-	"6_Performance/UnifiedMemoryPerf": {},
-}
+var exclusiveTests = map[string]struct{}{}
 
 // alwaysSkippedTests don't run at all, ever, and are not verified when
 // --cuda_verify_compatibility is set.
