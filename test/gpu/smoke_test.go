@@ -48,21 +48,7 @@ func TestNvidiaSmi(t *testing.T) {
 
 func TestGPUHello(t *testing.T) {
 	ctx := context.Background()
-	c := dockerutil.MakeContainer(ctx, t)
-	defer c.CleanUp(ctx)
-
-	opts, err := dockerutil.GPURunOpts(dockerutil.SniffGPUOpts{
-		Capabilities: "all",
-	})
-	if err != nil {
-		t.Fatalf("failed to get GPU run options: %v", err)
-	}
-	opts.Image = "gpu/cuda-tests"
-	out, err := c.Run(ctx, opts, "/run_sample", "--timeout=120s", "0_Introduction/vectorAdd")
-	t.Logf("0_Introduction/vectorAdd output: %s", string(out))
-	if err != nil {
-		t.Fatalf("could not run 0_Introduction/vectorAdd: %v", err)
-	}
+	runGPUHello(ctx, t, "gpu/cuda-tests")
 }
 
 func TestGPUHello_12_8(t *testing.T) {
@@ -75,7 +61,10 @@ func TestGPUHello_12_8(t *testing.T) {
 	if !cudaVersion.IsAtLeast(dockerutil.MustParseCudaVersion("12.8")) {
 		t.Skipf("CUDA version %s is not at least 12.8, skipping test", cudaVersion)
 	}
+	runGPUHello(ctx, t, "gpu/cuda-tests-12-8")
+}
 
+func runGPUHello(ctx context.Context, t *testing.T, image string) {
 	c := dockerutil.MakeContainer(ctx, t)
 	defer c.CleanUp(ctx)
 	opts, err := dockerutil.GPURunOpts(dockerutil.SniffGPUOpts{
@@ -84,8 +73,8 @@ func TestGPUHello_12_8(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to get GPU run options: %v", err)
 	}
-	opts.Image = "gpu/cuda-tests-12-8"
-	out, err := c.Run(ctx, opts, "python3", "run_cuda_test.py", "0_Introduction/vectorAdd")
+	opts.Image = image
+	out, err := c.Run(ctx, opts, "/run_sample", "--timeout=120s", "0_Introduction/vectorAdd")
 	t.Logf("0_Introduction/vectorAdd output: %s", string(out))
 	if err != nil {
 		t.Fatalf("could not run 0_Introduction/vectorAdd: %v", err)

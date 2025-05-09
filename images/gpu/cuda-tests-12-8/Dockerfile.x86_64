@@ -28,18 +28,22 @@ RUN export DEBIAN_FRONTEND=noninteractive; \
       xvfb \
       zlib1g zlib1g-dev
 
-RUN git clone  \
-      https://github.com/NVIDIA/cuda-samples.git /cuda-samples && cd /cuda-samples && \
-      git checkout 7b60178984e96bc09d066077d5455df71fee2a9f && cd /
+RUN git clone --depth=1 --branch=v12.8 --single-branch \
+      https://github.com/NVIDIA/cuda-samples.git /cuda-samples && cd /cuda-samples
 
 RUN apt install -y wget && apt -y purge golang*
 
-RUN wget https://go.dev/dl/go1.24.1.linux-amd64.tar.gz && tar -C /usr/local -xzf go1.24.1.linux-amd64.tar.gz && \
-   ln -s /usr/local/go/bin/go /usr/local/bin/go
+RUN wget https://go.dev/dl/go1.24.1.linux-amd64.tar.gz && \
+    tar -C /usr/local -xzf go1.24.1.linux-amd64.tar.gz && \
+    ln -s /usr/local/go/bin/go /usr/local/bin/go
 
-ADD *.cu *.h *.sh *.py *.cc /
+ADD *.cu *.h *.sh *.go *.cc /
 
-RUN chmod 555 /*.sh && gcc -o /unsupported_ioctl /unsupported_ioctl.cc
+RUN chmod 555 /*.sh && gcc -o /unsupported_ioctl /unsupported_ioctl.cc && \
+    go install \
+      github.com/TheZoraiz/ascii-image-converter@d05a757c5e02ab23e97b6f6fca4e1fbeb10ab559 && \
+    mv "$HOME/go/bin/ascii-image-converter" /usr/bin/ && \
+    go build -o /run_sample /run_sample.go
 
 RUN mkdir /cuda-samples/build && cd /cuda-samples/build && \
       cmake ..

@@ -34,8 +34,6 @@ var testSuiteCompatibility = map[string]cuda.Compatibility{
 	"6_Performance":             &cuda.NoCrossCompile{},
 }
 
-// testCompatibility maps test names to their compatibility data.
-// Unmapped test names are assumed to be fully compatible.
 var testCompatibility = map[string]cuda.Compatibility{
 	"0_Introduction/simpleAttributes": cuda.RequiresFeatures(cuda.FeaturePersistentL2Caching),
 	"0_Introduction/simpleCUDA2GL":    cuda.RequiresFeatures(cuda.FeatureGL),
@@ -95,21 +93,10 @@ var testCompatibility = map[string]cuda.Compatibility{
 	"5_Domain_Specific/vulkanImageCUDA":                    cuda.RequiresFeatures(cuda.FeatureGL),
 }
 
-// flakyTests is a list of tests that are flaky.
-// These will be retried up to 3 times in parallel before running 3 times
-// serially.
 var flakyTests = map[string]struct{}{
 	"3_CUDA_Features/cdpAdvancedQuicksort": {},
 }
 
-// exclusiveTests is a list of tests that must run exclusively (i.e. with
-// no other test running on the machine at the same time), or they will
-// likely fail. These tests are not attempted to be run in parallel.
-// This is usually the case for performance tests or tests that use a lot
-// of resources in general.
-// This saves the trouble to run them in parallel, while also avoiding
-// causing spurious failures for the tests that happen to be running in
-// parallel with them.
 var exclusiveTests = map[string]struct{}{
 	// Can fail due to
 	// "launch failed because launch would exceed cudaLimitDevRuntimePendingLaunchCount"
@@ -123,9 +110,6 @@ var exclusiveTests = map[string]struct{}{
 	"6_Performance/UnifiedMemoryPerf": {},
 }
 
-// alwaysSkippedTests don't run at all, ever, and are not verified when
-// --cuda_verify_compatibility is set.
-// Each test is mapped to a reason why it should be skipped.
 var alwaysSkippedTests = map[string]string{}
 
 // TestCUDA runs CUDA tests.

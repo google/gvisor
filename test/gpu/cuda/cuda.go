@@ -649,12 +649,40 @@ func getContainerOpts(image string) (dockerutil.RunOpts, error) {
 
 // RunCudaTestArgs contains arguments for RunCudaTests.
 type RunCudaTestArgs struct {
+	// TestSuiteCompatibility maps test suites to their compatibility data.
+	// Unmapped test suites are assumed to be fully compatible.
 	TestSuiteCompatibility map[string]Compatibility
-	TestCompatibility      map[string]Compatibility
-	FlakyTests             map[string]struct{}
-	ExclusiveTests         map[string]struct{}
-	AlwaysSkippedTests     map[string]string
-	Image                  string
+
+	// SkippedTestSuites maps test suites to a skip reason.
+	// If a test suite is mapped, then all tests in that suite will be skipped.
+	SkippedTestSuites map[string]string
+
+	// TestCompatibility maps test names to their compatibility data.
+	// Unmapped test names are assumed to be fully compatible.
+	TestCompatibility map[string]Compatibility
+
+	// FlakyTests is a list of tests that are flaky.
+	// These will be retried up to 3 times in parallel before running 3 times
+	// serially.
+	FlakyTests map[string]struct{}
+
+	// ExclusiveTests is a list of tests that must run exclusively (i.e. with
+	// no other test running on the machine at the same time), or they will
+	// likely fail. These tests are not attempted to be run in parallel.
+	// This is usually the case for performance tests or tests that use a lot
+	// of resources in general.
+	// This saves the trouble to run them in parallel, while also avoiding
+	// causing spurious failures for the tests that happen to be running in
+	// parallel with them.
+	ExclusiveTests map[string]struct{}
+
+	// AlwaysSkippedTests don't run at all, ever, and are not verified when
+	// --cuda_verify_compatibility is set.
+	// Each test is mapped to a reason why it should be skipped.
+	AlwaysSkippedTests map[string]string
+
+	// Image is the image to use for the CUDA tests.
+	Image string
 }
 
 // RunCudaTests runs CUDA tests.
@@ -688,11 +716,10 @@ func RunCudaTests(ctx context.Context, t *testing.T, args *RunCudaTestArgs) {
 	}
 
 	// Get a list of sample tests.
-	listContainer := dockerutil.MakeContainer(ctx, t)
+	listContainer := dockerutil.MakeNativeContainer(ctx, t)
 	defer listContainer.CleanUp(ctx)
-	runOpts, err := getContainerOpts(args.Image)
-	if err != nil {
-		t.Fatalf("Failed to get container options: %v", err)
+	runOpts := dockerutil.RunOpts{
+		Image: args.Image,
 	}
 	testsList, err := listContainer.Run(ctx, runOpts, "/list_sample_tests.sh")
 	if err != nil {
@@ -706,6 +733,18 @@ func RunCudaTests(ctx context.Context, t *testing.T, args *RunCudaTestArgs) {
 		if testName == "" {
 			continue
 		}
+
+		// Temporarily skip test suites that are not yet tested.
+		matches := strings.SplitN(testName, "/", 2)
+		if len(matches) != 2 {
+			t.Errorf("Invalid test name: %q", testName)
+			continue
+		}
+		if _, ok := args.SkippedTestSuites[matches[0]]; ok {
+			testLog(t, "Skipping test %q in suite %q", testName, matches[0])
+			continue
+		}
+
 		allTestsMap[testName] = struct{}{}
 		allTests = append(allTests, testName)
 	}
