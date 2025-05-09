@@ -513,14 +513,25 @@ func (s StaticSeccompInfo) HottestSyscalls() []uintptr {
 	return s.HotSyscalls
 }
 
+// Options is a collection variables and flags for platform initialization.
+type Options struct {
+	// DeviceFile is the device file to use (e.g. /dev/kvm for the KVM
+	// platform).
+	DeviceFile *fd.FD
+
+	// DisableSyscallPatching controls whether Systrap is allowed to patch
+	// syscalls invocations sites at runtime.
+	DisableSyscallPatching bool
+}
+
 // Constructor represents a platform type.
 type Constructor interface {
 	// New returns a new platform instance.
 	//
 	// Arguments:
 	//
-	//	* deviceFile - the device file (e.g. /dev/kvm for the KVM platform).
-	New(deviceFile *fd.FD) (Platform, error)
+	//	* opts - Platform customization bits.
+	New(opts Options) (Platform, error)
 
 	// OpenDevice opens the path to the device used by the platform.
 	// Passing in an empty string will use the default path for the device,

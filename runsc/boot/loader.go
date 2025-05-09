@@ -811,7 +811,10 @@ func createPlatform(conf *config.Config, deviceFile *fd.FD) (platform.Platform, 
 		panic(fmt.Sprintf("invalid platform %s: %s", conf.Platform, err))
 	}
 	log.Infof("Platform: %s", conf.Platform)
-	return p.New(deviceFile)
+	return p.New(platform.Options{
+		DeviceFile:             deviceFile,
+		DisableSyscallPatching: conf.Platform == "systrap" && conf.SystrapDisableSyscallPatching,
+	})
 }
 
 func createMemoryFile(appHugePages bool, hostTHP HostTHP) (*pgalloc.MemoryFile, error) {

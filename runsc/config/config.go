@@ -391,6 +391,9 @@ type Config struct {
 
 	// GVisorMarkerFile enables the /proc/gvisor/kernel_is_gvisor marker file.
 	GVisorMarkerFile bool `flag:"gvisor-marker-file"`
+
+	// SystrapDisableSyscallPatching disables syscall patching in Systrap.
+	SystrapDisableSyscallPatching bool `flag:"systrap-disable-syscall-patching"`
 }
 
 func (c *Config) validate() error {
