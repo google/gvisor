@@ -306,6 +306,10 @@ func stubInit() {
 	*p = uint64(stubContextQueueRegion)
 	p = (*uint64)(unsafe.Pointer(stubSysmsgStart + uintptr(sysmsg.Sighandler_blob_offset____export_spinning_queue_addr)))
 	*p = uint64(stubSpinningThreadQueueAddr)
+	if disableSyscallPatching {
+		p = (*uint64)(unsafe.Pointer(stubSysmsgStart + uintptr(sysmsg.Sighandler_blob_offset____export_disable_syscall_patching)))
+		*p = 1
+	}
 
 	prepareSeccompRules(stubSysmsgStart,
 		stubSysmsgRules, stubSysmsgRulesLen,

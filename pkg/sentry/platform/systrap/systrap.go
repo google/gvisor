@@ -113,6 +113,14 @@ var (
 
 	// archState stores architecture-specific details used in the platform.
 	archState sysmsg.ArchState
+
+	// disableSyscallPatching controls if Systrap is allowed to patch
+	// syscall invocation sites.
+	//
+	// This is a hacky global and is not toggleable at runtime! Once it has
+	// been flipped for one Systrap instance, it will apply to all previously
+	// created and future instances too.
+	disableSyscallPatching bool
 )
 
 // platformContext is an implementation of the platform context.
@@ -241,7 +249,11 @@ func (*Systrap) MinUserAddress() hostarch.Addr {
 }
 
 // New returns a new seccomp-based implementation of the platform interface.
-func New() (*Systrap, error) {
+func New(opts platform.Options) (*Systrap, error) {
+	if !disableSyscallPatching {
+		disableSyscallPatching = opts.DisableSyscallPatching
+	}
+
 	if maxSysmsgThreads == 0 {
 		// CPUID information has been initialized at this point.
 		archState.Init()
@@ -326,8 +338,8 @@ func (*Systrap) NewContext(ctx pkgcontext.Context) platform.Context {
 
 type constructor struct{}
 
-func (*constructor) New(_ *fd.FD) (platform.Platform, error) {
-	return New()
+func (*constructor) New(opts platform.Options) (platform.Platform, error) {
+	return New(opts)
 }
 
 func (*constructor) OpenDevice(_ string) (*fd.FD, error) {

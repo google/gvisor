@@ -34,6 +34,8 @@
 // sysmsg_lib.c.
 struct arch_state __export_arch_state;
 uint64_t __export_stub_start;
+// Note: This flag doesn't do anything for ARM. See AMD64 equivalent.
+uint64_t __export_disable_syscall_patching;
 
 long __syscall(long n, long a1, long a2, long a3, long a4, long a5, long a6) {
   // ARM64 syscall interface passes the syscall number in x8 and the 6 arguments

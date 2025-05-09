@@ -40,6 +40,7 @@
 // sysmsg_lib.c.
 struct arch_state __export_arch_state;
 uint64_t __export_stub_start;
+uint64_t __export_disable_syscall_patching;
 
 long __syscall(long n, long a1, long a2, long a3, long a4, long a5, long a6) {
   unsigned long ret;
@@ -251,7 +252,8 @@ void __export_sighandler(int signo, siginfo_t *siginfo, void *_ucontext) {
       // If a syscall instruction set is "mov sysno, %eax, syscall", it can be
       // replaced on a function call which works much faster.
       // Look at pkg/sentry/usertrap for more details.
-      if (siginfo->si_arch == AUDIT_ARCH_X86_64) {
+      if (__export_disable_syscall_patching == 0 &&
+          siginfo->si_arch == AUDIT_ARCH_X86_64) {
         uint8_t *rip = (uint8_t *)ctx->ptregs.rip;
         // FIXME(b/144063246): Even if all five bytes before the syscall
         // instruction match the "mov sysno, %eax" instruction, they can be a
