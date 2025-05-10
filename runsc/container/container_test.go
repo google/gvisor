@@ -3837,6 +3837,18 @@ func TestSpecValidation(t *testing.T) {
 			wantErr: "",
 		},
 		{
+			name: "AnnotationsContainerNameRemapIgnored",
+			mutate: func(spec, restoreSpec *specs.Spec, _, _ string) {
+				spec.Annotations = make(map[string]string)
+				spec.Annotations["dev.gvisor.dev.gvisor.container-name-remap.1"] = "name1"
+
+				restoreSpec.Annotations = make(map[string]string)
+				restoreSpec.Annotations["dev.gvisor.dev.gvisor.container-name-remap.1"] = "name2"
+				restoreSpec.Annotations["dev.gvisor.dev.gvisor.container-name-remap.asdf"] = "foobar"
+			},
+			wantErr: "",
+		},
+		{
 			name: "AnnotationsFail",
 			mutate: func(spec, restoreSpec *specs.Spec, _, _ string) {
 				spec.Annotations = make(map[string]string)
