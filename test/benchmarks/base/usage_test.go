@@ -63,7 +63,7 @@ func BenchmarkSizeEmpty(b *testing.B) {
 		if err := validateStats(stats); err != nil {
 			b.Fatalf("failed to validate container stats: %v", err)
 		}
-		sumMemoryUsage += stats.Stats.MemoryStats.Usage
+		sumMemoryUsage += stats.MemoryStats.Usage
 	}
 	reportMemoryUsage(b, sumMemoryUsage)
 }
@@ -106,7 +106,7 @@ func BenchmarkSizeNginx(b *testing.B) {
 		if err := validateStats(stats); err != nil {
 			b.Fatalf("failed to validate container stats: %v", err)
 		}
-		sumMemoryUsage += stats.Stats.MemoryStats.Usage
+		sumMemoryUsage += stats.MemoryStats.Usage
 	}
 	reportMemoryUsage(b, sumMemoryUsage)
 }
@@ -156,7 +156,7 @@ func BenchmarkSizeNode(b *testing.B) {
 		if err := validateStats(stats); err != nil {
 			b.Fatalf("failed to validate container stats: %v", err)
 		}
-		sumMemoryUsage += stats.Stats.MemoryStats.Usage
+		sumMemoryUsage += stats.MemoryStats.Usage
 	}
 	reportMemoryUsage(b, sumMemoryUsage)
 }
