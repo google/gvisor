@@ -8,31 +8,31 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (e *endpoint) StateTypeName() string {
-	return "pkg/tcpip/link/packetsocket.endpoint"
+func (e *Endpoint) StateTypeName() string {
+	return "pkg/tcpip/link/packetsocket.Endpoint"
 }
 
-func (e *endpoint) StateFields() []string {
+func (e *Endpoint) StateFields() []string {
 	return []string{
 		"Endpoint",
 	}
 }
 
-func (e *endpoint) beforeSave() {}
+func (e *Endpoint) beforeSave() {}
 
 // +checklocksignore
-func (e *endpoint) StateSave(stateSinkObject state.Sink) {
+func (e *Endpoint) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
 	stateSinkObject.Save(0, &e.Endpoint)
 }
 
-func (e *endpoint) afterLoad(context.Context) {}
+func (e *Endpoint) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (e *endpoint) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+func (e *Endpoint) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &e.Endpoint)
 }
 
 func init() {
-	state.Register((*endpoint)(nil))
+	state.Register((*Endpoint)(nil))
 }

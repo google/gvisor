@@ -106,6 +106,10 @@ func (fd *tunFD) Ioctl(ctx context.Context, uio usermem.IO, sysno uintptr, args 
 		}
 		return 0, fd.device.SetIff(ctx, stack.Stack, req.Name(), flags)
 
+	case linux.TUNSETPERSIST:
+		v := args[2].Uint()
+		return 0, fd.device.SetPersistent(v != 0)
+
 	case linux.TUNGETIFF:
 		var req linux.IFReq
 		copy(req.IFName[:], fd.device.Name())

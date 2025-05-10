@@ -86,6 +86,8 @@ func (e *tunEndpoint) StateFields() []string {
 		"nicID",
 		"name",
 		"isTap",
+		"persistent",
+		"closed",
 	}
 }
 
@@ -100,6 +102,8 @@ func (e *tunEndpoint) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(3, &e.nicID)
 	stateSinkObject.Save(4, &e.name)
 	stateSinkObject.Save(5, &e.isTap)
+	stateSinkObject.Save(6, &e.persistent)
+	stateSinkObject.Save(7, &e.closed)
 }
 
 func (e *tunEndpoint) afterLoad(context.Context) {}
@@ -112,6 +116,8 @@ func (e *tunEndpoint) StateLoad(ctx context.Context, stateSourceObject state.Sou
 	stateSourceObject.Load(3, &e.nicID)
 	stateSourceObject.Load(4, &e.name)
 	stateSourceObject.Load(5, &e.isTap)
+	stateSourceObject.Load(6, &e.persistent)
+	stateSourceObject.Load(7, &e.closed)
 }
 
 func (r *tunEndpointRefs) StateTypeName() string {

@@ -16,8 +16,9 @@ package linux
 
 // ioctl(2) request numbers from linux/if_tun.h
 var (
-	TUNSETIFF = IOW('T', 202, 4)
-	TUNGETIFF = IOR('T', 210, 4)
+	TUNSETIFF     = IOW('T', 202, 4)
+	TUNSETPERSIST = IOW('T', 203, 4)
+	TUNGETIFF     = IOR('T', 210, 4)
 )
 
 // Flags from net/if_tun.h
