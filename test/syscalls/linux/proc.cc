@@ -564,6 +564,27 @@ TEST(ProcPidMem, Read) {
   ASSERT_STREQ(input, output);
 }
 
+TEST(ProcPidMem, PWrite) {
+  auto memfd = ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/self/mem", O_RDWR));
+  char input[] = "hello-world";
+  char output[sizeof(input)];
+  ASSERT_THAT(pwrite(memfd.get(), input, sizeof(input),
+                     reinterpret_cast<off_t>(output)),
+              SyscallSucceedsWithValue(sizeof(input)));
+  ASSERT_STREQ(input, output);
+}
+
+TEST(ProcPidMem, Write) {
+  auto memfd = ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/self/mem", O_RDWR));
+  char input[] = "hello-world";
+  char output[sizeof(input)];
+  ASSERT_THAT(lseek(memfd.get(), reinterpret_cast<off_t>(output), SEEK_SET),
+              SyscallSucceedsWithValue(reinterpret_cast<off_t>(output)));
+  ASSERT_THAT(write(memfd.get(), input, sizeof(input)),
+              SyscallSucceedsWithValue(sizeof(input)));
+  ASSERT_STREQ(input, output);
+}
+
 // Perform read on an unmapped region.
 TEST(ProcPidMem, Unmapped) {
   // Strategy: map then unmap, so we have a guaranteed unmapped region
