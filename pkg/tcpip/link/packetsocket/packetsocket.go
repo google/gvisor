@@ -22,11 +22,14 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
-var _ stack.NetworkDispatcher = (*endpoint)(nil)
-var _ stack.LinkEndpoint = (*endpoint)(nil)
+var _ stack.NetworkDispatcher = (*Endpoint)(nil)
+var _ stack.LinkEndpoint = (*Endpoint)(nil)
 
+// Endpoint is a link endpoint that enables delivery of incoming and outgoing
+// packets to any interested packet sockets.
+//
 // +stateify savable
-type endpoint struct {
+type Endpoint struct {
 	nested.Endpoint
 }
 
@@ -35,20 +38,20 @@ type endpoint struct {
 // On ingress, the lower link endpoint must only deliver packets that have
 // a link-layer header set if one is required for the link.
 func New(lower stack.LinkEndpoint) stack.LinkEndpoint {
-	e := &endpoint{}
+	e := &Endpoint{}
 	e.Endpoint.Init(lower, e)
 	return e
 }
 
 // DeliverNetworkPacket implements stack.NetworkDispatcher.
-func (e *endpoint) DeliverNetworkPacket(protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
+func (e *Endpoint) DeliverNetworkPacket(protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
 	e.Endpoint.DeliverLinkPacket(protocol, pkt)
 
 	e.Endpoint.DeliverNetworkPacket(protocol, pkt)
 }
 
 // WritePackets implements stack.LinkEndpoint.
-func (e *endpoint) WritePackets(pkts stack.PacketBufferList) (int, tcpip.Error) {
+func (e *Endpoint) WritePackets(pkts stack.PacketBufferList) (int, tcpip.Error) {
 	for _, pkt := range pkts.AsSlice() {
 		e.Endpoint.DeliverLinkPacket(pkt.NetworkProtocolNumber, pkt)
 	}

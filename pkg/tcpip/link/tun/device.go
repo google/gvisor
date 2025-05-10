@@ -17,6 +17,7 @@ package tun
 import (
 	"fmt"
 
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
@@ -70,6 +71,19 @@ func (d *Device) beforeSave() {
 	if d.endpoint != nil {
 		panic("/dev/net/tun does not support save/restore when a device is associated with it.")
 	}
+}
+
+func (d *Device) SetPersistent(v bool) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	if d.endpoint == nil {
+		return linuxerr.EBADFD
+	}
+
+	d.endpoint.setPersistent(v)
+
+	return nil
 }
 
 // Release implements fs.FileOperations.Release.
@@ -126,7 +140,12 @@ func attachOrCreateNIC(ctx context.Context, s *stack.Stack, name, prefix string,
 		// 1. Try to attach to an existing NIC.
 		if name != "" && !flags.Exclusive {
 			if linkEP := s.GetLinkEndpointByName(name); linkEP != nil {
-				endpoint, ok := linkEP.(*tunEndpoint)
+				packetEndpoint, ok := linkEP.(*packetsocket.Endpoint)
+				if !ok {
+					// Not a NIC created by tun device.
+					return nil, linuxerr.EOPNOTSUPP
+				}
+				endpoint, ok := packetEndpoint.Child().(*tunEndpoint)
 				if !ok {
 					// Not a NIC created by tun device.
 					return nil, linuxerr.EOPNOTSUPP
@@ -343,17 +362,58 @@ type tunEndpoint struct {
 	tunEndpointRefs
 	*channel.Endpoint
 
-	stack *stack.Stack
-	nicID tcpip.NICID
-	name  string
-	isTap bool
+	stack      *stack.Stack
+	nicID      tcpip.NICID
+	name       string
+	isTap      bool
+	persistent atomicbitops.Bool
+	closed     atomicbitops.Bool
+
+	mu            endpointMutex `state:"nosave"`
+	onCloseAction func()        `state:"nosave"`
+}
+
+func (e *tunEndpoint) setPersistent(v bool) {
+	old := e.persistent.Swap(v)
+	if old == v {
+		return
+	}
+	if v {
+		e.IncRef()
+	} else {
+		e.DecRef(context.Background())
+	}
+}
+
+func (e *tunEndpoint) Close() {
+	if e.closed.Swap(true) {
+		return
+	}
+
+	if e.persistent.Load() {
+		e.DecRef(context.Background())
+	}
+	e.mu.Lock()
+	action := e.onCloseAction
+	e.onCloseAction = nil
+	e.mu.Unlock()
+	if action != nil {
+		action()
+	}
+	e.Endpoint.Close()
+}
+
+// SetOnCloseAction implements stack.LinkEndpoint.
+func (e *tunEndpoint) SetOnCloseAction(action func()) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.onCloseAction = action
 }
 
 // DecRef decrements refcount of e, removing NIC if it reaches 0.
 func (e *tunEndpoint) DecRef(ctx context.Context) {
 	e.tunEndpointRefs.DecRef(func() {
 		e.Close()
-		e.stack.RemoveNIC(e.nicID)
 	})
 }
 

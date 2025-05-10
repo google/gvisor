@@ -297,6 +297,45 @@ TEST_F(TuntapTest, CreateInterface) {
   EXPECT_THAT(ifname, ::testing::StartsWith("tap"));
   EXPECT_THAT(DumpLinkNames(),
               IsPosixErrorOkAndHolds(::testing::Contains(ifname)));
+  fd.reset();
+  EXPECT_THAT(GetLinkByName(ifname), PosixErrorIs(ENOENT));
+}
+
+TEST_F(TuntapTest, CreatePersistentInterface) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+
+  FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open(kDevNetTun, O_RDWR));
+
+  struct ifreq ifr = {};
+  ifr.ifr_flags = IFF_TAP;
+  // Empty ifr.ifr_name. Let kernel assign.
+
+  EXPECT_THAT(ioctl(fd.get(), TUNSETIFF, &ifr), SyscallSucceedsWithValue(0));
+  EXPECT_THAT(ioctl(fd.get(), TUNSETPERSIST, 1), SyscallSucceedsWithValue(0));
+
+  struct ifreq ifr_get = {};
+  EXPECT_THAT(ioctl(fd.get(), TUNGETIFF, &ifr_get),
+              SyscallSucceedsWithValue(0));
+
+  std::string ifname = ifr_get.ifr_name;
+  EXPECT_THAT(ifname, ::testing::StartsWith("tap"));
+  EXPECT_THAT(DumpLinkNames(),
+              IsPosixErrorOkAndHolds(::testing::Contains(ifname)));
+  fd.reset();
+  EXPECT_THAT(DumpLinkNames(),
+              IsPosixErrorOkAndHolds(::testing::Contains(ifname)));
+
+  fd = ASSERT_NO_ERRNO_AND_VALUE(Open(kDevNetTun, O_RDWR));
+  {
+    struct ifreq ifr = {};
+    ifr.ifr_flags = IFF_TAP;
+    strncpy(ifr.ifr_name, ifname.c_str(), IFNAMSIZ);
+
+    EXPECT_THAT(ioctl(fd.get(), TUNSETIFF, &ifr), SyscallSucceedsWithValue(0));
+  }
+  EXPECT_THAT(ioctl(fd.get(), TUNSETPERSIST, 0), SyscallSucceedsWithValue(0));
+  fd.reset();
+  EXPECT_THAT(GetLinkByName(ifname), PosixErrorIs(ENOENT));
 }
 
 TEST_F(TuntapTest, InvalidReadWrite) {

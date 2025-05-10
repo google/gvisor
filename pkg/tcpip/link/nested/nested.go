@@ -176,3 +176,8 @@ func (e *Endpoint) Close() {
 func (e *Endpoint) SetOnCloseAction(action func()) {
 	e.child.SetOnCloseAction(action)
 }
+
+// Child returns the child endpoint.
+func (e *Endpoint) Child() stack.LinkEndpoint {
+	return e.child
+}
