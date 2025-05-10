@@ -18,7 +18,6 @@ go_library(
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/abi/linux",
-        "//pkg/bits",
         "//pkg/log",
         "//pkg/sentry/devices/nvproxy/nvconf",
         "//pkg/sentry/kernel/auth",

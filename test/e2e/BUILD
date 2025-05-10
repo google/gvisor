@@ -21,7 +21,7 @@ go_test(
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/abi/linux",
-        "//pkg/bits",
+        "//pkg/sentry/kernel/auth",
         "//pkg/test/dockerutil",
         "//pkg/test/testutil",
         "//runsc/specutils",

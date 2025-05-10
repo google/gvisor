@@ -77,7 +77,6 @@ go_test(
     tags = ["requires-kvm"],
     deps = [
         "//pkg/abi/linux",
-        "//pkg/bits",
         "//pkg/cleanup",
         "//pkg/log",
         "//pkg/sentry/control",
