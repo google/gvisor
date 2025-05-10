@@ -88,9 +88,6 @@ func LogSpecDebug(orig *specs.Spec, logSeccomp bool) {
 
 	// Strip down parts of the spec that are not interesting.
 	spec := deepcopy.Copy(orig).(*specs.Spec)
-	if spec.Process != nil {
-		spec.Process.Capabilities = nil
-	}
 	if spec.Linux != nil {
 		if !logSeccomp {
 			spec.Linux.Seccomp = nil
