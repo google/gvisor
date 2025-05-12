@@ -2208,6 +2208,47 @@ TEST(PtraceTest, Interrupt_Listen_RequireSeize) {
       << " status " << status;
 }
 
+// TODO(b/416779744): PTRACE_SINGLESTEP doesn't work properly on ARM64.
+#ifdef __x86_64__
+TEST(PtraceTest, SingleStep) {
+  pid_t const child_pid = fork();
+  if (child_pid == 0) {
+    // In child process.
+    TEST_PCHECK(ptrace(PTRACE_TRACEME, 0, 0, 0) == 0);
+    MaybeSave();
+    raise(SIGSTOP);
+    while (true) {
+    }
+  }
+  // In parent process.
+  ASSERT_THAT(child_pid, SyscallSucceeds());
+
+  // Wait for the child to send itself SIGSTOP and enter signal-delivery-stop.
+  int status;
+  ASSERT_THAT(waitpid(child_pid, &status, 0),
+              SyscallSucceedsWithValue(child_pid));
+  EXPECT_TRUE(WIFSTOPPED(status) && WSTOPSIG(status) == SIGSTOP)
+      << " status " << status;
+
+  for (int i = 0; i < 5; i++) {
+    EXPECT_THAT(ptrace(PTRACE_SINGLESTEP, child_pid, 0, 0), SyscallSucceeds());
+    ASSERT_THAT(waitpid(child_pid, &status, 0),
+                SyscallSucceedsWithValue(child_pid));
+    EXPECT_TRUE(WIFSTOPPED(status) && WSTOPSIG(status) == SIGTRAP);
+    siginfo_t siginfo = {};
+    ASSERT_THAT(ptrace(PTRACE_GETSIGINFO, child_pid, 0, &siginfo),
+                SyscallSucceeds());
+    EXPECT_EQ(SIGTRAP, siginfo.si_signo);
+    EXPECT_EQ(TRAP_TRACE, siginfo.si_code);
+  }
+  ASSERT_THAT(ptrace(PTRACE_KILL, child_pid, SIGKILL, 0), SyscallSucceeds());
+  ASSERT_THAT(waitpid(child_pid, &status, 0),
+              SyscallSucceedsWithValue(child_pid));
+  EXPECT_TRUE(WIFSIGNALED(status) && WTERMSIG(status) == SIGKILL)
+      << " status " << status;
+}
+#endif /* __x86_64__ */
+
 TEST(PtraceTest, SeizeSetOptions) {
   pid_t const child_pid = fork();
   if (child_pid == 0) {

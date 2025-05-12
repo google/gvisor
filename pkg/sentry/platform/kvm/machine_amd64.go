@@ -329,6 +329,27 @@ func loadByte(ptr *byte) byte {
 	return *ptr
 }
 
+func rdDR6() uint64
+func wrDR6(val uint64)
+
+const (
+	// _DR6_RESERVED is a set of reserved bits in DR6 which are always set to 1
+	_DR6_RESERVED = uint64(0xFFFF0FF0)
+
+	_DR_TRAP0 = 0x1    // DR0
+	_DR_TRAP1 = 0x2    // DR1
+	_DR_TRAP2 = 0x4    // DR2
+	_DR_TRAP3 = 0x8    // DR3
+	_DR_STEP  = 0x4000 // single-step
+)
+
+func readAndResetDR6() uint64 {
+	dr6 := rdDR6()
+	wrDR6(_DR6_RESERVED)
+	dr6 ^= _DR6_RESERVED
+	return dr6
+}
+
 // SwitchToUser unpacks architectural-details.
 func (c *vCPU) SwitchToUser(switchOpts ring0.SwitchOpts, info *linux.SignalInfo) (hostarch.AccessType, error) {
 	// Check for canonical addresses.
@@ -370,12 +391,27 @@ func (c *vCPU) SwitchToUser(switchOpts ring0.SwitchOpts, info *linux.SignalInfo)
 	case ring0.PageFault:
 		return c.fault(int32(unix.SIGSEGV), info)
 
-	case ring0.Debug, ring0.Breakpoint:
+	case ring0.Debug:
+		bluepill(c)
+		dr6 := readAndResetDR6()
+		code := int32(linux.TRAP_BRKPT)
+		if dr6&_DR_STEP != 0 {
+			code = linux.TRAP_TRACE
+		} else if dr6&(_DR_TRAP0|_DR_TRAP1|_DR_TRAP2|_DR_TRAP3) != 0 {
+			code = linux.TRAP_HWBKPT
+		}
 		*info = linux.SignalInfo{
 			Signo: int32(unix.SIGTRAP),
-			Code:  1, // TRAP_BRKPT (breakpoint).
+			Code:  code,
 		}
 		info.SetAddr(switchOpts.Registers.Rip) // Include address.
+		return hostarch.AccessType{}, platform.ErrContextSignal
+
+	case ring0.Breakpoint:
+		*info = linux.SignalInfo{
+			Signo: int32(unix.SIGTRAP),
+			Code:  linux.SI_KERNEL,
+		}
 		return hostarch.AccessType{}, platform.ErrContextSignal
 
 	case ring0.GeneralProtectionFault,
