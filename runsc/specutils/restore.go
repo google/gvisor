@@ -136,14 +136,15 @@ func validateDevices(field, cName string, o, n []specs.LinuxDevice) error {
 
 func extractAnnotationsToValidate(o map[string]string) map[string]string {
 	const (
-		gvisorPrefix   = "dev.gvisor."
-		internalPrefix = "dev.gvisor.internal."
-		mntPrefix      = "dev.gvisor.spec.mount."
+		gvisorPrefix             = "dev.gvisor."
+		internalPrefix           = "dev.gvisor.internal."
+		mntPrefix                = "dev.gvisor.spec.mount."
+		containerNameRemapPrefix = "dev.gvisor.container-name-remap."
 	)
 
 	n := make(map[string]string)
 	for key, val := range o {
-		if strings.HasPrefix(key, internalPrefix) || (strings.HasPrefix(key, mntPrefix) && strings.HasSuffix(key, ".source")) {
+		if strings.HasPrefix(key, internalPrefix) || strings.HasPrefix(key, containerNameRemapPrefix) || (strings.HasPrefix(key, mntPrefix) && strings.HasSuffix(key, ".source")) {
 			continue
 		}
 
