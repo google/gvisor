@@ -510,6 +510,33 @@ func (fd *memFD) Seek(ctx context.Context, offset int64, whence int32) (int64, e
 	return offset, nil
 }
 
+// PWrite implements vfs.FileDescriptionImpl.PWrite.
+func (fd *memFD) PWrite(ctx context.Context, src usermem.IOSequence, offset int64, opts vfs.WriteOptions) (int64, error) {
+	if src.NumBytes() == 0 {
+		return 0, nil
+	}
+	m, err := getMMIncRef(fd.inode.task)
+	if err != nil {
+		return 0, err
+	}
+	defer m.DecUsers(ctx)
+	// Buffer the write data because of MM locks
+	buf := make([]byte, src.NumBytes())
+	n, readErr := src.CopyIn(ctx, buf)
+	if n > 0 {
+		if n, err := m.CopyOut(ctx, hostarch.Addr(offset), buf[:n], usermem.IOOpts{IgnorePermissions: true}); err != nil {
+			return 0, linuxerr.EFAULT
+		} else {
+			return int64(n), nil
+		}
+	}
+	if readErr != nil {
+		return 0, linuxerr.EIO
+	}
+	return 0, nil
+
+}
+
 // PRead implements vfs.FileDescriptionImpl.PRead.
 func (fd *memFD) PRead(ctx context.Context, dst usermem.IOSequence, offset int64, opts vfs.ReadOptions) (int64, error) {
 	if dst.NumBytes() == 0 {
@@ -533,6 +560,15 @@ func (fd *memFD) PRead(ctx context.Context, dst usermem.IOSequence, offset int64
 		return 0, linuxerr.EIO
 	}
 	return 0, nil
+}
+
+// Write implements vfs.FileDescriptionImpl.Write.
+func (fd *memFD) Write(ctx context.Context, dst usermem.IOSequence, opts vfs.WriteOptions) (int64, error) {
+	fd.mu.Lock()
+	n, err := fd.PWrite(ctx, dst, fd.offset, opts)
+	fd.offset += n
+	fd.mu.Unlock()
+	return n, err
 }
 
 // Read implements vfs.FileDescriptionImpl.Read.
