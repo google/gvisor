@@ -257,6 +257,11 @@ func (r *restorer) restore(l *Loader) error {
 	if err := l.k.LoadFrom(ctx, r.stateFile, r.asyncMFLoader == nil, nil, oldInetStack, time.NewCalibratedClocks(), &vfs.CompleteRestoreOptions{}, l.saveRestoreNet); err != nil {
 		return fmt.Errorf("failed to load kernel: %w", err)
 	}
+	// The kernel should already have been started at this point, so we can
+	// immediately wait for the save/restore binary to be ready.
+	if _, err := l.k.ExecSaveRestoreBin(kernel.SaveRestoreBinRestore); err != nil {
+		return fmt.Errorf("failed to wait for save/restore binary: %w", err)
+	}
 
 	if r.asyncMFLoader != nil {
 		if r.background {
