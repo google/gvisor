@@ -279,6 +279,14 @@ const (
 	SIGEV_THREAD_ID = 4
 )
 
+// SIGTRAP si_codes
+const (
+	TRAP_BRKPT  = 1
+	TRAP_TRACE  = 2
+	TRAP_BRANCH = 3
+	TRAP_HWBKPT = 4
+)
+
 // Sigevent represents struct sigevent.
 //
 // +marshal
