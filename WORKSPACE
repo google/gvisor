@@ -2801,13 +2801,6 @@ go_repository(
 )
 
 go_repository(
-    name = "com_github_moby_moby",
-    importpath = "github.com/moby/moby",
-    sum = "h1:lyEaGTiUhIdXRUv/vPamckAbPt5LcPQkeHmwAHN98eQ=",
-    version = "v28.1.1+incompatible",
-)
-
-go_repository(
     name = "com_github_docker_docker",
     importpath = "github.com/docker/docker",
     sum = "h1:49M11BFLsVO1gxY9UX9p/zwkE/rswggs8AdFmXQw51I=",
