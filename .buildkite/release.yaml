@@ -76,7 +76,7 @@ steps:
       - make gpu-all-tests
     agents:
       queue: gpu
-  - label: ":fish: CUDA tests"
+  - label: ":fish: CUDA 12.2 tests"
     # This is its own test rather than being part of the GPU tests,
     # because it takes around 30 minutes to run.
     parallelism: 32
@@ -86,6 +86,19 @@ steps:
     commands:
       - make sudo TARGETS=//tools/gpu:main ARGS="install --latest" || cat /var/log/nvidia-installer.log
       - make cuda-tests ARGS="--cuda_verify_compatibility=true"
+    agents:
+      queue: gpu
+  - label: ":batfish: CUDA 12.8 tests"
+    if: build.env("STAGED_BINARIES") == null && ( build.env("SKIP_GPU_TESTS") == null || build.message =~ /nvidia|nvproxy|gpu/i )
+    # This is its own test rather than being part of the GPU tests,
+    # because it takes around 30 minutes to run.
+    parallelism: 16
+    timeout_in_minutes: 60
+    retry:
+      <<: *retry_settings
+    commands:
+      - make sudo TARGETS=//tools/gpu:main ARGS="install --latest" || cat /var/log/nvidia-installer.log
+      - make cuda-12-8-tests ARGS="--cuda_verify_compatibility=true"
     agents:
       queue: gpu
   - <<: *common
