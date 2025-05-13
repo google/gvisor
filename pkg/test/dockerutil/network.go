@@ -19,7 +19,7 @@ import (
 	"net"
 
 	"github.com/docker/docker/api/types/network"
-	"github.com/moby/moby/client"
+	"github.com/docker/docker/client"
 	"gvisor.dev/gvisor/pkg/test/testutil"
 )
 
