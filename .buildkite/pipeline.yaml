@@ -469,6 +469,8 @@ steps:
     command: make packetimpact-tests
     agents:
       <<: *ubuntu_agents
+      # This test is flaky on old agents.
+      cgroup: "v2"
 
   # Runtime tests.
   - <<: *common
