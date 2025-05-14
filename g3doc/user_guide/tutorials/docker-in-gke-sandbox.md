@@ -43,6 +43,11 @@ metadata:
   name: docker-in-gvisor
 spec:
   runtimeClassName: gvisor
+  dnsPolicy: "None"
+  dnsConfig:
+    nameservers:
+      - "1.1.1.1"
+      - "8.8.8.8"
   containers:
   - name: docker-in-gvisor
     image: {registry_url}/docker-in-gvisor:latest
@@ -106,6 +111,3 @@ $ docker run -it --rm whalesay "Containers do not contain, but gVisor-s do!"
           \____\______/
 
 ```
-
-> For GKE autopilot, please use `docker build --network=host -t whalesay .`
-> Running with bridge network driver in GKE autopilot is not fully supported.
