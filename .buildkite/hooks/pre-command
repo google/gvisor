@@ -4,6 +4,11 @@ source .buildkite/hooks/libhook
 
 clear_docker_containers
 
+uname -a
+ps axf
+ss -an
+sysctl -w net.ipv4.tcp_tw_reuse=1
+
 # Use a per-day bazel remote cache. As the cache object's TTL expires, they are
 # deleted on an ongoing basis. Such partial deletion can break the cache state.
 # Using per day cache will ensure that builds triggered on a certain day have
@@ -104,12 +109,12 @@ if [[ "${BUILDKITE_PIPELINE_INSTALL_RUNTIME:-}" == "true" ]]; then
     make sudo TARGETS=//runsc:runsc \
       ARGS="install --experimental=true --runtime=${RUNTIME} -- ${RUNTIME_ARGS:-}"
   fi
-  if [[ "$HAD_EXPERIMENTAL" != true ]]; then
+  if true; then
     # WARNING: We may be running in a container when this command executes.
     # This only makes sense if Docker's `live-restore` feature is enabled.
     echo 'Restarting Docker daemon with this new configuration:' >&2
     cat /etc/docker/daemon.json >&2
-    sudo systemctl restart docker
+    sudo chroot /proc/1/root systemctl restart docker
   else
     # If experimental-ness was already enabled, we don't need to restart, as the
     # only thing we modified is the list of runtimes, which can be reloaded with
