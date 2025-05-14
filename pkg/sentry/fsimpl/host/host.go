@@ -36,6 +36,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
+	"gvisor.dev/gvisor/pkg/sentry/platform"
 	unixsocket "gvisor.dev/gvisor/pkg/sentry/socket/unix"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.dev/gvisor/pkg/sentry/uniqueid"
@@ -1013,7 +1014,7 @@ func (f *fileDescription) Sync(ctx context.Context) error {
 }
 
 // ConfigureMMap implements vfs.FileDescriptionImpl.ConfigureMMap.
-func (f *fileDescription) ConfigureMMap(_ context.Context, opts *memmap.MMapOpts) error {
+func (f *fileDescription) ConfigureMMap(ctx context.Context, opts *memmap.MMapOpts) error {
 	// NOTE(b/38213152): Technically, some obscure char devices can be memory
 	// mapped, but we only allow regular files.
 	if f.inode.ftype != unix.S_IFREG {
@@ -1021,6 +1022,17 @@ func (f *fileDescription) ConfigureMMap(_ context.Context, opts *memmap.MMapOpts
 	}
 	i := f.inode
 	i.CachedMappable.InitFileMapperOnce()
+	if opts.Perms.Any() {
+		if p := platform.FromContext(ctx); p != nil && p.MapUnit() == 0 {
+			// i.CachedMappable.Translate() will inexpensively return i.pf, and
+			// platform.AddressSpace.MapFile() will inexpensively map it. Ask
+			// MM to map the whole VMA immediately, which will probably save a
+			// page fault.
+			if opts.PlatformEffect < memmap.PlatformEffectPopulate {
+				opts.PlatformEffect = memmap.PlatformEffectPopulate
+			}
+		}
+	}
 	return vfs.GenericConfigureMMap(&f.vfsfd, i, opts)
 }
 
