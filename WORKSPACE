@@ -2801,17 +2801,10 @@ go_repository(
 )
 
 go_repository(
-    name = "com_github_moby_moby",
-    importpath = "github.com/moby/moby",
-    sum = "h1:AhSu/R7C5uiyd+JCts3kxrKyTzXa3FilBJ0KCLUHXqA=",
-    version = "v27.3.0+incompatible",
-)
-
-go_repository(
     name = "com_github_docker_docker",
     importpath = "github.com/docker/docker",
-    sum = "h1:BNb1QY6o4JdKpqwi9IB+HUYcRRrVN4aGFUTvDmWYK1A=",
-    version = "v27.3.0+incompatible",
+    sum = "h1:49M11BFLsVO1gxY9UX9p/zwkE/rswggs8AdFmXQw51I=",
+    version = "v28.1.1+incompatible",
 )
 
 go_repository(
