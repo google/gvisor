@@ -193,7 +193,7 @@ func checkOverlay2(name string, value string) error {
 	if err := o.Set(value); err != nil {
 		return fmt.Errorf("invalid overlay2 annotation: %w", err)
 	}
-	switch o.medium {
+	switch o.medium.MediumType() {
 	case NoOverlay, MemoryOverlay, SelfOverlay:
 		return nil
 	default:

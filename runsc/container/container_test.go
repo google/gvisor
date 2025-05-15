@@ -3486,7 +3486,7 @@ func TestRootfsEROFS(t *testing.T) {
 	spec.Annotations[boot.RootfsPrefix+"source"] = rootfsImage
 	// Disable the overlay, as we want to be sure that rootfs will always be
 	// shown as EROFS in mountinfo.
-	spec.Annotations[boot.RootfsPrefix+"overlay"] = config.NoOverlay.String()
+	spec.Annotations[boot.RootfsPrefix+"overlay"] = config.OverlayMediumNoOverlay().String()
 
 	conf := testutil.TestConfig(t)
 
@@ -3563,7 +3563,7 @@ func TestCheckpointRestoreEROFS(t *testing.T) {
 				// a writeable and savable overlay for rootfs, which allows the sentry to
 				// create the mount point for the bind mount of the temporary directory shared
 				// between host and test container.
-				spec.Annotations[boot.RootfsPrefix+"overlay"] = config.MemoryOverlay.String()
+				spec.Annotations[boot.RootfsPrefix+"overlay"] = config.OverlayMediumMemory().String()
 				return spec
 			})
 		})

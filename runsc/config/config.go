@@ -493,7 +493,7 @@ func (c *Config) GetOverlay2() Overlay2 {
 			panic(fmt.Sprintf("Overlay2 cannot be set when --overlay=true"))
 		}
 		// Using a deprecated flag, honor it to avoid breaking users.
-		return Overlay2{rootMount: true, subMounts: true, medium: "memory"}
+		return Overlay2{rootMount: true, subMounts: true, medium: OverlayMediumMemory()}
 	}
 	return c.Overlay2
 }
@@ -844,49 +844,82 @@ func (g HostFifo) AllowOpen() bool {
 	return g&HostFifoOpen != 0
 }
 
-// OverlayMedium describes how overlay medium is configured.
-type OverlayMedium string
+// OverlayMediumType describes types of overlay medium.
+type OverlayMediumType string
 
 const (
 	// NoOverlay indicates that no overlay will be applied.
-	NoOverlay = OverlayMedium("")
+	NoOverlay = OverlayMediumType("")
 
 	// MemoryOverlay indicates that the overlay is backed by app memory.
-	MemoryOverlay = OverlayMedium("memory")
+	MemoryOverlay = OverlayMediumType("memory")
 
 	// SelfOverlay indicates that the overlaid mount is backed by itself.
-	SelfOverlay = OverlayMedium("self")
+	SelfOverlay = OverlayMediumType("self")
 
-	// AnonOverlayPrefix is the prefix that users should specify in the
+	AnonOverlay = OverlayMediumType("dir")
+
+	// anonOverlayPrefix is the prefix that users should specify in the
 	// config for the anonymous overlay.
-	AnonOverlayPrefix = "dir="
+	anonOverlayPrefix = "dir="
 )
+
+// OverlayMedium describes how overlay medium is configured.
+type OverlayMedium struct {
+	medium OverlayMediumType
+	// Set iff medium is AnonOverlay.
+	dir string
+}
+
+func OverlayMediumNoOverlay() OverlayMedium {
+	return OverlayMedium{medium: NoOverlay}
+}
+
+func OverlayMediumMemory() OverlayMedium {
+	return OverlayMedium{medium: MemoryOverlay}
+}
 
 // String returns a human-readable string representing the overlay medium config.
 func (m OverlayMedium) String() string {
-	return string(m)
+	switch m.medium {
+	case NoOverlay, MemoryOverlay, SelfOverlay:
+		return string(m.medium)
+	case AnonOverlay:
+		return fmt.Sprintf("%s=%s", AnonOverlay, m.dir)
+	default:
+		panic(fmt.Sprintf("Invalid overlay medium %q", m.medium))
+	}
 }
 
 // Set sets the value. Set(String()) should be idempotent.
 func (m *OverlayMedium) Set(v string) error {
-	switch OverlayMedium(v) {
-	case NoOverlay, MemoryOverlay, SelfOverlay: // OK
+	switch OverlayMediumType(v) {
+	case NoOverlay, MemoryOverlay, SelfOverlay:
+		{
+			*m = OverlayMedium{medium: OverlayMediumType(v), dir: ""}
+			return nil
+		}
 	default:
-		if !strings.HasPrefix(v, AnonOverlayPrefix) {
+		if !strings.HasPrefix(v, anonOverlayPrefix) {
 			return fmt.Errorf("unexpected medium: %q", v)
 		}
-		if hostFileDir := strings.TrimPrefix(v, AnonOverlayPrefix); !filepath.IsAbs(hostFileDir) {
+		hostFileDir := strings.TrimPrefix(v, anonOverlayPrefix)
+		if !filepath.IsAbs(hostFileDir) {
 			return fmt.Errorf("overlay host file directory should be an absolute path, got %q", hostFileDir)
 		}
+		*m = OverlayMedium{medium: OverlayMediumType(v), dir: hostFileDir}
 	}
-	*m = OverlayMedium(v)
 	return nil
+}
+
+func (m OverlayMedium) MediumType() OverlayMediumType {
+	return m.medium
 }
 
 // IsBackedByAnon indicates whether the overlaid mount is backed by a host file
 // in an anonymous directory.
 func (m OverlayMedium) IsBackedByAnon() bool {
-	return strings.HasPrefix(string(m), AnonOverlayPrefix)
+	return m.medium == AnonOverlay
 }
 
 // HostFileDir indicates the directory in which the overlay-backing host file
@@ -895,9 +928,9 @@ func (m OverlayMedium) IsBackedByAnon() bool {
 // Precondition: m.IsBackedByAnon().
 func (m OverlayMedium) HostFileDir() string {
 	if !m.IsBackedByAnon() {
-		panic(fmt.Sprintf("anonymous overlay medium = %q does not have %v prefix", m, AnonOverlayPrefix))
+		panic(fmt.Sprintf("anonymous overlay medium = %q does not have %v prefix", m, anonOverlayPrefix))
 	}
-	return strings.TrimPrefix(string(m), AnonOverlayPrefix)
+	return m.dir
 }
 
 // Overlay2 holds the configuration for setting up overlay filesystems for the
@@ -910,7 +943,7 @@ type Overlay2 struct {
 
 func defaultOverlay2() *Overlay2 {
 	// Rootfs overlay is enabled by default and backed by a file in rootfs itself.
-	return &Overlay2{rootMount: true, subMounts: false, medium: SelfOverlay}
+	return &Overlay2{rootMount: true, subMounts: false, medium: OverlayMedium{medium: SelfOverlay}}
 }
 
 // Set implements flag.Value. Set(String()) should be idempotent.
@@ -918,7 +951,7 @@ func (o *Overlay2) Set(v string) error {
 	if v == "none" {
 		o.rootMount = false
 		o.subMounts = false
-		o.medium = NoOverlay
+		o.medium = OverlayMediumNoOverlay()
 		return nil
 	}
 	vs := strings.Split(v, ":")
@@ -963,13 +996,13 @@ func (o Overlay2) String() string {
 
 // Enabled returns true if the overlay option is enabled for any mounts.
 func (o *Overlay2) Enabled() bool {
-	return o.medium != NoOverlay
+	return o.medium.medium != NoOverlay
 }
 
 // RootOverlayMedium returns the overlay medium config of the root mount.
 func (o *Overlay2) RootOverlayMedium() OverlayMedium {
 	if !o.rootMount {
-		return NoOverlay
+		return OverlayMediumNoOverlay()
 	}
 	return o.medium
 }
@@ -977,7 +1010,7 @@ func (o *Overlay2) RootOverlayMedium() OverlayMedium {
 // SubMountOverlayMedium returns the overlay medium config of submounts.
 func (o *Overlay2) SubMountOverlayMedium() OverlayMedium {
 	if !o.subMounts {
-		return NoOverlay
+		return OverlayMediumNoOverlay()
 	}
 	return o.medium
 }

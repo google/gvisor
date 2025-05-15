@@ -257,7 +257,7 @@ func TestRootfsHintHappy(t *testing.T) {
 		Annotations: map[string]string{
 			RootfsPrefix + "source":  imagePath,
 			RootfsPrefix + "type":    erofs.Name,
-			RootfsPrefix + "overlay": config.MemoryOverlay.String(),
+			RootfsPrefix + "overlay": config.OverlayMediumMemory().String(),
 		},
 	}
 	hint, err := NewRootfsHint(spec)
@@ -272,7 +272,7 @@ func TestRootfsHintHappy(t *testing.T) {
 	if hint.Mount.Type != erofs.Name {
 		t.Errorf("rootfs type, want: %q, got: %q", erofs.Name, hint.Mount.Type)
 	}
-	if hint.Overlay != config.MemoryOverlay {
+	if hint.Overlay.MediumType() != config.MemoryOverlay {
 		t.Errorf("rootfs overlay, want: %q, got: %q", config.MemoryOverlay, hint.Overlay)
 	}
 }
@@ -317,7 +317,7 @@ func TestRootfsHintErrors(t *testing.T) {
 				RootfsPrefix + "invalid": "invalid",
 				RootfsPrefix + "source":  imagePath,
 				RootfsPrefix + "type":    erofs.Name,
-				RootfsPrefix + "overlay": config.MemoryOverlay.String(),
+				RootfsPrefix + "overlay": config.OverlayMediumMemory().String(),
 			},
 			error: "invalid rootfs annotation",
 		},
@@ -325,7 +325,7 @@ func TestRootfsHintErrors(t *testing.T) {
 			name: "missing source",
 			annotations: map[string]string{
 				RootfsPrefix + "type":    erofs.Name,
-				RootfsPrefix + "overlay": config.MemoryOverlay.String(),
+				RootfsPrefix + "overlay": config.OverlayMediumMemory().String(),
 			},
 			error: "rootfs annotations missing required field",
 		},
@@ -333,7 +333,7 @@ func TestRootfsHintErrors(t *testing.T) {
 			name: "missing type",
 			annotations: map[string]string{
 				RootfsPrefix + "source":  imagePath,
-				RootfsPrefix + "overlay": config.MemoryOverlay.String(),
+				RootfsPrefix + "overlay": config.OverlayMediumMemory().String(),
 			},
 			error: "rootfs annotations missing required field",
 		},

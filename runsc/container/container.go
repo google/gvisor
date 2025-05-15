@@ -911,7 +911,7 @@ func createGoferConf(overlayMedium config.OverlayMedium, mountType string, mount
 	default:
 		return boot.GoferMountConf{}, fmt.Errorf("unsupported mount type %q in mount hint", mountType)
 	}
-	switch overlayMedium {
+	switch overlayMedium.MediumType() {
 	case config.NoOverlay:
 		return boot.GoferMountConf{Lower: lower, Upper: boot.NoOverlay}, nil
 	case config.MemoryOverlay:
@@ -947,7 +947,7 @@ func (c *Container) initGoferConfs(ovlConf config.Overlay2, mountHints *boot.Pod
 		}
 	}
 	if c.Spec.Root.Readonly {
-		overlayMedium = config.NoOverlay
+		overlayMedium = config.OverlayMediumNoOverlay()
 	}
 	goferConf, err := createGoferConf(overlayMedium, mountType, c.Spec.Root.Path)
 	if err != nil {
@@ -963,12 +963,12 @@ func (c *Container) initGoferConfs(ovlConf config.Overlay2, mountHints *boot.Pod
 		overlayMedium = ovlConf.SubMountOverlayMedium()
 		mountType = boot.Bind
 		if specutils.IsReadonlyMount(c.Spec.Mounts[i].Options) {
-			overlayMedium = config.NoOverlay
+			overlayMedium = config.OverlayMediumNoOverlay()
 		}
 		if hint := mountHints.FindMount(c.Spec.Mounts[i].Source); hint != nil {
 			// Note that we want overlayMedium=self even if this is a read-only mount so that
 			// the shared mount is created correctly. Future containers may mount this writably.
-			overlayMedium = config.SelfOverlay
+			overlayMedium = config.OverlayMediumNoOverlay()
 			if !specutils.IsGoferMount(hint.Mount) {
 				mountType = hint.Mount.Type
 			}
