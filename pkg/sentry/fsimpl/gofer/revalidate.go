@@ -247,7 +247,7 @@ func (d *dentry) invalidate(ctx context.Context, vfsObj *vfs.VirtualFilesystem, 
 		// now. (The same would apply to racy replacement by
 		// filesystem.RenameAt(), but we can't race with rename since renameMu
 		// has been locked since entering filesystem.revalidatePath().)
-		if removed && (d.isSynthetic() || d.endpoint != nil) {
+		if removed && (d.isSynthetic() || d.inode.endpoint != nil) {
 			d.decRefNoCaching()
 		}
 

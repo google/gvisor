@@ -502,7 +502,7 @@ func (fs *filesystem) doCreateAt(ctx context.Context, rp *vfs.ResolvingPath, dir
 		if dir {
 			ev |= linux.IN_ISDIR
 		}
-		parent.watches.Notify(ctx, name, uint32(ev), 0, vfs.InodeEvent, false /* unlinked */)
+		parent.inode.watches.Notify(ctx, name, uint32(ev), 0, vfs.InodeEvent, false /* unlinked */)
 		return nil
 	}
 	// No cached dentry exists; however, in InteropModeShared there might still be
@@ -534,7 +534,7 @@ func (fs *filesystem) doCreateAt(ctx context.Context, rp *vfs.ResolvingPath, dir
 	if dir {
 		ev |= linux.IN_ISDIR
 	}
-	parent.watches.Notify(ctx, name, uint32(ev), 0, vfs.InodeEvent, false /* unlinked */)
+	parent.inode.watches.Notify(ctx, name, uint32(ev), 0, vfs.InodeEvent, false /* unlinked */)
 	return nil
 }
 
@@ -602,7 +602,7 @@ func (fs *filesystem) unlinkAt(ctx context.Context, rp *vfs.ResolvingPath, dir b
 	// Load child if sticky bit is set because we need to determine whether
 	// deletion is allowed.
 	var child *dentry
-	if parent.mode.Load()&linux.ModeSticky == 0 {
+	if parent.inode.mode.Load()&linux.ModeSticky == 0 {
 		var ok bool
 		parent.childrenMu.Lock()
 		child, ok = parent.children[name]
@@ -699,13 +699,13 @@ func (fs *filesystem) unlinkAt(ctx context.Context, rp *vfs.ResolvingPath, dir b
 
 	// Generate inotify events for rmdir or unlink.
 	if dir {
-		parent.watches.Notify(ctx, name, linux.IN_DELETE|linux.IN_ISDIR, 0, vfs.InodeEvent, true /* unlinked */)
+		parent.inode.watches.Notify(ctx, name, linux.IN_DELETE|linux.IN_ISDIR, 0, vfs.InodeEvent, true /* unlinked */)
 	} else {
 		var cw *vfs.Watches
 		if child != nil {
-			cw = &child.watches
+			cw = &child.inode.watches
 		}
-		vfs.InotifyRemoveChild(ctx, cw, &parent.watches, name)
+		vfs.InotifyRemoveChild(ctx, cw, &parent.inode.watches, name)
 	}
 
 	parent.childrenMu.Lock()
@@ -723,9 +723,10 @@ func (fs *filesystem) unlinkAt(ctx context.Context, rp *vfs.ResolvingPath, dir b
 		if child.isSynthetic() {
 			parent.syntheticChildren--
 			child.decRefNoCaching()
-		} else if child.endpoint != nil {
+		} else if child.inode.endpoint != nil {
 			child.decRefNoCaching()
 		}
+		child.decLinks()
 		ds = appendDentry(ds, child)
 	}
 	parent.cacheNegativeLookupLocked(name)
@@ -806,29 +807,26 @@ func (fs *filesystem) LinkAt(ctx context.Context, rp *vfs.ResolvingPath, vd vfs.
 		if d.isDir() {
 			return nil, linuxerr.EPERM
 		}
-		gid := auth.KGID(d.gid.Load())
-		uid := auth.KUID(d.uid.Load())
-		mode := linux.FileMode(d.mode.Load())
+		gid := auth.KGID(d.inode.gid.Load())
+		uid := auth.KUID(d.inode.uid.Load())
+		mode := linux.FileMode(d.inode.mode.Load())
 		if err := vfs.MayLink(rp.Credentials(), mode, uid, gid); err != nil {
 			return nil, err
 		}
-		if d.nlink.Load() == 0 {
+		if d.inode.nlink.Load() == 0 {
 			return nil, linuxerr.ENOENT
 		}
-		if d.nlink.Load() == math.MaxUint32 {
+		if d.inode.nlink.Load() == math.MaxUint32 {
 			return nil, linuxerr.EMLINK
 		}
 		if d.isSynthetic() {
 			// TODO(gvisor.dev/issue/6739): Add synthetic file hard link support.
 			return nil, linuxerr.EOPNOTSUPP
 		}
+		d.incLinks()
 		return parent.link(ctx, d, name)
 	}, nil)
 
-	if err == nil {
-		// Success!
-		vd.Dentry().Impl().(*dentry).incLinks()
-	}
 	return err
 }
 
@@ -840,8 +838,8 @@ func (fs *filesystem) MkdirAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 		// rather than the caller's and enable setgid.
 		kgid := creds.EffectiveKGID
 		mode := opts.Mode
-		if parent.mode.Load()&linux.S_ISGID != 0 {
-			kgid = auth.KGID(parent.gid.Load())
+		if parent.inode.mode.Load()&linux.S_ISGID != 0 {
+			kgid = auth.KGID(parent.inode.gid.Load())
 			mode |= linux.S_ISGID
 		}
 
@@ -1075,16 +1073,16 @@ func (d *dentry) open(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.Open
 		// also required by d.connect() which is called by
 		// d.openSocketByConnecting(). Note that opening non-synthetic pipes may
 		// block, renameMu is unlocked separately in d.openSpecialFile() for pipes.
-		d.fs.renameMu.RLock()
-		defer d.fs.renameMu.RUnlock()
+		d.inode.fs.renameMu.RLock()
+		defer d.inode.fs.renameMu.RUnlock()
 	}
 
 	trunc := opts.Flags&linux.O_TRUNC != 0 && d.fileType() == linux.S_IFREG
 	if trunc {
 		// Lock metadataMu *while* we open a regular file with O_TRUNC because
 		// open(2) will change the file size on server.
-		d.metadataMu.Lock()
-		defer d.metadataMu.Unlock()
+		d.inode.metadataMu.Lock()
+		defer d.inode.metadataMu.Unlock()
 	}
 
 	var vfd *vfs.FileDescription
@@ -1092,7 +1090,7 @@ func (d *dentry) open(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.Open
 	mnt := rp.Mount()
 	switch d.fileType() {
 	case linux.S_IFREG:
-		if !d.fs.opts.regularFilesUseSpecialFileFD {
+		if !d.inode.fs.opts.regularFilesUseSpecialFileFD {
 			if err := d.ensureSharedHandle(ctx, ats.MayRead(), ats.MayWrite(), trunc); err != nil {
 				return nil, err
 			}
@@ -1120,11 +1118,11 @@ func (d *dentry) open(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.Open
 			}
 		}
 		fd := &directoryFD{}
-		fd.LockFD.Init(&d.locks)
+		fd.LockFD.Init(&d.inode.locks)
 		if err := fd.vfsfd.Init(fd, opts.Flags, mnt, &d.vfsd, &vfs.FileDescriptionOptions{}); err != nil {
 			return nil, err
 		}
-		if d.readFD.Load() >= 0 {
+		if d.inode.readFD.Load() >= 0 {
 			fsmetric.GoferOpensHost.Increment()
 		} else {
 			fsmetric.GoferOpens9P.Increment()
@@ -1137,14 +1135,14 @@ func (d *dentry) open(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.Open
 		if d.isSynthetic() {
 			return nil, linuxerr.ENXIO
 		}
-		if d.fs.iopts.OpenSocketsByConnecting {
+		if d.inode.fs.iopts.OpenSocketsByConnecting {
 			return d.openSocketByConnecting(ctx, opts)
 		}
 	case linux.S_IFIFO:
 		if d.isSynthetic() {
-			return d.pipe.Open(ctx, mnt, &d.vfsd, opts.Flags, &d.locks)
+			return d.inode.pipe.Open(ctx, mnt, &d.vfsd, opts.Flags, &d.inode.locks)
 		}
-		if d.fs.opts.disableFifoOpen {
+		if d.inode.fs.opts.disableFifoOpen {
 			logRejectedFifoOpenOnce.Do(func() {
 				log.Warningf("Rejecting attempt to open fifo/pipe from host filesystem: %q. If you want to allow this, set flag --host-fifo=open", d.name)
 			})
@@ -1221,9 +1219,9 @@ retry:
 			// with ENXIO if opening the same named pipe with O_WRONLY would
 			// block because there are no readers of the pipe. Release renameMu
 			// while blocking.
-			d.fs.renameMu.RUnlock()
+			d.inode.fs.renameMu.RUnlock()
 			err := sleepBetweenNamedPipeOpenChecks(ctx)
-			d.fs.renameMu.RLock()
+			d.inode.fs.renameMu.RLock()
 			if err != nil {
 				return nil, err
 			}
@@ -1233,9 +1231,9 @@ retry:
 	}
 	if isBlockingOpenOfNamedPipe && ats == vfs.MayRead && h.fd >= 0 {
 		// Release renameMu while blocking.
-		d.fs.renameMu.RUnlock()
+		d.inode.fs.renameMu.RUnlock()
 		err := blockUntilNonblockingPipeHasWriter(ctx, h.fd)
-		d.fs.renameMu.RLock()
+		d.inode.fs.renameMu.RLock()
 		if err != nil {
 			h.close(ctx)
 			return nil, err
@@ -1250,7 +1248,7 @@ retry:
 }
 
 // Preconditions:
-//   - d.fs.renameMu must be locked.
+//   - d.inode.fs.renameMu must be locked.
 //   - d.opMu must be locked for writing.
 //   - !d.isSynthetic().
 //
@@ -1273,8 +1271,8 @@ func (d *dentry) createAndOpenChildLocked(ctx context.Context, rp *vfs.Resolving
 	// If the parent is a setgid directory, use the parent's GID rather
 	// than the caller's.
 	kgid := creds.EffectiveKGID
-	if d.mode.Load()&linux.S_ISGID != 0 {
-		kgid = auth.KGID(d.gid.Load())
+	if d.inode.mode.Load()&linux.S_ISGID != 0 {
+		kgid = auth.KGID(d.inode.gid.Load())
 	}
 
 	child, h, err := d.openCreate(ctx, name, opts.Flags&linux.O_ACCMODE, opts.Mode, creds.EffectiveKUID, kgid, true /* createDentry */)
@@ -1283,23 +1281,23 @@ func (d *dentry) createAndOpenChildLocked(ctx context.Context, rp *vfs.Resolving
 	}
 
 	// Incorporate the fid that was opened by lcreate.
-	useRegularFileFD := child.fileType() == linux.S_IFREG && !d.fs.opts.regularFilesUseSpecialFileFD
+	useRegularFileFD := child.fileType() == linux.S_IFREG && !d.inode.fs.opts.regularFilesUseSpecialFileFD
 	if useRegularFileFD {
 		var readable, writable bool
-		child.handleMu.Lock()
+		child.inode.handleMu.Lock()
 		if vfs.MayReadFileWithOpenFlags(opts.Flags) {
 			readable = true
 			if h.fd != -1 {
-				child.readFD = atomicbitops.FromInt32(h.fd)
-				child.mmapFD = atomicbitops.FromInt32(h.fd)
+				child.inode.readFD = atomicbitops.FromInt32(h.fd)
+				child.inode.mmapFD = atomicbitops.FromInt32(h.fd)
 			}
 		}
 		if vfs.MayWriteFileWithOpenFlags(opts.Flags) {
 			writable = true
-			child.writeFD = atomicbitops.FromInt32(h.fd)
+			child.inode.writeFD = atomicbitops.FromInt32(h.fd)
 		}
 		child.updateHandles(ctx, h, readable, writable)
-		child.handleMu.Unlock()
+		child.inode.handleMu.Unlock()
 	}
 	// Insert the dentry into the tree.
 	d.childrenMu.Lock()
@@ -1329,7 +1327,7 @@ func (d *dentry) createAndOpenChildLocked(ctx context.Context, rp *vfs.Resolving
 		}
 		childVFSFD = &fd.vfsfd
 	}
-	d.watches.Notify(ctx, name, linux.IN_CREATE, 0, vfs.PathEvent, false /* unlinked */)
+	d.inode.watches.Notify(ctx, name, linux.IN_CREATE, 0, vfs.PathEvent, false /* unlinked */)
 	return childVFSFD, nil
 }
 
@@ -1520,7 +1518,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 		if replaced.isSynthetic() {
 			newParent.syntheticChildren--
 			replaced.decRefNoCaching()
-		} else if replaced.endpoint != nil {
+		} else if replaced.inode.endpoint != nil {
 			replaced.decRefNoCaching()
 		}
 		ds = appendDentry(ds, replaced)
@@ -1560,7 +1558,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 			newParent.incLinks()
 		}
 	}
-	vfs.InotifyRename(ctx, &renamed.watches, &oldParent.watches, &newParent.watches, oldName, newName, renamed.isDir())
+	vfs.InotifyRename(ctx, &renamed.inode.watches, &oldParent.inode.watches, &newParent.inode.watches, oldName, newName, renamed.isDir())
 	return nil
 }
 
@@ -1647,14 +1645,14 @@ func (fs *filesystem) SymlinkAt(ctx context.Context, rp *vfs.ResolvingPath, targ
 		if err != nil {
 			return nil, err
 		}
-		if parent.fs.opts.interop != InteropModeShared {
+		if parent.inode.fs.opts.interop != InteropModeShared {
 			// Cache the symlink target on creation. In practice, this helps avoid a
 			// lot of ReadLink RPCs. Note that when InteropModeShared is in effect,
 			// we are forced to make Readlink RPCs. Because in this mode, we use host
 			// timestamps, not timestamps based on our internal clock. And readlink
 			// updates the atime on the host.
-			child.haveTarget = true
-			child.target = target
+			child.inode.haveTarget = true
+			child.inode.target = target
 		}
 		return child, nil
 	}, nil)
@@ -1680,8 +1678,8 @@ func (fs *filesystem) BoundEndpointAt(ctx context.Context, rp *vfs.ResolvingPath
 	if !d.isSocket() {
 		return nil, linuxerr.ECONNREFUSED
 	}
-	if d.endpoint != nil {
-		return d.endpoint, nil
+	if d.inode.endpoint != nil {
+		return d.inode.endpoint, nil
 	}
 	if !d.isSynthetic() {
 		d.IncRef()
