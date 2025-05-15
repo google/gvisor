@@ -50,10 +50,12 @@ func (m *machine) initArchState() error {
 
 	// Initialize all vCPUs to minimize kvm ioctl-s allowed by seccomp filters.
 	m.mu.Lock()
+	defer m.mu.Unlock()
 	for i := 0; i < m.maxVCPUs; i++ {
-		m.createVCPU(i)
+		if _, err := m.createVCPU(i); err != nil {
+			return err
+		}
 	}
-	m.mu.Unlock()
 
 	return nil
 }

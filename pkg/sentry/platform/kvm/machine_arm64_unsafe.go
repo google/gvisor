@@ -49,15 +49,19 @@ func (m *machine) initArchState() error {
 		panic(fmt.Sprintf("error setting KVM_ARM_PREFERRED_TARGET failed: %v", errno))
 	}
 
-	// Initialize all vCPUs on ARM64, while this does not happen on x86_64.
-	// The reason for the difference is that ARM64 and x86_64 have different KVM timer mechanisms.
-	// If we create vCPU dynamically on ARM64, the timer for vCPU would mess up for a short time.
+	// Initialize all vCPUs on ARM64 (we also do this on x86_64, but for
+	// ARM64 it is especially important as it has a different KVM timer
+	// mechanism).
+	// If we create vCPU dynamically on ARM64, the timer for vCPU would mess
+	// up for a short time.
 	// For more detail, please refer to https://github.com/google/gvisor/issues/5739
 	m.mu.Lock()
+	defer m.mu.Unlock()
 	for i := 0; i < m.maxVCPUs; i++ {
-		m.createVCPU(i)
+		if _, err := m.createVCPU(i); err != nil {
+			return err
+		}
 	}
-	m.mu.Unlock()
 	return nil
 }
 
