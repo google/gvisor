@@ -38,10 +38,12 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/socket/plugin"
 	"gvisor.dev/gvisor/pkg/sentry/state"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
+	"gvisor.dev/gvisor/pkg/timing"
 	"gvisor.dev/gvisor/pkg/urpc"
 	"gvisor.dev/gvisor/runsc/boot/procfs"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/specutils"
+	"gvisor.dev/gvisor/runsc/starttime"
 	"gvisor.dev/gvisor/runsc/version"
 )
 
@@ -496,9 +498,12 @@ type RestoreOpts struct {
 // created, and the kernel is recreated with the restore state file. The
 // container then sends the signal to start.
 func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
+	timer := starttime.Timer("Restore")
+	timer.Reached("cm.Restore RPC")
 	log.Debugf("containerManager.Restore")
 
 	cm.l.mu.Lock()
+	timer.Reached("cm.l.mu.Lock")
 	cu := cleanup.Make(cm.l.mu.Unlock)
 	defer cu.Clean()
 
@@ -538,10 +543,12 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 		onRestoreDone: cm.onRestoreDone,
 		stateFile:     reader,
 		background:    o.Background,
+		timer:         timer,
 		mainMF:        mf,
 	}
 	cm.l.restoreDone = sync.NewCond(&cm.l.mu)
 	cm.l.state = restoringUnstarted
+
 	// Release `cm.l.mu`.
 	cu.Clean()
 
@@ -560,7 +567,7 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 		fileIdx++
 
 		// This immediately starts loading the main MemoryFile asynchronously.
-		cm.restorer.asyncMFLoader = kernel.NewAsyncMFLoader(pagesMetadata, pagesFile, cm.restorer.mainMF)
+		cm.restorer.asyncMFLoader = kernel.NewAsyncMFLoader(pagesMetadata, pagesFile, cm.restorer.mainMF, timer.Fork("PagesFileLoader"))
 	}
 
 	if o.HaveDeviceFile {
@@ -574,9 +581,11 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 	if fileIdx < len(o.Files) {
 		return fmt.Errorf("more files passed to Restore than expected")
 	}
+	timer.Reached("restorer ok")
 
 	// Pause the kernel while we build a new one.
 	cm.l.k.Pause()
+	timer.Reached("kernel paused")
 
 	var count int
 	countStr, ok := metadata[ContainerCountKey]
@@ -614,7 +623,7 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 	if checkpointVersion != currentVersion {
 		return fmt.Errorf("runsc version does not match across checkpoint restore, checkpoint: %v current: %v", checkpointVersion, currentVersion)
 	}
-	return cm.restorer.restoreContainerInfo(cm.l, &cm.l.root)
+	return cm.restorer.restoreContainerInfo(cm.l, &cm.l.root, timer.Fork("cont:root"))
 }
 
 func (cm *containerManager) onRestoreDone() {
@@ -626,9 +635,11 @@ func (cm *containerManager) onRestoreDone() {
 }
 
 func (cm *containerManager) RestoreSubcontainer(args *StartArgs, _ *struct{}) error {
+	timeline := timing.OrphanTimeline(fmt.Sprintf("cont:%s", args.CID[0:min(8, len(args.CID))]), gtime.Now()).Lease()
+	defer timeline.End()
 	log.Debugf("containerManager.RestoreSubcontainer, cid: %s, args: %+v", args.CID, args)
-
 	cm.l.mu.Lock()
+	timeline.Reached("cm.l.mu.Lock")
 	state := cm.l.state
 	cm.l.mu.Unlock()
 	if state != restoringUnstarted {
@@ -656,6 +667,7 @@ func (cm *containerManager) RestoreSubcontainer(args *StartArgs, _ *struct{}) er
 
 	// All validation passed, logs the spec for debugging.
 	specutils.LogSpecDebug(args.Spec, args.Conf.OCISeccomp)
+	timeline.Reached("spec validated")
 
 	goferFiles := args.Files
 	var stdios []*fd.FD
@@ -695,7 +707,8 @@ func (cm *containerManager) RestoreSubcontainer(args *StartArgs, _ *struct{}) er
 		return fmt.Errorf("error dup'ing gofer files: %w", err)
 	}
 
-	if err := cm.restorer.restoreSubcontainer(args.Spec, args.Conf, cm.l, args.CID, stdios, goferFDs, goferFilestoreFDs, devGoferFD, args.GoferMountConfs); err != nil {
+	err = cm.restorer.restoreSubcontainer(args.Spec, args.Conf, cm.l, args.CID, stdios, goferFDs, goferFilestoreFDs, devGoferFD, args.GoferMountConfs, timeline.Transfer())
+	if err != nil {
 		log.Debugf("containerManager.RestoreSubcontainer failed, cid: %s, args: %+v, err: %v", args.CID, args, err)
 		return err
 	}
@@ -712,7 +725,7 @@ func (cm *containerManager) Pause(_, _ *struct{}) error {
 // Resume resumes all tasks.
 func (cm *containerManager) Resume(_, _ *struct{}) error {
 	cm.l.k.Unpause()
-	return postResumeImpl(cm.l)
+	return postResumeImpl(cm.l, nil)
 }
 
 // Wait waits for the init process in the given container.

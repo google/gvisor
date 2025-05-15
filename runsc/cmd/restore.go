@@ -153,7 +153,8 @@ func (r *Restore) Execute(_ context.Context, f *flag.FlagSet, args ...any) subco
 	}
 
 	log.Debugf("Restore: %v", r.imagePath)
-	if err := c.Restore(conf, r.imagePath, r.direct, r.background); err != nil {
+	err = c.Restore(conf, r.imagePath, r.direct, r.background)
+	if err != nil {
 		return util.Errorf("starting container: %v", err)
 	}
 
