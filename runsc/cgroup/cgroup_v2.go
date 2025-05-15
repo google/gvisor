@@ -78,7 +78,7 @@ type cgroupV2 struct {
 }
 
 func newCgroupV2(mountpoint, group string, useSystemd bool) (Cgroup, error) {
-	data, err := os.ReadFile(filepath.Join(mountpoint, "cgroup.controllers"))
+	data, err := os.ReadFile(filepath.Join(mountpoint, controllersFile))
 	if err != nil {
 		return nil, err
 	}
@@ -436,7 +436,7 @@ func (*cpu2) set(spec *specs.LinuxResources, path string) error {
 		}
 
 		v += " " + strconv.FormatUint(period, 10)
-		if err := setValue(path, "cpu.max", v); err != nil {
+		if err := setValue(path, cpuLimitCgroup, v); err != nil {
 			return err
 		}
 	}
@@ -557,7 +557,7 @@ func (*memory2) set(spec *specs.LinuxResources, path string) error {
 
 	if spec.Memory.Limit != nil {
 		if val := numToStr(*spec.Memory.Limit); val != "" {
-			if err := setValue(path, "memory.max", val); err != nil {
+			if err := setValue(path, memoryLimitCgroup, val); err != nil {
 				return err
 			}
 		}
