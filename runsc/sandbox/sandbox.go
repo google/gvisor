@@ -535,7 +535,6 @@ func (s *Sandbox) Restore(conf *config.Config, spec *specs.Spec, cid string, ima
 
 	} else if !os.IsNotExist(err) {
 		return fmt.Errorf("opening restore pages file %q failed: %v", pagesFileName, err)
-
 	} else {
 		log.Infof("Using single checkpoint file for sandbox %q", s.ID)
 	}

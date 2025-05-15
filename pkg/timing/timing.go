@@ -86,6 +86,10 @@ type Timeline struct {
 	// children is a list of forked timelines that are children of this one.
 	// Note that children do not necessarily need to end before the parent does.
 	children []*Timeline
+
+	// invalidReason, if non-empty, is the reason why this Timeline is invalid.
+	// A Timeline is also invalid if any of its children are invalid.
+	invalidReason string
 }
 
 // MidPoint is a named point in time on a Timeline.
@@ -243,6 +247,18 @@ func (s *Timeline) End() {
 	}
 }
 
+// Invalidate marks the Timeline as invalid.
+func (s *Timeline) Invalidate(reason string) {
+	if s == nil {
+		return
+	}
+	if s.invalidReason != "" {
+		log.Warningf("Timer for %s: Timeline %s was already invalid (%v), but tried to invalidate again (%v)", s.timer.root.name, s.fullName, s.invalidReason, reason)
+		return
+	}
+	s.invalidReason = reason
+}
+
 // A Lease is a reference to a Timeline that is valid until the Lease is
 // canceled. After calling Lease on a Timeline, the caller should no longer
 // use the Timeline directly, and should instead use the Lease exclusively.
@@ -340,6 +356,15 @@ func (l *Lease) End() {
 	}
 	l.valid = false
 	l.timeline.End()
+}
+
+// Invalidate invalidates the Timeline if the Lease is valid.
+// See `Timeline.Invalidate` for more details.
+func (l *Lease) Invalidate(reason string) {
+	if l == nil || !l.valid {
+		return
+	}
+	l.timeline.Invalidate(reason)
 }
 
 // Transfer invalidates the current Lease and returns the underlying Timeline.
@@ -608,6 +633,16 @@ func (t *Timer) Log() {
 	t.root.traverse(nil, func(_, child *Timeline) {
 		flatTimelines = append(flatTimelines, child)
 	})
+	var invalidReasons []string
+	for _, timeline := range flatTimelines {
+		if timeline.invalidReason != "" {
+			invalidReasons = append(invalidReasons, timeline.invalidReason)
+		}
+	}
+	if len(invalidReasons) > 0 {
+		log.Warningf("Timer for %s: Timeline was invalidated, so not displaying timing data: %v", t.root.name, invalidReasons)
+		return
+	}
 	var events []event
 	for _, timeline := range flatTimelines {
 		events = append(events, event{when: timeline.start, point: point{timeline: timeline, pointType: pointTypeStart}})
