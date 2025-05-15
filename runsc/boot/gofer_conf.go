@@ -124,19 +124,20 @@ func (l *GoferMountConfLowerType) Set(v string) error {
 
 // GoferMountConf describes how a gofer mount is configured in the sandbox.
 type GoferMountConf struct {
-	Upper GoferMountConfUpperType `json:"upper"`
-	Lower GoferMountConfLowerType `json:"lower"`
+	Upper     GoferMountConfUpperType `json:"upper"`
+	UpperSize string                  `json:"upperSize,omitempty"`
+	Lower     GoferMountConfLowerType `json:"lower"`
 }
 
 // String returns a human-readable string representing the gofer mount config.
 func (g GoferMountConf) String() string {
-	return fmt.Sprintf("%s:%s", g.Lower, g.Upper)
+	return fmt.Sprintf("%s:%s:upperSize=%s", g.Lower, g.Upper, g.UpperSize)
 }
 
 // Set sets the value. Set(String()) should be idempotent.
 func (g *GoferMountConf) Set(v string) error {
 	parts := strings.Split(v, ":")
-	if len(parts) != 2 {
+	if len(parts) != 3 {
 		return fmt.Errorf("invalid gofer mount config format: %q", v)
 	}
 	if err := g.Lower.Set(parts[0]); err != nil {
@@ -148,6 +149,12 @@ func (g *GoferMountConf) Set(v string) error {
 	if !g.valid() {
 		return fmt.Errorf("invalid gofer mount config: %+v", g)
 	}
+	sizeArg := parts[2]
+	size, cut := strings.CutPrefix(sizeArg, "upperSize=")
+	if !cut {
+		return fmt.Errorf("invalid gofer mount config format: %q", v)
+	}
+	g.UpperSize = size
 	return nil
 }
 
@@ -184,7 +191,7 @@ func (g GoferMountConf) ShouldUseErofs() bool {
 
 // valid returns true if this is a valid gofer mount config.
 func (g GoferMountConf) valid() bool {
-	return g.Lower < LowerMax && g.Upper < UpperMax && (g.Lower != NoneLower || g.Upper != NoOverlay)
+	return g.Lower < LowerMax && g.Upper < UpperMax && (g.Lower != NoneLower || g.Upper != NoOverlay) && (g.UpperSize == "" || g.ShouldUseOverlayfs())
 }
 
 // GoferMountConfFlags can be used with GoferMountConf flags that appear
