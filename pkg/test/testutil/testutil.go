@@ -283,6 +283,7 @@ func NewSpecWithArgs(args ...string) *specs.Spec {
 				"PATH=" + os.Getenv("PATH"),
 			},
 			Capabilities: specutils.AllCapabilities(),
+			Cwd:          "/",
 		},
 		Mounts: []specs.Mount{
 			// Hide the host /etc to avoid any side-effects.
