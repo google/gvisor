@@ -295,7 +295,7 @@ func newCudaVersionFromOutput(out string) (*CudaVersion, error) {
 }
 
 // MaxSuportedCUDAVersion returns the maximum supported by the host machine.
-func MaxSuportedCUDAVersion(ctx context.Context, t *testing.T) (*CudaVersion, error) {
+func MaxSuportedCUDAVersion(ctx context.Context, t *testing.T, image string) (*CudaVersion, error) {
 	c := MakeContainer(ctx, t)
 	defer c.CleanUp(ctx)
 	opts, err := GPURunOpts(SniffGPUOpts{
@@ -305,7 +305,7 @@ func MaxSuportedCUDAVersion(ctx context.Context, t *testing.T) (*CudaVersion, er
 	if err != nil {
 		return nil, fmt.Errorf("could not create opts: %w", err)
 	}
-	opts.Image = "gpu/cuda-tests"
+	opts.Image = image
 
 	out, err := c.Run(ctx, opts, "nvidia-smi")
 	if err != nil {
