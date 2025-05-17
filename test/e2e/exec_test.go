@@ -30,7 +30,7 @@ import (
 	"time"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/bits"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/test/dockerutil"
 	"gvisor.dev/gvisor/pkg/test/testutil"
 	"gvisor.dev/gvisor/runsc/specutils"
@@ -110,80 +110,175 @@ func TestExecCapabilities(t *testing.T) {
 
 func TestFileCap(t *testing.T) {
 	netAdminOnlyStatusCaps := fmt.Sprintf("CapInh:\t%s\nCapPrm:\t%s\nCapEff:\t%s\n", noCap, netAdminOnlyCap, netAdminOnlyCap)
-	for _, tc := range []struct {
-		name     string
-		capAdd   []string
-		useTmpfs bool
-		wantOut  string
-		err      bool
-	}{
-		{
-			name:     "success_tmpfs",
-			capAdd:   []string{"NET_ADMIN"},
-			useTmpfs: true,
-			wantOut:  netAdminOnlyStatusCaps,
-		},
-		{
-			name:    "success_gofer",
-			capAdd:  []string{"NET_ADMIN"},
-			wantOut: netAdminOnlyStatusCaps,
-		},
-		{
-			name:     "fail_tmpfs",
-			useTmpfs: true,
-			wantOut:  "operation not permitted",
-			err:      true,
-		},
-		{
-			name:    "fail_gofer",
-			wantOut: "operation not permitted",
-			err:     true,
-		},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			ctx := context.Background()
-			d := dockerutil.MakeContainer(ctx, t)
-			defer d.CleanUp(ctx)
-
-			// Start the sleep container.
-			if err := d.Spawn(ctx, dockerutil.RunOpts{
-				Image:  "basic/filecap",
-				CapAdd: tc.capAdd,
-			}, "sleep", "infinity"); err != nil {
-				t.Fatalf("docker run failed: %v", err)
-			}
-
-			catPath := "/mnt/cat"
-			if tc.useTmpfs {
-				// Copy /bin/cat to /tmp/cat.
-				if _, err := d.Exec(ctx, dockerutil.ExecOpts{}, "cp", "/bin/cat", "/tmp/cat"); err != nil {
-					t.Fatalf("failed to copy /bin/cat to /tmp/cat: %v", err)
+	// In Docker, when running without --privileged, the root user has the
+	// following capabilities.
+	rootCap := auth.CapabilitySetOfMany([]linux.Capability{
+		linux.CAP_CHOWN,
+		linux.CAP_DAC_OVERRIDE,
+		linux.CAP_FOWNER,
+		linux.CAP_FSETID,
+		linux.CAP_KILL,
+		linux.CAP_SETGID,
+		linux.CAP_SETUID,
+		linux.CAP_SETPCAP,
+		linux.CAP_NET_BIND_SERVICE,
+		linux.CAP_NET_RAW,
+		linux.CAP_SYS_CHROOT,
+		linux.CAP_MKNOD,
+		linux.CAP_AUDIT_WRITE,
+		linux.CAP_SETFCAP,
+	})
+	if !testutil.IsRunningWithNetRaw() {
+		rootCap.Clear(linux.CAP_NET_RAW)
+	}
+	rootCap.Add(linux.CAP_NET_ADMIN) // CAP_NET_ADMIN is added below.
+	rootCaps := fmt.Sprintf("CapInh:\t%s\nCapPrm:\t%016x\nCapEff:\t%016x\n", noCap, rootCap, rootCap)
+	for _, success := range []bool{true, false} {
+		for _, useTmpfs := range []bool{true, false} {
+			for _, rootUser := range []bool{true, false} {
+				tcName := "success"
+				if !success {
+					tcName = "fail"
 				}
-				// Set file cap on /tmp/cat.
-				if _, err := d.Exec(ctx, dockerutil.ExecOpts{}, "setcap", "cap_net_admin+ep", "/tmp/cat"); err != nil {
-					t.Fatalf("failed to set file cap on /tmp/cat: %v", err)
+				if useTmpfs {
+					tcName += "_tmpfs"
+				} else {
+					tcName += "_gofer"
 				}
-				catPath = "/tmp/cat"
-			}
+				if rootUser {
+					tcName += "_root"
+				} else {
+					tcName += "_non_root"
+				}
+				t.Run(tcName, func(t *testing.T) {
+					ctx := context.Background()
+					d := dockerutil.MakeContainer(ctx, t)
+					defer d.CleanUp(ctx)
 
-			// Check getcap output.
-			output, err := d.Exec(ctx, dockerutil.ExecOpts{}, "getcap", catPath)
-			if err != nil {
-				t.Fatalf("failed to getcap %s: %v", catPath, err)
-			}
-			if !strings.Contains(output, "cap_net_admin=ep") {
-				t.Errorf("can't find expected cap_net_admin=ep in output: %q", output)
-			}
+					// Start the sleep container.
+					var capAdd []string
+					if success {
+						capAdd = []string{"NET_ADMIN"}
+					}
+					if err := d.Spawn(ctx, dockerutil.RunOpts{
+						Image:  "basic/filecap",
+						CapAdd: capAdd,
+					}, "sleep", "infinity"); err != nil {
+						t.Fatalf("docker run failed: %v", err)
+					}
 
-			// Check that process credentials are properly configured.
-			output, err = d.Exec(ctx, dockerutil.ExecOpts{User: "1001"}, catPath, "/proc/self/status")
-			if (err == nil) == tc.err {
-				t.Fatalf("wanted err=%t, got=%v", tc.err, err)
+					// In basic/filecap image, /mnt/cat has file cap set to cap_net_admin+ep.
+					catPath := "/mnt/cat"
+					if useTmpfs {
+						// Copy /bin/cat to /tmp/cat.
+						if _, err := d.Exec(ctx, dockerutil.ExecOpts{}, "cp", "/bin/cat", "/tmp/cat"); err != nil {
+							t.Fatalf("failed to copy /bin/cat to /tmp/cat: %v", err)
+						}
+						// Set file cap on /tmp/cat.
+						if _, err := d.Exec(ctx, dockerutil.ExecOpts{}, "setcap", "cap_net_admin+ep", "/tmp/cat"); err != nil {
+							t.Fatalf("failed to set file cap on /tmp/cat: %v", err)
+						}
+						catPath = "/tmp/cat"
+					}
+
+					// Check getcap output.
+					output, err := d.Exec(ctx, dockerutil.ExecOpts{}, "getcap", catPath)
+					if err != nil {
+						t.Fatalf("failed to getcap %s: %v", catPath, err)
+					}
+					if !strings.Contains(output, "cap_net_admin=ep") {
+						t.Errorf("can't find expected cap_net_admin=ep in output: %q", output)
+					}
+
+					// Check that process credentials are properly configured.
+					var user string
+					if !rootUser {
+						user = "1001"
+					}
+					output, err = d.Exec(ctx, dockerutil.ExecOpts{User: user}, catPath, "/proc/self/status")
+					if (err == nil) != success {
+						t.Fatalf("wanted success=%t, got err=%v", success, err)
+					}
+					wantOut := "operation not permitted"
+					if success {
+						if rootUser {
+							wantOut = rootCaps
+						} else {
+							wantOut = netAdminOnlyStatusCaps
+						}
+					}
+					if !strings.Contains(output, wantOut) {
+						t.Errorf("can't find expected output %q in output: %q", wantOut, output)
+					}
+				})
 			}
-			if !strings.Contains(output, tc.wantOut) {
-				t.Errorf("can't find expected output %q in output: %q", tc.wantOut, output)
-			}
-		})
+		}
+	}
+}
+
+func TestNon0RootIdFileCap(t *testing.T) {
+	ctx := context.Background()
+	d := dockerutil.MakeContainer(ctx, t)
+	defer d.CleanUp(ctx)
+
+	if err := d.Spawn(ctx, dockerutil.RunOpts{
+		Image:  "basic/filecap",
+		CapAdd: []string{"NET_ADMIN"},
+	}, "sleep", "infinity"); err != nil {
+		t.Fatalf("docker run failed: %v", err)
+	}
+
+	// Copy /bin/cat to /tmp/cat.
+	if _, err := d.Exec(ctx, dockerutil.ExecOpts{}, "cp", "/bin/cat", "/tmp/cat"); err != nil {
+		t.Fatalf("failed to copy /bin/cat to /tmp/cat: %v", err)
+	}
+	// Set file cap on /tmp/cat for CAP_NET_ADMIN with rootid=1001.
+	if _, err := d.Exec(ctx, dockerutil.ExecOpts{}, "setcap", "-n", "1001", "cap_net_admin+ep", "/tmp/cat"); err != nil {
+		t.Fatalf("failed to set file cap on /tmp/cat: %v", err)
+	}
+
+	// Try to execute /tmp/cat as user 1001. Since we are not in a userns for
+	// which the rootid is 1001, the file cap should not be applied.
+	output, err := d.Exec(ctx, dockerutil.ExecOpts{User: "1001"}, "/tmp/cat", "/proc/self/status")
+	if err != nil {
+		t.Fatalf("failed to execute /tmp/cat: %v", err)
+	}
+	noCaps := fmt.Sprintf("CapInh:\t%s\nCapPrm:\t%s\nCapEff:\t%s\n", noCap, noCap, noCap)
+	if !strings.Contains(output, noCaps) {
+		t.Errorf("can't find expected output %q in output: %q", noCaps, output)
+	}
+}
+
+func TestNoEpermFileCap(t *testing.T) {
+	ctx := context.Background()
+	d := dockerutil.MakeContainer(ctx, t)
+	defer d.CleanUp(ctx)
+
+	if err := d.Spawn(ctx, dockerutil.RunOpts{
+		Image: "basic/filecap",
+	}, "sleep", "infinity"); err != nil {
+		t.Fatalf("docker run failed: %v", err)
+	}
+
+	// Copy /bin/cat to /tmp/cat.
+	if _, err := d.Exec(ctx, dockerutil.ExecOpts{}, "cp", "/bin/cat", "/tmp/cat"); err != nil {
+		t.Fatalf("failed to copy /bin/cat to /tmp/cat: %v", err)
+	}
+	// Set file cap on /tmp/cat for CAP_NET_ADMIN without the effective flag.
+	if _, err := d.Exec(ctx, dockerutil.ExecOpts{}, "setcap", "cap_net_admin+p", "/tmp/cat"); err != nil {
+		t.Fatalf("failed to set file cap on /tmp/cat: %v", err)
+	}
+
+	// Try to execute /tmp/cat as user 1001. Since the container was not run with
+	// CAP_NET_ADMIN, the file cap should not be applied. Since the effective bit
+	// is not set, we should not receive an EPERM either.
+	output, err := d.Exec(ctx, dockerutil.ExecOpts{User: "1001"}, "/tmp/cat", "/proc/self/status")
+	if err != nil {
+		t.Fatalf("failed to execute /tmp/cat: %v", err)
+	}
+	noCaps := fmt.Sprintf("CapInh:\t%s\nCapPrm:\t%s\nCapEff:\t%s\n", noCap, noCap, noCap)
+	if !strings.Contains(output, noCaps) {
+		t.Errorf("can't find expected output %q in output: %q", noCaps, output)
 	}
 }
 
@@ -202,7 +297,8 @@ func TestExecPrivileged(t *testing.T) {
 
 	// But if we are running with host network stack and raw sockets, then
 	// we require CAP_NET_RAW, so add that back.
-	if testutil.IsRunningWithHostNet() && testutil.IsRunningWithNetRaw() {
+	addNetRaw := testutil.IsRunningWithHostNet() && testutil.IsRunningWithNetRaw()
+	if addNetRaw {
 		opts.CapAdd = []string{"NET_RAW"}
 	}
 
@@ -224,12 +320,12 @@ func TestExecPrivileged(t *testing.T) {
 		t.Fatalf("failed to convert capabilities %q: %v", matches[1], err)
 	}
 
-	// Expect no capabilities, unless raw sockets configured.
-	var wantContainerCaps uint64
-	if testutil.IsRunningWithNetRaw() {
-		wantContainerCaps |= bits.MaskOf64(int(linux.CAP_NET_RAW))
+	// Expect no capabilities, unless CAP_NET_RAW was added above.
+	var wantContainerCaps auth.CapabilitySet
+	if addNetRaw {
+		wantContainerCaps.Add(linux.CAP_NET_RAW)
 	}
-	if containerCaps != wantContainerCaps {
+	if containerCaps != uint64(wantContainerCaps) {
 		t.Fatalf("Container caps got %x want %x", containerCaps, wantContainerCaps)
 	}
 
@@ -241,9 +337,9 @@ func TestExecPrivileged(t *testing.T) {
 	if err != nil {
 		t.Fatalf("docker exec failed: %v", err)
 	}
-	wantCaps := specutils.AllCapabilitiesUint64()
+	wantCaps := specutils.AllCapabilitiesSet()
 	if !testutil.IsRunningWithNetRaw() {
-		wantCaps &= ^bits.MaskOf64(int(linux.CAP_NET_RAW))
+		wantCaps.Clear(linux.CAP_NET_RAW)
 	}
 	wantStr := fmt.Sprintf("CapEff:\t%016x\n", wantCaps)
 	if got == wantStr {
@@ -254,7 +350,7 @@ func TestExecPrivileged(t *testing.T) {
 	// _CHECKPOINT_RESTORE. Mask those and see if we are equal.
 	oldWantCaps := wantCaps
 	for _, cap := range []linux.Capability{linux.CAP_PERFMON, linux.CAP_BPF, linux.CAP_CHECKPOINT_RESTORE} {
-		oldWantCaps = oldWantCaps &^ bits.MaskOf64(int(cap))
+		oldWantCaps.Clear(cap)
 	}
 	oldWantStr := fmt.Sprintf("CapEff:\t%016x\n", oldWantCaps)
 	if got != oldWantStr {

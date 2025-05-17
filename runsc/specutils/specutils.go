@@ -32,7 +32,6 @@ import (
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/bits"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/runsc/config"
@@ -366,11 +365,11 @@ func AllCapabilities() *specs.LinuxCapabilities {
 	}
 }
 
-// AllCapabilitiesUint64 returns a bitmask containing all capabilities set.
-func AllCapabilitiesUint64() uint64 {
-	var rv uint64
+// AllCapabilitiesSet returns a CapabilitySet containing all capabilities.
+func AllCapabilitiesSet() auth.CapabilitySet {
+	var rv auth.CapabilitySet
 	for _, cap := range capFromName {
-		rv |= bits.MaskOf64(int(cap))
+		rv.Add(cap)
 	}
 	return rv
 }

@@ -88,7 +88,10 @@ go_library(
         "user_namespace_mutex.go",
     ],
     marshal = True,
-    visibility = ["//pkg/sentry:internal"],
+    visibility = [
+        "//pkg/sentry:internal",
+        "//test/e2e:__subpackages__",
+    ],
     deps = [
         "//pkg/abi/linux",
         "//pkg/bits",
