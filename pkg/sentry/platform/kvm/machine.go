@@ -227,11 +227,11 @@ type dieState struct {
 // createVCPU creates and returns a new vCPU.
 //
 // Precondition: mu must be held.
-func (m *machine) createVCPU(id int) *vCPU {
+func (m *machine) createVCPU(id int) (*vCPU, error) {
 	// Create the vCPU.
 	fd, errno := hostsyscall.RawSyscall(unix.SYS_IOCTL, uintptr(m.fd), KVM_CREATE_VCPU, uintptr(id))
 	if errno != 0 {
-		panic(fmt.Sprintf("error creating new vCPU(id=%d): %v", id, errno))
+		return nil, fmt.Errorf("error creating new vCPU(id=%d): %w", id, errno)
 	}
 
 	c := &vCPU{
@@ -259,7 +259,7 @@ func (m *machine) createVCPU(id int) *vCPU {
 		panic(fmt.Sprintf("error initializing vCPU(id=%d) state: %v", id, err))
 	}
 
-	return c // Done.
+	return c, nil // Done.
 }
 
 // forceMappingEntireAddressSpace forces mapping the entire process address
