@@ -25,6 +25,7 @@ import (
 	"github.com/moby/sys/capability"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/control/server"
 	"gvisor.dev/gvisor/pkg/cpuid"
 	"gvisor.dev/gvisor/pkg/fspath"
@@ -404,11 +405,6 @@ func createMountTestcases() []*CreateMountTestcase {
 						Type:        "tmpfs",
 					},
 					{
-						// Mounted by runsc by default.
-						Destination: "/dev/fd",
-						Type:        "tmpfs",
-					},
-					{
 						// Mount with the same prefix.
 						Destination: "/dev/fd-foo",
 						Type:        "tmpfs",
@@ -502,6 +498,118 @@ func TestCreateMountNamespace(t *testing.T) {
 					t.Errorf("expected path %v to exist with spec %v, but got error %v", p, tc.spec, err)
 				} else {
 					d.DecRef(ctx)
+				}
+			}
+		})
+	}
+}
+
+type createMountPointTestCase struct {
+	name string
+	path string
+	mode linux.FileMode
+	fail bool
+}
+
+func TestCreateMountPoint(t *testing.T) {
+	var createMountPointTestCases = []createMountPointTestCase{
+		{
+			name: "File",
+			path: "/test/test-file",
+			mode: linux.ModeRegular,
+		},
+		{
+			name: "Directory",
+			path: "/test/test-dir",
+			mode: linux.ModeDirectory,
+		},
+		{
+			name: "FileWithIntDirs",
+			path: "/test/a/b/c/test-file",
+			mode: linux.ModeRegular,
+		},
+		{
+			name: "DirectoryWithIntDirs",
+			path: "/test/d/e/f/g/test-dir",
+			mode: linux.ModeDirectory,
+		},
+		{
+			name: "ExistingFile",
+			path: "/test/test-file",
+			mode: linux.ModeRegular,
+		},
+		{
+			name: "ExistingDirectory",
+			path: "/test/test-dir",
+			mode: linux.ModeDirectory,
+		},
+		{
+			name: "DirVSFile",
+			path: "/test/test-file",
+			mode: linux.ModeDirectory,
+			fail: true,
+		},
+		{
+			name: "FileVSDir",
+			path: "/test/test-dir",
+			mode: linux.ModeRegular,
+			fail: true,
+		},
+	}
+
+	spec := testSpec()
+	spec.Root = &specs.Root{
+		Path: os.TempDir(),
+	}
+	spec.Mounts = append(spec.Mounts, specs.Mount{
+		Destination: "/test",
+		Type:        "tmpfs",
+	})
+
+	t.Logf("Using root: %q", spec.Root.Path)
+	l, loaderCleanup, err := createLoader(testConfig(), spec)
+	if err != nil {
+		t.Fatalf("failed to create loader: %v", err)
+	}
+	defer l.Destroy()
+	defer loaderCleanup()
+
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	mntr := newContainerMounter(&l.root, l.k, l.mountHints, l.sharedMounts, "", l.sandboxID)
+	ctx := l.k.SupervisorContext()
+	creds := auth.NewRootCredentials(l.root.procArgs.Credentials.UserNamespace)
+	mns, err := mntr.mountAll(ctx, creds, l.root.spec, l.root.conf, &l.root.procArgs)
+	if err != nil {
+		t.Fatalf("mountAll: %v", err)
+	}
+
+	root := mns.Root(ctx)
+	defer root.DecRef(ctx)
+
+	for _, tc := range createMountPointTestCases {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := mntr.makeMountPoint(ctx, creds, mns, tc.path, tc.mode); err != nil {
+				if tc.fail {
+					return
+				}
+				t.Fatalf("makeMountPoint failed: %v", err)
+			} else {
+				if tc.fail {
+					t.Fatalf("makeMountPoint doesn't fail")
+				}
+			}
+			target := &vfs.PathOperation{
+				Root:  root,
+				Start: root,
+				Path:  fspath.Parse(tc.path),
+			}
+
+			if mode, err := mntr.getPathMode(ctx, creds, target); err != nil {
+				t.Errorf("expected path %v, but got error %v", tc.path, err)
+			} else {
+				if mode.IsDir() != tc.mode.IsDir() {
+					t.Errorf("path mode %v doesn't match the mount mode %v", mode, tc.mode)
 				}
 			}
 		})

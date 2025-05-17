@@ -156,6 +156,7 @@ go_test(
     ],
     library = ":boot",
     deps = [
+        "//pkg/abi/linux",
         "//pkg/control/server",
         "//pkg/cpuid",
         "//pkg/fspath",
