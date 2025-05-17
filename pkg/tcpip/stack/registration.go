@@ -217,7 +217,8 @@ type PacketMMapOpts struct {
 // mapped packets over the packet transport protocol (PACKET_MMAP).
 type PacketMMapEndpoint interface {
 	// HandlePacket is called by the stack when new packets arrive that
-	// match the endpoint.
+	// match the endpoint. It returns true if the packet was handled by the
+	// endpoint and false otherwise.
 	//
 	// Implementers should treat packet as immutable and should copy it
 	// before modification.
@@ -226,7 +227,7 @@ type PacketMMapEndpoint interface {
 	// should construct its own ethernet header for applications.
 	//
 	// HandlePacket may modify pkt.
-	HandlePacket(nicID tcpip.NICID, netProto tcpip.NetworkProtocolNumber, pkt *PacketBuffer)
+	HandlePacket(nicID tcpip.NICID, netProto tcpip.NetworkProtocolNumber, pkt *PacketBuffer) bool
 
 	// Close releases any resources associated with the endpoint.
 	Close()

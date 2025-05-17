@@ -492,9 +492,10 @@ func (ep *endpoint) GetSockOptInt(opt tcpip.SockOptInt) (int, tcpip.Error) {
 func (ep *endpoint) HandlePacket(nicID tcpip.NICID, netProto tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
 	ep.packetMmapMu.RLock()
 	if ep.packetMMapEp != nil {
-		ep.packetMMapEp.HandlePacket(nicID, netProto, pkt)
-		ep.packetMmapMu.RUnlock()
-		return
+		if handled := ep.packetMMapEp.HandlePacket(nicID, netProto, pkt); handled {
+			ep.packetMmapMu.RUnlock()
+			return
+		}
 	}
 	ep.packetMmapMu.RUnlock()
 

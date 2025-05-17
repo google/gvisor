@@ -31,14 +31,22 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip"
 )
 
+// Lock order for the mutexes in ringBuffer:
+//
+//	mu
+//	  dataMu
+//
 // +stateify savable
 type ringBuffer struct {
+	mu sync.Mutex `state:"nosave"`
+	// +checklocks:mu
 	framesPerBlock uint32
-	frameSize      uint32
-	frameMax       uint32
-	blockSize      uint32
-	numBlocks      uint32
-	version        int
+	// +checklocks:mu
+	frameSize uint32
+	// +checklocks:mu
+	frameMax uint32
+	// +checklocks:mu
+	blockSize uint32
 
 	// The following fields are protected by the owning endpoint's mutex.
 	head       uint32
@@ -59,11 +67,12 @@ type ringBuffer struct {
 //
 // The owning endpoint must be locked when calling this function.
 func (rb *ringBuffer) init(ctx context.Context, req *tcpip.TpacketReq) error {
+	rb.mu.Lock()
+	defer rb.mu.Unlock()
 	rb.blockSize = req.TpBlockSize
 	rb.framesPerBlock = req.TpBlockSize / req.TpFrameSize
 	rb.frameMax = req.TpFrameNr - 1
 	rb.frameSize = req.TpFrameSize
-	rb.numBlocks = req.TpBlockNr
 
 	rb.rxOwnerMap = bitmap.New(req.TpFrameNr)
 	rb.head = 0
@@ -92,7 +101,6 @@ func (rb *ringBuffer) destroy() {
 	rb.dataMu.Lock()
 	rb.mf.DecRef(rb.data)
 	rb.dataMu.Unlock()
-	*rb = ringBuffer{}
 }
 
 // AppendTranslation essentially implements memmap.Mappable.Translate, with the
@@ -125,6 +133,12 @@ func (rb *ringBuffer) AppendTranslation(ctx context.Context, required, optional 
 	return ts, nil
 }
 
+func (rb *ringBuffer) FrameSize() uint32 {
+	rb.mu.Lock()
+	defer rb.mu.Unlock()
+	return rb.frameSize
+}
+
 // writeStatus writes the status of a frame to the ring buffer's internal
 // mappings at the provided frame number. It also clears the owner map for the
 // frame number if setting it to TP_STATUS_USER.
@@ -134,6 +148,8 @@ func (rb *ringBuffer) writeStatus(frameNum uint32, status uint32) error {
 	if status&linux.TP_STATUS_USER != 0 {
 		rb.rxOwnerMap.Remove(frameNum)
 	}
+	rb.mu.Lock()
+	defer rb.mu.Unlock()
 	ims, err := rb.internalMappingsForFrame(frameNum, hostarch.Write)
 	if err != nil {
 		return err
@@ -148,6 +164,8 @@ func (rb *ringBuffer) writeStatus(frameNum uint32, status uint32) error {
 // writeFrame writes a frame to the ring buffer's internal mappings at the
 // provided frame number.
 func (rb *ringBuffer) writeFrame(frameNum uint32, hdrView *buffer.View, pkt buffer.Buffer) error {
+	rb.mu.Lock()
+	defer rb.mu.Unlock()
 	ims, err := rb.internalMappingsForFrame(frameNum, hostarch.Write)
 	if err != nil {
 		return err
@@ -168,6 +186,8 @@ func (rb *ringBuffer) writeFrame(frameNum uint32, hdrView *buffer.View, pkt buff
 //
 // The owning endpoint must be locked when calling this method.
 func (rb *ringBuffer) incHead() {
+	rb.mu.Lock()
+	defer rb.mu.Unlock()
 	if rb.head == rb.frameMax {
 		rb.head = 0
 	} else {
@@ -179,6 +199,8 @@ func (rb *ringBuffer) incHead() {
 //
 // The owning endpoint must be locked when calling this method.
 func (rb *ringBuffer) currFrameStatus() (uint32, error) {
+	rb.mu.Lock()
+	defer rb.mu.Unlock()
 	return rb.frameStatus(rb.head)
 }
 
@@ -187,6 +209,8 @@ func (rb *ringBuffer) currFrameStatus() (uint32, error) {
 //
 // The owning endpoint must be locked when calling this method.
 func (rb *ringBuffer) prevFrameStatus() (uint32, error) {
+	rb.mu.Lock()
+	defer rb.mu.Unlock()
 	prev := rb.head - 1
 	if rb.head == 0 {
 		prev = rb.frameMax
@@ -225,6 +249,7 @@ func (rb *ringBuffer) bufferSize() uint64 {
 	return rb.size
 }
 
+// +checklocks:rb.mu
 func (rb *ringBuffer) internalMappingsForFrame(frameNum uint32, at hostarch.AccessType) (safemem.BlockSeq, error) {
 	rb.dataMu.RLock()
 	defer rb.dataMu.RUnlock()
@@ -239,6 +264,7 @@ func (rb *ringBuffer) internalMappingsForFrame(frameNum uint32, at hostarch.Acce
 	return rb.mf.MapInternal(frameFR, at)
 }
 
+// +checklocks:rb.mu
 func (rb *ringBuffer) frameStatus(frameNum uint32) (uint32, error) {
 	ims, err := rb.internalMappingsForFrame(frameNum, hostarch.Read)
 	if err != nil {

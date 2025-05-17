@@ -813,6 +813,20 @@ func (c *containerMounter) prepareMounts() ([]mountInfo, error) {
 	return mounts, nil
 }
 
+// getPathMode returns file mode for the specified path.
+func (c *containerMounter) getPathMode(ctx context.Context, creds *auth.Credentials, path *vfs.PathOperation) (linux.FileMode, error) {
+	stat, err := c.k.VFS().StatAt(ctx, creds, path, &vfs.StatOptions{
+		Mask: linux.STATX_TYPE,
+	})
+	if err != nil {
+		return 0, err
+	}
+	if stat.Mask&linux.STATX_TYPE == 0 {
+		return 0, fmt.Errorf("failed to get file type")
+	}
+	return linux.FileMode(stat.Mode), nil
+}
+
 func (c *containerMounter) mountSubmount(ctx context.Context, spec *specs.Spec, conf *config.Config, mns *vfs.MountNamespace, creds *auth.Credentials, submount *mountInfo) (*vfs.Mount, error) {
 	fsName, opts, err := getMountNameAndOptions(spec, conf, submount, c.productName, c.containerName)
 	if err != nil {
@@ -821,10 +835,6 @@ func (c *containerMounter) mountSubmount(ctx context.Context, spec *specs.Spec, 
 	if len(fsName) == 0 {
 		// Filesystem is not supported (e.g. cgroup), just skip it.
 		return nil, nil
-	}
-
-	if err := c.makeMountPoint(ctx, creds, mns, submount.mount.Destination); err != nil {
-		return nil, fmt.Errorf("creating mount point %q: %w", submount.mount.Destination, err)
 	}
 
 	if submount.goferMountConf.ShouldUseOverlayfs() {
@@ -838,18 +848,42 @@ func (c *containerMounter) mountSubmount(ctx context.Context, spec *specs.Spec, 
 		fsName = overlay.Name
 	}
 
+	mount := submount.mount
 	root := mns.Root(ctx)
 	defer root.DecRef(ctx)
 	target := &vfs.PathOperation{
 		Root:  root,
 		Start: root,
-		Path:  fspath.Parse(submount.mount.Destination),
+		Path:  fspath.Parse(mount.Destination),
 	}
-	mnt, err := c.k.VFS().MountAt(ctx, creds, "", target, fsName, opts)
+	mnt, err := c.k.VFS().MountDisconnected(ctx, creds, "", fsName, opts)
 	if err != nil {
-		return nil, fmt.Errorf("failed to mount %q (type: %s): %w, opts: %v", submount.mount.Destination, submount.mount.Type, err, opts)
+		return nil, fmt.Errorf("mounting %q (type:%s, dest: %q): %w, opts: %v",
+			mount.Source, mount.Type, mount.Destination, err, opts)
 	}
-	log.Infof("Mounted %q to %q type: %s, internal-options: %q", submount.mount.Source, submount.mount.Destination, submount.mount.Type, opts.GetFilesystemOptions.Data)
+	defer mnt.DecRef(ctx)
+
+	vd := vfs.MakeVirtualDentry(mnt, mnt.Root())
+	rootPath := &vfs.PathOperation{
+		Root:  vd,
+		Start: vd,
+	}
+
+	rootMode, err := c.getPathMode(ctx, creds, rootPath)
+	if err != nil {
+		return nil, fmt.Errorf("stat mount %q (dest: %q): %w", mount.Source, mount.Destination, err)
+	}
+	if err := c.makeMountPoint(ctx, creds, mns, mount.Destination, rootMode); err != nil {
+		return nil, fmt.Errorf("creating mount point %q: %w", mount.Destination, err)
+	}
+
+	if err := c.k.VFS().ConnectMountAt(ctx, creds, mnt, target); err != nil {
+		return nil, fmt.Errorf("attaching %q to %q (type: %s): %w, opts: %v",
+			mount.Source, mount.Destination, mount.Type, err, opts)
+	}
+
+	log.Infof("Mounted %q to %q type: %s, internal-options: %q",
+		mount.Source, mount.Destination, mount.Type, opts.GetFilesystemOptions.Data)
 	return mnt, nil
 }
 
@@ -1225,7 +1259,17 @@ func (c *containerMounter) mountSharedSubmount(ctx context.Context, conf *config
 		Path:  fspath.Parse(mntInfo.mount.Destination),
 	}
 
-	if err := c.makeMountPoint(ctx, creds, mns, mntInfo.mount.Destination); err != nil {
+	vd := vfs.MakeVirtualDentry(newMnt, newMnt.Root())
+	rootPath := &vfs.PathOperation{
+		Root:  vd,
+		Start: vd,
+	}
+	rootMode, err := c.getPathMode(ctx, creds, rootPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := c.makeMountPoint(ctx, creds, mns, mntInfo.mount.Destination, rootMode); err != nil {
 		return nil, fmt.Errorf("creating mount point %q: %w", mntInfo.mount.Destination, err)
 	}
 
@@ -1236,24 +1280,67 @@ func (c *containerMounter) mountSharedSubmount(ctx context.Context, conf *config
 	return newMnt, nil
 }
 
-func (c *containerMounter) makeMountPoint(ctx context.Context, creds *auth.Credentials, mns *vfs.MountNamespace, dest string) error {
+// makeMountPoint creates the mount point destination, ensuring its type (file
+// or directory) matches `rootMode`. If the destination already exists, it just
+// verifies that its type is consistent with `rootMode`; otherwise, the ENOTDIR
+// error is returned.
+func (c *containerMounter) makeMountPoint(
+	ctx context.Context,
+	creds *auth.Credentials,
+	mns *vfs.MountNamespace,
+	dest string,
+	rootMode linux.FileMode,
+) error {
 	root := mns.Root(ctx)
 	defer root.DecRef(ctx)
+
 	target := &vfs.PathOperation{
 		Root:  root,
 		Start: root,
 		Path:  fspath.Parse(dest),
 	}
-	// First check if mount point exists. When overlay is enabled, gofer doesn't
-	// allow changes to the FS, making MakeSytheticMountpoint() ineffective
-	// because MkdirAt fails with EROFS even if file exists.
-	vd, err := c.k.VFS().GetDentryAt(ctx, creds, target, &vfs.GetDentryOptions{})
-	if err == nil {
-		// File exists, we're done.
-		vd.DecRef(ctx)
+
+	fs := c.k.VFS()
+
+	mode, err := c.getPathMode(ctx, creds, target)
+	// First check if mount point exists.
+	switch {
+	case err == nil:
+		if mode.IsDir() != rootMode.IsDir() {
+			if rootMode.IsDir() {
+				return fmt.Errorf("mountpoint %q isn't a directory", dest)
+			} else {
+				return fmt.Errorf("mountpoint %q isn't not a file", dest)
+			}
+		}
+		// Target already exists.
 		return nil
+	case linuxerr.Equals(linuxerr.ENOENT, err):
+		// Expected, we will create the mount point.
+	default:
+		return fmt.Errorf("stat failed for %q during mountpoint creation: %w", dest, err)
 	}
-	return c.k.VFS().MakeSyntheticMountpoint(ctx, dest, root, creds)
+
+	mkdirOpts := &vfs.MkdirOptions{Mode: 0755, ForSyntheticMountpoint: true}
+
+	// Make sure the parent directory of target exists.
+	if err := fs.MkdirAllAt(ctx, path.Dir(dest), root, creds, mkdirOpts, true /* mustBeDir */); err != nil {
+		return fmt.Errorf("failed to create parent directory of mountpoint %q: %w", dest, err)
+	}
+
+	if rootMode.IsDir() {
+		if err := fs.MkdirAt(ctx, creds, target, mkdirOpts); err != nil {
+			return fmt.Errorf("failed to create directory mountpoint %q: %w", dest, err)
+		}
+	} else {
+		mknodOpts := &vfs.MknodOptions{
+			Mode: linux.FileMode(linux.S_IFREG | 0644),
+		}
+		if err := fs.MknodAt(ctx, creds, target, mknodOpts); err != nil {
+			return fmt.Errorf("failed to create file mountpoint %q: %w", dest, err)
+		}
+	}
+	return nil
 }
 
 // configureRestore returns an updated context.Context including filesystem

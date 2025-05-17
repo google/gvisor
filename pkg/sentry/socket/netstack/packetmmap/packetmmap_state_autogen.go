@@ -82,8 +82,6 @@ func (rb *ringBuffer) StateFields() []string {
 		"frameSize",
 		"frameMax",
 		"blockSize",
-		"numBlocks",
-		"version",
 		"head",
 		"rxOwnerMap",
 		"size",
@@ -101,13 +99,11 @@ func (rb *ringBuffer) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &rb.frameSize)
 	stateSinkObject.Save(2, &rb.frameMax)
 	stateSinkObject.Save(3, &rb.blockSize)
-	stateSinkObject.Save(4, &rb.numBlocks)
-	stateSinkObject.Save(5, &rb.version)
-	stateSinkObject.Save(6, &rb.head)
-	stateSinkObject.Save(7, &rb.rxOwnerMap)
-	stateSinkObject.Save(8, &rb.size)
-	stateSinkObject.Save(9, &rb.mapping)
-	stateSinkObject.Save(10, &rb.data)
+	stateSinkObject.Save(4, &rb.head)
+	stateSinkObject.Save(5, &rb.rxOwnerMap)
+	stateSinkObject.Save(6, &rb.size)
+	stateSinkObject.Save(7, &rb.mapping)
+	stateSinkObject.Save(8, &rb.data)
 }
 
 // +checklocksignore
@@ -116,13 +112,11 @@ func (rb *ringBuffer) StateLoad(ctx context.Context, stateSourceObject state.Sou
 	stateSourceObject.Load(1, &rb.frameSize)
 	stateSourceObject.Load(2, &rb.frameMax)
 	stateSourceObject.Load(3, &rb.blockSize)
-	stateSourceObject.Load(4, &rb.numBlocks)
-	stateSourceObject.Load(5, &rb.version)
-	stateSourceObject.Load(6, &rb.head)
-	stateSourceObject.Load(7, &rb.rxOwnerMap)
-	stateSourceObject.Load(8, &rb.size)
-	stateSourceObject.Load(9, &rb.mapping)
-	stateSourceObject.Load(10, &rb.data)
+	stateSourceObject.Load(4, &rb.head)
+	stateSourceObject.Load(5, &rb.rxOwnerMap)
+	stateSourceObject.Load(6, &rb.size)
+	stateSourceObject.Load(7, &rb.mapping)
+	stateSourceObject.Load(8, &rb.data)
 	stateSourceObject.AfterLoad(func() { rb.afterLoad(ctx) })
 }
 
