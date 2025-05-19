@@ -245,6 +245,20 @@ type elemType interface {
 //
 // Nil may not be passed here.
 func (l *lockState) valueAndObject(v ssa.Value) (string, types.Object) {
+	// Detect and break potential alias cycles.
+	// If we are already resolving this SSA value higher in the call stack,
+	// short-circuit with a unique representation to avoid unbounded
+	// recursion and eventual stack overflow. This can occur with
+	// pathological alias chains such as A → B → A introduced via Store
+	// instructions or generic instantiation.
+	if _, alreadyResolving := l.used[v]; alreadyResolving {
+		return fmt.Sprintf("{cycle:%T:%p}", v, v), nil
+	}
+
+	// Mark this value as being resolved for the remainder of this call.
+	l.used[v] = struct{}{}
+	defer delete(l.used, v)
+
 	switch x := v.(type) {
 	case *ssa.Parameter:
 		// Was this provided as a parameter for a local anonymous
@@ -336,13 +350,29 @@ func (l *lockState) valueAndObject(v ssa.Value) (string, types.Object) {
 	case *ssa.Extract:
 		s, _ := l.valueAndObject(x.Tuple)
 		return fmt.Sprintf("%s[%d]", s, x.Index), nil
+	case *ssa.Alloc:
+		// Synthetic stack slots created by the compiler often alias an
+		// incoming parameter (e.g. the first Store in a function copies the
+		// parameter into an *ssa.Alloc). If we previously recorded such an
+		// alias via l.store, resolve through the stored mapping so that the
+		// stack slot and the parameter share a common string representation.
+		if alias, ok := l.stored[x]; ok {
+			return l.valueAndObject(alias)
+		}
+		// Otherwise fall back to a unique synthetic representation.
+		return fmt.Sprintf("{%T:%p}", v, v), nil
+	default:
+		// In the case of any other type (e.g. this may be an alloc, a return
+		// value, etc.), just return the literal pointer value to the Value.
+		// This will be unique within the ssa graph, and so if two values are
+		// equal, they are from the same type.
+		return fmt.Sprintf("{%T:%p}", v, v), nil
 	}
 
-	// In the case of any other type (e.g. this may be an alloc, a return
-	// value, etc.), just return the literal pointer value to the Value.
-	// This will be unique within the ssa graph, and so if two values are
-	// equal, they are from the same type.
-	return fmt.Sprintf("{%T:%p}", v, v), nil
+	// This statement should be unreachable, but the Go compiler cannot prove
+	// that the above type switch returns in all cases (due to `break` in some
+	// branches). Provide a safe default to satisfy the type checker.
+	return fmt.Sprintf("{unknown:%T:%p}", v, v), nil
 }
 
 // String returns the full lock state.
