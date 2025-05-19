@@ -127,6 +127,7 @@ func testRWInvalidRead(tc *rwGuardStruct) {
 	_ = x
 }
 
+// +checklocksacquire:tc.mu
 func testTwoLocksDoubleGuardStructValid(tc *twoLocksDoubleGuardStruct) {
 	tc.mu.Lock()
 	tc.secondMu.Lock()
