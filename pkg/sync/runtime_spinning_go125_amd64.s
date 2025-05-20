@@ -13,11 +13,11 @@
 // limitations under the License.
 
 // https://go.dev/cl/669235 (1.25) adds a new schedt field prior to nmspinning.
-//go:build amd64 && !go1.25
+//go:build amd64 && go1.25
 
 #include "textflag.h"
 
-#define NMSPINNING_OFFSET 92 // +checkoffset runtime schedt.nmspinning
+#define NMSPINNING_OFFSET 100 // +checkoffset runtime schedt.nmspinning
 
 TEXT ·addrOfSpinning(SB),NOSPLIT|NOFRAME,$0-8
 	LEAQ runtime·sched(SB), AX
