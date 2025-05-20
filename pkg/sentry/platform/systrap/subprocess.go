@@ -1157,7 +1157,10 @@ func (s *subprocess) createSysmsgThread() error {
 	if err := p.setRegs(tregs); err != nil {
 		panic(fmt.Sprintf("ptrace set regs failed: %v", err))
 	}
-	archSpecificSysmsgThreadInit(sysThread)
+	// Send a fake event to stop the BPF process so that it enters the sighandler.
+	if e := hostsyscall.RawSyscallErrno(unix.SYS_TGKILL, uintptr(sysThread.thread.tgid), uintptr(sysThread.thread.tid), uintptr(unix.SIGSEGV)); e != 0 {
+		panic(fmt.Sprintf("tkill failed: %v", e))
+	}
 	// Skip SIGSTOP.
 	if e := hostsyscall.RawSyscallErrno(unix.SYS_TGKILL, uintptr(p.tgid), uintptr(p.tid), uintptr(unix.SIGCONT)); e != 0 {
 		panic(fmt.Sprintf("tkill failed: %v", e))
