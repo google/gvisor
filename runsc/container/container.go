@@ -2067,6 +2067,10 @@ func nvproxySetup(spec *specs.Spec, conf *config.Config, goferPid int) error {
 		fmt.Sprintf("--pid=%d", goferPid),
 		fmt.Sprintf("--device=%s", devices),
 	}
+	if nvidiaContainerCliConfigureNeedsCudaCompatModeFlag(cliPath) {
+		// "mount" is the flag's intended default value.
+		argv = append(argv, "--cuda-compat-mode=mount")
+	}
 	// Pass driver capabilities allowed by configuration as flags. See
 	// nvidia-container-toolkit/cmd/nvidia-container-runtime-hook/main.go:doPrestart().
 	driverCaps, err := specutils.NVProxyDriverCapsFromEnv(spec, conf)
@@ -2089,6 +2093,43 @@ func nvproxySetup(spec *specs.Spec, conf *config.Config, goferPid int) error {
 		return fmt.Errorf("nvidia-container-cli configure failed, err: %v\nstdout: %s\nstderr: %s", err, stdout.String(), stderr.String())
 	}
 	return nil
+}
+
+func nvidiaContainerCliConfigureNeedsCudaCompatModeFlag(cliPath string) bool {
+	cmd := exec.Cmd{
+		Path: cliPath,
+		Args: []string{cliPath, "--version"},
+	}
+	log.Debugf("Executing %q", cmd.Args)
+	out, err := cmd.Output()
+	if err != nil {
+		log.Warningf("Failed to execute nvidia-container-cli --version: %v", err)
+		return false
+	}
+	m := regexp.MustCompile(`^cli-version: (\d+)\.(\d+)\.(\d+)`).FindSubmatch(out)
+	if m == nil {
+		log.Warningf("Failed to find version number in nvidia-container-cli --version: %s", out)
+		return false
+	}
+	major, err := strconv.Atoi(string(m[1]))
+	if err != nil {
+		log.Warningf("Invalid major version number in nvidia-container-cli --version: %v", err)
+		return false
+	}
+	minor, err := strconv.Atoi(string(m[2]))
+	if err != nil {
+		log.Warningf("Invalid minor version number in nvidia-container-cli --version: %v", err)
+		return false
+	}
+	release, err := strconv.Atoi(string(m[3]))
+	if err != nil {
+		log.Warningf("Invalid release version number in nvidia-container-cli --version: %v", err)
+		return false
+	}
+	// In nvidia-container-cli 1.17.7, in which the --cuda-compat-mode flag
+	// first appears, failing to pass this flag to nvidia-container-cli
+	// configure causes all other flags to be ignored.
+	return major == 1 && minor == 17 && release == 7
 }
 
 // CheckStopped checks if the container is stopped and updates its status.
