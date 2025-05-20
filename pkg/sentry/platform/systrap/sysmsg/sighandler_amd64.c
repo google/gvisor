@@ -206,12 +206,17 @@ void __export_sighandler(int signo, siginfo_t *siginfo, void *_ucontext) {
 
   if (sysmsg != sysmsg->self) panic(STUB_ERROR_BAD_SYSMSG, 0);
   int32_t thread_state = atomic_load(&sysmsg->state);
+  struct thread_context *ctx = NULL;
+  enum context_state ctx_state = CONTEXT_STATE_INVALID;
+  long fs_base = 0;
+
   if (thread_state == THREAD_STATE_INITIALIZING) {
-    // This thread was interrupted before it even had a context.
-    return;
+    // Find a new context and exit to restore it.
+    init_new_thread();
+    goto init;
   }
 
-  struct thread_context *ctx = sysmsg->context;
+  ctx = sysmsg->context;
 
   // If the current thread is in syshandler, an interrupt has to be postponed,
   // because sysmsg can't be changed.
@@ -226,7 +231,7 @@ void __export_sighandler(int signo, siginfo_t *siginfo, void *_ucontext) {
     return;
   }
 
-  long fs_base = get_fsbase();
+  fs_base = get_fsbase();
 
   ctx->signo = signo;
   ctx->siginfo = *siginfo;
@@ -241,8 +246,6 @@ void __export_sighandler(int signo, siginfo_t *siginfo, void *_ucontext) {
     memcpy(ctx->fpstate, (uint8_t *)ucontext->uc_mcontext.fpregs,
            __export_arch_state.fp_len);
   }
-
-  enum context_state ctx_state = CONTEXT_STATE_INVALID;
 
   switch (signo) {
     case SIGSYS: {
@@ -331,6 +334,8 @@ void __export_sighandler(int signo, siginfo_t *siginfo, void *_ucontext) {
   }
 
   atomic_store(&ctx->fpstate_changed, 0);
+
+init:
   ctx = switch_context_amd64(sysmsg, ctx, ctx_state);
   if (fs_base != ctx->ptregs.fs_base) {
     set_fsbase(ctx->ptregs.fs_base);
@@ -373,20 +378,6 @@ void __syshandler() {
   if (fs_base != ctx->ptregs.fs_base) {
     set_fsbase(ctx->ptregs.fs_base);
   }
-}
-
-void __export_start(struct sysmsg *sysmsg, void *_ucontext) {
-  init_new_thread();
-
-  asm volatile("movq %%gs:0, %0\n" : "=r"(sysmsg) : :);
-  if (sysmsg->self != sysmsg) {
-    panic(STUB_ERROR_BAD_SYSMSG, 0);
-  }
-
-  struct thread_context *ctx =
-      switch_context_amd64(sysmsg, NULL, CONTEXT_STATE_INVALID);
-
-  restore_state(sysmsg, ctx, _ucontext);
 }
 
 // asm_restore_state is implemented in syshandler_amd64.S

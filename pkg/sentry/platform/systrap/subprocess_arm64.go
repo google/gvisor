@@ -190,13 +190,6 @@ func retrieveArchSpecificState(ctx *sysmsg.ThreadContext, ac *arch.Context64) {
 	}
 }
 
-func archSpecificSysmsgThreadInit(sysThread *sysmsgThread) {
-	// Send a fake event to stop the BPF process so that it enters the sighandler.
-	if e := hostsyscall.RawSyscallErrno(unix.SYS_TGKILL, uintptr(sysThread.thread.tgid), uintptr(sysThread.thread.tid), uintptr(unix.SIGSEGV)); e != 0 {
-		panic(fmt.Sprintf("tkill failed: %v", e))
-	}
-}
-
 func sigErrorToAccessType(sigError uint64) hostarch.AccessType {
 	return hostarch.ESRAccessType(sigError)
 }
