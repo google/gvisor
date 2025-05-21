@@ -899,7 +899,7 @@ func (c *Container) forEachSelfMount(fn func(mountSrc string)) {
 	}
 }
 
-func createGoferConf(overlayMedium config.OverlayMedium, mountType string, mountSrc string) (boot.GoferMountConf, error) {
+func createGoferConf(overlayMedium config.OverlayMedium, overlaySize string, mountType string, mountSrc string) (boot.GoferMountConf, error) {
 	var lower boot.GoferMountConfLowerType
 	switch mountType {
 	case boot.Bind:
@@ -915,7 +915,7 @@ func createGoferConf(overlayMedium config.OverlayMedium, mountType string, mount
 	case config.NoOverlay:
 		return boot.GoferMountConf{Lower: lower, Upper: boot.NoOverlay}, nil
 	case config.MemoryOverlay:
-		return boot.GoferMountConf{Lower: lower, Upper: boot.MemoryOverlay}, nil
+		return boot.GoferMountConf{Lower: lower, Upper: boot.MemoryOverlay, Size: overlaySize}, nil
 	case config.SelfOverlay:
 		mountSrcInfo, err := os.Stat(mountSrc)
 		if err != nil {
@@ -923,12 +923,12 @@ func createGoferConf(overlayMedium config.OverlayMedium, mountType string, mount
 		}
 		if !mountSrcInfo.IsDir() {
 			log.Warningf("self filestore is only supported for directory mounts, but mount %q is not a directory, falling back to memory", mountSrc)
-			return boot.GoferMountConf{Lower: lower, Upper: boot.MemoryOverlay}, nil
+			return boot.GoferMountConf{Lower: lower, Upper: boot.MemoryOverlay, Size: overlaySize}, nil
 		}
-		return boot.GoferMountConf{Lower: lower, Upper: boot.SelfOverlay}, nil
+		return boot.GoferMountConf{Lower: lower, Upper: boot.SelfOverlay, Size: overlaySize}, nil
 	default:
 		if overlayMedium.IsBackedByAnon() {
-			return boot.GoferMountConf{Lower: lower, Upper: boot.AnonOverlay}, nil
+			return boot.GoferMountConf{Lower: lower, Upper: boot.AnonOverlay, Size: overlaySize}, nil
 		}
 		return boot.GoferMountConf{}, fmt.Errorf("unexpected overlay medium %q", overlayMedium)
 	}
@@ -939,17 +939,19 @@ func createGoferConf(overlayMedium config.OverlayMedium, mountType string, mount
 func (c *Container) initGoferConfs(ovlConf config.Overlay2, mountHints *boot.PodMountHints, rootfsHint *boot.RootfsHint) error {
 	// Handle root mount first.
 	overlayMedium := ovlConf.RootOverlayMedium()
+	overlaySize := ovlConf.RootOverlaySize()
 	mountType := boot.Bind
 	if rootfsHint != nil {
 		overlayMedium = rootfsHint.Overlay
 		if !specutils.IsGoferMount(rootfsHint.Mount) {
 			mountType = rootfsHint.Mount.Type
 		}
+		overlaySize = rootfsHint.Size
 	}
 	if c.Spec.Root.Readonly {
 		overlayMedium = config.NoOverlay
 	}
-	goferConf, err := createGoferConf(overlayMedium, mountType, c.Spec.Root.Path)
+	goferConf, err := createGoferConf(overlayMedium, overlaySize, mountType, c.Spec.Root.Path)
 	if err != nil {
 		return err
 	}
@@ -960,7 +962,8 @@ func (c *Container) initGoferConfs(ovlConf config.Overlay2, mountHints *boot.Pod
 		if !specutils.IsGoferMount(c.Spec.Mounts[i]) {
 			continue
 		}
-		overlayMedium = ovlConf.SubMountOverlayMedium()
+		overlayMedium := ovlConf.SubMountOverlayMedium()
+		overlaySize := ovlConf.SubMountOverlaySize()
 		mountType = boot.Bind
 		if specutils.IsReadonlyMount(c.Spec.Mounts[i].Options) {
 			overlayMedium = config.NoOverlay
@@ -972,8 +975,9 @@ func (c *Container) initGoferConfs(ovlConf config.Overlay2, mountHints *boot.Pod
 			if !specutils.IsGoferMount(hint.Mount) {
 				mountType = hint.Mount.Type
 			}
+			overlaySize = ""
 		}
-		goferConf, err := createGoferConf(overlayMedium, mountType, c.Spec.Mounts[i].Source)
+		goferConf, err := createGoferConf(overlayMedium, overlaySize, mountType, c.Spec.Mounts[i].Source)
 		if err != nil {
 			return err
 		}
