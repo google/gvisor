@@ -353,6 +353,7 @@ func (l *Lifecycle) StartContainer(args *StartContainerArgs, _ *uint32) error {
 	l.mu.Unlock()
 
 	// Start the newly created process.
+	timeContainerProcessStarting := time.Now()
 	l.Kernel.StartProcess(tg)
 	log.Infof("Started the new container %v ", initArgs.ContainerID)
 
@@ -367,6 +368,10 @@ func (l *Lifecycle) StartContainer(args *StartContainerArgs, _ *uint32) error {
 		Started:         true,
 		ContainerId:     initArgs.ContainerID,
 		RequestReceived: timeRequestReceived,
+		ContainerProcessStarting: &timestamppb.Timestamp{
+			Seconds: timeContainerProcessStarting.Unix(),
+			Nanos:   int32(timeContainerProcessStarting.Nanosecond()),
+		},
 		RequestCompleted: &timestamppb.Timestamp{
 			Seconds: timeRequestCompleted.Unix(),
 			Nanos:   int32(timeRequestCompleted.Nanosecond()),

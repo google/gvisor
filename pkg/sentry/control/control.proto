@@ -48,7 +48,14 @@ message ControlConfig {
 message ContainerStartedEvent {
   bool started = 1;
   string container_id = 2;
+
+  // Logged when the StartContainer request was received.
   google.protobuf.Timestamp request_received = 3;
+
+  // Logged just before starting the container process.
+  google.protobuf.Timestamp container_process_starting = 5;
+
+  // Logged after the StartContainer request was completed.
   google.protobuf.Timestamp request_completed = 4;
 }
 
