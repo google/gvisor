@@ -141,7 +141,7 @@ func (sc *sharedContext) NotifyInterrupt() {
 	}
 
 	t := sysmsgThread.thread
-	if e := hostsyscall.RawSyscallErrno(unix.SYS_TGKILL, uintptr(t.tgid), uintptr(t.tid), uintptr(platform.SignalInterrupt)); e != 0 {
+	if e := hostsyscall.RawSyscallErrno(unix.SYS_TGKILL, uintptr(t.tgid), uintptr(t.tid), uintptr(platform.SignalInterrupt)); e != 0 && e != unix.ESRCH {
 		panic(fmt.Sprintf("failed to interrupt the child process %d: %v", t.tid, e))
 	}
 }
