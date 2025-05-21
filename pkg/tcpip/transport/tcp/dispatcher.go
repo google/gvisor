@@ -32,7 +32,7 @@ import (
 //
 // +stateify savable
 type epQueue struct {
-	mu   sync.Mutex `state:"nosave"`
+	mu   epQueueMutex `state:"nosave"`
 	list endpointList
 }
 
@@ -365,7 +365,7 @@ type dispatcher struct {
 	processors []processor
 	wg         sync.WaitGroup `state:"nosave"`
 	hasher     jenkinsHasher
-	mu         sync.Mutex `state:"nosave"`
+	mu         dispatcherMutex `state:"nosave"`
 	// +checklocks:mu
 	paused bool
 	// +checklocks:mu
