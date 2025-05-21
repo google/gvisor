@@ -23,7 +23,6 @@ import (
 	"io"
 	"time"
 
-	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/ports"
@@ -88,7 +87,7 @@ type listenContext struct {
 	listenEP *Endpoint
 
 	// hasherMu protects hasher.
-	hasherMu sync.Mutex
+	hasherMu hasherMutex
 	// hasher is the hash function used to generate a SYN cookie.
 	hasher hash.Hash
 

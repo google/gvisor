@@ -285,7 +285,7 @@ func (*Stats) IsEndpointStats() {}
 //
 // +stateify savable
 type sndQueueInfo struct {
-	sndQueueMu sync.Mutex `state:"nosave"`
+	sndQueueMu sndQueueMutex `state:"nosave"`
 	TCPSndBufState
 }
 
@@ -354,7 +354,7 @@ type Endpoint struct {
 	endpointEntry `state:"nosave"`
 
 	// pendingProcessingMu protects pendingProcessing.
-	pendingProcessingMu sync.Mutex `state:"nosave"`
+	pendingProcessingMu pendingProcessingMutex `state:"nosave"`
 
 	// pendingProcessing is true if this endpoint is queued for processing
 	// to a TCP processor.
@@ -374,10 +374,10 @@ type Endpoint struct {
 
 	// lastError represents the last error that the endpoint reported;
 	// access to it is protected by the following mutex.
-	lastErrorMu sync.Mutex `state:"nosave"`
+	lastErrorMu lastErrorMutex `state:"nosave"`
 	lastError   tcpip.Error
 
-	rcvQueueMu sync.Mutex `state:"nosave"`
+	rcvQueueMu rcvQueueMutex `state:"nosave"`
 
 	// +checklocks:rcvQueueMu
 	TCPRcvBufState
@@ -834,11 +834,11 @@ func calculateTTL(route *stack.Route, ipv4TTL uint8, ipv6HopLimit int16) uint8 {
 //
 // +stateify savable
 type keepalive struct {
-	sync.Mutex `state:"nosave"`
-	idle       time.Duration
-	interval   time.Duration
-	count      int
-	unacked    int
+	keepaliveMutex `state:"nosave"`
+	idle           time.Duration
+	interval       time.Duration
+	count          int
+	unacked        int
 	// should never be a zero timer if the endpoint is not closed.
 	timer timer       `state:"nosave"`
 	waker sleep.Waker `state:"nosave"`

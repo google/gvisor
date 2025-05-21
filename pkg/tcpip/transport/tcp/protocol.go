@@ -23,7 +23,6 @@ import (
 	"strings"
 	"time"
 
-	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/header/parse"
@@ -90,7 +89,7 @@ const (
 type protocol struct {
 	stack *stack.Stack
 
-	mu                         sync.RWMutex `state:"nosave"`
+	mu                         protocolRWMutex `state:"nosave"`
 	sackEnabled                bool
 	recovery                   tcpip.TCPRecovery
 	delayEnabled               bool
