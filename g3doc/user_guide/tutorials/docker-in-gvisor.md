@@ -8,8 +8,8 @@ network driver and the bridge network driver are tested and supported.
 
 ### NOTE on runsc setup
 
-To run docker within gvisor, runsc must be enable to to allow raw sockets. This
-is not the default, `--net-raw` must be passed to runsc. To use the following
+To run docker within gvisor, runsc must be enabled to allow raw sockets. This is
+not the default, `--net-raw` must be passed to runsc. To use the following
 tutorial, that means having the following configuration in
 `/etc/docker/daemon.json`:
 
