@@ -382,9 +382,6 @@ type Config struct {
 	// TestOnlyAutosaveResume indicates save resume for syscall tests.
 	TestOnlyAutosaveResume bool `flag:"TESTONLY-autosave-resume"`
 
-	// TestOnlySaveRestoreNetstack indicates netstack should be saved and restored.
-	TestOnlySaveRestoreNetstack bool `flag:"TESTONLY-save-restore-netstack"`
-
 	// RestoreSpecValidation indicates the level of spec validation to be
 	// performed during restore.
 	RestoreSpecValidation RestoreSpecValidationPolicy `flag:"restore-spec-validation"`
@@ -394,6 +391,9 @@ type Config struct {
 
 	// SystrapDisableSyscallPatching disables syscall patching in Systrap.
 	SystrapDisableSyscallPatching bool `flag:"systrap-disable-syscall-patching"`
+
+	// SaveRestoreNetstack indicates whether netstack should be saved and restored.
+	SaveRestoreNetstack bool `flag:"save-restore-netstack"`
 }
 
 func (c *Config) validate() error {
