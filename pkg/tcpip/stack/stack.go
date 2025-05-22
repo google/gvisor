@@ -2009,6 +2009,11 @@ func (s *Stack) Restore() {
 	for _, e := range eps {
 		e.Restore(s)
 	}
+
+	// Make sure all the endpoints are loaded correctly before resuming the
+	// protocol level background workers.
+	tcpip.AsyncLoading.Wait()
+
 	// Now resume any protocol level background workers.
 	for _, p := range s.transportProtocols {
 		if saveRestoreEnabled {

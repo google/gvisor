@@ -15,6 +15,7 @@ RUN gcc -O2 -o test_sticky test_sticky.c
 RUN gcc -O2 -o host_fd host_fd.c
 RUN gcc -O2 -o host_connect host_connect.c
 RUN gcc -O2 -o tcp_server tcp_server.c
+RUN gcc -O2 -o tcp_stress_server tcp_stress_server.c -pthread
 
 # Add nonprivileged regular user named "nonroot".
 RUN groupadd --gid 1337 nonroot && \

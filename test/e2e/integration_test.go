@@ -1223,58 +1223,31 @@ func TestCheckpointResume(t *testing.T) {
 	}
 }
 
-func testCheckpointRestoreListeningConnection(ctx context.Context, t *testing.T, d *dockerutil.Container) {
-	defer d.CleanUp(ctx)
-
-	const port = 9000
-	opts := dockerutil.RunOpts{
-		Image: "basic/integrationtest",
-	}
-
-	// Start the tcp server.
-	if err := d.Spawn(ctx, opts, "./tcp_server"); err != nil {
-		t.Fatalf("docker run failed: %v", err)
-	}
-
-	var (
-		ip   net.IP
-		err  error
-		conn net.Conn
-	)
-	ip, err = d.FindIP(ctx, false)
-	if err != nil {
-		t.Fatalf("docker.FindIP failed: %v", err)
-	}
-	serverIP := ip.String() + ":" + strconv.Itoa(port)
+func connectWithTCPServer(t *testing.T, serverIP string, startPort int, numConn int) {
 	const timeout = 1 * time.Minute
-	for {
-		conn, err = net.DialTimeout("tcp", serverIP, timeout)
-		if err == nil {
+	var conn net.Conn
+	var err error
+
+	for i := range numConn {
+		ip := serverIP + ":" + strconv.Itoa(startPort+i)
+		for {
+			conn, err = net.DialTimeout("tcp", ip, timeout)
+			// Retry to connect to the server if there are any errors.
+			// Connect can fail sometimes when the server is not ready
+			// and is not in listening state when the request was sent.
+			if err != nil {
+				t.Logf("Error connecting to server %s: %v, retrying...", ip, err)
+				continue
+			}
 			break
 		}
+		conn.Close()
 	}
-	conn.Close()
+}
 
-	// Create a snapshot.
-	const checkpointFile = "networktest"
-	if err := d.Checkpoint(ctx, checkpointFile); err != nil {
-		t.Fatalf("docker checkpoint failed: %v", err)
-	}
-	if err := d.WaitTimeout(ctx, defaultWait); err != nil {
-		t.Fatalf("wait failed: %v", err)
-	}
-	d.RestoreInTest(ctx, t, checkpointFile)
-
-	var (
-		newIP   net.IP
-		newConn net.Conn
-	)
-	newIP, err = d.FindIP(ctx, false)
-	if err != nil {
-		t.Fatalf("docker.FindIP failed: %v", err)
-	}
-	newserverIP := newIP.String() + ":" + strconv.Itoa(port)
-	newConn, err = net.DialTimeout("tcp", newserverIP, timeout)
+func connectAndReadWrite(t *testing.T, serverIP string, port int) {
+	newserverIP := serverIP + ":" + strconv.Itoa(port)
+	newConn, err := net.DialTimeout("tcp", newserverIP, 1*time.Minute)
 	if err != nil {
 		t.Fatalf("Error connecting to server: %v", err)
 	}
@@ -1288,7 +1261,51 @@ func testCheckpointRestoreListeningConnection(ctx context.Context, t *testing.T,
 	if _, err := newConn.Write([]byte("Hello!")); err != nil {
 		t.Fatalf("Write failed: %v", err)
 	}
+}
 
+func testCheckpointRestoreListeningConnection(ctx context.Context, t *testing.T, d *dockerutil.Container, fName string, numConn int) {
+	defer d.CleanUp(ctx)
+
+	opts := dockerutil.RunOpts{
+		Image: "basic/integrationtest",
+	}
+	// Start the tcp server.
+	if err := d.Spawn(ctx, opts, fName); err != nil {
+		t.Fatalf("docker run failed: %v", err)
+	}
+
+	ip, err := d.FindIP(ctx, false)
+	if err != nil {
+		t.Fatalf("docker.FindIP failed: %v", err)
+	}
+
+	const port = 9000
+	connectWithTCPServer(t, ip.String(), port, numConn)
+
+	// Create a snapshot.
+	const checkpointFile = "networktest"
+	if err := d.Checkpoint(ctx, checkpointFile); err != nil {
+		t.Fatalf("docker checkpoint failed: %v", err)
+	}
+	if err := d.WaitTimeout(ctx, defaultWait); err != nil {
+		t.Fatalf("wait failed: %v", err)
+	}
+	d.RestoreInTest(ctx, t, checkpointFile)
+
+	var newIP net.IP
+	newIP, err = d.FindIP(ctx, false)
+	if err != nil {
+		t.Fatalf("docker.FindIP failed: %v", err)
+	}
+	if numConn > 1 {
+		connectWithTCPServer(t, newIP.String(), port, numConn)
+		if err := d.Kill(ctx); err != nil {
+			t.Fatalf("Wait failed: %v", err)
+		}
+		return
+	}
+
+	connectAndReadWrite(t, newIP.String(), port)
 	if err := d.Wait(ctx); err != nil {
 		t.Fatalf("Wait failed: %v", err)
 	}
@@ -1303,7 +1320,7 @@ func TestRestoreListenConn(t *testing.T) {
 
 	ctx := context.Background()
 	d := dockerutil.MakeContainer(ctx, t)
-	testCheckpointRestoreListeningConnection(ctx, t, d)
+	testCheckpointRestoreListeningConnection(ctx, t, d, "./tcp_server" /* fName */, 1 /* numConn */)
 }
 
 // Test to check restore of a TCP listening connection with netstack S/R.
@@ -1318,5 +1335,20 @@ func TestRestoreListenConnWithNetstackSR(t *testing.T) {
 
 	ctx := context.Background()
 	d := dockerutil.MakeContainerWithRuntime(ctx, t, "-TESTONLY-save-restore-netstack")
-	testCheckpointRestoreListeningConnection(ctx, t, d)
+	testCheckpointRestoreListeningConnection(ctx, t, d, "./tcp_server" /* fName */, 1 /* numConn */)
+}
+
+// Test to check restore of multiple TCP listening connections with netstack S/R.
+func TestRestoreMultipleListenConnWithNetstackSR(t *testing.T) {
+	if !testutil.IsCheckpointSupported() {
+		t.Skip("Checkpoint is not supported.")
+	}
+	if !testutil.IsRunningWithSaveRestoreNetstack() {
+		t.Skip("Netstack save restore is not supported.")
+	}
+	dockerutil.EnsureDockerExperimentalEnabled()
+
+	ctx := context.Background()
+	d := dockerutil.MakeContainerWithRuntime(ctx, t, "-TESTONLY-save-restore-netstack")
+	testCheckpointRestoreListeningConnection(ctx, t, d, "./tcp_stress_server" /* fName */, 100 /* numConn */)
 }
