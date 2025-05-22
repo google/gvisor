@@ -707,9 +707,10 @@ TEST_P(RawPacketMsgSizeTest, SpliceTooLong) {
   if (IsRunningOnGvisor()) {
     EXPECT_THAT(n, SyscallFailsWithErrno(EMSGSIZE));
   } else {
-    // TODO(gvisor.dev/issue/138): Linux sends out multiple UDP datagrams, each
-    // of the size of a page.
-    EXPECT_THAT(n, SyscallSucceedsWithValue(sizeof(buf)));
+    // Older versions of Linux sends out multiple UDP datagrams, each of the
+    // size of a page. Since Linux 6.5, Linux also returns EMSGSIZE.
+    EXPECT_THAT(n, AnyOf(SyscallFailsWithErrno(EMSGSIZE),
+                         SyscallSucceedsWithValue(sizeof(buf))));
   }
 }
 #endif  // __Fuchsia__
