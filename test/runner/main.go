@@ -405,7 +405,7 @@ func runRunsc(tc *gtest.TestCase, spec *specs.Spec) error {
 		// Create the state file.
 		if *save || *saveResume {
 			if *netstackSR {
-				args = append(args, "--TESTONLY-save-restore-netstack=true")
+				args = append(args, "--save-restore-netstack=true")
 			}
 			saveArgs = args
 			args, dirs, err = prepareSave(args, undeclaredOutputsDir, dirs, 0)

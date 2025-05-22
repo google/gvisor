@@ -1311,7 +1311,7 @@ func testCheckpointRestoreListeningConnection(ctx context.Context, t *testing.T,
 	}
 }
 
-// Test to check restore of a TCP listening connection.
+// Test to check restore of a TCP listening connection without netstack S/R.
 func TestRestoreListenConn(t *testing.T) {
 	if !testutil.IsCheckpointSupported() {
 		t.Skip("Checkpoint is not supported.")
@@ -1334,7 +1334,7 @@ func TestRestoreListenConnWithNetstackSR(t *testing.T) {
 	dockerutil.EnsureDockerExperimentalEnabled()
 
 	ctx := context.Background()
-	d := dockerutil.MakeContainerWithRuntime(ctx, t, "-TESTONLY-save-restore-netstack")
+	d := dockerutil.MakeContainerWithRuntime(ctx, t, "-save-restore-netstack")
 	testCheckpointRestoreListeningConnection(ctx, t, d, "./tcp_server" /* fName */, 1 /* numConn */)
 }
 
@@ -1349,6 +1349,6 @@ func TestRestoreMultipleListenConnWithNetstackSR(t *testing.T) {
 	dockerutil.EnsureDockerExperimentalEnabled()
 
 	ctx := context.Background()
-	d := dockerutil.MakeContainerWithRuntime(ctx, t, "-TESTONLY-save-restore-netstack")
+	d := dockerutil.MakeContainerWithRuntime(ctx, t, "-save-restore-netstack")
 	testCheckpointRestoreListeningConnection(ctx, t, d, "./tcp_stress_server" /* fName */, 100 /* numConn */)
 }
