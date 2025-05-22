@@ -27,13 +27,7 @@ import (
 var testSuiteCompatibility = map[string]cuda.Compatibility{}
 
 // TODO(b/388095023): Enable these tests once they are tested.
-var skippedTestSuites = map[string]string{
-	"3_CUDA_Features":   "TODO: not yet tested",
-	"4_CUDA_Libraries":  "TODO: not yet tested",
-	"5_Domain_Specific": "TODO: not yet tested",
-	"6_Performance":     "TODO: not yet tested",
-	"7_libNVVM":         "TODO: not yet tested",
-}
+var skippedTestSuites = map[string]string{}
 
 var testCompatibility = map[string]cuda.Compatibility{}
 
@@ -44,10 +38,22 @@ var exclusiveTests = map[string]struct{}{}
 // alwaysSkippedTests don't run at all, ever, and are not verified when
 // --cuda_verify_compatibility is set.
 // Each test is mapped to a reason why it should be skipped.
-var alwaysSkippedTests = map[string]string{}
+// TODO(zkoopmans): Enable these tests once they pass.
+var alwaysSkippedTests = map[string]string{
+	"4_CUDA_Libraries/cudaNvSci":           "TODO - Debug",
+	"5_Domain_Specific/simpleD3D11":        "TODO - Debug",
+	"5_Domain_Specific/simpleD3D12":        "TODO - Debug",
+	"5_Domain_Specific/simpleD3D11Texture": "TODO - Debug",
+	"7_libNVVM/syscalls":                   "TODO - Debug",
+	"7_libNVVM/cuda-shared-memory":         "TODO - Debug",
+	"7_libNVVM/device-side-launch":         "TODO - Debug",
+}
 
+// TestCuda12_8 tests basic CUDA workloads for CUDA 12.8.
 func TestCuda12_8(t *testing.T) {
 	ctx := context.Background()
+	const image = "gpu/cuda-tests-12-8"
+
 	cudaVersion, err := dockerutil.MaxSuportedCUDAVersion(ctx, t)
 	if err != nil {
 		t.Fatalf("failed to get CUDA version: %v", err)
@@ -62,7 +68,7 @@ func TestCuda12_8(t *testing.T) {
 		FlakyTests:             flakyTests,
 		ExclusiveTests:         exclusiveTests,
 		AlwaysSkippedTests:     alwaysSkippedTests,
-		Image:                  "gpu/cuda-tests-12-8",
+		Image:                  image,
 	}
 	cuda.RunCudaTests(ctx, t, args)
 }

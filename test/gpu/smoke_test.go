@@ -53,6 +53,8 @@ func TestGPUHello(t *testing.T) {
 
 func TestGPUHello_12_8(t *testing.T) {
 	ctx := context.Background()
+	const image = "gpu/cuda-tests-12-8"
+
 	cudaVersion, err := dockerutil.MaxSuportedCUDAVersion(ctx, t)
 	if err != nil {
 		t.Fatalf("failed to get CUDA version: %v", err)
@@ -61,7 +63,7 @@ func TestGPUHello_12_8(t *testing.T) {
 	if !cudaVersion.IsAtLeast(dockerutil.MustParseCudaVersion("12.8")) {
 		t.Skipf("CUDA version %s is not at least 12.8, skipping test", cudaVersion)
 	}
-	runGPUHello(ctx, t, "gpu/cuda-tests-12-8")
+	runGPUHello(ctx, t, image)
 }
 
 func runGPUHello(ctx context.Context, t *testing.T, image string) {
@@ -87,6 +89,8 @@ func TestCUDASmokeTests(t *testing.T) {
 
 func TestCUDASmokeTests_12_8(t *testing.T) {
 	ctx := context.Background()
+	const image = "gpu/cuda-tests-12-8"
+
 	cudaVersion, err := dockerutil.MaxSuportedCUDAVersion(ctx, t)
 	if err != nil {
 		t.Fatalf("failed to get CUDA version: %v", err)
@@ -94,7 +98,7 @@ func TestCUDASmokeTests_12_8(t *testing.T) {
 	if !cudaVersion.IsAtLeast(dockerutil.MustParseCudaVersion("12.8")) {
 		t.Skipf("CUDA version %s is not at least 12.8, skipping test", cudaVersion)
 	}
-	runCUDASmokeTests(ctx, t, "gpu/cuda-tests-12-8")
+	runCUDASmokeTests(ctx, t, image)
 }
 
 func runCUDASmokeTests(ctx context.Context, t *testing.T, image string) {
