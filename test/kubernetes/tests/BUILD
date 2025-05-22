@@ -29,3 +29,28 @@ go_test(
     ],
     deps = ["//test/kubernetes/k8sctx/kubectlctx"],
 )
+
+go_library(
+    name = "driver",
+    testonly = True,
+    srcs = ["driver_version.go"],
+    deps = [
+        "//test/gpu:gpu_driver_versions_go_proto",
+        "//test/kubernetes/k8sctx",
+        "//test/kubernetes/testcluster",
+        "@io_k8s_api//core/v1:go_default_library",
+        "@org_golang_google_protobuf//encoding/prototext:go_default_library",
+    ],
+)
+
+go_test(
+    name = "driver_test",
+    srcs = ["driver_version_test.go"],
+    library = ":driver",
+    tags = [
+        "local",
+        "noguitar",
+        "notap",
+    ],
+    deps = ["//test/kubernetes/k8sctx/kubectlctx"],
+)

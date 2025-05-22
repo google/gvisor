@@ -635,7 +635,7 @@ func (t *TestCluster) applyCommonPodConfigurations(ctx context.Context, np *Node
 
 	// Figure out which runtime to use for this pod, either by flag override or
 	// autodetection based on the nodepool configuration.
-	var applyRuntime = np.runtime
+	applyRuntime := np.runtime
 	if np.nodePooltype == TestRuntimeNodepoolName && t.testNodepoolRuntimeOverride != "" {
 		applyRuntime = t.testNodepoolRuntimeOverride
 	}
