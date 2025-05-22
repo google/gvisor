@@ -264,10 +264,13 @@ func Load(ctx context.Context, args LoadArgs, extraAuxv []arch.AuxEntry, vdso *V
 		return ImageInfo{}, syserr.NewDynamic(fmt.Sprintf("failed to load %s: %v", args.Filename, err), syserr.FromError(err).ToLinux())
 	}
 	defer file.DecRef(ctx)
-	xattr, err := file.GetXattr(ctx, &vfs.GetXattrOptions{Name: linux.XATTR_SECURITY_CAPABILITY, Size: linux.XATTR_CAPS_SZ_3})
+	fileCaps, err := file.GetXattr(ctx, &vfs.GetXattrOptions{Name: linux.XATTR_SECURITY_CAPABILITY, Size: linux.XATTR_CAPS_SZ_3})
 	switch {
-	case linuxerr.Equals(linuxerr.ENODATA, err), linuxerr.Equals(linuxerr.ENOTSUP, err):
-		xattr = ""
+	case linuxerr.Equals(linuxerr.ENODATA, err), linuxerr.Equals(linuxerr.EOPNOTSUPP, err):
+		// Linux converts EOPNOTSUPP to ENODATA in
+		// security/commoncap.c:get_vfs_caps_from_disk(). We communicate the lack
+		// of file capabilities by an empty string.
+		fileCaps = ""
 	case err != nil:
 		return ImageInfo{}, syserr.NewDynamic(fmt.Sprintf("failed to read file capabilities of %s: %v", args.Filename, err), syserr.FromError(err).ToLinux())
 	}
@@ -355,6 +358,6 @@ func Load(ctx context.Context, args LoadArgs, extraAuxv []arch.AuxEntry, vdso *V
 		OS:       loaded.os,
 		Arch:     ac,
 		Name:     name,
-		FileCaps: xattr,
+		FileCaps: fileCaps,
 	}, nil
 }
