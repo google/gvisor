@@ -99,6 +99,10 @@ func (r *Run) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomman
 	}
 	specutils.LogSpecDebug(spec, conf.OCISeccomp)
 
+	if err := validateProcessSpec(spec.Process); err != nil {
+		return util.Errorf("invalid process spec: %v", err)
+	}
+
 	// Create files from file descriptors.
 	fdMap := make(map[int]*os.File)
 	for _, mapping := range r.passFDs {

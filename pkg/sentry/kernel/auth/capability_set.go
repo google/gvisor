@@ -43,6 +43,16 @@ func CapabilitySetOfMany(cps []linux.Capability) CapabilitySet {
 	return CapabilitySet(cs)
 }
 
+// Add adds the given capability to the CapabilitySet.
+func (cs *CapabilitySet) Add(cp linux.Capability) {
+	*cs |= CapabilitySetOf(cp)
+}
+
+// Clear removes the given capability from the CapabilitySet.
+func (cs *CapabilitySet) Clear(cp linux.Capability) {
+	*cs &= ^CapabilitySetOf(cp)
+}
+
 // VfsCapDataOf returns a VfsCapData containing the file capabilities for the given slice of bytes.
 // For each field of the cap data, which are in the structure of either vfs_cap_data or vfs_ns_cap_data,
 // the bytes are ordered in little endian.
@@ -68,39 +78,28 @@ func VfsCapDataOf(data []byte) (linux.VfsNsCapData, error) {
 	return capData, nil
 }
 
-// CapsFromVfsCaps returns a copy of the given creds with new capability sets
-// by applying the file capability that is specified by capData.
-func CapsFromVfsCaps(capData linux.VfsNsCapData, creds *Credentials) (*Credentials, error) {
-	// If the real or effective user ID of the process is root,
-	// the file inheritable and permitted sets are ignored from
-	// `Capabilities and execution of programs by root` at capabilities(7).
-	if root := creds.UserNamespace.MapToKUID(RootUID); creds.EffectiveKUID == root || creds.RealKUID == root {
-		return creds, nil
+// HandleVfsCaps updates creds based on the given vfsCaps. It returns two
+// booleans; the first indicates whether the effective flag is set, and the second
+// second indicates whether the file capability is applied.
+func HandleVfsCaps(vfsCaps linux.VfsNsCapData, creds *Credentials) (bool, bool, error) {
+	// gVisor does not support ID-mapped mounts and all filesystems are owned by
+	// the initial user namespace. So we an directly cast the root ID to KUID.
+	rootID := KUID(vfsCaps.RootID)
+	if !rootIDOwnsCurrentUserns(creds, rootID) {
+		// Linux skips vfs caps in this situation.
+		return false, false, nil
 	}
-	effective := (capData.MagicEtc & linux.VFS_CAP_FLAGS_EFFECTIVE) > 0
-	permittedCaps := (CapabilitySet(capData.Permitted()) & creds.BoundingCaps) |
-		(CapabilitySet(capData.Inheritable()) & creds.InheritableCaps)
-	// P'(effective) = effective ? P'(permitted) : P'(ambient).
-	// The ambient capabilities has not supported yet in gVisor,
-	// set effective capabilities to 0 when effective bit is false.
-	effectiveCaps := CapabilitySet(0)
-	if effective {
-		effectiveCaps = permittedCaps
+	// Note that ambient capabilities are not yet supported in gVisor.
+	// P'(permitted) = (P(inheritable) & F(inheritable)) | (F(permitted) & P(bounding)) | P'(ambient)
+	creds.PermittedCaps = (CapabilitySet(vfsCaps.Permitted()) & creds.BoundingCaps) |
+		(CapabilitySet(vfsCaps.Inheritable()) & creds.InheritableCaps)
+	effective := (vfsCaps.MagicEtc & linux.VFS_CAP_FLAGS_EFFECTIVE) > 0
+	// Insufficient to execute correctly. Linux only returns EPERM when effective
+	// flag is set.
+	if effective && (CapabilitySet(vfsCaps.Permitted()) & ^creds.PermittedCaps) != 0 {
+		return effective, true, linuxerr.EPERM
 	}
-	// Insufficient to execute correctly.
-	if (CapabilitySet(capData.Permitted()) & ^permittedCaps) != 0 {
-		return nil, linuxerr.EPERM
-	}
-	// If the capabilities don't change, it will return the creds'
-	// original copy.
-	if creds.PermittedCaps == permittedCaps && creds.EffectiveCaps == effectiveCaps {
-		return creds, nil
-	}
-	// The credentials object is immutable.
-	newCreds := creds.Fork()
-	newCreds.PermittedCaps = permittedCaps
-	newCreds.EffectiveCaps = effectiveCaps
-	return newCreds, nil
+	return effective, true, nil
 }
 
 // FixupVfsCapDataOnSet may convert the given value to v3 file capabilities. It
@@ -172,6 +171,51 @@ func rootIDOwnsCurrentUserns(creds *Credentials, rootID KUID) bool {
 		}
 	}
 	return false
+}
+
+// HandlePrivilegedRoot updates creds for a privileged root user as per
+// `Capabilities and execution of programs by root` in capabilities(7).
+// It returns true if the file effective bit should be considered set.
+func HandlePrivilegedRoot(creds *Credentials, hasVFSCaps bool, filename string) bool {
+	// gVisor currently does not support SECURE_NOROOT secure bit since
+	// PR_SET_SECUREBITS is not supported. So no need to check here.
+	root := creds.UserNamespace.MapToKUID(RootUID)
+	if hasVFSCaps && creds.RealKUID != root && creds.EffectiveKUID == root {
+		log.Warningf("File %q has both SUID bit and file capabilities set, not raising all capabilities.", filename)
+		return false
+	}
+	if creds.RealKUID == root || creds.EffectiveKUID == root {
+		// P'(permitted) = P(inheritable) | P(bounding)
+		creds.PermittedCaps = creds.BoundingCaps | creds.InheritableCaps
+	}
+	// Linux only sets the effective bit if the effective KUID is root.
+	return creds.EffectiveKUID == root
+}
+
+// UpdateCredsForNewTask updates creds for a new task as per capabilities(7).
+func UpdateCredsForNewTask(creds *Credentials, fileCaps string, filename string) error {
+	// Clear the permitted capability set. It is initialized below via
+	// HandleVfsCaps() and HandlePrivilegedRoot().
+	creds.PermittedCaps = 0
+	hasVFSCaps := false
+	setEffective := false
+	if len(fileCaps) != 0 {
+		vfsCaps, err := VfsCapDataOf([]byte(fileCaps))
+		if err != nil {
+			return err
+		}
+		setEffective, hasVFSCaps, err = HandleVfsCaps(vfsCaps, creds)
+		if err != nil {
+			return err
+		}
+	}
+	setEffective = HandlePrivilegedRoot(creds, hasVFSCaps, filename) || setEffective
+	// P'(effective) = effective ? P'(permitted) : P'(ambient).
+	creds.EffectiveCaps = 0
+	if setEffective {
+		creds.EffectiveCaps = creds.PermittedCaps
+	}
+	return nil
 }
 
 // TaskCapabilities represents all the capability sets for a task. Each of these

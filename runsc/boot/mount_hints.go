@@ -185,6 +185,12 @@ func (m *MountHint) ShouldShareMount() bool {
 		(m.Share == container || m.Share == pod)
 }
 
+// IsSandboxLocal returns true if this mount is only used by the sandbox and
+// has no external observers.
+func (m *MountHint) IsSandboxLocal() bool {
+	return m.Share == container || m.Share == pod
+}
+
 // checkCompatible verifies that shared mount is compatible with master.
 // Master options must be the same or less restrictive than the container mount,
 // e.g. master can be 'rw' while container mounts as 'ro'.

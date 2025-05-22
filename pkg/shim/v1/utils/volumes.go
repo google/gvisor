@@ -16,9 +16,12 @@ package utils
 
 import (
 	"fmt"
+	"io"
+	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/containerd/log"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.dev/gvisor/runsc/specutils"
 )
@@ -33,6 +36,10 @@ const (
 	// emptyDirVolumesDir is the directory inside kubeletPodsDir/{uid}/volumes/
 	// that hosts all the EmptyDir volumes used by the pod.
 	emptyDirVolumesDir = "kubernetes.io~empty-dir"
+
+	// selfFilestorePrefix is the prefix for the filestore files used for
+	// self-backed mounts.
+	selfFilestorePrefix = ".gvisor.filestore."
 )
 
 // The directory structure for volumes is as follows:
@@ -81,6 +88,11 @@ func volumeSourceKey(volume string) string {
 	return volumeKeyPrefix + volume + ".source"
 }
 
+// volumeShareKey constructs the annotation key for volume share type.
+func volumeShareKey(volume string) string {
+	return volumeKeyPrefix + volume + ".share"
+}
+
 // volumePath searches the volume path in the kubelet pod directory.
 func volumePath(volume, uid string) (string, error) {
 	// TODO: Support subpath when gvisor supports pod volume bind mount.
@@ -121,17 +133,12 @@ func isVolumePath(volume, path string) (bool, error) {
 // runsc should use these two setting to infer EmptyDir medium:
 //   - tmpfs annotation type + tmpfs mount type = memory-backed EmptyDir
 //   - tmpfs annotation type + bind mount type = disk-backed EmptyDir
+//
+// NOTE(b/416567832): Some CSI drivers (like GCS FUSE driver) use EmptyDirs to
+// communicate with the Pod over a UDS. While not foolproof, we detect such
+// EmptyDirs by checking if the host directory is not empty and turn off the
+// EmptyDir optimization for them by configuring them as normal bind mounts.
 func UpdateVolumeAnnotations(s *specs.Spec) (bool, error) {
-	var uid string
-	if IsSandbox(s) {
-		var err error
-		uid, err = podUID(s)
-		if err != nil {
-			// Skip if we can't get pod UID, because this doesn't work
-			// for containerd 1.1.
-			return false, nil
-		}
-	}
 	updated := false
 	for k, v := range s.Annotations {
 		if !isVolumeKey(k) {
@@ -141,34 +148,51 @@ func UpdateVolumeAnnotations(s *specs.Spec) (bool, error) {
 			continue
 		}
 		volume := volumeName(k)
-		if uid != "" {
+		if IsSandbox(s) {
 			// This is the root (first) container. Mount annotations are only
 			// consumed from this container's spec. So fix mount annotations by:
 			// 1. Adding source annotation.
 			// 2. Fixing type annotation.
+			uid, err := podUID(s)
+			if err != nil {
+				// Skip if we can't get pod UID, because this doesn't work
+				// for containerd 1.1.
+				return false, nil
+			}
 			path, err := volumePath(volume, uid)
 			if err != nil {
 				return false, fmt.Errorf("get volume path for %q: %w", volume, err)
 			}
 			s.Annotations[volumeSourceKey(volume)] = path
 			if strings.Contains(path, emptyDirVolumesDir) {
-				s.Annotations[k] = "tmpfs" // See note about EmptyDir.
+				if isEmptyDirEmpty(path) {
+					s.Annotations[k] = "tmpfs" // See note about EmptyDir.
+				} else {
+					// This is a non-empty EmptyDir volume. Configure it as a bind mount.
+					log.L.Infof("Non-empty EmptyDir volume %q, configuring bind mount annotations", volume)
+					s.Annotations[k] = "bind"
+					s.Annotations[volumeShareKey(volume)] = "shared"
+				}
 			}
 			updated = true
 		} else {
 			// This is a sub-container. Mount annotations are ignored. So no need to
-			// bother fixing those.
+			// bother fixing those. An error is returned for sandbox if source
+			// annotation is not successfully applied, so it is guaranteed that the
+			// source annotation for sandbox has already been successfully applied at
+			// this point. Update mount type in spec.Mounts if required.
 			for i := range s.Mounts {
-				// An error is returned for sandbox if source annotation is not
-				// successfully applied, so it is guaranteed that the source annotation
-				// for sandbox has already been successfully applied at this point.
-				//
 				// The volume name is unique inside a pod, so matching without podUID
 				// is fine here.
 				//
 				// TODO: Pass podUID down to shim for containers to do more accurate
 				// matching.
 				if yes, _ := isVolumePath(volume, s.Mounts[i].Source); yes {
+					if strings.Contains(s.Mounts[i].Source, emptyDirVolumesDir) && !isEmptyDirEmpty(s.Mounts[i].Source) {
+						// This is a non-empty EmptyDir volume. Don't change the mount type.
+						log.L.Infof("Non-empty EmptyDir volume %q, not changing its mount type", volume)
+						continue
+					}
 					// Container mount type must match the mount type specified by
 					// admission controller. See note about EmptyDir.
 					specutils.ChangeMountType(&s.Mounts[i], v)
@@ -185,6 +209,31 @@ func UpdateVolumeAnnotations(s *specs.Spec) (bool, error) {
 	}
 
 	return updated, nil
+}
+
+func isEmptyDirEmpty(path string) bool {
+	f, err := os.Open(path)
+	if err != nil {
+		log.L.Warningf("failed to open %q to check if it is empty: %v", path, err)
+		return true
+	}
+	defer f.Close()
+
+	names, err := f.Readdirnames(2)
+	if len(names) == 0 && err == io.EOF {
+		return true
+	}
+	if err != io.EOF && err != nil {
+		log.L.Warningf("failed to readdirnames %q to check if it is empty: %v", path, err)
+		return true
+	}
+	if len(names) == 1 && strings.HasPrefix(names[0], selfFilestorePrefix) {
+		// The gVisor filestore file is the only file in the directory. This means
+		// that a previous container already created a shared mount for this
+		// EmptyDir. This is expected and should be considered empty.
+		return true
+	}
+	return false
 }
 
 // configureShm sets up annotations to mount /dev/shm as a pod shared tmpfs

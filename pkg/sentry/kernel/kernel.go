@@ -1088,16 +1088,7 @@ func (k *Kernel) CreateProcess(args CreateProcessArgs) (*ThreadGroup, ThreadID, 
 	if se != nil {
 		return nil, 0, errors.New(se.String())
 	}
-	var vfsCaps linux.VfsNsCapData
-	if len(image.FileCaps()) != 0 {
-		var err error
-		vfsCaps, err = auth.VfsCapDataOf([]byte(image.FileCaps()))
-		if err != nil {
-			return nil, 0, err
-		}
-	}
-	creds, err := auth.CapsFromVfsCaps(vfsCaps, args.Credentials)
-	if err != nil {
+	if err := auth.UpdateCredsForNewTask(args.Credentials, image.FileCaps(), args.Filename); err != nil {
 		return nil, 0, err
 	}
 	args.FDTable.IncRef()
@@ -1109,7 +1100,7 @@ func (k *Kernel) CreateProcess(args CreateProcessArgs) (*ThreadGroup, ThreadID, 
 		TaskImage:        image,
 		FSContext:        fsContext,
 		FDTable:          args.FDTable,
-		Credentials:      creds,
+		Credentials:      args.Credentials,
 		NetworkNamespace: k.RootNetworkNamespace(),
 		AllowedCPUMask:   sched.NewFullCPUSet(k.applicationCores),
 		UTSNamespace:     args.UTSNamespace,

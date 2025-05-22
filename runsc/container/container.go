@@ -965,7 +965,7 @@ func (c *Container) initGoferConfs(ovlConf config.Overlay2, mountHints *boot.Pod
 		if specutils.IsReadonlyMount(c.Spec.Mounts[i].Options) {
 			overlayMedium = config.NoOverlay
 		}
-		if hint := mountHints.FindMount(c.Spec.Mounts[i].Source); hint != nil {
+		if hint := mountHints.FindMount(c.Spec.Mounts[i].Source); hint != nil && hint.IsSandboxLocal() {
 			// Note that we want overlayMedium=self even if this is a read-only mount so that
 			// the shared mount is created correctly. Future containers may mount this writably.
 			overlayMedium = config.SelfOverlay
