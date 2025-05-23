@@ -60,9 +60,9 @@ can add your own rules).
 
 If you are using Kubernetes, the steps above must be done on every node that has
 gVisor enabled. Luckily, this can be done for you automatically using
-[Falco's Helm chart](https://github.com/falcosecurity/charts/blob/master/falco/README.md).
+[Falco's Helm chart](https://github.com/falcosecurity/charts/tree/master/charts/falco).
 You can find more details, like available options, in the
-[*About gVisor*](https://github.com/falcosecurity/charts/blob/master/falco/README.md#about-gvisor)
+[*About gVisor*](https://github.com/falcosecurity/charts/tree/master/charts/falco#about-gvisor)
 section.
 
 Here is a quick example using
