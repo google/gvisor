@@ -44,13 +44,16 @@ const (
 	flagOCISeccomp        = "oci-seccomp"
 	flagOverlay2          = "overlay2"
 	flagAllowFlagOverride = "allow-flag-override"
+
+	defaultRootDir      = "/var/run/runsc"
+	xdgRuntimeDirEnvVar = "XDG_RUNTIME_DIR"
 )
 
 // RegisterFlags registers flags used to populate Config.
 func RegisterFlags(flagSet *flag.FlagSet) {
 	// Although these flags are not part of the OCI spec, they are used by
 	// Docker, and thus should not be changed.
-	flagSet.String("root", "", "root directory for storage of container state.")
+	flagSet.String("root", "", fmt.Sprintf("root directory for storage of container state, defaults are $%s/runsc, %s.", xdgRuntimeDirEnvVar, defaultRootDir))
 	flagSet.String("log", "", "file path where internal debug information is written, default is stdout.")
 	flagSet.String("log-format", "text", "log format: text (default), json, or json-k8s.")
 	flagSet.Bool(flagDebug, false, "enable debug logging.")
@@ -252,9 +255,9 @@ func NewFromFlags(flagSet *flag.FlagSet) (*Config, error) {
 
 	if len(conf.RootDir) == 0 {
 		// If not set, set default root dir to something (hopefully) user-writeable.
-		conf.RootDir = "/var/run/runsc"
+		conf.RootDir = defaultRootDir
 		// NOTE: empty values for XDG_RUNTIME_DIR should be ignored.
-		if runtimeDir := os.Getenv("XDG_RUNTIME_DIR"); runtimeDir != "" {
+		if runtimeDir := os.Getenv(xdgRuntimeDirEnvVar); runtimeDir != "" {
 			conf.RootDir = filepath.Join(runtimeDir, "runsc")
 		}
 	}
