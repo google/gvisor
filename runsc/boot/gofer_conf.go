@@ -124,19 +124,24 @@ func (l *GoferMountConfLowerType) Set(v string) error {
 
 // GoferMountConf describes how a gofer mount is configured in the sandbox.
 type GoferMountConf struct {
-	Upper GoferMountConfUpperType `json:"upper"`
 	Lower GoferMountConfLowerType `json:"lower"`
+	Upper GoferMountConfUpperType `json:"upper"`
+	Size  string                  `json:"size,omitempty"`
 }
 
 // String returns a human-readable string representing the gofer mount config.
 func (g GoferMountConf) String() string {
-	return fmt.Sprintf("%s:%s", g.Lower, g.Upper)
+	res := fmt.Sprintf("%s:%s", g.Lower, g.Upper)
+	if g.Size != "" {
+		res += ":size=" + g.Size
+	}
+	return res
 }
 
 // Set sets the value. Set(String()) should be idempotent.
 func (g *GoferMountConf) Set(v string) error {
 	parts := strings.Split(v, ":")
-	if len(parts) != 2 {
+	if len(parts) < 2 || len(parts) > 3 {
 		return fmt.Errorf("invalid gofer mount config format: %q", v)
 	}
 	if err := g.Lower.Set(parts[0]); err != nil {
@@ -145,8 +150,17 @@ func (g *GoferMountConf) Set(v string) error {
 	if err := g.Upper.Set(parts[1]); err != nil {
 		return err
 	}
+	g.Size = ""
+	if len(parts) >= 3 {
+		sizeArg := parts[2]
+		size, cut := strings.CutPrefix(sizeArg, "size=")
+		if !cut {
+			return fmt.Errorf("invalid gofer mount config format: %q", v)
+		}
+		g.Size = size
+	}
 	if !g.valid() {
-		return fmt.Errorf("invalid gofer mount config: %+v", g)
+		return fmt.Errorf("invalid gofer mount config: %q", v)
 	}
 	return nil
 }
