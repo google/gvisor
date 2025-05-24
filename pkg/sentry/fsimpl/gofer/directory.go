@@ -51,7 +51,7 @@ func (d *dentry) isDir() bool {
 // +checklocks:d.childrenMu
 func (d *dentry) cacheNewChildLocked(child *dentry, name string) {
 	d.IncRef() // reference held by child on its parent
-	genericSetParentAndName(d.fs, child, d, name)
+	genericSetParentAndName(d.inode.fs, child, d, name)
 	if d.children == nil {
 		d.children = make(map[string]*dentry)
 	} else if c, ok := d.children[name]; ok {
@@ -77,7 +77,7 @@ func (d *dentry) cacheNegativeLookupLocked(name string) {
 	// this makes remote lookup unavoidable), or if d.isSynthetic() (in which
 	// case the only files in the directory are those for which a dentry exists
 	// in d.children). Instead, just delete any previously-cached dentry.
-	if d.fs.opts.interop == InteropModeShared || d.isSynthetic() {
+	if d.inode.fs.opts.interop == InteropModeShared || d.isSynthetic() {
 		delete(d.children, name)
 		return
 	}
@@ -124,30 +124,32 @@ type createSyntheticOpts struct {
 // newSyntheticDentry creates a synthetic file with the given name.
 func (fs *filesystem) newSyntheticDentry(opts *createSyntheticOpts) *dentry {
 	now := fs.clock.Now().Nanoseconds()
+	inode := new(inode)
+	inode.fs = fs
+	inode.ino = fs.nextIno()
+	inode.mode.Store(uint32(opts.mode))
+	inode.uid.Store(uint32(opts.kuid))
+	inode.gid.Store(uint32(opts.kgid))
+	inode.blockSize.Store(hostarch.PageSize)
+	inode.atime.Store(now)
+	inode.mtime.Store(now)
+	inode.ctime.Store(now)
+	inode.btime.Store(now)
+	inode.nlink.Store(2)
+	inode.readFD.Store(-1)
+	inode.writeFD.Store(-1)
+	inode.mmapFD.Store(-1)
 	child := &dentry{
-		refs:      atomicbitops.FromInt64(1), // held by parent.
-		fs:        fs,
-		ino:       fs.nextIno(),
-		mode:      atomicbitops.FromUint32(uint32(opts.mode)),
-		uid:       atomicbitops.FromUint32(uint32(opts.kuid)),
-		gid:       atomicbitops.FromUint32(uint32(opts.kgid)),
-		blockSize: atomicbitops.FromUint32(hostarch.PageSize), // arbitrary
-		atime:     atomicbitops.FromInt64(now),
-		mtime:     atomicbitops.FromInt64(now),
-		ctime:     atomicbitops.FromInt64(now),
-		btime:     atomicbitops.FromInt64(now),
-		readFD:    atomicbitops.FromInt32(-1),
-		writeFD:   atomicbitops.FromInt32(-1),
-		mmapFD:    atomicbitops.FromInt32(-1),
-		nlink:     atomicbitops.FromUint32(2),
+		refs:  atomicbitops.FromInt64(1), // held by parent.
+		inode: inode,
 	}
 	switch opts.mode.FileType() {
 	case linux.S_IFDIR:
 		// Nothing else needs to be done.
 	case linux.S_IFSOCK:
-		child.endpoint = opts.endpoint
+		child.inode.endpoint = opts.endpoint
 	case linux.S_IFIFO:
-		child.pipe = opts.pipe
+		child.inode.pipe = opts.pipe
 	default:
 		panic(fmt.Sprintf("failed to create synthetic file of unrecognized type: %v", opts.mode.FileType()))
 	}
@@ -224,8 +226,8 @@ func (d *dentry) getDirents(ctx context.Context) ([]vfs.Dirent, error) {
 
 	// filesystem.renameMu is needed for d.parent, and must be locked before
 	// d.opMu.
-	d.fs.renameMu.RLock()
-	defer d.fs.renameMu.RUnlock()
+	d.inode.fs.renameMu.RLock()
+	defer d.inode.fs.renameMu.RUnlock()
 	d.opMu.RLock()
 	defer d.opMu.RUnlock()
 
@@ -248,24 +250,24 @@ func (d *dentry) getDirents(ctx context.Context) ([]vfs.Dirent, error) {
 		{
 			Name:    ".",
 			Type:    linux.DT_DIR,
-			Ino:     uint64(d.ino),
+			Ino:     uint64(d.inode.ino),
 			NextOff: 1,
 		},
 		{
 			Name:    "..",
-			Type:    uint8(parent.mode.Load() >> 12),
-			Ino:     uint64(parent.ino),
+			Type:    uint8(parent.inode.mode.Load() >> 12),
+			Ino:     uint64(parent.inode.ino),
 			NextOff: 2,
 		},
 	}
 	var realChildren map[string]struct{}
 	if !d.isSynthetic() {
-		if d.syntheticChildren != 0 && d.fs.opts.interop == InteropModeShared {
+		if d.syntheticChildren != 0 && d.inode.fs.opts.interop == InteropModeShared {
 			// Record the set of children d actually has so that we don't emit
 			// duplicate entries for synthetic children.
 			realChildren = make(map[string]struct{})
 		}
-		d.handleMu.RLock()
+		d.inode.handleMu.RLock()
 		if !d.isReadHandleOk() {
 			// This should not be possible because a readable handle should
 			// have been opened when the calling directoryFD was opened.
@@ -274,7 +276,7 @@ func (d *dentry) getDirents(ctx context.Context) ([]vfs.Dirent, error) {
 		err := d.getDirentsLocked(ctx, func(name string, key inoKey, dType uint8) {
 			dirent := vfs.Dirent{
 				Name:    name,
-				Ino:     d.fs.inoFromKey(key),
+				Ino:     d.inode.fs.inoFromKey(key),
 				NextOff: int64(len(dirents) + 1),
 				Type:    dType,
 			}
@@ -283,7 +285,7 @@ func (d *dentry) getDirents(ctx context.Context) ([]vfs.Dirent, error) {
 				realChildren[name] = struct{}{}
 			}
 		})
-		d.handleMu.RUnlock()
+		d.inode.handleMu.RUnlock()
 		if err != nil {
 			return nil, err
 		}
@@ -300,8 +302,8 @@ func (d *dentry) getDirents(ctx context.Context) ([]vfs.Dirent, error) {
 			}
 			dirents = append(dirents, vfs.Dirent{
 				Name:    child.name,
-				Type:    uint8(child.mode.Load() >> 12),
-				Ino:     uint64(child.ino),
+				Type:    uint8(child.inode.mode.Load() >> 12),
+				Ino:     uint64(child.inode.ino),
 				NextOff: int64(len(dirents) + 1),
 			})
 		}
