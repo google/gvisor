@@ -119,7 +119,13 @@ func (fs *filesystem) newDirectfsDentry(controlFD int) (*dentry, error) {
 		_ = unix.Close(controlFD)
 		return nil, err
 	}
-	inoKey := inoKeyFromStat(&stat)
+	return fs.newDirectfsDentryWithStat(controlFD, &stat)
+}
+
+// newDirectfsDentryWithStat is the same as newDirectfsDentry, but takes a
+// pre-fetched unix.Stat_t.
+func (fs *filesystem) newDirectfsDentryWithStat(controlFD int, stat *unix.Stat_t) (*dentry, error) {
+	inoKey := inoKeyFromStat(stat)
 	d := &directfsDentry{
 		dentry: dentry{
 			fs:        fs,
@@ -476,15 +482,25 @@ func (d *directfsDentry) getCreatedChild(name string, uid auth.KUID, gid auth.KG
 		return nil, err
 	}
 
-	if err := fchown(childFD, uid, gid); err != nil {
+	var stat unix.Stat_t
+	if err := unix.Fstat(childFD, &stat); err != nil {
+		log.Warningf("failed to fstat(2) FD %d: %v", childFD, err)
 		deleteChild()
 		_ = unix.Close(childFD)
 		return nil, err
 	}
 
+	if stat.Uid != uint32(uid) || stat.Gid != uint32(gid) {
+		if err := fchown(childFD, uid, gid); err != nil {
+			deleteChild()
+			_ = unix.Close(childFD)
+			return nil, err
+		}
+	}
+
 	var child *dentry
 	if createDentry {
-		child, err = d.fs.newDirectfsDentry(childFD)
+		child, err = d.fs.newDirectfsDentryWithStat(childFD, &stat)
 		if err != nil {
 			// Ownership of childFD was passed to newDirectDentry(), so no need to
 			// clean that up.

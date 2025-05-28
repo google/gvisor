@@ -403,7 +403,7 @@ func (fd *controlFDLisa) SetStat(stat lisafs.SetStatReq) (failureMask uint32, fa
 		if stat.Mask&unix.STATX_GID != 0 {
 			gid = stat.GID
 		}
-		if err := fchown(fd.hostFD, uid, gid); err != nil {
+		if err := fchown(fd.hostFD, uid, gid, nil /* stat */); err != nil {
 			log.Warningf("SetStat fchown failed %q, err: %v", fd.Node().FilePath(), err)
 			failureMask |= stat.Mask & (unix.STATX_UID | unix.STATX_GID)
 			failureErr = err
@@ -574,14 +574,14 @@ func (fd *controlFDLisa) OpenCreate(mode linux.FileMode, uid lisafs.UID, gid lis
 	})
 	defer cu.Clean()
 
-	// Set the owners as requested by the client.
-	if err := fchown(childHostFD, uid, gid); err != nil {
-		return nil, linux.Statx{}, nil, -1, err
-	}
-
 	// Get stat results.
 	childStat, err := fstatTo(childHostFD)
 	if err != nil {
+		return nil, linux.Statx{}, nil, -1, err
+	}
+
+	// Set the owners as requested by the client.
+	if err := fchown(childHostFD, uid, gid, &childStat); err != nil {
 		return nil, linux.Statx{}, nil, -1, err
 	}
 
@@ -621,21 +621,18 @@ func (fd *controlFDLisa) Mkdir(mode linux.FileMode, uid lisafs.UID, gid lisafs.G
 	})
 	defer cu.Clean()
 
-	// Open directory to change ownership.
 	childDirFd, err := tryOpen(func(flags int) (int, error) {
 		return unix.Openat(fd.hostFD, name, flags|unix.O_DIRECTORY, 0)
 	})
 	if err != nil {
 		return nil, linux.Statx{}, err
 	}
-	if err := fchown(childDirFd, uid, gid); err != nil {
+	childDirStat, err := fstatTo(childDirFd)
+	if err != nil {
 		unix.Close(childDirFd)
 		return nil, linux.Statx{}, err
 	}
-
-	// Get stat results.
-	childDirStat, err := fstatTo(childDirFd)
-	if err != nil {
+	if err := fchown(childDirFd, uid, gid, &childDirStat); err != nil {
 		unix.Close(childDirFd)
 		return nil, linux.Statx{}, err
 	}
@@ -664,26 +661,23 @@ func (fd *controlFDLisa) Mknod(mode linux.FileMode, uid lisafs.UID, gid lisafs.G
 	})
 	defer cu.Clean()
 
-	// Open file to change ownership.
 	childFD, err := tryOpen(func(flags int) (int, error) {
 		return unix.Openat(fd.hostFD, name, flags, 0)
 	})
 	if err != nil {
 		return nil, linux.Statx{}, err
 	}
-	if err := fchown(childFD, uid, gid); err != nil {
-		unix.Close(childFD)
-		return nil, linux.Statx{}, err
-	}
-
-	// Get stat results.
 	childStat, err := fstatTo(childFD)
 	if err != nil {
 		unix.Close(childFD)
 		return nil, linux.Statx{}, err
 	}
-	cu.Release()
+	if err := fchown(childFD, uid, gid, &childStat); err != nil {
+		unix.Close(childFD)
+		return nil, linux.Statx{}, err
+	}
 
+	cu.Release()
 	return newControlFDLisa(childFD, fd, name, mode).FD(), childStat, nil
 }
 
@@ -700,21 +694,20 @@ func (fd *controlFDLisa) Symlink(name string, target string, uid lisafs.UID, gid
 	})
 	defer cu.Clean()
 
-	// Open symlink to change ownership.
 	symlinkFD, err := unix.Openat(fd.hostFD, name, unix.O_PATH|openFlags, 0)
 	if err != nil {
 		return nil, linux.Statx{}, err
 	}
-	if err := fchown(symlinkFD, uid, gid); err != nil {
-		unix.Close(symlinkFD)
-		return nil, linux.Statx{}, err
-	}
-
 	symlinkStat, err := fstatTo(symlinkFD)
 	if err != nil {
 		unix.Close(symlinkFD)
 		return nil, linux.Statx{}, err
 	}
+	if err := fchown(symlinkFD, uid, gid, &symlinkStat); err != nil {
+		unix.Close(symlinkFD)
+		return nil, linux.Statx{}, err
+	}
+
 	cu.Release()
 	return newControlFDLisa(symlinkFD, fd, name, linux.ModeSymlink).FD(), symlinkStat, nil
 }
@@ -959,13 +952,13 @@ func (fd *controlFDLisa) BindAt(name string, sockType uint32, mode linux.FileMod
 		_ = unix.Close(sockFileFD)
 	})
 
-	if err := fchown(sockFileFD, uid, gid); err != nil {
-		return nil, linux.Statx{}, nil, -1, err
-	}
-
 	// Stat the socket.
 	sockStat, err := fstatTo(sockFileFD)
 	if err != nil {
+		return nil, linux.Statx{}, nil, -1, err
+	}
+
+	if err := fchown(sockFileFD, uid, gid, &sockStat); err != nil {
 		return nil, linux.Statx{}, nil, -1, err
 	}
 
@@ -1223,10 +1216,15 @@ func tryOpen(open func(int) (int, error)) (hostFD int, err error) {
 	return
 }
 
-func fchown(hostFD int, uid lisafs.UID, gid lisafs.GID) error {
+func fchown(hostFD int, uid lisafs.UID, gid lisafs.GID, stat *linux.Statx) error {
 	// "If the owner or group is specified as -1, then that ID is not changed"
 	// - chown(2). Only bother making the syscall if the owner is changing.
 	if !uid.Ok() && !gid.Ok() {
+		return nil
+	}
+	if stat != nil &&
+		stat.Mask&unix.STATX_UID != 0 && stat.UID == uint32(uid) &&
+		stat.Mask&unix.STATX_GID != 0 && stat.GID == uint32(gid) {
 		return nil
 	}
 	u := -1
