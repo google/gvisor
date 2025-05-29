@@ -15,6 +15,7 @@
 package systrap
 
 import (
+	"errors"
 	"fmt"
 	"runtime"
 	"sync"
@@ -277,6 +278,25 @@ func (s *subprocess) handlePtraceSyscallRequest(req any) {
 		if err != nil {
 			handlePtraceSyscallRequestError(req, "prctl: %v", err)
 			return
+		}
+
+		// Enable syscall user dispatch for trapping guest system calls.
+		// This mechanism, introduced in kernel 5.11, is generally more
+		// efficient than seccomp. On old kernels, syscalls will be
+		// trapped by seccomp.
+		_, err = t.syscallIgnoreInterrupt(&t.initRegs, unix.SYS_PRCTL,
+			arch.SyscallArgument{Value: unix.PR_SET_SYSCALL_USER_DISPATCH},
+			arch.SyscallArgument{Value: unix.PR_SYS_DISPATCH_ON},
+			arch.SyscallArgument{Value: stubStart},
+			arch.SyscallArgument{Value: stubROMapEnd - stubStart},
+			arch.SyscallArgument{Value: 0})
+		if err != nil {
+			if errors.Is(err, unix.EINVAL) {
+				t.Debugf("PR_SET_SYSCALL_USER_DISPATCH isn't supported. User syscalls will be trapped by seccomp.")
+			} else {
+				handlePtraceSyscallRequestError(req, "prctl: %v", err)
+				return
+			}
 		}
 
 		id, ok := s.sysmsgStackPool.Get()
