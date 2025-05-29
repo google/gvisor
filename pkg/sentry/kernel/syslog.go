@@ -81,6 +81,11 @@ func (s *syslog) Log() []byte {
 		"Recruiting cron-ies...",
 		"Verifying that no non-zero bytes made their way into /dev/zero...",
 		"Accelerating teletypewriter to 9600 baud...",
+		"DeFUSEing fork bombs...",
+		"Deleting VFS and rebuilding it from scratch...",
+		"Asking an AI agent to fix the bugs...",
+		"Rewriting the kernel in Rust...",
+		"Politicking the oom killer...",
 	}
 
 	selectMessage := func() string {
@@ -103,11 +108,6 @@ func (s *syslog) Log() []byte {
 		time += rand.Float64() / 2
 		s.msg = append(s.msg, []byte(fmt.Sprintf(format, time, selectMessage()))...)
 	}
-
-	time += rand.Float64() / 2
-	s.msg = append(s.msg, []byte(fmt.Sprintf(format, time, "Setting up VFS..."))...)
-	time += rand.Float64() / 2
-	s.msg = append(s.msg, []byte(fmt.Sprintf(format, time, "Setting up FUSE..."))...)
 
 	time += rand.Float64() / 2
 	s.msg = append(s.msg, []byte(fmt.Sprintf(format, time, "Ready!"))...)
