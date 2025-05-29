@@ -258,6 +258,7 @@ func TestRootfsHintHappy(t *testing.T) {
 			RootfsPrefix + "source":  imagePath,
 			RootfsPrefix + "type":    erofs.Name,
 			RootfsPrefix + "overlay": config.MemoryOverlay.String(),
+			RootfsPrefix + "options": "size=100m",
 		},
 	}
 	hint, err := NewRootfsHint(spec)
@@ -274,6 +275,9 @@ func TestRootfsHintHappy(t *testing.T) {
 	}
 	if hint.Overlay != config.MemoryOverlay {
 		t.Errorf("rootfs overlay, want: %q, got: %q", config.MemoryOverlay, hint.Overlay)
+	}
+	if hint.Size != "100m" {
+		t.Errorf("rootfs size, want: 100m, got: %q", hint.Size)
 	}
 }
 

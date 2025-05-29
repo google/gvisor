@@ -238,6 +238,9 @@ func (p *PodMountHints) FindMount(mountSrc string) *MountHint {
 type RootfsHint struct {
 	Mount   specs.Mount
 	Overlay config.OverlayMedium
+	// Size of overlay tmpfs. Passed as `size={Size}` to tmpfs mount.
+	// Use default if unspecified.
+	Size string
 }
 
 func (r *RootfsHint) setSource(val string) error {
@@ -258,6 +261,30 @@ func (r *RootfsHint) setType(val string) error {
 	return nil
 }
 
+func (r *RootfsHint) setOption(key, val string) error {
+	switch key {
+	case "size":
+		r.Size = val
+	default:
+		return fmt.Errorf("invalid rootfs option: %s=%s", key, val)
+	}
+	return nil
+}
+
+func (r *RootfsHint) setOptions(val string) error {
+	for _, option := range strings.Split(val, ",") {
+		parts := strings.SplitN(option, "=", 2)
+		if len(parts) != 2 {
+			return fmt.Errorf("rootfs options must be key=value: %s", option)
+		}
+		key, val := parts[0], parts[1]
+		if err := r.setOption(key, val); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (r *RootfsHint) setField(key, val string) error {
 	switch key {
 	case "source":
@@ -266,6 +293,8 @@ func (r *RootfsHint) setField(key, val string) error {
 		return r.setType(val)
 	case "overlay":
 		return r.Overlay.Set(val)
+	case "options":
+		return r.setOptions(val)
 	default:
 		return fmt.Errorf("invalid rootfs annotation: %s=%s", key, val)
 	}

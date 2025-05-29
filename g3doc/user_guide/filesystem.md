@@ -58,6 +58,9 @@ Self-backed rootfs overlay (`--overlay2=root:self`) is enabled by default in
 runsc for performance. If you need to propagate rootfs changes to the host
 filesystem, then disable it with `--overlay2=none`.
 
+Overlay has `size=` option which is passed as `size=` tmpfs mount option.
+For example, `--overlay2=root:memory,size=2g`.
+
 ## Directfs
 
 Directfs is a feature that allows the sandbox process to directly access the
