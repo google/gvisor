@@ -37,6 +37,7 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/devices/memdev"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy"
+	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
 	"gvisor.dev/gvisor/pkg/sentry/devices/tpuproxy"
 	"gvisor.dev/gvisor/pkg/sentry/devices/tpuproxy/vfio"
 	"gvisor.dev/gvisor/pkg/sentry/devices/ttydev"
@@ -154,7 +155,7 @@ func registerFilesystems(k *kernel.Kernel, info *containerInfo) error {
 		return fmt.Errorf("registering fusedev: %w", err)
 	}
 
-	if err := nvproxyRegisterDevices(info, vfsObj); err != nil {
+	if err := nvproxyRegisterDevices(info, vfsObj, k.NvidiaDriverVersion); err != nil {
 		return err
 	}
 
@@ -1476,7 +1477,7 @@ func createDeviceFile(ctx context.Context, creds *auth.Credentials, info *contai
 	return dev.CreateDeviceFile(ctx, vfsObj, creds, root, devSpec.Path, major, minor, mode, devSpec.UID, devSpec.GID)
 }
 
-func nvproxyRegisterDevices(info *containerInfo, vfsObj *vfs.VirtualFilesystem) error {
+func nvproxyRegisterDevices(info *containerInfo, vfsObj *vfs.VirtualFilesystem, nvidiaDriverVersion nvconf.DriverVersion) error {
 	if !specutils.NVProxyEnabled(info.spec, info.conf) {
 		return nil
 	}
@@ -1488,7 +1489,7 @@ func nvproxyRegisterDevices(info *containerInfo, vfsObj *vfs.VirtualFilesystem) 
 	if err != nil {
 		return fmt.Errorf("reserving device major number for nvidia-uvm: %w", err)
 	}
-	if err := nvproxy.Register(vfsObj, info.nvidiaDriverVersion, driverCaps, uvmDevMajor, true /* useDevGofer */); err != nil {
+	if err := nvproxy.Register(vfsObj, nvidiaDriverVersion, driverCaps, uvmDevMajor, true /* useDevGofer */); err != nil {
 		return fmt.Errorf("registering nvproxy driver: %w", err)
 	}
 	info.nvidiaUVMDevMajor = uvmDevMajor

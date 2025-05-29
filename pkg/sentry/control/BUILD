@@ -6,7 +6,7 @@ package(
 )
 
 proto_library(
-    name = "control",
+    name = "control_api",
     srcs = ["control.proto"],
     visibility = ["//visibility:public"],
     deps = [
@@ -27,14 +27,16 @@ go_library(
         "pprof.go",
         "proc.go",
         "state.go",
+        "state_impl.go",
         "usage.go",
     ],
     visibility = [
         "//:sandbox",
     ],
     deps = [
-        ":control_go_proto",
+        ":control_api_go_proto",
         "//pkg/abi/linux",
+        "//pkg/cleanup",
         "//pkg/context",
         "//pkg/eventchannel",
         "//pkg/fd",
@@ -43,8 +45,12 @@ go_library(
         "//pkg/metric",
         "//pkg/metric:metric_go_proto",
         "//pkg/prometheus",
+        "//pkg/sentry/devices/memdev",
+        "//pkg/sentry/devices/nvproxy",
+        "//pkg/sentry/fdcollector",
         "//pkg/sentry/fdimport",
         "//pkg/sentry/fsimpl/host",
+        "//pkg/sentry/fsimpl/pipefs",
         "//pkg/sentry/fsimpl/user",
         "//pkg/sentry/fsmetric",
         "//pkg/sentry/kernel",
@@ -59,6 +65,7 @@ go_library(
         "//pkg/sentry/watchdog",
         "//pkg/sync",
         "//pkg/tcpip/link/sniffer",
+        "//pkg/timing",
         "//pkg/urpc",
         "//pkg/usermem",
         "@org_golang_google_protobuf//types/known/timestamppb",

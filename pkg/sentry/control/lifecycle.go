@@ -24,7 +24,7 @@ import (
 	"gvisor.dev/gvisor/pkg/eventchannel"
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/log"
-	pb "gvisor.dev/gvisor/pkg/sentry/control/control_go_proto"
+	pb "gvisor.dev/gvisor/pkg/sentry/control/control_api_go_proto"
 	"gvisor.dev/gvisor/pkg/sentry/fdimport"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/user"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"

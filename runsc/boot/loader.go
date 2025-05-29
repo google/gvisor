@@ -149,10 +149,6 @@ type containerInfo struct {
 
 	// nvidiaUVMDevMajor is the device major number used for nvidia-uvm.
 	nvidiaUVMDevMajor uint32
-
-	// nvidiaDriverVersion is the NVIDIA driver ABI version to use for
-	// communicating with NVIDIA devices on the host.
-	nvidiaDriverVersion nvconf.DriverVersion
 }
 
 type loaderState int
@@ -472,12 +468,11 @@ func New(args Args) (*Loader, error) {
 
 	containerName := l.registerContainer(args.Spec, args.ID)
 	l.root = containerInfo{
-		cid:                 args.ID,
-		containerName:       containerName,
-		conf:                args.Conf,
-		spec:                args.Spec,
-		goferMountConfs:     args.GoferMountConfs,
-		nvidiaDriverVersion: args.NvidiaDriverVersion,
+		cid:             args.ID,
+		containerName:   containerName,
+		conf:            args.Conf,
+		spec:            args.Spec,
+		goferMountConfs: args.GoferMountConfs,
 	}
 
 	// Make host FDs stable between invocations. Host FDs must map to the exact
@@ -532,7 +527,10 @@ func New(args Args) (*Loader, error) {
 			log.Warningf("Application cudaMallocManaged() is flaky on -platform=kvm, see gvisor.dev/docs/user_guide/gpu/#platforms")
 		}
 	}
-	l.k = &kernel.Kernel{Platform: p}
+	l.k = &kernel.Kernel{
+		Platform:            p,
+		NvidiaDriverVersion: args.NvidiaDriverVersion,
+	}
 
 	// Create memory file.
 	mf, err := createMemoryFile(args.Conf.AppHugePages, args.HostTHP)
@@ -1099,16 +1097,15 @@ func (l *Loader) startSubcontainer(spec *specs.Spec, conf *config.Config, cid st
 	containerName := l.registerContainerLocked(spec, cid)
 	l.k.RegisterContainerName(cid, containerName)
 	info := &containerInfo{
-		cid:                 cid,
-		containerName:       containerName,
-		conf:                conf,
-		spec:                spec,
-		goferFDs:            goferFDs,
-		devGoferFD:          devGoferFD,
-		goferFilestoreFDs:   goferFilestoreFDs,
-		goferMountConfs:     goferMountConfs,
-		nvidiaUVMDevMajor:   l.root.nvidiaUVMDevMajor,
-		nvidiaDriverVersion: l.root.nvidiaDriverVersion,
+		cid:               cid,
+		containerName:     containerName,
+		conf:              conf,
+		spec:              spec,
+		goferFDs:          goferFDs,
+		devGoferFD:        devGoferFD,
+		goferFilestoreFDs: goferFilestoreFDs,
+		goferMountConfs:   goferMountConfs,
+		nvidiaUVMDevMajor: l.root.nvidiaUVMDevMajor,
 	}
 	var err error
 	info.procArgs, err = createProcessArgs(cid, spec, conf, creds, l.k, pidns)

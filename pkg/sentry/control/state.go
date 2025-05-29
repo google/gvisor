@@ -17,12 +17,39 @@ package control
 import (
 	"errors"
 	"fmt"
+	"strings"
+	"time"
 
+	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/cleanup"
+	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/sentry/fdcollector"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/pipefs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/pkg/sentry/limits"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/state"
+	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sentry/watchdog"
+	"gvisor.dev/gvisor/pkg/timing"
 	"gvisor.dev/gvisor/pkg/urpc"
+)
+
+// SaveRestoreExecMode is the mode for the save/restore binary.
+type SaveRestoreExecMode string
+
+const (
+	// DefaultSaveRestoreExecTimeout is the default timeout for the save/restore
+	// binary.
+	DefaultSaveRestoreExecTimeout = 10 * time.Minute
+	// SaveRestoreExecSave is the save mode for the save/restore exec.
+	SaveRestoreExecSave SaveRestoreExecMode = "save"
+	// SaveRestoreExecRestore is the restore mode for the save/restore exec.
+	SaveRestoreExecRestore SaveRestoreExecMode = "restore"
+	// SaveRestoreExecResume is the resume mode for the save/restore binary.
+	SaveRestoreExecResume SaveRestoreExecMode = "resume"
+
+	saveRestoreExecEnvVar = "GVISOR_SAVE_RESTORE_AUTO_EXEC_MODE"
 )
 
 // ErrInvalidFiles is returned when the urpc call to Save does not include an
@@ -59,6 +86,18 @@ type SaveOpts struct {
 	// Resume indicates if the sandbox process should continue running
 	// after checkpointing.
 	Resume bool
+
+	// SaveRestoreExecArgv is the argv of the save/restore binary split by spaces.
+	// The first element is the path to the binary.
+	SaveRestoreExecArgv string
+
+	// SaveRestoreExecTimeout is the timeout for waiting for the save/restore
+	// binary.
+	SaveRestoreExecTimeout time.Duration
+
+	// SaveRestoreExecContainerID is the ID of the container that the
+	// save/restore binary executes in.
+	SaveRestoreExecContainerID string
 }
 
 // Save saves the running system.
@@ -97,5 +136,197 @@ func (s *State) Save(o *SaveOpts, _ *struct{}) error {
 		}
 		defer saveOpts.PagesFile.Close()
 	}
-	return saveOpts.Save(s.Kernel.SupervisorContext(), s.Kernel, s.Watchdog)
+	if err := PreSave(s.Kernel, o); err != nil {
+		return err
+	}
+	if err := saveOpts.Save(s.Kernel.SupervisorContext(), s.Kernel, s.Watchdog); err != nil {
+		return err
+	}
+	if o.Resume {
+		err = PostResume(s.Kernel, nil)
+	}
+	return err
+}
+
+// PreSave is called before saving the kernel.
+func PreSave(k *kernel.Kernel, o *SaveOpts) error {
+	if o.SaveRestoreExecArgv != "" {
+		saveRestoreExecArgv := strings.Split(o.SaveRestoreExecArgv, " ")
+		if err := ConfigureSaveRestoreExec(k, saveRestoreExecArgv, o.SaveRestoreExecTimeout, o.SaveRestoreExecContainerID); err != nil {
+			return fmt.Errorf("failed to configure save/restore binary: %w", err)
+		}
+		if err := SaveRestoreExec(k, SaveRestoreExecSave); err != nil {
+			return fmt.Errorf("failed to exec save/restore binary: %w", err)
+		}
+	}
+	return preSaveImpl(k, o)
+}
+
+// PostResume is called after resuming the kernel.
+//
+// Precondition: The kernel should be running.
+func PostResume(k *kernel.Kernel, timeline *timing.Timeline) error {
+	if k.IsPaused() {
+		// The kernel is still paused (double-pause can happen with Docker which
+		// calls pause first and then checkpoint command). The final resume command
+		// will invoke save/restore binary if necessary.
+		return nil
+	}
+	if k.TaskSet().IsExiting() {
+		// This can occur when kernel is saved with control.SaveOpts.Resume=false.
+		// We can not invoke the save/restore binary on such a kernel.
+		return nil
+	}
+	if err := SaveRestoreExec(k, SaveRestoreExecResume); err != nil {
+		return fmt.Errorf("failed to wait for save/restore binary: %w", err)
+	}
+	return postResumeImpl(k, timeline)
+}
+
+// PostRestore is called after restoring the kernel.
+//
+// Precondition: The kernel should be running.
+func PostRestore(k *kernel.Kernel, timeline *timing.Timeline) error {
+	if k.IsPaused() {
+		// The kernel is still paused (double-pause can happen with Docker which
+		// calls pause first and then checkpoint command). The final resume command
+		// will invoke cuda-checkpoint if necessary.
+		return nil
+	}
+	if k.TaskSet().IsExiting() {
+		// This can occur when kernel is saved with control.SaveOpts.Resume=false.
+		// We can not invoke cuda-checkpoint on such a kernel.
+		return nil
+	}
+	if err := SaveRestoreExec(k, SaveRestoreExecRestore); err != nil {
+		return fmt.Errorf("failed to wait for save/restore binary: %w", err)
+	}
+	return postRestoreImpl(k, timeline)
+}
+
+// SaveRestoreExec creates a new process that executes the save/restore
+// binary specified by k.SaveRestoreExecConfig and waits for it to finish.
+//
+// Precondition: The kernel should be running; k.SetSaveRestoreExecConfig should
+// be setup with an argv, otherwise this function is a no-op.
+func SaveRestoreExec(k *kernel.Kernel, mode SaveRestoreExecMode) error {
+	if k.SaveRestoreExecConfig == nil {
+		return nil
+	}
+
+	leader := k.SaveRestoreExecConfig.LeaderTask
+	argv := k.SaveRestoreExecConfig.Argv
+	timeout := k.SaveRestoreExecConfig.Timeout
+	sctx := k.SupervisorContext()
+	contID := leader.ContainerID()
+	mntns := leader.MountNamespace()
+	if mntns == nil || !mntns.TryIncRef() {
+		log.Warningf("PID %d in container %q has exited, skipping CUDA checkpoint for it", leader.ThreadGroup().ID(), contID)
+		return nil
+	}
+	mntns.IncRef()
+	root := mntns.Root(sctx)
+	cu := cleanup.Make(func() {
+		root.DecRef(sctx)
+	})
+	defer cu.Clean()
+	ctx := vfs.WithRoot(sctx, root)
+	cu.Add(func() {
+		mntns.DecRef(ctx)
+	})
+
+	fdTable := k.NewFDTable()
+	cu.Add(func() {
+		fdTable.DecRef(sctx)
+	})
+	var execOut *fdcollector.Agent
+	rfd, wfd, err := pipefs.NewConnectedPipeFDs(ctx, k.PipeMount(), 0 /* flags */)
+	if err != nil {
+		log.Warningf("Failed to create stdout/stderr pipe for %s: %v", argv[0], err)
+	} else {
+		if _, err := fdTable.NewFDAt(ctx, 1, wfd, kernel.FDFlags{}); err != nil {
+			log.Warningf("Failed to make pipe stdout for %s: %v", argv[0], err)
+		}
+		if _, err := fdTable.NewFDAt(ctx, 2, wfd, kernel.FDFlags{}); err != nil {
+			log.Warningf("Failed to make pipe stderr for %s: %v", argv[0], err)
+		}
+		wfd.DecRef(ctx)
+		execOut = fdcollector.NewAgent(ctx, rfd, argv[0]) // transfers ownership of rfd
+		cu.Add(execOut.Stop)
+	}
+	// TODO(b/419041893): Support running the save/restore binary with container
+	// env vars without relying on the Saver().
+	var envv []string
+	if k.Saver() != nil {
+		envv = k.Saver().SpecEnviron(contID)
+	}
+
+	proc := Proc{
+		Kernel: k,
+	}
+	execArgs := ExecArgs{
+		Filename:       argv[0],
+		Argv:           argv,
+		Envv:           append(envv, fmt.Sprintf("%s=%s", saveRestoreExecEnvVar, mode)),
+		ContainerID:    contID,
+		MountNamespace: mntns,
+		PIDNamespace:   k.RootPIDNamespace(),
+		Limits:         limits.NewLimitSet(),
+		FDTable:        fdTable,
+	}
+	tg, _, _, err := ExecAsync(&proc, &execArgs)
+	if err != nil {
+		return fmt.Errorf("failed to exec save/restore binary: %w", err)
+	}
+
+	waitC := make(chan struct{})
+	go func() {
+		tg.WaitExited()
+		waitC <- struct{}{}
+	}()
+	select {
+	case <-waitC:
+		if tg.ExitStatus() != 0 {
+			return fmt.Errorf("%v exited with non-zero status %d", argv[0], tg.ExitStatus())
+		}
+	case <-time.After(timeout):
+		tg.SendSignal(&linux.SignalInfo{Signo: int32(linux.SIGKILL)})
+		return fmt.Errorf("%s timed out after %v", argv[0], timeout)
+	}
+	log.Debugf("save/restore binary %s output: %s", argv[0], execOut.String())
+	return nil
+}
+
+// ConfigureSaveRestoreExec sets the configuration for the save/restore binary.
+// If containerID is empty, the global init process will be used for the
+// save/restore binary's leader task.
+func ConfigureSaveRestoreExec(k *kernel.Kernel, argv []string, timeout time.Duration, containerID string) error {
+	if k.SaveRestoreExecConfig != nil {
+		return fmt.Errorf("save/restore binary is already set")
+	}
+	k.SaveRestoreExecConfig = &kernel.SaveRestoreExecConfig{
+		Argv:    argv,
+		Timeout: timeout,
+	}
+
+	var leader *kernel.Task
+	if containerID != "" {
+		for _, tg := range k.RootPIDNamespace().ThreadGroups() {
+			// Find all processes with no parent (root of execution).
+			if tg.Leader().Parent() == nil {
+				cid := tg.Leader().ContainerID()
+				if cid == containerID {
+					leader = tg.Leader()
+					break
+				}
+			}
+		}
+		if leader == nil {
+			return fmt.Errorf("failed to find process associated with container %s", containerID)
+		}
+	} else {
+		leader = k.GlobalInit().Leader()
+	}
+	k.SaveRestoreExecConfig.LeaderTask = leader
+	return nil
 }

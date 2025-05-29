@@ -1,4 +1,4 @@
-// Copyright 2024 The gVisor Authors.
+// Copyright 2025 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -15,18 +15,21 @@
 //go:build !false
 // +build !false
 
-package boot
+package control
 
 import (
-	specs "github.com/opencontainers/runtime-spec/specs-go"
-	"gvisor.dev/gvisor/pkg/sentry/fsimpl/proc"
-	"gvisor.dev/gvisor/runsc/config"
+	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/pkg/timing"
 )
 
-func newProcInternalData(conf *config.Config, _ *specs.Spec) *proc.InternalData {
-	return &proc.InternalData{
-		GVisorMarkerFile: conf.GVisorMarkerFile,
-	}
+func preSaveImpl(k *kernel.Kernel, o *SaveOpts) error {
+	return nil
 }
 
-func (l *Loader) kernelInitExtra() {}
+func postRestoreImpl(k *kernel.Kernel, _ *timing.Timeline) error {
+	return nil
+}
+
+func postResumeImpl(k *kernel.Kernel, _ *timing.Timeline) error {
+	return nil
+}

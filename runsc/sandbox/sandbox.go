@@ -1469,8 +1469,11 @@ func (s *Sandbox) Checkpoint(cid string, imagePath string, direct bool, sfOpts s
 		FilePayload: urpc.FilePayload{
 			Files: files,
 		},
-		HavePagesFile: len(files) > 1,
-		Resume:        sfOpts.Resume,
+		HavePagesFile:              len(files) > 1,
+		Resume:                     sfOpts.Resume,
+		SaveRestoreExecArgv:        sfOpts.SaveRestoreExecArgv,
+		SaveRestoreExecTimeout:     sfOpts.SaveRestoreExecTimeout,
+		SaveRestoreExecContainerID: sfOpts.SaveRestoreExecContainerID,
 	}
 
 	if err := s.call(boot.ContMgrCheckpoint, &opt, nil); err != nil {
