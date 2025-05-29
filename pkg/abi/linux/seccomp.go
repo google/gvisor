@@ -80,7 +80,7 @@ func (a BPFAction) String() string {
 	case SECCOMP_RET_USER_NOTIF:
 		return "unotify"
 	}
-	return fmt.Sprintf("invalid action: %#x", a)
+	return fmt.Sprintf("invalid action: %#x", uint32(a))
 }
 
 // Data returns the SECCOMP_RET_DATA portion of the action.
