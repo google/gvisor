@@ -1278,12 +1278,26 @@ func (d *dentry) setStat(ctx context.Context, creds *auth.Credentials, opts *vfs
 	d.metadataMu.Lock()
 	defer d.metadataMu.Unlock()
 
+	isOwnerChanging := false
+	if stat.Mask&linux.STATX_UID != 0 {
+		if stat.UID == d.uid.RacyLoad() {
+			stat.Mask &^= linux.STATX_UID
+		} else {
+			isOwnerChanging = true
+		}
+	}
+	if stat.Mask&linux.STATX_GID != 0 {
+		if stat.GID == d.gid.RacyLoad() {
+			stat.Mask &^= linux.STATX_GID
+		} else {
+			isOwnerChanging = true
+		}
+	}
+
 	// As with Linux, if the UID, GID, or file size is changing, we have to
 	// clear permission bits. Note that when set, clearSGID may cause
 	// permissions to be updated.
-	clearSGID := (stat.Mask&linux.STATX_UID != 0 && stat.UID != d.uid.Load()) ||
-		(stat.Mask&linux.STATX_GID != 0 && stat.GID != d.gid.Load()) ||
-		stat.Mask&linux.STATX_SIZE != 0
+	clearSGID := isOwnerChanging || stat.Mask&linux.STATX_SIZE != 0
 	if clearSGID {
 		if stat.Mask&linux.STATX_MODE != 0 {
 			stat.Mode = uint16(vfs.ClearSUIDAndSGID(uint32(stat.Mode)))
