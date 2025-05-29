@@ -301,9 +301,13 @@ func ReadMounts(f *os.File) ([]specs.Mount, error) {
 }
 
 // ChangeMountType changes m.Type to the specified type. It may do necessary
-// amends to m.Options.
-func ChangeMountType(m *specs.Mount, newType string) {
-	m.Type = newType
+// amends to m.Options. It returns true if m was modified.
+func ChangeMountType(m *specs.Mount, newType string) bool {
+	updated := false
+	if m.Type != newType {
+		m.Type = newType
+		updated = true
+	}
 
 	// OCI spec allows bind mounts to be specified in options only. So if new type
 	// is not bind, remove bind/rbind from options.
@@ -315,10 +319,13 @@ func ChangeMountType(m *specs.Mount, newType string) {
 		for _, opt := range m.Options {
 			if opt != "rbind" && opt != "bind" {
 				newOpts = append(newOpts, opt)
+			} else {
+				updated = true
 			}
 		}
 		m.Options = newOpts
 	}
+	return updated
 }
 
 // Capabilities takes in spec and returns a TaskCapabilities corresponding to
