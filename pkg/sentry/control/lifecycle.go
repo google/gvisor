@@ -40,12 +40,12 @@ type Lifecycle struct {
 	// Kernel is the kernel where the tasks belong to.
 	Kernel *kernel.Kernel
 
+	// mu protects the fields below.
+	mu sync.RWMutex
+
 	// ShutdownCh is the channel used to signal the sentry to shutdown
 	// the sentry/sandbox.
 	ShutdownCh chan struct{}
-
-	// mu protects the fields below.
-	mu sync.RWMutex
 
 	// MountNamespacesMap is a map of container id/names and the mount
 	// namespaces.
@@ -398,7 +398,12 @@ func (l *Lifecycle) reap(containerID string, tg *kernel.ThreadGroup) {
 
 // Shutdown sends signal to destroy the sentry/sandbox.
 func (l *Lifecycle) Shutdown(_, _ *struct{}) error {
-	close(l.ShutdownCh)
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.ShutdownCh != nil {
+		close(l.ShutdownCh)
+		l.ShutdownCh = nil
+	}
 	return nil
 }
 
