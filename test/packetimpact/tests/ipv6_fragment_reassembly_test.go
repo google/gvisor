@@ -143,6 +143,7 @@ func TestIPv6FragmentReassembly(t *testing.T) {
 					})
 			}
 
+			time.Sleep(time.Second)
 			var bytesReceived int
 			reassembledPayload := make([]byte, test.ipPayloadLen)
 			for {
