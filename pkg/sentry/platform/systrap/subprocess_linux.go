@@ -67,14 +67,6 @@ func attachedThread(flags uintptr, defaultAction linux.BPFAction) (*thread, erro
 							unix.CLONE_VM |
 							unix.CLONE_PTRACE |
 							linux.SIGKILL)},
-					// Allow creation of new threads within a single address space (used by address spaces).
-					seccomp.PerArg{seccomp.EqualTo(
-						unix.CLONE_FILES |
-							unix.CLONE_FS |
-							unix.CLONE_SIGHAND |
-							unix.CLONE_THREAD |
-							unix.CLONE_PTRACE |
-							unix.CLONE_VM)},
 				},
 
 				// For the initial process creation.
@@ -85,6 +77,12 @@ func attachedThread(flags uintptr, defaultAction linux.BPFAction) (*thread, erro
 				unix.SYS_PRCTL: seccomp.Or{
 					seccomp.PerArg{seccomp.EqualTo(unix.PR_SET_PDEATHSIG), seccomp.EqualTo(unix.SIGKILL)},
 					seccomp.PerArg{seccomp.EqualTo(linux.PR_SET_NO_NEW_PRIVS), seccomp.EqualTo(1)},
+					seccomp.PerArg{
+						seccomp.EqualTo(unix.PR_SET_SYSCALL_USER_DISPATCH),
+						seccomp.EqualTo(unix.PR_SYS_DISPATCH_ON),
+						seccomp.EqualTo(stubStart),
+						seccomp.EqualTo(stubROMapEnd - stubStart),
+					},
 				},
 				unix.SYS_GETPPID: seccomp.MatchAll{},
 
