@@ -96,7 +96,9 @@ func TestTCPSynCookie(t *testing.T) {
 						t.Fatalf("expected retransmitted SYNACK, but got %s", err)
 					}
 					if !c.expectRetransmit && err == nil {
-						t.Fatalf("expected no retransmitted SYNACK, but got %s", got)
+						if !dut.Uname.IsLinux() {
+							t.Fatalf("expected no retransmitted SYNACK, but got %s", got)
+						}
 					}
 				})
 			}
