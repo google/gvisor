@@ -1296,9 +1296,10 @@ func (c *containerMounter) makeMountPoint(
 	defer root.DecRef(ctx)
 
 	target := &vfs.PathOperation{
-		Root:  root,
-		Start: root,
-		Path:  fspath.Parse(dest),
+		Root:               root,
+		Start:              root,
+		Path:               fspath.Parse(dest),
+		FollowFinalSymlink: true,
 	}
 
 	fs := c.k.VFS()
@@ -1309,9 +1310,9 @@ func (c *containerMounter) makeMountPoint(
 	case err == nil:
 		if mode.IsDir() != rootMode.IsDir() {
 			if rootMode.IsDir() {
-				return fmt.Errorf("mountpoint %q isn't a directory", dest)
+				return fmt.Errorf("mountpoint %q isn't a directory, got mode %v", dest, mode)
 			} else {
-				return fmt.Errorf("mountpoint %q isn't not a file", dest)
+				return fmt.Errorf("mountpoint %q isn't not a file, got mode %v", dest, mode)
 			}
 		}
 		// Target already exists.
@@ -1322,6 +1323,8 @@ func (c *containerMounter) makeMountPoint(
 		return fmt.Errorf("stat failed for %q during mountpoint creation: %w", dest, err)
 	}
 
+	// FollowFinalSymlink should be false to create new file or directory.
+	target.FollowFinalSymlink = false
 	mkdirOpts := &vfs.MkdirOptions{Mode: 0755, ForSyntheticMountpoint: true}
 
 	// Make sure the parent directory of target exists.
