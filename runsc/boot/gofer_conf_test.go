@@ -175,3 +175,28 @@ func TestGoferConfFlags(t *testing.T) {
 		}
 	}
 }
+
+func TestGoferMountConfSetGet(t *testing.T) {
+	t.Run("Without size", func(t *testing.T) {
+		conf := GoferMountConf{}
+		err := conf.Set("lisafs:anon")
+		if err != nil {
+			t.Fatalf("Expect success: %v", err)
+		}
+		s := conf.String()
+		if s != "lisafs:anon" {
+			t.Fatalf("Expected lisafs:anon, got %s", s)
+		}
+	})
+	t.Run("With size", func(t *testing.T) {
+		conf := GoferMountConf{}
+		err := conf.Set("lisafs:anon:size=1719")
+		if err != nil {
+			t.Fatalf("Expect success: %v", err)
+		}
+		s := conf.String()
+		if s != "lisafs:anon:size=1719" {
+			t.Fatalf("Expected lisafs:anon:size=1719, got %s", s)
+		}
+	})
+}
