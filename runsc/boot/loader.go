@@ -566,8 +566,9 @@ func New(args Args) (*Loader, error) {
 		return nil, fmt.Errorf("creating network: %w", err)
 	}
 
-	// S/R is not supported for hostinet.
-	if l.root.conf.Network != config.NetworkHost && args.Conf.SaveRestoreNetstack {
+	// S/R is not supported for hostinet and plugin network stack.
+	netMode := l.root.conf.Network
+	if netMode != config.NetworkHost && netMode != config.NetworkPlugin && args.Conf.SaveRestoreNetstack {
 		l.saveRestoreNet = true
 		if err := netns.Stack().EnableSaveRestore(); err != nil {
 			return nil, fmt.Errorf("enable s/r: %w", err)
