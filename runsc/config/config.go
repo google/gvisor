@@ -394,6 +394,9 @@ type Config struct {
 
 	// SaveRestoreNetstack indicates whether netstack should be saved and restored.
 	SaveRestoreNetstack bool `flag:"save-restore-netstack"`
+
+	// Nftables enables support for nftables to be used instead of iptables.
+	Nftables bool `flag:"TESTONLY-nftables"`
 }
 
 func (c *Config) validate() error {
