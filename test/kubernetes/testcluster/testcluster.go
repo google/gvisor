@@ -67,13 +67,22 @@ const (
 	// TestRuntimeNodepoolName is the value that marks a "test-runtime-nodepool", or a nodepool where
 	// w/ the runtime under test.
 	TestRuntimeNodepoolName NodePoolType = "test-runtime-nodepool"
+
 	// ClientNodepoolName is the value that marks a client nodepool. Usually this is a plain GKE
 	// nodepool
 	ClientNodepoolName NodePoolType = "client-nodepool"
+
 	// TertiaryNodepoolName is the value that marks the tertiary nodepool.
 	// This could either be a plain GKE nodepool or could be gVisor-enabled,
 	// as configured during test range creation.
 	TertiaryNodepoolName NodePoolType = "tertiary-nodepool"
+
+	// RestoreNodepoolName is the value that marks a nodepool that is used to
+	// restore pod snapshots. Optional, but if set, it will be configured in
+	// exactly the same way as the test-runtime nodepool. Its goal is to simply
+	// be a different nodepool from the test-runtime nodepool, in order to
+	// enforce that pod restores cross over the node boundary.
+	RestoreNodepoolName NodePoolType = "restore-nodepool"
 )
 
 // Nodepool keys.
@@ -624,6 +633,12 @@ func (t *TestCluster) ConfigurePodForClientNodepool(ctx context.Context, pod *v1
 // nodepool.
 func (t *TestCluster) ConfigurePodForTertiaryNodepool(ctx context.Context, pod *v13.Pod) (*v13.Pod, error) {
 	return t.configurePodForNodepool(ctx, pod, TertiaryNodepoolName)
+}
+
+// ConfigurePodForRestoreNodepool configures the pod to run on the restore
+// nodepool.
+func (t *TestCluster) ConfigurePodForRestoreNodepool(ctx context.Context, pod *v13.Pod) (*v13.Pod, error) {
+	return t.configurePodForNodepool(ctx, pod, RestoreNodepoolName)
 }
 
 func (t *TestCluster) applyCommonPodConfigurations(ctx context.Context, np *NodePool, podSpec *v13.PodSpec) error {

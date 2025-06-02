@@ -33,6 +33,11 @@ runs. Specifically, you need:
     dependencies should run there to minimize benchmark noise).
     *   These nodes may also be labeled `runtime=$RUNTIME`; this label will have
         the same behavior as it does on other nodepools.
+*   Optional: A set of 1 or more nodes labeled `nodepool-type=restore-nodepool`
+    and `cloud.google.com/gke-nodepool=restore-nodepool`, where pods can be
+    restored for tests involving pod snapshots. If this nodepool exists, its
+    configuration will be identical to the `test-runtime-nodepool`, other than
+    its name.
 
 The cluster should also support setting `runtimeClassName` to `gvisor` to run
 gVisor-sandboxed pods.

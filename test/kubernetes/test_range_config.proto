@@ -31,6 +31,12 @@ message TestRangeSpec {
   // user configuration.
   NodePool tertiary = 8;
 
+  // restore is an optional nodepool in the cluster, used as a restore target
+  // for benchmarks involving pod snapshots.
+  // If true, it will be configured in exactly the same way as the test_runtime
+  // nodepool, other than its name.
+  bool restore = 9;
+
   // versions are the GKE patch versions to use for the clusters. The number
   // of clusters created will be num(versions) * replicas.
   repeated string versions = 4;
