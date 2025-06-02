@@ -230,6 +230,20 @@ go_library(
         "neighbor_entry_list.go",
         "neighbor_entry_mutex.go",
         "neighborstate_string.go",
+        "nft_bitwise.go",
+        "nft_byteorder.go",
+        "nft_comparison.go",
+        "nft_counter.go",
+        "nft_immediate.go",
+        "nft_last.go",
+        "nft_metaload.go",
+        "nft_payload_load.go",
+        "nft_payload_set.go",
+        "nft_ranged.go",
+        "nft_route.go",
+        "nftables.go",
+        "nftables_types.go",
+        "nftinterp.go",
         "nic.go",
         "nic_mutex.go",
         "nic_stats.go",
@@ -258,6 +272,7 @@ go_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
+        "//pkg/abi/linux",
         "//pkg/atomicbitops",
         "//pkg/buffer",
         "//pkg/ilist",
@@ -361,5 +376,23 @@ go_test(
         "//pkg/tcpip/link/ethernet",
         "//pkg/tcpip/link/veth",
         "//pkg/tcpip/stack",
+    ],
+)
+
+go_test(
+    name = "nftables_test",
+    srcs = [
+        "nftables_test.go",
+        "nftinterp_test.go",
+    ],
+    library = ":stack",
+    deps = [
+        "//pkg/abi/linux",
+        "//pkg/buffer",
+        "//pkg/rand",
+        "//pkg/sync",
+        "//pkg/tcpip",
+        "//pkg/tcpip/faketime",
+        "//pkg/tcpip/header",
     ],
 )
