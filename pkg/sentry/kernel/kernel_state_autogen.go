@@ -378,6 +378,37 @@ func (c *CgroupMount) StateLoad(ctx context.Context, stateSourceObject state.Sou
 	stateSourceObject.Load(2, &c.Mount)
 }
 
+func (s *SaveRestoreExecConfig) StateTypeName() string {
+	return "pkg/sentry/kernel.SaveRestoreExecConfig"
+}
+
+func (s *SaveRestoreExecConfig) StateFields() []string {
+	return []string{
+		"Argv",
+		"Timeout",
+		"LeaderTask",
+	}
+}
+
+func (s *SaveRestoreExecConfig) beforeSave() {}
+
+// +checklocksignore
+func (s *SaveRestoreExecConfig) StateSave(stateSinkObject state.Sink) {
+	s.beforeSave()
+	stateSinkObject.Save(0, &s.Argv)
+	stateSinkObject.Save(1, &s.Timeout)
+	stateSinkObject.Save(2, &s.LeaderTask)
+}
+
+func (s *SaveRestoreExecConfig) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (s *SaveRestoreExecConfig) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &s.Argv)
+	stateSourceObject.Load(1, &s.Timeout)
+	stateSourceObject.Load(2, &s.LeaderTask)
+}
+
 func (k *Kernel) StateTypeName() string {
 	return "pkg/sentry/kernel.Kernel"
 }
@@ -428,6 +459,8 @@ func (k *Kernel) StateFields() []string {
 		"CheckpointWait",
 		"checkpointGen",
 		"UnixSocketOpts",
+		"SaveRestoreExecConfig",
+		"NvidiaDriverVersion",
 	}
 }
 
@@ -482,6 +515,8 @@ func (k *Kernel) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(41, &k.CheckpointWait)
 	stateSinkObject.Save(42, &k.checkpointGen)
 	stateSinkObject.Save(43, &k.UnixSocketOpts)
+	stateSinkObject.Save(44, &k.SaveRestoreExecConfig)
+	stateSinkObject.Save(45, &k.NvidiaDriverVersion)
 }
 
 func (k *Kernel) afterLoad(context.Context) {}
@@ -531,6 +566,8 @@ func (k *Kernel) StateLoad(ctx context.Context, stateSourceObject state.Source) 
 	stateSourceObject.Load(41, &k.CheckpointWait)
 	stateSourceObject.Load(42, &k.checkpointGen)
 	stateSourceObject.Load(43, &k.UnixSocketOpts)
+	stateSourceObject.Load(44, &k.SaveRestoreExecConfig)
+	stateSourceObject.Load(45, &k.NvidiaDriverVersion)
 	stateSourceObject.LoadValue(21, new([]tcpip.Endpoint), func(y any) { k.loadDanglingEndpoints(ctx, y.([]tcpip.Endpoint)) })
 }
 
@@ -2646,6 +2683,7 @@ func init() {
 	state.Register((*IPCNamespace)(nil))
 	state.Register((*UserCounters)(nil))
 	state.Register((*CgroupMount)(nil))
+	state.Register((*SaveRestoreExecConfig)(nil))
 	state.Register((*Kernel)(nil))
 	state.Register((*privateMemoryFileMetadata)(nil))
 	state.Register((*SocketRecord)(nil))

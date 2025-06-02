@@ -53,6 +53,7 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/nsfs"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/pipefs"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/sockfs"
@@ -121,6 +122,24 @@ type CgroupMount struct {
 	Fs    *vfs.Filesystem
 	Root  *vfs.Dentry
 	Mount *vfs.Mount
+}
+
+// SaveRestoreExecConfig contains the configuration for the save/restore binary.
+//
+// +stateify savable
+type SaveRestoreExecConfig struct {
+	// Argv is the argv to the save/restore binary. The binary path is expected to
+	// be argv[0]. The specified binary is executed with an environment variable
+	// (GVISOR_SAVE_RESTORE_AUTO_EXEC_MODE) set to "save" before the kernel is
+	// saved, "restore" after the kernel is restored and restarted, and "resume"
+	// after the kernel is saved and resumed.
+	Argv []string
+	// Timeout is the timeout for the save/restore binary. If the binary fails to
+	// exit within this timeout the save/restore operation will fail.
+	Timeout time.Duration
+	// LeaderTask is the task in the kernel that the save/restore binary will run
+	// under.
+	LeaderTask *Task
 }
 
 // Kernel represents an emulated Linux kernel. It must be initialized by calling
@@ -369,6 +388,14 @@ type Kernel struct {
 
 	// UnixSocketOpts stores configuration options for management of unix sockets.
 	UnixSocketOpts transport.UnixSocketOpts
+
+	// SaveRestoreExecConfig stores configuration options for the save/restore
+	// exec binary.
+	SaveRestoreExecConfig *SaveRestoreExecConfig
+
+	// NvidiaDriverVersion is the NVIDIA driver version configured for this
+	// sandbox.
+	NvidiaDriverVersion nvconf.DriverVersion
 }
 
 // InitKernelArgs holds arguments to Init.

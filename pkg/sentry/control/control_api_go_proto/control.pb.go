@@ -4,7 +4,7 @@
 // 	protoc        v5.29.3
 // source: pkg/sentry/control/control.proto
 
-package control_go_proto
+package control_api_go_proto
 
 import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"

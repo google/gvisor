@@ -29,6 +29,7 @@ import (
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/control"
+	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/host"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
@@ -208,7 +209,9 @@ func (r *restorer) restore(l *Loader) error {
 	l.watchdog.Start()
 
 	// Release the kernel and replace it with a new one that will be restored into.
+	var oldNvidiaDriverVersion nvconf.DriverVersion
 	if l.k != nil {
+		oldNvidiaDriverVersion = l.k.NvidiaDriverVersion
 		l.k.Release()
 	}
 	l.k = &kernel.Kernel{
@@ -277,6 +280,9 @@ func (r *restorer) restore(l *Loader) error {
 		return fmt.Errorf("failed to load kernel: %w", err)
 	}
 	r.timer.Reached("kernel loaded")
+	if oldNvidiaDriverVersion.Major() > 0 && !l.k.NvidiaDriverVersion.Equals(oldNvidiaDriverVersion) {
+		return fmt.Errorf("nvidia driver version changed during restore: was %v, now %v", oldNvidiaDriverVersion, l.k.NvidiaDriverVersion)
+	}
 
 	if r.asyncMFLoader != nil {
 		if r.background {
@@ -362,7 +368,7 @@ func (r *restorer) restore(l *Loader) error {
 	go func() {
 		defer postRestoreThread.End()
 		postRestoreThread.Reached("scheduled")
-		if err := postRestoreImpl(l, postRestoreThread); err != nil {
+		if err := control.PostRestore(l.k, postRestoreThread); err != nil {
 			log.Warningf("Killing the sandbox after post restore work failed: %v", err)
 			l.k.Kill(linux.WaitStatusTerminationSignal(linux.SIGKILL))
 			return
@@ -428,22 +434,12 @@ func (l *Loader) save(o *control.SaveOpts) (err error) {
 	}
 	o.Metadata[ContainerSpecsKey] = specsStr
 
-	if err := preSaveImpl(l, o); err != nil {
-		return err
-	}
-
 	state := control.State{
 		Kernel:   l.k,
 		Watchdog: l.watchdog,
 	}
 	if err := state.Save(o, nil); err != nil {
 		return err
-	}
-
-	if o.Resume {
-		if err := postResumeImpl(l, nil); err != nil {
-			return err
-		}
 	}
 	return nil
 }

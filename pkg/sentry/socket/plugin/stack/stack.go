@@ -19,6 +19,8 @@
 package stack
 
 import (
+	"fmt"
+
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/sentry/socket/plugin"
@@ -79,6 +81,11 @@ func (s *Stack) SupportsIPv6() bool {
 
 // Destroy implements inet.Stack.Destroy.
 func (*Stack) Destroy() {
+}
+
+// EnableSaveRestore implements inet.Stack.EnableSaveRestore.
+func (*Stack) EnableSaveRestore() error {
+	return fmt.Errorf("s/r is not supported for plugin stack")
 }
 
 func init() {

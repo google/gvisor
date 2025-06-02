@@ -18,8 +18,10 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/google/subcommands"
+	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/state/statefile"
 	"gvisor.dev/gvisor/runsc/cmd/util"
@@ -34,6 +36,8 @@ type Checkpoint struct {
 	leaveRunning              bool
 	compression               CheckpointCompression
 	excludeCommittedZeroPages bool
+	saveRestoreExecArgv       string
+	saveRestoreExecTimeout    time.Duration
 
 	// direct indicates whether O_DIRECT should be used for writing the
 	// checkpoint pages file. It bypasses the kernel page cache. It is beneficial
@@ -65,6 +69,8 @@ func (c *Checkpoint) SetFlags(f *flag.FlagSet) {
 	f.Var(newCheckpointCompressionValue(statefile.CompressionLevelDefault, &c.compression), "compression", "compress checkpoint image on disk. Values: none|flate-best-speed.")
 	f.BoolVar(&c.excludeCommittedZeroPages, "exclude-committed-zero-pages", false, "exclude committed zero-filled pages from checkpoint")
 	f.BoolVar(&c.direct, "direct", false, "use O_DIRECT for writing checkpoint pages file")
+	f.StringVar(&c.saveRestoreExecArgv, "save-restore-exec-argv", "", "argv (split by spaces) for a save/restore binary that's automatically executed in the sandbox before saving and after restoring. If the execution fails, the save/restore process will fail.")
+	f.DurationVar(&c.saveRestoreExecTimeout, "save-restore-exec-timeout", control.DefaultSaveRestoreExecTimeout, "timeout for the binary pointed to by save-restore-exec-argv.")
 
 	// Unimplemented flags necessary for compatibility with docker.
 	var wp string
@@ -95,7 +101,10 @@ func (c *Checkpoint) Execute(_ context.Context, f *flag.FlagSet, args ...any) su
 	}
 
 	sOpts := statefile.Options{
-		Compression: c.compression.Level(),
+		Compression:                c.compression.Level(),
+		SaveRestoreExecArgv:        c.saveRestoreExecArgv,
+		SaveRestoreExecTimeout:     c.saveRestoreExecTimeout,
+		SaveRestoreExecContainerID: id,
 	}
 	mfOpts := pgalloc.SaveOpts{
 		ExcludeCommittedZeroPages: c.excludeCommittedZeroPages,

@@ -115,6 +115,18 @@ type Options struct {
 	// Resume indicates if the sandbox process should continue running
 	// after checkpointing.
 	Resume bool
+
+	// SaveRestoreExecArgv is the argv of the save/restore binary split by spaces.
+	// The first element is the path to the binary.
+	SaveRestoreExecArgv string
+
+	// SaveRestoreExecTimeout is the timeout for waiting for the save/restore
+	// binary.
+	SaveRestoreExecTimeout time.Duration
+
+	// SaveRestoreExecContainerID is the ID of the container that the
+	// save/restore binary executes in.
+	SaveRestoreExecContainerID string
 }
 
 // WriteToMetadata save options to the metadata storage.  Method returns the

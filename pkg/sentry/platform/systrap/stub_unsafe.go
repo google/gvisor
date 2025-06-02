@@ -196,6 +196,7 @@ func stubInit() {
 	stubSysmsgStart = mapLen
 	stubSysmsgLen := len(sysmsg.SighandlerBlob)
 	mapLen, _ = hostarch.PageRoundUp(mapLen + uintptr(stubSysmsgLen))
+	stubExecMapEnd := mapLen
 
 	stubSysmsgRules = mapLen
 	stubSysmsgRulesLen = hostarch.PageSize * 2
@@ -279,6 +280,7 @@ func stubInit() {
 	stubSysmsgStart += stubStart
 	stubSysmsgStack += stubStart
 	stubROMapEnd += stubStart
+	stubExecMapEnd += stubStart
 	stubContextQueueRegion += stubStart
 	stubSpinningThreadQueueAddr += stubStart
 	stubContextRegion += stubStart
@@ -319,9 +321,23 @@ func stubInit() {
 	if errno := hostsyscall.RawSyscallErrno(
 		unix.SYS_MPROTECT,
 		stubStart,
-		stubROMapEnd-stubStart,
+		stubExecMapEnd-stubStart,
 		unix.PROT_EXEC|unix.PROT_READ); errno != 0 {
 		panic("mprotect failed: " + errno.Error())
+	}
+	if errno := hostsyscall.RawSyscallErrno(
+		unix.SYS_MPROTECT,
+		stubExecMapEnd,
+		stubROMapEnd-stubExecMapEnd,
+		unix.PROT_READ); errno != 0 {
+		panic("mprotect failed: " + errno.Error())
+	}
+	if errno := hostsyscall.RawSyscallErrno(
+		unix.SYS_MSEAL,
+		stubStart,
+		stubROMapEnd-stubStart,
+		0); errno != 0 && errno != unix.ENOSYS {
+		panic("mseal failed: " + errno.Error())
 	}
 
 	// Set the end.
