@@ -878,6 +878,8 @@ func (c *containerMounter) mountSubmount(ctx context.Context, spec *specs.Spec, 
 		return nil, fmt.Errorf("creating mount point %q: %w", mount.Destination, err)
 	}
 
+	// Avoid mounting on top of symlinks. The mount syscall on Linux always follows symlinks.
+	target.FollowFinalSymlink = true
 	if err := c.k.VFS().ConnectMountAt(ctx, creds, mnt, target); err != nil {
 		return nil, fmt.Errorf("attaching %q to %q (type: %s): %w, opts: %v",
 			mount.Source, mount.Destination, mount.Type, err, opts)
@@ -1274,6 +1276,8 @@ func (c *containerMounter) mountSharedSubmount(ctx context.Context, conf *config
 		return nil, fmt.Errorf("creating mount point %q: %w", mntInfo.mount.Destination, err)
 	}
 
+	// Avoid mounting on top of symlinks. The mount syscall on Linux always follows symlinks.
+	target.FollowFinalSymlink = true
 	if err := c.k.VFS().ConnectMountAt(ctx, creds, newMnt, target); err != nil {
 		return nil, err
 	}
@@ -1296,9 +1300,10 @@ func (c *containerMounter) makeMountPoint(
 	defer root.DecRef(ctx)
 
 	target := &vfs.PathOperation{
-		Root:  root,
-		Start: root,
-		Path:  fspath.Parse(dest),
+		Root:               root,
+		Start:              root,
+		Path:               fspath.Parse(dest),
+		FollowFinalSymlink: true,
 	}
 
 	fs := c.k.VFS()
@@ -1309,9 +1314,9 @@ func (c *containerMounter) makeMountPoint(
 	case err == nil:
 		if mode.IsDir() != rootMode.IsDir() {
 			if rootMode.IsDir() {
-				return fmt.Errorf("mountpoint %q isn't a directory", dest)
+				return fmt.Errorf("mountpoint %q isn't a directory, got mode %s", dest, mode)
 			} else {
-				return fmt.Errorf("mountpoint %q isn't not a file", dest)
+				return fmt.Errorf("mountpoint %q isn't not a file, got mode %s", dest, mode)
 			}
 		}
 		// Target already exists.
@@ -1322,6 +1327,8 @@ func (c *containerMounter) makeMountPoint(
 		return fmt.Errorf("stat failed for %q during mountpoint creation: %w", dest, err)
 	}
 
+	// FollowFinalSymlink should be false to create new file or directory.
+	target.FollowFinalSymlink = false
 	mkdirOpts := &vfs.MkdirOptions{Mode: 0755, ForSyntheticMountpoint: true}
 
 	// Make sure the parent directory of target exists.
