@@ -586,6 +586,12 @@ func (c *containerMounter) configureOverlay(ctx context.Context, conf *config.Co
 	// filesystem specific options.
 	upperOpts := *lowerOpts
 	upperOpts.GetFilesystemOptions = vfs.GetFilesystemOptions{InternalMount: true}
+	if mountConf.Size != "" {
+		if upperOpts.GetFilesystemOptions.Data != "" {
+			upperOpts.GetFilesystemOptions.Data += ","
+		}
+		upperOpts.GetFilesystemOptions.Data += "size=" + mountConf.Size
+	}
 
 	overlayOpts := *lowerOpts
 	overlayOpts.GetFilesystemOptions = vfs.GetFilesystemOptions{InternalMount: true}
