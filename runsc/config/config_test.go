@@ -231,6 +231,11 @@ func TestInvalidFlags(t *testing.T) {
 			value: "root:dir=tmp",
 			error: "overlay host file directory should be an absolute path, got \"tmp\"",
 		},
+		{
+			name:  "overlay2",
+			value: "root:memory,sz=sdg",
+			error: "expected format is --overlay2",
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			testFlags := flag.NewFlagSet("test", flag.ContinueOnError)
@@ -780,4 +785,33 @@ root = "%s"
 		})
 	}
 
+}
+
+func TestParseSerializeOverlay2(t *testing.T) {
+	t.Run("Without size", func(t *testing.T) {
+		o := Overlay2{}
+		err := o.Set("all:memory")
+		if err != nil {
+			t.Fatalf("Set failed: %v", err)
+		}
+		if o.RootOverlaySize() != "" || o.SubMountOverlaySize() != "" {
+			t.Fatalf("Size mismatch, expecting empty, got %q, %q", o.RootOverlaySize(), o.SubMountOverlaySize())
+		}
+		if o.String() != "all:memory" {
+			t.Fatalf("String mismatch, expecting all:memory, got %q", o.String())
+		}
+	})
+	t.Run("With size", func(t *testing.T) {
+		o := Overlay2{}
+		err := o.Set("root:memory,size=1g")
+		if err != nil {
+			t.Fatalf("Set failed: %v", err)
+		}
+		if o.RootOverlaySize() != "1g" || o.SubMountOverlaySize() != "" {
+			t.Fatalf("Size mismatch, expecting 1g, empty, got %q, %q", o.RootOverlaySize(), o.SubMountOverlaySize())
+		}
+		if o.String() != "root:memory,size=1g" {
+			t.Fatalf("String mismatch, expecting ll:memory,size=1g, got %q", o.String())
+		}
+	})
 }
