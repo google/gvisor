@@ -46,6 +46,7 @@ var errNoDefaultInterface = errors.New("no default interface found")
 type Do struct {
 	root    string
 	cwd     string
+	erofs   string
 	ip      string
 	quiet   bool
 	overlay bool
@@ -123,6 +124,7 @@ func (is *idMapSlice) Set(s string) error {
 func (c *Do) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&c.root, "root", "/", `path to the root directory, defaults to "/"`)
 	f.StringVar(&c.cwd, "cwd", ".", "path to the current directory, defaults to the current directory")
+	f.StringVar(&c.erofs, "erofs", "", "path to the erofs root image")
 	f.StringVar(&c.ip, "ip", "192.168.10.2", "IPv4 address for the sandbox")
 	f.BoolVar(&c.quiet, "quiet", false, "suppress runsc messages to stdout. Application output is still sent to stdout and stderr")
 	f.BoolVar(&c.overlay, "force-overlay", true, "use an overlay. WARNING: disabling gives the command write access to the host")
@@ -180,6 +182,13 @@ func (c *Do) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcommand
 			Terminal:     console.StdioIsPty(),
 		},
 		Hostname: hostname,
+	}
+	if c.erofs != "" {
+		spec.Annotations = map[string]string{
+			"dev.gvisor.spec.rootfs.source":  c.erofs,
+			"dev.gvisor.spec.rootfs.type":    "erofs",
+			"dev.gvisor.spec.rootfs.overlay": "memory",
+		}
 	}
 
 	cid := fmt.Sprintf("runsc-%06d", rand.Int31n(1000000))
