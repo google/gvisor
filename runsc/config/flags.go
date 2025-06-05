@@ -119,7 +119,12 @@ func RegisterFlags(flagSet *flag.FlagSet) {
 	flagSet.Var(fileAccessTypePtr(FileAccessExclusive), "file-access", "specifies which filesystem validation to use for the root mount: exclusive (default), shared.")
 	flagSet.Var(fileAccessTypePtr(FileAccessShared), "file-access-mounts", "specifies which filesystem validation to use for volumes other than the root mount: shared (default), exclusive.")
 	flagSet.Bool("overlay", false, "DEPRECATED: use --overlay2=all:memory to achieve the same effect")
-	flagSet.Var(defaultOverlay2(), flagOverlay2, "wrap mounts with overlayfs. Format is {mount}:{medium}, where 'mount' can be 'root' or 'all' and medium can be 'memory', 'self' or 'dir=/abs/dir/path' in which filestore will be created. 'none' will turn overlay mode off.")
+	flagSet.Var(defaultOverlay2(), flagOverlay2, "wrap mounts with overlayfs. Format is\n"+
+		"* 'none' to turn overlay mode off\n"+
+		"* {mount}:{medium}[,size={size}], where\n"+
+		"    'mount' can be 'root' or 'all'\n"+
+		"    'medium' can be 'memory', 'self' or 'dir=/abs/dir/path' in which filestore will be created\n"+
+		"    'size' optional parameter overrides default overlay upper layer size\n")
 	flagSet.Bool("fsgofer-host-uds", false, "DEPRECATED: use host-uds=all")
 	flagSet.Var(hostUDSPtr(HostUDSNone), flagHostUDS, "controls permission to access host Unix-domain sockets. Values: none|open|create|all, default: none")
 	flagSet.Var(hostFifoPtr(HostFifoNone), "host-fifo", "controls permission to access host FIFOs (or named pipes). Values: none|open, default: none")
@@ -134,6 +139,7 @@ func RegisterFlags(flagSet *flag.FlagSet) {
 	flagSet.Int("dcache", -1, "Set the global dentry cache size. This acts as a coarse-grained control on the number of host FDs simultaneously open by the sentry. If negative, per-mount caches are used.")
 	flagSet.Bool("iouring", false, "TEST ONLY; Enables io_uring syscalls in the sentry. Support is experimental and very limited.")
 	flagSet.Bool("directfs", true, "directly access the container filesystems from the sentry. Sentry runs with higher privileges.")
+	flagSet.Bool("TESTONLY-nftables", false, "TEST ONLY; Enables nftables support in the sentry.")
 
 	// Flags that control sandbox runtime behavior: network related.
 	flagSet.Var(networkTypePtr(NetworkSandbox), "network", "specifies which network to use: sandbox (default), host, none. Using network inside the sandbox is more secure because it's isolated from the host network.")
@@ -152,7 +158,7 @@ func RegisterFlags(flagSet *flag.FlagSet) {
 	flagSet.Bool("reproduce-nat", false, "Scrape the host netns NAT table and reproduce it in the sandbox.")
 	flagSet.Bool(flagReproduceNFTables, false, "Attempt to scrape and reproduce nftable rules inside the sandbox. Overrides reproduce-nat when true.")
 	flagSet.Bool(flagNetDisconnectOK, true, "Indicates whether open network connections and open unix domain sockets should be disconnected upon save.")
-	flagSet.Bool("save-restore-netstack", false, "Indicates whether netstack save/restore is enabled.")
+	flagSet.Bool("save-restore-netstack", true, "Indicates whether netstack save/restore is enabled.")
 
 	// Flags that control sandbox runtime behavior: accelerator related.
 	flagSet.Bool("nvproxy", false, "EXPERIMENTAL: enable support for Nvidia GPUs")

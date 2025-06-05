@@ -195,8 +195,9 @@ func UpdateVolumeAnnotations(s *specs.Spec) (bool, error) {
 					}
 					// Container mount type must match the mount type specified by
 					// admission controller. See note about EmptyDir.
-					specutils.ChangeMountType(&s.Mounts[i], v)
-					updated = true
+					if specutils.ChangeMountType(&s.Mounts[i], v) {
+						updated = true
+					}
 				}
 			}
 		}
@@ -275,14 +276,17 @@ func configureShm(s *specs.Spec) (bool, error) {
 				// inside the sandbox anyways) and apply options to subcontainers as
 				// they bind mount individually.
 				s.Annotations[volumeKeyPrefix+devshmName+".options"] = "rw"
+				updated = true
 			}
 
-			specutils.ChangeMountType(m, devshmType)
-			updated = true
+			if specutils.ChangeMountType(m, devshmType) {
+				updated = true
+			}
 
 			// Remove the duplicate entry now that we found the shared /dev/shm mount.
 			if duplicate >= 0 {
 				s.Mounts = append(s.Mounts[:duplicate], s.Mounts[duplicate+1:]...)
+				updated = true
 			}
 			break
 		}

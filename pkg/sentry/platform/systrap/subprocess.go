@@ -685,7 +685,7 @@ func (t *thread) wait(outcome waitOutcome) unix.Signal {
 	}
 }
 
-// kill kills the thread;
+// kill kills the thread.
 func (t *thread) kill() {
 	unix.Tgkill(int(t.tgid), int(t.tid), unix.Signal(unix.SIGKILL))
 }
@@ -863,13 +863,17 @@ func (s *subprocess) switchToApp(c *platformContext, ac *arch.Context64) (isSysc
 		ctxState = sysmsg.ContextStateSyscall
 		shouldPatchSyscall = true
 	}
-
 	if ctxState == sysmsg.ContextStateSyscall || ctxState == sysmsg.ContextStateSyscallTrap {
 		if maybePatchSignalInfo(regs, &c.signalInfo) {
 			return false, false, hostarch.Execute, nil
 		}
 		updateSyscallRegs(regs)
 		return true, shouldPatchSyscall, hostarch.NoAccess, nil
+	} else if ctxState == sysmsg.ContextStateUnexpectedDeath {
+		return false, shouldPatchSyscall, hostarch.NoAccess, &platform.ContextError{
+			Err:   fmt.Errorf("systrap unexpected death"),
+			Errno: unix.ECHILD,
+		}
 	} else if ctxState != sysmsg.ContextStateFault {
 		return false, false, hostarch.NoAccess, corruptedSharedMemoryErr(fmt.Sprintf("unknown context state: %v", ctxState))
 	}

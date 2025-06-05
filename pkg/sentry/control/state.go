@@ -258,7 +258,8 @@ func SaveRestoreExec(k *kernel.Kernel, mode SaveRestoreExecMode) error {
 	// env vars without relying on the Saver().
 	var envv []string
 	if k.Saver() != nil {
-		envv = k.Saver().SpecEnviron(contID)
+		contName := k.ContainerName(contID)
+		envv = k.Saver().SpecEnviron(contName)
 	}
 
 	proc := Proc{

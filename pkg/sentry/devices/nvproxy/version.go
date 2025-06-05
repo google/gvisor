@@ -634,7 +634,8 @@ func Init() {
 
 		// The following exist on the "535" branch. They branched off the main
 		// branch at 535.113.01.
-		v535_183_01 := addDriverABI(535, 183, 01, "f6707afbdda9407e3cbc2e5128e60bcbcdbf02fae29958c72fafb5d405e8b883", v535_113_01)
+		v535_129_03 := addDriverABI(535, 129, 03, "e6dca5626a2608c6bb2a046cfcb7c1af338b9e961a7dd90ac09bb8a126ff002e", v535_113_01)
+		v535_183_01 := addDriverABI(535, 183, 01, "f6707afbdda9407e3cbc2e5128e60bcbcdbf02fae29958c72fafb5d405e8b883", v535_129_03)
 		v535_183_06 := addDriverABI(535, 183, 06, "c7bb0a0569c5347845479ed4e3e4d885c6ee3b8adf068c3401cdf754d5ba3d3b", v535_183_01)
 		v535_216_01 := addDriverABI(535, 216, 01, "5ddea1147810012e33967c3181341bcd6624bd3d654c63f845df833b4ece6af7", v535_183_06)
 		v535_230_02 := addDriverABI(535, 230, 02, "20cca9118083fcc8083158466e9cb2b616a7922206bcb7296b1fa5cc9af2e0fd", v535_216_01)

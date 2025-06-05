@@ -129,11 +129,12 @@ func (sc *sharedContext) NotifyInterrupt() {
 	if sc.threadID() == invalidThreadID {
 		return
 	}
-	sc.subprocess.sysmsgThreadsMu.Lock()
-	defer sc.subprocess.sysmsgThreadsMu.Unlock()
+	s := sc.subprocess
+	s.sysmsgThreadsMu.Lock()
+	defer s.sysmsgThreadsMu.Unlock()
 
 	threadID := atomic.LoadUint32(&sc.shared.ThreadID)
-	sysmsgThread, ok := sc.subprocess.sysmsgThreads[threadID]
+	sysmsgThread, ok := s.sysmsgThreads[threadID]
 	if !ok {
 		// This is either an invalidThreadID or another garbage value; either way we
 		// don't know which thread to interrupt; best we can do is mark the context.
@@ -142,7 +143,18 @@ func (sc *sharedContext) NotifyInterrupt() {
 
 	t := sysmsgThread.thread
 	if e := hostsyscall.RawSyscallErrno(unix.SYS_TGKILL, uintptr(t.tgid), uintptr(t.tid), uintptr(platform.SignalInterrupt)); e != 0 {
-		panic(fmt.Sprintf("failed to interrupt the child process %d: %v", t.tid, e))
+		if e == unix.ESRCH { // Stub thread already killed?
+			s.dead.Store(true)
+			if !sc.shared.State.CompareAndSwap(sysmsg.ContextStateNone, sysmsg.ContextStateUnexpectedDeath) {
+				s.syscallThread.thread.Warningf("failed to set context state to ContextStateUnexpectedDeath; context state was %v", sc.state())
+			}
+			s.syscallThreadMu.Lock()
+			defer s.syscallThreadMu.Unlock()
+			s.syscallThread.thread.Warningf("Cannot interrupt stub thread %sas it no longer exists; killing syscall thread.", *t.loadLogPrefix())
+			s.syscallThread.thread.kill()
+		} else {
+			panic(fmt.Sprintf("failed to interrupt the child process %d: %v", t.tid, e))
+		}
 	}
 }
 

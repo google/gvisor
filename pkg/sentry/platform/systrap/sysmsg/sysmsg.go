@@ -172,7 +172,7 @@ type Msg struct {
 // or ContextStateNone if running/ready-to-run.
 type ContextState uint32
 
-// Set atomicaly sets the state value.
+// Set atomically sets the state value.
 func (s *ContextState) Set(state ContextState) {
 	atomic.StoreUint32((*uint32)(s), uint32(state))
 }
@@ -182,6 +182,11 @@ func (s *ContextState) Set(state ContextState) {
 //go:nosplit
 func (s *ContextState) Get() ContextState {
 	return ContextState(atomic.LoadUint32((*uint32)(s)))
+}
+
+// CompareAndSwap performs a compare-and-swap operation on the state value.
+func (s *ContextState) CompareAndSwap(old, new ContextState) bool {
+	return atomic.CompareAndSwapUint32((*uint32)(s), uint32(old), uint32(new))
 }
 
 // Context State types.
@@ -201,6 +206,8 @@ const (
 	// ContextStateSyscallCanBePatched means that the syscall can be replaced
 	// with a function call.
 	ContextStateSyscallCanBePatched
+	// ContextStateUnexpectedDeath means a stub thread died unexpectedly.
+	ContextStateUnexpectedDeath
 	// ContextStateInvalid is an invalid state that the sentry should never see.
 	ContextStateInvalid
 )

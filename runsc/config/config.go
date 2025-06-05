@@ -394,6 +394,9 @@ type Config struct {
 
 	// SaveRestoreNetstack indicates whether netstack should be saved and restored.
 	SaveRestoreNetstack bool `flag:"save-restore-netstack"`
+
+	// Nftables enables support for nftables to be used instead of iptables.
+	Nftables bool `flag:"TESTONLY-nftables"`
 }
 
 func (c *Config) validate() error {
@@ -906,6 +909,11 @@ type Overlay2 struct {
 	rootMount bool
 	subMounts bool
 	medium    OverlayMedium
+	// Size of overlay upper layer.
+	// Passed as is to tmpfs mount, as `size={size}`.
+	// Empty means use default.
+	// Size is applied to each overlay independently and not shared by overlays.
+	size string
 }
 
 func defaultOverlay2() *Overlay2 {
@@ -913,17 +921,30 @@ func defaultOverlay2() *Overlay2 {
 	return &Overlay2{rootMount: true, subMounts: false, medium: SelfOverlay}
 }
 
+func setOverlay2Err(v string) error {
+	return fmt.Errorf("expected format is --overlay2={mount}:{medium}[,size={size}], got %q", v)
+}
+
+// `--overlay2=...` param `size=`.
+const overlay2SizeEq = "size="
+
 // Set implements flag.Value. Set(String()) should be idempotent.
 func (o *Overlay2) Set(v string) error {
 	if v == "none" {
 		o.rootMount = false
 		o.subMounts = false
 		o.medium = NoOverlay
+		o.size = ""
 		return nil
 	}
-	vs := strings.Split(v, ":")
+	parts := strings.Split(v, ",")
+	if len(parts) < 1 {
+		return setOverlay2Err(v)
+	}
+
+	vs := strings.Split(parts[0], ":")
 	if len(vs) != 2 {
-		return fmt.Errorf("expected format is --overlay2={mount}:{medium}, got %q", v)
+		return setOverlay2Err(v)
 	}
 
 	switch mount := vs[0]; mount {
@@ -936,7 +957,25 @@ func (o *Overlay2) Set(v string) error {
 		return fmt.Errorf("unexpected mount specifier for --overlay2: %q", mount)
 	}
 
-	return o.medium.Set(vs[1])
+	err := o.medium.Set(vs[1])
+	if err != nil {
+		return err
+	}
+
+	if len(parts) == 1 {
+		o.size = ""
+	} else if len(parts) == 2 {
+		sizeArg := parts[1]
+		size, cut := strings.CutPrefix(sizeArg, overlay2SizeEq)
+		if !cut {
+			return setOverlay2Err(v)
+		}
+		o.size = size
+	} else {
+		return setOverlay2Err(v)
+	}
+
+	return nil
 }
 
 // Get implements flag.Value.
@@ -958,7 +997,13 @@ func (o Overlay2) String() string {
 	default:
 		panic("invalid state of subMounts = true and rootMount = false")
 	}
-	return res + ":" + o.medium.String()
+
+	var sizeSuffix string
+	if o.size != "" {
+		sizeSuffix = fmt.Sprintf(",%s%s", overlay2SizeEq, o.size)
+	}
+
+	return res + ":" + o.medium.String() + sizeSuffix
 }
 
 // Enabled returns true if the overlay option is enabled for any mounts.
@@ -974,12 +1019,26 @@ func (o *Overlay2) RootOverlayMedium() OverlayMedium {
 	return o.medium
 }
 
+func (o *Overlay2) RootOverlaySize() string {
+	if !o.rootMount {
+		return ""
+	}
+	return o.size
+}
+
 // SubMountOverlayMedium returns the overlay medium config of submounts.
 func (o *Overlay2) SubMountOverlayMedium() OverlayMedium {
 	if !o.subMounts {
 		return NoOverlay
 	}
 	return o.medium
+}
+
+func (o *Overlay2) SubMountOverlaySize() string {
+	if !o.subMounts {
+		return ""
+	}
+	return o.size
 }
 
 // Medium returns the overlay medium config.
