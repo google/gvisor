@@ -24,8 +24,8 @@ import (
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
-func (d *dentry) isSocket() bool {
-	return d.fileType() == linux.S_IFSOCK
+func (i *inode) isSocket() bool {
+	return i.fileType() == linux.S_IFSOCK
 }
 
 func isSocketTypeSupported(sockType linux.SockType) bool {
@@ -103,9 +103,9 @@ func (e *endpoint) UnidirectionalConnect(ctx context.Context, opts transport.Uni
 }
 
 func (e *endpoint) newConnectedEndpoint(ctx context.Context, sockType linux.SockType, queue *waiter.Queue, opts transport.UnixSocketOpts) (*transport.SCMConnectedEndpoint, *syserr.Error) {
-	e.dentry.fs.renameMu.RLock()
+	e.dentry.inode.fs.renameMu.RLock()
 	hostSockFD, err := e.dentry.connect(ctx, sockType)
-	e.dentry.fs.renameMu.RUnlock()
+	e.dentry.inode.fs.renameMu.RUnlock()
 	if err != nil {
 		return nil, syserr.ErrConnectionRefused
 	}

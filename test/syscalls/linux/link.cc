@@ -21,12 +21,13 @@
 
 #include <string>
 
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/flags/flag.h"
 #include "absl/strings/str_cat.h"
-#include "test/util/capability_util.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/fs_util.h"
+#include "test/util/linux_capability_util.h"
 #include "test/util/posix_error.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
@@ -51,7 +52,6 @@ bool IsSameFile(const std::string& f1, const std::string& f2) {
 }
 
 // TODO(b/178640646): Add test for linkat with AT_EMPTY_PATH
-
 TEST(LinkTest, CanCreateLinkFile) {
   auto oldfile = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   const std::string newname = NewTempAbsPath();
@@ -74,6 +74,21 @@ TEST(LinkTest, CanCreateLinkFile) {
   // Link count should be back to initial.
   EXPECT_THAT(Links(oldfile.path()),
               IsPosixErrorOkAndHolds(initial_link_count));
+}
+
+TEST(LinkTest, HardlinkChangeMode) {
+  auto oldfile = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  const std::string newname = NewTempAbsPath();
+  struct stat stat1 = {};
+
+  ASSERT_THAT(link(oldfile.path().c_str(), newname.c_str()), SyscallSucceeds());
+
+  EXPECT_TRUE(IsSameFile(oldfile.path(), newname));
+
+  EXPECT_THAT(chmod(oldfile.path().c_str(), S_IRUSR), SyscallSucceeds());
+  EXPECT_THAT(lstat(newname.c_str(), &stat1), SyscallSucceeds());
+  EXPECT_EQ(S_IRUSR, (stat1.st_mode & S_IRWXU));
+  EXPECT_THAT(unlink(newname.c_str()), SyscallSucceeds());
 }
 
 TEST(LinkTest, PermissionDenied) {

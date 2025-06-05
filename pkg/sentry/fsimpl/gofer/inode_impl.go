@@ -44,47 +44,47 @@ import (
 //    analysis to proceed as usual and avoids heap allocations.
 //
 // Also note that the default case in these type switch statements panics. We
-// do not do panic(fmt.Sprintf("... %T", d.impl)) because somehow it adds a lot
+// do not do panic(fmt.Sprintf("... %T", i.impl)) because somehow it adds a lot
 // of overhead to the type switch. So instead we panic with a constant string.
 
-// Precondition: d.handleMu must be locked.
-func (d *dentry) isReadHandleOk() bool {
-	switch dt := d.impl.(type) {
-	case *lisafsDentry:
-		return dt.readFDLisa.Ok()
-	case *directfsDentry:
-		return d.readFD.RacyLoad() >= 0
-	case nil: // synthetic dentry
+// Precondition: i.handleMu must be locked.
+func (i *inode) isReadHandleOk() bool {
+	switch it := i.impl.(type) {
+	case *lisafsInode:
+		return it.readFDLisa.Ok()
+	case *directfsInode:
+		return it.readFD.RacyLoad() >= 0
+	case nil: // synthetic inode
 		return false
 	default:
-		panic("unknown dentry implementation")
+		panic("unknown inode implementation")
 	}
 }
 
-// Precondition: d.handleMu must be locked.
-func (d *dentry) isWriteHandleOk() bool {
-	switch dt := d.impl.(type) {
-	case *lisafsDentry:
-		return dt.writeFDLisa.Ok()
-	case *directfsDentry:
-		return d.writeFD.RacyLoad() >= 0
-	case nil: // synthetic dentry
+// Precondition: i.handleMu must be locked.
+func (i *inode) isWriteHandleOk() bool {
+	switch it := i.impl.(type) {
+	case *lisafsInode:
+		return it.writeFDLisa.Ok()
+	case *directfsInode:
+		return i.writeFD.RacyLoad() >= 0
+	case nil: // synthetic inode
 		return false
 	default:
-		panic("unknown dentry implementation")
+		panic("unknown inode implementation")
 	}
 }
 
-// Precondition: d.handleMu must be locked.
-func (d *dentry) readHandle() handle {
-	switch dt := d.impl.(type) {
-	case *lisafsDentry:
+// Precondition: i.handleMu must be locked.
+func (i *inode) readHandle() handle {
+	switch it := i.impl.(type) {
+	case *lisafsInode:
 		return handle{
-			fdLisa: dt.readFDLisa,
-			fd:     d.readFD.RacyLoad(),
+			fdLisa: it.readFDLisa,
+			fd:     i.readFD.RacyLoad(),
 		}
-	case *directfsDentry:
-		return handle{fd: d.readFD.RacyLoad()}
+	case *directfsInode:
+		return handle{fd: i.readFD.RacyLoad()}
 	case nil: // synthetic dentry
 		return noHandle
 	default:
@@ -92,20 +92,20 @@ func (d *dentry) readHandle() handle {
 	}
 }
 
-// Precondition: d.handleMu must be locked.
-func (d *dentry) writeHandle() handle {
-	switch dt := d.impl.(type) {
-	case *lisafsDentry:
+// Precondition: i.handleMu must be locked.
+func (i *inode) writeHandle() handle {
+	switch it := i.impl.(type) {
+	case *lisafsInode:
 		return handle{
-			fdLisa: dt.writeFDLisa,
-			fd:     d.writeFD.RacyLoad(),
+			fdLisa: it.writeFDLisa,
+			fd:     i.writeFD.RacyLoad(),
 		}
-	case *directfsDentry:
-		return handle{fd: d.writeFD.RacyLoad()}
-	case nil: // synthetic dentry
+	case *directfsInode:
+		return handle{fd: i.writeFD.RacyLoad()}
+	case nil: // synthetic inode
 		return noHandle
 	default:
-		panic("unknown dentry implementation")
+		panic("unknown inode implementation")
 	}
 }
 
@@ -127,24 +127,24 @@ func (d *dentry) openHandle(ctx context.Context, read, write, trunc bool) (handl
 	if trunc {
 		flags |= unix.O_TRUNC
 	}
-	switch dt := d.impl.(type) {
-	case *lisafsDentry:
-		return dt.openHandle(ctx, flags)
-	case *directfsDentry:
-		return dt.openHandle(ctx, flags)
+	switch it := d.inode.impl.(type) {
+	case *lisafsInode:
+		return it.openHandle(ctx, flags)
+	case *directfsInode:
+		return it.openHandle(ctx, flags, d)
 	default:
-		panic("unknown dentry implementation")
+		panic("unknown inode implementation")
 	}
 }
 
 // Preconditions:
-//   - d.handleMu must be locked.
+//   - i.handleMu must be locked.
 //   - !d.isSynthetic().
-func (d *dentry) updateHandles(ctx context.Context, h handle, readable, writable bool) {
-	switch dt := d.impl.(type) {
-	case *lisafsDentry:
-		dt.updateHandles(ctx, h, readable, writable)
-	case *directfsDentry:
+func (i *inode) updateHandles(ctx context.Context, h handle, readable, writable bool) {
+	switch it := i.impl.(type) {
+	case *lisafsInode:
+		it.updateHandles(ctx, h, readable, writable)
+	case *directfsInode:
 		// No update needed.
 	default:
 		panic("unknown dentry implementation")
@@ -152,25 +152,25 @@ func (d *dentry) updateHandles(ctx context.Context, h handle, readable, writable
 }
 
 // Preconditions:
-//   - d.handleMu must be locked.
+//   - i.handleMu must be locked.
 //   - !d.isSynthetic().
-func (d *dentry) closeHostFDs() {
-	// We can use RacyLoad() because d.handleMu is locked.
-	if d.readFD.RacyLoad() >= 0 {
-		_ = unix.Close(int(d.readFD.RacyLoad()))
+func (i *inode) closeHostFDs() {
+	// We can use RacyLoad() because i.handleMu is locked.
+	if i.readFD.RacyLoad() >= 0 {
+		_ = unix.Close(int(i.readFD.RacyLoad()))
 	}
-	if d.writeFD.RacyLoad() >= 0 && d.readFD.RacyLoad() != d.writeFD.RacyLoad() {
-		_ = unix.Close(int(d.writeFD.RacyLoad()))
+	if i.writeFD.RacyLoad() >= 0 && i.readFD.RacyLoad() != i.writeFD.RacyLoad() {
+		_ = unix.Close(int(i.writeFD.RacyLoad()))
 	}
-	d.readFD = atomicbitops.FromInt32(-1)
-	d.writeFD = atomicbitops.FromInt32(-1)
-	d.mmapFD = atomicbitops.FromInt32(-1)
+	i.readFD = atomicbitops.FromInt32(-1)
+	i.writeFD = atomicbitops.FromInt32(-1)
+	i.mmapFD = atomicbitops.FromInt32(-1)
 
-	switch dt := d.impl.(type) {
-	case *directfsDentry:
-		if dt.controlFD >= 0 {
-			_ = unix.Close(dt.controlFD)
-			dt.controlFD = -1
+	switch it := i.impl.(type) {
+	case *directfsInode:
+		if it.controlFD >= 0 {
+			_ = unix.Close(it.controlFD)
+			it.controlFD = -1
 		}
 	}
 }
@@ -181,18 +181,18 @@ func (d *dentry) closeHostFDs() {
 //
 // Preconditions:
 //   - !d.isSynthetic().
-//   - d.metadataMu is locked.
+//   - i.metadataMu is locked.
 //
-// +checklocks:d.metadataMu
-func (d *dentry) updateMetadataLocked(ctx context.Context, h handle) error {
+// +checklocks:i.metadataMu
+func (i *inode) updateMetadataLocked(ctx context.Context, h handle) error {
 	// Need checklocksforce below because checklocks has no way of knowing that
-	// d.impl.(*dentryImpl).dentry == d. It can't know that the right metadataMu
+	// i.impl.(*dentryImpl).dentry == d. It can't know that the right metadataMu
 	// is already locked.
-	switch dt := d.impl.(type) {
-	case *lisafsDentry:
-		return dt.updateMetadataLocked(ctx, h) // +checklocksforce: acquired by precondition.
-	case *directfsDentry:
-		return dt.updateMetadataLocked(h) // +checklocksforce: acquired by precondition.
+	switch it := i.impl.(type) {
+	case *lisafsInode:
+		return it.updateMetadataLocked(ctx, h) // +checklocksforce: acquired by precondition.
+	case *directfsInode:
+		return it.updateMetadataLocked(h) // +checklocksforce: acquired by precondition.
 	default:
 		panic("unknown dentry implementation")
 	}
@@ -202,12 +202,12 @@ func (d *dentry) updateMetadataLocked(ctx context.Context, h handle) error {
 //   - !d.isSynthetic().
 //   - fs.renameMu is locked.
 func (d *dentry) prepareSetStat(ctx context.Context, stat *linux.Statx) error {
-	switch dt := d.impl.(type) {
-	case *lisafsDentry:
+	switch it := d.inode.impl.(type) {
+	case *lisafsInode:
 		// Nothing to be done.
 		return nil
-	case *directfsDentry:
-		return dt.prepareSetStat(ctx, stat)
+	case *directfsInode:
+		return it.prepareSetStat(ctx, stat, d)
 	default:
 		panic("unknown dentry implementation")
 	}
@@ -215,11 +215,11 @@ func (d *dentry) prepareSetStat(ctx context.Context, stat *linux.Statx) error {
 
 // Precondition: fs.renameMu is locked if d is a socket.
 func (d *dentry) chmod(ctx context.Context, mode uint16) error {
-	switch dt := d.impl.(type) {
-	case *lisafsDentry:
-		return chmod(ctx, dt.controlFD, mode)
-	case *directfsDentry:
-		return dt.chmod(ctx, mode)
+	switch it := d.inode.impl.(type) {
+	case *lisafsInode:
+		return chmod(ctx, it.controlFD, mode)
+	case *directfsInode:
+		return it.chmod(ctx, mode, d)
 	default:
 		panic("unknown dentry implementation")
 	}
@@ -227,27 +227,27 @@ func (d *dentry) chmod(ctx context.Context, mode uint16) error {
 
 // Preconditions:
 //   - !d.isSynthetic().
-//   - d.handleMu is locked.
+//   - i.handleMu is locked.
 //   - fs.renameMu is locked.
 func (d *dentry) setStatLocked(ctx context.Context, stat *linux.Statx) (uint32, error, error) {
-	switch dt := d.impl.(type) {
-	case *lisafsDentry:
-		return dt.controlFD.SetStat(ctx, stat)
-	case *directfsDentry:
-		failureMask, failureErr := dt.setStatLocked(ctx, stat)
+	switch it := d.inode.impl.(type) {
+	case *lisafsInode:
+		return it.controlFD.SetStat(ctx, stat)
+	case *directfsInode:
+		failureMask, failureErr := it.setStatLocked(ctx, stat, d)
 		return failureMask, failureErr, nil
 	default:
 		panic("unknown dentry implementation")
 	}
 }
 
-// Precondition: d.handleMu must be locked.
-func (d *dentry) destroyImpl(ctx context.Context) {
-	switch dt := d.impl.(type) {
-	case *lisafsDentry:
-		dt.destroy(ctx)
-	case *directfsDentry:
-		dt.destroy(ctx)
+// Precondition: i.handleMu must be locked.
+func (i *inode) destroyImpl(ctx context.Context, d *dentry) {
+	switch i := i.impl.(type) {
+	case *lisafsInode:
+		i.destroy(ctx, d)
+	case *directfsInode:
+		i.destroy(ctx)
 	case nil: // synthetic dentry
 	default:
 		panic("unknown dentry implementation")
@@ -258,11 +258,11 @@ func (d *dentry) destroyImpl(ctx context.Context) {
 //
 // +checklocksread:d.opMu
 func (d *dentry) getRemoteChild(ctx context.Context, name string) (*dentry, error) {
-	switch dt := d.impl.(type) {
-	case *lisafsDentry:
-		return dt.getRemoteChild(ctx, name)
-	case *directfsDentry:
-		return dt.getHostChild(name)
+	switch it := d.inode.impl.(type) {
+	case *lisafsInode:
+		return it.getRemoteChild(ctx, name)
+	case *directfsInode:
+		return it.getHostChild(name)
 	default:
 		panic("unknown dentry implementation")
 	}
@@ -277,14 +277,14 @@ func (d *dentry) getRemoteChild(ctx context.Context, name string) (*dentry, erro
 // Postcondition: The returned dentry is already cached appropriately.
 //
 // +checklocksread:d.opMu
-func (d *dentry) getRemoteChildAndWalkPathLocked(ctx context.Context, rp resolvingPath, ds **[]*dentry) (*dentry, error) {
-	switch dt := d.impl.(type) {
-	case *lisafsDentry:
-		return dt.getRemoteChildAndWalkPathLocked(ctx, rp, ds)
-	case *directfsDentry:
+func (i *inode) getRemoteChildAndWalkPathLocked(ctx context.Context, rp resolvingPath, ds **[]*dentry, d *dentry) (*dentry, error) {
+	switch it := i.impl.(type) {
+	case *lisafsInode:
+		return it.getRemoteChildAndWalkPathLocked(ctx, rp, ds, d)
+	case *directfsInode:
 		// We need to check for races because opMu is read locked which allows
 		// concurrent walks to occur.
-		return d.fs.getRemoteChildLocked(ctx, d, rp.Component(), true /* checkForRace */, ds)
+		return i.fs.getRemoteChildLocked(ctx, d, rp.Component(), true /* checkForRace */, ds)
 	default:
 		panic("unknown dentry implementation")
 	}
@@ -292,10 +292,10 @@ func (d *dentry) getRemoteChildAndWalkPathLocked(ctx context.Context, rp resolvi
 
 // Precondition: !d.isSynthetic().
 func (d *dentry) listXattrImpl(ctx context.Context, size uint64) ([]string, error) {
-	switch dt := d.impl.(type) {
-	case *lisafsDentry:
-		return dt.controlFD.ListXattr(ctx, size)
-	case *directfsDentry:
+	switch it := d.inode.impl.(type) {
+	case *lisafsInode:
+		return it.controlFD.ListXattr(ctx, size)
+	case *directfsInode:
 		// Consistent with runsc/fsgofer.
 		return nil, linuxerr.EOPNOTSUPP
 	default:
@@ -305,11 +305,11 @@ func (d *dentry) listXattrImpl(ctx context.Context, size uint64) ([]string, erro
 
 // Precondition: !d.isSynthetic().
 func (d *dentry) getXattrImpl(ctx context.Context, opts *vfs.GetXattrOptions) (string, error) {
-	switch dt := d.impl.(type) {
-	case *lisafsDentry:
-		return dt.controlFD.GetXattr(ctx, opts.Name, opts.Size)
-	case *directfsDentry:
-		return dt.getXattr(ctx, opts.Name, opts.Size)
+	switch it := d.inode.impl.(type) {
+	case *lisafsInode:
+		return it.controlFD.GetXattr(ctx, opts.Name, opts.Size)
+	case *directfsInode:
+		return it.getXattr(ctx, opts.Name, opts.Size, d)
 	default:
 		panic("unknown dentry implementation")
 	}
@@ -317,10 +317,10 @@ func (d *dentry) getXattrImpl(ctx context.Context, opts *vfs.GetXattrOptions) (s
 
 // Precondition: !d.isSynthetic().
 func (d *dentry) setXattrImpl(ctx context.Context, opts *vfs.SetXattrOptions) error {
-	switch dt := d.impl.(type) {
-	case *lisafsDentry:
-		return dt.controlFD.SetXattr(ctx, opts.Name, opts.Value, opts.Flags)
-	case *directfsDentry:
+	switch it := d.inode.impl.(type) {
+	case *lisafsInode:
+		return it.controlFD.SetXattr(ctx, opts.Name, opts.Value, opts.Flags)
+	case *directfsInode:
 		// Consistent with runsc/fsgofer.
 		return linuxerr.EOPNOTSUPP
 	default:
@@ -329,11 +329,11 @@ func (d *dentry) setXattrImpl(ctx context.Context, opts *vfs.SetXattrOptions) er
 }
 
 // Precondition: !d.isSynthetic().
-func (d *dentry) removeXattrImpl(ctx context.Context, name string) error {
-	switch dt := d.impl.(type) {
-	case *lisafsDentry:
-		return dt.controlFD.RemoveXattr(ctx, name)
-	case *directfsDentry:
+func (i *inode) removeXattrImpl(ctx context.Context, name string) error {
+	switch it := i.impl.(type) {
+	case *lisafsInode:
+		return it.controlFD.RemoveXattr(ctx, name)
+	case *directfsInode:
 		// Consistent with runsc/fsgofer.
 		return linuxerr.EOPNOTSUPP
 	default:
@@ -343,11 +343,11 @@ func (d *dentry) removeXattrImpl(ctx context.Context, name string) error {
 
 // Precondition: !d.isSynthetic().
 func (d *dentry) mknod(ctx context.Context, name string, creds *auth.Credentials, opts *vfs.MknodOptions) (*dentry, error) {
-	switch dt := d.impl.(type) {
-	case *lisafsDentry:
-		return dt.mknod(ctx, name, creds, opts)
-	case *directfsDentry:
-		return dt.mknod(ctx, name, creds, opts)
+	switch it := d.inode.impl.(type) {
+	case *lisafsInode:
+		return it.mknod(ctx, name, creds, opts)
+	case *directfsInode:
+		return it.mknod(ctx, name, creds, opts, d)
 	default:
 		panic("unknown dentry implementation")
 	}
@@ -356,13 +356,13 @@ func (d *dentry) mknod(ctx context.Context, name string, creds *auth.Credentials
 // Preconditions:
 //   - !d.isSynthetic().
 //   - !target.isSynthetic().
-//   - d.fs.renameMu must be locked.
+//   - i.fs.renameMu must be locked.
 func (d *dentry) link(ctx context.Context, target *dentry, name string) (*dentry, error) {
-	switch dt := d.impl.(type) {
-	case *lisafsDentry:
-		return dt.link(ctx, target.impl.(*lisafsDentry), name)
-	case *directfsDentry:
-		return dt.link(target.impl.(*directfsDentry), name)
+	switch it := d.inode.impl.(type) {
+	case *lisafsInode:
+		return it.link(ctx, target.inode.impl.(*lisafsInode), name)
+	case *directfsInode:
+		return it.link(target, name, d)
 	default:
 		panic("unknown dentry implementation")
 	}
@@ -370,11 +370,11 @@ func (d *dentry) link(ctx context.Context, target *dentry, name string) (*dentry
 
 // Precondition: !d.isSynthetic().
 func (d *dentry) mkdir(ctx context.Context, name string, mode linux.FileMode, uid auth.KUID, gid auth.KGID, createDentry bool) (*dentry, error) {
-	switch dt := d.impl.(type) {
-	case *lisafsDentry:
-		return dt.mkdir(ctx, name, mode, uid, gid, createDentry)
-	case *directfsDentry:
-		return dt.mkdir(name, mode, uid, gid, createDentry)
+	switch it := d.inode.impl.(type) {
+	case *lisafsInode:
+		return it.mkdir(ctx, name, mode, uid, gid, createDentry)
+	case *directfsInode:
+		return it.mkdir(name, mode, uid, gid, createDentry, d)
 	default:
 		panic("unknown dentry implementation")
 	}
@@ -382,11 +382,11 @@ func (d *dentry) mkdir(ctx context.Context, name string, mode linux.FileMode, ui
 
 // Precondition: !d.isSynthetic().
 func (d *dentry) symlink(ctx context.Context, name, target string, creds *auth.Credentials) (*dentry, error) {
-	switch dt := d.impl.(type) {
-	case *lisafsDentry:
-		return dt.symlink(ctx, name, target, creds)
-	case *directfsDentry:
-		return dt.symlink(name, target, creds)
+	switch it := d.inode.impl.(type) {
+	case *lisafsInode:
+		return it.symlink(ctx, name, target, creds)
+	case *directfsInode:
+		return it.symlink(name, target, creds, d)
 	default:
 		panic("unknown dentry implementation")
 	}
@@ -394,11 +394,11 @@ func (d *dentry) symlink(ctx context.Context, name, target string, creds *auth.C
 
 // Precondition: !d.isSynthetic().
 func (d *dentry) openCreate(ctx context.Context, name string, accessFlags uint32, mode linux.FileMode, uid auth.KUID, gid auth.KGID, createDentry bool) (*dentry, handle, error) {
-	switch dt := d.impl.(type) {
-	case *lisafsDentry:
-		return dt.openCreate(ctx, name, accessFlags, mode, uid, gid, createDentry)
-	case *directfsDentry:
-		return dt.openCreate(name, accessFlags, mode, uid, gid, createDentry)
+	switch it := d.inode.impl.(type) {
+	case *lisafsInode:
+		return it.openCreate(ctx, name, accessFlags, mode, uid, gid, createDentry)
+	case *directfsInode:
+		return it.openCreate(name, accessFlags, mode, uid, gid, createDentry, d)
 	default:
 		panic("unknown dentry implementation")
 	}
@@ -406,27 +406,27 @@ func (d *dentry) openCreate(ctx context.Context, name string, accessFlags uint32
 
 // Preconditions:
 //   - d.isDir().
-//   - d.handleMu must be locked.
+//   - i.handleMu must be locked.
 //   - !d.isSynthetic().
 func (d *dentry) getDirentsLocked(ctx context.Context, recordDirent func(name string, key inoKey, dType uint8)) error {
-	switch dt := d.impl.(type) {
-	case *lisafsDentry:
-		return dt.getDirentsLocked(ctx, recordDirent)
-	case *directfsDentry:
-		return dt.getDirentsLocked(recordDirent)
+	switch it := d.inode.impl.(type) {
+	case *lisafsInode:
+		return it.getDirentsLocked(ctx, recordDirent)
+	case *directfsInode:
+		return it.getDirentsLocked(recordDirent, d)
 	default:
 		panic("unknown dentry implementation")
 	}
 }
 
 // Precondition: !d.isSynthetic().
-func (d *dentry) flush(ctx context.Context) error {
-	d.handleMu.RLock()
-	defer d.handleMu.RUnlock()
-	switch dt := d.impl.(type) {
-	case *lisafsDentry:
-		return flush(ctx, dt.writeFDLisa)
-	case *directfsDentry:
+func (i *inode) flush(ctx context.Context) error {
+	i.handleMu.RLock()
+	defer i.handleMu.RUnlock()
+	switch it := i.impl.(type) {
+	case *lisafsInode:
+		return flush(ctx, it.writeFDLisa)
+	case *directfsInode:
 		// Nothing to do here.
 		return nil
 	default:
@@ -435,14 +435,14 @@ func (d *dentry) flush(ctx context.Context) error {
 }
 
 // Precondition: !d.isSynthetic().
-func (d *dentry) allocate(ctx context.Context, mode, offset, length uint64) error {
-	d.handleMu.RLock()
-	defer d.handleMu.RUnlock()
-	switch dt := d.impl.(type) {
-	case *lisafsDentry:
-		return dt.writeFDLisa.Allocate(ctx, mode, offset, length)
-	case *directfsDentry:
-		return unix.Fallocate(int(d.writeFD.RacyLoad()), uint32(mode), int64(offset), int64(length))
+func (i *inode) allocate(ctx context.Context, mode, offset, length uint64) error {
+	i.handleMu.RLock()
+	defer i.handleMu.RUnlock()
+	switch it := i.impl.(type) {
+	case *lisafsInode:
+		return it.writeFDLisa.Allocate(ctx, mode, offset, length)
+	case *directfsInode:
+		return unix.Fallocate(int(i.writeFD.RacyLoad()), uint32(mode), int64(offset), int64(length))
 	default:
 		panic("unknown dentry implementation")
 	}
@@ -459,59 +459,59 @@ func (d *dentry) connect(ctx context.Context, sockType linux.SockType) (int, err
 		euid = lisafs.UID(creds.EffectiveKUID)
 		egid = lisafs.GID(creds.EffectiveKGID)
 	}
-	switch dt := d.impl.(type) {
-	case *lisafsDentry:
-		return dt.controlFD.Connect(ctx, sockType, euid, egid)
-	case *directfsDentry:
-		return dt.connect(ctx, sockType, euid, egid)
+	switch it := d.inode.impl.(type) {
+	case *lisafsInode:
+		return it.controlFD.Connect(ctx, sockType, euid, egid)
+	case *directfsInode:
+		return it.connect(ctx, sockType, euid, egid, d)
 	default:
 		panic("unknown dentry implementation")
 	}
 }
 
 // Precondition: !d.isSynthetic().
-func (d *dentry) readlinkImpl(ctx context.Context) (string, error) {
-	switch dt := d.impl.(type) {
-	case *lisafsDentry:
-		return dt.controlFD.ReadLinkAt(ctx)
-	case *directfsDentry:
-		return dt.readlink()
+func (i *inode) readlinkImpl(ctx context.Context) (string, error) {
+	switch it := i.impl.(type) {
+	case *lisafsInode:
+		return it.controlFD.ReadLinkAt(ctx)
+	case *directfsInode:
+		return it.readlink()
 	default:
 		panic("unknown dentry implementation")
 	}
 }
 
 // Precondition: !d.isSynthetic().
-func (d *dentry) unlink(ctx context.Context, name string, flags uint32) error {
-	switch dt := d.impl.(type) {
-	case *lisafsDentry:
-		return dt.controlFD.UnlinkAt(ctx, name, flags)
-	case *directfsDentry:
-		return unix.Unlinkat(dt.controlFD, name, int(flags))
+func (i *inode) unlink(ctx context.Context, name string, flags uint32) error {
+	switch it := i.impl.(type) {
+	case *lisafsInode:
+		return it.controlFD.UnlinkAt(ctx, name, flags)
+	case *directfsInode:
+		return unix.Unlinkat(it.controlFD, name, int(flags))
 	default:
 		panic("unknown dentry implementation")
 	}
 }
 
 // Precondition: !d.isSynthetic().
-func (d *dentry) rename(ctx context.Context, oldName string, newParent *dentry, newName string) error {
-	switch dt := d.impl.(type) {
-	case *lisafsDentry:
-		return dt.controlFD.RenameAt(ctx, oldName, newParent.impl.(*lisafsDentry).controlFD.ID(), newName)
-	case *directfsDentry:
-		return fsutil.RenameAt(dt.controlFD, oldName, newParent.impl.(*directfsDentry).controlFD, newName)
+func (i *inode) rename(ctx context.Context, oldName string, newParent *dentry, newName string) error {
+	switch it := i.impl.(type) {
+	case *lisafsInode:
+		return it.controlFD.RenameAt(ctx, oldName, newParent.inode.impl.(*lisafsInode).controlFD.ID(), newName)
+	case *directfsInode:
+		return fsutil.RenameAt(it.controlFD, oldName, newParent.inode.impl.(*directfsInode).controlFD, newName)
 	default:
 		panic("unknown dentry implementation")
 	}
 }
 
 // Precondition: !d.isSynthetic().
-func (d *dentry) statfs(ctx context.Context) (linux.Statfs, error) {
-	switch dt := d.impl.(type) {
-	case *lisafsDentry:
-		return dt.statfs(ctx)
-	case *directfsDentry:
-		return dt.statfs()
+func (i *inode) statfs(ctx context.Context) (linux.Statfs, error) {
+	switch it := i.impl.(type) {
+	case *lisafsInode:
+		return it.statfs(ctx)
+	case *directfsInode:
+		return it.statfs()
 	default:
 		panic("unknown dentry implementation")
 	}
@@ -524,12 +524,12 @@ func (fs *filesystem) restoreRoot(ctx context.Context, opts *vfs.CompleteRestore
 	}
 
 	// The root is always non-synthetic.
-	switch dt := fs.root.impl.(type) {
-	case *lisafsDentry:
-		return dt.restoreFile(ctx, &rootInode, opts)
-	case *directfsDentry:
-		dt.controlFDLisa = fs.client.NewFD(rootInode.ControlFD)
-		return dt.restoreFile(ctx, rootHostFD, opts)
+	switch it := fs.root.inode.impl.(type) {
+	case *lisafsInode:
+		return it.restoreFile(ctx, &rootInode, opts, fs.root)
+	case *directfsInode:
+		it.controlFDLisa = fs.client.NewFD(rootInode.ControlFD)
+		return it.restoreFile(ctx, rootHostFD, opts, fs.root)
 	default:
 		panic("unknown dentry implementation")
 	}
@@ -539,39 +539,39 @@ func (fs *filesystem) restoreRoot(ctx context.Context, opts *vfs.CompleteRestore
 //   - !d.isSynthetic().
 //   - d.parent != nil and has been restored.
 func (d *dentry) restoreFile(ctx context.Context, opts *vfs.CompleteRestoreOptions) error {
-	switch dt := d.impl.(type) {
-	case *lisafsDentry:
-		controlFD := d.parent.Load().impl.(*lisafsDentry).controlFD
+	switch it := d.inode.impl.(type) {
+	case *lisafsInode:
+		controlFD := d.parent.Load().inode.impl.(*lisafsInode).controlFD
 		inode, err := controlFD.Walk(ctx, d.name)
 		if err != nil {
-			if !dt.isDir() || !dt.forMountpoint {
-				return fmt.Errorf("failed to walk %q of type %x: %w", genericDebugPathname(d.fs, d), dt.fileType(), err)
+			if !d.isDir() || !d.forMountpoint {
+				return fmt.Errorf("failed to walk %q of type %x: %w", genericDebugPathname(it.fs, d), it.inode.fileType(), err)
 			}
 
 			// Recreate directories that were created during volume mounting, since
 			// during restore we don't attempt to remount them.
-			inode, err = controlFD.MkdirAt(ctx, d.name, linux.FileMode(d.mode.Load()), lisafs.UID(d.uid.Load()), lisafs.GID(d.gid.Load()))
+			inode, err = controlFD.MkdirAt(ctx, d.name, linux.FileMode(it.mode.Load()), lisafs.UID(it.uid.Load()), lisafs.GID(it.gid.Load()))
 			if err != nil {
-				return fmt.Errorf("failed to create mountpoint directory at %q: %w", genericDebugPathname(d.fs, d), err)
+				return fmt.Errorf("failed to create mountpoint directory at %q: %w", genericDebugPathname(it.fs, d), err)
 			}
 		}
-		return dt.restoreFile(ctx, &inode, opts)
+		return it.restoreFile(ctx, &inode, opts, d)
 
-	case *directfsDentry:
-		controlFD := d.parent.Load().impl.(*directfsDentry).controlFD
+	case *directfsInode:
+		controlFD := d.parent.Load().inode.impl.(*directfsInode).controlFD
 		childFD, err := tryOpen(func(flags int) (int, error) {
 			n, err := unix.Openat(controlFD, d.name, flags, 0)
 			return n, err
 		})
 		if err != nil {
-			if !dt.isDir() || !dt.forMountpoint {
-				return fmt.Errorf("failed to walk %q of type %x: %w", genericDebugPathname(d.fs, d), dt.fileType(), err)
+			if !d.isDir() || !d.forMountpoint {
+				return fmt.Errorf("failed to walk %q of type %x: %w", genericDebugPathname(it.fs, d), it.inode.fileType(), err)
 			}
 
 			// Recreate directories that were created during volume mounting, since
 			// during restore we don't attempt to remount them.
-			if err := unix.Mkdirat(controlFD, d.name, d.mode.Load()); err != nil {
-				return fmt.Errorf("failed to create mountpoint directory at %q: %w", genericDebugPathname(d.fs, d), err)
+			if err := unix.Mkdirat(controlFD, d.name, it.mode.Load()); err != nil {
+				return fmt.Errorf("failed to create mountpoint directory at %q: %w", genericDebugPathname(it.fs, d), err)
 			}
 
 			// Try again...
@@ -579,10 +579,10 @@ func (d *dentry) restoreFile(ctx context.Context, opts *vfs.CompleteRestoreOptio
 				return unix.Openat(controlFD, d.name, flags, 0)
 			})
 			if err != nil {
-				return fmt.Errorf("failed to open %q: %w", genericDebugPathname(d.fs, d), err)
+				return fmt.Errorf("failed to open %q: %w", genericDebugPathname(it.fs, d), err)
 			}
 		}
-		return dt.restoreFile(ctx, childFD, opts)
+		return it.restoreFile(ctx, childFD, opts, d)
 
 	default:
 		panic("unknown dentry implementation")
@@ -598,13 +598,13 @@ func (d *dentry) restoreFile(ctx context.Context, opts *vfs.CompleteRestoreOptio
 func (r *revalidateState) doRevalidation(ctx context.Context, vfsObj *vfs.VirtualFilesystem, ds **[]*dentry) error {
 	// Skip synthetic dentries because there is no actual implementation that can
 	// be used to walk the remote filesystem. A start dentry cannot be replaced.
-	if r.start.isSynthetic() {
+	if r.start.inode.isSynthetic() {
 		return nil
 	}
-	switch r.start.impl.(type) {
-	case *lisafsDentry:
+	switch r.start.inode.impl.(type) {
+	case *lisafsInode:
 		return doRevalidationLisafs(ctx, vfsObj, r, ds)
-	case *directfsDentry:
+	case *directfsInode:
 		return doRevalidationDirectfs(ctx, vfsObj, r, ds)
 	default:
 		panic("unknown dentry implementation")
