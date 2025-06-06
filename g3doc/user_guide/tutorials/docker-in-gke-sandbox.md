@@ -8,14 +8,18 @@ network driver and the bridge network driver are tested and supported.
 
 ## How to run Docker in a GKE Sandbox
 
+### GKE standard cluster
+
 First, install a GKE standard cluster (1.29.0 or higher) and deploy a node pool
 with gVisor enabled. You can view the full documentation
 [here](https://cloud.google.com/kubernetes-engine/docs/how-to/sandbox-pods#enabling).
 
-You could also run docker in gVisor at GKE autopilot cluster, the GKE version
-needs to be 1.32 or higher. When creating the autopilot cluster, please add the
-option `--workload-policies=allow-net-admin` to allow NET_ADMIN capability that
-will be granted by the gVisor sandbox.
+### GKE Autopilot cluster
+
+Alternatively to GKE standard cluster, you could run docker in gVisor at GKE
+autopilot cluster, the version needs to be 1.32 or higher. When creating the
+autopilot cluster, please add the option `--workload-policies=allow-net-admin`
+to allow NET_ADMIN capability that will be granted by the gVisor sandbox.
 
 An example command to start an GKE autopilot cluster will be:
 
@@ -23,9 +27,7 @@ An example command to start an GKE autopilot cluster will be:
 gcloud container clusters create-auto [CLUTER_NAME] --workload-policies=allow-net-admin --location=[LOCATION] --cluster-version=1.32.2-gke.1182001
 ```
 
-> gVisor sandbox doesn't need any extra capabilities from the host to run docker
-> inside gVisor, the listed capabilities are granted by gVisor to the docker
-> daemon that is running inside sandbox.
+### Get started
 
 Prepare a container image with pre-installed Docker:
 
@@ -43,6 +45,7 @@ metadata:
   name: docker-in-gvisor
 spec:
   runtimeClassName: gvisor
+  # DNS config is only needed for GKE Autopilot
   dnsPolicy: "None"
   dnsConfig:
     nameservers:
@@ -62,6 +65,10 @@ spec:
     emptyDir: {}
 ```
 
+> gVisor sandbox doesn't need any extra capabilities from the host to run docker
+> inside gVisor, the listed capabilities are granted by gVisor to the docker
+> daemon that is running inside sandbox.
+
 This YAML file defines a Kubernetes Pod named docker-in-gvisor that will run a
 single container from the avagin/docker-in-gvisor:0.1 image.
 
@@ -73,6 +80,42 @@ $ kubectl apply -f docker.yaml
 
 Verify that the docker-in-gvisor pid is running successfully: `shell $ kubectl
 get pods | grep docker-in-gvisor`
+
+#### DNS config
+
+##### GKE standard cluster
+
+The `dnsConfig` in the yaml file is not needed for GKE standard clusters.
+
+##### GKE Autopilot
+
+You have 3 options to deal with DNS config in the cluster:
+
+*   Public DNS
+
+If public DNS works for you, you will be able to leverage public DNS like
+`1.1.1.1` or `8.8.8.8` like we listed above;
+
+*   kube-dns
+
+Otherwise, `kube-dns` will be a helpful option. The `kube-dns` is a pod which
+deployed with your k8s cluster.
+
+You will look for kube-dns's address you can specify in the `dnsConfig`
+
+```
+$ kubectl get services kube-dns -n kube-system
+NAME       TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)         AGE
+kube-dns   ClusterIP   34.118.224.10   <none>        53/UDP,53/TCP   3d1h
+```
+
+*   Host network driver
+
+If you are OK with using Docker host network driver, you can ignore DNS config
+in the yaml file. For every command you execute in docker in gVisor, you have to
+specify host network driver as `--network=host`.
+
+### Build and run the image with docker in gVisor
 
 You can access the container by executing a shell inside it. Use the following
 command:
