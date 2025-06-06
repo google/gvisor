@@ -53,6 +53,13 @@ declare_mutex(
     prefix = "directoryFD",
 )
 
+declare_mutex(
+    name = "create_creds_mutex",
+    out = "create_creds_mutex.go",
+    package = "overlay",
+    prefix = "createCreds",
+)
+
 declare_rwmutex(
     name = "rename_rwmutex",
     out = "rename_rwmutex.go",
@@ -91,9 +98,10 @@ go_library(
     srcs = [
         "ancestry_rwmutex.go",
         "copy_up.go",
+        "create_creds_mutex.go",
         "data_rwmutex.go",
         "dev_mutex.go",
-        "dir_cache_mutex",
+        "dir_cache_mutex.go",
         "dir_fd_mutex.go",
         "dir_mutex.go",
         "directory.go",

@@ -693,26 +693,12 @@ func (fs *filesystem) LinkAt(ctx context.Context, rp *vfs.ResolvingPath, vd vfs.
 				return err
 			}
 		}
-		if err := vfsObj.LinkAt(ctx, fs.creds, &vfs.PathOperation{
+		createCreds := parent.credsForCreate(rp.Credentials(), parent.isSGIDSet())
+		if err := vfsObj.LinkAt(ctx, createCreds, &vfs.PathOperation{
 			Root:  old.upperVD,
 			Start: old.upperVD,
 		}, &newpop); err != nil {
 			if haveUpperWhiteout {
-				fs.cleanupRecreateWhiteout(ctx, vfsObj, &newpop)
-			}
-			return err
-		}
-		creds := rp.Credentials()
-		if err := vfsObj.SetStatAt(ctx, fs.creds, &newpop, &vfs.SetStatOptions{
-			Stat: linux.Statx{
-				Mask: linux.STATX_UID | linux.STATX_GID,
-				UID:  uint32(creds.EffectiveKUID),
-				GID:  uint32(creds.EffectiveKGID),
-			},
-		}); err != nil {
-			if cleanupErr := vfsObj.UnlinkAt(ctx, fs.creds, &newpop); cleanupErr != nil {
-				panic(fmt.Sprintf("unrecoverable overlayfs inconsistency: failed to delete upper layer file after LinkAt metadata update failure: %v", cleanupErr))
-			} else if haveUpperWhiteout {
 				fs.cleanupRecreateWhiteout(ctx, vfsObj, &newpop)
 			}
 			return err
@@ -740,23 +726,19 @@ func (fs *filesystem) MkdirAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 				return err
 			}
 		}
-		if err := vfsObj.MkdirAt(ctx, fs.creds, &pop, &opts); err != nil {
+		sgidSet := parent.isSGIDSet()
+		if sgidSet {
+			// Directories inherit the SGID bit.
+			opts.Mode |= linux.ModeSetGID
+		}
+		createCreds := parent.credsForCreate(rp.Credentials(), sgidSet)
+		if err := vfsObj.MkdirAt(ctx, createCreds, &pop, &opts); err != nil {
 			if haveUpperWhiteout {
 				fs.cleanupRecreateWhiteout(ctx, vfsObj, &pop)
 			}
 			return err
 		}
 
-		if err := vfsObj.SetStatAt(ctx, fs.creds, &pop, &vfs.SetStatOptions{
-			Stat: parent.newChildOwnerStat(opts.Mode, rp.Credentials()),
-		}); err != nil {
-			if cleanupErr := vfsObj.RmdirAt(ctx, fs.creds, &pop); cleanupErr != nil {
-				panic(fmt.Sprintf("unrecoverable overlayfs inconsistency: failed to delete upper layer directory after MkdirAt metadata update failure: %v", cleanupErr))
-			} else if haveUpperWhiteout {
-				fs.cleanupRecreateWhiteout(ctx, vfsObj, &pop)
-			}
-			return err
-		}
 		if haveUpperWhiteout {
 			// A whiteout is being replaced with this new directory. There may be
 			// directories on lower layers (previously hidden by the whiteout) that
@@ -807,19 +789,9 @@ func (fs *filesystem) MknodAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 				return err
 			}
 		}
-		if err := vfsObj.MknodAt(ctx, fs.creds, &pop, &opts); err != nil {
+		createCreds := parent.credsForCreate(rp.Credentials(), parent.isSGIDSet())
+		if err := vfsObj.MknodAt(ctx, createCreds, &pop, &opts); err != nil {
 			if haveUpperWhiteout {
-				fs.cleanupRecreateWhiteout(ctx, vfsObj, &pop)
-			}
-			return err
-		}
-		creds := rp.Credentials()
-		if err := vfsObj.SetStatAt(ctx, fs.creds, &pop, &vfs.SetStatOptions{
-			Stat: parent.newChildOwnerStat(opts.Mode, creds),
-		}); err != nil {
-			if cleanupErr := vfsObj.UnlinkAt(ctx, fs.creds, &pop); cleanupErr != nil {
-				panic(fmt.Sprintf("unrecoverable overlayfs inconsistency: failed to delete upper layer file after MknodAt metadata update failure: %v", cleanupErr))
-			} else if haveUpperWhiteout {
 				fs.cleanupRecreateWhiteout(ctx, vfsObj, &pop)
 			}
 			return err
@@ -1027,7 +999,8 @@ func (fs *filesystem) createAndOpenLocked(ctx context.Context, rp *vfs.Resolving
 		}
 	}
 	// Create the file on the upper layer, and get an FD representing it.
-	upperFD, err := vfsObj.OpenAt(ctx, fs.creds, &pop, &vfs.OpenOptions{
+	createCreds := parent.credsForCreate(creds, parent.isSGIDSet())
+	upperFD, err := vfsObj.OpenAt(ctx, createCreds, &pop, &vfs.OpenOptions{
 		Flags: opts.Flags&^vfs.FileCreationFlags | linux.O_CREAT | linux.O_EXCL,
 		Mode:  opts.Mode,
 	})
@@ -1038,18 +1011,6 @@ func (fs *filesystem) createAndOpenLocked(ctx context.Context, rp *vfs.Resolving
 		return nil, err
 	}
 
-	// Change the file's owner to the caller. We can't use upperFD.SetStat()
-	// because it will pick up creds from ctx.
-	if err := vfsObj.SetStatAt(ctx, fs.creds, &pop, &vfs.SetStatOptions{
-		Stat: parent.newChildOwnerStat(opts.Mode, creds),
-	}); err != nil {
-		if cleanupErr := vfsObj.UnlinkAt(ctx, fs.creds, &pop); cleanupErr != nil {
-			panic(fmt.Sprintf("unrecoverable overlayfs inconsistency: failed to delete upper layer file after OpenAt(O_CREAT) metadata update failure: %v", cleanupErr))
-		} else if haveUpperWhiteout {
-			fs.cleanupRecreateWhiteout(ctx, vfsObj, &pop)
-		}
-		return nil, err
-	}
 	// Re-lookup to get a dentry representing the new file, which is needed for
 	// the returned FD.
 	child, _, err := fs.getChildLocked(ctx, parent, childName, ds)
@@ -1609,23 +1570,9 @@ func (fs *filesystem) SymlinkAt(ctx context.Context, rp *vfs.ResolvingPath, targ
 				return err
 			}
 		}
-		if err := vfsObj.SymlinkAt(ctx, fs.creds, &pop, target); err != nil {
+		createCreds := parent.credsForCreate(rp.Credentials(), parent.isSGIDSet())
+		if err := vfsObj.SymlinkAt(ctx, createCreds, &pop, target); err != nil {
 			if haveUpperWhiteout {
-				fs.cleanupRecreateWhiteout(ctx, vfsObj, &pop)
-			}
-			return err
-		}
-		creds := rp.Credentials()
-		if err := vfsObj.SetStatAt(ctx, fs.creds, &pop, &vfs.SetStatOptions{
-			Stat: linux.Statx{
-				Mask: linux.STATX_UID | linux.STATX_GID,
-				UID:  uint32(creds.EffectiveKUID),
-				GID:  uint32(creds.EffectiveKGID),
-			},
-		}); err != nil {
-			if cleanupErr := vfsObj.UnlinkAt(ctx, fs.creds, &pop); cleanupErr != nil {
-				panic(fmt.Sprintf("unrecoverable overlayfs inconsistency: failed to delete upper layer file after SymlinkAt metadata update failure: %v", cleanupErr))
-			} else if haveUpperWhiteout {
 				fs.cleanupRecreateWhiteout(ctx, vfsObj, &pop)
 			}
 			return err

@@ -26,6 +26,10 @@ func (d *dentry) isDir() bool {
 	return d.mode.Load()&linux.S_IFMT == linux.S_IFDIR
 }
 
+func (d *dentry) isSGIDSet() bool {
+	return d.mode.Load()&linux.ModeSetGID != 0
+}
+
 // Preconditions:
 //   - d.dirMu must be locked.
 //   - d.isDir().
