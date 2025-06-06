@@ -150,6 +150,13 @@ func initCPUInfo() {
 	}
 }
 
+// archSetAllowedFeatures sets the CPU features allowed for use by user apps.
+//
+// Do nothing as cpuid faulting is not enabled in arm64.
+func archSetAllowedFeatures(features []string) {
+	log.Warningf("Could not set allowed cpu features in arm64, just ignore.")
+}
+
 // archInitialize initializes hostFeatureSet.
 func archInitialize() {
 	initCPUInfo()
