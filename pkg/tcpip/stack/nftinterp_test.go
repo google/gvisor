@@ -1,4 +1,4 @@
-// Copyright 2024 The gVisor Authors.
+// Copyright 2025 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package nftables
+package stack
 
 import (
 	"fmt"
@@ -1094,12 +1094,12 @@ func TestInterpretRule(t *testing.T) {
 	for _, test := range []struct {
 		tname    string
 		ruleStr  string
-		expected *Rule // will be nil if an error is expected
+		expected *NFRule // will be nil if an error is expected
 	}{
 		{
 			tname:    "empty ruleset",
 			ruleStr:  ``,
-			expected: &Rule{},
+			expected: &NFRule{},
 		},
 		{
 			tname: "empty ruleset with excess whitespace",
@@ -1107,7 +1107,7 @@ func TestInterpretRule(t *testing.T) {
 
 
 			`,
-			expected: &Rule{},
+			expected: &NFRule{},
 		},
 	} {
 		t.Run(test.tname, func(t *testing.T) {

@@ -1,4 +1,4 @@
-// Copyright 2024 The gVisor Authors.
+// Copyright 2025 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package nftables
+package stack
 
 import (
 	"encoding/binary"
@@ -29,13 +29,12 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/faketime"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
-	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
-// Table Constants.
+// NF Table Constants.
 const (
 	arbitraryTargetChain         string        = "target_chain"
-	arbitraryHook                Hook          = Prerouting
+	arbitraryHook                NFHook        = NFPrerouting
 	arbitraryFamily              AddressFamily = Inet
 	arbitraryReservedHeaderBytes int           = 16
 )
@@ -208,18 +207,18 @@ var (
 )
 
 // makeArbitraryPacket creates an arbitrary packet for testing.
-func makeArbitraryPacket(reserved int) *stack.PacketBuffer {
-	return stack.NewPacketBuffer(stack.PacketBufferOptions{
+func makeArbitraryPacket(reserved int) *PacketBuffer {
+	return NewPacketBuffer(PacketBufferOptions{
 		ReserveHeaderBytes: reserved,
 		Payload:            buffer.MakeWithData([]byte{0, 2, 4, 8, 16, 32, 64, 128}),
 	})
 }
 
 // makeEthernetPacket creates a packet with an Ethernet header.
-func makeEthernetPacket(reserved int, ethFields *header.EthernetFields) *stack.PacketBuffer {
+func makeEthernetPacket(reserved int, ethFields *header.EthernetFields) *PacketBuffer {
 	eth := make([]byte, header.EthernetMinimumSize)
 	header.Ethernet(eth).Encode(ethFields)
-	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+	pkt := NewPacketBuffer(PacketBufferOptions{
 		ReserveHeaderBytes: reserved,
 		Payload:            buffer.MakeWithData(eth),
 	})
@@ -228,9 +227,9 @@ func makeEthernetPacket(reserved int, ethFields *header.EthernetFields) *stack.P
 }
 
 // makeIPv4Packet creates a packet with an IPv4 header.
-func makeIPv4Packet(reserved int, ipv4Fields *header.IPv4Fields) *stack.PacketBuffer {
+func makeIPv4Packet(reserved int, ipv4Fields *header.IPv4Fields) *PacketBuffer {
 	// Creates a new PacketBuffer with enough space for the IPv4 header.
-	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+	pkt := NewPacketBuffer(PacketBufferOptions{
 		ReserveHeaderBytes: reserved,
 	})
 
@@ -253,9 +252,9 @@ func makeIPv4Packet(reserved int, ipv4Fields *header.IPv4Fields) *stack.PacketBu
 }
 
 // makeIPv6Packet creates a packet with an IPv6 header.
-func makeIPv6Packet(reserved int, ipv6Fields *header.IPv6Fields) *stack.PacketBuffer {
+func makeIPv6Packet(reserved int, ipv6Fields *header.IPv6Fields) *PacketBuffer {
 	// Creates a new PacketBuffer with enough space for the IPv4 header.
-	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+	pkt := NewPacketBuffer(PacketBufferOptions{
 		ReserveHeaderBytes: reserved,
 	})
 
@@ -278,7 +277,7 @@ func makeIPv6Packet(reserved int, ipv6Fields *header.IPv6Fields) *stack.PacketBu
 
 // addTCPHeader adds a TCP header to a packet and returns the header.
 // Note: this does not compute the checksum.
-func addTCPHeader(pkt *stack.PacketBuffer, tcpFields *header.TCPFields) header.TCP {
+func addTCPHeader(pkt *PacketBuffer, tcpFields *header.TCPFields) header.TCP {
 	// Prepends the TCP header to the packet buffer.
 	tcpHdr := header.TCP(pkt.TransportHeader().Push(int(tcpFields.DataOffset)))
 
@@ -292,7 +291,7 @@ func addTCPHeader(pkt *stack.PacketBuffer, tcpFields *header.TCPFields) header.T
 }
 
 // makeIPv4TCPPacket creates a packet with an IPv4 and TCP header.
-func makeIPv4TCPPacket(reserved int, ipv4Fields *header.IPv4Fields, tcpFields *header.TCPFields) *stack.PacketBuffer {
+func makeIPv4TCPPacket(reserved int, ipv4Fields *header.IPv4Fields, tcpFields *header.TCPFields) *PacketBuffer {
 	// Makes a packet with the L3 IPv4 header (this sets the checksum).
 	pkt := makeIPv4Packet(reserved, ipv4Fields)
 
@@ -311,7 +310,7 @@ func makeIPv4TCPPacket(reserved int, ipv4Fields *header.IPv4Fields, tcpFields *h
 }
 
 // makeIPv6TCPPacket creates a packet with an IPv6 and TCP header.
-func makeIPv6TCPPacket(reserved int, ipv6Fields *header.IPv6Fields, tcpFields *header.TCPFields) *stack.PacketBuffer {
+func makeIPv6TCPPacket(reserved int, ipv6Fields *header.IPv6Fields, tcpFields *header.TCPFields) *PacketBuffer {
 	// Makes a packet with the L3 IPv6 header (this sets the checksum).
 	pkt := makeIPv6Packet(reserved, ipv6Fields)
 
@@ -359,7 +358,7 @@ func TestAcceptAllForSupportedHooks(t *testing.T) {
 	for _, family := range []AddressFamily{IP, IP6, Inet, Arp, Bridge, Netdev} {
 		t.Run(family.String()+" address family", func(t *testing.T) {
 			nf := newNFTablesStd()
-			for _, hook := range []Hook{Prerouting, Input, Forward, Output, Postrouting, Ingress, Egress} {
+			for _, hook := range []NFHook{NFPrerouting, NFInput, NFForward, NFOutput, NFPostrouting, NFIngress, NFEgress} {
 				pkt := makeArbitraryPacket(arbitraryReservedHeaderBytes)
 				v, err := nf.EvaluateHook(family, hook, pkt)
 
@@ -544,21 +543,21 @@ func TestEvaluateImmediateVerdict(t *testing.T) {
 
 			// Adds testing rules and operations.
 			if test.baseOp1 != nil {
-				rule1 := &Rule{}
+				rule1 := &NFRule{}
 				rule1.addOperation(test.baseOp1)
 				if err := bc.RegisterRule(rule1, -1); err != nil {
 					t.Fatalf("unexpected error for RegisterRule for the first operation: %v", err)
 				}
 			}
 			if test.baseOp2 != nil {
-				rule2 := &Rule{}
+				rule2 := &NFRule{}
 				rule2.addOperation(test.baseOp2)
 				if err := bc.RegisterRule(rule2, -1); err != nil {
 					t.Fatalf("unexpected error for RegisterRule for the second operation: %v", err)
 				}
 			}
 			if test.targetOp != nil {
-				ruleTarget := &Rule{}
+				ruleTarget := &NFRule{}
 				ruleTarget.addOperation(test.targetOp)
 				if err := tc.RegisterRule(ruleTarget, -1); err != nil {
 					t.Fatalf("unexpected error for RegisterRule for the target operation: %v", err)
@@ -606,7 +605,7 @@ func TestEvaluateImmediateBytesData(t *testing.T) {
 				switch registerSize {
 				case linux.NFT_REG32_SIZE:
 					for reg := linux.NFT_REG32_00; reg <= linux.NFT_REG32_15; reg++ {
-						rule := &Rule{}
+						rule := &NFRule{}
 						rule.addOperation(mustCreateImmediate(t, uint8(reg), newBytesData(bytes[:blen])))
 						if err := bc.RegisterRule(rule, -1); err != nil {
 							t.Fatalf("unexpected error for RegisterRule for rule %d: %v", reg-linux.NFT_REG32_00, err)
@@ -614,7 +613,7 @@ func TestEvaluateImmediateBytesData(t *testing.T) {
 					}
 				case linux.NFT_REG_SIZE:
 					for reg := linux.NFT_REG_1; reg <= linux.NFT_REG_4; reg++ {
-						rule := &Rule{}
+						rule := &NFRule{}
 						rule.addOperation(mustCreateImmediate(t, uint8(reg), newBytesData(bytes[:blen])))
 						if err := bc.RegisterRule(rule, -1); err != nil {
 							t.Fatalf("unexpected error for RegisterRule for rule %d: %v", reg-linux.NFT_REG_1, err)
@@ -1087,7 +1086,7 @@ func TestEvaluateComparison(t *testing.T) {
 				t.Fatalf("unexpected error for AddChain: %v", err)
 			}
 			bc.SetBaseChainInfo(arbitraryInfoPolicyAccept)
-			rule := &Rule{}
+			rule := &NFRule{}
 
 			// Adds testing operations.
 			if test.op1 != nil {
@@ -1324,7 +1323,7 @@ func TestEvaluateRanged(t *testing.T) {
 				t.Fatalf("unexpected error for AddChain: %v", err)
 			}
 			bc.SetBaseChainInfo(arbitraryInfoPolicyAccept)
-			rule := &Rule{}
+			rule := &NFRule{}
 
 			// Adds testing operations.
 			if test.op1 != nil {
@@ -1376,7 +1375,7 @@ func TestEvaluatePayloadLoad(t *testing.T) {
 
 	for _, test := range []struct {
 		tname string
-		pkt   *stack.PacketBuffer
+		pkt   *PacketBuffer
 		op1   operation // Payload Load operation to test.
 		op2   operation // Comparison operation to check resulting data in register,
 		// nil if expecting a break during evaluation.
@@ -1558,7 +1557,7 @@ func TestEvaluatePayloadLoad(t *testing.T) {
 				t.Fatalf("unexpected error for AddChain: %v", err)
 			}
 			bc.SetBaseChainInfo(arbitraryInfoPolicyAccept)
-			rule := &Rule{}
+			rule := &NFRule{}
 
 			// Adds testing operations.
 			if test.op1 != nil {
@@ -1608,16 +1607,16 @@ func TestEvaluatePayloadLoad(t *testing.T) {
 func TestEvaluatePayloadSet(t *testing.T) {
 	for _, test := range []struct {
 		tname  string
-		pkt    *stack.PacketBuffer
-		outPkt *stack.PacketBuffer // nil if expecting a break during evaluation.
-		op1    operation           // Immediate operation to load source register.
-		op2    operation           // Payload Set operation to test.
+		pkt    *PacketBuffer
+		outPkt *PacketBuffer // nil if expecting a break during evaluation.
+		op1    operation     // Immediate operation to load source register.
+		op2    operation     // Payload Set operation to test.
 	}{
 		// Ethernet header statement commands.
 		{ // cmd: add rule ip tab ch ether saddr set 02:02:03:04:05:07
 			tname: "set ethernet header source address",
 			pkt:   makeEthernetPacket(0, arbitraryEthernetFields()),
-			outPkt: func() *stack.PacketBuffer {
+			outPkt: func() *PacketBuffer {
 				fields := arbitraryEthernetFields()
 				fields.SrcAddr = arbitraryLinkAddr2
 				return makeEthernetPacket(0, fields)
@@ -1628,7 +1627,7 @@ func TestEvaluatePayloadSet(t *testing.T) {
 		{ // cmd: add rule ip tab ch ether daddr set 02:02:03:04:05:06
 			tname: "set ethernet header destination address",
 			pkt:   makeEthernetPacket(0, arbitraryEthernetFields()),
-			outPkt: func() *stack.PacketBuffer {
+			outPkt: func() *PacketBuffer {
 				fields := arbitraryEthernetFields()
 				fields.DstAddr = arbitraryLinkAddr
 				return makeEthernetPacket(0, fields)
@@ -1639,7 +1638,7 @@ func TestEvaluatePayloadSet(t *testing.T) {
 		{ // cmd: add rule ip tab ch ether type set ip6
 			tname: "set ethernet header type",
 			pkt:   makeEthernetPacket(0, arbitraryEthernetFields()),
-			outPkt: func() *stack.PacketBuffer {
+			outPkt: func() *PacketBuffer {
 				fields := arbitraryEthernetFields()
 				fields.Type = header.IPv6ProtocolNumber
 				return makeEthernetPacket(0, fields)
@@ -1652,7 +1651,7 @@ func TestEvaluatePayloadSet(t *testing.T) {
 		{ // cmd: add rule ip tab ch ip length set 30
 			tname: "set ipv4 header length",
 			pkt:   makeIPv4Packet(header.IPv4MinimumSize, arbitraryIPv4Fields()),
-			outPkt: func() *stack.PacketBuffer {
+			outPkt: func() *PacketBuffer {
 				fields := arbitraryIPv4Fields()
 				fields.TotalLength = uint16(30)
 				return makeIPv4Packet(header.IPv4MinimumSize, fields)
@@ -1663,7 +1662,7 @@ func TestEvaluatePayloadSet(t *testing.T) {
 		{ // cmd: add rule ip tab ch ip id set 12345
 			tname: "set ipv4 header ip id",
 			pkt:   makeIPv4Packet(header.IPv4MinimumSize, arbitraryIPv4Fields()),
-			outPkt: func() *stack.PacketBuffer {
+			outPkt: func() *PacketBuffer {
 				fields := arbitraryIPv4Fields()
 				fields.ID = uint16(12345)
 				return makeIPv4Packet(header.IPv4MinimumSize, fields)
@@ -1690,7 +1689,7 @@ func TestEvaluatePayloadSet(t *testing.T) {
 		{ // cmd: add rule ip tab ch ip frag-off set 10 (80 bytes)
 			tname: "set ipv4 header fragment offset, change fragment offset for fragmented packet",
 			pkt:   makeIPv4Packet(header.IPv4MinimumSize, fragmentedIPv4Fields()),
-			outPkt: func() *stack.PacketBuffer {
+			outPkt: func() *PacketBuffer {
 				fields := arbitraryIPv4Fields()
 				fields.FragmentOffset = uint16(10 * 8)
 				return makeIPv4Packet(header.IPv4MinimumSize, fields)
@@ -1701,7 +1700,7 @@ func TestEvaluatePayloadSet(t *testing.T) {
 		{ // cmd: add rule ip tab ch ip ttl set 128
 			tname: "set ipv4 time to live",
 			pkt:   makeIPv4Packet(header.IPv4MinimumSize, arbitraryIPv4Fields()),
-			outPkt: func() *stack.PacketBuffer {
+			outPkt: func() *PacketBuffer {
 				fields := arbitraryIPv4Fields()
 				fields.TTL = uint8(128)
 				return makeIPv4Packet(header.IPv4MinimumSize, fields)
@@ -1712,7 +1711,7 @@ func TestEvaluatePayloadSet(t *testing.T) {
 		{ // cmd: add rule ip tab ch ip saddr set 192.168.1.9
 			tname: "set ipv4 header source address",
 			pkt:   makeIPv4Packet(header.IPv4MinimumSize, arbitraryIPv4Fields()),
-			outPkt: func() *stack.PacketBuffer {
+			outPkt: func() *PacketBuffer {
 				fields := arbitraryIPv4Fields()
 				fields.SrcAddr = tcpip.AddrFrom4(arbitraryIPv4AddrB2)
 				return makeIPv4Packet(header.IPv4MinimumSize, fields)
@@ -1723,7 +1722,7 @@ func TestEvaluatePayloadSet(t *testing.T) {
 		{ // cmd: add rule ip tab ch ip daddr set 192.168.1.1
 			tname: "set ipv4 header destination address",
 			pkt:   makeIPv4Packet(header.IPv4MinimumSize, arbitraryIPv4Fields()),
-			outPkt: func() *stack.PacketBuffer {
+			outPkt: func() *PacketBuffer {
 				fields := arbitraryIPv4Fields()
 				fields.DstAddr = tcpip.AddrFrom4(arbitraryIPv4AddrB)
 				return makeIPv4Packet(header.IPv4MinimumSize, fields)
@@ -1734,7 +1733,7 @@ func TestEvaluatePayloadSet(t *testing.T) {
 		{ // cmd: add rule ip tab ch ip checksum set 6060
 			tname: "set ipv4 header checksum",
 			pkt:   makeIPv4Packet(header.IPv4MinimumSize, arbitraryIPv4Fields()),
-			outPkt: func() *stack.PacketBuffer {
+			outPkt: func() *PacketBuffer {
 				pkt := makeIPv4Packet(header.IPv4MinimumSize, arbitraryIPv4Fields())
 				pkt.Network().SetChecksum(6060)
 				return pkt
@@ -1747,7 +1746,7 @@ func TestEvaluatePayloadSet(t *testing.T) {
 		{ // cmd: add rule ip6 tab ch ip6 length set 232
 			tname: "set ipv6 header length",
 			pkt:   makeIPv6Packet(header.IPv6MinimumSize, arbitraryIPv6Fields()),
-			outPkt: func() *stack.PacketBuffer {
+			outPkt: func() *PacketBuffer {
 				fields := arbitraryIPv6Fields()
 				fields.PayloadLength = uint16(232)
 				return makeIPv6Packet(header.IPv6MinimumSize, fields)
@@ -1758,7 +1757,7 @@ func TestEvaluatePayloadSet(t *testing.T) {
 		{ // cmd: add rule ip6 tab ch ip6 hoplimit set 54
 			tname: "set ipv6 header hop limit",
 			pkt:   makeIPv6Packet(header.IPv6MinimumSize, arbitraryIPv6Fields()),
-			outPkt: func() *stack.PacketBuffer {
+			outPkt: func() *PacketBuffer {
 				fields := arbitraryIPv6Fields()
 				fields.HopLimit = uint8(54)
 				return makeIPv6Packet(header.IPv6MinimumSize, fields)
@@ -1769,7 +1768,7 @@ func TestEvaluatePayloadSet(t *testing.T) {
 		{ // cmd: add rule ip6 tab ch ip6 saddr set 2001:db8:85a3::bb
 			tname: "set ipv6 header source address",
 			pkt:   makeIPv6Packet(header.IPv6MinimumSize, arbitraryIPv6Fields()),
-			outPkt: func() *stack.PacketBuffer {
+			outPkt: func() *PacketBuffer {
 				fields := arbitraryIPv6Fields()
 				fields.SrcAddr = tcpip.AddrFrom16(arbitraryIPv6AddrB2)
 				return makeIPv6Packet(header.IPv6MinimumSize, fields)
@@ -1780,7 +1779,7 @@ func TestEvaluatePayloadSet(t *testing.T) {
 		{ // cmd: add rule ip6 tab ch ip6 daddr set 2001:db8:85a3::aa
 			tname: "set ipv6 header destination address",
 			pkt:   makeIPv6Packet(header.IPv6MinimumSize, arbitraryIPv6Fields()),
-			outPkt: func() *stack.PacketBuffer {
+			outPkt: func() *PacketBuffer {
 				fields := arbitraryIPv6Fields()
 				fields.DstAddr = tcpip.AddrFrom16(arbitraryIPv6AddrB)
 				return makeIPv6Packet(header.IPv6MinimumSize, fields)
@@ -1803,7 +1802,7 @@ func TestEvaluatePayloadSet(t *testing.T) {
 		{ // cmd: add rule ip tab ch tcp sport set 80
 			tname: "set tcp header with ipv4 source port",
 			pkt:   makeIPv4TCPPacket(header.IPv4MinimumSize+header.TCPMinimumSize, arbitraryIPv4Fields(), arbitraryTCPFields()),
-			outPkt: func() *stack.PacketBuffer {
+			outPkt: func() *PacketBuffer {
 				tcpFields := arbitraryTCPFields()
 				tcpFields.SrcPort = arbitraryPort2
 				return makeIPv4TCPPacket(header.IPv4MinimumSize+header.TCPMinimumSize, arbitraryIPv4Fields(), tcpFields)
@@ -1814,7 +1813,7 @@ func TestEvaluatePayloadSet(t *testing.T) {
 		{ // cmd: add rule ip tab ch tcp dport set 12345
 			tname: "set tcp header with ipv4 destination port",
 			pkt:   makeIPv4TCPPacket(header.IPv4MinimumSize+header.TCPMinimumSize, arbitraryIPv4Fields(), arbitraryTCPFields()),
-			outPkt: func() *stack.PacketBuffer {
+			outPkt: func() *PacketBuffer {
 				tcpFields := arbitraryTCPFields()
 				tcpFields.DstPort = arbitraryPort
 				return makeIPv4TCPPacket(header.IPv4MinimumSize+header.TCPMinimumSize, arbitraryIPv4Fields(), tcpFields)
@@ -1825,7 +1824,7 @@ func TestEvaluatePayloadSet(t *testing.T) {
 		{ // cmd: add rule ip tab ch tcp sequence set 33
 			tname: "set tcp header with ipv4 sequence number",
 			pkt:   makeIPv4TCPPacket(header.IPv4MinimumSize+header.TCPMinimumSize, arbitraryIPv4Fields(), arbitraryTCPFields()),
-			outPkt: func() *stack.PacketBuffer {
+			outPkt: func() *PacketBuffer {
 				tcpFields := arbitraryTCPFields()
 				tcpFields.SeqNum = uint32(33)
 				return makeIPv4TCPPacket(header.IPv4MinimumSize+header.TCPMinimumSize, arbitraryIPv4Fields(), tcpFields)
@@ -1836,7 +1835,7 @@ func TestEvaluatePayloadSet(t *testing.T) {
 		{ // cmd: add rule ip tab ch tcp ackseq set 245
 			tname: "set tcp header with ipv4 acknowledgement sequence number",
 			pkt:   makeIPv4TCPPacket(header.IPv4MinimumSize+header.TCPMinimumSize, arbitraryIPv4Fields(), arbitraryTCPFields()),
-			outPkt: func() *stack.PacketBuffer {
+			outPkt: func() *PacketBuffer {
 				tcpFields := arbitraryTCPFields()
 				tcpFields.AckNum = uint32(245)
 				return makeIPv4TCPPacket(header.IPv4MinimumSize+header.TCPMinimumSize, arbitraryIPv4Fields(), tcpFields)
@@ -1847,7 +1846,7 @@ func TestEvaluatePayloadSet(t *testing.T) {
 		{ // cmd: add rule ip tab ch tcp window set 91
 			tname: "set tcp header with ipv4 window",
 			pkt:   makeIPv4TCPPacket(header.IPv4MinimumSize+header.TCPMinimumSize, arbitraryIPv4Fields(), arbitraryTCPFields()),
-			outPkt: func() *stack.PacketBuffer {
+			outPkt: func() *PacketBuffer {
 				tcpFields := arbitraryTCPFields()
 				tcpFields.WindowSize = 91
 				return makeIPv4TCPPacket(header.IPv4MinimumSize+header.TCPMinimumSize, arbitraryIPv4Fields(), tcpFields)
@@ -1858,7 +1857,7 @@ func TestEvaluatePayloadSet(t *testing.T) {
 		{ // cmd: add rule ip tab ch tcp checksum set 7654
 			tname: "set tcp header with ipv4 checksum",
 			pkt:   makeIPv4TCPPacket(header.IPv4MinimumSize+header.TCPMinimumSize, arbitraryIPv4Fields(), arbitraryTCPFields()),
-			outPkt: func() *stack.PacketBuffer {
+			outPkt: func() *PacketBuffer {
 				pkt := makeIPv4TCPPacket(header.IPv4MinimumSize+header.TCPMinimumSize, arbitraryIPv4Fields(), arbitraryTCPFields())
 				tcpHdr := header.TCP(pkt.TransportHeader().Slice())
 				tcpHdr.SetChecksum(7654)
@@ -1870,7 +1869,7 @@ func TestEvaluatePayloadSet(t *testing.T) {
 		{ // cmd: add rule ip tab ch tcp urgptr set 40
 			tname: "set tcp header with ipv4 urgent pointer",
 			pkt:   makeIPv4TCPPacket(header.IPv4MinimumSize+header.TCPMinimumSize, arbitraryIPv4Fields(), arbitraryTCPFields()),
-			outPkt: func() *stack.PacketBuffer {
+			outPkt: func() *PacketBuffer {
 				tcpFields := arbitraryTCPFields()
 				tcpFields.UrgentPointer = 40
 				return makeIPv4TCPPacket(header.IPv4MinimumSize+header.TCPMinimumSize, arbitraryIPv4Fields(), tcpFields)
@@ -1882,7 +1881,7 @@ func TestEvaluatePayloadSet(t *testing.T) {
 		{ // cmd: add rule ip tab ch ip id set 12345
 			tname: "set ipv4 header with tcp ip id",
 			pkt:   makeIPv4TCPPacket(header.IPv4MinimumSize+header.TCPMinimumSize, arbitraryIPv4Fields(), arbitraryTCPFields()),
-			outPkt: func() *stack.PacketBuffer {
+			outPkt: func() *PacketBuffer {
 				ipFields := arbitraryIPv4Fields()
 				ipFields.ID = uint16(12345)
 				return makeIPv4TCPPacket(header.IPv4MinimumSize+header.TCPMinimumSize, ipFields, arbitraryTCPFields())
@@ -1893,7 +1892,7 @@ func TestEvaluatePayloadSet(t *testing.T) {
 		{ // cmd: add rule ip tab ch ip ttl set 128
 			tname: "set ipv4 time to live",
 			pkt:   makeIPv4TCPPacket(header.IPv4MinimumSize+header.TCPMinimumSize, arbitraryIPv4Fields(), arbitraryTCPFields()),
-			outPkt: func() *stack.PacketBuffer {
+			outPkt: func() *PacketBuffer {
 				ipFields := arbitraryIPv4Fields()
 				ipFields.TTL = uint8(128)
 				return makeIPv4TCPPacket(header.IPv4MinimumSize+header.TCPMinimumSize, ipFields, arbitraryTCPFields())
@@ -1904,7 +1903,7 @@ func TestEvaluatePayloadSet(t *testing.T) {
 		{ // cmd: add rule ip tab ch ip saddr set 192.168.1.9
 			tname: "set ipv4 header with tcp source address",
 			pkt:   makeIPv4TCPPacket(header.IPv4MinimumSize+header.TCPMinimumSize, arbitraryIPv4Fields(), arbitraryTCPFields()),
-			outPkt: func() *stack.PacketBuffer {
+			outPkt: func() *PacketBuffer {
 				ipFields := arbitraryIPv4Fields()
 				ipFields.SrcAddr = tcpip.AddrFrom4(arbitraryIPv4AddrB2)
 				return makeIPv4TCPPacket(header.IPv4MinimumSize+header.TCPMinimumSize, ipFields, arbitraryTCPFields())
@@ -1915,7 +1914,7 @@ func TestEvaluatePayloadSet(t *testing.T) {
 		{ // cmd: add rule ip tab ch ip daddr set 192.168.1.1
 			tname: "set ipv4 header with tcp destination address",
 			pkt:   makeIPv4TCPPacket(header.IPv4MinimumSize+header.TCPMinimumSize, arbitraryIPv4Fields(), arbitraryTCPFields()),
-			outPkt: func() *stack.PacketBuffer {
+			outPkt: func() *PacketBuffer {
 				ipFields := arbitraryIPv4Fields()
 				ipFields.DstAddr = tcpip.AddrFrom4(arbitraryIPv4AddrB)
 				return makeIPv4TCPPacket(header.IPv4MinimumSize+header.TCPMinimumSize, ipFields, arbitraryTCPFields())
@@ -1929,7 +1928,7 @@ func TestEvaluatePayloadSet(t *testing.T) {
 		{ // cmd: add rule ip tab ch tcp sport set 80
 			tname: "set tcp header with ipv6 source port",
 			pkt:   makeIPv6TCPPacket(header.IPv6MinimumSize+header.TCPMinimumSize, arbitraryIPv6Fields(), arbitraryTCPFields()),
-			outPkt: func() *stack.PacketBuffer {
+			outPkt: func() *PacketBuffer {
 				tcpFields := arbitraryTCPFields()
 				tcpFields.SrcPort = arbitraryPort2
 				return makeIPv6TCPPacket(header.IPv6MinimumSize+header.TCPMinimumSize, arbitraryIPv6Fields(), tcpFields)
@@ -1940,7 +1939,7 @@ func TestEvaluatePayloadSet(t *testing.T) {
 		{ // cmd: add rule ip tab ch tcp dport set 12345
 			tname: "set tcp header with ipv6 destination port",
 			pkt:   makeIPv6TCPPacket(header.IPv6MinimumSize+header.TCPMinimumSize, arbitraryIPv6Fields(), arbitraryTCPFields()),
-			outPkt: func() *stack.PacketBuffer {
+			outPkt: func() *PacketBuffer {
 				tcpFields := arbitraryTCPFields()
 				tcpFields.DstPort = arbitraryPort
 				return makeIPv6TCPPacket(header.IPv6MinimumSize+header.TCPMinimumSize, arbitraryIPv6Fields(), tcpFields)
@@ -1951,7 +1950,7 @@ func TestEvaluatePayloadSet(t *testing.T) {
 		{ // cmd: add rule ip tab ch tcp sequence set 33
 			tname: "set tcp header with ipv6 sequence number",
 			pkt:   makeIPv6TCPPacket(header.IPv6MinimumSize+header.TCPMinimumSize, arbitraryIPv6Fields(), arbitraryTCPFields()),
-			outPkt: func() *stack.PacketBuffer {
+			outPkt: func() *PacketBuffer {
 				tcpFields := arbitraryTCPFields()
 				tcpFields.SeqNum = uint32(33)
 				return makeIPv6TCPPacket(header.IPv6MinimumSize+header.TCPMinimumSize, arbitraryIPv6Fields(), tcpFields)
@@ -1962,7 +1961,7 @@ func TestEvaluatePayloadSet(t *testing.T) {
 		{ // cmd: add rule ip tab ch tcp ackseq set 245
 			tname: "set tcp header with ipv6 acknowledgement sequence number",
 			pkt:   makeIPv6TCPPacket(header.IPv6MinimumSize+header.TCPMinimumSize, arbitraryIPv6Fields(), arbitraryTCPFields()),
-			outPkt: func() *stack.PacketBuffer {
+			outPkt: func() *PacketBuffer {
 				tcpFields := arbitraryTCPFields()
 				tcpFields.AckNum = uint32(245)
 				return makeIPv6TCPPacket(header.IPv6MinimumSize+header.TCPMinimumSize, arbitraryIPv6Fields(), tcpFields)
@@ -1973,7 +1972,7 @@ func TestEvaluatePayloadSet(t *testing.T) {
 		{ // cmd: add rule ip tab ch tcp window set 91
 			tname: "set tcp header with ipv6 window",
 			pkt:   makeIPv6TCPPacket(header.IPv6MinimumSize+header.TCPMinimumSize, arbitraryIPv6Fields(), arbitraryTCPFields()),
-			outPkt: func() *stack.PacketBuffer {
+			outPkt: func() *PacketBuffer {
 				tcpFields := arbitraryTCPFields()
 				tcpFields.WindowSize = uint16(91)
 				return makeIPv6TCPPacket(header.IPv6MinimumSize+header.TCPMinimumSize, arbitraryIPv6Fields(), tcpFields)
@@ -1984,7 +1983,7 @@ func TestEvaluatePayloadSet(t *testing.T) {
 		{ // cmd: add rule ip tab ch tcp checksum set 7654
 			tname: "set tcp header with ipv6 checksum",
 			pkt:   makeIPv6TCPPacket(header.IPv6MinimumSize+header.TCPMinimumSize, arbitraryIPv6Fields(), arbitraryTCPFields()),
-			outPkt: func() *stack.PacketBuffer {
+			outPkt: func() *PacketBuffer {
 				pkt := makeIPv6TCPPacket(header.IPv6MinimumSize+header.TCPMinimumSize, arbitraryIPv6Fields(), arbitraryTCPFields())
 				tcpHdr := header.TCP(pkt.TransportHeader().Slice())
 				tcpHdr.SetChecksum(7654)
@@ -1996,7 +1995,7 @@ func TestEvaluatePayloadSet(t *testing.T) {
 		{ // cmd: add rule ip tab ch tcp urgptr set 40
 			tname: "set tcp header with ipv6 urgent pointer",
 			pkt:   makeIPv6TCPPacket(header.IPv6MinimumSize+header.TCPMinimumSize, arbitraryIPv6Fields(), arbitraryTCPFields()),
-			outPkt: func() *stack.PacketBuffer {
+			outPkt: func() *PacketBuffer {
 				tcpFields := arbitraryTCPFields()
 				tcpFields.UrgentPointer = uint16(40)
 				return makeIPv6TCPPacket(header.IPv6MinimumSize+header.TCPMinimumSize, arbitraryIPv6Fields(), tcpFields)
@@ -2008,7 +2007,7 @@ func TestEvaluatePayloadSet(t *testing.T) {
 		{ // cmd: add rule ip6 tab ch ip6 length set 232
 			tname: "set ipv6 header length",
 			pkt:   makeIPv6TCPPacket(header.IPv6MinimumSize+header.TCPMinimumSize, arbitraryIPv6Fields(), arbitraryTCPFields()),
-			outPkt: func() *stack.PacketBuffer {
+			outPkt: func() *PacketBuffer {
 				fields := arbitraryIPv6Fields()
 				fields.PayloadLength = uint16(232)
 				return makeIPv6TCPPacket(header.IPv6MinimumSize+header.TCPMinimumSize, fields, arbitraryTCPFields())
@@ -2019,7 +2018,7 @@ func TestEvaluatePayloadSet(t *testing.T) {
 		{ // cmd: add rule ip6 tab ch ip6 hoplimit set 54
 			tname: "set ipv6 header hop limit",
 			pkt:   makeIPv6TCPPacket(header.IPv6MinimumSize+header.TCPMinimumSize, arbitraryIPv6Fields(), arbitraryTCPFields()),
-			outPkt: func() *stack.PacketBuffer {
+			outPkt: func() *PacketBuffer {
 				fields := arbitraryIPv6Fields()
 				fields.HopLimit = uint8(54)
 				return makeIPv6TCPPacket(header.IPv6MinimumSize+header.TCPMinimumSize, fields, arbitraryTCPFields())
@@ -2030,7 +2029,7 @@ func TestEvaluatePayloadSet(t *testing.T) {
 		{ // cmd: add rule ip6 tab ch ip6 saddr set 2001:db8:85a3::bb
 			tname: "set ipv6 header source address",
 			pkt:   makeIPv6TCPPacket(header.IPv6MinimumSize+header.TCPMinimumSize, arbitraryIPv6Fields(), arbitraryTCPFields()),
-			outPkt: func() *stack.PacketBuffer {
+			outPkt: func() *PacketBuffer {
 				fields := arbitraryIPv6Fields()
 				fields.SrcAddr = tcpip.AddrFrom16(arbitraryIPv6AddrB2)
 				return makeIPv6TCPPacket(header.IPv6MinimumSize+header.TCPMinimumSize, fields, arbitraryTCPFields())
@@ -2041,7 +2040,7 @@ func TestEvaluatePayloadSet(t *testing.T) {
 		{ // cmd: add rule ip6 tab ch ip6 daddr set 2001:db8:85a3::aa
 			tname: "set ipv6 header destination address",
 			pkt:   makeIPv6TCPPacket(header.IPv6MinimumSize+header.TCPMinimumSize, arbitraryIPv6Fields(), arbitraryTCPFields()),
-			outPkt: func() *stack.PacketBuffer {
+			outPkt: func() *PacketBuffer {
 				fields := arbitraryIPv6Fields()
 				fields.DstAddr = tcpip.AddrFrom16(arbitraryIPv6AddrB)
 				return makeIPv6TCPPacket(header.IPv6MinimumSize+header.TCPMinimumSize, fields, arbitraryTCPFields())
@@ -2062,7 +2061,7 @@ func TestEvaluatePayloadSet(t *testing.T) {
 				t.Fatalf("unexpected error for AddChain: %v", err)
 			}
 			bc.SetBaseChainInfo(arbitraryInfoPolicyAccept)
-			rule := &Rule{}
+			rule := &NFRule{}
 
 			// Adds testing operations.
 			if test.op1 != nil {
@@ -2247,7 +2246,7 @@ func TestEvaluateBitwise(t *testing.T) {
 				t.Fatalf("unexpected error for AddChain: %v", err)
 			}
 			bc.SetBaseChainInfo(arbitraryInfoPolicyAccept)
-			rule := &Rule{}
+			rule := &NFRule{}
 
 			// Adds testing operations.
 			if test.op1 != nil {
@@ -2289,17 +2288,17 @@ func TestEvaluateCounter(t *testing.T) {
 	counter := newCounter(0, 0)
 	// Defines the packets to be used in the test.
 	desiredIpv4Address := tcpip.AddrFrom4(arbitraryIPv4AddrB)
-	countedIPv4Pkt := func() *stack.PacketBuffer {
+	countedIPv4Pkt := func() *PacketBuffer {
 		fields := arbitraryIPv4Fields()
 		fields.SrcAddr = desiredIpv4Address
 		return makeIPv4Packet(header.IPv4MinimumSize, fields)
 	}
-	uncountedIPv4Pkt := func() *stack.PacketBuffer {
+	uncountedIPv4Pkt := func() *PacketBuffer {
 		fields := arbitraryIPv4Fields()
 		fields.SrcAddr = tcpip.AddrFrom4(arbitraryIPv4AddrB2)
 		return makeIPv4Packet(header.IPv4MinimumSize, fields)
 	}
-	pkts := []*stack.PacketBuffer{countedIPv4Pkt(), uncountedIPv4Pkt(), countedIPv4Pkt(), countedIPv4Pkt(),
+	pkts := []*PacketBuffer{countedIPv4Pkt(), uncountedIPv4Pkt(), countedIPv4Pkt(), countedIPv4Pkt(),
 		uncountedIPv4Pkt(), countedIPv4Pkt(), uncountedIPv4Pkt(), uncountedIPv4Pkt(), uncountedIPv4Pkt(), countedIPv4Pkt()}
 	t.Run("counter increment tests", func(t *testing.T) {
 		// Sets up an NFTables object with a base chain with policy accept.
@@ -2317,7 +2316,7 @@ func TestEvaluateCounter(t *testing.T) {
 		// Creates a rule that filters for the desired IPv4 address and adds the
 		// counter to the end of the rule. So, the counter should only increment for
 		// packets that satisfy the comparison.
-		rule := &Rule{}
+		rule := &NFRule{}
 		rule.addOperation(mustCreatePayloadLoad(t, linux.NFT_PAYLOAD_NETWORK_HEADER, ipv4SrcAddrOffset, ipv4SrcAddrLen, linux.NFT_REG_1))
 		rule.addOperation(mustCreateComparison(t, linux.NFT_REG_1, linux.NFT_CMP_EQ, desiredIpv4Address.AsSlice()))
 		rule.addOperation(counter)
@@ -2383,7 +2382,7 @@ func TestEvaluateLast(t *testing.T) {
 		bc.SetBaseChainInfo(arbitraryInfoPolicyAccept)
 
 		// Registers a single rule with the last operation.
-		rule := &Rule{}
+		rule := &NFRule{}
 		rule.addOperation(last)
 		if err := bc.RegisterRule(rule, -1); err != nil {
 			t.Fatalf("unexpected error for RegisterRule: %v", err)
@@ -2438,14 +2437,14 @@ func TestEvaluateLast(t *testing.T) {
 func TestEvaluateRoute(t *testing.T) {
 	for _, test := range []struct {
 		tname string
-		pkt   *stack.PacketBuffer
+		pkt   *PacketBuffer
 		op1   operation // Route operation to test.
 		op2   operation // Comparison operation to check resulting data in register,
 	}{
 		// IPv4 Next Hop Commands
 		{ // cmd: add rule ip filter output rt nexthop 192.168.1.1
 			tname: "load nexthop4 key to 4-byte register",
-			pkt: func() *stack.PacketBuffer {
+			pkt: func() *PacketBuffer {
 				pkt := makeIPv4Packet(header.IPv6MinimumSize, arbitraryIPv4Fields())
 				pkt.EgressRoute.NextHop = tcpip.AddrFrom4(arbitraryIPv4AddrB)
 				return pkt
@@ -2455,7 +2454,7 @@ func TestEvaluateRoute(t *testing.T) {
 		},
 		{ // cmd: add rule ip filter output rt nexthop 192.168.1.9
 			tname: "load nexthop4 key to 16-byte register",
-			pkt: func() *stack.PacketBuffer {
+			pkt: func() *PacketBuffer {
 				pkt := makeIPv4Packet(header.IPv6MinimumSize, arbitraryIPv4Fields())
 				pkt.EgressRoute.NextHop = tcpip.AddrFrom4(arbitraryIPv4AddrB2)
 				return pkt
@@ -2466,7 +2465,7 @@ func TestEvaluateRoute(t *testing.T) {
 		// IPv6 Next Hop Commands
 		{ // cmd: add rule ip filter output rt nexthop 2001:db8:85a3::aa
 			tname: "load nexthop6 key to 16-byte register",
-			pkt: func() *stack.PacketBuffer {
+			pkt: func() *PacketBuffer {
 				pkt := makeIPv6Packet(header.IPv6MinimumSize, arbitraryIPv6Fields())
 				pkt.EgressRoute.NextHop = tcpip.AddrFrom16(arbitraryIPv6AddrB)
 				return pkt
@@ -2477,7 +2476,7 @@ func TestEvaluateRoute(t *testing.T) {
 		// TCP Maximum Segment Size Commands
 		{ // cmd: add rule ip filter output rt mtu 1500
 			tname: "load tcpmss key to 4-byte register",
-			pkt: func() *stack.PacketBuffer {
+			pkt: func() *PacketBuffer {
 				pkt := makeIPv4Packet(header.IPv6MinimumSize, arbitraryIPv4Fields())
 				pkt.GSOOptions.MSS = 1500
 				return pkt
@@ -2487,7 +2486,7 @@ func TestEvaluateRoute(t *testing.T) {
 		},
 		{ // cmd: add rule ip filter output rt mtu 0x0102
 			tname: "load tcpmss key to 16-byte register",
-			pkt: func() *stack.PacketBuffer {
+			pkt: func() *PacketBuffer {
 				pkt := makeIPv6Packet(header.IPv6MinimumSize, arbitraryIPv6Fields())
 				pkt.GSOOptions.MSS = 0x0102
 				return pkt
@@ -2508,7 +2507,7 @@ func TestEvaluateRoute(t *testing.T) {
 				t.Fatalf("unexpected error for AddChain: %v", err)
 			}
 			bc.SetBaseChainInfo(arbitraryInfoPolicyAccept)
-			rule := &Rule{}
+			rule := &NFRule{}
 
 			// Adds testing operations.
 			if test.op1 != nil {
@@ -2749,7 +2748,7 @@ func TestEvaluateByteorder(t *testing.T) {
 				t.Fatalf("unexpected error for AddChain: %v", err)
 			}
 			bc.SetBaseChainInfo(arbitraryInfoPolicyAccept)
-			rule := &Rule{}
+			rule := &NFRule{}
 
 			// Adds testing operations.
 			if test.op1 != nil {
@@ -2827,7 +2826,7 @@ func TestEvaluateMetaLoad(t *testing.T) {
 
 	for _, test := range []struct {
 		tname string
-		pkt   *stack.PacketBuffer
+		pkt   *PacketBuffer
 		op1   operation // Meta Load operation to test.
 		op2   operation // Comparison operation to check result data in register.
 		// Note: op2 should be nil if expecting a break during evaluation.
@@ -2931,7 +2930,7 @@ func TestEvaluateMetaLoad(t *testing.T) {
 				t.Fatalf("unexpected error for AddChain: %v", err)
 			}
 			bc.SetBaseChainInfo(arbitraryInfoPolicyAccept)
-			rule := &Rule{}
+			rule := &NFRule{}
 
 			// Adds testing operations.
 			if test.op1 != nil {
@@ -2980,8 +2979,8 @@ func TestEvaluateMetaSet(t *testing.T) {
 	testPktType := tcpip.PacketMulticast
 	for _, test := range []struct {
 		tname  string
-		pkt    *stack.PacketBuffer
-		outPkt *stack.PacketBuffer
+		pkt    *PacketBuffer
+		outPkt *PacketBuffer
 		op1    operation // Immediate operation to load source register.
 		op2    operation // Meta set operation to test.
 	}{
@@ -2989,7 +2988,7 @@ func TestEvaluateMetaSet(t *testing.T) {
 		{
 			tname: "meta set pkttype 4-byte reg test",
 			pkt:   makeIPv4Packet(header.IPv4MinimumSize, arbitraryIPv4Fields()),
-			outPkt: func() *stack.PacketBuffer {
+			outPkt: func() *PacketBuffer {
 				pkt := makeIPv4Packet(header.IPv4MinimumSize, arbitraryIPv4Fields())
 				pkt.PktType = testPktType
 				return pkt
@@ -3000,7 +2999,7 @@ func TestEvaluateMetaSet(t *testing.T) {
 		{
 			tname: "meta set pkttype 16-byte reg test",
 			pkt:   makeIPv4Packet(header.IPv4MinimumSize, arbitraryIPv4Fields()),
-			outPkt: func() *stack.PacketBuffer {
+			outPkt: func() *PacketBuffer {
 				pkt := makeIPv4Packet(header.IPv4MinimumSize, arbitraryIPv4Fields())
 				pkt.PktType = testPktType
 				return pkt
@@ -3021,7 +3020,7 @@ func TestEvaluateMetaSet(t *testing.T) {
 				t.Fatalf("unexpected error for AddChain: %v", err)
 			}
 			bc.SetBaseChainInfo(arbitraryInfoPolicyAccept)
-			rule := &Rule{}
+			rule := &NFRule{}
 
 			// Adds testing operations.
 			if test.op1 != nil {
@@ -3070,7 +3069,7 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 			chains: map[string]*Chain{
 				"base_chain": {
 					baseChainInfo: arbitraryInfoPolicyAccept,
-					rules: []*Rule{{
+					rules: []*NFRule{{
 						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_JUMP), ChainName: "non_existent_chain"}))},
 					}},
 				},
@@ -3082,7 +3081,7 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 			chains: map[string]*Chain{
 				"base_chain": {
 					baseChainInfo: arbitraryInfoPolicyAccept,
-					rules: []*Rule{{
+					rules: []*NFRule{{
 						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_GOTO), ChainName: "non_existent_chain"}))},
 					}},
 				},
@@ -3094,7 +3093,7 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 			chains: map[string]*Chain{
 				"base_chain": {
 					baseChainInfo: arbitraryInfoPolicyAccept,
-					rules: []*Rule{{
+					rules: []*NFRule{{
 						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_JUMP), ChainName: "base_chain"}))},
 					}},
 				},
@@ -3106,7 +3105,7 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 			chains: map[string]*Chain{
 				"base_chain": {
 					baseChainInfo: arbitraryInfoPolicyAccept,
-					rules: []*Rule{{
+					rules: []*NFRule{{
 						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_GOTO), ChainName: "base_chain"}))},
 					}},
 				},
@@ -3118,12 +3117,12 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 			chains: map[string]*Chain{
 				"base_chain": {
 					baseChainInfo: arbitraryInfoPolicyAccept,
-					rules: []*Rule{{
+					rules: []*NFRule{{
 						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"}))},
 					}},
 				},
 				"aux_chain": {
-					rules: []*Rule{{
+					rules: []*NFRule{{
 						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_GOTO), ChainName: "base_chain"}))},
 					}},
 				},
@@ -3135,17 +3134,17 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 			chains: map[string]*Chain{
 				"base_chain": {
 					baseChainInfo: arbitraryInfoPolicyAccept,
-					rules: []*Rule{{
+					rules: []*NFRule{{
 						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"}))},
 					}},
 				},
 				"aux_chain": {
-					rules: []*Rule{{
+					rules: []*NFRule{{
 						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_GOTO), ChainName: "aux_chain2"}))},
 					}},
 				},
 				"aux_chain2": {
-					rules: []*Rule{{
+					rules: []*NFRule{{
 						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_GOTO), ChainName: "aux_chain"}))},
 					}},
 				},
@@ -3157,17 +3156,17 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 			chains: map[string]*Chain{
 				"base_chain": {
 					baseChainInfo: arbitraryInfoPolicyAccept,
-					rules: []*Rule{{
+					rules: []*NFRule{{
 						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"}))},
 					}},
 				},
 				"aux_chain": {
-					rules: []*Rule{{
+					rules: []*NFRule{{
 						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain2"}))},
 					}},
 				},
 				"aux_chain2": {
-					rules: []*Rule{{
+					rules: []*NFRule{{
 						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_GOTO), ChainName: "base_chain"}))},
 					}},
 				},
@@ -3179,27 +3178,27 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 			chains: map[string]*Chain{
 				"base_chain": {
 					baseChainInfo: arbitraryInfoPolicyAccept,
-					rules: []*Rule{{
+					rules: []*NFRule{{
 						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"}))},
 					}},
 				},
 				"aux_chain": {
-					rules: []*Rule{{
+					rules: []*NFRule{{
 						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_GOTO), ChainName: "aux_chain2"}))},
 					}},
 				},
 				"aux_chain2": {
-					rules: []*Rule{{
+					rules: []*NFRule{{
 						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain3"}))},
 					}},
 				},
 				"aux_chain3": {
-					rules: []*Rule{{
+					rules: []*NFRule{{
 						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_GOTO), ChainName: "aux_chain4"}))},
 					}},
 				},
 				"aux_chain4": {
-					rules: []*Rule{{
+					rules: []*NFRule{{
 						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain2"}))},
 					}},
 				},
@@ -3211,22 +3210,22 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 			chains: map[string]*Chain{
 				"base_chain": {
 					baseChainInfo: arbitraryInfoPolicyAccept,
-					rules: []*Rule{{
+					rules: []*NFRule{{
 						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"}))},
 					}},
 				},
 				"aux_chain": {
-					rules: []*Rule{{
+					rules: []*NFRule{{
 						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_GOTO), ChainName: "aux_chain2"}))},
 					}},
 				},
 				"aux_chain2": {
-					rules: []*Rule{{
+					rules: []*NFRule{{
 						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain3"}))},
 					}},
 				},
 				"aux_chain3": {
-					rules: []*Rule{{
+					rules: []*NFRule{{
 						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_GOTO), ChainName: "base_chain"}))},
 					}},
 				},
@@ -3238,22 +3237,22 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 			chains: map[string]*Chain{
 				"base_chain": {
 					baseChainInfo: arbitraryInfoPolicyAccept,
-					rules: []*Rule{{
+					rules: []*NFRule{{
 						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"}))},
 					}},
 				},
 				"aux_chain": {
-					rules: []*Rule{{
+					rules: []*NFRule{{
 						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_GOTO), ChainName: "aux_chain2"}))},
 					}},
 				},
 				"aux_chain2": {
-					rules: []*Rule{{
+					rules: []*NFRule{{
 						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain3"}))},
 					}},
 				},
 				"aux_chain3": {
-					rules: []*Rule{{
+					rules: []*NFRule{{
 						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_GOTO), ChainName: "base_chain"}))},
 					}},
 				},
@@ -3269,7 +3268,7 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 			chains: map[string]*Chain{
 				"base_chain": {
 					baseChainInfo: arbitraryInfoPolicyAccept,
-					rules: []*Rule{{
+					rules: []*NFRule{{
 						ops: []operation{
 							mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"})),
 							mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain2"})),
@@ -3278,12 +3277,12 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 				},
 				"aux_chain": {
 					comment: "strictly target",
-					rules: []*Rule{{
+					rules: []*NFRule{{
 						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NF_DROP)}))},
 					}},
 				},
 				"aux_chain2": {
-					rules: []*Rule{{
+					rules: []*NFRule{{
 						ops: []operation{
 							mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"})),
 							mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain3"})),
@@ -3291,7 +3290,7 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 					}},
 				},
 				"aux_chain3": {
-					rules: []*Rule{{
+					rules: []*NFRule{{
 						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_GOTO), ChainName: "aux_chain2"}))},
 					}},
 				},
@@ -3303,14 +3302,14 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 			chains: map[string]*Chain{
 				"base_chain": {
 					baseChainInfo: arbitraryInfoPolicyAccept,
-					rules: []*Rule{
+					rules: []*NFRule{
 						{ops: []operation{mustCreateImmediate(t, linux.NFT_REG_1, newBytesData([]byte{0, 1, 2, 3}))}},
 						{ops: []operation{mustCreateImmediate(t, linux.NFT_REG32_14, newBytesData([]byte{0, 1, 2, 3}))}},
 						{ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"}))}},
 					},
 				},
 				"aux_chain": {
-					rules: []*Rule{{
+					rules: []*NFRule{{
 						ops: []operation{
 							mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NF_DROP)})),
 							mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_GOTO), ChainName: "aux_chain2"})),
@@ -3318,12 +3317,12 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 					}},
 				},
 				"aux_chain2": {
-					rules: []*Rule{{
+					rules: []*NFRule{{
 						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain3"}))},
 					}},
 				},
 				"aux_chain3": {
-					rules: []*Rule{
+					rules: []*NFRule{
 						{ops: []operation{mustCreateImmediate(t, linux.NFT_REG_1, newBytesData([]byte{0, 1, 2, 3}))}},
 						{ops: []operation{mustCreateImmediate(t, linux.NFT_REG32_14, newBytesData([]byte{0, 1, 2, 3}))}},
 						{ops: []operation{
@@ -3341,7 +3340,7 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 			chains: map[string]*Chain{
 				"base_chain": {
 					baseChainInfo: arbitraryInfoPolicyAccept,
-					rules: []*Rule{
+					rules: []*NFRule{
 						{
 							ops: []operation{
 								mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"})),
@@ -3353,19 +3352,19 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 				},
 				"aux_chain": {
 					comment: "strictly target",
-					rules: []*Rule{{
+					rules: []*NFRule{{
 						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_2, newBytesData([]byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}))},
 					}},
 				},
 				"aux_chain2": {
 					comment: "strictly target",
-					rules: []*Rule{{
+					rules: []*NFRule{{
 						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_3, newBytesData([]byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}))},
 					}},
 				},
 				"aux_chain3": {
 					comment: "strictly target",
-					rules: []*Rule{{
+					rules: []*NFRule{{
 						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_4, newBytesData([]byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}))},
 					}},
 				},
@@ -3377,7 +3376,7 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 			chains: map[string]*Chain{
 				"base_chain": {
 					baseChainInfo: arbitraryInfoPolicyAccept,
-					rules: []*Rule{
+					rules: []*NFRule{
 						{
 							ops: []operation{
 								mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"})),
@@ -3389,19 +3388,19 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 				},
 				"aux_chain": {
 					comment: "strictly target",
-					rules: []*Rule{{
+					rules: []*NFRule{{
 						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_2, newBytesData([]byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}))},
 					}},
 				},
 				"aux_chain2": {
 					comment: "strictly target",
-					rules: []*Rule{{
+					rules: []*NFRule{{
 						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_3, newBytesData([]byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}))},
 					}},
 				},
 				"aux_chain3": {
 					comment: "strictly target",
-					rules: []*Rule{{
+					rules: []*NFRule{{
 						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NF_DROP)}))},
 					}},
 				},
@@ -3413,7 +3412,7 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 			chains: map[string]*Chain{
 				"base_chain": {
 					baseChainInfo: arbitraryInfoPolicyAccept,
-					rules: []*Rule{
+					rules: []*NFRule{
 						{
 							ops: []operation{
 								mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"})),
@@ -3426,19 +3425,19 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 				},
 				"aux_chain": {
 					comment: "strictly target",
-					rules: []*Rule{{
+					rules: []*NFRule{{
 						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_2, newBytesData([]byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}))},
 					}},
 				},
 				"aux_chain2": {
 					comment: "strictly target",
-					rules: []*Rule{{
+					rules: []*NFRule{{
 						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_3, newBytesData([]byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}))},
 					}},
 				},
 				"aux_chain3": {
 					comment: "strictly target",
-					rules: []*Rule{{
+					rules: []*NFRule{{
 						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_4, newBytesData([]byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}))},
 					}},
 				},
@@ -3450,7 +3449,7 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 			chains: map[string]*Chain{
 				"base_chain": {
 					baseChainInfo: arbitraryInfoPolicyAccept,
-					rules: []*Rule{
+					rules: []*NFRule{
 						{
 							ops: []operation{
 								mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"})),
@@ -3461,7 +3460,7 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 				},
 				"aux_chain": {
 					comment: "strictly target",
-					rules:   []*Rule{{}},
+					rules:   []*NFRule{{}},
 				},
 			},
 			verdict: Verdict{Code: VC(linux.NF_ACCEPT)}, // from base chain policy
@@ -3594,7 +3593,7 @@ func TestMaxNestedJumps(t *testing.T) {
 				if err != nil {
 					t.Fatalf("unexpected error for AddChain: %v", err)
 				}
-				r := &Rule{}
+				r := &NFRule{}
 				if i == test.numberOfJumps-1 {
 					err = r.addOperation(mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NF_DROP)})))
 				} else {
@@ -3630,7 +3629,7 @@ func TestMaxNestedJumps(t *testing.T) {
 
 // checkPacketEquality checks that the given packets are equal for all fields
 // and data relevant to our testing. This is not an exhaustive check.
-func checkPacketEquality(t *testing.T, expected, actual *stack.PacketBuffer) {
+func checkPacketEquality(t *testing.T, expected, actual *PacketBuffer) {
 	if expected.PktType != actual.PktType {
 		t.Fatalf("expected packet type %d for resulting packet, got %d", int(expected.PktType), int(actual.PktType))
 	}
@@ -3700,7 +3699,7 @@ func numToBE(v int, n int) []byte {
 
 // packetResultString compares 2 packets by equality and returns a string
 // representation.
-func packetResultString(initial, final *stack.PacketBuffer) string {
+func packetResultString(initial, final *PacketBuffer) string {
 	if final == nil {
 		return "nil"
 	}

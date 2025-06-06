@@ -1,4 +1,4 @@
-// Copyright 2024 The gVisor Authors.
+// Copyright 2025 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package nftables
+package stack
 
 import (
 	"encoding/hex"
@@ -101,13 +101,13 @@ func validateIdentifier(id string, lnIdx int, tkIdx int) error {
 // represented as a block of text with a single operation per line.
 // Note: the rule string should be generated as output from the official nft
 // binary (can be accomplished by using flag --debug=netlink).
-func InterpretRule(ruleString string) (*Rule, error) {
+func InterpretRule(ruleString string) (*NFRule, error) {
 	ruleString = strings.TrimSpace(ruleString)
 	lines := slices.DeleteFunc(strings.Split(ruleString, "\n"), func(s string) bool {
 		return s == ""
 	})
 
-	r := &Rule{ops: make([]operation, 0, len(lines))}
+	r := &NFRule{ops: make([]operation, 0, len(lines))}
 
 	// Interprets all operations in the rule.
 	for lnIdx, line := range lines {

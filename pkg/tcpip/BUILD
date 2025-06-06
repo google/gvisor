@@ -87,6 +87,11 @@ deps_test(
         "//pkg/sync/locking",
         "//pkg/waiter",
         "//pkg/xdp",
+        "//pkg/abi/linux",
+        "//pkg/abi:abi",
+        "//pkg/hostarch:hostarch",
+        "//pkg/marshal:marshal",
+        "//pkg/marshal/primitive:primitive",
 
         # Other deps.
         "@com_github_google_btree//:go_default_library",
