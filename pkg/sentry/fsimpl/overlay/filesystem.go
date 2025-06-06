@@ -1267,6 +1267,10 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 		}
 	}
 
+	// Clear the RENAME_NOREPLACE flag. We already verified above that replaced
+	// is nil if this flag is set. Other filesystem implementations are not aware
+	// of whiteouts and may fail with EEXIST if a whiteout exists at newName.
+	opts.Flags &^= linux.RENAME_NOREPLACE
 	// Essentially no gVisor filesystem supports RENAME_WHITEOUT, so just do a
 	// regular rename and create the whiteout at the origin manually. Unlike
 	// RENAME_WHITEOUT, this isn't atomic with respect to other users of the
