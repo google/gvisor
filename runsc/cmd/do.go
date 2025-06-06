@@ -46,11 +46,13 @@ var errNoDefaultInterface = errors.New("no default interface found")
 type Do struct {
 	root    string
 	cwd     string
+	erofs   string
 	ip      string
 	quiet   bool
 	overlay bool
 	uidMap  idMapSlice
 	gidMap  idMapSlice
+	volumes volumes
 }
 
 // Name implements subcommands.Command.Name.
@@ -119,15 +121,35 @@ func (is *idMapSlice) Set(s string) error {
 	return nil
 }
 
+type volumes []string
+
+// Set implements flag.Value.Get.
+func (v *volumes) Set(value string) error {
+	*v = append(*v, value)
+	return nil
+}
+
+// Get implements flag.Value.Get.
+func (v *volumes) Get() any {
+	return v
+}
+
+// String implements flag.Value.String.
+func (v *volumes) String() string {
+	return strings.Join(*v, ",")
+}
+
 // SetFlags implements subcommands.Command.SetFlags.
 func (c *Do) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&c.root, "root", "/", `path to the root directory, defaults to "/"`)
 	f.StringVar(&c.cwd, "cwd", ".", "path to the current directory, defaults to the current directory")
+	f.StringVar(&c.erofs, "erofs", "", "path to the erofs root image")
 	f.StringVar(&c.ip, "ip", "192.168.10.2", "IPv4 address for the sandbox")
 	f.BoolVar(&c.quiet, "quiet", false, "suppress runsc messages to stdout. Application output is still sent to stdout and stderr")
 	f.BoolVar(&c.overlay, "force-overlay", true, "use an overlay. WARNING: disabling gives the command write access to the host")
 	f.Var(&c.uidMap, "uid-map", "Add a user id mapping [ContainerID, HostID, Size]")
 	f.Var(&c.gidMap, "gid-map", "Add a group id mapping [ContainerID, HostID, Size]")
+	f.Var(&c.volumes, "volume", "Add a volume path SRC[:DST]. This option can be used multiple times to add several volumes.")
 }
 
 // Execute implements subcommands.Command.Execute.
@@ -180,6 +202,27 @@ func (c *Do) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcommand
 			Terminal:     console.StdioIsPty(),
 		},
 		Hostname: hostname,
+	}
+	if c.erofs != "" {
+		spec.Annotations = map[string]string{
+			"dev.gvisor.spec.rootfs.source":  c.erofs,
+			"dev.gvisor.spec.rootfs.type":    "erofs",
+			"dev.gvisor.spec.rootfs.overlay": "memory",
+		}
+	}
+	for _, v := range c.volumes {
+		parts := strings.SplitN(v, ":", 2)
+		var src, dst string
+		if len(parts) == 2 {
+			src, dst = parts[0], parts[1]
+		} else {
+			src, dst = v, v
+		}
+		spec.Mounts = append(spec.Mounts, specs.Mount{
+			Type:        "bind",
+			Source:      src,
+			Destination: dst,
+		})
 	}
 
 	cid := fmt.Sprintf("runsc-%06d", rand.Int31n(1000000))

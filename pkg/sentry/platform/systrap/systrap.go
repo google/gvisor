@@ -268,6 +268,7 @@ func New(opts platform.Options) (*Systrap, error) {
 		return nil, err
 	}
 
+	var stubErr error
 	stubInitialized.Do(func() {
 		// Don't use sentry and stub fast paths if here is just one cpu.
 		neverEnableFastPath = min(runtime.NumCPU(), runtime.GOMAXPROCS(0)) == 1
@@ -279,8 +280,8 @@ func New(opts platform.Options) (*Systrap, error) {
 		// done before initializing any other processes.
 		source, err := newSubprocess(createStub, mf, false)
 		if err != nil {
-			// Should never happen.
-			panic("unable to initialize systrap source: " + err.Error())
+			stubErr = fmt.Errorf("initialize systrap: %w", err)
+			return
 		}
 		// The source subprocess is never released explicitly by a MM.
 		source.DecRef(nil)
@@ -291,6 +292,10 @@ func New(opts platform.Options) (*Systrap, error) {
 
 		initSeccompNotify()
 	})
+	if stubErr != nil {
+		mf.Destroy()
+		return nil, stubErr
+	}
 
 	latencyMonitoring.Do(func() {
 		go controlFastPath()
