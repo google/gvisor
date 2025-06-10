@@ -153,8 +153,12 @@ var allowedSyscalls = seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 			seccomp.AnyValue{}, /* ifreq struct */
 		},
 	},
-	unix.SYS_LSEEK:   seccomp.MatchAll{},
-	unix.SYS_MADVISE: seccomp.MatchAll{},
+	unix.SYS_IO_SETUP:     seccomp.MatchAll{},
+	unix.SYS_IO_DESTROY:   seccomp.MatchAll{},
+	unix.SYS_IO_GETEVENTS: seccomp.MatchAll{},
+	unix.SYS_IO_SUBMIT:    seccomp.MatchAll{},
+	unix.SYS_LSEEK:        seccomp.MatchAll{},
+	unix.SYS_MADVISE:      seccomp.MatchAll{},
 	unix.SYS_MEMBARRIER: seccomp.PerArg{
 		seccomp.EqualTo(linux.MEMBARRIER_CMD_GLOBAL),
 		seccomp.EqualTo(0),

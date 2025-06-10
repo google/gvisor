@@ -188,6 +188,7 @@ analyzers:
     internal:
       exclude:
         - ".*_test.go"                                             # Exclude tests.
+        - pkg/aio/aio_linux_unsafe.go                              # Special case.
         - pkg/eventfd/eventfd_unsafe.go                            # Special case.
         - "pkg/flipcall/.*_unsafe.go"                              # Special case.
         - pkg/gohacks/noescape_unsafe.go                           # Special case.

@@ -584,11 +584,7 @@ type privateMemoryFileMetadata struct {
 	owners []string
 }
 
-func savePrivateMFs(ctx context.Context, w io.Writer, pw io.Writer, mfsToSave map[string]*pgalloc.MemoryFile, mfOpts pgalloc.SaveOpts) error {
-	// mfOpts.ExcludeCommittedZeroPages is expected to reflect application
-	// memory usage behavior, but not necessarily usage of private MemoryFiles.
-	mfOpts.ExcludeCommittedZeroPages = false
-
+func savePrivateMFs(ctx context.Context, w io.Writer, mfsToSave map[string]*pgalloc.MemoryFile, mfOpts *pgalloc.SaveOpts) error {
 	var meta privateMemoryFileMetadata
 	// Generate the order in which private memory files are saved.
 	for fsID := range mfsToSave {
@@ -600,7 +596,7 @@ func savePrivateMFs(ctx context.Context, w io.Writer, pw io.Writer, mfsToSave ma
 	}
 	// Followed by the private memory files in order.
 	for _, fsID := range meta.owners {
-		if err := mfsToSave[fsID].SaveTo(ctx, w, pw, mfOpts); err != nil {
+		if err := mfsToSave[fsID].SaveTo(ctx, w, mfOpts); err != nil {
 			return err
 		}
 	}
@@ -610,7 +606,7 @@ func savePrivateMFs(ctx context.Context, w io.Writer, pw io.Writer, mfsToSave ma
 // SaveTo saves the state of k to w.
 //
 // Preconditions: The kernel must be paused throughout the call to SaveTo.
-func (k *Kernel) SaveTo(ctx context.Context, w, pagesMetadata io.Writer, pagesFile *fd.FD, mfOpts pgalloc.SaveOpts) error {
+func (k *Kernel) SaveTo(ctx context.Context, w, pagesMetadata io.Writer, pagesFile *fd.FD, excludeCommittedZeroPages bool) error {
 	saveStart := time.Now()
 
 	// Do not allow other Kernel methods to affect it while it's being saved.
@@ -655,7 +651,7 @@ func (k *Kernel) SaveTo(ctx context.Context, w, pagesMetadata io.Writer, pagesFi
 		mfSaveWg.Add(1)
 		go func() {
 			defer mfSaveWg.Done()
-			mfSaveErr = k.saveMemoryFiles(ctx, w, pagesMetadata, pagesFile, mfsToSave, mfOpts)
+			mfSaveErr = k.saveMemoryFiles(ctx, pagesMetadata, pagesFile, mfsToSave, excludeCommittedZeroPages)
 		}()
 		// Defer a Wait() so we wait for k.saveMemoryFiles() to complete even if we
 		// error out without reaching the other Wait() below.
@@ -696,7 +692,10 @@ func (k *Kernel) SaveTo(ctx context.Context, w, pagesMetadata io.Writer, pagesFi
 	if parallelMfSave {
 		mfSaveWg.Wait()
 	} else {
-		mfSaveErr = k.saveMemoryFiles(ctx, w, pagesMetadata, pagesFile, mfsToSave, mfOpts)
+		if pagesMetadata == nil {
+			pagesMetadata = w
+		}
+		mfSaveErr = k.saveMemoryFiles(ctx, pagesMetadata, pagesFile, mfsToSave, excludeCommittedZeroPages)
 	}
 	if mfSaveErr != nil {
 		return mfSaveErr
@@ -711,22 +710,45 @@ func (k *Kernel) BeforeResume(ctx context.Context) {
 	k.vfs.BeforeResume(ctx)
 }
 
-func (k *Kernel) saveMemoryFiles(ctx context.Context, w, pagesMetadata io.Writer, pagesFile *fd.FD, mfsToSave map[string]*pgalloc.MemoryFile, mfOpts pgalloc.SaveOpts) error {
-	// Save the memory files' state.
+func (k *Kernel) saveMemoryFiles(ctx context.Context, pagesMetadata io.Writer, pagesFile *fd.FD, mfsToSave map[string]*pgalloc.MemoryFile, excludeCommittedZeroPages bool) error {
 	memoryStart := time.Now()
-	pmw := w
-	if pagesMetadata != nil {
-		pmw = pagesMetadata
+	mfOpts := pgalloc.SaveOpts{
+		ExcludeCommittedZeroPages: excludeCommittedZeroPages,
 	}
-	pw := w
+	var (
+		asyncPageSaveErrsMu sync.Mutex
+		asyncPageSaveErrs   []error
+		asyncPageSaveWg     sync.WaitGroup
+	)
+	defer asyncPageSaveWg.Wait()
 	if pagesFile != nil {
-		pw = pagesFile
+		mfOpts.PagesFile = pagesFile
+		mfOpts.OnAsyncPageSaveStart = func(mf *pgalloc.MemoryFile) {
+			asyncPageSaveWg.Add(1)
+			log.Infof("Starting async page save for %p", mf)
+		}
+		mfOpts.OnAsyncPageSaveDone = func(mf *pgalloc.MemoryFile, err error) {
+			defer asyncPageSaveWg.Done()
+			if err != nil {
+				log.Warningf("Async page save error for %p: %v", mf, err)
+				asyncPageSaveErrsMu.Lock()
+				asyncPageSaveErrs = append(asyncPageSaveErrs, fmt.Errorf("%p: async page save: %w", mf, err))
+				asyncPageSaveErrsMu.Unlock()
+			}
+		}
 	}
-	if err := k.mf.SaveTo(ctx, pmw, pw, mfOpts); err != nil {
+	if err := k.mf.SaveTo(ctx, pagesMetadata, &mfOpts); err != nil {
 		return err
 	}
-	if err := savePrivateMFs(ctx, pmw, pw, mfsToSave, mfOpts); err != nil {
+	// excludeCommittedZeroPages is expected to reflect application memory
+	// usage behavior, but not necessarily usage of private MemoryFiles.
+	mfOpts.ExcludeCommittedZeroPages = false
+	if err := savePrivateMFs(ctx, pagesMetadata, mfsToSave, &mfOpts); err != nil {
 		return err
+	}
+	asyncPageSaveWg.Wait()
+	if asyncPageSaveErr := errors.Join(asyncPageSaveErrs...); asyncPageSaveErr != nil {
+		return fmt.Errorf("failed to save MemoryFile pages: %w", asyncPageSaveErr)
 	}
 	log.Infof("Memory files save took [%s].", time.Since(memoryStart))
 	return nil

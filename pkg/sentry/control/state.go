@@ -27,7 +27,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/pipefs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
-	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/state"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sentry/watchdog"
@@ -70,9 +69,6 @@ type SaveOpts struct {
 	// Metadata is the set of metadata to prepend to the state file.
 	Metadata map[string]string `json:"metadata"`
 
-	// MemoryFileSaveOpts is passed to calls to pgalloc.MemoryFile.SaveTo().
-	MemoryFileSaveOpts pgalloc.SaveOpts
-
 	// HavePagesFile indicates whether the pages file and its corresponding
 	// metadata file is provided.
 	HavePagesFile bool `json:"have_pages_file"`
@@ -82,6 +78,11 @@ type SaveOpts struct {
 	// 2. optional checkpoint pages metadata file.
 	// 3. optional checkpoint pages file.
 	urpc.FilePayload
+
+	// If ExcludeCommittedZeroPages is true, set
+	// pgalloc.SaveOpts.ExcludeCommittedZeroPages when saving the main
+	// application MemoryFile.
+	ExcludeCommittedZeroPages bool
 
 	// Resume indicates if the sandbox process should continue running
 	// after checkpointing.
@@ -117,11 +118,11 @@ func (s *State) Save(o *SaveOpts, _ *struct{}) error {
 	}
 	defer stateFile.Close()
 	saveOpts := state.SaveOpts{
-		Destination:        stateFile,
-		Key:                o.Key,
-		Metadata:           o.Metadata,
-		MemoryFileSaveOpts: o.MemoryFileSaveOpts,
-		Resume:             o.Resume,
+		Destination:               stateFile,
+		Key:                       o.Key,
+		Metadata:                  o.Metadata,
+		ExcludeCommittedZeroPages: o.ExcludeCommittedZeroPages,
+		Resume:                    o.Resume,
 	}
 	if o.HavePagesFile {
 		saveOpts.PagesMetadata, err = o.ReleaseFD(1)

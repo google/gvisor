@@ -20,7 +20,6 @@ go_library(
         "//pkg/fd",
         "//pkg/log",
         "//pkg/sentry/kernel",
-        "//pkg/sentry/pgalloc",
         "//pkg/sentry/time",
         "//pkg/sentry/watchdog",
         "//pkg/state/statefile",
