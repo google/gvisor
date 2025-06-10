@@ -8,7 +8,20 @@ package(
 go_library(
     name = "nftables",
     srcs = [
+        "nft_bitwise.go",
+        "nft_byteorder.go",
+        "nft_comparison.go",
+        "nft_counter.go",
+        "nft_immediate.go",
+        "nft_last.go",
+        "nft_metaload.go",
+        "nft_metaset.go",
+        "nft_payload_load.go",
+        "nft_payload_set.go",
+        "nft_ranged.go",
+        "nft_route.go",
         "nftables.go",
+        "nftables_types.go",
         "nftinterp.go",
     ],
     deps = [
