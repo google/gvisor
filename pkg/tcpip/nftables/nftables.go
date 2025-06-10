@@ -24,12 +24,67 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
+//
+// Interface-Related Methods
+//
+
+// CheckPrerouting checks at the Prerouting hook if the packet should continue traversing the stack.
+func (nf *NFTables) CheckPrerouting(pkt *stack.PacketBuffer, af stack.AddressFamily) bool {
+	return nf.checkHook(pkt, af, stack.NFPrerouting)
+}
+
+// CheckInput checks at the Input hook if the packet should continue traversing the stack.
+func (nf *NFTables) CheckInput(pkt *stack.PacketBuffer, af stack.AddressFamily) bool {
+	return nf.checkHook(pkt, af, stack.NFInput)
+}
+
+// CheckForward checks at the Forward hook if the packet should continue traversing the stack.
+func (nf *NFTables) CheckForward(pkt *stack.PacketBuffer, af stack.AddressFamily) bool {
+	return nf.checkHook(pkt, af, stack.NFForward)
+}
+
+// CheckOutput checks at the Output hook if the packet should continue traversing the stack.
+func (nf *NFTables) CheckOutput(pkt *stack.PacketBuffer, af stack.AddressFamily) bool {
+	return nf.checkHook(pkt, af, stack.NFOutput)
+}
+
+// CheckPostrouting checks at the Postrouting hook if the packet should continue traversing the stack.
+func (nf *NFTables) CheckPostrouting(pkt *stack.PacketBuffer, af stack.AddressFamily) bool {
+	return nf.checkHook(pkt, af, stack.NFPostrouting)
+}
+
+// CheckIngress checks at the Ingress hook if the packet should continue traversing the stack.
+func (nf *NFTables) CheckIngress(pkt *stack.PacketBuffer, af stack.AddressFamily) bool {
+	return nf.checkHook(pkt, af, stack.NFIngress)
+}
+
+// CheckEgress checks at the Egress hook if the packet should continue traversing the stack.
+func (nf *NFTables) CheckEgress(pkt *stack.PacketBuffer, af stack.AddressFamily) bool {
+	return nf.checkHook(pkt, af, stack.NFEgress)
+}
+
+// checkHook returns true if the packet should continue traversing the stack or false
+// if the packet should be dropped.
+func (nf *NFTables) checkHook(pkt *stack.PacketBuffer, af stack.AddressFamily, hook stack.NFHook) bool {
+	v, err := nf.EvaluateHook(af, hook, pkt)
+
+	if err != nil {
+		return false
+	}
+
+	return v.Code == VC(linux.NF_ACCEPT)
+}
+
+//
+// Core Evaluation Functions
+//
+
 // EvaluateHook evaluates a packet using the rules of the given hook for the
 // given address family, returning a netfilter verdict and modifying the packet
 // in place.
 // Returns an error if address family or hook is invalid or they don't match.
 // TODO(b/345684870): Consider removing error case if we never return an error.
-func (nf *NFTables) EvaluateHook(family AddressFamily, hook Hook, pkt *stack.PacketBuffer) (Verdict, error) {
+func (nf *NFTables) EvaluateHook(family stack.AddressFamily, hook stack.NFHook, pkt *stack.PacketBuffer) (stack.NFVerdict, error) {
 	// Note: none of the other evaluate functions are public because they require
 	// jumping to different chains in the same table, so all chains, rules, and
 	// operations must be tied to a table. Thus, calling evaluate for standalone
@@ -37,18 +92,18 @@ func (nf *NFTables) EvaluateHook(family AddressFamily, hook Hook, pkt *stack.Pac
 
 	// Ensures address family is valid.
 	if err := validateAddressFamily(family); err != nil {
-		return Verdict{}, err
+		return stack.NFVerdict{}, err
 	}
 
 	// Ensures hook is valid.
 	if err := validateHook(hook, family); err != nil {
-		return Verdict{}, err
+		return stack.NFVerdict{}, err
 	}
 
 	// Immediately accept if there are no base chains for the specified hook.
 	if nf.filters[family] == nil || nf.filters[family].hfStacks[hook] == nil ||
 		len(nf.filters[family].hfStacks[hook].baseChains) == 0 {
-		return Verdict{Code: VC(linux.NF_ACCEPT)}, nil
+		return stack.NFVerdict{Code: VC(linux.NF_ACCEPT)}, nil
 	}
 
 	regs := newRegisterSet()
@@ -63,7 +118,7 @@ func (nf *NFTables) EvaluateHook(family AddressFamily, hook Hook, pkt *stack.Pac
 
 		err := bc.evaluate(&regs, pkt)
 		if err != nil {
-			return Verdict{}, err
+			return stack.NFVerdict{}, err
 		}
 
 		// Terminates immediately on netfilter terminal verdicts.
@@ -78,9 +133,9 @@ func (nf *NFTables) EvaluateHook(family AddressFamily, hook Hook, pkt *stack.Pac
 	switch regs.Verdict().Code {
 	case VC(linux.NFT_CONTINUE), VC(linux.NFT_RETURN):
 		if bc.GetBaseChainInfo().PolicyDrop {
-			return Verdict{Code: VC(linux.NF_DROP)}, nil
+			return stack.NFVerdict{Code: VC(linux.NF_DROP)}, nil
 		}
-		return Verdict{Code: VC(linux.NF_ACCEPT)}, nil
+		return stack.NFVerdict{Code: VC(linux.NF_ACCEPT)}, nil
 	}
 
 	panic(fmt.Sprintf("unexpected verdict from hook evaluation: %s", VerdictCodeToString(regs.Verdict().Code)))
@@ -184,14 +239,14 @@ func NewNFTables(clock tcpip.Clock, rng rand.RNG) *NFTables {
 
 // Flush clears entire ruleset and all data for all address families.
 func (nf *NFTables) Flush() {
-	for family := range NumAFs {
+	for family := range stack.NumAFs {
 		nf.filters[family] = nil
 	}
 }
 
 // FlushAddressFamily clears ruleset and all data for the given address family,
 // returning an error if the address family is invalid.
-func (nf *NFTables) FlushAddressFamily(family AddressFamily) error {
+func (nf *NFTables) FlushAddressFamily(family stack.AddressFamily) error {
 	// Ensures address family is valid.
 	if err := validateAddressFamily(family); err != nil {
 		return err
@@ -202,7 +257,7 @@ func (nf *NFTables) FlushAddressFamily(family AddressFamily) error {
 }
 
 // GetTable validates the inputs and gets a table if it exists, error otherwise.
-func (nf *NFTables) GetTable(family AddressFamily, tableName string) (*Table, error) {
+func (nf *NFTables) GetTable(family stack.AddressFamily, tableName string) (*Table, error) {
 	// Ensures address family is valid.
 	if err := validateAddressFamily(family); err != nil {
 		return nil, err
@@ -232,7 +287,7 @@ func (nf *NFTables) GetTable(family AddressFamily, tableName string) (*Table, er
 // Note: if the table already exists, the existing table is returned without any
 // modifications.
 // Note: Table initialized as not dormant.
-func (nf *NFTables) AddTable(family AddressFamily, name string, comment string,
+func (nf *NFTables) AddTable(family stack.AddressFamily, name string, comment string,
 	errorOnDuplicate bool) (*Table, error) {
 	// Ensures address family is valid.
 	if err := validateAddressFamily(family); err != nil {
@@ -245,7 +300,7 @@ func (nf *NFTables) AddTable(family AddressFamily, name string, comment string,
 			family:   family,
 			nftState: nf,
 			tables:   make(map[string]*Table),
-			hfStacks: make(map[Hook]*hookFunctionStack),
+			hfStacks: make(map[stack.NFHook]*hookFunctionStack),
 		}
 	}
 
@@ -278,14 +333,14 @@ func (nf *NFTables) AddTable(family AddressFamily, name string, comment string,
 // but also returns an error if a table by the same name already exists.
 // Note: this interface mirrors the difference between the create and add
 // commands within the nft binary.
-func (nf *NFTables) CreateTable(family AddressFamily, name string, comment string) (*Table, error) {
+func (nf *NFTables) CreateTable(family stack.AddressFamily, name string, comment string) (*Table, error) {
 	return nf.AddTable(family, name, comment, true)
 }
 
 // DeleteTable deletes the specified table from the NFTables object returning
 // true if the table was deleted and false if the table doesn't exist. Returns
 // an error if the address family is invalid.
-func (nf *NFTables) DeleteTable(family AddressFamily, tableName string) (bool, error) {
+func (nf *NFTables) DeleteTable(family stack.AddressFamily, tableName string) (bool, error) {
 	// Ensures address family is valid.
 	if err := validateAddressFamily(family); err != nil {
 		return false, err
@@ -308,7 +363,7 @@ func (nf *NFTables) DeleteTable(family AddressFamily, tableName string) (bool, e
 }
 
 // GetChain validates the inputs and gets a chain if it exists, error otherwise.
-func (nf *NFTables) GetChain(family AddressFamily, tableName string, chainName string) (*Chain, error) {
+func (nf *NFTables) GetChain(family stack.AddressFamily, tableName string, chainName string) (*Chain, error) {
 	// Gets and checks the table.
 	t, err := nf.GetTable(family, tableName)
 	if err != nil {
@@ -326,7 +381,7 @@ func (nf *NFTables) GetChain(family AddressFamily, tableName string, chainName s
 // Note: if the chain already exists, the existing chain is returned without any
 // modifications.
 // Note: if the chain is not a base chain, info should be nil.
-func (nf *NFTables) AddChain(family AddressFamily, tableName string, chainName string, info *BaseChainInfo, comment string, errorOnDuplicate bool) (*Chain, error) {
+func (nf *NFTables) AddChain(family stack.AddressFamily, tableName string, chainName string, info *BaseChainInfo, comment string, errorOnDuplicate bool) (*Chain, error) {
 	// Gets and checks the table.
 	t, err := nf.GetTable(family, tableName)
 	if err != nil {
@@ -341,14 +396,14 @@ func (nf *NFTables) AddChain(family AddressFamily, tableName string, chainName s
 // chain by the same name already exists.
 // Note: this interface mirrors the difference between the create and add
 // commands within the nft binary.
-func (nf *NFTables) CreateChain(family AddressFamily, tableName string, chainName string, info *BaseChainInfo, comment string) (*Chain, error) {
+func (nf *NFTables) CreateChain(family stack.AddressFamily, tableName string, chainName string, info *BaseChainInfo, comment string) (*Chain, error) {
 	return nf.AddChain(family, tableName, chainName, info, comment, true)
 }
 
 // DeleteChain deletes the specified chain from the NFTables object returning
 // true if the chain was deleted and false if the chain doesn't exist. Returns
 // an error if the address family is invalid or the table doesn't exist.
-func (nf *NFTables) DeleteChain(family AddressFamily, tableName string, chainName string) (bool, error) {
+func (nf *NFTables) DeleteChain(family stack.AddressFamily, tableName string, chainName string) (bool, error) {
 	// Gets and checks the table.
 	t, err := nf.GetTable(family, tableName)
 	if err != nil {
@@ -373,7 +428,7 @@ func (t *Table) GetName() string {
 }
 
 // GetAddressFamily returns the address family of the table.
-func (t *Table) GetAddressFamily() AddressFamily {
+func (t *Table) GetAddressFamily() stack.AddressFamily {
 	return t.afFilter.family
 }
 
@@ -486,7 +541,7 @@ func (c *Chain) GetName() string {
 }
 
 // GetAddressFamily returns the address family of the chain.
-func (c *Chain) GetAddressFamily() AddressFamily {
+func (c *Chain) GetAddressFamily() stack.AddressFamily {
 	return c.table.GetAddressFamily()
 }
 

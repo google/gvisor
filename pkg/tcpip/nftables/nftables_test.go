@@ -34,10 +34,10 @@ import (
 
 // Table Constants.
 const (
-	arbitraryTargetChain         string        = "target_chain"
-	arbitraryHook                Hook          = Prerouting
-	arbitraryFamily              AddressFamily = Inet
-	arbitraryReservedHeaderBytes int           = 16
+	arbitraryTargetChain         string              = "target_chain"
+	arbitraryHook                stack.NFHook        = stack.NFPrerouting
+	arbitraryFamily              stack.AddressFamily = stack.Inet
+	arbitraryReservedHeaderBytes int                 = 16
 )
 
 var (
@@ -338,7 +338,7 @@ func TestUnsupportedAddressFamily(t *testing.T) {
 	// Makes arbitrary packet for comparison (to check for no changes).
 	cmpPkt := makeArbitraryPacket(arbitraryReservedHeaderBytes)
 	nf := newNFTablesStd()
-	for _, unsupportedFamily := range []AddressFamily{AddressFamily(NumAFs), AddressFamily(-1)} {
+	for _, unsupportedFamily := range []stack.AddressFamily{stack.AddressFamily(stack.NumAFs), stack.AddressFamily(-1)} {
 		// Note: the Prerouting hook is arbitrary (any hook would work).
 		pkt := makeArbitraryPacket(arbitraryReservedHeaderBytes)
 		v, err := nf.EvaluateHook(unsupportedFamily, arbitraryHook, pkt)
@@ -356,10 +356,10 @@ func TestUnsupportedAddressFamily(t *testing.T) {
 func TestAcceptAllForSupportedHooks(t *testing.T) {
 	// Makes arbitrary packet for comparison (to check for no changes).
 	cmpPkt := makeArbitraryPacket(arbitraryReservedHeaderBytes)
-	for _, family := range []AddressFamily{IP, IP6, Inet, Arp, Bridge, Netdev} {
+	for _, family := range []stack.AddressFamily{stack.IP, stack.IP6, stack.Inet, stack.Arp, stack.Bridge, stack.Netdev} {
 		t.Run(family.String()+" address family", func(t *testing.T) {
 			nf := newNFTablesStd()
-			for _, hook := range []Hook{Prerouting, Input, Forward, Output, Postrouting, Ingress, Egress} {
+			for _, hook := range []stack.NFHook{stack.NFPrerouting, stack.NFInput, stack.NFForward, stack.NFOutput, stack.NFPostrouting, stack.NFIngress, stack.NFEgress} {
 				pkt := makeArbitraryPacket(arbitraryReservedHeaderBytes)
 				v, err := nf.EvaluateHook(family, hook, pkt)
 
@@ -397,131 +397,131 @@ func TestEvaluateImmediateVerdict(t *testing.T) {
 		baseOp1  operation // will be nil if unused
 		baseOp2  operation // will be nil if unused
 		targetOp operation // will be nil if unused
-		verdict  Verdict
+		verdict  stack.NFVerdict
 	}{
 		{
 			tname:   "no operations",
-			verdict: Verdict{Code: VC(linux.NF_ACCEPT)}, // from base chain policy
+			verdict: stack.NFVerdict{Code: VC(linux.NF_ACCEPT)}, // from base chain policy
 		},
 		{
 			tname:   "immediately accept",
-			baseOp1: mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NF_ACCEPT)})),
-			verdict: Verdict{Code: VC(linux.NF_ACCEPT)},
+			baseOp1: mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NF_ACCEPT)})),
+			verdict: stack.NFVerdict{Code: VC(linux.NF_ACCEPT)},
 		},
 		{
 			tname:   "immediately drop",
-			baseOp1: mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NF_DROP)})),
-			verdict: Verdict{Code: VC(linux.NF_DROP)},
+			baseOp1: mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NF_DROP)})),
+			verdict: stack.NFVerdict{Code: VC(linux.NF_DROP)},
 		},
 		{
 			tname:   "immediately continue with base chain policy accept",
-			baseOp1: mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_CONTINUE)})),
-			verdict: Verdict{Code: VC(linux.NF_ACCEPT)}, // from base chain policy
+			baseOp1: mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NFT_CONTINUE)})),
+			verdict: stack.NFVerdict{Code: VC(linux.NF_ACCEPT)}, // from base chain policy
 		},
 		{
 			tname:   "immediately return with base chain policy accept",
-			baseOp1: mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_RETURN)})),
-			verdict: Verdict{Code: VC(linux.NF_ACCEPT)}, // from base chain policy
+			baseOp1: mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NFT_RETURN)})),
+			verdict: stack.NFVerdict{Code: VC(linux.NF_ACCEPT)}, // from base chain policy
 		},
 		{
 			tname:    "immediately jump to target chain that accepts",
-			baseOp1:  mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_JUMP), ChainName: arbitraryTargetChain})),
-			targetOp: mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NF_ACCEPT)})),
-			verdict:  Verdict{Code: VC(linux.NF_ACCEPT)},
+			baseOp1:  mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NFT_JUMP), ChainName: arbitraryTargetChain})),
+			targetOp: mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NF_ACCEPT)})),
+			verdict:  stack.NFVerdict{Code: VC(linux.NF_ACCEPT)},
 		},
 		{
 			tname:    "immediately jump to target chain that drops",
-			baseOp1:  mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_JUMP), ChainName: arbitraryTargetChain})),
-			targetOp: mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NF_DROP)})),
-			verdict:  Verdict{Code: VC(linux.NF_DROP)},
+			baseOp1:  mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NFT_JUMP), ChainName: arbitraryTargetChain})),
+			targetOp: mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NF_DROP)})),
+			verdict:  stack.NFVerdict{Code: VC(linux.NF_DROP)},
 		},
 		{
 			tname:    "immediately jump to target chain that continues with second rule that accepts",
-			baseOp1:  mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_JUMP), ChainName: arbitraryTargetChain})),
-			targetOp: mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_CONTINUE)})),
-			baseOp2:  mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NF_ACCEPT)})),
-			verdict:  Verdict{Code: VC(linux.NF_ACCEPT)},
+			baseOp1:  mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NFT_JUMP), ChainName: arbitraryTargetChain})),
+			targetOp: mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NFT_CONTINUE)})),
+			baseOp2:  mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NF_ACCEPT)})),
+			verdict:  stack.NFVerdict{Code: VC(linux.NF_ACCEPT)},
 		},
 		{
 			tname:    "immediately jump to target chain that continues with second rule that drops",
-			baseOp1:  mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_JUMP), ChainName: arbitraryTargetChain})),
-			targetOp: mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_CONTINUE)})),
-			baseOp2:  mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NF_DROP)})),
-			verdict:  Verdict{Code: VC(linux.NF_DROP)},
+			baseOp1:  mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NFT_JUMP), ChainName: arbitraryTargetChain})),
+			targetOp: mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NFT_CONTINUE)})),
+			baseOp2:  mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NF_DROP)})),
+			verdict:  stack.NFVerdict{Code: VC(linux.NF_DROP)},
 		},
 		{
 			tname:    "immediately goto to target chain that accepts",
-			baseOp1:  mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_GOTO), ChainName: arbitraryTargetChain})),
-			targetOp: mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NF_ACCEPT)})),
-			verdict:  Verdict{Code: VC(linux.NF_ACCEPT)},
+			baseOp1:  mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NFT_GOTO), ChainName: arbitraryTargetChain})),
+			targetOp: mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NF_ACCEPT)})),
+			verdict:  stack.NFVerdict{Code: VC(linux.NF_ACCEPT)},
 		},
 		{
 			tname:    "immediately goto to target chain that drops",
-			baseOp1:  mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_GOTO), ChainName: arbitraryTargetChain})),
-			targetOp: mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NF_DROP)})),
-			verdict:  Verdict{Code: VC(linux.NF_DROP)},
+			baseOp1:  mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NFT_GOTO), ChainName: arbitraryTargetChain})),
+			targetOp: mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NF_DROP)})),
+			verdict:  stack.NFVerdict{Code: VC(linux.NF_DROP)},
 		},
 		{
 			tname:    "immediately goto to target chain that continues with second rule that accepts",
-			baseOp1:  mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_GOTO), ChainName: arbitraryTargetChain})),
-			targetOp: mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_CONTINUE)})),
-			baseOp2:  mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NF_ACCEPT)})),
-			verdict:  Verdict{Code: VC(linux.NF_ACCEPT)}, // from base chain policy
+			baseOp1:  mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NFT_GOTO), ChainName: arbitraryTargetChain})),
+			targetOp: mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NFT_CONTINUE)})),
+			baseOp2:  mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NF_ACCEPT)})),
+			verdict:  stack.NFVerdict{Code: VC(linux.NF_ACCEPT)}, // from base chain policy
 		},
 		{
 			tname:    "immediately goto to target chain that continues with second rule that drops",
-			baseOp1:  mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_GOTO), ChainName: arbitraryTargetChain})),
-			targetOp: mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_CONTINUE)})),
-			baseOp2:  mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NF_DROP)})),
-			verdict:  Verdict{Code: VC(linux.NF_ACCEPT)}, // from base chain policy
+			baseOp1:  mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NFT_GOTO), ChainName: arbitraryTargetChain})),
+			targetOp: mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NFT_CONTINUE)})),
+			baseOp2:  mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NF_DROP)})),
+			verdict:  stack.NFVerdict{Code: VC(linux.NF_ACCEPT)}, // from base chain policy
 		},
 		{
 			tname:   "add data to register then accept",
 			baseOp1: mustCreateImmediate(t, linux.NFT_REG32_13, newBytesData([]byte{0, 1, 2, 3})),
-			baseOp2: mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NF_ACCEPT)})),
-			verdict: Verdict{Code: VC(linux.NF_ACCEPT)},
+			baseOp2: mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NF_ACCEPT)})),
+			verdict: stack.NFVerdict{Code: VC(linux.NF_ACCEPT)},
 		},
 		{
 			tname:   "add data to register then drop",
 			baseOp1: mustCreateImmediate(t, linux.NFT_REG32_15, newBytesData([]byte{0, 1, 2, 3})),
-			baseOp2: mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NF_DROP)})),
-			verdict: Verdict{Code: VC(linux.NF_DROP)},
+			baseOp2: mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NF_DROP)})),
+			verdict: stack.NFVerdict{Code: VC(linux.NF_DROP)},
 		},
 		{
 			tname:   "add data to register then continue",
 			baseOp1: mustCreateImmediate(t, linux.NFT_REG_4, newBytesData([]byte{0, 1, 2, 3})),
-			baseOp2: mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_CONTINUE)})),
-			verdict: Verdict{Code: VC(linux.NF_ACCEPT)}, // from base chain policy
+			baseOp2: mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NFT_CONTINUE)})),
+			verdict: stack.NFVerdict{Code: VC(linux.NF_ACCEPT)}, // from base chain policy
 		},
 		{
 			tname:   "multiple accepts",
-			baseOp1: mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NF_ACCEPT)})),
-			baseOp2: mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NF_ACCEPT)})),
-			verdict: Verdict{Code: VC(linux.NF_ACCEPT)},
+			baseOp1: mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NF_ACCEPT)})),
+			baseOp2: mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NF_ACCEPT)})),
+			verdict: stack.NFVerdict{Code: VC(linux.NF_ACCEPT)},
 		},
 		{
 			tname:   "multiple drops",
-			baseOp1: mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NF_DROP)})),
-			baseOp2: mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NF_DROP)})),
-			verdict: Verdict{Code: VC(linux.NF_DROP)},
+			baseOp1: mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NF_DROP)})),
+			baseOp2: mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NF_DROP)})),
+			verdict: stack.NFVerdict{Code: VC(linux.NF_DROP)},
 		},
 		{
 			tname:   "immediately accept then drop",
-			baseOp1: mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NF_ACCEPT)})),
-			baseOp2: mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NF_DROP)})),
-			verdict: Verdict{Code: VC(linux.NF_ACCEPT)},
+			baseOp1: mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NF_ACCEPT)})),
+			baseOp2: mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NF_DROP)})),
+			verdict: stack.NFVerdict{Code: VC(linux.NF_ACCEPT)},
 		},
 		{
 			tname:   "immediately drop then accept",
-			baseOp1: mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NF_DROP)})),
-			baseOp2: mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NF_ACCEPT)})),
-			verdict: Verdict{Code: VC(linux.NF_DROP)},
+			baseOp1: mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NF_DROP)})),
+			baseOp2: mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NF_ACCEPT)})),
+			verdict: stack.NFVerdict{Code: VC(linux.NF_DROP)},
 		},
 		{
 			tname:   "immediate load register",
-			baseOp1: mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NF_DROP)})),
-			baseOp2: mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NF_ACCEPT)})),
-			verdict: Verdict{Code: VC(linux.NF_DROP)},
+			baseOp1: mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NF_DROP)})),
+			baseOp2: mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NF_ACCEPT)})),
+			verdict: stack.NFVerdict{Code: VC(linux.NF_DROP)},
 		},
 	} {
 		t.Run(test.tname, func(t *testing.T) {
@@ -1099,7 +1099,7 @@ func TestEvaluateComparison(t *testing.T) {
 
 			// Add an operation that drops. This is what the final verdict should be
 			// if all the comparisons are true (res = true).
-			rule.addOperation(mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NF_DROP)})))
+			rule.addOperation(mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NF_DROP)})))
 
 			// Registers the rule to the base chain.
 			if err := bc.RegisterRule(rule, -1); err != nil {
@@ -1335,7 +1335,7 @@ func TestEvaluateRanged(t *testing.T) {
 			}
 
 			// Adds drop operation. Will be final verdict if comparison is true.
-			rule.addOperation(mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NF_DROP)})))
+			rule.addOperation(mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NF_DROP)})))
 
 			// Registers the rule to the base chain.
 			if err := bc.RegisterRule(rule, -1); err != nil {
@@ -1569,7 +1569,7 @@ func TestEvaluatePayloadLoad(t *testing.T) {
 			}
 
 			// Adds drop operation. Will be final verdict if all comparisons are true.
-			rule.addOperation(mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NF_DROP)})))
+			rule.addOperation(mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NF_DROP)})))
 
 			// Registers the rule to the base chain.
 			if err := bc.RegisterRule(rule, -1); err != nil {
@@ -2074,7 +2074,7 @@ func TestEvaluatePayloadSet(t *testing.T) {
 
 			// Adds drop operation. Will be final verdict if payload set evaluation is
 			// successful (operation breaks if anything goes wrong).
-			rule.addOperation(mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NF_DROP)})))
+			rule.addOperation(mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NF_DROP)})))
 
 			// Registers the rule to the base chain.
 			if err := bc.RegisterRule(rule, -1); err != nil {
@@ -2261,7 +2261,7 @@ func TestEvaluateBitwise(t *testing.T) {
 			}
 
 			// Adds drop operation. Will be final verdict if comparison is true.
-			rule.addOperation(mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NF_DROP)})))
+			rule.addOperation(mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NF_DROP)})))
 
 			// Registers the rule to the base chain.
 			if err := bc.RegisterRule(rule, -1); err != nil {
@@ -2519,7 +2519,7 @@ func TestEvaluateRoute(t *testing.T) {
 			}
 
 			// Adds drop operation. Will be final verdict if all comparisons are true.
-			rule.addOperation(mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NF_DROP)})))
+			rule.addOperation(mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NF_DROP)})))
 
 			// Registers the rule to the base chain.
 			if err := bc.RegisterRule(rule, -1); err != nil {
@@ -2763,7 +2763,7 @@ func TestEvaluateByteorder(t *testing.T) {
 			}
 
 			// Adds drop operation. Will be final verdict if comparison is true.
-			rule.addOperation(mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NF_DROP)})))
+			rule.addOperation(mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NF_DROP)})))
 
 			// Registers the rule to the base chain.
 			if err := bc.RegisterRule(rule, -1); err != nil {
@@ -2851,7 +2851,7 @@ func TestEvaluateMetaLoad(t *testing.T) {
 			pkt:   pkt,
 			op1:   mustCreateMetaLoad(t, linux.NFT_META_NFPROTO, linux.NFT_REG_4),
 			op2: mustCreateComparison(t, linux.NFT_REG_4, linux.NFT_CMP_EQ,
-				[]byte{IP6.Protocol(), 0, 0, 0}),
+				[]byte{AfProtocol(stack.IP6), 0, 0, 0}),
 		},
 		{ // cmd: add rule ip6 tab ch meta l4proto 0x6
 			tname: "meta load l4proto test",
@@ -2942,7 +2942,7 @@ func TestEvaluateMetaLoad(t *testing.T) {
 			}
 
 			// Adds drop operation. Will be final verdict if all comparisons are true.
-			rule.addOperation(mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NF_DROP)})))
+			rule.addOperation(mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NF_DROP)})))
 
 			// Registers the rule to the base chain.
 			if err := bc.RegisterRule(rule, -1); err != nil {
@@ -3032,7 +3032,7 @@ func TestEvaluateMetaSet(t *testing.T) {
 			}
 
 			// Adds drop operation, to be final verdict if evaluation is successful.
-			rule.addOperation(mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NF_DROP)})))
+			rule.addOperation(mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NF_DROP)})))
 
 			// Registers the rule to the base chain.
 			if err := bc.RegisterRule(rule, -1); err != nil {
@@ -3062,7 +3062,7 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 	for _, test := range []struct {
 		tname     string
 		chains    map[string]*Chain
-		verdict   Verdict
+		verdict   stack.NFVerdict
 		shouldErr bool
 	}{
 		{
@@ -3071,7 +3071,7 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 				"base_chain": {
 					baseChainInfo: arbitraryInfoPolicyAccept,
 					rules: []*Rule{{
-						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_JUMP), ChainName: "non_existent_chain"}))},
+						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NFT_JUMP), ChainName: "non_existent_chain"}))},
 					}},
 				},
 			},
@@ -3083,7 +3083,7 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 				"base_chain": {
 					baseChainInfo: arbitraryInfoPolicyAccept,
 					rules: []*Rule{{
-						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_GOTO), ChainName: "non_existent_chain"}))},
+						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NFT_GOTO), ChainName: "non_existent_chain"}))},
 					}},
 				},
 			},
@@ -3095,7 +3095,7 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 				"base_chain": {
 					baseChainInfo: arbitraryInfoPolicyAccept,
 					rules: []*Rule{{
-						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_JUMP), ChainName: "base_chain"}))},
+						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NFT_JUMP), ChainName: "base_chain"}))},
 					}},
 				},
 			},
@@ -3107,7 +3107,7 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 				"base_chain": {
 					baseChainInfo: arbitraryInfoPolicyAccept,
 					rules: []*Rule{{
-						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_GOTO), ChainName: "base_chain"}))},
+						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NFT_GOTO), ChainName: "base_chain"}))},
 					}},
 				},
 			},
@@ -3119,12 +3119,12 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 				"base_chain": {
 					baseChainInfo: arbitraryInfoPolicyAccept,
 					rules: []*Rule{{
-						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"}))},
+						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"}))},
 					}},
 				},
 				"aux_chain": {
 					rules: []*Rule{{
-						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_GOTO), ChainName: "base_chain"}))},
+						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NFT_GOTO), ChainName: "base_chain"}))},
 					}},
 				},
 			},
@@ -3136,17 +3136,17 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 				"base_chain": {
 					baseChainInfo: arbitraryInfoPolicyAccept,
 					rules: []*Rule{{
-						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"}))},
+						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"}))},
 					}},
 				},
 				"aux_chain": {
 					rules: []*Rule{{
-						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_GOTO), ChainName: "aux_chain2"}))},
+						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NFT_GOTO), ChainName: "aux_chain2"}))},
 					}},
 				},
 				"aux_chain2": {
 					rules: []*Rule{{
-						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_GOTO), ChainName: "aux_chain"}))},
+						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NFT_GOTO), ChainName: "aux_chain"}))},
 					}},
 				},
 			},
@@ -3158,17 +3158,17 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 				"base_chain": {
 					baseChainInfo: arbitraryInfoPolicyAccept,
 					rules: []*Rule{{
-						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"}))},
+						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"}))},
 					}},
 				},
 				"aux_chain": {
 					rules: []*Rule{{
-						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain2"}))},
+						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain2"}))},
 					}},
 				},
 				"aux_chain2": {
 					rules: []*Rule{{
-						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_GOTO), ChainName: "base_chain"}))},
+						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NFT_GOTO), ChainName: "base_chain"}))},
 					}},
 				},
 			},
@@ -3180,27 +3180,27 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 				"base_chain": {
 					baseChainInfo: arbitraryInfoPolicyAccept,
 					rules: []*Rule{{
-						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"}))},
+						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"}))},
 					}},
 				},
 				"aux_chain": {
 					rules: []*Rule{{
-						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_GOTO), ChainName: "aux_chain2"}))},
+						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NFT_GOTO), ChainName: "aux_chain2"}))},
 					}},
 				},
 				"aux_chain2": {
 					rules: []*Rule{{
-						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain3"}))},
+						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain3"}))},
 					}},
 				},
 				"aux_chain3": {
 					rules: []*Rule{{
-						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_GOTO), ChainName: "aux_chain4"}))},
+						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NFT_GOTO), ChainName: "aux_chain4"}))},
 					}},
 				},
 				"aux_chain4": {
 					rules: []*Rule{{
-						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain2"}))},
+						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain2"}))},
 					}},
 				},
 			},
@@ -3212,22 +3212,22 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 				"base_chain": {
 					baseChainInfo: arbitraryInfoPolicyAccept,
 					rules: []*Rule{{
-						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"}))},
+						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"}))},
 					}},
 				},
 				"aux_chain": {
 					rules: []*Rule{{
-						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_GOTO), ChainName: "aux_chain2"}))},
+						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NFT_GOTO), ChainName: "aux_chain2"}))},
 					}},
 				},
 				"aux_chain2": {
 					rules: []*Rule{{
-						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain3"}))},
+						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain3"}))},
 					}},
 				},
 				"aux_chain3": {
 					rules: []*Rule{{
-						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_GOTO), ChainName: "base_chain"}))},
+						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NFT_GOTO), ChainName: "base_chain"}))},
 					}},
 				},
 			},
@@ -3239,22 +3239,22 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 				"base_chain": {
 					baseChainInfo: arbitraryInfoPolicyAccept,
 					rules: []*Rule{{
-						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"}))},
+						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"}))},
 					}},
 				},
 				"aux_chain": {
 					rules: []*Rule{{
-						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_GOTO), ChainName: "aux_chain2"}))},
+						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NFT_GOTO), ChainName: "aux_chain2"}))},
 					}},
 				},
 				"aux_chain2": {
 					rules: []*Rule{{
-						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain3"}))},
+						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain3"}))},
 					}},
 				},
 				"aux_chain3": {
 					rules: []*Rule{{
-						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_GOTO), ChainName: "base_chain"}))},
+						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NFT_GOTO), ChainName: "base_chain"}))},
 					}},
 				},
 			},
@@ -3271,28 +3271,28 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 					baseChainInfo: arbitraryInfoPolicyAccept,
 					rules: []*Rule{{
 						ops: []operation{
-							mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"})),
-							mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain2"})),
+							mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"})),
+							mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain2"})),
 						},
 					}},
 				},
 				"aux_chain": {
 					comment: "strictly target",
 					rules: []*Rule{{
-						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NF_DROP)}))},
+						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NF_DROP)}))},
 					}},
 				},
 				"aux_chain2": {
 					rules: []*Rule{{
 						ops: []operation{
-							mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"})),
-							mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain3"})),
+							mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"})),
+							mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain3"})),
 						},
 					}},
 				},
 				"aux_chain3": {
 					rules: []*Rule{{
-						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_GOTO), ChainName: "aux_chain2"}))},
+						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NFT_GOTO), ChainName: "aux_chain2"}))},
 					}},
 				},
 			},
@@ -3306,20 +3306,20 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 					rules: []*Rule{
 						{ops: []operation{mustCreateImmediate(t, linux.NFT_REG_1, newBytesData([]byte{0, 1, 2, 3}))}},
 						{ops: []operation{mustCreateImmediate(t, linux.NFT_REG32_14, newBytesData([]byte{0, 1, 2, 3}))}},
-						{ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"}))}},
+						{ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"}))}},
 					},
 				},
 				"aux_chain": {
 					rules: []*Rule{{
 						ops: []operation{
-							mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NF_DROP)})),
-							mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_GOTO), ChainName: "aux_chain2"})),
+							mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NF_DROP)})),
+							mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NFT_GOTO), ChainName: "aux_chain2"})),
 						},
 					}},
 				},
 				"aux_chain2": {
 					rules: []*Rule{{
-						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain3"}))},
+						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain3"}))},
 					}},
 				},
 				"aux_chain3": {
@@ -3328,8 +3328,8 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 						{ops: []operation{mustCreateImmediate(t, linux.NFT_REG32_14, newBytesData([]byte{0, 1, 2, 3}))}},
 						{ops: []operation{
 							mustCreateImmediate(t, linux.NFT_REG_4, newBytesData([]byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15})),
-							mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_GOTO), ChainName: "aux_chain"})),
-							mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NF_DROP)})),
+							mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NFT_GOTO), ChainName: "aux_chain"})),
+							mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NF_DROP)})),
 						}},
 					},
 				},
@@ -3344,11 +3344,11 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 					rules: []*Rule{
 						{
 							ops: []operation{
-								mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"})),
-								mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain2"})),
+								mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"})),
+								mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain2"})),
 							},
 						},
-						{ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain3"}))}},
+						{ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain3"}))}},
 					},
 				},
 				"aux_chain": {
@@ -3370,7 +3370,7 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 					}},
 				},
 			},
-			verdict: Verdict{Code: VC(linux.NF_ACCEPT)}, // from base chain policy
+			verdict: stack.NFVerdict{Code: VC(linux.NF_ACCEPT)}, // from base chain policy
 		},
 		{
 			tname: "base chain jump to 3 other chains with last chain dropping",
@@ -3380,11 +3380,11 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 					rules: []*Rule{
 						{
 							ops: []operation{
-								mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"})),
-								mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain2"})),
+								mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"})),
+								mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain2"})),
 							},
 						},
-						{ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain3"}))}},
+						{ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain3"}))}},
 					},
 				},
 				"aux_chain": {
@@ -3402,11 +3402,11 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 				"aux_chain3": {
 					comment: "strictly target",
 					rules: []*Rule{{
-						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NF_DROP)}))},
+						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NF_DROP)}))},
 					}},
 				},
 			},
-			verdict: Verdict{Code: VC(linux.NF_DROP)}, // from last chain
+			verdict: stack.NFVerdict{Code: VC(linux.NF_DROP)}, // from last chain
 		},
 		{
 			tname: "base chain jump to 3 other chains with last rule in base chain dropping",
@@ -3416,12 +3416,12 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 					rules: []*Rule{
 						{
 							ops: []operation{
-								mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"})),
-								mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain2"})),
+								mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"})),
+								mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain2"})),
 							},
 						},
-						{ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain3"}))}},
-						{ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NF_DROP)}))}},
+						{ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain3"}))}},
+						{ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NF_DROP)}))}},
 					},
 				},
 				"aux_chain": {
@@ -3443,7 +3443,7 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 					}},
 				},
 			},
-			verdict: Verdict{Code: VC(linux.NF_DROP)}, // from last rule in base chain
+			verdict: stack.NFVerdict{Code: VC(linux.NF_DROP)}, // from last rule in base chain
 		},
 		{
 			tname: "jump to the same chain",
@@ -3453,8 +3453,8 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 					rules: []*Rule{
 						{
 							ops: []operation{
-								mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"})),
-								mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"})),
+								mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"})),
+								mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"})),
 							},
 						},
 					},
@@ -3464,7 +3464,7 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 					rules:   []*Rule{{}},
 				},
 			},
-			verdict: Verdict{Code: VC(linux.NF_ACCEPT)}, // from base chain policy
+			verdict: stack.NFVerdict{Code: VC(linux.NF_ACCEPT)}, // from base chain policy
 		},
 	} {
 		t.Run(test.tname, func(t *testing.T) {
@@ -3551,31 +3551,31 @@ func TestMaxNestedJumps(t *testing.T) {
 		tname         string
 		useJumpOp     bool
 		numberOfJumps int
-		verdict       Verdict // ChainName is set to "error" if an error is expected
+		verdict       stack.NFVerdict // ChainName is set to "error" if an error is expected
 	}{
 		{
 			tname:         "nested jump limit reached with jumps",
 			useJumpOp:     true,
 			numberOfJumps: nestedJumpLimit,
-			verdict:       Verdict{Code: VC(linux.NF_DROP)},
+			verdict:       stack.NFVerdict{Code: VC(linux.NF_DROP)},
 		},
 		{
 			tname:         "nested jump limit reached with gotos",
 			useJumpOp:     false,
 			numberOfJumps: nestedJumpLimit,
-			verdict:       Verdict{Code: VC(linux.NF_DROP)},
+			verdict:       stack.NFVerdict{Code: VC(linux.NF_DROP)},
 		},
 		{
 			tname:         "nested jump limit exceeded with jumps",
 			useJumpOp:     true,
 			numberOfJumps: nestedJumpLimit + 1,
-			verdict:       Verdict{ChainName: "error"},
+			verdict:       stack.NFVerdict{ChainName: "error"},
 		},
 		{
 			tname:         "nested jump limit exceeded with gotos",
 			useJumpOp:     false,
 			numberOfJumps: nestedJumpLimit + 1,
-			verdict:       Verdict{Code: VC(linux.NF_DROP)}, // limit only for jumps
+			verdict:       stack.NFVerdict{Code: VC(linux.NF_DROP)}, // limit only for jumps
 		},
 	} {
 		t.Run(test.tname, func(t *testing.T) {
@@ -3596,14 +3596,14 @@ func TestMaxNestedJumps(t *testing.T) {
 				}
 				r := &Rule{}
 				if i == test.numberOfJumps-1 {
-					err = r.addOperation(mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NF_DROP)})))
+					err = r.addOperation(mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NF_DROP)})))
 				} else {
 					targetName := fmt.Sprintf("chain %d", i+1)
 					code := VC(linux.NFT_JUMP)
 					if !test.useJumpOp {
 						code = VC(linux.NFT_GOTO)
 					}
-					err = r.addOperation(mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: code, ChainName: targetName})))
+					err = r.addOperation(mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: code, ChainName: targetName})))
 				}
 				if err != nil {
 					t.Fatalf("unexpected error for AddOperation: %v", err)
