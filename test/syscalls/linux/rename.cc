@@ -464,25 +464,6 @@ TEST(RenameTest, SysfsDirectoryToSelf) {
   EXPECT_THAT(rename(path.c_str(), path.c_str()), SyscallSucceeds());
 }
 
-#ifndef SYS_renameat2
-#if defined(__x86_64__)
-#define SYS_renameat2 316
-#elif defined(__aarch64__)
-#define SYS_renameat2 276
-#else
-#error "Unknown architecture"
-#endif
-#endif  // SYS_renameat2
-
-#ifndef RENAME_NOREPLACE
-#define RENAME_NOREPLACE (1 << 0)
-#endif  // RENAME_NOREPLACE
-
-int renameat2(int olddirfd, const char* oldpath, int newdirfd,
-              const char* newpath, unsigned int flags) {
-  return syscall(SYS_renameat2, olddirfd, oldpath, newdirfd, newpath, flags);
-}
-
 TEST(Renameat2Test, NoReplaceSuccess) {
   auto f = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   std::string const newpath = NewTempAbsPath();
