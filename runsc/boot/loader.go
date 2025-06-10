@@ -90,6 +90,7 @@ import (
 
 	// Include other supported socket providers.
 	_ "gvisor.dev/gvisor/pkg/sentry/socket/netlink"
+	_ "gvisor.dev/gvisor/pkg/sentry/socket/netlink/netfilter"
 	_ "gvisor.dev/gvisor/pkg/sentry/socket/netlink/route"
 	_ "gvisor.dev/gvisor/pkg/sentry/socket/netlink/uevent"
 	_ "gvisor.dev/gvisor/pkg/sentry/socket/unix"

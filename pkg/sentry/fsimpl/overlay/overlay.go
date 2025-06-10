@@ -99,6 +99,10 @@ type filesystem struct {
 	// used for accesses to the filesystem's layers. creds is immutable.
 	creds *auth.Credentials
 
+	// createCreds is a cache of credentials that is used for create operations.
+	createCredsMu createCredsMutex `state:"nosave"`
+	createCreds   map[createCredsKey]*auth.Credentials
+
 	// dirDevMinor is the device minor number used for directories. dirDevMinor
 	// is immutable.
 	dirDevMinor uint32
@@ -146,6 +150,12 @@ type layerDevNumber struct {
 type layerDevNoAndIno struct {
 	layerDevNumber
 	ino uint64
+}
+
+// +stateify savable
+type createCredsKey struct {
+	uid auth.KUID
+	gid auth.KGID
 }
 
 // GetFilesystem implements vfs.FilesystemType.GetFilesystem.
@@ -876,25 +886,35 @@ func (d *dentry) mayDelete(creds *auth.Credentials, child *dentry) error {
 	)
 }
 
-// newChildOwnerStat returns a Statx for configuring the UID, GID, and mode of
-// children.
-func (d *dentry) newChildOwnerStat(mode linux.FileMode, creds *auth.Credentials) linux.Statx {
-	stat := linux.Statx{
-		Mask: uint32(linux.STATX_UID | linux.STATX_GID),
-		UID:  uint32(creds.EffectiveKUID),
-		GID:  uint32(creds.EffectiveKGID),
+// credsForCreate returns the creds to use for creation operations.
+func (d *dentry) credsForCreate(creds *auth.Credentials, isSGIDSet bool) *auth.Credentials {
+	// During creation operations, Linux uses a modified version of fs.creds. It
+	// sets the fsuid/fsgid to the caller's fsuid/fsgid. Note that gVisor doesn't
+	// support fsuid/fsgid and just uses euid/egid to determine file ownership
+	// for new files. So we just update euid/egid with the caller's euid/egid.
+	key := createCredsKey{
+		uid: creds.EffectiveKUID,
+		gid: creds.EffectiveKGID,
 	}
-	// Set GID and possibly the SGID bit if the parent is an SGID directory.
-	d.copyMu.RLock()
-	defer d.copyMu.RUnlock()
-	if d.mode.Load()&linux.ModeSetGID == linux.ModeSetGID {
-		stat.GID = d.gid.Load()
-		if stat.Mode&linux.ModeDirectory == linux.ModeDirectory {
-			stat.Mode = uint16(mode) | linux.ModeSetGID
-			stat.Mask |= linux.STATX_MODE
+	if isSGIDSet {
+		key.gid = auth.KGID(d.gid.Load())
+	}
+	if d.fs.creds.EffectiveKUID == key.uid && d.fs.creds.EffectiveKGID == key.gid {
+		return d.fs.creds
+	}
+	d.fs.createCredsMu.Lock()
+	defer d.fs.createCredsMu.Unlock()
+	newCreds, ok := d.fs.createCreds[key]
+	if !ok {
+		newCreds = d.fs.creds.Fork()
+		newCreds.EffectiveKUID = key.uid
+		newCreds.EffectiveKGID = key.gid
+		if d.fs.createCreds == nil {
+			d.fs.createCreds = make(map[createCredsKey]*auth.Credentials)
 		}
+		d.fs.createCreds[key] = newCreds
 	}
-	return stat
+	return newCreds
 }
 
 // fileDescription is embedded by overlay implementations of

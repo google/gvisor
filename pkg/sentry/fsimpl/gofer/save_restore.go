@@ -426,14 +426,20 @@ func (d *dentry) restoreDeletedDirectory(ctx context.Context, opts *vfs.Complete
 func (d *dentry) restoreDeletedRegularFile(ctx context.Context, opts *vfs.CompleteRestoreOptions) error {
 	// Recreate the file on the host filesystem (this is temporary).
 	parent := d.parent.Load()
-	_, h, err := parent.openCreate(ctx, d.name, linux.O_WRONLY, linux.FileMode(d.mode.Load()), auth.KUID(d.uid.Load()), auth.KGID(d.gid.Load()), false /* createDentry */)
+	name := d.name
+	_, h, err := parent.openCreate(ctx, name, linux.O_WRONLY, linux.FileMode(d.mode.Load()), auth.KUID(d.uid.Load()), auth.KGID(d.gid.Load()), false /* createDentry */)
+	if linuxerr.Equals(linuxerr.EEXIST, err) {
+		name = fmt.Sprintf("%s.tmp-gvisor-restore", name)
+		log.Warningf("Deleted file %q was replaced with a new file at the same path, using new name %q", genericDebugPathname(d.fs, d), name)
+		_, h, err = parent.openCreate(ctx, name, linux.O_WRONLY, linux.FileMode(d.mode.Load()), auth.KUID(d.uid.Load()), auth.KGID(d.gid.Load()), false /* createDentry */)
+	}
 	if err != nil {
 		return fmt.Errorf("failed to re-create deleted file %q: %w", genericDebugPathname(d.fs, d), err)
 	}
 	defer h.close(ctx)
 	// In case of errors, clean up the recreated file.
 	unlinkCU := cleanup.Make(func() {
-		if err := parent.unlink(ctx, d.name, 0 /* flags */); err != nil {
+		if err := parent.unlink(ctx, name, 0 /* flags */); err != nil {
 			log.Warningf("failed to clean up recreated deleted file %q: %v", genericDebugPathname(d.fs, d), err)
 		}
 	})
@@ -456,7 +462,7 @@ func (d *dentry) restoreDeletedRegularFile(ctx context.Context, opts *vfs.Comple
 	}
 	// Finally, unlink the recreated file.
 	unlinkCU.Release()
-	if err := parent.unlink(ctx, d.name, 0 /* flags */); err != nil {
+	if err := parent.unlink(ctx, name, 0 /* flags */); err != nil {
 		return fmt.Errorf("failed to clean up recreated deleted file %q: %v", genericDebugPathname(d.fs, d), err)
 	}
 	delete(d.fs.savedDeletedOpenDentries, d)
