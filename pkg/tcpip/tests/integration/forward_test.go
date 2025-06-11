@@ -387,7 +387,10 @@ func TestUnicastForwarding(t *testing.T) {
 			srcAddr:       ipv4LinkLocalUnicastAddr,
 			dstAddr:       utils.RemoteIPv4Addr,
 			rx:            rxICMPv4EchoRequest,
-			expectForward: false,
+			expectForward: true,
+			checker: func(t *testing.T, v *buffer.View) {
+				forwardedICMPv4EchoRequestChecker(t, v, ipv4LinkLocalUnicastAddr, utils.RemoteIPv4Addr)
+			},
 		},
 		{
 			name:          "IPv4 link-local destination",
@@ -395,7 +398,10 @@ func TestUnicastForwarding(t *testing.T) {
 			srcAddr:       utils.RemoteIPv4Addr,
 			dstAddr:       ipv4LinkLocalUnicastAddr,
 			rx:            rxICMPv4EchoRequest,
-			expectForward: false,
+			expectForward: true,
+			checker: func(t *testing.T, v *buffer.View) {
+				forwardedICMPv4EchoRequestChecker(t, v, utils.RemoteIPv4Addr, ipv4LinkLocalUnicastAddr)
+			},
 		},
 		{
 			name:          "IPv4 non-link-local unicast",

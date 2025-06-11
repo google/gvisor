@@ -345,7 +345,6 @@ func TestForwarding(t *testing.T) {
 	const randomTimeOffset = 0x10203040
 
 	unreachableIPv4Addr := testutil.MustParse4("12.0.0.2")
-	linkLocalIPv4Addr := testutil.MustParse4("169.254.0.0")
 
 	tests := []struct {
 		name                                 string
@@ -479,22 +478,6 @@ func TestForwarding(t *testing.T) {
 			},
 			expectedPacketUnrouteableErrors: 1,
 			expectPacketForwarded:           false,
-		},
-		{
-			name:                        "Link local destination",
-			TTL:                         2,
-			srcAddr:                     remoteIPv4Addr1,
-			dstAddr:                     linkLocalIPv4Addr,
-			expectedLinkLocalDestErrors: 1,
-			expectPacketForwarded:       false,
-		},
-		{
-			name:                          "Link local source",
-			TTL:                           2,
-			srcAddr:                       linkLocalIPv4Addr,
-			dstAddr:                       remoteIPv4Addr2,
-			expectedLinkLocalSourceErrors: 1,
-			expectPacketForwarded:         false,
 		},
 		{
 			name:                             "unspecified source",

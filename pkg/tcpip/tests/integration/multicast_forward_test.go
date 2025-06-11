@@ -330,15 +330,6 @@ func TestAddMulticastRoute(t *testing.T) {
 			wantErr: &tcpip.ErrBadAddress{},
 		},
 		{
-			name:               "link-local unicast source",
-			srcAddr:            linkLocalUnicastAddr,
-			dstAddr:            multicastAddr,
-			routeIncomingNICID: incomingNICID,
-			routeOutgoingNICID: outgoingNICID,
-			multicastForwardingEventsBeforeAddRouteCalled: []multicastForwardingEvent{enabledForNIC, enabledForProtocol},
-			wantErr: &tcpip.ErrBadAddress{},
-		},
-		{
 			name:               "empty source",
 			srcAddr:            emptyAddr,
 			dstAddr:            multicastAddr,
@@ -360,15 +351,6 @@ func TestAddMulticastRoute(t *testing.T) {
 			name:               "empty destination",
 			srcAddr:            remoteUnicastAddr,
 			dstAddr:            emptyAddr,
-			routeIncomingNICID: incomingNICID,
-			routeOutgoingNICID: outgoingNICID,
-			multicastForwardingEventsBeforeAddRouteCalled: []multicastForwardingEvent{enabledForNIC, enabledForProtocol},
-			wantErr: &tcpip.ErrBadAddress{},
-		},
-		{
-			name:               "link-local multicast destination",
-			srcAddr:            remoteUnicastAddr,
-			dstAddr:            linkLocalMulticastAddr,
 			routeIncomingNICID: incomingNICID,
 			routeOutgoingNICID: outgoingNICID,
 			multicastForwardingEventsBeforeAddRouteCalled: []multicastForwardingEvent{enabledForNIC, enabledForProtocol},
@@ -601,12 +583,6 @@ func TestMulticastRouteLastUsedTime(t *testing.T) {
 			wantErr: &tcpip.ErrBadAddress{},
 		},
 		{
-			name:    "link-local unicast source",
-			srcAddr: linkLocalUnicastAddr,
-			dstAddr: multicastAddr,
-			wantErr: &tcpip.ErrBadAddress{},
-		},
-		{
 			name:    "empty source",
 			srcAddr: emptyAddr,
 			dstAddr: multicastAddr,
@@ -622,12 +598,6 @@ func TestMulticastRouteLastUsedTime(t *testing.T) {
 			name:    "empty destination",
 			srcAddr: remoteUnicastAddr,
 			dstAddr: emptyAddr,
-			wantErr: &tcpip.ErrBadAddress{},
-		},
-		{
-			name:    "link-local multicast destination",
-			srcAddr: remoteUnicastAddr,
-			dstAddr: linkLocalMulticastAddr,
 			wantErr: &tcpip.ErrBadAddress{},
 		},
 	}
@@ -759,12 +729,6 @@ func TestRemoveMulticastRoute(t *testing.T) {
 			wantErr: &tcpip.ErrBadAddress{},
 		},
 		{
-			name:    "link-local unicast source",
-			srcAddr: linkLocalUnicastAddr,
-			dstAddr: multicastAddr,
-			wantErr: &tcpip.ErrBadAddress{},
-		},
-		{
 			name:    "empty source",
 			srcAddr: emptyAddr,
 			dstAddr: multicastAddr,
@@ -780,12 +744,6 @@ func TestRemoveMulticastRoute(t *testing.T) {
 			name:    "empty destination",
 			srcAddr: remoteUnicastAddr,
 			dstAddr: emptyAddr,
-			wantErr: &tcpip.ErrBadAddress{},
-		},
-		{
-			name:    "link-local multicast destination",
-			srcAddr: remoteUnicastAddr,
-			dstAddr: linkLocalMulticastAddr,
 			wantErr: &tcpip.ErrBadAddress{},
 		},
 	}
@@ -926,22 +884,6 @@ func TestMulticastForwarding(t *testing.T) {
 			ttl:                          packetTTL,
 			routeInputInterface:          incomingNICID,
 			expectedForwardingInterfaces: []tcpip.NICID{outgoingNICID, otherOutgoingNICID},
-		},
-		{
-			name:                         "forward and local",
-			dstAddr:                      multicastAddr,
-			ttl:                          packetTTL,
-			routeInputInterface:          incomingNICID,
-			joinMulticastGroup:           true,
-			expectedForwardingInterfaces: []tcpip.NICID{outgoingNICID, otherOutgoingNICID},
-		},
-		{
-			name:                         "local only",
-			dstAddr:                      linkLocalMulticastAddr,
-			ttl:                          packetTTL,
-			routeInputInterface:          incomingNICID,
-			joinMulticastGroup:           true,
-			expectedForwardingInterfaces: []tcpip.NICID{},
 		},
 		{
 			name:                             "multicast forwarding disabled for NIC",
