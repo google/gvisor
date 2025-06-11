@@ -817,7 +817,22 @@ func Init() {
 		})
 
 		v570_124_06 := addDriverABI(570, 124, 06, "1818c90657d17e510de9fa032385ff7e99063e848e901cb4636ee71c8b339313", v570_86_15)
-		_ = addDriverABI(570, 133, 20, "1253d17b1528e8a24bf1f34a8ac6591c924b98ad7a32344bde253aa622ac1605", v570_124_06)
+		v570_133_20 := addDriverABI(570, 133, 20, "1253d17b1528e8a24bf1f34a8ac6591c924b98ad7a32344bde253aa622ac1605", v570_124_06)
+
+		// 575.51.02 is an intermediate unqualified version from the main branch.
+		v575_51_02 := func() *driverABI {
+			abi := v570_133_20()
+			abi.controlCmd[nvgpu.NV2080_CTRL_CMD_THERMAL_SYSTEM_EXECUTE_V2] = ctrlHandler(rmControlSimple, compUtil)
+			prevStructs := abi.getStructs
+			abi.getStructs = func() *driverABIStructs {
+				structs := prevStructs()
+				structs.controlStructs[nvgpu.NV2080_CTRL_CMD_THERMAL_SYSTEM_EXECUTE_V2] = simpleDriverStruct("NV2080_CTRL_THERMAL_SYSTEM_EXECUTE_V2_PARAMS")
+				return structs
+			}
+			return abi
+		}
+
+		_ = addDriverABI(575, 57, 8, "2aa701dac180a7b20a6e578cccd901ded8d44e57d60580f08f9d28dd1fffc6f2", v575_51_02)
 	})
 }
 

@@ -582,6 +582,11 @@ const (
 	NV2080_CTRL_CMD_TIMER_SET_GR_TICK_FREQ                  = 0x20800407
 )
 
+// From src/common/sdk/nvidia/inc/ctrl/ctrl2080/ctrl2080thermal.h:
+const (
+	NV2080_CTRL_CMD_THERMAL_SYSTEM_EXECUTE_V2 = 0x20800513
+)
+
 // From src/common/sdk/nvidia/inc/ctrl/ctrl503c.h:
 const (
 	NV503C_CTRL_CMD_REGISTER_VA_SPACE = 0x503c0102
