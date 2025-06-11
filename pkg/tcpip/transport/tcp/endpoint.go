@@ -1198,6 +1198,14 @@ func (e *Endpoint) cleanupLocked() {
 		e.timeWaitTimer.Stop()
 	}
 
+	// Remove current EP from its lEP acceptQueue.pendingEndpoint if exists.
+	if e.h != nil && e.h.listenEP != nil {
+		lEP := e.h.listenEP
+		lEP.acceptMu.Lock()
+		delete(lEP.acceptQueue.pendingEndpoints, e)
+		lEP.acceptMu.Unlock()
+	}
+
 	// Close all endpoints that might have been accepted by TCP but not by
 	// the client.
 	e.closePendingAcceptableConnectionsLocked()
