@@ -18,7 +18,6 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"math"
 	"math/rand"
 	"os"
@@ -4135,24 +4134,7 @@ func TestIPv6DisableAllSysctl(t *testing.T) {
 	for name, conf := range configs(t, true /* noOverlay */) {
 		for _, test := range tests {
 			t.Run(test.name+name, func(t *testing.T) {
-				dir, err := os.MkdirTemp(testutil.TmpDir(), "ipv6-test")
-				if err != nil {
-					t.Fatalf("os.MkdirTemp failed: %v", err)
-				}
-				defer os.RemoveAll(dir)
-				if err := os.Chmod(dir, 0777); err != nil {
-					t.Fatalf("error chmoding file: %q, %v", dir, err)
-				}
-
-				outputPath := filepath.Join(dir, "output")
-				outputFile, err := createWriteableOutputFile(outputPath)
-				if err != nil {
-					t.Fatalf("error creating output file: %v", err)
-				}
-				defer outputFile.Close()
-
-				script := fmt.Sprintf("ip addr >> %q", outputPath)
-				spec := testutil.NewSpecWithArgs("bash", "-c", script)
+				spec := testutil.NewSpecWithArgs("sleep", "infinity")
 				conf.Network = config.NetworkSandbox
 				if test.ipv6Disabled {
 					spec.Linux = &specs.Linux{}
@@ -4175,33 +4157,31 @@ func TestIPv6DisableAllSysctl(t *testing.T) {
 				if err != nil {
 					t.Fatalf("error creating container: %v", err)
 				}
+				defer cont.Destroy()
 				if err := cont.Start(conf); err != nil {
 					t.Fatalf("error starting container: %v", err)
 				}
 
-				// Wait until application has ran.
-				if err := waitForFileNotEmpty(outputFile); err != nil {
-					// This can happen when the network does not
-					// have any network interfaces configured.
-					// We cannot test whether the sysctl works
-					// properly in this case. Log a warning and
-					// return.
-					t.Logf("No network interfaces are configured: %v", err)
+				out, err := executeCombinedOutput(conf, cont, nil, "/bin/sh", "-c", "ip addr")
+				if err != nil {
+					t.Fatalf("error executing 'ip addr' command: %v", err)
+				}
+
+				if len(out) == 0 {
+					// This can happen when the network does not have any network
+					// interfaces configured. We cannot test whether the sysctl works
+					// properly in this case. Log a warning and return.
+					t.Logf("No output from 'ip addr' command, no network interfaces are configured")
 					return
 				}
 
-				content, err := ioutil.ReadFile(outputPath)
-				if err != nil {
-					fmt.Println("Error reading file:", err)
-					return
-				}
-				res := strings.Contains(string(content), "inet6")
+				res := strings.Contains(string(out), "inet6")
 				if test.ipv6Disabled && res {
-					t.Fatalf("IPv6 address present when IPv6 is disabled on all interfaces")
+					t.Errorf("IPv6 address present when IPv6 is disabled on all interfaces, output: %v", string(out))
 				}
 
 				if !test.ipv6Disabled && !res {
-					t.Fatalf("IPv6 address not present when IPv6 is enabled on all interfaces")
+					t.Errorf("IPv6 address not present when IPv6 is enabled on all interfaces, output: %v", string(out))
 				}
 			})
 		}
