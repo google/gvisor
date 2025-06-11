@@ -31,6 +31,19 @@ doc(
 )
 
 doc(
+    name = "intro_to_gvisor",
+    src = "intro_to_gvisor.md",
+    category = "Architecture Guide",
+    data = [
+        "isolation_with_gvisor.svg",
+        "isolation_with_linux_security_primitives.svg",
+        "isolation_with_virtualization.svg",
+    ],
+    permalink = "/docs/architecture_guide/intro/",
+    weight = "10",
+)
+
+doc(
     name = "security",
     src = "security.md",
     category = "Architecture Guide",
@@ -39,7 +52,7 @@ doc(
         "security.svg",
     ],
     permalink = "/docs/architecture_guide/security/",
-    weight = "10",
+    weight = "20",
 )
 
 doc(
@@ -47,7 +60,7 @@ doc(
     src = "performance.md",
     category = "Architecture Guide",
     permalink = "/docs/architecture_guide/performance/",
-    weight = "20",
+    weight = "50",
 )
 
 doc(
@@ -58,5 +71,5 @@ doc(
         "packetflow.svg",
     ],
     permalink = "/docs/architecture_guide/networking/",
-    weight = "50",
+    weight = "60",
 )
