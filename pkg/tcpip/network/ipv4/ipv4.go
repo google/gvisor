@@ -934,22 +934,6 @@ func validateAddressesForForwarding(h header.IPv4) ip.ForwardingError {
 		return &ip.ErrInitializingSourceAddress{}
 	}
 
-	// As per RFC 3927 section 7,
-	//
-	//   A router MUST NOT forward a packet with an IPv4 Link-Local source or
-	//   destination address, irrespective of the router's default route
-	//   configuration or routes obtained from dynamic routing protocols.
-	//
-	//   A router which receives a packet with an IPv4 Link-Local source or
-	//   destination address MUST NOT forward the packet.  This prevents
-	//   forwarding of packets back onto the network segment from which they
-	//   originated, or to any other segment.
-	if header.IsV4LinkLocalUnicastAddress(srcAddr) {
-		return &ip.ErrLinkLocalSourceAddress{}
-	}
-	if dstAddr := h.DestinationAddress(); header.IsV4LinkLocalUnicastAddress(dstAddr) || header.IsV4LinkLocalMulticastAddress(dstAddr) {
-		return &ip.ErrLinkLocalDestinationAddress{}
-	}
 	return nil
 }
 
@@ -1616,11 +1600,11 @@ func (p *protocol) Close() {
 func (*protocol) Wait() {}
 
 func (p *protocol) validateUnicastSourceAndMulticastDestination(addresses stack.UnicastSourceAndMulticastDestination) tcpip.Error {
-	if !p.isUnicastAddress(addresses.Source) || header.IsV4LinkLocalUnicastAddress(addresses.Source) {
+	if !p.isUnicastAddress(addresses.Source) {
 		return &tcpip.ErrBadAddress{}
 	}
 
-	if !header.IsV4MulticastAddress(addresses.Destination) || header.IsV4LinkLocalMulticastAddress(addresses.Destination) {
+	if !header.IsV4MulticastAddress(addresses.Destination) {
 		return &tcpip.ErrBadAddress{}
 	}
 
