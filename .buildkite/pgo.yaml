@@ -33,7 +33,7 @@ steps:
           git checkout -b "$pgo_branch_name" &&
           git add runsc/profiles &&
           git status &&
-          gh auth login &&
+          gh auth login --with-token < "$HOME/.github-token" &&
           gh auth setup-git &&
           export GIT_AUTHOR_NAME=gvisor-bot &&
           export GIT_AUTHOR_EMAIL=gvisor-bot@google.com &&
