@@ -24,27 +24,6 @@ steps:
     if: build.branch == "master" && build.tag == null
     commands:
       - make ARCH=x86_64 benchmark-refresh-pgo BENCHMARKS_PLATFORMS=systrap
-      - '
-        if [[ "$(git status --porcelain | wc -l)" -gt 0 ]]; then
-          today="$(date +"%Y-%m-%d")" &&
-          pgo_branch_name="pgo-update-${today}" &&
-          git stash &&
-          git pull --rebase=true https://github.com/google/gvisor master &&
-          git checkout -b "$pgo_branch_name" &&
-          git add runsc/profiles &&
-          git status &&
-          gh auth login --with-token < "$HOME/.github-token" &&
-          gh auth setup-git &&
-          export GIT_AUTHOR_NAME=gvisor-bot &&
-          export GIT_AUTHOR_EMAIL=gvisor-bot@google.com &&
-          export GIT_COMMITTER_NAME=gvisor-bot &&
-          export GIT_COMMITTER_EMAIL=gvisor-bot@google.com &&
-          git commit -m "Update runsc profiles for PGO (profile-guided optimizations), $today." &&
-          git push --set-upstream git@github.com:google/gvisor.git "$pgo_branch_name" &&
-          gh pr create --title="Update runsc profiles for PGO (profile-guided optimizations), $today." --body="This PR updates the runsc profiles for PGO (profile-guided optimizations)." --label=pgo-update --base=master;
-        else
-          echo "No changes to runsc profiles." >&2;
-        fi
-        '
+      - ./.buildkite/scripts/pgo/commit-update.sh
     agents:
       arch: "amd64"
