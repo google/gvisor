@@ -52,7 +52,7 @@ const (
 )
 
 var (
-	threads         = []int{1, 8, 1000}
+	threads         = []int{1, 8, 256}
 	targetQPS       = []int{1, 64, httpbench.InfiniteQPS}
 	wantPercentiles = []int{50, 95, 99}
 )
