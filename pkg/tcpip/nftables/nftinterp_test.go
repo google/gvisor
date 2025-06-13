@@ -19,6 +19,7 @@ import (
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
 type interpretOperationTestAction struct {
@@ -58,32 +59,32 @@ func TestInterpretImmediateOps(t *testing.T) {
 		{
 			tname:    "verdict register with accept verdict",
 			opStr:    "[ immediate reg 0 accept ]",
-			expected: mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NF_ACCEPT)})),
+			expected: mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NF_ACCEPT)})),
 		},
 		{
 			tname:    "verdict register with drop verdict",
 			opStr:    "[ immediate reg 0 drop ]",
-			expected: mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NF_DROP)})),
+			expected: mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NF_DROP)})),
 		},
 		{
 			tname:    "verdict register with continue verdict",
 			opStr:    "[ immediate reg 0 continue ]",
-			expected: mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_CONTINUE)})),
+			expected: mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NFT_CONTINUE)})),
 		},
 		{
 			tname:    "verdict register with return verdict",
 			opStr:    "[ immediate reg 0 return ]",
-			expected: mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_RETURN)})),
+			expected: mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NFT_RETURN)})),
 		},
 		{
 			tname:    "verdict register with jump verdict",
 			opStr:    "[ immediate reg 0 jump -> next_chain ]",
-			expected: mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_JUMP), ChainName: "next_chain"})),
+			expected: mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NFT_JUMP), ChainName: "next_chain"})),
 		},
 		{
 			tname:    "verdict register with goto verdict",
 			opStr:    "[ immediate reg 0 goto -> next_chain ]",
-			expected: mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(Verdict{Code: VC(linux.NFT_GOTO), ChainName: "next_chain"})),
+			expected: mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NFT_GOTO), ChainName: "next_chain"})),
 		},
 		{
 			tname:    "verdict register with 4-byte data",

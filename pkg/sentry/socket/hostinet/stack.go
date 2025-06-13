@@ -439,6 +439,16 @@ func (s *Stack) IsSaveRestoreEnabled() bool {
 	return false
 }
 
+// EnableNFTables implements inet.Stack.EnableNFTables.
+func (s *Stack) EnableNFTables() error {
+	return fmt.Errorf("nftables is not supported for hostinet")
+}
+
+// IsNFTablesEnabled implements inet.Stack.IsNFTablesEnabled.
+func (s *Stack) IsNFTablesEnabled() bool {
+	return false
+}
+
 // Stats implements inet.Stack.Stats.
 func (s *Stack) Stats() tcpip.Stats {
 	return tcpip.Stats{}

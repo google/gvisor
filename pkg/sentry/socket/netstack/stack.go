@@ -57,6 +57,20 @@ func (s *Stack) IsSaveRestoreEnabled() bool {
 	return s.Stack.IsSaveRestoreEnabled()
 }
 
+// EnableNFTables enables nftables support for the stack.
+func (s *Stack) EnableNFTables() error {
+	s.Stack.EnableNFTables()
+	return nil
+}
+
+// IsNFTablesEnabled implements inet.Stack.IsNFTablesEnabled.
+func (s *Stack) IsNFTablesEnabled() bool {
+	if s.Stack == nil {
+		return false
+	}
+	return s.Stack.IsNFTablesEnabled()
+}
+
 // Destroy implements inet.Stack.Destroy.
 func (s *Stack) Destroy() {
 	s.Stack.Close()

@@ -236,6 +236,18 @@ func (*TestStack) IsSaveRestoreEnabled() bool {
 	return false
 }
 
+// EnableNFTables implements Stack.
+func (*TestStack) EnableNFTables() error {
+	// No-op.
+	return nil
+}
+
+// IsNFTablesEnabled implements Stack.
+func (*TestStack) IsNFTablesEnabled() bool {
+	// No-op.
+	return false
+}
+
 // Stats implements Stack.
 func (*TestStack) Stats() tcpip.Stats {
 	// No-op.

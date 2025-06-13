@@ -159,7 +159,7 @@ func (op metaLoad) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *Ru
 	// Netfilter (Family) Protocol (8-bit, single byte).
 	case linux.NFT_META_NFPROTO:
 		family := rule.chain.GetAddressFamily()
-		target = []byte{family.Protocol()}
+		target = []byte{AfProtocol(family)}
 
 	// L4 Transport Layer Protocol (8-bit, single byte).
 	case linux.NFT_META_L4PROTO:
@@ -225,7 +225,7 @@ func (op metaLoad) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *Ru
 
 	// Breaks if could not retrieve meta data.
 	if target == nil {
-		regs.verdict = Verdict{Code: VC(linux.NFT_BREAK)}
+		regs.verdict = stack.NFVerdict{Code: VC(linux.NFT_BREAK)}
 		return
 	}
 

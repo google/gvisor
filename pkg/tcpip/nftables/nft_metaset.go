@@ -81,6 +81,6 @@ func (op metaSet) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *Rul
 	}
 
 	// Breaks if could not set the meta data.
-	regs.verdict = Verdict{Code: VC(linux.NFT_BREAK)}
+	regs.verdict = stack.NFVerdict{Code: VC(linux.NFT_BREAK)}
 	return
 }

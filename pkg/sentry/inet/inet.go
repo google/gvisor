@@ -138,6 +138,12 @@ type Stack interface {
 	// IsSaveRestoreEnabled returns true when netstack s/r is enabled.
 	IsSaveRestoreEnabled() bool
 
+	// EnableNFTables enables nftables support for the stack.
+	EnableNFTables() error
+
+	// IsNFTablesEnabled returns true when nftables support is enabled.
+	IsNFTablesEnabled() bool
+
 	// Stats returns the network stats.
 	Stats() tcpip.Stats
 }

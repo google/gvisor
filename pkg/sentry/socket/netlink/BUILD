@@ -29,6 +29,7 @@ go_library(
         "//pkg/sentry/socket",
         "//pkg/sentry/socket/netlink/nlmsg",
         "//pkg/sentry/socket/netlink/port",
+        "//pkg/sentry/socket/netstack",
         "//pkg/sentry/socket/unix",
         "//pkg/sentry/socket/unix/transport",
         "//pkg/sentry/vfs",

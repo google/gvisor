@@ -107,6 +107,6 @@ func (op ranged) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *Rule
 	// Determines the comparison result depending on the operator.
 	if (d1 >= 0 && d2 <= 0) != (op.rop == linux.NFT_RANGE_EQ) {
 		// Comparison is false, so break from the rule.
-		regs.verdict = Verdict{Code: VC(linux.NFT_BREAK)}
+		regs.verdict = stack.NFVerdict{Code: VC(linux.NFT_BREAK)}
 	}
 }
