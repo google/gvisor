@@ -230,6 +230,7 @@ go_library(
         "neighbor_entry_list.go",
         "neighbor_entry_mutex.go",
         "neighborstate_string.go",
+        "nftables_types.go",
         "nic.go",
         "nic_mutex.go",
         "nic_stats.go",

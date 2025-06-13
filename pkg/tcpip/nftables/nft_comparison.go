@@ -111,6 +111,6 @@ func (op comparison) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *
 	}
 	if !result {
 		// Comparison is false, so break from the rule.
-		regs.verdict = Verdict{Code: VC(linux.NFT_BREAK)}
+		regs.verdict = stack.NFVerdict{Code: VC(linux.NFT_BREAK)}
 	}
 }

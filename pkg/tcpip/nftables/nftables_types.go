@@ -71,64 +71,18 @@ const (
 	bitshiftLimit = 32
 )
 
-// AddressFamily describes the 6 address families supported by nftables.
-// The address family determines the type of packets processed, and each family
-// contains hooks at specific stages of the packet processing pipeline.
-type AddressFamily int
-
-const (
-	// IP     represents IPv4 Family.
-	IP AddressFamily = iota
-
-	// IP6    represents IPv6 Family.
-	IP6
-
-	// Inet   represents Internet Family for hybrid IPv4/IPv6 rules.
-	Inet
-
-	// Arp    represents ARP Family for IPv4 ARP packets.
-	Arp
-
-	// Bridge represents Bridge Family for Ethernet packets across bridge devices.
-	Bridge
-
-	// Netdev represents Netdev Family for packets on ingress and egress.
-	Netdev
-
-	// NumAFs is the number of address families supported by nftables.
-	NumAFs
-)
-
-// addressFamilyStrings maps address families to their string representation.
-var addressFamilyStrings = map[AddressFamily]string{
-	IP:     "IPv4",
-	IP6:    "IPv6",
-	Inet:   "Internet (Both IPv4/IPv6)",
-	Arp:    "ARP",
-	Bridge: "Bridge",
-	Netdev: "Netdev",
-}
-
-// String for AddressFamily returns the name of the address family.
-func (f AddressFamily) String() string {
-	if af, ok := addressFamilyStrings[f]; ok {
-		return af
-	}
-	panic(fmt.Sprintf("invalid address family: %d", int(f)))
-}
-
 // addressFamilyProtocols maps address families to their protocol number.
-var addressFamilyProtocols = map[AddressFamily]uint8{
-	IP:     linux.NFPROTO_INET,
-	IP6:    linux.NFPROTO_IPV6,
-	Inet:   linux.NFPROTO_IPV6,
-	Arp:    linux.NFPROTO_ARP,
-	Bridge: linux.NFPROTO_BRIDGE,
-	Netdev: linux.NFPROTO_NETDEV,
+var addressFamilyProtocols = map[stack.AddressFamily]uint8{
+	stack.IP:     linux.NFPROTO_INET,
+	stack.IP6:    linux.NFPROTO_IPV6,
+	stack.Inet:   linux.NFPROTO_IPV6,
+	stack.Arp:    linux.NFPROTO_ARP,
+	stack.Bridge: linux.NFPROTO_BRIDGE,
+	stack.Netdev: linux.NFPROTO_NETDEV,
 }
 
-// Protocol returns the protocol number for the address family.
-func (f AddressFamily) Protocol() uint8 {
+// AfProtocol returns the protocol number for the address family.
+func AfProtocol(f stack.AddressFamily) uint8 {
 	if protocol, ok := addressFamilyProtocols[f]; ok {
 		return protocol
 	}
@@ -136,79 +90,27 @@ func (f AddressFamily) Protocol() uint8 {
 }
 
 // validateAddressFamily ensures the family address is valid (within bounds).
-func validateAddressFamily(family AddressFamily) error {
-	if family < 0 || family >= NumAFs {
+func validateAddressFamily(family stack.AddressFamily) error {
+	if family < 0 || family >= stack.NumAFs {
 		return fmt.Errorf("invalid address family: %d", int(family))
 	}
 	return nil
 }
 
-// Hook describes specific points in the pipeline where chains can be attached.
-// Each address family has its own set of hooks (defined in supportedHooks).
-// For IPv4/IPv6/Inet and Bridge, there are two possible pipelines:
-// 1. Prerouting -> Input -> ~Local Process~ -> Output -> Postrouting
-// 2. Prerouting -> Forward -> Postrouting
-type Hook int
-
-const (
-	// Prerouting Hook    is supported by IPv4/IPv6/Inet, Bridge Families.
-	Prerouting Hook = iota
-
-	// Input Hook         is supported by IPv4/IPv6/Inet, Bridge, ARP Families.
-	Input
-
-	// Forward Hook       is supported by IPv4/IPv6/Inet, Bridge Families.
-	Forward
-
-	// Output Hook        is supported by IPv4/IPv6/Inet, Bridge, ARP Families.
-	Output
-
-	// Postrouting Hook   is supported by IPv4/IPv6/Inet, Bridge Families.
-	Postrouting
-
-	// Ingress Hook       is supported by IPv4/IPv6/Inet, Bridge, Netdev Families.
-	Ingress
-
-	// Egress Hook        is supported by Netdev Family only.
-	Egress
-
-	// NumHooks is the number of hooks supported by nftables.
-	NumHooks
-)
-
-// hookStrings maps hooks to their string representation.
-var hookStrings = map[Hook]string{
-	Prerouting:  "Prerouting",
-	Input:       "Input",
-	Forward:     "Forward",
-	Output:      "Output",
-	Postrouting: "Postrouting",
-	Ingress:     "Ingress",
-	Egress:      "Egress",
-}
-
-// String for Hook returns the name of the hook.
-func (h Hook) String() string {
-	if hook, ok := hookStrings[h]; ok {
-		return hook
-	}
-	panic(fmt.Sprintf("invalid hook: %d", int(h)))
-}
-
 // supportedHooks maps each address family to its supported hooks.
-var supportedHooks [NumAFs][]Hook = [NumAFs][]Hook{
-	IP:     {Prerouting, Input, Forward, Output, Postrouting, Ingress},
-	IP6:    {Prerouting, Input, Forward, Output, Postrouting, Ingress},
-	Inet:   {Prerouting, Input, Forward, Output, Postrouting, Ingress},
-	Arp:    {Input, Output},
-	Bridge: {Prerouting, Input, Forward, Output, Postrouting, Ingress},
-	Netdev: {Ingress, Egress},
+var supportedHooks [stack.NumAFs][]stack.NFHook = [stack.NumAFs][]stack.NFHook{
+	stack.IP:     {stack.NFPrerouting, stack.NFInput, stack.NFForward, stack.NFOutput, stack.NFPostrouting, stack.NFIngress},
+	stack.IP6:    {stack.NFPrerouting, stack.NFInput, stack.NFForward, stack.NFOutput, stack.NFPostrouting, stack.NFIngress},
+	stack.Inet:   {stack.NFPrerouting, stack.NFInput, stack.NFForward, stack.NFOutput, stack.NFPostrouting, stack.NFIngress},
+	stack.Arp:    {stack.NFInput, stack.NFOutput},
+	stack.Bridge: {stack.NFPrerouting, stack.NFInput, stack.NFForward, stack.NFOutput, stack.NFPostrouting, stack.NFIngress},
+	stack.Netdev: {stack.NFIngress, stack.NFEgress},
 }
 
 // validateHook ensures the hook is within bounds and supported for the given
 // address family.
-func validateHook(hook Hook, family AddressFamily) error {
-	if hook < 0 || hook >= NumHooks {
+func validateHook(hook stack.NFHook, family stack.AddressFamily) error {
+	if hook >= stack.NFNumHooks {
 		return fmt.Errorf("invalid hook: %d", int(hook))
 	}
 	if slices.Contains(supportedHooks[family], hook) {
@@ -221,17 +123,20 @@ func validateHook(hook Hook, family AddressFamily) error {
 // NFTables represents the nftables state for all address families.
 // Note: unlike iptables, nftables doesn't start with any initialized tables.
 type NFTables struct {
-	filters   [NumAFs]*addressFamilyFilter // Filters for each address family.
-	clock     tcpip.Clock                  // Clock for timing evaluations.
-	startTime time.Time                    // Time NFTables object was created.
-	rng       rand.RNG                     // Random number generator.
+	filters   [stack.NumAFs]*addressFamilyFilter // Filters for each address family.
+	clock     tcpip.Clock                        // Clock for timing evaluations.
+	startTime time.Time                          // Time NFTables object was created.
+	rng       rand.RNG                           // Random number generator.
 }
+
+// Ensures NFTables implements the NFTablesInterface.
+var _ stack.NFTablesInterface = (*NFTables)(nil)
 
 // addressFamilyFilter represents the nftables state for a specific address
 // family.
 type addressFamilyFilter struct {
 	// family is the address family of the filter.
-	family AddressFamily
+	family stack.AddressFamily
 
 	// nftState is the NFTables object the filter belongs to.
 	nftState *NFTables
@@ -241,7 +146,7 @@ type addressFamilyFilter struct {
 
 	// hfStacks is a map of hook function stacks (slice of base chains for a
 	// given hook ordered by priority).
-	hfStacks map[Hook]*hookFunctionStack
+	hfStacks map[stack.NFHook]*hookFunctionStack
 }
 
 // Table represents a single table as a collection of named chains.
@@ -269,7 +174,7 @@ type Table struct {
 // hookFunctionStack represents the list of base chains for a specific hook.
 // The stack is ordered by priority and built as chains are added to tables.
 type hookFunctionStack struct {
-	hook       Hook
+	hook       stack.NFHook
 	baseChains []*Chain
 }
 
@@ -317,7 +222,7 @@ type BaseChainInfo struct {
 	BcType BaseChainType
 
 	// Hook is the hook to attach the chain to in the netfilter pipeline
-	Hook Hook
+	Hook stack.NFHook
 
 	// Priority determines the order in which base chains with the same hook are
 	// traversed. Each priority is associated with a signed integer priority value
@@ -339,7 +244,7 @@ type BaseChainInfo struct {
 // NewBaseChainInfo creates a new BaseChainInfo object with the given values.
 // The device and policyDrop parameters are optional in the nft binary and
 // should be set to empty string and false if not needed.
-func NewBaseChainInfo(bcType BaseChainType, hook Hook, priority Priority, device string, policyDrop bool) *BaseChainInfo {
+func NewBaseChainInfo(bcType BaseChainType, hook stack.NFHook, priority Priority, device string, policyDrop bool) *BaseChainInfo {
 	return &BaseChainInfo{
 		BcType:     bcType,
 		Hook:       hook,
@@ -384,18 +289,18 @@ func (bcType BaseChainType) String() string {
 
 // supportedAFsForBaseChainTypes maps each base chain type to its supported
 // address families.
-var supportedAFsForBaseChainTypes [NumBaseChainTypes][]AddressFamily = [NumBaseChainTypes][]AddressFamily{
-	BaseChainTypeFilter: {IP, IP6, Inet, Bridge, Arp, Netdev},
-	BaseChainTypeNat:    {IP, IP6, Inet},
-	BaseChainTypeRoute:  {IP, IP6},
+var supportedAFsForBaseChainTypes [NumBaseChainTypes][]stack.AddressFamily = [NumBaseChainTypes][]stack.AddressFamily{
+	BaseChainTypeFilter: {stack.IP, stack.IP6, stack.Inet, stack.Bridge, stack.Arp, stack.Netdev},
+	BaseChainTypeNat:    {stack.IP, stack.IP6, stack.Inet},
+	BaseChainTypeRoute:  {stack.IP, stack.IP6},
 }
 
 // supportedHooksForBaseChainTypes maps each base chain type to its supported
 // hooks.
-var supportedHooksForBaseChainTypes [NumBaseChainTypes][]Hook = [NumBaseChainTypes][]Hook{
-	BaseChainTypeFilter: {Prerouting, Input, Forward, Output, Postrouting, Ingress, Egress},
-	BaseChainTypeNat:    {Prerouting, Input, Output, Postrouting},
-	BaseChainTypeRoute:  {Output},
+var supportedHooksForBaseChainTypes [NumBaseChainTypes][]stack.NFHook = [NumBaseChainTypes][]stack.NFHook{
+	BaseChainTypeFilter: {stack.NFPrerouting, stack.NFInput, stack.NFForward, stack.NFOutput, stack.NFPostrouting, stack.NFIngress, stack.NFEgress},
+	BaseChainTypeNat:    {stack.NFPrerouting, stack.NFInput, stack.NFOutput, stack.NFPostrouting},
+	BaseChainTypeRoute:  {stack.NFOutput},
 }
 
 //
@@ -433,7 +338,7 @@ func NewIntPriority(value int) Priority {
 // NewStandardPriority creates a new Priority object given a standard priority
 // name, returning an error if the standard priority name is not compatible with
 // the given address family and hook.
-func NewStandardPriority(name string, family AddressFamily, hook Hook) (Priority, error) {
+func NewStandardPriority(name string, family stack.AddressFamily, hook stack.NFHook) (Priority, error) {
 	// Validates address family and hook first.
 	if err := validateAddressFamily(family); err != nil {
 		return Priority{}, err
@@ -503,54 +408,54 @@ type standardPriority struct {
 	// value is the priority value of the standard priority name.
 	value int
 	// hooks are the hooks that are compatible with the standard priority name.
-	hooks []Hook
+	hooks []stack.NFHook
 }
 
 // standardPriorityMatrix is used to look up information for the predefined
 // standard priority names.
-var standardPriorityMatrix = map[AddressFamily](map[string]standardPriority){
-	IP: spmIP,
+var standardPriorityMatrix = map[stack.AddressFamily](map[string]standardPriority){
+	stack.IP: spmIP,
 	// Note: IPv6 standard priorities constants currently have the same values as
 	// IPv4's, but the definitions (in the linux kernel) may change in the future.
-	IP6: map[string]standardPriority{ // from uapi/linux/netfilter_ipv6.h
-		"raw":      {name: "raw", value: linux.NF_IP6_PRI_RAW, hooks: supportedHooks[IP6]},
-		"mangle":   {name: "mangle", value: linux.NF_IP6_PRI_MANGLE, hooks: supportedHooks[IP6]},
-		"dstnat":   {name: "dstnat", value: linux.NF_IP6_PRI_NAT_DST, hooks: []Hook{Prerouting}},
-		"filter":   {name: "filter", value: linux.NF_IP6_PRI_FILTER, hooks: supportedHooks[IP6]},
-		"security": {name: "security", value: linux.NF_IP6_PRI_SECURITY, hooks: supportedHooks[IP6]},
-		"srcnat":   {name: "srcnat", value: linux.NF_IP6_PRI_NAT_SRC, hooks: []Hook{Postrouting}},
+	stack.IP6: map[string]standardPriority{ // from uapi/linux/netfilter_ipv6.h
+		"raw":      {name: "raw", value: linux.NF_IP6_PRI_RAW, hooks: supportedHooks[stack.IP6]},
+		"mangle":   {name: "mangle", value: linux.NF_IP6_PRI_MANGLE, hooks: supportedHooks[stack.IP6]},
+		"dstnat":   {name: "dstnat", value: linux.NF_IP6_PRI_NAT_DST, hooks: []stack.NFHook{stack.NFPrerouting}},
+		"filter":   {name: "filter", value: linux.NF_IP6_PRI_FILTER, hooks: supportedHooks[stack.IP6]},
+		"security": {name: "security", value: linux.NF_IP6_PRI_SECURITY, hooks: supportedHooks[stack.IP6]},
+		"srcnat":   {name: "srcnat", value: linux.NF_IP6_PRI_NAT_SRC, hooks: []stack.NFHook{stack.NFPostrouting}},
 	},
-	Inet: spmIP,
-	Arp: map[string]standardPriority{ // defined as same as IP filter priority
-		"filter": {name: "filter", value: spmIP["filter"].value, hooks: supportedHooks[Arp]},
+	stack.Inet: spmIP,
+	stack.Arp: map[string]standardPriority{ // defined as same as IP filter priority
+		"filter": {name: "filter", value: spmIP["filter"].value, hooks: supportedHooks[stack.Arp]},
 	},
-	Bridge: map[string]standardPriority{ // from uapi/linux/netfilter_bridge.h
-		"dstnat": {name: "dstnat", value: linux.NF_BR_PRI_NAT_DST_BRIDGED, hooks: []Hook{Prerouting}},
-		"filter": {name: "filter", value: linux.NF_BR_PRI_FILTER_BRIDGED, hooks: supportedHooks[Bridge]},
-		"out":    {name: "out", value: linux.NF_BR_PRI_NAT_DST_OTHER, hooks: []Hook{Output}},
-		"srcnat": {name: "srcnat", value: linux.NF_BR_PRI_NAT_SRC, hooks: []Hook{Postrouting}},
+	stack.Bridge: map[string]standardPriority{ // from uapi/linux/netfilter_bridge.h
+		"dstnat": {name: "dstnat", value: linux.NF_BR_PRI_NAT_DST_BRIDGED, hooks: []stack.NFHook{stack.NFPrerouting}},
+		"filter": {name: "filter", value: linux.NF_BR_PRI_FILTER_BRIDGED, hooks: supportedHooks[stack.Bridge]},
+		"out":    {name: "out", value: linux.NF_BR_PRI_NAT_DST_OTHER, hooks: []stack.NFHook{stack.NFOutput}},
+		"srcnat": {name: "srcnat", value: linux.NF_BR_PRI_NAT_SRC, hooks: []stack.NFHook{stack.NFPostrouting}},
 	},
-	Netdev: map[string]standardPriority{ // defined as same as IP filter priority
-		"filter": {name: "filter", value: spmIP["filter"].value, hooks: supportedHooks[Netdev]},
+	stack.Netdev: map[string]standardPriority{ // defined as same as IP filter priority
+		"filter": {name: "filter", value: spmIP["filter"].value, hooks: supportedHooks[stack.Netdev]},
 	},
 }
 
 // Used in the standardPriorityMatrix above.
 // Note: IPv4 and Inet address families use the same standard priority names.
 var spmIP = map[string]standardPriority{ // from uapi/linux/netfilter_ipv4.h
-	"raw":      {name: "raw", value: linux.NF_IP_PRI_RAW, hooks: supportedHooks[IP]},
-	"mangle":   {name: "mangle", value: linux.NF_IP_PRI_MANGLE, hooks: supportedHooks[IP]},
-	"dstnat":   {name: "dstnat", value: linux.NF_IP_PRI_NAT_DST, hooks: []Hook{Prerouting}},
-	"filter":   {name: "filter", value: linux.NF_IP_PRI_FILTER, hooks: supportedHooks[IP]},
-	"security": {name: "security", value: linux.NF_IP_PRI_SECURITY, hooks: supportedHooks[IP]},
-	"srcnat":   {name: "srcnat", value: linux.NF_IP_PRI_NAT_SRC, hooks: []Hook{Postrouting}},
+	"raw":      {name: "raw", value: linux.NF_IP_PRI_RAW, hooks: supportedHooks[stack.IP]},
+	"mangle":   {name: "mangle", value: linux.NF_IP_PRI_MANGLE, hooks: supportedHooks[stack.IP]},
+	"dstnat":   {name: "dstnat", value: linux.NF_IP_PRI_NAT_DST, hooks: []stack.NFHook{stack.NFPrerouting}},
+	"filter":   {name: "filter", value: linux.NF_IP_PRI_FILTER, hooks: supportedHooks[stack.IP]},
+	"security": {name: "security", value: linux.NF_IP_PRI_SECURITY, hooks: supportedHooks[stack.IP]},
+	"srcnat":   {name: "srcnat", value: linux.NF_IP_PRI_NAT_SRC, hooks: []stack.NFHook{stack.NFPostrouting}},
 }
 
 // validateBaseChainInfo ensures the base chain info is valid by checking the
 // compatibility of the set base chain type, hook, and priority, and the given
 // address family.
 // Note: errors if the provided base chain info is nil.
-func validateBaseChainInfo(info *BaseChainInfo, family AddressFamily) error {
+func validateBaseChainInfo(info *BaseChainInfo, family stack.AddressFamily) error {
 	if info == nil {
 		return fmt.Errorf("base chain info is nil")
 	}
@@ -653,15 +558,15 @@ type registerData interface {
 
 // verdictData represents a verdict as data to be stored in a register.
 type verdictData struct {
-	data Verdict
+	data stack.NFVerdict
 }
 
 // newVerdictData creates a registerData for a verdict.
-func newVerdictData(verdict Verdict) verdictData { return verdictData{data: verdict} }
+func newVerdictData(verdict stack.NFVerdict) verdictData { return verdictData{data: verdict} }
 
 // String returns a string representation of the verdict data.
 func (rd verdictData) String() string {
-	return rd.data.String()
+	return VerdictString(rd.data)
 }
 
 // equal compares the verdict data to another RegisterData object.
@@ -765,7 +670,7 @@ func (rd bytesData) storeData(regs *registerSet, reg uint8) {
 // Use RegisterData.storeData to set data in the registers.
 // Note: Corresponds to nft_regs from include/net/netfilter/nf_tables.h.
 type registerSet struct {
-	verdict Verdict                 // 16-byte verdict register
+	verdict stack.NFVerdict         // 16-byte verdict register
 	data    [registersByteSize]byte // 4 16-byte registers or 16 4-byte registers
 }
 
@@ -773,13 +678,13 @@ type registerSet struct {
 // registers set to 0.
 func newRegisterSet() registerSet {
 	return registerSet{
-		verdict: Verdict{Code: VC(linux.NFT_CONTINUE)},
+		verdict: stack.NFVerdict{Code: VC(linux.NFT_CONTINUE)},
 		data:    [registersByteSize]byte{0},
 	}
 }
 
 // Verdict returns the verdict data.
-func (regs *registerSet) Verdict() Verdict {
+func (regs *registerSet) Verdict() stack.NFVerdict {
 	return regs.verdict
 }
 
@@ -787,29 +692,10 @@ func (regs *registerSet) String() string {
 	return fmt.Sprintf("verdict: %v, data: %x", regs.verdict, regs.data)
 }
 
-//
-// Verdict Implementation.
-// There are two types of verdicts:
-// 1. Netfilter (External) Verdicts: Drop, Accept, Stolen, Queue, Repeat, Stop
-// 		These are terminal verdicts that are returned to the kernel.
-// 2. Nftable (Internal) Verdicts:, Continue, Break, Jump, Goto, Return
-// 		These are internal verdicts that only exist within the nftables library.
-// Both share the same numeric space (uint32 Verdict Code).
-//
+// NF Verdict Helper Functions
 
-// Verdict represents the result of evaluating a packet against a rule or chain.
-type Verdict struct {
-	// Code is the numeric code that represents the verdict issued.
-	Code uint32
-
-	// ChainName is the name of the chain to continue evaluation if the verdict is
-	// Jump or Goto.
-	// Note: the chain must be in the same table as the current chain.
-	ChainName string
-}
-
-// String returns a string representation of the verdict.
-func (v Verdict) String() string {
+// VerdictString returns a string representation of the verdict.
+func VerdictString(v stack.NFVerdict) string {
 	out := VerdictCodeToString(v.Code)
 	if v.ChainName != "" {
 		out += fmt.Sprintf(" -> %s", v.ChainName)
