@@ -125,7 +125,7 @@ func (op route) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *Rule)
 
 	// Breaks if could not retrieve target data.
 	if target == nil {
-		regs.verdict = Verdict{Code: VC(linux.NFT_BREAK)}
+		regs.verdict = stack.NFVerdict{Code: VC(linux.NFT_BREAK)}
 		return
 	}
 

@@ -23,6 +23,7 @@ import (
 	"strings"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
 // SyntaxError is an interpretation error due to incorrect syntax.
@@ -1036,8 +1037,8 @@ var verdictCodeFromKeyword = map[string]int32{
 
 // parseVerdict parses the verdict from the given token and returns
 // the index of the next token to process (can consume multiple tokens).
-func parseVerdict(tokens []string, lnIdx int, tkIdx int) (int, Verdict, error) {
-	v := Verdict{}
+func parseVerdict(tokens []string, lnIdx int, tkIdx int) (int, stack.NFVerdict, error) {
+	v := stack.NFVerdict{}
 
 	vcString := tokens[tkIdx]
 	vc, ok := verdictCodeFromKeyword[vcString]
