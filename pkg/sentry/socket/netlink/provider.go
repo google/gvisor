@@ -20,9 +20,11 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/sockfs"
+	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/socket"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netlink/nlmsg"
+	"gvisor.dev/gvisor/pkg/sentry/socket/netstack"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/syserr"
 )
@@ -81,8 +83,9 @@ func (*socketProvider) Socket(t *kernel.Task, stype linux.SockType, protocol int
 		return nil, syserr.ErrSocketNotSupported
 	}
 
+	nftEnabled := inet.StackFromContext(t.Kernel().SupervisorContext()).(*netstack.Stack).Stack.IsNFTablesEnabled()
 	provider, ok := protocols[protocol]
-	if !ok {
+	if !ok || (!nftEnabled && protocol == linux.NETLINK_NETFILTER) {
 		return nil, syserr.ErrProtocolNotSupported
 	}
 

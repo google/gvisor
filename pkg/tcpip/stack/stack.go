@@ -176,6 +176,9 @@ type Stack struct {
 
 	// saveRestoreEnabled indicates whether the stack is saved and restored.
 	saveRestoreEnabled bool
+
+	// nftablesEnabled indicates whether nftables support is enabled.
+	nftablesEnabled bool
 }
 
 // NetworkProtocolFactory instantiates a network protocol.
@@ -2426,6 +2429,22 @@ func (s *Stack) IsSaveRestoreEnabled() bool {
 	defer s.mu.Unlock()
 
 	return s.saveRestoreEnabled
+}
+
+// EnableNFTables enables nftables support for the stack.
+func (s *Stack) EnableNFTables() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.nftablesEnabled = true
+}
+
+// IsNFTablesEnabled returns true if nftables is enabled for the stack.
+func (s *Stack) IsNFTablesEnabled() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	return s.nftablesEnabled
 }
 
 // contextID is this package's type for context.Context.Value keys.

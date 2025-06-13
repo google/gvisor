@@ -1556,7 +1556,7 @@ func newRootNetworkNamespace(conf *config.Config, clock tcpip.Clock, userns *aut
 		return inet.NewRootNamespace(hostinet.NewStack(), nil, userns), nil
 
 	case config.NetworkNone, config.NetworkSandbox:
-		s, err := newEmptySandboxNetworkStack(clock, conf.AllowPacketEndpointWrite)
+		s, err := newEmptySandboxNetworkStack(clock, conf.AllowPacketEndpointWrite, conf.Nftables)
 		if err != nil {
 			return nil, err
 		}
@@ -1574,7 +1574,7 @@ func newRootNetworkNamespace(conf *config.Config, clock tcpip.Clock, userns *aut
 
 }
 
-func newEmptySandboxNetworkStack(clock tcpip.Clock, allowPacketEndpointWrite bool) (*netstack.Stack, error) {
+func newEmptySandboxNetworkStack(clock tcpip.Clock, allowPacketEndpointWrite bool, enableNFTables bool) (*netstack.Stack, error) {
 	netProtos := []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol, arp.NewProtocol}
 	transProtos := []stack.TransportProtocolFactory{
 		tcp.NewProtocol,
@@ -1594,6 +1594,11 @@ func newEmptySandboxNetworkStack(clock tcpip.Clock, allowPacketEndpointWrite boo
 		AllowPacketEndpointWrite: allowPacketEndpointWrite,
 		DefaultIPTables:          netfilter.DefaultLinuxTables,
 	})}
+
+	// Enable nftables support only if the flag is enabled.
+	if enableNFTables {
+		s.Stack.EnableNFTables()
+	}
 
 	// Enable SACK Recovery.
 	{
@@ -1631,11 +1636,12 @@ func newEmptySandboxNetworkStack(clock tcpip.Clock, allowPacketEndpointWrite boo
 type sandboxNetstackCreator struct {
 	clock                    tcpip.Clock
 	allowPacketEndpointWrite bool
+	nftables                 bool
 }
 
 // CreateStack implements kernel.NetworkStackCreator.CreateStack.
 func (f *sandboxNetstackCreator) CreateStack() (inet.Stack, error) {
-	s, err := newEmptySandboxNetworkStack(f.clock, f.allowPacketEndpointWrite)
+	s, err := newEmptySandboxNetworkStack(f.clock, f.allowPacketEndpointWrite, f.nftables)
 	if err != nil {
 		return nil, err
 	}
