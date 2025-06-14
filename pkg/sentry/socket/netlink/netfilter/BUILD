@@ -16,5 +16,6 @@ go_library(
         "//pkg/sentry/socket/netlink",
         "//pkg/sentry/socket/netlink/nlmsg",
         "//pkg/syserr",
+        "//pkg/tcpip/nftables",
     ],
 )

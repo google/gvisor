@@ -18,6 +18,7 @@ go_library(
         "//pkg/refs",
         "//pkg/sentry/platform",
         "//pkg/sentry/syscalls/linux",
+        "//pkg/tcpip/nftables",
         "//runsc/cmd",
         "//runsc/cmd/nvproxy",
         "//runsc/cmd/trace",

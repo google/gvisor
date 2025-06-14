@@ -65,7 +65,11 @@ func (nf *NFTables) CheckEgress(pkt *stack.PacketBuffer, af stack.AddressFamily)
 
 // checkHook returns true if the packet should continue traversing the stack or false
 // if the packet should be dropped.
+// If NFTables is not enabled, the packet is always allowed to continue traversing the stack.
 func (nf *NFTables) checkHook(pkt *stack.PacketBuffer, af stack.AddressFamily, hook stack.NFHook) bool {
+	if !IsNFTablesEnabled() {
+		return true
+	}
 	v, err := nf.EvaluateHook(af, hook, pkt)
 
 	if err != nil {

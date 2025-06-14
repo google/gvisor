@@ -24,8 +24,12 @@ go_library(
         "nftables_types.go",
         "nftinterp.go",
     ],
+    visibility = [
+        "//:sandbox",
+    ],
     deps = [
         "//pkg/abi/linux",
+        "//pkg/atomicbitops",
         "//pkg/rand",
         "//pkg/tcpip",
         "//pkg/tcpip/checksum",

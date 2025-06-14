@@ -22,6 +22,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/socket/netlink"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netlink/nlmsg"
 	"gvisor.dev/gvisor/pkg/syserr"
+	"gvisor.dev/gvisor/pkg/tcpip/nftables"
 )
 
 // Protocol implements netlink.Protocol.
@@ -33,6 +34,10 @@ var _ netlink.Protocol = (*Protocol)(nil)
 
 // NewProtocol creates a NETLINK_NETFILTER netlink.Protocol.
 func NewProtocol(t *kernel.Task) (netlink.Protocol, *syserr.Error) {
+	if !nftables.IsNFTablesEnabled() {
+		return nil, syserr.ErrProtocolNotSupported
+	}
+
 	return &Protocol{}, nil
 }
 

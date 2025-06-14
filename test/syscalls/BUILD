@@ -939,6 +939,7 @@ syscall_test(
 
 syscall_test(
     add_hostinet = True,
+    nftables = True,
     test = "//test/syscalls/linux:socket_netlink_netfilter_test",
 )
 

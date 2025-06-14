@@ -80,6 +80,7 @@ def _syscall_test(
         save = False,
         save_resume = False,
         netstack_sr = False,
+        nftables = False,
         **kwargs):
     # Prepend "runsc" to non-native platform names.
     full_platform = platform if platform == "native" else "runsc_" + platform
@@ -102,6 +103,8 @@ def _syscall_test(
         name += "_save_resume"
     if save and netstack_sr:
         name += "_netstack_save"
+    if nftables:
+        name += "_nftables"
 
     # Apply all tags.
     if tags == None:
@@ -173,6 +176,7 @@ def _syscall_test(
         "--save=" + str(save),
         "--save-resume=" + str(save_resume),
         "--netstack-sr=" + str(netstack_sr),
+        "--nftables=" + str(nftables),
     ]
 
     # Trace points are platform agnostic, so enable them for ptrace only.
@@ -217,6 +221,7 @@ def syscall_test_variants(
         timeout = None,
         overlay = False,
         netstack_sr = False,
+        nftables = False,
         **kwargs):
     """Generates syscall tests for all variants.
 
@@ -266,6 +271,7 @@ def syscall_test_variants(
             timeout = timeout,
             overlay = overlay,
             netstack_sr = netstack_sr,
+            nftables = nftables,
             **kwargs
         )
 
@@ -289,6 +295,7 @@ def syscall_test_variants(
             size = size,
             timeout = timeout,
             netstack_sr = netstack_sr,
+            nftables = nftables,
             **kwargs
         )
 
@@ -313,6 +320,7 @@ def syscall_test_variants(
             size = size,
             timeout = timeout,
             netstack_sr = netstack_sr,
+            nftables = nftables,
             **kwargs
         )
     if not use_tmpfs:
@@ -336,6 +344,7 @@ def syscall_test_variants(
             size = size,
             timeout = timeout,
             netstack_sr = netstack_sr,
+            nftables = nftables,
             **kwargs
         )
     if add_fusefs:
@@ -357,6 +366,7 @@ def syscall_test_variants(
             size = size,
             timeout = timeout,
             netstack_sr = netstack_sr,
+            nftables = nftables,
             **kwargs
         )
 
@@ -381,6 +391,7 @@ def syscall_test(
         size = "medium",
         overlay = False,
         netstack_sr = False,
+        nftables = False,
         perf = False,
         **kwargs):
     """syscall_test is a macro that will create targets for all platforms.
@@ -459,6 +470,7 @@ def syscall_test(
         size,
         overlay = overlay,
         netstack_sr = False,
+        nftables = nftables,
         **kwargs
     )
 
@@ -488,6 +500,7 @@ def syscall_test(
             "large",  # size, use size as large by default for all S/R tests.
             "long",  # timeout, use long timeout for S/R tests.
             netstack_sr = False,
+            nftables = nftables,
             **kwargs
         )
 
@@ -514,6 +527,7 @@ def syscall_test(
                 "large",  # size, use size as large by default for all S/R tests.
                 "long",  # timeout, use long timeout for S/R tests.
                 netstack_sr = True,  # netstack_sr, generate all tests with netstack s/r.
+                nftables = nftables,
                 **kwargs
             )
 
@@ -540,5 +554,6 @@ def syscall_test(
             "large",  # size, use size as large by default for all S/R tests.
             "long",  # timeout, use long timeout for S/R tests.
             netstack_sr = False,
+            nftables = nftables,
             **kwargs
         )

@@ -33,6 +33,7 @@ import (
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/sentry/syscalls/linux"
+	"gvisor.dev/gvisor/pkg/tcpip/nftables"
 	"gvisor.dev/gvisor/runsc/cmd"
 	"gvisor.dev/gvisor/runsc/cmd/nvproxy"
 	"gvisor.dev/gvisor/runsc/cmd/trace"
@@ -91,6 +92,10 @@ func Main() {
 	conf, err := config.NewFromFlags(flag.CommandLine)
 	if err != nil {
 		util.Fatalf("%s", err.Error())
+	}
+
+	if conf.Nftables {
+		nftables.EnableNFTables()
 	}
 
 	var errorLogger io.Writer

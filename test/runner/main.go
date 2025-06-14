@@ -72,6 +72,7 @@ var (
 	save             = flag.Bool("save", false, "enables save restore")
 	saveResume       = flag.Bool("save-resume", false, "enables save resume")
 	netstackSR       = flag.Bool("netstack-sr", false, "enables netstack s/r")
+	nftables         = flag.Bool("nftables", false, "enables nftables")
 )
 
 const (
@@ -401,6 +402,10 @@ func runRunsc(tc *gtest.TestCase, spec *specs.Spec) error {
 		// difficult. Instead, drop them when debug log is enabled given it's a
 		// better place for these messages.
 		args = append(args, "-log=/dev/null")
+
+		if *nftables {
+			args = append(args, "-TESTONLY-nftables=true")
+		}
 
 		// Create the state file.
 		if *save || *saveResume {

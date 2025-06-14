@@ -46,15 +46,27 @@ import (
 	"time"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/rand"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
-// TODO(b/345684870): Break this file up into multiple files by operation type.
-// Each operation should get its own file.
 // TODO(b/345684870): Make the nftables package thread-safe! Must be done before
 // the package is used in production.
+
+// enableNFTables is a flag that indicates whether NFTables is enabled.
+var enableNFTables atomicbitops.Bool
+
+// EnableNFTables enables NFTables.
+func EnableNFTables() {
+	enableNFTables.Store(true)
+}
+
+// IsNFTablesEnabled returns true if NFTables is enabled.
+func IsNFTablesEnabled() bool {
+	return enableNFTables.Load()
+}
 
 // Defines general constants for the nftables interpreter.
 const (
