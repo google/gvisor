@@ -777,6 +777,11 @@ func (pc *passContext) checkBasicBlock(fn *ssa.Function, block *ssa.BasicBlock, 
 
 // checkFunction checks a function invocation, typically starting with nil lockState.
 func (pc *passContext) checkFunction(call callCommon, fn *ssa.Function, lff *lockFunctionFacts, parent *lockState, force bool) {
+	// Track current function for diagnostics when SSA positions are missing.
+	prevFn := pc.curFn
+	pc.curFn = fn
+	defer func() { pc.curFn = prevFn }()
+
 	defer func() {
 		// Mark this function as checked. This is used by the top-level
 		// loop to ensure that all anonymous functions are scanned, if
