@@ -36,7 +36,7 @@ export GIT_AUTHOR_EMAIL=gvisor-bot@google.com
 export GIT_COMMITTER_NAME=gvisor-bot
 export GIT_COMMITTER_EMAIL=gvisor-bot@google.com
 git commit -m "Update runsc profiles for PGO (profile-guided optimizations), $today."
-git push --set-upstream git@github.com:google/gvisor.git "$pgo_branch_name"
+git push --set-upstream https://github.com/google/gvisor.git "$pgo_branch_name"
 gh pr create \
   --title="Update runsc profiles for PGO (profile-guided optimizations), $today." \
   --body='This PR updates the runsc profiles for PGO (profile-guided optimizations).' \
