@@ -22,7 +22,7 @@ if [[ "$(git status --porcelain | wc -l)" == 0 ]]; then
 fi
 
 today="$(date +"%Y-%m-%d")"
-pgo_branch_name="pgo-update-${today}"
+pgo_branch_name="pgo/update-${today}"
 git stash
 git pull --rebase=true https://github.com/google/gvisor master
 git checkout -b "$pgo_branch_name"
@@ -40,5 +40,6 @@ git push --set-upstream https://github.com/google/gvisor.git "$pgo_branch_name"
 gh pr create \
   --title="Update runsc profiles for PGO (profile-guided optimizations), $today." \
   --body='This PR updates the runsc profiles for PGO (profile-guided optimizations).' \
-  --label=pgo-update --base=master
+  --label=pgo-update --label='ready to pull' \
+  --base=master
 echo 'PGO profile update PR created.' >&2
