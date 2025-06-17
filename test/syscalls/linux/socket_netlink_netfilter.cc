@@ -16,6 +16,7 @@
 
 #include <cerrno>
 #include <cstdint>
+#include <cstring>
 #include <functional>
 #include <string>
 #include <tuple>
@@ -41,7 +42,6 @@ namespace {
 constexpr uint32_t kSeq = 12345;
 
 using ::testing::_;
-using ::testing::Eq;
 
 using SockOptTest = ::testing::TestWithParam<
     std::tuple<int, std::function<bool(int)>, std::string>>;
@@ -105,14 +105,6 @@ TEST(NetlinkNetfilterTest, AddAndAddTableWithDormantFlag) {
   FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
 
-  struct nameAttribute {
-    struct nlattr attr;
-    char name[32];
-  };
-  struct flagAttribute {
-    struct nlattr attr;
-    uint32_t flags;
-  };
   struct request {
     struct nlmsghdr hdr;
     struct nfgenmsg msg;
@@ -164,16 +156,22 @@ TEST(NetlinkNetfilterTest, AddAndAddTableWithDormantFlag) {
 TEST(NetlinkNetfilterTest, AddAndRetrieveNewTable) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
   uint16_t default_table_id = 0;
-  const char test_table_name[] = "test_table";
-
+  const char test_table_name[] = "test_tab_add_retrieve";
+  uint32_t table_flags = NFT_TABLE_F_DORMANT | NFT_TABLE_F_OWNER;
+  uint8_t expected_udata[128] = {0x01, 0x02, 0x03};
   FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
+  uint32_t expected_owner = ASSERT_NO_ERRNO_AND_VALUE(NetlinkPortID(fd.get()));
 
-  struct nameAttribute {
-    struct nlattr attr;
-    char name[32];
-  };
   struct request {
+    struct nlmsghdr hdr;
+    struct nfgenmsg msg;
+    struct nameAttribute attr;
+    struct flagAttribute fattr;
+    struct userDataAttribute udata;
+  };
+
+  struct request_2 {
     struct nlmsghdr hdr;
     struct nfgenmsg msg;
     struct nameAttribute attr;
@@ -183,7 +181,6 @@ TEST(NetlinkNetfilterTest, AddAndRetrieveNewTable) {
   InitNetlinkHdr(&add_tab_req.hdr, sizeof(add_tab_req),
                  MakeNetlinkMsgType(NFNL_SUBSYS_NFTABLES, NFT_MSG_NEWTABLE),
                  kSeq, NLM_F_REQUEST | NLM_F_ACK);
-  // For both ipv4 and ipv6 tables.
   InitNetfilterGenmsg(&add_tab_req.msg, AF_INET, NFNETLINK_V0,
                       default_table_id);
   // Attribute setting
@@ -191,42 +188,41 @@ TEST(NetlinkNetfilterTest, AddAndRetrieveNewTable) {
                   NFTA_TABLE_NAME);
   absl::SNPrintF(add_tab_req.attr.name, sizeof(add_tab_req.attr.name),
                  test_table_name);
+  InitNetlinkAttr(&add_tab_req.fattr.attr, sizeof(add_tab_req.fattr.flags),
+                  NFTA_TABLE_FLAGS);
+  add_tab_req.fattr.flags = table_flags;
+  InitNetlinkAttr(&add_tab_req.udata.attr, sizeof(add_tab_req.udata.userdata),
+                  NFTA_TABLE_USERDATA);
+  std::memcpy(add_tab_req.udata.userdata, expected_udata,
+              sizeof(expected_udata));
 
-  struct request add_tab_req_2 = {};
+  struct request_2 get_tab_req = {};
+  uint32_t expected_chain_count = 0;
+  uint32_t expected_flags = table_flags;
+  size_t expected_udata_size = sizeof(expected_udata);
   bool correct_response = false;
-  InitNetlinkHdr(&add_tab_req_2.hdr, sizeof(add_tab_req_2),
+  InitNetlinkHdr(&get_tab_req.hdr, sizeof(get_tab_req),
                  MakeNetlinkMsgType(NFNL_SUBSYS_NFTABLES, NFT_MSG_GETTABLE),
                  kSeq + 1, NLM_F_REQUEST);
-  // For both ipv4 and ipv6 tables.
-  InitNetfilterGenmsg(&add_tab_req_2.msg, AF_INET, NFNETLINK_V0,
+  InitNetfilterGenmsg(&get_tab_req.msg, AF_INET, NFNETLINK_V0,
                       default_table_id);
   // Attribute setting
-  InitNetlinkAttr(&add_tab_req_2.attr.attr, sizeof(add_tab_req_2.attr.name),
+  InitNetlinkAttr(&get_tab_req.attr.attr, sizeof(get_tab_req.attr.name),
                   NFTA_TABLE_NAME);
-  absl::SNPrintF(add_tab_req_2.attr.name, sizeof(add_tab_req_2.attr.name),
+  absl::SNPrintF(get_tab_req.attr.name, sizeof(get_tab_req.attr.name),
                  test_table_name);
 
   ASSERT_NO_ERRNO(
       NetlinkRequestAckOrError(fd, kSeq, &add_tab_req, sizeof(add_tab_req)));
   ASSERT_NO_ERRNO(NetlinkRequestResponse(
-      fd, &add_tab_req_2, sizeof(add_tab_req_2),
+      fd, &get_tab_req, sizeof(get_tab_req),
       [&](const struct nlmsghdr* hdr) {
-        ASSERT_THAT(hdr->nlmsg_type, Eq(MakeNetlinkMsgType(NFNL_SUBSYS_NFTABLES,
-                                                           NFT_MSG_GETTABLE)));
-        ASSERT_GE(hdr->nlmsg_len, NLMSG_SPACE(sizeof(struct nfgenmsg)));
-        const struct nfgenmsg* genmsg =
-            reinterpret_cast<const struct nfgenmsg*>(NLMSG_DATA(hdr));
-        EXPECT_EQ(genmsg->nfgen_family, AF_INET);
-        EXPECT_EQ(genmsg->version, NFNETLINK_V0);
-
-        const struct nfattr* nfattr = FindNfAttr(hdr, genmsg, NFTA_TABLE_NAME);
-        EXPECT_NE(nullptr, nfattr) << "NFTA_TABLE_NAME not found in message.";
-        if (nfattr == nullptr) {
-          return;
-        }
-
-        std::string name(reinterpret_cast<const char*>(NFA_DATA(nfattr)));
-        EXPECT_EQ(name, test_table_name);
+        // Skip the handle check as it is not deterministic what handle value
+        // (id) gets assigned to the table.
+        CheckNetfilterTableAttributes(
+            hdr, &get_tab_req.msg, test_table_name, &expected_chain_count,
+            nullptr, &expected_flags, &expected_owner, expected_udata,
+            &expected_udata_size, true);
         correct_response = true;
       },
       false));
@@ -237,15 +233,11 @@ TEST(NetlinkNetfilterTest, AddAndRetrieveNewTable) {
 TEST(NetlinkNetfilterTest, ErrAddExistingTableWithExclusiveFlag) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
   uint16_t default_table_id = 0;
-  const char test_table_name[] = "test_table";
+  const char test_table_name[] = "err_exclusive";
 
   FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
 
-  struct nameAttribute {
-    struct nlattr attr;
-    char name[32];
-  };
   struct request {
     struct nlmsghdr hdr;
     struct nfgenmsg msg;
@@ -256,7 +248,6 @@ TEST(NetlinkNetfilterTest, ErrAddExistingTableWithExclusiveFlag) {
   InitNetlinkHdr(&add_tab_req.hdr, sizeof(add_tab_req),
                  MakeNetlinkMsgType(NFNL_SUBSYS_NFTABLES, NFT_MSG_NEWTABLE),
                  kSeq, NLM_F_REQUEST | NLM_F_ACK);
-  // For both ipv4 and ipv6 tables.
   InitNetfilterGenmsg(&add_tab_req.msg, AF_INET, NFNETLINK_V0,
                       default_table_id);
   // Attribute setting
@@ -269,7 +260,6 @@ TEST(NetlinkNetfilterTest, ErrAddExistingTableWithExclusiveFlag) {
   InitNetlinkHdr(&add_tab_req_2.hdr, sizeof(add_tab_req_2),
                  MakeNetlinkMsgType(NFNL_SUBSYS_NFTABLES, NFT_MSG_NEWTABLE),
                  kSeq + 1, NLM_F_REQUEST | NLM_F_EXCL);
-  // For both ipv4 and ipv6 tables.
   InitNetfilterGenmsg(&add_tab_req_2.msg, AF_INET, NFNETLINK_V0,
                       default_table_id);
   // Attribute setting
@@ -288,15 +278,11 @@ TEST(NetlinkNetfilterTest, ErrAddExistingTableWithExclusiveFlag) {
 TEST(NetlinkNetfilterTest, ErrAddExistingTableWithReplaceFlag) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
   uint16_t default_table_id = 0;
-  const char test_table_name[] = "test_table";
+  const char test_table_name[] = "err_replace";
 
   FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
 
-  struct nameAttribute {
-    struct nlattr attr;
-    char name[32];
-  };
   struct request {
     struct nlmsghdr hdr;
     struct nfgenmsg msg;
@@ -307,7 +293,6 @@ TEST(NetlinkNetfilterTest, ErrAddExistingTableWithReplaceFlag) {
   InitNetlinkHdr(&add_tab_req.hdr, sizeof(add_tab_req),
                  MakeNetlinkMsgType(NFNL_SUBSYS_NFTABLES, NFT_MSG_NEWTABLE),
                  kSeq, NLM_F_REQUEST | NLM_F_ACK);
-  // For both ipv4 and ipv6 tables.
   InitNetfilterGenmsg(&add_tab_req.msg, AF_INET, NFNETLINK_V0,
                       default_table_id);
   // Attribute setting
@@ -320,7 +305,6 @@ TEST(NetlinkNetfilterTest, ErrAddExistingTableWithReplaceFlag) {
   InitNetlinkHdr(&add_tab_req_2.hdr, sizeof(add_tab_req_2),
                  MakeNetlinkMsgType(NFNL_SUBSYS_NFTABLES, NFT_MSG_NEWTABLE),
                  kSeq + 1, NLM_F_REQUEST | NLM_F_REPLACE);
-  // For both ipv4 and ipv6 tables.
   InitNetfilterGenmsg(&add_tab_req_2.msg, AF_INET, NFNETLINK_V0,
                       default_table_id);
   // Attribute setting
@@ -345,10 +329,6 @@ TEST(NetlinkNetfilterTest, ErrAddTableWithUnsupportedFamily) {
   FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
 
-  struct nameAttribute {
-    struct nlattr attr;
-    char name[32];
-  };
   struct request {
     struct nlmsghdr hdr;
     struct nfgenmsg msg;
@@ -359,7 +339,6 @@ TEST(NetlinkNetfilterTest, ErrAddTableWithUnsupportedFamily) {
   InitNetlinkHdr(&get_tab_req.hdr, sizeof(get_tab_req),
                  MakeNetlinkMsgType(NFNL_SUBSYS_NFTABLES, NFT_MSG_NEWTABLE),
                  kSeq, NLM_F_REQUEST);
-  // For both ipv4 and ipv6 tables.
   InitNetfilterGenmsg(&get_tab_req.msg, unknown_family, NFNETLINK_V0,
                       default_table_id);
   // Attribute setting
@@ -373,6 +352,42 @@ TEST(NetlinkNetfilterTest, ErrAddTableWithUnsupportedFamily) {
       PosixErrorIs(ENOTSUP, _));
 }
 
+TEST(NetlinkNetfilterTest, ErrAddTableWithUnsupportedFlags) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+  uint8_t family = AF_INET;
+  uint16_t default_table_id = 0;
+  uint32_t unsupported_flags = 0xFFFFFFFF;
+  const char test_table_name[] = "test_table";
+
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
+
+  struct request {
+    struct nlmsghdr hdr;
+    struct nfgenmsg msg;
+    struct nameAttribute nattr;
+    struct flagAttribute fattr;
+  };
+
+  struct request get_tab_req = {};
+  InitNetlinkHdr(&get_tab_req.hdr, sizeof(get_tab_req),
+                 MakeNetlinkMsgType(NFNL_SUBSYS_NFTABLES, NFT_MSG_NEWTABLE),
+                 kSeq, NLM_F_REQUEST);
+  InitNetfilterGenmsg(&get_tab_req.msg, family, NFNETLINK_V0, default_table_id);
+  // Attribute setting
+  InitNetlinkAttr(&get_tab_req.nattr.attr, sizeof(get_tab_req.nattr.name),
+                  NFTA_TABLE_NAME);
+  absl::SNPrintF(get_tab_req.nattr.name, sizeof(get_tab_req.nattr.name),
+                 test_table_name);
+  InitNetlinkAttr(&get_tab_req.fattr.attr, sizeof(get_tab_req.fattr.flags),
+                  NFTA_TABLE_FLAGS);
+  get_tab_req.fattr.flags = unsupported_flags;
+
+  ASSERT_THAT(
+      NetlinkRequestAckOrError(fd, kSeq, &get_tab_req, sizeof(get_tab_req)),
+      PosixErrorIs(ENOTSUP, _));
+}
+
 TEST(NetlinkNetfilterTest, ErrRetrieveNoSpecifiedNameTable) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
   uint16_t default_table_id = 0;
@@ -380,10 +395,6 @@ TEST(NetlinkNetfilterTest, ErrRetrieveNoSpecifiedNameTable) {
   FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
 
-  struct nameAttribute {
-    struct nlattr attr;
-    char name[32];
-  };
   struct request {
     struct nlmsghdr hdr;
     struct nfgenmsg msg;
@@ -393,7 +404,6 @@ TEST(NetlinkNetfilterTest, ErrRetrieveNoSpecifiedNameTable) {
   InitNetlinkHdr(&get_tab_req.hdr, sizeof(get_tab_req),
                  MakeNetlinkMsgType(NFNL_SUBSYS_NFTABLES, NFT_MSG_GETTABLE),
                  kSeq, NLM_F_REQUEST);
-  // For both ipv4 and ipv6 tables.
   InitNetfilterGenmsg(&get_tab_req.msg, AF_INET, NFNETLINK_V0,
                       default_table_id);
 
@@ -410,10 +420,6 @@ TEST(NetlinkNetfilterTest, ErrRetrieveNonexistentTable) {
   FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
 
-  struct nameAttribute {
-    struct nlattr attr;
-    char name[32];
-  };
   struct request {
     struct nlmsghdr hdr;
     struct nfgenmsg msg;
@@ -424,7 +430,6 @@ TEST(NetlinkNetfilterTest, ErrRetrieveNonexistentTable) {
   InitNetlinkHdr(&get_tab_req.hdr, sizeof(get_tab_req),
                  MakeNetlinkMsgType(NFNL_SUBSYS_NFTABLES, NFT_MSG_GETTABLE),
                  kSeq, NLM_F_REQUEST);
-  // For both ipv4 and ipv6 tables.
   InitNetfilterGenmsg(&get_tab_req.msg, AF_INET, NFNETLINK_V0,
                       default_table_id);
   // Attribute setting
@@ -436,6 +441,70 @@ TEST(NetlinkNetfilterTest, ErrRetrieveNonexistentTable) {
   ASSERT_THAT(
       NetlinkRequestAckOrError(fd, kSeq, &get_tab_req, sizeof(get_tab_req)),
       PosixErrorIs(ENOENT, _));
+}
+
+TEST(NetlinkNetfilterTest, ErrRetrieveTableWithOwnerMismatch) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+  uint16_t default_table_id = 0;
+  const char test_table_name[] = "test_table";
+  uint32_t table_flags = NFT_TABLE_F_DORMANT | NFT_TABLE_F_OWNER;
+  uint8_t expected_udata[3] = {0x01, 0x02, 0x03};
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
+  FileDescriptor fd_2 =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
+
+  struct request {
+    struct nlmsghdr hdr;
+    struct nfgenmsg msg;
+    struct nameAttribute attr;
+    struct flagAttribute fattr;
+    struct userDataAttribute udata;
+  };
+
+  struct request_2 {
+    struct nlmsghdr hdr;
+    struct nfgenmsg msg;
+    struct nameAttribute attr;
+  };
+
+  struct request add_tab_req = {};
+  InitNetlinkHdr(&add_tab_req.hdr, sizeof(add_tab_req),
+                 MakeNetlinkMsgType(NFNL_SUBSYS_NFTABLES, NFT_MSG_NEWTABLE),
+                 kSeq, NLM_F_REQUEST | NLM_F_ACK);
+  InitNetfilterGenmsg(&add_tab_req.msg, AF_INET, NFNETLINK_V0,
+                      default_table_id);
+  // Attribute setting
+  InitNetlinkAttr(&add_tab_req.attr.attr, sizeof(add_tab_req.attr.name),
+                  NFTA_TABLE_NAME);
+  absl::SNPrintF(add_tab_req.attr.name, sizeof(add_tab_req.attr.name),
+                 test_table_name);
+  InitNetlinkAttr(&add_tab_req.fattr.attr, sizeof(add_tab_req.fattr.flags),
+                  NFTA_TABLE_FLAGS);
+  add_tab_req.fattr.flags = table_flags;
+  InitNetlinkAttr(&add_tab_req.udata.attr, sizeof(add_tab_req.udata.userdata),
+                  NFTA_TABLE_USERDATA);
+  std::memcpy(add_tab_req.udata.userdata, expected_udata,
+              sizeof(expected_udata));
+
+  struct request_2 get_tab_req = {};
+  InitNetlinkHdr(&get_tab_req.hdr, sizeof(get_tab_req),
+                 MakeNetlinkMsgType(NFNL_SUBSYS_NFTABLES, NFT_MSG_GETTABLE),
+                 kSeq + 1, NLM_F_REQUEST);
+  InitNetfilterGenmsg(&get_tab_req.msg, AF_INET, NFNETLINK_V0,
+                      default_table_id);
+  // Attribute setting
+  InitNetlinkAttr(&get_tab_req.attr.attr, sizeof(get_tab_req.attr.name),
+                  NFTA_TABLE_NAME);
+  absl::SNPrintF(get_tab_req.attr.name, sizeof(get_tab_req.attr.name),
+                 test_table_name);
+
+  ASSERT_NO_ERRNO(
+      NetlinkRequestAckOrError(fd, kSeq, &add_tab_req, sizeof(add_tab_req)));
+
+  ASSERT_THAT(NetlinkRequestAckOrError(fd_2, kSeq + 1, &get_tab_req,
+                                       sizeof(get_tab_req)),
+              PosixErrorIs(EPERM, _));
 }
 
 }  // namespace
