@@ -43,6 +43,9 @@ type Blocker interface {
 	// Interrupted notes whether this context is Interrupted.
 	Interrupted() bool
 
+	// Killed returns true if this context is interrupted by a fatal signal.
+	Killed() bool
+
 	// BlockOn blocks until one of the previously registered events occurs,
 	// or some external interrupt (cancellation).
 	//
@@ -92,6 +95,11 @@ func (nt *NoTask) Interrupt() {
 // Interrupted implements Blocker.Interrupted.
 func (nt *NoTask) Interrupted() bool {
 	return nt.cancel != nil && len(nt.cancel) > 0
+}
+
+// Killed implements Blocker.Killed.
+func (nt *NoTask) Killed() bool {
+	return false
 }
 
 // Block implements Blocker.Block.
