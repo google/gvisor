@@ -444,15 +444,17 @@ func addToleration(podSpec *v13.PodSpec, toleration v13.Toleration) {
 }
 
 // ApplyPodSpec modifies a PodSpec to use this runtime.
-func (t RuntimeType) ApplyPodSpec(podSpec *v13.PodSpec) {
+func (t RuntimeType) ApplyPodSpec(np *NodePool, podSpec *v13.PodSpec) {
 	switch t {
 	case RuntimeTypeGVisor:
 		podSpec.RuntimeClassName = proto.String(gvisorRuntimeClass)
 		podSpec.NodeSelector[NodepoolRuntimeKey] = string(RuntimeTypeGVisor)
-		addToleration(podSpec, v13.Toleration{
-			Key:      "nvidia.com/gpu",
-			Operator: v13.TolerationOpExists,
-		})
+		if np.numAccelerators > 0 {
+			addToleration(podSpec, v13.Toleration{
+				Key:      "nvidia.com/gpu",
+				Operator: v13.TolerationOpExists,
+			})
+		}
 	case RuntimeTypeUnsandboxed:
 		podSpec.RuntimeClassName = nil
 		podSpec.Tolerations = append(podSpec.Tolerations, v13.Toleration{
