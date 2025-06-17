@@ -17,16 +17,18 @@ package lisafs
 import (
 	"fmt"
 	"math"
+	"os"
 	"strings"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/cleanup"
+	"gvisor.dev/gvisor/pkg/errors"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/flipcall"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
-	"gvisor.dev/gvisor/pkg/p9"
 )
 
 const (
@@ -266,7 +268,7 @@ func SetStatHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32
 		failureMask, failureErr := fd.impl.SetStat(req)
 		resp.FailureMask = failureMask
 		if failureErr != nil {
-			resp.FailureErrNo = uint32(p9.ExtractErrno(failureErr))
+			resp.FailureErrNo = uint32(ExtractErrno(failureErr))
 		}
 		return nil
 	}); err != nil {
@@ -1528,4 +1530,43 @@ func checkSafeName(name string) error {
 		return nil
 	}
 	return unix.EINVAL
+}
+
+// ExtractErrno extracts a unix.Errno from an error, best effort.
+func ExtractErrno(err error) unix.Errno {
+	errno, _ := TryExtractErrno(err)
+	return errno
+}
+
+// TryExtractErrno extracts a unix.Errno from an error, and reports whether it
+// was successful. If unsuccessful, the returned errno is EIO.
+func TryExtractErrno(err error) (unix.Errno, bool) {
+	switch err {
+	case os.ErrNotExist:
+		return unix.ENOENT, true
+	case os.ErrExist:
+		return unix.EEXIST, true
+	case os.ErrPermission:
+		return unix.EACCES, true
+	case os.ErrInvalid:
+		return unix.EINVAL, true
+	}
+
+	// Attempt to unwrap.
+	switch e := err.(type) {
+	case *errors.Error:
+		return linuxerr.ToUnix(e), true
+	case unix.Errno:
+		return e, true
+	case *os.PathError:
+		return TryExtractErrno(e.Err)
+	case *os.SyscallError:
+		return TryExtractErrno(e.Err)
+	case *os.LinkError:
+		return TryExtractErrno(e.Err)
+	}
+
+	// Default case.
+	log.Warningf("unknown error: %v", err)
+	return unix.EIO, false
 }

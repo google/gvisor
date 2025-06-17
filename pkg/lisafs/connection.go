@@ -22,7 +22,6 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/flipcall"
 	"gvisor.dev/gvisor/pkg/log"
-	"gvisor.dev/gvisor/pkg/p9"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/unet"
 )
@@ -205,7 +204,7 @@ func (c *Connection) handleMsg(comm Communicator, m MID, payloadLen uint32) (ret
 	fds := comm.ReleaseFDs()
 	if err != nil {
 		closeFDs(fds)
-		return c.respondError(comm, p9.ExtractErrno(err))
+		return c.respondError(comm, ExtractErrno(err))
 	}
 	if respPayloadLen > c.maxMessageSize {
 		log.Warningf("handler for message %d responded with payload which is too large: %d bytes", m, respPayloadLen)

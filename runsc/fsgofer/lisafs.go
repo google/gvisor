@@ -1215,7 +1215,7 @@ func tryOpen(open func(int) (int, error)) (hostFD int, err error) {
 			return
 		}
 
-		if e := extractErrno(err); e == unix.ENOENT {
+		if e := lisafs.ExtractErrno(err); e == unix.ENOENT {
 			// File doesn't exist, no point in retrying.
 			return -1, e
 		}
@@ -1283,43 +1283,6 @@ func checkSupportedFileType(mode uint32) error {
 	default:
 		return unix.EPERM
 	}
-}
-
-// extractErrno tries to determine the errno.
-func extractErrno(err error) unix.Errno {
-	if err == nil {
-		// This should never happen. The likely result will be that
-		// some user gets the frustrating "error: SUCCESS" message.
-		log.Warningf("extractErrno called with nil error!")
-		return 0
-	}
-
-	switch err {
-	case os.ErrNotExist:
-		return unix.ENOENT
-	case os.ErrExist:
-		return unix.EEXIST
-	case os.ErrPermission:
-		return unix.EACCES
-	case os.ErrInvalid:
-		return unix.EINVAL
-	}
-
-	// See if it's an errno or a common wrapped error.
-	switch e := err.(type) {
-	case unix.Errno:
-		return e
-	case *os.PathError:
-		return extractErrno(e.Err)
-	case *os.LinkError:
-		return extractErrno(e.Err)
-	case *os.SyscallError:
-		return extractErrno(e.Err)
-	}
-
-	// Fall back to EIO.
-	log.Debugf("Unknown error: %v, defaulting to EIO", err)
-	return unix.EIO
 }
 
 // LINT.ThenChange(../../pkg/sentry/fsimpl/gofer/directfs_dentry.go)
