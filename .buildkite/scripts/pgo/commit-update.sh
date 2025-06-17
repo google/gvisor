@@ -22,9 +22,15 @@ if [[ "$(git status --porcelain | wc -l)" == 0 ]]; then
 fi
 
 today="$(date +"%Y-%m-%d")"
+repo_url="https://github.com/google/gvisor.git"
 pgo_branch_name="pgo/update-${today}"
+existing_remote="$(git ls-remote --heads "$repo_url" "refs/heads/${pgo_branch_name}" || true)"
+if [[ -n "$existing_remote" ]]; then
+  echo "Remote branch '$pgo_branch_name' already exists, skipping." >&2
+  exit 0
+fi
 git stash
-git pull --rebase=true https://github.com/google/gvisor master
+git pull --rebase=true "$repo_url" master
 git checkout -b "$pgo_branch_name"
 git stash pop
 git add runsc/profiles
@@ -37,7 +43,7 @@ export GIT_AUTHOR_EMAIL=gvisor-bot@google.com
 export GIT_COMMITTER_NAME=gvisor-bot
 export GIT_COMMITTER_EMAIL=gvisor-bot@google.com
 git commit -m "Update runsc profiles for PGO (profile-guided optimizations), $today."
-git push --set-upstream https://github.com/google/gvisor.git "$pgo_branch_name"
+git push --set-upstream "$repo_url" "$pgo_branch_name"
 
 # The 'yes' command will fail when the `gh` command closes its stdin,
 # which the `pipefail` option treats as a total failure.
