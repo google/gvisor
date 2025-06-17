@@ -16,6 +16,7 @@ package kernel
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/bits"
 )
 
@@ -49,7 +50,7 @@ type pendingSignals struct {
 
 	// Bit i of pendingSet is set iff there is at least one signal with signo
 	// i+1 pending.
-	pendingSet linux.SignalSet `state:"manual"`
+	pendingSet atomicbitops.Uint64 `state:"manual"`
 }
 
 // pendingSignalQueue holds a pendingSignalList for a single signal number.
@@ -86,7 +87,7 @@ func (p *pendingSignals) enqueue(info *linux.SignalInfo, timer *IntervalTimer) b
 	}
 	q.pendingSignalList.PushBack(&pendingSignal{SignalInfo: info, timer: timer})
 	q.length++
-	p.pendingSet |= linux.SignalSetOf(sig)
+	p.pendingSet.Store(p.pendingSet.RacyLoad() | uint64(linux.SignalSetOf(sig)))
 	return true
 }
 
@@ -103,7 +104,7 @@ func (p *pendingSignals) dequeue(mask linux.SignalSet) *linux.SignalInfo {
 	// process, POSIX leaves it unspecified which is delivered first. Linux,
 	// like many other implementations, gives priority to standard signals in
 	// this case." - signal(7)
-	lowestPendingUnblockedBit := bits.TrailingZeros64(uint64(p.pendingSet &^ mask))
+	lowestPendingUnblockedBit := bits.TrailingZeros64(p.pendingSet.RacyLoad() &^ uint64(mask))
 	if lowestPendingUnblockedBit >= linux.SignalMaximum {
 		return nil
 	}
@@ -119,7 +120,7 @@ func (p *pendingSignals) dequeueSpecific(sig linux.Signal) *linux.SignalInfo {
 	q.pendingSignalList.Remove(ps)
 	q.length--
 	if q.length == 0 {
-		p.pendingSet &^= linux.SignalSetOf(sig)
+		p.pendingSet.Store(p.pendingSet.RacyLoad() &^ uint64(linux.SignalSetOf(sig)))
 	}
 	if ps.timer != nil {
 		ps.timer.updateDequeuedSignalLocked(ps.SignalInfo)
@@ -137,5 +138,5 @@ func (p *pendingSignals) discardSpecific(sig linux.Signal) {
 	}
 	q.pendingSignalList.Reset()
 	q.length = 0
-	p.pendingSet &^= linux.SignalSetOf(sig)
+	p.pendingSet.Store(p.pendingSet.RacyLoad() &^ uint64(linux.SignalSetOf(sig)))
 }
