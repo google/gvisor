@@ -38,9 +38,16 @@ export GIT_COMMITTER_NAME=gvisor-bot
 export GIT_COMMITTER_EMAIL=gvisor-bot@google.com
 git commit -m "Update runsc profiles for PGO (profile-guided optimizations), $today."
 git push --set-upstream https://github.com/google/gvisor.git "$pgo_branch_name"
+
+# The 'yes' command will fail when the `gh` command closes its stdin,
+# which the `pipefail` option treats as a total failure.
+# So disable this option for this particular command.
+set +o pipefail
 yes '' | gh pr create \
   --title="Update runsc profiles for PGO (profile-guided optimizations), $today." \
   --body='This PR updates the runsc profiles for PGO (profile-guided optimizations).' \
   --label=pgo-update --label='ready to pull' \
   --base=master --head="$pgo_branch_name"
+set -o pipefail
+
 echo 'PGO profile update PR created.' >&2
