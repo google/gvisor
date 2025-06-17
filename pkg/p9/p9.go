@@ -12,7 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package p9 is a 9P2000.L implementation.
+// Package p9 used a 9P2000.L implementation. It served its purpose well,
+// but has been replaced by LisaFS.
+//
+// All that remains are some types that are used in LisaFS.
 package p9
 
 import (
@@ -24,7 +27,6 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 )
 
 // OpenFlags is the mode passed to Open and Create operations.
@@ -131,9 +133,6 @@ func (o OpenFlags) String() string {
 // Tag is a message tag.
 type Tag uint16
 
-// FID is a file identifier.
-type FID uint64
-
 // FileMode are flags corresponding to file modes.
 //
 // These correspond to bits sent over the wire.
@@ -191,22 +190,6 @@ const (
 	// bit, setuid bit, and setgid bit.
 	permissionsMask FileMode = 07777
 )
-
-// QIDType is the most significant byte of the FileMode word, to be used as the
-// Type field of p9.QID.
-func (m FileMode) QIDType() QIDType {
-	switch {
-	case m.IsDir():
-		return TypeDir
-	case m.IsSocket(), m.IsNamedPipe(), m.IsCharacterDevice():
-		// Best approximation.
-		return TypeAppendOnly
-	case m.IsSymlink():
-		return TypeSymlink
-	default:
-		return TypeRegular
-	}
-}
 
 // FileType returns the file mode without the permission bits.
 func (m FileMode) FileType() FileMode {
@@ -333,199 +316,12 @@ func (gid GID) Ok() bool {
 }
 
 const (
-	// NoTag is a sentinel used to indicate no valid tag.
-	NoTag Tag = math.MaxUint16
-
-	// NoFID is a sentinel used to indicate no valid FID.
-	NoFID FID = math.MaxUint32
-
 	// NoUID is a sentinel used to indicate no valid UID.
 	NoUID UID = math.MaxUint32
 
 	// NoGID is a sentinel used to indicate no valid GID.
 	NoGID GID = math.MaxUint32
 )
-
-// MsgType is a type identifier.
-type MsgType uint8
-
-// MsgType declarations.
-const (
-	MsgTlerror       MsgType = 6
-	MsgRlerror       MsgType = 7
-	MsgTstatfs       MsgType = 8
-	MsgRstatfs       MsgType = 9
-	MsgTlopen        MsgType = 12
-	MsgRlopen        MsgType = 13
-	MsgTlcreate      MsgType = 14
-	MsgRlcreate      MsgType = 15
-	MsgTsymlink      MsgType = 16
-	MsgRsymlink      MsgType = 17
-	MsgTmknod        MsgType = 18
-	MsgRmknod        MsgType = 19
-	MsgTrename       MsgType = 20
-	MsgRrename       MsgType = 21
-	MsgTreadlink     MsgType = 22
-	MsgRreadlink     MsgType = 23
-	MsgTgetattr      MsgType = 24
-	MsgRgetattr      MsgType = 25
-	MsgTsetattr      MsgType = 26
-	MsgRsetattr      MsgType = 27
-	MsgTlistxattr    MsgType = 28
-	MsgRlistxattr    MsgType = 29
-	MsgTxattrwalk    MsgType = 30
-	MsgRxattrwalk    MsgType = 31
-	MsgTxattrcreate  MsgType = 32
-	MsgRxattrcreate  MsgType = 33
-	MsgTgetxattr     MsgType = 34
-	MsgRgetxattr     MsgType = 35
-	MsgTsetxattr     MsgType = 36
-	MsgRsetxattr     MsgType = 37
-	MsgTremovexattr  MsgType = 38
-	MsgRremovexattr  MsgType = 39
-	MsgTreaddir      MsgType = 40
-	MsgRreaddir      MsgType = 41
-	MsgTfsync        MsgType = 50
-	MsgRfsync        MsgType = 51
-	MsgTlink         MsgType = 70
-	MsgRlink         MsgType = 71
-	MsgTmkdir        MsgType = 72
-	MsgRmkdir        MsgType = 73
-	MsgTrenameat     MsgType = 74
-	MsgRrenameat     MsgType = 75
-	MsgTunlinkat     MsgType = 76
-	MsgRunlinkat     MsgType = 77
-	MsgTversion      MsgType = 100
-	MsgRversion      MsgType = 101
-	MsgTauth         MsgType = 102
-	MsgRauth         MsgType = 103
-	MsgTattach       MsgType = 104
-	MsgRattach       MsgType = 105
-	MsgTflush        MsgType = 108
-	MsgRflush        MsgType = 109
-	MsgTwalk         MsgType = 110
-	MsgRwalk         MsgType = 111
-	MsgTread         MsgType = 116
-	MsgRread         MsgType = 117
-	MsgTwrite        MsgType = 118
-	MsgRwrite        MsgType = 119
-	MsgTclunk        MsgType = 120
-	MsgRclunk        MsgType = 121
-	MsgTremove       MsgType = 122
-	MsgRremove       MsgType = 123
-	MsgTflushf       MsgType = 124
-	MsgRflushf       MsgType = 125
-	MsgTwalkgetattr  MsgType = 126
-	MsgRwalkgetattr  MsgType = 127
-	MsgTucreate      MsgType = 128
-	MsgRucreate      MsgType = 129
-	MsgTumkdir       MsgType = 130
-	MsgRumkdir       MsgType = 131
-	MsgTumknod       MsgType = 132
-	MsgRumknod       MsgType = 133
-	MsgTusymlink     MsgType = 134
-	MsgRusymlink     MsgType = 135
-	MsgTlconnect     MsgType = 136
-	MsgRlconnect     MsgType = 137
-	MsgTallocate     MsgType = 138
-	MsgRallocate     MsgType = 139
-	MsgTsetattrclunk MsgType = 140
-	MsgRsetattrclunk MsgType = 141
-	MsgTmultigetattr MsgType = 142
-	MsgRmultigetattr MsgType = 143
-	MsgTbind         MsgType = 144
-	MsgRbind         MsgType = 145
-	MsgTchannel      MsgType = 250
-	MsgRchannel      MsgType = 251
-)
-
-// QIDType represents the file type for QIDs.
-//
-// QIDType corresponds to the high 8 bits of a Plan 9 file mode.
-type QIDType uint8
-
-const (
-	// TypeDir represents a directory type.
-	TypeDir QIDType = 0x80
-
-	// TypeAppendOnly represents an append only file.
-	TypeAppendOnly QIDType = 0x40
-
-	// TypeExclusive represents an exclusive-use file.
-	TypeExclusive QIDType = 0x20
-
-	// TypeMount represents a mounted channel.
-	TypeMount QIDType = 0x10
-
-	// TypeAuth represents an authentication file.
-	TypeAuth QIDType = 0x08
-
-	// TypeTemporary represents a temporary file.
-	TypeTemporary QIDType = 0x04
-
-	// TypeSymlink represents a symlink.
-	TypeSymlink QIDType = 0x02
-
-	// TypeLink represents a hard link.
-	TypeLink QIDType = 0x01
-
-	// TypeRegular represents a regular file.
-	TypeRegular QIDType = 0x00
-)
-
-// QID is a unique file identifier.
-//
-// This may be embedded in other requests and responses.
-type QID struct {
-	// Type is the highest order byte of the file mode.
-	Type QIDType
-
-	// Version is an arbitrary server version number.
-	Version uint32
-
-	// Path is a unique server identifier for this path (e.g. inode).
-	Path uint64
-}
-
-// String implements fmt.Stringer.
-func (q QID) String() string {
-	return fmt.Sprintf("QID{Type: %d, Version: %d, Path: %d}", q.Type, q.Version, q.Path)
-}
-
-// decode implements encoder.decode.
-func (q *QID) decode(b *buffer) {
-	q.Type = b.ReadQIDType()
-	q.Version = b.Read32()
-	q.Path = b.Read64()
-}
-
-// encode implements encoder.encode.
-func (q *QID) encode(b *buffer) {
-	b.WriteQIDType(q.Type)
-	b.Write32(q.Version)
-	b.Write64(q.Path)
-}
-
-// QIDGenerator is a simple generator for QIDs that atomically increments Path
-// values.
-type QIDGenerator struct {
-	// uids is an ever increasing value that can be atomically incremented
-	// to provide unique Path values for QIDs.
-	uids atomicbitops.Uint64
-}
-
-// Get returns a new 9P unique ID with a unique Path given a QID type.
-//
-// While the 9P spec allows Version to be incremented every time the file is
-// modified, we currently do not use the Version member for anything.  Hence,
-// it is set to 0.
-func (q *QIDGenerator) Get(t QIDType) QID {
-	return QID{
-		Type:    t,
-		Version: 0,
-		Path:    q.uids.Add(1),
-	}
-}
 
 // FSStat is used by statfs.
 type FSStat struct {
@@ -555,32 +351,6 @@ type FSStat struct {
 
 	// NameLength is the maximum name length.
 	NameLength uint32
-}
-
-// decode implements encoder.decode.
-func (f *FSStat) decode(b *buffer) {
-	f.Type = b.Read32()
-	f.BlockSize = b.Read32()
-	f.Blocks = b.Read64()
-	f.BlocksFree = b.Read64()
-	f.BlocksAvailable = b.Read64()
-	f.Files = b.Read64()
-	f.FilesFree = b.Read64()
-	f.FSID = b.Read64()
-	f.NameLength = b.Read32()
-}
-
-// encode implements encoder.encode.
-func (f *FSStat) encode(b *buffer) {
-	b.Write32(f.Type)
-	b.Write32(f.BlockSize)
-	b.Write64(f.Blocks)
-	b.Write64(f.BlocksFree)
-	b.Write64(f.BlocksAvailable)
-	b.Write64(f.Files)
-	b.Write64(f.FilesFree)
-	b.Write64(f.FSID)
-	b.Write32(f.NameLength)
 }
 
 // AttrMask is a mask of attributes for getattr.
@@ -721,73 +491,6 @@ func (a AttrMask) String() string {
 	return fmt.Sprintf("AttrMask{with: %s}", strings.Join(masks, " "))
 }
 
-// decode implements encoder.decode.
-func (a *AttrMask) decode(b *buffer) {
-	mask := b.Read64()
-	a.Mode = mask&0x00000001 != 0
-	a.NLink = mask&0x00000002 != 0
-	a.UID = mask&0x00000004 != 0
-	a.GID = mask&0x00000008 != 0
-	a.RDev = mask&0x00000010 != 0
-	a.ATime = mask&0x00000020 != 0
-	a.MTime = mask&0x00000040 != 0
-	a.CTime = mask&0x00000080 != 0
-	a.INo = mask&0x00000100 != 0
-	a.Size = mask&0x00000200 != 0
-	a.Blocks = mask&0x00000400 != 0
-	a.BTime = mask&0x00000800 != 0
-	a.Gen = mask&0x00001000 != 0
-	a.DataVersion = mask&0x00002000 != 0
-}
-
-// encode implements encoder.encode.
-func (a *AttrMask) encode(b *buffer) {
-	var mask uint64
-	if a.Mode {
-		mask |= 0x00000001
-	}
-	if a.NLink {
-		mask |= 0x00000002
-	}
-	if a.UID {
-		mask |= 0x00000004
-	}
-	if a.GID {
-		mask |= 0x00000008
-	}
-	if a.RDev {
-		mask |= 0x00000010
-	}
-	if a.ATime {
-		mask |= 0x00000020
-	}
-	if a.MTime {
-		mask |= 0x00000040
-	}
-	if a.CTime {
-		mask |= 0x00000080
-	}
-	if a.INo {
-		mask |= 0x00000100
-	}
-	if a.Size {
-		mask |= 0x00000200
-	}
-	if a.Blocks {
-		mask |= 0x00000400
-	}
-	if a.BTime {
-		mask |= 0x00000800
-	}
-	if a.Gen {
-		mask |= 0x00001000
-	}
-	if a.DataVersion {
-		mask |= 0x00002000
-	}
-	b.Write64(mask)
-}
-
 // Attr is a set of attributes for getattr.
 type Attr struct {
 	Mode             FileMode
@@ -814,50 +517,6 @@ type Attr struct {
 func (a Attr) String() string {
 	return fmt.Sprintf("Attr{Mode: 0o%o, UID: %d, GID: %d, NLink: %d, RDev: %d, Size: %d, BlockSize: %d, Blocks: %d, ATime: {Sec: %d, NanoSec: %d}, MTime: {Sec: %d, NanoSec: %d}, CTime: {Sec: %d, NanoSec: %d}, BTime: {Sec: %d, NanoSec: %d}, Gen: %d, DataVersion: %d}",
 		a.Mode, a.UID, a.GID, a.NLink, a.RDev, a.Size, a.BlockSize, a.Blocks, a.ATimeSeconds, a.ATimeNanoSeconds, a.MTimeSeconds, a.MTimeNanoSeconds, a.CTimeSeconds, a.CTimeNanoSeconds, a.BTimeSeconds, a.BTimeNanoSeconds, a.Gen, a.DataVersion)
-}
-
-// encode implements encoder.encode.
-func (a *Attr) encode(b *buffer) {
-	b.WriteFileMode(a.Mode)
-	b.WriteUID(a.UID)
-	b.WriteGID(a.GID)
-	b.Write64(a.NLink)
-	b.Write64(a.RDev)
-	b.Write64(a.Size)
-	b.Write64(a.BlockSize)
-	b.Write64(a.Blocks)
-	b.Write64(a.ATimeSeconds)
-	b.Write64(a.ATimeNanoSeconds)
-	b.Write64(a.MTimeSeconds)
-	b.Write64(a.MTimeNanoSeconds)
-	b.Write64(a.CTimeSeconds)
-	b.Write64(a.CTimeNanoSeconds)
-	b.Write64(a.BTimeSeconds)
-	b.Write64(a.BTimeNanoSeconds)
-	b.Write64(a.Gen)
-	b.Write64(a.DataVersion)
-}
-
-// decode implements encoder.decode.
-func (a *Attr) decode(b *buffer) {
-	a.Mode = b.ReadFileMode()
-	a.UID = b.ReadUID()
-	a.GID = b.ReadGID()
-	a.NLink = b.Read64()
-	a.RDev = b.Read64()
-	a.Size = b.Read64()
-	a.BlockSize = b.Read64()
-	a.Blocks = b.Read64()
-	a.ATimeSeconds = b.Read64()
-	a.ATimeNanoSeconds = b.Read64()
-	a.MTimeSeconds = b.Read64()
-	a.MTimeNanoSeconds = b.Read64()
-	a.CTimeSeconds = b.Read64()
-	a.CTimeNanoSeconds = b.Read64()
-	a.BTimeSeconds = b.Read64()
-	a.BTimeNanoSeconds = b.Read64()
-	a.Gen = b.Read64()
-	a.DataVersion = b.Read64()
 }
 
 // StatToAttr converts a Linux syscall stat structure to an Attr.
@@ -968,20 +627,6 @@ func (s SetAttrMask) Empty() bool {
 	return !s.Permissions && !s.UID && !s.GID && !s.Size && !s.ATime && !s.MTime && !s.CTime && !s.ATimeNotSystemTime && !s.MTimeNotSystemTime
 }
 
-// decode implements encoder.decode.
-func (s *SetAttrMask) decode(b *buffer) {
-	mask := b.Read32()
-	s.Permissions = mask&0x00000001 != 0
-	s.UID = mask&0x00000002 != 0
-	s.GID = mask&0x00000004 != 0
-	s.Size = mask&0x00000008 != 0
-	s.ATime = mask&0x00000010 != 0
-	s.MTime = mask&0x00000020 != 0
-	s.CTime = mask&0x00000040 != 0
-	s.ATimeNotSystemTime = mask&0x00000080 != 0
-	s.MTimeNotSystemTime = mask&0x00000100 != 0
-}
-
 func (s SetAttrMask) bitmask() uint32 {
 	var mask uint32
 	if s.Permissions {
@@ -1014,11 +659,6 @@ func (s SetAttrMask) bitmask() uint32 {
 	return mask
 }
 
-// encode implements encoder.encode.
-func (s *SetAttrMask) encode(b *buffer) {
-	b.Write32(s.bitmask())
-}
-
 // SetAttr specifies a set of attributes for a setattr.
 type SetAttr struct {
 	Permissions      FileMode
@@ -1034,30 +674,6 @@ type SetAttr struct {
 // String implements fmt.Stringer.
 func (s SetAttr) String() string {
 	return fmt.Sprintf("SetAttr{Permissions: 0o%o, UID: %d, GID: %d, Size: %d, ATime: {Sec: %d, NanoSec: %d}, MTime: {Sec: %d, NanoSec: %d}}", s.Permissions, s.UID, s.GID, s.Size, s.ATimeSeconds, s.ATimeNanoSeconds, s.MTimeSeconds, s.MTimeNanoSeconds)
-}
-
-// decode implements encoder.decode.
-func (s *SetAttr) decode(b *buffer) {
-	s.Permissions = b.ReadPermissions()
-	s.UID = b.ReadUID()
-	s.GID = b.ReadGID()
-	s.Size = b.Read64()
-	s.ATimeSeconds = b.Read64()
-	s.ATimeNanoSeconds = b.Read64()
-	s.MTimeSeconds = b.Read64()
-	s.MTimeNanoSeconds = b.Read64()
-}
-
-// encode implements encoder.encode.
-func (s *SetAttr) encode(b *buffer) {
-	b.WritePermissions(s.Permissions)
-	b.WriteUID(s.UID)
-	b.WriteGID(s.GID)
-	b.Write64(s.Size)
-	b.Write64(s.ATimeSeconds)
-	b.Write64(s.ATimeNanoSeconds)
-	b.Write64(s.MTimeSeconds)
-	b.Write64(s.MTimeNanoSeconds)
 }
 
 // Apply applies this to the given Attr.
@@ -1082,48 +698,6 @@ func (a *Attr) Apply(mask SetAttrMask, attr SetAttr) {
 		a.MTimeSeconds = attr.MTimeSeconds
 		a.MTimeNanoSeconds = attr.MTimeNanoSeconds
 	}
-}
-
-// DirentSizeStatic is the number of bytes required to encode a p9.Dirent
-// with an empty name. In other words, it is the static part of its size.
-const DirentSizeStatic = 24
-
-// Dirent is used for readdir.
-type Dirent struct {
-	// QID is the entry QID.
-	QID QID
-
-	// Offset is the offset in the directory.
-	//
-	// This will be communicated back the original caller.
-	Offset uint64
-
-	// Type is the 9P type.
-	Type QIDType
-
-	// Name is the name of the entry (i.e. basename).
-	Name string
-}
-
-// String implements fmt.Stringer.
-func (d Dirent) String() string {
-	return fmt.Sprintf("Dirent{QID: %d, Offset: %d, Type: 0x%X, Name: %s}", d.QID, d.Offset, d.Type, d.Name)
-}
-
-// decode implements encoder.decode.
-func (d *Dirent) decode(b *buffer) {
-	d.QID.decode(b)
-	d.Offset = b.Read64()
-	d.Type = b.ReadQIDType()
-	d.Name = b.ReadString()
-}
-
-// encode implements encoder.encode.
-func (d *Dirent) encode(b *buffer) {
-	d.QID.encode(b)
-	b.Write64(d.Offset)
-	b.WriteQIDType(d.Type)
-	b.WriteString(d.Name)
 }
 
 // AllocateMode are possible modes to p9.File.Allocate().
@@ -1175,69 +749,4 @@ func (a *AllocateMode) ToLinux() uint32 {
 		rv |= unix.FALLOC_FL_UNSHARE_RANGE
 	}
 	return rv
-}
-
-// decode implements encoder.decode.
-func (a *AllocateMode) decode(b *buffer) {
-	mask := b.Read32()
-	a.KeepSize = mask&0x01 != 0
-	a.PunchHole = mask&0x02 != 0
-	a.NoHideStale = mask&0x04 != 0
-	a.CollapseRange = mask&0x08 != 0
-	a.ZeroRange = mask&0x10 != 0
-	a.InsertRange = mask&0x20 != 0
-	a.Unshare = mask&0x40 != 0
-}
-
-// encode implements encoder.encode.
-func (a *AllocateMode) encode(b *buffer) {
-	mask := uint32(0)
-	if a.KeepSize {
-		mask |= 0x01
-	}
-	if a.PunchHole {
-		mask |= 0x02
-	}
-	if a.NoHideStale {
-		mask |= 0x04
-	}
-	if a.CollapseRange {
-		mask |= 0x08
-	}
-	if a.ZeroRange {
-		mask |= 0x10
-	}
-	if a.InsertRange {
-		mask |= 0x20
-	}
-	if a.Unshare {
-		mask |= 0x40
-	}
-	b.Write32(mask)
-}
-
-// FullStat is used in the result of a MultiGetAttr call.
-type FullStat struct {
-	QID   QID
-	Valid AttrMask
-	Attr  Attr
-}
-
-// String implements fmt.Stringer.
-func (f *FullStat) String() string {
-	return fmt.Sprintf("FullStat{QID: %v, Valid: %v, Attr: %v}", f.QID, f.Valid, f.Attr)
-}
-
-// decode implements encoder.decode.
-func (f *FullStat) decode(b *buffer) {
-	f.QID.decode(b)
-	f.Valid.decode(b)
-	f.Attr.decode(b)
-}
-
-// encode implements encoder.encode.
-func (f *FullStat) encode(b *buffer) {
-	f.QID.encode(b)
-	f.Valid.encode(b)
-	f.Attr.encode(b)
 }

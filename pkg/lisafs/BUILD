@@ -104,6 +104,8 @@ go_library(
         "//pkg/atomicbitops",
         "//pkg/cleanup",
         "//pkg/context",
+        "//pkg/errors",
+        "//pkg/errors/linuxerr",
         "//pkg/fdchannel",
         "//pkg/flipcall",
         "//pkg/fspath",

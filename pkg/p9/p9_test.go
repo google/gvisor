@@ -72,59 +72,6 @@ func TestFileModeHelpers(t *testing.T) {
 	}
 }
 
-func TestFileModeToQID(t *testing.T) {
-	for _, test := range []struct {
-		// name identifies the test.
-		name string
-
-		// mode is the FileMode we start out with.
-		mode FileMode
-
-		// want is the corresponding QIDType we expect.
-		want QIDType
-	}{
-		{
-			name: "Directories are of type directory",
-			mode: ModeDirectory,
-			want: TypeDir,
-		},
-		{
-			name: "Sockets are append-only files",
-			mode: ModeSocket,
-			want: TypeAppendOnly,
-		},
-		{
-			name: "Named pipes are append-only files",
-			mode: ModeNamedPipe,
-			want: TypeAppendOnly,
-		},
-		{
-			name: "Character devices are append-only files",
-			mode: ModeCharacterDevice,
-			want: TypeAppendOnly,
-		},
-		{
-			name: "Symlinks are of type symlink",
-			mode: ModeSymlink,
-			want: TypeSymlink,
-		},
-		{
-			name: "Regular files are of type regular",
-			mode: ModeRegular,
-			want: TypeRegular,
-		},
-		{
-			name: "Block devices are regular files",
-			mode: ModeBlockDevice,
-			want: TypeRegular,
-		},
-	} {
-		if qidType := test.mode.QIDType(); qidType != test.want {
-			t.Errorf("ModeToQID test %s failed: got %o, wanted %o", test.name, qidType, test.want)
-		}
-	}
-}
-
 func TestP9ModeConverters(t *testing.T) {
 	for _, m := range []FileMode{
 		ModeRegular,

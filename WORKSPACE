@@ -2664,13 +2664,6 @@ go_repository(
 )
 
 go_repository(
-    name = "com_github_golang_mock",
-    importpath = "github.com/golang/mock",
-    sum = "h1:YojYx61/OLFsiv6Rw1Z96LpldJIy31o+UHmwAUMJ6/U=",
-    version = "v1.7.0-rc.1",
-)
-
-go_repository(
     name = "com_github_google_subcommands",
     importpath = "github.com/google/subcommands",
     sum = "h1:8nlgEAjIalk6uj/CGKCdOO8CQqTeysvcW4RFZ6HbkGM=",
