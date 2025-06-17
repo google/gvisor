@@ -24,20 +24,35 @@ fi
 today="$(date +"%Y-%m-%d")"
 repo_url="https://github.com/google/gvisor.git"
 pgo_branch_name="pgo/update-${today}"
+
+# If the remote branch already exists, do nothing.
 existing_remote="$(git ls-remote --heads "$repo_url" "refs/heads/${pgo_branch_name}" || true)"
 if [[ -n "$existing_remote" ]]; then
   echo "Remote branch '$pgo_branch_name' already exists, skipping." >&2
   exit 0
 fi
+
+# GitHub CLI authentication.
+gh --version
+gh auth login --with-token < "$HOME/.github-token"
+gh auth setup-git
+
+# If there is already an open PR for PGO update, do nothing.
+if [[ "$(gh pr --repo="$repo_url" list --label pgo-update --state open --json title --jq length)" -gt 0 ]]; then
+  echo "There is already an open PR for PGO update, skipping." >&2
+  PAGER=cat gh pr --repo="$repo_url" list --label pgo-update --state open
+  exit 0
+fi
+
+# Create new branch for the PR and stages changes in it.
 git stash
 git pull --rebase=true "$repo_url" master
 git checkout -b "$pgo_branch_name"
 git stash pop
 git add runsc/profiles
 git status
-gh --version
-gh auth login --with-token < "$HOME/.github-token"
-gh auth setup-git
+
+# Commit and push PR branch.
 export GIT_AUTHOR_NAME=gvisor-bot
 export GIT_AUTHOR_EMAIL=gvisor-bot@google.com
 export GIT_COMMITTER_NAME=gvisor-bot
@@ -45,11 +60,12 @@ export GIT_COMMITTER_EMAIL=gvisor-bot@google.com
 git commit -m "Update runsc profiles for PGO (profile-guided optimizations), $today."
 git push --set-upstream "$repo_url" "$pgo_branch_name"
 
+# Send PR.
 # The 'yes' command will fail when the `gh` command closes its stdin,
 # which the `pipefail` option treats as a total failure.
 # So disable this option for this particular command.
 set +o pipefail
-yes '' | gh pr create \
+yes '' | gh pr --repo="$repo_url" create \
   --title="Update runsc profiles for PGO (profile-guided optimizations), $today." \
   --body='This PR updates the runsc profiles for PGO (profile-guided optimizations).' \
   --label=pgo-update --label='ready to pull' \
