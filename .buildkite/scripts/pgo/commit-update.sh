@@ -29,6 +29,7 @@ git checkout -b "$pgo_branch_name"
 git stash pop
 git add runsc/profiles
 git status
+gh --version
 gh auth login --with-token < "$HOME/.github-token"
 gh auth setup-git
 export GIT_AUTHOR_NAME=gvisor-bot
@@ -37,9 +38,9 @@ export GIT_COMMITTER_NAME=gvisor-bot
 export GIT_COMMITTER_EMAIL=gvisor-bot@google.com
 git commit -m "Update runsc profiles for PGO (profile-guided optimizations), $today."
 git push --set-upstream https://github.com/google/gvisor.git "$pgo_branch_name"
-gh pr create \
+yes '' | gh pr create \
   --title="Update runsc profiles for PGO (profile-guided optimizations), $today." \
   --body='This PR updates the runsc profiles for PGO (profile-guided optimizations).' \
   --label=pgo-update --label='ready to pull' \
-  --base=master
+  --base=master --head="$pgo_branch_name"
 echo 'PGO profile update PR created.' >&2
