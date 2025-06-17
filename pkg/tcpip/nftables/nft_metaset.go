@@ -15,9 +15,8 @@
 package nftables
 
 import (
-	"fmt"
-
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
@@ -32,7 +31,7 @@ type metaSet struct {
 }
 
 // checkMetaKeySetCompatible checks that the meta key is valid for meta set.
-func checkMetaKeySetCompatible(key metaKey) error {
+func checkMetaKeySetCompatible(key metaKey) *syserr.Error {
 	switch key {
 	// Supported meta keys.
 	case linux.NFT_META_PKTTYPE:
@@ -41,17 +40,17 @@ func checkMetaKeySetCompatible(key metaKey) error {
 	case linux.NFT_META_MARK, linux.NFT_META_PRIORITY,
 		linux.NFT_META_NFTRACE, linux.NFT_META_SECMARK:
 
-		return fmt.Errorf("meta key %v is not supported for meta set", key)
+		return syserr.ErrInvalidArgument
 	// All other keys cannot be used with meta set (strictly for loading).
 	default:
-		return fmt.Errorf("meta key %v is not compatible with meta set", key)
+		return syserr.ErrInvalidArgument
 	}
 }
 
 // newMetaSet creates a new metaSet operation.
-func newMetaSet(key metaKey, sreg uint8) (*metaSet, error) {
+func newMetaSet(key metaKey, sreg uint8) (*metaSet, *syserr.Error) {
 	if isVerdictRegister(sreg) {
-		return nil, fmt.Errorf("meta set operation cannot use verdict register as destination")
+		return nil, syserr.ErrInvalidArgument
 	}
 	if err := validateMetaKey(key); err != nil {
 		return nil, err
@@ -60,7 +59,7 @@ func newMetaSet(key metaKey, sreg uint8) (*metaSet, error) {
 		return nil, err
 	}
 	if metaDataLengths[key] > 4 && !is16ByteRegister(sreg) {
-		return nil, fmt.Errorf("meta load operation cannot use 4-byte register as destination for key %s", key)
+		return nil, syserr.ErrInvalidArgument
 	}
 
 	return &metaSet{key: key, sreg: sreg}, nil

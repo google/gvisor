@@ -16,10 +16,10 @@ package nftables
 
 import (
 	"encoding/binary"
-	"fmt"
 	"slices"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip/checksum"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
@@ -54,26 +54,26 @@ type payloadSet struct {
 }
 
 // validateChecksumType ensures the checksum type is valid.
-func validateChecksumType(csumType uint8) error {
+func validateChecksumType(csumType uint8) *syserr.Error {
 	switch csumType {
 	case linux.NFT_PAYLOAD_CSUM_NONE:
 		return nil
 	case linux.NFT_PAYLOAD_CSUM_INET:
 		return nil
 	case linux.NFT_PAYLOAD_CSUM_SCTP:
-		return fmt.Errorf("SCTP checksum not supported")
+		return syserr.ErrNotSupported
 	default:
-		return fmt.Errorf("invalid checksum type: %d", csumType)
+		return syserr.ErrNotSupported
 	}
 }
 
 // newPayloadSet creates a new payloadSet operation.
-func newPayloadSet(base payloadBase, offset, blen, sreg, csumType, csumOffset, csumFlags uint8) (*payloadSet, error) {
+func newPayloadSet(base payloadBase, offset, blen, sreg, csumType, csumOffset, csumFlags uint8) (*payloadSet, *syserr.Error) {
 	if isVerdictRegister(sreg) {
-		return nil, fmt.Errorf("payload set operation cannot use verdict register as destination")
+		return nil, syserr.ErrInvalidArgument
 	}
 	if blen > linux.NFT_REG_SIZE || (blen > linux.NFT_REG32_SIZE && is4ByteRegister(sreg)) {
-		return nil, fmt.Errorf("payload length %d is too long for destination register %d", blen, sreg)
+		return nil, syserr.ErrInvalidArgument
 	}
 	if err := validatePayloadBase(base); err != nil {
 		return nil, err
@@ -82,7 +82,7 @@ func newPayloadSet(base payloadBase, offset, blen, sreg, csumType, csumOffset, c
 		return nil, err
 	}
 	if csumFlags&^linux.NFT_PAYLOAD_L4CSUM_PSEUDOHDR != 0 {
-		return nil, fmt.Errorf("invalid checksum flags: %d", csumFlags)
+		return nil, syserr.ErrInvalidArgument
 	}
 	return &payloadSet{base: base, offset: offset, blen: blen, sreg: sreg,
 		csumType: csumType, csumOffset: csumOffset, csumFlags: csumFlags}, nil

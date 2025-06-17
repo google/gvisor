@@ -19,6 +19,7 @@ import (
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
@@ -56,19 +57,19 @@ func (cop cmpOp) String() string {
 }
 
 // validateComparisonOp ensures the comparison operator is valid.
-func validateComparisonOp(cop cmpOp) error {
+func validateComparisonOp(cop cmpOp) *syserr.Error {
 	switch cop {
 	case linux.NFT_CMP_EQ, linux.NFT_CMP_NEQ, linux.NFT_CMP_LT, linux.NFT_CMP_LTE, linux.NFT_CMP_GT, linux.NFT_CMP_GTE:
 		return nil
 	default:
-		return fmt.Errorf("invalid comparison operator: %d", int(cop))
+		return syserr.ErrInvalidArgument
 	}
 }
 
 // newComparison creates a new comparison operation.
-func newComparison(sreg uint8, op int, data []byte) (*comparison, error) {
+func newComparison(sreg uint8, op int, data []byte) (*comparison, *syserr.Error) {
 	if isVerdictRegister(sreg) {
-		return nil, fmt.Errorf("comparison operation cannot use verdict register as source")
+		return nil, syserr.ErrInvalidArgument
 	}
 	bytesData := newBytesData(data)
 	if err := bytesData.validateRegister(sreg); err != nil {

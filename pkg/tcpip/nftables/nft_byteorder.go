@@ -19,6 +19,7 @@ import (
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
@@ -54,35 +55,35 @@ func (bop byteorderOp) String() string {
 }
 
 // validateByteorderOp ensures the byteorder operator is valid.
-func validateByteorderOp(bop byteorderOp) error {
+func validateByteorderOp(bop byteorderOp) *syserr.Error {
 	switch bop {
 	// Supported operators.
 	case linux.NFT_BYTEORDER_NTOH, linux.NFT_BYTEORDER_HTON:
 		return nil
 	default:
-		return fmt.Errorf("invalid byteorder operator: %d", int(bop))
+		return syserr.ErrInvalidArgument
 	}
 }
 
 // newByteorder creates a new byteorder operation.
-func newByteorder(sreg, dreg uint8, bop byteorderOp, blen, size uint8) (*byteorder, error) {
+func newByteorder(sreg, dreg uint8, bop byteorderOp, blen, size uint8) (*byteorder, *syserr.Error) {
 	if isVerdictRegister(sreg) || isVerdictRegister(dreg) {
-		return nil, fmt.Errorf("byteorder operation cannot use verdict register")
+		return nil, syserr.ErrInvalidArgument
 	}
 	if err := validateByteorderOp(bop); err != nil {
 		return nil, err
 	}
 	if blen > linux.NFT_REG_SIZE {
-		return nil, fmt.Errorf("byteorder operation cannot have length greater than the max register size of %d bytes", linux.NFT_REG_SIZE)
+		return nil, syserr.ErrInvalidArgument
 	}
 	if (is4ByteRegister(sreg) || is4ByteRegister(dreg)) && blen > linux.NFT_REG32_SIZE {
-		return nil, fmt.Errorf("byteorder operation cannot have length greater than the max register size of %d bytes", linux.NFT_REG32_SIZE)
+		return nil, syserr.ErrInvalidArgument
 	}
 	if size > blen {
-		return nil, fmt.Errorf("byteorder operation cannot have size greater than length")
+		return nil, syserr.ErrInvalidArgument
 	}
 	if size != 2 && size != 4 && size != 8 {
-		return nil, fmt.Errorf("byteorder operation size must be 2, 4, or 8 bytes")
+		return nil, syserr.ErrInvalidArgument
 	}
 	return &byteorder{sreg: sreg, dreg: dreg, bop: bop, blen: blen, size: size}, nil
 }

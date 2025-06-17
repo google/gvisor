@@ -48,6 +48,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/rand"
+	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
@@ -102,9 +103,10 @@ func AfProtocol(f stack.AddressFamily) uint8 {
 }
 
 // validateAddressFamily ensures the family address is valid (within bounds).
-func validateAddressFamily(family stack.AddressFamily) error {
+func validateAddressFamily(family stack.AddressFamily) *syserr.Error {
+	// From net/netfilter/nf_tables_api.c:nf_tables_newtable
 	if family < 0 || family >= stack.NumAFs {
-		return fmt.Errorf("invalid address family: %d", int(family))
+		return syserr.ErrNotSupported
 	}
 	return nil
 }
@@ -121,24 +123,26 @@ var supportedHooks [stack.NumAFs][]stack.NFHook = [stack.NumAFs][]stack.NFHook{
 
 // validateHook ensures the hook is within bounds and supported for the given
 // address family.
-func validateHook(hook stack.NFHook, family stack.AddressFamily) error {
+func validateHook(hook stack.NFHook, family stack.AddressFamily) *syserr.Error {
 	if hook >= stack.NFNumHooks {
-		return fmt.Errorf("invalid hook: %d", int(hook))
+		return syserr.ErrInvalidArgument
 	}
 	if slices.Contains(supportedHooks[family], hook) {
 		return nil
 	}
 
-	return fmt.Errorf("hook %v is not valid for address family %v", hook, family)
+	// The hook is not supported for the given address family.
+	return syserr.ErrNotSupported
 }
 
 // NFTables represents the nftables state for all address families.
 // Note: unlike iptables, nftables doesn't start with any initialized tables.
 type NFTables struct {
-	filters   [stack.NumAFs]*addressFamilyFilter // Filters for each address family.
-	clock     tcpip.Clock                        // Clock for timing evaluations.
-	startTime time.Time                          // Time NFTables object was created.
-	rng       rand.RNG                           // Random number generator.
+	filters            [stack.NumAFs]*addressFamilyFilter // Filters for each address family.
+	clock              tcpip.Clock                        // Clock for timing evaluations.
+	startTime          time.Time                          // Time NFTables object was created.
+	rng                rand.RNG                           // Random number generator.
+	tableHandleCounter atomicbitops.Uint64                // Table handle counter.
 }
 
 // Ensures NFTables implements the NFTablesInterface.
@@ -175,12 +179,19 @@ type Table struct {
 	// chains is a map of chains for each table.
 	chains map[string]*Chain
 
-	// flags is the set of optional flags for the table.
+	// flagSet is the set of optional flags for the table.
 	// Note: currently nftables only has the single Dormant flag.
 	flagSet map[TableFlag]struct{}
 
-	// comment is the optional comment for the table.
-	comment string
+	// handle is the id of the table.
+	handle uint64
+
+	// owner is the port id of the table's owner, if it is specified.
+	owner uint32
+
+	// userData is the user-specified metadata for the table. This is not used
+	// by the kernel, but rather userspace applications like nft binary.
+	userData []byte
 }
 
 // hookFunctionStack represents the list of base chains for a specific hook.
@@ -197,6 +208,9 @@ const (
 	// TableFlagDormant is set if the table is dormant. Dormant tables are not
 	// evaluated by the kernel.
 	TableFlagDormant TableFlag = iota
+	// TableFlagOwner is set if the table has an owner. The owner is the port
+	// where the table is created.
+	TableFlagOwner
 )
 
 // Chain represents a single chain as a list of rules.
@@ -350,7 +364,7 @@ func NewIntPriority(value int) Priority {
 // NewStandardPriority creates a new Priority object given a standard priority
 // name, returning an error if the standard priority name is not compatible with
 // the given address family and hook.
-func NewStandardPriority(name string, family stack.AddressFamily, hook stack.NFHook) (Priority, error) {
+func NewStandardPriority(name string, family stack.AddressFamily, hook stack.NFHook) (Priority, *syserr.Error) {
 	// Validates address family and hook first.
 	if err := validateAddressFamily(family); err != nil {
 		return Priority{}, err
@@ -361,22 +375,22 @@ func NewStandardPriority(name string, family stack.AddressFamily, hook stack.NFH
 
 	// Ensures the standard priority name is set.
 	if name == "" {
-		return Priority{}, fmt.Errorf("standard priority name cannot be empty")
+		return Priority{}, syserr.ErrInvalidArgument
 	}
 
 	// Looks up standard priority name in the standard priority matrix.
 	familyMatrix, exists := standardPriorityMatrix[family]
 	if !exists {
-		return Priority{}, fmt.Errorf("standard priority names are not available for address family %v", family)
+		return Priority{}, syserr.ErrNoFileOrDir
 	}
 	sp, exists := familyMatrix[name]
 	if !exists {
-		return Priority{}, fmt.Errorf("standard priority name '%s' is not compatible with address family %v", name, family)
+		return Priority{}, syserr.ErrNoFileOrDir
 	}
 
 	// Checks for hook compatibility.
 	if !slices.Contains(sp.hooks, hook) {
-		return Priority{}, fmt.Errorf("standard priority %s is not compatible with hook %v", name, hook)
+		return Priority{}, syserr.ErrNotSupported
 	}
 
 	return Priority{value: sp.value, standardPriorityName: name}, nil
@@ -467,9 +481,9 @@ var spmIP = map[string]standardPriority{ // from uapi/linux/netfilter_ipv4.h
 // compatibility of the set base chain type, hook, and priority, and the given
 // address family.
 // Note: errors if the provided base chain info is nil.
-func validateBaseChainInfo(info *BaseChainInfo, family stack.AddressFamily) error {
+func validateBaseChainInfo(info *BaseChainInfo, family stack.AddressFamily) *syserr.Error {
 	if info == nil {
-		return fmt.Errorf("base chain info is nil")
+		return syserr.ErrInvalidArgument
 	}
 
 	// Validates the hook.
@@ -479,13 +493,13 @@ func validateBaseChainInfo(info *BaseChainInfo, family stack.AddressFamily) erro
 
 	// Validates the base chain type.
 	if info.BcType < 0 || info.BcType >= NumBaseChainTypes {
-		return fmt.Errorf("invalid base chain type: %d", int(info.BcType))
+		return syserr.ErrInvalidArgument
 	}
 	if !slices.Contains(supportedAFsForBaseChainTypes[info.BcType], family) {
-		return fmt.Errorf("base chain type %v is not valid for address family %v", info.BcType, family)
+		return syserr.ErrNotSupported
 	}
 	if !slices.Contains(supportedHooksForBaseChainTypes[info.BcType], info.Hook) {
-		return fmt.Errorf("base chain type %v is not valid for hook %v", info.BcType, info.Hook)
+		return syserr.ErrNotSupported
 	}
 
 	// Priority assumed to be valid since it's a result of a constructor call.
@@ -558,7 +572,7 @@ type registerData interface {
 
 	// validateRegister ensures the register is compatible with the data type,
 	// returning an error otherwise.
-	validateRegister(reg uint8) error
+	validateRegister(reg uint8) *syserr.Error
 
 	// storeData sets the data in the destination register, panicking if the
 	// register is not valid for the data type.
@@ -594,9 +608,9 @@ func (rd verdictData) equal(other registerData) bool {
 }
 
 // validateRegister ensures the register is compatible with VerdictData.
-func (rd verdictData) validateRegister(reg uint8) error {
+func (rd verdictData) validateRegister(reg uint8) *syserr.Error {
 	if !isVerdictRegister(reg) {
-		return fmt.Errorf("verdict can only be stored in verdict register")
+		return syserr.ErrInvalidArgument
 	}
 	return nil
 }
@@ -643,12 +657,12 @@ func (rd bytesData) equal(other registerData) bool {
 }
 
 // validateRegister ensures the register is compatible with this bytes data.
-func (rd bytesData) validateRegister(reg uint8) error {
+func (rd bytesData) validateRegister(reg uint8) *syserr.Error {
 	if isVerdictRegister(reg) {
-		return fmt.Errorf("data cannot be stored in verdict register")
+		return syserr.ErrInvalidArgument
 	}
 	if is4ByteRegister(reg) && len(rd.data) > linux.NFT_REG32_SIZE {
-		return fmt.Errorf("%d-byte data cannot be stored in %d-byte register", len(rd.data), linux.NFT_REG32_SIZE)
+		return syserr.ErrInvalidArgument
 	}
 	// 16-byte register can be used for any data (guaranteed to be <= 16 bytes)
 	return nil
