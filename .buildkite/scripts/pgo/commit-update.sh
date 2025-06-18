@@ -16,33 +16,14 @@
 
 set -euxo pipefail
 
-if [[ "$(git status --porcelain | wc -l)" == 0 ]]; then
-  echo "No changes to runsc profiles." >&2
-  exit 0
-fi
-
 today="$(date +"%Y-%m-%d")"
 repo_url="https://github.com/google/gvisor.git"
 pgo_branch_name="pgo/update-${today}"
-
-# If the remote branch already exists, do nothing.
-existing_remote="$(git ls-remote --heads "$repo_url" "refs/heads/${pgo_branch_name}" || true)"
-if [[ -n "$existing_remote" ]]; then
-  echo "Remote branch '$pgo_branch_name' already exists, skipping." >&2
-  exit 0
-fi
 
 # GitHub CLI authentication.
 gh --version
 gh auth login --with-token < "$HOME/.github-token"
 gh auth setup-git
-
-# If there is already an open PR for PGO update, do nothing.
-if [[ "$(gh pr --repo="$repo_url" list --label pgo-update --state open --json title --jq length)" -gt 0 ]]; then
-  echo "There is already an open PR for PGO update, skipping." >&2
-  PAGER=cat gh pr --repo="$repo_url" list --label pgo-update --state open
-  exit 0
-fi
 
 # Create new branch for the PR and stages changes in it.
 git stash

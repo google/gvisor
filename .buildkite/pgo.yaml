@@ -23,7 +23,7 @@ steps:
     label: ":arrows_counterclockwise: Refresh PGO profiles (x86_64 Systrap)"
     if: build.branch == "master" && build.tag == null
     commands:
-      - make ARCH=x86_64 benchmark-refresh-pgo BENCHMARKS_PLATFORMS=systrap
-      - ./.buildkite/scripts/pgo/commit-update.sh
+      - ./.buildkite/scripts/pgo/maybe-skip.sh --tolerate-no-profile-changes make ARCH=x86_64 benchmark-refresh-pgo BENCHMARKS_PLATFORMS=systrap
+      - ./.buildkite/scripts/pgo/mabe-skip.sh ./.buildkite/scripts/pgo/commit-update.sh
     agents:
       arch: "amd64"
