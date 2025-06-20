@@ -124,6 +124,29 @@ const (
 	NFT_MSG_MAX
 )
 
+// NfTableFlags represents table flags that can be set for a table, namely dormant.
+// These correspond to values in include/uapi/linux/netfilter/nf_tables.h.
+const (
+	NFT_TABLE_F_DORMANT = 0x1
+)
+
+// NfTableAttributes represents the netfilter table attributes.
+// These correspond to values in include/uapi/linux/netfilter/nf_tables.h.
+const (
+	NFTA_TABLE_UNSPEC uint16 = iota
+	NFTA_TABLE_NAME
+	NFTA_TABLE_FLAGS
+	NFTA_TABLE_USE
+	NFTA_TABLE_HANDLE
+	NFTA_TABLE_PAD
+	NFTA_TABLE_USERDATA
+	NFTA_TABLE_OWNER
+	__NFTA_TABLE_MAX
+)
+
+// NFTA_TABLE_MAX is the maximum netfilter table attribute.
+const NFTA_TABLE_MAX = __NFTA_TABLE_MAX - 1
+
 // Nf table relational operators.
 // Used by the nft comparison operation to compare values in registers.
 // These correspond to enum values in include/uapi/linux/netfilter/nf_tables.h.

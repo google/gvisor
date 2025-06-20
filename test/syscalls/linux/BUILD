@@ -137,7 +137,9 @@ cc_library(
     deps = [
         "//test/util:file_descriptor",
         "//test/util:posix_error",
+        "//test/util:save_util",
         "//test/util:socket_util",
+        "//test/util:test_util",
         "@com_google_absl//absl/strings",
     ],
 )
@@ -3502,7 +3504,9 @@ cc_binary(
     linkstatic = 1,
     malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
+        ":socket_netlink_netfilter_util",
         ":socket_netlink_util",
+        "//test/util:capability_util",
         "//test/util:file_descriptor",
         "//test/util:posix_error",
         "//test/util:socket_util",
@@ -3682,6 +3686,12 @@ cc_library(
         "@com_google_absl//absl/strings",
     ],
     alwayslink = 1,
+)
+
+cc_library(
+    name = "socket_netlink_netfilter_util",
+    srcs = ["socket_netlink_netfilter_util.cc"],
+    hdrs = ["socket_netlink_netfilter_util.h"],
 )
 
 cc_binary(

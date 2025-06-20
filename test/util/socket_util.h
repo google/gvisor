@@ -24,6 +24,9 @@
 #include <sys/types.h>
 #include <sys/un.h>
 
+#include <cstddef>
+#include <cstdint>
+#include <cstdio>
 #include <functional>
 #include <memory>
 #include <string>
@@ -34,6 +37,7 @@
 #include "absl/strings/str_format.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/posix_error.h"
+#include "test/util/save_util.h"
 #include "test/util/test_util.h"
 
 namespace gvisor {

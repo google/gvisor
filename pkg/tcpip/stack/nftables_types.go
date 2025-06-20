@@ -117,8 +117,8 @@ const (
 	NumAFs
 )
 
-// addressFamilyStrings maps address families to their string representation.
-var addressFamilyStrings = map[AddressFamily]string{
+// AddressFamilyStrings maps address families to their string representation.
+var AddressFamilyStrings = map[AddressFamily]string{
 	IP:     "IPv4",
 	IP6:    "IPv6",
 	Inet:   "Internet (Both IPv4/IPv6)",
@@ -137,7 +137,7 @@ func ValidateAddressFamily(family AddressFamily) error {
 
 // String for AddressFamily returns the name of the address family.
 func (f AddressFamily) String() string {
-	if af, ok := addressFamilyStrings[f]; ok {
+	if af, ok := AddressFamilyStrings[f]; ok {
 		return af
 	}
 	panic(fmt.Sprintf("invalid address family: %d", int(f)))

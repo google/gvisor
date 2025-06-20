@@ -528,7 +528,7 @@ func TestEvaluateImmediateVerdict(t *testing.T) {
 			// Sets up an NFTables object with a base chain (for 2 rules) and another
 			// target chain (for 1 rule).
 			nf := newNFTablesStd()
-			tab, err := nf.AddTable(arbitraryFamily, "test", "test table", false)
+			tab, err := nf.AddTable(arbitraryFamily, "test", false)
 			if err != nil {
 				t.Fatalf("unexpected error for AddTable: %v", err)
 			}
@@ -592,7 +592,7 @@ func TestEvaluateImmediateBytesData(t *testing.T) {
 			t.Run(tname, func(t *testing.T) {
 				// Sets up an NFTables object with a base chain with policy accept.
 				nf := newNFTablesStd()
-				tab, err := nf.AddTable(arbitraryFamily, "test", "test table", false)
+				tab, err := nf.AddTable(arbitraryFamily, "test", false)
 				if err != nil {
 					t.Fatalf("unexpected error for AddTable: %v", err)
 				}
@@ -1078,7 +1078,7 @@ func TestEvaluateComparison(t *testing.T) {
 		t.Run(test.tname, func(t *testing.T) {
 			// Sets up an NFTables object with a single table, chain, and rule.
 			nf := newNFTablesStd()
-			tab, err := nf.AddTable(arbitraryFamily, "test", "test table", false)
+			tab, err := nf.AddTable(arbitraryFamily, "test", false)
 			if err != nil {
 				t.Fatalf("unexpected error for AddTable: %v", err)
 			}
@@ -1315,7 +1315,7 @@ func TestEvaluateRanged(t *testing.T) {
 		t.Run(test.tname, func(t *testing.T) {
 			// Sets up an NFTables object with a single table, chain, and rule.
 			nf := newNFTablesStd()
-			tab, err := nf.AddTable(arbitraryFamily, "test", "test table", false)
+			tab, err := nf.AddTable(arbitraryFamily, "test", false)
 			if err != nil {
 				t.Fatalf("unexpected error for AddTable: %v", err)
 			}
@@ -1549,7 +1549,7 @@ func TestEvaluatePayloadLoad(t *testing.T) {
 		t.Run(test.tname, func(t *testing.T) {
 			// Sets up an NFTables object with a single table, chain, and rule.
 			nf := newNFTablesStd()
-			tab, err := nf.AddTable(arbitraryFamily, "test", "test table", false)
+			tab, err := nf.AddTable(arbitraryFamily, "test", false)
 			if err != nil {
 				t.Fatalf("unexpected error for AddTable: %v", err)
 			}
@@ -2053,7 +2053,7 @@ func TestEvaluatePayloadSet(t *testing.T) {
 		t.Run(test.tname, func(t *testing.T) {
 			// Sets up an NFTables object with a single table, chain, and rule.
 			nf := newNFTablesStd()
-			tab, err := nf.AddTable(arbitraryFamily, "test", "test table", false)
+			tab, err := nf.AddTable(arbitraryFamily, "test", false)
 			if err != nil {
 				t.Fatalf("unexpected error for AddTable: %v", err)
 			}
@@ -2238,7 +2238,7 @@ func TestEvaluateBitwise(t *testing.T) {
 		t.Run(test.tname, func(t *testing.T) {
 			// Sets up an NFTables object with a single table, chain, and rule.
 			nf := newNFTablesStd()
-			tab, err := nf.AddTable(arbitraryFamily, "test", "test table", false)
+			tab, err := nf.AddTable(arbitraryFamily, "test", false)
 			if err != nil {
 				t.Fatalf("unexpected error for AddTable: %v", err)
 			}
@@ -2304,7 +2304,7 @@ func TestEvaluateCounter(t *testing.T) {
 	t.Run("counter increment tests", func(t *testing.T) {
 		// Sets up an NFTables object with a base chain with policy accept.
 		nf := newNFTablesStd()
-		tab, err := nf.AddTable(arbitraryFamily, "test", "test table", false)
+		tab, err := nf.AddTable(arbitraryFamily, "test", false)
 		if err != nil {
 			t.Fatalf("unexpected error for AddTable: %v", err)
 		}
@@ -2372,7 +2372,7 @@ func TestEvaluateLast(t *testing.T) {
 		fakeClock := faketime.NewManualClock()
 		fixedRNG := rand.RNGFrom(&fixedReader{})
 		nf := NewNFTables(fakeClock, fixedRNG)
-		tab, err := nf.AddTable(arbitraryFamily, "test", "test table", false)
+		tab, err := nf.AddTable(arbitraryFamily, "test", false)
 		if err != nil {
 			t.Fatalf("unexpected error for AddTable: %v", err)
 		}
@@ -2499,7 +2499,7 @@ func TestEvaluateRoute(t *testing.T) {
 		t.Run(test.tname, func(t *testing.T) {
 			// Sets up an NFTables object with a single table, chain, and rule.
 			nf := newNFTablesStd()
-			tab, err := nf.AddTable(arbitraryFamily, "test", "test table", false)
+			tab, err := nf.AddTable(arbitraryFamily, "test", false)
 			if err != nil {
 				t.Fatalf("unexpected error for AddTable: %v", err)
 			}
@@ -2740,7 +2740,7 @@ func TestEvaluateByteorder(t *testing.T) {
 		t.Run(test.tname, func(t *testing.T) {
 			// Sets up an NFTables object with a single table, chain, and rule.
 			nf := newNFTablesStd()
-			tab, err := nf.AddTable(arbitraryFamily, "test", "test table", false)
+			tab, err := nf.AddTable(arbitraryFamily, "test", false)
 			if err != nil {
 				t.Fatalf("unexpected error for AddTable: %v", err)
 			}
@@ -2922,7 +2922,7 @@ func TestEvaluateMetaLoad(t *testing.T) {
 			// Using Manual Clock sets time.Now to Unix Epoch which fixes rng seed!
 			nf := NewNFTables(fakeClock, rand.RNGFrom(&fixedReader{}))
 
-			tab, err := nf.AddTable(arbitraryFamily, "test", "test table", false)
+			tab, err := nf.AddTable(arbitraryFamily, "test", false)
 			if err != nil {
 				t.Fatalf("unexpected error for AddTable: %v", err)
 			}
@@ -3012,7 +3012,7 @@ func TestEvaluateMetaSet(t *testing.T) {
 		t.Run(test.tname, func(t *testing.T) {
 			// Sets up an NFTables object with a single table, chain, and rule.
 			nf := newNFTablesStd()
-			tab, err := nf.AddTable(arbitraryFamily, "test", "test table", false)
+			tab, err := nf.AddTable(arbitraryFamily, "test", false)
 			if err != nil {
 				t.Fatalf("unexpected error for AddTable: %v", err)
 			}
@@ -3470,7 +3470,7 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 		t.Run(test.tname, func(t *testing.T) {
 			// Sets up an NFTables object based on test struct.
 			nf := newNFTablesStd()
-			tab, err := nf.AddTable(arbitraryFamily, "test", "test table", false)
+			tab, err := nf.AddTable(arbitraryFamily, "test", false)
 			if err != nil {
 				t.Fatalf("unexpected error for AddTable: %v", err)
 			}
@@ -3581,7 +3581,7 @@ func TestMaxNestedJumps(t *testing.T) {
 		t.Run(test.tname, func(t *testing.T) {
 			// Sets up chains of nested jumps or gotos.
 			nf := newNFTablesStd()
-			tab, err := nf.AddTable(arbitraryFamily, "test", "test table", false)
+			tab, err := nf.AddTable(arbitraryFamily, "test", false)
 			if err != nil {
 				t.Fatalf("unexpected error for AddTable: %v", err)
 			}
