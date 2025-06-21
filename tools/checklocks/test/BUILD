@@ -25,6 +25,7 @@ go_library(
         "return.go",
         "rwmutex.go",
         "test.go",
+        "generics.go",
     ],
     # This ensures that there are no dependencies, since we want to explicitly
     # control expected failures for analysis.
