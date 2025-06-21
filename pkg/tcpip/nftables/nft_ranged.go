@@ -19,6 +19,7 @@ import (
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
@@ -59,22 +60,22 @@ func (rop rngOp) String() string {
 }
 
 // validateRangeOp ensures the range operator is valid.
-func validateRangeOp(rop rngOp) error {
+func validateRangeOp(rop rngOp) *syserr.Error {
 	switch rop {
 	case linux.NFT_RANGE_EQ, linux.NFT_RANGE_NEQ:
 		return nil
 	default:
-		return fmt.Errorf("invalid range operator: %d", int(rop))
+		return syserr.ErrInvalidArgument
 	}
 }
 
 // newRanged creates a new ranged operation.
-func newRanged(sreg uint8, op int, low, high []byte) (*ranged, error) {
+func newRanged(sreg uint8, op int, low, high []byte) (*ranged, *syserr.Error) {
 	if isVerdictRegister(sreg) {
-		return nil, fmt.Errorf("comparison operation cannot use verdict register as source")
+		return nil, syserr.ErrInvalidArgument
 	}
 	if len(low) != len(high) {
-		return nil, fmt.Errorf("upper and lower bounds for ranged operation must be the same length")
+		return nil, syserr.ErrInvalidArgument
 	}
 	lowData := newBytesData(low)
 	if err := lowData.validateRegister(sreg); err != nil {
