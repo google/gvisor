@@ -18,8 +18,13 @@
 #include <sys/socket.h>
 // socket.h has to be included before if_arp.h.
 #include <linux/if_arp.h>
+#include <linux/netfilter/nfnetlink.h>
 #include <linux/netlink.h>
 #include <linux/rtnetlink.h>
+
+#include <cstddef>
+#include <cstdint>
+#include <functional>
 
 #include "test/util/file_descriptor.h"
 #include "test/util/posix_error.h"
@@ -64,6 +69,20 @@ PosixError NetlinkRequestAckOrError(const FileDescriptor& fd, uint32_t seq,
 const struct rtattr* FindRtAttr(const struct nlmsghdr* hdr,
                                 const struct ifinfomsg* msg, int16_t attr);
 
+// Helper function to make a netlink message type from a subsystem ID and a
+// message type.
+uint16_t MakeNetlinkMsgType(uint8_t subsys_id, uint8_t msg_type);
+
+// Helper function to initialize a netlink header.
+void InitNetlinkHdr(struct nlmsghdr* hdr, uint32_t msg_len, uint16_t msg_type,
+                    uint32_t seq, uint16_t flags);
+
+// Helper function to initialize a netlink attribute.
+void InitNetlinkAttr(struct nlattr* attr, int payload_size, uint16_t attr_type);
+
+// Helper function to find a netlink attribute in a message.
+const struct nfattr* FindNfAttr(const struct nlmsghdr* hdr,
+                                const struct nfgenmsg* msg, int16_t attr);
 }  // namespace testing
 }  // namespace gvisor
 

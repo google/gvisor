@@ -19,10 +19,19 @@
 #include <linux/rtnetlink.h>
 #include <sys/socket.h>
 
+#include <cerrno>
+#include <cstddef>
+#include <cstdint>
+#include <functional>
+#include <utility>
 #include <vector>
 
 #include "absl/strings/str_cat.h"
+#include "test/util/file_descriptor.h"
+#include "test/util/posix_error.h"
+#include "test/util/save_util.h"
 #include "test/util/socket_util.h"
+#include "test/util/test_util.h"
 
 namespace gvisor {
 namespace testing {
@@ -189,6 +198,46 @@ const struct rtattr* FindRtAttr(const struct nlmsghdr* hdr,
   for (; RTA_OK(rta, attrlen); rta = RTA_NEXT(rta, attrlen)) {
     if (rta->rta_type == attr) {
       return rta;
+    }
+  }
+  return nullptr;
+}
+
+uint16_t MakeNetlinkMsgType(uint8_t subsys_id, uint8_t msg_type) {
+  return (static_cast<uint16_t>(subsys_id) << 8) |
+         static_cast<uint16_t>(msg_type);
+}
+
+// Helper function to initialize a netlink header.
+void InitNetlinkHdr(struct nlmsghdr* hdr, uint32_t msg_len, uint16_t msg_type,
+                    uint32_t seq, uint16_t flags) {
+  hdr->nlmsg_len = msg_len;
+  hdr->nlmsg_type = msg_type;
+  hdr->nlmsg_flags = flags;
+  hdr->nlmsg_seq = seq;
+}
+
+// Helper function to initialize a netlink attribute.
+void InitNetlinkAttr(struct nlattr* attr, int payload_size,
+                     uint16_t attr_type) {
+  attr->nla_len = NLA_HDRLEN + payload_size;
+  attr->nla_type = attr_type;
+}
+
+// Helper function to find a netlink attribute in a message.
+const struct nfattr* FindNfAttr(const struct nlmsghdr* hdr,
+                                const struct nfgenmsg* msg, int16_t attr) {
+  // The space dedicated to the nlmsghdr and nfgenmsg headers.
+  const int nf_space = NLMSG_SPACE(sizeof(nfgenmsg));
+
+  // The hdr->nlmsg_len = nf_space + attribute payload.
+  int attrlen = hdr->nlmsg_len - nf_space;
+  // Ensure nf_space is aligned when traversing to the attributes.
+  const struct nfattr* nfa = reinterpret_cast<const struct nfattr*>(
+      reinterpret_cast<const uint8_t*>(hdr) + NLMSG_ALIGN(nf_space));
+  for (; NFA_OK(nfa, attrlen); nfa = NFA_NEXT(nfa, attrlen)) {
+    if (nfa->nfa_type == attr) {
+      return nfa;
     }
   }
   return nullptr;

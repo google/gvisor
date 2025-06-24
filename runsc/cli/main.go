@@ -94,7 +94,8 @@ func Main() {
 		util.Fatalf("%s", err.Error())
 	}
 
-	if conf.Nftables {
+	// NFtables is only supported for netstack.
+	if (conf.Network == config.NetworkNone || conf.Network == config.NetworkSandbox) && conf.Nftables {
 		nftables.EnableNFTables()
 	}
 

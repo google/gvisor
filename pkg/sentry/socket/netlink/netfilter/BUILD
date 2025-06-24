@@ -12,10 +12,14 @@ go_library(
     deps = [
         "//pkg/abi/linux",
         "//pkg/context",
+        "//pkg/log",
+        "//pkg/sentry/inet",
         "//pkg/sentry/kernel",
         "//pkg/sentry/socket/netlink",
         "//pkg/sentry/socket/netlink/nlmsg",
+        "//pkg/sentry/socket/netstack",
         "//pkg/syserr",
         "//pkg/tcpip/nftables",
+        "//pkg/tcpip/stack",
     ],
 )

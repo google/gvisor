@@ -71,6 +71,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/network/arp"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
+	"gvisor.dev/gvisor/pkg/tcpip/nftables"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/icmp"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/raw"
@@ -1594,6 +1595,10 @@ func newEmptySandboxNetworkStack(clock tcpip.Clock, allowPacketEndpointWrite boo
 		AllowPacketEndpointWrite: allowPacketEndpointWrite,
 		DefaultIPTables:          netfilter.DefaultLinuxTables,
 	})}
+
+	if nftables.IsNFTablesEnabled() {
+		s.Stack.SetNFTables(nftables.NewNFTables(clock, s.Stack.SecureRNG()))
+	}
 
 	// Enable SACK Recovery.
 	{

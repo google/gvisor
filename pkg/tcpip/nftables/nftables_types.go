@@ -178,9 +178,6 @@ type Table struct {
 	// flags is the set of optional flags for the table.
 	// Note: currently nftables only has the single Dormant flag.
 	flagSet map[TableFlag]struct{}
-
-	// comment is the optional comment for the table.
-	comment string
 }
 
 // hookFunctionStack represents the list of base chains for a specific hook.
