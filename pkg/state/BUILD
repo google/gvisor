@@ -19,14 +19,14 @@ go_template_instance(
 )
 
 go_template_instance(
-    name = "complete_list",
-    out = "complete_list.go",
+    name = "ods_list",
+    out = "ods_list.go",
     package = "state",
-    prefix = "complete",
+    prefix = "ods",
     template = "//pkg/ilist:generic_list",
     types = {
-        "Element": "*objectDecodeState",
-        "Linker": "*objectDecodeState",
+        "Element": "*odsListElem",
+        "Linker": "*odsListElem",
     },
 )
 
@@ -66,12 +66,12 @@ go_library(
     srcs = [
         "addr_range.go",
         "addr_set.go",
-        "complete_list.go",
         "decode.go",
         "decode_unsafe.go",
         "deferred_list.go",
         "encode.go",
         "encode_unsafe.go",
+        "ods_list.go",
         "state.go",
         "state_norace.go",
         "state_race.go",
