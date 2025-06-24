@@ -19,6 +19,7 @@ import (
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
@@ -61,7 +62,7 @@ func (key routeKey) String() string {
 }
 
 // validateRouteKey ensures the route key is valid.
-func validateRouteKey(key routeKey) error {
+func validateRouteKey(key routeKey) *syserr.Error {
 	switch key {
 	// Supported route keys.
 	case linux.NFT_RT_NEXTHOP4, linux.NFT_RT_NEXTHOP6, linux.NFT_RT_TCPMSS:
@@ -74,18 +75,18 @@ func validateRouteKey(key routeKey) error {
 		// the time of evaluation. In the worst case, we don't want the user to
 		// initialize a route with this key and then have it silently break and
 		// yield a difficult-to-debug error.
-		return fmt.Errorf("traffic class id not supported")
+		return syserr.ErrNotSupported
 	case linux.NFT_RT_XFRM:
-		return fmt.Errorf("xfrm transformation not supported")
+		return syserr.ErrNotSupported
 	default:
-		return fmt.Errorf("invalid route key: %d", int(key))
+		return syserr.ErrInvalidArgument
 	}
 }
 
 // newRoute creates a new route operation.
-func newRoute(key routeKey, dreg uint8) (*route, error) {
+func newRoute(key routeKey, dreg uint8) (*route, *syserr.Error) {
 	if isVerdictRegister(dreg) {
-		return nil, fmt.Errorf("route operation cannot use verdict register as destination")
+		return nil, syserr.ErrInvalidArgument
 	}
 	if err := validateRouteKey(key); err != nil {
 		return nil, err

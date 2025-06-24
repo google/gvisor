@@ -16,6 +16,18 @@ package linux
 
 // This file contains constants required to support nf_tables.
 
+// Name length constants for nf_table structures. These correspond to values in
+// include/uapi/linux/netfilter/nf_tables.h.
+const (
+	NFT_NAME_MAXLEN      = 256
+	NFT_TABLE_MAXNAMELEN = NFT_NAME_MAXLEN
+	NFT_CHAIN_MAXNAMELEN = NFT_NAME_MAXLEN
+	NFT_SET_MAXNAMELEN   = NFT_NAME_MAXLEN
+	NFT_OBJ_MAXNAMELEN   = NFT_NAME_MAXLEN
+	NFT_USERDATA_MAXLEN  = 256
+	NFT_OSF_MAXGENRELEN  = 16
+)
+
 // 16-byte Registers that can be used to maintain state for rules.
 // These correspond to values in include/uapi/linux/netfilter/nf_tables.h.
 const (
@@ -123,6 +135,32 @@ const (
 	NFT_MSG_GETSETELEM_RESET
 	NFT_MSG_MAX
 )
+
+// NfTableFlags represents table flags that can be set for a table, namely dormant.
+// These correspond to values in include/uapi/linux/netfilter/nf_tables.h.
+const (
+	NFT_TABLE_F_DORMANT uint32 = 0x1
+	NFT_TABLE_F_OWNER          = 0x2
+	NFT_TABLE_F_PERSIST        = 0x4
+	NFT_TABLE_F_MASK           = NFT_TABLE_F_DORMANT | NFT_TABLE_F_OWNER | NFT_TABLE_F_PERSIST
+)
+
+// NfTableAttributes represents the netfilter table attributes.
+// These correspond to values in include/uapi/linux/netfilter/nf_tables.h.
+const (
+	NFTA_TABLE_UNSPEC uint16 = iota
+	NFTA_TABLE_NAME
+	NFTA_TABLE_FLAGS
+	NFTA_TABLE_USE
+	NFTA_TABLE_HANDLE
+	NFTA_TABLE_PAD
+	NFTA_TABLE_USERDATA
+	NFTA_TABLE_OWNER
+	__NFTA_TABLE_MAX
+)
+
+// NFTA_TABLE_MAX is the maximum netfilter table attribute.
+const NFTA_TABLE_MAX = __NFTA_TABLE_MAX - 1
 
 // Nf table relational operators.
 // Used by the nft comparison operation to compare values in registers.

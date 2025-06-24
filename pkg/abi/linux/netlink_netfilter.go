@@ -35,6 +35,8 @@ const (
 )
 
 // NetFilterGenMsg describes the netlink netfilter genmsg message, from uapi/linux/netfilter/nfnetlink.h.
+//
+// +marshal
 type NetFilterGenMsg struct {
 	Family     uint8
 	Version    uint8
