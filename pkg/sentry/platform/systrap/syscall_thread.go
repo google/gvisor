@@ -224,7 +224,6 @@ func (t *syscallThread) syscall(sysno uintptr, args ...arch.SyscallArgument) (ui
 			return 0, errDeadSubprocess
 		}
 	} else {
-
 		// Notify the syscall thread about a new syscall request.
 		atomic.AddUint32(&sentryMsg.state, 1)
 		futexWakeUint32(&sentryMsg.state)

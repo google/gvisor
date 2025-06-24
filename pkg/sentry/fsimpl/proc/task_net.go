@@ -687,7 +687,7 @@ func (d *netSnmpData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 		}
 		if err := d.stack.Statistics(stat, line.prefix); err != nil {
 			if linuxerr.Equals(linuxerr.EOPNOTSUPP, err) {
-				log.Infof("Failed to retrieve %s of /proc/net/snmp: %v", line.prefix, err)
+				log.Debugf("Failed to retrieve %s of /proc/net/snmp: %v", line.prefix, err)
 			} else {
 				log.Warningf("Failed to retrieve %s of /proc/net/snmp: %v", line.prefix, err)
 			}

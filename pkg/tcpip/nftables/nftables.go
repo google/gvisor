@@ -24,6 +24,8 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
+// TODO: b/421437663 - Refactor functions to return a POSIX syserr
+
 //
 // Interface-Related Methods
 //
@@ -291,7 +293,7 @@ func (nf *NFTables) GetTable(family stack.AddressFamily, tableName string) (*Tab
 // Note: if the table already exists, the existing table is returned without any
 // modifications.
 // Note: Table initialized as not dormant.
-func (nf *NFTables) AddTable(family stack.AddressFamily, name string, comment string,
+func (nf *NFTables) AddTable(family stack.AddressFamily, name string,
 	errorOnDuplicate bool) (*Table, error) {
 	// Ensures address family is valid.
 	if err := validateAddressFamily(family); err != nil {
@@ -325,7 +327,6 @@ func (nf *NFTables) AddTable(family stack.AddressFamily, name string, comment st
 		name:     name,
 		afFilter: nf.filters[family],
 		chains:   make(map[string]*Chain),
-		comment:  comment,
 		flagSet:  make(map[TableFlag]struct{}),
 	}
 	tableMap[name] = t
@@ -337,8 +338,8 @@ func (nf *NFTables) AddTable(family stack.AddressFamily, name string, comment st
 // but also returns an error if a table by the same name already exists.
 // Note: this interface mirrors the difference between the create and add
 // commands within the nft binary.
-func (nf *NFTables) CreateTable(family stack.AddressFamily, name string, comment string) (*Table, error) {
-	return nf.AddTable(family, name, comment, true)
+func (nf *NFTables) CreateTable(family stack.AddressFamily, name string) (*Table, error) {
+	return nf.AddTable(family, name, true)
 }
 
 // DeleteTable deletes the specified table from the NFTables object returning
@@ -434,16 +435,6 @@ func (t *Table) GetName() string {
 // GetAddressFamily returns the address family of the table.
 func (t *Table) GetAddressFamily() stack.AddressFamily {
 	return t.afFilter.family
-}
-
-// GetComment returns the comment of the table.
-func (t *Table) GetComment() string {
-	return t.comment
-}
-
-// SetComment sets the comment of the table.
-func (t *Table) SetComment(comment string) {
-	t.comment = comment
 }
 
 // IsDormant returns whether the table is dormant.

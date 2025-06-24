@@ -291,7 +291,7 @@ func (w *Watchdog) runTurn() {
 	}
 	w.lastRun = now
 
-	log.Infof("Watchdog starting loop, tasks: %d, discount: %v", len(tasks), discount)
+	log.Debugf("Watchdog starting loop, tasks: %d, discount: %v", len(tasks), discount)
 	for _, t := range tasks {
 		// An offender is a task running inside the kernel for longer than the specified timeout.
 		tstate, lastUpdateTime := t.TaskGoroutineStateTime()
