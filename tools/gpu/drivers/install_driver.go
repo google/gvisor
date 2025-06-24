@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"runtime"
 	"sort"
 	"strings"
 
@@ -34,25 +35,36 @@ import (
 const (
 	nvidiaSMIPath       = "/usr/bin/nvidia-smi"
 	nvidiaUninstallPath = "/usr/bin/nvidia-uninstall"
-	nvidiaBaseURL       = "https://us.download.nvidia.com/tesla/"
+	nvidiaBaseURLX86_64 = "https://us.download.nvidia.com/tesla/%s/NVIDIA-Linux-x86_64-%s.run"
+	nvidiaARM64BaseURL  = "https://us.download.nvidia.com/XFree86/aarch64/%s/NVIDIA-Linux-aarch64-%s.run"
+
+	archARM64 = "arm64"
 )
 
 func init() {
 	nvproxy.Init()
 }
 
+func getNvidiaBaseURL(driverVersion, arch string) string {
+	if arch == archARM64 {
+		return fmt.Sprintf(nvidiaARM64BaseURL, driverVersion, driverVersion)
+	}
+	return fmt.Sprintf(nvidiaBaseURLX86_64, driverVersion, driverVersion)
+}
+
 // Installer handles the logic to install drivers.
 type Installer struct {
 	requestedVersion nvconf.DriverVersion
 	// include functions so they can be mocked in tests.
-	expectedChecksumFunc func(nvconf.DriverVersion) (string, bool)
+	expectedChecksumFunc func(nvconf.DriverVersion) (nvproxy.Checksums, bool)
 	getCurrentDriverFunc func() (nvconf.DriverVersion, error)
-	downloadFunc         func(context.Context, string) (io.ReadCloser, error)
+	downloadFunc         func(context.Context, string, string) (io.ReadCloser, error)
 	installFunc          func(string) error
 }
 
 // NewInstaller returns a driver installer instance.
 func NewInstaller(requestedVersion string, latest bool) (*Installer, error) {
+
 	ret := &Installer{
 		expectedChecksumFunc: nvproxy.ExpectedDriverChecksum,
 		getCurrentDriverFunc: getCurrentDriver,
@@ -69,7 +81,6 @@ func NewInstaller(requestedVersion string, latest bool) (*Installer, error) {
 		}
 		ret.requestedVersion = d
 	}
-
 	return ret, nil
 }
 
@@ -99,7 +110,7 @@ func (i *Installer) MaybeInstall(ctx context.Context) error {
 	}
 
 	log.Infof("Downloading driver: %s", i.requestedVersion)
-	reader, err := i.downloadFunc(ctx, i.requestedVersion.String())
+	reader, err := i.downloadFunc(ctx, i.requestedVersion.String(), runtime.GOARCH)
 	if err != nil {
 		return fmt.Errorf("failed to download driver: %w", err)
 	}
@@ -158,10 +169,16 @@ func (i *Installer) writeAndCheck(f *os.File, reader io.ReadCloser) error {
 		}
 	}
 	gotChecksum := fmt.Sprintf("%x", checksum.Sum(nil))
-	wantChecksum, ok := i.expectedChecksumFunc(i.requestedVersion)
+	c, ok := i.expectedChecksumFunc(i.requestedVersion)
 	if !ok {
 		return fmt.Errorf("requested driver %q is not supported", i.requestedVersion)
 	}
+
+	wantChecksum, err := c.Checksum()
+	if err != nil {
+		return fmt.Errorf("failed to get checksum for driver %q: %v", i.requestedVersion, err)
+	}
+
 	if gotChecksum != wantChecksum {
 		return fmt.Errorf("driver %q checksum mismatch: got %q, want %q", i.requestedVersion, gotChecksum, wantChecksum)
 	}
@@ -218,7 +235,7 @@ func ListSupportedDrivers(outfile string) error {
 	}
 
 	var list []string
-	nvproxy.ForEachSupportDriver(func(version nvconf.DriverVersion, checksum string) {
+	nvproxy.ForEachSupportDriver(func(version nvconf.DriverVersion, _ nvproxy.Checksums) {
 		list = append(list, version.String())
 	})
 	sort.Strings(list)
@@ -229,8 +246,8 @@ func ListSupportedDrivers(outfile string) error {
 }
 
 // ChecksumDriver downloads and returns the SHA265 checksum of the driver.
-func ChecksumDriver(ctx context.Context, driverVersion string) (string, error) {
-	f, err := DownloadDriver(ctx, driverVersion)
+func (i *Installer) ChecksumDriver(ctx context.Context, arch string) (string, error) {
+	f, err := DownloadDriver(ctx, i.requestedVersion.String(), arch)
 	if err != nil {
 		return "", fmt.Errorf("failed to download driver: %w", err)
 	}
@@ -249,14 +266,14 @@ func ChecksumDriver(ctx context.Context, driverVersion string) (string, error) {
 
 // DownloadDriver downloads the requested driver and returns the binary as a []byte so it can be
 // checked before written to disk.
-func DownloadDriver(ctx context.Context, driverVersion string) (io.ReadCloser, error) {
-	url := fmt.Sprintf("%s%s/NVIDIA-Linux-x86_64-%s.run", nvidiaBaseURL, driverVersion, driverVersion)
+func DownloadDriver(ctx context.Context, driverVersion, arch string) (io.ReadCloser, error) {
+	url := getNvidiaBaseURL(driverVersion, arch)
 	resp, err := http.Get(url)
 	if err != nil {
 		return nil, fmt.Errorf("failed to download driver: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("failed to download driver with status: %w", err)
+		return nil, fmt.Errorf("failed to download driver with statusCode: %d: status: %s", resp.StatusCode, resp.Status)
 	}
 	return resp.Body, nil
 }
@@ -316,6 +333,36 @@ func tryToPrintFailureLogs() {
 	for _, line := range strings.Split(string(out), "\n") {
 		fmt.Printf("[nvidia-installer]: %s\n", line)
 	}
+}
+
+// ValidateChecksum validates the checksum of the driver.
+func ValidateChecksum(ctx context.Context, version string, checksums nvproxy.Checksums) error {
+	for _, arch := range []string{"x86_64", archARM64} {
+		wantChecksum := checksums.X86_64()
+		if arch == archARM64 {
+			wantChecksum = checksums.Arm64()
+		}
+		installer, err := NewInstaller(version, false)
+		if err != nil {
+			return fmt.Errorf("failed to create installer for driver %q: %v", version, err)
+		}
+		gotChecksum, err := installer.ChecksumDriver(ctx, arch)
+		if wantChecksum == nvproxy.ChecksumNoDriver {
+			log.Infof("Runfile does not exist for driver %q arch: %q", version, arch)
+			if err == nil || !strings.Contains(err.Error(), "failed to download driver with statusCode: 404") {
+				return fmt.Errorf("checksum mismatch for driver %q: got %q, want %q", version, gotChecksum, wantChecksum)
+			}
+			return nil
+		}
+		log.Infof("Checksum for driver %q arch: %q: %q", version, arch, gotChecksum)
+		if err != nil {
+			return fmt.Errorf("failed to get checksum for driver %q: %v", version, err)
+		}
+		if gotChecksum != wantChecksum {
+			return fmt.Errorf("checksum mismatch for driver %q: got %q, want %q", version, gotChecksum, wantChecksum)
+		}
+	}
+	return nil
 }
 
 func osIsUbuntu2204() bool {
