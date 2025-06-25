@@ -256,6 +256,9 @@ type AsyncMFLoader struct {
 	// MemoryFiles, once they are known. This channel is written to exactly once.
 	privateMFsChan chan map[string]*pgalloc.MemoryFile
 
+	mainMFStartWg   sync.WaitGroup
+	mainMetadataErr error
+
 	metadataWg  sync.WaitGroup
 	metadataErr error
 
@@ -275,6 +278,7 @@ func NewAsyncMFLoader(pagesMetadata, pagesFile *fd.FD, mainMF *pgalloc.MemoryFil
 	mfl := &AsyncMFLoader{
 		privateMFsChan: make(chan map[string]*pgalloc.MemoryFile, 1),
 	}
+	mfl.mainMFStartWg.Add(1)
 	mfl.metadataWg.Add(1)
 	mfl.loadWg.Add(1)
 	go mfl.backgroundGoroutine(pagesMetadata, pagesFile, mainMF, timeline)
@@ -318,9 +322,12 @@ func (mfl *AsyncMFLoader) backgroundGoroutine(pagesMetadataFD, pagesFileFD *fd.F
 	timeline.Reached("loading mainMF")
 	log.Infof("Loading metadata for main MemoryFile: %p", mainMF)
 	ctx := context.Background()
-	if err := mainMF.LoadFrom(ctx, pagesMetadata, &opts); err != nil {
+	err := mainMF.LoadFrom(ctx, pagesMetadata, &opts)
+	mfl.metadataErr = err
+	mfl.mainMetadataErr = err
+	mfl.mainMFStartWg.Done()
+	if err != nil {
 		log.Warningf("Failed to load main MemoryFile %p: %v", mainMF, err)
-		mfl.metadataErr = err
 		return
 	}
 	timeline.Reached("waiting for privateMF info")
@@ -351,6 +358,13 @@ func (mfl *AsyncMFLoader) backgroundGoroutine(pagesMetadataFD, pagesFileFD *fd.F
 // KickoffPrivate notifies the background goroutine of the private MemoryFiles.
 func (mfl *AsyncMFLoader) KickoffPrivate(mfmap map[string]*pgalloc.MemoryFile) {
 	mfl.privateMFsChan <- mfmap
+}
+
+// WaitMainMFStart waits for the background goroutine to successfully start
+// asynchronously loading the main MemoryFile.
+func (mfl *AsyncMFLoader) WaitMainMFStart() error {
+	mfl.mainMFStartWg.Wait()
+	return mfl.mainMetadataErr
 }
 
 // WaitMetadata waits for the background goroutine to successfully complete

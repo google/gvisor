@@ -758,7 +758,7 @@ func (k *Kernel) invalidateUnsavableMappings(ctx context.Context) error {
 }
 
 // LoadFrom returns a new Kernel loaded from args.
-func (k *Kernel) LoadFrom(ctx context.Context, r io.Reader, loadMFs bool, timeReady chan struct{}, net inet.Stack, clocks sentrytime.Clocks, vfsOpts *vfs.CompleteRestoreOptions, saveRestoreNet bool) error {
+func (k *Kernel) LoadFrom(ctx context.Context, r io.Reader, asyncMFLoader *AsyncMFLoader, timeReady chan struct{}, net inet.Stack, clocks sentrytime.Clocks, vfsOpts *vfs.CompleteRestoreOptions, saveRestoreNet bool) error {
 	loadStart := time.Now()
 
 	k.runningTasksCond.L = &k.runningTasksMu
@@ -794,20 +794,27 @@ func (k *Kernel) LoadFrom(ctx context.Context, r io.Reader, loadMFs bool, timeRe
 	log.Infof("Kernel load stats: %s", stats.String())
 	log.Infof("Kernel load took [%s].", time.Since(kernelStart))
 
-	if loadMFs {
-		mfStart := time.Now()
-		if err := k.loadMemoryFiles(ctx, r); err != nil {
-			return fmt.Errorf("failed to load memory files: %w", err)
-		}
-		log.Infof("Memory files load took [%s].", time.Since(mfStart))
-	}
-
 	if !saveRestoreNet {
 		// rootNetworkNamespace and stack should be populated after
 		// loading the state file. Reset the stack before restoring the
 		// root network stack.
 		k.rootNetworkNamespace.ResetStack()
 		k.rootNetworkNamespace.RestoreRootStack(net)
+	}
+
+	if asyncMFLoader == nil {
+		mfStart := time.Now()
+		if err := k.loadMemoryFiles(ctx, r); err != nil {
+			return fmt.Errorf("failed to load memory files: %w", err)
+		}
+		log.Infof("Memory files load took [%s].", time.Since(mfStart))
+	} else {
+		// Timekeeper restore below tries writing to the main MF. If async page
+		// loading is being used, we need to make sure that the main MF loading has
+		// started before we try to write to it.
+		if err := asyncMFLoader.WaitMainMFStart(); err != nil {
+			return fmt.Errorf("main MF start failed: %w", err)
+		}
 	}
 
 	k.Timekeeper().SetClocks(clocks, k.vdsoParams)
