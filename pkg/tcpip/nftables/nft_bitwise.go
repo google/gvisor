@@ -19,6 +19,7 @@ import (
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
@@ -65,30 +66,30 @@ type bitwise struct {
 }
 
 // newBitwiseBool creates a new bitwise boolean operation.
-func newBitwiseBool(sreg, dreg uint8, mask, xor []byte) (*bitwise, error) {
+func newBitwiseBool(sreg, dreg uint8, mask, xor []byte) (*bitwise, *syserr.AnnotatedError) {
 	if isVerdictRegister(sreg) || isVerdictRegister(dreg) {
-		return nil, fmt.Errorf("bitwise operation cannot use verdict register as source or destination")
+		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("bitwise operation does not support verdict register as source or destination register"))
 	}
 	blen := len(mask)
 	if blen != len(xor) {
-		return nil, fmt.Errorf("bitwise boolean operation mask and xor must be the same length")
+		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("bitwise boolean operation mask and xor data lengths must be the same"))
 	}
 	if blen > linux.NFT_REG_SIZE || (blen > linux.NFT_REG32_SIZE && (is4ByteRegister(sreg) || is4ByteRegister(dreg))) {
-		return nil, fmt.Errorf("bitwise operation length %d is too long for source register %d, destination register %d", blen, sreg, dreg)
+		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("bitwise boolean operation cannot use more than %d bytes", linux.NFT_REG_SIZE))
 	}
 	return &bitwise{sreg: sreg, dreg: dreg, bop: linux.NFT_BITWISE_BOOL, blen: uint8(blen), mask: newBytesData(mask), xor: newBytesData(xor)}, nil
 }
 
 // newBitwiseShift creates a new bitwise shift operation.
-func newBitwiseShift(sreg, dreg, blen uint8, shift uint32, right bool) (*bitwise, error) {
+func newBitwiseShift(sreg, dreg, blen uint8, shift uint32, right bool) (*bitwise, *syserr.AnnotatedError) {
 	if isVerdictRegister(sreg) || isVerdictRegister(dreg) {
-		return nil, fmt.Errorf("bitwise operation cannot use verdict register as source or destination")
+		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("bitwise shift operation does not support verdict register as source or destination register"))
 	}
 	if blen > linux.NFT_REG_SIZE || (blen > linux.NFT_REG32_SIZE && (is4ByteRegister(sreg) || is4ByteRegister(dreg))) {
-		return nil, fmt.Errorf("bitwise operation length %d is too long for source register %d, destination register %d", blen, sreg, dreg)
+		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("bitwise operation length %d is too long for source register %d, destination register %d", blen, sreg, dreg))
 	}
 	if shift >= bitshiftLimit {
-		return nil, fmt.Errorf("bitwise operation shift %d must be less than %d", shift, bitshiftLimit)
+		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("bitwise operation shift %d must be less than %d", shift, bitshiftLimit))
 	}
 	bop := bitwiseOp(linux.NFT_BITWISE_LSHIFT)
 	if right {
@@ -180,11 +181,12 @@ func (op bitwise) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *Rul
 	if op.bop == linux.NFT_BITWISE_BOOL {
 		evaluateBitwiseBool(sregBuf, dregBuf, op.mask.data, op.xor.data)
 		return
-	} else {
-		if op.bop == linux.NFT_BITWISE_LSHIFT {
-			evaluateBitwiseLshift(sregBuf, dregBuf, op.shift)
-		} else {
-			evaluateBitwiseRshift(sregBuf, dregBuf, op.shift)
-		}
 	}
+
+	if op.bop == linux.NFT_BITWISE_LSHIFT {
+		evaluateBitwiseLshift(sregBuf, dregBuf, op.shift)
+	} else {
+		evaluateBitwiseRshift(sregBuf, dregBuf, op.shift)
+	}
+
 }

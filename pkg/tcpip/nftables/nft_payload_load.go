@@ -18,6 +18,7 @@ import (
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
@@ -55,14 +56,14 @@ func (base payloadBase) String() string {
 }
 
 // validatePayloadBase ensures the payload base is valid.
-func validatePayloadBase(base payloadBase) error {
+func validatePayloadBase(base payloadBase) *syserr.AnnotatedError {
 	switch base {
 	// Supported payload bases.
 	case linux.NFT_PAYLOAD_LL_HEADER, linux.NFT_PAYLOAD_NETWORK_HEADER, linux.NFT_PAYLOAD_TRANSPORT_HEADER:
 		return nil
 	// Unsupported payload bases.
 	default:
-		return fmt.Errorf("invalid payload base: %d", int(base))
+		return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("unknown payload base: %d", int(base)))
 	}
 }
 
@@ -93,12 +94,12 @@ func getPayloadBuffer(pkt *stack.PacketBuffer, base payloadBase) []byte {
 }
 
 // newPayloadLoad creates a new payloadLoad operation.
-func newPayloadLoad(base payloadBase, offset, blen, dreg uint8) (*payloadLoad, error) {
+func newPayloadLoad(base payloadBase, offset, blen, dreg uint8) (*payloadLoad, *syserr.AnnotatedError) {
 	if isVerdictRegister(dreg) {
-		return nil, fmt.Errorf("payload load operation cannot use verdict register as destination")
+		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("payload load operation does not support verdict register as destination register"))
 	}
 	if blen > linux.NFT_REG_SIZE || (blen > linux.NFT_REG32_SIZE && is4ByteRegister(dreg)) {
-		return nil, fmt.Errorf("payload length %d is too long for destination register %d", blen, dreg)
+		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("payload size %d is not supported for register %d", blen, dreg))
 	}
 	if err := validatePayloadBase(base); err != nil {
 		return nil, err

@@ -336,11 +336,11 @@ TEST(NetlinkNetfilterTest, ErrAddExistingTableWithReplaceFlag) {
               PosixErrorIs(ENOTSUP, _));
 }
 
-TEST(NetlinkNetfilterTest, ErrAddTableWithUnknownFamily) {
+TEST(NetlinkNetfilterTest, ErrAddTableWithUnsupportedFamily) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
   uint8_t unknown_family = 255;
   uint16_t default_table_id = 0;
-  const char test_table_name[] = "unknown_family_table";
+  const char test_table_name[] = "unsupported_family_table";
 
   FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
@@ -370,7 +370,7 @@ TEST(NetlinkNetfilterTest, ErrAddTableWithUnknownFamily) {
 
   ASSERT_THAT(
       NetlinkRequestAckOrError(fd, kSeq, &get_tab_req, sizeof(get_tab_req)),
-      PosixErrorIs(EINVAL, _));
+      PosixErrorIs(ENOTSUP, _));
 }
 
 TEST(NetlinkNetfilterTest, ErrRetrieveNoSpecifiedNameTable) {

@@ -48,6 +48,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/rand"
+	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
@@ -102,10 +103,12 @@ func AfProtocol(f stack.AddressFamily) uint8 {
 }
 
 // validateAddressFamily ensures the family address is valid (within bounds).
-func validateAddressFamily(family stack.AddressFamily) error {
+func validateAddressFamily(family stack.AddressFamily) *syserr.AnnotatedError {
+	// From net/netfilter/nf_tables_api.c:nf_tables_newtable
 	if family < 0 || family >= stack.NumAFs {
-		return fmt.Errorf("invalid address family: %d", int(family))
+		return syserr.NewAnnotatedError(syserr.ErrNotSupported, fmt.Sprintf("invalid address family: %d", int(family)))
 	}
+
 	return nil
 }
 
@@ -121,15 +124,16 @@ var supportedHooks [stack.NumAFs][]stack.NFHook = [stack.NumAFs][]stack.NFHook{
 
 // validateHook ensures the hook is within bounds and supported for the given
 // address family.
-func validateHook(hook stack.NFHook, family stack.AddressFamily) error {
+func validateHook(hook stack.NFHook, family stack.AddressFamily) *syserr.AnnotatedError {
 	if hook >= stack.NFNumHooks {
-		return fmt.Errorf("invalid hook: %d", int(hook))
+		return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("invalid hook: %d", int(hook)))
 	}
 	if slices.Contains(supportedHooks[family], hook) {
 		return nil
 	}
 
-	return fmt.Errorf("hook %v is not valid for address family %v", hook, family)
+	// The hook is not supported for the given address family.
+	return syserr.NewAnnotatedError(syserr.ErrNotSupported, fmt.Sprintf("hook %d is not supported for address family %d", int(hook), int(family)))
 }
 
 // NFTables represents the nftables state for all address families.
@@ -347,7 +351,7 @@ func NewIntPriority(value int) Priority {
 // NewStandardPriority creates a new Priority object given a standard priority
 // name, returning an error if the standard priority name is not compatible with
 // the given address family and hook.
-func NewStandardPriority(name string, family stack.AddressFamily, hook stack.NFHook) (Priority, error) {
+func NewStandardPriority(name string, family stack.AddressFamily, hook stack.NFHook) (Priority, *syserr.AnnotatedError) {
 	// Validates address family and hook first.
 	if err := validateAddressFamily(family); err != nil {
 		return Priority{}, err
@@ -358,22 +362,22 @@ func NewStandardPriority(name string, family stack.AddressFamily, hook stack.NFH
 
 	// Ensures the standard priority name is set.
 	if name == "" {
-		return Priority{}, fmt.Errorf("standard priority name cannot be empty")
+		return Priority{}, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("standard priority name cannot be empty"))
 	}
 
 	// Looks up standard priority name in the standard priority matrix.
 	familyMatrix, exists := standardPriorityMatrix[family]
 	if !exists {
-		return Priority{}, fmt.Errorf("standard priority names are not available for address family %v", family)
+		return Priority{}, syserr.NewAnnotatedError(syserr.ErrNoFileOrDir, fmt.Sprintf("standard priority names are not available for address family %v", family))
 	}
 	sp, exists := familyMatrix[name]
 	if !exists {
-		return Priority{}, fmt.Errorf("standard priority name '%s' is not compatible with address family %v", name, family)
+		return Priority{}, syserr.NewAnnotatedError(syserr.ErrNoFileOrDir, fmt.Sprintf("standard priority name %s not compatible for address family %s", name, family))
 	}
 
 	// Checks for hook compatibility.
 	if !slices.Contains(sp.hooks, hook) {
-		return Priority{}, fmt.Errorf("standard priority %s is not compatible with hook %v", name, hook)
+		return Priority{}, syserr.NewAnnotatedError(syserr.ErrNotSupported, fmt.Sprintf("hook %s is not compatible with standard priority %s", hook, name))
 	}
 
 	return Priority{value: sp.value, standardPriorityName: name}, nil
@@ -464,9 +468,9 @@ var spmIP = map[string]standardPriority{ // from uapi/linux/netfilter_ipv4.h
 // compatibility of the set base chain type, hook, and priority, and the given
 // address family.
 // Note: errors if the provided base chain info is nil.
-func validateBaseChainInfo(info *BaseChainInfo, family stack.AddressFamily) error {
+func validateBaseChainInfo(info *BaseChainInfo, family stack.AddressFamily) *syserr.AnnotatedError {
 	if info == nil {
-		return fmt.Errorf("base chain info is nil")
+		return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("base chain info is nil"))
 	}
 
 	// Validates the hook.
@@ -476,17 +480,16 @@ func validateBaseChainInfo(info *BaseChainInfo, family stack.AddressFamily) erro
 
 	// Validates the base chain type.
 	if info.BcType < 0 || info.BcType >= NumBaseChainTypes {
-		return fmt.Errorf("invalid base chain type: %d", int(info.BcType))
+		return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("base chain type %d is invalid", int(info.BcType)))
 	}
 	if !slices.Contains(supportedAFsForBaseChainTypes[info.BcType], family) {
-		return fmt.Errorf("base chain type %v is not valid for address family %v", info.BcType, family)
+		return syserr.NewAnnotatedError(syserr.ErrNotSupported, fmt.Sprintf("base chain type %d is not supported for address family %v", int(info.BcType), family))
 	}
 	if !slices.Contains(supportedHooksForBaseChainTypes[info.BcType], info.Hook) {
-		return fmt.Errorf("base chain type %v is not valid for hook %v", info.BcType, info.Hook)
+		return syserr.NewAnnotatedError(syserr.ErrNotSupported, fmt.Sprintf("base chain type %v is not valid for hook %v", info.BcType, info.Hook))
 	}
 
 	// Priority assumed to be valid since it's a result of a constructor call.
-
 	return nil
 }
 
@@ -555,7 +558,7 @@ type registerData interface {
 
 	// validateRegister ensures the register is compatible with the data type,
 	// returning an error otherwise.
-	validateRegister(reg uint8) error
+	validateRegister(reg uint8) *syserr.AnnotatedError
 
 	// storeData sets the data in the destination register, panicking if the
 	// register is not valid for the data type.
@@ -591,9 +594,9 @@ func (rd verdictData) equal(other registerData) bool {
 }
 
 // validateRegister ensures the register is compatible with VerdictData.
-func (rd verdictData) validateRegister(reg uint8) error {
+func (rd verdictData) validateRegister(reg uint8) *syserr.AnnotatedError {
 	if !isVerdictRegister(reg) {
-		return fmt.Errorf("verdict can only be stored in verdict register")
+		return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("verdict can only be stored in verdict register"))
 	}
 	return nil
 }
@@ -640,12 +643,12 @@ func (rd bytesData) equal(other registerData) bool {
 }
 
 // validateRegister ensures the register is compatible with this bytes data.
-func (rd bytesData) validateRegister(reg uint8) error {
+func (rd bytesData) validateRegister(reg uint8) *syserr.AnnotatedError {
 	if isVerdictRegister(reg) {
-		return fmt.Errorf("data cannot be stored in verdict register")
+		return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("data cannot be stored in verdict register"))
 	}
 	if is4ByteRegister(reg) && len(rd.data) > linux.NFT_REG32_SIZE {
-		return fmt.Errorf("%d-byte data cannot be stored in %d-byte register", len(rd.data), linux.NFT_REG32_SIZE)
+		return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("%d-byte data cannot be stored in %d-byte register", len(rd.data), linux.NFT_REG32_SIZE))
 	}
 	// 16-byte register can be used for any data (guaranteed to be <= 16 bytes)
 	return nil

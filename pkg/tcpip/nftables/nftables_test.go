@@ -3526,7 +3526,7 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 					t.Fatalf("unexpected error for GetChain: %v", err)
 				}
 				for rIdx := chainInit.RuleCount() - 1; rIdx >= 0; rIdx-- {
-					rule, err := chain.UnregisterRule(rIdx)
+					rule, err := chain.UnregisterRuleByIndex(rIdx)
 					if err != nil {
 						t.Fatalf("unexpected error for UnregisterRule: %v", err)
 					}

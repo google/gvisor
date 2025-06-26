@@ -15,6 +15,7 @@
 package nftables
 
 import (
+	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
@@ -25,7 +26,7 @@ type immediate struct {
 }
 
 // newImmediate creates a new immediate operation.
-func newImmediate(dreg uint8, data registerData) (*immediate, error) {
+func newImmediate(dreg uint8, data registerData) (*immediate, *syserr.AnnotatedError) {
 	if err := data.validateRegister(dreg); err != nil {
 		return nil, err
 	}
