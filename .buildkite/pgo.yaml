@@ -20,10 +20,11 @@ env:
 
 steps:
   - <<: *common
-    label: ":arrows_counterclockwise: Refresh PGO profiles (x86_64 Systrap)"
+    label: ":arrows_counterclockwise: Refresh PGO profiles (x86_64)"
     if: build.branch == "master" && build.tag == null
     commands:
       - ./.buildkite/scripts/pgo/maybe-skip.sh --tolerate-no-profile-changes make ARCH=x86_64 benchmark-refresh-pgo BENCHMARKS_PLATFORMS=systrap
+      - ./.buildkite/scripts/pgo/maybe-skip.sh --tolerate-no-profile-changes make ARCH=x86_64 benchmark-refresh-pgo BENCHMARKS_PLATFORMS=kvm
       - ./.buildkite/scripts/pgo/maybe-skip.sh ./.buildkite/scripts/pgo/commit-update.sh
     agents:
       arch: "amd64"
