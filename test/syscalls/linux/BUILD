@@ -2414,9 +2414,11 @@ cc_binary(
     deps = select_gtest() + [
         "//test/util:capability_util",
         "//test/util:file_descriptor",
+        "//test/util:logging",
         "//test/util:posix_error",
         "//test/util:test_main",
         "//test/util:test_util",
+        "@com_google_absl//absl/time",
     ],
 )
 

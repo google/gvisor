@@ -106,7 +106,7 @@ func Boot() (*kernel.Kernel, error) {
 		VdsoParams:        params,
 		RootUTSNamespace:  kernel.NewUTSNamespace("hostname", "domain", creds.UserNamespace),
 		RootIPCNamespace:  kernel.NewIPCNamespace(creds.UserNamespace),
-		PIDNamespace:      kernel.NewRootPIDNamespace(creds.UserNamespace),
+		RootPIDNamespace:  kernel.NewRootPIDNamespace(creds.UserNamespace),
 		UnixSocketOpts:    transport.UnixSocketOpts{},
 	}); err != nil {
 		return nil, fmt.Errorf("initializing kernel: %v", err)

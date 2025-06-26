@@ -285,6 +285,7 @@ type ThreadGroup struct {
 // The new thread group isn't visible to the system until a task has been
 // created inside of it by a successful call to TaskSet.NewTask.
 func (k *Kernel) NewThreadGroup(pidns *PIDNamespace, sh *SignalHandlers, terminationSignal linux.Signal, limits *limits.LimitSet) *ThreadGroup {
+	pidns.IncRef()
 	tg := &ThreadGroup{
 		threadGroupNode: threadGroupNode{
 			pidns: pidns,
@@ -364,6 +365,7 @@ func (tg *ThreadGroup) Release(ctx context.Context) {
 	for _, it := range its {
 		it.DestroyTimer()
 	}
+	tg.pidns.DecRef(ctx)
 }
 
 // forEachChildThreadGroupLocked indicates over all child ThreadGroups.

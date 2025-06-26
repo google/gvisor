@@ -224,7 +224,8 @@ func (t *Task) Clone(args *linux.CloneArgs) (ThreadID, *SyscallControl, error) {
 	if t.childPIDNamespace != nil {
 		pidns = t.childPIDNamespace
 	} else if args.Flags&linux.CLONE_NEWPID != 0 {
-		pidns = pidns.NewChild(userns)
+		pidns = pidns.NewChild(t, t.k, userns)
+		defer pidns.DecRef(t)
 	}
 
 	tg := t.tg
@@ -277,6 +278,9 @@ func (t *Task) Clone(args *linux.CloneArgs) (ThreadID, *SyscallControl, error) {
 	// the cleanup for us.
 	cu.Release()
 	if err != nil {
+		if args.Flags&linux.CLONE_THREAD == 0 {
+			tg.Release(t)
+		}
 		return 0, nil, err
 	}
 
@@ -547,6 +551,36 @@ func (t *Task) Setns(fd *vfs.FileDescription, flags int32) error {
 		t.mu.Unlock()
 		oldNS.DecRef(t)
 		return nil
+	case *PIDNamespace:
+		if flags != 0 && flags != linux.CLONE_NEWPID {
+			return linuxerr.EINVAL
+		}
+		if !t.HasCapabilityIn(linux.CAP_SYS_ADMIN, ns.UserNamespace()) ||
+			!t.Credentials().HasCapability(linux.CAP_SYS_ADMIN) {
+			return linuxerr.EPERM
+		}
+
+		// Allow setting the current or a child pid namespace.
+		current := t.PIDNamespace()
+		ancestor := ns
+		for ; ancestor != nil; ancestor = ancestor.parent {
+			if ancestor == current {
+				break
+			}
+		}
+		if ancestor == nil {
+			return linuxerr.EINVAL
+		}
+
+		oldNS := t.childPIDNamespace
+		ns.IncRef()
+		t.mu.Lock()
+		t.childPIDNamespace = ns
+		t.mu.Unlock()
+		if oldNS != nil {
+			oldNS.DecRef(t)
+		}
+		return nil
 	default:
 		return linuxerr.EINVAL
 	}
@@ -611,7 +645,7 @@ func (t *Task) Unshare(flags int32) error {
 		if !haveCapSysAdmin {
 			return linuxerr.EPERM
 		}
-		t.childPIDNamespace = t.tg.pidns.NewChild(t.UserNamespace())
+		t.childPIDNamespace = t.tg.pidns.NewChild(t, t.k, t.UserNamespace())
 	}
 	if flags&linux.CLONE_NEWNET != 0 {
 		if !haveCapSysAdmin {
