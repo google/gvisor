@@ -30,7 +30,7 @@ git stash
 git pull --rebase=true "$repo_url" master
 git checkout -b "$pgo_branch_name"
 git stash pop
-git add runsc/profiles
+git add runsc/profiles/data
 git status
 
 # Commit and push PR branch.

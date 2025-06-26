@@ -53,7 +53,7 @@ if [[ "$(gh pr --repo="$repo_url" list --label pgo-update --state open --json ti
 fi
 
 if [[ "$tolerate_no_profile_changes" == false ]]; then
-  if [[ "$(git status --porcelain runsc/profiles | wc -l)" == 0 ]]; then
+  if [[ "$(git status --porcelain runsc/profiles/data | wc -l)" == 0 ]]; then
     echo "No changes to runsc profiles; skipping." >&2
     exit 0
   fi

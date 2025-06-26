@@ -568,15 +568,15 @@ benchmark-refresh-pgo: load-benchmarks $(RUNTIME_BIN) ## Refresh profiles of all
 		export PGO_LAST_PKG_COMMIT_HASH; \
 		for PLATFORM in $(BENCHMARKS_PLATFORMS); do \
 			export PLATFORM; \
-			mkdir -p "$(REPO_DIR)/runsc/profiles/$${PGO_RUNTIME_KEY}_$${PLATFORM}"; \
+			mkdir -p "$(REPO_DIR)/runsc/profiles/data/$${PGO_RUNTIME_KEY}_$${PLATFORM}"; \
 			PLATFORM_TMPDIR="$$(mktemp --tmpdir=/tmp --directory "pgo_$${PGO_RUNTIME_KEY}_$${PLATFORM}.XXXXXXXX")"; \
 			export PLATFORM_TMPDIR; \
 			for PGO_BENCHMARK_TARGET in $$( $(call query,'attr(tags, gvisor_pgo_benchmark, //test/benchmarks/...)') | sed 's~^//~~'); do \
 				PGO_BENCHMARK_BASENAME="$$(echo "$${PGO_BENCHMARK_TARGET}" | cut -d: -f2 | sed 's/_test$$//')"; \
 				export PGO_BENCHMARK_BASENAME; \
-				PGO_PROFILE_OLD_COMMIT_HASH="$(REPO_DIR)/runsc/profiles/$${PGO_RUNTIME_KEY}_$${PLATFORM}/$${PGO_BENCHMARK_BASENAME}.pgo.pkg_commithash"; \
+				PGO_PROFILE_OLD_COMMIT_HASH="$(REPO_DIR)/runsc/profiles/data/$${PGO_RUNTIME_KEY}_$${PLATFORM}/$${PGO_BENCHMARK_BASENAME}.pgo.pkg_commithash"; \
 				export PGO_PROFILE_OLD_COMMIT_HASH; \
-				PGO_PROFILE_OLD="$(REPO_DIR)/runsc/profiles/$${PGO_RUNTIME_KEY}_$${PLATFORM}/$${PGO_BENCHMARK_BASENAME}.pgo.pprof.pb.gz"; \
+				PGO_PROFILE_OLD="$(REPO_DIR)/runsc/profiles/data/$${PGO_RUNTIME_KEY}_$${PLATFORM}/$${PGO_BENCHMARK_BASENAME}.pgo.pprof.pb.gz"; \
 				export PGO_PROFILE_OLD; \
 				PGO_PROFILE_NEW="$${PLATFORM_TMPDIR}/$${PGO_BENCHMARK_BASENAME}.pgo.pprof.pb.gz"; \
 				export PGO_PROFILE_NEW; \
