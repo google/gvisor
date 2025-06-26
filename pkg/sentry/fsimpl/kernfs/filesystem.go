@@ -512,6 +512,8 @@ func (fs *Filesystem) MknodAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 // OpenAt implements vfs.FilesystemImpl.OpenAt.
 func (fs *Filesystem) OpenAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
 	ats := vfs.AccessTypesForOpenFlags(&opts)
+	trunc := opts.Flags&linux.O_TRUNC != 0
+	mnt := rp.Mount()
 
 	// Do not create new file.
 	if opts.Flags&linux.O_CREAT == 0 {
@@ -525,6 +527,12 @@ func (fs *Filesystem) OpenAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 		if err := d.inode.CheckPermissions(ctx, rp.Credentials(), ats); err != nil {
 			fs.mu.RUnlock()
 			return nil, err
+		}
+		if trunc && d.isRegular() {
+			if err := mnt.CheckBeginWrite(); err != nil {
+				return nil, err
+			}
+			defer mnt.EndWrite()
 		}
 		// Open may block so we need to unlock fs.mu. IncRef d to prevent
 		// its destruction while fs.mu is unlocked.
@@ -560,6 +568,12 @@ func (fs *Filesystem) OpenAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 		}
 		if err := start.inode.CheckPermissions(ctx, rp.Credentials(), ats); err != nil {
 			return nil, err
+		}
+		if trunc && start.isRegular() {
+			if err := mnt.CheckBeginWrite(); err != nil {
+				return nil, err
+			}
+			defer mnt.EndWrite()
 		}
 		// Open may block so we need to unlock fs.mu. IncRef d to prevent
 		// its destruction while fs.mu is unlocked.
@@ -612,10 +626,10 @@ afterTrailingSymlink:
 		if err := parent.inode.CheckPermissions(ctx, rp.Credentials(), vfs.MayWrite); err != nil {
 			return nil, err
 		}
-		if err := rp.Mount().CheckBeginWrite(); err != nil {
+		if err := mnt.CheckBeginWrite(); err != nil {
 			return nil, err
 		}
-		defer rp.Mount().EndWrite()
+		defer mnt.EndWrite()
 		// Create and open the child.
 		childI, err := parent.inode.NewFile(ctx, pc, opts)
 		if err != nil {
@@ -645,6 +659,12 @@ afterTrailingSymlink:
 	}
 	if err := child.inode.CheckPermissions(ctx, rp.Credentials(), ats); err != nil {
 		return nil, err
+	}
+	if trunc && child.isRegular() {
+		if err := mnt.CheckBeginWrite(); err != nil {
+			return nil, err
+		}
+		defer mnt.EndWrite()
 	}
 	if child.isDir() {
 		// Can't open directories with O_CREAT.
