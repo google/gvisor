@@ -433,17 +433,28 @@ func SetNodePlacementPolicyCompact(nodepool *cspb.NodePool, tpuTopology string) 
 	return nil
 }
 
+// addToleration adds a toleration to the pod if it doesn't already exist.
+func addToleration(podSpec *v13.PodSpec, toleration v13.Toleration) {
+	for _, t := range podSpec.Tolerations {
+		if t == toleration {
+			return
+		}
+	}
+	podSpec.Tolerations = append(podSpec.Tolerations, toleration)
+}
+
 // ApplyPodSpec modifies a PodSpec to use this runtime.
 func (t RuntimeType) ApplyPodSpec(podSpec *v13.PodSpec) {
 	switch t {
 	case RuntimeTypeGVisor:
 		podSpec.RuntimeClassName = proto.String(gvisorRuntimeClass)
 		podSpec.NodeSelector[NodepoolRuntimeKey] = string(RuntimeTypeGVisor)
-		podSpec.Tolerations = append(podSpec.Tolerations, v13.Toleration{
+		addToleration(podSpec, v13.Toleration{
 			Key:      "nvidia.com/gpu",
 			Operator: v13.TolerationOpExists,
 		})
 	case RuntimeTypeUnsandboxed:
+		podSpec.RuntimeClassName = nil
 		podSpec.Tolerations = append(podSpec.Tolerations, v13.Toleration{
 			Key:      "nvidia.com/gpu",
 			Operator: v13.TolerationOpExists,
@@ -451,7 +462,7 @@ func (t RuntimeType) ApplyPodSpec(podSpec *v13.PodSpec) {
 		// Allow the pod to schedule on gVisor nodes as well.
 		// This enables the use of `--test-nodepool-runtime=runc` to run
 		// unsandboxed benchmarks on gVisor test clusters.
-		podSpec.Tolerations = append(podSpec.Tolerations, v13.Toleration{
+		addToleration(podSpec, v13.Toleration{
 			Effect:   v13.TaintEffectNoSchedule,
 			Key:      gvisorNodepoolKey,
 			Operator: v13.TolerationOpEqual,
@@ -460,16 +471,16 @@ func (t RuntimeType) ApplyPodSpec(podSpec *v13.PodSpec) {
 	case RuntimeTypeGVisorTPU:
 		podSpec.RuntimeClassName = proto.String(gvisorRuntimeClass)
 		podSpec.NodeSelector[NodepoolRuntimeKey] = string(RuntimeTypeGVisorTPU)
-		podSpec.Tolerations = append(podSpec.Tolerations, v13.Toleration{
+		addToleration(podSpec, v13.Toleration{
 			Key:      "google.com/tpu",
 			Operator: v13.TolerationOpExists,
 		})
 	case RuntimeTypeUnsandboxedTPU:
-		podSpec.Tolerations = append(podSpec.Tolerations, v13.Toleration{
+		addToleration(podSpec, v13.Toleration{
 			Key:      "google.com/tpu",
 			Operator: v13.TolerationOpExists,
 		})
-		podSpec.Tolerations = append(podSpec.Tolerations, v13.Toleration{
+		addToleration(podSpec, v13.Toleration{
 			Effect:   v13.TaintEffectNoSchedule,
 			Key:      gvisorNodepoolKey,
 			Operator: v13.TolerationOpEqual,
