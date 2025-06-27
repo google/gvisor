@@ -253,22 +253,7 @@ var allowedSyscalls = seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 	unix.SYS_RT_SIGACTION:    seccomp.MatchAll{},
 	unix.SYS_RT_SIGPROCMASK:  seccomp.MatchAll{},
 	unix.SYS_RT_SIGRETURN:    seccomp.MatchAll{},
-	// TODO(go.dev/issue/73193): sched_getaffinity is used by Go's
-	// automatic GOMAXPROCS updater. The runtime.GOMAXPROCS call in
-	// boot.New explicitly disables this updater. Currently
-	// runtime.GOMAXPROCS guarantees that the updater will not change
-	// GOMAXPROCS after runtime.GOMAXPROCS return. However, it does not
-	// guarantee that a concurrent update run will not perform the system
-	// call after runtime.GOMAXPROCS returns. So there is a tiny probability
-	// that we will manage to install filters before such a concurrent run
-	// calls sched_getaffinity.
-	//
-	// The Go runtime should make a stronger guarantee. Until then, allow the
-	// syscall.
-	unix.SYS_SCHED_GETAFFINITY: seccomp.PerArg{
-		seccomp.EqualTo(0),
-	},
-	unix.SYS_SCHED_YIELD: seccomp.MatchAll{},
+	unix.SYS_SCHED_YIELD:     seccomp.MatchAll{},
 	unix.SYS_SENDMSG: seccomp.PerArg{
 		seccomp.AnyValue{},
 		seccomp.AnyValue{},
