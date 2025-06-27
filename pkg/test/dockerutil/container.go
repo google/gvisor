@@ -368,6 +368,7 @@ func (c *Container) hostConfig(r RunOpts) *container.HostConfig {
 			DeviceRequests: r.DeviceRequests,
 			Devices:        r.Devices,
 		},
+		AutoRemove: true,
 	}
 }
 
