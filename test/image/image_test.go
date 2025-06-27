@@ -45,6 +45,8 @@ import (
 // individual slow-downs (but a huge speed-up in aggregate).
 const defaultWait = time.Minute
 
+const testAlpineImage = "gcr.io/gvisor-presubmit/basic/alpine_x86_64:1ce68c8160724eb9"
+
 func TestHelloWorld(t *testing.T) {
 	ctx := context.Background()
 	d := dockerutil.MakeContainer(ctx, t)
@@ -544,7 +546,7 @@ func testDockerRun(ctx context.Context, t *testing.T, d *dockerutil.Container, h
 	if startPrivilegedContainer {
 		cmd = append(cmd, "--privileged")
 	}
-	cmd = append(cmd, "alpine", "sh", "-c", "apk add curl && apk info -d curl")
+	cmd = append(cmd, testAlpineImage, "sh", "-c", "apk add curl && apk info -d curl")
 	execProc, err := d.ExecProcess(ctx, dockerutil.ExecOpts{}, cmd...)
 	if err != nil {
 		t.Fatalf("docker exec failed: %v", err)
@@ -560,7 +562,7 @@ func testDockerRun(ctx context.Context, t *testing.T, d *dockerutil.Container, h
 }
 
 func testDockerBuild(ctx context.Context, t *testing.T, d *dockerutil.Container, hostNetwork bool) {
-	cmd := []string{"echo", "-e", "FROM alpine:3.19\nRUN apk add git", "|", "docker", "build"}
+	cmd := []string{"echo", "-e", fmt.Sprintf("FROM %s\nRUN apk add git", testAlpineImage), "|", "docker", "build"}
 	if hostNetwork {
 		cmd = append(cmd, "--network", "host")
 	}
