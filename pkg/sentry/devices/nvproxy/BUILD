@@ -118,6 +118,7 @@ go_test(
         "//pkg/abi/nvgpu",
         "//pkg/sentry/devices/nvproxy/nvconf",
         "//pkg/test/testutil",
+        "//tools/gpu/drivers",
         "//tools/nvidia_driver_differ/parser",
     ],
 )
