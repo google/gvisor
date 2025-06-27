@@ -303,6 +303,8 @@ func goferMountData(fd int, fa config.FileAccessType, conf *config.Config) []str
 	if !conf.HostFifo.AllowOpen() {
 		opts = append(opts, "disable_fifo_open")
 	}
+	// Enable inode sharing for runsc goferfs
+	opts = append(opts, "enable_inode_sharing")
 	return opts
 }
 

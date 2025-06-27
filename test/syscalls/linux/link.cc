@@ -21,13 +21,15 @@
 
 #include <string>
 
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/flags/flag.h"
 #include "absl/strings/str_cat.h"
-#include "test/util/capability_util.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/fs_util.h"
+#include "test/util/linux_capability_util.h"
 #include "test/util/posix_error.h"
+#include "test/util/save_util.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
@@ -41,6 +43,11 @@ namespace {
 
 // IsSameFile returns true if both filenames have the same device and inode.
 bool IsSameFile(const std::string& f1, const std::string& f2) {
+  // Inode numbers for gofer-accessed files on which no reference is held may
+  // change across save/restore because the information that the gofer client
+  // uses to track file identity (path) is inconsistent between gofer
+  // processes, which are restarted across save/restore.
+  DisableSave ds;
   // Use lstat rather than stat, so that symlinks are not followed.
   struct stat stat1 = {};
   EXPECT_THAT(lstat(f1.c_str(), &stat1), SyscallSucceeds());
@@ -51,7 +58,6 @@ bool IsSameFile(const std::string& f1, const std::string& f2) {
 }
 
 // TODO(b/178640646): Add test for linkat with AT_EMPTY_PATH
-
 TEST(LinkTest, CanCreateLinkFile) {
   auto oldfile = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   const std::string newname = NewTempAbsPath();
@@ -74,6 +80,31 @@ TEST(LinkTest, CanCreateLinkFile) {
   // Link count should be back to initial.
   EXPECT_THAT(Links(oldfile.path()),
               IsPosixErrorOkAndHolds(initial_link_count));
+}
+
+TEST(LinkTest, HardlinkChangeMode) {
+  auto oldfile = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  const std::string newname = NewTempAbsPath();
+  struct stat stat1 = {};
+  struct stat stat2 = {};
+  FileDescriptor file_fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(oldfile.path(), O_PATH));
+
+  ASSERT_THAT(linkat(file_fd.get(), oldfile.path().c_str(), file_fd.get(),
+                     newname.c_str(), 0),
+              SyscallSucceeds());
+
+  EXPECT_THAT(chmod(oldfile.path().c_str(), S_IRUSR), SyscallSucceeds());
+  EXPECT_THAT(lstat(newname.c_str(), &stat1), SyscallSucceeds());
+  EXPECT_THAT(lstat(oldfile.path().c_str(), &stat2), SyscallSucceeds());
+
+  // files inode are preserved after save/restore only if the file is
+  // referenced. Do not use IsSameFile() here because it disables save before
+  // checking the st_ino and st_dev.
+  EXPECT_EQ(stat1.st_dev, stat2.st_dev);
+  EXPECT_EQ(stat1.st_ino, stat2.st_ino);
+  EXPECT_EQ(S_IRUSR, (stat1.st_mode & S_IRWXU));
+  EXPECT_THAT(unlink(newname.c_str()), SyscallSucceeds());
 }
 
 TEST(LinkTest, PermissionDenied) {
@@ -234,6 +265,8 @@ TEST(LinkTest, AbsPathsWithNonDirFDs) {
   EXPECT_THAT(linkat(file_fd.get(), oldfile.path().c_str(), file_fd.get(),
                      newname.c_str(), 0),
               SyscallSucceeds());
+
+  EXPECT_TRUE(IsSameFile(oldfile.path(), newname));
 }
 
 TEST(LinkTest, NewDirFDWithOpath) {
@@ -279,10 +312,14 @@ TEST(LinkTest, AbsPathsNonDirFDsWithOpath) {
   TempPath path = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   FileDescriptor file_fd = ASSERT_NO_ERRNO_AND_VALUE(Open(path.path(), O_PATH));
 
+  FileDescriptor oldfile_fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(oldfile.path(), O_PATH));
+
   // Using file_fd as the dirfds is OK as long as paths are absolute.
   EXPECT_THAT(linkat(file_fd.get(), oldfile.path().c_str(), file_fd.get(),
                      newname.c_str(), 0),
               SyscallSucceeds());
+  EXPECT_TRUE(IsSameFile(oldfile.path(), newname));
 }
 
 TEST(LinkTest, LinkDoesNotFollowSymlinks) {
@@ -299,7 +336,7 @@ TEST(LinkTest, LinkDoesNotFollowSymlinks) {
   // The link should not have resolved the symlink, so newname and oldsymlink
   // are the same.
   EXPECT_TRUE(IsSameFile(oldsymlink, newname));
-  EXPECT_FALSE(IsSameFile(oldfile.path(), newname));
+  EXPECT_FALSE(IsSameFile(oldfile.path(), oldsymlink));
 
   EXPECT_THAT(unlink(oldsymlink.c_str()), SyscallSucceeds());
   EXPECT_THAT(unlink(newname.c_str()), SyscallSucceeds());

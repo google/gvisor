@@ -27,27 +27,32 @@ import (
 func TestDestroyIdempotent(t *testing.T) {
 	ctx := contexttest.Context(t)
 	fs := filesystem{
-		mf:       pgalloc.MemoryFileFromContext(ctx),
-		inoByKey: make(map[inoKey]uint64),
-		clock:    ktime.RealtimeClockFromContext(ctx),
+		mf:         pgalloc.MemoryFileFromContext(ctx),
+		inoByKey:   make(map[inoKey]uint64),
+		inodeByIno: make(map[inoKey]*inode),
+		clock:      ktime.RealtimeClockFromContext(ctx),
 		// Test relies on no dentry being held in the cache.
 		dentryCache: &dentryCache{maxCachedDentries: 0},
 		client:      &lisafs.Client{},
 	}
 
-	parentInode := lisafs.Inode{
+	parentRemoteInode := lisafs.Inode{
 		ControlFD: 1,
 		Stat: linux.Statx{
 			Mask: linux.STATX_TYPE | linux.STATX_MODE,
 			Mode: linux.S_IFDIR | 0666,
 		},
 	}
-	parent, err := fs.newLisafsDentry(ctx, &parentInode)
+	parentInode, err := fs.newLisafsInode(ctx, &parentRemoteInode)
 	if err != nil {
-		t.Fatalf("fs.newLisafsDentry(): %v", err)
+		t.Fatalf("fs.newLisafsInode(): %v", err)
+	}
+	parent, err := fs.newDentry(parentInode)
+	if err != nil {
+		t.Fatalf("fs.newDentry(): %v", err)
 	}
 
-	childInode := lisafs.Inode{
+	childRemoteInode := lisafs.Inode{
 		ControlFD: 2,
 		Stat: linux.Statx{
 			Mask: linux.STATX_TYPE | linux.STATX_MODE | linux.STATX_SIZE,
@@ -55,9 +60,14 @@ func TestDestroyIdempotent(t *testing.T) {
 			Size: 0,
 		},
 	}
-	child, err := fs.newLisafsDentry(ctx, &childInode)
+	childInode, err := fs.newLisafsInode(ctx, &childRemoteInode)
 	if err != nil {
-		t.Fatalf("fs.newLisafsDentry(): %v", err)
+		t.Fatalf("fs.newLisafsInode(): %v", err)
+	}
+
+	child, err := fs.newDentry(childInode)
+	if err != nil {
+		t.Fatalf("fs.newDentry(): %v", err)
 	}
 	parent.opMu.Lock()
 	parent.childrenMu.Lock()

@@ -63,12 +63,12 @@ func (fs *filesystem) handleAnameLisafs(ctx context.Context, rootInode lisafs.In
 	}
 }
 
-// lisafsDentry is a gofer dentry implementation. It represents a dentry backed
+// lisafsInode is a gofer inode implementation. It represents a inode backed
 // by a lisafs connection.
 //
 // +stateify savable
-type lisafsDentry struct {
-	dentry
+type lisafsInode struct {
+	inode
 
 	// controlFD is used by lisafs to perform path based operations on this
 	// dentry. controlFD is immutable.
@@ -88,19 +88,20 @@ type lisafsDentry struct {
 	// readFDLisa and writeFDLisa may or may not represent the same LISAFS FD.
 	// Once either transitions from closed (Ok() == false) to open
 	// (Ok() == true), it may be mutated with dentry.handleMu locked, but cannot
-	// be closed until the dentry is destroyed. writeFDLisa is protected by
+	// be closed until the dentry is destroyei. writeFDLisa is protected by
 	// dentry.handleMu.
 	writeFDLisa lisafs.ClientFD `state:"nosave"`
 }
 
-// newLisafsDentry creates a new dentry representing the given file. The dentry
+// newLisafsInode creates a new dentry representing the given file. The dentry
 // initially has no references, but is not cached; it is the caller's
 // responsibility to set the dentry's reference count and/or call
 // dentry.checkCachingLocked() as appropriate.
-// newLisafsDentry takes ownership of ino.
-func (fs *filesystem) newLisafsDentry(ctx context.Context, ino *lisafs.Inode) (*dentry, error) {
+// newLisafsInode takes ownership of ino.
+func (fs *filesystem) newLisafsInode(ctx context.Context, ino *lisafs.Inode) (*inode, error) {
+	var ret *inode
 	if ino.Stat.Mask&linux.STATX_TYPE == 0 {
-		ctx.Warningf("can't create gofer.dentry without file type")
+		ctx.Warningf("can't create gofer.inode without file type")
 		fs.client.CloseFD(ctx, ino.ControlFD, false /* flush */)
 		return nil, linuxerr.EIO
 	}
@@ -111,106 +112,108 @@ func (fs *filesystem) newLisafsDentry(ctx context.Context, ino *lisafs.Inode) (*
 	}
 
 	inoKey := inoKeyFromStatx(&ino.Stat)
-	d := &lisafsDentry{
-		dentry: dentry{
-			fs:        fs,
-			inoKey:    inoKey,
-			ino:       fs.inoFromKey(inoKey),
-			mode:      atomicbitops.FromUint32(uint32(ino.Stat.Mode)),
-			uid:       atomicbitops.FromUint32(uint32(fs.opts.dfltuid)),
-			gid:       atomicbitops.FromUint32(uint32(fs.opts.dfltgid)),
-			blockSize: atomicbitops.FromUint32(hostarch.PageSize),
-			readFD:    atomicbitops.FromInt32(-1),
-			writeFD:   atomicbitops.FromInt32(-1),
-			mmapFD:    atomicbitops.FromInt32(-1),
-		},
-		controlFD: fs.client.NewFD(ino.ControlFD),
-	}
-	if ino.Stat.Mask&linux.STATX_UID != 0 {
-		d.uid = atomicbitops.FromUint32(dentryUID(lisafs.UID(ino.Stat.UID)))
-	}
-	if ino.Stat.Mask&linux.STATX_GID != 0 {
-		d.gid = atomicbitops.FromUint32(dentryGID(lisafs.GID(ino.Stat.GID)))
-	}
-	if ino.Stat.Mask&linux.STATX_SIZE != 0 {
-		d.size = atomicbitops.FromUint64(ino.Stat.Size)
-	}
-	if ino.Stat.Blksize != 0 {
-		d.blockSize = atomicbitops.FromUint32(ino.Stat.Blksize)
-	}
-	if ino.Stat.Mask&linux.STATX_ATIME != 0 {
-		d.atime = atomicbitops.FromInt64(dentryTimestamp(ino.Stat.Atime))
-	} else {
-		d.atime = atomicbitops.FromInt64(fs.clock.Now().Nanoseconds())
-	}
-	if ino.Stat.Mask&linux.STATX_MTIME != 0 {
-		d.mtime = atomicbitops.FromInt64(dentryTimestamp(ino.Stat.Mtime))
-	} else {
-		d.mtime = atomicbitops.FromInt64(fs.clock.Now().Nanoseconds())
-	}
-	if ino.Stat.Mask&linux.STATX_CTIME != 0 {
-		d.ctime = atomicbitops.FromInt64(dentryTimestamp(ino.Stat.Ctime))
-	} else {
-		// Approximate ctime with mtime if ctime isn't available.
-		d.ctime = atomicbitops.FromInt64(d.mtime.Load())
-	}
-	if ino.Stat.Mask&linux.STATX_BTIME != 0 {
-		d.btime = atomicbitops.FromInt64(dentryTimestamp(ino.Stat.Btime))
-	}
-	if ino.Stat.Mask&linux.STATX_NLINK != 0 {
-		d.nlink = atomicbitops.FromUint32(ino.Stat.Nlink)
-	} else {
-		if ino.Stat.Mode&linux.FileTypeMask == linux.ModeDirectory {
-			d.nlink = atomicbitops.FromUint32(2)
-		} else {
-			d.nlink = atomicbitops.FromUint32(1)
+	if fs.opts.enableInodeSharing {
+		cachedInode := fs.findInode(inoKey)
+		if cachedInode != nil {
+			ret = cachedInode
 		}
 	}
-	d.dentry.init(d)
-	fs.syncMu.Lock()
-	fs.syncableDentries.PushBack(&d.syncableListEntry)
-	fs.syncMu.Unlock()
-	return &d.dentry, nil
+
+	if ret == nil {
+		i := &lisafsInode{
+			inode:     inode{},
+			controlFD: fs.client.NewFD(ino.ControlFD),
+		}
+		i.init(fs, fs.inoFromKey(inoKey), &inoKey, i)
+		ret = &i.inode
+		ret.mode.Store(uint32(ino.Stat.Mode))
+		ret.uid.Store(uint32(fs.opts.dfltuid))
+		ret.gid.Store(uint32(fs.opts.dfltgid))
+		ret.blockSize.Store(uint32(hostarch.PageSize))
+
+		if ino.Stat.Mask&linux.STATX_UID != 0 {
+			ret.uid = atomicbitops.FromUint32(dentryUID(lisafs.UID(ino.Stat.UID)))
+		}
+		if ino.Stat.Mask&linux.STATX_GID != 0 {
+			ret.gid = atomicbitops.FromUint32(dentryGID(lisafs.GID(ino.Stat.GID)))
+		}
+		if ino.Stat.Mask&linux.STATX_SIZE != 0 {
+			ret.size = atomicbitops.FromUint64(ino.Stat.Size)
+		}
+		if ino.Stat.Blksize != 0 {
+			ret.blockSize = atomicbitops.FromUint32(ino.Stat.Blksize)
+		}
+		if ino.Stat.Mask&linux.STATX_ATIME != 0 {
+			ret.atime = atomicbitops.FromInt64(dentryTimestamp(ino.Stat.Atime))
+		} else {
+			ret.atime = atomicbitops.FromInt64(fs.clock.Now().Nanoseconds())
+		}
+		if ino.Stat.Mask&linux.STATX_MTIME != 0 {
+			ret.mtime = atomicbitops.FromInt64(dentryTimestamp(ino.Stat.Mtime))
+		} else {
+			ret.mtime = atomicbitops.FromInt64(fs.clock.Now().Nanoseconds())
+		}
+		if ino.Stat.Mask&linux.STATX_CTIME != 0 {
+			ret.ctime = atomicbitops.FromInt64(dentryTimestamp(ino.Stat.Ctime))
+		} else {
+			// Approximate ctime with mtime if ctime isn't available.
+			ret.ctime = atomicbitops.FromInt64(ret.mtime.Load())
+		}
+		if ino.Stat.Mask&linux.STATX_BTIME != 0 {
+			ret.btime = atomicbitops.FromInt64(dentryTimestamp(ino.Stat.Btime))
+		}
+
+		if ino.Stat.Mask&linux.STATX_NLINK != 0 {
+			ret.nlink = atomicbitops.FromUint32(ino.Stat.Nlink)
+		} else {
+			if ino.Stat.Mode&linux.FileTypeMask == linux.ModeDirectory {
+				ret.nlink = atomicbitops.FromUint32(2)
+			} else {
+				ret.nlink = atomicbitops.FromUint32(1)
+			}
+		}
+	}
+	return ret, nil
 }
 
-func (d *lisafsDentry) openHandle(ctx context.Context, flags uint32) (handle, error) {
-	openFD, hostFD, err := d.controlFD.OpenAt(ctx, flags)
+func (i *lisafsInode) openHandle(ctx context.Context, flags uint32) (handle, error) {
+	openFD, hostFD, err := i.controlFD.OpenAt(ctx, flags)
 	if err != nil {
 		return noHandle, err
 	}
 	return handle{
-		fdLisa: d.controlFD.Client().NewFD(openFD),
+		fdLisa: i.controlFD.Client().NewFD(openFD),
 		fd:     int32(hostFD),
 	}, nil
 }
 
-func (d *lisafsDentry) updateHandles(ctx context.Context, h handle, readable, writable bool) {
+func (i *lisafsInode) updateHandles(ctx context.Context, h handle, readable, writable bool) {
 	// Switch to new LISAFS FDs. Note that the read, write and mmap host FDs are
 	// updated separately.
 	oldReadFD := lisafs.InvalidFDID
 	if readable {
-		oldReadFD = d.readFDLisa.ID()
-		d.readFDLisa = h.fdLisa
+		oldReadFD = i.readFDLisa.ID()
+		i.readFDLisa = h.fdLisa
 	}
 	oldWriteFD := lisafs.InvalidFDID
 	if writable {
-		oldWriteFD = d.writeFDLisa.ID()
-		d.writeFDLisa = h.fdLisa
+		oldWriteFD = i.writeFDLisa.ID()
+		i.writeFDLisa = h.fdLisa
 	}
 	// NOTE(b/141991141): Close old FDs before making new fids visible (by
-	// unlocking d.handleMu).
+	// unlocking i.inode.handleMu).
 	if oldReadFD.Ok() {
-		d.fs.client.CloseFD(ctx, oldReadFD, false /* flush */)
+		i.inode.fs.client.CloseFD(ctx, oldReadFD, false /* flush */)
 	}
 	if oldWriteFD.Ok() && oldReadFD != oldWriteFD {
-		d.fs.client.CloseFD(ctx, oldWriteFD, false /* flush */)
+		i.inode.fs.client.CloseFD(ctx, oldWriteFD, false /* flush */)
 	}
 }
 
-// Precondition: d.metadataMu must be locked.
+// Precondition: i.inode.metadataMu must be lockei.
 //
-// +checklocks:d.metadataMu
-func (d *lisafsDentry) updateMetadataLocked(ctx context.Context, h handle) error {
+// +checklocks:i.inode.metadataMu
+func (i *lisafsInode) updateMetadataLocked(ctx context.Context, h handle) error {
 	handleMuRLocked := false
 	if !h.fdLisa.Ok() {
 		// Use open FDs in preferenece to the control FD. This may be significantly
@@ -218,17 +221,17 @@ func (d *lisafsDentry) updateMetadataLocked(ctx context.Context, h handle) error
 		// readable one since some filesystem implementations may update a writable
 		// FD's metadata after writes, without making metadata updates immediately
 		// visible to read-only FDs representing the same file.
-		d.handleMu.RLock()
+		i.inode.handleMu.RLock()
 		switch {
-		case d.writeFDLisa.Ok():
-			h.fdLisa = d.writeFDLisa
+		case i.writeFDLisa.Ok():
+			h.fdLisa = i.writeFDLisa
 			handleMuRLocked = true
-		case d.readFDLisa.Ok():
-			h.fdLisa = d.readFDLisa
+		case i.readFDLisa.Ok():
+			h.fdLisa = i.readFDLisa
 			handleMuRLocked = true
 		default:
-			h.fdLisa = d.controlFD
-			d.handleMu.RUnlock()
+			h.fdLisa = i.controlFD
+			i.inode.handleMu.RUnlock()
 		}
 	}
 
@@ -236,12 +239,12 @@ func (d *lisafsDentry) updateMetadataLocked(ctx context.Context, h handle) error
 	err := h.fdLisa.StatTo(ctx, &stat)
 	if handleMuRLocked {
 		// handleMu must be released before updateMetadataFromStatLocked().
-		d.handleMu.RUnlock() // +checklocksforce: complex case.
+		i.inode.handleMu.RUnlock() // +checklocksforce: complex case.
 	}
 	if err != nil {
 		return err
 	}
-	d.updateMetadataFromStatxLocked(&stat)
+	i.updateMetadataFromStatxLocked(&stat)
 	return nil
 }
 
@@ -257,39 +260,43 @@ func chmod(ctx context.Context, controlFD lisafs.ClientFD, mode uint16) error {
 	return failureErr
 }
 
-func (d *lisafsDentry) destroy(ctx context.Context) {
-	if d.readFDLisa.Ok() && d.readFDLisa.ID() != d.writeFDLisa.ID() {
-		d.readFDLisa.Close(ctx, false /* flush */)
+func (i *lisafsInode) destroy(ctx context.Context, d *dentry) {
+	if i.readFDLisa.Ok() && i.readFDLisa.ID() != i.writeFDLisa.ID() {
+		i.readFDLisa.Close(ctx, false /* flush */)
 	}
-	if d.writeFDLisa.Ok() {
-		d.writeFDLisa.Close(ctx, false /* flush */)
+	if i.writeFDLisa.Ok() {
+		i.writeFDLisa.Close(ctx, false /* flush */)
 	}
-	if d.controlFD.Ok() {
+	if i.controlFD.Ok() {
 		// Close the control FD. Propagate the Close RPCs immediately to the server
 		// if the dentry being destroyed is a deleted regular file. This is to
 		// release the disk space on remote immediately. This will flush the above
 		// read/write lisa FDs as well.
-		flushClose := d.isDeleted() && d.isRegularFile()
-		d.controlFD.Close(ctx, flushClose)
+		flushClose := d.isDeleted() && i.isRegularFile()
+		i.controlFD.Close(ctx, flushClose)
 	}
 }
 
-func (d *lisafsDentry) getRemoteChild(ctx context.Context, name string) (*dentry, error) {
-	childInode, err := d.controlFD.Walk(ctx, name)
+func (i *lisafsInode) getRemoteChild(ctx context.Context, name string) (*dentry, error) {
+	childInode, err := i.controlFD.Walk(ctx, name)
 	if err != nil {
 		return nil, err
 	}
-	return d.fs.newLisafsDentry(ctx, &childInode)
+	inode, err := i.inode.fs.newLisafsInode(ctx, &childInode)
+	if err != nil {
+		return nil, err
+	}
+	return i.inode.fs.newDentry(inode)
 }
 
 // Preconditions:
 //   - fs.renameMu must be locked.
-//   - d.opMu must be locked.
-//   - d.isDir().
+//   - i.opMu must be locked.
+//   - i.isDir().
 //   - !rp.done() && rp.Component() is not "." or "..".
 //
 // Postcondition: The returned dentry is already cached appropriately.
-func (d *lisafsDentry) getRemoteChildAndWalkPathLocked(ctx context.Context, rp resolvingPath, ds **[]*dentry) (*dentry, error) {
+func (i *lisafsInode) getRemoteChildAndWalkPathLocked(ctx context.Context, rp resolvingPath, ds **[]*dentry, d *dentry) (*dentry, error) {
 	// Collect as many path components as possible to walk.
 	var namesArr [16]string // arbitrarily sized array to help avoid slice allocation.
 	names := namesArr[:0]
@@ -304,12 +311,12 @@ func (d *lisafsDentry) getRemoteChildAndWalkPathLocked(ctx context.Context, rp r
 		return true
 	})
 	// Walk as much of the path as possible in 1 RPC.
-	_, inodes, err := d.controlFD.WalkMultiple(ctx, names)
+	_, inodes, err := i.controlFD.WalkMultiple(ctx, names)
 	if err != nil {
 		return nil, err
 	}
 	if len(inodes) == 0 {
-		// d.opMu is locked. So a new child could not have appeared concurrently.
+		// i.opMu is locked. So a new child could not have appeared concurrently.
 		// It should be safe to mark this as a negative entry.
 		d.childrenMu.Lock()
 		defer d.childrenMu.Unlock()
@@ -318,7 +325,7 @@ func (d *lisafsDentry) getRemoteChildAndWalkPathLocked(ctx context.Context, rp r
 	}
 
 	// Add the walked inodes into the dentry tree.
-	startParent := &d.dentry
+	startParent := d
 	curParent := startParent
 	curParentLock := func() {
 		if curParent != startParent {
@@ -336,7 +343,7 @@ func (d *lisafsDentry) getRemoteChildAndWalkPathLocked(ctx context.Context, rp r
 	var dentryCreationErr error
 	for i := range inodes {
 		if dentryCreationErr != nil {
-			d.fs.client.CloseFD(ctx, inodes[i].ControlFD, false /* flush */)
+			d.inode.fs.client.CloseFD(ctx, inodes[i].ControlFD, false /* flush */)
 			continue
 		}
 
@@ -346,11 +353,17 @@ func (d *lisafsDentry) getRemoteChildAndWalkPathLocked(ctx context.Context, rp r
 		if ok && child != nil {
 			// We raced. Clean up the new inode and proceed with
 			// the cached child.
-			d.fs.client.CloseFD(ctx, inodes[i].ControlFD, false /* flush */)
+			d.inode.fs.client.CloseFD(ctx, inodes[i].ControlFD, false /* flush */)
 		} else {
 			// Create and cache the new dentry.
 			var err error
-			child, err = d.fs.newLisafsDentry(ctx, &inodes[i])
+			inode, err := d.inode.fs.newLisafsInode(ctx, &inodes[i])
+			if err != nil {
+				dentryCreationErr = err
+				curParentUnlock()
+				continue
+			}
+			child, err = d.inode.fs.newDentry(inode)
 			if err != nil {
 				dentryCreationErr = err
 				curParentUnlock()
@@ -377,94 +390,106 @@ func (d *lisafsDentry) getRemoteChildAndWalkPathLocked(ctx context.Context, rp r
 	return ret, dentryCreationErr
 }
 
-func (d *lisafsDentry) newChildDentry(ctx context.Context, childIno *lisafs.Inode, childName string) (*dentry, error) {
-	child, err := d.fs.newLisafsDentry(ctx, childIno)
+func (i *lisafsInode) newChildDentry(ctx context.Context, childIno *lisafs.Inode, childName string) (*dentry, error) {
+	inode, err := i.fs.newLisafsInode(ctx, childIno)
 	if err != nil {
-		if err := d.controlFD.UnlinkAt(ctx, childName, 0 /* flags */); err != nil {
-			log.Warningf("failed to clean up created child %s after newLisafsDentry() failed: %v", childName, err)
+		if err := i.controlFD.UnlinkAt(ctx, childName, 0 /* flags */); err != nil {
+			log.Warningf("failed to create new lisafs inode for %q: %v", childName, err)
+		}
+		return nil, err
+	}
+	child, err := i.fs.newDentry(inode)
+	if err != nil {
+		if err := i.controlFD.UnlinkAt(ctx, childName, 0 /* flags */); err != nil {
+			log.Warningf("failed to clean up created child %q after newDentry() failed: %v", childName, err)
 		}
 	}
 	return child, err
 }
 
-func (d *lisafsDentry) mknod(ctx context.Context, name string, creds *auth.Credentials, opts *vfs.MknodOptions) (*dentry, error) {
+func (i *lisafsInode) mknod(ctx context.Context, name string, creds *auth.Credentials, opts *vfs.MknodOptions) (*dentry, error) {
 	if _, ok := opts.Endpoint.(transport.HostBoundEndpoint); !ok {
-		childInode, err := d.controlFD.MknodAt(ctx, name, opts.Mode, lisafs.UID(creds.EffectiveKUID), lisafs.GID(creds.EffectiveKGID), opts.DevMinor, opts.DevMajor)
+		childInode, err := i.controlFD.MknodAt(ctx, name, opts.Mode, lisafs.UID(creds.EffectiveKUID), lisafs.GID(creds.EffectiveKGID), opts.DevMinor, opts.DevMajor)
 		if err != nil {
 			return nil, err
 		}
-		return d.newChildDentry(ctx, &childInode, name)
+		return i.newChildDentry(ctx, &childInode, name)
 	}
 
 	// This mknod(2) is coming from unix bind(2), as opts.Endpoint is set.
 	sockType := opts.Endpoint.(transport.Endpoint).Type()
-	childInode, boundSocketFD, err := d.controlFD.BindAt(ctx, sockType, name, opts.Mode, lisafs.UID(creds.EffectiveKUID), lisafs.GID(creds.EffectiveKGID))
+	childInode, boundSocketFD, err := i.controlFD.BindAt(ctx, sockType, name, opts.Mode, lisafs.UID(creds.EffectiveKUID), lisafs.GID(creds.EffectiveKGID))
 	if err != nil {
 		return nil, err
 	}
 	hbep := opts.Endpoint.(transport.HostBoundEndpoint)
 	if err := hbep.SetBoundSocketFD(ctx, boundSocketFD); err != nil {
-		if err := d.controlFD.UnlinkAt(ctx, name, 0 /* flags */); err != nil {
+		if err := i.controlFD.UnlinkAt(ctx, name, 0 /* flags */); err != nil {
 			log.Warningf("failed to clean up socket which was created by BindAt RPC: %v", err)
 		}
-		d.fs.client.CloseFD(ctx, childInode.ControlFD, false /* flush */)
+		i.inode.fs.client.CloseFD(ctx, childInode.ControlFD, false /* flush */)
 		return nil, err
 	}
-	child, err := d.newChildDentry(ctx, &childInode, name)
+	child, err := i.newChildDentry(ctx, &childInode, name)
 	if err != nil {
 		hbep.ResetBoundSocketFD(ctx)
 		return nil, err
 	}
 	// Set the endpoint on the newly created child dentry, and take the
 	// corresponding extra dentry reference.
-	child.endpoint = opts.Endpoint
+	child.inode.endpoint = opts.Endpoint
 	child.IncRef()
 	return child, nil
 }
 
-func (d *lisafsDentry) link(ctx context.Context, target *lisafsDentry, name string) (*dentry, error) {
-	linkInode, err := d.controlFD.LinkAt(ctx, target.controlFD.ID(), name)
+func (i *lisafsInode) link(ctx context.Context, target *lisafsInode, name string) (*dentry, error) {
+	linkInode, err := i.controlFD.LinkAt(ctx, target.controlFD.ID(), name)
 	if err != nil {
 		return nil, err
 	}
 	// TODO(gvisor.dev/issue/6739): Hard linked dentries should share the same
 	// inode fields.
-	return d.newChildDentry(ctx, &linkInode, name)
+	return i.newChildDentry(ctx, &linkInode, name)
 }
 
-func (d *lisafsDentry) mkdir(ctx context.Context, name string, mode linux.FileMode, uid auth.KUID, gid auth.KGID, createDentry bool) (*dentry, error) {
-	childDirInode, err := d.controlFD.MkdirAt(ctx, name, mode, lisafs.UID(uid), lisafs.GID(gid))
+func (i *lisafsInode) mkdir(ctx context.Context, name string, mode linux.FileMode, uid auth.KUID, gid auth.KGID, createDentry bool) (*dentry, error) {
+	childDirInode, err := i.controlFD.MkdirAt(ctx, name, mode, lisafs.UID(uid), lisafs.GID(gid))
 	if err != nil {
 		return nil, err
 	}
 	if !createDentry {
 		return nil, nil
 	}
-	return d.newChildDentry(ctx, &childDirInode, name)
+	return i.newChildDentry(ctx, &childDirInode, name)
 }
 
-func (d *lisafsDentry) symlink(ctx context.Context, name, target string, creds *auth.Credentials) (*dentry, error) {
-	symlinkInode, err := d.controlFD.SymlinkAt(ctx, name, target, lisafs.UID(creds.EffectiveKUID), lisafs.GID(creds.EffectiveKGID))
+func (i *lisafsInode) symlink(ctx context.Context, name, target string, creds *auth.Credentials) (*dentry, error) {
+	symlinkInode, err := i.controlFD.SymlinkAt(ctx, name, target, lisafs.UID(creds.EffectiveKUID), lisafs.GID(creds.EffectiveKGID))
 	if err != nil {
 		return nil, err
 	}
-	return d.newChildDentry(ctx, &symlinkInode, name)
+	return i.newChildDentry(ctx, &symlinkInode, name)
 }
 
-func (d *lisafsDentry) openCreate(ctx context.Context, name string, flags uint32, mode linux.FileMode, uid auth.KUID, gid auth.KGID, createDentry bool) (*dentry, handle, error) {
-	ino, openFD, hostFD, err := d.controlFD.OpenCreateAt(ctx, name, flags, mode, lisafs.UID(uid), lisafs.GID(gid))
+func (i *lisafsInode) openCreate(ctx context.Context, name string, flags uint32, mode linux.FileMode, uid auth.KUID, gid auth.KGID, createDentry bool) (*dentry, handle, error) {
+	ino, openFD, hostFD, err := i.controlFD.OpenCreateAt(ctx, name, flags, mode, lisafs.UID(uid), lisafs.GID(gid))
 	if err != nil {
 		return nil, noHandle, err
 	}
 
 	h := handle{
-		fdLisa: d.fs.client.NewFD(openFD),
+		fdLisa: i.inode.fs.client.NewFD(openFD),
 		fd:     int32(hostFD),
 	}
 	if !createDentry {
 		return nil, h, nil
 	}
-	child, err := d.fs.newLisafsDentry(ctx, &ino)
+	inode, err := i.inode.fs.newLisafsInode(ctx, &ino)
+	if err != nil {
+		h.close(ctx)
+		return nil, noHandle, err
+	}
+	child, err := i.inode.fs.newDentry(inode)
 	if err != nil {
 		h.close(ctx)
 		return nil, noHandle, err
@@ -478,7 +503,7 @@ const lisafsGetdentsCount = int32(64 * 1024)
 
 // Preconditions:
 //   - getDirents may not be called concurrently with another getDirents call.
-func (d *lisafsDentry) getDirentsLocked(ctx context.Context, recordDirent func(name string, key inoKey, dType uint8)) error {
+func (i *lisafsInode) getDirentsLocked(ctx context.Context, recordDirent func(name string, key inoKey, dType uint8)) error {
 	// shouldSeek0 indicates whether the server should SEEK to 0 before reading
 	// directory entries.
 	shouldSeek0 := true
@@ -489,7 +514,7 @@ func (d *lisafsDentry) getDirentsLocked(ctx context.Context, recordDirent func(n
 			count = -count
 			shouldSeek0 = false
 		}
-		dirents, err := d.readFDLisa.Getdents64(ctx, count)
+		dirents, err := i.readFDLisa.Getdents64(ctx, count)
 		if err != nil {
 			return err
 		}
@@ -517,9 +542,9 @@ func flush(ctx context.Context, fd lisafs.ClientFD) error {
 	return nil
 }
 
-func (d *lisafsDentry) statfs(ctx context.Context) (linux.Statfs, error) {
+func (i *lisafsInode) statfs(ctx context.Context) (linux.Statfs, error) {
 	var statFS lisafs.StatFS
-	if err := d.controlFD.StatFSTo(ctx, &statFS); err != nil {
+	if err := i.controlFD.StatFSTo(ctx, &statFS); err != nil {
 		return linux.Statfs{}, err
 	}
 	return linux.Statfs{
@@ -534,8 +559,8 @@ func (d *lisafsDentry) statfs(ctx context.Context) (linux.Statfs, error) {
 	}, nil
 }
 
-func (d *lisafsDentry) restoreFile(ctx context.Context, inode *lisafs.Inode, opts *vfs.CompleteRestoreOptions) error {
-	d.controlFD = d.fs.client.NewFD(inode.ControlFD)
+func (i *lisafsInode) restoreFile(ctx context.Context, inode *lisafs.Inode, opts *vfs.CompleteRestoreOptions, d *dentry) error {
+	i.controlFD = i.inode.fs.client.NewFD(inode.ControlFD)
 
 	// Gofers do not preserve inoKey across checkpoint/restore, so:
 	//
@@ -543,40 +568,43 @@ func (d *lisafsDentry) restoreFile(ctx context.Context, inode *lisafs.Inode, opt
 	//		would invalidate dentries, since we can't revalidate dentries by
 	//		checking inoKey.
 	//
-	//	- We need to associate the new inoKey with the existing d.ino.
-	d.inoKey = inoKeyFromStatx(&inode.Stat)
-	d.fs.inoMu.Lock()
-	d.fs.inoByKey[d.inoKey] = d.ino
-	d.fs.inoMu.Unlock()
+	//	- We need to associate the new inoKey with the existing i.ino.
+	i.inode.inoKey = inoKeyFromStatx(&inode.Stat)
+	i.inode.fs.inoMu.Lock()
+	i.inode.fs.inoByKey[i.inode.inoKey] = i.inode.ino
+	i.inode.fs.inoMu.Unlock()
+	i.inode.fs.inodeByInoMu.Lock()
+	i.inode.fs.inodeByIno[i.inoKey] = &i.inode
+	i.inode.fs.inodeByInoMu.Unlock()
 
 	// Check metadata stability before updating metadata.
-	d.metadataMu.Lock()
-	defer d.metadataMu.Unlock()
-	if d.isRegularFile() {
+	i.inode.metadataMu.Lock()
+	defer i.inode.metadataMu.Unlock()
+	if i.isRegularFile() {
 		if opts.ValidateFileSizes {
 			if inode.Stat.Mask&linux.STATX_SIZE == 0 {
-				return vfs.ErrCorruption{fmt.Errorf("gofer.dentry(%q).restoreFile: file size validation failed: file size not available", genericDebugPathname(d.fs, &d.dentry))}
+				return vfs.ErrCorruption{Err: fmt.Errorf("gofer.dentry(%q).restoreFile: file size validation failed: file size not available", genericDebugPathname(i.inode.fs, d))}
 			}
-			if d.size.RacyLoad() != inode.Stat.Size {
-				return vfs.ErrCorruption{fmt.Errorf("gofer.dentry(%q).restoreFile: file size validation failed: size changed from %d to %d", genericDebugPathname(d.fs, &d.dentry), d.size.Load(), inode.Stat.Size)}
+			if i.inode.size.RacyLoad() != inode.Stat.Size {
+				return vfs.ErrCorruption{Err: fmt.Errorf("gofer.dentry(%q).restoreFile: file size validation failed: size changed from %d to %d", genericDebugPathname(i.inode.fs, d), i.inode.size.Load(), inode.Stat.Size)}
 			}
 		}
 		if opts.ValidateFileModificationTimestamps {
 			if inode.Stat.Mask&linux.STATX_MTIME == 0 {
-				return vfs.ErrCorruption{fmt.Errorf("gofer.dentry(%q).restoreFile: mtime validation failed: mtime not available", genericDebugPathname(d.fs, &d.dentry))}
+				return vfs.ErrCorruption{Err: fmt.Errorf("gofer.dentry(%q).restoreFile: mtime validation failed: mtime not available", genericDebugPathname(i.inode.fs, d))}
 			}
-			if want := dentryTimestamp(inode.Stat.Mtime); d.mtime.RacyLoad() != want {
-				return vfs.ErrCorruption{fmt.Errorf("gofer.dentry(%q).restoreFile: mtime validation failed: mtime changed from %+v to %+v", genericDebugPathname(d.fs, &d.dentry), linux.NsecToStatxTimestamp(d.mtime.RacyLoad()), linux.NsecToStatxTimestamp(want))}
+			if want := dentryTimestamp(inode.Stat.Mtime); i.inode.mtime.RacyLoad() != want {
+				return vfs.ErrCorruption{Err: fmt.Errorf("gofer.dentry(%q).restoreFile: mtime validation failed: mtime changed from %+v to %+v", genericDebugPathname(i.inode.fs, d), linux.NsecToStatxTimestamp(i.inode.mtime.RacyLoad()), linux.NsecToStatxTimestamp(want))}
 			}
 		}
 	}
-	if !d.cachedMetadataAuthoritative() {
-		d.updateMetadataFromStatxLocked(&inode.Stat)
+	if !i.inode.cachedMetadataAuthoritative() {
+		i.updateMetadataFromStatxLocked(&inode.Stat)
 	}
 
-	if rw, ok := d.fs.savedDentryRW[&d.dentry]; ok {
+	if rw, ok := i.inode.fs.savedDentryRW[d]; ok {
 		if err := d.ensureSharedHandle(ctx, rw.read, rw.write, false /* trunc */); err != nil {
-			return fmt.Errorf("failed to restore file handles (read=%t, write=%t) for %q: %w", rw.read, rw.write, genericDebugPathname(d.fs, &d.dentry), err)
+			return fmt.Errorf("failed to restore file handles (read=%t, write=%t) for %q: %w", rw.read, rw.write, genericDebugPathname(i.inode.fs, d), err)
 		}
 	}
 
@@ -590,7 +618,7 @@ func (d *lisafsDentry) restoreFile(ctx context.Context, inode *lisafs.Inode, opt
 //   - fs.renameMu must be locked.
 //   - InteropModeShared is in effect.
 func doRevalidationLisafs(ctx context.Context, vfsObj *vfs.VirtualFilesystem, state *revalidateState, ds **[]*dentry) error {
-	start := state.start.impl.(*lisafsDentry)
+	start := state.start.inode.impl.(*lisafsInode)
 
 	// Populate state.names.
 	state.names = state.names[:0] // For sanity.
@@ -603,11 +631,11 @@ func doRevalidationLisafs(ctx context.Context, vfsObj *vfs.VirtualFilesystem, st
 
 	// Lock metadata on all dentries *before* getting attributes for them.
 	if state.refreshStart {
-		start.metadataMu.Lock()
-		defer start.metadataMu.Unlock()
+		start.inode.metadataMu.Lock()
+		defer start.inode.metadataMu.Unlock()
 	}
 	for _, d := range state.dentries {
-		d.metadataMu.Lock()
+		d.inode.metadataMu.Lock()
 	}
 	// lastUnlockedDentry keeps track of the dentries in state.dentries that have
 	// already had their metadataMu unlocked. Avoid defer unlock in the loop
@@ -617,7 +645,7 @@ func doRevalidationLisafs(ctx context.Context, vfsObj *vfs.VirtualFilesystem, st
 		// Advance to the first unevaluated dentry and unlock the remaining
 		// dentries.
 		for lastUnlockedDentry++; lastUnlockedDentry < len(state.dentries); lastUnlockedDentry++ {
-			state.dentries[lastUnlockedDentry].metadataMu.Unlock()
+			state.dentries[lastUnlockedDentry].inode.metadataMu.Unlock()
 		}
 	}()
 
@@ -630,7 +658,7 @@ func doRevalidationLisafs(ctx context.Context, vfsObj *vfs.VirtualFilesystem, st
 	if state.refreshStart {
 		if len(stats) > 0 {
 			// First dentry is where the search is starting, just update attributes
-			// since it cannot be replaced.
+			// since it cannot be replacei.
 			start.updateMetadataFromStatxLocked(&stats[0]) // +checklocksforce: see above.
 			stats = stats[1:]
 		}
@@ -640,13 +668,13 @@ func doRevalidationLisafs(ctx context.Context, vfsObj *vfs.VirtualFilesystem, st
 		d := state.dentries[i]
 		found := i < len(stats)
 		// Advance lastUnlockedDentry. It is the responsibility of this for loop
-		// block to unlock d.metadataMu.
+		// block to unlock i.inode.metadataMu.
 		lastUnlockedDentry = i
 
 		// Note that synthetic dentries will always fail this comparison check.
-		if !found || d.inoKey != inoKeyFromStatx(&stats[i]) {
-			d.metadataMu.Unlock()
-			if !found && d.isSynthetic() {
+		if !found || d.inode.inoKey != inoKeyFromStatx(&stats[i]) {
+			d.inode.metadataMu.Unlock()
+			if !found && d.inode.isSynthetic() {
 				// We have a synthetic file, and no remote file has arisen to replace
 				// it.
 				return nil
@@ -658,8 +686,8 @@ func doRevalidationLisafs(ctx context.Context, vfsObj *vfs.VirtualFilesystem, st
 		}
 
 		// The file at this path hasn't changed. Just update cached metadata.
-		d.impl.(*lisafsDentry).updateMetadataFromStatxLocked(&stats[i]) // +checklocksforce: see above.
-		d.metadataMu.Unlock()
+		d.inode.impl.(*lisafsInode).updateMetadataFromStatxLocked(&stats[i]) // +checklocksforce: see above.
+		d.inode.metadataMu.Unlock()
 	}
 	return nil
 }

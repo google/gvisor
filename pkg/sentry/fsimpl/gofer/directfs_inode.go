@@ -22,7 +22,6 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fsutil"
 	"gvisor.dev/gvisor/pkg/lisafs"
@@ -67,29 +66,29 @@ func tryOpen(open func(int) (int, error)) (int, error) {
 	return -1, err
 }
 
-// getDirectfsRootDentry creates a new dentry representing the root dentry for
-// this mountpoint. getDirectfsRootDentry takes ownership of rootHostFD and
+// getDirectfsRootInode creates a new inode representing the root inode for
+// this mountpoint. getDirectfsRootInode takes ownership of rootHostFD and
 // rootControlFD.
-func (fs *filesystem) getDirectfsRootDentry(ctx context.Context, rootHostFD int, rootControlFD lisafs.ClientFD) (*dentry, error) {
-	d, err := fs.newDirectfsDentry(rootHostFD)
+func (fs *filesystem) getDirectfsRootInode(ctx context.Context, rootHostFD int, rootControlFD lisafs.ClientFD) (*inode, error) {
+	inode, err := fs.newDirectfsInode(rootHostFD)
 	if err != nil {
-		log.Warningf("newDirectfsDentry failed for mount point dentry: %v", err)
+		log.Warningf("newDirectfsInode failed for mount point dentry: %v", err)
 		rootControlFD.Close(ctx, false /* flush */)
 		return nil, err
 	}
-	d.impl.(*directfsDentry).controlFDLisa = rootControlFD
-	return d, nil
+	inode.impl.(*directfsInode).controlFDLisa = rootControlFD
+	return inode, nil
 }
 
-// directfsDentry is a host dentry implementation. It represents a dentry
+// directfsInode is a host dentry implementation. It represents a dentry
 // backed by a host file descriptor. All operations are directly performed on
 // the host. A gofer is only involved for some operations on the mount point
 // dentry (when dentry.parent = nil). We are forced to fall back to the gofer
 // due to the lack of procfs in the sandbox process.
 //
 // +stateify savable
-type directfsDentry struct {
-	dentry
+type directfsInode struct {
+	inode
 
 	// controlFD is the host FD to this file. controlFD is immutable until
 	// destruction, which is synchronized with dentry.handleMu.
@@ -107,59 +106,64 @@ type directfsDentry struct {
 	controlFDLisa lisafs.ClientFD `state:"nosave"`
 }
 
-// newDirectfsDentry creates a new dentry representing the given file. The dentry
+// newDirectfsInode creates a new dentry representing the given file. The dentry
 // initially has no references, but is not cached; it is the caller's
 // responsibility to set the dentry's reference count and/or call
 // dentry.checkCachingLocked() as appropriate.
 // newDirectDentry takes ownership of controlFD.
-func (fs *filesystem) newDirectfsDentry(controlFD int) (*dentry, error) {
+func (fs *filesystem) newDirectfsInode(controlFD int) (*inode, error) {
 	var stat unix.Stat_t
+	var ret *inode = nil
 	if err := unix.Fstat(controlFD, &stat); err != nil {
 		log.Warningf("failed to fstat(2) FD %d: %v", controlFD, err)
 		_ = unix.Close(controlFD)
 		return nil, err
 	}
 	inoKey := inoKeyFromStat(&stat)
-	d := &directfsDentry{
-		dentry: dentry{
-			fs:        fs,
-			inoKey:    inoKey,
-			ino:       fs.inoFromKey(inoKey),
-			mode:      atomicbitops.FromUint32(stat.Mode),
-			uid:       atomicbitops.FromUint32(stat.Uid),
-			gid:       atomicbitops.FromUint32(stat.Gid),
-			blockSize: atomicbitops.FromUint32(uint32(stat.Blksize)),
-			readFD:    atomicbitops.FromInt32(-1),
-			writeFD:   atomicbitops.FromInt32(-1),
-			mmapFD:    atomicbitops.FromInt32(-1),
-			size:      atomicbitops.FromUint64(uint64(stat.Size)),
-			atime:     atomicbitops.FromInt64(dentryTimestampFromUnix(stat.Atim)),
-			mtime:     atomicbitops.FromInt64(dentryTimestampFromUnix(stat.Mtim)),
-			ctime:     atomicbitops.FromInt64(dentryTimestampFromUnix(stat.Ctim)),
-			nlink:     atomicbitops.FromUint32(uint32(stat.Nlink)),
-		},
-		controlFD: controlFD,
+
+	if fs.opts.enableInodeSharing {
+		cachedInode := fs.findInode(inoKey)
+		if cachedInode != nil {
+			ret = cachedInode
+		}
 	}
-	d.dentry.init(d)
-	fs.syncMu.Lock()
-	fs.syncableDentries.PushBack(&d.syncableListEntry)
-	fs.syncMu.Unlock()
-	return &d.dentry, nil
+
+	if ret == nil {
+		i := &directfsInode{
+			inode:     inode{},
+			controlFD: controlFD,
+		}
+
+		// Initalize the inode before use or setting fields
+		i.init(fs, fs.inoFromKey(inoKey), &inoKey, i)
+		ret = &i.inode
+		ret.nlink.Store(uint32(stat.Nlink))
+		ret.mode.Store(uint32(stat.Mode))
+		ret.uid.Store(uint32(stat.Uid))
+		ret.gid.Store(uint32(stat.Gid))
+		ret.size.Store(uint64(stat.Size))
+		ret.blockSize.Store(uint32(stat.Blksize))
+		ret.atime.Store(dentryTimestampFromUnix(stat.Atim))
+		ret.mtime.Store(dentryTimestampFromUnix(stat.Mtim))
+		ret.ctime.Store(dentryTimestampFromUnix(stat.Ctim))
+		ret.inoKey = inoKey
+	}
+	return ret, nil
 }
 
 // Precondition: fs.renameMu is locked.
-func (d *directfsDentry) openHandle(ctx context.Context, flags uint32) (handle, error) {
+func (i *directfsInode) openHandle(ctx context.Context, flags uint32, d *dentry) (handle, error) {
 	parent := d.parent.Load()
 	if parent == nil {
 		// This is a mount point. We don't have parent. Fallback to using lisafs.
-		if !d.controlFDLisa.Ok() {
-			panic("directfsDentry.controlFDLisa is not set for mount point dentry")
+		if !i.controlFDLisa.Ok() {
+			panic("directfsInode.controlFDLisa is not set for mount point dentry")
 		}
-		openFD, hostFD, err := d.controlFDLisa.OpenAt(ctx, flags)
+		openFD, hostFD, err := i.controlFDLisa.OpenAt(ctx, flags)
 		if err != nil {
 			return noHandle, err
 		}
-		d.fs.client.CloseFD(ctx, openFD, true /* flush */)
+		i.inode.fs.client.CloseFD(ctx, openFD, true /* flush */)
 		if hostFD < 0 {
 			log.Warningf("gofer did not donate an FD for mount point")
 			return noHandle, unix.EIO
@@ -170,7 +174,7 @@ func (d *directfsDentry) openHandle(ctx context.Context, flags uint32) (handle, 
 	// The only way to re-open an FD with different flags is via procfs or
 	// openat(2) from the parent. Procfs does not exist here. So use parent.
 	flags |= hostOpenFlags
-	openFD, err := unix.Openat(parent.impl.(*directfsDentry).controlFD, d.name, int(flags), 0)
+	openFD, err := unix.Openat(parent.inode.impl.(*directfsInode).controlFD, d.name, int(flags), 0)
 	if err != nil {
 		return noHandle, err
 	}
@@ -178,10 +182,10 @@ func (d *directfsDentry) openHandle(ctx context.Context, flags uint32) (handle, 
 }
 
 // Precondition: fs.renameMu is locked.
-func (d *directfsDentry) ensureLisafsControlFD(ctx context.Context) error {
-	d.handleMu.Lock()
-	defer d.handleMu.Unlock()
-	if d.controlFDLisa.Ok() {
+func (i *directfsInode) ensureLisafsControlFD(ctx context.Context, d *dentry) error {
+	i.handleMu.Lock()
+	defer d.inode.handleMu.Unlock()
+	if d.inode.impl.(*directfsInode).controlFDLisa.Ok() {
 		return nil
 	}
 
@@ -189,9 +193,9 @@ func (d *directfsDentry) ensureLisafsControlFD(ctx context.Context) error {
 	root := d
 	for root.parent.Load() != nil {
 		names = append(names, root.name)
-		root = root.parent.Load().impl.(*directfsDentry)
+		root = root.parent.Load()
 	}
-	if !root.controlFDLisa.Ok() {
+	if !root.inode.impl.(*directfsInode).controlFDLisa.Ok() {
 		panic("controlFDLisa is not set for mount point dentry")
 	}
 	if len(names) == 0 {
@@ -202,7 +206,7 @@ func (d *directfsDentry) ensureLisafsControlFD(ctx context.Context) error {
 	for i := 0; i < len(names)/2; i++ {
 		names[i], names[last-i] = names[last-i], names[i]
 	}
-	status, inodes, err := root.controlFDLisa.WalkMultiple(ctx, names)
+	status, inodes, err := root.inode.impl.(*directfsInode).controlFDLisa.WalkMultiple(ctx, names)
 	if err != nil {
 		return err
 	}
@@ -210,7 +214,7 @@ func (d *directfsDentry) ensureLisafsControlFD(ctx context.Context) error {
 		// Close everything except for inodes[last] if it exists.
 		for i := 0; i < len(inodes) && i < last; i++ {
 			flush := i == last-1 || i == len(inodes)-1
-			d.fs.client.CloseFD(ctx, inodes[i].ControlFD, flush)
+			d.inode.fs.client.CloseFD(ctx, inodes[i].ControlFD, flush)
 		}
 	}()
 	switch status {
@@ -220,16 +224,16 @@ func (d *directfsDentry) ensureLisafsControlFD(ctx context.Context) error {
 		log.Warningf("intermediate path component was a symlink? names = %v, inodes = %+v", names, inodes)
 		return unix.ELOOP
 	case lisafs.WalkSuccess:
-		d.controlFDLisa = d.fs.client.NewFD(inodes[last].ControlFD)
+		d.inode.impl.(*directfsInode).controlFDLisa = d.inode.fs.client.NewFD(inodes[last].ControlFD)
 		return nil
 	}
 	panic("unreachable")
 }
 
-// Precondition: d.metadataMu must be locked.
+// Precondition: i.inode.metadataMu must be locked.
 //
-// +checklocks:d.metadataMu
-func (d *directfsDentry) updateMetadataLocked(h handle) error {
+// +checklocks:i.inode.metadataMu
+func (i *directfsInode) updateMetadataLocked(h handle) error {
 	handleMuRLocked := false
 	if h.fd < 0 {
 		// Use open FDs in preferenece to the control FD. Control FDs may be opened
@@ -238,17 +242,17 @@ func (d *directfsDentry) updateMetadataLocked(h handle) error {
 		// filesystem implementations may update a writable FD's metadata after
 		// writes, without making metadata updates immediately visible to read-only
 		// FDs representing the same file.
-		d.handleMu.RLock()
+		i.inode.handleMu.RLock()
 		switch {
-		case d.writeFD.RacyLoad() >= 0:
-			h.fd = d.writeFD.RacyLoad()
+		case i.inode.writeFD.RacyLoad() >= 0:
+			h.fd = i.inode.writeFD.RacyLoad()
 			handleMuRLocked = true
-		case d.readFD.RacyLoad() >= 0:
-			h.fd = d.readFD.RacyLoad()
+		case i.inode.readFD.RacyLoad() >= 0:
+			h.fd = i.inode.readFD.RacyLoad()
 			handleMuRLocked = true
 		default:
-			h.fd = int32(d.controlFD)
-			d.handleMu.RUnlock()
+			h.fd = int32(i.controlFD)
+			i.inode.handleMu.RUnlock()
 		}
 	}
 
@@ -256,42 +260,42 @@ func (d *directfsDentry) updateMetadataLocked(h handle) error {
 	err := unix.Fstat(int(h.fd), &stat)
 	if handleMuRLocked {
 		// handleMu must be released before updateMetadataFromStatLocked().
-		d.handleMu.RUnlock() // +checklocksforce: complex case.
+		i.inode.handleMu.RUnlock() // +checklocksforce: complex case.
 	}
 	if err != nil {
 		return err
 	}
-	return d.updateMetadataFromStatLocked(&stat)
+	return i.updateMetadataFromStatLocked(&stat)
 }
 
 // Precondition: fs.renameMu is locked if d is a socket.
-func (d *directfsDentry) chmod(ctx context.Context, mode uint16) error {
-	if d.isSymlink() {
+func (i *directfsInode) chmod(ctx context.Context, mode uint16, d *dentry) error {
+	if i.isSymlink() {
 		// Linux does not support changing the mode of symlinks. See
 		// fs/attr.c:notify_change().
 		return unix.EOPNOTSUPP
 	}
-	if !d.isSocket() {
-		return unix.Fchmod(d.controlFD, uint32(mode))
+	if !i.isSocket() {
+		return unix.Fchmod(i.controlFD, uint32(mode))
 	}
 
 	// Sockets use O_PATH control FDs. However, fchmod(2) fails with EBADF for
 	// O_PATH FDs. Try to fchmodat(2) it from its parent.
 	if parent := d.parent.Load(); parent != nil {
-		return unix.Fchmodat(parent.impl.(*directfsDentry).controlFD, d.name, uint32(mode), 0 /* flags */)
+		return unix.Fchmodat(parent.inode.impl.(*directfsInode).controlFD, d.name, uint32(mode), 0 /* flags */)
 	}
 
 	// This is a mount point socket (no parent). Fallback to using lisafs.
-	if err := d.ensureLisafsControlFD(ctx); err != nil {
+	if err := i.ensureLisafsControlFD(ctx, d); err != nil {
 		return err
 	}
-	return chmod(ctx, d.controlFDLisa, mode)
+	return chmod(ctx, i.controlFDLisa, mode)
 }
 
 // Preconditions:
-//   - d.handleMu is locked if d is a regular file.
+//   - i.inode.handleMu is locked if d is a regular file.
 //   - fs.renameMu is locked if d is a symlink.
-func (d *directfsDentry) utimensat(ctx context.Context, stat *linux.Statx) error {
+func (i *directfsInode) utimensat(ctx context.Context, stat *linux.Statx, d *dentry) error {
 	if stat.Mask&(linux.STATX_ATIME|linux.STATX_MTIME) == 0 {
 		return nil
 	}
@@ -309,12 +313,12 @@ func (d *directfsDentry) utimensat(ctx context.Context, stat *linux.Statx) error
 		utimes[1].Nsec = int64(stat.Mtime.Nsec)
 	}
 
-	if !d.isSymlink() {
-		hostFD := d.controlFD
-		if d.isRegularFile() {
+	if !i.isSymlink() {
+		hostFD := i.controlFD
+		if i.isRegularFile() {
 			// utimensat(2) requires a writable FD for regular files. See BUGS
 			// section. dentry.prepareSetStat() should have acquired a writable FD.
-			hostFD = int(d.writeFD.RacyLoad())
+			hostFD = int(i.inode.writeFD.RacyLoad())
 		}
 		// Non-symlinks can operate directly on the fd using an empty name.
 		return fsutil.Utimensat(hostFD, "", utimes, 0)
@@ -324,13 +328,13 @@ func (d *directfsDentry) utimensat(ctx context.Context, stat *linux.Statx) error
 	// symlink it *requires* AT_SYMLINK_NOFOLLOW with dirFD and a non-empty
 	// name.
 	if parent := d.parent.Load(); parent != nil {
-		return fsutil.Utimensat(parent.impl.(*directfsDentry).controlFD, d.name, utimes, unix.AT_SYMLINK_NOFOLLOW)
+		return fsutil.Utimensat(parent.inode.impl.(*directfsInode).controlFD, d.name, utimes, unix.AT_SYMLINK_NOFOLLOW)
 	}
 
 	// This is a mount point symlink. We don't have a parent FD. Fallback to
 	// using lisafs.
-	if !d.controlFDLisa.Ok() {
-		panic("directfsDentry.controlFDLisa is not set for mount point symlink")
+	if !i.controlFDLisa.Ok() {
+		panic("directfsInode.controlFDLisa is not set for mount point symlink")
 	}
 
 	setStat := linux.Statx{
@@ -338,7 +342,7 @@ func (d *directfsDentry) utimensat(ctx context.Context, stat *linux.Statx) error
 		Atime: stat.Atime,
 		Mtime: stat.Mtime,
 	}
-	_, failureErr, err := d.controlFDLisa.SetStat(ctx, &setStat)
+	_, failureErr, err := i.controlFDLisa.SetStat(ctx, &setStat)
 	if err != nil {
 		return err
 	}
@@ -346,9 +350,9 @@ func (d *directfsDentry) utimensat(ctx context.Context, stat *linux.Statx) error
 }
 
 // Precondition: fs.renameMu is locked.
-func (d *directfsDentry) prepareSetStat(ctx context.Context, stat *linux.Statx) error {
+func (i *directfsInode) prepareSetStat(ctx context.Context, stat *linux.Statx, d *dentry) error {
 	if stat.Mask&unix.STATX_SIZE != 0 ||
-		(stat.Mask&(unix.STATX_ATIME|unix.STATX_MTIME) != 0 && d.isRegularFile()) {
+		(stat.Mask&(unix.STATX_ATIME|unix.STATX_MTIME) != 0 && i.isRegularFile()) {
 		// Need to ensure a writable FD is available. See setStatLocked() to
 		// understand why.
 		return d.ensureSharedHandle(ctx, false /* read */, true /* write */, false /* trunc */)
@@ -357,11 +361,11 @@ func (d *directfsDentry) prepareSetStat(ctx context.Context, stat *linux.Statx) 
 }
 
 // Preconditions:
-//   - d.handleMu is locked.
+//   - i.inode.handleMu is locked.
 //   - fs.renameMu is locked.
-func (d *directfsDentry) setStatLocked(ctx context.Context, stat *linux.Statx) (failureMask uint32, failureErr error) {
+func (i *directfsInode) setStatLocked(ctx context.Context, stat *linux.Statx, d *dentry) (failureMask uint32, failureErr error) {
 	if stat.Mask&unix.STATX_MODE != 0 {
-		if err := d.chmod(ctx, stat.Mode&^unix.S_IFMT); err != nil {
+		if err := i.chmod(ctx, stat.Mode&^unix.S_IFMT, d); err != nil {
 			failureMask |= unix.STATX_MODE
 			failureErr = err
 		}
@@ -369,13 +373,13 @@ func (d *directfsDentry) setStatLocked(ctx context.Context, stat *linux.Statx) (
 
 	if stat.Mask&unix.STATX_SIZE != 0 {
 		// ftruncate(2) requires a writable FD.
-		if err := unix.Ftruncate(int(d.writeFD.RacyLoad()), int64(stat.Size)); err != nil {
+		if err := unix.Ftruncate(int(i.inode.writeFD.RacyLoad()), int64(stat.Size)); err != nil {
 			failureMask |= unix.STATX_SIZE
 			failureErr = err
 		}
 	}
 
-	if err := d.utimensat(ctx, stat); err != nil {
+	if err := i.utimensat(ctx, stat, d); err != nil {
 		failureMask |= (stat.Mask & (unix.STATX_ATIME | unix.STATX_MTIME))
 		failureErr = err
 	}
@@ -389,7 +393,7 @@ func (d *directfsDentry) setStatLocked(ctx context.Context, stat *linux.Statx) (
 		if stat.Mask&unix.STATX_GID != 0 {
 			gid = auth.KGID(stat.GID)
 		}
-		if err := fchown(d.controlFD, uid, gid); err != nil {
+		if err := fchown(i.controlFD, uid, gid); err != nil {
 			failureMask |= stat.Mask & (unix.STATX_UID | unix.STATX_GID)
 			failureErr = err
 		}
@@ -414,38 +418,42 @@ func fchown(fd int, uid auth.KUID, gid auth.KGID) error {
 	return unix.Fchownat(fd, "", u, g, unix.AT_EMPTY_PATH|unix.AT_SYMLINK_NOFOLLOW)
 }
 
-// Precondition: d.handleMu must be locked.
-func (d *directfsDentry) destroy(ctx context.Context) {
-	if d.controlFD >= 0 {
-		_ = unix.Close(d.controlFD)
-		d.controlFD = -1
+// Precondition: i.inode.handleMu must be locked.
+func (i *directfsInode) destroy(ctx context.Context) {
+	if i.controlFD >= 0 {
+		_ = unix.Close(i.controlFD)
+		i.controlFD = -1
 	}
-	if d.controlFDLisa.Ok() {
-		d.controlFDLisa.Close(ctx, true /* flush */)
+	if i.controlFDLisa.Ok() {
+		i.controlFDLisa.Close(ctx, true /* flush */)
 	}
 }
 
-func (d *directfsDentry) getHostChild(name string) (*dentry, error) {
+func (i *directfsInode) getHostChild(name string) (*dentry, error) {
 	childFD, err := tryOpen(func(flags int) (int, error) {
-		return unix.Openat(d.controlFD, name, flags, 0)
+		return unix.Openat(i.controlFD, name, flags, 0)
 	})
 	if err != nil {
 		return nil, err
 	}
-	return d.fs.newDirectfsDentry(childFD)
+	childInode, err := i.inode.fs.newDirectfsInode(childFD)
+	if err != nil {
+		return nil, err
+	}
+	return i.inode.fs.newDentry(childInode)
 }
 
-func (d *directfsDentry) getXattr(ctx context.Context, name string, size uint64) (string, error) {
-	if ftype := d.fileType(); ftype == linux.S_IFSOCK || ftype == linux.S_IFLNK {
+func (i *directfsInode) getXattr(ctx context.Context, name string, size uint64, d *dentry) (string, error) {
+	if ftype := d.inode.fileType(); ftype == linux.S_IFSOCK || ftype == linux.S_IFLNK {
 		// Sockets and symlinks use O_PATH control FDs. However, fgetxattr(2) fails
 		// with EBADF for O_PATH FDs. Fallback to lisafs.
-		if err := d.ensureLisafsControlFD(ctx); err != nil {
+		if err := i.ensureLisafsControlFD(ctx, d); err != nil {
 			return "", err
 		}
-		return d.controlFDLisa.GetXattr(ctx, name, size)
+		return i.controlFDLisa.GetXattr(ctx, name, size)
 	}
 	data := make([]byte, size)
-	n, err := unix.Fgetxattr(d.controlFD, name, data)
+	n, err := unix.Fgetxattr(i.controlFD, name, data)
 	if err != nil {
 		return "", err
 	}
@@ -454,7 +462,7 @@ func (d *directfsDentry) getXattr(ctx context.Context, name string, size uint64)
 
 // getCreatedChild opens the newly created child, sets its uid/gid, constructs
 // a disconnected dentry and returns it.
-func (d *directfsDentry) getCreatedChild(name string, uid auth.KUID, gid auth.KGID, isDir bool, createDentry bool) (*dentry, error) {
+func (i *directfsInode) getCreatedChild(name string, uid auth.KUID, gid auth.KGID, isDir bool, createDentry bool, d *dentry) (*dentry, error) {
 	unlinkFlags := 0
 	extraOpenFlags := 0
 	if isDir {
@@ -463,13 +471,13 @@ func (d *directfsDentry) getCreatedChild(name string, uid auth.KUID, gid auth.KG
 	}
 	deleteChild := func() {
 		// Best effort attempt to remove the newly created child on failure.
-		if err := unix.Unlinkat(d.controlFD, name, unlinkFlags); err != nil {
-			log.Warningf("error unlinking newly created child %q after failure: %v", filepath.Join(genericDebugPathname(d.fs, &d.dentry), name), err)
+		if err := unix.Unlinkat(i.controlFD, name, unlinkFlags); err != nil {
+			log.Warningf("error unlinking newly created child %q after failure: %v", filepath.Join(genericDebugPathname(i.inode.fs, d), name), err)
 		}
 	}
 
 	childFD, err := tryOpen(func(flags int) (int, error) {
-		return unix.Openat(d.controlFD, name, flags|extraOpenFlags, 0)
+		return unix.Openat(i.controlFD, name, flags|extraOpenFlags, 0)
 	})
 	if err != nil {
 		deleteChild()
@@ -483,8 +491,14 @@ func (d *directfsDentry) getCreatedChild(name string, uid auth.KUID, gid auth.KG
 	}
 
 	var child *dentry
+	var childInode *inode
 	if createDentry {
-		child, err = d.fs.newDirectfsDentry(childFD)
+		childInode, err = i.fs.newDirectfsInode(childFD)
+		if err != nil {
+			deleteChild()
+			return nil, err
+		}
+		child, err = i.fs.newDentry(childInode)
 		if err != nil {
 			// Ownership of childFD was passed to newDirectDentry(), so no need to
 			// clean that up.
@@ -495,9 +509,9 @@ func (d *directfsDentry) getCreatedChild(name string, uid auth.KUID, gid auth.KG
 	return child, nil
 }
 
-func (d *directfsDentry) mknod(ctx context.Context, name string, creds *auth.Credentials, opts *vfs.MknodOptions) (*dentry, error) {
+func (i *directfsInode) mknod(ctx context.Context, name string, creds *auth.Credentials, opts *vfs.MknodOptions, d *dentry) (*dentry, error) {
 	if _, ok := opts.Endpoint.(transport.HostBoundEndpoint); ok {
-		return d.bindAt(ctx, name, creds, opts)
+		return i.bindAt(ctx, name, creds, opts, d)
 	}
 
 	// From mknod(2) man page:
@@ -507,48 +521,48 @@ func (d *directfsDentry) mknod(ctx context.Context, name string, creds *auth.Cre
 		return nil, unix.EPERM
 	}
 
-	if err := unix.Mknodat(d.controlFD, name, uint32(opts.Mode), 0); err != nil {
+	if err := unix.Mknodat(i.controlFD, name, uint32(opts.Mode), 0); err != nil {
 		return nil, err
 	}
-	return d.getCreatedChild(name, creds.EffectiveKUID, creds.EffectiveKGID, false /* isDir */, true /* createDentry */)
+	return i.getCreatedChild(name, creds.EffectiveKUID, creds.EffectiveKGID, false /* isDir */, true /* createDentry */, d)
 }
 
 // Precondition: opts.Endpoint != nil and is transport.HostBoundEndpoint type.
-func (d *directfsDentry) bindAt(ctx context.Context, name string, creds *auth.Credentials, opts *vfs.MknodOptions) (*dentry, error) {
+func (i *directfsInode) bindAt(ctx context.Context, name string, creds *auth.Credentials, opts *vfs.MknodOptions, d *dentry) (*dentry, error) {
 	// There are no filesystems mounted in the sandbox process's mount namespace.
 	// So we can't perform absolute path traversals. So fallback to using lisafs.
-	if err := d.ensureLisafsControlFD(ctx); err != nil {
+	if err := i.ensureLisafsControlFD(ctx, d); err != nil {
 		return nil, err
 	}
 	sockType := opts.Endpoint.(transport.Endpoint).Type()
-	childInode, boundSocketFD, err := d.controlFDLisa.BindAt(ctx, sockType, name, opts.Mode, lisafs.UID(creds.EffectiveKUID), lisafs.GID(creds.EffectiveKGID))
+	childInode, boundSocketFD, err := i.controlFDLisa.BindAt(ctx, sockType, name, opts.Mode, lisafs.UID(creds.EffectiveKUID), lisafs.GID(creds.EffectiveKGID))
 	if err != nil {
 		return nil, err
 	}
-	d.fs.client.CloseFD(ctx, childInode.ControlFD, true /* flush */)
+	i.inode.fs.client.CloseFD(ctx, childInode.ControlFD, true /* flush */)
 	// Update opts.Endpoint that it is bound.
 	hbep := opts.Endpoint.(transport.HostBoundEndpoint)
 	if err := hbep.SetBoundSocketFD(ctx, boundSocketFD); err != nil {
-		if err := unix.Unlinkat(d.controlFD, name, 0); err != nil {
-			log.Warningf("error unlinking newly created socket %q after failure: %v", filepath.Join(genericDebugPathname(d.fs, &d.dentry), name), err)
+		if err := unix.Unlinkat(i.controlFD, name, 0); err != nil {
+			log.Warningf("error unlinking newly created socket %q after failure: %v", filepath.Join(genericDebugPathname(i.inode.fs, d), name), err)
 		}
 		return nil, err
 	}
 	// Socket already has the right UID/GID set, so use uid = gid = -1.
-	child, err := d.getCreatedChild(name, auth.NoID /* uid */, auth.NoID /* gid */, false /* isDir */, true /* createDentry */)
+	child, err := i.getCreatedChild(name, auth.NoID /* uid */, auth.NoID /* gid */, false /* isDir */, true /* createDentry */, d)
 	if err != nil {
 		hbep.ResetBoundSocketFD(ctx)
 		return nil, err
 	}
 	// Set the endpoint on the newly created child dentry, and take the
 	// corresponding extra dentry reference.
-	child.endpoint = opts.Endpoint
+	child.inode.endpoint = opts.Endpoint
 	child.IncRef()
 	return child, nil
 }
 
-// Precondition: d.fs.renameMu must be locked.
-func (d *directfsDentry) link(target *directfsDentry, name string) (*dentry, error) {
+// Precondition: i.inode.fs.renameMu must be locked.
+func (i *directfsInode) link(target *dentry, name string, d *dentry) (*dentry, error) {
 	// Using linkat(targetFD, "", newdirfd, name, AT_EMPTY_PATH) requires
 	// CAP_DAC_READ_SEARCH in the *root* userns. With directfs, the sandbox
 	// process has CAP_DAC_READ_SEARCH in its own userns. But the sandbox is
@@ -556,38 +570,39 @@ func (d *directfsDentry) link(target *directfsDentry, name string) (*dentry, err
 	// using olddirfd to call linkat(2).
 	// Also note that d and target are from the same mount. Given target is a
 	// non-directory and d is a directory, target.parent must exist.
-	if err := unix.Linkat(target.parent.Load().impl.(*directfsDentry).controlFD, target.name, d.controlFD, name, 0); err != nil {
+	if err := unix.Linkat(target.parent.Load().inode.impl.(*directfsInode).controlFD, target.name, i.controlFD, name, 0); err != nil {
 		return nil, err
 	}
 	// Note that we don't need to set uid/gid for the new child. This is a hard
 	// link. The original file already has the right owner.
 	// TODO(gvisor.dev/issue/6739): Hard linked dentries should share the same
 	// inode fields.
-	return d.getCreatedChild(name, auth.NoID /* uid */, auth.NoID /* gid */, false /* isDir */, true /* createDentry */)
+	dentry, err := i.getCreatedChild(name, auth.NoID /* uid */, auth.NoID /* gid */, false /* isDir */, true /* createDentry */, d)
+	return dentry, err
 }
 
-func (d *directfsDentry) mkdir(name string, mode linux.FileMode, uid auth.KUID, gid auth.KGID, createDentry bool) (*dentry, error) {
-	if err := unix.Mkdirat(d.controlFD, name, uint32(mode)); err != nil {
+func (i *directfsInode) mkdir(name string, mode linux.FileMode, uid auth.KUID, gid auth.KGID, createDentry bool, d *dentry) (*dentry, error) {
+	if err := unix.Mkdirat(i.controlFD, name, uint32(mode)); err != nil {
 		return nil, err
 	}
-	return d.getCreatedChild(name, uid, gid, true /* isDir */, createDentry)
+	return i.getCreatedChild(name, uid, gid, true /* isDir */, createDentry, d)
 }
 
-func (d *directfsDentry) symlink(name, target string, creds *auth.Credentials) (*dentry, error) {
-	if err := unix.Symlinkat(target, d.controlFD, name); err != nil {
+func (i *directfsInode) symlink(name, target string, creds *auth.Credentials, d *dentry) (*dentry, error) {
+	if err := unix.Symlinkat(target, i.controlFD, name); err != nil {
 		return nil, err
 	}
-	return d.getCreatedChild(name, creds.EffectiveKUID, creds.EffectiveKGID, false /* isDir */, true /* createDentry */)
+	return i.getCreatedChild(name, creds.EffectiveKUID, creds.EffectiveKGID, false /* isDir */, true /* createDentry */, d)
 }
 
-func (d *directfsDentry) openCreate(name string, accessFlags uint32, mode linux.FileMode, uid auth.KUID, gid auth.KGID, createDentry bool) (*dentry, handle, error) {
+func (i *directfsInode) openCreate(name string, accessFlags uint32, mode linux.FileMode, uid auth.KUID, gid auth.KGID, createDentry bool, d *dentry) (*dentry, handle, error) {
 	createFlags := unix.O_CREAT | unix.O_EXCL | int(accessFlags) | hostOpenFlags
-	childHandleFD, err := unix.Openat(d.controlFD, name, createFlags, uint32(mode&^linux.FileTypeMask))
+	childHandleFD, err := unix.Openat(i.controlFD, name, createFlags, uint32(mode&^linux.FileTypeMask))
 	if err != nil {
 		return nil, noHandle, err
 	}
 
-	child, err := d.getCreatedChild(name, uid, gid, false /* isDir */, createDentry)
+	child, err := i.getCreatedChild(name, uid, gid, false /* isDir */, createDentry, d)
 	if err != nil {
 		_ = unix.Close(childHandleFD)
 		return nil, noHandle, err
@@ -595,8 +610,8 @@ func (d *directfsDentry) openCreate(name string, accessFlags uint32, mode linux.
 	return child, handle{fd: int32(childHandleFD)}, nil
 }
 
-func (d *directfsDentry) getDirentsLocked(recordDirent func(name string, key inoKey, dType uint8)) error {
-	readFD := int(d.readFD.RacyLoad())
+func (i *directfsInode) getDirentsLocked(recordDirent func(name string, key inoKey, dType uint8), d *dentry) error {
+	readFD := int(i.inode.readFD.RacyLoad())
 	if _, err := unix.Seek(readFD, 0, 0); err != nil {
 		return err
 	}
@@ -605,9 +620,9 @@ func (d *directfsDentry) getDirentsLocked(recordDirent func(name string, key ino
 		// We also want the device ID, which annoyingly incurs an additional
 		// syscall per dirent.
 		// TODO(gvisor.dev/issue/6665): Get rid of per-dirent stat.
-		stat, err := fsutil.StatAt(d.controlFD, name)
+		stat, err := fsutil.StatAt(i.controlFD, name)
 		if err != nil {
-			log.Warningf("Getdent64: skipping file %q with failed stat, err: %v", path.Join(genericDebugPathname(d.fs, &d.dentry), name), err)
+			log.Warningf("Getdent64: skipping file %q with failed stat, err: %v", path.Join(genericDebugPathname(i.inode.fs, d), name), err)
 			return
 		}
 		recordDirent(name, inoKeyFromStat(&stat), ftype)
@@ -615,20 +630,20 @@ func (d *directfsDentry) getDirentsLocked(recordDirent func(name string, key ino
 }
 
 // Precondition: fs.renameMu is locked.
-func (d *directfsDentry) connect(ctx context.Context, sockType linux.SockType, euid lisafs.UID, egid lisafs.GID) (int, error) {
+func (i *directfsInode) connect(ctx context.Context, sockType linux.SockType, euid lisafs.UID, egid lisafs.GID, d *dentry) (int, error) {
 	// There are no filesystems mounted in the sandbox process's mount namespace.
 	// So we can't perform absolute path traversals. So fallback to using lisafs.
-	if err := d.ensureLisafsControlFD(ctx); err != nil {
+	if err := i.ensureLisafsControlFD(ctx, d); err != nil {
 		return -1, err
 	}
-	return d.controlFDLisa.Connect(ctx, sockType, euid, egid)
+	return i.controlFDLisa.Connect(ctx, sockType, euid, egid)
 }
 
-func (d *directfsDentry) readlink() (string, error) {
+func (i *directfsInode) readlink() (string, error) {
 	// This is similar to what os.Readlink does.
 	for linkLen := 128; linkLen < math.MaxUint16; linkLen *= 2 {
 		b := make([]byte, linkLen)
-		n, err := unix.Readlinkat(d.controlFD, "", b)
+		n, err := unix.Readlinkat(i.controlFD, "", b)
 
 		if err != nil {
 			return "", err
@@ -640,9 +655,9 @@ func (d *directfsDentry) readlink() (string, error) {
 	return "", unix.ENOMEM
 }
 
-func (d *directfsDentry) statfs() (linux.Statfs, error) {
+func (i *directfsInode) statfs() (linux.Statfs, error) {
 	var statFS unix.Statfs_t
-	if err := unix.Fstatfs(d.controlFD, &statFS); err != nil {
+	if err := unix.Fstatfs(i.controlFD, &statFS); err != nil {
 		return linux.Statfs{}, err
 	}
 	return linux.Statfs{
@@ -657,17 +672,16 @@ func (d *directfsDentry) statfs() (linux.Statfs, error) {
 	}, nil
 }
 
-func (d *directfsDentry) restoreFile(ctx context.Context, controlFD int, opts *vfs.CompleteRestoreOptions) error {
+func (i *directfsInode) restoreFile(ctx context.Context, controlFD int, opts *vfs.CompleteRestoreOptions, d *dentry) error {
 	if controlFD < 0 {
-		return fmt.Errorf("directfsDentry.restoreFile called with invalid controlFD")
+		return fmt.Errorf("directfsInode.restoreFile called with invalid controlFD")
 	}
 	var stat unix.Stat_t
 	if err := unix.Fstat(controlFD, &stat); err != nil {
 		_ = unix.Close(controlFD)
-		return fmt.Errorf("failed to stat %q: %w", genericDebugPathname(d.fs, &d.dentry), err)
+		return fmt.Errorf("failed to stat %q: %w", genericDebugPathname(i.inode.fs, d), err)
 	}
-
-	d.controlFD = controlFD
+	i.controlFD = controlFD
 	// We do not preserve inoKey across checkpoint/restore, so:
 	//
 	//	- We must assume that the host filesystem did not change in a way that
@@ -675,33 +689,36 @@ func (d *directfsDentry) restoreFile(ctx context.Context, controlFD int, opts *v
 	//		checking inoKey.
 	//
 	//	- We need to associate the new inoKey with the existing d.ino.
-	d.inoKey = inoKeyFromStat(&stat)
-	d.fs.inoMu.Lock()
-	d.fs.inoByKey[d.inoKey] = d.ino
-	d.fs.inoMu.Unlock()
+	i.inoKey = inoKeyFromStat(&stat)
+	i.fs.inoMu.Lock()
+	i.fs.inoByKey[i.inode.inoKey] = i.ino
+	i.fs.inoMu.Unlock()
+	i.fs.inodeByInoMu.Lock()
+	i.fs.inodeByIno[i.inoKey] = &i.inode
+	i.fs.inodeByInoMu.Unlock()
 
 	// Check metadata stability before updating metadata.
-	d.metadataMu.Lock()
-	defer d.metadataMu.Unlock()
-	if d.isRegularFile() {
+	i.inode.metadataMu.Lock()
+	defer i.inode.metadataMu.Unlock()
+	if i.isRegularFile() {
 		if opts.ValidateFileSizes {
-			if d.size.RacyLoad() != uint64(stat.Size) {
-				return vfs.ErrCorruption{fmt.Errorf("gofer.dentry(%q).restoreFile: file size validation failed: size changed from %d to %d", genericDebugPathname(d.fs, &d.dentry), d.size.Load(), stat.Size)}
+			if i.inode.size.RacyLoad() != uint64(stat.Size) {
+				return vfs.ErrCorruption{Err: fmt.Errorf("gofer.dentry(%q).restoreFile: file size validation failed: size changed from %d to %d", genericDebugPathname(i.inode.fs, d), i.inode.size.Load(), stat.Size)}
 			}
 		}
 		if opts.ValidateFileModificationTimestamps {
-			if want := dentryTimestampFromUnix(stat.Mtim); d.mtime.RacyLoad() != want {
-				return vfs.ErrCorruption{fmt.Errorf("gofer.dentry(%q).restoreFile: mtime validation failed: mtime changed from %+v to %+v", genericDebugPathname(d.fs, &d.dentry), linux.NsecToStatxTimestamp(d.mtime.RacyLoad()), linux.NsecToStatxTimestamp(want))}
+			if want := dentryTimestampFromUnix(stat.Mtim); i.inode.mtime.RacyLoad() != want {
+				return vfs.ErrCorruption{Err: fmt.Errorf("gofer.dentry(%q).restoreFile: mtime validation failed: mtime changed from %+v to %+v", genericDebugPathname(i.inode.fs, d), linux.NsecToStatxTimestamp(i.inode.mtime.RacyLoad()), linux.NsecToStatxTimestamp(want))}
 			}
 		}
 	}
-	if !d.cachedMetadataAuthoritative() {
-		d.updateMetadataFromStatLocked(&stat)
+	if !i.cachedMetadataAuthoritative() {
+		i.updateMetadataFromStatLocked(&stat)
 	}
 
-	if rw, ok := d.fs.savedDentryRW[&d.dentry]; ok {
+	if rw, ok := i.inode.fs.savedDentryRW[d]; ok {
 		if err := d.ensureSharedHandle(ctx, rw.read, rw.write, false /* trunc */); err != nil {
-			return fmt.Errorf("failed to restore file handles (read=%t, write=%t) for %q: %w", rw.read, rw.write, genericDebugPathname(d.fs, &d.dentry), err)
+			return fmt.Errorf("failed to restore file handles (read=%t, write=%t) for %q: %w", rw.read, rw.write, genericDebugPathname(i.inode.fs, d), err)
 		}
 	}
 
@@ -719,7 +736,7 @@ func doRevalidationDirectfs(ctx context.Context, vfsObj *vfs.VirtualFilesystem, 
 	// The function receiver has to be named `d` (to be consistent with other
 	// receivers). But `d` variable is also used below in various places. This
 	// helps with readability and makes code less error prone.
-	start := state.start.impl.(*directfsDentry)
+	start := state.start.inode.impl.(*directfsInode)
 	if state.refreshStart {
 		start.updateMetadata(ctx)
 	}
@@ -733,21 +750,21 @@ func doRevalidationDirectfs(ctx context.Context, vfsObj *vfs.VirtualFilesystem, 
 
 		var stat unix.Stat_t
 		// Lock metadata *before* getting attributes for d.
-		d.metadataMu.Lock()
+		d.inode.metadataMu.Lock()
 		found := err == nil
 		if found {
 			err = unix.Fstat(childFD, &stat)
 			_ = unix.Close(childFD)
 			if err != nil {
-				d.metadataMu.Unlock()
+				d.inode.metadataMu.Unlock()
 				return err
 			}
 		}
 
 		// Note that synthetic dentries will always fail this comparison check.
-		if !found || d.inoKey != inoKeyFromStat(&stat) {
-			d.metadataMu.Unlock()
-			if !found && d.isSynthetic() {
+		if !found || d.inode.inoKey != inoKeyFromStat(&stat) {
+			d.inode.metadataMu.Unlock()
+			if !found && d.inode.isSynthetic() {
 				// We have a synthetic file, and no remote file has arisen to replace
 				// it.
 				return nil
@@ -759,11 +776,11 @@ func doRevalidationDirectfs(ctx context.Context, vfsObj *vfs.VirtualFilesystem, 
 		}
 
 		// The file at this path hasn't changed. Just update cached metadata.
-		d.impl.(*directfsDentry).updateMetadataFromStatLocked(&stat) // +checklocksforce: d.metadataMu is locked above.
-		d.metadataMu.Unlock()
+		d.inode.impl.(*directfsInode).updateMetadataFromStatLocked(&stat) // +checklocksforce: i.inode.metadataMu is locked above.
+		d.inode.metadataMu.Unlock()
 
 		// Advance parent.
-		parent = d.impl.(*directfsDentry)
+		parent = d.inode.impl.(*directfsInode)
 	}
 	return nil
 }

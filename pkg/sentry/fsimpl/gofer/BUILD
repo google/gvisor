@@ -6,6 +6,17 @@ package(default_applicable_licenses = ["//:license"])
 licenses(["notice"])
 
 go_template_instance(
+    name = "inode_refs",
+    out = "inode_refs.go",
+    package = "gofer",
+    prefix = "inode",
+    template = "//pkg/refs:refs_template",
+    types = {
+        "T": "inode",
+    },
+)
+
+go_template_instance(
     name = "string_list",
     out = "string_list.go",
     package = "gofer",
@@ -56,16 +67,17 @@ go_template_instance(
 go_library(
     name = "gofer",
     srcs = [
-        "dentry_impl.go",
         "dentry_list.go",
-        "directfs_dentry.go",
+        "directfs_inode.go",
         "directory.go",
         "filesystem.go",
         "fstree.go",
         "gofer.go",
         "handle.go",
         "host_named_pipe.go",
-        "lisafs_dentry.go",
+        "inode_impl.go",
+        "inode_refs.go",
+        "lisafs_inode.go",
         "regular_file.go",
         "revalidate.go",
         "save_restore.go",
@@ -112,6 +124,7 @@ go_library(
         "//pkg/sentry/socket/unix/transport",
         "//pkg/sentry/usage",
         "//pkg/sentry/vfs",
+        "//pkg/sentry/vfs/memxattr",
         "//pkg/sync",
         "//pkg/syserr",
         "//pkg/unet",
