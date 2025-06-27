@@ -48,7 +48,7 @@ benchmark_test(
 benchmark_test(
     name = "sysbench_test",
     srcs = ["sysbench_test.go"],
-    use_for_pgo = False,
+    use_for_pgo = True,
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/test/dockerutil",

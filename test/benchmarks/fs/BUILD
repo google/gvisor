@@ -8,7 +8,7 @@ package(
 benchmark_test(
     name = "bazel_test",
     srcs = ["bazel_test.go"],
-    use_for_pgo = False,
+    use_for_pgo = True,
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/cleanup",
@@ -39,7 +39,7 @@ benchmark_test(
 benchmark_test(
     name = "rubydev_test",
     srcs = ["rubydev_test.go"],
-    use_for_pgo = False,
+    use_for_pgo = True,
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/test/dockerutil",
