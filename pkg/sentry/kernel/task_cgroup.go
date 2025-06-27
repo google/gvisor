@@ -225,11 +225,18 @@ type TaskCgroupEntry struct {
 // GetCgroupEntries generates the contents of /proc/<pid>/cgroup as
 // a TaskCgroupEntry array.
 func (t *Task) GetCgroupEntries() []TaskCgroupEntry {
+	// Gather cgroups with t.mu held.
 	t.mu.Lock()
-	defer t.mu.Unlock()
-
-	cgEntries := make([]TaskCgroupEntry, 0, len(t.cgroups))
+	cgroups := make([]Cgroup, 0, len(t.cgroups))
 	for c := range t.cgroups {
+		cgroups = append(cgroups, c)
+	}
+	t.mu.Unlock()
+
+	// Don't hold t.mu here as that can lead to lock inversion with
+	// kernfs.ancestryRWMutex when calculating cgroup paths.
+	cgEntries := make([]TaskCgroupEntry, 0, len(cgroups))
+	for _, c := range cgroups {
 		ctls := c.Controllers()
 		ctlNames := make([]string, 0, len(ctls))
 
