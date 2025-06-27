@@ -1,8 +1,8 @@
 # Security and Vulnerability Reporting
 
 Sensitive security-related questions, comments, and reports should be sent to
-the [gvisor-security mailing list][gvisor-security-list]. You should receive a
-prompt response, typically within 48 hours.
+the gvisor-security@googlegroups.com ([gvisor-security mailing list][gvisor-security-list]).
+You should receive a prompt response, typically within 48 hours.
 
 ## Security issue taxonomy
 
