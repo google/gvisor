@@ -100,19 +100,28 @@ func (t *Task) killLocked() {
 	t.interrupt()
 }
 
+// Killed implements context.Blocker.Killed.
+func (t *Task) Killed() bool {
+	if t.killed() {
+		return true
+	}
+	// Indicate that t's task goroutine is still responsive (i.e. reset the
+	// watchdog timer).
+	t.touchGostateTime()
+	return false
+}
+
 // killed returns true if t has a SIGKILL pending. killed is analogous to
 // Linux's fatal_signal_pending().
 //
 // Preconditions: The caller must be running on the task goroutine.
 func (t *Task) killed() bool {
-	t.tg.signalHandlers.mu.Lock()
-	defer t.tg.signalHandlers.mu.Unlock()
-	return t.killedLocked()
+	return linux.SignalSet(t.pendingSignals.pendingSet.Load())&linux.SignalSetOf(linux.SIGKILL) != 0
 }
 
 // Preconditions: The signal mutex must be locked.
 func (t *Task) killedLocked() bool {
-	return t.pendingSignals.pendingSet&linux.SignalSetOf(linux.SIGKILL) != 0
+	return linux.SignalSet(t.pendingSignals.pendingSet.RacyLoad())&linux.SignalSetOf(linux.SIGKILL) != 0
 }
 
 // PrepareExit indicates an exit with the given status.
