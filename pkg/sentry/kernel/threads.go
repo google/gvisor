@@ -18,6 +18,8 @@ import (
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/atomicbitops"
+	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/nsfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/waiter"
@@ -207,6 +209,8 @@ type PIDNamespace struct {
 
 	// pidNamespaceData contains additional per-PID-namespace data.
 	extra pidNamespaceData
+
+	inode *nsfs.Inode
 }
 
 func newPIDNamespace(ts *TaskSet, parent *PIDNamespace, userns *auth.UserNamespace) *PIDNamespace {
@@ -226,6 +230,11 @@ func newPIDNamespace(ts *TaskSet, parent *PIDNamespace, userns *auth.UserNamespa
 	}
 }
 
+// InitInode creates and sets a new nsfs.Inode.
+func (ns *PIDNamespace) InitInode(ctx context.Context, k *Kernel) {
+	ns.inode = nsfs.NewInode(ctx, k.nsfsMount, ns)
+}
+
 // lastPIDNSID is the last value of PIDNamespace.ID assigned to a PID
 // namespace.
 //
@@ -239,10 +248,35 @@ func NewRootPIDNamespace(userns *auth.UserNamespace) *PIDNamespace {
 	return newPIDNamespace(nil, nil, userns)
 }
 
+// GetInode returns the nsfs inode associated with the namespace.
+func (ns *PIDNamespace) GetInode() *nsfs.Inode {
+	return ns.inode
+}
+
+// IncRef increments the Namespace's refcount.
+func (ns *PIDNamespace) IncRef() {
+	ns.inode.IncRef()
+}
+
+// DecRef decrements the namespace's refcount.
+func (ns *PIDNamespace) DecRef(ctx context.Context) {
+	ns.inode.DecRef(ctx)
+}
+
+// Destroy implements nsfs.Namespace.Destroy.
+func (ns *PIDNamespace) Destroy(ctx context.Context) {}
+
+// Type implements nsfs.Namespace.Type.
+func (ns *PIDNamespace) Type() string {
+	return "pid"
+}
+
 // NewChild returns a new, empty PID namespace that is a child of ns. Authority
 // over the new PID namespace is controlled by userns.
-func (ns *PIDNamespace) NewChild(userns *auth.UserNamespace) *PIDNamespace {
-	return newPIDNamespace(ns.owner, ns, userns)
+func (ns *PIDNamespace) NewChild(ctx context.Context, k *Kernel, userns *auth.UserNamespace) *PIDNamespace {
+	pidns := newPIDNamespace(ns.owner, ns, userns)
+	pidns.InitInode(ctx, k)
+	return pidns
 }
 
 // TaskWithID returns the task with thread ID tid in PID namespace ns. If no
@@ -535,6 +569,12 @@ func (t *Task) ThreadGroup() *ThreadGroup {
 
 // PIDNamespace returns the PID namespace containing t.
 func (t *Task) PIDNamespace() *PIDNamespace {
+	return t.tg.pidns
+}
+
+// GetPIDNamespace returns the PID namespace containing t.
+func (t *Task) GetPIDNamespace() *PIDNamespace {
+	t.tg.pidns.IncRef()
 	return t.tg.pidns
 }
 

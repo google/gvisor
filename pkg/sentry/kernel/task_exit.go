@@ -304,11 +304,16 @@ func (*runExitMain) execute(t *Task) taskRunState {
 	t.ipcns = nil
 	netns := t.netns
 	t.netns = nil
+	childPIDNS := t.childPIDNamespace
+	t.childPIDNamespace = nil
 	t.mu.Unlock()
 	mntns.DecRef(t)
 	utsns.DecRef(t)
 	ipcns.DecRef(t)
 	netns.DecRef(t)
+	if childPIDNS != nil {
+		childPIDNS.DecRef(t)
+	}
 
 	// If this is the last task to exit from the thread group, release the
 	// thread group's resources.

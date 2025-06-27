@@ -16,6 +16,8 @@
 package netfilter
 
 import (
+	"fmt"
+
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/log"
@@ -91,23 +93,30 @@ func (p *Protocol) ProcessMessage(ctx context.Context, s *netlink.Socket, msg *n
 	// TODO: b/421437663 - Match the message type and call the appropriate Nftables function.
 	switch msgType {
 	case linux.NFT_MSG_NEWTABLE:
-		return p.newTable(nft, attrs, family, hdr.Flags)
+		if err := p.newTable(nft, attrs, family, hdr.Flags); err != nil {
+			log.Debugf("Nftables new table error: %s", err)
+			return err.GetError()
+		}
+		return nil
 	case linux.NFT_MSG_GETTABLE:
-		return p.getTable(nft, attrs, family, hdr.Flags, ms)
+		if err := p.getTable(nft, attrs, family, hdr.Flags, ms); err != nil {
+			log.Debugf("Nftables get table error: %s", err)
+			return err.GetError()
+		}
+		return nil
 	default:
 		log.Debugf("Unsupported message type: %d", msgType)
-		return syserr.ErrInvalidArgument
+		return syserr.ErrNotSupported
 	}
 }
 
 // newTable creates a new table for the given family.
-func (p *Protocol) newTable(nft *nftables.NFTables, attrs map[uint16]nlmsg.BytesView, family stack.AddressFamily, flags uint16) *syserr.Error {
+func (p *Protocol) newTable(nft *nftables.NFTables, attrs map[uint16]nlmsg.BytesView, family stack.AddressFamily, flags uint16) *syserr.AnnotatedError {
 	// TODO: b/421437663 - Handle the case where the table name is set to empty string.
 	// The table name is required.
 	tabNameBytes, ok := attrs[linux.NFTA_TABLE_NAME]
 	if !ok {
-		log.Debugf("Nftables: Table name attribute is malformed or not found")
-		return syserr.ErrInvalidArgument
+		return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("Nftables: Table name attribute is malformed or not found"))
 	}
 
 	var dormant bool
@@ -117,26 +126,24 @@ func (p *Protocol) newTable(nft *nftables.NFTables, attrs map[uint16]nlmsg.Bytes
 	}
 
 	tab, err := nft.GetTable(family, tabNameBytes.String())
+	if err != nil && err.GetError() != syserr.ErrNoFileOrDir {
+		return err
+	}
 
 	// If a table already exists, only update its dormant flags if NLM_F_EXCL and NLM_F_REPLACE
 	// are not set. From net/netfilter/nf_tables_api.c:nf_tables_newtable:nf_tables_updtable
-	if tab != nil && err == nil {
+	if tab != nil {
 		if flags&linux.NLM_F_EXCL == linux.NLM_F_EXCL {
-			log.Debugf("Nftables: Table with name: %s already exists", tabNameBytes.String())
-			return syserr.ErrExists
+			return syserr.NewAnnotatedError(syserr.ErrExists, fmt.Sprintf("Nftables: Table with name: %s already exists", tabNameBytes.String()))
 		}
 
 		if flags&linux.NLM_F_REPLACE == linux.NLM_F_REPLACE {
-			log.Debugf("Nftables: Table with name: %s already exists and NLM_F_REPLACE is not supported", tabNameBytes.String())
-			return syserr.ErrNotSupported
+			return syserr.NewAnnotatedError(syserr.ErrNotSupported, fmt.Sprintf("Nftables: Table with name: %s already exists and NLM_F_REPLACE is not supported", tabNameBytes.String()))
 		}
 	} else {
-		// There does not seem to be a way to add comments to a table using the nft binary.
 		tab, err = nft.CreateTable(family, tabNameBytes.String())
 		if err != nil {
-			log.Debugf("Nftables: Failed to create table with name: %s. Error: %s", tabNameBytes.String(), err.Error())
-			// If there is an error, it is not a duplicate error (checked above).
-			return syserr.ErrInvalidArgument
+			return err
 		}
 	}
 
@@ -144,20 +151,17 @@ func (p *Protocol) newTable(nft *nftables.NFTables, attrs map[uint16]nlmsg.Bytes
 	return nil
 }
 
-// getTable returns a table for the given family. Returns nil on success and
-// a sys.error on failure.
-func (p *Protocol) getTable(nft *nftables.NFTables, attrs map[uint16]nlmsg.BytesView, family stack.AddressFamily, flags uint16, ms *nlmsg.MessageSet) *syserr.Error {
+// getTable returns a table for the given family.
+func (p *Protocol) getTable(nft *nftables.NFTables, attrs map[uint16]nlmsg.BytesView, family stack.AddressFamily, flags uint16, ms *nlmsg.MessageSet) *syserr.AnnotatedError {
 	// The table name is required.
 	tabNameBytes, ok := attrs[linux.NFTA_TABLE_NAME]
 	if !ok {
-		log.Debugf("Nftables: Table name attribute is malformed or not found")
-		return syserr.ErrInvalidArgument
+		return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("Nftables: Table name attribute is malformed or not found"))
 	}
 
 	tab, err := nft.GetTable(family, tabNameBytes.String())
 	if err != nil {
-		log.Debugf("Nftables: ENOENT for table with name: %s", tabNameBytes.String())
-		return syserr.ErrNoFileOrDir
+		return err
 	}
 
 	tabName := tab.GetName()

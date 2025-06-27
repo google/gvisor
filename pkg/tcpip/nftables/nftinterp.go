@@ -23,6 +23,7 @@ import (
 	"strings"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
@@ -86,13 +87,13 @@ var identifierRegexp = regexp.MustCompile("^[a-zA-Z_][a-zA-Z0-9_/.]*$")
 // An identifier is valid if it is not a reserved keyword and begins with an
 // alphabetic character or underscore followed by zero or more alphanumeric
 // characters, underscores, forward slashes, or periods.
-func validateIdentifier(id string, lnIdx int, tkIdx int) error {
+func validateIdentifier(id string, lnIdx int, tkIdx int) *syserr.AnnotatedError {
 	if _, ok := reservedKeywordSet[id]; ok {
-		return &SyntaxError{lnIdx, tkIdx, fmt.Sprintf("cannot use reserved keyword %s as an identifier", id)}
+		return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("cannot use reserved keyword: %s", id))
 	}
 
 	if !identifierRegexp.MatchString(id) {
-		return &SyntaxError{lnIdx, tkIdx, fmt.Sprintf("invalid identifier %s", id)}
+		return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("invalid identifier: %s", id))
 	}
 
 	return nil
@@ -102,7 +103,7 @@ func validateIdentifier(id string, lnIdx int, tkIdx int) error {
 // represented as a block of text with a single operation per line.
 // Note: the rule string should be generated as output from the official nft
 // binary (can be accomplished by using flag --debug=netlink).
-func InterpretRule(ruleString string) (*Rule, error) {
+func InterpretRule(ruleString string) (*Rule, *syserr.AnnotatedError) {
 	ruleString = strings.TrimSpace(ruleString)
 	lines := slices.DeleteFunc(strings.Split(ruleString, "\n"), func(s string) bool {
 		return s == ""
@@ -128,12 +129,18 @@ func InterpretRule(ruleString string) (*Rule, error) {
 // assumed to be a single line of text surrounded in square brackets.
 // Note: the operation string should be generated as output from the official nft
 // binary (can be accomplished by using flag --debug=netlink).
-func InterpretOperation(line string, lnIdx int) (operation, error) {
+func InterpretOperation(line string, lnIdx int) (operation, *syserr.AnnotatedError) {
 	tokens := strings.Fields(line)
+
+	// TODO: b/421437663 - This should be done on validation of every operation type.
 	if len(tokens) < 2 {
-		return nil, &SyntaxError{lnIdx, 0, fmt.Sprintf("incorrect number of tokens for operation, should be at least 2, got %d", len(tokens))}
+		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("incorrect number of tokens for operation, should be at least 2, got %d", len(tokens)))
 	}
 
+	// TODO: b/421437663 - Replace this to interpret byte code to create these operations.
+	// Can also refactor this so that operations are registered dynamically instead of being updated
+	// here, using an init function per nft_{operation}.go file.
+	// Error values from net/netfilter/nf_tables_api.c:nft_expr_type_get
 	// Second token decides the operation type.
 	switch tokens[1] {
 	case "immediate":
@@ -147,7 +154,7 @@ func InterpretOperation(line string, lnIdx int) (operation, error) {
 		case "write":
 			return InterpretPayloadSet(line, lnIdx)
 		}
-		return nil, &SyntaxError{lnIdx, 2, fmt.Sprintf("unrecognized operation type: payload %s", tokens[2])}
+		return nil, syserr.NewAnnotatedError(syserr.ErrNoFileOrDir, fmt.Sprintf("invalid payload operation: %s", tokens[2]))
 	case "bitwise":
 		// Assumes the bitwise operation is a boolean because interpretation of
 		// non-boolean operations is not supported from the nft binary debug output.
@@ -165,20 +172,20 @@ func InterpretOperation(line string, lnIdx int) (operation, error) {
 		case "set":
 			return InterpretMetaSet(line, lnIdx)
 		}
-		return nil, &SyntaxError{lnIdx, 2, fmt.Sprintf("unrecognized operation type: meta %s", tokens[2])}
+		return nil, syserr.NewAnnotatedError(syserr.ErrNoFileOrDir, fmt.Sprintf("invalid meta operation: %s", tokens[2]))
 	default:
-		return nil, &SyntaxError{lnIdx, 1, fmt.Sprintf("unrecognized operation type: %s", tokens[1])}
+		return nil, syserr.NewAnnotatedError(syserr.ErrNoFileOrDir, fmt.Sprintf("invalid operation: %s", tokens[1]))
 	}
 }
 
 // InterpretImmediate creates a new Immediate operation from the given string.
-func InterpretImmediate(line string, lnIdx int) (operation, error) {
+func InterpretImmediate(line string, lnIdx int) (operation, *syserr.AnnotatedError) {
 	tokens := strings.Fields(line)
 
 	// Requires at least 6 tokens:
 	// 		"[", "immediate", "reg", register index, register value, "]".
 	if len(tokens) < 6 {
-		return nil, &SyntaxError{lnIdx, 0, fmt.Sprintf("incorrect number of tokens for immediate operation, should be at least 6, got %d", len(tokens))}
+		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("incorrect number of tokens for immediate operation, should be at least 6, got %d", len(tokens)))
 	}
 
 	if err := checkOperationBrackets(tokens, lnIdx); err != nil {
@@ -215,26 +222,26 @@ func InterpretImmediate(line string, lnIdx int) (operation, error) {
 
 	// Done parsing tokens.
 	if tkIdx != len(tokens)-1 {
-		return nil, &SyntaxError{lnIdx, tkIdx, "unexpected token after immediate operation"}
+		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("unexpected token after immediate operation"))
 	}
 
 	// Create the operation with the specified arguments.
 	imm, err := newImmediate(reg, data)
 	if err != nil {
-		return nil, &LogicError{lnIdx, tkIdx, err}
+		return nil, err
 	}
 
 	return imm, nil
 }
 
 // InterpretComparison creates a new Comparison operation from the given string.
-func InterpretComparison(line string, lnIdx int) (operation, error) {
+func InterpretComparison(line string, lnIdx int) (operation, *syserr.AnnotatedError) {
 	tokens := strings.Fields(line)
 
 	// Requires at least 7 tokens:
 	// 		"[", "cmp", op, "reg", register index, register value, "]".
 	if len(tokens) < 7 {
-		return nil, &SyntaxError{lnIdx, 0, fmt.Sprintf("incorrect number of tokens for cmp operation, should be at least 7, got %d", len(tokens))}
+		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("incorrect number of tokens for comparison operation, should be at least 7, got %d", len(tokens)))
 	}
 
 	if err := checkOperationBrackets(tokens, lnIdx); err != nil {
@@ -278,13 +285,13 @@ func InterpretComparison(line string, lnIdx int) (operation, error) {
 
 	// Done parsing tokens.
 	if tkIdx != len(tokens)-1 {
-		return nil, &SyntaxError{lnIdx, tkIdx, "unexpected token after comparison operation"}
+		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("unexpected token after comparison operation"))
 	}
 
 	// Create the operation with the specified arguments.
 	cmp, err := newComparison(reg, cop, data)
 	if err != nil {
-		return nil, &LogicError{lnIdx, tkIdx, err}
+		return nil, err
 	}
 
 	return cmp, nil
@@ -292,13 +299,13 @@ func InterpretComparison(line string, lnIdx int) (operation, error) {
 
 // InterpretPayloadLoad creates a new PayloadLoad operation from the given
 // string.
-func InterpretPayloadLoad(line string, lnIdx int) (operation, error) {
+func InterpretPayloadLoad(line string, lnIdx int) (operation, *syserr.AnnotatedError) {
 	tokens := strings.Fields(line)
 
 	// Requires exactly 13 tokens:
 	// 		"[", "payload", "load", len+"b", "@", payload base, "header", "+", offset, "=>", "reg", register index, "]".
 	if len(tokens) != 13 {
-		return nil, &SyntaxError{lnIdx, 0, fmt.Sprintf("incorrect number of tokens for payload load operation, should be exactly 13, got %d", len(tokens))}
+		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("incorrect number of tokens for payload load operation, should be 13, got %d", len(tokens)))
 	}
 
 	if err := checkOperationBrackets(tokens, lnIdx); err != nil {
@@ -380,21 +387,21 @@ func InterpretPayloadLoad(line string, lnIdx int) (operation, error) {
 	// Create the operation with the specified arguments.
 	pdload, err := newPayloadLoad(base, offset, blen, reg)
 	if err != nil {
-		return nil, &LogicError{lnIdx, tkIdx, err}
+		return nil, err
 	}
 
 	return pdload, nil
 }
 
 // InterpretPayloadSet creates a new PayloadSet operation from the given string.
-func InterpretPayloadSet(line string, lnIdx int) (operation, error) {
+func InterpretPayloadSet(line string, lnIdx int) (operation, *syserr.AnnotatedError) {
 	tokens := strings.Fields(line)
 
 	// Requires at least 19 tokens:
 	// 		"[", "payload", "write", "reg", register index, "=>", len+"b", "@", payload base, "header", "+", offset,
 	//		"csum_type", checksum type, "csum_off", checksum offset, "csum_flags", checksum flags as hexadecimal, "]".
 	if len(tokens) != 19 {
-		return nil, &SyntaxError{lnIdx, 0, fmt.Sprintf("incorrect number of tokens for payload set operation, should be exactly 19, got %d", len(tokens))}
+		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("incorrect number of tokens for payload set operation, should be 19, got %d", len(tokens)))
 	}
 
 	if err := checkOperationBrackets(tokens, lnIdx); err != nil {
@@ -515,20 +522,20 @@ func InterpretPayloadSet(line string, lnIdx int) (operation, error) {
 	// Create the operation with the specified arguments.
 	pdset, err := newPayloadSet(base, offset, blen, reg, csumType, csumOff, csumFlags)
 	if err != nil {
-		return nil, &LogicError{lnIdx, tkIdx, err}
+		return nil, err
 	}
 
 	return pdset, nil
 }
 
 // InterpretBitwiseBool creates a new Comparison operation from the given string.
-func InterpretBitwiseBool(line string, lnIdx int) (operation, error) {
+func InterpretBitwiseBool(line string, lnIdx int) (operation, *syserr.AnnotatedError) {
 	tokens := strings.Fields(line)
 
 	// Requires at least 14 tokens:
 	// 		"[", "bitwise", "reg", dreg index, "=", "(", "reg", sreg index, "&", mask value, ")", "^", xor value, "]".
 	if len(tokens) < 14 {
-		return nil, &SyntaxError{lnIdx, 0, fmt.Sprintf("incorrect number of tokens for bitwise boolean operation, should be at least 14, got %d", len(tokens))}
+		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("incorrect number of tokens for bitwise operation, should be at least 14, got %d", len(tokens)))
 	}
 
 	if err := checkOperationBrackets(tokens, lnIdx); err != nil {
@@ -615,26 +622,26 @@ func InterpretBitwiseBool(line string, lnIdx int) (operation, error) {
 
 	// Done parsing tokens.
 	if tkIdx != len(tokens)-1 {
-		return nil, &SyntaxError{lnIdx, tkIdx, "unexpected token after bitwise boolean operation"}
+		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("unexpected token after bitwise boolean operation"))
 	}
 
 	// Create the operation with the specified arguments.
 	bitwiseBool, err := newBitwiseBool(sreg, dreg, mask, xor)
 	if err != nil {
-		return nil, &LogicError{lnIdx, tkIdx, err}
+		return nil, err
 	}
 
 	return bitwiseBool, nil
 }
 
 // InterpretCounter creates a new Counter operation from the given string.
-func InterpretCounter(line string, lnIdx int) (operation, error) {
+func InterpretCounter(line string, lnIdx int) (operation, *syserr.AnnotatedError) {
 	tokens := strings.Fields(line)
 
 	// Requires exactly 7 tokens:
 	// 		"[", "counter", "pkts", initial packets, "bytes", initial bytes, "]".
 	if len(tokens) != 7 {
-		return nil, &SyntaxError{lnIdx, 0, fmt.Sprintf("incorrect number of tokens for counter operation, should be exactly 7, got %d", len(tokens))}
+		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("incorrect number of tokens for counter operation, should be 7, got %d", len(tokens)))
 	}
 
 	if err := checkOperationBrackets(tokens, lnIdx); err != nil {
@@ -658,7 +665,7 @@ func InterpretCounter(line string, lnIdx int) (operation, error) {
 	// Third token should be int64 representing initial packets.
 	initialPkts, err := strconv.ParseInt(tokens[tkIdx], 10, 64)
 	if err != nil {
-		return nil, &SyntaxError{lnIdx, tkIdx, fmt.Sprintf("could not parse int64 initial packets: '%s'", tokens[tkIdx])}
+		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("could not parse int64 initial packets: '%s'", tokens[tkIdx]))
 	}
 	tkIdx++
 
@@ -671,7 +678,7 @@ func InterpretCounter(line string, lnIdx int) (operation, error) {
 	// Fifth token should be int64 representing initial bytes.
 	initialBytes, err := strconv.ParseInt(tokens[tkIdx], 10, 64)
 	if err != nil {
-		return nil, &SyntaxError{lnIdx, tkIdx, fmt.Sprintf("could not parse int64 initial bytes: '%s'", tokens[tkIdx])}
+		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("could not parse int64 initial bytes: '%s'", tokens[tkIdx]))
 	}
 	tkIdx++
 
@@ -682,13 +689,13 @@ func InterpretCounter(line string, lnIdx int) (operation, error) {
 }
 
 // InterpretRoute creates a new Route operation from the given string.
-func InterpretRoute(line string, lnIdx int) (operation, error) {
+func InterpretRoute(line string, lnIdx int) (operation, *syserr.AnnotatedError) {
 	tokens := strings.Fields(line)
 
 	// Requires exactly 8 tokens:
 	// 		"[", "rt", "load", route key, "=>", "reg", register index, "]".
 	if len(tokens) != 8 {
-		return nil, &SyntaxError{lnIdx, 0, fmt.Sprintf("incorrect number of tokens for route operation, should be exactly 8, got %d", len(tokens))}
+		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("incorrect number of tokens for route operation, should be 8, got %d", len(tokens)))
 	}
 
 	if err := checkOperationBrackets(tokens, lnIdx); err != nil {
@@ -738,20 +745,20 @@ func InterpretRoute(line string, lnIdx int) (operation, error) {
 	// Create the operation with the specified arguments.
 	rt, err := newRoute(key, reg)
 	if err != nil {
-		return nil, &LogicError{lnIdx, tkIdx, err}
+		return nil, err
 	}
 
 	return rt, nil
 }
 
 // InterpretByteorder creates a new Byteorder operation from the given string.
-func InterpretByteorder(line string, lnIdx int) (operation, error) {
+func InterpretByteorder(line string, lnIdx int) (operation, *syserr.AnnotatedError) {
 	tokens := strings.Fields(line)
 
 	// Requires exactly 10 tokens:
 	// 		"[", "byteorder", "reg", dreg index, "=", byteorder op+"(reg", sreg index+",", size+",", blen+")", "]".
 	if len(tokens) != 10 {
-		return nil, &SyntaxError{lnIdx, 0, fmt.Sprintf("incorrect number of tokens for route operation, should be exactly 10, got %d", len(tokens))}
+		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("incorrect number of tokens for byteorder operation, should be 10, got %d", len(tokens)))
 	}
 
 	if err := checkOperationBrackets(tokens, lnIdx); err != nil {
@@ -793,7 +800,7 @@ func InterpretByteorder(line string, lnIdx int) (operation, error) {
 	case "hton(reg":
 		bop = linux.NFT_BYTEORDER_HTON
 	default:
-		return nil, &SyntaxError{lnIdx, tkIdx, fmt.Sprintf("expected 'ntoh' or 'hton' keyword followed by '(reg' at token %d, got '%s'", tkIdx, tokens[tkIdx])}
+		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("expected 'ntoh' or 'hton' keyword followed by '(reg' at token %d, got '%s'", tkIdx, tokens[tkIdx]))
 	}
 	tkIdx++
 
@@ -821,20 +828,20 @@ func InterpretByteorder(line string, lnIdx int) (operation, error) {
 	// Create the operation with the specified arguments.
 	order, err := newByteorder(dreg, sreg, bop, blen, size)
 	if err != nil {
-		return nil, &LogicError{lnIdx, tkIdx, err}
+		return nil, err
 	}
 
 	return order, nil
 }
 
 // InterpretMetaLoad creates a new MetaLoad operation from the given string.
-func InterpretMetaLoad(line string, lnIdx int) (operation, error) {
+func InterpretMetaLoad(line string, lnIdx int) (operation, *syserr.AnnotatedError) {
 	tokens := strings.Fields(line)
 
 	// Requires exactly 8 tokens:
 	// 		"[", "meta", "load", meta key, "=>", "reg", register index, "]".
 	if len(tokens) != 8 {
-		return nil, &SyntaxError{lnIdx, 0, fmt.Sprintf("incorrect number of tokens for meta operation, should be exactly 8, got %d", len(tokens))}
+		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("incorrect number of tokens for meta load operation, should be 8, got %d", len(tokens)))
 	}
 
 	if err := checkOperationBrackets(tokens, lnIdx); err != nil {
@@ -884,20 +891,20 @@ func InterpretMetaLoad(line string, lnIdx int) (operation, error) {
 	// Create the operation with the specified arguments.
 	mtLoad, err := newMetaLoad(key, reg)
 	if err != nil {
-		return nil, &LogicError{lnIdx, tkIdx, err}
+		return nil, err
 	}
 
 	return mtLoad, nil
 }
 
 // InterpretMetaSet creates a new MetaSet operation from the given string.
-func InterpretMetaSet(line string, lnIdx int) (operation, error) {
+func InterpretMetaSet(line string, lnIdx int) (operation, *syserr.AnnotatedError) {
 	tokens := strings.Fields(line)
 
 	// Requires exactly 8 tokens:
 	// 		"[", "meta", "set", meta key, "with", "reg", register index, "]".
 	if len(tokens) != 8 {
-		return nil, &SyntaxError{lnIdx, 0, fmt.Sprintf("incorrect number of tokens for meta operation, should be exactly 8, got %d", len(tokens))}
+		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("incorrect number of tokens for meta set operation, should be 8, got %d", len(tokens)))
 	}
 
 	if err := checkOperationBrackets(tokens, lnIdx); err != nil {
@@ -947,7 +954,7 @@ func InterpretMetaSet(line string, lnIdx int) (operation, error) {
 	// Create the operation with the specified arguments.
 	mtSet, err := newMetaSet(key, reg)
 	if err != nil {
-		return nil, &LogicError{lnIdx, tkIdx, err}
+		return nil, err
 	}
 
 	return mtSet, nil
@@ -959,19 +966,19 @@ func InterpretMetaSet(line string, lnIdx int) (operation, error) {
 
 // checkOperationBrackets checks that the operation string is surrounded by
 // square brackets.
-func checkOperationBrackets(tokens []string, lnIdx int) error {
+func checkOperationBrackets(tokens []string, lnIdx int) *syserr.AnnotatedError {
 	if tokens[0] != "[" {
-		return &SyntaxError{lnIdx, 0, "operation missing opening square bracket"}
+		return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("expected operation to be surrounded by '[]', got '%s'", tokens[0]))
 	}
 	if tokens[len(tokens)-1] != "]" {
-		return &SyntaxError{lnIdx, len(tokens) - 1, "operation missing closing square bracket"}
+		return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("operation missing closing square bracket"))
 	}
 	return nil
 }
 
 // parseUint8 parses the uint8 which should be supposed from the given string.
 // Input starting with "0x" are parsed as base 16, otherwise assumes base 10.
-func parseUint8(regString string, supposed string, lnIdx int, tkIdx int) (uint8, error) {
+func parseUint8(regString string, supposed string, lnIdx int, tkIdx int) (uint8, *syserr.AnnotatedError) {
 	var v64 uint64
 	var err error
 	if len(regString) > 2 && regString[:2] == "0x" {
@@ -980,19 +987,19 @@ func parseUint8(regString string, supposed string, lnIdx int, tkIdx int) (uint8,
 		v64, err = strconv.ParseUint(regString, 10, 8)
 	}
 	if err != nil {
-		return 0, &SyntaxError{lnIdx, tkIdx, fmt.Sprintf("could not parse uint8 %s: '%s'", supposed, regString)}
+		return 0, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("could not parse uint8 %s: '%s'", supposed, regString))
 	}
 	return uint8(v64), nil
 }
 
 // parseRegister parses the register index from the given string.
-func parseRegister(regString string, lnIdx int, tkIdx int) (uint8, error) {
+func parseRegister(regString string, lnIdx int, tkIdx int) (uint8, *syserr.AnnotatedError) {
 	reg, err := parseUint8(regString, "register index", lnIdx, tkIdx)
 	if err != nil {
 		return 0, err
 	}
 	if !isRegister(reg) {
-		return 0, &SyntaxError{lnIdx, tkIdx, fmt.Sprintf("invalid register index: %d", reg)}
+		return 0, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("register index %d is not a valid register index", reg))
 	}
 	return reg, nil
 }
@@ -1000,7 +1007,7 @@ func parseRegister(regString string, lnIdx int, tkIdx int) (uint8, error) {
 // parseRegisterData parses the register data from the given token and returns
 // the index of the next token to process (can consume multiple tokens).
 // Note: assumes the register index is valid (was checked in parseRegister).
-func parseRegisterData(reg uint8, tokens []string, lnIdx int, tkIdx int) (int, registerData, error) {
+func parseRegisterData(reg uint8, tokens []string, lnIdx int, tkIdx int) (int, registerData, *syserr.AnnotatedError) {
 	// Handles verdict data.
 	if isVerdictRegister(reg) {
 		nextIdx, verdict, err := parseVerdict(tokens, lnIdx, tkIdx)
@@ -1017,12 +1024,12 @@ func parseRegisterData(reg uint8, tokens []string, lnIdx int, tkIdx int) (int, r
 		}
 		bytesData := newBytesData(data)
 		if err := bytesData.validateRegister(reg); err != nil {
-			return 0, nil, &LogicError{lnIdx, tkIdx, err}
+			return 0, nil, err
 		}
 		return nextIdx, bytesData, nil
 	}
 	// TODO(b/345684870): cases will be added here as more types are supported.
-	return 0, nil, &SyntaxError{lnIdx, tkIdx, fmt.Sprintf("invalid register data: '%s'", tokens[tkIdx])}
+	return 0, nil, syserr.NewAnnotatedError(syserr.ErrNotSupported, fmt.Sprintf("unsupported register data type for register %d", reg))
 }
 
 // verdictCodeFromKeyword is a map of verdict keyword to its corresponding enum value.
@@ -1037,13 +1044,13 @@ var verdictCodeFromKeyword = map[string]int32{
 
 // parseVerdict parses the verdict from the given token and returns
 // the index of the next token to process (can consume multiple tokens).
-func parseVerdict(tokens []string, lnIdx int, tkIdx int) (int, stack.NFVerdict, error) {
+func parseVerdict(tokens []string, lnIdx int, tkIdx int) (int, stack.NFVerdict, *syserr.AnnotatedError) {
 	v := stack.NFVerdict{}
 
 	vcString := tokens[tkIdx]
 	vc, ok := verdictCodeFromKeyword[vcString]
 	if !ok {
-		return 0, v, &SyntaxError{lnIdx, tkIdx, fmt.Sprintf("invalid verdict: '%s'", tokens[tkIdx])}
+		return 0, v, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("unknown verdict code: %s", vcString))
 	}
 	v.Code = VC(vc)
 	tkIdx++
@@ -1069,7 +1076,7 @@ func parseVerdict(tokens []string, lnIdx int, tkIdx int) (int, stack.NFVerdict, 
 
 // parseHexData parses little endian hexadecimal data from the given token,
 // converts to big endian, and returns the index of the next token to process.
-func parseHexData(tokens []string, lnIdx int, tkIdx int) (int, []byte, error) {
+func parseHexData(tokens []string, lnIdx int, tkIdx int) (int, []byte, *syserr.AnnotatedError) {
 	var bytes []byte
 	for ; tkIdx < len(tokens); tkIdx++ {
 		if len(tokens[tkIdx]) <= 2 || tokens[tkIdx][:2] != "0x" {
@@ -1078,21 +1085,20 @@ func parseHexData(tokens []string, lnIdx int, tkIdx int) (int, []byte, error) {
 
 		// Hexadecimal data must have 2 digits per byte (even number of characters).
 		if len(tokens[tkIdx])%2 != 0 {
-			return 0, nil, &SyntaxError{lnIdx, tkIdx, fmt.Sprintf("invalid hexadecimal data: '%s'", tokens[tkIdx])}
+			return 0, nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("invalid hexadecimal data: '%s'", tokens[tkIdx]))
 		}
 
 		// Decodes the little endian hex string into bytes
 		bytes4, err := hex.DecodeString(tokens[tkIdx][2:])
 		if err != nil {
-			return 0, nil, &SyntaxError{lnIdx, tkIdx, fmt.Sprintf("could not decode hexadecimal data: '%s'", tokens[tkIdx])}
+			return 0, nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("could not decode hexadecimal data: '%s'", tokens[tkIdx]))
 		}
 		// Converts the bytes to big endian and appends to the bytes slice.
 		slices.Reverse(bytes4)
 		bytes = append(bytes, bytes4...)
 	}
 	if len(bytes) > linux.NFT_REG_SIZE {
-		return 0, nil, &SyntaxError{lnIdx, tkIdx, fmt.Sprintf("cannot have more than %d bytes of hexadecimal data, got %d",
-			linux.NFT_REG_SIZE, len(bytes))}
+		return 0, nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("cannot have more than %d bytes of hexadecimal data, got %d", linux.NFT_REG_SIZE, len(bytes)))
 	}
 	return tkIdx, bytes, nil
 }
@@ -1109,25 +1115,25 @@ var cmpOpFromKeyword = map[string]int{
 }
 
 // parseCmpOp parses the int representing the cmpOp from the given string.
-func parseCmpOp(copString string, lnIdx int, tkIdx int) (int, error) {
+func parseCmpOp(copString string, lnIdx int, tkIdx int) (int, *syserr.AnnotatedError) {
 	cop, ok := cmpOpFromKeyword[copString]
 	if !ok {
-		return 0, &SyntaxError{lnIdx, tkIdx, fmt.Sprintf("invalid comparison operator keyword: '%s'", copString)}
+		return 0, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("unknown cmp operator keyword: %s", copString))
 	}
 	return cop, nil
 }
 
 // parseUint8PlusChar parses the a uint8 followed by the given character from
 // the given string.
-func parseUint8PlusChar(numString string, char byte, lnIdx int, tkIdx int) (uint8, error) {
+func parseUint8PlusChar(numString string, char byte, lnIdx int, tkIdx int) (uint8, *syserr.AnnotatedError) {
 	lastChar := numString[len(numString)-1]
 	if lastChar != char {
-		return 0, &SyntaxError{lnIdx, tkIdx, fmt.Sprintf("expected '%c' at the end of the uint8, got '%c'", char, lastChar)}
+		return 0, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("expected character '%c' at the end of the string, got '%c'", char, lastChar))
 	}
 	numStr := numString[:len(numString)-1]
 	num, err := strconv.ParseUint(numStr, 10, 8)
 	if err != nil {
-		return 0, &SyntaxError{lnIdx, tkIdx, fmt.Sprintf("could not parse uint8: '%s'", numStr)}
+		return 0, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("could not parse uint8 %s: '%s'", numString, numStr))
 	}
 	return uint8(num), nil
 }
@@ -1141,11 +1147,11 @@ var payloadBaseFromKeyword = map[string]payloadBase{
 }
 
 // parsePayloadBase parses the payload base header from the given string.
-func parsePayloadBase(baseString string, lnIdx int, tkIdx int) (payloadBase, error) {
+func parsePayloadBase(baseString string, lnIdx int, tkIdx int) (payloadBase, *syserr.AnnotatedError) {
 	base, ok := payloadBaseFromKeyword[baseString]
 	if !ok {
 		// Inner and Tunnel Headers cannot be specified in payload load operation.
-		return 0, &SyntaxError{lnIdx, tkIdx, fmt.Sprintf("invalid payload base keyword: '%s'", baseString)}
+		return 0, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("unknown payload base keyword: %s", baseString))
 	}
 	return base, nil
 }
@@ -1163,10 +1169,10 @@ var routeKeyFromKeyword = map[string]routeKey{
 }
 
 // parseRouteKey parses the route key from the given string.
-func parseRouteKey(keyString string, lnIdx int, tkIdx int) (routeKey, error) {
+func parseRouteKey(keyString string, lnIdx int, tkIdx int) (routeKey, *syserr.AnnotatedError) {
 	key, ok := routeKeyFromKeyword[keyString]
 	if !ok {
-		return 0, &SyntaxError{lnIdx, tkIdx, fmt.Sprintf("invalid route key keyword: '%s'", keyString)}
+		return 0, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("unknown route key keyword: %s", keyString))
 	}
 	return key, nil
 }
@@ -1210,19 +1216,19 @@ var metaKeyFromKeyword = map[string]metaKey{
 }
 
 // parseMetaKey parses the meta key from the given string.
-func parseMetaKey(keyString string, lnIdx int, tkIdx int) (metaKey, error) {
+func parseMetaKey(keyString string, lnIdx int, tkIdx int) (metaKey, *syserr.AnnotatedError) {
 	key, ok := metaKeyFromKeyword[keyString]
 	if !ok {
-		return 0, &SyntaxError{lnIdx, tkIdx, fmt.Sprintf("invalid meta key keyword: '%s'", keyString)}
+		return 0, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("unknown meta key keyword: %s", keyString))
 	}
 	return key, nil
 }
 
 // consumeToken is a helper function that checks if the token at the given index
 // matches the expected string, returning a SyntaxError if not.
-func consumeToken(expected string, tokens []string, lnIdx int, tkIdx int) error {
+func consumeToken(expected string, tokens []string, lnIdx int, tkIdx int) *syserr.AnnotatedError {
 	if tokens[tkIdx] != expected {
-		return &SyntaxError{lnIdx, tkIdx, fmt.Sprintf("unexpected string: %s", tokens[tkIdx])}
+		return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("unexpected string: %s", tokens[tkIdx]))
 	}
 	return nil
 }

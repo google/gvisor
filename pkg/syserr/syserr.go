@@ -125,6 +125,27 @@ func (e *Error) ToLinux() errno.Errno {
 	return e.errno
 }
 
+// AnnotatedError represents an error with an additional message.
+type AnnotatedError struct {
+	error   *Error
+	message string
+}
+
+// Error implements Error() for the error interface
+func (e *AnnotatedError) Error() string {
+	return fmt.Sprintf("%s: %s", e.error.String(), e.message)
+}
+
+// NewAnnotatedError creates a new AnnotatedError with the given error and message.
+func NewAnnotatedError(error *Error, message string) *AnnotatedError {
+	return &AnnotatedError{error: error, message: message}
+}
+
+// GetError returns the underlying error.
+func (e *AnnotatedError) GetError() *Error {
+	return e.error
+}
+
 // TODO(b/34162363): Remove or replace most of these errors.
 //
 // Some of the errors should be replaced with package specific errors and

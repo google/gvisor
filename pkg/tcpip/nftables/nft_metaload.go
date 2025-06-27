@@ -19,6 +19,7 @@ import (
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
@@ -111,7 +112,7 @@ var metaDataLengths = map[metaKey]int{
 }
 
 // validateMetaKey ensures the meta key is valid.
-func validateMetaKey(key metaKey) error {
+func validateMetaKey(key metaKey) *syserr.AnnotatedError {
 	switch key {
 	case linux.NFT_META_LEN, linux.NFT_META_PROTOCOL, linux.NFT_META_NFPROTO,
 		linux.NFT_META_L4PROTO, linux.NFT_META_SKUID, linux.NFT_META_SKGID,
@@ -120,20 +121,20 @@ func validateMetaKey(key metaKey) error {
 
 		return nil
 	default:
-		return fmt.Errorf("invalid meta key: %d", int(key))
+		return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("meta key %v is not supported", key))
 	}
 }
 
 // newMetaLoad creates a new metaLoad operation.
-func newMetaLoad(key metaKey, dreg uint8) (*metaLoad, error) {
+func newMetaLoad(key metaKey, dreg uint8) (*metaLoad, *syserr.AnnotatedError) {
 	if isVerdictRegister(dreg) {
-		return nil, fmt.Errorf("meta load operation cannot use verdict register as destination")
+		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("meta load operation does not support verdict register as destination register"))
 	}
 	if err := validateMetaKey(key); err != nil {
 		return nil, err
 	}
 	if metaDataLengths[key] > 4 && !is16ByteRegister(dreg) {
-		return nil, fmt.Errorf("meta load operation cannot use 4-byte register as destination for key %s", key)
+		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("meta load operation cannot use 4-byte register as destination for key %v", key))
 	}
 
 	return &metaLoad{key: key, dreg: dreg}, nil

@@ -441,8 +441,8 @@ type InitKernelArgs struct {
 	// RootIPCNamespace is the root IPC namespace.
 	RootIPCNamespace *IPCNamespace
 
-	// PIDNamespace is the root PID namespace.
-	PIDNamespace *PIDNamespace
+	// RootPIDNamespace is the root PID namespace.
+	RootPIDNamespace *PIDNamespace
 
 	// MaxFDLimit specifies the maximum file descriptor number that can be
 	// used by processes.  If it is zero, the limit will be set to
@@ -473,7 +473,7 @@ func (k *Kernel) Init(args InitKernelArgs) error {
 
 	k.featureSet = args.FeatureSet
 	k.timekeeper = args.Timekeeper
-	k.tasks = newTaskSet(args.PIDNamespace)
+	k.tasks = newTaskSet(args.RootPIDNamespace)
 	k.rootUserNamespace = args.RootUserNamespace
 	k.rootUTSNamespace = args.RootUTSNamespace
 	k.rootIPCNamespace = args.RootIPCNamespace
@@ -539,6 +539,8 @@ func (k *Kernel) Init(args InitKernelArgs) error {
 	k.rootNetworkNamespace.SetInode(nsfs.NewInode(ctx, k.nsfsMount, k.rootNetworkNamespace))
 	k.rootIPCNamespace.SetInode(nsfs.NewInode(ctx, k.nsfsMount, k.rootIPCNamespace))
 	k.rootUTSNamespace.SetInode(nsfs.NewInode(ctx, k.nsfsMount, k.rootUTSNamespace))
+
+	args.RootPIDNamespace.InitInode(ctx, k)
 
 	tmpfsOpts := vfs.GetFilesystemOptions{
 		InternalData: tmpfs.FilesystemOpts{
@@ -1911,6 +1913,7 @@ func (k *Kernel) Release() {
 	k.rootUTSNamespace.DecRef(ctx)
 	k.cleaupDevGofers()
 	k.mf.Destroy()
+	k.RootPIDNamespace().DecRef(ctx)
 }
 
 // PopulateNewCgroupHierarchy moves all tasks into a newly created cgroup

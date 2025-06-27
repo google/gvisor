@@ -625,7 +625,7 @@ func New(args Args) (*Loader, error) {
 		VdsoParams:           params,
 		RootUTSNamespace:     kernel.NewUTSNamespace(args.Spec.Hostname, args.Spec.Hostname, creds.UserNamespace),
 		RootIPCNamespace:     kernel.NewIPCNamespace(creds.UserNamespace),
-		PIDNamespace:         kernel.NewRootPIDNamespace(creds.UserNamespace),
+		RootPIDNamespace:     kernel.NewRootPIDNamespace(creds.UserNamespace),
 		MaxFDLimit:           maxFDLimit,
 		UnixSocketOpts:       unixSocketOpts,
 	}); err != nil {
@@ -1090,7 +1090,7 @@ func (l *Loader) startSubcontainer(spec *specs.Spec, conf *config.Config, cid st
 		}
 		if pidns == nil {
 			log.Warningf("PID namespace %q not found, running in new PID namespace", ns.Path)
-			pidns = l.k.RootPIDNamespace().NewChild(l.k.RootUserNamespace())
+			pidns = l.k.RootPIDNamespace().NewChild(l.k.SupervisorContext(), l.k, l.k.RootUserNamespace())
 		}
 		ep.pidnsPath = ns.Path
 	} else {

@@ -237,10 +237,6 @@ func (l *Lifecycle) StartContainer(args *StartContainerArgs, _ *uint32) error {
 		ls.SetUnchecked(lt, limit)
 	}
 
-	// Create a new pid namespace for the container. Each container must run
-	// in its own pid namespace.
-	pidNs := l.Kernel.RootPIDNamespace().NewChild(l.Kernel.RootUserNamespace())
-
 	initArgs := kernel.CreateProcessArgs{
 		Filename: args.Filename,
 		Argv:     args.Argv,
@@ -254,10 +250,13 @@ func (l *Lifecycle) StartContainer(args *StartContainerArgs, _ *uint32) error {
 		UTSNamespace:         l.Kernel.RootUTSNamespace(),
 		IPCNamespace:         l.Kernel.RootIPCNamespace(),
 		ContainerID:          args.ContainerID,
-		PIDNamespace:         pidNs,
 	}
 
 	ctx := initArgs.NewContext(l.Kernel)
+
+	// Create a new pid namespace for the container. Each container must run
+	// in its own pid namespace.
+	initArgs.PIDNamespace = l.Kernel.RootPIDNamespace().NewChild(ctx, l.Kernel, l.Kernel.RootUserNamespace())
 
 	// Import file descriptors.
 	fdTable := l.Kernel.NewFDTable()
