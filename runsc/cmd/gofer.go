@@ -523,6 +523,55 @@ func (g *Gofer) setupRootFS(spec *specs.Spec, conf *config.Config, goferToHostRP
 	return nil
 }
 
+var recAttrFlags = map[string]struct {
+	clear bool
+	flag  uint64
+}{
+	"ro":            {false, unix.MOUNT_ATTR_RDONLY},
+	"rw":            {true, unix.MOUNT_ATTR_RDONLY},
+	"nosuid":        {false, unix.MOUNT_ATTR_NOSUID},
+	"suid":          {true, unix.MOUNT_ATTR_NOSUID},
+	"nodev":         {false, unix.MOUNT_ATTR_NODEV},
+	"dev":           {true, unix.MOUNT_ATTR_NODEV},
+	"noexec":        {false, unix.MOUNT_ATTR_NOEXEC},
+	"exec":          {true, unix.MOUNT_ATTR_NOEXEC},
+	"nodiratime":    {false, unix.MOUNT_ATTR_NODIRATIME},
+	"diratime":      {true, unix.MOUNT_ATTR_NODIRATIME},
+	"relatime":      {false, unix.MOUNT_ATTR_RELATIME},
+	"norelatime":    {true, unix.MOUNT_ATTR_RELATIME},
+	"noatime":       {false, unix.MOUNT_ATTR_NOATIME},
+	"atime":         {true, unix.MOUNT_ATTR_NOATIME},
+	"strictatime":   {false, unix.MOUNT_ATTR_STRICTATIME},
+	"nostrictatime": {true, unix.MOUNT_ATTR_STRICTATIME},
+	"nosymfollow":   {false, unix.MOUNT_ATTR_NOSYMFOLLOW}, // since kernel 5.14
+	"symfollow":     {true, unix.MOUNT_ATTR_NOSYMFOLLOW},  // since kernel 5.14
+}
+
+func (g *Gofer) setMountFlags(m *specs.Mount, dst string) error {
+	attr := unix.MountAttr{}
+	flags := uint(0)
+	for _, o := range m.Options {
+		if o == "rbind" {
+			flags |= unix.AT_RECURSIVE
+		}
+		if f, exists := recAttrFlags[o]; exists {
+			if f.clear {
+				attr.Attr_clr |= f.flag
+				attr.Attr_set &= ^f.flag
+			} else {
+				attr.Attr_set |= f.flag
+				attr.Attr_clr &= ^f.flag
+				if f.flag&unix.MOUNT_ATTR__ATIME == f.flag {
+					// https://man7.org/linux/man-pages/man2/mount_setattr.2.html
+					// "cannot simply specify the access-time setting in attr_set, but must also include MOUNT_ATTR__ATIME in the attr_clr field."
+					attr.Attr_clr |= unix.MOUNT_ATTR__ATIME
+				}
+			}
+		}
+	}
+	return unix.MountSetattr(-1, dst, flags, &attr)
+}
+
 // setupMounts bind mounts all mounts specified in the spec in their correct
 // location inside root. It will resolve relative paths and symlinks. It also
 // creates directories as needed.
@@ -567,6 +616,9 @@ func (g *Gofer) setupMounts(conf *config.Config, mounts []specs.Mount, root, pro
 		srcFile.Close()
 		if err != nil {
 			return fmt.Errorf("mounting %+v: %v", m, err)
+		}
+		if err := g.setMountFlags(&m, dst); err != nil {
+			return err
 		}
 
 		// Set propagation options that cannot be set together with other options.
