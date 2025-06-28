@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"os"
 
+	"golang.org/x/sync/errgroup"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
@@ -103,30 +104,45 @@ func main() {
 			os.Exit(1)
 		}
 
-		checksum, err := drivers.ChecksumDriver(ctx, *checksumVersion)
-		if err != nil {
-			log.Warningf("Failed to compute checksum: %v", err)
+		var eg errgroup.Group
+		for _, arch := range []string{"amd64", "amd64"} {
+			eg.Go(func() error {
+				installer, err := drivers.NewInstaller(*checksumVersion, false)
+				if err != nil {
+					return fmt.Errorf("failed to create installer: %w", err)
+				}
+				checksum, err := installer.ChecksumDriver(ctx, arch)
+				if err != nil {
+					return fmt.Errorf("failed to get checksum on arch %q: %w", arch, err)
+				}
+				fmt.Printf("%s %s %s\n", arch, *checksumVersion, checksum)
+				return nil
+			})
+		}
+		if err := eg.Wait(); err != nil {
+			log.Warningf("Failed to get checksum: %v", err.Error())
 			os.Exit(1)
 		}
-		fmt.Printf("Checksum: %q\n", checksum)
+
 	case validateChecksumCmdStr:
 		if err := validateChecksumCmd.Parse(os.Args[2:]); err != nil {
 			log.Warningf("%s failed with: %v", validateChecksumCmdStr, err)
 			os.Exit(1)
 		}
 
-		nvproxy.ForEachSupportDriver(func(version nvconf.DriverVersion, checksum string) {
-			wantChecksum, err := drivers.ChecksumDriver(ctx, version.String())
-			if err != nil {
-				log.Warningf("error on version %q: %v", version.String(), err)
-				return
-			}
-			if checksum != wantChecksum {
-				log.Warningf("Checksum mismatch on driver %q got: %q want: %q", version.String(), checksum, wantChecksum)
-				return
-			}
-			log.Infof("Checksum matched on driver %q.", version.String())
+		var eg errgroup.Group
+
+		nvproxy.ForEachSupportDriver(func(version nvconf.DriverVersion, checksums nvproxy.Checksums) {
+			eg.Go(func() error {
+				return drivers.ValidateChecksum(ctx, version.String(), checksums)
+			})
 		})
+
+		if err := eg.Wait(); err != nil {
+			log.Warningf("Failed to validate checksum: %v", err.Error())
+			os.Exit(1)
+		}
+
 	case listCmdStr:
 		if err := listCmd.Parse(os.Args[2:]); err != nil {
 			log.Warningf("%s failed with: %v", listCmdStr, err)
