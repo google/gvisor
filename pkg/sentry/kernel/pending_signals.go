@@ -16,6 +16,7 @@ package kernel
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/bits"
 )
 
@@ -35,8 +36,7 @@ const (
 )
 
 // pendingSignals holds a collection of pending signals. The zero value of
-// pendingSignals is a valid empty collection. pendingSignals is thread-unsafe;
-// users must provide synchronization.
+// pendingSignals is a valid empty collection.
 //
 // +stateify savable
 type pendingSignals struct {
@@ -45,11 +45,19 @@ type pendingSignals struct {
 	// Note that signals is zero-indexed, but signal 1 is the first valid
 	// signal, so signals[0] contains signals with signo 1 etc. This offset is
 	// usually handled by using Signal.index().
+	//
+	// signals is protected by the signal mutex for the containing Task or
+	// ThreadGroup.
 	signals [linux.SignalMaximum]pendingSignalQueue `state:".([]savedPendingSignal)"`
 
 	// Bit i of pendingSet is set iff there is at least one signal with signo
 	// i+1 pending.
-	pendingSet linux.SignalSet `state:"manual"`
+	//
+	// pendingSet is accessed using atomic memory operations, and is protected
+	// by the signal mutex (such that reading pendingSet is safe if either the
+	// signal mutex is locked or if atomic memory operations are used, while
+	// writing pendingSet requires both).
+	pendingSet atomicbitops.Uint64 `state:"manual"`
 }
 
 // pendingSignalQueue holds a pendingSignalList for a single signal number.
@@ -86,7 +94,7 @@ func (p *pendingSignals) enqueue(info *linux.SignalInfo, timer *IntervalTimer) b
 	}
 	q.pendingSignalList.PushBack(&pendingSignal{SignalInfo: info, timer: timer})
 	q.length++
-	p.pendingSet |= linux.SignalSetOf(sig)
+	p.pendingSet.Store(p.pendingSet.RacyLoad() | uint64(linux.SignalSetOf(sig)))
 	return true
 }
 
@@ -103,7 +111,7 @@ func (p *pendingSignals) dequeue(mask linux.SignalSet) *linux.SignalInfo {
 	// process, POSIX leaves it unspecified which is delivered first. Linux,
 	// like many other implementations, gives priority to standard signals in
 	// this case." - signal(7)
-	lowestPendingUnblockedBit := bits.TrailingZeros64(uint64(p.pendingSet &^ mask))
+	lowestPendingUnblockedBit := bits.TrailingZeros64(p.pendingSet.RacyLoad() &^ uint64(mask))
 	if lowestPendingUnblockedBit >= linux.SignalMaximum {
 		return nil
 	}
@@ -119,7 +127,7 @@ func (p *pendingSignals) dequeueSpecific(sig linux.Signal) *linux.SignalInfo {
 	q.pendingSignalList.Remove(ps)
 	q.length--
 	if q.length == 0 {
-		p.pendingSet &^= linux.SignalSetOf(sig)
+		p.pendingSet.Store(p.pendingSet.RacyLoad() &^ uint64(linux.SignalSetOf(sig)))
 	}
 	if ps.timer != nil {
 		ps.timer.updateDequeuedSignalLocked(ps.SignalInfo)
@@ -137,5 +145,5 @@ func (p *pendingSignals) discardSpecific(sig linux.Signal) {
 	}
 	q.pendingSignalList.Reset()
 	q.length = 0
-	p.pendingSet &^= linux.SignalSetOf(sig)
+	p.pendingSet.Store(p.pendingSet.RacyLoad() &^ uint64(linux.SignalSetOf(sig)))
 }
