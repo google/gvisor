@@ -321,7 +321,7 @@ func Load(ctx context.Context, args LoadArgs, extraAuxv []arch.AuxEntry, vdso *V
 		arch.AuxEntry{linux.AT_GID, hostarch.Addr(c.RealKGID.In(c.UserNamespace).OrOverflow())},
 		arch.AuxEntry{linux.AT_EGID, hostarch.Addr(c.EffectiveKGID.In(c.UserNamespace).OrOverflow())},
 		// The conditions that require AT_SECURE = 1 never arise. See
-		// kernel.Task.updateCredsForExecLocked.
+		// kernel.Task.updateCredsForExec.
 		arch.AuxEntry{linux.AT_SECURE, 0},
 		arch.AuxEntry{linux.AT_CLKTCK, linux.CLOCKS_PER_SEC},
 		arch.AuxEntry{linux.AT_EXECFN, execfn},

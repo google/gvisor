@@ -44,14 +44,13 @@ func (t *Task) HasCapability(cp linux.Capability) bool {
 }
 
 // SetUID implements the semantics of setuid(2).
+//
+// Preconditions: The caller must be running on the task goroutine.
 func (t *Task) SetUID(uid auth.UID) error {
 	// setuid considers -1 to be invalid.
 	if !uid.Ok() {
 		return linuxerr.EINVAL
 	}
-
-	t.mu.Lock()
-	defer t.mu.Unlock()
 
 	creds := t.Credentials()
 	kuid := creds.UserNamespace.MapToKUID(uid)
@@ -63,7 +62,7 @@ func (t *Task) SetUID(uid auth.UID) error {
 	// the CAP_SETUID capability), the real UID and saved set-user-ID are also
 	// set." - setuid(2)
 	if creds.HasCapability(linux.CAP_SETUID) {
-		t.setKUIDsUncheckedLocked(kuid, kuid, kuid)
+		t.setKUIDsUnchecked(kuid, kuid, kuid)
 		return nil
 	}
 	// "EPERM: The user is not privileged (Linux: does not have the CAP_SETUID
@@ -72,14 +71,14 @@ func (t *Task) SetUID(uid auth.UID) error {
 	if kuid != creds.RealKUID && kuid != creds.SavedKUID {
 		return linuxerr.EPERM
 	}
-	t.setKUIDsUncheckedLocked(creds.RealKUID, kuid, creds.SavedKUID)
+	t.setKUIDsUnchecked(creds.RealKUID, kuid, creds.SavedKUID)
 	return nil
 }
 
 // SetREUID implements the semantics of setreuid(2).
+//
+// Preconditions: The caller must be running on the task goroutine.
 func (t *Task) SetREUID(r, e auth.UID) error {
-	t.mu.Lock()
-	defer t.mu.Unlock()
 	// "Supplying a value of -1 for either the real or effective user ID forces
 	// the system to leave that ID unchanged." - setreuid(2)
 	creds := t.Credentials()
@@ -116,14 +115,14 @@ func (t *Task) SetREUID(r, e auth.UID) error {
 	if r.Ok() || (e.Ok() && newE != creds.EffectiveKUID) {
 		newS = newE
 	}
-	t.setKUIDsUncheckedLocked(newR, newE, newS)
+	t.setKUIDsUnchecked(newR, newE, newS)
 	return nil
 }
 
 // SetRESUID implements the semantics of the setresuid(2) syscall.
+//
+// Preconditions: The caller must be running on the task goroutine.
 func (t *Task) SetRESUID(r, e, s auth.UID) error {
-	t.mu.Lock()
-	defer t.mu.Unlock()
 	// "Unprivileged user processes may change the real UID, effective UID, and
 	// saved set-user-ID, each to one of: the current real UID, the current
 	// effective UID or the current saved set-user-ID. Privileged processes (on
@@ -154,12 +153,12 @@ func (t *Task) SetRESUID(r, e, s auth.UID) error {
 			return err
 		}
 	}
-	t.setKUIDsUncheckedLocked(newR, newE, newS)
+	t.setKUIDsUnchecked(newR, newE, newS)
 	return nil
 }
 
-// Preconditions: t.mu must be locked.
-func (t *Task) setKUIDsUncheckedLocked(newR, newE, newS auth.KUID) {
+// Preconditions: The caller must be running on the task goroutine.
+func (t *Task) setKUIDsUnchecked(newR, newE, newS auth.KUID) {
 	creds := t.Credentials().Fork() // The credentials object is immutable. See doc for creds.
 	root := creds.UserNamespace.MapToKUID(auth.RootUID)
 	oldR, oldE, oldS := creds.RealKUID, creds.EffectiveKUID, creds.SavedKUID
@@ -221,13 +220,12 @@ func (t *Task) setKUIDsUncheckedLocked(newR, newE, newS auth.KUID) {
 }
 
 // SetGID implements the semantics of setgid(2).
+//
+// Preconditions: The caller must be running on the task goroutine.
 func (t *Task) SetGID(gid auth.GID) error {
 	if !gid.Ok() {
 		return linuxerr.EINVAL
 	}
-
-	t.mu.Lock()
-	defer t.mu.Unlock()
 
 	creds := t.Credentials()
 	kgid := creds.UserNamespace.MapToKGID(gid)
@@ -235,21 +233,20 @@ func (t *Task) SetGID(gid auth.GID) error {
 		return linuxerr.EINVAL
 	}
 	if creds.HasCapability(linux.CAP_SETGID) {
-		t.setKGIDsUncheckedLocked(kgid, kgid, kgid)
+		t.setKGIDsUnchecked(kgid, kgid, kgid)
 		return nil
 	}
 	if kgid != creds.RealKGID && kgid != creds.SavedKGID {
 		return linuxerr.EPERM
 	}
-	t.setKGIDsUncheckedLocked(creds.RealKGID, kgid, creds.SavedKGID)
+	t.setKGIDsUnchecked(creds.RealKGID, kgid, creds.SavedKGID)
 	return nil
 }
 
 // SetREGID implements the semantics of setregid(2).
+//
+// Preconditions: The caller must be running on the task goroutine.
 func (t *Task) SetREGID(r, e auth.GID) error {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-
 	creds := t.Credentials()
 	newR := creds.RealKGID
 	if r.Ok() {
@@ -277,16 +274,15 @@ func (t *Task) SetREGID(r, e auth.GID) error {
 	if r.Ok() || (e.Ok() && newE != creds.EffectiveKGID) {
 		newS = newE
 	}
-	t.setKGIDsUncheckedLocked(newR, newE, newS)
+	t.setKGIDsUnchecked(newR, newE, newS)
 	return nil
 }
 
 // SetRESGID implements the semantics of the setresgid(2) syscall.
+//
+// Preconditions: The caller must be running on the task goroutine.
 func (t *Task) SetRESGID(r, e, s auth.GID) error {
 	var err error
-
-	t.mu.Lock()
-	defer t.mu.Unlock()
 
 	creds := t.Credentials()
 	newR := creds.RealKGID
@@ -310,11 +306,12 @@ func (t *Task) SetRESGID(r, e, s auth.GID) error {
 			return err
 		}
 	}
-	t.setKGIDsUncheckedLocked(newR, newE, newS)
+	t.setKGIDsUnchecked(newR, newE, newS)
 	return nil
 }
 
-func (t *Task) setKGIDsUncheckedLocked(newR, newE, newS auth.KGID) {
+// Preconditions: The caller must be running on the task goroutine.
+func (t *Task) setKGIDsUnchecked(newR, newE, newS auth.KGID) {
 	creds := t.Credentials().Fork() // The credentials object is immutable. See doc for creds.
 	oldE := creds.EffectiveKGID
 	creds.RealKGID, creds.EffectiveKGID, creds.SavedKGID = newR, newE, newS
@@ -338,6 +335,8 @@ func (t *Task) setKGIDsUncheckedLocked(newR, newE, newS auth.KGID) {
 
 // SetExtraGIDs attempts to change t's supplemental groups. All IDs are
 // interpreted as being in t's user namespace.
+//
+// Preconditions: The caller must be running on the task goroutine.
 func (t *Task) SetExtraGIDs(gids []auth.GID) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -364,9 +363,9 @@ var weakCaps = auth.CapabilitySetOf(linux.CAP_NET_RAW)
 
 // SetCapabilitySets attempts to change t's permitted, inheritable, and
 // effective capability sets.
+//
+// Preconditions: The caller must be running on the task goroutine.
 func (t *Task) SetCapabilitySets(permitted, inheritable, effective auth.CapabilitySet) error {
-	t.mu.Lock()
-	defer t.mu.Unlock()
 	// "Permitted: This is a limiting superset for the effective capabilities
 	// that the thread may assume." - capabilities(7)
 	if effective & ^permitted != 0 {
@@ -407,9 +406,9 @@ func (t *Task) SetCapabilitySets(permitted, inheritable, effective auth.Capabili
 
 // DropBoundingCapability attempts to drop capability cp from t's capability
 // bounding set.
+//
+// Preconditions: The caller must be running on the task goroutine.
 func (t *Task) DropBoundingCapability(cp linux.Capability) error {
-	t.mu.Lock()
-	defer t.mu.Unlock()
 	creds := t.Credentials()
 	if !creds.HasCapability(linux.CAP_SETPCAP) {
 		return linuxerr.EPERM
@@ -421,10 +420,9 @@ func (t *Task) DropBoundingCapability(cp linux.Capability) error {
 }
 
 // SetUserNamespace attempts to move c into ns.
+//
+// Preconditions: The caller must be running on the task goroutine.
 func (t *Task) SetUserNamespace(ns *auth.UserNamespace) error {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-
 	creds := t.Credentials()
 	// "A process reassociating itself with a user namespace must have the
 	// CAP_SYS_ADMIN capability in the target user namespace." - setns(2)
@@ -457,6 +455,8 @@ func (t *Task) SetUserNamespace(ns *auth.UserNamespace) error {
 }
 
 // SetKeepCaps will set the keep capabilities flag PR_SET_KEEPCAPS.
+//
+// Preconditions: The caller must be running on the task goroutine.
 func (t *Task) SetKeepCaps(k bool) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -465,7 +465,7 @@ func (t *Task) SetKeepCaps(k bool) {
 	t.creds.Store(creds)
 }
 
-// updateCredsForExecLocked updates t.creds to reflect an execve().
+// updateCredsForExec updates t.creds to reflect an execve().
 //
 // NOTE(b/30815691): We currently do not implement privileged executables
 // (set-user/group-ID bits and file capabilities). This allows us to make a lot
@@ -485,9 +485,7 @@ func (t *Task) SetKeepCaps(k bool) {
 //   - Task.ptraceAttach does not serialize with execve as it does in Linux,
 //     since no_new_privs being set has the same effect as the presence of an
 //     unprivileged tracer.
-//
-// Preconditions: t.mu must be locked.
-func (t *Task) updateCredsForExecLocked() {
+func (t *Task) updateCredsForExec() {
 	// """
 	// During an execve(2), the kernel calculates the new capabilities of
 	// the process using the following algorithm:
