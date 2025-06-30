@@ -100,6 +100,17 @@ func (t *Task) killLocked() {
 	t.interrupt()
 }
 
+// Killed implements context.Blocker.Killed.
+func (t *Task) Killed() bool {
+	if t.killed() {
+		return true
+	}
+	// Indicate that t's task goroutine is still responsive (i.e. reset the
+	// watchdog timer).
+	t.touchGostateTime()
+	return false
+}
+
 // killed returns true if t has a SIGKILL pending. killed is analogous to
 // Linux's fatal_signal_pending().
 //

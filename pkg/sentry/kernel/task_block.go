@@ -234,7 +234,7 @@ func (t *Task) Interrupted() bool {
 	}
 	// Indicate that t's task goroutine is still responsive (i.e. reset the
 	// watchdog timer).
-	t.accountTaskGoroutineRunning()
+	t.touchGostateTime()
 	return false
 }
 

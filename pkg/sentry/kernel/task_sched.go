@@ -117,14 +117,6 @@ func (t *Task) accountTaskGoroutineLeave(state TaskGoroutineState) {
 }
 
 // Preconditions: The caller must be running on the task goroutine.
-func (t *Task) accountTaskGoroutineRunning() {
-	if oldState := t.TaskGoroutineState(); oldState != TaskGoroutineRunningSys {
-		panic(fmt.Sprintf("Task goroutine in state %v (expected %v)", oldState, TaskGoroutineRunningSys))
-	}
-	t.touchGostateTime()
-}
-
-// Preconditions: The caller must be running on the task goroutine.
 func (t *Task) touchGostateTime() {
 	t.gostateTime.Store(t.k.cpuClock.Load())
 }
