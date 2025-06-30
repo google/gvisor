@@ -18,6 +18,7 @@
 #include <linux/magic.h>
 #include <sched.h>
 #include <stdio.h>
+#include <string.h>
 #include <sys/eventfd.h>
 #include <sys/mman.h>
 #include <sys/mount.h>
@@ -444,6 +445,37 @@ TEST(MountTest, MountReadonly) {
   std::string const filename = JoinPath(dir.path(), "foo");
   EXPECT_THAT(open(filename.c_str(), O_RDWR | O_CREAT, 0777),
               SyscallFailsWithErrno(EROFS));
+}
+
+TEST(MountTest, BindMountReadonly) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto const bindDir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto const mnt = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount(dir.path(), bindDir.path(), "", MS_BIND, "", 0));
+
+  std::string const filename = JoinPath(bindDir.path(), "foo");
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(filename, O_RDWR | O_CREAT, 0644));
+  char msg[] = "hello world";
+  EXPECT_THAT(pwrite64(fd.get(), msg, strlen(msg), 0),
+              SyscallSucceedsWithValue(strlen(msg)));
+  fd.reset();
+  EXPECT_THAT(mount(dir.path().c_str(), bindDir.path().c_str(), NULL,
+                    MS_BIND | MS_RDONLY | MS_REMOUNT, NULL),
+              SyscallSucceeds());
+
+  EXPECT_THAT(access(bindDir.path().c_str(), W_OK),
+              SyscallFailsWithErrno(EROFS));
+
+  EXPECT_THAT(open(filename.c_str(), O_RDWR), SyscallFailsWithErrno(EROFS));
+  EXPECT_THAT(open(filename.c_str(), O_RDWR | O_TRUNC),
+              SyscallFailsWithErrno(EROFS));
+  EXPECT_THAT(open(filename.c_str(), O_RDONLY | O_TRUNC),
+              SyscallFailsWithErrno(EROFS));
+  const struct stat s = ASSERT_NO_ERRNO_AND_VALUE(Stat(filename));
+  EXPECT_EQ(s.st_size, strlen(msg));
 }
 
 PosixErrorOr<absl::Time> ATime(absl::string_view file) {

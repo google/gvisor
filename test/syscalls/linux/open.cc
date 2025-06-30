@@ -436,6 +436,7 @@ TEST_F(OpenTest, CanTruncateReadOnly) {
   struct stat stat;
   EXPECT_THAT(fstat(fd1.get(), &stat), SyscallSucceeds());
   EXPECT_EQ(stat.st_size, 0);
+  EXPECT_THAT(write(fd1.get(), "x", 1), SyscallFailsWithErrno(EBADF));
 }
 
 // If we don't have read permission on the file, opening with

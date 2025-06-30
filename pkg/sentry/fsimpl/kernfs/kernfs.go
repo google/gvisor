@@ -202,6 +202,9 @@ const (
 
 	// Dentry points to a symlink inode.
 	dflagsIsSymlink
+
+	// Dentry points to a regular file inode.
+	dflagsIsRegular
 )
 
 // Dentry implements vfs.DentryImpl.
@@ -519,12 +522,13 @@ func (d *Dentry) Init(fs *Filesystem, inode Inode) {
 	d.fs = fs
 	d.inode = inode
 	d.refs.Store(1)
-	ftype := inode.Mode().FileType()
-	if ftype == linux.ModeDirectory {
+	switch inode.Mode().FileType() {
+	case linux.ModeDirectory:
 		d.flags = atomicbitops.FromUint32(d.flags.RacyLoad() | dflagsIsDir)
-	}
-	if ftype == linux.ModeSymlink {
+	case linux.ModeSymlink:
 		d.flags = atomicbitops.FromUint32(d.flags.RacyLoad() | dflagsIsSymlink)
+	case linux.ModeRegular:
+		d.flags = atomicbitops.FromUint32(d.flags.RacyLoad() | dflagsIsRegular)
 	}
 	refs.Register(d)
 	inode.RegisterDentry(d)
@@ -551,6 +555,11 @@ func (d *Dentry) isDir() bool {
 // isSymlink checks whether the dentry points to a symlink inode.
 func (d *Dentry) isSymlink() bool {
 	return d.flags.Load()&dflagsIsSymlink != 0
+}
+
+// isRegular checks whether the dentry points to a regular file inode.
+func (d *Dentry) isRegular() bool {
+	return d.flags.Load()&dflagsIsRegular != 0
 }
 
 // InotifyWithParent implements vfs.DentryImpl.InotifyWithParent.
