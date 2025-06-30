@@ -454,10 +454,9 @@ type Task struct {
 
 	// creds is the task's credentials.
 	//
-	// creds.Load() may be called without synchronization. creds.Store() is
-	// serialized by mu. creds is owned by the task goroutine. All
-	// auth.Credentials objects that creds may point to, or have pointed to
-	// in the past, must be treated as immutable.
+	// creds is owned by the task goroutine. All auth.Credentials objects that
+	// creds may point to, or have pointed to in the past, must be treated as
+	// immutable.
 	creds auth.AtomicPtrCredentials
 
 	// utsns is the task's UTS namespace.
