@@ -638,7 +638,7 @@ func imgEq(a, b image.Image) bool {
 	return true
 }
 
-// logImageWithPrefix renders an image to text, frames it with the given
+// logImageWithFrameAndPrefix renders an image to text, frames it with the given
 // title, and logs that with a given prefix.
 func logImageWithFrameAndPrefix(ctx context.Context, img image.Image, title, prefix string) error {
 	const imageWidth = 72
