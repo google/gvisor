@@ -485,18 +485,6 @@ func (g *Gofer) setupRootFS(spec *specs.Spec, conf *config.Config, goferToHostRP
 		g.setupDev(spec, conf, root, procPath)
 	}
 
-	// Create working directory if needed.
-	if spec.Process.Cwd != "" {
-		dst, err := resolveSymlinks(root, spec.Process.Cwd)
-		if err != nil {
-			return fmt.Errorf("resolving symlinks to %q: %v", spec.Process.Cwd, err)
-		}
-		log.Infof("Create working directory %q if needed", spec.Process.Cwd)
-		if err := os.MkdirAll(dst, 0755); err != nil {
-			return fmt.Errorf("creating working directory %q: %v", spec.Process.Cwd, err)
-		}
-	}
-
 	// Check if root needs to be remounted as readonly.
 	if rootfsConf.ShouldUseLisafs() && (spec.Root.Readonly || rootfsConf.ShouldUseOverlayfs()) {
 		// If root is a mount point but not read-only, we can change mount options
@@ -526,7 +514,7 @@ func (g *Gofer) setupRootFS(spec *specs.Spec, conf *config.Config, goferToHostRP
 // setupMounts bind mounts all mounts specified in the spec in their correct
 // location inside root. It will resolve relative paths and symlinks. It also
 // creates directories as needed.
-func (g *Gofer) setupMounts(conf *config.Config, mounts []specs.Mount, root, procPath string, goferToHostRPC *urpc.Client) error {
+func (g *Gofer) setupMounts(conf *config.Config, mounts []specs.Mount, root, procPath string, goferToHostRPC *urpc.Client) (retErr error) {
 	mountIdx := 1 // First index is for rootfs.
 	for _, m := range mounts {
 		if !specutils.IsGoferMount(m) {
@@ -568,6 +556,52 @@ func (g *Gofer) setupMounts(conf *config.Config, mounts []specs.Mount, root, pro
 		if err != nil {
 			return fmt.Errorf("mounting %+v: %v", m, err)
 		}
+
+		dstFD, err := unix.Open(dst, unix.O_PATH|unix.O_CLOEXEC, 0)
+		if err != nil {
+			return fmt.Errorf("Open(%s, _, _): %w", dst, err)
+		}
+		defer unix.Close(dstFD)
+		// Apply mount options after creating all mount points.
+		// Otherwise they can be remounted into read-only.
+		defer func(dstFD int, flags uint32, dst string) {
+			path := fmt.Sprintf("/proc/self/fd/%d", dstFD)
+			// The gofer process doesn't execute anything nativly.
+			flags |= unix.MS_NOSUID
+
+			statfs := unix.Statfs_t{}
+			if err := unix.Statfs(path, &statfs); err != nil {
+				retErr = fmt.Errorf("stat dst: %q", dst)
+				return
+			}
+			lockedFlags := uint32(0)
+			for _, f := range []struct {
+				st, ms int
+			}{
+				// MS_NOSUID are always set.
+				{unix.ST_RDONLY, unix.MS_RDONLY},
+				{unix.ST_NOEXEC, unix.MS_NOEXEC},
+				{unix.ST_NODEV, unix.MS_NODEV},
+				{unix.ST_NOATIME, unix.MS_NOATIME},
+				{unix.ST_NODIRATIME, unix.MS_NODIRATIME},
+				{unix.ST_RELATIME, unix.MS_RELATIME},
+			} {
+				if int(statfs.Flags)&f.st == f.st {
+					lockedFlags |= uint32(f.ms)
+				}
+			}
+			if lockedFlags&unix.MS_NOATIME|unix.MS_RELATIME == 0 {
+				lockedFlags |= unix.MS_STRICTATIME
+			}
+
+			// The previous SafeSetupAndMount creates a new bind-mount, but
+			// it doesn't change mount flags. A separate MS_BIND|MS_REMOUNT
+			// has to be done to apply the mount options.
+			if err := unix.Mount("", path, "", uintptr(flags|lockedFlags|unix.MS_REMOUNT), ""); err != nil {
+				retErr = fmt.Errorf("mount dst: %q, flags: %#x, err: %v", dst, flags, err)
+				return
+			}
+		}(dstFD, flags, dst)
 
 		// Set propagation options that cannot be set together with other options.
 		flags = specutils.PropOptionsToFlags(m.Options)

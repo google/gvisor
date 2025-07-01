@@ -202,6 +202,14 @@ func setupContainerVFS(ctx context.Context, info *containerInfo, mntr *container
 		return fmt.Errorf("failed to create device files: %w", err)
 	}
 
+	if err := mntr.k.VFS().MkdirAllAt(
+		ctx, procArgs.WorkingDirectory, mnsRoot, rootCreds,
+		&vfs.MkdirOptions{Mode: 0755}, true, /* mustBeDir */
+	); err != nil {
+		return fmt.Errorf("failed to create process working directory %q: %w",
+			procArgs.WorkingDirectory, err)
+	}
+
 	// We are executing a file directly. Do not resolve the executable path.
 	if procArgs.File != nil {
 		return nil
