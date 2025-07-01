@@ -480,7 +480,7 @@ func TestUDPForwarder(t *testing.T) {
 	}
 
 	done := make(chan struct{})
-	fwd := udp.NewForwarder(s, func(r *udp.ForwarderRequest) {
+	fwd := udp.NewForwarder(s, func(r *udp.ForwarderRequest) bool {
 		defer close(done)
 
 		var wq waiter.Queue
@@ -496,11 +496,15 @@ func TestUDPForwarder(t *testing.T) {
 		n, e := c.Read(buf)
 		if e != nil {
 			t.Errorf("c.Read() = %v", e)
+			return true
 		}
 
 		if _, e := c.Write(buf[:n]); e != nil {
 			t.Errorf("c.Write() = %v", e)
+			return true
 		}
+
+		return true
 	})
 	s.SetTransportProtocolHandler(udp.ProtocolNumber, fwd.HandlePacket)
 
