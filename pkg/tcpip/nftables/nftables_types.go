@@ -139,10 +139,11 @@ func validateHook(hook stack.NFHook, family stack.AddressFamily) *syserr.Annotat
 // NFTables represents the nftables state for all address families.
 // Note: unlike iptables, nftables doesn't start with any initialized tables.
 type NFTables struct {
-	filters   [stack.NumAFs]*addressFamilyFilter // Filters for each address family.
-	clock     tcpip.Clock                        // Clock for timing evaluations.
-	startTime time.Time                          // Time NFTables object was created.
-	rng       rand.RNG                           // Random number generator.
+	filters            [stack.NumAFs]*addressFamilyFilter // Filters for each address family.
+	clock              tcpip.Clock                        // Clock for timing evaluations.
+	startTime          time.Time                          // Time NFTables object was created.
+	rng                rand.RNG                           // Random number generator.
+	tableHandleCounter atomicbitops.Uint64                // Table handle counter.
 }
 
 // Ensures NFTables implements the NFTablesInterface.
@@ -159,6 +160,9 @@ type addressFamilyFilter struct {
 
 	// tables is a map of tables for each address family.
 	tables map[string]*Table
+
+	// tableHandles is a map of table handles (ids) to tables for a given address family.
+	tableHandles map[uint64]*Table
 
 	// hfStacks is a map of hook function stacks (slice of base chains for a
 	// given hook ordered by priority).
@@ -179,9 +183,25 @@ type Table struct {
 	// chains is a map of chains for each table.
 	chains map[string]*Chain
 
-	// flags is the set of optional flags for the table.
+	// flagSet is the set of optional flags for the table.
 	// Note: currently nftables only has the single Dormant flag.
 	flagSet map[TableFlag]struct{}
+
+	// handle is the id of the table.
+	handle uint64
+
+	// owner is the port id of the table's owner, if it is specified.
+	owner uint32
+
+	// userData is the user-specified metadata for the table. This is not used
+	// by the kernel, but rather userspace applications like nft binary.
+	userData []byte
+}
+
+// TableInfo represents data between an AFfilter and a Table.
+type TableInfo struct {
+	Name   string
+	Handle uint64
 }
 
 // hookFunctionStack represents the list of base chains for a specific hook.
@@ -198,6 +218,9 @@ const (
 	// TableFlagDormant is set if the table is dormant. Dormant tables are not
 	// evaluated by the kernel.
 	TableFlagDormant TableFlag = iota
+	// TableFlagOwner is set if the table has an owner. The owner is the port
+	// where the table is created.
+	TableFlagOwner
 )
 
 // Chain represents a single chain as a list of rules.
@@ -744,4 +767,28 @@ func VerdictCodeToString(v uint32) string {
 		return vcStr
 	}
 	return fmt.Sprintf("invalid verdict: %d", v)
+}
+
+// netlinkAFToStackAF maps address families from linux/socket.h to their corresponding
+// netfilter address families.
+// From linux/include/uapi/linux/netfilter.h
+var netlinkAFToStackAF = map[uint8]stack.AddressFamily{
+	linux.AF_UNSPEC:    stack.Unspec,
+	linux.AF_UNIX:      stack.Inet,
+	linux.AF_INET:      stack.IP,
+	linux.AF_AX25:      stack.Arp,
+	linux.AF_APPLETALK: stack.Netdev,
+	linux.AF_BRIDGE:    stack.Bridge,
+	linux.AF_INET6:     stack.IP6,
+}
+
+// AFtoNetlinkAF converts a generic address family to a netfilter address family.
+// On error, we simply cast it to be a stack.AddressFamily and return an error to allow netfilter
+// sockets to handle it accordingly if needed.
+func AFtoNetlinkAF(af uint8) (stack.AddressFamily, *syserr.Error) {
+	naf, ok := netlinkAFToStackAF[af]
+	if !ok {
+		return stack.AddressFamily(af), syserr.ErrNotSupported
+	}
+	return naf, nil
 }
