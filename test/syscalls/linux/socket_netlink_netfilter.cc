@@ -12,13 +12,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// netinet/in.h must be included before netfilter.h.
+// clang-format off
+#include <linux/netfilter/nf_tables.h>
+#include <netinet/in.h>
+#include <linux/netfilter.h>
 #include <linux/netlink.h>
+// clang-format on
 
 #include <cerrno>
+#include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <functional>
 #include <string>
 #include <tuple>
+#include <vector>
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
@@ -41,7 +50,6 @@ namespace {
 constexpr uint32_t kSeq = 12345;
 
 using ::testing::_;
-using ::testing::Eq;
 
 using SockOptTest = ::testing::TestWithParam<
     std::tuple<int, std::function<bool(int)>, std::string>>;
@@ -99,134 +107,88 @@ TEST(NetlinkNetfilterTest, CanCreateSocket) {
 
 TEST(NetlinkNetfilterTest, AddAndAddTableWithDormantFlag) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
-  uint16_t default_table_id = 0;
   const char test_table_name[] = "test_table";
+  uint32_t table_flags = NFT_TABLE_F_DORMANT;
 
   FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
 
-  struct nameAttribute {
-    struct nlattr attr;
-    char name[32];
-  };
-  struct flagAttribute {
-    struct nlattr attr;
-    uint32_t flags;
-  };
-  struct request {
-    struct nlmsghdr hdr;
-    struct nfgenmsg msg;
-    struct nameAttribute nattr;
-  };
+  std::vector<char> add_request_buffer =
+      NetlinkRequestBuilder()
+          .SetMessageType(NFT_MSG_NEWTABLE)
+          .SetFlags(NLM_F_REQUEST | NLM_F_ACK)
+          .SetFamily(NFPROTO_INET)
+          .SetSequenceNumber(kSeq)
+          .AddAttribute(NFTA_TABLE_NAME, test_table_name,
+                        strlen(test_table_name) + 1)
+          .Build();
 
-  struct request_2 {
-    struct nlmsghdr hdr;
-    struct nfgenmsg msg;
-    struct nameAttribute nattr;
-    struct flagAttribute fattr;
-  };
+  std::vector<char> add_request_buffer_2 =
+      NetlinkRequestBuilder()
+          .SetMessageType(NFT_MSG_NEWTABLE)
+          .SetFlags(NLM_F_REQUEST | NLM_F_ACK)
+          .SetFamily(NFPROTO_INET)
+          .SetSequenceNumber(kSeq + 1)
+          .AddAttribute(NFTA_TABLE_NAME, test_table_name,
+                        strlen(test_table_name) + 1)
+          .AddAttribute(NFTA_TABLE_FLAGS, &table_flags, sizeof(table_flags))
+          .Build();
 
-  struct request add_tab_req = {};
-  InitNetlinkHdr(&add_tab_req.hdr, sizeof(add_tab_req),
-                 MakeNetlinkMsgType(NFNL_SUBSYS_NFTABLES, NFT_MSG_NEWTABLE),
-                 kSeq, NLM_F_REQUEST | NLM_F_ACK);
-  // For both ipv4 and ipv6 tables.
-  InitNetfilterGenmsg(&add_tab_req.msg, AF_INET, NFNETLINK_V0,
-                      default_table_id);
-  // Attribute setting
-  InitNetlinkAttr(&add_tab_req.nattr.attr, sizeof(add_tab_req.nattr.name),
-                  NFTA_TABLE_NAME);
-  absl::SNPrintF(add_tab_req.nattr.name, sizeof(add_tab_req.nattr.name),
-                 test_table_name);
-
-  struct request_2 add_tab_req_2 = {};
-  InitNetlinkHdr(&add_tab_req_2.hdr, sizeof(add_tab_req_2),
-                 MakeNetlinkMsgType(NFNL_SUBSYS_NFTABLES, NFT_MSG_NEWTABLE),
-                 kSeq + 1, NLM_F_REQUEST | NLM_F_ACK);
-  // For both ipv4 and ipv6 tables.
-  InitNetfilterGenmsg(&add_tab_req_2.msg, AF_INET, NFNETLINK_V0,
-                      default_table_id);
-  // Attribute setting
-  InitNetlinkAttr(&add_tab_req_2.nattr.attr, sizeof(add_tab_req_2.nattr.name),
-                  NFTA_TABLE_NAME);
-  absl::SNPrintF(add_tab_req_2.nattr.name, sizeof(add_tab_req_2.nattr.name),
-                 test_table_name);
-  InitNetlinkAttr(&add_tab_req_2.fattr.attr, sizeof(add_tab_req_2.fattr.flags),
-                  NFTA_TABLE_FLAGS);
-  add_tab_req_2.fattr.flags = NFT_TABLE_F_DORMANT;
-
-  ASSERT_NO_ERRNO(
-      NetlinkRequestAckOrError(fd, kSeq, &add_tab_req, sizeof(add_tab_req)));
-  ASSERT_NO_ERRNO(NetlinkRequestAckOrError(fd, kSeq + 1, &add_tab_req_2,
-                                           sizeof(add_tab_req_2)));
+  ASSERT_NO_ERRNO(NetlinkRequestAckOrError(fd, kSeq, add_request_buffer.data(),
+                                           add_request_buffer.size()));
+  ASSERT_NO_ERRNO(NetlinkRequestAckOrError(
+      fd, kSeq + 1, add_request_buffer_2.data(), add_request_buffer_2.size()));
 }
 
 TEST(NetlinkNetfilterTest, AddAndRetrieveNewTable) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
-  uint16_t default_table_id = 0;
-  const char test_table_name[] = "test_table";
+  const char test_table_name[] = "test_tab_add_retrieve";
+  uint32_t table_flags = NFT_TABLE_F_DORMANT | NFT_TABLE_F_OWNER;
+  uint8_t expected_udata[] = {0x01, 0x02, 0x03, 0x04};
+  uint32_t expected_chain_count = 0;
+  uint32_t expected_flags = table_flags;
+  size_t expected_udata_size = sizeof(expected_udata);
+  bool correct_response = false;
 
   FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
+  uint32_t expected_owner = ASSERT_NO_ERRNO_AND_VALUE(NetlinkPortID(fd.get()));
 
-  struct nameAttribute {
-    struct nlattr attr;
-    char name[32];
-  };
-  struct request {
-    struct nlmsghdr hdr;
-    struct nfgenmsg msg;
-    struct nameAttribute attr;
-  };
+  std::vector<char> add_request_buffer =
+      NetlinkRequestBuilder()
+          .SetMessageType(NFT_MSG_NEWTABLE)
+          .SetFlags(NLM_F_REQUEST | NLM_F_ACK)
+          .SetFamily(NFPROTO_INET)
+          .SetSequenceNumber(kSeq)
+          // Include the null terminator at the end of the string.
+          .AddAttribute(NFTA_TABLE_NAME, test_table_name,
+                        strlen(test_table_name) + 1)
+          .AddAttribute(NFTA_TABLE_FLAGS, &table_flags, sizeof(table_flags))
+          .AddAttribute(NFTA_TABLE_USERDATA, expected_udata,
+                        sizeof(expected_udata))
+          .Build();
 
-  struct request add_tab_req = {};
-  InitNetlinkHdr(&add_tab_req.hdr, sizeof(add_tab_req),
-                 MakeNetlinkMsgType(NFNL_SUBSYS_NFTABLES, NFT_MSG_NEWTABLE),
-                 kSeq, NLM_F_REQUEST | NLM_F_ACK);
-  // For both ipv4 and ipv6 tables.
-  InitNetfilterGenmsg(&add_tab_req.msg, AF_INET, NFNETLINK_V0,
-                      default_table_id);
-  // Attribute setting
-  InitNetlinkAttr(&add_tab_req.attr.attr, sizeof(add_tab_req.attr.name),
-                  NFTA_TABLE_NAME);
-  absl::SNPrintF(add_tab_req.attr.name, sizeof(add_tab_req.attr.name),
-                 test_table_name);
+  std::vector<char> get_request_buffer =
+      NetlinkRequestBuilder()
+          .SetMessageType(NFT_MSG_GETTABLE)
+          // Don't set NLM_F_ACK here, since the check will be done for every
+          // nlmsg received.
+          .SetFlags(NLM_F_REQUEST)
+          .SetFamily(NFPROTO_INET)
+          .SetSequenceNumber(kSeq + 1)
+          .AddAttribute(NFTA_TABLE_NAME, test_table_name,
+                        strlen(test_table_name) + 1)
+          .Build();
 
-  struct request add_tab_req_2 = {};
-  bool correct_response = false;
-  InitNetlinkHdr(&add_tab_req_2.hdr, sizeof(add_tab_req_2),
-                 MakeNetlinkMsgType(NFNL_SUBSYS_NFTABLES, NFT_MSG_GETTABLE),
-                 kSeq + 1, NLM_F_REQUEST);
-  // For both ipv4 and ipv6 tables.
-  InitNetfilterGenmsg(&add_tab_req_2.msg, AF_INET, NFNETLINK_V0,
-                      default_table_id);
-  // Attribute setting
-  InitNetlinkAttr(&add_tab_req_2.attr.attr, sizeof(add_tab_req_2.attr.name),
-                  NFTA_TABLE_NAME);
-  absl::SNPrintF(add_tab_req_2.attr.name, sizeof(add_tab_req_2.attr.name),
-                 test_table_name);
-
-  ASSERT_NO_ERRNO(
-      NetlinkRequestAckOrError(fd, kSeq, &add_tab_req, sizeof(add_tab_req)));
+  ASSERT_NO_ERRNO(NetlinkRequestAckOrError(fd, kSeq, add_request_buffer.data(),
+                                           add_request_buffer.size()));
   ASSERT_NO_ERRNO(NetlinkRequestResponse(
-      fd, &add_tab_req_2, sizeof(add_tab_req_2),
+      fd, get_request_buffer.data(), get_request_buffer.size(),
       [&](const struct nlmsghdr* hdr) {
-        ASSERT_THAT(hdr->nlmsg_type, Eq(MakeNetlinkMsgType(NFNL_SUBSYS_NFTABLES,
-                                                           NFT_MSG_GETTABLE)));
-        ASSERT_GE(hdr->nlmsg_len, NLMSG_SPACE(sizeof(struct nfgenmsg)));
-        const struct nfgenmsg* genmsg =
-            reinterpret_cast<const struct nfgenmsg*>(NLMSG_DATA(hdr));
-        EXPECT_EQ(genmsg->nfgen_family, AF_INET);
-        EXPECT_EQ(genmsg->version, NFNETLINK_V0);
-
-        const struct nfattr* nfattr = FindNfAttr(hdr, genmsg, NFTA_TABLE_NAME);
-        EXPECT_NE(nullptr, nfattr) << "NFTA_TABLE_NAME not found in message.";
-        if (nfattr == nullptr) {
-          return;
-        }
-
-        std::string name(reinterpret_cast<const char*>(NFA_DATA(nfattr)));
-        EXPECT_EQ(name, test_table_name);
+        CheckNetfilterTableAttributes(
+            hdr, nullptr, test_table_name, &expected_chain_count, nullptr,
+            &expected_flags, &expected_owner, expected_udata,
+            &expected_udata_size, true);
         correct_response = true;
       },
       false));
@@ -234,207 +196,655 @@ TEST(NetlinkNetfilterTest, AddAndRetrieveNewTable) {
   ASSERT_TRUE(correct_response);
 }
 
+TEST(NetlinkNetfilterTest, ErrGettingTableWithDifferentFamily) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+  const char test_table_name[] = "test_tab_different_families";
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
+
+  std::vector<char> add_request_buffer_ipv4 =
+      NetlinkRequestBuilder()
+          .SetMessageType(NFT_MSG_NEWTABLE)
+          .SetFlags(NLM_F_REQUEST | NLM_F_ACK)
+          .SetFamily(NFPROTO_IPV4)
+          .SetSequenceNumber(kSeq)
+          .AddAttribute(NFTA_TABLE_NAME, test_table_name,
+                        strlen(test_table_name) + 1)
+          .Build();
+
+  std::vector<char> add_request_buffer_ipv6 =
+      NetlinkRequestBuilder()
+          .SetMessageType(NFT_MSG_NEWTABLE)
+          .SetFlags(NLM_F_REQUEST | NLM_F_ACK)
+          .SetFamily(NFPROTO_IPV6)
+          .SetSequenceNumber(kSeq + 1)
+          .AddAttribute(NFTA_TABLE_NAME, test_table_name,
+                        strlen(test_table_name) + 1)
+          .Build();
+
+  std::vector<char> get_request_buffer =
+      NetlinkRequestBuilder()
+          .SetMessageType(NFT_MSG_GETTABLE)
+          .SetFlags(NLM_F_REQUEST)
+          .SetFamily(NFPROTO_INET)
+          .SetSequenceNumber(kSeq + 2)
+          .AddAttribute(NFTA_TABLE_NAME, test_table_name,
+                        strlen(test_table_name) + 1)
+          .Build();
+
+  ASSERT_NO_ERRNO(NetlinkRequestAckOrError(fd, kSeq,
+                                           add_request_buffer_ipv4.data(),
+                                           add_request_buffer_ipv4.size()));
+  ASSERT_NO_ERRNO(NetlinkRequestAckOrError(fd, kSeq + 1,
+                                           add_request_buffer_ipv6.data(),
+                                           add_request_buffer_ipv6.size()));
+  ASSERT_THAT(NetlinkRequestAckOrError(fd, kSeq + 2, get_request_buffer.data(),
+                                       get_request_buffer.size()),
+              PosixErrorIs(ENOENT, _));
+}
+
 TEST(NetlinkNetfilterTest, ErrAddExistingTableWithExclusiveFlag) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
-  uint16_t default_table_id = 0;
-  const char test_table_name[] = "test_table";
+  const char test_table_name[] = "err_exclusive";
 
   FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
 
-  struct nameAttribute {
-    struct nlattr attr;
-    char name[32];
-  };
-  struct request {
-    struct nlmsghdr hdr;
-    struct nfgenmsg msg;
-    struct nameAttribute attr;
-  };
+  std::vector<char> add_request_buffer =
+      NetlinkRequestBuilder()
+          .SetMessageType(NFT_MSG_NEWTABLE)
+          .SetFlags(NLM_F_REQUEST | NLM_F_ACK)
+          .SetFamily(NFPROTO_INET)
+          .SetSequenceNumber(kSeq)
+          .AddAttribute(NFTA_TABLE_NAME, test_table_name,
+                        strlen(test_table_name) + 1)
+          .Build();
 
-  struct request add_tab_req = {};
-  InitNetlinkHdr(&add_tab_req.hdr, sizeof(add_tab_req),
-                 MakeNetlinkMsgType(NFNL_SUBSYS_NFTABLES, NFT_MSG_NEWTABLE),
-                 kSeq, NLM_F_REQUEST | NLM_F_ACK);
-  // For both ipv4 and ipv6 tables.
-  InitNetfilterGenmsg(&add_tab_req.msg, AF_INET, NFNETLINK_V0,
-                      default_table_id);
-  // Attribute setting
-  InitNetlinkAttr(&add_tab_req.attr.attr, sizeof(add_tab_req.attr.name),
-                  NFTA_TABLE_NAME);
-  absl::SNPrintF(add_tab_req.attr.name, sizeof(add_tab_req.attr.name),
-                 test_table_name);
+  std::vector<char> add_request_buffer_2 =
+      NetlinkRequestBuilder()
+          .SetMessageType(NFT_MSG_NEWTABLE)
+          .SetFlags(NLM_F_REQUEST | NLM_F_EXCL)
+          .SetFamily(NFPROTO_INET)
+          .SetSequenceNumber(kSeq + 1)
+          .AddAttribute(NFTA_TABLE_NAME, test_table_name,
+                        strlen(test_table_name) + 1)
+          .Build();
 
-  struct request add_tab_req_2 = {};
-  InitNetlinkHdr(&add_tab_req_2.hdr, sizeof(add_tab_req_2),
-                 MakeNetlinkMsgType(NFNL_SUBSYS_NFTABLES, NFT_MSG_NEWTABLE),
-                 kSeq + 1, NLM_F_REQUEST | NLM_F_EXCL);
-  // For both ipv4 and ipv6 tables.
-  InitNetfilterGenmsg(&add_tab_req_2.msg, AF_INET, NFNETLINK_V0,
-                      default_table_id);
-  // Attribute setting
-  InitNetlinkAttr(&add_tab_req_2.attr.attr, sizeof(add_tab_req_2.attr.name),
-                  NFTA_TABLE_NAME);
-  absl::SNPrintF(add_tab_req_2.attr.name, sizeof(add_tab_req_2.attr.name),
-                 test_table_name);
-
-  ASSERT_NO_ERRNO(
-      NetlinkRequestAckOrError(fd, kSeq, &add_tab_req, sizeof(add_tab_req)));
-  ASSERT_THAT(NetlinkRequestAckOrError(fd, kSeq + 1, &add_tab_req_2,
-                                       sizeof(add_tab_req_2)),
-              PosixErrorIs(EEXIST, _));
+  ASSERT_NO_ERRNO(NetlinkRequestAckOrError(fd, kSeq, add_request_buffer.data(),
+                                           add_request_buffer.size()));
+  ASSERT_THAT(
+      NetlinkRequestAckOrError(fd, kSeq + 1, add_request_buffer_2.data(),
+                               add_request_buffer_2.size()),
+      PosixErrorIs(EEXIST, _));
 }
 
 TEST(NetlinkNetfilterTest, ErrAddExistingTableWithReplaceFlag) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
-  uint16_t default_table_id = 0;
-  const char test_table_name[] = "test_table";
+  const char test_table_name[] = "err_replace";
 
   FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
 
-  struct nameAttribute {
-    struct nlattr attr;
-    char name[32];
-  };
-  struct request {
-    struct nlmsghdr hdr;
-    struct nfgenmsg msg;
-    struct nameAttribute attr;
-  };
+  std::vector<char> add_request_buffer =
+      NetlinkRequestBuilder()
+          .SetMessageType(NFT_MSG_NEWTABLE)
+          .SetFlags(NLM_F_REQUEST | NLM_F_ACK)
+          .SetFamily(NFPROTO_INET)
+          .SetSequenceNumber(kSeq)
+          .AddAttribute(NFTA_TABLE_NAME, test_table_name,
+                        strlen(test_table_name) + 1)
+          .Build();
 
-  struct request add_tab_req = {};
-  InitNetlinkHdr(&add_tab_req.hdr, sizeof(add_tab_req),
-                 MakeNetlinkMsgType(NFNL_SUBSYS_NFTABLES, NFT_MSG_NEWTABLE),
-                 kSeq, NLM_F_REQUEST | NLM_F_ACK);
-  // For both ipv4 and ipv6 tables.
-  InitNetfilterGenmsg(&add_tab_req.msg, AF_INET, NFNETLINK_V0,
-                      default_table_id);
-  // Attribute setting
-  InitNetlinkAttr(&add_tab_req.attr.attr, sizeof(add_tab_req.attr.name),
-                  NFTA_TABLE_NAME);
-  absl::SNPrintF(add_tab_req.attr.name, sizeof(add_tab_req.attr.name),
-                 test_table_name);
+  std::vector<char> add_request_buffer_2 =
+      NetlinkRequestBuilder()
+          .SetMessageType(NFT_MSG_NEWTABLE)
+          .SetFlags(NLM_F_REQUEST | NLM_F_REPLACE)
+          .SetFamily(NFPROTO_INET)
+          .SetSequenceNumber(kSeq + 1)
+          .AddAttribute(NFTA_TABLE_NAME, test_table_name,
+                        strlen(test_table_name) + 1)
+          .Build();
 
-  struct request add_tab_req_2 = {};
-  InitNetlinkHdr(&add_tab_req_2.hdr, sizeof(add_tab_req_2),
-                 MakeNetlinkMsgType(NFNL_SUBSYS_NFTABLES, NFT_MSG_NEWTABLE),
-                 kSeq + 1, NLM_F_REQUEST | NLM_F_REPLACE);
-  // For both ipv4 and ipv6 tables.
-  InitNetfilterGenmsg(&add_tab_req_2.msg, AF_INET, NFNETLINK_V0,
-                      default_table_id);
-  // Attribute setting
-  InitNetlinkAttr(&add_tab_req_2.attr.attr, sizeof(add_tab_req_2.attr.name),
-                  NFTA_TABLE_NAME);
-  absl::SNPrintF(add_tab_req_2.attr.name, sizeof(add_tab_req_2.attr.name),
-                 test_table_name);
-
-  ASSERT_NO_ERRNO(
-      NetlinkRequestAckOrError(fd, kSeq, &add_tab_req, sizeof(add_tab_req)));
-  ASSERT_THAT(NetlinkRequestAckOrError(fd, kSeq + 1, &add_tab_req_2,
-                                       sizeof(add_tab_req_2)),
-              PosixErrorIs(ENOTSUP, _));
+  ASSERT_NO_ERRNO(NetlinkRequestAckOrError(fd, kSeq, add_request_buffer.data(),
+                                           add_request_buffer.size()));
+  ASSERT_THAT(
+      NetlinkRequestAckOrError(fd, kSeq + 1, add_request_buffer_2.data(),
+                               add_request_buffer_2.size()),
+      PosixErrorIs(ENOTSUP, _));
 }
 
 TEST(NetlinkNetfilterTest, ErrAddTableWithUnsupportedFamily) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
   uint8_t unknown_family = 255;
-  uint16_t default_table_id = 0;
   const char test_table_name[] = "unsupported_family_table";
 
   FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
 
-  struct nameAttribute {
-    struct nlattr attr;
-    char name[32];
-  };
-  struct request {
-    struct nlmsghdr hdr;
-    struct nfgenmsg msg;
-    struct nameAttribute attr;
-  };
+  std::vector<char> add_request_buffer =
+      NetlinkRequestBuilder()
+          .SetMessageType(NFT_MSG_NEWTABLE)
+          .SetFlags(NLM_F_REQUEST)
+          .SetFamily(unknown_family)
+          .SetSequenceNumber(kSeq)
+          .AddAttribute(NFTA_TABLE_NAME, test_table_name,
+                        strlen(test_table_name) + 1)
+          .Build();
 
-  struct request get_tab_req = {};
-  InitNetlinkHdr(&get_tab_req.hdr, sizeof(get_tab_req),
-                 MakeNetlinkMsgType(NFNL_SUBSYS_NFTABLES, NFT_MSG_NEWTABLE),
-                 kSeq, NLM_F_REQUEST);
-  // For both ipv4 and ipv6 tables.
-  InitNetfilterGenmsg(&get_tab_req.msg, unknown_family, NFNETLINK_V0,
-                      default_table_id);
-  // Attribute setting
-  InitNetlinkAttr(&get_tab_req.attr.attr, sizeof(get_tab_req.attr.name),
-                  NFTA_TABLE_NAME);
-  absl::SNPrintF(get_tab_req.attr.name, sizeof(get_tab_req.attr.name),
-                 test_table_name);
-
-  ASSERT_THAT(
-      NetlinkRequestAckOrError(fd, kSeq, &get_tab_req, sizeof(get_tab_req)),
-      PosixErrorIs(ENOTSUP, _));
+  ASSERT_THAT(NetlinkRequestAckOrError(fd, kSeq, add_request_buffer.data(),
+                                       add_request_buffer.size()),
+              PosixErrorIs(ENOTSUP, _));
 }
 
-TEST(NetlinkNetfilterTest, ErrRetrieveNoSpecifiedNameTable) {
+TEST(NetlinkNetfilterTest, ErrAddTableWithUnsupportedFlags) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
-  uint16_t default_table_id = 0;
+  uint32_t unsupported_flags = 0xFFFFFFFF;
+  const char test_table_name[] = "test_table";
 
   FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
 
-  struct nameAttribute {
-    struct nlattr attr;
-    char name[32];
-  };
-  struct request {
-    struct nlmsghdr hdr;
-    struct nfgenmsg msg;
-  };
+  std::vector<char> add_request_buffer =
+      NetlinkRequestBuilder()
+          .SetMessageType(NFT_MSG_NEWTABLE)
+          .SetFlags(NLM_F_REQUEST)
+          .SetFamily(NFPROTO_INET)
+          .SetSequenceNumber(kSeq)
+          .AddAttribute(NFTA_TABLE_NAME, test_table_name,
+                        strlen(test_table_name) + 1)
+          .AddAttribute(NFTA_TABLE_FLAGS, &unsupported_flags,
+                        sizeof(unsupported_flags))
+          .Build();
 
-  struct request get_tab_req = {};
-  InitNetlinkHdr(&get_tab_req.hdr, sizeof(get_tab_req),
-                 MakeNetlinkMsgType(NFNL_SUBSYS_NFTABLES, NFT_MSG_GETTABLE),
-                 kSeq, NLM_F_REQUEST);
-  // For both ipv4 and ipv6 tables.
-  InitNetfilterGenmsg(&get_tab_req.msg, AF_INET, NFNETLINK_V0,
-                      default_table_id);
+  ASSERT_THAT(NetlinkRequestAckOrError(fd, kSeq, add_request_buffer.data(),
+                                       add_request_buffer.size()),
+              PosixErrorIs(ENOTSUP, _));
+}
 
-  ASSERT_THAT(
-      NetlinkRequestAckOrError(fd, kSeq, &get_tab_req, sizeof(get_tab_req)),
-      PosixErrorIs(EINVAL, _));
+TEST(NetlinkNetfilterTest, ErrRetrieveNoSpecifiedNameTable) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
+
+  std::vector<char> get_request_buffer =
+      NetlinkRequestBuilder()
+          .SetMessageType(NFT_MSG_GETTABLE)
+          .SetFlags(NLM_F_REQUEST | NLM_F_ACK)
+          .SetFamily(NFPROTO_INET)
+          .SetSequenceNumber(kSeq)
+          .Build();
+
+  ASSERT_THAT(NetlinkRequestAckOrError(fd, kSeq, get_request_buffer.data(),
+                                       get_request_buffer.size()),
+              PosixErrorIs(EINVAL, _));
 }
 
 TEST(NetlinkNetfilterTest, ErrRetrieveNonexistentTable) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
-  uint16_t default_table_id = 0;
   const char test_table_name[] = "undefined_table";
 
   FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
 
-  struct nameAttribute {
-    struct nlattr attr;
-    char name[32];
-  };
+  std::vector<char> get_request_buffer =
+      NetlinkRequestBuilder()
+          .SetMessageType(NFT_MSG_GETTABLE)
+          .SetFlags(NLM_F_REQUEST | NLM_F_ACK)
+          .SetFamily(NFPROTO_INET)
+          .SetSequenceNumber(kSeq)
+          .AddAttribute(NFTA_TABLE_NAME, test_table_name,
+                        strlen(test_table_name) + 1)
+          .Build();
+
+  ASSERT_THAT(NetlinkRequestAckOrError(fd, kSeq, get_request_buffer.data(),
+                                       get_request_buffer.size()),
+              PosixErrorIs(ENOENT, _));
+}
+
+TEST(NetlinkNetfilterTest, ErrRetrieveTableWithOwnerMismatch) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+  const char test_table_name[] = "test_table";
+  uint32_t table_flags = NFT_TABLE_F_DORMANT | NFT_TABLE_F_OWNER;
+  uint8_t expected_udata[3] = {0x01, 0x02, 0x03};
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
+  FileDescriptor fd_2 =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
+
+  std::vector<char> add_request_buffer =
+      NetlinkRequestBuilder()
+          .SetMessageType(NFT_MSG_NEWTABLE)
+          .SetFlags(NLM_F_REQUEST | NLM_F_ACK)
+          .SetFamily(NFPROTO_INET)
+          .SetSequenceNumber(kSeq)
+          .AddAttribute(NFTA_TABLE_NAME, test_table_name,
+                        strlen(test_table_name) + 1)
+          .AddAttribute(NFTA_TABLE_FLAGS, &table_flags, sizeof(table_flags))
+          .AddAttribute(NFTA_TABLE_USERDATA, expected_udata,
+                        sizeof(expected_udata))
+          .Build();
+
+  std::vector<char> get_request_buffer =
+      NetlinkRequestBuilder()
+          .SetMessageType(NFT_MSG_GETTABLE)
+          .SetFlags(NLM_F_REQUEST | NLM_F_ACK)
+          .SetFamily(NFPROTO_INET)
+          .SetSequenceNumber(kSeq + 1)
+          .AddAttribute(NFTA_TABLE_NAME, test_table_name,
+                        strlen(test_table_name) + 1)
+          .Build();
+
+  ASSERT_NO_ERRNO(NetlinkRequestAckOrError(fd, kSeq, add_request_buffer.data(),
+                                           add_request_buffer.size()));
+
+  ASSERT_THAT(
+      NetlinkRequestAckOrError(fd_2, kSeq + 1, get_request_buffer.data(),
+                               get_request_buffer.size()),
+      PosixErrorIs(EPERM, _));
+}
+
+TEST(NetlinkNetfilterTest, DeleteExistingTableByName) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+  // uint16_t default_table_id = 0;
+  const char test_table_name[] = "test_table_name_delete";
+
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
+
   struct request {
     struct nlmsghdr hdr;
     struct nfgenmsg msg;
-    struct nameAttribute attr;
+    struct nameAttribute nattr;
   };
 
-  struct request get_tab_req = {};
-  InitNetlinkHdr(&get_tab_req.hdr, sizeof(get_tab_req),
-                 MakeNetlinkMsgType(NFNL_SUBSYS_NFTABLES, NFT_MSG_GETTABLE),
-                 kSeq, NLM_F_REQUEST);
-  // For both ipv4 and ipv6 tables.
-  InitNetfilterGenmsg(&get_tab_req.msg, AF_INET, NFNETLINK_V0,
-                      default_table_id);
-  // Attribute setting
-  InitNetlinkAttr(&get_tab_req.attr.attr, sizeof(get_tab_req.attr.name),
-                  NFTA_TABLE_NAME);
-  absl::SNPrintF(get_tab_req.attr.name, sizeof(get_tab_req.attr.name),
-                 test_table_name);
+  std::vector<char> add_request_buffer =
+      NetlinkRequestBuilder()
+          .SetMessageType(NFT_MSG_NEWTABLE)
+          .SetFlags(NLM_F_REQUEST | NLM_F_ACK)
+          .SetFamily(NFPROTO_INET)
+          .SetSequenceNumber(kSeq)
+          .AddAttribute(NFTA_TABLE_NAME, test_table_name,
+                        strlen(test_table_name) + 1)
+          .Build();
 
+  std::vector<char> del_request_buffer =
+      NetlinkRequestBuilder()
+          .SetMessageType(NFT_MSG_DELTABLE)
+          .SetFlags(NLM_F_REQUEST | NLM_F_ACK)
+          .SetFamily(NFPROTO_INET)
+          .SetSequenceNumber(kSeq + 1)
+          .AddAttribute(NFTA_TABLE_NAME, test_table_name,
+                        strlen(test_table_name) + 1)
+          .Build();
+
+  ASSERT_NO_ERRNO(NetlinkRequestAckOrError(fd, kSeq, add_request_buffer.data(),
+                                           add_request_buffer.size()));
+  ASSERT_NO_ERRNO(NetlinkRequestAckOrError(
+      fd, kSeq + 1, del_request_buffer.data(), del_request_buffer.size()));
+}
+
+TEST(NetlinkNetfilterTest, DeleteTableByHandle) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+  // Retrieve the actual table handle from the kernel with a GET request.
+  uint64_t expected_handle = 0;
+  const char test_table_name[] = "test_table_handle_delete";
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
+
+  std::vector<char> add_request_buffer =
+      NetlinkRequestBuilder()
+          .SetMessageType(NFT_MSG_NEWTABLE)
+          .SetFlags(NLM_F_REQUEST | NLM_F_ACK)
+          .SetFamily(NFPROTO_INET)
+          .SetSequenceNumber(kSeq)
+          .AddAttribute(NFTA_TABLE_NAME, test_table_name,
+                        strlen(test_table_name) + 1)
+          .Build();
+
+  std::vector<char> get_request_buffer =
+      NetlinkRequestBuilder()
+          .SetMessageType(NFT_MSG_GETTABLE)
+          .SetFlags(NLM_F_REQUEST)
+          .SetFamily(NFPROTO_INET)
+          .SetSequenceNumber(kSeq + 1)
+          .AddAttribute(NFTA_TABLE_NAME, test_table_name,
+                        strlen(test_table_name) + 1)
+          .Build();
+
+  ASSERT_NO_ERRNO(NetlinkRequestAckOrError(fd, kSeq, add_request_buffer.data(),
+                                           add_request_buffer.size()));
+
+  // Retrieve the table handle from the kernel.
+  ASSERT_NO_ERRNO(NetlinkRequestResponse(
+      fd, get_request_buffer.data(), get_request_buffer.size(),
+      [&](const struct nlmsghdr* hdr) {
+        const nfattr* attr = FindNfAttr(hdr, nullptr, NFTA_TABLE_HANDLE);
+        EXPECT_NE(attr, nullptr);
+        EXPECT_EQ(attr->nfa_type, NFTA_TABLE_HANDLE);
+        EXPECT_EQ(attr->nfa_len - NLA_HDRLEN, sizeof(expected_handle));
+        expected_handle = *reinterpret_cast<const uint64_t*>(NFA_DATA(attr));
+      },
+      false));
+  EXPECT_NE(expected_handle, 0);
+
+  std::vector<char> del_request_buffer =
+      NetlinkRequestBuilder()
+          .SetMessageType(NFT_MSG_DELTABLE)
+          .SetFlags(NLM_F_REQUEST | NLM_F_ACK)
+          .SetFamily(NFPROTO_INET)
+          .SetSequenceNumber(kSeq + 2)
+          .AddAttribute(NFTA_TABLE_HANDLE, &expected_handle,
+                        sizeof(expected_handle))
+          .Build();
+
+  ASSERT_NO_ERRNO(NetlinkRequestAckOrError(
+      fd, kSeq + 2, del_request_buffer.data(), del_request_buffer.size()));
+}
+
+TEST(NetlinkNetfilterTest, ErrDeleteNonexistentTable) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+  const char test_table_name[] = "nonexistent_table";
+
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
+
+  std::vector<char> del_request_buffer =
+      NetlinkRequestBuilder()
+          .SetMessageType(NFT_MSG_DELTABLE)
+          .SetFlags(NLM_F_REQUEST | NLM_F_ACK)
+          .SetFamily(NFPROTO_INET)
+          .SetSequenceNumber(kSeq + 1)
+          .AddAttribute(NFTA_TABLE_NAME, test_table_name,
+                        strlen(test_table_name) + 1)
+          .Build();
+
+  ASSERT_THAT(NetlinkRequestAckOrError(fd, kSeq + 1, del_request_buffer.data(),
+                                       del_request_buffer.size()),
+              PosixErrorIs(ENOENT, _));
+}
+
+TEST(NetlinkNetfilterTest, DestroyNonexistentTable) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+  const char test_table_name[] = "nonexistent_table";
+
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
+
+  std::vector<char> destroy_request_buffer =
+      NetlinkRequestBuilder()
+          .SetMessageType(NFT_MSG_DESTROYTABLE)
+          .SetFlags(NLM_F_REQUEST | NLM_F_ACK)
+          .SetFamily(NFPROTO_INET)
+          .SetSequenceNumber(kSeq + 1)
+          .AddAttribute(NFTA_TABLE_NAME, test_table_name,
+                        strlen(test_table_name) + 1)
+          .Build();
+
+  ASSERT_NO_ERRNO(NetlinkRequestAckOrError(fd, kSeq + 1,
+                                           destroy_request_buffer.data(),
+                                           destroy_request_buffer.size()));
+}
+
+TEST(NetlinkNetfilterTest, DeleteAllTablesUnspecifiedFamily) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+  char test_table_name_inet[] = "test_table_inet";
+  char test_table_name_bridge[] = "test_table_bridge";
+
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
+
+  std::vector<char> add_request_buffer =
+      NetlinkRequestBuilder()
+          .SetMessageType(NFT_MSG_NEWTABLE)
+          .SetFlags(NLM_F_REQUEST | NLM_F_ACK)
+          .SetFamily(NFPROTO_INET)
+          .SetSequenceNumber(kSeq)
+          .AddAttribute(NFTA_TABLE_NAME, test_table_name_inet,
+                        strlen(test_table_name_inet) + 1)
+          .Build();
+
+  std::vector<char> add_request_buffer_2 =
+      NetlinkRequestBuilder()
+          .SetMessageType(NFT_MSG_NEWTABLE)
+          .SetFlags(NLM_F_REQUEST | NLM_F_ACK)
+          .SetFamily(NFPROTO_BRIDGE)
+          .SetSequenceNumber(kSeq + 1)
+          .AddAttribute(NFTA_TABLE_NAME, test_table_name_bridge,
+                        strlen(test_table_name_bridge) + 1)
+          .Build();
+
+  std::vector<char> destroy_request_buffer =
+      NetlinkRequestBuilder()
+          .SetMessageType(NFT_MSG_DELTABLE)
+          .SetFlags(NLM_F_REQUEST | NLM_F_ACK)
+          .SetFamily(NFPROTO_UNSPEC)
+          .SetSequenceNumber(kSeq + 2)
+          .Build();
+
+  std::vector<char> get_request_buffer =
+      NetlinkRequestBuilder()
+          .SetMessageType(NFT_MSG_GETTABLE)
+          .SetFlags(NLM_F_REQUEST | NLM_F_ACK)
+          .SetFamily(NFPROTO_INET)
+          .SetSequenceNumber(kSeq + 3)
+          .AddAttribute(NFTA_TABLE_NAME, test_table_name_inet,
+                        strlen(test_table_name_inet) + 1)
+          .Build();
+
+  std::vector<char> get_request_buffer_2 =
+      NetlinkRequestBuilder()
+          .SetMessageType(NFT_MSG_GETTABLE)
+          .SetFlags(NLM_F_REQUEST | NLM_F_ACK)
+          .SetFamily(NFPROTO_BRIDGE)
+          .SetSequenceNumber(kSeq + 4)
+          .AddAttribute(NFTA_TABLE_NAME, test_table_name_bridge,
+                        strlen(test_table_name_bridge) + 1)
+          .Build();
+
+  ASSERT_NO_ERRNO(NetlinkRequestAckOrError(fd, kSeq, add_request_buffer.data(),
+                                           add_request_buffer.size()));
+  ASSERT_NO_ERRNO(NetlinkRequestAckOrError(
+      fd, kSeq + 1, add_request_buffer_2.data(), add_request_buffer_2.size()));
+  ASSERT_NO_ERRNO(NetlinkRequestAckOrError(fd, kSeq + 2,
+                                           destroy_request_buffer.data(),
+                                           destroy_request_buffer.size()));
+  ASSERT_THAT(NetlinkRequestAckOrError(fd, kSeq + 3, get_request_buffer.data(),
+                                       get_request_buffer.size()),
+              PosixErrorIs(ENOENT, _));
   ASSERT_THAT(
-      NetlinkRequestAckOrError(fd, kSeq, &get_tab_req, sizeof(get_tab_req)),
+      NetlinkRequestAckOrError(fd, kSeq + 4, get_request_buffer_2.data(),
+                               get_request_buffer_2.size()),
+      PosixErrorIs(ENOENT, _));
+}
+
+TEST(NetlinkNetfilterTest, DeleteAllTablesUnspecifiedFamilySpecifiedName) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+  char test_table_name_same[] = "test_same_name_table";
+  char test_table_name_different[] = "test_different_name_table";
+
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
+
+  std::vector<char> add_request_buffer_inet =
+      NetlinkRequestBuilder()
+          .SetMessageType(NFT_MSG_NEWTABLE)
+          .SetFlags(NLM_F_REQUEST | NLM_F_ACK)
+          .SetFamily(NFPROTO_INET)
+          .SetSequenceNumber(kSeq)
+          .AddAttribute(NFTA_TABLE_NAME, test_table_name_same,
+                        strlen(test_table_name_same) + 1)
+          .Build();
+
+  std::vector<char> add_request_buffer_bridge =
+      NetlinkRequestBuilder()
+          .SetMessageType(NFT_MSG_NEWTABLE)
+          .SetFlags(NLM_F_REQUEST | NLM_F_ACK)
+          .SetFamily(NFPROTO_BRIDGE)
+          .SetSequenceNumber(kSeq + 1)
+          .AddAttribute(NFTA_TABLE_NAME, test_table_name_same,
+                        strlen(test_table_name_same) + 1)
+          .Build();
+
+  std::vector<char> add_request_buffer_different_bridge =
+      NetlinkRequestBuilder()
+          .SetMessageType(NFT_MSG_NEWTABLE)
+          .SetFlags(NLM_F_REQUEST | NLM_F_ACK)
+          .SetFamily(NFPROTO_BRIDGE)
+          .SetSequenceNumber(kSeq + 2)
+          .AddAttribute(NFTA_TABLE_NAME, test_table_name_different,
+                        strlen(test_table_name_different) + 1)
+          .Build();
+
+  std::vector<char> destroy_request_buffer =
+      NetlinkRequestBuilder()
+          .SetMessageType(NFT_MSG_DELTABLE)
+          .SetFlags(NLM_F_REQUEST | NLM_F_ACK)
+          .SetFamily(NFPROTO_UNSPEC)
+          .SetSequenceNumber(kSeq + 3)
+          .AddAttribute(NFTA_TABLE_NAME, test_table_name_same,
+                        strlen(test_table_name_same) + 1)
+          .Build();
+
+  std::vector<char> get_request_buffer_inet =
+      NetlinkRequestBuilder()
+          .SetMessageType(NFT_MSG_GETTABLE)
+          .SetFlags(NLM_F_REQUEST | NLM_F_ACK)
+          .SetFamily(NFPROTO_INET)
+          .SetSequenceNumber(kSeq + 4)
+          .AddAttribute(NFTA_TABLE_NAME, test_table_name_same,
+                        strlen(test_table_name_same) + 1)
+          .Build();
+
+  std::vector<char> get_request_buffer_bridge =
+      NetlinkRequestBuilder()
+          .SetMessageType(NFT_MSG_GETTABLE)
+          .SetFlags(NLM_F_REQUEST | NLM_F_ACK)
+          .SetFamily(NFPROTO_BRIDGE)
+          .SetSequenceNumber(kSeq + 5)
+          .AddAttribute(NFTA_TABLE_NAME, test_table_name_same,
+                        strlen(test_table_name_same) + 1)
+          .Build();
+
+  std::vector<char> get_request_buffer_different =
+      NetlinkRequestBuilder()
+          .SetMessageType(NFT_MSG_GETTABLE)
+          .SetFlags(NLM_F_REQUEST)
+          .SetFamily(NFPROTO_BRIDGE)
+          .SetSequenceNumber(kSeq + 6)
+          .AddAttribute(NFTA_TABLE_NAME, test_table_name_different,
+                        strlen(test_table_name_different) + 1)
+          .Build();
+
+  bool correct_response = false;
+
+  ASSERT_NO_ERRNO(NetlinkRequestAckOrError(fd, kSeq,
+                                           add_request_buffer_inet.data(),
+                                           add_request_buffer_inet.size()));
+  ASSERT_NO_ERRNO(NetlinkRequestAckOrError(fd, kSeq + 1,
+                                           add_request_buffer_bridge.data(),
+                                           add_request_buffer_bridge.size()));
+  ASSERT_NO_ERRNO(NetlinkRequestAckOrError(
+      fd, kSeq + 2, add_request_buffer_different_bridge.data(),
+      add_request_buffer_different_bridge.size()));
+  ASSERT_NO_ERRNO(NetlinkRequestAckOrError(fd, kSeq + 3,
+                                           destroy_request_buffer.data(),
+                                           destroy_request_buffer.size()));
+  ASSERT_THAT(
+      NetlinkRequestAckOrError(fd, kSeq + 4, get_request_buffer_inet.data(),
+                               get_request_buffer_inet.size()),
+      PosixErrorIs(ENOENT, _));
+  ASSERT_THAT(
+      NetlinkRequestAckOrError(fd, kSeq + 5, get_request_buffer_bridge.data(),
+                               get_request_buffer_bridge.size()),
+      PosixErrorIs(ENOENT, _));
+  ASSERT_NO_ERRNO(NetlinkRequestResponse(
+      fd, get_request_buffer_different.data(),
+      get_request_buffer_different.size(),
+      [&](const struct nlmsghdr* hdr) {
+        const struct nfattr* table_name_attr =
+            FindNfAttr(hdr, nullptr, NFTA_TABLE_NAME);
+        EXPECT_NE(table_name_attr, nullptr);
+        EXPECT_EQ(table_name_attr->nfa_type, NFTA_TABLE_NAME);
+        std::string name(
+            reinterpret_cast<const char*>(NFA_DATA(table_name_attr)));
+        EXPECT_EQ(name, test_table_name_different);
+        correct_response = true;
+      },
+      false));
+
+  ASSERT_TRUE(correct_response);
+}
+
+TEST(NetlinkNetfilterTest, DeleteAllTablesUnspecifiedNameAndHandle) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+  char test_table_name_inet[] = "test_table_inet";
+  char test_table_name_bridge[] = "test_table_bridge";
+
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
+
+  std::vector<char> add_request_buffer =
+      NetlinkRequestBuilder()
+          .SetMessageType(NFT_MSG_NEWTABLE)
+          .SetFlags(NLM_F_REQUEST | NLM_F_ACK)
+          .SetFamily(NFPROTO_INET)
+          .SetSequenceNumber(kSeq)
+          .AddAttribute(NFTA_TABLE_NAME, test_table_name_inet,
+                        strlen(test_table_name_inet) + 1)
+          .Build();
+
+  std::vector<char> add_request_buffer_2 =
+      NetlinkRequestBuilder()
+          .SetMessageType(NFT_MSG_NEWTABLE)
+          .SetFlags(NLM_F_REQUEST | NLM_F_ACK)
+          .SetFamily(NFPROTO_BRIDGE)
+          .SetSequenceNumber(kSeq + 1)
+          .AddAttribute(NFTA_TABLE_NAME, test_table_name_bridge,
+                        strlen(test_table_name_bridge) + 1)
+          .Build();
+
+  std::vector<char> destroy_request_buffer =
+      NetlinkRequestBuilder()
+          .SetMessageType(NFT_MSG_DELTABLE)
+          .SetFlags(NLM_F_REQUEST | NLM_F_ACK)
+          .SetFamily(NFPROTO_INET)
+          .SetSequenceNumber(kSeq + 2)
+          .Build();
+
+  std::vector<char> get_request_buffer =
+      NetlinkRequestBuilder()
+          .SetMessageType(NFT_MSG_GETTABLE)
+          .SetFlags(NLM_F_REQUEST | NLM_F_ACK)
+          .SetFamily(NFPROTO_INET)
+          .SetSequenceNumber(kSeq + 3)
+          .AddAttribute(NFTA_TABLE_NAME, test_table_name_inet,
+                        strlen(test_table_name_inet) + 1)
+          .Build();
+
+  std::vector<char> get_request_buffer_2 =
+      NetlinkRequestBuilder()
+          .SetMessageType(NFT_MSG_GETTABLE)
+          .SetFlags(NLM_F_REQUEST | NLM_F_ACK)
+          .SetFamily(NFPROTO_BRIDGE)
+          .SetSequenceNumber(kSeq + 4)
+          .AddAttribute(NFTA_TABLE_NAME, test_table_name_bridge,
+                        strlen(test_table_name_bridge) + 1)
+          .Build();
+
+  ASSERT_NO_ERRNO(NetlinkRequestAckOrError(fd, kSeq, add_request_buffer.data(),
+                                           add_request_buffer.size()));
+  ASSERT_NO_ERRNO(NetlinkRequestAckOrError(
+      fd, kSeq + 1, add_request_buffer_2.data(), add_request_buffer_2.size()));
+  ASSERT_NO_ERRNO(NetlinkRequestAckOrError(fd, kSeq + 2,
+                                           destroy_request_buffer.data(),
+                                           destroy_request_buffer.size()));
+  ASSERT_THAT(NetlinkRequestAckOrError(fd, kSeq + 3, get_request_buffer.data(),
+                                       get_request_buffer.size()),
+              PosixErrorIs(ENOENT, _));
+  ASSERT_THAT(
+      NetlinkRequestAckOrError(fd, kSeq + 4, get_request_buffer_2.data(),
+                               get_request_buffer_2.size()),
       PosixErrorIs(ENOENT, _));
 }
 
