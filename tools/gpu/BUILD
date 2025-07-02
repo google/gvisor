@@ -14,5 +14,6 @@ go_binary(
         "//pkg/sentry/devices/nvproxy/nvconf",
         "//runsc/flag",
         "//tools/gpu/drivers",
+        "@org_golang_x_sync//errgroup:go_default_library",
     ],
 )
