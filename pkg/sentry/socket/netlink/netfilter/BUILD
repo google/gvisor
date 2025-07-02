@@ -13,6 +13,7 @@ go_library(
         "//pkg/abi/linux",
         "//pkg/context",
         "//pkg/log",
+        "//pkg/marshal/primitive",
         "//pkg/sentry/inet",
         "//pkg/sentry/kernel",
         "//pkg/sentry/socket/netlink",

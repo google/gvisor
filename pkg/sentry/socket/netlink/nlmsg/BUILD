@@ -10,11 +10,15 @@ go_library(
     srcs = [
         "message.go",
     ],
-    visibility = ["//pkg/sentry:internal"],
+    visibility = [
+        "//pkg/sentry:internal",
+        "//pkg/tcpip/nftables:__subpackages__",
+    ],
     deps = [
         "//pkg/abi/linux",
         "//pkg/bits",
         "//pkg/hostarch",
+        "//pkg/log",
         "//pkg/marshal",
         "//pkg/marshal/primitive",
     ],
