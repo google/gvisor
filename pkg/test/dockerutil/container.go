@@ -77,9 +77,6 @@ type RunOpts struct {
 	// Cpus in which to allow execution. ("0", "1", "0-2").
 	CpusetCpus string
 
-	// Ports are the ports to be allocated.
-	Ports []int
-
 	// WorkDir sets the working directory.
 	WorkDir string
 
@@ -303,11 +300,6 @@ func (c *Container) create(ctx context.Context, profileImage string, conf *conta
 }
 
 func (c *Container) config(ctx context.Context, r RunOpts, args []string) (*container.Config, error) {
-	ports := nat.PortSet{}
-	for _, p := range r.Ports {
-		port := nat.Port(fmt.Sprintf("%d", p))
-		ports[port] = struct{}{}
-	}
 	env := append(r.Env, fmt.Sprintf("RUNSC_TEST_NAME=%s", c.Name))
 
 	image := testutil.ImageByName(r.Image)
@@ -338,13 +330,12 @@ func (c *Container) config(ctx context.Context, r RunOpts, args []string) (*cont
 	}
 
 	return &container.Config{
-		Image:        image,
-		Cmd:          args,
-		Entrypoint:   entrypoint,
-		ExposedPorts: ports,
-		Env:          env,
-		WorkingDir:   r.WorkDir,
-		User:         r.User,
+		Image:      image,
+		Cmd:        args,
+		Entrypoint: entrypoint,
+		Env:        env,
+		WorkingDir: r.WorkDir,
+		User:       r.User,
 	}, nil
 }
 

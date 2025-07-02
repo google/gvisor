@@ -127,10 +127,7 @@ func benchmarkNginxContinuous(b *testing.B, concurrency []int, sizes []string) {
 func runNginx(b *testing.B, hey *tools.Hey, tmpfs bool) {
 	// nginx runs on port 80.
 	port := 80
-	nginxRunOpts := dockerutil.RunOpts{
-		Image: "benchmarks/nginx",
-		Ports: []int{port},
-	}
+	nginxRunOpts := dockerutil.RunOpts{Image: "benchmarks/nginx"}
 
 	nginxCmd := []string{"nginx", "-c", "/etc/nginx/nginx_gofer.conf"}
 	if tmpfs {

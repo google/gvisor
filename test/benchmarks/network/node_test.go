@@ -98,7 +98,6 @@ func runNode(b *testing.B, hey *tools.Hey) {
 		Image:   "benchmarks/node",
 		WorkDir: "/usr/src/app",
 		Links:   []string{redis.MakeLink("redis")},
-		Ports:   []int{port},
 	}, "node", "index.js", redisIP.String()); err != nil {
 		b.Fatalf("failed to spawn node instance: %v", err)
 	}

@@ -80,10 +80,7 @@ func doBenchmarkRedis(b *testing.B, ops []string) {
 	defer server.CleanUp(ctx)
 
 	// The redis docker container takes no arguments to run a redis server.
-	if err := server.Spawn(ctx, dockerutil.RunOpts{
-		Image: "benchmarks/redis",
-		Ports: []int{port},
-	}); err != nil {
+	if err := server.Spawn(ctx, dockerutil.RunOpts{Image: "benchmarks/redis"}); err != nil {
 		b.Fatalf("failed to start redis server with: %v", err)
 	}
 	defer metricsviz.FromContainerLogs(ctx, b, server)

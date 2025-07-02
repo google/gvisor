@@ -79,10 +79,7 @@ func BenchmarkIperfOneConnection(b *testing.B) {
 			port := 5001
 
 			// Start the server.
-			if err := server.Spawn(ctx, dockerutil.RunOpts{
-				Image: "benchmarks/iperf",
-				Ports: []int{port},
-			}, "iperf", "-s"); err != nil {
+			if err := server.Spawn(ctx, dockerutil.RunOpts{Image: "benchmarks/iperf"}, "iperf", "-s"); err != nil {
 				b.Fatalf("failed to start server with: %v", err)
 			}
 			if out, err := server.WaitForOutput(ctx, fmt.Sprintf("Server listening on TCP port %d", port), 10*time.Second); err != nil {
@@ -192,10 +189,7 @@ func BenchmarkIperfManyConnections(b *testing.B) {
 			port := 5001
 
 			// Start the server.
-			if err := server.Spawn(ctx, dockerutil.RunOpts{
-				Image: "benchmarks/iperf",
-				Ports: []int{port},
-			}, "iperf", "-s"); err != nil {
+			if err := server.Spawn(ctx, dockerutil.RunOpts{Image: "benchmarks/iperf"}, "iperf", "-s"); err != nil {
 				b.Fatalf("failed to start server with: %v", err)
 			}
 			if out, err := server.WaitForOutput(ctx, fmt.Sprintf("Server listening on TCP port %d", port), 10*time.Second); err != nil {

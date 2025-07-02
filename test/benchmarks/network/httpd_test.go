@@ -112,10 +112,9 @@ func benchmarkHttpdContinuous(b *testing.B, concurrency []int, sizes []string) {
 // runHttpd configures the static serving methods to run httpd.
 func runHttpd(b *testing.B, hey *tools.Hey) {
 	// httpd runs on port 80.
-	port := 80
+	const port = 80
 	httpdRunOpts := dockerutil.RunOpts{
 		Image: "benchmarks/httpd",
-		Ports: []int{port},
 		Env: []string{
 			// Standard environmental variables for httpd.
 			"APACHE_RUN_DIR=/tmp",

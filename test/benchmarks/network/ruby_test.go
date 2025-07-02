@@ -92,7 +92,6 @@ func runRuby(b *testing.B, hey *tools.Hey) {
 		Image:   "benchmarks/ruby",
 		WorkDir: "/app",
 		Links:   []string{redis.MakeLink("redis")},
-		Ports:   []int{port},
 		Env: []string{
 			fmt.Sprintf("PORT=%d", port),
 			"WEB_CONCURRENCY=20",
