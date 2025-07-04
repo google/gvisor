@@ -221,7 +221,7 @@ func (pc *passContext) checkGuards(inst almostInst, from ssa.Value, accessObj ty
 	)
 
 	// Load the facts for the object accessed.
-	pc.pass.ImportObjectFact(accessObj, &lgf)
+	pc.importLockGuardFacts(accessObj, from.Type(), &lgf)
 
 	// Check guards held.
 	for guardName, fgr := range lgf.GuardedBy {
@@ -495,39 +495,46 @@ func (pc *passContext) checkFunctionCall(call callCommon, fn *types.Func, lff *l
 	// Update all lock state accordingly.
 	pc.postFunctionCallUpdate(call, lff, ls, false /* aliases */)
 
+	// Fast-path handling for sync.(RW)Mutex/Locker helper methods.
+	if fn == nil || fn.Pkg() == nil || len(args) == 0 {
+		return
+	}
+
+	if !(lockerRE.MatchString(fn.FullName()) || mutexRE.MatchString(fn.FullName())) {
+		return
+	}
+
 	// Check if it's a method dispatch for something in the sync package.
 	// See: https://godoc.org/golang.org/x/tools/go/ssa#Function
 
-	if (lockerRE.MatchString(fn.FullName()) || mutexRE.MatchString(fn.FullName())) && len(args) > 0 {
-		rv := makeResolvedValue(args[0], nil)
-		isExclusive := false
-		switch fn.Name() {
-		case "Lock", "NestedLock":
-			isExclusive = true
-			fallthrough
-		case "RLock":
-			if s, ok := ls.lockField(rv, isExclusive); !ok && !lff.Ignore {
-				if _, ok := pc.forced[pc.positionKey(call.Pos())]; !ok {
-					// Double locking a mutex that is already locked.
-					pc.maybeFail(call.Pos(), "%s already locked (locks: %s)", s, ls.String())
-				}
+	rv := makeResolvedValue(args[0], nil)
+	isExclusive := false
+	switch fn.Name() {
+	case "Lock", "NestedLock":
+		isExclusive = true
+		fallthrough
+	case "RLock":
+		if s, ok := ls.lockField(rv, isExclusive); !ok && !lff.Ignore {
+			if _, ok := pc.forced[pc.positionKey(call.Pos())]; !ok {
+				// Double locking a mutex that is already locked.
+				pc.maybeFail(call.Pos(), "%s already locked (locks: %s)", s, ls.String())
 			}
-		case "Unlock", "NestedUnlock":
-			isExclusive = true
-			fallthrough
-		case "RUnlock":
-			if s, ok := ls.unlockField(rv, isExclusive); !ok && !lff.Ignore {
-				if _, ok := pc.forced[pc.positionKey(call.Pos())]; !ok {
-					// Unlocking something that is already unlocked.
-					pc.maybeFail(call.Pos(), "%s already unlocked or locked differently (locks: %s)", s, ls.String())
-				}
+		}
+	case "Unlock", "NestedUnlock":
+		isExclusive = true
+		fallthrough
+	case "RUnlock":
+		if s, ok := ls.unlockField(rv, isExclusive); !ok && !lff.Ignore {
+			if _, ok := pc.forced[pc.positionKey(call.Pos())]; !ok {
+				// Unlocking something that is already unlocked.
+				pc.maybeFail(call.Pos(), "%s already unlocked or locked differently (locks: %s)", s, ls.String())
 			}
-		case "DowngradeLock":
-			if s, ok := ls.downgradeField(rv); !ok {
-				if _, ok := pc.forced[pc.positionKey(call.Pos())]; !ok && !lff.Ignore {
-					// Downgrading something that may not be downgraded.
-					pc.maybeFail(call.Pos(), "%s already unlocked or not exclusive (locks: %s)", s, ls.String())
-				}
+		}
+	case "DowngradeLock":
+		if s, ok := ls.downgradeField(rv); !ok {
+			if _, ok := pc.forced[pc.positionKey(call.Pos())]; !ok && !lff.Ignore {
+				// Downgrading something that may not be downgraded.
+				pc.maybeFail(call.Pos(), "%s already unlocked or not exclusive (locks: %s)", s, ls.String())
 			}
 		}
 	}
@@ -672,14 +679,11 @@ func (pc *passContext) checkInstruction(inst ssa.Instruction, lff *lockFunctionF
 				return nil, nil
 			}
 		}
-		// Analyze the closure without bindings. This means that we
-		// assume no lock facts or have any existing lock state. Only
-		// trivial closures are acceptable in this case.
-		clfn := x.Fn.(*ssa.Function)
-		nlff := lockFunctionFacts{
-			Ignore: lff.Ignore, // Inherit ignore.
-		}
-		pc.checkFunction(nil, clfn, &nlff, nil, false /* force */)
+		// Perform a fresh analysis of the closure body without propagating
+		// any lock state from the point of construction. This conservatively
+		// validates the closure in isolation while still inheriting the
+		// caller-supplied lock facts via checkClosure.
+		pc.checkClosure(nil, x, lff, ls)
 	case *ssa.Return:
 		return x, ls // Valid return state.
 	}
@@ -843,11 +847,47 @@ func (pc *passContext) checkFunction(call callCommon, fn *ssa.Function, lff *loc
 	}
 }
 
+// isMutexType checks if a given type is sync.Mutex or sync.RWMutex.
+// Simplified implementation focusing on direct Named type check.
+func (pc *passContext) isMutexType(typ types.Type) bool {
+	// Fast-path: unwrap aliases and pointers.
+	seen := make(map[types.Type]struct{})
+	cur := typ
+	for {
+		if _, dup := seen[cur]; dup {
+			// Cycle guard, should never happen.
+			break
+		}
+		seen[cur] = struct{}{}
+
+		cur = types.Unalias(cur)
+
+		switch t := cur.(type) {
+		case *types.Pointer:
+			cur = t.Elem()
+			continue
+		case *types.Named:
+			obj := t.Obj()
+			if obj != nil && obj.Pkg() != nil {
+				if obj.Pkg().Path() == "sync" && (obj.Name() == "Mutex" || obj.Name() == "RWMutex") {
+					return true
+				}
+			}
+		case *types.TypeParam:
+			// A generic type parameter can be any type; conservatively treat as non-mutex.
+			return false
+		}
+		// No further unwrapping possible.
+		break
+	}
+	return false
+}
+
 // checkInferred checks for any inferred lock annotations.
 func (pc *passContext) checkInferred() {
 	for obj, oo := range pc.observations {
 		var lgf lockGuardFacts
-		pc.pass.ImportObjectFact(obj, &lgf)
+		pc.importLockGuardFacts(obj, obj.Type(), &lgf)
 		for other, count := range oo.counts {
 			// Is this already a guard?
 			if _, ok := lgf.GuardedBy[other.Name()]; ok {
@@ -858,7 +898,68 @@ func (pc *passContext) checkInferred() {
 			// hint that this may something you wish to annotate.
 			const threshold = 0.9
 			if usage := float64(count) / float64(oo.total); usage >= threshold {
+				// Don't suggest annotations for fields that are themselves mutexes.
+				if pc.isMutexType(obj.Type()) {
+					continue
+				}
+
 				pc.maybeFail(obj.Pos(), "may require checklocks annotation for %s, used with lock held %2.0f%% of the time", other.Name(), usage*100)
+			}
+		}
+	}
+}
+
+// importLockGuardFacts imports lock guard facts for the given object and type.
+func (pc *passContext) importLockGuardFacts(obj types.Object, typ types.Type, lgf *lockGuardFacts) {
+	// Load the facts for the object accessed.
+	pc.pass.ImportObjectFact(obj, lgf)
+
+	// For instantiated generic types, the field object differs from its origin
+	// declaration object where facts are attached during export. If we did not
+	// find any facts on the instantiated object, retry with the origin object.
+	if len(lgf.GuardedBy) == 0 && lgf.AtomicDisposition == 0 {
+		if h, ok := obj.(interface{ Origin() types.Object }); ok {
+			if o := h.Origin(); o != nil && o != obj {
+				pc.pass.ImportObjectFact(o, lgf)
+				// If we successfully retrieved facts from the origin
+				// object, persist them on the instantiated field object
+				// so that later phases (e.g. inference) can retrieve
+				// them directly via ImportObjectFact.
+				if len(lgf.GuardedBy) > 0 || lgf.AtomicDisposition != 0 {
+					pc.pass.ExportObjectFact(obj, lgf)
+				}
+			}
+		}
+		// Additional fallback: for instantiated generic structs, facts are
+		// attached to the original field object inside the generic definition,
+		// which belongs to the *origin* Named type. Locate that origin field
+		// (matched by name) and import its facts.
+		if len(lgf.GuardedBy) == 0 && lgf.AtomicDisposition == 0 {
+			// Determine the originating Named type of the parent struct.
+			baseTyp := typ
+			for {
+				baseTyp = types.Unalias(baseTyp)
+				if ptr, ok := baseTyp.(*types.Pointer); ok {
+					baseTyp = ptr.Elem()
+					continue
+				}
+				break
+			}
+			if named, ok := baseTyp.(*types.Named); ok {
+				if origin := named.Origin(); origin != nil && origin != named {
+					if structOrigin, ok := origin.Underlying().(*types.Struct); ok {
+						for i := 0; i < structOrigin.NumFields(); i++ {
+							fld := structOrigin.Field(i)
+							if fld.Name() == obj.Name() {
+								pc.pass.ImportObjectFact(fld, lgf)
+								if len(lgf.GuardedBy) > 0 || lgf.AtomicDisposition != 0 {
+									pc.pass.ExportObjectFact(obj, lgf)
+								}
+								break
+							}
+						}
+					}
+				}
 			}
 		}
 	}
