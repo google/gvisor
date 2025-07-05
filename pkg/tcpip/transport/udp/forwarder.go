@@ -26,13 +26,13 @@ import (
 // The canonical way of using it is to pass the Forwarder.HandlePacket function
 // to stack.SetTransportProtocolHandler.
 type Forwarder struct {
-	handler func(*ForwarderRequest)
+	handler func(*ForwarderRequest) bool
 
 	stack *stack.Stack
 }
 
 // NewForwarder allocates and initializes a new forwarder.
-func NewForwarder(s *stack.Stack, handler func(*ForwarderRequest)) *Forwarder {
+func NewForwarder(s *stack.Stack, handler func(*ForwarderRequest) bool) *Forwarder {
 	return &Forwarder{
 		stack:   s,
 		handler: handler,
@@ -44,13 +44,11 @@ func NewForwarder(s *stack.Stack, handler func(*ForwarderRequest)) *Forwarder {
 // This function is expected to be passed as an argument to the
 // stack.SetTransportProtocolHandler function.
 func (f *Forwarder) HandlePacket(id stack.TransportEndpointID, pkt *stack.PacketBuffer) bool {
-	f.handler(&ForwarderRequest{
+	return f.handler(&ForwarderRequest{
 		stack: f.stack,
 		id:    id,
 		pkt:   pkt.Clone(),
 	})
-
-	return true
 }
 
 // ForwarderRequest represents a session request received by the forwarder and
