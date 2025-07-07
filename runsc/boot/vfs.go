@@ -1008,6 +1008,8 @@ func ParseMountOptions(opts []string) *vfs.MountOptions {
 			mountOpts.Flags.NoATime = true
 		case "noexec":
 			mountOpts.Flags.NoExec = true
+		case "nosuid":
+			mountOpts.Flags.NoSUID = true
 		case "rw", "atime", "exec":
 			// These use the default value and don't need to be set.
 		case "bind", "rbind":

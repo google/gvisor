@@ -328,6 +328,7 @@ func runRunsc(tc *gtest.TestCase, spec *specs.Spec) error {
 		"-file-access", *fileAccess,
 		"-gvisor-gro",
 		"-host-settings=check_mandatory",
+		"-allow-suid",
 	}
 
 	if *network == "host" && !testutil.TestEnvSupportsNetAdmin {

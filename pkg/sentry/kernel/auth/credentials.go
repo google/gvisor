@@ -56,6 +56,12 @@ type Credentials struct {
 	// maintained after a switch from root user to non-root user via setuid().
 	KeepCaps bool
 
+	// Determines whether the owning task is allowed to gain new privileges.
+	NoNewPrivs bool
+
+	// Determines if the SUID/SGID bits are honored when the owning task execves.
+	AllowSUID bool
+
 	// The user namespace associated with the owner of the credentials.
 	UserNamespace *UserNamespace
 }

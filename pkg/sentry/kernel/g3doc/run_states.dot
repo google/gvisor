@@ -14,10 +14,15 @@ digraph {
     SyscallAfterSysemuStop;
     SyscallInvoke;
     SyscallAfterPtraceEventClone;
-    SyscallAfterExecStop;
     SyscallAfterVforkStop;
     SyscallReinvoke;
     SyscallExit;
+    subgraph cluster_execve_and_ptrace_attach {
+      style = dotted;
+      ExecveAfterPtraceLock; // serialized with tracers (for correct creds computation)
+      PtraceAfterExecveLock; // serialized with execve
+      ExecveAfterSiblingExitStop; // siblings have all exited
+    }
   }
   subgraph {
     Vsyscall;
@@ -55,9 +60,21 @@ digraph {
   SyscallInvoke -> Exit;
 
   // execve
-  SyscallInvoke -> SyscallAfterExecStop;
-  SyscallAfterExecStop -> SyscallExit;
-  SyscallAfterExecStop -> App; // fatal signal pending
+  SyscallInvoke -> ExecveAfterPtraceLock; // This is to execve what PtraceAfterExecveLock is to ptrace.
+  ExecveAfterPtraceLock -> ExecveAfterSiblingExitStop;
+  ExecveAfterPtraceLock -> SyscallExit;
+  ExecveAfterSiblingExitStop -> SyscallExit;
+  ExecveAfterSiblingExitStop -> App; // fatal signal pending
+
+  // ptrace (only for PTRACE_ATTACH and PTRACE_SEIZE)
+  //
+  // For correct Task creds computation, execve and ptrace_attach|seize must be
+  // serialized. To mutually exclude each other in a S/R-safe manner, execve and
+  // ptrace_(attach|seize) languish in stops till they can reach the
+  // ExecveAfterPtraceLock and PtraceAfterExecveLock run states respectively.
+  SyscallInvoke -> PtraceAfterExecveLock; // This is to ptrace what ExecveAfterPtraceLock is to execve.
+  PtraceAfterExecveLock -> SyscallExit;
+  PtraceAfterExecveLock -> App;
 
   // vfork
   SyscallInvoke -> SyscallAfterVforkStop;

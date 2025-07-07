@@ -24,6 +24,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/runsc/config"
 )
 
 func TestUser(t *testing.T) {
@@ -124,9 +125,11 @@ func TestCLIArgs(t *testing.T) {
 		},
 	}
 
+	conf := config.Config{EnableRaw: true}
+
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			e, err := tc.ex.argsFromCLI(&tc.spec, tc.argv, true)
+			e, err := tc.ex.argsFromCLI(&tc.spec, &conf, tc.argv)
 			if err != nil {
 				t.Errorf("argsFromCLI(%+v): got error: %+v", tc.ex, err)
 				return
@@ -209,9 +212,11 @@ func TestJSONArgs(t *testing.T) {
 		},
 	}
 
+	conf := config.Config{EnableRaw: true}
+
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			e, err := argsFromProcess(&tc.spec, &tc.p, true)
+			e, err := argsFromProcess(&tc.spec, &tc.p, &conf)
 			if err != nil {
 				t.Errorf("argsFromProcess(%+v): got error: %+v", tc.p, err)
 				return

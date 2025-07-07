@@ -31,6 +31,7 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/base/macros.h"
+#include "test/util/linux_capability_util.h"
 #include "test/util/logging.h"
 #include "test/util/memory_util.h"
 #include "test/util/multiprocess_util.h"
@@ -474,6 +475,21 @@ TEST(SeccompTest, EmptyProgramIsRejected) {
   MaybeSave();
   ASSERT_THAT(prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &prog, 0, 0),
               SyscallFailsWithErrno(EINVAL));
+}
+
+TEST(SeccompTest, NoNewPrivsAndNoAdminCapabilityIsRejected) {
+  struct sock_filter filter[1];
+  filter[0] = BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW);
+  struct sock_fprog prog;
+  prog.len = 1;
+  prog.filter = filter;
+
+  AutoCapability cap_admin(CAP_SYS_ADMIN, false);
+  ASSERT_THAT(prctl(PR_GET_NO_NEW_PRIVS, 0, 0, 0, 0),
+              SyscallSucceedsWithValue(0));
+
+  ASSERT_THAT(prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &prog, 0, 0),
+              SyscallFailsWithErrno(EACCES));
 }
 
 TEST(SeccompTest, ProgramTooLargeIsRejected) {

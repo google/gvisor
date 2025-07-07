@@ -364,6 +364,12 @@ func (*runSyscallExit) execute(t *Task) taskRunState {
 	return (*runApp)(nil)
 }
 
+func (t *Task) doSyscallError(err error) taskRunState {
+	t.Arch().SetReturn(uintptr(-ExtractErrno(err, int(t.Arch().SyscallNo()))))
+	t.haveSyscallReturn = true
+	return (*runSyscallExit)(nil)
+}
+
 // doVsyscall is the entry point for a vsyscall invocation of syscall sysno, as
 // indicated by an execution fault at address addr. doVsyscall returns the
 // task's next run state.
