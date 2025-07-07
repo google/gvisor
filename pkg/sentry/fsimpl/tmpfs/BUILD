@@ -95,6 +95,7 @@ go_library(
         "save_restore.go",
         "socket_file.go",
         "symlink.go",
+        "tar.go",
         "tmpfs.go",
     ],
     visibility = ["//pkg/sentry:internal"],

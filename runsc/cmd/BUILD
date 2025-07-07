@@ -70,6 +70,7 @@ go_library(
         "statefile.go",
         "symbolize.go",
         "syscalls.go",
+        "tar.go",
         "umount_unsafe.go",
         "usage.go",
         "wait.go",
