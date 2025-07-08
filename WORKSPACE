@@ -101,7 +101,7 @@ go_download_sdk(
     patch = "//tools:go_types_memoize.patch",
     patch_strip = 1,
     # To update this dictionary, run (after updating VERSION):
-    # jq --arg VERSION "1.22.0" 'map(select(.version == "go" + $VERSION)).[0].files | map({(.os + "_" + .arch): [.filename, .sha256]}) | add' < <(curl 'https://go.dev/dl/?mode=json&include=all')
+    # jq --arg VERSION "1.24.1" ' map(select(.version == "go" + $VERSION)) | map(.files[]) | flatten | map(select(.filename | endswith(".tar.gz"))) | map({(.os + "_" + .arch): [.filename, .sha256]}) | add' < <(curl -s 'https://go.dev/dl/?mode=json&include=all')
     sdks = {
       "_": [
         "go1.24.1.src.tar.gz",
@@ -112,12 +112,12 @@ go_download_sdk(
         "8d627dc163a4bffa2b1887112ad6194af175dce108d606ed1714a089fb806033"
       ],
       "darwin_amd64": [
-        "go1.24.1.darwin-amd64.pkg",
-        "58d529334561cff11087cd4ab18fe0b46d8d5aad88f45c02b9645f847e014512"
+        "go1.24.1.darwin-amd64.tar.gz",
+        "addbfce2056744962e2d7436313ab93486660cf7a2e066d171b9d6f2da7c7abe"
       ],
       "darwin_arm64": [
-        "go1.24.1.darwin-arm64.pkg",
-        "78b0fc8ddc344eb499f1a952c687cb84cbd28ba2b739cfa0d4eb042f07e44e82"
+        "go1.24.1.darwin-arm64.tar.gz",
+        "295581b5619acc92f5106e5bcb05c51869337eb19742fdfa6c8346c18e78ff88"
       ],
       "dragonfly_amd64": [
         "go1.24.1.dragonfly-amd64.tar.gz",
@@ -255,18 +255,6 @@ go_download_sdk(
         "go1.24.1.solaris-amd64.tar.gz",
         "8e4f6a77388dc6e5aa481efd5abdb3b9f5c9463bb82f4db074494e04e5c84992"
       ],
-      "windows_386": [
-        "go1.24.1.windows-386.msi",
-        "db128981033ac82a64688a123f631e61297b6b8f52ca913145e57caa8ce94cc3"
-      ],
-      "windows_amd64": [
-        "go1.24.1.windows-amd64.msi",
-        "5968e7adcf26e68a54f1cd41ad561275a670a8e2ca5263bc375b524638557dfb"
-      ],
-      "windows_arm64": [
-        "go1.24.1.windows-arm64.msi",
-        "6d352c1f154a102a5b90c480cc64bab205ccf2681e34e78a3a4d3f1ddfbc81e4"
-      ]
     },
     version = "1.24.1",
 )
