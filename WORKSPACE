@@ -26,6 +26,16 @@ load("@bazel_skylib//:workspace.bzl", "bazel_skylib_workspace")
 
 bazel_skylib_workspace()
 
+# Allow CLT-only macOS builds.
+#
+# See https://github.com/bazelbuild/apple_support/commit/6e0fdb1ed90816e0aba1b6dd6d6700363c59842a.
+http_archive(
+    name = "build_bazel_apple_support",
+    urls = ["https://github.com/bazelbuild/apple_support/archive/refs/tags/1.18.0.zip"],
+    strip_prefix = "apple_support-1.18.0",
+    sha256 = "ebeb692bc1660a6189721d43c69185bf282339f79a756b2b9fd03fa671c3061e",
+)
+
 # Load license rules.
 http_archive(
     name = "rules_license",
