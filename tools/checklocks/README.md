@@ -255,8 +255,7 @@ These can be ignored with the `+checklocksignore` annotation on fields.
 ```go
 type foo struct {
   mu sync.Mutex
-  // +checklocksignore: mu is not required, it just happens to be held always.
-  bar int32
+  bar int32 // +checklocksignore: mu is inferred as requisite.
 }
 ```
 
