@@ -197,8 +197,8 @@ func (ex *Exec) exec(conf *config.Config, c *container.Container, e *control.Exe
 
 	// Write the sandbox-internal pid if required.
 	if ex.internalPidFile != "" {
-		pidStr := []byte(strconv.Itoa(int(pid)))
-		if err := os.WriteFile(ex.internalPidFile, pidStr, 0644); err != nil {
+		pidStr := fmt.Sprintf("%d\n", pid)
+		if err := os.WriteFile(ex.internalPidFile, []byte(pidStr), 0644); err != nil {
 			return util.Errorf("writing internal pid file %q: %v", ex.internalPidFile, err)
 		}
 	}
@@ -207,7 +207,8 @@ func (ex *Exec) exec(conf *config.Config, c *container.Container, e *control.Exe
 	// users can safely assume that the internal pid file is ready after
 	// `runsc exec -d` returns.
 	if ex.pidFile != "" {
-		if err := os.WriteFile(ex.pidFile, []byte(strconv.Itoa(os.Getpid())), 0644); err != nil {
+		pidStr := fmt.Sprintf("%d\n", os.Getpid())
+		if err := os.WriteFile(ex.pidFile, []byte(pidStr), 0644); err != nil {
 			return util.Errorf("writing pid file: %v", err)
 		}
 	}
@@ -289,7 +290,11 @@ func (ex *Exec) execChildAndWait(waitStatus *unix.WaitStatus) subcommands.ExitSt
 		pidb, err := os.ReadFile(pidFile)
 		if err == nil {
 			// File appeared, check whether pid is fully written.
-			pid, err := strconv.Atoi(string(pidb))
+			pids, cut := strings.CutSuffix(string(pidb), "\n")
+			if !cut {
+				return false, nil
+			}
+			pid, err := strconv.Atoi(pids)
 			if err != nil {
 				return false, nil
 			}
