@@ -20,5 +20,8 @@ go_test(
     name = "drivers_test",
     srcs = ["install_driver_test.go"],
     library = ":drivers",
-    deps = ["//pkg/sentry/devices/nvproxy/nvconf"],
+    deps = [
+        "//pkg/sentry/devices/nvproxy",
+        "//pkg/sentry/devices/nvproxy/nvconf",
+    ],
 )

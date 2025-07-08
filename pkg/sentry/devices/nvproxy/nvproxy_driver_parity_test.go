@@ -20,6 +20,7 @@
 package nvproxy_driver_parity_test
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"reflect"
@@ -33,6 +34,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
+	"gvisor.dev/gvisor/tools/gpu/drivers"
 	"gvisor.dev/gvisor/tools/nvidia_driver_differ/parser"
 )
 
@@ -85,7 +87,7 @@ func TestSupportedStructNames(t *testing.T) {
 	nvproxy.Init()
 
 	// Run the parser on all supported driver versions
-	nvproxy.ForEachSupportDriver(func(version nvconf.DriverVersion, checksum string) {
+	nvproxy.ForEachSupportDriver(func(version nvconf.DriverVersion, _ nvproxy.Checksums) {
 		t.Run(version.String(), func(t *testing.T) {
 			t.Parallel()
 			f, runner := createParserRunner(t)
@@ -110,7 +112,7 @@ func TestSupportedStructNames(t *testing.T) {
 func TestStructDefinitionParity(t *testing.T) {
 	nvproxy.Init()
 
-	nvproxy.ForEachSupportDriver(func(version nvconf.DriverVersion, checksum string) {
+	nvproxy.ForEachSupportDriver(func(version nvconf.DriverVersion, _ nvproxy.Checksums) {
 		t.Run(version.String(), func(t *testing.T) {
 			t.Parallel()
 			f, runner := createParserRunner(t)
@@ -436,4 +438,19 @@ func compareTypes(t *testing.T, nvproxyType reflect.Type, driverTypeName string,
 
 	t.Fatalf("unknown driver type %q", driverTypeName)
 	return nil
+}
+
+// TestDriverChecksums tests that the checksums of all drivers are correct.
+func TestDriverChecksums(t *testing.T) {
+	ctx := context.Background()
+	nvproxy.Init()
+	nvproxy.ForEachSupportDriver(func(version nvconf.DriverVersion, checksums nvproxy.Checksums) {
+		t.Run(version.String(), func(t *testing.T) {
+			t.Parallel()
+			if err := drivers.ValidateChecksum(ctx, version.String(), checksums); err != nil {
+				t.Errorf("checksum mismatch for driver %q: %v", version.String(), err)
+			}
+		})
+	})
+
 }
