@@ -18,6 +18,7 @@ import (
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
@@ -172,7 +173,7 @@ func (mm *MemoryManager) Deactivate() {
 //   - ar.Length() != 0.
 //   - ar must be page-aligned.
 //   - pseg == mm.pmas.LowerBoundSegment(ar.Start).
-func (mm *MemoryManager) mapASLocked(pseg pmaIterator, ar hostarch.AddrRange, platformEffect memmap.MMapPlatformEffect) error {
+func (mm *MemoryManager) mapASLocked(ctx context.Context, pseg pmaIterator, ar hostarch.AddrRange, platformEffect memmap.MMapPlatformEffect) error {
 	// By default, map entire pmas at a time, under the assumption that there
 	// is no cost to mapping more of a pma than necessary.
 	mapAR := hostarch.AddrRange{0, ^hostarch.Addr(hostarch.PageSize - 1)}
@@ -217,8 +218,28 @@ func (mm *MemoryManager) mapASLocked(pseg pmaIterator, ar hostarch.AddrRange, pl
 			perms.Write = false
 		}
 		if perms.Any() { // MapFile precondition
-			if err := mm.as.MapFile(pmaMapAR.Start, pma.file, pseg.fileRangeOf(pmaMapAR), perms, platformEffect == memmap.PlatformEffectCommit); err != nil {
-				return err
+			// If the length of the mapping exceeds singleMapThreshold, call
+			// AddressSpace.MapFile() on singleMapThreshold-aligned chunks so
+			// we can check ctx.Killed() reasonably frequently.
+			const singleMapThreshold = 1 << 30
+			if pmaMapAR.Length() <= singleMapThreshold {
+				if err := mm.as.MapFile(pmaMapAR.Start, pma.file, pseg.fileRangeOf(pmaMapAR), perms, platformEffect == memmap.PlatformEffectCommit); err != nil {
+					return err
+				}
+				if ctx.Killed() {
+					return linuxerr.EINTR
+				}
+			} else {
+				for windowStart := pmaMapAR.Start &^ (singleMapThreshold - 1); windowStart < pmaMapAR.End; windowStart += singleMapThreshold {
+					windowAR := hostarch.AddrRange{windowStart, windowStart + singleMapThreshold}
+					thisMapAR := pmaMapAR.Intersect(windowAR)
+					if err := mm.as.MapFile(thisMapAR.Start, pma.file, pseg.fileRangeOf(thisMapAR), perms, platformEffect == memmap.PlatformEffectCommit); err != nil {
+						return err
+					}
+					if ctx.Killed() {
+						return linuxerr.EINTR
+					}
+				}
 			}
 		}
 		pseg = pseg.NextSegment()

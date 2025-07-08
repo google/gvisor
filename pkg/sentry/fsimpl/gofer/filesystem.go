@@ -1079,8 +1079,13 @@ func (d *dentry) open(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.Open
 		defer d.fs.renameMu.RUnlock()
 	}
 
+	mnt := rp.Mount()
 	trunc := opts.Flags&linux.O_TRUNC != 0 && d.fileType() == linux.S_IFREG
 	if trunc {
+		if err := mnt.CheckBeginWrite(); err != nil {
+			return nil, err
+		}
+		defer mnt.EndWrite()
 		// Lock metadataMu *while* we open a regular file with O_TRUNC because
 		// open(2) will change the file size on server.
 		d.metadataMu.Lock()
@@ -1089,7 +1094,6 @@ func (d *dentry) open(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.Open
 
 	var vfd *vfs.FileDescription
 	var err error
-	mnt := rp.Mount()
 	switch d.fileType() {
 	case linux.S_IFREG:
 		if !d.fs.opts.regularFilesUseSpecialFileFD {

@@ -146,9 +146,7 @@ func (tg *ThreadGroup) discardSpecificLocked(sig linux.Signal) {
 
 // PendingSignals returns the set of pending signals.
 func (t *Task) PendingSignals() linux.SignalSet {
-	sh := t.tg.signalLock()
-	defer sh.mu.Unlock()
-	return t.pendingSignals.pendingSet | t.tg.pendingSignals.pendingSet
+	return linux.SignalSet(t.pendingSignals.pendingSet.Load() | t.tg.pendingSignals.pendingSet.Load())
 }
 
 // deliverSignal delivers the given signal and returns the following run state.
@@ -612,7 +610,7 @@ func (t *Task) setSignalMaskLocked(mask linux.SignalSet) {
 	// signal, but will no longer do so as a result of its new signal mask, so
 	// we have to pick a replacement.
 	blocked := mask &^ oldMask
-	blockedGroupPending := blocked & t.tg.pendingSignals.pendingSet
+	blockedGroupPending := blocked & linux.SignalSet(t.tg.pendingSignals.pendingSet.RacyLoad())
 	if blockedGroupPending != 0 && t.interrupted() {
 		linux.ForEachSignal(blockedGroupPending, func(sig linux.Signal) {
 			if nt := t.tg.findSignalReceiverLocked(sig); nt != nil {
@@ -626,7 +624,7 @@ func (t *Task) setSignalMaskLocked(mask linux.SignalSet) {
 	// the old mask, and at least one such signal is pending, we may now need
 	// to handle that signal.
 	unblocked := oldMask &^ mask
-	unblockedPending := unblocked & (t.pendingSignals.pendingSet | t.tg.pendingSignals.pendingSet)
+	unblockedPending := unblocked & linux.SignalSet(t.pendingSignals.pendingSet.RacyLoad()|t.tg.pendingSignals.pendingSet.RacyLoad())
 	if unblockedPending != 0 {
 		t.interruptSelf()
 	}

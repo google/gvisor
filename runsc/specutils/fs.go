@@ -103,7 +103,7 @@ func optionsToFlags(opts []string, source map[string]mapping) uint32 {
 			if m.set {
 				rv |= m.val
 			} else {
-				rv ^= m.val
+				rv &= ^m.val
 			}
 		}
 	}

@@ -276,7 +276,7 @@ func (r *restorer) restore(l *Loader) error {
 
 	// Load the state.
 	r.timer.Reached("loading kernel")
-	if err := l.k.LoadFrom(ctx, r.stateFile, r.asyncMFLoader == nil, nil, oldInetStack, time.NewCalibratedClocks(), &vfs.CompleteRestoreOptions{}, l.saveRestoreNet); err != nil {
+	if err := l.k.LoadFrom(ctx, r.stateFile, r.asyncMFLoader, nil, oldInetStack, time.NewCalibratedClocks(), &vfs.CompleteRestoreOptions{}, l.saveRestoreNet); err != nil {
 		return fmt.Errorf("failed to load kernel: %w", err)
 	}
 	r.timer.Reached("kernel loaded")

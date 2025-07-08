@@ -245,10 +245,10 @@ func (r *runSyscallAfterExecStop) execute(t *Task) taskRunState {
 
 	// Switch to the new process.
 	t.MemoryManager().Deactivate()
-	t.mu.Lock()
 	// Update credentials to reflect the execve. This should precede switching
 	// MMs to ensure that dumpability has been reset first, if needed.
-	t.updateCredsForExecLocked()
+	t.updateCredsForExec()
+	t.mu.Lock()
 	oldImage := t.image
 	t.image = *r.image
 	t.mu.Unlock()

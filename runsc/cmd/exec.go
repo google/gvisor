@@ -488,7 +488,7 @@ func (ss *stringSlice) Get() any {
 
 // Set implements flag.Value.Set. Set(String()) should be idempotent.
 func (ss *stringSlice) Set(s string) error {
-	*ss = append(*ss, strings.Split(s, ",")...)
+	*ss = append(*ss, s)
 	return nil
 }
 
