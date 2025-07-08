@@ -8,7 +8,7 @@ package(
 benchmark_test(
     name = "bazel_test",
     srcs = ["bazel_test.go"],
-    use_for_pgo = True,
+    use_for_pgo = False,
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/cleanup",
