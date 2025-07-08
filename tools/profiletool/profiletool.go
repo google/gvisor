@@ -87,6 +87,9 @@ func mergeProfiles() error {
 				if info.IsDir() {
 					return nil
 				}
+				if info.Size() == 0 {
+					return nil
+				}
 				profilePaths = append(profilePaths, path)
 				return nil
 			})
@@ -95,7 +98,7 @@ func mergeProfiles() error {
 		}
 	}
 	if len(profilePaths) == 0 {
-		return errors.New("no profiles (or directories containing profiles) specified as positional arguments")
+		return errors.New("no non-empty profiles (or directories containing profiles) specified as positional arguments")
 	}
 	profiles := make([]*profile.Profile, len(profilePaths))
 	for i, profilePath := range profilePaths {
