@@ -95,7 +95,7 @@ func TestCLIArgs(t *testing.T) {
 				user:       user{kuid: 4, kuidSet: true, kgid: 4, kgidSet: true},
 				extraKGIDs: []string{"4", "5", "6"},
 				caps:       []string{"CAP_DAC_READ_SEARCH"},
-				env:        []string{"BAZ=new"},
+				env:        []string{"BAZ=new", "XYZ=xyz,BAZ=new"},
 			},
 			spec: specs.Process{
 				User:         specs.User{UID: 2, GID: 2, AdditionalGids: []uint32{1, 2, 3}},
@@ -106,7 +106,7 @@ func TestCLIArgs(t *testing.T) {
 			argv: []string{"ls", "/"},
 			expected: control.ExecArgs{
 				Argv:             []string{"ls", "/"},
-				Envv:             []string{"FOO=bar", "BAZ=new"},
+				Envv:             []string{"FOO=bar", "BAZ=new", "XYZ=xyz,BAZ=new"},
 				WorkingDirectory: "/baz",
 				KUID:             4,
 				KGID:             4,
