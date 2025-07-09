@@ -16,6 +16,18 @@ package linux
 
 // This file contains constants required to support nf_tables.
 
+// Name length constants for nf_table structures. These correspond to values in
+// include/uapi/linux/netfilter/nf_tables.h.
+const (
+	NFT_NAME_MAXLEN      = 256
+	NFT_TABLE_MAXNAMELEN = NFT_NAME_MAXLEN
+	NFT_CHAIN_MAXNAMELEN = NFT_NAME_MAXLEN
+	NFT_SET_MAXNAMELEN   = NFT_NAME_MAXLEN
+	NFT_OBJ_MAXNAMELEN   = NFT_NAME_MAXLEN
+	NFT_USERDATA_MAXLEN  = 256
+	NFT_OSF_MAXGENRELEN  = 16
+)
+
 // 16-byte Registers that can be used to maintain state for rules.
 // These correspond to values in include/uapi/linux/netfilter/nf_tables.h.
 const (
@@ -127,7 +139,10 @@ const (
 // NfTableFlags represents table flags that can be set for a table, namely dormant.
 // These correspond to values in include/uapi/linux/netfilter/nf_tables.h.
 const (
-	NFT_TABLE_F_DORMANT = 0x1
+	NFT_TABLE_F_DORMANT uint32 = 0x1
+	NFT_TABLE_F_OWNER          = 0x2
+	NFT_TABLE_F_PERSIST        = 0x4
+	NFT_TABLE_F_MASK           = NFT_TABLE_F_DORMANT | NFT_TABLE_F_OWNER | NFT_TABLE_F_PERSIST
 )
 
 // NfTableAttributes represents the netfilter table attributes.
