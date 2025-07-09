@@ -38,6 +38,7 @@ go_test(
     srcs = ["cli_test.go"],
     library = ":cli",
     deps = [
+        "//runsc/cmd",
         "//runsc/flag",
         "@com_github_google_subcommands//:go_default_library",
     ],

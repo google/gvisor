@@ -478,7 +478,7 @@ type stringSlice []string
 
 // String implements flag.Value.String.
 func (ss *stringSlice) String() string {
-	return strings.Join(*ss, ",")
+	return fmt.Sprintf("%q", *ss)
 }
 
 // Get implements flag.Value.Get.
@@ -486,7 +486,7 @@ func (ss *stringSlice) Get() any {
 	return ss
 }
 
-// Set implements flag.Value.Set. Set(String()) should be idempotent.
+// Set implements flag.Value.Set.
 func (ss *stringSlice) Set(s string) error {
 	*ss = append(*ss, s)
 	return nil

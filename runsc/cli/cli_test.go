@@ -19,6 +19,7 @@ import (
 	"testing"
 
 	"github.com/google/subcommands"
+	"gvisor.dev/gvisor/runsc/cmd"
 	"gvisor.dev/gvisor/runsc/flag"
 )
 
@@ -52,7 +53,14 @@ func dupFlag(t *testing.T, cmd subcommands.Command, flagName string) *flag.Flag 
 // should be an idempotent operation.
 func TestFlagSetIdempotent(t *testing.T) {
 	cmds := make(map[string][]subcommands.Command)
+	nonIdempotentCommands := map[string]bool{
+		new(cmd.Exec).Name(): true,
+	}
 	forEachCmd(func(cmd subcommands.Command, group string) {
+		// Skip commands that are known to be non-idempotent.
+		if _, ok := nonIdempotentCommands[cmd.Name()]; ok {
+			return
+		}
 		if cmdList, ok := cmds[group]; ok {
 			cmds[group] = append(cmdList, cmd)
 		} else {
