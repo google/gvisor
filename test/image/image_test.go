@@ -406,92 +406,80 @@ func dockerInGvisorCapabilities() []string {
 	}
 }
 
-func TestDockerOverlayWithHostNetwork(t *testing.T) {
-	if testutil.IsRunningWithHostNet() {
-		t.Skip("docker doesn't work with hostinet")
-	}
-	ctx := context.Background()
-	d := startDockerdInGvisor(ctx, t, true)
-	defer d.CleanUp(ctx)
-	testDockerBuild(ctx, t, d, true)
-	testDockerRun(ctx, t, d, true, false)
+type dockerCommandOptions struct {
+	hostNetwork bool
+	privileged  bool
 }
 
-func TestPrivilegedDockerOverlayWithHostNetwork(t *testing.T) {
-	if testutil.IsRunningWithHostNet() {
-		t.Skip("docker doesn't work with hostinet")
+func testDockerMatrix(ctx context.Context, t *testing.T, d *dockerutil.Container) {
+	definitions := []struct {
+		name            string
+		testFunc        func(ctx context.Context, t *testing.T, d *dockerutil.Container, opts dockerCommandOptions)
+		testHostNetwork bool
+		testPrivileged  bool
+	}{
+		{"docker_run", testDockerRun, true, true},
+		{"docker_build", testDockerBuild, true, false},
+		{"docker_exec", testDockerExec, false, true},
 	}
-	ctx := context.Background()
-	d := startDockerdInGvisor(ctx, t, true)
-	defer d.CleanUp(ctx)
-	testDockerRun(ctx, t, d, true, true)
+	for _, def := range definitions {
+		hostNetworkOpts := []bool{false}
+		if def.testHostNetwork {
+			hostNetworkOpts = []bool{true, false}
+		}
+		privilegedOpts := []bool{false}
+		if def.testPrivileged {
+			privilegedOpts = []bool{true, false}
+		}
+		for _, hostNetwork := range hostNetworkOpts {
+			for _, privileged := range privilegedOpts {
+				opts := dockerCommandOptions{
+					hostNetwork: hostNetwork,
+					privileged:  privileged,
+				}
+				var nameParts []string
+				nameParts = append(nameParts, def.name)
+				if def.testHostNetwork {
+					if hostNetwork {
+						nameParts = append(nameParts, "host_network")
+					} else {
+						nameParts = append(nameParts, "bridge_network")
+					}
+				}
+				if def.testPrivileged {
+					if privileged {
+						nameParts = append(nameParts, "privileged")
+					} else {
+						nameParts = append(nameParts, "non_privileged")
+					}
+				}
+				name := strings.Join(nameParts, "_")
+				t.Run(name, func(t *testing.T) {
+					def.testFunc(ctx, t, d, opts)
+				})
+			}
+		}
+	}
 }
 
-func TestDockerOverlay(t *testing.T) {
-	if testutil.IsRunningWithHostNet() {
-		t.Skip("docker doesn't work with hostinet")
-	}
-	ctx := context.Background()
-	d := startDockerdInGvisor(ctx, t, true)
-	defer d.CleanUp(ctx)
-	testDockerBuild(ctx, t, d, false)
-	testDockerRun(ctx, t, d, false, false)
-}
-
-func TestPrivilegedDockerOverlay(t *testing.T) {
-	if testutil.IsRunningWithHostNet() {
-		t.Skip("docker doesn't work with hostinet")
-	}
-	ctx := context.Background()
-	d := startDockerdInGvisor(ctx, t, true)
-	defer d.CleanUp(ctx)
-	testDockerRun(ctx, t, d, false, true)
-}
-
-func TestDockerWithHostNetwork(t *testing.T) {
+func TestDockerWithVFS(t *testing.T) {
 	if testutil.IsRunningWithHostNet() {
 		t.Skip("docker doesn't work with hostinet")
 	}
 	ctx := context.Background()
 	d := startDockerdInGvisor(ctx, t, false)
 	defer d.CleanUp(ctx)
-	testDockerBuild(ctx, t, d, true)
-	testDockerRun(ctx, t, d, true, false)
+	testDockerMatrix(ctx, t, d)
 }
 
-func TestPrivilegedDockerWithHostNetwork(t *testing.T) {
-	if testutil.IsRunningWithHostNet() {
-		t.Skip("docker doesn't work with hostinet")
-	}
-	ctx := context.Background()
-	d := startDockerdInGvisor(ctx, t, false)
-	defer d.CleanUp(ctx)
-	testDockerRun(ctx, t, d, true, true)
-}
-
-func TestDocker(t *testing.T) {
-	if testutil.IsRunningWithHostNet() {
-		t.Skip("docker doesn't work with hostinet")
-	}
-	ctx := context.Background()
-	d := startDockerdInGvisor(ctx, t, false)
-	defer d.CleanUp(ctx)
-	testDockerBuild(ctx, t, d, false)
-	// Overlayfs can't be built on top of another overlayfs, so docket has
-	// to fall back to the vfs driver.
-	testDockerRun(ctx, t, d, false, false)
-}
-
-func TestPrivilegedDocker(t *testing.T) {
+func TestDockerWithOverlay(t *testing.T) {
 	if testutil.IsRunningWithHostNet() {
 		t.Skip("docker doesn't work with hostinet")
 	}
 	ctx := context.Background()
 	d := startDockerdInGvisor(ctx, t, true)
 	defer d.CleanUp(ctx)
-	// Overlayfs can't be built on top of another overlayfs, so docket has
-	// to fall back to the vfs driver.
-	testDockerRun(ctx, t, d, false, true)
+	testDockerMatrix(ctx, t, d)
 }
 
 // The container returned by this function has to be cleaned up by the caller.
@@ -538,12 +526,12 @@ func startDockerdInGvisor(ctx context.Context, t *testing.T, overlay bool) *dock
 	return d
 }
 
-func testDockerRun(ctx context.Context, t *testing.T, d *dockerutil.Container, hostNetwork, startPrivilegedContainer bool) {
+func testDockerRun(ctx context.Context, t *testing.T, d *dockerutil.Container, opts dockerCommandOptions) {
 	cmd := []string{"docker", "run", "--rm"}
-	if hostNetwork {
+	if opts.hostNetwork {
 		cmd = append(cmd, "--network", "host")
 	}
-	if startPrivilegedContainer {
+	if opts.privileged {
 		cmd = append(cmd, "--privileged")
 	}
 	cmd = append(cmd, testAlpineImage, "sh", "-c", "apk add curl && apk info -d curl")
@@ -561,9 +549,9 @@ func testDockerRun(ctx context.Context, t *testing.T, d *dockerutil.Container, h
 	}
 }
 
-func testDockerBuild(ctx context.Context, t *testing.T, d *dockerutil.Container, hostNetwork bool) {
+func testDockerBuild(ctx context.Context, t *testing.T, d *dockerutil.Container, opts dockerCommandOptions) {
 	cmd := []string{"echo", "-e", fmt.Sprintf("FROM %s\nRUN apk add git", testAlpineImage), "|", "docker", "build"}
-	if hostNetwork {
+	if opts.hostNetwork {
 		cmd = append(cmd, "--network", "host")
 	}
 	imageName := "test_docker_build_in_gvisor"
@@ -583,6 +571,59 @@ func testDockerBuild(ctx context.Context, t *testing.T, d *dockerutil.Container,
 	output := imageName + ":latest"
 	if !strings.Contains(got, output) {
 		t.Fatalf("docker didn't get output expected: %q, got: %q", output, got)
+	}
+}
+
+func testDockerExec(ctx context.Context, t *testing.T, d *dockerutil.Container, opts dockerCommandOptions) {
+	containerName := strings.ReplaceAll(testutil.RandomID("test_docker_exec"), "/", "-")
+	// Start a container with a sleep command to ensure that the container
+	// doesn't exit immediately.
+	cmd := []string{"docker", "run", "--rm", "-d", "--name", containerName, testAlpineImage, "sleep", "180"}
+	_, err := d.ExecProcess(ctx, dockerutil.ExecOpts{}, cmd...)
+	if err != nil {
+		t.Fatalf("docker run failed: %v", err)
+	}
+	// Kill the container at the end of the test.
+	defer func() {
+		_, err := d.ExecProcess(ctx, dockerutil.ExecOpts{}, []string{"docker", "kill", containerName}...)
+		if err != nil {
+			t.Fatalf("docker container kill failed: %v", err)
+		}
+	}()
+
+	for i := 0; i < 10; i++ {
+		inspectProc, err := d.ExecProcess(ctx, dockerutil.ExecOpts{}, []string{"docker", "container", "inspect", containerName}...)
+		if err != nil {
+			t.Fatalf("docker container inspect failed: %v", err)
+		}
+		inspectOutput, err := inspectProc.Logs()
+		if err != nil {
+			t.Fatalf("docker logs failed: %v", err)
+		}
+		if strings.Contains(inspectOutput, "\"Status\": \"running\"") {
+			break
+		}
+		time.Sleep(5 * time.Second)
+	}
+
+	execCmd := []string{"docker", "exec"}
+	if opts.privileged {
+		execCmd = append(execCmd, "--privileged")
+	}
+	// Execute echo command in the container.
+	execCmd = append(execCmd, containerName, "echo", "exec in "+containerName)
+	execProc, err := d.ExecProcess(ctx, dockerutil.ExecOpts{}, execCmd...)
+	if err != nil {
+		t.Fatalf("docker exec failed: %v", err)
+	}
+
+	output, err := execProc.Logs()
+	if err != nil {
+		t.Fatalf("docker logs failed: %v", err)
+	}
+	expectedOutput := "exec in " + containerName
+	if !strings.Contains(output, expectedOutput) {
+		t.Fatalf("docker didn't get output expected: %q, got: %q", expectedOutput, output)
 	}
 }
 
