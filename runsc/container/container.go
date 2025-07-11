@@ -1393,6 +1393,13 @@ func (c *Container) createGoferProcess(conf *config.Config, mountHints *boot.Pod
 		{Type: specs.UTSNamespace},
 	}
 
+	var gSyncFile *os.File
+	defer func() {
+		if gSyncFile != nil {
+			gSyncFile.Close()
+		}
+	}()
+
 	rootlessEUID := unix.Geteuid() != 0
 	// Setup any uid/gid mappings, and create or join the configured user
 	// namespace so the gofer's view of the filesystem aligns with the
@@ -1414,7 +1421,7 @@ func (c *Container) createGoferProcess(conf *config.Config, mountHints *boot.Pod
 		if err != nil {
 			return nil, nil, nil, nil, err
 		}
-		defer syncFile.Close()
+		gSyncFile = syncFile
 	}
 
 	// Create synchronization FD for chroot.
@@ -1458,6 +1465,13 @@ func (c *Container) createGoferProcess(conf *config.Config, mountHints *boot.Pod
 	goferFilestores, err := c.createGoferFilestores(conf.GetOverlay2(), mountHints)
 	if err != nil {
 		return nil, nil, nil, nil, fmt.Errorf("creating gofer filestore files: %w", err)
+	}
+
+	if rootlessEUID {
+                chrootSyncSandEnd.Close()
+                if err := sandbox.SendIDToSandbox(gSyncFile, c.Spec); err != nil {
+                        return nil, nil, nil, nil,  err
+		}
 	}
 
 	return sandEnds, goferFilestores, devSandEnd, mountsSand, nil
