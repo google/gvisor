@@ -167,6 +167,11 @@ const (
 	CgroupsWriteControlFiles = "Cgroups.WriteControlFiles"
 )
 
+// FS-related commands (see fs.go for more details).
+const (
+	FsTarRootfsUpperLayer = "Fs.TarRootfsUpperLayer"
+)
+
 // controller holds the control server, and is used for communication into the
 // sandbox.
 type controller struct {
@@ -201,6 +206,7 @@ func (c *controller) registerHandlers() {
 	l := c.manager.l
 	c.srv.Register(c.manager)
 	c.srv.Register(&control.Cgroups{Kernel: l.k})
+	c.srv.Register(&control.Fs{Kernel: l.k})
 	c.srv.Register(&control.Lifecycle{Kernel: l.k})
 	c.srv.Register(&control.Logging{})
 	c.srv.Register(&control.Proc{Kernel: l.k})

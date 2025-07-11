@@ -272,6 +272,7 @@ func forEachCmd(cb func(cmd subcommands.Command, group string)) {
 	cb(new(cmd.Start), "")
 	cb(new(cmd.State), "")
 	cb(new(cmd.Wait), "")
+	cb(new(cmd.Tar), "")
 
 	// Helpers.
 	const helperGroup = "helpers"

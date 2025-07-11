@@ -3993,6 +3993,71 @@ func TestSpecValidation(t *testing.T) {
 	}
 }
 
+func TestTarRootfsUpperLayer(t *testing.T) {
+	conf := testutil.TestConfig(t)
+	conf.Overlay2.Set("root:memory")
+
+	app, err := testutil.FindFile("test/cmd/test_app/test_app")
+	if err != nil {
+		t.Fatal("error finding test_app:", err)
+	}
+
+	spec, _ := sleepSpecConf(t)
+	spec.Root.Readonly = false
+
+	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer cleanup()
+
+	// Create and start the container.
+	args := Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+	}
+	cont, err := New(conf, args)
+	if err != nil {
+		t.Fatalf("error creating container: %v", err)
+	}
+	defer cont.Destroy()
+	if err := cont.Start(conf); err != nil {
+		t.Fatalf("error starting container: %v", err)
+	}
+
+	// Exec the command in the container.
+	execArgs := &control.ExecArgs{
+		Filename: app,
+		Argv:     []string{app, "fsTreeCreate", "--depth=3", "--file-per-level=2", "--file-size=1470", "--create-symlink"},
+	}
+	if ws, err := cont.executeSync(conf, execArgs); err != nil {
+		t.Fatalf("error exec'ing: %v", err)
+	} else if ws.ExitStatus() != 0 {
+		t.Fatalf("exec failed with exit status %d", ws.ExitStatus())
+	}
+
+	// Create a temporary file to write the tar bytes to.
+	tarFile, err := os.CreateTemp(testutil.TmpDir(), "tarfile-*.tar")
+	if err != nil {
+		t.Fatalf("error creating temp file: %v", err)
+	}
+	defer os.Remove(tarFile.Name())
+
+	if err := cont.Sandbox.TarRootfsUpperLayer(tarFile); err != nil {
+		t.Fatalf("error serializing rootfs upper layer to tar: %v", err)
+	}
+	tarFile.Close()
+
+	// List the contents of the tar file using the tar command.
+	cmd := exec.Command("tar", "-tvf", tarFile.Name())
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("error listing contents of tar file: %v, output: %s", err, out)
+	} else {
+		t.Logf("contents of tar file: %s", out)
+	}
+}
+
 func TestSpecValidationIgnore(t *testing.T) {
 	conf := testutil.TestConfig(t)
 	if err := conf.RestoreSpecValidation.Set("ignore"); err != nil {

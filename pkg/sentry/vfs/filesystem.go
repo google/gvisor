@@ -15,6 +15,8 @@
 package vfs
 
 import (
+	"os"
+
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fspath"
@@ -521,6 +523,14 @@ type FilesystemImpl interface {
 	// If the implementation has no filesystem-specific options, it should
 	// return the empty string.
 	MountOptions() string
+}
+
+// TarSerializer is an interface for serializing a filesystem to a tar archive.
+// It is an extension of FilesystemImpl.
+type TarSerializer interface {
+	// TarUpperLayer serializes the writable upper layer of the filesystem to a
+	// tar archive. It writes the tar archive to outFD.
+	TarUpperLayer(ctx context.Context, outFD *os.File) error
 }
 
 // PrependPathAtVFSRootError is returned by implementations of
