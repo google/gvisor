@@ -66,21 +66,35 @@ type NetlinkMessageHeader struct {
 // NetlinkMessageHeaderSize is the size of NetlinkMessageHeader.
 const NetlinkMessageHeaderSize = 16
 
-// Netlink message header flags, from uapi/linux/netlink.h.
+// Netlink message header flag values, from uapi/linux/netlink.h.
 const (
 	NLM_F_REQUEST   = 0x1
 	NLM_F_MULTI     = 0x2
 	NLM_F_ACK       = 0x4
 	NLM_F_ECHO      = 0x8
 	NLM_F_DUMP_INTR = 0x10
-	NLM_F_ROOT      = 0x100
-	NLM_F_MATCH     = 0x200
-	NLM_F_ATOMIC    = 0x400
-	NLM_F_DUMP      = NLM_F_ROOT | NLM_F_MATCH
-	NLM_F_REPLACE   = 0x100
-	NLM_F_EXCL      = 0x200
-	NLM_F_CREATE    = 0x400
-	NLM_F_APPEND    = 0x800
+)
+
+// Netlink message header flags for GET requests, from uapi/linux/netlink.h.
+const (
+	NLM_F_ROOT   = 0x100
+	NLM_F_MATCH  = 0x200
+	NLM_F_ATOMIC = 0x400
+	NLM_F_DUMP   = NLM_F_ROOT | NLM_F_MATCH
+)
+
+// Netlink message header flags for NEW requests, from uapi/linux/netlink.h.
+const (
+	NLM_F_REPLACE = 0x100
+	NLM_F_EXCL    = 0x200
+	NLM_F_CREATE  = 0x400
+	NLM_F_APPEND  = 0x800
+)
+
+// Netlink message header flags for DELETE requests, from uapi/linux/netlink.h.
+const (
+	NLM_F_NONREC = 0x100
+	NLM_F_BULK   = 0x200
 )
 
 // Standard netlink message types, from uapi/linux/netlink.h.
