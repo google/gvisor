@@ -219,7 +219,7 @@ func bluepillHandler(context unsafe.Pointer) {
 			c.die(bluepillArchContext(context), "shutdown")
 			return
 		case _KVM_EXIT_FAIL_ENTRY:
-			c.die(bluepillArchContext(context), "entry failed")
+			c.dieAndDumpExitReason(bluepillArchContext(context))
 			return
 		default:
 			bluepillArchHandleExit(c, context)
