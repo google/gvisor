@@ -16,6 +16,20 @@ package linux
 
 // This file contains constants required to support nf_tables.
 
+const NFT_MAX_HOOKS = NF_INET_NUMHOOKS + 1
+
+// Name length constants for nf_table structures. These correspond to values in
+// include/uapi/linux/netfilter/nf_tables.h.
+const (
+	NFT_NAME_MAXLEN      = 256
+	NFT_TABLE_MAXNAMELEN = NFT_NAME_MAXLEN
+	NFT_CHAIN_MAXNAMELEN = NFT_NAME_MAXLEN
+	NFT_SET_MAXNAMELEN   = NFT_NAME_MAXLEN
+	NFT_OBJ_MAXNAMELEN   = NFT_NAME_MAXLEN
+	NFT_USERDATA_MAXLEN  = 256
+	NFT_OSF_MAXGENRELEN  = 16
+)
+
 // 16-byte Registers that can be used to maintain state for rules.
 // These correspond to values in include/uapi/linux/netfilter/nf_tables.h.
 const (
@@ -124,10 +138,25 @@ const (
 	NFT_MSG_MAX
 )
 
+// NfTableHookAttributes represents the netfilter hook attributes.
+// These correspond to values in include/uapi/linux/netfilter/nf_tables.h.
+const (
+	NFTA_HOOK_UNSPEC uint16 = iota
+	NFTA_HOOK_HOOKNUM
+	NFTA_HOOK_PRIORITY
+	NFTA_HOOK_DEV
+	NFTA_HOOK_DEVS
+	__NFTA_HOOK_MAX
+	NFTA_HOOK_MAX = __NFTA_HOOK_MAX - 1
+)
+
 // NfTableFlags represents table flags that can be set for a table, namely dormant.
 // These correspond to values in include/uapi/linux/netfilter/nf_tables.h.
 const (
-	NFT_TABLE_F_DORMANT = 0x1
+	NFT_TABLE_F_DORMANT uint32 = 0x1
+	NFT_TABLE_F_OWNER          = 0x2
+	NFT_TABLE_F_PERSIST        = 0x4
+	NFT_TABLE_F_MASK           = NFT_TABLE_F_DORMANT | NFT_TABLE_F_OWNER | NFT_TABLE_F_PERSIST
 )
 
 // NfTableAttributes represents the netfilter table attributes.
@@ -146,6 +175,35 @@ const (
 
 // NFTA_TABLE_MAX is the maximum netfilter table attribute.
 const NFTA_TABLE_MAX = __NFTA_TABLE_MAX - 1
+
+// NfTableChainFlags represents chain flags that can be set for a chain.
+// These correspond to values in include/uapi/linux/netfilter/nf_tables.h.
+const (
+	NFT_CHAIN_BASE       uint32 = (1 << 0)
+	NFT_CHAIN_HW_OFFLOAD        = (1 << 1)
+	NFT_CHAIN_BINDING           = (1 << 2)
+	NFT_CHAIN_FLAGS             = (NFT_CHAIN_BASE | NFT_CHAIN_HW_OFFLOAD | NFT_CHAIN_BINDING)
+)
+
+// NfTableChainAttributes represents the netfilter chain attributes.
+// These correspond to values in include/uapi/linux/netfilter/nf_tables.h.
+const (
+	NFTA_CHAIN_UNSPEC uint16 = iota
+	NFTA_CHAIN_TABLE
+	NFTA_CHAIN_HANDLE
+	NFTA_CHAIN_NAME
+	NFTA_CHAIN_HOOK
+	NFTA_CHAIN_POLICY
+	NFTA_CHAIN_USE
+	NFTA_CHAIN_TYPE
+	NFTA_CHAIN_COUNTERS
+	NFTA_CHAIN_PAD
+	NFTA_CHAIN_FLAGS
+	NFTA_CHAIN_ID
+	NFTA_CHAIN_USERDATA
+	__NFTA_CHAIN_MAX
+	NFTA_CHAIN_MAX = __NFTA_CHAIN_MAX - 1
+)
 
 // Nf table relational operators.
 // Used by the nft comparison operation to compare values in registers.

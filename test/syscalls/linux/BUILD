@@ -3692,8 +3692,13 @@ cc_library(
 
 cc_library(
     name = "socket_netlink_netfilter_util",
+    testonly = 1,
     srcs = ["socket_netlink_netfilter_util.cc"],
     hdrs = ["socket_netlink_netfilter_util.h"],
+    deps = select_gtest() + [
+        ":socket_netlink_util",
+        "@com_google_absl//absl/log",
+    ],
 )
 
 cc_binary(
