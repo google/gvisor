@@ -95,8 +95,11 @@ func (h NFHook) String() string {
 type AddressFamily int
 
 const (
+	// Unspec represents an unspecified address family.
+	Unspec AddressFamily = iota
+
 	// IP     represents IPv4 Family.
-	IP AddressFamily = iota
+	IP
 
 	// IP6    represents IPv6 Family.
 	IP6
@@ -119,6 +122,7 @@ const (
 
 // AddressFamilyStrings maps address families to their string representation.
 var AddressFamilyStrings = map[AddressFamily]string{
+	Unspec: "UNSPEC",
 	IP:     "IPv4",
 	IP6:    "IPv6",
 	Inet:   "Internet (Both IPv4/IPv6)",
@@ -128,8 +132,9 @@ var AddressFamilyStrings = map[AddressFamily]string{
 }
 
 // ValidateAddressFamily ensures the family address is valid (within bounds).
+// Unspecified address family is not valid. It is only used to reference all address families.
 func ValidateAddressFamily(family AddressFamily) error {
-	if family < 0 || family >= NumAFs {
+	if family < 1 || family >= NumAFs {
 		return fmt.Errorf("invalid address family: %d", int(family))
 	}
 	return nil

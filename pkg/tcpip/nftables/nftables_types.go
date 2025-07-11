@@ -122,6 +122,35 @@ var supportedHooks [stack.NumAFs][]stack.NFHook = [stack.NumAFs][]stack.NFHook{
 	stack.Netdev: {stack.NFIngress, stack.NFEgress},
 }
 
+// supportedLinuxHooks maps each address family to its supported hooks for each base chain type.
+// From net/netfilter/nft_chain_filter.c, net/netfilter/nft_chain_nat.c, net/netfilter/nft_chain_route.c,
+var supportedLinuxHooks = map[stack.AddressFamily]map[BaseChainType][]stack.NFHook{
+	stack.IP: {
+		BaseChainTypeFilter: {linux.NF_INET_LOCAL_IN, linux.NF_INET_LOCAL_OUT, linux.NF_INET_FORWARD, linux.NF_INET_PRE_ROUTING, linux.NF_INET_POST_ROUTING},
+		BaseChainTypeNat:    {linux.NF_INET_PRE_ROUTING, linux.NF_INET_POST_ROUTING, linux.NF_INET_LOCAL_OUT, linux.NF_INET_LOCAL_IN},
+		BaseChainTypeRoute:  {linux.NF_INET_LOCAL_OUT},
+	},
+	stack.IP6: {
+		BaseChainTypeFilter: {linux.NF_INET_LOCAL_IN, linux.NF_INET_LOCAL_OUT, linux.NF_INET_FORWARD, linux.NF_INET_PRE_ROUTING, linux.NF_INET_POST_ROUTING},
+		BaseChainTypeNat:    {linux.NF_INET_PRE_ROUTING, linux.NF_INET_POST_ROUTING, linux.NF_INET_LOCAL_OUT, linux.NF_INET_LOCAL_IN},
+		BaseChainTypeRoute:  {linux.NF_INET_LOCAL_OUT},
+	},
+	stack.Inet: {
+		BaseChainTypeFilter: {linux.NF_INET_LOCAL_IN, linux.NF_INET_LOCAL_OUT, linux.NF_INET_FORWARD, linux.NF_INET_PRE_ROUTING, linux.NF_INET_POST_ROUTING},
+		BaseChainTypeNat:    {linux.NF_INET_PRE_ROUTING, linux.NF_INET_POST_ROUTING, linux.NF_INET_LOCAL_OUT, linux.NF_INET_LOCAL_IN},
+		BaseChainTypeRoute:  {linux.NF_INET_LOCAL_OUT},
+	},
+	stack.Arp: {
+		BaseChainTypeFilter: {linux.NF_ARP_IN, linux.NF_ARP_OUT},
+	},
+	stack.Bridge: {
+		BaseChainTypeFilter: {linux.NF_BR_PRE_ROUTING, linux.NF_BR_LOCAL_IN, linux.NF_BR_FORWARD, linux.NF_BR_LOCAL_OUT, linux.NF_BR_POST_ROUTING},
+	},
+	stack.Netdev: {
+		BaseChainTypeFilter: {linux.NF_NETDEV_INGRESS, linux.NF_NETDEV_EGRESS},
+	},
+}
+
 // validateHook ensures the hook is within bounds and supported for the given
 // address family.
 func validateHook(hook stack.NFHook, family stack.AddressFamily) *syserr.AnnotatedError {
@@ -136,13 +165,82 @@ func validateHook(hook stack.NFHook, family stack.AddressFamily) *syserr.Annotat
 	return syserr.NewAnnotatedError(syserr.ErrNotSupported, fmt.Sprintf("hook %d is not supported for address family %d", int(hook), int(family)))
 }
 
+// ValidLinuxHook ensures the hook is within bounds and supported for the
+// given address family and base chain type.
+func ValidLinuxHook(family stack.AddressFamily, bcType BaseChainType, hook uint32) bool {
+	if hook >= linux.NFT_MAX_HOOKS {
+		return false
+	}
+
+	typeToSupportedHooks, ok := supportedLinuxHooks[family]
+	if !ok {
+		return false
+	}
+
+	supportedHooks, ok := typeToSupportedHooks[bcType]
+	if !ok {
+		return false
+	}
+
+	return slices.Contains(supportedHooks, stack.NFHook(hook))
+}
+
+// FamilyHookKey is a struct that represents a stack.AddressFamily and linux hook pair.
+type FamilyHookKey struct {
+	Family stack.AddressFamily
+	Hook   uint32
+}
+
+// linuxHookToStackHook maps the linux hook constants to the stack hook constants.
+var linuxHookToStackHook = map[FamilyHookKey]stack.NFHook{
+	{Family: stack.IP, Hook: linux.NF_INET_LOCAL_IN}:     stack.NFInput,
+	{Family: stack.IP, Hook: linux.NF_INET_LOCAL_OUT}:    stack.NFOutput,
+	{Family: stack.IP, Hook: linux.NF_INET_FORWARD}:      stack.NFForward,
+	{Family: stack.IP, Hook: linux.NF_INET_PRE_ROUTING}:  stack.NFPrerouting,
+	{Family: stack.IP, Hook: linux.NF_INET_POST_ROUTING}: stack.NFPostrouting,
+
+	{Family: stack.IP6, Hook: linux.NF_INET_LOCAL_IN}:     stack.NFInput,
+	{Family: stack.IP6, Hook: linux.NF_INET_LOCAL_OUT}:    stack.NFOutput,
+	{Family: stack.IP6, Hook: linux.NF_INET_FORWARD}:      stack.NFForward,
+	{Family: stack.IP6, Hook: linux.NF_INET_PRE_ROUTING}:  stack.NFPrerouting,
+	{Family: stack.IP6, Hook: linux.NF_INET_POST_ROUTING}: stack.NFPostrouting,
+
+	{Family: stack.Inet, Hook: linux.NF_INET_LOCAL_IN}:     stack.NFInput,
+	{Family: stack.Inet, Hook: linux.NF_INET_LOCAL_OUT}:    stack.NFOutput,
+	{Family: stack.Inet, Hook: linux.NF_INET_FORWARD}:      stack.NFForward,
+	{Family: stack.Inet, Hook: linux.NF_INET_PRE_ROUTING}:  stack.NFPrerouting,
+	{Family: stack.Inet, Hook: linux.NF_INET_POST_ROUTING}: stack.NFPostrouting,
+
+	{Family: stack.Arp, Hook: linux.NF_ARP_IN}:  stack.NFInput,
+	{Family: stack.Arp, Hook: linux.NF_ARP_OUT}: stack.NFOutput,
+
+	{Family: stack.Bridge, Hook: linux.NF_BR_PRE_ROUTING}:  stack.NFPrerouting,
+	{Family: stack.Bridge, Hook: linux.NF_BR_LOCAL_IN}:     stack.NFInput,
+	{Family: stack.Bridge, Hook: linux.NF_BR_FORWARD}:      stack.NFForward,
+	{Family: stack.Bridge, Hook: linux.NF_BR_LOCAL_OUT}:    stack.NFOutput,
+	{Family: stack.Bridge, Hook: linux.NF_BR_POST_ROUTING}: stack.NFPostrouting,
+
+	{Family: stack.Netdev, Hook: linux.NF_NETDEV_INGRESS}: stack.NFIngress,
+	{Family: stack.Netdev, Hook: linux.NF_NETDEV_EGRESS}:  stack.NFEgress,
+}
+
+// StackHook returns the stack hook for the given linux hook.
+func StackHook(family stack.AddressFamily, hook uint32) (stack.NFHook, *syserr.AnnotatedError) {
+	if hook, ok := linuxHookToStackHook[FamilyHookKey{Family: family, Hook: hook}]; ok {
+		return hook, nil
+	}
+
+	return stack.NFHook(0), syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("invalid linux hook: %d", int(hook)))
+}
+
 // NFTables represents the nftables state for all address families.
 // Note: unlike iptables, nftables doesn't start with any initialized tables.
 type NFTables struct {
-	filters   [stack.NumAFs]*addressFamilyFilter // Filters for each address family.
-	clock     tcpip.Clock                        // Clock for timing evaluations.
-	startTime time.Time                          // Time NFTables object was created.
-	rng       rand.RNG                           // Random number generator.
+	filters            [stack.NumAFs]*addressFamilyFilter // Filters for each address family.
+	clock              tcpip.Clock                        // Clock for timing evaluations.
+	startTime          time.Time                          // Time NFTables object was created.
+	rng                rand.RNG                           // Random number generator.
+	tableHandleCounter atomicbitops.Uint64                // Table handle counter.
 }
 
 // Ensures NFTables implements the NFTablesInterface.
@@ -159,6 +257,9 @@ type addressFamilyFilter struct {
 
 	// tables is a map of tables for each address family.
 	tables map[string]*Table
+
+	// tableHandles is a map of table handles (ids) to tables for a given address family.
+	tableHandles map[uint64]*Table
 
 	// hfStacks is a map of hook function stacks (slice of base chains for a
 	// given hook ordered by priority).
@@ -179,9 +280,38 @@ type Table struct {
 	// chains is a map of chains for each table.
 	chains map[string]*Chain
 
-	// flags is the set of optional flags for the table.
+	// chainHandles is a map of chain handles (ids) to chains for a given table.
+	chainHandles map[uint64]*Chain
+
+	// flagSet is the set of optional flags for the table.
 	// Note: currently nftables only has the single Dormant flag.
 	flagSet map[TableFlag]struct{}
+
+	// Chain handle counter.
+	chainHandleCounter atomicbitops.Uint64
+
+	// handle is the id of the table.
+	handle uint64
+
+	// owner is the port id of the table's owner, if it is specified.
+	owner uint32
+
+	// userData is the user-specified metadata for the table. This is not used
+	// by the kernel, but rather userspace applications like nft binary.
+	userData []byte
+}
+
+// TableInfo represents data between an AFfilter and a Table.
+type TableInfo struct {
+	Name   string
+	Handle uint64
+}
+
+// HookInfo represents data retrieved from the NFTA_CHAIN_HOOK attribute.
+type HookInfo struct {
+	HookNum   uint32
+	Priority  int32
+	ChainType BaseChainType
 }
 
 // hookFunctionStack represents the list of base chains for a specific hook.
@@ -198,6 +328,9 @@ const (
 	// TableFlagDormant is set if the table is dormant. Dormant tables are not
 	// evaluated by the kernel.
 	TableFlagDormant TableFlag = iota
+	// TableFlagOwner is set if the table has an owner. The owner is the port
+	// where the table is created.
+	TableFlagOwner
 )
 
 // Chain represents a single chain as a list of rules.
@@ -214,12 +347,22 @@ type Chain struct {
 	// Note: this is tracked to check if the table is dormant.
 	table *Table
 
+	// handle is the id of the chain.
+	handle uint64
+
+	// flags is the set of optional flags for the chain.
+	flags uint8
+
 	// baseChainInfo is the base chain info for the chain if it is a base chain.
 	// Otherwise, it is nil.
 	baseChainInfo *BaseChainInfo
 
 	// rules is a list of rules for the chain.
 	rules []*Rule
+
+	// userData is the user-specified metadata for the chain. This is not used
+	// by the kernel, but rather userspace applications like nft binary.
+	userData []byte
 
 	// comment is the optional comment for the table.
 	comment string
@@ -236,6 +379,10 @@ type BaseChainInfo struct {
 
 	// Hook is the hook to attach the chain to in the netfilter pipeline
 	Hook stack.NFHook
+
+	// LinuxHookNum is the linux hook number for the hook. Used for filling out the information
+	// for a retrieved base chain.
+	LinuxHookNum uint32
 
 	// Priority determines the order in which base chains with the same hook are
 	// traversed. Each priority is associated with a signed integer priority value
@@ -744,4 +891,28 @@ func VerdictCodeToString(v uint32) string {
 		return vcStr
 	}
 	return fmt.Sprintf("invalid verdict: %d", v)
+}
+
+// netlinkAFToStackAF maps address families from linux/socket.h to their corresponding
+// netfilter address families.
+// From linux/include/uapi/linux/netfilter.h
+var netlinkAFToStackAF = map[uint8]stack.AddressFamily{
+	linux.AF_UNSPEC:    stack.Unspec,
+	linux.AF_UNIX:      stack.Inet,
+	linux.AF_INET:      stack.IP,
+	linux.AF_AX25:      stack.Arp,
+	linux.AF_APPLETALK: stack.Netdev,
+	linux.AF_BRIDGE:    stack.Bridge,
+	linux.AF_INET6:     stack.IP6,
+}
+
+// AFtoNetlinkAF converts a generic address family to a netfilter address family.
+// On error, we simply cast it to be a stack.AddressFamily and return an error to allow netfilter
+// sockets to handle it accordingly if needed.
+func AFtoNetlinkAF(af uint8) (stack.AddressFamily, *syserr.Error) {
+	naf, ok := netlinkAFToStackAF[af]
+	if !ok {
+		return stack.AddressFamily(af), syserr.ErrNotSupported
+	}
+	return naf, nil
 }
