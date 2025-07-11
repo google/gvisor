@@ -878,7 +878,16 @@ func (vfs *VirtualFilesystem) MkdirAllAt(ctx context.Context, currentPath string
 		Start: root,
 		Path:  fspath.Parse(currentPath),
 	}
+
+	// For the StatAt() operation, we follow final symlinks so that we don't
+	// produce errors when the final component is a symlink to a directory.
+	//
+	// However, keep the old pop unchanged when passing to MkdirAt() below
+	// because MkdirAt() must not follow the final symlink. This is enforced
+	// by preconditions of FilesystemImpl.MkdirAt().
+	pop.FollowFinalSymlink = true
 	stat, err := vfs.StatAt(ctx, creds, pop, &StatOptions{Mask: linux.STATX_TYPE})
+	pop.FollowFinalSymlink = false
 	switch {
 	case err == nil:
 		if mustBeDir && (stat.Mask&linux.STATX_TYPE == 0 || stat.Mode&linux.FileTypeMask != linux.ModeDirectory) {
