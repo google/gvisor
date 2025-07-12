@@ -19,7 +19,9 @@ import (
 	"slices"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/rand"
+	"gvisor.dev/gvisor/pkg/sentry/socket/netlink/nlmsg"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
@@ -241,13 +243,41 @@ func NewNFTables(clock tcpip.Clock, rng rand.RNG) *NFTables {
 	if rng.Reader == nil {
 		panic("nftables state must be initialized with a non-nil random number generator")
 	}
-	return &NFTables{clock: clock, startTime: clock.Now(), rng: rng}
+	return &NFTables{clock: clock, startTime: clock.Now(), rng: rng, tableHandleCounter: atomicbitops.Uint64{}}
 }
 
-// Flush clears entire ruleset and all data for all address families.
-func (nf *NFTables) Flush() {
+// Flush clears entire ruleset and all data for all address families
+// except for the tables that are not owned by the given owner.
+func (nf *NFTables) Flush(attrs map[uint16]nlmsg.BytesView, owner uint32) {
 	for family := range stack.NumAFs {
-		nf.filters[family] = nil
+		afFilter := nf.filters[family]
+		if afFilter == nil {
+			continue
+		}
+
+		var attrName *string = nil
+		if nameBytes, ok := attrs[linux.NFTA_TABLE_NAME]; ok {
+			name := nameBytes.String()
+			attrName = &name
+		}
+		var tablesToDelete []TableInfo
+		for name, table := range afFilter.tables {
+			// Caller cannot delete a table they do not own.
+			if table.HasOwner() && table.GetOwner() != owner {
+				continue
+			}
+
+			if attrName != nil && *attrName != table.GetName() {
+				continue
+			}
+
+			tablesToDelete = append(tablesToDelete, TableInfo{Name: name, Handle: table.GetHandle()})
+		}
+
+		for _, tableData := range tablesToDelete {
+			delete(afFilter.tables, tableData.Name)
+			delete(afFilter.tableHandles, tableData.Handle)
+		}
 	}
 }
 
@@ -264,7 +294,7 @@ func (nf *NFTables) FlushAddressFamily(family stack.AddressFamily) *syserr.Annot
 }
 
 // GetTable validates the inputs and gets a table if it exists, error otherwise.
-func (nf *NFTables) GetTable(family stack.AddressFamily, tableName string) (*Table, *syserr.AnnotatedError) {
+func (nf *NFTables) GetTable(family stack.AddressFamily, tableName string, portID uint32) (*Table, *syserr.AnnotatedError) {
 	// Ensures address family is valid.
 	if err := validateAddressFamily(family); err != nil {
 		return nil, err
@@ -282,6 +312,45 @@ func (nf *NFTables) GetTable(family stack.AddressFamily, tableName string) (*Tab
 	t, exists := tableMap[tableName]
 	if !exists {
 		return nil, syserr.NewAnnotatedError(syserr.ErrNoFileOrDir, fmt.Sprintf("table %s not found for address family %v", tableName, family))
+	}
+
+	// If the table has an owner, it must match the Netlink portID of the calling process.
+	// User space processes only have non-zero port ids.
+	// Only the kernel can have a zero port id.
+	if t.HasOwner() && portID != 0 && portID != t.GetOwner() {
+		return nil, syserr.NewAnnotatedError(syserr.ErrNotPermitted, fmt.Sprintf("table %s has owner %d, which does not match the Netlink portID of the calling process %d", tableName, t.GetOwner(), portID))
+	}
+
+	return t, nil
+}
+
+// GetTableByHandle validates the inputs and gets a table by its handle and family if it exists,
+// error otherwise.
+func (nf *NFTables) GetTableByHandle(family stack.AddressFamily, handle uint64, portID uint32) (*Table, *syserr.AnnotatedError) {
+	// Ensures address family is valid.
+	if err := validateAddressFamily(family); err != nil {
+		return nil, err
+	}
+
+	// Checks if the table handle map for the address family has been initialized.
+	if nf.filters[family] == nil || nf.filters[family].tableHandles == nil {
+		return nil, syserr.NewAnnotatedError(syserr.ErrNoFileOrDir, fmt.Sprintf("table handle map for address family %v has no tables", family))
+	}
+
+	// Gets the corresponding table map for the address family.
+	tableHandleMap := nf.filters[family].tableHandles
+
+	// Checks if a table with the name exists.
+	t, exists := tableHandleMap[handle]
+	if !exists {
+		return nil, syserr.NewAnnotatedError(syserr.ErrNoFileOrDir, fmt.Sprintf("table with handle %d not found for address family %v", handle, family))
+	}
+
+	// If the table has an owner, it must match the Netlink portID of the calling process.
+	// User space processes only have non-zero port ids.
+	// Only the kernel can have a zero port id.
+	if t.HasOwner() && portID != 0 && portID != t.GetOwner() {
+		return nil, syserr.NewAnnotatedError(syserr.ErrNotPermitted, fmt.Sprintf("table with handle %d has owner %d, which does not match the Netlink portID of the calling process %d", handle, t.GetOwner(), portID))
 	}
 
 	return t, nil
@@ -304,15 +373,17 @@ func (nf *NFTables) AddTable(family stack.AddressFamily, name string,
 	// Initializes filter if first table for the address family.
 	if nf.filters[family] == nil {
 		nf.filters[family] = &addressFamilyFilter{
-			family:   family,
-			nftState: nf,
-			tables:   make(map[string]*Table),
-			hfStacks: make(map[stack.NFHook]*hookFunctionStack),
+			family:       family,
+			nftState:     nf,
+			tables:       make(map[string]*Table),
+			tableHandles: make(map[uint64]*Table),
+			hfStacks:     make(map[stack.NFHook]*hookFunctionStack),
 		}
 	}
 
 	// Gets the corresponding table map for the address family.
 	tableMap := nf.filters[family].tables
+	tableHandleMap := nf.filters[family].tableHandles
 
 	// Checks if a table with the same name already exists. If so, returns the
 	// existing table (unless errorOnDuplicate is true).
@@ -325,14 +396,23 @@ func (nf *NFTables) AddTable(family stack.AddressFamily, name string,
 
 	// Creates the new table and add it to the table map.
 	t := &Table{
-		name:     name,
-		afFilter: nf.filters[family],
-		chains:   make(map[string]*Chain),
-		flagSet:  make(map[TableFlag]struct{}),
+		name:               name,
+		afFilter:           nf.filters[family],
+		chains:             make(map[string]*Chain),
+		chainHandles:       make(map[uint64]*Chain),
+		flagSet:            make(map[TableFlag]struct{}),
+		handle:             nf.getNewTableHandle(),
+		chainHandleCounter: atomicbitops.Uint64{},
 	}
 	tableMap[name] = t
+	tableHandleMap[t.handle] = t
 
 	return t, nil
+}
+
+// getNewTableHandle returns a new table handle for the NFTables object.
+func (nf *NFTables) getNewTableHandle() uint64 {
+	return nf.tableHandleCounter.Add(1)
 }
 
 // CreateTable makes a new table for the specified address family like AddTable
@@ -353,7 +433,7 @@ func (nf *NFTables) DeleteTable(family stack.AddressFamily, tableName string) (b
 	}
 
 	// Gets and checks the table.
-	t, err := nf.GetTable(family, tableName)
+	t, err := nf.GetTable(family, tableName, 0)
 	if err != nil {
 		return false, err
 	}
@@ -363,15 +443,16 @@ func (nf *NFTables) DeleteTable(family stack.AddressFamily, tableName string) (b
 		t.DeleteChain(chainName)
 	}
 
-	// Deletes the table from the table map.
+	// Deletes the table from the table map and from the table handle map.
 	delete(nf.filters[family].tables, tableName)
+	delete(nf.filters[family].tableHandles, t.handle)
 	return true, nil
 }
 
 // GetChain validates the inputs and gets a chain if it exists, error otherwise.
 func (nf *NFTables) GetChain(family stack.AddressFamily, tableName string, chainName string) (*Chain, *syserr.AnnotatedError) {
 	// Gets and checks the table.
-	t, err := nf.GetTable(family, tableName)
+	t, err := nf.GetTable(family, tableName, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -389,12 +470,17 @@ func (nf *NFTables) GetChain(family stack.AddressFamily, tableName string, chain
 // Note: if the chain is not a base chain, info should be nil.
 func (nf *NFTables) AddChain(family stack.AddressFamily, tableName string, chainName string, info *BaseChainInfo, comment string, errorOnDuplicate bool) (*Chain, *syserr.AnnotatedError) {
 	// Gets and checks the table.
-	t, err := nf.GetTable(family, tableName)
+	t, err := nf.GetTable(family, tableName, 0)
 	if err != nil {
 		return nil, err
 	}
 
 	return t.AddChain(chainName, info, comment, errorOnDuplicate)
+}
+
+// getNewChainHandle returns a new chain handle for the NFTables object.
+func (t *Table) getNewChainHandle() uint64 {
+	return t.chainHandleCounter.Add(1)
 }
 
 // CreateChain makes a new chain for the corresponding table and adds it to the
@@ -411,7 +497,7 @@ func (nf *NFTables) CreateChain(family stack.AddressFamily, tableName string, ch
 // an error if the address family is invalid or the table doesn't exist.
 func (nf *NFTables) DeleteChain(family stack.AddressFamily, tableName string, chainName string) (bool, *syserr.AnnotatedError) {
 	// Gets and checks the table.
-	t, err := nf.GetTable(family, tableName)
+	t, err := nf.GetTable(family, tableName, 0)
 	if err != nil {
 		return false, err
 	}
@@ -438,6 +524,56 @@ func (t *Table) GetAddressFamily() stack.AddressFamily {
 	return t.afFilter.family
 }
 
+// GetHandle returns the handle of the table.
+func (t *Table) GetHandle() uint64 {
+	return t.handle
+}
+
+// GetOwner returns the owner of the table.
+func (t *Table) GetOwner() uint32 {
+	return t.owner
+}
+
+// SetOwner sets the owner of the table. If the table already has an owner, it
+// is not updated.
+func (t *Table) SetOwner(nlpid uint32) *syserr.AnnotatedError {
+	// This should only be called once, when setting the owner of a table for the first time.
+	if t.HasOwner() {
+		return syserr.NewAnnotatedError(syserr.ErrNotSupported, fmt.Sprintf("table %s already has an owner", t.name))
+	}
+
+	t.flagSet[TableFlagOwner] = struct{}{}
+	t.owner = nlpid
+	return nil
+}
+
+// HasOwner returns whether the table has an owner.
+func (t *Table) HasOwner() bool {
+	_, ok := t.flagSet[TableFlagOwner]
+	return ok
+}
+
+// GetUserData returns the user data of the table.
+func (t *Table) GetUserData() []byte {
+	return t.userData
+}
+
+// HasUserData returns whether the table has user data.
+func (t *Table) HasUserData() bool {
+	return t.userData != nil
+}
+
+// SetUserData sets the user data of the table.
+func (t *Table) SetUserData(data []byte) {
+	// User data should only be set once.
+	if t.userData != nil {
+		return
+	}
+
+	t.userData = make([]byte, len(data))
+	copy(t.userData, data)
+}
+
 // IsDormant returns whether the table is dormant.
 func (t *Table) IsDormant() bool {
 	_, dormant := t.flagSet[TableFlagDormant]
@@ -453,6 +589,34 @@ func (t *Table) SetDormant(dormant bool) {
 	}
 }
 
+// GetLinuxFlagSet returns the flag set of the table.
+// Although user flags map to uint8 space, internal flags could eventually be
+// supported, which together map to a uint32 space.
+func (t *Table) GetLinuxFlagSet() (uint32, *syserr.AnnotatedError) {
+	var flags uint32 = 0
+	for flag := range t.flagSet {
+		switch flag {
+		case TableFlagDormant:
+			flags |= linux.NFT_TABLE_F_DORMANT
+		case TableFlagOwner:
+			flags |= linux.NFT_TABLE_F_OWNER
+		default:
+			return 0, syserr.NewAnnotatedError(syserr.ErrNotSupported, fmt.Sprintf("unsupported flag %v", flag))
+		}
+	}
+
+	return flags, nil
+}
+
+// GetLinuxUserFlagSet returns the user flag set of the table.
+func (t *Table) GetLinuxUserFlagSet() (uint8, *syserr.AnnotatedError) {
+	flags, err := t.GetLinuxFlagSet()
+	if err != nil {
+		return 0, err
+	}
+	return uint8(flags & linux.NFT_TABLE_F_MASK), nil
+}
+
 // GetChain returns the chain with the specified name if it exists, error
 // otherwise.
 func (t *Table) GetChain(chainName string) (*Chain, *syserr.AnnotatedError) {
@@ -460,6 +624,17 @@ func (t *Table) GetChain(chainName string) (*Chain, *syserr.AnnotatedError) {
 	c, exists := t.chains[chainName]
 	if !exists {
 		return nil, syserr.NewAnnotatedError(syserr.ErrNoFileOrDir, fmt.Sprintf("chain %s not found for table %s", chainName, t.name))
+	}
+	return c, nil
+}
+
+// GetChainByHandle returns the chain with the specified handle if it exists, error otherwise.
+func (t *Table) GetChainByHandle(chainHandle uint64) (*Chain, *syserr.AnnotatedError) {
+	// Checks if a chain with the handle exists. We don't support transactions/generations of tables
+	// or chains, so those checks are not needed.
+	c, exists := t.chainHandles[chainHandle]
+	if !exists {
+		return nil, syserr.NewAnnotatedError(syserr.ErrNoFileOrDir, fmt.Sprintf("chain %d not found for table %s", chainHandle, t.name))
 	}
 	return c, nil
 }
@@ -491,8 +666,12 @@ func (t *Table) AddChain(name string, info *BaseChainInfo, comment string, error
 		}
 	}
 
+	// Only assign a chain handle after error checks.
+	c.handle = t.getNewChainHandle()
+
 	// Adds the chain to the chain map (after successfully doing everything else).
 	t.chains[name] = c
+	t.chainHandles[c.handle] = c
 
 	return c, nil
 }
@@ -519,6 +698,7 @@ func (t *Table) DeleteChain(name string) bool {
 
 	// Deletes chain.
 	delete(t.chains, name)
+	delete(t.chainHandles, c.handle)
 	return true
 }
 
@@ -536,6 +716,17 @@ func (c *Chain) GetName() string {
 	return c.name
 }
 
+// SetName sets the name of the chain. This should only be called on
+// a chain that is not yet attached to a table.
+func (c *Chain) SetName(name string) *syserr.AnnotatedError {
+	if c.table != nil {
+		return syserr.NewAnnotatedError(syserr.ErrNotSupported, fmt.Sprintf("Cannot change the name of chain %s that is already attached to table %s", c.name, c.table.name))
+	}
+
+	c.name = name
+	return nil
+}
+
 // GetAddressFamily returns the address family of the chain.
 func (c *Chain) GetAddressFamily() stack.AddressFamily {
 	return c.table.GetAddressFamily()
@@ -544,6 +735,41 @@ func (c *Chain) GetAddressFamily() stack.AddressFamily {
 // GetTable returns the table that the chain belongs to.
 func (c *Chain) GetTable() *Table {
 	return c.table
+}
+
+// GetHandle returns the handle of the chain.
+func (c *Chain) GetHandle() uint64 {
+	return c.handle
+}
+
+// GetFlags returns the flags of the chain.
+func (c *Chain) GetFlags() uint8 {
+	return c.flags
+}
+
+// SetFlags sets the flags of the chain.
+func (c *Chain) SetFlags(flags uint8) {
+	c.flags = flags
+}
+
+// GetUserData returns the user data of the chain.
+func (c *Chain) GetUserData() []byte {
+	return c.userData
+}
+
+// SetUserData sets the user data of the chain.
+func (c *Chain) SetUserData(data []byte) {
+	// User data should only be set once.
+	if c.userData != nil {
+		return
+	}
+	c.userData = make([]byte, len(data))
+	copy(c.userData, data)
+}
+
+// HasUserData returns whether the chain has user data.
+func (c *Chain) HasUserData() bool {
+	return c.userData != nil
 }
 
 // IsBaseChain returns whether the chain is a base chain.
@@ -588,6 +814,11 @@ func (c *Chain) SetBaseChainInfo(info *BaseChainInfo) *syserr.AnnotatedError {
 	hfStacks[info.Hook].attachBaseChain(c)
 
 	return nil
+}
+
+// GetChainUse returns the chain use value of the chain.
+func (c *Chain) GetChainUse() uint32 {
+	return c.chainUse
 }
 
 // GetComment returns the comment of the chain.

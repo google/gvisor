@@ -22,6 +22,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/bits"
 	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/marshal"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 )
@@ -190,6 +191,25 @@ func (m *Message) PutAttrString(atype uint16, s string) {
 	m.putZeros(aligned - l)
 }
 
+// PutNestedAttr adds to the provided buffer, creating nested attributes.
+func (m *Message) PutNestedAttr(nestedBuf []byte, atype uint16, v marshal.Marshallable) []byte {
+	nestedMessage := Message{
+		buf: nestedBuf,
+	}
+
+	nestedMessage.PutAttr(atype, v)
+	return nestedMessage.buf
+}
+
+// PutNestedAttrString adds to the provided buffer, creating nested attributes.
+func (m *Message) PutNestedAttrString(nestedBuf []byte, atype uint16, s string) []byte {
+	nestedMessage := Message{
+		buf: nestedBuf,
+	}
+	nestedMessage.PutAttrString(atype, s)
+	return nestedMessage.buf
+}
+
 // MessageSet contains a series of netlink messages.
 type MessageSet struct {
 	// Multi indicates that this a multi-part message, to be terminated by
@@ -252,17 +272,20 @@ func (v AttrsView) ParseFirst() (hdr linux.NetlinkAttrHeader, value []byte, rest
 
 	hdrBytes, ok := b.Extract(linux.NetlinkAttrHeaderSize)
 	if !ok {
+		log.Debugf("Failed to parse netlink attributes at header stage")
 		return
 	}
 	hdr.UnmarshalUnsafe(hdrBytes)
 
 	value, ok = b.Extract(int(hdr.Length) - linux.NetlinkAttrHeaderSize)
 	if !ok {
+		log.Debugf("Failed to parse %d bytes after %d header bytes", int(hdr.Length)-linux.NetlinkAttrHeaderSize, linux.NetlinkAttrHeaderSize)
 		return
 	}
 
 	_, ok = b.Extract(alignPad(int(hdr.Length), linux.NLA_ALIGNTO))
 	if !ok {
+		log.Debugf("Failed to parse netlink attributes at aligning stage")
 		return
 	}
 
@@ -321,6 +344,17 @@ func (v *BytesView) Uint32() (uint32, bool) {
 	}
 	val.UnmarshalBytes(attr)
 	return uint32(val), true
+}
+
+// Uint64 converts the raw attribute value to uint64.
+func (v *BytesView) Uint64() (uint64, bool) {
+	attr := []byte(*v)
+	val := primitive.Uint64(0)
+	if len(attr) != val.SizeBytes() {
+		return 0, false
+	}
+	val.UnmarshalBytes(attr)
+	return uint64(val), true
 }
 
 // Int32 converts the raw attribute value to int32.

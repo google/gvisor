@@ -52,6 +52,7 @@ go_library(
         "msgqueue.go",
         "netdevice.go",
         "netfilter.go",
+        "netfilter_arp.go",
         "netfilter_bridge.go",
         "netfilter_ipv4.go",
         "netfilter_ipv6.go",

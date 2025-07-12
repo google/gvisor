@@ -211,7 +211,7 @@ uint16_t MakeNetlinkMsgType(uint8_t subsys_id, uint8_t msg_type) {
 // Helper function to initialize a netlink header.
 void InitNetlinkHdr(struct nlmsghdr* hdr, uint32_t msg_len, uint16_t msg_type,
                     uint32_t seq, uint16_t flags) {
-  hdr->nlmsg_len = msg_len;
+  hdr->nlmsg_len = NLMSG_ALIGN(msg_len);
   hdr->nlmsg_type = msg_type;
   hdr->nlmsg_flags = flags;
   hdr->nlmsg_seq = seq;
@@ -220,6 +220,7 @@ void InitNetlinkHdr(struct nlmsghdr* hdr, uint32_t msg_len, uint16_t msg_type,
 // Helper function to initialize a netlink attribute.
 void InitNetlinkAttr(struct nlattr* attr, int payload_size,
                      uint16_t attr_type) {
+  // The length is the header length plus the payload size, unaligned.
   attr->nla_len = NLA_HDRLEN + payload_size;
   attr->nla_type = attr_type;
 }
