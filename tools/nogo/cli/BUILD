@@ -17,6 +17,6 @@ go_library(
         "//tools/nogo/flags",
         "@com_github_google_subcommands//:go_default_library",
         "@in_gopkg_yaml_v2//:go_default_library",
-        "@org_golang_x_sys//unix:go_default_library",
+        "@org_golang_x_term//:go_default_library",
     ],
 )

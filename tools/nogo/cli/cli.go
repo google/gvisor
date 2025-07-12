@@ -24,7 +24,7 @@ import (
 	"path/filepath"
 
 	"github.com/google/subcommands"
-	"golang.org/x/sys/unix"
+	"golang.org/x/term"
 	yaml "gopkg.in/yaml.v2"
 	"gvisor.dev/gvisor/runsc/flag"
 	"gvisor.dev/gvisor/tools/nogo/check"
@@ -72,8 +72,7 @@ func isTerminal(w io.Writer) bool {
 	if !ok {
 		return false
 	}
-	_, err := unix.IoctlGetTermios(int(f.Fd()), unix.TCGETS)
-	return err == nil
+	return term.IsTerminal(int(f.Fd()))
 }
 
 // collectAllFiles collects all files from a directory tree.
