@@ -295,6 +295,40 @@ TEST(UnlinkTest, UnlinkWithOpenFDs) {
   EXPECT_STREQ(buf, kHello);
 }
 
+// The primary goal of this test is to ensure that a write-only FD to a deleted
+// file is savable.
+TEST(UnlinkTest, UnlinkWithOpenFDsWriteOnly) {
+  // TODO(b/400287667): Enable save/restore for local gofer.
+  DisableSave ds;
+  if (IsRunningOnRunsc()) {
+    ds.reset();
+  }
+
+  // Create a file.
+  TempPath file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+
+  // Open the file with O_WRONLY.
+  FileDescriptor file_fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_WRONLY, 0222));
+
+  // Unlink the file.
+  EXPECT_THAT(unlink(file.path().c_str()), SyscallSucceeds());
+
+  // Write to the file.
+  const char kHello[] = "hello";
+  ASSERT_THAT(write(file_fd.get(), kHello, sizeof(kHello)),
+              SyscallSucceedsWithValue(sizeof(kHello)));
+
+  // TODO(b/400287667): When running with local gofer AND cache policy = none,
+  // stat-ing a deleted file returns ENOENT.
+  if (IsRunningOnRunsc()) {
+    // Stat the file to verify its size.
+    struct stat st;
+    ASSERT_THAT(fstat(file_fd.get(), &st), SyscallSucceeds());
+    EXPECT_EQ(st.st_size, sizeof(kHello));
+  }
+}
+
 }  // namespace
 
 }  // namespace testing
