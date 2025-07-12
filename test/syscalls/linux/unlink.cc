@@ -239,6 +239,60 @@ TEST(UnlinkTest, UnlinkAtEmptyPath) {
               SyscallFailsWithErrno(ENOENT));
 }
 
+TEST(UnlinkTest, UnlinkWithOpenFDs) {
+  // TODO(b/400287667): Enable save/restore for local gofer.
+  DisableSave ds;
+  if (IsRunningOnRunsc()) {
+    ds.reset();
+  }
+
+  // Create some nested directories.
+  auto foo = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto bar = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(foo.path()));
+  auto baz = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(bar.path()));
+
+  // Create a file and directory in the inner most directory.
+  const std::string file_path = JoinPath(baz.path(), "file");
+  auto file_fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(file_path, O_RDWR | O_CREAT, 0666));
+  const char kHello[] = "hello";
+  ASSERT_THAT(write(file_fd.get(), kHello, sizeof(kHello)),
+              SyscallSucceedsWithValue(sizeof(kHello)));
+
+  const std::string dir_path = JoinPath(baz.path(), "dir");
+  ASSERT_THAT(mkdir(dir_path.c_str(), 0777), SyscallSucceeds());
+  auto dir_fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(dir_path, O_RDONLY | O_DIRECTORY));
+
+  // Unlink "file" and "dir".
+  EXPECT_THAT(unlink(file_path.c_str()), SyscallSucceeds());
+  EXPECT_THAT(rmdir(dir_path.c_str()), SyscallSucceeds());
+
+  // Recreate files in the same position. S/R should be able to handle this.
+  auto new_file_fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(file_path, O_RDWR | O_CREAT, 0666));
+  const char kWorld[] = "world";
+  ASSERT_THAT(write(new_file_fd.get(), kWorld, sizeof(kWorld)),
+              SyscallSucceedsWithValue(sizeof(kWorld)));
+  new_file_fd.reset();
+  ASSERT_THAT(mkdir(dir_path.c_str(), 0777), SyscallSucceeds());
+
+  // Unlink "file" and "dir" again.
+  EXPECT_THAT(unlink(file_path.c_str()), SyscallSucceeds());
+  EXPECT_THAT(rmdir(dir_path.c_str()), SyscallSucceeds());
+
+  // Delete the remaining directories.
+  EXPECT_THAT(rmdir(baz.path().c_str()), SyscallSucceeds());
+  EXPECT_THAT(rmdir(bar.path().c_str()), SyscallSucceeds());
+  EXPECT_THAT(rmdir(foo.path().c_str()), SyscallSucceeds());
+
+  // Verify that the original file contents were preserved across unlink/rmdir.
+  char buf[sizeof(kHello)] = {};
+  ASSERT_THAT(pread(file_fd.get(), buf, sizeof(buf), 0),
+              SyscallSucceedsWithValue(sizeof(buf)));
+  EXPECT_STREQ(buf, kHello);
+}
+
 }  // namespace
 
 }  // namespace testing

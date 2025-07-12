@@ -589,6 +589,37 @@ func (d *dentry) restoreFile(ctx context.Context, opts *vfs.CompleteRestoreOptio
 	}
 }
 
+// Precondition: d.handleMu is read locked.
+func (d *dentry) readHandleForDeleted(ctx context.Context) (handle, error) {
+	if d.isReadHandleOk() {
+		return d.readHandle(), nil
+	}
+	switch dt := d.impl.(type) {
+	case *lisafsDentry:
+		// ensureSharedHandle locks handleMu for write. Unlock is temporarily.
+		d.handleMu.RUnlock()
+		err := d.ensureSharedHandle(ctx, true /* read */, false /* write */, false /* trunc */)
+		d.handleMu.RLock()
+		if err != nil {
+			return handle{}, fmt.Errorf("failed to open read handle: %w", err)
+		}
+		return d.readHandle(), nil
+	case *directfsDentry:
+		// The sentry does not have access to any procfs mount which it could use
+		// to re-open dt.controlFD with a different mode (via /proc/self/fd/). The
+		// file is unlinked, so we can't use openat(parent.controlFD, name) either.
+		// dt.controlFD must be a read-only FD (see tryOpen() documentation). Just
+		// seek the control FD to 0 and return it. The control FD is not used for
+		// reading by the sentry, so this should be safe.
+		if _, err := unix.Seek(dt.controlFD, 0, unix.SEEK_SET); err != nil {
+			return handle{}, fmt.Errorf("failed to seek control FD to 0: %w", err)
+		}
+		return handle{fd: int32(dt.controlFD)}, nil
+	default:
+		panic("unknown dentry implementation")
+	}
+}
+
 // doRevalidation calls into r.start's dentry implementation to perform
 // revalidation on all the dentries contained in r.
 //
