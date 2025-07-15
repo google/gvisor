@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"math/rand"
 	"net"
 	"os"
 	"os/exec"
@@ -77,7 +76,7 @@ func (*fsTreeCreator) Name() string {
 
 // Synopsis implements subcommands.Command.Synopsys.
 func (*fsTreeCreator) Synopsis() string {
-	return "creates a filesystem tree of a certain depth, with a certain number of files on each level and each file with a certain size and type, under a certain directory. Some randomization is added on top of this"
+	return "creates a filesystem tree of a certain depth, with a certain number of files on each level and each file with a certain size and type, under a certain directory."
 }
 
 // Usage implements subcommands.Command.Usage.
@@ -96,9 +95,6 @@ func (c *fsTreeCreator) SetFlags(f *flag.FlagSet) {
 
 // Execute implements subcommands.Command.Execute.
 func (c *fsTreeCreator) Execute(ctx context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
-	depth := c.depth + uint(rand.Uint32())%c.depth
-	numFilesPerLevel := c.numFilesPerLevel + uint(rand.Uint32())%c.numFilesPerLevel
-	fileSize := c.fileSize + uint(rand.Uint32())%c.fileSize
 	curDir := c.targetDir
 	if _, err := os.Stat(curDir); os.IsNotExist(err) {
 		if err := os.MkdirAll(curDir, 0777); err != nil {
@@ -106,10 +102,10 @@ func (c *fsTreeCreator) Execute(ctx context.Context, f *flag.FlagSet, args ...an
 		}
 	}
 
-	data := make([]byte, fileSize)
+	data := make([]byte, c.fileSize)
 	gvisorrand.Read(data)
-	for i := uint(0); i < depth; i++ {
-		for j := uint(0); j < numFilesPerLevel; j++ {
+	for i := uint(0); i < c.depth; i++ {
+		for j := uint(0); j < c.numFilesPerLevel; j++ {
 			filePath := filepath.Join(curDir, fmt.Sprintf("file%d", j))
 			if c.createSymlink && j > 0 {
 				if err := os.Symlink("file0", filePath); err != nil {
