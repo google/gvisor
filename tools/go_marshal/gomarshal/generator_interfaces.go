@@ -53,7 +53,7 @@ func (g *interfaceGenerator) typeName() string {
 	return g.t.Name.Name
 }
 
-// newinterfaceGenerator creates a new interface generator.
+// newInterfaceGenerator creates a new interface generator.
 func newInterfaceGenerator(t *ast.TypeSpec, r string, fset *token.FileSet) *interfaceGenerator {
 	g := &interfaceGenerator{
 		t:  t,
@@ -188,7 +188,7 @@ func (g *interfaceGenerator) emitCastToByteSlice(srcPtr, dstVar, lenExpr string)
 	g.emit("hdr.Cap = %s\n\n", lenExpr)
 }
 
-// emitCastToByteSlice unsafely casts a slice with elements of an arbitrary type
+// emitCastSliceToByteSlice unsafely casts a slice with elements of an arbitrary type
 // to a byte slice. As part of the cast, the byte slice is made to look
 // independent of the src slice by bypassing escape analysis. This means the
 // byte slice can be used without causing the source to escape. The caller is

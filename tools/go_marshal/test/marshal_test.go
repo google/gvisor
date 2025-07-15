@@ -333,7 +333,7 @@ func TestLimitedMarshalling(t *testing.T) {
 	}
 }
 
-// TestLimitedMarshalling verifies marshalling/unmarshalling of slices of
+// TestLimitedSliceMarshalling verifies marshalling/unmarshalling of slices of
 // marshallable types succeed when the underlying copy in/out operations
 // partially succeed.
 func TestLimitedSliceMarshalling(t *testing.T) {
