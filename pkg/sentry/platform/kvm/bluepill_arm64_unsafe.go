@@ -40,7 +40,7 @@ func fpsimdPtr(addr *byte) *arch.FpsimdContext {
 // provided PC.
 //
 //go:nosplit
-func dieArchSetup(c *vCPU, context *arch.SignalContext64, guestRegs *userRegs) {
+func (c *vCPU) dieArchSetup(context *arch.SignalContext64, guestRegs *userRegs, dumpExitReason bool) {
 	// If the vCPU is in user mode, we set the stack to the stored stack
 	// value in the vCPU itself. We don't want to unwind the user stack.
 	if guestRegs.Regs.Pstate&ring0.PsrModeMask == ring0.UserFlagsSet {
@@ -54,15 +54,26 @@ func dieArchSetup(c *vCPU, context *arch.SignalContext64, guestRegs *userRegs) {
 		context.Regs[29] = guestRegs.Regs.Regs[29]
 		context.Pstate = guestRegs.Regs.Pstate
 	}
-	context.Regs[1] = uint64(uintptr(unsafe.Pointer(c)))
-	context.Pc = uint64(dieTrampolineAddr)
-}
-
-// bluepillArchFpContext returns the arch-specific fpsimd context.
-//
-//go:nosplit
-func bluepillArchFpContext(context unsafe.Pointer) *arch.FpsimdContext {
-	return &((*arch.SignalContext64)(context).Fpsimd64)
+	if dumpExitReason {
+		// Store the original instruction pointer in R9 and populates
+		// registers R10-R14 with the vCPU's exit reason and associated
+		// data from c.runData. To ensure this information is preserved
+		// in a crash report, PC is set to an invalid address (0xabc).
+		// This forces a memory fault immediately after a sigreturn,
+		// triggering a crash report that includes the altered register
+		// state, providing diagnostic details about why the vCPU
+		// exited.
+		context.Regs[9] = context.Pc
+		context.Pc = 0xabc
+		context.Regs[10] = uint64(c.runData.exitReason)
+		context.Regs[11] = c.runData.data[0]
+		context.Regs[12] = c.runData.data[1]
+		context.Regs[13] = c.runData.data[2]
+		context.Regs[14] = c.runData.data[3]
+	} else {
+		context.Regs[1] = uint64(uintptr(unsafe.Pointer(c)))
+		context.Pc = uint64(dieTrampolineAddr)
+	}
 }
 
 // getHypercallID returns hypercall ID.
@@ -174,6 +185,6 @@ func bluepillArchHandleExit(c *vCPU, context unsafe.Pointer) {
 	case _KVM_EXIT_ARM_NISV:
 		bluepillExtDabt(c)
 	default:
-		c.die(bluepillArchContext(context), "unknown")
+		c.dieAndDumpExitReason(bluepillArchContext(context))
 	}
 }
