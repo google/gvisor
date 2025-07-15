@@ -27,13 +27,6 @@
 namespace gvisor {
 namespace testing {
 
-static const std::map<uint16_t, size_t> kNetfilterAttributeSizes = {
-    {NFTA_TABLE_FLAGS, sizeof(uint32_t)},
-    {NFTA_TABLE_HANDLE, sizeof(uint64_t)},
-    {NFTA_TABLE_USE, sizeof(uint32_t)},
-    {NFTA_TABLE_OWNER, sizeof(uint32_t)},
-};
-
 NlReq& NlReq::MsgType(uint8_t message_type) {
   message_type_ = message_type;
   return *this;
@@ -54,22 +47,13 @@ NlReq& NlReq::Family(uint8_t family) {
   return *this;
 }
 
-// Method to add an attribute to the message. If there is a default
-// size for the attribute type, it will be used.
-// Otherwise, assumes the payload is of at least size payload_size.
+// Method to add an attribute to the message. payload_size must be the size of
+// the payload in bytes.
 NlReq& NlReq::RawAttr(uint16_t attr_type, const void* payload,
                       size_t payload_size) {
-  // Check if the attribute type has a standard size. Otherwise
-  // use the provided size.
-  size_t attr_size;
-  if (kNetfilterAttributeSizes.count(attr_type)) {
-    attr_size = kNetfilterAttributeSizes.at(attr_type);
-  } else {
-    attr_size = payload_size;
-  }
-
   // Store a pointer to the payload and the size to construct it later.
-  attributes_[attr_type] = {reinterpret_cast<const char*>(payload), attr_size};
+  attributes_[attr_type] = {reinterpret_cast<const char*>(payload),
+                            payload_size};
   return *this;
 }
 

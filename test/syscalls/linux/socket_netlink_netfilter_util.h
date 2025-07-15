@@ -86,9 +86,8 @@ class NlReq {
   NlReq& Seq(uint32_t seq);
   NlReq& Family(uint8_t family);
 
-  // Method to add an attribute to the message. If there is a default
-  // size for the attribute type, it will be used.
-  // Otherwise, assumes the payload is of at least size payload_size.
+  // Method to add an attribute to the message. payload_size must be the size of
+  // the payload in bytes.
   NlReq& RawAttr(uint16_t attr_type, const void* payload, size_t payload_size);
 
   // Method to add a string attribute to the message.
