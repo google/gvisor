@@ -139,10 +139,11 @@ func validateHook(hook stack.NFHook, family stack.AddressFamily) *syserr.Annotat
 // NFTables represents the nftables state for all address families.
 // Note: unlike iptables, nftables doesn't start with any initialized tables.
 type NFTables struct {
-	filters   [stack.NumAFs]*addressFamilyFilter // Filters for each address family.
-	clock     tcpip.Clock                        // Clock for timing evaluations.
-	startTime time.Time                          // Time NFTables object was created.
-	rng       rand.RNG                           // Random number generator.
+	filters            [stack.NumAFs]*addressFamilyFilter // Filters for each address family.
+	clock              tcpip.Clock                        // Clock for timing evaluations.
+	startTime          time.Time                          // Time NFTables object was created.
+	rng                rand.RNG                           // Random number generator.
+	tableHandleCounter atomicbitops.Uint64                // Table handle counter.
 }
 
 // Ensures NFTables implements the NFTablesInterface.
@@ -179,9 +180,19 @@ type Table struct {
 	// chains is a map of chains for each table.
 	chains map[string]*Chain
 
-	// flags is the set of optional flags for the table.
+	// flagSet is the set of optional flags for the table.
 	// Note: currently nftables only has the single Dormant flag.
 	flagSet map[TableFlag]struct{}
+
+	// handle is the id of the table.
+	handle uint64
+
+	// owner is the port id of the table's owner, if it is specified.
+	owner uint32
+
+	// userData is the user-specified metadata for the table. This is not used
+	// by the kernel, but rather userspace applications like nft binary.
+	userData []byte
 }
 
 // hookFunctionStack represents the list of base chains for a specific hook.
@@ -198,6 +209,9 @@ const (
 	// TableFlagDormant is set if the table is dormant. Dormant tables are not
 	// evaluated by the kernel.
 	TableFlagDormant TableFlag = iota
+	// TableFlagOwner is set if the table has an owner. The owner is the port
+	// where the table is created.
+	TableFlagOwner
 )
 
 // Chain represents a single chain as a list of rules.
