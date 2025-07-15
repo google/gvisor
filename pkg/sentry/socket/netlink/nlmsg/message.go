@@ -22,6 +22,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/bits"
 	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/marshal"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 )
@@ -252,17 +253,20 @@ func (v AttrsView) ParseFirst() (hdr linux.NetlinkAttrHeader, value []byte, rest
 
 	hdrBytes, ok := b.Extract(linux.NetlinkAttrHeaderSize)
 	if !ok {
+		log.Debugf("Failed to parse netlink attributes at header stage")
 		return
 	}
 	hdr.UnmarshalUnsafe(hdrBytes)
 
 	value, ok = b.Extract(int(hdr.Length) - linux.NetlinkAttrHeaderSize)
 	if !ok {
+		log.Debugf("Failed to parse %d bytes after %d header bytes", int(hdr.Length)-linux.NetlinkAttrHeaderSize, linux.NetlinkAttrHeaderSize)
 		return
 	}
 
 	_, ok = b.Extract(alignPad(int(hdr.Length), linux.NLA_ALIGNTO))
 	if !ok {
+		log.Debugf("Failed to parse netlink attributes at aligning stage")
 		return
 	}
 
@@ -321,6 +325,17 @@ func (v *BytesView) Uint32() (uint32, bool) {
 	}
 	val.UnmarshalBytes(attr)
 	return uint32(val), true
+}
+
+// Uint64 converts the raw attribute value to uint64.
+func (v *BytesView) Uint64() (uint64, bool) {
+	attr := []byte(*v)
+	val := primitive.Uint64(0)
+	if len(attr) != val.SizeBytes() {
+		return 0, false
+	}
+	val.UnmarshalBytes(attr)
+	return uint64(val), true
 }
 
 // Int32 converts the raw attribute value to int32.

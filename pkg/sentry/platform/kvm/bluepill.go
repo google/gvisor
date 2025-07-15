@@ -91,7 +91,17 @@ func (c *vCPU) die(context *arch.SignalContext64, msg string) {
 	c.dieState.message = msg
 
 	// Setup the trampoline.
-	dieArchSetup(c, context, &c.dieState.guestRegs)
+	c.dieArchSetup(context, &c.dieState.guestRegs, false)
+}
+
+// dieAndDumpExitReason populates registers with the vCPU's exit reason and
+// associated data from c.runData. Then it sets the instruction pointer to
+// an invalid address (0xabc) to trigger a memory fault immediately after
+// sigreturn.
+//
+//go:nosplit
+func (c *vCPU) dieAndDumpExitReason(context *arch.SignalContext64) {
+	c.dieArchSetup(context, &c.dieState.guestRegs, true)
 }
 
 func init() {

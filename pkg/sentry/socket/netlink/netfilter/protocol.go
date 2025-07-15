@@ -90,10 +90,18 @@ func (p *Protocol) ProcessMessage(ctx context.Context, s *netlink.Socket, msg *n
 	}
 
 	// Nftables functions error check the address family value.
-	family := stack.AddressFamily(nfGenMsg.Family)
+	family, err := nftables.AFtoNetlinkAF(nfGenMsg.Family)
 	// TODO: b/421437663 - Match the message type and call the appropriate Nftables function.
 	switch msgType {
 	case linux.NFT_MSG_NEWTABLE:
+		// We only check the error value in the case of NFT_MSG_NEWTABLE as linux returns
+		// an EOPNOTSUPP error only in that case. Otherwise the other operations will return
+		// errors specific to their function.
+		if err != nil {
+			log.Debugf("Nftables: Unsupported address family: %d", int(nfGenMsg.Family))
+			return err
+		}
+
 		if err := p.newTable(nft, attrs, family, hdr.Flags, ms); err != nil {
 			log.Debugf("Nftables new table error: %s", err)
 			return err.GetError()
@@ -102,6 +110,12 @@ func (p *Protocol) ProcessMessage(ctx context.Context, s *netlink.Socket, msg *n
 	case linux.NFT_MSG_GETTABLE:
 		if err := p.getTable(nft, attrs, family, hdr.Flags, ms); err != nil {
 			log.Debugf("Nftables get table error: %s", err)
+			return err.GetError()
+		}
+		return nil
+	case linux.NFT_MSG_DELTABLE, linux.NFT_MSG_DESTROYTABLE:
+		if err := p.deleteTable(nft, attrs, family, hdr, msgType, ms); err != nil {
+			log.Debugf("Nftables delete table error: %s", err)
 			return err.GetError()
 		}
 		return nil
@@ -247,8 +261,56 @@ func (p *Protocol) getTable(nft *nftables.NFTables, attrs map[uint16]nlmsg.Bytes
 	return nil
 }
 
+// deleteTable deletes a table for the given family.
+func (p *Protocol) deleteTable(nft *nftables.NFTables, attrs map[uint16]nlmsg.BytesView, family stack.AddressFamily, hdr linux.NetlinkMessageHeader, msgType linux.NfTableMsgType, ms *nlmsg.MessageSet) *syserr.AnnotatedError {
+	if family == stack.Unspec || (!hasAttr(linux.NFTA_TABLE_NAME, attrs) && !hasAttr(linux.NFTA_TABLE_HANDLE, attrs)) {
+		nft.Flush(attrs, uint32(ms.PortID))
+		return nil
+	}
+
+	var tab *nftables.Table
+	var err *syserr.AnnotatedError
+	if tabHandleBytes, ok := attrs[linux.NFTA_TABLE_HANDLE]; ok {
+		tabHandle, ok := tabHandleBytes.Uint64()
+		if !ok {
+			return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("Nftables: Table handle attribute is malformed or not found"))
+		}
+
+		tab, err = nft.GetTableByHandle(family, uint64(tabHandle), uint32(ms.PortID))
+	} else {
+		tabNameBytes, ok := attrs[linux.NFTA_TABLE_NAME]
+		if !ok {
+			return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("Nftables: Table name attribute is malformed or not found"))
+		}
+		tab, err = nft.GetTable(family, tabNameBytes.String(), uint32(ms.PortID))
+	}
+
+	if err != nil {
+		// Ignore ENOENT if DESTROY_TABLE is set
+		if err.GetError() == syserr.ErrNoFileOrDir && msgType == linux.NFT_MSG_DESTROYTABLE {
+			return nil
+		}
+		return err
+	}
+
+	// Don't delete the table if it is not empty and NLM_F_NONREC is set.
+	if hdr.Flags&linux.NLM_F_NONREC == linux.NLM_F_NONREC && tab.ChainCount() > 0 {
+		return syserr.NewAnnotatedError(syserr.ErrBusy, fmt.Sprintf("Nftables: Table with family: %d and name: %s already exists", int(family), tab.GetName()))
+	}
+
+	_, err = nft.DeleteTable(family, tab.GetName())
+	return err
+}
+
+// netLinkMessagePayloadSize returns the size of the netlink message payload.
 func netLinkMessagePayloadSize(h *linux.NetlinkMessageHeader) int {
 	return int(h.Length) - linux.NetlinkMessageHeaderSize
+}
+
+// hasAttr returns whether the given attribute key is present in the attribute map.
+func hasAttr(attrName uint16, attrs map[uint16]nlmsg.BytesView) bool {
+	_, ok := attrs[attrName]
+	return ok
 }
 
 // init registers the NETLINK_NETFILTER provider.

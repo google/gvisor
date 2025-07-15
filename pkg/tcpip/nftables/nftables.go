@@ -21,6 +21,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/rand"
+	"gvisor.dev/gvisor/pkg/sentry/socket/netlink/nlmsg"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
@@ -245,10 +246,38 @@ func NewNFTables(clock tcpip.Clock, rng rand.RNG) *NFTables {
 	return &NFTables{clock: clock, startTime: clock.Now(), rng: rng, tableHandleCounter: atomicbitops.Uint64{}}
 }
 
-// Flush clears entire ruleset and all data for all address families.
-func (nf *NFTables) Flush() {
+// Flush clears entire ruleset and all data for all address families
+// except for the tables that are not owned by the given owner.
+func (nf *NFTables) Flush(attrs map[uint16]nlmsg.BytesView, owner uint32) {
 	for family := range stack.NumAFs {
-		nf.filters[family] = nil
+		afFilter := nf.filters[family]
+		if afFilter == nil {
+			continue
+		}
+
+		var attrName *string = nil
+		if nameBytes, ok := attrs[linux.NFTA_TABLE_NAME]; ok {
+			name := nameBytes.String()
+			attrName = &name
+		}
+		var tablesToDelete []TableInfo
+		for name, table := range afFilter.tables {
+			// Caller cannot delete a table they do not own.
+			if table.HasOwner() && table.GetOwner() != owner {
+				continue
+			}
+
+			if attrName != nil && *attrName != table.GetName() {
+				continue
+			}
+
+			tablesToDelete = append(tablesToDelete, TableInfo{Name: name, Handle: table.GetHandle()})
+		}
+
+		for _, tableData := range tablesToDelete {
+			delete(afFilter.tables, tableData.Name)
+			delete(afFilter.tableHandles, tableData.Handle)
+		}
 	}
 }
 
@@ -295,6 +324,38 @@ func (nf *NFTables) GetTable(family stack.AddressFamily, tableName string, portI
 	return t, nil
 }
 
+// GetTableByHandle validates the inputs and gets a table by its handle and family if it exists,
+// error otherwise.
+func (nf *NFTables) GetTableByHandle(family stack.AddressFamily, handle uint64, portID uint32) (*Table, *syserr.AnnotatedError) {
+	// Ensures address family is valid.
+	if err := validateAddressFamily(family); err != nil {
+		return nil, err
+	}
+
+	// Checks if the table handle map for the address family has been initialized.
+	if nf.filters[family] == nil || nf.filters[family].tableHandles == nil {
+		return nil, syserr.NewAnnotatedError(syserr.ErrNoFileOrDir, fmt.Sprintf("table handle map for address family %v has no tables", family))
+	}
+
+	// Gets the corresponding table map for the address family.
+	tableHandleMap := nf.filters[family].tableHandles
+
+	// Checks if a table with the name exists.
+	t, exists := tableHandleMap[handle]
+	if !exists {
+		return nil, syserr.NewAnnotatedError(syserr.ErrNoFileOrDir, fmt.Sprintf("table with handle %d not found for address family %v", handle, family))
+	}
+
+	// If the table has an owner, it must match the Netlink portID of the calling process.
+	// User space processes only have non-zero port ids.
+	// Only the kernel can have a zero port id.
+	if t.HasOwner() && portID != 0 && portID != t.GetOwner() {
+		return nil, syserr.NewAnnotatedError(syserr.ErrNotPermitted, fmt.Sprintf("table with handle %d has owner %d, which does not match the Netlink portID of the calling process %d", handle, t.GetOwner(), portID))
+	}
+
+	return t, nil
+}
+
 // AddTable makes a new table for the specified address family, returning an
 // error if the address family is invalid. Can return an error if a table by the
 // same name already exists if errorOnDuplicate is true. Can be used to get an
@@ -312,15 +373,17 @@ func (nf *NFTables) AddTable(family stack.AddressFamily, name string,
 	// Initializes filter if first table for the address family.
 	if nf.filters[family] == nil {
 		nf.filters[family] = &addressFamilyFilter{
-			family:   family,
-			nftState: nf,
-			tables:   make(map[string]*Table),
-			hfStacks: make(map[stack.NFHook]*hookFunctionStack),
+			family:       family,
+			nftState:     nf,
+			tables:       make(map[string]*Table),
+			tableHandles: make(map[uint64]*Table),
+			hfStacks:     make(map[stack.NFHook]*hookFunctionStack),
 		}
 	}
 
 	// Gets the corresponding table map for the address family.
 	tableMap := nf.filters[family].tables
+	tableHandleMap := nf.filters[family].tableHandles
 
 	// Checks if a table with the same name already exists. If so, returns the
 	// existing table (unless errorOnDuplicate is true).
@@ -340,6 +403,7 @@ func (nf *NFTables) AddTable(family stack.AddressFamily, name string,
 		handle:   nf.getNewTableHandle(),
 	}
 	tableMap[name] = t
+	tableHandleMap[t.handle] = t
 
 	return t, nil
 }
@@ -377,8 +441,9 @@ func (nf *NFTables) DeleteTable(family stack.AddressFamily, tableName string) (b
 		t.DeleteChain(chainName)
 	}
 
-	// Deletes the table from the table map.
+	// Deletes the table from the table map and from the table handle map.
 	delete(nf.filters[family].tables, tableName)
+	delete(nf.filters[family].tableHandles, t.handle)
 	return true, nil
 }
 

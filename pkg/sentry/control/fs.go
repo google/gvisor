@@ -29,6 +29,39 @@ import (
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
+// Fs includes fs-related functions.
+type Fs struct {
+	Kernel *kernel.Kernel
+}
+
+// TarRootfsUpperLayerOpts contains options for the TarRootfsUpperLayer RPC.
+type TarRootfsUpperLayerOpts struct {
+	// FilePayload contains the destination for output.
+	urpc.FilePayload
+}
+
+// TarRootfsUpperLayer is a RPC stub which serializes the rootfs upper layer to
+// a tar file. When the rootfs is not an overlayfs, it returns an error.
+func (f *Fs) TarRootfsUpperLayer(o *TarRootfsUpperLayerOpts, _ *struct{}) error {
+	if len(o.FilePayload.Files) != 1 {
+		return ErrInvalidFiles
+	}
+	outFD := o.FilePayload.Files[0]
+	defer outFD.Close()
+
+	ctx := f.Kernel.SupervisorContext()
+	mns := f.Kernel.GlobalInit().Leader().MountNamespace()
+	root := mns.Root(ctx)
+	ts, ok := root.Mount().Filesystem().Impl().(vfs.TarSerializer)
+	if !ok {
+		return fmt.Errorf("rootfs is not an overlayfs")
+	}
+	if err := ts.TarUpperLayer(ctx, outFD); err != nil {
+		return fmt.Errorf("failed to serialize rootfs upper layer to tar: %v", err)
+	}
+	return nil
+}
+
 // CatOpts contains options for the Cat RPC call.
 type CatOpts struct {
 	// Files are the filesystem paths for the files to cat.
@@ -36,11 +69,6 @@ type CatOpts struct {
 
 	// FilePayload contains the destination for output.
 	urpc.FilePayload
-}
-
-// Fs includes fs-related functions.
-type Fs struct {
-	Kernel *kernel.Kernel
 }
 
 // Cat is a RPC stub which prints out and returns the content of the files.

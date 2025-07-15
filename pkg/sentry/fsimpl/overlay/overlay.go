@@ -36,6 +36,7 @@ package overlay
 
 import (
 	"fmt"
+	"os"
 	"strings"
 	"sync/atomic"
 
@@ -502,6 +503,16 @@ func (fs *filesystem) getLowerDevMinor(layerMajor, layerMinor uint32) (uint32, e
 	}
 	fs.lowerDevMinors[orig] = minor
 	return minor, nil
+}
+
+// TarUpperLayer implements vfs.TarSerializer.TarUpperLayer.
+func (fs *filesystem) TarUpperLayer(ctx context.Context, outFD *os.File) error {
+	upperFS := fs.opts.UpperRoot.Mount().Filesystem()
+	ts, ok := upperFS.Impl().(vfs.TarSerializer)
+	if !ok {
+		return fmt.Errorf("upper layer is of type %q, which does not implement vfs.TarSerializer", upperFS.FilesystemType().Name())
+	}
+	return ts.TarUpperLayer(ctx, outFD)
 }
 
 // dentry implements vfs.DentryImpl.
