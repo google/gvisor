@@ -132,7 +132,7 @@ go_library(
     srcs = [
         "anonfs.go",
         "context.go",
-        "debug.go",
+        "debug_impl.go",
         "debug_testonly.go",
         "dentry.go",
         "device.go",
