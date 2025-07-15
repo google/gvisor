@@ -42,6 +42,8 @@
 #define AT_STATX_DONT_SYNC 0x4000
 #endif
 
+using ::testing::AnyOf;
+
 namespace gvisor {
 namespace testing {
 
@@ -400,13 +402,45 @@ TEST_F(StatTest, StatDoesntChangeAfterRename) {
   EXPECT_EQ(st_old.st_size, st_new.st_size);
 }
 
+TEST_F(StatTest, LinkCountsWithSubdirectories) {
+  // Though not documented by inode(7), st_nlink for directories is usually 2
+  // (for the parent's directory entry and "." in the directory itself) plus 1
+  // for each subdirectory (for ".." in each subdirectory). GNU find requires
+  // that filesystems not supporting this feature instead return "a value less
+  // than 2" (Sec. 7.1 "Leaf Optimization"), and Linux filesystems with this
+  // property return 1 in practice.
+
+  const TempPath dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  struct stat statbuf = {};
+  ASSERT_THAT(stat(dir.path().c_str(), &statbuf), SyscallSucceeds());
+  EXPECT_THAT(statbuf.st_nlink, AnyOf(1, 2));
+
+  std::string subdir1_path = JoinPath(dir.path(), "subdir1");
+  ASSERT_THAT(mkdir(subdir1_path.c_str(), 0755), SyscallSucceeds());
+  ASSERT_THAT(stat(dir.path().c_str(), &statbuf), SyscallSucceeds());
+  EXPECT_THAT(statbuf.st_nlink, AnyOf(1, 3));
+
+  std::string subdir2_path = JoinPath(dir.path(), "subdir2");
+  ASSERT_THAT(mkdir(subdir2_path.c_str(), 0755), SyscallSucceeds());
+  ASSERT_THAT(stat(dir.path().c_str(), &statbuf), SyscallSucceeds());
+  EXPECT_THAT(statbuf.st_nlink, AnyOf(1, 4));
+
+  ASSERT_THAT(rmdir(subdir1_path.c_str()), SyscallSucceeds());
+  ASSERT_THAT(stat(dir.path().c_str(), &statbuf), SyscallSucceeds());
+  EXPECT_THAT(statbuf.st_nlink, AnyOf(1, 3));
+
+  ASSERT_THAT(rmdir(subdir2_path.c_str()), SyscallSucceeds());
+  ASSERT_THAT(stat(dir.path().c_str(), &statbuf), SyscallSucceeds());
+  EXPECT_THAT(statbuf.st_nlink, AnyOf(1, 2));
+}
+
 // Test link counts with a regular file as the child.
 TEST_F(StatTest, LinkCountsWithRegularFileChild) {
   const TempPath dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
 
   struct stat st_parent_before = {};
   ASSERT_THAT(stat(dir.path().c_str(), &st_parent_before), SyscallSucceeds());
-  EXPECT_EQ(st_parent_before.st_nlink, 2);
+  EXPECT_THAT(st_parent_before.st_nlink, AnyOf(1, 2));
 
   // Adding a regular file doesn't adjust the parent's link count.
   const TempPath child =
@@ -414,7 +448,7 @@ TEST_F(StatTest, LinkCountsWithRegularFileChild) {
 
   struct stat st_parent_after = {};
   ASSERT_THAT(stat(dir.path().c_str(), &st_parent_after), SyscallSucceeds());
-  EXPECT_EQ(st_parent_after.st_nlink, 2);
+  EXPECT_THAT(st_parent_after.st_nlink, AnyOf(1, 2));
 
   // The child should have a single link from the parent.
   struct stat st_child = {};
@@ -425,7 +459,7 @@ TEST_F(StatTest, LinkCountsWithRegularFileChild) {
   // Finally unlinking the child should not affect the parent's link count.
   ASSERT_THAT(unlink(child.path().c_str()), SyscallSucceeds());
   ASSERT_THAT(stat(dir.path().c_str(), &st_parent_after), SyscallSucceeds());
-  EXPECT_EQ(st_parent_after.st_nlink, 2);
+  EXPECT_THAT(st_parent_after.st_nlink, AnyOf(1, 2));
 }
 
 // This test verifies that inodes remain around when there is an open fd
