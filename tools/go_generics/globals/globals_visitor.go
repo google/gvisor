@@ -517,7 +517,7 @@ func (v *globalsVisitor) visitFuncDecl(d *ast.FuncDecl) {
 	v.popScope()
 }
 
-// globalsFromDecl is called in the first, and adds symbols to global scope.
+// globalsFromGenDecl is called in the first, and adds symbols to global scope.
 func (v *globalsVisitor) globalsFromGenDecl(d *ast.GenDecl) {
 	switch d.Tok {
 	case token.IMPORT:
