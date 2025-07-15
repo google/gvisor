@@ -21,13 +21,45 @@
 #include <linux/netfilter/nfnetlink_compat.h>
 #include <linux/netlink.h>
 
+#include <cstddef>
 #include <cstdint>
 
 namespace gvisor {
 namespace testing {
 
+#ifndef NFTA_TABLE_OWNER
+#define NFTA_TABLE_OWNER NFTA_TABLE_USERDATA + 1
+#endif
+
+#ifndef NFT_TABLE_F_OWNER
+#define NFT_TABLE_F_OWNER 0x2
+#endif
+
+#define TABLE_NAME_SIZE 32
+#define VALID_USERDATA_SIZE 128
+
+struct nameAttribute {
+  struct nlattr attr;
+  char name[TABLE_NAME_SIZE];
+};
+struct flagAttribute {
+  struct nlattr attr;
+  uint32_t flags;
+};
+struct userDataAttribute {
+  struct nlattr attr;
+  uint8_t userdata[VALID_USERDATA_SIZE];
+};
+
 void InitNetfilterGenmsg(struct nfgenmsg* genmsg, uint8_t family,
                          uint8_t version, uint16_t res_id);
+
+void CheckNetfilterTableAttributes(
+    const struct nlmsghdr* hdr, const struct nfgenmsg* genmsg,
+    const char* test_table_name, uint32_t* expected_chain_count,
+    uint64_t* expected_handle, uint32_t* expected_flags,
+    uint32_t* expected_owner, uint8_t* expected_udata,
+    size_t* expected_udata_size, bool skip_handle_check);
 
 }  // namespace testing
 }  // namespace gvisor
