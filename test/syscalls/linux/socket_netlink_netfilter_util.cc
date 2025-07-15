@@ -17,13 +17,125 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <map>
 #include <string>
+#include <vector>
 
 #include "gtest/gtest.h"
 #include "test/syscalls/linux/socket_netlink_util.h"
 
 namespace gvisor {
 namespace testing {
+
+static const std::map<uint16_t, size_t> kNetfilterAttributeSizes = {
+    {NFTA_TABLE_FLAGS, sizeof(uint32_t)},
+    {NFTA_TABLE_HANDLE, sizeof(uint64_t)},
+    {NFTA_TABLE_USE, sizeof(uint32_t)},
+    {NFTA_TABLE_OWNER, sizeof(uint32_t)},
+};
+
+NlReq& NlReq::MsgType(uint8_t message_type) {
+  message_type_ = message_type;
+  return *this;
+}
+
+NlReq& NlReq::Flags(uint16_t flags) {
+  flags_ = flags;
+  return *this;
+}
+
+NlReq& NlReq::Seq(uint32_t seq) {
+  seq_ = seq;
+  return *this;
+}
+
+NlReq& NlReq::Family(uint8_t family) {
+  family_ = family;
+  return *this;
+}
+
+// Method to add an attribute to the message. If there is a default
+// size for the attribute type, it will be used.
+// Otherwise, assumes the payload is of at least size payload_size.
+NlReq& NlReq::RawAttr(uint16_t attr_type, const void* payload,
+                      size_t payload_size) {
+  // Check if the attribute type has a standard size. Otherwise
+  // use the provided size.
+  size_t attr_size;
+  if (kNetfilterAttributeSizes.count(attr_type)) {
+    attr_size = kNetfilterAttributeSizes.at(attr_type);
+  } else {
+    attr_size = payload_size;
+  }
+
+  // Store a pointer to the payload and the size to construct it later.
+  attributes_[attr_type] = {reinterpret_cast<const char*>(payload), attr_size};
+  return *this;
+}
+
+// Method to add a string attribute to the message.
+// The payload is expected to be a null-terminated string.
+NlReq& NlReq::StrAttr(uint16_t attr_type, const char* payload) {
+  return RawAttr(attr_type, payload, strlen(payload) + 1);
+}
+
+// Method to add a uint8_t attribute to the message.
+NlReq& NlReq::U8Attr(uint16_t attr_type, const uint8_t* payload) {
+  return RawAttr(attr_type, payload, sizeof(uint8_t));
+}
+
+// Method to add a uint16_t attribute to the message.
+NlReq& NlReq::U16Attr(uint16_t attr_type, const uint16_t* payload) {
+  return RawAttr(attr_type, payload, sizeof(uint16_t));
+}
+
+// Method to add a uint32_t attribute to the message.
+NlReq& NlReq::U32Attr(uint16_t attr_type, const uint32_t* payload) {
+  return RawAttr(attr_type, payload, sizeof(uint32_t));
+}
+
+// Method to add a uint64_t attribute to the message.
+NlReq& NlReq::U64Attr(uint16_t attr_type, const uint64_t* payload) {
+  return RawAttr(attr_type, payload, sizeof(uint64_t));
+}
+
+std::vector<char> NlReq::Build() {
+  size_t aligned_hdr_size = NLMSG_ALIGN(sizeof(nlmsghdr));
+  size_t aligned_genmsg_size = NLMSG_ALIGN(sizeof(nfgenmsg));
+  size_t total_attr_size = 0;
+
+  for (const auto& [attr_type, attr_data] : attributes_) {
+    const auto& [_, payload_size] = attr_data;
+    total_attr_size += NLA_ALIGN(NLA_HDRLEN + payload_size);
+  }
+
+  size_t total_message_len =
+      NLMSG_ALIGN(aligned_hdr_size + aligned_genmsg_size + total_attr_size);
+
+  msg_buffer_.resize(total_message_len);
+  std::memset(msg_buffer_.data(), 0, total_message_len);
+
+  struct nlmsghdr* nlh = reinterpret_cast<struct nlmsghdr*>(msg_buffer_.data());
+  InitNetlinkHdr(nlh, (uint32_t)total_message_len,
+                 MakeNetlinkMsgType(NFNL_SUBSYS_NFTABLES, message_type_), seq_,
+                 flags_);
+
+  struct nfgenmsg* nfg = reinterpret_cast<struct nfgenmsg*>(NLMSG_DATA(nlh));
+  InitNetfilterGenmsg(nfg, family_, NFNETLINK_V0, 0);
+
+  char* payload =
+      (char*)msg_buffer_.data() + aligned_hdr_size + aligned_genmsg_size;
+
+  for (const auto& [attr_type, attr_data] : attributes_) {
+    const auto& [payload_data, payload_size] = attr_data;
+    struct nlattr* attr = reinterpret_cast<struct nlattr*>(payload);
+    InitNetlinkAttr(attr, payload_size, attr_type);
+    std::memcpy((char*)attr + NLA_HDRLEN, payload_data, payload_size);
+    // Move over to the next attribute.
+    payload += NLA_ALIGN(NLA_HDRLEN + payload_size);
+  }
+  return msg_buffer_;
+}
 
 // Helper function to initialize a nfgenmsg header.
 void InitNetfilterGenmsg(struct nfgenmsg* genmsg, uint8_t family,
