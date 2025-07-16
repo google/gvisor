@@ -4,288 +4,222 @@ layout: base
 ---
 
 <div class="container">
-  <div class="users-content">
+  <header class="users-header mb-4">
     <h1>{{ page.title }}</h1>
-    <div class="panel panel-default">
-      <div class="panel-body">
-          <strong>Note:</strong>
-          <span> Using gVisor? You can add yourself to this page,
-            contact <a href="mailto:gvisor-dev@googlegroups.com">
-              gvisor-dev@googlegroups.com</a>
-          </span>
-      </div>
-    </div> <!-- end panel -->
-    <p>This page lists companies that are known to use gVisor. This does not
-      constitute an endorsement.
-    </p>
-    <h1>Companies using gVisor</h1>
-    <hr>
-    <!-- Ant Group -->
-    <div class="row display-flex no-space">
-      <div class="col-md-12">
-        <h2>
-          <a href="https://www.antgroup.com/en" class="feature-link">
-              Ant Group
-          </a>
-        </h2>
-        <p class="info-users-text">Ant Group, develops online payment platforms.
-          The company offers a wide range of financial services to consumers and
-          businesses worldwide.
-        </p>
-        <div class="panel panel-default">
-          <div class="panel-body">
-              <p class="info-users-text"> At Ant Group, we are committed to
-                keeping online transactions safe and efficient. Continuously
-                improving security for potential system-level attacks is one
-                of many measures. As a container runtime, gVisor provides
-                container-native security without sacrificing resource
-                efficiency. Therefore, it has been on our radar since it was
-                released.
-              </p>
-          </div>
-        </div> <!-- end panel -->
-        <p class="info-users-text">Read Ant Group's blog post on running gVisor
-        in production at scale
-          (<a href="/blog/2021/12/02/running-gvisor-in-production-at-scale-in-ant/">source</a>).
-        </p>
-      </div>
+    <div class="alert alert-info" role="alert">
+      <strong>Note:</strong> Using gVisor? You can add yourself to this page by contacting 
+      <a href="mailto:gvisor-dev@googlegroups.com">gvisor-dev@googlegroups.com</a>.
     </div>
-    <hr>
-    <!-- Blink -->
-    <div class="row display-flex no-space">
-      <div class="col-md-12">
-        <h2>
-          <a href="https://www.blinkops.com/" class="feature-link">
-            Blink
-          </a>
-        </h2>
-        <p class="info-text"> Blink is a company that specializes in security
-          automation and orchestration powered by generative AI.
-        </p>
-        <p class="info-users-text">Blink uses gVisor to run pods with full
-          isolation including system calls
-          (<a href="https://www.blinkops.com/blog/run-containers-securely-with-gvisor-on-eks">source</a>).
-        </p>
-      </div>
-    </div>
-    <hr>
-    <!-- Cloudflare -->
-    <div class="row display-flex no-space">
-      <div class="col-md-12">
-        <h2>
-          <a href="https://www.cloudflare.com" class="feature-link">
-            Cloudflare
-          </a>
-        </h2>
-        <p class="info-users-text"> Cloudflare is a content delivery network
-          (CDN) and cloud computing security company. It provides a range of
-          services to businesses of all sizes.
-        </p>
-        <div class="panel panel-default">
-          <div class="panel-body">
-              <p class="info-users-text">
-                It takes just a few seconds for a new gVisor container to
-                start up and begin executing meaningful work in a secure
-                sandbox with near native performance.
-                (<a href="https://blog.cloudflare.com/cloudflare-pages-build-improvements/">A
-                  new era for Cloudflare Pages builds</a>)
-              </p>
-          </div>
-        </div> <!-- end panel -->
-      </div>
-    </div>
-    <hr>
-    <!-- DigitalOcean -->
-    <div class="row display-flex no-space">
-      <div class="col-md-12">
-        <h2>
-          <a href="https://www.digitalocean.com/" class="feature-link">
-            DigitalOcean
-          </a>
-        </h2>
-        <p class="info-text"> DigitalOcean is a cloud computing provider that
-        offers cloud infrastructure services to developers and businesses.
-        </p>
-        <p class="info-users-text">DigitalOcean uses gVisor in
-          <a href="https://docs.digitalocean.com/products/app-platform/">App Platform</a>
-          as a container runtime sandbox
-          (<a href="https://docs.digitalocean.com/products/app-platform/details/limits/">source</a>).
-        </p>
-      </div>
-    </div>
-    <hr>
-    <!-- Docker -->
-    <div class="row display-flex no-space">
-      <div class="col-md-12">
-        <h2>
-          <a href="https://www.docker.com/" class="feature-link">
-            Docker
-          </a>
-        </h2>
-        <p class="info-text">
-          Docker is a popular container management engine.
-        </p>
-        <p class="info-users-text">
-          Docker for Mac
-          <a href="https://docs.docker.com/desktop/release-notes/#4190">uses the gVisor network
-            stack library</a> for better performance than <code>vpnkit</code>.
-          Note that on Docker for Linux, you can
-          <a href="/docs/user_guide/quick_start/docker/">use gVisor as a container runtime</a>.
-        </p>
-      </div>
-    </div>
-    <hr>
-    <!-- Freedom of the Press Foundation -->
-    <div class="row display-flex no-space">
+    <p>This page lists companies known to use gVisor. This does not constitute an endorsement.</p>
+  </header>
+
+  <main class="users-list">
+    
+    <section class="user-company mb-5">
+      <h2>
+        <a href="https://www.antgroup.com/en" class="link-primary" target="_blank" rel="noopener noreferrer">
+          Ant Group
+        </a>
+      </h2>
+      <p>Ant Group develops online payment platforms, offering a wide range of financial services globally.</p>
+      <blockquote class="user-quote p-3 bg-light border rounded">
+  <p>
+    At Ant Group, we are committed to keeping online transactions safe and
+    efficient. Continuously improving security for potential system-level
+    attacks is one of many measures. As a container runtime, gVisor provides
+    container-native security without sacrificing resource efficiency. It has
+    been on our radar since its release.
+  </p>
+</blockquote>
+
+
+      <p>
+        Read Ant Group's blog post on running gVisor in production at scale 
+        (<a href="/blog/2021/12/02/running-gvisor-in-production-at-scale-in-ant/" target="_blank" rel="noopener noreferrer">source</a>).
+      </p>
+      <hr>
+    </section>
+
+    <section class="user-company mb-5">
+      <h2>
+        <a href="https://www.blinkops.com/" class="link-primary" target="_blank" rel="noopener noreferrer">
+          Blink
+        </a>
+      </h2>
+      <p>Blink specializes in security automation and orchestration powered by generative AI.</p>
+      <p>
+        Blink uses gVisor to run pods with full isolation including system calls 
+        (<a href="https://www.blinkops.com/blog/run-containers-securely-with-gvisor-on-eks" target="_blank" rel="noopener noreferrer">source</a>).
+      </p>
+      <hr>
+    </section>
+
+    <section class="user-company mb-5">
+      <h2>
+        <a href="https://www.cloudflare.com" class="link-primary" target="_blank" rel="noopener noreferrer">
+          Cloudflare
+        </a>
+      </h2>
+      <p>Cloudflare is a CDN and cloud computing security company providing services to businesses of all sizes.</p>
+      <blockquote class="user-quote p-3 bg-light border rounded">
+        It takes just a few seconds for a new gVisor container to start up and begin executing meaningful work in a secure sandbox with near-native performance.
+        (<a href="https://blog.cloudflare.com/cloudflare-pages-build-improvements/" target="_blank" rel="noopener noreferrer">A new era for Cloudflare Pages builds</a>)
+      </blockquote>
+      <hr>
+    </section>
+
+    <section class="user-company mb-5">
+      <h2>
+        <a href="https://www.digitalocean.com/" class="link-primary" target="_blank" rel="noopener noreferrer">
+          DigitalOcean
+        </a>
+      </h2>
+      <p>DigitalOcean offers cloud infrastructure services to developers and businesses.</p>
+      <p>
+        DigitalOcean uses gVisor in 
+        <a href="https://docs.digitalocean.com/products/app-platform/" target="_blank" rel="noopener noreferrer">App Platform</a> as a container runtime sandbox 
+        (<a href="https://docs.digitalocean.com/products/app-platform/details/limits/" target="_blank" rel="noopener noreferrer">source</a>).
+      </p>
+      <hr>
+    </section>
+
+    <section class="user-company mb-5">
+      <h2>
+        <a href="https://www.docker.com/" class="link-primary" target="_blank" rel="noopener noreferrer">
+          Docker
+        </a>
+      </h2>
+      <p>Docker is a popular container management engine.</p>
+      <p>
+        Docker for Mac uses the gVisor network stack library for better performance than <code>vpnkit</code>. 
+        On Docker for Linux, you can 
+        <a href="/docs/user_guide/quick_start/docker/" target="_blank" rel="noopener noreferrer">use gVisor as a container runtime</a>.
+      </p>
+      <hr>
+    </section>
+
+    <section class="user-company mb-5 row align-items-center">
       <div class="col-md-8">
         <h2>
-          <a href="https://freedom.press/" class="feature-link">
+          <a href="https://freedom.press/" class="link-primary" target="_blank" rel="noopener noreferrer">
             Freedom of the Press Foundation
           </a>
         </h2>
-        <p class="info-text">
-          The Freedom of the Press Foundation is a non-profit supporting free speech and freedom
-          of the press.
-        </p>
-        <p class="info-users-text">
-          The <a href="https://dangerzone.rocks/">Dangerzone</a> application converts
-          potentially dangerous PDFs, office documents, or images and convert them to safe PDFs
-          for use by journalists. The document conversion process runs in a
-          <a href="https://github.com/freedomofpress/dangerzone/blob/main/docs/developer/gvisor.md">
-            gVisor sandbox</a>.
+        <p>A non-profit supporting free speech and freedom of the press.</p>
+        <p>
+          The <a href="https://dangerzone.rocks/" target="_blank" rel="noopener noreferrer">Dangerzone</a> app converts potentially dangerous PDFs and documents to safe PDFs for journalists. The conversion runs in a 
+          <a href="https://github.com/freedomofpress/dangerzone/blob/main/docs/developer/gvisor.md" target="_blank" rel="noopener noreferrer">gVisor sandbox</a>.
         </p>
       </div>
-      <div class="col-md-4">
-        <div>
-          <img
-            src="/assets/logos/freedom_of_the_press_foundation.svg"
-            alt="Freedom of the Press Foundation logo"
-            title="Freedom of the Press Foundation logo"
-            class="img-responsive img-vert-center"
-            style="min-width: 90%" />
-        </div>
+      <div class="col-md-4 text-center mt-4 mt-md-0">
+        <img 
+          src="/assets/logos/freedom_of_the_press_foundation.svg" 
+          alt="Freedom of the Press Foundation logo" 
+          class="img-fluid" 
+          style="max-width: 180px;"
+          loading="lazy"
+        />
       </div>
-    </div>
-    <hr>
-    <!-- Google -->
-    <div class="row display-flex no-space">
+      <hr class="w-100 mt-5" />
+    </section>
+
+    <section class="user-company mb-5 row align-items-center">
       <div class="col-md-8">
         <h2>
-          <a href="https://www.google.com" class="feature-link">
+          <a href="https://www.google.com" class="link-primary" target="_blank" rel="noopener noreferrer">
             Google
           </a>
         </h2>
-        <p class="info-text">gVisor was designed and developed to efficiently
-          isolate production workloads at scale for Google services. There are
-          millions of gVisor sandbox instances running daily. gVisor powers Google Cloud
-          offerings <a href="https://cloud.google.com/kubernetes-engine/docs/concepts/sandbox-pods">
-              GKE Sandbox</a>, <a href="https://cloud.google.com/run">Cloud Run</a>,
-              <a href="https://cloud.google.com/appengine">App Engine</a>, and more.
+        <p>
+          gVisor was designed and developed to efficiently isolate production workloads at scale for Google services. Millions of gVisor sandbox instances run daily powering Google Cloud offerings like 
+          <a href="https://cloud.google.com/kubernetes-engine/docs/concepts/sandbox-pods" target="_blank" rel="noopener noreferrer">GKE Sandbox</a>, 
+          <a href="https://cloud.google.com/run" target="_blank" rel="noopener noreferrer">Cloud Run</a>, and 
+          <a href="https://cloud.google.com/appengine" target="_blank" rel="noopener noreferrer">App Engine</a>.
         </p>
       </div>
-      <div class="col-md-4">
-        <div>
-          <img
-            src="/assets/logos/logo_goog.png"
-            alt="Google logo"
-            title="Google logo"
-            class="img-responsive img-vert-center" />
-        </div>
+      <div class="col-md-4 text-center mt-4 mt-md-0">
+        <img 
+          src="/assets/logos/logo_goog.png" 
+          alt="Google logo" 
+          class="img-fluid" 
+          style="max-width: 180px;" 
+          loading="lazy"
+        />
       </div>
-    </div>
-    <hr>
-    <!-- Grist -->
-    <div class="row display-flex no-space">
-      <div class="col-md-12">
-        <h2>
-          <a href="https://www.getgrist.com/" class="feature-link">
-            Grist
-          </a>
-        </h2>
-        <p class="info-text"> Grist combines the flexibility and familiarity of
-          spreadsheets with the power of databases.
-        </p>
-        <p class="info-users-text">Grist uses gVisor to isolate documents from each other and the network
-        (<a href="https://support.getgrist.com/self-managed/#how-do-i-sandbox-documents">source</a>).
-        </p>
-      </div>
-    </div>
-    <hr>
-    <!-- Modal -->
-    <div class="row display-flex no-space">
+      <hr class="w-100 mt-5" />
+    </section>
+
+    <section class="user-company mb-5">
+      <h2>
+        <a href="https://www.getgrist.com/" class="link-primary" target="_blank" rel="noopener noreferrer">
+          Grist
+        </a>
+      </h2>
+      <p>Grist combines spreadsheet flexibility with database power.</p>
+      <p>
+        Grist uses gVisor to isolate documents from each other and the network 
+        (<a href="https://support.getgrist.com/self-managed/#how-do-i-sandbox-documents" target="_blank" rel="noopener noreferrer">source</a>).
+      </p>
+      <hr>
+    </section>
+
+    <section class="user-company mb-5 row align-items-center">
       <div class="col-md-8">
         <h2>
-          <a href="https://www.modal.com" class="feature-link">
+          <a href="https://www.modal.com" class="link-primary" target="_blank" rel="noopener noreferrer">
             Modal
           </a>
         </h2>
-        <p class="info-users-text"> Modal is a cloud platform that simplifies
-          the execution and management of various computing workloads for data
-          teams and application developers (particularly those working in the
-          field of generative AI).
+        <p>
+          Modal is a cloud platform simplifying computing workload execution and management for data teams and developers, especially in generative AI.
         </p>
-        <div class="panel panel-default">
-          <div class="panel-body">
-              <p class="info-users-text">
-                Compute jobs at Modal are containerized and virtualized using gVisor.
-                (<a href="https://modal.com/docs/guide/security">Security at Modal</a>).
-              </p>
-          </div>
-        </div> <!-- end panel -->
-        <p class="info-users-text">Modal labs tweeted about fully running on gVisor
-        (<a href="https://twitter.com/bernhardsson/status/1708929516955930699">source</a>).
+        <blockquote class="user-quote p-3 bg-light border rounded">
+          Compute jobs at Modal are containerized and virtualized using gVisor. 
+          (<a href="https://modal.com/docs/guide/security" target="_blank" rel="noopener noreferrer">Security at Modal</a>)
+        </blockquote>
+        <p>
+          Modal labs tweeted about fully running on gVisor 
+          (<a href="https://twitter.com/bernhardsson/status/1708929516955930699" target="_blank" rel="noopener noreferrer">source</a>).
         </p>
       </div>
-      <div class="col-md-4">
-        <div>
-          <img
-            src="/assets/logos/logo_modal.png"
-            alt="Modal logo"
-            title="Modal logo"
-            class="img-responsive img-vert-center" />
-        </div>
+      <div class="col-md-4 text-center mt-4 mt-md-0">
+        <img 
+          src="/assets/logos/logo_modal.png" 
+          alt="Modal logo" 
+          class="img-fluid" 
+          style="max-width: 180px;" 
+          loading="lazy"
+        />
       </div>
-    </div>
-    <!-- OpenAI -->
-    <div class="row display-flex no-space">
-      <div class="col-md-12">
-        <h2>
-          <a href="https://openai.com/" class="feature-link">
-            OpenAI
-          </a>
-        </h2>
-        <p class="info-text">
-          OpenAI develops Artificial Intelligence systems.
-        </p>
-        <p class="info-users-text">
-          OpenAI uses gVisor for
-          "<a href="https://openai.com/index/securing-research-infrastructure-for-advanced-ai/">some higher-risk tasks</a>",
-          such as
-          <a href="https://drive.google.com/file/d/1jjqrV76-86rdEcmFNnxMs4lI-ncAookn/view?resourcekey">code execution</a>.
-        </p>
-      </div>
-    </div>
-    <hr>
-    <!-- Tailscale -->
-    <div class="row display-flex no-space">
-      <div class="col-md-12">
-        <h2>
-          <a href="https://tailscale.com" class="feature-link">
-            Tailscale
-          </a>
-        </h2>
-        <p class="info-users-text">Tailscale provides a mesh-based VPN service
-          designed to simplify secure networking between devices and servers.
-        </p>
-        <div class="panel panel-default">
-          <div class="panel-body">
-              <p class="info-users-text"> In userspace mode, Tailscale uses the
-                gVisor netstack library, implementing networking in userspace.
-                (<a href="https://tailscale.com/kb/1177/kernel-vs-userspace-routers">Kernel vs. netstack subnet routing &amp; exit nodes</a>).
-              </p>
-          </div>
-        </div> <!-- end panel -->
-      </div>
-    </div>
-  </div> <!-- end div with padding -->
-</div> <!-- end container -->
+      <hr class="w-100 mt-5" />
+    </section>
+
+    <section class="user-company mb-5">
+      <h2>
+        <a href="https://openai.com/" class="link-primary" target="_blank" rel="noopener noreferrer">
+          OpenAI
+        </a>
+      </h2>
+      <p>OpenAI develops artificial intelligence systems.</p>
+      <p>
+        OpenAI uses gVisor for <a href="https://openai.com/index/securing-research-infrastructure-for-advanced-ai/" target="_blank" rel="noopener noreferrer">some higher-risk tasks</a>, such as 
+        <a href="https://drive.google.com/file/d/1jjqrV76-86rdEcmFNnxMs4lI-ncAookn/view?resourcekey" target="_blank" rel="noopener noreferrer">code execution</a>.
+      </p>
+      <hr>
+    </section>
+
+    <section class="user-company mb-5">
+      <h2>
+        <a href="https://tailscale.com" class="link-primary" target="_blank" rel="noopener noreferrer">
+          Tailscale
+        </a>
+      </h2>
+      <p>Tailscale provides a mesh VPN service for secure networking between devices and servers.</p>
+      <blockquote class="user-quote p-3 bg-light border rounded">
+        In userspace mode, Tailscale uses the gVisor netstack library, implementing networking in userspace. 
+        (<a href="https://tailscale.com/kb/1177/kernel-vs-userspace-routers" target="_blank" rel="noopener noreferrer">Kernel vs. netstack subnet routing &amp; exit nodes</a>)
+      </blockquote>
+    </section>
+
+  </main>
+</div>
