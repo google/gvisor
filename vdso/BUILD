@@ -5,7 +5,7 @@
 
 # Placeholder: load py_test
 load("//tools:arch.bzl", "select_arch")
-load("//tools:defs.bzl", "cc_flags_supplier", "cc_toolchain", "vdso_linker_option")
+load("//tools:defs.bzl", "cc_flags_supplier", "cc_toolchain")
 
 package(
     default_applicable_licenses = ["//:license"],
@@ -40,7 +40,6 @@ genrule(
           # Some toolchains enable stack protector by default. Disable it, the
           # VDSO has no hooks to handle failures.
           "-fno-stack-protector " +
-          vdso_linker_option +
           "-shared " +
           "-nostdlib " +
           "-Wl,-soname=linux-vdso.so.1 " +

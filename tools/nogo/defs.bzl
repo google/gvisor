@@ -73,7 +73,7 @@ def _nogo_stdlib_impl(ctx):
     ctx.actions.run(
         # For the standard library, we need to include the full set of Go
         # sources in the inputs.
-        inputs = inputs + go_ctx.stdlib_srcs,
+        inputs = inputs + go_ctx.stdlib_srcs.to_list(),
         outputs = [facts_file, findings_file],
         tools = depset(go_ctx.runfiles.to_list() + ctx.files._nogo),
         executable = ctx.files._nogo[0],
@@ -90,7 +90,7 @@ def _nogo_stdlib_impl(ctx):
             "-findings=%s" % findings_file.path,
             "-facts=%s" % facts_file.path,
             "-root=.*?/src/",
-        ] + [f.path for f in go_ctx.stdlib_srcs],
+        ] + [f.path for f in go_ctx.stdlib_srcs.to_list()],
         toolchain = None,
     )
 
