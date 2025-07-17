@@ -527,7 +527,10 @@ func OpenAtHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32,
 		hostOpenFD int
 	)
 	if err := fd.safelyRead(func() error {
-		if fd.node.isDeleted() || fd.IsSymlink() {
+		if fd.node.isDeleted() && !c.server.opts.OpenOnDeleted {
+			return unix.EINVAL
+		}
+		if fd.IsSymlink() {
 			return unix.EINVAL
 		}
 		openFD, hostOpenFD, err = fd.impl.Open(req.Flags)

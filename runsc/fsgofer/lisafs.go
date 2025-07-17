@@ -107,6 +107,7 @@ func NewLisafsServer(config Config) *LisafsServer {
 		WalkStatSupported: true,
 		SetAttrOnDeleted:  true,
 		AllocateOnDeleted: true,
+		OpenOnDeleted:     true,
 	})
 	return s
 }
