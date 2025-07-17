@@ -233,7 +233,12 @@ func (p *Protocol) updateTable(nft *nftables.NFTables, tab *nftables.Table, attr
 }
 
 // getTable returns a table for the given family.
-func (p *Protocol) getTable(nft *nftables.NFTables, attrs map[uint16]nlmsg.BytesView, family stack.AddressFamily, flags uint16, ms *nlmsg.MessageSet) *syserr.AnnotatedError {
+func (p *Protocol) getTable(nft *nftables.NFTables, attrs map[uint16]nlmsg.BytesView, family stack.AddressFamily, msgFlags uint16, ms *nlmsg.MessageSet) *syserr.AnnotatedError {
+	if (msgFlags & linux.NLM_F_DUMP) != 0 {
+		// TODO: b/421437663 - Support dump requests for tables.
+		return syserr.NewAnnotatedError(syserr.ErrNotSupported, fmt.Sprintf("Nftables: Table dump is not currently supported"))
+	}
+
 	// The table name is required.
 	tabNameBytes, ok := attrs[linux.NFTA_TABLE_NAME]
 	if !ok {
@@ -250,8 +255,9 @@ func (p *Protocol) getTable(nft *nftables.NFTables, attrs map[uint16]nlmsg.Bytes
 	if err != nil {
 		return err
 	}
+	// From net/netfilter/nf_tables_api.c:nf_tables_gettable
 	m := ms.AddMessage(linux.NetlinkMessageHeader{
-		Type: uint16(linux.NFNL_SUBSYS_NFTABLES)<<8 | uint16(linux.NFT_MSG_GETTABLE),
+		Type: uint16(linux.NFNL_SUBSYS_NFTABLES)<<8 | uint16(linux.NFT_MSG_NEWTABLE),
 	})
 
 	m.Put(&linux.NetFilterGenMsg{
