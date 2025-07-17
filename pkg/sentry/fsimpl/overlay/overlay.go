@@ -860,11 +860,9 @@ const statInternalMask = linux.STATX_TYPE | linux.STATX_MODE | linux.STATX_UID |
 func (d *dentry) statInternalTo(ctx context.Context, opts *vfs.StatOptions, stat *linux.Statx) {
 	stat.Mask |= statInternalMask
 	if d.isDir() {
-		// Linux sets nlink to 1 for merged directories
-		// (fs/overlayfs/inode.c:ovl_getattr()); we set it to 2 because this is
-		// correct more often ("." and the directory's entry in its parent),
-		// and some of our tests expect this.
-		stat.Nlink = 2
+		// This is consistent with Linux overlayfs for merged directories
+		// (fs/overlayfs/inode.c:ovl_getattr()).
+		stat.Nlink = 1
 	}
 	stat.UID = d.uid.Load()
 	stat.GID = d.gid.Load()

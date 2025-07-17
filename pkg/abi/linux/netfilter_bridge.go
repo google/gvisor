@@ -16,6 +16,17 @@ package linux
 
 import "math"
 
+// Netfilter Bridge Standard Hook Points, from uapi/linux/netfilter_bridge.h.
+const (
+	NF_BR_PRE_ROUTING = iota
+	NF_BR_LOCAL_IN
+	NF_BR_FORWARD
+	NF_BR_LOCAL_OUT
+	NF_BR_POST_ROUTING
+	NF_BR_BROUTING
+	NF_BR_NUMHOOKS
+)
+
 // Netfilter Bridge Standard Hook Priorities, from
 // uapi/linux/netfilter_bridge.h.
 const (

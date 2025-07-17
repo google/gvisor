@@ -19,6 +19,7 @@ import (
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
@@ -76,7 +77,7 @@ func (p *Protocol) ProcessMessage(ctx context.Context, s *netlink.Socket, msg *n
 	nft := (st.NFTables()).(*nftables.NFTables)
 	var nfGenMsg linux.NetFilterGenMsg
 
-	// The payload of a message is its attributes.
+	// The payload of a netfilter generic message is its attributes.
 	atr, ok := msg.GetData(&nfGenMsg)
 	if !ok {
 		log.Debugf("Failed to get message data")
@@ -116,6 +117,12 @@ func (p *Protocol) ProcessMessage(ctx context.Context, s *netlink.Socket, msg *n
 	case linux.NFT_MSG_DELTABLE, linux.NFT_MSG_DESTROYTABLE:
 		if err := p.deleteTable(nft, attrs, family, hdr, msgType, ms); err != nil {
 			log.Debugf("Nftables delete table error: %s", err)
+			return err.GetError()
+		}
+		return nil
+	case linux.NFT_MSG_NEWCHAIN:
+		if err := p.newChain(nft, attrs, family, hdr.Flags, ms); err != nil {
+			log.Debugf("Nftables new chain error: %s", err)
 			return err.GetError()
 		}
 		return nil
@@ -300,6 +307,259 @@ func (p *Protocol) deleteTable(nft *nftables.NFTables, attrs map[uint16]nlmsg.By
 
 	_, err = nft.DeleteTable(family, tab.GetName())
 	return err
+}
+
+// newChain creates a new chain for the given family.
+func (p *Protocol) newChain(nft *nftables.NFTables, attrs map[uint16]nlmsg.BytesView, family stack.AddressFamily, flags uint16, ms *nlmsg.MessageSet) *syserr.AnnotatedError {
+	tabNameBytes, ok := attrs[linux.NFTA_TABLE_NAME]
+	if !ok {
+		return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("Nftables: Table name attribute is malformed or not found"))
+	}
+
+	tab, err := nft.GetTable(family, tabNameBytes.String(), uint32(ms.PortID))
+	if err != nil {
+		return err
+	}
+
+	// Attempt to get the chain if it exists.
+	chain, err := attemptGetChain(tab, attrs)
+	if err != nil {
+		return err
+	}
+
+	// Default policy is NF_ACCEPT.
+	var policy uint8 = linux.NF_ACCEPT
+	if policyBytes, ok := attrs[linux.NFTA_CHAIN_POLICY]; ok {
+		if chain != nil && !chain.IsBaseChain() {
+			return syserr.NewAnnotatedError(syserr.ErrNotSupported, fmt.Sprintf("Nftables: Chain policy attribute is not supported for non-base chains"))
+		}
+
+		if chain == nil && !hasAttr(linux.NFTA_CHAIN_HOOK, attrs) {
+			return syserr.NewAnnotatedError(syserr.ErrNotSupported, fmt.Sprintf("Nftables: Chain policy attribute is not supported for new chains without a hook"))
+		}
+		policyData, ok := policyBytes.Uint32()
+
+		if !ok {
+			return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("Nftables: Chain policy attribute is malformed or not found"))
+		}
+
+		// The policy attribute is purposely truncated here to be one byte in size.
+		// From net/netfilter/nf_tables_api.c:nf_tables_newchain
+		policy = uint8(policyData)
+
+		if policy != linux.NF_DROP && policy != linux.NF_ACCEPT {
+			return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("Nftables: Chain policy attribute %d is an invalid value", policy))
+		}
+	}
+
+	var chainFlags uint32 = 0
+	if chainFlagBytes, ok := attrs[linux.NFTA_CHAIN_FLAGS]; ok {
+		flagData, ok := chainFlagBytes.Uint32()
+		if !ok {
+			return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("Nftables: Chain flags attribute is malformed or not found"))
+		}
+		chainFlags = flagData
+	} else if chain != nil {
+		chainFlags = uint32(chain.GetFlags())
+	}
+
+	if chainFlags & ^linux.NFT_CHAIN_FLAGS != 0 {
+		return syserr.NewAnnotatedError(syserr.ErrNotSupported, fmt.Sprintf("Nftables: Chain flags set are not supported"))
+	}
+
+	// Update the chain if it exists.
+	if chain != nil {
+		if flags&linux.NLM_F_EXCL != 0 {
+			return syserr.NewAnnotatedError(syserr.ErrExists, fmt.Sprintf("Nftables: Chain with handle: %d already exists and NLM_F_EXCL is set", chain.GetHandle()))
+		}
+
+		if flags&linux.NLM_F_REPLACE != 0 {
+			return syserr.NewAnnotatedError(syserr.ErrNotSupported, fmt.Sprintf("Nftables: Chain with handle: %d already exists and NLM_F_REPLACE is not supported", chain.GetHandle()))
+		}
+
+		// TODO: b/421437663: Support updating existing chains.
+		return syserr.NewAnnotatedError(syserr.ErrNotSupported, fmt.Sprintf("Nftables: Chain flags attribute is not supported for existing chains"))
+	}
+
+	return p.addChain(attrs, tab, family, policy, chainFlags)
+}
+
+// attemptGetChain returns a chain if it exists.
+func attemptGetChain(tab *nftables.Table, attrs map[uint16]nlmsg.BytesView) (*nftables.Chain, *syserr.AnnotatedError) {
+	var chain *nftables.Chain
+	var err *syserr.AnnotatedError
+	if chainHandleBytes, ok := attrs[linux.NFTA_CHAIN_HANDLE]; ok {
+		chainHandle, ok := chainHandleBytes.Uint64()
+		if !ok {
+			return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("Nftables: Chain handle attribute is malformed or not found"))
+		}
+
+		chain, err = tab.GetChainByHandle(chainHandle)
+		if err != nil {
+			return nil, err
+		}
+	} else if chainNameBytes, ok := attrs[linux.NFTA_CHAIN_NAME]; ok {
+		chainName := chainNameBytes.String()
+		chain, err = tab.GetChain(chainName)
+		// Only continue if the error is that the chain does not exist.
+		if err != nil && err.GetError() != syserr.ErrNoFileOrDir {
+			return nil, err
+		}
+	} else if !hasAttr(linux.NFTA_CHAIN_ID, attrs) {
+		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("Nftables: Chain handle or name attribute is malformed or not found"))
+	}
+	return chain, nil
+}
+
+var chainCounter atomicbitops.Uint64
+
+// addChain adds a chain to a table.
+func (p *Protocol) addChain(attrs map[uint16]nlmsg.BytesView, tab *nftables.Table, family stack.AddressFamily, policy uint8, chainFlags uint32) *syserr.AnnotatedError {
+	var bcInfo *nftables.BaseChainInfo
+	var err *syserr.AnnotatedError
+	if hookDataBytes, ok := attrs[linux.NFTA_CHAIN_HOOK]; ok {
+		if chainFlags&linux.NFT_CHAIN_BINDING != 0 {
+			return syserr.NewAnnotatedError(syserr.ErrNotSupported, fmt.Sprintf("Nftables: Chain binding attribute is not supported for chains with a hook"))
+		}
+
+		bcInfo, err = p.chainParseHook(nil, family, nlmsg.AttrsView(hookDataBytes))
+		if err != nil {
+			return err
+		}
+		// TODO: b/421437663 - support NFTA_CHAIN_COUNTERS (nested attribute)
+		if _, ok := attrs[linux.NFTA_CHAIN_COUNTERS]; ok {
+			return syserr.NewAnnotatedError(syserr.ErrNotSupported, fmt.Sprintf("Nftables: Chain counters attribute is currently not supported"))
+		}
+	} else {
+		if chainFlags&linux.NFT_CHAIN_BASE != 0 {
+			return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("Nftables: Chain base attribute is invalid for chains without a hook"))
+		}
+		if chainFlags&linux.NFT_CHAIN_HW_OFFLOAD != 0 {
+			return syserr.NewAnnotatedError(syserr.ErrNotSupported, fmt.Sprintf("Nftables: Chain hardware offload attribute is not supported for chains without a hook"))
+		}
+	}
+
+	var name string
+	if nameBytes, ok := attrs[linux.NFTA_CHAIN_NAME]; ok {
+		name = nameBytes.String()
+	} else {
+		if chainFlags&linux.NFT_CHAIN_BINDING == 0 {
+			return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("Nftables: Chain name attribute is not found and chain binding is not set"))
+		}
+
+		name = fmt.Sprintf("__chain%d", chainCounter.Add(1))
+	}
+
+	// Add the chain to the table, appending, by priority, to the stack of base chains for the hook.
+	chain, err := tab.AddChain(name, bcInfo, "", true)
+	if err != nil {
+		return err
+	}
+
+	chain.SetFlags(uint8(chainFlags))
+
+	if udata, ok := attrs[linux.NFTA_CHAIN_USERDATA]; ok {
+		chain.SetUserData(udata)
+	}
+
+	if chain.IsBaseChain() {
+		chain.GetBaseChainInfo().PolicyDrop = policy == linux.NF_DROP
+	}
+
+	return nil
+}
+
+// chainParseHook parses the hook attributes and returns a complete BaseChainInfo.
+func (p *Protocol) chainParseHook(chain *nftables.Chain, family stack.AddressFamily, hdata nlmsg.AttrsView) (*nftables.BaseChainInfo, *syserr.AnnotatedError) {
+	hookAttrs, ok := hdata.Parse()
+	var hookInfo nftables.HookInfo
+	if !ok {
+		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("Nftables: Failed to parse hook attributes"))
+	}
+
+	if chain != nil {
+		// TODO: b/421437663 - Support updating existing chains.
+		return nil, syserr.NewAnnotatedError(syserr.ErrNotSupported, fmt.Sprintf("Nftables: Updating hook attributes are not supported for existing chains"))
+	}
+
+	if !hasAttr(linux.NFTA_HOOK_HOOKNUM, hookAttrs) || !hasAttr(linux.NFTA_HOOK_PRIORITY, hookAttrs) {
+		return nil, syserr.NewAnnotatedError(syserr.ErrNoFileOrDir, fmt.Sprintf("Nftables: Hook attributes HOOK_HOOKNUM and/or HOOK_PRIORITY are not found"))
+	}
+
+	// These attributes are known to exist after the previous check.
+	if hookNumBytes, ok := hookAttrs[linux.NFTA_HOOK_HOOKNUM]; ok {
+		hookNum, ok := hookNumBytes.Uint32()
+		if !ok {
+			return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("Nftables: Hook attributes HOOK_HOOKNUM is malformed or not found"))
+		}
+		hookInfo.HookNum = hookNum
+	}
+
+	if priorityBytes, ok := hookAttrs[linux.NFTA_HOOK_PRIORITY]; ok {
+		priority, ok := priorityBytes.Uint32()
+		if !ok {
+			return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("Nftables: Hook attributes HOOK_PRIORITY is malformed or not found"))
+		}
+		hookInfo.Priority = int32(priority)
+	}
+
+	// All families default to filter type.
+	hookInfo.ChainType = nftables.BaseChainTypeFilter
+
+	if chainTypeBytes, ok := hookAttrs[linux.NFTA_CHAIN_TYPE]; ok {
+		// TODO - b/421437663: Support base chain types other than filter.
+		switch chainType := chainTypeBytes.String(); chainType {
+		case "filter":
+			hookInfo.ChainType = nftables.BaseChainTypeFilter
+		case "route":
+			hookInfo.ChainType = nftables.BaseChainTypeRoute
+		case "nat":
+			hookInfo.ChainType = nftables.BaseChainTypeNat
+		default:
+			return nil, syserr.NewAnnotatedError(syserr.ErrNoFileOrDir, fmt.Sprintf("Nftables: Unknown chain type not found: %s", chainType))
+		}
+	}
+
+	// Check whether the chain type is supported for the given hook number and family.
+	if !nftables.ValidLinuxHook(family, hookInfo.ChainType, hookInfo.HookNum) {
+		return nil, syserr.NewAnnotatedError(syserr.ErrNotSupported, fmt.Sprintf("Nftables: Hook attributes HOOK_HOOKNUM is invalid for the given family and chain type"))
+	}
+
+	if hookInfo.ChainType == nftables.BaseChainTypeNat && hookInfo.Priority <= linux.NF_IP_PRI_CONNTRACK {
+		return nil, syserr.NewAnnotatedError(syserr.ErrNotSupported, fmt.Sprintf("Nftables: Hook attributes HOOK_PRIORITY is invalid for chain type NAT"))
+	}
+
+	var netDevName string
+	if isNetDevHook(family, hookInfo.HookNum) {
+		// TODO: b/421437663 - Support chains for the netdev family.
+		return nil, syserr.NewAnnotatedError(syserr.ErrNotSupported, fmt.Sprintf("Nftables: Netdev hooks are not currently supported"))
+	}
+
+	if hasAttr(linux.NFTA_HOOK_DEV, hookAttrs) || hasAttr(linux.NFTA_HOOK_DEVS, hookAttrs) {
+		return nil, syserr.NewAnnotatedError(syserr.ErrNotSupported, fmt.Sprintf("Nftables: Hook attributes DEV and DEVS are not supported for non-netdev hooks"))
+	}
+
+	stackHook, err := nftables.StackHook(family, hookInfo.HookNum)
+	if err != nil {
+		return nil, err
+	}
+
+	baseChainInfo := &nftables.BaseChainInfo{
+		Hook:         stackHook,
+		LinuxHookNum: hookInfo.HookNum,
+		BcType:       hookInfo.ChainType,
+		Priority:     nftables.NewIntPriority(int(hookInfo.Priority)),
+		Device:       netDevName,
+	}
+
+	return baseChainInfo, nil
+}
+
+// isNetDevHook returns whether the given family and hook number represent a netdev hook, or if
+// the family is inet and is attempting to attach to Ingress or Egress hooks.
+func isNetDevHook(family stack.AddressFamily, hookNum uint32) bool {
+	return family == stack.Netdev ||
+		(family == stack.Inet && hookNum == linux.NF_INET_INGRESS)
 }
 
 // netLinkMessagePayloadSize returns the size of the netlink message payload.
