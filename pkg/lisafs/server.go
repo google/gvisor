@@ -62,6 +62,10 @@ type ServerOpts struct {
 	// AllocateOnDeleted is set to true if it's safe to call OpenFDImpl.Allocate
 	// for deleted files.
 	AllocateOnDeleted bool
+
+	// OpenOnDeleted is set to true if it's safe to call ControlFDImpl.Open for
+	// deleted files.
+	OpenOnDeleted bool
 }
 
 // Init must be called before first use of the server.

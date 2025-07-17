@@ -241,6 +241,7 @@ type NFTables struct {
 	startTime          time.Time                          // Time NFTables object was created.
 	rng                rand.RNG                           // Random number generator.
 	tableHandleCounter atomicbitops.Uint64                // Table handle counter.
+	Mu                 nfTablesRWMutex                    // Mutex for tableHandles.
 }
 
 // Ensures NFTables implements the NFTablesInterface.

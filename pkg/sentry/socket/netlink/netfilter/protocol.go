@@ -95,6 +95,8 @@ func (p *Protocol) ProcessMessage(ctx context.Context, s *netlink.Socket, msg *n
 	// TODO: b/421437663 - Match the message type and call the appropriate Nftables function.
 	switch msgType {
 	case linux.NFT_MSG_NEWTABLE:
+		nft.Mu.Lock()
+		defer nft.Mu.Unlock()
 		// We only check the error value in the case of NFT_MSG_NEWTABLE as linux returns
 		// an EOPNOTSUPP error only in that case. Otherwise the other operations will return
 		// errors specific to their function.
@@ -109,18 +111,24 @@ func (p *Protocol) ProcessMessage(ctx context.Context, s *netlink.Socket, msg *n
 		}
 		return nil
 	case linux.NFT_MSG_GETTABLE:
+		nft.Mu.RLock()
+		defer nft.Mu.RUnlock()
 		if err := p.getTable(nft, attrs, family, hdr.Flags, ms); err != nil {
 			log.Debugf("Nftables get table error: %s", err)
 			return err.GetError()
 		}
 		return nil
 	case linux.NFT_MSG_DELTABLE, linux.NFT_MSG_DESTROYTABLE:
+		nft.Mu.Lock()
+		defer nft.Mu.Unlock()
 		if err := p.deleteTable(nft, attrs, family, hdr, msgType, ms); err != nil {
 			log.Debugf("Nftables delete table error: %s", err)
 			return err.GetError()
 		}
 		return nil
 	case linux.NFT_MSG_NEWCHAIN:
+		nft.Mu.Lock()
+		defer nft.Mu.Unlock()
 		if err := p.newChain(nft, attrs, family, hdr.Flags, ms); err != nil {
 			log.Debugf("Nftables new chain error: %s", err)
 			return err.GetError()
@@ -225,7 +233,12 @@ func (p *Protocol) updateTable(nft *nftables.NFTables, tab *nftables.Table, attr
 }
 
 // getTable returns a table for the given family.
-func (p *Protocol) getTable(nft *nftables.NFTables, attrs map[uint16]nlmsg.BytesView, family stack.AddressFamily, flags uint16, ms *nlmsg.MessageSet) *syserr.AnnotatedError {
+func (p *Protocol) getTable(nft *nftables.NFTables, attrs map[uint16]nlmsg.BytesView, family stack.AddressFamily, msgFlags uint16, ms *nlmsg.MessageSet) *syserr.AnnotatedError {
+	if (msgFlags & linux.NLM_F_DUMP) != 0 {
+		// TODO: b/421437663 - Support dump requests for tables.
+		return syserr.NewAnnotatedError(syserr.ErrNotSupported, fmt.Sprintf("Nftables: Table dump is not currently supported"))
+	}
+
 	// The table name is required.
 	tabNameBytes, ok := attrs[linux.NFTA_TABLE_NAME]
 	if !ok {
@@ -242,8 +255,9 @@ func (p *Protocol) getTable(nft *nftables.NFTables, attrs map[uint16]nlmsg.Bytes
 	if err != nil {
 		return err
 	}
+	// From net/netfilter/nf_tables_api.c:nf_tables_gettable
 	m := ms.AddMessage(linux.NetlinkMessageHeader{
-		Type: uint16(linux.NFNL_SUBSYS_NFTABLES)<<8 | uint16(linux.NFT_MSG_GETTABLE),
+		Type: uint16(linux.NFNL_SUBSYS_NFTABLES)<<8 | uint16(linux.NFT_MSG_NEWTABLE),
 	})
 
 	m.Put(&linux.NetFilterGenMsg{
