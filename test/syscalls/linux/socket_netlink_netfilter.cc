@@ -806,6 +806,897 @@ TEST(NetlinkNetfilterTest, DeleteAllTablesUnspecifiedNameAndHandle) {
       PosixErrorIs(ENOENT, _));
 }
 
+TEST(NetlinkNetfilterTest, ErrNewChainWithNoSpecifiedTableName) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+  const char test_table_name[] = "test_table_chain";
+
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
+
+  std::vector<char> add_table_request_buffer =
+      NlReq()
+          .MsgType(NFT_MSG_NEWTABLE)
+          .Flags(NLM_F_REQUEST | NLM_F_ACK)
+          .Family(NFPROTO_INET)
+          .Seq(kSeq)
+          .StrAttr(NFTA_TABLE_NAME, test_table_name)
+          .Build();
+
+  std::vector<char> add_chain_request_buffer =
+      NlReq()
+          .MsgType(NFT_MSG_NEWCHAIN)
+          .Flags(NLM_F_REQUEST | NLM_F_ACK)
+          .Family(NFPROTO_INET)
+          .Seq(kSeq + 1)
+          .Build();
+
+  ASSERT_NO_ERRNO(NetlinkRequestAckOrError(fd, kSeq,
+                                           add_table_request_buffer.data(),
+                                           add_table_request_buffer.size()));
+  ASSERT_THAT(
+      NetlinkRequestAckOrError(fd, kSeq + 1, add_chain_request_buffer.data(),
+                               add_chain_request_buffer.size()),
+      PosixErrorIs(EINVAL, _));
+}
+
+TEST(NetlinkNetfilterTest, ErrNewChainWithNonexistentTable) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+  const char test_table_name[] = "test_no_table_chain";
+
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
+
+  std::vector<char> add_chain_request_buffer =
+      NlReq()
+          .MsgType(NFT_MSG_NEWCHAIN)
+          .Flags(NLM_F_REQUEST | NLM_F_ACK)
+          .Family(NFPROTO_INET)
+          .Seq(kSeq + 1)
+          .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
+          .Build();
+
+  ASSERT_THAT(
+      NetlinkRequestAckOrError(fd, kSeq + 1, add_chain_request_buffer.data(),
+                               add_chain_request_buffer.size()),
+      PosixErrorIs(ENOENT, _));
+}
+
+TEST(NetlinkNetfilterTest, ErrNewChainWithNoSpecifiedNameOrHandle) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+  const char test_table_name[] = "test_no_name_or_handle_chain";
+
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
+
+  std::vector<char> add_table_request_buffer =
+      NlReq()
+          .MsgType(NFT_MSG_NEWTABLE)
+          .Flags(NLM_F_REQUEST | NLM_F_ACK)
+          .Family(NFPROTO_INET)
+          .Seq(kSeq)
+          .StrAttr(NFTA_TABLE_NAME, test_table_name)
+          .Build();
+
+  std::vector<char> add_chain_request_buffer =
+      NlReq()
+          .MsgType(NFT_MSG_NEWCHAIN)
+          .Flags(NLM_F_REQUEST | NLM_F_ACK)
+          .Family(NFPROTO_INET)
+          .Seq(kSeq + 1)
+          .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
+          .Build();
+
+  ASSERT_NO_ERRNO(NetlinkRequestAckOrError(fd, kSeq,
+                                           add_table_request_buffer.data(),
+                                           add_table_request_buffer.size()));
+  ASSERT_THAT(
+      NetlinkRequestAckOrError(fd, kSeq + 1, add_chain_request_buffer.data(),
+                               add_chain_request_buffer.size()),
+      PosixErrorIs(EINVAL, _));
+}
+
+TEST(NetlinkNetfilterTest, ErrNewChainWithPolicySet) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+  const char test_table_name[] = "test_table_reg_chain";
+  const char test_chain_name[] = "test_chain";
+  const uint32_t test_policy = NF_ACCEPT;
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
+
+  std::vector<char> add_table_request_buffer =
+      NlReq()
+          .MsgType(NFT_MSG_NEWTABLE)
+          .Flags(NLM_F_REQUEST | NLM_F_ACK)
+          .Family(NFPROTO_INET)
+          .Seq(kSeq)
+          .StrAttr(NFTA_TABLE_NAME, test_table_name)
+          .Build();
+
+  std::vector<char> add_chain_request_buffer =
+      NlReq()
+          .MsgType(NFT_MSG_NEWCHAIN)
+          .Flags(NLM_F_REQUEST | NLM_F_ACK)
+          .Family(NFPROTO_INET)
+          .Seq(kSeq + 1)
+          .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
+          .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
+          .U32Attr(NFTA_CHAIN_POLICY, &test_policy)
+          .Build();
+
+  ASSERT_NO_ERRNO(NetlinkRequestAckOrError(fd, kSeq,
+                                           add_table_request_buffer.data(),
+                                           add_table_request_buffer.size()));
+  ASSERT_THAT(
+      NetlinkRequestAckOrError(fd, kSeq + 1, add_chain_request_buffer.data(),
+                               add_chain_request_buffer.size()),
+      PosixErrorIs(ENOTSUP, _));
+}
+
+TEST(NetlinkNetfilterTest, ErrNewBaseChainWithInvalidPolicy) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+  const char test_table_name[] = "test_table_chain_hook";
+  const char test_chain_name[] = "test_chain_bad_policy";
+  const uint32_t test_policy = 1 << 3;
+  const uint8_t test_hook = NF_INET_PRE_ROUTING;
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
+
+  std::vector<char> add_table_request_buffer =
+      NlReq()
+          .MsgType(NFT_MSG_NEWTABLE)
+          .Flags(NLM_F_REQUEST | NLM_F_ACK)
+          .Family(NFPROTO_INET)
+          .Seq(kSeq)
+          .StrAttr(NFTA_TABLE_NAME, test_table_name)
+          .Build();
+
+  std::vector<char> add_chain_request_buffer =
+      NlReq()
+          .MsgType(NFT_MSG_NEWCHAIN)
+          .Flags(NLM_F_REQUEST | NLM_F_ACK)
+          .Family(NFPROTO_INET)
+          .Seq(kSeq + 1)
+          .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
+          .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
+          .U32Attr(NFTA_CHAIN_POLICY, &test_policy)
+          .U8Attr(NFTA_CHAIN_HOOK, &test_hook)
+          .Build();
+
+  ASSERT_NO_ERRNO(NetlinkRequestAckOrError(fd, kSeq,
+                                           add_table_request_buffer.data(),
+                                           add_table_request_buffer.size()));
+  ASSERT_THAT(
+      NetlinkRequestAckOrError(fd, kSeq + 1, add_chain_request_buffer.data(),
+                               add_chain_request_buffer.size()),
+      PosixErrorIs(EINVAL, _));
+}
+
+TEST(NetlinkNetfilterTest, ErrNewBaseChainWithInvalidFlags) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+  const char test_table_name[] = "test_table_chain_hook";
+  const char test_chain_name[] = "test_chain_bad_policy";
+  const uint32_t test_policy = NF_ACCEPT;
+  const uint8_t test_hook = NF_INET_PRE_ROUTING;
+  // Only NFT_CHAIN_BASE, NFT_CHAIN_HW_OFFLOAD, and NFT_CHAIN_BINDING are
+  // valid flags that should be set by users.
+  const uint32_t test_chain_flags = 1 << 3;
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
+
+  std::vector<char> add_table_request_buffer =
+      NlReq()
+          .MsgType(NFT_MSG_NEWTABLE)
+          .Flags(NLM_F_REQUEST | NLM_F_ACK)
+          .Family(NFPROTO_INET)
+          .Seq(kSeq)
+          .StrAttr(NFTA_TABLE_NAME, test_table_name)
+          .Build();
+
+  std::vector<char> add_chain_request_buffer =
+      NlReq()
+          .MsgType(NFT_MSG_NEWCHAIN)
+          .Flags(NLM_F_REQUEST | NLM_F_ACK)
+          .Family(NFPROTO_INET)
+          .Seq(kSeq + 1)
+          .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
+          .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
+          .U32Attr(NFTA_CHAIN_POLICY, &test_policy)
+          .U8Attr(NFTA_CHAIN_HOOK, &test_hook)
+          .U32Attr(NFTA_CHAIN_FLAGS, &test_chain_flags)
+          .Build();
+
+  ASSERT_NO_ERRNO(NetlinkRequestAckOrError(fd, kSeq,
+                                           add_table_request_buffer.data(),
+                                           add_table_request_buffer.size()));
+  ASSERT_THAT(
+      NetlinkRequestAckOrError(fd, kSeq + 1, add_chain_request_buffer.data(),
+                               add_chain_request_buffer.size()),
+      PosixErrorIs(ENOTSUP, _));
+}
+
+TEST(NetlinkNetfilterTest,
+     ErrNewBaseChainWithMalformedHookDataMissingPriority) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+  const char test_table_name[] = "test_table_chain_hook";
+  const char test_chain_name[] = "test_chain_bad_policy";
+  const uint32_t test_policy = NF_ACCEPT;
+  const uint32_t test_hook_num = NF_INET_PRE_ROUTING;
+  const uint32_t test_chain_flags = NFT_CHAIN_BASE;
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
+
+  std::vector<char> add_table_request_buffer =
+      NlReq()
+          .MsgType(NFT_MSG_NEWTABLE)
+          .Flags(NLM_F_REQUEST | NLM_F_ACK)
+          .Family(NFPROTO_INET)
+          .Seq(kSeq)
+          .StrAttr(NFTA_TABLE_NAME, test_table_name)
+          .Build();
+
+  std::vector<char> nested_hook_data =
+      NlNestedAttr().U32Attr(NFTA_HOOK_HOOKNUM, &test_hook_num).Build();
+
+  std::vector<char> add_chain_request_buffer =
+      NlReq()
+          .MsgType(NFT_MSG_NEWCHAIN)
+          .Flags(NLM_F_REQUEST | NLM_F_ACK)
+          .Family(NFPROTO_INET)
+          .Seq(kSeq + 1)
+          .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
+          .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
+          .U32Attr(NFTA_CHAIN_POLICY, &test_policy)
+          .RawAttr(NFTA_CHAIN_HOOK, nested_hook_data.data(),
+                   nested_hook_data.size())
+          .U32Attr(NFTA_CHAIN_FLAGS, &test_chain_flags)
+          .Build();
+
+  ASSERT_NO_ERRNO(NetlinkRequestAckOrError(fd, kSeq,
+                                           add_table_request_buffer.data(),
+                                           add_table_request_buffer.size()));
+  ASSERT_THAT(
+      NetlinkRequestAckOrError(fd, kSeq + 1, add_chain_request_buffer.data(),
+                               add_chain_request_buffer.size()),
+      PosixErrorIs(ENOENT, _));
+}
+
+TEST(NetlinkNetfilterTest, ErrNewBaseChainWithMalformedHookDataMissingHookNum) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+  const char test_table_name[] = "test_table_chain_hook";
+  const char test_chain_name[] = "test_chain_bad_policy";
+  const uint32_t test_policy = NF_ACCEPT;
+  const uint32_t test_hook_priority = 10;
+  const uint32_t test_chain_flags = NFT_CHAIN_BASE;
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
+
+  std::vector<char> add_table_request_buffer =
+      NlReq()
+          .MsgType(NFT_MSG_NEWTABLE)
+          .Flags(NLM_F_REQUEST | NLM_F_ACK)
+          .Family(NFPROTO_INET)
+          .Seq(kSeq)
+          .StrAttr(NFTA_TABLE_NAME, test_table_name)
+          .Build();
+
+  std::vector<char> nested_hook_data =
+      NlNestedAttr().U32Attr(NFTA_HOOK_PRIORITY, &test_hook_priority).Build();
+
+  std::vector<char> add_chain_request_buffer =
+      NlReq()
+          .MsgType(NFT_MSG_NEWCHAIN)
+          .Flags(NLM_F_REQUEST | NLM_F_ACK)
+          .Family(NFPROTO_INET)
+          .Seq(kSeq + 1)
+          .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
+          .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
+          .U32Attr(NFTA_CHAIN_POLICY, &test_policy)
+          .RawAttr(NFTA_CHAIN_HOOK, nested_hook_data.data(),
+                   nested_hook_data.size())
+          .U32Attr(NFTA_CHAIN_FLAGS, &test_chain_flags)
+          .Build();
+
+  ASSERT_NO_ERRNO(NetlinkRequestAckOrError(fd, kSeq,
+                                           add_table_request_buffer.data(),
+                                           add_table_request_buffer.size()));
+  ASSERT_THAT(
+      NetlinkRequestAckOrError(fd, kSeq + 1, add_chain_request_buffer.data(),
+                               add_chain_request_buffer.size()),
+      PosixErrorIs(ENOENT, _));
+}
+
+TEST(NetlinkNetfilterTest, ErrNewBaseChainWithInvalidChainType) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+  const char test_table_name[] = "test_table_chain_hook";
+  const char test_chain_name[] = "test_chain_bad_policy";
+  const char test_chain_type_name[] = "test_chain_type_invalid";
+  const uint32_t test_policy = NF_ACCEPT;
+  const uint32_t test_hook_num = NF_INET_PRE_ROUTING;
+  const uint32_t test_hook_priority = 10;
+  const uint32_t test_chain_flags = NFT_CHAIN_BASE;
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
+
+  std::vector<char> add_table_request_buffer =
+      NlReq()
+          .MsgType(NFT_MSG_NEWTABLE)
+          .Flags(NLM_F_REQUEST | NLM_F_ACK)
+          .Family(NFPROTO_INET)
+          .Seq(kSeq)
+          .StrAttr(NFTA_TABLE_NAME, test_table_name)
+          .Build();
+
+  std::vector<char> nested_hook_data =
+      NlNestedAttr()
+          .U32Attr(NFTA_HOOK_HOOKNUM, &test_hook_num)
+          .U32Attr(NFTA_HOOK_PRIORITY, &test_hook_priority)
+          .StrAttr(NFTA_CHAIN_TYPE, test_chain_type_name)
+          .Build();
+
+  std::vector<char> add_chain_request_buffer =
+      NlReq()
+          .MsgType(NFT_MSG_NEWCHAIN)
+          .Flags(NLM_F_REQUEST | NLM_F_ACK)
+          .Family(NFPROTO_INET)
+          .Seq(kSeq + 1)
+          .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
+          .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
+          .U32Attr(NFTA_CHAIN_POLICY, &test_policy)
+          .RawAttr(NFTA_CHAIN_HOOK, nested_hook_data.data(),
+                   nested_hook_data.size())
+          .U32Attr(NFTA_CHAIN_FLAGS, &test_chain_flags)
+          .Build();
+
+  ASSERT_NO_ERRNO(NetlinkRequestAckOrError(fd, kSeq,
+                                           add_table_request_buffer.data(),
+                                           add_table_request_buffer.size()));
+  ASSERT_THAT(
+      NetlinkRequestAckOrError(fd, kSeq + 1, add_chain_request_buffer.data(),
+                               add_chain_request_buffer.size()),
+      PosixErrorIs(ENOENT, _));
+}
+
+TEST(NetlinkNetfilterTest, ErrNewBaseChainWithUnsupportedFamilyChainTypePair) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+  const char test_table_name[] = "test_table_chain_hook";
+  const char test_chain_name[] = "test_chain_bad_policy";
+  const char test_chain_type_name[] = "route";
+  const uint32_t test_policy = NF_ACCEPT;
+  const uint32_t test_hook_num = NF_INET_PRE_ROUTING;
+  const uint32_t test_hook_priority = 10;
+  const uint32_t test_chain_flags = NFT_CHAIN_BASE;
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
+
+  std::vector<char> add_table_request_buffer =
+      NlReq()
+          .MsgType(NFT_MSG_NEWTABLE)
+          .Flags(NLM_F_REQUEST | NLM_F_ACK)
+          .Family(NFPROTO_ARP)
+          .Seq(kSeq)
+          .StrAttr(NFTA_TABLE_NAME, test_table_name)
+          .Build();
+
+  std::vector<char> nested_hook_data =
+      NlNestedAttr()
+          .U32Attr(NFTA_HOOK_HOOKNUM, &test_hook_num)
+          .U32Attr(NFTA_HOOK_PRIORITY, &test_hook_priority)
+          .StrAttr(NFTA_CHAIN_TYPE, test_chain_type_name)
+          .Build();
+
+  std::vector<char> add_chain_request_buffer =
+      NlReq()
+          .MsgType(NFT_MSG_NEWCHAIN)
+          .Flags(NLM_F_REQUEST | NLM_F_ACK)
+          .Family(NFPROTO_ARP)
+          .Seq(kSeq + 1)
+          .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
+          .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
+          .U32Attr(NFTA_CHAIN_POLICY, &test_policy)
+          // Potentially add the NLA_F_NESTED flag if the hook data is nested.
+          .RawAttr(NFTA_CHAIN_HOOK, nested_hook_data.data(),
+                   nested_hook_data.size())
+          .U32Attr(NFTA_CHAIN_FLAGS, &test_chain_flags)
+          .Build();
+
+  ASSERT_NO_ERRNO(NetlinkRequestAckOrError(fd, kSeq,
+                                           add_table_request_buffer.data(),
+                                           add_table_request_buffer.size()));
+  ASSERT_THAT(
+      NetlinkRequestAckOrError(fd, kSeq + 1, add_chain_request_buffer.data(),
+                               add_chain_request_buffer.size()),
+      PosixErrorIs(ENOTSUP, _));
+}
+
+TEST(NetlinkNetfilterTest, ErrNewNATBaseChainWithInvalidPriority) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+  const char test_table_name[] = "test_table_chain_hook";
+  const char test_chain_name[] = "test_chain_bad_policy";
+  const char test_chain_type_name[] = "nat";
+  const uint32_t test_policy = NF_ACCEPT;
+  const uint32_t test_hook_num = NF_INET_PRE_ROUTING;
+  const uint32_t test_hook_priority = -250;
+  const uint32_t test_chain_flags = NFT_CHAIN_BASE;
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
+
+  std::vector<char> add_table_request_buffer =
+      NlReq()
+          .MsgType(NFT_MSG_NEWTABLE)
+          .Flags(NLM_F_REQUEST | NLM_F_ACK)
+          .Family(NFPROTO_INET)
+          .Seq(kSeq)
+          .StrAttr(NFTA_TABLE_NAME, test_table_name)
+          .Build();
+
+  std::vector<char> nested_hook_data =
+      NlNestedAttr()
+          .U32Attr(NFTA_HOOK_HOOKNUM, &test_hook_num)
+          .U32Attr(NFTA_HOOK_PRIORITY, &test_hook_priority)
+          .StrAttr(NFTA_CHAIN_TYPE, test_chain_type_name)
+          .Build();
+
+  std::vector<char> add_chain_request_buffer =
+      NlReq()
+          .MsgType(NFT_MSG_NEWCHAIN)
+          .Flags(NLM_F_REQUEST | NLM_F_ACK)
+          .Family(NFPROTO_INET)
+          .Seq(kSeq + 1)
+          .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
+          .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
+          .U32Attr(NFTA_CHAIN_POLICY, &test_policy)
+          .RawAttr(NFTA_CHAIN_HOOK, nested_hook_data.data(),
+                   nested_hook_data.size())
+          .U32Attr(NFTA_CHAIN_FLAGS, &test_chain_flags)
+          .Build();
+
+  ASSERT_NO_ERRNO(NetlinkRequestAckOrError(fd, kSeq,
+                                           add_table_request_buffer.data(),
+                                           add_table_request_buffer.size()));
+  ASSERT_THAT(
+      NetlinkRequestAckOrError(fd, kSeq + 1, add_chain_request_buffer.data(),
+                               add_chain_request_buffer.size()),
+      PosixErrorIs(ENOTSUP, _));
+}
+
+TEST(NetlinkNetfilterTest, ErrNewNetDevBaseChainUnsupported) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+  const char test_table_name[] = "test_table_chain_hook";
+  const char test_chain_name[] = "test_chain_bad_policy";
+  const char test_chain_type_name[] = "filter";
+  const uint32_t test_policy = NF_ACCEPT;
+  const uint32_t test_hook_num = NF_NETDEV_INGRESS;
+  const uint32_t test_hook_priority = 10;
+  const uint32_t test_chain_flags = NFT_CHAIN_BASE;
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
+
+  std::vector<char> add_table_request_buffer =
+      NlReq()
+          .MsgType(NFT_MSG_NEWTABLE)
+          .Flags(NLM_F_REQUEST | NLM_F_ACK)
+          .Family(NFPROTO_NETDEV)
+          .Seq(kSeq)
+          .StrAttr(NFTA_TABLE_NAME, test_table_name)
+          .Build();
+
+  std::vector<char> nested_hook_data =
+      NlNestedAttr()
+          .U32Attr(NFTA_HOOK_HOOKNUM, &test_hook_num)
+          .U32Attr(NFTA_HOOK_PRIORITY, &test_hook_priority)
+          .StrAttr(NFTA_CHAIN_TYPE, test_chain_type_name)
+          .Build();
+
+  std::vector<char> add_chain_request_buffer =
+      NlReq()
+          .MsgType(NFT_MSG_NEWCHAIN)
+          .Flags(NLM_F_REQUEST | NLM_F_ACK)
+          .Family(NFPROTO_NETDEV)
+          .Seq(kSeq + 1)
+          .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
+          .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
+          .U32Attr(NFTA_CHAIN_POLICY, &test_policy)
+          .RawAttr(NFTA_CHAIN_HOOK, nested_hook_data.data(),
+                   nested_hook_data.size())
+          .U32Attr(NFTA_CHAIN_FLAGS, &test_chain_flags)
+          .Build();
+
+  ASSERT_NO_ERRNO(NetlinkRequestAckOrError(fd, kSeq,
+                                           add_table_request_buffer.data(),
+                                           add_table_request_buffer.size()));
+  ASSERT_THAT(
+      NetlinkRequestAckOrError(fd, kSeq + 1, add_chain_request_buffer.data(),
+                               add_chain_request_buffer.size()),
+      PosixErrorIs(ENOTSUP, _));
+}
+
+TEST(NetlinkNetfilterTest, ErrNewInetBaseChainAtIngressUnsupported) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+  const char test_table_name[] = "test_table_chain_hook";
+  const char test_chain_name[] = "test_chain_bad_policy";
+  const char test_chain_type_name[] = "filter";
+  const uint32_t test_policy = NF_ACCEPT;
+  const uint32_t test_hook_num = NF_INET_INGRESS;
+  const uint32_t test_hook_priority = 10;
+  const uint32_t test_chain_flags = NFT_CHAIN_BASE;
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
+
+  std::vector<char> add_table_request_buffer =
+      NlReq()
+          .MsgType(NFT_MSG_NEWTABLE)
+          .Flags(NLM_F_REQUEST | NLM_F_ACK)
+          .Family(NFPROTO_INET)
+          .Seq(kSeq)
+          .StrAttr(NFTA_TABLE_NAME, test_table_name)
+          .Build();
+
+  std::vector<char> nested_hook_data =
+      NlNestedAttr()
+          .U32Attr(NFTA_HOOK_HOOKNUM, &test_hook_num)
+          .U32Attr(NFTA_HOOK_PRIORITY, &test_hook_priority)
+          .StrAttr(NFTA_CHAIN_TYPE, test_chain_type_name)
+          .Build();
+
+  std::vector<char> add_chain_request_buffer =
+      NlReq()
+          .MsgType(NFT_MSG_NEWCHAIN)
+          .Flags(NLM_F_REQUEST | NLM_F_ACK)
+          .Family(NFPROTO_INET)
+          .Seq(kSeq + 1)
+          .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
+          .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
+          .U32Attr(NFTA_CHAIN_POLICY, &test_policy)
+          .RawAttr(NFTA_CHAIN_HOOK, nested_hook_data.data(),
+                   nested_hook_data.size())
+          .U32Attr(NFTA_CHAIN_FLAGS, &test_chain_flags)
+          .Build();
+
+  ASSERT_NO_ERRNO(NetlinkRequestAckOrError(fd, kSeq,
+                                           add_table_request_buffer.data(),
+                                           add_table_request_buffer.size()));
+  ASSERT_THAT(
+      NetlinkRequestAckOrError(fd, kSeq + 1, add_chain_request_buffer.data(),
+                               add_chain_request_buffer.size()),
+      PosixErrorIs(ENOTSUP, _));
+}
+
+TEST(NetlinkNetfilterTest, ErrNewBaseChainWithUnsupportedChainCounters) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+  const char test_table_name[] = "test_table_chain_hook";
+  const char test_chain_name[] = "test_chain_bad_policy";
+  const char test_chain_type_name[] = "filter";
+  const uint32_t test_policy = NF_ACCEPT;
+  const uint32_t test_hook_num = NF_INET_INGRESS;
+  const uint32_t test_hook_priority = 10;
+  const uint32_t test_chain_flags = NFT_CHAIN_BASE;
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
+
+  std::vector<char> add_table_request_buffer =
+      NlReq()
+          .MsgType(NFT_MSG_NEWTABLE)
+          .Flags(NLM_F_REQUEST | NLM_F_ACK)
+          .Family(NFPROTO_INET)
+          .Seq(kSeq)
+          .StrAttr(NFTA_TABLE_NAME, test_table_name)
+          .Build();
+
+  std::vector<char> nested_hook_data =
+      NlNestedAttr()
+          .U32Attr(NFTA_HOOK_HOOKNUM, &test_hook_num)
+          .U32Attr(NFTA_HOOK_PRIORITY, &test_hook_priority)
+          .StrAttr(NFTA_CHAIN_TYPE, test_chain_type_name)
+          .Build();
+
+  std::vector<char> add_chain_request_buffer =
+      NlReq()
+          .MsgType(NFT_MSG_NEWCHAIN)
+          .Flags(NLM_F_REQUEST | NLM_F_ACK)
+          .Family(NFPROTO_INET)
+          .Seq(kSeq + 1)
+          .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
+          .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
+          .U32Attr(NFTA_CHAIN_POLICY, &test_policy)
+          .RawAttr(NFTA_CHAIN_HOOK, nested_hook_data.data(),
+                   nested_hook_data.size())
+          .U32Attr(NFTA_CHAIN_FLAGS, &test_chain_flags)
+          .RawAttr(NFTA_CHAIN_COUNTERS, nullptr, 0)
+          .Build();
+
+  ASSERT_NO_ERRNO(NetlinkRequestAckOrError(fd, kSeq,
+                                           add_table_request_buffer.data(),
+                                           add_table_request_buffer.size()));
+  ASSERT_THAT(
+      NetlinkRequestAckOrError(fd, kSeq + 1, add_chain_request_buffer.data(),
+                               add_chain_request_buffer.size()),
+      PosixErrorIs(ENOTSUP, _));
+}
+
+TEST(NetlinkNetfilterTest, ErrChainWithBaseChainFlagSet) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+  const char test_table_name[] = "test_table_chain_hook";
+  const char test_chain_name[] = "test_chain_bad_policy";
+  const uint32_t test_chain_flags = NFT_CHAIN_BASE;
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
+
+  std::vector<char> add_table_request_buffer =
+      NlReq()
+          .MsgType(NFT_MSG_NEWTABLE)
+          .Flags(NLM_F_REQUEST | NLM_F_ACK)
+          .Family(NFPROTO_INET)
+          .Seq(kSeq)
+          .StrAttr(NFTA_TABLE_NAME, test_table_name)
+          .Build();
+
+  std::vector<char> add_chain_request_buffer =
+      NlReq()
+          .MsgType(NFT_MSG_NEWCHAIN)
+          .Flags(NLM_F_REQUEST | NLM_F_ACK)
+          .Family(NFPROTO_INET)
+          .Seq(kSeq + 1)
+          .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
+          .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
+          .U32Attr(NFTA_CHAIN_FLAGS, &test_chain_flags)
+          .Build();
+
+  ASSERT_NO_ERRNO(NetlinkRequestAckOrError(fd, kSeq,
+                                           add_table_request_buffer.data(),
+                                           add_table_request_buffer.size()));
+  ASSERT_THAT(
+      NetlinkRequestAckOrError(fd, kSeq + 1, add_chain_request_buffer.data(),
+                               add_chain_request_buffer.size()),
+      PosixErrorIs(EINVAL, _));
+}
+
+TEST(NetlinkNetfilterTest, ErrChainWithHardwareOffloadFlagSet) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+  const char test_table_name[] = "test_table_chain_hook";
+  const char test_chain_name[] = "test_chain_bad_policy";
+  const uint32_t test_chain_flags = NFT_CHAIN_HW_OFFLOAD;
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
+
+  std::vector<char> add_table_request_buffer =
+      NlReq()
+          .MsgType(NFT_MSG_NEWTABLE)
+          .Flags(NLM_F_REQUEST | NLM_F_ACK)
+          .Family(NFPROTO_INET)
+          .Seq(kSeq)
+          .StrAttr(NFTA_TABLE_NAME, test_table_name)
+          .Build();
+
+  std::vector<char> add_chain_request_buffer =
+      NlReq()
+          .MsgType(NFT_MSG_NEWCHAIN)
+          .Flags(NLM_F_REQUEST | NLM_F_ACK)
+          .Family(NFPROTO_INET)
+          .Seq(kSeq + 1)
+          .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
+          .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
+          .U32Attr(NFTA_CHAIN_FLAGS, &test_chain_flags)
+          .Build();
+
+  ASSERT_NO_ERRNO(NetlinkRequestAckOrError(fd, kSeq,
+                                           add_table_request_buffer.data(),
+                                           add_table_request_buffer.size()));
+  ASSERT_THAT(
+      NetlinkRequestAckOrError(fd, kSeq + 1, add_chain_request_buffer.data(),
+                               add_chain_request_buffer.size()),
+      PosixErrorIs(ENOTSUP, _));
+}
+
+TEST(NetlinkNetfilterTest, ErrChainWithNoNameAndChainBindingFlagNotSet) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+  const char test_table_name[] = "test_table_chain_hook";
+  const uint32_t test_chain_flags = 0;
+  const uint32_t test_chain_id = 1;
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
+
+  std::vector<char> add_table_request_buffer =
+      NlReq()
+          .MsgType(NFT_MSG_NEWTABLE)
+          .Flags(NLM_F_REQUEST | NLM_F_ACK)
+          .Family(NFPROTO_INET)
+          .Seq(kSeq)
+          .StrAttr(NFTA_TABLE_NAME, test_table_name)
+          .Build();
+
+  std::vector<char> add_chain_request_buffer =
+      NlReq()
+          .MsgType(NFT_MSG_NEWCHAIN)
+          .Flags(NLM_F_REQUEST | NLM_F_ACK)
+          .Family(NFPROTO_INET)
+          .Seq(kSeq + 1)
+          .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
+          .U32Attr(NFTA_CHAIN_FLAGS, &test_chain_flags)
+          .U32Attr(NFTA_CHAIN_ID, &test_chain_id)
+          .Build();
+
+  ASSERT_NO_ERRNO(NetlinkRequestAckOrError(fd, kSeq,
+                                           add_table_request_buffer.data(),
+                                           add_table_request_buffer.size()));
+  ASSERT_THAT(
+      NetlinkRequestAckOrError(fd, kSeq + 1, add_chain_request_buffer.data(),
+                               add_chain_request_buffer.size()),
+      PosixErrorIs(EINVAL, _));
+}
+
+TEST(NetlinkNetfilterTest, ErrUpdateChain) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+  const char test_table_name[] = "test_table_chain_hook";
+  const char test_chain_name[] = "test_chain_invalid_update";
+  const uint32_t test_chain_flags = 0;
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
+
+  std::vector<char> add_table_request_buffer =
+      NlReq()
+          .MsgType(NFT_MSG_NEWTABLE)
+          .Flags(NLM_F_REQUEST | NLM_F_ACK)
+          .Family(NFPROTO_INET)
+          .Seq(kSeq)
+          .StrAttr(NFTA_TABLE_NAME, test_table_name)
+          .Build();
+
+  std::vector<char> add_chain_request_buffer =
+      NlReq()
+          .MsgType(NFT_MSG_NEWCHAIN)
+          .Flags(NLM_F_REQUEST | NLM_F_ACK)
+          .Family(NFPROTO_INET)
+          .Seq(kSeq + 1)
+          .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
+          .U32Attr(NFTA_CHAIN_FLAGS, &test_chain_flags)
+          .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
+          .Build();
+
+  std::vector<char> update_chain_request_buffer =
+      NlReq()
+          .MsgType(NFT_MSG_NEWCHAIN)
+          .Flags(NLM_F_REQUEST | NLM_F_ACK)
+          .Family(NFPROTO_INET)
+          .Seq(kSeq + 2)
+          .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
+          .U32Attr(NFTA_CHAIN_FLAGS, &test_chain_flags)
+          .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
+          .Build();
+
+  ASSERT_NO_ERRNO(NetlinkRequestAckOrError(fd, kSeq,
+                                           add_table_request_buffer.data(),
+                                           add_table_request_buffer.size()));
+  ASSERT_NO_ERRNO(NetlinkRequestAckOrError(fd, kSeq + 1,
+                                           add_chain_request_buffer.data(),
+                                           add_chain_request_buffer.size()));
+
+  ASSERT_THAT(
+      NetlinkRequestAckOrError(fd, kSeq + 2, update_chain_request_buffer.data(),
+                               update_chain_request_buffer.size()),
+      PosixErrorIs(ENOTSUP, _));
+}
+
+TEST(NetlinkNetfilterTest, AddChainWithNoNameAndChainIdAttributeSet) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+  const char test_table_name[] = "test_table_chain_hook";
+  const uint32_t test_chain_flags = NFT_CHAIN_BINDING;
+  const uint32_t test_chain_id = 2;
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
+
+  std::vector<char> add_table_request_buffer =
+      NlReq()
+          .MsgType(NFT_MSG_NEWTABLE)
+          .Flags(NLM_F_REQUEST | NLM_F_ACK)
+          .Family(NFPROTO_INET)
+          .Seq(kSeq)
+          .StrAttr(NFTA_TABLE_NAME, test_table_name)
+          .Build();
+
+  std::vector<char> add_chain_request_buffer =
+      NlReq()
+          .MsgType(NFT_MSG_NEWCHAIN)
+          .Flags(NLM_F_REQUEST | NLM_F_ACK)
+          .Family(NFPROTO_INET)
+          .Seq(kSeq + 1)
+          .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
+          .U32Attr(NFTA_CHAIN_FLAGS, &test_chain_flags)
+          .U32Attr(NFTA_CHAIN_ID, &test_chain_id)
+          .Build();
+
+  ASSERT_NO_ERRNO(NetlinkRequestAckOrError(fd, kSeq,
+                                           add_table_request_buffer.data(),
+                                           add_table_request_buffer.size()));
+  ASSERT_NO_ERRNO(NetlinkRequestAckOrError(fd, kSeq + 1,
+                                           add_chain_request_buffer.data(),
+                                           add_chain_request_buffer.size()));
+}
+
+TEST(NetlinkNetfilterTest, AddChainWithName) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+  const char test_table_name[] = "test_table_chain_hook";
+  const char test_chain_name[] = "test_chain_name";
+  const uint32_t test_chain_flags = 0;
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
+
+  std::vector<char> add_table_request_buffer =
+      NlReq()
+          .MsgType(NFT_MSG_NEWTABLE)
+          .Flags(NLM_F_REQUEST | NLM_F_ACK)
+          .Family(NFPROTO_INET)
+          .Seq(kSeq)
+          .StrAttr(NFTA_TABLE_NAME, test_table_name)
+          .Build();
+
+  std::vector<char> add_chain_request_buffer =
+      NlReq()
+          .MsgType(NFT_MSG_NEWCHAIN)
+          .Flags(NLM_F_REQUEST | NLM_F_ACK)
+          .Family(NFPROTO_INET)
+          .Seq(kSeq + 1)
+          .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
+          .U32Attr(NFTA_CHAIN_FLAGS, &test_chain_flags)
+          .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
+          .Build();
+
+  ASSERT_NO_ERRNO(NetlinkRequestAckOrError(fd, kSeq,
+                                           add_table_request_buffer.data(),
+                                           add_table_request_buffer.size()));
+  ASSERT_NO_ERRNO(NetlinkRequestAckOrError(fd, kSeq + 1,
+                                           add_chain_request_buffer.data(),
+                                           add_chain_request_buffer.size()));
+}
+
+TEST(NetlinkNetfilterTest, AddBaseChainWithDropPolicy) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+  const char test_table_name[] = "test_table_chain_hook";
+  const char test_chain_name[] = "test_chain_bad_policy";
+  const char test_chain_type_name[] = "filter";
+  const uint32_t test_policy = NF_DROP;
+  const uint32_t test_hook_num = NF_INET_PRE_ROUTING;
+  const uint32_t test_hook_priority = 0;
+  const uint32_t test_chain_flags = NFT_CHAIN_BASE;
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
+
+  std::vector<char> add_table_request_buffer =
+      NlReq()
+          .MsgType(NFT_MSG_NEWTABLE)
+          .Flags(NLM_F_REQUEST | NLM_F_ACK)
+          .Family(NFPROTO_INET)
+          .Seq(kSeq)
+          .StrAttr(NFTA_TABLE_NAME, test_table_name)
+          .Build();
+
+  std::vector<char> nested_hook_data =
+      NlNestedAttr()
+          .U32Attr(NFTA_HOOK_HOOKNUM, &test_hook_num)
+          .U32Attr(NFTA_HOOK_PRIORITY, &test_hook_priority)
+          .StrAttr(NFTA_CHAIN_TYPE, test_chain_type_name)
+          .Build();
+  std::vector<char> add_chain_request_buffer =
+      NlReq()
+          .MsgType(NFT_MSG_NEWCHAIN)
+          .Flags(NLM_F_REQUEST | NLM_F_ACK)
+          .Family(NFPROTO_INET)
+          .Seq(kSeq + 1)
+          .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
+          .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
+          .U32Attr(NFTA_CHAIN_POLICY, &test_policy)
+          .RawAttr(NFTA_CHAIN_HOOK, nested_hook_data.data(),
+                   nested_hook_data.size())
+          .U32Attr(NFTA_CHAIN_FLAGS, &test_chain_flags)
+          .Build();
+
+  ASSERT_NO_ERRNO(NetlinkRequestAckOrError(fd, kSeq,
+                                           add_table_request_buffer.data(),
+                                           add_table_request_buffer.size()));
+  ASSERT_NO_ERRNO(NetlinkRequestAckOrError(fd, kSeq + 1,
+                                           add_chain_request_buffer.data(),
+                                           add_chain_request_buffer.size()));
+}
+
 }  // namespace
 
 }  // namespace testing

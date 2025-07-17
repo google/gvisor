@@ -121,6 +121,69 @@ std::vector<char> NlReq::Build() {
   return msg_buffer_;
 }
 
+// Method to add an attribute to the message. payload_size must be the size of
+// the payload in bytes.
+NlNestedAttr& NlNestedAttr::RawAttr(uint16_t attr_type, const void* payload,
+                                    size_t payload_size) {
+  // Store a pointer to the payload and the size to construct it later.
+  attributes_[attr_type] = {reinterpret_cast<const char*>(payload),
+                            payload_size};
+  return *this;
+}
+
+// Method to add a string attribute to the message.
+// The payload is expected to be a null-terminated string.
+NlNestedAttr& NlNestedAttr::StrAttr(uint16_t attr_type, const char* payload) {
+  return RawAttr(attr_type, payload, strlen(payload) + 1);
+}
+
+// Method to add a uint8_t attribute to the message.
+NlNestedAttr& NlNestedAttr::U8Attr(uint16_t attr_type, const uint8_t* payload) {
+  return RawAttr(attr_type, payload, sizeof(uint8_t));
+}
+
+// Method to add a uint16_t attribute to the message.
+NlNestedAttr& NlNestedAttr::U16Attr(uint16_t attr_type,
+                                    const uint16_t* payload) {
+  return RawAttr(attr_type, payload, sizeof(uint16_t));
+}
+
+// Method to add a uint32_t attribute to the message.
+NlNestedAttr& NlNestedAttr::U32Attr(uint16_t attr_type,
+                                    const uint32_t* payload) {
+  return RawAttr(attr_type, payload, sizeof(uint32_t));
+}
+
+// Method to add a uint64_t attribute to the message.
+NlNestedAttr& NlNestedAttr::U64Attr(uint16_t attr_type,
+                                    const uint64_t* payload) {
+  return RawAttr(attr_type, payload, sizeof(uint64_t));
+}
+
+std::vector<char> NlNestedAttr::Build() {
+  size_t total_attr_size = 0;
+
+  for (const auto& [attr_type, attr_data] : attributes_) {
+    const auto& [_, payload_size] = attr_data;
+    total_attr_size += NLA_ALIGN(NLA_HDRLEN + payload_size);
+  }
+
+  msg_buffer_.resize(total_attr_size);
+  std::memset(msg_buffer_.data(), 0, total_attr_size);
+
+  char* payload = (char*)msg_buffer_.data();
+
+  for (const auto& [attr_type, attr_data] : attributes_) {
+    const auto& [payload_data, payload_size] = attr_data;
+    struct nlattr* attr = reinterpret_cast<struct nlattr*>(payload);
+    InitNetlinkAttr(attr, payload_size, attr_type);
+    std::memcpy((char*)attr + NLA_HDRLEN, payload_data, payload_size);
+    // Move over to the next attribute.
+    payload += NLA_ALIGN(NLA_HDRLEN + payload_size);
+  }
+  return msg_buffer_;
+}
+
 // Helper function to initialize a nfgenmsg header.
 void InitNetfilterGenmsg(struct nfgenmsg* genmsg, uint8_t family,
                          uint8_t version, uint16_t res_id) {

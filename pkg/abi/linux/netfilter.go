@@ -31,6 +31,13 @@ const (
 	NF_INET_LOCAL_OUT    = 3
 	NF_INET_POST_ROUTING = 4
 	NF_INET_NUMHOOKS     = 5
+	NF_INET_INGRESS      = NF_INET_NUMHOOKS
+)
+
+const (
+	NF_NETDEV_INGRESS = iota
+	NF_NETDEV_EGRESS
+	NF_NETDEV_NUMHOOKS
 )
 
 // Protocol families (address families). These correspond to values in

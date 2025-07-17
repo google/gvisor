@@ -396,11 +396,13 @@ func (nf *NFTables) AddTable(family stack.AddressFamily, name string,
 
 	// Creates the new table and add it to the table map.
 	t := &Table{
-		name:     name,
-		afFilter: nf.filters[family],
-		chains:   make(map[string]*Chain),
-		flagSet:  make(map[TableFlag]struct{}),
-		handle:   nf.getNewTableHandle(),
+		name:               name,
+		afFilter:           nf.filters[family],
+		chains:             make(map[string]*Chain),
+		chainHandles:       make(map[uint64]*Chain),
+		flagSet:            make(map[TableFlag]struct{}),
+		handle:             nf.getNewTableHandle(),
+		chainHandleCounter: atomicbitops.Uint64{},
 	}
 	tableMap[name] = t
 	tableHandleMap[t.handle] = t
@@ -474,6 +476,11 @@ func (nf *NFTables) AddChain(family stack.AddressFamily, tableName string, chain
 	}
 
 	return t.AddChain(chainName, info, comment, errorOnDuplicate)
+}
+
+// getNewChainHandle returns a new chain handle for the NFTables object.
+func (t *Table) getNewChainHandle() uint64 {
+	return t.chainHandleCounter.Add(1)
 }
 
 // CreateChain makes a new chain for the corresponding table and adds it to the
@@ -621,6 +628,17 @@ func (t *Table) GetChain(chainName string) (*Chain, *syserr.AnnotatedError) {
 	return c, nil
 }
 
+// GetChainByHandle returns the chain with the specified handle if it exists, error otherwise.
+func (t *Table) GetChainByHandle(chainHandle uint64) (*Chain, *syserr.AnnotatedError) {
+	// Checks if a chain with the handle exists. We don't support transactions/generations of tables
+	// or chains, so those checks are not needed.
+	c, exists := t.chainHandles[chainHandle]
+	if !exists {
+		return nil, syserr.NewAnnotatedError(syserr.ErrNoFileOrDir, fmt.Sprintf("chain %d not found for table %s", chainHandle, t.name))
+	}
+	return c, nil
+}
+
 // AddChain makes a new chain for the table. Can return an error if a chain by
 // the same name already exists if errorOnDuplicate is true.
 func (t *Table) AddChain(name string, info *BaseChainInfo, comment string, errorOnDuplicate bool) (*Chain, *syserr.AnnotatedError) {
@@ -648,8 +666,12 @@ func (t *Table) AddChain(name string, info *BaseChainInfo, comment string, error
 		}
 	}
 
+	// Only assign a chain handle after error checks.
+	c.handle = t.getNewChainHandle()
+
 	// Adds the chain to the chain map (after successfully doing everything else).
 	t.chains[name] = c
+	t.chainHandles[c.handle] = c
 
 	return c, nil
 }
@@ -676,6 +698,7 @@ func (t *Table) DeleteChain(name string) bool {
 
 	// Deletes chain.
 	delete(t.chains, name)
+	delete(t.chainHandles, c.handle)
 	return true
 }
 
@@ -693,6 +716,17 @@ func (c *Chain) GetName() string {
 	return c.name
 }
 
+// SetName sets the name of the chain. This should only be called on
+// a chain that is not yet attached to a table.
+func (c *Chain) SetName(name string) *syserr.AnnotatedError {
+	if c.table != nil {
+		return syserr.NewAnnotatedError(syserr.ErrNotSupported, fmt.Sprintf("Cannot change the name of chain %s that is already attached to table %s", c.name, c.table.name))
+	}
+
+	c.name = name
+	return nil
+}
+
 // GetAddressFamily returns the address family of the chain.
 func (c *Chain) GetAddressFamily() stack.AddressFamily {
 	return c.table.GetAddressFamily()
@@ -701,6 +735,36 @@ func (c *Chain) GetAddressFamily() stack.AddressFamily {
 // GetTable returns the table that the chain belongs to.
 func (c *Chain) GetTable() *Table {
 	return c.table
+}
+
+// GetHandle returns the handle of the chain.
+func (c *Chain) GetHandle() uint64 {
+	return c.handle
+}
+
+// GetFlags returns the flags of the chain.
+func (c *Chain) GetFlags() uint8 {
+	return c.flags
+}
+
+// SetFlags sets the flags of the chain.
+func (c *Chain) SetFlags(flags uint8) {
+	c.flags = flags
+}
+
+// GetUserData returns the user data of the chain.
+func (c *Chain) GetUserData() []byte {
+	return c.userData
+}
+
+// SetUserData sets the user data of the chain.
+func (c *Chain) SetUserData(data []byte) {
+	// User data should only be set once.
+	if c.userData != nil {
+		return
+	}
+	c.userData = make([]byte, len(data))
+	copy(c.userData, data)
 }
 
 // IsBaseChain returns whether the chain is a base chain.

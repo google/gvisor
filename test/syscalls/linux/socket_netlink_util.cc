@@ -220,7 +220,8 @@ void InitNetlinkHdr(struct nlmsghdr* hdr, uint32_t msg_len, uint16_t msg_type,
 // Helper function to initialize a netlink attribute.
 void InitNetlinkAttr(struct nlattr* attr, int payload_size,
                      uint16_t attr_type) {
-  attr->nla_len = NLA_ALIGN(NLA_HDRLEN + payload_size);
+  // The length is the header length plus the payload size, unaligned.
+  attr->nla_len = NLA_HDRLEN + payload_size;
   attr->nla_type = attr_type;
 }
 

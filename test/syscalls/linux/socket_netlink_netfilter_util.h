@@ -117,6 +117,43 @@ class NlReq {
   std::vector<char> msg_buffer_;
 };
 
+class NlNestedAttr {
+ public:
+  NlNestedAttr() = default;
+
+  // Method to add an attribute to the message. If there is a default
+  // size for the attribute type, it will be used.
+  // Otherwise, assumes the payload is of at least size payload_size.
+  NlNestedAttr& RawAttr(uint16_t attr_type, const void* payload,
+                        size_t payload_size);
+
+  // Method to add a string attribute to the message.
+  // The payload is expected to be a null-terminated string.
+  NlNestedAttr& StrAttr(uint16_t attr_type, const char* payload);
+
+  // Method to add a uint8_t attribute to the message.
+  NlNestedAttr& U8Attr(uint16_t attr_type, const uint8_t* payload);
+
+  // Method to add a uint16_t attribute to the message.
+  NlNestedAttr& U16Attr(uint16_t attr_type, const uint16_t* payload);
+
+  // Method to add a uint32_t attribute to the message.
+  NlNestedAttr& U32Attr(uint16_t attr_type, const uint32_t* payload);
+
+  // Method to add a uint64_t attribute to the message.
+  NlNestedAttr& U64Attr(uint16_t attr_type, const uint64_t* payload);
+
+  std::vector<char> Build();
+
+ private:
+  uint8_t message_type_ = 0;
+  uint16_t flags_ = 0;
+  uint32_t seq_ = 0;
+  uint8_t family_ = 0;
+  std::map<uint16_t, std::pair<const char*, size_t>> attributes_ = {};
+  std::vector<char> msg_buffer_;
+};
+
 }  // namespace testing
 }  // namespace gvisor
 
