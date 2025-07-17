@@ -30,6 +30,6 @@ RUN curl https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud
     ln -s /google-cloud-sdk/bin/gcloud /usr/bin/gcloud
 
 # Download the official bazel binary. The APT repository isn't used because there is not packages for arm64.
-RUN sh -c 'curl -o /usr/local/bin/bazel https://releases.bazel.build/7.5.0/release/bazel-7.5.0-linux-$(uname -m | sed s/aarch64/arm64/) && chmod ugo+x /usr/local/bin/bazel'
+RUN sh -c 'curl -o /usr/local/bin/bazel https://releases.bazel.build/8.3.1/release/bazel-8.3.1-linux-$(uname -m | sed s/aarch64/arm64/) && chmod ugo+x /usr/local/bin/bazel'
 WORKDIR /workspace
 ENTRYPOINT ["/usr/local/bin/bazel"]

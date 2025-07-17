@@ -1,7 +1,8 @@
 """C++ rules."""
 
 load("@com_github_grpc_grpc//bazel:cc_grpc_library.bzl", _cc_grpc_library = "cc_grpc_library")
-load("@rules_cc//cc:defs.bzl", _cc_binary = "cc_binary", _cc_library = "cc_library", _cc_proto_library = "cc_proto_library", _cc_test = "cc_test")
+load("@com_google_protobuf//bazel:cc_proto_library.bzl", _cc_proto_library = "cc_proto_library")
+load("@rules_cc//cc:defs.bzl", _cc_binary = "cc_binary", _cc_library = "cc_library", _cc_test = "cc_test")
 
 cc_library = _cc_library
 cc_proto_library = _cc_proto_library
@@ -11,7 +12,6 @@ gtest = "@com_google_googletest//:gtest"
 gbenchmark = "@com_google_benchmark//:benchmark"
 gbenchmark_internal = "@com_google_benchmark//:benchmark"
 grpcpp = "@com_github_grpc_grpc//:grpc++"
-vdso_linker_option = "-fuse-ld=gold "
 
 def _cc_flags_supplier_impl(ctx):
     variables = platform_common.TemplateVariableInfo({
