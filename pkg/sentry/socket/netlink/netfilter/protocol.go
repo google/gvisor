@@ -95,6 +95,8 @@ func (p *Protocol) ProcessMessage(ctx context.Context, s *netlink.Socket, msg *n
 	// TODO: b/421437663 - Match the message type and call the appropriate Nftables function.
 	switch msgType {
 	case linux.NFT_MSG_NEWTABLE:
+		nft.Mu.Lock()
+		defer nft.Mu.Unlock()
 		// We only check the error value in the case of NFT_MSG_NEWTABLE as linux returns
 		// an EOPNOTSUPP error only in that case. Otherwise the other operations will return
 		// errors specific to their function.
@@ -109,18 +111,24 @@ func (p *Protocol) ProcessMessage(ctx context.Context, s *netlink.Socket, msg *n
 		}
 		return nil
 	case linux.NFT_MSG_GETTABLE:
+		nft.Mu.RLock()
+		defer nft.Mu.RUnlock()
 		if err := p.getTable(nft, attrs, family, hdr.Flags, ms); err != nil {
 			log.Debugf("Nftables get table error: %s", err)
 			return err.GetError()
 		}
 		return nil
 	case linux.NFT_MSG_DELTABLE, linux.NFT_MSG_DESTROYTABLE:
+		nft.Mu.Lock()
+		defer nft.Mu.Unlock()
 		if err := p.deleteTable(nft, attrs, family, hdr, msgType, ms); err != nil {
 			log.Debugf("Nftables delete table error: %s", err)
 			return err.GetError()
 		}
 		return nil
 	case linux.NFT_MSG_NEWCHAIN:
+		nft.Mu.Lock()
+		defer nft.Mu.Unlock()
 		if err := p.newChain(nft, attrs, family, hdr.Flags, ms); err != nil {
 			log.Debugf("Nftables new chain error: %s", err)
 			return err.GetError()
