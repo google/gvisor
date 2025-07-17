@@ -12,7 +12,6 @@ layout: base
     </div>
     <p>This page lists companies known to use gVisor. This does not constitute an endorsement.</p>
   </header>
-
   <main class="users-list">
     
     <section class="user-company mb-5">
@@ -31,8 +30,6 @@ layout: base
     been on our radar since its release.
   </p>
 </blockquote>
-
-
       <p>
         Read Ant Group's blog post on running gVisor in production at scale 
         (<a href="/blog/2021/12/02/running-gvisor-in-production-at-scale-in-ant/" target="_blank" rel="noopener noreferrer">source</a>).
@@ -55,33 +52,49 @@ layout: base
     </section>
 
     <section class="user-company mb-5">
-      <h2>
-        <a href="https://www.cloudflare.com" class="link-primary" target="_blank" rel="noopener noreferrer">
-          Cloudflare
-        </a>
-      </h2>
-      <p>Cloudflare is a CDN and cloud computing security company providing services to businesses of all sizes.</p>
-      <blockquote class="user-quote p-3 bg-light border rounded">
-        It takes just a few seconds for a new gVisor container to start up and begin executing meaningful work in a secure sandbox with near-native performance.
-        (<a href="https://blog.cloudflare.com/cloudflare-pages-build-improvements/" target="_blank" rel="noopener noreferrer">A new era for Cloudflare Pages builds</a>)
-      </blockquote>
-      <hr>
-    </section>
+  <h2>
+    <a href="https://www.cloudflare.com" class="link-primary" target="_blank"
+      rel="noopener noreferrer">
+      Cloudflare
+    </a>
+  </h2>
+  <p>
+    Cloudflare is a CDN and cloud computing security company providing
+    services to businesses of all sizes.
+  </p>
+  <blockquote class="user-quote p-3 bg-light border rounded">
+    It takes just a few seconds for a new gVisor container to start up and
+    begin executing meaningful work in a secure sandbox with near-native
+    performance.
+    (<a href="https://blog.cloudflare.com/cloudflare-pages-build-improvements/"
+      target="_blank" rel="noopener noreferrer">
+      A new era for Cloudflare Pages builds</a>)
+  </blockquote>
+  <hr>
+</section>
+
 
     <section class="user-company mb-5">
-      <h2>
-        <a href="https://www.digitalocean.com/" class="link-primary" target="_blank" rel="noopener noreferrer">
-          DigitalOcean
-        </a>
-      </h2>
-      <p>DigitalOcean offers cloud infrastructure services to developers and businesses.</p>
-      <p>
-        DigitalOcean uses gVisor in 
-        <a href="https://docs.digitalocean.com/products/app-platform/" target="_blank" rel="noopener noreferrer">App Platform</a> as a container runtime sandbox 
-        (<a href="https://docs.digitalocean.com/products/app-platform/details/limits/" target="_blank" rel="noopener noreferrer">source</a>).
-      </p>
-      <hr>
-    </section>
+  <h2>
+    <a href="https://www.digitalocean.com/" class="link-primary"
+      target="_blank" rel="noopener noreferrer">
+      DigitalOcean
+    </a>
+  </h2>
+  <p>
+    DigitalOcean offers cloud infrastructure services to developers and
+    businesses.
+  </p>
+  <p>
+    DigitalOcean uses gVisor in 
+    <a href="https://docs.digitalocean.com/products/app-platform/"
+      target="_blank" rel="noopener noreferrer">App Platform</a> as a
+    container runtime sandbox 
+    (<a href="https://docs.digitalocean.com/products/app-platform/details/limits/"
+      target="_blank" rel="noopener noreferrer">source</a>).
+  </p>
+  <hr>
+</section>
 
     <section class="user-company mb-5">
       <h2>
@@ -100,54 +113,76 @@ layout: base
 
     <section class="user-company mb-5 row align-items-center">
       <div class="col-md-8">
-        <h2>
-          <a href="https://freedom.press/" class="link-primary" target="_blank" rel="noopener noreferrer">
-            Freedom of the Press Foundation
-          </a>
-        </h2>
-        <p>A non-profit supporting free speech and freedom of the press.</p>
-        <p>
-          The <a href="https://dangerzone.rocks/" target="_blank" rel="noopener noreferrer">Dangerzone</a> app converts potentially dangerous PDFs and documents to safe PDFs for journalists. The conversion runs in a 
-          <a href="https://github.com/freedomofpress/dangerzone/blob/main/docs/developer/gvisor.md" target="_blank" rel="noopener noreferrer">gVisor sandbox</a>.
-        </p>
-      </div>
-      <div class="col-md-4 text-center mt-4 mt-md-0">
-        <img 
-          src="/assets/logos/freedom_of_the_press_foundation.svg" 
-          alt="Freedom of the Press Foundation logo" 
-          class="img-fluid" 
-          style="max-width: 180px;"
-          loading="lazy"
-        />
-      </div>
-      <hr class="w-100 mt-5" />
-    </section>
+      <h2>
+        <a href="https://freedom.press/" class="link-primary" target="_blank" 
+         rel="noopener noreferrer">
+        Freedom of the Press Foundation
+        </a>
+      </h2>
+      <p>A non-profit supporting free speech and freedom of the press.</p>
+      <p>
+      The 
+        <a href="https://dangerzone.rocks/" target="_blank" rel="noopener noreferrer">
+          Dangerzone
+        </a> 
+        app converts potentially dangerous PDFs and documents to safe PDFs for 
+        journalists. The conversion runs in a 
+        <a href="https://github.com/freedomofpress/dangerzone/blob/main/docs/developer/gvisor.md" 
+           target="_blank" rel="noopener noreferrer">
+          gVisor sandbox
+        </a>.
+      </p>
+    </div>
+    <div class="col-md-4 text-center mt-4 mt-md-0">
+      <img 
+        src="/assets/logos/freedom_of_the_press_foundation.svg" 
+        alt="Freedom of the Press Foundation logo" 
+        class="img-fluid" 
+        style="max-width: 180px;"
+        loading="lazy"
+          />
+        </div>
+        <hr class="w-100 mt-5" />
+        </section>
 
-    <section class="user-company mb-5 row align-items-center">
-      <div class="col-md-8">
-        <h2>
-          <a href="https://www.google.com" class="link-primary" target="_blank" rel="noopener noreferrer">
-            Google
-          </a>
-        </h2>
-        <p>
-          gVisor was designed and developed to efficiently isolate production workloads at scale for Google services. Millions of gVisor sandbox instances run daily powering Google Cloud offerings like 
-          <a href="https://cloud.google.com/kubernetes-engine/docs/concepts/sandbox-pods" target="_blank" rel="noopener noreferrer">GKE Sandbox</a>, 
-          <a href="https://cloud.google.com/run" target="_blank" rel="noopener noreferrer">Cloud Run</a>, and 
-          <a href="https://cloud.google.com/appengine" target="_blank" rel="noopener noreferrer">App Engine</a>.
-        </p>
-      </div>
-      <div class="col-md-4 text-center mt-4 mt-md-0">
-        <img 
-          src="/assets/logos/logo_goog.png" 
-          alt="Google logo" 
-          class="img-fluid" 
-          style="max-width: 180px;" 
-          loading="lazy"
-        />
-      </div>
-      <hr class="w-100 mt-5" />
-    </section>
+  <section class="user-company mb-5 row align-items-center">
+  <div class="col-md-8">
+    <h2>
+      <a href="https://www.google.com" class="link-primary" target="_blank" 
+         rel="noopener noreferrer">
+        Google
+      </a>
+    </h2>
+    <p>
+      gVisor was designed and developed to efficiently isolate production 
+      workloads at scale for Google services. Millions of gVisor sandbox 
+      instances run daily powering Google Cloud offerings like 
+      <a href="https://cloud.google.com/kubernetes-engine/docs/concepts/sandbox-pods" 
+         target="_blank" rel="noopener noreferrer">
+        GKE Sandbox
+      </a>, 
+      <a href="https://cloud.google.com/run" target="_blank" 
+         rel="noopener noreferrer">
+        Cloud Run
+      </a>, and 
+      <a href="https://cloud.google.com/appengine" target="_blank" 
+         rel="noopener noreferrer">
+        App Engine
+      </a>.
+    </p>
+  </div>
+  <div class="col-md-4 text-center mt-4 mt-md-0">
+    <img 
+      src="/assets/logos/logo_goog.png" 
+      alt="Google logo" 
+      class="img-fluid" 
+      style="max-width: 180px;" 
+      loading="lazy"
+    />
+  </div>
+  <hr class="w-100 mt-5" />
+</section>
+
 
     <section class="user-company mb-5">
       <h2>
@@ -195,31 +230,45 @@ layout: base
     </section>
 
     <section class="user-company mb-5">
-      <h2>
-        <a href="https://openai.com/" class="link-primary" target="_blank" rel="noopener noreferrer">
-          OpenAI
-        </a>
-      </h2>
-      <p>OpenAI develops artificial intelligence systems.</p>
-      <p>
-        OpenAI uses gVisor for <a href="https://openai.com/index/securing-research-infrastructure-for-advanced-ai/" target="_blank" rel="noopener noreferrer">some higher-risk tasks</a>, such as 
-        <a href="https://drive.google.com/file/d/1jjqrV76-86rdEcmFNnxMs4lI-ncAookn/view?resourcekey" target="_blank" rel="noopener noreferrer">code execution</a>.
-      </p>
-      <hr>
-    </section>
-
+  <h2>
+    <a href="https://openai.com/" class="link-primary" target="_blank" 
+       rel="noopener noreferrer">
+      OpenAI
+    </a>
+  </h2>
+  <p>OpenAI develops artificial intelligence systems.</p>
+  <p>
+    OpenAI uses gVisor for 
+    <a href="https://openai.com/index/securing-research-infrastructure-for-advanced-ai/" 
+       target="_blank" rel="noopener noreferrer">
+      some higher-risk tasks
+    </a>, such as 
+    <a href="https://drive.google.com/file/d/1jjqrV76-86rdEcmFNnxMs4lI-ncAookn/view?resourcekey" 
+       target="_blank" rel="noopener noreferrer">
+      code execution
+    </a>.
+  </p>
+  <hr>
+</section>
+    
     <section class="user-company mb-5">
-      <h2>
-        <a href="https://tailscale.com" class="link-primary" target="_blank" rel="noopener noreferrer">
-          Tailscale
-        </a>
-      </h2>
-      <p>Tailscale provides a mesh VPN service for secure networking between devices and servers.</p>
-      <blockquote class="user-quote p-3 bg-light border rounded">
-        In userspace mode, Tailscale uses the gVisor netstack library, implementing networking in userspace. 
-        (<a href="https://tailscale.com/kb/1177/kernel-vs-userspace-routers" target="_blank" rel="noopener noreferrer">Kernel vs. netstack subnet routing &amp; exit nodes</a>)
-      </blockquote>
-    </section>
-
+  <h2>
+    <a href="https://tailscale.com" class="link-primary" target="_blank"
+      rel="noopener noreferrer">
+      Tailscale
+    </a>
+  </h2>
+  <p>
+    Tailscale provides a mesh VPN service for secure networking between
+    devices and servers.
+  </p>
+  <blockquote class="user-quote p-3 bg-light border rounded">
+    In userspace mode, Tailscale uses the gVisor netstack library,
+    implementing networking in userspace.
+    (<a href="https://tailscale.com/kb/1177/kernel-vs-userspace-routers"
+      target="_blank" rel="noopener noreferrer">
+      Kernel vs. netstack subnet routing &amp; exit nodes</a>)
+  </blockquote>
+</section>
   </main>
 </div>
