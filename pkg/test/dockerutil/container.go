@@ -225,20 +225,24 @@ func (c *Container) Run(ctx context.Context, r RunOpts, args ...string) (string,
 		return "", fmt.Errorf("container config: %w", err)
 	}
 	if err := c.create(ctx, r.Image, cfg, c.hostConfig(r), nil); err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to create container: %w", err)
 	}
 
 	if err := c.Start(ctx); err != nil {
 		logs, _ := c.Logs(ctx)
-		return logs, err
+		return logs, fmt.Errorf("failed to start container: %w", err)
 	}
 
 	if err := c.Wait(ctx); err != nil {
 		logs, _ := c.Logs(ctx)
-		return logs, err
+		return logs, fmt.Errorf("container failed: %w", err)
 	}
 
-	return c.Logs(ctx)
+	logs, err := c.Logs(ctx)
+	if err != nil {
+		return logs, fmt.Errorf("failed to get logs: %w", err)
+	}
+	return logs, nil
 }
 
 // ConfigsFrom returns container configs from RunOpts and args. The caller should call 'CreateFrom'
