@@ -767,6 +767,11 @@ func (c *Chain) SetUserData(data []byte) {
 	copy(c.userData, data)
 }
 
+// HasUserData returns whether the chain has user data.
+func (c *Chain) HasUserData() bool {
+	return c.userData != nil
+}
+
 // IsBaseChain returns whether the chain is a base chain.
 func (c *Chain) IsBaseChain() bool {
 	return c.baseChainInfo != nil
@@ -809,6 +814,11 @@ func (c *Chain) SetBaseChainInfo(info *BaseChainInfo) *syserr.AnnotatedError {
 	hfStacks[info.Hook].attachBaseChain(c)
 
 	return nil
+}
+
+// GetChainUse returns the chain use value of the chain.
+func (c *Chain) GetChainUse() uint32 {
+	return c.chainUse
 }
 
 // GetComment returns the comment of the chain.

@@ -50,6 +50,32 @@ namespace testing {
 #define TABLE_NAME_SIZE 32
 #define VALID_USERDATA_SIZE 128
 
+struct NfTableCheckOptions {
+  const struct nlmsghdr* hdr;
+  const char* test_table_name;
+  uint32_t* expected_chain_count;
+  uint64_t* expected_handle;
+  uint32_t* expected_flags;
+  uint32_t* expected_owner;
+  uint8_t* expected_udata;
+  size_t* expected_udata_size;
+  bool skip_handle_check;
+};
+
+struct NfChainCheckOptions {
+  const struct nlmsghdr* hdr;
+  const char* expected_table_name;
+  const char* expected_chain_name;
+  uint64_t* expected_handle;
+  const uint32_t* expected_policy;
+  const char* expected_chain_type;
+  const uint32_t* expected_flags;
+  uint32_t* expected_use;
+  uint8_t* expected_udata;
+  size_t* expected_udata_size;
+  bool skip_handle_check;
+};
+
 struct nameAttribute {
   struct nlattr attr;
   char name[TABLE_NAME_SIZE];
@@ -70,12 +96,11 @@ struct deleteAttribute {
 void InitNetfilterGenmsg(struct nfgenmsg* genmsg, uint8_t family,
                          uint8_t version, uint16_t res_id);
 
-void CheckNetfilterTableAttributes(
-    const struct nlmsghdr* hdr, const struct nfgenmsg* genmsg,
-    const char* test_table_name, uint32_t* expected_chain_count,
-    uint64_t* expected_handle, uint32_t* expected_flags,
-    uint32_t* expected_owner, uint8_t* expected_udata,
-    size_t* expected_udata_size, bool skip_handle_check);
+// Check the attributes of a netfilter table.
+void CheckNetfilterTableAttributes(const NfTableCheckOptions& options);
+
+// Check the attributes of a netfilter chain.
+void CheckNetfilterChainAttributes(const NfChainCheckOptions& options);
 
 class NlReq {
  public:

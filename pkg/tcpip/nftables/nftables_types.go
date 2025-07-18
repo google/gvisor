@@ -365,6 +365,12 @@ type Chain struct {
 	// by the kernel, but rather userspace applications like nft binary.
 	userData []byte
 
+	// TODO: b/421437663 - Increment the chainUse field when a jump or goto
+	// instruction is encountered.
+	// From net/netfilter/nf_tables_api.c: nft_data_hold
+	// chainUse is the number of jump references to this chain.
+	chainUse uint32
+
 	// comment is the optional comment for the table.
 	comment string
 }
@@ -400,6 +406,14 @@ type BaseChainInfo struct {
 	// explicitly accepted or rejected by the rules. A chain's policy defaults to
 	// Accept, but this can be used to specify otherwise.
 	PolicyDrop bool
+}
+
+// PolicyBoolToValue converts the policy drop boolean to a uint8.
+func (bc *BaseChainInfo) PolicyBoolToValue() uint8 {
+	if bc.PolicyDrop {
+		return uint8(linux.NF_DROP)
+	}
+	return uint8(linux.NF_ACCEPT)
 }
 
 // NewBaseChainInfo creates a new BaseChainInfo object with the given values.
