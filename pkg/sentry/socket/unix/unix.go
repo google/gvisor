@@ -409,7 +409,10 @@ func (*provider) Pair(t *kernel.Task, stype linux.SockType, protocol int) (*vfs.
 	}
 
 	// Create the endpoints and sockets.
-	ep1, ep2 := transport.NewPair(t, stype, t.Kernel())
+	ep1, ep2, err := transport.NewPair(t, stype, t.Kernel())
+	if err != nil {
+		return nil, nil, err
+	}
 	s1, err := NewSockfsFile(t, ep1, stype)
 	if err != nil {
 		ep1.Close(t)

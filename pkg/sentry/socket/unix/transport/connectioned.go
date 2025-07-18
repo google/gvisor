@@ -19,6 +19,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fdnotifier"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/uniqueid"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -145,7 +146,7 @@ func newConnectioned(ctx context.Context, stype linux.SockType, uid uniqueid.Pro
 }
 
 // NewPair allocates a new pair of connected unix-domain connectionedEndpoints.
-func NewPair(ctx context.Context, stype linux.SockType, uid uniqueid.Provider) (Endpoint, Endpoint) {
+func NewPair(ctx context.Context, stype linux.SockType, uid uniqueid.Provider) (Endpoint, Endpoint, *syserr.Error) {
 	a := newConnectioned(ctx, stype, uid)
 	b := newConnectioned(ctx, stype, uid)
 
@@ -172,8 +173,13 @@ func NewPair(ctx context.Context, stype linux.SockType, uid uniqueid.Provider) (
 		endpoint:   a,
 		writeQueue: q1,
 	}
-
-	return a, b
+	if err := a.initPeerCreds(ctx); err != nil {
+		return nil, nil, err
+	}
+	if err := b.initPeerCreds(ctx); err != nil {
+		return nil, nil, err
+	}
+	return a, b, nil
 }
 
 // NewExternal creates a new externally backed Endpoint. It behaves like a
@@ -274,6 +280,39 @@ func (e *connectionedEndpoint) Close(ctx context.Context) {
 	}
 }
 
+// initPeerCreds initializes the peer credentials from the context.
+// The context needs to be kernel.Task
+func (e *connectionedEndpoint) initPeerCreds(ctx context.Context) *syserr.Error {
+	creds := auth.CredentialsOrNilFromContext(ctx)
+	if creds == nil {
+		return syserr.ErrInvalidEndpointState
+	}
+	tGroupID, ok := auth.ThreadGroupIDFromContext(ctx)
+	if !ok {
+		return syserr.ErrInvalidEndpointState
+	}
+	peerCreds := &linux.ControlMessageCredentials{
+		PID: int32(tGroupID),
+		UID: uint32(creds.EffectiveKUID.In(creds.UserNamespace).OrOverflow()),
+		GID: uint32(creds.EffectiveKGID.In(creds.UserNamespace).OrOverflow()),
+	}
+	e.SocketOptions().SetPeerCreds(peerCreds)
+	return nil
+}
+
+func (e *connectionedEndpoint) swapPeerCreds(ctx context.Context, ce ConnectingEndpoint, ne *connectionedEndpoint) *syserr.Error {
+	if ce, ok := ce.(*connectionedEndpoint); ok {
+		if err := ce.initPeerCreds(ctx); err != nil {
+			return err
+		}
+		// Swap peer credentials between the two endpoints.
+		neCreds := ne.SocketOptions().PeerCreds()
+		ne.SocketOptions().SetPeerCreds(ce.SocketOptions().PeerCreds())
+		ce.SocketOptions().SetPeerCreds(neCreds)
+	}
+	return nil
+}
+
 // BidirectionalConnect implements BoundEndpoint.BidirectionalConnect.
 func (e *connectionedEndpoint) BidirectionalConnect(ctx context.Context, ce ConnectingEndpoint, returnConnect func(Receiver, ConnectedEndpoint), opts UnixSocketOpts) *syserr.Error {
 	if ce.Type() != e.stype {
@@ -327,6 +366,7 @@ func (e *connectionedEndpoint) BidirectionalConnect(ctx context.Context, ce Conn
 	ne.ops.SetSendBufferSize(defaultBufferSize, false /* notify */)
 	ne.ops.SetReceiveBufferSize(defaultBufferSize, false /* notify */)
 	ne.SocketOptions().SetPassCred(e.SocketOptions().GetPassCred())
+	ne.SocketOptions().SetPeerCreds(e.SocketOptions().PeerCreds())
 
 	readQueue := &queue{ReaderQueue: ce.WaiterQueue(), WriterQueue: ne.Queue, limit: defaultBufferSize}
 	readQueue.InitRefs()
@@ -355,6 +395,9 @@ func (e *connectionedEndpoint) BidirectionalConnect(ctx context.Context, ce Conn
 		readQueue.IncRef()
 		if e.stype == linux.SOCK_STREAM {
 			returnConnect(&streamQueueReceiver{queueReceiver: queueReceiver{readQueue: readQueue}}, connected)
+			if err := e.swapPeerCreds(ctx, ce, ne); err != nil {
+				return err
+			}
 		} else {
 			returnConnect(&queueReceiver{readQueue: readQueue}, connected)
 		}
@@ -419,6 +462,10 @@ func (e *connectionedEndpoint) Listen(ctx context.Context, backlog int) *syserr.
 			if err := e.boundSocketFD.Listen(ctx, int32(backlog)); err != nil {
 				return syserr.FromError(err)
 			}
+
+		}
+		if err := e.initPeerCreds(ctx); err != nil {
+			return err
 		}
 		return nil
 	}
@@ -432,6 +479,9 @@ func (e *connectionedEndpoint) Listen(ctx context.Context, backlog int) *syserr.
 		if err := e.boundSocketFD.Listen(ctx, int32(backlog)); err != nil {
 			return syserr.FromError(err)
 		}
+	}
+	if err := e.initPeerCreds(ctx); err != nil {
+		return err
 	}
 
 	return nil

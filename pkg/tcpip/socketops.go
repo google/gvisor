@@ -15,6 +15,7 @@
 package tcpip
 
 import (
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/sync"
@@ -252,6 +253,14 @@ type SocketOptions struct {
 
 	// receiveBufferSize determines the receive buffer size for this socket.
 	receiveBufferSize atomicbitops.Int64
+
+	// peerCreds is used to store the peer credentials.
+	// This  will store the socket's own credentials until the connection is
+	// established with connect(2). Once the connection is established, this
+	// will store the peer's credentials. The use of this option is possible
+	// only for connected AF_UNIX stream sockets and for AF_UNIX stream and
+	// datagram socket pairs created using socketpair(2)
+	peerCreds *linux.ControlMessageCredentials
 
 	// mu protects the access to the below fields.
 	mu sync.Mutex `state:"nosave"`
@@ -706,6 +715,16 @@ func (so *SocketOptions) SetBindToDevice(bindToDevice int32) Error {
 // GetSendBufferSize gets value for SO_SNDBUF option.
 func (so *SocketOptions) GetSendBufferSize() int64 {
 	return so.sendBufferSize.Load()
+}
+
+// SetPeerCreds sets the peer credentials.
+func (so *SocketOptions) SetPeerCreds(creds *linux.ControlMessageCredentials) {
+	so.peerCreds = creds
+}
+
+// PeerCreds returns the peer credentials.
+func (so *SocketOptions) PeerCreds() *linux.ControlMessageCredentials {
+	return so.peerCreds
 }
 
 // SendBufferLimits returns the [min, max) range of allowable send buffer
