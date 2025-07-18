@@ -1,14 +1,8 @@
-commit 441d5858370a443b117e1bcc19288b79d092147e
-Author: Andrei Vagin <avagin@google.com>
-Date:   Wed Feb 5 20:18:48 2025 +0000
-
-    ../gvisor/tools/rules_go_sdk.patch
-
 diff --git a/go/private/sdk.bzl b/go/private/sdk.bzl
-index ca70b237..71149eba 100644
+index 156bb255..619c5395 100644
 --- a/go/private/sdk.bzl
 +++ b/go/private/sdk.bzl
-@@ -130,6 +130,8 @@ def _go_download_sdk_impl(ctx):
+@@ -129,6 +129,8 @@ def _go_download_sdk_impl(ctx):
              "sdks": ctx.attr.sdks,
              "urls": ctx.attr.urls,
              "version": version,
@@ -17,7 +11,7 @@ index ca70b237..71149eba 100644
              "strip_prefix": ctx.attr.strip_prefix,
          }
      return None
-@@ -145,6 +147,7 @@ go_download_sdk_rule = repository_rule(
+@@ -144,6 +146,7 @@ go_download_sdk_rule = repository_rule(
          ),
          "urls": attr.string_list(default = ["https://dl.google.com/go/{}"]),
          "version": attr.string(),
@@ -25,12 +19,12 @@ index ca70b237..71149eba 100644
          "strip_prefix": attr.string(default = "go"),
          "patches": attr.label_list(
              doc = "A list of patches to apply to the SDK after downloading it",
-@@ -462,6 +465,8 @@ def _remote_sdk(ctx, urls, strip_prefix, sha256):
-         res = ctx.execute(["tar", "-xf", "go_sdk.tar.gz", "--strip-components=1"])
-         if res.return_code:
-             fail("error extracting Go SDK:\n" + res.stdout + res.stderr)
-+        if ctx.attr.patch:
-+            ctx.patch(ctx.attr.patch, strip=ctx.attr.patch_strip)
-         ctx.delete("go_sdk.tar.gz")
-     elif (urls[0].endswith(".zip") and
-           host_goos == "darwin" and
+@@ -432,6 +435,8 @@ def _remote_sdk(ctx, urls, strip_prefix, sha256):
+         sha256 = sha256,
+         auth = auth,
+     )
++    if ctx.attr.patch:
++        ctx.patch(ctx.attr.patch, strip = ctx.attr.patch_strip)
+ 
+ def _local_sdk(ctx, path):
+     for entry in ctx.path(path).readdir():
