@@ -43,6 +43,8 @@ type FSBenchmark struct {
 	WantOutput string
 	// CleanCmd, if set, is run to clean up between benchmarks.
 	CleanCmd []string
+	// EnableForPGO is whether this benchmark should be run for PGO benchmarks.
+	EnableForPGO bool
 	// Variants is a list of benchmark variants to run.
 	// If unset, the typical set is used.
 	Variants []Variant
@@ -56,6 +58,8 @@ type FSBenchmark struct {
 // Dimensions here are clean/dirty cache (do or don't drop caches)
 // and if the mount on which we are compiling is a tmpfs/bind mount.
 type Variant struct {
+	// EnableForPGO is whether this variant should be run for PGO benchmarks.
+	EnableForPGO bool
 	// clearCache drops caches before running.
 	clearCache bool
 	// fsType is the type of filesystem to use.
@@ -67,8 +71,9 @@ func TypicalVariants() []Variant {
 	variants := make([]Variant, 0, 8)
 	for _, filesys := range []harness.FileSystemType{harness.BindFS, harness.TmpFS, harness.RootFS, harness.FuseFS} {
 		variants = append(variants, Variant{
-			clearCache: true,
-			fsType:     filesys,
+			EnableForPGO: true,
+			clearCache:   true,
+			fsType:       filesys,
 		})
 		variants = append(variants, Variant{
 			clearCache: false,
@@ -81,6 +86,9 @@ func TypicalVariants() []Variant {
 // RunWithDifferentFilesystems runs a
 func RunWithDifferentFilesystems(ctx context.Context, b *testing.B, machine harness.Machine, bm FSBenchmark) {
 	b.Helper()
+	if !bm.EnableForPGO {
+		dockerutil.SkipIfPGO(b)
+	}
 
 	benchmarkVariants := bm.Variants
 	if len(benchmarkVariants) == 0 {
@@ -105,6 +113,9 @@ func RunWithDifferentFilesystems(ctx context.Context, b *testing.B, machine harn
 		}
 
 		b.Run(name, func(b *testing.B) {
+			if !variant.EnableForPGO {
+				dockerutil.SkipIfPGO(b)
+			}
 			// Grab a container.
 			container := machine.GetContainer(ctx, b)
 			cu := cleanup.Make(func() {

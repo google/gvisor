@@ -52,6 +52,7 @@ var operations []string = []string{
 // BenchmarkAllRedisOperations runs redis-benchmark against a redis instance and reports
 // data in queries per second. Each is reported by named operation (e.g. LPUSH).
 func BenchmarkAllRedisOperations(b *testing.B) {
+	dockerutil.SkipIfPGO(b)
 	doBenchmarkRedis(b, operations)
 }
 

@@ -46,6 +46,10 @@ var (
 	// config is the default Docker daemon configuration path.
 	config = flag.String("config_path", "/etc/docker/daemon.json", "configuration file for reading paths")
 
+	// pgoBenchmarks is a flag that is set during PGO benchmarks.
+	// This flag restricts the set of benchmark targets to run.
+	pgoBenchmarks = flag.Bool("pgo-benchmarks", false, "set to true for PGO benchmarks; restricts the set of benchmark targets to run")
+
 	// The following flags are for the "pprof" profiler tool.
 
 	// pprofBaseDir allows the user to change the directory to which profiles are
@@ -171,6 +175,13 @@ func IsGVisorRuntime(ctx context.Context, t *testing.T) (bool, error) {
 		return false, fmt.Errorf("failed to run dmesg: %v (output: %q)", err, output)
 	}
 	return strings.Contains(output, "gVisor"), nil
+}
+
+// SkipIfPGO skips the test if it is a PGO benchmark run.
+func SkipIfPGO[TB testing.TB](tb TB) {
+	if *pgoBenchmarks {
+		tb.Skip("Skipped as this is a PGO benchmark run.")
+	}
 }
 
 // UsingSystemdCgroup returns true if the docker configuration has the

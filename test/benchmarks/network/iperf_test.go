@@ -28,6 +28,7 @@ import (
 )
 
 func BenchmarkIperfOneConnection(b *testing.B) {
+	dockerutil.SkipIfPGO(b)
 	clientMachine, err := harness.GetMachine()
 	if err != nil {
 		b.Fatalf("failed to get machine: %v", err)
@@ -120,11 +121,12 @@ func BenchmarkIperfManyConnections(b *testing.B) {
 	defer serverMachine.CleanUp()
 	ctx := context.Background()
 	for _, bm := range []struct {
-		name       string
-		length     int
-		parallel   int
-		clientFunc func(context.Context, testutil.Logger) *dockerutil.Container
-		serverFunc func(context.Context, testutil.Logger) *dockerutil.Container
+		name         string
+		enableForPGO bool
+		length       int
+		parallel     int
+		clientFunc   func(context.Context, testutil.Logger) *dockerutil.Container
+		serverFunc   func(context.Context, testutil.Logger) *dockerutil.Container
 	}{
 		// We are either measuring the server or the client. The other should be
 		// runc. e.g. Upload sees how fast the runtime under test uploads to a native
@@ -142,16 +144,18 @@ func BenchmarkIperfManyConnections(b *testing.B) {
 			serverFunc: serverMachine.GetContainer,
 		},
 		{
-			name:       "Upload",
-			parallel:   16,
-			clientFunc: clientMachine.GetContainer,
-			serverFunc: serverMachine.GetNativeContainer,
+			name:         "Upload",
+			parallel:     16,
+			enableForPGO: true,
+			clientFunc:   clientMachine.GetContainer,
+			serverFunc:   serverMachine.GetNativeContainer,
 		},
 		{
-			name:       "Download",
-			parallel:   16,
-			clientFunc: clientMachine.GetNativeContainer,
-			serverFunc: serverMachine.GetContainer,
+			name:         "Download",
+			parallel:     16,
+			enableForPGO: true,
+			clientFunc:   clientMachine.GetNativeContainer,
+			serverFunc:   serverMachine.GetContainer,
 		},
 		{
 			name:       "Upload",
@@ -177,6 +181,9 @@ func BenchmarkIperfManyConnections(b *testing.B) {
 			b.Fatalf("Failed to parse parameters: %v", err)
 		}
 		b.Run(name, func(b *testing.B) {
+			if !bm.enableForPGO {
+				dockerutil.SkipIfPGO(b)
+			}
 			// Set up the containers.
 			server := bm.serverFunc(ctx, b)
 			defer server.CleanUp(ctx)

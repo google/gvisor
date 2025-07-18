@@ -57,10 +57,11 @@ func BenchmarkRubyNoOpTest(b *testing.B) {
 // https://github.com/fastlane/fastlane
 func BenchmarkRubySpecTest(b *testing.B) {
 	runRubyBenchmark(b, fsbench.FSBenchmark{
-		Image:      "benchmarks/rubydev",
-		WorkDir:    "/fastlane",
-		RunCmd:     []string{"bash", "/files/run_fastlane_tests.sh"},
-		WantOutput: "3613 examples, 0 failures",
+		Image:        "benchmarks/rubydev",
+		WorkDir:      "/fastlane",
+		RunCmd:       []string{"bash", "/files/run_fastlane_tests.sh"},
+		EnableForPGO: true,
+		WantOutput:   "3613 examples, 0 failures",
 		Callback: func(b *testing.B, output string) {
 			loadTime, err := tools.ExtractRubyLoadTime(output)
 			if err != nil {
