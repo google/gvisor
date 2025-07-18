@@ -81,10 +81,13 @@ var Version = specs.Version
 
 // LogSpecDebug writes the spec in a human-friendly format to the debug log.
 func LogSpecDebug(orig *specs.Spec, logSeccomp bool) {
-	if !log.IsLogging(log.Debug) {
-		return
+	if log.IsLogging(log.Debug) {
+		LogSpecCustomLogger(orig, logSeccomp, log.Debugf)
 	}
+}
 
+// LogSpecCustomLogger writes the spec in a human-friendly format to the provided logger.
+func LogSpecCustomLogger(orig *specs.Spec, logSeccomp bool, logf func(format string, args ...any)) {
 	// Strip down parts of the spec that are not interesting.
 	spec := deepcopy.Copy(orig).(*specs.Spec)
 	if spec.Linux != nil {
@@ -100,10 +103,10 @@ func LogSpecDebug(orig *specs.Spec, logSeccomp bool) {
 
 	out, err := json.MarshalIndent(spec, "", "  ")
 	if err != nil {
-		log.Debugf("Failed to marshal spec: %v", err)
+		logf("Failed to marshal spec: %v", err)
 		return
 	}
-	log.Debugf("Spec:\n%s", out)
+	logf("Spec:\n%s", out)
 }
 
 // ValidateSpec validates that the spec is compatible with runsc.
