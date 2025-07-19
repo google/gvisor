@@ -655,7 +655,7 @@ func (t *TestCluster) applyCommonPodConfigurations(ctx context.Context, np *Node
 		applyRuntime = t.testNodepoolRuntimeOverride
 	}
 	// Apply the runtime we've chosen, whether by override or autodetection.
-	applyRuntime.ApplyPodSpec(podSpec)
+	applyRuntime.ApplyPodSpec(np, podSpec)
 
 	// If the nodepool has accelerators, copy the number of them as a node
 	// selector option.
