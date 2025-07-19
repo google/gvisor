@@ -17,6 +17,7 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"os"
@@ -64,6 +65,8 @@ var goferCaps = &specs.LinuxCapabilities{
 	Bounding:  caps,
 	Effective: caps,
 	Permitted: caps,
+	Inheritable: caps,
+	Ambient: caps,
 }
 
 var goferUdsOpenCaps = &specs.LinuxCapabilities{
@@ -818,6 +821,26 @@ func waitForFD(fd int, fdName string) error {
 	return nil
 }
 
+func waitForID(fd int, fdName string) (uint32, uint32, error) {
+	log.Debugf("Waiting on %s %d...", fdName, fd)
+	f := os.NewFile(uintptr(fd), fdName)
+	defer f.Close()
+
+	var uid uint32
+	var gid uint32
+	buf := make([]byte, 8)
+
+	if n,  err := f.Read(buf); n != 8 || err != nil {
+		e := fmt.Errorf("failed to convert to int:%v :%v", uid, err)
+		return 0, 0, e
+	}
+	uid = binary.BigEndian.Uint32(buf[0:4])
+	gid = binary.BigEndian.Uint32(buf[4:8])
+
+
+	return uid, gid, nil
+}
+
 // spawnProcMounter executes the /proc unmounter process.
 // It returns a function to wait on the proc unmounter process, which
 // should be called (via defer) in case of errors in order to clean up the
@@ -872,17 +895,22 @@ func (g *goferSyncFDs) syncUsernsForRootless() {
 //
 // Postcondition: All callers must re-exec themselves after this returns.
 func syncUsernsForRootless(fd int) {
-	if err := waitForFD(fd, "userns sync FD"); err != nil {
-		util.Fatalf("failed to sync on userns FD: %v", err)
+	var uid uint32
+	var gid uint32
+	var err error
+
+	if uid, gid, err = waitForID(fd, "userns sync FD"); err != nil {
+		util.Fatalf("failed to sync on userns FD:%v: %v %v", uid, gid, err)
 	}
+
 
 	// SETUID changes UID on the current system thread, so we have
 	// to re-execute current binary.
 	runtime.LockOSThread()
-	if _, _, errno := unix.RawSyscall(unix.SYS_SETUID, 0, 0, 0); errno != 0 {
+	if _, _, errno := unix.RawSyscall(unix.SYS_SETUID, uintptr(uid), 0, 0); errno != 0 {
 		util.Fatalf("failed to set UID: %v", errno)
 	}
-	if _, _, errno := unix.RawSyscall(unix.SYS_SETGID, 0, 0, 0); errno != 0 {
+	if _, _, errno := unix.RawSyscall(unix.SYS_SETGID, uintptr(gid), 0, 0); errno != 0 {
 		util.Fatalf("failed to set GID: %v", errno)
 	}
 }
