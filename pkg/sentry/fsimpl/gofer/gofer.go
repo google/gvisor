@@ -1971,20 +1971,11 @@ func (d *dentry) removeXattr(ctx context.Context, creds *auth.Credentials, name 
 func (d *dentry) ensureSharedHandle(ctx context.Context, read, write, trunc bool) error {
 	// O_TRUNC unconditionally requires us to obtain a new handle (opened with
 	// O_TRUNC).
-	if !trunc {
-		d.handleMu.RLock()
-		canReuseCurHandle := (!read || d.isReadHandleOk()) && (!write || d.isWriteHandleOk())
-		d.handleMu.RUnlock()
-		if canReuseCurHandle {
-			// Current handles are sufficient.
-			return nil
-		}
-	}
-
 	d.handleMu.Lock()
 	needNewHandle := (read && !d.isReadHandleOk()) || (write && !d.isWriteHandleOk()) || trunc
 	if !needNewHandle {
 		d.handleMu.Unlock()
+		// Current handles are sufficient.
 		return nil
 	}
 

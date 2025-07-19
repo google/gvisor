@@ -152,16 +152,9 @@ func (d *dentry) prepareSaveDeletedRegularFile(ctx context.Context) error {
 	// Fetch an appropriate handle to read the deleted file.
 	d.handleMu.RLock()
 	defer d.handleMu.RUnlock()
-	var h handle
-	if d.isReadHandleOk() {
-		h = d.readHandle()
-	} else {
-		var err error
-		h, err = d.openHandle(ctx, true /* read */, false /* write */, false /* trunc */)
-		if err != nil {
-			return fmt.Errorf("failed to open read handle for deleted file %q: %w", genericDebugPathname(d.fs, d), err)
-		}
-		defer h.close(ctx)
+	h, err := d.readHandleForDeleted(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to open read handle for deleted file %q: %w", genericDebugPathname(d.fs, d), err)
 	}
 	// Read the file data and store it in d.savedDeletedData.
 	d.dataMu.RLock()
