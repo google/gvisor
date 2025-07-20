@@ -169,6 +169,7 @@ func (d *directfsDentry) openHandle(ctx context.Context, flags uint32) (handle, 
 
 	// The only way to re-open an FD with different flags is via procfs or
 	// openat(2) from the parent. Procfs does not exist here. So use parent.
+	// TODO(b/431481259): This does not work for deleted files.
 	flags |= hostOpenFlags
 	openFD, err := unix.Openat(parent.impl.(*directfsDentry).controlFD, d.name, int(flags), 0)
 	if err != nil {
