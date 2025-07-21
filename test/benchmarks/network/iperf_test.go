@@ -215,7 +215,7 @@ func BenchmarkIperfManyConnections(b *testing.B) {
 				Links: []string{server.MakeLink("iperfsrv")},
 			}, iperf.MakeCmd("iperfsrv", port)...)
 			if err != nil {
-				b.Fatalf("failed to run client: %v", err)
+				b.Fatalf("failed to run client: %v (output: %q)", err, out)
 			}
 			b.StopTimer()
 			iperf.Report(b, out)
