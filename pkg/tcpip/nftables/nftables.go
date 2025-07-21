@@ -933,12 +933,12 @@ func (c *Chain) RuleCount() int {
 // isJumpOrGoto returns whether the operation is an immediate operation that
 // sets the verdict register to a jump or goto verdict, returns the name of
 // the target chain to jump or goto if so and returns the verdict code.
-func isJumpOrGotoOperation(op operation) (bool, string) {
-	imm, ok := op.(*immediate)
+func isJumpOrGotoOperation(op Operation) (bool, string) {
+	imm, ok := op.(*Immediate)
 	if !ok {
 		return false, ""
 	}
-	verdictData, ok := imm.data.(verdictData)
+	verdictData, ok := imm.data.(VerdictData)
 	if !ok {
 		return false, ""
 	}
@@ -998,7 +998,7 @@ func (c *Chain) checkLoops(source *Chain, depth int) *syserr.AnnotatedError {
 // addOperation adds an operation to the rule. Adding operations is only allowed
 // before the rule is registered to a chain. Returns an error if the operation
 // is nil or if the rule is already registered to a chain.
-func (r *Rule) addOperation(op operation) *syserr.AnnotatedError {
+func (r *Rule) addOperation(op Operation) *syserr.AnnotatedError {
 	// From net/netfilter/nf_tables_api.c:nft_expr_type
 	if op == nil {
 		return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("operation is nil"))

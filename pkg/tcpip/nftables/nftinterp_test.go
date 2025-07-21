@@ -25,12 +25,12 @@ import (
 type interpretOperationTestAction struct {
 	tname    string
 	opStr    string
-	expected operation // will be nil if an error is expected
+	expected Operation // will be nil if an error is expected
 }
 
 // checkOp is a generic operation validation function used for testing that
 // the interpretation of an operation matches the expected operation.
-func checkOp(t *testing.T, test interpretOperationTestAction, checkFunc func(string, operation, operation) error) {
+func checkOp(t *testing.T, test interpretOperationTestAction, checkFunc func(string, Operation, Operation) error) {
 	rule, err := InterpretRule(test.opStr)
 	if test.expected == nil {
 		if err == nil {
@@ -59,32 +59,32 @@ func TestInterpretImmediateOps(t *testing.T) {
 		{
 			tname:    "verdict register with accept verdict",
 			opStr:    "[ immediate reg 0 accept ]",
-			expected: mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NF_ACCEPT)})),
+			expected: mustCreateImmediate(t, linux.NFT_REG_VERDICT, NewVerdictData(stack.NFVerdict{Code: VC(linux.NF_ACCEPT)})),
 		},
 		{
 			tname:    "verdict register with drop verdict",
 			opStr:    "[ immediate reg 0 drop ]",
-			expected: mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NF_DROP)})),
+			expected: mustCreateImmediate(t, linux.NFT_REG_VERDICT, NewVerdictData(stack.NFVerdict{Code: VC(linux.NF_DROP)})),
 		},
 		{
 			tname:    "verdict register with continue verdict",
 			opStr:    "[ immediate reg 0 continue ]",
-			expected: mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NFT_CONTINUE)})),
+			expected: mustCreateImmediate(t, linux.NFT_REG_VERDICT, NewVerdictData(stack.NFVerdict{Code: VC(linux.NFT_CONTINUE)})),
 		},
 		{
 			tname:    "verdict register with return verdict",
 			opStr:    "[ immediate reg 0 return ]",
-			expected: mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NFT_RETURN)})),
+			expected: mustCreateImmediate(t, linux.NFT_REG_VERDICT, NewVerdictData(stack.NFVerdict{Code: VC(linux.NFT_RETURN)})),
 		},
 		{
 			tname:    "verdict register with jump verdict",
 			opStr:    "[ immediate reg 0 jump -> next_chain ]",
-			expected: mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NFT_JUMP), ChainName: "next_chain"})),
+			expected: mustCreateImmediate(t, linux.NFT_REG_VERDICT, NewVerdictData(stack.NFVerdict{Code: VC(linux.NFT_JUMP), ChainName: "next_chain"})),
 		},
 		{
 			tname:    "verdict register with goto verdict",
 			opStr:    "[ immediate reg 0 goto -> next_chain ]",
-			expected: mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NFT_GOTO), ChainName: "next_chain"})),
+			expected: mustCreateImmediate(t, linux.NFT_REG_VERDICT, NewVerdictData(stack.NFVerdict{Code: VC(linux.NFT_GOTO), ChainName: "next_chain"})),
 		},
 		{
 			tname:    "verdict register with 4-byte data",
@@ -109,22 +109,22 @@ func TestInterpretImmediateOps(t *testing.T) {
 		{
 			tname:    "16-byte register with 4-byte data",
 			opStr:    "[ immediate reg 1 0x0201a8c0 ]",
-			expected: mustCreateImmediate(t, linux.NFT_REG_1, newBytesData([]byte{0xc0, 0xa8, 0x01, 0x02})),
+			expected: mustCreateImmediate(t, linux.NFT_REG_1, NewBytesData([]byte{0xc0, 0xa8, 0x01, 0x02})),
 		},
 		{
 			tname:    "16-byte register with 8-byte data",
 			opStr:    "[ immediate reg 2 0xb80d0120 0x00000050 ]",
-			expected: mustCreateImmediate(t, linux.NFT_REG_2, newBytesData([]byte{0x20, 0x01, 0x0d, 0xb8, 0x50, 0x00, 0x00, 0x00})),
+			expected: mustCreateImmediate(t, linux.NFT_REG_2, NewBytesData([]byte{0x20, 0x01, 0x0d, 0xb8, 0x50, 0x00, 0x00, 0x00})),
 		},
 		{
 			tname:    "16-byte register with 12-byte data",
 			opStr:    "[ immediate reg 3 0xb80d0120 0x00000050 0xb80d0120 ]",
-			expected: mustCreateImmediate(t, linux.NFT_REG_3, newBytesData([]byte{0x20, 0x01, 0x0d, 0xb8, 0x50, 0x00, 0x00, 0x00, 0x20, 0x01, 0x0d, 0xb8})),
+			expected: mustCreateImmediate(t, linux.NFT_REG_3, NewBytesData([]byte{0x20, 0x01, 0x0d, 0xb8, 0x50, 0x00, 0x00, 0x00, 0x20, 0x01, 0x0d, 0xb8})),
 		},
 		{
 			tname:    "16-byte register with 16-byte data",
 			opStr:    "[ immediate reg 4 0xb80d0120 0x00000000 0x00000000 0x02000000 ]",
-			expected: mustCreateImmediate(t, linux.NFT_REG_4, newBytesData([]byte{0x20, 0x01, 0x0d, 0xb8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02})),
+			expected: mustCreateImmediate(t, linux.NFT_REG_4, NewBytesData([]byte{0x20, 0x01, 0x0d, 0xb8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02})),
 		},
 		{
 			tname:    "4-byte register with verdict data",
@@ -148,9 +148,9 @@ func TestInterpretImmediateOps(t *testing.T) {
 
 // checkImmediateOp checks that the given operation is an immediate operation
 // and that it matches the expected immediate operation.
-func checkImmediateOp(tname string, expected operation, actual operation) error {
-	expectedImm := expected.(*immediate)
-	imm, ok := actual.(*immediate)
+func checkImmediateOp(tname string, expected Operation, actual Operation) error {
+	expectedImm := expected.(*Immediate)
+	imm, ok := actual.(*Immediate)
 	if !ok {
 		return fmt.Errorf("expected operation type to be Immediate for %s, got %T", tname, actual)
 	}
@@ -358,7 +358,7 @@ func TestInterpretComparisonOps(t *testing.T) {
 
 // checkComparisonOp checks that the given operation is an comparison operation
 // and that it matches the expected comparison operation.
-func checkComparisonOp(tname string, expected operation, actual operation) error {
+func checkComparisonOp(tname string, expected Operation, actual Operation) error {
 	expectedCmp := expected.(*comparison)
 	cmp, ok := actual.(*comparison)
 	if !ok {
@@ -475,7 +475,7 @@ func TestInterpretPayloadLoadOps(t *testing.T) {
 
 // checkPayloadLoadOp checks that the given operation is a payload load
 // operation and that it matches the expected payload load operation.
-func checkPayloadLoadOp(tname string, expected operation, actual operation) error {
+func checkPayloadLoadOp(tname string, expected Operation, actual Operation) error {
 	expectedPdLoad := expected.(*payloadLoad)
 	pdload, ok := actual.(*payloadLoad)
 	if !ok {
@@ -635,7 +635,7 @@ func TestInterpretPayloadSetOps(t *testing.T) {
 
 // checkPayloadSetOp checks that the given operation is a payload set
 // operation and that it matches the expected payload set operation.
-func checkPayloadSetOp(tname string, expected operation, actual operation) error {
+func checkPayloadSetOp(tname string, expected Operation, actual Operation) error {
 	expectedPdSet := expected.(*payloadSet)
 	pdset, ok := actual.(*payloadSet)
 	if !ok {
@@ -742,7 +742,7 @@ func TestInterpretBitwiseOps(t *testing.T) {
 
 // checkBitwiseOp checks that the given operation is a bitwise operation and
 // that it matches the expected bitwise operation.
-func checkBitwiseOp(tname string, expected operation, actual operation) error {
+func checkBitwiseOp(tname string, expected Operation, actual Operation) error {
 	expectedBit := expected.(*bitwise)
 	bit, ok := actual.(*bitwise)
 	if !ok {
@@ -794,7 +794,7 @@ func TestInterpretCounterOps(t *testing.T) {
 
 // checkCounterOp checks that the given operation is a counter operation and
 // that it matches the expected counter operation.
-func checkCounterOp(tname string, expected operation, actual operation) error {
+func checkCounterOp(tname string, expected Operation, actual Operation) error {
 	expectedCntr := expected.(*counter)
 	cntr, ok := actual.(*counter)
 	if !ok {
@@ -870,7 +870,7 @@ func TestInterpretRouteOps(t *testing.T) {
 
 // checkRouteOp checks that the given operation is a route operation and
 // that it matches the expected route operation.
-func checkRouteOp(tname string, expected operation, actual operation) error {
+func checkRouteOp(tname string, expected Operation, actual Operation) error {
 	expectedRt := expected.(*route)
 	rt, ok := actual.(*route)
 	if !ok {
@@ -934,7 +934,7 @@ func TestInterpretByteorderOps(t *testing.T) {
 
 // checkByteorderOp checks that the given operation is a byteorder operation
 // and that it matches the expected byteorder operation.
-func checkByteorderOp(tname string, expected operation, actual operation) error {
+func checkByteorderOp(tname string, expected Operation, actual Operation) error {
 	expectedOrder := expected.(*byteorder)
 	order, ok := actual.(*byteorder)
 	if !ok {
@@ -1038,7 +1038,7 @@ func TestInterpretMetaLoadOps(t *testing.T) {
 
 // checkMetaLoadOp checks that the given operation is a meta load operation and
 // that it matches the expected meta load operation.
-func checkMetaLoadOp(tname string, expected operation, actual operation) error {
+func checkMetaLoadOp(tname string, expected Operation, actual Operation) error {
 	expectedMtLoad := expected.(*metaLoad)
 	mtLoad, ok := actual.(*metaLoad)
 	if !ok {
@@ -1074,7 +1074,7 @@ func TestInterpretMetaSetOps(t *testing.T) {
 
 // checkMetaSetOp checks that the given operation is a meta set operation and
 // that it matches the expected meta set operation.
-func checkMetaSetOp(tname string, expected operation, actual operation) error {
+func checkMetaSetOp(tname string, expected Operation, actual Operation) error {
 	expectedMtSet := expected.(*metaSet)
 	mtSet, ok := actual.(*metaSet)
 	if !ok {
@@ -1131,7 +1131,7 @@ func TestInterpretRule(t *testing.T) {
 			for i, op := range rule.ops {
 				testOp := test.expected.ops[i]
 				switch testOp.(type) {
-				case *immediate:
+				case *Immediate:
 					if err := checkImmediateOp(test.tname, testOp, op); err != nil {
 						t.Fatalf("%s", err.Error())
 					}

@@ -665,12 +665,12 @@ func validateBaseChainInfo(info *BaseChainInfo, family stack.AddressFamily) *sys
 // Note: Empty rules should be created directly (via &Rule{}).
 type Rule struct {
 	chain  *Chain
-	ops    []operation
+	ops    []Operation
 	handle uint64
 }
 
-// operation represents a single operation in a rule.
-type operation interface {
+// Operation represents a single operation in a rule.
+type Operation interface {
 
 	// evaluate evaluates the operation on the given packet and register set,
 	// changing the register set and possibly the packet in place. We pass the
@@ -680,17 +680,17 @@ type operation interface {
 
 // Ensures all operations implement the Operation interface at compile time.
 var (
-	_ operation = (*immediate)(nil)
-	_ operation = (*comparison)(nil)
-	_ operation = (*ranged)(nil)
-	_ operation = (*payloadLoad)(nil)
-	_ operation = (*payloadSet)(nil)
-	_ operation = (*bitwise)(nil)
-	_ operation = (*counter)(nil)
-	_ operation = (*last)(nil)
-	_ operation = (*route)(nil)
-	_ operation = (*byteorder)(nil)
-	_ operation = (*metaLoad)(nil)
+	_ Operation = (*Immediate)(nil)
+	_ Operation = (*comparison)(nil)
+	_ Operation = (*ranged)(nil)
+	_ Operation = (*payloadLoad)(nil)
+	_ Operation = (*payloadSet)(nil)
+	_ Operation = (*bitwise)(nil)
+	_ Operation = (*counter)(nil)
+	_ Operation = (*last)(nil)
+	_ Operation = (*route)(nil)
+	_ Operation = (*byteorder)(nil)
+	_ Operation = (*metaLoad)(nil)
 )
 
 //
@@ -714,13 +714,13 @@ func isRegister(reg uint8) bool {
 	return isVerdictRegister(reg) || is16ByteRegister(reg) || is4ByteRegister(reg)
 }
 
-// registerData represents the data to be set in a register.
-type registerData interface {
+// RegisterData represents the data to be set in a register.
+type RegisterData interface {
 	// String returns a string representation of the register data.
 	String() string
 
 	// equal compares the register data to another.
-	equal(other registerData) bool
+	equal(other RegisterData) bool
 
 	// validateRegister ensures the register is compatible with the data type,
 	// returning an error otherwise.
@@ -734,25 +734,30 @@ type registerData interface {
 	storeData(regs *registerSet, reg uint8)
 }
 
-// verdictData represents a verdict as data to be stored in a register.
-type verdictData struct {
+var (
+	_ RegisterData = (*VerdictData)(nil)
+	_ RegisterData = (*BytesData)(nil)
+)
+
+// VerdictData represents a verdict as data to be stored in a register.
+type VerdictData struct {
 	data stack.NFVerdict
 }
 
-// newVerdictData creates a registerData for a verdict.
-func newVerdictData(verdict stack.NFVerdict) verdictData { return verdictData{data: verdict} }
+// NewVerdictData creates a registerData for a verdict.
+func NewVerdictData(verdict stack.NFVerdict) VerdictData { return VerdictData{data: verdict} }
 
 // String returns a string representation of the verdict data.
-func (rd verdictData) String() string {
+func (rd VerdictData) String() string {
 	return VerdictString(rd.data)
 }
 
 // equal compares the verdict data to another RegisterData object.
-func (rd verdictData) equal(other registerData) bool {
+func (rd VerdictData) equal(other RegisterData) bool {
 	if other == nil {
 		return false
 	}
-	otherVD, ok := other.(verdictData)
+	otherVD, ok := other.(VerdictData)
 	if !ok {
 		return false
 	}
@@ -760,7 +765,7 @@ func (rd verdictData) equal(other registerData) bool {
 }
 
 // validateRegister ensures the register is compatible with VerdictData.
-func (rd verdictData) validateRegister(reg uint8) *syserr.AnnotatedError {
+func (rd VerdictData) validateRegister(reg uint8) *syserr.AnnotatedError {
 	if !isVerdictRegister(reg) {
 		return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("verdict can only be stored in verdict register"))
 	}
@@ -768,40 +773,40 @@ func (rd verdictData) validateRegister(reg uint8) *syserr.AnnotatedError {
 }
 
 // storeData sets the data in the destination register to the verdict.
-func (rd verdictData) storeData(regs *registerSet, reg uint8) {
+func (rd VerdictData) storeData(regs *registerSet, reg uint8) {
 	if err := rd.validateRegister(reg); err != nil {
 		panic(err)
 	}
 	regs.verdict = rd.data
 }
 
-// bytesData represents <= 16 bytes of data to be stored in a register.
-type bytesData struct {
+// BytesData represents <= 16 bytes of data to be stored in a register.
+type BytesData struct {
 	data []byte
 }
 
-// newBytesData creates a registerData for <= 16 bytes of data.
-func newBytesData(bytes []byte) bytesData {
+// NewBytesData creates a registerData for <= 16 bytes of data.
+func NewBytesData(bytes []byte) BytesData {
 	if len(bytes) == 0 {
 		panic("bytes data cannot be empty")
 	}
 	if len(bytes) > linux.NFT_REG_SIZE {
 		panic(fmt.Errorf("bytes data cannot be more than %d bytes: %d", linux.NFT_REG_SIZE, len(bytes)))
 	}
-	return bytesData{data: bytes}
+	return BytesData{data: bytes}
 }
 
 // String returns a string representation of the big endian bytes data.
-func (rd bytesData) String() string {
+func (rd BytesData) String() string {
 	return fmt.Sprintf("%x", rd.data)
 }
 
 // equal compares the bytes data to another RegisterData object.
-func (rd bytesData) equal(other registerData) bool {
+func (rd BytesData) equal(other RegisterData) bool {
 	if other == nil {
 		return false
 	}
-	otherBD, ok := other.(bytesData)
+	otherBD, ok := other.(BytesData)
 	if !ok {
 		return false
 	}
@@ -809,7 +814,7 @@ func (rd bytesData) equal(other registerData) bool {
 }
 
 // validateRegister ensures the register is compatible with this bytes data.
-func (rd bytesData) validateRegister(reg uint8) *syserr.AnnotatedError {
+func (rd BytesData) validateRegister(reg uint8) *syserr.AnnotatedError {
 	if isVerdictRegister(reg) {
 		return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("data cannot be stored in verdict register"))
 	}
@@ -837,7 +842,7 @@ func getRegisterBuffer(regs *registerSet, reg uint8) []byte {
 }
 
 // storeData sets the data in the destination register to the bytes data.
-func (rd bytesData) storeData(regs *registerSet, reg uint8) {
+func (rd BytesData) storeData(regs *registerSet, reg uint8) {
 	if err := rd.validateRegister(reg); err != nil {
 		panic(err)
 	}

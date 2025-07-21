@@ -131,6 +131,6 @@ func (op route) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *Rule)
 	}
 
 	// Stores the target data in the destination register.
-	data := newBytesData(target)
+	data := NewBytesData(target)
 	data.storeData(regs, op.dreg)
 }

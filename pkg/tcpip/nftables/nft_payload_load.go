@@ -120,6 +120,6 @@ func (op payloadLoad) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule 
 	}
 
 	// Copies payload data into the specified register.
-	data := newBytesData(payload[op.offset : op.offset+op.blen])
+	data := NewBytesData(payload[op.offset : op.offset+op.blen])
 	data.storeData(regs, op.dreg)
 }

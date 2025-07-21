@@ -28,7 +28,7 @@ import (
 // if the comparison is false.
 // Note: comparison operations are not supported for the verdict register.
 type comparison struct {
-	data bytesData // Data to compare the source register to.
+	data BytesData // Data to compare the source register to.
 	sreg uint8     // Number of the source register.
 	cop  cmpOp     // Comparison operator.
 }
@@ -71,7 +71,7 @@ func newComparison(sreg uint8, op int, data []byte) (*comparison, *syserr.Annota
 	if isVerdictRegister(sreg) {
 		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("comparison operation does not support verdict register as source register"))
 	}
-	bytesData := newBytesData(data)
+	bytesData := NewBytesData(data)
 	if err := bytesData.validateRegister(sreg); err != nil {
 		return nil, err
 	}

@@ -109,7 +109,7 @@ func InterpretRule(ruleString string) (*Rule, *syserr.AnnotatedError) {
 		return s == ""
 	})
 
-	r := &Rule{ops: make([]operation, 0, len(lines))}
+	r := &Rule{ops: make([]Operation, 0, len(lines))}
 
 	// Interprets all operations in the rule.
 	for lnIdx, line := range lines {
@@ -129,7 +129,7 @@ func InterpretRule(ruleString string) (*Rule, *syserr.AnnotatedError) {
 // assumed to be a single line of text surrounded in square brackets.
 // Note: the operation string should be generated as output from the official nft
 // binary (can be accomplished by using flag --debug=netlink).
-func InterpretOperation(line string, lnIdx int) (operation, *syserr.AnnotatedError) {
+func InterpretOperation(line string, lnIdx int) (Operation, *syserr.AnnotatedError) {
 	tokens := strings.Fields(line)
 
 	// TODO: b/421437663 - This should be done on validation of every operation type.
@@ -179,7 +179,7 @@ func InterpretOperation(line string, lnIdx int) (operation, *syserr.AnnotatedErr
 }
 
 // InterpretImmediate creates a new Immediate operation from the given string.
-func InterpretImmediate(line string, lnIdx int) (operation, *syserr.AnnotatedError) {
+func InterpretImmediate(line string, lnIdx int) (Operation, *syserr.AnnotatedError) {
 	tokens := strings.Fields(line)
 
 	// Requires at least 6 tokens:
@@ -226,7 +226,7 @@ func InterpretImmediate(line string, lnIdx int) (operation, *syserr.AnnotatedErr
 	}
 
 	// Create the operation with the specified arguments.
-	imm, err := newImmediate(reg, data)
+	imm, err := NewImmediate(reg, data)
 	if err != nil {
 		return nil, err
 	}
@@ -235,7 +235,7 @@ func InterpretImmediate(line string, lnIdx int) (operation, *syserr.AnnotatedErr
 }
 
 // InterpretComparison creates a new Comparison operation from the given string.
-func InterpretComparison(line string, lnIdx int) (operation, *syserr.AnnotatedError) {
+func InterpretComparison(line string, lnIdx int) (Operation, *syserr.AnnotatedError) {
 	tokens := strings.Fields(line)
 
 	// Requires at least 7 tokens:
@@ -299,7 +299,7 @@ func InterpretComparison(line string, lnIdx int) (operation, *syserr.AnnotatedEr
 
 // InterpretPayloadLoad creates a new PayloadLoad operation from the given
 // string.
-func InterpretPayloadLoad(line string, lnIdx int) (operation, *syserr.AnnotatedError) {
+func InterpretPayloadLoad(line string, lnIdx int) (Operation, *syserr.AnnotatedError) {
 	tokens := strings.Fields(line)
 
 	// Requires exactly 13 tokens:
@@ -394,7 +394,7 @@ func InterpretPayloadLoad(line string, lnIdx int) (operation, *syserr.AnnotatedE
 }
 
 // InterpretPayloadSet creates a new PayloadSet operation from the given string.
-func InterpretPayloadSet(line string, lnIdx int) (operation, *syserr.AnnotatedError) {
+func InterpretPayloadSet(line string, lnIdx int) (Operation, *syserr.AnnotatedError) {
 	tokens := strings.Fields(line)
 
 	// Requires at least 19 tokens:
@@ -529,7 +529,7 @@ func InterpretPayloadSet(line string, lnIdx int) (operation, *syserr.AnnotatedEr
 }
 
 // InterpretBitwiseBool creates a new Comparison operation from the given string.
-func InterpretBitwiseBool(line string, lnIdx int) (operation, *syserr.AnnotatedError) {
+func InterpretBitwiseBool(line string, lnIdx int) (Operation, *syserr.AnnotatedError) {
 	tokens := strings.Fields(line)
 
 	// Requires at least 14 tokens:
@@ -635,7 +635,7 @@ func InterpretBitwiseBool(line string, lnIdx int) (operation, *syserr.AnnotatedE
 }
 
 // InterpretCounter creates a new Counter operation from the given string.
-func InterpretCounter(line string, lnIdx int) (operation, *syserr.AnnotatedError) {
+func InterpretCounter(line string, lnIdx int) (Operation, *syserr.AnnotatedError) {
 	tokens := strings.Fields(line)
 
 	// Requires exactly 7 tokens:
@@ -689,7 +689,7 @@ func InterpretCounter(line string, lnIdx int) (operation, *syserr.AnnotatedError
 }
 
 // InterpretRoute creates a new Route operation from the given string.
-func InterpretRoute(line string, lnIdx int) (operation, *syserr.AnnotatedError) {
+func InterpretRoute(line string, lnIdx int) (Operation, *syserr.AnnotatedError) {
 	tokens := strings.Fields(line)
 
 	// Requires exactly 8 tokens:
@@ -752,7 +752,7 @@ func InterpretRoute(line string, lnIdx int) (operation, *syserr.AnnotatedError) 
 }
 
 // InterpretByteorder creates a new Byteorder operation from the given string.
-func InterpretByteorder(line string, lnIdx int) (operation, *syserr.AnnotatedError) {
+func InterpretByteorder(line string, lnIdx int) (Operation, *syserr.AnnotatedError) {
 	tokens := strings.Fields(line)
 
 	// Requires exactly 10 tokens:
@@ -835,7 +835,7 @@ func InterpretByteorder(line string, lnIdx int) (operation, *syserr.AnnotatedErr
 }
 
 // InterpretMetaLoad creates a new MetaLoad operation from the given string.
-func InterpretMetaLoad(line string, lnIdx int) (operation, *syserr.AnnotatedError) {
+func InterpretMetaLoad(line string, lnIdx int) (Operation, *syserr.AnnotatedError) {
 	tokens := strings.Fields(line)
 
 	// Requires exactly 8 tokens:
@@ -898,7 +898,7 @@ func InterpretMetaLoad(line string, lnIdx int) (operation, *syserr.AnnotatedErro
 }
 
 // InterpretMetaSet creates a new MetaSet operation from the given string.
-func InterpretMetaSet(line string, lnIdx int) (operation, *syserr.AnnotatedError) {
+func InterpretMetaSet(line string, lnIdx int) (Operation, *syserr.AnnotatedError) {
 	tokens := strings.Fields(line)
 
 	// Requires exactly 8 tokens:
@@ -1007,14 +1007,14 @@ func parseRegister(regString string, lnIdx int, tkIdx int) (uint8, *syserr.Annot
 // parseRegisterData parses the register data from the given token and returns
 // the index of the next token to process (can consume multiple tokens).
 // Note: assumes the register index is valid (was checked in parseRegister).
-func parseRegisterData(reg uint8, tokens []string, lnIdx int, tkIdx int) (int, registerData, *syserr.AnnotatedError) {
+func parseRegisterData(reg uint8, tokens []string, lnIdx int, tkIdx int) (int, RegisterData, *syserr.AnnotatedError) {
 	// Handles verdict data.
 	if isVerdictRegister(reg) {
 		nextIdx, verdict, err := parseVerdict(tokens, lnIdx, tkIdx)
 		if err != nil {
 			return 0, nil, err
 		}
-		return nextIdx, newVerdictData(verdict), nil
+		return nextIdx, NewVerdictData(verdict), nil
 	}
 	// Handles hex data.
 	if len(tokens[tkIdx]) > 1 && tokens[tkIdx][:2] == "0x" {
@@ -1022,7 +1022,7 @@ func parseRegisterData(reg uint8, tokens []string, lnIdx int, tkIdx int) (int, r
 		if err != nil {
 			return 0, nil, err
 		}
-		bytesData := newBytesData(data)
+		bytesData := NewBytesData(data)
 		if err := bytesData.validateRegister(reg); err != nil {
 			return 0, nil, err
 		}

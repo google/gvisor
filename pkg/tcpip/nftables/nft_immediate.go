@@ -19,21 +19,21 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
-// immediate is an operation that sets the data in a register.
-type immediate struct {
-	data registerData // Data to set the destination register to.
+// Immediate is an operation that sets the data in a register.
+type Immediate struct {
+	data RegisterData // Data to set the destination register to.
 	dreg uint8        // Number of the destination register.
 }
 
-// newImmediate creates a new immediate operation.
-func newImmediate(dreg uint8, data registerData) (*immediate, *syserr.AnnotatedError) {
+// NewImmediate creates a new immediate operation.
+func NewImmediate(dreg uint8, data RegisterData) (*Immediate, *syserr.AnnotatedError) {
 	if err := data.validateRegister(dreg); err != nil {
 		return nil, err
 	}
-	return &immediate{dreg: dreg, data: data}, nil
+	return &Immediate{dreg: dreg, data: data}, nil
 }
 
 // evaluate for Immediate sets the data in the destination register.
-func (op immediate) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *Rule) {
+func (op Immediate) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *Rule) {
 	op.data.storeData(regs, op.dreg)
 }

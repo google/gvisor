@@ -28,8 +28,8 @@ import (
 // Note: ranged operations are not supported for the verdict register.
 // Note: named "ranged" because "range" is a reserved keyword in Go.
 type ranged struct {
-	low  bytesData // Data to compare the source register to.
-	high bytesData // Data to compare the source register to.
+	low  BytesData // Data to compare the source register to.
+	high BytesData // Data to compare the source register to.
 	sreg uint8     // Number of the source register.
 	rop  rngOp     // Range operator.
 
@@ -77,11 +77,11 @@ func newRanged(sreg uint8, op int, low, high []byte) (*ranged, *syserr.Annotated
 	if len(low) != len(high) {
 		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("upper and lower bounds for ranged operation must be the same length"))
 	}
-	lowData := newBytesData(low)
+	lowData := NewBytesData(low)
 	if err := lowData.validateRegister(sreg); err != nil {
 		return nil, err
 	}
-	highData := newBytesData(high)
+	highData := NewBytesData(high)
 	if err := highData.validateRegister(sreg); err != nil {
 		return nil, err
 	}

@@ -52,8 +52,8 @@ type bitwise struct {
 	dreg  uint8     // Number of the destination register.
 	bop   bitwiseOp // Bitwise operator to use.
 	blen  uint8     // Number of bytes to apply bitwise operation to.
-	mask  bytesData // Mask to apply bitwise & for boolean operations (before ^).
-	xor   bytesData // Xor to apply bitwise ^ for boolean operations (after &).
+	mask  BytesData // Mask to apply bitwise & for boolean operations (before ^).
+	xor   BytesData // Xor to apply bitwise ^ for boolean operations (after &).
 	shift uint32    // Shift to apply bitwise <</>> for non-boolean operations.
 
 	// Note: Technically, the linux kernel has defined bool, lshift, and rshift
@@ -77,7 +77,7 @@ func newBitwiseBool(sreg, dreg uint8, mask, xor []byte) (*bitwise, *syserr.Annot
 	if blen > linux.NFT_REG_SIZE || (blen > linux.NFT_REG32_SIZE && (is4ByteRegister(sreg) || is4ByteRegister(dreg))) {
 		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("bitwise boolean operation cannot use more than %d bytes", linux.NFT_REG_SIZE))
 	}
-	return &bitwise{sreg: sreg, dreg: dreg, bop: linux.NFT_BITWISE_BOOL, blen: uint8(blen), mask: newBytesData(mask), xor: newBytesData(xor)}, nil
+	return &bitwise{sreg: sreg, dreg: dreg, bop: linux.NFT_BITWISE_BOOL, blen: uint8(blen), mask: NewBytesData(mask), xor: NewBytesData(xor)}, nil
 }
 
 // newBitwiseShift creates a new bitwise shift operation.
