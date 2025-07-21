@@ -164,7 +164,11 @@ func (t *TTYFileDescription) Ioctl(ctx context.Context, io usermem.IO, sysno uin
 			return 0, linuxerr.ENOTTY
 		}
 
-		fgpg, err := t.ThreadGroup().ForegroundProcessGroup(t.TTY())
+		tg := t.ThreadGroup()
+		if tg == nil {
+			return 0, linuxerr.ENOTTY
+		}
+		fgpg, err := tg.ForegroundProcessGroup(t.TTY())
 		if err != nil {
 			return 0, err
 		}
@@ -184,7 +188,12 @@ func (t *TTYFileDescription) Ioctl(ctx context.Context, io usermem.IO, sysno uin
 			return 0, err
 		}
 		pgID := kernel.ProcessGroupID(pgIDP)
-		if err := t.ThreadGroup().SetForegroundProcessGroupID(ctx, t.TTY(), pgID); err != nil {
+
+		tg := t.ThreadGroup()
+		if tg == nil {
+			return 0, linuxerr.ENOTTY
+		}
+		if err := tg.SetForegroundProcessGroupID(ctx, t.TTY(), pgID); err != nil {
 			return 0, err
 		}
 
