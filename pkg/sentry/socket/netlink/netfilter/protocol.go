@@ -134,6 +134,14 @@ func (p *Protocol) ProcessMessage(ctx context.Context, s *netlink.Socket, msg *n
 			return err.GetError()
 		}
 		return nil
+	case linux.NFT_MSG_GETCHAIN:
+		nft.Mu.RLock()
+		defer nft.Mu.RUnlock()
+		if err := p.getChain(nft, attrs, family, hdr.Flags, ms); err != nil {
+			log.Debugf("Nftables get chain error: %s", err)
+			return err.GetError()
+		}
+		return nil
 	default:
 		log.Debugf("Unsupported message type: %d", msgType)
 		return syserr.ErrNotSupported
@@ -567,6 +575,89 @@ func (p *Protocol) chainParseHook(chain *nftables.Chain, family stack.AddressFam
 	}
 
 	return baseChainInfo, nil
+}
+
+// getChain returns the chain with the given name and table name.
+func (p *Protocol) getChain(nft *nftables.NFTables, attrs map[uint16]nlmsg.BytesView, family stack.AddressFamily, msgFlags uint16, ms *nlmsg.MessageSet) *syserr.AnnotatedError {
+	if (msgFlags & linux.NLM_F_DUMP) != 0 {
+		// TODO: b/421437663 - Support dump requests for chains.
+		return syserr.NewAnnotatedError(syserr.ErrNotSupported, fmt.Sprintf("Nftables: Chain dump is not currently supported"))
+	}
+
+	tabNameBytes, ok := attrs[linux.NFTA_CHAIN_TABLE]
+	if !ok {
+		return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("Nftables: NFTA_CHAIN_TABLE attribute is malformed or not found"))
+	}
+
+	tabName := tabNameBytes.String()
+	tab, err := nft.GetTable(family, tabName, uint32(ms.PortID))
+	if err != nil {
+		return err
+	}
+
+	chainNameBytes, ok := attrs[linux.NFTA_CHAIN_NAME]
+	if !ok {
+		return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("Nftables: NFTA_CHAIN_NAME attribute is malformed or not found"))
+	}
+
+	chainName := chainNameBytes.String()
+	chain, err := tab.GetChain(chainName)
+	if err != nil {
+		return err
+	}
+
+	m := ms.AddMessage(linux.NetlinkMessageHeader{
+		Type: uint16(linux.NFNL_SUBSYS_NFTABLES)<<8 | uint16(linux.NFT_MSG_NEWCHAIN),
+	})
+
+	m.Put(&linux.NetFilterGenMsg{
+		Family:  uint8(family),
+		Version: uint8(linux.NFNETLINK_V0),
+		// Unused, set to 0.
+		ResourceID: uint16(0),
+	})
+	m.PutAttrString(linux.NFTA_CHAIN_TABLE, tabName)
+	m.PutAttrString(linux.NFTA_CHAIN_NAME, chainName)
+	m.PutAttr(linux.NFTA_CHAIN_HANDLE, primitive.AllocateUint64(chain.GetHandle()))
+
+	if chain.IsBaseChain() {
+		err := getBaseChainHookInfo(chain, family, m)
+		if err != nil {
+			return err
+		}
+
+		baseChainInfo := chain.GetBaseChainInfo()
+		m.PutAttr(linux.NFTA_CHAIN_POLICY, primitive.AllocateUint32(uint32(baseChainInfo.PolicyBoolToValue())))
+		m.PutAttrString(linux.NFTA_CHAIN_TYPE, baseChainInfo.BcType.String())
+	}
+
+	chainFlags := chain.GetFlags()
+	if chainFlags != 0 {
+		m.PutAttr(linux.NFTA_CHAIN_FLAGS, primitive.AllocateUint32(uint32(chainFlags)))
+	}
+
+	m.PutAttr(linux.NFTA_CHAIN_USE, primitive.AllocateUint32(uint32(chain.GetChainUse())))
+	if chain.HasUserData() {
+		m.PutAttr(linux.NFTA_CHAIN_USERDATA, primitive.AsByteSlice(chain.GetUserData()))
+	}
+
+	return nil
+}
+
+// getBaseChainHookInfo creates a NFTA_CHAIN_HOOK attribute with all the corresponding nested attributes.
+func getBaseChainHookInfo(chain *nftables.Chain, family stack.AddressFamily, m *nlmsg.Message) *syserr.AnnotatedError {
+	baseChainInfo := chain.GetBaseChainInfo()
+	var nestedAttrs nlmsg.NestedAttr
+
+	nestedAttrs.PutAttr(linux.NFTA_HOOK_HOOKNUM, primitive.AllocateUint32(baseChainInfo.LinuxHookNum))
+	nestedAttrs.PutAttr(linux.NFTA_HOOK_PRIORITY, primitive.AllocateUint32(uint32(baseChainInfo.Priority.GetValue())))
+
+	if isNetDevHook(family, baseChainInfo.LinuxHookNum) {
+		return syserr.NewAnnotatedError(syserr.ErrNotSupported, fmt.Sprintf("Nftables: Netdev basechains or basechains attached to Ingress or Egress are not currently supported for getting"))
+	}
+
+	m.PutNestedAttr(linux.NFTA_CHAIN_HOOK, nestedAttrs)
+	return nil
 }
 
 // isNetDevHook returns whether the given family and hook number represent a netdev hook, or if

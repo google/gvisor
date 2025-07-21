@@ -191,6 +191,30 @@ func (m *Message) PutAttrString(atype uint16, s string) {
 	m.putZeros(aligned - l)
 }
 
+// PutNestedAttr adds v to the message as a netlink nested attribute.
+func (m *Message) PutNestedAttr(atype uint16, v NestedAttr) {
+	m.PutAttr(atype, primitive.AsByteSlice(v))
+}
+
+// NestedAttr represents a nested netlink attribute.
+type NestedAttr []byte
+
+// PutAttr adds v to the provided NestedAttr, creating nested attributes.
+func (n *NestedAttr) PutAttr(atype uint16, v marshal.Marshallable) {
+	m := Message{
+		buf: *n,
+	}
+	m.PutAttr(atype, v)
+}
+
+// PutAttrString adds s to the provided NestedAttr, creating nested attributes.
+func (n *NestedAttr) PutAttrString(atype uint16, s string) {
+	m := Message{
+		buf: *n,
+	}
+	m.PutAttrString(atype, s)
+}
+
 // MessageSet contains a series of netlink messages.
 type MessageSet struct {
 	// Multi indicates that this a multi-part message, to be terminated by
