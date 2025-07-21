@@ -177,6 +177,11 @@ func IsGVisorRuntime(ctx context.Context, t *testing.T) (bool, error) {
 	return strings.Contains(output, "gVisor"), nil
 }
 
+// IsPGO returns true if the test is a PGO benchmark run.
+func IsPGO() bool {
+	return *pgoBenchmarks
+}
+
 // SkipIfPGO skips the test if it is a PGO benchmark run.
 func SkipIfPGO[TB testing.TB](tb TB) {
 	if *pgoBenchmarks {

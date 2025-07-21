@@ -43,6 +43,7 @@ func BenchmarkNginxDocSize(b *testing.B) {
 // BenchmarkContinuousNginx runs specific benchmarks for continuous jobs.
 // The runtime under test is the sever serving a runc client.
 func BenchmarkContinuousNginx(b *testing.B) {
+	dockerutil.SkipIfPGO(b)
 	sizes := []string{"10Kb", "100Kb", "1Mb"}
 	threads := []int{1, 25, 100, 1000}
 	benchmarkNginxContinuous(b, threads, sizes)
@@ -51,8 +52,18 @@ func BenchmarkContinuousNginx(b *testing.B) {
 // benchmarkNginxDocSize iterates through all doc sizes, running subbenchmarks
 // for each size.
 func benchmarkNginxDocSize(b *testing.B, tmpfs bool) {
-	for size, filename := range nginxDocs {
+	docs := nginxDocs
+	if dockerutil.IsPGO() {
+		docs = map[string]string{
+			"1Kb":  "latin1k.txt",
+			"10Mb": "latin10240k.txt",
+		}
+	}
+	for size, filename := range docs {
 		concurrency := []int{1, 25, 50, 100, 1000}
+		if dockerutil.IsPGO() {
+			concurrency = []int{1, 100}
+		}
 		for _, c := range concurrency {
 			fsize := tools.Parameter{
 				Name:  "filesize",
