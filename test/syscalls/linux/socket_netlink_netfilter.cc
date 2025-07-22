@@ -432,17 +432,9 @@ TEST(NetlinkNetfilterTest, ErrRetrieveTableWithOwnerMismatch) {
 
 TEST(NetlinkNetfilterTest, DeleteExistingTableByName) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
-  // uint16_t default_table_id = 0;
   const char test_table_name[] = "test_table_name_delete";
-
   FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
-
-  struct request {
-    struct nlmsghdr hdr;
-    struct nfgenmsg msg;
-    struct nameAttribute nattr;
-  };
 
   std::vector<char> add_request_buffer =
       NlReq()
@@ -1199,7 +1191,6 @@ TEST(NetlinkNetfilterTest, ErrNewBaseChainWithUnsupportedFamilyChainTypePair) {
           .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
           .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
           .U32Attr(NFTA_CHAIN_POLICY, &test_policy)
-          // Potentially add the NLA_F_NESTED flag if the hook data is nested.
           .RawAttr(NFTA_CHAIN_HOOK, nested_hook_data.data(),
                    nested_hook_data.size())
           .U32Attr(NFTA_CHAIN_FLAGS, &test_chain_flags)

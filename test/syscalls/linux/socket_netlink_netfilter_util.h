@@ -80,23 +80,6 @@ struct NfChainCheckOptions {
   bool skip_handle_check;
 };
 
-struct nameAttribute {
-  struct nlattr attr;
-  char name[TABLE_NAME_SIZE];
-};
-struct flagAttribute {
-  struct nlattr attr;
-  uint32_t flags;
-};
-struct userDataAttribute {
-  struct nlattr attr;
-  uint8_t userdata[VALID_USERDATA_SIZE];
-};
-struct deleteAttribute {
-  struct nlattr attr;
-  uint32_t handle;
-};
-
 void InitNetfilterGenmsg(struct nfgenmsg* genmsg, uint8_t family,
                          uint8_t version, uint16_t res_id);
 
