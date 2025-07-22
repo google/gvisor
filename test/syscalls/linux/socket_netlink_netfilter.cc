@@ -1999,6 +1999,333 @@ TEST(NetlinkNetfilterTest, GetBaseChain) {
       false));
 }
 
+TEST(NetlinkNetfilterTest, ErrDeleteChainWithNoTableNameSpecified) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+  const char test_table_name[] = "test_table_chains";
+  const char test_chain_name[] = "test_chain_no_table_name";
+  const char test_chain_type_name[] = "filter";
+  const uint32_t test_policy = NF_DROP;
+  const uint32_t test_hook_num = NF_INET_PRE_ROUTING;
+  const uint32_t test_hook_priority = 0;
+  const uint32_t test_chain_flags = NFT_CHAIN_BASE;
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
+
+  std::vector<char> add_table_request_buffer =
+      NlReq()
+          .MsgType(NFT_MSG_NEWTABLE)
+          .Flags(NLM_F_REQUEST | NLM_F_ACK)
+          .Family(NFPROTO_INET)
+          .Seq(kSeq)
+          .StrAttr(NFTA_TABLE_NAME, test_table_name)
+          .Build();
+
+  std::vector<char> nested_hook_data =
+      NlNestedAttr()
+          .U32Attr(NFTA_HOOK_HOOKNUM, &test_hook_num)
+          .U32Attr(NFTA_HOOK_PRIORITY, &test_hook_priority)
+          .StrAttr(NFTA_CHAIN_TYPE, test_chain_type_name)
+          .Build();
+  std::vector<char> add_chain_request_buffer =
+      NlReq()
+          .MsgType(NFT_MSG_NEWCHAIN)
+          .Flags(NLM_F_REQUEST | NLM_F_ACK)
+          .Family(NFPROTO_INET)
+          .Seq(kSeq + 1)
+          .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
+          .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
+          .U32Attr(NFTA_CHAIN_POLICY, &test_policy)
+          .RawAttr(NFTA_CHAIN_HOOK, nested_hook_data.data(),
+                   nested_hook_data.size())
+          .U32Attr(NFTA_CHAIN_FLAGS, &test_chain_flags)
+          .Build();
+
+  std::vector<char> delete_chain_request_buffer =
+      NlReq()
+          .MsgType(NFT_MSG_DELCHAIN)
+          .Flags(NLM_F_REQUEST | NLM_F_ACK)
+          .Family(NFPROTO_INET)
+          .Seq(kSeq + 2)
+          .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
+          .Build();
+
+  ASSERT_NO_ERRNO(NetlinkRequestAckOrError(fd, kSeq,
+                                           add_table_request_buffer.data(),
+                                           add_table_request_buffer.size()));
+  ASSERT_NO_ERRNO(NetlinkRequestAckOrError(fd, kSeq + 1,
+                                           add_chain_request_buffer.data(),
+                                           add_chain_request_buffer.size()));
+  ASSERT_THAT(
+      NetlinkRequestAckOrError(fd, kSeq + 2, delete_chain_request_buffer.data(),
+                               delete_chain_request_buffer.size()),
+      PosixErrorIs(EINVAL, _));
+}
+
+TEST(NetlinkNetfilterTest, ErrDeleteNonexistentChain) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+  const char test_table_name[] = "test_table_chains";
+  const char test_chain_name[] = "test_chain_nonexistent";
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
+
+  std::vector<char> add_table_request_buffer =
+      NlReq()
+          .MsgType(NFT_MSG_NEWTABLE)
+          .Flags(NLM_F_REQUEST | NLM_F_ACK)
+          .Family(NFPROTO_INET)
+          .Seq(kSeq)
+          .StrAttr(NFTA_TABLE_NAME, test_table_name)
+          .Build();
+
+  std::vector<char> delete_chain_request_buffer =
+      NlReq()
+          .MsgType(NFT_MSG_DELCHAIN)
+          .Flags(NLM_F_REQUEST | NLM_F_ACK)
+          .Family(NFPROTO_INET)
+          .Seq(kSeq + 1)
+          .StrAttr(NFTA_TABLE_NAME, test_table_name)
+          .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
+          .Build();
+
+  ASSERT_NO_ERRNO(NetlinkRequestAckOrError(fd, kSeq,
+                                           add_table_request_buffer.data(),
+                                           add_table_request_buffer.size()));
+  ASSERT_THAT(
+      NetlinkRequestAckOrError(fd, kSeq + 1, delete_chain_request_buffer.data(),
+                               delete_chain_request_buffer.size()),
+      PosixErrorIs(ENOENT, _));
+}
+
+TEST(NetlinkNetfilterTest, ErrDeleteChainWithChainBindingFlagSet) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+  const char test_table_name[] = "test_table_chains";
+  const char test_chain_name[] = "test_chain_binding_set";
+  const uint32_t test_chain_flags = NFT_CHAIN_BINDING;
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
+
+  std::vector<char> add_table_request_buffer =
+      NlReq()
+          .MsgType(NFT_MSG_NEWTABLE)
+          .Flags(NLM_F_REQUEST | NLM_F_ACK)
+          .Family(NFPROTO_INET)
+          .Seq(kSeq)
+          .StrAttr(NFTA_TABLE_NAME, test_table_name)
+          .Build();
+
+  std::vector<char> add_chain_request_buffer =
+      NlReq()
+          .MsgType(NFT_MSG_NEWCHAIN)
+          .Flags(NLM_F_REQUEST | NLM_F_ACK)
+          .Family(NFPROTO_INET)
+          .Seq(kSeq + 1)
+          .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
+          .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
+          .U32Attr(NFTA_CHAIN_FLAGS, &test_chain_flags)
+          .Build();
+
+  std::vector<char> delete_chain_request_buffer =
+      NlReq()
+          .MsgType(NFT_MSG_DELCHAIN)
+          .Flags(NLM_F_REQUEST | NLM_F_ACK)
+          .Family(NFPROTO_INET)
+          .Seq(kSeq + 2)
+          .StrAttr(NFTA_TABLE_NAME, test_table_name)
+          .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
+          .Build();
+
+  ASSERT_NO_ERRNO(NetlinkRequestAckOrError(fd, kSeq,
+                                           add_table_request_buffer.data(),
+                                           add_table_request_buffer.size()));
+  ASSERT_NO_ERRNO(NetlinkRequestAckOrError(fd, kSeq + 1,
+                                           add_chain_request_buffer.data(),
+                                           add_chain_request_buffer.size()));
+  ASSERT_THAT(
+      NetlinkRequestAckOrError(fd, kSeq + 2, delete_chain_request_buffer.data(),
+                               delete_chain_request_buffer.size()),
+      PosixErrorIs(ENOTSUP, _));
+}
+
+TEST(NetlinkNetfilterTest, DestroyNonexistentChain) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+  const char test_table_name[] = "test_table_chains";
+  const char test_chain_name[] = "test_chain_nonexistent";
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
+
+  std::vector<char> add_table_request_buffer =
+      NlReq()
+          .MsgType(NFT_MSG_NEWTABLE)
+          .Flags(NLM_F_REQUEST | NLM_F_ACK)
+          .Family(NFPROTO_INET)
+          .Seq(kSeq)
+          .StrAttr(NFTA_TABLE_NAME, test_table_name)
+          .Build();
+
+  std::vector<char> delete_chain_request_buffer =
+      NlReq()
+          .MsgType(NFT_MSG_DESTROYCHAIN)
+          .Flags(NLM_F_REQUEST | NLM_F_ACK)
+          .Family(NFPROTO_INET)
+          .Seq(kSeq + 1)
+          .StrAttr(NFTA_TABLE_NAME, test_table_name)
+          .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
+          .Build();
+
+  ASSERT_NO_ERRNO(NetlinkRequestAckOrError(fd, kSeq,
+                                           add_table_request_buffer.data(),
+                                           add_table_request_buffer.size()));
+  ASSERT_NO_ERRNO(NetlinkRequestAckOrError(fd, kSeq + 1,
+                                           delete_chain_request_buffer.data(),
+                                           delete_chain_request_buffer.size()));
+}
+
+TEST(NetlinkNetfilterTest, DeleteBaseChain) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+  const char test_table_name[] = "test_table_chains";
+  const char test_chain_name[] = "test_chain_delete_base_chain";
+  const char test_chain_type_name[] = "filter";
+  const uint32_t test_policy = NF_DROP;
+  const uint32_t test_hook_num = NF_INET_PRE_ROUTING;
+  const uint32_t test_hook_priority = 0;
+  const uint32_t test_chain_flags = NFT_CHAIN_BASE;
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
+
+  std::vector<char> add_table_request_buffer =
+      NlReq()
+          .MsgType(NFT_MSG_NEWTABLE)
+          .Flags(NLM_F_REQUEST | NLM_F_ACK)
+          .Family(NFPROTO_INET)
+          .Seq(kSeq)
+          .StrAttr(NFTA_TABLE_NAME, test_table_name)
+          .Build();
+
+  std::vector<char> nested_hook_data =
+      NlNestedAttr()
+          .U32Attr(NFTA_HOOK_HOOKNUM, &test_hook_num)
+          .U32Attr(NFTA_HOOK_PRIORITY, &test_hook_priority)
+          .StrAttr(NFTA_CHAIN_TYPE, test_chain_type_name)
+          .Build();
+  std::vector<char> add_chain_request_buffer =
+      NlReq()
+          .MsgType(NFT_MSG_NEWCHAIN)
+          .Flags(NLM_F_REQUEST | NLM_F_ACK)
+          .Family(NFPROTO_INET)
+          .Seq(kSeq + 1)
+          .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
+          .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
+          .U32Attr(NFTA_CHAIN_POLICY, &test_policy)
+          .RawAttr(NFTA_CHAIN_HOOK, nested_hook_data.data(),
+                   nested_hook_data.size())
+          .U32Attr(NFTA_CHAIN_FLAGS, &test_chain_flags)
+          .Build();
+
+  std::vector<char> delete_chain_request_buffer =
+      NlReq()
+          .MsgType(NFT_MSG_DELCHAIN)
+          .Flags(NLM_F_REQUEST | NLM_F_ACK)
+          .Family(NFPROTO_INET)
+          .Seq(kSeq + 2)
+          .StrAttr(NFTA_TABLE_NAME, test_table_name)
+          .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
+          .Build();
+
+  ASSERT_NO_ERRNO(NetlinkRequestAckOrError(fd, kSeq,
+                                           add_table_request_buffer.data(),
+                                           add_table_request_buffer.size()));
+  ASSERT_NO_ERRNO(NetlinkRequestAckOrError(fd, kSeq + 1,
+                                           add_chain_request_buffer.data(),
+                                           add_chain_request_buffer.size()));
+  ASSERT_NO_ERRNO(NetlinkRequestAckOrError(fd, kSeq + 2,
+                                           delete_chain_request_buffer.data(),
+                                           delete_chain_request_buffer.size()));
+}
+
+TEST(NetlinkNetfilterTest, DeleteBaseChainByHandle) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+  const char test_table_name[] = "test_table_chains";
+  const char test_chain_name[] = "test_chain_delete_base_chain";
+  const char test_chain_type_name[] = "filter";
+  const uint32_t test_policy = NF_DROP;
+  const uint32_t test_hook_num = NF_INET_PRE_ROUTING;
+  const uint32_t test_hook_priority = 0;
+  const uint32_t test_chain_flags = NFT_CHAIN_BASE;
+  uint64_t chain_handle = 0;
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
+
+  std::vector<char> add_table_request_buffer =
+      NlReq()
+          .MsgType(NFT_MSG_NEWTABLE)
+          .Flags(NLM_F_REQUEST | NLM_F_ACK)
+          .Family(NFPROTO_INET)
+          .Seq(kSeq)
+          .StrAttr(NFTA_TABLE_NAME, test_table_name)
+          .Build();
+
+  std::vector<char> nested_hook_data =
+      NlNestedAttr()
+          .U32Attr(NFTA_HOOK_HOOKNUM, &test_hook_num)
+          .U32Attr(NFTA_HOOK_PRIORITY, &test_hook_priority)
+          .StrAttr(NFTA_CHAIN_TYPE, test_chain_type_name)
+          .Build();
+  std::vector<char> add_chain_request_buffer =
+      NlReq()
+          .MsgType(NFT_MSG_NEWCHAIN)
+          .Flags(NLM_F_REQUEST | NLM_F_ACK)
+          .Family(NFPROTO_INET)
+          .Seq(kSeq + 1)
+          .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
+          .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
+          .U32Attr(NFTA_CHAIN_POLICY, &test_policy)
+          .RawAttr(NFTA_CHAIN_HOOK, nested_hook_data.data(),
+                   nested_hook_data.size())
+          .U32Attr(NFTA_CHAIN_FLAGS, &test_chain_flags)
+          .Build();
+
+  std::vector<char> get_chain_request_buffer =
+      NlReq()
+          .MsgType(NFT_MSG_GETCHAIN)
+          .Flags(NLM_F_REQUEST)
+          .Family(NFPROTO_INET)
+          .Seq(kSeq + 2)
+          .StrAttr(NFTA_TABLE_NAME, test_table_name)
+          .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
+          .Build();
+
+  ASSERT_NO_ERRNO(NetlinkRequestAckOrError(fd, kSeq,
+                                           add_table_request_buffer.data(),
+                                           add_table_request_buffer.size()));
+  ASSERT_NO_ERRNO(NetlinkRequestAckOrError(fd, kSeq + 1,
+                                           add_chain_request_buffer.data(),
+                                           add_chain_request_buffer.size()));
+  ASSERT_NO_ERRNO(NetlinkRequestResponse(
+      fd, get_chain_request_buffer.data(), get_chain_request_buffer.size(),
+      [&](const struct nlmsghdr* hdr) {
+        const struct nfattr* chain_handle_attr =
+            FindNfAttr(hdr, nullptr, NFTA_CHAIN_HANDLE);
+        ASSERT_NE(chain_handle_attr, nullptr);
+        chain_handle =
+            *(reinterpret_cast<uint64_t*>(NFA_DATA(chain_handle_attr)));
+      },
+      false));
+
+  ASSERT_NE(chain_handle, 0);
+  std::vector<char> delete_chain_request_buffer =
+      NlReq()
+          .MsgType(NFT_MSG_DELCHAIN)
+          .Flags(NLM_F_REQUEST | NLM_F_ACK)
+          .Family(NFPROTO_INET)
+          .Seq(kSeq + 3)
+          .StrAttr(NFTA_TABLE_NAME, test_table_name)
+          .U64Attr(NFTA_CHAIN_HANDLE, &chain_handle)
+          .Build();
+  ASSERT_NO_ERRNO(NetlinkRequestAckOrError(fd, kSeq + 3,
+                                           delete_chain_request_buffer.data(),
+                                           delete_chain_request_buffer.size()));
+}
+
 }  // namespace
 
 }  // namespace testing

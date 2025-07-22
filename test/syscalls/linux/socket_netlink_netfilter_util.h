@@ -40,11 +40,15 @@ namespace testing {
 #endif
 
 #ifndef NFT_TABLE_F_OWNER
-#define NFT_TABLE_F_OWNER 2
+#define NFT_TABLE_F_OWNER (2)
 #endif
 
 #ifndef NFT_MSG_DESTROYTABLE
-#define NFT_MSG_DESTROYTABLE 26
+#define NFT_MSG_DESTROYTABLE (26)
+#endif
+
+#ifndef NFT_MSG_DESTROYCHAIN
+#define NFT_MSG_DESTROYCHAIN (27)
 #endif
 
 #define TABLE_NAME_SIZE 32

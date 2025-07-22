@@ -142,6 +142,14 @@ func (p *Protocol) ProcessMessage(ctx context.Context, s *netlink.Socket, msg *n
 			return err.GetError()
 		}
 		return nil
+	case linux.NFT_MSG_DELCHAIN, linux.NFT_MSG_DESTROYCHAIN:
+		nft.Mu.Lock()
+		defer nft.Mu.Unlock()
+		if err := p.deleteChain(nft, attrs, family, hdr.Flags, msgType, ms); err != nil {
+			log.Debugf("Nftables delete chain error: %s", err)
+			return err.GetError()
+		}
+		return nil
 	default:
 		log.Debugf("Unsupported message type: %d", msgType)
 		return syserr.ErrNotSupported
@@ -343,9 +351,14 @@ func (p *Protocol) newChain(nft *nftables.NFTables, attrs map[uint16]nlmsg.Bytes
 		return err
 	}
 
-	// Attempt to get the chain if it exists.
-	chain, err := attemptGetChain(tab, attrs)
-	if err != nil {
+	chain, err := getChain(tab, attrs)
+	// NFTA_CHAIN_ID must exist if name and handle attributes are not set.
+	if chain == nil && err == nil && !hasAttr(linux.NFTA_CHAIN_ID, attrs) {
+		return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("Nftables: Chain handle or name attribute is malformed or not found"))
+	}
+
+	// If the chain is not found, that means we are creating a completely new chain.
+	if err != nil && err.GetError() != syserr.ErrNoFileOrDir {
 		return err
 	}
 
@@ -406,8 +419,8 @@ func (p *Protocol) newChain(nft *nftables.NFTables, attrs map[uint16]nlmsg.Bytes
 	return p.addChain(attrs, tab, family, policy, chainFlags)
 }
 
-// attemptGetChain returns a chain if it exists.
-func attemptGetChain(tab *nftables.Table, attrs map[uint16]nlmsg.BytesView) (*nftables.Chain, *syserr.AnnotatedError) {
+// getChain returns a chain if it exists.
+func getChain(tab *nftables.Table, attrs map[uint16]nlmsg.BytesView) (*nftables.Chain, *syserr.AnnotatedError) {
 	var chain *nftables.Chain
 	var err *syserr.AnnotatedError
 	if chainHandleBytes, ok := attrs[linux.NFTA_CHAIN_HANDLE]; ok {
@@ -424,11 +437,9 @@ func attemptGetChain(tab *nftables.Table, attrs map[uint16]nlmsg.BytesView) (*nf
 		chainName := chainNameBytes.String()
 		chain, err = tab.GetChain(chainName)
 		// Only continue if the error is that the chain does not exist.
-		if err != nil && err.GetError() != syserr.ErrNoFileOrDir {
+		if err != nil {
 			return nil, err
 		}
-	} else if !hasAttr(linux.NFTA_CHAIN_ID, attrs) {
-		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("Nftables: Chain handle or name attribute is malformed or not found"))
 	}
 	return chain, nil
 }
@@ -641,6 +652,63 @@ func (p *Protocol) getChain(nft *nftables.NFTables, attrs map[uint16]nlmsg.Bytes
 		m.PutAttr(linux.NFTA_CHAIN_USERDATA, primitive.AsByteSlice(chain.GetUserData()))
 	}
 
+	return nil
+}
+
+// deleteChain deletes a chain from a table.
+func (p *Protocol) deleteChain(nft *nftables.NFTables, attrs map[uint16]nlmsg.BytesView, family stack.AddressFamily, msgFlags uint16, msgType linux.NfTableMsgType, ms *nlmsg.MessageSet) *syserr.AnnotatedError {
+	tabNameBytes, ok := attrs[linux.NFTA_TABLE_NAME]
+	if !ok {
+		return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("Nftables: NFTA_TABLE_NAME attribute is malformed or not found"))
+	}
+
+	tab, err := nft.GetTable(family, tabNameBytes.String(), uint32(ms.PortID))
+	if err != nil {
+		return err
+	}
+
+	chain, err := getChain(tab, attrs)
+	if err != nil {
+		if err.GetError() == syserr.ErrNoFileOrDir && msgType == linux.NFT_MSG_DESTROYCHAIN {
+			return nil
+		}
+		return err
+	}
+
+	chainFlags := chain.GetFlags()
+	if chainFlags&linux.NFT_CHAIN_BINDING != 0 {
+		return syserr.NewAnnotatedError(syserr.ErrNotSupported, fmt.Sprintf("Nftables: Chains with binding cannot be deleted"))
+	}
+
+	if hasAttr(linux.NFTA_CHAIN_HOOK, attrs) {
+		if msgType == linux.NFT_MSG_DESTROYCHAIN && chainFlags&linux.NFT_CHAIN_HW_OFFLOAD != 0 {
+			return syserr.NewAnnotatedError(syserr.ErrNotSupported, fmt.Sprintf("Nftables: Hardware offload chains cannot be deleted"))
+		}
+
+		if chain.IsBaseChain() {
+			// TODO: b/421437663 - Support deleting netdev basechains.
+			if isNetDevHook(family, chain.GetBaseChainInfo().LinuxHookNum) {
+				return syserr.NewAnnotatedError(syserr.ErrNotSupported, fmt.Sprintf("Nftables: Netdev basechains or basechains attached to Ingress or Egress are not currently supported for deleting"))
+			}
+		}
+	}
+
+	if msgFlags&linux.NLM_F_NONREC != 0 && chain.GetChainUse() != 0 {
+		return syserr.NewAnnotatedError(syserr.ErrBusy, fmt.Sprintf("Nftables: Non-recursive delete on a chain with use > 0 is not supported. Chain %s has chain use %d", chain.GetName(), chain.GetChainUse()))
+	}
+
+	// TODO: b/421437663 - Support iteratively deleting rules in a chain to then delete chains.
+	// After deleting all the possible rules, if the chain is still in use, it cannot be deleted.
+	if chain.GetChainUse() != 0 {
+		return syserr.NewAnnotatedError(syserr.ErrBusy, fmt.Sprintf("Nftables: Deleting a chain with chain use > 0 is not supported. Chain %s has chain use %d", chain.GetName(), chain.GetChainUse()))
+	}
+
+	// We don't worry about whether a delete operation succeeded or not, rather only that the chain
+	// is gone.
+	deleted := tab.DeleteChain(chain.GetName())
+	if !deleted {
+		log.Debugf("Failed to delete chain %s", chain.GetName())
+	}
 	return nil
 }
 
