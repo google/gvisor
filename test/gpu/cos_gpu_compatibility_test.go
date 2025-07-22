@@ -114,7 +114,7 @@ func TestGPUDriversCompatibility(t *testing.T) {
 }
 
 func imageNameToCosPatchVersion(imageName string, family string) (int, string, error) {
-	var cosVersionRegex = regexp.MustCompile(`^cos-(?:arm64-)?(?:beta-|dev-|stable-)?(\d+)-(\d+)-(\d+)-(\d+)$`)
+	cosVersionRegex := regexp.MustCompile(`^cos-(?:arm64-)?(?:lm-)?(?:beta-|dev-|stable-)?(\d+)-(\d+)-(\d+)-(\d+)$`)
 	matches := cosVersionRegex.FindStringSubmatch(imageName)
 	if len(matches) != 5 {
 		return 0, "", fmt.Errorf("image name %q does not match regex %q", imageName, cosVersionRegex.String())
