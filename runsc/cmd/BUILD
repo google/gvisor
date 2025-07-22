@@ -116,6 +116,7 @@ go_library(
         "//runsc/metricserver/containermetrics",
         "//runsc/mitigate",
         "//runsc/profile",
+        "//runsc/sandbox",
         "//runsc/specutils",
         "//runsc/starttime",
         "@com_github_google_subcommands//:go_default_library",

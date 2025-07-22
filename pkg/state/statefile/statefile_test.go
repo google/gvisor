@@ -212,7 +212,7 @@ func benchmark(b *testing.B, size int, write bool, compressible bool) {
 	var stateBuf bytes.Buffer
 	writeState := func() {
 		stateBuf.Reset()
-		w, err := NewWriter(&stateBuf, key, Options{Compression: CompressionLevelFlateBestSpeed}.WriteToMetadata(map[string]string{}))
+		w, err := NewWriter(&stateBuf, key, CompressionLevelFlateBestSpeed.ToMetadata())
 		if err != nil {
 			b.Fatalf("error creating writer: %v", err)
 		}
