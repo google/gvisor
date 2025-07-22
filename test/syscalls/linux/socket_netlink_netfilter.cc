@@ -114,19 +114,13 @@ TEST(NetlinkNetfilterTest, AddAndAddTableWithDormantFlag) {
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
 
   std::vector<char> add_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_NEWTABLE)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_INET)
+      NlReq("newtable req ack inet")
           .Seq(kSeq)
           .StrAttr(NFTA_TABLE_NAME, test_table_name)
           .Build();
 
   std::vector<char> add_request_buffer_2 =
-      NlReq()
-          .MsgType(NFT_MSG_NEWTABLE)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_INET)
+      NlReq("newtable req ack inet")
           .Seq(kSeq + 1)
           .StrAttr(NFTA_TABLE_NAME, test_table_name)
           .U32Attr(NFTA_TABLE_FLAGS, &table_flags)
@@ -153,10 +147,7 @@ TEST(NetlinkNetfilterTest, AddAndRetrieveNewTable) {
   uint32_t expected_owner = ASSERT_NO_ERRNO_AND_VALUE(NetlinkPortID(fd.get()));
 
   std::vector<char> add_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_NEWTABLE)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_INET)
+      NlReq("newtable req ack inet")
           .Seq(kSeq)
           // Include the null terminator at the end of the string.
           .StrAttr(NFTA_TABLE_NAME, test_table_name)
@@ -165,12 +156,9 @@ TEST(NetlinkNetfilterTest, AddAndRetrieveNewTable) {
           .Build();
 
   std::vector<char> get_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_GETTABLE)
-          // Don't set NLM_F_ACK here, since the check will be done for every
-          // nlmsg received.
-          .Flags(NLM_F_REQUEST)
-          .Family(NFPROTO_INET)
+      // Don't set NLM_F_ACK here, since the check will be done for every
+      // nlmsg received.
+      NlReq("gettable req inet")
           .Seq(kSeq + 1)
           .StrAttr(NFTA_TABLE_NAME, test_table_name)
           .Build();
@@ -204,28 +192,19 @@ TEST(NetlinkNetfilterTest, ErrGettingTableWithDifferentFamily) {
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
 
   std::vector<char> add_request_buffer_ipv4 =
-      NlReq()
-          .MsgType(NFT_MSG_NEWTABLE)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_IPV4)
+      NlReq("newtable req ack ipv4")
           .Seq(kSeq)
           .StrAttr(NFTA_TABLE_NAME, test_table_name)
           .Build();
 
   std::vector<char> add_request_buffer_ipv6 =
-      NlReq()
-          .MsgType(NFT_MSG_NEWTABLE)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_IPV6)
+      NlReq("newtable req ack ipv6")
           .Seq(kSeq + 1)
           .StrAttr(NFTA_TABLE_NAME, test_table_name)
           .Build();
 
   std::vector<char> get_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_GETTABLE)
-          .Flags(NLM_F_REQUEST)
-          .Family(NFPROTO_INET)
+      NlReq("gettable req inet")
           .Seq(kSeq + 2)
           .StrAttr(NFTA_TABLE_NAME, test_table_name)
           .Build();
@@ -249,19 +228,13 @@ TEST(NetlinkNetfilterTest, ErrAddExistingTableWithExclusiveFlag) {
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
 
   std::vector<char> add_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_NEWTABLE)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_INET)
+      NlReq("newtable req ack inet")
           .Seq(kSeq)
           .StrAttr(NFTA_TABLE_NAME, test_table_name)
           .Build();
 
   std::vector<char> add_request_buffer_2 =
-      NlReq()
-          .MsgType(NFT_MSG_NEWTABLE)
-          .Flags(NLM_F_REQUEST | NLM_F_EXCL)
-          .Family(NFPROTO_INET)
+      NlReq("newtable req excl inet")
           .Seq(kSeq + 1)
           .StrAttr(NFTA_TABLE_NAME, test_table_name)
           .Build();
@@ -282,19 +255,13 @@ TEST(NetlinkNetfilterTest, ErrAddExistingTableWithReplaceFlag) {
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
 
   std::vector<char> add_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_NEWTABLE)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_INET)
+      NlReq("newtable req ack inet")
           .Seq(kSeq)
           .StrAttr(NFTA_TABLE_NAME, test_table_name)
           .Build();
 
   std::vector<char> add_request_buffer_2 =
-      NlReq()
-          .MsgType(NFT_MSG_NEWTABLE)
-          .Flags(NLM_F_REQUEST | NLM_F_REPLACE)
-          .Family(NFPROTO_INET)
+      NlReq("newtable req replace inet")
           .Seq(kSeq + 1)
           .StrAttr(NFTA_TABLE_NAME, test_table_name)
           .Build();
@@ -307,19 +274,17 @@ TEST(NetlinkNetfilterTest, ErrAddExistingTableWithReplaceFlag) {
       PosixErrorIs(ENOTSUP, _));
 }
 
-TEST(NetlinkNetfilterTest, ErrAddTableWithUnsupportedFamily) {
+TEST(NetlinkNetfilterTest, ErrAddTableWithInvalidFamily) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
-  uint8_t unknown_family = 255;
+  uint8_t invalid_family = 255;
   const char test_table_name[] = "unsupported_family_table";
 
   FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
 
   std::vector<char> add_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_NEWTABLE)
-          .Flags(NLM_F_REQUEST)
-          .Family(unknown_family)
+      NlReq("newtable req")
+          .Family(invalid_family)
           .Seq(kSeq)
           .StrAttr(NFTA_TABLE_NAME, test_table_name)
           .Build();
@@ -338,10 +303,7 @@ TEST(NetlinkNetfilterTest, ErrAddTableWithUnsupportedFlags) {
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
 
   std::vector<char> add_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_NEWTABLE)
-          .Flags(NLM_F_REQUEST)
-          .Family(NFPROTO_INET)
+      NlReq("newtable req inet")
           .Seq(kSeq)
           .StrAttr(NFTA_TABLE_NAME, test_table_name)
           .U32Attr(NFTA_TABLE_FLAGS, &unsupported_flags)
@@ -358,12 +320,8 @@ TEST(NetlinkNetfilterTest, ErrRetrieveNoSpecifiedNameTable) {
   FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
 
-  std::vector<char> get_request_buffer = NlReq()
-                                             .MsgType(NFT_MSG_GETTABLE)
-                                             .Flags(NLM_F_REQUEST | NLM_F_ACK)
-                                             .Family(NFPROTO_INET)
-                                             .Seq(kSeq)
-                                             .Build();
+  std::vector<char> get_request_buffer =
+      NlReq("gettable req ack inet").Seq(kSeq).Build();
 
   ASSERT_THAT(NetlinkRequestAckOrError(fd, kSeq, get_request_buffer.data(),
                                        get_request_buffer.size()),
@@ -378,10 +336,7 @@ TEST(NetlinkNetfilterTest, ErrRetrieveNonexistentTable) {
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
 
   std::vector<char> get_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_GETTABLE)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_INET)
+      NlReq("gettable req ack inet")
           .Seq(kSeq)
           .StrAttr(NFTA_TABLE_NAME, test_table_name)
           .Build();
@@ -402,10 +357,7 @@ TEST(NetlinkNetfilterTest, ErrRetrieveTableWithOwnerMismatch) {
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
 
   std::vector<char> add_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_NEWTABLE)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_INET)
+      NlReq("newtable req ack inet")
           .Seq(kSeq)
           .StrAttr(NFTA_TABLE_NAME, test_table_name)
           .U32Attr(NFTA_TABLE_FLAGS, &table_flags)
@@ -413,10 +365,7 @@ TEST(NetlinkNetfilterTest, ErrRetrieveTableWithOwnerMismatch) {
           .Build();
 
   std::vector<char> get_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_GETTABLE)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_INET)
+      NlReq("gettable req ack inet")
           .Seq(kSeq + 1)
           .StrAttr(NFTA_TABLE_NAME, test_table_name)
           .Build();
@@ -437,19 +386,13 @@ TEST(NetlinkNetfilterTest, DeleteExistingTableByName) {
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
 
   std::vector<char> add_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_NEWTABLE)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_INET)
+      NlReq("newtable req ack inet")
           .Seq(kSeq)
           .StrAttr(NFTA_TABLE_NAME, test_table_name)
           .Build();
 
   std::vector<char> del_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_DELTABLE)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_INET)
+      NlReq("deltable req ack inet")
           .Seq(kSeq + 1)
           .StrAttr(NFTA_TABLE_NAME, test_table_name)
           .Build();
@@ -469,19 +412,13 @@ TEST(NetlinkNetfilterTest, DeleteTableByHandle) {
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
 
   std::vector<char> add_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_NEWTABLE)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_INET)
+      NlReq("newtable req ack inet")
           .Seq(kSeq)
           .StrAttr(NFTA_TABLE_NAME, test_table_name)
           .Build();
 
   std::vector<char> get_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_GETTABLE)
-          .Flags(NLM_F_REQUEST)
-          .Family(NFPROTO_INET)
+      NlReq("gettable req inet")
           .Seq(kSeq + 1)
           .StrAttr(NFTA_TABLE_NAME, test_table_name)
           .Build();
@@ -503,10 +440,7 @@ TEST(NetlinkNetfilterTest, DeleteTableByHandle) {
   EXPECT_NE(expected_handle, 0);
 
   std::vector<char> del_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_DELTABLE)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_INET)
+      NlReq("deltable req ack inet")
           .Seq(kSeq + 2)
           .U64Attr(NFTA_TABLE_HANDLE, &expected_handle)
           .Build();
@@ -523,10 +457,7 @@ TEST(NetlinkNetfilterTest, ErrDeleteNonexistentTable) {
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
 
   std::vector<char> del_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_DELTABLE)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_INET)
+      NlReq("deltable req ack inet")
           .Seq(kSeq + 1)
           .StrAttr(NFTA_TABLE_NAME, test_table_name)
           .Build();
@@ -544,10 +475,7 @@ TEST(NetlinkNetfilterTest, DestroyNonexistentTable) {
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
 
   std::vector<char> destroy_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_DESTROYTABLE)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_INET)
+      NlReq("destroytable req ack inet")
           .Seq(kSeq + 1)
           .StrAttr(NFTA_TABLE_NAME, test_table_name)
           .Build();
@@ -566,45 +494,28 @@ TEST(NetlinkNetfilterTest, DeleteAllTablesUnspecifiedFamily) {
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
 
   std::vector<char> add_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_NEWTABLE)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_INET)
+      NlReq("newtable req ack inet")
           .Seq(kSeq)
           .StrAttr(NFTA_TABLE_NAME, test_table_name_inet)
           .Build();
 
   std::vector<char> add_request_buffer_2 =
-      NlReq()
-          .MsgType(NFT_MSG_NEWTABLE)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_BRIDGE)
+      NlReq("newtable req ack bridge")
           .Seq(kSeq + 1)
           .StrAttr(NFTA_TABLE_NAME, test_table_name_bridge)
           .Build();
 
   std::vector<char> destroy_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_DELTABLE)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_UNSPEC)
-          .Seq(kSeq + 2)
-          .Build();
+      NlReq("deltable req ack unspec").Seq(kSeq + 2).Build();
 
   std::vector<char> get_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_GETTABLE)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_INET)
+      NlReq("gettable req ack inet")
           .Seq(kSeq + 3)
           .StrAttr(NFTA_TABLE_NAME, test_table_name_inet)
           .Build();
 
   std::vector<char> get_request_buffer_2 =
-      NlReq()
-          .MsgType(NFT_MSG_GETTABLE)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_BRIDGE)
+      NlReq("gettable req ack bridge")
           .Seq(kSeq + 4)
           .StrAttr(NFTA_TABLE_NAME, test_table_name_bridge)
           .Build();
@@ -634,64 +545,43 @@ TEST(NetlinkNetfilterTest, DeleteAllTablesUnspecifiedFamilySpecifiedName) {
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
 
   std::vector<char> add_request_buffer_inet =
-      NlReq()
-          .MsgType(NFT_MSG_NEWTABLE)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_INET)
+      NlReq("newtable req ack inet")
           .Seq(kSeq)
           .StrAttr(NFTA_TABLE_NAME, test_table_name_same)
           .Build();
 
   std::vector<char> add_request_buffer_bridge =
-      NlReq()
-          .MsgType(NFT_MSG_NEWTABLE)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_BRIDGE)
+      NlReq("newtable req ack bridge")
           .Seq(kSeq + 1)
           .StrAttr(NFTA_TABLE_NAME, test_table_name_same)
           .Build();
 
   std::vector<char> add_request_buffer_different_bridge =
-      NlReq()
-          .MsgType(NFT_MSG_NEWTABLE)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_BRIDGE)
+      NlReq("newtable req ack bridge")
           .Seq(kSeq + 2)
           .StrAttr(NFTA_TABLE_NAME, test_table_name_different)
           .Build();
 
   std::vector<char> destroy_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_DELTABLE)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_UNSPEC)
+      NlReq("deltable req ack unspec")
           .Seq(kSeq + 3)
           .StrAttr(NFTA_TABLE_NAME, test_table_name_same)
           .Build();
 
   std::vector<char> get_request_buffer_inet =
-      NlReq()
-          .MsgType(NFT_MSG_GETTABLE)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_INET)
+      NlReq("gettable req ack inet")
           .Seq(kSeq + 4)
           .StrAttr(NFTA_TABLE_NAME, test_table_name_same)
           .Build();
 
   std::vector<char> get_request_buffer_bridge =
-      NlReq()
-          .MsgType(NFT_MSG_GETTABLE)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_BRIDGE)
+      NlReq("gettable req ack bridge")
           .Seq(kSeq + 5)
           .StrAttr(NFTA_TABLE_NAME, test_table_name_same)
           .Build();
 
   std::vector<char> get_request_buffer_different =
-      NlReq()
-          .MsgType(NFT_MSG_GETTABLE)
-          .Flags(NLM_F_REQUEST)
-          .Family(NFPROTO_BRIDGE)
+      NlReq("gettable req bridge")
           .Seq(kSeq + 6)
           .StrAttr(NFTA_TABLE_NAME, test_table_name_different)
           .Build();
@@ -745,45 +635,28 @@ TEST(NetlinkNetfilterTest, DeleteAllTablesUnspecifiedNameAndHandle) {
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
 
   std::vector<char> add_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_NEWTABLE)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_INET)
+      NlReq("newtable req ack inet")
           .Seq(kSeq)
           .StrAttr(NFTA_TABLE_NAME, test_table_name_inet)
           .Build();
 
   std::vector<char> add_request_buffer_2 =
-      NlReq()
-          .MsgType(NFT_MSG_NEWTABLE)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_BRIDGE)
+      NlReq("newtable req ack bridge")
           .Seq(kSeq + 1)
           .StrAttr(NFTA_TABLE_NAME, test_table_name_bridge)
           .Build();
 
   std::vector<char> destroy_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_DELTABLE)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_INET)
-          .Seq(kSeq + 2)
-          .Build();
+      NlReq("deltable req ack unspec").Seq(kSeq + 2).Build();
 
   std::vector<char> get_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_GETTABLE)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_INET)
+      NlReq("gettable req inet")
           .Seq(kSeq + 3)
           .StrAttr(NFTA_TABLE_NAME, test_table_name_inet)
           .Build();
 
   std::vector<char> get_request_buffer_2 =
-      NlReq()
-          .MsgType(NFT_MSG_GETTABLE)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_BRIDGE)
+      NlReq("gettable req bridge")
           .Seq(kSeq + 4)
           .StrAttr(NFTA_TABLE_NAME, test_table_name_bridge)
           .Build();
@@ -812,21 +685,13 @@ TEST(NetlinkNetfilterTest, ErrNewChainWithNoSpecifiedTableName) {
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
 
   std::vector<char> add_table_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_NEWTABLE)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_INET)
+      NlReq("newtable req ack inet")
           .Seq(kSeq)
           .StrAttr(NFTA_TABLE_NAME, test_table_name)
           .Build();
 
   std::vector<char> add_chain_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_NEWCHAIN)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_INET)
-          .Seq(kSeq + 1)
-          .Build();
+      NlReq("newchain req ack inet").Seq(kSeq + 1).Build();
 
   ASSERT_NO_ERRNO(NetlinkRequestAckOrError(fd, kSeq,
                                            add_table_request_buffer.data(),
@@ -845,10 +710,7 @@ TEST(NetlinkNetfilterTest, ErrNewChainWithNonexistentTable) {
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
 
   std::vector<char> add_chain_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_NEWCHAIN)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_INET)
+      NlReq("newchain req ack inet")
           .Seq(kSeq + 1)
           .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
           .Build();
@@ -867,19 +729,13 @@ TEST(NetlinkNetfilterTest, ErrNewChainWithNoSpecifiedNameOrHandle) {
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
 
   std::vector<char> add_table_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_NEWTABLE)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_INET)
+      NlReq("newtable req ack inet")
           .Seq(kSeq)
           .StrAttr(NFTA_TABLE_NAME, test_table_name)
           .Build();
 
   std::vector<char> add_chain_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_NEWCHAIN)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_INET)
+      NlReq("newchain req ack inet")
           .Seq(kSeq + 1)
           .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
           .Build();
@@ -902,19 +758,13 @@ TEST(NetlinkNetfilterTest, ErrNewChainWithPolicySet) {
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
 
   std::vector<char> add_table_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_NEWTABLE)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_INET)
+      NlReq("newtable req ack inet")
           .Seq(kSeq)
           .StrAttr(NFTA_TABLE_NAME, test_table_name)
           .Build();
 
   std::vector<char> add_chain_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_NEWCHAIN)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_INET)
+      NlReq("newchain req ack inet")
           .Seq(kSeq + 1)
           .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
           .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
@@ -940,19 +790,13 @@ TEST(NetlinkNetfilterTest, ErrNewBaseChainWithInvalidPolicy) {
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
 
   std::vector<char> add_table_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_NEWTABLE)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_INET)
+      NlReq("newtable req ack inet")
           .Seq(kSeq)
           .StrAttr(NFTA_TABLE_NAME, test_table_name)
           .Build();
 
   std::vector<char> add_chain_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_NEWCHAIN)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_INET)
+      NlReq("newchain req ack inet")
           .Seq(kSeq + 1)
           .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
           .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
@@ -982,19 +826,13 @@ TEST(NetlinkNetfilterTest, ErrNewBaseChainWithInvalidFlags) {
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
 
   std::vector<char> add_table_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_NEWTABLE)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_INET)
+      NlReq("newtable req ack inet")
           .Seq(kSeq)
           .StrAttr(NFTA_TABLE_NAME, test_table_name)
           .Build();
 
   std::vector<char> add_chain_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_NEWCHAIN)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_INET)
+      NlReq("newchain req ack inet")
           .Seq(kSeq + 1)
           .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
           .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
@@ -1024,10 +862,7 @@ TEST(NetlinkNetfilterTest,
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
 
   std::vector<char> add_table_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_NEWTABLE)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_INET)
+      NlReq("newtable req ack inet")
           .Seq(kSeq)
           .StrAttr(NFTA_TABLE_NAME, test_table_name)
           .Build();
@@ -1036,10 +871,7 @@ TEST(NetlinkNetfilterTest,
       NlNestedAttr().U32Attr(NFTA_HOOK_HOOKNUM, &test_hook_num).Build();
 
   std::vector<char> add_chain_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_NEWCHAIN)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_INET)
+      NlReq("newchain req ack inet")
           .Seq(kSeq + 1)
           .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
           .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
@@ -1069,10 +901,7 @@ TEST(NetlinkNetfilterTest, ErrNewBaseChainWithMalformedHookDataMissingHookNum) {
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
 
   std::vector<char> add_table_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_NEWTABLE)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_INET)
+      NlReq("newtable req ack inet")
           .Seq(kSeq)
           .StrAttr(NFTA_TABLE_NAME, test_table_name)
           .Build();
@@ -1081,10 +910,7 @@ TEST(NetlinkNetfilterTest, ErrNewBaseChainWithMalformedHookDataMissingHookNum) {
       NlNestedAttr().U32Attr(NFTA_HOOK_PRIORITY, &test_hook_priority).Build();
 
   std::vector<char> add_chain_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_NEWCHAIN)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_INET)
+      NlReq("newchain req ack inet")
           .Seq(kSeq + 1)
           .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
           .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
@@ -1116,10 +942,7 @@ TEST(NetlinkNetfilterTest, ErrNewBaseChainWithInvalidChainType) {
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
 
   std::vector<char> add_table_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_NEWTABLE)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_INET)
+      NlReq("newtable req ack inet")
           .Seq(kSeq)
           .StrAttr(NFTA_TABLE_NAME, test_table_name)
           .Build();
@@ -1132,10 +955,7 @@ TEST(NetlinkNetfilterTest, ErrNewBaseChainWithInvalidChainType) {
           .Build();
 
   std::vector<char> add_chain_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_NEWCHAIN)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_INET)
+      NlReq("newchain req ack inet")
           .Seq(kSeq + 1)
           .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
           .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
@@ -1167,10 +987,7 @@ TEST(NetlinkNetfilterTest, ErrNewBaseChainWithUnsupportedFamilyChainTypePair) {
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
 
   std::vector<char> add_table_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_NEWTABLE)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_ARP)
+      NlReq("newtable req ack arp")
           .Seq(kSeq)
           .StrAttr(NFTA_TABLE_NAME, test_table_name)
           .Build();
@@ -1183,10 +1000,7 @@ TEST(NetlinkNetfilterTest, ErrNewBaseChainWithUnsupportedFamilyChainTypePair) {
           .Build();
 
   std::vector<char> add_chain_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_NEWCHAIN)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_ARP)
+      NlReq("newchain req ack arp")
           .Seq(kSeq + 1)
           .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
           .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
@@ -1218,10 +1032,7 @@ TEST(NetlinkNetfilterTest, ErrNewNATBaseChainWithInvalidPriority) {
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
 
   std::vector<char> add_table_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_NEWTABLE)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_INET)
+      NlReq("newtable req ack inet")
           .Seq(kSeq)
           .StrAttr(NFTA_TABLE_NAME, test_table_name)
           .Build();
@@ -1234,10 +1045,7 @@ TEST(NetlinkNetfilterTest, ErrNewNATBaseChainWithInvalidPriority) {
           .Build();
 
   std::vector<char> add_chain_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_NEWCHAIN)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_INET)
+      NlReq("newchain req ack inet")
           .Seq(kSeq + 1)
           .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
           .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
@@ -1269,10 +1077,7 @@ TEST(NetlinkNetfilterTest, ErrNewNetDevBaseChainUnsupported) {
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
 
   std::vector<char> add_table_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_NEWTABLE)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_NETDEV)
+      NlReq("newtable req ack netdev")
           .Seq(kSeq)
           .StrAttr(NFTA_TABLE_NAME, test_table_name)
           .Build();
@@ -1285,10 +1090,7 @@ TEST(NetlinkNetfilterTest, ErrNewNetDevBaseChainUnsupported) {
           .Build();
 
   std::vector<char> add_chain_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_NEWCHAIN)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_NETDEV)
+      NlReq("newchain req ack netdev")
           .Seq(kSeq + 1)
           .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
           .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
@@ -1320,10 +1122,7 @@ TEST(NetlinkNetfilterTest, ErrNewInetBaseChainAtIngressUnsupported) {
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
 
   std::vector<char> add_table_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_NEWTABLE)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_INET)
+      NlReq("newtable req ack inet")
           .Seq(kSeq)
           .StrAttr(NFTA_TABLE_NAME, test_table_name)
           .Build();
@@ -1336,10 +1135,7 @@ TEST(NetlinkNetfilterTest, ErrNewInetBaseChainAtIngressUnsupported) {
           .Build();
 
   std::vector<char> add_chain_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_NEWCHAIN)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_INET)
+      NlReq("newchain req ack inet")
           .Seq(kSeq + 1)
           .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
           .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
@@ -1371,10 +1167,7 @@ TEST(NetlinkNetfilterTest, ErrNewBaseChainWithUnsupportedChainCounters) {
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
 
   std::vector<char> add_table_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_NEWTABLE)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_INET)
+      NlReq("newtable req ack inet")
           .Seq(kSeq)
           .StrAttr(NFTA_TABLE_NAME, test_table_name)
           .Build();
@@ -1387,10 +1180,7 @@ TEST(NetlinkNetfilterTest, ErrNewBaseChainWithUnsupportedChainCounters) {
           .Build();
 
   std::vector<char> add_chain_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_NEWCHAIN)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_INET)
+      NlReq("newchain req ack inet")
           .Seq(kSeq + 1)
           .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
           .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
@@ -1419,19 +1209,13 @@ TEST(NetlinkNetfilterTest, ErrChainWithBaseChainFlagSet) {
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
 
   std::vector<char> add_table_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_NEWTABLE)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_INET)
+      NlReq("newtable req ack inet")
           .Seq(kSeq)
           .StrAttr(NFTA_TABLE_NAME, test_table_name)
           .Build();
 
   std::vector<char> add_chain_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_NEWCHAIN)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_INET)
+      NlReq("newchain req ack inet")
           .Seq(kSeq + 1)
           .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
           .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
@@ -1456,19 +1240,13 @@ TEST(NetlinkNetfilterTest, ErrChainWithHardwareOffloadFlagSet) {
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
 
   std::vector<char> add_table_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_NEWTABLE)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_INET)
+      NlReq("newtable req ack inet")
           .Seq(kSeq)
           .StrAttr(NFTA_TABLE_NAME, test_table_name)
           .Build();
 
   std::vector<char> add_chain_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_NEWCHAIN)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_INET)
+      NlReq("newchain req ack inet")
           .Seq(kSeq + 1)
           .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
           .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
@@ -1493,19 +1271,13 @@ TEST(NetlinkNetfilterTest, ErrChainWithNoNameAndChainBindingFlagNotSet) {
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
 
   std::vector<char> add_table_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_NEWTABLE)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_INET)
+      NlReq("newtable req ack inet")
           .Seq(kSeq)
           .StrAttr(NFTA_TABLE_NAME, test_table_name)
           .Build();
 
   std::vector<char> add_chain_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_NEWCHAIN)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_INET)
+      NlReq("newchain req ack inet")
           .Seq(kSeq + 1)
           .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
           .U32Attr(NFTA_CHAIN_FLAGS, &test_chain_flags)
@@ -1530,19 +1302,13 @@ TEST(NetlinkNetfilterTest, ErrUpdateChain) {
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
 
   std::vector<char> add_table_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_NEWTABLE)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_INET)
+      NlReq("newtable req ack inet")
           .Seq(kSeq)
           .StrAttr(NFTA_TABLE_NAME, test_table_name)
           .Build();
 
   std::vector<char> add_chain_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_NEWCHAIN)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_INET)
+      NlReq("newchain req ack inet")
           .Seq(kSeq + 1)
           .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
           .U32Attr(NFTA_CHAIN_FLAGS, &test_chain_flags)
@@ -1550,10 +1316,7 @@ TEST(NetlinkNetfilterTest, ErrUpdateChain) {
           .Build();
 
   std::vector<char> update_chain_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_NEWCHAIN)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_INET)
+      NlReq("newchain req ack inet")
           .Seq(kSeq + 2)
           .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
           .U32Attr(NFTA_CHAIN_FLAGS, &test_chain_flags)
@@ -1582,19 +1345,13 @@ TEST(NetlinkNetfilterTest, AddChainWithNoNameAndChainIdAttributeSet) {
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
 
   std::vector<char> add_table_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_NEWTABLE)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_INET)
+      NlReq("newtable req ack inet")
           .Seq(kSeq)
           .StrAttr(NFTA_TABLE_NAME, test_table_name)
           .Build();
 
   std::vector<char> add_chain_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_NEWCHAIN)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_INET)
+      NlReq("newchain req ack inet")
           .Seq(kSeq + 1)
           .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
           .U32Attr(NFTA_CHAIN_FLAGS, &test_chain_flags)
@@ -1618,19 +1375,13 @@ TEST(NetlinkNetfilterTest, AddChainWithName) {
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
 
   std::vector<char> add_table_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_NEWTABLE)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_INET)
+      NlReq("newtable req ack inet")
           .Seq(kSeq)
           .StrAttr(NFTA_TABLE_NAME, test_table_name)
           .Build();
 
   std::vector<char> add_chain_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_NEWCHAIN)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_INET)
+      NlReq("newchain req ack inet")
           .Seq(kSeq + 1)
           .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
           .U32Attr(NFTA_CHAIN_FLAGS, &test_chain_flags)
@@ -1658,10 +1409,7 @@ TEST(NetlinkNetfilterTest, AddBaseChainWithDropPolicy) {
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
 
   std::vector<char> add_table_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_NEWTABLE)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_INET)
+      NlReq("newtable req ack inet")
           .Seq(kSeq)
           .StrAttr(NFTA_TABLE_NAME, test_table_name)
           .Build();
@@ -1673,10 +1421,7 @@ TEST(NetlinkNetfilterTest, AddBaseChainWithDropPolicy) {
           .StrAttr(NFTA_CHAIN_TYPE, test_chain_type_name)
           .Build();
   std::vector<char> add_chain_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_NEWCHAIN)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_INET)
+      NlReq("newchain req ack inet")
           .Seq(kSeq + 1)
           .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
           .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
@@ -1703,19 +1448,13 @@ TEST(NetlinkNetfilterTest, ErrGetChainWithDumpFlagSet) {
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
 
   std::vector<char> add_table_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_NEWTABLE)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_INET)
+      NlReq("newtable req ack inet")
           .Seq(kSeq)
           .StrAttr(NFTA_TABLE_NAME, test_table_name)
           .Build();
 
   std::vector<char> add_chain_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_NEWCHAIN)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_INET)
+      NlReq("newchain req ack inet")
           .Seq(kSeq + 1)
           .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
           .U32Attr(NFTA_CHAIN_FLAGS, &test_chain_flags)
@@ -1723,10 +1462,7 @@ TEST(NetlinkNetfilterTest, ErrGetChainWithDumpFlagSet) {
           .Build();
 
   std::vector<char> get_chain_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_GETCHAIN)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK | NLM_F_DUMP)
-          .Family(NFPROTO_INET)
+      NlReq("getchain req ack dump inet")
           .Seq(kSeq + 2)
           .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
           .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
@@ -1753,19 +1489,13 @@ TEST(NetlinkNetfilterTest, ErrGetChainWithNoTableName) {
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
 
   std::vector<char> add_table_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_NEWTABLE)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_INET)
+      NlReq("newtable req ack inet")
           .Seq(kSeq)
           .StrAttr(NFTA_TABLE_NAME, test_table_name)
           .Build();
 
   std::vector<char> add_chain_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_NEWCHAIN)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_INET)
+      NlReq("newchain req ack inet")
           .Seq(kSeq + 1)
           .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
           .U32Attr(NFTA_CHAIN_FLAGS, &test_chain_flags)
@@ -1773,10 +1503,7 @@ TEST(NetlinkNetfilterTest, ErrGetChainWithNoTableName) {
           .Build();
 
   std::vector<char> get_chain_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_GETCHAIN)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_INET)
+      NlReq("getchain req ack inet")
           .Seq(kSeq + 2)
           .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
           .Build();
@@ -1802,19 +1529,13 @@ TEST(NetlinkNetfilterTest, ErrGetChainWithNoChainName) {
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
 
   std::vector<char> add_table_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_NEWTABLE)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_INET)
+      NlReq("newtable req ack inet")
           .Seq(kSeq)
           .StrAttr(NFTA_TABLE_NAME, test_table_name)
           .Build();
 
   std::vector<char> add_chain_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_NEWCHAIN)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_INET)
+      NlReq("newchain req ack inet")
           .Seq(kSeq + 1)
           .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
           .U32Attr(NFTA_CHAIN_FLAGS, &test_chain_flags)
@@ -1822,10 +1543,7 @@ TEST(NetlinkNetfilterTest, ErrGetChainWithNoChainName) {
           .Build();
 
   std::vector<char> get_chain_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_GETCHAIN)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_INET)
+      NlReq("getchain req ack inet")
           .Seq(kSeq + 2)
           .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
           .Build();
@@ -1853,19 +1571,13 @@ TEST(NetlinkNetfilterTest, GetChain) {
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
 
   std::vector<char> add_table_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_NEWTABLE)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_INET)
+      NlReq("newtable req ack inet")
           .Seq(kSeq)
           .StrAttr(NFTA_TABLE_NAME, test_table_name)
           .Build();
 
   std::vector<char> add_chain_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_NEWCHAIN)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_INET)
+      NlReq("newchain req ack inet")
           .Seq(kSeq + 1)
           .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
           .U32Attr(NFTA_CHAIN_FLAGS, &test_chain_flags)
@@ -1875,10 +1587,7 @@ TEST(NetlinkNetfilterTest, GetChain) {
 
   uint32_t expected_use = 0;
   std::vector<char> get_chain_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_GETCHAIN)
-          .Flags(NLM_F_REQUEST)
-          .Family(NFPROTO_INET)
+      NlReq("getchain req inet")
           .Seq(kSeq + 2)
           .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
           .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
@@ -1923,10 +1632,7 @@ TEST(NetlinkNetfilterTest, GetBaseChain) {
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
 
   std::vector<char> add_table_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_NEWTABLE)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_INET)
+      NlReq("newtable req ack inet")
           .Seq(kSeq)
           .StrAttr(NFTA_TABLE_NAME, test_table_name)
           .Build();
@@ -1939,10 +1645,7 @@ TEST(NetlinkNetfilterTest, GetBaseChain) {
           .Build();
 
   std::vector<char> add_chain_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_NEWCHAIN)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_INET)
+      NlReq("newchain req ack inet")
           .Seq(kSeq + 1)
           .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
           .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
@@ -1955,10 +1658,7 @@ TEST(NetlinkNetfilterTest, GetBaseChain) {
 
   uint32_t expected_use = 0;
   std::vector<char> get_chain_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_GETCHAIN)
-          .Flags(NLM_F_REQUEST)
-          .Family(NFPROTO_INET)
+      NlReq("getchain req inet")
           .Seq(kSeq + 2)
           .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
           .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
@@ -2003,10 +1703,7 @@ TEST(NetlinkNetfilterTest, ErrDeleteChainWithNoTableNameSpecified) {
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
 
   std::vector<char> add_table_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_NEWTABLE)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_INET)
+      NlReq("newtable req ack inet")
           .Seq(kSeq)
           .StrAttr(NFTA_TABLE_NAME, test_table_name)
           .Build();
@@ -2018,10 +1715,7 @@ TEST(NetlinkNetfilterTest, ErrDeleteChainWithNoTableNameSpecified) {
           .StrAttr(NFTA_CHAIN_TYPE, test_chain_type_name)
           .Build();
   std::vector<char> add_chain_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_NEWCHAIN)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_INET)
+      NlReq("newchain req ack inet")
           .Seq(kSeq + 1)
           .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
           .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
@@ -2032,10 +1726,7 @@ TEST(NetlinkNetfilterTest, ErrDeleteChainWithNoTableNameSpecified) {
           .Build();
 
   std::vector<char> delete_chain_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_DELCHAIN)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_INET)
+      NlReq("delchain req ack inet")
           .Seq(kSeq + 2)
           .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
           .Build();
@@ -2060,19 +1751,13 @@ TEST(NetlinkNetfilterTest, ErrDeleteNonexistentChain) {
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
 
   std::vector<char> add_table_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_NEWTABLE)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_INET)
+      NlReq("newtable req ack inet")
           .Seq(kSeq)
           .StrAttr(NFTA_TABLE_NAME, test_table_name)
           .Build();
 
   std::vector<char> delete_chain_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_DELCHAIN)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_INET)
+      NlReq("delchain req ack inet")
           .Seq(kSeq + 1)
           .StrAttr(NFTA_TABLE_NAME, test_table_name)
           .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
@@ -2096,19 +1781,13 @@ TEST(NetlinkNetfilterTest, ErrDeleteChainWithChainBindingFlagSet) {
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
 
   std::vector<char> add_table_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_NEWTABLE)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_INET)
+      NlReq("newtable req ack inet")
           .Seq(kSeq)
           .StrAttr(NFTA_TABLE_NAME, test_table_name)
           .Build();
 
   std::vector<char> add_chain_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_NEWCHAIN)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_INET)
+      NlReq("newchain req ack inet")
           .Seq(kSeq + 1)
           .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
           .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
@@ -2116,10 +1795,7 @@ TEST(NetlinkNetfilterTest, ErrDeleteChainWithChainBindingFlagSet) {
           .Build();
 
   std::vector<char> delete_chain_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_DELCHAIN)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_INET)
+      NlReq("delchain req ack inet")
           .Seq(kSeq + 2)
           .StrAttr(NFTA_TABLE_NAME, test_table_name)
           .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
@@ -2145,19 +1821,13 @@ TEST(NetlinkNetfilterTest, DestroyNonexistentChain) {
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
 
   std::vector<char> add_table_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_NEWTABLE)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_INET)
+      NlReq("newtable req ack inet")
           .Seq(kSeq)
           .StrAttr(NFTA_TABLE_NAME, test_table_name)
           .Build();
 
   std::vector<char> delete_chain_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_DESTROYCHAIN)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_INET)
+      NlReq("destroychain req ack inet")
           .Seq(kSeq + 1)
           .StrAttr(NFTA_TABLE_NAME, test_table_name)
           .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
@@ -2184,10 +1854,7 @@ TEST(NetlinkNetfilterTest, DeleteBaseChain) {
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
 
   std::vector<char> add_table_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_NEWTABLE)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_INET)
+      NlReq("newtable req ack inet")
           .Seq(kSeq)
           .StrAttr(NFTA_TABLE_NAME, test_table_name)
           .Build();
@@ -2199,10 +1866,7 @@ TEST(NetlinkNetfilterTest, DeleteBaseChain) {
           .StrAttr(NFTA_CHAIN_TYPE, test_chain_type_name)
           .Build();
   std::vector<char> add_chain_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_NEWCHAIN)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_INET)
+      NlReq("newchain req ack inet")
           .Seq(kSeq + 1)
           .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
           .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
@@ -2213,10 +1877,7 @@ TEST(NetlinkNetfilterTest, DeleteBaseChain) {
           .Build();
 
   std::vector<char> delete_chain_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_DELCHAIN)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_INET)
+      NlReq("delchain req ack inet")
           .Seq(kSeq + 2)
           .StrAttr(NFTA_TABLE_NAME, test_table_name)
           .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
@@ -2247,10 +1908,7 @@ TEST(NetlinkNetfilterTest, DeleteBaseChainByHandle) {
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
 
   std::vector<char> add_table_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_NEWTABLE)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_INET)
+      NlReq("newtable req ack inet")
           .Seq(kSeq)
           .StrAttr(NFTA_TABLE_NAME, test_table_name)
           .Build();
@@ -2262,10 +1920,7 @@ TEST(NetlinkNetfilterTest, DeleteBaseChainByHandle) {
           .StrAttr(NFTA_CHAIN_TYPE, test_chain_type_name)
           .Build();
   std::vector<char> add_chain_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_NEWCHAIN)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_INET)
+      NlReq("newchain req ack inet")
           .Seq(kSeq + 1)
           .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
           .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
@@ -2276,10 +1931,7 @@ TEST(NetlinkNetfilterTest, DeleteBaseChainByHandle) {
           .Build();
 
   std::vector<char> get_chain_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_GETCHAIN)
-          .Flags(NLM_F_REQUEST)
-          .Family(NFPROTO_INET)
+      NlReq("getchain req inet")
           .Seq(kSeq + 2)
           .StrAttr(NFTA_TABLE_NAME, test_table_name)
           .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
@@ -2304,10 +1956,7 @@ TEST(NetlinkNetfilterTest, DeleteBaseChainByHandle) {
 
   ASSERT_NE(chain_handle, 0);
   std::vector<char> delete_chain_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_DELCHAIN)
-          .Flags(NLM_F_REQUEST | NLM_F_ACK)
-          .Family(NFPROTO_INET)
+      NlReq("delchain req ack inet")
           .Seq(kSeq + 3)
           .StrAttr(NFTA_TABLE_NAME, test_table_name)
           .U64Attr(NFTA_CHAIN_HANDLE, &chain_handle)

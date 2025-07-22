@@ -18,6 +18,7 @@
 #include <cstdint>
 #include <cstring>
 #include <map>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -27,8 +28,11 @@
 namespace gvisor {
 namespace testing {
 
-NlReq& NlReq::MsgType(uint8_t message_type) {
-  message_type_ = message_type;
+NlReq& NlReq::MsgType(uint8_t msg_type) {
+  EXPECT_FALSE(msg_type_set_) << "Message type already set: " << msg_type_;
+
+  msg_type_ = msg_type;
+  msg_type_set_ = true;
   return *this;
 }
 
@@ -43,8 +47,78 @@ NlReq& NlReq::Seq(uint32_t seq) {
 }
 
 NlReq& NlReq::Family(uint8_t family) {
+  EXPECT_FALSE(family_set_) << "Family already set: " << family_;
+
   family_ = family;
+  family_set_ = true;
   return *this;
+}
+
+// Constructor that parses a string into a NlReq object with the header
+// filled in.
+NlReq::NlReq(const std::string& str) {
+  std::stringstream ss(str);
+  std::string token;
+  // Skips leading and trailing whitespace.
+  while (ss >> token) {
+    if (MsgTypeToken(token)) {
+      continue;
+    } else if (FlagsToken(token)) {
+      continue;
+    } else if (FamilyToken(token)) {
+      continue;
+    } else {
+      ADD_FAILURE() << "Unknown token: " << token;
+    }
+  }
+}
+
+bool NlReq::MsgTypeToken(const std::string& token) {
+  std::map<std::string, uint8_t> token_to_msg_type = {
+      {"newtable", NFT_MSG_NEWTABLE}, {"gettable", NFT_MSG_GETTABLE},
+      {"deltable", NFT_MSG_DELTABLE}, {"destroytable", NFT_MSG_DESTROYTABLE},
+      {"newchain", NFT_MSG_NEWCHAIN}, {"getchain", NFT_MSG_GETCHAIN},
+      {"delchain", NFT_MSG_DELCHAIN}, {"destroychain", NFT_MSG_DESTROYCHAIN},
+  };
+  auto it = token_to_msg_type.find(token);
+  if (it != token_to_msg_type.end()) {
+    EXPECT_FALSE(msg_type_set_) << "Message type already set: " << msg_type_;
+    msg_type_ = it->second;
+    msg_type_set_ = true;
+    return true;
+  }
+  return false;
+}
+
+bool NlReq::FlagsToken(const std::string& token) {
+  std::map<std::string, uint16_t> token_to_flags = {
+      {"req", NLM_F_REQUEST}, {"ack", NLM_F_ACK},
+      {"dump", NLM_F_DUMP},   {"replace", NLM_F_REPLACE},
+      {"excl", NLM_F_EXCL},   {"nonrec", NLM_F_NONREC},
+  };
+  auto it = token_to_flags.find(token);
+  if (it != token_to_flags.end()) {
+    flags_ |= it->second;
+    return true;
+  }
+  return false;
+}
+
+bool NlReq::FamilyToken(const std::string& token) {
+  std::map<std::string, uint8_t> token_to_family = {
+      {"unspec", NFPROTO_UNSPEC}, {"inet", NFPROTO_INET},
+      {"ipv4", NFPROTO_IPV4},     {"ipv6", NFPROTO_IPV6},
+      {"arp", NFPROTO_ARP},       {"bridge", NFPROTO_BRIDGE},
+      {"netdev", NFPROTO_NETDEV},
+  };
+  auto it = token_to_family.find(token);
+  if (it != token_to_family.end()) {
+    EXPECT_FALSE(family_set_) << "Family already set: " << family_;
+    family_ = it->second;
+    family_set_ = true;
+    return true;
+  }
+  return false;
 }
 
 // Method to add an attribute to the message. payload_size must be the size of
@@ -101,7 +175,7 @@ std::vector<char> NlReq::Build() {
 
   struct nlmsghdr* nlh = reinterpret_cast<struct nlmsghdr*>(msg_buffer_.data());
   InitNetlinkHdr(nlh, (uint32_t)total_message_len,
-                 MakeNetlinkMsgType(NFNL_SUBSYS_NFTABLES, message_type_), seq_,
+                 MakeNetlinkMsgType(NFNL_SUBSYS_NFTABLES, msg_type_), seq_,
                  flags_);
 
   struct nfgenmsg* nfg = reinterpret_cast<struct nfgenmsg*>(NLMSG_DATA(nlh));

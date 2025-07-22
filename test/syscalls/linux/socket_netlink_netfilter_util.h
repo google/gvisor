@@ -29,6 +29,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <map>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -91,9 +92,13 @@ void CheckNetfilterChainAttributes(const NfChainCheckOptions& options);
 
 class NlReq {
  public:
+  // Default constructor.
   NlReq() = default;
+  // Constructor that parses a string into a NlReq object with the header
+  // filled in.
+  explicit NlReq(const std::string& s);
 
-  NlReq& MsgType(uint8_t message_type);
+  NlReq& MsgType(uint8_t msg_type);
   NlReq& Flags(uint16_t flags);
   NlReq& Seq(uint32_t seq);
   NlReq& Family(uint8_t family);
@@ -121,10 +126,16 @@ class NlReq {
   std::vector<char> Build();
 
  private:
-  uint8_t message_type_ = 0;
+  bool MsgTypeToken(const std::string& token);
+  bool FlagsToken(const std::string& token);
+  bool FamilyToken(const std::string& token);
+
+  uint8_t msg_type_ = 0;
   uint16_t flags_ = 0;
   uint32_t seq_ = 0;
   uint8_t family_ = 0;
+  bool msg_type_set_ = false;
+  bool family_set_ = false;
   std::map<uint16_t, std::pair<const char*, size_t>> attributes_ = {};
   std::vector<char> msg_buffer_;
 };
