@@ -35,6 +35,7 @@ const (
 const (
 	MAP_SHARED     = 1 << 0
 	MAP_PRIVATE    = 1 << 1
+	MAP_DROPPABLE  = 1 << 3
 	MAP_FIXED      = 1 << 4
 	MAP_ANONYMOUS  = 1 << 5
 	MAP_32BIT      = 1 << 6 // arch/x86/include/uapi/asm/mman.h
