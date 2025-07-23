@@ -15,6 +15,13 @@ declare_mutex(
 )
 
 declare_mutex(
+    name = "aps_shared_mutex",
+    out = "aps_shared_mutex.go",
+    package = "pgalloc",
+    prefix = "apsShared",
+)
+
+declare_mutex(
     name = "memory_file_mutex",
     out = "memory_file_mutex.go",
     package = "pgalloc",
@@ -130,6 +137,7 @@ go_library(
     srcs = [
         "apl_shared_mutex.go",
         "apl_unloaded_set.go",
+        "aps_shared_mutex.go",
         "context.go",
         "debug.go",
         "evictable_range.go",

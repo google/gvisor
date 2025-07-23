@@ -43,8 +43,40 @@ import (
 	"gvisor.dev/gvisor/pkg/timing"
 )
 
+// MarkSavable marks f as savable.
+func (f *MemoryFile) MarkSavable() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.savable = true
+}
+
+// IsSavable returns true if f is savable.
+func (f *MemoryFile) IsSavable() bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.savable
+}
+
+// RestoreID returns the restore ID for f.
+func (f *MemoryFile) RestoreID() string {
+	return f.opts.RestoreID
+}
+
 // SaveOpts provides options to MemoryFile.SaveTo().
 type SaveOpts struct {
+	// If PagesFile is not nil, then page contents will be written to
+	// PagesFile, starting at PagesFileOffset, rather than to w. If SaveTo
+	// returns a nil error, it increments PagesFileOffset by the number of
+	// bytes that will be written to PagesFile. PagesFile may be written even
+	// after SaveTo returns; OnAsyncPageSaveStart will be called before writing
+	// to PagesFile begins, and OnAsyncPageSaveDone will be called after all
+	// writes are complete. Callers must ensure that PagesFile remains valid
+	// until OnAsyncPageSaveDone is called.
+	PagesFile            *fd.FD
+	PagesFileOffset      uint64
+	OnAsyncPageSaveStart func(*MemoryFile)
+	OnAsyncPageSaveDone  func(*MemoryFile, error)
+
 	// If ExcludeCommittedZeroPages is true, SaveTo() will scan both committed
 	// and possibly-committed pages to find zero pages, whose contents are
 	// saved implicitly rather than explicitly to reduce checkpoint size. If
@@ -59,7 +91,7 @@ type SaveOpts struct {
 }
 
 // SaveTo writes f's state to the given stream.
-func (f *MemoryFile) SaveTo(ctx context.Context, w io.Writer, pw io.Writer, opts SaveOpts) error {
+func (f *MemoryFile) SaveTo(ctx context.Context, w io.Writer, opts *SaveOpts) error {
 	if err := f.AwaitLoadAll(); err != nil {
 		return fmt.Errorf("previous async page loading failed: %w", err)
 	}
@@ -194,54 +226,395 @@ func (f *MemoryFile) SaveTo(ctx context.Context, w io.Writer, pw io.Writer, opts
 	}
 	log.Infof("MemoryFile(%p): saved metadata in %s", f, time.Since(timeMetadataStart))
 
-	// Dump out committed pages.
+	// Start async page saving if a pages file has been provided.
+	var (
+		apsg *apsGoroutine
+	)
+	if opts.PagesFile != nil {
+		// LinuxQueue is faster than GoQueue here since it avoids kernel lock
+		// contention during disk block allocation.
+		q, err := aio.NewLinuxQueue(apsQueueCapacity)
+		if err != nil {
+			return fmt.Errorf("failed to create aio.LinuxQueue: %w", err)
+		}
+		apsg = &apsGoroutine{
+			f:            f,
+			q:            q,
+			doneCallback: opts.OnAsyncPageSaveDone,
+			qavail:       apsQueueCapacity,
+			off:          opts.PagesFileOffset,
+			fd:           int32(opts.PagesFile.FD()),
+			opsBusy:      bitmap.New(apsQueueCapacity),
+		}
+		// Mark ops in opsBusy that don't actually exist as permanently busy.
+		for i, n := apsQueueCapacity, apsg.opsBusy.Size(); i < n; i++ {
+			apsg.opsBusy.Add(uint32(i))
+		}
+		apsg.stStatus.Init()
+		defer apsg.stStatus.Notify(apsSTDone)
+		if opts.OnAsyncPageSaveStart != nil {
+			opts.OnAsyncPageSaveStart(f)
+		}
+		go apsg.main()
+	}
+
+	// Save committed pages.
 	ww := wire.Writer{Writer: w}
 	timePagesStart := time.Now()
 	savedBytes := uint64(0)
+	defer func() { opts.PagesFileOffset += savedBytes }()
 	for maseg := f.memAcct.FirstSegment(); maseg.Ok(); maseg = maseg.NextSegment() {
 		if !maseg.ValuePtr().knownCommitted {
 			continue
 		}
-		// Write a header to distinguish from objects.
-		if err := state.WriteHeader(&ww, uint64(maseg.Range().Length()), false); err != nil {
-			return err
-		}
-		// Write out data.
-		var ioErr error
-		f.forEachMappingSlice(maseg.Range(), func(s []byte) {
-			if ioErr != nil {
-				return
+		if apsg != nil {
+			// Record data to be written.
+			apsg.mu.Lock()
+			apsg.unsaved.PushBack(maseg.Range())
+			apsg.mu.Unlock()
+			apsg.stStatus.Notify(apsSTPending)
+		} else {
+			// Write a header to distinguish from objects.
+			if err := state.WriteHeader(&ww, uint64(maseg.Range().Length()), false); err != nil {
+				return err
 			}
-			_, ioErr = pw.Write(s)
-		})
-		if ioErr != nil {
-			return ioErr
+			// Write out data.
+			var ioErr error
+			f.forEachMappingSlice(maseg.Range(), func(s []byte) {
+				if ioErr != nil {
+					return
+				}
+				_, ioErr = w.Write(s)
+			})
+			if ioErr != nil {
+				return ioErr
+			}
 		}
 		savedBytes += maseg.Range().Length()
 	}
 	durPages := time.Since(timePagesStart)
-	log.Infof("MemoryFile(%p): saved pages in %s (%d bytes, %.3f MiB/s)", f, durPages, savedBytes, float64(savedBytes)/durPages.Seconds()/(1024.0*1024.0))
+	if apsg != nil {
+		log.Infof("MemoryFile(%p): saved page file offsets in %s; async saving %d bytes", f, durPages, savedBytes)
+	} else {
+		log.Infof("MemoryFile(%p): saved pages in %s (%d bytes, %.3f MB/s)", f, durPages, savedBytes, float64(savedBytes)*1e-6/durPages.Seconds())
+	}
 
 	return nil
 }
 
-// MarkSavable marks f as savable.
-func (f *MemoryFile) MarkSavable() {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.savable = true
+const (
+	// When a pages file is provided, write to it will be issued asynchronously
+	// via an aio.Queue of capacity apsQueueCapacity, and each write will be of
+	// size apsWriteMaxBytes when possible; writes may be smaller in some
+	// circumstances but will never be larger.
+	// TODO: Pass these via SaveOpts and make them flag-controlled.
+	apsWriteMaxBytes = 256 * 1024
+	apsQueueCapacity = 128
+
+	apsOpMaxIovecs = apsWriteMaxBytes / hostarch.PageSize
+)
+
+// apsGoroutine holds state for the async page saver goroutine.
+type apsGoroutine struct {
+	// mu protects the following fields, which are shared between the goroutine
+	// and MemoryFile.SaveTo().
+	mu apsSharedMutex
+
+	// unsaved tracks pages that have not been saved.
+	unsaved ringdeque.Deque[memmap.FileRange]
+
+	// stStatus communicates state from MemoryFile.SaveTo() to the goroutine.
+	stStatus syncevent.Waiter
+
+	// bytesSaved is the number of completely-written bytes.
+	bytesSaved atomicbitops.Uint64
+
+	_ [hostarch.CacheLineSize]byte // padding
+
+	// immutable fields
+	f            *MemoryFile
+	q            *aio.LinuxQueue
+	doneCallback func(*MemoryFile, error)
+
+	// qavail is unused capacity in q.
+	qavail int
+
+	// Pages file writes are always contiguous, even when the corresponding
+	// memmap.FileRanges and mappings are not. If curOp is not nil, it is the
+	// current apsOp under construction, and curOpID is its index into ops.
+	// Otherwise, off is the pages file offset at which the next apsOp should
+	// begin.
+	off     uint64
+	curOp   *apsOp
+	curOpID uint32
+
+	// fd is the host file descriptor for the pages file.
+	fd int32 // immutable
+
+	// opsBusy tracks which apsOps in ops are in use (correspond to
+	// inflight operations or curOp).
+	opsBusy bitmap.Bitmap
+
+	// ops stores all apsOps.
+	ops [apsQueueCapacity]apsOp
+
+	// err is the error that will be passed to doneCallback.
+	err error
 }
 
-// IsSavable returns true if f is savable.
-func (f *MemoryFile) IsSavable() bool {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return f.savable
+// Possible events in apsGoroutine.stStatus:
+const (
+	apsSTPending syncevent.Set = 1 << iota
+	apsSTDone
+)
+
+// apsOp tracks async page save state corresponding to a single AIO write
+// operation.
+type apsOp struct {
+	// off is the pages file offset at which the write begins.
+	off uint64
+
+	// total is the number of bytes to be written by the operation.
+	total uint64
+
+	// iovecs() = iovecsData[:iovecsLen] contains mappings of the data to be
+	// written.
+	iovecsData [apsOpMaxIovecs]unix.Iovec
+	iovecsLen  uint8
 }
 
-// RestoreID returns the restore ID for f.
-func (f *MemoryFile) RestoreID() string {
-	return f.opts.RestoreID
+func (op *apsOp) iovecs() []unix.Iovec {
+	return op.iovecsData[:op.iovecsLen]
+}
+
+func (g *apsGoroutine) canEnqueue() bool {
+	return g.qavail > 0
+}
+
+// Preconditions: g.canEnqueue() == true.
+func (g *apsGoroutine) enqueueCurOp() {
+	if g.qavail <= 0 {
+		panic("queue full")
+	}
+	op := g.curOp
+	if op.total == 0 {
+		panic("invalid write of 0 bytes")
+	}
+	if op.total > apsWriteMaxBytes {
+		panic(fmt.Sprintf("write of %d bytes exceeds per-write limit of %d bytes", op.total, apsWriteMaxBytes))
+	}
+
+	g.qavail--
+	g.curOp = nil
+	g.off += op.total
+	if op.iovecsLen == 1 {
+		// Perform a non-vectorized write to save an indirection (and
+		// userspace-to-kernelspace copy) in the aio.Queue implementation.
+		aio.Write(g.q, uint64(g.curOpID), g.fd, int64(op.off), sliceFromIovec(op.iovecsData[0]))
+	} else {
+		aio.Writev(g.q, uint64(g.curOpID), g.fd, int64(op.off), op.iovecs())
+	}
+}
+
+// Preconditions:
+// - g.canEnqueue() == true.
+// - fr.Length() > 0.
+// - fr must be page-aligned.
+func (g *apsGoroutine) enqueueRange(fr memmap.FileRange) uint64 {
+	for {
+		if g.curOp == nil {
+			id, err := g.opsBusy.FirstZero(0)
+			if err != nil {
+				panic(fmt.Sprintf("all ops busy with qavail=%d: %v", g.qavail, err))
+			}
+			g.opsBusy.Add(id)
+			op := &g.ops[id]
+			op.off = g.off
+			op.total = 0
+			op.iovecsLen = 0
+			g.curOp = op
+			g.curOpID = id
+		}
+		n := g.combine(fr)
+		if n > 0 {
+			return n
+		}
+		// Flush the existing (conflicting) op and try again with a new one.
+		g.enqueueCurOp()
+		if !g.canEnqueue() {
+			return 0
+		}
+	}
+}
+
+// combine adds as much of the given save as possible to g.curOp and returns
+// the number of bytes added.
+//
+// Preconditions:
+// - fr.Length() > 0.
+// - fr must be page-aligned.
+func (g *apsGoroutine) combine(fr memmap.FileRange) uint64 {
+	op := g.curOp
+
+	// Apply direct length limits.
+	n := fr.Length()
+	if op.total+n >= apsWriteMaxBytes {
+		n = apsWriteMaxBytes - op.total
+	}
+	if n == 0 {
+		return 0
+	}
+	fr.End = fr.Start + n
+
+	// Collect iovecs, which may further limit length.
+	n = 0
+	g.f.forEachMappingSlice(fr, func(bs []byte) {
+		if op.iovecsLen > 0 {
+			if canMergeIovecAndSlice(op.iovecsData[op.iovecsLen-1], bs) {
+				op.iovecsData[op.iovecsLen-1].Len += uint64(len(bs))
+				n += uint64(len(bs))
+				return
+			}
+			if int(op.iovecsLen) == len(op.iovecsData) {
+				return
+			}
+		}
+		op.iovecsData[op.iovecsLen].Base = &bs[0]
+		op.iovecsData[op.iovecsLen].SetLen(len(bs))
+		op.iovecsLen++
+		n += uint64(len(bs))
+	})
+	if n == 0 {
+		return 0
+	}
+	fr.End = fr.Start + n
+
+	// With the length decided, finish updating op.
+	op.total += n
+	return n
+}
+
+func (g *apsGoroutine) main() {
+	f := g.f
+	q := g.q
+	defer func() {
+		q.Destroy()
+		if g.doneCallback != nil {
+			g.doneCallback(f, g.err)
+		}
+	}()
+
+	// Storage reused between main loop iterations:
+	var completions []aio.Completion
+
+	timeStart := gohacks.Nanotime()
+	if log.IsLogging(log.Debug) {
+		log.Debugf("MemoryFile(%p): async page saving started", f)
+		progressTicker := time.NewTicker(5 * time.Second)
+		progressStopC := make(chan struct{})
+		defer func() { close(progressStopC) }()
+		go func() {
+			timeLast := timeStart
+			bytesSavedLast := uint64(0)
+			for {
+				select {
+				case <-progressStopC:
+					progressTicker.Stop()
+					return
+				case <-progressTicker.C:
+					bytesSaved := g.bytesSaved.Load()
+					now := gohacks.Nanotime()
+					durTotal := time.Duration(now - timeStart)
+					durDelta := time.Duration(now - timeLast)
+					bytesSavedDelta := bytesSaved - bytesSavedLast
+					bandwidthTotal := float64(bytesSaved) * 1e-6 / durTotal.Seconds()
+					bandwidthSinceLast := float64(bytesSavedDelta) * 1e-6 / durDelta.Seconds()
+					log.Infof("MemoryFile(%p): async page saving in progress for %s (%d bytes, %.3f MB/s); since last update %s ago: %d bytes, %.3f MB/s", f, durTotal.Round(time.Millisecond), bytesSaved, bandwidthTotal, durDelta.Round(time.Millisecond), bytesSavedDelta, bandwidthSinceLast)
+					timeLast = now
+					bytesSavedLast = bytesSaved
+				}
+			}
+		}()
+	}
+	for {
+		// Enqueue as many writes as possible.
+		if !g.canEnqueue() {
+			panic("main loop invariant failed")
+		}
+		g.mu.Lock()
+		for !g.unsaved.Empty() {
+			fr := g.unsaved.PeekFront()
+			n := g.enqueueRange(fr)
+			if n == fr.Length() {
+				g.unsaved.RemoveFront()
+			} else if n != 0 {
+				fr.Start += n
+				g.unsaved.RemoveFront()
+				g.unsaved.PushFront(fr)
+			} else {
+				break
+			}
+			if !g.canEnqueue() {
+				break
+			}
+		}
+		g.mu.Unlock()
+		// Flush pending op.
+		if g.curOp != nil {
+			g.enqueueCurOp()
+		}
+
+		if g.qavail == q.Cap() {
+			// We are out of work to do.
+			ev := g.stStatus.Wait()
+			if ev&apsSTPending != 0 {
+				// We may have raced with MemoryFile.SaveTo() inserting into
+				// g.unsaved.
+				g.stStatus.Ack(apsSTPending)
+				continue
+			}
+			if ev&apsSTDone != 0 {
+				// MemoryFile.SaveTo() finished inserting into g.unsaved, so
+				// async page saving has completed successfully.
+				timeFinish := gohacks.Nanotime()
+				durTotal := time.Duration(timeFinish - timeStart)
+				bytesSaved := g.bytesSaved.RacyLoad()
+				bandwidthTotal := float64(bytesSaved) * 1e-6 / durTotal.Seconds()
+				log.Infof("MemoryFile(%p): async page saving completed in %s (%d bytes, %.3f MB/s)", f, durTotal.Round(time.Millisecond), bytesSaved, bandwidthTotal)
+				return
+			}
+			panic(fmt.Sprintf("unknown events in stStatus: %#x", ev))
+		}
+
+		// Wait for any number of writes to complete.
+		var err error
+		completions, err = q.Wait(completions[:0], 1 /* minCompletions */)
+		if err != nil {
+			log.Warningf("MemoryFile(%p): async page saving: aio.Queue.Wait failed: %v", f, err)
+			g.err = linuxerr.EIO
+			return
+		}
+
+		// Process completions.
+		for _, c := range completions {
+			op := &g.ops[c.ID]
+			g.opsBusy.Remove(uint32(c.ID))
+			g.qavail++
+			if err := c.Err(); err != nil {
+				log.Warningf("MemoryFile(%p): async page saving: write at offset %d of %d bytes failed: %v", f, op.off, op.total, err)
+				g.err = err
+				return
+			}
+			if uint64(c.Result) != op.total {
+				// TODO: Is this something we actually have to worry about? If
+				// so, we need to reissue the remainder of the write...
+				log.Warningf("MemoryFile(%p): async page saving: write at offset %d of %d bytes returned %d bytes", f, op.off, op.total, c.Result)
+				g.err = linuxerr.EIO
+				return
+			}
+			g.bytesSaved.Store(g.bytesSaved.RacyLoad() + uint64(c.Result))
+		}
+	}
 }
 
 // LoadOpts provides options to MemoryFile.LoadFrom().
@@ -378,7 +751,9 @@ func (f *MemoryFile) LoadFrom(ctx context.Context, r io.Reader, opts *LoadOpts) 
 			apl: aplShared{
 				timeStartWaiters: math.MaxInt64,
 			},
-			f:            f,
+			f: f,
+			// GoQueue is faster than LinuxQueue here since it can allocate and
+			// zero tmpfs pages in parallel.
 			q:            aio.NewGoQueue(aplQueueCapacity),
 			doneCallback: opts.OnAsyncPageLoadDone,
 			qavail:       aplQueueCapacity,
@@ -409,21 +784,8 @@ func (f *MemoryFile) LoadFrom(ctx context.Context, r io.Reader, opts *LoadOpts) 
 		if !maseg.ValuePtr().knownCommitted {
 			continue
 		}
-		// Verify header.
-		length, object, err := state.ReadHeader(&wr)
-		if err != nil {
-			return fmt.Errorf("failed to read header: %w", err)
-		}
-		if object {
-			// Not expected.
-			return fmt.Errorf("unexpected object")
-		}
 		maFR := maseg.Range()
 		amount := maFR.Length()
-		if length != amount {
-			// Size mismatch.
-			return fmt.Errorf("mismatched segment: expected %d, got %d", amount, length)
-		}
 		// Wait for all chunks spanned by this segment to be madvised.
 		for madviseEnd.Load() < maFR.End {
 			<-madviseChan
@@ -437,6 +799,19 @@ func (f *MemoryFile) LoadFrom(ctx context.Context, r io.Reader, opts *LoadOpts) 
 			apl.mu.Unlock()
 			aplg.lfStatus.Notify(aplLFPending)
 		} else {
+			// Verify header.
+			length, object, err := state.ReadHeader(&wr)
+			if err != nil {
+				return fmt.Errorf("failed to read header: %w", err)
+			}
+			if object {
+				// Not expected.
+				return fmt.Errorf("unexpected object")
+			}
+			if length != amount {
+				// Size mismatch.
+				return fmt.Errorf("mismatched segment: expected %d, got %d", amount, length)
+			}
 			// Read data.
 			var ioErr error
 			f.forEachMappingSlice(maFR, func(s []byte) {
@@ -462,7 +837,7 @@ func (f *MemoryFile) LoadFrom(ctx context.Context, r io.Reader, opts *LoadOpts) 
 	if apl != nil {
 		log.Infof("MemoryFile(%p): loaded page file offsets in %s; async loading %d bytes", f, durPages, loadedBytes)
 	} else {
-		log.Infof("MemoryFile(%p): loaded pages in %s (%d bytes, %f bytes/second)", f, durPages, loadedBytes, float64(loadedBytes)/durPages.Seconds())
+		log.Infof("MemoryFile(%p): loaded pages in %s (%d bytes, %.3f MB/s)", f, durPages, loadedBytes, float64(loadedBytes)*1e-6/durPages.Seconds())
 	}
 
 	return nil
@@ -654,7 +1029,7 @@ type aplGoroutine struct {
 	q            *aio.GoQueue             // immutable
 	doneCallback func(*MemoryFile, error) // immutable
 
-	// lfStatus communicates state from Memory.LoadFrom() to the goroutine.
+	// lfStatus communicates state from MemoryFile.LoadFrom() to the goroutine.
 	lfStatus syncevent.Waiter
 
 	// qavail is unused capacity in q.
@@ -793,9 +1168,6 @@ func (g *aplGoroutine) enqueueRange(fr memmap.FileRange, off uint64, tempRef boo
 // Preconditions:
 // - fr.Length() > 0.
 // - fr must be page-aligned.
-//
-// Postconditions:
-// - combine() never returns (0, false).
 func (g *aplGoroutine) combine(fr memmap.FileRange, off uint64, tempRef bool) uint64 {
 	op := g.curOp
 	if op.total != 0 {

@@ -48,7 +48,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/erofs"
-	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/sentry/seccheck"
 	"gvisor.dev/gvisor/pkg/state/statefile"
@@ -1478,12 +1477,12 @@ func (s *Sandbox) Checkpoint(cid string, imagePath string, opts CheckpointOpts) 
 	}()
 
 	opt := control.SaveOpts{
-		Metadata:           opts.Compression.ToMetadata(),
-		MemoryFileSaveOpts: pgalloc.SaveOpts{ExcludeCommittedZeroPages: opts.ExcludeCommittedZeroPages},
+		Metadata: opts.Compression.ToMetadata(),
 		FilePayload: urpc.FilePayload{
 			Files: files,
 		},
 		HavePagesFile:              len(files) > 1,
+		ExcludeCommittedZeroPages:  opts.ExcludeCommittedZeroPages,
 		Resume:                     opts.Resume,
 		SaveRestoreExecArgv:        opts.SaveRestoreExecArgv,
 		SaveRestoreExecTimeout:     opts.SaveRestoreExecTimeout,
