@@ -107,33 +107,9 @@ func (c CompressionLevel) String() string {
 	return string(c)
 }
 
-// Options is statefile options.
-type Options struct {
-	// Compression is an image compression type/level.
-	Compression CompressionLevel
-
-	// Resume indicates if the sandbox process should continue running
-	// after checkpointing.
-	Resume bool
-
-	// SaveRestoreExecArgv is the argv of the save/restore binary split by spaces.
-	// The first element is the path to the binary.
-	SaveRestoreExecArgv string
-
-	// SaveRestoreExecTimeout is the timeout for waiting for the save/restore
-	// binary.
-	SaveRestoreExecTimeout time.Duration
-
-	// SaveRestoreExecContainerID is the ID of the container that the
-	// save/restore binary executes in.
-	SaveRestoreExecContainerID string
-}
-
-// WriteToMetadata save options to the metadata storage.  Method returns the
-// reference to the original metadata map to allow to be used in the chain calls.
-func (o Options) WriteToMetadata(metadata map[string]string) map[string]string {
-	metadata[CompressionKey] = string(o.Compression)
-	return metadata
+// ToMetadata returns the compression level as a metadata map.
+func (c CompressionLevel) ToMetadata() map[string]string {
+	return map[string]string{CompressionKey: string(c)}
 }
 
 // CompressionLevelFromString parses a string into the CompressionLevel.

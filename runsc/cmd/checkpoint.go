@@ -22,12 +22,12 @@ import (
 
 	"github.com/google/subcommands"
 	"gvisor.dev/gvisor/pkg/sentry/control"
-	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/state/statefile"
 	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/container"
 	"gvisor.dev/gvisor/runsc/flag"
+	"gvisor.dev/gvisor/runsc/sandbox"
 )
 
 // Checkpoint implements subcommands.Command for the "checkpoint" command.
@@ -100,22 +100,17 @@ func (c *Checkpoint) Execute(_ context.Context, f *flag.FlagSet, args ...any) su
 		util.Fatalf("making directories at path provided: %v", err)
 	}
 
-	sOpts := statefile.Options{
+	opts := sandbox.CheckpointOpts{
 		Compression:                c.compression.Level(),
+		Resume:                     c.leaveRunning,
+		Direct:                     c.direct,
+		ExcludeCommittedZeroPages:  c.excludeCommittedZeroPages,
 		SaveRestoreExecArgv:        c.saveRestoreExecArgv,
 		SaveRestoreExecTimeout:     c.saveRestoreExecTimeout,
 		SaveRestoreExecContainerID: id,
 	}
-	mfOpts := pgalloc.SaveOpts{
-		ExcludeCommittedZeroPages: c.excludeCommittedZeroPages,
-	}
 
-	if c.leaveRunning {
-		// Do not destroy the sandbox after saving.
-		sOpts.Resume = true
-	}
-
-	if err := cont.Checkpoint(c.imagePath, c.direct, sOpts, mfOpts); err != nil {
+	if err := cont.Checkpoint(c.imagePath, opts); err != nil {
 		util.Fatalf("checkpoint failed: %v", err)
 	}
 

@@ -43,7 +43,6 @@ import (
 	"gvisor.dev/gvisor/pkg/coverage"
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/log"
-	metricpb "gvisor.dev/gvisor/pkg/metric/metric_go_proto"
 	"gvisor.dev/gvisor/pkg/prometheus"
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy"
@@ -65,6 +64,8 @@ import (
 	"gvisor.dev/gvisor/runsc/profile"
 	"gvisor.dev/gvisor/runsc/specutils"
 	"gvisor.dev/gvisor/runsc/starttime"
+
+	metricpb "gvisor.dev/gvisor/pkg/metric/metric_go_proto"
 )
 
 const (
@@ -1448,12 +1449,25 @@ func (s *Sandbox) SignalProcess(cid string, pid int32, sig unix.Signal, fgProces
 	return nil
 }
 
+// CheckpointOpts contains the options for checkpointing a sandbox.
+type CheckpointOpts struct {
+	Compression               statefile.CompressionLevel
+	Resume                    bool
+	Direct                    bool
+	ExcludeCommittedZeroPages bool
+
+	// Save/restore exec options.
+	SaveRestoreExecArgv        string
+	SaveRestoreExecTimeout     time.Duration
+	SaveRestoreExecContainerID string
+}
+
 // Checkpoint sends the checkpoint call for a container in the sandbox.
 // The statefile will be written to f.
-func (s *Sandbox) Checkpoint(cid string, imagePath string, direct bool, sfOpts statefile.Options, mfOpts pgalloc.SaveOpts) error {
-	log.Debugf("Checkpoint sandbox %q, statefile options %+v, MemoryFile options %+v", s.ID, sfOpts, mfOpts)
+func (s *Sandbox) Checkpoint(cid string, imagePath string, opts CheckpointOpts) error {
+	log.Debugf("Checkpoint sandbox %q, imagePath %q, opts %+v", s.ID, imagePath, opts)
 
-	files, err := createSaveFiles(imagePath, direct, sfOpts.Compression)
+	files, err := createSaveFiles(imagePath, opts.Direct, opts.Compression)
 	if err != nil {
 		return err
 	}
@@ -1464,16 +1478,16 @@ func (s *Sandbox) Checkpoint(cid string, imagePath string, direct bool, sfOpts s
 	}()
 
 	opt := control.SaveOpts{
-		Metadata:           sfOpts.WriteToMetadata(map[string]string{}),
-		MemoryFileSaveOpts: mfOpts,
+		Metadata:           opts.Compression.ToMetadata(),
+		MemoryFileSaveOpts: pgalloc.SaveOpts{ExcludeCommittedZeroPages: opts.ExcludeCommittedZeroPages},
 		FilePayload: urpc.FilePayload{
 			Files: files,
 		},
 		HavePagesFile:              len(files) > 1,
-		Resume:                     sfOpts.Resume,
-		SaveRestoreExecArgv:        sfOpts.SaveRestoreExecArgv,
-		SaveRestoreExecTimeout:     sfOpts.SaveRestoreExecTimeout,
-		SaveRestoreExecContainerID: sfOpts.SaveRestoreExecContainerID,
+		Resume:                     opts.Resume,
+		SaveRestoreExecArgv:        opts.SaveRestoreExecArgv,
+		SaveRestoreExecTimeout:     opts.SaveRestoreExecTimeout,
+		SaveRestoreExecContainerID: opts.SaveRestoreExecContainerID,
 	}
 
 	if err := s.call(boot.ContMgrCheckpoint, &opt, nil); err != nil {

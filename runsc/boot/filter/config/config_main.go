@@ -204,6 +204,12 @@ var allowedSyscalls = seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 			seccomp.EqualTo(unix.PROT_WRITE | unix.PROT_READ),
 			seccomp.EqualTo(unix.MAP_PRIVATE | unix.MAP_ANONYMOUS | unix.MAP_FIXED),
 		},
+		seccomp.PerArg{ // Used by vdso getrandom().
+			seccomp.AnyValue{},
+			seccomp.AnyValue{},
+			seccomp.EqualTo(unix.PROT_WRITE | unix.PROT_READ),
+			seccomp.EqualTo(linux.MAP_DROPPABLE | unix.MAP_ANONYMOUS),
+		},
 	},
 	unix.SYS_MPROTECT:  seccomp.MatchAll{},
 	unix.SYS_MUNLOCK:   seccomp.MatchAll{},
