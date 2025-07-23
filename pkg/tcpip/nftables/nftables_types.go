@@ -288,8 +288,8 @@ type Table struct {
 	// Note: currently nftables only has the single Dormant flag.
 	flagSet map[TableFlag]struct{}
 
-	// Chain handle counter.
-	chainHandleCounter atomicbitops.Uint64
+	// handleCounter is the counter for chain and rule handles.
+	handleCounter atomicbitops.Uint64
 
 	// handle is the id of the table.
 	handle uint64
@@ -360,6 +360,9 @@ type Chain struct {
 
 	// rules is a list of rules for the chain.
 	rules []*Rule
+
+	// handleToRule is a map of rule handles to rules for the chain.
+	handleToRule map[uint64]*Rule
 
 	// userData is the user-specified metadata for the chain. This is not used
 	// by the kernel, but rather userspace applications like nft binary.
@@ -661,8 +664,9 @@ func validateBaseChainInfo(info *BaseChainInfo, family stack.AddressFamily) *sys
 // have been registered to a chain cannot be modified.
 // Note: Empty rules should be created directly (via &Rule{}).
 type Rule struct {
-	chain *Chain
-	ops   []operation
+	chain  *Chain
+	ops    []operation
+	handle uint64
 }
 
 // operation represents a single operation in a rule.

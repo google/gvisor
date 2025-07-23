@@ -396,13 +396,13 @@ func (nf *NFTables) AddTable(family stack.AddressFamily, name string,
 
 	// Creates the new table and add it to the table map.
 	t := &Table{
-		name:               name,
-		afFilter:           nf.filters[family],
-		chains:             make(map[string]*Chain),
-		chainHandles:       make(map[uint64]*Chain),
-		flagSet:            make(map[TableFlag]struct{}),
-		handle:             nf.getNewTableHandle(),
-		chainHandleCounter: atomicbitops.Uint64{},
+		name:          name,
+		afFilter:      nf.filters[family],
+		chains:        make(map[string]*Chain),
+		chainHandles:  make(map[uint64]*Chain),
+		flagSet:       make(map[TableFlag]struct{}),
+		handle:        nf.getNewTableHandle(),
+		handleCounter: atomicbitops.Uint64{},
 	}
 	tableMap[name] = t
 	tableHandleMap[t.handle] = t
@@ -478,9 +478,9 @@ func (nf *NFTables) AddChain(family stack.AddressFamily, tableName string, chain
 	return t.AddChain(chainName, info, comment, errorOnDuplicate)
 }
 
-// getNewChainHandle returns a new chain handle for the NFTables object.
-func (t *Table) getNewChainHandle() uint64 {
-	return t.chainHandleCounter.Add(1)
+// getNewHandle returns a new handle for a chain or rule.
+func (t *Table) getNewHandle() uint64 {
+	return t.handleCounter.Add(1)
 }
 
 // CreateChain makes a new chain for the corresponding table and adds it to the
@@ -657,6 +657,7 @@ func (t *Table) AddChain(name string, info *BaseChainInfo, comment string, error
 		table:         t,
 		baseChainInfo: info,
 		comment:       comment,
+		handleToRule:  make(map[uint64]*Rule),
 	}
 
 	// Sets the base chain info if it's a base chain (and validates it).
@@ -667,7 +668,7 @@ func (t *Table) AddChain(name string, info *BaseChainInfo, comment string, error
 	}
 
 	// Only assign a chain handle after error checks.
-	c.handle = t.getNewChainHandle()
+	c.handle = t.getNewHandle()
 
 	// Adds the chain to the chain map (after successfully doing everything else).
 	t.chains[name] = c
@@ -866,8 +867,10 @@ func (c *Chain) RegisterRule(rule *Rule, index int) *syserr.AnnotatedError {
 		}
 	}
 
-	// Assigns chain to rule and adds rule to chain's rule list at given index.
+	// Assigns chain to rule and adds rule to chain's rule list at given index with the given handle.
 	rule.chain = c
+	rule.handle = c.table.getNewHandle()
+	c.handleToRule[rule.handle] = rule
 
 	// Adds the rule to the chain's rule list at the correct index.
 	if index == -1 || index == c.RuleCount() {
@@ -892,6 +895,7 @@ func (c *Chain) UnregisterRuleByIndex(index int) (*Rule, *syserr.AnnotatedError)
 	}
 	c.rules = append(c.rules[:index], c.rules[index+1:]...)
 	rule.chain = nil
+	delete(c.handleToRule, rule.handle)
 	return rule, nil
 }
 
@@ -905,6 +909,16 @@ func (c *Chain) GetRule(index int) (*Rule, *syserr.AnnotatedError) {
 		return c.rules[c.RuleCount()-1], nil
 	}
 	return c.rules[index], nil
+}
+
+// GetRuleByHandle returns the rule with the specified handle from the chain's rule list.
+// Errors on rule not found.
+func (c *Chain) GetRuleByHandle(handle uint64) (*Rule, *syserr.AnnotatedError) {
+	rule, exists := c.handleToRule[handle]
+	if !exists {
+		return nil, syserr.NewAnnotatedError(syserr.ErrNoFileOrDir, fmt.Sprintf("rule %d not found for chain %s", handle, c.name))
+	}
+	return rule, nil
 }
 
 // RuleCount returns the number of rules in the chain.
