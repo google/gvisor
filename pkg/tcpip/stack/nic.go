@@ -72,7 +72,7 @@ type nic struct {
 	// complete.
 	linkResQueue packetsPendingLinkResolution
 
-	// packetEPsMu protects annotated fields below.
+	// packetEPsMu protects packetEPs.
 	packetEPsMu packetEPsRWMutex `state:"nosave"`
 
 	// eps is protected by the mutex, but the values contained in it are not.
@@ -191,16 +191,12 @@ func newNIC(stack *Stack, id tcpip.NICID, ep LinkEndpoint, opts NICOptions) *nic
 		networkEndpoints:          make(map[tcpip.NetworkProtocolNumber]NetworkEndpoint),
 		linkAddrResolvers:         make(map[tcpip.NetworkProtocolNumber]*linkResolver),
 		duplicateAddressDetectors: make(map[tcpip.NetworkProtocolNumber]DuplicateAddressDetector),
+		packetEPs:                 make(map[tcpip.NetworkProtocolNumber]*packetEndpointList),
 		qDisc:                     qDisc,
 		deliverLinkPackets:        opts.DeliverLinkPackets,
 		experimentIPOptionEnabled: opts.EnableExperimentIPOption,
 	}
 	nic.linkResQueue.init(nic)
-
-	nic.packetEPsMu.Lock()
-	defer nic.packetEPsMu.Unlock()
-
-	nic.packetEPs = make(map[tcpip.NetworkProtocolNumber]*packetEndpointList)
 
 	resolutionRequired := ep.Capabilities()&CapabilityResolutionRequired != 0
 
