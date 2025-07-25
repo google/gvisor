@@ -25,7 +25,7 @@ import (
 	"gvisor.dev/gvisor/pkg/rand"
 )
 
-func TestRead(t *testing.T) {
+func testRead(t *testing.T, newQueue func(cap int) (Queue, error)) {
 	// Create a temp file.
 	testFile, err := os.CreateTemp(t.TempDir(), "aio_test_read")
 	if err != nil {
@@ -46,7 +46,10 @@ func TestRead(t *testing.T) {
 	}
 
 	// Read data from the file using async reads.
-	q := NewGoQueue(8)
+	q, err := newQueue(8)
+	if err != nil {
+		t.Fatalf("failed to create Queue: %v", err)
+	}
 	defer q.Destroy()
 	qavail := q.Cap()
 	off := int64(0)
@@ -82,7 +85,7 @@ func TestRead(t *testing.T) {
 	}
 }
 
-func TestReadv(t *testing.T) {
+func testReadv(t *testing.T, newQueue func(cap int) (Queue, error)) {
 	// Create a temp file.
 	testFile, err := os.CreateTemp(t.TempDir(), "aio_test_readv")
 	if err != nil {
@@ -103,7 +106,10 @@ func TestReadv(t *testing.T) {
 	}
 
 	// Read data from the file using async vectored reads.
-	q := NewGoQueue(8)
+	q, err := newQueue(8)
+	if err != nil {
+		t.Fatalf("failed to create Queue: %v", err)
+	}
 	defer q.Destroy()
 	qavail := q.Cap()
 	iovecsData := make([][2]unix.Iovec, qavail)
@@ -152,7 +158,7 @@ func TestReadv(t *testing.T) {
 	}
 }
 
-func TestWrite(t *testing.T) {
+func testWrite(t *testing.T, newQueue func(cap int) (Queue, error)) {
 	// Create a temp file.
 	testFile, err := os.CreateTemp(t.TempDir(), "aio_test_write")
 	if err != nil {
@@ -168,7 +174,10 @@ func TestWrite(t *testing.T) {
 	_, _ = rand.Read(data)
 
 	// Write data to the file using async writes.
-	q := NewGoQueue(8)
+	q, err := newQueue(8)
+	if err != nil {
+		t.Fatalf("failed to create Queue: %v", err)
+	}
 	defer q.Destroy()
 	qavail := q.Cap()
 	off := int64(0)
@@ -209,7 +218,7 @@ func TestWrite(t *testing.T) {
 	}
 }
 
-func TestWritev(t *testing.T) {
+func testWritev(t *testing.T, newQueue func(cap int) (Queue, error)) {
 	// Create a temp file.
 	testFile, err := os.CreateTemp(t.TempDir(), "aio_test_writev")
 	if err != nil {
@@ -225,7 +234,10 @@ func TestWritev(t *testing.T) {
 	_, _ = rand.Read(data)
 
 	// Write data to the file using async vectored writes.
-	q := NewGoQueue(8)
+	q, err := newQueue(8)
+	if err != nil {
+		t.Fatalf("failed to create Queue: %v", err)
+	}
 	defer q.Destroy()
 	qavail := q.Cap()
 	iovecsData := make([][2]unix.Iovec, qavail)
@@ -277,4 +289,34 @@ func TestWritev(t *testing.T) {
 	if bytes.Compare(data, buf) != 0 {
 		t.Errorf("bytes differ")
 	}
+}
+
+func testQueue(t *testing.T, newQueue func(cap int) (Queue, error)) {
+	t.Run("Read", func(t *testing.T) {
+		t.Helper()
+		t.Parallel()
+		testRead(t, newQueue)
+	})
+	t.Run("Readv", func(t *testing.T) {
+		t.Helper()
+		t.Parallel()
+		testReadv(t, newQueue)
+	})
+	t.Run("Write", func(t *testing.T) {
+		t.Helper()
+		t.Parallel()
+		testWrite(t, newQueue)
+	})
+	t.Run("Writev", func(t *testing.T) {
+		t.Helper()
+		t.Parallel()
+		testWritev(t, newQueue)
+	})
+}
+
+func TestGoQueue(t *testing.T) {
+	testQueue(t, func(cap int) (Queue, error) {
+		q := NewGoQueue(cap)
+		return q, nil
+	})
 }

@@ -13,6 +13,8 @@
 // limitations under the License.
 
 // Package aio provides asynchronous I/O on host file descriptors.
+//
+// +checkalignedignore
 package aio
 
 import (
