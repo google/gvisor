@@ -345,6 +345,7 @@ const (
 	_DR_STEP  = 0x4000 // single-step
 )
 
+//go:nosplit
 func readAndResetDR6() uint64 {
 	dr6 := rdDR6()
 	wrDR6(_DR6_RESERVED)

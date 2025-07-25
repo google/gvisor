@@ -102,12 +102,12 @@ TEXT ·rdgsbase(SB), $0-8
 	MOVQ AX, ret+0(FP)
 	RET
 
-TEXT ·rdDR6(SB), $0-8
+TEXT ·rdDR6(SB),NOSPLIT,$0-8
 	MOVQ DR6, AX
 	MOVQ AX, ret+0(FP)
 	RET
 
-TEXT ·wrDR6(SB), $0-8
+TEXT ·wrDR6(SB),NOSPLIT,$0-8
 	MOVQ val+0(FP), AX
 	MOVQ AX, DR6
 	RET
