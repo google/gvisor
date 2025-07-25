@@ -17,6 +17,7 @@ package sandbox
 
 import (
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -1030,6 +1031,13 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 	// configured.
 	rootlessEUID := unix.Geteuid() != 0
 	setUserMappings := false
+	var gSyncFile *os.File
+        defer func() {
+                if gSyncFile != nil {
+                        gSyncFile.Close()
+                }
+        }()
+
 	if conf.Network == config.NetworkHost || conf.DirectFS {
 		if userns, ok := specutils.GetNS(specs.UserNamespace, args.Spec); ok {
 			log.Infof("Sandbox will be started in container's user namespace: %+v", userns)
@@ -1039,7 +1047,7 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 				if err != nil {
 					return err
 				}
-				defer syncFile.Close()
+				gSyncFile = syncFile
 				setUserMappings = true
 			} else {
 				specutils.SetUIDGIDMappings(cmd, args.Spec)
@@ -1284,11 +1292,44 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 		if err := SetUserMappings(args.Spec, cmd.Process.Pid); err != nil {
 			return err
 		}
+		if err := SendIDToSandbox(gSyncFile, args.Spec); err != nil {
+			return err
+		}
 	}
 
 	s.child = true
 	s.Pid.store(cmd.Process.Pid)
 	log.Infof("Sandbox started, PID: %d", cmd.Process.Pid)
+
+	return nil
+}
+
+func SendIDToSandbox(syncFile *os.File, spec *specs.Spec) error {
+	euid := uint32(os.Geteuid())
+	egid := uint32(os.Getegid())
+
+	var cuid uint32
+	var cgid uint32
+
+	for _, idMap := range spec.Linux.UIDMappings {
+		if euid >= idMap.HostID && euid < idMap.Size + idMap.HostID {
+			cuid = euid - idMap.HostID + idMap.ContainerID
+			break
+		}
+	}
+
+	for _, idMap := range spec.Linux.GIDMappings {
+                if egid >= idMap.HostID && euid < idMap.Size + idMap.HostID  {
+                        cgid = egid - idMap.HostID + idMap.ContainerID
+                        break
+                }
+        }
+	buf := make([]byte, 8)
+	binary.BigEndian.PutUint32(buf[0:4], cuid)
+	binary.BigEndian.PutUint32(buf[4:8], cgid)
+	if _, err := syncFile.Write(buf); err != nil {
+		return fmt.Errorf("write uid&gid to sandbox error: %w", err)
+	}
 
 	return nil
 }
