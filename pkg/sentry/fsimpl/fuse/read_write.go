@@ -195,6 +195,10 @@ func (fs *filesystem) Write(ctx context.Context, fd *regularFileFD, offset int64
 		if err != nil {
 			return n, offset, err
 		}
+		if err := res.Error(); err != nil {
+			return n, offset, err
+		}
+
 		out := linux.FUSEWriteOut{}
 		if err := res.UnmarshalPayload(&out); err != nil {
 			return n, offset, err
@@ -203,9 +207,6 @@ func (fs *filesystem) Write(ctx context.Context, fd *regularFileFD, offset int64
 		offset += int64(out.Size)
 		src = src.DropFirst64(int64(out.Size))
 
-		if err := res.Error(); err != nil {
-			return n, offset, err
-		}
 		// Write more than requested? EIO.
 		if out.Size > writeSize {
 			return n, offset, linuxerr.EIO
