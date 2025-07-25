@@ -38,6 +38,7 @@ type Agent struct {
 	stopC chan struct{}
 	mu    sync.Mutex
 	buf   bytes.Buffer
+	wg    sync.WaitGroup
 }
 
 // NewAgent creates a new Fdcollector agent.
@@ -48,6 +49,7 @@ func NewAgent(ctx context.Context, rfd *vfs.FileDescription, desc string) *Agent
 		desc:  desc,
 		stopC: make(chan struct{}),
 	}
+	c.wg.Add(1)
 	go c.run()
 	return c
 }
@@ -55,11 +57,12 @@ func NewAgent(ctx context.Context, rfd *vfs.FileDescription, desc string) *Agent
 // Run starts the goroutine that reads from the vfs.FileDescription. It blocks
 // until the vfs.FileDescription is closed or an error occurs.
 func (c *Agent) run() {
+	defer c.wg.Done()
 	defer c.rfd.DecRef(c.ctx)
 
 	var buf [4096]byte // arbitrary size
 	dst := usermem.BytesIOSequence(buf[:])
-	e, ch := waiter.NewChannelEntry(waiter.EventIn)
+	e, ch := waiter.NewChannelEntry(waiter.EventIn | waiter.EventErr | waiter.EventHUp)
 	if err := c.rfd.EventRegister(&e); err != nil {
 		log.Warningf("Error registering for events from %s: %v", c.desc, err)
 		return
@@ -95,6 +98,7 @@ func (c *Agent) run() {
 // Stop stops the goroutine that reads from the vfs.FileDescription.
 func (c *Agent) Stop() {
 	close(c.stopC)
+	c.wg.Wait()
 }
 
 // String returns a string representation of the FdCollector.
