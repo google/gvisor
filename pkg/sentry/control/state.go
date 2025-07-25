@@ -271,7 +271,7 @@ func SaveRestoreExec(k *kernel.Kernel, mode SaveRestoreExecMode) error {
 		Envv:           append(envv, fmt.Sprintf("%s=%s", saveRestoreExecEnvVar, mode)),
 		ContainerID:    contID,
 		MountNamespace: mntns,
-		PIDNamespace:   k.RootPIDNamespace(),
+		PIDNamespace:   leader.PIDNamespace(),
 		Limits:         limits.NewLimitSet(),
 		FDTable:        fdTable,
 	}
