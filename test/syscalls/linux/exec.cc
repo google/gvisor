@@ -17,8 +17,10 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <sys/eventfd.h>
+#include <sys/prctl.h>
 #include <sys/ptrace.h>
 #include <sys/resource.h>
+#include <sys/socket.h>
 #include <sys/time.h>
 #include <unistd.h>
 
@@ -40,18 +42,32 @@
 #include "absl/types/optional.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/fs_util.h"
+#include "test/util/linux_capability_util.h"
+#include "test/util/logging.h"
 #include "test/util/multiprocess_util.h"
 #include "test/util/posix_error.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
+#include "test/util/uid_util.h"
 
 namespace gvisor {
 namespace testing {
 
 namespace {
 
+#ifndef SUID_DUMP_DISABLE
+#define SUID_DUMP_DISABLE 0
+#endif /* SUID_DUMP_DISABLE */
+#ifndef SUID_DUMP_USER
+#define SUID_DUMP_USER 1
+#endif /* SUID_DUMP_USER */
+#ifndef SUID_DUMP_ROOT
+#define SUID_DUMP_ROOT 2
+#endif /* SUID_DUMP_ROOT */
+
 constexpr char kBasicWorkload[] = "test/syscalls/linux/exec_basic_workload";
+constexpr char kCheckEuidProgram[] = "test/syscalls/linux/exec_check_creds";
 constexpr char kExitScript[] = "test/syscalls/linux/exit_script";
 constexpr char kStateWorkload[] = "test/syscalls/linux/exec_state_workload";
 constexpr char kProcExeWorkload[] =
@@ -849,6 +865,211 @@ TEST(ExecTest, Setpgid) {
   EXPECT_THAT(setpgid(pid, pid), SyscallFailsWithErrno(EACCES));
   EXPECT_THAT(setpgid(pid, getpid()), SyscallFailsWithErrno(EACCES));
   EXPECT_THAT(setpgid(getpid(), pid), SyscallSucceeds());
+}
+
+PosixErrorOr<TempPath> CreateSUIDExecutable(std::string path) {
+  std::string exec_blob;
+  PosixError perr = GetContents(path, &exec_blob);
+  RETURN_IF_ERRNO(perr);
+
+  // Note that this wouldn't work if /tmp/ is mounted with nosuid.`
+  mode_t mode = 0755 | S_ISUID;
+  return TempPath::CreateFileWith(GetShortTestTmpdir(), exec_blob, mode);
+}
+
+PosixErrorOr<TempPath> CreateGUIDExecutable(std::string path) {
+  std::string exec_blob;
+  PosixError perr = GetContents(path, &exec_blob);
+  RETURN_IF_ERRNO(perr);
+
+  // Note that this wouldn't work if /tmp/ is mounted with nosuid.`
+  mode_t mode = 0755 | S_ISGID;
+  return TempPath::CreateFileWith(GetShortTestTmpdir(), exec_blob, mode);
+}
+
+TEST(ExecTest, SUIDExecGainsUID) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(IsRoot()));
+  TempPath suid_exe = ASSERT_NO_ERRNO_AND_VALUE(
+      CreateSUIDExecutable(RunfilePath(kCheckEuidProgram)));
+
+  int euid = geteuid();
+  // Use a separate thread so as to not pollute the other tests with the
+  // goofy uid we're about to set.
+  ScopedThread([&] {
+    ASSERT_THAT(syscall(SYS_setresuid, 12345, 12345, 12345), SyscallSucceeds());
+
+    int dumpability;
+    ASSERT_THAT(prctl(PR_SET_DUMPABLE, SUID_DUMP_USER), SyscallSucceeds());
+    ASSERT_THAT(dumpability = prctl(PR_GET_DUMPABLE), SyscallSucceeds());
+    ASSERT_EQ(dumpability, SUID_DUMP_USER);
+
+    const ExecveArray argv = {
+        suid_exe.path(),
+        /*want_euid=*/absl::StrCat(euid),  // gained back original euid
+        /*want_egid=*/absl::StrCat(getegid()),
+        /*want_dumpability=*/absl::StrCat(SUID_DUMP_DISABLE)};  // but lost this
+    CheckExec(suid_exe.path(), argv, {}, /*expect_status=*/0, "");
+  });
+}
+
+TEST(ExecTest, SGIDExecGainsGID) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(IsRoot()));
+  TempPath suid_exe = ASSERT_NO_ERRNO_AND_VALUE(
+      CreateGUIDExecutable(RunfilePath(kCheckEuidProgram)));
+
+  int egid = getegid();
+  // Use a separate thread so as to not pollute the other tests with the
+  // goofy gid we're about to set.
+  ScopedThread([&] {
+    ASSERT_THAT(syscall(SYS_setresgid, 12345, 12345, 12345), SyscallSucceeds());
+
+    int dumpability;
+    ASSERT_THAT(prctl(PR_SET_DUMPABLE, SUID_DUMP_USER), SyscallSucceeds());
+    ASSERT_THAT(dumpability = prctl(PR_GET_DUMPABLE), SyscallSucceeds());
+    ASSERT_EQ(dumpability, SUID_DUMP_USER);
+
+    const ExecveArray argv = {
+        suid_exe.path(),
+        /*want_euid=*/absl::StrCat(geteuid()),
+        /*want_egid=*/absl::StrCat(egid),  // gained back original egid
+        /*want_dumpability=*/absl::StrCat(SUID_DUMP_DISABLE)};  // but lost this
+    CheckExec(suid_exe.path(), argv, {}, /*expect_status=*/0, "");
+  });
+}
+
+TEST(ExecTest, SUIDExecDoesntGainUIDWithNoNewPrivs) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(IsRoot()));
+  TempPath suid_exe = ASSERT_NO_ERRNO_AND_VALUE(
+      CreateSUIDExecutable(RunfilePath(kCheckEuidProgram)));
+
+  // Use a separate thread so as to not pollute the other tests with the
+  // goofy uid we're about to set.
+  ScopedThread([&] {
+    ASSERT_THAT(prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0), SyscallSucceeds());
+    ASSERT_THAT(syscall(SYS_setresuid, 12345, 12345, 12345), SyscallSucceeds());
+    const ExecveArray argv = {
+        suid_exe.path(),
+        /*want_euid=*/absl::StrCat(12345),  // remained unprivileged
+        /*want_egid=*/absl::StrCat(getegid()),
+        /*want_dumpability=*/absl::StrCat(SUID_DUMP_USER)};
+    CheckExec(suid_exe.path(), argv, {}, /*expect_status=*/0, "");
+  });
+}
+
+struct CloneExecArgs {
+  const char* path;
+  char* const* argv;
+};
+
+int DoExecveAfterClone(void* args_void) {
+  const CloneExecArgs* args = static_cast<const CloneExecArgs*>(args_void);
+  execve(args->path, args->argv, nullptr);
+  _exit(1);
+}
+
+// Clones a new process with CLONE_FS and execve's into the provided path, and
+// then checks that the child's exit status is as expected. This is a version
+// of CheckExec that uses clone(2) with CLONE_FS instead of fork(2).
+void CheckCloneFsExec(const std::string& path, const ExecveArray& argv,
+                      int want_status) {
+  CloneExecArgs args = {path.c_str(), argv.get()};
+  struct clone_arg {
+    char stack[1024] __attribute__((aligned(16)));
+    char stack_ptr[0];
+  } ca;
+  pid_t child_pid;
+  ASSERT_THAT(child_pid = clone(DoExecveAfterClone, ca.stack_ptr,
+                                CLONE_FS | SIGCHLD, (void*)&args),
+              SyscallSucceeds());
+
+  int status;
+  ASSERT_THAT(RetryEINTR(waitpid)(child_pid, &status, 0), SyscallSucceeds());
+  EXPECT_EQ(status, want_status);
+}
+
+TEST(ExecTest, SUIDExecDoesntGainUIDWithSharedFSContext) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(IsRoot()));
+  TempPath suid_exe = ASSERT_NO_ERRNO_AND_VALUE(
+      CreateSUIDExecutable(RunfilePath(kCheckEuidProgram)));
+
+  // Use a separate thread so as to not pollute the other tests with the
+  // goofy uid we're about to set. ScopedThread will clone with CLONE_FS.
+  ScopedThread([&] {
+    ASSERT_THAT(syscall(SYS_setresuid, 12345, 12345, 12345), SyscallSucceeds());
+    const ExecveArray argv = {
+        suid_exe.path(),
+        /*want_euid=*/absl::StrCat(12345),  // remained unprivileged
+        /*want_egid=*/absl::StrCat(getegid()),
+        /*want_dumpability=*/absl::StrCat(SUID_DUMP_USER)};
+    CheckCloneFsExec(suid_exe.path(), argv, /*want_status=*/0);
+  });
+}
+
+TEST(ExecTest, SUIDExecDoesntGainUIDWithPtracerAttached) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(IsRoot()));
+  TempPath suid_exe = ASSERT_NO_ERRNO_AND_VALUE(
+      CreateSUIDExecutable(RunfilePath(kCheckEuidProgram)));
+
+  int sockets[2];  // Used to establish a ptrace_attach before an execve.
+  ASSERT_THAT(socketpair(AF_UNIX, SOCK_STREAM, 0, sockets), SyscallSucceeds());
+
+  pid_t const tracee_pid = fork();
+  if (tracee_pid == 0) {
+    TEST_PCHECK(close(sockets[1]) == 0);
+    ASSERT_THAT(prctl(PR_SET_PTRACER, PR_SET_PTRACER_ANY), SyscallSucceeds());
+    // Indicate that the prctl has been set.
+    TEST_PCHECK(write(sockets[0], "x", 1) == 1);
+
+    // Wait until tracer has attached before execing.
+    char done;
+    TEST_PCHECK(read(sockets[0], &done, 1) == 1);
+
+    // Become an unprivileged user, to test whether execing into the privileged
+    // suid_exe will bestow the original uid.
+    ASSERT_THAT(syscall(SYS_setresuid, 12345, 12345, 12345), SyscallSucceeds());
+
+    const ExecveArray argv = {
+        suid_exe.path(),
+        /*want_euid=*/absl::StrCat(12345),  // remained unprivileged
+        /*want_egid=*/absl::StrCat(getegid()),
+        /*want_dumpability=*/absl::StrCat(SUID_DUMP_USER)};
+    const ExecveArray envv;
+    execve(argv.get()[0], argv.get(), envv.get());
+    TEST_PCHECK_MSG(false, "survived execve");
+  }
+  ASSERT_THAT(tracee_pid, SyscallSucceeds());
+  ASSERT_THAT(close(sockets[0]), SyscallSucceeds());
+
+  pid_t const tracer_pid = fork();
+  if (tracer_pid == 0) {
+    // Wait until tracee has called prctl, or else we won't be able to attach.
+    char done;
+    TEST_PCHECK(read(sockets[1], &done, 1) == 1);
+
+    ASSERT_THAT(ptrace(PTRACE_ATTACH, tracee_pid, 0, 0), SyscallSucceeds());
+    // Indicate that we have attached.
+    TEST_PCHECK(write(sockets[1], &done, 1) == 1);
+
+    // Priv gain isn't prevented when the tracer has this cap.
+    AutoCapability cap_tracer(CAP_SYS_PTRACE, false);
+
+    // Block until tracee enters signal-delivery-stop as a result of the
+    // SIGSTOP sent by PTRACE_ATTACH. And then continue it.
+    int status;
+    TEST_PCHECK(waitpid(tracee_pid, &status, 0) == tracee_pid);
+    TEST_CHECK(WIFSTOPPED(status) && WSTOPSIG(status) == SIGSTOP);
+    ASSERT_THAT(ptrace(PTRACE_CONT, tracee_pid, 0, 0), SyscallSucceeds());
+
+    // Remain attached till the tracee exits.
+    ASSERT_THAT(waitpid(tracee_pid, &status, 0), SyscallSucceeds());
+    _exit(0);
+  }
+  ASSERT_THAT(tracer_pid, SyscallSucceeds());
+
+  int status;
+  // Verify the tracee's (exec_check_creds's) exit code
+  ASSERT_THAT(waitpid(tracee_pid, &status, 0), SyscallSucceeds());
+  EXPECT_EQ(status, 0);
 }
 
 void ExecWithThread() {

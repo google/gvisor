@@ -79,6 +79,12 @@ func seccomp(t *kernel.Task, mode, flags uint64, addr hostarch.Addr) error {
 		return linuxerr.EINVAL
 	}
 
+	// To prevent unprivileged parents from affecting privileged children
+	c := t.Credentials()
+	if !c.NoNewPrivs && !c.HasCapability(linux.CAP_SYS_ADMIN) {
+		return linuxerr.EACCES
+	}
+
 	return t.AppendSyscallFilter(compiledFilter, tsync)
 }
 

@@ -423,6 +423,9 @@ func getRootCredentials(spec *specs.Spec, conf *config.Config, userNs *auth.User
 		extraKGIDs,
 		caps,
 		userNs)
+	if spec.Process.NoNewPrivileges {
+		creds.NoNewPrivs = true
+	}
 
 	return creds
 }

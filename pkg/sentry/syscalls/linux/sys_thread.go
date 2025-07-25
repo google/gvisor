@@ -23,8 +23,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/sched"
-	"gvisor.dev/gvisor/pkg/sentry/loader"
-	"gvisor.dev/gvisor/pkg/sentry/seccheck"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
@@ -107,12 +105,7 @@ func execveat(t *kernel.Task, dirfd int32, pathnameAddr, argvAddr, envvAddr host
 
 	root := t.FSContext().RootDirectory()
 	defer root.DecRef(t)
-	var executable *vfs.FileDescription
-	defer func() {
-		if executable != nil {
-			executable.DecRef(t)
-		}
-	}()
+	var executable *vfs.FileDescription // DecRef deferred to to Task.Execve
 	closeOnExec := false
 	if path := fspath.Parse(pathname); dirfd != linux.AT_FDCWD && !path.Absolute {
 		// We must open the executable ourselves since dirfd is used as the
@@ -149,43 +142,9 @@ func execveat(t *kernel.Task, dirfd int32, pathnameAddr, argvAddr, envvAddr host
 		pathname = executable.MappedName(t)
 	}
 
-	// Load the new TaskImage.
-	wd := t.FSContext().WorkingDirectory()
-	defer wd.DecRef(t)
-	remainingTraversals := uint(linux.MaxSymlinkTraversals)
-	loadArgs := loader.LoadArgs{
-		Root:                root,
-		WorkingDir:          wd,
-		RemainingTraversals: &remainingTraversals,
-		ResolveFinal:        flags&linux.AT_SYMLINK_NOFOLLOW == 0,
-		Filename:            pathname,
-		File:                executable,
-		CloseOnExec:         closeOnExec,
-		Argv:                argv,
-		Envv:                envv,
-		Features:            t.Kernel().FeatureSet(),
-	}
-	if seccheck.Global.Enabled(seccheck.PointExecve) {
-		// Retain the first executable file that is opened (which may open
-		// multiple executable files while resolving interpreter scripts).
-		if executable == nil {
-			loadArgs.AfterOpen = func(f *vfs.FileDescription) {
-				if executable == nil {
-					f.IncRef()
-					executable = f
-					pathname = executable.MappedName(t)
-				}
-			}
-		}
-	}
-
-	image, se := t.Kernel().LoadTaskImage(t, loadArgs)
-	if se != nil {
-		return 0, nil, se.ToError()
-	}
-
-	ctrl, err := t.Execve(image, argv, envv, executable, pathname)
-	return 0, ctrl, err
+	// Execve takes ownership of `executable`.
+	ctrl := t.Execve(argv, envv, flags, pathname, executable, closeOnExec)
+	return 0, ctrl, nil
 }
 
 // Exit implements linux syscall exit(2).
@@ -786,5 +745,9 @@ func Ptrace(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr,
 	addr := args[2].Pointer()
 	data := args[3].Pointer()
 
+	if req == linux.PTRACE_ATTACH || req == linux.PTRACE_SEIZE {
+		ctrl, err := t.PtraceAttach(req, pid, addr, data)
+		return 0, ctrl, err
+	}
 	return 0, nil, t.Ptrace(req, pid, addr, data)
 }

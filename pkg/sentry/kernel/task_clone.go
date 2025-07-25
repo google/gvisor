@@ -195,7 +195,10 @@ func (t *Task) Clone(args *linux.CloneArgs) (ThreadID, *SyscallControl, error) {
 		fsContext = t.fsContext.Fork()
 	} else {
 		fsContext = t.fsContext
-		fsContext.IncRef()
+		if !fsContext.Share() {
+			// Linux fails clone with EAGAIN if there is a concurrent execve, see kernel/fork.c:copy_fs().
+			return 0, nil, linuxerr.EAGAIN
+		}
 	}
 
 	mntns := t.mountNamespace

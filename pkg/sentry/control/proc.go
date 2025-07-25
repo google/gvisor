@@ -123,6 +123,9 @@ type ExecArgs struct {
 	// ExtraKGIDs is the list of additional groups to which the user belongs.
 	ExtraKGIDs []auth.KGID
 
+	// NoNewPrivileges disallows the new process from acquiring new privileges.
+	NoNewPrivileges bool
+
 	// Capabilities is the list of capabilities to give to the process.
 	Capabilities *auth.TaskCapabilities
 
@@ -188,6 +191,9 @@ func (proc *Proc) execAsync(args *ExecArgs) (*kernel.ThreadGroup, kernel.ThreadI
 		args.ExtraKGIDs,
 		args.Capabilities,
 		proc.Kernel.RootUserNamespace())
+	if args.NoNewPrivileges {
+		creds.NoNewPrivs = true
+	}
 
 	pidns := args.PIDNamespace
 	if pidns == nil {

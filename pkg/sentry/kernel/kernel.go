@@ -1115,14 +1115,12 @@ func (k *Kernel) CreateProcess(args CreateProcessArgs) (*ThreadGroup, ThreadID, 
 		Argv:                args.Argv,
 		Envv:                args.Envv,
 		Features:            k.featureSet,
+		StopPrivGain:        false,
 	}
 
-	image, se := k.LoadTaskImage(ctx, loadArgs)
+	image, newCreds, _, se := k.LoadTaskImage(ctx, loadArgs)
 	if se != nil {
 		return nil, 0, errors.New(se.String())
-	}
-	if err := auth.UpdateCredsForNewTask(args.Credentials, image.FileCaps(), args.Filename); err != nil {
-		return nil, 0, err
 	}
 	args.FDTable.IncRef()
 
@@ -1133,7 +1131,7 @@ func (k *Kernel) CreateProcess(args CreateProcessArgs) (*ThreadGroup, ThreadID, 
 		TaskImage:        image,
 		FSContext:        fsContext,
 		FDTable:          args.FDTable,
-		Credentials:      args.Credentials,
+		Credentials:      newCreds,
 		NetworkNamespace: k.RootNetworkNamespace(),
 		AllowedCPUMask:   sched.NewFullCPUSet(k.applicationCores),
 		UTSNamespace:     args.UTSNamespace,

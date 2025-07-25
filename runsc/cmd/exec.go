@@ -442,6 +442,7 @@ func argsFromProcess(specProc *specs.Process, p *specs.Process, enableRaw bool) 
 		ExtraKGIDs:       extraKGIDs,
 		Capabilities:     caps,
 		StdioIsPty:       p.Terminal,
+		NoNewPrivileges:  p.NoNewPrivileges,
 	}, nil
 }
 
