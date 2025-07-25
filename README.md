@@ -102,6 +102,16 @@ To run specific tests, you can specify the target:
 make test TARGETS="//runsc:version_test"
 ```
 
+Some packages support running tests directly on macOS. At the time of this
+writing, gVisor requires bazel 7, which you can install via homebrew:
+
+```sh
+brew install bazel@7
+
+# You can then run the tests, e.g.:
+$(brew --prefix bazel@7)/bin/bazel test --macos_sdk_version=$(xcrun --show-sdk-version) -- //tools/nogo/... //tools/check{aligned,const,escape,linkname,locks,unsafe}/...
+```
+
 ### Using `go get`
 
 This project uses [bazel][bazel] to build and manage dependencies. A synthetic
