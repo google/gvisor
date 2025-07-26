@@ -224,6 +224,42 @@ func readMaxCPUFreq() {
 // xgetbv reads an extended control register.
 func xgetbv(reg uintptr) uint64
 
+// CPU features allowed for use by user apps. If nil, allow all.
+var allowedFeatures map[string]struct{}
+
+// SetAllowedFeatures sets the CPU features allowed for use by user apps.
+func SetAllowedFeatures(features []string) {
+	if features == nil {
+		return
+	}
+
+	log.Debugf("Setting allowed cpu features: %v", features)
+	allowedFeatures = make(map[string]struct{})
+	for _, f := range features {
+		allowedFeatures[f] = struct{}{}
+	}
+}
+
+// AllowedHostFeatureSet returns the host CPU features allowed for use by user apps.
+func AllowedHostFeatureSet() FeatureSet {
+	hs := hostFeatureSet.ToStatic()
+
+	// only keep features inside allowedFeatures.
+	if allowedFeatures != nil {
+		hfs := hs.ToFeatureSet()
+		for f, v := range allFeatures {
+			if hfs.HasFeature(f) {
+				if _, ok := allowedFeatures[v.displayName]; !ok {
+					log.Infof("Removing CPU feature %v as it is not allowed.", f)
+					hs.Remove(f)
+				}
+			}
+		}
+	}
+
+	return hs.ToFeatureSet()
+}
+
 // archInitialize initializes hostFeatureSet.
 func archInitialize() {
 	hostFeatureSet = FeatureSet{

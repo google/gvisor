@@ -616,7 +616,7 @@ func New(args Args) (*Loader, error) {
 		DisconnectOnSave: args.Conf.NetDisconnectOk,
 	}
 	if err = l.k.Init(kernel.InitKernelArgs{
-		FeatureSet:           cpuid.HostFeatureSet().Fixed(),
+		FeatureSet:           cpuid.AllowedHostFeatureSet().Fixed(),
 		Timekeeper:           tk,
 		RootUserNamespace:    creds.UserNamespace,
 		RootNetworkNamespace: netns,

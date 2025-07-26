@@ -322,6 +322,11 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 		util.Fatalf("reading spec: %v", err)
 	}
 
+	if value, ok := spec.Annotations[specutils.AnnotationCpuFeatures]; ok {
+		features := strings.Split(value, ",")
+		cpuid.SetAllowedFeatures(features)
+	}
+
 	if b.setUpRoot {
 		if err := setUpChroot(spec, conf); err != nil {
 			util.Fatalf("error setting up chroot: %v", err)
