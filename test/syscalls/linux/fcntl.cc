@@ -1767,6 +1767,24 @@ TEST(FcntlTest, SetFlSetOwnSetSigDoNotRace) {
   }
 }
 
+TEST(FcntlTest, RegularFileOAsync) {
+  auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_RDWR, 0666));
+
+  // Linux allows, but silently ignores, fcntl(F_SETFL, O_ASYNC) on regular
+  // files (more precisely, files for which file_operations::fasync == nil). As
+  // of this writing, gVisor allows and implements O_ASYNC on all files. (It's
+  // not clear that this is safe from a lock ordering perspective, so this may
+  // be fixed in the future.) For now, just test that enabling O_ASYNC succeeds
+  // and that closing the file does not panic the sentry (b/430624153).
+  ASSERT_THAT(fcntl(fd.get(), F_SETOWN, getpid()), SyscallSucceeds());
+  ASSERT_THAT(fcntl(fd.get(), F_SETSIG, SIGIO), SyscallSucceeds());
+  int flags;
+  ASSERT_THAT(flags = fcntl(fd.get(), F_GETFL), SyscallSucceeds());
+  ASSERT_THAT(fcntl(fd.get(), F_SETFL, flags | O_ASYNC), SyscallSucceeds());
+}
+
 TEST_F(FcntlLockTest, GetLockOnNothing) {
   auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   FileDescriptor fd =
