@@ -87,9 +87,10 @@ const (
 
 // addressFamilyProtocols maps address families to their protocol number.
 var addressFamilyProtocols = map[stack.AddressFamily]uint8{
-	stack.IP:     linux.NFPROTO_INET,
+	stack.Unspec: linux.NFPROTO_UNSPEC,
+	stack.IP:     linux.NFPROTO_IPV4,
 	stack.IP6:    linux.NFPROTO_IPV6,
-	stack.Inet:   linux.NFPROTO_IPV6,
+	stack.Inet:   linux.NFPROTO_INET,
 	stack.Arp:    linux.NFPROTO_ARP,
 	stack.Bridge: linux.NFPROTO_BRIDGE,
 	stack.Netdev: linux.NFPROTO_NETDEV,
@@ -243,6 +244,7 @@ type NFTables struct {
 	rng                rand.RNG                           // Random number generator.
 	tableHandleCounter atomicbitops.Uint64                // Table handle counter.
 	Mu                 nfTablesRWMutex                    // Mutex for tableHandles.
+	genid              uint32                             // Generation ID for nftables.
 }
 
 // Ensures NFTables implements the NFTablesInterface.
@@ -930,17 +932,17 @@ func VerdictCodeToString(v uint32) string {
 	return fmt.Sprintf("invalid verdict: %d", v)
 }
 
-// netlinkAFToStackAF maps address families from linux/socket.h to their corresponding
-// netfilter address families.
+// netlinkAFToStackAF maps address families from linux/netfilter.h to their
+// corresponding netfilter address families.
 // From linux/include/uapi/linux/netfilter.h
 var netlinkAFToStackAF = map[uint8]stack.AddressFamily{
-	linux.AF_UNSPEC:    stack.Unspec,
-	linux.AF_UNIX:      stack.Inet,
-	linux.AF_INET:      stack.IP,
-	linux.AF_AX25:      stack.Arp,
-	linux.AF_APPLETALK: stack.Netdev,
-	linux.AF_BRIDGE:    stack.Bridge,
-	linux.AF_INET6:     stack.IP6,
+	linux.NFPROTO_UNSPEC: stack.Unspec,
+	linux.NFPROTO_INET:   stack.Inet,
+	linux.NFPROTO_IPV4:   stack.IP,
+	linux.NFPROTO_ARP:    stack.Arp,
+	linux.NFPROTO_NETDEV: stack.Netdev,
+	linux.NFPROTO_BRIDGE: stack.Bridge,
+	linux.NFPROTO_IPV6:   stack.IP6,
 }
 
 // AFtoNetlinkAF converts a generic address family to a netfilter address family.
@@ -956,7 +958,7 @@ func AFtoNetlinkAF(af uint8) (stack.AddressFamily, *syserr.Error) {
 
 // nftDataInit creates a new registerData struct from the passed in data bytes.
 func nftDataInit(tab *Table, regType uint32, dataBytes nlmsg.AttrsView) (registerData, *syserr.AnnotatedError) {
-	dataAttrs, ok := dataBytes.Parse()
+	dataAttrs, ok := NfParse(dataBytes)
 	if !ok {
 		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("Nftables: Failed to parse data bytes for nested expression data"))
 	}
@@ -1049,7 +1051,7 @@ func nftValidateRegister(reg uint32, regType uint32, data registerData) (uint8, 
 // validateVerdictData validates the verdict data bytes and returns the data as a verdict.
 func validateVerdictData(tab *Table, bytes nlmsg.AttrsView) (stack.NFVerdict, *syserr.AnnotatedError) {
 	v := stack.NFVerdict{}
-	verdictAttrs, ok := bytes.Parse()
+	verdictAttrs, ok := NfParse(bytes)
 	if !ok {
 		return v, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: Failed to parse verdict data")
 	}
@@ -1114,6 +1116,25 @@ func validateVerdictData(tab *Table, bytes nlmsg.AttrsView) (stack.NFVerdict, *s
 func HasAttr(attrName uint16, attrs map[uint16]nlmsg.BytesView) bool {
 	_, ok := attrs[attrName]
 	return ok
+}
+
+// NfParse parses the data bytes, clearing the nested attribute bit if present.
+// For nested attributes, Linux supports these attributes having the bit
+// set or unset. It is cleared here for consistency.
+func NfParse(data nlmsg.AttrsView) (map[uint16]nlmsg.BytesView, bool) {
+	attrs, ok := data.Parse()
+	if !ok {
+		return nil, ok
+	}
+
+	newAttrs := make(map[uint16]nlmsg.BytesView)
+	// TODO - b/421437663: If any validation has to be done on nested attributes,
+	// it should be done here.
+	for attr, attrData := range attrs {
+		newAttrs[attr & ^linux.NLA_F_NESTED] = attrData
+	}
+
+	return newAttrs, ok
 }
 
 // deepCopyRule returns a deep copy of the Rule struct.
@@ -1241,4 +1262,5 @@ func (nf *NFTables) DeepCopy() *NFTables {
 // with the tables of the passed in NFTables struct.
 func (nf *NFTables) ReplaceNFTables(nftCopy *NFTables) {
 	nf.filters = nftCopy.filters
+	nf.genid++
 }

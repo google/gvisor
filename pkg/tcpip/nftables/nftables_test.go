@@ -2846,12 +2846,13 @@ func TestEvaluateMetaLoad(t *testing.T) {
 			op2: mustCreateComparison(t, linux.NFT_REG_3, linux.NFT_CMP_EQ,
 				append(numToBE(int(header.IPv6ProtocolNumber), 2), 0, 0)),
 		},
-		{ // cmd: add rule ip6 tab ch meta nfproto 0x0a
+		{ // meta nfproto is only useful in the inet family
+			// cmd: add rule inet tab ch meta nfproto 0x0a
 			tname: "meta load nfproto test",
 			pkt:   pkt,
 			op1:   mustCreateMetaLoad(t, linux.NFT_META_NFPROTO, linux.NFT_REG_4),
 			op2: mustCreateComparison(t, linux.NFT_REG_4, linux.NFT_CMP_EQ,
-				[]byte{AfProtocol(stack.IP6), 0, 0, 0}),
+				[]byte{AfProtocol(stack.Inet), 0, 0, 0}),
 		},
 		{ // cmd: add rule ip6 tab ch meta l4proto 0x6
 			tname: "meta load l4proto test",
