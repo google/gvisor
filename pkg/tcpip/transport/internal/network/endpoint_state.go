@@ -30,7 +30,17 @@ func (e *Endpoint) Resume(s *stack.Stack) {
 	e.stack = s
 
 	for m := range e.multicastMemberships {
-		if err := e.stack.JoinGroup(e.netProto, m.nicID, m.multicastAddr); err != nil {
+		// The NICID can change during restore, find the possible new NICID for the
+		// multicast address and then join the group.
+		var nicID tcpip.NICID
+		if r, err := e.stack.FindRoute(0, tcpip.Address{}, m.multicastAddr, e.netProto, false /* multicastLoop */); err == nil {
+			nicID = r.NICID()
+			r.Release()
+		}
+		if nicID == 0 {
+			panic(fmt.Sprintf("could not find a NIC for multicast address %s during restore", m.multicastAddr))
+		}
+		if err := e.stack.JoinGroup(e.netProto, nicID, m.multicastAddr); err != nil {
 			panic(fmt.Sprintf("e.stack.JoinGroup(%d, %d, %s): %s", e.netProto, m.nicID, m.multicastAddr, err))
 		}
 	}
