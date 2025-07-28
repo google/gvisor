@@ -56,9 +56,11 @@ const (
 	NV01_MEMORY_SYSTEM_OS_DESCRIPTOR = 0x00000071
 	NV01_EVENT_OS_EVENT              = 0x00000079
 	NV01_DEVICE_0                    = 0x00000080
+	NV_SEMAPHORE_SURFACE             = 0x000000da
 	RM_USER_SHARED_DATA              = 0x000000de
 	NV_MEMORY_FABRIC                 = 0x000000f8
 	NV_MEMORY_MULTICAST_FABRIC       = 0x000000fd
+	NV_MEMORY_MAPPER                 = 0x000000fe
 	NV20_SUBDEVICE_0                 = 0x00002080
 	NV2081_BINAPI                    = 0x00002081
 	NV50_P2P                         = 0x0000503b
@@ -184,6 +186,16 @@ type NV0080_ALLOC_PARAMETERS struct {
 	VALimitInternal uint64
 	VAMode          uint32
 	Pad1            [4]byte
+}
+
+// NV_SEMAPHORE_SURFACE_ALLOC_PARAMETERS is the alloc params type for
+// NV_SEMAPHORE_SURFACE, from src/common/sdk/nvidia/inc/class/cl00da.h.
+//
+// +marshal
+type NV_SEMAPHORE_SURFACE_ALLOC_PARAMETERS struct {
+	HSemaphoreMem    Handle
+	HMaxSubmittedMem Handle
+	flags            uint64
 }
 
 // NV2080_ALLOC_PARAMETERS is the alloc params type for NV20_SUBDEVICE_0, from
@@ -517,6 +529,34 @@ type NV00FD_ALLOCATION_PARAMETERS_V545 struct {
 	Index     uint16
 	_         [6]byte
 	NV00FD_ALLOCATION_PARAMETERS
+}
+
+// NV_MEMORY_MAPPER_ALLOCATION_PARAMS is the alloc param type for
+// NV_MEMORY_MAPPER, from src/common/sdk/nvidia/inc/class/cl00fe.h.
+//
+// +marshal
+type NV_MEMORY_MAPPER_ALLOCATION_PARAMS struct {
+	unused uint8
+}
+
+// NV_MEMORY_MAPPER_ALLOCATION_PARAMS_V550 is the updated version of
+// NV_MEMORY_MAPPER_ALLOCATION_PARAMS since 550.40.07.
+//
+// +marshal
+type NV_MEMORY_MAPPER_ALLOCATION_PARAMS_V550 struct {
+	HSemaphoreSurface Handle
+	MaxQueueSize      uint32
+}
+
+// NV_MEMORY_MAPPER_ALLOCATION_PARAMS_V555 is the updated version of
+// NV_MEMORY_MAPPER_ALLOCATION_PARAMS_V550 since 555.42.02.
+//
+// +marshal
+type NV_MEMORY_MAPPER_ALLOCATION_PARAMS_V555 struct {
+	NV_MEMORY_MAPPER_ALLOCATION_PARAMS_V550
+	HNotificationMemory Handle
+	_                   uint32
+	NotificationOffset  uint64
 }
 
 // NV_CONFIDENTIAL_COMPUTE_ALLOC_PARAMS is the alloc param type for
