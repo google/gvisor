@@ -260,7 +260,6 @@ TEST(SymlinkTest, SymlinkAtDegradedPermissions) {
   ASSERT_THAT(dirfd = open(dir.path().c_str(), O_DIRECTORY, 0),
               SyscallSucceeds());
 
-  const DisableSave ds;  // Permissions are dropped.
   EXPECT_THAT(fchmod(dirfd, 0), SyscallSucceeds());
 
   std::string basename = std::string(Basename(file.path()));
@@ -311,7 +310,6 @@ TEST(SymlinkTest, ReadlinkAtDegradedPermissions) {
   EXPECT_THAT(dirfd = open(dir.path().c_str(), O_DIRECTORY, 0),
               SyscallSucceeds());
 
-  const DisableSave ds;  // Permissions are dropped.
   EXPECT_THAT(fchmod(dirfd, 0), SyscallSucceeds());
 
   char buf[1024];

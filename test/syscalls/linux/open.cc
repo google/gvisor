@@ -430,6 +430,8 @@ TEST_F(OpenTest, Null) {
 // undefined, Linux truncates the file on opening read only if we have write
 // permission, so we will too.
 TEST_F(OpenTest, CanTruncateReadOnly) {
+  // Drop capabilities that allow us to override file permissions.
+  AutoCapability cap(CAP_DAC_OVERRIDE, false);
   const FileDescriptor fd1 =
       ASSERT_NO_ERRNO_AND_VALUE(Open(test_file_name_, O_RDONLY | O_TRUNC));
 
@@ -439,13 +441,12 @@ TEST_F(OpenTest, CanTruncateReadOnly) {
   EXPECT_THAT(write(fd1.get(), "x", 1), SyscallFailsWithErrno(EBADF));
 }
 
-// If we don't have read permission on the file, opening with
-// O_TRUNC should fail.
+// If we don't have write permission but have read permission, opening O_RDONLY
+// and O_TRUNC should fail.
 TEST_F(OpenTest, CanTruncateReadOnlyNoWritePermission) {
   // Drop capabilities that allow us to override file permissions.
   AutoCapability cap(CAP_DAC_OVERRIDE, false);
 
-  const DisableSave ds;  // Permissions are dropped.
   ASSERT_THAT(chmod(test_file_name_.c_str(), S_IRUSR | S_IRGRP),
               SyscallSucceeds());
 
@@ -463,7 +464,8 @@ TEST_F(OpenTest, CanTruncateReadOnlyNoWritePermission) {
 // If we don't have read permission but have write permission, opening O_WRONLY
 // and O_TRUNC should succeed.
 TEST_F(OpenTest, CanTruncateWriteOnlyNoReadPermission) {
-  const DisableSave ds;  // Permissions are dropped.
+  // Drop capabilities that allow us to override file permissions.
+  AutoCapability cap(CAP_DAC_OVERRIDE, false);
 
   EXPECT_THAT(fchmod(test_file_fd_.get(), S_IWUSR | S_IWGRP),
               SyscallSucceeds());
@@ -485,7 +487,6 @@ TEST_F(OpenTest, CanTruncateWriteOnlyNoReadPermission) {
 TEST_F(OpenTest, CanTruncateWithStrangePermissions) {
   AutoCapability cap1(CAP_DAC_OVERRIDE, false);
   AutoCapability cap2(CAP_DAC_READ_SEARCH, false);
-  const DisableSave ds;  // Permissions are dropped.
   std::string path = NewTempAbsPath();
   // Create a file without user permissions.
   EXPECT_NO_ERRNO(Open(path, O_CREAT | O_TRUNC | O_WRONLY, 055));
@@ -518,7 +519,6 @@ TEST_F(OpenTest, OpenWithStrangeFlags) {
 TEST_F(OpenTest, OpenWithOpath) {
   AutoCapability cap1(CAP_DAC_OVERRIDE, false);
   AutoCapability cap2(CAP_DAC_READ_SEARCH, false);
-  const DisableSave ds;  // Permissions are dropped.
   std::string path = NewTempAbsPath();
 
   // Create a file without user permissions.

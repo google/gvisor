@@ -63,7 +63,6 @@ TEST(ChmodTest, FchmodFileSucceeds) {
   ASSERT_THAT(fd = open(file.path().c_str(), O_RDWR), SyscallSucceeds());
 
   {
-    const DisableSave ds;  // File permissions are reduced.
     ASSERT_THAT(fchmod(fd, 0444), SyscallSucceeds());
     EXPECT_THAT(close(fd), SyscallSucceeds());
   }
@@ -82,7 +81,6 @@ TEST(ChmodTest, FchmodDirSucceeds) {
               SyscallSucceeds());
 
   {
-    const DisableSave ds;  // File permissions are reduced.
     ASSERT_THAT(fchmod(fd, 0), SyscallSucceeds());
     EXPECT_THAT(close(fd), SyscallSucceeds());
   }
@@ -221,7 +219,6 @@ TEST(ChmodTest, ChmodDowngradeWritability) {
   int fd;
   ASSERT_THAT(fd = open(file.path().c_str(), O_RDWR), SyscallSucceeds());
 
-  const DisableSave ds;  // Permissions are dropped.
   ASSERT_THAT(chmod(file.path().c_str(), 0444), SyscallSucceeds());
   EXPECT_THAT(write(fd, "hello", 5), SyscallSucceedsWithValue(5));
 
@@ -248,7 +245,6 @@ TEST(ChmodTest, FchmodDowngradeWritability) {
   ASSERT_THAT(fd = open(file.path().c_str(), O_RDWR | O_CREAT, 0666),
               SyscallSucceeds());
 
-  const DisableSave ds;  // Permissions are dropped.
   ASSERT_THAT(fchmod(fd, 0444), SyscallSucceeds());
   EXPECT_THAT(write(fd, "hello", 5), SyscallSucceedsWithValue(5));
 
@@ -266,7 +262,6 @@ TEST(ChmodTest, FchmodFileToNoPermissionsSucceeds) {
   ASSERT_THAT(fd = open(file.path().c_str(), O_RDWR), SyscallSucceeds());
 
   {
-    const DisableSave ds;  // Permissions are dropped.
     ASSERT_THAT(fchmod(fd, 0), SyscallSucceeds());
     EXPECT_THAT(close(fd), SyscallSucceeds());
   }
