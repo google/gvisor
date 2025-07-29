@@ -385,15 +385,15 @@ const (
 	NV0080_CTRL_CMD_NVJPG_GET_CAPS_V2 = 0x801f02
 )
 
+// From src/common/sdk/nvidia/inc/ctrl/ctrl00da.h:
+const (
+	NV_SEMAPHORE_SURFACE_CTRL_CMD_BIND_CHANNEL = 0xda0002
+)
+
 // From src/common/sdk/nvidia/inc/ctrl/ctrl00de.h
 const (
 	NV00DE_CTRL_CMD_REQUEST_DATA_POLL = 0xde0001
 )
-
-// +marshal
-type NV00DE_CTRL_REQUEST_DATA_POLL_PARAMS struct {
-	PolledDataMask uint64
-}
 
 // From src/common/sdk/nvidia/inc/ctrl/ctrl00f8.h:
 const (
@@ -585,6 +585,11 @@ const (
 // From src/common/sdk/nvidia/inc/ctrl/ctrl2080/ctrl2080thermal.h:
 const (
 	NV2080_CTRL_CMD_THERMAL_SYSTEM_EXECUTE_V2 = 0x20800513
+)
+
+// From src/common/sdk/nvidia/inc/ctrl/ctrl2080/ctrl2080unix.h:
+const (
+	NV2080_CTRL_CMD_OS_UNIX_VIDMEM_PERSISTENCE_STATUS = 0x20803d07
 )
 
 // From src/common/sdk/nvidia/inc/ctrl/ctrl503c.h:

@@ -193,18 +193,20 @@ func (fd *FileDescription) DecRef(ctx context.Context) {
 			fd.impl.UnlockPOSIX(ctx, fd, lock.LockRange{0, lock.LockEOF})
 		}
 
-		// Release implementation resources.
-		fd.impl.Release(ctx)
-		if fd.writable {
-			fd.vd.mount.EndWrite()
-		}
-		fd.vd.DecRef(ctx)
+		// Clean up O_ASYNC state.
 		fd.flagsMu.Lock()
 		if fd.statusFlags.RacyLoad()&linux.O_ASYNC != 0 && fd.asyncHandler != nil {
 			fd.impl.UnregisterFileAsyncHandler(fd)
 		}
 		fd.asyncHandler = nil
 		fd.flagsMu.Unlock()
+
+		// Release implementation resources.
+		fd.impl.Release(ctx)
+		if fd.writable {
+			fd.vd.mount.EndWrite()
+		}
+		fd.vd.DecRef(ctx)
 	})
 }
 

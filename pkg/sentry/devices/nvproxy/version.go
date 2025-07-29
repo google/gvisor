@@ -240,6 +240,7 @@ func Init() {
 					nvgpu.NV0080_CTRL_CMD_BSP_GET_CAPS_V2:                                  ctrlHandler(rmControlSimple, nvconf.CapGraphics|nvconf.CapVideo),
 					nvgpu.NV0080_CTRL_CMD_NVJPG_GET_CAPS_V2:                                ctrlHandler(rmControlSimple, nvconf.CapVideo),
 					nvgpu.NV0080_CTRL_CMD_FIFO_GET_ENGINE_CONTEXT_PROPERTIES:               ctrlHandler(rmControlSimple, nvconf.CapGraphics),
+					nvgpu.NV_SEMAPHORE_SURFACE_CTRL_CMD_BIND_CHANNEL:                       ctrlHandler(rmControlSimple, nvconf.CapGraphics),
 					nvgpu.NV00F8_CTRL_CMD_ATTACH_MEM:                                       ctrlHandler(rmControlSimple, compUtil),
 					nvgpu.NV00FD_CTRL_CMD_GET_INFO:                                         ctrlHandler(rmControlSimple, compUtil),
 					nvgpu.NV00FD_CTRL_CMD_ATTACH_MEM:                                       ctrlHandler(rmControlSimple, compUtil),
@@ -292,6 +293,7 @@ func Init() {
 					nvgpu.NV2080_CTRL_CMD_GR_GET_TPC_MASK:                                  ctrlHandler(rmControlSimple, compUtil),
 					nvgpu.NV2080_CTRL_CMD_GR_GET_SM_ISSUE_RATE_MODIFIER:                    ctrlHandler(rmControlSimple, compUtil),
 					nvgpu.NV2080_CTRL_CMD_GRMGR_GET_GR_FS_INFO:                             ctrlHandler(rmControlSimple, compUtil),
+					nvgpu.NV2080_CTRL_CMD_OS_UNIX_VIDMEM_PERSISTENCE_STATUS:                ctrlHandler(rmControlSimple, nvconf.CapGraphics),
 					nvgpu.NV2080_CTRL_CMD_GSP_GET_FEATURES:                                 ctrlHandler(rmControlSimple, compUtil),
 					nvgpu.NV2080_CTRL_CMD_MC_GET_ARCH_INFO:                                 ctrlHandler(rmControlSimple, compUtil),
 					nvgpu.NV2080_CTRL_CMD_MC_SERVICE_INTERRUPTS:                            ctrlHandler(rmControlSimple, compUtil),
@@ -361,9 +363,11 @@ func Init() {
 					nvgpu.NV01_EVENT_OS_EVENT:        allocHandler(rmAllocEventOSEvent, compUtil),
 					nvgpu.NV01_MEMORY_VIRTUAL:        allocHandler(rmAllocMemoryVirtual, nvconf.CapGraphics|nvconf.CapVideo),
 					nvgpu.NV01_DEVICE_0:              allocHandler(rmAllocSimple[nvgpu.NV0080_ALLOC_PARAMETERS], compUtil),
+					nvgpu.NV_SEMAPHORE_SURFACE:       allocHandler(rmAllocSimple[nvgpu.NV_SEMAPHORE_SURFACE_ALLOC_PARAMETERS], nvconf.CapGraphics),
 					nvgpu.RM_USER_SHARED_DATA:        allocHandler(rmAllocSimple[nvgpu.NV00DE_ALLOC_PARAMETERS], compUtil),
 					nvgpu.NV_MEMORY_FABRIC:           allocHandler(rmAllocSimple[nvgpu.NV00F8_ALLOCATION_PARAMETERS], compUtil),
 					nvgpu.NV_MEMORY_MULTICAST_FABRIC: allocHandler(rmAllocSimple[nvgpu.NV00FD_ALLOCATION_PARAMETERS], compUtil),
+					nvgpu.NV_MEMORY_MAPPER:           allocHandler(rmAllocSimple[nvgpu.NV_MEMORY_MAPPER_ALLOCATION_PARAMS], nvconf.CapGraphics),
 					nvgpu.NV20_SUBDEVICE_0:           allocHandler(rmAllocSimple[nvgpu.NV2080_ALLOC_PARAMETERS], compUtil),
 					nvgpu.NV2081_BINAPI:              allocHandler(rmAllocSimple[nvgpu.NV2081_ALLOC_PARAMETERS], compUtil),
 					nvgpu.NV50_MEMORY_VIRTUAL:        allocHandler(rmAllocSimple[nvgpu.NV_MEMORY_ALLOCATION_PARAMS], compUtil),
@@ -501,6 +505,7 @@ func Init() {
 							nvgpu.NV0080_CTRL_CMD_BSP_GET_CAPS_V2:                                  simpleDriverStruct("NV0080_CTRL_BSP_GET_CAPS_PARAMS_V2"),
 							nvgpu.NV0080_CTRL_CMD_NVJPG_GET_CAPS_V2:                                simpleDriverStruct("NV0080_CTRL_NVJPG_GET_CAPS_V2_PARAMS"),
 							nvgpu.NV0080_CTRL_CMD_FIFO_GET_ENGINE_CONTEXT_PROPERTIES:               simpleDriverStruct("NV0080_CTRL_FIFO_GET_ENGINE_CONTEXT_PROPERTIES_PARAMS"),
+							nvgpu.NV_SEMAPHORE_SURFACE_CTRL_CMD_BIND_CHANNEL:                       simpleDriverStruct("NV_SEMAPHORE_SURFACE_CTRL_BIND_CHANNEL_PARAMS"),
 							nvgpu.NV00F8_CTRL_CMD_ATTACH_MEM:                                       simpleDriverStruct("NV00F8_CTRL_ATTACH_MEM_PARAMS"),
 							nvgpu.NV00FD_CTRL_CMD_GET_INFO:                                         simpleDriverStruct("NV00FD_CTRL_GET_INFO_PARAMS"),
 							nvgpu.NV00FD_CTRL_CMD_ATTACH_MEM:                                       simpleDriverStruct("NV00FD_CTRL_ATTACH_MEM_PARAMS"),
@@ -553,6 +558,7 @@ func Init() {
 							nvgpu.NV2080_CTRL_CMD_GR_GET_TPC_MASK:                                  simpleDriverStruct("NV2080_CTRL_GR_GET_TPC_MASK_PARAMS"),
 							nvgpu.NV2080_CTRL_CMD_GR_GET_SM_ISSUE_RATE_MODIFIER:                    simpleDriverStruct("NV2080_CTRL_GR_GET_SM_ISSUE_RATE_MODIFIER_PARAMS"),
 							nvgpu.NV2080_CTRL_CMD_GRMGR_GET_GR_FS_INFO:                             simpleDriverStruct("NV2080_CTRL_GRMGR_GET_GR_FS_INFO_PARAMS"),
+							nvgpu.NV2080_CTRL_CMD_OS_UNIX_VIDMEM_PERSISTENCE_STATUS:                simpleDriverStruct("NV2080_CTRL_OS_UNIX_VIDMEM_PERSISTENCE_STATUS_PARAMS"),
 							nvgpu.NV2080_CTRL_CMD_GSP_GET_FEATURES:                                 simpleDriverStruct("NV2080_CTRL_GSP_GET_FEATURES_PARAMS"),
 							nvgpu.NV2080_CTRL_CMD_MC_GET_ARCH_INFO:                                 simpleDriverStruct("NV2080_CTRL_MC_GET_ARCH_INFO_PARAMS"),
 							nvgpu.NV2080_CTRL_CMD_MC_SERVICE_INTERRUPTS:                            simpleDriverStruct("NV2080_CTRL_MC_SERVICE_INTERRUPTS_PARAMS"),
@@ -622,9 +628,11 @@ func Init() {
 							nvgpu.NV01_EVENT_OS_EVENT:        driverStructs(nvgpu.NV0005_ALLOC_PARAMETERS{}),
 							nvgpu.NV01_MEMORY_VIRTUAL:        driverStructs(nvgpu.NV_MEMORY_VIRTUAL_ALLOCATION_PARAMS{}),
 							nvgpu.NV01_DEVICE_0:              driverStructs(nvgpu.NV0080_ALLOC_PARAMETERS{}),
+							nvgpu.NV_SEMAPHORE_SURFACE:       driverStructs(nvgpu.NV_SEMAPHORE_SURFACE_ALLOC_PARAMETERS{}),
 							nvgpu.RM_USER_SHARED_DATA:        driverStructs(nvgpu.NV00DE_ALLOC_PARAMETERS{}),
 							nvgpu.NV_MEMORY_FABRIC:           driverStructs(nvgpu.NV00F8_ALLOCATION_PARAMETERS{}),
 							nvgpu.NV_MEMORY_MULTICAST_FABRIC: driverStructs(nvgpu.NV00FD_ALLOCATION_PARAMETERS{}),
+							nvgpu.NV_MEMORY_MAPPER:           driverStructs(nvgpu.NV_MEMORY_MAPPER_ALLOCATION_PARAMS{}),
 							nvgpu.NV20_SUBDEVICE_0:           driverStructs(nvgpu.NV2080_ALLOC_PARAMETERS{}),
 							nvgpu.NV2081_BINAPI:              driverStructs(nvgpu.NV2081_ALLOC_PARAMETERS{}),
 							nvgpu.NV50_MEMORY_VIRTUAL:        driverStructs(nvgpu.NV_MEMORY_ALLOCATION_PARAMS{}),
@@ -706,7 +714,7 @@ func Init() {
 				structs := prevStructs()
 				structs.controlStructs[nvgpu.NV0000_CTRL_CMD_OS_UNIX_GET_EXPORT_OBJECT_INFO] = driverStructWithName(nvgpu.NV0000_CTRL_OS_UNIX_GET_EXPORT_OBJECT_INFO_PARAMS_V545{}, "NV0000_CTRL_OS_UNIX_GET_EXPORT_OBJECT_INFO_PARAMS")
 				structs.controlStructs[nvgpu.NV0000_CTRL_CMD_GPU_GET_ACTIVE_DEVICE_IDS] = simpleDriverStruct("NV0000_CTRL_GPU_GET_ACTIVE_DEVICE_IDS_PARAMS")
-				structs.controlStructs[nvgpu.NV00DE_CTRL_CMD_REQUEST_DATA_POLL] = driverStructs(nvgpu.NV00DE_CTRL_REQUEST_DATA_POLL_PARAMS{})
+				structs.controlStructs[nvgpu.NV00DE_CTRL_CMD_REQUEST_DATA_POLL] = simpleDriverStruct("NV00DE_CTRL_REQUEST_DATA_POLL_PARAMS")
 				structs.allocationStructs[nvgpu.RM_USER_SHARED_DATA] = driverStructWithName(nvgpu.NV00DE_ALLOC_PARAMETERS_V545{}, "NV00DE_ALLOC_PARAMETERS")
 				structs.allocationStructs[nvgpu.NV_MEMORY_MULTICAST_FABRIC] = driverStructWithName(nvgpu.NV00FD_ALLOCATION_PARAMETERS_V545{}, "NV00FD_ALLOCATION_PARAMETERS")
 				structs.allocationStructs[nvgpu.NV01_MEMORY_SYSTEM] = driverStructWithName(nvgpu.NV_MEMORY_ALLOCATION_PARAMS_V545{}, "NV_MEMORY_ALLOCATION_PARAMS")
@@ -731,6 +739,7 @@ func Init() {
 			abi.uvmIoctl[nvgpu.UVM_SET_PREFERRED_LOCATION] = uvmHandler(uvmIoctlSimple[nvgpu.UVM_SET_PREFERRED_LOCATION_PARAMS_V550], compUtil)
 			abi.uvmIoctl[nvgpu.UVM_MIGRATE] = uvmHandler(uvmIoctlSimple[nvgpu.UVM_MIGRATE_PARAMS_V550], compUtil)
 			abi.allocationClass[nvgpu.NVENC_SW_SESSION] = allocHandler(rmAllocSimple[nvgpu.NVA0BC_ALLOC_PARAMETERS], nvconf.CapVideo)
+			abi.allocationClass[nvgpu.NV_MEMORY_MAPPER] = allocHandler(rmAllocSimple[nvgpu.NV_MEMORY_MAPPER_ALLOCATION_PARAMS_V550], nvconf.CapVideo)
 
 			prevStructs := abi.getStructs
 			abi.getStructs = func() *driverABIStructs {
@@ -745,6 +754,7 @@ func Init() {
 				structs.uvmStructs[nvgpu.UVM_SET_PREFERRED_LOCATION] = driverStructWithName(nvgpu.UVM_SET_PREFERRED_LOCATION_PARAMS_V550{}, "UVM_SET_PREFERRED_LOCATION_PARAMS")
 				structs.uvmStructs[nvgpu.UVM_MIGRATE] = driverStructWithName(nvgpu.UVM_MIGRATE_PARAMS_V550{}, "UVM_MIGRATE_PARAMS")
 				structs.allocationStructs[nvgpu.NVENC_SW_SESSION] = driverStructs(nvgpu.NVA0BC_ALLOC_PARAMETERS{})
+				structs.allocationStructs[nvgpu.NV_MEMORY_MAPPER] = driverStructWithName(nvgpu.NV_MEMORY_MAPPER_ALLOCATION_PARAMS_V550{}, "NV_MEMORY_MAPPER_ALLOCATION_PARAMS")
 				return structs
 			}
 
@@ -796,12 +806,13 @@ func Init() {
 		// 555.42.02 is an intermediate unqualified version.
 		v555_42_02 := func() *driverABI {
 			abi := v550_90_07()
-			// NVC36F_CTRL_GET_CLASS_ENGINEID was deleted in 555.42.02:
-			// https://github.com/NVIDIA/open-gpu-kernel-modules/commit/5a1c474040e1c3ed20760267510cc9d9332898f1
+			abi.allocationClass[nvgpu.NV_MEMORY_MAPPER] = allocHandler(rmAllocSimple[nvgpu.NV_MEMORY_MAPPER_ALLOCATION_PARAMS_V555], nvconf.CapVideo)
+			// NVC36F_CTRL_GET_CLASS_ENGINEID was deleted in 555.42.02.
 			delete(abi.controlCmd, nvgpu.NVC36F_CTRL_GET_CLASS_ENGINEID)
 			prevStructs := abi.getStructs
 			abi.getStructs = func() *driverABIStructs {
 				structs := prevStructs()
+				structs.allocationStructs[nvgpu.NV_MEMORY_MAPPER] = driverStructWithName(nvgpu.NV_MEMORY_MAPPER_ALLOCATION_PARAMS_V555{}, "NV_MEMORY_MAPPER_ALLOCATION_PARAMS")
 				delete(structs.controlStructs, nvgpu.NVC36F_CTRL_GET_CLASS_ENGINEID)
 				return structs
 			}
