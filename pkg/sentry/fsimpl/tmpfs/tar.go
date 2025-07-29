@@ -23,6 +23,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
@@ -55,6 +56,9 @@ func (d *dentry) writeToTar(ctx context.Context, tw *tar.Writer, baseDir string,
 	header, err := d.createTarHeader(path, inoToPath)
 	if err != nil {
 		return fmt.Errorf("failed to create tar header for %q: %w", path, err)
+	}
+	if header == nil {
+		return nil
 	}
 
 	if err := tw.WriteHeader(header); err != nil {
@@ -116,6 +120,10 @@ func (d *dentry) createTarHeader(path string, inoToPath map[uint64]string) (*tar
 		} else {
 			header.Typeflag = tar.TypeChar
 		}
+	case *socketFile:
+		// This is consistent with the behavior of tar(1).
+		log.Warningf("Skipping socket file %q while generating tar archive", path)
+		return nil, nil
 	default:
 		return nil, fmt.Errorf("unsupported file type for %q", path)
 	}
