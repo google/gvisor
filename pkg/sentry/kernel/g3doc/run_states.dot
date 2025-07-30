@@ -55,9 +55,20 @@ digraph {
   SyscallInvoke -> Exit;
 
   // execve
-  SyscallInvoke -> SyscallAfterExecStop;
+  SyscallInvoke -> SyscallAfterPtraceLock; // This is to execve what SyscallAfterExecveLock is to ptrace.
+  SyscallAfterPtraceLock -> SyscallAfterExecStop;
+  SyscallAfterPtraceLock -> SyscallExit;
   SyscallAfterExecStop -> SyscallExit;
   SyscallAfterExecStop -> App; // fatal signal pending
+
+  // ptrace (only for PTRACE_ATTACH and PTRACE_SEIZE)
+  // For correct Task creds computation, execve and ptrace_attach|seize must be
+  // serialized. To mutually exclude each other in a S/R-safe manner, execve and
+  // ptrace_attach|seize respectively languish in stops till they can reach
+  // the SyscallAfterPtraceLock and SyscallAfterExecveLock run states respectively.
+  SyscallInvoke -> SyscallAfterExecveLock; // This is to ptrace what SyscallAfterPtraceLock is to execve.
+  SyscallAfterExecveLock -> SyscallExit;
+  SyscallAfterExecveLock -> App;
 
   // vfork
   SyscallInvoke -> SyscallAfterVforkStop;

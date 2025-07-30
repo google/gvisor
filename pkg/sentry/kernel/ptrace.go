@@ -1002,7 +1002,59 @@ func (t *Task) ptraceSetOptionsLocked(opts uintptr) error {
 	return nil
 }
 
-// Ptrace implements the ptrace system call.
+// PtraceAttach implements PTRACE_ATTACH and PTRACE_SEIZE.
+func (t *Task) PtraceAttach(req int64, pid ThreadID, addr, data hostarch.Addr) (*SyscallControl, error) {
+	target := t.tg.pidns.TaskWithID(pid)
+	if target == nil {
+		return nil, linuxerr.ESRCH
+	}
+
+	// Serialize with execve(2) to ensure correct creds computation in execve(2),
+	// see Task.shouldStopPrivGainDueToPtracer().
+	t.ptraceExecveMutexStartLock(target.tg)
+
+	r := runSyscallAfterExecveLock{
+		req:    req,
+		target: target,
+		addr:   addr,
+		data:   data,
+	}
+	return &SyscallControl{next: &r, ignoreReturn: false}, nil
+}
+
+// The runSyscallAfterExecveLock state continues PTRACE_ATTACH and PTRACE_SEIZE after
+// the lock that serializes them with execve has been acquired.
+//
+// +stateify savable
+type runSyscallAfterExecveLock struct {
+	req    int64
+	target *Task
+	addr   hostarch.Addr
+	data   hostarch.Addr
+}
+
+func (r *runSyscallAfterExecveLock) execute(t *Task) taskRunState {
+	if t.killed() {
+		// We can't be racily handed the mutex after being killed, so this racy load is safe:
+		if t.ptraceExecveMutexOwner != nil {
+			t.ptraceExecveMutexUnlock()
+		}
+		return (*runInterrupt)(nil)
+	}
+
+	defer t.ptraceExecveMutexUnlock()
+	seize := r.req == linux.PTRACE_SEIZE
+	if seize && r.addr != 0 {
+		return t.doSyscallError(linuxerr.EIO)
+	}
+	err := t.ptraceAttach(r.target, seize, uintptr(r.data))
+	if err != nil {
+		return t.doSyscallError(err)
+	}
+	return (*runSyscallExit)(nil)
+}
+
+// Ptrace implements ptrace(2) excluding PTRACE_ATTACH and PTRACE_SEIZE.
 func (t *Task) Ptrace(req int64, pid ThreadID, addr, data hostarch.Addr) error {
 	// PTRACE_TRACEME ignores all other arguments.
 	if req == linux.PTRACE_TRACEME {
@@ -1013,16 +1065,6 @@ func (t *Task) Ptrace(req int64, pid ThreadID, addr, data hostarch.Addr) error {
 	target := t.tg.pidns.TaskWithID(pid)
 	if target == nil {
 		return linuxerr.ESRCH
-	}
-
-	// PTRACE_ATTACH and PTRACE_SEIZE do not require that target is not already
-	// a tracee.
-	if req == linux.PTRACE_ATTACH || req == linux.PTRACE_SEIZE {
-		seize := req == linux.PTRACE_SEIZE
-		if seize && addr != 0 {
-			return linuxerr.EIO
-		}
-		return t.ptraceAttach(target, seize, uintptr(data))
 	}
 	// PTRACE_KILL and PTRACE_INTERRUPT require that the target is a tracee,
 	// but does not require that it is ptrace-stopped.
