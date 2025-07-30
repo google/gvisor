@@ -38,6 +38,7 @@ go_library(
         "//pkg/sentry/platform/platforms",
         "//pkg/sentry/socket/hostinet",
         "//pkg/sentry/socket/plugin",
+        "//pkg/sync",
         "//pkg/tcpip/link/fdbased",
         "@org_golang_x_sync//errgroup:go_default_library",
         "@org_golang_x_sys//unix:go_default_library",
