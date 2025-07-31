@@ -1966,6 +1966,89 @@ TEST(NetlinkNetfilterTest, DeleteBaseChainByHandle) {
                                            delete_chain_request_buffer.size()));
 }
 
+TEST(NetlinkNetfilterTest, ErrRetrieveTableWithOwnerMismatchUnboundSocket) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+  const char test_table_name[] = "test_table";
+  uint32_t table_flags = NFT_TABLE_F_DORMANT | NFT_TABLE_F_OWNER;
+  uint8_t expected_udata[3] = {0x01, 0x02, 0x03};
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
+  FileDescriptor fd_2 = ASSERT_NO_ERRNO_AND_VALUE(
+      Socket(AF_NETLINK, SOCK_RAW, NETLINK_NETFILTER));
+
+  std::vector<char> add_request_buffer =
+      NlReq("newtable req ack inet")
+          .Seq(kSeq)
+          .StrAttr(NFTA_TABLE_NAME, test_table_name)
+          .U32Attr(NFTA_TABLE_FLAGS, &table_flags)
+          .RawAttr(NFTA_TABLE_USERDATA, expected_udata, sizeof(expected_udata))
+          .Build();
+
+  std::vector<char> get_request_buffer =
+      NlReq("gettable req ack inet")
+          .Seq(kSeq + 1)
+          .StrAttr(NFTA_TABLE_NAME, test_table_name)
+          .Build();
+
+  ASSERT_NO_ERRNO(NetlinkRequestAckOrError(fd, kSeq, add_request_buffer.data(),
+                                           add_request_buffer.size()));
+
+  ASSERT_THAT(
+      NetlinkRequestAckOrError(fd_2, kSeq + 1, get_request_buffer.data(),
+                               get_request_buffer.size()),
+      PosixErrorIs(EPERM, _));
+}
+
+TEST(NetlinkNetfilterTest, AddTableWithUnboundSocket) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+  const char test_table_name[] = "test_table";
+  uint32_t table_flags = NFT_TABLE_F_DORMANT | NFT_TABLE_F_OWNER;
+  uint32_t expected_port_id = 0;
+  uint8_t expected_udata[3] = {0x01, 0x02, 0x03};
+  FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(
+      Socket(AF_NETLINK, SOCK_RAW, NETLINK_NETFILTER));
+  bool correct_response = false;
+
+  std::vector<char> add_request_buffer =
+      NlReq("newtable req ack inet")
+          .Seq(kSeq)
+          .StrAttr(NFTA_TABLE_NAME, test_table_name)
+          .U32Attr(NFTA_TABLE_FLAGS, &table_flags)
+          .RawAttr(NFTA_TABLE_USERDATA, expected_udata, sizeof(expected_udata))
+          .Build();
+
+  std::vector<char> get_request_buffer =
+      NlReq("gettable req inet")
+          .Seq(kSeq + 1)
+          .StrAttr(NFTA_TABLE_NAME, test_table_name)
+          .Build();
+
+  ASSERT_NO_ERRNO(NetlinkRequestAckOrError(fd, kSeq, add_request_buffer.data(),
+                                           add_request_buffer.size()));
+
+  ASSERT_NO_ERRNO(NetlinkRequestResponse(
+      fd, get_request_buffer.data(), get_request_buffer.size(),
+      [&](const struct nlmsghdr* hdr) {
+        const struct nfattr* owner_attr =
+            FindNfAttr(hdr, nullptr, NFTA_TABLE_OWNER);
+        EXPECT_NE(owner_attr, nullptr);
+        uint32_t owner = *(reinterpret_cast<uint32_t*>(NFA_DATA(owner_attr)));
+        EXPECT_NE(owner, 0);
+        expected_port_id = owner;
+        correct_response = true;
+      },
+      false));
+  ASSERT_TRUE(correct_response);
+
+  // Ensure that the port ID assigned to the table is not 0 and matches the
+  // port id retrieved from getsockname() syscall.
+  uint32_t assigned_port_id =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkPortID(fd.get()));
+  ASSERT_NE(expected_port_id, 0);
+  ASSERT_NE(assigned_port_id, 0);
+  ASSERT_EQ(expected_port_id, assigned_port_id);
+}
+
 }  // namespace
 
 }  // namespace testing

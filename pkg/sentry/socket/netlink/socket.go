@@ -796,6 +796,13 @@ func (s *Socket) sendMsg(ctx context.Context, src usermem.IOSequence, to []byte,
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	// An unbound socket has a port ID defaulted to 0. If it has not yet been bound,
+	// bind it to assign it a unique port ID.
+	// From net/netlink/af_netlink.c:netlink_sendmsg
+	if !s.bound {
+		s.bindPort(kernel.TaskFromContext(ctx), 0)
+	}
+
 	// For simplicity, and consistency with Linux, we copy in the entire
 	// message up front.
 	if src.NumBytes() > int64(s.sendBufferSize) {
