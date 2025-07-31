@@ -138,6 +138,15 @@ const (
 	NFT_MSG_MAX
 )
 
+// NfTableListAttributes represents the netfilter attributes for lists of data.
+// These correspond to values in include/uapi/linux/netfilter/nf_tables.h.
+const (
+	NFTA_LIST_UNSPEC uint16 = iota
+	NFTA_LIST_ELEM
+	__NFTA_LIST_MAX
+	NFTA_LIST_MAX = __NFTA_LIST_MAX - 1
+)
+
 // NfTableHookAttributes represents the netfilter hook attributes.
 // These correspond to values in include/uapi/linux/netfilter/nf_tables.h.
 const (
@@ -203,6 +212,82 @@ const (
 	NFTA_CHAIN_USERDATA
 	__NFTA_CHAIN_MAX
 	NFTA_CHAIN_MAX = __NFTA_CHAIN_MAX - 1
+)
+
+// NfTableRuleAttributes represents the netfilter rule attributes.
+// These correspond to values in include/uapi/linux/netfilter/nf_tables.h.
+const (
+	NFTA_RULE_UNSPEC uint16 = iota
+	NFTA_RULE_TABLE
+	NFTA_RULE_CHAIN
+	NFTA_RULE_HANDLE
+	NFTA_RULE_EXPRESSIONS
+	NFTA_RULE_COMPAT
+	NFTA_RULE_POSITION
+	NFTA_RULE_USERDATA
+	NFTA_RULE_PAD
+	NFTA_RULE_ID
+	NFTA_RULE_POSITION_ID
+	NFTA_RULE_CHAIN_ID
+	__NFTA_RULE_MAX
+	NFTA_RULE_MAX = __NFTA_RULE_MAX - 1
+)
+
+// NfTableDataTypes represents the netfilter data types.
+// These correspond to values in include/uapi/linux/netfilter/nf_tables.h.
+const (
+	NFT_DATA_VALUE   = iota
+	NFT_DATA_VERDICT = 0xffffff00
+)
+
+// NfTableDataReservedMask represents the netfilter data reserved mask for internally used types.
+// These correspond to values in include/uapi/linux/netfilter/nf_tables.h.
+const (
+	NFT_DATA_RESERVED_MASK = 0xffffff00
+)
+
+// NfTableDataAttributes represents the netfilter data attributes.
+// These correspond to values in include/uapi/linux/netfilter/nf_tables.h.
+const (
+	NFTA_DATA_UNSPEC uint16 = iota
+	NFTA_DATA_VALUE
+	NFTA_DATA_VERDICT
+	__NFTA_DATA_MAX
+	NFTA_DATA_MAX = __NFTA_DATA_MAX - 1
+)
+
+// NFT_DATA_VALUE_MAXLEN is the maximum length of a netfilter data value.
+const NFT_DATA_VALUE_MAXLEN = 64
+
+// NfTableVerdictAttributes represents the netfilter verdict attributes.
+// These correspond to values in include/uapi/linux/netfilter/nf_tables.h.
+const (
+	NFTA_VERDICT_UNSPEC uint16 = iota
+	NFTA_VERDICT_CODE
+	NFTA_VERDICT_CHAIN
+	NFTA_VERDICT_CHAIN_ID
+	__NFTA_VERDICT_MAX
+	NFTA_VERDICT_MAX = __NFTA_VERDICT_MAX - 1
+)
+
+// NfTableExprAttributes represents the netfilter expression attributes.
+// These correspond to values in include/uapi/linux/netfilter/nf_tables.h.
+const (
+	NFTA_EXPR_UNSPEC uint16 = iota
+	NFTA_EXPR_NAME
+	NFTA_EXPR_DATA
+	__NFTA_EXPR_MAX
+	NFTA_EXPR_MAX = __NFTA_EXPR_MAX - 1
+)
+
+// NfTableImmediateAttributes represents the netfilter immediate attributes.
+// These correspond to values in include/uapi/linux/netfilter/nf_tables.h.
+const (
+	NFTA_IMMEDIATE_UNSPEC uint16 = iota
+	NFTA_IMMEDIATE_DREG
+	NFTA_IMMEDIATE_DATA
+	__NFTA_IMMEDIATE_MAX
+	NFTA_IMMEDIATE_MAX = __NFTA_IMMEDIATE_MAX - 1
 )
 
 // Nf table relational operators.

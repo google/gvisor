@@ -736,9 +736,9 @@ func dumpAckMessage(hdr linux.NetlinkMessageHeader, ms *nlmsg.MessageSet) {
 	})
 }
 
-// processMessages handles each message in buf, passing it to the protocol
+// ProcessMessages handles each message in buf, passing it to the protocol
 // handler for final handling.
-func (s *Socket) processMessages(ctx context.Context, buf []byte) *syserr.Error {
+func (s *Socket) ProcessMessages(ctx context.Context, buf []byte) *syserr.Error {
 	for len(buf) > 0 {
 		msg, rest, ok := nlmsg.ParseMessage(buf)
 		if !ok {
@@ -822,7 +822,9 @@ func (s *Socket) sendMsg(ctx context.Context, src usermem.IOSequence, to []byte,
 		return 0, syserr.FromError(err)
 	}
 
-	if err := s.processMessages(ctx, buf); err != nil {
+	// Because we ensure the kernel is the only valid destination,
+	// we can start processing here.
+	if err := s.protocol.Receive(ctx, s, buf); err != nil {
 		return 0, err
 	}
 

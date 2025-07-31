@@ -49,6 +49,12 @@ func (p *Protocol) CanSend() bool {
 	return false
 }
 
+// Receive implements netlink.Protocol.Receive.
+// From lib/kobject_uevent.c:uevent_net_rcv.
+func (p *Protocol) Receive(ctx context.Context, s *netlink.Socket, buf []byte) *syserr.Error {
+	return s.ProcessMessages(ctx, buf)
+}
+
 // ProcessMessage implements netlink.Protocol.ProcessMessage.
 func (p *Protocol) ProcessMessage(ctx context.Context, s *netlink.Socket, msg *nlmsg.Message, ms *nlmsg.MessageSet) *syserr.Error {
 	// Silently ignore all messages.
