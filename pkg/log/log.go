@@ -396,4 +396,6 @@ func CopyStandardLogTo(l Level) error {
 func init() {
 	// Store the initial value for the log.
 	log.Store(&BasicLogger{Level: Info, Emitter: GoogleEmitter{&Writer{Next: os.Stderr}}})
+
+	warnedSet = make(map[string]struct{})
 }
