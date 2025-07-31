@@ -122,6 +122,13 @@ type NetlinkAttrHeader struct {
 	Type   uint16
 }
 
+// Netlink attribute flags, from uapi/linux/netlink.h.
+const (
+	NLA_F_NESTED        uint16 = 1 << 15
+	NLA_F_NET_BYTEORDER        = 1 << 14
+	NLA_TYPE_MASK              = ^(NLA_F_NESTED | NLA_F_NET_BYTEORDER)
+)
+
 // NetlinkAttrHeaderSize is the size of NetlinkAttrHeader.
 const NetlinkAttrHeaderSize = 4
 

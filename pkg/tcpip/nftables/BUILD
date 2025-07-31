@@ -39,6 +39,7 @@ go_library(
     deps = [
         "//pkg/abi/linux",
         "//pkg/atomicbitops",
+        "//pkg/log",
         "//pkg/rand",
         "//pkg/sentry/socket/netlink/nlmsg",
         "//pkg/sync",
