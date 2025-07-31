@@ -92,7 +92,7 @@ type specialFileFD struct {
 }
 
 func newSpecialFileFD(h handle, mnt *vfs.Mount, d *dentry, flags uint32) (*specialFileFD, error) {
-	ftype := d.fileType()
+	ftype := d.inode.fileType()
 	seekable := ftype == linux.S_IFREG || ftype == linux.S_IFCHR || ftype == linux.S_IFBLK
 	haveQueue := (ftype == linux.S_IFIFO || ftype == linux.S_IFSOCK || ftype == linux.S_IFCHR) && h.fd >= 0
 	fd := &specialFileFD{
@@ -101,7 +101,7 @@ func newSpecialFileFD(h handle, mnt *vfs.Mount, d *dentry, flags uint32) (*speci
 		seekable:      seekable,
 		haveQueue:     haveQueue,
 	}
-	fd.LockFD.Init(&d.locks)
+	fd.LockFD.Init(&d.inode.locks)
 	if haveQueue {
 		if err := fdnotifier.AddFD(h.fd, &fd.queue); err != nil {
 			return nil, err
@@ -117,10 +117,10 @@ func newSpecialFileFD(h handle, mnt *vfs.Mount, d *dentry, flags uint32) (*speci
 		}
 		return nil, err
 	}
-	d.fs.syncMu.Lock()
-	d.fs.specialFileFDs.PushBack(fd)
-	d.fs.syncMu.Unlock()
-	if fd.vfsfd.IsWritable() && (d.mode.Load()&0111 != 0) {
+	d.inode.fs.syncMu.Lock()
+	d.inode.fs.specialFileFDs.PushBack(fd)
+	d.inode.fs.syncMu.Unlock()
+	if fd.vfsfd.IsWritable() && (d.inode.mode.Load()&0111 != 0) {
 		metric.SuspiciousOperationsMetric.Increment(&metric.SuspiciousOperationsTypeOpenedWriteExecuteFile)
 	}
 	if h.fd >= 0 {
@@ -229,7 +229,7 @@ func (fd *specialFileFD) PRead(ctx context.Context, dst usermem.IOSequence, offs
 		return 0, linuxerr.EOPNOTSUPP
 	}
 
-	if d := fd.dentry(); d.cachedMetadataAuthoritative() {
+	if d := fd.dentry(); d.inode.cachedMetadataAuthoritative() {
 		d.touchAtime(fd.vfsfd.Mount())
 	}
 
@@ -304,20 +304,20 @@ func (fd *specialFileFD) pwrite(ctx context.Context, src usermem.IOSequence, off
 		// If the regular file fd was opened with O_APPEND, make sure the file
 		// size is updated. There is a possible race here if size is modified
 		// externally after metadata cache is updated.
-		if fd.vfsfd.StatusFlags()&linux.O_APPEND != 0 && !d.cachedMetadataAuthoritative() {
-			if err := d.updateMetadata(ctx); err != nil {
+		if fd.vfsfd.StatusFlags()&linux.O_APPEND != 0 && !d.inode.cachedMetadataAuthoritative() {
+			if err := d.inode.updateMetadata(ctx); err != nil {
 				return 0, offset, err
 			}
 		}
 
 		// We need to hold the metadataMu *while* writing to a regular file.
-		d.metadataMu.Lock()
-		defer d.metadataMu.Unlock()
+		d.inode.metadataMu.Lock()
+		defer d.inode.metadataMu.Unlock()
 
 		// Set offset to file size if the regular file was opened with O_APPEND.
 		if fd.vfsfd.StatusFlags()&linux.O_APPEND != 0 {
-			// Holding d.metadataMu is sufficient for reading d.size.
-			offset = int64(d.size.RacyLoad())
+			// Holding d.inode.metadataMu is sufficient for reading d.inode.size.
+			offset = int64(d.inode.size.RacyLoad())
 		}
 		limit, err := vfs.CheckLimit(ctx, offset, src.NumBytes())
 		if err != nil {
@@ -326,7 +326,7 @@ func (fd *specialFileFD) pwrite(ctx context.Context, src usermem.IOSequence, off
 		src = src.TakeFirst64(limit)
 	}
 
-	if d.cachedMetadataAuthoritative() {
+	if d.inode.cachedMetadataAuthoritative() {
 		if fd.isRegularFile {
 			d.touchCMtimeLocked()
 		} else {
@@ -335,7 +335,7 @@ func (fd *specialFileFD) pwrite(ctx context.Context, src usermem.IOSequence, off
 	}
 
 	// handleReadWriter always writes to the remote file. So O_DIRECT is
-	// effectively always set. Invalidate pages in d.mappings that have been
+	// effectively always set. Invalidate pages in d.inode.mappings that have been
 	// written to.
 	pgstart := hostarch.PageRoundDown(uint64(offset))
 	pgend, ok := hostarch.PageRoundUp(uint64(offset + src.NumBytes()))
@@ -343,9 +343,9 @@ func (fd *specialFileFD) pwrite(ctx context.Context, src usermem.IOSequence, off
 		return 0, offset, linuxerr.EINVAL
 	}
 	mr := memmap.MappableRange{pgstart, pgend}
-	d.mapsMu.Lock()
-	d.mappings.Invalidate(mr, memmap.InvalidateOpts{})
-	d.mapsMu.Unlock()
+	d.inode.mapsMu.Lock()
+	d.inode.mappings.Invalidate(mr, memmap.InvalidateOpts{})
+	d.inode.mapsMu.Unlock()
 
 	rw := getHandleReadWriter(ctx, &fd.handle, offset)
 	n, err := src.CopyInTo(ctx, rw)
@@ -369,11 +369,11 @@ func (fd *specialFileFD) pwrite(ctx context.Context, src usermem.IOSequence, off
 	}
 	// Update file size for regular files.
 	if fd.isRegularFile {
-		// d.metadataMu is already locked at this point.
-		if uint64(offset) > d.size.RacyLoad() {
-			d.dataMu.Lock()
-			defer d.dataMu.Unlock()
-			d.size.Store(uint64(offset))
+		// d.inode.metadataMu is already locked at this point.
+		if uint64(offset) > d.inode.size.RacyLoad() {
+			d.inode.dataMu.Lock()
+			defer d.inode.dataMu.Unlock()
+			d.inode.size.Store(uint64(offset))
 		}
 	}
 	return int64(n), offset, err
@@ -444,9 +444,9 @@ func (fd *specialFileFD) ConfigureMMap(ctx context.Context, opts *memmap.MMapOpt
 // AddMapping implements memmap.Mappable.AddMapping.
 func (fd *specialFileFD) AddMapping(ctx context.Context, ms memmap.MappingSpace, ar hostarch.AddrRange, offset uint64, writable bool) error {
 	d := fd.dentry()
-	d.mapsMu.Lock()
-	defer d.mapsMu.Unlock()
-	d.mappings.AddMapping(ms, ar, offset, writable)
+	d.inode.mapsMu.Lock()
+	defer d.inode.mapsMu.Unlock()
+	d.inode.mappings.AddMapping(ms, ar, offset, writable)
 	fd.hostFileMapper.IncRefOn(memmap.MappableRange{offset, offset + uint64(ar.Length())})
 	return nil
 }
@@ -454,9 +454,9 @@ func (fd *specialFileFD) AddMapping(ctx context.Context, ms memmap.MappingSpace,
 // RemoveMapping implements memmap.Mappable.RemoveMapping.
 func (fd *specialFileFD) RemoveMapping(ctx context.Context, ms memmap.MappingSpace, ar hostarch.AddrRange, offset uint64, writable bool) {
 	d := fd.dentry()
-	d.mapsMu.Lock()
-	defer d.mapsMu.Unlock()
-	d.mappings.RemoveMapping(ms, ar, offset, writable)
+	d.inode.mapsMu.Lock()
+	defer d.inode.mapsMu.Unlock()
+	d.inode.mappings.RemoveMapping(ms, ar, offset, writable)
 	fd.hostFileMapper.DecRefOn(memmap.MappableRange{offset, offset + uint64(ar.Length())})
 }
 
@@ -484,9 +484,9 @@ func (fd *specialFileFD) Translate(ctx context.Context, required, optional memma
 // InvalidateUnsavable implements memmap.Mappable.InvalidateUnsavable.
 func (fd *specialFileFD) InvalidateUnsavable(ctx context.Context) error {
 	d := fd.dentry()
-	d.mapsMu.Lock()
-	defer d.mapsMu.Unlock()
-	d.mappings.InvalidateAll(memmap.InvalidateOpts{})
+	d.inode.mapsMu.Lock()
+	defer d.inode.mapsMu.Unlock()
+	d.inode.mappings.InvalidateAll(memmap.InvalidateOpts{})
 	return nil
 }
 
@@ -532,7 +532,7 @@ func (fd *specialFileFD) requireHostFD() {
 
 func (fd *specialFileFD) updateMetadata(ctx context.Context) error {
 	d := fd.dentry()
-	d.metadataMu.Lock()
-	defer d.metadataMu.Unlock()
-	return d.updateMetadataLocked(ctx, fd.handle)
+	d.inode.metadataMu.Lock()
+	defer d.inode.metadataMu.Unlock()
+	return d.inode.updateMetadataLocked(ctx, fd.handle)
 }
