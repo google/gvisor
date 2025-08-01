@@ -15,6 +15,8 @@
 package nftables
 
 import (
+	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/sentry/socket/netlink/nlmsg"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
@@ -25,6 +27,11 @@ type immediate struct {
 	dreg uint8        // Number of the destination register.
 }
 
+// evaluate for immediate sets the data in the destination register.
+func (op immediate) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *Rule) {
+	op.data.storeData(regs, op.dreg)
+}
+
 // newImmediate creates a new immediate operation.
 func newImmediate(dreg uint8, data registerData) (*immediate, *syserr.AnnotatedError) {
 	if err := data.validateRegister(dreg); err != nil {
@@ -33,7 +40,54 @@ func newImmediate(dreg uint8, data registerData) (*immediate, *syserr.AnnotatedE
 	return &immediate{dreg: dreg, data: data}, nil
 }
 
-// evaluate for Immediate sets the data in the destination register.
-func (op immediate) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *Rule) {
-	op.data.storeData(regs, op.dreg)
+// InitImmediate initializes the immediate operation from the expression info.
+func initImmediate(tab *Table, exprInfo ExprInfo) (*immediate, *syserr.AnnotatedError) {
+	// We now have attributes specific to immediate expressions.
+	immDataAttrs, ok := exprInfo.ExprData.Parse()
+	if !ok {
+		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: Failed to parse immediate expression data")
+	}
+
+	regBytes, ok := immDataAttrs[linux.NFTA_IMMEDIATE_DREG]
+	if !ok {
+		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: NFTA_IMMEDIATE_DREG attribute is not found")
+	}
+
+	reg, ok := regBytes.Uint32()
+	if !ok {
+		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: NFTA_IMMEDIATE_DREG attribute is malformed")
+	}
+
+	dataBytes, ok := immDataAttrs[linux.NFTA_IMMEDIATE_DATA]
+	if !ok {
+		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: NFTA_IMMEDIATE_DATA attribute is not found")
+	}
+
+	dregType := immRegToType(reg)
+	regData, err := nftDataInit(tab, dregType, nlmsg.AttrsView(dataBytes))
+	if err != nil {
+		return nil, err
+	}
+
+	// Now find the register to store it in.
+	dreg, err := nftParseReg(reg, dregType, regData)
+	if err != nil {
+		return nil, err
+	}
+
+	switch int32(dreg) {
+	case linux.NFT_JUMP, linux.NFT_GOTO:
+		// TODO - b/421437663: Add support for jump and goto verdicts.
+		return nil, syserr.NewAnnotatedError(syserr.ErrNotSupported, "Nftables: Verdicts with jump or goto codes are not yet supported")
+	}
+	return newImmediate(dreg, regData)
+}
+
+// immRegToType returns the corresponding data type for a given register number.
+func immRegToType(reg uint32) uint32 {
+	if reg == linux.NFT_REG_VERDICT {
+		return linux.NFT_DATA_VERDICT
+	}
+
+	return linux.NFT_DATA_VALUE
 }

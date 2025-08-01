@@ -48,6 +48,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/rand"
+	"gvisor.dev/gvisor/pkg/sentry/socket/netlink/nlmsg"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
@@ -374,6 +375,10 @@ type Chain struct {
 	// chainUse is the number of jump references to this chain.
 	chainUse uint32
 
+	// bound can only be set if the chain has the NFT_CHAIN_BINDING flag is set.
+	// If bound is true, the chain is being jumped to by a specific chain in the same table.
+	bound bool
+
 	// comment is the optional comment for the table.
 	comment string
 }
@@ -667,6 +672,14 @@ type Rule struct {
 	chain  *Chain
 	ops    []operation
 	handle uint64
+	udata  []byte
+}
+
+// ExprInfo represents the information for a single expression nested under
+// NFTA_EXPRESSIONS.
+type ExprInfo struct {
+	ExprName string
+	ExprData nlmsg.AttrsView
 }
 
 // operation represents a single operation in a rule.
@@ -747,7 +760,7 @@ func (rd verdictData) String() string {
 	return VerdictString(rd.data)
 }
 
-// equal compares the verdict data to another RegisterData object.
+// equal compares the verdict data to another registerData object.
 func (rd verdictData) equal(other registerData) bool {
 	if other == nil {
 		return false
@@ -759,7 +772,7 @@ func (rd verdictData) equal(other registerData) bool {
 	return rd.data == otherVD.data
 }
 
-// validateRegister ensures the register is compatible with VerdictData.
+// validateRegister ensures the register is compatible with verdictData.
 func (rd verdictData) validateRegister(reg uint8) *syserr.AnnotatedError {
 	if !isVerdictRegister(reg) {
 		return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("verdict can only be stored in verdict register"))
@@ -782,6 +795,8 @@ type bytesData struct {
 
 // newBytesData creates a registerData for <= 16 bytes of data.
 func newBytesData(bytes []byte) bytesData {
+	// TODO - b/421437663: Return errors instead of panicking.
+	// See net/netfilter/nf_tables_api.c:nft_value_init
 	if len(bytes) == 0 {
 		panic("bytes data cannot be empty")
 	}
@@ -796,7 +811,7 @@ func (rd bytesData) String() string {
 	return fmt.Sprintf("%x", rd.data)
 }
 
-// equal compares the bytes data to another RegisterData object.
+// equal compares the bytes data to another registerData object.
 func (rd bytesData) equal(other registerData) bool {
 	if other == nil {
 		return false
@@ -845,7 +860,7 @@ func (rd bytesData) storeData(regs *registerSet, reg uint8) {
 }
 
 // registerSet represents the set of registers supported by the kernel.
-// Use RegisterData.storeData to set data in the registers.
+// Use registerData.storeData to set data in the registers.
 // Note: Corresponds to nft_regs from include/net/netfilter/nf_tables.h.
 type registerSet struct {
 	verdict stack.NFVerdict         // 16-byte verdict register
@@ -934,4 +949,163 @@ func AFtoNetlinkAF(af uint8) (stack.AddressFamily, *syserr.Error) {
 		return stack.NumAFs, syserr.ErrNotSupported
 	}
 	return naf, nil
+}
+
+// nftDataInit creates a new registerData struct from the passed in data bytes.
+func nftDataInit(tab *Table, regType uint32, dataBytes nlmsg.AttrsView) (registerData, *syserr.AnnotatedError) {
+	dataAttrs, ok := dataBytes.Parse()
+	if !ok {
+		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("Nftables: Failed to parse data bytes for nested expression data"))
+	}
+
+	if valueBytes, ok := dataAttrs[linux.NFTA_DATA_VALUE]; ok {
+		// Represents a value like an ip address or a string.
+		if regType != linux.NFT_DATA_VALUE {
+			return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("Nftables: Attribute NFTA_DATA_VALUE is not supported for register type %d", regType))
+		}
+
+		// TODO - b/421437663: Add stricter validation for value bytes.
+		return newBytesData(valueBytes), nil
+	} else if vBytes, ok := dataAttrs[linux.NFTA_DATA_VERDICT]; ok {
+		// Represents a verdict like NF_DROP or NF_ACCEPT.
+		if regType != linux.NFT_DATA_VERDICT {
+			return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("Nftables: Attribute NFTA_DATA_VERDICT is not supported for register type %d", regType))
+		}
+
+		verdict, err := validateVerdictData(tab, nlmsg.AttrsView(vBytes))
+		if err != nil {
+			return nil, err
+		}
+		return newVerdictData(verdict), nil
+	}
+
+	return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("Nftables: Attributes NFTA_DATA_VALUE or NFTA_DATA_VERDICT not found"))
+}
+
+// nftParseReg parses the register type and returns the register number.
+func nftParseReg(reg uint32, regType uint32, regData registerData) (uint8, *syserr.AnnotatedError) {
+	dreg, err := nftMatchReg(reg)
+	if err != nil {
+		return 0, err
+	}
+
+	return nftValidateRegister(dreg, regType, regData)
+}
+
+// nftMatchReg matches the register type to the corresponding register number.
+func nftMatchReg(reg uint32) (uint32, *syserr.AnnotatedError) {
+	switch reg {
+	case linux.NFT_REG_VERDICT, linux.NFT_REG_1, linux.NFT_REG_2, linux.NFT_REG_3, linux.NFT_REG_4:
+		return (reg * linux.NFT_REG_SIZE) / linux.NFT_REG32_SIZE, nil
+	case linux.NFT_REG32_00, linux.NFT_REG32_01, linux.NFT_REG32_02, linux.NFT_REG32_03,
+		linux.NFT_REG32_04, linux.NFT_REG32_05, linux.NFT_REG32_06, linux.NFT_REG32_07,
+		linux.NFT_REG32_08, linux.NFT_REG32_09, linux.NFT_REG32_10, linux.NFT_REG32_11,
+		linux.NFT_REG32_12, linux.NFT_REG32_13, linux.NFT_REG32_14, linux.NFT_REG32_15:
+
+		return reg + (linux.NFT_REG_SIZE / linux.NFT_REG32_SIZE) - linux.NFT_REG32_00, nil
+	default:
+		return 0, syserr.NewAnnotatedError(syserr.ErrRange, fmt.Sprintf("Nftables: Unsupported register type %d", reg))
+	}
+}
+
+// nftValidateRegister validates the register type and returns the register number.
+func nftValidateRegister(reg uint32, regType uint32, data registerData) (uint8, *syserr.AnnotatedError) {
+	switch reg {
+	case linux.NFT_REG_VERDICT:
+		if regType != linux.NFT_DATA_VERDICT {
+			return 0, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("Nftables: Register type %d is not NFTA_DATA_VERDICT for a register NFT_REG_VERDICT", regType))
+		}
+
+		verdictData, ok := data.(verdictData)
+		if !ok {
+			return 0, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("Nftables: Register data is not a verdict data"))
+		}
+
+		// TODO - b/421437663: Add insertion-time validation of chains for jump and goto verdicts.
+		if int32(verdictData.data.Code) == linux.NFT_GOTO || int32(verdictData.data.Code) == linux.NFT_JUMP {
+			return 0, syserr.NewAnnotatedError(syserr.ErrNotSupported, fmt.Sprintf("Nftables: Verdicts with jump or goto codes are not yet supported"))
+		}
+	default:
+		if regType != linux.NFT_DATA_VALUE {
+			return 0, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("Nftables: Register type %d is not supported for register %d", regType, reg))
+		}
+
+		if reg < (linux.NFT_REG_1 * linux.NFT_REG_SIZE / linux.NFT_REG32_SIZE) {
+			return 0, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("Nftables: Register %d with type %d is less than %d bytes", reg, regType, linux.NFT_REG_1*linux.NFT_REG_SIZE/linux.NFT_REG32_SIZE))
+		}
+
+		// TODO - b/421437663: Add error checking for the length of the expression data, ensuring it
+		// can fit within the specified register.
+	}
+
+	return uint8(reg), nil
+}
+
+// validateVerdictData validates the verdict data bytes and returns the data as a verdict.
+func validateVerdictData(tab *Table, bytes nlmsg.AttrsView) (stack.NFVerdict, *syserr.AnnotatedError) {
+	v := stack.NFVerdict{}
+	verdictAttrs, ok := bytes.Parse()
+	if !ok {
+		return v, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: Failed to parse verdict data")
+	}
+
+	verdictCodeBytes, ok := verdictAttrs[linux.NFTA_VERDICT_CODE]
+	if !ok {
+		return v, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: NFTA_VERDICT_CODE attribute is not found")
+	}
+
+	verdictCode, ok := verdictCodeBytes.Uint32()
+	if !ok {
+		return v, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("Nftables: NFTA_VERDICT_CODE attribute cannot be parsed to a uint32"))
+	}
+
+	switch int32(verdictCode) {
+	case linux.NF_ACCEPT, linux.NF_DROP, linux.NF_QUEUE,
+		linux.NFT_CONTINUE, linux.NFT_BREAK, linux.NFT_RETURN:
+
+	case linux.NFT_JUMP, linux.NFT_GOTO:
+		var chain *Chain
+		var err *syserr.AnnotatedError
+		if chainNameBytes, ok := verdictAttrs[linux.NFTA_VERDICT_CHAIN]; ok {
+			if chain, err = tab.GetChain(chainNameBytes.String()); err != nil {
+				return v, err
+			}
+		} else if _, ok := verdictAttrs[linux.NFTA_VERDICT_CHAIN_ID]; ok {
+			// TODO - b/421437663: Add support for looking up chains via their transaction id.
+			return v, syserr.NewAnnotatedError(syserr.ErrNotSupported, fmt.Sprintf("Nftables: Looking up chains via their id is not supported"))
+		} else {
+			return v, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("Nftables: Attributes for verdict data must contain a chain name or chain id"))
+		}
+
+		if chain.IsBaseChain() {
+			return v, syserr.NewAnnotatedError(syserr.ErrNotSupported, fmt.Sprintf("Nftables: Base chains are not supported as jump targets"))
+		}
+
+		if chain.IsBound() {
+			return v, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("Nftables: Already Bound chains cannot be jump targets"))
+		}
+
+		if chain.GetFlags()&linux.NFT_CHAIN_BINDING != 0 {
+			return v, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("Nftables: Chain binding must be set for chains to be used as jump targets"))
+		}
+
+		if !chain.IncrementChainUse() {
+			return v, syserr.NewAnnotatedError(syserr.ErrTooManyOpenFiles, fmt.Sprintf("Nftables: Chain use exceeds the maximum number of chains that can jump to chain %s", chain.GetName()))
+		}
+
+		v.ChainName = chain.name
+	default:
+		return v, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("Nftables: Unsupported verdict code: %d", verdictCode))
+	}
+
+	// TODO - b/421437663: Potential modify this to take a pointer to the chain it is jumping to.
+	// Would need to ensure that the chain cannot be removed while it is being pointed to (using use field).
+	v.Code = verdictCode
+	return v, nil
+}
+
+// HasAttr returns whether the given attribute key is present in the attribute map.
+func HasAttr(attrName uint16, attrs map[uint16]nlmsg.BytesView) bool {
+	_, ok := attrs[attrName]
+	return ok
 }

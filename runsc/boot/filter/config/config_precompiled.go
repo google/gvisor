@@ -23,6 +23,7 @@ import (
 	"gvisor.dev/gvisor/pkg/seccomp/precompiledseccomp"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
+	"gvisor.dev/gvisor/pkg/sync"
 
 	// Import platforms that we need to precompile filters for.
 	_ "gvisor.dev/gvisor/pkg/sentry/platform/platforms"
@@ -136,6 +137,7 @@ func PrecompiledPrograms() ([]precompiledseccomp.Program, error) {
 		return nil, err
 	}
 	programs := make([]precompiledseccomp.Program, len(opts))
+	var programsMu sync.Mutex
 	var errGroup errgroup.Group
 	for i, opt := range opts {
 		i, opt := i, opt
@@ -165,6 +167,8 @@ func PrecompiledPrograms() ([]precompiledseccomp.Program, error) {
 			if err != nil {
 				return fmt.Errorf("cannot precompile seccomp program for options %v: %w", opt.ConfigKey(), err)
 			}
+			programsMu.Lock()
+			defer programsMu.Unlock()
 			programs[i] = program
 			return nil
 		})

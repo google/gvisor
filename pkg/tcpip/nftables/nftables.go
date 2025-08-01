@@ -16,6 +16,7 @@ package nftables
 
 import (
 	"fmt"
+	"math"
 	"slices"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -564,14 +565,15 @@ func (t *Table) HasUserData() bool {
 }
 
 // SetUserData sets the user data of the table.
-func (t *Table) SetUserData(data []byte) {
+func (t *Table) SetUserData(data []byte) *syserr.AnnotatedError {
 	// User data should only be set once.
 	if t.userData != nil {
-		return
+		return syserr.NewAnnotatedError(syserr.ErrNotSupported, fmt.Sprintf("table %s already has user data", t.name))
 	}
 
 	t.userData = make([]byte, len(data))
 	copy(t.userData, data)
+	return nil
 }
 
 // IsDormant returns whether the table is dormant.
@@ -759,13 +761,14 @@ func (c *Chain) GetUserData() []byte {
 }
 
 // SetUserData sets the user data of the chain.
-func (c *Chain) SetUserData(data []byte) {
+func (c *Chain) SetUserData(data []byte) *syserr.AnnotatedError {
 	// User data should only be set once.
 	if c.userData != nil {
-		return
+		return syserr.NewAnnotatedError(syserr.ErrNotSupported, fmt.Sprintf("chain %s already has user data", c.name))
 	}
 	c.userData = make([]byte, len(data))
 	copy(c.userData, data)
+	return nil
 }
 
 // HasUserData returns whether the chain has user data.
@@ -776,6 +779,21 @@ func (c *Chain) HasUserData() bool {
 // IsBaseChain returns whether the chain is a base chain.
 func (c *Chain) IsBaseChain() bool {
 	return c.baseChainInfo != nil
+}
+
+// IsBound returns true if the chain is bound.
+func (c *Chain) IsBound() bool {
+	return (c.flags&linux.NFT_CHAIN_BINDING != 0) && c.bound
+}
+
+// IncrementChainUse increments the chain use value of the chain.
+func (c *Chain) IncrementChainUse() bool {
+	if c.chainUse == math.MaxUint32 {
+		return false
+	}
+
+	c.chainUse++
+	return true
 }
 
 // GetBaseChainInfo returns the base chain info of the chain.
@@ -840,6 +858,7 @@ func (c *Chain) SetComment(comment string) {
 // - All jump and goto operations have a valid target chain.
 // - Loop checking for jump and goto operations.
 // - TODO(b/345684870): Add more checks as more operations are supported.
+// TODO - b/421437663: Update rules to be in a linked list for faster insertion and deletion.
 func (c *Chain) RegisterRule(rule *Rule, index int) *syserr.AnnotatedError {
 	// Error checks like these are not part of the nf_tables_api.c. Rather they are error
 	// checked here for completeness for unit tests. Netfilter sockets should never attempt to register
@@ -881,6 +900,25 @@ func (c *Chain) RegisterRule(rule *Rule, index int) *syserr.AnnotatedError {
 	return nil
 }
 
+// RegisterBeforeExistingRule registers the new rule before the existing rule.
+func (c *Chain) RegisterBeforeExistingRule(newRule *Rule, oldRule *Rule) *syserr.AnnotatedError {
+	index, err := c.GetRuleIndex(oldRule)
+	if err != nil {
+		return err
+	}
+
+	return c.RegisterRule(newRule, index)
+}
+
+// RegisterAfterExistingRule registers the new rule after the existing rule.
+func (c *Chain) RegisterAfterExistingRule(newRule *Rule, oldRule *Rule) *syserr.AnnotatedError {
+	index, err := c.GetRuleIndex(oldRule)
+	if err != nil {
+		return err
+	}
+	return c.RegisterRule(newRule, index+1)
+}
+
 // UnregisterRuleByIndex removes the rule at the given index from the chain's rule list
 // and unassigns the chain from the rule then returns the unregistered rule.
 // Valid indices are -1 (pop) and [0, len-1]. Errors on invalid index.
@@ -916,9 +954,19 @@ func (c *Chain) GetRule(index int) (*Rule, *syserr.AnnotatedError) {
 func (c *Chain) GetRuleByHandle(handle uint64) (*Rule, *syserr.AnnotatedError) {
 	rule, exists := c.handleToRule[handle]
 	if !exists {
-		return nil, syserr.NewAnnotatedError(syserr.ErrNoFileOrDir, fmt.Sprintf("rule %d not found for chain %s", handle, c.name))
+		return nil, syserr.NewAnnotatedError(syserr.ErrNoFileOrDir, fmt.Sprintf("rule with handle %d not found for chain %s", handle, c.name))
 	}
 	return rule, nil
+}
+
+// GetRuleIndex returns the index of the rule in the chain's rule list.
+func (c *Chain) GetRuleIndex(r *Rule) (int, *syserr.AnnotatedError) {
+	for i, rule := range c.rules {
+		if rule == r {
+			return i, nil
+		}
+	}
+	return -1, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("index of rule with handle %d not found for chain %s", r.handle, c.name))
 }
 
 // RuleCount returns the number of rules in the chain.
@@ -1012,6 +1060,44 @@ func (r *Rule) addOperation(op operation) *syserr.AnnotatedError {
 	}
 	r.ops = append(r.ops, op)
 	return nil
+}
+
+// AddOpFromExprInfo adds an operation to the rule given the expression information.
+func (r *Rule) AddOpFromExprInfo(tab *Table, exprInfo ExprInfo) *syserr.AnnotatedError {
+	// Centralized here so that operations can do their own validation when being created.
+	// TODO - b/421437663: Support parsing expression types other than NFT_IMMEDIATE
+	var op operation
+	var err *syserr.AnnotatedError
+	switch exprInfo.ExprName {
+	case "immediate":
+		if op, err = initImmediate(tab, exprInfo); err != nil {
+			return err
+		}
+	default:
+		return syserr.NewAnnotatedError(syserr.ErrNoFileOrDir, fmt.Sprintf("Nftables: Unknown expression type not found: %s", exprInfo.ExprName))
+	}
+
+	return r.addOperation(op)
+}
+
+// GetHandle returns the handle of the rule.
+func (r *Rule) GetHandle() uint64 {
+	return r.handle
+}
+
+// SetUserData sets the user data of the rule.
+func (r *Rule) SetUserData(data []byte) *syserr.AnnotatedError {
+	if r.udata != nil {
+		return syserr.NewAnnotatedError(syserr.ErrNotSupported, "rule already has user data")
+	}
+	r.udata = make([]byte, len(data))
+	copy(r.udata, data)
+	return nil
+}
+
+// GetUserData returns the user data of the rule.
+func (r *Rule) GetUserData() []byte {
+	return r.udata
 }
 
 //
