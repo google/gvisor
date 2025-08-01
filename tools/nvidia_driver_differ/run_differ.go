@@ -86,7 +86,7 @@ func Main() error {
 
 	// Parse through nvproxy to find the list of structs used
 	nvproxy.Init()
-	structNames, ok := nvproxy.SupportedStructNames(baseVersion)
+	structDefs, ok := nvproxy.SupportedStructTypes(baseVersion)
 	if !ok {
 		return fmt.Errorf("failed to get struct names for version %v", baseVersion)
 	}
@@ -103,7 +103,7 @@ func Main() error {
 	}()
 
 	// Write list of structs to file
-	if err := runner.CreateStructsFile(structNames); err != nil {
+	if err := runner.CreateStructsFile(structDefs); err != nil {
 		return fmt.Errorf("failed to create temporary structs list: %w", err)
 	}
 
@@ -177,12 +177,12 @@ func Main() error {
 	}
 
 	// Check if any structs from the list of struct names were missing.
-	missingStructs := []nvproxy.DriverStructName{}
-	for _, name := range structNames {
-		_, isRecord := recordsFound[name]
-		_, isAlias := aliasesFound[name]
+	var missingStructs []nvproxy.DriverStructName
+	for _, structDef := range structDefs {
+		_, isRecord := recordsFound[structDef.Name]
+		_, isAlias := aliasesFound[structDef.Name]
 		if !isRecord && !isAlias {
-			missingStructs = append(missingStructs, name)
+			missingStructs = append(missingStructs, structDef.Name)
 		}
 	}
 	if len(missingStructs) > 0 {

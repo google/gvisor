@@ -1008,39 +1008,6 @@ func SupportedIoctls(version nvconf.DriverVersion) (frontendIoctls map[uint32]st
 	return
 }
 
-// SupportedStructNames returns the list of struct names supported by the given driver version.
-// It merges the frontend, uvm, control, and allocation names into one slice.
-func SupportedStructNames(version nvconf.DriverVersion) ([]DriverStructName, bool) {
-	namesCons, ok := abis[version]
-	if !ok {
-		return nil, false
-	}
-	abi := namesCons.cons()
-	names := abi.getStructs()
-
-	var allNames []DriverStructName
-	addNames := func(names []DriverStruct) {
-		for _, name := range names {
-			allNames = append(allNames, name.Name)
-		}
-	}
-
-	for _, names := range names.frontendStructs {
-		addNames(names)
-	}
-	for _, names := range names.uvmStructs {
-		addNames(names)
-	}
-	for _, names := range names.controlStructs {
-		addNames(names)
-	}
-	for _, names := range names.allocationStructs {
-		addNames(names)
-	}
-
-	return allNames, true
-}
-
 // SupportedStructTypes returns the list of struct types supported by the given driver version.
 // It merges the frontend, uvm, control, and allocation names into one slice.
 func SupportedStructTypes(version nvconf.DriverVersion) ([]DriverStruct, bool) {

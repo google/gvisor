@@ -59,16 +59,16 @@ func createParserRunner(t *testing.T) (*os.File, *parser.Runner) {
 	return parserFile, runner
 }
 
-func getDriverDefs(t *testing.T, runner *parser.Runner, version nvconf.DriverVersion) ([]nvproxy.DriverStructName, *parser.OutputJSON) {
+func getDriverDefs(t *testing.T, runner *parser.Runner, version nvconf.DriverVersion) ([]nvproxy.DriverStruct, *parser.OutputJSON) {
 	t.Helper()
 
-	structNames, ok := nvproxy.SupportedStructNames(version)
+	structs, ok := nvproxy.SupportedStructTypes(version)
 	if !ok {
 		t.Fatalf("failed to get struct names for driver %q", version.String())
 	}
 
 	// Create structs file for parser
-	if err := runner.CreateStructsFile(structNames); err != nil {
+	if err := runner.CreateStructsFile(structs); err != nil {
 		t.Fatalf("failed to create temporary structs list: %v", err)
 	}
 
@@ -78,33 +78,7 @@ func getDriverDefs(t *testing.T, runner *parser.Runner, version nvconf.DriverVer
 		t.Fatalf("failed to run driver_ast_parser: %v", err)
 	}
 
-	return structNames, defs
-}
-
-// TestSupportedStructNames tests that all the structs listed in nvproxy are found in the driver
-// source code.
-func TestSupportedStructNames(t *testing.T) {
-	nvproxy.Init()
-
-	// Run the parser on all supported driver versions
-	nvproxy.ForEachSupportDriver(func(version nvconf.DriverVersion, _ nvproxy.Checksums) {
-		t.Run(version.String(), func(t *testing.T) {
-			t.Parallel()
-			f, runner := createParserRunner(t)
-			defer f.Close()
-
-			structNames, defs := getDriverDefs(t, runner, version)
-
-			// Check that every struct is found in the parser output.
-			for _, name := range structNames {
-				_, isRecord := defs.Records[string(name)]
-				_, isAlias := defs.Aliases[string(name)]
-				if !isRecord && !isAlias {
-					t.Errorf("struct %q not found in parser output for version %q", name, version.String())
-				}
-			}
-		})
-	})
+	return structs, defs
 }
 
 // TestStructDefinitionParity tests that the struct definitions in nvproxy are the same as the
@@ -118,12 +92,7 @@ func TestStructDefinitionParity(t *testing.T) {
 			f, runner := createParserRunner(t)
 			defer f.Close()
 
-			_, defs := getDriverDefs(t, runner, version)
-
-			nvproxyDefs, ok := nvproxy.SupportedStructTypes(version)
-			if !ok {
-				t.Fatalf("failed to get struct instances for driver %q", version.String())
-			}
+			nvproxyDefs, defs := getDriverDefs(t, runner, version)
 
 			for _, nvproxyDef := range nvproxyDefs {
 				// Check if the nvproxy definition has disallowed types.
@@ -325,7 +294,7 @@ func compareStructs(t *testing.T, nvproxyStruct reflect.Type, driverStructName s
 	// We loop through both definitions with two pointers. We only increment the driver pointer
 	// when we find a field in the nvproxy struct with the same offset, at which point we compare
 	// the types.
-	var driverFieldNum = 0
+	driverFieldNum := 0
 	for _, nvproxyField := range nvproxyFields {
 		// We get this case if there are padding fields at the very end of the nvproxy struct.
 		// Since we check the size above, we can just ignore these fields.

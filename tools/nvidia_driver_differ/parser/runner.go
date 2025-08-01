@@ -58,9 +58,12 @@ func (r *Runner) Cleanup() error {
 }
 
 // CreateStructsFile saves a list of structs for the runner to parse.
-func (r *Runner) CreateStructsFile(structs []nvproxy.DriverStructName) error {
+func (r *Runner) CreateStructsFile(structs []nvproxy.DriverStruct) error {
 	inputJSON := InputJSON{
-		Structs: structs,
+		Structs: make([]string, 0, len(structs)),
+	}
+	for _, structDef := range structs {
+		inputJSON.Structs = append(inputJSON.Structs, structDef.Name)
 	}
 
 	f, err := os.CreateTemp(r.dir, "structs_list_*.json")
