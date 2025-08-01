@@ -13,6 +13,7 @@ go_library(
         "json_k8s.go",
         "log.go",
         "rate_limited.go",
+        "warn_on.go",
     ],
     marshal = False,
     stateify = False,
@@ -32,6 +33,7 @@ go_test(
     srcs = [
         "json_test.go",
         "log_test.go",
+        "warn_on_test.go",
     ],
     library = ":log",
 )

@@ -37,6 +37,10 @@ func (w *testWriter) Write(bytes []byte) (int, error) {
 	return len(bytes), nil
 }
 
+func (w *testWriter) clear() {
+	w.lines = nil
+}
+
 func TestDropMessages(t *testing.T) {
 	tw := &testWriter{}
 	w := Writer{Next: tw}
