@@ -8,12 +8,12 @@ package(
 go_library(
     name = "log",
     srcs = [
+        "bug.go",
         "glog.go",
         "json.go",
         "json_k8s.go",
         "log.go",
         "rate_limited.go",
-        "warn_on.go",
     ],
     marshal = False,
     stateify = False,
@@ -31,9 +31,9 @@ go_test(
     name = "log_test",
     size = "small",
     srcs = [
+        "bug_test.go",
         "json_test.go",
         "log_test.go",
-        "warn_on_test.go",
     ],
     library = ":log",
 )

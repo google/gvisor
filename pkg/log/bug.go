@@ -22,13 +22,22 @@ import (
 	"gvisor.dev/gvisor/pkg/sync"
 )
 
+// This file contains helper functions analogous to the Linux kernel's WARN*
+// macros. Should be used for non-fatal errors that should be treated as bugs
+// none the less.
+
 const (
 	warnFmtStr         = "WARNING: BUG on %s:%d\n"
 	warnUnknownLineStr = "WARNING: BUG on unknown line\n"
 	catchAllMagic      = "runtime.Caller failed"
 )
 
-func warn(caller int, msg string) {
+//go:noinline
+func reportBugErr(caller int, err error) {
+	reportBug(caller+1, err.Error(), nil)
+}
+
+func reportBug(caller int, msg string, vars []any) {
 	var b strings.Builder
 	if _, file, line, ok := runtime.Caller(caller); ok {
 		b.WriteString(fmt.Sprintf(warnFmtStr, file, line))
@@ -37,7 +46,11 @@ func warn(caller int, msg string) {
 	}
 	b.WriteByte('\n')
 	if len(msg) > 0 {
-		b.WriteString(msg)
+		if len(vars) > 0 {
+			b.WriteString(fmt.Sprintf(msg, vars...))
+		} else {
+			b.WriteString(msg)
+		}
 		b.WriteByte('\n')
 	}
 	TracebackAll(b.String())
@@ -50,7 +63,12 @@ var (
 	warnedSet map[string]struct{}
 )
 
-func warnOnce(caller int, msg string) {
+//go:noinline
+func reportBugErrOnce(caller int, err error) {
+	reportBugOnce(caller+1, err.Error(), nil)
+}
+
+func reportBugOnce(caller int, msg string, vars []any) {
 	var b strings.Builder
 	if _, file, line, ok := runtime.Caller(caller); ok {
 		key := fmt.Sprintf("%s:%d", file, line)
@@ -62,7 +80,11 @@ func warnOnce(caller int, msg string) {
 			b.WriteString(fmt.Sprintf(warnFmtStr, file, line))
 			b.WriteByte('\n')
 			if len(msg) > 0 {
-				b.WriteString(msg)
+				if len(vars) > 0 {
+					b.WriteString(fmt.Sprintf(msg, vars...))
+				} else {
+					b.WriteString(msg)
+				}
 				b.WriteByte('\n')
 			}
 
@@ -79,7 +101,11 @@ func warnOnce(caller int, msg string) {
 			b.WriteString(warnUnknownLineStr)
 			b.WriteByte('\n')
 			if len(msg) > 0 {
-				b.WriteString(msg)
+				if len(vars) > 0 {
+					b.WriteString(fmt.Sprintf(msg, vars...))
+				} else {
+					b.WriteString(msg)
+				}
 				b.WriteByte('\n')
 			}
 
@@ -89,94 +115,86 @@ func warnOnce(caller int, msg string) {
 	}
 }
 
-// WARN serves the same purpose as the Linux kernel's WARN macro. Use it
-// for reporting abnormal bugs encountered at runtime that should be fixed.
-//
-// Will print out the full Go stacktrace at time of invocation.
-//
-// Do not use this for bad user input. Errors reported by this function should
-// not be fatal.
-func WARN(cond bool, s string, a ...any) {
-	if !cond {
-		return
-	}
-	msg := fmt.Sprintf(s, a...)
-	warn(2, msg)
-}
-
-// WARN_ON serves the same purpose as the Linux kernel's WARN_ON macro. Use it
-// for reporting abnormal bugs encountered at runtime that should be fixed.
-//
-// Will print out the full Go stacktrace at time of invocation.
-//
-// Do not use this for bad user input. Errors reported by this function should
-// not be fatal.
-func WARN_ON(cond bool) {
-	if !cond {
-		return
-	}
-	warn(2, "")
-}
-
-// WARN_ERR is a more Go-friendly version of the typical Linux WARN* macros. If
-// the error isn't nil, it will report the error prefixed with the standard WARN
-// string. Use it for reporting abnormal bugs encountered at runtime that
-// should be fixed.
-//
-// Will print out the full Go stacktrace at time of invocation.
-//
-// Do not use this for bad user input. Errors reported by this function should
-// not be fatal.
-func WARN_ERR(err error) {
-	if err == nil {
-		return
-	}
-	warn(2, err.Error())
-}
-
-// WARN_ONCE serves the same purpose as the Linux kernel's WARN_ONCE macro.
+// BugTraceback will report a bug with a traceback if the error isn't nil.
 // Use it for reporting abnormal bugs encountered at runtime that should be
 // fixed.
 //
-// Will print out the full Go stacktrace at time of invocation.
-//
 // Do not use this for bad user input. Errors reported by this function should
 // not be fatal.
-func WARN_ONCE(cond bool, s string, a ...any) {
-	if !cond {
-		return
+//
+//go:inline
+func BugTraceback(err error) {
+	if err != nil {
+		reportBugErr(2, err)
 	}
-	msg := fmt.Sprintf(s, a...)
-	warnOnce(2, msg)
 }
 
-// WARN_ON_ONCE serves the same purpose as the Linux kernel's WARN_ON_ONCE macro.
+// BugTracebackf will report a bug with a traceback if (cond == true).
 // Use it for reporting abnormal bugs encountered at runtime that should be
 // fixed.
 //
-// Will print out the full Go stacktrace at time of invocation.
-//
 // Do not use this for bad user input. Errors reported by this function should
 // not be fatal.
-func WARN_ON_ONCE(cond bool) {
-	if !cond {
-		return
+//
+//go:inline
+func BugTracebackf(cond bool, s string, a ...any) {
+	if cond {
+		reportBug(2, s, a)
 	}
-	warnOnce(2, "")
 }
 
-// WARN_ERR_ONCE is a more Go-friendly version of the typical Linux WARN* macros.
-// If the error isn't nil, it will report the error prefixed with the standard
-// WARN string. Use it for reporting abnormal bugs encountered at runtime that
-// should be fixed.
-//
-// Will print out the full Go stacktrace at time of invocation.
+// BugTracebackOn will report a bug with a traceback if (cond == true).
+// Use it for reporting abnormal bugs encountered at runtime that should be
+// fixed.
 //
 // Do not use this for bad user input. Errors reported by this function should
 // not be fatal.
-func WARN_ERR_ONCE(err error) {
-	if err == nil {
-		return
+//
+//go:inline
+func BugTracebackOn(cond bool) {
+	if cond {
+		reportBug(2, "", nil)
 	}
-	warnOnce(2, err.Error())
+}
+
+// BugTracebackOnce will report a bug with a traceback if the error isn't nil.
+// Use it for reporting abnormal bugs encountered at runtime that should be
+// fixed. If called multiple time from same invocation, will only print once.
+//
+// Do not use this for bad user input. Errors reported by this function should
+// not be fatal.
+//
+//go:inline
+func BugTracebackOnce(err error) {
+	if err != nil {
+		reportBugErrOnce(2, err)
+	}
+}
+
+// BugTracebackfOnce will report a bug with a traceback if (cond == true).
+// Use it for reporting abnormal bugs encountered at runtime that should be
+// fixed. If called multiple time from same invocation, will only print once.
+//
+// Do not use this for bad user input. Errors reported by this function should
+// not be fatal.
+//
+//go:inline
+func BugTracebackfOnce(cond bool, s string, a ...any) {
+	if cond {
+		reportBugOnce(2, s, a)
+	}
+}
+
+// BugTracebackOnceOn will report a bug with a traceback if (cond == true).
+// Use it for reporting abnormal bugs encountered at runtime that should be
+// fixed. If called multiple time from same invocation, will only print once.
+//
+// Do not use this for bad user input. Errors reported by this function should
+// not be fatal.
+//
+//go:inline
+func BugTracebackOnceOn(cond bool) {
+	if cond {
+		reportBugOnce(2, "", nil)
+	}
 }
