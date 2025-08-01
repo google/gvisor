@@ -65,8 +65,8 @@ func (p *Protocol) CanSend() bool {
 func (p *Protocol) ProcessMessage(ctx context.Context, s *netlink.Socket, msg *nlmsg.Message, ms *nlmsg.MessageSet) *syserr.Error {
 	hdr := msg.Header()
 
-	// Netlink message payloads must be of at least the size of the genmsg. Return early if it is not,
-	// from linux/net/netfilter/nfnetlink.c.
+	// Netlink message payloads must be of at least the size of the genmsg.
+	// Return early if it is not, from linux/net/netfilter/nfnetlink.c.
 	if netLinkMessagePayloadSize(&hdr) < linux.SizeOfNetfilterGenMsg {
 		log.Debugf("Netlink message payload is too small: %d < %d", netLinkMessagePayloadSize(&hdr), linux.SizeOfNetfilterGenMsg)
 		return nil
@@ -92,14 +92,13 @@ func (p *Protocol) ProcessMessage(ctx context.Context, s *netlink.Socket, msg *n
 
 	// Nftables functions error check the address family value.
 	family, err := nftables.AFtoNetlinkAF(nfGenMsg.Family)
-	// TODO: b/421437663 - Match the message type and call the appropriate Nftables function.
 	switch msgType {
 	case linux.NFT_MSG_NEWTABLE:
 		nft.Mu.Lock()
 		defer nft.Mu.Unlock()
-		// We only check the error value in the case of NFT_MSG_NEWTABLE as linux returns
-		// an EOPNOTSUPP error only in that case. Otherwise the other operations will return
-		// errors specific to their function.
+		// We only check the error value in the case of NFT_MSG_NEWTABLE as linux
+		// returns an EOPNOTSUPP error only in that case. Otherwise the other
+		// operations will return errors specific to their function.
 		if err != nil {
 			log.Debugf("Nftables: Unsupported address family: %d", int(nfGenMsg.Family))
 			return err
@@ -150,6 +149,14 @@ func (p *Protocol) ProcessMessage(ctx context.Context, s *netlink.Socket, msg *n
 			return err.GetError()
 		}
 		return nil
+	case linux.NFT_MSG_NEWRULE:
+		nft.Mu.Lock()
+		defer nft.Mu.Unlock()
+		if err := p.newRule(nft, attrs, family, hdr.Flags, ms); err != nil {
+			log.Debugf("Nftables new rule error: %s", err)
+			return err.GetError()
+		}
+		return nil
 	default:
 		log.Debugf("Unsupported message type: %d", msgType)
 		return syserr.ErrNotSupported
@@ -170,8 +177,9 @@ func (p *Protocol) newTable(nft *nftables.NFTables, attrs map[uint16]nlmsg.Bytes
 		return err
 	}
 
-	// If a table already exists, only update its dormant flags if NLM_F_EXCL and NLM_F_REPLACE
-	// are not set. From net/netfilter/nf_tables_api.c:nf_tables_newtable:nf_tables_updtable
+	// If a table already exists, only update its dormant flags if NLM_F_EXCL
+	// and NLM_F_REPLACE are not set. From
+	// net/netfilter/nf_tables_api.c:nf_tables_newtable:nf_tables_updtable
 	if tab != nil {
 		if flags&linux.NLM_F_EXCL != 0 {
 			return syserr.NewAnnotatedError(syserr.ErrExists, fmt.Sprintf("Nftables: Table with name: %s already exists", tab.GetName()))
@@ -189,7 +197,8 @@ func (p *Protocol) newTable(nft *nftables.NFTables, attrs map[uint16]nlmsg.Bytes
 	if uflags, ok := attrs[linux.NFTA_TABLE_FLAGS]; ok {
 		attrFlags, _ = uflags.Uint32()
 		// Flags sent through the NFTA_TABLE_FLAGS attribute are of type uint32
-		// but should only have user flags set. This check needs to be done before table creation.
+		// but should only have user flags set. This check needs to be done
+		// before table creation.
 		if attrFlags & ^uint32(linux.NFT_TABLE_F_MASK) != 0 {
 			return syserr.NewAnnotatedError(syserr.ErrNotSupported, fmt.Sprintf("Nftables: Table flags set are not supported"))
 		}
@@ -201,7 +210,9 @@ func (p *Protocol) newTable(nft *nftables.NFTables, attrs map[uint16]nlmsg.Bytes
 	}
 
 	if udata, ok := attrs[linux.NFTA_TABLE_USERDATA]; ok {
-		tab.SetUserData(udata)
+		if err := tab.SetUserData(udata); err != nil {
+			return err
+		}
 	}
 
 	// Flags should only be assigned after we have successfully created the table.
@@ -229,9 +240,9 @@ func (p *Protocol) updateTable(nft *nftables.NFTables, tab *nftables.Table, attr
 		}
 	}
 
-	// When updating the table, if the table has an owner but the owner flag isn't set,
-	// the table should not be updated.
-	// From net/netfilter/nf_tables_api.c:nf_tables_updtable.
+	// When updating the table, if the table has an owner but the owner flag
+	// isn't set, the table should not be updated. From
+	// net/netfilter/nf_tables_api.c:nf_tables_updtable.
 	if tab.HasOwner() && (attrFlags&uint32(linux.NFT_TABLE_F_OWNER)) == 0 {
 		return syserr.NewAnnotatedError(syserr.ErrNotSupported, fmt.Sprintf("Nftables: Table with name: %s already has an owner but NFT_TABLE_F_OWNER was not set when updating the table", tab.GetName()))
 	}
@@ -300,7 +311,7 @@ func (p *Protocol) getTable(nft *nftables.NFTables, attrs map[uint16]nlmsg.Bytes
 
 // deleteTable deletes a table for the given family.
 func (p *Protocol) deleteTable(nft *nftables.NFTables, attrs map[uint16]nlmsg.BytesView, family stack.AddressFamily, hdr linux.NetlinkMessageHeader, msgType linux.NfTableMsgType, ms *nlmsg.MessageSet) *syserr.AnnotatedError {
-	if family == stack.Unspec || (!hasAttr(linux.NFTA_TABLE_NAME, attrs) && !hasAttr(linux.NFTA_TABLE_HANDLE, attrs)) {
+	if family == stack.Unspec || (!nftables.HasAttr(linux.NFTA_TABLE_NAME, attrs) && !nftables.HasAttr(linux.NFTA_TABLE_HANDLE, attrs)) {
 		nft.Flush(attrs, uint32(ms.PortID))
 		return nil
 	}
@@ -353,7 +364,7 @@ func (p *Protocol) newChain(nft *nftables.NFTables, attrs map[uint16]nlmsg.Bytes
 
 	chain, err := getChain(tab, attrs)
 	// NFTA_CHAIN_ID must exist if name and handle attributes are not set.
-	if chain == nil && err == nil && !hasAttr(linux.NFTA_CHAIN_ID, attrs) {
+	if chain == nil && err == nil && !nftables.HasAttr(linux.NFTA_CHAIN_ID, attrs) {
 		return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("Nftables: Chain handle or name attribute is malformed or not found"))
 	}
 
@@ -369,7 +380,7 @@ func (p *Protocol) newChain(nft *nftables.NFTables, attrs map[uint16]nlmsg.Bytes
 			return syserr.NewAnnotatedError(syserr.ErrNotSupported, fmt.Sprintf("Nftables: Chain policy attribute is not supported for non-base chains"))
 		}
 
-		if chain == nil && !hasAttr(linux.NFTA_CHAIN_HOOK, attrs) {
+		if chain == nil && !nftables.HasAttr(linux.NFTA_CHAIN_HOOK, attrs) {
 			return syserr.NewAnnotatedError(syserr.ErrNotSupported, fmt.Sprintf("Nftables: Chain policy attribute is not supported for new chains without a hook"))
 		}
 		policyData, ok := policyBytes.Uint32()
@@ -483,7 +494,8 @@ func (p *Protocol) addChain(attrs map[uint16]nlmsg.BytesView, tab *nftables.Tabl
 		name = fmt.Sprintf("__chain%d", chainCounter.Add(1))
 	}
 
-	// Add the chain to the table, appending, by priority, to the stack of base chains for the hook.
+	// Add the chain to the table, appending, by priority, to the stack of base
+	// chains for the hook.
 	chain, err := tab.AddChain(name, bcInfo, "", true)
 	if err != nil {
 		return err
@@ -492,7 +504,9 @@ func (p *Protocol) addChain(attrs map[uint16]nlmsg.BytesView, tab *nftables.Tabl
 	chain.SetFlags(uint8(chainFlags))
 
 	if udata, ok := attrs[linux.NFTA_CHAIN_USERDATA]; ok {
-		chain.SetUserData(udata)
+		if err := chain.SetUserData(udata); err != nil {
+			return err
+		}
 	}
 
 	if chain.IsBaseChain() {
@@ -502,7 +516,8 @@ func (p *Protocol) addChain(attrs map[uint16]nlmsg.BytesView, tab *nftables.Tabl
 	return nil
 }
 
-// chainParseHook parses the hook attributes and returns a complete BaseChainInfo.
+// chainParseHook parses the hook attributes and returns a complete
+// BaseChainInfo.
 func (p *Protocol) chainParseHook(chain *nftables.Chain, family stack.AddressFamily, hdata nlmsg.AttrsView) (*nftables.BaseChainInfo, *syserr.AnnotatedError) {
 	hookAttrs, ok := hdata.Parse()
 	var hookInfo nftables.HookInfo
@@ -515,7 +530,7 @@ func (p *Protocol) chainParseHook(chain *nftables.Chain, family stack.AddressFam
 		return nil, syserr.NewAnnotatedError(syserr.ErrNotSupported, fmt.Sprintf("Nftables: Updating hook attributes are not supported for existing chains"))
 	}
 
-	if !hasAttr(linux.NFTA_HOOK_HOOKNUM, hookAttrs) || !hasAttr(linux.NFTA_HOOK_PRIORITY, hookAttrs) {
+	if !nftables.HasAttr(linux.NFTA_HOOK_HOOKNUM, hookAttrs) || !nftables.HasAttr(linux.NFTA_HOOK_PRIORITY, hookAttrs) {
 		return nil, syserr.NewAnnotatedError(syserr.ErrNoFileOrDir, fmt.Sprintf("Nftables: Hook attributes HOOK_HOOKNUM and/or HOOK_PRIORITY are not found"))
 	}
 
@@ -553,7 +568,8 @@ func (p *Protocol) chainParseHook(chain *nftables.Chain, family stack.AddressFam
 		}
 	}
 
-	// Check whether the chain type is supported for the given hook number and family.
+	// Check whether the chain type is supported for the given hook number and
+	// family.
 	if !nftables.ValidLinuxHook(family, hookInfo.ChainType, hookInfo.HookNum) {
 		return nil, syserr.NewAnnotatedError(syserr.ErrNotSupported, fmt.Sprintf("Nftables: Hook attributes HOOK_HOOKNUM is invalid for the given family and chain type"))
 	}
@@ -568,7 +584,7 @@ func (p *Protocol) chainParseHook(chain *nftables.Chain, family stack.AddressFam
 		return nil, syserr.NewAnnotatedError(syserr.ErrNotSupported, fmt.Sprintf("Nftables: Netdev hooks are not currently supported"))
 	}
 
-	if hasAttr(linux.NFTA_HOOK_DEV, hookAttrs) || hasAttr(linux.NFTA_HOOK_DEVS, hookAttrs) {
+	if nftables.HasAttr(linux.NFTA_HOOK_DEV, hookAttrs) || nftables.HasAttr(linux.NFTA_HOOK_DEVS, hookAttrs) {
 		return nil, syserr.NewAnnotatedError(syserr.ErrNotSupported, fmt.Sprintf("Nftables: Hook attributes DEV and DEVS are not supported for non-netdev hooks"))
 	}
 
@@ -680,7 +696,7 @@ func (p *Protocol) deleteChain(nft *nftables.NFTables, attrs map[uint16]nlmsg.By
 		return syserr.NewAnnotatedError(syserr.ErrNotSupported, fmt.Sprintf("Nftables: Chains with binding cannot be deleted"))
 	}
 
-	if hasAttr(linux.NFTA_CHAIN_HOOK, attrs) {
+	if nftables.HasAttr(linux.NFTA_CHAIN_HOOK, attrs) {
 		if msgType == linux.NFT_MSG_DESTROYCHAIN && chainFlags&linux.NFT_CHAIN_HW_OFFLOAD != 0 {
 			return syserr.NewAnnotatedError(syserr.ErrNotSupported, fmt.Sprintf("Nftables: Hardware offload chains cannot be deleted"))
 		}
@@ -697,14 +713,15 @@ func (p *Protocol) deleteChain(nft *nftables.NFTables, attrs map[uint16]nlmsg.By
 		return syserr.NewAnnotatedError(syserr.ErrBusy, fmt.Sprintf("Nftables: Non-recursive delete on a chain with use > 0 is not supported. Chain %s has chain use %d", chain.GetName(), chain.GetChainUse()))
 	}
 
-	// TODO: b/421437663 - Support iteratively deleting rules in a chain to then delete chains.
-	// After deleting all the possible rules, if the chain is still in use, it cannot be deleted.
+	// TODO: b/421437663 - Support iteratively deleting rules in a chain to then
+	// delete chains. After deleting all the possible rules, if the chain is
+	// still in use, it cannot be deleted.
 	if chain.GetChainUse() != 0 {
 		return syserr.NewAnnotatedError(syserr.ErrBusy, fmt.Sprintf("Nftables: Deleting a chain with chain use > 0 is not supported. Chain %s has chain use %d", chain.GetName(), chain.GetChainUse()))
 	}
 
-	// We don't worry about whether a delete operation succeeded or not, rather only that the chain
-	// is gone.
+	// We don't worry about whether a delete operation succeeded or not, rather
+	// only that the chain is gone.
 	deleted := tab.DeleteChain(chain.GetName())
 	if !deleted {
 		log.Debugf("Failed to delete chain %s", chain.GetName())
@@ -712,7 +729,213 @@ func (p *Protocol) deleteChain(nft *nftables.NFTables, attrs map[uint16]nlmsg.By
 	return nil
 }
 
-// getBaseChainHookInfo creates a NFTA_CHAIN_HOOK attribute with all the corresponding nested attributes.
+// NFT_RULE_MAXEXPRS is the maximum number of expressions that can be specified
+// for a rule. From include/uapi/linux/netfilter/nf_tables_api.c.
+const NFT_RULE_MAXEXPRS = 128
+
+// newRule creates a new rule in the given chain.
+func (p *Protocol) newRule(nft *nftables.NFTables, attrs map[uint16]nlmsg.BytesView, family stack.AddressFamily, msgFlags uint16, ms *nlmsg.MessageSet) *syserr.AnnotatedError {
+	tabNameBytes, ok := attrs[linux.NFTA_RULE_TABLE]
+	if !ok {
+		return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: NFTA_CHAIN_TABLE attribute is malformed or not found")
+	}
+
+	tab, err := nft.GetTable(family, tabNameBytes.String(), uint32(ms.PortID))
+	if err != nil {
+		return err
+	}
+
+	var chain *nftables.Chain
+	if chainNameBytes, ok := attrs[linux.NFTA_RULE_CHAIN]; ok {
+		chain, err = tab.GetChain(chainNameBytes.String())
+		if err != nil {
+			return err
+		}
+	} else if _, ok := attrs[linux.NFTA_RULE_CHAIN_ID]; ok {
+		// TODO - b/421437663: Support looking up chains via their transaction id.
+		// This has to do with Linux's transaction system for committing tables
+		// atomically. This allows users to modify chains that have not yet been
+		// committed, but given that we do not have a transaction system (tables
+		// are committed atomically as soon as a mutex is acquired), this may not
+		// be necessary. It is a relatively new flag.
+		return syserr.NewAnnotatedError(syserr.ErrNotSupported, "Nftables: Looking up chains via their id is not supported")
+	} else {
+		return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: NFTA_RULE_CHAIN or NFTA_RULE_CHAIN_ID attribute is malformed or not found")
+	}
+
+	if chain.IsBound() {
+		return syserr.NewAnnotatedError(syserr.ErrNotSupported, "Nftables: New rules cannot be added to bound chains")
+	}
+
+	var oldRule *nftables.Rule
+	// NFTA_RULE_HANDLE is used in the replace case. NFTA_RULE_POSITION is used to
+	// to insert before or after an existing rule.
+	if handleBytes, ok := attrs[linux.NFTA_RULE_HANDLE]; ok {
+		ruleHandle, ok := handleBytes.Uint64()
+		if !ok {
+			return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: Rule handle attribute is malformed or not found")
+		}
+
+		rule, err := chain.GetRuleByHandle(ruleHandle)
+		if err != nil {
+			return err
+		}
+
+		if msgFlags&linux.NLM_F_EXCL != 0 {
+			return syserr.NewAnnotatedError(syserr.ErrExists, fmt.Sprintf("Nftables: Rule handle %d already exists and NLM_F_EXCL is set", ruleHandle))
+		}
+
+		if msgFlags&linux.NLM_F_REPLACE == 0 {
+			return syserr.NewAnnotatedError(syserr.ErrNotSupported, fmt.Sprintf("Nftables: Rule handle %d exists but NLM_F_REPLACE is not set", ruleHandle))
+		}
+
+		oldRule = rule
+	} else {
+		// Create or replace a rule.
+		if msgFlags&linux.NLM_F_CREATE == 0 ||
+			msgFlags&linux.NLM_F_REPLACE != 0 {
+			return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: Rule handle is not specified and NLM_F_CREATE is not set or NLM_F_REPLACE is set")
+		}
+
+		if posHandleBytes, ok := attrs[linux.NFTA_RULE_POSITION]; ok {
+			posHandle, ok := posHandleBytes.Uint64()
+			if !ok {
+				return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: Rule position attribute is malformed or not found")
+			}
+
+			oldRule, err = chain.GetRuleByHandle(posHandle)
+			if err != nil {
+				return err
+			}
+		} else if _, ok := attrs[linux.NFTA_RULE_POSITION_ID]; ok {
+			// TODO - b/421437663: Support looking up rules via their position id.
+			// ID is used for Linux's transaction system like stated above.
+			return syserr.NewAnnotatedError(syserr.ErrNotSupported, "Nftables: Rule position id is not supported.")
+		}
+	}
+
+	var exprInfos []nftables.ExprInfo
+	if exprBytes, ok := attrs[linux.NFTA_RULE_EXPRESSIONS]; ok {
+		exprInfos, err = parseNestedExprs(nlmsg.AttrsView(exprBytes))
+		if err != nil {
+			return err
+		}
+	}
+
+	rule := &nftables.Rule{}
+	// TODO: b/421437663 - Support error-checking the size of the expressions.
+	if udataBytes, ok := attrs[linux.NFTA_RULE_USERDATA]; ok {
+		if err := rule.SetUserData(udataBytes); err != nil {
+			return err
+		}
+	}
+
+	for _, exprInfo := range exprInfos {
+		err = rule.AddOpFromExprInfo(tab, exprInfo)
+		// TODO - b/421437663: Create a copy of nftables structure when modifying the table.
+		// Because we will create a copy of the table, no cleanup is necessary on the error case.
+		// The table will simply be reverted to the original state.
+		if err != nil {
+			return err
+		}
+	}
+
+	if chain.GetFlags()&linux.NFT_CHAIN_HW_OFFLOAD != 0 {
+		return syserr.NewAnnotatedError(syserr.ErrNotSupported, "Nftables: Hardware offload chains are not supported.")
+	}
+
+	if !chain.IncrementChainUse() {
+		return syserr.NewAnnotatedError(syserr.ErrTooManyOpenFiles, fmt.Sprintf("Nftables: Chain %s has the maximum chain use value at %d", chain.GetName(), chain.GetChainUse()))
+	}
+
+	// TODO - b/421437663: Support replace operations on rules.
+	if msgFlags&linux.NLM_F_REPLACE != 0 {
+		return syserr.NewAnnotatedError(syserr.ErrNotSupported, "Nftables: Replace operations are not currently supported.")
+	}
+
+	if msgFlags&linux.NLM_F_APPEND != 0 {
+		if oldRule != nil {
+			err = chain.RegisterAfterExistingRule(rule, oldRule)
+		} else {
+			err = chain.RegisterRule(rule, -1)
+		}
+	} else {
+		if oldRule != nil {
+			err = chain.RegisterBeforeExistingRule(rule, oldRule)
+		} else {
+			err = chain.RegisterRule(rule, 0)
+		}
+	}
+
+	// Rule registration should not fail, as all validation checks have already
+	// been performed.
+	if err != nil {
+		log.Warningf("Failed to register rule, this should not happen: %v", err)
+		return err
+	}
+
+	// TODO - b/421437663: Support validating the entire table before returning.
+	return nil
+}
+
+// parseNestedExprs parses the rule expressions attributes and adds the
+// operations to the rule.
+func parseNestedExprs(nestedAttrBytes nlmsg.AttrsView) ([]nftables.ExprInfo, *syserr.AnnotatedError) {
+	// NFTA_EXPRESSIONS -> many NFTA_LIST_ELEM that each hold -> NFTA_EXPR_NAME
+	// and NFTA_EXPR_DATA.
+	var exprInfos []nftables.ExprInfo
+	numExprs := 0
+	for !nestedAttrBytes.Empty() {
+		hdr, value, rest, ok := nestedAttrBytes.ParseFirst()
+		if !ok {
+			return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: Failed to parse list atttribute for rules")
+		}
+
+		nestedAttrBytes = rest
+		if nlaType(hdr) != linux.NFTA_LIST_ELEM {
+			return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: parsed attribute is not of type NFTA_LIST_ELEM")
+		}
+
+		if numExprs == NFT_RULE_MAXEXPRS {
+			return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: Too many expressions specified for rule")
+		}
+		numExprs++
+
+		exprAttrs, ok := nlmsg.AttrsView(value).Parse()
+		if !ok {
+			return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: Failed to parse attributes for expression")
+		}
+
+		exprNameBytes, ok := exprAttrs[linux.NFTA_EXPR_NAME]
+		if !ok {
+			return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: NFTA_EXPR_NAME attribute is malformed or not found")
+		}
+
+		// exprData holds the expression data for a specific operation.
+		exprData := nlmsg.AttrsView{}
+		// Only assign exprData if the data is present. Later validation will
+		// check if it is needed for the specific operation type.
+		// From linux/net/netfilter/nf_tables_api.c: nf_tables_expr_parse
+		if exprDataBytes, ok := exprAttrs[linux.NFTA_EXPR_DATA]; ok {
+			exprData = nlmsg.AttrsView(exprDataBytes)
+		}
+
+		exprInfos = append(exprInfos, nftables.ExprInfo{
+			ExprName: exprNameBytes.String(),
+			ExprData: exprData,
+		})
+	}
+
+	return exprInfos, nil
+}
+
+// nlaType returns the type of the netlink attribute.
+func nlaType(hdr linux.NetlinkAttrHeader) uint16 {
+	return hdr.Type & linux.NLA_TYPE_MASK
+}
+
+// getBaseChainHookInfo creates a NFTA_CHAIN_HOOK attribute with all the
+// corresponding nested attributes.
 func getBaseChainHookInfo(chain *nftables.Chain, family stack.AddressFamily, m *nlmsg.Message) *syserr.AnnotatedError {
 	baseChainInfo := chain.GetBaseChainInfo()
 	var nestedAttrs nlmsg.NestedAttr
@@ -728,8 +951,9 @@ func getBaseChainHookInfo(chain *nftables.Chain, family stack.AddressFamily, m *
 	return nil
 }
 
-// isNetDevHook returns whether the given family and hook number represent a netdev hook, or if
-// the family is inet and is attempting to attach to Ingress or Egress hooks.
+// isNetDevHook returns whether the given family and hook number represent a
+// netdev hook, or if the family is inet and is attempting to attach to
+// Ingress or Egress hooks.
 func isNetDevHook(family stack.AddressFamily, hookNum uint32) bool {
 	return family == stack.Netdev ||
 		(family == stack.Inet && hookNum == linux.NF_INET_INGRESS)
@@ -738,12 +962,6 @@ func isNetDevHook(family stack.AddressFamily, hookNum uint32) bool {
 // netLinkMessagePayloadSize returns the size of the netlink message payload.
 func netLinkMessagePayloadSize(h *linux.NetlinkMessageHeader) int {
 	return int(h.Length) - linux.NetlinkMessageHeaderSize
-}
-
-// hasAttr returns whether the given attribute key is present in the attribute map.
-func hasAttr(attrName uint16, attrs map[uint16]nlmsg.BytesView) bool {
-	_, ok := attrs[attrName]
-	return ok
 }
 
 // init registers the NETLINK_NETFILTER provider.

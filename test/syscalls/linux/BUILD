@@ -3697,6 +3697,8 @@ cc_library(
     hdrs = ["socket_netlink_netfilter_util.h"],
     deps = select_gtest() + [
         ":socket_netlink_util",
+        "//test/util:file_descriptor",
+        "//test/util:posix_error",
         "@com_google_absl//absl/log",
     ],
 )

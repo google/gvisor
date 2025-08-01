@@ -33,6 +33,8 @@
 #include <utility>
 #include <vector>
 
+#include "test/util/file_descriptor.h"
+
 namespace gvisor {
 namespace testing {
 
@@ -54,6 +56,9 @@ namespace testing {
 
 #define TABLE_NAME_SIZE 32
 #define VALID_USERDATA_SIZE 128
+
+#define DEFAULT_TABLE_NAME "default_test_table"
+#define DEFAULT_CHAIN_NAME "default_test_chain"
 
 struct NfTableCheckOptions {
   const struct nlmsghdr* hdr;
@@ -81,6 +86,19 @@ struct NfChainCheckOptions {
   bool skip_handle_check;
 };
 
+struct AddDefaultTableOptions {
+  const FileDescriptor& fd;
+  const char* test_table_name;
+  uint32_t seq;
+};
+
+struct AddDefaultBaseChainOptions {
+  const FileDescriptor& fd;
+  const char* test_table_name;
+  const char* test_chain_name;
+  uint32_t seq;
+};
+
 void InitNetfilterGenmsg(struct nfgenmsg* genmsg, uint8_t family,
                          uint8_t version, uint16_t res_id);
 
@@ -89,6 +107,12 @@ void CheckNetfilterTableAttributes(const NfTableCheckOptions& options);
 
 // Check the attributes of a netfilter chain.
 void CheckNetfilterChainAttributes(const NfChainCheckOptions& options);
+
+// Helper function to add a default table.
+void AddDefaultTable(AddDefaultTableOptions options);
+
+// Helper function to add a default chain.
+void AddDefaultBaseChain(AddDefaultBaseChainOptions options);
 
 class NlReq {
  public:
@@ -169,12 +193,57 @@ class NlNestedAttr {
   std::vector<char> Build();
 
  private:
-  uint8_t message_type_ = 0;
-  uint16_t flags_ = 0;
-  uint32_t seq_ = 0;
-  uint8_t family_ = 0;
   std::map<uint16_t, std::pair<const char*, size_t>> attributes_ = {};
   std::vector<char> msg_buffer_;
+};
+
+const int kMaxExprs = 128;
+class NlListAttr {
+ public:
+  NlListAttr() = default;
+
+  // Method to add an attribute to the payload of this list attribute..
+  NlListAttr& Add(const std::vector<char>& attr);
+
+  std::vector<char> Build();
+
+  static std::vector<char> BuildWithMaxAttrs();
+
+ private:
+  std::vector<char> msg_buffer_;
+  std::vector<std::vector<char>> nested_attrs_;
+};
+
+// A builder for immediate expressions.
+class NlImmExpr {
+ public:
+  NlImmExpr() = default;
+
+  // Sets the destination register.
+  NlImmExpr& Dreg(uint32_t dreg);
+
+  // Sets the verdict code to place in the register for the immediate data.
+  NlImmExpr& VerdictCode(uint32_t verdict_code);
+
+  // Sets the raw value to place in the register for the immediate data.
+  NlImmExpr& Value(const std::vector<char>& value);
+
+  // Builds the immediate expression to contain a verdict code.
+  std::vector<char> VerdictBuild();
+
+  // Builds the immediate expression to contain a raw value that is not a
+  // verdict code.
+  std::vector<char> ValueBuild();
+
+  static std::vector<char> DefaultAcceptAll();
+
+  static std::vector<char> DefaultDropAll();
+
+ private:
+  uint32_t dreg_ = 0;
+  std::vector<char> value_;
+  uint32_t verdict_code_ = 0;
+  bool has_verdict_code_ = false;
 };
 
 }  // namespace testing
