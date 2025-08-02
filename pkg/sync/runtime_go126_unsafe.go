@@ -4,7 +4,7 @@
 // license that can be found in the LICENSE file.
 
 // https://go.dev/cl/691596 (1.26) renames the internal map type which nogo relies on.
-//go:build go1.24 && !go1.26
+//go:build go1.26
 
 package sync
 
@@ -12,4 +12,4 @@ import "unsafe"
 
 // Use checkoffset to assert that maptype.hasher (the only field we use) has
 // the correct offset.
-const maptypeHasherOffset = unsafe.Offsetof(maptype{}.Hasher) // +checkoffset internal/abi SwissMapType.Hasher
+const maptypeHasherOffset = unsafe.Offsetof(maptype{}.Hasher) // +checkoffset internal/abi MapType.Hasher
