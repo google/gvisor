@@ -453,7 +453,9 @@ func (f *memInode) Open(ctx context.Context, rp *vfs.ResolvingPath, d *kernfs.De
 	if err := checkTaskState(f.task); err != nil {
 		return nil, err
 	}
-	fd := &memFD{}
+	fd := &memFD{
+		mm: getMM(f.task),
+	}
 	if err := fd.Init(rp.Mount(), d, f, opts.Flags); err != nil {
 		return nil, err
 	}
@@ -476,7 +478,7 @@ type memFD struct {
 	vfs.LockFD
 
 	inode *memInode
-
+	mm    *mm.MemoryManager
 	// mu guards the fields below.
 	mu     sync.Mutex `state:"nosave"`
 	offset int64
@@ -515,9 +517,9 @@ func (fd *memFD) PWrite(ctx context.Context, src usermem.IOSequence, offset int6
 	if src.NumBytes() == 0 {
 		return 0, nil
 	}
-	m, err := getMMIncRef(fd.inode.task)
-	if err != nil {
-		return 0, err
+	m := fd.mm
+	if m == nil || !m.IncUsers() {
+		return 0, nil
 	}
 	defer m.DecUsers(ctx)
 	// Buffer the write data because of MM locks
@@ -542,9 +544,9 @@ func (fd *memFD) PRead(ctx context.Context, dst usermem.IOSequence, offset int64
 	if dst.NumBytes() == 0 {
 		return 0, nil
 	}
-	m, err := getMMIncRef(fd.inode.task)
-	if err != nil {
-		return 0, err
+	m := fd.mm
+	if m == nil || !m.IncUsers() {
+		return 0, nil
 	}
 	defer m.DecUsers(ctx)
 	// Buffer the read data because of MM locks
