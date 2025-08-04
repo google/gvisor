@@ -165,7 +165,7 @@ func (p *Protocol) ProcessMessage(ctx context.Context, s *netlink.Socket, msg *n
 
 // newTable creates a new table for the given family.
 func (p *Protocol) newTable(nft *nftables.NFTables, attrs map[uint16]nlmsg.BytesView, family stack.AddressFamily, flags uint16, ms *nlmsg.MessageSet) *syserr.AnnotatedError {
-	// TODO: b/421437663 - Handle the case where the table name is set to empty string.
+	// TODO: b/434242152 - Handle the case where the table name is set to empty string.
 	// The table name is required.
 	tabNameBytes, ok := attrs[linux.NFTA_TABLE_NAME]
 	if !ok {
@@ -192,7 +192,7 @@ func (p *Protocol) newTable(nft *nftables.NFTables, attrs map[uint16]nlmsg.Bytes
 		return p.updateTable(nft, tab, attrs, family, ms)
 	}
 
-	// TODO: b/421437663 - Support additional user-specified table flags.
+	// TODO: b/434242152 - Support additional user-specified table flags.
 	var attrFlags uint32 = 0
 	if uflags, ok := attrs[linux.NFTA_TABLE_FLAGS]; ok {
 		attrFlags, _ = uflags.Uint32()
@@ -262,7 +262,7 @@ func (p *Protocol) updateTable(nft *nftables.NFTables, tab *nftables.Table, attr
 // getTable returns a table for the given family.
 func (p *Protocol) getTable(nft *nftables.NFTables, attrs map[uint16]nlmsg.BytesView, family stack.AddressFamily, msgFlags uint16, ms *nlmsg.MessageSet) *syserr.AnnotatedError {
 	if (msgFlags & linux.NLM_F_DUMP) != 0 {
-		// TODO: b/421437663 - Support dump requests for tables.
+		// TODO: b/434242152 - Support dump requests for tables.
 		return syserr.NewAnnotatedError(syserr.ErrNotSupported, fmt.Sprintf("Nftables: Table dump is not currently supported"))
 	}
 
@@ -423,7 +423,7 @@ func (p *Protocol) newChain(nft *nftables.NFTables, attrs map[uint16]nlmsg.Bytes
 			return syserr.NewAnnotatedError(syserr.ErrNotSupported, fmt.Sprintf("Nftables: Chain with handle: %d already exists and NLM_F_REPLACE is not supported", chain.GetHandle()))
 		}
 
-		// TODO: b/421437663: Support updating existing chains.
+		// TODO: b/434243967: Support updating existing chains.
 		return syserr.NewAnnotatedError(syserr.ErrNotSupported, fmt.Sprintf("Nftables: Chain flags attribute is not supported for existing chains"))
 	}
 
@@ -470,7 +470,7 @@ func (p *Protocol) addChain(attrs map[uint16]nlmsg.BytesView, tab *nftables.Tabl
 		if err != nil {
 			return err
 		}
-		// TODO: b/421437663 - support NFTA_CHAIN_COUNTERS (nested attribute)
+		// TODO: b/434243967 - support NFTA_CHAIN_COUNTERS (nested attribute)
 		if _, ok := attrs[linux.NFTA_CHAIN_COUNTERS]; ok {
 			return syserr.NewAnnotatedError(syserr.ErrNotSupported, fmt.Sprintf("Nftables: Chain counters attribute is currently not supported"))
 		}
@@ -526,7 +526,7 @@ func (p *Protocol) chainParseHook(chain *nftables.Chain, family stack.AddressFam
 	}
 
 	if chain != nil {
-		// TODO: b/421437663 - Support updating existing chains.
+		// TODO: b/434243967 - Support updating existing chains.
 		return nil, syserr.NewAnnotatedError(syserr.ErrNotSupported, fmt.Sprintf("Nftables: Updating hook attributes are not supported for existing chains"))
 	}
 
@@ -555,7 +555,7 @@ func (p *Protocol) chainParseHook(chain *nftables.Chain, family stack.AddressFam
 	hookInfo.ChainType = nftables.BaseChainTypeFilter
 
 	if chainTypeBytes, ok := hookAttrs[linux.NFTA_CHAIN_TYPE]; ok {
-		// TODO - b/421437663: Support base chain types other than filter.
+		// TODO - b/434243967: Support base chain types other than filter.
 		switch chainType := chainTypeBytes.String(); chainType {
 		case "filter":
 			hookInfo.ChainType = nftables.BaseChainTypeFilter
@@ -580,7 +580,7 @@ func (p *Protocol) chainParseHook(chain *nftables.Chain, family stack.AddressFam
 
 	var netDevName string
 	if isNetDevHook(family, hookInfo.HookNum) {
-		// TODO: b/421437663 - Support chains for the netdev family.
+		// TODO: b/434243967 - Support chains for the netdev family.
 		return nil, syserr.NewAnnotatedError(syserr.ErrNotSupported, fmt.Sprintf("Nftables: Netdev hooks are not currently supported"))
 	}
 
@@ -607,7 +607,7 @@ func (p *Protocol) chainParseHook(chain *nftables.Chain, family stack.AddressFam
 // getChain returns the chain with the given name and table name.
 func (p *Protocol) getChain(nft *nftables.NFTables, attrs map[uint16]nlmsg.BytesView, family stack.AddressFamily, msgFlags uint16, ms *nlmsg.MessageSet) *syserr.AnnotatedError {
 	if (msgFlags & linux.NLM_F_DUMP) != 0 {
-		// TODO: b/421437663 - Support dump requests for chains.
+		// TODO: b/434243967 - Support dump requests for chains.
 		return syserr.NewAnnotatedError(syserr.ErrNotSupported, fmt.Sprintf("Nftables: Chain dump is not currently supported"))
 	}
 
@@ -702,7 +702,7 @@ func (p *Protocol) deleteChain(nft *nftables.NFTables, attrs map[uint16]nlmsg.By
 		}
 
 		if chain.IsBaseChain() {
-			// TODO: b/421437663 - Support deleting netdev basechains.
+			// TODO: b/434243967 - Support deleting netdev basechains.
 			if isNetDevHook(family, chain.GetBaseChainInfo().LinuxHookNum) {
 				return syserr.NewAnnotatedError(syserr.ErrNotSupported, fmt.Sprintf("Nftables: Netdev basechains or basechains attached to Ingress or Egress are not currently supported for deleting"))
 			}
@@ -713,7 +713,7 @@ func (p *Protocol) deleteChain(nft *nftables.NFTables, attrs map[uint16]nlmsg.By
 		return syserr.NewAnnotatedError(syserr.ErrBusy, fmt.Sprintf("Nftables: Non-recursive delete on a chain with use > 0 is not supported. Chain %s has chain use %d", chain.GetName(), chain.GetChainUse()))
 	}
 
-	// TODO: b/421437663 - Support iteratively deleting rules in a chain to then
+	// TODO: b/434243967 - Support iteratively deleting rules in a chain to then
 	// delete chains. After deleting all the possible rules, if the chain is
 	// still in use, it cannot be deleted.
 	if chain.GetChainUse() != 0 {
@@ -752,7 +752,7 @@ func (p *Protocol) newRule(nft *nftables.NFTables, attrs map[uint16]nlmsg.BytesV
 			return err
 		}
 	} else if _, ok := attrs[linux.NFTA_RULE_CHAIN_ID]; ok {
-		// TODO - b/421437663: Support looking up chains via their transaction id.
+		// TODO - b/434244017: Support looking up chains via their transaction id.
 		// This has to do with Linux's transaction system for committing tables
 		// atomically. This allows users to modify chains that have not yet been
 		// committed, but given that we do not have a transaction system (tables
@@ -808,7 +808,7 @@ func (p *Protocol) newRule(nft *nftables.NFTables, attrs map[uint16]nlmsg.BytesV
 				return err
 			}
 		} else if _, ok := attrs[linux.NFTA_RULE_POSITION_ID]; ok {
-			// TODO - b/421437663: Support looking up rules via their position id.
+			// TODO - b/434244017: Support looking up rules via their position id.
 			// ID is used for Linux's transaction system like stated above.
 			return syserr.NewAnnotatedError(syserr.ErrNotSupported, "Nftables: Rule position id is not supported.")
 		}
@@ -823,7 +823,7 @@ func (p *Protocol) newRule(nft *nftables.NFTables, attrs map[uint16]nlmsg.BytesV
 	}
 
 	rule := &nftables.Rule{}
-	// TODO: b/421437663 - Support error-checking the size of the expressions.
+	// TODO: b/434244017 - Support error-checking the size of the expressions.
 	if udataBytes, ok := attrs[linux.NFTA_RULE_USERDATA]; ok {
 		if err := rule.SetUserData(udataBytes); err != nil {
 			return err
@@ -832,7 +832,7 @@ func (p *Protocol) newRule(nft *nftables.NFTables, attrs map[uint16]nlmsg.BytesV
 
 	for _, exprInfo := range exprInfos {
 		err = rule.AddOpFromExprInfo(tab, exprInfo)
-		// TODO - b/421437663: Create a copy of nftables structure when modifying the table.
+		// TODO - b/434244017: Create a copy of nftables structure when modifying the table.
 		// Because we will create a copy of the table, no cleanup is necessary on the error case.
 		// The table will simply be reverted to the original state.
 		if err != nil {
@@ -848,7 +848,7 @@ func (p *Protocol) newRule(nft *nftables.NFTables, attrs map[uint16]nlmsg.BytesV
 		return syserr.NewAnnotatedError(syserr.ErrTooManyOpenFiles, fmt.Sprintf("Nftables: Chain %s has the maximum chain use value at %d", chain.GetName(), chain.GetChainUse()))
 	}
 
-	// TODO - b/421437663: Support replace operations on rules.
+	// TODO - b/434244017: Support replace operations on rules.
 	if msgFlags&linux.NLM_F_REPLACE != 0 {
 		return syserr.NewAnnotatedError(syserr.ErrNotSupported, "Nftables: Replace operations are not currently supported.")
 	}
@@ -874,7 +874,7 @@ func (p *Protocol) newRule(nft *nftables.NFTables, attrs map[uint16]nlmsg.BytesV
 		return err
 	}
 
-	// TODO - b/421437663: Support validating the entire table before returning.
+	// TODO - b/434244017: Support validating the entire table before returning.
 	return nil
 }
 

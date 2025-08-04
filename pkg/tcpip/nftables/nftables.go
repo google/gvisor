@@ -28,8 +28,6 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
-// TODO: b/421437663 - Refactor functions to return a POSIX syserr
-
 //
 // Interface-Related Methods
 //
@@ -858,7 +856,7 @@ func (c *Chain) SetComment(comment string) {
 // - All jump and goto operations have a valid target chain.
 // - Loop checking for jump and goto operations.
 // - TODO(b/345684870): Add more checks as more operations are supported.
-// TODO - b/421437663: Update rules to be in a linked list for faster insertion and deletion.
+// TODO - b/434244017: Update rules to be in a linked list for faster insertion and deletion.
 func (c *Chain) RegisterRule(rule *Rule, index int) *syserr.AnnotatedError {
 	// Error checks like these are not part of the nf_tables_api.c. Rather they are error
 	// checked here for completeness for unit tests. Netfilter sockets should never attempt to register
@@ -920,9 +918,8 @@ func (c *Chain) RegisterAfterExistingRule(newRule *Rule, oldRule *Rule) *syserr.
 }
 
 // UnregisterRuleByIndex removes the rule at the given index from the chain's rule list
-// and unassigns the chain from the rule then returns the unregistered rule.
+// and un-assigns the chain from the rule then returns the unregistered rule.
 // Valid indices are -1 (pop) and [0, len-1]. Errors on invalid index.
-// TODO: b/421437663 - Need to refactor or implement a function to remove by rule name.
 func (c *Chain) UnregisterRuleByIndex(index int) (*Rule, *syserr.AnnotatedError) {
 	rule, err := c.GetRule(index)
 	if err != nil {
@@ -1065,7 +1062,7 @@ func (r *Rule) addOperation(op operation) *syserr.AnnotatedError {
 // AddOpFromExprInfo adds an operation to the rule given the expression information.
 func (r *Rule) AddOpFromExprInfo(tab *Table, exprInfo ExprInfo) *syserr.AnnotatedError {
 	// Centralized here so that operations can do their own validation when being created.
-	// TODO - b/421437663: Support parsing expression types other than NFT_IMMEDIATE
+	// TODO - b/434244017: Support parsing expression types other than NFT_IMMEDIATE
 	var op operation
 	var err *syserr.AnnotatedError
 	switch exprInfo.ExprName {

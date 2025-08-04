@@ -305,7 +305,7 @@ func (fl IPHeaderFilter) match(pkt *PacketBuffer, hook Hook, inNicName, outNicNa
 	switch hook {
 	case Prerouting, Input:
 		return matchIfName(inNicName, fl.InputInterface, fl.InputInterfaceInvert)
-	case Output:
+	case Postrouting, Output:
 		return matchIfName(outNicName, fl.OutputInterface, fl.OutputInterfaceInvert)
 	case Forward:
 		if !matchIfName(inNicName, fl.InputInterface, fl.InputInterfaceInvert) {
@@ -316,8 +316,6 @@ func (fl IPHeaderFilter) match(pkt *PacketBuffer, hook Hook, inNicName, outNicNa
 			return false
 		}
 
-		return true
-	case Postrouting:
 		return true
 	default:
 		panic(fmt.Sprintf("unknown hook: %d", hook))
