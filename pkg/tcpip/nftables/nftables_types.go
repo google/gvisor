@@ -964,7 +964,7 @@ func nftDataInit(tab *Table, regType uint32, dataBytes nlmsg.AttrsView) (registe
 			return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("Nftables: Attribute NFTA_DATA_VALUE is not supported for register type %d", regType))
 		}
 
-		// TODO - b/421437663: Add stricter validation for value bytes.
+		// TODO - b/434244017: Add stricter validation for value bytes.
 		return newBytesData(valueBytes), nil
 	} else if vBytes, ok := dataAttrs[linux.NFTA_DATA_VERDICT]; ok {
 		// Represents a verdict like NF_DROP or NF_ACCEPT.
@@ -1021,7 +1021,7 @@ func nftValidateRegister(reg uint32, regType uint32, data registerData) (uint8, 
 			return 0, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("Nftables: Register data is not a verdict data"))
 		}
 
-		// TODO - b/421437663: Add insertion-time validation of chains for jump and goto verdicts.
+		// TODO - b/434244017: Add insertion-time validation of chains for jump and goto verdicts.
 		if int32(verdictData.data.Code) == linux.NFT_GOTO || int32(verdictData.data.Code) == linux.NFT_JUMP {
 			return 0, syserr.NewAnnotatedError(syserr.ErrNotSupported, fmt.Sprintf("Nftables: Verdicts with jump or goto codes are not yet supported"))
 		}
@@ -1034,7 +1034,7 @@ func nftValidateRegister(reg uint32, regType uint32, data registerData) (uint8, 
 			return 0, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("Nftables: Register %d with type %d is less than %d bytes", reg, regType, linux.NFT_REG_1*linux.NFT_REG_SIZE/linux.NFT_REG32_SIZE))
 		}
 
-		// TODO - b/421437663: Add error checking for the length of the expression data, ensuring it
+		// TODO - b/434244017: Add error checking for the length of the expression data, ensuring it
 		// can fit within the specified register.
 	}
 
@@ -1071,7 +1071,7 @@ func validateVerdictData(tab *Table, bytes nlmsg.AttrsView) (stack.NFVerdict, *s
 				return v, err
 			}
 		} else if _, ok := verdictAttrs[linux.NFTA_VERDICT_CHAIN_ID]; ok {
-			// TODO - b/421437663: Add support for looking up chains via their transaction id.
+			// TODO - b/434243967: Add support for looking up chains via their transaction id.
 			return v, syserr.NewAnnotatedError(syserr.ErrNotSupported, fmt.Sprintf("Nftables: Looking up chains via their id is not supported"))
 		} else {
 			return v, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("Nftables: Attributes for verdict data must contain a chain name or chain id"))
@@ -1098,7 +1098,7 @@ func validateVerdictData(tab *Table, bytes nlmsg.AttrsView) (stack.NFVerdict, *s
 		return v, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("Nftables: Unsupported verdict code: %d", verdictCode))
 	}
 
-	// TODO - b/421437663: Potential modify this to take a pointer to the chain it is jumping to.
+	// TODO - b/345684870: Potentially modify this to take a pointer to the chain it is jumping to.
 	// Would need to ensure that the chain cannot be removed while it is being pointed to (using use field).
 	v.Code = verdictCode
 	return v, nil
