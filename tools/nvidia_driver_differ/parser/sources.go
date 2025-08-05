@@ -20,6 +20,7 @@ import (
 	"io"
 	"path/filepath"
 
+	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
 )
 
@@ -47,14 +48,16 @@ func (d *DriverSourceDir) GlobDriverFiles(pattern string) ([]string, error) {
 func (d *DriverSourceDir) GetNonUVMSourcePaths() ([]string, error) {
 	patterns := []string{
 		"src/common/sdk/nvidia/inc/nvos.h",
+		"src/nvidia/arch/nvalloc/unix/include/nv_escape.h",
 		"src/nvidia/arch/nvalloc/unix/include/nv-ioctl.h",
 		"src/nvidia/arch/nvalloc/unix/include/nv-unix-nvos-params-wrappers.h",
 		"src/common/sdk/nvidia/inc/class/*.h",
 		"src/common/sdk/nvidia/inc/ctrl/*.h",
 		"src/common/sdk/nvidia/inc/ctrl/*/*.h",
+		"kernel-open/common/inc/nv-ioctl-numa.h",
 	}
 
-	sources := []string{}
+	var sources []string
 	for _, pattern := range patterns {
 		files, err := d.GlobDriverFiles(pattern)
 		if err != nil {
@@ -79,6 +82,7 @@ func (d *DriverSourceDir) GetNonUVMIncludePaths() []string {
 		fmt.Sprintf("%s/src/common/sdk/nvidia/inc", d.Name()),
 		fmt.Sprintf("%s/src/common/shared/inc", d.Name()),
 		fmt.Sprintf("%s/src/nvidia/arch/nvalloc/unix/include", d.Name()),
+		fmt.Sprintf("%s/kernel-open/common/inc", d.Name()),
 	}
 }
 
@@ -90,10 +94,23 @@ func (d *DriverSourceDir) GetUVMIncludePaths() []string {
 }
 
 // WriteIncludeFile writes an cc file at file that includes all the given sources.
-func WriteIncludeFile(sources []string, w io.Writer) error {
+func WriteIncludeFile(sources []string, w io.Writer, ioctls []nvproxy.IoctlName) error {
 	bufW := bufio.NewWriter(w)
 	for _, source := range sources {
 		if _, err := bufW.WriteString(fmt.Sprintf("#include \"%s\"\n", source)); err != nil {
+			return fmt.Errorf("failed to write to include file: %w", err)
+		}
+	}
+	// We need to include stdint.h for uint64_t.
+	if _, err := bufW.WriteString("\n#include <stdint.h>\n\n"); err != nil {
+		return fmt.Errorf("failed to write to include file: %w", err)
+	}
+	// The driver source code defines all ioctl numbers as macros. It is very
+	// hard to evaluate the macro's numerical value in our Clang AST parser. So
+	// in the source file, we create constants with name "GVISOR_<ioctl_name>"
+	// which are initialized with the ioctl macro.
+	for _, ioctl := range ioctls {
+		if _, err := bufW.WriteString(fmt.Sprintf("const uint64_t GVISOR_%s = %s;\n", ioctl, ioctl)); err != nil {
 			return fmt.Errorf("failed to write to include file: %w", err)
 		}
 	}

@@ -86,7 +86,7 @@ func Main() error {
 
 	// Parse through nvproxy to find the list of structs used
 	nvproxy.Init()
-	structDefs, ok := nvproxy.SupportedStructTypes(baseVersion)
+	nvproxyInfo, ok := nvproxy.SupportedIoctls(baseVersion)
 	if !ok {
 		return fmt.Errorf("failed to get struct names for version %v", baseVersion)
 	}
@@ -103,7 +103,7 @@ func Main() error {
 	}()
 
 	// Write list of structs to file
-	if err := runner.CreateStructsFile(structDefs); err != nil {
+	if err := runner.CreateInputFile(nvproxyInfo); err != nil {
 		return fmt.Errorf("failed to create temporary structs list: %w", err)
 	}
 
@@ -176,17 +176,66 @@ func Main() error {
 		}
 	}
 
-	// Check if any structs from the list of struct names were missing.
-	var missingStructs []nvproxy.DriverStructName
-	for _, structDef := range structDefs {
-		_, isRecord := recordsFound[structDef.Name]
-		_, isAlias := aliasesFound[structDef.Name]
-		if !isRecord && !isAlias {
-			missingStructs = append(missingStructs, structDef.Name)
+	log.Infof("Comparing constants between %s and %s", baseVersion, nextVersion)
+	constantsFound := make(map[nvproxy.IoctlName]struct{})
+	for name := range baseDefs.Constants {
+		constantsFound[name] = struct{}{}
+	}
+	for name := range nextDefs.Constants {
+		constantsFound[name] = struct{}{}
+	}
+	for name := range constantsFound {
+		baseConstant, baseOk := baseDefs.Constants[name]
+		if !baseOk {
+			log.Infof("constant %s not found in first source file", name)
 		}
+		nextConstant, nextOk := nextDefs.Constants[name]
+		if !nextOk {
+			log.Infof("constant %s not found in second source file", name)
+		}
+		if !baseOk || !nextOk {
+			continue
+		}
+		if baseConstant != nextConstant {
+			log.Infof("constant %s changed from %d to %d", name, baseConstant, nextConstant)
+		}
+	}
+
+	// Check if any constants or structs from the input list were missing.
+	var missingStructs []nvproxy.DriverStructName
+	var missingConstants []nvproxy.IoctlName
+	checkMissing := func(ioctl nvproxy.IoctlInfo) {
+		if ioctl.Name == "" {
+			return
+		}
+		for _, structDef := range ioctl.Structs {
+			_, isRecord := recordsFound[structDef.Name]
+			_, isAlias := aliasesFound[structDef.Name]
+			if !isRecord && !isAlias {
+				missingStructs = append(missingStructs, structDef.Name)
+			}
+		}
+		if _, ok := constantsFound[ioctl.Name]; !ok {
+			missingConstants = append(missingConstants, ioctl.Name)
+		}
+	}
+	for _, ioctl := range nvproxyInfo.FrontendInfos {
+		checkMissing(ioctl)
+	}
+	for _, ioctl := range nvproxyInfo.ControlInfos {
+		checkMissing(ioctl)
+	}
+	for _, ioctl := range nvproxyInfo.AllocationInfos {
+		checkMissing(ioctl)
+	}
+	for _, ioctl := range nvproxyInfo.UvmInfos {
+		checkMissing(ioctl)
 	}
 	if len(missingStructs) > 0 {
 		return fmt.Errorf("expected structs not found: %v", missingStructs)
+	}
+	if len(missingConstants) > 0 {
+		return fmt.Errorf("expected constants not found: %v", missingConstants)
 	}
 
 	return nil

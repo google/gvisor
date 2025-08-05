@@ -208,7 +208,7 @@ func Init() error {
 
 	log.Debugf("Host driver version: %v", driverVer)
 
-	suppFrontendIoctls, suppUvmIoctls, suppControlCmds, suppAllocClasses, ok := nvproxy.SupportedIoctls(driverVer)
+	suppFrontendIoctls, suppUvmIoctls, suppControlCmds, suppAllocClasses, ok := nvproxy.SupportedIoctlsNumbers(driverVer)
 	if !ok {
 		return fmt.Errorf("host driver version %s is not supported", driverVer)
 	}

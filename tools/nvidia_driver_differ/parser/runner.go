@@ -15,10 +15,12 @@
 package parser
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
@@ -30,6 +32,9 @@ type Runner struct {
 	dir        string
 	parserPath string
 	inputPath  string
+
+	nonUVMIoctls []nvproxy.IoctlName
+	uvmIoctls    []nvproxy.IoctlName
 }
 
 // NewRunner creates a new Runner around a given parser file and a temporary working directory.
@@ -51,13 +56,43 @@ func (r *Runner) Cleanup() error {
 	return os.RemoveAll(r.dir)
 }
 
-// CreateStructsFile saves a list of structs for the runner to parse.
-func (r *Runner) CreateStructsFile(structs []nvproxy.DriverStruct) error {
+// CreateInputFile saves a list of structs for the runner to parse.
+func (r *Runner) CreateInputFile(info *nvproxy.DriverABIInfo) error {
+	numNonUvm := len(info.FrontendInfos) + len(info.ControlInfos) + len(info.AllocationInfos)
+	numUvm := len(info.UvmInfos)
+	r.nonUVMIoctls = make([]nvproxy.IoctlName, 0, numNonUvm)
+	r.uvmIoctls = make([]nvproxy.IoctlName, 0, numUvm)
 	inputJSON := InputJSON{
-		Structs: make([]string, 0, len(structs)),
+		Structs:   make([]nvproxy.DriverStructName, 0, numNonUvm+numUvm),
+		Constants: make([]nvproxy.IoctlName, 0, numNonUvm+numUvm),
 	}
-	for _, structDef := range structs {
-		inputJSON.Structs = append(inputJSON.Structs, structDef.Name)
+
+	handleIoctlInfo := func(info nvproxy.IoctlInfo, isUVM bool) {
+		if info.Name == "" {
+			return
+		}
+		if isUVM {
+			r.uvmIoctls = append(r.uvmIoctls, info.Name)
+		} else {
+			r.nonUVMIoctls = append(r.nonUVMIoctls, info.Name)
+		}
+		// Add "GVISOR_" prefix to all constants; see WriteIncludeFile().
+		inputJSON.Constants = append(inputJSON.Constants, "GVISOR_"+info.Name)
+		for _, structDef := range info.Structs {
+			inputJSON.Structs = append(inputJSON.Structs, structDef.Name)
+		}
+	}
+	for _, info := range info.FrontendInfos {
+		handleIoctlInfo(info, false)
+	}
+	for _, info := range info.ControlInfos {
+		handleIoctlInfo(info, false)
+	}
+	for _, info := range info.AllocationInfos {
+		handleIoctlInfo(info, false)
+	}
+	for _, info := range info.UvmInfos {
+		handleIoctlInfo(info, true)
 	}
 
 	f, err := os.CreateTemp(r.dir, "input_*.json")
@@ -83,9 +118,11 @@ func (r *Runner) parseSourceFile(sourcePath string) (*OutputJSON, error) {
 
 	// Run driver_ast_parser on the source file.
 	cmd := exec.Command(r.parserPath, "--input", r.inputPath, sourcePath)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
 	out, err := cmd.Output()
 	if err != nil {
-		return nil, fmt.Errorf("failed to run driver_ast_parser: %v", err)
+		return nil, fmt.Errorf("failed to run driver_ast_parser: %v\n%s", err, stderr.String())
 	}
 
 	// Unmarshal the output
@@ -93,6 +130,13 @@ func (r *Runner) parseSourceFile(sourcePath string) (*OutputJSON, error) {
 	if err := json.Unmarshal(out, &defs); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal output file: %w", err)
 	}
+
+	// Remove the "GVISOR_" prefix from all constants; see WriteIncludeFile().
+	constants := make(map[string]uint64)
+	for name, value := range defs.Constants {
+		constants[strings.TrimPrefix(name, "GVISOR_")] = value
+	}
+	defs.Constants = constants
 
 	return &defs, nil
 }
@@ -132,7 +176,7 @@ func (r *Runner) ParseDriver(version nvconf.DriverVersion) (*OutputJSON, error) 
 		return nil, fmt.Errorf("failed to clone git repo: %w", err)
 	}
 
-	config, err := CreateIncludeFiles(dir, *source)
+	config, err := CreateIncludeFiles(dir, *source, r.nonUVMIoctls, r.uvmIoctls)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create include files: %w", err)
 	}
