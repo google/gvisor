@@ -74,9 +74,10 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/mm"
 	"gvisor.dev/gvisor/pkg/sentry/seccheck"
-	pb "gvisor.dev/gvisor/pkg/sentry/seccheck/points/points_go_proto"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/usermem"
+
+	pb "gvisor.dev/gvisor/pkg/sentry/seccheck/points/points_go_proto"
 )
 
 // execStop is a TaskStop that a task sets on itself when it wants to execve
@@ -261,7 +262,9 @@ func (r *runSyscallAfterExecStop) execute(t *Task) taskRunState {
 	t.unstopVforkParent()
 	t.p.FullStateChanged()
 	// NOTE(b/30316266): All locks must be dropped prior to calling Activate.
-	t.MemoryManager().Activate(t)
+	if err := t.MemoryManager().Activate(t); err != nil {
+		panic("unable to activate mm: " + err.Error())
+	}
 
 	t.ptraceExec(oldTID)
 	return (*runSyscallExit)(nil)
