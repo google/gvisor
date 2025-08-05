@@ -17,6 +17,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <sys/eventfd.h>
+#include <sys/mman.h>
 #include <sys/ptrace.h>
 #include <sys/resource.h>
 #include <sys/time.h>
@@ -33,15 +34,20 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/strings/match.h"
+#include "absl/strings/numbers.h"
 #include "absl/strings/str_cat.h"
+#include "absl/strings/str_format.h"
 #include "absl/strings/str_split.h"
 #include "absl/strings/string_view.h"
 #include "absl/synchronization/mutex.h"
 #include "absl/types/optional.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/fs_util.h"
+#include "test/util/logging.h"
+#include "test/util/memory_util.h"
 #include "test/util/multiprocess_util.h"
 #include "test/util/posix_error.h"
+#include "test/util/save_util.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
@@ -63,6 +69,8 @@ constexpr char kPriorityWorkload[] = "test/syscalls/linux/priority_execve";
 constexpr char kExit42[] = "--exec_exit_42";
 constexpr char kExecWithThread[] = "--exec_exec_with_thread";
 constexpr char kExecFromThread[] = "--exec_exec_from_thread";
+constexpr char kExecInParent[] = "--exec_exec_in_parent";
+constexpr char kWriteAndWaitForPid[] = "--exec_write_and_wait_for_pid";
 
 // Runs file specified by dirfd and pathname with argv and checks that the exit
 // status is expect_status and that stderr contains expect_stderr.
@@ -851,6 +859,101 @@ TEST(ExecTest, Setpgid) {
   EXPECT_THAT(setpgid(getpid(), pid), SyscallSucceeds());
 }
 
+TEST(ExecTest, ReadProcMemAfterExecFromChild) {
+  // Fork and exec in the parent process.
+  CheckExec("/proc/self/exe", {"/proc/self/exe", kExecInParent}, {},
+            W_EXITCODE(42, 0), "");
+}
+
+/*
+This function, along with writeAndWaitForPid, sets up the test case to verify
+that a /proc/self/mem file descriptor is not leaked across an execve similar to
+b/382136040.
+
+The setup is as follows:
+
+This function opens /proc/self/mem in a process we'll call P1.
+* P1 forks, creating a child process P2.
+* P1 (the parent) then execves to become a new process, P3, which runs
+writeAndWaitForPid.
+* P2 (the child) holds the memfd from P1. It waits for a
+signal from P3.
+* P3 maps some memory with a secret value and then signals P2 via
+a pipe.
+* P2, upon receiving the signal, tries to read from the secret's memory
+location using the memfd it inherited. The test asserts that this pread in P2
+fails, because the memfd should be tied to the (now defunct) address space of
+P1, not the new address space of P3.
+*/
+void execInParent() {
+  auto mem_fd = ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/self/mem", O_RDONLY));
+  int pipe_fd[2] = {};
+  TEST_PCHECK(pipe(pipe_fd) == 0);
+
+  const auto readSecret = [&] {
+    // Close writing end of the pipe.
+    close(pipe_fd[1]);
+    // Await parent OK to read the secret.
+    uintptr_t addr;
+    TEST_PCHECK_MSG(ReadFd(pipe_fd[0], &addr, sizeof(addr)) == sizeof(addr),
+                    "Failed to read mmap address from the pipe.");
+    // Close the reading end of the pipe.
+    TEST_PCHECK(close(pipe_fd[0]) == 0);
+    // Parent sent the signal. Read the secret.
+    // Use /proc/mem fd from parent to try to read the secret.
+    char secret[] = "secret";
+    char output[sizeof(secret)];
+    TEST_PCHECK_MSG(
+        pread(mem_fd.get(), output, sizeof(output), addr) != sizeof(secret),
+        "pread succeeded. It should have failed.");
+  };
+  pid_t pid = fork();
+  // In child process.
+  if (pid == 0) {
+    readSecret();
+    TEST_CHECK_MSG(!::testing::Test::HasFailure(),
+                   "EXPECT*/ASSERT* failed. These are not async-signal-safe "
+                   "and must not be called from fn.");
+    _exit(0);
+  }
+  // In parent process.
+  MaybeSave();
+  TEST_PCHECK(close(pipe_fd[0]) == 0);
+  TEST_CHECK(pid != -1);
+
+  // Execve with args{function name, child_pid, pipe_fd[1]}
+  const ExecveArray argv = {"/proc/self/exe", kWriteAndWaitForPid,
+                            absl::StrCat(pid) /*child_pid*/,
+                            absl::StrCat(pipe_fd[1])};
+  const ExecveArray envv;
+  execve("/proc/self/exe", argv.get(), envv.get());
+}
+/*
+This function is the new program image after execve in execInParent. It maps a
+"secret" value at a known address, signals the child of the original process to
+proceed, and then waits for it to exit.
+*/
+void writeAndWaitForPid(int child_pid, int pipe_fd) {
+  // mmap the same address that the child process will try to read.
+  const Mapping m = ASSERT_NO_ERRNO_AND_VALUE(
+      MmapAnon(kPageSize, PROT_READ | PROT_WRITE, MAP_PRIVATE));
+  const char secret[] = "secret";
+  absl::SNPrintF((char*)m.addr(), sizeof(secret), "%s", secret);
+
+  // Tell the child process to read the secret location.
+  uintptr_t addr = m.addr();
+  TEST_PCHECK_MSG(WriteFd(pipe_fd, &addr, sizeof(addr)) == sizeof(addr),
+                  "Failed to write mmap address to the pipe.");
+  TEST_PCHECK(close(pipe_fd) == 0);
+
+  // Wait for child process to read before the exit.
+  int status;
+  TEST_PCHECK_MSG(waitpid(child_pid, &status, 0) == child_pid,
+                  "waitpid failed.");
+  TEST_CHECK(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+  exit(42);
+}
+
 void ExecWithThread() {
   // Used to ensure that the thread has actually started.
   absl::Mutex mu;
@@ -946,6 +1049,22 @@ int main(int argc, char** argv) {
     }
     if (arg == gvisor::testing::kExecFromThread) {
       gvisor::testing::ExecFromThread();
+      return 1;
+    }
+    if (arg == gvisor::testing::kExecInParent) {
+      gvisor::testing::execInParent();
+      return 1;
+    }
+    if (arg == gvisor::testing::kWriteAndWaitForPid) {
+      int pid;
+      if (!absl::SimpleAtoi(argv[i + 1], &pid)) {
+        return 1;
+      }
+      int fd;
+      if (!absl::SimpleAtoi(argv[i + 2], &fd)) {
+        return 1;
+      }
+      gvisor::testing::writeAndWaitForPid(pid, fd);
       return 1;
     }
   }
