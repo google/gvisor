@@ -829,6 +829,7 @@ func Init() {
 			abi.allocationClass[nvgpu.BLACKWELL_A] = allocHandler(rmAllocSimple[nvgpu.NV_GR_ALLOCATION_PARAMETERS], nvconf.CapGraphics)
 			abi.allocationClass[nvgpu.BLACKWELL_COMPUTE_A] = allocHandler(rmAllocSimple[nvgpu.NV_GR_ALLOCATION_PARAMETERS], compUtil)
 			abi.allocationClass[nvgpu.BLACKWELL_INLINE_TO_MEMORY_A] = allocHandler(rmAllocSimple[nvgpu.NV_GR_ALLOCATION_PARAMETERS], nvconf.CapGraphics)
+			abi.controlCmd[nvgpu.NV_SEMAPHORE_SURFACE_CTRL_CMD_UNBIND_CHANNEL] = ctrlHandler(rmControlSimple, nvconf.CapGraphics)
 			prevStructs := abi.getStructs
 			abi.getStructs = func() *driverABIStructs {
 				structs := prevStructs()
@@ -839,6 +840,7 @@ func Init() {
 				structs.allocationStructs[nvgpu.BLACKWELL_A] = driverStructs(nvgpu.NV_GR_ALLOCATION_PARAMETERS{})
 				structs.allocationStructs[nvgpu.BLACKWELL_COMPUTE_A] = driverStructs(nvgpu.NV_GR_ALLOCATION_PARAMETERS{})
 				structs.allocationStructs[nvgpu.BLACKWELL_INLINE_TO_MEMORY_A] = driverStructs(nvgpu.NV_GR_ALLOCATION_PARAMETERS{})
+				structs.controlStructs[nvgpu.NV_SEMAPHORE_SURFACE_CTRL_CMD_UNBIND_CHANNEL] = simpleDriverStruct("NV_SEMAPHORE_SURFACE_CTRL_UNBIND_CHANNEL_PARAMS")
 				return structs
 			}
 			return abi
