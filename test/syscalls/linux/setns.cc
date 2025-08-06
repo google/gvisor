@@ -12,9 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <linux/prctl.h>
 #include <sched.h>
 #include <signal.h>
 #include <stdio.h>
+#include <sys/prctl.h>
 #include <sys/wait.h>
 
 #include <cstdint>
@@ -96,6 +98,9 @@ TEST(SetnsTest, ChangePIDNamespace) {
     return 0;
   };
 
+  // Check that a subreaper doesn't affect how pidns is destroyed.
+  ASSERT_THAT(prctl(PR_SET_CHILD_SUBREAPER, 1), SyscallSucceeds());
+
   // Fork a test process in a new PID namespace, because it needs to manipulate
   // with reparented processes.
   struct clone_arg {
@@ -139,6 +144,8 @@ TEST(SetnsTest, ChangePIDNamespace) {
   ASSERT_THAT(RetryEINTR(waitpid)(pid, &status, 0),
               SyscallSucceedsWithValue(pid));
   EXPECT_EQ(WEXITSTATUS(status), 5);
+
+  ASSERT_THAT(prctl(PR_SET_CHILD_SUBREAPER, 0), SyscallSucceeds());
 }
 
 }  // namespace
