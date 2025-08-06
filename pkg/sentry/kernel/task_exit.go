@@ -35,8 +35,9 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/seccheck"
-	pb "gvisor.dev/gvisor/pkg/sentry/seccheck/points/points_go_proto"
 	"gvisor.dev/gvisor/pkg/waiter"
+
+	pb "gvisor.dev/gvisor/pkg/sentry/seccheck/points/points_go_proto"
 )
 
 // TaskExitState represents a step in the task exit path.
@@ -433,6 +434,10 @@ func (t *Task) findReparentTargetLocked() *Task {
 	// exiting.
 	if t2 := t.tg.anyNonExitingTaskLocked(); t2 != nil {
 		return t2
+	}
+
+	if t.tg.isInitInLocked(t.PIDNamespace()) {
+		return nil // The init process is terminating.
 	}
 
 	if !t.tg.hasChildSubreaper {

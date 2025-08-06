@@ -837,6 +837,7 @@ func (fd *memFD) StateFields() []string {
 		"FileDescriptionDefaultImpl",
 		"LockFD",
 		"inode",
+		"mm",
 		"offset",
 	}
 }
@@ -850,7 +851,8 @@ func (fd *memFD) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &fd.FileDescriptionDefaultImpl)
 	stateSinkObject.Save(2, &fd.LockFD)
 	stateSinkObject.Save(3, &fd.inode)
-	stateSinkObject.Save(4, &fd.offset)
+	stateSinkObject.Save(4, &fd.mm)
+	stateSinkObject.Save(5, &fd.offset)
 }
 
 func (fd *memFD) afterLoad(context.Context) {}
@@ -861,7 +863,8 @@ func (fd *memFD) StateLoad(ctx context.Context, stateSourceObject state.Source) 
 	stateSourceObject.Load(1, &fd.FileDescriptionDefaultImpl)
 	stateSourceObject.Load(2, &fd.LockFD)
 	stateSourceObject.Load(3, &fd.inode)
-	stateSourceObject.Load(4, &fd.offset)
+	stateSourceObject.Load(4, &fd.mm)
+	stateSourceObject.Load(5, &fd.offset)
 }
 
 func (d *limitsData) StateTypeName() string {
