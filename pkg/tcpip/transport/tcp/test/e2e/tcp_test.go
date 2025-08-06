@@ -260,7 +260,7 @@ func TestActiveFailedConnectionAttemptIncrement(t *testing.T) {
 
 	{
 		err := c.EP.Connect(tcpip.FullAddress{NIC: 2, Addr: context.TestAddr, Port: context.TestPort})
-		if d := cmp.Diff(&tcpip.ErrHostUnreachable{}, err); d != "" {
+		if d := cmp.Diff(&tcpip.ErrNetworkUnreachable{}, err); d != "" {
 			t.Errorf("c.EP.Connect(...) mismatch (-want +got):\n%s", d)
 		}
 	}

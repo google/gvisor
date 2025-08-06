@@ -1598,8 +1598,7 @@ func (s *Stack) FindRoute(id tcpip.NICID, localAddr, remoteAddr tcpip.Address, n
 				}
 			}
 
-			// TODO(https://gvisor.dev/issues/8105): This should be ErrNetworkUnreachable.
-			return nil, &tcpip.ErrHostUnreachable{}
+			return nil, &tcpip.ErrNetworkUnreachable{}
 		}
 
 		if id == 0 {
@@ -1612,13 +1611,11 @@ func (s *Stack) FindRoute(id tcpip.NICID, localAddr, remoteAddr tcpip.Address, n
 	}
 
 	if needRoute {
-		// TODO(https://gvisor.dev/issues/8105): This should be ErrNetworkUnreachable.
-		return nil, &tcpip.ErrHostUnreachable{}
+		return nil, &tcpip.ErrNetworkUnreachable{}
 	}
 	if header.IsV6LoopbackAddress(remoteAddr) {
 		return nil, &tcpip.ErrBadLocalAddress{}
 	}
-	// TODO(https://gvisor.dev/issues/8105): This should be ErrNetworkUnreachable.
 	return nil, &tcpip.ErrNetworkUnreachable{}
 }
 

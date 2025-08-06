@@ -282,7 +282,7 @@ func TestLocalUDP(t *testing.T) {
 		{
 			name:             "Unassigned local address",
 			addAddress:       false,
-			expectedWriteErr: &tcpip.ErrHostUnreachable{},
+			expectedWriteErr: &tcpip.ErrNetworkUnreachable{},
 		},
 		{
 			name:             "Assigned local address",

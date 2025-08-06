@@ -612,8 +612,8 @@ func TestDADResolve(t *testing.T) {
 			// tentative address.
 			{
 				r, err := s.FindRoute(nicID, tcpip.Address{}, addr2, header.IPv6ProtocolNumber, false)
-				if _, ok := err.(*tcpip.ErrHostUnreachable); !ok {
-					t.Errorf("got FindRoute(%d, '', %s, %d, false) = (%+v, %v), want = (_, %s)", nicID, addr2, header.IPv6ProtocolNumber, r, err, &tcpip.ErrHostUnreachable{})
+				if _, ok := err.(*tcpip.ErrNetworkUnreachable); !ok {
+					t.Errorf("got FindRoute(%d, '', %s, %d, false) = (%+v, %v), want = (_, %s)", nicID, addr2, header.IPv6ProtocolNumber, r, err, &tcpip.ErrNetworkUnreachable{})
 				}
 				if r != nil {
 					r.Release()
@@ -621,8 +621,8 @@ func TestDADResolve(t *testing.T) {
 			}
 			{
 				r, err := s.FindRoute(nicID, addr1, addr2, header.IPv6ProtocolNumber, false)
-				if _, ok := err.(*tcpip.ErrHostUnreachable); !ok {
-					t.Errorf("got FindRoute(%d, %s, %s, %d, false) = (%+v, %v), want = (_, %s)", nicID, addr1, addr2, header.IPv6ProtocolNumber, r, err, &tcpip.ErrHostUnreachable{})
+				if _, ok := err.(*tcpip.ErrNetworkUnreachable); !ok {
+					t.Errorf("got FindRoute(%d, %s, %s, %d, false) = (%+v, %v), want = (_, %s)", nicID, addr1, addr2, header.IPv6ProtocolNumber, r, err, &tcpip.ErrNetworkUnreachable{})
 				}
 				if r != nil {
 					r.Release()
@@ -3799,7 +3799,7 @@ func TestAutoGenAddrJobDeprecation(t *testing.T) {
 
 	{
 		err := ep.Connect(dstAddr)
-		if _, ok := err.(*tcpip.ErrHostUnreachable); !ok {
+		if _, ok := err.(*tcpip.ErrNetworkUnreachable); !ok {
 			t.Errorf("got ep.Connect(%+v) = %s, want = %s", dstAddr, err, &tcpip.ErrHostUnreachable{})
 		}
 	}
