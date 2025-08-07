@@ -25,7 +25,6 @@ import (
 	"strings"
 	"syscall"
 
-	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 )
 
@@ -564,55 +563,4 @@ func StatToAttr(s *syscall.Stat_t, req AttrMask) (Attr, AttrMask) {
 	req.DataVersion = false
 
 	return attr, req
-}
-
-// AllocateMode are possible modes to p9.File.Allocate().
-type AllocateMode struct {
-	KeepSize      bool
-	PunchHole     bool
-	NoHideStale   bool
-	CollapseRange bool
-	ZeroRange     bool
-	InsertRange   bool
-	Unshare       bool
-}
-
-// ToAllocateMode returns an AllocateMode from a fallocate(2) mode.
-func ToAllocateMode(mode uint64) AllocateMode {
-	return AllocateMode{
-		KeepSize:      mode&unix.FALLOC_FL_KEEP_SIZE != 0,
-		PunchHole:     mode&unix.FALLOC_FL_PUNCH_HOLE != 0,
-		NoHideStale:   mode&unix.FALLOC_FL_NO_HIDE_STALE != 0,
-		CollapseRange: mode&unix.FALLOC_FL_COLLAPSE_RANGE != 0,
-		ZeroRange:     mode&unix.FALLOC_FL_ZERO_RANGE != 0,
-		InsertRange:   mode&unix.FALLOC_FL_INSERT_RANGE != 0,
-		Unshare:       mode&unix.FALLOC_FL_UNSHARE_RANGE != 0,
-	}
-}
-
-// ToLinux converts to a value compatible with fallocate(2)'s mode.
-func (a *AllocateMode) ToLinux() uint32 {
-	rv := uint32(0)
-	if a.KeepSize {
-		rv |= unix.FALLOC_FL_KEEP_SIZE
-	}
-	if a.PunchHole {
-		rv |= unix.FALLOC_FL_PUNCH_HOLE
-	}
-	if a.NoHideStale {
-		rv |= unix.FALLOC_FL_NO_HIDE_STALE
-	}
-	if a.CollapseRange {
-		rv |= unix.FALLOC_FL_COLLAPSE_RANGE
-	}
-	if a.ZeroRange {
-		rv |= unix.FALLOC_FL_ZERO_RANGE
-	}
-	if a.InsertRange {
-		rv |= unix.FALLOC_FL_INSERT_RANGE
-	}
-	if a.Unshare {
-		rv |= unix.FALLOC_FL_UNSHARE_RANGE
-	}
-	return rv
 }
