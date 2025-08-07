@@ -51,25 +51,25 @@ func TestABIStructNamesInSync(t *testing.T) {
 	for version, abiCons := range abis {
 		t.Run(version.String(), func(t *testing.T) {
 			abi := abiCons.cons()
-			structNames := abi.getStructs()
+			info := abi.getInfo()
 
 			for ioctl := range abi.frontendIoctl {
-				if _, ok := structNames.frontendStructs[ioctl]; !ok {
+				if _, ok := info.frontendInfos[ioctl]; !ok {
 					t.Errorf("Frontend ioctl %#x not found in struct names for version %v", ioctl, version.String())
 				}
 			}
 			for ioctl := range abi.uvmIoctl {
-				if _, ok := structNames.uvmStructs[ioctl]; !ok {
+				if _, ok := info.uvmInfos[ioctl]; !ok {
 					t.Errorf("UVM ioctl %#x not found in struct names for version %v", ioctl, version.String())
 				}
 			}
 			for ioctl := range abi.controlCmd {
-				if _, ok := structNames.controlStructs[ioctl]; !ok {
+				if _, ok := info.controlInfos[ioctl]; !ok {
 					t.Errorf("Control command %#x not found in struct names for version %v", ioctl, version.String())
 				}
 			}
 			for ioctl := range abi.allocationClass {
-				if _, ok := structNames.allocationStructs[ioctl]; !ok {
+				if _, ok := info.allocationInfos[ioctl]; !ok {
 					t.Errorf("Alloc class %#x not found in struct names for version %v", ioctl, version.String())
 				}
 			}
