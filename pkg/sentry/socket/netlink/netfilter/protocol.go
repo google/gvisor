@@ -86,109 +86,6 @@ func (p *Protocol) Receive(ctx context.Context, s *netlink.Socket, buf []byte) *
 	return s.ProcessMessages(ctx, buf)
 }
 
-// ProcessMessage implements netlink.Protocol.ProcessMessage.
-// TODO: 434785410 - Support batch messages.
-func (p *Protocol) ProcessMessage(ctx context.Context, s *netlink.Socket, msg *nlmsg.Message, ms *nlmsg.MessageSet) *syserr.Error {
-	hdr := msg.Header()
-
-	// Netlink message payloads must be of at least the size of the genmsg.
-	// Return early if it is not, from linux/net/netfilter/nfnetlink.c.
-	if netLinkMessagePayloadSize(&hdr) < linux.SizeOfNetfilterGenMsg {
-		log.Debugf("Netlink message payload is too small: %d < %d", netLinkMessagePayloadSize(&hdr), linux.SizeOfNetfilterGenMsg)
-		return nil
-	}
-
-	msgType := hdr.NetFilterMsgType()
-	st := inet.StackFromContext(ctx).(*netstack.Stack).Stack
-	nft := (st.NFTables()).(*nftables.NFTables)
-	var nfGenMsg linux.NetFilterGenMsg
-
-	// The payload of a netfilter generic message is its attributes.
-	atr, ok := msg.GetData(&nfGenMsg)
-	if !ok {
-		log.Debugf("Failed to get message data")
-		return syserr.ErrInvalidArgument
-	}
-
-	attrs, ok := atr.Parse()
-	if !ok {
-		log.Debugf("Failed to parse message attributes")
-		return syserr.ErrInvalidArgument
-	}
-
-	// Nftables functions error check the address family value.
-	family, err := nftables.AFtoNetlinkAF(nfGenMsg.Family)
-	switch msgType {
-	case linux.NFT_MSG_NEWTABLE:
-		nft.Mu.Lock()
-		defer nft.Mu.Unlock()
-		// We only check the error value in the case of NFT_MSG_NEWTABLE as linux
-		// returns an EOPNOTSUPP error only in that case. Otherwise the other
-		// operations will return errors specific to their function.
-		if err != nil {
-			log.Debugf("Nftables: Unsupported address family: %d", int(nfGenMsg.Family))
-			return err
-		}
-
-		if err := p.newTable(nft, attrs, family, hdr.Flags, ms); err != nil {
-			log.Debugf("Nftables new table error: %s", err)
-			return err.GetError()
-		}
-		return nil
-	case linux.NFT_MSG_GETTABLE:
-		nft.Mu.RLock()
-		defer nft.Mu.RUnlock()
-		if err := p.getTable(nft, attrs, family, hdr.Flags, ms); err != nil {
-			log.Debugf("Nftables get table error: %s", err)
-			return err.GetError()
-		}
-		return nil
-	case linux.NFT_MSG_DELTABLE, linux.NFT_MSG_DESTROYTABLE:
-		nft.Mu.Lock()
-		defer nft.Mu.Unlock()
-		if err := p.deleteTable(nft, attrs, family, hdr, msgType, ms); err != nil {
-			log.Debugf("Nftables delete table error: %s", err)
-			return err.GetError()
-		}
-		return nil
-	case linux.NFT_MSG_NEWCHAIN:
-		nft.Mu.Lock()
-		defer nft.Mu.Unlock()
-		if err := p.newChain(nft, attrs, family, hdr.Flags, ms); err != nil {
-			log.Debugf("Nftables new chain error: %s", err)
-			return err.GetError()
-		}
-		return nil
-	case linux.NFT_MSG_GETCHAIN:
-		nft.Mu.RLock()
-		defer nft.Mu.RUnlock()
-		if err := p.getChain(nft, attrs, family, hdr.Flags, ms); err != nil {
-			log.Debugf("Nftables get chain error: %s", err)
-			return err.GetError()
-		}
-		return nil
-	case linux.NFT_MSG_DELCHAIN, linux.NFT_MSG_DESTROYCHAIN:
-		nft.Mu.Lock()
-		defer nft.Mu.Unlock()
-		if err := p.deleteChain(nft, attrs, family, hdr.Flags, msgType, ms); err != nil {
-			log.Debugf("Nftables delete chain error: %s", err)
-			return err.GetError()
-		}
-		return nil
-	case linux.NFT_MSG_NEWRULE:
-		nft.Mu.Lock()
-		defer nft.Mu.Unlock()
-		if err := p.newRule(nft, attrs, family, hdr.Flags, ms); err != nil {
-			log.Debugf("Nftables new rule error: %s", err)
-			return err.GetError()
-		}
-		return nil
-	default:
-		log.Debugf("Unsupported message type: %d", msgType)
-		return syserr.ErrNotSupported
-	}
-}
-
 // newTable creates a new table for the given family.
 func (p *Protocol) newTable(nft *nftables.NFTables, attrs map[uint16]nlmsg.BytesView, family stack.AddressFamily, flags uint16, ms *nlmsg.MessageSet) *syserr.AnnotatedError {
 	// TODO: b/434242152 - Handle the case where the table name is set to empty string.
@@ -988,6 +885,109 @@ func isNetDevHook(family stack.AddressFamily, hookNum uint32) bool {
 // netLinkMessagePayloadSize returns the size of the netlink message payload.
 func netLinkMessagePayloadSize(h *linux.NetlinkMessageHeader) int {
 	return int(h.Length) - linux.NetlinkMessageHeaderSize
+}
+
+// ProcessMessage implements netlink.Protocol.ProcessMessage.
+// TODO: 434785410 - Support batch messages.
+func (p *Protocol) ProcessMessage(ctx context.Context, s *netlink.Socket, msg *nlmsg.Message, ms *nlmsg.MessageSet) *syserr.Error {
+	hdr := msg.Header()
+
+	// Netlink message payloads must be of at least the size of the genmsg.
+	// Return early if it is not, from linux/net/netfilter/nfnetlink.c.
+	if netLinkMessagePayloadSize(&hdr) < linux.SizeOfNetfilterGenMsg {
+		log.Debugf("Netlink message payload is too small: %d < %d", netLinkMessagePayloadSize(&hdr), linux.SizeOfNetfilterGenMsg)
+		return nil
+	}
+
+	msgType := hdr.NetFilterMsgType()
+	st := inet.StackFromContext(ctx).(*netstack.Stack).Stack
+	nft := (st.NFTables()).(*nftables.NFTables)
+	var nfGenMsg linux.NetFilterGenMsg
+
+	// The payload of a netfilter generic message is its attributes.
+	atr, ok := msg.GetData(&nfGenMsg)
+	if !ok {
+		log.Debugf("Failed to get message data")
+		return syserr.ErrInvalidArgument
+	}
+
+	attrs, ok := atr.Parse()
+	if !ok {
+		log.Debugf("Failed to parse message attributes")
+		return syserr.ErrInvalidArgument
+	}
+
+	// Nftables functions error check the address family value.
+	family, err := nftables.AFtoNetlinkAF(nfGenMsg.Family)
+	switch msgType {
+	case linux.NFT_MSG_NEWTABLE:
+		nft.Mu.Lock()
+		defer nft.Mu.Unlock()
+		// We only check the error value in the case of NFT_MSG_NEWTABLE as linux
+		// returns an EOPNOTSUPP error only in that case. Otherwise the other
+		// operations will return errors specific to their function.
+		if err != nil {
+			log.Debugf("Nftables: Unsupported address family: %d", int(nfGenMsg.Family))
+			return err
+		}
+
+		if err := p.newTable(nft, attrs, family, hdr.Flags, ms); err != nil {
+			log.Debugf("Nftables new table error: %s", err)
+			return err.GetError()
+		}
+		return nil
+	case linux.NFT_MSG_GETTABLE:
+		nft.Mu.RLock()
+		defer nft.Mu.RUnlock()
+		if err := p.getTable(nft, attrs, family, hdr.Flags, ms); err != nil {
+			log.Debugf("Nftables get table error: %s", err)
+			return err.GetError()
+		}
+		return nil
+	case linux.NFT_MSG_DELTABLE, linux.NFT_MSG_DESTROYTABLE:
+		nft.Mu.Lock()
+		defer nft.Mu.Unlock()
+		if err := p.deleteTable(nft, attrs, family, hdr, msgType, ms); err != nil {
+			log.Debugf("Nftables delete table error: %s", err)
+			return err.GetError()
+		}
+		return nil
+	case linux.NFT_MSG_NEWCHAIN:
+		nft.Mu.Lock()
+		defer nft.Mu.Unlock()
+		if err := p.newChain(nft, attrs, family, hdr.Flags, ms); err != nil {
+			log.Debugf("Nftables new chain error: %s", err)
+			return err.GetError()
+		}
+		return nil
+	case linux.NFT_MSG_GETCHAIN:
+		nft.Mu.RLock()
+		defer nft.Mu.RUnlock()
+		if err := p.getChain(nft, attrs, family, hdr.Flags, ms); err != nil {
+			log.Debugf("Nftables get chain error: %s", err)
+			return err.GetError()
+		}
+		return nil
+	case linux.NFT_MSG_DELCHAIN, linux.NFT_MSG_DESTROYCHAIN:
+		nft.Mu.Lock()
+		defer nft.Mu.Unlock()
+		if err := p.deleteChain(nft, attrs, family, hdr.Flags, msgType, ms); err != nil {
+			log.Debugf("Nftables delete chain error: %s", err)
+			return err.GetError()
+		}
+		return nil
+	case linux.NFT_MSG_NEWRULE:
+		nft.Mu.Lock()
+		defer nft.Mu.Unlock()
+		if err := p.newRule(nft, attrs, family, hdr.Flags, ms); err != nil {
+			log.Debugf("Nftables new rule error: %s", err)
+			return err.GetError()
+		}
+		return nil
+	default:
+		log.Debugf("Unsupported message type: %d", msgType)
+		return syserr.ErrNotSupported
+	}
 }
 
 // init registers the NETLINK_NETFILTER provider.
