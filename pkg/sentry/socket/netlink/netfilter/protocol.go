@@ -25,6 +25,7 @@ import (
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netlink"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netlink/nlmsg"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netstack"
@@ -61,7 +62,32 @@ func (p *Protocol) CanSend() bool {
 	return true
 }
 
+// Receive implements netlink.Protocol.Receive.
+// From net/netfilter/nfnetlink.c:nfnetlink_rcv.
+func (p *Protocol) Receive(ctx context.Context, s *netlink.Socket, buf []byte) *syserr.Error {
+	hdr, ok := nlmsg.PeekHeader(buf)
+	// Linux ignores messages that are less than the NetlinkMessageHeaderSize.
+	if !ok || hdr.Length < linux.NetlinkMessageHeaderSize || uint32(len(buf)) < hdr.Length {
+		return nil
+	}
+
+	creds := auth.CredentialsFromContext(ctx)
+	// Currently, the kernel is the only valid destination so simply return
+	// the error to the caller.
+	if !creds.HasCapability(linux.CAP_NET_ADMIN) {
+		return syserr.ErrPermissionDenied
+	}
+
+	// TODO: b/434785410 - Support batch messages.
+	if hdr.Type == linux.NFNL_MSG_BATCH_BEGIN {
+		return syserr.ErrNotSupported
+	}
+
+	return s.ProcessMessages(ctx, buf)
+}
+
 // ProcessMessage implements netlink.Protocol.ProcessMessage.
+// TODO: 434785410 - Support batch messages.
 func (p *Protocol) ProcessMessage(ctx context.Context, s *netlink.Socket, msg *nlmsg.Message, ms *nlmsg.MessageSet) *syserr.Error {
 	hdr := msg.Header()
 

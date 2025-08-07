@@ -89,6 +89,19 @@ func ParseMessage(buf []byte) (msg *Message, rest []byte, ok bool) {
 	}, []byte(b), true
 }
 
+// PeekHeader peeks at the header of the message from the given buffer,
+// leaving the buffer unchanged. If the header is not present, it returns false.
+func PeekHeader(buf []byte) (linux.NetlinkMessageHeader, bool) {
+	b := BytesView(buf)
+	hdrBytes, ok := b.Extract(linux.NetlinkMessageHeaderSize)
+	if !ok {
+		return linux.NetlinkMessageHeader{}, false
+	}
+	var hdr linux.NetlinkMessageHeader
+	hdr.UnmarshalUnsafe(hdrBytes)
+	return hdr, true
+}
+
 // Header returns the header of this message.
 func (m *Message) Header() linux.NetlinkMessageHeader {
 	return m.hdr
@@ -326,6 +339,18 @@ func (v *BytesView) Extract(n int) ([]byte, bool) {
 	extracted := (*v)[:n]
 	*v = (*v)[n:]
 	return extracted, true
+}
+
+// Retrieve returns the first n bytes from v, leaving v unchanged. If n is out of
+// bounds, it returns false.
+func (v *BytesView) Retrieve(n int) ([]byte, bool) {
+	b := []byte(*v)
+	if n < 0 || n > len(b) {
+		return nil, false
+	}
+
+	retrieved := b[:n]
+	return retrieved, true
 }
 
 // String converts the raw attribute value to string.

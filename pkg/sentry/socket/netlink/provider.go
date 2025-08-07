@@ -39,6 +39,10 @@ type Protocol interface {
 	// that will never send messages, thus making those features no-ops.
 	CanSend() bool
 
+	// Receive receives an arbitrary message or batch of messages
+	// and processes them.
+	Receive(ctx context.Context, s *Socket, buf []byte) *syserr.Error
+
 	// ProcessMessage processes a single message from userspace.
 	//
 	// If err == nil, any messages added to ms will be sent back to the
