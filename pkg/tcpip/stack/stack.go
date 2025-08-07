@@ -805,7 +805,7 @@ func (s *Stack) removeRoutesLocked(match func(tcpip.Route) bool) int {
 	return count
 }
 
-// ReplaceRoute replaces the route in the routing table which matchse
+// ReplaceRoute replaces the route in the routing table which matches
 // the lookup key for the routing table. If there is no match, the given
 // route will still be added to the routing table.
 // The lookup key consists of destination, ToS, scope and output interface.
