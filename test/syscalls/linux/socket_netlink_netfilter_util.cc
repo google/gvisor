@@ -14,6 +14,8 @@
 
 #include "test/syscalls/linux/socket_netlink_netfilter_util.h"
 
+#include <endian.h>
+
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -35,7 +37,7 @@ void InitNetfilterGenmsg(struct nfgenmsg* genmsg, uint8_t family,
                          uint8_t version, uint16_t res_id) {
   genmsg->nfgen_family = family;
   genmsg->version = version;
-  genmsg->res_id = res_id;
+  genmsg->res_id = htons(res_id);
 }
 
 // Helper function to check the netfilter table attributes.
@@ -55,7 +57,8 @@ void CheckNetfilterTableAttributes(const NfTableCheckOptions& options) {
   const struct nfattr* table_use_attr =
       FindNfAttr(options.hdr, nullptr, NFTA_TABLE_USE);
   if (table_use_attr != nullptr && options.expected_chain_count != nullptr) {
-    uint32_t count = *(reinterpret_cast<uint32_t*>(NFA_DATA(table_use_attr)));
+    uint32_t count =
+        ntohl(*(reinterpret_cast<uint32_t*>(NFA_DATA(table_use_attr))));
     EXPECT_EQ(count, *options.expected_chain_count);
   } else {
     EXPECT_EQ(table_use_attr, nullptr);
@@ -67,7 +70,8 @@ void CheckNetfilterTableAttributes(const NfTableCheckOptions& options) {
     const struct nfattr* handle_attr =
         FindNfAttr(options.hdr, nullptr, NFTA_TABLE_HANDLE);
     if (handle_attr != nullptr && options.expected_handle != nullptr) {
-      uint64_t handle = *(reinterpret_cast<uint64_t*>(NFA_DATA(handle_attr)));
+      uint64_t handle =
+          be64toh(*(reinterpret_cast<uint64_t*>(NFA_DATA(handle_attr))));
       EXPECT_EQ(handle, *options.expected_handle);
     } else {
       EXPECT_EQ(handle_attr, nullptr);
@@ -79,7 +83,8 @@ void CheckNetfilterTableAttributes(const NfTableCheckOptions& options) {
   const struct nfattr* flags_attr =
       FindNfAttr(options.hdr, nullptr, NFTA_TABLE_FLAGS);
   if (flags_attr != nullptr && options.expected_flags != nullptr) {
-    uint32_t flags = *(reinterpret_cast<uint32_t*>(NFA_DATA(flags_attr)));
+    uint32_t flags =
+        ntohl(*(reinterpret_cast<uint32_t*>(NFA_DATA(flags_attr))));
     EXPECT_EQ(flags, *options.expected_flags);
   } else {
     EXPECT_EQ(flags_attr, nullptr);
@@ -90,7 +95,9 @@ void CheckNetfilterTableAttributes(const NfTableCheckOptions& options) {
   const struct nfattr* owner_attr =
       FindNfAttr(options.hdr, nullptr, NFTA_TABLE_OWNER);
   if (owner_attr != nullptr) {
-    uint32_t owner = *(reinterpret_cast<uint32_t*>(NFA_DATA(owner_attr)));
+    // Returned in network byte order.
+    uint32_t owner =
+        ntohl(*(reinterpret_cast<uint32_t*>(NFA_DATA(owner_attr))));
     EXPECT_EQ(owner, *options.expected_owner);
   } else {
     EXPECT_EQ(owner_attr, nullptr);
@@ -147,7 +154,8 @@ void CheckNetfilterChainAttributes(const NfChainCheckOptions& options) {
     const struct nfattr* handle_attr =
         FindNfAttr(options.hdr, nullptr, NFTA_CHAIN_HANDLE);
     if (handle_attr != nullptr && options.expected_handle != nullptr) {
-      uint64_t handle = *(reinterpret_cast<uint64_t*>(NFA_DATA(handle_attr)));
+      uint64_t handle =
+          be64toh(*(reinterpret_cast<uint64_t*>(NFA_DATA(handle_attr))));
       EXPECT_EQ(handle, *options.expected_handle);
     } else {
       EXPECT_EQ(handle_attr, nullptr);
@@ -159,7 +167,8 @@ void CheckNetfilterChainAttributes(const NfChainCheckOptions& options) {
   const struct nfattr* policy_attr =
       FindNfAttr(options.hdr, nullptr, NFTA_CHAIN_POLICY);
   if (policy_attr != nullptr && options.expected_policy != nullptr) {
-    uint32_t policy = *(reinterpret_cast<uint32_t*>(NFA_DATA(policy_attr)));
+    uint32_t policy =
+        ntohl(*(reinterpret_cast<uint32_t*>(NFA_DATA(policy_attr))));
     EXPECT_EQ(policy, *options.expected_policy);
   } else {
     EXPECT_EQ(policy_attr, nullptr);
@@ -182,7 +191,8 @@ void CheckNetfilterChainAttributes(const NfChainCheckOptions& options) {
   const struct nfattr* flags_attr =
       FindNfAttr(options.hdr, nullptr, NFTA_CHAIN_FLAGS);
   if (flags_attr != nullptr && options.expected_flags != nullptr) {
-    uint32_t flags = *(reinterpret_cast<uint32_t*>(NFA_DATA(flags_attr)));
+    uint32_t flags =
+        ntohl(*(reinterpret_cast<uint32_t*>(NFA_DATA(flags_attr))));
     EXPECT_EQ(flags, *options.expected_flags);
   } else {
     EXPECT_EQ(flags_attr, nullptr);
@@ -193,7 +203,7 @@ void CheckNetfilterChainAttributes(const NfChainCheckOptions& options) {
   const struct nfattr* use_attr =
       FindNfAttr(options.hdr, nullptr, NFTA_CHAIN_USE);
   if (use_attr != nullptr && options.expected_use != nullptr) {
-    uint32_t use = *(reinterpret_cast<uint32_t*>(NFA_DATA(use_attr)));
+    uint32_t use = ntohl(*(reinterpret_cast<uint32_t*>(NFA_DATA(use_attr))));
     EXPECT_EQ(use, *options.expected_use);
   } else {
     EXPECT_EQ(use_attr, nullptr);
@@ -227,13 +237,17 @@ void AddDefaultTable(const AddDefaultTableOptions options) {
   }
 
   std::vector<char> add_table_request_buffer =
-      NlReq("newtable req ack inet")
-          .Seq(options.seq)
-          .StrAttr(NFTA_TABLE_NAME, test_table_name)
+      NlBatchReq()
+          .SeqStart(options.seq)
+          .Req(NlReq("newtable req ack inet")
+                   .Seq(options.seq + 1)
+                   .StrAttr(NFTA_TABLE_NAME, test_table_name)
+                   .Build())
+          .SeqEnd(options.seq + 2)
           .Build();
-  ASSERT_NO_ERRNO(NetlinkRequestAckOrError(options.fd, options.seq,
-                                           add_table_request_buffer.data(),
-                                           add_table_request_buffer.size()));
+  ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
+      options.fd, options.seq, options.seq + 2, add_table_request_buffer.data(),
+      add_table_request_buffer.size()));
 }
 
 // Helper function to add a default base chain.
@@ -256,23 +270,82 @@ void AddDefaultBaseChain(const AddDefaultBaseChainOptions options) {
 
   std::vector<char> nested_hook_data =
       NlNestedAttr()
-          .U32Attr(NFTA_HOOK_HOOKNUM, &test_hook_num)
-          .U32Attr(NFTA_HOOK_PRIORITY, &test_hook_priority)
+          .U32Attr(NFTA_HOOK_HOOKNUM, test_hook_num)
+          .U32Attr(NFTA_HOOK_PRIORITY, test_hook_priority)
           .StrAttr(NFTA_CHAIN_TYPE, test_chain_type_name)
           .Build();
   std::vector<char> add_chain_request_buffer =
-      NlReq("newchain req ack inet")
-          .Seq(options.seq)
-          .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
-          .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
-          .U32Attr(NFTA_CHAIN_POLICY, &test_policy)
-          .RawAttr(NFTA_CHAIN_HOOK, nested_hook_data.data(),
-                   nested_hook_data.size())
-          .U32Attr(NFTA_CHAIN_FLAGS, &test_chain_flags)
+      NlBatchReq()
+          .SeqStart(options.seq)
+          .Req(NlReq("newchain req ack inet")
+                   .Seq(options.seq + 1)
+                   .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
+                   .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
+                   .U32Attr(NFTA_CHAIN_POLICY, test_policy)
+                   .RawAttr(NFTA_CHAIN_HOOK, nested_hook_data.data(),
+                            nested_hook_data.size())
+                   .U32Attr(NFTA_CHAIN_FLAGS, test_chain_flags)
+                   .Build())
+          .SeqEnd(options.seq + 2)
           .Build();
-  ASSERT_NO_ERRNO(NetlinkRequestAckOrError(options.fd, options.seq,
-                                           add_chain_request_buffer.data(),
-                                           add_chain_request_buffer.size()));
+  ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
+      options.fd, options.seq, options.seq + 2, add_chain_request_buffer.data(),
+      add_chain_request_buffer.size()));
+}
+
+NlBatchReq& NlBatchReq::SeqStart(uint32_t seq) {
+  seq_start_ = seq;
+  return *this;
+}
+
+NlBatchReq& NlBatchReq::SeqEnd(uint32_t seq) {
+  seq_end_ = seq;
+  return *this;
+}
+
+NlBatchReq& NlBatchReq::Req(std::vector<char> req) {
+  // Since everything is already 4 bit aligned, we can just append the request
+  // to the buffer.
+  reqs_buffer_.insert(reqs_buffer_.end(), req.begin(), req.end());
+  return *this;
+}
+
+std::vector<char> NlBatchReq::Build() {
+  std::vector<char> batch_begin;
+  std::vector<char> batch_end;
+  size_t aligned_hdr_size = NLMSG_ALIGN(sizeof(nlmsghdr));
+  size_t aligned_genmsg_size = NLMSG_ALIGN(sizeof(nfgenmsg));
+  size_t total_message_len =
+      NLMSG_ALIGN(aligned_hdr_size + aligned_genmsg_size);
+
+  batch_begin.resize(total_message_len);
+  batch_end.resize(total_message_len);
+  std::memset(batch_begin.data(), 0, total_message_len);
+  std::memset(batch_end.data(), 0, total_message_len);
+
+  // Must be formatted as requests to be accepted by the kernel.
+  struct nlmsghdr* nlh = reinterpret_cast<struct nlmsghdr*>(batch_begin.data());
+  InitNetlinkHdr(nlh, (uint32_t)total_message_len, NFNL_MSG_BATCH_BEGIN,
+                 seq_start_, NLM_F_REQUEST | NLM_F_ACK);
+
+  struct nfgenmsg* nfg = reinterpret_cast<struct nfgenmsg*>(NLMSG_DATA(nlh));
+  InitNetfilterGenmsg(nfg, 0, NFNETLINK_V0, NFNL_SUBSYS_NFTABLES);
+
+  struct nlmsghdr* nlh_end =
+      reinterpret_cast<struct nlmsghdr*>(batch_end.data());
+  InitNetlinkHdr(nlh_end, (uint32_t)total_message_len, NFNL_MSG_BATCH_END,
+                 seq_end_, NLM_F_REQUEST | NLM_F_ACK);
+  struct nfgenmsg* nfg_end =
+      reinterpret_cast<struct nfgenmsg*>(NLMSG_DATA(nlh_end));
+  InitNetfilterGenmsg(nfg_end, 0, NFNETLINK_V0, NFNL_SUBSYS_NFTABLES);
+
+  std::vector<char> batched_req;
+  batched_req.insert(batched_req.end(), batch_begin.begin(), batch_begin.end());
+  batched_req.insert(batched_req.end(), reqs_buffer_.begin(),
+                     reqs_buffer_.end());
+  batched_req.insert(batched_req.end(), batch_end.begin(), batch_end.end());
+
+  return batched_req;
 }
 
 NlReq& NlReq::MsgType(uint8_t msg_type) {
@@ -372,9 +445,9 @@ bool NlReq::FamilyToken(const std::string& token) {
 // the payload in bytes.
 NlReq& NlReq::RawAttr(uint16_t attr_type, const void* payload,
                       size_t payload_size) {
-  // Store a pointer to the payload and the size to construct it later.
-  attributes_[attr_type] = {reinterpret_cast<const char*>(payload),
-                            payload_size};
+  // Store a copy of the payload.
+  const char* payload_ptr = reinterpret_cast<const char*>(payload);
+  attributes_[attr_type].assign(payload_ptr, payload_ptr + payload_size);
   return *this;
 }
 
@@ -385,23 +458,26 @@ NlReq& NlReq::StrAttr(uint16_t attr_type, const char* payload) {
 }
 
 // Method to add a uint8_t attribute to the message.
-NlReq& NlReq::U8Attr(uint16_t attr_type, const uint8_t* payload) {
-  return RawAttr(attr_type, payload, sizeof(uint8_t));
+NlReq& NlReq::U8Attr(uint16_t attr_type, uint8_t payload) {
+  return RawAttr(attr_type, &payload, sizeof(uint8_t));
 }
 
 // Method to add a uint16_t attribute to the message.
-NlReq& NlReq::U16Attr(uint16_t attr_type, const uint16_t* payload) {
-  return RawAttr(attr_type, payload, sizeof(uint16_t));
+NlReq& NlReq::U16Attr(uint16_t attr_type, uint16_t payload) {
+  payload = htons(payload);
+  return RawAttr(attr_type, &payload, sizeof(uint16_t));
 }
 
 // Method to add a uint32_t attribute to the message.
-NlReq& NlReq::U32Attr(uint16_t attr_type, const uint32_t* payload) {
-  return RawAttr(attr_type, payload, sizeof(uint32_t));
+NlReq& NlReq::U32Attr(uint16_t attr_type, uint32_t payload) {
+  payload = htonl(payload);
+  return RawAttr(attr_type, &payload, sizeof(uint32_t));
 }
 
 // Method to add a uint64_t attribute to the message.
-NlReq& NlReq::U64Attr(uint16_t attr_type, const uint64_t* payload) {
-  return RawAttr(attr_type, payload, sizeof(uint64_t));
+NlReq& NlReq::U64Attr(uint16_t attr_type, uint64_t payload) {
+  payload = htobe64(payload);
+  return RawAttr(attr_type, &payload, sizeof(uint64_t));
 }
 
 std::vector<char> NlReq::Build() {
@@ -409,9 +485,8 @@ std::vector<char> NlReq::Build() {
   size_t aligned_genmsg_size = NLMSG_ALIGN(sizeof(nfgenmsg));
   size_t total_attr_size = 0;
 
-  for (const auto& [attr_type, attr_data] : attributes_) {
-    const auto& [_, payload_size] = attr_data;
-    total_attr_size += NLA_ALIGN(NLA_HDRLEN + payload_size);
+  for (const auto& [attr_type, attr_payload] : attributes_) {
+    total_attr_size += NLA_ALIGN(NLA_HDRLEN + attr_payload.size());
   }
 
   size_t total_message_len =
@@ -426,18 +501,18 @@ std::vector<char> NlReq::Build() {
                  flags_);
 
   struct nfgenmsg* nfg = reinterpret_cast<struct nfgenmsg*>(NLMSG_DATA(nlh));
-  InitNetfilterGenmsg(nfg, family_, NFNETLINK_V0, 0);
+  InitNetfilterGenmsg(nfg, family_, NFNETLINK_V0, NFNL_SUBSYS_NFTABLES);
 
   char* payload =
       (char*)msg_buffer_.data() + aligned_hdr_size + aligned_genmsg_size;
 
-  for (const auto& [attr_type, attr_data] : attributes_) {
-    const auto& [payload_data, payload_size] = attr_data;
+  for (const auto& [attr_type, attr_payload] : attributes_) {
     struct nlattr* attr = reinterpret_cast<struct nlattr*>(payload);
-    InitNetlinkAttr(attr, payload_size, attr_type);
-    std::memcpy((char*)attr + NLA_HDRLEN, payload_data, payload_size);
+    InitNetlinkAttr(attr, attr_payload.size(), attr_type);
+    std::memcpy((char*)attr + NLA_HDRLEN, attr_payload.data(),
+                attr_payload.size());
     // Move over to the next attribute.
-    payload += NLA_ALIGN(NLA_HDRLEN + payload_size);
+    payload += NLA_ALIGN(NLA_HDRLEN + attr_payload.size());
   }
   return msg_buffer_;
 }
@@ -446,9 +521,9 @@ std::vector<char> NlReq::Build() {
 // the payload in bytes.
 NlNestedAttr& NlNestedAttr::RawAttr(uint16_t attr_type, const void* payload,
                                     size_t payload_size) {
-  // Store a pointer to the payload and the size to construct it later.
-  attributes_[attr_type] = {reinterpret_cast<const char*>(payload),
-                            payload_size};
+  // Store a copy of the payload.
+  const char* payload_ptr = reinterpret_cast<const char*>(payload);
+  attributes_[attr_type].assign(payload_ptr, payload_ptr + payload_size);
   return *this;
 }
 
@@ -459,34 +534,33 @@ NlNestedAttr& NlNestedAttr::StrAttr(uint16_t attr_type, const char* payload) {
 }
 
 // Method to add a uint8_t attribute to the message.
-NlNestedAttr& NlNestedAttr::U8Attr(uint16_t attr_type, const uint8_t* payload) {
-  return RawAttr(attr_type, payload, sizeof(uint8_t));
+NlNestedAttr& NlNestedAttr::U8Attr(uint16_t attr_type, uint8_t payload) {
+  return RawAttr(attr_type, &payload, sizeof(uint8_t));
 }
 
 // Method to add a uint16_t attribute to the message.
-NlNestedAttr& NlNestedAttr::U16Attr(uint16_t attr_type,
-                                    const uint16_t* payload) {
-  return RawAttr(attr_type, payload, sizeof(uint16_t));
+NlNestedAttr& NlNestedAttr::U16Attr(uint16_t attr_type, uint16_t payload) {
+  payload = htons(payload);
+  return RawAttr(attr_type, &payload, sizeof(uint16_t));
 }
 
 // Method to add a uint32_t attribute to the message.
-NlNestedAttr& NlNestedAttr::U32Attr(uint16_t attr_type,
-                                    const uint32_t* payload) {
-  return RawAttr(attr_type, payload, sizeof(uint32_t));
+NlNestedAttr& NlNestedAttr::U32Attr(uint16_t attr_type, uint32_t payload) {
+  payload = htonl(payload);
+  return RawAttr(attr_type, &payload, sizeof(uint32_t));
 }
 
 // Method to add a uint64_t attribute to the message.
-NlNestedAttr& NlNestedAttr::U64Attr(uint16_t attr_type,
-                                    const uint64_t* payload) {
-  return RawAttr(attr_type, payload, sizeof(uint64_t));
+NlNestedAttr& NlNestedAttr::U64Attr(uint16_t attr_type, uint64_t payload) {
+  payload = htobe64(payload);
+  return RawAttr(attr_type, &payload, sizeof(uint64_t));
 }
 
 std::vector<char> NlNestedAttr::Build() {
   size_t total_attr_size = 0;
 
-  for (const auto& [attr_type, attr_data] : attributes_) {
-    const auto& [_, payload_size] = attr_data;
-    total_attr_size += NLA_ALIGN(NLA_HDRLEN + payload_size);
+  for (const auto& [attr_type, attr_payload] : attributes_) {
+    total_attr_size += NLA_ALIGN(NLA_HDRLEN + attr_payload.size());
   }
 
   msg_buffer_.resize(total_attr_size);
@@ -494,13 +568,13 @@ std::vector<char> NlNestedAttr::Build() {
 
   char* payload = (char*)msg_buffer_.data();
 
-  for (const auto& [attr_type, attr_data] : attributes_) {
-    const auto& [payload_data, payload_size] = attr_data;
+  for (const auto& [attr_type, attr_payload] : attributes_) {
     struct nlattr* attr = reinterpret_cast<struct nlattr*>(payload);
-    InitNetlinkAttr(attr, payload_size, attr_type);
-    std::memcpy((char*)attr + NLA_HDRLEN, payload_data, payload_size);
+    InitNetlinkAttr(attr, attr_payload.size(), attr_type);
+    std::memcpy((char*)attr + NLA_HDRLEN, attr_payload.data(),
+                attr_payload.size());
     // Move over to the next attribute.
-    payload += NLA_ALIGN(NLA_HDRLEN + payload_size);
+    payload += NLA_ALIGN(NLA_HDRLEN + attr_payload.size());
   }
   return msg_buffer_;
 }
@@ -559,7 +633,7 @@ NlImmExpr& NlImmExpr::Value(const std::vector<char>& value) {
 
 std::vector<char> NlImmExpr::VerdictBuild() {
   std::vector<char> verdict_code_data =
-      NlNestedAttr().U32Attr(NFTA_VERDICT_CODE, &verdict_code_).Build();
+      NlNestedAttr().U32Attr(NFTA_VERDICT_CODE, verdict_code_).Build();
   std::vector<char> immediate_data =
       NlNestedAttr()
           .RawAttr(NFTA_DATA_VERDICT, verdict_code_data.data(),
@@ -567,7 +641,7 @@ std::vector<char> NlImmExpr::VerdictBuild() {
           .Build();
   std::vector<char> immediate_attrs =
       NlNestedAttr()
-          .U32Attr(NFTA_IMMEDIATE_DREG, &dreg_)
+          .U32Attr(NFTA_IMMEDIATE_DREG, dreg_)
           .RawAttr(NFTA_IMMEDIATE_DATA, immediate_data.data(),
                    immediate_data.size())
           .Build();
@@ -584,7 +658,7 @@ std::vector<char> NlImmExpr::ValueBuild() {
           .Build();
   std::vector<char> immediate_attrs =
       NlNestedAttr()
-          .U32Attr(NFTA_IMMEDIATE_DREG, &dreg_)
+          .U32Attr(NFTA_IMMEDIATE_DREG, dreg_)
           .RawAttr(NFTA_IMMEDIATE_DATA, immediate_data.data(),
                    immediate_data.size())
           .Build();
@@ -603,6 +677,46 @@ std::vector<char> NlImmExpr::DefaultAcceptAll() {
 
 std::vector<char> NlImmExpr::DefaultDropAll() {
   return NlImmExpr().Dreg(NFT_REG_VERDICT).VerdictCode(NF_DROP).VerdictBuild();
+}
+
+PosixError NetlinkNetfilterBatchRequestAckOrError(const FileDescriptor& fd,
+                                                  uint32_t seq_start,
+                                                  uint32_t seq_end,
+                                                  void* request, size_t len) {
+  RETURN_IF_ERRNO(NetlinkRequest(fd, request, len));
+  // Dummy negative number for no error message received.
+  // On a successful message, err will be set to 0 (signalling an ack).
+  int err = -42;
+  bool err_set = false;
+  int msg_count = 0;
+  int expected_msg_count = seq_end - seq_start + 1;
+  while (msg_count < expected_msg_count) {
+    RETURN_IF_ERRNO(NetlinkResponse(
+        fd,
+        [&](const struct nlmsghdr* hdr) {
+          msg_count++;
+          EXPECT_EQ(NLMSG_ERROR, hdr->nlmsg_type);
+          EXPECT_GE(hdr->nlmsg_seq, seq_start);
+          EXPECT_LE(hdr->nlmsg_seq, seq_end);
+          EXPECT_GE(hdr->nlmsg_len, sizeof(*hdr) + sizeof(struct nlmsgerr));
+
+          const struct nlmsgerr* msg =
+              reinterpret_cast<const struct nlmsgerr*>(NLMSG_DATA(hdr));
+          err = -msg->error;
+          if (err != 0) {
+            if (!err_set) {
+              expected_msg_count -= 1;
+              err_set = true;
+            }
+          }
+        },
+        true));
+  }
+
+  // Assumes that we need to read as many messages as there are sequences in the
+  // batch.
+  EXPECT_EQ(msg_count, expected_msg_count);
+  return PosixError(err);
 }
 
 }  // namespace testing

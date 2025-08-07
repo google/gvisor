@@ -661,8 +661,8 @@ func (kernelSCM) Credentials(*kernel.Task) (kernel.ThreadID, auth.UID, auth.GID)
 // kernelCreds is the concrete version of kernelSCM used in all creds.
 var kernelCreds = &kernelSCM{}
 
-// sendResponse sends the response messages in ms back to userspace.
-func (s *Socket) sendResponse(ctx context.Context, ms *nlmsg.MessageSet) *syserr.Error {
+// SendResponse sends the response messages in ms back to userspace.
+func (s *Socket) SendResponse(ctx context.Context, ms *nlmsg.MessageSet) *syserr.Error {
 	// Linux combines multiple netlink messages into a single datagram.
 	bufs := make([][]byte, 0, len(ms.Messages))
 	for _, m := range ms.Messages {
@@ -716,7 +716,8 @@ func (s *Socket) sendResponse(ctx context.Context, ms *nlmsg.MessageSet) *syserr
 	return nil
 }
 
-func dumpErrorMessage(hdr linux.NetlinkMessageHeader, ms *nlmsg.MessageSet, err *syserr.Error) {
+// DumpErrorMessage adds an error message to the message set.
+func DumpErrorMessage(hdr linux.NetlinkMessageHeader, ms *nlmsg.MessageSet, err *syserr.Error) {
 	m := ms.AddMessage(linux.NetlinkMessageHeader{
 		Type: linux.NLMSG_ERROR,
 	})
@@ -724,9 +725,11 @@ func dumpErrorMessage(hdr linux.NetlinkMessageHeader, ms *nlmsg.MessageSet, err 
 		Error:  int32(-err.ToLinux()),
 		Header: hdr,
 	})
+	ms.ContainsError = true
 }
 
-func dumpAckMessage(hdr linux.NetlinkMessageHeader, ms *nlmsg.MessageSet) {
+// DumpAckMessage adds an ack message to the message set.
+func DumpAckMessage(hdr linux.NetlinkMessageHeader, ms *nlmsg.MessageSet) {
 	m := ms.AddMessage(linux.NetlinkMessageHeader{
 		Type: linux.NLMSG_ERROR,
 	})
@@ -756,12 +759,12 @@ func (s *Socket) ProcessMessages(ctx context.Context, buf []byte) *syserr.Error 
 
 		ms := nlmsg.NewMessageSet(s.portID, hdr.Seq)
 		if err := s.protocol.ProcessMessage(ctx, s, msg, ms); err != nil {
-			dumpErrorMessage(hdr, ms, err)
+			DumpErrorMessage(hdr, ms, err)
 		} else if hdr.Flags&linux.NLM_F_ACK == linux.NLM_F_ACK {
-			dumpAckMessage(hdr, ms)
+			DumpAckMessage(hdr, ms)
 		}
 
-		if err := s.sendResponse(ctx, ms); err != nil {
+		if err := s.SendResponse(ctx, ms); err != nil {
 			return err
 		}
 	}
@@ -844,4 +847,9 @@ func (s *Socket) State() uint32 {
 // Type implements socket.Socket.Type.
 func (s *Socket) Type() (family int, skType linux.SockType, protocol int) {
 	return linux.AF_NETLINK, s.skType, s.protocol.Protocol()
+}
+
+// GetPortID returns the port ID of the NETLINK socket.
+func (s *Socket) GetPortID() int32 {
+	return s.portID
 }
