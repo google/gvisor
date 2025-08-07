@@ -1,7 +1,9 @@
 // Copyright 2009 The Go Authors. All rights reserved.
 // Copyright 2019 The gVisor Authors.
+//
 // Use of this source code is governed by a BSD-style
-// license that can be found in the LICENSE file.
+// license that can be found in the LICENSE file or at
+// https://developers.google.com/open-source/licenses/bsd.
 
 // This is mostly copied from the standard library's sync/rwmutex.go.
 //
