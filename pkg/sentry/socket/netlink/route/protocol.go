@@ -69,6 +69,12 @@ func (p *Protocol) CanSend() bool {
 	return true
 }
 
+// Receive implements netlink.Protocol.Receive.
+// From net/core/rtnetlink.c:rtnetlink_rcv.
+func (p *Protocol) Receive(ctx context.Context, s *netlink.Socket, buf []byte) *syserr.Error {
+	return s.ProcessMessages(ctx, buf)
+}
+
 // dumpLinks handles RTM_GETLINK dump requests.
 func (p *Protocol) dumpLinks(ctx context.Context, s *netlink.Socket, msg *nlmsg.Message, ms *nlmsg.MessageSet) *syserr.Error {
 	// NLM_F_DUMP + RTM_GETLINK messages are supposed to include an

@@ -796,9 +796,7 @@ func (e *endpoint) forwardUnicastPacket(pkt *stack.PacketBuffer) ip.ForwardingEr
 	r, err := stk.FindRoute(0, tcpip.Address{}, dstAddr, ProtocolNumber, false /* multicastLoop */)
 	switch err.(type) {
 	case nil:
-	// TODO(https://gvisor.dev/issues/8105): We should not observe ErrHostUnreachable from route
-	// lookups.
-	case *tcpip.ErrHostUnreachable, *tcpip.ErrNetworkUnreachable:
+	case *tcpip.ErrNetworkUnreachable:
 		// We return the original error rather than the result of returning
 		// the ICMP packet because the original error is more relevant to
 		// the caller.

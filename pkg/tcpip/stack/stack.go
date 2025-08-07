@@ -805,7 +805,7 @@ func (s *Stack) removeRoutesLocked(match func(tcpip.Route) bool) int {
 	return count
 }
 
-// ReplaceRoute replaces the route in the routing table which matchse
+// ReplaceRoute replaces the route in the routing table which matches
 // the lookup key for the routing table. If there is no match, the given
 // route will still be added to the routing table.
 // The lookup key consists of destination, ToS, scope and output interface.
@@ -1598,8 +1598,7 @@ func (s *Stack) FindRoute(id tcpip.NICID, localAddr, remoteAddr tcpip.Address, n
 				}
 			}
 
-			// TODO(https://gvisor.dev/issues/8105): This should be ErrNetworkUnreachable.
-			return nil, &tcpip.ErrHostUnreachable{}
+			return nil, &tcpip.ErrNetworkUnreachable{}
 		}
 
 		if id == 0 {
@@ -1612,13 +1611,11 @@ func (s *Stack) FindRoute(id tcpip.NICID, localAddr, remoteAddr tcpip.Address, n
 	}
 
 	if needRoute {
-		// TODO(https://gvisor.dev/issues/8105): This should be ErrNetworkUnreachable.
-		return nil, &tcpip.ErrHostUnreachable{}
+		return nil, &tcpip.ErrNetworkUnreachable{}
 	}
 	if header.IsV6LoopbackAddress(remoteAddr) {
 		return nil, &tcpip.ErrBadLocalAddress{}
 	}
-	// TODO(https://gvisor.dev/issues/8105): This should be ErrNetworkUnreachable.
 	return nil, &tcpip.ErrNetworkUnreachable{}
 }
 

@@ -228,7 +228,7 @@ func handlePtraceSyscallRequestError(req any, format string, values ...any) {
 	case requestStub:
 		req.(requestStub).done <- nil
 	}
-	log.Warningf("handlePtraceSyscallRequest failed: "+format, values...)
+	log.BugTracebackf("handlePtraceSyscallRequest failed: "+format, values...)
 }
 
 // handlePtraceSyscallRequest executes system calls that can't be run via
@@ -846,7 +846,9 @@ func (s *subprocess) switchToApp(c *platformContext, ac *arch.Context64) (isSysc
 	threadID := ctx.threadID()
 	if threadID != invalidThreadID {
 		if sysThread, ok := s.sysmsgThreads[threadID]; ok && sysThread.msg.Err != 0 {
-			return false, false, hostarch.NoAccess, sysThread.msg.ConvertSysmsgErr()
+			sysmsgErr := sysThread.msg.ConvertSysmsgErr()
+			log.BugTraceback(sysmsgErr)
+			return false, false, hostarch.NoAccess, sysmsgErr
 		}
 		return false, false, hostarch.NoAccess, corruptedSharedMemoryErr(fmt.Sprintf("found unexpected ThreadContext.ThreadID field, expected %d found %d", invalidThreadID, threadID))
 	}
