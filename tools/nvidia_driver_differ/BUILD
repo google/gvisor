@@ -19,7 +19,6 @@ cc_binary(
         "@com_google_absl//absl/strings",
         "@llvm-project//clang:ast",
         "@llvm-project//clang:ast_matchers",
-        "@llvm-project//clang:basic",
         "@llvm-project//clang:tooling",
         "@llvm-project//llvm:Support",
         "@nlohmann_json//:json",

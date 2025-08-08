@@ -317,14 +317,15 @@ make things simple, the inputs and outputs can be encoded in JSON. Overall,
 interfacing with the parser would go something like this:
 
 ```bash
-./driver_ast_parser --structs=structs.json source_file.cc
+./driver_ast_parser --input=input.json source_file.cc
 ```
 
 Input:
 
 ```json
 {
-    "structs": ["STRUCT", "NAMES", "HERE", ...]
+    "structs": ["STRUCT", "NAMES", "HERE", ...],
+    "constants": ["CONSTANT", "NAMES", "HERE", ...]
 }
 ```
 
@@ -346,6 +347,9 @@ Output:
     // All the typedefs found
     "aliases": {
         "NvHandle": "unsigned int"
+    },
+    "constants": {
+      "CONSTANT_NAME": UINT_VALUE
     }
 }
 ```

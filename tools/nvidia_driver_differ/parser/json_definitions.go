@@ -22,18 +22,19 @@ import (
 	"strings"
 
 	"github.com/google/go-cmp/cmp"
-	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy"
 )
 
-// InputJSON is the format for the structs.json file that driver_ast_parser takes as input.
+// InputJSON is the format for the input.json file that driver_ast_parser takes as input.
 type InputJSON struct {
-	Structs []string `json:"structs"`
+	Structs   []string `json:"structs"`
+	Constants []string `json:"constants"`
 }
 
 // OutputJSON is the format for the output of driver_ast_parser.
 type OutputJSON struct {
-	Records RecordDefs
-	Aliases TypeAliases
+	Records   RecordDefs
+	Aliases   TypeAliases
+	Constants map[string]uint64
 }
 
 // Merge merges the struct definitions from b into this OutputJSON.
@@ -44,8 +45,12 @@ func (a *OutputJSON) Merge(b OutputJSON) {
 	if a.Aliases == nil {
 		a.Aliases = make(TypeAliases)
 	}
+	if a.Constants == nil {
+		a.Constants = make(map[string]uint64)
+	}
 	maps.Copy(a.Records, b.Records)
 	maps.Copy(a.Aliases, b.Aliases)
+	maps.Copy(a.Constants, b.Constants)
 }
 
 // RecordField represents a field in a record (struct or union).
@@ -85,7 +90,7 @@ type RecordDefs map[string]RecordDef
 type TypeAliases map[string]TypeDef
 
 // GetRecordDiff prints a diff between two records.
-func GetRecordDiff(name nvproxy.DriverStructName, a, b RecordDef) string {
+func GetRecordDiff(name string, a, b RecordDef) string {
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "--- A: %s\n", a.Source)
 	fmt.Fprintf(&sb, "+++ B: %s\n", b.Source)

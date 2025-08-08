@@ -42,33 +42,43 @@ func TestParser(t *testing.T) {
 	}
 
 	// Write a file containing the struct name we want to parse.
-	structsFile, err := os.CreateTemp(os.TempDir(), "structs.*.json")
+	inputFile, err := os.CreateTemp(os.TempDir(), "input.*.json")
 	if err != nil {
-		t.Fatalf("failed to create structs file: %v", err)
+		t.Fatalf("failed to create input file: %v", err)
 	}
 	defer func() {
-		if err := structsFile.Close(); err != nil {
-			t.Fatalf("failed to close structs file: %v", err)
+		if err := inputFile.Close(); err != nil {
+			t.Fatalf("failed to close input file: %v", err)
 		}
-		if err := os.Remove(structsFile.Name()); err != nil {
-			t.Fatalf("failed to remove structs file: %v", err)
+		if err := os.Remove(inputFile.Name()); err != nil {
+			t.Fatalf("failed to remove input file: %v", err)
 		}
 	}()
 
 	input := parser.InputJSON{
 		Structs: []string{"TestStruct", "TestStruct2"},
+		Constants: []string{
+			"VAR_CONSTANT_MACRO",
+			"VAR_ADDITION_MACRO",
+			"VAR_UNSIGNED_HEX_MACRO",
+			"VAR_PARENTHESIZED_HEX_MACRO",
+			"VAR_USES_FUNCTION_MACRO",
+		},
 	}
-	if err := json.NewEncoder(structsFile).Encode(&input); err != nil {
-		t.Fatalf("failed to write input structs file: %v", err)
+	if err := json.NewEncoder(inputFile).Encode(&input); err != nil {
+		t.Fatalf("failed to write input input file: %v", err)
 	}
-	structsFile.Sync()
+	inputFile.Sync()
 
-	cmd := exec.Command(driverParser, "--structs", structsFile.Name(), testStructFile)
+	cmd := exec.Command(driverParser, "--input", inputFile.Name(), testStructFile)
 	var stderr strings.Builder
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()
 	if err != nil {
 		t.Fatalf("failed to run driver_ast_parser: %v\n%s", err, stderr.String())
+	}
+	if stderr.Len() > 0 {
+		t.Logf("driver_ast_parser stderr:\n%s", stderr.String())
 	}
 
 	outputJSON := parser.OutputJSON{}
@@ -121,6 +131,13 @@ func TestParser(t *testing.T) {
 		Aliases: parser.TypeAliases{
 			"OtherInt": parser.TypeDef{Type: "int", Size: 4},
 			"int":      parser.TypeDef{Type: "int", Size: 4},
+		},
+		Constants: map[string]uint64{
+			"VAR_CONSTANT_MACRO":          0x1469,
+			"VAR_ADDITION_MACRO":          0x1470,
+			"VAR_UNSIGNED_HEX_MACRO":      0x279,
+			"VAR_PARENTHESIZED_HEX_MACRO": 0x50a0,
+			"VAR_USES_FUNCTION_MACRO":     0x1,
 		},
 	}
 

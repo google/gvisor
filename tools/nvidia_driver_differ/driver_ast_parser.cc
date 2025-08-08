@@ -26,10 +26,10 @@
 #include "nlohmann/json.hpp"
 #include "clang/include/clang/AST/ASTContext.h"
 #include "clang/include/clang/AST/Decl.h"
+#include "clang/include/clang/AST/Expr.h"
 #include "clang/include/clang/AST/Type.h"
 #include "clang/include/clang/ASTMatchers/ASTMatchFinder.h"
 #include "clang/include/clang/ASTMatchers/ASTMatchers.h"
-#include "clang/include/clang/Basic/SourceManager.h"
 #include "clang/include/clang/Tooling/CommonOptionsParser.h"
 #include "clang/include/clang/Tooling/Tooling.h"
 #include "llvm/include/llvm/Support/Casting.h"
@@ -43,6 +43,7 @@ using clang::ast_matchers::hasName;
 using clang::ast_matchers::hasType;
 using clang::ast_matchers::recordDecl;
 using clang::ast_matchers::typedefDecl;
+using clang::ast_matchers::varDecl;
 
 using clang::ast_matchers::MatchFinder;
 
@@ -51,6 +52,7 @@ using json = nlohmann::json;
 struct DriverStructReporter : public MatchFinder::MatchCallback {
   json RecordDefinitions;
   json TypeAliases;
+  json Constants;
   absl::flat_hash_set<std::string> ParsedTypes;
 
   // This matches the case where a struct is being defined.
@@ -89,13 +91,34 @@ struct DriverStructReporter : public MatchFinder::MatchCallback {
         .bind("typedef_decl");
   }
 
+  auto get_constant_matcher(std::string constant_name) {
+    return varDecl(hasName(constant_name)).bind("constant_decl");
+  }
+
   void run(const MatchFinder::MatchResult &result) override {
     const auto *ctx = result.Context;
+
+    const auto *constant_decl =
+        result.Nodes.getNodeAs<clang::VarDecl>("constant_decl");
+    if (constant_decl) {
+      std::string name = constant_decl->getNameAsString();
+      if (!constant_decl->hasInit()) {
+        std::cerr << "Constant " << name << " has no initializer\n";
+        exit(1);
+      }
+      clang::Expr::EvalResult value;
+      if (!constant_decl->getInit()->EvaluateAsInt(value, *ctx)) {
+        std::cerr << "Unable to evaluate constant " << name << "\n";
+        exit(1);
+      }
+      Constants[name] = value.Val.getInt().getZExtValue();
+      return;
+    }
 
     const auto *typedef_decl =
         result.Nodes.getNodeAs<clang::TypedefDecl>("typedef_decl");
     if (typedef_decl == nullptr) {
-      std::cerr << "Unable to find typedef decl\n";
+      std::cerr << "Unable to find a matched declaration\n";
       exit(1);
     }
     std::string name = typedef_decl->getNameAsString();
@@ -218,10 +241,10 @@ static llvm::cl::extrahelp CommonHelp(
     clang::tooling::CommonOptionsParser::HelpMessage);
 static llvm::cl::extrahelp MoreHelp(ToolHelpDescription);
 
-static llvm::cl::opt<std::string> StructNames(
-    "structs",
-    llvm::cl::desc(
-        "Path to the input file containing the struct names to parse."),
+static llvm::cl::opt<std::string> InputFile(
+    "input",
+    llvm::cl::desc("Path to the input file containing the struct and constant "
+                   "names to parse."),
     llvm::cl::cat(DriverASTParserCategory), llvm::cl::Required);
 
 static llvm::cl::opt<std::string> OutputFile(
@@ -247,17 +270,24 @@ int main(int argc, const char **argv) {
   MatchFinder finder;
 
   // Read from StructNames file.
-  std::ifstream StructNamesIS(StructNames);
-  if (!StructNamesIS) {
-    std::cerr << "Unable to open struct names file: " << StructNames << "\n";
+  std::ifstream InputFileIS(InputFile);
+  if (!InputFileIS) {
+    std::cerr << "Unable to open struct names file: " << InputFile << "\n";
     return 1;
   }
-  json StructNamesJSON;
-  StructNamesIS >> StructNamesJSON;
-  for (json::iterator it = StructNamesJSON["structs"].begin();
-       it != StructNamesJSON["structs"].end(); ++it) {
+  json input;
+  InputFileIS >> input;
+  for (json::iterator it = input["structs"].begin();
+       it != input["structs"].end(); ++it) {
     finder.addMatcher(reporter.get_struct_definition_matcher(*it), &reporter);
     finder.addMatcher(reporter.get_struct_typedef_matcher(*it), &reporter);
+  }
+
+  if (input.contains("constants")) {
+    for (json::iterator it = input["constants"].begin();
+         it != input["constants"].end(); ++it) {
+      finder.addMatcher(reporter.get_constant_matcher(*it), &reporter);
+    }
   }
 
   // Run tool
@@ -265,7 +295,8 @@ int main(int argc, const char **argv) {
 
   // Print output.
   json output = json::object({{"records", reporter.RecordDefinitions},
-                              {"aliases", reporter.TypeAliases}});
+                              {"aliases", reporter.TypeAliases},
+                              {"constants", reporter.Constants}});
   if (OutputFile.empty()) {
     std::cout << output.dump() << "\n";
   } else {

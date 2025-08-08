@@ -33,3 +33,16 @@ typedef struct TestStruct {
 } TestStruct;
 
 typedef TestStruct TestStruct2;
+
+#define CONSTANT_MACRO 0x1469
+#define ADDITION_MACRO (CONSTANT_MACRO + 7)
+#define UNSIGNED_HEX_MACRO 0x279U
+#define PARENTHESIZED_HEX_MACRO (0x000050a0) /* Comment to test parsing */
+#define FUNCTION_MACRO(i) i
+#define USES_FUNCTION_MACRO FUNCTION_MACRO(1)
+
+const unsigned int VAR_CONSTANT_MACRO = CONSTANT_MACRO;
+const unsigned int VAR_ADDITION_MACRO = ADDITION_MACRO;
+const unsigned int VAR_UNSIGNED_HEX_MACRO = UNSIGNED_HEX_MACRO;
+const unsigned int VAR_PARENTHESIZED_HEX_MACRO = PARENTHESIZED_HEX_MACRO;
+const unsigned int VAR_USES_FUNCTION_MACRO = USES_FUNCTION_MACRO;

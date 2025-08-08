@@ -22,7 +22,6 @@ package nvproxy_driver_parity_test
 import (
 	"context"
 	"fmt"
-	"os"
 	"reflect"
 	"regexp"
 	"strconv"
@@ -38,7 +37,7 @@ import (
 	"gvisor.dev/gvisor/tools/nvidia_driver_differ/parser"
 )
 
-func createParserRunner(t *testing.T) (*os.File, *parser.Runner) {
+func createParserRunner(t *testing.T) *parser.Runner {
 	t.Helper()
 
 	// Find the parser binary
@@ -46,17 +45,13 @@ func createParserRunner(t *testing.T) (*os.File, *parser.Runner) {
 	if err != nil {
 		t.Fatalf("Failed to find driver_ast_parser: %v", err)
 	}
-	parserFile, err := os.Open(parserPath)
-	if err != nil {
-		t.Fatalf("Failed to open driver_ast_parser: %v", err)
-	}
 
-	runner, err := parser.NewRunner((*parser.ParserFile)(parserFile))
+	runner, err := parser.NewRunner(parserPath)
 	if err != nil {
 		t.Fatalf("Failed to create parser runner: %v", err)
 	}
 
-	return parserFile, runner
+	return runner
 }
 
 func getDriverDefs(t *testing.T, runner *parser.Runner, version nvconf.DriverVersion) ([]nvproxy.DriverStruct, *parser.OutputJSON) {
@@ -89,8 +84,7 @@ func TestStructDefinitionParity(t *testing.T) {
 	nvproxy.ForEachSupportDriver(func(version nvconf.DriverVersion, _ nvproxy.Checksums) {
 		t.Run(version.String(), func(t *testing.T) {
 			t.Parallel()
-			f, runner := createParserRunner(t)
-			defer f.Close()
+			runner := createParserRunner(t)
 
 			nvproxyDefs, defs := getDriverDefs(t, runner, version)
 

@@ -39,10 +39,10 @@ var driverParserBinary []byte
 
 // createParserBinary creates a temporary file containing the driver_ast_parser
 // binary, and returns the path to it.
-func createParserBinary() (*os.File, error) {
+func createParserBinary() (string, error) {
 	tmpFile, err := os.CreateTemp(os.TempDir(), "driver_ast_parser_*")
 	if err != nil {
-		return nil, fmt.Errorf("failed to create temporary file: %w", err)
+		return "", fmt.Errorf("failed to create temporary file: %w", err)
 	}
 	defer func() {
 		if err := tmpFile.Close(); err != nil {
@@ -51,14 +51,14 @@ func createParserBinary() (*os.File, error) {
 	}()
 
 	if _, err := tmpFile.Write(driverParserBinary); err != nil {
-		return nil, fmt.Errorf("failed to write to temporary file: %w", err)
+		return "", fmt.Errorf("failed to write to temporary file: %w", err)
 	}
 
 	if err := tmpFile.Chmod(0500); err != nil {
-		return nil, fmt.Errorf("failed to make file executable: %w", err)
+		return "", fmt.Errorf("failed to make file executable: %w", err)
 	}
 
-	return tmpFile, nil
+	return tmpFile.Name(), nil
 }
 
 // Main is the main function for the NVIDIA driver differ.
@@ -79,7 +79,7 @@ func Main() error {
 		return fmt.Errorf("failed to unpack driver_ast_parser binary: %w", err)
 	}
 	defer func() {
-		if err := os.Remove(parserFile.Name()); err != nil {
+		if err := os.Remove(parserFile); err != nil {
 			log.Warningf("failed to close driver_ast_parser binary: %w", err)
 		}
 	}()
@@ -92,7 +92,7 @@ func Main() error {
 	}
 
 	// Create runner for driver_ast_parser
-	runner, err := parser.NewRunner((*parser.ParserFile)(parserFile))
+	runner, err := parser.NewRunner(parserFile)
 	if err != nil {
 		return fmt.Errorf("failed to create runner for driver_ast_parser: %w", err)
 	}

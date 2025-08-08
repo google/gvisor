@@ -24,22 +24,16 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
 )
 
-// ParserFile is a wrapper around the driver_ast_parser binary.
-type ParserFile os.File
-
-// StructsFile is a wrapper around the structs list file.
-type StructsFile os.File
-
 // Runner is a helper for running the driver_ast_parser on a given set of structs.
 type Runner struct {
 	// Working directory for the runner.
-	dir         string
-	parserFile  *ParserFile
-	structsFile *StructsFile
+	dir        string
+	parserPath string
+	inputPath  string
 }
 
 // NewRunner creates a new Runner around a given parser file and a temporary working directory.
-func NewRunner(parserFile *ParserFile) (*Runner, error) {
+func NewRunner(parserPath string) (*Runner, error) {
 	// Create a temp directory for the runner.
 	dir, err := os.MkdirTemp(os.TempDir(), "run_differ_*")
 	if err != nil {
@@ -48,7 +42,7 @@ func NewRunner(parserFile *ParserFile) (*Runner, error) {
 
 	return &Runner{
 		dir:        dir,
-		parserFile: parserFile,
+		parserPath: parserPath,
 	}, nil
 }
 
@@ -66,7 +60,7 @@ func (r *Runner) CreateStructsFile(structs []nvproxy.DriverStruct) error {
 		inputJSON.Structs = append(inputJSON.Structs, structDef.Name)
 	}
 
-	f, err := os.CreateTemp(r.dir, "structs_list_*.json")
+	f, err := os.CreateTemp(r.dir, "input_*.json")
 	if err != nil {
 		return fmt.Errorf("failed to create temporary structs list: %w", err)
 	}
@@ -76,19 +70,19 @@ func (r *Runner) CreateStructsFile(structs []nvproxy.DriverStruct) error {
 		return fmt.Errorf("failed to write structs list to file: %w", err)
 	}
 
-	r.structsFile = (*StructsFile)(f)
+	r.inputPath = f.Name()
 	return nil
 }
 
 // parseSourceFile runs driver_ast_parser on sourceFile for the structs listed in structsFile,
 // and returns the parsed JSON output.
 func (r *Runner) parseSourceFile(sourcePath string) (*OutputJSON, error) {
-	if r.structsFile == nil {
-		return nil, fmt.Errorf("structs file not created")
+	if r.inputPath == "" {
+		return nil, fmt.Errorf("input file not created")
 	}
 
-	// Run driver_ast_parser on the .cc file
-	cmd := exec.Command((*os.File)(r.parserFile).Name(), "--structs", (*os.File)(r.structsFile).Name(), sourcePath)
+	// Run driver_ast_parser on the source file.
+	cmd := exec.Command(r.parserPath, "--input", r.inputPath, sourcePath)
 	out, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("failed to run driver_ast_parser: %v", err)
