@@ -76,6 +76,7 @@ func TestEndpointStateTransitions(t *testing.T) {
 		remoteAddr              tcpip.Address
 		expectedRemoteAddr      tcpip.Address
 		checker                 func(*testing.T, *buffer.View)
+		resume                  bool
 	}{
 		{
 			name:                    "IPv4",
@@ -88,6 +89,7 @@ func TestEndpointStateTransitions(t *testing.T) {
 			remoteAddr:              ipv4RemoteAddr,
 			expectedRemoteAddr:      ipv4RemoteAddr,
 			checker:                 v4Checker,
+			resume:                  false,
 		},
 		{
 			name:                    "IPv6",
@@ -100,6 +102,7 @@ func TestEndpointStateTransitions(t *testing.T) {
 			remoteAddr:              ipv6RemoteAddr,
 			expectedRemoteAddr:      ipv6RemoteAddr,
 			checker:                 v6Checker,
+			resume:                  false,
 		},
 		{
 			name:                    "IPv4-mapped-IPv6",
@@ -112,6 +115,20 @@ func TestEndpointStateTransitions(t *testing.T) {
 			remoteAddr:              testutil.MustParse6("::ffff:0607:0809"),
 			expectedRemoteAddr:      ipv4RemoteAddr,
 			checker:                 v4Checker,
+			resume:                  false,
+		},
+		{
+			name:                    "IPv4-resume",
+			netProto:                ipv4.ProtocolNumber,
+			expectedMaxHeaderLength: header.IPv4MaximumHeaderSize,
+			expectedNetProto:        ipv4.ProtocolNumber,
+			expectedLocalAddr:       ipv4NICAddr,
+			bindAddr:                header.IPv4AllSystems,
+			expectedBoundAddr:       header.IPv4AllSystems,
+			remoteAddr:              ipv4RemoteAddr,
+			expectedRemoteAddr:      ipv4RemoteAddr,
+			checker:                 v4Checker,
+			resume:                  true,
 		},
 	}
 
@@ -218,6 +235,19 @@ func TestEndpointStateTransitions(t *testing.T) {
 				defer payload.Release()
 				test.checker(t, payload)
 				pkt.DecRef()
+			}
+
+			if test.resume {
+				// Remove all the routes so that Resume(..) fails.
+				removed := s.RemoveRoutes(func(r tcpip.Route) bool {
+					return r.NIC == nicID
+				})
+				if removed != 2 {
+					t.Fatalf("wrong number of routes removed, got: %v, want: 2", removed)
+				}
+				if err := ep.Resume(s); err == nil {
+					t.Fatalf("wrong error, got: nil, want: not nil")
+				}
 			}
 
 			ep.Close()
