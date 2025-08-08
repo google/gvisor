@@ -38,6 +38,7 @@ const (
 	nvidiaBaseURLX86_64 = "https://us.download.nvidia.com/tesla/%s/NVIDIA-Linux-x86_64-%s.run"
 	nvidiaARM64BaseURL  = "https://us.download.nvidia.com/XFree86/aarch64/%s/NVIDIA-Linux-aarch64-%s.run"
 
+	archAMD64 = "amd64"
 	archARM64 = "arm64"
 )
 
@@ -46,10 +47,13 @@ func init() {
 }
 
 func getNvidiaBaseURL(driverVersion, arch string) string {
-	if arch == archARM64 {
+	switch arch {
+	case archARM64:
 		return fmt.Sprintf(nvidiaARM64BaseURL, driverVersion, driverVersion)
+	case archAMD64:
+		return fmt.Sprintf(nvidiaBaseURLX86_64, driverVersion, driverVersion)
 	}
-	return fmt.Sprintf(nvidiaBaseURLX86_64, driverVersion, driverVersion)
+	panic(fmt.Sprintf("unsupported arch: %q", arch))
 }
 
 // Installer handles the logic to install drivers.
@@ -337,7 +341,7 @@ func tryToPrintFailureLogs() {
 
 // ValidateChecksum validates the checksum of the driver.
 func ValidateChecksum(ctx context.Context, version string, checksums nvproxy.Checksums) error {
-	for _, arch := range []string{"x86_64", archARM64} {
+	for _, arch := range []string{archAMD64, archARM64} {
 		wantChecksum := checksums.X86_64()
 		if arch == archARM64 {
 			wantChecksum = checksums.Arm64()

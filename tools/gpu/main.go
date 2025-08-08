@@ -105,7 +105,7 @@ func main() {
 		}
 
 		var eg errgroup.Group
-		for _, arch := range []string{"amd64", "amd64"} {
+		for _, arch := range []string{"amd64", "arm64"} {
 			eg.Go(func() error {
 				installer, err := drivers.NewInstaller(*checksumVersion, false)
 				if err != nil {
