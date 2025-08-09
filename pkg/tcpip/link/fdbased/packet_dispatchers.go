@@ -28,7 +28,7 @@ import (
 )
 
 // BufConfig defines the shape of the buffer used to read packets from the NIC.
-var BufConfig = []int{128, 256, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768}
+var BufConfig = []int{128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768}
 
 // +stateify savable
 type iovecBuffer struct {
