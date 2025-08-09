@@ -54,16 +54,16 @@ func createParserRunner(t *testing.T) *parser.Runner {
 	return runner
 }
 
-func getDriverDefs(t *testing.T, runner *parser.Runner, version nvconf.DriverVersion) ([]nvproxy.DriverStruct, *parser.OutputJSON) {
+func getDriverDefs(t *testing.T, runner *parser.Runner, version nvconf.DriverVersion) (*nvproxy.DriverABIInfo, *parser.OutputJSON) {
 	t.Helper()
 
-	structs, ok := nvproxy.SupportedStructTypes(version)
+	info, ok := nvproxy.SupportedIoctls(version)
 	if !ok {
 		t.Fatalf("failed to get struct names for driver %q", version.String())
 	}
 
 	// Create structs file for parser
-	if err := runner.CreateStructsFile(structs); err != nil {
+	if err := runner.CreateInputFile(info); err != nil {
 		t.Fatalf("failed to create temporary structs list: %v", err)
 	}
 
@@ -73,7 +73,7 @@ func getDriverDefs(t *testing.T, runner *parser.Runner, version nvconf.DriverVer
 		t.Fatalf("failed to run driver_ast_parser: %v", err)
 	}
 
-	return structs, defs
+	return info, defs
 }
 
 // TestStructDefinitionParity tests that the struct definitions in nvproxy are the same as the
@@ -86,42 +86,67 @@ func TestStructDefinitionParity(t *testing.T) {
 			t.Parallel()
 			runner := createParserRunner(t)
 
-			nvproxyDefs, defs := getDriverDefs(t, runner, version)
+			nvproxyIoctls, defs := getDriverDefs(t, runner, version)
 
-			for _, nvproxyDef := range nvproxyDefs {
-				// Check if the nvproxy definition has disallowed types.
-				if nvproxyDef.Type != nil {
-					fields := flattenNvproxyStruct(t, nvproxyDef.Type)
-					for _, field := range fields {
-						if _, ok := typeAllowlist[field.Type.Kind()]; !ok {
-							t.Errorf("struct %q has disallowed type %q in nvproxy", nvproxyDef.Name, field.Type.Name())
+			checkIoctl := func(ioctlNum uint32, nvproxyIoctl nvproxy.IoctlInfo) {
+				if nvproxyIoctl.Name == "" {
+					return
+				}
+				// Check if the ioctl number has changed.
+				if driverIoctlNum, ok := defs.Constants[nvproxyIoctl.Name]; !ok {
+					t.Errorf("ioctl %q not found in driver source code", nvproxyIoctl.Name)
+				} else if driverIoctlNum != uint64(ioctlNum) {
+					t.Errorf("ioctl %q has changed numbers between nvproxy (%#x) and driver (%#x)",
+						nvproxyIoctl.Name, ioctlNum, defs.Constants[nvproxyIoctl.Name])
+				}
+
+				for _, nvproxyDef := range nvproxyIoctl.Structs {
+					// Check if the nvproxy definition has disallowed types.
+					if nvproxyDef.Type != nil {
+						fields := flattenNvproxyStruct(t, nvproxyDef.Type)
+						for _, field := range fields {
+							if _, ok := typeAllowlist[field.Type.Kind()]; !ok {
+								t.Errorf("struct %q has disallowed type %q in nvproxy", nvproxyDef.Name, field.Type.Name())
+							}
 						}
 					}
-				}
 
-				// Compare the nvproxy definition to the parser output.
-				name := nvproxyDef.Name
-				_, isRecord := defs.Records[name]
-				aliasDef, isAlias := defs.Aliases[name]
-				if !isRecord && !isAlias {
-					t.Errorf("struct %q not found in parser output for version %q", name, version.String())
-					continue
-				}
-
-				switch {
-				case isRecord && nvproxyDef.Type == nil:
-					checkSimpleRecord(t, name, defs)
-				case isRecord && nvproxyDef.Type != nil:
-					if err := compareStructs(t, nvproxyDef.Type, name, defs); err != nil {
-						t.Errorf("struct %q has different definitions between nvproxy and driver: %v", name, err)
+					// Compare the nvproxy definition to the parser output.
+					name := nvproxyDef.Name
+					_, isRecord := defs.Records[name]
+					aliasDef, isAlias := defs.Aliases[name]
+					if !isRecord && !isAlias {
+						t.Errorf("struct %q not found in parser output for version %q", name, version.String())
+						continue
 					}
-				case isAlias && nvproxyDef.Type == nil:
-					// For now, there is no good way to check if an alias is still simple.
-					// Regardless, none of the current ioctls fall into this category.
-					t.Errorf("struct %q is a simple alias, which is not supported yet", name)
-				case isAlias && nvproxyDef.Type != nil:
-					checkComplexAlias(t, nvproxyDef, aliasDef)
+
+					switch {
+					case isRecord && nvproxyDef.Type == nil:
+						checkSimpleRecord(t, name, defs)
+					case isRecord && nvproxyDef.Type != nil:
+						if err := compareStructs(t, nvproxyDef.Type, name, defs); err != nil {
+							t.Errorf("struct %q has different definitions between nvproxy and driver: %v", name, err)
+						}
+					case isAlias && nvproxyDef.Type == nil:
+						// For now, there is no good way to check if an alias is still simple.
+						// Regardless, none of the current ioctls fall into this category.
+						t.Errorf("struct %q is a simple alias, which is not supported yet", name)
+					case isAlias && nvproxyDef.Type != nil:
+						checkComplexAlias(t, nvproxyDef, aliasDef)
+					}
 				}
+			}
+			for num, info := range nvproxyIoctls.FrontendInfos {
+				checkIoctl(num, info)
+			}
+			for num, info := range nvproxyIoctls.ControlInfos {
+				checkIoctl(num, info)
+			}
+			for num, info := range nvproxyIoctls.AllocationInfos {
+				checkIoctl(uint32(num), info)
+			}
+			for num, info := range nvproxyIoctls.UvmInfos {
+				checkIoctl(num, info)
 			}
 		})
 	})
