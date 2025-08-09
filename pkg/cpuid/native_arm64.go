@@ -18,6 +18,7 @@
 package cpuid
 
 import (
+	"fmt"
 	"os"
 	"runtime"
 	"strconv"
@@ -39,6 +40,13 @@ func HostFeatureSet() FeatureSet {
 // Fixed returns the same feature set.
 func (fs FeatureSet) Fixed() FeatureSet {
 	return fs
+}
+
+// Intersect returns the intersection of features between self and allowedFeatures.
+//
+// Just return error as there is no ARM64 equivalent to cpuid.Static.Remove().
+func (fs FeatureSet) Intersect(allowedFeatures map[Feature]struct{}) (FeatureSet, error) {
+	return FeatureSet{}, fmt.Errorf("FeatureSet intersection is not supported on ARM64")
 }
 
 // Reads CPU information from host /proc/cpuinfo.

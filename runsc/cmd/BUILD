@@ -39,6 +39,7 @@ go_library(
         "chroot.go",
         "cmd.go",
         "create.go",
+        "cpu_features.go",
         "debug.go",
         "delete.go",
         "do.go",
