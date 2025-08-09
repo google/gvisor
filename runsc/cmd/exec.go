@@ -126,7 +126,7 @@ func (ex *Exec) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomm
 		util.Fatalf("loading sandbox: %v", err)
 	}
 
-	e, err := ex.parseArgs(f, c.Spec.Process, conf.EnableRaw)
+	e, err := ex.parseArgs(f, c.Spec.Process, conf)
 	if err != nil {
 		util.Fatalf("parsing process spec: %v", err)
 	}
@@ -314,25 +314,25 @@ func (ex *Exec) execChildAndWait(waitStatus *unix.WaitStatus) subcommands.ExitSt
 
 // parseArgs parses exec information from the command line or a JSON file
 // depending on whether the --process flag was used.
-func (ex *Exec) parseArgs(f *flag.FlagSet, p *specs.Process, enableRaw bool) (*control.ExecArgs, error) {
+func (ex *Exec) parseArgs(f *flag.FlagSet, p *specs.Process, conf *config.Config) (*control.ExecArgs, error) {
 	if ex.processPath == "" {
 		// Requires at least a container ID and command.
 		if f.NArg() < 2 {
 			f.Usage()
 			return nil, fmt.Errorf("both a container-id and command are required")
 		}
-		return ex.argsFromCLI(p, f.Args()[1:], enableRaw)
+		return ex.argsFromCLI(p, conf, f.Args()[1:])
 	}
 	// Requires only the container ID.
 	if f.NArg() != 1 {
 		f.Usage()
 		return nil, fmt.Errorf("only the container-id is required")
 	}
-	e, err := ex.argsFromProcessFile(p, enableRaw)
+	e, err := ex.argsFromProcessFile(p, conf)
 	return e, err
 }
 
-func (ex *Exec) argsFromCLI(p *specs.Process, argv []string, enableRaw bool) (*control.ExecArgs, error) {
+func (ex *Exec) argsFromCLI(p *specs.Process, conf *config.Config, argv []string) (*control.ExecArgs, error) {
 	extraKGIDs := make([]auth.KGID, 0, len(p.User.AdditionalGids)+len(ex.extraKGIDs))
 	for _, kgid := range p.User.AdditionalGids {
 		extraKGIDs = append(extraKGIDs, auth.KGID(kgid))
@@ -345,7 +345,7 @@ func (ex *Exec) argsFromCLI(p *specs.Process, argv []string, enableRaw bool) (*c
 		extraKGIDs = append(extraKGIDs, auth.KGID(kgid))
 	}
 
-	caps, err := capabilities(p, ex.caps, enableRaw)
+	caps, err := capabilities(p, ex.caps, conf.EnableRaw)
 	if err != nil {
 		return nil, fmt.Errorf("capabilities error: %v", err)
 	}
@@ -376,10 +376,12 @@ func (ex *Exec) argsFromCLI(p *specs.Process, argv []string, enableRaw bool) (*c
 		ExtraKGIDs:       extraKGIDs,
 		Capabilities:     caps,
 		StdioIsPty:       ex.consoleSocket != "" || console.StdioIsPty(),
+		NoNewPrivileges:  p.NoNewPrivileges,
+		AllowSUID:        conf.AllowSUID,
 	}, nil
 }
 
-func (ex *Exec) argsFromProcessFile(specProc *specs.Process, enableRaw bool) (*control.ExecArgs, error) {
+func (ex *Exec) argsFromProcessFile(specProc *specs.Process, conf *config.Config) (*control.ExecArgs, error) {
 	f, err := os.Open(ex.processPath)
 	if err != nil {
 		return nil, fmt.Errorf("error opening process file: %s, %v", ex.processPath, err)
@@ -392,7 +394,7 @@ func (ex *Exec) argsFromProcessFile(specProc *specs.Process, enableRaw bool) (*c
 	if validateProcessSpec(&p) != nil {
 		return nil, fmt.Errorf("invalid process spec: %w", err)
 	}
-	return argsFromProcess(specProc, &p, enableRaw)
+	return argsFromProcess(specProc, &p, conf)
 }
 
 func validateProcessSpec(p *specs.Process) error {
@@ -410,7 +412,7 @@ func validateProcessSpec(p *specs.Process) error {
 
 // argsFromProcess performs all the non-IO conversion from the Process struct
 // to ExecArgs.
-func argsFromProcess(specProc *specs.Process, p *specs.Process, enableRaw bool) (*control.ExecArgs, error) {
+func argsFromProcess(specProc *specs.Process, p *specs.Process, conf *config.Config) (*control.ExecArgs, error) {
 	// Create capabilities.
 	procCaps := p.Capabilities
 	if procCaps == nil {
@@ -422,7 +424,7 @@ func argsFromProcess(specProc *specs.Process, p *specs.Process, enableRaw bool) 
 	// of nil like before). So we can't distinguish 'exec' from
 	// 'exec --privileged', as both specify CAP_NET_RAW. Therefore, filter
 	// CAP_NET_RAW in the same way as container start.
-	caps, err := specutils.Capabilities(enableRaw, procCaps)
+	caps, err := specutils.Capabilities(conf.EnableRaw, procCaps)
 	if err != nil {
 		return nil, fmt.Errorf("error creating capabilities: %v", err)
 	}
@@ -442,6 +444,8 @@ func argsFromProcess(specProc *specs.Process, p *specs.Process, enableRaw bool) 
 		ExtraKGIDs:       extraKGIDs,
 		Capabilities:     caps,
 		StdioIsPty:       p.Terminal,
+		NoNewPrivileges:  p.NoNewPrivileges,
+		AllowSUID:        conf.AllowSUID,
 	}, nil
 }
 

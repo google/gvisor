@@ -636,6 +636,12 @@ type Task struct {
 	// onDestroyAction is a set of callbacks that are executed when the
 	// task is destroyed.
 	onDestroyAction map[TaskDestroyAction]struct{}
+
+	// Helps serializes an execve(2) with a PTRACE_ATTACH. See the comment
+	// for ptraceExecveMutexStartLock() for more details. When the task is
+	// in the ptraceExecveMutexStop, another task that wants to pass on the
+	// ptraceExecveMutex may write to this field with t.tg.signalHandlers.mu held.
+	ptraceExecveMutexOwner *ThreadGroup
 }
 
 // Task related metrics
