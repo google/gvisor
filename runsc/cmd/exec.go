@@ -197,9 +197,8 @@ func (ex *Exec) exec(conf *config.Config, c *container.Container, e *control.Exe
 
 	// Write the sandbox-internal pid if required.
 	if ex.internalPidFile != "" {
-		pidStr := []byte(strconv.Itoa(int(pid)))
-		if err := os.WriteFile(ex.internalPidFile, pidStr, 0644); err != nil {
-			return util.Errorf("writing internal pid file %q: %v", ex.internalPidFile, err)
+		if err := WritePidFile(ex.internalPidFile, int(pid)); err != nil {
+			return util.Errorf("writing internal pid file: %v", err)
 		}
 	}
 
@@ -207,7 +206,7 @@ func (ex *Exec) exec(conf *config.Config, c *container.Container, e *control.Exe
 	// users can safely assume that the internal pid file is ready after
 	// `runsc exec -d` returns.
 	if ex.pidFile != "" {
-		if err := os.WriteFile(ex.pidFile, []byte(strconv.Itoa(os.Getpid())), 0644); err != nil {
+		if err := WritePidFile(ex.pidFile, os.Getpid()); err != nil {
 			return util.Errorf("writing pid file: %v", err)
 		}
 	}
