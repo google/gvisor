@@ -980,14 +980,16 @@ func getSockOptSocket(t *kernel.Task, s socket.Socket, ep commonEndpoint, family
 		if family != linux.AF_UNIX || outLen < unix.SizeofUcred {
 			return nil, syserr.ErrInvalidArgument
 		}
-
-		tcred := t.Credentials()
-		creds := linux.ControlMessageCredentials{
-			PID: int32(t.ThreadGroup().ID()),
-			UID: uint32(tcred.EffectiveKUID.In(tcred.UserNamespace).OrOverflow()),
-			GID: uint32(tcred.EffectiveKGID.In(tcred.UserNamespace).OrOverflow()),
+		creds := ep.SocketOptions().PeerCreds()
+		if creds == nil {
+			UID := -1
+			return &linux.ControlMessageCredentials{
+				PID: 0,
+				UID: uint32(UID),
+				GID: uint32(UID),
+			}, nil
 		}
-		return &creds, nil
+		return creds, nil
 
 	case linux.SO_PASSCRED:
 		if outLen < sizeOfInt32 {
