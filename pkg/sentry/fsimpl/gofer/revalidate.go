@@ -67,7 +67,7 @@ func (fs *filesystem) revalidateOne(ctx context.Context, vfsObj *vfs.VirtualFile
 	// Skip revalidation for interop mode different than InteropModeShared or
 	// if the parent is synthetic (child must be synthetic too, but it cannot be
 	// replaced without first replacing the parent).
-	if parent.cachedMetadataAuthoritative() {
+	if parent.inode.cachedMetadataAuthoritative() {
 		return nil
 	}
 
@@ -184,7 +184,7 @@ func (fs *filesystem) revalidateStep(ctx context.Context, rp resolvingPath, d *d
 		state.add(child)
 
 		// Symlink must be resolved before continuing with revalidation.
-		if child.isSymlink() {
+		if child.inode.isSymlink() {
 			return nil, errRevalidationStepDone{}
 		}
 
@@ -211,7 +211,7 @@ func (d *dentry) invalidate(ctx context.Context, vfsObj *vfs.VirtualFilesystem, 
 		if child := parent.children[d.name]; child == d {
 			// Invalidate dentry so it gets reloaded next time it's accessed.
 			delete(parent.children, d.name)
-			if d.isSynthetic() {
+			if d.inode.isSynthetic() {
 				// Normally we don't mark invalidated dentries as deleted since
 				// they may still exist (but at a different path), and also for
 				// consistency with Linux. However, synthetic files are
@@ -247,7 +247,7 @@ func (d *dentry) invalidate(ctx context.Context, vfsObj *vfs.VirtualFilesystem, 
 		// now. (The same would apply to racy replacement by
 		// filesystem.RenameAt(), but we can't race with rename since renameMu
 		// has been locked since entering filesystem.revalidatePath().)
-		if removed && (d.isSynthetic() || d.endpoint != nil) {
+		if removed && (d.inode.isSynthetic() || d.inode.endpoint != nil) {
 			d.decRefNoCaching()
 		}
 
@@ -282,7 +282,7 @@ func (d *dentry) disownAllChildrenForInvalidation(ctx context.Context, vfsObj *v
 	for name, child := range d.children {
 		children = append(children, child)
 		delete(d.children, name)
-		if child.isSynthetic() {
+		if child.inode.isSynthetic() {
 			child.deleteSynthetic(d, ds)
 		}
 	}

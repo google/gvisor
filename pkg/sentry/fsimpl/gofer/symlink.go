@@ -20,28 +20,28 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
 
-func (d *dentry) isSymlink() bool {
-	return d.fileType() == linux.S_IFLNK
+func (i *inode) isSymlink() bool {
+	return i.fileType() == linux.S_IFLNK
 }
 
 // Precondition: d.isSymlink().
 func (d *dentry) readlink(ctx context.Context, mnt *vfs.Mount) (string, error) {
-	if d.fs.opts.interop != InteropModeShared {
+	if d.inode.fs.opts.interop != InteropModeShared {
 		d.touchAtime(mnt)
-		d.dataMu.Lock()
-		if d.haveTarget {
-			target := d.target
-			d.dataMu.Unlock()
+		d.inode.dataMu.Lock()
+		if d.inode.haveTarget {
+			target := d.inode.target
+			d.inode.dataMu.Unlock()
 			return target, nil
 		}
 	}
-	target, err := d.readlinkImpl(ctx)
-	if d.fs.opts.interop != InteropModeShared {
+	target, err := d.inode.readlinkImpl(ctx)
+	if d.inode.fs.opts.interop != InteropModeShared {
 		if err == nil {
-			d.haveTarget = true
-			d.target = target
+			d.inode.haveTarget = true
+			d.inode.target = target
 		}
-		d.dataMu.Unlock() // +checklocksforce: guaranteed locked from above.
+		d.inode.dataMu.Unlock() // +checklocksforce: guaranteed locked from above.
 	}
 	return target, err
 }
