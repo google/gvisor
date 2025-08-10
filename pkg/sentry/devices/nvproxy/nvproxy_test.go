@@ -54,24 +54,36 @@ func TestABIStructNamesInSync(t *testing.T) {
 			info := abi.getInfo()
 
 			for ioctl := range abi.frontendIoctl {
-				if _, ok := info.frontendInfos[ioctl]; !ok {
-					t.Errorf("Frontend ioctl %#x not found in struct names for version %v", ioctl, version.String())
+				if _, ok := info.FrontendInfos[ioctl]; !ok {
+					t.Errorf("Frontend ioctl %#x not found in struct names for version %s", ioctl, version)
 				}
+			}
+			if len(abi.frontendIoctl) != len(info.FrontendInfos) {
+				t.Errorf("Frontend ioctl count mismatch for version %s: %d != %d", version, len(abi.frontendIoctl), len(info.FrontendInfos))
 			}
 			for ioctl := range abi.uvmIoctl {
-				if _, ok := info.uvmInfos[ioctl]; !ok {
-					t.Errorf("UVM ioctl %#x not found in struct names for version %v", ioctl, version.String())
+				if _, ok := info.UvmInfos[ioctl]; !ok {
+					t.Errorf("UVM ioctl %#x not found in struct names for version %s", ioctl, version)
 				}
+			}
+			if len(abi.uvmIoctl) != len(info.UvmInfos) {
+				t.Errorf("UVM ioctl count mismatch for version %s: %d != %d", version, len(abi.uvmIoctl), len(info.UvmInfos))
 			}
 			for ioctl := range abi.controlCmd {
-				if _, ok := info.controlInfos[ioctl]; !ok {
-					t.Errorf("Control command %#x not found in struct names for version %v", ioctl, version.String())
+				if _, ok := info.ControlInfos[ioctl]; !ok {
+					t.Errorf("Control command %#x not found in struct names for version %s", ioctl, version)
 				}
 			}
+			if len(abi.controlCmd) != len(info.ControlInfos) {
+				t.Errorf("Control command count mismatch for version %s: %d != %d", version, len(abi.controlCmd), len(info.ControlInfos))
+			}
 			for ioctl := range abi.allocationClass {
-				if _, ok := info.allocationInfos[ioctl]; !ok {
-					t.Errorf("Alloc class %#x not found in struct names for version %v", ioctl, version.String())
+				if _, ok := info.AllocationInfos[ioctl]; !ok {
+					t.Errorf("Alloc class %#x not found in struct names for version %s", ioctl, version)
 				}
+			}
+			if len(abi.allocationClass) != len(info.AllocationInfos) {
+				t.Errorf("Alloc class count mismatch for version %s: %d != %d", version, len(abi.allocationClass), len(info.AllocationInfos))
 			}
 		})
 	}

@@ -38,7 +38,7 @@ type driverABIFunc func() *driverABI
 // driverABIInfoFunc returns the driverABIInfo for a given ABI version. This
 // indirection exists to avoid the memory usage in production when info about
 // the driver ABI is not needed.
-type driverABIInfoFunc func() *driverABIInfo
+type driverABIInfoFunc func() *DriverABIInfo
 
 // Checksums is a struct containing the SHA256 checksum of the linux .run driver installer file from
 // NVIDIA.
@@ -106,16 +106,16 @@ type driverABI struct {
 	getInfo driverABIInfoFunc
 }
 
-// driverABIInfo defines all the structs and ioctls used by a driverABI.
+// DriverABIInfo defines all the structs and ioctls used by a driverABI.
 // This is used to help with verifying and supporting new driver versions. This
 // helps keep track of all the driver structs and ioctls that we currently
 // support. We do so by mapping ioctl numbers to its name in the driver and a
 // list of DriverStructs used by that ioctl.
-type driverABIInfo struct {
-	frontendInfos   map[uint32]IoctlInfo
-	uvmInfos        map[uint32]IoctlInfo
-	controlInfos    map[uint32]IoctlInfo
-	allocationInfos map[nvgpu.ClassID]IoctlInfo
+type DriverABIInfo struct {
+	FrontendInfos   map[uint32]IoctlInfo
+	UvmInfos        map[uint32]IoctlInfo
+	ControlInfos    map[uint32]IoctlInfo
+	AllocationInfos map[nvgpu.ClassID]IoctlInfo
 }
 
 // IoctlName is the name of the constant used by the Nvidia driver to define
@@ -428,9 +428,9 @@ func Init() {
 					nvgpu.NV20_SUBDEVICE_DIAG:        allocHandler(rmAllocNoParams, compUtil),
 				},
 
-				getInfo: func() *driverABIInfo {
-					return &driverABIInfo{
-						frontendInfos: map[uint32]IoctlInfo{
+				getInfo: func() *DriverABIInfo {
+					return &DriverABIInfo{
+						FrontendInfos: map[uint32]IoctlInfo{
 							nvgpu.NV_ESC_CARD_INFO:                     simpleIoctlInfo("NV_ESC_CARD_INFO", "nv_ioctl_card_info_t"),
 							nvgpu.NV_ESC_CHECK_VERSION_STR:             ioctlInfoWithStructName("NV_ESC_CHECK_VERSION_STR", nvgpu.RMAPIVersion{}, "nv_ioctl_rm_api_version_t"),
 							nvgpu.NV_ESC_ATTACH_GPUS_TO_FD:             simpleIoctlInfo("NV_ESC_ATTACH_GPUS_TO_FD"), // No params struct, params is a NvU32 array containing GPU IDs
@@ -454,7 +454,7 @@ func Init() {
 							nvgpu.NV_ESC_RM_VID_HEAP_CONTROL:           ioctlInfo("NV_ESC_RM_VID_HEAP_CONTROL", nvgpu.NVOS32_PARAMETERS{}),
 							nvgpu.NV_ESC_RM_MAP_MEMORY:                 ioctlInfoWithStructName("NV_ESC_RM_MAP_MEMORY", nvgpu.IoctlNVOS33ParametersWithFD{}, "nv_ioctl_nvos33_parameters_with_fd"),
 						},
-						uvmInfos: map[uint32]IoctlInfo{
+						UvmInfos: map[uint32]IoctlInfo{
 							nvgpu.UVM_INITIALIZE:                     ioctlInfo("UVM_INITIALIZE", nvgpu.UVM_INITIALIZE_PARAMS{}),
 							nvgpu.UVM_DEINITIALIZE:                   simpleIoctlInfo("UVM_DEINITIALIZE"), // Doesn't have any params
 							nvgpu.UVM_CREATE_RANGE_GROUP:             ioctlInfo("UVM_CREATE_RANGE_GROUP", nvgpu.UVM_CREATE_RANGE_GROUP_PARAMS{}),
@@ -485,7 +485,7 @@ func Init() {
 							nvgpu.UVM_CREATE_EXTERNAL_RANGE:          ioctlInfo("UVM_CREATE_EXTERNAL_RANGE", nvgpu.UVM_CREATE_EXTERNAL_RANGE_PARAMS{}),
 							nvgpu.UVM_MM_INITIALIZE:                  ioctlInfo("UVM_MM_INITIALIZE", nvgpu.UVM_MM_INITIALIZE_PARAMS{}),
 						},
-						controlInfos: map[uint32]IoctlInfo{
+						ControlInfos: map[uint32]IoctlInfo{
 							nvgpu.NV0000_CTRL_CMD_CLIENT_GET_ADDR_SPACE_TYPE:                       simpleIoctlInfo("NV0000_CTRL_CMD_CLIENT_GET_ADDR_SPACE_TYPE", "NV0000_CTRL_CLIENT_GET_ADDR_SPACE_TYPE_PARAMS"),
 							nvgpu.NV0000_CTRL_CMD_CLIENT_SET_INHERITED_SHARE_POLICY:                simpleIoctlInfo("NV0000_CTRL_CMD_CLIENT_SET_INHERITED_SHARE_POLICY", "NV0000_CTRL_CLIENT_SET_INHERITED_SHARE_POLICY_PARAMS"),
 							nvgpu.NV0000_CTRL_CMD_GPU_GET_ATTACHED_IDS:                             simpleIoctlInfo("NV0000_CTRL_CMD_GPU_GET_ATTACHED_IDS", "NV0000_CTRL_GPU_GET_ATTACHED_IDS_PARAMS"),
@@ -630,7 +630,7 @@ func Init() {
 							nvgpu.NV503C_CTRL_CMD_REGISTER_VA_SPACE:                                ioctlInfo("NV503C_CTRL_CMD_REGISTER_VA_SPACE", nvgpu.NV503C_CTRL_REGISTER_VA_SPACE_PARAMS{}),
 							nvgpu.NV208F_CTRL_CMD_GPU_VERIFY_INFOROM:                               ioctlInfo("NV208F_CTRL_CMD_GPU_VERIFY_INFOROM", nvgpu.NV208F_CTRL_GPU_VERIFY_INFOROM_PARAMS{}),
 						},
-						allocationInfos: map[nvgpu.ClassID]IoctlInfo{
+						AllocationInfos: map[nvgpu.ClassID]IoctlInfo{
 							nvgpu.NV01_ROOT:                  ioctlInfoWithStructName("NV01_ROOT", nvgpu.Handle{}, "NvHandle"),
 							nvgpu.NV01_ROOT_NON_PRIV:         ioctlInfoWithStructName("NV01_ROOT_NON_PRIV", nvgpu.Handle{}, "NvHandle"),
 							nvgpu.NV01_CONTEXT_DMA:           ioctlInfo("NV01_CONTEXT_DMA", nvgpu.NV_CONTEXT_DMA_ALLOCATION_PARAMS{}),
@@ -723,16 +723,16 @@ func Init() {
 			abi.allocationClass[nvgpu.NV50_MEMORY_VIRTUAL] = allocHandler(rmAllocSimple[nvgpu.NV_MEMORY_ALLOCATION_PARAMS_V545], compUtil)
 
 			prevGetInfo := abi.getInfo
-			abi.getInfo = func() *driverABIInfo {
+			abi.getInfo = func() *DriverABIInfo {
 				info := prevGetInfo()
-				info.controlInfos[nvgpu.NV0000_CTRL_CMD_OS_UNIX_GET_EXPORT_OBJECT_INFO] = ioctlInfoWithStructName("NV0000_CTRL_CMD_OS_UNIX_GET_EXPORT_OBJECT_INFO", nvgpu.NV0000_CTRL_OS_UNIX_GET_EXPORT_OBJECT_INFO_PARAMS_V545{}, "NV0000_CTRL_OS_UNIX_GET_EXPORT_OBJECT_INFO_PARAMS")
-				info.controlInfos[nvgpu.NV0000_CTRL_CMD_GPU_GET_ACTIVE_DEVICE_IDS] = simpleIoctlInfo("NV0000_CTRL_CMD_GPU_GET_ACTIVE_DEVICE_IDS", "NV0000_CTRL_GPU_GET_ACTIVE_DEVICE_IDS_PARAMS")
-				info.controlInfos[nvgpu.NV00DE_CTRL_CMD_REQUEST_DATA_POLL] = simpleIoctlInfo("NV00DE_CTRL_CMD_REQUEST_DATA_POLL", "NV00DE_CTRL_REQUEST_DATA_POLL_PARAMS")
-				info.allocationInfos[nvgpu.RM_USER_SHARED_DATA] = ioctlInfoWithStructName("RM_USER_SHARED_DATA", nvgpu.NV00DE_ALLOC_PARAMETERS_V545{}, "NV00DE_ALLOC_PARAMETERS")
-				info.allocationInfos[nvgpu.NV_MEMORY_MULTICAST_FABRIC] = ioctlInfoWithStructName("NV_MEMORY_MULTICAST_FABRIC", nvgpu.NV00FD_ALLOCATION_PARAMETERS_V545{}, "NV00FD_ALLOCATION_PARAMETERS")
-				info.allocationInfos[nvgpu.NV01_MEMORY_SYSTEM] = ioctlInfoWithStructName("NV01_MEMORY_SYSTEM", nvgpu.NV_MEMORY_ALLOCATION_PARAMS_V545{}, "NV_MEMORY_ALLOCATION_PARAMS")
-				info.allocationInfos[nvgpu.NV01_MEMORY_LOCAL_USER] = ioctlInfoWithStructName("NV01_MEMORY_LOCAL_USER", nvgpu.NV_MEMORY_ALLOCATION_PARAMS_V545{}, "NV_MEMORY_ALLOCATION_PARAMS")
-				info.allocationInfos[nvgpu.NV50_MEMORY_VIRTUAL] = ioctlInfoWithStructName("NV50_MEMORY_VIRTUAL", nvgpu.NV_MEMORY_ALLOCATION_PARAMS_V545{}, "NV_MEMORY_ALLOCATION_PARAMS")
+				info.ControlInfos[nvgpu.NV0000_CTRL_CMD_OS_UNIX_GET_EXPORT_OBJECT_INFO] = ioctlInfoWithStructName("NV0000_CTRL_CMD_OS_UNIX_GET_EXPORT_OBJECT_INFO", nvgpu.NV0000_CTRL_OS_UNIX_GET_EXPORT_OBJECT_INFO_PARAMS_V545{}, "NV0000_CTRL_OS_UNIX_GET_EXPORT_OBJECT_INFO_PARAMS")
+				info.ControlInfos[nvgpu.NV0000_CTRL_CMD_GPU_GET_ACTIVE_DEVICE_IDS] = simpleIoctlInfo("NV0000_CTRL_CMD_GPU_GET_ACTIVE_DEVICE_IDS", "NV0000_CTRL_GPU_GET_ACTIVE_DEVICE_IDS_PARAMS")
+				info.ControlInfos[nvgpu.NV00DE_CTRL_CMD_REQUEST_DATA_POLL] = simpleIoctlInfo("NV00DE_CTRL_CMD_REQUEST_DATA_POLL", "NV00DE_CTRL_REQUEST_DATA_POLL_PARAMS")
+				info.AllocationInfos[nvgpu.RM_USER_SHARED_DATA] = ioctlInfoWithStructName("RM_USER_SHARED_DATA", nvgpu.NV00DE_ALLOC_PARAMETERS_V545{}, "NV00DE_ALLOC_PARAMETERS")
+				info.AllocationInfos[nvgpu.NV_MEMORY_MULTICAST_FABRIC] = ioctlInfoWithStructName("NV_MEMORY_MULTICAST_FABRIC", nvgpu.NV00FD_ALLOCATION_PARAMETERS_V545{}, "NV00FD_ALLOCATION_PARAMETERS")
+				info.AllocationInfos[nvgpu.NV01_MEMORY_SYSTEM] = ioctlInfoWithStructName("NV01_MEMORY_SYSTEM", nvgpu.NV_MEMORY_ALLOCATION_PARAMS_V545{}, "NV_MEMORY_ALLOCATION_PARAMS")
+				info.AllocationInfos[nvgpu.NV01_MEMORY_LOCAL_USER] = ioctlInfoWithStructName("NV01_MEMORY_LOCAL_USER", nvgpu.NV_MEMORY_ALLOCATION_PARAMS_V545{}, "NV_MEMORY_ALLOCATION_PARAMS")
+				info.AllocationInfos[nvgpu.NV50_MEMORY_VIRTUAL] = ioctlInfoWithStructName("NV50_MEMORY_VIRTUAL", nvgpu.NV_MEMORY_ALLOCATION_PARAMS_V545{}, "NV_MEMORY_ALLOCATION_PARAMS")
 				return info
 			}
 
@@ -755,19 +755,19 @@ func Init() {
 			abi.allocationClass[nvgpu.NV_MEMORY_MAPPER] = allocHandler(rmAllocSimple[nvgpu.NV_MEMORY_MAPPER_ALLOCATION_PARAMS_V550], nvconf.CapVideo)
 
 			prevGetInfo := abi.getInfo
-			abi.getInfo = func() *driverABIInfo {
+			abi.getInfo = func() *DriverABIInfo {
 				info := prevGetInfo()
-				info.frontendInfos[nvgpu.NV_ESC_WAIT_OPEN_COMPLETE] = ioctlInfoWithStructName("NV_ESC_WAIT_OPEN_COMPLETE", nvgpu.IoctlWaitOpenComplete{}, "nv_ioctl_wait_open_complete_t")
-				info.frontendInfos[nvgpu.NV_ESC_RM_UNMAP_MEMORY_DMA] = ioctlInfoWithStructName("NV_ESC_RM_UNMAP_MEMORY_DMA", nvgpu.NVOS47_PARAMETERS_V550{}, "NVOS47_PARAMETERS")
-				info.controlInfos[nvgpu.NV0000_CTRL_CMD_GPU_ASYNC_ATTACH_ID] = simpleIoctlInfo("NV0000_CTRL_CMD_GPU_ASYNC_ATTACH_ID", "NV0000_CTRL_GPU_ASYNC_ATTACH_ID_PARAMS")
-				info.controlInfos[nvgpu.NV0000_CTRL_CMD_GPU_WAIT_ATTACH_ID] = simpleIoctlInfo("NV0000_CTRL_CMD_GPU_WAIT_ATTACH_ID", "NV0000_CTRL_GPU_WAIT_ATTACH_ID_PARAMS")
-				info.controlInfos[nvgpu.NV0080_CTRL_CMD_PERF_CUDA_LIMIT_SET_CONTROL] = simpleIoctlInfo("NV0080_CTRL_CMD_PERF_CUDA_LIMIT_SET_CONTROL", "NV0080_CTRL_PERF_CUDA_LIMIT_CONTROL_PARAMS")
-				info.controlInfos[nvgpu.NV2080_CTRL_CMD_PERF_GET_CURRENT_PSTATE] = simpleIoctlInfo("NV2080_CTRL_CMD_PERF_GET_CURRENT_PSTATE", "NV2080_CTRL_PERF_GET_CURRENT_PSTATE_PARAMS")
-				info.controlInfos[nvgpu.NV0000_CTRL_CMD_SYSTEM_GET_P2P_CAPS] = ioctlInfoWithStructName("NV0000_CTRL_CMD_SYSTEM_GET_P2P_CAPS", nvgpu.NV0000_CTRL_SYSTEM_GET_P2P_CAPS_PARAMS_V550{}, "NV0000_CTRL_SYSTEM_GET_P2P_CAPS_PARAMS")
-				info.uvmInfos[nvgpu.UVM_SET_PREFERRED_LOCATION] = ioctlInfoWithStructName("UVM_SET_PREFERRED_LOCATION", nvgpu.UVM_SET_PREFERRED_LOCATION_PARAMS_V550{}, "UVM_SET_PREFERRED_LOCATION_PARAMS")
-				info.uvmInfos[nvgpu.UVM_MIGRATE] = ioctlInfoWithStructName("UVM_MIGRATE", nvgpu.UVM_MIGRATE_PARAMS_V550{}, "UVM_MIGRATE_PARAMS")
-				info.allocationInfos[nvgpu.NVENC_SW_SESSION] = ioctlInfo("NVENC_SW_SESSION", nvgpu.NVA0BC_ALLOC_PARAMETERS{})
-				info.allocationInfos[nvgpu.NV_MEMORY_MAPPER] = ioctlInfoWithStructName("NV_MEMORY_MAPPER", nvgpu.NV_MEMORY_MAPPER_ALLOCATION_PARAMS_V550{}, "NV_MEMORY_MAPPER_ALLOCATION_PARAMS")
+				info.FrontendInfos[nvgpu.NV_ESC_WAIT_OPEN_COMPLETE] = ioctlInfoWithStructName("NV_ESC_WAIT_OPEN_COMPLETE", nvgpu.IoctlWaitOpenComplete{}, "nv_ioctl_wait_open_complete_t")
+				info.FrontendInfos[nvgpu.NV_ESC_RM_UNMAP_MEMORY_DMA] = ioctlInfoWithStructName("NV_ESC_RM_UNMAP_MEMORY_DMA", nvgpu.NVOS47_PARAMETERS_V550{}, "NVOS47_PARAMETERS")
+				info.ControlInfos[nvgpu.NV0000_CTRL_CMD_GPU_ASYNC_ATTACH_ID] = simpleIoctlInfo("NV0000_CTRL_CMD_GPU_ASYNC_ATTACH_ID", "NV0000_CTRL_GPU_ASYNC_ATTACH_ID_PARAMS")
+				info.ControlInfos[nvgpu.NV0000_CTRL_CMD_GPU_WAIT_ATTACH_ID] = simpleIoctlInfo("NV0000_CTRL_CMD_GPU_WAIT_ATTACH_ID", "NV0000_CTRL_GPU_WAIT_ATTACH_ID_PARAMS")
+				info.ControlInfos[nvgpu.NV0080_CTRL_CMD_PERF_CUDA_LIMIT_SET_CONTROL] = simpleIoctlInfo("NV0080_CTRL_CMD_PERF_CUDA_LIMIT_SET_CONTROL", "NV0080_CTRL_PERF_CUDA_LIMIT_CONTROL_PARAMS")
+				info.ControlInfos[nvgpu.NV2080_CTRL_CMD_PERF_GET_CURRENT_PSTATE] = simpleIoctlInfo("NV2080_CTRL_CMD_PERF_GET_CURRENT_PSTATE", "NV2080_CTRL_PERF_GET_CURRENT_PSTATE_PARAMS")
+				info.ControlInfos[nvgpu.NV0000_CTRL_CMD_SYSTEM_GET_P2P_CAPS] = ioctlInfoWithStructName("NV0000_CTRL_CMD_SYSTEM_GET_P2P_CAPS", nvgpu.NV0000_CTRL_SYSTEM_GET_P2P_CAPS_PARAMS_V550{}, "NV0000_CTRL_SYSTEM_GET_P2P_CAPS_PARAMS")
+				info.UvmInfos[nvgpu.UVM_SET_PREFERRED_LOCATION] = ioctlInfoWithStructName("UVM_SET_PREFERRED_LOCATION", nvgpu.UVM_SET_PREFERRED_LOCATION_PARAMS_V550{}, "UVM_SET_PREFERRED_LOCATION_PARAMS")
+				info.UvmInfos[nvgpu.UVM_MIGRATE] = ioctlInfoWithStructName("UVM_MIGRATE", nvgpu.UVM_MIGRATE_PARAMS_V550{}, "UVM_MIGRATE_PARAMS")
+				info.AllocationInfos[nvgpu.NVENC_SW_SESSION] = ioctlInfo("NVENC_SW_SESSION", nvgpu.NVA0BC_ALLOC_PARAMETERS{})
+				info.AllocationInfos[nvgpu.NV_MEMORY_MAPPER] = ioctlInfoWithStructName("NV_MEMORY_MAPPER", nvgpu.NV_MEMORY_MAPPER_ALLOCATION_PARAMS_V550{}, "NV_MEMORY_MAPPER_ALLOCATION_PARAMS")
 				return info
 			}
 
@@ -780,10 +780,10 @@ func Init() {
 			abi.uvmIoctl[nvgpu.UVM_MAP_EXTERNAL_ALLOCATION] = uvmHandler(uvmIoctlHasFrontendFD[nvgpu.UVM_MAP_EXTERNAL_ALLOCATION_PARAMS_V550], compUtil)
 
 			prevGetInfo := abi.getInfo
-			abi.getInfo = func() *driverABIInfo {
+			abi.getInfo = func() *DriverABIInfo {
 				info := prevGetInfo()
-				info.uvmInfos[nvgpu.UVM_ALLOC_SEMAPHORE_POOL] = ioctlInfoWithStructName("UVM_ALLOC_SEMAPHORE_POOL", nvgpu.UVM_ALLOC_SEMAPHORE_POOL_PARAMS_V550{}, "UVM_ALLOC_SEMAPHORE_POOL_PARAMS")
-				info.uvmInfos[nvgpu.UVM_MAP_EXTERNAL_ALLOCATION] = ioctlInfoWithStructName("UVM_MAP_EXTERNAL_ALLOCATION", nvgpu.UVM_MAP_EXTERNAL_ALLOCATION_PARAMS_V550{}, "UVM_MAP_EXTERNAL_ALLOCATION_PARAMS")
+				info.UvmInfos[nvgpu.UVM_ALLOC_SEMAPHORE_POOL] = ioctlInfoWithStructName("UVM_ALLOC_SEMAPHORE_POOL", nvgpu.UVM_ALLOC_SEMAPHORE_POOL_PARAMS_V550{}, "UVM_ALLOC_SEMAPHORE_POOL_PARAMS")
+				info.UvmInfos[nvgpu.UVM_MAP_EXTERNAL_ALLOCATION] = ioctlInfoWithStructName("UVM_MAP_EXTERNAL_ALLOCATION", nvgpu.UVM_MAP_EXTERNAL_ALLOCATION_PARAMS_V550{}, "UVM_MAP_EXTERNAL_ALLOCATION_PARAMS")
 				return info
 			}
 
@@ -797,9 +797,9 @@ func Init() {
 			abi.controlCmd[nvgpu.NV_CONF_COMPUTE_CTRL_CMD_GPU_GET_KEY_ROTATION_STATE] = ctrlHandler(rmControlSimple, compUtil)
 
 			prevGetInfo := abi.getInfo
-			abi.getInfo = func() *driverABIInfo {
+			abi.getInfo = func() *DriverABIInfo {
 				info := prevGetInfo()
-				info.controlInfos[nvgpu.NV_CONF_COMPUTE_CTRL_CMD_GPU_GET_KEY_ROTATION_STATE] = simpleIoctlInfo("NV_CONF_COMPUTE_CTRL_CMD_GPU_GET_KEY_ROTATION_STATE", "NV_CONF_COMPUTE_CTRL_CMD_GPU_GET_KEY_ROTATION_STATE_PARAMS")
+				info.ControlInfos[nvgpu.NV_CONF_COMPUTE_CTRL_CMD_GPU_GET_KEY_ROTATION_STATE] = simpleIoctlInfo("NV_CONF_COMPUTE_CTRL_CMD_GPU_GET_KEY_ROTATION_STATE", "NV_CONF_COMPUTE_CTRL_CMD_GPU_GET_KEY_ROTATION_STATE_PARAMS")
 				return info
 			}
 
@@ -820,13 +820,12 @@ func Init() {
 		v555_42_02 := func() *driverABI {
 			abi := v550_90_07()
 			abi.allocationClass[nvgpu.NV_MEMORY_MAPPER] = allocHandler(rmAllocSimple[nvgpu.NV_MEMORY_MAPPER_ALLOCATION_PARAMS_V555], nvconf.CapVideo)
-			// NVC36F_CTRL_GET_CLASS_ENGINEID was deleted in 555.42.02.
 			delete(abi.controlCmd, nvgpu.NVC36F_CTRL_GET_CLASS_ENGINEID)
 			prevGetInfo := abi.getInfo
-			abi.getInfo = func() *driverABIInfo {
+			abi.getInfo = func() *DriverABIInfo {
 				info := prevGetInfo()
-				info.allocationInfos[nvgpu.NV_MEMORY_MAPPER] = ioctlInfoWithStructName("NV_MEMORY_MAPPER", nvgpu.NV_MEMORY_MAPPER_ALLOCATION_PARAMS_V555{}, "NV_MEMORY_MAPPER_ALLOCATION_PARAMS")
-				delete(info.controlInfos, nvgpu.NVC36F_CTRL_GET_CLASS_ENGINEID)
+				info.AllocationInfos[nvgpu.NV_MEMORY_MAPPER] = ioctlInfoWithStructName("NV_MEMORY_MAPPER", nvgpu.NV_MEMORY_MAPPER_ALLOCATION_PARAMS_V555{}, "NV_MEMORY_MAPPER_ALLOCATION_PARAMS")
+				delete(info.ControlInfos, nvgpu.NVC36F_CTRL_GET_CLASS_ENGINEID)
 				return info
 			}
 			return abi
@@ -843,15 +842,15 @@ func Init() {
 			abi.allocationClass[nvgpu.BLACKWELL_INLINE_TO_MEMORY_A] = allocHandler(rmAllocSimple[nvgpu.NV_GR_ALLOCATION_PARAMETERS], nvconf.CapGraphics)
 			abi.controlCmd[nvgpu.NV_SEMAPHORE_SURFACE_CTRL_CMD_UNBIND_CHANNEL] = ctrlHandler(rmControlSimple, nvconf.CapGraphics)
 			prevGetInfo := abi.getInfo
-			abi.getInfo = func() *driverABIInfo {
+			abi.getInfo = func() *DriverABIInfo {
 				info := prevGetInfo()
-				info.allocationInfos[nvgpu.NVCDB0_VIDEO_DECODER] = ioctlInfo("NVCDB0_VIDEO_DECODER", nvgpu.NV_BSP_ALLOCATION_PARAMETERS{})
-				info.allocationInfos[nvgpu.BLACKWELL_CHANNEL_GPFIFO_A] = ioctlInfo("BLACKWELL_CHANNEL_GPFIFO_A", nvgpu.NV_CHANNEL_ALLOC_PARAMS{})
-				info.allocationInfos[nvgpu.BLACKWELL_DMA_COPY_A] = ioctlInfo("BLACKWELL_DMA_COPY_A", nvgpu.NVB0B5_ALLOCATION_PARAMETERS{})
-				info.allocationInfos[nvgpu.BLACKWELL_A] = ioctlInfo("BLACKWELL_A", nvgpu.NV_GR_ALLOCATION_PARAMETERS{})
-				info.allocationInfos[nvgpu.BLACKWELL_COMPUTE_A] = ioctlInfo("BLACKWELL_COMPUTE_A", nvgpu.NV_GR_ALLOCATION_PARAMETERS{})
-				info.allocationInfos[nvgpu.BLACKWELL_INLINE_TO_MEMORY_A] = ioctlInfo("BLACKWELL_INLINE_TO_MEMORY_A", nvgpu.NV_GR_ALLOCATION_PARAMETERS{})
-				info.controlInfos[nvgpu.NV_SEMAPHORE_SURFACE_CTRL_CMD_UNBIND_CHANNEL] = simpleIoctlInfo("NV_SEMAPHORE_SURFACE_CTRL_CMD_UNBIND_CHANNEL", "NV_SEMAPHORE_SURFACE_CTRL_UNBIND_CHANNEL_PARAMS")
+				info.AllocationInfos[nvgpu.NVCDB0_VIDEO_DECODER] = ioctlInfo("NVCDB0_VIDEO_DECODER", nvgpu.NV_BSP_ALLOCATION_PARAMETERS{})
+				info.AllocationInfos[nvgpu.BLACKWELL_CHANNEL_GPFIFO_A] = ioctlInfo("BLACKWELL_CHANNEL_GPFIFO_A", nvgpu.NV_CHANNEL_ALLOC_PARAMS{})
+				info.AllocationInfos[nvgpu.BLACKWELL_DMA_COPY_A] = ioctlInfo("BLACKWELL_DMA_COPY_A", nvgpu.NVB0B5_ALLOCATION_PARAMETERS{})
+				info.AllocationInfos[nvgpu.BLACKWELL_A] = ioctlInfo("BLACKWELL_A", nvgpu.NV_GR_ALLOCATION_PARAMETERS{})
+				info.AllocationInfos[nvgpu.BLACKWELL_COMPUTE_A] = ioctlInfo("BLACKWELL_COMPUTE_A", nvgpu.NV_GR_ALLOCATION_PARAMETERS{})
+				info.AllocationInfos[nvgpu.BLACKWELL_INLINE_TO_MEMORY_A] = ioctlInfo("BLACKWELL_INLINE_TO_MEMORY_A", nvgpu.NV_GR_ALLOCATION_PARAMETERS{})
+				info.ControlInfos[nvgpu.NV_SEMAPHORE_SURFACE_CTRL_CMD_UNBIND_CHANNEL] = simpleIoctlInfo("NV_SEMAPHORE_SURFACE_CTRL_CMD_UNBIND_CHANNEL", "NV_SEMAPHORE_SURFACE_CTRL_UNBIND_CHANNEL_PARAMS")
 				return info
 			}
 			return abi
@@ -873,18 +872,18 @@ func Init() {
 			abi.allocationClass[nvgpu.BLACKWELL_COMPUTE_B] = allocHandler(rmAllocSimple[nvgpu.NV_GR_ALLOCATION_PARAMETERS], compUtil)
 			abi.allocationClass[nvgpu.BLACKWELL_USERMODE_A] = allocHandler(rmAllocSimple[nvgpu.NV_HOPPER_USERMODE_A_PARAMS], compUtil)
 			prevGetInfo := abi.getInfo
-			abi.getInfo = func() *driverABIInfo {
+			abi.getInfo = func() *DriverABIInfo {
 				info := prevGetInfo()
-				info.controlInfos[nvgpu.NV2080_CTRL_CMD_FB_QUERY_DRAM_ENCRYPTION_INFOROM_SUPPORT] = simpleIoctlInfo("NV2080_CTRL_CMD_FB_QUERY_DRAM_ENCRYPTION_INFOROM_SUPPORT", "NV2080_CTRL_FB_DRAM_ENCRYPTION_INFOROM_SUPPORT_PARAMS")
-				info.allocationInfos[nvgpu.TURING_CHANNEL_GPFIFO_A] = ioctlInfoWithStructName("TURING_CHANNEL_GPFIFO_A", nvgpu.NV_CHANNEL_ALLOC_PARAMS_V570{}, "NV_CHANNEL_ALLOC_PARAMS")
-				info.allocationInfos[nvgpu.AMPERE_CHANNEL_GPFIFO_A] = ioctlInfoWithStructName("AMPERE_CHANNEL_GPFIFO_A", nvgpu.NV_CHANNEL_ALLOC_PARAMS_V570{}, "NV_CHANNEL_ALLOC_PARAMS")
-				info.allocationInfos[nvgpu.HOPPER_CHANNEL_GPFIFO_A] = ioctlInfoWithStructName("HOPPER_CHANNEL_GPFIFO_A", nvgpu.NV_CHANNEL_ALLOC_PARAMS_V570{}, "NV_CHANNEL_ALLOC_PARAMS")
-				info.allocationInfos[nvgpu.BLACKWELL_DMA_COPY_B] = ioctlInfo("BLACKWELL_DMA_COPY_B", nvgpu.NVB0B5_ALLOCATION_PARAMETERS{})
-				info.allocationInfos[nvgpu.BLACKWELL_CHANNEL_GPFIFO_A] = ioctlInfoWithStructName("BLACKWELL_CHANNEL_GPFIFO_A", nvgpu.NV_CHANNEL_ALLOC_PARAMS_V570{}, "NV_CHANNEL_ALLOC_PARAMS")
-				info.allocationInfos[nvgpu.BLACKWELL_CHANNEL_GPFIFO_B] = ioctlInfoWithStructName("BLACKWELL_CHANNEL_GPFIFO_B", nvgpu.NV_CHANNEL_ALLOC_PARAMS_V570{}, "NV_CHANNEL_ALLOC_PARAMS")
-				info.allocationInfos[nvgpu.BLACKWELL_B] = ioctlInfo("BLACKWELL_B", nvgpu.NV_GR_ALLOCATION_PARAMETERS{})
-				info.allocationInfos[nvgpu.BLACKWELL_COMPUTE_B] = ioctlInfo("BLACKWELL_COMPUTE_B", nvgpu.NV_GR_ALLOCATION_PARAMETERS{})
-				info.allocationInfos[nvgpu.BLACKWELL_USERMODE_A] = ioctlInfo("BLACKWELL_USERMODE_A", nvgpu.NV_HOPPER_USERMODE_A_PARAMS{})
+				info.ControlInfos[nvgpu.NV2080_CTRL_CMD_FB_QUERY_DRAM_ENCRYPTION_INFOROM_SUPPORT] = simpleIoctlInfo("NV2080_CTRL_CMD_FB_QUERY_DRAM_ENCRYPTION_INFOROM_SUPPORT", "NV2080_CTRL_FB_DRAM_ENCRYPTION_INFOROM_SUPPORT_PARAMS")
+				info.AllocationInfos[nvgpu.TURING_CHANNEL_GPFIFO_A] = ioctlInfoWithStructName("TURING_CHANNEL_GPFIFO_A", nvgpu.NV_CHANNEL_ALLOC_PARAMS_V570{}, "NV_CHANNEL_ALLOC_PARAMS")
+				info.AllocationInfos[nvgpu.AMPERE_CHANNEL_GPFIFO_A] = ioctlInfoWithStructName("AMPERE_CHANNEL_GPFIFO_A", nvgpu.NV_CHANNEL_ALLOC_PARAMS_V570{}, "NV_CHANNEL_ALLOC_PARAMS")
+				info.AllocationInfos[nvgpu.HOPPER_CHANNEL_GPFIFO_A] = ioctlInfoWithStructName("HOPPER_CHANNEL_GPFIFO_A", nvgpu.NV_CHANNEL_ALLOC_PARAMS_V570{}, "NV_CHANNEL_ALLOC_PARAMS")
+				info.AllocationInfos[nvgpu.BLACKWELL_DMA_COPY_B] = ioctlInfo("BLACKWELL_DMA_COPY_B", nvgpu.NVB0B5_ALLOCATION_PARAMETERS{})
+				info.AllocationInfos[nvgpu.BLACKWELL_CHANNEL_GPFIFO_A] = ioctlInfoWithStructName("BLACKWELL_CHANNEL_GPFIFO_A", nvgpu.NV_CHANNEL_ALLOC_PARAMS_V570{}, "NV_CHANNEL_ALLOC_PARAMS")
+				info.AllocationInfos[nvgpu.BLACKWELL_CHANNEL_GPFIFO_B] = ioctlInfoWithStructName("BLACKWELL_CHANNEL_GPFIFO_B", nvgpu.NV_CHANNEL_ALLOC_PARAMS_V570{}, "NV_CHANNEL_ALLOC_PARAMS")
+				info.AllocationInfos[nvgpu.BLACKWELL_B] = ioctlInfo("BLACKWELL_B", nvgpu.NV_GR_ALLOCATION_PARAMETERS{})
+				info.AllocationInfos[nvgpu.BLACKWELL_COMPUTE_B] = ioctlInfo("BLACKWELL_COMPUTE_B", nvgpu.NV_GR_ALLOCATION_PARAMETERS{})
+				info.AllocationInfos[nvgpu.BLACKWELL_USERMODE_A] = ioctlInfo("BLACKWELL_USERMODE_A", nvgpu.NV_HOPPER_USERMODE_A_PARAMS{})
 				return info
 			}
 			return abi
@@ -904,11 +903,11 @@ func Init() {
 			abi.controlCmd[nvgpu.NV2080_CTRL_CMD_FB_QUERY_DRAM_ENCRYPTION_INFOROM_SUPPORT_V575] = ctrlHandler(rmControlSimple, compUtil)
 			abi.controlCmd[nvgpu.NV2080_CTRL_CMD_THERMAL_SYSTEM_EXECUTE_V2] = ctrlHandler(rmControlSimple, compUtil)
 			prevGetInfo := abi.getInfo
-			abi.getInfo = func() *driverABIInfo {
+			abi.getInfo = func() *DriverABIInfo {
 				info := prevGetInfo()
-				delete(info.controlInfos, nvgpu.NV2080_CTRL_CMD_FB_QUERY_DRAM_ENCRYPTION_INFOROM_SUPPORT)
-				info.controlInfos[nvgpu.NV2080_CTRL_CMD_FB_QUERY_DRAM_ENCRYPTION_INFOROM_SUPPORT_V575] = simpleIoctlInfo("NV2080_CTRL_CMD_FB_QUERY_DRAM_ENCRYPTION_INFOROM_SUPPORT", "NV2080_CTRL_FB_DRAM_ENCRYPTION_INFOROM_SUPPORT_PARAMS")
-				info.controlInfos[nvgpu.NV2080_CTRL_CMD_THERMAL_SYSTEM_EXECUTE_V2] = simpleIoctlInfo("NV2080_CTRL_CMD_THERMAL_SYSTEM_EXECUTE_V2", "NV2080_CTRL_THERMAL_SYSTEM_EXECUTE_V2_PARAMS")
+				delete(info.ControlInfos, nvgpu.NV2080_CTRL_CMD_FB_QUERY_DRAM_ENCRYPTION_INFOROM_SUPPORT)
+				info.ControlInfos[nvgpu.NV2080_CTRL_CMD_FB_QUERY_DRAM_ENCRYPTION_INFOROM_SUPPORT_V575] = simpleIoctlInfo("NV2080_CTRL_CMD_FB_QUERY_DRAM_ENCRYPTION_INFOROM_SUPPORT", "NV2080_CTRL_FB_DRAM_ENCRYPTION_INFOROM_SUPPORT_PARAMS")
+				info.ControlInfos[nvgpu.NV2080_CTRL_CMD_THERMAL_SYSTEM_EXECUTE_V2] = simpleIoctlInfo("NV2080_CTRL_CMD_THERMAL_SYSTEM_EXECUTE_V2", "NV2080_CTRL_THERMAL_SYSTEM_EXECUTE_V2_PARAMS")
 				return info
 			}
 			return abi
@@ -1015,9 +1014,9 @@ func ExpectedDriverChecksum(version nvconf.DriverVersion) (Checksums, bool) {
 	return abi.checksums, true
 }
 
-// SupportedIoctls returns the ioctl numbers that are supported by nvproxy at
-// a given version.
-func SupportedIoctls(version nvconf.DriverVersion) (frontendIoctls map[uint32]struct{}, uvmIoctls map[uint32]struct{}, controlCmds map[uint32]struct{}, allocClasses map[uint32]struct{}, ok bool) {
+// SupportedIoctlsNumbers returns the ioctl numbers that are supported by
+// nvproxy at a given version.
+func SupportedIoctlsNumbers(version nvconf.DriverVersion) (frontendIoctls map[uint32]struct{}, uvmIoctls map[uint32]struct{}, controlCmds map[uint32]struct{}, allocClasses map[uint32]struct{}, ok bool) {
 	abiCons, ok := abis[version]
 	if !ok {
 		return nil, nil, nil, nil, false
@@ -1042,29 +1041,13 @@ func SupportedIoctls(version nvconf.DriverVersion) (frontendIoctls map[uint32]st
 	return
 }
 
-// SupportedStructTypes returns the list of struct types supported by the given driver version.
-// It merges the frontend, uvm, control, and allocation names into one slice.
-func SupportedStructTypes(version nvconf.DriverVersion) ([]DriverStruct, bool) {
+// SupportedIoctls returns the DriverABIInfo struct for the given version,
+// which describes the ioctls supported in nvproxy for the given version.
+func SupportedIoctls(version nvconf.DriverVersion) (*DriverABIInfo, bool) {
 	abiCons, ok := abis[version]
 	if !ok {
 		return nil, false
 	}
 	abi := abiCons.cons()
-	info := abi.getInfo()
-
-	var allStructs []DriverStruct
-	for _, i := range info.frontendInfos {
-		allStructs = append(allStructs, i.Structs...)
-	}
-	for _, i := range info.uvmInfos {
-		allStructs = append(allStructs, i.Structs...)
-	}
-	for _, i := range info.controlInfos {
-		allStructs = append(allStructs, i.Structs...)
-	}
-	for _, i := range info.allocationInfos {
-		allStructs = append(allStructs, i.Structs...)
-	}
-
-	return allStructs, true
+	return abi.getInfo(), true
 }
