@@ -19,15 +19,18 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#include <cstdint>
 #include <string>
 
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/flags/flag.h"
 #include "absl/strings/str_cat.h"
-#include "test/util/capability_util.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/fs_util.h"
+#include "test/util/linux_capability_util.h"
 #include "test/util/posix_error.h"
+#include "test/util/save_util.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
@@ -41,6 +44,11 @@ namespace {
 
 // IsSameFile returns true if both filenames have the same device and inode.
 bool IsSameFile(const std::string& f1, const std::string& f2) {
+  // Inode numbers for gofer-accessed files on which no reference is held may
+  // change across save/restore because the information that the gofer client
+  // uses to track file identity (path) is inconsistent between gofer
+  // processes, which are restarted across save/restore.
+  DisableSave ds;
   // Use lstat rather than stat, so that symlinks are not followed.
   struct stat stat1 = {};
   EXPECT_THAT(lstat(f1.c_str(), &stat1), SyscallSucceeds());
@@ -74,6 +82,34 @@ TEST(LinkTest, CanCreateLinkFile) {
   // Link count should be back to initial.
   EXPECT_THAT(Links(oldfile.path()),
               IsPosixErrorOkAndHolds(initial_link_count));
+}
+
+TEST(LinkTest, HardlinkChangeMode) {
+  auto oldfile = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  const std::string newname = NewTempAbsPath();
+  constexpr uint32_t kMode = S_IRUSR;
+  struct stat stat1 = {};
+  struct stat stat2 = {};
+  FileDescriptor file_fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(oldfile.path(), O_PATH));
+
+  ASSERT_THAT(
+      linkat(AT_FDCWD, oldfile.path().c_str(), AT_FDCWD, newname.c_str(), 0),
+      SyscallSucceeds());
+
+  EXPECT_THAT(chmod(oldfile.path().c_str(), kMode), SyscallSucceeds());
+  EXPECT_THAT(lstat(newname.c_str(), &stat1), SyscallSucceeds());
+  EXPECT_THAT(lstat(oldfile.path().c_str(), &stat2), SyscallSucceeds());
+
+  // Expect inode numbers to be preserved, even with save/restore enabled in
+  // this test. Since file_fd is open, the gofer filesystem should preserve the
+  // inode number across save/restore. Do not use IsSameFile() here because it
+  // disables save/reftore feature.
+
+  EXPECT_EQ(stat1.st_dev, stat2.st_dev);
+  EXPECT_EQ(stat1.st_ino, stat2.st_ino);
+  EXPECT_EQ(kMode, (stat1.st_mode & S_IRWXU));
+  EXPECT_THAT(unlink(newname.c_str()), SyscallSucceeds());
 }
 
 TEST(LinkTest, PermissionDenied) {
@@ -234,6 +270,8 @@ TEST(LinkTest, AbsPathsWithNonDirFDs) {
   EXPECT_THAT(linkat(file_fd.get(), oldfile.path().c_str(), file_fd.get(),
                      newname.c_str(), 0),
               SyscallSucceeds());
+
+  EXPECT_TRUE(IsSameFile(oldfile.path(), newname));
 }
 
 TEST(LinkTest, NewDirFDWithOpath) {
@@ -283,6 +321,7 @@ TEST(LinkTest, AbsPathsNonDirFDsWithOpath) {
   EXPECT_THAT(linkat(file_fd.get(), oldfile.path().c_str(), file_fd.get(),
                      newname.c_str(), 0),
               SyscallSucceeds());
+  EXPECT_TRUE(IsSameFile(oldfile.path(), newname));
 }
 
 TEST(LinkTest, LinkDoesNotFollowSymlinks) {

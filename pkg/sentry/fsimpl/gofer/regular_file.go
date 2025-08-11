@@ -36,8 +36,8 @@ import (
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
-func (d *dentry) isRegularFile() bool {
-	return d.fileType() == linux.S_IFREG
+func (i *inode) isRegularFile() bool {
+	return i.fileType() == linux.S_IFREG
 }
 
 // +stateify savable
@@ -51,16 +51,16 @@ type regularFileFD struct {
 
 func newRegularFileFD(mnt *vfs.Mount, d *dentry, flags uint32) (*regularFileFD, error) {
 	fd := &regularFileFD{}
-	fd.LockFD.Init(&d.locks)
+	fd.LockFD.Init(&d.inode.locks)
 	if err := fd.vfsfd.Init(fd, flags, mnt, &d.vfsd, &vfs.FileDescriptionOptions{
 		AllowDirectIO: true,
 	}); err != nil {
 		return nil, err
 	}
-	if fd.vfsfd.IsWritable() && (d.mode.Load()&0111 != 0) {
+	if fd.vfsfd.IsWritable() && (d.inode.mode.Load()&0111 != 0) {
 		metric.SuspiciousOperationsMetric.Increment(&metric.SuspiciousOperationsTypeOpenedWriteExecuteFile)
 	}
-	if d.mmapFD.Load() >= 0 {
+	if d.inode.mmapFD.Load() >= 0 {
 		fsmetric.GoferOpensHost.Increment()
 	} else {
 		fsmetric.GoferOpens9P.Increment()
@@ -77,8 +77,8 @@ func (fd *regularFileFD) OnClose(ctx context.Context) error {
 	if !fd.vfsfd.IsWritable() {
 		return nil
 	}
-	d := fd.dentry()
-	if d.fs.opts.interop == InteropModeExclusive {
+	i := fd.dentry().inode
+	if i.fs.opts.interop == InteropModeExclusive {
 		// d may have dirty pages that we won't write back now (and wouldn't
 		// have in VFS1), making a flushf RPC ineffective. If this is the case,
 		// skip the flushf.
@@ -87,21 +87,21 @@ func (fd *regularFileFD) OnClose(ctx context.Context) error {
 		// modes if forcePageCache is in effect; we conservatively assume that
 		// applications have some way of tolerating this and still want the
 		// flushf.
-		d.dataMu.RLock()
-		haveDirtyPages := !d.dirty.IsEmpty()
-		d.dataMu.RUnlock()
+		i.dataMu.RLock()
+		haveDirtyPages := !i.dirty.IsEmpty()
+		i.dataMu.RUnlock()
 		if haveDirtyPages {
 			return nil
 		}
 	}
-	return d.flush(ctx)
+	return i.flush(ctx)
 }
 
 // Allocate implements vfs.FileDescriptionImpl.Allocate.
 func (fd *regularFileFD) Allocate(ctx context.Context, mode, offset, length uint64) error {
 	d := fd.dentry()
 	return d.doAllocate(ctx, offset, length, func() error {
-		return d.allocate(ctx, mode, offset, length)
+		return d.inode.allocate(ctx, mode, offset, length)
 	})
 }
 
@@ -110,7 +110,7 @@ func (fd *regularFileFD) PRead(ctx context.Context, dst usermem.IOSequence, offs
 	start := fsmetric.StartReadWait()
 	d := fd.dentry()
 	defer func() {
-		if d.readFD.Load() >= 0 {
+		if d.inode.readFD.Load() >= 0 {
 			fsmetric.GoferReadsHost.Increment()
 			fsmetric.FinishReadWait(fsmetric.GoferReadWaitHost, start)
 		} else {
@@ -131,8 +131,8 @@ func (fd *regularFileFD) PRead(ctx context.Context, dst usermem.IOSequence, offs
 	}
 
 	// Check for reading at EOF before calling into MM (but not under
-	// InteropModeShared, which makes d.size unreliable).
-	if d.cachedMetadataAuthoritative() && uint64(offset) >= d.size.Load() {
+	// InteropModeShared, which makes d.inode.size unreliable).
+	if d.inode.cachedMetadataAuthoritative() && uint64(offset) >= d.inode.size.Load() {
 		return 0, io.EOF
 	}
 
@@ -151,7 +151,7 @@ func (fd *regularFileFD) PRead(ctx context.Context, dst usermem.IOSequence, offs
 		rw.direct = true
 		n, readErr = dst.CopyOutFrom(ctx, rw)
 		putDentryReadWriter(rw)
-		if d.fs.opts.interop != InteropModeShared {
+		if d.inode.fs.opts.interop != InteropModeShared {
 			// Compare Linux's mm/filemap.c:do_generic_file_read() => file_accessed().
 			d.touchAtimeLocked(fd.vfsfd.Mount())
 		}
@@ -159,7 +159,7 @@ func (fd *regularFileFD) PRead(ctx context.Context, dst usermem.IOSequence, offs
 		rw := getDentryReadWriter(ctx, d, offset)
 		n, readErr = dst.CopyOutFrom(ctx, rw)
 		putDentryReadWriter(rw)
-		if d.fs.opts.interop != InteropModeShared {
+		if d.inode.fs.opts.interop != InteropModeShared {
 			// Compare Linux's mm/filemap.c:do_generic_file_read() => file_accessed().
 			d.touchAtime(fd.vfsfd.Mount())
 		}
@@ -198,13 +198,13 @@ func (fd *regularFileFD) pwrite(ctx context.Context, src usermem.IOSequence, off
 
 	d := fd.dentry()
 
-	d.metadataMu.Lock()
-	defer d.metadataMu.Unlock()
+	d.inode.metadataMu.Lock()
+	defer d.inode.metadataMu.Unlock()
 
 	// If the fd was opened with O_APPEND, make sure the file size is updated.
 	// There is a possible race here if size is modified externally after
 	// metadata cache is updated.
-	if fd.vfsfd.StatusFlags()&linux.O_APPEND != 0 && !d.cachedMetadataAuthoritative() {
+	if fd.vfsfd.StatusFlags()&linux.O_APPEND != 0 && !d.inode.cachedMetadataAuthoritative() {
 		if err := d.refreshSizeLocked(ctx); err != nil {
 			return 0, offset, err
 		}
@@ -212,8 +212,8 @@ func (fd *regularFileFD) pwrite(ctx context.Context, src usermem.IOSequence, off
 
 	// Set offset to file size if the fd was opened with O_APPEND.
 	if fd.vfsfd.StatusFlags()&linux.O_APPEND != 0 {
-		// Holding d.metadataMu is sufficient for reading d.size.
-		offset = int64(d.size.RacyLoad())
+		// Holding d.inode.metadataMu is sufficient for reading d.inode.size.
+		offset = int64(d.inode.size.RacyLoad())
 	}
 	limit, err := vfs.CheckLimit(ctx, offset, src.NumBytes())
 	if err != nil {
@@ -221,10 +221,10 @@ func (fd *regularFileFD) pwrite(ctx context.Context, src usermem.IOSequence, off
 	}
 	src = src.TakeFirst64(limit)
 
-	if d.fs.opts.interop != InteropModeShared {
+	if d.inode.fs.opts.interop != InteropModeShared {
 		// Compare Linux's mm/filemap.c:__generic_file_write_iter() =>
 		// file_update_time(). This is d.touchCMtime(), but without locking
-		// d.metadataMu (recursively).
+		// d.inode.metadataMu (recursively).
 		d.touchCMtimeLocked()
 	}
 
@@ -264,14 +264,14 @@ func (fd *regularFileFD) pwrite(ctx context.Context, src usermem.IOSequence, off
 
 	// As with Linux, writing clears the setuid and setgid bits.
 	if n > 0 {
-		oldMode := d.mode.Load()
-		// If setuid or setgid were set, update d.mode and propagate
+		oldMode := d.inode.mode.Load()
+		// If setuid or setgid were set, update d.inode.mode and propagate
 		// changes to the host.
 		if newMode := vfs.ClearSUIDAndSGID(oldMode); newMode != oldMode {
 			if err := d.chmod(ctx, uint16(newMode)); err != nil {
 				return 0, offset, err
 			}
-			d.mode.Store(newMode)
+			d.inode.mode.Store(newMode)
 		}
 	}
 
@@ -294,19 +294,19 @@ func (fd *regularFileFD) writeCache(ctx context.Context, d *dentry, offset int64
 	mr := memmap.MappableRange{pgstart, pgend}
 	var freed []memmap.FileRange
 
-	d.dataMu.Lock()
-	d.cache.RemoveRangeWith(mr, func(cseg fsutil.FileRangeIterator) {
+	d.inode.dataMu.Lock()
+	d.inode.cache.RemoveRangeWith(mr, func(cseg fsutil.FileRangeIterator) {
 		freed = append(freed, memmap.FileRange{cseg.Value(), cseg.Value() + cseg.Range().Length()})
 	})
-	d.dataMu.Unlock()
+	d.inode.dataMu.Unlock()
 
 	// Invalidate mappings of removed pages.
-	d.mapsMu.Lock()
-	d.mappings.Invalidate(mr, memmap.InvalidateOpts{})
-	d.mapsMu.Unlock()
+	d.inode.mapsMu.Lock()
+	d.inode.mappings.Invalidate(mr, memmap.InvalidateOpts{})
+	d.inode.mapsMu.Unlock()
 
 	// Finally free pages removed from the cache.
-	mf := d.fs.mf
+	mf := d.inode.fs.mf
 	for _, freedFR := range freed {
 		mf.DecRef(freedFR)
 	}
@@ -361,10 +361,10 @@ func (rw *dentryReadWriter) ReadToBlocks(dsts safemem.BlockSeq) (uint64, error) 
 	// (which prevents us from caching file contents and makes dentry.size
 	// unreliable), or if the file was opened O_DIRECT, read directly from
 	// readHandle() without locking dentry.dataMu.
-	rw.d.handleMu.RLock()
-	defer rw.d.handleMu.RUnlock()
-	h := rw.d.readHandle()
-	if (rw.d.mmapFD.RacyLoad() >= 0 && !rw.d.fs.opts.forcePageCache) || rw.d.fs.opts.interop == InteropModeShared || rw.direct {
+	rw.d.inode.handleMu.RLock()
+	defer rw.d.inode.handleMu.RUnlock()
+	h := rw.d.inode.readHandle()
+	if (rw.d.inode.mmapFD.RacyLoad() >= 0 && !rw.d.inode.fs.opts.forcePageCache) || rw.d.inode.fs.opts.interop == InteropModeShared || rw.direct {
 		n, err := h.readToBlocksAt(rw.ctx, dsts, rw.off)
 		rw.off += n
 		return n, err
@@ -372,20 +372,20 @@ func (rw *dentryReadWriter) ReadToBlocks(dsts safemem.BlockSeq) (uint64, error) 
 
 	// Otherwise read from/through the cache.
 	memCgID := pgalloc.MemoryCgroupIDFromContext(rw.ctx)
-	mf := rw.d.fs.mf
+	mf := rw.d.inode.fs.mf
 	fillCache := mf.ShouldCacheEvictable()
 	var dataMuUnlock func()
 	if fillCache {
-		rw.d.dataMu.Lock()
-		dataMuUnlock = rw.d.dataMu.Unlock
+		rw.d.inode.dataMu.Lock()
+		dataMuUnlock = rw.d.inode.dataMu.Unlock
 	} else {
-		rw.d.dataMu.RLock()
-		dataMuUnlock = rw.d.dataMu.RUnlock
+		rw.d.inode.dataMu.RLock()
+		dataMuUnlock = rw.d.inode.dataMu.RUnlock
 	}
 	defer dataMuUnlock()
 
 	// Compute the range to read (limited by file size and overflow-checked).
-	end := rw.d.size.Load()
+	end := rw.d.inode.size.Load()
 	if rw.off >= end {
 		return 0, io.EOF
 	}
@@ -394,7 +394,7 @@ func (rw *dentryReadWriter) ReadToBlocks(dsts safemem.BlockSeq) (uint64, error) 
 	}
 
 	var done uint64
-	seg, gap := rw.d.cache.Find(rw.off)
+	seg, gap := rw.d.inode.cache.Find(rw.off)
 	for rw.off < end {
 		mr := memmap.MappableRange{rw.off, end}
 		switch {
@@ -428,13 +428,13 @@ func (rw *dentryReadWriter) ReadToBlocks(dsts safemem.BlockSeq) (uint64, error) 
 					End:   gapEnd,
 				}
 				optMR := gap.Range()
-				_, err := rw.d.cache.Fill(rw.ctx, reqMR, maxFillRange(reqMR, optMR), rw.d.size.Load(), mf, pgalloc.AllocOpts{
+				_, err := rw.d.inode.cache.Fill(rw.ctx, reqMR, maxFillRange(reqMR, optMR), rw.d.inode.size.Load(), mf, pgalloc.AllocOpts{
 					Kind:    usage.PageCache,
 					MemCgID: memCgID,
 					Mode:    pgalloc.AllocateAndWritePopulate,
 				}, h.readToBlocksAt)
-				mf.MarkEvictable(rw.d, pgalloc.EvictableRange{optMR.Start, optMR.End})
-				seg, gap = rw.d.cache.Find(rw.off)
+				mf.MarkEvictable(rw.d.inode, pgalloc.EvictableRange{Start: optMR.Start, End: optMR.End})
+				seg, gap = rw.d.inode.cache.Find(rw.off)
 				if !seg.Ok() {
 					return done, err
 				}
@@ -464,7 +464,7 @@ func (rw *dentryReadWriter) ReadToBlocks(dsts safemem.BlockSeq) (uint64, error) 
 
 // WriteFromBlocks implements safemem.Writer.WriteFromBlocks.
 //
-// Preconditions: rw.d.metadataMu must be locked.
+// Preconditions: rw.d.inode.metadataMu must be locked.
 func (rw *dentryReadWriter) WriteFromBlocks(srcs safemem.BlockSeq) (uint64, error) {
 	if srcs.IsEmpty() {
 		return 0, nil
@@ -475,16 +475,16 @@ func (rw *dentryReadWriter) WriteFromBlocks(srcs safemem.BlockSeq) (uint64, erro
 	// (which prevents us from caching file contents), or if the file was
 	// opened with O_DIRECT, write directly to dentry.writeHandle()
 	// without locking dentry.dataMu.
-	rw.d.handleMu.RLock()
-	defer rw.d.handleMu.RUnlock()
-	h := rw.d.writeHandle()
-	if (rw.d.mmapFD.RacyLoad() >= 0 && !rw.d.fs.opts.forcePageCache) || rw.d.fs.opts.interop == InteropModeShared || rw.direct {
+	rw.d.inode.handleMu.RLock()
+	defer rw.d.inode.handleMu.RUnlock()
+	h := rw.d.inode.writeHandle()
+	if (rw.d.inode.mmapFD.RacyLoad() >= 0 && !rw.d.inode.fs.opts.forcePageCache) || rw.d.inode.fs.opts.interop == InteropModeShared || rw.direct {
 		n, err := h.writeFromBlocksAt(rw.ctx, srcs, rw.off)
 		rw.off += n
-		rw.d.dataMu.Lock()
-		defer rw.d.dataMu.Unlock()
-		if rw.off > rw.d.size.Load() {
-			rw.d.size.Store(rw.off)
+		rw.d.inode.dataMu.Lock()
+		defer rw.d.inode.dataMu.Unlock()
+		if rw.off > rw.d.inode.size.Load() {
+			rw.d.inode.size.Store(rw.off)
 			// The remote file's size will implicitly be extended to the correct
 			// value when we write back to it.
 		}
@@ -492,9 +492,9 @@ func (rw *dentryReadWriter) WriteFromBlocks(srcs safemem.BlockSeq) (uint64, erro
 	}
 
 	// Otherwise write to/through the cache.
-	mf := rw.d.fs.mf
-	rw.d.dataMu.Lock()
-	defer rw.d.dataMu.Unlock()
+	mf := rw.d.inode.fs.mf
+	rw.d.inode.dataMu.Lock()
+	defer rw.d.inode.dataMu.Unlock()
 
 	// Compute the range to write (overflow-checked).
 	start := rw.off
@@ -507,7 +507,7 @@ func (rw *dentryReadWriter) WriteFromBlocks(srcs safemem.BlockSeq) (uint64, erro
 		done   uint64
 		retErr error
 	)
-	seg, gap := rw.d.cache.Find(rw.off)
+	seg, gap := rw.d.inode.cache.Find(rw.off)
 	for rw.off < end {
 		mr := memmap.MappableRange{rw.off, end}
 		switch {
@@ -525,7 +525,7 @@ func (rw *dentryReadWriter) WriteFromBlocks(srcs safemem.BlockSeq) (uint64, erro
 			done += n
 			rw.off += n
 			srcs = srcs.DropFirst64(n)
-			rw.d.dirty.MarkDirty(segMR)
+			rw.d.inode.dirty.MarkDirty(segMR)
 			if err != nil {
 				retErr = err
 				goto exitLoop
@@ -556,18 +556,18 @@ func (rw *dentryReadWriter) WriteFromBlocks(srcs safemem.BlockSeq) (uint64, erro
 		}
 	}
 exitLoop:
-	if rw.off > rw.d.size.Load() {
-		rw.d.size.Store(rw.off)
+	if rw.off > rw.d.inode.size.Load() {
+		rw.d.inode.size.Store(rw.off)
 		// The remote file's size will implicitly be extended to the correct
 		// value when we write back to it.
 	}
 	// If InteropModeWritethrough is in effect, flush written data back to the
 	// remote filesystem.
-	if rw.d.fs.opts.interop == InteropModeWritethrough && done != 0 {
+	if rw.d.inode.fs.opts.interop == InteropModeWritethrough && done != 0 {
 		if err := fsutil.SyncDirty(rw.ctx, memmap.MappableRange{
 			Start: start,
 			End:   rw.off,
-		}, &rw.d.cache, &rw.d.dirty, rw.d.size.Load(), mf, h.writeFromBlocksAt); err != nil {
+		}, &rw.d.inode.cache, &rw.d.inode.dirty, rw.d.inode.size.Load(), mf, h.writeFromBlocksAt); err != nil {
 			// We have no idea how many bytes were actually flushed.
 			rw.off = start
 			done = 0
@@ -581,13 +581,13 @@ func (d *dentry) writeback(ctx context.Context, offset, size int64) error {
 	if size == 0 {
 		return nil
 	}
-	d.handleMu.RLock()
-	defer d.handleMu.RUnlock()
-	h := d.writeHandle()
-	d.dataMu.Lock()
-	defer d.dataMu.Unlock()
+	d.inode.handleMu.RLock()
+	defer d.inode.handleMu.RUnlock()
+	h := d.inode.writeHandle()
+	d.inode.dataMu.Lock()
+	defer d.inode.dataMu.Unlock()
 	// Compute the range of valid bytes (overflow-checked).
-	dentrySize := d.size.Load()
+	dentrySize := d.inode.size.Load()
 	if uint64(offset) >= dentrySize {
 		return nil
 	}
@@ -598,7 +598,7 @@ func (d *dentry) writeback(ctx context.Context, offset, size int64) error {
 	return fsutil.SyncDirty(ctx, memmap.MappableRange{
 		Start: uint64(offset),
 		End:   uint64(end),
-	}, &d.cache, &d.dirty, dentrySize, d.fs.mf, h.writeFromBlocksAt)
+	}, &d.inode.cache, &d.inode.dirty, dentrySize, d.inode.fs.mf, h.writeFromBlocksAt)
 }
 
 // Seek implements vfs.FileDescriptionImpl.Seek.
@@ -622,12 +622,12 @@ func regularFileSeekLocked(ctx context.Context, d *dentry, fdOffset, offset int6
 		offset += fdOffset
 	case linux.SEEK_END, linux.SEEK_DATA, linux.SEEK_HOLE:
 		// Ensure file size is up to date.
-		if !d.cachedMetadataAuthoritative() {
-			if err := d.updateMetadata(ctx); err != nil {
+		if !d.inode.cachedMetadataAuthoritative() {
+			if err := d.inode.updateMetadata(ctx); err != nil {
 				return 0, err
 			}
 		}
-		size := int64(d.size.Load())
+		size := int64(d.inode.size.Load())
 		// For SEEK_DATA and SEEK_HOLE, treat the file as a single contiguous
 		// block of data.
 		switch whence {
@@ -662,8 +662,8 @@ func (fd *regularFileFD) Sync(ctx context.Context) error {
 func (fd *regularFileFD) ConfigureMMap(ctx context.Context, opts *memmap.MMapOpts) error {
 	d := fd.dentry()
 	// Force sentry page caching at your own risk.
-	if !d.fs.opts.forcePageCache {
-		switch d.fs.opts.interop {
+	if !d.inode.fs.opts.forcePageCache {
+		switch d.inode.fs.opts.interop {
 		case InteropModeExclusive:
 			// Any mapping is fine.
 		case InteropModeWritethrough:
@@ -677,16 +677,16 @@ func (fd *regularFileFD) ConfigureMMap(ctx context.Context, opts *memmap.MMapOpt
 		case InteropModeShared:
 			// All mappings require a host FD to be coherent with other
 			// filesystem users.
-			if d.mmapFD.Load() < 0 {
+			if d.inode.mmapFD.Load() < 0 {
 				return linuxerr.ENODEV
 			}
 		default:
-			panic(fmt.Sprintf("unknown InteropMode %v", d.fs.opts.interop))
+			panic(fmt.Sprintf("unknown InteropMode %v", d.inode.fs.opts.interop))
 		}
 	}
 	// After this point, d may be used as a memmap.Mappable.
-	d.pf.hostFileMapperInitOnce.Do(d.pf.hostFileMapper.Init)
-	opts.SentryOwnedContent = d.fs.opts.forcePageCache
+	d.inode.pf.hostFileMapperInitOnce.Do(d.inode.pf.hostFileMapper.Init)
+	opts.SentryOwnedContent = d.inode.fs.opts.forcePageCache
 	return vfs.GenericConfigureMMap(&fd.vfsfd, d, opts)
 }
 
@@ -696,47 +696,47 @@ func (fs *filesystem) mayCachePagesInMemoryFile() bool {
 
 // AddMapping implements memmap.Mappable.AddMapping.
 func (d *dentry) AddMapping(ctx context.Context, ms memmap.MappingSpace, ar hostarch.AddrRange, offset uint64, writable bool) error {
-	d.mapsMu.Lock()
-	mapped := d.mappings.AddMapping(ms, ar, offset, writable)
+	d.inode.mapsMu.Lock()
+	mapped := d.inode.mappings.AddMapping(ms, ar, offset, writable)
 	// Do this unconditionally since whether we have a host FD can change
 	// across save/restore.
 	for _, r := range mapped {
-		d.pf.hostFileMapper.IncRefOn(r)
+		d.inode.pf.hostFileMapper.IncRefOn(r)
 	}
-	if d.fs.mayCachePagesInMemoryFile() {
+	if d.inode.fs.mayCachePagesInMemoryFile() {
 		// d.Evict() will refuse to evict memory-mapped pages, so tell the
 		// MemoryFile to not bother trying.
-		mf := d.fs.mf
+		mf := d.inode.fs.mf
 		for _, r := range mapped {
-			mf.MarkUnevictable(d, pgalloc.EvictableRange{r.Start, r.End})
+			mf.MarkUnevictable(d.inode, pgalloc.EvictableRange{Start: r.Start, End: r.End})
 		}
 	}
-	d.mapsMu.Unlock()
+	d.inode.mapsMu.Unlock()
 	return nil
 }
 
 // RemoveMapping implements memmap.Mappable.RemoveMapping.
 func (d *dentry) RemoveMapping(ctx context.Context, ms memmap.MappingSpace, ar hostarch.AddrRange, offset uint64, writable bool) {
-	d.mapsMu.Lock()
-	unmapped := d.mappings.RemoveMapping(ms, ar, offset, writable)
+	d.inode.mapsMu.Lock()
+	unmapped := d.inode.mappings.RemoveMapping(ms, ar, offset, writable)
 	for _, r := range unmapped {
-		d.pf.hostFileMapper.DecRefOn(r)
+		d.inode.pf.hostFileMapper.DecRefOn(r)
 	}
-	if d.fs.mayCachePagesInMemoryFile() {
+	if d.inode.fs.mayCachePagesInMemoryFile() {
 		// Pages that are no longer referenced by any application memory
 		// mappings are now considered unused; allow MemoryFile to evict them
 		// when necessary.
-		mf := d.fs.mf
-		d.dataMu.Lock()
+		mf := d.inode.fs.mf
+		d.inode.dataMu.Lock()
 		for _, r := range unmapped {
 			// Since these pages are no longer mapped, they are no longer
 			// concurrently dirtyable by a writable memory mapping.
-			d.dirty.AllowClean(r)
-			mf.MarkEvictable(d, pgalloc.EvictableRange{r.Start, r.End})
+			d.inode.dirty.AllowClean(r)
+			mf.MarkEvictable(d.inode, pgalloc.EvictableRange{Start: r.Start, End: r.End})
 		}
-		d.dataMu.Unlock()
+		d.inode.dataMu.Unlock()
 	}
-	d.mapsMu.Unlock()
+	d.inode.mapsMu.Unlock()
 }
 
 // CopyMapping implements memmap.Mappable.CopyMapping.
@@ -746,17 +746,17 @@ func (d *dentry) CopyMapping(ctx context.Context, ms memmap.MappingSpace, srcAR,
 
 // Translate implements memmap.Mappable.Translate.
 func (d *dentry) Translate(ctx context.Context, required, optional memmap.MappableRange, at hostarch.AccessType) ([]memmap.Translation, error) {
-	d.handleMu.RLock()
-	defer d.handleMu.RUnlock()
-	if d.mmapFD.RacyLoad() >= 0 && !d.fs.opts.forcePageCache {
+	d.inode.handleMu.RLock()
+	defer d.inode.handleMu.RUnlock()
+	if d.inode.mmapFD.RacyLoad() >= 0 && !d.inode.fs.opts.forcePageCache {
 		mr := optional
-		if d.fs.opts.limitHostFDTranslation {
+		if d.inode.fs.opts.limitHostFDTranslation {
 			mr = maxFillRange(required, optional)
 		}
 		return []memmap.Translation{
 			{
 				Source: mr,
-				File:   &d.pf,
+				File:   &d.inode.pf,
 				Offset: mr.Start,
 				Perms:  hostarch.AnyAccess,
 			},
@@ -764,12 +764,12 @@ func (d *dentry) Translate(ctx context.Context, required, optional memmap.Mappab
 	}
 
 	memCgID := pgalloc.MemoryCgroupIDFromContext(ctx)
-	d.dataMu.Lock()
-	defer d.dataMu.Unlock()
+	d.inode.dataMu.Lock()
+	defer d.inode.dataMu.Unlock()
 
-	// Constrain translations to d.size (rounded up) to prevent translation to
+	// Constrain translations to d.inode.size (rounded up) to prevent translation to
 	// pages that may be concurrently truncated.
-	pgend, _ := hostarch.PageRoundUp(d.size.Load())
+	pgend, _ := hostarch.PageRoundUp(d.inode.size.Load())
 	var beyondEOF bool
 	if required.End > pgend {
 		if required.Start >= pgend {
@@ -782,9 +782,9 @@ func (d *dentry) Translate(ctx context.Context, required, optional memmap.Mappab
 		optional.End = pgend
 	}
 
-	mf := d.fs.mf
-	h := d.readHandle()
-	_, cerr := d.cache.Fill(ctx, required, maxFillRange(required, optional), d.size.Load(), mf, pgalloc.AllocOpts{
+	mf := d.inode.fs.mf
+	h := d.inode.readHandle()
+	_, cerr := d.inode.cache.Fill(ctx, required, maxFillRange(required, optional), d.inode.size.Load(), mf, pgalloc.AllocOpts{
 		Kind:    usage.PageCache,
 		MemCgID: memCgID,
 		Mode:    pgalloc.AllocateAndWritePopulate,
@@ -792,7 +792,7 @@ func (d *dentry) Translate(ctx context.Context, required, optional memmap.Mappab
 
 	var ts []memmap.Translation
 	var translatedEnd uint64
-	for seg := d.cache.FindSegment(required.Start); seg.Ok() && seg.Start() < required.End; seg, _ = seg.NextNonEmpty() {
+	for seg := d.inode.cache.FindSegment(required.Start); seg.Ok() && seg.Start() < required.End; seg, _ = seg.NextNonEmpty() {
 		segMR := seg.Range().Intersect(optional)
 		// TODO(jamieliu): Make Translations writable even if writability is
 		// not required if already kept-dirty by another writable translation.
@@ -800,7 +800,7 @@ func (d *dentry) Translate(ctx context.Context, required, optional memmap.Mappab
 		if at.Write {
 			// From this point forward, this memory can be dirtied through the
 			// mapping at any time.
-			d.dirty.KeepDirty(segMR)
+			d.inode.dirty.KeepDirty(segMR)
 			perms.Write = true
 		}
 		ts = append(ts, memmap.Translation{
@@ -844,70 +844,70 @@ func (d *dentry) InvalidateUnsavable(ctx context.Context) error {
 	// Whether we have a host fd (and consequently what memmap.File is
 	// mapped) can change across save/restore, so invalidate all translations
 	// unconditionally.
-	d.mapsMu.Lock()
-	defer d.mapsMu.Unlock()
-	d.mappings.InvalidateAll(memmap.InvalidateOpts{})
+	d.inode.mapsMu.Lock()
+	defer d.inode.mapsMu.Unlock()
+	d.inode.mappings.InvalidateAll(memmap.InvalidateOpts{})
 
 	// Write the cache's contents back to the remote file so that if we have a
 	// host fd after restore, the remote file's contents are coherent.
-	mf := d.fs.mf
-	d.handleMu.RLock()
-	defer d.handleMu.RUnlock()
-	h := d.writeHandle()
-	d.dataMu.Lock()
-	defer d.dataMu.Unlock()
-	if err := fsutil.SyncDirtyAll(ctx, &d.cache, &d.dirty, d.size.Load(), mf, h.writeFromBlocksAt); err != nil {
+	mf := d.inode.fs.mf
+	d.inode.handleMu.RLock()
+	defer d.inode.handleMu.RUnlock()
+	h := d.inode.writeHandle()
+	d.inode.dataMu.Lock()
+	defer d.inode.dataMu.Unlock()
+	if err := fsutil.SyncDirtyAll(ctx, &d.inode.cache, &d.inode.dirty, d.inode.size.Load(), mf, h.writeFromBlocksAt); err != nil {
 		return err
 	}
 
 	// Discard the cache so that it's not stored in saved state. This is safe
 	// because per InvalidateUnsavable invariants, no new translations can have
 	// been returned after we invalidated all existing translations above.
-	d.cache.DropAll(mf)
-	d.dirty.RemoveAll()
+	d.inode.cache.DropAll(mf)
+	d.inode.dirty.RemoveAll()
 
 	return nil
 }
 
 // Evict implements pgalloc.EvictableMemoryUser.Evict.
-func (d *dentry) Evict(ctx context.Context, er pgalloc.EvictableRange) {
+func (i *inode) Evict(ctx context.Context, er pgalloc.EvictableRange) {
 	mr := memmap.MappableRange{er.Start, er.End}
-	mf := d.fs.mf
-	d.mapsMu.Lock()
-	defer d.mapsMu.Unlock()
-	d.handleMu.RLock()
-	defer d.handleMu.RUnlock()
-	h := d.writeHandle()
-	d.dataMu.Lock()
-	defer d.dataMu.Unlock()
+	mf := i.fs.mf
+	i.mapsMu.Lock()
+	defer i.mapsMu.Unlock()
+	i.handleMu.RLock()
+	defer i.handleMu.RUnlock()
+	h := i.writeHandle()
+	i.dataMu.Lock()
+	defer i.dataMu.Unlock()
 
 	// Only allow pages that are no longer memory-mapped to be evicted.
-	for mgap := d.mappings.LowerBoundGap(mr.Start); mgap.Ok() && mgap.Start() < mr.End; mgap = mgap.NextGap() {
+	for mgap := i.mappings.LowerBoundGap(mr.Start); mgap.Ok() && mgap.Start() < mr.End; mgap = mgap.NextGap() {
 		mgapMR := mgap.Range().Intersect(mr)
 		if mgapMR.Length() == 0 {
 			continue
 		}
-		if err := fsutil.SyncDirty(ctx, mgapMR, &d.cache, &d.dirty, d.size.Load(), mf, h.writeFromBlocksAt); err != nil {
+		if err := fsutil.SyncDirty(ctx, mgapMR, &i.cache, &i.dirty, i.size.Load(), mf, h.writeFromBlocksAt); err != nil {
 			log.Warningf("Failed to writeback cached data %v: %v", mgapMR, err)
 		}
-		d.cache.Drop(mgapMR, mf)
-		d.dirty.KeepClean(mgapMR)
+		i.cache.Drop(mgapMR, mf)
+		i.dirty.KeepClean(mgapMR)
 	}
 }
 
-// dentryPlatformFile implements memmap.File. It exists solely because dentry
+// inodePlatformFile implements memmap.File. It exists solely because dentry
 // cannot implement both vfs.DentryImpl.IncRef and memmap.File.IncRef.
 //
-// dentryPlatformFile is only used when a host FD representing the remote file
+// inodePlatformFile is only used when a host FD representing the remote file
 // is available (i.e. dentry.mmapFD >= 0), and that FD is used for application
 // memory mappings (i.e. !filesystem.opts.forcePageCache).
 //
 // +stateify savable
-type dentryPlatformFile struct {
+type inodePlatformFile struct {
 	memmap.DefaultMemoryType
 	memmap.NoBufferedIOFallback
 
-	*dentry
+	*inode
 
 	// fdRefs counts references on memmap.File offsets. fdRefs is protected
 	// by dentry.dataMu.
@@ -922,34 +922,34 @@ type dentryPlatformFile struct {
 }
 
 // IncRef implements memmap.File.IncRef.
-func (d *dentryPlatformFile) IncRef(fr memmap.FileRange, memCgID uint32) {
-	d.dataMu.Lock()
-	d.fdRefs.IncRefAndAccount(fr, memCgID)
-	d.dataMu.Unlock()
+func (i *inodePlatformFile) IncRef(fr memmap.FileRange, memCgID uint32) {
+	i.dataMu.Lock()
+	i.fdRefs.IncRefAndAccount(fr, memCgID)
+	i.dataMu.Unlock()
 }
 
 // DecRef implements memmap.File.DecRef.
-func (d *dentryPlatformFile) DecRef(fr memmap.FileRange) {
-	d.dataMu.Lock()
-	d.fdRefs.DecRefAndAccount(fr)
-	d.dataMu.Unlock()
+func (i *inodePlatformFile) DecRef(fr memmap.FileRange) {
+	i.dataMu.Lock()
+	i.fdRefs.DecRefAndAccount(fr)
+	i.dataMu.Unlock()
 }
 
 // MapInternal implements memmap.File.MapInternal.
-func (d *dentryPlatformFile) MapInternal(fr memmap.FileRange, at hostarch.AccessType) (safemem.BlockSeq, error) {
-	d.handleMu.RLock()
-	defer d.handleMu.RUnlock()
-	return d.hostFileMapper.MapInternal(fr, int(d.mmapFD.RacyLoad()), at.Write)
+func (i *inodePlatformFile) MapInternal(fr memmap.FileRange, at hostarch.AccessType) (safemem.BlockSeq, error) {
+	i.handleMu.RLock()
+	defer i.handleMu.RUnlock()
+	return i.hostFileMapper.MapInternal(fr, int(i.mmapFD.RacyLoad()), at.Write)
 }
 
 // DataFD implements memmap.File.DataFD.
-func (d *dentryPlatformFile) DataFD(fr memmap.FileRange) (int, error) {
-	return d.FD(), nil
+func (i *inodePlatformFile) DataFD(fr memmap.FileRange) (int, error) {
+	return i.FD(), nil
 }
 
 // FD implements memmap.File.FD.
-func (d *dentryPlatformFile) FD() int {
-	d.handleMu.RLock()
-	defer d.handleMu.RUnlock()
-	return int(d.mmapFD.RacyLoad())
+func (i *inodePlatformFile) FD() int {
+	i.handleMu.RLock()
+	defer i.handleMu.RUnlock()
+	return int(i.mmapFD.RacyLoad())
 }
