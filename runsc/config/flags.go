@@ -40,6 +40,7 @@ const (
 	flagStraceLogSize     = "strace-log-size"
 	flagHostUDS           = "host-uds"
 	flagNetDisconnectOK   = "net-disconnect-ok"
+	flagReproduceNAT      = "reproduce-nat"
 	flagReproduceNFTables = "reproduce-nftables"
 	flagOCISeccomp        = "oci-seccomp"
 	flagOverlay2          = "overlay2"
@@ -155,7 +156,7 @@ func RegisterFlags(flagSet *flag.FlagSet) {
 	flagSet.Bool("buffer-pooling", true, "DEPRECATED: this flag has no effect. Buffer pooling is always enabled.")
 	flagSet.Var(&xdpConfig, "EXPERIMENTAL-xdp", `whether and how to use XDP. Can be one of: "off" (default), "ns", "redirect:<device name>", or "tunnel:<device name>"`)
 	flagSet.Bool("EXPERIMENTAL-xdp-need-wakeup", true, "EXPERIMENTAL. Use XDP_USE_NEED_WAKEUP with XDP sockets.") // TODO(b/240191988): Figure out whether this helps and remove it as a flag.
-	flagSet.Bool("reproduce-nat", false, "Scrape the host netns NAT table and reproduce it in the sandbox.")
+	flagSet.Bool(flagReproduceNAT, false, "Scrape the host netns NAT table and reproduce it in the sandbox.")
 	flagSet.Bool(flagReproduceNFTables, false, "Attempt to scrape and reproduce nftable rules inside the sandbox. Overrides reproduce-nat when true.")
 	flagSet.Bool(flagNetDisconnectOK, true, "Indicates whether open network connections and open unix domain sockets should be disconnected upon save.")
 	flagSet.Bool("save-restore-netstack", true, "Indicates whether netstack save/restore is enabled.")
@@ -190,6 +191,7 @@ var overrideAllowlist = map[string]struct {
 	flagStraceLogSize:     {},
 	flagHostUDS:           {},
 	flagNetDisconnectOK:   {},
+	flagReproduceNAT:      {},
 	flagReproduceNFTables: {},
 	flagOverlay2:          {check: checkOverlay2},
 	flagOCISeccomp:        {check: checkOciSeccomp},
