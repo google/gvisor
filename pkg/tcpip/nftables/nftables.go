@@ -21,6 +21,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/rand"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netlink/nlmsg"
 	"gvisor.dev/gvisor/pkg/syserr"
@@ -268,6 +269,15 @@ func (nf *NFTables) Flush(attrs map[uint16]nlmsg.BytesView, owner uint32) {
 
 			if attrName != nil && *attrName != table.GetName() {
 				continue
+			}
+
+			// TODO: b/434242152 - Support correctly deleting chains once
+			// rules are deletable.
+			for chainName := range table.chains {
+				ok := table.DeleteChain(chainName)
+				if !ok {
+					log.Warningf("Failed to delete chain %s", chainName)
+				}
 			}
 
 			tablesToDelete = append(tablesToDelete, TableInfo{Name: name, Handle: table.GetHandle()})

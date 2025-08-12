@@ -18,6 +18,7 @@ import (
 	"context"
 	"time"
 
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/tcpip/transport"
@@ -50,12 +51,17 @@ func (e *endpoint) beforeSave() {
 
 // Restore implements tcpip.RestoredEndpoint.Restore.
 func (e *endpoint) Restore(s *stack.Stack) {
-	e.thaw()
-
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
-	e.net.Resume(s)
+	if err := e.net.Resume(s); err != nil {
+		log.Warningf("Closing the UDP endpoint as it cannot be restored, err: %v", err)
+		e.closeLocked()
+		return
+	}
+
+	// Unfreeze the endpoint to handle packets.
+	e.frozen = false
 	if e.stack.IsSaveRestoreEnabled() {
 		e.ops.InitHandler(e, e.stack, tcpip.GetStackSendBufferLimits, tcpip.GetStackReceiveBufferLimits)
 		return

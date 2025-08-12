@@ -23,15 +23,14 @@ import (
 )
 
 // Resume implements tcpip.ResumableEndpoint.Resume.
-func (e *Endpoint) Resume(s *stack.Stack) {
+func (e *Endpoint) Resume(s *stack.Stack) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
 	e.stack = s
-
 	for m := range e.multicastMemberships {
 		if err := e.stack.JoinGroup(e.netProto, m.nicID, m.multicastAddr); err != nil {
-			panic(fmt.Sprintf("e.stack.JoinGroup(%d, %d, %s): %s", e.netProto, m.nicID, m.multicastAddr, err))
+			return fmt.Errorf("e.stack.JoinGroup(%d, %d, %s): %s", e.netProto, m.nicID, m.multicastAddr, err)
 		}
 	}
 
@@ -42,17 +41,22 @@ func (e *Endpoint) Resume(s *stack.Stack) {
 	case transport.DatagramEndpointStateBound:
 		if info.ID.LocalAddress.BitLen() != 0 && !e.isBroadcastOrMulticast(info.RegisterNICID, e.effectiveNetProto, info.ID.LocalAddress) {
 			if e.stack.CheckLocalAddress(info.RegisterNICID, e.effectiveNetProto, info.ID.LocalAddress) == 0 {
-				panic(fmt.Sprintf("got e.stack.CheckLocalAddress(%d, %d, %s) = 0, want != 0", info.RegisterNICID, e.effectiveNetProto, info.ID.LocalAddress))
+				return fmt.Errorf("got e.stack.CheckLocalAddress(%d, %d, %s) = 0, want != 0", info.RegisterNICID, e.effectiveNetProto, info.ID.LocalAddress)
 			}
 		}
 	case transport.DatagramEndpointStateConnected:
 		var err tcpip.Error
 		multicastLoop := e.ops.GetMulticastLoop()
+		// Release the connectedRoute if present.
+		if e.connectedRoute != nil {
+			e.connectedRoute.Release()
+		}
 		e.connectedRoute, err = e.stack.FindRoute(info.RegisterNICID, info.ID.LocalAddress, info.ID.RemoteAddress, e.effectiveNetProto, multicastLoop)
 		if err != nil {
-			panic(fmt.Sprintf("e.stack.FindRoute(%d, %s, %s, %d, %t): %s", info.RegisterNICID, info.ID.LocalAddress, info.ID.RemoteAddress, e.effectiveNetProto, multicastLoop, err))
+			return fmt.Errorf("e.stack.FindRoute(%d, %s, %s, %d, %t): %s", info.RegisterNICID, info.ID.LocalAddress, info.ID.RemoteAddress, e.effectiveNetProto, multicastLoop, err)
 		}
 	default:
 		panic(fmt.Sprintf("unhandled state = %s", state))
 	}
+	return nil
 }

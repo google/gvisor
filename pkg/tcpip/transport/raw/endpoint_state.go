@@ -18,6 +18,7 @@ import (
 	"context"
 	"time"
 
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
@@ -49,8 +50,12 @@ func (e *endpoint) beforeSave() {
 
 // Restore implements tcpip.RestoredEndpoint.Restore.
 func (e *endpoint) Restore(s *stack.Stack) {
+	if err := e.net.Resume(s); err != nil {
+		log.Warningf("Closing the raw endpoint as it cannot be restored, err: %v", err)
+		e.Close()
+		return
+	}
 	e.setReceiveDisabled(false)
-	e.net.Resume(s)
 	if e.stack.IsSaveRestoreEnabled() {
 		e.ops.InitHandler(e, e.stack, tcpip.GetStackSendBufferLimits, tcpip.GetStackReceiveBufferLimits)
 		return
