@@ -1,0 +1,1778 @@
+diff --git a/BUILD.tpl b/BUILD.tpl
+index 74522e3..46af16d 100644
+--- a/BUILD.tpl
++++ b/BUILD.tpl
+@@ -17,7 +17,6 @@ package(default_visibility = ["//visibility:public"])
+ licenses(["notice"])
+ 
+ load(":cc_toolchain_config.bzl", "cc_toolchain_config")
+-load(":windows_cc_toolchain_config.bzl", "windows_cc_toolchain_config")
+ 
+ filegroup(name = "empty")
+ 
+@@ -34,10 +33,6 @@ cc_toolchain_suite(
+       "k8|gcc"     : ":cc-compiler-k8",
+       "riscv64"    : ":cc-compiler-riscv64",
+       "riscv64|gcc": ":cc-compiler-riscv64",
+-      "x64_windows|msvc-cl": ":cc-compiler-x64_windows",
+-      "x64_windows|msvc-cl-x64": ":cc-compiler-x64_windows",
+-      "x64_windows|msvc-cl-arm64": "cc-compiler-arm64_windows",
+-      "x64_windows": ":cc-compiler-x64_windows",
+     }
+ )
+ 
+@@ -97,21 +92,6 @@ cc_toolchain(
+ 
+ cc_toolchain_config(name = "k8-config", cpu = "k8")
+ 
+-cc_toolchain(
+-    name = "cc-compiler-x64_windows",
+-    toolchain_identifier = "msvc_x64",
+-    toolchain_config = ":msvc_x64",
+-    all_files = ":empty",
+-    ar_files = ":empty",
+-    as_files = ":empty",
+-    compiler_files = ":empty",
+-    dwp_files = ":empty",
+-    linker_files = ":empty",
+-    objcopy_files = ":empty",
+-    strip_files = ":empty",
+-    supports_param_files = 1,
+-)
+-
+ cc_toolchain(
+     name = "cc-compiler-riscv64",
+     toolchain_config = ":riscv64-config",
+@@ -139,118 +119,3 @@ toolchain(
+     toolchain = ":cc-compiler-riscv64",
+     toolchain_type = "@bazel_tools//tools/cpp:toolchain_type",
+ )
+-
+-windows_cc_toolchain_config(
+-    name = "msvc_x64",
+-    cpu = "x64_windows",
+-    compiler = "msvc-cl",
+-    host_system_name = "local",
+-    target_system_name = "local",
+-    target_libc = "msvcrt",
+-    abi_version = "local",
+-    abi_libc_version = "local",
+-    toolchain_identifier = "msvc_x64",
+-    msvc_env_tmp = "%{msvc_env_tmp}",
+-    msvc_env_path = "%{msvc_x64_env_path}",
+-    msvc_env_include = "%{msvc_x64_env_include}",
+-    msvc_env_lib = "%{msvc_x64_env_lib}",
+-    msvc_cl_path = "%{msvc_x64_cl_path}",
+-    msvc_ml_path = "%{msvc_x64_ml_path}",
+-    msvc_link_path = "%{msvc_x64_link_path}",
+-    msvc_lib_path = "%{msvc_x64_lib_path}",
+-    cxx_builtin_include_directories = [%{msvc_cxx_builtin_include_directories}],
+-    tool_paths = {
+-        "ar": "%{msvc_x64_lib_path}",
+-        "ml": "%{msvc_x64_ml_path}",
+-        "cpp": "%{msvc_x64_cl_path}",
+-        "gcc": "%{msvc_x64_cl_path}",
+-        "gcov": "wrapper/bin/msvc_nop.bat",
+-        "ld": "%{msvc_x64_link_path}",
+-        "nm": "wrapper/bin/msvc_nop.bat",
+-        "objcopy": "wrapper/bin/msvc_nop.bat",
+-        "objdump": "wrapper/bin/msvc_nop.bat",
+-        "strip": "wrapper/bin/msvc_nop.bat",
+-    },
+-    default_link_flags = ["/MACHINE:X64"],
+-    dbg_mode_debug_flag = "%{dbg_mode_debug_flag}",
+-    fastbuild_mode_debug_flag = "%{fastbuild_mode_debug_flag}",
+-)
+-
+-toolchain(
+-    name = "cc-toolchain-x64_windows",
+-    exec_compatible_with = [
+-        "@platforms//cpu:x86_64",
+-        "@platforms//os:windows",
+-    ],
+-    target_compatible_with = [
+-        "@platforms//cpu:x86_64",
+-        "@platforms//os:windows",
+-    ],
+-    toolchain = ":cc-compiler-x64_windows",
+-    toolchain_type = "@bazel_tools//tools/cpp:toolchain_type",
+-)
+-
+-cc_toolchain(
+-    name = "cc-compiler-arm64_windows",
+-    toolchain_identifier = "msvc_arm64",
+-    toolchain_config = ":msvc_arm64",
+-    all_files = ":empty",
+-    ar_files = ":empty",
+-    as_files = ":empty",
+-    compiler_files = ":empty",
+-    dwp_files = ":empty",
+-    linker_files = ":empty",
+-    objcopy_files = ":empty",
+-    strip_files = ":empty",
+-    supports_param_files = 1,
+-)
+-
+-windows_cc_toolchain_config(
+-    name = "msvc_arm64",
+-    cpu = "x64_windows",
+-    compiler = "msvc-cl",
+-    host_system_name = "local",
+-    target_system_name = "arm64_windows",
+-    target_libc = "msvcrt",
+-    abi_version = "local",
+-    abi_libc_version = "local",
+-    toolchain_identifier = "msvc_arm64",
+-    msvc_env_tmp = "%{msvc_env_tmp}",
+-    msvc_env_path = "%{msvc_arm64_env_path}",
+-    msvc_env_include = "%{msvc_arm64_env_include}",
+-    msvc_env_lib = "%{msvc_arm64_env_lib}",
+-    msvc_cl_path = "%{msvc_arm64_cl_path}",
+-    msvc_ml_path = "%{msvc_arm64_ml_path}",
+-    msvc_link_path = "%{msvc_arm64_link_path}",
+-    msvc_lib_path = "%{msvc_arm64_lib_path}",
+-    cxx_builtin_include_directories = [%{msvc_cxx_builtin_include_directories}],
+-    tool_paths = {
+-        "ar": "%{msvc_arm64_lib_path}",
+-        "ml": "%{msvc_arm64_ml_path}",
+-        "cpp": "%{msvc_arm64_cl_path}",
+-        "gcc": "%{msvc_arm64_cl_path}",
+-        "gcov": "wrapper/bin/msvc_nop.bat",
+-        "ld": "%{msvc_arm64_link_path}",
+-        "nm": "wrapper/bin/msvc_nop.bat",
+-        "objcopy": "wrapper/bin/msvc_nop.bat",
+-        "objdump": "wrapper/bin/msvc_nop.bat",
+-        "strip": "wrapper/bin/msvc_nop.bat",
+-    },
+-    default_link_flags = ["/MACHINE:ARM64"],
+-    dbg_mode_debug_flag = "%{dbg_mode_debug_flag}",
+-    fastbuild_mode_debug_flag = "%{fastbuild_mode_debug_flag}",
+-)
+-
+-toolchain(
+-    name = "cc-toolchain-arm64_windows",
+-    exec_compatible_with = [
+-        "@platforms//cpu:aarch64",
+-        "@platforms//os:windows",
+-    ],
+-    target_compatible_with = [
+-        "@platforms//cpu:aarch64",
+-        "@platforms//os:windows",
+-    ],
+-    toolchain = ":cc-compiler-arm64_windows",
+-    toolchain_type = "@bazel_tools//tools/cpp:toolchain_type",
+-)
+diff --git a/configure.bzl b/configure.bzl
+index ff0a930..765e57a 100644
+--- a/configure.bzl
++++ b/configure.bzl
+@@ -13,8 +13,6 @@
+ # limitations under the License.
+ """Rules for configuring the C++ cross-toolchain."""
+ 
+-load(":windows_cc_configure.bzl", "configure_windows_toolchain")
+-
+ def _impl(repository_ctx):
+     dir_labels = repository_ctx.attr.additional_system_include_directories
+     additional_include_dirs = ", ".join([
+@@ -35,11 +33,9 @@ def _impl(repository_ctx):
+             "%{additional_system_include_directories}%": additional_include_dirs,
+         },
+     )
+-    template_vars = configure_windows_toolchain(repository_ctx)
+     repository_ctx.template(
+         "BUILD",
+         Label("//:BUILD.tpl"),
+-        template_vars,
+     )
+ 
+ cc_crosstool = repository_rule(
+diff --git a/windows_cc_configure.bzl b/windows_cc_configure.bzl
+deleted file mode 100644
+index 9801ad7..0000000
+--- a/windows_cc_configure.bzl
++++ /dev/null
+@@ -1,441 +0,0 @@
+-# pylint: disable=g-bad-file-header
+-# Copyright 2016 The Bazel Authors. All rights reserved.
+-#
+-# Licensed under the Apache License, Version 2.0 (the "License");
+-# you may not use this file except in compliance with the License.
+-# You may obtain a copy of the License at
+-#
+-#    http://www.apache.org/licenses/LICENSE-2.0
+-#
+-# Unless required by applicable law or agreed to in writing, software
+-# distributed under the License is distributed on an "AS IS" BASIS,
+-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+-# See the License for the specific language governing permissions and
+-# limitations under the License.
+-"""Configuring the C++ toolchain on Windows."""
+-
+-load(
+-    "@bazel_tools//tools/cpp:lib_cc_configure.bzl",
+-    "auto_configure_fail",
+-    "auto_configure_warning",
+-    "auto_configure_warning_maybe",
+-    "escape_string",
+-    "execute",
+-    "resolve_labels",
+-    "write_builtin_include_directory_paths",
+-)
+-
+-def _get_path_env_var(repository_ctx, name):
+-    """Returns a path from an environment variable.
+-
+-    Removes quotes, replaces '/' with '\', and strips trailing '\'s."""
+-    if name in repository_ctx.os.environ:
+-        value = repository_ctx.os.environ[name]
+-        if value[0] == "\"":
+-            if len(value) == 1 or value[-1] != "\"":
+-                auto_configure_fail("'%s' environment variable has no trailing quote" % name)
+-            value = value[1:-1]
+-        if "/" in value:
+-            value = value.replace("/", "\\")
+-        if value[-1] == "\\":
+-            value = value.rstrip("\\")
+-        return value
+-    else:
+-        return None
+-
+-def _get_temp_env(repository_ctx):
+-    """Returns the value of TMP, or TEMP, or if both undefined then C:\\Windows."""
+-    tmp = _get_path_env_var(repository_ctx, "TMP")
+-    if not tmp:
+-        tmp = _get_path_env_var(repository_ctx, "TEMP")
+-    if not tmp:
+-        tmp = "C:\\Windows\\Temp"
+-        auto_configure_warning(
+-            "neither 'TMP' nor 'TEMP' environment variables are set, using '%s' as default" % tmp,
+-        )
+-    return tmp
+-
+-def _get_system_root(repository_ctx):
+-    """Get System root path on Windows, default is C:\\Windows. Doesn't %-escape the result."""
+-    systemroot = _get_path_env_var(repository_ctx, "SYSTEMROOT")
+-    if not systemroot:
+-        systemroot = "C:\\Windows"
+-        auto_configure_warning_maybe(
+-            repository_ctx,
+-            "SYSTEMROOT is not set, using default SYSTEMROOT=C:\\Windows",
+-        )
+-    return escape_string(systemroot)
+-
+-def _add_system_root(repository_ctx, env):
+-    """Running VCVARSALL.BAT and VCVARSQUERYREGISTRY.BAT need %SYSTEMROOT%\\\\system32 in PATH."""
+-    if "PATH" not in env:
+-        env["PATH"] = ""
+-    env["PATH"] = env["PATH"] + ";" + _get_system_root(repository_ctx) + "\\system32"
+-    return env
+-
+-def find_vc_path(repository_ctx):
+-    """Find Visual C++ build tools install path. Doesn't %-escape the result."""
+-
+-    # 1. Check if BAZEL_VC or BAZEL_VS is already set by user.
+-    bazel_vc = _get_path_env_var(repository_ctx, "BAZEL_VC")
+-    if bazel_vc:
+-        if repository_ctx.path(bazel_vc).exists:
+-            return bazel_vc
+-        else:
+-            auto_configure_warning_maybe(
+-                repository_ctx,
+-                "%BAZEL_VC% is set to non-existent path, ignoring.",
+-            )
+-
+-    bazel_vs = _get_path_env_var(repository_ctx, "BAZEL_VS")
+-    if bazel_vs:
+-        if repository_ctx.path(bazel_vs).exists:
+-            bazel_vc = bazel_vs + "\\VC"
+-            if repository_ctx.path(bazel_vc).exists:
+-                return bazel_vc
+-            else:
+-                auto_configure_warning_maybe(
+-                    repository_ctx,
+-                    "No 'VC' directory found under %BAZEL_VS%, ignoring.",
+-                )
+-        else:
+-            auto_configure_warning_maybe(
+-                repository_ctx,
+-                "%BAZEL_VS% is set to non-existent path, ignoring.",
+-            )
+-
+-    auto_configure_warning_maybe(
+-        repository_ctx,
+-        "Neither %BAZEL_VC% nor %BAZEL_VS% are set, start looking for the latest Visual C++" +
+-        " installed.",
+-    )
+-
+-    # 2. Check if VS%VS_VERSION%COMNTOOLS is set, if true then try to find and use
+-    # vcvarsqueryregistry.bat / VsDevCmd.bat to detect VC++.
+-    auto_configure_warning_maybe(repository_ctx, "Looking for VS%VERSION%COMNTOOLS environment variables, " +
+-                                                 "eg. VS140COMNTOOLS")
+-    for vscommontools_env, script in [
+-        ("VS160COMNTOOLS", "VsDevCmd.bat"),
+-        ("VS150COMNTOOLS", "VsDevCmd.bat"),
+-        ("VS140COMNTOOLS", "vcvarsqueryregistry.bat"),
+-        ("VS120COMNTOOLS", "vcvarsqueryregistry.bat"),
+-        ("VS110COMNTOOLS", "vcvarsqueryregistry.bat"),
+-        ("VS100COMNTOOLS", "vcvarsqueryregistry.bat"),
+-        ("VS90COMNTOOLS", "vcvarsqueryregistry.bat"),
+-    ]:
+-        if vscommontools_env not in repository_ctx.os.environ:
+-            continue
+-        script = _get_path_env_var(repository_ctx, vscommontools_env) + "\\" + script
+-        if not repository_ctx.path(script).exists:
+-            continue
+-        repository_ctx.file(
+-            "get_vc_dir.bat",
+-            "@echo off\n" +
+-            "call \"" + script + "\" > NUL\n" +
+-            "echo %VCINSTALLDIR%",
+-            True,
+-        )
+-        env = _add_system_root(repository_ctx, repository_ctx.os.environ)
+-        vc_dir = execute(repository_ctx, ["./get_vc_dir.bat"], environment = env)
+-
+-        auto_configure_warning_maybe(repository_ctx, "Visual C++ build tools found at %s" % vc_dir)
+-        return vc_dir
+-
+-    # 3. User might have purged all environment variables. If so, look for Visual C++ in registry.
+-    # Works for Visual Studio 2017 and older. (Does not work for Visual Studio 2019 Preview.)
+-    auto_configure_warning_maybe(repository_ctx, "Looking for Visual C++ through registry")
+-    reg_binary = _get_system_root(repository_ctx) + "\\system32\\reg.exe"
+-    vc_dir = None
+-    for key, suffix in (("VC7", ""), ("VS7", "\\VC")):
+-        for version in ["15.0", "14.0", "12.0", "11.0", "10.0", "9.0", "8.0"]:
+-            if vc_dir:
+-                break
+-            result = repository_ctx.execute([reg_binary, "query", "HKEY_LOCAL_MACHINE\\SOFTWARE\\Wow6432Node\\Microsoft\\VisualStudio\\SxS\\" + key, "/v", version])
+-            auto_configure_warning_maybe(repository_ctx, "registry query result for VC %s:\n\nSTDOUT(start)\n%s\nSTDOUT(end)\nSTDERR(start):\n%s\nSTDERR(end)\n" %
+-                                                         (version, result.stdout, result.stderr))
+-            if not result.stderr:
+-                for line in result.stdout.split("\n"):
+-                    line = line.strip()
+-                    if line.startswith(version) and line.find("REG_SZ") != -1:
+-                        vc_dir = line[line.find("REG_SZ") + len("REG_SZ"):].strip() + suffix
+-    if vc_dir:
+-        auto_configure_warning_maybe(repository_ctx, "Visual C++ build tools found at %s" % vc_dir)
+-        return vc_dir
+-
+-    # 4. Check default directories for VC installation
+-    auto_configure_warning_maybe(repository_ctx, "Looking for default Visual C++ installation directory")
+-    program_files_dir = _get_path_env_var(repository_ctx, "PROGRAMFILES(X86)")
+-    if not program_files_dir:
+-        program_files_dir = "C:\\Program Files (x86)"
+-        auto_configure_warning_maybe(
+-            repository_ctx,
+-            "'PROGRAMFILES(X86)' environment variable is not set, using '%s' as default" % program_files_dir,
+-        )
+-    for path in [
+-        "Microsoft Visual Studio\\2019\\Preview\\VC",
+-        "Microsoft Visual Studio\\2019\\BuildTools\\VC",
+-        "Microsoft Visual Studio\\2019\\Community\\VC",
+-        "Microsoft Visual Studio\\2019\\Professional\\VC",
+-        "Microsoft Visual Studio\\2019\\Enterprise\\VC",
+-        "Microsoft Visual Studio\\2017\\BuildTools\\VC",
+-        "Microsoft Visual Studio\\2017\\Community\\VC",
+-        "Microsoft Visual Studio\\2017\\Professional\\VC",
+-        "Microsoft Visual Studio\\2017\\Enterprise\\VC",
+-    ]:
+-        path = program_files_dir + "\\" + path
+-        if repository_ctx.path(path).exists:
+-            vc_dir = path
+-            break
+-
+-    if not vc_dir:
+-        auto_configure_warning_maybe(repository_ctx, "Visual C++ build tools not found.")
+-        return None
+-    auto_configure_warning_maybe(repository_ctx, "Visual C++ build tools found at %s" % vc_dir)
+-    return vc_dir
+-
+-def _find_vcvars_bat_script(repository_ctx, vc_path):
+-    """Find batch script to set up environment variables for VC. Doesn't %-escape the result."""
+-    vcvars_script = vc_path + "\\Auxiliary\\Build\\VCVARSALL.BAT"
+-
+-    if not repository_ctx.path(vcvars_script).exists:
+-        return None
+-
+-    return vcvars_script
+-
+-def _is_support_vcvars_ver(vc_full_version):
+-    """-vcvars_ver option is supported from version 14.11.25503 (VS 2017 version 15.3)."""
+-    version = [int(i) for i in vc_full_version.split(".")]
+-    min_version = [14, 11, 25503]
+-    return version >= min_version
+-
+-def setup_vc_env_vars(repository_ctx, vc_path, arch, envvars = [], allow_empty = False, escape = True):
+-    """Get environment variables set by VCVARSALL.BAT script. Doesn't %-escape the result!
+-
+-    Args:
+-        repository_ctx: the repository_ctx object
+-        vc_path: Visual C++ root directory
+-        envvars: list of envvars to retrieve; default is ["PATH", "INCLUDE", "LIB", "WINDOWSSDKDIR"]
+-        allow_empty: allow unset envvars; if False then report errors for those
+-        escape: if True, escape "\" as "\\" and "%" as "%%" in the envvar values
+-
+-    Returns:
+-        dictionary of the envvars
+-    """
+-    if not envvars:
+-        envvars = ["PATH", "INCLUDE", "LIB", "WINDOWSSDKDIR"]
+-
+-    vcvars_script = _find_vcvars_bat_script(repository_ctx, vc_path)
+-    if not vcvars_script:
+-        auto_configure_fail("Cannot find VCVARSALL.BAT script under %s" % vc_path)
+-
+-    # Getting Windows SDK version set by user.
+-    # Only supports VC 2017 & 2019.
+-    winsdk_version = _get_winsdk_full_version(repository_ctx)
+-
+-    # Get VC version set by user. Only supports VC 2017 & 2019.
+-    vcvars_ver = ""
+-    full_version = _get_vc_full_version(repository_ctx, vc_path)
+-
+-    # Because VCVARSALL.BAT is from the latest VC installed, so we check if the latest
+-    # version supports -vcvars_ver or not.
+-    if _is_support_vcvars_ver(_get_latest_subversion(repository_ctx, vc_path)):
+-        vcvars_ver = "-vcvars_ver=" + full_version
+-
+-    cmd = "\"%s\" %s %s %s" % (vcvars_script, arch, winsdk_version, vcvars_ver)
+-    print_envvars = ",".join(["{k}=%{k}%".format(k = k) for k in envvars])
+-    repository_ctx.file(
+-        "get_env.bat",
+-        "@echo off\n" +
+-        ("call %s > NUL \n" % cmd) + ("echo %s \n" % print_envvars),
+-        True,
+-    )
+-    env = _add_system_root(repository_ctx, {k: "" for k in envvars})
+-    envs = execute(repository_ctx, ["./get_env.bat"], environment = env).split(",")
+-    env_map = {}
+-    for env in envs:
+-        key, value = env.split("=", 1)
+-        env_map[key] = escape_string(value.replace("\\", "\\\\")) if escape else value
+-    if not allow_empty:
+-        _check_env_vars(env_map, cmd, expected = envvars)
+-    return env_map
+-
+-def _check_env_vars(env_map, cmd, expected):
+-    for env in expected:
+-        if not env_map.get(env):
+-            auto_configure_fail(
+-                "Setting up VC environment variables failed, %s is not set by the following command:\n    %s" % (env, cmd),
+-            )
+-
+-def _get_latest_subversion(repository_ctx, vc_path):
+-    """Get the latest subversion of a VS 2017/2019 installation.
+-
+-    For VS 2017 & 2019, there could be multiple versions of VC build tools.
+-    The directories are like:
+-      <vc_path>\\Tools\\MSVC\\14.10.24930\\bin\\HostX64\\x64
+-      <vc_path>\\Tools\\MSVC\\14.16.27023\\bin\\HostX64\\x64
+-    This function should return 14.16.27023 in this case."""
+-    versions = [path.basename for path in repository_ctx.path(vc_path + "\\Tools\\MSVC").readdir()]
+-    if len(versions) < 1:
+-        auto_configure_warning_maybe(repository_ctx, "Cannot find any VC installation under BAZEL_VC(%s)" % vc_path)
+-        return None
+-
+-    # Parse the version string into integers, then sort the integers to prevent textual sorting.
+-    version_list = []
+-    for version in versions:
+-        parts = [int(i) for i in version.split(".")]
+-        version_list.append((parts, version))
+-
+-    version_list = sorted(version_list)
+-    latest_version = version_list[-1][1]
+-
+-    auto_configure_warning_maybe(repository_ctx, "Found the following VC verisons:\n%s\n\nChoosing the latest version = %s" % ("\n".join(versions), latest_version))
+-    return latest_version
+-
+-def _get_vc_full_version(repository_ctx, vc_path):
+-    """Return the value of BAZEL_VC_FULL_VERSION if defined, otherwise the latest version."""
+-    if "BAZEL_VC_FULL_VERSION" in repository_ctx.os.environ:
+-        return repository_ctx.os.environ["BAZEL_VC_FULL_VERSION"]
+-    return _get_latest_subversion(repository_ctx, vc_path)
+-
+-def _get_winsdk_full_version(repository_ctx):
+-    """Return the value of BAZEL_WINSDK_FULL_VERSION if defined, otherwise an empty string."""
+-    return repository_ctx.os.environ.get("BAZEL_WINSDK_FULL_VERSION", default = "")
+-
+-def find_msvc_tool(repository_ctx, vc_path, tool, arch):
+-    """Find the exact path of a specific build tool in MSVC. Doesn't %-escape the result."""
+-    tool_path = None
+-    full_version = _get_vc_full_version(repository_ctx, vc_path)
+-    if full_version:
+-        tool_path = "%s\\Tools\\MSVC\\%s\\bin\\HostX64\\%s\\%s" % (vc_path, full_version, arch, tool)
+-
+-    if not tool_path or not repository_ctx.path(tool_path).exists:
+-        return None
+-
+-    return tool_path.replace("\\", "/")
+-
+-def _find_missing_vc_tools(repository_ctx, vc_path, arch):
+-    """Check if any required tool is missing under given VC path."""
+-    missing_tools = []
+-    if not _find_vcvars_bat_script(repository_ctx, vc_path):
+-        missing_tools.append("VCVARSALL.BAT")
+-
+-    for tool in ["cl.exe", "link.exe", "lib.exe"]:
+-        if not find_msvc_tool(repository_ctx, vc_path, tool, arch):
+-            missing_tools.append(tool)
+-
+-    return missing_tools
+-
+-def _is_support_debug_fastlink(repository_ctx, linker):
+-    """Run linker alone to see if it supports /DEBUG:FASTLINK."""
+-    result = execute(repository_ctx, [linker], expect_failure = True)
+-    return result.find("/DEBUG[:{FASTLINK|FULL|NONE}]") != -1
+-
+-def _get_msvc_vars(repository_ctx, paths, arch):
+-    """Get the variables we need to populate the MSVC toolchains."""
+-    msvc_vars = dict()
+-    vc_path = find_vc_path(repository_ctx)
+-    missing_tools = None
+-    if not vc_path:
+-        repository_ctx.template(
+-            "vc_installation_error.bat",
+-            paths["@bazel_tools//tools/cpp:vc_installation_error.bat.tpl"],
+-            {"%{vc_error_message}": ""},
+-        )
+-    else:
+-        missing_tools = _find_missing_vc_tools(repository_ctx, vc_path, arch)
+-        if missing_tools:
+-            message = "\r\n".join([
+-                "echo. 1>&2",
+-                "echo Visual C++ build tools seems to be installed at %s 1>&2" % vc_path,
+-                "echo But Bazel can't find the following tools: 1>&2",
+-                "echo     %s 1>&2" % ", ".join(missing_tools),
+-                "echo. 1>&2",
+-            ])
+-            repository_ctx.template(
+-                "vc_installation_error.bat",
+-                paths["@bazel_tools//tools/cpp:vc_installation_error.bat.tpl"],
+-                {"%{vc_error_message}": message},
+-            )
+-
+-    if not vc_path or missing_tools:
+-        write_builtin_include_directory_paths(repository_ctx, "msvc", [], file_suffix = "_msvc")
+-        msvc_vars = {
+-            "%{msvc_env_tmp}": "msvc_not_found",
+-            "%{msvc_env_path}": "msvc_not_found",
+-            "%{msvc_env_include}": "msvc_not_found",
+-            "%{msvc_env_lib}": "msvc_not_found",
+-            "%{msvc_cl_path}": "vc_installation_error.bat",
+-            "%{msvc_ml_path}": "vc_installation_error.bat",
+-            "%{msvc_link_path}": "vc_installation_error.bat",
+-            "%{msvc_lib_path}": "vc_installation_error.bat",
+-            "%{dbg_mode_debug_flag}": "/DEBUG",
+-            "%{fastbuild_mode_debug_flag}": "/DEBUG",
+-            "%{msvc_cxx_builtin_include_directories}": "",
+-        }
+-        return msvc_vars
+-
+-    vcvars_arch_map = {
+-        "x64": "amd64",
+-        "arm64": "x64_arm64",
+-    }
+-
+-    env = setup_vc_env_vars(repository_ctx, vc_path, vcvars_arch_map[arch])
+-    escaped_paths = escape_string(env["PATH"])
+-    escaped_include_paths = escape_string(env["INCLUDE"])
+-    escaped_lib_paths = escape_string(env["LIB"])
+-
+-    escaped_tmp_dir = escape_string(_get_temp_env(repository_ctx).replace("\\", "\\\\"))
+-
+-    cl_path = find_msvc_tool(repository_ctx, vc_path, "cl.exe", arch)
+-    link_path = find_msvc_tool(repository_ctx, vc_path, "link.exe", arch)
+-    lib_path = find_msvc_tool(repository_ctx, vc_path, "lib.exe", arch)
+-
+-    vcvars_ml_map = {
+-        "x64": "ml64.exe",
+-        "arm64": "armasm64.exe",
+-    }
+-    msvc_ml_path = find_msvc_tool(repository_ctx, vc_path, vcvars_ml_map[arch], arch)
+-
+-    escaped_cxx_include_directories = []
+-
+-    for path in escaped_include_paths.split(";"):
+-        if path:
+-            escaped_cxx_include_directories.append("\"%s\"" % path)
+-
+-    support_debug_fastlink = _is_support_debug_fastlink(repository_ctx, link_path)
+-
+-    write_builtin_include_directory_paths(repository_ctx, "msvc", escaped_cxx_include_directories, file_suffix = "_msvc")
+-    msvc_vars = {
+-        "%{msvc_env_tmp}": escaped_tmp_dir,
+-        "%%{msvc_%s_env_path}" % arch: escaped_paths,
+-        "%%{msvc_%s_env_include}" % arch: escaped_include_paths,
+-        "%%{msvc_%s_env_lib}" % arch: escaped_lib_paths,
+-        "%%{msvc_%s_cl_path}" % arch: cl_path,
+-        "%%{msvc_%s_ml_path}" % arch: msvc_ml_path,
+-        "%%{msvc_%s_link_path}" % arch: link_path,
+-        "%%{msvc_%s_lib_path}" % arch: lib_path,
+-        "%{dbg_mode_debug_flag}": "/DEBUG:FULL" if support_debug_fastlink else "/DEBUG",
+-        "%{fastbuild_mode_debug_flag}": "/DEBUG:FASTLINK" if support_debug_fastlink else "/DEBUG",
+-        "%{msvc_cxx_builtin_include_directories}": "        " + ",\n        ".join(escaped_cxx_include_directories),
+-    }
+-    return msvc_vars
+-
+-def configure_windows_toolchain(repository_ctx):
+-    """Configure C++ toolchain on Windows."""
+-    paths = resolve_labels(repository_ctx, [
+-        "@bazel_tools//tools/cpp:vc_installation_error.bat.tpl",
+-    ])
+-
+-    repository_ctx.symlink(
+-        Label("//:windows_cc_toolchain_config.bzl"),
+-        "windows_cc_toolchain_config.bzl",
+-    )
+-
+-    template_vars = dict()
+-    x64_msvc_vars = _get_msvc_vars(repository_ctx, paths, "x64")
+-    template_vars.update(x64_msvc_vars)
+-
+-    arm64_msvc_vars = _get_msvc_vars(repository_ctx, paths, "arm64")
+-    template_vars.update(arm64_msvc_vars)
+-
+-    return template_vars
+diff --git a/windows_cc_toolchain_config.bzl b/windows_cc_toolchain_config.bzl
+deleted file mode 100644
+index ecf67ac..0000000
+--- a/windows_cc_toolchain_config.bzl
++++ /dev/null
+@@ -1,1136 +0,0 @@
+-# Copyright 2019 The Bazel Authors. All rights reserved.
+-#
+-# Licensed under the Apache License, Version 2.0 (the "License");
+-# you may not use this file except in compliance with the License.
+-# You may obtain a copy of the License at
+-#
+-#    http://www.apache.org/licenses/LICENSE-2.0
+-#
+-# Unless required by applicable law or agreed to in writing, software
+-# distributed under the License is distributed on an "AS IS" BASIS,
+-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+-# See the License for the specific language governing permissions and
+-# limitations under the License.
+-
+-"""A Starlark cc_toolchain configuration rule for Windows"""
+-
+-load(
+-    "@bazel_tools//tools/cpp:cc_toolchain_config_lib.bzl",
+-    "action_config",
+-    "artifact_name_pattern",
+-    "env_entry",
+-    "env_set",
+-    "feature",
+-    "feature_set",
+-    "flag_group",
+-    "flag_set",
+-    "tool",
+-    "tool_path",
+-    "variable_with_value",
+-    "with_feature_set",
+-)
+-load("@bazel_tools//tools/build_defs/cc:action_names.bzl", "ACTION_NAMES")
+-
+-all_compile_actions = [
+-    ACTION_NAMES.c_compile,
+-    ACTION_NAMES.cpp_compile,
+-    ACTION_NAMES.linkstamp_compile,
+-    ACTION_NAMES.assemble,
+-    ACTION_NAMES.preprocess_assemble,
+-    ACTION_NAMES.cpp_header_parsing,
+-    ACTION_NAMES.cpp_module_compile,
+-    ACTION_NAMES.cpp_module_codegen,
+-    ACTION_NAMES.clif_match,
+-    ACTION_NAMES.lto_backend,
+-]
+-
+-all_cpp_compile_actions = [
+-    ACTION_NAMES.cpp_compile,
+-    ACTION_NAMES.linkstamp_compile,
+-    ACTION_NAMES.cpp_header_parsing,
+-    ACTION_NAMES.cpp_module_compile,
+-    ACTION_NAMES.cpp_module_codegen,
+-    ACTION_NAMES.clif_match,
+-]
+-
+-preprocessor_compile_actions = [
+-    ACTION_NAMES.c_compile,
+-    ACTION_NAMES.cpp_compile,
+-    ACTION_NAMES.linkstamp_compile,
+-    ACTION_NAMES.preprocess_assemble,
+-    ACTION_NAMES.cpp_header_parsing,
+-    ACTION_NAMES.cpp_module_compile,
+-    ACTION_NAMES.clif_match,
+-]
+-
+-codegen_compile_actions = [
+-    ACTION_NAMES.c_compile,
+-    ACTION_NAMES.cpp_compile,
+-    ACTION_NAMES.linkstamp_compile,
+-    ACTION_NAMES.assemble,
+-    ACTION_NAMES.preprocess_assemble,
+-    ACTION_NAMES.cpp_module_codegen,
+-    ACTION_NAMES.lto_backend,
+-]
+-
+-all_link_actions = [
+-    ACTION_NAMES.cpp_link_executable,
+-    ACTION_NAMES.cpp_link_dynamic_library,
+-    ACTION_NAMES.cpp_link_nodeps_dynamic_library,
+-]
+-
+-def _impl(ctx):
+-    artifact_name_patterns = [
+-        artifact_name_pattern(
+-            category_name = "object_file",
+-            prefix = "",
+-            extension = ".obj",
+-        ),
+-        artifact_name_pattern(
+-            category_name = "static_library",
+-            prefix = "",
+-            extension = ".lib",
+-        ),
+-        artifact_name_pattern(
+-            category_name = "alwayslink_static_library",
+-            prefix = "",
+-            extension = ".lo.lib",
+-        ),
+-        artifact_name_pattern(
+-            category_name = "executable",
+-            prefix = "",
+-            extension = ".exe",
+-        ),
+-        artifact_name_pattern(
+-            category_name = "dynamic_library",
+-            prefix = "",
+-            extension = ".dll",
+-        ),
+-        artifact_name_pattern(
+-            category_name = "interface_library",
+-            prefix = "",
+-            extension = ".if.lib",
+-        ),
+-    ]
+-
+-    cpp_link_nodeps_dynamic_library_action = action_config(
+-        action_name = ACTION_NAMES.cpp_link_nodeps_dynamic_library,
+-        implies = [
+-            "nologo",
+-            "shared_flag",
+-            "linkstamps",
+-            "output_execpath_flags",
+-            "input_param_flags",
+-            "user_link_flags",
+-            "default_link_flags",
+-            "linker_subsystem_flag",
+-            "linker_param_file",
+-            "msvc_env",
+-            "no_stripping",
+-            "has_configured_linker_path",
+-            "def_file",
+-        ],
+-        tools = [tool(path = ctx.attr.msvc_link_path)],
+-    )
+-
+-    cpp_link_static_library_action = action_config(
+-        action_name = ACTION_NAMES.cpp_link_static_library,
+-        implies = [
+-            "nologo",
+-            "archiver_flags",
+-            "input_param_flags",
+-            "linker_param_file",
+-            "msvc_env",
+-        ],
+-        tools = [tool(path = ctx.attr.msvc_lib_path)],
+-    )
+-
+-    assemble_action = action_config(
+-        action_name = ACTION_NAMES.assemble,
+-        implies = [
+-            "compiler_input_flags",
+-            "compiler_output_flags",
+-            "nologo",
+-            "msvc_env",
+-            "sysroot",
+-        ],
+-        tools = [tool(path = ctx.attr.msvc_ml_path)],
+-    )
+-
+-    preprocess_assemble_action = action_config(
+-        action_name = ACTION_NAMES.preprocess_assemble,
+-        implies = [
+-            "compiler_input_flags",
+-            "compiler_output_flags",
+-            "nologo",
+-            "msvc_env",
+-            "sysroot",
+-        ],
+-        tools = [tool(path = ctx.attr.msvc_ml_path)],
+-    )
+-
+-    c_compile_action = action_config(
+-        action_name = ACTION_NAMES.c_compile,
+-        implies = [
+-            "compiler_input_flags",
+-            "compiler_output_flags",
+-            "default_compile_flags",
+-            "nologo",
+-            "msvc_env",
+-            "parse_showincludes",
+-            "user_compile_flags",
+-            "sysroot",
+-            "unfiltered_compile_flags",
+-        ],
+-        tools = [tool(path = ctx.attr.msvc_cl_path)],
+-    )
+-
+-    cpp_compile_action = action_config(
+-        action_name = ACTION_NAMES.cpp_compile,
+-        implies = [
+-            "compiler_input_flags",
+-            "compiler_output_flags",
+-            "default_compile_flags",
+-            "nologo",
+-            "msvc_env",
+-            "parse_showincludes",
+-            "user_compile_flags",
+-            "sysroot",
+-            "unfiltered_compile_flags",
+-        ],
+-        tools = [tool(path = ctx.attr.msvc_cl_path)],
+-    )
+-
+-    cpp_link_executable_action = action_config(
+-        action_name = ACTION_NAMES.cpp_link_executable,
+-        implies = [
+-            "nologo",
+-            "linkstamps",
+-            "output_execpath_flags",
+-            "input_param_flags",
+-            "user_link_flags",
+-            "default_link_flags",
+-            "linker_subsystem_flag",
+-            "linker_param_file",
+-            "msvc_env",
+-            "no_stripping",
+-        ],
+-        tools = [tool(path = ctx.attr.msvc_link_path)],
+-    )
+-
+-    cpp_link_dynamic_library_action = action_config(
+-        action_name = ACTION_NAMES.cpp_link_dynamic_library,
+-        implies = [
+-            "nologo",
+-            "shared_flag",
+-            "linkstamps",
+-            "output_execpath_flags",
+-            "input_param_flags",
+-            "user_link_flags",
+-            "default_link_flags",
+-            "linker_subsystem_flag",
+-            "linker_param_file",
+-            "msvc_env",
+-            "no_stripping",
+-            "has_configured_linker_path",
+-            "def_file",
+-        ],
+-        tools = [tool(path = ctx.attr.msvc_link_path)],
+-    )
+-
+-    action_configs = [
+-        assemble_action,
+-        preprocess_assemble_action,
+-        c_compile_action,
+-        cpp_compile_action,
+-        cpp_link_executable_action,
+-        cpp_link_dynamic_library_action,
+-        cpp_link_nodeps_dynamic_library_action,
+-        cpp_link_static_library_action,
+-    ]
+-
+-    msvc_link_env_feature = feature(
+-        name = "msvc_link_env",
+-        env_sets = [
+-            env_set(
+-                actions = all_link_actions +
+-                          [ACTION_NAMES.cpp_link_static_library],
+-                env_entries = [env_entry(key = "LIB", value = ctx.attr.msvc_env_lib)],
+-            ),
+-        ],
+-    )
+-
+-    shared_flag_feature = feature(
+-        name = "shared_flag",
+-        flag_sets = [
+-            flag_set(
+-                actions = [
+-                    ACTION_NAMES.cpp_link_dynamic_library,
+-                    ACTION_NAMES.cpp_link_nodeps_dynamic_library,
+-                ],
+-                flag_groups = [flag_group(flags = ["/DLL"])],
+-            ),
+-        ],
+-    )
+-
+-    determinism_feature = feature(
+-        name = "determinism",
+-        enabled = True,
+-        flag_sets = [
+-            flag_set(
+-                actions = [ACTION_NAMES.c_compile, ACTION_NAMES.cpp_compile],
+-                flag_groups = [
+-                    flag_group(
+-                        flags = [
+-                            "/wd4117",
+-                            "-D__DATE__=\"redacted\"",
+-                            "-D__TIMESTAMP__=\"redacted\"",
+-                            "-D__TIME__=\"redacted\"",
+-                        ] + (["-Wno-builtin-macro-redefined"] if ctx.attr.compiler == "clang-cl" else []),
+-                    ),
+-                ],
+-            ),
+-        ],
+-    )
+-
+-    sysroot_feature = feature(
+-        name = "sysroot",
+-        flag_sets = [
+-            flag_set(
+-                actions = [
+-                    ACTION_NAMES.assemble,
+-                    ACTION_NAMES.preprocess_assemble,
+-                    ACTION_NAMES.c_compile,
+-                    ACTION_NAMES.cpp_compile,
+-                    ACTION_NAMES.cpp_header_parsing,
+-                    ACTION_NAMES.cpp_module_compile,
+-                    ACTION_NAMES.cpp_module_codegen,
+-                    ACTION_NAMES.cpp_link_executable,
+-                    ACTION_NAMES.cpp_link_dynamic_library,
+-                    ACTION_NAMES.cpp_link_nodeps_dynamic_library,
+-                ],
+-                flag_groups = [
+-                    flag_group(
+-                        flags = ["--sysroot=%{sysroot}"],
+-                        iterate_over = "sysroot",
+-                        expand_if_available = "sysroot",
+-                    ),
+-                ],
+-            ),
+-        ],
+-    )
+-
+-    unfiltered_compile_flags_feature = feature(
+-        name = "unfiltered_compile_flags",
+-        flag_sets = [
+-            flag_set(
+-                actions = [
+-                    ACTION_NAMES.preprocess_assemble,
+-                    ACTION_NAMES.c_compile,
+-                    ACTION_NAMES.cpp_compile,
+-                    ACTION_NAMES.cpp_header_parsing,
+-                    ACTION_NAMES.cpp_module_compile,
+-                    ACTION_NAMES.cpp_module_codegen,
+-                ],
+-                flag_groups = [
+-                    flag_group(
+-                        flags = ["%{unfiltered_compile_flags}"],
+-                        iterate_over = "unfiltered_compile_flags",
+-                        expand_if_available = "unfiltered_compile_flags",
+-                    ),
+-                ],
+-            ),
+-        ],
+-    )
+-
+-    compiler_param_file_feature = feature(
+-        name = "compiler_param_file",
+-    )
+-
+-    copy_dynamic_libraries_to_binary_feature = feature(
+-        name = "copy_dynamic_libraries_to_binary",
+-    )
+-
+-    input_param_flags_feature = feature(
+-        name = "input_param_flags",
+-        flag_sets = [
+-            flag_set(
+-                actions = [
+-                    ACTION_NAMES.cpp_link_dynamic_library,
+-                    ACTION_NAMES.cpp_link_nodeps_dynamic_library,
+-                ],
+-                flag_groups = [
+-                    flag_group(
+-                        flags = ["/IMPLIB:%{interface_library_output_path}"],
+-                        expand_if_available = "interface_library_output_path",
+-                    ),
+-                ],
+-            ),
+-            flag_set(
+-                actions = all_link_actions,
+-                flag_groups = [
+-                    flag_group(
+-                        flags = ["%{libopts}"],
+-                        iterate_over = "libopts",
+-                        expand_if_available = "libopts",
+-                    ),
+-                ],
+-            ),
+-            flag_set(
+-                actions = all_link_actions +
+-                          [ACTION_NAMES.cpp_link_static_library],
+-                flag_groups = [
+-                    flag_group(
+-                        iterate_over = "libraries_to_link",
+-                        flag_groups = [
+-                            flag_group(
+-                                iterate_over = "libraries_to_link.object_files",
+-                                flag_groups = [flag_group(flags = ["%{libraries_to_link.object_files}"])],
+-                                expand_if_equal = variable_with_value(
+-                                    name = "libraries_to_link.type",
+-                                    value = "object_file_group",
+-                                ),
+-                            ),
+-                            flag_group(
+-                                flag_groups = [flag_group(flags = ["%{libraries_to_link.name}"])],
+-                                expand_if_equal = variable_with_value(
+-                                    name = "libraries_to_link.type",
+-                                    value = "object_file",
+-                                ),
+-                            ),
+-                            flag_group(
+-                                flag_groups = [flag_group(flags = ["%{libraries_to_link.name}"])],
+-                                expand_if_equal = variable_with_value(
+-                                    name = "libraries_to_link.type",
+-                                    value = "interface_library",
+-                                ),
+-                            ),
+-                            flag_group(
+-                                flag_groups = [
+-                                    flag_group(
+-                                        flags = ["%{libraries_to_link.name}"],
+-                                        expand_if_false = "libraries_to_link.is_whole_archive",
+-                                    ),
+-                                    flag_group(
+-                                        flags = ["/WHOLEARCHIVE:%{libraries_to_link.name}"],
+-                                        expand_if_true = "libraries_to_link.is_whole_archive",
+-                                    ),
+-                                ],
+-                                expand_if_equal = variable_with_value(
+-                                    name = "libraries_to_link.type",
+-                                    value = "static_library",
+-                                ),
+-                            ),
+-                        ],
+-                        expand_if_available = "libraries_to_link",
+-                    ),
+-                ],
+-            ),
+-        ],
+-    )
+-
+-    fastbuild_feature = feature(
+-        name = "fastbuild",
+-        flag_sets = [
+-            flag_set(
+-                actions = [ACTION_NAMES.c_compile, ACTION_NAMES.cpp_compile],
+-                flag_groups = [flag_group(flags = ["/Od", "/Z7"])],
+-            ),
+-            flag_set(
+-                actions = all_link_actions,
+-                flag_groups = [
+-                    flag_group(
+-                        flags = [ctx.attr.fastbuild_mode_debug_flag, "/INCREMENTAL:NO"],
+-                    ),
+-                ],
+-            ),
+-        ],
+-        implies = ["generate_pdb_file"],
+-    )
+-
+-    user_compile_flags_feature = feature(
+-        name = "user_compile_flags",
+-        flag_sets = [
+-            flag_set(
+-                actions = [
+-                    ACTION_NAMES.preprocess_assemble,
+-                    ACTION_NAMES.c_compile,
+-                    ACTION_NAMES.cpp_compile,
+-                    ACTION_NAMES.cpp_header_parsing,
+-                    ACTION_NAMES.cpp_module_compile,
+-                    ACTION_NAMES.cpp_module_codegen,
+-                ],
+-                flag_groups = [
+-                    flag_group(
+-                        flags = ["%{user_compile_flags}"],
+-                        iterate_over = "user_compile_flags",
+-                        expand_if_available = "user_compile_flags",
+-                    ),
+-                ],
+-            ),
+-        ],
+-    )
+-
+-    archiver_flags_feature = feature(
+-        name = "archiver_flags",
+-        flag_sets = [
+-            flag_set(
+-                actions = [ACTION_NAMES.cpp_link_static_library],
+-                flag_groups = [
+-                    flag_group(
+-                        flags = ["/OUT:%{output_execpath}"],
+-                        expand_if_available = "output_execpath",
+-                    ),
+-                ],
+-            ),
+-        ],
+-    )
+-
+-    default_link_flags_feature = feature(
+-        name = "default_link_flags",
+-        enabled = True,
+-        flag_sets = [
+-            flag_set(
+-                actions = all_link_actions,
+-                flag_groups = [flag_group(flags = ctx.attr.default_link_flags)],
+-            ),
+-        ],
+-    )
+-
+-    static_link_msvcrt_feature = feature(name = "static_link_msvcrt")
+-
+-    dynamic_link_msvcrt_debug_feature = feature(
+-        name = "dynamic_link_msvcrt_debug",
+-        flag_sets = [
+-            flag_set(
+-                actions = [ACTION_NAMES.c_compile, ACTION_NAMES.cpp_compile],
+-                flag_groups = [flag_group(flags = ["/MDd"])],
+-            ),
+-            flag_set(
+-                actions = all_link_actions,
+-                flag_groups = [flag_group(flags = ["/DEFAULTLIB:msvcrtd.lib"])],
+-            ),
+-        ],
+-        requires = [feature_set(features = ["dbg"])],
+-    )
+-
+-    dbg_feature = feature(
+-        name = "dbg",
+-        flag_sets = [
+-            flag_set(
+-                actions = [ACTION_NAMES.c_compile, ACTION_NAMES.cpp_compile],
+-                flag_groups = [flag_group(flags = ["/Od", "/Z7"])],
+-            ),
+-            flag_set(
+-                actions = all_link_actions,
+-                flag_groups = [
+-                    flag_group(
+-                        flags = [ctx.attr.dbg_mode_debug_flag, "/INCREMENTAL:NO"],
+-                    ),
+-                ],
+-            ),
+-        ],
+-        implies = ["generate_pdb_file"],
+-    )
+-
+-    opt_feature = feature(
+-        name = "opt",
+-        flag_sets = [
+-            flag_set(
+-                actions = [ACTION_NAMES.c_compile, ACTION_NAMES.cpp_compile],
+-                flag_groups = [flag_group(flags = ["/O2"])],
+-            ),
+-        ],
+-        implies = ["frame_pointer"],
+-    )
+-
+-    supports_interface_shared_libraries_feature = feature(
+-        name = "supports_interface_shared_libraries",
+-        enabled = True,
+-    )
+-
+-    user_link_flags_feature = feature(
+-        name = "user_link_flags",
+-        flag_sets = [
+-            flag_set(
+-                actions = all_link_actions,
+-                flag_groups = [
+-                    flag_group(
+-                        flags = ["%{user_link_flags}"],
+-                        iterate_over = "user_link_flags",
+-                        expand_if_available = "user_link_flags",
+-                    ),
+-                ],
+-            ),
+-        ],
+-    )
+-
+-    default_compile_flags_feature = feature(
+-        name = "default_compile_flags",
+-        enabled = True,
+-        flag_sets = [
+-            flag_set(
+-                actions = [
+-                    ACTION_NAMES.assemble,
+-                    ACTION_NAMES.preprocess_assemble,
+-                    ACTION_NAMES.linkstamp_compile,
+-                    ACTION_NAMES.c_compile,
+-                    ACTION_NAMES.cpp_compile,
+-                    ACTION_NAMES.cpp_header_parsing,
+-                    ACTION_NAMES.cpp_module_compile,
+-                    ACTION_NAMES.cpp_module_codegen,
+-                    ACTION_NAMES.lto_backend,
+-                    ACTION_NAMES.clif_match,
+-                ],
+-                flag_groups = [
+-                    flag_group(
+-                        flags = [
+-                            "/DCOMPILER_MSVC",
+-                            "/DNOMINMAX",
+-                            "/D_WIN32_WINNT=0x0601",
+-                            "/D_CRT_SECURE_NO_DEPRECATE",
+-                            "/D_CRT_SECURE_NO_WARNINGS",
+-                            "/bigobj",
+-                            "/Zm500",
+-                            "/EHsc",
+-                            "/wd4351",
+-                            "/wd4291",
+-                            "/wd4250",
+-                            "/wd4996",
+-                        ],
+-                    ),
+-                ],
+-            ),
+-        ],
+-    )
+-
+-    msvc_compile_env_feature = feature(
+-        name = "msvc_compile_env",
+-        env_sets = [
+-            env_set(
+-                actions = [
+-                    ACTION_NAMES.c_compile,
+-                    ACTION_NAMES.cpp_compile,
+-                    ACTION_NAMES.cpp_module_compile,
+-                    ACTION_NAMES.cpp_module_codegen,
+-                    ACTION_NAMES.cpp_header_parsing,
+-                    ACTION_NAMES.assemble,
+-                    ACTION_NAMES.preprocess_assemble,
+-                ],
+-                env_entries = [env_entry(key = "INCLUDE", value = ctx.attr.msvc_env_include)],
+-            ),
+-        ],
+-    )
+-
+-    preprocessor_defines_feature = feature(
+-        name = "preprocessor_defines",
+-        enabled = True,
+-        flag_sets = [
+-            flag_set(
+-                actions = [
+-                    ACTION_NAMES.assemble,
+-                    ACTION_NAMES.preprocess_assemble,
+-                    ACTION_NAMES.c_compile,
+-                    ACTION_NAMES.cpp_compile,
+-                    ACTION_NAMES.cpp_header_parsing,
+-                    ACTION_NAMES.cpp_module_compile,
+-                ],
+-                flag_groups = [
+-                    flag_group(
+-                        flags = ["/D%{preprocessor_defines}"],
+-                        iterate_over = "preprocessor_defines",
+-                    ),
+-                ],
+-            ),
+-        ],
+-    )
+-
+-    generate_pdb_file_feature = feature(
+-        name = "generate_pdb_file",
+-        requires = [
+-            feature_set(features = ["dbg"]),
+-            feature_set(features = ["fastbuild"]),
+-        ],
+-    )
+-
+-    output_execpath_flags_feature = feature(
+-        name = "output_execpath_flags",
+-        flag_sets = [
+-            flag_set(
+-                actions = all_link_actions,
+-                flag_groups = [
+-                    flag_group(
+-                        flags = ["/OUT:%{output_execpath}"],
+-                        expand_if_available = "output_execpath",
+-                    ),
+-                ],
+-            ),
+-        ],
+-    )
+-
+-    dynamic_link_msvcrt_no_debug_feature = feature(
+-        name = "dynamic_link_msvcrt_no_debug",
+-        flag_sets = [
+-            flag_set(
+-                actions = [ACTION_NAMES.c_compile, ACTION_NAMES.cpp_compile],
+-                flag_groups = [flag_group(flags = ["/MD"])],
+-            ),
+-            flag_set(
+-                actions = all_link_actions,
+-                flag_groups = [flag_group(flags = ["/DEFAULTLIB:msvcrt.lib"])],
+-            ),
+-        ],
+-        requires = [
+-            feature_set(features = ["fastbuild"]),
+-            feature_set(features = ["opt"]),
+-        ],
+-    )
+-
+-    disable_assertions_feature = feature(
+-        name = "disable_assertions",
+-        enabled = True,
+-        flag_sets = [
+-            flag_set(
+-                actions = [ACTION_NAMES.c_compile, ACTION_NAMES.cpp_compile],
+-                flag_groups = [flag_group(flags = ["/DNDEBUG"])],
+-                with_features = [with_feature_set(features = ["opt"])],
+-            ),
+-        ],
+-    )
+-
+-    has_configured_linker_path_feature = feature(name = "has_configured_linker_path")
+-
+-    supports_dynamic_linker_feature = feature(name = "supports_dynamic_linker", enabled = True)
+-
+-    no_stripping_feature = feature(name = "no_stripping")
+-
+-    linker_param_file_feature = feature(
+-        name = "linker_param_file",
+-        flag_sets = [
+-            flag_set(
+-                actions = all_link_actions +
+-                          [ACTION_NAMES.cpp_link_static_library],
+-                flag_groups = [
+-                    flag_group(
+-                        flags = ["@%{linker_param_file}"],
+-                        expand_if_available = "linker_param_file",
+-                    ),
+-                ],
+-            ),
+-        ],
+-    )
+-
+-    ignore_noisy_warnings_feature = feature(
+-        name = "ignore_noisy_warnings",
+-        enabled = True,
+-        flag_sets = [
+-            flag_set(
+-                actions = [ACTION_NAMES.cpp_link_static_library],
+-                flag_groups = [flag_group(flags = ["/ignore:4221"])],
+-            ),
+-        ],
+-    )
+-
+-    no_legacy_features_feature = feature(name = "no_legacy_features")
+-
+-    parse_showincludes_feature = feature(
+-        name = "parse_showincludes",
+-        flag_sets = [
+-            flag_set(
+-                actions = [
+-                    ACTION_NAMES.preprocess_assemble,
+-                    ACTION_NAMES.c_compile,
+-                    ACTION_NAMES.cpp_compile,
+-                    ACTION_NAMES.cpp_module_compile,
+-                    ACTION_NAMES.cpp_header_parsing,
+-                ],
+-                flag_groups = [flag_group(flags = ["/showIncludes"])],
+-            ),
+-        ],
+-    )
+-
+-    static_link_msvcrt_no_debug_feature = feature(
+-        name = "static_link_msvcrt_no_debug",
+-        flag_sets = [
+-            flag_set(
+-                actions = [ACTION_NAMES.c_compile, ACTION_NAMES.cpp_compile],
+-                flag_groups = [flag_group(flags = ["/MT"])],
+-            ),
+-            flag_set(
+-                actions = all_link_actions,
+-                flag_groups = [flag_group(flags = ["/DEFAULTLIB:libcmt.lib"])],
+-            ),
+-        ],
+-        requires = [
+-            feature_set(features = ["fastbuild"]),
+-            feature_set(features = ["opt"]),
+-        ],
+-    )
+-
+-    treat_warnings_as_errors_feature = feature(
+-        name = "treat_warnings_as_errors",
+-        flag_sets = [
+-            flag_set(
+-                actions = [ACTION_NAMES.c_compile, ACTION_NAMES.cpp_compile],
+-                flag_groups = [flag_group(flags = ["/WX"])],
+-            ),
+-        ],
+-    )
+-
+-    windows_export_all_symbols_feature = feature(name = "windows_export_all_symbols")
+-
+-    no_windows_export_all_symbols_feature = feature(name = "no_windows_export_all_symbols")
+-
+-    include_paths_feature = feature(
+-        name = "include_paths",
+-        enabled = True,
+-        flag_sets = [
+-            flag_set(
+-                actions = [
+-                    ACTION_NAMES.assemble,
+-                    ACTION_NAMES.preprocess_assemble,
+-                    ACTION_NAMES.c_compile,
+-                    ACTION_NAMES.cpp_compile,
+-                    ACTION_NAMES.cpp_header_parsing,
+-                    ACTION_NAMES.cpp_module_compile,
+-                ],
+-                flag_groups = [
+-                    flag_group(
+-                        flags = ["/I%{quote_include_paths}"],
+-                        iterate_over = "quote_include_paths",
+-                    ),
+-                    flag_group(
+-                        flags = ["/I%{include_paths}"],
+-                        iterate_over = "include_paths",
+-                    ),
+-                    flag_group(
+-                        flags = ["/I%{system_include_paths}"],
+-                        iterate_over = "system_include_paths",
+-                    ),
+-                ],
+-            ),
+-        ],
+-    )
+-
+-    linkstamps_feature = feature(
+-        name = "linkstamps",
+-        flag_sets = [
+-            flag_set(
+-                actions = all_link_actions,
+-                flag_groups = [
+-                    flag_group(
+-                        flags = ["%{linkstamp_paths}"],
+-                        iterate_over = "linkstamp_paths",
+-                        expand_if_available = "linkstamp_paths",
+-                    ),
+-                ],
+-            ),
+-        ],
+-    )
+-
+-    targets_windows_feature = feature(
+-        name = "targets_windows",
+-        enabled = True,
+-        implies = ["copy_dynamic_libraries_to_binary"],
+-    )
+-
+-    linker_subsystem_flag_feature = feature(
+-        name = "linker_subsystem_flag",
+-        flag_sets = [
+-            flag_set(
+-                actions = all_link_actions,
+-                flag_groups = [flag_group(flags = ["/SUBSYSTEM:CONSOLE"])],
+-            ),
+-        ],
+-    )
+-
+-    static_link_msvcrt_debug_feature = feature(
+-        name = "static_link_msvcrt_debug",
+-        flag_sets = [
+-            flag_set(
+-                actions = [ACTION_NAMES.c_compile, ACTION_NAMES.cpp_compile],
+-                flag_groups = [flag_group(flags = ["/MTd"])],
+-            ),
+-            flag_set(
+-                actions = all_link_actions,
+-                flag_groups = [flag_group(flags = ["/DEFAULTLIB:libcmtd.lib"])],
+-            ),
+-        ],
+-        requires = [feature_set(features = ["dbg"])],
+-    )
+-
+-    frame_pointer_feature = feature(
+-        name = "frame_pointer",
+-        flag_sets = [
+-            flag_set(
+-                actions = [ACTION_NAMES.c_compile, ACTION_NAMES.cpp_compile],
+-                flag_groups = [flag_group(flags = ["/Oy-"])],
+-            ),
+-        ],
+-    )
+-
+-    compiler_output_flags_feature = feature(
+-        name = "compiler_output_flags",
+-        flag_sets = [
+-            flag_set(
+-                actions = [ACTION_NAMES.assemble],
+-                flag_groups = [
+-                    flag_group(
+-                        flag_groups = [
+-                            flag_group(
+-                                flags = ["/Fo%{output_file}", "/Zi"],
+-                                expand_if_available = "output_file",
+-                                expand_if_not_available = "output_assembly_file",
+-                            ),
+-                        ],
+-                        expand_if_not_available = "output_preprocess_file",
+-                    ),
+-                ],
+-            ),
+-            flag_set(
+-                actions = [
+-                    ACTION_NAMES.preprocess_assemble,
+-                    ACTION_NAMES.c_compile,
+-                    ACTION_NAMES.cpp_compile,
+-                    ACTION_NAMES.cpp_header_parsing,
+-                    ACTION_NAMES.cpp_module_compile,
+-                    ACTION_NAMES.cpp_module_codegen,
+-                ],
+-                flag_groups = [
+-                    flag_group(
+-                        flag_groups = [
+-                            flag_group(
+-                                flags = ["/Fo%{output_file}"],
+-                                expand_if_not_available = "output_preprocess_file",
+-                            ),
+-                        ],
+-                        expand_if_available = "output_file",
+-                        expand_if_not_available = "output_assembly_file",
+-                    ),
+-                    flag_group(
+-                        flag_groups = [
+-                            flag_group(
+-                                flags = ["/Fa%{output_file}"],
+-                                expand_if_available = "output_assembly_file",
+-                            ),
+-                        ],
+-                        expand_if_available = "output_file",
+-                    ),
+-                    flag_group(
+-                        flag_groups = [
+-                            flag_group(
+-                                flags = ["/P", "/Fi%{output_file}"],
+-                                expand_if_available = "output_preprocess_file",
+-                            ),
+-                        ],
+-                        expand_if_available = "output_file",
+-                    ),
+-                ],
+-            ),
+-        ],
+-    )
+-
+-    nologo_feature = feature(
+-        name = "nologo",
+-        flag_sets = [
+-            flag_set(
+-                actions = [
+-                    ACTION_NAMES.c_compile,
+-                    ACTION_NAMES.cpp_compile,
+-                    ACTION_NAMES.cpp_module_compile,
+-                    ACTION_NAMES.cpp_module_codegen,
+-                    ACTION_NAMES.cpp_header_parsing,
+-                    ACTION_NAMES.assemble,
+-                    ACTION_NAMES.preprocess_assemble,
+-                    ACTION_NAMES.cpp_link_executable,
+-                    ACTION_NAMES.cpp_link_dynamic_library,
+-                    ACTION_NAMES.cpp_link_nodeps_dynamic_library,
+-                    ACTION_NAMES.cpp_link_static_library,
+-                ],
+-                flag_groups = [flag_group(flags = ["/nologo"])],
+-            ),
+-        ],
+-    )
+-
+-    smaller_binary_feature = feature(
+-        name = "smaller_binary",
+-        enabled = True,
+-        flag_sets = [
+-            flag_set(
+-                actions = [ACTION_NAMES.c_compile, ACTION_NAMES.cpp_compile],
+-                flag_groups = [flag_group(flags = ["/Gy", "/Gw"])],
+-                with_features = [with_feature_set(features = ["opt"])],
+-            ),
+-            flag_set(
+-                actions = all_link_actions,
+-                flag_groups = [flag_group(flags = ["/OPT:ICF", "/OPT:REF"])],
+-                with_features = [with_feature_set(features = ["opt"])],
+-            ),
+-        ],
+-    )
+-
+-    compiler_input_flags_feature = feature(
+-        name = "compiler_input_flags",
+-        flag_sets = [
+-            flag_set(
+-                actions = [
+-                    ACTION_NAMES.assemble,
+-                    ACTION_NAMES.preprocess_assemble,
+-                    ACTION_NAMES.c_compile,
+-                    ACTION_NAMES.cpp_compile,
+-                    ACTION_NAMES.cpp_header_parsing,
+-                    ACTION_NAMES.cpp_module_compile,
+-                    ACTION_NAMES.cpp_module_codegen,
+-                ],
+-                flag_groups = [
+-                    flag_group(
+-                        flags = ["/c", "%{source_file}"],
+-                        expand_if_available = "source_file",
+-                    ),
+-                ],
+-            ),
+-        ],
+-    )
+-
+-    def_file_feature = feature(
+-        name = "def_file",
+-        flag_sets = [
+-            flag_set(
+-                actions = all_link_actions,
+-                flag_groups = [
+-                    flag_group(
+-                        flags = ["/DEF:%{def_file_path}", "/ignore:4070"],
+-                        expand_if_available = "def_file_path",
+-                    ),
+-                ],
+-            ),
+-        ],
+-    )
+-
+-    msvc_env_feature = feature(
+-        name = "msvc_env",
+-        env_sets = [
+-            env_set(
+-                actions = [
+-                    ACTION_NAMES.c_compile,
+-                    ACTION_NAMES.cpp_compile,
+-                    ACTION_NAMES.cpp_module_compile,
+-                    ACTION_NAMES.cpp_module_codegen,
+-                    ACTION_NAMES.cpp_header_parsing,
+-                    ACTION_NAMES.assemble,
+-                    ACTION_NAMES.preprocess_assemble,
+-                    ACTION_NAMES.cpp_link_executable,
+-                    ACTION_NAMES.cpp_link_dynamic_library,
+-                    ACTION_NAMES.cpp_link_nodeps_dynamic_library,
+-                    ACTION_NAMES.cpp_link_static_library,
+-                ],
+-                env_entries = [
+-                    env_entry(key = "PATH", value = ctx.attr.msvc_env_path),
+-                    env_entry(key = "TMP", value = ctx.attr.msvc_env_tmp),
+-                    env_entry(key = "TEMP", value = ctx.attr.msvc_env_tmp),
+-                ],
+-            ),
+-        ],
+-        implies = ["msvc_compile_env", "msvc_link_env"],
+-    )
+-    features = [
+-        no_legacy_features_feature,
+-        nologo_feature,
+-        has_configured_linker_path_feature,
+-        no_stripping_feature,
+-        targets_windows_feature,
+-        copy_dynamic_libraries_to_binary_feature,
+-        default_compile_flags_feature,
+-        msvc_env_feature,
+-        msvc_compile_env_feature,
+-        msvc_link_env_feature,
+-        include_paths_feature,
+-        preprocessor_defines_feature,
+-        parse_showincludes_feature,
+-        generate_pdb_file_feature,
+-        shared_flag_feature,
+-        linkstamps_feature,
+-        output_execpath_flags_feature,
+-        archiver_flags_feature,
+-        input_param_flags_feature,
+-        linker_subsystem_flag_feature,
+-        user_link_flags_feature,
+-        default_link_flags_feature,
+-        linker_param_file_feature,
+-        static_link_msvcrt_feature,
+-        static_link_msvcrt_no_debug_feature,
+-        dynamic_link_msvcrt_no_debug_feature,
+-        static_link_msvcrt_debug_feature,
+-        dynamic_link_msvcrt_debug_feature,
+-        dbg_feature,
+-        fastbuild_feature,
+-        opt_feature,
+-        frame_pointer_feature,
+-        disable_assertions_feature,
+-        determinism_feature,
+-        treat_warnings_as_errors_feature,
+-        smaller_binary_feature,
+-        ignore_noisy_warnings_feature,
+-        user_compile_flags_feature,
+-        sysroot_feature,
+-        unfiltered_compile_flags_feature,
+-        compiler_param_file_feature,
+-        compiler_output_flags_feature,
+-        compiler_input_flags_feature,
+-        def_file_feature,
+-        windows_export_all_symbols_feature,
+-        no_windows_export_all_symbols_feature,
+-        supports_dynamic_linker_feature,
+-        supports_interface_shared_libraries_feature,
+-    ]
+-
+-    tool_paths = [
+-        tool_path(name = name, path = path)
+-        for name, path in ctx.attr.tool_paths.items()
+-    ]
+-
+-    return cc_common.create_cc_toolchain_config_info(
+-        ctx = ctx,
+-        features = features,
+-        action_configs = action_configs,
+-        artifact_name_patterns = artifact_name_patterns,
+-        cxx_builtin_include_directories = ctx.attr.cxx_builtin_include_directories,
+-        toolchain_identifier = ctx.attr.toolchain_identifier,
+-        host_system_name = ctx.attr.host_system_name,
+-        target_system_name = ctx.attr.target_system_name,
+-        target_cpu = ctx.attr.cpu,
+-        target_libc = ctx.attr.target_libc,
+-        compiler = ctx.attr.compiler,
+-        abi_version = ctx.attr.abi_version,
+-        abi_libc_version = ctx.attr.abi_libc_version,
+-        tool_paths = tool_paths,
+-    )
+-
+-windows_cc_toolchain_config = rule(
+-    implementation = _impl,
+-    attrs = {
+-        "cpu": attr.string(mandatory = True),
+-        "compiler": attr.string(),
+-        "toolchain_identifier": attr.string(),
+-        "host_system_name": attr.string(),
+-        "target_system_name": attr.string(),
+-        "target_libc": attr.string(),
+-        "abi_version": attr.string(),
+-        "abi_libc_version": attr.string(),
+-        "tool_paths": attr.string_dict(),
+-        "cxx_builtin_include_directories": attr.string_list(),
+-        "default_link_flags": attr.string_list(default = []),
+-        "msvc_env_tmp": attr.string(default = "msvc_not_found"),
+-        "msvc_env_path": attr.string(default = "msvc_not_found"),
+-        "msvc_env_include": attr.string(default = "msvc_not_found"),
+-        "msvc_env_lib": attr.string(default = "msvc_not_found"),
+-        "msvc_cl_path": attr.string(default = "vc_installation_error.bat"),
+-        "msvc_ml_path": attr.string(default = "vc_installation_error.bat"),
+-        "msvc_link_path": attr.string(default = "vc_installation_error.bat"),
+-        "msvc_lib_path": attr.string(default = "vc_installation_error.bat"),
+-        "dbg_mode_debug_flag": attr.string(),
+-        "fastbuild_mode_debug_flag": attr.string(),
+-        "tool_bin_path": attr.string(default = "not_found"),
+-    },
+-    provides = [CcToolchainConfigInfo],
+-)
