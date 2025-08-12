@@ -28,6 +28,8 @@ import (
 )
 
 // BufConfig defines the shape of the buffer used to read packets from the NIC.
+// The duplication of 256 is intended so that the sum of the elements can cover
+// the maximum packet size we expect to receive. See TestBufConfigMaxLength.
 var BufConfig = []int{128, 256, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768}
 
 // +stateify savable
