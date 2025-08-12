@@ -162,7 +162,9 @@ proto_library(
     name = "gpu_driver_versions",
     testonly = True,
     srcs = ["gpu_driver_versions.proto"],
-    visibility = ["//test/kubernetes:__subpackages__"],
+    visibility = [
+        "//:sandbox",
+    ],
 )
 
 go_test(
