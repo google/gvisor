@@ -65,10 +65,10 @@ http_archive(
         # Export .x files.
         "//tools:rules_go_export.patch",
     ],
-    sha256 = "af47f30e9cbd70ae34e49866e201b3f77069abb111183f2c0297e7e74ba6bbc0",
+    sha256 = "9d72f7b8904128afb98d46bbef82ad7223ec9ff3718d419afb355fddd9f9484a",
     urls = [
-        "https://mirror.bazel.build/github.com/bazelbuild/rules_go/releases/download/v0.47.0/rules_go-v0.47.0.zip",
-        "https://github.com/bazelbuild/rules_go/releases/download/v0.47.0/rules_go-v0.47.0.zip",
+        "https://mirror.bazel.build/github.com/bazel-contrib/rules_go/releases/download/v0.55.1/rules_go-v0.55.1.zip",
+        "https://github.com/bazel-contrib/rules_go/releases/download/v0.55.1/rules_go-v0.55.1.zip",
     ],
 )
 
@@ -89,12 +89,23 @@ switched_rules_by_language(
     go = False,  # Disable building proto Go libraries; use org_golang_google_genproto instead.
 )
 
+# rules_python needed by bazel_gazelle
+http_archive(
+    name = "rules_python",
+    sha256 = "fa532d635f29c038a64c8062724af700c30cf6b31174dd4fac120bc561a1a560",
+    strip_prefix = "rules_python-1.5.1",
+    url = "https://github.com/bazel-contrib/rules_python/releases/download/1.5.1/rules_python-1.5.1.tar.gz",
+)
+
+load("@rules_python//python:repositories.bzl", "py_repositories")
+
+py_repositories()
+
 http_archive(
     name = "bazel_gazelle",
-    sha256 = "32938bda16e6700063035479063d9d24c60eda8d79fd4739563f50d331cb3209",
+    sha256 = "49b14c691ceec841f445f8642d28336e99457d1db162092fd5082351ea302f1d",
     urls = [
-        "https://mirror.bazel.build/github.com/bazelbuild/bazel-gazelle/releases/download/v0.35.0/bazel-gazelle-v0.35.0.tar.gz",
-        "https://github.com/bazelbuild/bazel-gazelle/releases/download/v0.35.0/bazel-gazelle-v0.35.0.tar.gz",
+        "https://github.com/bazel-contrib/bazel-gazelle/releases/download/v0.44.0/bazel-gazelle-v0.44.0.tar.gz"
     ],
 )
 
@@ -389,16 +400,19 @@ go_repository(
 # Load C++ rules.
 http_archive(
     name = "rules_cc",
-    sha256 = "abc605dd850f813bb37004b77db20106a19311a96b2da1c92b789da529d28fe1",
-    strip_prefix = "rules_cc-0.0.17",
-    urls = ["https://github.com/bazelbuild/rules_cc/releases/download/0.0.17/rules_cc-0.0.17.tar.gz"],
+    sha256 = "64cb81641305dcf7b3b3d5a73095ee8fe7444b26f7b72a12227d36e15cfbb6cb",
+    strip_prefix = "rules_cc-0.1.3",
+    url = "https://github.com/bazelbuild/rules_cc/releases/download/0.1.3/rules_cc-0.1.3.tar.gz",
 )
 
-# Load C++ cross-compilation toolchains.
+# # Load C++ cross-compilation toolchains.
 http_archive(
     name = "coral_crosstool",
     patch_args = ["-p1"],
-    patches = ["//tools:crosstool-arm-dirs.patch"],
+    patches = [
+        "//tools:crosstool-arm-dirs.patch",
+        "//tools:remove_windows_deps.patch",
+    ],
     sha256 = "f86d488ca353c5ee99187579fe408adb73e9f2bb1d69c6e3a42ffb904ce3ba01",
     strip_prefix = "crosstool-8e885509123395299bed6a5f9529fdc1b9751599",
     urls = [
@@ -429,9 +443,9 @@ http_archive(
 )
 
 # Load LLVM dependencies.
-LLVM_COMMIT = "926f85db98aae66ab8f57b9981f47ddddb868c51"
+LLVM_COMMIT = "cbcb48a88c3a6227cfc09f91880d5cb92a26f5f9"
 
-LLVM_SHA256 = "c78c94b2a03b2cf6ef1ba035c31a6f1b0bb7913da8af5aa8d5c2061f6499d589"
+LLVM_SHA256 = "356cb88e5975104628494bd02b8edef1889ea30a7dbe96b5abe6ad74ed8ba74b"
 
 http_archive(
     name = "llvm-raw",
@@ -477,6 +491,15 @@ http_archive(
     urls = [
         "https://github.com/nlohmann/json/archive/960b763ecd144f156d05ec61f577b04107290137.tar.gz",
     ],
+)
+
+# rules_java needed for rules_proto and grpc both.
+http_archive(
+    name = "rules_java",
+    urls = [
+        "https://github.com/bazelbuild/rules_java/releases/download/8.6.2/rules_java-8.6.2.tar.gz",
+    ],
+    sha256 = "a64ab04616e76a448c2c2d8165d836f0d2fb0906200d0b7c7376f46dd62e59cc",
 )
 
 http_archive(
@@ -1758,10 +1781,6 @@ go_repository(
     sum = "h1:TysL7dMa/r7wsQi44BjqlwaHvwlFlqkK8CtBWCX3gb4=",
     version = "v56.0.0",
 )
-
-rules_proto_dependencies()
-
-rules_proto_toolchains()
 
 http_archive(
     name = "rules_pkg",
