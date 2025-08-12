@@ -281,6 +281,7 @@ func forEachCmd(cb func(cmd subcommands.Command, group string)) {
 	cb(new(cmd.Uninstall), helperGroup)
 	cb(new(nvproxy.Nvproxy), helperGroup)
 	cb(new(trace.Trace), helperGroup)
+	cb(new(cmd.CPUFeatures), helperGroup)
 
 	const debugGroup = "debug"
 	cb(new(cmd.Debug), debugGroup)
