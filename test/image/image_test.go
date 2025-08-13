@@ -526,6 +526,35 @@ func startDockerdInGvisor(ctx context.Context, t *testing.T, overlay bool) *dock
 	return d
 }
 
+// checkDockerImage list available images and checks if the given image is
+// present.
+func checkDockerImage(ctx context.Context, imageName string, d *dockerutil.Container) error {
+	listImages, err := d.ExecProcess(ctx, dockerutil.ExecOpts{}, "/bin/sh", "-c", "docker images")
+	if err != nil {
+		return fmt.Errorf("docker exec failed: %v", err)
+	}
+	got, err := listImages.Logs()
+	if err != nil {
+		return fmt.Errorf("docker logs failed: %v", err)
+	}
+	if !strings.Contains(got, imageName) {
+		return fmt.Errorf("docker didn't get expected image: %q, got: %q", imageName, got)
+	}
+	return nil
+}
+
+func removeDockerImage(ctx context.Context, imageName string, d *dockerutil.Container) error {
+	cmd := []string{"docker", "image", "rm", imageName}
+	_, err := d.ExecProcess(
+		ctx,
+		dockerutil.ExecOpts{},
+		"/bin/sh", "-c", strings.Join(cmd, " "))
+	if err != nil {
+		return fmt.Errorf("docker exec failed: %v", err)
+	}
+	return nil
+}
+
 func testDockerRun(ctx context.Context, t *testing.T, d *dockerutil.Container, opts dockerCommandOptions) {
 	cmd := []string{"docker", "run", "--rm"}
 	if opts.hostNetwork {
@@ -550,27 +579,24 @@ func testDockerRun(ctx context.Context, t *testing.T, d *dockerutil.Container, o
 }
 
 func testDockerBuild(ctx context.Context, t *testing.T, d *dockerutil.Container, opts dockerCommandOptions) {
-	cmd := []string{"echo", "-e", fmt.Sprintf("FROM %s\nRUN apk add git", testAlpineImage), "|", "docker", "build"}
+	parts := []string{"echo", fmt.Sprintf("\"FROM %s\nRUN apk add git\"", testAlpineImage), "|", "docker", "build"}
 	if opts.hostNetwork {
-		cmd = append(cmd, "--network", "host")
+		parts = append(parts, "--network", "host")
 	}
-	imageName := "test_docker_build_in_gvisor"
-	cmd = append(cmd, "-t", imageName, "-f", "-", ".")
-	_, err := d.ExecProcess(ctx, dockerutil.ExecOpts{}, cmd...)
+	imageName := strings.ToLower(strings.ReplaceAll(testutil.RandomID("test_docker_build"), "/", "-"))
+	parts = append(parts, "-t", imageName, "-f", "-", ".")
+	cmd := strings.Join(parts, " ")
+	dockerBuildProc, err := d.ExecProcess(ctx, dockerutil.ExecOpts{}, "/bin/sh", "-c", cmd)
 	if err != nil {
 		t.Fatalf("docker exec failed: %v", err)
 	}
-	inspectImage, err := d.ExecProcess(ctx, dockerutil.ExecOpts{}, []string{"docker", "image", "inspect", imageName}...)
-	if err != nil {
-		t.Fatalf("docker exec failed: %v", err)
-	}
-	got, err := inspectImage.Logs()
+	_, err = dockerBuildProc.Logs()
 	if err != nil {
 		t.Fatalf("docker logs failed: %v", err)
 	}
-	output := imageName + ":latest"
-	if !strings.Contains(got, output) {
-		t.Fatalf("docker didn't get output expected: %q, got: %q", output, got)
+	defer removeDockerImage(ctx, imageName, d)
+	if err := checkDockerImage(ctx, imageName, d); err != nil {
+		t.Fatalf("failed to find docker image: %v", err)
 	}
 }
 
