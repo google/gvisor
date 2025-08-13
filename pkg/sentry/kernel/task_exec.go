@@ -72,6 +72,8 @@ import (
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/sentry/loader"
 	"gvisor.dev/gvisor/pkg/sentry/mm"
 	"gvisor.dev/gvisor/pkg/sentry/seccheck"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
@@ -80,36 +82,148 @@ import (
 	pb "gvisor.dev/gvisor/pkg/sentry/seccheck/points/points_go_proto"
 )
 
-// execStop is a TaskStop that a task sets on itself when it wants to execve
+// Execve implements the execve(2) syscall by first doing these two potentially stop-requiring tasks:
+//
+//  1. Acquiring a lock that serializes execve with a concurrent PTRACE_ATTACH or seccomp tsync for
+//     correct creds computation.
+//     * The next taskRunState is runExecveAfterExecveCredsLock
+//     * The task will wait in the execveCredsMutexStop stop till it can acquire the lock.
+//  2. Killing all other tasks in its thread group and switching to the new TaskImage.
+//     * The next run state is runExecveAfterSiblingExitStop
+//     * The task will wait in the siblingExitStop stop till it its siblings have exited.
+//
+// Execve takes ownership of `executable`.
+//
+// Preconditions: The caller must be running Task.doSyscallInvoke on the task goroutine.
+func (t *Task) Execve(argv, envv []string, flags int32, pathname string, executable *vfs.FileDescription, closeOnExec bool) *SyscallControl {
+	// Serialize with PTRACE_ATTACH to ensure correct creds computation,
+	// see Task.shouldStopPrivGainDueToPtracer().
+	t.execveCredsMutexStartLock(t.tg)
+
+	// We cannot load the TaskImage before we serialize with PTRACE_ATTACH because loading the image
+	// involves setting up aux vectors that reflect the task's new creds, which can only be correctly
+	// computed after we freeze the identity (or the absence of) a ptracer.
+	//
+	// So we save the execve args for the next run state "runSyscallAfterPtraceExecveMutexLocked" that
+	// will load the new task image.
+	r := runExecveAfterExecveCredsLock{
+		argv:        argv,
+		envv:        envv,
+		pathname:    pathname,
+		flags:       flags,
+		executable:  executable,
+		closeOnExec: closeOnExec,
+	}
+	return &SyscallControl{next: &r, ignoreReturn: true}
+}
+
+// The runExecveAfterExecveCredsLock state continues execve(2) after the lock serializing
+// PTRACE_ATTACH and execve has been acquired.
+//
+// +stateify savable
+type runExecveAfterExecveCredsLock struct {
+	argv, envv  []string
+	pathname    string
+	flags       int32
+	executable  *vfs.FileDescription
+	closeOnExec bool
+}
+
+func (r *runExecveAfterExecveCredsLock) execute(t *Task) taskRunState {
+	defer func() {
+		if r.executable != nil {
+			r.executable.DecRef(t)
+		}
+	}()
+	if t.killed() {
+		// execveCredsMutexUnlock() will not pass us the lock after we were killed, so there is no
+		// race in loading the execveCredsMutexOwner value without a lock.
+		if t.execveCredsMutexOwner != nil {
+			t.execveCredsMutexUnlock()
+		}
+		return (*runInterrupt)(nil)
+	}
+
+	root := t.FSContext().RootDirectory()
+	defer root.DecRef(t)
+	wd := t.FSContext().WorkingDirectory()
+	defer wd.DecRef(t)
+
+	// Cannot gain privileges if the ptracer's capabilities prevent it.
+	stopPrivGain := t.shouldStopPrivGainDueToPtracerLocked()
+	// Cannot gain privileges if the FSContext is shared outside of our thread group.
+	if t.fsContext.checkAndPreventSharingOutsideTG(t.tg) {
+		stopPrivGain = true
+	}
+
+	remainingTraversals := uint(linux.MaxSymlinkTraversals)
+	loadArgs := loader.LoadArgs{
+		Root:                root,
+		WorkingDir:          wd,
+		RemainingTraversals: &remainingTraversals,
+		ResolveFinal:        r.flags&linux.AT_SYMLINK_NOFOLLOW == 0,
+		Filename:            r.pathname,
+		File:                r.executable,
+		CloseOnExec:         r.closeOnExec,
+		Argv:                r.argv,
+		Envv:                r.envv,
+		Features:            t.Kernel().FeatureSet(),
+		NoNewPrivs:          t.GetNoNewPrivs(),
+		StopPrivGain:        stopPrivGain,
+		AllowSUID:           t.Kernel().AllowSUID,
+	}
+
+	if seccheck.Global.Enabled(seccheck.PointExecve) {
+		// Retain the first executable file that is opened (which may open
+		// multiple executable files while resolving interpreter scripts).
+		if r.executable == nil {
+			loadArgs.AfterOpen = func(f *vfs.FileDescription) {
+				if r.executable == nil {
+					f.IncRef()
+					r.executable = f
+					r.pathname = r.executable.MappedName(t)
+				}
+			}
+		}
+	}
+
+	image, newCreds, secureExec, se := t.Kernel().LoadTaskImage(t, loadArgs)
+	if se != nil {
+		t.releaseExecveCredsLocks()
+		return t.doSyscallError(se.ToError())
+	}
+
+	return r.execveWithImage(t, image, newCreds, secureExec)
+}
+
+// siblingExitStop is a TaskStop that a task sets on itself when it wants to execve
 // and is waiting for the other tasks in its thread group to exit first.
 //
 // +stateify savable
-type execStop struct{}
+type siblingExitStop struct{}
 
 // Killable implements TaskStop.Killable.
-func (*execStop) Killable() bool { return true }
+func (*siblingExitStop) Killable() bool { return true }
 
-// Execve implements the execve(2) syscall by killing all other tasks in its
-// thread group and switching to newImage. Execve always takes ownership of
-// newImage.
+// execveWithImage continues the implementation of execve(2) now that the PTRACE_ATTACH lock has been
+// acquired and the new TaskImage has been loaded.
 //
-// If executable is not nil, it is the first executable file that was loaded in
-// the process of obtaining newImage, and pathname is a path to it.
-//
-// Preconditions: The caller must be running Task.doSyscallInvoke on the task
-// goroutine.
-func (t *Task) Execve(newImage *TaskImage, argv, env []string, executable *vfs.FileDescription, pathname string) (*SyscallControl, error) {
+// Enters the execStop state to wait for other tasks in the thread group to exit.
+func (r *runExecveAfterExecveCredsLock) execveWithImage(t *Task, newImage *TaskImage, newCreds *auth.Credentials, secureExec bool) taskRunState {
 	cu := cleanup.Make(func() {
 		newImage.release(t)
+	})
+	cu.Add(func() {
+		t.releaseExecveCredsLocks()
 	})
 	defer cu.Clean()
 	// We can't clearly hold kernel package locks while stat'ing executable.
 	if seccheck.Global.Enabled(seccheck.PointExecve) {
-		mask, info := getExecveSeccheckInfo(t, argv, env, executable, pathname)
+		mask, info := getExecveSeccheckInfo(t, r.argv, r.envv, r.executable, r.pathname)
 		if err := seccheck.Global.SentToSinks(func(c seccheck.Sink) error {
 			return c.Execve(t, mask, info)
 		}); err != nil {
-			return nil, err
+			return t.doSyscallError(err)
 		}
 	}
 
@@ -121,7 +235,7 @@ func (t *Task) Execve(newImage *TaskImage, argv, env []string, executable *vfs.F
 	if t.tg.exiting || t.tg.execing != nil {
 		// We lost to a racing group-exit, kill, or exec from another thread
 		// and should just exit.
-		return nil, linuxerr.EINTR
+		return t.doSyscallError(linuxerr.EINTR)
 	}
 
 	// Cancel any racing group stops.
@@ -139,22 +253,25 @@ func (t *Task) Execve(newImage *TaskImage, argv, env []string, executable *vfs.F
 			}
 		}
 		// The last sibling to exit will wake t.
-		t.beginInternalStopLocked((*execStop)(nil))
+		t.beginInternalStopLocked((*siblingExitStop)(nil))
 	}
 
 	cu.Release()
-	return &SyscallControl{next: &runSyscallAfterExecStop{newImage}, ignoreReturn: true}, nil
+	return &runExecveAfterSiblingExitStop{newImage, newCreds, secureExec}
 }
 
-// The runSyscallAfterExecStop state continues execve(2) after all siblings of
+// The runExecveAfterSiblingExitStop state continues execve(2) after all siblings of
 // a thread in the execve syscall have exited.
 //
 // +stateify savable
-type runSyscallAfterExecStop struct {
-	image *TaskImage
+type runExecveAfterSiblingExitStop struct {
+	image      *TaskImage
+	newCreds   *auth.Credentials
+	secureExec bool
 }
 
-func (r *runSyscallAfterExecStop) execute(t *Task) taskRunState {
+func (r *runExecveAfterSiblingExitStop) execute(t *Task) taskRunState {
+	defer t.releaseExecveCredsLocks()
 	t.traceExecEvent(r.image)
 	t.tg.pidns.owner.mu.Lock()
 	t.tg.execing = nil
@@ -238,17 +355,34 @@ func (r *runSyscallAfterExecStop) execute(t *Task) taskRunState {
 	// Handle the robust futex list.
 	t.exitRobustList()
 
-	// NOTE(b/30815691): We currently do not implement privileged
-	// executables (set-user/group-ID bits and file capabilities). This
-	// allows us to unconditionally enable user dumpability on the new mm.
-	// See fs/exec.c:setup_new_exec.
-	r.image.MemoryManager.SetDumpability(mm.UserDumpable)
+	// Parent should not signal the now privileged task, undocumented Linux behavior.
+	if r.secureExec {
+		t.parentDeathSignal = 0
+	}
+
+	// Update dumpability using just the old creds, see fs/exec.c:begin_new_exec().
+	// FIXME: Account for executables that may not be read when setting dumpability below.
+	oldCreds := t.creds.Load()
+	if oldCreds.EffectiveKUID != oldCreds.RealKUID ||
+		oldCreds.EffectiveKGID != oldCreds.RealKGID {
+		r.image.MemoryManager.SetDumpability(mm.NotDumpable) // suid_dumpable is not implemented
+	} else {
+		r.image.MemoryManager.SetDumpability(mm.UserDumpable)
+	}
+
+	// Lower dumpability based on cred delta, see kernel/cred.c:commit_creds().
+	if r.newCreds.EffectiveKUID != oldCreds.EffectiveKUID ||
+		r.newCreds.EffectiveKGID != oldCreds.EffectiveKGID ||
+		!r.newCreds.PermittedCaps.IsSubsetOf(oldCreds.PermittedCaps) {
+		r.image.MemoryManager.SetDumpability(mm.NotDumpable) // suid_dumpable is not implemented
+		t.parentDeathSignal = 0
+	}
 
 	// Switch to the new process.
 	t.MemoryManager().Deactivate()
 	// Update credentials to reflect the execve. This should precede switching
 	// MMs to ensure that dumpability has been reset first, if needed.
-	t.updateCredsForExec()
+	t.creds.Store(r.newCreds)
 	t.mu.Lock()
 	oldImage := t.image
 	t.image = *r.image
@@ -371,4 +505,115 @@ func getExecveSeccheckInfo(t *Task, argv, env []string, executable *vfs.FileDesc
 		LoadSeccheckData(t, fields.Context, info.ContextData)
 	}
 	return fields, info
+}
+
+// execveCredsMutexStop is a TaskStop that a task enters if it fails to acquire the execveCredsMutex
+// lock immediately. The task exits the stop when the lock owner eventually calls endInternalStop on
+// it in Task.execveCredsMutexUnlock, or if it is killed before that happens.
+//
+// +stateify savable
+type execveCredsMutexStop struct{}
+
+// Killable implements TaskStop.Killable.
+func (*execveCredsMutexStop) Killable() bool { return true }
+
+// execveCredsMutexStartLock attempts to acquire the lock that serializes an execve(2) with a
+// concurrent PTRACE_ATTACH or seccomp tsync. Such an exclusion is required to ensure correct creds
+// computation in execve(2).
+//
+// Will push the calling Task into the execveCredsMutexStop stop if the lock is busy.
+// The owner of the lock will then call endInternalStop on the waiting Task to pass on the lock.
+// Since the caller cannot determine if the lock was acquired or the stop entered, it must
+// have a distinct taskRunState where it would perform the work protected by the lock.
+//
+// Preconditions: Must be called from the task goroutine.
+func (t *Task) execveCredsMutexStartLock(tg *ThreadGroup) {
+	tg.execveCredsMutexMu.Lock()
+	defer tg.execveCredsMutexMu.Unlock()
+	t.tg.signalHandlers.mu.Lock()
+	defer t.tg.signalHandlers.mu.Unlock()
+	if t.execveCredsMutexOwner != nil {
+		panic("Task already holds a execveCredsMutex lock")
+	}
+	if t.killedLocked() {
+		return // No point in taking the lock when we'd give it up first thing come the next runState.
+	}
+	if !tg.execveCredsMutexLocked {
+		tg.execveCredsMutexLocked = true
+		t.execveCredsMutexOwner = tg
+		return
+	}
+	t.beginInternalStopLocked((*execveCredsMutexStop)(nil))
+	tg.execveCredsMutexWaiters[t] = struct{}{}
+}
+
+// execveCredsMutexUnlock releases the mutex that serializes an execve(2) with a PTRACE_ATTACH or
+// seccomp tsync. If there are other tasks waiting on the lock, one will be pulled out of the
+// execveCredsMutexStop stop it is in and handed the lock.
+//
+// Preconditions: Must be called from the task goroutine. The caller must have called
+// execveCredsMutexStartLock() earlier.
+func (t *Task) execveCredsMutexUnlock() {
+	if t.execveCredsMutexOwner == nil {
+		panic("calling Task does not hold hold any execveCredsMutex lock")
+	}
+	tg := t.execveCredsMutexOwner
+
+	tg.execveCredsMutexMu.Lock()
+	defer tg.execveCredsMutexMu.Unlock()
+	if !tg.execveCredsMutexLocked {
+		panic("unlock of unlocked ThreadGroup execveCredsMutex")
+	}
+	tg.execveCredsMutexLocked = false
+	t.execveCredsMutexOwner = nil
+
+	// Find a waiting task whose execveCredsMutexStop hasn't been killed and pass on the lock.
+	for t2 := range tg.execveCredsMutexWaiters {
+		delete(tg.execveCredsMutexWaiters, t2)
+		if t.execveCredsMutexStartLocked(tg, t2) {
+			break
+		}
+	}
+}
+
+// Tries to pass the execveCredsMutex lock in tg to t2. Returns true if the lock was passed.
+//
+// preconditions: tg.execveCredsMutexMu must be locked.
+func (t *Task) execveCredsMutexStartLocked(tg *ThreadGroup, t2 *Task) bool {
+	t2.tg.signalHandlers.mu.Lock()
+	defer t2.tg.signalHandlers.mu.Unlock()
+	// This check achieves the invariant "A Task cannot be passed the lock after being killed",
+	// allowing the post-kill taskRunState::execute() to access Task.execveCredsMutexOwner
+	// without anything racing with it.
+	if _, ok := t2.stop.(*execveCredsMutexStop); ok {
+		tg.execveCredsMutexLocked = true // tg.execveCredsMutexMu being locked is a precondition
+		if t2.execveCredsMutexOwner != nil {
+			panic("Task already holds a execveCredsMutex lock")
+		}
+		// The write to t2.execveCredsMutexOwner is safe because we know t2 is in a stop and we hold
+		// the signalHandlers.mu lock, so it cannot exit the stop from under us.
+		t2.execveCredsMutexOwner = tg
+		t2.endInternalStopLocked()
+		return true
+	}
+	return false
+}
+
+// shouldStopPrivGainDueToPtracerLocked returns true if the task has a tracer and the tracer's
+// capabilities prevent us from elevating the current task's (the tracee's) privileges.
+// Preconditions: The caller must have called execveCredsMutexStartLock() earlier.
+func (t *Task) shouldStopPrivGainDueToPtracerLocked() bool {
+	if !t.hasTracer() {
+		return false
+	}
+	tracerCreds := t.Tracer().Credentials()
+	return !tracerCreds.HasCapabilityIn(linux.CAP_SYS_PTRACE, t.Credentials().UserNamespace)
+}
+
+// Releases the mutex that serializes an execve(2) with a PTRACE_ATTACH and allows t.fsContext to
+// be shared again via clone(2). The caller must have called execveCredsMutexStartLock() and
+// fsContext.CheckAndPreventSharingOutsideTG() earlier.
+func (t *Task) releaseExecveCredsLocks() {
+	t.execveCredsMutexUnlock()
+	t.fsContext.allowSharing()
 }

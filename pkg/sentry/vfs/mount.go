@@ -1393,6 +1393,9 @@ func (vfs *VirtualFilesystem) GenerateProcMounts(ctx context.Context, taskRootDi
 		if mntOpts.Flags.NoExec {
 			opts += ",noexec"
 		}
+		if mntOpts.Flags.NoSUID {
+			opts += ",nosuid"
+		}
 		if mopts := mnt.fs.Impl().MountOptions(); mopts != "" {
 			opts += "," + mopts
 		}
@@ -1517,6 +1520,9 @@ func (vfs *VirtualFilesystem) GenerateProcMountInfo(ctx context.Context, taskRoo
 		}
 		if mnt.flags.NoExec {
 			opts += ",noexec"
+		}
+		if mnt.flags.NoSUID {
+			opts += ",nosuid"
 		}
 		fmt.Fprintf(buf, "%s ", opts)
 

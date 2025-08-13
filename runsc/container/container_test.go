@@ -3400,6 +3400,15 @@ find $dir -type l -o -type f | sort | xargs cat | md5sum`), 0755); err != nil {
 		t.Fatalf("error starting container: %v", err)
 	}
 
+	// When running this test inside a user namespace without host root mapped, like bazel is wont to
+	// do, /bin/umount appears as a setuid binary owned by (host) overflow-uid inside the container,
+	// and thus would rob the execing process of its exalted (sandbox) root EUID. So we make a copy.
+	copiedUmount := filepath.Join(testutil.TmpDir(), "umount")
+	if out, err := executeCombinedOutput(conf, c, nil,
+		"/bin/cp", "/bin/umount", copiedUmount); err != nil {
+		t.Fatalf("Failed to copy /bin/umount; err: %v, out: %s", err, out)
+	}
+
 	targetDir := "/mnt"
 	for _, i := range images {
 		// Mount the EROFS image in the container.
@@ -3417,7 +3426,7 @@ find $dir -type l -o -type f | sort | xargs cat | md5sum`), 0755); err != nil {
 		}
 
 		// Unmount the EROFS image in the container.
-		if out, err := executeCombinedOutput(conf, c, nil, "/bin/umount", targetDir); err != nil {
+		if out, err := executeCombinedOutput(conf, c, nil, copiedUmount, targetDir); err != nil {
 			t.Fatalf("exec: umount %q, err: %v, out: %s", targetDir, err, out)
 		}
 	}

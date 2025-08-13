@@ -109,6 +109,10 @@ type RunOpts struct {
 	// Mounts is the list of directories/files to be mounted inside the container.
 	Mounts []mount.Mount
 
+	// "--tmpfs" has features unsupported by "--mount", especially nosuid,
+	// see https://docs.docker.com/engine/storage/tmpfs/
+	Tmpfs map[string]string
+
 	// Links is the list of containers to be connected to the container.
 	Links []string
 
@@ -349,6 +353,7 @@ func (c *Container) hostConfig(r RunOpts) *container.HostConfig {
 	return &container.HostConfig{
 		Runtime:         c.runtime,
 		Mounts:          c.mounts,
+		Tmpfs:           r.Tmpfs,
 		PublishAllPorts: true,
 		Links:           r.Links,
 		CapAdd:          r.CapAdd,

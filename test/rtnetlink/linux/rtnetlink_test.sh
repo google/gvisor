@@ -24,6 +24,23 @@ fail() {
 # Don't report any test cases.
 echo "$@" | grep list_tests && exit 1
 
+# When running this test inside a user namespace without host root mapped, like bazel is wont to
+# do, /bin/mount appears as a setuid binary owned by (host) overflow-uid inside the container,
+# and thus would rob the execing process of its exalted (sandbox) root EUID. So we make a copy if
+# mount has the setuid bit set.
+hostMount="$(which mount)"
+if [[ -u ${hostMount} ]]; then
+  cp "${hostMount}" /tmp/mount
+fi
+
+mount() {
+  if [[ -x /tmp/mount ]]; then
+    /tmp/mount "$@"
+  else
+    "${hostMount}" "$@"
+  fi
+}
+
 if [[ -z "$TEST_ON_GVISOR" ]]; then
   if [[ ! -d /var/run ]]; then
     echo "SKIP: /var/run doesn't exist but it is required for the ip tool."

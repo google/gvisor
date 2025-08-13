@@ -278,6 +278,14 @@ type ThreadGroup struct {
 	// should look for a child_subreaper process at exit"
 	isChildSubreaper  bool
 	hasChildSubreaper bool
+
+	// These help serialize execve(2) with PTRACE_ATTACH and seccomp thread-sync. Since checkpointing
+	// precludes holding onto a sync.Mutex across taskRunStates, and execve(2) spans multiple
+	// taskRunStates, we implement locking by way of the ptraceExecveMutexStop internal stop.
+	// See Task.execveCredsMutexStartLock().
+	execveCredsMutexMu      sync.Mutex `state:"nosave"`
+	execveCredsMutexLocked  bool
+	execveCredsMutexWaiters map[*Task]struct{}
 }
 
 // NewThreadGroup returns a new, empty thread group in PID namespace pidns. The
@@ -290,11 +298,12 @@ func (k *Kernel) NewThreadGroup(pidns *PIDNamespace, sh *SignalHandlers, termina
 		threadGroupNode: threadGroupNode{
 			pidns: pidns,
 		},
-		signalHandlers:    sh,
-		terminationSignal: terminationSignal,
-		timers:            make(map[linux.TimerID]*IntervalTimer),
-		ioUsage:           &usage.IO{},
-		limits:            limits,
+		signalHandlers:          sh,
+		terminationSignal:       terminationSignal,
+		timers:                  make(map[linux.TimerID]*IntervalTimer),
+		execveCredsMutexWaiters: make(map[*Task]struct{}),
+		ioUsage:                 &usage.IO{},
+		limits:                  limits,
 	}
 	tg.itimerRealTimer = ktime.NewSampledTimer(k.timekeeper.monotonicClock, &tg.itimerRealListener)
 	tg.itimerRealListener.tg = tg

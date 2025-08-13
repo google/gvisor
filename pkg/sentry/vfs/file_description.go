@@ -986,3 +986,50 @@ func CopyRegularFileData(ctx context.Context, dstFD, srcFD *FileDescription) (in
 		}
 	}
 }
+
+// GetFilePrivileges returns the file privileges for the file represented by fd.
+func (fd *FileDescription) GetFilePrivileges(ctx context.Context) (auth.FilePrivileges, error) {
+	stat, err := fd.Stat(ctx, StatOptions{
+		Mask: linux.STATX_UID | linux.STATX_GID | linux.STATX_MODE,
+	})
+	if err != nil {
+		return auth.FilePrivileges{}, err
+	}
+
+	filePrivs := auth.FilePrivileges{SetUserID: auth.NoID, SetGroupID: auth.NoID, HasCaps: false}
+	if fd.Mount().Options().Flags.NoSUID {
+		return filePrivs, nil
+	}
+
+	if stat.Mask&linux.STATX_MODE != 0 {
+		if stat.Mode&linux.ModeSetUID != 0 && stat.Mask&linux.STATX_UID != 0 {
+			filePrivs.SetUserID = auth.KUID(stat.UID)
+		}
+		if stat.Mode&linux.ModeSetGID != 0 && stat.Mask&linux.STATX_GID != 0 {
+			filePrivs.SetGroupID = auth.KGID(stat.GID)
+		}
+	}
+
+	fileCaps, err := fd.GetXattr(ctx, &GetXattrOptions{Name: linux.XATTR_SECURITY_CAPABILITY, Size: linux.XATTR_CAPS_SZ_3})
+	switch {
+	case linuxerr.Equals(linuxerr.ENODATA, err), linuxerr.Equals(linuxerr.EOPNOTSUPP, err):
+		return filePrivs, nil
+	case err != nil:
+		return auth.FilePrivileges{}, err
+	}
+	vfsCaps, err := auth.VfsCapDataOf([]byte(fileCaps))
+	if err != nil {
+		return auth.FilePrivileges{}, err
+	}
+
+	filePrivs.HasCaps = true
+	filePrivs.PermittedCaps = auth.CapabilitySet(vfsCaps.Permitted())
+	filePrivs.InheritableCaps = auth.CapabilitySet(vfsCaps.Inheritable())
+	filePrivs.Effective = (vfsCaps.MagicEtc & linux.VFS_CAP_FLAGS_EFFECTIVE) > 0
+
+	// gVisor does not support ID-mapped mounts and all filesystems are owned by
+	// the initial user namespace. So we can directly cast the root ID to KUID.
+	filePrivs.CapRootID = auth.KUID(vfsCaps.RootID)
+
+	return filePrivs, nil
+}

@@ -23,12 +23,10 @@ import (
 
 // credentialsWithCaps creates a credentials object with the given capabilities.
 func credentialsWithCaps(inheritable, bounding CapabilitySet) *Credentials {
-	creds := NewRootCredentials(NewRootUserNamespace())
-	creds.PermittedCaps = 0
-	creds.InheritableCaps = inheritable
-	creds.EffectiveCaps = 0
-	creds.BoundingCaps = bounding
-	return creds
+	return NewUserCredentials(1001, 1001, nil, &TaskCapabilities{
+		InheritableCaps: inheritable,
+		BoundingCaps:    bounding,
+	}, NewRootUserNamespace())
 }
 
 func vfsNsCapDataFrom(effective bool, rootid uint32, permitted, inheritable CapabilitySet) linux.VfsNsCapData {
@@ -54,70 +52,85 @@ func vfsCapDataFrom(effective bool, permitted, inheritable CapabilitySet) linux.
 	return capData
 }
 
-func TestCapsFromVfsCaps(t *testing.T) {
+func TestComputeCredsForExec(t *testing.T) {
 	for _, tst := range []struct {
 		name          string
-		capData       linux.VfsNsCapData
+		filePrivs     FilePrivileges
 		creds         *Credentials
+		noNewPrivs    bool
+		stopPrivGain  bool
+		allowSUID     bool
 		wantPermitted CapabilitySet
 		wantEffective bool
 		wantErr       error
 	}{
 		{
 			name: "TestSamePermittedAndInheritableCaps",
-			capData: vfsCapDataFrom(
-				true,                                  // effective
-				CapabilitySetOf(linux.CAP_NET_ADMIN),  // permitted
-				CapabilitySetOf(linux.CAP_NET_ADMIN)), // inheritable
+			filePrivs: FilePrivileges{
+				HasCaps:         true,
+				Effective:       true,
+				PermittedCaps:   CapabilitySetOf(linux.CAP_NET_ADMIN),
+				InheritableCaps: CapabilitySetOf(linux.CAP_NET_ADMIN),
+			},
 			creds:         credentialsWithCaps(AllCapabilities, AllCapabilities),
 			wantPermitted: CapabilitySetOf(linux.CAP_NET_ADMIN),
 			wantEffective: true,
 		},
 		{
 			name: "TestDifferentPermittedAndInheritableCaps",
-			capData: vfsCapDataFrom(
-				true, // effective
-				CapabilitySetOfMany([]linux.Capability{linux.CAP_CHOWN, linux.CAP_SETUID}),  // permitted
-				CapabilitySetOfMany([]linux.Capability{linux.CAP_CHOWN, linux.CAP_SETGID})), // inheritable
+			filePrivs: FilePrivileges{
+				HasCaps:         true,
+				Effective:       true,
+				PermittedCaps:   CapabilitySetOfMany([]linux.Capability{linux.CAP_CHOWN, linux.CAP_SETUID}),
+				InheritableCaps: CapabilitySetOfMany([]linux.Capability{linux.CAP_CHOWN, linux.CAP_SETGID}),
+			},
 			creds:         credentialsWithCaps(AllCapabilities, AllCapabilities),
 			wantPermitted: CapabilitySetOfMany([]linux.Capability{linux.CAP_CHOWN, linux.CAP_SETUID, linux.CAP_SETGID}),
 			wantEffective: true,
 		},
 		{
 			name: "TestEffectiveBitOff",
-			capData: vfsCapDataFrom(
-				false, // effective
-				CapabilitySetOfMany([]linux.Capability{linux.CAP_CHOWN, linux.CAP_SETUID}),  // permitted
-				CapabilitySetOfMany([]linux.Capability{linux.CAP_CHOWN, linux.CAP_SETGID})), // inheritable
+			filePrivs: FilePrivileges{
+				HasCaps:         true,
+				Effective:       false,
+				PermittedCaps:   CapabilitySetOfMany([]linux.Capability{linux.CAP_CHOWN, linux.CAP_SETUID}),
+				InheritableCaps: CapabilitySetOfMany([]linux.Capability{linux.CAP_CHOWN, linux.CAP_SETGID}),
+			},
 			creds:         credentialsWithCaps(AllCapabilities, AllCapabilities),
 			wantPermitted: CapabilitySetOfMany([]linux.Capability{linux.CAP_CHOWN, linux.CAP_SETUID, linux.CAP_SETGID}),
 			wantEffective: false,
 		},
 		{
 			name: "TestInsufficientCaps",
-			capData: vfsCapDataFrom(
-				true, // effective
-				CapabilitySetOfMany([]linux.Capability{linux.CAP_CHOWN, linux.CAP_SETUID}), // permitted
-				CapabilitySetOf(linux.CAP_CHOWN)),                                          // inheritable
+			filePrivs: FilePrivileges{
+				HasCaps:         true,
+				Effective:       true,
+				PermittedCaps:   CapabilitySetOfMany([]linux.Capability{linux.CAP_CHOWN, linux.CAP_SETUID}),
+				InheritableCaps: CapabilitySetOf(linux.CAP_CHOWN),
+			},
 			creds:   credentialsWithCaps(AllCapabilities, CapabilitySetOf(linux.CAP_CHOWN)),
 			wantErr: linuxerr.EPERM,
 		},
 	} {
 		t.Run(tst.name, func(t *testing.T) {
-			setEff, _, err := HandleVfsCaps(tst.capData, tst.creds)
+			newC, _, err := ComputeCredsForExec(tst.creds, tst.filePrivs, "", tst.noNewPrivs, tst.stopPrivGain, tst.allowSUID)
 			if err == nil {
 				if tst.wantErr != nil {
-					t.Errorf("CapsFromVfsCaps(%v) returned unexpected error %v", tst.capData, tst.wantErr)
+					t.Errorf("ComputeCredsForExec(%v) returned unexpected error %v", tst.filePrivs, tst.wantErr)
 				}
-				if tst.creds.PermittedCaps != tst.wantPermitted {
-					t.Errorf("CapsFromVfsCaps(%v) set PermittedCaps to: %#x, want capabilities: %#x",
-						tst.capData, tst.creds.PermittedCaps, tst.wantPermitted)
+				if newC.PermittedCaps != tst.wantPermitted {
+					t.Errorf("ComputeCredsForExec(%v) set PermittedCaps to: %#x, want capabilities: %#x",
+						tst.filePrivs, newC.PermittedCaps, tst.wantPermitted)
 				}
-				if setEff != tst.wantEffective {
-					t.Errorf("CapsFromVfsCaps(%v) returned effective=%t, want: %t", tst.capData, setEff, tst.wantEffective)
+				if tst.wantEffective && newC.EffectiveCaps != newC.PermittedCaps {
+					t.Errorf("ComputeCredsForExec(%v) did not set effective caps", tst.filePrivs)
+				}
+				if !tst.wantEffective && newC.EffectiveCaps != CapabilitySet(0) {
+					t.Errorf("ComputeCredsForExec(%v) did not clear effective caps: %#x",
+						tst.filePrivs, newC.EffectiveCaps)
 				}
 			} else if tst.wantErr == nil || tst.wantErr.Error() != err.Error() {
-				t.Errorf("CapsFromVfsCaps(%v) returned error %v, wantErr: %v", tst.capData, err, tst.wantErr)
+				t.Errorf("ComputeCredsForExec(%v) returned error %v, wantErr: %v", tst.filePrivs, err, tst.wantErr)
 			}
 		})
 	}

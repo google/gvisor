@@ -424,7 +424,6 @@ func getRootCredentials(spec *specs.Spec, conf *config.Config, userNs *auth.User
 		extraKGIDs,
 		caps,
 		userNs)
-
 	return creds
 }
 
@@ -533,6 +532,7 @@ func New(args Args) (*Loader, error) {
 	l.k = &kernel.Kernel{
 		Platform:            p,
 		NvidiaDriverVersion: args.NvidiaDriverVersion,
+		AllowSUID:           args.Conf.AllowSUID,
 	}
 
 	// Create memory file.
@@ -761,6 +761,7 @@ func createProcessArgs(id string, spec *specs.Spec, conf *config.Config, creds *
 		Envv:                 env,
 		WorkingDirectory:     wd,
 		Credentials:          creds,
+		NoNewPrivs:           spec.Process.NoNewPrivileges,
 		Umask:                umask,
 		Limits:               ls,
 		MaxSymlinkTraversals: linux.MaxSymlinkTraversals,

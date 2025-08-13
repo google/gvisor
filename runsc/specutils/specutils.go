@@ -145,12 +145,6 @@ func ValidateSpec(spec *specs.Spec) error {
 		log.Warningf("AppArmor profile %q is being ignored", spec.Process.ApparmorProfile)
 	}
 
-	// PR_SET_NO_NEW_PRIVS is assumed to always be set.
-	// See kernel.Task.updateCredsForExecLocked.
-	if !spec.Process.NoNewPrivileges {
-		log.Warningf("noNewPrivileges ignored. PR_SET_NO_NEW_PRIVS is assumed to always be set.")
-	}
-
 	if spec.Linux != nil && spec.Linux.RootfsPropagation != "" {
 		if err := validateRootfsPropagation(spec.Linux.RootfsPropagation); err != nil {
 			return err

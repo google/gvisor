@@ -14,10 +14,18 @@ digraph {
     SyscallAfterSysemuStop;
     SyscallInvoke;
     SyscallAfterPtraceEventClone;
-    SyscallAfterExecStop;
     SyscallAfterVforkStop;
     SyscallReinvoke;
     SyscallExit;
+    subgraph cluster_execve_and_its_creds_mutex {
+      style = dotted;
+      // execve itself
+      ExecveAfterExecveCredsLock; // creds mutex acquired
+      ExecveAfterSiblingExitStop; // siblings have all exited
+      // others
+      PtraceAfterExecveCredsLock;
+      SeccompAfterExecveCredsLock;
+    }
   }
   subgraph {
     Vsyscall;
@@ -55,9 +63,21 @@ digraph {
   SyscallInvoke -> Exit;
 
   // execve
-  SyscallInvoke -> SyscallAfterExecStop;
-  SyscallAfterExecStop -> SyscallExit;
-  SyscallAfterExecStop -> App; // fatal signal pending
+  SyscallInvoke -> ExecveAfterExecveCredsLock;
+  ExecveAfterExecveCredsLock -> ExecveAfterSiblingExitStop;
+  ExecveAfterExecveCredsLock -> SyscallExit;
+  ExecveAfterSiblingExitStop -> SyscallExit;
+  ExecveAfterSiblingExitStop -> App; // fatal signal pending
+
+  // Other syscalls that serialize with execve for correct creds computation.
+  // 1) ptrace (only for PTRACE_ATTACH and PTRACE_SEIZE)
+  SyscallInvoke -> PtraceAfterExecveCredsLock;
+  PtraceAfterExecveCredsLock -> SyscallExit;
+  PtraceAfterExecveCredsLock -> App;
+  // 2) seccomp (only SECCOMP_FILTER_FLAG_TSYNC)
+  SyscallInvoke -> SeccompAfterExecveCredsLock;
+  SeccompAfterExecveCredsLock -> SyscallExit;
+  SeccompAfterExecveCredsLock -> App;
 
   // vfork
   SyscallInvoke -> SyscallAfterVforkStop;

@@ -249,6 +249,42 @@ func TestNon0RootIdFileCap(t *testing.T) {
 	}
 }
 
+func TestFileCapWithNoNewPrivs(t *testing.T) {
+	ctx := context.Background()
+	d := dockerutil.MakeContainer(ctx, t)
+	defer d.CleanUp(ctx)
+
+	if err := d.Spawn(ctx, dockerutil.RunOpts{
+		Image:  "basic/sudo",
+		CapAdd: []string{"NET_ADMIN"}, // we need this in the bounding set
+	}, "sleep", "infinity"); err != nil {
+		t.Fatalf("docker run failed: %v", err)
+	}
+
+	if output, err := d.Exec(ctx, dockerutil.ExecOpts{User: "alice"},
+		"cp", "/bin/cat", "/tmp/catWithNetadmin"); err != nil {
+		t.Fatalf("failed to copy /bin/cat to /tmp/catWithNetadmin; err: %v output: %v", err, output)
+	}
+	if output, err := d.Exec(ctx, dockerutil.ExecOpts{User: "alice"},
+		"sudo", "setcap", "cap_net_admin+ep", "/tmp/catWithNetadmin"); err != nil {
+		t.Fatalf("failed to set file cap on /tmp/catWithNetadmin; err: %v, output: %v", err, output)
+	}
+
+	// Fails to gain file caps with NO_NEW_PRIVS.
+	noStatusCaps := fmt.Sprintf("CapInh:\t%s\nCapPrm:\t%s\nCapEff:\t%s\n", noCap, noCap, noCap)
+	output, err := d.Exec(ctx, dockerutil.ExecOpts{User: "alice"},
+		"setpriv", "--no-new-privs", "/tmp/catWithNetadmin", "/proc/self/status")
+	if err != nil || !strings.Contains(output, noStatusCaps) {
+		t.Errorf("failed to get expected status caps; err: %v, output: %v", err, output)
+	}
+	// But succeeds otherwise
+	netAdminOnlyStatusCaps := fmt.Sprintf("CapInh:\t%s\nCapPrm:\t%s\nCapEff:\t%s\n", noCap, netAdminOnlyCap, netAdminOnlyCap)
+	output, err = d.Exec(ctx, dockerutil.ExecOpts{User: "alice"}, "/tmp/catWithNetadmin", "/proc/self/status")
+	if err != nil || !strings.Contains(output, netAdminOnlyStatusCaps) {
+		t.Errorf("failed to get expected status caps; err: %v, output: %v", err, output)
+	}
+}
+
 func TestNoEpermFileCap(t *testing.T) {
 	ctx := context.Background()
 	d := dockerutil.MakeContainer(ctx, t)
@@ -355,6 +391,81 @@ func TestExecPrivileged(t *testing.T) {
 	oldWantStr := fmt.Sprintf("CapEff:\t%016x\n", oldWantCaps)
 	if got != oldWantStr {
 		t.Errorf("Wrong capabilities, got: %q, want: %q or %q. Make sure runsc is not using '--net-raw'", got, wantStr, oldWantStr)
+	}
+}
+
+func TestSetUserId(t *testing.T) {
+	ctx := context.Background()
+	d := dockerutil.MakeContainer(ctx, t)
+	defer d.CleanUp(ctx)
+	if err := d.Spawn(ctx, dockerutil.RunOpts{
+		Image: "basic/sudo",
+	}, "sleep", "infinity"); err != nil {
+		t.Fatalf("docker run failed: %v", err)
+	}
+
+	if _, err := d.Exec(ctx, dockerutil.ExecOpts{User: "alice"},
+		"cp", "/bin/whoami", "/tmp/alices_whomai"); err != nil {
+		t.Fatalf("docker exec failed: %v", err)
+	}
+	if _, err := d.Exec(ctx, dockerutil.ExecOpts{User: "alice"},
+		"cp", "/bin/whoami", "/tmp/alices_whoami_suid"); err != nil {
+		t.Fatalf("docker exec failed: %v", err)
+	}
+	if _, err := d.Exec(ctx, dockerutil.ExecOpts{User: "alice"},
+		"chmod", "u+s", "/tmp/alices_whoami_suid"); err != nil {
+		t.Fatalf("docker exec failed: %v", err)
+	}
+
+	// bob should become alice with suid bit set.
+	who, err := d.Exec(ctx, dockerutil.ExecOpts{User: "bob"}, "/tmp/alices_whoami_suid")
+	if err != nil || strings.TrimSpace(who) != "alice" {
+		t.Errorf("suid bit did not change the effective uid; err: %v, who: %v", err, who)
+	}
+	// bob should stay bob with suid bit unset.
+	who, err = d.Exec(ctx, dockerutil.ExecOpts{User: "bob"}, "/tmp/alices_whomai")
+	if err != nil || strings.TrimSpace(who) != "bob" {
+		t.Errorf("non-suid exec changed the effective uid; err: %v, who: %v", err, who)
+	}
+	// When NO_NEW_PRIVS is set, bob should stay bob even if the suid bit is set.
+	who, err = d.Exec(ctx, dockerutil.ExecOpts{User: "bob"},
+		"setpriv", "--no-new-privs", "/tmp/alices_whoami_suid")
+	if err != nil || strings.TrimSpace(who) != "bob" {
+		t.Errorf("suid bit caused euid change when NO_NEW_PRIVS is set; err: %v, who: %v", err, who)
+	}
+	// In a user namespace owned by bob, bob should not become alice even if the suid bit is set
+	// (for alice isn't mapped in the new userns).
+	who, err = d.Exec(ctx, dockerutil.ExecOpts{User: "bob"},
+		"unshare", "--user", "--map-current-user", "/tmp/alices_whoami_suid")
+	if err != nil || strings.TrimSpace(who) != "bob" {
+		t.Errorf("suid bit caused euid change even though the userns has no mapping; err: %v, who: %v", err, who)
+	}
+}
+
+func TestSetUserIdInFsWithNosuid(t *testing.T) {
+	ctx := context.Background()
+	d := dockerutil.MakeContainer(ctx, t)
+	defer d.CleanUp(ctx)
+	if err := d.Spawn(ctx, dockerutil.RunOpts{
+		Tmpfs: map[string]string{"/nosuidtmp": "nosuid,exec"},
+		Image: "basic/sudo",
+	}, "sleep", "infinity"); err != nil {
+		t.Fatalf("docker run failed: %v", err)
+	}
+
+	if _, err := d.Exec(ctx, dockerutil.ExecOpts{User: "alice"},
+		"cp", "/bin/whoami", "/nosuidtmp/alices_whoami_suid"); err != nil {
+		t.Fatalf("docker exec failed: %v", err)
+	}
+	if _, err := d.Exec(ctx, dockerutil.ExecOpts{User: "alice"},
+		"chmod", "u+s", "/nosuidtmp/alices_whoami_suid"); err != nil {
+		t.Fatalf("docker exec failed: %v", err)
+	}
+
+	// bob should stay bob even if suid bit is set, for the executable lives on a nosuid tmpfs mount.
+	who, err := d.Exec(ctx, dockerutil.ExecOpts{User: "bob"}, "/nosuidtmp/alices_whoami_suid")
+	if err != nil || strings.TrimSpace(who) != "bob" {
+		t.Errorf("exec of a suid file in a nosuid fs changed the euid; err: %v, who: %v", err, who)
 	}
 }
 

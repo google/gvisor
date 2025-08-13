@@ -1352,3 +1352,72 @@ func TestRestoreMultipleListenConnWithNetstackSR(t *testing.T) {
 	d := dockerutil.MakeContainerWithRuntime(ctx, t, "-save-restore-netstack")
 	testCheckpointRestoreListeningConnection(ctx, t, d, "./tcp_stress_server" /* fName */, 100 /* numConn */)
 }
+
+// Test to check if sudo works
+func TestSudo(t *testing.T) {
+	ctx := context.Background()
+	d := dockerutil.MakeContainer(ctx, t)
+	defer d.CleanUp(ctx)
+	if err := d.Create(ctx, dockerutil.RunOpts{
+		Image: "basic/sudo",
+	}, "sleep", "infinity"); err != nil {
+		t.Fatalf("docker create failed: %v", err)
+	}
+	if err := d.Start(ctx); err != nil {
+		t.Fatalf("docker start failed: %v", err)
+	}
+
+	// sudo works through kernel.go/CreateProcess
+	if who, err := d.Exec(ctx, dockerutil.ExecOpts{User: "alice"},
+		"sudo", "whoami"); err != nil || strings.TrimSpace(who) != "root" {
+		t.Errorf("sudo without execve failed; err: %v, who: %s", err, who)
+	}
+	// sudo works through execve(2)
+	if who, err := d.Exec(ctx, dockerutil.ExecOpts{User: "alice"},
+		"/bin/sh", "-c", "sudo whoami"); err != nil || strings.TrimSpace(who) != "root" {
+		t.Errorf("sudo through shell failed; err: %v, who: %s", err, who)
+	}
+	// Fails when prctl(PR_SET_NO_NEW_PRIVS) is set
+	if output, err := d.Exec(ctx, dockerutil.ExecOpts{User: "alice"},
+		"setpriv", "--no-new-privs", "sudo", "pwd"); err == nil {
+		t.Errorf("setpriv --no-new-privs sudo worked")
+	} else if !strings.Contains(output, "no new privileges") {
+		t.Errorf("setpriv --no-new-privs sudo failed with unexpected error: %v", output)
+	}
+	// Fails when there is an unprivileged ptracer
+	if output, err := d.Exec(ctx, dockerutil.ExecOpts{User: "alice"},
+		"/bin/sh", "-c", "strace -o /dev/null sudo whoami"); err == nil ||
+		!strings.Contains(output, "sudo: effective uid is not 0") {
+		t.Errorf("sudo worked despite inadequate ptracer, err: %v, output: %s", err, output)
+	}
+
+	// A new process created in the sandbox via "docker run" (containerManager.StartRoot)
+	// should honor the no-new-privileges security option.
+	privlessD := dockerutil.MakeContainer(ctx, t)
+	defer privlessD.CleanUp(ctx)
+	if who, err := privlessD.Run(ctx, dockerutil.RunOpts{
+		User:         "alice",
+		Image:        "basic/sudo",
+		SecurityOpts: []string{"no-new-privileges"},
+	}, "sudo", "whoami"); err == nil || strings.TrimSpace(who) == "root" {
+		t.Errorf("\"docker run\" sudo successful despite a no-new-privileges container; err: %v, who: %s", err, who)
+	}
+
+	// A new process created in the sandbox via "docker exec" (containerManager.ExecuteAsync)
+	// should honor the no-new-privileges security option the container was created with.
+	privlessExecD := dockerutil.MakeContainer(ctx, t)
+	defer privlessExecD.CleanUp(ctx)
+	if err := privlessExecD.Create(ctx, dockerutil.RunOpts{
+		Image:        "basic/sudo",
+		SecurityOpts: []string{"no-new-privileges"},
+	}, "sleep", "infinity"); err != nil {
+		t.Fatalf("docker create failed: %v", err)
+	}
+	if err := privlessExecD.Start(ctx); err != nil {
+		t.Fatalf("docker start failed: %v", err)
+	}
+	if who, err := privlessExecD.Exec(ctx, dockerutil.ExecOpts{User: "alice"},
+		"sudo", "whoami"); err == nil || strings.TrimSpace(who) == "root" {
+		t.Errorf("\"docker exec\" sudo successful despite a no-new-privileges container; err: %v, who: %s", err, who)
+	}
+}

@@ -25,6 +25,7 @@
 #include <unistd.h>
 
 #include <iostream>
+#include <memory>
 #include <utility>
 
 #include "gmock/gmock.h"
@@ -39,6 +40,8 @@
 #include "test/util/memory_util.h"
 #include "test/util/multiprocess_util.h"
 #include "test/util/platform_util.h"
+#include "test/util/posix_error.h"
+#include "test/util/save_util.h"
 #include "test/util/signal_util.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
@@ -2361,6 +2364,59 @@ TEST(PtraceTest, SetYAMAPtraceScope) {
   ASSERT_THAT(lseek(fd.get(), 0, SEEK_SET), SyscallSucceeds());
   EXPECT_THAT(read(fd.get(), buf.data(), buf.size()), SyscallSucceeds());
   EXPECT_STREQ(buf.data(), "1\n");
+}
+
+// Launch a bunch of ptracers vying for the execveCredsMutex to stress the lock
+// implementation.
+TEST(PtraceTest, ExecvePtraceLockStress) {
+  SKIP_IF(ASSERT_NO_ERRNO_AND_VALUE(YamaPtraceScope()) < 1);
+  const DisableSave ds;  // Too many threads
+  constexpr int kThreadCount = 20;
+  constexpr int kAttachAttempts = 100;
+  std::unique_ptr<ScopedThread> threads[kThreadCount];
+
+  int sockets[2];
+  ASSERT_THAT(socketpair(AF_UNIX, SOCK_STREAM, 0, sockets), SyscallSucceeds());
+
+  const ExecveArray traceeArgv = {"/bin/true"};
+  const pid_t tracee_pid = fork();
+  if (tracee_pid == 0) {
+    TEST_PCHECK(close(sockets[1]) == 0);
+    TEST_PCHECK(prctl(PR_SET_PTRACER, PR_SET_PTRACER_ANY) == 0);
+    TEST_PCHECK(WriteFd(sockets[0], "x", 1) == 1);  // tracers can trace
+
+    char done;
+    // block on parent's go ahead
+    TEST_PCHECK(ReadFd(sockets[0], &done, 1) == 1);
+
+    execve(traceeArgv.get()[0], traceeArgv.get(), nullptr);
+    TEST_PCHECK_MSG(false, "survived execve");
+  }
+  ASSERT_THAT(tracee_pid, SyscallSucceeds());
+  ASSERT_THAT(close(sockets[0]), SyscallSucceeds());
+
+  char done;
+  ASSERT_EQ(ReadFd(sockets[1], &done, 1), 1);  // wait till tracee is ready
+
+  for (int i = 0; i < kThreadCount; i++) {
+    threads[i] = std::make_unique<ScopedThread>([&]() {
+      for (int j = 0; j < kAttachAttempts; j++) {
+        if (ptrace(PTRACE_ATTACH, tracee_pid, 0, 0) == 0) {
+          waitpid(tracee_pid, nullptr, 0);
+          ASSERT_THAT(ptrace(PTRACE_DETACH, tracee_pid, 0, 0),
+                      SyscallSucceeds());
+        }
+      }
+    });
+  }
+  for (int i = 0; i < kThreadCount; i++) {
+    threads[i]->Join();
+  }
+
+  TEST_PCHECK(write(sockets[1], "x", 1) == 1);  // Ask the tracee to exec.
+  // The tracee was able to get the exceveCredsMutex lock, proving that the
+  // last ptracer released it correctly.
+  EXPECT_THAT(waitpid(tracee_pid, nullptr, 0), SyscallSucceeds());
 }
 
 }  // namespace

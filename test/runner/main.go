@@ -328,6 +328,7 @@ func runRunsc(tc *gtest.TestCase, spec *specs.Spec) error {
 		"-file-access", *fileAccess,
 		"-gvisor-gro",
 		"-host-settings=check_mandatory",
+		"-allow-suid",
 	}
 
 	if *network == "host" && !testutil.TestEnvSupportsNetAdmin {
@@ -678,7 +679,6 @@ func isWarning(line string) bool {
 	// Capability "perfmon" is not permitted, dropping it.
 	case strings.Contains(line, "is not permitted, dropping it."):
 	case strings.Contains(line, "sndPrepopulatedMsg failed"):
-	case strings.Contains(line, "PR_SET_NO_NEW_PRIVS is assumed to always be set."):
 	case strings.Contains(line, "TSC snapshot unavailable"):
 	case strings.Contains(line, "copy up failed to copy up contents"):
 	case strings.Contains(line, "populate failed for"):

@@ -627,7 +627,7 @@ func (*runExitNotify) execute(t *Task) taskRunState {
 		// the sole living task must be the execing one.
 		e := t.tg.execing
 		e.tg.signalHandlers.mu.Lock()
-		if _, ok := e.stop.(*execStop); ok {
+		if _, ok := e.stop.(*siblingExitStop); ok {
 			e.endInternalStopLocked()
 		}
 		e.tg.signalHandlers.mu.Unlock()

@@ -296,9 +296,14 @@ func (t *Task) AppendSyscallFilter(p bpf.Program, syncAll bool) error {
 	t.seccomp.Store(newSeccomp)
 
 	if syncAll {
-		// Note: No new privs is always assumed to be set.
+		currentNoNewPrivs := t.GetNoNewPrivs()
 		for ot := t.tg.tasks.Front(); ot != nil; ot = ot.Next() {
 			if ot != t {
+				// Disallow threads from getting around the NoNewPrivs restriction through a NoNewPrivs
+				// sibling that does a tsync.
+				if currentNoNewPrivs {
+					ot.SetNoNewPrivs()
+				}
 				seccompCopy := newSeccomp.copy()
 				seccompCopy.populateCache(ot)
 				ot.seccomp.Store(seccompCopy)
@@ -307,6 +312,45 @@ func (t *Task) AppendSyscallFilter(p bpf.Program, syncAll bool) error {
 	}
 
 	return nil
+}
+
+// AppendSyscallFilterAndTsync adds the program p and syncs it to all other tasks in the thread
+// group. Unlike AppendSyscallFilter, it serializes with a concurrent execve.
+//
+// Preconditions: Must be called from a system call handler on the task goroutine.
+func (t *Task) AppendSyscallFilterAndTsync(p bpf.Program) *SyscallControl {
+	// Serialize with execve(2) to ensure that a sibling doesn't change its creds or NoNewPrivs
+	// while we're syncing the seccomp filter, see kernel/seccomp.c:seccomp_sync_threads().
+	t.execveCredsMutexStartLock(t.tg)
+	r := runSeccompAfterExecveCredsLock{
+		program: p,
+	}
+	return &SyscallControl{next: &r, ignoreReturn: false}
+}
+
+// The runSeccompAfterExecveCredsLock state continues seccomp tsync after the lock that serializes
+// it with execve has been acquired.
+//
+// +stateify savable
+type runSeccompAfterExecveCredsLock struct {
+	program bpf.Program
+}
+
+func (r *runSeccompAfterExecveCredsLock) execute(t *Task) taskRunState {
+	if t.killed() {
+		// execveCredsMutexUnlock() will not pass us the lock after we were killed, so there is no
+		// race in loading execveCredsMutexOwner without a lock.
+		if t.execveCredsMutexOwner != nil {
+			t.execveCredsMutexUnlock()
+		}
+		return (*runInterrupt)(nil)
+	}
+
+	defer t.execveCredsMutexUnlock()
+	if err := t.AppendSyscallFilter(r.program, true); err != nil {
+		return t.doSyscallError(err)
+	}
+	return (*runSyscallExit)(nil)
 }
 
 // SeccompMode returns a SECCOMP_MODE_* constant indicating the task's current

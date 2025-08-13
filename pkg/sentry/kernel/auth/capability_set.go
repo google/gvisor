@@ -53,6 +53,11 @@ func (cs *CapabilitySet) Clear(cp linux.Capability) {
 	*cs &= ^CapabilitySetOf(cp)
 }
 
+// IsSubsetOf returns true if the given capability set is a subset of "super".
+func (cs *CapabilitySet) IsSubsetOf(super CapabilitySet) bool {
+	return *cs&super == *cs
+}
+
 // VfsCapDataOf returns a VfsCapData containing the file capabilities for the given slice of bytes.
 // For each field of the cap data, which are in the structure of either vfs_cap_data or vfs_ns_cap_data,
 // the bytes are ordered in little endian.
@@ -76,30 +81,6 @@ func VfsCapDataOf(data []byte) (linux.VfsNsCapData, error) {
 		return linux.VfsNsCapData{}, linuxerr.EINVAL
 	}
 	return capData, nil
-}
-
-// HandleVfsCaps updates creds based on the given vfsCaps. It returns two
-// booleans; the first indicates whether the effective flag is set, and the second
-// second indicates whether the file capability is applied.
-func HandleVfsCaps(vfsCaps linux.VfsNsCapData, creds *Credentials) (bool, bool, error) {
-	// gVisor does not support ID-mapped mounts and all filesystems are owned by
-	// the initial user namespace. So we an directly cast the root ID to KUID.
-	rootID := KUID(vfsCaps.RootID)
-	if !rootIDOwnsCurrentUserns(creds, rootID) {
-		// Linux skips vfs caps in this situation.
-		return false, false, nil
-	}
-	// Note that ambient capabilities are not yet supported in gVisor.
-	// P'(permitted) = (P(inheritable) & F(inheritable)) | (F(permitted) & P(bounding)) | P'(ambient)
-	creds.PermittedCaps = (CapabilitySet(vfsCaps.Permitted()) & creds.BoundingCaps) |
-		(CapabilitySet(vfsCaps.Inheritable()) & creds.InheritableCaps)
-	effective := (vfsCaps.MagicEtc & linux.VFS_CAP_FLAGS_EFFECTIVE) > 0
-	// Insufficient to execute correctly. Linux only returns EPERM when effective
-	// flag is set.
-	if effective && (CapabilitySet(vfsCaps.Permitted()) & ^creds.PermittedCaps) != 0 {
-		return effective, true, linuxerr.EPERM
-	}
-	return effective, true, nil
 }
 
 // FixupVfsCapDataOnSet may convert the given value to v3 file capabilities. It
@@ -173,49 +154,157 @@ func rootIDOwnsCurrentUserns(creds *Credentials, rootID KUID) bool {
 	return false
 }
 
-// HandlePrivilegedRoot updates creds for a privileged root user as per
-// `Capabilities and execution of programs by root` in capabilities(7).
-// It returns true if the file effective bit should be considered set.
-func HandlePrivilegedRoot(creds *Credentials, hasVFSCaps bool, filename string) bool {
-	// gVisor currently does not support SECURE_NOROOT secure bit since
-	// PR_SET_SECUREBITS is not supported. So no need to check here.
-	root := creds.UserNamespace.MapToKUID(RootUID)
-	if hasVFSCaps && creds.RealKUID != root && creds.EffectiveKUID == root {
-		log.Warningf("File %q has both SUID bit and file capabilities set, not raising all capabilities.", filename)
-		return false
-	}
-	if creds.RealKUID == root || creds.EffectiveKUID == root {
-		// P'(permitted) = P(inheritable) | P(bounding)
-		creds.PermittedCaps = creds.BoundingCaps | creds.InheritableCaps
-	}
-	// Linux only sets the effective bit if the effective KUID is root.
-	return creds.EffectiveKUID == root
+// FilePrivileges contains the file privileges for a file.
+type FilePrivileges struct {
+	// SetUserID, when not NoID, indicates that the file has the setuid bit set. It is the KUID of the
+	// owner of the file.
+	SetUserID KUID
+
+	// SetGroupID, when not NoID, indicates that the file has the setgid bit set. It is the KGID of
+	// the owning group of the file.
+	SetGroupID KGID
+
+	// HasCaps indicates whether the file has capabilities attached.
+	HasCaps bool
+
+	// CapRootID is the KUID of the namespace root of the Task that created the file caps.
+	CapRootID KUID
+
+	// "These capabilities are automatically permitted to the thread, regardless of the thread's
+	// inheritable capabilities." - capabilities(7).
+	PermittedCaps CapabilitySet
+
+	// "This set is ANDed with the thread's inheritable set to determine which inheritable capabilities
+	// are enabled in the permitted set of the thread after the execve(2)." - capabilities(7).
+	InheritableCaps CapabilitySet
+
+	// "Determines if all of the new permitted capabilities for the thread are also raised in the
+	// effective set." - capabilities(7).
+	Effective bool
 }
 
-// UpdateCredsForNewTask updates creds for a new task as per capabilities(7).
-func UpdateCredsForNewTask(creds *Credentials, fileCaps string, filename string) error {
-	// Clear the permitted capability set. It is initialized below via
-	// HandleVfsCaps() and HandlePrivilegedRoot().
-	creds.PermittedCaps = 0
-	hasVFSCaps := false
-	setEffective := false
-	if len(fileCaps) != 0 {
-		vfsCaps, err := VfsCapDataOf([]byte(fileCaps))
-		if err != nil {
-			return err
-		}
-		setEffective, hasVFSCaps, err = HandleVfsCaps(vfsCaps, creds)
-		if err != nil {
-			return err
+// handlePrivilegedRoot updates creds for a privileged root user as per
+// "Capabilities and execution of programs by root" in capabilities(7).
+func handlePrivilegedRoot(c *Credentials, f *FilePrivileges, filename string) {
+	// gVisor currently does not support SECURE_NOROOT secure bit since
+	// PR_SET_SECUREBITS is not supported. So no need to check here.
+	root := c.UserNamespace.MapToKUID(RootUID)
+
+	// "If (a) the binary that is being executed has capabilities attached and (b) the real user ID of
+	// the process is not 0 (root) and (c) the effective user ID of the process is 0 (root), then the
+	// file capability bits are honored.  (i.e., they are not notionally considered to be all ones)."
+	// - capabilities(7)
+	if f.HasCaps && c.RealKUID != root && c.EffectiveKUID == root {
+		log.Warningf("File %q has both SUID bit and file capabilities set, not raising all capabilities.", filename)
+		return
+	}
+
+	// "If the real or effective user ID of the process is 0 (root), then the file inheritable and
+	// permitted sets are ignored; instead they are notionally considered to be all ones (i.e., all
+	// capabilities enabled)." - capabilities(7)
+	if c.RealKUID == root || c.EffectiveKUID == root {
+		// P'(permitted) = P(inheritable) | P(bounding)
+		c.PermittedCaps = c.BoundingCaps | c.InheritableCaps
+	}
+
+	// "If the effective user ID of the process is 0 (root) or the file effective bit is in fact
+	// enabled, then the file effective bit is notionally defined to be one (enabled)." - capabilities(7)
+	f.Effective = c.EffectiveKUID == root || f.Effective
+}
+
+// ComputeCredsForExec computes the new credentials given the file privileges.
+// It returns the new creds and a bool indicating if the task is executing with
+// elevated privileges. A few words about the arguments:
+//   - c: The current credentials of the task.
+//   - f: The file privileges of the executable.
+//   - filename: The name of the executable, used for logging.
+//   - noNewPrivs: The current state of the prctl NO_NEW_PRIVS.
+//   - stopPrivGain: Determines if privilege gain should be stopped for reasons beyond NO_NEW_PRIVS.
+//     Both noNewPrivs and stopPrivGain prevent cap gain, but stopPrivGain does not by itself
+//     prevent ID gain.
+//   - allowSUID: If true, the task will be allowed to setuid.
+//     Both noNewPrivs and allowSUID prevent ID gain, but allowSUID does not by itself prevent cap
+//     gain. Note also that while noNewPrivs brings down the effective IDs down to the real IDs,
+//     allowSUID at most prevents further ID gain due the SUID/GID bits.
+//
+// Note that gVisor does not support Ambient capabilities.
+func ComputeCredsForExec(c *Credentials, f FilePrivileges, filename string,
+	noNewPrivs bool, stopPrivGain bool, allowSUID bool) (*Credentials, bool, error) {
+	if noNewPrivs || !allowSUID {
+		f.SetUserID = NoID
+		f.SetGroupID = NoID
+	}
+	// "...if either the user or the group ID of the file has no mapping inside the namespace, the
+	// set-user-ID (set-group-ID) bit is silently ignored: the new program is executed, but the
+	// process's effective user (group) ID is left unchanged." - user_namespaces(7).
+	if !f.SetUserID.In(c.UserNamespace).Ok() {
+		f.SetUserID = NoID
+	}
+	if !f.SetGroupID.In(c.UserNamespace).Ok() {
+		f.SetGroupID = NoID
+	}
+	// "...capabilities are conferred only if the binary is executed by a process that resides in a
+	// user namespace whose UID 0 maps to the root user ID that is saved in the extended attribute,
+	// or when executed by a process that resides in a descendant of such a namespace."
+	// - capabilities(7).
+	if !rootIDOwnsCurrentUserns(c, f.CapRootID) {
+		f.HasCaps = false
+		f.Effective = false
+	}
+
+	newC := c.Fork()
+	if f.SetUserID.Ok() {
+		newC.EffectiveKUID = f.SetUserID
+	}
+	if f.SetGroupID.Ok() {
+		newC.EffectiveKGID = f.SetGroupID
+	}
+
+	newC.PermittedCaps = CapabilitySet(0)
+	if f.HasCaps {
+		// P'(permitted) = (P(inheritable) & F(inheritable)) | (F(permitted) & P(bounding))
+		newC.PermittedCaps = (c.InheritableCaps & f.InheritableCaps) | (f.PermittedCaps & c.BoundingCaps)
+
+		// The "Safety checking for capability-dumb binaries" section of capabilities(7) says:
+		// "...For such applications, the effective capability bit is set on the file...
+		// ...If the process did not obtain the full set of file permitted capabilities,
+		// then execve(2) fails with the error EPERM."
+		if f.Effective && (newC.PermittedCaps&f.PermittedCaps != f.PermittedCaps) {
+			return nil, false, linuxerr.EPERM
 		}
 	}
-	setEffective = HandlePrivilegedRoot(creds, hasVFSCaps, filename) || setEffective
+	// newC.PermittedCaps and f.Effective are set differently for namespace root.
+	handlePrivilegedRoot(newC, &f, filename)
+
+	// Deny privilege elevation if we have to, see commoncap.c:cap_bprm_creds_from_file().
+	gainedID := (newC.EffectiveKUID != c.RealKUID) || (newC.EffectiveKGID != c.RealKGID)
+	gainedCaps := !newC.PermittedCaps.IsSubsetOf(c.PermittedCaps)
+	if (gainedID || gainedCaps) && (noNewPrivs || stopPrivGain) {
+		if noNewPrivs || !c.HasCapability(linux.CAP_SETUID) {
+			newC.EffectiveKUID = c.RealKUID
+			newC.EffectiveKGID = c.RealKGID
+		}
+		newC.PermittedCaps &= c.PermittedCaps
+	}
+	newC.SavedKUID = newC.EffectiveKUID
+	newC.SavedKGID = newC.EffectiveKGID
+
 	// P'(effective) = effective ? P'(permitted) : P'(ambient).
-	creds.EffectiveCaps = 0
-	if setEffective {
-		creds.EffectiveCaps = creds.PermittedCaps
+	newC.EffectiveCaps = 0
+	if f.Effective {
+		newC.EffectiveCaps = newC.PermittedCaps
 	}
-	return nil
+
+	// prctl(2): The "keep capabilities" value will be reset to 0 on subsequent calls to execve(2).
+	newC.KeepCaps = false
+
+	root := c.UserNamespace.MapToKUID(RootUID)
+	secureExec := false
+	// See commoncap.c:cap_bprm_secureexec() in Linux 4.2 (before the introduction of ambient caps).
+	if gainedID || (newC.RealKUID != root && (f.Effective || newC.PermittedCaps != CapabilitySet(0))) {
+		secureExec = true
+	}
+	return newC, secureExec, nil
 }
 
 // TaskCapabilities represents all the capability sets for a task. Each of these

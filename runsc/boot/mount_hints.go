@@ -207,6 +207,9 @@ func (m *MountHint) checkCompatible(replica *specs.Mount) error {
 	if masterOpts.Flags.NoATime && !replicaOpts.Flags.NoATime {
 		return fmt.Errorf("cannot mount atime enabled shared mount because master is noatime, mount: %+v", replica)
 	}
+	if masterOpts.Flags.NoSUID && !replicaOpts.Flags.NoSUID {
+		return fmt.Errorf("cannot mount suid enabled shared mount because master is nosuid, mount: %+v", replica)
+	}
 	return nil
 }
 

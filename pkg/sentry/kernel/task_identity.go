@@ -465,150 +465,16 @@ func (t *Task) SetKeepCaps(k bool) {
 	t.creds.Store(creds)
 }
 
-// updateCredsForExec updates t.creds to reflect an execve().
-//
-// NOTE(b/30815691): We currently do not implement privileged executables
-// (set-user/group-ID bits and file capabilities). This allows us to make a lot
-// of simplifying assumptions:
-//
-//   - We assume the no_new_privs bit (set by prctl(SET_NO_NEW_PRIVS)), which
-//     disables the features we don't support anyway, is always set. This
-//     drastically simplifies this function.
-//
-//   - We don't set AT_SECURE = 1, because no_new_privs always being set means
-//     that the conditions that require AT_SECURE = 1 never arise. (Compare Linux's
-//     security/commoncap.c:cap_bprm_set_creds() and cap_bprm_secureexec().)
-//
-//   - We don't check for CAP_SYS_ADMIN in prctl(PR_SET_SECCOMP), since
-//     seccomp-bpf is also allowed if the task has no_new_privs set.
-//
-//   - Task.ptraceAttach does not serialize with execve as it does in Linux,
-//     since no_new_privs being set has the same effect as the presence of an
-//     unprivileged tracer.
-func (t *Task) updateCredsForExec() {
-	// """
-	// During an execve(2), the kernel calculates the new capabilities of
-	// the process using the following algorithm:
-	//
-	//     P'(permitted) = (P(inheritable) & F(inheritable)) |
-	//                     (F(permitted) & cap_bset)
-	//
-	//     P'(effective) = F(effective) ? P'(permitted) : 0
-	//
-	//     P'(inheritable) = P(inheritable)    [i.e., unchanged]
-	//
-	// where:
-	//
-	//     P         denotes the value of a thread capability set before the
-	//               execve(2)
-	//
-	//     P'        denotes the value of a thread capability set after the
-	//               execve(2)
-	//
-	//     F         denotes a file capability set
-	//
-	//     cap_bset  is the value of the capability bounding set
-	//
-	// ...
-	//
-	// In order to provide an all-powerful root using capability sets, during
-	// an execve(2):
-	//
-	// 1. If a set-user-ID-root program is being executed, or the real user ID
-	// of the process is 0 (root) then the file inheritable and permitted sets
-	// are defined to be all ones (i.e. all capabilities enabled).
-	//
-	// 2. If a set-user-ID-root program is being executed, then the file
-	// effective bit is defined to be one (enabled).
-	//
-	// The upshot of the above rules, combined with the capabilities
-	// transformations described above, is that when a process execve(2)s a
-	// set-user-ID-root program, or when a process with an effective UID of 0
-	// execve(2)s a program, it gains all capabilities in its permitted and
-	// effective capability sets, except those masked out by the capability
-	// bounding set.
-	// """ - capabilities(7)
-	// (ambient capability sets omitted)
-	//
-	// As the last paragraph implies, the case of "a set-user-ID root program
-	// is being executed" also includes the case where (namespace) root is
-	// executing a non-set-user-ID program; the actual check is just based on
-	// the effective user ID.
-	var newPermitted auth.CapabilitySet // since F(inheritable) == F(permitted) == 0
-	fileEffective := false
-	creds := t.Credentials()
-	root := creds.UserNamespace.MapToKUID(auth.RootUID)
-	if creds.EffectiveKUID == root || creds.RealKUID == root {
-		newPermitted = creds.InheritableCaps | creds.BoundingCaps
-		if creds.EffectiveKUID == root {
-			fileEffective = true
-		}
-	}
+// SetNoNewPrivs will set the no new privileges flag PR_SET_NO_NEW_PRIVS.
+func (t *Task) SetNoNewPrivs() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.noNewPrivs = true
+}
 
-	creds = creds.Fork() // The credentials object is immutable. See doc for creds.
-
-	// Now we enter poorly-documented, somewhat confusing territory. (The
-	// accompanying comment in Linux's security/commoncap.c:cap_bprm_set_creds
-	// is not very helpful.) My reading of it is:
-	//
-	// If at least one of the following is true:
-	//
-	// A1. The execing task is ptraced, and the tracer did not have
-	// CAP_SYS_PTRACE in the execing task's user namespace at the time of
-	// PTRACE_ATTACH.
-	//
-	// A2. The execing task shares its FS context with at least one task in
-	// another thread group.
-	//
-	// A3. The execing task has no_new_privs set.
-	//
-	// AND at least one of the following is true:
-	//
-	// B1. The new effective user ID (which may come from set-user-ID, or be the
-	// execing task's existing effective user ID) is not equal to the task's
-	// real UID.
-	//
-	// B2. The new effective group ID (which may come from set-group-ID, or be
-	// the execing task's existing effective group ID) is not equal to the
-	// task's real GID.
-	//
-	// B3. The new permitted capability set contains capabilities not in the
-	// task's permitted capability set.
-	//
-	// Then:
-	//
-	// C1. Limit the new permitted capability set to the task's permitted
-	// capability set.
-	//
-	// C2. If either the task does not have CAP_SETUID in its user namespace, or
-	// the task has no_new_privs set, force the new effective UID and GID to
-	// the task's real UID and GID.
-	//
-	// But since no_new_privs is always set (A3 is always true), this becomes
-	// much simpler. If B1 and B2 are false, C2 is a no-op. If B3 is false, C1
-	// is a no-op. So we can just do C1 and C2 unconditionally.
-	if creds.EffectiveKUID != creds.RealKUID || creds.EffectiveKGID != creds.RealKGID {
-		creds.EffectiveKUID = creds.RealKUID
-		creds.EffectiveKGID = creds.RealKGID
-		t.parentDeathSignal = 0
-	}
-	// (Saved set-user-ID is always set to the new effective user ID, and saved
-	// set-group-ID is always set to the new effective group ID, regardless of
-	// the above.)
-	creds.SavedKUID = creds.RealKUID
-	creds.SavedKGID = creds.RealKGID
-	creds.PermittedCaps &= newPermitted
-	if fileEffective {
-		creds.EffectiveCaps = creds.PermittedCaps
-	} else {
-		creds.EffectiveCaps = 0
-	}
-
-	// prctl(2): The "keep capabilities" value will be reset to 0 on subsequent
-	// calls to execve(2).
-	creds.KeepCaps = false
-
-	// "The bounding set is inherited at fork(2) from the thread's parent, and
-	// is preserved across an execve(2)". So we're done.
-	t.creds.Store(creds)
+// GetNoNewPrivs returns true if the prctl flag NO_NEW_PRIVS is set.
+func (t *Task) GetNoNewPrivs() bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.noNewPrivs
 }

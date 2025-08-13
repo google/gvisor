@@ -43,7 +43,6 @@ func Mount(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, 
 		flags = flags &^ linux.MS_MGC_MSK
 	}
 
-	// Silently allow MS_NOSUID, since we don't implement set-id bits anyway.
 	const unsupported = linux.MS_UNBINDABLE | linux.MS_MOVE | linux.MS_NODIRATIME
 
 	// Linux just allows passing any flags to mount(2) - it won't fail when
