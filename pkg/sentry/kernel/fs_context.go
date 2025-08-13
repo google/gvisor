@@ -43,6 +43,9 @@ type FSContext struct {
 	// context invokes a syscall that creates a file, bits set in umask are
 	// removed from the permissions that the file is created with.
 	umask uint
+
+	// preventSharing is true for the duration of an associated Task's execve
+	preventSharing bool
 }
 
 // NewFSContext returns a new filesystem context.
@@ -184,4 +187,49 @@ func (f *FSContext) SwapUmask(mask uint) uint {
 	old := f.umask
 	f.umask = mask
 	return old
+}
+
+// checkAndPreventSharingOutsideTG returns true if the FSContext is shared
+// outside of the given thread group. If it happens to be not shared, i.e.,
+// used only by the given thread group, it will prevent this from changing by
+// causing subsequent calls by clone(2) to fsContext.share() to fail until
+// fsContext.allowSharing() is called.
+//
+// See Linux's fs_struct->in_exec.
+func (f *FSContext) checkAndPreventSharingOutsideTG(tg *ThreadGroup) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	tgCount := int64(0)
+	tg.ForEachTask(func(t *Task) bool {
+		if t.fsContext == f {
+			tgCount++
+		}
+		return true
+	})
+
+	shared := f.ReadRefs() > tgCount
+	if !shared {
+		f.preventSharing = true
+	}
+	return shared
+}
+
+// allowSharing allows the FSContext to be shared again via clone(2).
+func (f *FSContext) allowSharing() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.preventSharing = false
+}
+
+// share is a wrapper around IncRef. It returns false if a concurrent execve(2) in one of
+// the thread groups that uses this FSContext has prevented sharing.
+func (f *FSContext) share() bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.preventSharing {
+		return false
+	}
+	f.IncRef()
+	return true
 }

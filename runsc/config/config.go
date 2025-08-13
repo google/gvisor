@@ -397,6 +397,10 @@ type Config struct {
 
 	// Nftables enables support for nftables to be used instead of iptables.
 	Nftables bool `flag:"TESTONLY-nftables"`
+
+	// AllowSUID causes ID elevation to be allowed when execving into executables
+	// with the SUID/SGID bits set.
+	AllowSUID bool `flag:"allow-suid"`
 }
 
 func (c *Config) validate() error {
@@ -450,6 +454,9 @@ func (c *Config) Log() {
 	log.Infof("Network: %v", c.Network)
 	if c.Debug || c.Strace {
 		log.Infof("Debug: %t. Strace: %t, max size: %d, syscalls: %s", c.Debug, c.Strace, c.StraceLogSize, c.StraceSyscalls)
+	}
+	if !c.AllowSUID {
+		log.Warningf("--allow-suid is disabled, SUID/SGID bits on executables will be ignored.")
 	}
 	if c.Debug {
 		obj := reflect.ValueOf(c).Elem()

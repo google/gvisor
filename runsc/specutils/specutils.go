@@ -70,6 +70,10 @@ const (
 
 	// AnnotationTPU is the annotation used to enable TPU proxy on a pod.
 	AnnotationTPU = "dev.gvisor.internal.tpuproxy"
+
+	// AnnotationCPUFeatures is the annotation used to control cpu features
+	// that exposed to user apps.
+	AnnotationCPUFeatures = "dev.gvisor.internal.cpufeatures"
 )
 
 // ExePath must point to runsc binary, which is normally the same binary. It's
@@ -139,12 +143,6 @@ func ValidateSpec(spec *specs.Spec) error {
 	// Docker uses AppArmor by default, so just log that it's being ignored.
 	if spec.Process.ApparmorProfile != "" {
 		log.Warningf("AppArmor profile %q is being ignored", spec.Process.ApparmorProfile)
-	}
-
-	// PR_SET_NO_NEW_PRIVS is assumed to always be set.
-	// See kernel.Task.updateCredsForExecLocked.
-	if !spec.Process.NoNewPrivileges {
-		log.Warningf("noNewPrivileges ignored. PR_SET_NO_NEW_PRIVS is assumed to always be set.")
 	}
 
 	if spec.Linux != nil && spec.Linux.RootfsPropagation != "" {

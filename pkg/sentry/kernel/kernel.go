@@ -396,6 +396,9 @@ type Kernel struct {
 	// NvidiaDriverVersion is the NVIDIA driver version configured for this
 	// sandbox.
 	NvidiaDriverVersion nvconf.DriverVersion
+
+	// AllowSUID determines if the SUID/SGID bits are honored during execve.
+	AllowSUID bool
 }
 
 // InitKernelArgs holds arguments to Init.
@@ -748,7 +751,7 @@ func (k *Kernel) invalidateUnsavableMappings(ctx context.Context) error {
 			}
 		}
 		// I really wish we just had a sync.Map of all MMs...
-		if r, ok := t.runState.(*runSyscallAfterExecStop); ok {
+		if r, ok := t.runState.(*runExecveAfterSiblingExitStop); ok {
 			if err := r.image.MemoryManager.InvalidateUnsavable(ctx); err != nil {
 				return err
 			}
@@ -891,6 +894,9 @@ type CreateProcessArgs struct {
 
 	// Credentials is the initial credentials.
 	Credentials *auth.Credentials
+
+	// NoNewPrivs is the initial prctl NO_NEW_PRIVS state.
+	NoNewPrivs bool
 
 	// FDTable is the initial set of file descriptors. If CreateProcess succeeds,
 	// it takes a reference on FDTable.
@@ -1115,14 +1121,14 @@ func (k *Kernel) CreateProcess(args CreateProcessArgs) (*ThreadGroup, ThreadID, 
 		Argv:                args.Argv,
 		Envv:                args.Envv,
 		Features:            k.featureSet,
+		NoNewPrivs:          args.NoNewPrivs,
+		StopPrivGain:        false,
+		AllowSUID:           k.AllowSUID,
 	}
 
-	image, se := k.LoadTaskImage(ctx, loadArgs)
+	image, newCreds, _, se := k.LoadTaskImage(ctx, loadArgs)
 	if se != nil {
 		return nil, 0, errors.New(se.String())
-	}
-	if err := auth.UpdateCredsForNewTask(args.Credentials, image.FileCaps(), args.Filename); err != nil {
-		return nil, 0, err
 	}
 	args.FDTable.IncRef()
 
@@ -1133,7 +1139,8 @@ func (k *Kernel) CreateProcess(args CreateProcessArgs) (*ThreadGroup, ThreadID, 
 		TaskImage:        image,
 		FSContext:        fsContext,
 		FDTable:          args.FDTable,
-		Credentials:      args.Credentials,
+		Credentials:      newCreds,
+		NoNewPrivs:       args.NoNewPrivs,
 		NetworkNamespace: k.RootNetworkNamespace(),
 		AllowedCPUMask:   sched.NewFullCPUSet(k.applicationCores),
 		UTSNamespace:     args.UTSNamespace,

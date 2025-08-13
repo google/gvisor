@@ -30,7 +30,7 @@ const (
 	CtxThreadGroupID contextID = iota
 )
 
-// CredentialsFromContext returns a copy of the Credentials used by ctx, or a
+// CredentialsFromContext returns the Credentials used by ctx, or a
 // set of Credentials with no capabilities if ctx does not have Credentials.
 func CredentialsFromContext(ctx context.Context) *Credentials {
 	if v := ctx.Value(CtxCredentials); v != nil {

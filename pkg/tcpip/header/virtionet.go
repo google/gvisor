@@ -87,8 +87,8 @@ func (v VirtioNetHeader) CSumOffset() uint16 {
 func (v VirtioNetHeader) Encode(f *VirtioNetHeaderFields) {
 	v[flags] = uint8(f.Flags)
 	v[gsoType] = uint8(f.GSOType)
-	binary.BigEndian.PutUint16(v[hdrLen:], f.HdrLen)
-	binary.BigEndian.PutUint16(v[gsoSize:], f.GSOSize)
-	binary.BigEndian.PutUint16(v[csumStart:], f.CSumStart)
-	binary.BigEndian.PutUint16(v[csumOffset:], f.CSumOffset)
+	binary.LittleEndian.PutUint16(v[hdrLen:], f.HdrLen)
+	binary.LittleEndian.PutUint16(v[gsoSize:], f.GSOSize)
+	binary.LittleEndian.PutUint16(v[csumStart:], f.CSumStart)
+	binary.LittleEndian.PutUint16(v[csumOffset:], f.CSumOffset)
 }

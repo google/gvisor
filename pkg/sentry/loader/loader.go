@@ -86,6 +86,15 @@ type LoadArgs struct {
 
 	// Features specifies the CPU feature set for the executable.
 	Features cpuid.FeatureSet
+
+	// NoNewPrivs is the prctl NO_NEW_PRIVS state of the calling task.
+	NoNewPrivs bool
+
+	// StopPrivGain indicates whether to deny privilege elevation for reasons beyond NO_NEW_PRIVS.
+	StopPrivGain bool
+
+	// AllowSUID indicates whether to allow ID elevation during execve.
+	AllowSUID bool
 }
 
 // openPath opens args.Filename and checks that it is valid for loading.
@@ -244,12 +253,12 @@ type ImageInfo struct {
 	Arch *arch.Context64
 	// The base name of the binary.
 	Name string
-	// The binary's file capability.
-	FileCaps string
 }
 
 // Load loads args.File into a MemoryManager. If args.File is nil, the path
-// args.Filename is resolved and loaded instead.
+// args.Filename is resolved and loaded instead. Load also returns the new
+// credentials for the task after execve and a bool indicating whether the
+// task is executing with elevated privileges.
 //
 // If Load returns ErrSwitchFile it should be called again with the returned
 // path and argv.
@@ -257,28 +266,18 @@ type ImageInfo struct {
 // Preconditions:
 //   - The Task MemoryManager is empty.
 //   - Load is called on the Task goroutine.
-func Load(ctx context.Context, args LoadArgs, extraAuxv []arch.AuxEntry, vdso *VDSO) (ImageInfo, *syserr.Error) {
+func Load(ctx context.Context, args LoadArgs, extraAuxv []arch.AuxEntry, vdso *VDSO) (ImageInfo, *auth.Credentials, bool, *syserr.Error) {
 	// Load the executable itself.
 	loaded, ac, file, newArgv, err := loadExecutable(ctx, args)
 	if err != nil {
-		return ImageInfo{}, syserr.NewDynamic(fmt.Sprintf("failed to load %s: %v", args.Filename, err), syserr.FromError(err).ToLinux())
+		return ImageInfo{}, nil, false, syserr.NewDynamic(fmt.Sprintf("failed to load %s: %v", args.Filename, err), syserr.FromError(err).ToLinux())
 	}
 	defer file.DecRef(ctx)
-	fileCaps, err := file.GetXattr(ctx, &vfs.GetXattrOptions{Name: linux.XATTR_SECURITY_CAPABILITY, Size: linux.XATTR_CAPS_SZ_3})
-	switch {
-	case linuxerr.Equals(linuxerr.ENODATA, err), linuxerr.Equals(linuxerr.EOPNOTSUPP, err):
-		// Linux converts EOPNOTSUPP to ENODATA in
-		// security/commoncap.c:get_vfs_caps_from_disk(). We communicate the lack
-		// of file capabilities by an empty string.
-		fileCaps = ""
-	case err != nil:
-		return ImageInfo{}, syserr.NewDynamic(fmt.Sprintf("failed to read file capabilities of %s: %v", args.Filename, err), syserr.FromError(err).ToLinux())
-	}
 
 	// Load the VDSO.
 	vdsoAddr, err := loadVDSO(ctx, args.MemoryManager, vdso, loaded)
 	if err != nil {
-		return ImageInfo{}, syserr.NewDynamic(fmt.Sprintf("error loading VDSO: %v", err), syserr.FromError(err).ToLinux())
+		return ImageInfo{}, nil, false, syserr.NewDynamic(fmt.Sprintf("error loading VDSO: %v", err), syserr.FromError(err).ToLinux())
 	}
 
 	// Setup the heap. brk starts at the next page after the end of the
@@ -286,33 +285,45 @@ func Load(ctx context.Context, args LoadArgs, extraAuxv []arch.AuxEntry, vdso *V
 	// loaded.end is available for its use.
 	e, ok := loaded.end.RoundUp()
 	if !ok {
-		return ImageInfo{}, syserr.NewDynamic(fmt.Sprintf("brk overflows: %#x", loaded.end), errno.ENOEXEC)
+		return ImageInfo{}, nil, false, syserr.NewDynamic(fmt.Sprintf("brk overflows: %#x", loaded.end), errno.ENOEXEC)
 	}
 	args.MemoryManager.BrkSetup(ctx, e)
 
 	// Allocate our stack.
 	stack, err := allocStack(ctx, args.MemoryManager, ac)
 	if err != nil {
-		return ImageInfo{}, syserr.NewDynamic(fmt.Sprintf("Failed to allocate stack: %v", err), syserr.FromError(err).ToLinux())
+		return ImageInfo{}, nil, false, syserr.NewDynamic(fmt.Sprintf("Failed to allocate stack: %v", err), syserr.FromError(err).ToLinux())
 	}
 
 	// Push the original filename to the stack, for AT_EXECFN.
 	if _, err := stack.PushNullTerminatedByteSlice([]byte(args.Filename)); err != nil {
-		return ImageInfo{}, syserr.NewDynamic(fmt.Sprintf("Failed to push exec filename: %v", err), syserr.FromError(err).ToLinux())
+		return ImageInfo{}, nil, false, syserr.NewDynamic(fmt.Sprintf("Failed to push exec filename: %v", err), syserr.FromError(err).ToLinux())
 	}
 	execfn := stack.Bottom
 
 	// Push 16 random bytes on the stack which AT_RANDOM will point to.
 	var b [16]byte
 	if _, err := rand.Read(b[:]); err != nil {
-		return ImageInfo{}, syserr.NewDynamic(fmt.Sprintf("Failed to read random bytes: %v", err), syserr.FromError(err).ToLinux())
+		return ImageInfo{}, nil, false, syserr.NewDynamic(fmt.Sprintf("Failed to read random bytes: %v", err), syserr.FromError(err).ToLinux())
 	}
 	if _, err = stack.PushNullTerminatedByteSlice(b[:]); err != nil {
-		return ImageInfo{}, syserr.NewDynamic(fmt.Sprintf("Failed to push random bytes: %v", err), syserr.FromError(err).ToLinux())
+		return ImageInfo{}, nil, false, syserr.NewDynamic(fmt.Sprintf("Failed to push random bytes: %v", err), syserr.FromError(err).ToLinux())
 	}
 	random := stack.Bottom
 
-	c := auth.CredentialsFromContext(ctx)
+	filePrivs, err := file.GetFilePrivileges(ctx)
+	if err != nil {
+		return ImageInfo{}, nil, false, syserr.NewDynamic(fmt.Sprintf("failed to read file privileges of %s: %v", args.Filename, err), syserr.FromError(err).ToLinux())
+	}
+	c, secureExec, err := auth.ComputeCredsForExec(auth.CredentialsFromContext(ctx), filePrivs, file.MappedName(ctx),
+		args.NoNewPrivs, args.StopPrivGain, args.AllowSUID)
+	if err != nil {
+		return ImageInfo{}, nil, false, syserr.NewDynamic(fmt.Sprintf("failed to update creds with file privileges: %v", err), syserr.FromError(err).ToLinux())
+	}
+	secureExecInt := 0
+	if secureExec {
+		secureExecInt = 1
+	}
 
 	// Add generic auxv entries.
 	auxv := append(loaded.auxv, arch.Auxv{
@@ -320,9 +331,7 @@ func Load(ctx context.Context, args LoadArgs, extraAuxv []arch.AuxEntry, vdso *V
 		arch.AuxEntry{linux.AT_EUID, hostarch.Addr(c.EffectiveKUID.In(c.UserNamespace).OrOverflow())},
 		arch.AuxEntry{linux.AT_GID, hostarch.Addr(c.RealKGID.In(c.UserNamespace).OrOverflow())},
 		arch.AuxEntry{linux.AT_EGID, hostarch.Addr(c.EffectiveKGID.In(c.UserNamespace).OrOverflow())},
-		// The conditions that require AT_SECURE = 1 never arise. See
-		// kernel.Task.updateCredsForExec.
-		arch.AuxEntry{linux.AT_SECURE, 0},
+		arch.AuxEntry{linux.AT_SECURE, hostarch.Addr(secureExecInt)},
 		arch.AuxEntry{linux.AT_CLKTCK, linux.CLOCKS_PER_SEC},
 		arch.AuxEntry{linux.AT_EXECFN, execfn},
 		arch.AuxEntry{linux.AT_RANDOM, random},
@@ -334,7 +343,7 @@ func Load(ctx context.Context, args LoadArgs, extraAuxv []arch.AuxEntry, vdso *V
 
 	sl, err := stack.Load(newArgv, args.Envv, auxv)
 	if err != nil {
-		return ImageInfo{}, syserr.NewDynamic(fmt.Sprintf("Failed to load stack: %v", err), syserr.FromError(err).ToLinux())
+		return ImageInfo{}, nil, false, syserr.NewDynamic(fmt.Sprintf("Failed to load stack: %v", err), syserr.FromError(err).ToLinux())
 	}
 
 	m := args.MemoryManager
@@ -355,9 +364,8 @@ func Load(ctx context.Context, args LoadArgs, extraAuxv []arch.AuxEntry, vdso *V
 	}
 
 	return ImageInfo{
-		OS:       loaded.os,
-		Arch:     ac,
-		Name:     name,
-		FileCaps: fileCaps,
-	}, nil
+		OS:   loaded.os,
+		Arch: ac,
+		Name: name,
+	}, c, secureExec, nil
 }

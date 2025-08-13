@@ -459,6 +459,11 @@ type Task struct {
 	// immutable.
 	creds auth.AtomicPtrCredentials
 
+	// noNewPrivs determines whether the task is allowed to gain new privileges.
+	//
+	// noNewPrivs is protected by mu.
+	noNewPrivs bool
+
 	// utsns is the task's UTS namespace.
 	//
 	// utsns is protected by mu. utsns is owned by the task goroutine.
@@ -636,6 +641,12 @@ type Task struct {
 	// onDestroyAction is a set of callbacks that are executed when the
 	// task is destroyed.
 	onDestroyAction map[TaskDestroyAction]struct{}
+
+	// Helps serializes an execve(2) with a PTRACE_ATTACH and seccomp tsync. See the comment for
+	// execveCredsMutexStartLock() for more details. When the task is in the execveCredsMutexStop,
+	// another task that wants to pass on the execveCredsMutex lock may write to this field with
+	// tg.signalHandlers.mu held.
+	execveCredsMutexOwner *ThreadGroup
 }
 
 // Task related metrics

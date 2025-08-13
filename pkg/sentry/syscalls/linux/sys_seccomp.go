@@ -40,11 +40,11 @@ type userSockFprog struct {
 }
 
 // seccomp applies a seccomp policy to the current task.
-func seccomp(t *kernel.Task, mode, flags uint64, addr hostarch.Addr) error {
+func seccomp(t *kernel.Task, mode, flags uint64, addr hostarch.Addr) (*kernel.SyscallControl, error) {
 	// We only support SECCOMP_SET_MODE_FILTER at the moment.
 	if mode != linux.SECCOMP_SET_MODE_FILTER {
 		// Unsupported mode.
-		return linuxerr.EINVAL
+		return nil, linuxerr.EINVAL
 	}
 
 	tsync := flags&linux.SECCOMP_FILTER_FLAG_TSYNC != 0
@@ -52,22 +52,22 @@ func seccomp(t *kernel.Task, mode, flags uint64, addr hostarch.Addr) error {
 	// The only flag we support now is SECCOMP_FILTER_FLAG_TSYNC.
 	if flags&^linux.SECCOMP_FILTER_FLAG_TSYNC != 0 {
 		// Unsupported flag.
-		return linuxerr.EINVAL
+		return nil, linuxerr.EINVAL
 	}
 
 	var fprog userSockFprog
 	if _, err := fprog.CopyIn(t, addr); err != nil {
-		return err
+		return nil, err
 	}
 	if fprog.Len == 0 || fprog.Len > bpf.MaxInstructions {
 		// If the filter is already over the maximum number of instructions,
 		// do not go further and attempt to optimize the bytecode to make it
 		// smaller.
-		return linuxerr.EINVAL
+		return nil, linuxerr.EINVAL
 	}
 	filter := make([]linux.BPFInstruction, int(fprog.Len))
 	if _, err := linux.CopyBPFInstructionSliceIn(t, hostarch.Addr(fprog.Filter), filter); err != nil {
-		return err
+		return nil, err
 	}
 	bpfFilter := make([]bpf.Instruction, len(filter))
 	for i, ins := range filter {
@@ -76,13 +76,25 @@ func seccomp(t *kernel.Task, mode, flags uint64, addr hostarch.Addr) error {
 	compiledFilter, err := bpf.Compile(bpfFilter, true /* optimize */)
 	if err != nil {
 		t.Debugf("Invalid seccomp-bpf filter: %v", err)
-		return linuxerr.EINVAL
+		return nil, linuxerr.EINVAL
 	}
 
-	return t.AppendSyscallFilter(compiledFilter, tsync)
+	// To prevent unprivileged parents from affecting privileged children
+	if !t.GetNoNewPrivs() && !t.Credentials().HasCapability(linux.CAP_SYS_ADMIN) {
+		return nil, linuxerr.EACCES
+	}
+
+	if !tsync {
+		return nil, t.AppendSyscallFilter(compiledFilter, false)
+	}
+	return t.AppendSyscallFilterAndTsync(compiledFilter), nil
 }
 
 // Seccomp implements linux syscall seccomp(2).
 func Seccomp(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	return 0, nil, seccomp(t, args[0].Uint64(), args[1].Uint64(), args[2].Pointer())
+	ctrl, err := seccomp(t, args[0].Uint64(), args[1].Uint64(), args[2].Pointer())
+	if err != nil {
+		return 0, nil, err
+	}
+	return 0, ctrl, nil
 }

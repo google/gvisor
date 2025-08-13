@@ -66,6 +66,9 @@ type TaskConfig struct {
 	// Credentials is the Credentials of the new task.
 	Credentials *auth.Credentials
 
+	// NoNewPrivs determines if the task can gain new privileges.
+	NoNewPrivs bool
+
 	// Niceness is the niceness of the new task.
 	Niceness int
 
@@ -176,6 +179,7 @@ func (ts *TaskSet) newTask(ctx context.Context, cfg *TaskConfig) (*Task, error) 
 		sessionKeyring:  cfg.SessionKeyring,
 		Origin:          cfg.Origin,
 		onDestroyAction: make(map[TaskDestroyAction]struct{}),
+		noNewPrivs:      cfg.NoNewPrivs,
 	}
 	t.netns = cfg.NetworkNamespace
 	t.creds.Store(cfg.Credentials)

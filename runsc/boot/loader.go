@@ -21,6 +21,7 @@ import (
 	"os"
 	"runtime"
 	"strconv"
+	"strings"
 	gtime "time"
 
 	"github.com/moby/sys/capability"
@@ -423,7 +424,6 @@ func getRootCredentials(spec *specs.Spec, conf *config.Config, userNs *auth.User
 		extraKGIDs,
 		caps,
 		userNs)
-
 	return creds
 }
 
@@ -532,6 +532,7 @@ func New(args Args) (*Loader, error) {
 	l.k = &kernel.Kernel{
 		Platform:            p,
 		NvidiaDriverVersion: args.NvidiaDriverVersion,
+		AllowSUID:           args.Conf.AllowSUID,
 	}
 
 	// Create memory file.
@@ -597,6 +598,26 @@ func New(args Args) (*Loader, error) {
 		log.Infof("Setting total memory to %.2f GB", float64(args.TotalMem)/(1<<30))
 	}
 
+	cpufs := cpuid.HostFeatureSet()
+	if value, ok := args.Spec.Annotations[specutils.AnnotationCPUFeatures]; ok {
+		allowedFeatures := make(map[cpuid.Feature]struct{})
+		for str := range strings.SplitSeq(value, ",") {
+			if str == "" {
+				continue // ignore empty feature name rather than return error
+			}
+			f, ok := cpuid.FeatureFromString(str)
+			if !ok {
+				return nil, fmt.Errorf("annotation %s contains unknown feature %s", specutils.AnnotationCPUFeatures, str)
+			}
+			allowedFeatures[f] = struct{}{}
+		}
+		afs, err := cpufs.Intersect(allowedFeatures) // err only needed for now because this isn't implemented on ARM64 yet
+		if err != nil {
+			return nil, err
+		}
+		cpufs = afs
+	}
+
 	maxFDLimit := kernel.MaxFdLimit
 	if args.Spec.Linux != nil && args.Spec.Linux.Sysctl != nil {
 		if val, ok := args.Spec.Linux.Sysctl["fs.nr_open"]; ok {
@@ -616,7 +637,7 @@ func New(args Args) (*Loader, error) {
 		DisconnectOnSave: args.Conf.NetDisconnectOk,
 	}
 	if err = l.k.Init(kernel.InitKernelArgs{
-		FeatureSet:           cpuid.HostFeatureSet().Fixed(),
+		FeatureSet:           cpufs.Fixed(),
 		Timekeeper:           tk,
 		RootUserNamespace:    creds.UserNamespace,
 		RootNetworkNamespace: netns,
@@ -740,6 +761,7 @@ func createProcessArgs(id string, spec *specs.Spec, conf *config.Config, creds *
 		Envv:                 env,
 		WorkingDirectory:     wd,
 		Credentials:          creds,
+		NoNewPrivs:           spec.Process.NoNewPrivileges,
 		Umask:                umask,
 		Limits:               ls,
 		MaxSymlinkTraversals: linux.MaxSymlinkTraversals,
