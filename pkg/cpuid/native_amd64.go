@@ -163,6 +163,23 @@ func (fs FeatureSet) query(fn cpuidFunction) (uint32, uint32, uint32, uint32) {
 	return out.Eax, out.Ebx, out.Ecx, out.Edx
 }
 
+// Intersect returns the intersection of features between self and allowedFeatures.
+func (fs FeatureSet) Intersect(allowedFeatures map[Feature]struct{}) (FeatureSet, error) {
+	hs := fs.ToStatic()
+
+	// only keep features inside allowedFeatures.
+	for f := range allFeatures {
+		if fs.HasFeature(f) {
+			if _, ok := allowedFeatures[f]; !ok {
+				log.Infof("Removing CPU feature %v as it is not allowed.", f)
+				hs.Remove(f)
+			}
+		}
+	}
+
+	return hs.ToFeatureSet(), nil
+}
+
 var hostFeatureSet FeatureSet
 
 // HostFeatureSet returns a host CPUID.

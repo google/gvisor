@@ -38,6 +38,7 @@ go_library(
         "checkpoint.go",
         "chroot.go",
         "cmd.go",
+        "cpu_features.go",
         "create.go",
         "debug.go",
         "delete.go",

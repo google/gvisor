@@ -70,6 +70,10 @@ const (
 
 	// AnnotationTPU is the annotation used to enable TPU proxy on a pod.
 	AnnotationTPU = "dev.gvisor.internal.tpuproxy"
+
+	// AnnotationCPUFeatures is the annotation used to control cpu features
+	// that exposed to user apps.
+	AnnotationCPUFeatures = "dev.gvisor.internal.cpufeatures"
 )
 
 // ExePath must point to runsc binary, which is normally the same binary. It's
