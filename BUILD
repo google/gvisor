@@ -1,3 +1,8 @@
+# NOTICE: BUILD IN DOCKER
+#
+# Building runsc requires complex external dependencies.
+# Consider building in docker. Refer to `README.md` for instructions.
+
 load("@rules_license//rules:license.bzl", "license")
 load("//tools:defs.bzl", "build_test", "gazelle", "go_path")
 load("//tools/nogo:defs.bzl", "nogo_config")
