@@ -58,6 +58,7 @@ func initImmediate(tab *Table, exprInfo ExprInfo) (*immediate, *syserr.Annotated
 		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: NFTA_IMMEDIATE_DREG attribute is malformed")
 	}
 
+	reg = nlmsg.NetToHostU32(reg)
 	dataBytes, ok := immDataAttrs[linux.NFTA_IMMEDIATE_DATA]
 	if !ok {
 		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: NFTA_IMMEDIATE_DATA attribute is not found")
@@ -84,6 +85,7 @@ func initImmediate(tab *Table, exprInfo ExprInfo) (*immediate, *syserr.Annotated
 }
 
 // immRegToType returns the corresponding data type for a given register number.
+// Assumes that the value is in host byte order.
 func immRegToType(reg uint32) uint32 {
 	if reg == linux.NFT_REG_VERDICT {
 		return linux.NFT_DATA_VERDICT

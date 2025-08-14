@@ -16,6 +16,7 @@
 package nlmsg
 
 import (
+	"encoding/binary"
 	"fmt"
 	"math"
 
@@ -245,6 +246,9 @@ type MessageSet struct {
 
 	// Messages contains the messages in the set.
 	Messages []*Message
+
+	// ContainsError indicates that the message set contains at least one error.
+	ContainsError bool
 }
 
 // NewMessageSet creates a new MessageSet.
@@ -274,6 +278,11 @@ func (ms *MessageSet) AddMessage(hdr linux.NetlinkMessageHeader) *Message {
 	m := NewMessage(hdr)
 	ms.Messages = append(ms.Messages, m)
 	return m
+}
+
+// Clear resets the message set.
+func (ms *MessageSet) Clear() {
+	ms.Messages = nil
 }
 
 // AttrsView is a view into the attributes portion of a netlink message.
@@ -396,4 +405,57 @@ func (v *BytesView) Int32() (int32, bool) {
 	}
 	val.UnmarshalBytes(attr)
 	return int32(val), true
+}
+
+// NetToHostU16 converts a uint16 in network byte order to host byte order.
+func NetToHostU16(v uint16) uint16 {
+	b := make([]byte, 2)
+	b[0] = uint8(v)
+	b[1] = uint8(v >> 8)
+	return binary.BigEndian.Uint16(b)
+}
+
+// NetToHostU32 converts a uint32 in network byte order to host byte order.
+func NetToHostU32(v uint32) uint32 {
+	b := make([]byte, 4)
+	b[0] = uint8(v)
+	b[1] = uint8(v >> 8)
+	b[2] = uint8(v >> 16)
+	b[3] = uint8(v >> 24)
+	return binary.BigEndian.Uint32(b)
+}
+
+// NetToHostU64 converts a uint64 in network byte order to host byte order.
+func NetToHostU64(v uint64) uint64 {
+	b := make([]byte, 8)
+	b[0] = uint8(v)
+	b[1] = uint8(v >> 8)
+	b[2] = uint8(v >> 16)
+	b[3] = uint8(v >> 24)
+	b[4] = uint8(v >> 32)
+	b[5] = uint8(v >> 40)
+	b[6] = uint8(v >> 48)
+	b[7] = uint8(v >> 56)
+	return binary.BigEndian.Uint64(b)
+}
+
+// HostToNetU16 converts a uint16 in host byte order to network byte order.
+func HostToNetU16(v uint16) uint16 {
+	b := make([]byte, 2)
+	binary.BigEndian.PutUint16(b, v)
+	return binary.LittleEndian.Uint16(b)
+}
+
+// HostToNetU32 converts a uint32 in host byte order to network byte order.
+func HostToNetU32(v uint32) uint32 {
+	b := make([]byte, 4)
+	binary.BigEndian.PutUint32(b, v)
+	return binary.LittleEndian.Uint32(b)
+}
+
+// HostToNetU64 converts a uint64 in host byte order to network byte order.
+func HostToNetU64(v uint64) uint64 {
+	b := make([]byte, 8)
+	binary.BigEndian.PutUint64(b, v)
+	return binary.LittleEndian.Uint64(b)
 }

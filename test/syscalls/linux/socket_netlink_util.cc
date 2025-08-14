@@ -26,6 +26,7 @@
 #include <utility>
 #include <vector>
 
+#include "gtest/gtest.h"
 #include "absl/strings/str_cat.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/posix_error.h"
@@ -59,6 +60,20 @@ PosixErrorOr<uint32_t> NetlinkPortID(int fd) {
   MaybeSave();
 
   return static_cast<uint32_t>(addr.nl_pid);
+}
+
+PosixError NetlinkRequest(const FileDescriptor& fd, void* request, size_t len) {
+  struct iovec iov = {};
+  iov.iov_base = request;
+  iov.iov_len = len;
+
+  struct msghdr msg = {};
+  msg.msg_iov = &iov;
+  msg.msg_iovlen = 1;
+  // No destination required; it defaults to pid 0, the kernel.
+
+  RETURN_ERROR_IF_SYSCALL_FAIL(RetryEINTR(sendmsg)(fd.get(), &msg, 0));
+  return NoError();
 }
 
 PosixError NetlinkRequestResponse(
