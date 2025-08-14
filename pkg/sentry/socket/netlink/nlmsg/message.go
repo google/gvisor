@@ -245,6 +245,9 @@ type MessageSet struct {
 
 	// Messages contains the messages in the set.
 	Messages []*Message
+
+	// ContainsError indicates that the message set contains at least one error.
+	ContainsError bool
 }
 
 // NewMessageSet creates a new MessageSet.
@@ -274,6 +277,11 @@ func (ms *MessageSet) AddMessage(hdr linux.NetlinkMessageHeader) *Message {
 	m := NewMessage(hdr)
 	ms.Messages = append(ms.Messages, m)
 	return m
+}
+
+// Clear resets the message set.
+func (ms *MessageSet) Clear() {
+	ms.Messages = nil
 }
 
 // AttrsView is a view into the attributes portion of a netlink message.

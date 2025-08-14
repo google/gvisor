@@ -24,7 +24,6 @@
 
 #include "gtest/gtest.h"
 #include "test/syscalls/linux/socket_netlink_util.h"
-#include "test/util/file_descriptor.h"
 #include "test/util/posix_error.h"
 
 namespace gvisor {
@@ -227,13 +226,17 @@ void AddDefaultTable(const AddDefaultTableOptions options) {
   }
 
   std::vector<char> add_table_request_buffer =
-      NlReq("newtable req ack inet")
-          .Seq(options.seq)
-          .StrAttr(NFTA_TABLE_NAME, test_table_name)
+      NlBatchReq()
+          .SeqStart(options.seq)
+          .Req(NlReq("newtable req ack inet")
+                   .Seq(options.seq + 1)
+                   .StrAttr(NFTA_TABLE_NAME, test_table_name)
+                   .Build())
+          .SeqEnd(options.seq + 2)
           .Build();
-  ASSERT_NO_ERRNO(NetlinkRequestAckOrError(options.fd, options.seq,
-                                           add_table_request_buffer.data(),
-                                           add_table_request_buffer.size()));
+  ASSERT_NO_ERRNO(NetlinkBatchedRequestAckOrError(
+      options.fd, options.seq, options.seq + 2, add_table_request_buffer.data(),
+      add_table_request_buffer.size()));
 }
 
 // Helper function to add a default base chain.
@@ -261,18 +264,77 @@ void AddDefaultBaseChain(const AddDefaultBaseChainOptions options) {
           .StrAttr(NFTA_CHAIN_TYPE, test_chain_type_name)
           .Build();
   std::vector<char> add_chain_request_buffer =
-      NlReq("newchain req ack inet")
-          .Seq(options.seq)
-          .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
-          .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
-          .U32Attr(NFTA_CHAIN_POLICY, &test_policy)
-          .RawAttr(NFTA_CHAIN_HOOK, nested_hook_data.data(),
-                   nested_hook_data.size())
-          .U32Attr(NFTA_CHAIN_FLAGS, &test_chain_flags)
+      NlBatchReq()
+          .SeqStart(options.seq)
+          .Req(NlReq("newchain req ack inet")
+                   .Seq(options.seq + 1)
+                   .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
+                   .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
+                   .U32Attr(NFTA_CHAIN_POLICY, &test_policy)
+                   .RawAttr(NFTA_CHAIN_HOOK, nested_hook_data.data(),
+                            nested_hook_data.size())
+                   .U32Attr(NFTA_CHAIN_FLAGS, &test_chain_flags)
+                   .Build())
+          .SeqEnd(options.seq + 2)
           .Build();
-  ASSERT_NO_ERRNO(NetlinkRequestAckOrError(options.fd, options.seq,
-                                           add_chain_request_buffer.data(),
-                                           add_chain_request_buffer.size()));
+  ASSERT_NO_ERRNO(NetlinkBatchedRequestAckOrError(
+      options.fd, options.seq, options.seq + 2, add_chain_request_buffer.data(),
+      add_chain_request_buffer.size()));
+}
+
+NlBatchReq& NlBatchReq::SeqStart(uint32_t seq) {
+  seq_start_ = seq;
+  return *this;
+}
+
+NlBatchReq& NlBatchReq::SeqEnd(uint32_t seq) {
+  seq_end_ = seq;
+  return *this;
+}
+
+NlBatchReq& NlBatchReq::Req(std::vector<char> req) {
+  // Since everything is already 4 bit aligned, we can just append the request
+  // to the buffer.
+  reqs_buffer_.insert(reqs_buffer_.end(), req.begin(), req.end());
+  return *this;
+}
+
+std::vector<char> NlBatchReq::Build() {
+  std::vector<char> batch_begin;
+  std::vector<char> batch_end;
+  size_t aligned_hdr_size = NLMSG_ALIGN(sizeof(nlmsghdr));
+  size_t aligned_genmsg_size = NLMSG_ALIGN(sizeof(nfgenmsg));
+  size_t total_message_len =
+      NLMSG_ALIGN(aligned_hdr_size + aligned_genmsg_size);
+
+  batch_begin.resize(total_message_len);
+  batch_end.resize(total_message_len);
+  std::memset(batch_begin.data(), 0, total_message_len);
+  std::memset(batch_end.data(), 0, total_message_len);
+
+  // Must be formatted as requests to be accepted by the kernel.
+  struct nlmsghdr* nlh = reinterpret_cast<struct nlmsghdr*>(batch_begin.data());
+  InitNetlinkHdr(nlh, (uint32_t)total_message_len, NFNL_MSG_BATCH_BEGIN,
+                 seq_start_, NLM_F_REQUEST);
+
+  struct nfgenmsg* nfg = reinterpret_cast<struct nfgenmsg*>(NLMSG_DATA(nlh));
+  InitNetfilterGenmsg(nfg, 0, NFNETLINK_V0, NFNL_SUBSYS_NFTABLES);
+
+  struct nlmsghdr* nlh_end =
+      reinterpret_cast<struct nlmsghdr*>(batch_end.data());
+  InitNetlinkHdr(nlh_end, (uint32_t)total_message_len, NFNL_MSG_BATCH_END,
+                 seq_end_, NLM_F_REQUEST);
+  struct nfgenmsg* nfg_end =
+      reinterpret_cast<struct nfgenmsg*>(NLMSG_DATA(nlh_end));
+  InitNetfilterGenmsg(nfg_end, 0, NFNETLINK_V0, NFNL_SUBSYS_NFTABLES);
+
+  std::vector<char> batched_req;
+  batched_req.insert(batched_req.end(), batch_begin.begin(), batch_begin.end());
+  batched_req.insert(batched_req.end(), reqs_buffer_.begin(),
+                     reqs_buffer_.end());
+  batched_req.insert(batched_req.end(), batch_end.begin(), batch_end.end());
+
+  return batched_req;
 }
 
 NlReq& NlReq::MsgType(uint8_t msg_type) {
@@ -426,7 +488,7 @@ std::vector<char> NlReq::Build() {
                  flags_);
 
   struct nfgenmsg* nfg = reinterpret_cast<struct nfgenmsg*>(NLMSG_DATA(nlh));
-  InitNetfilterGenmsg(nfg, family_, NFNETLINK_V0, 0);
+  InitNetfilterGenmsg(nfg, family_, NFNETLINK_V0, NFNL_SUBSYS_NFTABLES);
 
   char* payload =
       (char*)msg_buffer_.data() + aligned_hdr_size + aligned_genmsg_size;

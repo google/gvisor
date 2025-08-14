@@ -26,6 +26,7 @@
 #include <utility>
 #include <vector>
 
+#include "gtest/gtest.h"
 #include "absl/strings/str_cat.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/posix_error.h"
@@ -184,6 +185,35 @@ PosixError NetlinkRequestAckOrError(const FileDescriptor& fd, uint32_t seq,
         const struct nlmsgerr* msg =
             reinterpret_cast<const struct nlmsgerr*>(NLMSG_DATA(hdr));
         err = -msg->error;
+      },
+      true));
+  return PosixError(err);
+}
+
+PosixError NetlinkBatchedRequestAckOrError(const FileDescriptor& fd,
+                                           uint32_t seq_start, uint32_t seq_end,
+                                           void* request, size_t len) {
+  // Dummy negative number for no error message received.
+  // On a successful message, err will be set to 0 (signalling an ack).
+  int err = -42;
+  bool err_set = false;
+  RETURN_IF_ERRNO(NetlinkRequestResponse(
+      fd, request, len,
+      [&](const struct nlmsghdr* hdr) {
+        if (err_set) {
+          return;
+        }
+        EXPECT_EQ(NLMSG_ERROR, hdr->nlmsg_type);
+        EXPECT_GE(hdr->nlmsg_seq, seq_start);
+        EXPECT_LE(hdr->nlmsg_seq, seq_end);
+        EXPECT_GE(hdr->nlmsg_len, sizeof(*hdr) + sizeof(struct nlmsgerr));
+
+        const struct nlmsgerr* msg =
+            reinterpret_cast<const struct nlmsgerr*>(NLMSG_DATA(hdr));
+        err = -msg->error;
+        if (err != 0) {
+          err_set = true;
+        }
       },
       true));
   return PosixError(err);

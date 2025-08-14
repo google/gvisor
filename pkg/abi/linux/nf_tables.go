@@ -138,6 +138,52 @@ const (
 	NFT_MSG_MAX
 )
 
+var nfTableMsgTypeStrings = [...]string{
+	NFT_MSG_NEWTABLE:         "NFT_MSG_NEWTABLE",
+	NFT_MSG_GETTABLE:         "NFT_MSG_GETTABLE",
+	NFT_MSG_DELTABLE:         "NFT_MSG_DELTABLE",
+	NFT_MSG_NEWCHAIN:         "NFT_MSG_NEWCHAIN",
+	NFT_MSG_GETCHAIN:         "NFT_MSG_GETCHAIN",
+	NFT_MSG_DELCHAIN:         "NFT_MSG_DELCHAIN",
+	NFT_MSG_NEWRULE:          "NFT_MSG_NEWRULE",
+	NFT_MSG_GETRULE:          "NFT_MSG_GETRULE",
+	NFT_MSG_DELRULE:          "NFT_MSG_DELRULE",
+	NFT_MSG_NEWSET:           "NFT_MSG_NEWSET",
+	NFT_MSG_GETSET:           "NFT_MSG_GETSET",
+	NFT_MSG_DELSET:           "NFT_MSG_DELSET",
+	NFT_MSG_NEWSETELEM:       "NFT_MSG_NEWSETELEM",
+	NFT_MSG_GETSETELEM:       "NFT_MSG_GETSETELEM",
+	NFT_MSG_DELSETELEM:       "NFT_MSG_DELSETELEM",
+	NFT_MSG_NEWGEN:           "NFT_MSG_NEWGEN",
+	NFT_MSG_GETGEN:           "NFT_MSG_GETGEN",
+	NFT_MSG_TRACE:            "NFT_MSG_TRACE",
+	NFT_MSG_NEWOBJ:           "NFT_MSG_NEWOBJ",
+	NFT_MSG_GETOBJ:           "NFT_MSG_GETOBJ",
+	NFT_MSG_DELOBJ:           "NFT_MSG_DELOBJ",
+	NFT_MSG_GETOBJ_RESET:     "NFT_MSG_GETOBJ_RESET",
+	NFT_MSG_NEWFLOWTABLE:     "NFT_MSG_NEWFLOWTABLE",
+	NFT_MSG_GETFLOWTABLE:     "NFT_MSG_GETFLOWTABLE",
+	NFT_MSG_DELFLOWTABLE:     "NFT_MSG_DELFLOWTABLE",
+	NFT_MSG_GETRULE_RESET:    "NFT_MSG_GETRULE_RESET",
+	NFT_MSG_DESTROYTABLE:     "NFT_MSG_DESTROYTABLE",
+	NFT_MSG_DESTROYCHAIN:     "NFT_MSG_DESTROYCHAIN",
+	NFT_MSG_DESTROYRULE:      "NFT_MSG_DESTROYRULE",
+	NFT_MSG_DESTROYSET:       "NFT_MSG_DESTROYSET",
+	NFT_MSG_DESTROYSETELEM:   "NFT_MSG_DESTROYSETELEM",
+	NFT_MSG_DESTROYOBJ:       "NFT_MSG_DESTROYOBJ",
+	NFT_MSG_DESTROYFLOWTABLE: "NFT_MSG_DESTROYFLOWTABLE",
+	NFT_MSG_GETSETELEM_RESET: "NFT_MSG_GETSETELEM_RESET",
+	NFT_MSG_MAX:              "NFT_MSG_MAX",
+}
+
+// String returns the string representation of the NfTableMsgType.
+func (msg NfTableMsgType) String() string {
+	if int(msg) < len(nfTableMsgTypeStrings) {
+		return nfTableMsgTypeStrings[msg]
+	}
+	return "UNKNOWN"
+}
+
 // NfTableListAttributes represents the netfilter attributes for lists of data.
 // These correspond to values in include/uapi/linux/netfilter/nf_tables.h.
 const (

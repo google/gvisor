@@ -145,7 +145,7 @@ cc_library(
     testonly = 1,
     srcs = ["socket_netlink_util.cc"],
     hdrs = ["socket_netlink_util.h"],
-    deps = [
+    deps = select_gtest() + [
         "//test/util:file_descriptor",
         "//test/util:posix_error",
         "//test/util:save_util",

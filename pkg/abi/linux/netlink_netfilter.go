@@ -49,12 +49,9 @@ const SizeOfNetfilterGenMsg = 4
 // NFNETLINK_V0 is the default version of the netlink netfilter.
 const NFNETLINK_V0 = 0
 
-// SubsysID describes Netlink Netfilter subsystem IDs, from uapi/linux/netfilter/nfnetlink.h.
-type SubsysID uint16
-
-// Netlink Netfilter subsystem IDs.
+// Netlink Netfilter subsystem IDs, from uapi/linux/netfilter/nfnetlink.h.
 const (
-	NFNL_SUBSYS_NONE SubsysID = iota
+	NFNL_SUBSYS_NONE = iota
 	NFNL_SUBSYS_CTNETLINK
 	NFNL_SUBSYS_CTNETLINK_EXP
 	NFNL_SUBSYS_QUEUE
@@ -67,11 +64,12 @@ const (
 	NFNL_SUBSYS_NFTABLES
 	NFNL_SUBSYS_NFT_COMPAT
 	NFNL_SUBSYS_HOOK
+	NFNL_SUBSYS_COUNT
 )
 
 // NetFilterSubsysID returns the Netfilter Subsystem ID from the netlink message header.
-func (hdr *NetlinkMessageHeader) NetFilterSubsysID() SubsysID {
-	return SubsysID((hdr.Type & 0xff00) >> 8)
+func (hdr *NetlinkMessageHeader) NetFilterSubsysID() uint16 {
+	return (hdr.Type & 0xff00) >> 8
 }
 
 // NetFilterMsgType returns the Netfilter Message Type from the netlink message header.
@@ -85,12 +83,9 @@ const (
 	NFNL_MSG_BATCH_END   = NLMSG_MIN_TYPE + 1
 )
 
-// NetlinkBatchAttr describes Netlink Netfilter batch attributes, from uapi/linux/netfilter/nfnetlink.h.
-type NetlinkBatchAttr uint16
-
 // Netlink Netfilter batch attributes.
 const (
-	NFNL_BATCH_UNSPEC NetlinkBatchAttr = iota
+	NFNL_BATCH_UNSPEC = iota
 	NFNL_BATCH_GENID
 	__NFNL_BATCH_MAX
 	NFNL_BATCH_MAX = __NFNL_BATCH_MAX - 1

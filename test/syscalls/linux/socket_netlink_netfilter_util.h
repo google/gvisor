@@ -114,6 +114,25 @@ void AddDefaultTable(AddDefaultTableOptions options);
 // Helper function to add a default chain.
 void AddDefaultBaseChain(AddDefaultBaseChainOptions options);
 
+class NlBatchReq {
+ public:
+  // Default constructor.
+  NlBatchReq() = default;
+
+  NlBatchReq& SeqStart(uint32_t seq);
+
+  NlBatchReq& SeqEnd(uint32_t seq);
+
+  NlBatchReq& Req(std::vector<char> req);
+
+  std::vector<char> Build();
+
+ private:
+  uint32_t seq_start_ = 0;
+  uint32_t seq_end_ = 0;
+  std::vector<char> reqs_buffer_;
+};
+
 class NlReq {
  public:
   // Default constructor.
@@ -148,6 +167,8 @@ class NlReq {
   NlReq& U64Attr(uint16_t attr_type, const uint64_t* payload);
 
   std::vector<char> Build();
+
+  std::vector<char> BuildBatched();
 
  private:
   bool MsgTypeToken(const std::string& token);

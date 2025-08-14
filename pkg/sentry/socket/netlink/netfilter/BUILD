@@ -12,6 +12,7 @@ go_library(
     deps = [
         "//pkg/abi/linux",
         "//pkg/atomicbitops",
+        "//pkg/bits",
         "//pkg/context",
         "//pkg/log",
         "//pkg/marshal/primitive",
