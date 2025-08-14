@@ -157,6 +157,10 @@ func (e *Endpoint) Restore(s *stack.Stack) {
 	e.ops.InitHandler(e, e.stack, GetTCPSendBufferLimits, GetTCPReceiveBufferLimits)
 	e.segmentQueue.thaw()
 
+	e.mu.Lock()
+	id := e.ID
+	e.mu.Unlock()
+
 	bind := func() {
 		e.mu.Lock()
 		defer e.mu.Unlock()
@@ -211,7 +215,11 @@ func (e *Endpoint) Restore(s *stack.Stack) {
 		e.mu.Lock()
 		err := e.connect(tcpip.FullAddress{NIC: e.boundNICID, Addr: e.connectingAddress, Port: e.TransportEndpointInfo.ID.RemotePort}, false /* handshake */)
 		if _, ok := err.(*tcpip.ErrConnectStarted); !ok {
-			panic("endpoint connecting failed: " + err.String())
+			log.Warningf("TCP endpoint connect failed for connected endpoint with ID: %+v err: %v", id, err)
+			e.mu.Unlock()
+			e.Close()
+			connectedLoading.Done()
+			return
 		}
 		e.state.Store(e.origEndpointState)
 		// For FIN-WAIT-2 and TIME-WAIT we need to start the appropriate timers so
@@ -274,7 +282,8 @@ func (e *Endpoint) Restore(s *stack.Stack) {
 			bind()
 			err := e.Connect(tcpip.FullAddress{NIC: e.boundNICID, Addr: e.connectingAddress, Port: e.TransportEndpointInfo.ID.RemotePort})
 			if _, ok := err.(*tcpip.ErrConnectStarted); !ok {
-				panic("endpoint connecting failed: " + err.String())
+				log.Warningf("TCP endpoint connect failed for connecting endpoint with ID: %+v err: %v", id, err)
+				e.Close()
 			}
 			connectingLoading.Done()
 			tcpip.AsyncLoading.Done()
@@ -289,11 +298,15 @@ func (e *Endpoint) Restore(s *stack.Stack) {
 			// naturally complete the connection.
 			bind()
 			e.mu.Lock()
-			defer e.mu.Unlock()
 			e.setEndpointState(epState)
 			r, err := e.stack.FindRoute(e.boundNICID, e.TransportEndpointInfo.ID.LocalAddress, e.TransportEndpointInfo.ID.RemoteAddress, e.effectiveNetProtos[0], false /* multicastLoop */)
 			if err != nil {
-				panic(fmt.Sprintf("FindRoute failed when restoring endpoint w/ ID: %+v", e.ID))
+				e.mu.Unlock()
+				log.Warningf("FindRoute failed when restoring endpoint w/ ID: %+v err: %v", id, err)
+				e.Close()
+				connectingLoading.Done()
+				tcpip.AsyncLoading.Done()
+				return
 			}
 			e.route = r
 			timer, err := newBackoffTimer(e.stack.Clock(), InitialRTO, MaxRTO, timerHandler(e, e.h.retransmitHandlerLocked))
@@ -303,6 +316,7 @@ func (e *Endpoint) Restore(s *stack.Stack) {
 			e.h.retransmitTimer = timer
 			connectingLoading.Done()
 			tcpip.AsyncLoading.Done()
+			e.mu.Unlock()
 		}()
 	case epState == StateBound:
 		tcpip.AsyncLoading.Add(1)
