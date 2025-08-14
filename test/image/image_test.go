@@ -34,6 +34,7 @@ import (
 	"time"
 
 	"github.com/docker/docker/api/types/mount"
+	yaml "gopkg.in/yaml.v3"
 	"gvisor.dev/gvisor/pkg/test/dockerutil"
 	"gvisor.dev/gvisor/pkg/test/testutil"
 )
@@ -411,6 +412,23 @@ type dockerCommandOptions struct {
 	privileged  bool
 }
 
+type dockerComposeConfig struct {
+	Name     string                   `yaml:"name,omitempty"`
+	Services map[string]dockerService `yaml:"services,omitempty"`
+}
+
+type dockerService struct {
+	Image        string      `yaml:"image,omitempty"`
+	Build        dockerBuild `yaml:"build,omitempty"`
+	Privileged   bool        `yaml:"privileged,omitempty"`
+	NetworkdMode string      `yaml:"network_mode,omitempty"`
+}
+
+type dockerBuild struct {
+	Context string `yaml:"context,omitempty"`
+	Network string `yaml:"network,omitempty"`
+}
+
 func testDockerMatrix(ctx context.Context, t *testing.T, d *dockerutil.Container) {
 	definitions := []struct {
 		name            string
@@ -421,6 +439,8 @@ func testDockerMatrix(ctx context.Context, t *testing.T, d *dockerutil.Container
 		{"docker_run", testDockerRun, true, true},
 		{"docker_build", testDockerBuild, true, false},
 		{"docker_exec", testDockerExec, false, true},
+		{"docker_compose_run", testDockerComposeRun, true, true},
+		{"docker_compose_build", testDockerComposeBuild, true, false},
 	}
 	for _, def := range definitions {
 		hostNetworkOpts := []bool{false}
@@ -648,6 +668,101 @@ func testDockerExec(ctx context.Context, t *testing.T, d *dockerutil.Container, 
 		t.Fatalf("docker logs failed: %v", err)
 	}
 	expectedOutput := "exec in " + containerName
+	if !strings.Contains(output, expectedOutput) {
+		t.Fatalf("docker didn't get output expected: %q, got: %q", expectedOutput, output)
+	}
+}
+
+func testDockerComposeBuild(ctx context.Context, t *testing.T, d *dockerutil.Container, opts dockerCommandOptions) {
+	dockerComposeFileName := strings.ToLower(strings.ReplaceAll(testutil.RandomID("docker-compose-build"), "/", "-"))
+	// Letters in image name must be lowercase.
+	imageName := strings.ToLower(strings.ReplaceAll(testutil.RandomID("testdockercomposebuild"), "/", "-"))
+	network := ""
+	if opts.hostNetwork {
+		network = "host"
+	}
+	config := dockerComposeConfig{
+		Name: "image_test",
+		Services: map[string]dockerService{
+			imageName: dockerService{
+				Image: imageName,
+				Build: dockerBuild{
+					Context: ".",
+					Network: network,
+				},
+			},
+		},
+	}
+	buildConfig, err := yaml.Marshal(config)
+	if err != nil {
+		log.Fatalf("error marshaling to docker-compose.yml: %v", err)
+	}
+	dockerfileContent := fmt.Sprintf("\"FROM %s\nRUN apk add curl\"", testAlpineImage)
+	cmd := []string{"echo", dockerfileContent, ">", "Dockerfile"}
+	_, err = d.ExecProcess(ctx, dockerutil.ExecOpts{},
+		"/bin/sh", "-c", strings.Join(cmd, " "))
+	if err != nil {
+		t.Fatalf("failed to write Dockerfile: %v", err)
+	}
+	cmd = []string{"echo", fmt.Sprintf("\"%s\"", string(buildConfig)), ">", dockerComposeFileName}
+	// Write a config file for docker compose.
+	_, err = d.ExecProcess(ctx, dockerutil.ExecOpts{},
+		"/bin/sh", "-c", strings.Join(cmd, " "))
+	if err != nil {
+		t.Fatalf("failed to write docker-compose.yml: %v", err)
+	}
+	_, err = d.ExecProcess(ctx, dockerutil.ExecOpts{}, "/bin/sh", "-c", fmt.Sprintf("docker compose -f %s build", dockerComposeFileName))
+	if err != nil {
+		t.Fatalf("docker compose build failed: %v", err)
+	}
+	defer removeDockerImage(ctx, imageName, d)
+	d.WaitForOutput(ctx, fmt.Sprintf("%s  Built", imageName), defaultWait)
+	if err := checkDockerImage(ctx, imageName, d); err != nil {
+		t.Fatalf("failed to find docker image: %v", err)
+	}
+}
+
+func testDockerComposeRun(ctx context.Context, t *testing.T, d *dockerutil.Container, opts dockerCommandOptions) {
+	dockerComposeAppName := strings.ToLower(strings.ReplaceAll(testutil.RandomID("docker-compose-run-test-app"), "/", "-"))
+	dockerComposeFileName := strings.ToLower(strings.ReplaceAll(testutil.RandomID("docker-compose-run"), "/", "-"))
+	networkMode := ""
+	// TODO(b/436936268): test bridge network driver in docker compose run.
+	// The option now has no impact since the test command doesn't attempt to connect to internet.
+	if opts.hostNetwork {
+		networkMode = "host"
+	}
+	config := dockerComposeConfig{
+		Name: "image_test",
+		Services: map[string]dockerService{
+			dockerComposeAppName: dockerService{
+				Image:        testAlpineImage,
+				Privileged:   opts.privileged,
+				NetworkdMode: networkMode,
+			},
+		},
+	}
+	dockerComposeContent, err := yaml.Marshal(config)
+	if err != nil {
+		log.Fatalf("error marshaling to docker-compose.yml: %v", err)
+	}
+	cmd := []string{"echo", fmt.Sprintf("\"%s\"", string(dockerComposeContent)), ">", dockerComposeFileName}
+	_, err = d.ExecProcess(
+		ctx,
+		dockerutil.ExecOpts{},
+		"/bin/sh", "-c", strings.Join(cmd, " "))
+	if err != nil {
+		t.Fatalf("failed to write %s: %v", dockerComposeFileName, err)
+	}
+	execProc, err := d.ExecProcess(ctx, dockerutil.ExecOpts{},
+		[]string{"docker", "compose", "-f", dockerComposeFileName, "run", "--rm", dockerComposeAppName, "sh", "-c", "echo hello gVisor"}...)
+	if err != nil {
+		t.Fatalf("docker compose run failed: %v", err)
+	}
+	output, err := execProc.Logs()
+	if err != nil {
+		t.Fatalf("docker logs failed: %v", err)
+	}
+	expectedOutput := "hello gVisor"
 	if !strings.Contains(output, expectedOutput) {
 		t.Fatalf("docker didn't get output expected: %q, got: %q", expectedOutput, output)
 	}
