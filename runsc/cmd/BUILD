@@ -58,6 +58,7 @@ go_library(
         "mitigate_extras.go",
         "path.go",
         "pause.go",
+        "pidfile.go",
         "platforms.go",
         "portforward.go",
         "ps.go",
@@ -145,6 +146,7 @@ go_test(
         "install_test.go",
         "list_test.go",
         "mitigate_test.go",
+        "pidfile_test.go",
     ],
     data = [
         "//runsc",
