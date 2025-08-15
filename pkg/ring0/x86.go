@@ -31,6 +31,7 @@ const (
 	_CR4_OSFXSR     = 1 << 9
 	_CR4_OSXMMEXCPT = 1 << 10
 	_CR4_UMIP       = 1 << 11
+	_CR4_LA57       = 1 << 12
 	_CR4_FSGSBASE   = 1 << 16
 	_CR4_PCIDE      = 1 << 17
 	_CR4_OSXSAVE    = 1 << 18

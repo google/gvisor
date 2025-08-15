@@ -205,6 +205,9 @@ func (c *CPU) CR4() uint64 {
 	if hasUMIP {
 		cr4 |= _CR4_UMIP
 	}
+	if hasLA57 {
+		cr4 |= _CR4_LA57
+	}
 	return cr4
 }
 

@@ -259,6 +259,8 @@ var initOnce sync.Once
 
 // Initialize initializes the global data structures used by this package.
 // Must be called prior to using anything else in this package.
+//
+//go:nosplit
 func Initialize() {
 	initOnce.Do(archInitialize)
 }
