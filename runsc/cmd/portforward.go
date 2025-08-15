@@ -120,7 +120,7 @@ func (p *PortForward) Execute(ctx context.Context, f *flag.FlagSet, args ...any)
 	if err != nil {
 		util.Fatalf("invalid port string %q: %v", portStr, err)
 	}
-	if portNum <= 0 || portNum > math.MaxUint16 {
+	if portNum < 0 || portNum > math.MaxUint16 {
 		util.Fatalf("invalid port %d: %v", portNum, err)
 	}
 
