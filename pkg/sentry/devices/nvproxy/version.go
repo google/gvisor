@@ -702,11 +702,10 @@ func Init() {
 
 		// The following exist on the "535" branch. They branched off the main
 		// branch at 535.113.01.
-		v535_129_03 := addDriverABI(535, 129, 03, "e6dca5626a2608c6bb2a046cfcb7c1af338b9e961a7dd90ac09bb8a126ff002e", "8ba8d961457a241bcdf91b76d6fe2f36cb473c8bbdb02fb6650a622ce2e85b33", v535_113_01)
-		v535_183_01 := addDriverABI(535, 183, 01, "f6707afbdda9407e3cbc2e5128e60bcbcdbf02fae29958c72fafb5d405e8b883", "c9d13b6250d24b76ef87a49b179f234564184a9f6d6414184668958b7f6d21e6", v535_129_03)
-		v535_183_06 := addDriverABI(535, 183, 06, "c7bb0a0569c5347845479ed4e3e4d885c6ee3b8adf068c3401cdf754d5ba3d3b", ChecksumNoDriver, v535_183_01)
-		v535_216_01 := addDriverABI(535, 216, 01, "5ddea1147810012e33967c3181341bcd6624bd3d654c63f845df833b4ece6af7", "4869ae0345b5892b2a50aed566c8226d3e07813d1190aa466feba5e9e21b33b9", v535_183_06)
-		v535_230_02 := addDriverABI(535, 230, 02, "20cca9118083fcc8083158466e9cb2b616a7922206bcb7296b1fa5cc9af2e0fd", "ea000e6ff481f55e9bfedbea93b739368c635fe4be6156fdad560524ac7f363b", v535_216_01)
+
+		v535_129_03 := addDriverABI(535, 129, 03, "e6dca5626a2608c6bb2a046cfcb7c1af338b9e961a7dd90ac09bb8a126ff002e", "8ba8d961457a241bcdf91b76d6fe2f36cb473c8bbdb02fb6650a622ce2e85b33", v535_113_01) // Internal use.
+		v535_183_06 := addDriverABI(535, 183, 06, "c7bb0a0569c5347845479ed4e3e4d885c6ee3b8adf068c3401cdf754d5ba3d3b", ChecksumNoDriver, v535_129_03)                                                   // Internal use.
+		v535_230_02 := addDriverABI(535, 230, 02, "20cca9118083fcc8083158466e9cb2b616a7922206bcb7296b1fa5cc9af2e0fd", "ea000e6ff481f55e9bfedbea93b739368c635fe4be6156fdad560524ac7f363b", v535_183_06)
 		v535_247_01 := addDriverABI(535, 247, 01, "c250e686494cb0c1b5eeea58ba2003707510b2766df05b06ba20b11b3445466b", "bd8ea5c3747a588ff1a29b4f59300d2eba69402a605cb95fce10a30f535993d0", v535_230_02)
 		_ = addDriverABI(535, 261, 03, "d74b61d11e9c9b9052f4042d6ec4437f13d1def30e964e232d47e5d659d11d68", "9a412d3ac01c99d2ca02100a7139597fce8804c52bf533d11b60437286834a93", v535_247_01)
 
@@ -774,7 +773,7 @@ func Init() {
 			return abi
 		}
 
-		v550_54_14 := addDriverABI(550, 54, 14, "8c497ff1cfc7c310fb875149bc30faa4fd26d2237b2cba6cd2e8b0780157cfe3", "b0fae8061633885c24f6b0c047649b46249a3bb44cadffbf658af28f80642c1d", func() *driverABI {
+		v550_54_14 := func() *driverABI {
 			abi := v550_40_07()
 			abi.uvmIoctl[nvgpu.UVM_ALLOC_SEMAPHORE_POOL] = uvmHandler(uvmIoctlSimple[nvgpu.UVM_ALLOC_SEMAPHORE_POOL_PARAMS_V550], compUtil)
 			abi.uvmIoctl[nvgpu.UVM_MAP_EXTERNAL_ALLOCATION] = uvmHandler(uvmIoctlHasFrontendFD[nvgpu.UVM_MAP_EXTERNAL_ALLOCATION_PARAMS_V550], compUtil)
@@ -788,12 +787,10 @@ func Init() {
 			}
 
 			return abi
-		})
+		}
 
-		v550_54_15 := addDriverABI(550, 54, 15, "2e859ae5f912a9a47aaa9b2d40a94a14f6f486b5d3b67c0ddf8b72c1c9650385", ChecksumNoDriver, v550_54_14)
-
-		v550_90_07 := addDriverABI(550, 90, 07, "51acf579d5a9884f573a1d3f522e7fafa5e7841e22a9cec0b4bbeae31b0b9733", "b896b76ae465307afc5b269c40bd8ccb279e6ea7d3ecae95534a91ecb1971572", func() *driverABI {
-			abi := v550_54_15()
+		v550_90_07 := func() *driverABI {
+			abi := v550_54_14()
 			abi.controlCmd[nvgpu.NV_CONF_COMPUTE_CTRL_CMD_GPU_GET_KEY_ROTATION_STATE] = ctrlHandler(rmControlSimple, compUtil)
 
 			prevGetInfo := abi.getInfo
@@ -804,17 +801,10 @@ func Init() {
 			}
 
 			return abi
-		})
+		}
 
 		// This version does not belong on any branch, but it is a child of 550.90.07.
-		_ = addDriverABI(550, 90, 12, "391883846713b9e700af2ae87f8ac671f5527508ce3f9f60058deb363e05162a", ChecksumNoDriver, v550_90_07)
-
-		// 550.100 is an intermediate unqualified version from the main branch.
-		v550_100 := v550_90_07
-
-		// The following exist on the "550" branch. They branched off the main
-		// branch at 550.100.
-		_ = addDriverABI(550, 127, 05, "d384f34f5d2a896bd7536d3deb6a6d973d8094a3ad485a1c2ee3bf5192086ae9", "df0b06a89bc37fc8a8e2a152a9ba5a7de1c70636dab0ae62fd6f94e937847816", v550_100)
+		_ = addDriverABI(550, 90, 12, "391883846713b9e700af2ae87f8ac671f5527508ce3f9f60058deb363e05162a", ChecksumNoDriver, v550_90_07) // Internal use.
 
 		// 555.42.02 is an intermediate unqualified version.
 		v555_42_02 := func() *driverABI {
@@ -856,11 +846,8 @@ func Init() {
 			return abi
 		}
 
-		v560_35_03 := addDriverABI(560, 35, 03, "f2932c92fadd43c5b2341be453fc4f73f0ad7185c26bb7a43fbde81ae29f1fe3", "b3c64054abd1357a63c5162a337139a2cb3915da96fadbf5a900b6a438df1beb", v560_28_03)
-		v565_57_01 := addDriverABI(565, 57, 01, "6eebe94e585e385e8804f5a74152df414887bf819cc21bd95b72acd0fb182c7a", "68355cdec3531b83b7cbebca5bcee6c3e8bd02a5c2636f4656a108525b2f61f1", v560_35_03)
-
 		v570_86_15 := addDriverABI(570, 86, 15, "87709c19c7401243136bc0ec9e7f147c6803070a11449ae8f0819dee7963f76b", ChecksumNoDriver, func() *driverABI {
-			abi := v565_57_01()
+			abi := v560_28_03()
 			abi.controlCmd[nvgpu.NV2080_CTRL_CMD_FB_QUERY_DRAM_ENCRYPTION_INFOROM_SUPPORT] = ctrlHandler(rmControlSimple, compUtil)
 			abi.allocationClass[nvgpu.TURING_CHANNEL_GPFIFO_A] = allocHandler(rmAllocChannelV570, compUtil)
 			abi.allocationClass[nvgpu.AMPERE_CHANNEL_GPFIFO_A] = allocHandler(rmAllocChannelV570, compUtil)
