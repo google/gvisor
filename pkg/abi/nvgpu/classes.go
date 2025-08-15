@@ -328,6 +328,16 @@ type NV_VASPACE_ALLOCATION_PARAMETERS struct {
 	VABase          uint64
 }
 
+// NV_VASPACE_ALLOCATION_PARAMETERS_V580 is the updated version of
+// NV_VASPACE_ALLOCATION_PARAMETERS since 580.65.06.
+//
+// +marshal
+type NV_VASPACE_ALLOCATION_PARAMETERS_V580 struct {
+	NV_VASPACE_ALLOCATION_PARAMETERS
+	Pasid uint32
+	Pad1  [4]byte
+}
+
 // NV_CHANNEL_GROUP_ALLOCATION_PARAMETERS is the alloc params type for
 // KEPLER_CHANNEL_GROUP_A, from src/common/sdk/nvidia/inc/nvos.h.
 //

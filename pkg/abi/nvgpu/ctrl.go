@@ -142,10 +142,14 @@ type NV0000_CTRL_SYSTEM_GET_P2P_CAPS_PARAMS_V550 struct {
 
 // From src/common/sdk/nvidia/inc/ctrl/ctrl0000/ctrl0000unix.h:
 const (
-	NV0000_CTRL_CMD_OS_UNIX_EXPORT_OBJECT_TO_FD    = 0x3d05
-	NV0000_CTRL_CMD_OS_UNIX_IMPORT_OBJECT_FROM_FD  = 0x3d06
-	NV0000_CTRL_CMD_OS_UNIX_GET_EXPORT_OBJECT_INFO = 0x3d08
-	NV0000_OS_UNIX_EXPORT_OBJECT_FD_BUFFER_SIZE    = 64
+	NV0000_CTRL_CMD_OS_UNIX_EXPORT_OBJECT_TO_FD          = 0x3d05
+	NV0000_CTRL_CMD_OS_UNIX_IMPORT_OBJECT_FROM_FD        = 0x3d06
+	NV0000_CTRL_CMD_OS_UNIX_GET_EXPORT_OBJECT_INFO       = 0x3d08
+	NV0000_CTRL_CMD_OS_UNIX_EXPORT_OBJECTS_TO_FD         = 0x3d0b
+	NV0000_CTRL_CMD_OS_UNIX_IMPORT_OBJECTS_FROM_FD       = 0x3d0c
+	NV0000_OS_UNIX_EXPORT_OBJECT_FD_BUFFER_SIZE          = 64
+	NV0000_CTRL_OS_UNIX_EXPORT_OBJECTS_TO_FD_MAX_OBJECTS = 512
+	NV0000_CTRL_OS_UNIX_IMPORT_OBJECTS_TO_FD_MAX_OBJECTS = 128
 )
 
 // +marshal
@@ -223,6 +227,48 @@ func (p *NV0000_CTRL_OS_UNIX_IMPORT_OBJECT_FROM_FD_PARAMS) GetFrontendFD() int32
 
 // SetFrontendFD implements HasFrontendFD.SetFrontendFD.
 func (p *NV0000_CTRL_OS_UNIX_IMPORT_OBJECT_FROM_FD_PARAMS) SetFrontendFD(fd int32) {
+	p.FD = fd
+}
+
+// +marshal
+type NV0000_CTRL_OS_UNIX_EXPORT_OBJECTS_TO_FD_PARAMS struct {
+	FD         int32
+	HDevice    Handle
+	MaxObjects uint16
+	Metadata   [NV0000_OS_UNIX_EXPORT_OBJECT_FD_BUFFER_SIZE]uint8
+	Pad        [2]byte
+	Objects    [NV0000_CTRL_OS_UNIX_EXPORT_OBJECTS_TO_FD_MAX_OBJECTS]Handle
+	NumObjects uint16
+	Index      uint16
+}
+
+// GetFrontendFD implements HasFrontendFD.GetFrontendFD.
+func (p *NV0000_CTRL_OS_UNIX_EXPORT_OBJECTS_TO_FD_PARAMS) GetFrontendFD() int32 {
+	return p.FD
+}
+
+// SetFrontendFD implements HasFrontendFD.SetFrontendFD.
+func (p *NV0000_CTRL_OS_UNIX_EXPORT_OBJECTS_TO_FD_PARAMS) SetFrontendFD(fd int32) {
+	p.FD = fd
+}
+
+// +marshal
+type NV0000_CTRL_OS_UNIX_IMPORT_OBJECTS_FROM_FD_PARAMS struct {
+	FD          int32
+	HParent     Handle
+	Objects     [NV0000_CTRL_OS_UNIX_IMPORT_OBJECTS_TO_FD_MAX_OBJECTS]Handle
+	ObjectTypes [NV0000_CTRL_OS_UNIX_IMPORT_OBJECTS_TO_FD_MAX_OBJECTS]uint8
+	NumObjects  uint16
+	Index       uint16
+}
+
+// GetFrontendFD implements HasFrontendFD.GetFrontendFD.
+func (p *NV0000_CTRL_OS_UNIX_IMPORT_OBJECTS_FROM_FD_PARAMS) GetFrontendFD() int32 {
+	return p.FD
+}
+
+// SetFrontendFD implements HasFrontendFD.SetFrontendFD.
+func (p *NV0000_CTRL_OS_UNIX_IMPORT_OBJECTS_FROM_FD_PARAMS) SetFrontendFD(fd int32) {
 	p.FD = fd
 }
 

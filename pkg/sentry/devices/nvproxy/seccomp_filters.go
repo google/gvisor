@@ -60,7 +60,7 @@ func frontendIoctlFilters(enabledCaps nvconf.DriverCaps) []seccomp.SyscallRule {
 		{seccomp.EqualTo(frontendIoctlCmd(nvgpu.NV_ESC_RM_MAP_MEMORY, nvgpu.SizeofIoctlNVOS33ParametersWithFD)), compUtil},
 		{seccomp.EqualTo(frontendIoctlCmd(nvgpu.NV_ESC_RM_UNMAP_MEMORY, nvgpu.SizeofNVOS34Parameters)), compUtil},
 		{seccomp.EqualTo(frontendIoctlCmd(nvgpu.NV_ESC_RM_ALLOC_CONTEXT_DMA2, nvgpu.SizeofNVOS39Parameters)), nvconf.CapGraphics},
-		{seccomp.EqualTo(frontendIoctlCmd(nvgpu.NV_ESC_RM_MAP_MEMORY_DMA, nvgpu.SizeofNVOS46Parameters)), nvconf.CapGraphics | nvconf.CapVideo},
+		{seccomp.MaskedEqual(notIocSizeMask, frontendIoctlCmd(nvgpu.NV_ESC_RM_MAP_MEMORY_DMA, 0)), nvconf.CapGraphics | nvconf.CapVideo},
 		{seccomp.MaskedEqual(notIocSizeMask, frontendIoctlCmd(nvgpu.NV_ESC_RM_UNMAP_MEMORY_DMA, 0)), nvconf.CapGraphics | nvconf.CapVideo},
 		{seccomp.EqualTo(frontendIoctlCmd(nvgpu.NV_ESC_RM_UPDATE_DEVICE_MAPPING_INFO, nvgpu.SizeofNVOS56Parameters)), compUtil},
 	} {
