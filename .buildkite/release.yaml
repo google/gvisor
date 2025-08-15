@@ -89,7 +89,6 @@ steps:
     agents:
       queue: gpu
   - label: ":batfish: CUDA 12.8 tests"
-    if: build.env("STAGED_BINARIES") == null && ( build.env("SKIP_GPU_TESTS") == null || build.message =~ /nvidia|nvproxy|gpu/i )
     # This is its own test rather than being part of the GPU tests,
     # because it takes around 30 minutes to run.
     parallelism: 16

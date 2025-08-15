@@ -51,7 +51,6 @@ var testCompatibility = map[string]cuda.Compatibility{
 		},
 	),
 	"2_Concepts_and_Techniques/EGLSync_CUDAEvent_Interop":  &cuda.OnlyOnWindows{},
-	"2_Concepts_and_Techniques/streamOrderedAllocationIPC": &cuda.BrokenInGVisor{},
 	"2_Concepts_and_Techniques/streamOrderedAllocationP2P": &cuda.RequiresP2P{},
 	"3_CUDA_Features/bf16TensorCoreGemm":                   cuda.RequiresFeatures(cuda.FeatureTensorCores),
 	"3_CUDA_Features/cdpAdvancedQuicksort":                 cuda.RequiresFeatures(cuda.FeatureDynamicParallelism),
