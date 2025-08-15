@@ -41,7 +41,7 @@ If you're interested in exploring further, there are more details in the
 
 # Points
 
-Every trance point in the system is identified by a unique name. The naming
+Every trace point in the system is identified by a unique name. The naming
 convention is to scope the point with a main component followed by its name to
 avoid conflicts. Here are a few examples:
 
