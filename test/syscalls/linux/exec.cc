@@ -159,7 +159,7 @@ void CheckExecHelper(const absl::optional<int32_t> dirfd,
 
   int status;
   ASSERT_THAT(RetryEINTR(waitpid)(child, &status, 0), SyscallSucceeds());
-  EXPECT_EQ(status, expect_status);
+  EXPECT_EQ(status, expect_status) << output;
 
   // Process cleanup no longer needed.
   kill.Release();
