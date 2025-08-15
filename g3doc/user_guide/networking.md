@@ -9,7 +9,8 @@ network stack. Data link layer packets are written directly to the virtual
 device inside the network namespace setup by Docker or Kubernetes.
 
 Configuring the network stack may provide performance benefits, but isn't the
-only step to optimizing gVisor performance. See the [Production guide] for more.
+only step to optimizing gVisor performance. See the
+[Production guide][Production guide] for more.
 
 The IP address and routes configured for the device are transferred inside the
 sandbox. The loopback device runs exclusively inside the sandbox and does not
@@ -86,3 +87,4 @@ Offload (GSO) to run with a kernel that is newer than 3.17. Add the
 ```
 
 [netstack]: /docs/architecture_guide/networking/
+[Production guide]: /docs/user_guide/production/
