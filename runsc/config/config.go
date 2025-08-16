@@ -402,9 +402,9 @@ type Config struct {
 	// with the SUID/SGID bits set.
 	AllowSUID bool `flag:"allow-suid"`
 
-    // AllowUnknownFields allows unknown fields in the OCI config. If disabled,
-    // unknown fields will result in an error.
-    AllowUnknownFields bool `flag:"allow-unknown-fields"`
+	// AllowUnknownFields allows unknown fields in the OCI config. If disabled,
+	// unknown fields will result in an error.
+	AllowUnknownFields bool `flag:"allow-unknown-fields"`
 }
 
 func (c *Config) validate() error {
