@@ -590,6 +590,36 @@ func (n *NVOS46_PARAMETERS) SetStatus(status uint32) {
 	n.Status = status
 }
 
+// NVOS46_PARAMETERS_V580 is the updated version of NVOS46_PARAMETERS since
+// 580.65.06.
+//
+// +marshal
+type NVOS46_PARAMETERS_V580 struct {
+	Client       Handle
+	Device       Handle
+	Dma          Handle
+	Memory       Handle
+	Offset       uint64
+	Length       uint64
+	Flags        uint32
+	Flags2       uint32
+	KindOverride uint32
+	Pad0         [4]byte
+	DmaOffset    uint64
+	Status       uint32
+	Pad1         [4]byte
+}
+
+// GetStatus implements HasStatus.GetStatus.
+func (n *NVOS46_PARAMETERS_V580) GetStatus() uint32 {
+	return n.Status
+}
+
+// SetStatus implements HasStatus.SetStatus.
+func (n *NVOS46_PARAMETERS_V580) SetStatus(status uint32) {
+	n.Status = status
+}
+
 // NVOS47_PARAMETERS is the parameter type for NV_ESC_RM_UNMAP_MEMORY_DMA.
 //
 // +marshal
@@ -767,7 +797,6 @@ var (
 	SizeofNVOS32Parameters            = uint32((*NVOS32_PARAMETERS)(nil).SizeBytes())
 	SizeofNVOS34Parameters            = uint32((*NVOS34_PARAMETERS)(nil).SizeBytes())
 	SizeofNVOS39Parameters            = uint32((*NVOS39_PARAMETERS)(nil).SizeBytes())
-	SizeofNVOS46Parameters            = uint32((*NVOS46_PARAMETERS)(nil).SizeBytes())
 	SizeofNVOS54Parameters            = uint32((*NVOS54_PARAMETERS)(nil).SizeBytes())
 	SizeofNVOS55Parameters            = uint32((*NVOS55_PARAMETERS)(nil).SizeBytes())
 	SizeofNVOS56Parameters            = uint32((*NVOS56_PARAMETERS)(nil).SizeBytes())
