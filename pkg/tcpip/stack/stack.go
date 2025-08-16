@@ -96,6 +96,8 @@ type Stack struct {
 	// +checklocks:mu
 	nics map[tcpip.NICID]*nic `state:"nosave"`
 	// +checklocks:mu
+	loopbackNIC *nic
+	// +checklocks:mu
 	defaultForwardingEnabled map[tcpip.NetworkProtocolNumber]struct{}
 
 	// nicIDGen is used to generate NIC IDs.
@@ -936,6 +938,9 @@ func (s *Stack) CreateNICWithOptions(id tcpip.NICID, ep LinkEndpoint, opts NICOp
 		}
 	}
 	s.nics[id] = n
+	if n.IsLoopback() {
+		s.loopbackNIC = n
+	}
 	ep.SetOnCloseAction(func() {
 		s.RemoveNIC(id)
 	})
@@ -1048,6 +1053,9 @@ func (s *Stack) removeNICLocked(id tcpip.NICID) (func(), tcpip.Error) {
 	}
 	s.routeMu.Unlock()
 
+	if s.loopbackNIC == nic {
+		s.loopbackNIC = nil
+	}
 	return nic.remove(true /* closeLinkEndpoint */)
 }
 
@@ -1385,6 +1393,29 @@ func (s *Stack) findLocalRouteFromNICRLocked(localAddressNIC *nic, localAddr, re
 	return r
 }
 
+func (s *Stack) loopbackLocalRoute(localAddressNIC *nic, localAddr, remoteAddr tcpip.Address, netProto tcpip.NetworkProtocolNumber) *Route {
+	localAddressEndpoint := localAddressNIC.getAddressOrCreateTempInner(netProto, localAddr, true /* createTemp */, NeverPrimaryEndpoint)
+	if localAddressEndpoint == nil {
+		return nil
+	}
+
+	r := makeLocalRoute(
+		netProto,
+		localAddr,
+		remoteAddr,
+		localAddressNIC,
+		localAddressNIC,
+		localAddressEndpoint,
+	)
+
+	if r.IsOutboundBroadcast() {
+		r.Release()
+		return nil
+	}
+
+	return r
+}
+
 // findLocalRouteRLocked returns a local route.
 //
 // A local route is a route to some remote address which the stack owns. That
@@ -1397,6 +1428,22 @@ func (s *Stack) findLocalRouteRLocked(localAddressNICID tcpip.NICID, localAddr, 
 	}
 
 	if localAddressNICID == 0 {
+		if s.loopbackNIC != nil {
+			// Send all packets directed to local ip addresses through the loopback device.
+			for _, nic := range s.nics {
+				if !nic.hasAddress(netProto, remoteAddr) {
+					continue
+				}
+				if isSubnetBroadcastOnNIC(nic, netProto, remoteAddr) {
+					break
+				}
+				if r := s.loopbackLocalRoute(s.loopbackNIC, localAddr, remoteAddr, netProto); r != nil {
+					return r
+				}
+				break
+			}
+		}
+
 		for _, localAddressNIC := range s.nics {
 			if r := s.findLocalRouteFromNICRLocked(localAddressNIC, localAddr, remoteAddr, netProto); r != nil {
 				return r
@@ -1992,9 +2039,13 @@ func (s *Stack) ReplaceConfig(st *Stack) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.nics = make(map[tcpip.NICID]*nic)
+	s.loopbackNIC = nil
 	for id, nic := range nics {
 		nic.stack = s
 		s.nics[id] = nic
+		if nic.IsLoopback() {
+			s.loopbackNIC = nic
+		}
 		_ = s.NextNICID()
 	}
 	s.tables = st.tables
