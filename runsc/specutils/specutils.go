@@ -26,6 +26,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"bytes"
 
 	"github.com/cenkalti/backoff"
 	"github.com/mohae/deepcopy"
@@ -215,7 +216,11 @@ func ReadSpecFromFile(bundleDir string, specFile *os.File, conf *config.Config) 
 		return nil, fmt.Errorf("error reading spec from file %q: %v", specFile.Name(), err)
 	}
 	var spec specs.Spec
-	if err := json.Unmarshal(specBytes, &spec); err != nil {
+	decoder := json.NewDecoder(bytes.NewReader(specBytes))
+	if !conf.AllowUnknownFields {
+		decoder.DisallowUnknownFields()
+	}
+	if err := decoder.Decode(&spec); err != nil {
 		return nil, fmt.Errorf("error unmarshaling spec from file %q: %v\n %s", specFile.Name(), err, string(specBytes))
 	}
 	if err := ValidateSpec(&spec); err != nil {
