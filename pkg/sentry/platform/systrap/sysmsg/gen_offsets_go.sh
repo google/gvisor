@@ -1,3 +1,5 @@
+#!/bin/bash
+
 # Copyright 2020 The gVisor Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -15,8 +17,6 @@
 # This script generates a golang file which contains:
 #   * byte array with the sysmsg stub binary blob.
 #   * set of variables with addresses of exported symbols.
-
-#!/bin/bash
 
 set -e
 set -u
