@@ -63,10 +63,9 @@ const (
 
 // Flags.
 var (
-	verifyCompatibility = flag.Bool("cuda_verify_compatibility", os.Getenv("GVISOR_TEST_CUDA_VERIFY_COMPATIBILITY") == "true", "whether to verify that all tests are marked as compatible")
-	logSuccessfulTests  = flag.Bool("cuda_log_successful_tests", false, "log console output of successful tests")
-	debug               = flag.Bool("cuda_test_debug", false, "log more data as the test is running")
-	containersPerCPU    = flag.Float64("cuda_containers_per_cpu", defaultContainersPerCPU, "number of parallel execution containers to spawn per CPU (floating point values allowed)")
+	logSuccessfulTests = flag.Bool("cuda_log_successful_tests", false, "log console output of successful tests")
+	debug              = flag.Bool("cuda_test_debug", false, "log more data as the test is running")
+	containersPerCPU   = flag.Float64("cuda_containers_per_cpu", defaultContainersPerCPU, "number of parallel execution containers to spawn per CPU (floating point values allowed)")
 )
 
 // InitFlags parses the flags and sets the test.parallel flag to the desired
@@ -524,9 +523,6 @@ func runSampleTest(ctx context.Context, t *testing.T, testName string, te *TestE
 		compat = &FullyCompatible{}
 	}
 	willFailReason := compat.WillFail(ctx, te)
-	if willFailReason != "" && !*verifyCompatibility {
-		return fmt.Sprintf("this test is expected to fail (%s) --cuda_verify_compatibility=true to verify compatibility)", willFailReason), nil
-	}
 	if skipReason, isAlwaysSkipped := args.AlwaysSkippedTests[testName]; isAlwaysSkipped {
 		return fmt.Sprintf("this test is always skipped (%v)", skipReason), nil
 	}
@@ -676,8 +672,7 @@ type RunCudaTestArgs struct {
 	// parallel with them.
 	ExclusiveTests map[string]struct{}
 
-	// AlwaysSkippedTests don't run at all, ever, and are not verified when
-	// --cuda_verify_compatibility is set.
+	// AlwaysSkippedTests don't run at all.
 	// Each test is mapped to a reason why it should be skipped.
 	AlwaysSkippedTests map[string]string
 
