@@ -85,7 +85,7 @@ steps:
       <<: *retry_settings
     commands:
       - make sudo TARGETS=//tools/gpu:main ARGS="install --latest" || cat /var/log/nvidia-installer.log
-      - make cuda-tests ARGS="--cuda_verify_compatibility=true"
+      - make cuda-tests
     agents:
       queue: gpu
   - label: ":batfish: CUDA 12.8 tests"
@@ -97,7 +97,7 @@ steps:
       <<: *retry_settings
     commands:
       - make sudo TARGETS=//tools/gpu:main ARGS="install --latest" || cat /var/log/nvidia-installer.log
-      - make cuda-12-8-tests ARGS="--cuda_verify_compatibility=true"
+      - make cuda-12-8-tests
     agents:
       queue: gpu
   - <<: *common

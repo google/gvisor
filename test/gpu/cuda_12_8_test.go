@@ -35,9 +35,6 @@ var flakyTests = map[string]struct{}{}
 
 var exclusiveTests = map[string]struct{}{}
 
-// alwaysSkippedTests don't run at all, ever, and are not verified when
-// --cuda_verify_compatibility is set.
-// Each test is mapped to a reason why it should be skipped.
 // TODO(zkoopmans): Enable these tests once they pass.
 var alwaysSkippedTests = map[string]string{
 	"4_CUDA_Libraries/cudaNvSci":           "TODO - Debug",
