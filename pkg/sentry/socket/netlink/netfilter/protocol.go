@@ -82,8 +82,7 @@ func (p *Protocol) Receive(ctx context.Context, s *netlink.Socket, buf []byte) *
 	// TODO: b/434785410 - Support batch messages.
 	if hdr.Type == linux.NFNL_MSG_BATCH_BEGIN {
 		ms := nlmsg.NewMessageSet(s.GetPortID(), hdr.Seq)
-		err := p.receiveBatchMessage(ctx, s, ms, buf)
-		if err != nil {
+		if err := p.receiveBatchMessage(ctx, s, ms, buf); err != nil {
 			log.Debugf("Nftables: Failed to process batch message: %v", err)
 			netlink.DumpErrorMessage(hdr, ms, err.GetError())
 		}
@@ -129,6 +128,7 @@ func (p *Protocol) newTable(nft *nftables.NFTables, attrs map[uint16]nlmsg.Bytes
 	var attrFlags uint32 = 0
 	if uflags, ok := attrs[linux.NFTA_TABLE_FLAGS]; ok {
 		attrFlags, _ = uflags.Uint32()
+		attrFlags = nlmsg.NetToHostU32(attrFlags)
 		// Flags sent through the NFTA_TABLE_FLAGS attribute are of type uint32
 		// but should only have user flags set. This check needs to be done
 		// before table creation.
@@ -165,11 +165,17 @@ func (p *Protocol) newTable(nft *nftables.NFTables, attrs map[uint16]nlmsg.Bytes
 // updateTable updates an existing table.
 func (p *Protocol) updateTable(nft *nftables.NFTables, tab *nftables.Table, attrs map[uint16]nlmsg.BytesView, family stack.AddressFamily, ms *nlmsg.MessageSet) *syserr.AnnotatedError {
 	var attrFlags uint32
-	if uflags, ok := attrs[linux.NFTA_TABLE_FLAGS]; ok {
-		attrFlags, _ = uflags.Uint32()
+	if uflagsBytes, ok := attrs[linux.NFTA_TABLE_FLAGS]; ok {
+		attrFlags, ok := uflagsBytes.Uint32()
+		if !ok {
+			return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("Nftables: Table flags attribute is malformed or not found"))
+		}
+
+		// User Flags are read in network byte order.
+		attrFlags = nlmsg.NetToHostU32(attrFlags)
 		// This check needs to be done before table update.
 		if attrFlags & ^uint32(linux.NFT_TABLE_F_MASK) > 0 {
-			return syserr.NewAnnotatedError(syserr.ErrNotSupported, fmt.Sprintf("Nftables: Table flags set are not supported"))
+			return syserr.NewAnnotatedError(syserr.ErrNotSupported, fmt.Sprintf("Nftables: Table flags %d are not supported", attrFlags))
 		}
 	}
 
@@ -205,7 +211,9 @@ func (p *Protocol) getTable(nft *nftables.NFTables, attrs map[uint16]nlmsg.Bytes
 		return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("Nftables: Table name attribute is malformed or not found"))
 	}
 
-	tab, err := nft.GetTable(family, tabNameBytes.String(), uint32(ms.PortID))
+	// Tables can be retrieved by anybody, so we pass in 0 as the port ID.
+	// From net/netfilter/nf_tables_api.c:nf_tables_gettable
+	tab, err := nft.GetTable(family, tabNameBytes.String(), 0)
 	if err != nil {
 		return err
 	}
@@ -227,12 +235,12 @@ func (p *Protocol) getTable(nft *nftables.NFTables, attrs map[uint16]nlmsg.Bytes
 		ResourceID: uint16(0),
 	})
 	m.PutAttrString(linux.NFTA_TABLE_NAME, tabName)
-	m.PutAttr(linux.NFTA_TABLE_USE, primitive.AllocateUint32(uint32(tab.ChainCount())))
-	m.PutAttr(linux.NFTA_TABLE_HANDLE, primitive.AllocateUint64(tab.GetHandle()))
-	m.PutAttr(linux.NFTA_TABLE_FLAGS, primitive.AllocateUint8(userFlags))
+	m.PutAttr(linux.NFTA_TABLE_USE, nlmsg.PutU32(uint32(tab.ChainCount())))
+	m.PutAttr(linux.NFTA_TABLE_HANDLE, nlmsg.PutU64(tab.GetHandle()))
+	m.PutAttr(linux.NFTA_TABLE_FLAGS, nlmsg.PutU32(uint32(userFlags)))
 
 	if tab.HasOwner() {
-		m.PutAttr(linux.NFTA_TABLE_OWNER, primitive.AllocateUint32(tab.GetOwner()))
+		m.PutAttr(linux.NFTA_TABLE_OWNER, nlmsg.PutU32(tab.GetOwner()))
 	}
 
 	if tab.HasUserData() {
@@ -257,7 +265,7 @@ func (p *Protocol) deleteTable(nft *nftables.NFTables, attrs map[uint16]nlmsg.By
 			return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("Nftables: Table handle attribute is malformed or not found"))
 		}
 
-		tab, err = nft.GetTableByHandle(family, uint64(tabHandle), uint32(ms.PortID))
+		tab, err = nft.GetTableByHandle(family, nlmsg.HostToNetU64(tabHandle), uint32(ms.PortID))
 	} else {
 		tabNameBytes, ok := attrs[linux.NFTA_TABLE_NAME]
 		if !ok {
@@ -324,7 +332,7 @@ func (p *Protocol) newChain(nft *nftables.NFTables, attrs map[uint16]nlmsg.Bytes
 
 		// The policy attribute is purposely truncated here to be one byte in size.
 		// From net/netfilter/nf_tables_api.c:nf_tables_newchain
-		policy = uint8(policyData)
+		policy = uint8(nlmsg.NetToHostU32(policyData))
 
 		if policy != linux.NF_DROP && policy != linux.NF_ACCEPT {
 			return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("Nftables: Chain policy attribute %d is an invalid value", policy))
@@ -337,7 +345,7 @@ func (p *Protocol) newChain(nft *nftables.NFTables, attrs map[uint16]nlmsg.Bytes
 		if !ok {
 			return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("Nftables: Chain flags attribute is malformed or not found"))
 		}
-		chainFlags = flagData
+		chainFlags = nlmsg.NetToHostU32(flagData)
 	} else if chain != nil {
 		chainFlags = uint32(chain.GetFlags())
 	}
@@ -373,7 +381,7 @@ func getChain(tab *nftables.Table, attrs map[uint16]nlmsg.BytesView) (*nftables.
 			return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("Nftables: Chain handle attribute is malformed or not found"))
 		}
 
-		chain, err = tab.GetChainByHandle(chainHandle)
+		chain, err = tab.GetChainByHandle(nlmsg.NetToHostU64(chainHandle))
 		if err != nil {
 			return nil, err
 		}
@@ -473,7 +481,7 @@ func (p *Protocol) chainParseHook(chain *nftables.Chain, family stack.AddressFam
 		if !ok {
 			return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("Nftables: Hook attributes HOOK_HOOKNUM is malformed or not found"))
 		}
-		hookInfo.HookNum = hookNum
+		hookInfo.HookNum = nlmsg.NetToHostU32(hookNum)
 	}
 
 	if priorityBytes, ok := hookAttrs[linux.NFTA_HOOK_PRIORITY]; ok {
@@ -481,7 +489,7 @@ func (p *Protocol) chainParseHook(chain *nftables.Chain, family stack.AddressFam
 		if !ok {
 			return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("Nftables: Hook attributes HOOK_PRIORITY is malformed or not found"))
 		}
-		hookInfo.Priority = int32(priority)
+		hookInfo.Priority = int32(nlmsg.NetToHostU32(priority))
 	}
 
 	// All families default to filter type.
@@ -537,7 +545,7 @@ func (p *Protocol) chainParseHook(chain *nftables.Chain, family stack.AddressFam
 	return baseChainInfo, nil
 }
 
-// getChain returns the chain with the given name and table name.
+// getChain fills the message set with information about a chain.
 func (p *Protocol) getChain(nft *nftables.NFTables, attrs map[uint16]nlmsg.BytesView, family stack.AddressFamily, msgFlags uint16, ms *nlmsg.MessageSet) *syserr.AnnotatedError {
 	if (msgFlags & linux.NLM_F_DUMP) != 0 {
 		// TODO: b/434243967 - Support dump requests for chains.
@@ -550,7 +558,10 @@ func (p *Protocol) getChain(nft *nftables.NFTables, attrs map[uint16]nlmsg.Bytes
 	}
 
 	tabName := tabNameBytes.String()
-	tab, err := nft.GetTable(family, tabName, uint32(ms.PortID))
+
+	// Tables can be retrieved by anybody, so we pass in 0 for the port id.
+	// From net/netfilter/nf_tables_api.c:nf_tables_getchain
+	tab, err := nft.GetTable(family, tabName, 0)
 	if err != nil {
 		return err
 	}
@@ -578,7 +589,7 @@ func (p *Protocol) getChain(nft *nftables.NFTables, attrs map[uint16]nlmsg.Bytes
 	})
 	m.PutAttrString(linux.NFTA_CHAIN_TABLE, tabName)
 	m.PutAttrString(linux.NFTA_CHAIN_NAME, chainName)
-	m.PutAttr(linux.NFTA_CHAIN_HANDLE, primitive.AllocateUint64(chain.GetHandle()))
+	m.PutAttr(linux.NFTA_CHAIN_HANDLE, nlmsg.PutU64(chain.GetHandle()))
 
 	if chain.IsBaseChain() {
 		err := getBaseChainHookInfo(chain, family, m)
@@ -587,16 +598,16 @@ func (p *Protocol) getChain(nft *nftables.NFTables, attrs map[uint16]nlmsg.Bytes
 		}
 
 		baseChainInfo := chain.GetBaseChainInfo()
-		m.PutAttr(linux.NFTA_CHAIN_POLICY, primitive.AllocateUint32(uint32(baseChainInfo.PolicyBoolToValue())))
+		m.PutAttr(linux.NFTA_CHAIN_POLICY, nlmsg.PutU32(uint32(baseChainInfo.PolicyBoolToValue())))
 		m.PutAttrString(linux.NFTA_CHAIN_TYPE, baseChainInfo.BcType.String())
 	}
 
 	chainFlags := chain.GetFlags()
 	if chainFlags != 0 {
-		m.PutAttr(linux.NFTA_CHAIN_FLAGS, primitive.AllocateUint32(uint32(chainFlags)))
+		m.PutAttr(linux.NFTA_CHAIN_FLAGS, nlmsg.PutU32(uint32(chainFlags)))
 	}
 
-	m.PutAttr(linux.NFTA_CHAIN_USE, primitive.AllocateUint32(uint32(chain.GetChainUse())))
+	m.PutAttr(linux.NFTA_CHAIN_USE, nlmsg.PutU32(uint32(chain.GetChainUse())))
 	if chain.HasUserData() {
 		m.PutAttr(linux.NFTA_CHAIN_USERDATA, primitive.AsByteSlice(chain.GetUserData()))
 	}
@@ -709,7 +720,7 @@ func (p *Protocol) newRule(nft *nftables.NFTables, attrs map[uint16]nlmsg.BytesV
 			return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: Rule handle attribute is malformed or not found")
 		}
 
-		rule, err := chain.GetRuleByHandle(ruleHandle)
+		rule, err := chain.GetRuleByHandle(nlmsg.NetToHostU64(ruleHandle))
 		if err != nil {
 			return err
 		}
@@ -736,7 +747,7 @@ func (p *Protocol) newRule(nft *nftables.NFTables, attrs map[uint16]nlmsg.BytesV
 				return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: Rule position attribute is malformed or not found")
 			}
 
-			oldRule, err = chain.GetRuleByHandle(posHandle)
+			oldRule, err = chain.GetRuleByHandle(nlmsg.NetToHostU64(posHandle))
 			if err != nil {
 				return err
 			}
@@ -873,8 +884,8 @@ func getBaseChainHookInfo(chain *nftables.Chain, family stack.AddressFamily, m *
 	baseChainInfo := chain.GetBaseChainInfo()
 	var nestedAttrs nlmsg.NestedAttr
 
-	nestedAttrs.PutAttr(linux.NFTA_HOOK_HOOKNUM, primitive.AllocateUint32(baseChainInfo.LinuxHookNum))
-	nestedAttrs.PutAttr(linux.NFTA_HOOK_PRIORITY, primitive.AllocateUint32(uint32(baseChainInfo.Priority.GetValue())))
+	nestedAttrs.PutAttr(linux.NFTA_HOOK_HOOKNUM, nlmsg.PutU32(baseChainInfo.LinuxHookNum))
+	nestedAttrs.PutAttr(linux.NFTA_HOOK_PRIORITY, nlmsg.PutU32(uint32(baseChainInfo.Priority.GetValue())))
 
 	if isNetDevHook(family, baseChainInfo.LinuxHookNum) {
 		return syserr.NewAnnotatedError(syserr.ErrNotSupported, fmt.Sprintf("Nftables: Netdev basechains or basechains attached to Ingress or Egress are not currently supported for getting"))
@@ -996,7 +1007,10 @@ func (p *Protocol) receiveBatchMessage(ctx context.Context, s *netlink.Socket, m
 		}
 	}
 
-	if err := p.processBatchMessage(ctx, s, buf, ms, hdr, nfGenMsg.ResourceID); err != nil {
+	// The resource ID is a 16-bit value that is stored in network byte order.
+	// We ensure that it is in host byte order before passing it for processing.
+	resID := nlmsg.NetToHostU16(nfGenMsg.ResourceID)
+	if err := p.processBatchMessage(ctx, s, buf, ms, hdr, resID); err != nil {
 		log.Debugf("Failed to process batch message: %v", err)
 		netlink.DumpErrorMessage(hdr, ms, err.GetError())
 	}
@@ -1065,8 +1079,13 @@ func (p *Protocol) processBatchMessage(ctx context.Context, s *netlink.Socket, b
 		if hdr.Type == linux.NFNL_MSG_BATCH_END {
 			// Replace the table if no errors were added into the message set.
 			if !ms.ContainsError {
+				// Batch end messages are only ACK'd if the batch was successful.
+				if hdr.Flags&linux.NLM_F_ACK != 0 {
+					netlink.DumpAckMessage(hdr, ms)
+				}
 				nft.ReplaceNFTables(nftCopy)
 			}
+
 			return nil
 		}
 
