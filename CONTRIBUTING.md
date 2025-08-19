@@ -92,6 +92,12 @@ Before sending code reviews, run `bazel test ...` to ensure tests are passing.
 
 Code changes are accepted via [pull request][github].
 
+When iterating on a pull request, please amend your commit rather than creating
+new commits on the same branch. Our merge bot applies all commits from the
+branch to master and does not yet support squash merging. If you'd like to
+submit a pull request with multiple commits, please ensure they are independent,
+logical units of work that can be applied separately.
+
 When approved, the change will be submitted by a team member and automatically
 merged into the repository.
 
