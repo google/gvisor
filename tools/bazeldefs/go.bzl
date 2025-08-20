@@ -173,7 +173,7 @@ def go_context(ctx, goos = None, goarch = None, std = False):
         goos = goos,
         gotags = go_ctx.tags,
         nogo_args = [],
-        runfiles = depset([go_ctx.go] + go_ctx.sdk.srcs + go_ctx.sdk.tools + go_ctx.stdlib.libs),
+        runfiles = depset([go_ctx.go] + go_ctx.sdk.srcs.to_list() + go_ctx.sdk.tools.to_list() + go_ctx.stdlib.libs.to_list()),
         stdlib_srcs = go_ctx.sdk.srcs,
     )
 
