@@ -13,7 +13,7 @@ def format(target):
     if files_to_run and files_to_run.executable:
         outputs[files_to_run.executable.path] = True
     elif default_info:
-        for x in default_info.files:
+        for x in default_info.files.to_list():
             outputs[x.path] = True
     elif output_group_info:
         for entry in dir(output_group_info):
