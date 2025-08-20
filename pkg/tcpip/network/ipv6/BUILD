@@ -26,6 +26,7 @@ go_library(
         "//pkg/tcpip/network/internal/fragmentation",
         "//pkg/tcpip/network/internal/ip",
         "//pkg/tcpip/network/internal/multicast",
+        "//pkg/tcpip/nftables",
         "//pkg/tcpip/stack",
     ],
 )
