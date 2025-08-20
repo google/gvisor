@@ -87,6 +87,22 @@ To build specific libraries or binaries, you can specify the target:
 make build TARGETS="//pkg/tcpip:tcpip"
 ```
 
+### Building directly with Bazel (without Docker)
+
+Using Bazel directly isn't recommended due to the extra overhead, but in order
+to get started:
+
+-   Look at the [build dockerfile](images/default/Dockerfile) for the canonical
+    list of needed dependencies.
+-   Install and use [bazelisk][bazelisk]. Otherwise, make sure your bazel
+    version matches the one listed in the [.bazelversion](.bazelversion) file.
+
+After setting up dependencies, using Bazel is similar to the Makefile:
+
+```sh
+bazel build //runsc:runsc
+```
+
 ### Testing
 
 To run standard test suites, you can use:
@@ -99,17 +115,22 @@ make tests
 To run specific tests, you can specify the target:
 
 ```sh
+# Makefile
 make test TARGETS="//runsc:version_test"
+# Bazel
+bazel test //runsc:version_test
 ```
 
+### Mac OS
+
 Some packages support running tests directly on macOS. At the time of this
-writing, gVisor requires bazel 7, which you can install via homebrew:
+writing, gVisor requires bazel 8, which you can install via homebrew:
 
 ```sh
-brew install bazel@7
+brew install bazel@8
 
 # You can then run the tests, e.g.:
-$(brew --prefix bazel@7)/bin/bazel test --macos_sdk_version=$(xcrun --show-sdk-version) -- //tools/nogo/... //tools/check{aligned,const,escape,linkname,locks,unsafe}/...
+$(brew --prefix bazel@8)/bin/bazel test --macos_sdk_version=$(xcrun --show-sdk-version) -- //tools/nogo/... //tools/check{aligned,const,escape,linkname,locks,unsafe}/...
 ```
 
 ### Using `go get`
@@ -161,3 +182,4 @@ See [Contributing.md](CONTRIBUTING.md).
 [oci]: https://www.opencontainers.org
 [old-linux]: https://gvisor.dev/docs/user_guide/networking/#gso
 [sandbox]: https://en.wikipedia.org/wiki/Sandbox_(computer_security)
+[bazelisk]: https://github.com/bazelbuild/bazelisk

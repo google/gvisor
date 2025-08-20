@@ -1,6 +1,11 @@
 FROM ubuntu:22.04
 
 ENV DEBIAN_FRONTEND="noninteractive"
+
+#-------------------------------------------------------------------------------
+# Note: If you want to use bazel directly you will need these packages or their
+#       equivalents for your distribution:
+#-------------------------------------------------------------------------------
 RUN apt-get update && apt-get install -y curl gnupg2 git \
         python-is-python3 python3 python3-distutils python3-pip \
         build-essential crossbuild-essential-arm64 qemu-user-static \
@@ -14,6 +19,10 @@ RUN apt-get update && apt-get install -y curl gnupg2 git \
 # This package is needed to build eBPF on amd64, but not on arm64 where it
 # doesn't exist.
 RUN test "$(uname -m)" != x86_64 && exit 0 || apt-get install -y libc6-dev-i386
+#-------------------------------------------------------------------------------
+# The rest of the file is unnecessary for building `runsc`, but are necessary
+# for test targets.
+#-------------------------------------------------------------------------------
 
 # Install Docker client for the website build.
 RUN curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add -
