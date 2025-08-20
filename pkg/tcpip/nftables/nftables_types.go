@@ -986,6 +986,7 @@ func nftDataInit(tab *Table, regType uint32, dataBytes nlmsg.AttrsView) (registe
 }
 
 // nftParseReg parses the register type and returns the register number.
+// Assumes that the register is in host byte order.
 func nftParseReg(reg uint32, regType uint32, regData registerData) (uint8, *syserr.AnnotatedError) {
 	dreg, err := nftMatchReg(reg)
 	if err != nil {
@@ -996,6 +997,7 @@ func nftParseReg(reg uint32, regType uint32, regData registerData) (uint8, *syse
 }
 
 // nftMatchReg matches the register type to the corresponding register number.
+// Assumes that the register is in host byte order.
 func nftMatchReg(reg uint32) (uint32, *syserr.AnnotatedError) {
 	switch reg {
 	case linux.NFT_REG_VERDICT, linux.NFT_REG_1, linux.NFT_REG_2, linux.NFT_REG_3, linux.NFT_REG_4:
@@ -1062,6 +1064,7 @@ func validateVerdictData(tab *Table, bytes nlmsg.AttrsView) (stack.NFVerdict, *s
 		return v, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("Nftables: NFTA_VERDICT_CODE attribute cannot be parsed to a uint32"))
 	}
 
+	verdictCode = nlmsg.NetToHostU32(verdictCode)
 	switch int32(verdictCode) {
 	case linux.NF_ACCEPT, linux.NF_DROP, linux.NF_QUEUE,
 		linux.NFT_CONTINUE, linux.NFT_BREAK, linux.NFT_RETURN:

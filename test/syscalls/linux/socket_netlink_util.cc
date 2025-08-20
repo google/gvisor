@@ -62,6 +62,20 @@ PosixErrorOr<uint32_t> NetlinkPortID(int fd) {
   return static_cast<uint32_t>(addr.nl_pid);
 }
 
+PosixError NetlinkRequest(const FileDescriptor& fd, void* request, size_t len) {
+  struct iovec iov = {};
+  iov.iov_base = request;
+  iov.iov_len = len;
+
+  struct msghdr msg = {};
+  msg.msg_iov = &iov;
+  msg.msg_iovlen = 1;
+  // No destination required; it defaults to pid 0, the kernel.
+
+  RETURN_ERROR_IF_SYSCALL_FAIL(RetryEINTR(sendmsg)(fd.get(), &msg, 0));
+  return NoError();
+}
+
 PosixError NetlinkRequestResponse(
     const FileDescriptor& fd, void* request, size_t len,
     const std::function<void(const struct nlmsghdr* hdr)>& fn,
@@ -185,35 +199,6 @@ PosixError NetlinkRequestAckOrError(const FileDescriptor& fd, uint32_t seq,
         const struct nlmsgerr* msg =
             reinterpret_cast<const struct nlmsgerr*>(NLMSG_DATA(hdr));
         err = -msg->error;
-      },
-      true));
-  return PosixError(err);
-}
-
-PosixError NetlinkBatchedRequestAckOrError(const FileDescriptor& fd,
-                                           uint32_t seq_start, uint32_t seq_end,
-                                           void* request, size_t len) {
-  // Dummy negative number for no error message received.
-  // On a successful message, err will be set to 0 (signalling an ack).
-  int err = -42;
-  bool err_set = false;
-  RETURN_IF_ERRNO(NetlinkRequestResponse(
-      fd, request, len,
-      [&](const struct nlmsghdr* hdr) {
-        if (err_set) {
-          return;
-        }
-        EXPECT_EQ(NLMSG_ERROR, hdr->nlmsg_type);
-        EXPECT_GE(hdr->nlmsg_seq, seq_start);
-        EXPECT_LE(hdr->nlmsg_seq, seq_end);
-        EXPECT_GE(hdr->nlmsg_len, sizeof(*hdr) + sizeof(struct nlmsgerr));
-
-        const struct nlmsgerr* msg =
-            reinterpret_cast<const struct nlmsgerr*>(NLMSG_DATA(hdr));
-        err = -msg->error;
-        if (err != 0) {
-          err_set = true;
-        }
       },
       true));
   return PosixError(err);
