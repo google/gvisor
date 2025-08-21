@@ -548,7 +548,7 @@ run-benchmark: load-benchmarks ## Runs single benchmark and optionally sends dat
 # The arguments passed to benchmarks when run for PGO profile collection.
 # This should *not* include the `-profile` or `-profile-cpu` arguments, as
 # those are added automatically.
-BENCHMARKS_ARGS_PGO  := -test.v -test.bench=. -test.benchtime=30s
+BENCHMARKS_ARGS_PGO  := -test.v -test.bench=. -test.benchtime=20s
 # The threshold below which the `benchmark-refresh-pgo` rule will update the
 # profile.
 BENCHMARKS_PGO_REFRESH_THRESHOLD ?= 0.7
@@ -590,7 +590,7 @@ benchmark-refresh-pgo: load-benchmarks $(RUNTIME_BIN) ## Refresh profiles of all
 				fi; \
 				mkdir -p "$$(dirname "$${PGO_PROFILE_OLD}")"; \
 				mkdir -p "$${PLATFORM_TMPDIR}/$${PGO_BENCHMARK_BASENAME}"; \
-				$(call install_runtime,$${PLATFORM}_$${PGO_RUNTIME_KEY}_pgo_$${PGO_BENCHMARK_BASENAME},--platform $${PLATFORM} --profile --profile-cpu="$${PLATFORM_TMPDIR}/$${PGO_BENCHMARK_BASENAME}/$${PGO_BENCHMARK_BASENAME}.%YYYY%-%MM%-%DD%_%HH%-%II%-%SS%-%NN%.pgo.pprof.pb.gz"); \
+				$(call install_runtime,$${PLATFORM}_$${PGO_RUNTIME_KEY}_pgo_$${PGO_BENCHMARK_BASENAME},--platform $${PLATFORM} --profile --profile-gc-interval=3s --profile-cpu="$${PLATFORM_TMPDIR}/$${PGO_BENCHMARK_BASENAME}/$${PGO_BENCHMARK_BASENAME}.%YYYY%-%MM%-%DD%_%HH%-%II%-%SS%-%NN%.pgo.pprof.pb.gz"); \
 				$(call sudo,$${PGO_BENCHMARK_TARGET},-runtime=$${PLATFORM}_$${PGO_RUNTIME_KEY}_pgo_$${PGO_BENCHMARK_BASENAME} -pgo-benchmarks=true $(BENCHMARKS_ARGS_PGO)); \
 				$(call run,tools/profiletool,merge --out="$${PGO_PROFILE_NEW}" "$${PLATFORM_TMPDIR}/$${PGO_BENCHMARK_BASENAME}"); \
 				rm -rf --one-file-system "$${PLATFORM_TMPDIR}/$${PGO_BENCHMARK_BASENAME}"; \

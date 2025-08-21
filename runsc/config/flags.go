@@ -99,6 +99,7 @@ func RegisterFlags(flagSet *flag.FlagSet) {
 	flagSet.Bool("profile", false, "prepares the sandbox to use Golang profiler. Note that enabling profiler loosens the seccomp protection added to the sandbox (DO NOT USE IN PRODUCTION).")
 	flagSet.String("profile-block", "", "collects a block profile to this file path for the duration of the container execution. Requires -profile=true.")
 	flagSet.String("profile-cpu", "", "collects a CPU profile to this file path for the duration of the container execution. Requires -profile=true.")
+	flagSet.Duration("profile-gc-interval", 0, "forces a garbage collection cycle every this duration while another type of time-based profiling is enabled. Requires -profile=true.")
 	flagSet.String("profile-heap", "", "collects a heap profile to this file path for the duration of the container execution. Requires -profile=true.")
 	flagSet.String("profile-mutex", "", "collects a mutex profile to this file path for the duration of the container execution. Requires -profile=true.")
 	flagSet.String("trace", "", "collects a Go runtime execution trace to this file path for the duration of the container execution.")

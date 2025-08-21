@@ -24,6 +24,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"time"
 
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/refs"
@@ -229,6 +230,15 @@ type Config struct {
 	// ProfileCPU collects a CPU profile to the passed file for the
 	// duration of the container execution. Requires ProfileEnabled.
 	ProfileCPU string `flag:"profile-cpu"`
+
+	// ProfileGCInterval forces a garbage-collection cycle at regular intervals.
+	// Useful for benchmark runs where the GC threshold may not be reached
+	// but for which it is useful to have GC (and the effects of GC) show
+	// up in the traces, while keeping the profile short.
+	// Requires `ProfileEnable`, and triggered when any other type of
+	// time-based profiling is enabled.
+	// If zero, GC happens per the Go runtime's default behavior.
+	ProfileGCInterval time.Duration `flag:"profile-gc-interval"`
 
 	// ProfileHeap collects a heap profile to the passed file for the
 	// duration of the container execution. Requires ProfileEnabled.

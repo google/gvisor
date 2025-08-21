@@ -201,7 +201,7 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomm
 	}
 
 	// Start profiling. This will be a noop if no profiling arguments were passed.
-	profileOpts := g.profileFDs.ToOpts()
+	profileOpts := profile.MakeOpts(&g.profileFDs, conf.ProfileGCInterval)
 	g.stopProfiling = profile.Start(profileOpts)
 
 	// At this point we won't re-execute, so it's safe to limit via rlimits. Any
@@ -278,7 +278,7 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomm
 	opts := filter.Options{
 		UDSOpenEnabled:   conf.GetHostUDS().AllowOpen(),
 		UDSCreateEnabled: conf.GetHostUDS().AllowCreate(),
-		ProfileEnabled:   len(profileOpts) > 0,
+		ProfileEnabled:   profileOpts.Enabled(),
 		DirectFS:         conf.DirectFS,
 		CgoEnabled:       config.CgoEnabled,
 	}

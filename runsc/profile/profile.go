@@ -77,26 +77,46 @@ func (fds *FDArgs) SetFromFlags(f *flag.FlagSet) {
 	f.IntVar(&fds.TraceFD, "trace-fd", -1, "file descriptor to write Go execution trace to. -1 disables tracing.")
 }
 
-// Opts is a map of profile Kind to FD.
-type Opts map[Kind]uintptr
+// Opts is a struct that holds the options for profiling.
+type Opts struct {
+	// FDs is a map of profile Kind to FD.
+	FDs map[Kind]uintptr
 
-// ToOpts turns FDArgs into an Opts struct which can be passed to Start.
-func (fds *FDArgs) ToOpts() Opts {
-	o := Opts{}
+	// GCInterval is the interval at which to force a garbage collection cycle.
+	// If zero, GC happens per the Go runtime's default behavior.
+	GCInterval time.Duration
+}
+
+// Enabled returns true if any profile type is enabled.
+func (opts Opts) Enabled() bool {
+	for _, fd := range opts.FDs {
+		if fd != 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// MakeOpts creates an Opts struct from the given FDArgs and GC interval.
+func MakeOpts(fds *FDArgs, gcInterval time.Duration) Opts {
+	o := Opts{
+		FDs:        make(map[Kind]uintptr),
+		GCInterval: gcInterval,
+	}
 	if fds.BlockFD >= 0 {
-		o[Block] = uintptr(fds.BlockFD)
+		o.FDs[Block] = uintptr(fds.BlockFD)
 	}
 	if fds.CPUFD >= 0 {
-		o[CPU] = uintptr(fds.CPUFD)
+		o.FDs[CPU] = uintptr(fds.CPUFD)
 	}
 	if fds.HeapFD >= 0 {
-		o[Heap] = uintptr(fds.HeapFD)
+		o.FDs[Heap] = uintptr(fds.HeapFD)
 	}
 	if fds.MutexFD >= 0 {
-		o[Mutex] = uintptr(fds.MutexFD)
+		o.FDs[Mutex] = uintptr(fds.MutexFD)
 	}
 	if fds.TraceFD >= 0 {
-		o[Trace] = uintptr(fds.TraceFD)
+		o.FDs[Trace] = uintptr(fds.TraceFD)
 	}
 	return o
 }
@@ -112,11 +132,41 @@ func Start(opts Opts) func() {
 		}
 	}
 
-	if fd, ok := opts[Block]; ok {
+	var stopPeriodicGC chan struct{}
+	maybeEnablePeriodicGC := func() {
+		if opts.GCInterval > 0 && stopPeriodicGC == nil {
+			log.Infof("Periodic garbage collection enabled during profiling; will run GC every %v.", opts.GCInterval)
+			stopPeriodicGC = make(chan struct{}, 1)
+			stoppedCh := make(chan struct{}, 1)
+			go func() {
+				ticker := time.NewTicker(opts.GCInterval)
+				defer ticker.Stop()
+				for {
+					select {
+					case <-stopPeriodicGC:
+						stoppedCh <- struct{}{}
+						close(stoppedCh)
+						return
+					case <-ticker.C:
+						log.Debugf("Forcing garbage collection per profile options")
+						runtime.GC()
+					}
+				}
+			}()
+			onStopProfiling = append(onStopProfiling, func() {
+				stopPeriodicGC <- struct{}{}
+				close(stopPeriodicGC)
+				<-stoppedCh // Wait for the goroutine to exit; this ensures periodic GC is not going to run further.
+			})
+		}
+	}
+
+	if fd, ok := opts.FDs[Block]; ok {
 		log.Infof("Block profiling enabled")
 		file := os.NewFile(fd, "profile-block")
 
 		runtime.SetBlockProfileRate(control.DefaultBlockProfileRate)
+		maybeEnablePeriodicGC()
 		onStopProfiling = append(onStopProfiling, func() {
 			if err := pprof.Lookup("block").WriteTo(file, 0); err != nil {
 				log.Warningf("Error writing block profile: %v", err)
@@ -127,11 +177,12 @@ func Start(opts Opts) func() {
 		})
 	}
 
-	if fd, ok := opts[CPU]; ok {
+	if fd, ok := opts.FDs[CPU]; ok {
 		log.Infof("CPU profiling enabled")
 		file := os.NewFile(fd, "profile-cpu")
 
 		pprof.StartCPUProfile(file)
+		maybeEnablePeriodicGC()
 		onStopProfiling = append(onStopProfiling, func() {
 			pprof.StopCPUProfile()
 			file.Close()
@@ -139,7 +190,7 @@ func Start(opts Opts) func() {
 		})
 	}
 
-	if fd, ok := opts[Heap]; ok {
+	if fd, ok := opts.FDs[Heap]; ok {
 		log.Infof("Heap profiling enabled")
 		file := os.NewFile(fd, "profile-heap")
 
@@ -152,11 +203,12 @@ func Start(opts Opts) func() {
 		})
 	}
 
-	if fd, ok := opts[Mutex]; ok {
+	if fd, ok := opts.FDs[Mutex]; ok {
 		log.Infof("Mutex profiling enabled")
 		file := os.NewFile(fd, "profile-mutex")
 
 		prev := runtime.SetMutexProfileFraction(control.DefaultMutexProfileRate)
+		maybeEnablePeriodicGC()
 		onStopProfiling = append(onStopProfiling, func() {
 			if err := pprof.Lookup("mutex").WriteTo(file, 0); err != nil {
 				log.Warningf("Error writing mutex profile: %v", err)
@@ -167,7 +219,7 @@ func Start(opts Opts) func() {
 		})
 	}
 
-	if fd, ok := opts[Trace]; ok {
+	if fd, ok := opts.FDs[Trace]; ok {
 		log.Infof("Tracing enabled")
 		file := os.NewFile(fd, "trace")
 
