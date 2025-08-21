@@ -23,9 +23,9 @@
 #include "gtest/gtest.h"
 #include "absl/flags/flag.h"
 #include "absl/synchronization/notification.h"
-#include "test/util/capability_util.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/fs_util.h"
+#include "test/util/linux_capability_util.h"
 #include "test/util/posix_error.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
@@ -125,6 +125,59 @@ TEST(ChownTest, FchownatEmptyPath) {
   const auto fd =
       ASSERT_NO_ERRNO_AND_VALUE(Open(dir.path(), O_DIRECTORY | O_RDONLY));
   ASSERT_THAT(fchownat(fd.get(), "", 0, 0, 0), SyscallFailsWithErrno(ENOENT));
+}
+
+TEST(ChownTest, SetGroupIdBitDeniedWithoutCapFsetIdOrRelevantGroup) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SETGID)));
+  const auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  AutoCapability cap(CAP_FSETID, false);
+
+  // Changing task creds in the main thread can mess with other tests.
+  ScopedThread([&] {
+    const mode_t chown_mode = 0755 | S_ISGID;
+    const gid_t oddGid = 12345;
+    struct stat stats;
+    mode_t stat_mode;
+
+    // 1) Without CAP_FSETID, and no relevant group, S_ISGID is not applied.
+    ASSERT_THAT(syscall(SYS_setresgid, oddGid, oddGid, oddGid),
+                SyscallSucceeds());
+    std::vector<gid_t> no_extra_groups;
+    ASSERT_THAT(
+        syscall(SYS_setgroups, no_extra_groups.size(), no_extra_groups.data()),
+        SyscallSucceeds());
+
+    ASSERT_THAT(chmod(file.path().c_str(), chown_mode), SyscallSucceeds());
+    ASSERT_THAT(stat(file.path().c_str(), &stats), SyscallSucceeds());
+    stat_mode = stats.st_mode & ~S_IFMT;
+
+    EXPECT_EQ(stat_mode & S_ISGID, 0);            // S_ISGID is not applied.
+    EXPECT_EQ(stat_mode, chown_mode & ~S_ISGID);  // but the rest is.
+
+    // 2) Without CAP_FSETID, but with a relevant group, S_ISGID is applied.
+    gid_t file_gid = stats.st_gid;
+    ASSERT_THAT(syscall(SYS_setresgid, file_gid, file_gid, file_gid),
+                SyscallSucceeds());
+
+    ASSERT_THAT(chmod(file.path().c_str(), chown_mode), SyscallSucceeds());
+    ASSERT_THAT(stat(file.path().c_str(), &stats), SyscallSucceeds());
+    stat_mode = stats.st_mode & ~S_IFMT;
+
+    EXPECT_EQ(stat_mode & S_ISGID, S_ISGID);  // S_ISGID is applied.
+    EXPECT_EQ(stat_mode, chown_mode);         // as is the rest.
+
+    // 3) With CAP_FSETID, but without a relevant group, S_ISGID is applied.
+    AutoCapability cap_inner(CAP_FSETID, true);
+    ASSERT_THAT(syscall(SYS_setresgid, oddGid, oddGid, oddGid),
+                SyscallSucceeds());
+
+    ASSERT_THAT(chmod(file.path().c_str(), chown_mode), SyscallSucceeds());
+    ASSERT_THAT(stat(file.path().c_str(), &stats), SyscallSucceeds());
+    stat_mode = stats.st_mode & ~S_IFMT;
+
+    EXPECT_EQ(stat_mode & S_ISGID, S_ISGID);  // S_ISGID is applied.
+    EXPECT_EQ(stat_mode, chown_mode);         // as is the rest.
+  });
 }
 
 using Chown =
