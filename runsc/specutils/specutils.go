@@ -218,11 +218,11 @@ func ReadSpecFromFile(bundleDir string, specFile *os.File, conf *config.Config) 
 	var spec specs.Spec
 	decoder := json.NewDecoder(bytes.NewReader(specBytes))
 	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&spec); err != nil {
-		if err2 := json.Unmarshal(specBytes, &spec); err2 != nil {
-			return nil, fmt.Errorf("error unmarshaling spec from file %q: %v\n %s", specFile.Name(), err2, string(specBytes))
+	if errLooseDecode := decoder.Decode(&spec); errLooseDecode != nil {
+		if errStrictDecode := json.Unmarshal(specBytes, &spec); errStrictDecode != nil {
+			return nil, fmt.Errorf("error unmarshaling spec from file %q: %v\n %s", specFile.Name(), errStrictDecode, string(specBytes))
 		} else {
-			log.Warningf("Problem with spec file %q: %v. Consider removing unnecessary fields.", specFile.Name(), err)
+			log.Warningf("OCI spec file %q contains fields unknown to `runsc`: %v. Ignoring these fields and continuing anyway.", specFile.Name(), errLooseDecode)
 		}
 	}
 	if err := ValidateSpec(&spec); err != nil {
