@@ -38,6 +38,9 @@ PosixErrorOr<FileDescriptor> NetlinkBoundSocket(int protocol);
 // Returns the port ID of the passed socket.
 PosixErrorOr<uint32_t> NetlinkPortID(int fd);
 
+// Send the passed request.
+PosixError NetlinkRequest(const FileDescriptor& fd, void* request, size_t len);
+
 // Send the passed request and call fn on all response netlink messages.
 //
 // To be used on requests with NLM_F_MULTI responses.
@@ -65,9 +68,10 @@ PosixError NetlinkRequestResponseSingle(
 PosixError NetlinkRequestAckOrError(const FileDescriptor& fd, uint32_t seq,
                                     void* request, size_t len);
 
-PosixError NetlinkBatchedRequestAckOrError(const FileDescriptor& fd,
-                                           uint32_t seq_start, uint32_t seq_end,
-                                           void* request, size_t len);
+PosixError NetlinkNetfilterBatchRequestAckOrError(const FileDescriptor& fd,
+                                                  uint32_t seq_start,
+                                                  uint32_t seq_end,
+                                                  void* request, size_t len);
 
 // Find rtnetlink attribute in message.
 const struct rtattr* FindRtAttr(const struct nlmsghdr* hdr,
