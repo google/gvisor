@@ -106,6 +106,7 @@ go_library(
         "//pkg/errors/linuxerr",
         "//pkg/fd",
         "//pkg/fspath",
+        "//pkg/fsutil",
         "//pkg/hostarch",
         "//pkg/log",
         "//pkg/refs",

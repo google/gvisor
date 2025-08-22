@@ -47,6 +47,7 @@ go_library(
         "//pkg/fd",
         "//pkg/flipcall",
         "//pkg/fspath",
+        "//pkg/fsutil",
         "//pkg/gomaxprocs",
         "//pkg/hostos",
         "//pkg/log",

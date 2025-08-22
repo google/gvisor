@@ -36,9 +36,9 @@ import (
 
 	"github.com/docker/docker/api/types/mount"
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/fsutil"
 	"gvisor.dev/gvisor/pkg/test/dockerutil"
 	"gvisor.dev/gvisor/pkg/test/testutil"
-	"gvisor.dev/gvisor/runsc/boot"
 )
 
 const (
@@ -237,10 +237,10 @@ func TestOverlayRootfsWhiteout(t *testing.T) {
 	opts := dockerutil.RunOpts{
 		Image: "basic/ubuntu",
 	}
-	if got, err := d.Run(ctx, opts, "bash", "-c", fmt.Sprintf("ls -al / | grep %q || true", boot.SelfFilestorePrefix)); err != nil {
+	if got, err := d.Run(ctx, opts, "bash", "-c", fmt.Sprintf("ls -al / | grep %q || true", fsutil.SelfFilestorePrefix)); err != nil {
 		t.Fatalf("docker run failed: %s, %v", got, err)
 	} else if got != "" {
-		t.Errorf("root directory contains a file/directory whose name contains %q: output = %q", boot.SelfFilestorePrefix, got)
+		t.Errorf("root directory contains a file/directory whose name contains %q: output = %q", fsutil.SelfFilestorePrefix, got)
 	}
 }
 

@@ -34,6 +34,7 @@ import (
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/fspath"
+	"gvisor.dev/gvisor/pkg/fsutil"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/devices/memdev"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy"
@@ -70,9 +71,6 @@ const (
 	Nonefs = "none"
 )
 
-// SelfFilestorePrefix is the prefix of the self filestore file name.
-const SelfFilestorePrefix = ".gvisor.filestore."
-
 // SelfFilestorePath returns the path at which the self filestore file is
 // stored for a given mount.
 func SelfFilestorePath(mountSrc, sandboxID string) string {
@@ -84,7 +82,7 @@ func SelfFilestorePath(mountSrc, sandboxID string) string {
 }
 
 func selfFilestoreName(sandboxID string) string {
-	return SelfFilestorePrefix + sandboxID
+	return fsutil.SelfFilestorePrefix + sandboxID
 }
 
 // tmpfs has some extra supported options that we must pass through.
