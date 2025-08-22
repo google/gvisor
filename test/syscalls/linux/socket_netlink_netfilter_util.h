@@ -155,16 +155,16 @@ class NlReq {
   NlReq& StrAttr(uint16_t attr_type, const char* payload);
 
   // Method to add a uint8_t attribute to the message.
-  NlReq& U8Attr(uint16_t attr_type, const uint8_t* payload);
+  NlReq& U8Attr(uint16_t attr_type, uint8_t payload);
 
   // Method to add a uint16_t attribute to the message.
-  NlReq& U16Attr(uint16_t attr_type, const uint16_t* payload);
+  NlReq& U16Attr(uint16_t attr_type, uint16_t payload);
 
   // Method to add a uint32_t attribute to the message.
-  NlReq& U32Attr(uint16_t attr_type, const uint32_t* payload);
+  NlReq& U32Attr(uint16_t attr_type, uint32_t payload);
 
   // Method to add a uint64_t attribute to the message.
-  NlReq& U64Attr(uint16_t attr_type, const uint64_t* payload);
+  NlReq& U64Attr(uint16_t attr_type, uint64_t payload);
 
   std::vector<char> Build();
 
@@ -181,7 +181,7 @@ class NlReq {
   uint8_t family_ = 0;
   bool msg_type_set_ = false;
   bool family_set_ = false;
-  std::map<uint16_t, std::pair<const char*, size_t>> attributes_ = {};
+  std::map<uint16_t, std::vector<char>> attributes_ = {};
   std::vector<char> msg_buffer_;
 };
 
@@ -200,21 +200,21 @@ class NlNestedAttr {
   NlNestedAttr& StrAttr(uint16_t attr_type, const char* payload);
 
   // Method to add a uint8_t attribute to the message.
-  NlNestedAttr& U8Attr(uint16_t attr_type, const uint8_t* payload);
+  NlNestedAttr& U8Attr(uint16_t attr_type, uint8_t payload);
 
   // Method to add a uint16_t attribute to the message.
-  NlNestedAttr& U16Attr(uint16_t attr_type, const uint16_t* payload);
+  NlNestedAttr& U16Attr(uint16_t attr_type, uint16_t payload);
 
   // Method to add a uint32_t attribute to the message.
-  NlNestedAttr& U32Attr(uint16_t attr_type, const uint32_t* payload);
+  NlNestedAttr& U32Attr(uint16_t attr_type, uint32_t payload);
 
   // Method to add a uint64_t attribute to the message.
-  NlNestedAttr& U64Attr(uint16_t attr_type, const uint64_t* payload);
+  NlNestedAttr& U64Attr(uint16_t attr_type, uint64_t payload);
 
   std::vector<char> Build();
 
  private:
-  std::map<uint16_t, std::pair<const char*, size_t>> attributes_ = {};
+  std::map<uint16_t, std::vector<char>> attributes_ = {};
   std::vector<char> msg_buffer_;
 };
 

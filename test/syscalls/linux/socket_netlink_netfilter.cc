@@ -41,6 +41,8 @@
 #include "test/util/test_util.h"
 
 // Tests for NETLINK_NETFILTER sockets.
+// Error test cases prefixed with "ErrUnsupported" error only because they
+// are currently unsupported by gvisor.
 
 namespace gvisor {
 namespace testing {
@@ -115,7 +117,7 @@ class NetlinkNetfilterTest : public ::testing::Test {
             .SeqEnd(kSeq + 2)
             .Build();
 
-    ASSERT_NO_ERRNO(NetlinkBatchedRequestAckOrError(
+    ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
         fd, kSeq, kSeq + 2, destroy_request_buffer.data(),
         destroy_request_buffer.size()));
   }
@@ -154,17 +156,17 @@ TEST_F(NetlinkNetfilterTest, AddAndAddTableWithDormantFlag) {
           .Req(NlReq("newtable req ack inet")
                    .Seq(kSeq + 4)
                    .StrAttr(NFTA_TABLE_NAME, test_table_name)
-                   .U32Attr(NFTA_TABLE_FLAGS, &table_flags)
+                   .U32Attr(NFTA_TABLE_FLAGS, table_flags)
                    .Build())
           .SeqEnd(kSeq + 5)
           .Build();
 
-  ASSERT_NO_ERRNO(NetlinkBatchedRequestAckOrError(fd, kSeq, kSeq + 2,
-                                                  add_request_buffer.data(),
-                                                  add_request_buffer.size()));
-  ASSERT_NO_ERRNO(NetlinkBatchedRequestAckOrError(fd, kSeq + 3, kSeq + 5,
-                                                  add_request_buffer_2.data(),
-                                                  add_request_buffer_2.size()));
+  ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
+      fd, kSeq, kSeq + 2, add_request_buffer.data(),
+      add_request_buffer.size()));
+  ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
+      fd, kSeq + 3, kSeq + 5, add_request_buffer_2.data(),
+      add_request_buffer_2.size()));
 }
 
 TEST_F(NetlinkNetfilterTest, AddAndRetrieveNewTable) {
@@ -188,7 +190,7 @@ TEST_F(NetlinkNetfilterTest, AddAndRetrieveNewTable) {
                    .Seq(kSeq + 1)
                    // Include the null terminator at the end of the string.
                    .StrAttr(NFTA_TABLE_NAME, test_table_name)
-                   .U32Attr(NFTA_TABLE_FLAGS, &table_flags)
+                   .U32Attr(NFTA_TABLE_FLAGS, expected_flags)
                    .RawAttr(NFTA_TABLE_USERDATA, expected_udata,
                             sizeof(expected_udata))
                    .Build())
@@ -203,9 +205,9 @@ TEST_F(NetlinkNetfilterTest, AddAndRetrieveNewTable) {
           .StrAttr(NFTA_TABLE_NAME, test_table_name)
           .Build();
 
-  ASSERT_NO_ERRNO(NetlinkBatchedRequestAckOrError(fd, kSeq, kSeq + 2,
-                                                  add_request_buffer.data(),
-                                                  add_request_buffer.size()));
+  ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
+      fd, kSeq, kSeq + 2, add_request_buffer.data(),
+      add_request_buffer.size()));
   ASSERT_NO_ERRNO(NetlinkRequestResponse(
       fd, get_request_buffer.data(), get_request_buffer.size(),
       [&](const struct nlmsghdr* hdr) {
@@ -252,9 +254,9 @@ TEST_F(NetlinkNetfilterTest, ErrGettingTableWithDifferentFamily) {
           .StrAttr(NFTA_TABLE_NAME, test_table_name)
           .Build();
 
-  ASSERT_NO_ERRNO(NetlinkBatchedRequestAckOrError(fd, kSeq, kSeq + 3,
-                                                  add_request_buffer.data(),
-                                                  add_request_buffer.size()));
+  ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
+      fd, kSeq, kSeq + 3, add_request_buffer.data(),
+      add_request_buffer.size()));
   ASSERT_THAT(NetlinkRequestAckOrError(fd, kSeq + 4, get_request_buffer.data(),
                                        get_request_buffer.size()),
               PosixErrorIs(ENOENT, _));
@@ -288,12 +290,12 @@ TEST_F(NetlinkNetfilterTest, ErrAddExistingTableWithExclusiveFlag) {
           .SeqEnd(kSeq + 5)
           .Build();
 
-  ASSERT_NO_ERRNO(NetlinkBatchedRequestAckOrError(fd, kSeq, kSeq + 2,
-                                                  add_request_buffer.data(),
-                                                  add_request_buffer.size()));
-  ASSERT_THAT(NetlinkBatchedRequestAckOrError(fd, kSeq + 3, kSeq + 5,
-                                              add_request_buffer_2.data(),
-                                              add_request_buffer_2.size()),
+  ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
+      fd, kSeq, kSeq + 2, add_request_buffer.data(),
+      add_request_buffer.size()));
+  ASSERT_THAT(NetlinkNetfilterBatchRequestAckOrError(
+                  fd, kSeq + 3, kSeq + 5, add_request_buffer_2.data(),
+                  add_request_buffer_2.size()),
               PosixErrorIs(EEXIST, _));
 }
 
@@ -325,12 +327,12 @@ TEST_F(NetlinkNetfilterTest, ErrAddExistingTableWithReplaceFlag) {
           .SeqEnd(kSeq + 5)
           .Build();
 
-  ASSERT_NO_ERRNO(NetlinkBatchedRequestAckOrError(fd, kSeq, kSeq + 2,
-                                                  add_request_buffer.data(),
-                                                  add_request_buffer.size()));
-  ASSERT_THAT(NetlinkBatchedRequestAckOrError(fd, kSeq + 3, kSeq + 5,
-                                              add_request_buffer_2.data(),
-                                              add_request_buffer_2.size()),
+  ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
+      fd, kSeq, kSeq + 2, add_request_buffer.data(),
+      add_request_buffer.size()));
+  ASSERT_THAT(NetlinkNetfilterBatchRequestAckOrError(
+                  fd, kSeq + 3, kSeq + 5, add_request_buffer_2.data(),
+                  add_request_buffer_2.size()),
               PosixErrorIs(ENOTSUP, _));
 }
 
@@ -353,9 +355,9 @@ TEST_F(NetlinkNetfilterTest, ErrAddTableWithInvalidFamily) {
           .SeqEnd(kSeq + 2)
           .Build();
 
-  ASSERT_THAT(NetlinkBatchedRequestAckOrError(fd, kSeq, kSeq + 2,
-                                              add_request_buffer.data(),
-                                              add_request_buffer.size()),
+  ASSERT_THAT(NetlinkNetfilterBatchRequestAckOrError(fd, kSeq, kSeq + 2,
+                                                     add_request_buffer.data(),
+                                                     add_request_buffer.size()),
               PosixErrorIs(ENOTSUP, _));
 }
 
@@ -373,14 +375,14 @@ TEST_F(NetlinkNetfilterTest, ErrAddTableWithUnsupportedFlags) {
           .Req(NlReq("newtable req inet")
                    .Seq(kSeq + 1)
                    .StrAttr(NFTA_TABLE_NAME, test_table_name)
-                   .U32Attr(NFTA_TABLE_FLAGS, &unsupported_flags)
+                   .U32Attr(NFTA_TABLE_FLAGS, unsupported_flags)
                    .Build())
           .SeqEnd(kSeq + 2)
           .Build();
 
-  ASSERT_THAT(NetlinkBatchedRequestAckOrError(fd, kSeq, kSeq + 2,
-                                              add_request_buffer.data(),
-                                              add_request_buffer.size()),
+  ASSERT_THAT(NetlinkNetfilterBatchRequestAckOrError(fd, kSeq, kSeq + 2,
+                                                     add_request_buffer.data(),
+                                                     add_request_buffer.size()),
               PosixErrorIs(ENOTSUP, _));
 }
 
@@ -432,7 +434,7 @@ TEST_F(NetlinkNetfilterTest, ErrRetrieveTableWithOwnerMismatch) {
           .Req(NlReq("newtable req ack inet")
                    .Seq(kSeq + 1)
                    .StrAttr(NFTA_TABLE_NAME, test_table_name)
-                   .U32Attr(NFTA_TABLE_FLAGS, &table_flags)
+                   .U32Attr(NFTA_TABLE_FLAGS, table_flags)
                    .RawAttr(NFTA_TABLE_USERDATA, expected_udata,
                             sizeof(expected_udata))
                    .Build())
@@ -445,9 +447,9 @@ TEST_F(NetlinkNetfilterTest, ErrRetrieveTableWithOwnerMismatch) {
           .StrAttr(NFTA_TABLE_NAME, test_table_name)
           .Build();
 
-  ASSERT_NO_ERRNO(NetlinkBatchedRequestAckOrError(fd, kSeq, kSeq + 2,
-                                                  add_request_buffer.data(),
-                                                  add_request_buffer.size()));
+  ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
+      fd, kSeq, kSeq + 2, add_request_buffer.data(),
+      add_request_buffer.size()));
 
   ASSERT_THAT(
       NetlinkRequestAckOrError(fd_2, kSeq + 3, get_request_buffer.data(),
@@ -481,12 +483,12 @@ TEST_F(NetlinkNetfilterTest, DeleteExistingTableByName) {
           .SeqEnd(kSeq + 5)
           .Build();
 
-  ASSERT_NO_ERRNO(NetlinkBatchedRequestAckOrError(fd, kSeq, kSeq + 2,
-                                                  add_request_buffer.data(),
-                                                  add_request_buffer.size()));
-  ASSERT_NO_ERRNO(NetlinkBatchedRequestAckOrError(fd, kSeq + 3, kSeq + 5,
-                                                  del_request_buffer.data(),
-                                                  del_request_buffer.size()));
+  ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
+      fd, kSeq, kSeq + 2, add_request_buffer.data(),
+      add_request_buffer.size()));
+  ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
+      fd, kSeq + 3, kSeq + 5, del_request_buffer.data(),
+      del_request_buffer.size()));
 }
 
 TEST_F(NetlinkNetfilterTest, DeleteTableByHandle) {
@@ -513,9 +515,9 @@ TEST_F(NetlinkNetfilterTest, DeleteTableByHandle) {
           .StrAttr(NFTA_TABLE_NAME, test_table_name)
           .Build();
 
-  ASSERT_NO_ERRNO(NetlinkBatchedRequestAckOrError(fd, kSeq, kSeq + 2,
-                                                  add_request_buffer.data(),
-                                                  add_request_buffer.size()));
+  ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
+      fd, kSeq, kSeq + 2, add_request_buffer.data(),
+      add_request_buffer.size()));
 
   // Retrieve the table handle from the kernel.
   ASSERT_NO_ERRNO(NetlinkRequestResponse(
@@ -525,7 +527,8 @@ TEST_F(NetlinkNetfilterTest, DeleteTableByHandle) {
         EXPECT_NE(attr, nullptr);
         EXPECT_EQ(attr->nfa_type, NFTA_TABLE_HANDLE);
         EXPECT_EQ(attr->nfa_len - NLA_HDRLEN, sizeof(expected_handle));
-        expected_handle = *reinterpret_cast<const uint64_t*>(NFA_DATA(attr));
+        expected_handle =
+            be64toh(*reinterpret_cast<const uint64_t*>(NFA_DATA(attr)));
       },
       false));
   EXPECT_NE(expected_handle, 0);
@@ -535,14 +538,14 @@ TEST_F(NetlinkNetfilterTest, DeleteTableByHandle) {
           .SeqStart(kSeq + 4)
           .Req(NlReq("deltable req ack inet")
                    .Seq(kSeq + 5)
-                   .U64Attr(NFTA_TABLE_HANDLE, &expected_handle)
+                   .U64Attr(NFTA_TABLE_HANDLE, expected_handle)
                    .Build())
           .SeqEnd(kSeq + 6)
           .Build();
 
-  ASSERT_NO_ERRNO(NetlinkBatchedRequestAckOrError(fd, kSeq + 4, kSeq + 6,
-                                                  del_request_buffer.data(),
-                                                  del_request_buffer.size()));
+  ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
+      fd, kSeq + 4, kSeq + 6, del_request_buffer.data(),
+      del_request_buffer.size()));
 }
 
 TEST_F(NetlinkNetfilterTest, ErrDeleteNonexistentTable) {
@@ -562,9 +565,9 @@ TEST_F(NetlinkNetfilterTest, ErrDeleteNonexistentTable) {
           .SeqEnd(kSeq + 2)
           .Build();
 
-  ASSERT_THAT(NetlinkBatchedRequestAckOrError(fd, kSeq, kSeq + 2,
-                                              del_request_buffer.data(),
-                                              del_request_buffer.size()),
+  ASSERT_THAT(NetlinkNetfilterBatchRequestAckOrError(fd, kSeq, kSeq + 2,
+                                                     del_request_buffer.data(),
+                                                     del_request_buffer.size()),
               PosixErrorIs(ENOENT, _));
 }
 
@@ -585,7 +588,7 @@ TEST_F(NetlinkNetfilterTest, DestroyNonexistentTable) {
           .SeqEnd(kSeq + 2)
           .Build();
 
-  ASSERT_NO_ERRNO(NetlinkBatchedRequestAckOrError(
+  ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
       fd, kSeq, kSeq + 2, destroy_request_buffer.data(),
       destroy_request_buffer.size()));
 }
@@ -631,10 +634,10 @@ TEST_F(NetlinkNetfilterTest, DeleteAllTablesUnspecifiedFamily) {
           .StrAttr(NFTA_TABLE_NAME, test_table_name_bridge)
           .Build();
 
-  ASSERT_NO_ERRNO(NetlinkBatchedRequestAckOrError(fd, kSeq, kSeq + 3,
-                                                  add_request_buffer.data(),
-                                                  add_request_buffer.size()));
-  ASSERT_NO_ERRNO(NetlinkBatchedRequestAckOrError(
+  ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
+      fd, kSeq, kSeq + 3, add_request_buffer.data(),
+      add_request_buffer.size()));
+  ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
       fd, kSeq + 4, kSeq + 6, destroy_request_buffer.data(),
       destroy_request_buffer.size()));
   ASSERT_THAT(NetlinkRequestAckOrError(fd, kSeq + 7, get_request_buffer.data(),
@@ -702,10 +705,10 @@ TEST_F(NetlinkNetfilterTest, DeleteAllTablesUnspecifiedFamilySpecifiedName) {
 
   bool correct_response = false;
 
-  ASSERT_NO_ERRNO(NetlinkBatchedRequestAckOrError(fd, kSeq, kSeq + 4,
-                                                  add_request_buffer.data(),
-                                                  add_request_buffer.size()));
-  ASSERT_NO_ERRNO(NetlinkBatchedRequestAckOrError(
+  ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
+      fd, kSeq, kSeq + 4, add_request_buffer.data(),
+      add_request_buffer.size()));
+  ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
       fd, kSeq + 5, kSeq + 7, destroy_request_buffer.data(),
       destroy_request_buffer.size()));
   ASSERT_THAT(
@@ -775,10 +778,10 @@ TEST_F(NetlinkNetfilterTest, DeleteAllTablesUnspecifiedNameAndHandle) {
           .StrAttr(NFTA_TABLE_NAME, test_table_name_bridge)
           .Build();
 
-  ASSERT_NO_ERRNO(NetlinkBatchedRequestAckOrError(fd, kSeq, kSeq + 3,
-                                                  add_request_buffer.data(),
-                                                  add_request_buffer.size()));
-  ASSERT_NO_ERRNO(NetlinkBatchedRequestAckOrError(
+  ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
+      fd, kSeq, kSeq + 3, add_request_buffer.data(),
+      add_request_buffer.size()));
+  ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
       fd, kSeq + 4, kSeq + 6, destroy_request_buffer.data(),
       destroy_request_buffer.size()));
   ASSERT_THAT(NetlinkRequestAckOrError(fd, kSeq + 7, get_request_buffer.data(),
@@ -797,7 +800,8 @@ TEST_F(NetlinkNetfilterTest, ErrNewChainWithNoSpecifiedTableName) {
   FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
 
-  // Kept separate to make clear that the chain request is the one that fails.
+  // Kept separate to make clear that the chain request is the one that
+  // fails.
   std::vector<char> add_table_request_buffer =
       NlBatchReq()
           .SeqStart(kSeq)
@@ -815,12 +819,12 @@ TEST_F(NetlinkNetfilterTest, ErrNewChainWithNoSpecifiedTableName) {
           .SeqEnd(kSeq + 5)
           .Build();
 
-  ASSERT_NO_ERRNO(NetlinkBatchedRequestAckOrError(
+  ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
       fd, kSeq, kSeq + 2, add_table_request_buffer.data(),
       add_table_request_buffer.size()));
-  ASSERT_THAT(NetlinkBatchedRequestAckOrError(fd, kSeq + 3, kSeq + 5,
-                                              add_chain_request_buffer.data(),
-                                              add_chain_request_buffer.size()),
+  ASSERT_THAT(NetlinkNetfilterBatchRequestAckOrError(
+                  fd, kSeq + 3, kSeq + 5, add_chain_request_buffer.data(),
+                  add_chain_request_buffer.size()),
               PosixErrorIs(EINVAL, _));
 }
 
@@ -841,9 +845,9 @@ TEST_F(NetlinkNetfilterTest, ErrNewChainWithNonexistentTable) {
           .SeqEnd(kSeq + 2)
           .Build();
 
-  ASSERT_THAT(NetlinkBatchedRequestAckOrError(fd, kSeq, kSeq + 2,
-                                              add_chain_request_buffer.data(),
-                                              add_chain_request_buffer.size()),
+  ASSERT_THAT(NetlinkNetfilterBatchRequestAckOrError(
+                  fd, kSeq, kSeq + 2, add_chain_request_buffer.data(),
+                  add_chain_request_buffer.size()),
               PosixErrorIs(ENOENT, _));
 }
 
@@ -854,7 +858,8 @@ TEST_F(NetlinkNetfilterTest, ErrNewChainWithNoSpecifiedNameOrHandle) {
   FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
 
-  // Kept separate to make clear that the chain request is the one that fails.
+  // Kept separate to make clear that the chain request is the one that
+  // fails.
   std::vector<char> add_table_request_buffer =
       NlBatchReq()
           .SeqStart(kSeq)
@@ -875,12 +880,12 @@ TEST_F(NetlinkNetfilterTest, ErrNewChainWithNoSpecifiedNameOrHandle) {
           .SeqEnd(kSeq + 5)
           .Build();
 
-  ASSERT_NO_ERRNO(NetlinkBatchedRequestAckOrError(
+  ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
       fd, kSeq, kSeq + 2, add_table_request_buffer.data(),
       add_table_request_buffer.size()));
-  ASSERT_THAT(NetlinkBatchedRequestAckOrError(fd, kSeq + 3, kSeq + 5,
-                                              add_chain_request_buffer.data(),
-                                              add_chain_request_buffer.size()),
+  ASSERT_THAT(NetlinkNetfilterBatchRequestAckOrError(
+                  fd, kSeq + 3, kSeq + 5, add_chain_request_buffer.data(),
+                  add_chain_request_buffer.size()),
               PosixErrorIs(EINVAL, _));
 }
 
@@ -909,17 +914,17 @@ TEST_F(NetlinkNetfilterTest, ErrNewChainWithPolicySet) {
                    .Seq(kSeq + 4)
                    .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
                    .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
-                   .U32Attr(NFTA_CHAIN_POLICY, &test_policy)
+                   .U32Attr(NFTA_CHAIN_POLICY, test_policy)
                    .Build())
           .SeqEnd(kSeq + 5)
           .Build();
 
-  ASSERT_NO_ERRNO(NetlinkBatchedRequestAckOrError(
+  ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
       fd, kSeq, kSeq + 2, add_table_request_buffer.data(),
       add_table_request_buffer.size()));
-  ASSERT_THAT(NetlinkBatchedRequestAckOrError(fd, kSeq + 3, kSeq + 5,
-                                              add_chain_request_buffer.data(),
-                                              add_chain_request_buffer.size()),
+  ASSERT_THAT(NetlinkNetfilterBatchRequestAckOrError(
+                  fd, kSeq + 3, kSeq + 5, add_chain_request_buffer.data(),
+                  add_chain_request_buffer.size()),
               PosixErrorIs(ENOTSUP, _));
 }
 
@@ -949,18 +954,18 @@ TEST_F(NetlinkNetfilterTest, ErrNewBaseChainWithInvalidPolicy) {
                    .Seq(kSeq + 4)
                    .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
                    .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
-                   .U32Attr(NFTA_CHAIN_POLICY, &test_policy)
-                   .U8Attr(NFTA_CHAIN_HOOK, &test_hook)
+                   .U32Attr(NFTA_CHAIN_POLICY, test_policy)
+                   .U8Attr(NFTA_CHAIN_HOOK, test_hook)
                    .Build())
           .SeqEnd(kSeq + 5)
           .Build();
 
-  ASSERT_NO_ERRNO(NetlinkBatchedRequestAckOrError(
+  ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
       fd, kSeq, kSeq + 2, add_table_request_buffer.data(),
       add_table_request_buffer.size()));
-  ASSERT_THAT(NetlinkBatchedRequestAckOrError(fd, kSeq + 3, kSeq + 5,
-                                              add_chain_request_buffer.data(),
-                                              add_chain_request_buffer.size()),
+  ASSERT_THAT(NetlinkNetfilterBatchRequestAckOrError(
+                  fd, kSeq + 3, kSeq + 5, add_chain_request_buffer.data(),
+                  add_chain_request_buffer.size()),
               PosixErrorIs(EINVAL, _));
 }
 
@@ -993,19 +998,19 @@ TEST_F(NetlinkNetfilterTest, ErrNewBaseChainWithInvalidFlags) {
                    .Seq(kSeq + 4)
                    .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
                    .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
-                   .U32Attr(NFTA_CHAIN_POLICY, &test_policy)
-                   .U8Attr(NFTA_CHAIN_HOOK, &test_hook)
-                   .U32Attr(NFTA_CHAIN_FLAGS, &test_chain_flags)
+                   .U32Attr(NFTA_CHAIN_POLICY, test_policy)
+                   .U8Attr(NFTA_CHAIN_HOOK, test_hook)
+                   .U32Attr(NFTA_CHAIN_FLAGS, test_chain_flags)
                    .Build())
           .SeqEnd(kSeq + 5)
           .Build();
 
-  ASSERT_NO_ERRNO(NetlinkBatchedRequestAckOrError(
+  ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
       fd, kSeq, kSeq + 2, add_table_request_buffer.data(),
       add_table_request_buffer.size()));
-  ASSERT_THAT(NetlinkBatchedRequestAckOrError(fd, kSeq + 3, kSeq + 5,
-                                              add_chain_request_buffer.data(),
-                                              add_chain_request_buffer.size()),
+  ASSERT_THAT(NetlinkNetfilterBatchRequestAckOrError(
+                  fd, kSeq + 3, kSeq + 5, add_chain_request_buffer.data(),
+                  add_chain_request_buffer.size()),
               PosixErrorIs(ENOTSUP, _));
 }
 
@@ -1031,7 +1036,7 @@ TEST_F(NetlinkNetfilterTest,
           .Build();
 
   std::vector<char> nested_hook_data =
-      NlNestedAttr().U32Attr(NFTA_HOOK_HOOKNUM, &test_hook_num).Build();
+      NlNestedAttr().U32Attr(NFTA_HOOK_HOOKNUM, test_hook_num).Build();
 
   std::vector<char> add_chain_request_buffer =
       NlBatchReq()
@@ -1040,20 +1045,20 @@ TEST_F(NetlinkNetfilterTest,
                    .Seq(kSeq + 4)
                    .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
                    .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
-                   .U32Attr(NFTA_CHAIN_POLICY, &test_policy)
+                   .U32Attr(NFTA_CHAIN_POLICY, test_policy)
                    .RawAttr(NFTA_CHAIN_HOOK, nested_hook_data.data(),
                             nested_hook_data.size())
-                   .U32Attr(NFTA_CHAIN_FLAGS, &test_chain_flags)
+                   .U32Attr(NFTA_CHAIN_FLAGS, test_chain_flags)
                    .Build())
           .SeqEnd(kSeq + 5)
           .Build();
 
-  ASSERT_NO_ERRNO(NetlinkBatchedRequestAckOrError(
+  ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
       fd, kSeq, kSeq + 2, add_table_request_buffer.data(),
       add_table_request_buffer.size()));
-  ASSERT_THAT(NetlinkBatchedRequestAckOrError(fd, kSeq + 3, kSeq + 5,
-                                              add_chain_request_buffer.data(),
-                                              add_chain_request_buffer.size()),
+  ASSERT_THAT(NetlinkNetfilterBatchRequestAckOrError(
+                  fd, kSeq + 3, kSeq + 5, add_chain_request_buffer.data(),
+                  add_chain_request_buffer.size()),
               PosixErrorIs(ENOENT, _));
 }
 
@@ -1069,7 +1074,7 @@ TEST_F(NetlinkNetfilterTest,
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
 
   std::vector<char> nested_hook_data =
-      NlNestedAttr().U32Attr(NFTA_HOOK_PRIORITY, &test_hook_priority).Build();
+      NlNestedAttr().U32Attr(NFTA_HOOK_PRIORITY, test_hook_priority).Build();
 
   std::vector<char> add_request_buffer =
       NlBatchReq()
@@ -1082,17 +1087,17 @@ TEST_F(NetlinkNetfilterTest,
                    .Seq(kSeq + 2)
                    .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
                    .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
-                   .U32Attr(NFTA_CHAIN_POLICY, &test_policy)
+                   .U32Attr(NFTA_CHAIN_POLICY, test_policy)
                    .RawAttr(NFTA_CHAIN_HOOK, nested_hook_data.data(),
                             nested_hook_data.size())
-                   .U32Attr(NFTA_CHAIN_FLAGS, &test_chain_flags)
+                   .U32Attr(NFTA_CHAIN_FLAGS, test_chain_flags)
                    .Build())
           .SeqEnd(kSeq + 3)
           .Build();
 
-  ASSERT_THAT(NetlinkBatchedRequestAckOrError(fd, kSeq, kSeq + 3,
-                                              add_request_buffer.data(),
-                                              add_request_buffer.size()),
+  ASSERT_THAT(NetlinkNetfilterBatchRequestAckOrError(fd, kSeq, kSeq + 3,
+                                                     add_request_buffer.data(),
+                                                     add_request_buffer.size()),
               PosixErrorIs(ENOENT, _));
 }
 
@@ -1110,8 +1115,8 @@ TEST_F(NetlinkNetfilterTest, ErrNewBaseChainWithInvalidChainType) {
 
   std::vector<char> nested_hook_data =
       NlNestedAttr()
-          .U32Attr(NFTA_HOOK_HOOKNUM, &test_hook_num)
-          .U32Attr(NFTA_HOOK_PRIORITY, &test_hook_priority)
+          .U32Attr(NFTA_HOOK_HOOKNUM, test_hook_num)
+          .U32Attr(NFTA_HOOK_PRIORITY, test_hook_priority)
           .StrAttr(NFTA_CHAIN_TYPE, test_chain_type_name)
           .Build();
 
@@ -1126,17 +1131,17 @@ TEST_F(NetlinkNetfilterTest, ErrNewBaseChainWithInvalidChainType) {
                    .Seq(kSeq + 2)
                    .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
                    .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
-                   .U32Attr(NFTA_CHAIN_POLICY, &test_policy)
+                   .U32Attr(NFTA_CHAIN_POLICY, test_policy)
                    .RawAttr(NFTA_CHAIN_HOOK, nested_hook_data.data(),
                             nested_hook_data.size())
-                   .U32Attr(NFTA_CHAIN_FLAGS, &test_chain_flags)
+                   .U32Attr(NFTA_CHAIN_FLAGS, test_chain_flags)
                    .Build())
           .SeqEnd(kSeq + 3)
           .Build();
 
-  ASSERT_THAT(NetlinkBatchedRequestAckOrError(fd, kSeq, kSeq + 3,
-                                              add_request_buffer.data(),
-                                              add_request_buffer.size()),
+  ASSERT_THAT(NetlinkNetfilterBatchRequestAckOrError(fd, kSeq, kSeq + 3,
+                                                     add_request_buffer.data(),
+                                                     add_request_buffer.size()),
               PosixErrorIs(ENOENT, _));
 }
 
@@ -1155,8 +1160,8 @@ TEST_F(NetlinkNetfilterTest,
 
   std::vector<char> nested_hook_data =
       NlNestedAttr()
-          .U32Attr(NFTA_HOOK_HOOKNUM, &test_hook_num)
-          .U32Attr(NFTA_HOOK_PRIORITY, &test_hook_priority)
+          .U32Attr(NFTA_HOOK_HOOKNUM, test_hook_num)
+          .U32Attr(NFTA_HOOK_PRIORITY, test_hook_priority)
           .StrAttr(NFTA_CHAIN_TYPE, test_chain_type_name)
           .Build();
 
@@ -1171,17 +1176,17 @@ TEST_F(NetlinkNetfilterTest,
                    .Seq(kSeq + 2)
                    .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
                    .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
-                   .U32Attr(NFTA_CHAIN_POLICY, &test_policy)
+                   .U32Attr(NFTA_CHAIN_POLICY, test_policy)
                    .RawAttr(NFTA_CHAIN_HOOK, nested_hook_data.data(),
                             nested_hook_data.size())
-                   .U32Attr(NFTA_CHAIN_FLAGS, &test_chain_flags)
+                   .U32Attr(NFTA_CHAIN_FLAGS, test_chain_flags)
                    .Build())
           .SeqEnd(kSeq + 3)
           .Build();
 
-  ASSERT_THAT(NetlinkBatchedRequestAckOrError(fd, kSeq, kSeq + 3,
-                                              add_request_buffer.data(),
-                                              add_request_buffer.size()),
+  ASSERT_THAT(NetlinkNetfilterBatchRequestAckOrError(fd, kSeq, kSeq + 3,
+                                                     add_request_buffer.data(),
+                                                     add_request_buffer.size()),
               PosixErrorIs(ENOTSUP, _));
 }
 
@@ -1199,8 +1204,8 @@ TEST_F(NetlinkNetfilterTest, ErrNewNATBaseChainWithInvalidPriority) {
 
   std::vector<char> nested_hook_data =
       NlNestedAttr()
-          .U32Attr(NFTA_HOOK_HOOKNUM, &test_hook_num)
-          .U32Attr(NFTA_HOOK_PRIORITY, &test_hook_priority)
+          .U32Attr(NFTA_HOOK_HOOKNUM, test_hook_num)
+          .U32Attr(NFTA_HOOK_PRIORITY, test_hook_priority)
           .StrAttr(NFTA_CHAIN_TYPE, test_chain_type_name)
           .Build();
 
@@ -1215,21 +1220,23 @@ TEST_F(NetlinkNetfilterTest, ErrNewNATBaseChainWithInvalidPriority) {
                    .Seq(kSeq + 2)
                    .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
                    .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
-                   .U32Attr(NFTA_CHAIN_POLICY, &test_policy)
+                   .U32Attr(NFTA_CHAIN_POLICY, test_policy)
                    .RawAttr(NFTA_CHAIN_HOOK, nested_hook_data.data(),
                             nested_hook_data.size())
-                   .U32Attr(NFTA_CHAIN_FLAGS, &test_chain_flags)
+                   .U32Attr(NFTA_CHAIN_FLAGS, test_chain_flags)
                    .Build())
           .SeqEnd(kSeq + 3)
           .Build();
 
-  ASSERT_THAT(NetlinkBatchedRequestAckOrError(fd, kSeq, kSeq + 3,
-                                              add_request_buffer.data(),
-                                              add_request_buffer.size()),
+  ASSERT_THAT(NetlinkNetfilterBatchRequestAckOrError(fd, kSeq, kSeq + 3,
+                                                     add_request_buffer.data(),
+                                                     add_request_buffer.size()),
               PosixErrorIs(ENOTSUP, _));
 }
 
-TEST_F(NetlinkNetfilterTest, ErrNewNetDevBaseChainUnsupported) {
+TEST_F(NetlinkNetfilterTest, ErrUnsupportedNewNetDevBaseChain) {
+  // TODO: b/434243967 - Remove when netdev chains are supported.
+  SKIP_IF(!IsRunningOnGvisor());
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
   const char test_table_name[] = "test_table_chain_hook";
   const char test_chain_name[] = "test_chain_bad_policy";
@@ -1243,8 +1250,8 @@ TEST_F(NetlinkNetfilterTest, ErrNewNetDevBaseChainUnsupported) {
 
   std::vector<char> nested_hook_data =
       NlNestedAttr()
-          .U32Attr(NFTA_HOOK_HOOKNUM, &test_hook_num)
-          .U32Attr(NFTA_HOOK_PRIORITY, &test_hook_priority)
+          .U32Attr(NFTA_HOOK_HOOKNUM, test_hook_num)
+          .U32Attr(NFTA_HOOK_PRIORITY, test_hook_priority)
           .StrAttr(NFTA_CHAIN_TYPE, test_chain_type_name)
           .Build();
 
@@ -1259,21 +1266,23 @@ TEST_F(NetlinkNetfilterTest, ErrNewNetDevBaseChainUnsupported) {
                    .Seq(kSeq + 2)
                    .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
                    .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
-                   .U32Attr(NFTA_CHAIN_POLICY, &test_policy)
+                   .U32Attr(NFTA_CHAIN_POLICY, test_policy)
                    .RawAttr(NFTA_CHAIN_HOOK, nested_hook_data.data(),
                             nested_hook_data.size())
-                   .U32Attr(NFTA_CHAIN_FLAGS, &test_chain_flags)
+                   .U32Attr(NFTA_CHAIN_FLAGS, test_chain_flags)
                    .Build())
           .SeqEnd(kSeq + 3)
           .Build();
 
-  ASSERT_THAT(NetlinkBatchedRequestAckOrError(fd, kSeq, kSeq + 3,
-                                              add_request_buffer.data(),
-                                              add_request_buffer.size()),
+  ASSERT_THAT(NetlinkNetfilterBatchRequestAckOrError(fd, kSeq, kSeq + 3,
+                                                     add_request_buffer.data(),
+                                                     add_request_buffer.size()),
               PosixErrorIs(ENOTSUP, _));
 }
 
-TEST_F(NetlinkNetfilterTest, ErrNewInetBaseChainAtIngressUnsupported) {
+TEST_F(NetlinkNetfilterTest, ErrUnsupportedNewInetBaseChainAtIngress) {
+  // TODO: b/434243967 - Remove when inet chains are supported at Ingress.
+  SKIP_IF(!IsRunningOnGvisor());
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
   const char test_table_name[] = "test_table_chain_hook";
   const char test_chain_name[] = "test_chain_bad_policy";
@@ -1287,8 +1296,8 @@ TEST_F(NetlinkNetfilterTest, ErrNewInetBaseChainAtIngressUnsupported) {
 
   std::vector<char> nested_hook_data =
       NlNestedAttr()
-          .U32Attr(NFTA_HOOK_HOOKNUM, &test_hook_num)
-          .U32Attr(NFTA_HOOK_PRIORITY, &test_hook_priority)
+          .U32Attr(NFTA_HOOK_HOOKNUM, test_hook_num)
+          .U32Attr(NFTA_HOOK_PRIORITY, test_hook_priority)
           .StrAttr(NFTA_CHAIN_TYPE, test_chain_type_name)
           .Build();
 
@@ -1303,21 +1312,23 @@ TEST_F(NetlinkNetfilterTest, ErrNewInetBaseChainAtIngressUnsupported) {
                    .Seq(kSeq + 2)
                    .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
                    .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
-                   .U32Attr(NFTA_CHAIN_POLICY, &test_policy)
+                   .U32Attr(NFTA_CHAIN_POLICY, test_policy)
                    .RawAttr(NFTA_CHAIN_HOOK, nested_hook_data.data(),
                             nested_hook_data.size())
-                   .U32Attr(NFTA_CHAIN_FLAGS, &test_chain_flags)
+                   .U32Attr(NFTA_CHAIN_FLAGS, test_chain_flags)
                    .Build())
           .SeqEnd(kSeq + 3)
           .Build();
 
-  ASSERT_THAT(NetlinkBatchedRequestAckOrError(fd, kSeq, kSeq + 3,
-                                              add_request_buffer.data(),
-                                              add_request_buffer.size()),
+  ASSERT_THAT(NetlinkNetfilterBatchRequestAckOrError(fd, kSeq, kSeq + 3,
+                                                     add_request_buffer.data(),
+                                                     add_request_buffer.size()),
               PosixErrorIs(ENOTSUP, _));
 }
 
-TEST_F(NetlinkNetfilterTest, ErrNewBaseChainWithUnsupportedChainCounters) {
+TEST_F(NetlinkNetfilterTest, ErrUnsupportedNewBaseChainWithChainCounters) {
+  // TODO: b/434243967 - Remove when chain counters are supported.
+  SKIP_IF(!IsRunningOnGvisor());
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
   const char test_table_name[] = "test_table_chain_hook";
   const char test_chain_name[] = "test_chain_bad_policy";
@@ -1331,8 +1342,8 @@ TEST_F(NetlinkNetfilterTest, ErrNewBaseChainWithUnsupportedChainCounters) {
 
   std::vector<char> nested_hook_data =
       NlNestedAttr()
-          .U32Attr(NFTA_HOOK_HOOKNUM, &test_hook_num)
-          .U32Attr(NFTA_HOOK_PRIORITY, &test_hook_priority)
+          .U32Attr(NFTA_HOOK_HOOKNUM, test_hook_num)
+          .U32Attr(NFTA_HOOK_PRIORITY, test_hook_priority)
           .StrAttr(NFTA_CHAIN_TYPE, test_chain_type_name)
           .Build();
 
@@ -1347,18 +1358,18 @@ TEST_F(NetlinkNetfilterTest, ErrNewBaseChainWithUnsupportedChainCounters) {
                    .Seq(kSeq + 2)
                    .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
                    .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
-                   .U32Attr(NFTA_CHAIN_POLICY, &test_policy)
+                   .U32Attr(NFTA_CHAIN_POLICY, test_policy)
                    .RawAttr(NFTA_CHAIN_HOOK, nested_hook_data.data(),
                             nested_hook_data.size())
-                   .U32Attr(NFTA_CHAIN_FLAGS, &test_chain_flags)
+                   .U32Attr(NFTA_CHAIN_FLAGS, test_chain_flags)
                    .RawAttr(NFTA_CHAIN_COUNTERS, nullptr, 0)
                    .Build())
           .SeqEnd(kSeq + 3)
           .Build();
 
-  ASSERT_THAT(NetlinkBatchedRequestAckOrError(fd, kSeq, kSeq + 3,
-                                              add_request_buffer.data(),
-                                              add_request_buffer.size()),
+  ASSERT_THAT(NetlinkNetfilterBatchRequestAckOrError(fd, kSeq, kSeq + 3,
+                                                     add_request_buffer.data(),
+                                                     add_request_buffer.size()),
               PosixErrorIs(ENOTSUP, _));
 }
 
@@ -1381,18 +1392,20 @@ TEST_F(NetlinkNetfilterTest, ErrChainWithBaseChainFlagSet) {
                    .Seq(kSeq + 2)
                    .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
                    .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
-                   .U32Attr(NFTA_CHAIN_FLAGS, &test_chain_flags)
+                   .U32Attr(NFTA_CHAIN_FLAGS, test_chain_flags)
                    .Build())
           .SeqEnd(kSeq + 3)
           .Build();
 
-  ASSERT_THAT(NetlinkBatchedRequestAckOrError(fd, kSeq, kSeq + 3,
-                                              add_request_buffer.data(),
-                                              add_request_buffer.size()),
+  ASSERT_THAT(NetlinkNetfilterBatchRequestAckOrError(fd, kSeq, kSeq + 3,
+                                                     add_request_buffer.data(),
+                                                     add_request_buffer.size()),
               PosixErrorIs(EINVAL, _));
 }
 
-TEST_F(NetlinkNetfilterTest, ErrChainWithHardwareOffloadFlagSet) {
+TEST_F(NetlinkNetfilterTest, ErrUnsupportedChainWithHardwareOffloadFlagSet) {
+  // TODO: b/434243967 - Remove when hardware offload chains are supported.
+  SKIP_IF(!IsRunningOnGvisor());
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
   const char test_table_name[] = "test_table_chain_hook";
   const char test_chain_name[] = "test_chain_bad_policy";
@@ -1411,14 +1424,14 @@ TEST_F(NetlinkNetfilterTest, ErrChainWithHardwareOffloadFlagSet) {
                    .Seq(kSeq + 2)
                    .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
                    .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
-                   .U32Attr(NFTA_CHAIN_FLAGS, &test_chain_flags)
+                   .U32Attr(NFTA_CHAIN_FLAGS, test_chain_flags)
                    .Build())
           .SeqEnd(kSeq + 3)
           .Build();
 
-  ASSERT_THAT(NetlinkBatchedRequestAckOrError(fd, kSeq, kSeq + 3,
-                                              add_request_buffer.data(),
-                                              add_request_buffer.size()),
+  ASSERT_THAT(NetlinkNetfilterBatchRequestAckOrError(fd, kSeq, kSeq + 3,
+                                                     add_request_buffer.data(),
+                                                     add_request_buffer.size()),
               PosixErrorIs(ENOTSUP, _));
 }
 
@@ -1440,19 +1453,21 @@ TEST_F(NetlinkNetfilterTest, ErrChainWithNoNameAndChainBindingFlagNotSet) {
           .Req(NlReq("newchain req ack inet")
                    .Seq(kSeq + 2)
                    .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
-                   .U32Attr(NFTA_CHAIN_FLAGS, &test_chain_flags)
-                   .U32Attr(NFTA_CHAIN_ID, &test_chain_id)
+                   .U32Attr(NFTA_CHAIN_FLAGS, test_chain_flags)
+                   .U32Attr(NFTA_CHAIN_ID, test_chain_id)
                    .Build())
           .SeqEnd(kSeq + 3)
           .Build();
 
-  ASSERT_THAT(NetlinkBatchedRequestAckOrError(fd, kSeq, kSeq + 3,
-                                              add_request_buffer.data(),
-                                              add_request_buffer.size()),
+  ASSERT_THAT(NetlinkNetfilterBatchRequestAckOrError(fd, kSeq, kSeq + 3,
+                                                     add_request_buffer.data(),
+                                                     add_request_buffer.size()),
               PosixErrorIs(EINVAL, _));
 }
 
-TEST_F(NetlinkNetfilterTest, ErrUpdateChain) {
+TEST_F(NetlinkNetfilterTest, ErrUnsupportedUpdateChain) {
+  // TODO: b/434243967 - Remove when updating existing chains are supported.
+  SKIP_IF(!IsRunningOnGvisor());
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
   const char test_table_name[] = "test_table_chain_hook";
   const char test_chain_name[] = "test_chain_invalid_update";
@@ -1470,7 +1485,7 @@ TEST_F(NetlinkNetfilterTest, ErrUpdateChain) {
           .Req(NlReq("newchain req ack inet")
                    .Seq(kSeq + 2)
                    .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
-                   .U32Attr(NFTA_CHAIN_FLAGS, &test_chain_flags)
+                   .U32Attr(NFTA_CHAIN_FLAGS, test_chain_flags)
                    .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
                    .Build())
           .SeqEnd(kSeq + 3)
@@ -1482,17 +1497,17 @@ TEST_F(NetlinkNetfilterTest, ErrUpdateChain) {
           .Req(NlReq("newchain req ack inet")
                    .Seq(kSeq + 5)
                    .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
-                   .U32Attr(NFTA_CHAIN_FLAGS, &test_chain_flags)
+                   .U32Attr(NFTA_CHAIN_FLAGS, test_chain_flags)
                    .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
                    .Build())
           .SeqEnd(kSeq + 6)
           .Build();
 
-  ASSERT_NO_ERRNO(NetlinkBatchedRequestAckOrError(fd, kSeq, kSeq + 3,
-                                                  add_request_buffer.data(),
-                                                  add_request_buffer.size()));
+  ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
+      fd, kSeq, kSeq + 3, add_request_buffer.data(),
+      add_request_buffer.size()));
 
-  ASSERT_THAT(NetlinkBatchedRequestAckOrError(
+  ASSERT_THAT(NetlinkNetfilterBatchRequestAckOrError(
                   fd, kSeq + 4, kSeq + 6, update_chain_request_buffer.data(),
                   update_chain_request_buffer.size()),
               PosixErrorIs(ENOTSUP, _));
@@ -1516,15 +1531,15 @@ TEST_F(NetlinkNetfilterTest, AddChainWithNoNameAndChainIdAttributeSet) {
           .Req(NlReq("newchain req ack inet")
                    .Seq(kSeq + 2)
                    .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
-                   .U32Attr(NFTA_CHAIN_FLAGS, &test_chain_flags)
-                   .U32Attr(NFTA_CHAIN_ID, &test_chain_id)
+                   .U32Attr(NFTA_CHAIN_FLAGS, test_chain_flags)
+                   .U32Attr(NFTA_CHAIN_ID, test_chain_id)
                    .Build())
           .SeqEnd(kSeq + 3)
           .Build();
 
-  ASSERT_NO_ERRNO(NetlinkBatchedRequestAckOrError(fd, kSeq, kSeq + 3,
-                                                  add_request_buffer.data(),
-                                                  add_request_buffer.size()));
+  ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
+      fd, kSeq, kSeq + 3, add_request_buffer.data(),
+      add_request_buffer.size()));
 }
 
 TEST_F(NetlinkNetfilterTest, AddChainWithName) {
@@ -1545,15 +1560,15 @@ TEST_F(NetlinkNetfilterTest, AddChainWithName) {
           .Req(NlReq("newchain req ack inet")
                    .Seq(kSeq + 2)
                    .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
-                   .U32Attr(NFTA_CHAIN_FLAGS, &test_chain_flags)
+                   .U32Attr(NFTA_CHAIN_FLAGS, test_chain_flags)
                    .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
                    .Build())
           .SeqEnd(kSeq + 3)
           .Build();
 
-  ASSERT_NO_ERRNO(NetlinkBatchedRequestAckOrError(fd, kSeq, kSeq + 3,
-                                                  add_request_buffer.data(),
-                                                  add_request_buffer.size()));
+  ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
+      fd, kSeq, kSeq + 3, add_request_buffer.data(),
+      add_request_buffer.size()));
 }
 
 TEST_F(NetlinkNetfilterTest, AddBaseChainWithDropPolicy) {
@@ -1570,8 +1585,8 @@ TEST_F(NetlinkNetfilterTest, AddBaseChainWithDropPolicy) {
 
   std::vector<char> nested_hook_data =
       NlNestedAttr()
-          .U32Attr(NFTA_HOOK_HOOKNUM, &test_hook_num)
-          .U32Attr(NFTA_HOOK_PRIORITY, &test_hook_priority)
+          .U32Attr(NFTA_HOOK_HOOKNUM, test_hook_num)
+          .U32Attr(NFTA_HOOK_PRIORITY, test_hook_priority)
           .StrAttr(NFTA_CHAIN_TYPE, test_chain_type_name)
           .Build();
 
@@ -1586,20 +1601,20 @@ TEST_F(NetlinkNetfilterTest, AddBaseChainWithDropPolicy) {
                    .Seq(kSeq + 2)
                    .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
                    .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
-                   .U32Attr(NFTA_CHAIN_POLICY, &test_policy)
+                   .U32Attr(NFTA_CHAIN_POLICY, test_policy)
                    .RawAttr(NFTA_CHAIN_HOOK, nested_hook_data.data(),
                             nested_hook_data.size())
-                   .U32Attr(NFTA_CHAIN_FLAGS, &test_chain_flags)
+                   .U32Attr(NFTA_CHAIN_FLAGS, test_chain_flags)
                    .Build())
           .SeqEnd(kSeq + 3)
           .Build();
 
-  ASSERT_NO_ERRNO(NetlinkBatchedRequestAckOrError(fd, kSeq, kSeq + 3,
-                                                  add_request_buffer.data(),
-                                                  add_request_buffer.size()));
+  ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
+      fd, kSeq, kSeq + 3, add_request_buffer.data(),
+      add_request_buffer.size()));
 }
 
-TEST_F(NetlinkNetfilterTest, ErrGetChainWithDumpFlagSet) {
+TEST_F(NetlinkNetfilterTest, ErrUnsupportedGetChainWithDumpFlagSet) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
   const char test_table_name[] = "test_table_chain_hook";
   const char test_chain_name[] = "test_chain_dump_fail";
@@ -1617,7 +1632,7 @@ TEST_F(NetlinkNetfilterTest, ErrGetChainWithDumpFlagSet) {
           .Req(NlReq("newchain req ack inet")
                    .Seq(kSeq + 2)
                    .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
-                   .U32Attr(NFTA_CHAIN_FLAGS, &test_chain_flags)
+                   .U32Attr(NFTA_CHAIN_FLAGS, test_chain_flags)
                    .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
                    .Build())
           .SeqEnd(kSeq + 3)
@@ -1630,9 +1645,9 @@ TEST_F(NetlinkNetfilterTest, ErrGetChainWithDumpFlagSet) {
           .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
           .Build();
 
-  ASSERT_NO_ERRNO(NetlinkBatchedRequestAckOrError(fd, kSeq, kSeq + 3,
-                                                  add_request_buffer.data(),
-                                                  add_request_buffer.size()));
+  ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
+      fd, kSeq, kSeq + 3, add_request_buffer.data(),
+      add_request_buffer.size()));
   ASSERT_THAT(
       NetlinkRequestAckOrError(fd, kSeq + 4, get_chain_request_buffer.data(),
                                get_chain_request_buffer.size()),
@@ -1657,7 +1672,7 @@ TEST_F(NetlinkNetfilterTest, ErrGetChainWithNoTableName) {
           .Req(NlReq("newchain req ack inet")
                    .Seq(kSeq + 2)
                    .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
-                   .U32Attr(NFTA_CHAIN_FLAGS, &test_chain_flags)
+                   .U32Attr(NFTA_CHAIN_FLAGS, test_chain_flags)
                    .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
                    .Build())
           .SeqEnd(kSeq + 3)
@@ -1669,9 +1684,9 @@ TEST_F(NetlinkNetfilterTest, ErrGetChainWithNoTableName) {
           .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
           .Build();
 
-  ASSERT_NO_ERRNO(NetlinkBatchedRequestAckOrError(fd, kSeq, kSeq + 3,
-                                                  add_request_buffer.data(),
-                                                  add_request_buffer.size()));
+  ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
+      fd, kSeq, kSeq + 3, add_request_buffer.data(),
+      add_request_buffer.size()));
   ASSERT_THAT(
       NetlinkRequestAckOrError(fd, kSeq + 4, get_chain_request_buffer.data(),
                                get_chain_request_buffer.size()),
@@ -1696,7 +1711,7 @@ TEST_F(NetlinkNetfilterTest, ErrGetChainWithNoChainName) {
           .Req(NlReq("newchain req ack inet")
                    .Seq(kSeq + 2)
                    .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
-                   .U32Attr(NFTA_CHAIN_FLAGS, &test_chain_flags)
+                   .U32Attr(NFTA_CHAIN_FLAGS, test_chain_flags)
                    .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
                    .Build())
           .SeqEnd(kSeq + 3)
@@ -1708,9 +1723,9 @@ TEST_F(NetlinkNetfilterTest, ErrGetChainWithNoChainName) {
           .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
           .Build();
 
-  ASSERT_NO_ERRNO(NetlinkBatchedRequestAckOrError(fd, kSeq, kSeq + 3,
-                                                  add_request_buffer.data(),
-                                                  add_request_buffer.size()));
+  ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
+      fd, kSeq, kSeq + 3, add_request_buffer.data(),
+      add_request_buffer.size()));
   ASSERT_THAT(
       NetlinkRequestAckOrError(fd, kSeq + 4, get_chain_request_buffer.data(),
                                get_chain_request_buffer.size()),
@@ -1737,7 +1752,7 @@ TEST_F(NetlinkNetfilterTest, GetChain) {
           .Req(NlReq("newchain req ack inet")
                    .Seq(kSeq + 2)
                    .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
-                   .U32Attr(NFTA_CHAIN_FLAGS, &test_chain_flags)
+                   .U32Attr(NFTA_CHAIN_FLAGS, test_chain_flags)
                    .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
                    .RawAttr(NFTA_CHAIN_USERDATA, test_user_data,
                             expected_udata_size)
@@ -1753,9 +1768,9 @@ TEST_F(NetlinkNetfilterTest, GetChain) {
           .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
           .Build();
 
-  ASSERT_NO_ERRNO(NetlinkBatchedRequestAckOrError(fd, kSeq, kSeq + 3,
-                                                  add_request_buffer.data(),
-                                                  add_request_buffer.size()));
+  ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
+      fd, kSeq, kSeq + 3, add_request_buffer.data(),
+      add_request_buffer.size()));
 
   ASSERT_NO_ERRNO(NetlinkRequestResponse(
       fd, get_chain_request_buffer.data(), get_chain_request_buffer.size(),
@@ -1790,8 +1805,8 @@ TEST_F(NetlinkNetfilterTest, GetBaseChain) {
 
   std::vector<char> nested_hook_data =
       NlNestedAttr()
-          .U32Attr(NFTA_HOOK_HOOKNUM, &test_hook_num)
-          .U32Attr(NFTA_HOOK_PRIORITY, &test_hook_priority)
+          .U32Attr(NFTA_HOOK_HOOKNUM, test_hook_num)
+          .U32Attr(NFTA_HOOK_PRIORITY, test_hook_priority)
           .StrAttr(NFTA_CHAIN_TYPE, test_chain_type_name)
           .Build();
 
@@ -1806,10 +1821,10 @@ TEST_F(NetlinkNetfilterTest, GetBaseChain) {
                    .Seq(kSeq + 2)
                    .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
                    .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
-                   .U32Attr(NFTA_CHAIN_POLICY, &test_policy)
+                   .U32Attr(NFTA_CHAIN_POLICY, test_policy)
                    .RawAttr(NFTA_CHAIN_HOOK, nested_hook_data.data(),
                             nested_hook_data.size())
-                   .U32Attr(NFTA_CHAIN_FLAGS, &test_chain_flags)
+                   .U32Attr(NFTA_CHAIN_FLAGS, test_chain_flags)
                    .RawAttr(NFTA_CHAIN_USERDATA, test_user_data,
                             expected_udata_size)
                    .Build())
@@ -1824,9 +1839,9 @@ TEST_F(NetlinkNetfilterTest, GetBaseChain) {
           .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
           .Build();
 
-  ASSERT_NO_ERRNO(NetlinkBatchedRequestAckOrError(fd, kSeq, kSeq + 3,
-                                                  add_request_buffer.data(),
-                                                  add_request_buffer.size()));
+  ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
+      fd, kSeq, kSeq + 3, add_request_buffer.data(),
+      add_request_buffer.size()));
 
   ASSERT_NO_ERRNO(NetlinkRequestResponse(
       fd, get_chain_request_buffer.data(), get_chain_request_buffer.size(),
@@ -1861,8 +1876,8 @@ TEST_F(NetlinkNetfilterTest, ErrDeleteChainWithNoTableNameSpecified) {
 
   std::vector<char> nested_hook_data =
       NlNestedAttr()
-          .U32Attr(NFTA_HOOK_HOOKNUM, &test_hook_num)
-          .U32Attr(NFTA_HOOK_PRIORITY, &test_hook_priority)
+          .U32Attr(NFTA_HOOK_HOOKNUM, test_hook_num)
+          .U32Attr(NFTA_HOOK_PRIORITY, test_hook_priority)
           .StrAttr(NFTA_CHAIN_TYPE, test_chain_type_name)
           .Build();
 
@@ -1877,10 +1892,10 @@ TEST_F(NetlinkNetfilterTest, ErrDeleteChainWithNoTableNameSpecified) {
                    .Seq(kSeq + 2)
                    .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
                    .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
-                   .U32Attr(NFTA_CHAIN_POLICY, &test_policy)
+                   .U32Attr(NFTA_CHAIN_POLICY, test_policy)
                    .RawAttr(NFTA_CHAIN_HOOK, nested_hook_data.data(),
                             nested_hook_data.size())
-                   .U32Attr(NFTA_CHAIN_FLAGS, &test_chain_flags)
+                   .U32Attr(NFTA_CHAIN_FLAGS, test_chain_flags)
                    .Build())
           .SeqEnd(kSeq + 3)
           .Build();
@@ -1895,10 +1910,10 @@ TEST_F(NetlinkNetfilterTest, ErrDeleteChainWithNoTableNameSpecified) {
           .SeqEnd(kSeq + 6)
           .Build();
 
-  ASSERT_NO_ERRNO(NetlinkBatchedRequestAckOrError(fd, kSeq, kSeq + 3,
-                                                  add_request_buffer.data(),
-                                                  add_request_buffer.size()));
-  ASSERT_THAT(NetlinkBatchedRequestAckOrError(
+  ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
+      fd, kSeq, kSeq + 3, add_request_buffer.data(),
+      add_request_buffer.size()));
+  ASSERT_THAT(NetlinkNetfilterBatchRequestAckOrError(
                   fd, kSeq + 4, kSeq + 6, delete_chain_request_buffer.data(),
                   delete_chain_request_buffer.size()),
               PosixErrorIs(EINVAL, _));
@@ -1932,10 +1947,10 @@ TEST_F(NetlinkNetfilterTest, ErrDeleteNonexistentChain) {
           .SeqEnd(kSeq + 5)
           .Build();
 
-  ASSERT_NO_ERRNO(NetlinkBatchedRequestAckOrError(
+  ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
       fd, kSeq, kSeq + 2, add_table_request_buffer.data(),
       add_table_request_buffer.size()));
-  ASSERT_THAT(NetlinkBatchedRequestAckOrError(
+  ASSERT_THAT(NetlinkNetfilterBatchRequestAckOrError(
                   fd, kSeq + 3, kSeq + 5, delete_chain_request_buffer.data(),
                   delete_chain_request_buffer.size()),
               PosixErrorIs(ENOENT, _));
@@ -1960,7 +1975,7 @@ TEST_F(NetlinkNetfilterTest, ErrDeleteChainWithChainBindingFlagSet) {
                    .Seq(kSeq + 2)
                    .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
                    .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
-                   .U32Attr(NFTA_CHAIN_FLAGS, &test_chain_flags)
+                   .U32Attr(NFTA_CHAIN_FLAGS, test_chain_flags)
                    .Build())
           .SeqEnd(kSeq + 3)
           .Build();
@@ -1976,10 +1991,10 @@ TEST_F(NetlinkNetfilterTest, ErrDeleteChainWithChainBindingFlagSet) {
           .SeqEnd(kSeq + 6)
           .Build();
 
-  ASSERT_NO_ERRNO(NetlinkBatchedRequestAckOrError(fd, kSeq, kSeq + 3,
-                                                  add_request_buffer.data(),
-                                                  add_request_buffer.size()));
-  ASSERT_THAT(NetlinkBatchedRequestAckOrError(
+  ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
+      fd, kSeq, kSeq + 3, add_request_buffer.data(),
+      add_request_buffer.size()));
+  ASSERT_THAT(NetlinkNetfilterBatchRequestAckOrError(
                   fd, kSeq + 4, kSeq + 6, delete_chain_request_buffer.data(),
                   delete_chain_request_buffer.size()),
               PosixErrorIs(ENOTSUP, _));
@@ -2013,10 +2028,10 @@ TEST_F(NetlinkNetfilterTest, DestroyNonexistentChain) {
           .SeqEnd(kSeq + 5)
           .Build();
 
-  ASSERT_NO_ERRNO(NetlinkBatchedRequestAckOrError(
+  ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
       fd, kSeq, kSeq + 2, add_table_request_buffer.data(),
       add_table_request_buffer.size()));
-  ASSERT_NO_ERRNO(NetlinkBatchedRequestAckOrError(
+  ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
       fd, kSeq + 3, kSeq + 5, delete_chain_request_buffer.data(),
       delete_chain_request_buffer.size()));
 }
@@ -2035,8 +2050,8 @@ TEST_F(NetlinkNetfilterTest, DeleteBaseChain) {
 
   std::vector<char> nested_hook_data =
       NlNestedAttr()
-          .U32Attr(NFTA_HOOK_HOOKNUM, &test_hook_num)
-          .U32Attr(NFTA_HOOK_PRIORITY, &test_hook_priority)
+          .U32Attr(NFTA_HOOK_HOOKNUM, test_hook_num)
+          .U32Attr(NFTA_HOOK_PRIORITY, test_hook_priority)
           .StrAttr(NFTA_CHAIN_TYPE, test_chain_type_name)
           .Build();
 
@@ -2051,10 +2066,10 @@ TEST_F(NetlinkNetfilterTest, DeleteBaseChain) {
                    .Seq(kSeq + 2)
                    .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
                    .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
-                   .U32Attr(NFTA_CHAIN_POLICY, &test_policy)
+                   .U32Attr(NFTA_CHAIN_POLICY, test_policy)
                    .RawAttr(NFTA_CHAIN_HOOK, nested_hook_data.data(),
                             nested_hook_data.size())
-                   .U32Attr(NFTA_CHAIN_FLAGS, &test_chain_flags)
+                   .U32Attr(NFTA_CHAIN_FLAGS, test_chain_flags)
                    .Build())
           .SeqEnd(kSeq + 3)
           .Build();
@@ -2070,10 +2085,10 @@ TEST_F(NetlinkNetfilterTest, DeleteBaseChain) {
           .SeqEnd(kSeq + 6)
           .Build();
 
-  ASSERT_NO_ERRNO(NetlinkBatchedRequestAckOrError(fd, kSeq, kSeq + 3,
-                                                  add_request_buffer.data(),
-                                                  add_request_buffer.size()));
-  ASSERT_NO_ERRNO(NetlinkBatchedRequestAckOrError(
+  ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
+      fd, kSeq, kSeq + 3, add_request_buffer.data(),
+      add_request_buffer.size()));
+  ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
       fd, kSeq + 4, kSeq + 6, delete_chain_request_buffer.data(),
       delete_chain_request_buffer.size()));
 }
@@ -2093,8 +2108,8 @@ TEST_F(NetlinkNetfilterTest, DeleteBaseChainByHandle) {
 
   std::vector<char> nested_hook_data =
       NlNestedAttr()
-          .U32Attr(NFTA_HOOK_HOOKNUM, &test_hook_num)
-          .U32Attr(NFTA_HOOK_PRIORITY, &test_hook_priority)
+          .U32Attr(NFTA_HOOK_HOOKNUM, test_hook_num)
+          .U32Attr(NFTA_HOOK_PRIORITY, test_hook_priority)
           .StrAttr(NFTA_CHAIN_TYPE, test_chain_type_name)
           .Build();
 
@@ -2109,10 +2124,10 @@ TEST_F(NetlinkNetfilterTest, DeleteBaseChainByHandle) {
                    .Seq(kSeq + 2)
                    .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
                    .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
-                   .U32Attr(NFTA_CHAIN_POLICY, &test_policy)
+                   .U32Attr(NFTA_CHAIN_POLICY, test_policy)
                    .RawAttr(NFTA_CHAIN_HOOK, nested_hook_data.data(),
                             nested_hook_data.size())
-                   .U32Attr(NFTA_CHAIN_FLAGS, &test_chain_flags)
+                   .U32Attr(NFTA_CHAIN_FLAGS, test_chain_flags)
                    .Build())
           .SeqEnd(kSeq + 3)
           .Build();
@@ -2124,17 +2139,17 @@ TEST_F(NetlinkNetfilterTest, DeleteBaseChainByHandle) {
           .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
           .Build();
 
-  ASSERT_NO_ERRNO(NetlinkBatchedRequestAckOrError(fd, kSeq, kSeq + 3,
-                                                  add_request_buffer.data(),
-                                                  add_request_buffer.size()));
+  ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
+      fd, kSeq, kSeq + 3, add_request_buffer.data(),
+      add_request_buffer.size()));
   ASSERT_NO_ERRNO(NetlinkRequestResponse(
       fd, get_chain_request_buffer.data(), get_chain_request_buffer.size(),
       [&](const struct nlmsghdr* hdr) {
         const struct nfattr* chain_handle_attr =
             FindNfAttr(hdr, nullptr, NFTA_CHAIN_HANDLE);
         ASSERT_NE(chain_handle_attr, nullptr);
-        chain_handle =
-            *(reinterpret_cast<uint64_t*>(NFA_DATA(chain_handle_attr)));
+        chain_handle = be64toh(
+            *(reinterpret_cast<uint64_t*>(NFA_DATA(chain_handle_attr))));
       },
       false));
 
@@ -2145,11 +2160,11 @@ TEST_F(NetlinkNetfilterTest, DeleteBaseChainByHandle) {
           .Req(NlReq("delchain req ack inet")
                    .Seq(kSeq + 6)
                    .StrAttr(NFTA_TABLE_NAME, test_table_name)
-                   .U64Attr(NFTA_CHAIN_HANDLE, &chain_handle)
+                   .U64Attr(NFTA_CHAIN_HANDLE, chain_handle)
                    .Build())
           .SeqEnd(kSeq + 7)
           .Build();
-  ASSERT_NO_ERRNO(NetlinkBatchedRequestAckOrError(
+  ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
       fd, kSeq + 5, kSeq + 7, delete_chain_request_buffer.data(),
       delete_chain_request_buffer.size()));
 }
@@ -2170,7 +2185,7 @@ TEST_F(NetlinkNetfilterTest, ErrRetrieveTableWithOwnerMismatchUnboundSocket) {
           .Req(NlReq("newtable req ack inet")
                    .Seq(kSeq + 1)
                    .StrAttr(NFTA_TABLE_NAME, test_table_name)
-                   .U32Attr(NFTA_TABLE_FLAGS, &table_flags)
+                   .U32Attr(NFTA_TABLE_FLAGS, table_flags)
                    .RawAttr(NFTA_TABLE_USERDATA, expected_udata,
                             sizeof(expected_udata))
                    .Build())
@@ -2183,9 +2198,9 @@ TEST_F(NetlinkNetfilterTest, ErrRetrieveTableWithOwnerMismatchUnboundSocket) {
           .StrAttr(NFTA_TABLE_NAME, test_table_name)
           .Build();
 
-  ASSERT_NO_ERRNO(NetlinkBatchedRequestAckOrError(fd, kSeq, kSeq + 2,
-                                                  add_request_buffer.data(),
-                                                  add_request_buffer.size()));
+  ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
+      fd, kSeq, kSeq + 2, add_request_buffer.data(),
+      add_request_buffer.size()));
 
   ASSERT_THAT(
       NetlinkRequestAckOrError(fd_2, kSeq + 3, get_request_buffer.data(),
@@ -2209,7 +2224,7 @@ TEST_F(NetlinkNetfilterTest, AddTableWithUnboundSocket) {
           .Req(NlReq("newtable req ack inet")
                    .Seq(kSeq + 1)
                    .StrAttr(NFTA_TABLE_NAME, test_table_name)
-                   .U32Attr(NFTA_TABLE_FLAGS, &table_flags)
+                   .U32Attr(NFTA_TABLE_FLAGS, table_flags)
                    .RawAttr(NFTA_TABLE_USERDATA, expected_udata,
                             sizeof(expected_udata))
                    .Build())
@@ -2222,9 +2237,9 @@ TEST_F(NetlinkNetfilterTest, AddTableWithUnboundSocket) {
           .StrAttr(NFTA_TABLE_NAME, test_table_name)
           .Build();
 
-  ASSERT_NO_ERRNO(NetlinkBatchedRequestAckOrError(fd, kSeq, kSeq + 2,
-                                                  add_request_buffer.data(),
-                                                  add_request_buffer.size()));
+  ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
+      fd, kSeq, kSeq + 2, add_request_buffer.data(),
+      add_request_buffer.size()));
 
   ASSERT_NO_ERRNO(NetlinkRequestResponse(
       fd, get_request_buffer.data(), get_request_buffer.size(),
@@ -2232,7 +2247,8 @@ TEST_F(NetlinkNetfilterTest, AddTableWithUnboundSocket) {
         const struct nfattr* owner_attr =
             FindNfAttr(hdr, nullptr, NFTA_TABLE_OWNER);
         EXPECT_NE(owner_attr, nullptr);
-        uint32_t owner = *(reinterpret_cast<uint32_t*>(NFA_DATA(owner_attr)));
+        uint32_t owner =
+            ntohl(*(reinterpret_cast<uint32_t*>(NFA_DATA(owner_attr))));
         EXPECT_NE(owner, 0);
         expected_port_id = owner;
         correct_response = true;
@@ -2263,9 +2279,9 @@ TEST_F(NetlinkNetfilterTest, ErrAddRuleWithMissingTableName) {
 
   AddDefaultTable({.fd = fd, .seq = kSeq});
   AddDefaultBaseChain({.fd = fd, .seq = kSeq + 3});
-  ASSERT_THAT(NetlinkBatchedRequestAckOrError(fd, kSeq + 4, kSeq + 6,
-                                              add_rule_request_buffer.data(),
-                                              add_rule_request_buffer.size()),
+  ASSERT_THAT(NetlinkNetfilterBatchRequestAckOrError(
+                  fd, kSeq + 4, kSeq + 6, add_rule_request_buffer.data(),
+                  add_rule_request_buffer.size()),
               PosixErrorIs(EINVAL, _));
 }
 
@@ -2286,9 +2302,9 @@ TEST_F(NetlinkNetfilterTest, ErrAddRuleWithUnknownTableName) {
 
   AddDefaultTable({.fd = fd, .seq = kSeq});
   AddDefaultBaseChain({.fd = fd, .seq = kSeq + 3});
-  ASSERT_THAT(NetlinkBatchedRequestAckOrError(fd, kSeq + 6, kSeq + 8,
-                                              add_rule_request_buffer.data(),
-                                              add_rule_request_buffer.size()),
+  ASSERT_THAT(NetlinkNetfilterBatchRequestAckOrError(
+                  fd, kSeq + 6, kSeq + 8, add_rule_request_buffer.data(),
+                  add_rule_request_buffer.size()),
               PosixErrorIs(ENOENT, _));
 }
 
@@ -2309,9 +2325,9 @@ TEST_F(NetlinkNetfilterTest, ErrAddRuleNoChainSpecified) {
 
   AddDefaultTable({.fd = fd, .seq = kSeq});
   AddDefaultBaseChain({.fd = fd, .seq = kSeq + 3});
-  ASSERT_THAT(NetlinkBatchedRequestAckOrError(fd, kSeq + 6, kSeq + 8,
-                                              add_rule_request_buffer.data(),
-                                              add_rule_request_buffer.size()),
+  ASSERT_THAT(NetlinkNetfilterBatchRequestAckOrError(
+                  fd, kSeq + 6, kSeq + 8, add_rule_request_buffer.data(),
+                  add_rule_request_buffer.size()),
               PosixErrorIs(EINVAL, _));
 }
 
@@ -2334,9 +2350,9 @@ TEST_F(NetlinkNetfilterTest,
 
   AddDefaultTable({.fd = fd, .seq = kSeq});
   AddDefaultBaseChain({.fd = fd, .seq = kSeq + 3});
-  ASSERT_THAT(NetlinkBatchedRequestAckOrError(fd, kSeq + 6, kSeq + 8,
-                                              add_rule_request_buffer.data(),
-                                              add_rule_request_buffer.size()),
+  ASSERT_THAT(NetlinkNetfilterBatchRequestAckOrError(
+                  fd, kSeq + 6, kSeq + 8, add_rule_request_buffer.data(),
+                  add_rule_request_buffer.size()),
               PosixErrorIs(EINVAL, _));
 }
 
@@ -2358,9 +2374,9 @@ TEST_F(NetlinkNetfilterTest, ErrAddRuleNoHandleOrPositionSpecified) {
 
   AddDefaultTable({.fd = fd, .seq = kSeq});
   AddDefaultBaseChain({.fd = fd, .seq = kSeq + 3});
-  ASSERT_THAT(NetlinkBatchedRequestAckOrError(fd, kSeq + 6, kSeq + 8,
-                                              add_rule_request_buffer.data(),
-                                              add_rule_request_buffer.size()),
+  ASSERT_THAT(NetlinkNetfilterBatchRequestAckOrError(
+                  fd, kSeq + 6, kSeq + 8, add_rule_request_buffer.data(),
+                  add_rule_request_buffer.size()),
               PosixErrorIs(EINVAL, _));
 }
 
@@ -2377,16 +2393,16 @@ TEST_F(NetlinkNetfilterTest, ErrAddRuleInvalidPositionSpecified) {
                    .Seq(kSeq + 5)
                    .StrAttr(NFTA_RULE_TABLE, DEFAULT_TABLE_NAME)
                    .StrAttr(NFTA_RULE_CHAIN, DEFAULT_CHAIN_NAME)
-                   .U64Attr(NFTA_RULE_POSITION, &invalid_position)
+                   .U64Attr(NFTA_RULE_POSITION, invalid_position)
                    .Build())
           .SeqEnd(kSeq + 6)
           .Build();
 
   AddDefaultTable({.fd = fd, .seq = kSeq});
   AddDefaultBaseChain({.fd = fd, .seq = kSeq + 3});
-  ASSERT_THAT(NetlinkBatchedRequestAckOrError(fd, kSeq + 4, kSeq + 6,
-                                              add_rule_request_buffer.data(),
-                                              add_rule_request_buffer.size()),
+  ASSERT_THAT(NetlinkNetfilterBatchRequestAckOrError(
+                  fd, kSeq + 4, kSeq + 6, add_rule_request_buffer.data(),
+                  add_rule_request_buffer.size()),
               PosixErrorIs(ENOENT, _));
 }
 
@@ -2403,16 +2419,16 @@ TEST_F(NetlinkNetfilterTest, ErrAddRuleInvalidHandleSpecified) {
                    .Seq(kSeq + 5)
                    .StrAttr(NFTA_RULE_TABLE, DEFAULT_TABLE_NAME)
                    .StrAttr(NFTA_RULE_CHAIN, DEFAULT_CHAIN_NAME)
-                   .U64Attr(NFTA_RULE_HANDLE, &invalid_handle)
+                   .U64Attr(NFTA_RULE_HANDLE, invalid_handle)
                    .Build())
           .SeqEnd(kSeq + 6)
           .Build();
 
   AddDefaultTable({.fd = fd, .seq = kSeq});
   AddDefaultBaseChain({.fd = fd, .seq = kSeq + 3});
-  ASSERT_THAT(NetlinkBatchedRequestAckOrError(fd, kSeq + 4, kSeq + 6,
-                                              add_rule_request_buffer.data(),
-                                              add_rule_request_buffer.size()),
+  ASSERT_THAT(NetlinkNetfilterBatchRequestAckOrError(
+                  fd, kSeq + 4, kSeq + 6, add_rule_request_buffer.data(),
+                  add_rule_request_buffer.size()),
               PosixErrorIs(ENOENT, _));
 }
 
@@ -2437,7 +2453,7 @@ TEST_F(NetlinkNetfilterTest, AddEmptyRule) {
 
   AddDefaultTable({.fd = fd, .seq = kSeq});
   AddDefaultBaseChain({.fd = fd, .seq = kSeq + 3});
-  ASSERT_NO_ERRNO(NetlinkBatchedRequestAckOrError(
+  ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
       fd, kSeq + 4, kSeq + 6, add_rule_request_buffer.data(),
       add_rule_request_buffer.size()));
 }
@@ -2455,23 +2471,23 @@ TEST_F(NetlinkNetfilterTest, ErrRuleExpressionWrongType) {
 
   std::vector<char> add_rule_request_buffer =
       NlBatchReq()
-          .SeqStart(kSeq + 4)
+          .SeqStart(kSeq + 6)
           .Req(NlReq("newrule req ack create inet")
-                   .Seq(kSeq + 5)
+                   .Seq(kSeq + 7)
                    .StrAttr(NFTA_RULE_TABLE, DEFAULT_TABLE_NAME)
                    .StrAttr(NFTA_RULE_CHAIN, DEFAULT_CHAIN_NAME)
                    .RawAttr(NFTA_RULE_USERDATA, udata, sizeof(udata))
                    .RawAttr(NFTA_RULE_EXPRESSIONS, list_expr_data.data(),
                             list_expr_data.size())
                    .Build())
-          .SeqEnd(kSeq + 6)
+          .SeqEnd(kSeq + 8)
           .Build();
 
   AddDefaultTable({.fd = fd, .seq = kSeq});
   AddDefaultBaseChain({.fd = fd, .seq = kSeq + 3});
-  ASSERT_THAT(NetlinkBatchedRequestAckOrError(fd, kSeq + 4, kSeq + 6,
-                                              add_rule_request_buffer.data(),
-                                              add_rule_request_buffer.size()),
+  ASSERT_THAT(NetlinkNetfilterBatchRequestAckOrError(
+                  fd, kSeq + 6, kSeq + 8, add_rule_request_buffer.data(),
+                  add_rule_request_buffer.size()),
               PosixErrorIs(EINVAL, _));
 }
 
@@ -2486,23 +2502,23 @@ TEST_F(NetlinkNetfilterTest, ErrRuleTooManyExpressions) {
 
   std::vector<char> add_rule_request_buffer =
       NlBatchReq()
-          .SeqStart(kSeq + 4)
+          .SeqStart(kSeq + 6)
           .Req(NlReq("newrule req ack create inet")
-                   .Seq(kSeq + 5)
+                   .Seq(kSeq + 7)
                    .StrAttr(NFTA_RULE_TABLE, DEFAULT_TABLE_NAME)
                    .StrAttr(NFTA_RULE_CHAIN, DEFAULT_CHAIN_NAME)
                    .RawAttr(NFTA_RULE_USERDATA, udata, sizeof(udata))
                    .RawAttr(NFTA_RULE_EXPRESSIONS, list_expr_data.data(),
                             list_expr_data.size())
                    .Build())
-          .SeqEnd(kSeq + 6)
+          .SeqEnd(kSeq + 8)
           .Build();
 
   AddDefaultTable({.fd = fd, .seq = kSeq});
   AddDefaultBaseChain({.fd = fd, .seq = kSeq + 3});
-  ASSERT_THAT(NetlinkBatchedRequestAckOrError(fd, kSeq + 4, kSeq + 6,
-                                              add_rule_request_buffer.data(),
-                                              add_rule_request_buffer.size()),
+  ASSERT_THAT(NetlinkNetfilterBatchRequestAckOrError(
+                  fd, kSeq + 6, kSeq + 8, add_rule_request_buffer.data(),
+                  add_rule_request_buffer.size()),
               PosixErrorIs(EINVAL, _));
 }
 
@@ -2532,23 +2548,23 @@ TEST_F(NetlinkNetfilterTest, ErrImmRuleNoDestinationRegisterSpecified) {
 
   std::vector<char> add_rule_request_buffer =
       NlBatchReq()
-          .SeqStart(kSeq + 4)
+          .SeqStart(kSeq + 6)
           .Req(NlReq("newrule req ack create inet")
-                   .Seq(kSeq + 5)
+                   .Seq(kSeq + 7)
                    .StrAttr(NFTA_RULE_TABLE, DEFAULT_TABLE_NAME)
                    .StrAttr(NFTA_RULE_CHAIN, DEFAULT_CHAIN_NAME)
                    .RawAttr(NFTA_RULE_USERDATA, udata, sizeof(udata))
                    .RawAttr(NFTA_RULE_EXPRESSIONS, list_expr_data.data(),
                             list_expr_data.size())
                    .Build())
-          .SeqEnd(kSeq + 6)
+          .SeqEnd(kSeq + 8)
           .Build();
 
   AddDefaultTable({.fd = fd, .seq = kSeq});
   AddDefaultBaseChain({.fd = fd, .seq = kSeq + 3});
-  ASSERT_THAT(NetlinkBatchedRequestAckOrError(fd, kSeq + 4, kSeq + 6,
-                                              add_rule_request_buffer.data(),
-                                              add_rule_request_buffer.size()),
+  ASSERT_THAT(NetlinkNetfilterBatchRequestAckOrError(
+                  fd, kSeq + 6, kSeq + 8, add_rule_request_buffer.data(),
+                  add_rule_request_buffer.size()),
               PosixErrorIs(EINVAL, _));
 }
 
@@ -2561,7 +2577,7 @@ TEST_F(NetlinkNetfilterTest, ErrImmRuleNoDataSpecified) {
   uint32_t dreg = NFT_REG_VERDICT;
   std::vector<char> rule_data = {0, 1, 2};
   std::vector<char> immediate_attrs =
-      NlNestedAttr().U32Attr(NFTA_IMMEDIATE_DREG, &dreg).Build();
+      NlNestedAttr().U32Attr(NFTA_IMMEDIATE_DREG, dreg).Build();
   std::vector<char> rule_expr_data =
       NlNestedAttr()
           .StrAttr(NFTA_EXPR_NAME, "immediate")
@@ -2572,23 +2588,23 @@ TEST_F(NetlinkNetfilterTest, ErrImmRuleNoDataSpecified) {
 
   std::vector<char> add_rule_request_buffer =
       NlBatchReq()
-          .SeqStart(kSeq + 4)
+          .SeqStart(kSeq + 6)
           .Req(NlReq("newrule req ack create inet")
-                   .Seq(kSeq + 5)
+                   .Seq(kSeq + 7)
                    .StrAttr(NFTA_RULE_TABLE, DEFAULT_TABLE_NAME)
                    .StrAttr(NFTA_RULE_CHAIN, DEFAULT_CHAIN_NAME)
                    .RawAttr(NFTA_RULE_USERDATA, udata, sizeof(udata))
                    .RawAttr(NFTA_RULE_EXPRESSIONS, list_expr_data.data(),
                             list_expr_data.size())
                    .Build())
-          .SeqEnd(kSeq + 6)
+          .SeqEnd(kSeq + 8)
           .Build();
 
   AddDefaultTable({.fd = fd, .seq = kSeq});
   AddDefaultBaseChain({.fd = fd, .seq = kSeq + 3});
-  ASSERT_THAT(NetlinkBatchedRequestAckOrError(fd, kSeq + 4, kSeq + 6,
-                                              add_rule_request_buffer.data(),
-                                              add_rule_request_buffer.size()),
+  ASSERT_THAT(NetlinkNetfilterBatchRequestAckOrError(
+                  fd, kSeq + 6, kSeq + 8, add_rule_request_buffer.data(),
+                  add_rule_request_buffer.size()),
               PosixErrorIs(EINVAL, _));
 }
 
@@ -2604,23 +2620,23 @@ TEST_F(NetlinkNetfilterTest, ErrValueDataWithVerdictRegister) {
 
   std::vector<char> add_rule_request_buffer =
       NlBatchReq()
-          .SeqStart(kSeq + 4)
+          .SeqStart(kSeq + 6)
           .Req(NlReq("newrule req ack create inet")
-                   .Seq(kSeq + 5)
+                   .Seq(kSeq + 7)
                    .StrAttr(NFTA_RULE_TABLE, DEFAULT_TABLE_NAME)
                    .StrAttr(NFTA_RULE_CHAIN, DEFAULT_CHAIN_NAME)
                    .RawAttr(NFTA_RULE_USERDATA, udata, sizeof(udata))
                    .RawAttr(NFTA_RULE_EXPRESSIONS, list_expr_data.data(),
                             list_expr_data.size())
                    .Build())
-          .SeqEnd(kSeq + 6)
+          .SeqEnd(kSeq + 8)
           .Build();
 
   AddDefaultTable({.fd = fd, .seq = kSeq});
   AddDefaultBaseChain({.fd = fd, .seq = kSeq + 3});
-  ASSERT_THAT(NetlinkBatchedRequestAckOrError(fd, kSeq + 4, kSeq + 6,
-                                              add_rule_request_buffer.data(),
-                                              add_rule_request_buffer.size()),
+  ASSERT_THAT(NetlinkNetfilterBatchRequestAckOrError(
+                  fd, kSeq + 6, kSeq + 8, add_rule_request_buffer.data(),
+                  add_rule_request_buffer.size()),
               PosixErrorIs(EINVAL, _));
 }
 
@@ -2650,9 +2666,9 @@ TEST_F(NetlinkNetfilterTest, ErrVerdictDataWithNonVerdictRegister) {
 
   AddDefaultTable({.fd = fd, .seq = kSeq});
   AddDefaultBaseChain({.fd = fd, .seq = kSeq + 3});
-  ASSERT_THAT(NetlinkBatchedRequestAckOrError(fd, kSeq + 4, kSeq + 6,
-                                              add_rule_request_buffer.data(),
-                                              add_rule_request_buffer.size()),
+  ASSERT_THAT(NetlinkNetfilterBatchRequestAckOrError(
+                  fd, kSeq + 4, kSeq + 6, add_rule_request_buffer.data(),
+                  add_rule_request_buffer.size()),
               PosixErrorIs(EINVAL, _));
 }
 
@@ -2668,7 +2684,7 @@ TEST_F(NetlinkNetfilterTest, ErrExpressionDataMalformed) {
       NlNestedAttr().RawAttr(20, rule_data.data(), rule_data.size()).Build();
   std::vector<char> immediate_attrs =
       NlNestedAttr()
-          .U32Attr(NFTA_IMMEDIATE_DREG, &dreg)
+          .U32Attr(NFTA_IMMEDIATE_DREG, dreg)
           .RawAttr(NFTA_IMMEDIATE_DATA, immediate_data.data(),
                    immediate_data.size())
           .Build();
@@ -2696,9 +2712,9 @@ TEST_F(NetlinkNetfilterTest, ErrExpressionDataMalformed) {
 
   AddDefaultTable({.fd = fd, .seq = kSeq});
   AddDefaultBaseChain({.fd = fd, .seq = kSeq + 3});
-  ASSERT_THAT(NetlinkBatchedRequestAckOrError(fd, kSeq + 4, kSeq + 6,
-                                              add_rule_request_buffer.data(),
-                                              add_rule_request_buffer.size()),
+  ASSERT_THAT(NetlinkNetfilterBatchRequestAckOrError(
+                  fd, kSeq + 4, kSeq + 6, add_rule_request_buffer.data(),
+                  add_rule_request_buffer.size()),
               PosixErrorIs(EINVAL, _));
 }
 
@@ -2716,7 +2732,7 @@ TEST_F(NetlinkNetfilterTest, ErrImmInvalidDreg) {
           .Build();
   std::vector<char> immediate_attrs =
       NlNestedAttr()
-          .U32Attr(NFTA_IMMEDIATE_DREG, &dreg)
+          .U32Attr(NFTA_IMMEDIATE_DREG, dreg)
           .RawAttr(NFTA_IMMEDIATE_DATA, immediate_data.data(),
                    immediate_data.size())
           .Build();
@@ -2730,23 +2746,23 @@ TEST_F(NetlinkNetfilterTest, ErrImmInvalidDreg) {
 
   std::vector<char> add_rule_request_buffer =
       NlBatchReq()
-          .SeqStart(kSeq + 4)
+          .SeqStart(kSeq + 6)
           .Req(NlReq("newrule req ack create inet")
-                   .Seq(kSeq + 5)
+                   .Seq(kSeq + 7)
                    .StrAttr(NFTA_RULE_TABLE, DEFAULT_TABLE_NAME)
                    .StrAttr(NFTA_RULE_CHAIN, DEFAULT_CHAIN_NAME)
                    .RawAttr(NFTA_RULE_USERDATA, udata, sizeof(udata))
                    .RawAttr(NFTA_RULE_EXPRESSIONS, list_expr_data.data(),
                             list_expr_data.size())
                    .Build())
-          .SeqEnd(kSeq + 6)
+          .SeqEnd(kSeq + 8)
           .Build();
 
   AddDefaultTable({.fd = fd, .seq = kSeq});
   AddDefaultBaseChain({.fd = fd, .seq = kSeq + 3});
-  ASSERT_THAT(NetlinkBatchedRequestAckOrError(fd, kSeq + 4, kSeq + 6,
-                                              add_rule_request_buffer.data(),
-                                              add_rule_request_buffer.size()),
+  ASSERT_THAT(NetlinkNetfilterBatchRequestAckOrError(
+                  fd, kSeq + 6, kSeq + 8, add_rule_request_buffer.data(),
+                  add_rule_request_buffer.size()),
               PosixErrorIs(ERANGE, _));
 }
 
@@ -2761,22 +2777,22 @@ TEST_F(NetlinkNetfilterTest, AddAcceptAllRule) {
 
   std::vector<char> add_rule_request_buffer =
       NlBatchReq()
-          .SeqStart(kSeq + 4)
+          .SeqStart(kSeq + 6)
           .Req(NlReq("newrule req ack create inet")
-                   .Seq(kSeq + 5)
+                   .Seq(kSeq + 7)
                    .StrAttr(NFTA_RULE_TABLE, DEFAULT_TABLE_NAME)
                    .StrAttr(NFTA_RULE_CHAIN, DEFAULT_CHAIN_NAME)
                    .RawAttr(NFTA_RULE_USERDATA, udata, sizeof(udata))
                    .RawAttr(NFTA_RULE_EXPRESSIONS, list_expr_data.data(),
                             list_expr_data.size())
                    .Build())
-          .SeqEnd(kSeq + 6)
+          .SeqEnd(kSeq + 8)
           .Build();
 
   AddDefaultTable({.fd = fd, .seq = kSeq});
   AddDefaultBaseChain({.fd = fd, .seq = kSeq + 3});
-  ASSERT_NO_ERRNO(NetlinkBatchedRequestAckOrError(
-      fd, kSeq + 4, kSeq + 6, add_rule_request_buffer.data(),
+  ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
+      fd, kSeq + 6, kSeq + 8, add_rule_request_buffer.data(),
       add_rule_request_buffer.size()));
 }
 
@@ -2804,7 +2820,7 @@ TEST_F(NetlinkNetfilterTest, AddDropAllRule) {
 
   AddDefaultTable({.fd = fd, .seq = kSeq});
   AddDefaultBaseChain({.fd = fd, .seq = kSeq + 3});
-  ASSERT_NO_ERRNO(NetlinkBatchedRequestAckOrError(
+  ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
       fd, kSeq + 4, kSeq + 6, add_rule_request_buffer.data(),
       add_rule_request_buffer.size()));
 }
@@ -2823,22 +2839,22 @@ TEST_F(NetlinkNetfilterTest, AddRuleWithImmDataValue) {
 
   std::vector<char> add_rule_request_buffer =
       NlBatchReq()
-          .SeqStart(kSeq + 4)
+          .SeqStart(kSeq + 6)
           .Req(NlReq("newrule req ack create inet")
-                   .Seq(kSeq + 5)
+                   .Seq(kSeq + 7)
                    .StrAttr(NFTA_RULE_TABLE, DEFAULT_TABLE_NAME)
                    .StrAttr(NFTA_RULE_CHAIN, DEFAULT_CHAIN_NAME)
                    .RawAttr(NFTA_RULE_USERDATA, udata, sizeof(udata))
                    .RawAttr(NFTA_RULE_EXPRESSIONS, list_expr_data.data(),
                             list_expr_data.size())
                    .Build())
-          .SeqEnd(kSeq + 6)
+          .SeqEnd(kSeq + 8)
           .Build();
 
   AddDefaultTable({.fd = fd, .seq = kSeq});
   AddDefaultBaseChain({.fd = fd, .seq = kSeq + 3});
-  ASSERT_NO_ERRNO(NetlinkBatchedRequestAckOrError(
-      fd, kSeq + 4, kSeq + 6, add_rule_request_buffer.data(),
+  ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
+      fd, kSeq + 6, kSeq + 8, add_rule_request_buffer.data(),
       add_rule_request_buffer.size()));
 }
 
@@ -2853,39 +2869,39 @@ TEST_F(NetlinkNetfilterTest, AddRuleToEndOfRuleList) {
 
   std::vector<char> add_rule_request_buffer =
       NlBatchReq()
-          .SeqStart(kSeq + 4)
+          .SeqStart(kSeq + 6)
           .Req(NlReq("newrule req ack create inet")
-                   .Seq(kSeq + 5)
+                   .Seq(kSeq + 7)
                    .StrAttr(NFTA_RULE_TABLE, DEFAULT_TABLE_NAME)
                    .StrAttr(NFTA_RULE_CHAIN, DEFAULT_CHAIN_NAME)
                    .RawAttr(NFTA_RULE_USERDATA, udata, sizeof(udata))
                    .RawAttr(NFTA_RULE_EXPRESSIONS, list_expr_data.data(),
                             list_expr_data.size())
                    .Build())
-          .SeqEnd(kSeq + 6)
+          .SeqEnd(kSeq + 8)
           .Build();
 
   std::vector<char> add_rule_request_buffer_2 =
       NlBatchReq()
-          .SeqStart(kSeq + 7)
+          .SeqStart(kSeq + 9)
           .Req(NlReq("newrule req ack create append inet")
-                   .Seq(kSeq + 8)
+                   .Seq(kSeq + 10)
                    .StrAttr(NFTA_RULE_TABLE, DEFAULT_TABLE_NAME)
                    .StrAttr(NFTA_RULE_CHAIN, DEFAULT_CHAIN_NAME)
                    .RawAttr(NFTA_RULE_USERDATA, udata, sizeof(udata))
                    .RawAttr(NFTA_RULE_EXPRESSIONS, list_expr_data.data(),
                             list_expr_data.size())
                    .Build())
-          .SeqEnd(kSeq + 9)
+          .SeqEnd(kSeq + 11)
           .Build();
 
   AddDefaultTable({.fd = fd, .seq = kSeq});
   AddDefaultBaseChain({.fd = fd, .seq = kSeq + 3});
-  ASSERT_NO_ERRNO(NetlinkBatchedRequestAckOrError(
-      fd, kSeq + 4, kSeq + 6, add_rule_request_buffer.data(),
+  ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
+      fd, kSeq + 6, kSeq + 8, add_rule_request_buffer.data(),
       add_rule_request_buffer.size()));
-  ASSERT_NO_ERRNO(NetlinkBatchedRequestAckOrError(
-      fd, kSeq + 7, kSeq + 9, add_rule_request_buffer_2.data(),
+  ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
+      fd, kSeq + 9, kSeq + 11, add_rule_request_buffer_2.data(),
       add_rule_request_buffer_2.size()));
 }
 
@@ -2900,16 +2916,16 @@ TEST_F(NetlinkNetfilterTest, AddDropRuleBeforeAcceptRule) {
 
   std::vector<char> add_rule_accept_request_buffer =
       NlBatchReq()
-          .SeqStart(kSeq + 4)
+          .SeqStart(kSeq + 6)
           .Req(NlReq("newrule req ack create inet")
-                   .Seq(kSeq + 5)
+                   .Seq(kSeq + 7)
                    .StrAttr(NFTA_RULE_TABLE, DEFAULT_TABLE_NAME)
                    .StrAttr(NFTA_RULE_CHAIN, DEFAULT_CHAIN_NAME)
                    .RawAttr(NFTA_RULE_USERDATA, udata, sizeof(udata))
                    .RawAttr(NFTA_RULE_EXPRESSIONS, list_expr_data.data(),
                             list_expr_data.size())
                    .Build())
-          .SeqEnd(kSeq + 6)
+          .SeqEnd(kSeq + 8)
           .Build();
 
   // TODO - b/421437663: Change to use GET_RULE to retrieve the rule handle
@@ -2919,26 +2935,26 @@ TEST_F(NetlinkNetfilterTest, AddDropRuleBeforeAcceptRule) {
   std::vector<char> list_expr_data_2 = NlListAttr().Add(rule_expr_drop).Build();
   std::vector<char> add_rule_drop_request_buffer =
       NlBatchReq()
-          .SeqStart(kSeq + 7)
+          .SeqStart(kSeq + 9)
           .Req(NlReq("newrule req ack create append inet")
-                   .Seq(kSeq + 8)
+                   .Seq(kSeq + 10)
                    .StrAttr(NFTA_RULE_TABLE, DEFAULT_TABLE_NAME)
                    .StrAttr(NFTA_RULE_CHAIN, DEFAULT_CHAIN_NAME)
-                   .U64Attr(NFTA_RULE_POSITION, &rule_handle)
+                   .U64Attr(NFTA_RULE_POSITION, rule_handle)
                    .RawAttr(NFTA_RULE_USERDATA, udata, sizeof(udata))
                    .RawAttr(NFTA_RULE_EXPRESSIONS, list_expr_data_2.data(),
                             list_expr_data_2.size())
                    .Build())
-          .SeqEnd(kSeq + 9)
+          .SeqEnd(kSeq + 11)
           .Build();
 
   AddDefaultTable({.fd = fd, .seq = kSeq});
   AddDefaultBaseChain({.fd = fd, .seq = kSeq + 3});
-  ASSERT_NO_ERRNO(NetlinkBatchedRequestAckOrError(
-      fd, kSeq + 4, kSeq + 6, add_rule_accept_request_buffer.data(),
+  ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
+      fd, kSeq + 6, kSeq + 8, add_rule_accept_request_buffer.data(),
       add_rule_accept_request_buffer.size()));
-  ASSERT_NO_ERRNO(NetlinkBatchedRequestAckOrError(
-      fd, kSeq + 7, kSeq + 9, add_rule_drop_request_buffer.data(),
+  ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
+      fd, kSeq + 9, kSeq + 11, add_rule_drop_request_buffer.data(),
       add_rule_drop_request_buffer.size()));
 }
 
@@ -2953,16 +2969,16 @@ TEST_F(NetlinkNetfilterTest, AddDropRuleAfterAcceptRule) {
 
   std::vector<char> add_rule_accept_request_buffer =
       NlBatchReq()
-          .SeqStart(kSeq + 4)
+          .SeqStart(kSeq + 6)
           .Req(NlReq("newrule req ack create append inet")
-                   .Seq(kSeq + 5)
+                   .Seq(kSeq + 7)
                    .StrAttr(NFTA_RULE_TABLE, DEFAULT_TABLE_NAME)
                    .StrAttr(NFTA_RULE_CHAIN, DEFAULT_CHAIN_NAME)
                    .RawAttr(NFTA_RULE_USERDATA, udata, sizeof(udata))
                    .RawAttr(NFTA_RULE_EXPRESSIONS, list_expr_data.data(),
                             list_expr_data.size())
                    .Build())
-          .SeqEnd(kSeq + 6)
+          .SeqEnd(kSeq + 8)
           .Build();
 
   // TODO - b/421437663: Change to use GET_RULE to retrieve the rule handle
@@ -2972,26 +2988,26 @@ TEST_F(NetlinkNetfilterTest, AddDropRuleAfterAcceptRule) {
   std::vector<char> list_expr_data_2 = NlListAttr().Add(rule_expr_drop).Build();
   std::vector<char> add_rule_drop_request_buffer =
       NlBatchReq()
-          .SeqStart(kSeq + 7)
+          .SeqStart(kSeq + 9)
           .Req(NlReq("newrule req ack create append inet")
-                   .Seq(kSeq + 8)
+                   .Seq(kSeq + 10)
                    .StrAttr(NFTA_RULE_TABLE, DEFAULT_TABLE_NAME)
                    .StrAttr(NFTA_RULE_CHAIN, DEFAULT_CHAIN_NAME)
-                   .U64Attr(NFTA_RULE_POSITION, &rule_handle)
+                   .U64Attr(NFTA_RULE_POSITION, rule_handle)
                    .RawAttr(NFTA_RULE_USERDATA, udata, sizeof(udata))
                    .RawAttr(NFTA_RULE_EXPRESSIONS, list_expr_data_2.data(),
                             list_expr_data_2.size())
                    .Build())
-          .SeqEnd(kSeq + 9)
+          .SeqEnd(kSeq + 11)
           .Build();
 
   AddDefaultTable({.fd = fd, .seq = kSeq});
   AddDefaultBaseChain({.fd = fd, .seq = kSeq + 3});
-  ASSERT_NO_ERRNO(NetlinkBatchedRequestAckOrError(
-      fd, kSeq + 4, kSeq + 6, add_rule_accept_request_buffer.data(),
+  ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
+      fd, kSeq + 6, kSeq + 8, add_rule_accept_request_buffer.data(),
       add_rule_accept_request_buffer.size()));
-  ASSERT_NO_ERRNO(NetlinkBatchedRequestAckOrError(
-      fd, kSeq + 7, kSeq + 9, add_rule_drop_request_buffer.data(),
+  ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
+      fd, kSeq + 9, kSeq + 11, add_rule_drop_request_buffer.data(),
       add_rule_drop_request_buffer.size()));
 }
 
