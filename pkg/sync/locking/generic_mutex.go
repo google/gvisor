@@ -74,5 +74,5 @@ func initLockNames() {}
 
 func init() {
 	initLockNames()
-	genericMarkIndex = locking.NewMutexClass(reflect.TypeOf(Mutex{}), lockNames)
+	genericMarkIndex = locking.NewMutexClass(reflect.TypeFor[Mutex](), lockNames)
 }
