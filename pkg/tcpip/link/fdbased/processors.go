@@ -276,3 +276,8 @@ func (m *processorManager) wakeReady() {
 		m.ready[i] = false
 	}
 }
+
+func (m *processorManager) beforeSave() {
+	m.close()
+	m.wg.Wait()
+}
