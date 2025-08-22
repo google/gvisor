@@ -211,7 +211,9 @@ func (p *Protocol) getTable(nft *nftables.NFTables, attrs map[uint16]nlmsg.Bytes
 		return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("Nftables: Table name attribute is malformed or not found"))
 	}
 
-	tab, err := nft.GetTable(family, tabNameBytes.String(), uint32(ms.PortID))
+	// Tables can be retrieved by anybody, so we pass in 0 as the port ID.
+	// From net/netfilter/nf_tables_api.c:nf_tables_gettable
+	tab, err := nft.GetTable(family, tabNameBytes.String(), 0)
 	if err != nil {
 		return err
 	}
@@ -556,7 +558,10 @@ func (p *Protocol) getChain(nft *nftables.NFTables, attrs map[uint16]nlmsg.Bytes
 	}
 
 	tabName := tabNameBytes.String()
-	tab, err := nft.GetTable(family, tabName, uint32(ms.PortID))
+
+	// Tables can be retrieved by anybody, so we pass in 0 for the port id.
+	// From net/netfilter/nf_tables_api.c:nf_tables_getchain
+	tab, err := nft.GetTable(family, tabName, 0)
 	if err != nil {
 		return err
 	}
