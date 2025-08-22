@@ -530,13 +530,23 @@ func (e *endpoint) writePacket(r *stack.Route, pkt *stack.PacketBuffer) tcpip.Er
 	netHeader := header.IPv4(pkt.NetworkHeader().Slice())
 	dstAddr := netHeader.DestinationAddress()
 
-	// iptables filtering. All packets that reach here are locally
-	// generated.
+	// iptables filtering. All packets that reach here are locally generated.
 	outNicName := e.protocol.stack.FindNICNameFromID(e.nic.ID())
 	if ok := e.protocol.stack.IPTables().CheckOutput(pkt, r, outNicName); !ok {
 		// iptables is telling us to drop the packet.
 		e.stats.ip.IPTablesOutputDropped.Increment()
 		return nil
+	}
+
+	if nft := e.protocol.stack.NFTables(); nft != nil {
+		ipCheck := nft.CheckOutput(pkt, stack.IP)
+		// nftables allows us to use the inet family to apply rules to both IPv4
+		// and IPv6 packets.
+		inetCheck := nft.CheckOutput(pkt, stack.Inet)
+		if !ipCheck || !inetCheck {
+			// nftables is telling us to drop the packet.
+			return nil
+		}
 	}
 
 	// If the packet is manipulated as per DNAT Output rules, handle packet
@@ -576,6 +586,15 @@ func (e *endpoint) writePacketPostRouting(r *stack.Route, pkt *stack.PacketBuffe
 		// iptables is telling us to drop the packet.
 		e.stats.ip.IPTablesPostroutingDropped.Increment()
 		return nil
+	}
+
+	if nft := e.protocol.stack.NFTables(); nft != nil {
+		ipCheck := nft.CheckOutput(pkt, stack.IP)
+		inetCheck := nft.CheckOutput(pkt, stack.Inet)
+		if !ipCheck || !inetCheck {
+			// nftables is telling us to drop the packet.
+			return nil
+		}
 	}
 
 	stats := e.stats.ip
@@ -688,6 +707,15 @@ func (e *endpoint) forwardPacketWithRoute(route *stack.Route, pkt *stack.PacketB
 		return nil
 	}
 
+	if nft := e.protocol.stack.NFTables(); nft != nil {
+		ipCheck := nft.CheckForward(pkt, stack.IP)
+		inetCheck := nft.CheckForward(pkt, stack.Inet)
+		if !ipCheck || !inetCheck {
+			// nftables is telling us to drop the packet.
+			return nil
+		}
+	}
+
 	// We need to do a deep copy of the IP packet because
 	// WriteHeaderIncludedPacket may modify the packet buffer, but we do
 	// not own it.
@@ -788,6 +816,15 @@ func (e *endpoint) forwardUnicastPacket(pkt *stack.PacketBuffer) ip.ForwardingEr
 			return nil
 		}
 
+		if nft := e.protocol.stack.NFTables(); nft != nil {
+			ipCheck := nft.CheckForward(pkt, stack.IP)
+			inetCheck := nft.CheckForward(pkt, stack.Inet)
+			if !ipCheck || !inetCheck {
+				// nftables is telling us to drop the packet.
+				return nil
+			}
+		}
+
 		// The packet originally arrived on e so provide its NIC as the input NIC.
 		ep.handleValidatedPacket(h, pkt, e.nic.Name() /* inNICName */)
 		return nil
@@ -872,6 +909,15 @@ func (e *endpoint) HandlePacket(pkt *stack.PacketBuffer) {
 			// iptables is telling us to drop the packet.
 			stats.IPTablesPreroutingDropped.Increment()
 			return
+		}
+
+		if nft := e.protocol.stack.NFTables(); nft != nil {
+			ipCheck := nft.CheckPrerouting(pkt, stack.IP)
+			inetCheck := nft.CheckPrerouting(pkt, stack.Inet)
+			if !ipCheck || !inetCheck {
+				// nftables is telling us to drop the packet.
+				return
+			}
 		}
 	}
 	// CheckPrerouting can modify the backing storage of the packet, so refresh
@@ -1212,6 +1258,15 @@ func (e *endpoint) deliverPacketLocally(h header.IPv4, pkt *stack.PacketBuffer, 
 		// iptables is telling us to drop the packet.
 		stats.ip.IPTablesInputDropped.Increment()
 		return
+	}
+
+	if nft := e.protocol.stack.NFTables(); nft != nil {
+		ipCheck := nft.CheckInput(pkt, stack.IP)
+		inetCheck := nft.CheckInput(pkt, stack.Inet)
+		if !ipCheck || !inetCheck {
+			// nftables is telling us to drop the packet.
+			return
+		}
 	}
 
 	if h.More() || h.FragmentOffset() != 0 {
