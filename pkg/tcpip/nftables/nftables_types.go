@@ -87,9 +87,9 @@ const (
 
 // addressFamilyProtocols maps address families to their protocol number.
 var addressFamilyProtocols = map[stack.AddressFamily]uint8{
-	stack.IP:     linux.NFPROTO_INET,
+	stack.IP:     linux.NFPROTO_IPV4,
 	stack.IP6:    linux.NFPROTO_IPV6,
-	stack.Inet:   linux.NFPROTO_IPV6,
+	stack.Inet:   linux.NFPROTO_INET,
 	stack.Arp:    linux.NFPROTO_ARP,
 	stack.Bridge: linux.NFPROTO_BRIDGE,
 	stack.Netdev: linux.NFPROTO_NETDEV,
@@ -930,17 +930,17 @@ func VerdictCodeToString(v uint32) string {
 	return fmt.Sprintf("invalid verdict: %d", v)
 }
 
-// netlinkAFToStackAF maps address families from linux/socket.h to their corresponding
-// netfilter address families.
+// netlinkAFToStackAF maps address families from linux/netfilter.h to their
+// corresponding netfilter address families.
 // From linux/include/uapi/linux/netfilter.h
 var netlinkAFToStackAF = map[uint8]stack.AddressFamily{
-	linux.AF_UNSPEC:    stack.Unspec,
-	linux.AF_UNIX:      stack.Inet,
-	linux.AF_INET:      stack.IP,
-	linux.AF_AX25:      stack.Arp,
-	linux.AF_APPLETALK: stack.Netdev,
-	linux.AF_BRIDGE:    stack.Bridge,
-	linux.AF_INET6:     stack.IP6,
+	linux.NFPROTO_UNSPEC: stack.Unspec,
+	linux.NFPROTO_INET:   stack.Inet,
+	linux.NFPROTO_IPV4:   stack.IP,
+	linux.NFPROTO_ARP:    stack.Arp,
+	linux.NFPROTO_NETDEV: stack.Netdev,
+	linux.NFPROTO_BRIDGE: stack.Bridge,
+	linux.NFPROTO_IPV6:   stack.IP6,
 }
 
 // AFtoNetlinkAF converts a generic address family to a netfilter address family.
@@ -986,6 +986,7 @@ func nftDataInit(tab *Table, regType uint32, dataBytes nlmsg.AttrsView) (registe
 }
 
 // nftParseReg parses the register type and returns the register number.
+// Assumes that the register is in host byte order.
 func nftParseReg(reg uint32, regType uint32, regData registerData) (uint8, *syserr.AnnotatedError) {
 	dreg, err := nftMatchReg(reg)
 	if err != nil {
@@ -996,6 +997,7 @@ func nftParseReg(reg uint32, regType uint32, regData registerData) (uint8, *syse
 }
 
 // nftMatchReg matches the register type to the corresponding register number.
+// Assumes that the register is in host byte order.
 func nftMatchReg(reg uint32) (uint32, *syserr.AnnotatedError) {
 	switch reg {
 	case linux.NFT_REG_VERDICT, linux.NFT_REG_1, linux.NFT_REG_2, linux.NFT_REG_3, linux.NFT_REG_4:
@@ -1062,6 +1064,7 @@ func validateVerdictData(tab *Table, bytes nlmsg.AttrsView) (stack.NFVerdict, *s
 		return v, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("Nftables: NFTA_VERDICT_CODE attribute cannot be parsed to a uint32"))
 	}
 
+	verdictCode = nlmsg.NetToHostU32(verdictCode)
 	switch int32(verdictCode) {
 	case linux.NF_ACCEPT, linux.NF_DROP, linux.NF_QUEUE,
 		linux.NFT_CONTINUE, linux.NFT_BREAK, linux.NFT_RETURN:
