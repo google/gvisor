@@ -108,10 +108,10 @@ GID := $(shell id -g ${USER})
 USERADD_OPTIONS :=
 DOCKER_RUN_OPTIONS  :=
 DOCKER_RUN_OPTIONS  += --rm
-DOCKER_RUN_OPTIONS  += --user $(UID):$(GID)
+DOCKER_RUN_OPTIONS  += --user $(UID):$(GID) --env=HOME=$(HOME)
 DOCKER_RUN_OPTIONS  += --entrypoint ""
 DOCKER_RUN_OPTIONS  += --init
-DOCKER_EXEC_OPTIONS := --user $(UID):$(GID)
+DOCKER_EXEC_OPTIONS := --user $(UID):$(GID) --env=HOME=$(HOME)
 ifneq (,$(UNSANDBOXED_RUNTIME))
 DOCKER_RUN_OPTIONS += --runtime=$(UNSANDBOXED_RUNTIME)
 endif
