@@ -18,6 +18,9 @@ package fsutil
 
 import "golang.org/x/sys/unix"
 
+// SelfFilestorePrefix is the prefix of the self filestore file name.
+const SelfFilestorePrefix = ".gvisor.filestore."
+
 // DirentHandler is a function that handles a dirent.
 type DirentHandler func(ino uint64, off int64, ftype uint8, name string, reclen uint16)
 

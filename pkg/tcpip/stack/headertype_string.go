@@ -30,7 +30,7 @@ func _() {
 
 const _headerType_name = "virtioNetHeaderlinkHeadernetworkHeadertransportHeadernumHeaderType"
 
-var _headerType_index = [...]uint8{0, 10, 23, 38, 51}
+var _headerType_index = [...]uint8{0, 15, 25, 38, 53, 66}
 
 func (i headerType) String() string {
 	if i < 0 || i >= headerType(len(_headerType_index)-1) {

@@ -88,6 +88,11 @@ func (d *dentry) writeToTar(ctx context.Context, tw *tar.Writer, baseDir string,
 
 // createTarHeader creates a tar header for the given dentry.
 func (d *dentry) createTarHeader(path string, inoToPath map[uint64]string) (*tar.Header, error) {
+	if d.isSelfFilestoreWhiteout() {
+		// Skip the self filestore whiteout.
+		return nil, nil
+	}
+
 	header := &tar.Header{
 		Name:    path,
 		Mode:    int64(d.inode.mode.Load() & ^uint32(linux.S_IFMT)),

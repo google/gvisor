@@ -16,9 +16,11 @@ package tmpfs
 
 import (
 	"fmt"
+	"strings"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
+	"gvisor.dev/gvisor/pkg/fsutil"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
@@ -29,6 +31,18 @@ type deviceFile struct {
 	kind  vfs.DeviceKind
 	major uint32
 	minor uint32
+}
+
+// Precondition: fs.mu must be locked for at least reading.
+func (d *dentry) isSelfFilestoreWhiteout() bool {
+	if !strings.HasPrefix(d.name, fsutil.SelfFilestorePrefix) {
+		return false
+	}
+	dev, ok := d.inode.impl.(*deviceFile)
+	if !ok {
+		return false
+	}
+	return d.inode.fs.ovlWhiteout == dev
 }
 
 func isOvlWhiteoutDev(mode linux.FileMode, major, minor uint32) bool {

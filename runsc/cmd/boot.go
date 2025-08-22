@@ -523,7 +523,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 		ProductName:         b.productName,
 		PodInitConfigFD:     b.podInitConfigFD,
 		SinkFDs:             b.sinkFDs.GetArray(),
-		ProfileOpts:         b.profileFDs.ToOpts(),
+		ProfileOpts:         profile.MakeOpts(&b.profileFDs, conf.ProfileGCInterval),
 		NvidiaDriverVersion: nvidiaDriverVersion,
 		HostTHP:             b.hostTHP,
 		SaveFDs:             b.saveFDs.GetFDs(),

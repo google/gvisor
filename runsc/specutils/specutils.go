@@ -17,6 +17,7 @@
 package specutils
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -215,8 +216,14 @@ func ReadSpecFromFile(bundleDir string, specFile *os.File, conf *config.Config) 
 		return nil, fmt.Errorf("error reading spec from file %q: %v", specFile.Name(), err)
 	}
 	var spec specs.Spec
-	if err := json.Unmarshal(specBytes, &spec); err != nil {
-		return nil, fmt.Errorf("error unmarshaling spec from file %q: %v\n %s", specFile.Name(), err, string(specBytes))
+	decoder := json.NewDecoder(bytes.NewReader(specBytes))
+	decoder.DisallowUnknownFields()
+	if errLooseDecode := decoder.Decode(&spec); errLooseDecode != nil {
+		if errStrictDecode := json.Unmarshal(specBytes, &spec); errStrictDecode != nil {
+			return nil, fmt.Errorf("error unmarshaling spec from file %q: %v\n %s", specFile.Name(), errStrictDecode, string(specBytes))
+		} else {
+			log.Warningf("OCI spec file %q contains fields unknown to `runsc`: %v. Ignoring these fields and continuing anyway.", specFile.Name(), errLooseDecode)
+		}
 	}
 	if err := ValidateSpec(&spec); err != nil {
 		return nil, err

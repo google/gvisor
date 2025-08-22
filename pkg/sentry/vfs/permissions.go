@@ -185,7 +185,7 @@ func MayWriteFileWithOpenFlags(flags uint32) bool {
 
 // CheckSetStat checks that creds has permission to change the metadata of a
 // file with the given permissions, UID, and GID as specified by stat, subject
-// to the rules of Linux's fs/attr.c:setattr_prepare().
+// to the rules of Linux's fs/attr.c:setattr_prepare(). Might mutate `opts`.
 func CheckSetStat(ctx context.Context, creds *auth.Credentials, opts *SetStatOptions, mode linux.FileMode, kuid auth.KUID, kgid auth.KGID) error {
 	stat := &opts.Stat
 	if stat.Mask&linux.STATX_SIZE != 0 {
@@ -201,11 +201,13 @@ func CheckSetStat(ctx context.Context, creds *auth.Credentials, opts *SetStatOpt
 		if !CanActAsOwner(creds, kuid) {
 			return linuxerr.EPERM
 		}
-		// TODO(b/30815691): "If the calling process is not privileged (Linux:
-		// does not have the CAP_FSETID capability), and the group of the file
-		// does not match the effective group ID of the process or one of its
-		// supplementary group IDs, the S_ISGID bit will be turned off, but
-		// this will not cause an error to be returned." - chmod(2)
+		// "If the calling process is not privileged (Linux: does not have the CAP_FSETID capability),
+		// and the group of the file does not match the effective group ID of the process or one of its
+		// supplementary group IDs, the S_ISGID bit will be turned off, but this will not cause an error
+		// to be returned." - chmod(2)
+		if stat.Mode&linux.S_ISGID != 0 && !creds.HasCapabilityOnFile(linux.CAP_FSETID, kuid, kgid) && !creds.InGroup(kgid) {
+			stat.Mode &^= linux.S_ISGID
+		}
 	}
 	if stat.Mask&linux.STATX_UID != 0 {
 		if !((creds.EffectiveKUID == kuid && auth.KUID(stat.UID) == kuid) ||
