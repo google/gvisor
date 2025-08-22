@@ -229,6 +229,66 @@ void CheckNetfilterChainAttributes(const NfChainCheckOptions& options) {
   }
 }
 
+// Helper function to check the netfilter rule attributes.
+// TODO: b/434244017 - Add support for checking the rule expression.
+void CheckNetfilterRuleAttributes(const NfRuleCheckOptions& options) {
+  // Check for the NFTA_RULE_TABLE attribute.
+  const struct nfattr* table_name_attr =
+      FindNfAttr(options.hdr, nullptr, NFTA_RULE_TABLE);
+  if (table_name_attr != nullptr && options.expected_table_name != nullptr) {
+    std::string table_name(
+        reinterpret_cast<const char*>(NFA_DATA(table_name_attr)));
+    EXPECT_EQ(table_name, options.expected_table_name);
+  } else {
+    EXPECT_EQ(table_name_attr, nullptr);
+    EXPECT_EQ(options.expected_table_name, nullptr);
+  }
+
+  // Check for the NFTA_RULE_CHAIN attribute.
+  const struct nfattr* chain_name_attr =
+      FindNfAttr(options.hdr, nullptr, NFTA_RULE_CHAIN);
+  if (chain_name_attr != nullptr && options.expected_chain_name != nullptr) {
+    std::string chain_name(
+        reinterpret_cast<const char*>(NFA_DATA(chain_name_attr)));
+    EXPECT_EQ(chain_name, options.expected_chain_name);
+  } else {
+    EXPECT_EQ(chain_name_attr, nullptr);
+    EXPECT_EQ(options.expected_chain_name, nullptr);
+  }
+
+  if (!options.skip_handle_check) {
+    // Check for the NFTA_RULE_HANDLE attribute.
+    const struct nfattr* handle_attr =
+        FindNfAttr(options.hdr, nullptr, NFTA_RULE_HANDLE);
+    if (handle_attr != nullptr && options.expected_handle != nullptr) {
+      uint64_t handle =
+          be64toh(*(reinterpret_cast<uint64_t*>(NFA_DATA(handle_attr))));
+      EXPECT_EQ(handle, *options.expected_handle);
+    } else {
+      EXPECT_EQ(handle_attr, nullptr);
+      EXPECT_EQ(options.expected_handle, nullptr);
+    }
+  }
+
+  // Check for the NFTA_RULE_USERDATA attribute.
+  const struct nfattr* user_data_attr =
+      FindNfAttr(options.hdr, nullptr, NFTA_RULE_USERDATA);
+
+  if (user_data_attr != nullptr && options.expected_udata_size != nullptr) {
+    uint8_t user_data[VALID_USERDATA_SIZE] = {};
+    EXPECT_EQ(user_data_attr->nfa_len - NLA_HDRLEN,
+              *options.expected_udata_size);
+    std::memcpy(user_data, NFA_DATA(user_data_attr),
+                *options.expected_udata_size);
+    EXPECT_EQ(
+        memcmp(user_data, options.expected_udata, *options.expected_udata_size),
+        0);
+  } else {
+    EXPECT_EQ(user_data_attr, nullptr);
+    EXPECT_EQ(options.expected_udata_size, nullptr);
+  }
+}
+
 // Helper function to add a default table.
 void AddDefaultTable(const AddDefaultTableOptions options) {
   const char* test_table_name = options.test_table_name;
@@ -399,7 +459,8 @@ bool NlReq::MsgTypeToken(const std::string& token) {
       {"deltable", NFT_MSG_DELTABLE}, {"destroytable", NFT_MSG_DESTROYTABLE},
       {"newchain", NFT_MSG_NEWCHAIN}, {"getchain", NFT_MSG_GETCHAIN},
       {"delchain", NFT_MSG_DELCHAIN}, {"destroychain", NFT_MSG_DESTROYCHAIN},
-      {"newrule", NFT_MSG_NEWRULE}};
+      {"newrule", NFT_MSG_NEWRULE},   {"getrule", NFT_MSG_GETRULE},
+      {"getgen", NFT_MSG_GETGEN}};
   auto it = token_to_msg_type.find(token);
   if (it != token_to_msg_type.end()) {
     EXPECT_FALSE(msg_type_set_) << "Message type already set: " << msg_type_;
