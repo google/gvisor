@@ -1,8 +1,8 @@
-FROM nvidia/cuda:12.2.2-devel-ubuntu22.04
+FROM nvidia/cuda:12.5.1-devel-ubuntu24.04
 
 # From: https://github.com/NVIDIA/cuda-samples/releases
 # Ideally, pick a release that matches the CUDA version of the image above.
-ARG CUDA_SAMPLES_VERSION=v12.2
+ARG CUDA_SAMPLES_VERSION=v12.5
 
 WORKDIR /
 COPY *.cu *.h *.sh *.go *.cc /
@@ -12,7 +12,7 @@ RUN export DEBIAN_FRONTEND=noninteractive; \
     apt-get install -y \
       build-essential \
       cmake \
-      freeglut3 freeglut3-dev \
+      freeglut3-dev \
       git \
       golang \
       imagemagick \
@@ -31,6 +31,7 @@ RUN export DEBIAN_FRONTEND=noninteractive; \
       xdotool \
       xvfb \
       zlib1g zlib1g-dev \
+      cuda-cccl-devel \
     && \
     chmod 555 /*.sh && \
     git clone --depth=1 --branch="$CUDA_SAMPLES_VERSION" --single-branch \

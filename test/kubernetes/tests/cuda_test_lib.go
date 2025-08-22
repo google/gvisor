@@ -33,9 +33,9 @@ import (
 
 var (
 	// For some reason, nvidia removed nvidia-smi from the nvidia/cuda image.
-	// So we use the nvidia/cuda:12.6.3-base-ubuntu22.04 image which has nvidia-smi.
+	// So we use the nvidia/cuda:12.6.3-base-ubuntu24.04 image which has nvidia-smi.
 	// This image is a few MB instead of GB.
-	nvidiaSMIImage   = "nvidia/cuda:12.6.3-base-ubuntu22.04"
+	nvidiaSMIImage   = "nvidia/cuda:12.6.3-base-ubuntu24.04"
 	cudaTestImage122 = k8s.ImageRepoPrefix + "gpu/cuda-tests_x86_64"
 	cudaTestImage128 = k8s.ImageRepoPrefix + "gpu/cuda-tests-12-8_x86_64"
 

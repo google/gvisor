@@ -1,7 +1,7 @@
-FROM nvidia/cuda:12.4.0-devel-ubuntu22.04
+FROM nvidia/cuda:12.8.1-devel-ubuntu24.04
 
 # Used for determining the correct pip index URL below.
-ENV CUDA_VERSION=12.4
+ENV CUDA_VERSION=12.8
 
 ENV PYTORCH_DATASETS_DIR=/pytorch-data
 ENV TORCH_HOME=/pytorch-home
@@ -10,15 +10,20 @@ RUN mkdir -p "$TORCH_HOME" && \
 
 RUN apt-get update && \
     apt-get install --yes \
-        libgl1-mesa-glx libglib2.0-0 \
+        libgl1 libglx-mesa0 libglib2.0-0 \
         pkg-config \
         python3 \
-        python3-distutils \
+        python3-setuptools \
         python3-pip \
+        python3-venv \
         clang \
         wget \
         vim \
         git
+
+ENV VIRTUAL_ENV=/opt/venv
+RUN python3 -m venv $VIRTUAL_ENV
+ENV PATH="$VIRTUAL_ENV/bin:$PATH"
 
 RUN PIP_INDEX_URL="https://download.pytorch.org/whl/cu$(echo "$CUDA_VERSION" | sed 's~\.~~g')" && \
     python3 -m pip install --ignore-installed \
