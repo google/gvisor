@@ -43,7 +43,7 @@ func newImmediate(dreg uint8, data registerData) (*immediate, *syserr.AnnotatedE
 // InitImmediate initializes the immediate operation from the expression info.
 func initImmediate(tab *Table, exprInfo ExprInfo) (*immediate, *syserr.AnnotatedError) {
 	// We now have attributes specific to immediate expressions.
-	immDataAttrs, ok := exprInfo.ExprData.Parse()
+	immDataAttrs, ok := NfParse(exprInfo.ExprData)
 	if !ok {
 		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: Failed to parse immediate expression data")
 	}
@@ -58,6 +58,7 @@ func initImmediate(tab *Table, exprInfo ExprInfo) (*immediate, *syserr.Annotated
 		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: NFTA_IMMEDIATE_DREG attribute is malformed")
 	}
 
+	reg = nlmsg.NetToHostU32(reg)
 	dataBytes, ok := immDataAttrs[linux.NFTA_IMMEDIATE_DATA]
 	if !ok {
 		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: NFTA_IMMEDIATE_DATA attribute is not found")
@@ -84,6 +85,7 @@ func initImmediate(tab *Table, exprInfo ExprInfo) (*immediate, *syserr.Annotated
 }
 
 // immRegToType returns the corresponding data type for a given register number.
+// Assumes that the value is in host byte order.
 func immRegToType(reg uint32) uint32 {
 	if reg == linux.NFT_REG_VERDICT {
 		return linux.NFT_DATA_VERDICT
