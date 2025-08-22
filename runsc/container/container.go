@@ -606,8 +606,10 @@ func (c *Container) Wait() (unix.WaitStatus, error) {
 	log.Debugf("Wait on container, cid: %s", c.ID)
 	ws, err := c.Sandbox.Wait(c.ID)
 	if err == nil {
-		// Wait succeeded, container is not running anymore.
-		c.changeStatus(Stopped)
+		// Wait succeeded, container is not running anymore. Wait for the gofer.
+		if err = c.waitForStopped(); err == nil {
+			c.changeStatus(Stopped)
+		}
 	}
 	return ws, err
 }
