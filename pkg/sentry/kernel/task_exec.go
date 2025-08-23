@@ -612,7 +612,7 @@ func (t *Task) shouldStopPrivGainDueToPtracerLocked() bool {
 
 // Releases the mutex that serializes an execve(2) with a PTRACE_ATTACH and allows t.fsContext to
 // be shared again via clone(2). The caller must have called execveCredsMutexStartLock() and
-// fsContext.CheckAndPreventSharingOutsideTG() earlier.
+// fsContext.checkAndPreventSharingOutsideTG() earlier.
 func (t *Task) releaseExecveCredsLocks() {
 	t.execveCredsMutexUnlock()
 	t.fsContext.allowSharing()
