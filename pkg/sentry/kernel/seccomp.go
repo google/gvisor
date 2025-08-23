@@ -199,7 +199,7 @@ func (t *Task) evaluateSyscallFilters(sysno int32, args arch.SyscallArguments, i
 func checkFilterCacheability(program bpf.Program, input bpf.Input) (uint32, error) {
 	// Look up Nr and Arch fields, we'll use their offsets later
 	// to verify whether they were accessed.
-	sdType := reflect.TypeOf(linux.SeccompData{})
+	sdType := reflect.TypeFor[linux.SeccompData]()
 	nrField, ok := sdType.FieldByName("Nr")
 	if !ok {
 		panic("linux.SeccompData.Nr field not found")
