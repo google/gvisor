@@ -243,7 +243,12 @@ func NewNFTables(clock tcpip.Clock, rng rand.RNG) *NFTables {
 	if rng.Reader == nil {
 		panic("nftables state must be initialized with a non-nil random number generator")
 	}
-	return &NFTables{clock: clock, startTime: clock.Now(), rng: rng, tableHandleCounter: atomicbitops.Uint64{}}
+	return &NFTables{clock: clock, startTime: clock.Now(), rng: rng, tableHandleCounter: atomicbitops.Uint64{}, genid: 1}
+}
+
+// GetGenID returns the generation ID for the NFTables object.
+func (nf *NFTables) GetGenID() uint32 {
+	return nf.genid
 }
 
 // Flush clears entire ruleset and all data for all address families
@@ -300,6 +305,17 @@ func (nf *NFTables) FlushAddressFamily(family stack.AddressFamily) *syserr.Annot
 
 	nf.filters[family] = nil
 	return nil
+}
+
+// GetAddressFamilyTables returns the tables for the given address family.
+func (nf *NFTables) GetAddressFamilyTables(family stack.AddressFamily) map[string]*Table {
+	afFilter := nf.filters[family]
+	if afFilter == nil {
+		// An empty map is safe to iterate over.
+		return nil
+	}
+
+	return afFilter.tables
 }
 
 // GetTable validates the inputs and gets a table if it exists, error otherwise.
@@ -649,6 +665,11 @@ func (t *Table) GetChainByHandle(chainHandle uint64) (*Chain, *syserr.AnnotatedE
 	return c, nil
 }
 
+// GetChains returns a map of all chains for the table.
+func (t *Table) GetChains() map[string]*Chain {
+	return t.chains
+}
+
 // AddChain makes a new chain for the table. Can return an error if a chain by
 // the same name already exists if errorOnDuplicate is true.
 func (t *Table) AddChain(name string, info *BaseChainInfo, comment string, errorOnDuplicate bool) (*Chain, *syserr.AnnotatedError) {
@@ -856,6 +877,11 @@ func (c *Chain) GetComment() string {
 // SetComment sets the comment of the chain.
 func (c *Chain) SetComment(comment string) {
 	c.comment = comment
+}
+
+// GetRules returns the rules of the chain.
+func (c *Chain) GetRules() []*Rule {
+	return c.rules
 }
 
 // RegisterRule assigns the chain to the rule and adds the rule to the chain's
@@ -1087,6 +1113,11 @@ func (r *Rule) AddOpFromExprInfo(tab *Table, exprInfo ExprInfo) *syserr.Annotate
 	return r.addOperation(op)
 }
 
+// GetChain returns the chain that the rule is registered to.
+func (r *Rule) GetChain() *Chain {
+	return r.chain
+}
+
 // GetHandle returns the handle of the rule.
 func (r *Rule) GetHandle() uint64 {
 	return r.handle
@@ -1102,9 +1133,19 @@ func (r *Rule) SetUserData(data []byte) *syserr.AnnotatedError {
 	return nil
 }
 
+// HasUserData returns whether the rule has user data.
+func (r *Rule) HasUserData() bool {
+	return r.udata != nil
+}
+
 // GetUserData returns the user data of the rule.
 func (r *Rule) GetUserData() []byte {
 	return r.udata
+}
+
+// GetAddressFamily returns the address family of the rule.
+func (r *Rule) GetAddressFamily() stack.AddressFamily {
+	return r.chain.GetAddressFamily()
 }
 
 //
