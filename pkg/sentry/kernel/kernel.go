@@ -1038,6 +1038,9 @@ func (ctx *createProcessContext) getMemoryCgroupID() uint32 {
 //
 // CreateProcess has no analogue in Linux; it is used to create the initial
 // application task, as well as processes started by the control server.
+//
+// Precondition: Caller must take a ref on args.MountNamespace, which is
+// transferred to CreateProcess.
 func (k *Kernel) CreateProcess(args CreateProcessArgs) (*ThreadGroup, ThreadID, error) {
 	k.extMu.Lock()
 	defer k.extMu.Unlock()
@@ -1056,6 +1059,8 @@ func (k *Kernel) CreateProcess(args CreateProcessArgs) (*ThreadGroup, ThreadID, 
 	// Get the root directory from the MountNamespace.
 	root := mntns.Root(ctx)
 	defer root.DecRef(ctx)
+	refcountCu := cleanup.Make(func() { mntns.DecRef(ctx) })
+	defer refcountCu.Clean()
 
 	// Grab the working directory.
 	wd := root // Default.
@@ -1081,6 +1086,7 @@ func (k *Kernel) CreateProcess(args CreateProcessArgs) (*ThreadGroup, ThreadID, 
 		defer wd.DecRef(ctx)
 	}
 	fsContext := NewFSContext(root, wd, args.Umask)
+	refcountCu.Add(func() { fsContext.DecRef(ctx) })
 
 	tg := k.NewThreadGroup(args.PIDNamespace, NewSignalHandlers(), linux.SIGCHLD, args.Limits)
 	cu := cleanup.Make(func() {
@@ -1156,6 +1162,7 @@ func (k *Kernel) CreateProcess(args CreateProcessArgs) (*ThreadGroup, ThreadID, 
 	config.UTSNamespace.IncRef()
 	config.IPCNamespace.IncRef()
 	config.NetworkNamespace.IncRef()
+	refcountCu.Release() // refs(mntns, fsContext) are transferred to NewTask()
 	t, err := k.tasks.NewTask(ctx, config)
 	if err != nil {
 		return nil, 0, err
