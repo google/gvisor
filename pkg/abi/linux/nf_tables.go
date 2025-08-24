@@ -462,3 +462,14 @@ const (
 	NFT_META_SDIFNAME             // Slave device interface name
 	NFT_META_BRI_BROUTE           // Packet br_netfilter_broute bit
 )
+
+// Nftables Generation Attributes
+// These correspond to values in include/uapi/linux/netfilter/nf_tables.h.
+const (
+	NFTA_GEN_UNSPEC uint16 = iota
+	NFTA_GEN_ID
+	NFTA_GEN_PROC_PID
+	NFTA_GEN_PROC_NAME
+	__NFTA_GEN_MAX
+	NFTA_GEN_MAX = __NFTA_GEN_MAX - 1
+)

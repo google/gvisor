@@ -420,6 +420,13 @@ iptables-tests: load-iptables $(RUNTIME_BIN)
 	@$(call test_runtime,$(RUNTIME)-nftables,--test_env=TEST_NET_RAW=true --test_output=all //test/iptables:nftables_test)
 .PHONY: iptables-tests
 
+nftables-tests: load-nftables $(RUNTIME_BIN)
+	@sudo modprobe nfnetlink
+	@sudo modprobe nf_tables
+	@$(call install_runtime,$(RUNTIME),--net-raw --TESTONLY-nftables)
+	@$(call test_runtime,$(RUNTIME),--test_env=TEST_NET_RAW=true //test/nftables:nftables_test)
+.PHONY: nftables-tests
+
 packetdrill-tests: load-packetdrill $(RUNTIME_BIN)
 	@$(call install_runtime,$(RUNTIME),) # Clear flags.
 	@$(call test_runtime,$(RUNTIME),//test/packetdrill:all_tests)
