@@ -671,7 +671,6 @@ func (t *Task) Unshare(flags int32) error {
 	defer cu.Clean()
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	// Can't defer unlock: DecRefs must occur without holding t.mu.
 	if flags&linux.CLONE_NEWUTS != 0 {
 		if !haveCapSysAdmin {
 			return linuxerr.EPERM
@@ -701,9 +700,10 @@ func (t *Task) Unshare(flags int32) error {
 		cu.Add(func() { oldFDTable.DecRef(t) })
 	}
 	if flags&linux.CLONE_FS != 0 || flags&linux.CLONE_NEWNS != 0 {
-		oldFSContext := t.fsContext
-		t.fsContext = oldFSContext.Fork()
-		cu.Add(func() { oldFSContext.DecRef(t) })
+		newFSContext := t.fsContext.Fork()
+		t.mu.Unlock() // unshareFromTask requires t.mu to be not held.
+		t.fsContext.unshareFromTask(t, newFSContext)
+		t.mu.Lock()
 	}
 	if flags&linux.CLONE_NEWNS != 0 {
 		if !haveCapSysAdmin {

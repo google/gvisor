@@ -202,6 +202,8 @@ func (f *FSContext) checkAndPreventSharingOutsideTG(tg *ThreadGroup) bool {
 
 	tgCount := int64(0)
 	tg.ForEachTask(func(t *Task) bool {
+		t.mu.Lock() // same lock order as FSContext.unshareFromTask().
+		defer t.mu.Unlock()
 		if t.fsContext == f {
 			tgCount++
 		}
@@ -232,4 +234,29 @@ func (f *FSContext) share() bool {
 	}
 	f.IncRef()
 	return true
+}
+
+// unshareFromTask removes the FSContext f from the given Task t and replaces it with newF.
+// It does so without compromising a concurrent checkAndPreventSharingOutsideTG(): t's association
+// with f is severed atomically.
+//
+// If it weren't atomic, i.e, if say checkAndPreventSharingOutsideTG sees an updated t.fsContext,
+// but finds the refcount for f unchanged, then it'd incorrectly conclude that f is being shared
+// outside of t's thread group.
+//
+// Preconditions: The caller must not hold t.mu or f.mu.
+func (f *FSContext) unshareFromTask(t *Task, newF *FSContext) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	t.mu.Lock() // same lock order as FSContext.checkAndPreventSharingOutsideTG().
+	t.fsContext = newF
+	t.mu.Unlock() // no defer: DecRef() below requires t.mu to be unlocked.
+
+	f.FSContextRefs.DecRef(func() {
+		f.root.DecRef(t)
+		f.root = vfs.VirtualDentry{}
+		f.cwd.DecRef(t)
+		f.cwd = vfs.VirtualDentry{}
+	})
 }
