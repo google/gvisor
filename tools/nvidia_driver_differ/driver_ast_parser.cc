@@ -37,12 +37,13 @@
 #include "llvm/include/llvm/Support/raw_ostream.h"
 
 using clang::ast_matchers::allOf;
-using clang::ast_matchers::elaboratedType;
 using clang::ast_matchers::hasDeclaration;
 using clang::ast_matchers::hasName;
 using clang::ast_matchers::hasType;
 using clang::ast_matchers::recordDecl;
+using clang::ast_matchers::recordType;
 using clang::ast_matchers::typedefDecl;
+using clang::ast_matchers::typedefType;
 using clang::ast_matchers::varDecl;
 
 using clang::ast_matchers::MatchFinder;
@@ -64,14 +65,10 @@ struct DriverStructReporter : public MatchFinder::MatchCallback {
   auto get_struct_definition_matcher(std::string struct_name) {
     // Nvidia's driver typedefs all their struct. We search for the
     // typedef declaration, and go from there to find the struct definition.
-    return typedefDecl(
-               allOf(hasName(struct_name),
-                     // Match and bind to the struct declaration.
-                     hasType(
-                         // Need to specify elaboratedType, otherwise hasType
-                         // will complain that the type is ambiguous.
-                         elaboratedType(hasDeclaration(
-                             recordDecl().bind("struct_decl"))))))
+    return typedefDecl(allOf(hasName(struct_name),
+                             // Match and bind to the struct declaration.
+                             hasType(recordType(hasDeclaration(
+                                 recordDecl().bind("struct_decl"))))))
         .bind("typedef_decl");
   }
 
@@ -84,10 +81,7 @@ struct DriverStructReporter : public MatchFinder::MatchCallback {
     return typedefDecl(
                allOf(hasName(struct_name),
                      // Match and bind to the struct declaration.
-                     hasType(
-                         // Need to specify elaboratedType, otherwise hasType
-                         // will complain that the type is ambiguous.
-                         elaboratedType(hasDeclaration(typedefDecl())))))
+                     hasType(typedefType(hasDeclaration(typedefDecl())))))
         .bind("typedef_decl");
   }
 
@@ -142,7 +136,7 @@ struct DriverStructReporter : public MatchFinder::MatchCallback {
       return;
     }
 
-    add_type_definition(ctx->getTypeDeclType(struct_decl), name, ctx);
+    add_type_definition(ctx->getCanonicalTagType(struct_decl), name, ctx);
   }
 
   // Adds the type definition of `type` to either `RecordDefinitions` or
@@ -226,7 +220,10 @@ struct DriverStructReporter : public MatchFinder::MatchCallback {
     std::string source =
         record_decl->getLocation().printToString(ctx->getSourceManager());
     // getTypeSize returns the size in bits, so we divide by 8 to get bytes.
-    uint64_t size = ctx->getTypeSize(record_decl->getTypeForDecl()) / 8;
+    uint64_t size =
+        ctx->getTypeSize(
+            record_decl->getASTContext().getCanonicalTagType(record_decl)) /
+        8;
     bool is_union = record_decl->isUnion();
     RecordDefinitions[name] = json::object({{"source", source},
                                             {"fields", fields},
