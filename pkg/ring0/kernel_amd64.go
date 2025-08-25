@@ -32,7 +32,7 @@ func HaltAndWriteFSBase(regs *arch.Registers)
 
 // init initializes architecture-specific state.
 func (k *Kernel) init(maxCPUs int) {
-	entrySize := reflect.TypeOf(kernelEntry{}).Size()
+	entrySize := reflect.TypeFor[kernelEntry]().Size()
 	var (
 		entries []kernelEntry
 		padding = 1
@@ -51,7 +51,7 @@ func (k *Kernel) init(maxCPUs int) {
 	k.cpuEntries = entries
 
 	k.globalIDT = &idt64{}
-	if reflect.TypeOf(idt64{}).Size() != hostarch.PageSize {
+	if reflect.TypeFor[idt64]().Size() != hostarch.PageSize {
 		panic("Size of globalIDT should be PageSize")
 	}
 	if reflect.ValueOf(k.globalIDT).Pointer()&(hostarch.PageSize-1) != 0 {
@@ -77,12 +77,12 @@ func (k *Kernel) EntryRegions() map[uintptr]uintptr {
 	regions := make(map[uintptr]uintptr)
 
 	addr := reflect.ValueOf(&k.cpuEntries[0]).Pointer()
-	size := reflect.TypeOf(kernelEntry{}).Size() * uintptr(len(k.cpuEntries))
+	size := reflect.TypeFor[kernelEntry]().Size() * uintptr(len(k.cpuEntries))
 	end, _ := hostarch.Addr(addr + size).RoundUp()
 	regions[uintptr(hostarch.Addr(addr).RoundDown())] = uintptr(end)
 
 	addr = reflect.ValueOf(k.globalIDT).Pointer()
-	size = reflect.TypeOf(idt64{}).Size()
+	size = reflect.TypeFor[idt64]().Size()
 	end, _ = hostarch.Addr(addr + size).RoundUp()
 	regions[uintptr(hostarch.Addr(addr).RoundDown())] = uintptr(end)
 
