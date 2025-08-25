@@ -20,7 +20,7 @@ go_library(
     deps = [
         "//pkg/binary",
         "//pkg/hostarch",
-        "//pkg/test/testutil",
+        "//test/netutils",
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )
@@ -41,6 +41,7 @@ go_test(
         "//pkg/log",
         "//pkg/test/dockerutil",
         "//pkg/test/testutil",
+        "//test/netutils",
     ],
 )
 

@@ -26,6 +26,7 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/test/dockerutil"
 	"gvisor.dev/gvisor/pkg/test/testutil"
+	"gvisor.dev/gvisor/test/netutils"
 )
 
 // singleTest runs a TestCase. Each test follows a pattern:
@@ -469,7 +470,7 @@ func TestFilterAddrs(t *testing.T) {
 	}
 
 	for _, tc := range tcs {
-		if got := filterAddrs(tc.addrs, tc.ipv6); !slices.Equal(got, tc.want) {
+		if got := netutils.FilterAddrs(tc.addrs, tc.ipv6); !slices.Equal(got, tc.want) {
 			t.Errorf("%v with IPv6 %t: got %v, but wanted %v", tc.addrs, tc.ipv6, got, tc.want)
 		}
 	}
