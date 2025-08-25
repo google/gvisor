@@ -108,13 +108,22 @@ func fillAddressSpace() (specialRegions []specialVirtualRegion) {
 	required := uintptr(requiredAddr)
 	current := required // Attempted mmap size.
 	for filled := uintptr(0); filled < required && current > 0; {
+		suggestedAddr := uintptr(0)
+		if ring0.VirtualAddressBits > 48 {
+			// Even though it's safe to pass a high hint address on older kernel or
+			// older machine without 5-level paging support. We need to guard
+			// passing the hint based on `ring0.VirtualAddressBits` because Sentry might
+			// not support 5-level paging for the underlying CPU uarch i.e. arm64.
+			suggestedAddr = uintptr(1 << ring0.PhysicalAddressBits)
+		}
 		addr, errno := hostsyscall.RawSyscall6(
 			unix.SYS_MMAP,
-			0, // Suggested address.
+			suggestedAddr,
 			current,
 			unix.PROT_NONE,
 			unix.MAP_ANONYMOUS|unix.MAP_PRIVATE|unix.MAP_NORESERVE,
 			0, 0)
+		// If we ran out of memory, try a smaller mapping.
 		if errno != 0 {
 			// One page is the smallest mapping that can be allocated.
 			if current == hostarch.PageSize {
