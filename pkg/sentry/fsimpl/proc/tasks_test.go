@@ -92,6 +92,7 @@ var (
 		"oom_score":     linux.DT_REG,
 		"oom_score_adj": linux.DT_REG,
 		"root":          linux.DT_LNK,
+		"setgroups":     linux.DT_REG,
 		"smaps":         linux.DT_REG,
 		"stat":          linux.DT_REG,
 		"statm":         linux.DT_REG,
