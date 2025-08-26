@@ -123,6 +123,10 @@ type Stack struct {
 	// nftables is the nftables interface for packet filtering and manipulation rules.
 	nftables NFTablesInterface `state:"nosave"`
 
+	// nftablesConfigured indicates whether NFTables is configured with at
+	// least one rule on a chain at a network hook.
+	nftablesConfigured atomicbitops.Bool
+
 	// restoredEndpoints is a list of endpoints that need to be restored if the
 	// stack is being restored.
 	restoredEndpoints []RestoredEndpoint
@@ -2252,6 +2256,16 @@ func (s *Stack) NFTables() NFTablesInterface {
 // SetNFTables sets the stack's nftables.
 func (s *Stack) SetNFTables(nft NFTablesInterface) {
 	s.nftables = nft
+}
+
+// IsNFTablesConfigured returns true if the stack has nftables configured.
+func (s *Stack) IsNFTablesConfigured() bool {
+	return s.nftablesConfigured.Load()
+}
+
+// SetNFTablesConfigured sets whether the stack has nftables configured.
+func (s *Stack) SetNFTablesConfigured(configured bool) {
+	s.nftablesConfigured.Store(configured)
 }
 
 // ICMPLimit returns the maximum number of ICMP messages that can be sent

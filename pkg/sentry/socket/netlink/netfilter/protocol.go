@@ -678,7 +678,7 @@ func (p *Protocol) deleteChain(nft *nftables.NFTables, attrs map[uint16]nlmsg.By
 const NFT_RULE_MAXEXPRS = 128
 
 // newRule creates a new rule in the given chain.
-func (p *Protocol) newRule(nft *nftables.NFTables, attrs map[uint16]nlmsg.BytesView, family stack.AddressFamily, msgFlags uint16, ms *nlmsg.MessageSet) *syserr.AnnotatedError {
+func (p *Protocol) newRule(nft *nftables.NFTables, st *stack.Stack, attrs map[uint16]nlmsg.BytesView, family stack.AddressFamily, msgFlags uint16, ms *nlmsg.MessageSet) *syserr.AnnotatedError {
 	tabNameBytes, ok := attrs[linux.NFTA_RULE_TABLE]
 	if !ok {
 		return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: NFTA_CHAIN_TABLE attribute is malformed or not found")
@@ -817,6 +817,10 @@ func (p *Protocol) newRule(nft *nftables.NFTables, attrs map[uint16]nlmsg.BytesV
 		log.Warningf("Failed to register rule, this should not happen: %v", err)
 		return err
 	}
+
+	// Once we have a at least one rule registered on a base chain, nftables can
+	// be called to potentially filter the packet.
+	st.SetNFTablesConfigured(chain.IsBaseChain())
 
 	// TODO - b/434244017: Support validating the entire table before returning.
 	return nil
@@ -1141,7 +1145,7 @@ func (p *Protocol) processBatchMessage(ctx context.Context, s *netlink.Socket, b
 		case linux.NFT_MSG_DELCHAIN, linux.NFT_MSG_DESTROYCHAIN:
 			subErr = p.deleteChain(nftCopy, attrs, family, hdr.Flags, hdr.NetFilterMsgType(), ms)
 		case linux.NFT_MSG_NEWRULE:
-			subErr = p.newRule(nftCopy, attrs, family, hdr.Flags, ms)
+			subErr = p.newRule(nftCopy, st, attrs, family, hdr.Flags, ms)
 		case linux.NFT_MSG_DELRULE, linux.NFT_MSG_DESTROYRULE, linux.NFT_MSG_NEWSET,
 			linux.NFT_MSG_DELSET, linux.NFT_MSG_DESTROYSET, linux.NFT_MSG_NEWSETELEM,
 			linux.NFT_MSG_DELSETELEM, linux.NFT_MSG_DESTROYSETELEM,
