@@ -56,6 +56,10 @@ type PageTables struct {
 	// readOnlyShared indicates the Pagetables are read-only and
 	// own the ranges that are shared with other Pagetables.
 	readOnlyShared bool
+
+	// largeAddressesEnabled indicates the Pagetables support addresess
+	// larger than 48 bits.
+	largeAddressesEnabled bool
 }
 
 // Init initializes a set of PageTables.

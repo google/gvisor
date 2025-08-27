@@ -229,27 +229,81 @@ func (w *lookupWalker) iterateRangeCanonical(start, end uintptr) bool {
 		nextBoundary := lookupaddrEnd(start, end, pgdSize)
 		pgdIndex := uint16((start & pgdMask) >> pgdShift)
 		pgdEntry := &w.pageTables.root[pgdIndex]
-		if !pgdEntry.Valid() {
-			if !w.visitor.requiresAlloc() {
+		if !w.pageTables.largeAddressesEnabled {
+			if !pgdEntry.Valid() {
+				if !w.visitor.requiresAlloc() {
 
-				start = nextBoundary
-				continue
+					start = nextBoundary
+					continue
+				}
+
+				pudEntries = w.pageTables.Allocator.NewPTEs()
+				pgdEntry.setPageTable(w.pageTables, pudEntries)
+			} else {
+				pudEntries = w.pageTables.Allocator.LookupPTEs(pgdEntry.Address())
 			}
 
-			pudEntries = w.pageTables.Allocator.NewPTEs()
-			pgdEntry.setPageTable(w.pageTables, pudEntries)
+			ok, clearPUDEntries := w.walkPUDs(pudEntries, start, nextBoundary)
+			if !ok {
+				return false
+			}
+
+			if clearPUDEntries == entriesPerPage {
+				pgdEntry.Clear()
+				w.pageTables.Allocator.FreePTEs(pudEntries)
+			}
 		} else {
-			pudEntries = w.pageTables.Allocator.LookupPTEs(pgdEntry.Address())
-		}
+			var p4dEntries *PTEs
+			if !pgdEntry.Valid() {
+				if !w.visitor.requiresAlloc() {
 
-		ok, clearPUDEntries := w.walkPUDs(pudEntries, start, nextBoundary)
-		if !ok {
-			return false
-		}
+					start = nextBoundary
+					continue
+				}
 
-		if clearPUDEntries == entriesPerPage {
-			pgdEntry.Clear()
-			w.pageTables.Allocator.FreePTEs(pudEntries)
+				p4dEntries = w.pageTables.Allocator.NewPTEs()
+				pgdEntry.setPageTable(w.pageTables, p4dEntries)
+			} else {
+				p4dEntries = w.pageTables.Allocator.LookupPTEs(pgdEntry.Address())
+			}
+			var clearP4DEntries uint16 = 0
+			p4dStart := start
+			p4dEnd := nextBoundary
+			for p4dStart < p4dEnd {
+				nextP4DBoundary := lookupaddrEnd(p4dStart, p4dEnd, p4dSize)
+				p4dIndex := uint16((p4dStart & p4dMask) >> p4dShift)
+				p4dEntry := &p4dEntries[p4dIndex]
+				if !p4dEntry.Valid() {
+					if !w.visitor.requiresAlloc() {
+
+						clearP4DEntries++
+						p4dStart = nextP4DBoundary
+						continue
+					}
+
+					pudEntries = w.pageTables.Allocator.NewPTEs()
+					p4dEntry.setPageTable(w.pageTables, pudEntries)
+				} else {
+					pudEntries = w.pageTables.Allocator.LookupPTEs(p4dEntry.Address())
+				}
+
+				ok, clearPUDEntries := w.walkPUDs(pudEntries, p4dStart, nextP4DBoundary)
+				if !ok {
+					return false
+				}
+				if clearPUDEntries == entriesPerPage {
+					p4dEntry.Clear()
+					w.pageTables.Allocator.FreePTEs(pudEntries)
+					clearP4DEntries++
+				}
+
+				p4dStart = nextP4DBoundary
+			}
+
+			if clearP4DEntries == entriesPerPage {
+				pgdEntry.Clear()
+				w.pageTables.Allocator.FreePTEs(p4dEntries)
+			}
 		}
 
 		start = nextBoundary

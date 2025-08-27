@@ -262,30 +262,85 @@ func (w *Walker) iterateRangeCanonical(start, end uintptr) bool {
 		nextBoundary := addrEnd(start, end, pgdSize)
 		pgdIndex := uint16((start & pgdMask) >> pgdShift)
 		pgdEntry := &w.pageTables.root[pgdIndex]
-		if !pgdEntry.Valid() {
-			if !w.visitor.requiresAlloc() {
-				// Skip over this entry.
-				start = nextBoundary
-				continue
+		if !w.pageTables.largeAddressesEnabled {
+			if !pgdEntry.Valid() {
+				if !w.visitor.requiresAlloc() {
+					// Skip over this entry.
+					start = nextBoundary
+					continue
+				}
+
+				// Allocate a new pgd.
+				pudEntries = w.pageTables.Allocator.NewPTEs() // escapes: depends on allocator.
+				pgdEntry.setPageTable(w.pageTables, pudEntries)
+			} else {
+				pudEntries = w.pageTables.Allocator.LookupPTEs(pgdEntry.Address()) // escapes: see above.
+			}
+			// Map the next level.
+			ok, clearPUDEntries := w.walkPUDs(pudEntries, start, nextBoundary)
+			if !ok {
+				return false
 			}
 
-			// Allocate a new pgd.
-			pudEntries = w.pageTables.Allocator.NewPTEs() // escapes: depends on allocator.
-			pgdEntry.setPageTable(w.pageTables, pudEntries)
+			// Check if we no longer need this page table.
+			if clearPUDEntries == entriesPerPage {
+				pgdEntry.Clear()
+				w.pageTables.Allocator.FreePTEs(pudEntries) // escapes: see above.
+			}
 		} else {
-			pudEntries = w.pageTables.Allocator.LookupPTEs(pgdEntry.Address()) // escapes: see above.
-		}
+			var p4dEntries *PTEs
+			if !pgdEntry.Valid() {
+				if !w.visitor.requiresAlloc() {
+					// Skip over this entry.
+					start = nextBoundary
+					continue
+				}
 
-		// Map the next level.
-		ok, clearPUDEntries := w.walkPUDs(pudEntries, start, nextBoundary)
-		if !ok {
-			return false
-		}
+				// Allocate a new pgd.
+				p4dEntries = w.pageTables.Allocator.NewPTEs() // escapes: depends on allocator.
+				pgdEntry.setPageTable(w.pageTables, p4dEntries)
+			} else {
+				p4dEntries = w.pageTables.Allocator.LookupPTEs(pgdEntry.Address()) // escapes: see above.
+			}
+			var clearP4DEntries uint16 = 0
+			p4dStart := start
+			p4dEnd := nextBoundary
+			for p4dStart < p4dEnd {
+				nextP4DBoundary := addrEnd(p4dStart, p4dEnd, p4dSize)
+				p4dIndex := uint16((p4dStart & p4dMask) >> p4dShift)
+				p4dEntry := &p4dEntries[p4dIndex]
+				if !p4dEntry.Valid() {
+					if !w.visitor.requiresAlloc() {
+						// Skip over this entry.
+						clearP4DEntries++
+						p4dStart = nextP4DBoundary
+						continue
+					}
+					// Allocate a new pud.
+					pudEntries = w.pageTables.Allocator.NewPTEs() // escapes: depends on allocator.
+					p4dEntry.setPageTable(w.pageTables, pudEntries)
+				} else {
+					pudEntries = w.pageTables.Allocator.LookupPTEs(p4dEntry.Address()) // escapes: see above.
+				}
 
-		// Check if we no longer need this page table.
-		if clearPUDEntries == entriesPerPage {
-			pgdEntry.Clear()
-			w.pageTables.Allocator.FreePTEs(pudEntries) // escapes: see above.
+				ok, clearPUDEntries := w.walkPUDs(pudEntries, p4dStart, nextP4DBoundary)
+				if !ok {
+					return false
+				}
+				if clearPUDEntries == entriesPerPage {
+					p4dEntry.Clear()
+					w.pageTables.Allocator.FreePTEs(pudEntries) // escapes: see above.
+					clearP4DEntries++
+				}
+
+				p4dStart = nextP4DBoundary
+			}
+
+			// Check if we no longer need this page table.
+			if clearP4DEntries == entriesPerPage {
+				pgdEntry.Clear()
+				w.pageTables.Allocator.FreePTEs(p4dEntries) // escapes: see above.
+			}
 		}
 
 		// Advance to the next PGD entry's range for the next loop.

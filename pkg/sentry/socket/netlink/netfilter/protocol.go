@@ -233,7 +233,7 @@ func dumpTablesForFamily(nft *nftables.NFTables, family stack.AddressFamily, ms 
 }
 
 // dumpTables populates the message set with information about all tables for
-// all address families.
+// a given address family or all address families if the family is unspecified.
 func dumpTables(nft *nftables.NFTables, family stack.AddressFamily, ms *nlmsg.MessageSet) *syserr.AnnotatedError {
 	// Dumps are multi-part messages.
 	ms.Multi = true
@@ -614,6 +614,23 @@ func (p *Protocol) getChain(nft *nftables.NFTables, attrs map[uint16]nlmsg.Bytes
 	return fillChainInfo(chain, ms)
 }
 
+// getBaseChainHookInfo creates a NFTA_CHAIN_HOOK attribute with all the
+// corresponding nested attributes.
+func getBaseChainHookInfo(chain *nftables.Chain, m *nlmsg.Message) *syserr.AnnotatedError {
+	baseChainInfo := chain.GetBaseChainInfo()
+	var nestedAttrs nlmsg.NestedAttr
+
+	nestedAttrs.PutAttr(linux.NFTA_HOOK_HOOKNUM, nlmsg.PutU32(baseChainInfo.LinuxHookNum))
+	nestedAttrs.PutAttr(linux.NFTA_HOOK_PRIORITY, nlmsg.PutU32(uint32(baseChainInfo.Priority.GetValue())))
+
+	if isNetDevHook(chain.GetAddressFamily(), baseChainInfo.LinuxHookNum) {
+		return syserr.NewAnnotatedError(syserr.ErrNotSupported, fmt.Sprintf("Nftables: Netdev basechains or basechains attached to Ingress or Egress are not currently supported for getting"))
+	}
+
+	m.PutNestedAttr(linux.NFTA_CHAIN_HOOK, nestedAttrs)
+	return nil
+}
+
 // dumpChainsForFamily populates the message set with information about all
 // chains for a specific address family.
 func dumpChainsForFamily(nft *nftables.NFTables, family stack.AddressFamily, ms *nlmsg.MessageSet) *syserr.AnnotatedError {
@@ -627,8 +644,8 @@ func dumpChainsForFamily(nft *nftables.NFTables, family stack.AddressFamily, ms 
 	return nil
 }
 
-// dumpChains populates the message set with information chains. If no address
-// family is specified, all address families are dumped.
+// dumpChains populates the message set with information about all chains for
+// a given address family or all address families if the family is unspecified.
 func dumpChains(nft *nftables.NFTables, family stack.AddressFamily, ms *nlmsg.MessageSet) *syserr.AnnotatedError {
 	ms.Multi = true
 	if family != stack.Unspec {
@@ -951,20 +968,137 @@ func nlaType(hdr linux.NetlinkAttrHeader) uint16 {
 	return hdr.Type & linux.NLA_TYPE_MASK
 }
 
-// getBaseChainHookInfo creates a NFTA_CHAIN_HOOK attribute with all the
-// corresponding nested attributes.
-func getBaseChainHookInfo(chain *nftables.Chain, m *nlmsg.Message) *syserr.AnnotatedError {
-	baseChainInfo := chain.GetBaseChainInfo()
-	var nestedAttrs nlmsg.NestedAttr
-
-	nestedAttrs.PutAttr(linux.NFTA_HOOK_HOOKNUM, nlmsg.PutU32(baseChainInfo.LinuxHookNum))
-	nestedAttrs.PutAttr(linux.NFTA_HOOK_PRIORITY, nlmsg.PutU32(uint32(baseChainInfo.Priority.GetValue())))
-
-	if isNetDevHook(chain.GetAddressFamily(), baseChainInfo.LinuxHookNum) {
-		return syserr.NewAnnotatedError(syserr.ErrNotSupported, fmt.Sprintf("Nftables: Netdev basechains or basechains attached to Ingress or Egress are not currently supported for getting"))
+// getRule returns the rule for the given family and message flags.
+func (p *Protocol) getRule(nft *nftables.NFTables, attrs map[uint16]nlmsg.BytesView, family stack.AddressFamily, msgFlags uint16, ms *nlmsg.MessageSet) *syserr.AnnotatedError {
+	if (msgFlags & linux.NLM_F_DUMP) != 0 {
+		return dumpRules(nft, attrs, family, ms)
 	}
 
-	m.PutNestedAttr(linux.NFTA_CHAIN_HOOK, nestedAttrs)
+	tabName, ok := attrs[linux.NFTA_RULE_TABLE]
+	if !ok {
+		return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: NFTA_TABLE attribute is malformed or not found")
+	}
+
+	// Any process can get any table.
+	tab, err := nft.GetTable(family, tabName.String(), 0)
+	if err != nil {
+		return err
+	}
+
+	chainName, ok := attrs[linux.NFTA_RULE_CHAIN]
+	if !ok {
+		return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: NFTA_CHAIN_NAME attribute is malformed or not found")
+	}
+
+	chain, err := tab.GetChain(chainName.String())
+	if err != nil {
+		return err
+	}
+
+	ruleHandleBytes, ok := attrs[linux.NFTA_RULE_HANDLE]
+	if !ok {
+		return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: NFTA_RULE_HANDLE attribute is malformed or not found")
+	}
+
+	ruleHandle, ok := ruleHandleBytes.Uint64()
+	if !ok {
+		return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: Rule handle attribute is malformed or not found")
+	}
+
+	ruleHandle = nlmsg.NetToHostU64(ruleHandle)
+	rule, err := chain.GetRuleByHandle(ruleHandle)
+	if err != nil {
+		return err
+	}
+
+	return fillRuleInfo(rule, ms)
+}
+
+// dumpRulesForFamily dumps all rules for a given family.
+func dumpRulesForFamily(nft *nftables.NFTables, family stack.AddressFamily, tabName *string, chainName *string, ms *nlmsg.MessageSet) *syserr.AnnotatedError {
+	// Linux allows rules to be retrieved for specific tables and chains via
+	// attributes, unlike dump operations for tables and chains.
+	// From linux/net/netfilter/nf_tables_api.c: nf_tables_dump_rules
+	for _, tab := range nft.GetAddressFamilyTables(family) {
+		if tabName != nil && tab.GetName() != *tabName {
+			continue
+		}
+
+		for _, chain := range tab.GetChains() {
+			if chainName != nil && chain.GetName() != *chainName {
+				continue
+			}
+
+			for _, rule := range chain.GetRules() {
+				if err := fillRuleInfo(rule, ms); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// dumpRules dumps all rules for a given family or all families if the family
+// is unspecified.
+func dumpRules(nft *nftables.NFTables, attrs map[uint16]nlmsg.BytesView, family stack.AddressFamily, ms *nlmsg.MessageSet) *syserr.AnnotatedError {
+	ms.Multi = true
+	var tabName *string
+	var chainName *string
+
+	if tabNameBytes, ok := attrs[linux.NFTA_RULE_TABLE]; ok {
+		attrName := tabNameBytes.String()
+		tabName = &attrName
+	}
+
+	if chainNameBytes, ok := attrs[linux.NFTA_RULE_CHAIN]; ok {
+		attrName := chainNameBytes.String()
+		chainName = &attrName
+	}
+	if family != stack.Unspec {
+		return dumpRulesForFamily(nft, family, tabName, chainName, ms)
+	}
+
+	for family := range stack.NumAFs {
+		if err := dumpRulesForFamily(nft, family, tabName, chainName, ms); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// fillRuleInfo adds the rule information to the message set.
+func fillRuleInfo(rule *nftables.Rule, ms *nlmsg.MessageSet) *syserr.AnnotatedError {
+	chain := rule.GetChain()
+	m := ms.AddMessage(linux.NetlinkMessageHeader{
+		Type: uint16(linux.NFNL_SUBSYS_NFTABLES)<<8 | uint16(linux.NFT_MSG_NEWCHAIN),
+	})
+
+	m.Put(&linux.NetFilterGenMsg{
+		Family:  uint8(nftables.AfProtocol(rule.GetAddressFamily())),
+		Version: uint8(linux.NFNETLINK_V0),
+		// Unused, set to 0.
+		ResourceID: uint16(0),
+	})
+	m.PutAttrString(linux.NFTA_RULE_TABLE, chain.GetTable().GetName())
+	m.PutAttrString(linux.NFTA_RULE_CHAIN, chain.GetName())
+	m.PutAttr(linux.NFTA_RULE_HANDLE, nlmsg.PutU64(rule.GetHandle()))
+
+	if (chain.GetFlags() & linux.NFT_CHAIN_HW_OFFLOAD) != 0 {
+		return syserr.NewAnnotatedError(syserr.ErrNotSupported, "Nftables: Hardware offload chains are not supported")
+	}
+
+	// TODO(b/434244017): Add support for dumping expressions. This means
+	// expanding the nftables operation interface to include dump operations.
+	var exprsData []byte
+	// The NLA_F_NESTED flag is explicitly not set here, for backwards
+	// compatibility with older kernels.
+	// From linux/net/netfilter/nf_tables_api.c: nf_tables_fill_rule_info
+	m.PutAttr(linux.NFTA_RULE_EXPRESSIONS, primitive.AsByteSlice(exprsData))
+
+	if rule.HasUserData() {
+		m.PutAttr(linux.NFTA_RULE_USERDATA, primitive.AsByteSlice(rule.GetUserData()))
+	}
 	return nil
 }
 
@@ -1029,7 +1163,14 @@ func (p *Protocol) ProcessMessage(ctx context.Context, s *netlink.Socket, msg *n
 			return err.GetError()
 		}
 		return nil
-	case linux.NFT_MSG_GETRULE, linux.NFT_MSG_GETRULE_RESET,
+	case linux.NFT_MSG_GETRULE:
+		if err := p.getRule(nft, attrs, family, hdr.Flags, ms); err != nil {
+			log.Debugf("Nftables get rule error: %s", err)
+			return err.GetError()
+		}
+
+		return nil
+	case linux.NFT_MSG_GETRULE_RESET,
 		linux.NFT_MSG_GETSET, linux.NFT_MSG_GETSETELEM,
 		linux.NFT_MSG_GETSETELEM_RESET, linux.NFT_MSG_GETGEN,
 		linux.NFT_MSG_GETOBJ, linux.NFT_MSG_GETOBJ_RESET,

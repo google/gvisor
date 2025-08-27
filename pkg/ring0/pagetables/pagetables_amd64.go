@@ -14,28 +14,34 @@
 
 package pagetables
 
-// Address constraints.
-//
-// The lowerTop and upperBottom currently apply to four-level pagetables;
-// additional refactoring would be necessary to support five-level pagetables.
-const (
-	lowerTop    = 0x00007fffffffffff
-	upperBottom = 0xffff800000000000
+import (
+	"gvisor.dev/gvisor/pkg/cpuid"
+)
 
+// Address constraints.
+var (
+	lowerTop    uintptr = 0x00007fffffffffff
+	upperBottom uintptr = 0xffff800000000000
+	pgdShift            = 39
+	pgdMask     uintptr = 0x1ff << pgdShift
+	pgdSize     uintptr = 1 << pgdShift
+)
+
+const (
 	pteShift = 12
 	pmdShift = 21
 	pudShift = 30
-	pgdShift = 39
+	p4dShift = 39
 
 	pteMask = 0x1ff << pteShift
 	pmdMask = 0x1ff << pmdShift
 	pudMask = 0x1ff << pudShift
-	pgdMask = 0x1ff << pgdShift
+	p4dMask = 0x1ff << p4dShift
 
 	pteSize = 1 << pteShift
 	pmdSize = 1 << pmdShift
 	pudSize = 1 << pudShift
-	pgdSize = 1 << pgdShift
+	p4dSize = 1 << p4dShift
 
 	executeDisable = 1 << 63
 	entriesPerPage = 512
@@ -47,6 +53,16 @@ const (
 //
 //go:nosplit
 func (p *PageTables) InitArch(allocator Allocator) {
+	featureSet := cpuid.HostFeatureSet()
+	if featureSet.HasFeature(cpuid.X86FeatureLA57) {
+		p.largeAddressesEnabled = true
+		lowerTop = 0x00FFFFFFFFFFFFFF
+		upperBottom = 0xFF00000000000000
+		pgdShift = 48
+		pgdMask = 0x1ff << pgdShift
+		pgdSize = 1 << pgdShift
+	}
+
 	if p.upperSharedPageTables != nil {
 		p.cloneUpperShared()
 	}
@@ -58,10 +74,10 @@ func pgdIndex(upperStart uintptr) uintptr {
 		panic("upperStart should be pgd size aligned")
 	}
 	if upperStart >= upperBottom {
-		return entriesPerPage/2 + (upperStart-upperBottom)/pgdSize
+		return entriesPerPage/2 + (upperStart-upperBottom)>>pgdShift
 	}
 	if upperStart < lowerTop {
-		return upperStart / pgdSize
+		return upperStart >> pgdShift
 	}
 	panic("upperStart should be in canonical range")
 }

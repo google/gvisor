@@ -874,6 +874,11 @@ func (c *Chain) SetComment(comment string) {
 	c.comment = comment
 }
 
+// GetRules returns the rules of the chain.
+func (c *Chain) GetRules() []*Rule {
+	return c.rules
+}
+
 // RegisterRule assigns the chain to the rule and adds the rule to the chain's
 // rule list at the given index.
 // Valid indices are -1 (append) and [0, len]. Errors on invalid index.
@@ -1103,6 +1108,11 @@ func (r *Rule) AddOpFromExprInfo(tab *Table, exprInfo ExprInfo) *syserr.Annotate
 	return r.addOperation(op)
 }
 
+// GetChain returns the chain that the rule is registered to.
+func (r *Rule) GetChain() *Chain {
+	return r.chain
+}
+
 // GetHandle returns the handle of the rule.
 func (r *Rule) GetHandle() uint64 {
 	return r.handle
@@ -1118,9 +1128,19 @@ func (r *Rule) SetUserData(data []byte) *syserr.AnnotatedError {
 	return nil
 }
 
+// HasUserData returns whether the rule has user data.
+func (r *Rule) HasUserData() bool {
+	return r.udata != nil
+}
+
 // GetUserData returns the user data of the rule.
 func (r *Rule) GetUserData() []byte {
 	return r.udata
+}
+
+// GetAddressFamily returns the address family of the rule.
+func (r *Rule) GetAddressFamily() stack.AddressFamily {
+	return r.chain.GetAddressFamily()
 }
 
 //
