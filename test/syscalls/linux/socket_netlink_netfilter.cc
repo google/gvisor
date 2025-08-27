@@ -27,6 +27,7 @@
 #include <functional>
 #include <string>
 #include <tuple>
+#include <unordered_set>
 #include <vector>
 
 #include "gmock/gmock.h"
@@ -226,6 +227,68 @@ TEST_F(NetlinkNetfilterTest, AddAndRetrieveNewTable) {
       false));
 
   ASSERT_TRUE(correct_response);
+}
+
+TEST_F(NetlinkNetfilterTest, GetDumpTables) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+  SKIP_IF(!IsRunningOnGvisor());
+  const char test_table_name[] = "test_tab_one";
+  const char test_table_name_2[] = "test_tab_two";
+  uint32_t expected_chain_count = 0;
+  uint32_t expected_flags = 0;
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
+
+  std::vector<char> add_request_buffer =
+      NlBatchReq()
+          .SeqStart(kSeq)
+          .Req(NlReq("newtable req ack inet")
+                   .Seq(kSeq + 1)
+                   .StrAttr(NFTA_TABLE_NAME, test_table_name)
+                   .Build())
+          .Req(NlReq("newtable req ack inet")
+                   .Seq(kSeq + 2)
+                   .StrAttr(NFTA_TABLE_NAME, test_table_name_2)
+                   .Build())
+          .SeqEnd(kSeq + 3)
+          .Build();
+
+  std::vector<char> get_dump_request_buffer =
+      NlReq("gettable req dump inet").Seq(kSeq + 4).Build();
+
+  std::unordered_set<std::string> expected_tables = {test_table_name,
+                                                     test_table_name_2};
+  ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
+      fd, kSeq, kSeq + 3, add_request_buffer.data(),
+      add_request_buffer.size()));
+  ASSERT_NO_ERRNO(NetlinkRequestResponse(
+      fd, get_dump_request_buffer.data(), get_dump_request_buffer.size(),
+      [&](const struct nlmsghdr* hdr) {
+        if (hdr->nlmsg_type == NLMSG_DONE) {
+          return;
+        }
+
+        EXPECT_TRUE(hdr->nlmsg_flags & NLM_F_MULTI);
+
+        const struct nfattr* table_name_attr =
+            FindNfAttr(hdr, nullptr, NFTA_TABLE_NAME);
+        EXPECT_NE(table_name_attr, nullptr);
+        std::string table_name(
+            reinterpret_cast<const char*>(NFA_DATA(table_name_attr)));
+
+        if (expected_tables.count(table_name)) {
+          CheckNetfilterTableAttributes({
+              .hdr = hdr,
+              .test_table_name = table_name.c_str(),
+              .expected_chain_count = &expected_chain_count,
+              .expected_flags = &expected_flags,
+              .skip_handle_check = true,
+          });
+          expected_tables.erase(table_name);
+        }
+      },
+      false));
+  ASSERT_TRUE(expected_tables.empty());
 }
 
 TEST_F(NetlinkNetfilterTest, ErrGettingTableWithDifferentFamily) {
@@ -1599,12 +1662,14 @@ TEST_F(NetlinkNetfilterTest, AddBaseChainWithDropPolicy) {
       add_request_buffer.size()));
 }
 
-TEST_F(NetlinkNetfilterTest, ErrUnsupportedGetChainWithDumpFlagSet) {
+TEST_F(NetlinkNetfilterTest, GetChainWithDumpFlagSet) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
   SKIP_IF(!IsRunningOnGvisor());
   const char test_table_name[] = "test_table_chain_hook";
-  const char test_chain_name[] = "test_chain_dump_fail";
+  const char test_chain_name[] = "test_chain";
+  const char test_chain_two_name[] = "test_chain_two";
   const uint32_t test_chain_flags = 0;
+  uint32_t expected_use = 0;
   FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
 
@@ -1621,23 +1686,55 @@ TEST_F(NetlinkNetfilterTest, ErrUnsupportedGetChainWithDumpFlagSet) {
                    .U32Attr(NFTA_CHAIN_FLAGS, test_chain_flags)
                    .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
                    .Build())
-          .SeqEnd(kSeq + 3)
+          .Req(NlReq("newchain req ack inet")
+                   .Seq(kSeq + 3)
+                   .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
+                   .U32Attr(NFTA_CHAIN_FLAGS, test_chain_flags)
+                   .StrAttr(NFTA_CHAIN_NAME, test_chain_two_name)
+                   .Build())
+          .SeqEnd(kSeq + 4)
           .Build();
 
   std::vector<char> get_chain_request_buffer =
-      NlReq("getchain req ack dump inet")
-          .Seq(kSeq + 4)
-          .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
-          .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
-          .Build();
+      NlReq("getchain req dump inet").Seq(kSeq + 5).Build();
 
   ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
-      fd, kSeq, kSeq + 3, add_request_buffer.data(),
+      fd, kSeq, kSeq + 4, add_request_buffer.data(),
       add_request_buffer.size()));
-  ASSERT_THAT(
-      NetlinkRequestAckOrError(fd, kSeq + 4, get_chain_request_buffer.data(),
-                               get_chain_request_buffer.size()),
-      PosixErrorIs(ENOTSUP, _));
+
+  std::unordered_set<std::string> expected_chains = {test_chain_name,
+                                                     test_chain_two_name};
+  ASSERT_NO_ERRNO(NetlinkRequestResponse(
+      fd, get_chain_request_buffer.data(), get_chain_request_buffer.size(),
+      [&](const struct nlmsghdr* hdr) {
+        if (hdr->nlmsg_type == NLMSG_DONE) {
+          return;
+        }
+
+        EXPECT_TRUE(hdr->nlmsg_flags & NLM_F_MULTI);
+
+        const struct nfattr* chain_name_attr =
+            FindNfAttr(hdr, nullptr, NFTA_CHAIN_NAME);
+        EXPECT_NE(chain_name_attr, nullptr);
+        std::string chain_name(
+            reinterpret_cast<const char*>(NFA_DATA(chain_name_attr)));
+
+        if (expected_chains.count(chain_name)) {
+          CheckNetfilterChainAttributes({
+              .hdr = hdr,
+              .expected_table_name = test_table_name,
+              .expected_chain_name = chain_name.c_str(),
+              .expected_use = &expected_use,
+              .expected_udata = nullptr,
+              .expected_udata_size = nullptr,
+              .skip_handle_check = true,
+          });
+          expected_chains.erase(chain_name);
+        }
+      },
+      false));
+
+  ASSERT_TRUE(expected_chains.empty());
 }
 
 TEST_F(NetlinkNetfilterTest, ErrGetChainWithNoTableName) {
