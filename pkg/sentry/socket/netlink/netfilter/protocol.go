@@ -495,12 +495,12 @@ func (p *Protocol) addChain(attrs map[uint16]nlmsg.BytesView, tab *nftables.Tabl
 // chainParseHook parses the hook attributes and returns a complete
 // BaseChainInfo.
 func (p *Protocol) chainParseHook(chain *nftables.Chain, family stack.AddressFamily, hdata nlmsg.AttrsView) (*nftables.BaseChainInfo, *syserr.AnnotatedError) {
-	hookAttrs, ok := hdata.Parse()
-	var hookInfo nftables.HookInfo
+	hookAttrs, ok := nftables.NfParse(hdata)
 	if !ok {
 		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("Nftables: Failed to parse hook attributes"))
 	}
 
+	var hookInfo nftables.HookInfo
 	if chain != nil {
 		// TODO: b/434243967 - Support updating existing chains.
 		return nil, syserr.NewAnnotatedError(syserr.ErrNotSupported, fmt.Sprintf("Nftables: Updating hook attributes are not supported for existing chains"))
@@ -935,7 +935,7 @@ func parseNestedExprs(nestedAttrBytes nlmsg.AttrsView) ([]nftables.ExprInfo, *sy
 		}
 		numExprs++
 
-		exprAttrs, ok := nlmsg.AttrsView(value).Parse()
+		exprAttrs, ok := nftables.NfParse(nlmsg.AttrsView(value))
 		if !ok {
 			return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: Failed to parse attributes for expression")
 		}
@@ -1139,7 +1139,7 @@ func (p *Protocol) ProcessMessage(ctx context.Context, s *netlink.Socket, msg *n
 		return syserr.ErrInvalidArgument
 	}
 
-	attrs, ok := atr.Parse()
+	attrs, ok := nftables.NfParse(atr)
 	if !ok {
 		log.Debugf("Failed to parse message attributes")
 		return syserr.ErrInvalidArgument
@@ -1206,7 +1206,7 @@ func (p *Protocol) receiveBatchMessage(ctx context.Context, s *netlink.Socket, m
 		return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: Failed to get message data")
 	}
 
-	attrs, ok := atr.Parse()
+	attrs, ok := nftables.NfParse(atr)
 	if !ok {
 		return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Failed to parse message attributes for batch message")
 	}
@@ -1322,7 +1322,7 @@ func (p *Protocol) processBatchMessage(ctx context.Context, s *netlink.Socket, b
 			continue
 		}
 
-		attrs, ok := atr.Parse()
+		attrs, ok := nftables.NfParse(atr)
 		if !ok {
 			netlink.DumpErrorMessage(hdr, ms, syserr.ErrInvalidArgument)
 			continue

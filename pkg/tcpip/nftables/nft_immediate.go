@@ -43,7 +43,7 @@ func newImmediate(dreg uint8, data registerData) (*immediate, *syserr.AnnotatedE
 // InitImmediate initializes the immediate operation from the expression info.
 func initImmediate(tab *Table, exprInfo ExprInfo) (*immediate, *syserr.AnnotatedError) {
 	// We now have attributes specific to immediate expressions.
-	immDataAttrs, ok := exprInfo.ExprData.Parse()
+	immDataAttrs, ok := NfParse(exprInfo.ExprData)
 	if !ok {
 		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: Failed to parse immediate expression data")
 	}
