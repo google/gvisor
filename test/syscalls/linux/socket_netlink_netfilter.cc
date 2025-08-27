@@ -3055,6 +3055,352 @@ TEST_F(NetlinkNetfilterTest, AddDropRuleAfterAcceptRule) {
       add_rule_drop_request_buffer.size()));
 }
 
+TEST_F(NetlinkNetfilterTest, GetRule) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
+
+  uint8_t udata[] = {0, 1, 2};
+  size_t expected_udata_size = sizeof(udata);
+  std::vector<char> rule_expr_data = NlImmExpr::DefaultAcceptAll();
+  std::vector<char> list_expr_data = NlListAttr().Add(rule_expr_data).Build();
+  // Rule handle is two because the atomic counter that assigns the handles
+  // for chains and rules are the same.
+  uint64_t rule_handle = 2;
+
+  AddDefaultTable({.fd = fd, .seq = kSeq});
+  AddDefaultBaseChain({.fd = fd, .seq = kSeq + 3});
+  std::vector<char> add_rule_accept_request_buffer =
+      NlBatchReq()
+          .SeqStart(kSeq + 6)
+          .Req(NlReq("newrule req ack create inet")
+                   .Seq(kSeq + 7)
+                   .StrAttr(NFTA_RULE_TABLE, DEFAULT_TABLE_NAME)
+                   .StrAttr(NFTA_RULE_CHAIN, DEFAULT_CHAIN_NAME)
+                   .RawAttr(NFTA_RULE_USERDATA, udata, sizeof(udata))
+                   .RawAttr(NFTA_RULE_EXPRESSIONS, list_expr_data.data(),
+                            list_expr_data.size())
+                   .Build())
+          .SeqEnd(kSeq + 8)
+          .Build();
+
+  std::vector<char> get_rule_request_buffer =
+      NlReq("getrule req inet")
+          .Seq(kSeq + 9)
+          .StrAttr(NFTA_RULE_TABLE, DEFAULT_TABLE_NAME)
+          .StrAttr(NFTA_RULE_CHAIN, DEFAULT_CHAIN_NAME)
+          .U64Attr(NFTA_RULE_HANDLE, rule_handle)
+          .Build();
+
+  ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
+      fd, kSeq + 6, kSeq + 8, add_rule_accept_request_buffer.data(),
+      add_rule_accept_request_buffer.size()));
+
+  bool correct_response = false;
+  ASSERT_NO_ERRNO(NetlinkRequestResponse(
+      fd, get_rule_request_buffer.data(), get_rule_request_buffer.size(),
+      [&](const struct nlmsghdr* hdr) {
+        CheckNetfilterRuleAttributes({
+            .hdr = hdr,
+            .expected_table_name = DEFAULT_TABLE_NAME,
+            .expected_chain_name = DEFAULT_CHAIN_NAME,
+            .expected_handle = &rule_handle,
+            .expected_udata = udata,
+            .expected_udata_size = &expected_udata_size,
+        });
+        correct_response = true;
+      },
+      false));
+  EXPECT_TRUE(correct_response);
+}
+
+TEST_F(NetlinkNetfilterTest, GetRuleDump) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+  SKIP_IF(!IsRunningOnGvisor());
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
+
+  uint8_t udata[] = {0, 1, 2};
+  size_t expected_udata_size = sizeof(udata);
+  std::vector<char> rule_expr_data = NlImmExpr::DefaultAcceptAll();
+  std::vector<char> list_expr_data = NlListAttr().Add(rule_expr_data).Build();
+
+  AddDefaultTable({.fd = fd, .seq = kSeq});
+  AddDefaultBaseChain({.fd = fd, .seq = kSeq + 3});
+  // Add two rules.
+  std::vector<char> add_rule_request_buffer =
+      NlBatchReq()
+          .SeqStart(kSeq + 6)
+          .Req(NlReq("newrule req ack create inet")
+                   .Seq(kSeq + 7)
+                   .StrAttr(NFTA_RULE_TABLE, DEFAULT_TABLE_NAME)
+                   .StrAttr(NFTA_RULE_CHAIN, DEFAULT_CHAIN_NAME)
+                   .RawAttr(NFTA_RULE_USERDATA, udata, sizeof(udata))
+                   .RawAttr(NFTA_RULE_EXPRESSIONS, list_expr_data.data(),
+                            list_expr_data.size())
+                   .Build())
+          .Req(NlReq("newrule req ack create append inet")
+                   .Seq(kSeq + 8)
+                   .StrAttr(NFTA_RULE_TABLE, DEFAULT_TABLE_NAME)
+                   .StrAttr(NFTA_RULE_CHAIN, DEFAULT_CHAIN_NAME)
+                   .RawAttr(NFTA_RULE_USERDATA, udata, sizeof(udata))
+                   .RawAttr(NFTA_RULE_EXPRESSIONS, list_expr_data.data(),
+                            list_expr_data.size())
+                   .Build())
+          .SeqEnd(kSeq + 9)
+          .Build();
+
+  std::vector<char> get_dump_rule_request_buffer =
+      NlReq("getrule req dump inet")
+          .Seq(kSeq + 10)
+          .StrAttr(NFTA_RULE_TABLE, DEFAULT_TABLE_NAME)
+          .StrAttr(NFTA_RULE_CHAIN, DEFAULT_CHAIN_NAME)
+          .Build();
+
+  ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
+      fd, kSeq + 6, kSeq + 9, add_rule_request_buffer.data(),
+      add_rule_request_buffer.size()));
+
+  int rules_found = 0;
+  ASSERT_NO_ERRNO(NetlinkRequestResponse(
+      fd, get_dump_rule_request_buffer.data(),
+      get_dump_rule_request_buffer.size(),
+      [&](const struct nlmsghdr* hdr) {
+        if (hdr->nlmsg_type == NLMSG_DONE) {
+          return;
+        }
+
+        EXPECT_TRUE(hdr->nlmsg_flags & NLM_F_MULTI);
+
+        CheckNetfilterRuleAttributes({
+            .hdr = hdr,
+            .expected_table_name = DEFAULT_TABLE_NAME,
+            .expected_chain_name = DEFAULT_CHAIN_NAME,
+            .expected_udata = udata,
+            .expected_udata_size = &expected_udata_size,
+            .skip_handle_check = true,
+        });
+        rules_found++;
+      },
+      false));
+  EXPECT_EQ(rules_found, 2);
+}
+
+TEST_F(NetlinkNetfilterTest, GetRuleDumpTableSpecified) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+  SKIP_IF(!IsRunningOnGvisor());
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
+
+  uint8_t udata[] = {0, 1, 2};
+  size_t expected_udata_size = sizeof(udata);
+  std::vector<char> rule_expr_data = NlImmExpr::DefaultAcceptAll();
+  std::vector<char> list_expr_data = NlListAttr().Add(rule_expr_data).Build();
+
+  std::vector<char> add_request =
+      NlBatchReq()
+          .SeqStart(kSeq)
+          .Req(NlReq("newtable req ack inet")
+                   .Seq(kSeq + 1)
+                   .StrAttr(NFTA_TABLE_NAME, DEFAULT_TABLE_NAME)
+                   .Build())
+          .Req(NlReq("newtable req ack ipv6")
+                   .Seq(kSeq + 2)
+                   .StrAttr(NFTA_TABLE_NAME, DEFAULT_TABLE_NAME)
+                   .Build())
+          .Req(NlReq("newchain req ack inet")
+                   .Seq(kSeq + 3)
+                   .StrAttr(NFTA_TABLE_NAME, DEFAULT_TABLE_NAME)
+                   .StrAttr(NFTA_CHAIN_NAME, DEFAULT_CHAIN_NAME)
+                   .Build())
+          .Req(NlReq("newchain req ack ipv6")
+                   .Seq(kSeq + 4)
+                   .StrAttr(NFTA_TABLE_NAME, DEFAULT_TABLE_NAME)
+                   .StrAttr(NFTA_CHAIN_NAME, DEFAULT_CHAIN_NAME)
+                   .Build())
+          .Req(NlReq("newrule req ack create inet")
+                   .Seq(kSeq + 5)
+                   .StrAttr(NFTA_RULE_TABLE, DEFAULT_TABLE_NAME)
+                   .StrAttr(NFTA_RULE_CHAIN, DEFAULT_CHAIN_NAME)
+                   .RawAttr(NFTA_RULE_USERDATA, udata, sizeof(udata))
+                   .RawAttr(NFTA_RULE_EXPRESSIONS, list_expr_data.data(),
+                            list_expr_data.size())
+                   .Build())
+          .Req(NlReq("newrule req ack create ipv6")
+                   .Seq(kSeq + 6)
+                   .StrAttr(NFTA_RULE_TABLE, DEFAULT_TABLE_NAME)
+                   .StrAttr(NFTA_RULE_CHAIN, DEFAULT_CHAIN_NAME)
+                   .RawAttr(NFTA_RULE_USERDATA, udata, sizeof(udata))
+                   .RawAttr(NFTA_RULE_EXPRESSIONS, list_expr_data.data(),
+                            list_expr_data.size())
+                   .Build())
+          .SeqEnd(kSeq + 7)
+          .Build();
+
+  std::vector<char> get_dump_request_inet =
+      NlReq("getrule req dump inet")
+          .Seq(kSeq + 8)
+          .StrAttr(NFTA_RULE_TABLE, DEFAULT_TABLE_NAME)
+          .Build();
+
+  std::vector<char> get_dump_request_ipv6 =
+      NlReq("getrule req dump ipv6")
+          .Seq(kSeq + 9)
+          .StrAttr(NFTA_RULE_TABLE, DEFAULT_TABLE_NAME)
+          .Build();
+
+  int rules_found = 0;
+  ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
+      fd, kSeq, kSeq + 7, add_request.data(), add_request.size()));
+  ASSERT_NO_ERRNO(NetlinkRequestResponse(
+      fd, get_dump_request_inet.data(), get_dump_request_inet.size(),
+      [&](const struct nlmsghdr* hdr) {
+        if (hdr->nlmsg_type == NLMSG_DONE) {
+          return;
+        }
+
+        EXPECT_TRUE(hdr->nlmsg_flags & NLM_F_MULTI);
+
+        CheckNetfilterRuleAttributes(
+            {.hdr = hdr,
+             .expected_table_name = DEFAULT_TABLE_NAME,
+             .expected_chain_name = DEFAULT_CHAIN_NAME,
+             .expected_udata = udata,
+             .expected_udata_size = &expected_udata_size,
+             .skip_handle_check = true});
+        rules_found++;
+      },
+      false));
+  EXPECT_EQ(rules_found, 1);
+
+  rules_found = 0;
+  ASSERT_NO_ERRNO(NetlinkRequestResponse(
+      fd, get_dump_request_ipv6.data(), get_dump_request_ipv6.size(),
+      [&](const struct nlmsghdr* hdr) {
+        if (hdr->nlmsg_type == NLMSG_DONE) {
+          return;
+        }
+
+        EXPECT_TRUE(hdr->nlmsg_flags & NLM_F_MULTI);
+
+        CheckNetfilterRuleAttributes(
+            {.hdr = hdr,
+             .expected_table_name = DEFAULT_TABLE_NAME,
+             .expected_chain_name = DEFAULT_CHAIN_NAME,
+             .expected_udata = udata,
+             .expected_udata_size = &expected_udata_size,
+             .skip_handle_check = true});
+        rules_found++;
+      },
+      false));
+  EXPECT_EQ(rules_found, 1);
+}
+
+TEST_F(NetlinkNetfilterTest, GetRuleDumpTableChainSpecified) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+  SKIP_IF(!IsRunningOnGvisor());
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
+
+  const char* test_table_name_one = "test_table_1";
+  const char* test_chain_name_one = "test_chain_1";
+  const char* test_chain_name_two = "test_chain_2";
+
+  uint8_t udata[] = {0, 1, 2};
+  size_t expected_udata_size = sizeof(udata);
+  std::vector<char> rule_expr_data = NlImmExpr::DefaultAcceptAll();
+  std::vector<char> list_expr_data = NlListAttr().Add(rule_expr_data).Build();
+
+  std::vector<char> add_request =
+      NlBatchReq()
+          .SeqStart(kSeq)
+          .Req(NlReq("newtable req ack inet")
+                   .Seq(kSeq + 1)
+                   .StrAttr(NFTA_TABLE_NAME, test_table_name_one)
+                   .Build())
+          .Req(NlReq("newchain req ack inet")
+                   .Seq(kSeq + 2)
+                   .StrAttr(NFTA_TABLE_NAME, test_table_name_one)
+                   .StrAttr(NFTA_CHAIN_NAME, test_chain_name_one)
+                   .Build())
+          .Req(NlReq("newchain req ack inet")
+                   .Seq(kSeq + 3)
+                   .StrAttr(NFTA_TABLE_NAME, test_table_name_one)
+                   .StrAttr(NFTA_CHAIN_NAME, test_chain_name_two)
+                   .Build())
+          .Req(NlReq("newrule req ack create inet")
+                   .Seq(kSeq + 4)
+                   .StrAttr(NFTA_RULE_TABLE, test_table_name_one)
+                   .StrAttr(NFTA_RULE_CHAIN, test_chain_name_one)
+                   .RawAttr(NFTA_RULE_USERDATA, udata, sizeof(udata))
+                   .RawAttr(NFTA_RULE_EXPRESSIONS, list_expr_data.data(),
+                            list_expr_data.size())
+                   .Build())
+          .Req(NlReq("newrule req ack create append inet")
+                   .Seq(kSeq + 5)
+                   .StrAttr(NFTA_RULE_TABLE, test_table_name_one)
+                   .StrAttr(NFTA_RULE_CHAIN, test_chain_name_one)
+                   .RawAttr(NFTA_RULE_USERDATA, udata, sizeof(udata))
+                   .RawAttr(NFTA_RULE_EXPRESSIONS, list_expr_data.data(),
+                            list_expr_data.size())
+                   .Build())
+          .SeqEnd(kSeq + 6)
+          .Build();
+
+  std::vector<char> get_dump_request_inet =
+      NlReq("getrule req dump inet")
+          .Seq(kSeq + 7)
+          .StrAttr(NFTA_RULE_TABLE, test_table_name_one)
+          .StrAttr(NFTA_RULE_CHAIN, test_chain_name_one)
+          .Build();
+
+  std::vector<char> get_dump_request_inet_two =
+      NlReq("getrule req dump inet")
+          .Seq(kSeq + 8)
+          .StrAttr(NFTA_RULE_TABLE, test_table_name_one)
+          .StrAttr(NFTA_RULE_CHAIN, test_chain_name_two)
+          .Build();
+
+  int rules_found = 0;
+  ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
+      fd, kSeq, kSeq + 6, add_request.data(), add_request.size()));
+  ASSERT_NO_ERRNO(NetlinkRequestResponse(
+      fd, get_dump_request_inet.data(), get_dump_request_inet.size(),
+      [&](const struct nlmsghdr* hdr) {
+        if (hdr->nlmsg_type == NLMSG_DONE) {
+          return;
+        }
+
+        EXPECT_TRUE(hdr->nlmsg_flags & NLM_F_MULTI);
+
+        CheckNetfilterRuleAttributes(
+            {.hdr = hdr,
+             .expected_table_name = test_table_name_one,
+             .expected_chain_name = test_chain_name_one,
+             .expected_udata = udata,
+             .expected_udata_size = &expected_udata_size,
+             .skip_handle_check = true});
+        rules_found++;
+      },
+      false));
+  EXPECT_EQ(rules_found, 2);
+
+  rules_found = 0;
+  // We expect no rules to be found as they were registered to a different
+  // chain.
+  ASSERT_NO_ERRNO(NetlinkRequestResponse(
+      fd, get_dump_request_inet_two.data(), get_dump_request_inet_two.size(),
+      [&](const struct nlmsghdr* hdr) {
+        if (hdr->nlmsg_type == NLMSG_DONE) {
+          return;
+        }
+
+        rules_found++;
+      },
+      false));
+  EXPECT_EQ(rules_found, 0);
+}
+
 }  // namespace
 
 }  // namespace testing

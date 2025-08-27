@@ -30,7 +30,6 @@
 #include <cstdint>
 #include <map>
 #include <string>
-#include <utility>
 #include <vector>
 
 #include "test/util/file_descriptor.h"
@@ -86,6 +85,16 @@ struct NfChainCheckOptions {
   bool skip_handle_check;
 };
 
+struct NfRuleCheckOptions {
+  const struct nlmsghdr* hdr;
+  const char* expected_table_name;
+  const char* expected_chain_name;
+  uint64_t* expected_handle;
+  uint8_t* expected_udata;
+  size_t* expected_udata_size;
+  bool skip_handle_check;
+};
+
 struct AddDefaultTableOptions {
   const FileDescriptor& fd;
   const char* test_table_name;
@@ -107,6 +116,9 @@ void CheckNetfilterTableAttributes(const NfTableCheckOptions& options);
 
 // Check the attributes of a netfilter chain.
 void CheckNetfilterChainAttributes(const NfChainCheckOptions& options);
+
+// Check the attributes of a netfilter rule.
+void CheckNetfilterRuleAttributes(const struct NfRuleCheckOptions& options);
 
 // Helper function to add a default table.
 void AddDefaultTable(AddDefaultTableOptions options);

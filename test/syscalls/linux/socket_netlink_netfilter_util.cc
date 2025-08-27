@@ -40,6 +40,36 @@ void InitNetfilterGenmsg(struct nfgenmsg* genmsg, uint8_t family,
   genmsg->res_id = htons(res_id);
 }
 
+// Reads a uint16_t from an nfattr, handling potential alignment issues
+// and network byte order.
+uint16_t GetNfAttrU16(const struct nfattr* attr) {
+  EXPECT_EQ(attr->nfa_len - NLA_HDRLEN, sizeof(uint16_t));
+  uint16_t aligned_value;
+  const uint8_t* source_ptr = reinterpret_cast<const uint8_t*>(NFA_DATA(attr));
+  memcpy(&aligned_value, source_ptr, sizeof(uint16_t));
+  return ntohs(aligned_value);
+}
+
+// Reads a uint32_t from an nfattr, handling potential alignment issues
+// and network byte order.
+uint32_t GetNfAttrU32(const struct nfattr* attr) {
+  EXPECT_EQ(attr->nfa_len - NLA_HDRLEN, sizeof(uint32_t));
+  uint32_t aligned_value;
+  const uint8_t* source_ptr = reinterpret_cast<const uint8_t*>(NFA_DATA(attr));
+  memcpy(&aligned_value, source_ptr, sizeof(uint32_t));
+  return ntohl(aligned_value);
+}
+
+// Reads a uint64_t from an nfattr, handling potential alignment issues and
+// network byte order.
+uint64_t GetNfAttrU64(const struct nfattr* attr) {
+  EXPECT_EQ(attr->nfa_len - NLA_HDRLEN, sizeof(uint64_t));
+  uint64_t aligned_value;
+  const uint8_t* source_ptr = reinterpret_cast<const uint8_t*>(NFA_DATA(attr));
+  memcpy(&aligned_value, source_ptr, sizeof(uint64_t));
+  return be64toh(aligned_value);
+}
+
 // Helper function to check the netfilter table attributes.
 void CheckNetfilterTableAttributes(const NfTableCheckOptions& options) {
   // Check for the NFTA_TABLE_NAME attribute.
@@ -57,8 +87,7 @@ void CheckNetfilterTableAttributes(const NfTableCheckOptions& options) {
   const struct nfattr* table_use_attr =
       FindNfAttr(options.hdr, nullptr, NFTA_TABLE_USE);
   if (table_use_attr != nullptr && options.expected_chain_count != nullptr) {
-    uint32_t count =
-        ntohl(*(reinterpret_cast<uint32_t*>(NFA_DATA(table_use_attr))));
+    uint32_t count = GetNfAttrU32(table_use_attr);
     EXPECT_EQ(count, *options.expected_chain_count);
   } else {
     EXPECT_EQ(table_use_attr, nullptr);
@@ -70,8 +99,7 @@ void CheckNetfilterTableAttributes(const NfTableCheckOptions& options) {
     const struct nfattr* handle_attr =
         FindNfAttr(options.hdr, nullptr, NFTA_TABLE_HANDLE);
     if (handle_attr != nullptr && options.expected_handle != nullptr) {
-      uint64_t handle =
-          be64toh(*(reinterpret_cast<uint64_t*>(NFA_DATA(handle_attr))));
+      uint64_t handle = GetNfAttrU64(handle_attr);
       EXPECT_EQ(handle, *options.expected_handle);
     } else {
       EXPECT_EQ(handle_attr, nullptr);
@@ -83,8 +111,7 @@ void CheckNetfilterTableAttributes(const NfTableCheckOptions& options) {
   const struct nfattr* flags_attr =
       FindNfAttr(options.hdr, nullptr, NFTA_TABLE_FLAGS);
   if (flags_attr != nullptr && options.expected_flags != nullptr) {
-    uint32_t flags =
-        ntohl(*(reinterpret_cast<uint32_t*>(NFA_DATA(flags_attr))));
+    uint32_t flags = GetNfAttrU32(flags_attr);
     EXPECT_EQ(flags, *options.expected_flags);
   } else {
     EXPECT_EQ(flags_attr, nullptr);
@@ -96,8 +123,7 @@ void CheckNetfilterTableAttributes(const NfTableCheckOptions& options) {
       FindNfAttr(options.hdr, nullptr, NFTA_TABLE_OWNER);
   if (owner_attr != nullptr) {
     // Returned in network byte order.
-    uint32_t owner =
-        ntohl(*(reinterpret_cast<uint32_t*>(NFA_DATA(owner_attr))));
+    uint32_t owner = GetNfAttrU32(owner_attr);
     EXPECT_EQ(owner, *options.expected_owner);
   } else {
     EXPECT_EQ(owner_attr, nullptr);
@@ -109,14 +135,11 @@ void CheckNetfilterTableAttributes(const NfTableCheckOptions& options) {
       FindNfAttr(options.hdr, nullptr, NFTA_TABLE_USERDATA);
 
   if (user_data_attr != nullptr && options.expected_udata_size != nullptr) {
-    uint8_t user_data[VALID_USERDATA_SIZE] = {};
     EXPECT_EQ(user_data_attr->nfa_len - NLA_HDRLEN,
               *options.expected_udata_size);
-    std::memcpy(user_data, NFA_DATA(user_data_attr),
-                *options.expected_udata_size);
-    EXPECT_EQ(
-        memcmp(user_data, options.expected_udata, *options.expected_udata_size),
-        0);
+    EXPECT_EQ(memcmp(NFA_DATA(user_data_attr), options.expected_udata,
+                     *options.expected_udata_size),
+              0);
   } else {
     EXPECT_EQ(user_data_attr, nullptr);
     EXPECT_EQ(options.expected_udata_size, nullptr);
@@ -154,8 +177,7 @@ void CheckNetfilterChainAttributes(const NfChainCheckOptions& options) {
     const struct nfattr* handle_attr =
         FindNfAttr(options.hdr, nullptr, NFTA_CHAIN_HANDLE);
     if (handle_attr != nullptr && options.expected_handle != nullptr) {
-      uint64_t handle =
-          be64toh(*(reinterpret_cast<uint64_t*>(NFA_DATA(handle_attr))));
+      uint64_t handle = GetNfAttrU64(handle_attr);
       EXPECT_EQ(handle, *options.expected_handle);
     } else {
       EXPECT_EQ(handle_attr, nullptr);
@@ -167,8 +189,7 @@ void CheckNetfilterChainAttributes(const NfChainCheckOptions& options) {
   const struct nfattr* policy_attr =
       FindNfAttr(options.hdr, nullptr, NFTA_CHAIN_POLICY);
   if (policy_attr != nullptr && options.expected_policy != nullptr) {
-    uint32_t policy =
-        ntohl(*(reinterpret_cast<uint32_t*>(NFA_DATA(policy_attr))));
+    uint32_t policy = GetNfAttrU32(policy_attr);
     EXPECT_EQ(policy, *options.expected_policy);
   } else {
     EXPECT_EQ(policy_attr, nullptr);
@@ -191,8 +212,7 @@ void CheckNetfilterChainAttributes(const NfChainCheckOptions& options) {
   const struct nfattr* flags_attr =
       FindNfAttr(options.hdr, nullptr, NFTA_CHAIN_FLAGS);
   if (flags_attr != nullptr && options.expected_flags != nullptr) {
-    uint32_t flags =
-        ntohl(*(reinterpret_cast<uint32_t*>(NFA_DATA(flags_attr))));
+    uint32_t flags = GetNfAttrU32(flags_attr);
     EXPECT_EQ(flags, *options.expected_flags);
   } else {
     EXPECT_EQ(flags_attr, nullptr);
@@ -203,7 +223,7 @@ void CheckNetfilterChainAttributes(const NfChainCheckOptions& options) {
   const struct nfattr* use_attr =
       FindNfAttr(options.hdr, nullptr, NFTA_CHAIN_USE);
   if (use_attr != nullptr && options.expected_use != nullptr) {
-    uint32_t use = ntohl(*(reinterpret_cast<uint32_t*>(NFA_DATA(use_attr))));
+    uint32_t use = GetNfAttrU32(use_attr);
     EXPECT_EQ(use, *options.expected_use);
   } else {
     EXPECT_EQ(use_attr, nullptr);
@@ -215,14 +235,67 @@ void CheckNetfilterChainAttributes(const NfChainCheckOptions& options) {
       FindNfAttr(options.hdr, nullptr, NFTA_CHAIN_USERDATA);
 
   if (user_data_attr != nullptr && options.expected_udata_size != nullptr) {
-    uint8_t user_data[VALID_USERDATA_SIZE] = {};
     EXPECT_EQ(user_data_attr->nfa_len - NLA_HDRLEN,
               *options.expected_udata_size);
-    std::memcpy(user_data, NFA_DATA(user_data_attr),
-                *options.expected_udata_size);
-    EXPECT_EQ(
-        memcmp(user_data, options.expected_udata, *options.expected_udata_size),
-        0);
+    EXPECT_EQ(memcmp(NFA_DATA(user_data_attr), options.expected_udata,
+                     *options.expected_udata_size),
+              0);
+  } else {
+    EXPECT_EQ(user_data_attr, nullptr);
+    EXPECT_EQ(options.expected_udata_size, nullptr);
+  }
+}
+
+// Helper function to check the netfilter rule attributes.
+// TODO(b/434244017) - Add support for checking the rule expression.
+void CheckNetfilterRuleAttributes(const NfRuleCheckOptions& options) {
+  // Check for the NFTA_RULE_TABLE attribute.
+  const struct nfattr* table_name_attr =
+      FindNfAttr(options.hdr, nullptr, NFTA_RULE_TABLE);
+  if (table_name_attr != nullptr && options.expected_table_name != nullptr) {
+    std::string table_name(
+        reinterpret_cast<const char*>(NFA_DATA(table_name_attr)));
+    EXPECT_EQ(table_name, options.expected_table_name);
+  } else {
+    EXPECT_EQ(table_name_attr, nullptr);
+    EXPECT_EQ(options.expected_table_name, nullptr);
+  }
+
+  // Check for the NFTA_RULE_CHAIN attribute.
+  const struct nfattr* chain_name_attr =
+      FindNfAttr(options.hdr, nullptr, NFTA_RULE_CHAIN);
+  if (chain_name_attr != nullptr && options.expected_chain_name != nullptr) {
+    std::string chain_name(
+        reinterpret_cast<const char*>(NFA_DATA(chain_name_attr)));
+    EXPECT_EQ(chain_name, options.expected_chain_name);
+  } else {
+    EXPECT_EQ(chain_name_attr, nullptr);
+    EXPECT_EQ(options.expected_chain_name, nullptr);
+  }
+
+  if (!options.skip_handle_check) {
+    // Check for the NFTA_RULE_HANDLE attribute.
+    const struct nfattr* handle_attr =
+        FindNfAttr(options.hdr, nullptr, NFTA_RULE_HANDLE);
+    if (handle_attr != nullptr && options.expected_handle != nullptr) {
+      uint64_t handle = GetNfAttrU64(handle_attr);
+      EXPECT_EQ(handle, *options.expected_handle);
+    } else {
+      EXPECT_EQ(handle_attr, nullptr);
+      EXPECT_EQ(options.expected_handle, nullptr);
+    }
+  }
+
+  // Check for the NFTA_RULE_USERDATA attribute.
+  const struct nfattr* user_data_attr =
+      FindNfAttr(options.hdr, nullptr, NFTA_RULE_USERDATA);
+
+  if (user_data_attr != nullptr && options.expected_udata_size != nullptr) {
+    EXPECT_EQ(user_data_attr->nfa_len - NLA_HDRLEN,
+              *options.expected_udata_size);
+    EXPECT_EQ(memcmp(NFA_DATA(user_data_attr), options.expected_udata,
+                     *options.expected_udata_size),
+              0);
   } else {
     EXPECT_EQ(user_data_attr, nullptr);
     EXPECT_EQ(options.expected_udata_size, nullptr);
@@ -399,7 +472,7 @@ bool NlReq::MsgTypeToken(const std::string& token) {
       {"deltable", NFT_MSG_DELTABLE}, {"destroytable", NFT_MSG_DESTROYTABLE},
       {"newchain", NFT_MSG_NEWCHAIN}, {"getchain", NFT_MSG_GETCHAIN},
       {"delchain", NFT_MSG_DELCHAIN}, {"destroychain", NFT_MSG_DESTROYCHAIN},
-      {"newrule", NFT_MSG_NEWRULE}};
+      {"newrule", NFT_MSG_NEWRULE},   {"getrule", NFT_MSG_GETRULE}};
   auto it = token_to_msg_type.find(token);
   if (it != token_to_msg_type.end()) {
     EXPECT_FALSE(msg_type_set_) << "Message type already set: " << msg_type_;
