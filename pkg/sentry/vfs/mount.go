@@ -1371,15 +1371,19 @@ func (vfs *VirtualFilesystem) GenerateProcMounts(ctx context.Context, taskRootDi
 		}
 		path, err := vfs.PathnameReachable(ctx, taskRootDir, mntRootVD)
 		if err != nil {
-			// For some reason we didn't get a path. Log a warning
-			// and run with empty path.
+			// For some reason we didn't get a path.
 			ctx.Warningf("VFS.GenerateProcMounts: error getting pathname for mount root: %v", err)
-			path = ""
+			continue
 		}
 		if path == "" {
-			// Either an error occurred, or path is not reachable
-			// from root.
-			break
+			// The path is not reachable from root.
+			continue
+		}
+		if mp := vfs.getMountPromise(mntRootVD); mp != nil && !mp.resolved.Load() {
+			// Generate fake information for unresolved mount promises for
+			// consistency with GenerateProcMountInfo.
+			fmt.Fprintf(buf, "none %s promise promise 0 0\n", path)
+			continue
 		}
 
 		mntOpts := mnt.Options()
@@ -1464,6 +1468,14 @@ func (vfs *VirtualFilesystem) GenerateProcMountInfo(ctx context.Context, taskRoo
 		}
 		if pathFromFS == "" {
 			// The path is not reachable from root.
+			continue
+		}
+		if mp := vfs.getMountPromise(mntRootVD); mp != nil && !mp.resolved.Load() {
+			// If the caller is reponsible for resolving the mount promise,
+			// blocking below in StatAt will result in deadlock. Some
+			// applications expect mount promises to appear in /proc/mountinfo
+			// (b/388102869), so generate fake information to avoid this.
+			fmt.Fprintf(buf, "0 0 0:0 %s %s promise - promise none promise\n", manglePath(pathFromFS), manglePath(pathFromRoot))
 			continue
 		}
 		// Stat the mount root to get the major/minor device numbers.
