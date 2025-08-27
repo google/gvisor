@@ -302,6 +302,17 @@ func (nf *NFTables) FlushAddressFamily(family stack.AddressFamily) *syserr.Annot
 	return nil
 }
 
+// GetAddressFamilyTables returns the tables for the given address family.
+func (nf *NFTables) GetAddressFamilyTables(family stack.AddressFamily) map[string]*Table {
+	afFilter := nf.filters[family]
+	if afFilter == nil {
+		// An empty map is safe to iterate over.
+		return nil
+	}
+
+	return afFilter.tables
+}
+
 // GetTable validates the inputs and gets a table if it exists, error otherwise.
 func (nf *NFTables) GetTable(family stack.AddressFamily, tableName string, portID uint32) (*Table, *syserr.AnnotatedError) {
 	// Ensures address family is valid.
@@ -647,6 +658,11 @@ func (t *Table) GetChainByHandle(chainHandle uint64) (*Chain, *syserr.AnnotatedE
 		return nil, syserr.NewAnnotatedError(syserr.ErrNoFileOrDir, fmt.Sprintf("chain %d not found for table %s", chainHandle, t.name))
 	}
 	return c, nil
+}
+
+// GetChains returns a map of all chains for the table.
+func (t *Table) GetChains() map[string]*Chain {
+	return t.chains
 }
 
 // AddChain makes a new chain for the table. Can return an error if a chain by

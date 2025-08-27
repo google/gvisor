@@ -46,7 +46,6 @@ type processor struct {
 
 func (p *processor) start(wg *sync.WaitGroup) {
 	defer wg.Done()
-	defer p.sleeper.Done()
 	for {
 		switch w := p.sleeper.Fetch(true); {
 		case w == &p.packetWaker:

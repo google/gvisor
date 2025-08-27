@@ -87,9 +87,9 @@ const (
 
 // addressFamilyProtocols maps address families to their protocol number.
 var addressFamilyProtocols = map[stack.AddressFamily]uint8{
-	stack.IP:     linux.NFPROTO_INET,
+	stack.IP:     linux.NFPROTO_IPV4,
 	stack.IP6:    linux.NFPROTO_IPV6,
-	stack.Inet:   linux.NFPROTO_IPV6,
+	stack.Inet:   linux.NFPROTO_INET,
 	stack.Arp:    linux.NFPROTO_ARP,
 	stack.Bridge: linux.NFPROTO_BRIDGE,
 	stack.Netdev: linux.NFPROTO_NETDEV,
@@ -930,17 +930,17 @@ func VerdictCodeToString(v uint32) string {
 	return fmt.Sprintf("invalid verdict: %d", v)
 }
 
-// netlinkAFToStackAF maps address families from linux/socket.h to their corresponding
-// netfilter address families.
+// netlinkAFToStackAF maps address families from linux/netfilter.h to their
+// corresponding netfilter address families.
 // From linux/include/uapi/linux/netfilter.h
 var netlinkAFToStackAF = map[uint8]stack.AddressFamily{
-	linux.AF_UNSPEC:    stack.Unspec,
-	linux.AF_UNIX:      stack.Inet,
-	linux.AF_INET:      stack.IP,
-	linux.AF_AX25:      stack.Arp,
-	linux.AF_APPLETALK: stack.Netdev,
-	linux.AF_BRIDGE:    stack.Bridge,
-	linux.AF_INET6:     stack.IP6,
+	linux.NFPROTO_UNSPEC: stack.Unspec,
+	linux.NFPROTO_INET:   stack.Inet,
+	linux.NFPROTO_IPV4:   stack.IP,
+	linux.NFPROTO_ARP:    stack.Arp,
+	linux.NFPROTO_NETDEV: stack.Netdev,
+	linux.NFPROTO_BRIDGE: stack.Bridge,
+	linux.NFPROTO_IPV6:   stack.IP6,
 }
 
 // AFtoNetlinkAF converts a generic address family to a netfilter address family.

@@ -3,19 +3,236 @@
 
 package pagetables
 
-// iterateRangeCanonical walks a canonical range.
+// When walking page tables, get the address of the next boundary,
+// or the end address of the range if that comes earlier.
+// addrEnd calculates the end of the address range for the given size covering addr.
+// addrEnd is a power of two.
+//
+//go:nosplit
+func mapaddrEnd(addr, end, size uintptr) uintptr {
+	next := (addr + size) &^ (size - 1)
+	if next < addr || next > end {
+		return end
+	}
+	return next
+}
+
+// walkPTEs iterates over the PTEs in the given range and calls the visitor for each one.
+// Clear entries are counted if the visitor does not require allocation.
+//
+// Returns:
+//   - ok: whether the walk was successful.
+//   - clearEntries: number of clear entries.
+//
+//go:nosplit
+func (w *mapWalker) walkPTEs(entries *PTEs, start, end uintptr) (bool, uint16) {
+	var clearEntries uint16
+	for start < end {
+		pteIndex := uint16((start & pteMask) >> pteShift)
+		entry := &entries[pteIndex]
+		if !entry.Valid() && !w.visitor.requiresAlloc() {
+			clearEntries++
+			start += pteSize
+			continue
+		}
+
+		if !w.visitor.visit(uintptr(start&^(pteSize-1)), entry, pteSize-1) {
+			return false, clearEntries
+		}
+		if !entry.Valid() && !w.visitor.requiresAlloc() {
+			clearEntries++
+		}
+
+		start += pteSize
+	}
+	return true, clearEntries
+}
+
+// walkPMDs iterates over the PMD entries in the given range.
+//
+// This function implements the algorithm to maximize the use of super/sect pages whenever
+// possible. Whether a super page is provided will be clear through the range
+// provided in the callback.
+//
+// Returns:
+//   - ok: whether the walk was successful.
+//   - clearEntries: number of clear entries.
+//
+//go:nosplit
+func (w *mapWalker) walkPMDs(pmdEntries *PTEs, start, end uintptr) (bool, uint16) {
+	var clearEntries uint16
+	for start < end {
+		var pteEntries *PTEs
+		nextBoundary := mapaddrEnd(start, end, pmdSize)
+		pmdIndex := uint16((start & pmdMask) >> pmdShift)
+		pmdEntry := &pmdEntries[pmdIndex]
+		if !pmdEntry.Valid() {
+			if !w.visitor.requiresAlloc() {
+
+				clearEntries++
+				start = nextBoundary
+				continue
+			}
+
+			if start&(pmdSize-1) == 0 && end-start >= pmdSize {
+				pmdEntry.SetSuper()
+				if !w.visitor.visit(uintptr(start&^(pmdSize-1)), pmdEntry, pmdSize-1) {
+					return false, clearEntries
+				}
+				if pmdEntry.Valid() {
+					start = nextBoundary
+					continue
+				}
+			}
+
+			pteEntries = w.pageTables.Allocator.NewPTEs()
+			pmdEntry.setPageTable(w.pageTables, pteEntries)
+
+		} else if pmdEntry.IsSuper() {
+
+			if w.visitor.requiresSplit() && (start&(pmdSize-1) != 0 || end < mapnext(start, pmdSize)) {
+
+				pteEntries = w.pageTables.Allocator.NewPTEs()
+				for index := uint16(0); index < entriesPerPage; index++ {
+					pteEntries[index].Set(
+						pmdEntry.Address()+(pteSize*uintptr(index)),
+						pmdEntry.Opts())
+				}
+				pmdEntry.setPageTable(w.pageTables, pteEntries)
+			} else {
+
+				if !w.visitor.visit(uintptr(start&^(pmdSize-1)), pmdEntry, pmdSize-1) {
+					return false, clearEntries
+				}
+
+				if !pmdEntry.Valid() {
+					clearEntries++
+				}
+
+				start = nextBoundary
+				continue
+			}
+		} else {
+			pteEntries = w.pageTables.Allocator.LookupPTEs(pmdEntry.Address())
+		}
+
+		ok, clearPTEntries := w.walkPTEs(pteEntries, start, nextBoundary)
+		if !ok {
+			return false, clearEntries
+		}
+
+		if clearPTEntries == entriesPerPage {
+			pmdEntry.Clear()
+			w.pageTables.Allocator.FreePTEs(pteEntries)
+			clearEntries++
+		}
+
+		start = nextBoundary
+	}
+	return true, clearEntries
+}
+
+// walkPUDs iterates over the PUD entries in the given range.
+//
+// This function implements the algorithm to maximize the use of super/sect pages whenever
+// possible. Whether a super page is provided will be clear through the range
+// provided in the callback.
+//
+// Returns:
+//   - ok: whether the walk was successful.
+//   - clearEntries: number of clear entries.
+//
+//go:nosplit
+func (w *mapWalker) walkPUDs(pudEntries *PTEs, start, end uintptr) (bool, uint16) {
+	var clearEntries uint16
+	for start < end {
+		var pmdEntries *PTEs
+		nextBoundary := mapaddrEnd(start, end, pudSize)
+		pudIndex := uint16((start & pudMask) >> pudShift)
+		pudEntry := &pudEntries[pudIndex]
+		if !pudEntry.Valid() {
+			if !w.visitor.requiresAlloc() {
+
+				clearEntries++
+				start = nextBoundary
+				continue
+			}
+
+			if start&(pudSize-1) == 0 && end-start >= pudSize {
+				pudEntry.SetSuper()
+				if !w.visitor.visit(uintptr(start&^(pudSize-1)), pudEntry, pudSize-1) {
+					return false, clearEntries
+				}
+				if pudEntry.Valid() {
+
+					start = nextBoundary
+					continue
+				}
+			}
+
+			pmdEntries = w.pageTables.Allocator.NewPTEs()
+			pudEntry.setPageTable(w.pageTables, pmdEntries)
+
+		} else if pudEntry.IsSuper() {
+
+			if w.visitor.requiresSplit() && (start&(pudSize-1) != 0 || end < mapnext(start, pudSize)) {
+
+				pmdEntries = w.pageTables.Allocator.NewPTEs()
+				for index := uint16(0); index < entriesPerPage; index++ {
+					pmdEntries[index].SetSuper()
+					pmdEntries[index].Set(
+						pudEntry.Address()+(pmdSize*uintptr(index)),
+						pudEntry.Opts())
+				}
+				pudEntry.setPageTable(w.pageTables, pmdEntries)
+			} else {
+
+				if !w.visitor.visit(uintptr(start&^(pudSize-1)), pudEntry, pudSize-1) {
+					return false, clearEntries
+				}
+
+				if !pudEntry.Valid() {
+					clearEntries++
+				}
+
+				start = nextBoundary
+				continue
+			}
+		} else {
+			pmdEntries = w.pageTables.Allocator.LookupPTEs(pudEntry.Address())
+		}
+
+		ok, clearPMDEntries := w.walkPMDs(pmdEntries, start, nextBoundary)
+		if !ok {
+			return false, clearEntries
+		}
+
+		if clearPMDEntries == entriesPerPage {
+			pudEntry.Clear()
+			w.pageTables.Allocator.FreePTEs(pmdEntries)
+			clearEntries++
+		}
+
+		start = nextBoundary
+	}
+	return true, clearEntries
+}
+
+// iterateRangeCanonical iterates over all appropriate levels of page tables for the given range.
+// see walker_generic.go for more details.
 //
 //go:nosplit
 func (w *mapWalker) iterateRangeCanonical(start, end uintptr) bool {
-	for pgdIndex := uint16((start & pgdMask) >> pgdShift); start < end && pgdIndex < entriesPerPage; pgdIndex++ {
-		var (
-			pgdEntry   = &w.pageTables.root[pgdIndex]
-			pudEntries *PTEs
-		)
+
+	for start < end {
+		var pudEntries *PTEs
+		nextBoundary := mapaddrEnd(start, end, pgdSize)
+		pgdIndex := uint16((start & pgdMask) >> pgdShift)
+		pgdEntry := &w.pageTables.root[pgdIndex]
 		if !pgdEntry.Valid() {
 			if !w.visitor.requiresAlloc() {
 
-				start = mapnext(start, pgdSize)
+				start = nextBoundary
 				continue
 			}
 
@@ -25,162 +242,17 @@ func (w *mapWalker) iterateRangeCanonical(start, end uintptr) bool {
 			pudEntries = w.pageTables.Allocator.LookupPTEs(pgdEntry.Address())
 		}
 
-		clearPUDEntries := uint16(0)
-
-		for pudIndex := uint16((start & pudMask) >> pudShift); start < end && pudIndex < entriesPerPage; pudIndex++ {
-			var (
-				pudEntry   = &pudEntries[pudIndex]
-				pmdEntries *PTEs
-			)
-			if !pudEntry.Valid() {
-				if !w.visitor.requiresAlloc() {
-
-					clearPUDEntries++
-					start = mapnext(start, pudSize)
-					continue
-				}
-
-				if start&(pudSize-1) == 0 && end-start >= pudSize {
-					pudEntry.SetSuper()
-					if !w.visitor.visit(uintptr(start&^(pudSize-1)), pudEntry, pudSize-1) {
-						return false
-					}
-					if pudEntry.Valid() {
-						start = mapnext(start, pudSize)
-						continue
-					}
-				}
-
-				pmdEntries = w.pageTables.Allocator.NewPTEs()
-				pudEntry.setPageTable(w.pageTables, pmdEntries)
-
-			} else if pudEntry.IsSuper() {
-
-				if w.visitor.requiresSplit() && (start&(pudSize-1) != 0 || end < mapnext(start, pudSize)) {
-
-					pmdEntries = w.pageTables.Allocator.NewPTEs()
-					for index := uint16(0); index < entriesPerPage; index++ {
-						pmdEntries[index].SetSuper()
-						pmdEntries[index].Set(
-							pudEntry.Address()+(pmdSize*uintptr(index)),
-							pudEntry.Opts())
-					}
-					pudEntry.setPageTable(w.pageTables, pmdEntries)
-				} else {
-
-					if !w.visitor.visit(uintptr(start&^(pudSize-1)), pudEntry, pudSize-1) {
-						return false
-					}
-
-					if !pudEntry.Valid() {
-						clearPUDEntries++
-					}
-
-					start = mapnext(start, pudSize)
-					continue
-				}
-			} else {
-				pmdEntries = w.pageTables.Allocator.LookupPTEs(pudEntry.Address())
-			}
-
-			clearPMDEntries := uint16(0)
-
-			for pmdIndex := uint16((start & pmdMask) >> pmdShift); start < end && pmdIndex < entriesPerPage; pmdIndex++ {
-				var (
-					pmdEntry   = &pmdEntries[pmdIndex]
-					pteEntries *PTEs
-				)
-				if !pmdEntry.Valid() {
-					if !w.visitor.requiresAlloc() {
-
-						clearPMDEntries++
-						start = mapnext(start, pmdSize)
-						continue
-					}
-
-					if start&(pmdSize-1) == 0 && end-start >= pmdSize {
-						pmdEntry.SetSuper()
-						if !w.visitor.visit(uintptr(start&^(pmdSize-1)), pmdEntry, pmdSize-1) {
-							return false
-						}
-						if pmdEntry.Valid() {
-							start = mapnext(start, pmdSize)
-							continue
-						}
-					}
-
-					pteEntries = w.pageTables.Allocator.NewPTEs()
-					pmdEntry.setPageTable(w.pageTables, pteEntries)
-
-				} else if pmdEntry.IsSuper() {
-
-					if w.visitor.requiresSplit() && (start&(pmdSize-1) != 0 || end < mapnext(start, pmdSize)) {
-
-						pteEntries = w.pageTables.Allocator.NewPTEs()
-						for index := uint16(0); index < entriesPerPage; index++ {
-							pteEntries[index].Set(
-								pmdEntry.Address()+(pteSize*uintptr(index)),
-								pmdEntry.Opts())
-						}
-						pmdEntry.setPageTable(w.pageTables, pteEntries)
-					} else {
-
-						if !w.visitor.visit(uintptr(start&^(pmdSize-1)), pmdEntry, pmdSize-1) {
-							return false
-						}
-
-						if !pmdEntry.Valid() {
-							clearPMDEntries++
-						}
-
-						start = mapnext(start, pmdSize)
-						continue
-					}
-				} else {
-					pteEntries = w.pageTables.Allocator.LookupPTEs(pmdEntry.Address())
-				}
-
-				clearPTEEntries := uint16(0)
-
-				for pteIndex := uint16((start & pteMask) >> pteShift); start < end && pteIndex < entriesPerPage; pteIndex++ {
-					var (
-						pteEntry = &pteEntries[pteIndex]
-					)
-					if !pteEntry.Valid() && !w.visitor.requiresAlloc() {
-						clearPTEEntries++
-						start += pteSize
-						continue
-					}
-
-					if !w.visitor.visit(uintptr(start&^(pteSize-1)), pteEntry, pteSize-1) {
-						return false
-					}
-					if !pteEntry.Valid() && !w.visitor.requiresAlloc() {
-						clearPTEEntries++
-					}
-
-					start += pteSize
-					continue
-				}
-
-				if clearPTEEntries == entriesPerPage {
-					pmdEntry.Clear()
-					w.pageTables.Allocator.FreePTEs(pteEntries)
-					clearPMDEntries++
-				}
-			}
-
-			if clearPMDEntries == entriesPerPage {
-				pudEntry.Clear()
-				w.pageTables.Allocator.FreePTEs(pmdEntries)
-				clearPUDEntries++
-			}
+		ok, clearPUDEntries := w.walkPUDs(pudEntries, start, nextBoundary)
+		if !ok {
+			return false
 		}
 
 		if clearPUDEntries == entriesPerPage {
 			pgdEntry.Clear()
 			w.pageTables.Allocator.FreePTEs(pudEntries)
 		}
+
+		start = nextBoundary
 	}
 	return true
 }
