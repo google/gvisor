@@ -8,6 +8,8 @@ name: "Issue reviver"
 jobs:
   issue_reviver:
     runs-on: ubuntu-latest
+    permissions:
+      issues: write
     steps:
     - uses: actions/checkout@v5
       if: github.repository == 'google/gvisor'
