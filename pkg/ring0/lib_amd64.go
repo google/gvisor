@@ -88,6 +88,7 @@ var (
 	hasXSAVEOPT   bool
 	hasXSAVE      bool
 	hasFSGSBASE   bool
+	hasLA57       bool
 	validXCR0Mask uintptr
 	localXCR0     uintptr
 )
@@ -100,19 +101,12 @@ var (
 func Init(fs cpuid.FeatureSet) {
 	// Initialize all sizes.
 	VirtualAddressBits = uintptr(fs.VirtualAddressBits())
-	// TODO(gvisor.dev/issue/7349): introduce support for 5-level paging.
-	// Four-level page tables allows to address up to 48-bit virtual
-	// addresses.
-	if VirtualAddressBits > 48 {
-		VirtualAddressBits = 48
-	}
 	if PhysicalAddressBits == 0 {
 		PhysicalAddressBits = uintptr(fs.PhysicalAddressBits())
 	}
 	UserspaceSize = uintptr(1) << (VirtualAddressBits - 1)
 	MaximumUserAddress = (UserspaceSize - 1) & ^uintptr(hostarch.PageSize-1)
 	KernelStartAddress = ^uintptr(0) - (UserspaceSize - 1)
-
 	// Initialize all functions.
 	hasSMEP = fs.HasFeature(cpuid.X86FeatureSMEP)
 	hasSMAP = fs.HasFeature(cpuid.X86FeatureSMAP)
@@ -121,6 +115,7 @@ func Init(fs cpuid.FeatureSet) {
 	hasXSAVEOPT = fs.UseXsaveopt()
 	hasXSAVE = fs.UseXsave()
 	hasFSGSBASE = fs.HasFeature(cpuid.X86FeatureFSGSBase)
+	hasLA57 = fs.HasFeature(cpuid.X86FeatureLA57)
 	validXCR0Mask = uintptr(fs.ValidXCR0Mask())
 	if hasXSAVE {
 		XCR0DisabledMask := uintptr((1 << 9) | (1 << 17) | (1 << 18))
