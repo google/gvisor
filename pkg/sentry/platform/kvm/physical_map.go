@@ -107,15 +107,20 @@ func fillAddressSpace() (specialRegions []specialVirtualRegion) {
 	}
 	required := uintptr(requiredAddr)
 	current := required // Attempted mmap size.
-	for filled := uintptr(0); filled < required && current > 0; {
-		suggestedAddr := uintptr(0)
-		if ring0.VirtualAddressBits > 48 {
-			// Even though it's safe to pass a high hint address on older kernel or
-			// older machine without 5-level paging support. We need to guard
-			// passing the hint based on `ring0.VirtualAddressBits` because Sentry might
-			// not support 5-level paging for the underlying CPU uarch i.e. arm64.
-			suggestedAddr = uintptr(1 << ring0.PhysicalAddressBits)
-		}
+	filled := uintptr(0)
+	suggestedAddr := uintptr(0)
+	if ring0.VirtualAddressBits > 48 {
+		// Pass a hint address above 47 bits to indicate to the kernel that
+		// we can handle, and want, mappings above 47 bits:
+		// https://docs.kernel.org/arch/x86/x86_64/5level-paging.html#user-space-and-large-virtual-address-space.
+		// Even though it's safe to pass a high hint address on older kernel or
+		// older machine without 5-level paging support. We need to guard
+		// passing the hint based on `ring0.VirtualAddressBits` because Sentry might
+		// not support 5-level paging for the underlying CPU uarch i.e. arm64.
+		suggestedAddr = ring0.UserspaceSize - hostarch.PageSize
+	}
+	var lastMmapErrno unix.Errno
+	for filled < required && current > 0 {
 		addr, errno := hostsyscall.RawSyscall6(
 			unix.SYS_MMAP,
 			suggestedAddr,
@@ -128,6 +133,7 @@ func fillAddressSpace() (specialRegions []specialVirtualRegion) {
 			// One page is the smallest mapping that can be allocated.
 			if current == hostarch.PageSize {
 				current = 0
+				lastMmapErrno = errno
 				break
 			}
 			// Attempt half the size; overflow not possible.
@@ -168,6 +174,17 @@ func fillAddressSpace() (specialRegions []specialVirtualRegion) {
 		}
 	}
 	if current == 0 {
+		log.Warningf("Filling address space failed (VirtualAddressBits=%d PhysicalAddressBits=%d vSize=%#x pSize=%#x faultBlockSize=%#x required=%#x filled=%#x); last mmap errno: %v; VMAs:", ring0.VirtualAddressBits, ring0.PhysicalAddressBits, vSize, pSize, faultBlockSize, required, filled, lastMmapErrno)
+		err := applyVirtualRegions(func(vr virtualRegion) {
+			ps := "p"
+			if vr.shared {
+				ps = "s"
+			}
+			log.Warningf("%x-%x %v%s %08x %s", vr.region.virtual, vr.region.virtual+vr.region.length, vr.accessType, ps, vr.offset, vr.filename)
+		})
+		if err != nil {
+			log.Warningf("Failed to get all VMAs: %v", err)
+		}
 		panic("filling address space failed")
 	}
 	sort.Slice(specialRegions, func(i, j int) bool {
