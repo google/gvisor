@@ -17,6 +17,18 @@ go_template_instance(
     },
 )
 
+go_template_instance(
+    name = "vcpu_list",
+    out = "vcpu_list.go",
+    package = "kvm",
+    prefix = "vCPU",
+    template = "//pkg/ilist:generic_list",
+    types = {
+        "Element": "*vCPU",
+        "Linker": "*vCPU",
+    },
+)
+
 config_setting(
     name = "debug_build",
     values = {
@@ -69,6 +81,7 @@ go_library(
         "physical_map_amd64.go",
         "physical_map_arm64.go",
         "seccomp_mmap_unsafe.go",
+        "vcpu_list.go",
         "virtual_map.go",
     ],
     visibility = ["//pkg/sentry:internal"],

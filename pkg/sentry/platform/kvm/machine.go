@@ -71,6 +71,17 @@ type machine struct {
 	// vCPUsByID are the machine vCPUs, can be indexed by the vCPU's ID.
 	vCPUsByID []*vCPU
 
+	// vCPUList is a list of vCPUs, ordered by most-recently-used.
+	// The most recently used vCPUs are at the end of the list.
+	vCPUList vCPUList
+
+	// numRecentVCPUs tracks the number of vCPUs considered recently used.
+	numRecentVCPUs atomicbitops.Int32
+
+	// recentVCPUThreshold is the maximum number of vCPUs to track as
+	// recently used before triggering a reordering of vCPUList.
+	recentVCPUThreshold int32
+
 	// usedVCPUs is the number of vCPUs that have been used from the
 	// vCPUsByID pool.
 	usedVCPUs int
@@ -213,6 +224,9 @@ type vCPU struct {
 
 	// dieState holds state related to vCPU death.
 	dieState dieState
+
+	recentlyUsed atomicbitops.Bool
+	vCPUEntry
 }
 
 type dieState struct {
@@ -241,6 +255,7 @@ func (m *machine) createVCPU(id int) (*vCPU, error) {
 	}
 	c.CPU.Init(&m.kernel, c.id, c)
 	m.vCPUsByID[c.id] = c
+	m.vCPUList.PushFront(c)
 
 	// Ensure the signal mask is correct.
 	if err := c.setSignalMask(); err != nil {
@@ -533,6 +548,10 @@ func (m *machine) Get() *vCPU {
 	runtime.UnlockOSThread()
 	m.mu.Lock()
 
+	if m.numRecentVCPUs.Load() > m.recentVCPUThreshold {
+		m.resortRecentlyUsedListLocked()
+	}
+
 	for {
 		runtime.LockOSThread()
 		tid = hosttid.Current()
@@ -558,10 +577,12 @@ func (m *machine) Get() *vCPU {
 		}
 
 		// Scan for an available vCPU.
-		for origTID, c := range m.vCPUsByTID {
+		for c := m.vCPUList.Front(); c != nil; c = c.Next() {
+			origTID := c.tid.Load()
 			if c.state.CompareAndSwap(vCPUReady, vCPUUser) {
 				delete(m.vCPUsByTID, origTID)
 				m.vCPUsByTID[tid] = c
+				c.setRecentlyUsed(true)
 				m.mu.Unlock()
 				c.loadSegments(tid)
 				getVCPUCounter.Increment(&getVCPUAcquisitionUnused)
@@ -570,7 +591,7 @@ func (m *machine) Get() *vCPU {
 		}
 
 		// Scan for something not in user mode.
-		for origTID, c := range m.vCPUsByTID {
+		for c := m.vCPUList.Front(); c != nil; c = c.Next() {
 			if !c.state.CompareAndSwap(vCPUGuest, vCPUGuest|vCPUWaiter) {
 				continue
 			}
@@ -588,8 +609,10 @@ func (m *machine) Get() *vCPU {
 			}
 
 			// Steal the vCPU.
+			origTID := c.tid.Load()
 			delete(m.vCPUsByTID, origTID)
 			m.vCPUsByTID[tid] = c
+			c.setRecentlyUsed(true)
 			m.mu.Unlock()
 			c.loadSegments(tid)
 			getVCPUCounter.Increment(&getVCPUAcquisitionStolen)
@@ -637,6 +660,51 @@ func (m *machine) dropPageTables(pt *pagetables.PageTables) {
 	}
 }
 
+// getMaxVCPU get max vCPU number
+func (m *machine) getMaxVCPU() {
+	maxVCPUs, errno := hostsyscall.RawSyscall(unix.SYS_IOCTL, uintptr(m.fd), KVM_CHECK_EXTENSION, _KVM_CAP_MAX_VCPUS)
+	if errno != 0 {
+		m.maxVCPUs = _KVM_NR_VCPUS
+	} else {
+		m.maxVCPUs = int(maxVCPUs)
+	}
+
+	// The goal here is to avoid vCPU contentions for reasonable workloads.
+	// But "reasonable" isn't defined well in this case. Let's say that CPU
+	// overcommit with factor 2 is still acceptable. We allocate a set of
+	// vCPU for each goruntime processor (P) and two sets of vCPUs to run
+	// user code.
+	rCPUs := runtime.GOMAXPROCS(0)
+	if 3*rCPUs < m.maxVCPUs {
+		m.maxVCPUs = 3 * rCPUs
+	}
+	m.recentVCPUThreshold = int32(m.maxVCPUs * 2 / 3)
+}
+
+// resortRecentlyUsedListLocked reorders the m.vCPUList so that the most
+// recently used vCPUs are located at the back. It either reset
+// `vCPU.recentlyUsed` flag for all vCPUs.
+//
+// Precondition: callers must hold m.mu for writing.
+func (m *machine) resortRecentlyUsedListLocked() {
+	var activeList vCPUList
+	cur := m.vCPUList.Front()
+	next := cur.Next()
+	for {
+		if cur.recentlyUsed.Load() {
+			m.vCPUList.Remove(cur)
+			activeList.PushBack(cur)
+			cur.setRecentlyUsed(false)
+		}
+		cur = next
+		if cur == nil {
+			break
+		}
+		next = cur.Next()
+	}
+	m.vCPUList.PushBackList(&activeList)
+}
+
 // lock marks the vCPU as in user mode.
 //
 // This should only be called directly when known to be safe, i.e. when
@@ -644,6 +712,7 @@ func (m *machine) dropPageTables(pt *pagetables.PageTables) {
 //
 //go:nosplit
 func (c *vCPU) lock() {
+	c.setRecentlyUsed(true)
 	atomicbitops.OrUint32(&c.state, vCPUUser)
 }
 
@@ -697,6 +766,17 @@ func (c *vCPU) NotifyInterrupt() {
 
 // pid is used below in bounce.
 var pid = unix.Getpid()
+
+func (c *vCPU) setRecentlyUsed(v bool) {
+	old := c.recentlyUsed.Swap(v)
+	if v != old {
+		if v {
+			c.machine.numRecentVCPUs.Add(1)
+		} else {
+			c.machine.numRecentVCPUs.Add(-1)
+		}
+	}
+}
 
 // bounce forces a return to the kernel or to host mode.
 //
