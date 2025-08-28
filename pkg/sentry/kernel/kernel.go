@@ -1993,9 +1993,9 @@ func (k *Kernel) ReplaceFSContextRoots(ctx context.Context, oldRoot vfs.VirtualD
 	k.tasks.mu.RLock()
 	oldRootDecRefs := 0
 	k.tasks.forEachTaskLocked(func(t *Task) {
-		t.mu.Lock()
+		t.mu.Lock() // To prevent t's task goroutine from unsharing its fsContext from under us.
 		defer t.mu.Unlock()
-		if fsc := t.fsContext; fsc != nil {
+		if fsc := t.FSContext(); fsc != nil {
 			fsc.mu.Lock()
 			defer fsc.mu.Unlock()
 			if fsc.root == oldRoot {

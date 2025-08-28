@@ -159,7 +159,6 @@ func (ts *TaskSet) newTask(ctx context.Context, cfg *TaskConfig) (*Task, error) 
 		signalMask:      atomicbitops.FromUint64(uint64(cfg.SignalMask)),
 		signalStack:     linux.SignalStack{Flags: linux.SS_DISABLE},
 		image:           *image,
-		fsContext:       cfg.FSContext,
 		fdTable:         cfg.FDTable,
 		k:               cfg.Kernel,
 		ptraceTracees:   make(map[*Task]struct{}),
@@ -183,6 +182,7 @@ func (ts *TaskSet) newTask(ctx context.Context, cfg *TaskConfig) (*Task, error) 
 	}
 	t.netns = cfg.NetworkNamespace
 	t.creds.Store(cfg.Credentials)
+	t.fsContext.Store(cfg.FSContext)
 	t.endStopCond.L = &t.tg.signalHandlers.mu
 	// We don't construct t.blockingTimer until Task.run(); see that function
 	// for justification.

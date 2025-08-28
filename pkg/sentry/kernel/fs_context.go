@@ -61,6 +61,20 @@ func NewFSContext(root, cwd vfs.VirtualDentry, umask uint) *FSContext {
 	return &f
 }
 
+// destroy destroys the FSContext.
+//
+// Preconditions: f must have no refcount.
+func (f *FSContext) destroy(ctx context.Context) {
+	// Hold f.mu so that we don't race with RootDirectory() and
+	// WorkingDirectory().
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.root.DecRef(ctx)
+	f.root = vfs.VirtualDentry{}
+	f.cwd.DecRef(ctx)
+	f.cwd = vfs.VirtualDentry{}
+}
+
 // DecRef implements RefCounter.DecRef.
 //
 // When f reaches zero references, DecRef will be called on both root and cwd
@@ -71,15 +85,7 @@ func NewFSContext(root, cwd vfs.VirtualDentry, umask uint) *FSContext {
 // proc files or other mechanisms.
 func (f *FSContext) DecRef(ctx context.Context) {
 	f.FSContextRefs.DecRef(func() {
-		// Hold f.mu so that we don't race with RootDirectory() and
-		// WorkingDirectory().
-		f.mu.Lock()
-		defer f.mu.Unlock()
-
-		f.root.DecRef(ctx)
-		f.root = vfs.VirtualDentry{}
-		f.cwd.DecRef(ctx)
-		f.cwd = vfs.VirtualDentry{}
+		f.destroy(ctx)
 	})
 }
 
@@ -202,7 +208,7 @@ func (f *FSContext) checkAndPreventSharingOutsideTG(tg *ThreadGroup) bool {
 
 	tgCount := int64(0)
 	tg.ForEachTask(func(t *Task) bool {
-		if t.fsContext == f {
+		if t.FSContext() == f {
 			tgCount++
 		}
 		return true
@@ -232,4 +238,21 @@ func (f *FSContext) share() bool {
 	}
 	f.IncRef()
 	return true
+}
+
+// unshareFromTask removes the FSContext f from the given Task t and replaces it with newF.
+// It returns a bool indicating whether f needs to be destroyed.
+
+// This func operates without compromising a concurrent checkAndPreventSharingOutsideTG(): t's
+// association with f is severed atomically by holding f.mu, allowing the concurrent func to
+// correctly ascribe extra ref counts to tasks outside of t's thread group.
+//
+// Preconditions: The caller must be on the task goroutine and must hold t.mu.
+func (f *FSContext) unshareFromTask(t *Task, newF *FSContext) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	t.fsContext.Store(newF)
+	destroy := false
+	f.FSContextRefs.DecRef(func() { destroy = true })
+	return destroy
 }

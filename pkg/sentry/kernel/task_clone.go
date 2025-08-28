@@ -192,9 +192,9 @@ func (t *Task) Clone(args *linux.CloneArgs) (ThreadID, *SyscallControl, error) {
 
 	var fsContext *FSContext
 	if args.Flags&linux.CLONE_FS == 0 || args.Flags&linux.CLONE_NEWNS != 0 {
-		fsContext = t.fsContext.Fork()
+		fsContext = t.FSContext().Fork()
 	} else {
-		fsContext = t.fsContext
+		fsContext = t.FSContext()
 		if !fsContext.share() {
 			// Linux fails clone with EAGAIN if there is a concurrent execve, see kernel/fork.c:copy_fs().
 			return 0, nil, linuxerr.EAGAIN
@@ -518,7 +518,7 @@ func (t *Task) Setns(fd *vfs.FileDescription, flags int32) error {
 			!t.Credentials().HasCapability(linux.CAP_SYS_ADMIN) {
 			return linuxerr.EPERM
 		}
-		oldFSContext := t.fsContext
+		oldFSContext := t.FSContext()
 		// The current task has to be an exclusive owner of its fs context.
 		if oldFSContext.ReadRefs() != 1 {
 			return linuxerr.EINVAL
@@ -535,7 +535,7 @@ func (t *Task) Setns(fd *vfs.FileDescription, flags int32) error {
 		ns.IncRef()
 		t.mu.Lock()
 		t.mountNamespace = ns
-		t.fsContext = fsContext
+		t.fsContext.Store(fsContext)
 		t.mu.Unlock()
 		oldNS.DecRef(t)
 		oldFSContext.DecRef(t)
@@ -671,7 +671,6 @@ func (t *Task) Unshare(flags int32) error {
 	defer cu.Clean()
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	// Can't defer unlock: DecRefs must occur without holding t.mu.
 	if flags&linux.CLONE_NEWUTS != 0 {
 		if !haveCapSysAdmin {
 			return linuxerr.EPERM
@@ -701,16 +700,21 @@ func (t *Task) Unshare(flags int32) error {
 		cu.Add(func() { oldFDTable.DecRef(t) })
 	}
 	if flags&linux.CLONE_FS != 0 || flags&linux.CLONE_NEWNS != 0 {
-		oldFSContext := t.fsContext
-		t.fsContext = oldFSContext.Fork()
-		cu.Add(func() { oldFSContext.DecRef(t) })
+		oldFSContext := t.FSContext()
+		// unshareFromTask() lowers the old fs context's ref count, but its for us to
+		// destroy it if there are no other references.
+		if oldFSContext.unshareFromTask(t, oldFSContext.Fork()) {
+			// destroy() requires t.mu to not be held, hence the deferral.
+			cu.Add(func() { oldFSContext.destroy(t) })
+		}
 	}
 	if flags&linux.CLONE_NEWNS != 0 {
 		if !haveCapSysAdmin {
 			return linuxerr.EPERM
 		}
 		oldMountNS := t.mountNamespace
-		mntns, err := t.k.vfs.CloneMountNamespace(t, creds.UserNamespace, oldMountNS, &t.fsContext.root, &t.fsContext.cwd, t.k)
+		fsContext := t.FSContext()
+		mntns, err := t.k.vfs.CloneMountNamespace(t, creds.UserNamespace, oldMountNS, &fsContext.root, &fsContext.cwd, t.k)
 		if err != nil {
 			return err
 		}

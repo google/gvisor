@@ -40,6 +40,17 @@ go_template_instance(
     },
 )
 
+go_template_instance(
+    name = "atomicptr_fscontext",
+    out = "atomicptr_fscontext_unsafe.go",
+    package = "kernel",
+    prefix = "fsContext",
+    template = "//pkg/sync/atomicptr:generic_atomicptr",
+    types = {
+        "Value": "fsContext",
+    },
+)
+
 declare_mutex(
     name = "user_counters_mutex",
     out = "user_counters_mutex.go",

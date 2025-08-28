@@ -144,15 +144,16 @@ func (r *runExecveAfterExecveCredsLock) execute(t *Task) taskRunState {
 		return (*runInterrupt)(nil)
 	}
 
-	root := t.FSContext().RootDirectory()
+	fsContext := t.FSContext()
+	root := fsContext.RootDirectory()
 	defer root.DecRef(t)
-	wd := t.FSContext().WorkingDirectory()
+	wd := fsContext.WorkingDirectory()
 	defer wd.DecRef(t)
 
 	// Cannot gain privileges if the ptracer's capabilities prevent it.
 	stopPrivGain := t.shouldStopPrivGainDueToPtracerLocked()
 	// Cannot gain privileges if the FSContext is shared outside of our thread group.
-	if t.fsContext.checkAndPreventSharingOutsideTG(t.tg) {
+	if fsContext.checkAndPreventSharingOutsideTG(t.tg) {
 		stopPrivGain = true
 	}
 
@@ -612,8 +613,8 @@ func (t *Task) shouldStopPrivGainDueToPtracerLocked() bool {
 
 // Releases the mutex that serializes an execve(2) with a PTRACE_ATTACH and allows t.fsContext to
 // be shared again via clone(2). The caller must have called execveCredsMutexStartLock() and
-// fsContext.CheckAndPreventSharingOutsideTG() earlier.
+// fsContext.checkAndPreventSharingOutsideTG() earlier.
 func (t *Task) releaseExecveCredsLocks() {
 	t.execveCredsMutexUnlock()
-	t.fsContext.allowSharing()
+	t.FSContext().allowSharing()
 }

@@ -67,6 +67,16 @@ func (t *Task) loadSeccomp(_ context.Context, seccompData *taskSeccomp) {
 	t.seccomp.Store(seccompData)
 }
 
+// saveFsContext is invoked by stateify.
+func (t *Task) saveFsContext() *FSContext {
+	return t.fsContext.Load()
+}
+
+// loadFsContext is invoked by stateify.
+func (t *Task) loadFsContext(_ context.Context, fsContext *FSContext) {
+	t.fsContext.Store(fsContext)
+}
+
 // saveAppCPUClockLast is invoked by stateify.
 func (tg *ThreadGroup) saveAppCPUClockLast() *Task {
 	return tg.appCPUClockLast.Load()

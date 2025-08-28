@@ -96,7 +96,7 @@ func (t *Task) contextValue(key any, isTaskGoroutine bool) any {
 			t.mu.Lock()
 			defer t.mu.Unlock()
 		}
-		return t.fsContext.RootDirectory()
+		return t.FSContext().RootDirectory()
 	case vfs.CtxMountNamespace:
 		if !isTaskGoroutine {
 			t.mu.Lock()
