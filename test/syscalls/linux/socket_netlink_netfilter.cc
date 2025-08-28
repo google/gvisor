@@ -3401,6 +3401,31 @@ TEST_F(NetlinkNetfilterTest, GetRuleDumpTableChainSpecified) {
   EXPECT_EQ(rules_found, 0);
 }
 
+TEST_F(NetlinkNetfilterTest, GetGenerationID) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+  SKIP_IF(!IsRunningOnGvisor());
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
+
+  std::vector<char> get_gen_request =
+      NlReq("getgen req inet").Seq(kSeq).Build();
+
+  ASSERT_NO_ERRNO(NetlinkRequestResponse(
+      fd, get_gen_request.data(), get_gen_request.size(),
+      [&](const struct nlmsghdr* hdr) {
+        const struct nfattr* gen_id_attr =
+            FindNfAttr(hdr, nullptr, NFTA_GEN_ID);
+        EXPECT_NE(gen_id_attr, nullptr);
+        // Although the generation ID is initialized to 1, this number gets
+        // incremented on successful NETFILTER nftables batch requests.
+        // Thus, we simply check that is is greater than 1 here.
+        uint32_t gen_id =
+            ntohl(*(reinterpret_cast<uint32_t*>(NFA_DATA(gen_id_attr))));
+        EXPECT_GE(gen_id, 1);
+      },
+      false));
+}
+
 }  // namespace
 
 }  // namespace testing

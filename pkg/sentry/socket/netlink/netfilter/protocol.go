@@ -1102,6 +1102,25 @@ func fillRuleInfo(rule *nftables.Rule, ms *nlmsg.MessageSet) *syserr.AnnotatedEr
 	return nil
 }
 
+// getGen returns the generation info for the current nftables instance.
+func (p *Protocol) getGen(nft *nftables.NFTables, task *kernel.Task, attrs map[uint16]nlmsg.BytesView, family stack.AddressFamily, msgFlags uint16, ms *nlmsg.MessageSet) *syserr.AnnotatedError {
+	m := ms.AddMessage(linux.NetlinkMessageHeader{
+		Type: uint16(linux.NFNL_SUBSYS_NFTABLES)<<8 | uint16(linux.NFT_MSG_NEWGEN),
+	})
+	m.Put(&linux.NetFilterGenMsg{
+		Family:  uint8(nftables.AfProtocol(stack.Unspec)),
+		Version: uint8(linux.NFNETLINK_V0),
+		// Unused, set to 0.
+		ResourceID: uint16(0),
+	})
+
+	m.PutAttr(linux.NFTA_GEN_ID, nlmsg.PutU32(nft.GetGenID()))
+	m.PutAttr(linux.NFTA_GEN_PROC_PID, nlmsg.PutU32(uint32(task.ThreadGroup().ID())))
+	// TODO - b/434244017: Add support for dumping the process name.
+	m.PutAttrString(linux.NFTA_GEN_PROC_NAME, "placeholder")
+	return nil
+}
+
 // isNetDevHook returns whether the given family and hook number represent a
 // netdev hook, or if the family is inet and is attempting to attach to
 // Ingress or Egress hooks.
@@ -1170,9 +1189,20 @@ func (p *Protocol) ProcessMessage(ctx context.Context, s *netlink.Socket, msg *n
 		}
 
 		return nil
-	case linux.NFT_MSG_GETRULE_RESET,
-		linux.NFT_MSG_GETSET, linux.NFT_MSG_GETSETELEM,
-		linux.NFT_MSG_GETSETELEM_RESET, linux.NFT_MSG_GETGEN,
+	case linux.NFT_MSG_GETGEN:
+		if err := p.getGen(nft, kernel.TaskFromContext(ctx), attrs, family, hdr.Flags, ms); err != nil {
+			log.Debugf("Nftables get gen error: %s", err)
+			return err.GetError()
+		}
+		return nil
+	case linux.NFT_MSG_GETSET:
+		// TODO - b/421437663: Implement sets for nftables. This skeleton is
+		// left here to satisfy auxiliary calls from the nft CLI not needed
+		// for packet filtering functionality.
+		ms.Multi = true
+		return nil
+	case linux.NFT_MSG_GETRULE_RESET, linux.NFT_MSG_GETSETELEM,
+		linux.NFT_MSG_GETSETELEM_RESET,
 		linux.NFT_MSG_GETOBJ, linux.NFT_MSG_GETOBJ_RESET,
 		linux.NFT_MSG_GETFLOWTABLE:
 

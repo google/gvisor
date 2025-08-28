@@ -472,7 +472,8 @@ bool NlReq::MsgTypeToken(const std::string& token) {
       {"deltable", NFT_MSG_DELTABLE}, {"destroytable", NFT_MSG_DESTROYTABLE},
       {"newchain", NFT_MSG_NEWCHAIN}, {"getchain", NFT_MSG_GETCHAIN},
       {"delchain", NFT_MSG_DELCHAIN}, {"destroychain", NFT_MSG_DESTROYCHAIN},
-      {"newrule", NFT_MSG_NEWRULE},   {"getrule", NFT_MSG_GETRULE}};
+      {"newrule", NFT_MSG_NEWRULE},   {"getrule", NFT_MSG_GETRULE},
+      {"getgen", NFT_MSG_GETGEN}};
   auto it = token_to_msg_type.find(token);
   if (it != token_to_msg_type.end()) {
     EXPECT_FALSE(msg_type_set_) << "Message type already set: " << msg_type_;

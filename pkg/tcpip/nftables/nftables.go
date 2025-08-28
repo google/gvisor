@@ -243,7 +243,12 @@ func NewNFTables(clock tcpip.Clock, rng rand.RNG) *NFTables {
 	if rng.Reader == nil {
 		panic("nftables state must be initialized with a non-nil random number generator")
 	}
-	return &NFTables{clock: clock, startTime: clock.Now(), rng: rng, tableHandleCounter: atomicbitops.Uint64{}}
+	return &NFTables{clock: clock, startTime: clock.Now(), rng: rng, tableHandleCounter: atomicbitops.Uint64{}, genid: 1}
+}
+
+// GetGenID returns the generation ID for the NFTables object.
+func (nf *NFTables) GetGenID() uint32 {
+	return nf.genid
 }
 
 // Flush clears entire ruleset and all data for all address families

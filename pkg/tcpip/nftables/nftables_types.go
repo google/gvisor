@@ -87,6 +87,7 @@ const (
 
 // addressFamilyProtocols maps address families to their protocol number.
 var addressFamilyProtocols = map[stack.AddressFamily]uint8{
+	stack.Unspec: linux.NFPROTO_UNSPEC,
 	stack.IP:     linux.NFPROTO_IPV4,
 	stack.IP6:    linux.NFPROTO_IPV6,
 	stack.Inet:   linux.NFPROTO_INET,
@@ -243,6 +244,7 @@ type NFTables struct {
 	rng                rand.RNG                           // Random number generator.
 	tableHandleCounter atomicbitops.Uint64                // Table handle counter.
 	Mu                 nfTablesRWMutex                    // Mutex for tableHandles.
+	genid              uint32                             // Generation ID for nftables.
 }
 
 // Ensures NFTables implements the NFTablesInterface.
@@ -1260,4 +1262,5 @@ func (nf *NFTables) DeepCopy() *NFTables {
 // with the tables of the passed in NFTables struct.
 func (nf *NFTables) ReplaceNFTables(nftCopy *NFTables) {
 	nf.filters = nftCopy.filters
+	nf.genid++
 }
