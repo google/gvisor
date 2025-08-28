@@ -291,8 +291,9 @@ type Task struct {
 
 	// fsContext is the task's filesystem context.
 	//
-	// fsContext is protected by mu, and is owned by the task goroutine.
-	fsContext *FSContext
+	// fsContext is protected by mu, and is owned by the task goroutine. It can be read without
+	// synchronization using FSContext().
+	fsContext atomic.Pointer[FSContext] `state:".(*FSContext)"`
 
 	// fdTable is the task's file descriptor table.
 	//
@@ -750,7 +751,7 @@ func (t *Task) SyscallRestartBlock() SyscallRestartBlock {
 func (t *Task) IsChrooted() bool {
 	realRoot := t.mountNamespace.Root(t)
 	defer realRoot.DecRef(t)
-	root := t.fsContext.RootDirectory()
+	root := t.FSContext().RootDirectory()
 	defer root.DecRef(t)
 	return root != realRoot
 }
@@ -766,10 +767,11 @@ func (t *Task) TaskImage() *TaskImage {
 // FSContext returns t's FSContext. FSContext does not take an additional
 // reference on the returned FSContext.
 //
-// Precondition: The caller must be running on the task goroutine, or t.mu must
-// be locked.
+// Precondition: No synchronization is needed for just read access. If the caller instead intends to
+// modify the contents of the FSContext, it must either be running on the task goroutine or have
+// t.mu locked.
 func (t *Task) FSContext() *FSContext {
-	return t.fsContext
+	return t.fsContext.Load()
 }
 
 // FDTable returns t's FDTable. FDMTable does not take an additional reference

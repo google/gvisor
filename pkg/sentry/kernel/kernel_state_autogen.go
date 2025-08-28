@@ -1506,6 +1506,9 @@ func (t *Task) beforeSave() {}
 // +checklocksignore
 func (t *Task) StateSave(stateSinkObject state.Sink) {
 	t.beforeSave()
+	var fsContextValue *FSContext
+	fsContextValue = t.saveFsContext()
+	stateSinkObject.SaveValue(27, fsContextValue)
 	var vforkParentValue *Task
 	vforkParentValue = t.saveVforkParent()
 	stateSinkObject.SaveValue(29, vforkParentValue)
@@ -1542,7 +1545,6 @@ func (t *Task) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(24, &t.k)
 	stateSinkObject.Save(25, &t.containerID)
 	stateSinkObject.Save(26, &t.image)
-	stateSinkObject.Save(27, &t.fsContext)
 	stateSinkObject.Save(28, &t.fdTable)
 	stateSinkObject.Save(30, &t.exitState)
 	stateSinkObject.Save(31, &t.exitTracerNotified)
@@ -1617,7 +1619,6 @@ func (t *Task) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(24, &t.k)
 	stateSourceObject.Load(25, &t.containerID)
 	stateSourceObject.Load(26, &t.image)
-	stateSourceObject.Load(27, &t.fsContext)
 	stateSourceObject.Load(28, &t.fdTable)
 	stateSourceObject.Load(30, &t.exitState)
 	stateSourceObject.Load(31, &t.exitTracerNotified)
@@ -1661,6 +1662,7 @@ func (t *Task) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(71, &t.Origin)
 	stateSourceObject.Load(72, &t.onDestroyAction)
 	stateSourceObject.Load(73, &t.execveCredsMutexOwner)
+	stateSourceObject.LoadValue(27, new(*FSContext), func(y any) { t.loadFsContext(ctx, y.(*FSContext)) })
 	stateSourceObject.LoadValue(29, new(*Task), func(y any) { t.loadVforkParent(ctx, y.(*Task)) })
 	stateSourceObject.LoadValue(35, new(*Task), func(y any) { t.loadPtraceTracer(ctx, y.(*Task)) })
 	stateSourceObject.LoadValue(52, new(*taskSeccomp), func(y any) { t.loadSeccomp(ctx, y.(*taskSeccomp)) })
