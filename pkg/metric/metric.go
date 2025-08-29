@@ -384,7 +384,7 @@ func newFieldMapper(fields ...Field) (fieldMapper, error) {
 // +checkescape:all
 //
 //go:nosplit
-func (m fieldMapper) lookupSingle(fieldIndex int, fieldValue *FieldValue, idx, remainingCombinationBucket int) (int, int) {
+func (m *fieldMapper) lookupSingle(fieldIndex int, fieldValue *FieldValue, idx, remainingCombinationBucket int) (int, int) {
 	field := m.fields[fieldIndex]
 	numValues := len(field.values)
 
@@ -422,7 +422,7 @@ func (m fieldMapper) lookupSingle(fieldIndex int, fieldValue *FieldValue, idx, r
 // +checkescape:all
 //
 //go:nosplit
-func (m fieldMapper) lookupConcat(fields1, fields2 []*FieldValue) int {
+func (m *fieldMapper) lookupConcat(fields1, fields2 []*FieldValue) int {
 	if (len(fields1) + len(fields2)) != len(m.fields) {
 		panic("invalid field lookup depth")
 	}
@@ -447,7 +447,7 @@ func (m fieldMapper) lookupConcat(fields1, fields2 []*FieldValue) int {
 // +checkescape:all
 //
 //go:nosplit
-func (m fieldMapper) lookup(fields ...*FieldValue) int {
+func (m *fieldMapper) lookup(fields ...*FieldValue) int {
 	return m.lookupConcat(fields, nil)
 }
 
@@ -455,7 +455,7 @@ func (m fieldMapper) lookup(fields ...*FieldValue) int {
 // defined by the fieldMapper.
 //
 //go:nosplit
-func (m fieldMapper) numKeys() int {
+func (m *fieldMapper) numKeys() int {
 	return m.numFieldCombinations
 }
 
@@ -464,7 +464,7 @@ func (m fieldMapper) numKeys() int {
 //     accessed using index "keys" made by fieldMapper.
 //   - The second level corresponds to buckets within a metric. The number of
 //     buckets is specified by numBuckets.
-func (m fieldMapper) makeDistributionSampleMap(numBuckets int) [][]atomicbitops.Uint64 {
+func (m *fieldMapper) makeDistributionSampleMap(numBuckets int) [][]atomicbitops.Uint64 {
 	samples := make([][]atomicbitops.Uint64, m.numKeys())
 	for i := range samples {
 		samples[i] = make([]atomicbitops.Uint64, numBuckets)
@@ -475,7 +475,7 @@ func (m fieldMapper) makeDistributionSampleMap(numBuckets int) [][]atomicbitops.
 // keyToMultiField is the reverse of lookup/lookupConcat. The returned list of
 // field values corresponds to the same order of fields that were passed in to
 // newFieldMapper.
-func (m fieldMapper) keyToMultiField(key int) []string {
+func (m *fieldMapper) keyToMultiField(key int) []string {
 	depth := len(m.fields)
 	if depth == 0 && key == 0 {
 		return nil
@@ -495,7 +495,7 @@ func (m fieldMapper) keyToMultiField(key int) []string {
 // `len(m.fields)`.
 //
 //go:nosplit
-func (m fieldMapper) keyToMultiFieldInPlace(key int, fieldValues []*FieldValue) {
+func (m *fieldMapper) keyToMultiFieldInPlace(key int, fieldValues []*FieldValue) {
 	if len(m.fields) == 0 {
 		return
 	}
@@ -1386,10 +1386,10 @@ func EmitMetricUpdate() {
 				if (!ok && metricValue == 0) || (ok && prev.([]uint64)[fieldKey] == metricValue) {
 					continue
 				}
-
+				uint64M := allMetrics.uint64Metrics[k]
 				m.Metrics = append(m.Metrics, &pb.MetricValue{
 					Name:        k,
-					FieldValues: allMetrics.uint64Metrics[k].fieldMapper.keyToMultiField(fieldKey),
+					FieldValues: uint64M.fieldMapper.keyToMultiField(fieldKey),
 					Value:       &pb.MetricValue_Uint64Value{Uint64Value: metricValue},
 				})
 			}
