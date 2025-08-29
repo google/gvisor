@@ -1,4 +1,4 @@
-FROM nvidia/cuda:12.8.1-devel-ubuntu22.04
+FROM nvidia/cuda:12.8.1-devel-ubuntu24.04
 
 WORKDIR /
 ENV PATH=$PATH:/usr/local/nvidia/bin
@@ -7,7 +7,7 @@ RUN export DEBIAN_FRONTEND=noninteractive; \
     apt-get install -y \
       build-essential \
       cmake \
-      freeglut3 freeglut3-dev \
+      freeglut3-dev \
       git \
       golang \
       imagemagick \
@@ -28,6 +28,7 @@ RUN export DEBIAN_FRONTEND=noninteractive; \
       xdotool \
       xvfb \
       zlib1g zlib1g-dev \
+      cuda-cccl-devel \
       && apt -y purge 'golang*'
 
 RUN git clone --depth=1 --branch=v12.8 --single-branch \

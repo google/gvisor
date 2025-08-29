@@ -114,7 +114,7 @@ TEST_F(XattrTest, SecurityCapacityXattr) {
   EXPECT_THAT(lsetxattr(path, name, &val, val.size(), 0),
               SyscallFailsWithErrno(EOPNOTSUPP));
   int buf = 0;
-  EXPECT_THAT(lgetxattr(path, name, &buf, /*size=*/128),
+  EXPECT_THAT(lgetxattr(path, name, &buf, /*size=*/4),
               SyscallFailsWithErrno(AnyOf(ENODATA, EOPNOTSUPP)));
   EXPECT_THAT(lremovexattr(path, name), SyscallFailsWithErrno(EOPNOTSUPP));
 }

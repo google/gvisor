@@ -1,10 +1,12 @@
-FROM ubuntu:jammy
+FROM ubuntu:24.04
 RUN apt-get update && apt-get install -y \
   curl \
   dumb-init \
   g++ \
   make \
-  python3.10
+  python3
+
+RUN ln -s /usr/bin/python3 /usr/bin/python
 
 WORKDIR /root
 ARG VERSION=v22.2.0

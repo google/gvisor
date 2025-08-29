@@ -1,8 +1,8 @@
-FROM nvidia/cuda:12.3.1-devel-ubuntu22.04
+FROM nvidia/cuda:12.8.1-devel-ubuntu24.04
 
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install --yes \
       python3 \
-      python3-distutils \
+      python3-setuptools \
       python3-pip \
       clang \
       wget \
@@ -10,10 +10,10 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install --yes \
       git \
       libgl1 \
       libglib2.0-0 \
-      libgl1-mesa-glx \
+      libgl1 libglx-mesa0 \
       golang
 
-RUN python3 -m pip install --ignore-installed \
+RUN python3 -m pip install --ignore-installed --break-system-packages \
       "clang~=$(clang --version | grep -oP 'clang version [.0-9]+' | cut -d' ' -f3)" \
       diffusers \
       transformers \
