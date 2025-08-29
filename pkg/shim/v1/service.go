@@ -17,6 +17,7 @@ package v1
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -152,14 +153,53 @@ func (s *service) newCommand(ctx context.Context, containerdBinary, containerdAd
 	return cmd, nil
 }
 
+// TODO: Add runsc annotation to identify grouping.
+var groupLabels = []string{
+	"io.kubernetes.cri.sandbox-id",
+}
+
+type spec struct {
+	// Annotations contains arbitrary metadata for the container.
+	Annotations map[string]string `json:"annotations,omitempty"`
+}
+
+func readSpec() (*spec, error) {
+	f, err := os.Open("config.json")
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	var s spec
+	if err := json.NewDecoder(f).Decode(&s); err != nil {
+		return nil, err
+	}
+	return &s, nil
+}
+
 func (s *service) StartShim(ctx context.Context, opts shim.StartOpts) (string, error) {
 	log.L.Debugf("StartShim, id: %s, binary: %q, address: %q", opts.ID, opts.ContainerdBinary, opts.Address)
+
+	grouping := opts.ID
+	// Check for group annotations in the spec and update the grouping.
+	spec, err := readSpec()
+	if err != nil {
+		return "", err
+	}
+	for _, group := range groupLabels {
+		if groupID, ok := spec.Annotations[group]; ok {
+			grouping = groupID
+			log.L.Debugf("group label found %v: %v", group, groupID)
+			break
+		} else {
+			log.L.Debugf("group label not found")
+		}
+	}
 
 	cmd, err := s.newCommand(ctx, opts.ContainerdBinary, opts.Address)
 	if err != nil {
 		return "", err
 	}
-	address, err := shim.SocketAddress(ctx, opts.Address, opts.ID)
+	address, err := shim.SocketAddress(ctx, opts.Address, grouping)
 	if err != nil {
 		return "", err
 	}
