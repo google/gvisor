@@ -159,7 +159,7 @@ func stringLayer(l Layer) string {
 		v = reflect.Indirect(v)
 		switch {
 		// Try to use Stringers appropriately.
-		case v.Type().Implements(reflect.TypeOf((*fmt.Stringer)(nil)).Elem()):
+		case v.Type().Implements(reflect.TypeFor[fmt.Stringer]()):
 			ret = append(ret, fmt.Sprintf("%s:%v", t.Name, v))
 		// Print byte slices as hex.
 		case v.Kind() == reflect.Slice && v.Type().Elem().Kind() == reflect.Uint8:
