@@ -827,7 +827,6 @@ func (fs *filesystem) LinkAt(ctx context.Context, rp *vfs.ResolvingPath, vd vfs.
 			return nil, linuxerr.EMLINK
 		}
 		if d.inode.isSynthetic() {
-			// TODO(gvisor.dev/issue/6739): Add synthetic file hard link support.
 			return nil, linuxerr.EOPNOTSUPP
 		}
 		return parent.link(ctx, d, name)

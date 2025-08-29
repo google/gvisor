@@ -583,8 +583,6 @@ func (i *directfsInode) link(target *dentry, name string, d *dentry) (*dentry, e
 	}
 	// Note that we don't need to set uid/gid for the new child. This is a hard
 	// link. The original file already has the right owner.
-	// TODO(gvisor.dev/issue/6739): Hard linked dentries should share the same
-	// inode fields.
 	return i.getCreatedChild(name, auth.NoID /* uid */, auth.NoID /* gid */, false /* isDir */, true /* createDentry */, d)
 }
 
