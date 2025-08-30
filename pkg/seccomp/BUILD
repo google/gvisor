@@ -20,6 +20,7 @@ go_library(
     deps = [
         "//pkg/abi/linux",
         "//pkg/bpf",
+        "//pkg/hostsyscall",
         "//pkg/log",
         "@org_golang_x_sys//unix:go_default_library",
     ],
