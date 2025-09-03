@@ -2038,10 +2038,16 @@ func (s *Stack) ReplaceConfig(st *Stack) {
 	// Update route table.
 	s.SetRouteTable(st.GetRouteTable())
 
-	// Update NICs.
 	nics := st.getNICs()
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	// Update iptables and nftables.
+	s.tables = st.IPTables()
+	s.nftables = st.NFTables()
+
+	// Update NICs.
 	s.nics = make(map[tcpip.NICID]*nic)
 	s.loopbackNIC = nil
 	for id, nic := range nics {
@@ -2052,8 +2058,6 @@ func (s *Stack) ReplaceConfig(st *Stack) {
 		}
 		_ = s.NextNICID()
 	}
-	s.tables = st.tables
-	s.nftables = st.nftables
 }
 
 // Restore restarts the stack after a restore. This must be called after the
