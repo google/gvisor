@@ -444,9 +444,9 @@ http_archive(
 )
 
 # Load LLVM dependencies.
-LLVM_COMMIT = "cbcb48a88c3a6227cfc09f91880d5cb92a26f5f9"
+LLVM_COMMIT = "cb2f0d0a5f14c183e7182aba0f0e54a518de9e3f"
 
-LLVM_SHA256 = "356cb88e5975104628494bd02b8edef1889ea30a7dbe96b5abe6ad74ed8ba74b"
+LLVM_SHA256 = "e8ece380fdb57dc6f8e42df9db872a1ade5056c5379075e3e2f99c89200aea69"
 
 http_archive(
     name = "llvm-raw",
