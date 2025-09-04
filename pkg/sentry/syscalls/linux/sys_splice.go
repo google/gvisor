@@ -41,8 +41,8 @@ func Splice(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr,
 	if count == 0 {
 		return 0, nil, nil
 	}
-	if count > int64(kernel.MAX_RW_COUNT) {
-		count = int64(kernel.MAX_RW_COUNT)
+	if count > int64(linux.MAX_RW_COUNT) {
+		count = int64(linux.MAX_RW_COUNT)
 	}
 	if count < 0 {
 		return 0, nil, linuxerr.EINVAL
@@ -187,8 +187,8 @@ func Tee(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *k
 	if count == 0 {
 		return 0, nil, nil
 	}
-	if count > int64(kernel.MAX_RW_COUNT) {
-		count = int64(kernel.MAX_RW_COUNT)
+	if count > int64(linux.MAX_RW_COUNT) {
+		count = int64(linux.MAX_RW_COUNT)
 	}
 	if count < 0 {
 		return 0, nil, linuxerr.EINVAL
@@ -336,8 +336,8 @@ func Sendfile(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintpt
 	if count == 0 {
 		return 0, nil, nil
 	}
-	if count > int64(kernel.MAX_RW_COUNT) {
-		count = int64(kernel.MAX_RW_COUNT)
+	if count > int64(linux.MAX_RW_COUNT) {
+		count = int64(linux.MAX_RW_COUNT)
 	}
 
 	// Copy data.
