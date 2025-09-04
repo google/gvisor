@@ -166,7 +166,6 @@ go_library(
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
-        "//pkg/aio",
         "//pkg/atomicbitops",
         "//pkg/bitmap",
         "//pkg/context",
@@ -180,6 +179,7 @@ go_library(
         "//pkg/sentry/arch",
         "//pkg/sentry/hostmm",
         "//pkg/sentry/memmap",
+        "//pkg/sentry/state/stateio",
         "//pkg/sentry/usage",
         "//pkg/state",
         "//pkg/state/wire",
