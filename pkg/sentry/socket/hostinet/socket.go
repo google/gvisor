@@ -24,7 +24,6 @@ import (
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fdnotifier"
 	"gvisor.dev/gvisor/pkg/log"
-	"gvisor.dev/gvisor/pkg/marshal"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
@@ -828,9 +827,4 @@ func init() {
 		socket.RegisterProvider(fam, &socketProvider{fam})
 		registered[fam] = struct{}{}
 	}
-}
-
-// GetPeerCreds implements socket.Socket.GetPeerCreds
-func (s *Socket) GetPeerCreds(t *kernel.Task) (marshal.Marshallable, *syserr.Error) {
-	return nil, syserr.ErrNotSupported
 }

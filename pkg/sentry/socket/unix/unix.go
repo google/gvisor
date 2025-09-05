@@ -32,7 +32,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/sockfs"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
-	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/ktime"
 	"gvisor.dev/gvisor/pkg/sentry/socket"
 	"gvisor.dev/gvisor/pkg/sentry/socket/control"
@@ -423,10 +422,6 @@ func (*provider) Pair(t *kernel.Task, stype linux.SockType, protocol int) (*vfs.
 		ep2.Close(t)
 		return nil, nil, err
 	}
-	// Initialize the peer credentials.
-	creds := control.MakeCreds(t)
-	ep1.SetPeerCreds(creds)
-	ep2.SetPeerCreds(creds)
 
 	return s1, s2, nil
 }
@@ -512,30 +507,6 @@ func (s *Socket) GetPeerName(t *kernel.Task) (linux.SockAddr, uint32, *syserr.Er
 	return a, l, nil
 }
 
-// GetPeerCreds returns the peer credentials of the socket backed by a
-// transport.Endpoint.
-func (s *Socket) GetPeerCreds(t *kernel.Task) (marshal.Marshallable, *syserr.Error) {
-	pCreds := s.ep.PeerCreds()
-	if pCreds == nil {
-		// https://elixir.bootlin.com/linux/v6.16-rc7/source/net/core/sock.c#L1905
-		return &linux.ControlMessageCredentials{
-			PID: 0,
-			UID: auth.NoID,
-			GID: auth.NoID,
-		}, nil
-	}
-	scmCreds, ok := pCreds.(control.SCMCredentials)
-	if !ok {
-		return nil, syserr.ErrInvalidEndpointState
-	}
-	pid, uid, gid := scmCreds.Credentials(t)
-	return &linux.ControlMessageCredentials{
-		PID: int32(pid),
-		UID: uint32(uid),
-		GID: uint32(gid),
-	}, nil
-}
-
 // GetSockName implements the linux syscall getsockname(2) for sockets backed by
 // a transport.Endpoint.
 func (s *Socket) GetSockName(t *kernel.Task) (linux.SockAddr, uint32, *syserr.Error) {
@@ -551,11 +522,7 @@ func (s *Socket) GetSockName(t *kernel.Task) (linux.SockAddr, uint32, *syserr.Er
 // Listen implements the linux syscall listen(2) for sockets backed by
 // a transport.Endpoint.
 func (s *Socket) Listen(t *kernel.Task, backlog int) *syserr.Error {
-	if err := s.ep.Listen(t, backlog); err != nil {
-		return err
-	}
-	s.ep.SetPeerCreds(control.MakeCreds(t))
-	return nil
+	return s.ep.Listen(t, backlog)
 }
 
 // extractEndpoint retrieves the transport.BoundEndpoint associated with a Unix
@@ -613,9 +580,6 @@ func (s *Socket) Connect(t *kernel.Task, sockaddr []byte, blocking bool) *syserr
 		return err
 	}
 	defer ep.Release(t)
-
-	// Initialize the peer credentials of client endpoint.
-	s.ep.SetPeerCreds(control.MakeCreds(t))
 
 	// Connect the server endpoint.
 	err = s.ep.Connect(t, ep, t.Kernel().UnixSocketOpts)

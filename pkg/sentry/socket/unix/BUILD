@@ -42,7 +42,6 @@ go_library(
         "//pkg/sentry/fsutil",
         "//pkg/sentry/inet",
         "//pkg/sentry/kernel",
-        "//pkg/sentry/kernel/auth",
         "//pkg/sentry/ktime",
         "//pkg/sentry/socket",
         "//pkg/sentry/socket/control",
