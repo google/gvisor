@@ -421,7 +421,7 @@ func (c *Container) RestoreInTest(ctx context.Context, t *testing.T, name string
 			regexp.MustCompile("failed to create task for container: content digest .*: not found: unknown").MatchString(err.Error()) {
 			t.Skip("Skipping restore due to known issue: https://github.com/moby/moby/issues/42900")
 		}
-		t.Fatalf("docker restore failed: %v", err)
+		t.Fatalf("docker restore checkpoint %s failed: %v", name, err)
 	}
 }
 
