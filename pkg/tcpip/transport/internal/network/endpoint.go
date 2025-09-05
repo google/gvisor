@@ -915,6 +915,18 @@ func (e *Endpoint) GetSockOptInt(opt tcpip.SockOptInt) (int, tcpip.Error) {
 // SetSockOpt sets the socket option.
 func (e *Endpoint) SetSockOpt(opt tcpip.SettableSocketOption) tcpip.Error {
 	switch v := opt.(type) {
+	case *tcpip.IPV6MulticastInterfaceOption:
+		e.mu.Lock()
+		defer e.mu.Unlock()
+
+		if v.NIC == 0 {
+			return &tcpip.ErrBadLocalAddress{}
+		}
+		if !e.stack.CheckNIC(v.NIC) {
+			return &tcpip.ErrBadLocalAddress{}
+		}
+		e.multicastNICID = v.NIC
+
 	case *tcpip.MulticastInterfaceOption:
 		e.mu.Lock()
 		defer e.mu.Unlock()
@@ -1036,6 +1048,13 @@ func (e *Endpoint) GetSockOpt(opt tcpip.GettableSocketOption) tcpip.Error {
 		*o = tcpip.MulticastInterfaceOption{
 			NIC:           e.multicastNICID,
 			InterfaceAddr: e.multicastAddr,
+		}
+		e.mu.Unlock()
+
+	case *tcpip.IPV6MulticastInterfaceOption:
+		e.mu.Lock()
+		*o = tcpip.IPV6MulticastInterfaceOption{
+			NIC: e.multicastNICID,
 		}
 		e.mu.Unlock()
 

@@ -1627,6 +1627,15 @@ func getSockOptIPv6(t *kernel.Task, s socket.Socket, ep commonEndpoint, name int
 			return nil, err
 		}
 		return &ret, nil
+
+	case linux.IPV6_MULTICAST_IF:
+		var v tcpip.IPV6MulticastInterfaceOption
+		if err := ep.GetSockOpt(&v); err != nil {
+			return nil, syserr.TranslateNetstackError(err)
+		}
+
+		vP := primitive.Int32(v.NIC)
+		return &vP, nil
 	}
 	return nil, syserr.ErrProtocolNotAvailable
 }
@@ -2479,6 +2488,16 @@ func setSockOptIPv6(t *kernel.Task, s socket.Socket, ep commonEndpoint, name int
 			MulticastAddr: tcpip.AddrFrom16(req.MulticastAddr),
 		}))
 
+	case linux.IPV6_MULTICAST_IF:
+		if len(optVal) < sizeOfInt32 {
+			return syserr.ErrInvalidArgument
+		}
+
+		v := hostarch.ByteOrder.Uint32(optVal)
+		return syserr.TranslateNetstackError(ep.SetSockOpt(&tcpip.MulticastInterfaceOption{
+			NIC: tcpip.NICID(v),
+		}))
+
 	case linux.IPV6_IPSEC_POLICY,
 		linux.IPV6_JOIN_ANYCAST,
 		linux.IPV6_LEAVE_ANYCAST,
@@ -2595,7 +2614,6 @@ func setSockOptIPv6(t *kernel.Task, s socket.Socket, ep commonEndpoint, name int
 		linux.IPV6_MTU_DISCOVER,
 		linux.IPV6_FLOWINFO_SEND,
 		linux.IPV6_ADDR_PREFERENCES,
-		linux.IPV6_MULTICAST_IF,
 		linux.IPV6_UNICAST_IF,
 		linux.IPV6_ADDRFORM,
 		linux.IPV6_2292PKTINFO,
