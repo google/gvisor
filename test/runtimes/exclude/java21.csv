@@ -27,20 +27,16 @@ java/lang/management/ThreadMXBean/ThreadMXBeanStateTest.java,,Broken test
 java/lang/reflect/exeCallerAccessTest/CallerAccessTest.java,,Broken test
 java/net/DatagramSocket/AddressNotSet.java,,
 java/net/DatagramSocket/SetGetReceiveBufferSize.java,b/180507650,
-java/net/MulticastSocket/B6425815.java,b/126900872,Need support for IPV6_MULTICAST_IF
-java/net/MulticastSocket/B6427403.java,b/126900872,Need support for IPV6_MULTICAST_IF
-java/net/MulticastSocket/IPMulticastIF.java,b/126900872,Need support for IPV6_MULTICAST_IF
+java/net/MulticastSocket/B6425815.java,b/446951345,Need support for IPV6_MULTICAST_HOPS
 java/net/MulticastSocket/MulticastTTL.java,,
-java/net/MulticastSocket/NetworkInterfaceEmptyGetInetAddressesTest.java,b/126900872,Need support for IPV6_MULTICAST_IF
-java/net/MulticastSocket/NoLoopbackPackets.java,b/126900872,Need support for IPV6_MULTICAST_IF
-java/net/MulticastSocket/NoSetNetworkInterface.java,b/126900872,Need support for IPV6_MULTICAST_IF
+java/net/MulticastSocket/NoLoopbackPackets.java,b/446928871,Test fails with runc too
 java/net/MulticastSocket/Promiscuous.java,,
 java/net/MulticastSocket/SendPortZero.java,,
 java/net/MulticastSocket/SetLoopbackMode.java,,
 java/net/MulticastSocket/SetLoopbackModeIPv4.java,,
 java/net/MulticastSocket/SetLoopbackOption.java,,
 java/net/MulticastSocket/SetTTLAndGetTTL.java,,
-java/net/MulticastSocket/Test.java,b/126900872,Need support for IPV6_MULTICAST_IF
+java/net/MulticastSocket/Test.java,b/446928871,Test fails with runc too
 java/net/MulticastSocket/TestDefaults.java,,
 java/net/MulticastSocket/TimeToLive.java,,
 java/net/NetworkInterface/NetworkInterfaceStreamTest.java,,
@@ -82,10 +78,6 @@ jdk/jfr/event/runtime/TestResidentSetSizeEvent.java,,
 jdk/jfr/jvm/TestWaste.java,,Broken test
 jdk/net/ExtendedSocketOption/DontFragmentTest.java,,
 jni/nullCaller/NullCallerTest.java,,Broken test
-sun/management/jdp/JdpDefaultsTest.java,b/126900872,Need support for IPV6_MULTICAST_IF
-sun/management/jdp/JdpJmxRemoteDynamicPortTest.java,b/126900872,Need support for IPV6_MULTICAST_IF
-sun/management/jdp/JdpOffTest.java,b/126900872,Need support for IPV6_MULTICAST_IF
-sun/management/jdp/JdpSpecificAddressTest.java,b/126900872,Need support for IPV6_MULTICAST_IF
 sun/management/jmxremote/bootstrap/CustomLauncherTest.java,,Broken test
 sun/management/jmxremote/bootstrap/JvmstatCountersTest.java,,Broken test
 sun/management/jmxremote/bootstrap/LocalManagementTest.java,,Broken test
