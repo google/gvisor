@@ -62,5 +62,5 @@ func signalHandlersinitLockNames() { signalHandlerslockNames = []string{"tg"} }
 
 func init() {
 	signalHandlersinitLockNames()
-	signalHandlersprefixIndex = locking.NewMutexClass(reflect.TypeOf(signalHandlersMutex{}), signalHandlerslockNames)
+	signalHandlersprefixIndex = locking.NewMutexClass(reflect.TypeFor[signalHandlersMutex](), signalHandlerslockNames)
 }

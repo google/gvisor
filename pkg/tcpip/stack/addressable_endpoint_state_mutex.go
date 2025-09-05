@@ -92,5 +92,5 @@ func addressableEndpointStateinitLockNames() {}
 
 func init() {
 	addressableEndpointStateinitLockNames()
-	addressableEndpointStateprefixIndex = locking.NewMutexClass(reflect.TypeOf(addressableEndpointStateRWMutex{}), addressableEndpointStatelockNames)
+	addressableEndpointStateprefixIndex = locking.NewMutexClass(reflect.TypeFor[addressableEndpointStateRWMutex](), addressableEndpointStatelockNames)
 }

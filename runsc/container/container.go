@@ -118,7 +118,7 @@ type Container struct {
 
 	// GoferPid is the PID of the gofer running along side the sandbox. May
 	// be 0 if the gofer has been killed.
-	GoferPid int `json:"goferPid"`
+	GoferPid sandbox.Pid `json:"goferPid"`
 
 	// Sandbox is the sandbox this container is running in. It's set when the
 	// container is created and reset when the sandbox is destroyed.
@@ -995,7 +995,7 @@ func (c *Container) createGoferFilestores(ovlConf config.Overlay2, mountHints *b
 	// namespace, so that they don't prevent the host mount points from being
 	// unmounted from the host's mount namespace. We will use /proc/pid/root
 	// to access gofer's mount namespace. See proc_pid_root(5).
-	goferRootfs := fmt.Sprintf("/proc/%d/root", c.GoferPid)
+	goferRootfs := fmt.Sprintf("/proc/%d/root", c.GoferPid.Load())
 
 	// Handle rootfs first.
 	rootfsConf := c.GoferMountConfs[0]
@@ -1129,11 +1129,11 @@ func (c *Container) stop() error {
 	}
 
 	// Try killing gofer if it does not exit with container.
-	if c.GoferPid != 0 {
-		log.Debugf("Killing gofer for container, cid: %s, PID: %d", c.ID, c.GoferPid)
-		if err := unix.Kill(c.GoferPid, unix.SIGKILL); err != nil {
+	if goferPid := c.GoferPid.Load(); goferPid != 0 {
+		log.Debugf("Killing gofer for container, cid: %s, PID: %d", c.ID, goferPid)
+		if err := unix.Kill(goferPid, unix.SIGKILL); err != nil {
 			// The gofer may already be stopped, log the error.
-			log.Warningf("Error sending signal %d to gofer %d: %v", unix.SIGKILL, c.GoferPid, err)
+			log.Warningf("Error sending signal %d to gofer %d: %v", unix.SIGKILL, goferPid, err)
 		}
 	}
 
@@ -1158,7 +1158,8 @@ func (c *Container) stop() error {
 }
 
 func (c *Container) waitForStopped() error {
-	if c.GoferPid == 0 {
+	goferPid := c.GoferPid.Load()
+	if goferPid == 0 {
 		return nil
 	}
 
@@ -1171,10 +1172,10 @@ func (c *Container) waitForStopped() error {
 	if c.goferIsChild {
 		// The gofer process is a child of the current process,
 		// so we can wait it and collect its zombie.
-		if _, err := unix.Wait4(int(c.GoferPid), nil, 0, nil); err != nil {
+		if _, err := unix.Wait4(int(goferPid), nil, 0, nil); err != nil {
 			return fmt.Errorf("error waiting the gofer process: %v", err)
 		}
-		c.GoferPid = 0
+		c.GoferPid.Store(0)
 		return nil
 	}
 
@@ -1182,10 +1183,10 @@ func (c *Container) waitForStopped() error {
 	defer cancel()
 	b := backoff.WithContext(backoff.NewConstantBackOff(100*time.Millisecond), ctx)
 	op := func() error {
-		if err := unix.Kill(c.GoferPid, 0); err == nil {
+		if err := unix.Kill(goferPid, 0); err == nil {
 			return fmt.Errorf("gofer is still running")
 		}
-		c.GoferPid = 0
+		c.GoferPid.Store(0)
 		return nil
 	}
 	return backoff.Retry(op, b)
@@ -1435,7 +1436,7 @@ func (c *Container) createGoferProcess(conf *config.Config, mountHints *boot.Pod
 		return nil, nil, nil, nil, fmt.Errorf("gofer: %v", err)
 	}
 	log.Infof("Gofer started, PID: %d", cmd.Process.Pid)
-	c.GoferPid = cmd.Process.Pid
+	c.GoferPid.Store(cmd.Process.Pid)
 	c.goferIsChild = true
 	rpcPidCh <- cmd.Process.Pid
 
@@ -1448,7 +1449,7 @@ func (c *Container) createGoferProcess(conf *config.Config, mountHints *boot.Pod
 
 	// Set up nvproxy with the Gofer's mount namespaces while chrootSyncSandEnd is
 	// is still open.
-	if err := nvproxySetup(c.Spec, conf, c.GoferPid); err != nil {
+	if err := nvproxySetup(c.Spec, conf, c.GoferPid.Load()); err != nil {
 		return nil, nil, nil, nil, fmt.Errorf("setting up nvproxy for gofer: %w", err)
 	}
 
@@ -1567,10 +1568,11 @@ func runInCgroup(cg cgroup.Cgroup, fn func() error) error {
 
 // adjustGoferOOMScoreAdj sets the oom_store_adj for the container's gofer.
 func (c *Container) adjustGoferOOMScoreAdj() error {
-	if c.GoferPid == 0 || c.Spec.Process.OOMScoreAdj == nil {
+	goferPid := c.GoferPid.Load()
+	if goferPid == 0 || c.Spec.Process.OOMScoreAdj == nil {
 		return nil
 	}
-	return setOOMScoreAdj(c.GoferPid, *c.Spec.Process.OOMScoreAdj)
+	return setOOMScoreAdj(goferPid, *c.Spec.Process.OOMScoreAdj)
 }
 
 // adjustSandboxOOMScoreAdj sets the oom_score_adj for the sandbox.

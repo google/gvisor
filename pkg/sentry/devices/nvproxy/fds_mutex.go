@@ -60,5 +60,5 @@ func fdsinitLockNames() {}
 
 func init() {
 	fdsinitLockNames()
-	fdsprefixIndex = locking.NewMutexClass(reflect.TypeOf(fdsMutex{}), fdslockNames)
+	fdsprefixIndex = locking.NewMutexClass(reflect.TypeFor[fdsMutex](), fdslockNames)
 }

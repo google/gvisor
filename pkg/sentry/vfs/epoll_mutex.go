@@ -60,5 +60,5 @@ func epollinitLockNames() {}
 
 func init() {
 	epollinitLockNames()
-	epollprefixIndex = locking.NewMutexClass(reflect.TypeOf(epollMutex{}), epolllockNames)
+	epollprefixIndex = locking.NewMutexClass(reflect.TypeFor[epollMutex](), epolllockNames)
 }

@@ -92,5 +92,5 @@ func filesysteminitLockNames() {}
 
 func init() {
 	filesysteminitLockNames()
-	filesystemprefixIndex = locking.NewMutexClass(reflect.TypeOf(filesystemRWMutex{}), filesystemlockNames)
+	filesystemprefixIndex = locking.NewMutexClass(reflect.TypeFor[filesystemRWMutex](), filesystemlockNames)
 }

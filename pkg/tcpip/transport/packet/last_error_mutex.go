@@ -60,5 +60,5 @@ func lastErrorinitLockNames() {}
 
 func init() {
 	lastErrorinitLockNames()
-	lastErrorprefixIndex = locking.NewMutexClass(reflect.TypeOf(lastErrorMutex{}), lastErrorlockNames)
+	lastErrorprefixIndex = locking.NewMutexClass(reflect.TypeFor[lastErrorMutex](), lastErrorlockNames)
 }

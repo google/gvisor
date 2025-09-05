@@ -92,5 +92,5 @@ func mappinginitLockNames() {}
 
 func init() {
 	mappinginitLockNames()
-	mappingprefixIndex = locking.NewMutexClass(reflect.TypeOf(mappingRWMutex{}), mappinglockNames)
+	mappingprefixIndex = locking.NewMutexClass(reflect.TypeFor[mappingRWMutex](), mappinglockNames)
 }

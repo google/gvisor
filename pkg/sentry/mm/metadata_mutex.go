@@ -60,5 +60,5 @@ func metadatainitLockNames() {}
 
 func init() {
 	metadatainitLockNames()
-	metadataprefixIndex = locking.NewMutexClass(reflect.TypeOf(metadataMutex{}), metadatalockNames)
+	metadataprefixIndex = locking.NewMutexClass(reflect.TypeFor[metadataMutex](), metadatalockNames)
 }

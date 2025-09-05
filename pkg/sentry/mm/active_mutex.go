@@ -94,5 +94,5 @@ func activeinitLockNames() { activelockNames = []string{"forked"} }
 
 func init() {
 	activeinitLockNames()
-	activeprefixIndex = locking.NewMutexClass(reflect.TypeOf(activeRWMutex{}), activelockNames)
+	activeprefixIndex = locking.NewMutexClass(reflect.TypeFor[activeRWMutex](), activelockNames)
 }

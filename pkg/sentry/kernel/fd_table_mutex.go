@@ -60,5 +60,5 @@ func fdTableinitLockNames() {}
 
 func init() {
 	fdTableinitLockNames()
-	fdTableprefixIndex = locking.NewMutexClass(reflect.TypeOf(fdTableMutex{}), fdTablelockNames)
+	fdTableprefixIndex = locking.NewMutexClass(reflect.TypeFor[fdTableMutex](), fdTablelockNames)
 }

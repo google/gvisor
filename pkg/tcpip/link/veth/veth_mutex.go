@@ -92,5 +92,5 @@ func vethinitLockNames() {}
 
 func init() {
 	vethinitLockNames()
-	vethprefixIndex = locking.NewMutexClass(reflect.TypeOf(vethRWMutex{}), vethlockNames)
+	vethprefixIndex = locking.NewMutexClass(reflect.TypeFor[vethRWMutex](), vethlockNames)
 }

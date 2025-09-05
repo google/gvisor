@@ -92,5 +92,5 @@ func ipTablesinitLockNames() {}
 
 func init() {
 	ipTablesinitLockNames()
-	ipTablesprefixIndex = locking.NewMutexClass(reflect.TypeOf(ipTablesRWMutex{}), ipTableslockNames)
+	ipTablesprefixIndex = locking.NewMutexClass(reflect.TypeFor[ipTablesRWMutex](), ipTableslockNames)
 }

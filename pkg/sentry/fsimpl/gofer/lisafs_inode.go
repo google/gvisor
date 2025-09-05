@@ -228,8 +228,6 @@ func (i *lisafsInode) updateHandles(ctx context.Context, h handle, readable, wri
 	}
 }
 
-// Precondition: i.metadataMu must be lockei.
-//
 // +checklocks:i.metadataMu
 func (i *lisafsInode) updateMetadataLocked(ctx context.Context, h handle) error {
 	handleMuRLocked := false
@@ -264,6 +262,49 @@ func (i *lisafsInode) updateMetadataLocked(ctx context.Context, h handle) error 
 	}
 	i.updateMetadataFromStatxLocked(&stat)
 	return nil
+}
+
+// updateMetadataFromStatxLocked is called to update d's metadata after an update
+// from the remote filesystem.
+// +checklocks:i.inode.metadataMu
+func (i *lisafsInode) updateMetadataFromStatxLocked(stat *linux.Statx) {
+	if stat.Mask&linux.STATX_TYPE != 0 {
+		if got, want := stat.Mode&linux.FileTypeMask, i.inode.fileType(); uint32(got) != want {
+			panic(fmt.Sprintf("lisafsInode file type changed from %#o to %#o", want, got))
+		}
+	}
+	if stat.Mask&linux.STATX_MODE != 0 {
+		i.inode.mode.Store(uint32(stat.Mode))
+	}
+	if stat.Mask&linux.STATX_UID != 0 {
+		i.inode.uid.Store(dentryUID(lisafs.UID(stat.UID)))
+	}
+	if stat.Mask&linux.STATX_GID != 0 {
+		i.inode.gid.Store(dentryGID(lisafs.GID(stat.GID)))
+	}
+	if stat.Blksize != 0 {
+		i.inode.blockSize.Store(stat.Blksize)
+	}
+	// Don't override newer client-defined timestamps with old server-defined
+	// ones.
+	if stat.Mask&linux.STATX_ATIME != 0 && i.inode.atimeDirty.Load() == 0 {
+		i.inode.atime.Store(dentryTimestamp(stat.Atime))
+	}
+	if stat.Mask&linux.STATX_MTIME != 0 && i.inode.mtimeDirty.Load() == 0 {
+		i.inode.mtime.Store(dentryTimestamp(stat.Mtime))
+	}
+	if stat.Mask&linux.STATX_CTIME != 0 {
+		i.inode.ctime.Store(dentryTimestamp(stat.Ctime))
+	}
+	if stat.Mask&linux.STATX_BTIME != 0 {
+		i.inode.btime.Store(dentryTimestamp(stat.Btime))
+	}
+	if stat.Mask&linux.STATX_NLINK != 0 {
+		i.inode.nlink.Store(stat.Nlink)
+	}
+	if stat.Mask&linux.STATX_SIZE != 0 {
+		i.updateSizeLocked(stat.Size)
+	}
 }
 
 func chmod(ctx context.Context, controlFD lisafs.ClientFD, mode uint16) error {
@@ -448,8 +489,6 @@ func (i *lisafsInode) link(ctx context.Context, target *lisafsInode, name string
 	if err != nil {
 		return nil, err
 	}
-	// TODO(gvisor.dev/issue/6739): Hard linked dentries should share the same
-	// inode fields.
 	return i.newChildDentry(ctx, &linkInode, name)
 }
 
@@ -654,7 +693,7 @@ func doRevalidationLisafs(ctx context.Context, vfsObj *vfs.VirtualFilesystem, st
 	if state.refreshStart {
 		if len(stats) > 0 {
 			// First dentry is where the search is starting, just update attributes
-			// since it cannot be replacei.
+			// since it cannot be replaced.
 			start.updateMetadataFromStatxLocked(&stats[0]) // +checklocksforce: see above.
 			stats = stats[1:]
 		}
@@ -679,6 +718,13 @@ func doRevalidationLisafs(ctx context.Context, vfsObj *vfs.VirtualFilesystem, st
 			// dentry invalidated.
 			d.invalidate(ctx, vfsObj, ds)
 			return nil
+		}
+
+		// Check that the file type has not changed.
+		if stats[i].Mask&linux.STATX_TYPE != 0 {
+			if got, want := stats[i].Mode&linux.FileTypeMask, d.inode.fileType(); uint32(got) != want {
+				panic(fmt.Sprintf("file type of %q changed from %#o to %#o while inode key (%+v) did not change", genericDebugPathname(d.inode.fs, d), want, got, d.inode.inoKey))
+			}
 		}
 
 		// The file at this path hasn't changed. Just update cached metadata.

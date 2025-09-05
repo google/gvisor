@@ -92,5 +92,5 @@ func ancestryinitLockNames() {}
 
 func init() {
 	ancestryinitLockNames()
-	ancestryprefixIndex = locking.NewMutexClass(reflect.TypeOf(ancestryRWMutex{}), ancestrylockNames)
+	ancestryprefixIndex = locking.NewMutexClass(reflect.TypeFor[ancestryRWMutex](), ancestrylockNames)
 }

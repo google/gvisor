@@ -60,5 +60,5 @@ func epQueueinitLockNames() {}
 
 func init() {
 	epQueueinitLockNames()
-	epQueueprefixIndex = locking.NewMutexClass(reflect.TypeOf(epQueueMutex{}), epQueuelockNames)
+	epQueueprefixIndex = locking.NewMutexClass(reflect.TypeFor[epQueueMutex](), epQueuelockNames)
 }

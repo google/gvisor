@@ -60,5 +60,5 @@ func virtualFilesysteminitLockNames() {}
 
 func init() {
 	virtualFilesysteminitLockNames()
-	virtualFilesystemprefixIndex = locking.NewMutexClass(reflect.TypeOf(virtualFilesystemMutex{}), virtualFilesystemlockNames)
+	virtualFilesystemprefixIndex = locking.NewMutexClass(reflect.TypeFor[virtualFilesystemMutex](), virtualFilesystemlockNames)
 }

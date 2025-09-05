@@ -60,5 +60,5 @@ func streamQueueReceiverinitLockNames() {}
 
 func init() {
 	streamQueueReceiverinitLockNames()
-	streamQueueReceiverprefixIndex = locking.NewMutexClass(reflect.TypeOf(streamQueueReceiverMutex{}), streamQueueReceiverlockNames)
+	streamQueueReceiverprefixIndex = locking.NewMutexClass(reflect.TypeFor[streamQueueReceiverMutex](), streamQueueReceiverlockNames)
 }

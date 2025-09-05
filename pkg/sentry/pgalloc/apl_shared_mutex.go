@@ -60,5 +60,5 @@ func aplSharedinitLockNames() {}
 
 func init() {
 	aplSharedinitLockNames()
-	aplSharedprefixIndex = locking.NewMutexClass(reflect.TypeOf(aplSharedMutex{}), aplSharedlockNames)
+	aplSharedprefixIndex = locking.NewMutexClass(reflect.TypeFor[aplSharedMutex](), aplSharedlockNames)
 }

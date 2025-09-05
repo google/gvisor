@@ -60,5 +60,5 @@ func hasherinitLockNames() {}
 
 func init() {
 	hasherinitLockNames()
-	hasherprefixIndex = locking.NewMutexClass(reflect.TypeOf(hasherMutex{}), hasherlockNames)
+	hasherprefixIndex = locking.NewMutexClass(reflect.TypeFor[hasherMutex](), hasherlockNames)
 }

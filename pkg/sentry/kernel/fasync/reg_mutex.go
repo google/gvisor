@@ -60,5 +60,5 @@ func reginitLockNames() {}
 
 func init() {
 	reginitLockNames()
-	regprefixIndex = locking.NewMutexClass(reflect.TypeOf(regMutex{}), reglockNames)
+	regprefixIndex = locking.NewMutexClass(reflect.TypeFor[regMutex](), reglockNames)
 }

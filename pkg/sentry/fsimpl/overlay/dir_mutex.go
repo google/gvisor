@@ -64,5 +64,5 @@ func dirinitLockNames() { dirlockNames = []string{"new", "replaced", "child"} }
 
 func init() {
 	dirinitLockNames()
-	dirprefixIndex = locking.NewMutexClass(reflect.TypeOf(dirMutex{}), dirlockNames)
+	dirprefixIndex = locking.NewMutexClass(reflect.TypeFor[dirMutex](), dirlockNames)
 }

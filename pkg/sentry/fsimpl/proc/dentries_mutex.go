@@ -92,5 +92,5 @@ func dentriesinitLockNames() {}
 
 func init() {
 	dentriesinitLockNames()
-	dentriesprefixIndex = locking.NewMutexClass(reflect.TypeOf(dentriesRWMutex{}), dentrieslockNames)
+	dentriesprefixIndex = locking.NewMutexClass(reflect.TypeFor[dentriesRWMutex](), dentrieslockNames)
 }

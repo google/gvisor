@@ -60,5 +60,5 @@ func pagesUsedinitLockNames() {}
 
 func init() {
 	pagesUsedinitLockNames()
-	pagesUsedprefixIndex = locking.NewMutexClass(reflect.TypeOf(pagesUsedMutex{}), pagesUsedlockNames)
+	pagesUsedprefixIndex = locking.NewMutexClass(reflect.TypeFor[pagesUsedMutex](), pagesUsedlockNames)
 }

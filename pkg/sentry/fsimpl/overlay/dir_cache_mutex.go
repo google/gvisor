@@ -60,5 +60,5 @@ func dirInoCacheinitLockNames() {}
 
 func init() {
 	dirInoCacheinitLockNames()
-	dirInoCacheprefixIndex = locking.NewMutexClass(reflect.TypeOf(dirInoCacheMutex{}), dirInoCachelockNames)
+	dirInoCacheprefixIndex = locking.NewMutexClass(reflect.TypeFor[dirInoCacheMutex](), dirInoCachelockNames)
 }

@@ -92,5 +92,5 @@ func injectableEndpointinitLockNames() {}
 
 func init() {
 	injectableEndpointinitLockNames()
-	injectableEndpointprefixIndex = locking.NewMutexClass(reflect.TypeOf(injectableEndpointRWMutex{}), injectableEndpointlockNames)
+	injectableEndpointprefixIndex = locking.NewMutexClass(reflect.TypeFor[injectableEndpointRWMutex](), injectableEndpointlockNames)
 }

@@ -60,5 +60,5 @@ func frontendMmapinitLockNames() {}
 
 func init() {
 	frontendMmapinitLockNames()
-	frontendMmapprefixIndex = locking.NewMutexClass(reflect.TypeOf(frontendMmapMutex{}), frontendMmaplockNames)
+	frontendMmapprefixIndex = locking.NewMutexClass(reflect.TypeFor[frontendMmapMutex](), frontendMmaplockNames)
 }

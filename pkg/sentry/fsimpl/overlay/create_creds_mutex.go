@@ -60,5 +60,5 @@ func createCredsinitLockNames() {}
 
 func init() {
 	createCredsinitLockNames()
-	createCredsprefixIndex = locking.NewMutexClass(reflect.TypeOf(createCredsMutex{}), createCredslockNames)
+	createCredsprefixIndex = locking.NewMutexClass(reflect.TypeFor[createCredsMutex](), createCredslockNames)
 }

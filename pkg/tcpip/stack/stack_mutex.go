@@ -92,5 +92,5 @@ func stackinitLockNames() {}
 
 func init() {
 	stackinitLockNames()
-	stackprefixIndex = locking.NewMutexClass(reflect.TypeOf(stackRWMutex{}), stacklockNames)
+	stackprefixIndex = locking.NewMutexClass(reflect.TypeFor[stackRWMutex](), stacklockNames)
 }

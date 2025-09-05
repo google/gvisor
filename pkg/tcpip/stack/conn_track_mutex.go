@@ -92,5 +92,5 @@ func connTrackinitLockNames() {}
 
 func init() {
 	connTrackinitLockNames()
-	connTrackprefixIndex = locking.NewMutexClass(reflect.TypeOf(connTrackRWMutex{}), connTracklockNames)
+	connTrackprefixIndex = locking.NewMutexClass(reflect.TypeFor[connTrackRWMutex](), connTracklockNames)
 }

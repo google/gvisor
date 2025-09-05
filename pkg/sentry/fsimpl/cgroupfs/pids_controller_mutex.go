@@ -60,5 +60,5 @@ func pidsControllerinitLockNames() {}
 
 func init() {
 	pidsControllerinitLockNames()
-	pidsControllerprefixIndex = locking.NewMutexClass(reflect.TypeOf(pidsControllerMutex{}), pidsControllerlockNames)
+	pidsControllerprefixIndex = locking.NewMutexClass(reflect.TypeFor[pidsControllerMutex](), pidsControllerlockNames)
 }

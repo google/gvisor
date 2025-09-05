@@ -60,5 +60,5 @@ func deferredDecRefsinitLockNames() {}
 
 func init() {
 	deferredDecRefsinitLockNames()
-	deferredDecRefsprefixIndex = locking.NewMutexClass(reflect.TypeOf(deferredDecRefsMutex{}), deferredDecRefslockNames)
+	deferredDecRefsprefixIndex = locking.NewMutexClass(reflect.TypeFor[deferredDecRefsMutex](), deferredDecRefslockNames)
 }

@@ -92,5 +92,5 @@ func renameinitLockNames() {}
 
 func init() {
 	renameinitLockNames()
-	renameprefixIndex = locking.NewMutexClass(reflect.TypeOf(renameRWMutex{}), renamelockNames)
+	renameprefixIndex = locking.NewMutexClass(reflect.TypeFor[renameRWMutex](), renamelockNames)
 }

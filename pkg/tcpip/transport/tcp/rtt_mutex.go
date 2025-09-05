@@ -60,5 +60,5 @@ func rttinitLockNames() {}
 
 func init() {
 	rttinitLockNames()
-	rttprefixIndex = locking.NewMutexClass(reflect.TypeOf(rttMutex{}), rttlockNames)
+	rttprefixIndex = locking.NewMutexClass(reflect.TypeFor[rttMutex](), rttlockNames)
 }

@@ -62,5 +62,5 @@ func pipeinitLockNames() { pipelockNames = []string{"pipe"} }
 
 func init() {
 	pipeinitLockNames()
-	pipeprefixIndex = locking.NewMutexClass(reflect.TypeOf(pipeMutex{}), pipelockNames)
+	pipeprefixIndex = locking.NewMutexClass(reflect.TypeFor[pipeMutex](), pipelockNames)
 }

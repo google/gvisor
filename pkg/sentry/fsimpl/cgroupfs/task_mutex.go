@@ -92,5 +92,5 @@ func taskinitLockNames() {}
 
 func init() {
 	taskinitLockNames()
-	taskprefixIndex = locking.NewMutexClass(reflect.TypeOf(taskRWMutex{}), tasklockNames)
+	taskprefixIndex = locking.NewMutexClass(reflect.TypeFor[taskRWMutex](), tasklockNames)
 }

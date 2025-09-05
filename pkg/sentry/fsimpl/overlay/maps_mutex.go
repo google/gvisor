@@ -60,5 +60,5 @@ func mapsinitLockNames() {}
 
 func init() {
 	mapsinitLockNames()
-	mapsprefixIndex = locking.NewMutexClass(reflect.TypeOf(mapsMutex{}), mapslockNames)
+	mapsprefixIndex = locking.NewMutexClass(reflect.TypeFor[mapsMutex](), mapslockNames)
 }

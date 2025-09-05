@@ -92,5 +92,5 @@ func transportEndpointsinitLockNames() {}
 
 func init() {
 	transportEndpointsinitLockNames()
-	transportEndpointsprefixIndex = locking.NewMutexClass(reflect.TypeOf(transportEndpointsRWMutex{}), transportEndpointslockNames)
+	transportEndpointsprefixIndex = locking.NewMutexClass(reflect.TypeFor[transportEndpointsRWMutex](), transportEndpointslockNames)
 }

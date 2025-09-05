@@ -92,5 +92,5 @@ func neighborEntryinitLockNames() {}
 
 func init() {
 	neighborEntryinitLockNames()
-	neighborEntryprefixIndex = locking.NewMutexClass(reflect.TypeOf(neighborEntryRWMutex{}), neighborEntrylockNames)
+	neighborEntryprefixIndex = locking.NewMutexClass(reflect.TypeFor[neighborEntryRWMutex](), neighborEntrylockNames)
 }

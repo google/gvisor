@@ -60,5 +60,5 @@ func gomaxprocsinitLockNames() {}
 
 func init() {
 	gomaxprocsinitLockNames()
-	gomaxprocsprefixIndex = locking.NewMutexClass(reflect.TypeOf(gomaxprocsMutex{}), gomaxprocslockNames)
+	gomaxprocsprefixIndex = locking.NewMutexClass(reflect.TypeFor[gomaxprocsMutex](), gomaxprocslockNames)
 }

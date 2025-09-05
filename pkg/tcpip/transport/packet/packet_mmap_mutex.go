@@ -92,5 +92,5 @@ func packetMmapinitLockNames() {}
 
 func init() {
 	packetMmapinitLockNames()
-	packetMmapprefixIndex = locking.NewMutexClass(reflect.TypeOf(packetMmapRWMutex{}), packetMmaplockNames)
+	packetMmapprefixIndex = locking.NewMutexClass(reflect.TypeFor[packetMmapRWMutex](), packetMmaplockNames)
 }

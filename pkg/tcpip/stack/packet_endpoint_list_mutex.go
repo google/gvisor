@@ -92,5 +92,5 @@ func packetEndpointListinitLockNames() {}
 
 func init() {
 	packetEndpointListinitLockNames()
-	packetEndpointListprefixIndex = locking.NewMutexClass(reflect.TypeOf(packetEndpointListRWMutex{}), packetEndpointListlockNames)
+	packetEndpointListprefixIndex = locking.NewMutexClass(reflect.TypeFor[packetEndpointListRWMutex](), packetEndpointListlockNames)
 }

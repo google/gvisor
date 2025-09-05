@@ -60,5 +60,5 @@ func devinitLockNames() {}
 
 func init() {
 	devinitLockNames()
-	devprefixIndex = locking.NewMutexClass(reflect.TypeOf(devMutex{}), devlockNames)
+	devprefixIndex = locking.NewMutexClass(reflect.TypeFor[devMutex](), devlockNames)
 }

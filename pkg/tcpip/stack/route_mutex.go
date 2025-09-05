@@ -92,5 +92,5 @@ func routeinitLockNames() {}
 
 func init() {
 	routeinitLockNames()
-	routeprefixIndex = locking.NewMutexClass(reflect.TypeOf(routeRWMutex{}), routelockNames)
+	routeprefixIndex = locking.NewMutexClass(reflect.TypeFor[routeRWMutex](), routelockNames)
 }

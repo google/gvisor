@@ -60,5 +60,5 @@ func rcvinitLockNames() {}
 
 func init() {
 	rcvinitLockNames()
-	rcvprefixIndex = locking.NewMutexClass(reflect.TypeOf(rcvMutex{}), rcvlockNames)
+	rcvprefixIndex = locking.NewMutexClass(reflect.TypeFor[rcvMutex](), rcvlockNames)
 }

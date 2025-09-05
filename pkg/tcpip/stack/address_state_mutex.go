@@ -92,5 +92,5 @@ func addressStateinitLockNames() {}
 
 func init() {
 	addressStateinitLockNames()
-	addressStateprefixIndex = locking.NewMutexClass(reflect.TypeOf(addressStateRWMutex{}), addressStatelockNames)
+	addressStateprefixIndex = locking.NewMutexClass(reflect.TypeFor[addressStateRWMutex](), addressStatelockNames)
 }

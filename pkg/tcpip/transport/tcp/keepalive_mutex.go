@@ -60,5 +60,5 @@ func keepaliveinitLockNames() {}
 
 func init() {
 	keepaliveinitLockNames()
-	keepaliveprefixIndex = locking.NewMutexClass(reflect.TypeOf(keepaliveMutex{}), keepalivelockNames)
+	keepaliveprefixIndex = locking.NewMutexClass(reflect.TypeFor[keepaliveMutex](), keepalivelockNames)
 }

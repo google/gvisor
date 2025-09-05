@@ -60,5 +60,5 @@ func aioContextinitLockNames() {}
 
 func init() {
 	aioContextinitLockNames()
-	aioContextprefixIndex = locking.NewMutexClass(reflect.TypeOf(aioContextMutex{}), aioContextlockNames)
+	aioContextprefixIndex = locking.NewMutexClass(reflect.TypeFor[aioContextMutex](), aioContextlockNames)
 }

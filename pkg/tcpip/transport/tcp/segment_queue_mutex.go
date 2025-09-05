@@ -60,5 +60,5 @@ func segmentQueueinitLockNames() {}
 
 func init() {
 	segmentQueueinitLockNames()
-	segmentQueueprefixIndex = locking.NewMutexClass(reflect.TypeOf(segmentQueueMutex{}), segmentQueuelockNames)
+	segmentQueueprefixIndex = locking.NewMutexClass(reflect.TypeFor[segmentQueueMutex](), segmentQueuelockNames)
 }

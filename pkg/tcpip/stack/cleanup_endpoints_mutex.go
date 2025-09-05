@@ -60,5 +60,5 @@ func cleanupEndpointsinitLockNames() {}
 
 func init() {
 	cleanupEndpointsinitLockNames()
-	cleanupEndpointsprefixIndex = locking.NewMutexClass(reflect.TypeOf(cleanupEndpointsMutex{}), cleanupEndpointslockNames)
+	cleanupEndpointsprefixIndex = locking.NewMutexClass(reflect.TypeFor[cleanupEndpointsMutex](), cleanupEndpointslockNames)
 }

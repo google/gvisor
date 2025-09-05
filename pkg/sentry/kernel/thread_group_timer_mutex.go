@@ -60,5 +60,5 @@ func threadGroupTimerinitLockNames() {}
 
 func init() {
 	threadGroupTimerinitLockNames()
-	threadGroupTimerprefixIndex = locking.NewMutexClass(reflect.TypeOf(threadGroupTimerMutex{}), threadGroupTimerlockNames)
+	threadGroupTimerprefixIndex = locking.NewMutexClass(reflect.TypeFor[threadGroupTimerMutex](), threadGroupTimerlockNames)
 }

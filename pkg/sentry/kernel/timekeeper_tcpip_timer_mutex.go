@@ -60,5 +60,5 @@ func timekeeperTcpipTimerinitLockNames() {}
 
 func init() {
 	timekeeperTcpipTimerinitLockNames()
-	timekeeperTcpipTimerprefixIndex = locking.NewMutexClass(reflect.TypeOf(timekeeperTcpipTimerMutex{}), timekeeperTcpipTimerlockNames)
+	timekeeperTcpipTimerprefixIndex = locking.NewMutexClass(reflect.TypeFor[timekeeperTcpipTimerMutex](), timekeeperTcpipTimerlockNames)
 }

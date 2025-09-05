@@ -60,5 +60,5 @@ func inodeinitLockNames() {}
 
 func init() {
 	inodeinitLockNames()
-	inodeprefixIndex = locking.NewMutexClass(reflect.TypeOf(inodeMutex{}), inodelockNames)
+	inodeprefixIndex = locking.NewMutexClass(reflect.TypeFor[inodeMutex](), inodelockNames)
 }

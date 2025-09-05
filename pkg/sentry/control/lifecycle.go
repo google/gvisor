@@ -21,6 +21,7 @@ import (
 
 	"google.golang.org/protobuf/types/known/timestamppb"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/eventchannel"
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/log"
@@ -288,6 +289,8 @@ func (l *Lifecycle) StartContainer(args *StartContainerArgs, _ *uint32) error {
 
 	initArgs.MountNamespace = mntns
 	initArgs.MountNamespace.IncRef()
+	mntnsCu := cleanup.Make(func() { initArgs.MountNamespace.DecRef(ctx) })
+	defer mntnsCu.Clean()
 
 	if args.ResolveBinaryPath {
 		resolved, err := user.ResolveExecutablePath(ctx, &initArgs)
@@ -327,6 +330,7 @@ func (l *Lifecycle) StartContainer(args *StartContainerArgs, _ *uint32) error {
 	}
 	initArgs.InitialCgroups = initialCgroups
 
+	mntnsCu.Release() // mntns ref is transferred to Kernel.CreateProcess()
 	tg, _, err := l.Kernel.CreateProcess(initArgs)
 	if err != nil {
 		return err

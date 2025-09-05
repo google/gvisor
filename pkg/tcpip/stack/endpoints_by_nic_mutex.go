@@ -92,5 +92,5 @@ func endpointsByNICinitLockNames() {}
 
 func init() {
 	endpointsByNICinitLockNames()
-	endpointsByNICprefixIndex = locking.NewMutexClass(reflect.TypeOf(endpointsByNICRWMutex{}), endpointsByNIClockNames)
+	endpointsByNICprefixIndex = locking.NewMutexClass(reflect.TypeFor[endpointsByNICRWMutex](), endpointsByNIClockNames)
 }

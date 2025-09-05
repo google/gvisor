@@ -92,5 +92,5 @@ func nfTablesinitLockNames() {}
 
 func init() {
 	nfTablesinitLockNames()
-	nfTablesprefixIndex = locking.NewMutexClass(reflect.TypeOf(nfTablesRWMutex{}), nfTableslockNames)
+	nfTablesprefixIndex = locking.NewMutexClass(reflect.TypeFor[nfTablesRWMutex](), nfTableslockNames)
 }

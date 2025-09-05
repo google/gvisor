@@ -18,7 +18,6 @@ func (e *connectionedEndpoint) StateFields() []string {
 		"id",
 		"idGenerator",
 		"stype",
-		"peerCreds",
 		"acceptedChan",
 		"boundSocketFD",
 	}
@@ -29,13 +28,12 @@ func (e *connectionedEndpoint) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
 	var acceptedChanValue []*connectionedEndpoint
 	acceptedChanValue = e.saveAcceptedChan()
-	stateSinkObject.SaveValue(5, acceptedChanValue)
+	stateSinkObject.SaveValue(4, acceptedChanValue)
 	stateSinkObject.Save(0, &e.baseEndpoint)
 	stateSinkObject.Save(1, &e.id)
 	stateSinkObject.Save(2, &e.idGenerator)
 	stateSinkObject.Save(3, &e.stype)
-	stateSinkObject.Save(4, &e.peerCreds)
-	stateSinkObject.Save(6, &e.boundSocketFD)
+	stateSinkObject.Save(5, &e.boundSocketFD)
 }
 
 // +checklocksignore
@@ -44,9 +42,8 @@ func (e *connectionedEndpoint) StateLoad(ctx context.Context, stateSourceObject 
 	stateSourceObject.Load(1, &e.id)
 	stateSourceObject.Load(2, &e.idGenerator)
 	stateSourceObject.Load(3, &e.stype)
-	stateSourceObject.Load(4, &e.peerCreds)
-	stateSourceObject.Load(6, &e.boundSocketFD)
-	stateSourceObject.LoadValue(5, new([]*connectionedEndpoint), func(y any) { e.loadAcceptedChan(ctx, y.([]*connectionedEndpoint)) })
+	stateSourceObject.Load(5, &e.boundSocketFD)
+	stateSourceObject.LoadValue(4, new([]*connectionedEndpoint), func(y any) { e.loadAcceptedChan(ctx, y.([]*connectionedEndpoint)) })
 	stateSourceObject.AfterLoad(func() { e.afterLoad(ctx) })
 }
 

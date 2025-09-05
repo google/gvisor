@@ -60,5 +60,5 @@ func directoryFDinitLockNames() {}
 
 func init() {
 	directoryFDinitLockNames()
-	directoryFDprefixIndex = locking.NewMutexClass(reflect.TypeOf(directoryFDMutex{}), directoryFDlockNames)
+	directoryFDprefixIndex = locking.NewMutexClass(reflect.TypeFor[directoryFDMutex](), directoryFDlockNames)
 }

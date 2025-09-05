@@ -60,5 +60,5 @@ func queueinitLockNames() {}
 
 func init() {
 	queueinitLockNames()
-	queueprefixIndex = locking.NewMutexClass(reflect.TypeOf(queueMutex{}), queuelockNames)
+	queueprefixIndex = locking.NewMutexClass(reflect.TypeFor[queueMutex](), queuelockNames)
 }

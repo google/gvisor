@@ -92,5 +92,5 @@ func nicinitLockNames() {}
 
 func init() {
 	nicinitLockNames()
-	nicprefixIndex = locking.NewMutexClass(reflect.TypeOf(nicRWMutex{}), niclockNames)
+	nicprefixIndex = locking.NewMutexClass(reflect.TypeFor[nicRWMutex](), niclockNames)
 }

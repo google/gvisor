@@ -60,5 +60,5 @@ func userCountersinitLockNames() {}
 
 func init() {
 	userCountersinitLockNames()
-	userCountersprefixIndex = locking.NewMutexClass(reflect.TypeOf(userCountersMutex{}), userCounterslockNames)
+	userCountersprefixIndex = locking.NewMutexClass(reflect.TypeFor[userCountersMutex](), userCounterslockNames)
 }

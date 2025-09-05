@@ -60,5 +60,5 @@ func aioManagerinitLockNames() {}
 
 func init() {
 	aioManagerinitLockNames()
-	aioManagerprefixIndex = locking.NewMutexClass(reflect.TypeOf(aioManagerMutex{}), aioManagerlockNames)
+	aioManagerprefixIndex = locking.NewMutexClass(reflect.TypeFor[aioManagerMutex](), aioManagerlockNames)
 }

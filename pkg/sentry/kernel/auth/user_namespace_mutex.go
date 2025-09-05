@@ -62,5 +62,5 @@ func userNamespaceinitLockNames() { userNamespacelockNames = []string{"ns"} }
 
 func init() {
 	userNamespaceinitLockNames()
-	userNamespaceprefixIndex = locking.NewMutexClass(reflect.TypeOf(userNamespaceMutex{}), userNamespacelockNames)
+	userNamespaceprefixIndex = locking.NewMutexClass(reflect.TypeFor[userNamespaceMutex](), userNamespacelockNames)
 }

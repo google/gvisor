@@ -60,5 +60,5 @@ func acceptinitLockNames() {}
 
 func init() {
 	acceptinitLockNames()
-	acceptprefixIndex = locking.NewMutexClass(reflect.TypeOf(acceptMutex{}), acceptlockNames)
+	acceptprefixIndex = locking.NewMutexClass(reflect.TypeFor[acceptMutex](), acceptlockNames)
 }

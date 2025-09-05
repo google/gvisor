@@ -60,5 +60,5 @@ func epollReadyInstanceinitLockNames() {}
 
 func init() {
 	epollReadyInstanceinitLockNames()
-	epollReadyInstanceprefixIndex = locking.NewMutexClass(reflect.TypeOf(epollReadyInstanceMutex{}), epollReadyInstancelockNames)
+	epollReadyInstanceprefixIndex = locking.NewMutexClass(reflect.TypeFor[epollReadyInstanceMutex](), epollReadyInstancelockNames)
 }

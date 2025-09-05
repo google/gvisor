@@ -60,5 +60,5 @@ func iterinitLockNames() {}
 
 func init() {
 	iterinitLockNames()
-	iterprefixIndex = locking.NewMutexClass(reflect.TypeOf(iterMutex{}), iterlockNames)
+	iterprefixIndex = locking.NewMutexClass(reflect.TypeFor[iterMutex](), iterlockNames)
 }

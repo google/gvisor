@@ -158,14 +158,6 @@ func (*connectionlessEndpoint) Accept(context.Context, *Address, UnixSocketOpts)
 	return nil, syserr.ErrNotSupported
 }
 
-func (e *connectionlessEndpoint) PeerCreds() CredentialsControlMessage {
-	return nil
-}
-
-func (e *connectionlessEndpoint) SetPeerCreds(creds CredentialsControlMessage) {
-	// no-op
-}
-
 // Bind binds the connection.
 //
 // For Unix endpoints, this _only sets the address associated with the socket_.

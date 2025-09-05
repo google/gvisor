@@ -60,5 +60,5 @@ func queueDispatcherinitLockNames() {}
 
 func init() {
 	queueDispatcherinitLockNames()
-	queueDispatcherprefixIndex = locking.NewMutexClass(reflect.TypeOf(queueDispatcherMutex{}), queueDispatcherlockNames)
+	queueDispatcherprefixIndex = locking.NewMutexClass(reflect.TypeFor[queueDispatcherMutex](), queueDispatcherlockNames)
 }

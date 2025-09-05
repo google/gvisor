@@ -92,5 +92,5 @@ func protocolinitLockNames() {}
 
 func init() {
 	protocolinitLockNames()
-	protocolprefixIndex = locking.NewMutexClass(reflect.TypeOf(protocolRWMutex{}), protocollockNames)
+	protocolprefixIndex = locking.NewMutexClass(reflect.TypeFor[protocolRWMutex](), protocollockNames)
 }

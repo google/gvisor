@@ -60,5 +60,5 @@ func regularFileFDinitLockNames() {}
 
 func init() {
 	regularFileFDinitLockNames()
-	regularFileFDprefixIndex = locking.NewMutexClass(reflect.TypeOf(regularFileFDMutex{}), regularFileFDlockNames)
+	regularFileFDprefixIndex = locking.NewMutexClass(reflect.TypeFor[regularFileFDMutex](), regularFileFDlockNames)
 }

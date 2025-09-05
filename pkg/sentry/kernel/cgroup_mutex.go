@@ -60,5 +60,5 @@ func cgroupinitLockNames() {}
 
 func init() {
 	cgroupinitLockNames()
-	cgroupprefixIndex = locking.NewMutexClass(reflect.TypeOf(cgroupMutex{}), cgrouplockNames)
+	cgroupprefixIndex = locking.NewMutexClass(reflect.TypeFor[cgroupMutex](), cgrouplockNames)
 }

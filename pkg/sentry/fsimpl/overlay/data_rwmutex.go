@@ -92,5 +92,5 @@ func datainitLockNames() {}
 
 func init() {
 	datainitLockNames()
-	dataprefixIndex = locking.NewMutexClass(reflect.TypeOf(dataRWMutex{}), datalockNames)
+	dataprefixIndex = locking.NewMutexClass(reflect.TypeFor[dataRWMutex](), datalockNames)
 }

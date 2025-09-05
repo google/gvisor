@@ -60,5 +60,5 @@ func refsinitLockNames() {}
 
 func init() {
 	refsinitLockNames()
-	refsprefixIndex = locking.NewMutexClass(reflect.TypeOf(refsMutex{}), refslockNames)
+	refsprefixIndex = locking.NewMutexClass(reflect.TypeFor[refsMutex](), refslockNames)
 }

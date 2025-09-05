@@ -60,5 +60,5 @@ func inotifyEventinitLockNames() {}
 
 func init() {
 	inotifyEventinitLockNames()
-	inotifyEventprefixIndex = locking.NewMutexClass(reflect.TypeOf(inotifyEventMutex{}), inotifyEventlockNames)
+	inotifyEventprefixIndex = locking.NewMutexClass(reflect.TypeFor[inotifyEventMutex](), inotifyEventlockNames)
 }

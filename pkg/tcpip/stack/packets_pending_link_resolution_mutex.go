@@ -60,5 +60,5 @@ func packetsPendingLinkResolutioninitLockNames() {}
 
 func init() {
 	packetsPendingLinkResolutioninitLockNames()
-	packetsPendingLinkResolutionprefixIndex = locking.NewMutexClass(reflect.TypeOf(packetsPendingLinkResolutionMutex{}), packetsPendingLinkResolutionlockNames)
+	packetsPendingLinkResolutionprefixIndex = locking.NewMutexClass(reflect.TypeFor[packetsPendingLinkResolutionMutex](), packetsPendingLinkResolutionlockNames)
 }

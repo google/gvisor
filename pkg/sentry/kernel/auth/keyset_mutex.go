@@ -92,5 +92,5 @@ func keysetinitLockNames() {}
 
 func init() {
 	keysetinitLockNames()
-	keysetprefixIndex = locking.NewMutexClass(reflect.TypeOf(keysetRWMutex{}), keysetlockNames)
+	keysetprefixIndex = locking.NewMutexClass(reflect.TypeFor[keysetRWMutex](), keysetlockNames)
 }

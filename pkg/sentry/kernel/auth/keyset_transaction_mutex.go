@@ -60,5 +60,5 @@ func keysetTransactioninitLockNames() {}
 
 func init() {
 	keysetTransactioninitLockNames()
-	keysetTransactionprefixIndex = locking.NewMutexClass(reflect.TypeOf(keysetTransactionMutex{}), keysetTransactionlockNames)
+	keysetTransactionprefixIndex = locking.NewMutexClass(reflect.TypeFor[keysetTransactionMutex](), keysetTransactionlockNames)
 }

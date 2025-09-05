@@ -60,5 +60,5 @@ func forwarderRequestinitLockNames() {}
 
 func init() {
 	forwarderRequestinitLockNames()
-	forwarderRequestprefixIndex = locking.NewMutexClass(reflect.TypeOf(forwarderRequestMutex{}), forwarderRequestlockNames)
+	forwarderRequestprefixIndex = locking.NewMutexClass(reflect.TypeFor[forwarderRequestMutex](), forwarderRequestlockNames)
 }

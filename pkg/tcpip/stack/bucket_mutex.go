@@ -94,5 +94,5 @@ func bucketinitLockNames() { bucketlockNames = []string{"otherTuple"} }
 
 func init() {
 	bucketinitLockNames()
-	bucketprefixIndex = locking.NewMutexClass(reflect.TypeOf(bucketRWMutex{}), bucketlockNames)
+	bucketprefixIndex = locking.NewMutexClass(reflect.TypeFor[bucketRWMutex](), bucketlockNames)
 }

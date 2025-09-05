@@ -62,5 +62,5 @@ func futexBucketinitLockNames() { futexBucketlockNames = []string{"b"} }
 
 func init() {
 	futexBucketinitLockNames()
-	futexBucketprefixIndex = locking.NewMutexClass(reflect.TypeOf(futexBucketMutex{}), futexBucketlockNames)
+	futexBucketprefixIndex = locking.NewMutexClass(reflect.TypeFor[futexBucketMutex](), futexBucketlockNames)
 }

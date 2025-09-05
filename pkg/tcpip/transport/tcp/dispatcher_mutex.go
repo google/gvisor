@@ -60,5 +60,5 @@ func dispatcherinitLockNames() {}
 
 func init() {
 	dispatcherinitLockNames()
-	dispatcherprefixIndex = locking.NewMutexClass(reflect.TypeOf(dispatcherMutex{}), dispatcherlockNames)
+	dispatcherprefixIndex = locking.NewMutexClass(reflect.TypeFor[dispatcherMutex](), dispatcherlockNames)
 }

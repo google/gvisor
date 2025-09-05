@@ -60,5 +60,5 @@ func abstractSocketNamespaceinitLockNames() {}
 
 func init() {
 	abstractSocketNamespaceinitLockNames()
-	abstractSocketNamespaceprefixIndex = locking.NewMutexClass(reflect.TypeOf(abstractSocketNamespaceMutex{}), abstractSocketNamespacelockNames)
+	abstractSocketNamespaceprefixIndex = locking.NewMutexClass(reflect.TypeFor[abstractSocketNamespaceMutex](), abstractSocketNamespacelockNames)
 }

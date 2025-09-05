@@ -60,5 +60,5 @@ func processorinitLockNames() {}
 
 func init() {
 	processorinitLockNames()
-	processorprefixIndex = locking.NewMutexClass(reflect.TypeOf(processorMutex{}), processorlockNames)
+	processorprefixIndex = locking.NewMutexClass(reflect.TypeFor[processorMutex](), processorlockNames)
 }

@@ -60,5 +60,5 @@ func objsinitLockNames() {}
 
 func init() {
 	objsinitLockNames()
-	objsprefixIndex = locking.NewMutexClass(reflect.TypeOf(objsMutex{}), objslockNames)
+	objsprefixIndex = locking.NewMutexClass(reflect.TypeFor[objsMutex](), objslockNames)
 }

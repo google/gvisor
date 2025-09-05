@@ -266,7 +266,7 @@ func (s *Server) Register(obj any) {
 			// Need single return.
 			panic(fmt.Sprintf("method %s has wrong number of returns.", prettyName))
 		}
-		if returnType := mtype.Out(0); returnType != reflect.TypeOf((*error)(nil)).Elem() {
+		if returnType := mtype.Out(0); returnType != reflect.TypeFor[error]() {
 			// Need error return.
 			panic(fmt.Sprintf("method %s has non-error return value.", prettyName))
 		}

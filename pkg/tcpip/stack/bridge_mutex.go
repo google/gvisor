@@ -92,5 +92,5 @@ func bridgeinitLockNames() {}
 
 func init() {
 	bridgeinitLockNames()
-	bridgeprefixIndex = locking.NewMutexClass(reflect.TypeOf(bridgeRWMutex{}), bridgelockNames)
+	bridgeprefixIndex = locking.NewMutexClass(reflect.TypeFor[bridgeRWMutex](), bridgelockNames)
 }

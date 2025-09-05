@@ -104,33 +104,35 @@ func createControlSocket(rootDir, id string) (string, int, error) {
 	return "", -1, fmt.Errorf("unable to find location to write socket file")
 }
 
-// pid is an atomic type that implements JSON marshal/unmarshal interfaces.
-type pid struct {
+// Pid is an atomic type that implements JSON marshal/unmarshal interfaces.
+type Pid struct {
 	val atomicbitops.Int64
 }
 
-func (p *pid) store(pid int) {
+// Store stores the PID in p.
+func (p *Pid) Store(pid int) {
 	p.val.Store(int64(pid))
 }
 
-func (p *pid) load() int {
+// Load loads the PID from p.
+func (p *Pid) Load() int {
 	return int(p.val.Load())
 }
 
 // UnmarshalJSON implements json.Unmarshaler.UnmarshalJSON.
-func (p *pid) UnmarshalJSON(b []byte) error {
+func (p *Pid) UnmarshalJSON(b []byte) error {
 	var pid int
 
 	if err := json.Unmarshal(b, &pid); err != nil {
 		return err
 	}
-	p.store(pid)
+	p.Store(pid)
 	return nil
 }
 
 // MarshalJSON implements json.Marshaler.MarshalJSON
-func (p *pid) MarshalJSON() ([]byte, error) {
-	return json.Marshal(p.load())
+func (p *Pid) MarshalJSON() ([]byte, error) {
+	return json.Marshal(p.Load())
 }
 
 // Sandbox wraps a sandbox process.
@@ -156,7 +158,7 @@ type Sandbox struct {
 
 	// Pid is the pid of the running sandbox. May be 0 if the sandbox
 	// is not running.
-	Pid pid `json:"pid"`
+	Pid Pid `json:"pid"`
 
 	// UID is the user ID in the parent namespace that the sandbox is running as.
 	UID int `json:"uid"`
@@ -231,7 +233,7 @@ type Sandbox struct {
 
 // Getpid returns the process ID of the sandbox process.
 func (s *Sandbox) Getpid() int {
-	return s.Pid.load()
+	return s.Pid.Load()
 }
 
 // Args is used to configure a new sandbox.
@@ -388,7 +390,7 @@ func New(conf *config.Config, args *Args) (*Sandbox, error) {
 
 // CreateSubcontainer creates a container inside the sandbox.
 func (s *Sandbox) CreateSubcontainer(conf *config.Config, cid string, tty *os.File) error {
-	log.Debugf("Create sub-container %q in sandbox %q, PID: %d", cid, s.ID, s.Pid.load())
+	log.Debugf("Create sub-container %q in sandbox %q, PID: %d", cid, s.ID, s.Pid.Load())
 
 	var files []*os.File
 	if tty != nil {
@@ -428,7 +430,7 @@ func (s *Sandbox) StartRoot(conf *config.Config, spec *specs.Spec) error {
 	if err := hostsettings.Handle(conf); err != nil {
 		return fmt.Errorf("host settings: %w (use --host-settings=ignore to bypass)", err)
 	}
-	pid := s.Pid.load()
+	pid := s.Pid.Load()
 	log.Debugf("Start root sandbox %q, PID: %d", s.ID, pid)
 	conn, err := s.sandboxConnect()
 	if err != nil {
@@ -456,7 +458,7 @@ func (s *Sandbox) StartRoot(conf *config.Config, spec *specs.Spec) error {
 
 // StartSubcontainer starts running a sub-container inside the sandbox.
 func (s *Sandbox) StartSubcontainer(spec *specs.Spec, conf *config.Config, cid string, stdios, goferFiles, goferFilestores []*os.File, devIOFile *os.File, goferConfs []boot.GoferMountConf) error {
-	log.Debugf("Start sub-container %q in sandbox %q, PID: %d", cid, s.ID, s.Pid.load())
+	log.Debugf("Start sub-container %q in sandbox %q, PID: %d", cid, s.ID, s.Pid.Load())
 
 	if err := s.configureStdios(conf, stdios); err != nil {
 		return err
@@ -561,7 +563,7 @@ func (s *Sandbox) Restore(conf *config.Config, spec *specs.Spec, cid string, ima
 		return err
 	}
 	// Configure the network.
-	if err := setupNetwork(conn, s.Pid.load(), conf, disableIPv6); err != nil {
+	if err := setupNetwork(conn, s.Pid.Load(), conf, disableIPv6); err != nil {
 		return fmt.Errorf("setting up network: %v", err)
 	}
 
@@ -575,7 +577,7 @@ func (s *Sandbox) Restore(conf *config.Config, spec *specs.Spec, cid string, ima
 
 // RestoreSubcontainer sends the restore call for a sub-container in the sandbox.
 func (s *Sandbox) RestoreSubcontainer(spec *specs.Spec, conf *config.Config, cid string, stdios, goferFiles, goferFilestoreFiles []*os.File, devIOFile *os.File, goferMountConf []boot.GoferMountConf) error {
-	log.Debugf("Restore sub-container %q in sandbox %q, PID: %d", cid, s.ID, s.Pid.load())
+	log.Debugf("Restore sub-container %q in sandbox %q, PID: %d", cid, s.ID, s.Pid.Load())
 
 	if err := s.configureStdios(conf, stdios); err != nil {
 		return err
@@ -680,7 +682,7 @@ func (s *Sandbox) ProcfsDump() ([]procfs.ProcessProcfsDump, error) {
 
 // NewCGroup returns the sandbox's Cgroup, or an error if it does not have one.
 func (s *Sandbox) NewCGroup() (cgroup.Cgroup, error) {
-	return cgroup.NewFromPid(s.Pid.load(), false /* useSystemd */)
+	return cgroup.NewFromPid(s.Pid.Load(), false /* useSystemd */)
 }
 
 // Execute runs the specified command in the container. It returns the PID of
@@ -797,7 +799,7 @@ func (s *Sandbox) call(method string, arg, result any) error {
 }
 
 func (s *Sandbox) connError(err error) error {
-	return fmt.Errorf("connecting to control server at PID %d: %v", s.Pid.load(), err)
+	return fmt.Errorf("connecting to control server at PID %d: %v", s.Pid.Load(), err)
 }
 
 // createSandboxProcess starts the sandbox as a subprocess by running the "boot"
@@ -1287,7 +1289,7 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 	}
 
 	s.child = true
-	s.Pid.store(cmd.Process.Pid)
+	s.Pid.Store(cmd.Process.Pid)
 	log.Infof("Sandbox started, PID: %d", cmd.Process.Pid)
 
 	return nil
@@ -1390,7 +1392,7 @@ func (s *Sandbox) destroy() error {
 			log.Warningf("failed to delete control socket file %q: %v", controlSocketPath, err)
 		}
 	}
-	pid := s.Pid.load()
+	pid := s.Pid.Load()
 	if pid != 0 {
 		log.Debugf("Killing sandbox %q", s.ID)
 		if err := unix.Kill(pid, unix.SIGKILL); err != nil && err != unix.ESRCH {
@@ -1610,7 +1612,7 @@ func (s *Sandbox) ExportMetrics(opts control.MetricsExportOpts) (*prometheus.Sna
 
 // IsRunning returns true if the sandbox or gofer process is running.
 func (s *Sandbox) IsRunning() bool {
-	pid := s.Pid.load()
+	pid := s.Pid.Load()
 	if pid == 0 {
 		return false
 	}
@@ -1721,7 +1723,7 @@ func (s *Sandbox) waitForStopped() error {
 	if s.child {
 		s.statusMu.Lock()
 		defer s.statusMu.Unlock()
-		pid := s.Pid.load()
+		pid := s.Pid.Load()
 		if pid == 0 {
 			return nil
 		}
@@ -1730,7 +1732,7 @@ func (s *Sandbox) waitForStopped() error {
 		if _, err := unix.Wait4(int(pid), &s.status, 0, nil); err != nil {
 			return fmt.Errorf("error waiting the sandbox process: %v", err)
 		}
-		s.Pid.store(0)
+		s.Pid.Store(0)
 		return nil
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), waitTimeout)
@@ -1878,7 +1880,7 @@ func (s *Sandbox) fixPidns(spec *specs.Spec) {
 		// pidns was not set, nothing to fix.
 		return
 	}
-	if pidns.Path != fmt.Sprintf("/proc/%d/ns/pid", s.Pid.load()) {
+	if pidns.Path != fmt.Sprintf("/proc/%d/ns/pid", s.Pid.Load()) {
 		// Fix only if the PID namespace corresponds to the sandbox's.
 		return
 	}

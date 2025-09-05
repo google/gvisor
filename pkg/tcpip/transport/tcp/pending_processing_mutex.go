@@ -60,5 +60,5 @@ func pendingProcessinginitLockNames() {}
 
 func init() {
 	pendingProcessinginitLockNames()
-	pendingProcessingprefixIndex = locking.NewMutexClass(reflect.TypeOf(pendingProcessingMutex{}), pendingProcessinglockNames)
+	pendingProcessingprefixIndex = locking.NewMutexClass(reflect.TypeFor[pendingProcessingMutex](), pendingProcessinglockNames)
 }

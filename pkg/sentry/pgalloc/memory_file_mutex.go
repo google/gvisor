@@ -60,5 +60,5 @@ func memoryFileinitLockNames() {}
 
 func init() {
 	memoryFileinitLockNames()
-	memoryFileprefixIndex = locking.NewMutexClass(reflect.TypeOf(memoryFileMutex{}), memoryFilelockNames)
+	memoryFileprefixIndex = locking.NewMutexClass(reflect.TypeFor[memoryFileMutex](), memoryFilelockNames)
 }

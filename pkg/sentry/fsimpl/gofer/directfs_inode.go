@@ -248,13 +248,11 @@ func (i *directfsInode) ensureLisafsControlFD(ctx context.Context, d *dentry) er
 	panic("unreachable")
 }
 
-// Precondition: i.metadataMu must be locked.
-//
 // +checklocks:i.metadataMu
 func (i *directfsInode) updateMetadataLocked(h handle) error {
 	handleMuRLocked := false
 	if h.fd < 0 {
-		// Use open FDs in preferenece to the control FD. Control FDs may be opened
+		// Use open FDs in preference to the control FD. Control FDs may be opened
 		// with O_PATH. This may be significantly more efficient in some
 		// implementations. Prefer a writable FD over a readable one since some
 		// filesystem implementations may update a writable FD's metadata after
@@ -284,6 +282,31 @@ func (i *directfsInode) updateMetadataLocked(h handle) error {
 		return err
 	}
 	return i.updateMetadataFromStatLocked(&stat)
+}
+
+// updateMetadataFromStatLocked is similar to updateMetadataFromStatxLocked,
+// except that it takes a unix.Stat_t argument.
+// +checklocks:i.inode.metadataMu
+func (i *directfsInode) updateMetadataFromStatLocked(stat *unix.Stat_t) error {
+	if got, want := stat.Mode&unix.S_IFMT, i.inode.fileType(); got != want {
+		panic(fmt.Sprintf("directfsInode file type changed from %#o to %#o", want, got))
+	}
+	i.inode.mode.Store(stat.Mode)
+	i.inode.uid.Store(stat.Uid)
+	i.inode.gid.Store(stat.Gid)
+	i.inode.blockSize.Store(uint32(stat.Blksize))
+	// Don't override newer client-defined timestamps with old host-defined
+	// ones.
+	if i.inode.atimeDirty.Load() == 0 {
+		i.inode.atime.Store(dentryTimestampFromUnix(stat.Atim))
+	}
+	if i.inode.mtimeDirty.Load() == 0 {
+		i.inode.mtime.Store(dentryTimestampFromUnix(stat.Mtim))
+	}
+	i.inode.ctime.Store(dentryTimestampFromUnix(stat.Ctim))
+	i.inode.nlink.Store(uint32(stat.Nlink))
+	i.inode.updateSizeLocked(uint64(stat.Size))
+	return nil
 }
 
 // Precondition: fs.renameMu is locked if d is a socket.
@@ -583,8 +606,6 @@ func (i *directfsInode) link(target *dentry, name string, d *dentry) (*dentry, e
 	}
 	// Note that we don't need to set uid/gid for the new child. This is a hard
 	// link. The original file already has the right owner.
-	// TODO(gvisor.dev/issue/6739): Hard linked dentries should share the same
-	// inode fields.
 	return i.getCreatedChild(name, auth.NoID /* uid */, auth.NoID /* gid */, false /* isDir */, true /* createDentry */, d)
 }
 
@@ -780,6 +801,11 @@ func doRevalidationDirectfs(ctx context.Context, vfsObj *vfs.VirtualFilesystem, 
 			// dentry invalidated.
 			d.invalidate(ctx, vfsObj, ds)
 			return nil
+		}
+
+		// Check that the file type has not changed.
+		if got, want := stat.Mode&unix.S_IFMT, d.inode.fileType(); got != want {
+			panic(fmt.Sprintf("file type of %q changed from %#o to %#o while inode key (%+v) did not change", genericDebugPathname(d.inode.fs, d), want, got, d.inode.inoKey))
 		}
 
 		// The file at this path hasn't changed. Just update cached metadata.
