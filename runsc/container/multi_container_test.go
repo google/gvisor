@@ -837,7 +837,7 @@ func TestMultiContainerSignal(t *testing.T) {
 			}
 
 			// goferPid is reset when container is destroyed.
-			goferPid := containers[1].GoferPid
+			goferPid := containers[1].GoferPid.Load()
 
 			// Destroy container and ensure container's gofer process has exited.
 			if err := containers[1].Destroy(); err != nil {
@@ -867,7 +867,7 @@ func TestMultiContainerSignal(t *testing.T) {
 			}
 
 			// Ensure that container's gofer and sandbox process are no more.
-			err = blockUntilWaitable(containers[0].GoferPid)
+			err = blockUntilWaitable(containers[0].GoferPid.Load())
 			if err != nil && err != unix.ECHILD {
 				t.Errorf("error waiting for gofer to exit: %v", err)
 			}
@@ -1973,8 +1973,8 @@ func TestMultiContainerGoferKilled(t *testing.T) {
 	}
 
 	// Kill container's gofer.
-	if err := unix.Kill(c.GoferPid, unix.SIGKILL); err != nil {
-		t.Fatalf("unix.Kill(%d, SIGKILL)=%v", c.GoferPid, err)
+	if err := unix.Kill(c.GoferPid.Load(), unix.SIGKILL); err != nil {
+		t.Fatalf("unix.Kill(%d, SIGKILL)=%v", c.GoferPid.Load(), err)
 	}
 
 	// Wait until container stops.
@@ -2005,8 +2005,8 @@ func TestMultiContainerGoferKilled(t *testing.T) {
 
 	// Kill root container's gofer to bring entire sandbox down.
 	c = containers[0]
-	if err := unix.Kill(c.GoferPid, unix.SIGKILL); err != nil {
-		t.Fatalf("unix.Kill(%d, SIGKILL)=%v", c.GoferPid, err)
+	if err := unix.Kill(c.GoferPid.Load(), unix.SIGKILL); err != nil {
+		t.Fatalf("unix.Kill(%d, SIGKILL)=%v", c.GoferPid.Load(), err)
 	}
 
 	// Wait until sandbox stops. waitForProcessList will loop until sandbox exits

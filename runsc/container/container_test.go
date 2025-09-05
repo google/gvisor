@@ -2084,7 +2084,7 @@ func TestGoferExits(t *testing.T) {
 		t.Fatalf("error killing sandbox process: %v", err)
 	}
 
-	err = blockUntilWaitable(c.GoferPid)
+	err = blockUntilWaitable(c.GoferPid.Load())
 	if err != nil && err != unix.ECHILD {
 		t.Errorf("error waiting for gofer to exit: %v", err)
 	}

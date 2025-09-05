@@ -136,7 +136,7 @@ func testCapabilities(t *testing.T, directfs bool) {
 	if err := checkProcessCaps(c.Sandbox.Getpid(), wantSandboxCaps); err != nil {
 		t.Error(err)
 	}
-	if err := checkProcessCaps(c.GoferPid, goferCaps); err != nil {
+	if err := checkProcessCaps(c.GoferPid.Load(), goferCaps); err != nil {
 		t.Error(err)
 	}
 }

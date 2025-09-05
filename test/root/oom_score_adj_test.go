@@ -90,7 +90,7 @@ func TestOOMScoreAdjSingle(t *testing.T) {
 
 			// Verify the gofer's oom_score_adj
 			if testCase.OOMScoreAdj != nil {
-				goferScore, err := specutils.GetOOMScoreAdj(c.GoferPid)
+				goferScore, err := specutils.GetOOMScoreAdj(c.GoferPid.Load())
 				if err != nil {
 					t.Fatalf("error reading gofer oom_score_adj: %v", err)
 				}
@@ -240,7 +240,7 @@ func TestOOMScoreAdjMulti(t *testing.T) {
 			for i, c := range containers {
 				if oomScoreAdj[i] != nil {
 					// Verify the gofer's oom_score_adj
-					score, err := specutils.GetOOMScoreAdj(c.GoferPid)
+					score, err := specutils.GetOOMScoreAdj(c.GoferPid.Load())
 					if err != nil {
 						t.Fatalf("error reading gofer oom_score_adj: %v", err)
 					}
