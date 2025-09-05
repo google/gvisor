@@ -96,7 +96,7 @@ type Stack struct {
 	// +checklocks:mu
 	nics map[tcpip.NICID]*nic `state:"nosave"`
 	// +checklocks:mu
-	loopbackNIC *nic
+	loopbackNIC *nic `state:"nosave"`
 	// +checklocks:mu
 	defaultForwardingEnabled map[tcpip.NetworkProtocolNumber]struct{}
 
