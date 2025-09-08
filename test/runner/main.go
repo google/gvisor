@@ -701,6 +701,8 @@ func isWarning(line string) bool {
 	case strings.Contains(line, "Rejecting attempt to open unix domain socket"):
 	case strings.Contains(line, "Rejecting attempt to connect to unix domain socket"):
 	case strings.Contains(line, "Rejecting attempt to create unix domain socket"):
+	// Expected in some socket tests.
+	case strings.Contains(line, "tcp.Endpoint.handleListenSegment() failed") && strings.Contains(line, "connection aborted"):
 
 	// Ignore clock frequency adjustment messages.
 	case strings.Contains(line, "adjusted frequency from"):

@@ -207,6 +207,7 @@ go_library(
         "//pkg/tcpip/transport/raw",
         "//pkg/waiter",
         "@com_github_google_btree//:go_default_library",
+        "@org_golang_x_time//rate:go_default_library",
     ],
 )
 
