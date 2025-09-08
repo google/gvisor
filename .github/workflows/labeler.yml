@@ -7,7 +7,7 @@ jobs:
   label:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/labeler@v4
+    - uses: actions/labeler@v6
       if: github.base_ref == null
       with:
         repo-token: "${{ secrets.GITHUB_TOKEN }}"
