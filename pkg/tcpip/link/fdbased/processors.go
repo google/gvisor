@@ -127,7 +127,13 @@ func (m *processorManager) start() {
 }
 
 // afterLoad is invoked by stateify.
-func (m *processorManager) afterLoad(context.Context) {
+func (m *processorManager) afterLoad(ctx context.Context) {
+	// Do not start the processors for save/restore. New NICs and
+	// processors will be created during restore.
+	resume := stack.ResumeStackFromContext(ctx)
+	if !resume {
+		return
+	}
 	m.wg.Add(len(m.processors))
 	m.start()
 }
@@ -276,6 +282,7 @@ func (m *processorManager) wakeReady() {
 	}
 }
 
+// beforeSave is invoked by stateify.
 func (m *processorManager) beforeSave() {
 	m.close()
 	m.wg.Wait()

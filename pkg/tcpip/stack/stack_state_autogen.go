@@ -2093,7 +2093,6 @@ func (s *Stack) StateFields() []string {
 		"packetEndpointWriteSupported",
 		"demux",
 		"stats",
-		"loopbackNIC",
 		"defaultForwardingEnabled",
 		"cleanupEndpoints",
 		"PortManager",
@@ -2114,8 +2113,6 @@ func (s *Stack) StateFields() []string {
 	}
 }
 
-func (s *Stack) beforeSave() {}
-
 // +checklocksignore
 func (s *Stack) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
@@ -2125,24 +2122,23 @@ func (s *Stack) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(3, &s.packetEndpointWriteSupported)
 	stateSinkObject.Save(4, &s.demux)
 	stateSinkObject.Save(5, &s.stats)
-	stateSinkObject.Save(6, &s.loopbackNIC)
-	stateSinkObject.Save(7, &s.defaultForwardingEnabled)
-	stateSinkObject.Save(8, &s.cleanupEndpoints)
-	stateSinkObject.Save(9, &s.PortManager)
-	stateSinkObject.Save(10, &s.clock)
-	stateSinkObject.Save(11, &s.handleLocal)
-	stateSinkObject.Save(12, &s.nftablesConfigured)
-	stateSinkObject.Save(13, &s.restoredEndpoints)
-	stateSinkObject.Save(14, &s.resumableEndpoints)
-	stateSinkObject.Save(15, &s.icmpRateLimiter)
-	stateSinkObject.Save(16, &s.seed)
-	stateSinkObject.Save(17, &s.nudConfigs)
-	stateSinkObject.Save(18, &s.nudDisp)
-	stateSinkObject.Save(19, &s.sendBufferSize)
-	stateSinkObject.Save(20, &s.receiveBufferSize)
-	stateSinkObject.Save(21, &s.tcpInvalidRateLimit)
-	stateSinkObject.Save(22, &s.tsOffsetSecret)
-	stateSinkObject.Save(23, &s.saveRestoreEnabled)
+	stateSinkObject.Save(6, &s.defaultForwardingEnabled)
+	stateSinkObject.Save(7, &s.cleanupEndpoints)
+	stateSinkObject.Save(8, &s.PortManager)
+	stateSinkObject.Save(9, &s.clock)
+	stateSinkObject.Save(10, &s.handleLocal)
+	stateSinkObject.Save(11, &s.nftablesConfigured)
+	stateSinkObject.Save(12, &s.restoredEndpoints)
+	stateSinkObject.Save(13, &s.resumableEndpoints)
+	stateSinkObject.Save(14, &s.icmpRateLimiter)
+	stateSinkObject.Save(15, &s.seed)
+	stateSinkObject.Save(16, &s.nudConfigs)
+	stateSinkObject.Save(17, &s.nudDisp)
+	stateSinkObject.Save(18, &s.sendBufferSize)
+	stateSinkObject.Save(19, &s.receiveBufferSize)
+	stateSinkObject.Save(20, &s.tcpInvalidRateLimit)
+	stateSinkObject.Save(21, &s.tsOffsetSecret)
+	stateSinkObject.Save(22, &s.saveRestoreEnabled)
 }
 
 // +checklocksignore
@@ -2153,24 +2149,23 @@ func (s *Stack) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(3, &s.packetEndpointWriteSupported)
 	stateSourceObject.Load(4, &s.demux)
 	stateSourceObject.Load(5, &s.stats)
-	stateSourceObject.Load(6, &s.loopbackNIC)
-	stateSourceObject.Load(7, &s.defaultForwardingEnabled)
-	stateSourceObject.Load(8, &s.cleanupEndpoints)
-	stateSourceObject.Load(9, &s.PortManager)
-	stateSourceObject.Load(10, &s.clock)
-	stateSourceObject.Load(11, &s.handleLocal)
-	stateSourceObject.Load(12, &s.nftablesConfigured)
-	stateSourceObject.Load(13, &s.restoredEndpoints)
-	stateSourceObject.Load(14, &s.resumableEndpoints)
-	stateSourceObject.Load(15, &s.icmpRateLimiter)
-	stateSourceObject.Load(16, &s.seed)
-	stateSourceObject.Load(17, &s.nudConfigs)
-	stateSourceObject.Load(18, &s.nudDisp)
-	stateSourceObject.Load(19, &s.sendBufferSize)
-	stateSourceObject.Load(20, &s.receiveBufferSize)
-	stateSourceObject.Load(21, &s.tcpInvalidRateLimit)
-	stateSourceObject.Load(22, &s.tsOffsetSecret)
-	stateSourceObject.Load(23, &s.saveRestoreEnabled)
+	stateSourceObject.Load(6, &s.defaultForwardingEnabled)
+	stateSourceObject.Load(7, &s.cleanupEndpoints)
+	stateSourceObject.Load(8, &s.PortManager)
+	stateSourceObject.Load(9, &s.clock)
+	stateSourceObject.Load(10, &s.handleLocal)
+	stateSourceObject.Load(11, &s.nftablesConfigured)
+	stateSourceObject.Load(12, &s.restoredEndpoints)
+	stateSourceObject.Load(13, &s.resumableEndpoints)
+	stateSourceObject.Load(14, &s.icmpRateLimiter)
+	stateSourceObject.Load(15, &s.seed)
+	stateSourceObject.Load(16, &s.nudConfigs)
+	stateSourceObject.Load(17, &s.nudDisp)
+	stateSourceObject.Load(18, &s.sendBufferSize)
+	stateSourceObject.Load(19, &s.receiveBufferSize)
+	stateSourceObject.Load(20, &s.tcpInvalidRateLimit)
+	stateSourceObject.Load(21, &s.tsOffsetSecret)
+	stateSourceObject.Load(22, &s.saveRestoreEnabled)
 	stateSourceObject.AfterLoad(func() { s.afterLoad(ctx) })
 }
 

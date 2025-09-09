@@ -96,7 +96,7 @@ type Stack struct {
 	// +checklocks:mu
 	nics map[tcpip.NICID]*nic `state:"nosave"`
 	// +checklocks:mu
-	loopbackNIC *nic
+	loopbackNIC *nic `state:"nosave"`
 	// +checklocks:mu
 	defaultForwardingEnabled map[tcpip.NetworkProtocolNumber]struct{}
 
@@ -185,6 +185,9 @@ type Stack struct {
 
 	// saveRestoreEnabled indicates whether the stack is saved and restored.
 	saveRestoreEnabled bool
+
+	// removeNICs indicates if the NICs and routes should be removed before saving.
+	removeNICs bool `state:"nosave"`
 }
 
 // NetworkProtocolFactory instantiates a network protocol.
@@ -2518,9 +2521,24 @@ type contextID int
 const (
 	// CtxRestoreStack is a Context.Value key for the stack to be used in restore.
 	CtxRestoreStack contextID = iota
+
+	// CtxResumeStack is a Context.Value key for the stack to be used in resume.
+	CtxResumeStack contextID = iota
 )
 
 // RestoreStackFromContext returns the stack to be used during restore.
 func RestoreStackFromContext(ctx context.Context) *Stack {
 	return ctx.Value(CtxRestoreStack).(*Stack)
+}
+
+// ResumeStackFromContext returns the stack to be used during restore.
+func ResumeStackFromContext(ctx context.Context) bool {
+	return ctx.Value(CtxResumeStack).(bool)
+}
+
+// SetRemoveNICs sets the removeNICs in stack to true during save/restore.
+func (s *Stack) SetRemoveNICs() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.removeNICs = true
 }

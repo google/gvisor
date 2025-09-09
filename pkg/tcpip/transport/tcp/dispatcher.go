@@ -18,7 +18,10 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math/rand"
+	"time"
 
+	"golang.org/x/time/rate"
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sleep"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -253,6 +256,8 @@ func handleTimeWait(ep *Endpoint) {
 	ep.mu.Unlock()
 }
 
+var warnRateLimiter = rate.NewLimiter(rate.Every(time.Second), 1)
+
 // handleListen is responsible for TCP processing for an endpoint in LISTEN
 // state.
 func handleListen(ep *Endpoint) {
@@ -274,9 +279,11 @@ func handleListen(ep *Endpoint) {
 			break
 		}
 
-		// TODO(gvisor.dev/issue/4690): Better handle errors instead of
-		// silently dropping.
-		_ = ep.handleListenSegment(ep.listenCtx, s)
+		if err := ep.handleListenSegment(ep.listenCtx, s); err != nil {
+			if warnRateLimiter.Allow() {
+				log.Warningf("tcp.Endpoint.handleListenSegment() failed for packet [nic=%d, source=%s, dest=%s, protocol=%d]: %v", s.pkt.NICID, s.pkt.Network().SourceAddress(), s.pkt.Network().DestinationAddress(), s.pkt.NetworkProtocolNumber, err)
+			}
+		}
 		s.DecRef()
 	}
 }

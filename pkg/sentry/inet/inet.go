@@ -140,6 +140,10 @@ type Stack interface {
 
 	// Stats returns the network stats.
 	Stats() tcpip.Stats
+
+	// SetRemoveNICs sets removeNICs in stack to true. This should only be
+	// called during save/restore.
+	SetRemoveNICs()
 }
 
 // Interface contains information about a network interface.

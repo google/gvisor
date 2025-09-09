@@ -443,3 +443,8 @@ func (s *Stack) IsSaveRestoreEnabled() bool {
 func (s *Stack) Stats() tcpip.Stats {
 	return tcpip.Stats{}
 }
+
+// SetRemoveNICs implements inet.Stack.SetRemoveNICs.
+func (*Stack) SetRemoveNICs() {
+	// No-op.
+}

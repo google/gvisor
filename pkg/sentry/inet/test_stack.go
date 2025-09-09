@@ -241,3 +241,8 @@ func (*TestStack) Stats() tcpip.Stats {
 	// No-op.
 	return tcpip.Stats{}
 }
+
+// SetRemoveNICs implements Stack.
+func (*TestStack) SetRemoveNICs() {
+	// No-op.
+}
