@@ -80,6 +80,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/state"
 	"gvisor.dev/gvisor/pkg/sync"
+	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
 // IOUringEnabled is set to true when IO_URING is enabled. Added as a global to
@@ -613,7 +614,7 @@ func savePrivateMFs(ctx context.Context, w io.Writer, pw io.Writer, mfsToSave ma
 // SaveTo saves the state of k to w.
 //
 // Preconditions: The kernel must be paused throughout the call to SaveTo.
-func (k *Kernel) SaveTo(ctx context.Context, w, pagesMetadata io.Writer, pagesFile *fd.FD, mfOpts pgalloc.SaveOpts) error {
+func (k *Kernel) SaveTo(ctx context.Context, w, pagesMetadata io.Writer, pagesFile *fd.FD, mfOpts pgalloc.SaveOpts, resume bool) error {
 	saveStart := time.Now()
 
 	// Do not allow other Kernel methods to affect it while it's being saved.
@@ -681,6 +682,11 @@ func (k *Kernel) SaveTo(ctx context.Context, w, pagesMetadata io.Writer, pagesFi
 	if rootNS := k.rootNetworkNamespace; rootNS != nil && rootNS.Stack() != nil {
 		// Pause the network stack.
 		netstackPauseStart := time.Now()
+		if resume {
+			ctx = context.WithValue(ctx, stack.CtxResumeStack, resume)
+		} else {
+			k.rootNetworkNamespace.Stack().SetRemoveNICs()
+		}
 		log.Infof("Pausing root network namespace")
 		k.rootNetworkNamespace.Stack().Pause()
 		defer k.rootNetworkNamespace.Stack().Resume()

@@ -970,3 +970,8 @@ func (s *Stack) PortRange() (uint16, uint16) {
 func (s *Stack) SetPortRange(start uint16, end uint16) error {
 	return syserr.TranslateNetstackError(s.Stack.SetPortRange(start, end)).ToError()
 }
+
+// SetRemoveNICs implements inet.Stack.SetRemoveNICs.
+func (s *Stack) SetRemoveNICs() {
+	s.Stack.SetRemoveNICs()
+}
