@@ -712,6 +712,10 @@ type ReadOptions struct {
 	// NeedLinkPacketInfo indicates whether to return the link-layer information,
 	// if supported.
 	NeedLinkPacketInfo bool
+
+	// NeedRecvdExperimentOption indicates whether to return the experiment
+	// option value from the last received packet, if supported.
+	NeedReceivedExperimentOption bool
 }
 
 // ReadResult represents result for a successful Endpoint.Read.
@@ -732,6 +736,10 @@ type ReadResult struct {
 	// LinkPacketInfo is the link-layer information of the received packet if
 	// ReadOptions.NeedLinkPacketInfo is true.
 	LinkPacketInfo LinkPacketInfo
+
+	// ReceivedExperimentOption is the experiment option value from the last
+	// received packet if ReadOptions.NeedReceivedExperimentOption is true.
+	ReceivedExperimentOption uint16
 }
 
 // Endpoint is the interface implemented by transport protocols (e.g., tcp, udp)
