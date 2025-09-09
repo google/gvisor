@@ -28,11 +28,6 @@ import (
 
 const iovecLength = 16
 
-// MAX_RW_COUNT is the maximum size in bytes of a single read or write.
-// Reads and writes that exceed this size may be silently truncated.
-// (Linux: include/linux/fs.h:MAX_RW_COUNT)
-var MAX_RW_COUNT = int(hostarch.Addr(math.MaxInt32).RoundDown())
-
 // Activate ensures that the task has an active address space.
 func (t *Task) Activate() {
 	if mm := t.MemoryManager(); mm != nil {
@@ -190,7 +185,7 @@ func copyInIovec(ctx marshal.CopyContext, t *Task, addr hostarch.Addr) (hostarch
 	if err != nil {
 		return hostarch.AddrRangeSeq{}, err
 	}
-	return hostarch.AddrRangeSeqOf(ar).TakeFirst(MAX_RW_COUNT), nil
+	return hostarch.AddrRangeSeqOf(ar).TakeFirst(linux.MAX_RW_COUNT), nil
 }
 
 // copyInIovecs copies an array of numIovecs struct iovecs from the memory
@@ -243,7 +238,7 @@ func copyInIovecs(ctx marshal.CopyContext, t *Task, addr hostarch.Addr, numIovec
 	var total uint64
 	for i := range dst {
 		dstlen := uint64(dst[i].Length())
-		if rem := uint64(MAX_RW_COUNT) - total; rem < dstlen {
+		if rem := uint64(linux.MAX_RW_COUNT) - total; rem < dstlen {
 			dst[i].End -= hostarch.Addr(dstlen - rem)
 			dstlen = rem
 		}
@@ -288,8 +283,8 @@ func makeIovec(ctx marshal.CopyContext, t *Task, addr hostarch.Addr, b []byte) (
 // access_ok() in fs/read_write.c:vfs_read/vfs_write, and overflowing address
 // ranges are truncated to MAX_RW_COUNT by fs/read_write.c:rw_verify_area().)
 func (t *Task) SingleIOSequence(addr hostarch.Addr, length int, opts usermem.IOOpts) (usermem.IOSequence, error) {
-	if length > MAX_RW_COUNT {
-		length = MAX_RW_COUNT
+	if length > linux.MAX_RW_COUNT {
+		length = linux.MAX_RW_COUNT
 	}
 	ar, ok := t.MemoryManager().CheckIORange(addr, int64(length))
 	if !ok {
