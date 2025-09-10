@@ -125,7 +125,9 @@ func (fs *filesystem) newLisafsDentry(ctx context.Context, ino *lisafs.Inode) (*
 		d dentry
 		i lisafsInode
 	}{}
-	temp.d.inode = fs.getOrCreateInode(inoKey, func() *inode {
+	temp.d.inode = fs.getOrCreateInode(inoKey, func() {
+		fs.client.CloseFD(ctx, ino.ControlFD, false /* flush */)
+	}, func() *inode {
 		temp.i = lisafsInode{
 			inode: inode{
 				fs:        fs,

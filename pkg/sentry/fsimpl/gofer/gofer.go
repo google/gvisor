@@ -260,14 +260,16 @@ type filesystem struct {
 	released atomicbitops.Int32
 }
 
-// getOrCreateInode returns the inode for the given inoKey and increments its reference count.
-// If the inode is not found, then createInode is called and the new inode is returned.
+// getOrCreateInode returns the inode for the given inoKey and upon inode cache
+// hit, calls onCacheHit and increments the inode's reference count. On cache
+// miss, createInode is called and the new inode is returned.
 // getOrCreateInode locks fs.inodeMu.
 // The caller is responsible for decrementing the inode's reference count when done.
-func (fs *filesystem) getOrCreateInode(inoKey inoKey, createInode func() *inode) *inode {
+func (fs *filesystem) getOrCreateInode(inoKey inoKey, onCacheHit func(), createInode func() *inode) *inode {
 	fs.inodeMu.Lock()
 	defer fs.inodeMu.Unlock()
 	if cachedInode, ok := fs.inodeByKey[inoKey]; ok {
+		onCacheHit()
 		cachedInode.incRef()
 		return cachedInode
 	}
