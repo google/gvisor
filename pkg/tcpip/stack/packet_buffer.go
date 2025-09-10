@@ -768,3 +768,52 @@ func BufferSince(h PacketHeader) buffer.Buffer {
 	clone.TrimFront(int64(offset))
 	return clone
 }
+
+// ExperimentOptionValue returns the experiment option value from the packet
+// and a bool indicating whether an experiment option value was found.
+func (pk *PacketBuffer) ExperimentOptionValue() (uint16, bool) {
+	switch pk.NetworkProtocolNumber {
+	case header.IPv4ProtocolNumber:
+		h := header.IPv4(pk.NetworkHeader().Slice())
+		opts := h.Options()
+		iter := opts.MakeIterator()
+		for {
+			opt, done, err := iter.Next()
+			if err != nil {
+				return 0, false
+			}
+			if done {
+				return 0, false
+			}
+			if opt.Type() == header.IPv4OptionExperimentType {
+				return opt.(*header.IPv4OptionExperiment).Value(), true
+			}
+		}
+	case header.IPv6ProtocolNumber:
+		h := header.IPv6(pk.NetworkHeader().Slice())
+		v := pk.NetworkHeader().View()
+		if v != nil {
+			v.TrimFront(header.IPv6MinimumSize)
+		}
+		buf := buffer.MakeWithView(v)
+		buf.Append(pk.TransportHeader().View())
+		dataBuf := pk.Data().ToBuffer()
+		buf.Merge(&dataBuf)
+		it := header.MakeIPv6PayloadIterator(header.IPv6ExtensionHeaderIdentifier(h.NextHeader()), buf)
+
+		for {
+			hdr, done, err := it.Next()
+			if done || err != nil {
+				break
+			}
+			if h, ok := hdr.(header.IPv6ExperimentExtHdr); ok {
+				hdr.Release()
+				return h.Value, true
+			}
+			hdr.Release()
+		}
+	default:
+		panic(fmt.Sprintf("Unexpected network protocol number %d", pk.NetworkProtocolNumber))
+	}
+	return 0, false
+}

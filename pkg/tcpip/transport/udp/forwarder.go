@@ -65,6 +65,15 @@ type ForwarderRequest struct {
 	pkt   *stack.PacketBuffer
 }
 
+// NewForwarderRequest creates a new ForwarderRequest.
+func NewForwarderRequest(stack *stack.Stack, id stack.TransportEndpointID, pkt *stack.PacketBuffer) *ForwarderRequest {
+	return &ForwarderRequest{
+		stack: stack,
+		id:    id,
+		pkt:   pkt,
+	}
+}
+
 // ID returns the 4-tuple (src address, src port, dst address, dst port) that
 // represents the session request.
 func (r *ForwarderRequest) ID() stack.TransportEndpointID {

@@ -134,8 +134,7 @@ func (fs *filesystem) newDirectfsDentry(controlFD int) (*dentry, error) {
 		d dentry
 		i directfsInode
 	}{}
-
-	temp.d.inode = fs.getOrCreateInode(inoKey, func() *inode {
+	temp.d.inode = fs.getOrCreateInode(inoKey, func() { _ = unix.Close(controlFD) }, func() *inode {
 		temp.i = directfsInode{
 			inode: inode{
 				fs:        fs,
