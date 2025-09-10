@@ -294,6 +294,10 @@ func (e *endpoint) Read(dst io.Writer, opts tcpip.ReadOptions) (tcpip.ReadResult
 	if opts.NeedRemoteAddr {
 		res.RemoteAddr = p.senderAddress
 	}
+	if opts.NeedReceivedExperimentOption {
+		expOptVal, _ := p.pkt.ExperimentOptionValue()
+		res.ReceivedExperimentOption = expOptVal
+	}
 
 	n, err := p.pkt.Data().ReadTo(dst, opts.Peek)
 	if n == 0 && err != nil {
