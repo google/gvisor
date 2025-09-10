@@ -32,6 +32,7 @@ package tmpfs
 import (
 	"fmt"
 	"math"
+	"os"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -279,6 +280,16 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		}
 	}
 
+	sourceTarFD := -1
+	if sourceTar, ok := mopts["source_tar_fd"]; ok {
+		delete(mopts, "source_tar_fd")
+		var err error
+		sourceTarFD, err = strconv.Atoi(sourceTar)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to parse source_tar option: %w", err)
+		}
+	}
+
 	if len(mopts) != 0 {
 		ctx.Warningf("tmpfs.FilesystemType.GetFilesystem: unknown options: %v", mopts)
 		return nil, nil, linuxerr.EINVAL
@@ -321,6 +332,21 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		return nil, nil, fmt.Errorf("invalid tmpfs root file type: %#o", rootFileType)
 	}
 	fs.root = root
+
+	if sourceTarFD != -1 {
+		sourceTar := os.NewFile(uintptr(sourceTarFD), "source_tar")
+		if sourceTar == nil {
+			fs.vfsfs.DecRef(ctx)
+			return nil, nil, fmt.Errorf("source_tar_fd: %d is an invalid file descriptor", sourceTarFD)
+		}
+		defer sourceTar.Close()
+
+		if err := fs.UntarUpperLayer(ctx, sourceTar); err != nil {
+			fs.vfsfs.DecRef(ctx)
+			return nil, nil, err
+		}
+	}
+
 	return &fs.vfsfs, &root.vfsd, nil
 }
 
