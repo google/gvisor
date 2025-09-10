@@ -15,19 +15,20 @@
 // A simple `curl`-like HTTP client that prints metrics after the request.
 // All of its output is structured to be unambiguous even if stdout/stderr
 // is combined, as is the case for Kubernetes logs.
-// Useful for communicating with ollama.
+// Useful for communicating with SGLang.
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"flag"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -51,7 +52,7 @@ func fatalf(format string, values ...any) {
 }
 
 // Metrics contains the request metrics to export to JSON.
-// This is parsed by the ollama library at `test/gpu/ollama/ollama.go`.
+// This is parsed by the sglang library at `test/gpu/sglang/sglang.go`.
 type Metrics struct {
 	// ProgramStarted is the time when the program started.
 	ProgramStarted time.Time `json:"program_started"`
@@ -98,7 +99,6 @@ func main() {
 	if err != nil {
 		fatalf("cannot create request: %v", err)
 	}
-	readBuf := make([]byte, bufSize)
 	orderedReqHeaders := make([]string, 0, len(request.Header))
 	for k := range request.Header {
 		orderedReqHeaders = append(orderedReqHeaders, k)
@@ -116,23 +116,22 @@ func main() {
 		fatalf("cannot make request: %v", err)
 	}
 	gotFirstByte := false
-	for {
-		n, err := resp.Body.Read(readBuf)
-		if n > 0 {
-			if !gotFirstByte {
-				metrics.FirstByteRead = time.Now()
-				gotFirstByte = true
-			}
-			fmt.Printf("BODY: %q\n", string(readBuf[:n]))
+	scanner := bufio.NewScanner(resp.Body)
+	for scanner.Scan() {
+		if !gotFirstByte {
+			metrics.FirstByteRead = time.Now()
+			gotFirstByte = true
 		}
-		if err == io.EOF {
-			metrics.LastByteRead = time.Now()
-			break
+		if scanner.Text() == "" {
+			continue
 		}
-		if err != nil {
-			fatalf("cannot read response body: %v", err)
-		}
+		fmt.Printf("BODY: %q\n", strings.TrimPrefix(scanner.Text(), "data: "))
 	}
+	// Check for any errors that may have occurred during scanning
+	if err := scanner.Err(); err != nil {
+		fatalf("error reading response body: %v", err)
+	}
+	metrics.LastByteRead = time.Now()
 	if err := resp.Body.Close(); err != nil {
 		fatalf("cannot close response body: %v", err)
 	}
@@ -153,4 +152,4 @@ func main() {
 	fmt.Fprintf(os.Stderr, "STATS: %s\n", string(metricsBytes))
 }
 
-// LINT.ThenChange(../../sglang/client/client.go)
+// LINT.ThenChange(../../ollama/client/client.go)
