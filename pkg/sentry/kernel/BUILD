@@ -95,6 +95,13 @@ declare_mutex(
 )
 
 declare_mutex(
+    name = "fs_context_mutex",
+    out = "fs_context_mutex.go",
+    package = "kernel",
+    prefix = "fsContext",
+)
+
+declare_mutex(
     name = "running_tasks_mutex",
     out = "running_tasks_mutex.go",
     package = "kernel",
@@ -245,6 +252,7 @@ go_library(
         "fd_table_refs.go",
         "fd_table_unsafe.go",
         "fs_context.go",
+        "fs_context_mutex.go",
         "fs_context_refs.go",
         "ipc_namespace.go",
         "kcov.go",
