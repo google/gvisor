@@ -19,7 +19,6 @@ import (
 
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // FSContext contains filesystem context.
@@ -31,7 +30,7 @@ type FSContext struct {
 	FSContextRefs
 
 	// mu protects below.
-	mu sync.Mutex `state:"nosave"`
+	mu fsContextMutex `state:"nosave"`
 
 	// root is the filesystem root.
 	root vfs.VirtualDentry
