@@ -26,6 +26,7 @@
 //	      TaskSet.mu
 //	        SignalHandlers.mu
 //	          Task.mu
+//	            FSContext.mu
 //	      runningTasksMu
 //
 // Locking SignalHandlers.mu in multiple SignalHandlers requires locking

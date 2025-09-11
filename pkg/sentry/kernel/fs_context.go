@@ -19,7 +19,6 @@ import (
 
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // FSContext contains filesystem context.
@@ -31,7 +30,7 @@ type FSContext struct {
 	FSContextRefs
 
 	// mu protects below.
-	mu sync.Mutex `state:"nosave"`
+	mu fsContextMutex `state:"nosave"`
 
 	// root is the filesystem root.
 	root vfs.VirtualDentry
@@ -203,16 +202,17 @@ func (f *FSContext) SwapUmask(mask uint) uint {
 //
 // See Linux's fs_struct->in_exec.
 func (f *FSContext) checkAndPreventSharingOutsideTG(tg *ThreadGroup) bool {
+	tg.pidns.owner.mu.RLock()
+	defer tg.pidns.owner.mu.RUnlock()
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
 	tgCount := int64(0)
-	tg.ForEachTask(func(t *Task) bool {
+	for t := tg.tasks.Front(); t != nil; t = t.Next() {
 		if t.FSContext() == f {
 			tgCount++
 		}
-		return true
-	})
+	}
 
 	shared := f.ReadRefs() > tgCount
 	if !shared {
