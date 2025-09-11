@@ -29,6 +29,8 @@ import (
 const (
 	volumeKeyPrefix = "dev.gvisor.spec.mount."
 
+	udsFlagAnnotation = "dev.gvisor.flag.host-uds"
+
 	// devshmName is the volume name used for /dev/shm. Pick a name that is
 	// unlikely to be used.
 	devshmName = "gvisorinternaldevshm"
@@ -40,6 +42,11 @@ const (
 	// selfFilestorePrefix is the prefix for the filestore files used for
 	// self-backed mounts.
 	selfFilestorePrefix = ".gvisor.filestore."
+
+	// gcsFuseSidecarTmpVolumeName is the name of the GCS FUSE sidecar's volume
+	// that contains the socket for communicating with the driver. Same as
+	// GoogleCloudPlatform/gcs-fuse-csi-driver/pkg/webhook/sidecar_spec.go:SidecarContainerTmpVolumeName.
+	gcsFuseSidecarTmpVolumeName = "gke-gcsfuse-tmp"
 )
 
 // The directory structure for volumes is as follows:
@@ -172,6 +179,11 @@ func UpdateVolumeAnnotations(s *specs.Spec) (bool, error) {
 					log.L.Infof("Non-empty EmptyDir volume %q, configuring bind mount annotations", volume)
 					s.Annotations[k] = "bind"
 					s.Annotations[volumeShareKey(volume)] = "shared"
+					if volume == gcsFuseSidecarTmpVolumeName && s.Annotations[udsFlagAnnotation] == "" {
+						// Enable host UDS flag to allow communication with the gcsfuse driver.
+						log.L.Infof("GCS Fuse sidecar detected in Pod, setting --host-uds=open")
+						s.Annotations[udsFlagAnnotation] = "open"
+					}
 				}
 			}
 			updated = true
@@ -191,6 +203,13 @@ func UpdateVolumeAnnotations(s *specs.Spec) (bool, error) {
 					if strings.Contains(s.Mounts[i].Source, emptyDirVolumesDir) && !isEmptyDirEmpty(s.Mounts[i].Source) {
 						// This is a non-empty EmptyDir volume. Don't change the mount type.
 						log.L.Infof("Non-empty EmptyDir volume %q, not changing its mount type", volume)
+						if volume == gcsFuseSidecarTmpVolumeName && s.Annotations[udsFlagAnnotation] == "" {
+							// Enable host UDS flag to allow communication with the gcsfuse
+							// driver. Do this for subcontainers too to update fsgofer's UDS
+							// configuration because each subcontainer has its own fsgofer.
+							log.L.Infof("This is a GCS Fuse sidecar container, setting --host-uds=open")
+							s.Annotations[udsFlagAnnotation] = "open"
+						}
 						continue
 					}
 					// Container mount type must match the mount type specified by
