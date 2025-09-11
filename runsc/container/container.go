@@ -604,6 +604,30 @@ func (c *Container) SandboxPid() int {
 // and wait returns immediately.
 func (c *Container) Wait() (unix.WaitStatus, error) {
 	log.Debugf("Wait on container, cid: %s", c.ID)
+	if c.goferIsChild {
+		// The gofer process is a child of the current process, so we need to wait
+		// on it and collect its zombie. Start a goroutine to reap c.GoferPid. Do
+		// not block the main thread waiting for the gofer to exit. In certain
+		// multi-container scenarios, the gofer may outlive its container. For
+		// example, if a gofer-backed FD is donated by the application to another
+		// container within the sandbox. The lifecycle of the gofer will be tied to
+		// both containers, whichever lives longer.
+		go func() {
+			goferPid := c.GoferPid.Load()
+			if goferPid == 0 {
+				return
+			}
+			// The gofer process could be racily reaped by c.waitForStopped() so
+			// ignore ECHILD errors.
+			var status unix.WaitStatus
+			if _, err := unix.Wait4(goferPid, &status, 0, nil); err == nil {
+				log.Infof("Gofer process (PID=%d) reaped: exit code = %v", goferPid, status.ExitStatus())
+			} else if !errors.Is(err, unix.ECHILD) {
+				log.Warningf("error reaping the gofer process (PID=%d) from background goroutine: %v", goferPid, err)
+			}
+			c.GoferPid.Store(0)
+		}()
+	}
 	ws, err := c.Sandbox.Wait(c.ID)
 	if err == nil {
 		// Wait succeeded, container is not running anymore.
@@ -1131,8 +1155,9 @@ func (c *Container) stop() error {
 	// Try killing gofer if it does not exit with container.
 	if goferPid := c.GoferPid.Load(); goferPid != 0 {
 		log.Debugf("Killing gofer for container, cid: %s, PID: %d", c.ID, goferPid)
-		if err := unix.Kill(goferPid, unix.SIGKILL); err != nil {
-			// The gofer may already be stopped, log the error.
+		// The gofer process may have been racily reaped by the goroutine from
+		// c.Wait() so ignore ESRCH errors.
+		if err := unix.Kill(goferPid, unix.SIGKILL); err != nil && !errors.Is(err, unix.ESRCH) {
 			log.Warningf("Error sending signal %d to gofer %d: %v", unix.SIGKILL, goferPid, err)
 		}
 	}
@@ -1170,9 +1195,10 @@ func (c *Container) waitForStopped() error {
 	}
 
 	if c.goferIsChild {
-		// The gofer process is a child of the current process,
-		// so we can wait it and collect its zombie.
-		if _, err := unix.Wait4(int(goferPid), nil, 0, nil); err != nil {
+		// The gofer process is a child of the current process, so we can wait it
+		// and collect its zombie. The gofer process could be racily reaped by the
+		// goroutine from c.Wait() so ignore ECHILD errors.
+		if _, err := unix.Wait4(int(goferPid), nil, 0, nil); err != nil && !errors.Is(err, unix.ECHILD) {
 			return fmt.Errorf("error waiting the gofer process: %v", err)
 		}
 		c.GoferPid.Store(0)
