@@ -197,6 +197,7 @@ func (k *Kernel) runCPUClockTicker() {
 		allTasks []*Task
 		incTasks = make([]*Task, k.applicationCores)
 	)
+	concurrencyCount := k.ConcurrencyCount()
 
 	for {
 		// Stop CPU clocks while nothing is running.
@@ -244,9 +245,12 @@ func (k *Kernel) runCPUClockTicker() {
 		// applicationCores running tasks (and their thread groups).
 		allTasks = k.tasks.Root.TasksAppend(allTasks)
 		runningTasks := 0
+		runningAppTasks := 0
 		for _, t := range allTasks {
 			state := t.TaskGoroutineState()
-			if state != TaskGoroutineRunningApp && state != TaskGoroutineRunningSys {
+			if state == TaskGoroutineRunningApp {
+				runningAppTasks++
+			} else if state != TaskGoroutineRunningSys {
 				continue
 			}
 			if runningTasks < len(incTasks) {
@@ -259,6 +263,7 @@ func (k *Kernel) runCPUClockTicker() {
 				incTasks[i] = t
 			}
 		}
+		preempt := runningAppTasks > concurrencyCount
 		numIncTasks := min(runningTasks, len(incTasks))
 		// Shuffle incTasks to ensure that if multiple tasks are in the same
 		// thread group, then all are equally likely to be
@@ -272,6 +277,9 @@ func (k *Kernel) runCPUClockTicker() {
 				t.appCPUClock.Add(linux.ClockTick)
 				t.tg.appCPUClockLast.Store(t)
 				t.tg.appCPUClock.Add(linux.ClockTick)
+				if preempt {
+					t.p.Preempt()
+				}
 				fallthrough
 			case TaskGoroutineRunningSys:
 				t.appSysCPUClock.Add(linux.ClockTick)

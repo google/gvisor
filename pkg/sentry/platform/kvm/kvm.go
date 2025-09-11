@@ -174,6 +174,12 @@ func (k *KVM) NewAddressSpace(any) (platform.AddressSpace, <-chan struct{}, erro
 	}, nil, nil
 }
 
+// ConcurrencyCount implements platform.Platform.ConcurrencyCount.
+// KVM can't run more than maxVCPUs contexts concurrently.
+func (k *KVM) ConcurrencyCount() int {
+	return k.machine.maxVCPUs
+}
+
 // NewContext returns an interruptible context.
 func (k *KVM) NewContext(pkgcontext.Context) platform.Context {
 	return &platformContext{

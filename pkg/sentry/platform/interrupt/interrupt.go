@@ -97,3 +97,14 @@ func (f *Forwarder) NotifyInterrupt() {
 	}
 	f.mu.Unlock()
 }
+
+// Preempt preempts the running context. Preempt is a weaker version of
+// NotifyInterrupt, it doesn't set the pending flag which is set when a context
+// isn't actually running at this moment.
+func (f *Forwarder) Preempt() {
+	f.mu.Lock()
+	if f.dst != nil {
+		f.dst.NotifyInterrupt()
+	}
+	f.mu.Unlock()
+}
