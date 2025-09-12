@@ -67,3 +67,7 @@ func (p *PtraceRegs) StackPointer() uint64 {
 func (p *PtraceRegs) SetStackPointer(sp uint64) {
 	p.Rsp = sp
 }
+
+func (p *PtraceRegs) SyscallRet() uint64 {
+	return p.Rax
+}
