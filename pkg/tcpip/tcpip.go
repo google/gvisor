@@ -1413,6 +1413,16 @@ func (*MulticastInterfaceOption) isGettableSocketOption() {}
 
 func (*MulticastInterfaceOption) isSettableSocketOption() {}
 
+// IPV6MulticastInterfaceOption is used by SetSockOpt/GetSockOpt to specify a
+// default interface for IPV6multicast.
+type IPV6MulticastInterfaceOption struct {
+	NIC NICID
+}
+
+func (*IPV6MulticastInterfaceOption) isGettableSocketOption() {}
+
+func (*IPV6MulticastInterfaceOption) isSettableSocketOption() {}
+
 // MembershipOption is used to identify a multicast membership on an interface.
 type MembershipOption struct {
 	NIC           NICID
