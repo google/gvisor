@@ -151,7 +151,7 @@ func Main(ctx context.Context) error {
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	if !*seccompMode {
+	if true || !*seccompMode {
 		// Refer to the hook file by file descriptor here as its named file no
 		// longer exists.
 		cmd.Env = append(os.Environ(),

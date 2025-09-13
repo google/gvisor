@@ -248,7 +248,7 @@ func (c Connection) ReadHookOutput(ctx context.Context) *Results {
 			continue
 		}
 
-		log.Debugf("%s", ioctl)
+		log.Warningf("%s", ioctl)
 
 		if !ioctl.IsSupported() {
 			res.AddUnsupportedIoctl(ioctl)
@@ -314,6 +314,7 @@ func ServeSeccompRequest(res *Results, req linux.SeccompNotif) {
 		log.Warningf("Error parsing ioctl %v: %v", ioctlPB, err)
 		return
 	}
+	log.Warningf("%s", ioctl)
 
 	if !ioctl.IsSupported() {
 		res.AddUnsupportedIoctl(ioctl)
