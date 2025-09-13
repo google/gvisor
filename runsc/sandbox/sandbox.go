@@ -1043,6 +1043,13 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 				}
 				defer syncFile.Close()
 				setUserMappings = true
+				uid, gid := SandboxUserGroupIDs(args.Spec)
+				if uid != 0 {
+					cmd.Args = append(cmd.Args, fmt.Sprintf("--uid=%d", uid))
+				}
+				if gid != 0 {
+					cmd.Args = append(cmd.Args, fmt.Sprintf("--gid=%d", gid))
+				}
 			} else {
 				specutils.SetUIDGIDMappings(cmd, args.Spec)
 				// We need to set UID and GID to have capabilities in a new user namespace.
@@ -1293,6 +1300,30 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 	log.Infof("Sandbox started, PID: %d", cmd.Process.Pid)
 
 	return nil
+}
+
+func rootMappedInContainer(IDMap []specs.LinuxIDMapping) bool {
+	for _, idMap := range IDMap {
+		if idMap.ContainerID == 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func SandboxUserGroupIDs(spec *specs.Spec) (uint32, uint32) {
+	uid := uint32(0)
+	gid := uint32(0)
+
+	if !rootMappedInContainer(spec.Linux.UIDMappings) {
+		uid = spec.Process.User.UID
+	}
+
+	if !rootMappedInContainer(spec.Linux.GIDMappings) {
+		gid = spec.Process.User.GID
+	}
+
+	return uid, gid
 }
 
 // Wait waits for the containerized process to exit, and returns its WaitStatus.
