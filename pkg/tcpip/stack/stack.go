@@ -2528,12 +2528,20 @@ const (
 
 // RestoreStackFromContext returns the stack to be used during restore.
 func RestoreStackFromContext(ctx context.Context) *Stack {
-	return ctx.Value(CtxRestoreStack).(*Stack)
+	if st := ctx.Value(CtxRestoreStack); st != nil {
+		return st.(*Stack)
+	}
+	return nil
 }
 
 // ResumeStackFromContext returns the stack to be used during restore.
 func ResumeStackFromContext(ctx context.Context) bool {
-	return ctx.Value(CtxResumeStack).(bool)
+	// If we are resuming, the context should have a value set to true. If
+	// restoring it will be false or not exist.
+	if resume := ctx.Value(CtxResumeStack); resume != nil {
+		return resume.(bool)
+	}
+	return false
 }
 
 // SetRemoveNICs sets the removeNICs in stack to true during save/restore.
