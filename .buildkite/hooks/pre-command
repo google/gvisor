@@ -8,7 +8,8 @@ clear_docker_containers
 # deleted on an ongoing basis. Such partial deletion can break the cache state.
 # Using per day cache will ensure that builds triggered on a certain day have
 # the full bazel remote cache to use. TTL of the cache must be >1 day.
-export BAZEL_REMOTE_CACHE="--remote_cache=https://storage.googleapis.com/gvisor-buildkite-bazel-cache/cache-$(date +%Y-%m-%d) --google_default_credentials"
+BAZEL_VERSION="$(cat images/default/bazelversion)"
+export BAZEL_REMOTE_CACHE="--remote_cache=https://storage.googleapis.com/gvisor-buildkite-bazel-cache/${BAZEL_VERSION}/$(date +%Y-%m-%d) --google_default_credentials"
 
 if POSIXLY_CORRECT=true df --local --output=pcent,ipcent,target | grep -vE '/snap/' | grep -qE '9[4-9]%|100%'; then
   echo "Disk usage has reached critical level, node is bad." >&2

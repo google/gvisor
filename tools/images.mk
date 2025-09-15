@@ -37,6 +37,8 @@ else
 DOCKER_PLATFORM_ARGS :=
 endif
 
+DOCKER_BUILD_ARGS ?=
+
 # Note that the image prefixes used here must match the image mangling in
 # runsc/testutil.MangleImage. Names are mangled in this way to ensure that all
 # tests are using locally-defined images (that are consistent and idempotent).
@@ -158,8 +160,7 @@ pull-%: register-cross ## Force a repull of the image.
 rebuild = \
   $(call header,REBUILD $(1)) && \
   (T=$$(mktemp -d) && cp -a $(call path,$(1))/* $$T && \
-  $(foreach image,$(shell grep FROM "$(call path,$(1))/$(call dockerfile,$(1))" 2>/dev/null | cut -d' ' -f2),docker pull $(DOCKER_PLATFORM_ARGS) $(image) >&2 &&) \
-  docker build $(DOCKER_PLATFORM_ARGS) \
+  set -x && docker build $(DOCKER_PLATFORM_ARGS) $(DOCKER_BUILD_ARGS) \
     -f "$$T/$(call dockerfile,$(1))" \
     -t "$(call remote_image,$(1)):$(call tag,$(1))" \
     -t "$(call remote_image,$(1))":latest \
