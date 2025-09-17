@@ -811,6 +811,12 @@ syscall_test(
 )
 
 syscall_test(
+    # FIXME: TestJoinLeaveMulticast fails with add_hostinet.
+    netstack_sr = True,
+    test = "//test/syscalls/linux:socket_ipv6_udp_unbound_external_networking_test",
+)
+
+syscall_test(
     size = "large",
     add_hostinet = True,
     netstack_sr = True,
