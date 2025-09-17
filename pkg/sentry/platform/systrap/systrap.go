@@ -212,6 +212,9 @@ func (c *platformContext) Interrupt() {
 	c.interrupt.NotifyInterrupt()
 }
 
+// Preempt implements platform.Context.Preempt.
+func (c *platformContext) Preempt() {}
+
 // Release releases all platform resources used by the platformContext.
 func (c *platformContext) Release() {
 	if c.sharedContext != nil {
@@ -339,6 +342,11 @@ func (*Systrap) NewContext(ctx pkgcontext.Context) platform.Context {
 		needRestoreFPState:  true,
 		needToPullFullState: false,
 	}
+}
+
+// ConcurrencyCount implements platform.Platform.ConcurrencyCount.
+func (*Systrap) ConcurrencyCount() int {
+	return maxSysmsgThreads
 }
 
 type constructor struct{}

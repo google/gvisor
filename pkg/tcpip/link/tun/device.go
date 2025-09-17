@@ -17,7 +17,6 @@ package tun
 import (
 	"fmt"
 
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
@@ -362,22 +361,26 @@ type tunEndpoint struct {
 	tunEndpointRefs
 	*channel.Endpoint
 
-	stack      *stack.Stack
-	nicID      tcpip.NICID
-	name       string
-	isTap      bool
-	persistent atomicbitops.Bool
-	closed     atomicbitops.Bool
+	stack *stack.Stack
+	nicID tcpip.NICID
+	name  string
+	isTap bool
 
 	mu            endpointMutex `state:"nosave"`
 	onCloseAction func()        `state:"nosave"`
+	persistent    bool
+	closed        bool
 }
 
 func (e *tunEndpoint) setPersistent(v bool) {
-	old := e.persistent.Swap(v)
-	if old == v {
+	e.mu.Lock()
+	if e.persistent == v || e.closed {
+		e.mu.Unlock()
 		return
 	}
+	e.persistent = v
+	e.mu.Unlock()
+	// Update refs without holding the lock.
 	if v {
 		e.IncRef()
 	} else {
@@ -386,17 +389,19 @@ func (e *tunEndpoint) setPersistent(v bool) {
 }
 
 func (e *tunEndpoint) Close() {
-	if e.closed.Swap(true) {
+	e.mu.Lock()
+	if e.closed {
+		e.mu.Unlock()
 		return
 	}
-
-	if e.persistent.Load() {
-		e.DecRef(context.Background())
-	}
-	e.mu.Lock()
+	e.closed = true
+	decref := e.persistent
 	action := e.onCloseAction
 	e.onCloseAction = nil
 	e.mu.Unlock()
+	if decref {
+		e.DecRef(context.Background())
+	}
 	if action != nil {
 		action()
 	}

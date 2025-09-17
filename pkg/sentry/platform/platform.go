@@ -116,6 +116,11 @@ type Platform interface {
 
 	// SeccompInfo returns seccomp-related information about this platform.
 	SeccompInfo() SeccompInfo
+
+	// ConcurrencyCount returns the maximum number of contexts that can run
+	// in parallel. Concurrent calls to Context.Switch() beyond
+	// ConcurrencyCount() may block until previous calls have returned.
+	ConcurrencyCount() int
 }
 
 // NoCPUPreemptionDetection implements Platform.DetectsCPUPreemption and
@@ -245,6 +250,13 @@ type Context interface {
 	// Interrupt interrupts a concurrent call to Switch(), causing it to return
 	// ErrContextInterrupt.
 	Interrupt()
+
+	// Preempt interrupts a concurrent call to Switch().
+	// If Platform.ConcurrencyCount() == math.MaxInt, or if the context is not
+	// running application code (e.g. it is blocked waiting for the number of
+	// running contexts to drop below Platform.ConcurrencyCount(), Preempt may
+	// have no effect.
+	Preempt()
 
 	// Release() releases any resources associated with this context.
 	Release()

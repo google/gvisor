@@ -118,6 +118,11 @@ func (c *platformContext) Interrupt() {
 	c.interrupt.NotifyInterrupt()
 }
 
+// Preempt implements platform.Context.Preempt.
+func (c *platformContext) Preempt() {
+	c.interrupt.Preempt()
+}
+
 // Release implements platform.Context.Release().
 func (c *platformContext) Release() {}
 
