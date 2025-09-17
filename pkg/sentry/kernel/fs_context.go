@@ -67,11 +67,13 @@ func (f *FSContext) destroy(ctx context.Context) {
 	// Hold f.mu so that we don't race with RootDirectory() and
 	// WorkingDirectory().
 	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.root.DecRef(ctx)
+	root := f.root
+	cwd := f.cwd
 	f.root = vfs.VirtualDentry{}
-	f.cwd.DecRef(ctx)
 	f.cwd = vfs.VirtualDentry{}
+	f.mu.Unlock()
+	root.DecRef(ctx)
+	cwd.DecRef(ctx)
 }
 
 // DecRef implements RefCounter.DecRef.
