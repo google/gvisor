@@ -45,6 +45,12 @@ const (
 	// TPUV5pDeviceID is the PCI device ID of TPU V5p hardware.
 	TPUV5pDeviceID = 0x0062
 
+	// TPUV5pPFDeviceID is the PCI device ID of TPU V5p hardware PF.
+	TPUV5pPFDeviceID = 0x00AC
+
+	// TPUV5ePFDeviceID is the PCI device ID of TPU V5e hardware PF.
+	TPUV5ePFDeviceID = 0x00AE
+
 	// TPUV6eDeviceID is the PCI device ID of TPU V6e hardware.
 	TPUV6eDeviceID = 0x006f
 
