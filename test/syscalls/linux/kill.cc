@@ -165,16 +165,16 @@ TEST(KillTest, CannotKillTid) {
   bool finished = false;
   absl::Mutex mu;
   ScopedThread t([&] {
-    mu.Lock();
+    mu.lock();
     tid = gettid();
     tid_available = true;
     mu.Await(absl::Condition(&finished));
-    mu.Unlock();
+    mu.unlock();
   });
   mu.LockWhen(absl::Condition(&tid_available));
   EXPECT_THAT(kill(tid, 0), SyscallSucceeds());
   finished = true;
-  mu.Unlock();
+  mu.unlock();
 }
 
 TEST(KillTest, SetPgid) {

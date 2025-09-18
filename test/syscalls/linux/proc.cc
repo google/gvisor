@@ -2406,14 +2406,14 @@ class BlockingChild {
   ~BlockingChild() { Join(); }
 
   pid_t Tid() const {
-    absl::MutexLock ml(&mu_);
+    absl::MutexLock ml(mu_);
     mu_.Await(absl::Condition(&tid_ready_));
     return tid_;
   }
 
   void Join() {
     {
-      absl::MutexLock ml(&mu_);
+      absl::MutexLock ml(mu_);
       stop_ = true;
     }
     thread_.Join();
@@ -2421,7 +2421,7 @@ class BlockingChild {
 
  private:
   void Start() {
-    absl::MutexLock ml(&mu_);
+    absl::MutexLock ml(mu_);
     tid_ = syscall(__NR_gettid);
     tid_ready_ = true;
     mu_.Await(absl::Condition(&stop_));
