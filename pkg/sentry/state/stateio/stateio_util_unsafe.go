@@ -1,4 +1,4 @@
-// Copyright 2020 The gVisor Authors.
+// Copyright 2025 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,21 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build !false
-// +build !false
-
-// Binary runsc implements the OCI runtime interface.
-package main
+package stateio
 
 import (
-	"gvisor.dev/gvisor/runsc/cli/maincli"
-	"gvisor.dev/gvisor/runsc/version"
+	"unsafe"
+
+	"golang.org/x/sys/unix"
 )
 
-// version.Version is set dynamically, but needs to be
-// linked in the binary, so reference it here.
-var _ = version.Version()
-
-func main() {
-	maincli.Main()
+// SliceFromIovec returns a byte slice representing the memory described by
+// iov.
+func SliceFromIovec(iov unix.Iovec) []byte {
+	return unsafe.Slice(iov.Base, iov.Len)
 }

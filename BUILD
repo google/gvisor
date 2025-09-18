@@ -132,7 +132,7 @@ go_path(
         # on go_library targets here, and not go_binary. Thus the
         # binaries have been factored into a cli package, which is
         # a good practice in any case.
-        "//runsc/cli",
+        "//runsc/cli/maincli",
         "//shim/v1/cli",
         "//webhook/pkg/cli",
         "//tools/checklocks",

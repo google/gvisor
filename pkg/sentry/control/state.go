@@ -20,6 +20,7 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/log"
@@ -27,8 +28,8 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/pipefs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
-	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/state"
+	"gvisor.dev/gvisor/pkg/sentry/state/stateio"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sentry/watchdog"
 	"gvisor.dev/gvisor/pkg/timing"
@@ -70,8 +71,10 @@ type SaveOpts struct {
 	// Metadata is the set of metadata to prepend to the state file.
 	Metadata map[string]string `json:"metadata"`
 
-	// MemoryFileSaveOpts is passed to calls to pgalloc.MemoryFile.SaveTo().
-	MemoryFileSaveOpts pgalloc.SaveOpts
+	// AppMFExcludeCommittedZeroPages is the value of
+	// pgalloc.SaveOpts.ExcludeCommittedZeroPages for the application memory
+	// file.
+	AppMFExcludeCommittedZeroPages bool `json:"app_mf_exclude_committed_zero_pages"`
 
 	// HavePagesFile indicates whether the pages file and its corresponding
 	// metadata file is provided.
@@ -115,31 +118,43 @@ func (s *State) Save(o *SaveOpts, _ *struct{}) error {
 	if err != nil {
 		return err
 	}
-	defer stateFile.Close()
+	cu := cleanup.Make(func() {
+		stateFile.Close()
+	})
+	defer cu.Clean()
 	saveOpts := state.SaveOpts{
-		Destination:        stateFile,
-		Key:                o.Key,
-		Metadata:           o.Metadata,
-		MemoryFileSaveOpts: o.MemoryFileSaveOpts,
-		Resume:             o.Resume,
+		Destination:                    stateFile,
+		Key:                            o.Key,
+		Metadata:                       o.Metadata,
+		AppMFExcludeCommittedZeroPages: o.AppMFExcludeCommittedZeroPages,
+		Resume:                         o.Resume,
 	}
 	if o.HavePagesFile {
-		saveOpts.PagesMetadata, err = o.ReleaseFD(1)
+		pagesMetadataFile, err := o.ReleaseFD(1)
 		if err != nil {
 			return err
 		}
-		defer saveOpts.PagesMetadata.Close()
+		// //pkg/state/wire writes one byte at a time; buffer these writes to
+		// avoid making one syscall per write. For the state file, this
+		// buffering is handled by statefile.NewWriter() => compressio.Writer
+		// or compressio.NewSimpleWriter().
+		saveOpts.PagesMetadata = stateio.NewBufioWriteCloser(pagesMetadataFile)
+		cu.Add(func() { saveOpts.PagesMetadata.Close() })
 
-		saveOpts.PagesFile, err = o.ReleaseFD(2)
+		pagesFileFD, err := unix.Dup(int(o.Files[2].Fd()))
 		if err != nil {
 			return err
 		}
-		defer saveOpts.PagesFile.Close()
+		// TODO: Allow `runsc checkpoint` to override I/O parameters.
+		saveOpts.PagesFile = stateio.NewPagesFileFDWriterDefault(int32(pagesFileFD))
+		cu.Add(func() { saveOpts.PagesFile.Close() })
 	}
 	if err := PreSave(s.Kernel, o); err != nil {
 		return err
 	}
-	if err := saveOpts.Save(s.Kernel.SupervisorContext(), s.Kernel, s.Watchdog); err != nil {
+	err = saveOpts.Save(s.Kernel.SupervisorContext(), s.Kernel, s.Watchdog) // transfers ownership
+	cu.Release()
+	if err != nil {
 		return err
 	}
 	if o.Resume {

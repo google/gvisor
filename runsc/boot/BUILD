@@ -103,6 +103,7 @@ go_library(
         "//pkg/sentry/socket/unix",
         "//pkg/sentry/socket/unix/transport",
         "//pkg/sentry/state",
+        "//pkg/sentry/state/stateio",
         "//pkg/sentry/strace",
         "//pkg/sentry/time",
         "//pkg/sentry/unimpl:unimplemented_syscall_go_proto",
