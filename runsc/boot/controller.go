@@ -15,8 +15,10 @@
 package boot
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
+	"io"
 	"path"
 	"strconv"
 	"sync"
@@ -29,6 +31,7 @@ import (
 	"gvisor.dev/gvisor/pkg/control/server"
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/fspath"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/erofs"
@@ -37,6 +40,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/socket/netstack"
 	"gvisor.dev/gvisor/pkg/sentry/socket/plugin"
 	"gvisor.dev/gvisor/pkg/sentry/state"
+	"gvisor.dev/gvisor/pkg/sentry/state/stateio"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/timing"
 	"gvisor.dev/gvisor/pkg/urpc"
@@ -560,17 +564,28 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 
 	fileIdx := 1
 	if o.HavePagesFile {
-		pagesMetadata, err := o.ReleaseFD(fileIdx)
+		pagesMetadataFD, err := o.ReleaseFD(fileIdx)
 		if err != nil {
 			return err
 		}
 		fileIdx++
 
-		pagesFile, err := o.ReleaseFD(fileIdx)
+		pagesFileFD, err := o.ReleaseFD(fileIdx)
 		if err != nil {
 			return err
 		}
 		fileIdx++
+
+		pagesMetadata := newBufioReadCloser(pagesMetadataFD)
+		// Provision one range per page, which is the most that
+		// pgalloc.MemoryFile save/restore can require.
+		// TODO: Make these parameters configurable via arguments to `runsc restore`.
+		const (
+			pagesFileMaxReadBytes = 256 * 1024
+			pagesFileMaxRanges    = pagesFileMaxReadBytes / hostarch.PageSize
+			pagesFileMaxParallel  = 128
+		)
+		pagesFile := stateio.NewFDReader(int32(pagesFileFD.Release()), pagesFileMaxReadBytes, pagesFileMaxRanges, pagesFileMaxParallel)
 
 		// This immediately starts loading the main MemoryFile asynchronously.
 		cm.restorer.asyncMFLoader = kernel.NewAsyncMFLoader(pagesMetadata, pagesFile, cm.restorer.mainMF, timer.Fork("PagesFileLoader"))
@@ -986,4 +1001,17 @@ func (cm *containerManager) ContainerRuntimeState(cid *string, state *ContainerR
 	log.Debugf("containerManager.ContainerRuntimeState: cid: %s", *cid)
 	*state = cm.l.containerRuntimeState(*cid)
 	return nil
+}
+
+type bufioReadCloser struct {
+	bufio.Reader
+	io.Closer
+}
+
+func newBufioReadCloser(r io.ReadCloser) *bufioReadCloser {
+	brc := &bufioReadCloser{
+		Closer: r,
+	}
+	brc.Reader.Reset(r)
+	return brc
 }
