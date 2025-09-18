@@ -349,6 +349,11 @@ func (*Systrap) ConcurrencyCount() int {
 	return maxSysmsgThreads
 }
 
+// Name implements platform.Platform.Name.
+func (*Systrap) Name() string {
+	return "systrap"
+}
+
 type constructor struct{}
 
 func (*constructor) New(opts platform.Options) (platform.Platform, error) {

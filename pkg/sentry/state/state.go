@@ -93,7 +93,7 @@ func (opts SaveOpts) Save(ctx context.Context, k *kernel.Kernel, w *watchdog.Wat
 	if opts.Metadata == nil {
 		opts.Metadata = make(map[string]string)
 	}
-	addSaveMetadata(opts.Metadata)
+	addSaveMetadata(opts.Metadata, k.Platform.Name())
 
 	// Open the statefile.
 	wc, err := statefile.NewWriter(opts.Destination, opts.Key, opts.Metadata)

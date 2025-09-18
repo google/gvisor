@@ -268,6 +268,11 @@ func (*PTrace) ConcurrencyCount() int {
 	return math.MaxInt
 }
 
+// Name implements platform.Platform.Name.
+func (*PTrace) Name() string {
+	return "ptrace"
+}
+
 type constructor struct{}
 
 func (*constructor) New(platform.Options) (platform.Platform, error) {

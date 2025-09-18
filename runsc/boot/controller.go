@@ -639,6 +639,11 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 	if checkpointVersion != currentVersion {
 		return fmt.Errorf("runsc version does not match across checkpoint restore, checkpoint: %v current: %v", checkpointVersion, currentVersion)
 	}
+	checkpointPlatform := metadata[state.MetadataPlatform]
+	currentPlatform := cm.l.k.Platform.Name()
+	if checkpointPlatform != currentPlatform {
+		return fmt.Errorf("platform does not match across checkpoint restore, checkpoint: %v current: %v", checkpointPlatform, currentPlatform)
+	}
 	return cm.restorer.restoreContainerInfo(cm.l, &cm.l.root, timer.Fork("cont:root"))
 }
 
