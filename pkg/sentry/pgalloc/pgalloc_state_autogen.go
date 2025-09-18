@@ -8,6 +8,62 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
+func (l *asyncMemoryFileLoadList) StateTypeName() string {
+	return "pkg/sentry/pgalloc.asyncMemoryFileLoadList"
+}
+
+func (l *asyncMemoryFileLoadList) StateFields() []string {
+	return []string{
+		"head",
+		"tail",
+	}
+}
+
+func (l *asyncMemoryFileLoadList) beforeSave() {}
+
+// +checklocksignore
+func (l *asyncMemoryFileLoadList) StateSave(stateSinkObject state.Sink) {
+	l.beforeSave()
+	stateSinkObject.Save(0, &l.head)
+	stateSinkObject.Save(1, &l.tail)
+}
+
+func (l *asyncMemoryFileLoadList) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (l *asyncMemoryFileLoadList) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &l.head)
+	stateSourceObject.Load(1, &l.tail)
+}
+
+func (e *asyncMemoryFileLoadEntry) StateTypeName() string {
+	return "pkg/sentry/pgalloc.asyncMemoryFileLoadEntry"
+}
+
+func (e *asyncMemoryFileLoadEntry) StateFields() []string {
+	return []string{
+		"next",
+		"prev",
+	}
+}
+
+func (e *asyncMemoryFileLoadEntry) beforeSave() {}
+
+// +checklocksignore
+func (e *asyncMemoryFileLoadEntry) StateSave(stateSinkObject state.Sink) {
+	e.beforeSave()
+	stateSinkObject.Save(0, &e.next)
+	stateSinkObject.Save(1, &e.prev)
+}
+
+func (e *asyncMemoryFileLoadEntry) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (e *asyncMemoryFileLoadEntry) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &e.next)
+	stateSourceObject.Load(1, &e.prev)
+}
+
 func (s *aplUnloadedSet) StateTypeName() string {
 	return "pkg/sentry/pgalloc.aplUnloadedSet"
 }
@@ -665,6 +721,8 @@ func (u *unwasteFlatSegment) StateLoad(ctx context.Context, stateSourceObject st
 }
 
 func init() {
+	state.Register((*asyncMemoryFileLoadList)(nil))
+	state.Register((*asyncMemoryFileLoadEntry)(nil))
 	state.Register((*aplUnloadedSet)(nil))
 	state.Register((*aplUnloadednode)(nil))
 	state.Register((*aplUnloadedFlatSegment)(nil))

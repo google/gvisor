@@ -530,6 +530,7 @@ func (fs *Filesystem) OpenAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 		}
 		if trunc && d.isRegular() {
 			if err := mnt.CheckBeginWrite(); err != nil {
+				fs.mu.RUnlock()
 				return nil, err
 			}
 			defer mnt.EndWrite()

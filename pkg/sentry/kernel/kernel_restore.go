@@ -16,7 +16,6 @@ package kernel
 
 import (
 	"bufio"
-	"errors"
 	"fmt"
 	"io"
 
@@ -262,9 +261,8 @@ type AsyncMFLoader struct {
 	metadataWg  sync.WaitGroup
 	metadataErr error
 
-	loadWg     sync.WaitGroup
-	loadErrsMu sync.Mutex
-	loadErrs   []error
+	loadWg  sync.WaitGroup
+	loadErr error
 }
 
 // NewAsyncMFLoader creates a new AsyncMFLoader. It takes ownership of
@@ -301,22 +299,16 @@ func (mfl *AsyncMFLoader) backgroundGoroutine(pagesMetadataFD, pagesFileFD *fd.F
 	// or compressio.NewSimpleReader().
 	pagesMetadata := bufio.NewReader(pagesMetadataFD)
 
+	mfl.loadWg.Add(1)
+	apfl := pgalloc.StartAsyncPagesFileLoad(int32(pagesFileFD.FD()), func(err error) {
+		defer mfl.loadWg.Done()
+		mfl.loadErr = err
+	}, timeline)
+	cu.Add(apfl.MemoryFilesDone)
+
 	opts := pgalloc.LoadOpts{
-		PagesFile: pagesFileFD,
-		OnAsyncPageLoadStart: func(mf *pgalloc.MemoryFile) {
-			mfl.loadWg.Add(1)
-			log.Infof("Starting async page load for %p", mf)
-		},
-		OnAsyncPageLoadDone: func(mf *pgalloc.MemoryFile, err error) {
-			defer mfl.loadWg.Done()
-			if err != nil {
-				log.Warningf("Async page load error for %p: %v", mf, err)
-				mfl.loadErrsMu.Lock()
-				mfl.loadErrs = append(mfl.loadErrs, fmt.Errorf("%p: async page load: %w", mf, err))
-				mfl.loadErrsMu.Unlock()
-			}
-		},
-		Timeline: timeline,
+		PagesFile: apfl,
+		Timeline:  timeline,
 	}
 
 	timeline.Reached("loading mainMF")
@@ -347,9 +339,9 @@ func (mfl *AsyncMFLoader) backgroundGoroutine(pagesMetadataFD, pagesFileFD *fd.F
 
 	// Wait for page loads to complete and report errors.
 	mfl.loadWg.Wait()
-	if loadErr := errors.Join(mfl.loadErrs...); loadErr != nil {
+	if mfl.loadErr != nil {
 		timeline.Invalidate("page load failed")
-		log.Warningf("Failed to load MemoryFile pages: %v", loadErr)
+		log.Warningf("Failed to load MemoryFile pages: %v", mfl.loadErr)
 		return
 	}
 	log.Infof("All MemoryFile pages have been loaded.")
@@ -381,5 +373,5 @@ func (mfl *AsyncMFLoader) Wait() error {
 		return err
 	}
 	mfl.loadWg.Wait()
-	return errors.Join(mfl.loadErrs...)
+	return mfl.loadErr
 }
