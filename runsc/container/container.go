@@ -1441,6 +1441,13 @@ func (c *Container) createGoferProcess(conf *config.Config, mountHints *boot.Pod
 			return nil, nil, nil, nil, err
 		}
 		defer syncFile.Close()
+		uid, gid := sandbox.SandboxUserGroupIDs(c.Spec)
+		if uid != 0 {
+			cmd.Args = append(cmd.Args, fmt.Sprintf("--uid=%d", uid))
+		}
+		if gid != 0 {
+			cmd.Args = append(cmd.Args, fmt.Sprintf("--gid=%d", gid))
+		}
 	}
 
 	// Create synchronization FD for chroot.
