@@ -8,7 +8,5 @@ package(
 go_binary(
     name = "stucktasks",
     srcs = ["stucktasks.go"],
-    deps = [
-        "//runsc/flag",
-    ],
+    deps = ["//runsc/flag"],
 )

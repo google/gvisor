@@ -134,7 +134,11 @@ func analyzeStackDump(scanner *bufio.Scanner, out io.Writer, stuckIds map[uint]s
 		sorted = append(sorted, c)
 	}
 	sort.Slice(sorted, func(i, j int) bool {
-		// Reverse sort
+		// Sort with the most occurring stacks first, then start with the longest stacks (likely
+		// to be the more relevant for deadlocks).
+		if sorted[i].count == sorted[j].count {
+			return len(sorted[i].stack.lines) > len(sorted[j].stack.lines)
+		}
 		return sorted[i].count > sorted[j].count
 	})
 
@@ -210,7 +214,13 @@ func parseBlock(block []string) (*stack, error) {
 
 	var signature string
 	for i, line := range block[1:] {
-		if i%2 == 1 {
+		// Only look at function names. Skip odd lines that contain file names.
+		if i%2 == 0 {
+			// Use the full function name, but ignore argument values.
+			idx := strings.LastIndex(line, "(")
+			if idx != -1 {
+				line = line[:idx]
+			}
 			signature += line + "\n"
 		}
 	}
