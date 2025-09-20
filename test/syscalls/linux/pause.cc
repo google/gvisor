@@ -57,16 +57,16 @@ TEST(PauseTest, OnlyReturnsWhenSignalHandled) {
   std::atomic<int> sent_signal{0};
   std::atomic<int> waking_signal{0};
   ScopedThread t([&] {
-    mu.Lock();
+    mu.lock();
     child_tid = gettid();
     child_tid_available = true;
-    mu.Unlock();
+    mu.unlock();
     EXPECT_THAT(pause(), SyscallFailsWithErrno(EINTR));
     waking_signal.store(sent_signal.load());
   });
-  mu.Lock();
+  mu.lock();
   mu.Await(absl::Condition(&child_tid_available));
-  mu.Unlock();
+  mu.unlock();
 
   // Wait a bit to let the child enter pause().
   absl::SleepFor(absl::Seconds(3));

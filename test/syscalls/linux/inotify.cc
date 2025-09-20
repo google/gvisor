@@ -2322,7 +2322,7 @@ TEST(InotifyTest, InotifyAndTargetDestructionDoNotDeadlock) {
       for (auto& afd : fds) {
         int new_fd;
         ASSERT_THAT(new_fd = inotify_init1(IN_NONBLOCK), SyscallSucceeds());
-        absl::MutexLock l(&afd.mu);
+        absl::MutexLock l(afd.mu);
         ASSERT_THAT(close(afd.fd), SyscallSucceeds());
         afd.fd = new_fd;
         for (auto& p : paths) {
@@ -2429,7 +2429,7 @@ TEST(InotifyTest, NotifyNoDeadlock) {
         InotifyAddWatch(ifd.get(), dir, IN_ALL_EVENTS));
     int file_wd;
     {
-      absl::ReaderMutexLock l(&mu);
+      absl::ReaderMutexLock l(mu);
       file_wd = ASSERT_NO_ERRNO_AND_VALUE(
           InotifyAddWatch(ifd.get(), file, IN_ALL_EVENTS));
     }
@@ -2439,7 +2439,7 @@ TEST(InotifyTest, NotifyNoDeadlock) {
       dir_wd = ASSERT_NO_ERRNO_AND_VALUE(
           InotifyAddWatch(ifd.get(), dir, IN_ALL_EVENTS));
       {
-        absl::ReaderMutexLock l(&mu);
+        absl::ReaderMutexLock l(mu);
         file_wd = ASSERT_NO_ERRNO_AND_VALUE(
             InotifyAddWatch(ifd.get(), file, IN_ALL_EVENTS));
       }
@@ -2451,7 +2451,7 @@ TEST(InotifyTest, NotifyNoDeadlock) {
   ScopedThread stats([&] {
     int fd, dir_fd;
     {
-      absl::ReaderMutexLock l(&mu);
+      absl::ReaderMutexLock l(mu);
       ASSERT_THAT(fd = open(file.c_str(), O_RDONLY), SyscallSucceeds());
     }
     ASSERT_THAT(dir_fd = open(dir.c_str(), O_RDONLY | O_DIRECTORY),
@@ -2460,7 +2460,7 @@ TEST(InotifyTest, NotifyNoDeadlock) {
 
     for (auto start = absl::Now(); absl::Now() - start < runtime;) {
       {
-        absl::ReaderMutexLock l(&mu);
+        absl::ReaderMutexLock l(mu);
         EXPECT_THAT(utimes(file.c_str(), times), SyscallSucceeds());
       }
       EXPECT_THAT(futimes(fd, times), SyscallSucceeds());
@@ -2476,7 +2476,7 @@ TEST(InotifyTest, NotifyNoDeadlock) {
     if (!IsRunningOnGvisor()) {
       int fd;
       {
-        absl::ReaderMutexLock l(&mu);
+        absl::ReaderMutexLock l(mu);
         ASSERT_THAT(fd = open(file.c_str(), O_RDONLY), SyscallSucceeds());
       }
 
@@ -2484,7 +2484,7 @@ TEST(InotifyTest, NotifyNoDeadlock) {
       int val = 123;
       for (auto start = absl::Now(); absl::Now() - start < runtime;) {
         {
-          absl::ReaderMutexLock l(&mu);
+          absl::ReaderMutexLock l(mu);
           ASSERT_THAT(
               setxattr(file.c_str(), name, &val, sizeof(val), /*flags=*/0),
               SyscallSucceeds());
@@ -2503,7 +2503,7 @@ TEST(InotifyTest, NotifyNoDeadlock) {
   ScopedThread read_write([&] {
     int fd;
     {
-      absl::ReaderMutexLock l(&mu);
+      absl::ReaderMutexLock l(mu);
       ASSERT_THAT(fd = open(file.c_str(), O_RDWR), SyscallSucceeds());
     }
     for (auto start = absl::Now(); absl::Now() - start < runtime;) {
@@ -2522,7 +2522,7 @@ TEST(InotifyTest, NotifyNoDeadlock) {
   for (auto start = absl::Now(); absl::Now() - start < runtime;) {
     const std::string new_path = NewTempAbsPathInDir(dir);
     {
-      absl::WriterMutexLock l(&mu);
+      absl::WriterMutexLock l(mu);
       ASSERT_THAT(rename(file.c_str(), new_path.c_str()), SyscallSucceeds());
       file = new_path;
     }

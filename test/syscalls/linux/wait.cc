@@ -447,7 +447,7 @@ TEST_P(WaitSpecificChildTest, SiblingChildren) {
   bool stop = false;
 
   ScopedThread t([&] {
-    absl::MutexLock ml(&mu);
+    absl::MutexLock ml(mu);
     EXPECT_THAT(child = ForkAndExit(0, 0), SyscallSucceeds());
     ready = true;
     mu.Await(absl::Condition(&stop));
@@ -455,7 +455,7 @@ TEST_P(WaitSpecificChildTest, SiblingChildren) {
 
   // N.B. This must be declared after ScopedThread, so it is destructed first,
   // thus waking the thread.
-  absl::MutexLock ml(&mu);
+  absl::MutexLock ml(mu);
   mu.Await(absl::Condition(&ready));
 
   EXPECT_NO_ERRNO(WaitFor(child, 0));
@@ -483,7 +483,7 @@ TEST_P(WaitSpecificChildTest, SiblingChildrenWNOTHREAD) {
   bool stop = false;
 
   ScopedThread t([&] {
-    absl::MutexLock ml(&mu);
+    absl::MutexLock ml(mu);
     EXPECT_THAT(child = ForkAndExit(0, 0), SyscallSucceeds());
     ready = true;
     mu.Await(absl::Condition(&stop));
@@ -494,7 +494,7 @@ TEST_P(WaitSpecificChildTest, SiblingChildrenWNOTHREAD) {
 
   // N.B. This must be declared after ScopedThread, so it is destructed first,
   // thus waking the thread.
-  absl::MutexLock ml(&mu);
+  absl::MutexLock ml(mu);
   mu.Await(absl::Condition(&ready));
 
   // This thread can't wait on child.

@@ -34,14 +34,14 @@ TEST(UnshareTest, ThreadFlagFailsIfMultithreaded) {
   absl::Mutex mu;
   bool finished = false;
   ScopedThread t([&] {
-    mu.Lock();
+    mu.lock();
     mu.Await(absl::Condition(&finished));
-    mu.Unlock();
+    mu.unlock();
   });
   ASSERT_THAT(unshare(CLONE_THREAD), SyscallFailsWithErrno(EINVAL));
-  mu.Lock();
+  mu.lock();
   finished = true;
-  mu.Unlock();
+  mu.unlock();
 }
 
 }  // namespace
