@@ -174,6 +174,12 @@ func (mm *MemoryManager) Deactivate() {
 //   - ar must be page-aligned.
 //   - pseg == mm.pmas.LowerBoundSegment(ar.Start).
 func (mm *MemoryManager) mapASLocked(ctx context.Context, pseg pmaIterator, ar hostarch.AddrRange, platformEffect memmap.MMapPlatformEffect) error {
+	if platformEffect == memmap.PlatformEffectCommit && ar.Length() > (1<<30) {
+		// FIXME(b/445932215, b/445939339): Don't precommit very large ranges
+		// via platform.AddressSpace.MapFile() for now, since holding locks
+		// while doing so causes problems.
+		platformEffect = memmap.PlatformEffectPopulate
+	}
 	// By default, map entire pmas at a time, under the assumption that there
 	// is no cost to mapping more of a pma than necessary.
 	mapAR := hostarch.AddrRange{0, ^hostarch.Addr(hostarch.PageSize - 1)}

@@ -16,11 +16,9 @@ go_library(
     deps = [
         "//pkg/abi/linux",
         "//pkg/context",
-        "//pkg/errors/linuxerr",
-        "//pkg/fd",
         "//pkg/log",
         "//pkg/sentry/kernel",
-        "//pkg/sentry/pgalloc",
+        "//pkg/sentry/state/stateio",
         "//pkg/sentry/time",
         "//pkg/sentry/watchdog",
         "//pkg/state/statefile",

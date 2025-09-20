@@ -99,7 +99,6 @@ go_library(
         "//pkg/sentry/hostmm",
         "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/auth",
-        "//pkg/sentry/pgalloc",
         "//pkg/sentry/platform",
         "//pkg/sentry/socket/plugin",
         "//pkg/state/pretty",
