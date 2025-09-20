@@ -704,13 +704,11 @@ func doRevalidationLisafs(ctx context.Context, vfsObj *vfs.VirtualFilesystem, st
 	for i := 0; i < len(state.dentries); i++ {
 		d := state.dentries[i]
 		found := i < len(stats)
-		// Advance lastUnlockedDentry. It is the responsibility of this for loop
-		// block to unlock i.metadataMu.
-		lastUnlockedDentry = i
 
 		// Note that synthetic dentries will always fail this comparison check.
 		if !found || d.inode.inoKey != inoKeyFromStatx(&stats[i]) {
 			d.inode.metadataMu.Unlock()
+			lastUnlockedDentry = i
 			if !found && d.inode.isSynthetic() {
 				// We have a synthetic file, and no remote file has arisen to replace
 				// it.
@@ -725,13 +723,18 @@ func doRevalidationLisafs(ctx context.Context, vfsObj *vfs.VirtualFilesystem, st
 		// Check that the file type has not changed.
 		if stats[i].Mask&linux.STATX_TYPE != 0 {
 			if got, want := stats[i].Mode&linux.FileTypeMask, d.inode.fileType(); uint32(got) != want {
-				panic(fmt.Sprintf("file type of %q changed from %#o to %#o while inode key (%+v) did not change", genericDebugPathname(d.inode.fs, d), want, got, d.inode.inoKey))
+				ctx.Warningf("file type of %q changed from %#o to %#o while inode key (%+v) did not change", genericDebugPathname(d.inode.fs, d), want, got, d.inode.inoKey)
+				d.inode.metadataMu.Unlock()
+				lastUnlockedDentry = i
+				d.invalidate(ctx, vfsObj, ds)
+				return nil
 			}
 		}
 
 		// The file at this path hasn't changed. Just update cached metadata.
 		d.inode.impl.(*lisafsInode).updateMetadataFromStatxLocked(&stats[i]) // +checklocksforce: see above.
 		d.inode.metadataMu.Unlock()
+		lastUnlockedDentry = i
 	}
 	return nil
 }
