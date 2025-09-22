@@ -704,13 +704,11 @@ func doRevalidationLisafs(ctx context.Context, vfsObj *vfs.VirtualFilesystem, st
 	for i := 0; i < len(state.dentries); i++ {
 		d := state.dentries[i]
 		found := i < len(stats)
-		// Advance lastUnlockedDentry. It is the responsibility of this for loop
-		// block to unlock i.metadataMu.
-		lastUnlockedDentry = i
 
 		// Note that synthetic dentries will always fail this comparison check.
 		if !found || d.inode.inoKey != inoKeyFromStatx(&stats[i]) {
 			d.inode.metadataMu.Unlock()
+			lastUnlockedDentry = i
 			if !found && d.inode.isSynthetic() {
 				// We have a synthetic file, and no remote file has arisen to replace
 				// it.
@@ -732,6 +730,7 @@ func doRevalidationLisafs(ctx context.Context, vfsObj *vfs.VirtualFilesystem, st
 		// The file at this path hasn't changed. Just update cached metadata.
 		d.inode.impl.(*lisafsInode).updateMetadataFromStatxLocked(&stats[i]) // +checklocksforce: see above.
 		d.inode.metadataMu.Unlock()
+		lastUnlockedDentry = i
 	}
 	return nil
 }
