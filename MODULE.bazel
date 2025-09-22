@@ -1,0 +1,499 @@
+module(
+    name = "gvisor",
+    version = "0.0.1",
+)
+
+bazel_dep(name = "rules_go", version = "0.57.0", repo_name = "io_bazel_rules_go")
+bazel_dep(name = "gazelle", version = "0.37.0", repo_name = "bazel_gazelle")
+bazel_dep(name = "rules_license", version = "1.0.0")
+bazel_dep(name = "bazel_skylib", version = "1.7.1")
+bazel_dep(name = "rules_pkg", version = "1.0.1")
+bazel_dep(name = "rules_cc", version = "0.1.4")
+bazel_dep(name = "grpc", version = "1.74.1", repo_name = "com_github_grpc_grpc")
+bazel_dep(name = "protobuf", version = "31.1", repo_name = "com_google_protobuf")
+bazel_dep(name = "platforms", version = "1.0.0")
+bazel_dep(name = "abseil-cpp", version = "20250512.1", repo_name = "com_google_absl")
+bazel_dep(name = "googletest", version = "1.17.0", repo_name = "com_google_googletest")
+bazel_dep(name = "google_benchmark", version = "1.8.4", repo_name = "com_google_benchmark")
+bazel_dep(name = "nlohmann_json", version = "3.11.3")
+bazel_dep(name = "rules_python", version = "1.4.0")
+bazel_dep(name = "zstd", version = "1.5.5", repo_name = "llvm_zstd")
+
+### LLVM
+# TODO: try using "llvm-raw" from BCR
+http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+
+http_archive(
+    name = "llvm-raw",
+    build_file_content = "# empty",
+    sha256 = "e8ece380fdb57dc6f8e42df9db872a1ade5056c5379075e3e2f99c89200aea69",
+    strip_prefix = "llvm-project-cb2f0d0a5f14c183e7182aba0f0e54a518de9e3f",
+    urls = ["https://github.com/llvm/llvm-project/archive/{commit}.tar.gz".format(commit = "cb2f0d0a5f14c183e7182aba0f0e54a518de9e3f")],
+)
+
+llvm_configure = use_repo_rule("@llvm-raw//utils/bazel:configure.bzl", "llvm_configure")
+
+llvm_configure(name = "llvm-project")
+
+### Python
+python = use_extension("@rules_python//python/extensions:python.bzl", "python")
+python.defaults(python_version = "3.11")
+python.toolchain(python_version = "3.11")
+
+### Crosstool
+coral_crosstool_extension = use_extension("//:third_party/extensions/coral_crosstool.bzl", "coral_crosstool_extension")
+use_repo(coral_crosstool_extension, "coral_crosstool")
+
+crosstool = use_extension("//:third_party/extensions/crosstool.bzl", "crosstool_extension")
+use_repo(crosstool, "crosstool")
+
+### zlib-ng
+# TODO: try using "zlib-ng" from BCR
+llvm_zlib = use_extension("//:third_party/extensions/llvm_zlib.bzl", "llvm_zlib_extension")
+use_repo(llvm_zlib, "llvm_zlib")
+
+### Repo rules
+http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
+
+http_file(
+    name = "buildkite_pipeline_schema",
+    sha256 = "3369c58038b4d55c08928affafb653716eb1e7b3cabb4a391aef979dd921f4e1",
+    urls = ["https://raw.githubusercontent.com/buildkite/pipeline-schema/f7a0894074d194bcf19eec5411fec0528f7f4180/schema.json"],
+)
+
+http_file(
+    name = "github_workflow_schema",
+    sha256 = "7499ccb3e75975504ea1ee7c70291e0c9f6c1f684678091d013061fe263e3ddb",
+    urls = ["https://raw.githubusercontent.com/SchemaStore/schemastore/166136b96a14f103a948053903e9339e63ad9170/src/schemas/json/github-workflow.json"],
+)
+
+### Toolchains
+register_toolchains("//:cc_toolchain_k8")
+
+register_toolchains("//:cc_toolchain_aarch64")
+
+### Go
+go_sdk = use_extension("@io_bazel_rules_go//go:extensions.bzl", "go_sdk")
+go_sdk.download(version = "1.24.1")
+
+go_deps = use_extension("@bazel_gazelle//:extensions.bzl", "go_deps")
+go_deps.from_file(go_mod = "//:go.mod")
+use_repo(
+    go_deps,
+    "co_honnef_go_tools",
+    "com_github_burntsushi_toml",
+    "com_github_cenkalti_backoff",
+    "com_github_cilium_ebpf",
+    "com_github_containerd_cgroups",
+    "com_github_containerd_console",
+    "com_github_containerd_containerd",
+    "com_github_containerd_errdefs",
+    "com_github_containerd_fifo",
+    "com_github_containerd_go_runc",
+    "com_github_containerd_log",
+    "com_github_containerd_typeurl",
+    "com_github_coreos_go_systemd_v22",
+    "com_github_distribution_reference",
+    "com_github_docker_docker",
+    "com_github_docker_go_connections",
+    "com_github_felixge_httpsnoop",
+    "com_github_go_echarts_go_echarts_v2",
+    "com_github_go_logr_stdr",
+    "com_github_godbus_dbus_v5",
+    "com_github_gofrs_flock",
+    "com_github_gogo_protobuf",
+    "com_github_golang_protobuf",
+    "com_github_google_btree",
+    "com_github_google_go_cmp",
+    "com_github_google_go_github_v56",
+    "com_github_google_go_querystring",
+    "com_github_google_gopacket",
+    "com_github_google_pprof",
+    "com_github_google_subcommands",
+    "com_github_google_uuid",
+    "com_github_googleapis_enterprise_certificate_proxy",
+    "com_github_googleapis_gax_go_v2",
+    "com_github_hanwen_go_fuse_v2",
+    "com_github_ianlancetaylor_demangle",
+    "com_github_imdario_mergo",
+    "com_github_kr_pty",
+    "com_github_mattbaird_jsonpatch",
+    "com_github_matttproud_golang_protobuf_extensions",
+    "com_github_moby_docker_image_spec",
+    "com_github_moby_sys_capability",
+    "com_github_mohae_deepcopy",
+    "com_github_opencontainers_image_spec",
+    "com_github_opencontainers_runtime_spec",
+    "com_github_prometheus_client_model",
+    "com_github_prometheus_common",
+    "com_github_sirupsen_logrus",
+    "com_github_spf13_pflag",
+    "com_github_vishvananda_netlink",
+    "com_github_xeipuuv_gojsonpointer",
+    "com_github_xeipuuv_gojsonreference",
+    "com_github_xeipuuv_gojsonschema",
+    "com_google_cloud_go",
+    "com_google_cloud_go_bigquery",
+    "com_google_cloud_go_compute_metadata",
+    "com_google_cloud_go_container",
+    "com_google_cloud_go_iam",
+    "in_gopkg_yaml_v2",
+    "in_gopkg_yaml_v3",
+    "io_k8s_api",
+    "io_k8s_apimachinery",
+    "io_k8s_client_go",
+    "io_opentelemetry_go_contrib_instrumentation_net_http_otelhttp",
+    "io_opentelemetry_go_otel",
+    "io_opentelemetry_go_otel_metric",
+    "io_opentelemetry_go_otel_trace",
+    "org_golang_google_api",
+    "org_golang_google_genproto",
+    "org_golang_google_grpc",
+    "org_golang_google_protobuf",
+    "org_golang_x_exp",
+    "org_golang_x_exp_typeparams",
+    "org_golang_x_mod",
+    "org_golang_x_net",
+    "org_golang_x_oauth2",
+    "org_golang_x_sync",
+    "org_golang_x_sys",
+    "org_golang_x_term",
+    "org_golang_x_time",
+    "org_golang_x_tools",
+    "org_uber_go_atomic",
+    "org_uber_go_multierr",
+)
+go_deps.module(
+    path = "golang.org/x/term",
+    sum = "h1:m+B6fahuftsE9qjo0VWp2FW0mB3MTJvR0BaMQrq0pmE=",
+    version = "v0.16.0",
+)
+go_deps.module(
+    path = "golang.org/x/net",
+    sum = "h1:AcW1SDZMkb8IpzCdQUaIq2sP4sZ4zw+55h6ynffypl4=",
+    version = "v0.30.0",
+)
+go_deps.module(
+    path = "github.com/google/go-cmp",
+    sum = "h1:O2Tfq5qg4qc4AmwVlvv0oLiVAGB7enBSJ2x2DqQFi38=",
+    version = "v0.5.9",
+)
+go_deps.module(
+    path = "github.com/golang/protobuf",
+    sum = "h1:KhyjKVUg7Usr/dYsdSqoFveMYd5ko72D+zANwlG1mmg=",
+    version = "v1.5.3",
+)
+go_deps.module(
+    path = "github.com/xeipuuv/gojsonpointer",
+    sum = "h1:J9EGpcZtP0E/raorCMxlFGSTBrsSlaDGf3jU/qvAE2c=",
+    version = "v0.0.0-20180127040702-4e3ac2762d5f",
+)
+go_deps.module(
+    path = "go.opentelemetry.io/otel",
+    sum = "h1:/SqNcYk+idO0CxKEUOtKQClMK/MimZihKYMruSMViUo=",
+    version = "v1.28.0",
+)
+go_deps.module(
+    path = "github.com/go-logr/stdr",
+    sum = "h1:hSWxHoqTgW2S2qGc0LTAI563KZ5YKYRhT3MFKZMbjag=",
+    version = "v1.2.2",
+)
+go_deps.module(
+    path = "go.opentelemetry.io/otel/metric",
+    sum = "h1:f0HGvSl1KRAU1DLgLGFjrwVyismPlnuU6JD6bOeuA5Q=",
+    version = "v1.28.0",
+)
+go_deps.module(
+    path = "github.com/felixge/httpsnoop",
+    sum = "h1:+nS9g82KMXccJ/wp0zyRW9ZBHFETmMGtkk+2CTTrW4o=",
+    version = "v1.0.2",
+)
+go_deps.module(
+    path = "go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp",
+    sum = "h1:4K4tsIXefpVJtvA/8srF4V4y0akAoPHkIslgAkjixJA=",
+    version = "v0.53.0",
+)
+go_deps.module(
+    path = "go.opentelemetry.io/otel/trace",
+    sum = "h1:GhQ9cUuQGmNDd5BTCP2dAvv75RdMxEfTmYejp+lkx9g=",
+    version = "v1.28.0",
+)
+go_deps.module(
+    path = "github.com/distribution/reference",
+    sum = "h1:0IXCQ5g4/QMHHkarYzh5l+u8T3t73zM5QvfrDyIgxBk=",
+    version = "v0.6.0",
+)
+go_deps.module(
+    path = "github.com/opencontainers/image-spec",
+    sum = "h1:9yCKha/T5XdGtO0q9Q9a6T5NUCsTn/DrBg0D7ufOcFM=",
+    version = "v1.0.2",
+)
+go_deps.module(
+    path = "github.com/moby/docker-image-spec",
+    sum = "h1:jMKff3w6PgbfSa69GfNg+zN/XLhfXJGnEx3Nl2EsFP0=",
+    version = "v1.3.1",
+)
+go_deps.module(
+    path = "honnef.co/go/tools",
+    sum = "h1:4bH5o3b5ZULQ4UrBmP+63W9r7qIkqJClEA9ko5YKx+I=",
+    version = "v0.5.1",
+)
+go_deps.module(
+    path = "cloud.google.com/go",
+    sum = "h1:DNtEKRBAAzeS4KyIory52wWHuClNaXJ5x1F7xa4q+5Y=",
+    version = "v0.105.0",
+)
+go_deps.module(
+    path = "cloud.google.com/go/bigquery",
+    sum = "h1:Wi4dITi+cf9VYp4VH2T9O41w0kCW0uQTELq2Z6tukN0=",
+    version = "v1.44.0",
+)
+go_deps.module(
+    path = "cloud.google.com/go/iam",
+    sum = "h1:E2osAkZzxI/+8pZcxVLcDtAQx/u+hZXVryUaYQ5O0Kk=",
+    version = "v0.8.0",
+)
+go_deps.module(
+    path = "cloud.google.com/go/compute/metadata",
+    sum = "h1:mg4jlk7mCAj6xXp9UJ4fjI9VUI5rubuGBW5aJ7UnBMY=",
+    version = "v0.2.3",
+)
+go_deps.module(
+    path = "cloud.google.com/go/container",
+    sum = "h1:JVoEg/4RvoGW37r2Eja/cTBc3X9c2loGWYq7QDsRDuI=",
+    version = "v1.40.0",
+)
+go_deps.module(
+    path = "github.com/docker/docker",
+    sum = "h1:49M11BFLsVO1gxY9UX9p/zwkE/rswggs8AdFmXQw51I=",
+    version = "v28.1.1+incompatible",
+)
+go_deps.module(
+    path = "github.com/go-echarts/go-echarts/v2",
+    sum = "h1:uImZAk6qLkC6F9ju6mZ5SPBqTyK8xjZKwSmwnCg4bxg=",
+    version = "v2.3.3",
+)
+go_deps.module(
+    path = "github.com/google/go-github/v56",
+    sum = "h1:TysL7dMa/r7wsQi44BjqlwaHvwlFlqkK8CtBWCX3gb4=",
+    version = "v56.0.0",
+)
+go_deps.module(
+    path = "github.com/google/go-querystring",
+    sum = "h1:AnCroh3fv4ZBgVIf1Iwtovgjaw/GiKJo8M8yD/fhyJ8=",
+    version = "v1.1.0",
+)
+go_deps.module(
+    path = "github.com/google/uuid",
+    sum = "h1:t6JiXgmwXMjEs8VusXIJk2BXHsn+wx8BZdTaoZ5fu7I=",
+    version = "v1.3.0",
+)
+go_deps.module(
+    path = "github.com/googleapis/enterprise-certificate-proxy",
+    sum = "h1:y8Yozv7SZtlU//QXbezB6QkpuE6jMD2/gfzk4AftXjs=",
+    version = "v0.2.0",
+)
+go_deps.module(
+    path = "github.com/google/gopacket",
+    sum = "h1:ves8RnFZPGiFnTS0uPQStjwru6uO6h+nlr9j6fL7kF8=",
+    version = "v1.1.19",
+)
+go_deps.module(
+    path = "github.com/hanwen/go-fuse/v2",
+    sum = "h1:t5ivNIH2PK+zw4OBul/iJjsoG9K6kXo4nMDoBpciC8A=",
+    version = "v2.3.0",
+)
+go_deps.module(
+    path = "github.com/xeipuuv/gojsonreference",
+    sum = "h1:EzJWgHovont7NscjpAxXsDA8S8BMYve8Y5+7cuRE7R0=",
+    version = "v0.0.0-20180127040603-bd5ef7bd5415",
+)
+go_deps.module(
+    path = "github.com/xeipuuv/gojsonschema",
+    sum = "h1:LhYJRs+L4fBtjZUfuSZIKGeVu0QRy8e5Xi7D17UxZ74=",
+    version = "v1.2.0",
+)
+go_deps.module(
+    path = "go.uber.org/multierr",
+    sum = "h1:dg6GjLku4EH+249NNmoIciG9N/jURbDG+pFlTkhzIC8=",
+    version = "v1.8.0",
+)
+go_deps.module(
+    path = "go.uber.org/atomic",
+    sum = "h1:ADUqmZGgLDDfbSL9ZmPxKTybcoEYHgpYfELNoN+7hsw=",
+    version = "v1.7.0",
+)
+go_deps.module(
+    path = "golang.org/x/oauth2",
+    sum = "h1:PbgcYx2W7i4LvjJWEbf0ngHV6qJYr86PkAV3bXdLEbs=",
+    version = "v0.23.0",
+)
+go_deps.module(
+    path = "gopkg.in/yaml.v3",
+    sum = "h1:fxVm/GzAzEWqLHuvctI91KS9hhNmmWOoWu0XTYJS7CA=",
+    version = "v3.0.1",
+)
+go_deps.module(
+    path = "google.golang.org/genproto",
+    sum = "h1:Q3nlH8iSQSRUwOskjbcSMcF2jiYMNiQYZ0c2KEJLKKU=",
+    version = "v0.0.0-20241021214115-324edc3d5d38",
+)
+go_deps.module(
+    path = "google.golang.org/grpc",
+    sum = "h1:zWnc1Vrcno+lHZCOofnIMvycFcc0QRGIzm9dhnDX68E=",
+    version = "v1.67.1",
+)
+go_deps.module(
+    path = "github.com/docker/go-connections",
+    sum = "h1:El9xVISelRB7BuFusrZozjnkIM5YnzCViNKohAFqRJQ=",
+    version = "v0.4.0",
+)
+go_deps.module(
+    path = "github.com/googleapis/gax-go/v2",
+    sum = "h1:IcsPKeInNvYi7eqSaDjiZqDDKu5rsmunY0Y1YupQSSQ=",
+    version = "v2.7.0",
+)
+go_deps.module(
+    path = "github.com/ianlancetaylor/demangle",
+    sum = "h1:EVX1s+XNss9jkRW9K6XGJn2jL2lB1h5H804oKPsxOec=",
+    version = "v0.0.0-20240912202439-0a2b6291aafd",
+)
+go_deps.module(
+    path = "github.com/google/pprof",
+    sum = "h1:xRmpO92tb8y+Z85iUOMOicpCfaYcv7o3Cg3wKrIpg8g=",
+    version = "v0.0.0-20240711041743-f6c9dda6c6da",
+)
+go_deps.module(
+    path = "github.com/prometheus/common",
+    sum = "h1:0ZISXCMRuCZcxF77aT1BXY5m74mX2vrGYl1dSwBI0Jo=",
+    version = "v0.11.1",
+)
+go_deps.module(
+    path = "github.com/prometheus/client_model",
+    sum = "h1:UBgGFHqYdG/TPFD1B1ogZywDqEkwp3fBMvqdiQ7Xew4=",
+    version = "v0.3.0",
+)
+go_deps.module(
+    path = "github.com/spf13/pflag",
+    sum = "h1:iy+VFUOCP1a+8yFto/drg2CJ5u0yRoB7fZw3DKv/JXA=",
+    version = "v1.0.5",
+)
+go_deps.module(
+    path = "google.golang.org/api",
+    sum = "h1:9yuVqlu2JCvcLg9p8S3fcFLZij8EPSyvODIY1rkMizQ=",
+    version = "v0.103.0",
+)
+go_deps.module(
+    path = "gopkg.in/yaml.v2",
+    sum = "h1:D8xgwECY7CYvx+Y2n4sBz93Jn9JRvxdiyyo8CTfuKaY=",
+    version = "v2.4.0",
+)
+go_deps.module(
+    path = "github.com/golang/protobuf",
+    sum = "h1:KhyjKVUg7Usr/dYsdSqoFveMYd5ko72D+zANwlG1mmg=",
+    version = "v1.5.3",
+)
+go_deps.module(
+    path = "github.com/imdario/mergo",
+    sum = "h1:JboBksRwiiAJWvIYJVo46AfV+IAIKZpfrSzVKj42R4Q=",
+    version = "v0.3.5",
+)
+go_deps.module(
+    path = "golang.org/x/exp/typeparams",
+    sum = "h1:Jw5wfR+h9mnIYH+OtGT2im5wV1YGGDora5vTv/aa5bE=",
+    version = "v0.0.0-20221208152030-732eee02a75a",
+)
+go_deps.module(
+    path = "github.com/matttproud/golang_protobuf_extensions",
+    sum = "h1:4hp9jkHxhMHkqkrB3Ix0jegS5sx/RkqARlsWZ6pIwiU=",
+    version = "v1.0.1",
+)
+go_deps.module(
+    path = "github.com/containerd/containerd",
+    sum = "h1:Bcj0ZXqgIs6GG+YbaKkMX3Dap0JsIVG4UYFOLRo7iX4=",
+    version = "v1.6.36",
+)
+go_deps.module(
+    path = "github.com/containerd/cgroups",
+    sum = "h1:iJnMvco9XGvKUvNQkv88bE4uJXxRQH18efbKo9w5vHQ=",
+    version = "v1.0.1",
+)
+go_deps.module(
+    path = "github.com/containerd/errdefs",
+    sum = "h1:m0wCRBiu1WJT/Fr+iOoQHMQS/eP5myQ8lCv4Dz5ZURM=",
+    version = "v0.1.0",
+)
+go_deps.module(
+    path = "github.com/containerd/log",
+    sum = "h1:TCJt7ioM2cr/tfR8GPbGf9/VRAX8D2B4PjzCpfX540I=",
+    version = "v0.1.0",
+)
+go_deps.module(
+    path = "github.com/googleapis/gnostic",
+    sum = "h1:9fHAtK0uDfpveeqqo1hkEZJcFvYXAiCN3UutL8F9xHw=",
+    version = "v0.5.5",
+)
+go_deps.module(
+    path = "k8s.io/api",
+    sum = "h1:op+yeqZLQxDt2tEnrOP9Y+WA7l4Lxh+7R0IWEzyuk2I=",
+    version = "v0.23.16",
+)
+go_deps.module(
+    path = "k8s.io/apimachinery",
+    sum = "h1:f6Q+3qYv3qWvbDZp2iUhwC2rzMRBkSb7JYBhmeVK5pc=",
+    version = "v0.23.16",
+)
+go_deps.gazelle_override(
+    directives = [
+        "gazelle:proto disable",
+    ],
+    path = "google.golang.org/grpc",
+)
+go_deps.gazelle_override(
+    directives = [
+        "gazelle:proto disable",
+    ],
+    path = "github.com/containerd/containerd",
+)
+go_deps.gazelle_override(
+    directives = [
+        "gazelle:proto disable",
+    ],
+    path = "github.com/containerd/cgroups",
+)
+go_deps.gazelle_override(
+    directives = [
+        "gazelle:proto disable",
+    ],
+    path = "github.com/containerd/errdefs",
+)
+go_deps.gazelle_override(
+    directives = [
+        "gazelle:proto disable",
+    ],
+    path = "github.com/containerd/log",
+)
+go_deps.gazelle_override(
+    directives = [
+        "gazelle:proto disable_global",
+    ],
+    path = "github.com/googleapis/gax-go/v2",
+)
+go_deps.gazelle_override(
+    directives = [
+        "gazelle:proto disable_global",
+    ],
+    path = "github.com/googleapis/gnostic",
+)
+go_deps.gazelle_override(
+    directives = [
+        "gazelle:proto disable_global",
+    ],
+    path = "k8s.io/api",
+)
+go_deps.gazelle_override(
+    directives = [
+        "gazelle:proto disable_global",
+    ],
+    path = "k8s.io/apimachinery",
+)
