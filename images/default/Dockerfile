@@ -39,7 +39,7 @@ RUN curl https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud
     google-cloud-sdk/install.sh --quiet && \
     ln -s /google-cloud-sdk/bin/gcloud /usr/bin/gcloud
 
-RUN apt-get install -y golang
+RUN add-apt-repository ppa:longsleep/golang-backports && apt update && apt install -y golang-go
 
 # Download the official bazel binary. The APT repository isn't used because there is not packages for arm64.
 COPY bazelversion .
