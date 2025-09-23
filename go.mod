@@ -21,7 +21,7 @@ require (
 	github.com/gogo/protobuf v1.3.2
 	github.com/google/btree v1.1.2
 	github.com/google/subcommands v1.0.2-0.20190508160503-636abe8753b8
-	github.com/kr/pty v1.1.5
+	github.com/kr/pty v1.1.8
 	github.com/mattbaird/jsonpatch v0.0.0-20171005235357-81af80346b1a
 	github.com/moby/sys/capability v0.4.0
 	github.com/mohae/deepcopy v0.0.0-20170308212314-bb9b5e7adda9
@@ -44,6 +44,7 @@ require (
 	github.com/Microsoft/go-winio v0.6.0 // indirect
 	github.com/Microsoft/hcsshim v0.9.12 // indirect
 	github.com/containerd/ttrpc v1.1.2 // indirect
+	github.com/creack/pty v1.1.24 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/docker/go-events v0.0.0-20190806004212-e31b211e4f1c // indirect
 	github.com/docker/go-units v0.4.0 // indirect
