@@ -706,7 +706,9 @@ func doRevalidationLisafs(ctx context.Context, vfsObj *vfs.VirtualFilesystem, st
 		found := i < len(stats)
 
 		// Note that synthetic dentries will always fail this comparison check.
-		if !found || d.inode.inoKey != inoKeyFromStatx(&stats[i]) {
+		if !found ||
+			d.inode.inoKey != inoKeyFromStatx(&stats[i]) ||
+			(stats[i].Mask&linux.STATX_TYPE != 0 && uint32(stats[i].Mode&linux.FileTypeMask) != d.inode.fileType()) {
 			d.inode.metadataMu.Unlock()
 			lastUnlockedDentry = i
 			if !found && d.inode.isSynthetic() {
@@ -718,13 +720,6 @@ func doRevalidationLisafs(ctx context.Context, vfsObj *vfs.VirtualFilesystem, st
 			// dentry invalidated.
 			d.invalidate(ctx, vfsObj, ds)
 			return nil
-		}
-
-		// Check that the file type has not changed.
-		if stats[i].Mask&linux.STATX_TYPE != 0 {
-			if got, want := stats[i].Mode&linux.FileTypeMask, d.inode.fileType(); uint32(got) != want {
-				panic(fmt.Sprintf("file type of %q changed from %#o to %#o while inode key (%+v) did not change", genericDebugPathname(d.inode.fs, d), want, got, d.inode.inoKey))
-			}
 		}
 
 		// The file at this path hasn't changed. Just update cached metadata.
