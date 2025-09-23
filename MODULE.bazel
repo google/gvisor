@@ -41,15 +41,15 @@ python.defaults(python_version = "3.11")
 python.toolchain(python_version = "3.11")
 
 ### Crosstool
-coral_crosstool_extension = use_extension("//:tools/bazeldefs/extensions/coral_crosstool.bzl", "coral_crosstool_extension")
+coral_crosstool_extension = use_extension("//tools/bazeldefs:extensions/coral_crosstool.bzl", "coral_crosstool_extension")
 use_repo(coral_crosstool_extension, "coral_crosstool")
 
-crosstool = use_extension("//:tools/bazeldefs/extensions/crosstool.bzl", "crosstool_extension")
+crosstool = use_extension("//tools/bazeldefs:extensions/crosstool.bzl", "crosstool_extension")
 use_repo(crosstool, "crosstool")
 
 ### zlib-ng
-# TODO: try using "zlib-ng" from BCR
-llvm_zlib = use_extension("//:tools/bazeldefs/extensions/llvm_zlib.bzl", "llvm_zlib_extension")
+# TODO: try using "zlib-ng" from BCR once llvm-raw is used directly from BCR
+llvm_zlib = use_extension("//tools/bazeldefs:extensions/llvm_zlib.bzl", "llvm_zlib_extension")
 use_repo(llvm_zlib, "llvm_zlib")
 
 ### Repo rules

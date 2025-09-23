@@ -46,5 +46,5 @@ build:aarch64 --crosstool_top=@crosstool//:toolchains
 build:aarch64 --cpu=aarch64
 build:aarch64 --platforms=@io_bazel_rules_go//go/toolchain:linux_arm64
 
-common --noenable_bzlmod
-common --enable_workspace
+common --enable_bzlmod
+common --noenable_workspace
