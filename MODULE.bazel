@@ -19,6 +19,28 @@ bazel_dep(name = "nlohmann_json", version = "3.11.3")
 bazel_dep(name = "rules_python", version = "1.4.0")
 bazel_dep(name = "zstd", version = "1.5.5", repo_name = "llvm_zstd")
 
+archive_override(
+    module_name = "rules_go",
+    integrity = "sha256-pynI7SRHyQ/hQAd2iQecoKz7dYDsQWN/MS1lDOnZPZY=",
+    patch_args = ["-p1"],
+    patches = [
+        "//tools:rules_go_symbols.patch",
+        "//tools:rules_go_sdk.patch",
+        "//tools:rules_cgo.patch",
+        "//tools:rules_go_export.patch",
+    ],
+    url = "https://github.com/bazel-contrib/rules_go/releases/download/v0.57.0/rules_go-v0.57.0.zip",
+)
+
+archive_override(
+    module_name = "grpc",
+    integrity = "sha256-e/l8Ec84CNZQo6Alu/nF+SLIRKWQgmKFBndl39BV0ig=",
+    patch_args = ["-p1"],
+    patches = ["//tools:grpc_extra_deps.patch"],
+    strip_prefix = "grpc-1.74.1",
+    url = "https://github.com/grpc/grpc/archive/refs/tags/v1.74.1.tar.gz",
+)
+
 ### LLVM
 # TODO: try using "llvm-raw" from BCR
 http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
@@ -82,7 +104,11 @@ register_toolchains("//:cc_toolchain_aarch64")
 
 ### Go
 go_sdk = use_extension("@io_bazel_rules_go//go:extensions.bzl", "go_sdk")
-go_sdk.download(version = "1.24.1")
+go_sdk.download(
+    version = "1.24.1",
+    patches = ["//tools:go_types_memoize.patch"],
+    patch_strip = 1,
+)
 
 go_deps = use_extension("@bazel_gazelle//:extensions.bzl", "go_deps")
 go_deps.from_file(go_mod = "//:go.mod")
