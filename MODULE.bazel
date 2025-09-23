@@ -97,6 +97,17 @@ http_file(
     urls = ["https://raw.githubusercontent.com/SchemaStore/schemastore/166136b96a14f103a948053903e9339e63ad9170/src/schemas/json/github-workflow.json"],
 )
 
+# Root certificates.
+#
+# Note that the sha256 hash is omitted here intentionally. This should not be
+# used in any part of the build other than as certificates present in images.
+http_file(
+    name = "google_root_pem",
+    urls = [
+        "https://pki.goog/roots.pem",
+    ],
+)
+
 ### Toolchains
 register_toolchains("//:cc_toolchain_k8")
 
@@ -105,9 +116,9 @@ register_toolchains("//:cc_toolchain_aarch64")
 ### Go
 go_sdk = use_extension("@io_bazel_rules_go//go:extensions.bzl", "go_sdk")
 go_sdk.download(
-    version = "1.24.1",
-    patches = ["//tools:go_types_memoize.patch"],
     patch_strip = 1,
+    patches = ["//tools:go_types_memoize.patch"],
+    version = "1.24.1",
 )
 
 go_deps = use_extension("@bazel_gazelle//:extensions.bzl", "go_deps")
