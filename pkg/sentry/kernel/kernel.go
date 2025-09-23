@@ -76,12 +76,13 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
 	sentrytime "gvisor.dev/gvisor/pkg/sentry/time"
 	"gvisor.dev/gvisor/pkg/sentry/unimpl"
-	uspb "gvisor.dev/gvisor/pkg/sentry/unimpl/unimplemented_syscall_go_proto"
 	"gvisor.dev/gvisor/pkg/sentry/uniqueid"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/state"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
+
+	uspb "gvisor.dev/gvisor/pkg/sentry/unimpl/unimplemented_syscall_go_proto"
 )
 
 // IOUringEnabled is set to true when IO_URING is enabled. Added as a global to
@@ -1051,7 +1052,7 @@ func (ctx *createProcessContext) getMemoryCgroupID() uint32 {
 func (k *Kernel) CreateProcess(args CreateProcessArgs) (*ThreadGroup, ThreadID, error) {
 	k.extMu.Lock()
 	defer k.extMu.Unlock()
-	log.Infof("EXEC: %v", args.Argv)
+	log.Infof("EXEC: %#v", args.Argv)
 
 	ctx := args.NewContext(k)
 	mntns := args.MountNamespace

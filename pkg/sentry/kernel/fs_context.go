@@ -132,15 +132,16 @@ func (f *FSContext) WorkingDirectory() vfs.VirtualDentry {
 // This is not a valid call after f is destroyed.
 func (f *FSContext) SetWorkingDirectory(ctx context.Context, d vfs.VirtualDentry) {
 	f.mu.Lock()
-	defer f.mu.Unlock()
 
 	if !f.cwd.Ok() {
+		f.mu.Unlock()
 		panic(fmt.Sprintf("FSContext.SetWorkingDirectory(%v)) called after destroy", d))
 	}
 
 	old := f.cwd
 	f.cwd = d
 	d.IncRef()
+	f.mu.Unlock()
 	old.DecRef(ctx)
 }
 
