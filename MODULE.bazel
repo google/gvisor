@@ -55,6 +55,14 @@ use_repo(llvm_zlib, "llvm_zlib")
 ### Repo rules
 http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
 
+new_local_repository = use_repo_rule("@bazel_tools//tools/build_defs/repo:local.bzl", "new_local_repository")
+
+new_local_repository(
+    name = "libpluginstack",
+    build_file = "external/tools/plugin-stack/plugin-stack.BUILD",
+    path = "external/tools/plugin-stack",
+)
+
 http_file(
     name = "buildkite_pipeline_schema",
     sha256 = "3369c58038b4d55c08928affafb653716eb1e7b3cabb4a391aef979dd921f4e1",
