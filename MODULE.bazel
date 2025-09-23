@@ -9,7 +9,7 @@ bazel_dep(name = "rules_license", version = "1.0.0")
 bazel_dep(name = "bazel_skylib", version = "1.7.1")
 bazel_dep(name = "rules_pkg", version = "1.0.1")
 bazel_dep(name = "rules_cc", version = "0.1.4")
-bazel_dep(name = "grpc", version = "1.74.1", repo_name = "com_github_grpc_grpc")
+bazel_dep(name = "grpc", version = "1.75.0", repo_name = "com_github_grpc_grpc")
 bazel_dep(name = "protobuf", version = "31.1", repo_name = "com_google_protobuf")
 bazel_dep(name = "platforms", version = "1.0.0")
 bazel_dep(name = "abseil-cpp", version = "20250512.1", repo_name = "com_google_absl")
@@ -34,11 +34,11 @@ archive_override(
 
 archive_override(
     module_name = "grpc",
-    integrity = "sha256-e/l8Ec84CNZQo6Alu/nF+SLIRKWQgmKFBndl39BV0ig=",
+    integrity = "sha256-MdbAHDv6CjWEUyZlcV5IdwPrENdrswtIdeV9E5wTu/k=",
     patch_args = ["-p1"],
     patches = ["//tools:grpc_extra_deps.patch"],
-    strip_prefix = "grpc-1.74.1",
-    url = "https://github.com/grpc/grpc/archive/refs/tags/v1.74.1.tar.gz",
+    strip_prefix = "grpc-1.75.0",
+    url = "https://github.com/grpc/grpc/archive/refs/tags/v1.75.0.tar.gz",
 )
 
 ### LLVM
@@ -143,6 +143,7 @@ use_repo(
     "com_github_docker_go_connections",
     "com_github_felixge_httpsnoop",
     "com_github_go_echarts_go_echarts_v2",
+    "com_github_go_logr_logr",
     "com_github_go_logr_stdr",
     "com_github_godbus_dbus_v5",
     "com_github_gofrs_flock",
@@ -154,10 +155,12 @@ use_repo(
     "com_github_google_go_querystring",
     "com_github_google_gopacket",
     "com_github_google_pprof",
+    "com_github_google_s2a_go",
     "com_github_google_subcommands",
     "com_github_google_uuid",
     "com_github_googleapis_enterprise_certificate_proxy",
     "com_github_googleapis_gax_go_v2",
+    "com_github_googleapis_gnostic",
     "com_github_hanwen_go_fuse_v2",
     "com_github_ianlancetaylor_demangle",
     "com_github_imdario_mergo",
@@ -178,6 +181,8 @@ use_repo(
     "com_github_xeipuuv_gojsonreference",
     "com_github_xeipuuv_gojsonschema",
     "com_google_cloud_go",
+    "com_google_cloud_go_auth",
+    "com_google_cloud_go_auth_oauth2adapt",
     "com_google_cloud_go_bigquery",
     "com_google_cloud_go_compute_metadata",
     "com_google_cloud_go_container",
@@ -187,6 +192,8 @@ use_repo(
     "io_k8s_api",
     "io_k8s_apimachinery",
     "io_k8s_client_go",
+    "io_opentelemetry_go_auto_sdk",
+    "io_opentelemetry_go_contrib_instrumentation_google_golang_org_grpc_otelgrpc",
     "io_opentelemetry_go_contrib_instrumentation_net_http_otelhttp",
     "io_opentelemetry_go_otel",
     "io_opentelemetry_go_otel_metric",
@@ -195,6 +202,7 @@ use_repo(
     "org_golang_google_genproto",
     "org_golang_google_grpc",
     "org_golang_google_protobuf",
+    "org_golang_x_crypto",
     "org_golang_x_exp",
     "org_golang_x_exp_typeparams",
     "org_golang_x_mod",
@@ -210,24 +218,69 @@ use_repo(
 )
 
 go_deps.module(
+    path = "cloud.google.com/go/auth",
+    sum = "h1:mFWNQ2FEVWAliEQWpAdH80omXFokmrnbDhUS9cBywsI=",
+    version = "v0.16.5",
+)
+go_deps.module(
+    path = "cloud.google.com/go/auth/oauth2adapt",
+    sum = "h1:keo8NaayQZ6wimpNSmW5OPc283g65QNIiLpZnkHRbnc=",
+    version = "v0.2.8",
+)
+go_deps.module(
+    path = "github.com/google/s2a-go",
+    sum = "h1:LGD7gtMgezd8a/Xak7mEWL0PjoTQFvpRudN895yqKW0=",
+    version = "v0.1.9",
+)
+go_deps.module(
+    path = "go.opentelemetry.io/auto/sdk",
+    sum = "h1:cH53jehLUN6UFLY71z+NDOiNJqDdPRaXzTel0sJySYA=",
+    version = "v1.1.0",
+)
+go_deps.module(
+    path = "go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc",
+    sum = "h1:q4XOmH/0opmeuJtPsbFNivyl7bCt7yRBbeEm2sC/XtQ=",
+    version = "v0.61.0",
+)
+go_deps.module(
+    path = "golang.org/x/crypto",
+    sum = "h1:chiH31gIWm57EkTXpwnqf8qeuMUi0yekh6mT2AvFlqI=",
+    version = "v0.42.0",
+)
+go_deps.module(
+    path = "golang.org/x/mod",
+    sum = "h1:gQBtGhjxykdjY9YhZpSlZIsbnaE2+PgjfLWUQTnoZ1U=",
+    version = "v0.28.0",
+)
+go_deps.module(
+    path = "golang.org/x/sync",
+    sum = "h1:l60nONMj9l5drqw6jlhIELNv9I0A4OFgRsG9k2oT9Ug=",
+    version = "v0.17.0",
+)
+go_deps.module(
+    path = "golang.org/x/sys",
+    sum = "h1:KVRy2GtZBrk1cBYA7MKu5bEZFxQk4NIDV6RLVcC8o0k=",
+    version = "v0.36.0",
+)
+go_deps.module(
+    path = "golang.org/x/tools",
+    sum = "h1:DVSRzp7FwePZW356yEAChSdNcQo6Nsp+fex1SUW09lE=",
+    version = "v0.37.0",
+)
+go_deps.module(
     path = "golang.org/x/term",
-    sum = "h1:m+B6fahuftsE9qjo0VWp2FW0mB3MTJvR0BaMQrq0pmE=",
-    version = "v0.16.0",
+    sum = "h1:bZBVKBudEyhRcajGcNc3jIfWPqV4y/Kt2XcoigOWtDQ=",
+    version = "v0.35.0",
 )
 go_deps.module(
     path = "golang.org/x/net",
-    sum = "h1:AcW1SDZMkb8IpzCdQUaIq2sP4sZ4zw+55h6ynffypl4=",
-    version = "v0.30.0",
+    sum = "h1:evd8IRDyfNBMBTTY5XRF1vaZlD+EmWx6x8PkhR04H/I=",
+    version = "v0.44.0",
 )
 go_deps.module(
     path = "github.com/google/go-cmp",
-    sum = "h1:O2Tfq5qg4qc4AmwVlvv0oLiVAGB7enBSJ2x2DqQFi38=",
-    version = "v0.5.9",
-)
-go_deps.module(
-    path = "github.com/golang/protobuf",
-    sum = "h1:KhyjKVUg7Usr/dYsdSqoFveMYd5ko72D+zANwlG1mmg=",
-    version = "v1.5.3",
+    sum = "h1:wk8382ETsv4JYUZwIsn6YpYiWiBsYLSJiTsyBybVuN8=",
+    version = "v0.7.0",
 )
 go_deps.module(
     path = "github.com/xeipuuv/gojsonpointer",
@@ -236,13 +289,18 @@ go_deps.module(
 )
 go_deps.module(
     path = "go.opentelemetry.io/otel",
-    sum = "h1:/SqNcYk+idO0CxKEUOtKQClMK/MimZihKYMruSMViUo=",
-    version = "v1.28.0",
+    sum = "h1:9zhNfelUvx0KBfu/gb+ZgeAfAgtWrfHJZcAqFC228wQ=",
+    version = "v1.37.0",
 )
 go_deps.module(
     path = "github.com/go-logr/stdr",
     sum = "h1:hSWxHoqTgW2S2qGc0LTAI563KZ5YKYRhT3MFKZMbjag=",
     version = "v1.2.2",
+)
+go_deps.module(
+    path = "github.com/go-logr/logr",
+    sum = "h1:CjnDlHq8ikf6E492q6eKboGOC0T8CDaOvkHCIg8idEI=",
+    version = "v1.4.3",
 )
 go_deps.module(
     path = "go.opentelemetry.io/otel/metric",
@@ -301,8 +359,8 @@ go_deps.module(
 )
 go_deps.module(
     path = "cloud.google.com/go/compute/metadata",
-    sum = "h1:mg4jlk7mCAj6xXp9UJ4fjI9VUI5rubuGBW5aJ7UnBMY=",
-    version = "v0.2.3",
+    sum = "h1:HxMRIbao8w17ZX6wBnjhcDkW6lTFpgcaobyVfZWqRLA=",
+    version = "v0.8.0",
 )
 go_deps.module(
     path = "cloud.google.com/go/container",
@@ -336,8 +394,8 @@ go_deps.module(
 )
 go_deps.module(
     path = "github.com/googleapis/enterprise-certificate-proxy",
-    sum = "h1:y8Yozv7SZtlU//QXbezB6QkpuE6jMD2/gfzk4AftXjs=",
-    version = "v0.2.0",
+    sum = "h1:GW/XbdyBFQ8Qe+YAmFU9uHLo7OnF5tL52HFAgMmyrf4=",
+    version = "v0.3.6",
 )
 go_deps.module(
     path = "github.com/google/gopacket",
@@ -371,8 +429,8 @@ go_deps.module(
 )
 go_deps.module(
     path = "golang.org/x/oauth2",
-    sum = "h1:PbgcYx2W7i4LvjJWEbf0ngHV6qJYr86PkAV3bXdLEbs=",
-    version = "v0.23.0",
+    sum = "h1:dnDm7JmhM45NNpd8FDDeLhK6FwqbOf4MLCM9zb1BOHI=",
+    version = "v0.30.0",
 )
 go_deps.module(
     path = "gopkg.in/yaml.v3",
@@ -381,13 +439,13 @@ go_deps.module(
 )
 go_deps.module(
     path = "google.golang.org/genproto",
-    sum = "h1:Q3nlH8iSQSRUwOskjbcSMcF2jiYMNiQYZ0c2KEJLKKU=",
-    version = "v0.0.0-20241021214115-324edc3d5d38",
+    sum = "h1:FGOcxvKlJgRBVbXeugjljCfCgfKWhC42FBoYmTCWVBs=",
+    version = "v0.0.0-20250707201910-8d1bb00bc6a7",
 )
 go_deps.module(
     path = "google.golang.org/grpc",
-    sum = "h1:zWnc1Vrcno+lHZCOofnIMvycFcc0QRGIzm9dhnDX68E=",
-    version = "v1.67.1",
+    sum = "h1:/ODCNEuf9VghjgO3rqLcfg8fiOP0nSluljWFlDxELLI=",
+    version = "v1.75.1",
 )
 go_deps.module(
     path = "github.com/docker/go-connections",
@@ -396,8 +454,8 @@ go_deps.module(
 )
 go_deps.module(
     path = "github.com/googleapis/gax-go/v2",
-    sum = "h1:IcsPKeInNvYi7eqSaDjiZqDDKu5rsmunY0Y1YupQSSQ=",
-    version = "v2.7.0",
+    sum = "h1:SyjDc1mGgZU5LncH8gimWo9lW1DtIfPibOG81vgd/bo=",
+    version = "v2.15.0",
 )
 go_deps.module(
     path = "github.com/ianlancetaylor/demangle",
@@ -426,8 +484,8 @@ go_deps.module(
 )
 go_deps.module(
     path = "google.golang.org/api",
-    sum = "h1:9yuVqlu2JCvcLg9p8S3fcFLZij8EPSyvODIY1rkMizQ=",
-    version = "v0.103.0",
+    sum = "h1:0VrsWAKzIZi058aeq+I86uIXbNhm9GxSHpbmZ92a38w=",
+    version = "v0.249.0",
 )
 go_deps.module(
     path = "gopkg.in/yaml.v2",
@@ -436,8 +494,8 @@ go_deps.module(
 )
 go_deps.module(
     path = "github.com/golang/protobuf",
-    sum = "h1:KhyjKVUg7Usr/dYsdSqoFveMYd5ko72D+zANwlG1mmg=",
-    version = "v1.5.3",
+    sum = "h1:i7eJL8qZTpSEXOPTxNKhASYpMn+8e5Q6AdndVa1dWek=",
+    version = "v1.5.4",
 )
 go_deps.module(
     path = "github.com/imdario/mergo",
