@@ -21,6 +21,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/xeipuuv/gojsonschema"
 	yaml "gopkg.in/yaml.v2"
@@ -94,7 +95,8 @@ func main() {
 	}
 
 	// Construct our schema loader.
-	schemaLoader := gojsonschema.NewReferenceLoader(fmt.Sprintf("file://%s", *schema))
+	schemaPath := strings.ReplaceAll(*schema, "+", "%2B")
+	schemaLoader := gojsonschema.NewReferenceLoader(fmt.Sprintf("file://%s", schemaPath))
 
 	// Parse all documents.
 	allErrors := make(map[string][]error)
