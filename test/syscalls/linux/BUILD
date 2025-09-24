@@ -2140,6 +2140,7 @@ cc_binary(
         ":unix_domain_socket_test_util",
         "//test/util:capability_util",
         "//test/util:file_descriptor",
+        "//test/util:posix_error",
         "//test/util:socket_util",
         "//test/util:test_main",
         "//test/util:test_util",
@@ -2896,7 +2897,13 @@ cc_library(
         "socket_ipv6_udp_unbound_external_networking.h",
     ],
     deps = select_gtest() + [
+        ":ip_socket_test_util",
         ":socket_ip_udp_unbound_external_networking",
+        "//test/util:file_descriptor",
+        "//test/util:posix_error",
+        "//test/util:socket_util",
+        "//test/util:test_util",
+        "@com_google_absl//absl/cleanup",
     ],
     alwayslink = 1,
 )
