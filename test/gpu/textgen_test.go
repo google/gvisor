@@ -106,6 +106,7 @@ func TestLLM(t *testing.T) {
 			for _, acceptableWord := range []string{
 				"你好",
 				"世界",
+				"世界",
 			} {
 				if strings.Contains(text, acceptableWord) {
 					return prompt, nil
