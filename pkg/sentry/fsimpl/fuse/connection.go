@@ -24,7 +24,10 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/syserr"
+	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
@@ -49,13 +52,7 @@ const (
 //
 // +stateify savable
 type connection struct {
-	fd *DeviceFD
-
-	// mu protects access to struct members.
-	mu sync.Mutex `state:"nosave"`
-
-	// attributeVersion is the version of connection's attributes.
-	attributeVersion atomicbitops.Uint64
+	connectionRefs
 
 	// We target FUSE 7.23.
 	// The following FUSE_INIT flags are currently unsupported by this implementation:
@@ -82,22 +79,66 @@ type connection struct {
 	// initializedChan is used to block requests before initialization.
 	initializedChan chan struct{} `state:".(bool)"`
 
+	// waitQueue is used to notify the readers that there is something to read.
+	waitQueue waiter.Queue
+
+	// fullQueueCh is a channel used to synchronize the readers with the writers.
+	// Writers (inbound requests to the filesystem) block if there are too many
+	// unprocessed in-flight requests.
+	fullQueueCh chan struct{} `state:".(int)"`
+
+	// mu protects access to struct members.
+	mu sync.Mutex `state:"nosave"`
+
+	// numActiveRequests is the number of active requests.
+	//
+	// +checklocks:mu
+	numActiveRequests uint64
+
+	// completions is used to map a request to its response. A Writer will use this
+	// to notify the caller of a completed response.
+	//
+	// +checklocks:mu
+	completions map[linux.FUSEOpID]*futureResponse
+
+	// queue is the list of requests that need to be processed by the FUSE server.
+	//
+	// +checklocks:mu
+	queue requestList
+
+	// nextOpID is used to create new requests.
+	//
+	// +checklocks:mu
+	nextOpID linux.FUSEOpID
+
+	// writeBuf is the memory buffer used to copy in the FUSE out header from
+	// userspace.
+	//
+	// +checklocks:mu
+	writeBuf [fuseHeaderOutSize]byte
+
+	// attributeVersion is the version of connection's attributes.
+	attributeVersion atomicbitops.Uint64
+
 	// connected (connection established) when a new FUSE file system is created.
 	// Set to false when:
 	//   umount,
 	//   connection abort,
 	//   device release.
+	//
 	// +checklocks:mu
 	connected bool
 
 	// connInitError if FUSE_INIT encountered error (major version mismatch).
 	// Only set in INIT.
+	//
 	// +checklocks:mu
 	connInitError bool
 
 	// connInitSuccess if FUSE_INIT is successful.
 	// Only set in INIT.
 	// Used for destroy (not yet implemented).
+	//
 	// +checklocks:mu
 	connInitSuccess bool
 
@@ -124,18 +165,21 @@ type connection struct {
 	asyncMu sync.Mutex `state:"nosave"`
 
 	// asyncNum is the number of async requests.
+	//
 	// +checklocks:asyncMu
 	asyncNum uint16
 
 	// asyncCongestionThreshold the number of async requests.
 	// Negotiated in FUSE_INIT as "CongestionThreshold".
 	// TODO(gvisor.dev/issue/3529): add congestion control.
+	//
 	// +checklocks:asyncMu
 	asyncCongestionThreshold uint16
 
 	// asyncNumMax is the maximum number of asyncNum.
 	// Connection blocks the async requests when it is reached.
 	// Negotiated in FUSE_INIT as "MaxBackground".
+	//
 	// +checklocks:asyncMu
 	asyncNumMax uint16
 
@@ -226,11 +270,9 @@ func newFUSEConnection(_ context.Context, fuseFD *DeviceFD, opts *filesystemOpti
 	// mount another filesystem.
 
 	// Create the writeBuf for the header to be stored in.
-	fuseFD.completions = make(map[linux.FUSEOpID]*futureResponse)
-	fuseFD.fullQueueCh = make(chan struct{}, opts.maxActiveRequests)
-
-	return &connection{
-		fd:                       fuseFD,
+	conn := &connection{
+		completions:              make(map[linux.FUSEOpID]*futureResponse),
+		fullQueueCh:              make(chan struct{}, opts.maxActiveRequests),
 		asyncNumMax:              fuseDefaultMaxBackground,
 		asyncCongestionThreshold: fuseDefaultCongestionThreshold,
 		maxRead:                  opts.maxRead,
@@ -238,7 +280,16 @@ func newFUSEConnection(_ context.Context, fuseFD *DeviceFD, opts *filesystemOpti
 		maxActiveRequests:        opts.maxActiveRequests,
 		initializedChan:          make(chan struct{}),
 		connected:                true,
-	}, nil
+	}
+	conn.InitRefs()
+	return conn, nil
+}
+
+func (conn *connection) DecRef(ctx context.Context) {
+	conn.connectionRefs.DecRef(func() {
+		conn.Abort(ctx)
+		conn.waitQueue.Notify(waiter.ReadableEvents)
+	})
 }
 
 // CallAsync makes an async (aka background) request.
@@ -275,24 +326,20 @@ func (conn *connection) Call(ctx context.Context, r *Request) (*Response, error)
 		}
 	}
 
-	conn.fd.mu.Lock()
 	conn.mu.Lock()
 	connected := conn.connected
 	connInitError := conn.connInitError
 	conn.mu.Unlock()
 
 	if !connected {
-		conn.fd.mu.Unlock()
 		return nil, linuxerr.ENOTCONN
 	}
 
 	if connInitError {
-		conn.fd.mu.Unlock()
 		return nil, linuxerr.ECONNREFUSED
 	}
 
 	fut, err := conn.callFuture(ctx, r)
-	conn.fd.mu.Unlock()
 	if err != nil {
 		return nil, connError(err)
 	}
@@ -306,8 +353,10 @@ func (conn *connection) Call(ctx context.Context, r *Request) (*Response, error)
 
 // callFuture makes a request to the server and returns a future response.
 // Call resolve() when the response needs to be fulfilled.
-// +checklocks:conn.fd.mu
 func (conn *connection) callFuture(b context.Blocker, r *Request) (*futureResponse, error) {
+	conn.mu.Lock()
+	defer conn.mu.Unlock()
+
 	// Is the queue full?
 	//
 	// We must busy wait here until the request can be queued. We don't
@@ -319,12 +368,12 @@ func (conn *connection) callFuture(b context.Blocker, r *Request) (*futureRespon
 	// This can potentially starve a request forever but this can only happen
 	// if there are always too many ongoing requests all the time. The
 	// supported maxActiveRequests setting should be really high to avoid this.
-	for conn.fd.numActiveRequests == conn.maxActiveRequests {
+	for conn.numActiveRequests == conn.maxActiveRequests {
 		log.Infof("Blocking request %v from being queued. Too many active requests: %v",
-			r.id, conn.fd.numActiveRequests)
-		conn.fd.mu.Unlock()
-		err := b.Block(conn.fd.fullQueueCh)
-		conn.fd.mu.Lock()
+			r.id, conn.numActiveRequests)
+		conn.mu.Unlock()
+		err := b.Block(conn.fullQueueCh)
+		conn.mu.Lock()
 		if err != nil {
 			return nil, err
 		}
@@ -334,25 +383,175 @@ func (conn *connection) callFuture(b context.Blocker, r *Request) (*futureRespon
 }
 
 // callFutureLocked makes a request to the server and returns a future response.
-// +checklocks:conn.fd.mu
+//
+// +checklocks:conn.mu
 func (conn *connection) callFutureLocked(r *Request) (*futureResponse, error) {
 	// Check connected again holding conn.mu.
-	conn.mu.Lock()
 	if !conn.connected {
-		conn.mu.Unlock()
 		// we checked connected before,
 		// this must be due to aborted connection.
 		return nil, linuxerr.ECONNABORTED
 	}
-	conn.mu.Unlock()
 
-	conn.fd.queue.PushBack(r)
-	conn.fd.numActiveRequests++
+	conn.queue.PushBack(r)
+	conn.numActiveRequests++
 	fut := newFutureResponse(r)
-	conn.fd.completions[r.id] = fut
+	conn.completions[r.id] = fut
 
 	// Signal the readers that there is something to read.
-	conn.fd.waitQueue.Notify(waiter.ReadableEvents)
+	conn.waitQueue.Notify(waiter.ReadableEvents)
 
 	return fut, nil
+}
+
+// sendResponse sends a response to the waiting task (if any).
+//
+// +checklocks:conn.mu
+func (conn *connection) sendResponse(ctx context.Context, fut *futureResponse) error {
+	// Signal the task waiting on a response if any.
+	defer close(fut.ch)
+
+	// Signal that the queue is no longer full.
+	select {
+	case conn.fullQueueCh <- struct{}{}:
+	default:
+	}
+	conn.numActiveRequests--
+
+	if fut.async {
+		return conn.asyncCallBack(ctx, fut.getResponse())
+	}
+
+	return nil
+}
+
+// asyncCallBack executes pre-defined callback function for async requests.
+// Currently used by: FUSE_INIT.
+//
+// +checklocks:conn.mu
+func (conn *connection) asyncCallBack(ctx context.Context, r *Response) error {
+	switch r.opcode {
+	case linux.FUSE_INIT:
+		creds := auth.CredentialsFromContext(ctx)
+		rootUserNs := kernel.KernelFromContext(ctx).RootUserNamespace()
+		return conn.InitRecv(r, creds.HasCapabilityIn(linux.CAP_SYS_ADMIN, rootUserNs))
+		// TODO(gvisor.dev/issue/3247): support async read: correctly process the response.
+	}
+
+	return nil
+}
+
+// readiness returns the readiness of the connection.
+func (conn *connection) readiness(ready waiter.EventMask) waiter.EventMask {
+	conn.mu.Lock()
+	defer conn.mu.Unlock()
+	// FD is always writable.
+	ready |= waiter.WritableEvents
+	if !conn.queue.Empty() {
+		// Have reqs available, FD is readable.
+		ready |= waiter.ReadableEvents
+	}
+	return ready
+}
+
+func (conn *connection) read(ctx context.Context, dst usermem.IOSequence) (int64, error) {
+	conn.mu.Lock()
+	defer conn.mu.Unlock()
+	minBuffSize := linux.FUSE_MIN_READ_BUFFER
+	// We require that any Read done on this filesystem have a sane minimum
+	// read buffer. It must have the capacity for the fixed parts of any request
+	// header (Linux uses the request header and the FUSEWriteIn header for this
+	// calculation) + the negotiated MaxWrite room for the data.
+	negotiatedMinBuffSize := linux.SizeOfFUSEHeaderIn + linux.SizeOfFUSEHeaderOut + conn.maxWrite
+	if minBuffSize < negotiatedMinBuffSize {
+		minBuffSize = negotiatedMinBuffSize
+	}
+
+	// If the read buffer is too small, error out.
+	if dst.NumBytes() < int64(minBuffSize) {
+		return 0, linuxerr.EINVAL
+	}
+	// Find the first valid request. For the normal case this loop only executes
+	// once.
+	var req *Request
+	for req = conn.queue.Front(); !conn.queue.Empty(); req = conn.queue.Front() {
+		if int64(req.hdr.Len) <= dst.NumBytes() {
+			break
+		}
+		// The request is too large so we cannot process it. All requests must be
+		// smaller than the negotiated size as specified by Connection.MaxWrite set
+		// as part of the FUSE_INIT handshake.
+		errno := -int32(unix.EIO)
+		if req.hdr.Opcode == linux.FUSE_SETXATTR {
+			errno = -int32(unix.E2BIG)
+		}
+
+		if err := conn.sendError(ctx, errno, req.hdr.Unique); err != nil {
+			return 0, err
+		}
+		conn.queue.Remove(req)
+		req = nil
+	}
+	if req == nil {
+		return 0, linuxerr.ErrWouldBlock
+	}
+
+	// We already checked the size: dst must be able to fit the whole request.
+	n, err := dst.CopyOut(ctx, req.data)
+	if err != nil {
+		return 0, err
+	}
+	if n != len(req.data) {
+		return 0, linuxerr.EIO
+	}
+	conn.queue.Remove(req)
+	// Remove noReply ones from the map of requests expecting a reply.
+	if req.noReply {
+		conn.numActiveRequests--
+		delete(conn.completions, req.hdr.Unique)
+	}
+	return int64(n), nil
+}
+
+func (conn *connection) write(ctx context.Context, src usermem.IOSequence) (int64, error) {
+	conn.mu.Lock()
+	defer conn.mu.Unlock()
+	var hdr linux.FUSEHeaderOut
+	if src.NumBytes() < int64(hdr.SizeBytes()) {
+		return 0, linuxerr.EINVAL
+	}
+	n, err := src.CopyIn(ctx, conn.writeBuf[:])
+	if err != nil {
+		return 0, err
+	}
+	hdr.UnmarshalBytes(conn.writeBuf[:])
+	if src.NumBytes() != int64(hdr.Len) {
+		return 0, linuxerr.EINVAL
+	}
+
+	fut, ok := conn.completions[hdr.Unique]
+	if !ok {
+		// Server sent us a response for a request we never sent, or for which we
+		// already received a reply (e.g. aborted), an unlikely event.
+		return 0, linuxerr.EINVAL
+	}
+	delete(conn.completions, hdr.Unique)
+
+	// Copy over the header into the future response. The rest of the payload
+	// will be copied over to the FR's data in the next iteration.
+	fut.hdr = &hdr
+	fut.data = make([]byte, fut.hdr.Len)
+	copy(fut.data, conn.writeBuf[:])
+	if fut.hdr.Len > uint32(len(conn.writeBuf)) {
+		src = src.DropFirst(len(conn.writeBuf))
+		n2, err := src.CopyIn(ctx, fut.data[len(conn.writeBuf):])
+		if err != nil {
+			return 0, err
+		}
+		n += n2
+	}
+	if err := conn.sendResponse(ctx, fut); err != nil {
+		return 0, err
+	}
+	return int64(n), nil
 }

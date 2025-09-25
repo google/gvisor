@@ -162,19 +162,19 @@ func TestReuseFd(t *testing.T) {
 // goroutine until a server responds with a response. Doesn't block
 // a kernel.Task. Analogous to Connection.Call but used for testing.
 func CallTest(conn *connection, t *kernel.Task, r *Request, i uint32) (*Response, error) {
-	conn.fd.mu.Lock()
+	conn.mu.Lock()
 
 	// Wait until we're certain that a new request can be processed.
-	for conn.fd.numActiveRequests == conn.maxActiveRequests {
-		conn.fd.mu.Unlock()
+	for conn.numActiveRequests == conn.maxActiveRequests {
+		conn.mu.Unlock()
 		select {
-		case <-conn.fd.fullQueueCh:
+		case <-conn.fullQueueCh:
 		}
-		conn.fd.mu.Lock()
+		conn.mu.Lock()
 	}
 
 	fut, err := conn.callFutureLocked(r) // No task given.
-	conn.fd.mu.Unlock()
+	conn.mu.Unlock()
 
 	if err != nil {
 		return nil, err

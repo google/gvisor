@@ -29,6 +29,17 @@ go_template_instance(
 )
 
 go_template_instance(
+    name = "connection_refs",
+    out = "connection_refs.go",
+    package = "fuse",
+    prefix = "connection",
+    template = "//pkg/refs:refs_template",
+    types = {
+        "T": "connection",
+    },
+)
+
+go_template_instance(
     name = "seqatomic_time",
     out = "seqatomic_time_unsafe.go",
     imports = {
@@ -47,8 +58,8 @@ go_library(
     srcs = [
         "connection.go",
         "connection_control.go",
+        "connection_refs.go",
         "dev.go",
-        "dev_state.go",
         "directory.go",
         "file.go",
         "fusefs.go",

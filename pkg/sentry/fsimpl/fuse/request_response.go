@@ -105,14 +105,14 @@ type Request struct {
 
 // NewRequest creates a new request that can be sent to the FUSE server.
 func (conn *connection) NewRequest(creds *auth.Credentials, pid uint32, ino uint64, opcode linux.FUSEOpcode, payload marshal.Marshallable) *Request {
-	conn.fd.mu.Lock()
-	defer conn.fd.mu.Unlock()
-	conn.fd.nextOpID += linux.FUSEOpID(reqIDStep)
+	conn.mu.Lock()
+	defer conn.mu.Unlock()
+	conn.nextOpID += linux.FUSEOpID(reqIDStep)
 
 	hdr := linux.FUSEHeaderIn{
 		Len:    linux.SizeOfFUSEHeaderIn + uint32(payload.SizeBytes()),
 		Opcode: opcode,
-		Unique: conn.fd.nextOpID,
+		Unique: conn.nextOpID,
 		NodeID: ino,
 		UID:    uint32(creds.EffectiveKUID),
 		GID:    uint32(creds.EffectiveKGID),
