@@ -149,6 +149,9 @@ func (fd *DeviceFD) Readiness(mask waiter.EventMask) waiter.EventMask {
 func (fd *DeviceFD) EventRegister(e *waiter.Entry) error {
 	fd.mu.Lock()
 	defer fd.mu.Unlock()
+	if !fd.connected() {
+		return linuxerr.EPERM
+	}
 	fd.conn.waitQueue.EventRegister(e)
 	return nil
 }
@@ -157,6 +160,9 @@ func (fd *DeviceFD) EventRegister(e *waiter.Entry) error {
 func (fd *DeviceFD) EventUnregister(e *waiter.Entry) {
 	fd.mu.Lock()
 	defer fd.mu.Unlock()
+	if !fd.connected() {
+		return
+	}
 	fd.conn.waitQueue.EventUnregister(e)
 }
 
