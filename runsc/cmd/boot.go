@@ -187,6 +187,10 @@ type Boot struct {
 
 	// nvidiaDriverVersion is the Nvidia driver version on the host.
 	nvidiaDriverVersion string
+
+	// uid and gud are the user and group IDs to switch to after setting up the user namespace.
+	uid int
+	gid int
 }
 
 // Name implements subcommands.Command.Name.
@@ -219,6 +223,8 @@ func (b *Boot) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&b.nvidiaDriverVersion, "nvidia-driver-version", "", "Nvidia driver version on the host")
 	f.StringVar(&b.hostTHP.ShmemEnabled, "host-thp-shmem-enabled", "", "value of /sys/kernel/mm/transparent_hugepage/shmem_enabled on the host")
 	f.StringVar(&b.hostTHP.Defrag, "host-thp-defrag", "", "value of /sys/kernel/mm/transparent_hugepage/defrag on the host")
+	f.IntVar(&b.uid, "uid", 0, "user ID")
+	f.IntVar(&b.gid, "gid", 0, "user ID")
 
 	// Open FDs that are donated to the sandbox.
 	f.IntVar(&b.specFD, "spec-fd", -1, "required fd with the container spec")
@@ -309,7 +315,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 	}
 
 	if b.syncUsernsFD >= 0 {
-		syncUsernsForRootless(b.syncUsernsFD)
+		syncUsernsForRootless(b.syncUsernsFD, uint32(b.uid), uint32(b.gid))
 		argOverride["sync-userns-fd"] = "-1"
 	}
 

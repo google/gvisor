@@ -61,9 +61,11 @@ var udsOpenCaps = []string{
 // goferCaps is the minimal set of capabilities needed by the Gofer to operate
 // on files.
 var goferCaps = &specs.LinuxCapabilities{
-	Bounding:  caps,
-	Effective: caps,
-	Permitted: caps,
+	Bounding:    caps,
+	Effective:   caps,
+	Permitted:   caps,
+	Inheritable: caps,
+	Ambient:     caps,
 }
 
 var goferUdsOpenCaps = &specs.LinuxCapabilities{
@@ -91,6 +93,11 @@ type goferSyncFDs struct {
 	// If this is set, this FD is the last that the Gofer interacts with and
 	// closes.
 	procMountFD int
+
+	// uid and gud are the user and group IDs to switch to after setting up
+	// the user namespace.
+	uid int
+	gid int
 }
 
 // Gofer implements subcommands.Command for the "gofer" command, which starts a
@@ -791,6 +798,8 @@ func (g *goferSyncFDs) setFlags(f *flag.FlagSet) {
 	f.IntVar(&g.chrootFD, "sync-chroot-fd", -1, "file descriptor that the gofer waits on until container filesystem setup is done")
 	f.IntVar(&g.usernsFD, "sync-userns-fd", -1, "file descriptor the gofer waits on until userns mappings are set up")
 	f.IntVar(&g.procMountFD, "proc-mount-sync-fd", -1, "file descriptor that the gofer writes to when /proc isn't needed anymore and can be unmounted")
+	f.IntVar(&g.uid, "uid", 0, "User ID")
+	f.IntVar(&g.gid, "gid", 0, "Group ID")
 }
 
 // flags returns the flags necessary to pass along the current sync FD values
@@ -863,7 +872,7 @@ func (g *goferSyncFDs) syncUsernsForRootless() {
 	if g.usernsFD < 0 {
 		return
 	}
-	syncUsernsForRootless(g.usernsFD)
+	syncUsernsForRootless(g.usernsFD, uint32(g.uid), uint32(g.gid))
 	g.usernsFD = -1
 }
 
@@ -871,7 +880,7 @@ func (g *goferSyncFDs) syncUsernsForRootless() {
 // UID/GID to 0. Note that this function calls runtime.LockOSThread().
 //
 // Postcondition: All callers must re-exec themselves after this returns.
-func syncUsernsForRootless(fd int) {
+func syncUsernsForRootless(fd int, uid uint32, gid uint32) {
 	if err := waitForFD(fd, "userns sync FD"); err != nil {
 		util.Fatalf("failed to sync on userns FD: %v", err)
 	}
@@ -879,10 +888,10 @@ func syncUsernsForRootless(fd int) {
 	// SETUID changes UID on the current system thread, so we have
 	// to re-execute current binary.
 	runtime.LockOSThread()
-	if _, _, errno := unix.RawSyscall(unix.SYS_SETUID, 0, 0, 0); errno != 0 {
+	if _, _, errno := unix.RawSyscall(unix.SYS_SETUID, uintptr(uid), 0, 0); errno != 0 {
 		util.Fatalf("failed to set UID: %v", errno)
 	}
-	if _, _, errno := unix.RawSyscall(unix.SYS_SETGID, 0, 0, 0); errno != 0 {
+	if _, _, errno := unix.RawSyscall(unix.SYS_SETGID, uintptr(gid), 0, 0); errno != 0 {
 		util.Fatalf("failed to set GID: %v", errno)
 	}
 }
