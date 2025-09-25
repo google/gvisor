@@ -36,7 +36,7 @@ func FindFile(path string) (string, error) {
 	root := wd
 	for {
 		dir, name := filepath.Split(root)
-		if name == "__main__" {
+		if name == "_main" {
 			break
 		}
 		if len(dir) == 0 {
