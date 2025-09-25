@@ -14,10 +14,17 @@ func (conn *connection) StateTypeName() string {
 
 func (conn *connection) StateFields() []string {
 	return []string{
-		"fd",
-		"attributeVersion",
+		"connectionRefs",
 		"initialized",
 		"initializedChan",
+		"waitQueue",
+		"fullQueueCh",
+		"numActiveRequests",
+		"completions",
+		"queue",
+		"nextOpID",
+		"writeBuf",
+		"attributeVersion",
 		"connected",
 		"connInitError",
 		"connInitSuccess",
@@ -47,58 +54,98 @@ func (conn *connection) StateSave(stateSinkObject state.Sink) {
 	conn.beforeSave()
 	var initializedChanValue bool
 	initializedChanValue = conn.saveInitializedChan()
-	stateSinkObject.SaveValue(3, initializedChanValue)
-	stateSinkObject.Save(0, &conn.fd)
-	stateSinkObject.Save(1, &conn.attributeVersion)
-	stateSinkObject.Save(2, &conn.initialized)
-	stateSinkObject.Save(4, &conn.connected)
-	stateSinkObject.Save(5, &conn.connInitError)
-	stateSinkObject.Save(6, &conn.connInitSuccess)
-	stateSinkObject.Save(7, &conn.aborted)
-	stateSinkObject.Save(8, &conn.numWaiting)
-	stateSinkObject.Save(9, &conn.asyncNum)
-	stateSinkObject.Save(10, &conn.asyncCongestionThreshold)
-	stateSinkObject.Save(11, &conn.asyncNumMax)
-	stateSinkObject.Save(12, &conn.maxRead)
-	stateSinkObject.Save(13, &conn.maxWrite)
-	stateSinkObject.Save(14, &conn.maxPages)
-	stateSinkObject.Save(15, &conn.maxActiveRequests)
-	stateSinkObject.Save(16, &conn.minor)
-	stateSinkObject.Save(17, &conn.atomicOTrunc)
-	stateSinkObject.Save(18, &conn.asyncRead)
-	stateSinkObject.Save(19, &conn.writebackCache)
-	stateSinkObject.Save(20, &conn.bigWrites)
-	stateSinkObject.Save(21, &conn.dontMask)
-	stateSinkObject.Save(22, &conn.noOpen)
+	stateSinkObject.SaveValue(2, initializedChanValue)
+	var fullQueueChValue int
+	fullQueueChValue = conn.saveFullQueueCh()
+	stateSinkObject.SaveValue(4, fullQueueChValue)
+	stateSinkObject.Save(0, &conn.connectionRefs)
+	stateSinkObject.Save(1, &conn.initialized)
+	stateSinkObject.Save(3, &conn.waitQueue)
+	stateSinkObject.Save(5, &conn.numActiveRequests)
+	stateSinkObject.Save(6, &conn.completions)
+	stateSinkObject.Save(7, &conn.queue)
+	stateSinkObject.Save(8, &conn.nextOpID)
+	stateSinkObject.Save(9, &conn.writeBuf)
+	stateSinkObject.Save(10, &conn.attributeVersion)
+	stateSinkObject.Save(11, &conn.connected)
+	stateSinkObject.Save(12, &conn.connInitError)
+	stateSinkObject.Save(13, &conn.connInitSuccess)
+	stateSinkObject.Save(14, &conn.aborted)
+	stateSinkObject.Save(15, &conn.numWaiting)
+	stateSinkObject.Save(16, &conn.asyncNum)
+	stateSinkObject.Save(17, &conn.asyncCongestionThreshold)
+	stateSinkObject.Save(18, &conn.asyncNumMax)
+	stateSinkObject.Save(19, &conn.maxRead)
+	stateSinkObject.Save(20, &conn.maxWrite)
+	stateSinkObject.Save(21, &conn.maxPages)
+	stateSinkObject.Save(22, &conn.maxActiveRequests)
+	stateSinkObject.Save(23, &conn.minor)
+	stateSinkObject.Save(24, &conn.atomicOTrunc)
+	stateSinkObject.Save(25, &conn.asyncRead)
+	stateSinkObject.Save(26, &conn.writebackCache)
+	stateSinkObject.Save(27, &conn.bigWrites)
+	stateSinkObject.Save(28, &conn.dontMask)
+	stateSinkObject.Save(29, &conn.noOpen)
 }
 
 func (conn *connection) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (conn *connection) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &conn.fd)
-	stateSourceObject.Load(1, &conn.attributeVersion)
-	stateSourceObject.Load(2, &conn.initialized)
-	stateSourceObject.Load(4, &conn.connected)
-	stateSourceObject.Load(5, &conn.connInitError)
-	stateSourceObject.Load(6, &conn.connInitSuccess)
-	stateSourceObject.Load(7, &conn.aborted)
-	stateSourceObject.Load(8, &conn.numWaiting)
-	stateSourceObject.Load(9, &conn.asyncNum)
-	stateSourceObject.Load(10, &conn.asyncCongestionThreshold)
-	stateSourceObject.Load(11, &conn.asyncNumMax)
-	stateSourceObject.Load(12, &conn.maxRead)
-	stateSourceObject.Load(13, &conn.maxWrite)
-	stateSourceObject.Load(14, &conn.maxPages)
-	stateSourceObject.Load(15, &conn.maxActiveRequests)
-	stateSourceObject.Load(16, &conn.minor)
-	stateSourceObject.Load(17, &conn.atomicOTrunc)
-	stateSourceObject.Load(18, &conn.asyncRead)
-	stateSourceObject.Load(19, &conn.writebackCache)
-	stateSourceObject.Load(20, &conn.bigWrites)
-	stateSourceObject.Load(21, &conn.dontMask)
-	stateSourceObject.Load(22, &conn.noOpen)
-	stateSourceObject.LoadValue(3, new(bool), func(y any) { conn.loadInitializedChan(ctx, y.(bool)) })
+	stateSourceObject.Load(0, &conn.connectionRefs)
+	stateSourceObject.Load(1, &conn.initialized)
+	stateSourceObject.Load(3, &conn.waitQueue)
+	stateSourceObject.Load(5, &conn.numActiveRequests)
+	stateSourceObject.Load(6, &conn.completions)
+	stateSourceObject.Load(7, &conn.queue)
+	stateSourceObject.Load(8, &conn.nextOpID)
+	stateSourceObject.Load(9, &conn.writeBuf)
+	stateSourceObject.Load(10, &conn.attributeVersion)
+	stateSourceObject.Load(11, &conn.connected)
+	stateSourceObject.Load(12, &conn.connInitError)
+	stateSourceObject.Load(13, &conn.connInitSuccess)
+	stateSourceObject.Load(14, &conn.aborted)
+	stateSourceObject.Load(15, &conn.numWaiting)
+	stateSourceObject.Load(16, &conn.asyncNum)
+	stateSourceObject.Load(17, &conn.asyncCongestionThreshold)
+	stateSourceObject.Load(18, &conn.asyncNumMax)
+	stateSourceObject.Load(19, &conn.maxRead)
+	stateSourceObject.Load(20, &conn.maxWrite)
+	stateSourceObject.Load(21, &conn.maxPages)
+	stateSourceObject.Load(22, &conn.maxActiveRequests)
+	stateSourceObject.Load(23, &conn.minor)
+	stateSourceObject.Load(24, &conn.atomicOTrunc)
+	stateSourceObject.Load(25, &conn.asyncRead)
+	stateSourceObject.Load(26, &conn.writebackCache)
+	stateSourceObject.Load(27, &conn.bigWrites)
+	stateSourceObject.Load(28, &conn.dontMask)
+	stateSourceObject.Load(29, &conn.noOpen)
+	stateSourceObject.LoadValue(2, new(bool), func(y any) { conn.loadInitializedChan(ctx, y.(bool)) })
+	stateSourceObject.LoadValue(4, new(int), func(y any) { conn.loadFullQueueCh(ctx, y.(int)) })
+}
+
+func (r *connectionRefs) StateTypeName() string {
+	return "pkg/sentry/fsimpl/fuse.connectionRefs"
+}
+
+func (r *connectionRefs) StateFields() []string {
+	return []string{
+		"refCount",
+	}
+}
+
+func (r *connectionRefs) beforeSave() {}
+
+// +checklocksignore
+func (r *connectionRefs) StateSave(stateSinkObject state.Sink) {
+	r.beforeSave()
+	stateSinkObject.Save(0, &r.refCount)
+}
+
+// +checklocksignore
+func (r *connectionRefs) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &r.refCount)
+	stateSourceObject.AfterLoad(func() { r.afterLoad(ctx) })
 }
 
 func (f *fuseDevice) StateTypeName() string {
@@ -132,13 +179,6 @@ func (fd *DeviceFD) StateFields() []string {
 		"FileDescriptionDefaultImpl",
 		"DentryMetadataFileDescriptionImpl",
 		"NoLockFD",
-		"waitQueue",
-		"fullQueueCh",
-		"nextOpID",
-		"queue",
-		"numActiveRequests",
-		"completions",
-		"writeBuf",
 		"conn",
 	}
 }
@@ -148,20 +188,11 @@ func (fd *DeviceFD) beforeSave() {}
 // +checklocksignore
 func (fd *DeviceFD) StateSave(stateSinkObject state.Sink) {
 	fd.beforeSave()
-	var fullQueueChValue int
-	fullQueueChValue = fd.saveFullQueueCh()
-	stateSinkObject.SaveValue(5, fullQueueChValue)
 	stateSinkObject.Save(0, &fd.vfsfd)
 	stateSinkObject.Save(1, &fd.FileDescriptionDefaultImpl)
 	stateSinkObject.Save(2, &fd.DentryMetadataFileDescriptionImpl)
 	stateSinkObject.Save(3, &fd.NoLockFD)
-	stateSinkObject.Save(4, &fd.waitQueue)
-	stateSinkObject.Save(6, &fd.nextOpID)
-	stateSinkObject.Save(7, &fd.queue)
-	stateSinkObject.Save(8, &fd.numActiveRequests)
-	stateSinkObject.Save(9, &fd.completions)
-	stateSinkObject.Save(10, &fd.writeBuf)
-	stateSinkObject.Save(11, &fd.conn)
+	stateSinkObject.Save(4, &fd.conn)
 }
 
 func (fd *DeviceFD) afterLoad(context.Context) {}
@@ -172,14 +203,7 @@ func (fd *DeviceFD) StateLoad(ctx context.Context, stateSourceObject state.Sourc
 	stateSourceObject.Load(1, &fd.FileDescriptionDefaultImpl)
 	stateSourceObject.Load(2, &fd.DentryMetadataFileDescriptionImpl)
 	stateSourceObject.Load(3, &fd.NoLockFD)
-	stateSourceObject.Load(4, &fd.waitQueue)
-	stateSourceObject.Load(6, &fd.nextOpID)
-	stateSourceObject.Load(7, &fd.queue)
-	stateSourceObject.Load(8, &fd.numActiveRequests)
-	stateSourceObject.Load(9, &fd.completions)
-	stateSourceObject.Load(10, &fd.writeBuf)
-	stateSourceObject.Load(11, &fd.conn)
-	stateSourceObject.LoadValue(5, new(int), func(y any) { fd.loadFullQueueCh(ctx, y.(int)) })
+	stateSourceObject.Load(4, &fd.conn)
 }
 
 func (dir *directoryFD) StateTypeName() string {
@@ -714,6 +738,7 @@ func (r *Response) StateLoad(ctx context.Context, stateSourceObject state.Source
 
 func init() {
 	state.Register((*connection)(nil))
+	state.Register((*connectionRefs)(nil))
 	state.Register((*fuseDevice)(nil))
 	state.Register((*DeviceFD)(nil))
 	state.Register((*directoryFD)(nil))

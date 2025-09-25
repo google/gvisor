@@ -19,3 +19,11 @@ import "context"
 func (fRes *futureResponse) afterLoad(context.Context) {
 	fRes.ch = make(chan struct{})
 }
+
+func (conn *connection) saveFullQueueCh() int {
+	return cap(conn.fullQueueCh)
+}
+
+func (conn *connection) loadFullQueueCh(_ context.Context, capacity int) {
+	conn.fullQueueCh = make(chan struct{}, capacity)
+}
