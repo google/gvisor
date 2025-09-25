@@ -86,6 +86,7 @@ go_library(
         "//pkg/marshal/primitive",
         "//pkg/refs",
         "//pkg/safemem",
+        "//pkg/sentry/arch",
         "//pkg/sentry/fsimpl/kernfs",
         "//pkg/sentry/fsutil",
         "//pkg/sentry/kernel",
