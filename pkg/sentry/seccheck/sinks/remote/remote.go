@@ -17,6 +17,7 @@
 package remote
 
 import (
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -280,66 +281,87 @@ func (r *remote) batchFlushLoop() {
 	}
 }
 
-// flushBatchLocked sends all batched messages in a single writev() syscall.
+// flushBatchLocked sends all batched messages individually to maintain SEQPACKET boundaries.
 // Must be called with batchMu held.
 func (r *remote) flushBatchLocked() {
 	if len(r.batch) == 0 {
 		return
 	}
 
-	log.Debugf("Flushing batch of %d messages using single writev()", len(r.batch))
+	log.Debugf("Flushing batch of %d messages using individual writes", len(r.batch))
 	
-	// Prepare all message buffers for a single writev() call
-	var buffers [][]byte
+	// SOCK_SEQPACKET requires separate writes to maintain message boundaries
+	// Send each message individually with brief spacing to avoid overwhelming the socket
+	currentDroppedCount := r.droppedCount.Load()
+	var failedCount uint32
 	
-	for _, bm := range r.batch {
+	for i, bm := range r.batch {
 		// Marshal the message
 		out, err := proto.Marshal(bm.msg)
 		if err != nil {
 			log.Debugf("Marshal(%+v): %v", bm.msg, err)
-			r.droppedCount.Add(1)
+			failedCount++
 			continue
 		}
 		
-		// Create header for this message
+		// Create header for this message - use snapshot of dropped count
 		hdr := wire.Header{
 			HeaderSize:   uint16(wire.HeaderStructSize),
-			DroppedCount: r.droppedCount.Load(),
+			DroppedCount: currentDroppedCount,
 			MessageType:  uint16(bm.msgType),
 		}
 		var hdrOut [wire.HeaderStructSize]byte
-		hdr.MarshalUnsafe(hdrOut[:])
+		binary.LittleEndian.PutUint16(hdrOut[0:2], hdr.HeaderSize)
+		binary.LittleEndian.PutUint16(hdrOut[2:4], hdr.MessageType)
+		binary.LittleEndian.PutUint32(hdrOut[4:8], hdr.DroppedCount)
 		
-		// Add header and payload to buffers
-		buffers = append(buffers, hdrOut[:])
-		buffers = append(buffers, out)
-	}
-	
-	// Send all messages in a single writev() syscall - THIS is the key optimization!
-	if len(buffers) > 0 {
-		backoff := r.initialBackoff
-		for i := 0; ; i++ {
-			_, err := unix.Writev(r.endpoint.FD(), buffers)
-			if err == nil {
-				// Write succeeded, we're done!
-				break
-			}
-			if !errors.Is(err, unix.EAGAIN) || i >= r.retries {
-				log.Debugf("Batch write failed, dropping %d messages: %v", len(r.batch), err)
-				r.droppedCount.Add(uint32(len(r.batch)))
-				break
-			}
-			log.Debugf("Batch write failed, retrying (%d/%d) in %v: %v", i+1, r.retries, backoff, err)
-			time.Sleep(backoff)
-			backoff *= 2
-			if r.maxBackoff > 0 && backoff > r.maxBackoff {
-				backoff = r.maxBackoff
+		// Send this message with retry logic for EAGAIN
+		if err := r.writeSingleMessage(hdrOut[:], out); err != nil {
+			failedCount++
+			if failedCount == 1 { // Log only first error to avoid spam
+				log.Debugf("Batch message write failed: %v", err)
 			}
 		}
+		
+		// Add brief spacing to avoid overwhelming the socket buffer
+		// For large batches (>100 messages), add microsecond delays
+		if i > 0 && i%100 == 0 && len(r.batch) > 100 {
+			time.Sleep(10 * time.Microsecond)
+		}
+	}
+	
+	if failedCount > 0 {
+		log.Debugf("Batch flush completed: %d failed out of %d messages", failedCount, len(r.batch))
+		r.droppedCount.Add(failedCount)
 	}
 	
 	// Clear the batch
 	r.batch = r.batch[:0]
+}
+
+// writeSingleMessage sends a single message with retry logic for EAGAIN
+func (r *remote) writeSingleMessage(header, payload []byte) error {
+	backoff := r.initialBackoff
+	for i := 0; i <= r.retries; i++ {
+		_, err := unix.Writev(r.endpoint.FD(), [][]byte{header, payload})
+		if err == nil {
+			return nil
+		}
+		if !errors.Is(err, unix.EAGAIN) {
+			return err // Non-retryable error
+		}
+		if i >= r.retries {
+			return err // Max retries exceeded
+		}
+		
+		// Brief backoff for EAGAIN
+		time.Sleep(backoff)
+		backoff *= 2
+		if r.maxBackoff > 0 && backoff > r.maxBackoff {
+			backoff = r.maxBackoff
+		}
+	}
+	return unix.EAGAIN
 }
 
 // writeSingle sends a single message immediately (internal method).
@@ -355,26 +377,13 @@ func (r *remote) writeSingle(msg proto.Message, msgType pb.MessageType) {
 		MessageType:  uint16(msgType),
 	}
 	var hdrOut [wire.HeaderStructSize]byte
-	hdr.MarshalUnsafe(hdrOut[:])
+	binary.LittleEndian.PutUint16(hdrOut[0:2], hdr.HeaderSize)
+	binary.LittleEndian.PutUint16(hdrOut[2:4], hdr.MessageType)
+	binary.LittleEndian.PutUint32(hdrOut[4:8], hdr.DroppedCount)
 
-	backoff := r.initialBackoff
-	for i := 0; ; i++ {
-		_, err := unix.Writev(r.endpoint.FD(), [][]byte{hdrOut[:], out})
-		if err == nil {
-			// Write succeeded, we're done!
-			return
-		}
-		if !errors.Is(err, unix.EAGAIN) || i >= r.retries {
-			log.Debugf("Write failed, dropping point: %v", err)
-			r.droppedCount.Add(1)
-			return
-		}
-		log.Debugf("Write failed, retrying (%d/%d) in %v: %v", i+1, r.retries, backoff, err)
-		time.Sleep(backoff)
-		backoff *= 2
-		if r.maxBackoff > 0 && backoff > r.maxBackoff {
-			backoff = r.maxBackoff
-		}
+	if err := r.writeSingleMessage(hdrOut[:], out); err != nil {
+		log.Debugf("Write failed, dropping point: %v", err)
+		r.droppedCount.Add(1)
 	}
 }
 
