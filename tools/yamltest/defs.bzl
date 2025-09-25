@@ -6,7 +6,7 @@ def _yaml_test_impl(ctx):
     ctx.actions.write(runner, "\n".join([
         "#!/bin/bash",
         "set -euo pipefail",
-        "%s -schema=%s -strict=%s -- %s" % (
+        "%s '-schema=%s' -strict=%s -- %s" % (
             ctx.files._tool[0].short_path,
             ctx.files.schema[0].short_path,
             "true" if ctx.attr.strict else "false",
