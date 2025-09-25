@@ -210,14 +210,6 @@ func validateMap[K comparable, V comparable](field, cName string, oldM map[K]V, 
 	return nil
 }
 
-func sortCapabilities(o *specs.LinuxCapabilities) {
-	sort.Strings(o.Bounding)
-	sort.Strings(o.Effective)
-	sort.Strings(o.Inheritable)
-	sort.Strings(o.Permitted)
-	sort.Strings(o.Ambient)
-}
-
 func validateCapabilities(field, cName string, oldCaps, newCaps *specs.LinuxCapabilities) error {
 	if oldCaps == nil && newCaps == nil {
 		return nil
@@ -225,10 +217,21 @@ func validateCapabilities(field, cName string, oldCaps, newCaps *specs.LinuxCapa
 	if oldCaps == nil || newCaps == nil {
 		return validateError(field, cName, oldCaps, newCaps)
 	}
-	sortCapabilities(oldCaps)
-	sortCapabilities(newCaps)
-	if !reflect.DeepEqual(oldCaps, newCaps) {
-		return validateError(field, cName, oldCaps, newCaps)
+
+	if err := validateArray(field+".Bounding", cName, oldCaps.Bounding, newCaps.Bounding); err != nil {
+		return err
+	}
+	if err := validateArray(field+".Effective", cName, oldCaps.Effective, newCaps.Effective); err != nil {
+		return err
+	}
+	if err := validateArray(field+".Inheritable", cName, oldCaps.Inheritable, newCaps.Inheritable); err != nil {
+		return err
+	}
+	if err := validateArray(field+".Permitted", cName, oldCaps.Permitted, newCaps.Permitted); err != nil {
+		return err
+	}
+	if err := validateArray(field+".Ambient", cName, oldCaps.Ambient, newCaps.Ambient); err != nil {
+		return err
 	}
 	return nil
 }

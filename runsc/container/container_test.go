@@ -3879,7 +3879,7 @@ func TestSpecValidation(t *testing.T) {
 			mutate: func(spec, restoreSpec *specs.Spec, _, _ string) {
 				restoreSpec.Process.Capabilities.Bounding = append(restoreSpec.Process.Capabilities.Bounding, "CAP_NET_RAW")
 			},
-			wantErr: "Capabilities does not match across checkpoint restore",
+			wantErr: "Capabilities.Bounding does not match across checkpoint restore",
 		},
 		{
 			name: "Resources",
@@ -4108,6 +4108,23 @@ func TestSpecValidationForArgs(t *testing.T) {
 	restoreSpec.Process.Args = append(restoreSpec.Process.Args, "infinity")
 	if err := specutils.RestoreValidateSpec(oldSpecs, newSpecs, conf); err == nil {
 		t.Errorf("spec validation passed when we expected it to fail")
+	}
+}
+
+func TestSpecValidationForCapabilities(t *testing.T) {
+	conf := testutil.TestConfig(t)
+	oldSpecs := make(map[string]*specs.Spec)
+	spec, _ := sleepSpecConf(t)
+	spec.Process.Capabilities.Bounding = nil
+	oldSpecs["container1"] = spec
+
+	newSpecs := make(map[string]*specs.Spec)
+	restoreSpec, _ := sleepSpecConf(t)
+	restoreSpec.Process.Capabilities.Bounding = []string{}
+	newSpecs["container1"] = restoreSpec
+
+	if err := specutils.RestoreValidateSpec(oldSpecs, newSpecs, conf); err != nil {
+		t.Errorf("spec validation failed, got: %v, want: nil", err)
 	}
 }
 
