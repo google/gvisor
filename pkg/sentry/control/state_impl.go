@@ -19,10 +19,11 @@ package control
 
 import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/pkg/sentry/state"
 	"gvisor.dev/gvisor/pkg/timing"
 )
 
-func preSaveImpl(k *kernel.Kernel, o *SaveOpts) error {
+func preSaveImpl(k *kernel.Kernel, o *state.SaveOpts) error {
 	return nil
 }
 
