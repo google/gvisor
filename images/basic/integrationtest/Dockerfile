@@ -16,6 +16,7 @@ RUN gcc -O2 -o host_fd host_fd.c
 RUN gcc -O2 -o host_connect host_connect.c
 RUN gcc -O2 -o tcp_server tcp_server.c
 RUN gcc -O2 -o tcp_stress_server tcp_stress_server.c -pthread
+RUN gcc -O2 -o tcp_loopback tcp_loopback.c
 
 # Add nonprivileged regular user named "nonroot".
 RUN groupadd --gid 1337 nonroot && \
