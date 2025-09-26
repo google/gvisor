@@ -112,3 +112,13 @@ func CacheLineRoundUp[T bytecount](x T) (val T, ok bool) {
 	ok = val >= x
 	return
 }
+
+// MustCacheLineRoundUp is equivalent to CacheLineRoundUp, but panics if
+// rounding up overflows.
+func MustCacheLineRoundUp[T bytecount](x T) T {
+	val, ok := CacheLineRoundUp(x)
+	if !ok {
+		panic("CacheLineRoundUp overflows")
+	}
+	return val
+}
