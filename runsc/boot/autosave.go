@@ -23,6 +23,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/state"
+	"gvisor.dev/gvisor/pkg/sentry/state/stateio"
 	"gvisor.dev/gvisor/pkg/sentry/strace"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/runsc/specutils"
@@ -65,8 +66,8 @@ func getTargetForSaveRestore(l *Loader, files []*fd.FD) func(k *kernel.Kernel) {
 				Metadata:    map[string]string{VersionKey: version.Version()},
 			}
 			if len(files) == 3 {
-				saveOpts.PagesMetadata = files[1]
-				saveOpts.PagesFile = files[2]
+				saveOpts.PagesMetadata = stateio.NewBufioWriteCloser(files[1])
+				saveOpts.PagesFile = stateio.NewPagesFileFDWriterDefault(int32(files[2].Release()))
 			}
 			specsStr, err := specutils.ConvertSpecsToString(l.GetContainerSpecs())
 			if err != nil {
