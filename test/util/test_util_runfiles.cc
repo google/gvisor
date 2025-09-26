@@ -34,14 +34,14 @@ std::string RunfilePath(std::string path) {
   }();
 
   if (!runfiles) {
-    // Can't find runfiles? This probably won't work, but __main__/path is our
+    // Can't find runfiles? This probably won't work, but _main/path is our
     // best guess.
-    return JoinPath("__main__", path);
+    return JoinPath("_main", path);
   }
 
   // Try to resolve the path as it was passed to us, and check that it exists
   // before returning.
-  std::string runfile_path = runfiles->Rlocation(JoinPath("__main__", path));
+  std::string runfile_path = runfiles->Rlocation(JoinPath("_main", path));
   struct stat st = {};
   if (!runfile_path.empty() && stat(runfile_path.c_str(), &st) == 0) {
     // Found it.
@@ -60,7 +60,7 @@ std::string RunfilePath(std::string path) {
   absl::string_view basename = Basename(path);
   std::string go_binary_path =
       JoinPath(dirname, absl::StrCat(basename, "_"), basename);
-  return runfiles->Rlocation(JoinPath("__main__", go_binary_path));
+  return runfiles->Rlocation(JoinPath("_main", go_binary_path));
 }
 
 }  // namespace testing
