@@ -40,6 +40,8 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
 	"gvisor.dev/gvisor/pkg/sentry/hostmm"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
+	"gvisor.dev/gvisor/pkg/sentry/syscalls/linux"
+	"gvisor.dev/gvisor/pkg/tcpip/nftables"
 	"gvisor.dev/gvisor/runsc/boot"
 	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/config"
@@ -500,6 +502,11 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 		log.Infof("Core tag enabled (core tag=%d)", coreTags[0])
 	}
 
+	// NFtables is only supported for netstack.
+	if (conf.Network == config.NetworkNone || conf.Network == config.NetworkSandbox) && conf.Nftables {
+		nftables.EnableNFTables()
+	}
+
 	var nvidiaDriverVersion nvconf.DriverVersion
 	if b.nvidiaDriverVersion != "" {
 		nvidiaDriverVersion, err = nvconf.DriverVersionFrom(b.nvidiaDriverVersion)
@@ -507,6 +514,8 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 			util.Fatalf("Failed to parse nvidia driver version: %v", err)
 		}
 	}
+
+	linux.SetAFSSyscallPanic(conf.TestOnlyAFSSyscallPanic)
 
 	// Create the loader.
 	bootArgs := boot.Args{
