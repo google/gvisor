@@ -31,9 +31,9 @@ bazel_skylib_workspace()
 # See https://github.com/bazelbuild/apple_support/commit/6e0fdb1ed90816e0aba1b6dd6d6700363c59842a.
 http_archive(
     name = "build_bazel_apple_support",
-    urls = ["https://github.com/bazelbuild/apple_support/archive/refs/tags/1.18.0.zip"],
-    strip_prefix = "apple_support-1.18.0",
     sha256 = "ebeb692bc1660a6189721d43c69185bf282339f79a756b2b9fd03fa671c3061e",
+    strip_prefix = "apple_support-1.18.0",
+    urls = ["https://github.com/bazelbuild/apple_support/archive/refs/tags/1.18.0.zip"],
 )
 
 # Load license rules.
@@ -65,10 +65,10 @@ http_archive(
         # Export .x files.
         "//tools:rules_go_export.patch",
     ],
-    sha256 = "9d72f7b8904128afb98d46bbef82ad7223ec9ff3718d419afb355fddd9f9484a",
+    sha256 = "a729c8ed2447c90fe140077689079ca0acfb7580ec41637f312d650ce9d93d96",
     urls = [
-        "https://mirror.bazel.build/github.com/bazel-contrib/rules_go/releases/download/v0.55.1/rules_go-v0.55.1.zip",
-        "https://github.com/bazel-contrib/rules_go/releases/download/v0.55.1/rules_go-v0.55.1.zip",
+        "https://mirror.bazel.build/github.com/bazel-contrib/rules_go/releases/download/v0.57.0/rules_go-v0.57.0.zip",
+        "https://github.com/bazel-contrib/rules_go/releases/download/v0.57.0/rules_go-v0.57.0.zip",
     ],
 )
 
@@ -112,16 +112,18 @@ http_archive(
 
 http_archive(
     name = "bazel_gazelle",
-    sha256 = "49b14c691ceec841f445f8642d28336e99457d1db162092fd5082351ea302f1d",
+    sha256 = "e467b801046b6598c657309b45d2426dc03513777bd1092af2c62eebf990aca5",
     urls = [
-        "https://github.com/bazel-contrib/bazel-gazelle/releases/download/v0.44.0/bazel-gazelle-v0.44.0.tar.gz"
+        "https://github.com/bazel-contrib/bazel-gazelle/releases/download/v0.45.0/bazel-gazelle-v0.45.0.tar.gz",
     ],
 )
 
 load("@bazel_gazelle//:deps.bzl", "gazelle_dependencies", "go_repository")
-load("@io_bazel_rules_go//go:deps.bzl", "go_download_sdk", "go_rules_dependencies")
+load("@io_bazel_rules_go//go:deps.bzl", "go_download_sdk", "go_register_toolchains", "go_rules_dependencies")
 
 go_rules_dependencies()
+
+go_register_toolchains(version = "1.25.1")
 
 go_download_sdk(
     name = "go_sdk",
@@ -131,174 +133,174 @@ go_download_sdk(
     patch = "//tools:go_types_memoize.patch",
     patch_strip = 1,
     # To update this dictionary, run (after updating VERSION):
-    # jq --arg VERSION "1.24.1" ' map(select(.version == "go" + $VERSION)) | map(.files[]) | flatten | map(select(.filename | endswith(".tar.gz") or endswith(".msi"))) | map({(.os + "_" + .arch): [.filename, .sha256]}) | add' < <(curl -s 'https://go.dev/dl/?mode=json&include=all')
+    # jq --arg VERSION "1.25.1" ' map(select(.version == "go" + $VERSION)) | map(.files[]) | flatten | map(select(.filename | endswith(".tar.gz") or endswith(".msi"))) | map({(.os + "_" + .arch): [.filename, .sha256]}) | add' < <(curl -s 'https://go.dev/dl/?mode=json&include=all')
     sdks = {
         "_": [
-            "go1.24.1.src.tar.gz",
-            "8244ebf46c65607db10222b5806aeb31c1fcf8979c1b6b12f60c677e9a3c0656"
+            "go1.25.1.src.tar.gz",
+            "d010c109cee94d80efe681eab46bdea491ac906bf46583c32e9f0dbb0bd1a594",
         ],
         "aix_ppc64": [
-            "go1.24.1.aix-ppc64.tar.gz",
-            "8d627dc163a4bffa2b1887112ad6194af175dce108d606ed1714a089fb806033"
+            "go1.25.1.aix-ppc64.tar.gz",
+            "45ab4290adbd6ee9e7f18f0d57eaa9008fdbef590882778ed93eac3c8cca06c5",
         ],
         "darwin_amd64": [
-            "go1.24.1.darwin-amd64.tar.gz",
-            "addbfce2056744962e2d7436313ab93486660cf7a2e066d171b9d6f2da7c7abe"
+            "go1.25.1.darwin-amd64.tar.gz",
+            "1d622468f767a1b9fe1e1e67bd6ce6744d04e0c68712adc689748bbeccb126bb",
         ],
         "darwin_arm64": [
-            "go1.24.1.darwin-arm64.tar.gz",
-            "295581b5619acc92f5106e5bcb05c51869337eb19742fdfa6c8346c18e78ff88"
+            "go1.25.1.darwin-arm64.tar.gz",
+            "68deebb214f39d542e518ebb0598a406ab1b5a22bba8ec9ade9f55fb4dd94a6c",
         ],
         "dragonfly_amd64": [
-            "go1.24.1.dragonfly-amd64.tar.gz",
-            "e70053f56f7eb93806d80cbd5726f78509a0a467602f7bea0e2c4ee8ed7c3968"
+            "go1.25.1.dragonfly-amd64.tar.gz",
+            "2e3c1549bed3124763774d648f291ac42611232f48320ebbd23517c909c09b81",
         ],
         "freebsd_386": [
-            "go1.24.1.freebsd-386.tar.gz",
-            "3595e2674ed8fe72e604ca59c964d3e5277aafb08475c2b1aaca2d2fd69c24fc"
+            "go1.25.1.freebsd-386.tar.gz",
+            "dc0198dd4ec520e13f26798def8750544edf6448d8e9c43fd2a814e4885932af",
         ],
         "freebsd_amd64": [
-            "go1.24.1.freebsd-amd64.tar.gz",
-            "47d7de8bb64d5c3ee7b6723aa62d5ecb11e3568ef2249bbe1d4bbd432d37c00c"
+            "go1.25.1.freebsd-amd64.tar.gz",
+            "c4f1a7e7b258406e6f3b677ecdbd97bbb23ff9c0d44be4eb238a07d360f69ac8",
         ],
         "freebsd_arm": [
-            "go1.24.1.freebsd-arm.tar.gz",
-            "04eec3bcfaa14c1370cdf98e8307fac7e4853496c3045afb9c3124a29cbca205"
+            "go1.25.1.freebsd-arm.tar.gz",
+            "7772fc5ff71ed39297ec0c1599fc54e399642c9b848eac989601040923b0de9c",
         ],
         "freebsd_arm64": [
-            "go1.24.1.freebsd-arm64.tar.gz",
-            "51aa70146e40cfdc20927424083dc86e6223f85dc08089913a1651973b55665b"
+            "go1.25.1.freebsd-arm64.tar.gz",
+            "5bb011d5d5b6218b12189f07aa0be618ab2002662fff1ca40afba7389735c207",
         ],
         "freebsd_riscv64": [
-            "go1.24.1.freebsd-riscv64.tar.gz",
-            "3c131d8e3fc285a1340f87813153e24226d3ddbd6e54f3facbd6e4c46a84655e"
+            "go1.25.1.freebsd-riscv64.tar.gz",
+            "ccac716240cb049bebfafcb7eebc3758512178a4c51fc26da9cc032035d850c8",
         ],
         "illumos_amd64": [
-            "go1.24.1.illumos-amd64.tar.gz",
-            "201d09da737ba39d5367f87d4e8b31edaeeb3dc9b9c407cb8cfb40f90c5a727a"
+            "go1.25.1.illumos-amd64.tar.gz",
+            "cc53910ffb9fcfdd988a9fa25b5423bae1cfa01b19616be646700e1f5453b466",
         ],
         "linux_386": [
-            "go1.24.1.linux-386.tar.gz",
-            "8c530ecedbc17e42ce10177bea07ccc96a3e77c792ea1ea72173a9675d16ffa5"
+            "go1.25.1.linux-386.tar.gz",
+            "d03cdcbc9bd8baf5cf028de390478e9e2b3e4d0afe5a6582dedc19bfe6a263b2",
         ],
         "linux_amd64": [
-            "go1.24.1.linux-amd64.tar.gz",
-            "cb2396bae64183cdccf81a9a6df0aea3bce9511fc21469fb89a0c00470088073"
+            "go1.25.1.linux-amd64.tar.gz",
+            "7716a0d940a0f6ae8e1f3b3f4f36299dc53e31b16840dbd171254312c41ca12e",
         ],
         "linux_arm64": [
-            "go1.24.1.linux-arm64.tar.gz",
-            "8df5750ffc0281017fb6070fba450f5d22b600a02081dceef47966ffaf36a3af"
+            "go1.25.1.linux-arm64.tar.gz",
+            "65a3e34fb2126f55b34e1edfc709121660e1be2dee6bdf405fc399a63a95a87d",
         ],
         "linux_armv6l": [
-            "go1.24.1.linux-armv6l.tar.gz",
-            "6d95f8d7884bfe2364644c837f080f2b585903d0b771eb5b06044e226a4f120a"
+            "go1.25.1.linux-armv6l.tar.gz",
+            "eb949be683e82a99e9861dafd7057e31ea40b161eae6c4cd18fdc0e8c4ae6225",
         ],
         "linux_loong64": [
-            "go1.24.1.linux-loong64.tar.gz",
-            "19304a4a56e46d04604547d2d83235dc4f9b192c79832560ce337d26cc7b835a"
+            "go1.25.1.linux-loong64.tar.gz",
+            "efe809f923bcedab44bf7be2b3af8d182b512b1bf9c07d302e0c45d26c8f56f3",
         ],
         "linux_mips": [
-            "go1.24.1.linux-mips.tar.gz",
-            "6347be77fa5359c12a5308c8ab87147c1fc4717b0c216493d1706c3b9fcde22d"
+            "go1.25.1.linux-mips.tar.gz",
+            "c0de33679f6ed68991dc42dc4a602e74a666e3e166c1748ee1b5d1a7ea2ffbb2",
         ],
         "linux_mips64": [
-            "go1.24.1.linux-mips64.tar.gz",
-            "1647df415f7030b82d4105670192aa7e8910e18563bb0d505192d72800cc2d21"
+            "go1.25.1.linux-mips64.tar.gz",
+            "c270f7b0c0bdfbcd54fef4481227c40d41bb518f9ae38ee930870f04a0a6a589",
         ],
         "linux_mips64le": [
-            "go1.24.1.linux-mips64le.tar.gz",
-            "762da594e4ec0f9cf6defae6ef971f5f7901203ee6a2d979e317adec96657317"
+            "go1.25.1.linux-mips64le.tar.gz",
+            "80be871ba9c944f34d1868cdf5047e1cf2e1289fe08cdb90e2453d2f0d6965ae",
         ],
         "linux_mipsle": [
-            "go1.24.1.linux-mipsle.tar.gz",
-            "9d8133c7b23a557399fab870b5cf464079c2b623a43b214a7567cf11c254a444"
+            "go1.25.1.linux-mipsle.tar.gz",
+            "9f09defa9bb22ebf2cde76162f40958564e57ce5c2b3649bc063bebcbc9294c1",
         ],
         "linux_ppc64": [
-            "go1.24.1.linux-ppc64.tar.gz",
-            "132f10999abbaccbada47fa85462db30c423955913b14d6c692de25f4636c766"
+            "go1.25.1.linux-ppc64.tar.gz",
+            "2c76b7d278c1d43ad19d478ad3f0f05e7b782b64b90870701b314fa48b5f43c6",
         ],
         "linux_ppc64le": [
-            "go1.24.1.linux-ppc64le.tar.gz",
-            "0fb522efcefabae6e37e69bdc444094e75bfe824ea6d4cc3cbc70c7ae1b16858"
+            "go1.25.1.linux-ppc64le.tar.gz",
+            "8b0c8d3ee5b1b5c28b6bd63dc4438792012e01d03b4bf7a61d985c87edab7d1f",
         ],
         "linux_riscv64": [
-            "go1.24.1.linux-riscv64.tar.gz",
-            "eaef4323d5467ff97fb1979c8491764060dade19f02f3275a9313f9a0da3b9c0"
+            "go1.25.1.linux-riscv64.tar.gz",
+            "22fe934a9d0c9c57275716c55b92d46ebd887cec3177c9140705efa9f84ba1e2",
         ],
         "linux_s390x": [
-            "go1.24.1.linux-s390x.tar.gz",
-            "6c05e14d8f11094cb56a1c50f390b6b658bed8a7cbd8d1a57e926581b7eabfce"
+            "go1.25.1.linux-s390x.tar.gz",
+            "9cfe517ba423f59f3738ca5c3d907c103253cffbbcc2987142f79c5de8c1bf93",
         ],
         "netbsd_386": [
-            "go1.24.1.netbsd-386.tar.gz",
-            "5dbb287d343ea00d58a70b11629f32ee716dc50a6875c459ea2018df0f294cd8"
+            "go1.25.1.netbsd-386.tar.gz",
+            "6af8a08353e76205d5b743dd7a3f0126684f96f62be0a31b75daf9837e512c46",
         ],
         "netbsd_amd64": [
-            "go1.24.1.netbsd-amd64.tar.gz",
-            "617aa3faee50ce84c343db0888e9a210c310a7203666b4ed620f31030c9fb32f"
+            "go1.25.1.netbsd-amd64.tar.gz",
+            "e5d534ff362edb1bd8c8e10892b6a027c4c1482454245d1529167676498684c7",
         ],
         "netbsd_arm": [
-            "go1.24.1.netbsd-arm.tar.gz",
-            "59a928b7080c4a6ac985946274b7c65ce1cecc0b468ecd992d17b7c12fab9296"
+            "go1.25.1.netbsd-arm.tar.gz",
+            "88bcf39254fdcea6a199c1c27d787831b652427ce60851ae9e41a3d7eb477f45",
         ],
         "netbsd_arm64": [
-            "go1.24.1.netbsd-arm64.tar.gz",
-            "28daa8d0feb4aef2af60cefa3305bb9314de7e8a05cbca41ac548964cdfe89b7"
+            "go1.25.1.netbsd-arm64.tar.gz",
+            "d7c2eabe1d04ee47bcaea2816fdd90dbd25d90d4dfa756faa9786c788e4f3a4e",
         ],
         "openbsd_386": [
-            "go1.24.1.openbsd-386.tar.gz",
-            "b7382b2f5d99813aeac14db482faa3bfbd47a68880b607fa2a7e669e26bab9cd"
+            "go1.25.1.openbsd-386.tar.gz",
+            "14a2845977eb4dde11d929858c437a043467c427db87899935e90cee04a38d72",
         ],
         "openbsd_amd64": [
-            "go1.24.1.openbsd-amd64.tar.gz",
-            "2513b6537c45deead5e641c7ce7502913e7d5e6f0b21c52542fb11f81578690f"
+            "go1.25.1.openbsd-amd64.tar.gz",
+            "d27ac54b38a13a09c81e67c82ac70d387037341c85c3399291c73e13e83fdd8c",
         ],
         "openbsd_arm": [
-            "go1.24.1.openbsd-arm.tar.gz",
-            "853c1917d4fc7b144c55a02842aa48542d5cc798dde8db96dc0fdbc263200e04"
+            "go1.25.1.openbsd-arm.tar.gz",
+            "0f4ab5f02500afa4befd51fed1e8b45e4d07ca050f641cc3acc76eaa4027b2c3",
         ],
         "openbsd_arm64": [
-            "go1.24.1.openbsd-arm64.tar.gz",
-            "6bc207b91e6f6ae3347fb54616a8fb2f5c11983713846a4cef111ff3f4f94d14"
+            "go1.25.1.openbsd-arm64.tar.gz",
+            "d46c3bd156843656f7f3cb0dec27ea51cd926ec3f7b80744bf8156e67c1c812f",
         ],
         "openbsd_ppc64": [
-            "go1.24.1.openbsd-ppc64.tar.gz",
-            "4279260e2f2b94ee94e81470d13db7367f4393b061fee60985528fa0fa430df4"
+            "go1.25.1.openbsd-ppc64.tar.gz",
+            "c550514c67f22e409be10e40eace761e2e43069f4ef086ae6e60aac736c2b679",
         ],
         "openbsd_riscv64": [
-            "go1.24.1.openbsd-riscv64.tar.gz",
-            "6fc4023a0a339ee0778522364a127d94c78e62122288d47d820dba703f81dc07"
+            "go1.25.1.openbsd-riscv64.tar.gz",
+            "8a09a8714a2556eb13fc1f10b7ce2553fcea4971e3330fc3be0efd24aab45734",
         ],
         "plan9_386": [
-            "go1.24.1.plan9-386.tar.gz",
-            "b5eb9fafd77146e7e1f748acfd95559580ecc8d2f15abf432a20f58c929c7cd2"
+            "go1.25.1.plan9-386.tar.gz",
+            "b0e1fefaf0c7abd71f139a54eee9767944aff5f0bc9d69c968234804884e552f",
         ],
         "plan9_amd64": [
-            "go1.24.1.plan9-amd64.tar.gz",
-            "24dcad6361b141fc8cced15b092351e12a99d2e58d7013204a3013c50daf9fdd"
+            "go1.25.1.plan9-amd64.tar.gz",
+            "e94732c94f149690aa0ab11c26090577211b4a988137cb2c03ec0b54e750402e",
         ],
         "plan9_arm": [
-            "go1.24.1.plan9-arm.tar.gz",
-            "a026ac3b55aa1e6fdc2aaab30207a117eafbe965ed81d3aa0676409f280ddc37"
+            "go1.25.1.plan9-arm.tar.gz",
+            "7eb80e9de1e817d9089a54e8c7c5c8d8ed9e5fb4d4a012fc0f18fc422a484f0c",
         ],
         "solaris_amd64": [
-            "go1.24.1.solaris-amd64.tar.gz",
-            "8e4f6a77388dc6e5aa481efd5abdb3b9f5c9463bb82f4db074494e04e5c84992"
+            "go1.25.1.solaris-amd64.tar.gz",
+            "1261dfad7c4953c0ab90381bc1242dc54e394db7485c59349428d532b2273343",
         ],
         "windows_386": [
-            "go1.24.1.windows-386.msi",
-            "db128981033ac82a64688a123f631e61297b6b8f52ca913145e57caa8ce94cc3"
+            "go1.25.1.windows-386.msi",
+            "301952733f5ceeba1793fe65001bc0cd8d3f1899713e53f5314dbb7c864ebaf4",
         ],
         "windows_amd64": [
-            "go1.24.1.windows-amd64.msi",
-            "5968e7adcf26e68a54f1cd41ad561275a670a8e2ca5263bc375b524638557dfb"
+            "go1.25.1.windows-amd64.msi",
+            "c9b5057b918862849ef83795ad5ace4812363ce3877e99863be759715571dbc1",
         ],
         "windows_arm64": [
-            "go1.24.1.windows-arm64.msi",
-            "6d352c1f154a102a5b90c480cc64bab205ccf2681e34e78a3a4d3f1ddfbc81e4"
-        ]
+            "go1.25.1.windows-arm64.msi",
+            "96211f78b8b0690a898358802d1dd431ca0cd7644f2a6633ee0a2d4174f90bf2",
+        ],
     },
-    version = "1.24.1",
+    version = "1.25.1",
 )
 
 gazelle_dependencies()
@@ -310,29 +312,29 @@ gazelle_dependencies()
 go_repository(
     name = "org_golang_x_tools",
     importpath = "golang.org/x/tools",
-    sum = "h1:v/60pFQmzmT9ExmjDv2gGIfi3OqfKoEP6I5+umXlbnQ=",
-    version = "v0.26.0",
+    sum = "h1:DVSRzp7FwePZW356yEAChSdNcQo6Nsp+fex1SUW09lE=",
+    version = "v0.37.0",
 )
 
 go_repository(
     name = "org_golang_x_sys",
     importpath = "golang.org/x/sys",
-    sum = "h1:KHjCJyddX0LoSTb3J+vWpupP9p0oznkqVk/IfjymZbo=",
-    version = "v0.26.0",
+    sum = "h1:KVRy2GtZBrk1cBYA7MKu5bEZFxQk4NIDV6RLVcC8o0k=",
+    version = "v0.36.0",
 )
 
 go_repository(
     name = "org_golang_x_exp",
     importpath = "golang.org/x/exp",
-    sum = "h1:FRnLl4eNAQl8hwxVVC17teOw8kdjVDVAiFMtgUdTSRQ=",
-    version = "v0.0.0-20231110203233-9a3e6036ecaa",
+    sum = "h1:2id6c1/gto0kaHYyrixvknJ8tUK/Qs5IsmBtrc+FtgU=",
+    version = "v0.0.0-20250911091902-df9299821621",
 )
 
 go_repository(
     name = "org_golang_x_net",
     importpath = "golang.org/x/net",
-    sum = "h1:AcW1SDZMkb8IpzCdQUaIq2sP4sZ4zw+55h6ynffypl4=",
-    version = "v0.30.0",
+    sum = "h1:evd8IRDyfNBMBTTY5XRF1vaZlD+EmWx6x8PkhR04H/I=",
+    version = "v0.44.0",
 )
 
 go_repository(
@@ -497,10 +499,10 @@ http_archive(
 # rules_java needed for rules_proto and grpc both.
 http_archive(
     name = "rules_java",
+    sha256 = "a64ab04616e76a448c2c2d8165d836f0d2fb0906200d0b7c7376f46dd62e59cc",
     urls = [
         "https://github.com/bazelbuild/rules_java/releases/download/8.6.2/rules_java-8.6.2.tar.gz",
     ],
-    sha256 = "a64ab04616e76a448c2c2d8165d836f0d2fb0906200d0b7c7376f46dd62e59cc",
 )
 
 http_archive(
@@ -533,8 +535,8 @@ rules_proto_toolchains()
 go_repository(
     name = "org_golang_x_term",
     importpath = "golang.org/x/term",
-    sum = "h1:m+B6fahuftsE9qjo0VWp2FW0mB3MTJvR0BaMQrq0pmE=",
-    version = "v0.16.0",
+    sum = "h1:bZBVKBudEyhRcajGcNc3jIfWPqV4y/Kt2XcoigOWtDQ=",
+    version = "v0.35.0",
 )
 
 go_repository(
@@ -1758,8 +1760,8 @@ go_repository(
 go_repository(
     name = "org_golang_x_exp_typeparams",
     importpath = "golang.org/x/exp/typeparams",
-    sum = "h1:Jw5wfR+h9mnIYH+OtGT2im5wV1YGGDora5vTv/aa5bE=",
-    version = "v0.0.0-20221208152030-732eee02a75a",
+    sum = "h1:Yl4H5w2RV7L/dvSHp2GerziT5K2CORgFINPaMFxWGWw=",
+    version = "v0.0.0-20250911091902-df9299821621",
 )
 
 go_repository(
@@ -2752,36 +2754,36 @@ go_repository(
 go_repository(
     name = "org_golang_x_crypto",
     importpath = "golang.org/x/crypto",
-    sum = "h1:GBDwsMXVQi34v5CCYUm2jkJvu4cbtru2U4TN2PSyQnw=",
-    version = "v0.28.0",
+    sum = "h1:chiH31gIWm57EkTXpwnqf8qeuMUi0yekh6mT2AvFlqI=",
+    version = "v0.42.0",
 )
 
 go_repository(
     name = "org_golang_x_mod",
     importpath = "golang.org/x/mod",
-    sum = "h1:vvrHzRwRfVKSiLrG+d4FMl/Qi4ukBCE6kZlTUkDYRT0=",
-    version = "v0.21.0",
+    sum = "h1:gQBtGhjxykdjY9YhZpSlZIsbnaE2+PgjfLWUQTnoZ1U=",
+    version = "v0.28.0",
 )
 
 go_repository(
     name = "org_golang_x_sync",
     importpath = "golang.org/x/sync",
-    sum = "h1:3NFvSEYkUoMifnESzZl15y791HH1qU2xm6eCJU5ZPXQ=",
-    version = "v0.8.0",
+    sum = "h1:l60nONMj9l5drqw6jlhIELNv9I0A4OFgRsG9k2oT9Ug=",
+    version = "v0.17.0",
 )
 
 go_repository(
     name = "org_golang_x_text",
     importpath = "golang.org/x/text",
-    sum = "h1:kTxAhCbGbxhK0IwgSKiMO5awPoDQ0RpfiVYBfK860YM=",
-    version = "v0.19.0",
+    sum = "h1:1neNs90w9YzJ9BocxfsQNHKuAT4pkghyXc4nhZ6sJvk=",
+    version = "v0.29.0",
 )
 
 go_repository(
     name = "org_golang_x_time",
     importpath = "golang.org/x/time",
-    sum = "h1:ntUhktv3OPE6TgYxXWv9vKvUSJyIFJlyohwbkEwPrKQ=",
-    version = "v0.7.0",
+    sum = "h1:eUlYslOIt32DgYD6utsuUeHs4d7AsEYLuIAdg7FlYgI=",
+    version = "v0.13.0",
 )
 
 go_repository(
@@ -3196,8 +3198,8 @@ go_repository(
 go_repository(
     name = "org_golang_x_lint",
     importpath = "golang.org/x/lint",
-    sum = "h1:XQyxROzUlZH+WIQwySDgnISgOivlhjIEwaQaJEJrrN0=",
-    version = "v0.0.0-20190313153728-d0100b6bd8b3",
+    sum = "h1:Wh+f8QHJXR411sJR8/vRBTZ7YapZaRvUcLFFJhusH0k=",
+    version = "v0.0.0-20200302205851-738671d3881b",
 )
 
 go_repository(
@@ -3622,6 +3624,13 @@ go_repository(
     importpath = "github.com/go-echarts/go-echarts/v2",
     sum = "h1:uImZAk6qLkC6F9ju6mZ5SPBqTyK8xjZKwSmwnCg4bxg=",
     version = "v2.3.3",
+)
+
+go_repository(
+    name = "org_golang_x_telemetry",
+    importpath = "golang.org/x/telemetry",
+    sum = "h1:dHQOQddU4YHS5gY33/6klKjq7Gp3WwMyOXGNp5nzRj8=",
+    version = "v0.0.0-20250908211612-aef8a434d053",
 )
 
 new_local_repository(

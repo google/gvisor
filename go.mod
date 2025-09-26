@@ -1,6 +1,6 @@
 module gvisor.dev/gvisor
 
-go 1.24.1
+go 1.25.1
 
 require (
 	github.com/BurntSushi/toml v1.4.1-0.20240526193622-a339e1f7089c
@@ -28,12 +28,12 @@ require (
 	github.com/opencontainers/runtime-spec v1.1.0-rc.1
 	github.com/sirupsen/logrus v1.9.3
 	github.com/vishvananda/netlink v1.1.1-0.20211118161826-650dca95af54
-	golang.org/x/exp v0.0.0-20231110203233-9a3e6036ecaa
-	golang.org/x/mod v0.21.0
-	golang.org/x/sync v0.8.0
-	golang.org/x/sys v0.26.0
-	golang.org/x/time v0.7.0
-	golang.org/x/tools v0.26.0
+	golang.org/x/exp v0.0.0-20250911091902-df9299821621
+	golang.org/x/mod v0.28.0
+	golang.org/x/sync v0.17.0
+	golang.org/x/sys v0.36.0
+	golang.org/x/time v0.13.0
+	golang.org/x/tools v0.37.0
 	google.golang.org/protobuf v1.33.0
 	k8s.io/api v0.23.16
 	k8s.io/apimachinery v0.23.16
@@ -64,10 +64,11 @@ require (
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/vishvananda/netns v0.0.0-20210104183010-2eb08e3e575f // indirect
 	go.opencensus.io v0.24.0 // indirect
-	golang.org/x/net v0.30.0 // indirect
+	golang.org/x/lint v0.0.0-20241112194109-818c5a804067 // indirect
+	golang.org/x/net v0.44.0 // indirect
 	golang.org/x/oauth2 v0.23.0 // indirect
-	golang.org/x/term v0.25.0 // indirect
-	golang.org/x/text v0.19.0 // indirect
+	golang.org/x/term v0.35.0 // indirect
+	golang.org/x/text v0.29.0 // indirect
 	golang.org/x/xerrors v0.0.0-20220907171357-04be3eba64a2 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20231002182017-d307bd883b97 // indirect
 	google.golang.org/grpc v1.59.0 // indirect
