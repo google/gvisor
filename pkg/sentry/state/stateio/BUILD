@@ -6,22 +6,24 @@ package(
 )
 
 go_library(
-    name = "state",
+    name = "stateio",
     srcs = [
-        "state.go",
-        "state_metadata.go",
-        "state_unsafe.go",
+        "bufio.go",
+        "fdreader.go",
+        "fdwriter.go",
+        "pagesfile.go",
+        "stateio.go",
+        "stateio_impl_util.go",
+        "stateio_util_unsafe.go",
     ],
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
-        "//pkg/context",
+        "//pkg/aio",
+        "//pkg/hostarch",
         "//pkg/log",
-        "//pkg/sentry/kernel",
-        "//pkg/sentry/state/stateio",
-        "//pkg/sentry/time",
-        "//pkg/sentry/watchdog",
-        "//pkg/state/statefile",
+        "//pkg/sentry/hostfd",
+        "//pkg/sentry/memmap",
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )
