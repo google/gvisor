@@ -37,6 +37,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/socket/netstack"
 	"gvisor.dev/gvisor/pkg/sentry/socket/plugin"
 	"gvisor.dev/gvisor/pkg/sentry/state"
+	"gvisor.dev/gvisor/pkg/sentry/state/stateio"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/timing"
 	"gvisor.dev/gvisor/pkg/urpc"
@@ -560,17 +561,25 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 
 	fileIdx := 1
 	if o.HavePagesFile {
-		pagesMetadata, err := o.ReleaseFD(fileIdx)
+		pagesMetadataFD, err := o.ReleaseFD(fileIdx)
 		if err != nil {
 			return err
 		}
 		fileIdx++
 
-		pagesFile, err := o.ReleaseFD(fileIdx)
+		pagesFileFD, err := o.ReleaseFD(fileIdx)
 		if err != nil {
 			return err
 		}
 		fileIdx++
+
+		// //pkg/state/wire reads one byte at a time; buffer these reads to
+		// avoid making one syscall per read. For the state file, this
+		// buffering is handled by statefile.NewReader() => compressio.Reader
+		// or compressio.NewSimpleReader().
+		pagesMetadata := stateio.NewBufioReadCloser(pagesMetadataFD)
+		// TODO: Allow `runsc restore` to override I/O parameters.
+		pagesFile := stateio.NewPagesFileFDReaderDefault(int32(pagesFileFD.Release()))
 
 		// This immediately starts loading the main MemoryFile asynchronously.
 		cm.restorer.asyncMFLoader = kernel.NewAsyncMFLoader(pagesMetadata, pagesFile, cm.restorer.mainMF, timer.Fork("PagesFileLoader"))

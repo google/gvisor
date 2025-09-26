@@ -103,20 +103,32 @@ type GoQueue struct {
 	completions chan Completion
 	shutdown    chan struct{}
 	workers     sync.WaitGroup
+	numWorkers  int
 }
 
 // NewGoQueue returns a new GoQueue with the given capacity.
 func NewGoQueue(cap int) *GoQueue {
+	return newGoQueue(cap, cap)
+}
+
+// NewSerialGoQueue returns a new GoQueue with the given capacity that executes
+// one operation at a time, in the order in which they are enqueued.
+func NewSerialGoQueue(cap int) *GoQueue {
+	return newGoQueue(cap, 1)
+}
+
+func newGoQueue(cap, workers int) *GoQueue {
 	q := &GoQueue{
 		requests:    make(chan Request, cap),
 		completions: make(chan Completion, cap),
 		shutdown:    make(chan struct{}),
+		numWorkers:  workers,
 	}
-	q.workers.Add(cap)
-	for range cap {
+	q.workers.Add(workers)
+	for range workers {
 		go q.workerMain()
 	}
-	gomaxprocs.Add(cap)
+	gomaxprocs.Add(workers)
 	return q
 }
 
@@ -157,7 +169,7 @@ func (q *GoQueue) workerMain() {
 func (q *GoQueue) Destroy() {
 	close(q.shutdown)
 	q.workers.Wait()
-	gomaxprocs.Add(-q.Cap())
+	gomaxprocs.Add(-q.numWorkers)
 }
 
 // Cap implements Queue.Cap.
