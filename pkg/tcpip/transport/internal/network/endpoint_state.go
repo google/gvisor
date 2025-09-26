@@ -29,8 +29,12 @@ func (e *Endpoint) Resume(s *stack.Stack) error {
 
 	e.stack = s
 	for m := range e.multicastMemberships {
-		if err := e.stack.JoinGroup(e.netProto, m.nicID, m.multicastAddr); err != nil {
-			return fmt.Errorf("e.stack.JoinGroup(%d, %d, %s): %s", e.netProto, m.nicID, m.multicastAddr, err)
+		proto, err := e.multicastNetProto(m.multicastAddr)
+		if err != nil {
+			return fmt.Errorf("non multicast address in an existing membership during Resume: %s", err)
+		}
+		if err := e.stack.JoinGroup(proto, m.nicID, m.multicastAddr); err != nil {
+			return fmt.Errorf("e.stack.JoinGroup(%d, %d, %s): %s", proto, m.nicID, m.multicastAddr, err)
 		}
 	}
 

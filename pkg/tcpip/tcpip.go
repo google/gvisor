@@ -49,10 +49,8 @@ import (
 
 // Using the header package here would cause an import cycle.
 const (
-	ipv4AddressSize    = 4
-	ipv4ProtocolNumber = 0x0800
-	ipv6AddressSize    = 16
-	ipv6ProtocolNumber = 0x86dd
+	ipv4AddressSize = 4
+	ipv6AddressSize = 16
 )
 
 const (
@@ -1011,6 +1009,10 @@ const (
 	// PacketMMapReserveOption is used to set the packet mmap reserved space
 	// between the aligned header and the payload.
 	PacketMMapReserveOption
+
+	// IPv6MulticastInterfaceOption is used to set/get the NIC used for
+	// IPv6 multicast Tx.
+	IPv6MulticastInterfaceOption
 )
 
 const (
