@@ -25,7 +25,6 @@ import (
 	"time"
 
 	"golang.org/x/sys/unix"
-	"gvisor.dev/gvisor/pkg/aio"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/bitmap"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
@@ -35,6 +34,7 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/ringdeque"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
+	"gvisor.dev/gvisor/pkg/sentry/state/stateio"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
 	"gvisor.dev/gvisor/pkg/state"
 	"gvisor.dev/gvisor/pkg/state/wire"
@@ -302,7 +302,8 @@ func (f *MemoryFile) LoadFrom(ctx context.Context, r io.Reader, opts *LoadOpts) 
 	f.chunks.Store(&chunks)
 	mfTimeline.Reached("metadata loaded")
 	log.Infof("MemoryFile(%p): loaded metadata in %s", f, time.Since(timeMetadataStart))
-	if err := f.file.Truncate(int64(len(chunks)) * chunkSize); err != nil {
+	fileSize := uint64(len(chunks)) * chunkSize
+	if err := f.file.Truncate(int64(fileSize)); err != nil {
 		return fmt.Errorf("failed to truncate MemoryFile: %w", err)
 	}
 	// Obtain chunk mappings, then madvise them concurrently with loading data.
@@ -315,7 +316,7 @@ func (f *MemoryFile) LoadFrom(ctx context.Context, r io.Reader, opts *LoadOpts) 
 		m, _, errno := unix.Syscall6(
 			unix.SYS_MMAP,
 			0,
-			uintptr(len(chunks)*chunkSize),
+			uintptr(fileSize),
 			unix.PROT_READ|unix.PROT_WRITE,
 			unix.MAP_SHARED,
 			f.file.Fd(),
@@ -349,9 +350,18 @@ func (f *MemoryFile) LoadFrom(ctx context.Context, r io.Reader, opts *LoadOpts) 
 	// been provided.
 	var amfl *asyncMemoryFileLoad
 	if opts.PagesFile != nil {
+		var df stateio.DestinationFile
+		if opts.PagesFile.ar.NeedRegisterDestinationFD() {
+			var err error
+			df, err = opts.PagesFile.ar.RegisterDestinationFD(int32(f.file.Fd()), fileSize, f.getClientFileRangeSettings(fileSize))
+			if err != nil {
+				return fmt.Errorf("failed to register MemoryFile with pages file: %w", err)
+			}
+		}
 		amfl = &asyncMemoryFileLoad{
 			f:        f,
 			pf:       opts.PagesFile,
+			df:       df,
 			timeline: mfTimeline.Transfer(),
 		}
 		amfl.pf.amflsMu.Lock()
@@ -456,18 +466,6 @@ func (f *MemoryFile) LoadFrom(ctx context.Context, r io.Reader, opts *LoadOpts) 
 	return nil
 }
 
-const (
-	// When a pages file is provided, reads from it will be issued
-	// asynchronously via an aio.Queue of capacity aplQueueCapacity, and each
-	// read will be of size aplReadMaxBytes when possible; reads may be smaller
-	// in some circumstances but will never be larger.
-	// TODO: Pass these via LoadOpts and make them flag-controlled.
-	aplReadMaxBytes  = 256 * 1024
-	aplQueueCapacity = 128
-
-	aplOpMaxIovecs = aplReadMaxBytes / hostarch.PageSize
-)
-
 // AsyncPagesFileLoad holds async page loading state for a single pages file.
 type AsyncPagesFileLoad struct {
 	// loadOff is the offset in the pages file from which the next page should
@@ -530,12 +528,15 @@ type AsyncPagesFileLoad struct {
 	timeline     *timing.Timeline // immutable
 	doneCallback func(error)      // immutable
 
-	// q issues reads to the pages file. GoQueue is faster than LinuxQueue here
-	// since it can allocate and zero MemoryFile pages in parallel. q is
-	// immutable.
-	q *aio.GoQueue
+	// ar is the pages file. ar is immutable.
+	ar stateio.AsyncReader
 
-	// qavail is unused capacity in q.
+	// maxReadBytes is hostarch.PageRoundDown(ar.MaxReadBytes()), cached to
+	// avoid interface method calls and recomputation. maxReadBytes is
+	// immutable.
+	maxReadBytes uint64
+
+	// qavail is unused capacity in ar.
 	qavail int
 
 	// The async page loader combines multiple loads with contiguous pages file
@@ -546,15 +547,12 @@ type AsyncPagesFileLoad struct {
 	curOp   *aplOp
 	curOpID uint32
 
-	// fd is the host file descriptor for the pages file.
-	fd int32 // immutable
-
 	// opsBusy tracks which aplOps in ops are in use (correspond to
 	// inflight operations or curOp).
 	opsBusy bitmap.Bitmap
 
 	// ops stores all aplOps.
-	ops [aplQueueCapacity]aplOp
+	ops []aplOp
 }
 
 // Possible events in AsyncPagesFileLoad.lfStatus:
@@ -577,9 +575,10 @@ func (apfl *AsyncPagesFileLoad) err() error {
 
 // asyncMemoryFileLoad holds async page loading state for a single MemoryFile.
 type asyncMemoryFileLoad struct {
-	f        *MemoryFile         // immutable
-	pf       *AsyncPagesFileLoad // immutable
-	timeline *timing.Timeline    // immutable
+	f        *MemoryFile             // immutable
+	pf       *AsyncPagesFileLoad     // immutable
+	df       stateio.DestinationFile // immutable
+	timeline *timing.Timeline        // immutable
 
 	// minUnloaded is the MemoryFile offset of the first unloaded byte.
 	minUnloaded atomicbitops.Uint64
@@ -653,53 +652,53 @@ type aplOp struct {
 	// amfl represents the MemoryFile being loaded.
 	amfl *asyncMemoryFileLoad
 
-	// frs() = frsData[:frsLen] are the MemoryFile ranges being loaded.
-	frsData [aplOpMaxIovecs]memmap.FileRange
-	frsLen  uint8
+	// frs are the MemoryFile ranges being loaded.
+	frs []memmap.FileRange
 
-	// iovecsLen is described below, but stored here to minimize alignment
-	// padding.
-	iovecsLen uint8
+	// iovecs contains mappings of frs.
+	iovecs []unix.Iovec
 
-	// If tempRef is true, a temporary reference is held on pages in frs() that
+	// If tempRef is true, a temporary reference is held on pages in frs that
 	// should be dropped after completion.
 	tempRef bool
-
-	// iovecs() = iovecsData[:iovecsLen] contains mappings of frs().
-	iovecsData [aplOpMaxIovecs]unix.Iovec
 }
 
 func (op *aplOp) off() int64 {
 	return int64(op.end - op.total)
 }
 
-func (op *aplOp) frs() []memmap.FileRange {
-	return op.frsData[:op.frsLen]
-}
-
-func (op *aplOp) iovecs() []unix.Iovec {
-	return op.iovecsData[:op.iovecsLen]
-}
-
 // StartAsyncPagesFileLoad constructs asynchronous loading state for the pages
-// file with host file descriptor pagesFD. It does not take ownership of
-// pagesFD, which must remain valid until doneCallback is invoked.
-func StartAsyncPagesFileLoad(pagesFD int32, doneCallback func(error), timeline *timing.Timeline) *AsyncPagesFileLoad {
+// file ar. It takes ownership of ar, even if it returns a non-nil error.
+func StartAsyncPagesFileLoad(ar stateio.AsyncReader, doneCallback func(error), timeline *timing.Timeline) (*AsyncPagesFileLoad, error) {
+	maxReadBytes := hostarch.PageRoundDown(ar.MaxReadBytes())
+	if maxReadBytes <= 0 {
+		ar.Close()
+		return nil, fmt.Errorf("stateio.AsyncReader.MaxReadBytes() (%d) must be at least one page)", ar.MaxReadBytes())
+	}
+	maxParallel := ar.MaxParallel()
 	apfl := &AsyncPagesFileLoad{
 		timeline:     timeline.Fork("async page loading"),
 		doneCallback: doneCallback,
-		q:            aio.NewGoQueue(aplQueueCapacity),
-		qavail:       aplQueueCapacity,
-		fd:           pagesFD,
-		opsBusy:      bitmap.New(aplQueueCapacity),
+		ar:           ar,
+		maxReadBytes: maxReadBytes,
+		qavail:       maxParallel,
+		opsBusy:      bitmap.New(uint32(maxParallel)),
+		ops:          make([]aplOp, maxParallel),
 	}
 	// Mark ops in opsBusy that don't actually exist as permanently busy.
-	for i, n := aplQueueCapacity, apfl.opsBusy.Size(); i < n; i++ {
+	for i, n := maxParallel, apfl.opsBusy.Size(); i < n; i++ {
 		apfl.opsBusy.Add(uint32(i))
+	}
+	// Pre-allocate slices in ops.
+	maxRanges := ar.MaxRanges()
+	for i := range apfl.ops {
+		op := &apfl.ops[i]
+		op.frs = make([]memmap.FileRange, 0, maxRanges)
+		op.iovecs = make([]unix.Iovec, 0, maxRanges)
 	}
 	apfl.lfStatus.Init()
 	go apfl.main()
-	return apfl
+	return apfl, nil
 }
 
 // MemoryFilesDone must be called after calling LoadFrom() for all MemoryFiles
@@ -807,21 +806,21 @@ func (apfl *AsyncPagesFileLoad) enqueueCurOp() {
 	if op.total == 0 {
 		panic("invalid read of 0 bytes")
 	}
-	if op.total > aplReadMaxBytes {
-		panic(fmt.Sprintf("read of %d bytes exceeds per-read limit of %d bytes", op.total, aplReadMaxBytes))
+	if op.total > apfl.maxReadBytes {
+		panic(fmt.Sprintf("read of %d bytes exceeds per-read limit of %d bytes", op.total, apfl.maxReadBytes))
 	}
 
 	apfl.qavail--
 	apfl.curOp = nil
-	if op.iovecsLen == 1 {
-		// Perform a non-vectorized read to save an indirection (and
-		// userspace-to-kernelspace copy) in the aio.Queue implementation.
-		aio.Read(apfl.q, uint64(apfl.curOpID), apfl.fd, op.off(), sliceFromIovec(op.iovecsData[0]))
+	if len(op.frs) == 1 && len(op.iovecs) == 1 {
+		// Perform a non-vectorized read to save an indirection (and possible
+		// userspace-to-kernelspace copy) in the AsyncReader implementation.
+		apfl.ar.AddRead(int(apfl.curOpID), op.off(), op.amfl.df, op.frs[0], stateio.SliceFromIovec(op.iovecs[0]))
 	} else {
-		aio.Readv(apfl.q, uint64(apfl.curOpID), apfl.fd, op.off(), op.iovecs())
+		apfl.ar.AddReadv(int(apfl.curOpID), op.off(), op.total, op.amfl.df, op.frs, op.iovecs)
 	}
 	if logAwaitedLoads && !op.tempRef {
-		log.Infof("MemoryFile(%p): awaited opid %d start, read %d bytes: %v", op.amfl.f, apfl.curOpID, op.total, op.frs())
+		log.Infof("MemoryFile(%p): awaited opid %d start, read %d bytes: %v", op.amfl.f, apfl.curOpID, op.total, op.frs)
 	}
 }
 
@@ -839,8 +838,8 @@ func (apfl *AsyncPagesFileLoad) enqueueRange(amfl *asyncMemoryFileLoad, fr memma
 			apfl.opsBusy.Add(id)
 			op := &apfl.ops[id]
 			op.total = 0
-			op.frsLen = 0
-			op.iovecsLen = 0
+			op.frs = op.frs[:0]
+			op.iovecs = op.iovecs[:0]
 			apfl.curOp = op
 			apfl.curOpID = id
 		}
@@ -870,12 +869,10 @@ func (apfl *AsyncPagesFileLoad) combine(amfl *asyncMemoryFileLoad, fr memmap.Fil
 			return 0
 		}
 		if op.amfl != amfl {
-			// Differing MemoryFile. We could handle this by making the
-			// asyncMemoryFileLoad per-FileRange, but this would bloat aplOp
-			// and should happen very infrequently.
+			// Differing MemoryFile.
 			return 0
 		}
-		if int(op.frsLen) == len(op.frsData) && op.frsData[op.frsLen-1].End != fr.Start {
+		if len(op.frs) == cap(op.frs) && op.frs[len(op.frs)-1].End != fr.Start {
 			// Non-contiguous in the MemoryFile, and we're out of space for
 			// FileRanges.
 			return 0
@@ -891,8 +888,8 @@ func (apfl *AsyncPagesFileLoad) combine(amfl *asyncMemoryFileLoad, fr memmap.Fil
 
 	// Apply direct length limits.
 	n := fr.Length()
-	if op.total+n >= aplReadMaxBytes {
-		n = aplReadMaxBytes - op.total
+	if op.total+n >= apfl.maxReadBytes {
+		n = apfl.maxReadBytes - op.total
 	}
 	if n == 0 {
 		return 0
@@ -902,19 +899,20 @@ func (apfl *AsyncPagesFileLoad) combine(amfl *asyncMemoryFileLoad, fr memmap.Fil
 	// Collect iovecs, which may further limit length.
 	n = 0
 	amfl.f.forEachMappingSlice(fr, func(bs []byte) {
-		if op.iovecsLen > 0 {
-			if canMergeIovecAndSlice(op.iovecsData[op.iovecsLen-1], bs) {
-				op.iovecsData[op.iovecsLen-1].Len += uint64(len(bs))
+		if len(op.iovecs) > 0 {
+			if canMergeIovecAndSlice(op.iovecs[len(op.iovecs)-1], bs) {
+				op.iovecs[len(op.iovecs)-1].Len += uint64(len(bs))
 				n += uint64(len(bs))
 				return
 			}
-			if int(op.iovecsLen) == len(op.iovecsData) {
+			if len(op.iovecs) == cap(op.iovecs) {
 				return
 			}
 		}
-		op.iovecsData[op.iovecsLen].Base = &bs[0]
-		op.iovecsData[op.iovecsLen].SetLen(len(bs))
-		op.iovecsLen++
+		op.iovecs = append(op.iovecs, unix.Iovec{
+			Base: &bs[0],
+			Len:  uint64(len(bs)),
+		})
 		n += uint64(len(bs))
 	})
 	if n == 0 {
@@ -930,20 +928,22 @@ func (apfl *AsyncPagesFileLoad) combine(amfl *asyncMemoryFileLoad, fr memmap.Fil
 	op.end += n
 	op.total += n
 	op.tempRef = tempRef
-	if op.frsLen > 0 && op.frsData[op.frsLen-1].End == fr.Start {
-		op.frsData[op.frsLen-1].End = fr.End
+	if len(op.frs) > 0 && op.frs[len(op.frs)-1].End == fr.Start {
+		op.frs[len(op.frs)-1].End = fr.End
 	} else {
-		op.frsData[op.frsLen] = fr
-		op.frsLen++
+		op.frs = append(op.frs, fr)
 	}
 	return n
 }
 
 func (apfl *AsyncPagesFileLoad) main() {
-	q := apfl.q
 	defer func() {
-		// Destroy q first since this synchronously stops inflight I/O.
-		q.Destroy()
+		// Close ar first since this synchronously stops inflight I/O.
+		if err := apfl.ar.Close(); err != nil {
+			// Completed reads are complete irrespective of err, so log err
+			// rather than propagating it.
+			log.Warningf("Async page loading: stateio.AsyncReader.Close failed: %v", err)
+		}
 		apfl.timeline.End()
 		// Wake up any remaining waiters so that they can observe apfl.err().
 		// Leave all segments in asyncMemoryFileLoad.unloaded so that new
@@ -972,8 +972,9 @@ func (apfl *AsyncPagesFileLoad) main() {
 		}
 	}()
 
+	maxParallel := apfl.ar.MaxParallel()
 	// Storage reused between main loop iterations:
-	var completions []aio.Completion
+	var completions []stateio.Completion
 	var wakeups []*aplWaiter
 	var decRefs []aplFileRange
 
@@ -1140,7 +1141,7 @@ func (apfl *AsyncPagesFileLoad) main() {
 			apfl.enqueueCurOp()
 		}
 
-		if apfl.qavail == aplQueueCapacity {
+		if apfl.qavail == maxParallel {
 			// We are out of work to do.
 			ev := apfl.lfStatus.Wait()
 			if ev&aplLFPending != 0 {
@@ -1162,9 +1163,9 @@ func (apfl *AsyncPagesFileLoad) main() {
 
 		// Wait for any number of reads to complete.
 		var err error
-		completions, err = q.Wait(completions[:0], 1 /* minCompletions */)
+		completions, err = apfl.ar.Wait(completions[:0], 1 /* minCompletions */)
 		if err != nil {
-			log.Warningf("Async page loading failed: aio.Queue.Wait failed: %v", err)
+			log.Warningf("Async page loading failed: stateio.AsyncReader.Wait failed: %v", err)
 			apfl.mu.Lock()
 			apfl.errVal.Store(linuxerr.EIO)
 			apfl.mu.Unlock()
@@ -1183,21 +1184,12 @@ func (apfl *AsyncPagesFileLoad) main() {
 				// required to avoid lock recursion via dropping the last
 				// reference => asyncMemoryFileLoad.cancelWasteLoad() =>
 				// apfl.mu.Lock().
-				for _, fr := range op.frs() {
+				for _, fr := range op.frs {
 					decRefs = append(decRefs, aplFileRange{op.amfl, fr})
 				}
 			}
-			if err := c.Err(); err != nil {
-				log.Warningf("Async page loading failed: read for MemoryFile(%p) pages %v failed: %v", op.amfl.f, op.frs(), err)
-				apfl.errVal.Store(err)
-				apfl.mu.Unlock()
-				apfl.amflsMu.Unlock()
-				return
-			}
-			if uint64(c.Result) != op.total {
-				// TODO: Is this something we actually have to worry about? If
-				// so, we need to reissue the remainder of the read...
-				log.Warningf("Async page loading failed: read for MemoryFile(%p) pages %v (total %d bytes) returned %d bytes", op.amfl.f, op.frs(), op.total, c.Result)
+			if c.N != op.total {
+				log.Warningf("Async page loading failed: read for MemoryFile(%p) pages %v (total %d bytes) returned %d bytes, error: %v", op.amfl.f, op.frs, op.total, c.N, c.Err)
 				apfl.errVal.Store(linuxerr.EIO)
 				apfl.mu.Unlock()
 				apfl.amflsMu.Unlock()
@@ -1207,7 +1199,7 @@ func (apfl *AsyncPagesFileLoad) main() {
 			amfl := op.amfl
 			haveWaiters := false
 			now := int64(0)
-			for _, fr := range op.frs() {
+			for _, fr := range op.frs {
 				// All pages in fr have been started and were split around fr
 				// when they were started (above), and fr.amfl.unloaded never
 				// merges started segments. Thus, we don't need to split around
@@ -1241,7 +1233,7 @@ func (apfl *AsyncPagesFileLoad) main() {
 				}
 			}
 			if logAwaitedLoads && haveWaiters {
-				log.Infof("MemoryFile(%p): awaited opid %d complete, read %d bytes: %v", op.amfl.f, c.ID, op.total, op.frs())
+				log.Infof("MemoryFile(%p): awaited opid %d complete, read %d bytes: %v", op.amfl.f, c.ID, op.total, op.frs)
 			}
 			// Keep amfl.minUnloaded up to date. We can only determine this
 			// accurately if insertions into amfl.unloaded are complete.
@@ -1330,4 +1322,30 @@ func (aplUnloadedSetFunctions) Split(fr memmap.FileRange, ul aplUnloadedInfo, sp
 		waiters: ul.waiters[:len(ul.waiters):len(ul.waiters)],
 	}
 	return ul, ul2
+}
+
+func (f *MemoryFile) getClientFileRangeSettings(fileSize uint64) []stateio.ClientFileRangeSetting {
+	if !f.opts.AdviseHugepage && !f.opts.AdviseNoHugepage {
+		return nil
+	}
+	var cfrs []stateio.ClientFileRangeSetting
+	f.forEachChunk(memmap.FileRange{0, fileSize}, func(chunk *chunkInfo, chunkFR memmap.FileRange) bool {
+		if chunk.huge {
+			if f.opts.AdviseHugepage {
+				cfrs = append(cfrs, stateio.ClientFileRangeSetting{
+					FileRange: chunkFR,
+					Property:  stateio.PropertyHugepage,
+				})
+			}
+		} else {
+			if f.opts.AdviseNoHugepage {
+				cfrs = append(cfrs, stateio.ClientFileRangeSetting{
+					FileRange: chunkFR,
+					Property:  stateio.PropertyNoHugepage,
+				})
+			}
+		}
+		return true
+	})
+	return cfrs
 }
