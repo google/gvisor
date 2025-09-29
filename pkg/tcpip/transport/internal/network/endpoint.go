@@ -181,7 +181,11 @@ func (e *Endpoint) Close() {
 	}
 
 	for mem := range e.multicastMemberships {
-		e.stack.LeaveGroup(e.netProto, mem.nicID, mem.multicastAddr)
+		proto, err := e.multicastNetProto(mem.multicastAddr)
+		if err != nil {
+			panic("non multicast address in an existing membership")
+		}
+		e.stack.LeaveGroup(proto, mem.nicID, mem.multicastAddr)
 	}
 	e.multicastMemberships = nil
 
@@ -912,6 +916,19 @@ func (e *Endpoint) GetSockOptInt(opt tcpip.SockOptInt) (int, tcpip.Error) {
 	}
 }
 
+// multicastNetProto returns the network protocol of a given multicast address.
+// Returns an error if the address is not a multicast address.
+func (e *Endpoint) multicastNetProto(addr tcpip.Address) (tcpip.NetworkProtocolNumber, tcpip.Error) {
+	switch {
+	case header.IsV4MulticastAddress(addr):
+		return header.IPv4ProtocolNumber, nil
+	case header.IsV6MulticastAddress(addr):
+		return header.IPv6ProtocolNumber, nil
+	default:
+		return 0, &tcpip.ErrInvalidOptionValue{}
+	}
+}
+
 // SetSockOpt sets the socket option.
 func (e *Endpoint) SetSockOpt(opt tcpip.SettableSocketOption) tcpip.Error {
 	switch v := opt.(type) {
@@ -952,21 +969,23 @@ func (e *Endpoint) SetSockOpt(opt tcpip.SettableSocketOption) tcpip.Error {
 		e.multicastAddr = addr
 
 	case *tcpip.AddMembershipOption:
-		if !(header.IsV4MulticastAddress(v.MulticastAddr) && e.netProto == header.IPv4ProtocolNumber) && !(header.IsV6MulticastAddress(v.MulticastAddr) && e.netProto == header.IPv6ProtocolNumber) {
-			return &tcpip.ErrInvalidOptionValue{}
+		// Allowing IP_ADD_MEMBERSHIP on an ipv6 socket matches Linux behavior:
+		// https://github.com/torvalds/linux/blob/cec1e6e5d1a/net/ipv6/ipv6_sockglue.c#L964
+		proto, err := e.multicastNetProto(v.MulticastAddr)
+		if err != nil {
+			return err
 		}
 
 		nicID := v.NIC
-
 		if v.InterfaceAddr.Unspecified() {
 			if nicID == 0 {
-				if r, err := e.stack.FindRoute(0, tcpip.Address{}, v.MulticastAddr, e.netProto, false /* multicastLoop */); err == nil {
+				if r, err := e.stack.FindRoute(0, tcpip.Address{}, v.MulticastAddr, proto, false /* multicastLoop */); err == nil {
 					nicID = r.NICID()
 					r.Release()
 				}
 			}
 		} else {
-			nicID = e.stack.CheckLocalAddress(nicID, e.netProto, v.InterfaceAddr)
+			nicID = e.stack.CheckLocalAddress(nicID, proto, v.InterfaceAddr)
 		}
 		if nicID == 0 {
 			return &tcpip.ErrUnknownDevice{}
@@ -981,27 +1000,28 @@ func (e *Endpoint) SetSockOpt(opt tcpip.SettableSocketOption) tcpip.Error {
 			return &tcpip.ErrPortInUse{}
 		}
 
-		if err := e.stack.JoinGroup(e.netProto, nicID, v.MulticastAddr); err != nil {
+		if err := e.stack.JoinGroup(proto, nicID, v.MulticastAddr); err != nil {
 			return err
 		}
 
 		e.multicastMemberships[memToInsert] = struct{}{}
 
 	case *tcpip.RemoveMembershipOption:
-		if !(header.IsV4MulticastAddress(v.MulticastAddr) && e.netProto == header.IPv4ProtocolNumber) && !(header.IsV6MulticastAddress(v.MulticastAddr) && e.netProto == header.IPv6ProtocolNumber) {
-			return &tcpip.ErrInvalidOptionValue{}
+		proto, err := e.multicastNetProto(v.MulticastAddr)
+		if err != nil {
+			return err
 		}
 
 		nicID := v.NIC
 		if v.InterfaceAddr.Unspecified() {
 			if nicID == 0 {
-				if r, err := e.stack.FindRoute(0, tcpip.Address{}, v.MulticastAddr, e.netProto, false /* multicastLoop */); err == nil {
+				if r, err := e.stack.FindRoute(0, tcpip.Address{}, v.MulticastAddr, proto, false /* multicastLoop */); err == nil {
 					nicID = r.NICID()
 					r.Release()
 				}
 			}
 		} else {
-			nicID = e.stack.CheckLocalAddress(nicID, e.netProto, v.InterfaceAddr)
+			nicID = e.stack.CheckLocalAddress(nicID, proto, v.InterfaceAddr)
 		}
 		if nicID == 0 {
 			return &tcpip.ErrUnknownDevice{}
@@ -1016,7 +1036,7 @@ func (e *Endpoint) SetSockOpt(opt tcpip.SettableSocketOption) tcpip.Error {
 			return &tcpip.ErrBadLocalAddress{}
 		}
 
-		if err := e.stack.LeaveGroup(e.netProto, nicID, v.MulticastAddr); err != nil {
+		if err := e.stack.LeaveGroup(proto, nicID, v.MulticastAddr); err != nil {
 			return err
 		}
 
