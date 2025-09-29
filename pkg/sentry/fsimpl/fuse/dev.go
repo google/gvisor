@@ -15,8 +15,12 @@
 package fuse
 
 import (
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+	"gvisor.dev/gvisor/pkg/marshal/primitive"
+	"gvisor.dev/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/usermem"
@@ -180,6 +184,52 @@ func (fd *DeviceFD) Seek(ctx context.Context, offset int64, whence int32) (int64
 	defer fd.mu.Unlock()
 	if !fd.connected() {
 		return 0, linuxerr.EPERM
+	}
+
+	return 0, linuxerr.ENOSYS
+}
+
+// Ioctl implements vfs.FileDescriptionImpl.Ioctl.
+func (fd *DeviceFD) Ioctl(ctx context.Context, uio usermem.IO, sysno uintptr, args arch.SyscallArguments) (uintptr, error) {
+	cmd := args[1].Uint()
+	switch cmd {
+	case linux.FUSE_DEV_IOC_CLONE:
+		t := kernel.TaskFromContext(ctx)
+		if t == nil {
+			return 0, linuxerr.ESRCH
+		}
+		var userFuseFD int32
+		if _, err := primitive.CopyInt32In(t, args[2].Pointer(), &userFuseFD); err != nil {
+			return 0, err
+		}
+		userFuseFile, _ := t.FDTable().Get(userFuseFD)
+		if userFuseFile == nil {
+			return 0, linuxerr.EBADF
+		}
+		defer userFuseFile.DecRef(ctx)
+		fuseFD, ok := userFuseFile.Impl().(*DeviceFD)
+		if !ok {
+			return 0, linuxerr.EINVAL
+		}
+
+		fuseFD.mu.Lock()
+		if fuseFD.conn == nil {
+			fuseFD.mu.Unlock()
+			return 0, linuxerr.EINVAL
+		}
+		conn := fuseFD.conn
+		conn.IncRef()
+		fuseFD.mu.Unlock()
+
+		fd.mu.Lock()
+		defer fd.mu.Unlock()
+		if fd.conn != nil {
+			conn.DecRef(ctx)
+			return 0, linuxerr.EINVAL
+		}
+		fd.conn = conn
+
+		return 0, nil
 	}
 
 	return 0, linuxerr.ENOSYS

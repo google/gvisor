@@ -184,3 +184,8 @@ const (
 	KCOV_MODE_TRACE_PC  = 2
 	KCOV_MODE_TRACE_CMP = 3
 )
+
+// FUSE_DEV_IOC_CLONE from include/uapi/linux/fuse.h.
+var (
+	FUSE_DEV_IOC_CLONE = IOR(229, 0, 4)
+)

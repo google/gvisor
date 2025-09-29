@@ -15,15 +15,14 @@
 package kernel
 
 import (
-	"bufio"
 	"fmt"
 	"io"
 
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/context"
-	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
+	"gvisor.dev/gvisor/pkg/sentry/state/stateio"
 	"gvisor.dev/gvisor/pkg/state"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/timing"
@@ -272,7 +271,7 @@ type AsyncMFLoader struct {
 // If timeline is provided, it will be used to track async page loading.
 // It takes ownership of the timeline, and will end it when done loading all
 // pages.
-func NewAsyncMFLoader(pagesMetadata, pagesFile *fd.FD, mainMF *pgalloc.MemoryFile, timeline *timing.Timeline) *AsyncMFLoader {
+func NewAsyncMFLoader(pagesMetadata io.ReadCloser, pagesFile stateio.AsyncReader, mainMF *pgalloc.MemoryFile, timeline *timing.Timeline) *AsyncMFLoader {
 	mfl := &AsyncMFLoader{
 		privateMFsChan: make(chan map[string]*pgalloc.MemoryFile, 1),
 	}
@@ -283,27 +282,25 @@ func NewAsyncMFLoader(pagesMetadata, pagesFile *fd.FD, mainMF *pgalloc.MemoryFil
 	return mfl
 }
 
-func (mfl *AsyncMFLoader) backgroundGoroutine(pagesMetadataFD, pagesFileFD *fd.FD, mainMF *pgalloc.MemoryFile, timeline *timing.Timeline) {
+func (mfl *AsyncMFLoader) backgroundGoroutine(pagesMetadata io.ReadCloser, pagesFile stateio.AsyncReader, mainMF *pgalloc.MemoryFile, timeline *timing.Timeline) {
 	defer timeline.End()
-	defer pagesMetadataFD.Close()
-	defer pagesFileFD.Close()
+	defer pagesMetadata.Close()
 	cu := cleanup.Make(func() {
 		mfl.metadataWg.Done()
 		mfl.loadWg.Done()
 	})
 	defer cu.Clean()
 
-	// //pkg/state/wire reads one byte at a time; buffer these reads to
-	// avoid making one syscall per read. For the "main" state file, this
-	// buffering is handled by statefile.NewReader() => compressio.Reader
-	// or compressio.NewSimpleReader().
-	pagesMetadata := bufio.NewReader(pagesMetadataFD)
-
 	mfl.loadWg.Add(1)
-	apfl := pgalloc.StartAsyncPagesFileLoad(int32(pagesFileFD.FD()), func(err error) {
+	apfl, err := pgalloc.StartAsyncPagesFileLoad(pagesFile, func(err error) {
 		defer mfl.loadWg.Done()
 		mfl.loadErr = err
-	}, timeline)
+	}, timeline) // transfers ownership of pagesFile
+	if err != nil {
+		mfl.loadWg.Done()
+		log.Warningf("Failed to start async page loading: %v", err)
+		return
+	}
 	cu.Add(apfl.MemoryFilesDone)
 
 	opts := pgalloc.LoadOpts{
@@ -314,7 +311,7 @@ func (mfl *AsyncMFLoader) backgroundGoroutine(pagesMetadataFD, pagesFileFD *fd.F
 	timeline.Reached("loading mainMF")
 	log.Infof("Loading metadata for main MemoryFile: %p", mainMF)
 	ctx := context.Background()
-	err := mainMF.LoadFrom(ctx, pagesMetadata, &opts)
+	err = mainMF.LoadFrom(ctx, pagesMetadata, &opts)
 	mfl.metadataErr = err
 	mfl.mainMetadataErr = err
 	mfl.mainMFStartWg.Done()
