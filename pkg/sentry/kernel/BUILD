@@ -390,6 +390,7 @@ go_library(
         "//pkg/sentry/seccheck/points:points_go_proto",
         "//pkg/sentry/socket/netlink/port",
         "//pkg/sentry/socket/unix/transport",
+        "//pkg/sentry/state/stateio",
         "//pkg/sentry/time",
         "//pkg/sentry/unimpl",
         "//pkg/sentry/unimpl:unimplemented_syscall_go_proto",
