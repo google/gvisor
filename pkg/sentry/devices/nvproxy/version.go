@@ -912,7 +912,7 @@ func Init() {
 
 		v575_57_08 := addDriverABI(575, 57, 8, "2aa701dac180a7b20a6e578cccd901ded8d44e57d60580f08f9d28dd1fffc6f2", "549e73e4f7402f66275ee665b6e3a2ae5d7bf57296b743b824d713f205203bdf", v575_51_02)
 
-		_ = addDriverABI(580, 65, 06, "04b10867af585e765cfbfdcf39ed5f4bd112375bebab0172eaa187c6aa5024ff", "e02acdc0d20d4a541aa5026bfddb1b9b4fc6bc64ae3b04ff9cb9c892700cf9c4", func() *driverABI {
+		v580_65_06 := addDriverABI(580, 65, 06, "04b10867af585e765cfbfdcf39ed5f4bd112375bebab0172eaa187c6aa5024ff", "e02acdc0d20d4a541aa5026bfddb1b9b4fc6bc64ae3b04ff9cb9c892700cf9c4", func() *driverABI {
 			abi := v575_57_08()
 			abi.frontendIoctl[nvgpu.NV_ESC_RM_MAP_MEMORY_DMA] = feHandler(frontendIoctlSimple[nvgpu.NVOS46_PARAMETERS_V580], nvconf.CapGraphics|nvconf.CapVideo)
 			abi.allocationClass[nvgpu.FERMI_VASPACE_A] = allocHandler(rmAllocSimple[nvgpu.NV_VASPACE_ALLOCATION_PARAMETERS_V580], compUtil)
@@ -926,6 +926,8 @@ func Init() {
 			}
 			return abi
 		})
+
+		_ = addDriverABI(580, 82, 07, "061e48e11fe552232095811d0b1cea9b718ba2540d605074ff227fce0628798c", "a2bdfffda5784d070f0e070bc4507be47fe407c9fedd1cf04ced42d996c90092", v580_65_06)
 	})
 }
 
