@@ -282,7 +282,34 @@ func (mm *MemoryManager) getPMAsInternalLocked(ctx context.Context, vseg vmaIter
 					allocAR := optAR.Intersect(hugeMaskAR)
 					// Don't back stacks with huge pages due to low utilization
 					// and because they're often fragmented by copy-on-write.
-					huge := mm.mf.HugepagesEnabled() && allocAR.IsHugePageAligned() && !vma.growsDown && !vma.isStack
+					mayHuge := mm.mf.HugepagesEnabled() && !vma.growsDown && !vma.isStack
+					huge := false
+					if mayHuge {
+						if allocAR.IsHugePageAligned() {
+							huge = true
+						} else {
+							startHugeRoundUp, ok := allocAR.Start.HugeRoundUp()
+							endHugeRoundDown := allocAR.End.HugeRoundDown()
+							if ok && startHugeRoundUp < endHugeRoundDown {
+								// allocAR contains at least one full aligned
+								// huge page.
+								if allocAR.Start != startHugeRoundUp {
+									// Shorten allocAR to exclude full huge
+									// pages, so that a later iteration of this
+									// loop can allocate huge pages for the
+									// hugepage-aligned subrange.
+									allocAR.End = startHugeRoundUp
+								} else {
+									// Shorten allocAR to include only full
+									// huge pages, so that a later iteration of
+									// this loop can allocate small pages for
+									// the sub-hugepage tail of allocAR.
+									allocAR.End = endHugeRoundDown
+									huge = true
+								}
+							}
+						}
+					}
 					allocOpts := pgalloc.AllocOpts{
 						Kind:    usage.Anonymous,
 						MemCgID: memCgID,
