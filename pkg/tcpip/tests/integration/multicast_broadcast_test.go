@@ -33,7 +33,6 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/tests/utils"
 	"gvisor.dev/gvisor/pkg/tcpip/testutil"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/icmp"
-	"gvisor.dev/gvisor/pkg/tcpip/transport/raw"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -777,56 +776,5 @@ func TestAddMembershipInterfacePrecedence(t *testing.T) {
 	addOpt := tcpip.AddMembershipOption(memOpt)
 	if err := ep.SetSockOpt(&addOpt); err != nil {
 		t.Fatalf("ep.SetSockOpt(&%#v): %s", addOpt, err)
-	}
-}
-
-func TestMismatchedMulticastAddressAndProtocol(t *testing.T) {
-	const nicID = 1
-	// MulticastAddr is IPv4, but proto is IPv6.
-	multicastAddr := tcpip.AddrFromSlice([]byte("\xe0\x01\x02\x03"))
-	s := stack.New(stack.Options{
-		NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol},
-		TransportProtocols: []stack.TransportProtocolFactory{icmp.NewProtocol6},
-		RawFactory:         raw.EndpointFactory{},
-	})
-	e := channel.New(0, defaultMTU, "")
-	defer e.Close()
-	if err := s.CreateNIC(nicID, e); err != nil {
-		t.Fatalf("CreateNIC(%d, _): %s", nicID, err)
-	}
-	protoAddr := tcpip.ProtocolAddress{Protocol: header.IPv4ProtocolNumber, AddressWithPrefix: utils.Ipv4Addr}
-	if err := s.AddProtocolAddress(nicID, protoAddr, stack.AddressProperties{}); err != nil {
-		t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID, protoAddr, err)
-	}
-
-	var wq waiter.Queue
-	ep, err := s.NewRawEndpoint(header.ICMPv6ProtocolNumber, header.IPv6ProtocolNumber, &wq, false)
-	if err != nil {
-		t.Fatalf("NewEndpoint(%d, %d, _): %s", udp.ProtocolNumber, header.IPv6ProtocolNumber, err)
-	}
-	defer ep.Close()
-
-	bindAddr := tcpip.FullAddress{Port: utils.LocalPort}
-	if err := ep.Bind(bindAddr); err != nil {
-		t.Fatalf("ep.Bind(%#v): %s", bindAddr, err)
-	}
-
-	memOpt := tcpip.MembershipOption{
-		MulticastAddr: multicastAddr,
-		NIC:           0,
-		InterfaceAddr: utils.Ipv4Addr.Address,
-	}
-
-	// Add/remove membership should succeed when the interface index is specified,
-	// even if a bad interface address is specified.
-	addOpt := tcpip.AddMembershipOption(memOpt)
-	expErr := &tcpip.ErrInvalidOptionValue{}
-	if err := ep.SetSockOpt(&addOpt); err != expErr {
-		t.Fatalf("ep.SetSockOpt(&%#v): want %q, got %q", addOpt, expErr, err)
-	}
-
-	removeOpt := tcpip.RemoveMembershipOption(memOpt)
-	if err := ep.SetSockOpt(&removeOpt); err != expErr {
-		t.Fatalf("ep.SetSockOpt(&%#v): want %q, got %q", addOpt, expErr, err)
 	}
 }

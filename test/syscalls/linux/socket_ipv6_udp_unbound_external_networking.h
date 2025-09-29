@@ -15,6 +15,9 @@
 #ifndef GVISOR_TEST_SYSCALLS_LINUX_SOCKET_IPV6_UDP_UNBOUND_EXTERNAL_NETWORKING_H_
 #define GVISOR_TEST_SYSCALLS_LINUX_SOCKET_IPV6_UDP_UNBOUND_EXTERNAL_NETWORKING_H_
 
+#include <optional>
+#include <utility>
+
 #include "test/syscalls/linux/socket_ip_udp_unbound_external_networking.h"
 
 namespace gvisor {
@@ -22,8 +25,24 @@ namespace testing {
 
 // Test fixture for tests that apply to unbound IPv6 UDP sockets in a sandbox
 // with external networking support.
-using IPv6UDPUnboundExternalNetworkingSocketTest =
-    IPUDPUnboundExternalNetworkingSocketTest;
+class IPv6UDPUnboundExternalNetworkingSocketTest
+    : public IPUDPUnboundExternalNetworkingSocketTest {
+ protected:
+  void SetUp() override;
+
+  int lo_if_idx() const { return std::get<0>(lo_if_.value()); }
+  int eth_if_idx() const { return std::get<0>(eth_if_.value()); }
+
+  const sockaddr_in6& lo_if_addr() const { return std::get<1>(lo_if_.value()); }
+  const sockaddr_in6& eth_if_addr() const {
+    return std::get<1>(eth_if_.value());
+  }
+
+ private:
+  // SetUp() will skip the tests if either of these does not have a value,
+  // making it safe to access these without checking has_value().
+  std::optional<std::pair<int, sockaddr_in6>> lo_if_, eth_if_;
+};
 
 }  // namespace testing
 }  // namespace gvisor
