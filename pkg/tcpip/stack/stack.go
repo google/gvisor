@@ -2521,9 +2521,6 @@ type contextID int
 const (
 	// CtxRestoreStack is a Context.Value key for the stack to be used in restore.
 	CtxRestoreStack contextID = iota
-
-	// CtxResumeStack is a Context.Value key for the stack to be used in resume.
-	CtxResumeStack contextID = iota
 )
 
 // RestoreStackFromContext returns the stack to be used during restore.
@@ -2532,16 +2529,6 @@ func RestoreStackFromContext(ctx context.Context) *Stack {
 		return st.(*Stack)
 	}
 	return nil
-}
-
-// ResumeStackFromContext returns the stack to be used during restore.
-func ResumeStackFromContext(ctx context.Context) bool {
-	// If we are resuming, the context should have a value set to true. If
-	// restoring it will be false or not exist.
-	if resume := ctx.Value(CtxResumeStack); resume != nil {
-		return resume.(bool)
-	}
-	return false
 }
 
 // SetRemoveNICs sets the removeNICs in stack to true during save/restore.
