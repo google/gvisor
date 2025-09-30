@@ -123,6 +123,7 @@ func (fs *filesystem) newDirectfsDentry(controlFD int) (*dentry, error) {
 		_ = unix.Close(controlFD)
 		return nil, err
 	}
+	isDir := stat.Mode&linux.FileTypeMask == linux.ModeDirectory
 	inoKey := inoKeyFromStat(&stat)
 
 	// Common case. Performance hack which is used to allocate the dentry
@@ -134,30 +135,36 @@ func (fs *filesystem) newDirectfsDentry(controlFD int) (*dentry, error) {
 		d dentry
 		i directfsInode
 	}{}
-	temp.d.inode = fs.getOrCreateInode(inoKey, func() { _ = unix.Close(controlFD) }, func() *inode {
-		temp.i = directfsInode{
-			inode: inode{
-				fs:        fs,
-				inoKey:    inoKey,
-				ino:       fs.inoFromKey(inoKey),
-				mode:      atomicbitops.FromUint32(stat.Mode),
-				uid:       atomicbitops.FromUint32(stat.Uid),
-				gid:       atomicbitops.FromUint32(stat.Gid),
-				blockSize: atomicbitops.FromUint32(uint32(stat.Blksize)),
-				readFD:    atomicbitops.FromInt32(-1),
-				writeFD:   atomicbitops.FromInt32(-1),
-				mmapFD:    atomicbitops.FromInt32(-1),
-				size:      atomicbitops.FromUint64(uint64(stat.Size)),
-				atime:     atomicbitops.FromInt64(dentryTimestampFromUnix(stat.Atim)),
-				mtime:     atomicbitops.FromInt64(dentryTimestampFromUnix(stat.Mtim)),
-				ctime:     atomicbitops.FromInt64(dentryTimestampFromUnix(stat.Ctim)),
-				nlink:     atomicbitops.FromUint32(uint32(stat.Nlink)),
-			},
-			controlFD: controlFD,
-		}
-		temp.i.inode.init(&temp.i)
-		return &temp.i.inode
-	})
+	// Force new inode creation for directory inodes to avoid hard-linking directories.
+	// This also avoids a correctness issue when a directory is bind-mounted on the host:
+	// different paths (e.g., /mnt/ and /mnt/a/b/c if /mnt/a/b/c is a bind mount of /mnt/)
+	// can return the same device ID and inode number from a stat call.
+	temp.d.inode = fs.getOrCreateInode(inoKey /* dontCache = */, isDir,
+		func() { _ = unix.Close(controlFD) },
+		func() *inode {
+			temp.i = directfsInode{
+				inode: inode{
+					fs:        fs,
+					inoKey:    inoKey,
+					ino:       fs.inoFromKey(inoKey),
+					mode:      atomicbitops.FromUint32(stat.Mode),
+					uid:       atomicbitops.FromUint32(stat.Uid),
+					gid:       atomicbitops.FromUint32(stat.Gid),
+					blockSize: atomicbitops.FromUint32(uint32(stat.Blksize)),
+					readFD:    atomicbitops.FromInt32(-1),
+					writeFD:   atomicbitops.FromInt32(-1),
+					mmapFD:    atomicbitops.FromInt32(-1),
+					size:      atomicbitops.FromUint64(uint64(stat.Size)),
+					atime:     atomicbitops.FromInt64(dentryTimestampFromUnix(stat.Atim)),
+					mtime:     atomicbitops.FromInt64(dentryTimestampFromUnix(stat.Mtim)),
+					ctime:     atomicbitops.FromInt64(dentryTimestampFromUnix(stat.Ctim)),
+					nlink:     atomicbitops.FromUint32(uint32(stat.Nlink)),
+				},
+				controlFD: controlFD,
+			}
+			temp.i.inode.init(&temp.i)
+			return &temp.i.inode
+		})
 
 	temp.d.init()
 	fs.syncMu.Lock()

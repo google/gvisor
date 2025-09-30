@@ -239,9 +239,11 @@ type filesystem struct {
 	// files across checkpoint/restore. inoByKey is protected by inoMu.
 	inoMu    sync.Mutex        `state:"nosave"`
 	inoByKey map[inoKey]uint64 `state:"nosave"`
-	// inodeByKey maps internal inodeKeys [virtual ino and device ID] to inodes. inodeByKey is
-	// protected by inodeMu. inodeByKey is similar to inoByKey, except that is not an
-	// ever-growing map. As inodes are destroyed, its entry in this map is cleared.
+	// inodeByKey maps inoKey to non-directory inodes. inodeByKey is protected by
+	// inodeMu. inodeByKey is similar to inoByKey, except that is not an
+	// ever-growing map. This is to allow for the sharing of inodes across
+	// dentries. As non-directory dentries are destroyed, their associated inode
+	// entry in this map is cleared.
 	inodeMu    sync.Mutex        `state:"nosave"`
 	inodeByKey map[inoKey]*inode `state:"nosave"`
 
@@ -260,12 +262,20 @@ type filesystem struct {
 	released atomicbitops.Int32
 }
 
-// getOrCreateInode returns the inode for the given inoKey and upon inode cache
-// hit, calls onCacheHit and increments the inode's reference count. On cache
-// miss, createInode is called and the new inode is returned.
-// getOrCreateInode locks fs.inodeMu.
+// getOrCreateInode returns an inode for the given inoKey, to avoid creating
+// multiple inodes objects for the same inoKey. This is useful for sharing
+// inodes across dentries.
+//
+// If a miss, `createInode` is called and the result is cached. If a hit,
+// `onCacheHit` is called. This path locks fs.inodeMu.
+//
 // The caller is responsible for decrementing the inode's reference count when done.
-func (fs *filesystem) getOrCreateInode(inoKey inoKey, onCacheHit func(), createInode func() *inode) *inode {
+func (fs *filesystem) getOrCreateInode(inoKey inoKey, dontCache bool, onCacheHit func(), createInode func() *inode) *inode {
+	if dontCache {
+		// Create a new inode and return it bypassing the cache. This is used for
+		// creating inodes that are not meant to be shared across dentries.
+		return createInode()
+	}
 	fs.inodeMu.Lock()
 	defer fs.inodeMu.Unlock()
 	if cachedInode, ok := fs.inodeByKey[inoKey]; ok {
@@ -1886,7 +1896,10 @@ func (d *dentry) destroyLocked(ctx context.Context) {
 	d.inode.fs.inodeMu.Lock()
 	d.inode.refs.DecRef(func() {
 		destroyInode = true
-		delete(d.inode.fs.inodeByKey, d.inode.inoKey)
+		if !d.isDir() {
+			// Only non-directory inodes are cached in inodeByKey.
+			delete(d.inode.fs.inodeByKey, d.inode.inoKey)
+		}
 	})
 	d.inode.fs.inodeMu.Unlock()
 
