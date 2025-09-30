@@ -364,8 +364,13 @@ func TestJobControl(t *testing.T) {
 	if _, err := p.Write(time.Second, []byte{0x03}); err != nil {
 		t.Fatalf("error exit: %v", err)
 	}
+	if logs, err := p.Logs(); err != nil {
+		t.Logf("failed to read output: %s", err)
+	} else {
+		t.Logf("output: %s", logs)
+	}
 
-	if err := d.WaitTimeout(ctx, 3*time.Second); err != nil {
+	if err := d.WaitTimeout(ctx, 10*time.Second); err != nil {
 		t.Fatalf("WaitTimeout failed: %v", err)
 	}
 

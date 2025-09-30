@@ -16,6 +16,8 @@ go_test(
         "mysql.sql",
         "ruby.rb",
         "ruby.sh",
+        # runsc is needed to invalidate the bazel cache in case of any code changes.
+        "//runsc",
     ],
     library = ":image",
     tags = [
