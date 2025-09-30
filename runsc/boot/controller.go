@@ -610,23 +610,16 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 	cm.l.k.Pause()
 	timer.Reached("kernel paused")
 
-	var count int
 	countStr, ok := metadata[ContainerCountKey]
 	if !ok {
-		// TODO(gvisor.dev/issue/1956): Add container count with syscall save
-		// trigger. For now, assume that only a single container exists if metadata
-		// isn't present.
-		//
-		// -return errors.New("container count not present in state file")
-		count = 1
-	} else {
-		count, err = strconv.Atoi(countStr)
-		if err != nil {
-			return fmt.Errorf("invalid container count: %w", err)
-		}
-		if count < 1 {
-			return fmt.Errorf("invalid container count value: %v", count)
-		}
+		return errors.New("container count not present in state file")
+	}
+	count, err := strconv.Atoi(countStr)
+	if err != nil {
+		return fmt.Errorf("invalid container count: %w", err)
+	}
+	if count < 1 {
+		return fmt.Errorf("invalid container count value: %v", count)
 	}
 	cm.restorer.totalContainers = count
 	log.Infof("Restoring a total of %d containers", cm.restorer.totalContainers)

@@ -87,72 +87,101 @@ type SaveOpts struct {
 	// after checkpointing.
 	Resume bool
 
-	// SaveRestoreExecArgv is the argv of the save/restore binary split by spaces.
-	// The first element is the path to the binary.
-	SaveRestoreExecArgv string
-
-	// SaveRestoreExecTimeout is the timeout for waiting for the save/restore
-	// binary.
-	SaveRestoreExecTimeout time.Duration
-
-	// SaveRestoreExecContainerID is the ID of the container that the
-	// save/restore binary executes in.
-	SaveRestoreExecContainerID string
+	// ExecOpts contains options for executing a binary during save/restore.
+	ExecOpts SaveRestoreExecOpts
 }
 
-// Save saves the running system.
-func (s *State) Save(o *SaveOpts, _ *struct{}) error {
+// SaveRestoreExecOpts contains options for executing a binary
+// during save/restore.
+type SaveRestoreExecOpts struct {
+	// Argv is the argv of the save/restore binary split by spaces.
+	// The first element is the path to the binary.
+	Argv string
+
+	// Timeout is the timeout for waiting for the save/restore binary.
+	Timeout time.Duration
+
+	// ContainerID is the ID of the container that the save/restore binary executes in.
+	ContainerID string
+}
+
+// ConvertToStateSaveOpts converts a control.SaveOpts to a state.SaveOpts.
+// Returns a cleanup function that must be called after the SaveOpts is no longer
+// needed.
+func ConvertToStateSaveOpts(o *SaveOpts) (*state.SaveOpts, func(), error) {
 	wantFiles := 1
 	if o.HavePagesFile {
 		wantFiles += 2
 	}
 	if gotFiles := len(o.FilePayload.Files); gotFiles != wantFiles {
-		return fmt.Errorf("got %d files, wanted %d", gotFiles, wantFiles)
+		return nil, nil, fmt.Errorf("got %d files, wanted %d", gotFiles, wantFiles)
 	}
 
 	// Save to the first provided stream.
 	stateFile, err := o.ReleaseFD(0)
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
-	defer stateFile.Close()
-	saveOpts := state.SaveOpts{
-		Destination:        stateFile,
+	cu := cleanup.Make(func() { stateFile.Close() })
+	defer cu.Clean()
+
+	saveOpts := &state.SaveOpts{
+		Destination:        o.FilePayload.Files[0],
 		Key:                o.Key,
 		Metadata:           o.Metadata,
 		MemoryFileSaveOpts: o.MemoryFileSaveOpts,
 		Resume:             o.Resume,
 	}
+
 	if o.HavePagesFile {
 		saveOpts.PagesMetadata, err = o.ReleaseFD(1)
 		if err != nil {
-			return err
+			return nil, nil, err
 		}
-		defer saveOpts.PagesMetadata.Close()
+		cu.Add(func() { saveOpts.PagesMetadata.Close() })
 
 		saveOpts.PagesFile, err = o.ReleaseFD(2)
 		if err != nil {
-			return err
+			return nil, nil, err
 		}
-		defer saveOpts.PagesFile.Close()
+		cu.Add(func() { saveOpts.PagesFile.Close() })
 	}
-	if err := PreSave(s.Kernel, o); err != nil {
+
+	return saveOpts, cu.Release(), nil
+}
+
+// Save saves the running system.
+func (s *State) Save(o *SaveOpts, _ *struct{}) error {
+	saveOpts, cleanup, err := ConvertToStateSaveOpts(o)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+
+	return s.SaveWithOpts(saveOpts, &o.ExecOpts)
+}
+
+// SaveWithOpts saves the running system with the given options.
+func (s *State) SaveWithOpts(saveOpts *state.SaveOpts, execOpts *SaveRestoreExecOpts) error {
+	if err := preSave(s.Kernel, saveOpts, execOpts); err != nil {
 		return err
 	}
 	if err := saveOpts.Save(s.Kernel.SupervisorContext(), s.Kernel, s.Watchdog); err != nil {
 		return err
 	}
-	if o.Resume {
-		err = PostResume(s.Kernel, nil)
+	if saveOpts.Resume {
+		if err := PostResume(s.Kernel, nil); err != nil {
+			return err
+		}
 	}
-	return err
+	return nil
 }
 
-// PreSave is called before saving the kernel.
-func PreSave(k *kernel.Kernel, o *SaveOpts) error {
-	if o.SaveRestoreExecArgv != "" {
-		saveRestoreExecArgv := strings.Split(o.SaveRestoreExecArgv, " ")
-		if err := ConfigureSaveRestoreExec(k, saveRestoreExecArgv, o.SaveRestoreExecTimeout, o.SaveRestoreExecContainerID); err != nil {
+// preSave is called before saving the kernel.
+func preSave(k *kernel.Kernel, o *state.SaveOpts, execOpts *SaveRestoreExecOpts) error {
+	if execOpts.Argv != "" {
+		argv := strings.Split(execOpts.Argv, " ")
+		if err := ConfigureSaveRestoreExec(k, argv, execOpts.Timeout, execOpts.ContainerID); err != nil {
 			return fmt.Errorf("failed to configure save/restore binary: %w", err)
 		}
 		if err := SaveRestoreExec(k, SaveRestoreExecSave); err != nil {
