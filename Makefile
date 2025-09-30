@@ -232,12 +232,12 @@ nogo-tests:
 #
 # FIXME(gvisor.dev/issue/10045): Need to fix broken tests.
 unit-tests: ## Local package unit tests in pkg/..., tools/.., etc.
-	@$(call test,--test_tag_filters=-nogo$(COMMA)-requires-kvm --build_tag_filters=-network_plugins -- //:all pkg/... tools/... runsc/... vdso/... test/trace/... -//pkg/metric:metric_test -//pkg/coretag:coretag_test -//tools/tracereplay:tracereplay_test -//test/trace:trace_test)
+	@$(call test,--test_tag_filters=-nogo$(COMMA)-requires-kvm --build_tag_filters=-network_plugins --test_env=CGROUPV2=$(CGROUPV2) -- //:all pkg/... tools/... runsc/... vdso/... test/trace/... -//pkg/metric:metric_test -//pkg/coretag:coretag_test -//tools/tracereplay:tracereplay_test -//test/trace:trace_test)
 .PHONY: unit-tests
 
 # See unit-tests: this includes runsc/container.
 container-tests: ## Run all tests in runsc/container/...
-	@$(call test,--test_tag_filters=-nogo runsc/container/...)
+	@$(call test,--test_tag_filters=-nogo --test_env=CGROUPV2=$(CGROUPV2) runsc/container/...)
 .PHONY: container-tests
 
 tests: ## Runs all unit tests and syscall tests.
@@ -366,45 +366,45 @@ docker-tests: load-basic $(RUNTIME_BIN)
 	@$(call install_runtime,$(RUNTIME)-host-uds,--host-uds=all) # Used by TestHostSocketConnect.
 	@$(call install_runtime,$(RUNTIME)-overlay,--overlay2=all:self) # Used by TestOverlay*.
 	@$(call install_runtime,$(RUNTIME)-save-restore-netstack,--save-restore-netstack=true) # Used by TestRestoreListenConnWithNetstackSR.
-	@$(call test_runtime,$(RUNTIME),$(INTEGRATION_TARGETS) --test_env=TEST_SAVE_RESTORE_NETSTACK=true //test/e2e:integration_runtime_test //test/e2e:runtime_in_docker_test)
+	@$(call test_runtime_cached,$(RUNTIME),$(INTEGRATION_TARGETS) --test_env=TEST_SAVE_RESTORE_NETSTACK=true //test/e2e:integration_runtime_test //test/e2e:runtime_in_docker_test)
 .PHONY: docker-tests
 
 plugin-network-tests: load-basic $(RUNTIME_BIN)
-	@$(call install_runtime,$(RUNTIME),--network=plugin)
-	@$(call test_runtime,$(RUNTIME), --test_arg=-test.run=ConnectToSelf $(INTEGRATION_TARGETS))
+	@$(call install_runtime,$(RUNTIME)-dpdk,--network=plugin)
+	@$(call test_runtime_cached,$(RUNTIME)-dpdk, --test_arg=-test.run=ConnectToSelf $(INTEGRATION_TARGETS))
 
 plugin-network-tests: RUNSC_TARGET=--config plugin-tldk //runsc:runsc-plugin-stack
 
 overlay-tests: load-basic $(RUNTIME_BIN)
-	@$(call install_runtime,$(RUNTIME),--overlay2=all:dir=/tmp)
-	@$(call install_runtime,$(RUNTIME)-docker,--net-raw --overlay2=all:dir=/tmp)
-	@$(call test_runtime,$(RUNTIME),--test_env=TEST_OVERLAY=true $(INTEGRATION_TARGETS))
+	@$(call install_runtime,$(RUNTIME)-overlay,--overlay2=all:dir=/tmp)
+	@$(call install_runtime,$(RUNTIME)-overlay-docker,--net-raw --overlay2=all:dir=/tmp)
+	@$(call test_runtime_cached,$(RUNTIME)-overlay,--test_env=TEST_OVERLAY=true $(INTEGRATION_TARGETS))
 .PHONY: overlay-tests
 
 swgso-tests: load-basic $(RUNTIME_BIN)
-	@$(call install_runtime,$(RUNTIME),--software-gso=true --gso=false)
-	@$(call install_runtime,$(RUNTIME)-docker,--net-raw --software-gso=true --gso=false)
-	@$(call test_runtime,$(RUNTIME),$(INTEGRATION_TARGETS))
+	@$(call install_runtime,$(RUNTIME)-swgso,--software-gso=true --gso=false)
+	@$(call install_runtime,$(RUNTIME)-swgso-docker,--net-raw --software-gso=true --gso=false)
+	@$(call test_runtime_cached,$(RUNTIME)-swgso,$(INTEGRATION_TARGETS))
 .PHONY: swgso-tests
 
 hostnet-tests: load-basic $(RUNTIME_BIN)
-	@$(call install_runtime,$(RUNTIME),--network=host --net-raw)
-	@$(call test_runtime,$(RUNTIME),--test_env=TEST_CHECKPOINT=false --test_env=TEST_HOSTNET=true --test_env=TEST_NET_RAW=true $(INTEGRATION_TARGETS))
+	@$(call install_runtime,$(RUNTIME)-hostnet,--network=host --net-raw)
+	@$(call test_runtime_cached,$(RUNTIME)-hostnet,--test_env=TEST_CHECKPOINT=false --test_env=TEST_HOSTNET=true --test_env=TEST_NET_RAW=true $(INTEGRATION_TARGETS))
 .PHONY: hostnet-tests
 
 kvm-tests: load-basic $(RUNTIME_BIN)
 	@(lsmod | grep -E '^(kvm_intel|kvm_amd)') || sudo modprobe kvm
 	@if ! test -w /dev/kvm; then sudo chmod a+rw /dev/kvm; fi
 	@$(call test,//pkg/sentry/platform/kvm:kvm_test)
-	@$(call install_runtime,$(RUNTIME),--platform=kvm)
-	@$(call install_runtime,$(RUNTIME)-docker,--net-raw --platform=kvm)
-	@$(call test_runtime,$(RUNTIME),$(INTEGRATION_TARGETS))
+	@$(call install_runtime,$(RUNTIME)-kvm,--platform=kvm)
+	@$(call install_runtime,$(RUNTIME)-kvm-docker,--net-raw --platform=kvm)
+	@$(call test_runtime_cached,$(RUNTIME)-kvm,$(INTEGRATION_TARGETS))
 .PHONY: kvm-tests
 
 systrap-tests: load-basic $(RUNTIME_BIN)
-	@$(call install_runtime,$(RUNTIME),--platform=systrap)
-	@$(call install_runtime,$(RUNTIME)-docker,--net-raw --platform=systrap)
-	@$(call test_runtime,$(RUNTIME),$(INTEGRATION_TARGETS))
+	@$(call install_runtime,$(RUNTIME)-systrap,--platform=systrap)
+	@$(call install_runtime,$(RUNTIME)-systrap-docker,--net-raw --platform=systrap)
+	@$(call test_runtime_cached,$(RUNTIME)-systrap,$(INTEGRATION_TARGETS))
 .PHONY: systrap-tests
 
 iptables-tests: load-iptables $(RUNTIME_BIN)

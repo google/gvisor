@@ -19,6 +19,9 @@ go_test(
         "manual",
     ],
     visibility = ["//:sandbox"],
+
+    # runsc is needed to invalidate the bazel cache in case of any code changes.
+    data = ["//runsc"],
     deps = [
         "//pkg/abi/linux",
         "//pkg/sentry/kernel/auth",
@@ -31,6 +34,8 @@ go_test(
 )
 
 go_test(
+    # runsc is needed to invalidate the bazel cache in case of any code changes.
+    data = ["//runsc"],
     name = "integration_runtime_test",
     size = "large",
     srcs = [
@@ -53,6 +58,8 @@ go_test(
 )
 
 go_test(
+    # runsc is needed to invalidate the bazel cache in case of any code changes.
+    data = ["//runsc"],
     name = "runtime_in_docker_test",
     size = "large",
     srcs = [
