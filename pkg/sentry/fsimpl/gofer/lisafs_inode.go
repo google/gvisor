@@ -114,7 +114,7 @@ func (fs *filesystem) newLisafsDentry(ctx context.Context, ino *lisafs.Inode) (*
 		fs.client.CloseFD(ctx, ino.ControlFD, false /* flush */)
 		return nil, linuxerr.EIO
 	}
-
+	isDir := ino.Stat.Mode&linux.FileTypeMask == linux.ModeDirectory
 	inoKey := inoKeyFromStatx(&ino.Stat)
 	// Common case. Performance hack which is used to allocate the dentry
 	// and its inode together in the heap. This will help reduce allocations and memory
@@ -125,69 +125,73 @@ func (fs *filesystem) newLisafsDentry(ctx context.Context, ino *lisafs.Inode) (*
 		d dentry
 		i lisafsInode
 	}{}
-	temp.d.inode = fs.getOrCreateInode(inoKey, func() {
-		fs.client.CloseFD(ctx, ino.ControlFD, false /* flush */)
-	}, func() *inode {
-		temp.i = lisafsInode{
-			inode: inode{
-				fs:        fs,
-				inoKey:    inoKey,
-				ino:       fs.inoFromKey(inoKey),
-				mode:      atomicbitops.FromUint32(uint32(ino.Stat.Mode)),
-				uid:       atomicbitops.FromUint32(uint32(fs.opts.dfltuid)),
-				gid:       atomicbitops.FromUint32(uint32(fs.opts.dfltgid)),
-				blockSize: atomicbitops.FromUint32(hostarch.PageSize),
-				readFD:    atomicbitops.FromInt32(-1),
-				writeFD:   atomicbitops.FromInt32(-1),
-				mmapFD:    atomicbitops.FromInt32(-1),
-			},
-			controlFD: fs.client.NewFD(ino.ControlFD),
-		}
-		temp.i.inode.init(&temp.i)
-		inode := &temp.i.inode
-		if ino.Stat.Mask&linux.STATX_UID != 0 {
-			inode.uid = atomicbitops.FromUint32(dentryUID(lisafs.UID(ino.Stat.UID)))
-		}
-		if ino.Stat.Mask&linux.STATX_GID != 0 {
-			inode.gid = atomicbitops.FromUint32(dentryGID(lisafs.GID(ino.Stat.GID)))
-		}
-		if ino.Stat.Mask&linux.STATX_SIZE != 0 {
-			inode.size = atomicbitops.FromUint64(ino.Stat.Size)
-		}
-		if ino.Stat.Blksize != 0 {
-			inode.blockSize = atomicbitops.FromUint32(ino.Stat.Blksize)
-		}
-		if ino.Stat.Mask&linux.STATX_ATIME != 0 {
-			inode.atime = atomicbitops.FromInt64(dentryTimestamp(ino.Stat.Atime))
-		} else {
-			inode.atime = atomicbitops.FromInt64(fs.clock.Now().Nanoseconds())
-		}
-		if ino.Stat.Mask&linux.STATX_MTIME != 0 {
-			inode.mtime = atomicbitops.FromInt64(dentryTimestamp(ino.Stat.Mtime))
-		} else {
-			inode.mtime = atomicbitops.FromInt64(fs.clock.Now().Nanoseconds())
-		}
-		if ino.Stat.Mask&linux.STATX_CTIME != 0 {
-			inode.ctime = atomicbitops.FromInt64(dentryTimestamp(ino.Stat.Ctime))
-		} else {
-			// Approximate ctime with mtime if ctime isn't available.
-			inode.ctime = atomicbitops.FromInt64(inode.mtime.Load())
-		}
-		if ino.Stat.Mask&linux.STATX_BTIME != 0 {
-			inode.btime = atomicbitops.FromInt64(dentryTimestamp(ino.Stat.Btime))
-		}
-
-		if ino.Stat.Mask&linux.STATX_NLINK != 0 {
-			inode.nlink = atomicbitops.FromUint32(ino.Stat.Nlink)
-		} else {
-			if ino.Stat.Mode&linux.FileTypeMask == linux.ModeDirectory {
-				inode.nlink = atomicbitops.FromUint32(2)
-			} else {
-				inode.nlink = atomicbitops.FromUint32(1)
+	// Force new inode creation for directory inodes to avoid hard-linking directories.
+	// This also avoids a correctness issue when a directory is bind-mounted on the host:
+	// different paths (e.g., /mnt/ and /mnt/a/b/c if /mnt/a/b/c is a bind mount of /mnt/)
+	// can return the same device ID and inode number from a stat call.
+	temp.d.inode = fs.getOrCreateInode(inoKey /* dontCache = */, isDir,
+		func() { fs.client.CloseFD(ctx, ino.ControlFD, false /* flush */) },
+		func() *inode {
+			temp.i = lisafsInode{
+				inode: inode{
+					fs:        fs,
+					inoKey:    inoKey,
+					ino:       fs.inoFromKey(inoKey),
+					mode:      atomicbitops.FromUint32(uint32(ino.Stat.Mode)),
+					uid:       atomicbitops.FromUint32(uint32(fs.opts.dfltuid)),
+					gid:       atomicbitops.FromUint32(uint32(fs.opts.dfltgid)),
+					blockSize: atomicbitops.FromUint32(hostarch.PageSize),
+					readFD:    atomicbitops.FromInt32(-1),
+					writeFD:   atomicbitops.FromInt32(-1),
+					mmapFD:    atomicbitops.FromInt32(-1),
+				},
+				controlFD: fs.client.NewFD(ino.ControlFD),
 			}
-		}
-		return inode
-	})
+			temp.i.inode.init(&temp.i)
+			inode := &temp.i.inode
+			if ino.Stat.Mask&linux.STATX_UID != 0 {
+				inode.uid = atomicbitops.FromUint32(dentryUID(lisafs.UID(ino.Stat.UID)))
+			}
+			if ino.Stat.Mask&linux.STATX_GID != 0 {
+				inode.gid = atomicbitops.FromUint32(dentryGID(lisafs.GID(ino.Stat.GID)))
+			}
+			if ino.Stat.Mask&linux.STATX_SIZE != 0 {
+				inode.size = atomicbitops.FromUint64(ino.Stat.Size)
+			}
+			if ino.Stat.Blksize != 0 {
+				inode.blockSize = atomicbitops.FromUint32(ino.Stat.Blksize)
+			}
+			if ino.Stat.Mask&linux.STATX_ATIME != 0 {
+				inode.atime = atomicbitops.FromInt64(dentryTimestamp(ino.Stat.Atime))
+			} else {
+				inode.atime = atomicbitops.FromInt64(fs.clock.Now().Nanoseconds())
+			}
+			if ino.Stat.Mask&linux.STATX_MTIME != 0 {
+				inode.mtime = atomicbitops.FromInt64(dentryTimestamp(ino.Stat.Mtime))
+			} else {
+				inode.mtime = atomicbitops.FromInt64(fs.clock.Now().Nanoseconds())
+			}
+			if ino.Stat.Mask&linux.STATX_CTIME != 0 {
+				inode.ctime = atomicbitops.FromInt64(dentryTimestamp(ino.Stat.Ctime))
+			} else {
+				// Approximate ctime with mtime if ctime isn't available.
+				inode.ctime = atomicbitops.FromInt64(inode.mtime.Load())
+			}
+			if ino.Stat.Mask&linux.STATX_BTIME != 0 {
+				inode.btime = atomicbitops.FromInt64(dentryTimestamp(ino.Stat.Btime))
+			}
+
+			if ino.Stat.Mask&linux.STATX_NLINK != 0 {
+				inode.nlink = atomicbitops.FromUint32(ino.Stat.Nlink)
+			} else {
+				if isDir {
+					inode.nlink = atomicbitops.FromUint32(2)
+				} else {
+					inode.nlink = atomicbitops.FromUint32(1)
+				}
+			}
+			return inode
+		})
 
 	temp.d.init()
 	fs.syncMu.Lock()
