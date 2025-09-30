@@ -36,6 +36,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/socket/hostinet"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netstack"
+	"gvisor.dev/gvisor/pkg/sentry/state"
 	"gvisor.dev/gvisor/pkg/sentry/time"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sentry/watchdog"
@@ -409,6 +410,17 @@ func (r *restorer) restore(l *Loader) error {
 }
 
 func (l *Loader) save(o *control.SaveOpts) (err error) {
+	saveOpts, cleanup, err := control.ConvertToStateSaveOpts(o)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+
+	return l.saveWithOpts(saveOpts, &o.ExecOpts)
+}
+
+// saveWithOpts saves the kernel with the given options.
+func (l *Loader) saveWithOpts(saveOpts *state.SaveOpts, execOpts *control.SaveRestoreExecOpts) (err error) {
 	defer func() {
 		// This closure is required to capture the final value of err.
 		l.k.OnCheckpointAttempt(err)
@@ -419,27 +431,24 @@ func (l *Loader) save(o *control.SaveOpts) (err error) {
 		return errors.New("checkpoint not supported when using hostinet")
 	}
 
-	if o.Metadata == nil {
-		o.Metadata = make(map[string]string)
+	if saveOpts.Metadata == nil {
+		saveOpts.Metadata = make(map[string]string)
 	}
-	o.Metadata[ContainerCountKey] = strconv.Itoa(l.containerCount())
+	saveOpts.Metadata[ContainerCountKey] = strconv.Itoa(l.containerCount())
 
 	// Save runsc version.
-	o.Metadata[VersionKey] = version.Version()
+	saveOpts.Metadata[VersionKey] = version.Version()
 
 	// Save container specs.
 	specsStr, err := specutils.ConvertSpecsToString(l.GetContainerSpecs())
 	if err != nil {
 		return err
 	}
-	o.Metadata[ContainerSpecsKey] = specsStr
+	saveOpts.Metadata[ContainerSpecsKey] = specsStr
 
 	state := control.State{
 		Kernel:   l.k,
 		Watchdog: l.watchdog,
 	}
-	if err := state.Save(o, nil); err != nil {
-		return err
-	}
-	return nil
+	return state.SaveWithOpts(saveOpts, execOpts)
 }

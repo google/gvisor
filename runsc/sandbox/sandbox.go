@@ -1516,11 +1516,13 @@ func (s *Sandbox) Checkpoint(cid string, imagePath string, opts CheckpointOpts) 
 		FilePayload: urpc.FilePayload{
 			Files: files,
 		},
-		HavePagesFile:              len(files) > 1,
-		Resume:                     opts.Resume,
-		SaveRestoreExecArgv:        opts.SaveRestoreExecArgv,
-		SaveRestoreExecTimeout:     opts.SaveRestoreExecTimeout,
-		SaveRestoreExecContainerID: opts.SaveRestoreExecContainerID,
+		HavePagesFile: len(files) > 1,
+		Resume:        opts.Resume,
+		ExecOpts: control.SaveRestoreExecOpts{
+			Argv:        opts.SaveRestoreExecArgv,
+			Timeout:     opts.SaveRestoreExecTimeout,
+			ContainerID: opts.SaveRestoreExecContainerID,
+		},
 	}
 
 	if err := s.call(boot.ContMgrCheckpoint, &opt, nil); err != nil {
