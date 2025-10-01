@@ -354,7 +354,10 @@ func TestTcpdump(t *testing.T) {
 		t.Fatalf("docker run failed: %v", err)
 	}
 
-	cmd := "tcpdump -c 2 -i any port 9999"
+	// Stick to `lo` to avoid catching packets from the host. The "port 9999"
+	// does not actually do anything because we do not yet support installing
+	// a filter bpf program.
+	cmd := "tcpdump -c 2 -i lo port 9999"
 	tcpdumpProc, err := d.ExecProcess(ctx, dockerutil.ExecOpts{}, "/bin/sh", "-c", cmd)
 	if err != nil {
 		t.Fatalf("docker run failed: %v", err)
@@ -364,13 +367,13 @@ func TestTcpdump(t *testing.T) {
 	if err != nil {
 		t.Fatalf("docker exec failed: %v", err)
 	}
+
 	if status, err := senderProc.WaitExitStatus(ctx); err != nil || status != 0 {
 		t.Fatalf("docker exec failed: %v, status: %d", err, status)
 	}
 	if status, err := tcpdumpProc.WaitExitStatus(ctx); err != nil || status != 0 {
 		t.Fatalf("docker exec failed: %v, status: %d", err, status)
 	}
-
 	expectedOutputStr1 := "IP localhost.9999 > localhost.9999: UDP, length 4"
 	logs, err := tcpdumpProc.Logs()
 	if err != nil {
@@ -382,6 +385,27 @@ func TestTcpdump(t *testing.T) {
 	expectedOutputStr2 := "IP localhost.9999 > localhost.9999: UDP, length 8"
 	if !strings.Contains(logs, expectedOutputStr2) {
 		t.Fatalf("docker didn't get output: %q, got: %q", expectedOutputStr2, logs)
+	}
+
+	// Check that `any` also works to guard against b/411198401.
+	cmd = "tcpdump -c 2 -i any port 9999"
+	tcpdumpProc, err = d.ExecProcess(ctx, dockerutil.ExecOpts{}, "/bin/sh", "-c", cmd)
+	if err != nil {
+		t.Fatalf("docker run failed: %v", err)
+	}
+	cmd = "python3 sender.py"
+	senderProc, err = d.ExecProcess(ctx, dockerutil.ExecOpts{}, "/bin/sh", "-c", cmd)
+	if err != nil {
+		t.Fatalf("docker exec failed: %v", err)
+	}
+
+	// We make no assertions about the output because we might catch host packets
+	// too: we only rely on tcpdump's exit status.
+	if status, err := tcpdumpProc.WaitExitStatus(ctx); err != nil || status != 0 {
+		t.Fatalf("docker exec failed: %v, status: %d", err, status)
+	}
+	if status, err := senderProc.WaitExitStatus(ctx); err != nil || status != 0 {
+		t.Fatalf("docker exec failed: %v, status: %d", err, status)
 	}
 }
 
