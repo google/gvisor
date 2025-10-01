@@ -1645,6 +1645,11 @@ func getSockOptIP(t *kernel.Task, s socket.Socket, ep commonEndpoint, name int, 
 		log.Warningf("SOL_IP options not supported on endpoints other than tcpip.Endpoint: option = %d, endpoint = %T", name, ep)
 		return nil, syserr.ErrUnknownProtocolOption
 	}
+	// Rejection of SOL_IP options for AF_INET6 RAW sockets matches Linux behavior:
+	// https://github.com/torvalds/linux/blob/cec1e6e5d1a/net/ipv6/ipv6_sockglue.c#L1453
+	if family, skType, _ := s.Type(); family == linux.AF_INET6 && skType == linux.SOCK_RAW {
+		return nil, syserr.ErrUnknownProtocolOption
+	}
 
 	switch name {
 	case linux.IP_TTL:
@@ -2715,6 +2720,11 @@ func parseIntOrChar(buf []byte) (int32, *syserr.Error) {
 func setSockOptIP(t *kernel.Task, s socket.Socket, ep commonEndpoint, name int, optVal []byte) *syserr.Error {
 	if _, ok := ep.(tcpip.Endpoint); !ok {
 		log.Warningf("SOL_IP options not supported on endpoints other than tcpip.Endpoint: option = %d, endpoint = %T", name, ep)
+		return syserr.ErrUnknownProtocolOption
+	}
+	// Rejection of SOL_IP options for AF_INET6 RAW sockets matches Linux behavior:
+	// https://github.com/torvalds/linux/blob/cec1e6e5d1a/net/ipv6/ipv6_sockglue.c#L963
+	if family, skType, _ := s.Type(); family == linux.AF_INET6 && skType == linux.SOCK_RAW {
 		return syserr.ErrUnknownProtocolOption
 	}
 

@@ -23,12 +23,15 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#include <cerrno>
+
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "test/syscalls/linux/ip_socket_test_util.h"
 #include "test/syscalls/linux/unix_domain_socket_test_util.h"
 #include "test/util/capability_util.h"
 #include "test/util/file_descriptor.h"
+#include "test/util/posix_error.h"
 #include "test/util/socket_util.h"
 #include "test/util/test_util.h"
 
@@ -1584,6 +1587,39 @@ TEST(RawSocketTest, IPv6Checksum_ValidateAndCalculate) {
   ASSERT_NO_FATAL_FAILURE(send(checksum_set, ++counter));
   ASSERT_NO_FATAL_FAILURE(expect_receive(checksum_set, counter, true));
   ASSERT_NO_FATAL_FAILURE(expect_receive(checksum_not_set, counter, true));
+}
+
+// SOL_IP options on a raw AF_INET6 socket are denied.
+TEST(RawSocketTest, SolIPSetSockOptOnRawV6SocketFails) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability()));
+  FileDescriptor raw =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET6, SOCK_RAW, IPPROTO_UDP));
+
+  const ip_mreqn group = {
+      .imr_multiaddr =
+          {
+              .s_addr = inet_addr(kMulticastAddress),
+          },
+      .imr_ifindex = ASSERT_NO_ERRNO_AND_VALUE(InterfaceIndex("lo")),
+  };
+  EXPECT_THAT(
+      setsockopt(raw.get(), SOL_IP, IP_ADD_MEMBERSHIP, &group, sizeof(group)),
+      SyscallFailsWithErrno(ENOPROTOOPT));
+
+  // Try with another SOL_IP option.
+  const ip_mreqn iface = {
+      .imr_multiaddr = {},
+      .imr_ifindex = ASSERT_NO_ERRNO_AND_VALUE(InterfaceIndex("lo")),
+  };
+  EXPECT_THAT(
+      setsockopt(raw.get(), SOL_IP, IP_MULTICAST_IF, &iface, sizeof(iface)),
+      SyscallFailsWithErrno(ENOPROTOOPT));
+
+  // getsockopt is also denied.
+  int on;
+  socklen_t slen = sizeof(on);
+  EXPECT_THAT(getsockopt(raw.get(), SOL_IP, IP_HDRINCL, &on, &slen),
+              SyscallFailsWithErrno(ENOPROTOOPT));
 }
 
 }  // namespace
