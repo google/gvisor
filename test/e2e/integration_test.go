@@ -347,6 +347,13 @@ func TestNumCPU(t *testing.T) {
 
 // TestJobControl tests that job control characters are handled properly.
 func TestJobControl(t *testing.T) {
+	for i := 0; i < 100; i++ {
+		testJobControl(t)
+		time.Sleep(time.Second)
+	}
+}
+
+func testJobControl(t *testing.T) {
 	ctx := context.Background()
 	d := dockerutil.MakeContainer(ctx, t)
 	defer d.CleanUp(ctx)
@@ -360,6 +367,7 @@ func TestJobControl(t *testing.T) {
 	}
 	// Give shell a few seconds to start executing the sleep.
 	time.Sleep(2 * time.Second)
+	t.Logf("TestJobControl: container %v is sleeping", d.ID())
 
 	if _, err := p.Write(time.Second, []byte{0x03}); err != nil {
 		t.Fatalf("error exit: %v", err)

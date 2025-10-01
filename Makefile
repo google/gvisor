@@ -369,6 +369,11 @@ docker-tests: load-basic $(RUNTIME_BIN)
 	@$(call test_runtime_cached,$(RUNTIME),$(INTEGRATION_TARGETS) --test_env=TEST_SAVE_RESTORE_NETSTACK=true //test/e2e:integration_runtime_test //test/e2e:runtime_in_docker_test)
 .PHONY: docker-tests
 
+flake-repro: load-basic $(RUNTIME_BIN)
+	@$(call install_runtime,$(RUNTIME),) # Clear flags.
+	@$(call test_runtime,$(RUNTIME),//test/e2e:integration_test)
+.PHONY: flake-repro
+
 plugin-network-tests: load-basic $(RUNTIME_BIN)
 	@$(call install_runtime,$(RUNTIME)-dpdk,--network=plugin)
 	@$(call test_runtime_cached,$(RUNTIME)-dpdk, --test_arg=-test.run=ConnectToSelf $(INTEGRATION_TARGETS))

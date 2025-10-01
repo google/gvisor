@@ -8,6 +8,7 @@ rm -f repo.key
 # Upload all relevant test failures.
 make -s testlogs 2>/dev/null | grep // | sort | uniq | (
   declare log_count=0
+  local failed=false
   while read target log; do
     if test -z "${target}"; then
       continue
@@ -25,6 +26,7 @@ make -s testlogs 2>/dev/null | grep // | sort | uniq | (
         buildkite-agent annotate --style error --context failures --append
     else
       buildkite-agent artifact upload "${log}"
+        failed=true
       echo " * [${target}](artifact://${log#/}) (${BUILDKITE_LABEL})" | \
         buildkite-agent annotate --style error --context failures --append
 
@@ -38,6 +40,15 @@ make -s testlogs 2>/dev/null | grep // | sort | uniq | (
         buildkite-agent annotate --style error --context failures --append
     fi
   done
+
+  if [[ "${failed}" == true ]]; then
+    sudo journalctl -u docker.service -p warning --since "2 hours ago" > /tmp/docker.log
+    echo "#############" >> /tmp/docker.log
+    docker --version >> /tmp/docker.log
+    uname -a >> /tmp/docker.log
+    echo "#############" >> /tmp/docker.log
+    buildkite-agent artifact upload /tmp/docker.log
+  fi
 )
 
 # Upload all profiles, and include in an annotation.
