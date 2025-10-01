@@ -66,9 +66,10 @@ type Endpoint struct {
 	// TODO(https://gvisor.dev/issue/6389): Use different fields for IPv4/IPv6.
 	// +checklocks:mu
 	multicastAddr tcpip.Address
-	// TODO(https://gvisor.dev/issue/6389): Use different fields for IPv4/IPv6.
 	// +checklocks:mu
 	multicastNICID tcpip.NICID
+	// +checklocks:mu
+	ipv6MulticastNICID tcpip.NICID
 	// +checklocks:mu
 	ipv4TOS uint8
 	// +checklocks:mu
@@ -617,13 +618,16 @@ func (e *Endpoint) connectRouteRLocked(nicID tcpip.NICID, localAddr tcpip.Addres
 			localAddr = tcpip.Address{}
 		}
 
-		if header.IsV4MulticastAddress(addr.Addr) || header.IsV6MulticastAddress(addr.Addr) {
+		if header.IsV4MulticastAddress(addr.Addr) {
 			if nicID == 0 {
 				nicID = e.multicastNICID
 			}
 			if localAddr == (tcpip.Address{}) && nicID == 0 {
 				localAddr = e.multicastAddr
 			}
+		}
+		if header.IsV6MulticastAddress(addr.Addr) && nicID == 0 {
+			nicID = e.ipv6MulticastNICID
 		}
 	}
 
@@ -869,6 +873,18 @@ func (e *Endpoint) SetSockOptInt(opt tcpip.SockOptInt, v int) tcpip.Error {
 		e.mu.Lock()
 		e.ipv6TClass = uint8(v)
 		e.mu.Unlock()
+
+	case tcpip.IPv6MulticastInterfaceOption:
+		if v != 0 && !e.stack.CheckNIC(tcpip.NICID(v)) {
+			return &tcpip.ErrUnknownNICID{}
+		}
+		e.mu.Lock()
+		defer e.mu.Unlock()
+		nic := tcpip.NICID(v)
+		if info := e.Info(); info.BindNICID != 0 && info.BindNICID != nic {
+			return &tcpip.ErrInvalidEndpointState{}
+		}
+		e.ipv6MulticastNICID = nic
 	}
 
 	return nil
@@ -908,6 +924,12 @@ func (e *Endpoint) GetSockOptInt(opt tcpip.SockOptInt) (int, tcpip.Error) {
 	case tcpip.IPv6TrafficClassOption:
 		e.mu.RLock()
 		v := int(e.ipv6TClass)
+		e.mu.RUnlock()
+		return v, nil
+
+	case tcpip.IPv6MulticastInterfaceOption:
+		e.mu.RLock()
+		v := int(e.ipv6MulticastNICID)
 		e.mu.RUnlock()
 		return v, nil
 

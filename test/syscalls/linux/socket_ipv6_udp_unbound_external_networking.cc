@@ -211,5 +211,96 @@ TEST_P(IPv6UDPUnboundExternalNetworkingSocketTest, AddV4MembershipToV6Socket) {
               SyscallFailsWithErrno(ENOPROTOOPT));
 }
 
+TEST_P(IPv6UDPUnboundExternalNetworkingSocketTest, TestIPv6MulticastIf) {
+  auto sock = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
+
+  // Bind sock to the ethernet interface.
+  struct sockaddr_in6 bind_addr = eth_if_addr();
+  ASSERT_THAT(bind(sock->get(), AsSockAddr(&bind_addr), sizeof(bind_addr)),
+              SyscallSucceeds());
+
+  int mcast_idx;
+  socklen_t slen = sizeof(mcast_idx);
+  ASSERT_THAT(getsockopt(sock->get(), IPPROTO_IPV6, IPV6_MULTICAST_IF,
+                         &mcast_idx, &slen),
+              SyscallSucceeds());
+  EXPECT_EQ(mcast_idx, 0);  // Default is 0.
+
+  // Setting its multicast interface to the loopback interface should fail.
+  mcast_idx = lo_if_idx();
+  EXPECT_THAT(setsockopt(sock->get(), IPPROTO_IPV6, IPV6_MULTICAST_IF,
+                         &mcast_idx, slen),
+              SyscallFailsWithErrno(EINVAL));
+
+  // But setting it to the ethernet interface should succeed.
+  mcast_idx = eth_if_idx();
+  EXPECT_THAT(setsockopt(sock->get(), IPPROTO_IPV6, IPV6_MULTICAST_IF,
+                         &mcast_idx, slen),
+              SyscallSucceeds());
+  ASSERT_THAT(getsockopt(sock->get(), IPPROTO_IPV6, IPV6_MULTICAST_IF,
+                         &mcast_idx, &slen),
+              SyscallSucceeds());
+  EXPECT_EQ(mcast_idx, eth_if_idx());
+}
+
+TEST_P(IPv6UDPUnboundExternalNetworkingSocketTest,
+       TestIPv6MulticastIfSendAndRecv) {
+  auto recv = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
+  auto send = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
+
+  // Bind recv to ::.
+  TestAddress recv_addr = V6Any();
+  ASSERT_THAT(
+      bind(recv->get(), AsSockAddr(&recv_addr.addr), recv_addr.addr_len),
+      SyscallSucceeds());
+  socklen_t recv_addr_len = recv_addr.addr_len;
+  // Retrieve its assigned port.
+  ASSERT_THAT(
+      getsockname(recv->get(), AsSockAddr(&recv_addr.addr), &recv_addr_len),
+      SyscallSucceeds());
+
+  // And have it join a multicast group on the loopback interface.
+  TestAddress multicast_addr = V6Multicast();
+  ipv6_mreq group_req = {
+      .ipv6mr_multiaddr =
+          reinterpret_cast<sockaddr_in6*>(&multicast_addr.addr)->sin6_addr,
+      .ipv6mr_interface =
+          static_cast<decltype(ipv6_mreq::ipv6mr_interface)>(lo_if_idx()),
+  };
+  ASSERT_THAT(setsockopt(recv->get(), IPPROTO_IPV6, IPV6_ADD_MEMBERSHIP,
+                         &group_req, sizeof(group_req)),
+              SyscallSucceeds());
+
+  // Set send's multicast interface to the loopback interface. It is still
+  // unbound.
+  int mcast_idx = lo_if_idx();
+  ASSERT_THAT(setsockopt(send->get(), IPPROTO_IPV6, IPV6_MULTICAST_IF,
+                         &mcast_idx, sizeof(mcast_idx)),
+              SyscallSucceeds());
+
+  // Send a multicast packet.
+  auto send_addr = multicast_addr;
+  reinterpret_cast<sockaddr_in6*>(&send_addr.addr)->sin6_port =
+      reinterpret_cast<sockaddr_in6*>(&recv_addr.addr)->sin6_port;
+  char send_buf[200];
+  RandomizeBuffer(send_buf, sizeof(send_buf));
+  ASSERT_THAT(
+      RetryEINTR(sendto)(send->get(), send_buf, sizeof(send_buf), 0,
+                         AsSockAddr(&send_addr.addr), send_addr.addr_len),
+      SyscallSucceedsWithValue(sizeof(send_buf)));
+
+  // Check that we received the multicast packet.
+  char recv_buf[sizeof(send_buf)] = {};
+  ASSERT_THAT(
+      RecvTimeout(recv->get(), recv_buf, sizeof(recv_buf), 1 /*timeout*/),
+      IsPosixErrorOkAndHolds(sizeof(recv_buf)));
+  EXPECT_EQ(0, memcmp(send_buf, recv_buf, sizeof(send_buf)));
+
+  // Drop recv from the multicast group.
+  ASSERT_THAT(setsockopt(recv->get(), IPPROTO_IPV6, IPV6_DROP_MEMBERSHIP,
+                         &group_req, sizeof(group_req)),
+              SyscallSucceeds());
+}
+
 }  // namespace testing
 }  // namespace gvisor
