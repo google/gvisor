@@ -1009,6 +1009,10 @@ const (
 	// PacketMMapReserveOption is used to set the packet mmap reserved space
 	// between the aligned header and the payload.
 	PacketMMapReserveOption
+
+	// IPv6MulticastInterfaceOption is used to set/get the NIC used for
+	// IPv6 multicast Tx.
+	IPv6MulticastInterfaceOption
 )
 
 const (

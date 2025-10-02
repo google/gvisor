@@ -29,7 +29,6 @@ import (
 	"gvisor.dev/gvisor/pkg/control/server"
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/fspath"
-	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/erofs"
@@ -579,15 +578,8 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 		// buffering is handled by statefile.NewReader() => compressio.Reader
 		// or compressio.NewSimpleReader().
 		pagesMetadata := stateio.NewBufioReadCloser(pagesMetadataFD)
-		// Provision one range per page, which is the most that
-		// pgalloc.MemoryFile save/restore can require.
-		// TODO: Make these parameters configurable via arguments to `runsc restore`.
-		const (
-			pagesFileMaxReadBytes = 256 * 1024
-			pagesFileMaxRanges    = pagesFileMaxReadBytes / hostarch.PageSize
-			pagesFileMaxParallel  = 128
-		)
-		pagesFile := stateio.NewFDReader(int32(pagesFileFD.Release()), pagesFileMaxReadBytes, pagesFileMaxRanges, pagesFileMaxParallel)
+		// TODO: Allow `runsc restore` to override I/O parameters.
+		pagesFile := stateio.NewPagesFileFDReaderDefault(int32(pagesFileFD.Release()))
 
 		// This immediately starts loading the main MemoryFile asynchronously.
 		cm.restorer.asyncMFLoader = kernel.NewAsyncMFLoader(pagesMetadata, pagesFile, cm.restorer.mainMF, timer.Fork("PagesFileLoader"))

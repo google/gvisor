@@ -410,11 +410,11 @@ func (r *restorer) restore(l *Loader) error {
 }
 
 func (l *Loader) save(o *control.SaveOpts) (err error) {
-	saveOpts, cleanup, err := control.ConvertToStateSaveOpts(o)
+	saveOpts, err := control.ConvertToStateSaveOpts(o)
 	if err != nil {
 		return err
 	}
-	defer cleanup()
+	defer saveOpts.Close()
 
 	return l.saveWithOpts(saveOpts, &o.ExecOpts)
 }

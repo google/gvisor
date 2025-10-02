@@ -68,10 +68,11 @@ type AsyncReader interface {
 	NeedRegisterDestinationFD() bool
 
 	// RegisterDestinationFD makes the first size bytes of the given host file
-	// descriptor a valid destination for reads from this file, and returns a
-	// DestinationFile representing it. The returned DestinationFile can only
-	// be used with the AsyncReader that returned it. fd does not need to
-	// remain valid beyond the call to RegisterDestinationFD.
+	// descriptor a valid destination for reads from the file represented by
+	// the AsyncReader, and returns a DestinationFile representing the
+	// registered host file. The returned DestinationFile can only be used with
+	// the AsyncReader that returned it. fd does not need to remain valid
+	// beyond the call to RegisterDestinationFD.
 	//
 	// There is no way to unregister individual DestinationFiles; all
 	// DestinationFiles are invalidated by AsyncReader.Close.
@@ -122,11 +123,151 @@ type AsyncReader interface {
 	Wait(cs []Completion, minCompletions int) ([]Completion, error)
 }
 
+// AsyncWriter represents a file supporting asynchronous sequential writes.
+//
+// MaxWriteBytes, MaxRanges, MaxParallel, and NeedRegisterSourceFD may be
+// called concurrently. Only one goroutine may call RegisterSourceFD at a time.
+// Only one goroutine may call any of AddWrite, AddWritev, Wait, Reserve or
+// Finalize at a time. However, RegisterSourceFD and any one of AddWrite,
+// AddWritev, Wait, Reserve, or Finalize may be called concurrently. Close may
+// not be called concurrently with any other methods, and no methods may be
+// called after Close.
+type AsyncWriter interface {
+	// Close cancels inflight writes if possible, waits for uncanceled inflight
+	// writes to complete, and then releases resources owned by the
+	// AsyncWriter.
+	//
+	// Close may not flush buffered state to the file; callers must call
+	// Finalize instead. This also means that if Finalize returns nil, but
+	// Close returns a non-nil error, the file was still written successfully.
+	Close() error
+
+	// MaxWriteBytes returns the maximum length of each write in bytes, which
+	// must be strictly positive. All calls to MaxWriteBytes for a given
+	// AsyncWriter must return the same value.
+	//
+	// Implementations should return the largest write size that is efficient,
+	// rather than the largest write size that is implementable, allowing
+	// callers to treat MaxWriteBytes() as a target.
+	MaxWriteBytes() uint64
+
+	// MaxRanges returns the maximum number of FileRanges and Iovecs that may
+	// be passed in calls to AddWritev, which must be strictly positive. All
+	// calls to MaxRanges for a given AsyncWriter must return the same value.
+	MaxRanges() int
+
+	// MaxParallel returns the maximum number of parallel writes that may be
+	// enqueued on this file, which must be strictly positive. All calls to
+	// MaxParallel for a given AsyncWriter must return the same value.
+	MaxParallel() int
+
+	// NeedRegisterSourceFD returns true if RegisterSourceFD must be called to
+	// obtain SourceFiles for write sources. If NeedRegisterSourceFD returns
+	// false, callers may pass a nil SourceFile to AddWrite and AddWritev, an
+	// empty FileRange to AddWrite, and a nil FileRange slice to AddWritev. All
+	// calls to NeedRegisterSourceFD for a given AsyncWriter must return the
+	// same value.
+	//
+	// This feature exists to support implementations of AsyncWriter in which
+	// writes take place in external processes. Implementations of AsyncWriter
+	// that don't require this can embed NoRegisterClientFD to obtain an
+	// appropriate implementation of NeedRegisterSourceFD and RegisterSourceFD.
+	NeedRegisterSourceFD() bool
+
+	// RegisterSourceFD makes the first size bytes of the given host file
+	// descriptor a valid source for writes to the file represented by the
+	// AsyncWriter, and returns a SourceFile representing the registered host
+	// file. The returned SourceFile can only be used with the AsyncWriter that
+	// returned it. fd does not need to remain valid beyond the call to
+	// RegisterSourceFD.
+	//
+	// There is no way to unregister individual SourceFiles; all SourceFiles
+	// are invalidated by Close.
+	//
+	// It is safe, though unnecessary, to call RegisterSourceFD even if
+	// NeedRegisterSourceFD returns false.
+	RegisterSourceFD(fd int32, size uint64, settings []ClientFileRangeSetting) (SourceFile, error)
+
+	// AddWrite enqueues an appending write of size srcFR.Length() bytes, from
+	// srcFile starting at srcFR.Start, to the file represented by the
+	// AsyncWriter. srcMap must be a mapping of srcFR.
+	//
+	// Note that some AsyncWriter implementations may not begin execution of
+	// enqueued writes until the following call to Wait.
+	//
+	// Preconditions:
+	// - 0 <= id < MaxParallel().
+	// - id must not be in use by any inflight write.
+	// - 0 < srcFR.Length() <= MaxWriteBytes().
+	// - No previous call to Wait has returned a non-nil error.
+	// - Finalize has never been called.
+	AddWrite(id int, srcFile SourceFile, srcFR memmap.FileRange, srcMap []byte)
+
+	// AddWritev enqueues an appending write of size total, from the srcFile
+	// ranges in srcFRs, to the file represented by the AsyncWriter. srcMaps
+	// must be a mapping of srcFRs. The AsyncWriter may retain srcFRs and
+	// srcMaps until the corresponding completion is returned by Wait; neither
+	// the caller nor the AsyncWriter may mutate srcFRs or srcMaps during this
+	// time.
+	//
+	// Note that some AsyncWriter implementations may not begin execution of
+	// enqueued writes until the following call to Wait.
+	//
+	// Preconditions:
+	// - 0 <= id < MaxParallel().
+	// - id must not be in use by any inflight write.
+	// - 0 < total <= MaxWriteBytes().
+	// - total == the sum of FileRange.Length() over srcFRs.
+	// - No FileRange in srcFRs may have length 0.
+	// - No call to Wait has returned a non-nil error.
+	// - Finalize has never been called.
+	AddWritev(id int, total uint64, srcFile SourceFile, srcFRs []memmap.FileRange, srcMaps []unix.Iovec)
+
+	// Wait waits for at least minCompletions enqueued writes to complete,
+	// appends information for completed writes to cs, and returns the updated
+	// slice.
+	//
+	// Preconditions:
+	// - minCompletions <= the number of inflight writes.
+	// - No call to Wait has returned a non-nil error.
+	// - Finalize has never been called.
+	Wait(cs []Completion, minCompletions int) ([]Completion, error)
+
+	// Reserve indicates that the caller intends to write at least n bytes in
+	// total to the file. If n or more bytes have already been written to the
+	// file, Reserve has no effect. Callers must not Reserve more bytes than
+	// will actually be written to the file.
+	//
+	// Calling Reserve is optional, but may improve performance.
+	//
+	// Preconditions:
+	// - Reserve has never been called with a smaller value of n.
+	// - No call to Wait has returned a non-nil error.
+	// - Finalize has never been called.
+	Reserve(n uint64)
+
+	// Finalize must be called after all writes to the file have completed
+	// successfully. It may take actions such as flushing buffered state. If
+	// Finalize returns a non-nil error, the written file may be corrupt
+	// despite successful completion of previous writes.
+	//
+	// Preconditions:
+	// - No writes are inflight or enqueued.
+	// - No call to Wait has returned a non-nil error.
+	// - Finalize has never been called.
+	Finalize() error
+}
+
 // DestinationFile represents a file that has been registered for reads from an
 // AsyncReader.
 type DestinationFile any
 
-// ClientFileRangeSetting specifies properties of a range in a DestinationFile.
+// SourceFile represents a file that has been registered for writes to an
+// AsyncWriter.
+type SourceFile any
+
+// ClientFileRangeSetting specifies properties of a range in a DestinationFile
+// or SourceFile.
 type ClientFileRangeSetting struct {
 	memmap.FileRange
 	Property ClientFileRangeProperty
@@ -151,7 +292,8 @@ const (
 
 // Completion indicates the result of a completed I/O operation.
 type Completion struct {
-	// ID is the ID passed to AsyncReader.AddRead or AsyncReader.AddReadv.
+	// ID is the ID passed to AsyncReader.AddRead, AsyncReader.AddReadv,
+	// AsyncWriter.AddWrite, or AsyncWriter.AddWritev.
 	ID int
 
 	// N is the number of bytes for which I/O was successfully performed. Err

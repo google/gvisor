@@ -20,6 +20,7 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/log"
@@ -27,8 +28,8 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/pipefs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
-	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/state"
+	"gvisor.dev/gvisor/pkg/sentry/state/stateio"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sentry/watchdog"
 	"gvisor.dev/gvisor/pkg/timing"
@@ -70,8 +71,10 @@ type SaveOpts struct {
 	// Metadata is the set of metadata to prepend to the state file.
 	Metadata map[string]string `json:"metadata"`
 
-	// MemoryFileSaveOpts is passed to calls to pgalloc.MemoryFile.SaveTo().
-	MemoryFileSaveOpts pgalloc.SaveOpts
+	// AppMFExcludeCommittedZeroPages is the value of
+	// pgalloc.SaveOpts.ExcludeCommittedZeroPages for the application memory
+	// file.
+	AppMFExcludeCommittedZeroPages bool `json:"app_mf_exclude_committed_zero_pages"`
 
 	// HavePagesFile indicates whether the pages file and its corresponding
 	// metadata file is provided.
@@ -106,57 +109,65 @@ type SaveRestoreExecOpts struct {
 }
 
 // ConvertToStateSaveOpts converts a control.SaveOpts to a state.SaveOpts.
-// Returns a cleanup function that must be called after the SaveOpts is no longer
+// state.SaveOpts.Close() must be called when the state.SaveOpts is no longer
 // needed.
-func ConvertToStateSaveOpts(o *SaveOpts) (*state.SaveOpts, func(), error) {
+func ConvertToStateSaveOpts(o *SaveOpts) (*state.SaveOpts, error) {
 	wantFiles := 1
 	if o.HavePagesFile {
 		wantFiles += 2
 	}
 	if gotFiles := len(o.FilePayload.Files); gotFiles != wantFiles {
-		return nil, nil, fmt.Errorf("got %d files, wanted %d", gotFiles, wantFiles)
+		return nil, fmt.Errorf("got %d files, wanted %d", gotFiles, wantFiles)
 	}
 
 	// Save to the first provided stream.
 	stateFile, err := o.ReleaseFD(0)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	cu := cleanup.Make(func() { stateFile.Close() })
 	defer cu.Clean()
 
 	saveOpts := &state.SaveOpts{
-		Destination:        o.FilePayload.Files[0],
-		Key:                o.Key,
-		Metadata:           o.Metadata,
-		MemoryFileSaveOpts: o.MemoryFileSaveOpts,
-		Resume:             o.Resume,
+		Destination:                    stateFile,
+		Key:                            o.Key,
+		Metadata:                       o.Metadata,
+		AppMFExcludeCommittedZeroPages: o.AppMFExcludeCommittedZeroPages,
+		Resume:                         o.Resume,
 	}
 
 	if o.HavePagesFile {
-		saveOpts.PagesMetadata, err = o.ReleaseFD(1)
+		pagesMetadataFile, err := o.ReleaseFD(1)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
+		// //pkg/state/wire writes one byte at a time; buffer these writes to
+		// avoid making one syscall per write. For the state file, this
+		// buffering is handled by statefile.NewWriter() => compressio.Writer
+		// or compressio.NewSimpleWriter().
+		saveOpts.PagesMetadata = stateio.NewBufioWriteCloser(pagesMetadataFile)
 		cu.Add(func() { saveOpts.PagesMetadata.Close() })
 
-		saveOpts.PagesFile, err = o.ReleaseFD(2)
+		pagesFileFD, err := unix.Dup(int(o.Files[2].Fd()))
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
+		// TODO: Allow `runsc checkpoint` to override I/O parameters.
+		saveOpts.PagesFile = stateio.NewPagesFileFDWriterDefault(int32(pagesFileFD))
 		cu.Add(func() { saveOpts.PagesFile.Close() })
 	}
 
-	return saveOpts, cu.Release(), nil
+	cu.Release()
+	return saveOpts, nil
 }
 
 // Save saves the running system.
 func (s *State) Save(o *SaveOpts, _ *struct{}) error {
-	saveOpts, cleanup, err := ConvertToStateSaveOpts(o)
+	saveOpts, err := ConvertToStateSaveOpts(o)
 	if err != nil {
 		return err
 	}
-	defer cleanup()
+	defer saveOpts.Close()
 
 	return s.SaveWithOpts(saveOpts, &o.ExecOpts)
 }
