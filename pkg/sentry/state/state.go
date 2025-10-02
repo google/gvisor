@@ -16,33 +16,20 @@
 package state
 
 import (
-	"bufio"
+	"errors"
 	"fmt"
 	"io"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
-	"gvisor.dev/gvisor/pkg/errors/linuxerr"
-	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
-	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
+	"gvisor.dev/gvisor/pkg/sentry/state/stateio"
 	"gvisor.dev/gvisor/pkg/sentry/watchdog"
 	"gvisor.dev/gvisor/pkg/state/statefile"
 )
 
 var previousMetadata map[string]string
-
-// ErrStateFile is returned when an error is encountered writing the statefile
-// (which may occur during open or close calls in addition to write).
-type ErrStateFile struct {
-	Err error
-}
-
-// Error implements error.Error().
-func (e ErrStateFile) Error() string {
-	return fmt.Sprintf("statefile error: %v", e.Err)
-}
 
 // SaveOpts contains save-related options.
 type SaveOpts struct {
@@ -51,11 +38,11 @@ type SaveOpts struct {
 
 	// PagesMetadata is the file into which MemoryFile metadata is stored if
 	// PagesMetadata is non-nil. Otherwise this content is stored in Destination.
-	PagesMetadata *fd.FD
+	PagesMetadata io.WriteCloser
 
 	// PagesFile is the file in which all MemoryFile pages are stored if
 	// PagesFile is non-nil. Otherwise this content is stored in Destination.
-	PagesFile *fd.FD
+	PagesFile stateio.AsyncWriter
 
 	// Key is used for state integrity check.
 	Key []byte
@@ -63,8 +50,10 @@ type SaveOpts struct {
 	// Metadata is save metadata.
 	Metadata map[string]string
 
-	// MemoryFileSaveOpts is passed to calls to pgalloc.MemoryFile.SaveTo().
-	MemoryFileSaveOpts pgalloc.SaveOpts
+	// AppMFExcludeCommittedZeroPages is the value of
+	// pgalloc.SaveOpts.ExcludeCommittedZeroPages for the application memory
+	// file.
+	AppMFExcludeCommittedZeroPages bool
 
 	// Resume indicates if the statefile is used for save-resume.
 	Resume bool
@@ -73,8 +62,23 @@ type SaveOpts struct {
 	Autosave bool
 }
 
+// Close releases resources owned by opts.
+func (opts *SaveOpts) Close() error {
+	var dstErr, pmErr, pfErr error
+	if c, ok := opts.Destination.(io.Closer); ok {
+		dstErr = c.Close()
+	}
+	if opts.PagesMetadata != nil {
+		pmErr = opts.PagesMetadata.Close()
+	}
+	if opts.PagesFile != nil {
+		pfErr = opts.PagesFile.Close()
+	}
+	return errors.Join(dstErr, pmErr, pfErr)
+}
+
 // Save saves the system state.
-func (opts SaveOpts) Save(ctx context.Context, k *kernel.Kernel, w *watchdog.Watchdog) error {
+func (opts *SaveOpts) Save(ctx context.Context, k *kernel.Kernel, w *watchdog.Watchdog) error {
 	t, _ := CPUTime()
 	log.Infof("Before save CPU usage: %s", t.String())
 
@@ -96,37 +100,15 @@ func (opts SaveOpts) Save(ctx context.Context, k *kernel.Kernel, w *watchdog.Wat
 	addSaveMetadata(opts.Metadata)
 
 	// Open the statefile.
-	wc, err := statefile.NewWriter(opts.Destination, opts.Key, opts.Metadata)
+	wc, err := statefile.NewWriter(opts.Destination, opts.Key, opts.Metadata) // transfers ownership of opts.Destination to wc if err == nil
 	if err != nil {
-		err = ErrStateFile{err}
+		err = fmt.Errorf("statefile.NewWriter failed: %w", err)
 	} else {
-		var pagesMetadata io.Writer
-		if opts.PagesMetadata != nil {
-			// //pkg/state/wire writes one byte at a time; buffer these writes
-			// to avoid making one syscall per write. For the "main" state
-			// file, this buffering is handled by statefile.NewWriter() =>
-			// compressio.Writer or compressio.NewSimpleWriter().
-			pagesMetadata = bufio.NewWriter(opts.PagesMetadata)
-		}
-
+		opts.Destination = nil
 		// Save the kernel.
-		err = k.SaveTo(ctx, wc, pagesMetadata, opts.PagesFile, opts.MemoryFileSaveOpts, opts.Resume)
-
-		// ENOSPC is a state file error. This error can only come from
-		// writing the state file, and not from fs.FileOperations.Fsync
-		// because we wrap those in kernel.TaskSet.flushWritesToFiles.
-		if linuxerr.Equals(linuxerr.ENOSPC, err) {
-			err = ErrStateFile{err}
-		}
-
-		if closeErr := wc.Close(); err == nil && closeErr != nil {
-			err = ErrStateFile{closeErr}
-		}
-		if pagesMetadata != nil {
-			if flushErr := pagesMetadata.(*bufio.Writer).Flush(); err == nil && flushErr != nil {
-				err = ErrStateFile{flushErr}
-			}
-		}
+		err = k.SaveTo(ctx, wc, opts.PagesMetadata, opts.PagesFile, opts.AppMFExcludeCommittedZeroPages, opts.Resume) // transfers ownership of wc, opts.PagesMetadata, opts.PagesFile
+		opts.PagesMetadata = nil
+		opts.PagesFile = nil
 	}
 
 	t1, _ := CPUTime()
@@ -152,7 +134,7 @@ func (opts SaveOpts) Save(ctx context.Context, k *kernel.Kernel, w *watchdog.Wat
 func NewStatefileReader(source io.ReadCloser, key []byte) (io.ReadCloser, map[string]string, error) {
 	r, m, err := statefile.NewReader(source, key)
 	if err != nil {
-		return nil, nil, ErrStateFile{err}
+		return nil, nil, fmt.Errorf("statefile.NewReader failed: %w", err)
 	}
 	previousMetadata = m
 	return r, m, nil

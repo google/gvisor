@@ -10,6 +10,8 @@ go_library(
     srcs = [
         "bufio.go",
         "fdreader.go",
+        "fdwriter.go",
+        "pagesfile.go",
         "stateio.go",
         "stateio_impl_util.go",
         "stateio_util_unsafe.go",
@@ -18,6 +20,8 @@ go_library(
     deps = [
         "//pkg/abi/linux",
         "//pkg/aio",
+        "//pkg/hostarch",
+        "//pkg/log",
         "//pkg/sentry/hostfd",
         "//pkg/sentry/memmap",
         "@org_golang_x_sys//unix:go_default_library",

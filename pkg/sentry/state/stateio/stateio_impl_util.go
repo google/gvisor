@@ -18,11 +18,13 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// This file contains utilities for implementors of AsyncReader.
+// This file contains utilities for implementors of AsyncReader and
+// AsyncWriter.
 
-// NoRegisterClientFD implements AsyncReader.NeedRegisterDestinationFD and
-// AsyncReader.RegisterDestinationFD for implementations of AsyncReader that
-// don't require client FD registration.
+// NoRegisterClientFD implements AsyncReader.NeedRegisterDestinationFD,
+// AsyncReader.RegisterDestinationFD, AsyncWriter.NeedRegisterSourceFD, and
+// AsyncWriter.RegisterSourceFD for implementations of AsyncReader and
+// AsyncWriter that don't require client FD registration.
 type NoRegisterClientFD struct{}
 
 // NeedRegisterDestinationFD implements AsyncReader.NeedRegisterDestinationFD.
@@ -35,9 +37,20 @@ func (NoRegisterClientFD) RegisterDestinationFD(fd int32, size uint64, settings 
 	return nil, nil
 }
 
-// LocalClientRanges holds mappings as passed to AsyncReader.AddRead or
-// AsyncReader.AddReadv, for use by implementations that ignore the
-// DestinationFile and FileRanges and instead use only the provided mappings.
+// NeedRegisterSourceFD implements AsyncWriter.NeedRegisterSourceFD.
+func (NoRegisterClientFD) NeedRegisterSourceFD() bool {
+	return false
+}
+
+// RegisterSourceFD implements AsyncWriter.RegisterSourceFD.
+func (NoRegisterClientFD) RegisterSourceFD(fd int32, size uint64, settings []ClientFileRangeSetting) (SourceFile, error) {
+	return nil, nil
+}
+
+// LocalClientRanges holds mappings as passed to AsyncReader.AddRead,
+// AsyncReader.AddReadv, AsyncWriter.AddWrite, or AsyncWriter.AddWritev, for
+// use by implementations that ignore the Destination/SourceFile and FileRanges
+// and instead use only the provided mappings.
 type LocalClientRanges struct {
 	// At most one of the following is non-nil:
 	Mapping []byte

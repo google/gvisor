@@ -49,7 +49,6 @@ import (
 	"gvisor.dev/gvisor/pkg/devutil"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/eventchannel"
-	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/refs"
@@ -74,6 +73,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netlink/port"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
+	"gvisor.dev/gvisor/pkg/sentry/state/stateio"
 	sentrytime "gvisor.dev/gvisor/pkg/sentry/time"
 	"gvisor.dev/gvisor/pkg/sentry/unimpl"
 	"gvisor.dev/gvisor/pkg/sentry/uniqueid"
@@ -590,11 +590,7 @@ type privateMemoryFileMetadata struct {
 	owners []string
 }
 
-func savePrivateMFs(ctx context.Context, w io.Writer, pw io.Writer, mfsToSave map[string]*pgalloc.MemoryFile, mfOpts pgalloc.SaveOpts) error {
-	// mfOpts.ExcludeCommittedZeroPages is expected to reflect application
-	// memory usage behavior, but not necessarily usage of private MemoryFiles.
-	mfOpts.ExcludeCommittedZeroPages = false
-
+func savePrivateMFs(ctx context.Context, w io.Writer, mfsToSave map[string]*pgalloc.MemoryFile, mfOpts *pgalloc.SaveOpts) error {
 	var meta privateMemoryFileMetadata
 	// Generate the order in which private memory files are saved.
 	for fsID := range mfsToSave {
@@ -606,18 +602,32 @@ func savePrivateMFs(ctx context.Context, w io.Writer, pw io.Writer, mfsToSave ma
 	}
 	// Followed by the private memory files in order.
 	for _, fsID := range meta.owners {
-		if err := mfsToSave[fsID].SaveTo(ctx, w, pw, mfOpts); err != nil {
+		if err := mfsToSave[fsID].SaveTo(ctx, w, mfOpts); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// SaveTo saves the state of k to w.
+// SaveTo saves the state of k to stateFile. It takes ownership of stateFile,
+// pagesMetadata, and pagesFile, even if it returns a non-nil error.
 //
 // Preconditions: The kernel must be paused throughout the call to SaveTo.
-func (k *Kernel) SaveTo(ctx context.Context, w, pagesMetadata io.Writer, pagesFile *fd.FD, mfOpts pgalloc.SaveOpts, resume bool) error {
+func (k *Kernel) SaveTo(ctx context.Context, stateFile, pagesMetadata io.WriteCloser, pagesFile stateio.AsyncWriter, appMFExcludeCommittedZeroPages, resume bool) error {
 	saveStart := time.Now()
+
+	stateFileCleanup := cleanup.Make(func() { stateFile.Close() })
+	defer stateFileCleanup.Clean()
+
+	parallelMFSave := pagesMetadata != nil
+	var pagesCleanup cleanup.Cleanup
+	if parallelMFSave {
+		pagesCleanup.Add(func() {
+			pagesMetadata.Close()
+			pagesFile.Close()
+		})
+	}
+	defer pagesCleanup.Clean()
 
 	// Do not allow other Kernel methods to affect it while it's being saved.
 	k.extMu.Lock()
@@ -655,14 +665,14 @@ func (k *Kernel) SaveTo(ctx context.Context, w, pagesMetadata io.Writer, pagesFi
 		mfSaveWg  sync.WaitGroup
 		mfSaveErr error
 	)
-	parallelMfSave := pagesMetadata != nil && pagesFile != nil
-	if parallelMfSave {
+	if parallelMFSave {
 		// Parallelize MemoryFile save and kernel save. Both are independent.
 		mfSaveWg.Add(1)
 		go func() {
 			defer mfSaveWg.Done()
-			mfSaveErr = k.saveMemoryFiles(ctx, w, pagesMetadata, pagesFile, mfsToSave, mfOpts)
+			mfSaveErr = k.saveMemoryFiles(ctx, nil, pagesMetadata, pagesFile, mfsToSave, appMFExcludeCommittedZeroPages) // transfers ownership
 		}()
+		pagesCleanup.Release()
 		// Defer a Wait() so we wait for k.saveMemoryFiles() to complete even if we
 		// error out without reaching the other Wait() below.
 		defer mfSaveWg.Wait()
@@ -674,7 +684,7 @@ func (k *Kernel) SaveTo(ctx context.Context, w, pagesMetadata io.Writer, pagesFi
 	//
 	// N.B. This will also be saved along with the full kernel save below.
 	cpuidStart := time.Now()
-	if _, err := state.Save(ctx, w, &k.featureSet); err != nil {
+	if _, err := state.Save(ctx, stateFile, &k.featureSet); err != nil {
 		return err
 	}
 	log.Infof("CPUID save took [%s].", time.Since(cpuidStart))
@@ -697,20 +707,37 @@ func (k *Kernel) SaveTo(ctx context.Context, w, pagesMetadata io.Writer, pagesFi
 
 	// Save the kernel state.
 	kernelStart := time.Now()
-	stats, err := state.Save(ctx, w, k)
+	stats, err := state.Save(ctx, stateFile, k)
 	if err != nil {
 		return err
 	}
 	log.Infof("Kernel save stats: %s", stats.String())
 	log.Infof("Kernel save took [%s].", time.Since(kernelStart))
 
-	if parallelMfSave {
+	if parallelMFSave {
+		// Close stateFile while MemoryFile saving is in progress to overlap
+		// their latencies.
+		err := stateFile.Close()
+		stateFileCleanup.Release()
+		if err != nil {
+			return fmt.Errorf("closing state file failed: %w", err)
+		}
 		mfSaveWg.Wait()
+		if mfSaveErr != nil {
+			return mfSaveErr
+		}
 	} else {
-		mfSaveErr = k.saveMemoryFiles(ctx, w, pagesMetadata, pagesFile, mfsToSave, mfOpts)
-	}
-	if mfSaveErr != nil {
-		return mfSaveErr
+		mfSaveErr = k.saveMemoryFiles(ctx, stateFile, nil, nil, mfsToSave, appMFExcludeCommittedZeroPages)
+		if mfSaveErr != nil {
+			return mfSaveErr
+		}
+		// Can't close stateFile until k.saveMemoryFiles() finishes writing to
+		// it.
+		err := stateFile.Close()
+		stateFileCleanup.Release()
+		if err != nil {
+			return fmt.Errorf("closing state file failed: %w", err)
+		}
 	}
 
 	log.Infof("Overall save took [%s].", time.Since(saveStart))
@@ -722,22 +749,71 @@ func (k *Kernel) BeforeResume(ctx context.Context) {
 	k.vfs.BeforeResume(ctx)
 }
 
-func (k *Kernel) saveMemoryFiles(ctx context.Context, w, pagesMetadata io.Writer, pagesFile *fd.FD, mfsToSave map[string]*pgalloc.MemoryFile, mfOpts pgalloc.SaveOpts) error {
-	// Save the memory files' state.
+// saveMemoryFiles saves both the application memory file and all MemoryFiles
+// in mfsToSave. If w is non-nil, then pagesMetadata and pagesFile must be nil,
+// and MemoryFile state will be saved to w. Otherwise, pagesMetadata and
+// pagesFile must be non-nil, saveMemoryFiles takes ownership of both
+// pagesMetadata and pagesFile (even if it returns a non-nil error), and
+// MemoryFile state will be saved to pagesMetadata and pagesFile.
+func (k *Kernel) saveMemoryFiles(ctx context.Context, w io.Writer, pagesMetadata io.WriteCloser, pagesFile stateio.AsyncWriter, mfsToSave map[string]*pgalloc.MemoryFile, appMFExcludeCommittedZeroPages bool) error {
 	memoryStart := time.Now()
+
 	pmw := w
+	var pmwCleanup cleanup.Cleanup
 	if pagesMetadata != nil {
 		pmw = pagesMetadata
+		pmwCleanup.Add(func() { pagesMetadata.Close() })
 	}
-	pw := w
+	defer pmwCleanup.Clean()
+
+	mfOpts := pgalloc.SaveOpts{
+		ExcludeCommittedZeroPages: appMFExcludeCommittedZeroPages,
+	}
+	var (
+		asyncPageSaveWg      sync.WaitGroup
+		asyncPageSaveErr     error
+		asyncPageSaveCleanup cleanup.Cleanup
+	)
+	defer asyncPageSaveCleanup.Clean()
 	if pagesFile != nil {
-		pw = pagesFile
+		asyncPageSaveWg.Add(1)
+		apfs, err := pgalloc.StartAsyncPagesFileSave(pagesFile, func(err error) {
+			defer asyncPageSaveWg.Done()
+			asyncPageSaveErr = err
+		}) // transfers ownership
+		if err != nil {
+			return fmt.Errorf("failed to start async pages file saving: %w", err)
+		}
+		asyncPageSaveCleanup.Add(func() {
+			apfs.MemoryFilesDone()
+			asyncPageSaveWg.Wait()
+		})
+		mfOpts.PagesFile = apfs
 	}
-	if err := k.mf.SaveTo(ctx, pmw, pw, mfOpts); err != nil {
+
+	if err := k.mf.SaveTo(ctx, pmw, &mfOpts); err != nil {
 		return err
 	}
-	if err := savePrivateMFs(ctx, pmw, pw, mfsToSave, mfOpts); err != nil {
+	// appMFExcludeCommittedZeroPages is expected to reflect application memory
+	// usage behavior, but not necessarily usage of private MemoryFiles.
+	mfOpts.ExcludeCommittedZeroPages = false
+	if err := savePrivateMFs(ctx, pmw, mfsToSave, &mfOpts); err != nil {
 		return err
+	}
+	if pagesMetadata != nil {
+		// Close pagesMetadata while async MemoryFile saving is in progress to
+		// overlap their latencies.
+		err := pagesMetadata.Close()
+		pmwCleanup.Release()
+		if err != nil {
+			return fmt.Errorf("failed to close pages metadata file: %w", err)
+		}
+	}
+
+	// Wait for page saving to complete and report errors.
+	asyncPageSaveCleanup.Release()()
+	if asyncPageSaveErr != nil {
+		return fmt.Errorf("failed to save MemoryFile pages: %w", asyncPageSaveErr)
 	}
 	log.Infof("Memory files save took [%s].", time.Since(memoryStart))
 	return nil

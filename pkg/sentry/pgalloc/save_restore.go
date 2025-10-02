@@ -64,6 +64,10 @@ func (f *MemoryFile) RestoreID() string {
 
 // SaveOpts provides options to MemoryFile.SaveTo().
 type SaveOpts struct {
+	// If PagesFile is not nil, then page contents will be written to PagesFile
+	// rather than to w.
+	PagesFile *AsyncPagesFileSave
+
 	// If ExcludeCommittedZeroPages is true, SaveTo() will scan both committed
 	// and possibly-committed pages to find zero pages, whose contents are
 	// saved implicitly rather than explicitly to reduce checkpoint size. If
@@ -78,7 +82,7 @@ type SaveOpts struct {
 }
 
 // SaveTo writes f's state to the given stream.
-func (f *MemoryFile) SaveTo(ctx context.Context, w io.Writer, pw io.Writer, opts SaveOpts) error {
+func (f *MemoryFile) SaveTo(ctx context.Context, w io.Writer, opts *SaveOpts) error {
 	if err := f.AwaitLoadAll(); err != nil {
 		return fmt.Errorf("previous async page loading failed: %w", err)
 	}
@@ -213,35 +217,464 @@ func (f *MemoryFile) SaveTo(ctx context.Context, w io.Writer, pw io.Writer, opts
 	}
 	log.Infof("MemoryFile(%p): saved metadata in %s", f, time.Since(timeMetadataStart))
 
-	// Dump out committed pages.
+	// Register this MemoryFile with async page saving if a pages file has been
+	// provided.
+	var amfs *asyncMemoryFileSave
+	if opts.PagesFile != nil {
+		var sf stateio.SourceFile
+		if opts.PagesFile.aw.NeedRegisterSourceFD() {
+			fileSize := uint64(len(f.chunksLoad())) * chunkSize
+			var err error
+			sf, err = opts.PagesFile.aw.RegisterSourceFD(int32(f.file.Fd()), fileSize, f.getClientFileRangeSettings(fileSize))
+			if err != nil {
+				return fmt.Errorf("failed to register MemoryFile with pages file: %w", err)
+			}
+		}
+		amfs = &asyncMemoryFileSave{
+			f:  f,
+			pf: opts.PagesFile,
+			sf: sf,
+		}
+	}
+
+	// Save committed pages.
 	ww := wire.Writer{Writer: w}
 	timePagesStart := time.Now()
-	savedBytes := uint64(0)
+	bytesSaved := uint64(0)
 	for maseg := f.memAcct.FirstSegment(); maseg.Ok(); maseg = maseg.NextSegment() {
 		if !maseg.ValuePtr().knownCommitted {
 			continue
 		}
-		// Write a header to distinguish from objects.
-		if err := state.WriteHeader(&ww, uint64(maseg.Range().Length()), false); err != nil {
-			return err
-		}
-		// Write out data.
-		var ioErr error
-		f.forEachMappingSlice(maseg.Range(), func(s []byte) {
-			if ioErr != nil {
-				return
+		maFR := maseg.Range()
+		amount := maFR.Length()
+		if amfs != nil {
+			// Record data to be written.
+			amfs.pf.mu.Lock()
+			amfs.pf.unsaved.PushBack(apsRange{
+				amfs:      amfs,
+				FileRange: maFR,
+			})
+			amfs.pf.saveOff += amount
+			amfs.pf.mu.Unlock()
+			amfs.pf.stStatus.Notify(apsSTPending)
+		} else {
+			// Write a header to distinguish from objects.
+			if err := state.WriteHeader(&ww, amount, false); err != nil {
+				return err
 			}
-			_, ioErr = pw.Write(s)
-		})
-		if ioErr != nil {
-			return ioErr
+			// Write out data.
+			var ioErr error
+			f.forEachMappingSlice(maFR, func(s []byte) {
+				if ioErr != nil {
+					return
+				}
+				_, ioErr = w.Write(s)
+			})
+			if ioErr != nil {
+				return ioErr
+			}
 		}
-		savedBytes += maseg.Range().Length()
+		bytesSaved += amount
 	}
 	durPages := time.Since(timePagesStart)
-	log.Infof("MemoryFile(%p): saved pages in %s (%d bytes, %.3f MiB/s)", f, durPages, savedBytes, float64(savedBytes)/durPages.Seconds()/(1024.0*1024.0))
+	if amfs != nil {
+		log.Infof("MemoryFile(%p): saved page file offsets in %s; async saving %d bytes", f, durPages, bytesSaved)
+	} else {
+		log.Infof("MemoryFile(%p): saved pages in %s (%d bytes, %.3f MB/s)", f, durPages, bytesSaved, float64(bytesSaved)*1e-6/durPages.Seconds())
+	}
 
 	return nil
+}
+
+// AsyncPagesFileSave holds async page saving state for a single pages file.
+type AsyncPagesFileSave struct {
+	mu apfsMutex
+
+	// saveOff is the offset in the pages file at which the next page to be
+	// inserted into unsaved will be saved. saveOff is protected by mu.
+	saveOff uint64
+
+	// unsaved tracks pages that have not been saved. unsaved is protected by mu.
+	unsaved ringdeque.Deque[apsRange]
+
+	// stStatus communicates state from MemoryFile.SaveTo() and its callers to
+	// the goroutine.
+	stStatus syncevent.Waiter
+
+	// Padding before fields exclusive to the async page saver goroutine:
+	_ [hostarch.CacheLineSize]byte
+
+	doneCallback func(error) // immutable
+
+	// aw is the pages file. aw is immutable.
+	aw stateio.AsyncWriter
+
+	// maxWriteBytes is hostarch.PageRoundDown(ar.MaxWriteBytes()), cached to
+	// avoid interface method calls and recomputation. maxWriteBytes is
+	// immutable.
+	maxWriteBytes uint64
+
+	// qavail is unused capacity in aw.
+	qavail int
+
+	// Pages file writes are always contiguous, even when the corresponding
+	// memmap.FileRanges and mappings are not. If curOp is not nil, it is the
+	// current apsOp under construction, and curOpID is its index into ops.
+	curOp   *apsOp
+	curOpID uint32
+
+	// opsBusy tracks which apsOps in ops are in use (correspond to
+	// inflight operations or curOp).
+	opsBusy bitmap.Bitmap
+
+	// ops stores all apsOps.
+	ops []apsOp
+
+	// If err is not nil, it is the error that has terminated async page
+	// saving. Note that unlike AsyncPagesFileLoad.err(),
+	// AsyncPagesFileSave.err is never returned to application syscalls and
+	// hence is not constrained to being an errno.
+	err error
+}
+
+// Possible events in AsyncPagesFileSave.stStatus:
+const (
+	apsSTPending syncevent.Set = 1 << iota
+	apsSTDone
+)
+
+// asyncMemoryFileSave holds state for async page saving from a single
+// MemoryFile.
+type asyncMemoryFileSave struct {
+	// Immutable fields:
+	f  *MemoryFile
+	pf *AsyncPagesFileSave
+	sf stateio.SourceFile
+}
+
+type apsRange struct {
+	amfs *asyncMemoryFileSave
+	memmap.FileRange
+}
+
+// apsOp tracks async page save state corresponding to a single AIO write
+// operation.
+type apsOp struct {
+	// total is the number of bytes to be written by the operation.
+	total uint64
+
+	// amfs represents the MemoryFile being saved.
+	amfs *asyncMemoryFileSave
+
+	// frs are the MemoryFile ranges being saved.
+	frs []memmap.FileRange
+
+	// iovecs contains mappings of frs.
+	iovecs []unix.Iovec
+}
+
+// StartAsyncPagesFileSave constructs asynchronous saving state for the pages
+// file aw. It takes ownership of aw, even if it returns a non-nil error.
+func StartAsyncPagesFileSave(aw stateio.AsyncWriter, doneCallback func(error)) (*AsyncPagesFileSave, error) {
+	maxWriteBytes := hostarch.PageRoundDown(aw.MaxWriteBytes())
+	if maxWriteBytes <= 0 {
+		aw.Close()
+		return nil, fmt.Errorf("stateio.AsyncWriter.MaxWriteBytes() (%d) must be at least one page)", aw.MaxWriteBytes())
+	}
+	// Cap maxParallel due to the uint32 range of bitmap.Bitmap.
+	maxParallel := min(aw.MaxParallel(), 1<<30)
+	apfs := &AsyncPagesFileSave{
+		doneCallback:  doneCallback,
+		aw:            aw,
+		maxWriteBytes: maxWriteBytes,
+		qavail:        maxParallel,
+		opsBusy:       bitmap.New(uint32(maxParallel)),
+		ops:           make([]apsOp, maxParallel),
+	}
+	// Mark ops in opsBusy that don't actually exist as permanently busy.
+	for i, n := maxParallel, apfs.opsBusy.Size(); i < n; i++ {
+		apfs.opsBusy.Add(uint32(i))
+	}
+	// Pre-allocate slices in ops.
+	maxRanges := aw.MaxRanges()
+	for i := range apfs.ops {
+		op := &apfs.ops[i]
+		op.frs = make([]memmap.FileRange, 0, maxRanges)
+		op.iovecs = make([]unix.Iovec, 0, maxRanges)
+	}
+	apfs.stStatus.Init()
+	go apfs.main()
+	return apfs, nil
+}
+
+// MemoryFilesDone must be called after calling SaveTo() for all MemoryFiles
+// saving to apfs. MemoryFilesDone may be called multiple times; subsequent
+// calls have no effect.
+func (apfs *AsyncPagesFileSave) MemoryFilesDone() {
+	apfs.stStatus.Notify(apsSTDone)
+}
+
+func (apfs *AsyncPagesFileSave) canEnqueue() bool {
+	return apfs.qavail > 0
+}
+
+// Preconditions: apfs.canEnqueue() == true.
+func (apfs *AsyncPagesFileSave) enqueueCurOp() {
+	if apfs.qavail <= 0 {
+		panic("queue full")
+	}
+	op := apfs.curOp
+	if op.total == 0 {
+		panic("invalid write of 0 bytes")
+	}
+	if op.total > apfs.maxWriteBytes {
+		panic(fmt.Sprintf("write of %d bytes exceeds per-write limit of %d bytes", op.total, apfs.maxWriteBytes))
+	}
+
+	apfs.qavail--
+	apfs.curOp = nil
+	if len(op.frs) == 1 && len(op.iovecs) == 1 {
+		// Perform a non-vectorized write to save an indirection (and possible
+		// userspace-to-kernelspace copy) in the AsyncWriter implementation.
+		apfs.aw.AddWrite(int(apfs.curOpID), op.amfs.sf, op.frs[0], stateio.SliceFromIovec(op.iovecs[0]))
+	} else {
+		apfs.aw.AddWritev(int(apfs.curOpID), op.total, op.amfs.sf, op.frs, op.iovecs)
+	}
+}
+
+// Preconditions:
+// - apfs.canEnqueue() == true.
+// - mfr.Length() > 0.
+// - mfr must be page-aligned.
+func (apfs *AsyncPagesFileSave) enqueueRange(mfr apsRange) uint64 {
+	for {
+		if apfs.curOp == nil {
+			id, err := apfs.opsBusy.FirstZero(0)
+			if err != nil {
+				panic(fmt.Sprintf("all ops busy with qavail=%d: %v", apfs.qavail, err))
+			}
+			apfs.opsBusy.Add(id)
+			op := &apfs.ops[id]
+			op.total = 0
+			op.frs = op.frs[:0]
+			op.iovecs = op.iovecs[:0]
+			apfs.curOp = op
+			apfs.curOpID = id
+		}
+		n := apfs.combine(mfr)
+		if n > 0 {
+			return n
+		}
+		// Flush the existing (conflicting) op and try again with a new one.
+		apfs.enqueueCurOp()
+		if !apfs.canEnqueue() {
+			return 0
+		}
+	}
+}
+
+// combine adds as much of the given save as possible to apfs.curOp and returns
+// the number of bytes added.
+//
+// Preconditions:
+// - mfr.Length() > 0.
+// - mfr must be page-aligned.
+func (apfs *AsyncPagesFileSave) combine(mfr apsRange) uint64 {
+	op := apfs.curOp
+	if op.total != 0 {
+		if op.amfs != mfr.amfs {
+			// Differing MemoryFile.
+			return 0
+		}
+		if len(op.frs) == cap(op.frs) && op.frs[len(op.frs)-1].End != mfr.Start {
+			// Non-contiguous in the MemoryFile, and we're out of space for
+			// FileRanges.
+			return 0
+		}
+	}
+
+	// Apply direct length limits.
+	n := mfr.Length()
+	if op.total+n >= apfs.maxWriteBytes {
+		n = apfs.maxWriteBytes - op.total
+	}
+	if n == 0 {
+		return 0
+	}
+	mfr.End = mfr.Start + n
+
+	// Collect iovecs, which may further limit length.
+	n = 0
+	mfr.amfs.f.forEachMappingSlice(mfr.FileRange, func(bs []byte) {
+		if len(op.iovecs) > 0 {
+			if canMergeIovecAndSlice(op.iovecs[len(op.iovecs)-1], bs) {
+				op.iovecs[len(op.iovecs)-1].Len += uint64(len(bs))
+				n += uint64(len(bs))
+				return
+			}
+			if len(op.iovecs) == cap(op.iovecs) {
+				return
+			}
+		}
+		op.iovecs = append(op.iovecs, unix.Iovec{
+			Base: &bs[0],
+			Len:  uint64(len(bs)),
+		})
+		n += uint64(len(bs))
+	})
+	if n == 0 {
+		return 0
+	}
+	mfr.End = mfr.Start + n
+
+	// With the length decided, finish updating op.
+	if op.total == 0 {
+		op.amfs = mfr.amfs
+	}
+	op.total += n
+	if len(op.frs) > 0 && op.frs[len(op.frs)-1].End == mfr.Start {
+		op.frs[len(op.frs)-1].End = mfr.End
+	} else {
+		op.frs = append(op.frs, mfr.FileRange)
+	}
+	return n
+}
+
+func (apfs *AsyncPagesFileSave) main() {
+	defer func() {
+		if apfs.err != nil {
+			log.Warningf("Async page saving failed: %w", apfs.err)
+		}
+		if err := apfs.aw.Close(); err != nil {
+			// Saving success is independent of err, so log it rather than
+			// propagating it.
+			log.Warningf("Async page saving: stateio.AsyncWriter.Close failed: %v", err)
+		}
+		if apfs.doneCallback != nil {
+			apfs.doneCallback(apfs.err)
+		}
+	}()
+
+	maxParallel := apfs.aw.MaxParallel()
+	// Storage reused between main loop iterations:
+	var completions []stateio.Completion
+
+	// Don't start timing until we have pages to save.
+	apfs.stStatus.Wait()
+	timeStart := gohacks.Nanotime()
+	var bytesSaved atomicbitops.Uint64
+	if log.IsLogging(log.Debug) {
+		log.Debugf("Async page saving started")
+		progressTicker := time.NewTicker(5 * time.Second)
+		progressStopC := make(chan struct{})
+		defer func() { close(progressStopC) }()
+		go func() {
+			timeLast := timeStart
+			bytesSavedLast := uint64(0)
+			for {
+				select {
+				case <-progressStopC:
+					progressTicker.Stop()
+					return
+				case <-progressTicker.C:
+					// Take a snapshot of our progress.
+					bytesSavedNow := bytesSaved.Load()
+					now := gohacks.Nanotime()
+					durTotal := time.Duration(now - timeStart)
+					durDelta := time.Duration(now - timeLast)
+					bytesSavedDelta := bytesSavedNow - bytesSavedLast
+					bandwidthTotal := float64(bytesSavedNow) * 1e-6 / durTotal.Seconds()
+					bandwidthSinceLast := float64(bytesSavedDelta) * 1e-6 / durDelta.Seconds()
+					log.Infof("Async page saving in progress for %s (%d bytes, %.3f MB/s); since last update %s ago: %d bytes, %.3f MB/s", durTotal.Round(time.Millisecond), bytesSavedNow, bandwidthTotal, durDelta.Round(time.Millisecond), bytesSavedDelta, bandwidthSinceLast)
+					timeLast = now
+					bytesSavedLast = bytesSavedNow
+				}
+			}
+		}()
+	}
+
+	for {
+		// Enqueue as many writes as possible.
+		if !apfs.canEnqueue() {
+			panic("main loop invariant failed")
+		}
+		apfs.mu.Lock()
+		apfs.aw.Reserve(apfs.saveOff)
+		for !apfs.unsaved.Empty() {
+			mfr := apfs.unsaved.PeekFrontPtr()
+			n := apfs.enqueueRange(*mfr)
+			if n == mfr.Length() {
+				apfs.unsaved.RemoveFront()
+			} else if n != 0 {
+				mfr.Start += n
+			} else {
+				break
+			}
+			if !apfs.canEnqueue() {
+				break
+			}
+		}
+		apfs.mu.Unlock()
+		// Don't flush pending op unless it's the last one; this differs from
+		// async page loading since writers are likely to be more sensitive to
+		// write size than readers are to read size, and saving is less
+		// latency-sensitive that loading.
+		if apfs.curOp != nil && apfs.stStatus.Pending()&apsSTDone != 0 {
+			apfs.enqueueCurOp()
+		}
+
+		if apfs.qavail == maxParallel {
+			// We are out of work to do.
+			ev := apfs.stStatus.Wait()
+			if ev&apsSTPending != 0 {
+				// We may have raced with MemoryFile.SaveTo() inserting into
+				// apfs.unsaved.
+				apfs.stStatus.Ack(apsSTPending)
+				continue
+			}
+			if ev&apsSTDone != 0 {
+				if apfs.curOp != nil {
+					// Enqueue and complete the final write before finalizing.
+					continue
+				}
+				if err := apfs.aw.Finalize(); err != nil {
+					apfs.err = fmt.Errorf("stateio.AsyncWriter.Finalize failed: %w", err)
+					return
+				}
+				// Successfully completed all saving for all MemoryFiles.
+				durTotal := time.Duration(gohacks.Nanotime() - timeStart)
+				bytesTotal := bytesSaved.RacyLoad()
+				bandwidthTotal := float64(bytesTotal) * 1e-6 / durTotal.Seconds()
+				log.Infof("Async page saving completed in %s (%d bytes, %.3f MB/s)", durTotal.Round(time.Millisecond), bytesTotal, bandwidthTotal)
+				return
+			}
+			panic(fmt.Sprintf("unknown events in stStatus: %#x", ev))
+		}
+
+		// Wait for any number of writes to complete.
+		var err error
+		completions, err = apfs.aw.Wait(completions[:0], 1 /* minCompletions */)
+		if err != nil {
+			apfs.err = fmt.Errorf("stateio.AsyncWriter.Wait failed: %w", err)
+			return
+		}
+
+		// Process completions.
+		for _, c := range completions {
+			op := &apfs.ops[c.ID]
+			apfs.opsBusy.Remove(uint32(c.ID))
+			apfs.qavail++
+			if c.Err != nil {
+				apfs.err = fmt.Errorf("write for MemoryFile(%p) pages %v failed: %w", op.amfs.f, op.frs, err)
+				return
+			}
+			if c.N != op.total {
+				apfs.err = fmt.Errorf("write for MemoryFile(%p) pages %v (total %d bytes) returned %d bytes", op.amfs.f, op.frs, op.total, c.N)
+				return
+			}
+			bytesSaved.Add(op.total)
+		}
+	}
 }
 
 // LoadOpts provides options to MemoryFile.LoadFrom().
@@ -402,21 +835,8 @@ func (f *MemoryFile) LoadFrom(ctx context.Context, r io.Reader, opts *LoadOpts) 
 		if !maseg.ValuePtr().knownCommitted {
 			continue
 		}
-		// Verify header.
-		length, object, err := state.ReadHeader(&wr)
-		if err != nil {
-			return fmt.Errorf("failed to read header: %w", err)
-		}
-		if object {
-			// Not expected.
-			return fmt.Errorf("unexpected object")
-		}
 		maFR := maseg.Range()
 		amount := maFR.Length()
-		if length != amount {
-			// Size mismatch.
-			return fmt.Errorf("mismatched segment: expected %d, got %d", amount, length)
-		}
 		// Wait for all chunks spanned by this segment to be madvised.
 		for madviseEnd.Load() < maFR.End {
 			<-madviseChan
@@ -435,6 +855,19 @@ func (f *MemoryFile) LoadFrom(ctx context.Context, r io.Reader, opts *LoadOpts) 
 			amfl.pf.loadOff += amount
 			amfl.pf.lfStatus.Notify(aplLFPending)
 		} else {
+			// Verify header.
+			length, object, err := state.ReadHeader(&wr)
+			if err != nil {
+				return fmt.Errorf("failed to read header: %w", err)
+			}
+			if object {
+				// Not expected.
+				return fmt.Errorf("unexpected object")
+			}
+			if length != amount {
+				// Size mismatch.
+				return fmt.Errorf("mismatched segment: expected %d, got %d", amount, length)
+			}
 			// Read data.
 			var ioErr error
 			f.forEachMappingSlice(maFR, func(s []byte) {
@@ -486,6 +919,10 @@ type AsyncPagesFileLoad struct {
 	// priority is protected by mu.
 	priority ringdeque.Deque[aplFileRange]
 
+	// lfStatus communicates MemoryFile.LoadFrom() state to the async page
+	// loader goroutine.
+	lfStatus syncevent.Waiter
+
 	// Padding before state used mostly by the async page loader goroutine:
 	_ [hostarch.CacheLineSize]byte
 
@@ -493,10 +930,6 @@ type AsyncPagesFileLoad struct {
 	// amfls is protected by amflsMu.
 	amflsMu amflsMutex
 	amfls   asyncMemoryFileLoadList
-
-	// lfStatus communicates MemoryFile.LoadFrom() state to the async page
-	// loader goroutine.
-	lfStatus syncevent.Waiter
 
 	// numWaiters is the current number of waiting waiters. numWaiters is
 	// protected by mu.
@@ -575,10 +1008,11 @@ func (apfl *AsyncPagesFileLoad) err() error {
 
 // asyncMemoryFileLoad holds async page loading state for a single MemoryFile.
 type asyncMemoryFileLoad struct {
-	f        *MemoryFile             // immutable
-	pf       *AsyncPagesFileLoad     // immutable
-	df       stateio.DestinationFile // immutable
-	timeline *timing.Timeline        // immutable
+	// Immutable fields:
+	f        *MemoryFile
+	pf       *AsyncPagesFileLoad
+	df       stateio.DestinationFile
+	timeline *timing.Timeline
 
 	// minUnloaded is the MemoryFile offset of the first unloaded byte.
 	minUnloaded atomicbitops.Uint64
@@ -675,7 +1109,8 @@ func StartAsyncPagesFileLoad(ar stateio.AsyncReader, doneCallback func(error), t
 		ar.Close()
 		return nil, fmt.Errorf("stateio.AsyncReader.MaxReadBytes() (%d) must be at least one page)", ar.MaxReadBytes())
 	}
-	maxParallel := ar.MaxParallel()
+	// Cap maxParallel due to the uint32 range of bitmap.Bitmap.
+	maxParallel := min(ar.MaxParallel(), 1<<30)
 	apfl := &AsyncPagesFileLoad{
 		timeline:     timeline.Fork("async page loading"),
 		doneCallback: doneCallback,
@@ -702,7 +1137,8 @@ func StartAsyncPagesFileLoad(ar stateio.AsyncReader, doneCallback func(error), t
 }
 
 // MemoryFilesDone must be called after calling LoadFrom() for all MemoryFiles
-// loading from apfl.
+// loading from apfl. MemoryFilesDone may be called multiple times; subsequent
+// calls have no effect.
 func (apfl *AsyncPagesFileLoad) MemoryFilesDone() {
 	apfl.lfStatus.Notify(aplLFDone)
 }

@@ -24,6 +24,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/state"
+	"gvisor.dev/gvisor/pkg/sentry/state/stateio"
 	"gvisor.dev/gvisor/pkg/sentry/strace"
 	"gvisor.dev/gvisor/pkg/sync"
 )
@@ -39,6 +40,7 @@ func getTargetForSaveResume(l *Loader) func(k *kernel.Kernel) {
 			Resume:      true,
 			Destination: &buf,
 		}
+		defer saveOpts.Close()
 		l.saveWithOpts(&saveOpts, &control.SaveRestoreExecOpts{})
 	}
 }
@@ -57,9 +59,10 @@ func getTargetForSaveRestore(l *Loader, files []*fd.FD) func(k *kernel.Kernel) {
 				Destination: files[0],
 			}
 			if len(files) == 3 {
-				saveOpts.PagesMetadata = files[1]
-				saveOpts.PagesFile = files[2]
+				saveOpts.PagesMetadata = stateio.NewBufioWriteCloser(files[1])
+				saveOpts.PagesFile = stateio.NewPagesFileFDWriterDefault(int32(files[2].Release()))
 			}
+			defer saveOpts.Close()
 			l.saveWithOpts(&saveOpts, &control.SaveRestoreExecOpts{})
 		})
 	}

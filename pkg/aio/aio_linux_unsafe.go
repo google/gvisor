@@ -19,6 +19,7 @@ package aio
 
 import (
 	"fmt"
+	"math"
 	"sync/atomic"
 	"unsafe"
 
@@ -38,13 +39,13 @@ import (
 // asynchronous completion. This means that submission of a read/write
 // operation will block (without submitting later requests) until the operation
 // completes, unless the implementation of that operation specifically supports
-// asynchronous. In practice, this seems to mean:
+// asynchronous I/O. In practice, this seems to mean:
 //
 // - O_DIRECT reads, subject to the constraints described by the man page notes
 // for open(2), will probably work.
 //
-// - O_DIRECT writes, subject to the same constraints, will probably work if
-// disk blocks are already allocated.
+// - O_DIRECT writes that do not extend a file's size, subject to the same
+// constraints, will probably work.
 type LinuxQueue struct {
 	ctxID    uintptr
 	iocbs    []linux.IOCallback
@@ -54,6 +55,10 @@ type LinuxQueue struct {
 
 // NewLinuxQueue returns a new LinuxQueue with the given capacity.
 func NewLinuxQueue(cap int) (*LinuxQueue, error) {
+	// io_setup(2) takes unsigned int nr_events.
+	if cap > math.MaxUint32 {
+		return nil, fmt.Errorf("capacity %d exceeds maximum %d", cap, math.MaxUint32)
+	}
 	var ctxID uintptr
 	if _, _, e := unix.Syscall(unix.SYS_IO_SETUP, uintptr(cap), uintptr(unsafe.Pointer(&ctxID)), 0 /* unused */); e != 0 {
 		return nil, e

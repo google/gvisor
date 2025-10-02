@@ -22,6 +22,13 @@ declare_mutex(
 )
 
 declare_mutex(
+    name = "apfs_mutex",
+    out = "apfs_mutex.go",
+    package = "pgalloc",
+    prefix = "apfs",
+)
+
+declare_mutex(
     name = "memory_file_mutex",
     out = "memory_file_mutex.go",
     package = "pgalloc",
@@ -150,6 +157,7 @@ go_library(
         "amfl_list.go",
         "amfls_mutex.go",
         "apfl_mutex.go",
+        "apfs_mutex.go",
         "apl_unloaded_set.go",
         "context.go",
         "debug.go",
