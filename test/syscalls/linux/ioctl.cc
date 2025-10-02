@@ -137,6 +137,18 @@ TEST_F(IoctlTest, FIOASYNCSucceeds) {
   ASSERT_THAT(fcntl(s.get(), F_GETFL), SyscallSucceedsWithValue(before));
 }
 
+TEST_F(IoctlTest, FIOASYNCHandlesFuseFD) {
+  // /dev/fuse FDs are a special case since they return an error from
+  // EventRegister if the FD is not initialized with a connection. This is
+  // not the case for other FD types.
+  const FileDescriptor f = ASSERT_NO_ERRNO_AND_VALUE(Open("/dev/fuse", O_RDWR));
+
+  int set = 1;
+  ASSERT_THAT(fcntl(f.get(), F_SETSIG, set), SyscallSucceeds());
+  EXPECT_THAT(ioctl(f.get(), FIOASYNC, &set), SyscallFailsWithErrno(EPERM));
+  EXPECT_THAT(ioctl(f.get(), FIOASYNC, &set), SyscallFailsWithErrno(EPERM));
+}
+
 /* Count of the number of SIGIOs handled. */
 static volatile int io_received = 0;
 

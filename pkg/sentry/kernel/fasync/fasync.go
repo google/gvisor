@@ -154,9 +154,14 @@ func (a *FileAsync) Register(w waiter.Waitable) error {
 		panic("registering already registered file")
 	}
 	a.e.Init(a, waiter.ReadableEvents|waiter.WritableEvents|waiter.EventErr|waiter.EventHUp)
-	a.registered = true
 	a.mu.Unlock()
-	return w.EventRegister(&a.e)
+	if err := w.EventRegister(&a.e); err != nil {
+		return err
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.registered = true
+	return nil
 }
 
 // Unregister stops monitoring a file.
