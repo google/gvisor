@@ -21,7 +21,7 @@ package main
 
 import (
 	_ "gvisor.dev/gvisor/pkg/sentry/socket/plugin/stack"
-	"gvisor.dev/gvisor/runsc/cli"
+	"gvisor.dev/gvisor/runsc/cli/maincli"
 	"gvisor.dev/gvisor/runsc/version"
 )
 
@@ -30,5 +30,5 @@ import (
 var _ = version.Version()
 
 func main() {
-	cli.Main()
+	maincli.Main()
 }

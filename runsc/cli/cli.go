@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package cli is the main entrypoint for runsc.
+// Package cli provides the entrypoint for runsc binaries.
 package cli
 
 import (
@@ -31,12 +31,6 @@ import (
 	"gvisor.dev/gvisor/pkg/coverage"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/refs"
-	"gvisor.dev/gvisor/pkg/sentry/platform"
-	"gvisor.dev/gvisor/pkg/sentry/syscalls/linux"
-	"gvisor.dev/gvisor/pkg/tcpip/nftables"
-	"gvisor.dev/gvisor/runsc/cmd"
-	"gvisor.dev/gvisor/runsc/cmd/nvproxy"
-	"gvisor.dev/gvisor/runsc/cmd/trace"
 	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/flag"
@@ -61,8 +55,10 @@ var (
 	coverageFD = flag.Int("coverage-fd", -1, "file descriptor to write Go coverage output.")
 )
 
-// Main is the main entrypoint.
-func Main() {
+// Run runs the binary, whose behavior is determined by the subcommand passed
+// on the command line. forEachCmd invokes the passed callback for each
+// supported subcommand.
+func Run(forEachCmd func(cb func(cmd subcommands.Command, group string))) {
 	// Set the start time as soon as possible.
 	startTime := starttime.Get()
 
@@ -94,11 +90,6 @@ func Main() {
 		util.Fatalf("%s", err.Error())
 	}
 
-	// NFtables is only supported for netstack.
-	if (conf.Network == config.NetworkNone || conf.Network == config.NetworkSandbox) && conf.Nftables {
-		nftables.EnableNFTables()
-	}
-
 	var errorLogger io.Writer
 	if *logFD > -1 {
 		errorLogger = os.NewFile(uintptr(*logFD), "error log file")
@@ -114,10 +105,6 @@ func Main() {
 		}
 	}
 	util.ErrorLogger = errorLogger
-
-	if _, err := platform.Lookup(conf.Platform); err != nil {
-		util.Fatalf("%v", err)
-	}
 
 	// Sets the reference leak check mode. Also set it in config below to
 	// propagate it to child processes.
@@ -222,7 +209,6 @@ func Main() {
 		log.Warningf("Block the TERM signal. This is only safe in tests!")
 		signal.Ignore(unix.SIGTERM)
 	}
-	linux.SetAFSSyscallPanic(conf.TestOnlyAFSSyscallPanic)
 
 	// Call the subcommand and pass in the configuration.
 	var ws unix.WaitStatus
@@ -242,65 +228,6 @@ func Main() {
 	// Return an error that is unlikely to be used by the application.
 	log.Warningf("Failure to execute command, err: %v", subcmdCode)
 	os.Exit(128)
-}
-
-// forEachCmd invokes the passed callback for each command supported by runsc.
-func forEachCmd(cb func(cmd subcommands.Command, group string)) {
-	// Help and flags commands are generated automatically.
-	help := cmd.NewHelp(subcommands.DefaultCommander)
-	help.Register(new(cmd.Platforms))
-	help.Register(new(cmd.Syscalls))
-	cb(help, "")
-	cb(subcommands.FlagsCommand(), "")
-
-	// Register OCI user-facing runsc commands.
-	cb(new(cmd.Checkpoint), "")
-	cb(new(cmd.Create), "")
-	cb(new(cmd.Delete), "")
-	cb(new(cmd.Do), "")
-	cb(new(cmd.Events), "")
-	cb(new(cmd.Exec), "")
-	cb(new(cmd.Kill), "")
-	cb(new(cmd.List), "")
-	cb(new(cmd.PS), "")
-	cb(new(cmd.Pause), "")
-	cb(new(cmd.PortForward), "")
-	cb(new(cmd.Restore), "")
-	cb(new(cmd.Resume), "")
-	cb(new(cmd.Run), "")
-	cb(new(cmd.Spec), "")
-	cb(new(cmd.Start), "")
-	cb(new(cmd.State), "")
-	cb(new(cmd.Tar), "")
-	cb(new(cmd.Wait), "")
-
-	// Helpers.
-	const helperGroup = "helpers"
-	cb(new(cmd.Install), helperGroup)
-	cb(new(cmd.Mitigate), helperGroup)
-	cb(new(cmd.Uninstall), helperGroup)
-	cb(new(nvproxy.Nvproxy), helperGroup)
-	cb(new(trace.Trace), helperGroup)
-	cb(new(cmd.CPUFeatures), helperGroup)
-
-	const debugGroup = "debug"
-	cb(new(cmd.Debug), debugGroup)
-	cb(new(cmd.Statefile), debugGroup)
-	cb(new(cmd.Symbolize), debugGroup)
-	cb(new(cmd.Usage), debugGroup)
-	cb(new(cmd.ReadControl), debugGroup)
-	cb(new(cmd.WriteControl), debugGroup)
-
-	const metricGroup = "metrics"
-	cb(new(cmd.MetricMetadata), metricGroup)
-	cb(new(cmd.MetricExport), metricGroup)
-	cb(new(cmd.MetricServer), metricGroup)
-
-	// Internal commands.
-	const internalGroup = "internal use only"
-	cb(new(cmd.Boot), internalGroup)
-	cb(new(cmd.Gofer), internalGroup)
-	cb(new(cmd.Umount), internalGroup)
 }
 
 func newEmitter(format string, logFile io.Writer) log.Emitter {
