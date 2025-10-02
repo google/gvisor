@@ -27,6 +27,15 @@ make -s testlogs 2>/dev/null | grep // | sort | uniq | (
       buildkite-agent artifact upload "${log}"
       echo " * [${target}](artifact://${log#/}) (${BUILDKITE_LABEL})" | \
         buildkite-agent annotate --style error --context failures --append
+
+      # List the first 5 specific failing go tests as sub-bullets.
+      sed -n '/^--- FAIL:/ {s/^--- FAIL: \([^ ]*\) (.*)/\1/p}' "${log}" | \
+        grep -v 'main_test' | head -n 5 | xargs -I {} echo "   * {}" | \
+        buildkite-agent annotate --style error --context failures --append
+      # List the first 5 specific failing cpp tests as sub-bullets.
+      sed -n '/\[  FAILED  \]/ {s/.*\[  FAILED  \] \([^ ]*\) (.*)/\1/p}' "${log}" | \
+        grep -v 'main_test' | head -n 5 | xargs -I {} echo "   * {}" | \
+        buildkite-agent annotate --style error --context failures --append
     fi
   done
 )
