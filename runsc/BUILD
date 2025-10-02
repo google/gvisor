@@ -15,7 +15,7 @@ go_binary(
     ],
     x_defs = {"gvisor.dev/gvisor/runsc/version.version": "{STABLE_VERSION}"},
     deps = [
-        "//runsc/cli",
+        "//runsc/cli/maincli",
         "//runsc/version",
     ],
 )
@@ -34,7 +34,7 @@ go_binary(
     x_defs = {"gvisor.dev/gvisor/runsc/version.version": "{STABLE_VERSION}"},
     deps = [
         "//pkg/sentry/socket/plugin/stack",
-        "//runsc/cli",
+        "//runsc/cli/maincli",
         "//runsc/version",
     ],
 )
@@ -62,7 +62,7 @@ go_binary(
     ],
     x_defs = {"gvisor.dev/gvisor/runsc/version.version": "{STABLE_VERSION}"},
     deps = [
-        "//runsc/cli",
+        "//runsc/cli/maincli",
         "//runsc/version",
     ],
 )
