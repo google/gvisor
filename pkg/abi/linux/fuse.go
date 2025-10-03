@@ -475,6 +475,12 @@ const (
 	FOPEN_KEEP_CACHE = 1 << 1
 	// FOPEN_NONSEEKABLE indicates the file cannot be seeked.
 	FOPEN_NONSEEKABLE = 1 << 2
+	// FOPEN_CACHE_DIR indicated to allow caching this directory
+	FOPEN_CACHE_DIR = 1 << 3
+	// FOPEN_STREAM indicates the file is stream-like (no file position at all)
+	FOPEN_STREAM = 1 << 4
+	// FOPEN_NOFLUSH indicates the file does not need to be flushed on close.
+	FOPEN_NOFLUSH = 1 << 5
 )
 
 // FUSEOpenIn is the request sent by the kernel to the daemon,
