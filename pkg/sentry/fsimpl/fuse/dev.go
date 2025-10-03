@@ -66,6 +66,14 @@ type DeviceFD struct {
 	conn *connection
 }
 
+// RegisterFileAsyncHandler implements vfs.FileDescriptionImpl.RegisterFileAsyncHandler.
+func (*DeviceFD) RegisterFileAsyncHandler(*vfs.FileDescription) error {
+	return linuxerr.EPERM
+}
+
+// UnregisterFileAsyncHandler implements vfs.FileDescriptionImpl.UnregisterFileAsyncHandler.
+func (*DeviceFD) UnregisterFileAsyncHandler(*vfs.FileDescription) {}
+
 // Release implements vfs.FileDescriptionImpl.Release.
 func (fd *DeviceFD) Release(ctx context.Context) {
 	fd.mu.Lock()

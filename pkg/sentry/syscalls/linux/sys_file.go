@@ -248,8 +248,7 @@ func Ioctl(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, 
 		} else {
 			flags &^= linux.O_ASYNC
 		}
-		file.SetStatusFlags(t, t.Credentials(), flags)
-		return 0, nil, nil
+		return 0, nil, file.SetStatusFlags(t, t.Credentials(), flags)
 
 	case linux.FIOGETOWN, linux.SIOCGPGRP:
 		var who int32
