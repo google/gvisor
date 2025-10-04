@@ -193,6 +193,10 @@ func (sgo *SniffGPUOpts) GPUCapabilities() string {
 
 // prepend prepends the sniffer arguments to the given command.
 func (sgo *SniffGPUOpts) prepend(argv []string) []string {
+	if *runtime != "" && *runtime != "runc" {
+		// ioctl_sniffer isn't supported in gVisor.
+		return argv
+	}
 	if sgo.DisableSnifferReason != "" {
 		return argv
 	}
