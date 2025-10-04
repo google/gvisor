@@ -190,7 +190,9 @@ func (k *KVM) NewContext(pkgcontext.Context) platform.Context {
 type constructor struct{}
 
 func (*constructor) New(opts platform.Options) (platform.Platform, error) {
-	return New(opts.DeviceFile, Config{})
+	return New(opts.DeviceFile, Config{
+		ApplicationCores: opts.ApplicationCores,
+	})
 }
 
 func (*constructor) OpenDevice(devicePath string) (*fd.FD, error) {

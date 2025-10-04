@@ -534,6 +534,10 @@ type Options struct {
 	// DisableSyscallPatching controls whether Systrap is allowed to patch
 	// syscalls invocations sites at runtime.
 	DisableSyscallPatching bool
+
+	// ApplicationCores is used by KVM to determine the correct amount of
+	// vCPUs to create.
+	ApplicationCores int
 }
 
 // Constructor represents a platform type.

@@ -18,6 +18,11 @@
 package kvm
 
 // Config sets configuration options for each platform instance.
-type Config struct{}
+type Config struct {
+	// ApplicationCores is the same parameter passed into
+	// kernel.InitKernelArgs. It is necessary to forward it to KVM in order
+	// to initialize the correct amount of vCPUs.
+	ApplicationCores int
+}
 
 func (*machine) applyConfig(config *Config) error { return nil }

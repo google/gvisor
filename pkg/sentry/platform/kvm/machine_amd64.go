@@ -563,6 +563,17 @@ func (m *machine) getMaxVCPU() {
 	if 3*rCPUs < m.maxVCPUs {
 		m.maxVCPUs = 3 * rCPUs
 	}
+	// However if the sentry is explicitly configured to run more application
+	// cores then we should try our best to give each application thread
+	// it's own vCPU.
+	if m.maxVCPUs < m.applicationCores {
+		if int(maxVCPUs) < m.applicationCores {
+			log.Warningf("ApplicationCores is set too high: set to %d, max on this machine is %d. Your workload may experience unexpected timeouts.", m.applicationCores, maxVCPUs)
+			m.maxVCPUs = int(maxVCPUs)
+		} else {
+			m.maxVCPUs = m.applicationCores
+		}
+	}
 }
 
 func archPhysicalRegions(physicalRegions []physicalRegion) []physicalRegion {

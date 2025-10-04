@@ -519,8 +519,14 @@ func New(args Args) (*Loader, error) {
 		})
 	}
 
+	if args.NumCPU == 0 {
+		args.NumCPU = runtime.NumCPU()
+	}
+	log.Infof("CPUs: %d", args.NumCPU)
+	gomaxprocs.SetBase(args.NumCPU)
+
 	// Create kernel and platform.
-	p, err := createPlatform(args.Conf, args.Device)
+	p, err := createPlatform(args.Conf, args.NumCPU, args.Device)
 	if err != nil {
 		return nil, fmt.Errorf("creating platform: %w", err)
 	}
@@ -577,12 +583,6 @@ func New(args Args) (*Loader, error) {
 			return nil, fmt.Errorf("enable s/r: %w", err)
 		}
 	}
-
-	if args.NumCPU == 0 {
-		args.NumCPU = runtime.NumCPU()
-	}
-	log.Infof("CPUs: %d", args.NumCPU)
-	gomaxprocs.SetBase(args.NumCPU)
 
 	if args.TotalHostMem > 0 {
 		// As per tmpfs(5), the default size limit is 50% of total physical RAM.
@@ -828,7 +828,7 @@ func (l *Loader) Destroy() {
 	refs.OnExit()
 }
 
-func createPlatform(conf *config.Config, deviceFile *fd.FD) (platform.Platform, error) {
+func createPlatform(conf *config.Config, numCPU int, deviceFile *fd.FD) (platform.Platform, error) {
 	p, err := platform.Lookup(conf.Platform)
 	if err != nil {
 		panic(fmt.Sprintf("invalid platform %s: %s", conf.Platform, err))
@@ -837,6 +837,7 @@ func createPlatform(conf *config.Config, deviceFile *fd.FD) (platform.Platform, 
 	return p.New(platform.Options{
 		DeviceFile:             deviceFile,
 		DisableSyscallPatching: conf.Platform == "systrap" && conf.SystrapDisableSyscallPatching,
+		ApplicationCores:       numCPU,
 	})
 }
 
