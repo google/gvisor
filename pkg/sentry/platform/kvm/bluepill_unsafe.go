@@ -201,7 +201,6 @@ func bluepillHandler(context unsafe.Pointer) {
 			c.die(bluepillArchContext(context), "debug")
 			return
 		case _KVM_EXIT_HLT:
-			c.hltSanityCheck()
 			bluepillGuestExit(c, context)
 			return
 		case _KVM_EXIT_MMIO:

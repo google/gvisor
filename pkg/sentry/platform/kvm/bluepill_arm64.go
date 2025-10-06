@@ -133,12 +133,6 @@ func (c *vCPU) KernelException(vector ring0.Vector) {
 	ring0.Halt()
 }
 
-// hltSanityCheck verifies the current state to detect obvious corruption.
-//
-//go:nosplit
-func (c *vCPU) hltSanityCheck() {
-}
-
 func currentEL() uint64
 
 func inKernelMode() bool {

@@ -59,30 +59,45 @@ func bluepillArchEnter(context *arch.SignalContext64) *vCPU {
 	return c
 }
 
-// hltSanityCheck verifies the current state to detect obvious corruption.
+// archExitSanityCheck verifies the current state to detect obvious corruption.
 //
 //go:nosplit
-func (c *vCPU) hltSanityCheck() {
-	vector := c.CPU.Vector()
-	switch ring0.Vector(vector) {
-	case ring0.PageFault:
-		if c.CPU.FaultAddr() < ring0.KernelStartAddress {
+func (c *vCPU) archExitSanityCheck(context *arch.SignalContext64) {
+	kernelStartAddress := uint64(ring0.KernelStartAddress)
+	faultAddr := uint64(c.CPU.FaultAddr())
+	vector := uint64(c.CPU.Vector())
+	rsp := c.CPU.Registers().Rsp
+	rip := c.CPU.Registers().Rip
+	rbp := c.CPU.Registers().Rbp
+
+	allRegsInUserspace := rsp < kernelStartAddress &&
+		rip < kernelStartAddress &&
+		rbp < kernelStartAddress
+	if allRegsInUserspace {
+		switch ring0.Vector(vector) {
+		case ring0.PageFault:
+			if faultAddr < kernelStartAddress {
+				return
+			}
+		case ring0.DoubleFault:
+		case ring0.GeneralProtectionFault:
+		case ring0.InvalidOpcode:
+		case ring0.MachineCheck:
+		case ring0.VirtualizationException:
+		default:
 			return
 		}
-	case ring0.DoubleFault:
-	case ring0.GeneralProtectionFault:
-	case ring0.InvalidOpcode:
-	case ring0.MachineCheck:
-	case ring0.VirtualizationException:
-	default:
-		return
 	}
 
-	printHex([]byte("Vector    = "), uint64(c.CPU.Vector()))
-	printHex([]byte("FaultAddr = "), uint64(c.CPU.FaultAddr()))
-	printHex([]byte("rip       = "), uint64(c.CPU.Registers().Rip))
-	printHex([]byte("rsp       = "), uint64(c.CPU.Registers().Rsp))
-	throw("fault")
+	printHex([]byte("Vector    = "), vector)
+	printHex([]byte("FaultAddr = "), faultAddr)
+	printHex([]byte("rip       = "), rip)
+	printHex([]byte("rsp       = "), rsp)
+	printHex([]byte("rbp       = "), rbp)
+	context.R9 = rip
+	context.Rip = _PANIC_RIP_EXC_CHECK
+	context.R10 = vector
+	context.R11 = faultAddr
 }
 
 // KernelSyscall handles kernel syscalls.
@@ -165,6 +180,8 @@ func bluepillArchExit(c *vCPU, context *arch.SignalContext64) {
 	// where the guest data has been serialized, the kernel will restore
 	// from this new pointer value.
 	context.Fpstate = uint64(uintptrValue(c.FloatingPointState().BytePointer())) // escapes: no.
+
+	c.archExitSanityCheck(context)
 }
 
 func inKernelMode() bool {
