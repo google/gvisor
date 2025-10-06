@@ -53,6 +53,11 @@ func (*directoryFD) Write(ctx context.Context, src usermem.IOSequence, opts vfs.
 	return 0, linuxerr.EISDIR
 }
 
+// OnClose implements vfs.FileDescriptionImpl.OnClose.
+func (*directoryFD) OnClose(ctx context.Context) error {
+	return nil
+}
+
 // IterDirents implements vfs.FileDescriptionImpl.IterDirents.
 func (dir *directoryFD) IterDirents(ctx context.Context, callback vfs.IterDirentsCallback) error {
 	fusefs := dir.inode().fs
