@@ -28,6 +28,12 @@ import (
 	"gvisor.dev/gvisor/pkg/sigframe"
 )
 
+// Instruction pointers used to trigger panics.
+const (
+	_PANIC_RIP_CPU_DIE   = 0xabc
+	_PANIC_RIP_EXC_CHECK = 0xabd
+)
+
 // dieArchSetup initializes the state for dieTrampoline.
 //
 // The amd64 dieTrampoline requires the vCPU to be set in BX, and the last RIP
@@ -65,7 +71,7 @@ func (c *vCPU) dieArchSetup(context *arch.SignalContext64, guestRegs *userRegs, 
 		// state, providing diagnostic details about why the vCPU
 		// exited.
 		context.R9 = context.Rip
-		context.Rip = 0xabc
+		context.Rip = _PANIC_RIP_CPU_DIE
 		context.R10 = uint64(c.runData.exitReason)
 		context.R11 = c.runData.data[0]
 		context.R12 = c.runData.data[1]
