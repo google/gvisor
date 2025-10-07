@@ -170,6 +170,22 @@ func (ep *Endpoint) DataCap() uint32 {
 	return ep.dataCap
 }
 
+// DataAddr returns the start address of the datagram part of ep's packet
+// window as a uintptr. Equivalently, DataAddr returns &ep.Data()[0] as a
+// uintptr. It returns uintptr instead of unsafe.Pointer so that code using
+// flipcall cannot obtain unsafe.Pointers without importing the unsafe package
+// directly.
+func (ep *Endpoint) DataAddr() uintptr {
+	return ep.packet + PacketHeaderBytes
+}
+
+// DataEndAddr returns the address of the first byte after ep's packet window,
+// as a uintptr. Note that in Go (unlike in C), such an address cannot safely
+// be converted to a pointer.
+func (ep *Endpoint) DataEndAddr() uintptr {
+	return ep.packet + PacketHeaderBytes + uintptr(ep.dataCap)
+}
+
 // Connection state.
 const (
 	// The client is, by definition, initially active, so this must be 0.
@@ -179,6 +195,9 @@ const (
 )
 
 // Connect blocks until the peer Endpoint has called Endpoint.RecvFirst().
+//
+// Flipcall uses the packet window to negotiate the connection, so callers must
+// not use the packet window until Connect returns.
 //
 // Preconditions:
 //   - ep is a client Endpoint.
@@ -194,6 +213,9 @@ func (ep *Endpoint) Connect() error {
 
 // RecvFirst blocks until the peer Endpoint calls Endpoint.SendRecv(), then
 // returns the datagram length specified by that call.
+//
+// Flipcall uses the packet window to negotiate the connection, so callers must
+// not use the packet window until RecvFirst returns.
 //
 // Preconditions:
 //   - ep is a server Endpoint.
