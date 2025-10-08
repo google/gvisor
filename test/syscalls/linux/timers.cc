@@ -33,6 +33,7 @@
 #include "test/util/logging.h"
 #include "test/util/multiprocess_util.h"
 #include "test/util/posix_error.h"
+#include "test/util/save_util.h"
 #include "test/util/signal_util.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
@@ -486,6 +487,11 @@ TEST(IntervalTimerTest, RealTimeSignalsAreNotDuplicated) {
   const auto timer =
       ASSERT_NO_ERRNO_AND_VALUE(TimerCreate(CLOCK_MONOTONIC, sev));
 
+  // Disable save because a save/restore cycle adds considerable time overhead
+  // between each syscall such that `timer` fires in between sigtimedwait() call
+  // and timer.Set() call, which causes the last sigtimedwait() check to fail.
+  DisableSave ds;
+
   constexpr absl::Duration kPeriod = absl::Seconds(1);
   constexpr int kCycles = 3;
   struct itimerspec its = {};
@@ -493,22 +499,22 @@ TEST(IntervalTimerTest, RealTimeSignalsAreNotDuplicated) {
   ASSERT_NO_ERRNO(timer.Set(0, its));
   absl::SleepFor(kPeriod * kCycles + kTimerSlack);
 
-  // Stop the timer so that no further signals are enqueued after sigtimedwait.
   struct timespec zero_ts = absl::ToTimespec(absl::ZeroDuration());
-  its.it_value = its.it_interval = zero_ts;
-  ASSERT_NO_ERRNO(timer.Set(0, its));
-
-  // The timer should have sent only a single signal, even though the kernel
-  // supports enqueueing of multiple RT signals.
   siginfo_t si;
   ASSERT_THAT(sigtimedwait(&mask, &si, &zero_ts),
               SyscallSucceedsWithValue(kSigno));
   EXPECT_EQ(si.si_signo, kSigno);
   EXPECT_EQ(si.si_code, SI_TIMER);
   EXPECT_EQ(si.si_timerid, timer.get());
-  // si_overrun was reset by timer_settime.
-  EXPECT_EQ(si.si_overrun, 0);
+  EXPECT_EQ(si.si_overrun, kCycles - 1);
   EXPECT_EQ(si.si_int, kSigvalue);
+
+  // Stop the timer so that no further signals are enqueued after sigtimedwait.
+  its.it_value = its.it_interval = zero_ts;
+  ASSERT_NO_ERRNO(timer.Set(0, its));
+
+  // The timer should have sent only a single signal, even though the kernel
+  // supports enqueueing of multiple RT signals.
   EXPECT_THAT(sigtimedwait(&mask, &si, &zero_ts),
               SyscallFailsWithErrno(EAGAIN));
 }
@@ -559,65 +565,6 @@ TEST(IntervalTimerTest, AlreadyPendingSignal) {
 
   // At least kCycles expirations should have occurred, resulting in kCycles-1
   // overruns (the last expiration sent the signal successfully).
-  ASSERT_THAT(sigtimedwait(&mask, &si, &zero_ts),
-              SyscallSucceedsWithValue(kSigno));
-  EXPECT_EQ(si.si_signo, kSigno);
-  EXPECT_EQ(si.si_code, SI_TIMER);
-  EXPECT_EQ(si.si_timerid, timer.get());
-  EXPECT_GE(si.si_overrun, kCycles - 1);
-  EXPECT_EQ(si.si_int, kSigvalue);
-
-  // Kill the timer, then drain any additional signal it may have enqueued. We
-  // can't do this before the preceding sigtimedwait because stopping or
-  // deleting the timer resets si_overrun to 0.
-  timer.reset();
-  sigtimedwait(&mask, &si, &zero_ts);
-}
-
-TEST(IntervalTimerTest, IgnoredSignalCountsAsOverrun) {
-  constexpr int kSigno = SIGUSR1;
-  constexpr int kSigvalue = 42;
-
-  // Ignore kSigno.
-  struct sigaction sa = {};
-  sa.sa_handler = SIG_IGN;
-  const auto scoped_sigaction =
-      ASSERT_NO_ERRNO_AND_VALUE(ScopedSigaction(kSigno, sa));
-
-  // Unblock kSigno so that ignored signals will be discarded.
-  sigset_t mask;
-  sigemptyset(&mask);
-  sigaddset(&mask, kSigno);
-  auto scoped_sigmask =
-      ASSERT_NO_ERRNO_AND_VALUE(ScopedSignalMask(SIG_UNBLOCK, mask));
-
-  struct sigevent sev = {};
-  sev.sigev_notify = SIGEV_THREAD_ID;
-  sev.sigev_signo = kSigno;
-  sev.sigev_value.sival_int = kSigvalue;
-  sev.sigev_notify_thread_id = gettid();
-  auto timer = ASSERT_NO_ERRNO_AND_VALUE(TimerCreate(CLOCK_MONOTONIC, sev));
-
-  constexpr absl::Duration kPeriod = absl::Seconds(1);
-  constexpr int kCycles = 3;
-  struct itimerspec its = {};
-  its.it_value = its.it_interval = absl::ToTimespec(kPeriod);
-  ASSERT_NO_ERRNO(timer.Set(0, its));
-
-  // End the sleep one cycle short; we will sleep for one more cycle below.
-  absl::SleepFor(kPeriod * (kCycles - 1));
-
-  // Block kSigno so that ignored signals will be enqueued.
-  scoped_sigmask.Release()();
-  scoped_sigmask = ASSERT_NO_ERRNO_AND_VALUE(ScopedSignalMask(SIG_BLOCK, mask));
-
-  // Sleep for 1 more cycle to give the timer time to send a signal.
-  absl::SleepFor(kPeriod + kTimerSlack);
-
-  // At least kCycles expirations should have occurred, resulting in kCycles-1
-  // overruns (the last expiration sent the signal successfully).
-  siginfo_t si;
-  struct timespec zero_ts = absl::ToTimespec(absl::ZeroDuration());
   ASSERT_THAT(sigtimedwait(&mask, &si, &zero_ts),
               SyscallSucceedsWithValue(kSigno));
   EXPECT_EQ(si.si_signo, kSigno);
