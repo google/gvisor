@@ -13,7 +13,8 @@
 // limitations under the License.
 
 // https://go.dev/cl/670497 (1.25) adds a new wait reason, adjusting the value of waitReasonSemacquire.
-//go:build !go1.25
+// https://go.dev/cl/688335 (1.26) reorders waitreason runtime constants, adjusting the values of waitReasonSemacquire et al.
+//go:build !go1.25 && !go1.26
 
 package sync
 

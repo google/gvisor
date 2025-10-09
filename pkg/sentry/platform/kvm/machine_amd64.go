@@ -549,10 +549,9 @@ func (m *machine) mapUpperHalf(pageTable *pagetables.PageTables) {
 func (m *machine) getMaxVCPU() {
 	maxVCPUs, errno := hostsyscall.RawSyscall(unix.SYS_IOCTL, uintptr(m.fd), KVM_CHECK_EXTENSION, _KVM_CAP_MAX_VCPUS)
 	if errno != 0 {
-		m.maxVCPUs = _KVM_NR_VCPUS
-	} else {
-		m.maxVCPUs = int(maxVCPUs)
+		maxVCPUs = _KVM_NR_VCPUS
 	}
+	m.maxVCPUs = int(maxVCPUs)
 
 	// The goal here is to avoid vCPU contentions for reasonable workloads.
 	// But "reasonable" isn't defined well in this case. Let's say that CPU
@@ -562,6 +561,18 @@ func (m *machine) getMaxVCPU() {
 	rCPUs := runtime.GOMAXPROCS(0)
 	if 3*rCPUs < m.maxVCPUs {
 		m.maxVCPUs = 3 * rCPUs
+	}
+	// However if the sentry is explicitly configured to run more application
+	// cores then we should try our best to give each application thread
+	// its own vCPU, with some room to spare (like above, factor of 2).
+	desiredAppCores := m.applicationCores * 2
+	if m.maxVCPUs < desiredAppCores {
+		if int(maxVCPUs) < desiredAppCores {
+			log.Warningf("ApplicationCores is set too high: set to %d, max on this machine is %d. Your workload may experience unexpected timeouts.", desiredAppCores, maxVCPUs)
+			m.maxVCPUs = int(maxVCPUs)
+		} else {
+			m.maxVCPUs = desiredAppCores
+		}
 	}
 }
 
