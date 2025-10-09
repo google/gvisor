@@ -152,6 +152,10 @@ type containerInfo struct {
 
 	// nvidiaUVMDevMajor is the device major number used for nvidia-uvm.
 	nvidiaUVMDevMajor uint32
+
+	// applicationCores is the number of CPU cores gVisor reports to user
+	// applications.
+	applicationCores int
 }
 
 type loaderState int
@@ -468,13 +472,20 @@ func New(args Args) (*Loader, error) {
 		saveFDs:        args.SaveFDs,
 	}
 
+	if args.NumCPU == 0 {
+		args.NumCPU = runtime.NumCPU()
+	}
+	log.Infof("CPUs: %d", args.NumCPU)
+	gomaxprocs.SetBase(args.NumCPU)
+
 	containerName := l.registerContainer(args.Spec, args.ID)
 	l.root = containerInfo{
-		cid:             args.ID,
-		containerName:   containerName,
-		conf:            args.Conf,
-		spec:            args.Spec,
-		goferMountConfs: args.GoferMountConfs,
+		cid:              args.ID,
+		containerName:    containerName,
+		conf:             args.Conf,
+		spec:             args.Spec,
+		goferMountConfs:  args.GoferMountConfs,
+		applicationCores: args.NumCPU,
 	}
 
 	// Make host FDs stable between invocations. Host FDs must map to the exact
@@ -520,7 +531,7 @@ func New(args Args) (*Loader, error) {
 	}
 
 	// Create kernel and platform.
-	p, err := createPlatform(args.Conf, args.Device)
+	p, err := createPlatform(args.Conf, args.NumCPU, args.Device)
 	if err != nil {
 		return nil, fmt.Errorf("creating platform: %w", err)
 	}
@@ -577,12 +588,6 @@ func New(args Args) (*Loader, error) {
 			return nil, fmt.Errorf("enable s/r: %w", err)
 		}
 	}
-
-	if args.NumCPU == 0 {
-		args.NumCPU = runtime.NumCPU()
-	}
-	log.Infof("CPUs: %d", args.NumCPU)
-	gomaxprocs.SetBase(args.NumCPU)
 
 	if args.TotalHostMem > 0 {
 		// As per tmpfs(5), the default size limit is 50% of total physical RAM.
@@ -828,7 +833,7 @@ func (l *Loader) Destroy() {
 	refs.OnExit()
 }
 
-func createPlatform(conf *config.Config, deviceFile *fd.FD) (platform.Platform, error) {
+func createPlatform(conf *config.Config, numCPU int, deviceFile *fd.FD) (platform.Platform, error) {
 	p, err := platform.Lookup(conf.Platform)
 	if err != nil {
 		panic(fmt.Sprintf("invalid platform %s: %s", conf.Platform, err))
@@ -837,6 +842,7 @@ func createPlatform(conf *config.Config, deviceFile *fd.FD) (platform.Platform, 
 	return p.New(platform.Options{
 		DeviceFile:             deviceFile,
 		DisableSyscallPatching: conf.Platform == "systrap" && conf.SystrapDisableSyscallPatching,
+		ApplicationCores:       numCPU,
 	})
 }
 

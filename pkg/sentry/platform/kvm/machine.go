@@ -57,6 +57,9 @@ type machine struct {
 	// kernel is the set of global structures.
 	kernel ring0.Kernel
 
+	// applicationCores is used to calculate maxVCPUs.
+	applicationCores int
+
 	// mu protects vCPUs.
 	mu sync.RWMutex
 
@@ -269,7 +272,10 @@ var forceMappingEntireAddressSpace = false
 // newMachine returns a new VM context.
 func newMachine(vm int, config *Config) (*machine, error) {
 	// Create the machine.
-	m := &machine{fd: vm}
+	m := &machine{
+		fd:               vm,
+		applicationCores: config.ApplicationCores,
+	}
 	m.available.L = &m.mu
 
 	if err := m.applyConfig(config); err != nil {
