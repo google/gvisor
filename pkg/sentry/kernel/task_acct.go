@@ -215,30 +215,21 @@ func (t *Task) MaxRSS(which int32) uint64 {
 	t.tg.pidns.owner.mu.RLock()
 	defer t.tg.pidns.owner.mu.RUnlock()
 
+	maxRSS := uint64(0)
 	switch which {
-	case linux.RUSAGE_SELF, linux.RUSAGE_THREAD:
-		// If there's an active mm we can use its value.
-		if mm := t.MemoryManager(); mm != nil {
-			if mmMaxRSS := mm.MaxResidentSetSize(); mmMaxRSS > t.tg.maxRSS {
-				return mmMaxRSS
-			}
-		}
-		return t.tg.maxRSS
 	case linux.RUSAGE_CHILDREN:
-		return t.tg.childMaxRSS
+		maxRSS = t.tg.childMaxRSS
 	case linux.RUSAGE_BOTH:
-		maxRSS := t.tg.maxRSS
-		if maxRSS < t.tg.childMaxRSS {
-			maxRSS = t.tg.childMaxRSS
+		maxRSS = t.tg.childMaxRSS
+		fallthrough
+	case linux.RUSAGE_SELF, linux.RUSAGE_THREAD:
+		maxRSS = max(maxRSS, t.tg.maxRSS)
+		t.mu.Lock()
+		mm := t.MemoryManager()
+		t.mu.Unlock()
+		if mm != nil {
+			maxRSS = max(maxRSS, mm.MaxResidentSetSize())
 		}
-		if mm := t.MemoryManager(); mm != nil {
-			if mmMaxRSS := mm.MaxResidentSetSize(); mmMaxRSS > maxRSS {
-				return mmMaxRSS
-			}
-		}
-		return maxRSS
-	default:
-		// We'll only get here if which is invalid.
-		return 0
 	}
+	return maxRSS
 }
