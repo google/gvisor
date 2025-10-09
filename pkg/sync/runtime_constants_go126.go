@@ -12,15 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// https://go.dev/cl/670497 (1.25) adds a new wait reason, adjusting the value of waitReasonSemacquire.
 // https://go.dev/cl/688335 (1.26) reorders waitreason runtime constants, adjusting the values of waitReasonSemacquire et al.
-//go:build !go1.25 && !go1.26
+//go:build go1.26
 
 package sync
 
 // Values for the reason argument to gopark, from Go's src/runtime/runtime2.go.
 const (
-	WaitReasonSelect      uint8 = 9  // +checkconst runtime waitReasonSelect
-	WaitReasonChanReceive uint8 = 14 // +checkconst runtime waitReasonChanReceive
-	WaitReasonSemacquire  uint8 = 18 // +checkconst runtime waitReasonSemacquire
+	WaitReasonSelect      uint8 = 18 // +checkconst runtime waitReasonSelect
+	WaitReasonChanReceive uint8 = 19 // +checkconst runtime waitReasonChanReceive
+	WaitReasonSemacquire  uint8 = 13 // +checkconst runtime waitReasonSemacquire
 )
