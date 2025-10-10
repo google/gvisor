@@ -50,6 +50,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/erofs"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/sentry/seccheck"
+	"gvisor.dev/gvisor/pkg/sentry/state/checkpointfiles"
 	"gvisor.dev/gvisor/pkg/state/statefile"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/urpc"
@@ -501,7 +502,7 @@ func (s *Sandbox) Restore(conf *config.Config, spec *specs.Spec, cid string, ima
 
 	log.Debugf("Restore sandbox %q from path %q", s.ID, imagePath)
 
-	stateFileName := path.Join(imagePath, boot.CheckpointStateFileName)
+	stateFileName := path.Join(imagePath, checkpointfiles.StateFileName)
 	sf, err := os.Open(stateFileName)
 	if err != nil {
 		return fmt.Errorf("opening state file %q failed: %v", stateFileName, err)
@@ -516,7 +517,7 @@ func (s *Sandbox) Restore(conf *config.Config, spec *specs.Spec, cid string, ima
 	}
 
 	// If the pages file exists, we must pass it in.
-	pagesFileName := path.Join(imagePath, boot.CheckpointPagesFileName)
+	pagesFileName := path.Join(imagePath, checkpointfiles.PagesFileName)
 	pagesReadFlags := os.O_RDONLY
 	if direct {
 		// The contents are page-aligned, so it can be opened with O_DIRECT.
@@ -524,7 +525,7 @@ func (s *Sandbox) Restore(conf *config.Config, spec *specs.Spec, cid string, ima
 	}
 	if pf, err := os.OpenFile(pagesFileName, pagesReadFlags, 0); err == nil {
 		defer pf.Close()
-		pagesMetadataFileName := path.Join(imagePath, boot.CheckpointPagesMetadataFileName)
+		pagesMetadataFileName := path.Join(imagePath, checkpointfiles.PagesMetadataFileName)
 		pmf, err := os.Open(pagesMetadataFileName)
 		if err != nil {
 			return fmt.Errorf("opening restore image file %q failed: %v", pagesMetadataFileName, err)
@@ -1537,7 +1538,7 @@ func (s *Sandbox) Checkpoint(cid string, imagePath string, opts CheckpointOpts) 
 func createSaveFiles(path string, direct bool, compression statefile.CompressionLevel) ([]*os.File, error) {
 	var files []*os.File
 
-	stateFilePath := filepath.Join(path, boot.CheckpointStateFileName)
+	stateFilePath := filepath.Join(path, checkpointfiles.StateFileName)
 	f, err := os.OpenFile(stateFilePath, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0644)
 	if err != nil {
 		return nil, fmt.Errorf("creating checkpoint state file %q: %w", stateFilePath, err)
@@ -1548,14 +1549,14 @@ func createSaveFiles(path string, direct bool, compression statefile.Compression
 	// It is beneficial to store them separately so certain optimizations can be
 	// applied during restore. See Restore().
 	if compression == statefile.CompressionLevelNone {
-		pagesMetadataFilePath := filepath.Join(path, boot.CheckpointPagesMetadataFileName)
+		pagesMetadataFilePath := filepath.Join(path, checkpointfiles.PagesMetadataFileName)
 		f, err = os.OpenFile(pagesMetadataFilePath, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0644)
 		if err != nil {
 			return nil, fmt.Errorf("creating checkpoint pages metadata file %q: %w", pagesMetadataFilePath, err)
 		}
 		files = append(files, f)
 
-		pagesFilePath := filepath.Join(path, boot.CheckpointPagesFileName)
+		pagesFilePath := filepath.Join(path, checkpointfiles.PagesFileName)
 		pagesWriteFlags := os.O_CREATE | os.O_EXCL | os.O_RDWR
 		if direct {
 			// The writes will be page-aligned, so it can be opened with O_DIRECT.

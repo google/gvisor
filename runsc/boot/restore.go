@@ -50,15 +50,6 @@ import (
 )
 
 const (
-	// CheckpointStateFileName is the file within the given image-path's
-	// directory which contains the container's saved state.
-	CheckpointStateFileName = "checkpoint.img"
-	// CheckpointPagesMetadataFileName is the file within the given image-path's
-	// directory containing the container's MemoryFile metadata.
-	CheckpointPagesMetadataFileName = "pages_meta.img"
-	// CheckpointPagesFileName is the file within the given image-path's
-	// directory containing the container's MemoryFile pages.
-	CheckpointPagesFileName = "pages.img"
 	// VersionKey is the key used to save runsc version in the save metadata and compare
 	// it across checkpoint restore.
 	VersionKey = "runsc_version"

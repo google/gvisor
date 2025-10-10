@@ -38,6 +38,7 @@ go_library(
         "//pkg/sentry/platform",
         "//pkg/sentry/seccheck",
         "//pkg/sentry/socket/plugin",
+        "//pkg/sentry/state/checkpointfiles",
         "//pkg/state/statefile",
         "//pkg/sync",
         "//pkg/tcpip/header",
