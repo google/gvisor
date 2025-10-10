@@ -154,6 +154,10 @@ type FilesystemOpts struct {
 	// AllowXattrPrefix is a set of xattr namespace prefixes that this
 	// tmpfs mount will allow.
 	AllowXattrPrefix []string
+
+	// SourceTarFD is the file descriptor of the source tar file to be untarred
+	// into the tmpfs.
+	SourceTarFile *os.File
 }
 
 // Default size limit mount option. It is immutable after initialization.
@@ -280,16 +284,6 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		}
 	}
 
-	sourceTarFD := -1
-	if sourceTar, ok := mopts["source_tar_fd"]; ok {
-		delete(mopts, "source_tar_fd")
-		var err error
-		sourceTarFD, err = strconv.Atoi(sourceTar)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to parse source_tar option: %w", err)
-		}
-	}
-
 	if len(mopts) != 0 {
 		ctx.Warningf("tmpfs.FilesystemType.GetFilesystem: unknown options: %v", mopts)
 		return nil, nil, linuxerr.EINVAL
@@ -333,15 +327,10 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	}
 	fs.root = root
 
-	if sourceTarFD != -1 {
-		sourceTar := os.NewFile(uintptr(sourceTarFD), "source_tar")
-		if sourceTar == nil {
-			fs.vfsfs.DecRef(ctx)
-			return nil, nil, fmt.Errorf("source_tar_fd: %d is an invalid file descriptor", sourceTarFD)
-		}
-		defer sourceTar.Close()
+	if tmpfsOptsOk && tmpfsOpts.SourceTarFile != nil {
+		defer tmpfsOpts.SourceTarFile.Close()
 
-		if err := fs.UntarUpperLayer(ctx, sourceTar); err != nil {
+		if err := fs.UntarUpperLayer(ctx, tmpfsOpts.SourceTarFile); err != nil {
 			fs.vfsfs.DecRef(ctx)
 			return nil, nil, err
 		}
