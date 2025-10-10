@@ -40,7 +40,6 @@ import (
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/rand"
-	"gvisor.dev/gvisor/pkg/sentry/watchdog"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/flag"
@@ -264,7 +263,7 @@ func TestConfig(t *testing.T) *config.Config {
 	conf.Network = config.NetworkNone
 	conf.Strace = true
 	conf.TestOnlyAllowRunAsCurrentUserWithoutChroot = true
-	conf.WatchdogAction = watchdog.Panic
+	conf.WatchdogAction = "panic"
 	return conf
 }
 

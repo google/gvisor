@@ -19,7 +19,6 @@ go_library(
         "//pkg/log",
         "//pkg/refs",
         "//pkg/sentry/devices/nvproxy/nvconf",
-        "//pkg/sentry/watchdog",
         "//runsc/flag",
         "//runsc/version",
     ],

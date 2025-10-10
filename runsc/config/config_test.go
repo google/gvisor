@@ -202,11 +202,6 @@ func TestInvalidFlags(t *testing.T) {
 			error: "invalid qdisc",
 		},
 		{
-			name:  "watchdog-action",
-			value: "invalid",
-			error: "invalid watchdog action",
-		},
-		{
 			name:  "ref-leak-mode",
 			value: "invalid",
 			error: "invalid ref leak mode",

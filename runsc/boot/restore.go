@@ -292,7 +292,9 @@ func (r *restorer) restore(l *Loader) error {
 
 	// Since we have a new kernel we also must make a new watchdog.
 	dogOpts := watchdog.DefaultOpts
-	dogOpts.TaskTimeoutAction = l.root.conf.WatchdogAction
+	if err := dogOpts.TaskTimeoutAction.Set(l.root.conf.WatchdogAction); err != nil {
+		return fmt.Errorf("setting watchdog action: %w", err)
+	}
 	dogOpts.StartupTimeout = 3 * time2.Minute // Give extra time for all containers to restore.
 	dog := watchdog.New(l.k, dogOpts)
 

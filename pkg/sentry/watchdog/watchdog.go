@@ -89,7 +89,7 @@ const (
 	Panic
 )
 
-// Set implements flag.Value.
+// Set attempts to set an Action from a string.
 func (a *Action) Set(v string) error {
 	switch v {
 	case "log", "logwarning":
@@ -100,11 +100,6 @@ func (a *Action) Set(v string) error {
 		return fmt.Errorf("invalid watchdog action %q", v)
 	}
 	return nil
-}
-
-// Get implements flag.Value.
-func (a *Action) Get() any {
-	return *a
 }
 
 // String returns Action's string representation.

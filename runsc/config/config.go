@@ -29,7 +29,6 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
-	"gvisor.dev/gvisor/pkg/sentry/watchdog"
 	"gvisor.dev/gvisor/runsc/flag"
 	"gvisor.dev/gvisor/runsc/version"
 )
@@ -214,7 +213,7 @@ type Config struct {
 	EnableCoreTags bool `flag:"enable-core-tags"`
 
 	// WatchdogAction sets what action the watchdog takes when triggered.
-	WatchdogAction watchdog.Action `flag:"watchdog-action"`
+	WatchdogAction string `flag:"watchdog-action"`
 
 	// PanicSignal registers signal handling that panics. Usually set to
 	// SIGUSR2(12) to troubleshoot hangs. -1 disables it.
@@ -737,10 +736,6 @@ func (q QueueingDiscipline) String() string {
 }
 
 func leakModePtr(v refs.LeakMode) *refs.LeakMode {
-	return &v
-}
-
-func watchdogActionPtr(v watchdog.Action) *watchdog.Action {
 	return &v
 }
 
