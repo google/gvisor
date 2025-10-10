@@ -27,7 +27,6 @@ import (
 
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/refs"
-	"gvisor.dev/gvisor/pkg/sentry/watchdog"
 	"gvisor.dev/gvisor/runsc/flag"
 )
 
@@ -94,7 +93,7 @@ func RegisterFlags(flagSet *flag.FlagSet) {
 	// Flags that control sandbox runtime behavior.
 	flagSet.String("platform", "systrap", "specifies which platform to use: systrap (default), ptrace, kvm.")
 	flagSet.String("platform_device_path", "", "path to a platform-specific device file (e.g. /dev/kvm for KVM platform). If unset, will use a sane platform-specific default.")
-	flagSet.Var(watchdogActionPtr(watchdog.LogWarning), "watchdog-action", "sets what action the watchdog takes when triggered: log (default), panic.")
+	flagSet.String("watchdog-action", "log", "sets what action the watchdog takes when triggered: log (default), panic.")
 	flagSet.Int("panic-signal", -1, "register signal handling that panics. Usually set to SIGUSR2(12) to troubleshoot hangs. -1 disables it.")
 	flagSet.Bool("profile", false, "prepares the sandbox to use Golang profiler. Note that enabling profiler loosens the seccomp protection added to the sandbox (DO NOT USE IN PRODUCTION).")
 	flagSet.String("profile-block", "", "collects a block profile to this file path for the duration of the container execution. Requires -profile=true.")

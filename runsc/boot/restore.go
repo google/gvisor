@@ -50,15 +50,6 @@ import (
 )
 
 const (
-	// CheckpointStateFileName is the file within the given image-path's
-	// directory which contains the container's saved state.
-	CheckpointStateFileName = "checkpoint.img"
-	// CheckpointPagesMetadataFileName is the file within the given image-path's
-	// directory containing the container's MemoryFile metadata.
-	CheckpointPagesMetadataFileName = "pages_meta.img"
-	// CheckpointPagesFileName is the file within the given image-path's
-	// directory containing the container's MemoryFile pages.
-	CheckpointPagesFileName = "pages.img"
 	// VersionKey is the key used to save runsc version in the save metadata and compare
 	// it across checkpoint restore.
 	VersionKey = "runsc_version"
@@ -301,7 +292,9 @@ func (r *restorer) restore(l *Loader) error {
 
 	// Since we have a new kernel we also must make a new watchdog.
 	dogOpts := watchdog.DefaultOpts
-	dogOpts.TaskTimeoutAction = l.root.conf.WatchdogAction
+	if err := dogOpts.TaskTimeoutAction.Set(l.root.conf.WatchdogAction); err != nil {
+		return fmt.Errorf("setting watchdog action: %w", err)
+	}
 	dogOpts.StartupTimeout = 3 * time2.Minute // Give extra time for all containers to restore.
 	dog := watchdog.New(l.k, dogOpts)
 
