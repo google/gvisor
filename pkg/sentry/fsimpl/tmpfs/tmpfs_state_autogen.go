@@ -452,6 +452,7 @@ func (f *FilesystemOpts) StateFields() []string {
 		"MemoryFile",
 		"DisableDefaultSizeLimit",
 		"AllowXattrPrefix",
+		"SourceTarFile",
 	}
 }
 
@@ -468,6 +469,7 @@ func (f *FilesystemOpts) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(5, &f.MemoryFile)
 	stateSinkObject.Save(6, &f.DisableDefaultSizeLimit)
 	stateSinkObject.Save(7, &f.AllowXattrPrefix)
+	stateSinkObject.Save(8, &f.SourceTarFile)
 }
 
 func (f *FilesystemOpts) afterLoad(context.Context) {}
@@ -482,6 +484,7 @@ func (f *FilesystemOpts) StateLoad(ctx context.Context, stateSourceObject state.
 	stateSourceObject.Load(5, &f.MemoryFile)
 	stateSourceObject.Load(6, &f.DisableDefaultSizeLimit)
 	stateSourceObject.Load(7, &f.AllowXattrPrefix)
+	stateSourceObject.Load(8, &f.SourceTarFile)
 }
 
 func (d *dentry) StateTypeName() string {
