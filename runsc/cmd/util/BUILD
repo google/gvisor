@@ -12,8 +12,7 @@ go_library(
         "util.go",
     ],
     visibility = [
-        "//runsc/cli:__subpackages__",
-        "//runsc/cmd:__subpackages__",
+        "//runsc:__subpackages__",
         "//tools:__subpackages__",
     ],
     deps = [

@@ -18,10 +18,15 @@
 package sandbox
 
 import (
+	"gvisor.dev/gvisor/runsc/boot"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/donation"
 )
 
 func createSandboxProcessExtra(conf *config.Config, args *Args, donations *donation.Agency) error {
 	return nil
+}
+
+func (s *Sandbox) setRestoreOptsImpl(conf *config.Config, imagePath string, direct bool, opt *boot.RestoreOpts) error {
+	return s.setRestoreOptsForLocalCheckpointFiles(conf, imagePath, direct, opt)
 }

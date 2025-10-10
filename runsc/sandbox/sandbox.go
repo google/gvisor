@@ -502,44 +502,16 @@ func (s *Sandbox) Restore(conf *config.Config, spec *specs.Spec, cid string, ima
 
 	log.Debugf("Restore sandbox %q from path %q", s.ID, imagePath)
 
-	stateFileName := path.Join(imagePath, checkpointfiles.StateFileName)
-	sf, err := os.Open(stateFileName)
-	if err != nil {
-		return fmt.Errorf("opening state file %q failed: %v", stateFileName, err)
-	}
-	defer sf.Close()
-
 	opt := boot.RestoreOpts{
-		FilePayload: urpc.FilePayload{
-			Files: []*os.File{sf},
-		},
 		Background: background,
 	}
-
-	// If the pages file exists, we must pass it in.
-	pagesFileName := path.Join(imagePath, checkpointfiles.PagesFileName)
-	pagesReadFlags := os.O_RDONLY
-	if direct {
-		// The contents are page-aligned, so it can be opened with O_DIRECT.
-		pagesReadFlags |= syscall.O_DIRECT
-	}
-	if pf, err := os.OpenFile(pagesFileName, pagesReadFlags, 0); err == nil {
-		defer pf.Close()
-		pagesMetadataFileName := path.Join(imagePath, checkpointfiles.PagesMetadataFileName)
-		pmf, err := os.Open(pagesMetadataFileName)
-		if err != nil {
-			return fmt.Errorf("opening restore image file %q failed: %v", pagesMetadataFileName, err)
+	defer func() {
+		for _, f := range opt.FilePayload.Files {
+			_ = f.Close()
 		}
-		defer pmf.Close()
-
-		opt.HavePagesFile = true
-		opt.FilePayload.Files = append(opt.FilePayload.Files, pmf, pf)
-		log.Infof("Found page files for sandbox %q. Page metadata: %q, pages: %q", s.ID, pagesMetadataFileName, pagesFileName)
-
-	} else if !os.IsNotExist(err) {
-		return fmt.Errorf("opening restore pages file %q failed: %v", pagesFileName, err)
-	} else {
-		log.Infof("Using single checkpoint file for sandbox %q", s.ID)
+	}()
+	if err := s.setRestoreOptsImpl(conf, imagePath, direct, &opt); err != nil {
+		return err
 	}
 
 	// If the platform needs a device FD we must pass it in.
@@ -572,6 +544,39 @@ func (s *Sandbox) Restore(conf *config.Config, spec *specs.Spec, cid string, ima
 		return fmt.Errorf("restoring container %q: %v", cid, err)
 	}
 	s.Restored = true
+	return nil
+}
+
+func (s *Sandbox) setRestoreOptsForLocalCheckpointFiles(conf *config.Config, imagePath string, direct bool, opt *boot.RestoreOpts) error {
+	stateFileName := path.Join(imagePath, checkpointfiles.StateFileName)
+	sf, err := os.Open(stateFileName)
+	if err != nil {
+		return fmt.Errorf("opening state file %q failed: %w", stateFileName, err)
+	}
+	opt.FilePayload.Files = append(opt.FilePayload.Files, sf)
+
+	// If either the pages metadata file or pages file exist, both must exist,
+	// and we must pass them in.
+	pagesMetadataFileName := path.Join(imagePath, checkpointfiles.PagesMetadataFileName)
+	if pmf, err := os.Open(pagesMetadataFileName); err == nil {
+		opt.FilePayload.Files = append(opt.FilePayload.Files, pmf)
+		pagesFileName := path.Join(imagePath, checkpointfiles.PagesFileName)
+		pagesReadFlags := os.O_RDONLY
+		if direct {
+			// The contents are page-aligned, so it can be opened with O_DIRECT.
+			pagesReadFlags |= syscall.O_DIRECT
+		}
+		pf, err := os.OpenFile(pagesFileName, pagesReadFlags, 0)
+		if err != nil {
+			return fmt.Errorf("opening pages file %q failed: %w", pagesFileName, err)
+		}
+		opt.FilePayload.Files = append(opt.FilePayload.Files, pf)
+		opt.HavePagesFile = true
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("opening pages metadata file %q failed: %w", pagesMetadataFileName, err)
+	} else {
+		log.Infof("Using single checkpoint file for sandbox %q", s.ID)
+	}
 	return nil
 }
 

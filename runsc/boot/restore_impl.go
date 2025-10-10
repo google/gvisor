@@ -18,8 +18,11 @@
 package boot
 
 import (
+	"io"
+
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/proc"
+	"gvisor.dev/gvisor/pkg/sentry/state/stateio"
 	"gvisor.dev/gvisor/runsc/config"
 )
 
@@ -30,3 +33,9 @@ func newProcInternalData(conf *config.Config, _ *specs.Spec) *proc.InternalData 
 }
 
 func (l *Loader) kernelInitExtra() {}
+
+type RestoreOptsExtra struct{}
+
+func getRestoreReadersImpl(o *RestoreOpts) (io.ReadCloser, io.ReadCloser, stateio.AsyncReader, error) {
+	return getRestoreReadersForLocalCheckpointFiles(o)
+}

@@ -17,6 +17,7 @@ package boot
 import (
 	"errors"
 	"fmt"
+	"io"
 	"path"
 	"strconv"
 	"sync"
@@ -489,7 +490,7 @@ func (cm *containerManager) PortForward(opts *PortForwardOpts, _ *struct{}) erro
 
 // RestoreOpts contains options related to restoring a container's file system.
 type RestoreOpts struct {
-	// FilePayload contains the state file to be restored, followed in order by:
+	// FilePayload contains, in order:
 	// 1. checkpoint state file.
 	// 2. optional checkpoint pages metadata file.
 	// 3. optional checkpoint pages file.
@@ -498,6 +499,8 @@ type RestoreOpts struct {
 	HavePagesFile  bool
 	HaveDeviceFile bool
 	Background     bool
+
+	RestoreOptsExtra
 }
 
 // Restore loads a container from a statefile.
@@ -521,27 +524,32 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 		return fmt.Errorf("at least one file must be passed to Restore")
 	}
 
-	stateFile, err := o.ReleaseFD(0)
+	stateFile, pagesMetadata, pagesFile, err := getRestoreReadersImpl(o)
 	if err != nil {
 		return err
 	}
+	defer func() {
+		if stateFile != nil {
+			stateFile.Close()
+		}
+		if pagesMetadata != nil {
+			pagesMetadata.Close()
+		}
+		if pagesFile != nil {
+			pagesFile.Close()
+		}
+	}()
 
-	var stat unix.Stat_t
-	if err := unix.Fstat(stateFile.FD(), &stat); err != nil {
-		return err
-	}
-	if stat.Size == 0 {
-		return fmt.Errorf("statefile cannot be empty")
-	}
-
-	reader, metadata, err := state.NewStatefileReader(stateFile, nil)
+	reader, metadata, err := state.NewStatefileReader(stateFile /* transfers ownership on success */, nil)
 	if err != nil {
 		return fmt.Errorf("creating statefile reader: %w", err)
 	}
+	stateFile = nil
 
 	// Create the main MemoryFile.
 	mf, err := createMemoryFile(cm.l.root.conf.AppHugePages, cm.l.hostTHP)
 	if err != nil {
+		reader.Close()
 		return fmt.Errorf("creating memory file: %v", err)
 	}
 
@@ -559,42 +567,18 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 	// Release `cm.l.mu`.
 	cu.Clean()
 
-	fileIdx := 1
 	if o.HavePagesFile {
-		pagesMetadataFD, err := o.ReleaseFD(fileIdx)
-		if err != nil {
-			return err
-		}
-		fileIdx++
-
-		pagesFileFD, err := o.ReleaseFD(fileIdx)
-		if err != nil {
-			return err
-		}
-		fileIdx++
-
-		// //pkg/state/wire reads one byte at a time; buffer these reads to
-		// avoid making one syscall per read. For the state file, this
-		// buffering is handled by statefile.NewReader() => compressio.Reader
-		// or compressio.NewSimpleReader().
-		pagesMetadata := stateio.NewBufioReadCloser(pagesMetadataFD)
-		// TODO: Allow `runsc restore` to override I/O parameters.
-		pagesFile := stateio.NewPagesFileFDReaderDefault(int32(pagesFileFD.Release()))
-
 		// This immediately starts loading the main MemoryFile asynchronously.
-		cm.restorer.asyncMFLoader = kernel.NewAsyncMFLoader(pagesMetadata, pagesFile, cm.restorer.mainMF, timer.Fork("PagesFileLoader"))
+		cm.restorer.asyncMFLoader = kernel.NewAsyncMFLoader(pagesMetadata, pagesFile, cm.restorer.mainMF, timer.Fork("PagesFileLoader")) // transfers ownership
+		pagesMetadata = nil
+		pagesFile = nil
 	}
 
 	if o.HaveDeviceFile {
-		cm.restorer.deviceFile, err = o.ReleaseFD(fileIdx)
+		cm.restorer.deviceFile, err = o.ReleaseFD(len(o.Files) - 1)
 		if err != nil {
 			return err
 		}
-		fileIdx++
-	}
-
-	if fileIdx < len(o.Files) {
-		return fmt.Errorf("more files passed to Restore than expected")
 	}
 	timer.Reached("restorer ok")
 
@@ -632,6 +616,45 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 		return fmt.Errorf("runsc version does not match across checkpoint restore, checkpoint: %v current: %v", checkpointVersion, currentVersion)
 	}
 	return cm.restorer.restoreContainerInfo(cm.l, &cm.l.root, timer.Fork("cont:root"))
+}
+
+func getRestoreReadersForLocalCheckpointFiles(o *RestoreOpts) (io.ReadCloser, io.ReadCloser, stateio.AsyncReader, error) {
+	stateFile, err := o.ReleaseFD(0)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	cu := cleanup.Make(func() { stateFile.Close() })
+	defer cu.Clean()
+	var stat unix.Stat_t
+	if err := unix.Fstat(stateFile.FD(), &stat); err != nil {
+		return nil, nil, nil, err
+	}
+	if stat.Size == 0 {
+		return nil, nil, nil, fmt.Errorf("statefile cannot be empty")
+	}
+
+	if !o.HavePagesFile {
+		cu.Release()
+		return stateFile, nil, nil, nil
+	}
+	pagesMetadataFile, err := o.ReleaseFD(1)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	cu.Add(func() { pagesMetadataFile.Close() })
+	pagesFile, err := o.ReleaseFD(2)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	cu.Release()
+	// //pkg/state/wire reads one byte at a time; buffer reads from
+	// pagesMetadataFile to avoid making one syscall per read. For the state
+	// file, this buffering is handled by statefile.NewReader() =>
+	// compressio.Reader or compressio.NewSimpleReader().
+	return stateFile,
+		stateio.NewBufioReadCloser(pagesMetadataFile),
+		stateio.NewPagesFileFDReaderDefault(int32(pagesFile.Release())),
+		nil
 }
 
 func (cm *containerManager) onRestoreDone() {

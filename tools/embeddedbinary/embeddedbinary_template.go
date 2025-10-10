@@ -38,6 +38,11 @@ var compressedBinary []byte
 
 // Options is the set of options to execute the embedded binary.
 type Options struct {
+	// If TempDir is non-empty, the embedded binary will be extracted to a
+	// subdirectory of TempDir. Otherwise, the embedded binary will be
+	// extracted to a subdirectory of os.TempDir().
+	TempDir string
+
 	// Argv is the set of arguments to exec with.
 	// `Argv[0]` is the name of the binary as invoked.
 	// If Argv is empty, it will default to a single-element slice, with
@@ -50,6 +55,10 @@ type Options struct {
 	// Files is the set of file descriptors to pass to forked processes.
 	// Only used when forking, not pure exec'ing.
 	Files []uintptr
+
+	// SysProcAttr provides OS-specific options to the executed process.
+	// Only used when forking, not pure exec'ing.
+	SysProcAttr *unix.SysProcAttr
 }
 
 // Bogus import to satisfy the compiler that we are using the flate import,
@@ -60,7 +69,7 @@ const _ = flate.NoCompression
 // If fork is true, the binary runs in a separate process, and its PID is
 // returned.
 // Otherwise, the binary is exec'd, so the current process stops executing.
-func run(options Options, fork bool) (int, error) {
+func run(options *Options, fork bool) (int, error) {
 	if len(options.Argv) == 0 {
 		options.Argv = []string{BinaryName}
 	}
@@ -71,7 +80,7 @@ func run(options Options, fork bool) (int, error) {
 	defer runtime.UnlockOSThread()
 	oldMask := unix.Umask(0077)
 	defer unix.Umask(oldMask)
-	tmpDir, err := os.MkdirTemp("", "gvisor.*.tmp")
+	tmpDir, err := os.MkdirTemp(options.TempDir, "gvisor.*.tmp")
 	if err != nil {
 		return 0, fmt.Errorf("cannot create temp directory: %w", err)
 	}
@@ -112,6 +121,7 @@ func run(options Options, fork bool) (int, error) {
 		return syscall.ForkExec(fdPath, options.Argv, &syscall.ProcAttr{
 			Env:   options.Envv,
 			Files: options.Files,
+			Sys:   options.SysProcAttr,
 		})
 	}
 	if err := unix.Exec(fdPath, options.Argv, options.Envv); err != nil {
@@ -123,12 +133,12 @@ func run(options Options, fork bool) (int, error) {
 // Exec execs the embedded binary. The current process is replaced.
 // This function only returns if unsuccessful.
 func Exec(options Options) error {
-	_, err := run(options, false)
+	_, err := run(&options, false)
 	return err
 }
 
 // ForkExec runs the embedded binary in a separate process.
 // Returns the PID of the child process.
 func ForkExec(options Options) (int, error) {
-	return run(options, true)
+	return run(&options, true)
 }
