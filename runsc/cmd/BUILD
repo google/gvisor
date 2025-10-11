@@ -34,6 +34,7 @@ go_library(
     name = "cmd",
     srcs = [
         "boot.go",
+        "boot_impl.go",
         "capability.go",
         "checkpoint.go",
         "chroot.go",

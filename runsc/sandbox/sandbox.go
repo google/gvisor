@@ -968,7 +968,7 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 		donations.DonateAndClose("save-fds", files...)
 	}
 
-	if err := createSandboxProcessExtra(conf, args, &donations); err != nil {
+	if err := createSandboxProcessExtra(conf, args, cmd, &donations); err != nil {
 		return err
 	}
 

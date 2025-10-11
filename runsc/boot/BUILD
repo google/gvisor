@@ -18,6 +18,7 @@ go_library(
         "gofer_conf.go",
         "limits.go",
         "loader.go",
+        "loader_impl.go",
         "mount_hints.go",
         "network.go",
         "restore.go",

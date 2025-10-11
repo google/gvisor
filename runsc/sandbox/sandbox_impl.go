@@ -18,13 +18,15 @@
 package sandbox
 
 import (
+	"os/exec"
+
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/runsc/boot"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/donation"
 )
 
-func createSandboxProcessExtra(conf *config.Config, args *Args, donations *donation.Agency) error {
+func createSandboxProcessExtra(conf *config.Config, args *Args, cmd *exec.Cmd, donations *donation.Agency) error {
 	return nil
 }
 

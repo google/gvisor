@@ -190,9 +190,11 @@ type Boot struct {
 	// nvidiaDriverVersion is the Nvidia driver version on the host.
 	nvidiaDriverVersion string
 
-	// uid and gud are the user and group IDs to switch to after setting up the user namespace.
+	// uid and gid are the user and group IDs to switch to after setting up the user namespace.
 	uid int
 	gid int
+
+	bootExtra
 }
 
 // Name implements subcommands.Command.Name.
@@ -251,6 +253,8 @@ func (b *Boot) SetFlags(f *flag.FlagSet) {
 	f.IntVar(&b.finalMetricsFD, "final-metrics-log-fd", -1, "file descriptor to write metrics to upon sandbox termination.")
 	f.IntVar(&b.profilingMetricsFD, "profiling-metrics-fd", -1, "file descriptor to write sentry profiling metrics.")
 	f.BoolVar(&b.profilingMetricsLossy, "profiling-metrics-fd-lossy", false, "if true, treat the sentry profiling metrics FD as lossy and write a checksum to it.")
+
+	b.setFlagsExtra(f)
 }
 
 // Execute implements subcommands.Command.Execute.  It starts a sandbox in a
@@ -543,6 +547,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 		HostTHP:             b.hostTHP,
 		SaveFDs:             b.saveFDs.GetFDs(),
 	}
+	b.setBootArgsExtra(&bootArgs)
 	l, err := boot.New(bootArgs)
 	if err != nil {
 		util.Fatalf("creating loader: %v", err)
