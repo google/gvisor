@@ -163,6 +163,10 @@ var allowedSyscalls = seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 		seccomp.EqualTo(linux.MEMBARRIER_CMD_GLOBAL),
 		seccomp.EqualTo(0),
 	},
+	unix.SYS_MEMFD_CREATE: seccomp.PerArg{
+		seccomp.AnyValue{}, /* name */
+		seccomp.EqualTo(0), /* flags */
+	},
 	unix.SYS_MINCORE: seccomp.MatchAll{},
 	unix.SYS_MLOCK:   seccomp.MatchAll{},
 	unix.SYS_MMAP: seccomp.Or{

@@ -1063,7 +1063,7 @@ func testCheckpointRestore(t *testing.T, conf *config.Config, compression statef
 	}
 
 	// Checkpoint running container; save state into new file.
-	if err := cont.Checkpoint(dir, sandbox.CheckpointOpts{Compression: compression}); err != nil {
+	if err := cont.Checkpoint(conf, dir, sandbox.CheckpointOpts{Compression: compression}); err != nil {
 		t.Fatalf("error checkpointing container to empty file: %v", err)
 	}
 
@@ -1267,7 +1267,7 @@ func TestCheckpointRestoreExecKilled(t *testing.T) {
 	}
 
 	// Checkpoint running container.
-	if err := cont.Checkpoint(dir, sandbox.CheckpointOpts{Compression: statefile.CompressionLevelFlateBestSpeed}); err != nil {
+	if err := cont.Checkpoint(conf, dir, sandbox.CheckpointOpts{Compression: statefile.CompressionLevelFlateBestSpeed}); err != nil {
 		t.Fatalf("error checkpointing container: %v", err)
 	}
 	cont.Destroy()
@@ -1346,7 +1346,7 @@ func TestCheckpointRestoreCreateMountPoint(t *testing.T) {
 	}
 
 	// Checkpoint running container; save state into new file.
-	if err := cont.Checkpoint(dir, sandbox.CheckpointOpts{Compression: statefile.CompressionLevelDefault}); err != nil {
+	if err := cont.Checkpoint(conf, dir, sandbox.CheckpointOpts{Compression: statefile.CompressionLevelDefault}); err != nil {
 		t.Fatalf("error checkpointing container to file: %v", err)
 	}
 
@@ -1445,7 +1445,7 @@ func TestUnixDomainSockets(t *testing.T) {
 			}
 
 			// Checkpoint running container; save state into new file.
-			if err := cont.Checkpoint(dir, sandbox.CheckpointOpts{Compression: statefile.CompressionLevelDefault}); err != nil {
+			if err := cont.Checkpoint(conf, dir, sandbox.CheckpointOpts{Compression: statefile.CompressionLevelDefault}); err != nil {
 				t.Fatalf("error checkpointing container to empty file: %v", err)
 			}
 
@@ -2829,7 +2829,7 @@ func TestUsageFD(t *testing.T) {
 	}
 
 	// Checkpoint running container.
-	if err := cont.Checkpoint(dir, sandbox.CheckpointOpts{Compression: statefile.CompressionLevelDefault}); err != nil {
+	if err := cont.Checkpoint(conf, dir, sandbox.CheckpointOpts{Compression: statefile.CompressionLevelDefault}); err != nil {
 		t.Fatalf("error checkpointing container: %v", err)
 	}
 	cont.Destroy()
@@ -3963,7 +3963,7 @@ func TestSpecValidation(t *testing.T) {
 				t.Fatalf("error chmoding file: %q, %v", dir, err)
 			}
 			// Checkpoint running container; save state into new file.
-			if err := cont.Checkpoint(dir, sandbox.CheckpointOpts{Compression: statefile.CompressionLevelFlateBestSpeed}); err != nil {
+			if err := cont.Checkpoint(conf, dir, sandbox.CheckpointOpts{Compression: statefile.CompressionLevelFlateBestSpeed}); err != nil {
 				t.Fatalf("error checkpointing container to empty file: %v", err)
 			}
 
@@ -4175,7 +4175,7 @@ func TestCheckpointResume(t *testing.T) {
 			}
 
 			// Checkpoint running container; save state into new file.
-			if err := cont.Checkpoint(dir, sandbox.CheckpointOpts{Resume: true}); err != nil {
+			if err := cont.Checkpoint(conf, dir, sandbox.CheckpointOpts{Resume: true}); err != nil {
 				t.Fatalf("error checkpointing container to empty file: %v", err)
 			}
 

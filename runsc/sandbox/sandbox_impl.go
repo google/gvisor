@@ -18,6 +18,7 @@
 package sandbox
 
 import (
+	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/runsc/boot"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/donation"
@@ -25,6 +26,10 @@ import (
 
 func createSandboxProcessExtra(conf *config.Config, args *Args, donations *donation.Agency) error {
 	return nil
+}
+
+func setCheckpointOptsImpl(conf *config.Config, imagePath string, opts CheckpointOpts, opt *control.SaveOpts) error {
+	return setCheckpointOptsForLocalCheckpointFiles(conf, imagePath, opts, opt)
 }
 
 func (s *Sandbox) setRestoreOptsImpl(conf *config.Config, imagePath string, direct bool, opt *boot.RestoreOpts) error {

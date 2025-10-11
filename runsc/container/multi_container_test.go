@@ -2782,7 +2782,7 @@ func testMultiContainerCheckpointRestore(t *testing.T, conf *config.Config, comp
 	}()
 
 	// Checkpoint root container; save state into new file.
-	if err := conts[0].Checkpoint(dir, sandbox.CheckpointOpts{Compression: compression}); err != nil {
+	if err := conts[0].Checkpoint(conf, dir, sandbox.CheckpointOpts{Compression: compression}); err != nil {
 		t.Fatalf("error checkpointing container to empty file: %v", err)
 	}
 

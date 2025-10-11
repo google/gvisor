@@ -110,7 +110,7 @@ func (c *Checkpoint) Execute(_ context.Context, f *flag.FlagSet, args ...any) su
 		SaveRestoreExecContainerID: id,
 	}
 
-	if err := cont.Checkpoint(c.imagePath, opts); err != nil {
+	if err := cont.Checkpoint(conf, c.imagePath, opts); err != nil {
 		util.Fatalf("checkpoint failed: %v", err)
 	}
 

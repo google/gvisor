@@ -92,6 +92,8 @@ type SaveOpts struct {
 
 	// ExecOpts contains options for executing a binary during save/restore.
 	ExecOpts SaveRestoreExecOpts
+
+	SaveOptsExtra
 }
 
 // SaveRestoreExecOpts contains options for executing a binary
@@ -112,53 +114,54 @@ type SaveRestoreExecOpts struct {
 // state.SaveOpts.Close() must be called when the state.SaveOpts is no longer
 // needed.
 func ConvertToStateSaveOpts(o *SaveOpts) (*state.SaveOpts, error) {
-	wantFiles := 1
-	if o.HavePagesFile {
-		wantFiles += 2
-	}
-	if gotFiles := len(o.FilePayload.Files); gotFiles != wantFiles {
-		return nil, fmt.Errorf("got %d files, wanted %d", gotFiles, wantFiles)
-	}
-
-	// Save to the first provided stream.
-	stateFile, err := o.ReleaseFD(0)
-	if err != nil {
-		return nil, err
-	}
-	cu := cleanup.Make(func() { stateFile.Close() })
-	defer cu.Clean()
-
 	saveOpts := &state.SaveOpts{
-		Destination:                    stateFile,
 		Key:                            o.Key,
 		Metadata:                       o.Metadata,
 		AppMFExcludeCommittedZeroPages: o.AppMFExcludeCommittedZeroPages,
 		Resume:                         o.Resume,
 	}
+	if err := setSaveOptsImpl(o, saveOpts); err != nil {
+		saveOpts.Close()
+		return nil, err
+	}
+	return saveOpts, nil
+}
 
+func setSaveOptsForLocalCheckpointFiles(o *SaveOpts, saveOpts *state.SaveOpts) error {
+	wantFiles := 1
+	if o.HavePagesFile {
+		wantFiles += 2
+	}
+	if gotFiles := len(o.FilePayload.Files); gotFiles != wantFiles {
+		return fmt.Errorf("got %d files, wanted %d", gotFiles, wantFiles)
+	}
+
+	// Save to the first provided stream.
+	stateFile, err := o.ReleaseFD(0)
+	if err != nil {
+		return err
+	}
+	// Setting saveOpts.Destination/PagesMetadata/PagesFile transfers ownership
+	// of the created object to saveOpts, even if we return a non-nil error.
+	saveOpts.Destination = stateFile
 	if o.HavePagesFile {
 		pagesMetadataFile, err := o.ReleaseFD(1)
 		if err != nil {
-			return nil, err
+			return err
 		}
-		// //pkg/state/wire writes one byte at a time; buffer these writes to
-		// avoid making one syscall per write. For the state file, this
-		// buffering is handled by statefile.NewWriter() => compressio.Writer
-		// or compressio.NewSimpleWriter().
+		// //pkg/state/wire writes one byte at a time; buffer writes to
+		// pagesMetadataFile to avoid making one syscall per write. For the
+		// state file, this buffering is handled by statefile.NewWriter() =>
+		// compressio.Writer or compressio.NewSimpleWriter().
 		saveOpts.PagesMetadata = stateio.NewBufioWriteCloser(pagesMetadataFile)
-		cu.Add(func() { saveOpts.PagesMetadata.Close() })
 
 		pagesFileFD, err := unix.Dup(int(o.Files[2].Fd()))
 		if err != nil {
-			return nil, err
+			return err
 		}
-		// TODO: Allow `runsc checkpoint` to override I/O parameters.
 		saveOpts.PagesFile = stateio.NewPagesFileFDWriterDefault(int32(pagesFileFD))
-		cu.Add(func() { saveOpts.PagesFile.Close() })
 	}
-
-	cu.Release()
-	return saveOpts, nil
+	return nil
 }
 
 // Save saves the running system.
