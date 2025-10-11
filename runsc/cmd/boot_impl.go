@@ -15,28 +15,15 @@
 //go:build !false
 // +build !false
 
-package control
+package cmd
 
 import (
-	"gvisor.dev/gvisor/pkg/sentry/kernel"
-	"gvisor.dev/gvisor/pkg/sentry/state"
-	"gvisor.dev/gvisor/pkg/timing"
+	"gvisor.dev/gvisor/runsc/boot"
+	"gvisor.dev/gvisor/runsc/flag"
 )
 
-type SaveOptsExtra struct{}
+type bootExtra struct{}
 
-func setSaveOptsImpl(o *SaveOpts, saveOpts *state.SaveOpts) error {
-	return setSaveOptsForLocalCheckpointFiles(o, saveOpts)
-}
+func (b *Boot) setFlagsExtra(f *flag.FlagSet) {}
 
-func preSaveImpl(k *kernel.Kernel, o *state.SaveOpts) error {
-	return nil
-}
-
-func postRestoreImpl(k *kernel.Kernel, _ *timing.Timeline) error {
-	return nil
-}
-
-func postResumeImpl(k *kernel.Kernel, _ *timing.Timeline) error {
-	return nil
-}
+func (b *Boot) setBootArgsExtra(bootArgs *boot.Args) {}

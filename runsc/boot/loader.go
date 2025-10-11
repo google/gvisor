@@ -278,6 +278,8 @@ type Loader struct {
 	// saveRestoreNet indicates if the saved network stack should be used
 	// during restore.
 	saveRestoreNet bool
+
+	LoaderExtra
 }
 
 // execID uniquely identifies a sentry process that is executed in a container.
@@ -381,6 +383,8 @@ type Args struct {
 	HostTHP HostTHP
 
 	SaveFDs []*fd.FD
+
+	ArgsExtra
 }
 
 // HostTHP holds host transparent hugepage settings.
@@ -471,6 +475,7 @@ func New(args Args) (*Loader, error) {
 		containerSpecs: make(map[string]*specs.Spec),
 		saveFDs:        args.SaveFDs,
 	}
+	setLoaderFromArgsExtra(l, &args)
 
 	if args.NumCPU == 0 {
 		args.NumCPU = runtime.NumCPU()

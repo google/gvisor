@@ -968,7 +968,7 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 		donations.DonateAndClose("save-fds", files...)
 	}
 
-	if err := createSandboxProcessExtra(conf, args, &donations); err != nil {
+	if err := createSandboxProcessExtra(conf, args, cmd, &donations); err != nil {
 		return err
 	}
 
@@ -1502,38 +1502,42 @@ type CheckpointOpts struct {
 
 // Checkpoint sends the checkpoint call for a container in the sandbox.
 // The statefile will be written to f.
-func (s *Sandbox) Checkpoint(cid string, imagePath string, opts CheckpointOpts) error {
+func (s *Sandbox) Checkpoint(conf *config.Config, cid string, imagePath string, opts CheckpointOpts) error {
 	log.Debugf("Checkpoint sandbox %q, imagePath %q, opts %+v", s.ID, imagePath, opts)
-
-	files, err := createSaveFiles(imagePath, opts.Direct, opts.Compression)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		for _, f := range files {
-			_ = f.Close()
-		}
-	}()
 
 	opt := control.SaveOpts{
 		Metadata:                       opts.Compression.ToMetadata(),
 		AppMFExcludeCommittedZeroPages: opts.ExcludeCommittedZeroPages,
-		FilePayload: urpc.FilePayload{
-			Files: files,
-		},
-		HavePagesFile: len(files) > 1,
-		Resume:        opts.Resume,
+		Resume:                         opts.Resume,
 		ExecOpts: control.SaveRestoreExecOpts{
 			Argv:        opts.SaveRestoreExecArgv,
 			Timeout:     opts.SaveRestoreExecTimeout,
 			ContainerID: opts.SaveRestoreExecContainerID,
 		},
 	}
+	defer func() {
+		for _, f := range opt.FilePayload.Files {
+			_ = f.Close()
+		}
+	}()
+	if err := setCheckpointOptsImpl(conf, imagePath, opts, &opt); err != nil {
+		return err
+	}
 
 	if err := s.call(boot.ContMgrCheckpoint, &opt, nil); err != nil {
 		return fmt.Errorf("checkpointing container %q: %w", cid, err)
 	}
 	s.Checkpointed = true
+	return nil
+}
+
+func setCheckpointOptsForLocalCheckpointFiles(conf *config.Config, imagePath string, opts CheckpointOpts, opt *control.SaveOpts) error {
+	files, err := createSaveFiles(imagePath, opts.Direct, opts.Compression)
+	if err != nil {
+		return err
+	}
+	opt.FilePayload.Files = files
+	opt.HavePagesFile = len(files) > 1
 	return nil
 }
 

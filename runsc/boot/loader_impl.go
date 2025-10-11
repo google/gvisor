@@ -15,28 +15,10 @@
 //go:build !false
 // +build !false
 
-package control
+package boot
 
-import (
-	"gvisor.dev/gvisor/pkg/sentry/kernel"
-	"gvisor.dev/gvisor/pkg/sentry/state"
-	"gvisor.dev/gvisor/pkg/timing"
-)
+type LoaderExtra struct{}
 
-type SaveOptsExtra struct{}
+type ArgsExtra struct{}
 
-func setSaveOptsImpl(o *SaveOpts, saveOpts *state.SaveOpts) error {
-	return setSaveOptsForLocalCheckpointFiles(o, saveOpts)
-}
-
-func preSaveImpl(k *kernel.Kernel, o *state.SaveOpts) error {
-	return nil
-}
-
-func postRestoreImpl(k *kernel.Kernel, _ *timing.Timeline) error {
-	return nil
-}
-
-func postResumeImpl(k *kernel.Kernel, _ *timing.Timeline) error {
-	return nil
-}
+func setLoaderFromArgsExtra(l *Loader, args *Args) {}
