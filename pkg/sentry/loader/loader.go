@@ -17,6 +17,7 @@ package loader
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"path"
@@ -187,7 +188,11 @@ func loadExecutable(ctx context.Context, args LoadArgs) (loadedELF, *arch.Contex
 			var err error
 			args.File, err = openPath(ctx, args)
 			if err != nil {
-				ctx.Infof("Error opening %s: %v", args.Filename, err)
+				// ENOENT is common for runtimes that try to exec many locations on PATH (e.g Python).
+				// Don't log those errors to avoid spam.
+				if !errors.Is(err, linuxerr.ENOENT) {
+					ctx.Infof("Error opening %s: %v", args.Filename, err)
+				}
 				return loadedELF{}, nil, nil, nil, err
 			}
 			// Ensure file is release in case the code loops or errors out.
