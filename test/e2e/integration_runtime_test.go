@@ -249,6 +249,9 @@ func TestOverlayCheckpointRestore(t *testing.T) {
 		t.Skip("Checkpoint is not supported.")
 	}
 	dockerutil.EnsureDockerExperimentalEnabled()
+	if !dockerutil.IsRestoreSupported() {
+		t.Skip("Restore is not supported.")
+	}
 
 	dir, err := os.MkdirTemp(testutil.TmpDir(), "submount")
 	if err != nil {

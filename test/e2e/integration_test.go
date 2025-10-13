@@ -179,6 +179,9 @@ func TestCheckpointRestore(t *testing.T) {
 		t.Skip("Checkpoint is not supported.")
 	}
 	dockerutil.EnsureDockerExperimentalEnabled()
+	if !dockerutil.IsRestoreSupported() {
+		t.Skip("Restore is not supported.")
+	}
 
 	ctx := context.Background()
 	d := dockerutil.MakeContainer(ctx, t)
@@ -1268,7 +1271,25 @@ func connectAndReadWrite(t *testing.T, serverIP string, port int) {
 	}
 }
 
-func testCheckpointRestoreTCPConnection(ctx context.Context, t *testing.T, d *dockerutil.Container, fName string, numConn int, restoreLoopback bool) {
+func testCheckpointRestoreTCPConnection(t *testing.T, netstackSR bool, fName string, numConn int, restoreLoopback bool) {
+	if !testutil.IsCheckpointSupported() {
+		t.Skip("Checkpoint is not supported.")
+	}
+	dockerutil.EnsureDockerExperimentalEnabled()
+	if !dockerutil.IsRestoreSupported() {
+		t.Skip("Restore is not supported.")
+	}
+
+	var d *dockerutil.Container
+	ctx := context.Background()
+	if netstackSR {
+		if !testutil.IsRunningWithSaveRestoreNetstack() {
+			t.Skip("Netstack save restore is not supported.")
+		}
+		d = dockerutil.MakeContainerWithRuntime(ctx, t, "-save-restore-netstack")
+	} else {
+		d = dockerutil.MakeContainer(ctx, t)
+	}
 	defer d.CleanUp(ctx)
 
 	opts := dockerutil.RunOpts{
@@ -1322,59 +1343,22 @@ func testCheckpointRestoreTCPConnection(ctx context.Context, t *testing.T, d *do
 
 // Test to check restore of a TCP listening connection without netstack S/R.
 func TestRestoreListenConn(t *testing.T) {
-	if !testutil.IsCheckpointSupported() {
-		t.Skip("Checkpoint is not supported.")
-	}
-	dockerutil.EnsureDockerExperimentalEnabled()
-
-	ctx := context.Background()
-	d := dockerutil.MakeContainer(ctx, t)
-	testCheckpointRestoreTCPConnection(ctx, t, d, "./tcp_server" /* fName */, 1 /* numConn */, false /* restoreLoopback */)
+	testCheckpointRestoreTCPConnection(t, false /* netstackSR */, "./tcp_server" /* fName */, 1 /* numConn */, false /* restoreLoopback */)
 }
 
 // Test to check restore of a TCP listening connection with netstack S/R.
 func TestRestoreListenConnWithNetstackSR(t *testing.T) {
-	if !testutil.IsCheckpointSupported() {
-		t.Skip("Checkpoint is not supported.")
-	}
-	if !testutil.IsRunningWithSaveRestoreNetstack() {
-		t.Skip("Netstack save restore is not supported.")
-	}
-	dockerutil.EnsureDockerExperimentalEnabled()
-
-	ctx := context.Background()
-	d := dockerutil.MakeContainerWithRuntime(ctx, t, "-save-restore-netstack")
-	testCheckpointRestoreTCPConnection(ctx, t, d, "./tcp_server" /* fName */, 1 /* numConn */, false /* restoreLoopback */)
+	testCheckpointRestoreTCPConnection(t, true /* netstackSR */, "./tcp_server" /* fName */, 1 /* numConn */, false /* restoreLoopback */)
 }
 
 // Test to check restore of multiple TCP listening connections with netstack S/R.
 func TestRestoreMultipleListenConnWithNetstackSR(t *testing.T) {
-	if !testutil.IsCheckpointSupported() {
-		t.Skip("Checkpoint is not supported.")
-	}
-	if !testutil.IsRunningWithSaveRestoreNetstack() {
-		t.Skip("Netstack save restore is not supported.")
-	}
-	dockerutil.EnsureDockerExperimentalEnabled()
-
-	ctx := context.Background()
-	d := dockerutil.MakeContainerWithRuntime(ctx, t, "-save-restore-netstack")
-	testCheckpointRestoreTCPConnection(ctx, t, d, "./tcp_stress_server" /* fName */, 100 /* numConn */, false /* restoreLoopback */)
+	testCheckpointRestoreTCPConnection(t, true /* netstackSR */, "./tcp_stress_server" /* fName */, 100 /* numConn */, false /* restoreLoopback */)
 }
 
 // Test to check restore of TCP established loopback connection with netstack S/R.
 func TestRestoreLoopbackConnWithNetstackSR(t *testing.T) {
-	if !testutil.IsCheckpointSupported() {
-		t.Skip("Checkpoint is not supported.")
-	}
-	if !testutil.IsRunningWithSaveRestoreNetstack() {
-		t.Skip("Netstack save restore is not supported.")
-	}
-	dockerutil.EnsureDockerExperimentalEnabled()
-
-	ctx := context.Background()
-	d := dockerutil.MakeContainerWithRuntime(ctx, t, "-save-restore-netstack")
-	testCheckpointRestoreTCPConnection(ctx, t, d, "./tcp_loopback" /* fName */, 1 /* numConn */, true /* restoreLoopback */)
+	testCheckpointRestoreTCPConnection(t, true /* netstackSR */, "./tcp_loopback" /* fName */, 1 /* numConn */, true /* restoreLoopback */)
 }
 
 // Test to check if sudo works

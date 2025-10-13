@@ -89,10 +89,7 @@ func PrintDockerConfig() {
 	log.Printf("Docker config (from %v):\n--------\n%v\n--------\n", *config, string(configBytes))
 }
 
-// EnsureSupportedDockerVersion checks if correct docker is installed.
-//
-// This logs directly to stderr, as it is typically called from a Main wrapper.
-func EnsureSupportedDockerVersion() {
+func getDockerVersion() (int, int) {
 	cmd := exec.Command(dockerCLIPath(), "version")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -105,6 +102,14 @@ func EnsureSupportedDockerVersion() {
 	}
 	major, _ := strconv.Atoi(matches[1])
 	minor, _ := strconv.Atoi(matches[2])
+	return major, minor
+}
+
+// EnsureSupportedDockerVersion checks if correct docker is installed.
+//
+// This logs directly to stderr, as it is typically called from a Main wrapper.
+func EnsureSupportedDockerVersion() {
+	major, minor := getDockerVersion()
 	if major < 17 || (major == 17 && minor < 9) {
 		log.Fatalf("Docker version 17.09.0 or greater is required, found: %02d.%02d", major, minor)
 	}
@@ -121,6 +126,14 @@ func EnsureDockerExperimentalEnabled() {
 		PrintDockerConfig()
 		log.Fatalf("Docker is running without experimental features enabled.")
 	}
+}
+
+// IsRestoreSupported returns true if the docker version supports restore.
+// Docker restore broke starting v28 due to
+// https://github.com/moby/moby/issues/50750.
+func IsRestoreSupported() bool {
+	major, _ := getDockerVersion()
+	return major <= 27
 }
 
 // RuntimePath returns the binary path for the current runtime.

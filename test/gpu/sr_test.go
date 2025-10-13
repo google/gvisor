@@ -30,6 +30,9 @@ func TestGPUCheckpointRestore(t *testing.T) {
 		t.Skip("Checkpoint is not supported.")
 	}
 	dockerutil.EnsureDockerExperimentalEnabled()
+	if !dockerutil.IsRestoreSupported() {
+		t.Skip("Restore is not supported.")
+	}
 
 	ctx := context.Background()
 	c := dockerutil.MakeContainer(ctx, t)
