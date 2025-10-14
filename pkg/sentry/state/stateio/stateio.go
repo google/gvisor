@@ -252,7 +252,8 @@ type AsyncWriter interface {
 	// despite successful completion of previous writes.
 	//
 	// Preconditions:
-	// - No writes are inflight or enqueued.
+	// - Wait has returned successful completions for all writes submitted by
+	//   previous calls to AddWrite and AddWritev.
 	// - No call to Wait has returned a non-nil error.
 	// - Finalize has never been called.
 	Finalize() error
