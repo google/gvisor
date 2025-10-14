@@ -333,11 +333,15 @@ func (i *lisafsInode) destroy(ctx context.Context, d *dentry) {
 		i.writeFDLisa.Close(ctx, false /* flush */)
 	}
 	if i.controlFD.Ok() {
-		// Close the control FD. Propagate the Close RPCs immediately to the server
-		// if the dentry being destroyed is a deleted regular file. This is to
-		// release the disk space on remote immediately. This will flush the above
-		// read/write lisa FDs as well.
-		flushClose := d.isDeleted() && i.isRegularFile()
+		// Close the control FD.
+		// Propagate the Close RPCs immediately to the server if:
+		// - The dentry being destroyed is a deleted regular file. This is to
+		//   release the disk space on remote immediately.
+		// - The filesystem is shared with external writers, who may try to delete
+		//   files and attempt to unmount the filesystem. gVisor should not be
+		//   caching FDs here as it would prevent external cleanup.
+		// This will flush the Close RPCs for read/write lisa FDs above as well.
+		flushClose := i.fs.opts.interop == InteropModeShared || (d.isDeleted() && i.isRegularFile())
 		i.controlFD.Close(ctx, flushClose)
 	}
 }
