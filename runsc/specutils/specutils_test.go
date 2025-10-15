@@ -502,6 +502,45 @@ func TestNvidiaDriverCapabilities(t *testing.T) {
 	}
 }
 
+func TestRootfsUpperTarPath(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		spec specs.Spec
+		want string
+	}{
+		{
+			name: "no annotation",
+			spec: specs.Spec{},
+			want: "",
+		},
+		{
+			name: "no gvisor tar rootfs upper annotation",
+			spec: specs.Spec{
+				Annotations: map[string]string{
+					"dev.gvisor": "123",
+				},
+			},
+			want: "",
+		},
+		{
+			name: "get gvisor tar rootfs upper annotation",
+			spec: specs.Spec{
+				Annotations: map[string]string{
+					"dev.gvisor.tar.rootfs.upper": "123",
+				},
+			},
+			want: "123",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := RootfsTarUpperPath(&tc.spec)
+			if got != tc.want {
+				t.Errorf("RootfsUpperTarFD() got: %v, want: %v", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestContainerName(t *testing.T) {
 	for _, tc := range []struct {
 		name string

@@ -405,6 +405,10 @@ type containerMounter struct {
 	// This is used to set the InitialCgroups before starting the container
 	// process.
 	cgroupsMounted bool
+
+	// rootfsUpperTarFD is the file descriptor to the tar file containing the rootfs
+	// upper layer changes.
+	rootfsUpperTarFD *fd.FD
 }
 
 func newContainerMounter(info *containerInfo, k *kernel.Kernel, hints *PodMountHints, sharedMounts map[string]*vfs.Mount, productName string, sandboxID string) *containerMounter {
@@ -422,6 +426,7 @@ func newContainerMounter(info *containerInfo, k *kernel.Kernel, hints *PodMountH
 		containerID:       info.cid,
 		sandboxID:         sandboxID,
 		containerName:     info.containerName,
+		rootfsUpperTarFD:  info.rootfsUpperTarFD,
 	}
 }
 
@@ -546,12 +551,16 @@ func (c *containerMounter) createMountNamespace(ctx context.Context, conf *confi
 		if rootfsConf.IsFilestorePresent() {
 			filestoreFD = c.goferFilestoreFDs.removeAsFD()
 		}
-		opts, cleanup, err = c.configureOverlay(ctx, conf, creds, opts, fsName, filestoreFD, rootfsConf, "/")
+		opts, cleanup, err = c.configureOverlay(ctx, conf, creds, opts, fsName, filestoreFD, rootfsConf, "/", c.rootfsUpperTarFD)
 		if err != nil {
 			return nil, fmt.Errorf("mounting root with overlay: %w", err)
 		}
 		defer cleanup()
 		fsName = overlay.Name
+	} else {
+		if c.rootfsUpperTarFD != nil {
+			return nil, fmt.Errorf("rootfs-upper-tar-fd is set when overlay is disabled for rootfs: rootfsConf=%s", rootfsConf)
+		}
 	}
 
 	// The namespace root mount can't be changed, so let's mount a dummy
@@ -587,7 +596,7 @@ func (c *containerMounter) createMountNamespace(ctx context.Context, conf *confi
 // layer using tmpfs, and return overlay mount options. "cleanup" must be called
 // after the options have been used to mount the overlay, to release refs on
 // lower and upper mounts.
-func (c *containerMounter) configureOverlay(ctx context.Context, conf *config.Config, creds *auth.Credentials, lowerOpts *vfs.MountOptions, lowerFSName string, filestoreFD *fd.FD, mountConf GoferMountConf, dst string) (*vfs.MountOptions, func(), error) {
+func (c *containerMounter) configureOverlay(ctx context.Context, conf *config.Config, creds *auth.Credentials, lowerOpts *vfs.MountOptions, lowerFSName string, filestoreFD *fd.FD, mountConf GoferMountConf, dst string, rootfsUpperTarFD *fd.FD) (*vfs.MountOptions, func(), error) {
 	// First copy options from lower layer to upper layer and overlay. Clear
 	// filesystem specific options.
 	upperOpts := *lowerOpts
@@ -598,7 +607,6 @@ func (c *containerMounter) configureOverlay(ctx context.Context, conf *config.Co
 		}
 		upperOpts.GetFilesystemOptions.Data += "size=" + mountConf.Size
 	}
-
 	overlayOpts := *lowerOpts
 	overlayOpts.GetFilesystemOptions = vfs.GetFilesystemOptions{InternalMount: true}
 
@@ -644,6 +652,11 @@ func (c *containerMounter) configureOverlay(ctx context.Context, conf *config.Co
 			return nil, nil, fmt.Errorf("failed to create memory file for overlay: %v", err)
 		}
 		tmpfsOpts.MemoryFile = mf
+	}
+	// If the rootfs upper tar file is provided, it will be applied to the
+	// tmpfs which is on the upper layer of the root's overlay fs.
+	if rootfsUpperTarFD != nil {
+		tmpfsOpts.SourceTarFile = rootfsUpperTarFD.ReleaseToFile("rootfs-upper-tar-fd")
 	}
 	upperOpts.GetFilesystemOptions.InternalData = tmpfsOpts
 	upper, err := c.k.VFS().MountDisconnected(ctx, creds, "" /* source */, tmpfs.Name, &upperOpts)
@@ -853,7 +866,7 @@ func (c *containerMounter) mountSubmount(ctx context.Context, spec *specs.Spec, 
 	if submount.goferMountConf.ShouldUseOverlayfs() {
 		log.Infof("Adding overlay on top of mount %q", submount.mount.Destination)
 		var cleanup func()
-		opts, cleanup, err = c.configureOverlay(ctx, conf, creds, opts, fsName, submount.filestoreFD, submount.goferMountConf, submount.mount.Destination)
+		opts, cleanup, err = c.configureOverlay(ctx, conf, creds, opts, fsName, submount.filestoreFD, submount.goferMountConf, submount.mount.Destination, nil)
 		if err != nil {
 			return nil, fmt.Errorf("mounting volume with overlay at %q: %w", submount.mount.Destination, err)
 		}

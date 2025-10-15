@@ -302,7 +302,8 @@ func NewSpecWithArgs(args ...string) *specs.Spec {
 				Source:      TmpDir(),
 			},
 		},
-		Hostname: "runsc-test-hostname",
+		Hostname:    "runsc-test-hostname",
+		Annotations: map[string]string{},
 	}
 }
 

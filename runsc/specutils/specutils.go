@@ -813,6 +813,15 @@ func containerNameNoRemap(spec *specs.Spec) string {
 	return spec.Annotations[annotationContainerName]
 }
 
+// RootfsTarUpperPath returns the path to the rootfs upper tar file. Returns empty string if no
+// annotation is found.
+func RootfsTarUpperPath(spec *specs.Spec) string {
+	if spec == nil || spec.Annotations == nil {
+		return ""
+	}
+	return spec.Annotations["dev.gvisor.tar.rootfs.upper"]
+}
+
 // AnnotationToBool parses the annotation value as a bool. On failure, it logs a warning and
 // returns false.
 func AnnotationToBool(spec *specs.Spec, annotation string) bool {

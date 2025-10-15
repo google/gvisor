@@ -135,16 +135,17 @@ func createLoader(conf *config.Config, spec *specs.Spec) (*Loader, func(), error
 	}
 
 	args := Args{
-		ID:              "foo",
-		Spec:            spec,
-		Conf:            conf,
-		ControllerFD:    fd,
-		GoferFDs:        []int{sandEnd},
-		DevGoferFD:      -1,
-		StdioFDs:        stdio,
-		GoferMountConfs: []GoferMountConf{{Lower: Lisafs, Upper: NoOverlay}},
-		PodInitConfigFD: -1,
-		ExecFD:          -1,
+		ID:               "foo",
+		Spec:             spec,
+		Conf:             conf,
+		ControllerFD:     fd,
+		GoferFDs:         []int{sandEnd},
+		DevGoferFD:       -1,
+		StdioFDs:         stdio,
+		GoferMountConfs:  []GoferMountConf{{Lower: Lisafs, Upper: NoOverlay}},
+		PodInitConfigFD:  -1,
+		ExecFD:           -1,
+		RootfsUpperTarFD: -1,
 	}
 	l, err := New(args)
 	if err != nil {

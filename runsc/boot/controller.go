@@ -338,10 +338,14 @@ type StartArgs struct {
 	// for bind mounts in Spec.Mounts (in the same order).
 	GoferMountConfs []GoferMountConf
 
+	// IsRootfsUpperTarFilePresent indicates whether the rootfs upper tar file is present.
+	IsRootfsUpperTarFilePresent bool
+
 	// FilePayload contains, in order:
 	//   * stdin, stdout, and stderr (optional: if terminal is disabled).
 	//   * file descriptors to gofer-backing host files (optional).
 	//   * file descriptor for /dev gofer connection (optional)
+	//   * file descriptor for rootfs upper tar file (optional)
 	//   * file descriptors to connect to gofer to serve the root filesystem.
 	urpc.FilePayload
 }
@@ -369,6 +373,9 @@ func (cm *containerManager) StartSubcontainer(args *StartArgs, _ *struct{}) erro
 	}
 	if !args.Spec.Process.Terminal {
 		expectedFDs += 3
+	}
+	if args.IsRootfsUpperTarFilePresent {
+		expectedFDs++
 	}
 	if len(args.Files) < expectedFDs {
 		return fmt.Errorf("start arguments must contain at least %d FDs, but only got %d", expectedFDs, len(args.Files))
@@ -421,6 +428,17 @@ func (cm *containerManager) StartSubcontainer(args *StartArgs, _ *struct{}) erro
 		defer devGoferFD.Close()
 	}
 
+	var rootfsUpperTarFD *fd.FD
+	if args.IsRootfsUpperTarFilePresent {
+		var err error
+		rootfsUpperTarFD, err = fd.NewFromFile(goferFiles[0])
+		if err != nil {
+			return fmt.Errorf("error dup'ing rootfs upper tar file: %w", err)
+		}
+		goferFiles = goferFiles[1:]
+		defer rootfsUpperTarFD.Close()
+	}
+
 	goferFDs, err := fd.NewFromFiles(goferFiles)
 	if err != nil {
 		return fmt.Errorf("error dup'ing gofer files: %w", err)
@@ -431,7 +449,7 @@ func (cm *containerManager) StartSubcontainer(args *StartArgs, _ *struct{}) erro
 		}
 	}()
 
-	if err := cm.l.startSubcontainer(args.Spec, args.Conf, args.CID, stdios, goferFDs, goferFilestoreFDs, devGoferFD, args.GoferMountConfs); err != nil {
+	if err := cm.l.startSubcontainer(args.Spec, args.Conf, args.CID, stdios, goferFDs, goferFilestoreFDs, devGoferFD, args.GoferMountConfs, rootfsUpperTarFD); err != nil {
 		log.Debugf("containerManager.StartSubcontainer failed, cid: %s, args: %+v, err: %v", args.CID, args, err)
 		return err
 	}
