@@ -2791,6 +2791,7 @@ cc_library(
         "//test/util:posix_error",
         "//test/util:socket_util",
         "//test/util:test_util",
+        "@com_google_absl//absl/cleanup",
         "@com_google_absl//absl/memory",
     ],
     alwayslink = 1,
