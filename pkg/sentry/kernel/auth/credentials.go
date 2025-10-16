@@ -152,6 +152,28 @@ func (c *Credentials) Fork() *Credentials {
 	return nc
 }
 
+// ForkIntoUserNamespace returns a copy of c after its caller has entered user
+// namespace ns.
+func (c *Credentials) ForkIntoUserNamespace(ns *UserNamespace) *Credentials {
+	nc := c.Fork()
+	nc.UserNamespace = ns
+	// "The child process created by clone(2) with the CLONE_NEWUSER flag
+	// starts out with a complete set of capabilities in the new user
+	// namespace. Likewise, a process that creates a new user namespace using
+	// unshare(2) or joins an existing user namespace using setns(2) gains a
+	// full set of capabilities in that namespace."
+	nc.PermittedCaps = AllCapabilities
+	nc.InheritableCaps = 0
+	nc.EffectiveCaps = AllCapabilities
+	nc.BoundingCaps = AllCapabilities
+	// "A call to clone(2), unshare(2), or setns(2) using the CLONE_NEWUSER
+	// flag sets the "securebits" flags (see capabilities(7)) to their default
+	// values (all flags disabled) in the child (for clone(2)) or caller (for
+	// unshare(2), or setns(2)." - user_namespaces(7)
+	nc.KeepCaps = false
+	return nc
+}
+
 // InGroup returns true if c is in group kgid. Compare Linux's
 // kernel/groups.c:in_group_p().
 func (c *Credentials) InGroup(kgid KGID) bool {
@@ -240,34 +262,6 @@ func (c *Credentials) UseGID(gid GID) (KGID, error) {
 		return kgid, nil
 	}
 	return NoID, linuxerr.EPERM
-}
-
-// SetUID translates the provided uid to the root user namespace and updates c's
-// uids to it. This performs no permissions or capabilities checks, the caller
-// is responsible for ensuring the calling context is permitted to modify c.
-func (c *Credentials) SetUID(uid UID) error {
-	kuid := c.UserNamespace.MapToKUID(uid)
-	if !kuid.Ok() {
-		return linuxerr.EINVAL
-	}
-	c.RealKUID = kuid
-	c.EffectiveKUID = kuid
-	c.SavedKUID = kuid
-	return nil
-}
-
-// SetGID translates the provided gid to the root user namespace and updates c's
-// gids to it. This performs no permissions or capabilities checks, the caller
-// is responsible for ensuring the calling context is permitted to modify c.
-func (c *Credentials) SetGID(gid GID) error {
-	kgid := c.UserNamespace.MapToKGID(gid)
-	if !kgid.Ok() {
-		return linuxerr.EINVAL
-	}
-	c.RealKGID = kgid
-	c.EffectiveKGID = kgid
-	c.SavedKGID = kgid
-	return nil
 }
 
 // LoadSeccheckData sets credential data based on mask.
