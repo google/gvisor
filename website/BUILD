@@ -165,6 +165,7 @@ docs(
         "//g3doc/user_guide:observability",
         "//g3doc/user_guide:platforms",
         "//g3doc/user_guide:production",
+        "//g3doc/user_guide:rootfs_snapshot",
         "//g3doc/user_guide:runtime_monitoring",
         "//g3doc/user_guide:systemd",
         "//g3doc/user_guide:tpu",
