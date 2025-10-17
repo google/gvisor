@@ -310,10 +310,15 @@ cos-gpu-smoke-tests: gpu-smoke-images $(RUNTIME_BIN)
 # This is a superset of those needed for smoke tests.
 # It includes non-GPU images that are used as part of GPU tests,
 # e.g. busybox and python.
-gpu-images: gpu-smoke-images load-gpu_pytorch load-gpu_ollama load-gpu_ollama_client load-basic_busybox load-basic_alpine load-basic_python load-gpu_stable-diffusion-xl load-gpu_vllm load-gpu_nccl-tests load-benchmarks_ffmpeg
+gpu-images: gpu-smoke-images load-gpu_pytorch load-gpu_ollama load-gpu_ollama_client load-gpu_sglang load-gpu_sglang_client load-basic_busybox load-basic_alpine load-basic_python load-gpu_stable-diffusion-xl load-gpu_vllm load-gpu_nccl-tests load-benchmarks_ffmpeg
 .PHONY: gpu-images
 
-gpu-all-tests: gpu-images gpu-smoke-tests $(RUNTIME_BIN)
+gpu-l4-tests: load-gpu_sglang load-gpu_sglang_client $(RUNTIME_BIN)
+	@$(call install_runtime,$(RUNTIME),--nvproxy=true --nvproxy-docker=true --nvproxy-allowed-driver-capabilities=all)
+	@$(call sudo,test/gpu:sglang_test,--runtime=$(RUNTIME) -test.v $(ARGS))
+.PHONY: gpu-l4-tests
+
+gpu-all-tests: gpu-images gpu-smoke-tests gpu-l4-tests $(RUNTIME_BIN)
 	@$(call install_runtime,$(RUNTIME),--nvproxy=true --nvproxy-docker=true --nvproxy-allowed-driver-capabilities=all)
 	@$(call sudo,test/gpu:pytorch_test,--runtime=$(RUNTIME) -test.v $(ARGS))
 	@$(call sudo,test/gpu:textgen_test,--runtime=$(RUNTIME) -test.v $(ARGS))
