@@ -67,6 +67,7 @@ type fsTreeCreator struct {
 	fileSize         uint
 	targetDir        string
 	createSymlink    bool
+	addEmptyFiles    bool
 }
 
 // Name implements subcommands.Command.Name.
@@ -91,6 +92,7 @@ func (c *fsTreeCreator) SetFlags(f *flag.FlagSet) {
 	f.UintVar(&c.fileSize, "file-size", 4096, "size of each file")
 	f.StringVar(&c.targetDir, "target-dir", "/", "directory under which to create the filesystem tree")
 	f.BoolVar(&c.createSymlink, "create-symlink", false, "create symlinks other than the first file per level")
+	f.BoolVar(&c.addEmptyFiles, "add-empty-files", false, "add empty file to each level")
 }
 
 // Execute implements subcommands.Command.Execute.
@@ -115,6 +117,12 @@ func (c *fsTreeCreator) Execute(ctx context.Context, f *flag.FlagSet, args ...an
 				if err := os.WriteFile(filePath, data, 0666); err != nil {
 					log.Fatalf("error writing file %q: %v", filePath, err)
 				}
+			}
+		}
+		if c.addEmptyFiles {
+			emptyPath := filepath.Join(curDir, fmt.Sprintf("empty%d", i))
+			if err := os.WriteFile(emptyPath, nil, 0666); err != nil {
+				log.Fatalf("error writing empty file %q: %v", emptyPath, err)
 			}
 		}
 		nextDir := filepath.Join(curDir, "dir")

@@ -4035,11 +4035,10 @@ func TestTarRootfsUpperLayer(t *testing.T) {
 	if err := cont.Start(conf); err != nil {
 		t.Fatalf("error starting container: %v", err)
 	}
-
 	// Exec the command in the container.
 	execArgs := &control.ExecArgs{
 		Filename: app,
-		Argv:     []string{app, "fsTreeCreate", "--depth=3", "--file-per-level=2", "--file-size=1470", "--create-symlink"},
+		Argv:     []string{app, "fsTreeCreate", "--depth=3", "--file-per-level=2", "--file-size=1470", "--create-symlink", "--add-empty-files"},
 	}
 	if ws, err := cont.executeSync(conf, execArgs); err != nil {
 		t.Fatalf("error exec'ing: %v", err)
