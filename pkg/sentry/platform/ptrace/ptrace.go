@@ -110,7 +110,10 @@ func (c *context) Switch(ctx pkgcontext.Context, mm platform.MemoryManager, ac *
 	as := mm.AddressSpace()
 	s := as.(*subprocess)
 restart:
-	isSyscall := s.switchToApp(c, ac)
+	isSyscall, err := s.switchToApp(c, ac)
+	if err != nil {
+		return nil, hostarch.NoAccess, err
+	}
 
 	var (
 		faultSP   *subprocess
