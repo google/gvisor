@@ -467,9 +467,9 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, tcp
 
 	dataSz := p.Len()
 	pktInfo := udpInfo.ctx.PacketInfo()
-	pkt := udpInfo.ctx.TryNewPacketBufferFromPayloader(header.UDPMinimumSize+int(pktInfo.MaxHeaderLength), p)
-	if pkt == nil {
-		return 0, &tcpip.ErrWouldBlock{}
+	pkt, err := udpInfo.ctx.TryNewPacketBufferFromPayloader(header.UDPMinimumSize+int(pktInfo.MaxHeaderLength), p)
+	if err != nil {
+		return 0, err
 	}
 	defer pkt.DecRef()
 

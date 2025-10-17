@@ -77,8 +77,10 @@ func (fs *filesystem) readFromTar(ctx context.Context, tr *tar.Reader) error {
 			if n != header.Size {
 				return fmt.Errorf("failed to read all file content, got %d bytes, want %d", n, header.Size)
 			}
+			if header.Size > 0 {
+				fileToContent[header.Name] = &buffer
+			}
 			fileToHeader[header.Name] = header
-			fileToContent[header.Name] = &buffer
 		case tar.TypeFifo, tar.TypeBlock, tar.TypeChar:
 			fileToHeader[header.Name] = header
 		case tar.TypeSymlink:

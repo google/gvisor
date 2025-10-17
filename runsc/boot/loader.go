@@ -156,6 +156,10 @@ type containerInfo struct {
 	// applicationCores is the number of CPU cores gVisor reports to user
 	// applications.
 	applicationCores int
+
+	// rootfsUpperTarFD is the file descriptor to the tar file containing the rootfs
+	// upper layer changes.
+	rootfsUpperTarFD *fd.FD
 }
 
 type loaderState int
@@ -385,6 +389,10 @@ type Args struct {
 	SaveFDs []*fd.FD
 
 	ArgsExtra
+
+	// RootfsUpperTarFD is the file descriptor to the tar file containing the rootfs
+	// upper layer changes.
+	RootfsUpperTarFD int
 }
 
 // HostTHP holds host transparent hugepage settings.
@@ -533,6 +541,10 @@ func New(args Args) (*Loader, error) {
 			host:  fd.New(customFD.Host),
 			guest: customFD.Guest,
 		})
+	}
+
+	if args.RootfsUpperTarFD >= 0 {
+		l.root.rootfsUpperTarFD = fd.New(args.RootfsUpperTarFD)
 	}
 
 	// Create kernel and platform.
@@ -1095,7 +1107,7 @@ func (l *Loader) createSubcontainer(cid string, tty *fd.FD) error {
 // startSubcontainer starts a child container. It returns the thread group ID of
 // the newly created process. Used FDs are either closed or released. It's safe
 // for the caller to close any remaining files upon return.
-func (l *Loader) startSubcontainer(spec *specs.Spec, conf *config.Config, cid string, stdioFDs, goferFDs, goferFilestoreFDs []*fd.FD, devGoferFD *fd.FD, goferMountConfs []GoferMountConf) error {
+func (l *Loader) startSubcontainer(spec *specs.Spec, conf *config.Config, cid string, stdioFDs, goferFDs, goferFilestoreFDs []*fd.FD, devGoferFD *fd.FD, goferMountConfs []GoferMountConf, rootfsUpperTarFD *fd.FD) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
@@ -1144,6 +1156,7 @@ func (l *Loader) startSubcontainer(spec *specs.Spec, conf *config.Config, cid st
 		goferFilestoreFDs: goferFilestoreFDs,
 		goferMountConfs:   goferMountConfs,
 		nvidiaUVMDevMajor: l.root.nvidiaUVMDevMajor,
+		rootfsUpperTarFD:  rootfsUpperTarFD,
 	}
 	var err error
 	info.procArgs, err = createProcessArgs(cid, spec, conf, creds, l.k, pidns)

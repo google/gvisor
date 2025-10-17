@@ -465,10 +465,21 @@ func (s *Sandbox) StartSubcontainer(spec *specs.Spec, conf *config.Config, cid s
 	}
 	s.fixPidns(spec)
 
+	var rootfsUpperTarFile *os.File
+	if path := specutils.RootfsTarUpperPath(spec); path != "" {
+		var err error
+		rootfsUpperTarFile, err = os.OpenFile(path, os.O_RDONLY, 0644)
+		if err != nil {
+			return fmt.Errorf("opening rootfs upper tar file: %v", err)
+		}
+	}
+	defer rootfsUpperTarFile.Close()
+
 	// The payload contains (in this specific order):
 	// * stdin/stdout/stderr (optional: only present when not using TTY)
 	// * The subcontainer's gofer filestore files (optional)
 	// * The subcontainer's dev gofer file (optional)
+	// * The TAR file that contains the upper layer changes of the overlay rootfs.
 	// * Gofer files.
 	payload := urpc.FilePayload{}
 	payload.Files = append(payload.Files, stdios...)
@@ -476,17 +487,21 @@ func (s *Sandbox) StartSubcontainer(spec *specs.Spec, conf *config.Config, cid s
 	if devIOFile != nil {
 		payload.Files = append(payload.Files, devIOFile)
 	}
+	if rootfsUpperTarFile != nil {
+		payload.Files = append(payload.Files, rootfsUpperTarFile)
+	}
 	payload.Files = append(payload.Files, goferFiles...)
 
 	// Start running the container.
 	args := boot.StartArgs{
-		Spec:                 spec,
-		Conf:                 conf,
-		CID:                  cid,
-		NumGoferFilestoreFDs: len(goferFilestores),
-		IsDevIoFilePresent:   devIOFile != nil,
-		GoferMountConfs:      goferConfs,
-		FilePayload:          payload,
+		Spec:                        spec,
+		Conf:                        conf,
+		CID:                         cid,
+		NumGoferFilestoreFDs:        len(goferFilestores),
+		IsDevIoFilePresent:          devIOFile != nil,
+		GoferMountConfs:             goferConfs,
+		IsRootfsUpperTarFilePresent: rootfsUpperTarFile != nil,
+		FilePayload:                 payload,
 	}
 	if err := s.call(boot.ContMgrStartSubcontainer, &args, nil); err != nil {
 		return fmt.Errorf("starting sub-container %v: %w", spec.Process.Args, err)
@@ -935,6 +950,9 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 	}
 	if err := donations.OpenAndDonate("final-metrics-log-fd", conf.FinalMetricsLog, profFlags); err != nil {
 		return fmt.Errorf("donating final metrics log file: %w", err)
+	}
+	if err := donations.OpenAndDonate("rootfs-upper-tar-fd", specutils.RootfsTarUpperPath(args.Spec), os.O_RDONLY); err != nil {
+		return fmt.Errorf("donating rootfs tar file: %w", err)
 	}
 
 	// Pass gofer mount configs.

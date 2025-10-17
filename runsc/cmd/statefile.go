@@ -37,7 +37,7 @@ type Statefile struct {
 
 // Name implements subcommands.Command.
 func (*Statefile) Name() string {
-	return "state"
+	return "statefile"
 }
 
 // Synopsis implements subcommands.Command.

@@ -282,26 +282,23 @@ func (c *WriteContext) TryNewPacketBuffer(reserveHdrBytes int, data buffer.Buffe
 	return c.newPacketBufferLocked(reserveHdrBytes, data)
 }
 
-// TryNewPacketBufferFromPayloader returns a new packet buffer iff the endpoint's send buffer
+// TryNewPacketBufferFromPayloader returns a new packet buffer if the endpoint's send buffer
 // is not full. Otherwise, data from `payloader` isn't read.
-//
-// If this method returns nil, the caller should wait for the endpoint to become
-// writable.
-func (c *WriteContext) TryNewPacketBufferFromPayloader(reserveHdrBytes int, payloader tcpip.Payloader) *stack.PacketBuffer {
+func (c *WriteContext) TryNewPacketBufferFromPayloader(reserveHdrBytes int, payloader tcpip.Payloader) (*stack.PacketBuffer, tcpip.Error) {
 	e := c.e
 
 	e.sendBufferSizeInUseMu.Lock()
 	defer e.sendBufferSizeInUseMu.Unlock()
 
 	if !e.hasSendSpaceRLocked() {
-		return nil
+		return nil, &tcpip.ErrWouldBlock{}
 	}
 	var data buffer.Buffer
 	if _, err := data.WriteFromReader(payloader, int64(payloader.Len())); err != nil {
 		data.Release()
-		return nil
+		return nil, &tcpip.ErrBadBuffer{}
 	}
-	return c.newPacketBufferLocked(reserveHdrBytes, data)
+	return c.newPacketBufferLocked(reserveHdrBytes, data), nil
 }
 
 // +checklocks:c.e.sendBufferSizeInUseMu
