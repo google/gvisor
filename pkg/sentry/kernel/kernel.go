@@ -80,7 +80,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/state"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/tcpip/stack"
 
 	uspb "gvisor.dev/gvisor/pkg/sentry/unimpl/unimplemented_syscall_go_proto"
 )
@@ -694,9 +693,7 @@ func (k *Kernel) SaveTo(ctx context.Context, stateFile, pagesMetadata io.WriteCl
 	if rootNS := k.rootNetworkNamespace; rootNS != nil && rootNS.Stack() != nil {
 		// Pause the network stack.
 		netstackPauseStart := time.Now()
-		if resume {
-			ctx = context.WithValue(ctx, stack.CtxResumeStack, resume)
-		} else {
+		if !resume {
 			k.rootNetworkNamespace.Stack().SetRemoveNICs()
 		}
 		log.Infof("Pausing root network namespace")
