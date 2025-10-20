@@ -19,7 +19,6 @@ import (
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
-	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
@@ -92,14 +91,7 @@ func (fd *fileDescription) Release(ctx context.Context) {
 	// Ignoring errors and FUSE server replies is analogous to Linux's behavior.
 	req := conn.NewRequest(auth.CredentialsFromContext(ctx), pidFromContext(ctx), inode.nodeID, opcode, &in)
 	// The reply will be ignored since no callback is defined in asyncCallBack().
-	res, err := conn.Call(ctx, req)
-	if err != nil {
-		log.Warningf("FUSE Release failed: %v", err)
-		return
-	}
-	if res.Error() != nil {
-		log.Warningf("FUSE Release failed: %v", res.Error())
-	}
+	conn.Call(ctx, req)
 }
 
 // OnClose implements vfs.FileDescriptionImpl.OnClose.
