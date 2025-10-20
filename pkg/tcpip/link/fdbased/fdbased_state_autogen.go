@@ -404,6 +404,8 @@ func (m *processorManager) StateFields() []string {
 	}
 }
 
+func (m *processorManager) beforeSave() {}
+
 // +checklocksignore
 func (m *processorManager) StateSave(stateSinkObject state.Sink) {
 	m.beforeSave()
