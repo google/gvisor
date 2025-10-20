@@ -38,11 +38,6 @@ var compressedBinary []byte
 
 // Options is the set of options to execute the embedded binary.
 type Options struct {
-	// If TempDir is non-empty, the embedded binary will be extracted to a
-	// subdirectory of TempDir. Otherwise, the embedded binary will be
-	// extracted to a subdirectory of os.TempDir().
-	TempDir string
-
 	// Argv is the set of arguments to exec with.
 	// `Argv[0]` is the name of the binary as invoked.
 	// If Argv is empty, it will default to a single-element slice, with
@@ -80,40 +75,70 @@ func run(options *Options, fork bool) (int, error) {
 	defer runtime.UnlockOSThread()
 	oldMask := unix.Umask(0077)
 	defer unix.Umask(oldMask)
-	tmpDir, err := os.MkdirTemp(options.TempDir, "gvisor.*.tmp")
-	if err != nil {
-		return 0, fmt.Errorf("cannot create temp directory: %w", err)
+
+	tmpFD := -1
+	// /tmp is sometimes mounted noexec for "security" reasons. Handle this by
+	// falling back to executing from a memfd.
+	parentDir := os.TempDir()
+	var parentDirStatfs unix.Statfs_t
+	if err := unix.Statfs(parentDir, &parentDirStatfs); err == nil && parentDirStatfs.Flags&unix.ST_NOEXEC == 0 {
+		tmpDir, err := os.MkdirTemp(parentDir, "gvisor.*.tmp")
+		if err != nil {
+			return 0, fmt.Errorf("cannot create temp directory: %w", err)
+		}
+		tmpDirHandle, err := os.Open(tmpDir)
+		if err != nil {
+			return 0, fmt.Errorf("cannot open temp directory: %w", err)
+		}
+		defer tmpDirHandle.Close()
+		binPath := path.Join(tmpDir, BinaryName)
+		tmpFile, err := os.OpenFile(binPath, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0700)
+		if err != nil {
+			return 0, fmt.Errorf("cannot open temp file: %w", err)
+		}
+		if err := os.RemoveAll(tmpDir); err != nil {
+			return 0, fmt.Errorf("cannot remove temp directory: %w", err)
+		}
+		unix.Umask(oldMask)
+		if _, err := io.Copy(tmpFile, binaryReader); err != nil {
+			tmpFile.Close()
+			return 0, fmt.Errorf("cannot decompress embedded binary or write it to temporary file: %w", err)
+		}
+		// Reopen the file for reading.
+		tmpFileReadOnly, err := os.OpenFile(fmt.Sprintf("/proc/self/fd/%d", tmpFile.Fd()), os.O_RDONLY, 0700)
+		if err != nil {
+			tmpFile.Close()
+			return 0, fmt.Errorf("cannot re-open temp file for reading: %w", err)
+		}
+		if err := tmpFile.Close(); err != nil {
+			return 0, fmt.Errorf("cannot close temp file: %w", err)
+		}
+		defer tmpFileReadOnly.Close()
+		tmpFD = int(tmpFileReadOnly.Fd())
+	} else {
+		var err error
+		tmpFD, err = unix.MemfdCreate(BinaryName, unix.MFD_ALLOW_SEALING|unix.MFD_EXEC)
+		if err == unix.EINVAL {
+			// Assume that the kernel precedes 105ff5339f498 ("mm/memfd: add
+			// MFD_NOEXEC_SEAL and MFD_EXEC"), Linux 6.3+.
+			tmpFD, err = unix.MemfdCreate(BinaryName, unix.MFD_ALLOW_SEALING)
+		}
+		if err != nil {
+			return 0, fmt.Errorf("cannot create memfd: %w", err)
+		}
+		tmpFile := os.NewFile(uintptr(tmpFD), BinaryName)
+		defer tmpFile.Close()
+		unix.Umask(oldMask)
+		if _, err := io.Copy(tmpFile, binaryReader); err != nil {
+			return 0, fmt.Errorf("cannot decompress embedded binary or write it to temporary memfd: %w", err)
+		}
+		// Prevent future writes to the memfd.
+		if _, err := unix.FcntlInt(uintptr(tmpFD), unix.F_ADD_SEALS, unix.F_SEAL_SEAL|unix.F_SEAL_SHRINK|unix.F_SEAL_GROW|unix.F_SEAL_WRITE); err != nil {
+			return 0, fmt.Errorf("cannot seal memfd: %w", err)
+		}
 	}
-	tmpDirHandle, err := os.Open(tmpDir)
-	if err != nil {
-		return 0, fmt.Errorf("cannot open temp directory: %w", err)
-	}
-	defer tmpDirHandle.Close()
-	binPath := path.Join(tmpDir, BinaryName)
-	tmpFile, err := os.OpenFile(binPath, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0700)
-	if err != nil {
-		return 0, fmt.Errorf("cannot open temp file: %w", err)
-	}
-	if err := os.RemoveAll(tmpDir); err != nil {
-		return 0, fmt.Errorf("cannot remove temp directory: %w", err)
-	}
-	unix.Umask(oldMask)
-	if _, err := io.Copy(tmpFile, binaryReader); err != nil {
-		tmpFile.Close()
-		return 0, fmt.Errorf("cannot decompress embedded binary or write it to temporary file: %w", err)
-	}
-	// Reopen the file for reading.
-	tmpFileReadOnly, err := os.OpenFile(fmt.Sprintf("/proc/self/fd/%d", tmpFile.Fd()), os.O_RDONLY, 0700)
-	if err != nil {
-		tmpFile.Close()
-		return 0, fmt.Errorf("cannot re-open temp file for reading: %w", err)
-	}
-	if err := tmpFile.Close(); err != nil {
-		return 0, fmt.Errorf("cannot close temp file: %w", err)
-	}
-	defer tmpFileReadOnly.Close()
-	tmpFD := tmpFileReadOnly.Fd()
-	if _, err := unix.Seek(int(tmpFD), 0, unix.SEEK_SET); err != nil {
+
+	if _, err := unix.Seek(tmpFD, 0, unix.SEEK_SET); err != nil {
 		return 0, fmt.Errorf("cannot seek temp file back to 0: %w", err)
 	}
 	fdPath := fmt.Sprintf("/proc/self/fd/%d", tmpFD)
