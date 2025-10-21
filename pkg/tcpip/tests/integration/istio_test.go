@@ -343,7 +343,7 @@ func TestOutboundNATRedirect(t *testing.T) {
 		},
 	}
 
-	serverURL := fmt.Sprintf("http://[%s]:%d/", net.IP(remoteIPv4Addr1.AsSlice()), remoteServerPort)
+	serverURL := fmt.Sprintf("http://%s/", net.JoinHostPort(net.IP(remoteIPv4Addr1.AsSlice()).String(), strconv.Itoa(remoteServerPort)))
 	response, err := httpClient.Get(serverURL)
 	if err != nil {
 		t.Fatalf("httpClient.Get(\"/\") failed: %s", err)
