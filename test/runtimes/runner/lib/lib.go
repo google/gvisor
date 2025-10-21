@@ -269,6 +269,7 @@ func (f testDeps) SnapshotCoverage()                                        {}
 func (f testDeps) InitRuntimeCoverage() (mode string, tearDown func(string, string) (string, error), snapcov func() float64) {
 	return
 }
+func (f testDeps) ModulePath() string { return "" }
 
 // Copied from testing/fuzz.go.
 type corpusEntry = struct {
