@@ -88,5 +88,29 @@ docker start --checkpoint <checkpoint-name> <container-name>
     `--checkpoint-dir` flag but this will be required when restoring from a
     checkpoint made in another container.
 
+## Checkpoint & Restore with different CPU features
+
+When restoring a state file, gVisor verifies that the target host machine
+possesses all the CPU features enabled on the machine where the checkpoint
+snapshot was created.
+
+gVisor allows users to specify a list of *allowed* CPU features using the
+annotation `dev.gvisor.internal.cpufeatures`. Only the host CPU features present
+in this annotation list will be enabled. By doing this, users are able to
+stabilize the list of CPU features that will be exposed to applications in the
+sandbox, which makes it possible to checkpoint and restore among machines with
+different set of CPU features.
+
+CPU features in the annotation should be comma-separated. A comprehensive list
+of all supported CPU features can be found
+[here](https://github.com/google/gvisor/blob/61f4c77225e1f5128cad8982f3af0d4278494bd4/pkg/cpuid/features_amd64.go#L457).
+
+The runsc command `runsc cpu-features` lists all CPU features on the current
+machine.
+
+### Limitation
+
+It is not supported on the arm64 architecture.
+
 [leave-running]: https://github.com/moby/moby/pull/37360
 [checkpoint-dir]: https://github.com/moby/moby/issues/37344
