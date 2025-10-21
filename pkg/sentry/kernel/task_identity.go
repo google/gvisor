@@ -419,41 +419,6 @@ func (t *Task) DropBoundingCapability(cp linux.Capability) error {
 	return nil
 }
 
-// SetUserNamespace attempts to move c into ns.
-//
-// Preconditions: The caller must be running on the task goroutine.
-func (t *Task) SetUserNamespace(ns *auth.UserNamespace) error {
-	creds := t.Credentials()
-	// "A process reassociating itself with a user namespace must have the
-	// CAP_SYS_ADMIN capability in the target user namespace." - setns(2)
-	//
-	// If t just created ns, then t.creds is guaranteed to have CAP_SYS_ADMIN
-	// in ns (by rule 3 in auth.Credentials.HasCapability).
-	if !creds.HasCapabilityIn(linux.CAP_SYS_ADMIN, ns) {
-		return linuxerr.EPERM
-	}
-
-	creds = creds.Fork() // The credentials object is immutable. See doc for creds.
-	creds.UserNamespace = ns
-	// "The child process created by clone(2) with the CLONE_NEWUSER flag
-	// starts out with a complete set of capabilities in the new user
-	// namespace. Likewise, a process that creates a new user namespace using
-	// unshare(2) or joins an existing user namespace using setns(2) gains a
-	// full set of capabilities in that namespace."
-	creds.PermittedCaps = auth.AllCapabilities
-	creds.InheritableCaps = 0
-	creds.EffectiveCaps = auth.AllCapabilities
-	creds.BoundingCaps = auth.AllCapabilities
-	// "A call to clone(2), unshare(2), or setns(2) using the CLONE_NEWUSER
-	// flag sets the "securebits" flags (see capabilities(7)) to their default
-	// values (all flags disabled) in the child (for clone(2)) or caller (for
-	// unshare(2), or setns(2)." - user_namespaces(7)
-	creds.KeepCaps = false
-	t.creds.Store(creds)
-
-	return nil
-}
-
 // SetKeepCaps will set the keep capabilities flag PR_SET_KEEPCAPS.
 //
 // Preconditions: The caller must be running on the task goroutine.
