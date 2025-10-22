@@ -57,6 +57,15 @@ llvm_configure = use_repo_rule("@llvm-raw//utils/bazel:configure.bzl", "llvm_con
 
 llvm_configure(name = "llvm-project")
 
+http_archive(
+    name = "kythe_release",
+    sha256 = "fc70441a75a71bd280e9d58408a20e649ab13ac5e1a1cef5939da3ec67f4fad5",
+    strip_prefix = "kythe-v0.0.73",
+    urls = [
+        "https://github.com/kythe/kythe/releases/download/v0.0.73/kythe-v0.0.73.tar.gz",
+    ],
+)
+
 ### Python
 python = use_extension("@rules_python//python/extensions:python.bzl", "python")
 python.defaults(python_version = "3.11")
