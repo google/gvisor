@@ -313,12 +313,13 @@ cos-gpu-smoke-tests: gpu-smoke-images $(RUNTIME_BIN)
 gpu-images: gpu-smoke-images load-gpu_pytorch load-gpu_ollama load-gpu_ollama_client load-basic_busybox load-basic_alpine load-basic_python load-gpu_stable-diffusion-xl load-gpu_vllm load-gpu_nccl-tests load-benchmarks_ffmpeg
 .PHONY: gpu-images
 
-l4-gpu-images: load-gpu_sglang load-gpu_sglang_client
+l4-gpu-images: load-gpu_sglang load-gpu_sglang_client load-gpu_triton load-gpu_triton_client
 .PHONY: l4-gpu-images
 
 l4-gpu-tests: l4-gpu-images $(RUNTIME_BIN)
 	@$(call install_runtime,$(RUNTIME),--nvproxy=true --nvproxy-docker=true --nvproxy-allowed-driver-capabilities=all)
 	@$(call sudo,test/gpu:sglang_test,--runtime=$(RUNTIME) -test.v $(ARGS))
+	@$(call sudo,test/gpu:triton_test,--runtime=$(RUNTIME) -test.v $(ARGS))
 .PHONY: l4-gpu-tests
 
 gpu-all-tests: gpu-images gpu-smoke-tests $(RUNTIME_BIN)
