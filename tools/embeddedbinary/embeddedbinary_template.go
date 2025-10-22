@@ -141,14 +141,21 @@ func run(options *Options, fork bool) (int, error) {
 	if _, err := unix.Seek(tmpFD, 0, unix.SEEK_SET); err != nil {
 		return 0, fmt.Errorf("cannot seek temp file back to 0: %w", err)
 	}
-	fdPath := fmt.Sprintf("/proc/self/fd/%d", tmpFD)
 	if fork {
+		// Go's syscall/exec_linux.go:forkAndExecInChild1() can clobber FDs
+		// outside of syscall.ProcAttr.Files, including tmpFD, so the FD that
+		// the child execs must be in syscall.ProcAttr.Files to ensure that
+		// it's valid at time of execve().
+		childTmpFD := len(options.Files)
+		files := append(options.Files, uintptr(tmpFD))
+		fdPath := fmt.Sprintf("/proc/self/fd/%d", childTmpFD)
 		return syscall.ForkExec(fdPath, options.Argv, &syscall.ProcAttr{
 			Env:   options.Envv,
-			Files: options.Files,
+			Files: files,
 			Sys:   options.SysProcAttr,
 		})
 	}
+	fdPath := fmt.Sprintf("/proc/self/fd/%d", tmpFD)
 	if err := unix.Exec(fdPath, options.Argv, options.Envv); err != nil {
 		return 0, fmt.Errorf("cannot exec embedded binary: %w", err)
 	}
