@@ -117,8 +117,7 @@ type Stack struct {
 	handleLocal bool
 
 	// tables are the iptables packet filtering and manipulation rules.
-	// TODO(gvisor.dev/issue/4595): S/R this field.
-	tables *IPTables `state:"nosave"`
+	tables *IPTables
 
 	// nftables is the nftables interface for packet filtering and manipulation rules.
 	nftables NFTablesInterface `state:"nosave"`
@@ -2072,6 +2071,7 @@ func (s *Stack) Restore() {
 	eps := s.restoredEndpoints
 	s.restoredEndpoints = nil
 	saveRestoreEnabled := s.saveRestoreEnabled
+	s.tables.Resume()
 	s.mu.Unlock()
 	for _, e := range eps {
 		e.Restore(s)
@@ -2096,6 +2096,7 @@ func (s *Stack) Resume() {
 	s.mu.Lock()
 	eps := s.resumableEndpoints
 	s.resumableEndpoints = nil
+	s.tables.Resume()
 	s.mu.Unlock()
 	for _, e := range eps {
 		e.Resume()
