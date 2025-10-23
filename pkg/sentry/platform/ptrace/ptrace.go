@@ -74,6 +74,7 @@ var (
 
 type context struct {
 	archContext
+	platform.NoCPUNumbers
 
 	// signalInfo is the signal info, if and when a signal is received.
 	signalInfo linux.SignalInfo
@@ -214,6 +215,7 @@ type PTrace struct {
 	platform.MMapMinAddr
 	platform.NoCPUPreemptionDetection
 	platform.UseHostGlobalMemoryBarrier
+	platform.NoCPUNumbers
 }
 
 // New returns a new ptrace-based implementation of the platform interface.
