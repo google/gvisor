@@ -160,6 +160,9 @@ type containerInfo struct {
 	// rootfsUpperTarFD is the file descriptor to the tar file containing the rootfs
 	// upper layer changes.
 	rootfsUpperTarFD *fd.FD
+
+	// useCPUNums indicates whether to use platform assigned CPU numbers as CPU numbers in the sentry.
+	useCPUNums bool
 }
 
 type loaderState int
@@ -869,15 +872,18 @@ func (l *Loader) Destroy() {
 }
 
 func createPlatform(conf *config.Config, numCPU int, deviceFile *fd.FD) (platform.Platform, error) {
+	platformName := conf.Platform
 	p, err := platform.Lookup(conf.Platform)
 	if err != nil {
 		panic(fmt.Sprintf("invalid platform %s: %s", conf.Platform, err))
 	}
-	log.Infof("Platform: %s", conf.Platform)
+
+	log.Infof("Platform: %s", platformName)
 	return p.New(platform.Options{
 		DeviceFile:             deviceFile,
-		DisableSyscallPatching: conf.Platform == "systrap" && conf.SystrapDisableSyscallPatching,
+		DisableSyscallPatching: platformName == "systrap" && conf.SystrapDisableSyscallPatching,
 		ApplicationCores:       numCPU,
+		UseCPUNums:             platformName == "kvm" && conf.UseCPUNums,
 	})
 }
 
