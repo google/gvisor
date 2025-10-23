@@ -62,8 +62,6 @@ type runData struct {
 
 // KVM represents a lightweight VM context.
 type KVM struct {
-	platform.NoCPUPreemptionDetection
-
 	// KVM never changes mm_structs.
 	platform.UseHostProcessMemoryBarrier
 
@@ -180,11 +178,52 @@ func (k *KVM) ConcurrencyCount() int {
 	return k.machine.maxVCPUs
 }
 
+// HasCPUNumbers implements platform.Platform.HasCPUNumbers.
+func (*KVM) HasCPUNumbers() bool {
+	return true
+}
+
+// NumCPUs implements platform.Platform.NumCPUs.
+func (k *KVM) NumCPUs() int32 {
+	return int32(k.machine.maxVCPUs)
+}
+
+// DetectsCPUPreemption implements platform.Platform.DetectsCPUPreemption.
+func (k *KVM) DetectsCPUPreemption() bool {
+	return true
+}
+
+// PreemptAllCPUs implements platform.Platform.PreemptAllCPUs.
+func (k *KVM) PreemptAllCPUs() error {
+	k.machine.mu.RLock()
+	defer k.machine.mu.RUnlock()
+	for _, c := range k.machine.vCPUsByID {
+		c.lastCtx.Store(nil)
+		c.BounceToHost()
+	}
+	return nil
+}
+
+// PreemptCPU implements platform.Platform.PreemptCPU.
+func (k *KVM) PreemptCPU(cpu int32) error {
+	if cpu < 0 || cpu >= k.NumCPUs() {
+		return fmt.Errorf("invalid CPU number: %d", cpu)
+	}
+	k.machine.mu.RLock()
+	defer k.machine.mu.RUnlock()
+	c := k.machine.vCPUsByID[cpu]
+	c.lastCtx.Store(nil)
+	c.BounceToHost()
+	return nil
+}
+
 // NewContext returns an interruptible context.
 func (k *KVM) NewContext(pkgcontext.Context) platform.Context {
-	return &platformContext{
+	pc := &platformContext{
 		machine: k.machine,
 	}
+	pc.lastUsedCPU.Store(-1)
+	return pc
 }
 
 type constructor struct{}

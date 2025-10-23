@@ -216,6 +216,9 @@ type vCPU struct {
 
 	// dieState holds state related to vCPU death.
 	dieState dieState
+
+	// lastCtx is the last context that was scheduled on this vCPU
+	lastCtx atomic.Pointer[platformContext]
 }
 
 type dieState struct {
