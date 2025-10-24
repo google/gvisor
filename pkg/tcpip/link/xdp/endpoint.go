@@ -109,6 +109,9 @@ type Options struct {
 
 	// GRO enables generic receive offload.
 	GRO bool
+
+	// QueueID is the ID of the RX queue to which the AF_XDP socket is attached.
+	QueueID uint32
 }
 
 // New creates a new endpoint from an AF_XDP socket.
@@ -164,7 +167,7 @@ func New(opts *Options) (stack.LinkEndpoint, error) {
 		NDescriptors: nFrames / 2,
 		Bind:         opts.Bind,
 	}
-	ep.control, err = xdp.NewFromSocket(opts.FD, uint32(opts.InterfaceIndex), 0 /* queueID */, xdpOpts)
+	ep.control, err = xdp.NewFromSocket(opts.FD, uint32(opts.InterfaceIndex), opts.QueueID, xdpOpts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create AF_XDP dispatcher: %v", err)
 	}
