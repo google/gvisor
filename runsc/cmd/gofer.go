@@ -193,7 +193,6 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomm
 			defer cleanupUnmounter()
 		}
 	}
-	goferToHostRPC.Close()
 	if g.applyCaps {
 		overrides := g.syncFDs.flags()
 		overrides["apply-caps"] = "false"
@@ -206,6 +205,11 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomm
 		util.Fatalf("setCapsAndCallSelf(%v, %v): %v", args, capsToApply, setCapsAndCallSelf(args, capsToApply))
 		panic("unreachable")
 	}
+
+	// This can't happen until after setCapsAndCallSelf(), since otherwise the
+	// re-executed gofer may reuse goferToHostRPCFD's file descriptor for an
+	// unrelated file.
+	goferToHostRPC.Close()
 
 	// Start profiling. This will be a noop if no profiling arguments were passed.
 	profileOpts := profile.MakeOpts(&g.profileFDs, conf.ProfileGCInterval)

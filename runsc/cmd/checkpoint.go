@@ -45,6 +45,8 @@ type Checkpoint struct {
 	// For example, if the checkpoint files will be stored on a network block
 	// device, which will be detached after the checkpoint is done.
 	direct bool
+
+	checkpointExtra
 }
 
 // Name implements subcommands.Command.Name.
@@ -75,6 +77,7 @@ func (c *Checkpoint) SetFlags(f *flag.FlagSet) {
 	// Unimplemented flags necessary for compatibility with docker.
 	var wp string
 	f.StringVar(&wp, "work-path", "", "ignored")
+	c.setFlagsExtra(f)
 }
 
 // Execute implements subcommands.Command.Execute.
@@ -109,6 +112,7 @@ func (c *Checkpoint) Execute(_ context.Context, f *flag.FlagSet, args ...any) su
 		SaveRestoreExecTimeout:     c.saveRestoreExecTimeout,
 		SaveRestoreExecContainerID: id,
 	}
+	c.setCheckpointOptsExtra(&opts)
 
 	if err := cont.Checkpoint(conf, c.imagePath, opts); err != nil {
 		util.Fatalf("checkpoint failed: %v", err)
