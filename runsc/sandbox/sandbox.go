@@ -1516,6 +1516,8 @@ type CheckpointOpts struct {
 	SaveRestoreExecArgv        string
 	SaveRestoreExecTimeout     time.Duration
 	SaveRestoreExecContainerID string
+
+	checkpointOptsExtra
 }
 
 // Checkpoint sends the checkpoint call for a container in the sandbox.

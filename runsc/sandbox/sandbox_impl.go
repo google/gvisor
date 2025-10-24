@@ -30,6 +30,8 @@ func createSandboxProcessExtra(conf *config.Config, args *Args, cmd *exec.Cmd, d
 	return nil
 }
 
+type checkpointOptsExtra struct{}
+
 func setCheckpointOptsImpl(conf *config.Config, imagePath string, opts CheckpointOpts, opt *control.SaveOpts) error {
 	return setCheckpointOptsForLocalCheckpointFiles(conf, imagePath, opts, opt)
 }

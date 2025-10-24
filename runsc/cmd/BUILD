@@ -37,6 +37,7 @@ go_library(
         "boot_impl.go",
         "capability.go",
         "checkpoint.go",
+        "checkpoint_impl.go",
         "chroot.go",
         "cmd.go",
         "cpu_features.go",
