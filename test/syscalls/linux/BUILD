@@ -3729,7 +3729,9 @@ cc_library(
         ":socket_netlink_util",
         "//test/util:file_descriptor",
         "//test/util:posix_error",
+        "//test/util:test_util",
         "@com_google_absl//absl/log",
+        "@com_google_absl//absl/strings:string_view",
     ],
 )
 
