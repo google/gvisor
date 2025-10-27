@@ -120,13 +120,19 @@ TEST(EventfdTest, IllegalPwrite) {
   EXPECT_THAT(pwrite(efd.get(), "x", 1, 0), SyscallFailsWithErrno(ESPIPE));
 }
 
-TEST(EventfdTest, BigWrite) {
+TEST(EventfdTest, BigWriteFails) {
+  // Starting Linux 6.9, big writes fail. gVisor has the newer behavior.
+  if (!IsRunningOnGvisor()) {
+    auto version = ASSERT_NO_ERRNO_AND_VALUE(GetKernelVersion());
+    SKIP_IF(version.major < 6 || (version.major == 6 && version.minor < 9));
+  }
   FileDescriptor efd =
       ASSERT_NO_ERRNO_AND_VALUE(NewEventFD(0, EFD_NONBLOCK | EFD_SEMAPHORE));
 
   uint64_t big[16];
   big[0] = 16;
-  ASSERT_THAT(write(efd.get(), big, sizeof(big)), SyscallSucceeds());
+  ASSERT_THAT(write(efd.get(), big, sizeof(big)),
+              SyscallFailsWithErrno(EINVAL));
 }
 
 TEST(EventfdTest, BigRead) {
@@ -136,20 +142,10 @@ TEST(EventfdTest, BigRead) {
   uint64_t l = 1;
   ASSERT_THAT(write(efd.get(), &l, sizeof(l)), SyscallSucceeds());
 
+  // As of writing, big reads are allowed on Linux while big writes are not.
   uint64_t big[16];
   ASSERT_THAT(read(efd.get(), big, sizeof(big)), SyscallSucceeds());
   EXPECT_EQ(big[0], 1);
-}
-
-TEST(EventfdTest, BigWriteBigRead) {
-  FileDescriptor efd =
-      ASSERT_NO_ERRNO_AND_VALUE(NewEventFD(0, EFD_NONBLOCK | EFD_SEMAPHORE));
-
-  uint64_t l[16];
-  l[0] = 16;
-  ASSERT_THAT(write(efd.get(), l, sizeof(l)), SyscallSucceeds());
-  ASSERT_THAT(read(efd.get(), l, sizeof(l)), SyscallSucceeds());
-  EXPECT_EQ(l[0], 1);
 }
 
 TEST(EventfdTest, NotifyNonZero) {

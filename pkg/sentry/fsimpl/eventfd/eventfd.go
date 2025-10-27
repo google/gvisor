@@ -164,7 +164,7 @@ func (efd *EventFileDescription) Read(ctx context.Context, dst usermem.IOSequenc
 
 // Write implements vfs.FileDescriptionImpl.Write.
 func (efd *EventFileDescription) Write(ctx context.Context, src usermem.IOSequence, _ vfs.WriteOptions) (int64, error) {
-	if src.NumBytes() < 8 {
+	if src.NumBytes() != 8 {
 		return 0, unix.EINVAL
 	}
 	if err := efd.write(ctx, src); err != nil {
