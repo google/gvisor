@@ -1,0 +1,11 @@
+FROM alpine/git@sha256:4d7fe8d770483993c0cec264d49a573bac49e5239db47a9846572352e72da49c AS downloader
+# post checkout hook. checks that command git lfs is available.
+RUN apk add git-lfs && \
+    git lfs install && \
+    GIT_CLONE_PROTECTION_ACTIVE=false git clone https://huggingface.co/qwen/qwen2.5-0.5b-instruct /qwen2.5-0.5b-instruct
+
+FROM lmsysorg/sglang@sha256:119cf3a894b380a78d81e1557c8cc58ccc234b4854232e0e1dbf39916a4c7e75
+COPY --from=downloader /qwen2.5-0.5b-instruct /qwen2.5-0.5b-instruct
+
+ENTRYPOINT ["python3"]
+CMD ["-m", "sglang.launch_server", "--device", "cuda", "--model", "/qwen2.5-0.5b-instruct", "--host", "0.0.0.0", "--port", "30000", "--random-seed", "42"]

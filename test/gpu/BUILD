@@ -53,6 +53,23 @@ go_test(
 )
 
 go_test(
+    name = "sglang_test",
+    srcs = ["sglang_test.go"],
+    # runsc is needed to invalidate the bazel cache in case of any code changes.
+    data = ["//runsc"],
+    tags = [
+        "manual",
+        "noguitar",
+        "notap",
+    ],
+    visibility = ["//:sandbox"],
+    deps = [
+        "//pkg/test/dockerutil",
+        "//test/gpu/sglang",
+    ],
+)
+
+go_test(
     name = "sr_test",
     srcs = ["sr_test.go"],
     # runsc is needed to invalidate the bazel cache in case of any code changes.
