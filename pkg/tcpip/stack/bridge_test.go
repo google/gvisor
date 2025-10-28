@@ -243,7 +243,15 @@ func TestBridgeFDB(t *testing.T) {
 	// FDB.
 	var e stack.BridgeFDBEntry
 	start := time.Now()
-	for e = bridgeEndpoint.FindFDBEntry(veth2.LinkAddress()); len(e.PortLinkAddress()) == 0 && time.Since(start) < 30*time.Second; {
+	for {
+		e = bridgeEndpoint.FindFDBEntry(veth2.LinkAddress())
+		if len(e.PortLinkAddress()) != 0 {
+			break
+		}
+		if time.Since(start) > 30*time.Second {
+			t.Fatalf("failed to find FDB entry for %s after 30 seconds", veth2.LinkAddress())
+		}
+		time.Sleep(time.Second)
 	}
 	if e.PortLinkAddress() != veth1.LinkAddress() {
 		t.Fatalf("bridgeEndpoint.FindFDBEntry(%s) = %s, want = %s", veth2.LinkAddress(), e.PortLinkAddress(), veth1.LinkAddress())
