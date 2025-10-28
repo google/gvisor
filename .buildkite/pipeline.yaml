@@ -483,6 +483,15 @@ steps:
       <<: *ubuntu_agents
       # This test is flaky on old agents.
       cgroup: "v2"
+  - <<: *common
+    <<: *source_test
+    label: ":table: Native NFTable Syscall tests"
+    command: make nftables-syscall-tests
+    agents:
+      <<: *ubuntu_agents
+      # Test is only validated to run on newer agents, older kernels have
+      # different implementation behaviour.
+      cgroup: "v2"
 
   # Runtime tests.
   - <<: *common
