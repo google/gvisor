@@ -601,6 +601,9 @@ func (i *inode) Readlink(ctx context.Context, mnt *vfs.Mount) (string, error) {
 		if err != nil {
 			return "", err
 		}
+		if err := res.Error(); err != nil {
+			return "", err
+		}
 		i.link = string(res.data[res.hdr.SizeBytes():])
 		if !mnt.Options().ReadOnly {
 			i.attrTime = ktime.ZeroTime
