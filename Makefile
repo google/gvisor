@@ -435,6 +435,12 @@ nftables-tests: load-nftables $(RUNTIME_BIN)
 	@$(call test_runtime,$(RUNTIME),--test_env=TEST_NET_RAW=true //test/nftables:nftables_test)
 .PHONY: nftables-tests
 
+nftables-syscall-tests: load-basic
+	@sudo modprobe nfnetlink
+	@sudo modprobe nf_tables
+	@$(call sudo,--runtime=runc //test/syscalls/linux:socket_netlink_netfilter_test)
+.PHONY: nftables-syscall-tests
+
 packetdrill-tests: load-packetdrill $(RUNTIME_BIN)
 	@$(call install_runtime,$(RUNTIME),) # Clear flags.
 	@$(call test_runtime,$(RUNTIME),//test/packetdrill:all_tests)
