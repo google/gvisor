@@ -157,3 +157,8 @@ type NetlinkErrorMessage struct {
 	Error  int32
 	Header NetlinkMessageHeader
 }
+
+// RTNetlink multicast groups, from uapi/linux/rtnetlink.h.
+const (
+	RTNLGRP_LINK = 1
+)
