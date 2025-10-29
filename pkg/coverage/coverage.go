@@ -29,16 +29,22 @@
 package coverage
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
+	icov "internal/coverage"
+	"internal/coverage/decodecounter"
+	"internal/coverage/decodemeta"
+	"internal/coverage/rtcov"
+	"unsafe"
+	_ "unsafe"
+
 	"io"
-	"sort"
-	"sync/atomic"
-	"testing"
+	"runtime/coverage"
 
 	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sync"
-
-	"github.com/bazelbuild/rules_go/go/tools/coverdata"
 )
 
 var (
@@ -64,7 +70,8 @@ const blockBitLength = 16
 
 // Available returns whether any coverage data is available.
 func Available() bool {
-	return len(coverdata.Blocks) > 0
+	InitCoverageData()
+	return len(globalData.pkgs) > 0
 }
 
 // EnableReport sets up coverage reporting.
@@ -83,13 +90,7 @@ func KcovSupported() bool {
 }
 
 var globalData struct {
-	// files is the set of covered files sorted by filename. It is calculated at
-	// startup.
-	files []string
-
-	// syntheticPCs are a set of PCs calculated at startup, where the PC
-	// at syntheticPCs[i][j] corresponds to file i, block j.
-	syntheticPCs [][]uint64
+	pkgs map[uint32]*pkg
 
 	// once ensures that globalData is only initialized once.
 	once sync.Once
@@ -102,18 +103,81 @@ func ClearCoverageData() {
 	coverageMu.Lock()
 	defer coverageMu.Unlock()
 
-	// We do not use atomic operations while reading/writing to the counters,
-	// which would drastically degrade performance. Slight discrepancies due to
-	// racing is okay for the purposes of kcov.
-	for _, counters := range coverdata.Counters {
-		clear(counters)
-	}
+	coverage.ClearCounters()
 }
 
 var coveragePool = sync.Pool{
 	New: func() any {
 		return make([]byte, 0)
 	},
+}
+
+// fileBuffer implements io.ReadWriteSeeker.
+type fileBuffer struct {
+	buffer []byte
+	offset int64
+}
+
+// Bytes implements io.ReadWriteSeeker.Bytes.
+func (fb *fileBuffer) Bytes() []byte {
+	return fb.buffer
+}
+
+// Len implements io.ReadWriteSeeker.Len.
+func (fb *fileBuffer) Len() int {
+	return len(fb.buffer)
+}
+
+// Write implements io.ReadWriteSeeker.Write.
+func (fb *fileBuffer) Read(b []byte) (int, error) {
+	available := len(fb.buffer) - int(fb.offset)
+	if available == 0 {
+		return 0, io.EOF
+	}
+	size := len(b)
+	if size > available {
+		size = available
+	}
+	copy(b, fb.buffer[fb.offset:fb.offset+int64(size)])
+	fb.offset += int64(size)
+	return size, nil
+}
+
+// Write implements io.ReadWriteSeeker.Write.
+func (fb *fileBuffer) Write(b []byte) (int, error) {
+	copied := copy(fb.buffer[fb.offset:], b)
+	if copied < len(b) {
+		fb.buffer = append(fb.buffer, b[copied:]...)
+	}
+	fb.offset += int64(len(b))
+	return len(b), nil
+}
+
+// Seek implements io.ReadWriteSeeker.Seek.
+func (fb *fileBuffer) Seek(offset int64, whence int) (int64, error) {
+	var newOffset int64
+	switch whence {
+	case io.SeekStart:
+		newOffset = offset
+	case io.SeekCurrent:
+		newOffset = fb.offset + offset
+	case io.SeekEnd:
+		newOffset = int64(len(fb.buffer)) + offset
+	default:
+		return 0, errors.New("Unknown Seek Method")
+	}
+	if newOffset > int64(len(fb.buffer)) || newOffset < 0 {
+		return 0, fmt.Errorf("Invalid Offset %d", offset)
+	}
+	fb.offset = newOffset
+	return newOffset, nil
+}
+
+//go:linkname getCovCounterList
+func getCovCounterList() []rtcov.CovCounterBlob
+
+type pkg struct {
+	funcs map[uint32]icov.FuncDesc
 }
 
 // ConsumeCoverageData builds and writes the collection of covered PCs. It
@@ -148,60 +212,96 @@ var coveragePool = sync.Pool{
 //
 //go:norace
 func ConsumeCoverageData(w io.Writer) int {
+	total := 0
+	var pcBuffer [8]byte
+
+	consumeCoverageData(func(pc uint64) bool {
+		hostarch.ByteOrder.PutUint64(pcBuffer[:], pc)
+		n, err := w.Write(pcBuffer[:])
+		if err != nil {
+			if err == io.EOF {
+				// Simply stop writing if we encounter EOF; it's ok if we attempted to
+				// write more than we can hold.
+				total += n
+				return false
+			}
+			panic(fmt.Sprintf("Internal error writing PCs to kcov area: %v", err))
+		}
+		total += n
+		return true
+	})
+
+	return total
+}
+
+func consumeCoverageData(handler func(pc uint64) bool) {
 	InitCoverageData()
 
 	coverageMu.Lock()
 	defer coverageMu.Unlock()
 
-	total := 0
-	var pcBuffer [8]byte
-	for fileNum, file := range globalData.files {
-		counters := coverdata.Counters[file]
-		for index := 0; index < len(counters); index++ {
-			// We do not use atomic operations while reading/writing to the counters,
-			// which would drastically degrade performance. Slight discrepancies due to
-			// racing is okay for the purposes of kcov.
-			if counters[index] == 0 {
-				continue
-			}
-			// Non-zero coverage data found; consume it and report as a PC.
-			counters[index] = 0
-			pc := globalData.syntheticPCs[fileNum][index]
-			hostarch.ByteOrder.PutUint64(pcBuffer[:], pc)
-			n, err := w.Write(pcBuffer[:])
-			if err != nil {
-				if err == io.EOF {
-					// Simply stop writing if we encounter EOF; it's ok if we attempted to
-					// write more than we can hold.
-					return total + n
-				}
-				panic(fmt.Sprintf("Internal error writing PCs to kcov area: %v", err))
-			}
-			total += n
-		}
+	var buf bytes.Buffer
+	var writer io.Writer = &buf
+	err := coverage.WriteCounters(writer)
+	if err != nil {
+		log.Warningf("coverage.WriteCounters failed: %s", err)
+		return
+	}
+	coverage.ClearCounters()
+
+	fb := fileBuffer{buffer: buf.Bytes()}
+	cdr, err := decodecounter.NewCounterDataReader("cover", &fb)
+	if err != nil {
+		log.Warningf("decodecounter.NewCounterDataReader failed: %s", err)
+		return
 	}
 
-	return total
+	var data decodecounter.FuncPayload
+	for {
+		ok, err := cdr.NextFunc(&data)
+		if err != nil {
+			panic(fmt.Sprintf("CounterDataReader.NextFunc failed: %s", err))
+		}
+		if !ok {
+			break
+		}
+		for i := 0; i < len(data.Counters); i++ {
+			if data.Counters[i] == 0 {
+				continue
+			}
+			pc := calculateSyntheticPC(data.PkgIdx, data.FuncIdx, i)
+			if !handler(pc) {
+				return
+			}
+		}
+	}
+	return
 }
 
 // InitCoverageData initializes globalData. It should be called before any kcov
 // data is written.
 func InitCoverageData() {
 	globalData.once.Do(func() {
-		// First, order all files. Then calculate synthetic PCs for every block
-		// (using the well-defined ordering for files as well).
-		for file := range coverdata.Blocks {
-			globalData.files = append(globalData.files, file)
-		}
-		sort.Strings(globalData.files)
-
-		for fileNum, file := range globalData.files {
-			blocks := coverdata.Blocks[file]
-			pcs := make([]uint64, 0, len(blocks))
-			for blockNum := range blocks {
-				pcs = append(pcs, calculateSyntheticPC(fileNum, blockNum))
+		globalData.pkgs = make(map[uint32]*pkg)
+		ml := rtcov.Meta.List
+		for k, b := range ml {
+			byteSlice := unsafe.Slice(b.P, b.Len)
+			p := pkg{}
+			globalData.pkgs[uint32(k)] = &p
+			p.funcs = make(map[uint32]icov.FuncDesc)
+			pd, err := decodemeta.NewCoverageMetaDataDecoder(byteSlice, true)
+			if err != nil {
+				panic(fmt.Sprintf("decodemeta.NewCoverageMetaDataDecoder failed: %s", err))
 			}
-			globalData.syntheticPCs = append(globalData.syntheticPCs, pcs)
+			var fd icov.FuncDesc
+			nf := pd.NumFuncs()
+			for fidx := uint32(0); fidx < nf; fidx++ {
+				if err := pd.ReadFunc(fidx, &fd); err != nil {
+					panic(fmt.Sprintf("reading meta-data file: %s", err))
+				}
+				p.funcs[fidx] = fd
+			}
+
 		}
 	})
 }
@@ -222,17 +322,10 @@ func Report() error {
 
 	var err error
 	reportOnce.Do(func() {
-		for file, counters := range coverdata.Counters {
-			blocks := coverdata.Blocks[file]
-			for i := 0; i < len(counters); i++ {
-				if atomic.LoadUint32(&counters[i]) > 0 {
-					err = writeBlock(reportOutput, file, blocks[i])
-					if err != nil {
-						return
-					}
-				}
-			}
-		}
+		consumeCoverageData(func(pc uint64) bool {
+			err = symbolize(reportOutput, pc)
+			return err == nil
+		})
 		reportOutput.Close()
 	})
 	return err
@@ -240,69 +333,57 @@ func Report() error {
 
 // Symbolize prints information about the block corresponding to pc.
 func Symbolize(out io.Writer, pc uint64) error {
-	fileNum, blockNum := syntheticPCToIndexes(pc)
-	file, err := fileFromIndex(fileNum)
-	if err != nil {
+	if _, err := io.WriteString(out, fmt.Sprintf("%#x\n", pc)); err != nil {
 		return err
 	}
-	block, err := blockFromIndex(file, blockNum)
-	if err != nil {
-		return err
-	}
-	return writeBlockWithPC(out, pc, file, block)
+	return symbolize(out, pc)
+}
+
+func symbolize(out io.Writer, pc uint64) error {
+	pkgIdx, funcIdx, idx := syntheticPCToIndexes(pc)
+	p := globalData.pkgs[uint32(pkgIdx)]
+	fd := p.funcs[uint32(funcIdx)]
+	u := fd.Units[idx]
+	_, err := io.WriteString(out, fmt.Sprintf("%s:%d.%d,%d.%d\n", fd.Srcfile, u.StLine, u.StCol, u.EnLine, u.EnCol))
+	return err
 }
 
 // WriteAllBlocks prints all information about all blocks along with their
 // corresponding synthetic PCs.
 func WriteAllBlocks(out io.Writer) error {
-	for fileNum, file := range globalData.files {
-		for blockNum, block := range coverdata.Blocks[file] {
-			if err := writeBlockWithPC(out, calculateSyntheticPC(fileNum, blockNum), file, block); err != nil {
-				return err
+	for pkgIdx, p := range globalData.pkgs {
+		for funcIdx, fd := range p.funcs {
+			for idx := range fd.Units {
+				pc := calculateSyntheticPC(pkgIdx, funcIdx, idx)
+				err := Symbolize(out, pc)
+				if err != nil {
+					return err
+				}
+
 			}
 		}
 	}
 	return nil
 }
 
-func writeBlockWithPC(out io.Writer, pc uint64, file string, block testing.CoverBlock) error {
-	if _, err := io.WriteString(out, fmt.Sprintf("%#x\n", pc)); err != nil {
-		return err
-	}
-	return writeBlock(out, file, block)
+const (
+	blockIdxBits = 8
+	funcIdxBits  = 12
+	pkgIdxShift  = funcIdxBits + blockIdxBits
+	funcIdxShift = blockIdxBits
+	blockIdxMask = (1 << blockIdxBits) - 1
+	funcIdxMask  = (1 << funcIdxBits) - 1
+)
+
+func calculateSyntheticPC(pkgIdx uint32, funcIdx uint32, blockIdx int) uint64 {
+	pc := uint64(blockIdx) | (uint64(funcIdx) << funcIdxShift) | (uint64(pkgIdx) << pkgIdxShift)
+	return ^pc
 }
 
-func writeBlock(out io.Writer, file string, block testing.CoverBlock) error {
-	_, err := io.WriteString(out, fmt.Sprintf("%s:%d.%d,%d.%d\n", file, block.Line0, block.Col0, block.Line1, block.Col1))
-	return err
-}
-
-func calculateSyntheticPC(fileNum int, blockNum int) uint64 {
-	return (uint64(fileNum) << blockBitLength) + uint64(blockNum)
-}
-
-func syntheticPCToIndexes(pc uint64) (fileNum int, blockNum int) {
-	return int(pc >> blockBitLength), int(pc & ((1 << blockBitLength) - 1))
-}
-
-// fileFromIndex returns the name of the file in the sorted list of instrumented files.
-func fileFromIndex(i int) (string, error) {
-	total := len(globalData.files)
-	if i < 0 || i >= total {
-		return "", fmt.Errorf("file index out of range: [%d] with length %d", i, total)
-	}
-	return globalData.files[i], nil
-}
-
-// blockFromIndex returns the i-th block in the given file.
-func blockFromIndex(file string, i int) (testing.CoverBlock, error) {
-	blocks, ok := coverdata.Blocks[file]
-	if !ok {
-		return testing.CoverBlock{}, fmt.Errorf("instrumented file %s does not exist", file)
-	}
-	total := len(blocks)
-	if i < 0 || i >= total {
-		return testing.CoverBlock{}, fmt.Errorf("block index out of range: [%d] with length %d", i, total)
-	}
-	return blocks[i], nil
+func syntheticPCToIndexes(pc uint64) (pkgIdx uint32, funcIdx uint32, blockIdx int) {
+	pc = ^pc
+	blockIdx = int(pc & blockIdxMask)
+	funcIdx = uint32((pc >> funcIdxShift) & funcIdxMask)
+	pkgIdx = uint32(pc >> pkgIdxShift)
+	return
 }
