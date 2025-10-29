@@ -41,14 +41,10 @@ import (
 
 	"io"
 	"runtime/coverage"
-	"sync/atomic"
-	"testing"
 
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sync"
-
-	"github.com/bazelbuild/rules_go/go/tools/coverdata"
 )
 
 var (
@@ -107,12 +103,7 @@ func ClearCoverageData() {
 	coverageMu.Lock()
 	defer coverageMu.Unlock()
 
-	// We do not use atomic operations while reading/writing to the counters,
-	// which would drastically degrade performance. Slight discrepancies due to
-	// racing is okay for the purposes of kcov.
-	for _, counters := range coverdata.Counters {
-		clear(counters)
-	}
+	coverage.ClearCounters()
 }
 
 var coveragePool = sync.Pool{
@@ -221,6 +212,29 @@ type pkg struct {
 //
 //go:norace
 func ConsumeCoverageData(w io.Writer) int {
+	total := 0
+	var pcBuffer [8]byte
+
+	consumeCoverageData(func(pc uint64) bool {
+		hostarch.ByteOrder.PutUint64(pcBuffer[:], pc)
+		n, err := w.Write(pcBuffer[:])
+		if err != nil {
+			if err == io.EOF {
+				// Simply stop writing if we encounter EOF; it's ok if we attempted to
+				// write more than we can hold.
+				total += n
+				return false
+			}
+			panic(fmt.Sprintf("Internal error writing PCs to kcov area: %v", err))
+		}
+		total += n
+		return true
+	})
+
+	return total
+}
+
+func consumeCoverageData(handler func(pc uint64) bool) {
 	InitCoverageData()
 
 	coverageMu.Lock()
@@ -231,7 +245,7 @@ func ConsumeCoverageData(w io.Writer) int {
 	err := coverage.WriteCounters(writer)
 	if err != nil {
 		log.Warningf("coverage.WriteCounters failed: %s", err)
-		return 0
+		return
 	}
 	coverage.ClearCounters()
 
@@ -239,39 +253,29 @@ func ConsumeCoverageData(w io.Writer) int {
 	cdr, err := decodecounter.NewCounterDataReader("cover", &fb)
 	if err != nil {
 		log.Warningf("decodecounter.NewCounterDataReader failed: %s", err)
-		return 0
+		return
 	}
 
-	total := 0
-	var pcBuffer [8]byte
 	var data decodecounter.FuncPayload
 	for {
 		ok, err := cdr.NextFunc(&data)
 		if err != nil {
-			panic(fmt.Sprintf("%s", err))
+			panic(fmt.Sprintf("CounterDataReader.NextFunc failed: %s", err))
 		}
 		if !ok {
 			break
 		}
 		for i := 0; i < len(data.Counters); i++ {
-			pc := calculateSyntheticPC(data.PkgIdx, data.FuncIdx, i)
 			if data.Counters[i] == 0 {
 				continue
 			}
-			hostarch.ByteOrder.PutUint64(pcBuffer[:], pc)
-			n, err := w.Write(pcBuffer[:])
-			if err != nil {
-				if err == io.EOF {
-					// Simply stop writing if we encounter EOF; it's ok if we attempted to
-					// write more than we can hold.
-					return total + n
-				}
-				panic(fmt.Sprintf("Internal error writing PCs to kcov area: %v", err))
+			pc := calculateSyntheticPC(data.PkgIdx, data.FuncIdx, i)
+			if !handler(pc) {
+				return
 			}
-			total += n
 		}
 	}
-	return total
+	return
 }
 
 // InitCoverageData initializes globalData. It should be called before any kcov
@@ -318,17 +322,10 @@ func Report() error {
 
 	var err error
 	reportOnce.Do(func() {
-		for file, counters := range coverdata.Counters {
-			blocks := coverdata.Blocks[file]
-			for i := 0; i < len(counters); i++ {
-				if atomic.LoadUint32(&counters[i]) > 0 {
-					err = writeBlock(reportOutput, file, blocks[i])
-					if err != nil {
-						return
-					}
-				}
-			}
-		}
+		consumeCoverageData(func(pc uint64) bool {
+			err = symbolize(reportOutput, pc)
+			return err == nil
+		})
 		reportOutput.Close()
 	})
 	return err
@@ -336,13 +333,17 @@ func Report() error {
 
 // Symbolize prints information about the block corresponding to pc.
 func Symbolize(out io.Writer, pc uint64) error {
+	if _, err := io.WriteString(out, fmt.Sprintf("%#x\n", pc)); err != nil {
+		return err
+	}
+	return symbolize(out, pc)
+}
+
+func symbolize(out io.Writer, pc uint64) error {
 	pkgIdx, funcIdx, idx := syntheticPCToIndexes(pc)
 	p := globalData.pkgs[uint32(pkgIdx)]
 	fd := p.funcs[uint32(funcIdx)]
 	u := fd.Units[idx]
-	if _, err := io.WriteString(out, fmt.Sprintf("%#x\n", pc)); err != nil {
-		return err
-	}
 	_, err := io.WriteString(out, fmt.Sprintf("%s:%d.%d,%d.%d\n", fd.Srcfile, u.StLine, u.StCol, u.EnLine, u.EnCol))
 	return err
 }
@@ -363,18 +364,6 @@ func WriteAllBlocks(out io.Writer) error {
 		}
 	}
 	return nil
-}
-
-func writeBlockWithPC(out io.Writer, pc uint64, file string, block testing.CoverBlock) error {
-	if _, err := io.WriteString(out, fmt.Sprintf("%#x\n", pc)); err != nil {
-		return err
-	}
-	return writeBlock(out, file, block)
-}
-
-func writeBlock(out io.Writer, file string, block testing.CoverBlock) error {
-	_, err := io.WriteString(out, fmt.Sprintf("%s:%d.%d,%d.%d\n", file, block.Line0, block.Col0, block.Line1, block.Col1))
-	return err
 }
 
 const (
