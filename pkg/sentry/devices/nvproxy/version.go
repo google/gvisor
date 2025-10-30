@@ -711,7 +711,8 @@ func Init() {
 		v535_183_06 := addDriverABI(535, 183, 06, "c7bb0a0569c5347845479ed4e3e4d885c6ee3b8adf068c3401cdf754d5ba3d3b", ChecksumNoDriver, v535_129_03)                                                   // Internal use.
 		v535_230_02 := addDriverABI(535, 230, 02, "20cca9118083fcc8083158466e9cb2b616a7922206bcb7296b1fa5cc9af2e0fd", "ea000e6ff481f55e9bfedbea93b739368c635fe4be6156fdad560524ac7f363b", v535_183_06)
 		v535_247_01 := addDriverABI(535, 247, 01, "c250e686494cb0c1b5eeea58ba2003707510b2766df05b06ba20b11b3445466b", "bd8ea5c3747a588ff1a29b4f59300d2eba69402a605cb95fce10a30f535993d0", v535_230_02)
-		_ = addDriverABI(535, 261, 03, "d74b61d11e9c9b9052f4042d6ec4437f13d1def30e964e232d47e5d659d11d68", "9a412d3ac01c99d2ca02100a7139597fce8804c52bf533d11b60437286834a93", v535_247_01)
+		v535_261_03 := addDriverABI(535, 261, 03, "d74b61d11e9c9b9052f4042d6ec4437f13d1def30e964e232d47e5d659d11d68", "9a412d3ac01c99d2ca02100a7139597fce8804c52bf533d11b60437286834a93", v535_247_01)
+		_ = addDriverABI(535, 274, 02, "3b4ef54f06991e6dfff7868dde797fad9a451fee68d5267df87ca2be8e7f293b", "3e01dcaea19fe04fadb67a61a3e37c48ab0c4319d99f6f5f7df1d719b780c51c", v535_261_03)
 
 		// 545.23.06 is an intermediate unqualified version from the main branch.
 		v545_23_06 := func() *driverABI {
@@ -887,7 +888,8 @@ func Init() {
 
 		// The following exist on the "570" branch. They branched off the main
 		// branch at 570.133.20.
-		_ = addDriverABI(570, 172, 8, "0256867e082caf93d7b25fa7c8e69b316062a9c6c72c6e228fad7b238c6fa17d", "15547216f2b514ace7724a5ab4c3327669904a41cafb8d4d9048d3c9b60963d8", v570_133_20)
+		v570_172_08 := addDriverABI(570, 172, 8, "0256867e082caf93d7b25fa7c8e69b316062a9c6c72c6e228fad7b238c6fa17d", "15547216f2b514ace7724a5ab4c3327669904a41cafb8d4d9048d3c9b60963d8", v570_133_20)
+		_ = addDriverABI(570, 195, 03, "d47de81d9a513496a60adc9cfa72fe9e162c65f2722fb960c4f531bd7ac5dc1e", "a38ae007abe8f82bfdd25272c28bc8c950114464b7475e73610523f9fd67cd64", v570_172_08)
 
 		// 575.51.02 is an intermediate unqualified version from the main branch.
 		v575_51_02 := func() *driverABI {
