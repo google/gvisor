@@ -68,11 +68,6 @@ PosixError NetlinkRequestResponseSingle(
 PosixError NetlinkRequestAckOrError(const FileDescriptor& fd, uint32_t seq,
                                     void* request, size_t len);
 
-PosixError NetlinkNetfilterBatchRequestAckOrError(const FileDescriptor& fd,
-                                                  uint32_t seq_start,
-                                                  uint32_t seq_end,
-                                                  void* request, size_t len);
-
 // Find rtnetlink attribute in message.
 const struct rtattr* FindRtAttr(const struct nlmsghdr* hdr,
                                 const struct ifinfomsg* msg, int16_t attr);

@@ -22,15 +22,46 @@
 #include <map>
 #include <sstream>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "gtest/gtest.h"
+#include "absl/base/no_destructor.h"
+#include "absl/strings/string_view.h"
 #include "test/syscalls/linux/socket_netlink_util.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/posix_error.h"
+#include "test/util/save_util.h"
+#include "test/util/test_util.h"
 
 namespace gvisor {
 namespace testing {
+
+const std::string& GetDefaultTableName() {
+  static const absl::NoDestructor<std::string> name("default_test_table");
+  return *name;
+}
+
+const std::string& GetDefaultChainName() {
+  static const absl::NoDestructor<std::string> name("default_test_chain");
+  return *name;
+}
+
+PosixErrorOr<FileDescriptor> NetfilterBoundSocket() {
+  ASSIGN_OR_RETURN_ERRNO(FileDescriptor fd,
+                         NetlinkBoundSocket(NETLINK_NETFILTER));
+
+  // Set arbitrary timeout big enough to handle most netfilter operations,
+  // to catch buggy behaviour permanently blocking on recv.
+  struct timeval tv;
+  tv.tv_sec = 5;
+  tv.tv_usec = 0;
+  RETURN_ERROR_IF_SYSCALL_FAIL(setsockopt(fd.get(), SOL_SOCKET, SO_RCVTIMEO,
+                                          (const char*)&tv, sizeof(tv)));
+  MaybeSave();
+
+  return std::move(fd);
+}
 
 // Helper function to initialize a nfgenmsg header.
 void InitNetfilterGenmsg(struct nfgenmsg* genmsg, uint8_t family,
@@ -75,12 +106,12 @@ void CheckNetfilterTableAttributes(const NfTableCheckOptions& options) {
   // Check for the NFTA_TABLE_NAME attribute.
   const struct nfattr* table_name_attr =
       FindNfAttr(options.hdr, nullptr, NFTA_TABLE_NAME);
-  if (table_name_attr != nullptr && options.test_table_name != nullptr) {
+  if (table_name_attr != nullptr && !options.test_table_name.empty()) {
     std::string name(reinterpret_cast<const char*>(NFA_DATA(table_name_attr)));
     EXPECT_EQ(name, options.test_table_name);
   } else {
     EXPECT_EQ(table_name_attr, nullptr);
-    EXPECT_EQ(options.test_table_name, nullptr);
+    EXPECT_TRUE(options.test_table_name.empty());
   }
 
   // Check for the NFTA_TABLE_USE attribute.
@@ -151,25 +182,25 @@ void CheckNetfilterChainAttributes(const NfChainCheckOptions& options) {
   // Check for the NFTA_CHAIN_TABLE attribute.
   const struct nfattr* table_name_attr =
       FindNfAttr(options.hdr, nullptr, NFTA_CHAIN_TABLE);
-  if (table_name_attr != nullptr && options.expected_table_name != nullptr) {
+  if (table_name_attr != nullptr && !options.expected_table_name.empty()) {
     std::string table_name(
         reinterpret_cast<const char*>(NFA_DATA(table_name_attr)));
     EXPECT_EQ(table_name, options.expected_table_name);
   } else {
     EXPECT_EQ(table_name_attr, nullptr);
-    EXPECT_EQ(options.expected_table_name, nullptr);
+    EXPECT_TRUE(options.expected_table_name.empty());
   }
 
   // Check for the NFTA_CHAIN_NAME attribute.
   const struct nfattr* chain_name_attr =
       FindNfAttr(options.hdr, nullptr, NFTA_CHAIN_NAME);
-  if (chain_name_attr != nullptr && options.expected_chain_name != nullptr) {
+  if (chain_name_attr != nullptr && !options.expected_chain_name.empty()) {
     std::string chain_name(
         reinterpret_cast<const char*>(NFA_DATA(chain_name_attr)));
     EXPECT_EQ(chain_name, options.expected_chain_name);
   } else {
     EXPECT_EQ(chain_name_attr, nullptr);
-    EXPECT_EQ(options.expected_chain_name, nullptr);
+    EXPECT_TRUE(options.expected_chain_name.empty());
   }
 
   if (!options.skip_handle_check) {
@@ -199,13 +230,13 @@ void CheckNetfilterChainAttributes(const NfChainCheckOptions& options) {
   // Check for the NFTA_CHAIN_TYPE attribute.
   const struct nfattr* chain_type_attr =
       FindNfAttr(options.hdr, nullptr, NFTA_CHAIN_TYPE);
-  if (chain_type_attr != nullptr && options.expected_chain_type != nullptr) {
+  if (chain_type_attr != nullptr && !options.expected_chain_type.empty()) {
     std::string chain_type(
         reinterpret_cast<const char*>(NFA_DATA(chain_type_attr)));
     EXPECT_EQ(chain_type, options.expected_chain_type);
   } else {
     EXPECT_EQ(chain_type_attr, nullptr);
-    EXPECT_EQ(options.expected_chain_type, nullptr);
+    EXPECT_TRUE(options.expected_chain_type.empty());
   }
 
   // Check for the NFTA_CHAIN_FLAGS attribute.
@@ -252,25 +283,25 @@ void CheckNetfilterRuleAttributes(const NfRuleCheckOptions& options) {
   // Check for the NFTA_RULE_TABLE attribute.
   const struct nfattr* table_name_attr =
       FindNfAttr(options.hdr, nullptr, NFTA_RULE_TABLE);
-  if (table_name_attr != nullptr && options.expected_table_name != nullptr) {
+  if (table_name_attr != nullptr && !options.expected_table_name.empty()) {
     std::string table_name(
         reinterpret_cast<const char*>(NFA_DATA(table_name_attr)));
     EXPECT_EQ(table_name, options.expected_table_name);
   } else {
     EXPECT_EQ(table_name_attr, nullptr);
-    EXPECT_EQ(options.expected_table_name, nullptr);
+    EXPECT_TRUE(options.expected_table_name.empty());
   }
 
   // Check for the NFTA_RULE_CHAIN attribute.
   const struct nfattr* chain_name_attr =
       FindNfAttr(options.hdr, nullptr, NFTA_RULE_CHAIN);
-  if (chain_name_attr != nullptr && options.expected_chain_name != nullptr) {
+  if (chain_name_attr != nullptr && !options.expected_chain_name.empty()) {
     std::string chain_name(
         reinterpret_cast<const char*>(NFA_DATA(chain_name_attr)));
     EXPECT_EQ(chain_name, options.expected_chain_name);
   } else {
     EXPECT_EQ(chain_name_attr, nullptr);
-    EXPECT_EQ(options.expected_chain_name, nullptr);
+    EXPECT_TRUE(options.expected_chain_name.empty());
   }
 
   if (!options.skip_handle_check) {
@@ -303,10 +334,10 @@ void CheckNetfilterRuleAttributes(const NfRuleCheckOptions& options) {
 }
 
 // Helper function to add a default table.
-void AddDefaultTable(const AddDefaultTableOptions options) {
-  const char* test_table_name = options.test_table_name;
-  if (test_table_name == nullptr) {
-    test_table_name = DEFAULT_TABLE_NAME;
+void AddDefaultTable(const AddDefaultTableOptions& options) {
+  const std::string* table_name = &options.table_name;
+  if (table_name->empty()) {
+    table_name = &GetDefaultTableName();
   }
 
   std::vector<char> add_table_request_buffer =
@@ -314,7 +345,7 @@ void AddDefaultTable(const AddDefaultTableOptions options) {
           .SeqStart(options.seq)
           .Req(NlReq("newtable req ack inet")
                    .Seq(options.seq + 1)
-                   .StrAttr(NFTA_TABLE_NAME, test_table_name)
+                   .StrAttr(NFTA_TABLE_NAME, *table_name)
                    .Build())
           .SeqEnd(options.seq + 2)
           .Build();
@@ -324,15 +355,15 @@ void AddDefaultTable(const AddDefaultTableOptions options) {
 }
 
 // Helper function to add a default base chain.
-void AddDefaultBaseChain(const AddDefaultBaseChainOptions options) {
-  const char* test_table_name = options.test_table_name;
-  if (test_table_name == nullptr) {
-    test_table_name = DEFAULT_TABLE_NAME;
+void AddDefaultBaseChain(const AddDefaultBaseChainOptions& options) {
+  const std::string* table_name = &options.table_name;
+  if (table_name->empty()) {
+    table_name = &GetDefaultTableName();
   }
 
-  const char* test_chain_name = options.test_chain_name;
-  if (test_chain_name == nullptr) {
-    test_chain_name = DEFAULT_CHAIN_NAME;
+  const std::string* chain_name = &options.chain_name;
+  if (chain_name->empty()) {
+    chain_name = &GetDefaultChainName();
   }
 
   const char test_chain_type_name[] = "filter";
@@ -352,8 +383,8 @@ void AddDefaultBaseChain(const AddDefaultBaseChainOptions options) {
           .SeqStart(options.seq)
           .Req(NlReq("newchain req ack inet")
                    .Seq(options.seq + 1)
-                   .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
-                   .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
+                   .StrAttr(NFTA_CHAIN_TABLE, *table_name)
+                   .StrAttr(NFTA_CHAIN_NAME, *chain_name)
                    .U32Attr(NFTA_CHAIN_POLICY, test_policy)
                    .RawAttr(NFTA_CHAIN_HOOK, nested_hook_data.data(),
                             nested_hook_data.size())
@@ -527,8 +558,8 @@ NlReq& NlReq::RawAttr(uint16_t attr_type, const void* payload,
 
 // Method to add a string attribute to the message.
 // The payload is expected to be a null-terminated string.
-NlReq& NlReq::StrAttr(uint16_t attr_type, const char* payload) {
-  return RawAttr(attr_type, payload, strlen(payload) + 1);
+NlReq& NlReq::StrAttr(uint16_t attr_type, const std::string& payload) {
+  return RawAttr(attr_type, payload.c_str(), payload.size() + 1);
 }
 
 // Method to add a uint8_t attribute to the message.
@@ -603,8 +634,9 @@ NlNestedAttr& NlNestedAttr::RawAttr(uint16_t attr_type, const void* payload,
 
 // Method to add a string attribute to the message.
 // The payload is expected to be a null-terminated string.
-NlNestedAttr& NlNestedAttr::StrAttr(uint16_t attr_type, const char* payload) {
-  return RawAttr(attr_type, payload, strlen(payload) + 1);
+NlNestedAttr& NlNestedAttr::StrAttr(uint16_t attr_type,
+                                    const std::string& payload) {
+  return RawAttr(attr_type, payload.c_str(), payload.size() + 1);
 }
 
 // Method to add a uint8_t attribute to the message.
@@ -757,14 +789,26 @@ PosixError NetlinkNetfilterBatchRequestAckOrError(const FileDescriptor& fd,
                                                   uint32_t seq_start,
                                                   uint32_t seq_end,
                                                   void* request, size_t len) {
+  // Test sanity checking. seq start/end bounds are inclusive.
+  EXPECT_GT(seq_end, seq_start);
+
+  // A properly formatted batch has start and end headers. Older Linux versions
+  // do not send them, whereas kernels past 6.10 do.
+  int expected_msg_count = seq_end - seq_start + 1;  // include headers
+  if (!IsRunningOnGvisor()) {
+    ASSIGN_OR_RETURN_ERRNO(KernelVersion version, GetKernelVersion());
+    if (version.major < 6 || (version.major == 6 && version.minor < 10)) {
+      expected_msg_count = seq_end - seq_start - 1;  // exclude headers
+    }
+  }
+
   RETURN_IF_ERRNO(NetlinkRequest(fd, request, len));
   // Dummy negative number for no error message received.
   // On a successful message, err will be set to 0 (signalling an ack).
   int err = -42;
   bool err_set = false;
   int msg_count = 0;
-  int expected_msg_count = seq_end - seq_start + 1;
-  while (msg_count < expected_msg_count) {
+  while (msg_count < expected_msg_count && !err_set) {
     RETURN_IF_ERRNO(NetlinkResponse(
         fd,
         [&](const struct nlmsghdr* hdr) {
@@ -773,24 +817,34 @@ PosixError NetlinkNetfilterBatchRequestAckOrError(const FileDescriptor& fd,
           EXPECT_GE(hdr->nlmsg_seq, seq_start);
           EXPECT_LE(hdr->nlmsg_seq, seq_end);
           EXPECT_GE(hdr->nlmsg_len, sizeof(*hdr) + sizeof(struct nlmsgerr));
-
           const struct nlmsgerr* msg =
               reinterpret_cast<const struct nlmsgerr*>(NLMSG_DATA(hdr));
           err = -msg->error;
           if (err != 0) {
-            if (!err_set) {
-              expected_msg_count -= 1;
-              err_set = true;
-            }
+            err_set = true;
           }
         },
         true));
   }
 
-  // Assumes that we need to read as many messages as there are sequences in the
-  // batch.
-  EXPECT_EQ(msg_count, expected_msg_count);
   return PosixError(err);
+}
+
+PosixError DestroyNetfilterTable(FileDescriptor& fd,
+                                 absl::string_view table_name, int seq_num) {
+  std::vector<char> destroy_request_buffer =
+      NlBatchReq()
+          .SeqStart(seq_num)
+          .Req(NlReq("deltable req ack unspec")
+                   .Seq(seq_num + 1)
+                   .StrAttr(NFTA_TABLE_NAME, table_name.data())
+                   .Build())
+          .SeqEnd(seq_num + 2)
+          .Build();
+
+  return NetlinkNetfilterBatchRequestAckOrError(fd, seq_num, seq_num + 2,
+                                                destroy_request_buffer.data(),
+                                                destroy_request_buffer.size());
 }
 
 }  // namespace testing

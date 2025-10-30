@@ -56,12 +56,9 @@ namespace testing {
 #define TABLE_NAME_SIZE 32
 #define VALID_USERDATA_SIZE 128
 
-#define DEFAULT_TABLE_NAME "default_test_table"
-#define DEFAULT_CHAIN_NAME "default_test_chain"
-
 struct NfTableCheckOptions {
   const struct nlmsghdr* hdr;
-  const char* test_table_name;
+  std::string test_table_name;
   uint32_t* expected_chain_count;
   uint64_t* expected_handle;
   uint32_t* expected_flags;
@@ -73,11 +70,11 @@ struct NfTableCheckOptions {
 
 struct NfChainCheckOptions {
   const struct nlmsghdr* hdr;
-  const char* expected_table_name;
-  const char* expected_chain_name;
+  std::string expected_table_name;
+  std::string expected_chain_name;
   uint64_t* expected_handle;
   const uint32_t* expected_policy;
-  const char* expected_chain_type;
+  std::string expected_chain_type;
   const uint32_t* expected_flags;
   uint32_t* expected_use;
   uint8_t* expected_udata;
@@ -87,8 +84,8 @@ struct NfChainCheckOptions {
 
 struct NfRuleCheckOptions {
   const struct nlmsghdr* hdr;
-  const char* expected_table_name;
-  const char* expected_chain_name;
+  std::string expected_table_name;
+  std::string expected_chain_name;
   uint64_t* expected_handle;
   uint8_t* expected_udata;
   size_t* expected_udata_size;
@@ -97,16 +94,25 @@ struct NfRuleCheckOptions {
 
 struct AddDefaultTableOptions {
   const FileDescriptor& fd;
-  const char* test_table_name;
+  std::string table_name;
   uint32_t seq;
 };
 
 struct AddDefaultBaseChainOptions {
   const FileDescriptor& fd;
-  const char* test_table_name;
-  const char* test_chain_name;
+  std::string table_name;
+  std::string chain_name;
   uint32_t seq;
 };
+
+// Returns default table name for tests.
+const std::string& GetDefaultTableName();
+
+// Returns default chain name for tests.
+const std::string& GetDefaultChainName();
+
+// Like NetlinkBoundSocket, but with extra configuration for netfilter tests..
+PosixErrorOr<FileDescriptor> NetfilterBoundSocket();
 
 void InitNetfilterGenmsg(struct nfgenmsg* genmsg, uint8_t family,
                          uint8_t version, uint16_t res_id);
@@ -121,10 +127,20 @@ void CheckNetfilterChainAttributes(const NfChainCheckOptions& options);
 void CheckNetfilterRuleAttributes(const struct NfRuleCheckOptions& options);
 
 // Helper function to add a default table.
-void AddDefaultTable(AddDefaultTableOptions options);
+void AddDefaultTable(const AddDefaultTableOptions& options);
 
 // Helper function to add a default chain.
-void AddDefaultBaseChain(AddDefaultBaseChainOptions options);
+void AddDefaultBaseChain(const AddDefaultBaseChainOptions& options);
+
+// Helper function to generate a batch netfilter request.
+PosixError NetlinkNetfilterBatchRequestAckOrError(const FileDescriptor& fd,
+                                                  uint32_t seq_start,
+                                                  uint32_t seq_end,
+                                                  void* request, size_t len);
+
+// Helper function to delete a table.
+PosixError DestroyNetfilterTable(FileDescriptor& fd,
+                                 absl::string_view table_name, int seq_num);
 
 class NlBatchReq {
  public:
@@ -164,7 +180,7 @@ class NlReq {
 
   // Method to add a string attribute to the message.
   // The payload is expected to be a null-terminated string.
-  NlReq& StrAttr(uint16_t attr_type, const char* payload);
+  NlReq& StrAttr(uint16_t attr_type, const std::string& payload);
 
   // Method to add a uint8_t attribute to the message.
   NlReq& U8Attr(uint16_t attr_type, uint8_t payload);
@@ -209,7 +225,7 @@ class NlNestedAttr {
 
   // Method to add a string attribute to the message.
   // The payload is expected to be a null-terminated string.
-  NlNestedAttr& StrAttr(uint16_t attr_type, const char* payload);
+  NlNestedAttr& StrAttr(uint16_t attr_type, const std::string& payload);
 
   // Method to add a uint8_t attribute to the message.
   NlNestedAttr& U8Attr(uint16_t attr_type, uint8_t payload);
