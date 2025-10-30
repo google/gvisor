@@ -568,6 +568,11 @@ func (s *Socket) GetPeerName(t *kernel.Task) (linux.SockAddr, uint32, *syserr.Er
 	return sa, uint32(sa.SizeBytes()), nil
 }
 
+// GetPeerCreds implements socket.Socket.GetPeerCreds.
+func (s *Socket) GetPeerCreds(t *kernel.Task) (marshal.Marshallable, *syserr.Error) {
+	return nil, syserr.ErrNotSupported
+}
+
 // RecvMsg implements socket.Socket.RecvMsg.
 func (s *Socket) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags int, haveDeadline bool, deadline ktime.Time, senderRequested bool, controlDataLen uint64) (int, int, linux.SockAddr, uint32, socket.ControlMessages, *syserr.Error) {
 	from := &linux.SockAddrNetlink{

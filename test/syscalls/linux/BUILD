@@ -394,6 +394,47 @@ cc_binary(
     ],
 )
 
+cc_library(
+    name = "socket_unix_peercred_test_cases",
+    testonly = 1,
+    srcs = [
+        "socket_unix_peercred.cc",
+    ],
+    hdrs = [
+        "socket_unix_peercred.h",
+    ],
+    deps = select_gtest() + [
+        "//test/util:capability_util",
+        "//test/util:cleanup",
+        "//test/util:eventfd_util",
+        "//test/util:file_descriptor",
+        "//test/util:fs_util",
+        "//test/util:logging",
+        "//test/util:memory_util",
+        "//test/util:mount_util",
+        "//test/util:multiprocess_util",
+        "//test/util:posix_error",
+        "//test/util:proc_util",
+        "//test/util:save_util",
+        "//test/util:socket_util",
+        "//test/util:temp_path",
+        "//test/util:test_util",
+        "//test/util:thread_util",
+        "//test/util:time_util",
+        "//test/util:timer_util",
+        "@com_google_absl//absl/algorithm:container",
+        "@com_google_absl//absl/container:btree",
+        "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/container:node_hash_set",
+        "@com_google_absl//absl/flags:flag",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/synchronization",
+        "@com_google_absl//absl/time",
+    ],
+    alwayslink = 1,
+)
+
 cc_binary(
     name = "chdir_test",
     testonly = 1,
@@ -3930,6 +3971,7 @@ cc_binary(
     malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         ":socket_unix_cmsg_test_cases",
+        ":socket_unix_peercred_test_cases",
         ":socket_unix_test_cases",
         ":unix_domain_socket_test_util",
         "//test/util:socket_util",
