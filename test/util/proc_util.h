@@ -70,6 +70,7 @@ struct ProcSmapsEntry {
   absl::optional<size_t> kernel_page_size_kb;
   absl::optional<size_t> mmu_page_size_kb;
   absl::optional<size_t> locked_kb;
+  absl::optional<int> thp_eligible;
 
   // Caution: "Note that there is no guarantee that every flag and associated
   // mnemonic will be present in all further kernel releases. Things get

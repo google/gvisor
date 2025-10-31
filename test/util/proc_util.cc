@@ -290,6 +290,11 @@ PosixErrorOr<std::vector<ProcSmapsEntry>> ParseProcSmaps(
       RETURN_IF_ERRNO(on_optional_field_kb(&entry->mmu_page_size_kb));
     } else if (key == "Locked") {
       RETURN_IF_ERRNO(on_optional_field_kb(&entry->locked_kb));
+    } else if (key == "THPeligible") {
+      if (entry->thp_eligible) {
+        return PosixError(EINVAL, "smaps entry has duplicate THPeligible line");
+      }
+      ASSIGN_OR_RETURN_ERRNO(entry->thp_eligible, Atoi<int>(key_value[1]));
     } else if (key == "VmFlags") {
       if (entry->vm_flags) {
         return PosixError(EINVAL, "duplicate VmFlags line");
@@ -336,17 +341,23 @@ PosixErrorOr<std::vector<ProcSmapsEntry>> ReadProcSmaps(pid_t pid) {
   return ParseProcSmaps(contents);
 }
 
-bool EntryHasNH(const ProcSmapsEntry& e) {
-  if (e.vm_flags) {
-    auto flags = e.vm_flags.value();
-    return std::find(flags.begin(), flags.end(), "nh") != flags.end();
-  }
-  return false;
-}
-
 bool StackTHPDisabled(std::vector<ProcSmapsEntry> maps) {
-  return std::any_of(maps.begin(), maps.end(), [](const ProcSmapsEntry& e) {
-    return e.maps_entry.filename == "[stack]" && EntryHasNH(e);
+  return absl::c_any_of(maps, [](const ProcSmapsEntry& e) {
+    if (e.maps_entry.filename != "[stack]") {
+      return false;
+    }
+    // Linux changed PR_SET_THP_DISABLE to cease setting VM_NOHUGEPAGE on VMAs
+    // in 1860033237d4b ("mm: make PR_SET_THP_DISABLE immediately active") and
+    // subsequently added THPeligible in 7635d9cbe8327 ("mm, thp, proc: report
+    // THP eligibility for each vma").
+    if (e.thp_eligible) {
+      return *e.thp_eligible == 0;
+    }
+    if (e.vm_flags) {
+      auto flags = e.vm_flags.value();
+      return std::find(flags.begin(), flags.end(), "nh") != flags.end();
+    }
+    return false;
   });
 }
 
