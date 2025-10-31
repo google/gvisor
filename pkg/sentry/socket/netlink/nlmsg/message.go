@@ -374,6 +374,28 @@ func (v *BytesView) String() string {
 	return string(b)
 }
 
+// Uint8 converts the raw attribute value to uint8.
+func (v *BytesView) Uint8() (uint8, bool) {
+	attr := []byte(*v)
+	val := primitive.Uint8(0)
+	if len(attr) != val.SizeBytes() {
+		return 0, false
+	}
+	val.UnmarshalBytes(attr)
+	return uint8(val), true
+}
+
+// Uint16 converts the raw attribute value to uint16.
+func (v *BytesView) Uint16() (uint16, bool) {
+	attr := []byte(*v)
+	val := primitive.Uint16(0)
+	if len(attr) != val.SizeBytes() {
+		return 0, false
+	}
+	val.UnmarshalBytes(attr)
+	return uint16(val), true
+}
+
 // Uint32 converts the raw attribute value to uint32.
 func (v *BytesView) Uint32() (uint32, bool) {
 	attr := []byte(*v)
@@ -396,6 +418,28 @@ func (v *BytesView) Uint64() (uint64, bool) {
 	return uint64(val), true
 }
 
+// Int8 converts the raw attribute value to int8.
+func (v *BytesView) Int8() (int8, bool) {
+	attr := []byte(*v)
+	val := primitive.Int8(0)
+	if len(attr) != val.SizeBytes() {
+		return 0, false
+	}
+	val.UnmarshalBytes(attr)
+	return int8(val), true
+}
+
+// Int16 converts the raw attribute value to int32.
+func (v *BytesView) Int16() (int16, bool) {
+	attr := []byte(*v)
+	val := primitive.Int16(0)
+	if len(attr) != val.SizeBytes() {
+		return 0, false
+	}
+	val.UnmarshalBytes(attr)
+	return int16(val), true
+}
+
 // Int32 converts the raw attribute value to int32.
 func (v *BytesView) Int32() (int32, bool) {
 	attr := []byte(*v)
@@ -405,6 +449,17 @@ func (v *BytesView) Int32() (int32, bool) {
 	}
 	val.UnmarshalBytes(attr)
 	return int32(val), true
+}
+
+// Int64 converts the raw attribute value to int32.
+func (v *BytesView) Int64() (int64, bool) {
+	attr := []byte(*v)
+	val := primitive.Int64(0)
+	if len(attr) != val.SizeBytes() {
+		return 0, false
+	}
+	val.UnmarshalBytes(attr)
+	return int64(val), true
 }
 
 // NetToHostU16 converts a uint16 in network byte order to
