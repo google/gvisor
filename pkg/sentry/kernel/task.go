@@ -681,7 +681,9 @@ func (t *Task) afterLoad(gocontext.Context) {
 		t.stopCount = atomicbitops.FromInt32(1)
 	}
 	t.endStopCond.L = &t.tg.signalHandlers.mu
-	t.rseqPreempted = true
+	if !t.k.Platform.HasCPUNumbers() {
+		t.rseqPreempted = true
+	}
 	t.futexWaiter = futex.NewWaiter()
 	t.p = t.k.Platform.NewContext(t.AsyncContext())
 }

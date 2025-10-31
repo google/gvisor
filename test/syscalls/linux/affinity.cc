@@ -34,6 +34,8 @@ namespace {
 class AffinityTest : public ::testing::Test {
  protected:
   void SetUp() override {
+    // sched_getaffinity() is a no-op on platform/KVM
+    SKIP_IF(GvisorPlatform() == Platform::kKVM);
     EXPECT_THAT(
         // Needs use the raw syscall to get the actual size.
         cpuset_size_ = syscall(SYS_sched_getaffinity, /*pid=*/0,

@@ -490,6 +490,11 @@ func (k *Kernel) Init(args InitKernelArgs) error {
 	k.cpuClockTickerWakeCh = make(chan struct{}, 1)
 	k.cpuClockTickerStopCond.L = &k.runningTasksMu
 	k.applicationCores = args.ApplicationCores
+	if args.UseHostCores && k.HasCPUNumbers() {
+		args.UseHostCores = false
+		log.Infof("UseHostCores enabled but the platform implements HasCPUNumbers(): setting UseHostCores to false")
+	}
+
 	if args.UseHostCores {
 		k.useHostCores = true
 		maxCPU, err := hostcpu.MaxPossibleCPU()
@@ -502,6 +507,15 @@ func (k *Kernel) Init(args InitKernelArgs) error {
 			k.applicationCores = minAppCores
 		}
 	}
+
+	if k.HasCPUNumbers() {
+		if k.applicationCores < uint(k.NumCPUs()) {
+			log.Infof("ApplicationCores is less than NumCPUs: %d < %d", k.applicationCores, k.NumCPUs())
+			log.Infof("Setting applicationCores to NumCPUs: %d", k.NumCPUs())
+			k.applicationCores = uint(k.NumCPUs())
+		}
+	}
+
 	k.extraAuxv = args.ExtraAuxv
 	k.vdso = args.Vdso
 	k.vdsoParams = args.VdsoParams
