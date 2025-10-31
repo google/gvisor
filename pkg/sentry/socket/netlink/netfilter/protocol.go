@@ -442,7 +442,7 @@ func (p *Protocol) addChain(attrs map[uint16]nlmsg.BytesView, tab *nftables.Tabl
 			return syserr.NewAnnotatedError(syserr.ErrNotSupported, fmt.Sprintf("Nftables: Chain binding attribute is not supported for chains with a hook"))
 		}
 
-		bcInfo, err = p.chainParseHook(nil, family, nlmsg.AttrsView(hookDataBytes))
+		bcInfo, err = p.chainParseHook(nil, family, nlmsg.AttrsView(hookDataBytes), attrs)
 		if err != nil {
 			return err
 		}
@@ -494,7 +494,7 @@ func (p *Protocol) addChain(attrs map[uint16]nlmsg.BytesView, tab *nftables.Tabl
 
 // chainParseHook parses the hook attributes and returns a complete
 // BaseChainInfo.
-func (p *Protocol) chainParseHook(chain *nftables.Chain, family stack.AddressFamily, hdata nlmsg.AttrsView) (*nftables.BaseChainInfo, *syserr.AnnotatedError) {
+func (p *Protocol) chainParseHook(chain *nftables.Chain, family stack.AddressFamily, hdata nlmsg.AttrsView, attrs map[uint16]nlmsg.BytesView) (*nftables.BaseChainInfo, *syserr.AnnotatedError) {
 	hookAttrs, ok := nftables.NfParse(hdata)
 	if !ok {
 		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("Nftables: Failed to parse hook attributes"))
@@ -530,7 +530,7 @@ func (p *Protocol) chainParseHook(chain *nftables.Chain, family stack.AddressFam
 	// All families default to filter type.
 	hookInfo.ChainType = nftables.BaseChainTypeFilter
 
-	if chainTypeBytes, ok := hookAttrs[linux.NFTA_CHAIN_TYPE]; ok {
+	if chainTypeBytes, ok := attrs[linux.NFTA_CHAIN_TYPE]; ok {
 		// TODO - b/434243967: Support base chain types other than filter.
 		switch chainType := chainTypeBytes.String(); chainType {
 		case "filter":
