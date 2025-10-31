@@ -308,6 +308,17 @@ func (app *runApp) execute(t *Task) taskRunState {
 				}
 			}
 
+			if sig == linux.SIGSEGV && t.tg.sigsegvLockCount.Load() != 0 {
+				t.tg.signalHandlers.mu.Lock()
+				if t.tg.sigsegvLockCount.Load() != 0 {
+					t.Infof("Pausing execution due to SigsegvLock")
+					t.beginInternalStopLocked((*sigsegvLockStop)(nil))
+					t.tg.signalHandlers.mu.Unlock()
+					return (*runApp)(nil)
+				}
+				t.tg.signalHandlers.mu.Unlock()
+			}
+
 			// Faults are common, log only at debug level.
 			t.Debugf("Unhandled user fault: addr=%x ip=%x access=%v sig=%v err=%v", addr, t.Arch().IP(), at, sig, err)
 			t.DebugDumpState()
