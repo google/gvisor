@@ -45,6 +45,9 @@ type Namespace struct {
 
 	// abstractSockets tracks abstract sockets that are in use.
 	abstractSockets AbstractSocketNamespace
+
+	// netlinkMcastTable manages multicast group membership for netlink sockets.
+	netlinkMcastTable *McastTable
 }
 
 // NewRootNamespace creates the root network namespace, with creator
@@ -52,10 +55,14 @@ type Namespace struct {
 // networking will function if the network is namespaced.
 func NewRootNamespace(stack Stack, creator NetworkStackCreator, userNS *auth.UserNamespace) *Namespace {
 	n := &Namespace{
-		stack:   stack,
-		creator: creator,
-		isRoot:  true,
-		userNS:  userNS,
+		stack:             stack,
+		creator:           creator,
+		isRoot:            true,
+		userNS:            userNS,
+		netlinkMcastTable: NewNetlinkMcastTable(),
+	}
+	if eventPublishingStack, ok := stack.(InterfaceEventPublisher); ok {
+		eventPublishingStack.AddInterfaceEventSubscriber(n.netlinkMcastTable)
 	}
 	n.abstractSockets.init()
 	return n
@@ -79,8 +86,9 @@ func (n *Namespace) GetInode() *nsfs.Inode {
 // NewNamespace creates a new network namespace from the root.
 func NewNamespace(root *Namespace, userNS *auth.UserNamespace) *Namespace {
 	n := &Namespace{
-		creator: root.creator,
-		userNS:  userNS,
+		creator:           root.creator,
+		userNS:            userNS,
+		netlinkMcastTable: NewNetlinkMcastTable(),
 	}
 	n.init()
 	return n
@@ -148,6 +156,9 @@ func (n *Namespace) init() {
 		if err != nil {
 			panic(err)
 		}
+		if eventPublishingStack, ok := n.stack.(InterfaceEventPublisher); ok {
+			eventPublishingStack.AddInterfaceEventSubscriber(n.netlinkMcastTable)
+		}
 	}
 	n.abstractSockets.init()
 }
@@ -160,6 +171,11 @@ func (n *Namespace) afterLoad(goContext.Context) {
 // AbstractSockets returns AbstractSocketNamespace.
 func (n *Namespace) AbstractSockets() *AbstractSocketNamespace {
 	return &n.abstractSockets
+}
+
+// NetlinkMcastTable returns the netlink multicast group table.
+func (n *Namespace) NetlinkMcastTable() *McastTable {
+	return n.netlinkMcastTable
 }
 
 // NetworkStackCreator allows new instances of a network stack to be created. It

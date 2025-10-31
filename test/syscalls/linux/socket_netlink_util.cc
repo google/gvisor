@@ -38,14 +38,17 @@ namespace gvisor {
 namespace testing {
 
 PosixErrorOr<FileDescriptor> NetlinkBoundSocket(int protocol) {
+  struct sockaddr_nl addr = {};
+  addr.nl_family = AF_NETLINK;
+  return NetlinkBoundSocket(protocol, &addr);
+}
+
+PosixErrorOr<FileDescriptor> NetlinkBoundSocket(
+    int protocol, const struct sockaddr_nl* addr) {
   FileDescriptor fd;
   ASSIGN_OR_RETURN_ERRNO(fd, Socket(AF_NETLINK, SOCK_RAW, protocol));
 
-  struct sockaddr_nl addr = {};
-  addr.nl_family = AF_NETLINK;
-
-  RETURN_ERROR_IF_SYSCALL_FAIL(
-      bind(fd.get(), reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)));
+  RETURN_ERROR_IF_SYSCALL_FAIL(bind(fd.get(), AsSockAddr(addr), sizeof(*addr)));
   MaybeSave();
 
   return std::move(fd);

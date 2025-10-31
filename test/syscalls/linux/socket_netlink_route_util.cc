@@ -290,6 +290,7 @@ PosixErrorOr<std::vector<Link>> DumpLinks() {
         rta_address == nullptr
             ? ""
             : std::string(reinterpret_cast<const char*>(RTA_DATA(rta_address)));
+    links.back().flags = msg->ifi_flags;
   }));
   return links;
 }

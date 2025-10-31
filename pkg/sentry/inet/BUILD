@@ -26,6 +26,13 @@ declare_mutex(
     prefix = "abstractSocketNamespace",
 )
 
+declare_mutex(
+    name = "nlmcast_table_mutex",
+    out = "nlmcast_table_mutex.go",
+    package = "inet",
+    prefix = "nlmcastTable",
+)
+
 go_library(
     name = "inet",
     srcs = [
@@ -35,6 +42,8 @@ go_library(
         "inet.go",
         "namespace.go",
         "namespace_refs.go",
+        "nlmcast.go",
+        "nlmcast_table_mutex.go",
         "test_stack.go",
     ],
     deps = [
