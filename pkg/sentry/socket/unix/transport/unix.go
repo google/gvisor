@@ -52,6 +52,16 @@ type CredentialsControlMessage interface {
 	Equals(CredentialsControlMessage) bool
 }
 
+// A PeerCredentialer is a socket or endpoint that supports the SO_PEERCREDS socket
+// option.
+type PeerCredentialer interface {
+	// PeerCreds returns the peer credentials.
+	PeerCreds() CredentialsControlMessage
+
+	// SetPeerCreds sets the peer credentials.
+	SetPeerCreds(creds CredentialsControlMessage)
+}
+
 // A ControlMessages represents a collection of socket control messages.
 //
 // +stateify savable
@@ -151,6 +161,7 @@ type UnixSocketOpts struct {
 // etc. to Unix socket implementations.
 type Endpoint interface {
 	Credentialer
+	PeerCredentialer
 	waiter.Waitable
 
 	// Close puts the endpoint in a closed state and frees all resources

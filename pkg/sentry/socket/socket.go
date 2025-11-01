@@ -257,6 +257,9 @@ type Socket interface {
 	// necessarily the actual length of the address.
 	GetPeerName(t *kernel.Task) (addr linux.SockAddr, addrLen uint32, err *syserr.Error)
 
+	// GetPeerCreds returns the peer credentials of the socket.
+	GetPeerCreds(t *kernel.Task) (marshal.Marshallable, *syserr.Error)
+
 	// RecvMsg implements the recvmsg(2) linux unix.
 	//
 	// senderAddrLen is the address length to be returned to the application,

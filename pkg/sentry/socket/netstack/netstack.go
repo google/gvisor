@@ -980,14 +980,7 @@ func getSockOptSocket(t *kernel.Task, s socket.Socket, ep commonEndpoint, family
 		if family != linux.AF_UNIX || outLen < unix.SizeofUcred {
 			return nil, syserr.ErrInvalidArgument
 		}
-
-		tcred := t.Credentials()
-		creds := linux.ControlMessageCredentials{
-			PID: int32(t.ThreadGroup().ID()),
-			UID: uint32(tcred.EffectiveKUID.In(tcred.UserNamespace).OrOverflow()),
-			GID: uint32(tcred.EffectiveKGID.In(tcred.UserNamespace).OrOverflow()),
-		}
-		return &creds, nil
+		return s.GetPeerCreds(t)
 
 	case linux.SO_PASSCRED:
 		if outLen < sizeOfInt32 {
@@ -3049,6 +3042,10 @@ func (s *sock) GetPeerName(*kernel.Task) (linux.SockAddr, uint32, *syserr.Error)
 
 	a, l := socket.ConvertAddress(s.family, addr)
 	return a, l, nil
+}
+
+func (s *sock) GetPeerCreds(*kernel.Task) (marshal.Marshallable, *syserr.Error) {
+	return nil, syserr.ErrNotSupported
 }
 
 func (s *sock) fillCmsgInq(cmsg *socket.ControlMessages) {
