@@ -12,6 +12,7 @@ go_library(
     deps = [
         "//pkg/hostarch",
         "//pkg/sync",
+        "//pkg/log",
         "@io_bazel_rules_go//go/tools/coverdata",
     ],
 )
