@@ -11,6 +11,7 @@ go_library(
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/hostarch",
+        "//pkg/log",
         "//pkg/sync",
         "@io_bazel_rules_go//go/tools/coverdata",
     ],
