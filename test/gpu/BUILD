@@ -175,6 +175,23 @@ go_test(
     deps = ["//pkg/test/dockerutil"],
 )
 
+go_test(
+    name = "triton_test",
+    srcs = ["triton_test.go"],
+    # runsc is needed to invalidate the bazel cache in case of any code changes.
+    data = ["//runsc"],
+    tags = [
+        "manual",
+        "noguitar",
+        "notap",
+    ],
+    visibility = ["//:sandbox"],
+    deps = [
+        "//pkg/test/dockerutil",
+        "//test/gpu/triton",
+    ],
+)
+
 proto_library(
     name = "gpu_driver_versions",
     testonly = True,
