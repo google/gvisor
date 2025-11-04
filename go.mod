@@ -15,7 +15,7 @@ require (
 	github.com/containerd/go-runc v1.0.0
 	github.com/containerd/log v0.1.0
 	github.com/containerd/typeurl v1.0.2
-	github.com/coreos/go-systemd/v22 v22.5.0
+	github.com/coreos/go-systemd/v22 v22.6.0
 	github.com/godbus/dbus/v5 v5.1.0
 	github.com/gofrs/flock v0.8.0
 	github.com/gogo/protobuf v1.3.2
