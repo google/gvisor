@@ -986,7 +986,7 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 		donations.DonateAndClose("save-fds", files...)
 	}
 
-	if err := createSandboxProcessExtra(conf, args, cmd, &donations); err != nil {
+	if err := s.createSandboxProcessExtra(conf, args, cmd, &donations); err != nil {
 		return err
 	}
 
@@ -1540,7 +1540,7 @@ func (s *Sandbox) Checkpoint(conf *config.Config, cid string, imagePath string, 
 			_ = f.Close()
 		}
 	}()
-	if err := setCheckpointOptsImpl(conf, imagePath, opts, &opt); err != nil {
+	if err := s.setCheckpointOptsImpl(conf, imagePath, opts, &opt); err != nil {
 		return err
 	}
 
