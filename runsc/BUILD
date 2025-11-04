@@ -1,4 +1,4 @@
-load("//tools:defs.bzl", "go_binary")
+load("//tools:defs.bzl", "go_binary", "go_cov")
 
 package(
     default_applicable_licenses = ["//:license"],
@@ -73,4 +73,25 @@ sh_test(
     srcs = ["version_test.sh"],
     args = ["$(location :runsc)"],
     data = [":runsc"],
+)
+
+go_cov(
+    name = "runsc_coverage",
+    srcs = [
+        "main.go",
+        "//:go.mod",
+        "//:go.sum",
+        "//:gopath",
+        "//tools:build_cover.sh",
+        "//tools:go-allow-internal.patch",
+    ],
+    outs = ["runsc_cov"],
+    cmd =
+        "\"$(location //tools:build_cover.sh)\" " +
+        "\"$(location //runsc:runsc_cov)\" " +
+        "\"$(location //:gopath)\" " +
+        "\"$(location //:go.mod)\" " +
+        "\"$(location //:go.sum)\" " +
+        "\"$(location main.go)\" " +
+        "\"$(location //tools:go-allow-internal.patch)\" ",
 )

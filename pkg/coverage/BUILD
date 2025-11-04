@@ -7,10 +7,14 @@ package(
 
 go_library(
     name = "coverage",
-    srcs = ["coverage.go"],
+    srcs = [
+        "coverage.go",
+        "coverage_unsafe.go",
+    ],
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/hostarch",
+        "//pkg/log",
         "//pkg/sync",
         "@io_bazel_rules_go//go/tools/coverdata",
     ],

@@ -123,6 +123,7 @@ build_test(
 go_path(
     name = "gopath",
     mode = "archive",
+    visibility = ["//:sandbox"],
     deps = [
         # Main binaries.
         #
@@ -184,3 +185,8 @@ toolchain(
 # To update the WORKSPACE from go.mod, use:
 #   bazel run //:gazelle -- update-repos -from_file=go.mod
 gazelle(name = "gazelle")
+
+exports_files([
+    "go.sum",
+    "go.mod",
+])

@@ -8,6 +8,7 @@ load("//tools/bazeldefs:defs.bzl", "select_arch", "select_system")
 gazelle = _gazelle
 
 go_path = _go_path
+go_cov = native.genrule
 
 def _go_proto_or_grpc_library(go_library_func, name, **kwargs):
     if "importpath" in kwargs:

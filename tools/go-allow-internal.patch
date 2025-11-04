@@ -1,0 +1,12 @@
+diff --git a/src/cmd/go/internal/load/pkg.go b/src/cmd/go/internal/load/pkg.go
+index 1f791546f9..809e5f142b 100644
+--- a/src/cmd/go/internal/load/pkg.go
++++ b/src/cmd/go/internal/load/pkg.go
+@@ -1464,6 +1464,7 @@ func reusePackage(p *Package, stk *ImportStack) *Package {
+ // If the import is allowed, disallowInternal returns the original package p.
+ // If not, it returns a new package containing just an appropriate error.
+ func disallowInternal(ctx context.Context, srcDir string, importer *Package, importerPath string, p *Package, stk *ImportStack) *PackageError {
++	return nil
+ 	// golang.org/s/go14internal:
+ 	// An import of a path containing the element “internal”
+ 	// is disallowed if the importing code is outside the tree

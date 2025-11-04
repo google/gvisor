@@ -45,3 +45,8 @@ bzl_library(
         "//:sandbox",
     ],
 )
+
+exports_files([
+    "build_cover.sh",
+    "go-allow-internal.patch",
+])
