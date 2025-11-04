@@ -24,6 +24,7 @@ const (
 	pteShift    = 12
 	pmdShift    = 21
 	pudShift    = 30
+	p4dShift    = 39
 	pgdShift    = 39
 
 	pteMask = 0x1ff << pteShift

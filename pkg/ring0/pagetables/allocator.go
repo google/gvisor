@@ -100,9 +100,20 @@ func (r *RuntimeAllocator) NewPTEs() *PTEs {
 	}
 
 	// Allocate a new entry.
-	ptes := newAlignedPTEs()
-	r.used[ptes] = struct{}{}
-	return ptes
+	ptes := newAlignedPTEs(1)
+	p := &ptes[0]
+	r.used[p] = struct{}{}
+	return p
+}
+
+// PreallocatePTEs preallocates the specified number of PTEs.
+func (r *RuntimeAllocator) PreallocatePTEs(n uintptr) {
+	ptes := newAlignedPTEs(n)
+	for i := range ptes {
+		p := &ptes[i]
+		r.used[p] = struct{}{}
+		r.pool = append(r.pool, p)
+	}
 }
 
 // PhysicalFor returns the physical address for the given PTEs.

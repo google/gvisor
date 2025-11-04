@@ -156,7 +156,7 @@ func (p *PTE) IsSect() bool {
 // This does not change the sect page property.
 //
 //go:nosplit
-func (p *PTE) Set(addr uintptr, opts MapOpts) {
+func (p *PTE) Set(addr uintptr, opts *MapOpts) {
 	v := (addr &^ optionMask) | nG | readOnly | protDefault
 	// Note: p.IsSect is manually inlined to reduce stack size for
 	//       nosplit-ness.

@@ -91,7 +91,7 @@ func (p *PTE) Clear() {
 //
 //go:nosplit
 func (p *PTE) Valid() bool {
-	return atomic.LoadUintptr((*uintptr)(p))&present != 0
+	return atomic.LoadUintptr((*uintptr)(p)) != 0
 }
 
 // Opts returns the PTE options.
@@ -138,7 +138,7 @@ func (p *PTE) IsSuper() bool {
 // This does not change the super page property.
 //
 //go:nosplit
-func (p *PTE) Set(addr uintptr, opts MapOpts) {
+func (p *PTE) Set(addr uintptr, opts *MapOpts) {
 	if !opts.AccessType.Any() {
 		p.Clear()
 		return

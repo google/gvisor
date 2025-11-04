@@ -39,6 +39,7 @@ import (
 var dummyFPState fpu.State
 
 type testHarness interface {
+	Logf(format string, args ...any)
 	Errorf(format string, args ...any)
 	Fatalf(format string, args ...any)
 }
@@ -146,6 +147,7 @@ func applicationTest(t testHarness, useHostMappings bool, targetFn uintptr, fn f
 			// done for regular user code, but is fine for test
 			// purposes.)
 			applyPhysicalRegions(func(pr physicalRegion) bool {
+				t.Logf("Map %x-%x", pr.virtual, pr.virtual+pr.length)
 				pt.Map(hostarch.Addr(pr.virtual), pr.length, pagetables.MapOpts{
 					AccessType: hostarch.AnyAccess,
 					User:       true,
