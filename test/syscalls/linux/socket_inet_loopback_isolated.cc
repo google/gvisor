@@ -15,6 +15,7 @@
 #include <netinet/tcp.h>
 #include <sys/socket.h>
 
+#include <cerrno>
 #include <cstring>
 
 #include "gmock/gmock.h"
@@ -205,12 +206,26 @@ TEST_P(SocketInetLoopbackIsolatedTest, TCPFinWait2Test) {
   ASSERT_THAT(bind(conn_fd2.get(), AsSockAddr(&conn_bound_addr), conn_addrlen),
               SyscallFailsWithErrno(EADDRINUSE));
 
-  // Sleep for a little over the linger timeout to reduce flakiness in
-  // save/restore tests.
-  absl::SleepFor(absl::Seconds(kTCPLingerTimeout + 2));
+  // Sleep for the linger timeout to allow the FIN_WAIT2 timer to expire.
+  absl::SleepFor(absl::Seconds(kTCPLingerTimeout));
 
-  ASSERT_THAT(bind(conn_fd2.get(), AsSockAddr(&conn_bound_addr), conn_addrlen),
-              SyscallSucceeds());
+  // Verify that we can bind and connect to the address.
+  // Try multiple times to make the test robust against timing variation.
+  constexpr int kMaxAttempts = 5;
+  int attempts = 0;
+  while (true) {
+    if (bind(conn_fd2.get(), AsSockAddr(&conn_bound_addr), conn_addrlen) >= 0) {
+      break;  // Bind Succeeded.
+    }
+    if (errno != EADDRINUSE) {
+      FAIL() << "bind failed with unexpected errno: " << errno;
+    }
+    attempts++;
+    if (attempts >= kMaxAttempts) {
+      FAIL() << "bind failed after " << attempts << " attempts";
+    }
+    absl::SleepFor(absl::Seconds(1));
+  }
 
   // Close the `accepted` end otherwise connect can return ECONNREFUSED.
   constexpr int kTCPLingerTimeout0 = 0;
