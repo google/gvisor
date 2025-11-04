@@ -26,13 +26,13 @@ import (
 	"gvisor.dev/gvisor/runsc/donation"
 )
 
-func createSandboxProcessExtra(conf *config.Config, args *Args, cmd *exec.Cmd, donations *donation.Agency) error {
+func (s *Sandbox) createSandboxProcessExtra(conf *config.Config, args *Args, cmd *exec.Cmd, donations *donation.Agency) error {
 	return nil
 }
 
 type checkpointOptsExtra struct{}
 
-func setCheckpointOptsImpl(conf *config.Config, imagePath string, opts CheckpointOpts, opt *control.SaveOpts) error {
+func (s *Sandbox) setCheckpointOptsImpl(conf *config.Config, imagePath string, opts CheckpointOpts, opt *control.SaveOpts) error {
 	return setCheckpointOptsForLocalCheckpointFiles(conf, imagePath, opts, opt)
 }
 

@@ -297,7 +297,7 @@ func New(conf *config.Config, args Args) (*Container, error) {
 		if err := nvProxyPreGoferHostSetup(args.Spec, conf); err != nil {
 			return nil, err
 		}
-		if err := runInCgroup(containerCgroup, func() error {
+		if err := cgroup.RunInCgroup(containerCgroup, func() error {
 			ioFiles, goferFilestores, devIOFile, specFile, err := c.createGoferProcess(conf, mountHints, args.Attached)
 			if err != nil {
 				return fmt.Errorf("cannot create gofer process: %w", err)
@@ -451,7 +451,7 @@ func (c *Container) startImpl(conf *config.Config, action string, startRoot func
 	} else {
 		// Join cgroup to start gofer process to ensure it's part of the cgroup from
 		// the start (and all their children processes).
-		if err := runInCgroup(c.Sandbox.CgroupJSON.Cgroup, func() error {
+		if err := cgroup.RunInCgroup(c.Sandbox.CgroupJSON.Cgroup, func() error {
 			// Create the gofer process.
 			goferFiles, goferFilestores, devIOFile, mountsFile, err := c.createGoferProcess(conf, c.Sandbox.MountHints, false /* attached */)
 			if err != nil {
@@ -1587,20 +1587,6 @@ func (c *Container) IsSandboxRoot() bool {
 
 func isRoot(spec *specs.Spec) bool {
 	return specutils.SpecContainerType(spec) != specutils.ContainerTypeContainer
-}
-
-// runInCgroup executes fn inside the specified cgroup. If cg is nil, execute
-// it in the current context.
-func runInCgroup(cg cgroup.Cgroup, fn func() error) error {
-	if cg == nil {
-		return fn()
-	}
-	restore, err := cg.Join()
-	if err != nil {
-		return err
-	}
-	defer restore()
-	return fn()
 }
 
 // adjustGoferOOMScoreAdj sets the oom_store_adj for the container's gofer.

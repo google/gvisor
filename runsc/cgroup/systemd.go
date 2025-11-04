@@ -182,6 +182,9 @@ func (c *cgroupSystemd) Join() (func(), error) {
 			return nil, fmt.Errorf("unknown job completion status %q", s)
 		}
 	} else if unitAlreadyExists(err) {
+		if err := c.dbusConn.AttachProcessesToUnit(timedCtx, unitName, "" /* subcgroup */, []uint32{uint32(os.Getpid())}); err != nil {
+			return nil, fmt.Errorf("error joining systemd unit `%s`: %w", unitName, err)
+		}
 		return clean.Release(), nil
 	} else {
 		return nil, fmt.Errorf("systemd error: %v", err)

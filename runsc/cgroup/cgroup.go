@@ -960,3 +960,17 @@ func (*hugeTLB) set(spec *specs.LinuxResources, path string) error {
 	}
 	return nil
 }
+
+// RunInCgroup executes fn inside the specified cgroup. If cg is nil, execute
+// it in the current context.
+func RunInCgroup(cg Cgroup, fn func() error) error {
+	if cg == nil {
+		return fn()
+	}
+	restore, err := cg.Join()
+	if err != nil {
+		return err
+	}
+	defer restore()
+	return fn()
+}
