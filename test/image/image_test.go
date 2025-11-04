@@ -33,6 +33,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cenkalti/backoff"
 	"github.com/docker/docker/api/types/mount"
 	yaml "gopkg.in/yaml.v3"
 	"gvisor.dev/gvisor/pkg/test/dockerutil"
@@ -499,6 +500,18 @@ func testDockerMatrix(ctx context.Context, t *testing.T, d *dockerutil.Container
 				}
 				name := strings.Join(nameParts, "_")
 				t.Run(name, func(t *testing.T) {
+					if err := backoff.Retry(func() error {
+						output, err := dockerInGvisorExecOutput(ctx, d, []string{"docker", "info"})
+						if err != nil {
+							return fmt.Errorf("docker exec failed: %v", err)
+						}
+						if !strings.Contains(output, "Cannot connect to the Docker daemon") {
+							return nil
+						}
+						return fmt.Errorf("docker daemon not ready")
+					}, backoff.WithMaxRetries(backoff.NewConstantBackOff(100*time.Millisecond), 10)); err != nil {
+						t.Fatalf("failed to run docker test %q: %v", name, err)
+					}
 					def.testFunc(ctx, t, d, opts)
 				})
 			}
@@ -599,6 +612,18 @@ func removeDockerImage(ctx context.Context, imageName string, d *dockerutil.Cont
 	return nil
 }
 
+func dockerInGvisorExecOutput(ctx context.Context, d *dockerutil.Container, cmd []string) (string, error) {
+	execProc, err := d.ExecProcess(ctx, dockerutil.ExecOpts{}, cmd...)
+	if err != nil {
+		return "", fmt.Errorf("docker exec failed: %v", err)
+	}
+	output, err := execProc.Logs()
+	if err != nil {
+		return "", fmt.Errorf("docker logs failed: %v", err)
+	}
+	return output, nil
+}
+
 func testDockerRun(ctx context.Context, t *testing.T, d *dockerutil.Container, opts dockerCommandOptions) {
 	cmd := []string{"docker", "run", "--rm"}
 	if opts.hostNetwork {
@@ -608,15 +633,12 @@ func testDockerRun(ctx context.Context, t *testing.T, d *dockerutil.Container, o
 		cmd = append(cmd, "--privileged")
 	}
 	cmd = append(cmd, testAlpineImage, "sh", "-c", "apk add curl && apk info -d curl")
-	execProc, err := d.ExecProcess(ctx, dockerutil.ExecOpts{}, cmd...)
+
+	expectedOutput := "URL retrival utility and library"
+	output, err := dockerInGvisorExecOutput(ctx, d, cmd)
 	if err != nil {
 		t.Fatalf("docker exec failed: %v", err)
 	}
-	output, err := execProc.Logs()
-	if err != nil {
-		t.Fatalf("docker logs failed: %v", err)
-	}
-	expectedOutput := "URL retrival utility and library"
 	if !strings.Contains(output, expectedOutput) {
 		t.Fatalf("docker didn't get output expected: %q, got: %q", expectedOutput, output)
 	}
@@ -630,13 +652,9 @@ func testDockerBuild(ctx context.Context, t *testing.T, d *dockerutil.Container,
 	imageName := strings.ToLower(strings.ReplaceAll(testutil.RandomID("test_docker_build"), "/", "-"))
 	parts = append(parts, "-t", imageName, "-f", "-", ".")
 	cmd := strings.Join(parts, " ")
-	dockerBuildProc, err := d.ExecProcess(ctx, dockerutil.ExecOpts{}, "/bin/sh", "-c", cmd)
+	_, err := dockerInGvisorExecOutput(ctx, d, []string{"/bin/sh", "-c", cmd})
 	if err != nil {
 		t.Fatalf("docker exec failed: %v", err)
-	}
-	_, err = dockerBuildProc.Logs()
-	if err != nil {
-		t.Fatalf("docker logs failed: %v", err)
 	}
 	defer removeDockerImage(ctx, imageName, d)
 	if err := checkDockerImage(ctx, imageName, d); err != nil {
@@ -662,13 +680,9 @@ func testDockerExec(ctx context.Context, t *testing.T, d *dockerutil.Container, 
 	}()
 
 	for i := 0; i < 10; i++ {
-		inspectProc, err := d.ExecProcess(ctx, dockerutil.ExecOpts{}, []string{"docker", "container", "inspect", containerName}...)
+		inspectOutput, err := dockerInGvisorExecOutput(ctx, d, []string{"docker", "container", "inspect", containerName})
 		if err != nil {
-			t.Fatalf("docker container inspect failed: %v", err)
-		}
-		inspectOutput, err := inspectProc.Logs()
-		if err != nil {
-			t.Fatalf("docker logs failed: %v", err)
+			t.Fatalf("docker exec failed: %v", err)
 		}
 		if strings.Contains(inspectOutput, "\"Status\": \"running\"") {
 			break
@@ -682,14 +696,10 @@ func testDockerExec(ctx context.Context, t *testing.T, d *dockerutil.Container, 
 	}
 	// Execute echo command in the container.
 	execCmd = append(execCmd, containerName, "echo", "exec in "+containerName)
-	execProc, err := d.ExecProcess(ctx, dockerutil.ExecOpts{}, execCmd...)
+
+	output, err := dockerInGvisorExecOutput(ctx, d, execCmd)
 	if err != nil {
 		t.Fatalf("docker exec failed: %v", err)
-	}
-
-	output, err := execProc.Logs()
-	if err != nil {
-		t.Fatalf("docker logs failed: %v", err)
 	}
 	expectedOutput := "exec in " + containerName
 	if !strings.Contains(output, expectedOutput) {
