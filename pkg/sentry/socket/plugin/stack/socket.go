@@ -569,6 +569,11 @@ func (s *socketOperations) GetPeerName(t *kernel.Task) (linux.SockAddr, uint32, 
 	return socket.UnmarshalSockAddr(s.family, addr), addrlen, nil
 }
 
+// GetPeerCreds implements socket.Socket.GetPeerCreds.
+func (s *socketOperations) GetPeerCreds(t *kernel.Task) (marshal.Marshallable, *syserr.Error) {
+	return nil, syserr.ErrInvalidEndpointState
+}
+
 // recv is a helper function for doing non-blocking read once.
 // It returns:
 // 1. number of bytes received;
