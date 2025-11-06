@@ -78,9 +78,11 @@ if [[ "${DUT_PLATFORM-}" == "netstack" ]]; then
     echo "FAIL: Missing --runtime argument: ${RUNTIME-}"
     exit 2
   fi
-  declare -r RUNTIME_ARG="--runtime ${RUNTIME}"
+  # Using array to pass multiple arguments; https://www.shellcheck.net/wiki/SC2086.
+  declare -a RUNTIME_ARG=("--runtime" "${RUNTIME}")
 elif [[ "${DUT_PLATFORM-}" == "linux" ]]; then
-  declare -r RUNTIME_ARG=""
+  # Declare an empty array.
+  declare -a RUNTIME_ARG
 else
   echo "FAIL: Bad or missing --dut_platform argument: ${DUT_PLATFORM-}"
   exit 2
@@ -101,13 +103,11 @@ function new_net_prefix() {
 # Variables specific to the test runner start with TEST_RUNNER_.
 declare -r PACKETDRILL="/packetdrill/gtests/net/packetdrill/packetdrill"
 # Use random numbers so that test networks don't collide.
-declare CTRL_NET="ctrl_net-$(shuf -i 0-99999999 -n 1)"
-declare CTRL_NET_PREFIX=$(new_net_prefix)
-declare TEST_NET="test_net-$(shuf -i 0-99999999 -n 1)"
-declare TEST_NET_PREFIX=$(new_net_prefix)
+CTRL_NET="ctrl_net-$(shuf -i 0-99999999 -n 1)"
+CTRL_NET_PREFIX=$(new_net_prefix)
+TEST_NET="test_net-$(shuf -i 0-99999999 -n 1)"
+TEST_NET_PREFIX=$(new_net_prefix)
 declare -r tolerance_usecs=100000
-# On both DUT and test runner, testing packets are on the eth2 interface.
-declare -r TEST_DEVICE="eth2"
 # Number of bits in the *_NET_PREFIX variables.
 declare -r NET_MASK="24"
 # Last bits of the DUT's IP address.
@@ -144,6 +144,16 @@ function finish {
 }
 trap finish EXIT
 
+# Finds the interface name from the IP address.
+function get_container_if_from_ip() {
+  local container="$1"
+  local ip="$2"
+  if [[ -z "$container" ||  -z "$ip" ]]; then
+    return 1
+  fi
+  docker exec "$container" ip -o addr show | grep  "$ip"/ | awk '{print $2; exit}'
+}
+
 # Subnet for control packets between test runner and DUT.
 while ! docker network create \
   "--subnet=${CTRL_NET_PREFIX}.0/${NET_MASK}" "${CTRL_NET}"; do
@@ -161,39 +171,56 @@ while ! docker network create \
 done
 
 # Create the DUT container and connect to network.
-DUT=$(docker create ${RUNTIME_ARG} --privileged --rm \
+DUT_TEST_NET_IP="${TEST_NET_PREFIX}${DUT_NET_SUFFIX}"
+DUT=$(docker create "${RUNTIME_ARG[@]}" --privileged --rm \
   --stop-timeout ${TIMEOUT} -it ${IMAGE_TAG})
 docker network connect "${CTRL_NET}" \
   --ip "${CTRL_NET_PREFIX}${DUT_NET_SUFFIX}" "${DUT}" \
-  || (docker kill ${DUT}; docker rm ${DUT}; false)
+  || (docker kill "${DUT}"; docker rm "${DUT}"; false)
 docker network connect "${TEST_NET}" \
-  --ip "${TEST_NET_PREFIX}${DUT_NET_SUFFIX}" "${DUT}" \
-  || (docker kill ${DUT}; docker rm ${DUT}; false)
+  --ip "${DUT_TEST_NET_IP}" "${DUT}" \
+  || (docker kill "${DUT}"; docker rm "${DUT}"; false)
 docker start "${DUT}"
 
+DUT_IF=$(get_container_if_from_ip "${DUT}" "$DUT_TEST_NET_IP")
+if [[ -z "$DUT_IF" ]]; then
+  echo "Error: Could not find interface for DUT_TEST_NET_IP: ${DUT_TEST_NET_IP}. Exiting."
+  exit 1
+fi
+
 # Create the test runner container and connect to network.
+TEST_RUNNER_TEST_NET_IP="${TEST_NET_PREFIX}${TEST_RUNNER_NET_SUFFIX}"
 TEST_RUNNER=$(docker create --privileged --rm \
-  --stop-timeout ${TIMEOUT} -it ${IMAGE_TAG})
+  --stop-timeout "${TIMEOUT}" -it "${IMAGE_TAG}")
 docker network connect "${CTRL_NET}" \
   --ip "${CTRL_NET_PREFIX}${TEST_RUNNER_NET_SUFFIX}" "${TEST_RUNNER}" \
-  || (docker kill ${TEST_RUNNER}; docker rm ${REST_RUNNER}; false)
+  || (docker kill "${TEST_RUNNER}"; docker rm "${TEST_RUNNER}"; false)
 docker network connect "${TEST_NET}" \
-  --ip "${TEST_NET_PREFIX}${TEST_RUNNER_NET_SUFFIX}" "${TEST_RUNNER}" \
-  || (docker kill ${TEST_RUNNER}; docker rm ${REST_RUNNER}; false)
+  --ip "${TEST_RUNNER_TEST_NET_IP}" "${TEST_RUNNER}" \
+  || (docker kill "${TEST_RUNNER}"; docker rm "${TEST_RUNNER}"; false)
 docker start "${TEST_RUNNER}"
+
+TEST_RUNNER_IF=$(get_container_if_from_ip "${TEST_RUNNER}" \
+  "$TEST_RUNNER_TEST_NET_IP")
+if [[ -z "$TEST_RUNNER_IF" ]]; then
+  echo "Error: Could not find interface for TEST_RUNNER_TEST_NET_IP: ${TEST_RUNNER_TEST_NET_IP}. Exiting."
+  exit 1
+fi
 
 # Run tcpdump in the test runner unbuffered, without dns resolution, just on the
 # interface with the test packets.
-docker exec -t ${TEST_RUNNER} tcpdump -U -n -i "${TEST_DEVICE}" &
+docker exec -t "${TEST_RUNNER}" tcpdump -U -n -i "${TEST_RUNNER_IF}" &
 
 # Start a packetdrill server on the test_runner.  The packetdrill server sends
 # packets and asserts that they are received.
 docker exec -d "${TEST_RUNNER}" \
-  ${PACKETDRILL} --wire_server --wire_server_dev="${TEST_DEVICE}" \
+  ${PACKETDRILL} \
+  --ip_version=ipv4 \
+  --wire_server --wire_server_dev="${TEST_RUNNER_IF}" \
   --wire_server_ip="${CTRL_NET_PREFIX}${TEST_RUNNER_NET_SUFFIX}" \
   --wire_server_port="${CTRL_PORT}" \
-  --local_ip="${TEST_NET_PREFIX}${TEST_RUNNER_NET_SUFFIX}" \
-  --remote_ip="${TEST_NET_PREFIX}${DUT_NET_SUFFIX}"
+  --local_ip="${TEST_RUNNER_TEST_NET_IP}" \
+  --remote_ip="${DUT_TEST_NET_IP}"
 
 # Because the Linux kernel receives the SYN-ACK but didn't send the SYN it will
 # issue a RST. To prevent this IPtables can be used to filter those out.
@@ -220,11 +247,13 @@ done
 # Start a packetdrill client on the DUT.  The packetdrill client runs POSIX
 # socket commands and also sends instructions to the server.
 docker exec -t "${DUT}" \
-  ${PACKETDRILL} --wire_client --wire_client_dev="${TEST_DEVICE}" \
+  ${PACKETDRILL} \
+  --ip_version=ipv4 \
+  --wire_client --wire_client_dev="${DUT_IF}" \
   --wire_server_ip="${CTRL_NET_PREFIX}${TEST_RUNNER_NET_SUFFIX}" \
   --wire_server_port="${CTRL_PORT}" \
-  --local_ip="${TEST_NET_PREFIX}${DUT_NET_SUFFIX}" \
-  --remote_ip="${TEST_NET_PREFIX}${TEST_RUNNER_NET_SUFFIX}" \
+  --local_ip="${DUT_TEST_NET_IP}" \
+  --remote_ip="${TEST_RUNNER_TEST_NET_IP}" \
   --init_scripts=/packetdrill_setup.sh \
   --tolerance_usecs="${tolerance_usecs}" "${dut_scripts[@]}"
 
