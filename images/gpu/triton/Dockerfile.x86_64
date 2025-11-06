@@ -1,0 +1,79 @@
+# --- Downloader Stage ---
+# Fetches model/tokenizer assets from GCS
+FROM google/cloud-sdk:541.0.0-slim AS downloader
+RUN gcloud config set auth/disable_credentials true
+RUN gsutil -m cp -r gs://gvisor/tests/models/llama-2-7b-chat-hf /
+RUN mkdir -p /engines
+RUN gsutil -m cp -r gs://gvisor/tests/l4/engines/llama-2-7b-chat-hf /engines/
+
+# --- Builder Stage for TensorRT-LLM ---
+# This stage uses 'git sparse-checkout' to download *only* the
+# files we need, which is much faster than 'git clone' and avoids svn.
+FROM nvcr.io/nvidia/tritonserver:25.08-trtllm-python-py3 AS trtllm_builder
+
+WORKDIR /
+
+# 1. Clone an empty "blob-less" repo. This is very fast.
+RUN git clone --filter=blob:none --no-checkout --depth 1 \
+    https://github.com/NVIDIA/TensorRT-LLM.git /TensorRT-LLM
+WORKDIR /TensorRT-LLM
+
+# 2. Set up sparse checkout to define *only* the paths we need
+RUN git sparse-checkout init --cone && \
+    git sparse-checkout set \
+    "triton_backend/all_models/inflight_batcher_llm/" \
+    "triton_backend/tools/"
+
+# 3. Now, check out the v1.2.0rc1 tag.
+# This will download *only* the files in the two directories above.
+RUN git checkout 796891ba2a6959bad58c0da9645416c7264349e9
+
+# --- Final Stage ---
+# This is our final runtime image.
+# NO CHANGES are needed here. The COPY commands work perfectly
+# because the builder stage created the identical paths.
+FROM nvcr.io/nvidia/tritonserver:25.08-trtllm-python-py3
+
+# --- Build Arguments ---
+ARG TOKENIZER_DIR=/llama-2-7b-chat-hf
+ARG ENGINE_DIR=/engines/llama-2-7b-chat-hf/fp8/1-gpu
+ARG MAX_BATCH_SIZE=1
+ARG INSTANCE_COUNT=1
+ARG TOKENIZER_TYPE=auto
+ARG DECOUPLED_MODE=true
+ARG MODEL_FOLDER=/models/
+ARG MAX_QUEUE_DELAY_MS=10000
+ARG TRITON_BACKEND=tensorrtllm
+ARG LOGITS_DATATYPE="TYPE_FP32"
+ARG FILL_TEMPLATE_SCRIPT=/TensorRT-LLM/triton_backend/tools/fill_template.py
+
+# --- Asset Copying ---
+
+# Copy only the tokenizer (needed for config)
+COPY --from=downloader ${TOKENIZER_DIR} ${TOKENIZER_DIR}
+
+# Copy *only* the model templates from the trtllm_builder stage
+COPY --from=trtllm_builder /TensorRT-LLM/triton_backend/all_models/inflight_batcher_llm ${MODEL_FOLDER}
+
+# Copy *only* the build script we need from the trtllm_builder stage
+COPY --from=trtllm_builder ${FILL_TEMPLATE_SCRIPT} /usr/local/bin/fill_template.py
+ARG FILL_TEMPLATE_SCRIPT=/usr/local/bin/fill_template.py # Update ARG to new path
+
+# Copy *only* the specific engine directory we need, directly
+# from the downloader into the final model repository path.
+COPY --from=downloader ${ENGINE_DIR} ${MODEL_FOLDER}/tensorrt_llm/1/
+
+# --- Model Configuration ---
+# Run the template-filling commands and clean up the script
+RUN python3 ${FILL_TEMPLATE_SCRIPT} -i ${MODEL_FOLDER}/preprocessing/config.pbtxt \
+        tokenizer_dir:${TOKENIZER_DIR},triton_max_batch_size:${MAX_BATCH_SIZE},preprocessing_instance_count:${INSTANCE_COUNT} && \
+    python3 ${FILL_TEMPLATE_SCRIPT} -i ${MODEL_FOLDER}/postprocessing/config.pbtxt \
+        tokenizer_dir:${TOKENIZER_DIR},triton_max_batch_size:${MAX_BATCH_SIZE},postprocessing_instance_count:${INSTANCE_COUNT} && \
+    python3 ${FILL_TEMPLATE_SCRIPT} -i ${MODEL_FOLDER}/tensorrt_llm_bls/config.pbtxt \
+        prompt_embedding_table_data_type:TYPE_FP16,triton_max_batch_size:${MAX_BATCH_SIZE},decoupled_mode:${DECOUPLED_MODE},bls_instance_count:${INSTANCE_COUNT},logits_datatype:${LOGITS_DATATYPE} && \
+    python3 ${FILL_TEMPLATE_SCRIPT} -i ${MODEL_FOLDER}/ensemble/config.pbtxt \
+        triton_max_batch_size:${MAX_BATCH_SIZE},logits_datatype:${LOGITS_DATATYPE} && \
+    python3 ${FILL_TEMPLATE_SCRIPT} -i ${MODEL_FOLDER}/tensorrt_llm/config.pbtxt \
+        prompt_embedding_table_data_type:TYPE_FP16,triton_backend:${TRITON_BACKEND},triton_max_batch_size:${MAX_BATCH_SIZE},decoupled_mode:${DECOUPLED_MODE},engine_dir:${MODEL_FOLDER}/tensorrt_llm/1,max_queue_delay_microseconds:${MAX_QUEUE_DELAY_MS},batching_strategy:inflight_fused_batching,encoder_input_features_data_type:TYPE_FP16,logits_datatype:${LOGITS_DATATYPE}
+
+CMD ["tritonserver", "--model-repository=/models/"]

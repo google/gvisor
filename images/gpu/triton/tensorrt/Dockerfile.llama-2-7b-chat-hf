@@ -1,0 +1,53 @@
+# Use the official NVIDIA CUDA image as the base.
+FROM nvidia/cuda:12.8.1-devel-ubuntu22.04
+
+# Set the default shell to bash.
+SHELL ["/bin/bash", "-c"]
+
+# Consolidate system dependency installation into a single RUN command
+# to reduce the number of layers in the final image.
+RUN apt-get update && apt-get install -y \
+    neovim \
+    git \
+    openmpi-bin \
+    libopenmpi-dev \
+    python3.10 \
+    python3.10-dev \
+    python3-pip \
+    python3-venv \
+    python-is-python3 && \
+    # Clean up the apt cache to reduce image size.
+    rm -rf /var/lib/apt/lists/*
+
+# Download TensorRT-LLM from the specified version tag.
+ARG TENSORRT_LLM_VERSION="1.0.0"
+ARG TENSORRT_LLM_DIR="/TensorRT-LLM-${TENSORRT_LLM_VERSION}"
+RUN git clone --depth 1 --branch "v${TENSORRT_LLM_VERSION}" https://github.com/NVIDIA/TensorRT-LLM.git "${TENSORRT_LLM_DIR}"
+
+# Create a Python virtual environment and add its bin directory to the system's PATH.
+# This makes commands from the venv (like pip, huggingface-cli) available in all subsequent layers.
+ENV VENV_PATH="/opt/venv"
+RUN python3 -m venv "${VENV_PATH}"
+ENV PATH="${VENV_PATH}/bin:${PATH}"
+
+# Upgrade pip and install the huggingface_hub library.
+RUN pip install --upgrade pip
+RUN pip install huggingface_hub
+
+# Download the model from Hugging Face.
+# The HF_TOKEN should be passed as a build argument for security.
+ARG HF_TOKEN=""
+ARG REPO_ID="meta-llama/Llama-2-7b-chat-hf"
+ARG MODEL_DIR="/llama-2-7b-chat-hf"
+RUN huggingface-cli download \
+    "${REPO_ID}" \
+    --local-dir "${MODEL_DIR}" \
+    --local-dir-use-symlinks False \
+    --token "${HF_TOKEN}"
+
+# Set the working directory to the Llama example within the TensorRT-LLM repository.
+WORKDIR "${TENSORRT_LLM_DIR}/examples/models/core/llama"
+
+# Install the Python dependencies required for the Llama example.
+# This command will use the pip from the virtual environment we added to the PATH.
+RUN pip install -r requirements.txt
