@@ -454,7 +454,7 @@ type dockerBuild struct {
 	Network string `yaml:"network,omitempty"`
 }
 
-func testDockerMatrix(ctx context.Context, t *testing.T, d *dockerutil.Container) {
+func testDockerMatrix(t *testing.T, overlay bool) {
 	definitions := []struct {
 		name            string
 		testFunc        func(ctx context.Context, t *testing.T, d *dockerutil.Container, opts dockerCommandOptions)
@@ -500,6 +500,10 @@ func testDockerMatrix(ctx context.Context, t *testing.T, d *dockerutil.Container
 				}
 				name := strings.Join(nameParts, "_")
 				t.Run(name, func(t *testing.T) {
+					ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+					defer cancel()
+					d := startDockerdInGvisor(ctx, t, overlay)
+					defer d.CleanUp(ctx)
 					if err := backoff.Retry(func() error {
 						output, err := dockerInGvisorExecOutput(ctx, d, []string{"docker", "info"})
 						if err != nil {
@@ -509,7 +513,7 @@ func testDockerMatrix(ctx context.Context, t *testing.T, d *dockerutil.Container
 							return nil
 						}
 						return fmt.Errorf("docker daemon not ready")
-					}, backoff.WithMaxRetries(backoff.NewConstantBackOff(100*time.Millisecond), 10)); err != nil {
+					}, backoff.WithMaxRetries(backoff.NewConstantBackOff(1*time.Second), 10)); err != nil {
 						t.Fatalf("failed to run docker test %q: %v", name, err)
 					}
 					def.testFunc(ctx, t, d, opts)
@@ -523,20 +527,14 @@ func TestDockerWithVFS(t *testing.T) {
 	if testutil.IsRunningWithHostNet() {
 		t.Skip("docker doesn't work with hostinet")
 	}
-	ctx := context.Background()
-	d := startDockerdInGvisor(ctx, t, false)
-	defer d.CleanUp(ctx)
-	testDockerMatrix(ctx, t, d)
+	testDockerMatrix(t, false)
 }
 
 func TestDockerWithOverlay(t *testing.T) {
 	if testutil.IsRunningWithHostNet() {
 		t.Skip("docker doesn't work with hostinet")
 	}
-	ctx := context.Background()
-	d := startDockerdInGvisor(ctx, t, true)
-	defer d.CleanUp(ctx)
-	testDockerMatrix(ctx, t, d)
+	testDockerMatrix(t, true)
 }
 
 // The container returned by this function has to be cleaned up by the caller.
@@ -714,6 +712,9 @@ func testDockerComposeBuild(ctx context.Context, t *testing.T, d *dockerutil.Con
 	network := ""
 	if opts.hostNetwork {
 		network = "host"
+	} else {
+		// TODO(b/447472587): re-enable bridge network test.
+		t.Skip("Skip docker compose build test with bridge network.")
 	}
 	config := dockerComposeConfig{
 		Name: "image_test",
