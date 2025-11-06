@@ -59,5 +59,9 @@ else
   # mount namespace.
   export CGO_ENABLED=0
 fi
-gopkgs=$("$go_tool" list ./... | grep -v pkg/sentry/platform | grep -v pkg/ring0 | grep -v pkg/coverage | paste -sd,)
-"$go_tool" build --tags "$go_tags" $go_opts -cover -coverpkg="$gopkg" -covermode=atomic -o "$dst" runsc/main.go
+# sleep, sync, syncevent use go:norace, which is not respected by coverage
+# instrumentation. Race builds will be instrumented with atomic coverage (using
+# sync/atomic.AddInt32), which will not work. We may be able to re-enable
+# coverage on them when https://golang.org/issue/43007 is resolved.
+gopkgs=$("$go_tool" list ./... | grep -E -v 'pkg/sentry/platform|pkg/ring0|pkg/coverage|pkg/sleep|pkg/sync|pkg/syncevent' | paste -sd,)
+"$go_tool" build --tags "$go_tags" $go_opts -cover -coverpkg="$gopkgs" -covermode=atomic -o "$dst" runsc/main.go
