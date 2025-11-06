@@ -737,10 +737,12 @@ PosixError CheckSameFile(const FileDescriptor& fd1, const FileDescriptor& fd2) {
   return MakeMatcher(new ModePermissionMatcher(want));
 }
 
+#ifndef __Fuchsia__
 int renameat2(int olddirfd, const char* oldpath, int newdirfd,
               const char* newpath, unsigned int flags) {
   return syscall(SYS_renameat2, olddirfd, oldpath, newdirfd, newpath, flags);
 }
+#endif  // __Fuchsia__
 
 }  // namespace testing
 }  // namespace gvisor
