@@ -22,6 +22,7 @@ go_mod="$3"
 go_sum="$4"
 runsc_main_go="$5"
 golang_patch=$(realpath "$6")
+race="$7"
 
 mkdir .gocache
 GOMODCACHE="$(pwd)/.gocache"
@@ -48,5 +49,15 @@ mkdir -p "$gvisor_gopath/src/gvisor.dev/gvisor/runsc"
 cp "$runsc_main_go" "$gvisor_gopath/src/gvisor.dev/gvisor/runsc/main.go"
 cd "$gvisor_gopath/src/gvisor.dev/gvisor/"
 export GOROOT="$goroot_dir"
+go_opts=""
+go_tags="kcov,opensource"
+if [[ "$race" = true ]]; then
+  go_opts="-race"
+  go_tags="$go_tags,lockdep"
+else
+  # runsc has to be a self-contained binary to be able to run it in a minimal
+  # mount namespace.
+  export CGO_ENABLED=0
+fi
 gopkgs=$("$go_tool" list ./... | grep -v pkg/sentry/platform | grep -v pkg/ring0 | grep -v pkg/coverage | paste -sd,)
-"$go_tool" build --tags kcov,opensource -cover -coverpkg="$gopkg" -covermode=atomic -o "$dst" runsc/main.go
+"$go_tool" build --tags "$go_tags" $go_opts -cover -coverpkg="$gopkg" -covermode=atomic -o "$dst" runsc/main.go

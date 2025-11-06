@@ -93,5 +93,28 @@ go_cov(
         "\"$(location //:go.mod)\" " +
         "\"$(location //:go.sum)\" " +
         "\"$(location main.go)\" " +
-        "\"$(location //tools:go-allow-internal.patch)\" ",
+        "\"$(location //tools:go-allow-internal.patch)\" " +
+        "\"false\" ",
+)
+
+go_cov(
+    name = "runsc_race_coverage",
+    srcs = [
+        "main.go",
+        "//:go.mod",
+        "//:go.sum",
+        "//:gopath",
+        "//tools:build_cover.sh",
+        "//tools:go-allow-internal.patch",
+    ],
+    outs = ["runsc_race_cov"],
+    cmd =
+        "\"$(location //tools:build_cover.sh)\" " +
+        "\"$(location //runsc:runsc_race_cov)\" " +
+        "\"$(location //:gopath)\" " +
+        "\"$(location //:go.mod)\" " +
+        "\"$(location //:go.sum)\" " +
+        "\"$(location main.go)\" " +
+        "\"$(location //tools:go-allow-internal.patch)\" " +
+        "\"true\" ",
 )
