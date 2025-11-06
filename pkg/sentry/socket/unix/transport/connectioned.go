@@ -106,6 +106,14 @@ type connectionedEndpoint struct {
 	// tcpip.SockStream.
 	stype linux.SockType
 
+	// peerCreds is used to store the peer credentials.
+	// This will store the socket's own credentials until the connection is
+	// established with connect(2). Once the connection is established, this
+	// will store the peer's credentials. The use of this option is possible
+	// only for connected `AF_UNIX` stream sockets and for `AF_UNIX` stream and
+	// datagram socket pairs created using socketpair(2)
+	peerCreds CredentialsControlMessage
+
 	// acceptedChan is per the TCP endpoint implementation. Note that the
 	// sockets in this channel are _already in the connected state_, and
 	// have another associated connectionedEndpoint.
@@ -274,6 +282,16 @@ func (e *connectionedEndpoint) Close(ctx context.Context) {
 	}
 }
 
+func (e *connectionedEndpoint) swapPeerCredsLocked(ctx context.Context, cend ConnectingEndpoint, ne *connectionedEndpoint) *syserr.Error {
+	ce, ok := cend.(*connectionedEndpoint)
+	if !ok {
+		return syserr.ErrInvalidEndpointState
+	}
+	// Swap peer credentials between the two endpoints.
+	ne.peerCreds, ce.peerCreds = ce.peerCreds, ne.peerCreds
+	return nil
+}
+
 // BidirectionalConnect implements BoundEndpoint.BidirectionalConnect.
 func (e *connectionedEndpoint) BidirectionalConnect(ctx context.Context, ce ConnectingEndpoint, returnConnect func(Receiver, ConnectedEndpoint), opts UnixSocketOpts) *syserr.Error {
 	if ce.Type() != e.stype {
@@ -327,6 +345,7 @@ func (e *connectionedEndpoint) BidirectionalConnect(ctx context.Context, ce Conn
 	ne.ops.SetSendBufferSize(defaultBufferSize, false /* notify */)
 	ne.ops.SetReceiveBufferSize(defaultBufferSize, false /* notify */)
 	ne.SocketOptions().SetPassCred(e.SocketOptions().GetPassCred())
+	ne.peerCreds = e.peerCreds
 
 	readQueue := &queue{ReaderQueue: ce.WaiterQueue(), WriterQueue: ne.Queue, limit: defaultBufferSize}
 	readQueue.InitRefs()
@@ -354,6 +373,9 @@ func (e *connectionedEndpoint) BidirectionalConnect(ctx context.Context, ce Conn
 		}
 		readQueue.IncRef()
 		if e.stype == linux.SOCK_STREAM {
+			if err := e.swapPeerCredsLocked(ctx, ce, ne); err != nil {
+				return err
+			}
 			returnConnect(&streamQueueReceiver{queueReceiver: queueReceiver{readQueue: readQueue}}, connected)
 		} else {
 			returnConnect(&queueReceiver{readQueue: readQueue}, connected)
@@ -654,4 +676,16 @@ func (e *connectionedEndpoint) EventUnregister(we *waiter.Entry) {
 
 func (e *connectionedEndpoint) GetAcceptConn() bool {
 	return e.Listening()
+}
+
+func (e *connectionedEndpoint) PeerCreds() CredentialsControlMessage {
+	e.Lock()
+	defer e.Unlock()
+	return e.peerCreds
+}
+
+func (e *connectionedEndpoint) SetPeerCreds(creds CredentialsControlMessage) {
+	e.Lock()
+	defer e.Unlock()
+	e.peerCreds = creds
 }
