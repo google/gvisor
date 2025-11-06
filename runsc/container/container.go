@@ -574,10 +574,8 @@ func (c *Container) Event() (*boot.EventOut, error) {
 		return nil, err
 	}
 
-	if len(event.ContainerUsage) > 0 {
-		// Some stats can utilize host cgroups for accuracy.
-		c.populateStats(event)
-	}
+	// CPU stats can utilize host cgroups for accuracy.
+	c.populateStats(event)
 
 	return event, nil
 }
@@ -1708,9 +1706,9 @@ func (c *Container) populateStats(event *boot.EventOut) {
 
 	var containerUsage uint64
 	var allContainersUsage uint64
-	for ID, usage := range event.ContainerUsage {
+	for id, usage := range event.ContainerUsage {
 		allContainersUsage += usage
-		if ID == c.ID {
+		if id == c.ID {
 			containerUsage = usage
 		}
 	}
