@@ -20,6 +20,7 @@
 
 _start:
   mov  x29, sp
+  mov  x0, sp
   bl   __init
   wfi
 
