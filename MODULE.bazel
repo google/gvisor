@@ -59,10 +59,10 @@ llvm_configure(name = "llvm-project")
 
 http_archive(
     name = "kythe_release",
-    sha256 = "fc70441a75a71bd280e9d58408a20e649ab13ac5e1a1cef5939da3ec67f4fad5",
-    strip_prefix = "kythe-v0.0.73",
+    sha256 = "52a9c6e8111237043b8d0b6127637f0eb8d2ba3a776e4749b036e911ec3529ce",
+    strip_prefix = "kythe-v0.0.74",
     urls = [
-        "https://github.com/kythe/kythe/releases/download/v0.0.73/kythe-v0.0.73.tar.gz",
+        "https://github.com/kythe/kythe/releases/download/v0.0.74/kythe-v0.0.74.tar.gz",
     ],
 )
 
