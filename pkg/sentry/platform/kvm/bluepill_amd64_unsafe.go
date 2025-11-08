@@ -61,6 +61,10 @@ func (c *vCPU) dieArchSetup(context *arch.SignalContext64, guestRegs *userRegs, 
 		context.Rbp = guestRegs.RBP
 		context.Eflags = guestRegs.RFLAGS
 	}
+	printHex([]byte("FATAL: rip = "), guestRegs.RIP)
+	printHex([]byte("FATAL: rsp = "), guestRegs.RSP)
+	printHex([]byte("FATAL: rbp = "), guestRegs.RBP)
+	printHex([]byte("FATAL: rflags = "), guestRegs.RFLAGS)
 	if dumpExitReason {
 		// Store the original instruction pointer in R9 and populates
 		// registers R10-R14 with the vCPU's exit reason and associated
