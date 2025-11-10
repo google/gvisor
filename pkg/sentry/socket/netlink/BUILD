@@ -15,6 +15,7 @@ go_library(
     deps = [
         "//pkg/abi/linux",
         "//pkg/abi/linux/errno",
+        "//pkg/atomicbitops",
         "//pkg/context",
         "//pkg/errors/linuxerr",
         "//pkg/hostarch",
@@ -27,6 +28,7 @@ go_library(
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/ktime",
         "//pkg/sentry/socket",
+        "//pkg/sentry/socket/control",
         "//pkg/sentry/socket/netlink/nlmsg",
         "//pkg/sentry/socket/netlink/port",
         "//pkg/sentry/socket/unix",

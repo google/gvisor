@@ -82,7 +82,7 @@ func (p *Protocol) Receive(ctx context.Context, s *netlink.Socket, buf []byte) *
 	// TODO: b/434785410 - Support batch messages.
 	if hdr.Type == linux.NFNL_MSG_BATCH_BEGIN {
 		ms := nlmsg.NewMessageSet(s.GetPortID(), hdr.Seq)
-		if err := p.receiveBatchMessage(ctx, s, ms, buf); err != nil {
+		if err := p.receiveBatchMessage(ctx, ms, buf); err != nil {
 			log.Debugf("Nftables: Failed to process batch message: %v", err)
 			netlink.DumpErrorMessage(hdr, ms, err.GetError())
 		}
@@ -1215,7 +1215,7 @@ func (p *Protocol) ProcessMessage(ctx context.Context, s *netlink.Socket, msg *n
 }
 
 // receiveBatchMessage processes a NETFILTER batch message.
-func (p *Protocol) receiveBatchMessage(ctx context.Context, s *netlink.Socket, ms *nlmsg.MessageSet, buf []byte) *syserr.AnnotatedError {
+func (p *Protocol) receiveBatchMessage(ctx context.Context, ms *nlmsg.MessageSet, buf []byte) *syserr.AnnotatedError {
 	// Linux ignores messages that are too small.
 	// From net/netfilter/nfnetlink.c:nfnetlink_rcv_skb_batch
 	if len(buf) < linux.NetlinkMessageHeaderSize+linux.SizeOfNetfilterGenMsg {
@@ -1254,7 +1254,7 @@ func (p *Protocol) receiveBatchMessage(ctx context.Context, s *netlink.Socket, m
 	// The resource ID is a 16-bit value that is stored in network byte order.
 	// We ensure that it is in host byte order before passing it for processing.
 	resID := nlmsg.NetToHostU16(nfGenMsg.ResourceID)
-	if err := p.processBatchMessage(ctx, s, buf, ms, hdr, resID); err != nil {
+	if err := p.processBatchMessage(ctx, buf, ms, hdr, resID); err != nil {
 		log.Debugf("Failed to process batch message: %v", err)
 		netlink.DumpErrorMessage(hdr, ms, err.GetError())
 	}
@@ -1263,7 +1263,7 @@ func (p *Protocol) receiveBatchMessage(ctx context.Context, s *netlink.Socket, m
 }
 
 // processBatchMessage processes a batch message.
-func (p *Protocol) processBatchMessage(ctx context.Context, s *netlink.Socket, buf []byte, ms *nlmsg.MessageSet, batchHdr linux.NetlinkMessageHeader, subsysID uint16) *syserr.AnnotatedError {
+func (p *Protocol) processBatchMessage(ctx context.Context, buf []byte, ms *nlmsg.MessageSet, batchHdr linux.NetlinkMessageHeader, subsysID uint16) *syserr.AnnotatedError {
 	if subsysID >= linux.NFNL_SUBSYS_COUNT {
 		return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("Nftables: Unknown subsystem id %d", subsysID))
 	}
