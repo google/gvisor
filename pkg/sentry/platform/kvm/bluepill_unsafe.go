@@ -96,6 +96,33 @@ func printHex(title []byte, val uint64) {
 	hostsyscall.RawSyscallErrno(unix.SYS_WRITE, uintptr(unix.Stderr), uintptr(unsafe.Pointer(&str)), 18)
 }
 
+//go:nosplit
+func logKVMExitReason(c *vCPU, exitReason int) {
+	printHex(printHexTitles[exitReason], uint64(c.runData.data[0]))
+}
+
+const (
+	kvmExitExceptionStr = iota
+	kvmExitIOStr
+	kvmExitInternalErrorStr
+	kvmExitHypercallStr
+	kvmExitDebugStr
+	kvmExitMMIOStr
+	kvmExitShutdownStr
+	kvmExitFailEntryStr
+)
+
+var printHexTitles = [8][]byte{
+	kvmExitExceptionStr:     []byte("unexpected exception exit: "),
+	kvmExitIOStr:            []byte("unexpected I/O exit: "),
+	kvmExitInternalErrorStr: []byte("unexpected internal_error exit: "),
+	kvmExitHypercallStr:     []byte("unexpected hypercall exit: "),
+	kvmExitDebugStr:         []byte("unexpected debug exit: "),
+	kvmExitMMIOStr:          []byte("unexpected MMIO exit: "),
+	kvmExitShutdownStr:      []byte("unexpected shutdown exit: "),
+	kvmExitFailEntryStr:     []byte("unexpected fail_entry exit: "),
+}
+
 // bluepillHandler is called from the signal stub.
 //
 // The world may be stopped while this is executing, and it executes on the
@@ -183,9 +210,11 @@ func bluepillHandler(context unsafe.Pointer) {
 
 		switch c.runData.exitReason {
 		case _KVM_EXIT_EXCEPTION:
+			logKVMExitReason(c, kvmExitExceptionStr)
 			c.die(bluepillArchContext(context), "exception")
 			return
 		case _KVM_EXIT_IO:
+			logKVMExitReason(c, kvmExitIOStr)
 			c.die(bluepillArchContext(context), "I/O")
 			return
 		case _KVM_EXIT_INTERNAL_ERROR:
@@ -194,10 +223,13 @@ func bluepillHandler(context unsafe.Pointer) {
 			// it might fail because we have multiple regions that
 			// are not mapped). We would actually prefer that no
 			// emulation occur, and don't mind at all if it fails.
+			logKVMExitReason(c, kvmExitInternalErrorStr)
 		case _KVM_EXIT_HYPERCALL:
+			logKVMExitReason(c, kvmExitHypercallStr)
 			c.die(bluepillArchContext(context), "hypercall")
 			return
 		case _KVM_EXIT_DEBUG:
+			logKVMExitReason(c, kvmExitDebugStr)
 			c.die(bluepillArchContext(context), "debug")
 			return
 		case _KVM_EXIT_HLT:
@@ -210,14 +242,17 @@ func bluepillHandler(context unsafe.Pointer) {
 				return
 			}
 
+			logKVMExitReason(c, kvmExitMMIOStr)
 			c.die(bluepillArchContext(context), "exit_mmio")
 			return
 		case _KVM_EXIT_IRQ_WINDOW_OPEN:
 			bluepillStopGuest(c)
 		case _KVM_EXIT_SHUTDOWN:
+			logKVMExitReason(c, kvmExitShutdownStr)
 			c.die(bluepillArchContext(context), "shutdown")
 			return
 		case _KVM_EXIT_FAIL_ENTRY:
+			logKVMExitReason(c, kvmExitFailEntryStr)
 			c.dieAndDumpExitReason(bluepillArchContext(context))
 			return
 		default:
