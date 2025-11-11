@@ -716,7 +716,6 @@ func (cm *containerManager) RestoreSubcontainer(args *StartArgs, _ *struct{}) er
 
 	// All validation passed, logs the spec for debugging.
 	specutils.LogSpecDebug(args.Spec, args.Conf.OCISeccomp)
-	timeline.Reached("spec validated")
 
 	goferFiles := args.Files
 	var stdios []*fd.FD

@@ -463,7 +463,9 @@ func validateSpecs(oldSpecs, newSpecs map[string]*specs.Spec) error {
 		if !ok {
 			return fmt.Errorf("checkpoint image does not contain spec for container: %q", cName)
 		}
-		return validateSpecForContainer(oldSpec, newSpec, cName)
+		if err := validateSpecForContainer(oldSpec, newSpec, cName); err != nil {
+			return fmt.Errorf("failed to validate spec for container %q: %w", cName, err)
+		}
 	}
 
 	return nil

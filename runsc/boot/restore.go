@@ -163,6 +163,7 @@ func (r *restorer) restoreContainerInfo(l *Loader, info *containerInfo, containe
 		if err := specutils.RestoreValidateSpec(r.checkpointedSpecs, l.GetContainerSpecs(), l.root.conf); err != nil {
 			return fmt.Errorf("failed to handle restore spec validation: %w", err)
 		}
+		r.timer.Reached("specs validated")
 
 		// Trigger the restore if this is the last container.
 		return r.restore(l)
