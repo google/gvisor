@@ -75,6 +75,10 @@ func fdReadVec(fd int, bufs [][]byte, control []byte, peek bool, maxlen int64) (
 // If the total length of bufs is > maxlen && truncate, fdWriteVec will do a
 // partial write and err will indicate why the message was truncated.
 func fdWriteVec(fd int, bufs [][]byte, maxlen int64, truncate bool) (int64, int64, error) {
+	return fdWriteVecCreds(fd, bufs, maxlen, truncate, false)
+}
+
+func fdWriteVecCreds(fd int, bufs [][]byte, maxlen int64, truncate bool, creds bool) (int64, int64, error) {
 	length, iovecs, intermediate, err := buildIovec(bufs, maxlen, truncate)
 	if err != nil && len(iovecs) == 0 {
 		// No partial write to do, return error immediately.
@@ -92,6 +96,27 @@ func fdWriteVec(fd int, bufs [][]byte, maxlen int64, truncate bool) (int64, int6
 		msg.Iovlen = uint64(len(iovecs))
 	}
 
+	if creds {
+		// We can't pass arbitrary application credentials to the host. Pass the
+		// sentry's credentials instead.
+		cmsgSlice := make([]byte, unix.CmsgSpace(unix.SizeofUcred))
+		cmsg := (*unix.Cmsghdr)(unsafe.Pointer(&cmsgSlice[0]))
+		cmsg.Level = unix.SOL_SOCKET
+		cmsg.Type = unix.SCM_CREDENTIALS
+		cmsgLen := unix.CmsgLen(unix.SizeofUcred)
+		cmsg.SetLen(cmsgLen)
+		cmsgData := (*unix.Ucred)(unsafe.Pointer(&cmsgSlice[unix.CmsgLen(0)]))
+		// Collect owner information for fd. Gete(uid|gid) are forbidden by the
+		// sentry's seccomp filters.
+		s := unix.Stat_t{}
+		if err := unix.Fstat(fd, &s); err != nil {
+			return 0, length, err
+		}
+		*cmsgData = unix.Ucred{Pid: int32(unix.Getpid()), Uid: s.Uid, Gid: s.Gid}
+		msg.Control = &cmsgSlice[0]
+		msg.SetControllen(cmsgLen)
+	}
+
 	n, _, e := unix.RawSyscall(unix.SYS_SENDMSG, uintptr(fd), uintptr(unsafe.Pointer(&msg)), unix.MSG_DONTWAIT|unix.MSG_NOSIGNAL)
 	if e != 0 {
 		// N.B. prioritize the syscall error over the buildIovec error.
@@ -99,4 +124,12 @@ func fdWriteVec(fd int, bufs [][]byte, maxlen int64, truncate bool) (int64, int6
 	}
 
 	return int64(n), length, err
+}
+
+func getPasscredEnabled(fd int) bool {
+	enabled, err := unix.GetsockoptInt(fd, unix.SOL_SOCKET, unix.SO_PASSCRED)
+	if err != nil {
+		return false
+	}
+	return enabled != 0
 }
