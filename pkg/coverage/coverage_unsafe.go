@@ -32,6 +32,7 @@ import (
 	"bytes"
 	"fmt"
 	icov "internal/coverage"
+	"internal/coverage/cfile"
 	"internal/coverage/decodecounter"
 	"internal/coverage/decodemeta"
 	"internal/coverage/rtcov"
@@ -279,6 +280,7 @@ func consumeCoverageData(handler func(pc uint64) bool) {
 // data is written.
 func InitCoverageData() {
 	globalData.once.Do(func() {
+		cfile.InitHook(false)
 		globalData.pkgs = make(map[uint32]*pkg)
 		ml := rtcov.Meta.List
 		for k, b := range ml {
