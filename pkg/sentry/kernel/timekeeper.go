@@ -364,13 +364,16 @@ func (t *Timekeeper) AfterFunc(d time.Duration, f func()) tcpip.Timer {
 // tcpip.Timer does not define a Destroy method, so each timer expiration and
 // each call to Timer.Stop() must release all resources by calling
 // ktime.SampledTimer.Destroy().
+//
+// +stateify savable
 type timekeeperTcpipTimer struct {
 	// immutable
 	clock *timekeeperClock
-	fn    func()
+	// TODO(b/341946753): Restore when netstack is savable.
+	fn func() `state:"nosave"`
 
 	// mu protects t.
-	mu timekeeperTcpipTimerMutex
+	mu timekeeperTcpipTimerMutex `state:"nosave"`
 
 	// t stores the latest running Timer. This is replaced whenever Reset is
 	// called since Timer cannot be restarted once it has been Destroyed by Stop.
