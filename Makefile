@@ -470,19 +470,7 @@ else
 		sudo tar -C "$$(dirname $$(which containerd))" -zxvf - containerd-shim-runsc-v1
 endif
 	@$(call sudo,test/root:root_test,--runtime=$(RUNTIME) -test.v)
-containerd-tests-min: containerd-test-1.4.12
-
-##
-## Containerd tests.
-##
-## Runs all supported containerd version tests. Update as new versions become
-## available.
-##
-containerd-tests:
-containerd-tests: containerd-test-1.4.12
-containerd-tests: containerd-test-1.5.11
-containerd-tests: containerd-test-1.6.2
-containerd-tests: containerd-test-1.7.25
+containerd-tests-min: containerd-test-1.6.2
 
 ##
 ## Benchmarks.

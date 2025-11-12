@@ -269,22 +269,6 @@ func TestHomeDir(t *testing.T) {
 
 const containerdRuntime = "runsc"
 
-// containerdConfigv14 is the containerd (1.4-) configuration file that
-// configures the gVisor shim.
-//
-// Note that the v2 shim binary name must be containerd-shim-<runtime>-v1.
-const containerdConfigv14 = `
-disabled_plugins = ["restart"]
-[plugins.cri]
-  disable_tcp_service = true
-[plugins.linux]
-  shim_debug = true
-[plugins.cri.containerd.runtimes.` + containerdRuntime + `]
-  runtime_type = "io.containerd.` + containerdRuntime + `.v1"
-[plugins.cri.containerd.runtimes.` + containerdRuntime + `.options]
-  TypeUrl = "io.containerd.` + containerdRuntime + `.v1.options"
-`
-
 // containerdConfig is the containerd (1.5+) configuration file that
 // configures the gVisor shim.
 //
@@ -496,8 +480,5 @@ func getContainerd() string {
 }
 
 func getContainerdConfig(major, minor uint64) string {
-	if major == 1 && minor <= 4 {
-		return containerdConfigv14
-	}
 	return containerdConfig
 }
