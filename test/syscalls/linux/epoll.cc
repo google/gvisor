@@ -631,6 +631,13 @@ TEST(EpollTest, DoubleLayerEpoll) {
   ASSERT_NO_ERRNO(RegisterEpollFD(epfd2.get(), epfd1.get(), EPOLLIN | EPOLLHUP,
                                   epfd1.get()));
 
+  // Verify that there are no events initially.
+  struct epoll_event ret_events[2];
+  ASSERT_THAT(RetryEINTR(epoll_wait)(epfd2.get(), ret_events, 2, 0),
+              SyscallSucceedsWithValue(0));
+  ASSERT_THAT(RetryEINTR(epoll_wait)(epfd1.get(), ret_events, 2, 0),
+              SyscallSucceedsWithValue(0));
+
   // Write to wfd and then check if epoll events were generated correctly.
   // Run this loop a couple of times to check if event in epfd1 is cleaned.
   constexpr char data[] = "data";
