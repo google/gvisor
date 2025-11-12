@@ -276,6 +276,24 @@ func (c *ControlMessage) ExtractFDs() ([]int, error) {
 	return fds, nil
 }
 
+// ExtractCredentials returns the credentials in the control message.
+func (c *ControlMessage) ExtractCredentials() (*unix.Ucred, error) {
+	msgs, err := unix.ParseSocketControlMessage(*c)
+	if err != nil {
+		return nil, err
+	}
+	for _, msg := range msgs {
+		if msg.Header.Type == unix.SCM_CREDENTIALS {
+			ucred, err := unix.ParseUnixCredentials(&msg)
+			if err != nil {
+				return nil, err
+			}
+			return ucred, nil
+		}
+	}
+	return nil, nil
+}
+
 // CloseFDs closes the list of FDs in the control message.
 //
 // Either this or ExtractFDs should be used after EnableFDs.

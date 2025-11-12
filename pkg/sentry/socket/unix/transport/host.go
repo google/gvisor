@@ -50,6 +50,18 @@ func (c *SCMRights) Release(ctx context.Context) {
 	c.FDs = nil
 }
 
+// SCMCredentials implements CredentialsControlMessage for credentials from the
+// host.
+type SCMCredentials struct {
+	Ucred unix.Ucred
+}
+
+// Equals implements CredentialsControlMessage.Equals.
+func (c *SCMCredentials) Equals(oc CredentialsControlMessage) bool {
+	oc2, _ := oc.(*SCMCredentials)
+	return oc2 != nil && c.Ucred == oc2.Ucred
+}
+
 // HostConnectedEndpoint is an implementation of ConnectedEndpoint and
 // Receiver. It is backed by a host fd that was imported at sentry startup.
 // This fd is shared with a hostfs inode, which retains ownership of it.
@@ -164,7 +176,7 @@ func (c *HostConnectedEndpoint) Send(ctx context.Context, data [][]byte, control
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
-	if !controlMessages.Empty() {
+	if controlMessages.Rights != nil {
 		return 0, false, syserr.ErrInvalidEndpointState
 	}
 
@@ -176,7 +188,7 @@ func (c *HostConnectedEndpoint) Send(ctx context.Context, data [][]byte, control
 	// only as much of the message as fits in the send buffer.
 	truncate := c.stype == linux.SOCK_STREAM
 
-	n, totalLen, err := fdWriteVec(c.fd, data, c.SendMaxQueueSize(), truncate)
+	n, totalLen, err := fdWriteVecCreds(c.fd, data, c.SendMaxQueueSize(), truncate, controlMessages.Credentials != nil)
 	if n < totalLen && err == nil {
 		// The host only returns a short write if it would otherwise
 		// block (and only for stream sockets).
@@ -236,8 +248,7 @@ func (c *HostConnectedEndpoint) Writable() bool {
 
 // Passcred implements ConnectedEndpoint.Passcred.
 func (c *HostConnectedEndpoint) Passcred() bool {
-	// We don't support credential passing for host sockets.
-	return false
+	return getPasscredEnabled(c.fd)
 }
 
 // GetLocalAddress implements ConnectedEndpoint.GetLocalAddress.
@@ -265,6 +276,9 @@ func (c *HostConnectedEndpoint) Recv(ctx context.Context, data [][]byte, args Re
 	var cm unet.ControlMessage
 	if args.NumRights > 0 {
 		cm.EnableFDs(int(args.NumRights))
+	}
+	if args.Creds {
+		cm = append(cm, make([]byte, unix.CmsgSpace(linux.SizeOfControlMessageCredentials))...)
 	}
 
 	// N.B. Unix sockets don't have a receive buffer, the send buffer
@@ -300,12 +314,19 @@ func (c *HostConnectedEndpoint) Recv(ctx context.Context, data [][]byte, args Re
 	if err != nil {
 		return RecvOutput{}, false, syserr.FromError(err)
 	}
+	creds, err := cm.ExtractCredentials()
+	if err != nil {
+		return RecvOutput{}, false, syserr.FromError(err)
+	}
 
 	if len(fds) == 0 {
 		return out, false, nil
 	}
 	out.Control = ControlMessages{
 		Rights: &SCMRights{fds},
+	}
+	if creds != nil {
+		out.Control.Credentials = &SCMCredentials{Ucred: *creds}
 	}
 	return out, false, nil
 }
