@@ -267,7 +267,7 @@ func TestHomeDir(t *testing.T) {
 	})
 }
 
-const containerdRuntime = "runsc"
+const containerdRuntime = "runc"
 
 // containerdConfigv14 is the containerd (1.4-) configuration file that
 // configures the gVisor shim.
