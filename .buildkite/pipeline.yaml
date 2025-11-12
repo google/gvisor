@@ -429,8 +429,8 @@ steps:
       arch: "amd64"
   - <<: *common
     <<: *docker
-    label: ":docker: Containerd 1.6.2 tests (cgroupv1)"
-    command: make containerd-test-1.6.2
+    label: ":docker: Containerd 1.7.25 tests (cgroupv1)"
+    command: make containerd-test-1.7.25
     agents:
       <<: *platform_specific_agents
       <<: *ubuntu_agents
@@ -438,8 +438,8 @@ steps:
   - <<: *common
     <<: *docker
     <<: *source_test
-    label: ":docker: Containerd 1.6.2 tests (cgroupv2)"
-    command: make containerd-test-1.6.2
+    label: ":docker: Containerd 1.7.25 tests (cgroupv2)"
+    command: make containerd-test-1.7.25
     agents:
       <<: *ubuntu_agents
       cgroup: "v2"
