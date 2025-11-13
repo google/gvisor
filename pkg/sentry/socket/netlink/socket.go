@@ -16,12 +16,14 @@
 package netlink
 
 import (
+	"fmt"
 	"io"
 	"math"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/abi/linux/errno"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
@@ -55,6 +57,9 @@ const (
 
 	// maxBufferSize is the largest size a send buffer can grow to.
 	maxSendBufferSize = 4 << 20 // 4MB
+
+	// supportedGroups is the set of multicast groups that are supported.
+	supportedGroups = 1 << (linux.RTNLGRP_LINK - 1)
 )
 
 var errNoFilter = syserr.New("no filter attached", errno.ENOENT)
@@ -92,6 +97,14 @@ type Socket struct {
 	// sent to userspace.
 	connection transport.ConnectedEndpoint
 
+	// netns is the network namespace associated with the socket.
+	// A netlink socket is immutably bound to a network namespace.
+	netns *inet.Namespace
+
+	// groups is a bitmap of the set of multicast groups this socket is bound to.
+	// Writing to it requires the per-netns table lock to be held, reading it does not.
+	groups atomicbitops.Uint64
+
 	// mu protects the fields below.
 	mu sync.Mutex `state:"nosave"`
 
@@ -110,13 +123,11 @@ type Socket struct {
 	// TODO(gvisor.dev/issue/1119): We don't actually support filtering,
 	// this is just bookkeeping for tracking add/remove.
 	filter bool
-
-	// netns is the network namespace associated with the socket.
-	netns *inet.Namespace
 }
 
 var _ socket.Socket = (*Socket)(nil)
 var _ transport.Credentialer = (*Socket)(nil)
+var _ inet.NetlinkSocket = (*Socket)(nil)
 
 // New creates a new Socket.
 func New(t *kernel.Task, skType linux.SockType, protocol Protocol) (*Socket, *syserr.Error) {
@@ -157,6 +168,12 @@ func (s *Socket) Stack() inet.Stack {
 
 // Release implements vfs.FileDescriptionImpl.Release.
 func (s *Socket) Release(ctx context.Context) {
+	if s.groups.Load() != 0 {
+		s.netns.NetlinkMcastTable().WithTableLocked(func() {
+			s.netns.NetlinkMcastTable().RemoveSocket(s)
+		})
+	}
+
 	t := kernel.TaskFromContext(ctx)
 	t.Kernel().DeleteSocket(&s.vfsfd)
 	s.connection.Release(ctx)
@@ -304,6 +321,125 @@ func (s *Socket) bindPort(t *kernel.Task, port int32) *syserr.Error {
 	return nil
 }
 
+func (s *Socket) checkMcastSupport(t *kernel.Task) *syserr.Error {
+	// Currently only ROUTE family sockets support multicast.
+	if s.Protocol() != linux.NETLINK_ROUTE {
+		return syserr.ErrNotSupported
+	}
+	// Not all inet.Stacks relay interface events, currently only netstack/tcpip does.
+	if _, ok := s.Stack().(inet.InterfaceEventPublisher); !ok {
+		return syserr.ErrNotSupported
+	}
+	// man 7 netlink: "Only processes with an effective UID of 0 or the CAP_NET_ADMIN
+	// capability may send or listen to a netlink multicast group."
+	if !t.HasCapability(linux.CAP_NET_ADMIN) {
+		return syserr.ErrPermissionDenied
+	}
+	return nil
+}
+
+// preconditions: the netlink multicast table is locked.
+func (s *Socket) joinGroups(t *kernel.Task, groups uint64) *syserr.Error {
+	if groups&supportedGroups != groups {
+		return syserr.ErrNotSupported
+	}
+	if err := s.checkMcastSupport(t); err != nil {
+		return err
+	}
+
+	oldGroups := s.groups.Load()
+	s.groups.Store(groups)
+	if oldGroups == 0 && s.groups.Load() != 0 {
+		s.netns.NetlinkMcastTable().AddSocket(s)
+	} else if oldGroups != 0 && s.groups.Load() == 0 {
+		s.netns.NetlinkMcastTable().RemoveSocket(s)
+	}
+	return nil
+}
+
+// preconditions: the netlink multicast table is locked.
+func (s *Socket) joinGroup(t *kernel.Task, group uint32) *syserr.Error {
+	if group == 0 || group > 64 {
+		return syserr.ErrInvalidArgument
+	}
+	groups := uint64(1) << (group - 1)
+	if groups&supportedGroups != groups {
+		return syserr.ErrNotSupported
+	}
+	if err := s.checkMcastSupport(t); err != nil {
+		return err
+	}
+
+	oldGroups := s.groups.Load()
+	s.groups.Store(oldGroups | groups)
+	if oldGroups == 0 {
+		s.netns.NetlinkMcastTable().AddSocket(s)
+	}
+	return nil
+}
+
+// preconditions: the netlink multicast table is locked.
+func (s *Socket) leaveGroup(t *kernel.Task, group uint32) *syserr.Error {
+	if group == 0 || group > 64 {
+		return syserr.ErrInvalidArgument
+	}
+	groups := uint64(1) << (group - 1)
+	if groups&supportedGroups != groups {
+		return syserr.ErrNotSupported
+	}
+	if err := s.checkMcastSupport(t); err != nil {
+		return err
+	}
+
+	s.groups.Store(s.groups.Load() &^ groups)
+	if s.groups.Load() == 0 {
+		s.netns.NetlinkMcastTable().RemoveSocket(s)
+	}
+	return nil
+}
+
+// Protocol implements inet.NetlinkSocket.Protocol.
+func (s *Socket) Protocol() int {
+	return s.protocol.Protocol()
+}
+
+// Groups implements inet.NetlinkSocket.Groups.
+func (s *Socket) Groups() uint64 {
+	return s.groups.Load()
+}
+
+// HandleInterfaceChangeEvent implements inet.NetlinkSocket.HandleInterfaceChangeEvent.
+func (s *Socket) HandleInterfaceChangeEvent(ctx context.Context, idx int32, i inet.Interface) {
+	routeProtocol, ok := s.protocol.(RouteProtocol)
+	if !ok {
+		panic(fmt.Sprintf("Non-ROUTE netlink socket (protocol %d) cannot handle interface events", s.Protocol()))
+	}
+
+	s.mu.Lock()
+	portID := s.portID
+	s.mu.Unlock()
+	ms := nlmsg.NewMessageSet(portID, 0)
+	routeProtocol.AddNewLinkMessage(ms, idx, i)
+	// TODO(b/456238795): Implement netlink ENOBUFS.
+	s.SendResponse(ctx, ms)
+}
+
+// HandleInterfaceDeleteEvent implements inet.NetlinkSocket.HandleInterfaceDeleteEvent.
+func (s *Socket) HandleInterfaceDeleteEvent(ctx context.Context, idx int32, i inet.Interface) {
+	routeProtocol, ok := s.protocol.(RouteProtocol)
+	if !ok {
+		panic(fmt.Sprintf("Non-ROUTE netlink socket (protocol %d) cannot handle interface events", s.Protocol()))
+	}
+
+	s.mu.Lock()
+	portID := s.portID
+	s.mu.Unlock()
+	ms := nlmsg.NewMessageSet(portID, 0)
+	routeProtocol.AddDelLinkMessage(ms, idx, i)
+	// TODO(b/456238795): Implement netlink ENOBUFS.
+	s.SendResponse(ctx, ms)
+}
+
 // Bind implements socket.Socket.Bind.
 func (s *Socket) Bind(t *kernel.Task, sockaddr []byte) *syserr.Error {
 	a, err := ExtractSockAddr(sockaddr)
@@ -311,14 +447,18 @@ func (s *Socket) Bind(t *kernel.Task, sockaddr []byte) *syserr.Error {
 		return err
 	}
 
-	// No support for multicast groups yet.
 	if a.Groups != 0 {
-		return syserr.ErrPermissionDenied
+		var err *syserr.Error
+		s.netns.NetlinkMcastTable().WithTableLocked(func() {
+			err = s.joinGroups(t, uint64(a.Groups))
+		})
+		if err != nil {
+			return err
+		}
 	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-
 	return s.bindPort(t, int32(a.PortID))
 }
 
@@ -329,7 +469,7 @@ func (s *Socket) Connect(t *kernel.Task, sockaddr []byte, blocking bool) *syserr
 		return err
 	}
 
-	// No support for multicast groups yet.
+	// No support for sending to destination multicast groups yet.
 	if a.Groups != 0 {
 		return syserr.ErrPermissionDenied
 	}
@@ -417,13 +557,19 @@ func (s *Socket) GetSockOpt(t *kernel.Task, level int, name int, outPtr hostarch
 		}
 	case linux.SOL_NETLINK:
 		switch name {
+		case linux.NETLINK_LIST_MEMBERSHIPS:
+			if outLen < sizeOfInt32 {
+				return nil, syserr.ErrInvalidArgument
+			}
+			return primitive.AllocateUint64(s.groups.Load()), nil
+
 		case linux.NETLINK_BROADCAST_ERROR,
 			linux.NETLINK_CAP_ACK,
 			linux.NETLINK_DUMP_STRICT_CHK,
 			linux.NETLINK_EXT_ACK,
-			linux.NETLINK_LIST_MEMBERSHIPS,
 			linux.NETLINK_NO_ENOBUFS,
 			linux.NETLINK_PKTINFO:
+
 			// Not supported.
 		}
 	}
@@ -528,15 +674,36 @@ func (s *Socket) SetSockOpt(t *kernel.Task, level int, name int, opt []byte) *sy
 		}
 	case linux.SOL_NETLINK:
 		switch name {
-		case linux.NETLINK_ADD_MEMBERSHIP,
-			linux.NETLINK_BROADCAST_ERROR,
+		case linux.NETLINK_ADD_MEMBERSHIP:
+			if len(opt) < sizeOfInt32 {
+				return syserr.ErrInvalidArgument
+			}
+			group := hostarch.ByteOrder.Uint32(opt)
+			var err *syserr.Error
+			s.netns.NetlinkMcastTable().WithTableLocked(func() {
+				err = s.joinGroup(t, group)
+			})
+			return err
+
+		case linux.NETLINK_DROP_MEMBERSHIP:
+			if len(opt) < sizeOfInt32 {
+				return syserr.ErrInvalidArgument
+			}
+			group := hostarch.ByteOrder.Uint32(opt)
+			var err *syserr.Error
+			s.netns.NetlinkMcastTable().WithTableLocked(func() {
+				err = s.leaveGroup(t, group)
+			})
+			return err
+
+		case linux.NETLINK_BROADCAST_ERROR,
 			linux.NETLINK_CAP_ACK,
-			linux.NETLINK_DROP_MEMBERSHIP,
 			linux.NETLINK_DUMP_STRICT_CHK,
 			linux.NETLINK_EXT_ACK,
 			linux.NETLINK_LISTEN_ALL_NSID,
 			linux.NETLINK_NO_ENOBUFS,
 			linux.NETLINK_PKTINFO:
+
 			// Not supported.
 		}
 	}

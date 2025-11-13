@@ -41,6 +41,46 @@ import (
 // +stateify savable
 type Stack struct {
 	Stack *stack.Stack `state:".(*stack.Stack)"`
+
+	eventSubscriber inet.InterfaceEventSubscriber
+
+	// linkMu serializes link creation, modification and deletion.
+	// It is a rough parallel to the per-netns rtnl_mutex in Linux.
+	linkMu netstackLinkMutex `state:"nosave"`
+}
+
+// AddInterfaceEventSubscriber implements inet.InterfaceEventPublisher.AddInterfaceEventSubscriber.
+func (s *Stack) AddInterfaceEventSubscriber(sub inet.InterfaceEventSubscriber) {
+	if s.eventSubscriber != nil {
+		panic("AddInterfaceEventSubscriber called twice: multiple subscribers yet to be supported")
+	}
+	s.eventSubscriber = sub
+}
+
+func makeInterfaceInfo(ni *stack.NICInfo) inet.Interface {
+	return inet.Interface{
+		Name:       ni.Name,
+		Addr:       []byte(ni.LinkAddress),
+		Flags:      uint32(nicStateFlagsToLinux(ni.Flags)),
+		DeviceType: toLinuxARPHardwareType(ni.ARPHardwareType),
+		MTU:        ni.MTU,
+	}
+}
+
+func (s *Stack) sendChangeEvent(ctx context.Context, id tcpip.NICID) {
+	if s.eventSubscriber == nil {
+		return
+	}
+	if nicInfo, ok := s.Stack.SingleNICInfo(id); ok {
+		s.eventSubscriber.OnInterfaceChangeEvent(ctx, int32(id), makeInterfaceInfo(nicInfo))
+	}
+}
+
+func (s *Stack) sendDeleteEvent(ctx context.Context, id tcpip.NICID, nicInfo *stack.NICInfo) {
+	if s.eventSubscriber == nil {
+		return
+	}
+	s.eventSubscriber.OnInterfaceDeleteEvent(ctx, int32(id), makeInterfaceInfo(nicInfo))
 }
 
 // EnableSaveRestore enables netstack s/r.
@@ -90,22 +130,19 @@ func toLinuxARPHardwareType(t header.ARPHardwareType) uint16 {
 func (s *Stack) Interfaces() map[int32]inet.Interface {
 	is := make(map[int32]inet.Interface)
 	for id, ni := range s.Stack.NICInfo() {
-		is[int32(id)] = inet.Interface{
-			Name:       ni.Name,
-			Addr:       []byte(ni.LinkAddress),
-			Flags:      uint32(nicStateFlagsToLinux(ni.Flags)),
-			DeviceType: toLinuxARPHardwareType(ni.ARPHardwareType),
-			MTU:        ni.MTU,
-		}
+		is[int32(id)] = makeInterfaceInfo(&ni)
 	}
 	return is
 }
 
 // RemoveInterface implements inet.Stack.RemoveInterface.
-func (s *Stack) RemoveInterface(idx int32) error {
+func (s *Stack) RemoveInterface(ctx context.Context, idx int32) error {
+	s.linkMu.Lock()
+	defer s.linkMu.Unlock()
+
 	nic := tcpip.NICID(idx)
 
-	nicInfo, ok := s.Stack.NICInfo()[nic]
+	nicInfo, ok := s.Stack.SingleNICInfo(nic)
 	if !ok {
 		return syserr.ErrUnknownNICID.ToError()
 	}
@@ -115,7 +152,12 @@ func (s *Stack) RemoveInterface(idx int32) error {
 		return syserr.ErrNotSupported.ToError()
 	}
 
-	return syserr.TranslateNetstackError(s.Stack.RemoveNIC(nic)).ToError()
+	if err := syserr.TranslateNetstackError(s.Stack.RemoveNIC(nic)); err != nil {
+		return err.ToError()
+	}
+	s.sendDeleteEvent(ctx, nic, nicInfo)
+	return nil
+
 }
 
 // SetInterface implements inet.Stack.SetInterface.
@@ -180,10 +222,18 @@ func (s *Stack) SetInterface(ctx context.Context, msg *nlmsg.Message) *syserr.Er
 		// Netstack interfaces are always up.
 	}
 
-	return s.setLink(ctx, tcpip.NICID(ifinfomsg.Index), attrs)
+	s.linkMu.Lock()
+	defer s.linkMu.Unlock()
+	return s.setLinkLocked(ctx, tcpip.NICID(ifinfomsg.Index), attrs)
 }
 
-func (s *Stack) setLink(ctx context.Context, id tcpip.NICID, linkAttrs map[uint16]nlmsg.BytesView) *syserr.Error {
+// precondition: s.linkLock is held.
+func (s *Stack) setLinkLocked(ctx context.Context, id tcpip.NICID, linkAttrs map[uint16]nlmsg.BytesView) *syserr.Error {
+	oldNicInfo, ok := s.Stack.SingleNICInfo(id)
+	if !ok {
+		return syserr.ErrUnknownNICID
+	}
+
 	// IFLA_NET_NS_FD has to be handled first, because other parameters may be reset.
 	if v, ok := linkAttrs[linux.IFLA_NET_NS_FD]; ok {
 		fd, ok := v.Uint32()
@@ -202,12 +252,21 @@ func (s *Stack) setLink(ctx context.Context, id tcpip.NICID, linkAttrs map[uint1
 		peer := ns.Stack().(*Stack)
 		if peer.Stack != s.Stack {
 			var err tcpip.Error
+			oldID := id
+
 			id, err = s.Stack.SetNICStack(id, peer.Stack)
 			if err != nil {
 				return syserr.TranslateNetstackError(err)
 			}
+
+			s.sendDeleteEvent(ctx, oldID, oldNicInfo) // inform about exit from old ns
+			peer.sendChangeEvent(ctx, id)             // inform about entry into new ns
+			// TODO: Once we support IFLA_LINK_NETNSID, we need to call sendChangeEvent on
+			// the peer interface if this interface is part of a veth pair.
 		}
 	}
+
+	changed := false
 	for t, v := range linkAttrs {
 		switch t {
 		case linux.IFLA_MASTER:
@@ -215,34 +274,54 @@ func (s *Stack) setLink(ctx context.Context, id tcpip.NICID, linkAttrs map[uint1
 			if !ok {
 				return syserr.ErrInvalidArgument
 			}
+			if mid, ok := s.Stack.GetNICCoordinatorID(id); ok && mid == tcpip.NICID(master) {
+				continue
+			}
 			if master != 0 {
 				if err := s.Stack.SetNICCoordinator(id, tcpip.NICID(master)); err != nil {
 					return syserr.TranslateNetstackError(err)
 				}
+				changed = true
 			}
 		case linux.IFLA_ADDRESS:
 			if len(v) != tcpip.LinkAddressSize {
 				return syserr.ErrInvalidArgument
 			}
 			addr := tcpip.LinkAddress(v)
+			if oldNicInfo.LinkAddress == addr {
+				continue
+			}
 			if err := s.Stack.SetNICAddress(id, addr); err != nil {
 				return syserr.TranslateNetstackError(err)
 			}
+			changed = true
 		case linux.IFLA_IFNAME:
+			if oldNicInfo.Name == v.String() {
+				continue
+			}
 			if err := s.Stack.SetNICName(id, v.String()); err != nil {
 				return syserr.TranslateNetstackError(err)
 			}
+			changed = true
 		case linux.IFLA_MTU:
 			mtu, ok := v.Uint32()
 			if !ok {
 				return syserr.ErrInvalidArgument
 			}
+			if oldNicInfo.MTU == mtu {
+				continue
+			}
 			if err := s.Stack.SetNICMTU(id, mtu); err != nil {
 				return syserr.TranslateNetstackError(err)
 			}
+			changed = true
 		case linux.IFLA_TXQLEN:
 			// TODO(b/340388892): support IFLA_TXQLEN.
 		}
+	}
+
+	if changed {
+		s.sendChangeEvent(ctx, id)
 	}
 	return nil
 }
@@ -298,6 +377,8 @@ func (s *Stack) newVeth(ctx context.Context, linkAttrs map[uint16]nlmsg.BytesVie
 			}
 		}
 	}
+
+	s.linkMu.Lock()
 	ep, peerEP := veth.NewPair(defaultMTU, veth.DefaultBacklogSize)
 	id := s.Stack.NextNICID()
 	peerID := peerStack.Stack.NextNICID()
@@ -308,16 +389,21 @@ func (s *Stack) newVeth(ctx context.Context, linkAttrs map[uint16]nlmsg.BytesVie
 		Name: ifname,
 	})
 	if err != nil {
+		s.linkMu.Unlock()
 		return syserr.TranslateNetstackError(err)
 	}
-	if err := s.setLink(ctx, id, linkAttrs); err != nil {
+	if err := s.setLinkLocked(ctx, id, linkAttrs); err != nil {
+		s.linkMu.Unlock()
 		peerEP.Close()
 		return err
 	}
+	s.linkMu.Unlock()
 
 	if peerName == "" {
 		peerName = fmt.Sprintf("veth%d", peerID)
 	}
+	peerStack.linkMu.Lock()
+	defer peerStack.linkMu.Unlock()
 	err = peerStack.Stack.CreateNICWithOptions(peerID, packetsocket.New(ethernet.New(peerEP)), stack.NICOptions{
 		Name: peerName,
 	})
@@ -326,7 +412,7 @@ func (s *Stack) newVeth(ctx context.Context, linkAttrs map[uint16]nlmsg.BytesVie
 		return syserr.TranslateNetstackError(err)
 	}
 	if peerLinkAttrs != nil {
-		if err := peerStack.setLink(ctx, peerID, peerLinkAttrs); err != nil {
+		if err := peerStack.setLinkLocked(ctx, peerID, peerLinkAttrs); err != nil {
 			peerStack.Stack.RemoveNIC(peerID)
 			peerEP.Close()
 			return err
@@ -337,6 +423,9 @@ func (s *Stack) newVeth(ctx context.Context, linkAttrs map[uint16]nlmsg.BytesVie
 }
 
 func (s *Stack) newBridge(ctx context.Context, linkAttrs map[uint16]nlmsg.BytesView, linkInfoAttrs map[uint16]nlmsg.BytesView) *syserr.Error {
+	s.linkMu.Lock()
+	defer s.linkMu.Unlock()
+
 	ifname := ""
 
 	if v, ok := linkAttrs[linux.IFLA_IFNAME]; ok {
@@ -350,7 +439,7 @@ func (s *Stack) newBridge(ctx context.Context, linkAttrs map[uint16]nlmsg.BytesV
 	if err != nil {
 		return syserr.TranslateNetstackError(err)
 	}
-	if err := s.setLink(ctx, id, linkAttrs); err != nil {
+	if err := s.setLinkLocked(ctx, id, linkAttrs); err != nil {
 		return err
 	}
 

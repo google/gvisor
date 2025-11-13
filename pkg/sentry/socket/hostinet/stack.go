@@ -152,7 +152,7 @@ func (s *Stack) Interfaces() map[int32]inet.Interface {
 }
 
 // RemoveInterface implements inet.Stack.RemoveInterface.
-func (*Stack) RemoveInterface(idx int32) error {
+func (*Stack) RemoveInterface(ctx context.Context, idx int32) error {
 	return removeInterface(idx)
 }
 

@@ -101,7 +101,7 @@ func (p *Protocol) dumpLinks(ctx context.Context, s *netlink.Socket, msg *nlmsg.
 	}
 
 	for idx, i := range stack.Interfaces() {
-		addNewLinkMessage(ms, idx, i)
+		p.AddNewLinkMessage(ms, idx, i)
 	}
 
 	return nil
@@ -158,7 +158,7 @@ func (p *Protocol) getLink(ctx context.Context, s *netlink.Socket, msg *nlmsg.Me
 			return syserr.ErrInvalidArgument
 		}
 
-		addNewLinkMessage(ms, idx, i)
+		p.AddNewLinkMessage(ms, idx, i)
 		found = true
 		break
 	}
@@ -232,16 +232,10 @@ func (p *Protocol) delLink(ctx context.Context, s *netlink.Socket, msg *nlmsg.Me
 			return syserr.ErrNoDevice
 		}
 	}
-	return syserr.FromError(stack.RemoveInterface(ifinfomsg.Index))
+	return syserr.FromError(stack.RemoveInterface(ctx, ifinfomsg.Index))
 }
 
-// addNewLinkMessage appends RTM_NEWLINK message for the given interface into
-// the message set.
-func addNewLinkMessage(ms *nlmsg.MessageSet, idx int32, i inet.Interface) {
-	m := ms.AddMessage(linux.NetlinkMessageHeader{
-		Type: linux.RTM_NEWLINK,
-	})
-
+func writeLinkInfo(m *nlmsg.Message, idx int32, i inet.Interface) {
 	m.Put(&linux.InterfaceInfoMessage{
 		Family: linux.AF_UNSPEC,
 		Type:   i.DeviceType,
@@ -262,6 +256,26 @@ func addNewLinkMessage(ms *nlmsg.MessageSet, idx int32, i inet.Interface) {
 	m.PutAttr(linux.IFLA_BROADCAST, primitive.AsByteSlice(brd))
 
 	// TODO(gvisor.dev/issue/578): There are many more attributes.
+}
+
+// AddNewLinkMessage appends an RTM_NEWLINK message for the given interface into
+// the message set.
+// AddNewLinkMessage implements netlink.RouteProtocol.AddNewLinkMessage.
+func (p *Protocol) AddNewLinkMessage(ms *nlmsg.MessageSet, idx int32, i inet.Interface) {
+	m := ms.AddMessage(linux.NetlinkMessageHeader{
+		Type: linux.RTM_NEWLINK,
+	})
+	writeLinkInfo(m, idx, i)
+}
+
+// AddDelLinkMessage appends an RTM_DELLINK message for the given interface into
+// the message set.
+// AddDelLinkMessage implements netlink.RouteProtocol.AddDelLinkMessage.
+func (p *Protocol) AddDelLinkMessage(ms *nlmsg.MessageSet, idx int32, i inet.Interface) {
+	m := ms.AddMessage(linux.NetlinkMessageHeader{
+		Type: linux.RTM_DELLINK,
+	})
+	writeLinkInfo(m, idx, i)
 }
 
 // dumpAddrs handles RTM_GETADDR dump requests.

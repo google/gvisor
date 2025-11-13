@@ -31,6 +31,7 @@ struct Link {
   std::string name;
   uint32_t mtu;
   std::string address;
+  unsigned int flags;
 };
 
 PosixError DumpLinks(const FileDescriptor& fd, uint32_t seq,

@@ -1,3 +1,4 @@
+load("//pkg/sync/locking:locking.bzl", "declare_mutex")
 load("//tools:defs.bzl", "go_library", "proto_library")
 
 package(
@@ -5,10 +6,18 @@ package(
     licenses = ["notice"],
 )
 
+declare_mutex(
+    name = "netstack_link_mutex",
+    out = "netstack_link_mutex.go",
+    package = "netstack",
+    prefix = "netstackLink",
+)
+
 go_library(
     name = "netstack",
     srcs = [
         "netstack.go",
+        "netstack_link_mutex.go",
         "netstack_state.go",
         "provider.go",
         "save_restore.go",
@@ -48,6 +57,7 @@ go_library(
         "//pkg/sentry/socket/netstack/packetmmap",
         "//pkg/sentry/vfs",
         "//pkg/sync",
+        "//pkg/sync/locking",
         "//pkg/syserr",
         "//pkg/tcpip",
         "//pkg/tcpip/header",

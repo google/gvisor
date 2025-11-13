@@ -61,7 +61,7 @@ func (s *TestStack) Destroy() {
 }
 
 // RemoveInterface implements Stack.
-func (s *TestStack) RemoveInterface(idx int32) error {
+func (s *TestStack) RemoveInterface(ctx context.Context, idx int32) error {
 	delete(s.InterfacesMap, idx)
 	return nil
 }
