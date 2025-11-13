@@ -270,6 +270,12 @@ type containerManager struct {
 // StartRoot will start the root container process.
 func (cm *containerManager) StartRoot(cid *string, _ *struct{}) error {
 	log.Debugf("containerManager.StartRoot, cid: %s", *cid)
+	cm.l.mu.Lock()
+	state := cm.l.state
+	cm.l.mu.Unlock()
+	if state != created {
+		return fmt.Errorf("sandbox is not in created state, cannot start root container: state=%s", state)
+	}
 	// Tell the root container to start and wait for the result.
 	return cm.onStart()
 }
@@ -365,6 +371,12 @@ func (cm *containerManager) StartSubcontainer(args *StartArgs, _ *struct{}) erro
 	}
 	if args.CID == "" {
 		return errors.New("start argument missing container ID")
+	}
+	cm.l.mu.Lock()
+	state := cm.l.state
+	cm.l.mu.Unlock()
+	if state != started {
+		return fmt.Errorf("sandbox is not in started state, cannot start subcontainer: state=%s", state)
 	}
 	expectedFDs := 1 // At least one FD for the root filesystem.
 	expectedFDs += args.NumGoferFilestoreFDs
@@ -572,12 +584,11 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 	}
 
 	cm.restorer = &restorer{
-		readyToStart:  cm.onStart,
-		onRestoreDone: cm.onRestoreDone,
-		stateFile:     reader,
-		background:    o.Background,
-		timer:         timer,
-		mainMF:        mf,
+		cm:         cm,
+		stateFile:  reader,
+		background: o.Background,
+		timer:      timer,
+		mainMF:     mf,
 	}
 	cm.l.restoreDone = sync.NewCond(&cm.l.mu)
 	cm.l.state = restoringUnstarted
@@ -673,6 +684,15 @@ func getRestoreReadersForLocalCheckpointFiles(o *RestoreOpts) (io.ReadCloser, io
 		stateio.NewBufioReadCloser(pagesMetadataFile),
 		stateio.NewPagesFileFDReaderDefault(int32(pagesFile.Release())),
 		nil
+}
+
+func (cm *containerManager) onRestoreFailed(err error) {
+	cm.l.mu.Lock()
+	cm.l.state = restoreFailed
+	cm.l.restoreErr = err
+	cm.l.mu.Unlock()
+	cm.l.restoreDone.Broadcast()
+	cm.restorer = nil
 }
 
 func (cm *containerManager) onRestoreDone() {

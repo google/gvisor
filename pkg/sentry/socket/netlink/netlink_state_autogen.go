@@ -24,11 +24,12 @@ func (s *Socket) StateFields() []string {
 		"skType",
 		"ep",
 		"connection",
+		"netns",
+		"groups",
 		"bound",
 		"portID",
 		"sendBufferSize",
 		"filter",
-		"netns",
 	}
 }
 
@@ -47,11 +48,12 @@ func (s *Socket) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(7, &s.skType)
 	stateSinkObject.Save(8, &s.ep)
 	stateSinkObject.Save(9, &s.connection)
-	stateSinkObject.Save(10, &s.bound)
-	stateSinkObject.Save(11, &s.portID)
-	stateSinkObject.Save(12, &s.sendBufferSize)
-	stateSinkObject.Save(13, &s.filter)
-	stateSinkObject.Save(14, &s.netns)
+	stateSinkObject.Save(10, &s.netns)
+	stateSinkObject.Save(11, &s.groups)
+	stateSinkObject.Save(12, &s.bound)
+	stateSinkObject.Save(13, &s.portID)
+	stateSinkObject.Save(14, &s.sendBufferSize)
+	stateSinkObject.Save(15, &s.filter)
 }
 
 func (s *Socket) afterLoad(context.Context) {}
@@ -68,11 +70,12 @@ func (s *Socket) StateLoad(ctx context.Context, stateSourceObject state.Source) 
 	stateSourceObject.Load(7, &s.skType)
 	stateSourceObject.Load(8, &s.ep)
 	stateSourceObject.Load(9, &s.connection)
-	stateSourceObject.Load(10, &s.bound)
-	stateSourceObject.Load(11, &s.portID)
-	stateSourceObject.Load(12, &s.sendBufferSize)
-	stateSourceObject.Load(13, &s.filter)
-	stateSourceObject.Load(14, &s.netns)
+	stateSourceObject.Load(10, &s.netns)
+	stateSourceObject.Load(11, &s.groups)
+	stateSourceObject.Load(12, &s.bound)
+	stateSourceObject.Load(13, &s.portID)
+	stateSourceObject.Load(14, &s.sendBufferSize)
+	stateSourceObject.Load(15, &s.filter)
 }
 
 func (k *kernelSCM) StateTypeName() string {

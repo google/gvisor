@@ -110,6 +110,7 @@ func (n *Namespace) StateFields() []string {
 		"isRoot",
 		"userNS",
 		"abstractSockets",
+		"netlinkMcastTable",
 	}
 }
 
@@ -124,6 +125,7 @@ func (n *Namespace) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(3, &n.isRoot)
 	stateSinkObject.Save(4, &n.userNS)
 	stateSinkObject.Save(5, &n.abstractSockets)
+	stateSinkObject.Save(6, &n.netlinkMcastTable)
 }
 
 // +checklocksignore
@@ -134,6 +136,7 @@ func (n *Namespace) StateLoad(ctx context.Context, stateSourceObject state.Sourc
 	stateSourceObject.Load(3, &n.isRoot)
 	stateSourceObject.Load(4, &n.userNS)
 	stateSourceObject.Load(5, &n.abstractSockets)
+	stateSourceObject.Load(6, &n.netlinkMcastTable)
 	stateSourceObject.AfterLoad(func() { n.afterLoad(ctx) })
 }
 
@@ -161,10 +164,36 @@ func (r *namespaceRefs) StateLoad(ctx context.Context, stateSourceObject state.S
 	stateSourceObject.AfterLoad(func() { r.afterLoad(ctx) })
 }
 
+func (m *McastTable) StateTypeName() string {
+	return "pkg/sentry/inet.McastTable"
+}
+
+func (m *McastTable) StateFields() []string {
+	return []string{
+		"socks",
+	}
+}
+
+func (m *McastTable) beforeSave() {}
+
+// +checklocksignore
+func (m *McastTable) StateSave(stateSinkObject state.Sink) {
+	m.beforeSave()
+	stateSinkObject.Save(0, &m.socks)
+}
+
+func (m *McastTable) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (m *McastTable) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &m.socks)
+}
+
 func init() {
 	state.Register((*abstractEndpoint)(nil))
 	state.Register((*AbstractSocketNamespace)(nil))
 	state.Register((*TCPBufferSize)(nil))
 	state.Register((*Namespace)(nil))
 	state.Register((*namespaceRefs)(nil))
+	state.Register((*McastTable)(nil))
 }

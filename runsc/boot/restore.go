@@ -98,11 +98,8 @@ type restorer struct {
 	// deviceFile is the required to start the platform.
 	deviceFile *fd.FD
 
-	// readyToStart is a callback triggered when the sandbox is ready to start.
-	readyToStart func() error
-
-	// onRestoreDone is a callback triggered when the restore is done.
-	onRestoreDone func()
+	// cm is the container manager that is used to restore the sandbox.
+	cm *containerManager
 
 	// checkpointedSpecs contains the map of container specs used during
 	// checkpoint.
@@ -160,13 +157,11 @@ func (r *restorer) restoreContainerInfo(l *Loader, info *containerInfo, containe
 	// Non-container-specific restore work:
 
 	if len(r.containers) == r.totalContainers {
-		if err := specutils.RestoreValidateSpec(r.checkpointedSpecs, l.GetContainerSpecs(), l.root.conf); err != nil {
-			return fmt.Errorf("failed to handle restore spec validation: %w", err)
-		}
-		r.timer.Reached("specs validated")
-
 		// Trigger the restore if this is the last container.
-		return r.restore(l)
+		if err := r.restore(l); err != nil {
+			r.cm.onRestoreFailed(err)
+			return err
+		}
 	}
 	return nil
 }
@@ -182,6 +177,13 @@ func createNetworkStackForRestore(l *Loader) (*stack.Stack, inet.Stack) {
 
 func (r *restorer) restore(l *Loader) error {
 	log.Infof("Starting to restore %d containers", len(r.containers))
+
+	// Validate the container specs to ensure they did not meaningfully change
+	// between checkpoint and restore.
+	if err := specutils.RestoreValidateSpec(r.checkpointedSpecs, l.GetContainerSpecs(), l.root.conf); err != nil {
+		return fmt.Errorf("failed to handle restore spec validation: %w", err)
+	}
+	r.timer.Reached("specs validated")
 
 	// Create a new root network namespace with the network stack of the
 	// old kernel to preserve the existing network configuration.
@@ -353,7 +355,7 @@ func (r *restorer) restore(l *Loader) error {
 	cu.Clean()
 
 	r.timer.Reached("Starting sandbox")
-	if err := r.readyToStart(); err != nil {
+	if err := r.cm.onStart(); err != nil {
 		return fmt.Errorf("restorer.readyToStart callback failed: %w", err)
 	}
 
@@ -386,7 +388,7 @@ func (r *restorer) restore(l *Loader) error {
 			}
 		}
 
-		r.onRestoreDone()
+		r.cm.onRestoreDone()
 		postRestoreThread.Reached("kernel notified")
 
 		log.Infof("Restore successful")

@@ -1066,6 +1066,18 @@ func (s *Stack) removeNICLocked(id tcpip.NICID) (func(), tcpip.Error) {
 	return nic.remove(true /* closeLinkEndpoint */)
 }
 
+// GetNICCoordinatorID returns the ID of the coordinator device of a NIC.
+func (s *Stack) GetNICCoordinatorID(id tcpip.NICID) (tcpip.NICID, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if nic, ok := s.nics[id]; ok {
+		if nic.Primary != nil {
+			return nic.Primary.id, true
+		}
+	}
+	return 0, false
+}
+
 // SetNICCoordinator sets a coordinator device.
 func (s *Stack) SetNICCoordinator(id tcpip.NICID, mid tcpip.NICID) tcpip.Error {
 	s.mu.Lock()
@@ -1176,65 +1188,83 @@ func (s *Stack) HasNIC(id tcpip.NICID) bool {
 	return ok
 }
 
+type forwardingFn func(tcpip.NetworkProtocolNumber) (bool, tcpip.Error)
+
+func forwardingValue(forwardingFn forwardingFn, proto tcpip.NetworkProtocolNumber, nicID tcpip.NICID, fnName string) (forward bool, ok bool) {
+	switch forwarding, err := forwardingFn(proto); err.(type) {
+	case nil:
+		return forwarding, true
+	case *tcpip.ErrUnknownProtocol:
+		panic(fmt.Sprintf("expected network protocol %d to be available on NIC %d", proto, nicID))
+	case *tcpip.ErrNotSupported:
+		// Not all network protocols support forwarding.
+	default:
+		panic(fmt.Sprintf("nic(id=%d).%s(%d): %s", nicID, fnName, proto, err))
+	}
+	return false, false
+}
+
+// precondition: s.mu is held.
+func (s *Stack) nicInfo(nic *nic, id tcpip.NICID) *NICInfo {
+	flags := NICStateFlags{
+		Up:          true, // Netstack interfaces are always up.
+		Running:     nic.Enabled(),
+		Promiscuous: nic.Promiscuous(),
+		Loopback:    nic.IsLoopback(),
+	}
+
+	netStats := make(map[tcpip.NetworkProtocolNumber]NetworkEndpointStats)
+	for proto, netEP := range nic.networkEndpoints {
+		netStats[proto] = netEP.Stats()
+	}
+
+	info := NICInfo{
+		Name:                nic.name,
+		LinkAddress:         nic.NetworkLinkEndpoint.LinkAddress(),
+		ProtocolAddresses:   nic.primaryAddresses(),
+		Flags:               flags,
+		MTU:                 nic.NetworkLinkEndpoint.MTU(),
+		Stats:               nic.stats.local,
+		NetworkStats:        netStats,
+		Context:             nic.context,
+		ARPHardwareType:     nic.NetworkLinkEndpoint.ARPHardwareType(),
+		Forwarding:          make(map[tcpip.NetworkProtocolNumber]bool),
+		MulticastForwarding: make(map[tcpip.NetworkProtocolNumber]bool),
+	}
+
+	for proto := range s.networkProtocols {
+		if forwarding, ok := forwardingValue(nic.forwarding, proto, id, "forwarding"); ok {
+			info.Forwarding[proto] = forwarding
+		}
+
+		if multicastForwarding, ok := forwardingValue(nic.multicastForwarding, proto, id, "multicastForwarding"); ok {
+			info.MulticastForwarding[proto] = multicastForwarding
+		}
+	}
+
+	return &info
+}
+
+// SingleNICInfo returns the NICInfo for the given NICID.
+func (s *Stack) SingleNICInfo(id tcpip.NICID) (*NICInfo, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if nic, ok := s.nics[id]; !ok {
+		return nil, false
+	} else {
+		return s.nicInfo(nic, id), true
+	}
+}
+
 // NICInfo returns a map of NICIDs to their associated information.
 func (s *Stack) NICInfo() map[tcpip.NICID]NICInfo {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	type forwardingFn func(tcpip.NetworkProtocolNumber) (bool, tcpip.Error)
-	forwardingValue := func(forwardingFn forwardingFn, proto tcpip.NetworkProtocolNumber, nicID tcpip.NICID, fnName string) (forward bool, ok bool) {
-		switch forwarding, err := forwardingFn(proto); err.(type) {
-		case nil:
-			return forwarding, true
-		case *tcpip.ErrUnknownProtocol:
-			panic(fmt.Sprintf("expected network protocol %d to be available on NIC %d", proto, nicID))
-		case *tcpip.ErrNotSupported:
-			// Not all network protocols support forwarding.
-		default:
-			panic(fmt.Sprintf("nic(id=%d).%s(%d): %s", nicID, fnName, proto, err))
-		}
-		return false, false
-	}
-
 	nics := make(map[tcpip.NICID]NICInfo)
 	for id, nic := range s.nics {
-		flags := NICStateFlags{
-			Up:          true, // Netstack interfaces are always up.
-			Running:     nic.Enabled(),
-			Promiscuous: nic.Promiscuous(),
-			Loopback:    nic.IsLoopback(),
-		}
-
-		netStats := make(map[tcpip.NetworkProtocolNumber]NetworkEndpointStats)
-		for proto, netEP := range nic.networkEndpoints {
-			netStats[proto] = netEP.Stats()
-		}
-
-		info := NICInfo{
-			Name:                nic.name,
-			LinkAddress:         nic.NetworkLinkEndpoint.LinkAddress(),
-			ProtocolAddresses:   nic.primaryAddresses(),
-			Flags:               flags,
-			MTU:                 nic.NetworkLinkEndpoint.MTU(),
-			Stats:               nic.stats.local,
-			NetworkStats:        netStats,
-			Context:             nic.context,
-			ARPHardwareType:     nic.NetworkLinkEndpoint.ARPHardwareType(),
-			Forwarding:          make(map[tcpip.NetworkProtocolNumber]bool),
-			MulticastForwarding: make(map[tcpip.NetworkProtocolNumber]bool),
-		}
-
-		for proto := range s.networkProtocols {
-			if forwarding, ok := forwardingValue(nic.forwarding, proto, id, "forwarding"); ok {
-				info.Forwarding[proto] = forwarding
-			}
-
-			if multicastForwarding, ok := forwardingValue(nic.multicastForwarding, proto, id, "multicastForwarding"); ok {
-				info.MulticastForwarding[proto] = multicastForwarding
-			}
-		}
-
-		nics[id] = info
+		nics[id] = *s.nicInfo(nic, id)
 	}
 	return nics
 }
