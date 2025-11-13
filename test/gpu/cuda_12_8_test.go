@@ -26,7 +26,6 @@ import (
 
 var testSuiteCompatibility = map[string]cuda.Compatibility{}
 
-// TODO(b/388095023): Enable these tests once they are tested.
 var skippedTestSuites = map[string]string{}
 
 var testCompatibility = map[string]cuda.Compatibility{}
