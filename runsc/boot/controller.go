@@ -584,12 +584,11 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 	}
 
 	cm.restorer = &restorer{
-		readyToStart:  cm.onStart,
-		onRestoreDone: cm.onRestoreDone,
-		stateFile:     reader,
-		background:    o.Background,
-		timer:         timer,
-		mainMF:        mf,
+		cm:         cm,
+		stateFile:  reader,
+		background: o.Background,
+		timer:      timer,
+		mainMF:     mf,
 	}
 	cm.l.restoreDone = sync.NewCond(&cm.l.mu)
 	cm.l.state = restoringUnstarted
@@ -685,6 +684,15 @@ func getRestoreReadersForLocalCheckpointFiles(o *RestoreOpts) (io.ReadCloser, io
 		stateio.NewBufioReadCloser(pagesMetadataFile),
 		stateio.NewPagesFileFDReaderDefault(int32(pagesFile.Release())),
 		nil
+}
+
+func (cm *containerManager) onRestoreFailed(err error) {
+	cm.l.mu.Lock()
+	cm.l.state = restoreFailed
+	cm.l.restoreErr = err
+	cm.l.mu.Unlock()
+	cm.l.restoreDone.Broadcast()
+	cm.restorer = nil
 }
 
 func (cm *containerManager) onRestoreDone() {
