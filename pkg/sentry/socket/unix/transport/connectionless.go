@@ -197,6 +197,12 @@ func (e *connectionlessEndpoint) Readiness(mask waiter.EventMask) waiter.EventMa
 	defer e.Unlock()
 
 	ready := waiter.EventMask(0)
+	// e.receiver is nil only when the endpoint is closed, return empty
+	// events mask in this case.
+	if e.receiver == nil {
+		return ready
+	}
+
 	if mask&waiter.ReadableEvents != 0 && e.receiver.Readable() {
 		ready |= waiter.ReadableEvents
 	}
