@@ -276,6 +276,11 @@ type Loader struct {
 	// +checklocks:mu
 	containerSpecs map[string]*specs.Spec
 
+	// failedToStart is a set of container IDs that failed to start.
+	//
+	// +checklocks:mu
+	failedToStart map[string]struct{}
+
 	// portForwardProxies is a list of active port forwarding connections.
 	//
 	// +checklocks:mu
@@ -491,6 +496,7 @@ func New(args Args) (*Loader, error) {
 		hostTHP:        args.HostTHP,
 		containerIDs:   make(map[string]string),
 		containerSpecs: make(map[string]*specs.Spec),
+		failedToStart:  make(map[string]struct{}),
 		saveFDs:        args.SaveFDs,
 	}
 	setLoaderFromArgsExtra(l, &args)
@@ -1128,6 +1134,11 @@ func (l *Loader) startSubcontainer(spec *specs.Spec, conf *config.Config, cid st
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
+	cu := cleanup.Make(func() {
+		l.failedToStart[cid] = struct{}{} // +checklocksignore: l.mu is locked above
+	})
+	defer cu.Clean()
+
 	ep := l.processes[execID{cid: cid}]
 	if ep == nil {
 		return fmt.Errorf("trying to start a deleted container %q", cid)
@@ -1195,8 +1206,6 @@ func (l *Loader) startSubcontainer(spec *specs.Spec, conf *config.Config, cid st
 		info.stdioFDs = stdioFDs
 	}
 
-	var cu cleanup.Cleanup
-	defer cu.Clean()
 	if devGoferFD != nil {
 		cu.Add(func() {
 			// createContainerProcess() will consume devGoferFD and initialize a gofer
@@ -2129,6 +2138,9 @@ func (l *Loader) containerRuntimeState(cid string) ContainerRuntimeState {
 	}
 	if exec.tg == nil {
 		if l.state == restoreFailed {
+			return RuntimeStateStopped
+		}
+		if _, ok := l.failedToStart[cid]; ok {
 			return RuntimeStateStopped
 		}
 		// Container has no thread group assigned, so it has not started yet.
