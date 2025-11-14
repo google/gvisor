@@ -57,7 +57,7 @@ type RouteTable struct {
 	// cleanupPendingRoutesTimer is a timer that triggers a routine to remove
 	// pending routes that are expired.
 	// +checklocks:pendingMu
-	cleanupPendingRoutesTimer tcpip.Timer
+	cleanupPendingRoutesTimer tcpip.Timer `state:"nosave"`
 	// +checklocks:pendingMu
 	isCleanupRoutineRunning bool
 

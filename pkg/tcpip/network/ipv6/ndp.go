@@ -471,7 +471,7 @@ type timer struct {
 	// done indicates to the timer that the timer was stopped.
 	done *bool
 
-	timer tcpip.Timer
+	timer tcpip.Timer `state:"nosave"`
 }
 
 // +stateify savable

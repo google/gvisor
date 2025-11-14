@@ -291,13 +291,13 @@ type GenericMulticastProtocolState struct {
 	robustnessVariable uint8
 	queryInterval      time.Duration
 	mode               protocolMode
-	modeTimer          tcpip.Timer
+	modeTimer          tcpip.Timer `state:"nosave"`
 
-	generalQueryV2Timer tcpip.Timer
+	generalQueryV2Timer tcpip.Timer `state:"nosave"`
 	// TODO(b/341946753): Restore when netstack is savable.
 	generalQueryV2TimerFiresAt time.Time `state:"nosave"`
 
-	stateChangedReportV2Timer    tcpip.Timer
+	stateChangedReportV2Timer    tcpip.Timer `state:"nosave"`
 	stateChangedReportV2TimerSet bool
 }
 
