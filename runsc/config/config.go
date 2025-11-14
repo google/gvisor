@@ -410,6 +410,10 @@ type Config struct {
 	// AllowSUID causes ID elevation to be allowed when execving into executables
 	// with the SUID/SGID bits set.
 	AllowSUID bool `flag:"allow-suid"`
+
+	// UseCPUNums causes the sentry to use KVM CPU numbers as CPU numbers in the
+	// sentry. This is necessary to support features like rseq.
+	UseCPUNums bool `flag:"use-cpu-nums"`
 }
 
 func (c *Config) validate() error {
@@ -461,6 +465,7 @@ func (c *Config) Log() {
 	log.Infof("RootDir: %s", c.RootDir)
 	log.Infof("FileAccess: %v / Directfs: %t / Overlay: %v", c.FileAccess, c.DirectFS, c.GetOverlay2())
 	log.Infof("Network: %v", c.Network)
+	log.Infof("UseCPUNums: %t", c.UseCPUNums)
 	if c.Debug || c.Strace {
 		log.Infof("Debug: %t. Strace: %t, max size: %d, syscalls: %s", c.Debug, c.Strace, c.StraceLogSize, c.StraceSyscalls)
 	}
