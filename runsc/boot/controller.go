@@ -537,7 +537,7 @@ type RestoreOpts struct {
 // The container's current kernel is destroyed, a restore environment is
 // created, and the kernel is recreated with the restore state file. The
 // container then sends the signal to start.
-func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
+func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) (retErr error) {
 	timer := starttime.Timer("Restore")
 	timer.Reached("cm.Restore RPC")
 	log.Debugf("containerManager.Restore")
@@ -547,9 +547,15 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 	cu := cleanup.Make(cm.l.mu.Unlock)
 	defer cu.Clean()
 
-	if cm.l.state > created {
+	if cm.l.state != created {
 		return fmt.Errorf("cannot restore a container in state=%s", cm.l.state)
 	}
+	defer func() {
+		if retErr != nil {
+			cu.Clean() // Release `cm.l.mu` as onRestoreFailed will acquire it.
+			cm.onRestoreFailed(fmt.Errorf("Restore failed: %w", retErr))
+		}
+	}()
 	if len(o.Files) == 0 {
 		return fmt.Errorf("at least one file must be passed to Restore")
 	}
@@ -703,7 +709,7 @@ func (cm *containerManager) onRestoreDone() {
 	cm.restorer = nil
 }
 
-func (cm *containerManager) RestoreSubcontainer(args *StartArgs, _ *struct{}) error {
+func (cm *containerManager) RestoreSubcontainer(args *StartArgs, _ *struct{}) (retErr error) {
 	timeline := timing.OrphanTimeline(fmt.Sprintf("cont:%s", args.CID[0:min(8, len(args.CID))]), gtime.Now()).Lease()
 	defer timeline.End()
 	log.Debugf("containerManager.RestoreSubcontainer, cid: %s, args: %+v", args.CID, args)
@@ -714,6 +720,11 @@ func (cm *containerManager) RestoreSubcontainer(args *StartArgs, _ *struct{}) er
 	if state != restoringUnstarted {
 		return fmt.Errorf("sandbox is not being restored, cannot restore subcontainer: state=%s", state)
 	}
+	defer func() {
+		if retErr != nil {
+			cm.onRestoreFailed(fmt.Errorf("RestoreSubcontainer failed: %w", retErr))
+		}
+	}()
 
 	// Validate arguments.
 	if args.Spec == nil {
