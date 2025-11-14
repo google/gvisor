@@ -832,6 +832,10 @@ func (l *Loader) Destroy() {
 	}
 	l.mu.Unlock()
 
+	// Wake up all checkpoint waiters. This must be done before the controller
+	// is stopped, since its stop sequence requires all pending RPCs to complete.
+	l.k.SignalAllCheckpointWaiters(fmt.Errorf("Loader destroyed"))
+
 	// Stop the control server. This will indirectly stop any
 	// long-running control operations that are in flight, e.g.
 	// profiling operations.

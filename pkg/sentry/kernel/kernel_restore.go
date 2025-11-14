@@ -17,6 +17,7 @@ package kernel
 import (
 	"fmt"
 	"io"
+	"math"
 
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/context"
@@ -130,6 +131,11 @@ func (k *Kernel) WaitForCheckpoint() error {
 	defer k.CheckpointWait.Unregister(key)
 
 	return <-ch
+}
+
+// SignalAllCheckpointWaiters signals all checkpoint waiters with err.
+func (k *Kernel) SignalAllCheckpointWaiters(err error) {
+	k.CheckpointWait.signal(CheckpointGeneration{Count: math.MaxUint32}, err)
 }
 
 type checkpointWaiter struct {

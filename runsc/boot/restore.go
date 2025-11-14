@@ -159,7 +159,6 @@ func (r *restorer) restoreContainerInfo(l *Loader, info *containerInfo, containe
 	if len(r.containers) == r.totalContainers {
 		// Trigger the restore if this is the last container.
 		if err := r.restore(l); err != nil {
-			r.cm.onRestoreFailed(err)
 			return err
 		}
 	}
