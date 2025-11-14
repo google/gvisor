@@ -380,7 +380,7 @@ func (r *runExecveAfterSiblingExitStop) execute(t *Task) taskRunState {
 	}
 
 	// Switch to the new process.
-	t.MemoryManager().Deactivate()
+	t.p.PrepareExecve()
 	// Update credentials to reflect the execve. This should precede switching
 	// MMs to ensure that dumpability has been reset first, if needed.
 	t.creds.Store(r.newCreds)
@@ -396,10 +396,6 @@ func (r *runExecveAfterSiblingExitStop) execute(t *Task) taskRunState {
 
 	t.unstopVforkParent()
 	t.p.FullStateChanged()
-	// NOTE(b/30316266): All locks must be dropped prior to calling Activate.
-	if err := t.MemoryManager().Activate(t); err != nil {
-		panic("unable to activate mm: " + err.Error())
-	}
 
 	t.ptraceExec(oldTID)
 	return (*runSyscallExit)(nil)

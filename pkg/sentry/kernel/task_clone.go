@@ -344,7 +344,7 @@ func (t *Task) Clone(args *linux.CloneArgs) (ThreadID, *SyscallControl, error) {
 	}
 	if args.Flags&linux.CLONE_CHILD_SETTID != 0 {
 		ctid := nt.ThreadID()
-		ctid.CopyOut(nt.CopyContext(t, usermem.IOOpts{AddressSpaceActive: false}), hostarch.Addr(args.ChildTID))
+		ctid.CopyOut(nt.CopyContext(t, usermem.IOOpts{}), hostarch.Addr(args.ChildTID))
 	}
 	ntid := t.tg.pidns.IDOfTask(nt)
 	if args.Flags&linux.CLONE_PARENT_SETTID != 0 {
