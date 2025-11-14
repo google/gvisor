@@ -66,6 +66,7 @@ func fillAddressSpace() (specialRegions []specialVirtualRegion) {
 	pSize := uintptr(1) << ring0.PhysicalAddressBits
 	pSize -= reservedMemory
 
+	maxUserAddr := uintptr(0)
 	// Add specifically excluded regions; see excludeVirtualRegion.
 	if err := applyVirtualRegions(func(vr virtualRegion) {
 		if excludeVirtualRegion(vr) {
@@ -81,9 +82,16 @@ func fillAddressSpace() (specialRegions []specialVirtualRegion) {
 			})
 			log.Infof("mmio: virtual [%x,%x)", vr.virtual, vr.virtual+vr.length)
 		}
+		if vr.filename != "[vsyscall]" {
+			maxUserAddr = vr.region.virtual + vr.region.length
+		}
 	}); err != nil {
 		panic(fmt.Sprintf("error parsing /proc/self/maps: %v", err))
 	}
+
+	var archRegions []specialVirtualRegion
+	vSize, archRegions = archSpecialRegions(vSize, maxUserAddr)
+	specialRegions = append(specialRegions, archRegions...)
 
 	// Do we need any more work?
 	if vSize < pSize {
@@ -109,7 +117,7 @@ func fillAddressSpace() (specialRegions []specialVirtualRegion) {
 	current := required // Attempted mmap size.
 	filled := uintptr(0)
 	suggestedAddr := uintptr(0)
-	if ring0.VirtualAddressBits > 48 {
+	if exendedAddressSpaceAllowed && ring0.VirtualAddressBits > 48 {
 		// Pass a hint address above 47 bits to indicate to the kernel that
 		// we can handle, and want, mappings above 47 bits:
 		// https://docs.kernel.org/arch/x86/x86_64/5level-paging.html#user-space-and-large-virtual-address-space.

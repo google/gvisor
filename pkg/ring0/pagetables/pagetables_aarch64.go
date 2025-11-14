@@ -91,6 +91,9 @@ type MapOpts struct {
 	// User indicates the page is a user page.
 	User bool
 
+	// Static indicates the entries should not be cleared/freed.
+	Static bool
+
 	// MemoryType is the memory type.
 	MemoryType hostarch.MemoryType
 }
@@ -156,7 +159,7 @@ func (p *PTE) IsSect() bool {
 // This does not change the sect page property.
 //
 //go:nosplit
-func (p *PTE) Set(addr uintptr, opts MapOpts) {
+func (p *PTE) Set(addr uintptr, opts *MapOpts) {
 	v := (addr &^ optionMask) | nG | readOnly | protDefault
 	// Note: p.IsSect is manually inlined to reduce stack size for
 	//       nosplit-ness.
