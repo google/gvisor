@@ -141,7 +141,7 @@ type AcceleratorType string
 const (
 	AcceleratorTypeTeslaT4GPU = AcceleratorType("nvidia-tesla-t4")
 	AcceleratorTypeA100GPU    = AcceleratorType("nvidia-tesla-a100")
-	AcceleratorTypeL4GPU      = AcceleratorType("nvidia-tesla-l4")
+	AcceleratorTypeL4GPU      = AcceleratorType("nvidia-l4")
 	AcceleratorTypeV4PodTPU   = AcceleratorType("tpu-v4-pod")
 )
 
