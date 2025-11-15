@@ -121,6 +121,9 @@ type Platform interface {
 	// in parallel. Concurrent calls to Context.Switch() beyond
 	// ConcurrencyCount() may block until previous calls have returned.
 	ConcurrencyCount() int
+
+	// Name returns the name of the platform.
+	Name() string
 }
 
 // NoCPUPreemptionDetection implements Platform.DetectsCPUPreemption and
