@@ -31,7 +31,7 @@ var (
 
 func getLargeAddressesEnabled() bool {
 	featureSet := cpuid.HostFeatureSet()
-	return featureSet.HasFeature(cpuid.X86FeatureLA57)
+	return featureSet.HasFeature(cpuid.X86FeatureLA57) && cpuid.IsFiveLevelPagingEnabled
 }
 
 func getLowerTopAligned() uintptr {
