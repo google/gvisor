@@ -17,6 +17,7 @@ package transport
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/state"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -39,6 +40,9 @@ var (
 
 // NewConnectionless creates a new unbound dgram endpoint.
 func NewConnectionless(ctx context.Context) Endpoint {
+	if state.IsSaving.Load() {
+		panic("transport.connectionlessEndpoint being created during kernel save")
+	}
 	ep := &connectionlessEndpoint{baseEndpoint{Queue: &waiter.Queue{}}}
 	q := queue{ReaderQueue: ep.Queue, WriterQueue: &waiter.Queue{}, limit: defaultBufferSize}
 	q.InitRefs()
@@ -67,6 +71,9 @@ func (e *connectionlessEndpoint) Close(ctx context.Context) {
 
 	e.receiver.CloseRecv()
 	r := e.receiver
+	if state.IsSaving.Load() {
+		panic("transport.connectionlessEndpoint being closed during kernel save")
+	}
 	e.receiver = nil
 	e.Unlock()
 

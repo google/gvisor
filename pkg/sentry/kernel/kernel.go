@@ -704,7 +704,9 @@ func (k *Kernel) SaveTo(ctx context.Context, stateFile, pagesMetadata io.WriteCl
 
 	// Save the kernel state.
 	kernelStart := time.Now()
+	state.IsSaving.Store(true)
 	stats, err := state.Save(ctx, stateFile, k)
+	state.IsSaving.Store(false)
 	if err != nil {
 		return err
 	}
