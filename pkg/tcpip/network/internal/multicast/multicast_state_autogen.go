@@ -16,7 +16,6 @@ func (r *RouteTable) StateFields() []string {
 	return []string{
 		"installedRoutes",
 		"pendingRoutes",
-		"cleanupPendingRoutesTimer",
 		"isCleanupRoutineRunning",
 		"config",
 	}
@@ -29,9 +28,8 @@ func (r *RouteTable) StateSave(stateSinkObject state.Sink) {
 	r.beforeSave()
 	stateSinkObject.Save(0, &r.installedRoutes)
 	stateSinkObject.Save(1, &r.pendingRoutes)
-	stateSinkObject.Save(2, &r.cleanupPendingRoutesTimer)
-	stateSinkObject.Save(3, &r.isCleanupRoutineRunning)
-	stateSinkObject.Save(4, &r.config)
+	stateSinkObject.Save(2, &r.isCleanupRoutineRunning)
+	stateSinkObject.Save(3, &r.config)
 }
 
 func (r *RouteTable) afterLoad(context.Context) {}
@@ -40,9 +38,8 @@ func (r *RouteTable) afterLoad(context.Context) {}
 func (r *RouteTable) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.installedRoutes)
 	stateSourceObject.Load(1, &r.pendingRoutes)
-	stateSourceObject.Load(2, &r.cleanupPendingRoutesTimer)
-	stateSourceObject.Load(3, &r.isCleanupRoutineRunning)
-	stateSourceObject.Load(4, &r.config)
+	stateSourceObject.Load(2, &r.isCleanupRoutineRunning)
+	stateSourceObject.Load(3, &r.config)
 }
 
 func (r *InstalledRoute) StateTypeName() string {

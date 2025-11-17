@@ -525,7 +525,6 @@ func (t *timer) StateTypeName() string {
 func (t *timer) StateFields() []string {
 	return []string{
 		"done",
-		"timer",
 	}
 }
 
@@ -535,7 +534,6 @@ func (t *timer) beforeSave() {}
 func (t *timer) StateSave(stateSinkObject state.Sink) {
 	t.beforeSave()
 	stateSinkObject.Save(0, &t.done)
-	stateSinkObject.Save(1, &t.timer)
 }
 
 func (t *timer) afterLoad(context.Context) {}
@@ -543,7 +541,6 @@ func (t *timer) afterLoad(context.Context) {}
 // +checklocksignore
 func (t *timer) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &t.done)
-	stateSourceObject.Load(1, &t.timer)
 }
 
 func (o *offLinkRoute) StateTypeName() string {

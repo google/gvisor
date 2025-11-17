@@ -17,7 +17,6 @@ func (d *dadState) StateFields() []string {
 		"nonce",
 		"extendRequest",
 		"done",
-		"timer",
 		"completionHandlers",
 	}
 }
@@ -30,8 +29,7 @@ func (d *dadState) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &d.nonce)
 	stateSinkObject.Save(1, &d.extendRequest)
 	stateSinkObject.Save(2, &d.done)
-	stateSinkObject.Save(3, &d.timer)
-	stateSinkObject.Save(4, &d.completionHandlers)
+	stateSinkObject.Save(3, &d.completionHandlers)
 }
 
 func (d *dadState) afterLoad(context.Context) {}
@@ -41,8 +39,7 @@ func (d *dadState) StateLoad(ctx context.Context, stateSourceObject state.Source
 	stateSourceObject.Load(0, &d.nonce)
 	stateSourceObject.Load(1, &d.extendRequest)
 	stateSourceObject.Load(2, &d.done)
-	stateSourceObject.Load(3, &d.timer)
-	stateSourceObject.Load(4, &d.completionHandlers)
+	stateSourceObject.Load(3, &d.completionHandlers)
 }
 
 func (d *DADOptions) StateTypeName() string {
@@ -237,9 +234,6 @@ func (g *GenericMulticastProtocolState) StateFields() []string {
 		"robustnessVariable",
 		"queryInterval",
 		"mode",
-		"modeTimer",
-		"generalQueryV2Timer",
-		"stateChangedReportV2Timer",
 		"stateChangedReportV2TimerSet",
 	}
 }
@@ -254,10 +248,7 @@ func (g *GenericMulticastProtocolState) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(2, &g.robustnessVariable)
 	stateSinkObject.Save(3, &g.queryInterval)
 	stateSinkObject.Save(4, &g.mode)
-	stateSinkObject.Save(5, &g.modeTimer)
-	stateSinkObject.Save(6, &g.generalQueryV2Timer)
-	stateSinkObject.Save(7, &g.stateChangedReportV2Timer)
-	stateSinkObject.Save(8, &g.stateChangedReportV2TimerSet)
+	stateSinkObject.Save(5, &g.stateChangedReportV2TimerSet)
 }
 
 func (g *GenericMulticastProtocolState) afterLoad(context.Context) {}
@@ -269,10 +260,7 @@ func (g *GenericMulticastProtocolState) StateLoad(ctx context.Context, stateSour
 	stateSourceObject.Load(2, &g.robustnessVariable)
 	stateSourceObject.Load(3, &g.queryInterval)
 	stateSourceObject.Load(4, &g.mode)
-	stateSourceObject.Load(5, &g.modeTimer)
-	stateSourceObject.Load(6, &g.generalQueryV2Timer)
-	stateSourceObject.Load(7, &g.stateChangedReportV2Timer)
-	stateSourceObject.Load(8, &g.stateChangedReportV2TimerSet)
+	stateSourceObject.Load(5, &g.stateChangedReportV2TimerSet)
 }
 
 func (m *MultiCounterIPForwardingStats) StateTypeName() string {
