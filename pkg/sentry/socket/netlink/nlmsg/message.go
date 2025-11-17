@@ -410,49 +410,49 @@ func (v *BytesView) Int32() (int32, bool) {
 // NetToHostU16 converts a uint16 in network byte order to
 // host byte order value.
 func NetToHostU16(v uint16) uint16 {
-	b := make([]byte, 2)
-	binary.NativeEndian.PutUint16(b, v)
-	return binary.BigEndian.Uint16(b)
+	var b [2]byte
+	binary.BigEndian.PutUint16(b[:], v)
+	return binary.NativeEndian.Uint16(b[:])
 }
 
 // NetToHostU32 converts a uint32 in network byte order to
 // host byte order value.
 func NetToHostU32(v uint32) uint32 {
-	b := make([]byte, 4)
-	binary.NativeEndian.PutUint32(b, v)
-	return binary.BigEndian.Uint32(b)
+	var b [4]byte
+	binary.BigEndian.PutUint32(b[:], v)
+	return binary.NativeEndian.Uint32(b[:])
 }
 
 // NetToHostU64 converts a uint64 in network byte order to
 // host byte order value.
 func NetToHostU64(v uint64) uint64 {
-	b := make([]byte, 8)
-	binary.NativeEndian.PutUint64(b, v)
-	return binary.BigEndian.Uint64(b)
+	var b [8]byte
+	binary.BigEndian.PutUint64(b[:], v)
+	return binary.NativeEndian.Uint64(b[:])
 }
 
 // HostToNetU16 converts a uint16 in host byte order to
 // network byte order value.
 func HostToNetU16(v uint16) uint16 {
-	b := make([]byte, 2)
-	binary.BigEndian.PutUint16(b, v)
-	return binary.NativeEndian.Uint16(b)
+	var b [2]byte
+	binary.NativeEndian.PutUint16(b[:], v)
+	return binary.BigEndian.Uint16(b[:])
 }
 
 // HostToNetU32 converts a uint32 in host byte order to
 // network byte order value.
 func HostToNetU32(v uint32) uint32 {
-	b := make([]byte, 4)
-	binary.BigEndian.PutUint32(b, v)
-	return binary.NativeEndian.Uint32(b)
+	var b [4]byte
+	binary.NativeEndian.PutUint32(b[:], v)
+	return binary.BigEndian.Uint32(b[:])
 }
 
 // HostToNetU64 converts a uint64 in host byte order to
 // network byte order value.
 func HostToNetU64(v uint64) uint64 {
-	b := make([]byte, 8)
-	binary.BigEndian.PutUint64(b, v)
-	return binary.NativeEndian.Uint64(b)
+	var b [8]byte
+	binary.NativeEndian.PutUint64(b[:], v)
+	return binary.BigEndian.Uint64(b[:])
 }
 
 // PutU16 converts a uint16 to network byte order and returns it as a
