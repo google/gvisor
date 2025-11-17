@@ -14,11 +14,12 @@
 
 // https://go.dev/cl/669235 (1.25) adds a new schedt field prior to nmspinning.
 // https://go.dev/cl/714800 (1.26) changes size of the schedt.midle field.
-//go:build amd64 && !go1.25 && !go1.26
+//go:build amd64 && go1.25 && lgo1.26
+
 
 #include "textflag.h"
 
-#define NMSPINNING_OFFSET 92 // +checkoffset runtime schedt.nmspinning
+#define NMSPINNING_OFFSET 116 // +checkoffset runtime schedt.nmspinning
 
 TEXT ·addrOfSpinning(SB),NOSPLIT|NOFRAME,$0-8
 	LEAQ runtime·sched(SB), AX
