@@ -59,7 +59,7 @@ import (
 //
 // +stateify savable
 type jobInstance struct {
-	timer Timer
+	timer Timer `state:"nosave"`
 
 	// Used to inform the timer to early return when it gets stopped while the
 	// lock the timer tries to obtain when fired is held (T1 is a goroutine that

@@ -82,7 +82,7 @@ const (
 type IPTables struct {
 	connections ConnTrack
 
-	reaper tcpip.Timer
+	reaper tcpip.Timer `state:"nosave"`
 
 	mu ipTablesRWMutex `state:"nosave"`
 	// v4Tables and v6tables map tableIDs to tables. They hold builtin

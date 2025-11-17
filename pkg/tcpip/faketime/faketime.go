@@ -25,8 +25,6 @@ import (
 )
 
 // NullClock implements a clock that never advances.
-//
-// +stateify savable
 type NullClock struct{}
 
 var _ tcpip.Clock = (*NullClock)(nil)
@@ -42,8 +40,6 @@ func (*NullClock) NowMonotonic() tcpip.MonotonicTime {
 }
 
 // nullTimer implements a timer that never fires.
-//
-// +stateify savable
 type nullTimer struct{}
 
 var _ tcpip.Timer = (*nullTimer)(nil)
@@ -96,9 +92,8 @@ func (n *notificationChannels) wait() {
 	}
 }
 
-// +stateify savable
 type manualClockMutex struct {
-	sync.RWMutex `state:"nosave"`
+	sync.RWMutex
 
 	// now is the current (fake) time of the clock.
 	now time.Time
@@ -334,9 +329,8 @@ func (mc *ManualClock) stopTimer(mt *manualTimer) bool {
 	return true
 }
 
-// +stateify savable
 type manualTimerMu struct {
-	sync.Mutex `state:"nosave"`
+	sync.Mutex
 
 	// firesAt is the time when the timer will fire.
 	//
@@ -344,13 +338,10 @@ type manualTimerMu struct {
 	firesAt time.Time
 }
 
-// +stateify savable
 type manualTimer struct {
 	clock *ManualClock
-	// TODO(b/341946753): Restore when netstack is savable.
-	f func() `state:"nosave"`
-
-	mu manualTimerMu
+	f     func()
+	mu    manualTimerMu
 }
 
 var _ tcpip.Timer = (*manualTimer)(nil)

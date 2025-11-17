@@ -39,7 +39,7 @@ type dadState struct {
 	extendRequest extendRequest
 
 	done  *bool
-	timer tcpip.Timer
+	timer tcpip.Timer `state:"nosave"`
 
 	completionHandlers []stack.DADCompletionHandler
 }
