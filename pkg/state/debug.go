@@ -1,4 +1,4 @@
-// Copyright 2018 The gVisor Authors.
+// Copyright 2025 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,16 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// https://go.dev/cl/669235 (1.25) adds a new schedt field prior to nmspinning.
-// https://go.dev/cl/714800 (1.26) changes size of the schedt.midle field.
-//go:build amd64 && !go1.25 && !go1.26
+package state
 
-#include "textflag.h"
+import (
+	"sync/atomic"
+)
 
-#define NMSPINNING_OFFSET 92 // +checkoffset runtime schedt.nmspinning
-
-TEXT ·addrOfSpinning(SB),NOSPLIT|NOFRAME,$0-8
-	LEAQ runtime·sched(SB), AX
-	ADDQ $NMSPINNING_OFFSET, AX
-	MOVQ AX, ret+0(FP)
-	RET
+// IsSaving is set to true during kernel object graph saving for debugging.
+var IsSaving atomic.Bool

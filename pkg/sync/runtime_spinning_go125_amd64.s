@@ -13,7 +13,8 @@
 // limitations under the License.
 
 // https://go.dev/cl/669235 (1.25) adds a new schedt field prior to nmspinning.
-//go:build amd64 && go1.25
+// https://go.dev/cl/714800 (1.26) changes size of the schedt.midle field.
+//go:build amd64 && go1.25 && !go1.26
 
 #include "textflag.h"
 
