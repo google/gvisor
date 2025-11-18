@@ -77,6 +77,9 @@ type restorer struct {
 	// stateFile is a reader for the statefile.
 	stateFile io.ReadCloser
 
+	// metadata is the metadata contained in the statefile.
+	metadata map[string]string
+
 	// timer is the timer for the restore process.
 	// The `restorer` owns the timer and will end it when restore is complete.
 	timer *timing.Timer
@@ -268,6 +271,11 @@ func (r *restorer) restore(l *Loader) error {
 		r.asyncMFLoader.KickoffPrivate(mfmap)
 	}
 
+	ctx, err = r.prepareRestoreContextExtraLocked(ctx, l)
+	if err != nil {
+		return err
+	}
+
 	// Load the state.
 	r.timer.Reached("loading kernel")
 	if err := l.k.LoadFrom(ctx, r.stateFile, r.asyncMFLoader, nil, oldInetStack, time.NewCalibratedClocks(), &vfs.CompleteRestoreOptions{}, l.saveRestoreNet); err != nil {
@@ -345,7 +353,7 @@ func (r *restorer) restore(l *Loader) error {
 
 	l.k.RestoreContainerMapping(l.containerIDs)
 
-	l.kernelInitExtra()
+	l.kernelInitExtra(ctx)
 
 	// Refresh the control server with the newly created kernel.
 	l.ctrl.refreshHandlers()
@@ -440,6 +448,10 @@ func (l *Loader) saveWithOpts(saveOpts *state.SaveOpts, execOpts *control.SaveRe
 		return err
 	}
 	saveOpts.Metadata[ContainerSpecsKey] = specsStr
+
+	if err := l.prepareSaveOptsExtra(saveOpts); err != nil {
+		return err
+	}
 
 	state := control.State{
 		Kernel:   l.k,
