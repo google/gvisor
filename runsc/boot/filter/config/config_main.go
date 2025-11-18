@@ -105,6 +105,11 @@ var allowedSyscalls = seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 			seccomp.EqualTo(unix.SOL_SOCKET),
 			seccomp.EqualTo(unix.SO_SNDBUF),
 		},
+		seccomp.PerArg{
+			seccomp.AnyValue{},
+			seccomp.EqualTo(unix.SOL_SOCKET),
+			seccomp.EqualTo(unix.SO_PASSCRED),
+		},
 	},
 	unix.SYS_GETTID:       seccomp.MatchAll{},
 	unix.SYS_GETTIMEOFDAY: seccomp.MatchAll{},

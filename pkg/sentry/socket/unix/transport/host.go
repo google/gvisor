@@ -164,7 +164,7 @@ func (c *HostConnectedEndpoint) Send(ctx context.Context, data [][]byte, control
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
-	if !controlMessages.Empty() {
+	if controlMessages.Rights != nil {
 		return 0, false, syserr.ErrInvalidEndpointState
 	}
 
@@ -176,7 +176,7 @@ func (c *HostConnectedEndpoint) Send(ctx context.Context, data [][]byte, control
 	// only as much of the message as fits in the send buffer.
 	truncate := c.stype == linux.SOCK_STREAM
 
-	n, totalLen, err := fdWriteVec(c.fd, data, c.SendMaxQueueSize(), truncate)
+	n, totalLen, err := fdWriteVec(c.fd, data, c.SendMaxQueueSize(), truncate, controlMessages.Credentials != nil)
 	if n < totalLen && err == nil {
 		// The host only returns a short write if it would otherwise
 		// block (and only for stream sockets).
@@ -236,8 +236,7 @@ func (c *HostConnectedEndpoint) Writable() bool {
 
 // Passcred implements ConnectedEndpoint.Passcred.
 func (c *HostConnectedEndpoint) Passcred() bool {
-	// We don't support credential passing for host sockets.
-	return false
+	return passcredsEnabled(c.fd)
 }
 
 // GetLocalAddress implements ConnectedEndpoint.GetLocalAddress.
@@ -269,6 +268,11 @@ func (c *HostConnectedEndpoint) Recv(ctx context.Context, data [][]byte, args Re
 
 	// N.B. Unix sockets don't have a receive buffer, the send buffer
 	// serves both purposes.
+	//
+	// We ignore args.Creds because we don't translate sandbox socket options to
+	// host socket options, so the fd won't have the SO_PASSCRED option set. By
+	// default, the sentry will always return credentials with PID 0 and UID/GID
+	// 65534 (nobody).
 	out := RecvOutput{Source: Address{Addr: c.addr}}
 	var err error
 	var controlLen uint64
