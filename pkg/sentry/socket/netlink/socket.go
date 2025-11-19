@@ -415,10 +415,12 @@ func (s *Socket) HandleInterfaceChangeEvent(ctx context.Context, idx int32, i in
 		panic(fmt.Sprintf("Non-ROUTE netlink socket (protocol %d) cannot handle interface events", s.Protocol()))
 	}
 
-	s.mu.Lock()
-	portID := s.portID
-	s.mu.Unlock()
-	ms := nlmsg.NewMessageSet(portID, 0)
+	// s.portID is protected by s.mu. But we cannot take s.mu because it already may
+	// be held across sendMsg() -> Protocol.Receive() -> ProcessMessages() -> ...
+	// -> protocol.ProcessMessage() -> Socket.SendResponse(). The racy access to s.portID
+	// happens to be okay because once bound, a netlink socket's port ID is immutable.
+	// TODO(b/435491173): Stop holding s.mu across the chain above.
+	ms := nlmsg.NewMessageSet(s.portID, 0)
 	routeProtocol.AddNewLinkMessage(ms, idx, i)
 	// TODO(b/456238795): Implement netlink ENOBUFS.
 	s.SendResponse(ctx, ms)
@@ -431,10 +433,12 @@ func (s *Socket) HandleInterfaceDeleteEvent(ctx context.Context, idx int32, i in
 		panic(fmt.Sprintf("Non-ROUTE netlink socket (protocol %d) cannot handle interface events", s.Protocol()))
 	}
 
-	s.mu.Lock()
-	portID := s.portID
-	s.mu.Unlock()
-	ms := nlmsg.NewMessageSet(portID, 0)
+	// s.portID is protected by s.mu. But we cannot take s.mu because it already may
+	// be held across sendMsg() -> Protocol.Receive() -> ProcessMessages() -> ...
+	// -> protocol.ProcessMessage() -> Socket.SendResponse(). The racy access to s.portID
+	// happens to be okay because once bound, a netlink socket's port ID is immutable.
+	// TODO(b/435491173): Stop holding s.mu across the chain above.
+	ms := nlmsg.NewMessageSet(s.portID, 0)
 	routeProtocol.AddDelLinkMessage(ms, idx, i)
 	// TODO(b/456238795): Implement netlink ENOBUFS.
 	s.SendResponse(ctx, ms)
