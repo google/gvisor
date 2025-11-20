@@ -299,7 +299,10 @@ func (c *Context64) SignalRestore(st *Stack, rt bool, featureSet cpuid.FeatureSe
 			c.fpState.Reset()
 			return 0, linux.SignalStack{}, err
 		}
-		c.fpState.SanitizeUser(featureSet)
+		if err := c.fpState.SanitizeUser(featureSet); err != nil {
+			c.fpState.Reset()
+			return 0, linux.SignalStack{}, linuxerr.EFAULT
+		}
 	}
 
 	return uc.Sigset, uc.Stack, nil
