@@ -20,13 +20,11 @@
 // for the pkg/sentry/platform/systrap/usertrap package.
 #define FAULT_OPCODE 0x06
 
-// The value for XCR0 is defined to xsave/xrstor everything except for PKRU and
-// AMX regions.
-// TODO(gvisor.dev/issues/9896): Implement AMX support.
-// TODO(gvisor.dev/issues/10087): Implement PKRU support.
-#define XCR0_DISABLED_MASK ((1 << 9) | (1 << 17) | (1 << 18))
-#define XCR0_EAX (0xffffffff ^ XCR0_DISABLED_MASK)
-#define XCR0_EDX 0xffffffff
+// LINT.IfChange
+#define XCR0_EAX 0xe7UL
+#define XCR0_EDX 0
+#define XCR0_DISABLED_MASK (~XCR0_EAX)
+// LINT.ThenChange(../../../arch/fpu/fpu_amd64.go)
 
 // LINT.IfChange
 #define MAX_FPSTATE_LEN 3584

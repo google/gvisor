@@ -15,10 +15,16 @@
 // This program verifies that application floating point state is visible in
 // signal frames, and that changes to said state is visible after the signal
 // handler returns.
+#include <signal.h>
+#include <stdint.h>
 #include <sys/time.h>
 #include <sys/ucontext.h>
+#include <ucontext.h>
+
+#include <cstdint>
 
 #include "gtest/gtest.h"
+#include "absl/log/log.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
 
@@ -54,6 +60,19 @@ void sigusr1(int s, siginfo_t* siginfo, void* _uc) {
              static_cast<uint64_t>(uc_xmm0->element[0]);
   uc_xmm0->element[1] = static_cast<uint32_t>(kNewFPRegValue >> 32);
   uc_xmm0->element[0] = static_cast<uint32_t>(kNewFPRegValue);
+}
+
+volatile uint64_t testXsaveFeature;
+void sigusr2(int s, siginfo_t* siginfo, void* _uc) {
+  ucontext_t* uc = reinterpret_cast<ucontext_t*>(_uc);
+  *(uint64_t*)((uint8_t*)uc->uc_mcontext.fpregs + 512) |= 1 << testXsaveFeature;
+}
+
+ucontext_t safe_ctx;
+volatile bool segvTriggered;
+void sigsegv(int s, siginfo_t* siginfo, void* _uc) {
+  segvTriggered = true;
+  setcontext(&safe_ctx);
 }
 
 TEST(FPSigTest, StateInFrame) {
@@ -103,6 +122,50 @@ TEST(FPSigTest, StateInFrame) {
   EXPECT_EQ(handlerxmm, 0);
   EXPECT_EQ(framexmm, kOldFPRegValue);
   EXPECT_EQ(got, kNewFPRegValue);
+}
+
+TEST(FPSigTest, XFeaturesInFrame) {
+  pid = getpid();
+  tid = gettid();
+
+  struct sigaction sa = {};
+  sigemptyset(&sa.sa_mask);
+  sa.sa_flags = SA_SIGINFO;
+  sa.sa_sigaction = sigusr2;
+  ASSERT_THAT(sigaction(SIGUSR2, &sa, nullptr), SyscallSucceeds());
+  sa.sa_sigaction = sigsegv;
+  ASSERT_THAT(sigaction(SIGSEGV, &sa, nullptr), SyscallSucceeds());
+
+  for (testXsaveFeature = 0; testXsaveFeature < 64; testXsaveFeature++) {
+    getcontext(&safe_ctx);
+    if (segvTriggered) {
+      LOG(INFO) << testXsaveFeature << " triggered SEGV";
+      segvTriggered = false;
+    } else {
+      asm volatile(
+          "movl %[pid], %%edi;"
+          "movl %[tid], %%esi;"
+          "movl %[sig], %%edx;"
+          "movl %[killnr], %%eax;"
+          "syscall;"
+          :
+          : [killnr] "i"(__NR_tgkill), [pid] "rm"(pid), [tid] "rm"(tid),
+            [sig] "i"(SIGUSR2)
+          : "rax", "rdi", "rsi", "rdx",
+            // Clobbered by syscall.
+            "rcx", "r11");
+      switch (testXsaveFeature) {
+        case 8:   // PT (Processor Trace)
+        case 13:  // HDC (Hardware Debug Controls)
+        case 17:  // LBR (Last Branch Record)
+        case 18:  // CET (Control-flow Enforcement Technology)
+        case 19:  // HRESET (Host Reset)
+          FAIL() << testXsaveFeature << " didn't trigger a fault";
+        default:
+          LOG(INFO) << testXsaveFeature << " has been accepted";
+      }
+    }
+  }
 }
 
 }  // namespace
