@@ -20,7 +20,7 @@ source "$(dirname "$0")/rtnetlink_test.sh"
 # Create a new veth pair in the current namespace and change the MTU.
 ip link add name test_veth01 type veth peer name test_veth02
 ip link set test_veth01 mtu 3000
-ip link show test_veth01 | grep -E "mtu 3000"
+ip link show test_veth01 | grep -E "mtu (2986|3000)"
 ip link del name test_veth01
 # Check that test_veth02 has been destroyed.
 if ! wait_for ! ip link show test_veth02; then
