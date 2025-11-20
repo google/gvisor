@@ -1796,6 +1796,16 @@ TEST(NetlinkRouteTest, VethAdd) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
   SKIP_IF(IsRunningWithHostinet());
 
+  // Running the test in an ephemeral netns allows it to not interfere with
+  // other tests that also want to create veth pairs with the same names.
+  const FileDescriptor curr_nsfd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/thread-self/ns/net", O_RDONLY));
+  Cleanup restore_netns = Cleanup([&] {
+    ASSERT_THAT(setns(curr_nsfd.get(), CLONE_NEWNET),
+                SyscallSucceedsWithValue(0));
+  });
+  ASSERT_THAT(unshare(CLONE_NEWNET), SyscallSucceedsWithValue(0));
+
   FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
   VethRequest req = GetVethRequest(kSeq, "veth1", "veth2");
@@ -1820,6 +1830,86 @@ TEST(NetlinkRouteTest, LookupAllAddrOrder) {
     }
     ASSERT_TRUE(std::is_sorted(addrs_family.begin(), addrs_family.end()));
     freeifaddrs(if_addr_list);
+  }
+}
+
+struct NetNSRequest {
+  struct nlmsghdr hdr;
+  struct ifinfomsg ifm;
+  char buf[1024];
+};
+
+struct NetNSRequest GetNetNSRequest(uint32_t seq, int if_index, int ns_fd) {
+  struct NetNSRequest req = {};
+
+  req.hdr.nlmsg_len = NLMSG_LENGTH(sizeof(struct ifinfomsg));
+  req.hdr.nlmsg_type = RTM_NEWLINK;
+  req.hdr.nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
+  req.hdr.nlmsg_seq = seq;
+  req.ifm.ifi_family = AF_UNSPEC;
+  req.ifm.ifi_index = if_index;
+  addattr(&req.hdr, sizeof(req), IFLA_NET_NS_FD, &ns_fd, sizeof(ns_fd));
+
+  return req;
+}
+
+// Guard against b/456552490, a bug where gvisor'd try to modify the given
+// attributes in the wrong stack when the request also directs it to change the
+// netns.
+TEST(NetlinkRouteTest, ChangeNetnsAndOtherAttrsTogether) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+  SKIP_IF(IsRunningWithHostinet());
+  // TODO(gvisor.dev/issue/4595): enable cooperative save tests.
+  const DisableSave ds;
+
+  // Running the test in an ephemeral netns allows it to not interfere with
+  // other tests that also want to create veth pairs with the same names.
+  const FileDescriptor curr_nsfd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/thread-self/ns/net", O_RDONLY));
+  Cleanup restore_netns = Cleanup([&] {
+    ASSERT_THAT(setns(curr_nsfd.get(), CLONE_NEWNET),
+                SyscallSucceedsWithValue(0));
+  });
+  ASSERT_THAT(unshare(CLONE_NEWNET), SyscallSucceedsWithValue(0));
+
+  FileDescriptor nlsk =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
+  VethRequest req = GetVethRequest(kSeq, "veth1", "veth2");
+  EXPECT_NO_ERRNO(
+      NetlinkRequestAckOrError(nlsk, kSeq, &req, req.hdr.nlmsg_len));
+  int inner_veth_idx = if_nametoindex("veth2");
+  ASSERT_NE(inner_veth_idx, 0);
+
+  // Enter a new network namespace and move veth2 into it.
+  ASSERT_THAT(unshare(CLONE_NEWNET), SyscallSucceedsWithValue(0));
+  const FileDescriptor inner_nsfd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/thread-self/ns/net", O_RDONLY));
+  NetNSRequest set_netns_req =
+      GetNetNSRequest(kSeq, inner_veth_idx, inner_nsfd.get());
+  // Request a name change along with the netns change.
+  std::string new_name = "veth2_new";
+  addattr(&set_netns_req.hdr, sizeof(set_netns_req), IFLA_IFNAME,
+          new_name.c_str(), new_name.size());
+  EXPECT_NO_ERRNO(NetlinkRequestAckOrError(nlsk, kSeq, &set_netns_req,
+                                           set_netns_req.hdr.nlmsg_len));
+
+  // Verify that an interface with the new name exists in the inner netns.
+  bool found_name_inner = false;
+  std::vector<Link> links = ASSERT_NO_ERRNO_AND_VALUE(DumpLinks());
+  for (const Link& link : links) {
+    if (link.name == new_name) {
+      found_name_inner = true;
+      break;
+    }
+  }
+  EXPECT_TRUE(found_name_inner)
+      << "Did not find interface with name " << new_name;
+
+  // And verify also that the outer netns does not have the new name.
+  links = ASSERT_NO_ERRNO_AND_VALUE(DumpLinks(nlsk));
+  for (const Link& link : links) {
+    ASSERT_NE(link.name, new_name)
+        << "Found interface with name " << new_name << " in outer netns";
   }
 }
 
@@ -1965,26 +2055,22 @@ TEST(NetlinkRouteTest, LinkMulticastGroupBasic) {
   }
 }
 
-struct VethRequest GetSetNetNSRequest(uint32_t seq, int if_index, int ns_fd) {
-  struct VethRequest req = {};
-
-  req.hdr.nlmsg_len = NLMSG_LENGTH(sizeof(struct ifinfomsg));
-  req.hdr.nlmsg_type = RTM_NEWLINK;
-  req.hdr.nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-  req.hdr.nlmsg_seq = seq;
-  req.ifm.ifi_family = AF_UNSPEC;
-  req.ifm.ifi_index = if_index;
-  addattr(&req.hdr, sizeof(req), IFLA_NET_NS_FD, &ns_fd, sizeof(ns_fd));
-
-  return req;
-}
-
 // To verify the namespaced nature of the netlink multicast groups.
 TEST(NetlinkRouteTest, LinkMulticastGroupNamespaced) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
   SKIP_IF(IsRunningWithHostinet());
   // TODO(gvisor.dev/issue/4595): enable cooperative save tests.
   const DisableSave ds;
+
+  // Running the test in an ephemeral netns allows it to not interfere with
+  // other tests that also want to create veth pairs with the same names.
+  const FileDescriptor curr_nsfd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/thread-self/ns/net", O_RDONLY));
+  Cleanup restore_netns = Cleanup([&] {
+    ASSERT_THAT(setns(curr_nsfd.get(), CLONE_NEWNET),
+                SyscallSucceedsWithValue(0));
+  });
+  ASSERT_THAT(unshare(CLONE_NEWNET), SyscallSucceedsWithValue(0));
 
   FileDescriptor control_nlsk =
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
@@ -1998,15 +2084,8 @@ TEST(NetlinkRouteTest, LinkMulticastGroupNamespaced) {
   struct sockaddr_nl mcast_addr = {};
   mcast_addr.nl_family = AF_NETLINK;
   mcast_addr.nl_groups = RTMGRP_LINK;
-  FileDescriptor root_nlsk =
+  FileDescriptor outer_nlsk =
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE, &mcast_addr));
-
-  const FileDescriptor root_nsfd =
-      ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/thread-self/ns/net", O_RDONLY));
-  Cleanup restore_netns = Cleanup([&] {
-    ASSERT_THAT(setns(root_nsfd.get(), CLONE_NEWNET),
-                SyscallSucceedsWithValue(0));
-  });
 
   // Enter a new network namespace.
   ASSERT_THAT(unshare(CLONE_NEWNET), SyscallSucceedsWithValue(0));
@@ -2016,24 +2095,24 @@ TEST(NetlinkRouteTest, LinkMulticastGroupNamespaced) {
   // And move veth2 into it.
   const FileDescriptor inner_nsfd =
       ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/thread-self/ns/net", O_RDONLY));
-  VethRequest set_netns_req =
-      GetSetNetNSRequest(kSeq, inner_veth_idx, inner_nsfd.get());
+  NetNSRequest set_netns_req =
+      GetNetNSRequest(kSeq, inner_veth_idx, inner_nsfd.get());
   EXPECT_NO_ERRNO(NetlinkRequestAckOrError(control_nlsk, kSeq, &set_netns_req,
                                            set_netns_req.hdr.nlmsg_len));
 
   constexpr int kPollTimeoutMs = 1000;
   bool got_msg = false;
-  // We expect an RTM_DELINK message for veth2 in the root netns socket.
+  // We expect an RTM_DELINK message for veth2 in the outer netns socket.
   // But an RTM_NEWLINK is also expected for veth1 because its peer was moved.
   // Hence the two attempts. N.B. gVisor does not send the RTM_NEWLINK because
   // IFLA_LINK_NETNSID is not yet supported.
   for (int i = 0; i < 2; ++i) {
-    struct pollfd pfd = {.fd = root_nlsk.get(), .events = POLLIN};
+    struct pollfd pfd = {.fd = outer_nlsk.get(), .events = POLLIN};
     ASSERT_EQ(RetryEINTR(poll)(&pfd, 1, kPollTimeoutMs), 1)
         << "root_nlsk: Did not get veth2 DELLINK";
 
     ASSERT_NO_ERRNO(NetlinkResponse(
-        root_nlsk,
+        outer_nlsk,
         [&](const struct nlmsghdr* hdr) {
           const struct ifinfomsg* msg =
               reinterpret_cast<const struct ifinfomsg*>(NLMSG_DATA(hdr));
@@ -2044,7 +2123,7 @@ TEST(NetlinkRouteTest, LinkMulticastGroupNamespaced) {
         /*expect_nlmsgerr=*/false));
     if (got_msg) break;
   }
-  EXPECT_TRUE(got_msg) << "root_nlsk: Did not get veth2 DELLINK";
+  EXPECT_TRUE(got_msg) << "outer_nlsk: Did not get veth2 DELLINK";
 
   // We expect an RTM_NEWLINK message for veth2 in the inner netns socket.
   {
