@@ -504,14 +504,44 @@ func (r *Response) NumTokens() int {
 	return len(r.data)
 }
 
+// TimeToFirstToken returns the time it took between the request starting
+// and the first token being received by the client.
+func (r *Response) TimeToFirstToken() time.Duration {
+	return r.metrics.TimeToFirstByte()
+}
+
+// TimeToLastToken returns the time it took between the request starting
+// and the last token being received by the client.
+func (r *Response) TimeToLastToken() time.Duration {
+	return r.metrics.TimeToLastByte()
+}
+
+// OutputTokensPerSecond computes the average number of output tokens
+// generated per second.
+func (r *Response) OutputTokensPerSecond() float64 {
+	return float64(r.NumTokens()) / r.E2ELatency()
+}
+
+// E2ELatency returns the elapsed time between when start_time was recorded and
+// the current moment in seconds.
+func (r *Response) E2ELatency() float64 {
+	if r.metrics.LastByteRead.IsZero() || r.metrics.RequestSent.IsZero() {
+		return 0
+	}
+	return r.metrics.LastByteRead.Sub(r.metrics.RequestSent).Seconds()
+}
+
 // String returns the response text, if it is done.
 func (r *Response) String() string {
 	if len(r.data) == 0 {
 		return "<EMPTY>"
 	}
 	var fullResponse strings.Builder
-	for _, token := range r.data {
+	for i, token := range r.data {
 		fullResponse.WriteString(token.Text)
+		if i < len(r.data)-1 {
+			fullResponse.WriteString(" ")
+		}
 	}
 	return fullResponse.String()
 }

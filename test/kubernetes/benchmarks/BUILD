@@ -398,6 +398,46 @@ go_test(
 )
 
 go_library(
+    name = "triton",
+    testonly = True,
+    srcs = ["triton.go"],
+    embedsrcs = [
+        "//test/kubernetes/benchmarks/resources:files",  # keep
+    ],
+    nogo = False,
+    deps = [
+        "//pkg/sync",
+        "//test/gpu/triton",
+        "//test/kubernetes",
+        "//test/kubernetes/benchmarks/profiling",
+        "//test/kubernetes/benchmetric",
+        "//test/kubernetes/k8sctx",
+        "//test/kubernetes/testcluster",
+        "@io_k8s_api//core/v1:go_default_library",
+        "@io_k8s_apimachinery//pkg/api/resource:go_default_library",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1:go_default_library",
+        "@io_k8s_apimachinery//pkg/util/intstr:go_default_library",
+    ],
+)
+
+go_test(
+    name = "triton_test",
+    srcs = ["triton_test.go"],
+    library = ":triton",
+    nogo = False,
+    tags = [
+        "local",
+        "noguitar",
+        "notap",
+    ],
+    deps = [
+        "//test/kubernetes/k8sctx",
+        "//test/kubernetes/k8sctx/kubectlctx",
+        "//test/kubernetes/testcluster",
+    ],
+)
+
+go_library(
     name = "sglang",
     testonly = True,
     srcs = ["sglang.go"],
