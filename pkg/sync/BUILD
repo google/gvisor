@@ -37,6 +37,7 @@ go_library(
         "runtime_other.go",
         "runtime_spinning_amd64.s",
         "runtime_spinning_go125_amd64.s",
+        "runtime_spinning_go126_amd64.s",
         "runtime_spinning_other.s",
         "runtime_unsafe.go",
         "rwmutex_unsafe.go",
