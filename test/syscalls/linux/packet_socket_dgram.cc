@@ -28,7 +28,11 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#include <string_view>
+
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "absl/strings/escaping.h"
 #include "test/syscalls/linux/ip_socket_test_util.h"
 #include "test/syscalls/linux/unix_domain_socket_test_util.h"
 #include "test/util/capability_util.h"
@@ -66,7 +70,7 @@ namespace {
 using ::testing::AnyOf;
 using ::testing::Eq;
 
-constexpr char kMessage[] = "soweoneul malhaebwa";
+constexpr std::string_view kMessage = "soweoneul malhaebwa";
 constexpr in_port_t kPort = 0x409c;  // htons(40000)
 constexpr int kTimeoutMS = 60 * 1000;
 
@@ -82,9 +86,9 @@ void SendUDPMessage(int sock) {
   dest.sin_port = kPort;
   dest.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
   dest.sin_family = AF_INET;
-  EXPECT_THAT(sendto(sock, kMessage, sizeof(kMessage), 0,
+  EXPECT_THAT(sendto(sock, kMessage.data(), kMessage.size(), 0,
                      reinterpret_cast<struct sockaddr*>(&dest), sizeof(dest)),
-              SyscallSucceedsWithValue(sizeof(kMessage)));
+              SyscallSucceedsWithValue(kMessage.size()));
 }
 
 // Send an IP packet and make sure ETH_P_<something else> doesn't pick it up.
@@ -177,7 +181,7 @@ void ReceiveMessage(int sock, int ifindex) {
 
   // Read and verify the data.
   constexpr size_t packet_size =
-      sizeof(struct iphdr) + sizeof(struct udphdr) + sizeof(kMessage);
+      sizeof(struct iphdr) + sizeof(struct udphdr) + kMessage.size();
   char buf[64];
   struct sockaddr_ll src = {};
   socklen_t src_len = sizeof(src);
@@ -215,11 +219,11 @@ void ReceiveMessage(int sock, int ifindex) {
   struct udphdr udp = {};
   memcpy(&udp, buf + sizeof(iphdr), sizeof(udp));
   EXPECT_EQ(udp.dest, kPort);
-  EXPECT_EQ(udp.len, htons(sizeof(udphdr) + sizeof(kMessage)));
+  EXPECT_EQ(udp.len, htons(sizeof(udphdr) + kMessage.size()));
 
   // Verify the payload.
   char* payload = reinterpret_cast<char*>(buf + sizeof(iphdr) + sizeof(udphdr));
-  EXPECT_EQ(strncmp(payload, kMessage, sizeof(kMessage)), 0);
+  EXPECT_EQ(std::string_view(payload, kMessage.size()), kMessage);
 }
 
 // Receive via a packet socket.
@@ -267,7 +271,7 @@ TEST_P(CookedPacketTest, Send) {
   iphdr.version = 4;
   iphdr.tos = 0;
   iphdr.tot_len =
-      htons(sizeof(struct iphdr) + sizeof(struct udphdr) + sizeof(kMessage));
+      htons(sizeof(struct iphdr) + sizeof(struct udphdr) + kMessage.size());
   // Get a pseudo-random ID. If we clash with an in-use ID the test will fail,
   // but we have no way of getting an ID we know to be good.
   srand(*reinterpret_cast<unsigned int*>(&iphdr));
@@ -284,14 +288,15 @@ TEST_P(CookedPacketTest, Send) {
   struct udphdr udphdr = {};
   udphdr.source = kPort;
   udphdr.dest = kPort;
-  udphdr.len = htons(sizeof(udphdr) + sizeof(kMessage));
-  udphdr.check = UDPChecksum(iphdr, udphdr, kMessage, sizeof(kMessage));
+  udphdr.len = htons(sizeof(udphdr) + kMessage.size());
+  udphdr.check = UDPChecksum(iphdr, udphdr, kMessage.data(), kMessage.size());
 
   // Copy both headers and the payload into our packet buffer.
-  char send_buf[sizeof(iphdr) + sizeof(udphdr) + sizeof(kMessage)];
+  char send_buf[sizeof(iphdr) + sizeof(udphdr) + kMessage.size()];
   memcpy(send_buf, &iphdr, sizeof(iphdr));
   memcpy(send_buf + sizeof(iphdr), &udphdr, sizeof(udphdr));
-  memcpy(send_buf + sizeof(iphdr) + sizeof(udphdr), kMessage, sizeof(kMessage));
+  memcpy(send_buf + sizeof(iphdr) + sizeof(udphdr), kMessage.data(),
+         kMessage.size());
 
   // Send it.
   ASSERT_THAT(sendto(socket_, send_buf, sizeof(send_buf), 0,
@@ -313,16 +318,18 @@ TEST_P(CookedPacketTest, Send) {
   char recv_buf[sizeof(send_buf)];
   ASSERT_THAT(recv(socket_, recv_buf, sizeof(recv_buf), 0),
               SyscallSucceedsWithValue(sizeof(recv_buf)));
-  ASSERT_EQ(memcmp(recv_buf, send_buf, sizeof(send_buf)), 0);
+  ASSERT_EQ(
+      absl::BytesToHexString(std::string_view(recv_buf, sizeof(recv_buf))),
+      absl::BytesToHexString(std::string_view(send_buf, sizeof(send_buf))));
 
   // Receive on the UDP socket.
   struct sockaddr_in src;
   socklen_t src_len = sizeof(src);
   ASSERT_THAT(recvfrom(udp_sock.get(), recv_buf, sizeof(recv_buf), MSG_DONTWAIT,
                        reinterpret_cast<struct sockaddr*>(&src), &src_len),
-              SyscallSucceedsWithValue(sizeof(kMessage)));
+              SyscallSucceedsWithValue(kMessage.size()));
   // Check src and payload.
-  EXPECT_EQ(strncmp(recv_buf, kMessage, sizeof(kMessage)), 0);
+  EXPECT_EQ(std::string_view(recv_buf, kMessage.size()), kMessage);
   EXPECT_EQ(src.sin_family, AF_INET);
   EXPECT_EQ(src.sin_port, kPort);
   EXPECT_EQ(src.sin_addr.s_addr, htonl(INADDR_LOOPBACK));
@@ -414,9 +421,9 @@ TEST_P(CookedPacketTest, BindDrop) {
   dest.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
   dest.sin_family = AF_INET;
   dest.sin_port = kPort;
-  EXPECT_THAT(sendto(udp_sock.get(), kMessage, sizeof(kMessage), 0,
+  EXPECT_THAT(sendto(udp_sock.get(), kMessage.data(), kMessage.size(), 0,
                      reinterpret_cast<struct sockaddr*>(&dest), sizeof(dest)),
-              SyscallSucceedsWithValue(sizeof(kMessage)));
+              SyscallSucceedsWithValue(kMessage.size()));
 
   // Wait and make sure the socket never receives any data.
   struct pollfd pfd = {};
@@ -485,9 +492,9 @@ TEST_P(CookedPacketTest, ReceiveOutbound) {
   ASSERT_EQ(inet_pton(AF_INET, "8.8.8.8", &dest.sin_addr.s_addr), 1);
   dest.sin_family = AF_INET;
   dest.sin_port = kPort;
-  EXPECT_THAT(sendto(udp_sock.get(), kMessage, sizeof(kMessage), 0,
+  EXPECT_THAT(sendto(udp_sock.get(), kMessage.data(), kMessage.size(), 0,
                      reinterpret_cast<struct sockaddr*>(&dest), sizeof(dest)),
-              SyscallSucceedsWithValue(sizeof(kMessage)));
+              SyscallSucceedsWithValue(kMessage.size()));
 
   // Wait and make sure the socket receives the data.
   struct pollfd pfd = {};
@@ -499,7 +506,7 @@ TEST_P(CookedPacketTest, ReceiveOutbound) {
   // Now read and check that the packet is the one we just sent.
   // Read and verify the data.
   constexpr size_t packet_size =
-      sizeof(struct iphdr) + sizeof(struct udphdr) + sizeof(kMessage);
+      sizeof(struct iphdr) + sizeof(struct udphdr) + kMessage.size();
   char buf[64];
   struct sockaddr_ll src = {};
   socklen_t src_len = sizeof(src);
@@ -539,11 +546,11 @@ TEST_P(CookedPacketTest, ReceiveOutbound) {
   struct udphdr udp = {};
   memcpy(&udp, buf + sizeof(iphdr), sizeof(udp));
   EXPECT_EQ(udp.dest, kPort);
-  EXPECT_EQ(udp.len, htons(sizeof(udphdr) + sizeof(kMessage)));
+  EXPECT_EQ(udp.len, htons(sizeof(udphdr) + kMessage.size()));
 
   // Verify the payload.
   char* payload = reinterpret_cast<char*>(buf + sizeof(iphdr) + sizeof(udphdr));
-  EXPECT_EQ(strncmp(payload, kMessage, sizeof(kMessage)), 0);
+  EXPECT_EQ(std::string_view(payload, kMessage.size()), kMessage);
 }
 
 // Bind with invalid address.
