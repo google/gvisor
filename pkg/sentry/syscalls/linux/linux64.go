@@ -382,8 +382,8 @@ var AMD64 = &kernel.SyscallTable{
 		// Syscalls implemented after 325 are "backports" from versions
 		// of Linux after 4.4.
 		326: syscalls.ErrorWithEvent("copy_file_range", linuxerr.ENOSYS, "", nil),
-		327: syscalls.SupportedPoint("preadv2", Preadv2, PointPreadv2),
-		328: syscalls.SupportedPoint("pwritev2", Pwritev2, PointPwritev2),
+		327: syscalls.PartiallySupportedPoint("preadv2", Preadv2, PointPreadv2, "RWF flags are not supported.", []string{"gvisor.dev/issue/2601"}),
+		328: syscalls.PartiallySupportedPoint("pwritev2", Pwritev2, PointPwritev2, "RWF flags are not supported.", []string{"gvisor.dev/issue/2601"}),
 		329: syscalls.ErrorWithEvent("pkey_mprotect", linuxerr.ENOSYS, "", nil),
 		330: syscalls.ErrorWithEvent("pkey_alloc", linuxerr.ENOSYS, "", nil),
 		331: syscalls.ErrorWithEvent("pkey_free", linuxerr.ENOSYS, "", nil),
@@ -703,8 +703,8 @@ var ARM64 = &kernel.SyscallTable{
 
 		// Syscalls after 284 are "backports" from versions of Linux after 4.4.
 		285: syscalls.ErrorWithEvent("copy_file_range", linuxerr.ENOSYS, "", nil),
-		286: syscalls.SupportedPoint("preadv2", Preadv2, PointPreadv2),
-		287: syscalls.SupportedPoint("pwritev2", Pwritev2, PointPwritev2),
+		286: syscalls.PartiallySupportedPoint("preadv2", Preadv2, PointPreadv2, "RWF flags are not supported.", []string{"gvisor.dev/issue/2601"}),
+		287: syscalls.PartiallySupportedPoint("pwritev2", Pwritev2, PointPwritev2, "RWF flags are not supported.", []string{"gvisor.dev/issue/2601"}),
 		288: syscalls.ErrorWithEvent("pkey_mprotect", linuxerr.ENOSYS, "", nil),
 		289: syscalls.ErrorWithEvent("pkey_alloc", linuxerr.ENOSYS, "", nil),
 		290: syscalls.ErrorWithEvent("pkey_free", linuxerr.ENOSYS, "", nil),
