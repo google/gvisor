@@ -900,14 +900,14 @@ TestAddress V6MulticastLinkLocalAllRouters() {
 uint16_t Checksum(uint16_t* buf, ssize_t buf_size) {
   // Add up the 16-bit values in the buffer.
   uint32_t total = 0;
-  for (unsigned int i = 0; i < buf_size; i += sizeof(*buf)) {
+  for (unsigned int i = 0; i < buf_size - 1; i += sizeof(*buf)) {
     total += *buf;
     buf++;
   }
 
   // If buf has an odd size, add the remaining byte.
   if (buf_size % 2) {
-    total += *(reinterpret_cast<unsigned char*>(buf) - 1);
+    total += *(reinterpret_cast<unsigned char*>(buf));
   }
 
   // This carries any bits past the lower 16 until everything fits in 16 bits.
