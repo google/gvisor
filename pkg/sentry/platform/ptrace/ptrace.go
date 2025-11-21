@@ -209,6 +209,19 @@ func (c *context) PullFullState(as platform.AddressSpace, ac *arch.Context64) er
 // PrepareSleep implements platform.Context.platform.PrepareSleep.
 func (*context) PrepareSleep() {}
 
+// PrepareUninterruptibleSleep implements
+// platform.Context.platform.PrepareUninterruptibleSleep.
+func (*context) PrepareUninterruptibleSleep() {}
+
+// PrepareStop implements platform.Context.PrepareStop.
+func (*context) PrepareStop() {}
+
+// PrepareExecve implements platform.Context.PrepareExecve.
+func (*context) PrepareExecve() {}
+
+// PrepareExit implements platform.Context.PrepareExit.
+func (*context) PrepareExit() {}
+
 // PTrace represents a collection of ptrace subprocesses.
 type PTrace struct {
 	platform.MMapMinAddr
@@ -242,11 +255,6 @@ func (*PTrace) SupportsAddressSpaceIO() bool {
 	return false
 }
 
-// CooperativelySchedulesAddressSpace implements platform.Platform.CooperativelySchedulesAddressSpace.
-func (*PTrace) CooperativelySchedulesAddressSpace() bool {
-	return false
-}
-
 // MapUnit implements platform.Platform.MapUnit.
 func (*PTrace) MapUnit() uint64 {
 	// The host kernel manages page tables and arbitrary-sized mappings
@@ -261,9 +269,8 @@ func (*PTrace) MaxUserAddress() hostarch.Addr {
 }
 
 // NewAddressSpace returns a new subprocess.
-func (p *PTrace) NewAddressSpace(any) (platform.AddressSpace, <-chan struct{}, error) {
-	as, err := newSubprocess(globalPool.master.createStub)
-	return as, nil, err
+func (p *PTrace) NewAddressSpace() (platform.AddressSpace, error) {
+	return newSubprocess(globalPool.master.createStub)
 }
 
 // ConcurrencyCount implements platform.Platform.ConcurrencyCount.

@@ -41,6 +41,13 @@ func (mm *MemoryManager) InvalidateUnsavable(ctx context.Context) error {
 func (mm *MemoryManager) afterLoad(ctx goContext.Context) {
 	mm.mf = pgalloc.MemoryFileFromContext(ctx)
 	mm.haveASIO = mm.p.SupportsAddressSpaceIO()
+	if mm.users.Load() != 0 {
+		as, err := mm.p.NewAddressSpace()
+		if err != nil {
+			panic(fmt.Sprintf("failed to create AddressSpace after restore: %v", err))
+		}
+		mm.as = as
+	}
 }
 
 // afterLoad is invoked by stateify.

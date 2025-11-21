@@ -69,13 +69,6 @@ func (t *Task) run(threadID uintptr) {
 	t.blockingTimer = ktime.NewSampledTimer(t.k.MonotonicClock(), t.blockingTimerListener)
 	defer t.blockingTimer.Destroy()
 
-	// Activate our address space.
-	t.Activate()
-	// The corresponding t.Deactivate occurs in the exit path
-	// (runExitMain.execute) so that when
-	// Platform.CooperativelySharesAddressSpace() == true, we give up the
-	// AddressSpace before the task goroutine finishes executing.
-
 	// If this is a newly-started task, it should check for participation in
 	// group stops. If this is a task resuming after restore, it was
 	// interrupted by saving. In either case, the task is initially
@@ -125,10 +118,7 @@ func (t *Task) doStop() {
 	if t.stopCount.Load() == 0 {
 		return
 	}
-	t.Deactivate()
-	// NOTE(b/30316266): t.Activate() must be called without any locks held, so
-	// this defer must precede the defer for unlocking the signal mutex.
-	defer t.Activate()
+	t.p.PrepareStop()
 	t.accountTaskGoroutineEnter(TaskGoroutineStopped)
 	defer t.accountTaskGoroutineLeave(TaskGoroutineStopped)
 	t.tg.signalHandlers.mu.Lock()

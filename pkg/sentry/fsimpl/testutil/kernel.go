@@ -138,7 +138,10 @@ func CreateTask(ctx context.Context, name string, tc *kernel.ThreadGroup, mntns 
 	if err != nil {
 		return nil, err
 	}
-	m := mm.NewMemoryManager(k, k.MemoryFile(), k.SleepForAddressSpaceActivation)
+	m, err := mm.NewMemoryManager(k, k.MemoryFile())
+	if err != nil {
+		return nil, err
+	}
 	m.SetExecutable(ctx, exe)
 
 	creds := auth.CredentialsFromContext(ctx)
