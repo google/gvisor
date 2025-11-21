@@ -367,7 +367,7 @@ func TestClientBulkTransfer(t *testing.T) {
 			}
 			defer l.Close()
 			const chunkSize = 4 << 20 // 4 MiB
-			var responseString = strings.Repeat("r", chunkSize)
+			responseString := strings.Repeat("r", chunkSize)
 			go func() {
 				http.Serve(l, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					for done := 0; done < payloadSize; {
@@ -382,9 +382,6 @@ func TestClientBulkTransfer(t *testing.T) {
 			}()
 
 			response, err := makeRequest(listenAddr, ctx.serverStk)
-			if err != nil {
-				t.Fatalf("httpClient.Get(\"/\") failed: %s", err)
-			}
 			if err != nil {
 				t.Fatalf("httpClient.Get(\"/\") failed: %s", err)
 			}
