@@ -193,6 +193,24 @@ func (s *State) PatchSyscall(ctx context.Context, ac *arch.Context64, mm memoryM
 		return fmt.Errorf("no task found")
 	}
 
+	// Don't patch syscalls when the task is being ptraced (e.g., gdb/lldb debugging).
+	// Syscall patching causes intermittent segfaults when ptrace is active.
+	//
+	// The observed bug: When debugging with gdb, programs randomly segfault at
+	// garbage addresses (e.g., 0x00007fbcd44c4e48) during startup. The bug is
+	// intermittent - sometimes the program runs successfully, other times it crashes.
+	//
+	// Root cause: Not fully understood. The intermittent nature suggests a
+	// subtle interaction or timing issue between the patching mechanism
+	// and ptrace state management.
+	//
+	// Skipping patching entirely when ptrace is active avoids whatever the issue is
+	// and allows normal (unpatched) syscall handling, which works correctly with
+	// debuggers. Performance cost is acceptable when debugging.
+	if task.Tracer() != nil {
+		return nil
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
