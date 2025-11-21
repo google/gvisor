@@ -87,9 +87,10 @@ func (w *Walker) iterateRangeCanonical(start, end uintptr) bool {
 					pmdEntries = w.pageTables.Allocator.NewPTEs()
 					for index := uint16(0); index < entriesPerPage; index++ {
 						pmdEntries[index].SetSect()
+						opts := pudEntry.Opts()
 						pmdEntries[index].Set(
 							pudEntry.Address()+(pmdSize*uintptr(index)),
-							pudEntry.Opts())
+							&opts)
 					}
 					pudEntry.setPageTable(w.pageTables, pmdEntries)
 				} else {
@@ -152,9 +153,10 @@ func (w *Walker) iterateRangeCanonical(start, end uintptr) bool {
 						// Install the relevant entries.
 						pteEntries = w.pageTables.Allocator.NewPTEs()
 						for index := uint16(0); index < entriesPerPage; index++ {
+							opts := pmdEntry.Opts()
 							pteEntries[index].Set(
 								pmdEntry.Address()+(pteSize*uintptr(index)),
-								pmdEntry.Opts())
+								&opts)
 						}
 						pmdEntry.setPageTable(w.pageTables, pteEntries)
 					} else {

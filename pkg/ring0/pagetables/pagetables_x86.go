@@ -73,6 +73,9 @@ type MapOpts struct {
 	// User indicates the page is a user page.
 	User bool
 
+	// Static indicates the entries should not be cleared/freed.
+	Static bool
+
 	// MemoryType is the memory type.
 	MemoryType hostarch.MemoryType
 }
@@ -91,7 +94,7 @@ func (p *PTE) Clear() {
 //
 //go:nosplit
 func (p *PTE) Valid() bool {
-	return atomic.LoadUintptr((*uintptr)(p))&present != 0
+	return atomic.LoadUintptr((*uintptr)(p)) != 0
 }
 
 // Opts returns the PTE options.
@@ -138,8 +141,8 @@ func (p *PTE) IsSuper() bool {
 // This does not change the super page property.
 //
 //go:nosplit
-func (p *PTE) Set(addr uintptr, opts MapOpts) {
-	if !opts.AccessType.Any() {
+func (p *PTE) Set(addr uintptr, opts *MapOpts) {
+	if !opts.AccessType.Any() && !opts.Static {
 		p.Clear()
 		return
 	}
