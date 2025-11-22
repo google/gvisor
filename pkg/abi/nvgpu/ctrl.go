@@ -75,11 +75,10 @@ const (
 	NV0000_CTRL_CMD_GPU_GET_ACTIVE_DEVICE_IDS = 0x288
 	NV0000_CTRL_CMD_GPU_ASYNC_ATTACH_ID       = 0x289
 	NV0000_CTRL_CMD_GPU_WAIT_ATTACH_ID        = 0x290
-)
 
-// From src/common/sdk/nvidia/inc/ctrl/ctrl0000/ctrl0000gsync.h:
-const (
-	NV0000_CTRL_CMD_GSYNC_GET_ATTACHED_IDS = 0x301
+	NV0000_CTRL_GPU_INVALID_ID      = 0xffffffff
+	NV0000_CTRL_GPU_MAX_PROBED_GPUS = NV_MAX_DEVICES
+	NV0000_GPU_MAX_GID_LENGTH       = 0x100
 )
 
 // NV0000_CTRL_GPU_GET_ID_INFO_PARAMS is the param type for NV0000_CTRL_CMD_GPU_GET_ID_INFO,
@@ -97,6 +96,25 @@ type NV0000_CTRL_GPU_GET_ID_INFO_PARAMS struct {
 	GpuInstance       uint32
 	NumaID            int32
 }
+
+// +marshal
+type NV0000_CTRL_GPU_ATTACH_IDS_PARAMS struct {
+	GPUIDs   [NV0000_CTRL_GPU_MAX_PROBED_GPUS]uint32
+	FailedID uint32
+}
+
+// +marshal
+type NV0000_CTRL_GPU_GET_UUID_FROM_GPU_ID_PARAMS struct {
+	GPUID      uint32
+	Flags      uint32
+	GPUUUID    [NV0000_GPU_MAX_GID_LENGTH]byte
+	UUIDStrLen uint32
+}
+
+// From src/common/sdk/nvidia/inc/ctrl/ctrl0000/ctrl0000gsync.h:
+const (
+	NV0000_CTRL_CMD_GSYNC_GET_ATTACHED_IDS = 0x301
+)
 
 // From src/common/sdk/nvidia/inc/ctrl/ctrl0000/ctrl0000syncgpuboost.h:
 const (

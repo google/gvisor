@@ -27,6 +27,9 @@ type DirentHandler func(ino uint64, off int64, ftype uint8, name string, reclen 
 // ForEachDirent retrieves all dirents from dirfd using getdents64(2) and
 // invokes handleDirent on them.
 func ForEachDirent(dirfd int, handleDirent DirentHandler) error {
+	if _, err := unix.Seek(dirfd, unix.SEEK_SET, 0); err != nil {
+		return err
+	}
 	var direntsBuf [8192]byte
 	for {
 		n, err := unix.Getdents(dirfd, direntsBuf[:])
