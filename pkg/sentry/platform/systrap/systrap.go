@@ -125,6 +125,8 @@ var (
 
 // platformContext is an implementation of the platform context.
 type platformContext struct {
+	platform.NoCPUNumbers
+
 	// signalInfo is the signal info, if and when a signal is received.
 	signalInfo linux.SignalInfo
 
@@ -239,6 +241,7 @@ func (c *platformContext) PrepareSleep() {
 type Systrap struct {
 	platform.NoCPUPreemptionDetection
 	platform.UseHostGlobalMemoryBarrier
+	platform.NoCPUNumbers
 
 	// memoryFile is used to create a stub sysmsg stack which is shared with
 	// the Sentry. Since memoryFile is platform-private, it is never restored,

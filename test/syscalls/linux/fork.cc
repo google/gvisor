@@ -377,6 +377,8 @@ TEST_F(ForkTest, SigAltStack) {
 }
 
 TEST_F(ForkTest, Affinity) {
+  // sched_setaffinity is a no-op on platform/KVM.
+  SKIP_IF(GvisorPlatform() == Platform::kKVM);
   // Make a non-default cpumask.
   cpu_set_t parent_mask;
   EXPECT_THAT(sched_getaffinity(/*pid=*/0, sizeof(cpu_set_t), &parent_mask),
