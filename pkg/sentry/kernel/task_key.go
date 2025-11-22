@@ -48,7 +48,7 @@ func (t *Task) joinNewSessionKeyringLocked(newKeyDesc string, newKeyPerms auth.K
 	err := t.UserNamespace().Keys.Do(func(keySet *auth.LockedKeySet) error {
 		creds := t.Credentials()
 		var err error
-		sessionKeyring, err = keySet.Add(newKeyDesc, creds, newKeyPerms)
+		sessionKeyring, err = keySet.Add(newKeyDesc, creds, newKeyPerms, int(t.Kernel().MaxKeySetSize.Load()))
 		return err
 	})
 	if err != nil {
