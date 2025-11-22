@@ -82,8 +82,14 @@ func Install(rules SyscallRules, denyRules SyscallRules, options ProgramOptions)
 	}
 
 	// Perform the actual installation.
-	if err := SetFilter(instrs); err != nil {
-		return fmt.Errorf("failed to set filter: %v", err)
+	if options.LogNotifications {
+		if err := SetFilterAndLogNotifications(instrs, options); err != nil {
+			return fmt.Errorf("failed to set filter: %v", err)
+		}
+	} else {
+		if err := SetFilter(instrs); err != nil {
+			return fmt.Errorf("failed to set filter: %v", err)
+		}
 	}
 
 	log.Infof("Seccomp filters installed.")
@@ -321,6 +327,17 @@ type ProgramOptions struct {
 	// called >10% of the time out of all syscalls made).
 	// It is ordered from most frequent to least frequent.
 	HotSyscalls []uintptr
+
+	// LogNotifications enables logging of user notifications at the
+	// warning level. Syscalls triggered notifications are not blocked.
+	LogNotifications bool
+
+	// NotificationCallback is called when a blocked syscall is triggered.
+	NotificationCallback NotificationCallback
+
+	// NotifyFDNum is a target number for the seccomp notify descriptor.
+	// It can be used in filters to allow ioctl-s on this file descriptor.
+	NotifyFDNum int
 }
 
 // DefaultProgramOptions returns the default program options.
@@ -333,6 +350,7 @@ func DefaultProgramOptions() ProgramOptions {
 		DefaultAction: action,
 		BadArchAction: action,
 		Optimize:      true,
+		NotifyFDNum:   -1,
 	}
 }
 
