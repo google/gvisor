@@ -36,12 +36,12 @@ jobs:
             -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
             "${{ github.event.pull_request.statuses_url }}"
       if: github.event_name == 'pull_request'
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@v6
       if: github.event_name == 'push' && steps.setup.outputs.has_token == 'true'
       with:
         fetch-depth: 0
         token: '${{ secrets.GO_TOKEN }}'
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@v6
       if: github.event_name == 'pull_request' || steps.setup.outputs.has_token != 'true'
       with:
         fetch-depth: 0
