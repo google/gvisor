@@ -1112,31 +1112,6 @@ func validateVerdictData(tab *Table, bytes nlmsg.AttrsView) (stack.NFVerdict, *s
 	return v, nil
 }
 
-// HasAttr returns whether the given attribute key is present in the attribute map.
-func HasAttr(attrName uint16, attrs map[uint16]nlmsg.BytesView) bool {
-	_, ok := attrs[attrName]
-	return ok
-}
-
-// NfParse parses the data bytes, clearing the nested attribute bit if present.
-// For nested attributes, Linux supports these attributes having the bit
-// set or unset. It is cleared here for consistency.
-func NfParse(data nlmsg.AttrsView) (map[uint16]nlmsg.BytesView, bool) {
-	attrs, ok := data.Parse()
-	if !ok {
-		return nil, ok
-	}
-
-	newAttrs := make(map[uint16]nlmsg.BytesView)
-	// TODO - b/421437663: If any validation has to be done on nested attributes,
-	// it should be done here.
-	for attr, attrData := range attrs {
-		newAttrs[attr & ^linux.NLA_F_NESTED] = attrData
-	}
-
-	return newAttrs, ok
-}
-
 // deepCopyRule returns a deep copy of the Rule struct.
 func deepCopyRule(rule *Rule, chainCopy *Chain) *Rule {
 	return &Rule{

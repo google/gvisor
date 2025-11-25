@@ -22,9 +22,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/rand"
+	"gvisor.dev/gvisor/pkg/sentry/socket/netlink/nlmsg"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/faketime"
@@ -3829,4 +3831,97 @@ func (*fixedReader) Read(buf []byte) (int, error) {
 		buf[i] = 1
 	}
 	return len(buf), nil
+}
+
+func createEmptyNlMsg() *nlmsg.Message {
+	m := nlmsg.NewMessage(linux.NetlinkMessageHeader{})
+	m.Put(&linux.NetFilterGenMsg{})
+	return m
+}
+
+func TestNfAttrParser(t *testing.T) {
+	tests := []struct {
+		name   string
+		msg    *nlmsg.Message
+		policy []NlaPolicy
+		want   map[uint16]nlmsg.BytesView
+	}{
+		{
+			name: "validAttrs",
+			msg: func() *nlmsg.Message {
+				m := createEmptyNlMsg()
+				m.PutAttr(linux.NFTA_TABLE_HANDLE, nlmsg.PutU32(123))
+				m.PutAttr(linux.NFTA_TABLE_USE, nlmsg.PutU64(1))
+				m.PutAttrString(linux.NFTA_TABLE_NAME, "test_table")
+				return m
+			}(),
+			policy: []NlaPolicy{
+				linux.NFTA_TABLE_HANDLE: {nlaType: linux.NLA_BE32, validator: AttrMaxValidator[uint32](256)},
+				linux.NFTA_TABLE_USE:    {nlaType: linux.NLA_U64, validator: AttrMaxValidator[uint64](nlmsg.HostToNetU64(1))},
+				linux.NFTA_TABLE_NAME:   {nlaType: linux.NLA_STRING},
+			},
+			want: map[uint16]nlmsg.BytesView{
+				linux.NFTA_TABLE_HANDLE: []byte{0, 0, 0, 123},           // Network byte order.
+				linux.NFTA_TABLE_USE:    []byte{0, 0, 0, 0, 0, 0, 0, 1}, // Network byte order.
+				// The string is expected to be null terminated.
+				linux.NFTA_TABLE_NAME: []byte{'t', 'e', 's', 't', '_', 't', 'a', 'b', 'l', 'e', '\x00'},
+			},
+		},
+		{
+			name: "attrsWithoutPolicy",
+			msg: func() *nlmsg.Message {
+				m := createEmptyNlMsg()
+				m.PutAttr(linux.NFTA_TABLE_HANDLE, nlmsg.PutU32(123))
+				m.PutAttr(linux.NFTA_TABLE_USE, nlmsg.PutU64(1))
+				return m
+			}(),
+			want: map[uint16]nlmsg.BytesView{
+				linux.NFTA_TABLE_HANDLE: []byte{0, 0, 0, 123},
+				linux.NFTA_TABLE_USE:    []byte{0, 0, 0, 0, 0, 0, 0, 1},
+			},
+		},
+		{
+			name: "attrGtThanMax",
+			msg: func() *nlmsg.Message {
+				m := createEmptyNlMsg()
+				m.PutAttr(linux.NFTA_TABLE_HANDLE, nlmsg.PutU32(123))
+				return m
+			}(),
+			policy: []NlaPolicy{
+				linux.NFTA_TABLE_HANDLE: {nlaType: linux.NLA_BE32, validator: AttrMaxValidator[uint32](1)},
+			},
+		},
+		{
+			name: "attrWithInvalidType",
+			msg: func() *nlmsg.Message {
+				m := createEmptyNlMsg()
+				m.PutAttr(linux.NFTA_TABLE_HANDLE, nlmsg.PutU16(123))
+				return m
+			}(),
+			policy: []NlaPolicy{
+				linux.NFTA_TABLE_HANDLE: {nlaType: linux.NLA_U32},
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var nfGenMsg linux.NetFilterGenMsg
+			attr, ok := test.msg.GetData(&nfGenMsg)
+			if !ok {
+				t.Fatalf("GetData() failed for msg %v", test.msg)
+			}
+			got, gotOk := NfParseWithPolicy(attr, test.policy)
+			wantOk := test.want != nil
+			if wantOk != gotOk {
+				t.Fatalf("NfParseWithPolicy() failed, want ok: %v, got ok: %v", wantOk, gotOk)
+			}
+			if !wantOk {
+				return
+			}
+			if diff := cmp.Diff(test.want, got); diff != "" {
+				t.Fatalf("NfParseWithPolicy() returned diff (-want +got): %v", diff)
+			}
+		})
+	}
 }
