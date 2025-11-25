@@ -2167,6 +2167,263 @@ TEST(NetlinkRouteTest, LinkMulticastGroupEnobufs) {
               SyscallFailsWithErrno(ENOBUFS));
 }
 
+// Tests the ability of a userspace process to simultaneously send an
+// RTM_SETLINK message to both the kernel and the userland RTMGRP_LINK
+// subscribers.
+TEST(NetlinkRouteTest, LinkMulticastGroupUserToUserSend) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+  SKIP_IF(IsRunningWithHostinet());
+  // TODO(gvisor.dev/issue/4595): enable cooperative save tests.
+  const DisableSave ds;
+
+  const struct sockaddr_nl recv_addr = {
+      .nl_family = AF_NETLINK,
+      .nl_groups = RTMGRP_LINK,
+  };
+  FileDescriptor nlsk_recv =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE, &recv_addr));
+  int passcred_val = 1;
+  ASSERT_THAT(setsockopt(nlsk_recv.get(), SOL_SOCKET, SO_PASSCRED,
+                         &passcred_val, sizeof(passcred_val)),
+              SyscallSucceeds());
+
+  FileDescriptor nlsk_send =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
+  struct sockaddr_nl nlsk_send_addr = {};
+  socklen_t addr_len = sizeof(nlsk_send_addr);
+  ASSERT_THAT(getsockname(nlsk_send.get(), (struct sockaddr*)&nlsk_send_addr,
+                          &addr_len),
+              SyscallSucceeds());
+
+  // Send an RTM_SETLINK message to change the MTU of the loopback
+  // interface.
+  struct sockaddr_nl send_addr = {
+      .nl_family = AF_NETLINK,
+      .nl_pid = 0,               // Send to the kernel.
+      .nl_groups = RTMGRP_LINK,  // and also send to userland subscribers.
+  };
+  const Link link = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink());
+  MtuRequest mtu_request = GetMtuRequest(link, RTM_SETLINK, link.mtu + 10);
+  mtu_request.hdr.nlmsg_pid = getpid();
+  struct iovec iov = {
+      .iov_base = &mtu_request,
+      .iov_len = sizeof(mtu_request),
+  };
+  struct msghdr msg = {
+      .msg_name = &send_addr,
+      .msg_namelen = sizeof(send_addr),
+      .msg_iov = &iov,
+      .msg_iovlen = 1,
+  };
+  ASSERT_THAT(RetryEINTR(sendmsg)(nlsk_send.get(), &msg, 0), SyscallSucceeds());
+
+  // And verify we received a response from the kernel.
+  constexpr int kPollTimeoutMs = 1000;
+  struct pollfd pfd = {.fd = nlsk_send.get(), .events = POLLIN};
+  ASSERT_EQ(RetryEINTR(poll)(&pfd, 1, kPollTimeoutMs), 1)
+      << "nlsk_send: Did not get the expected unicast from the kernel.";
+  bool got_msg = false;
+  ASSERT_NO_ERRNO(NetlinkResponse(
+      nlsk_send,
+      [&](const struct nlmsghdr* hdr) {
+        EXPECT_EQ(NLMSG_ERROR, hdr->nlmsg_type);
+        EXPECT_EQ(hdr->nlmsg_seq, kSeq);
+        EXPECT_GE(hdr->nlmsg_len, sizeof(*hdr) + sizeof(struct nlmsgerr));
+        const struct nlmsgerr* msg =
+            reinterpret_cast<const struct nlmsgerr*>(NLMSG_DATA(hdr));
+        ASSERT_EQ(msg->error, 0);
+        got_msg = true;
+      },
+      /*expect_nlmsgerr=*/true));
+  ASSERT_TRUE(got_msg) << "Did not get a response from the kernel.";
+
+  // Now that we know the kernel has processed the message, setup a cleanup.
+  auto restore_mtu = Cleanup([&]() {
+    MtuRequest mtu_request = GetMtuRequest(link, RTM_SETLINK, link.mtu);
+    ASSERT_NO_ERRNO(NetlinkRequestAckOrError(nlsk_send, kSeq, &mtu_request,
+                                             sizeof(mtu_request)));
+  });
+
+  // Verify that the RTM_SETLINK we sent was also received by the RTMGRP_LINK
+  // subscriber. We also expect an RTM_NEWLINK message from the kernel. Hence
+  // the two attempts.
+  bool got_user_msg = false;
+  for (int i = 0; i < 2; ++i) {
+    struct pollfd pfd2 = {.fd = nlsk_recv.get(), .events = POLLIN};
+    if (RetryEINTR(poll)(&pfd2, 1, kPollTimeoutMs) < 1) break;
+
+    char control[CMSG_SPACE(sizeof(struct ucred))] = {};
+    constexpr size_t kBufferSize = 4096;
+    std::vector<char> buf(kBufferSize);
+    iov = {
+        .iov_base = buf.data(),
+        .iov_len = buf.size(),
+    };
+    struct sockaddr_nl from_addr = {};
+    msg = {
+        .msg_name = &from_addr,
+        .msg_namelen = sizeof(from_addr),
+        .msg_iov = &iov,
+        .msg_iovlen = 1,
+        .msg_control = control,
+        .msg_controllen = sizeof(control),
+    };
+
+    int len;
+    ASSERT_THAT(len = RetryEINTR(recvmsg)(nlsk_recv.get(), &msg, 0),
+                SyscallSucceeds());
+    ASSERT_NE(msg.msg_flags & MSG_TRUNC,
+              MSG_TRUNC);  // The buf we gave was big.
+
+    struct nlmsghdr* hdr = reinterpret_cast<struct nlmsghdr*>(buf.data());
+    for (; NLMSG_OK(hdr, len); hdr = NLMSG_NEXT(hdr, len)) {
+      ASSERT_TRUE(NLMSG_OK(hdr, len));
+      // Ignore the kernel's message.
+      if (hdr->nlmsg_type == RTM_NEWLINK) {
+        EXPECT_EQ(from_addr.nl_pid, 0);
+        continue;
+      }
+
+      ASSERT_EQ(hdr->nlmsg_type, RTM_SETLINK);
+      ASSERT_EQ(hdr->nlmsg_pid, getpid());
+      EXPECT_EQ(from_addr.nl_family, AF_NETLINK);
+      EXPECT_EQ(from_addr.nl_pid, nlsk_send_addr.nl_pid);
+
+      struct ucred creds;
+      struct cmsghdr* cmsg = CMSG_FIRSTHDR(&msg);
+      ASSERT_NE(cmsg, nullptr);
+      ASSERT_EQ(cmsg->cmsg_len, CMSG_LEN(sizeof(creds)));
+      ASSERT_EQ(cmsg->cmsg_level, SOL_SOCKET);
+      ASSERT_EQ(cmsg->cmsg_type, SCM_CREDENTIALS);
+      memcpy(&creds, CMSG_DATA(cmsg), sizeof(creds));
+      EXPECT_EQ(creds.pid, getpid());
+      got_user_msg = true;
+    }
+  }
+  EXPECT_TRUE(got_user_msg) << "RTMGRP_LINK subscriber did not receive the "
+                               "expected RTM_SETLINK message.";
+}
+
+TEST(NetlinkRouteTest, LinkMulticastGroupCapNetAdmin) {
+  SKIP_IF(IsRunningWithHostinet());
+  // TODO(gvisor.dev/issue/4595): enable cooperative save tests.
+  const DisableSave ds;
+  AutoCapability cap(CAP_NET_ADMIN, false);
+
+  FileDescriptor nlsk =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
+  struct sockaddr_nl send_addr = {
+      .nl_family = AF_NETLINK,
+      .nl_pid = 0,
+      .nl_groups = RTMGRP_LINK,
+  };
+
+  const Link link = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink());
+  MtuRequest mtu_request = GetMtuRequest(link, RTM_SETLINK, link.mtu + 10);
+  struct iovec iov = {
+      .iov_base = &mtu_request,
+      .iov_len = sizeof(mtu_request),
+  };
+  struct msghdr msg = {
+      .msg_name = &send_addr,
+      .msg_namelen = sizeof(send_addr),
+      .msg_iov = &iov,
+      .msg_iovlen = 1,
+  };
+
+  EXPECT_THAT(RetryEINTR(sendmsg)(nlsk.get(), &msg, 0),
+              SyscallFailsWithErrno(EPERM));
+
+  // But joining a multicast group should not require CAP_NET_ADMIN.
+  struct sockaddr_nl mcast_addr = {
+      .nl_family = AF_NETLINK,
+      .nl_groups = RTMGRP_LINK,
+  };
+  ASSERT_NO_ERRNO(NetlinkBoundSocket(NETLINK_ROUTE, &mcast_addr));
+}
+
+TEST(NetlinkRouteTest, LinkMulticastGroupNoSelfBroadcast) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+  SKIP_IF(IsRunningWithHostinet());
+  // TODO(gvisor.dev/issue/4595): enable cooperative save tests.
+  const DisableSave ds;
+
+  const struct sockaddr_nl linkgrp_addr = {
+      .nl_family = AF_NETLINK,
+      .nl_groups = RTMGRP_LINK,
+  };
+  FileDescriptor nlsk_send = ASSERT_NO_ERRNO_AND_VALUE(
+      NetlinkBoundSocket(NETLINK_ROUTE, &linkgrp_addr));
+  FileDescriptor nlsk_recv = ASSERT_NO_ERRNO_AND_VALUE(
+      NetlinkBoundSocket(NETLINK_ROUTE, &linkgrp_addr));
+
+  // Create an RTM_GETLINK request.
+  struct request {
+    struct nlmsghdr hdr;
+    struct ifinfomsg ifm;
+  };
+  request req = {};
+  req.hdr = {
+      .nlmsg_len = sizeof(req),
+      .nlmsg_type = RTM_GETLINK,
+      .nlmsg_flags = NLM_F_REQUEST | NLM_F_DUMP,
+      .nlmsg_seq = kSeq,
+  };
+  req.ifm.ifi_family = AF_UNSPEC;
+
+  // And send it to both the kernel and the RTMGRP_LINK group.
+  struct iovec iov = {
+      .iov_base = &req,
+      .iov_len = sizeof(req),
+  };
+  struct sockaddr_nl send_addr = linkgrp_addr;
+  ASSERT_EQ(send_addr.nl_pid, 0);
+  struct msghdr msg = {
+      .msg_name = &send_addr,
+      .msg_namelen = sizeof(send_addr),
+      .msg_iov = &iov,
+      .msg_iovlen = 1,
+  };
+  ASSERT_THAT(RetryEINTR(sendmsg)(nlsk_send.get(), &msg, 0), SyscallSucceeds());
+
+  // The sender should only receive the kernel's response, not its own
+  // broadcast.
+  constexpr int kPollTimeoutMs = 500;
+  bool got_response = false;
+  for (int i = 0; i < 2; ++i) {
+    struct pollfd pfd = {.fd = nlsk_send.get(), .events = POLLIN};
+    if (RetryEINTR(poll)(&pfd, 1, kPollTimeoutMs) != 1) {
+      break;
+    }
+    ASSERT_NO_ERRNO(NetlinkResponse(
+        nlsk_send,
+        [&](const struct nlmsghdr* hdr) {
+          ASSERT_NE(hdr->nlmsg_type, RTM_GETLINK);  // No self-broadcast.
+          if (hdr->nlmsg_type == RTM_NEWLINK) {
+            got_response = true;
+          }
+        },
+        /*expect_nlmsgerr=*/false));
+  }
+  EXPECT_TRUE(got_response) << "Did not get a response from the kernel.";
+
+  // Whereas the bystander RTMGRP_LINK subscriber should get the broadcast.
+  bool got_broadcast = false;
+  {
+    struct pollfd pfd = {.fd = nlsk_recv.get(), .events = POLLIN};
+    ASSERT_EQ(RetryEINTR(poll)(&pfd, 1, kPollTimeoutMs), 1)
+        << "RTMGRP_LINK subscriber did not get the broadcast.";
+    ASSERT_NO_ERRNO(NetlinkResponse(
+        nlsk_recv,
+        [&](const struct nlmsghdr* hdr) {
+          ASSERT_EQ(hdr->nlmsg_type, RTM_GETLINK);
+          got_broadcast = true;
+        },
+        /*expect_nlmsgerr=*/false));
+  }
+  EXPECT_TRUE(got_broadcast) << "Did not get the broadcast.";
+}
+
 }  // namespace
 
 }  // namespace testing

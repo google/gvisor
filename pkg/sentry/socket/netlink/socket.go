@@ -19,6 +19,8 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"math/bits"
+	"strconv"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -35,6 +37,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/ktime"
 	"gvisor.dev/gvisor/pkg/sentry/socket"
+	"gvisor.dev/gvisor/pkg/sentry/socket/control"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netlink/nlmsg"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netlink/port"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix"
@@ -105,7 +108,8 @@ type Socket struct {
 	// Writing to it requires the per-netns table lock to be held, reading it does not.
 	groups atomicbitops.Uint64
 
-	// mu protects the fields below.
+	// mu protects the fields below. In lock order it follows the per-netns multicast
+	// table lock.
 	mu sync.Mutex `state:"nosave"`
 
 	// bound indicates that portid is valid.
@@ -321,7 +325,7 @@ func (s *Socket) bindPort(t *kernel.Task, port int32) *syserr.Error {
 	return nil
 }
 
-func (s *Socket) checkMcastSupport(t *kernel.Task) *syserr.Error {
+func (s *Socket) checkMcastSupport() *syserr.Error {
 	// Currently only ROUTE family sockets support multicast.
 	if s.Protocol() != linux.NETLINK_ROUTE {
 		return syserr.ErrNotSupported
@@ -330,20 +334,15 @@ func (s *Socket) checkMcastSupport(t *kernel.Task) *syserr.Error {
 	if _, ok := s.Stack().(inet.InterfaceEventPublisher); !ok {
 		return syserr.ErrNotSupported
 	}
-	// man 7 netlink: "Only processes with an effective UID of 0 or the CAP_NET_ADMIN
-	// capability may send or listen to a netlink multicast group."
-	if !t.HasCapability(linux.CAP_NET_ADMIN) {
-		return syserr.ErrPermissionDenied
-	}
 	return nil
 }
 
 // preconditions: the netlink multicast table is locked.
-func (s *Socket) joinGroups(t *kernel.Task, groups uint64) *syserr.Error {
+func (s *Socket) joinGroups(groups uint64) *syserr.Error {
 	if groups&supportedGroups != groups {
 		return syserr.ErrNotSupported
 	}
-	if err := s.checkMcastSupport(t); err != nil {
+	if err := s.checkMcastSupport(); err != nil {
 		return err
 	}
 
@@ -358,7 +357,7 @@ func (s *Socket) joinGroups(t *kernel.Task, groups uint64) *syserr.Error {
 }
 
 // preconditions: the netlink multicast table is locked.
-func (s *Socket) joinGroup(t *kernel.Task, group uint32) *syserr.Error {
+func (s *Socket) joinGroup(group uint32) *syserr.Error {
 	if group == 0 || group > 64 {
 		return syserr.ErrInvalidArgument
 	}
@@ -366,7 +365,7 @@ func (s *Socket) joinGroup(t *kernel.Task, group uint32) *syserr.Error {
 	if groups&supportedGroups != groups {
 		return syserr.ErrNotSupported
 	}
-	if err := s.checkMcastSupport(t); err != nil {
+	if err := s.checkMcastSupport(); err != nil {
 		return err
 	}
 
@@ -379,7 +378,7 @@ func (s *Socket) joinGroup(t *kernel.Task, group uint32) *syserr.Error {
 }
 
 // preconditions: the netlink multicast table is locked.
-func (s *Socket) leaveGroup(t *kernel.Task, group uint32) *syserr.Error {
+func (s *Socket) leaveGroup(group uint32) *syserr.Error {
 	if group == 0 || group > 64 {
 		return syserr.ErrInvalidArgument
 	}
@@ -387,7 +386,7 @@ func (s *Socket) leaveGroup(t *kernel.Task, group uint32) *syserr.Error {
 	if groups&supportedGroups != groups {
 		return syserr.ErrNotSupported
 	}
-	if err := s.checkMcastSupport(t); err != nil {
+	if err := s.checkMcastSupport(); err != nil {
 		return err
 	}
 
@@ -415,14 +414,8 @@ func (s *Socket) HandleInterfaceChangeEvent(ctx context.Context, idx int32, i in
 		panic(fmt.Sprintf("Non-ROUTE netlink socket (protocol %d) cannot handle interface events", s.Protocol()))
 	}
 
-	// s.portID is protected by s.mu. But we cannot take s.mu because it already may
-	// be held across sendMsg() -> Protocol.Receive() -> ProcessMessages() -> ...
-	// -> protocol.ProcessMessage() -> Socket.SendResponse(). The racy access to s.portID
-	// happens to be okay because once bound, a netlink socket's port ID is immutable.
-	// TODO(b/435491173): Stop holding s.mu across the chain above.
-	ms := nlmsg.NewMessageSet(s.portID, 0)
+	ms := nlmsg.NewMessageSet(s.GetPortID(), 0)
 	routeProtocol.AddNewLinkMessage(ms, idx, i)
-	// TODO(b/456238795): Implement netlink ENOBUFS.
 	s.SendResponse(ctx, ms)
 }
 
@@ -433,14 +426,8 @@ func (s *Socket) HandleInterfaceDeleteEvent(ctx context.Context, idx int32, i in
 		panic(fmt.Sprintf("Non-ROUTE netlink socket (protocol %d) cannot handle interface events", s.Protocol()))
 	}
 
-	// s.portID is protected by s.mu. But we cannot take s.mu because it already may
-	// be held across sendMsg() -> Protocol.Receive() -> ProcessMessages() -> ...
-	// -> protocol.ProcessMessage() -> Socket.SendResponse(). The racy access to s.portID
-	// happens to be okay because once bound, a netlink socket's port ID is immutable.
-	// TODO(b/435491173): Stop holding s.mu across the chain above.
-	ms := nlmsg.NewMessageSet(s.portID, 0)
+	ms := nlmsg.NewMessageSet(s.GetPortID(), 0)
 	routeProtocol.AddDelLinkMessage(ms, idx, i)
-	// TODO(b/456238795): Implement netlink ENOBUFS.
 	s.SendResponse(ctx, ms)
 }
 
@@ -454,7 +441,7 @@ func (s *Socket) Bind(t *kernel.Task, sockaddr []byte) *syserr.Error {
 	if a.Groups != 0 {
 		var err *syserr.Error
 		s.netns.NetlinkMcastTable().WithTableLocked(func() {
-			err = s.joinGroups(t, uint64(a.Groups))
+			err = s.joinGroups(uint64(a.Groups))
 		})
 		if err != nil {
 			return err
@@ -473,7 +460,7 @@ func (s *Socket) Connect(t *kernel.Task, sockaddr []byte, blocking bool) *syserr
 		return err
 	}
 
-	// No support for sending to destination multicast groups yet.
+	// No support for connecting to destination multicast groups yet.
 	if a.Groups != 0 {
 		return syserr.ErrPermissionDenied
 	}
@@ -685,7 +672,7 @@ func (s *Socket) SetSockOpt(t *kernel.Task, level int, name int, opt []byte) *sy
 			group := hostarch.ByteOrder.Uint32(opt)
 			var err *syserr.Error
 			s.netns.NetlinkMcastTable().WithTableLocked(func() {
-				err = s.joinGroup(t, group)
+				err = s.joinGroup(group)
 			})
 			return err
 
@@ -696,7 +683,7 @@ func (s *Socket) SetSockOpt(t *kernel.Task, level int, name int, opt []byte) *sy
 			group := hostarch.ByteOrder.Uint32(opt)
 			var err *syserr.Error
 			s.netns.NetlinkMcastTable().WithTableLocked(func() {
-				err = s.leaveGroup(t, group)
+				err = s.leaveGroup(group)
 			})
 			return err
 
@@ -757,6 +744,7 @@ func (s *Socket) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags int, have
 	r := unix.EndpointReader{
 		Ctx:      t,
 		Endpoint: s.ep,
+		Creds:    s.Passcred(),
 		Peek:     flags&linux.MSG_PEEK != 0,
 	}
 
@@ -785,7 +773,10 @@ func (s *Socket) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags int, have
 		if trunc {
 			n = int64(r.MsgSize)
 		}
-		return int(n), mflags, from, fromLen, socket.ControlMessages{}, syserr.FromError(err)
+		if srcPort, err := strconv.ParseUint(r.From.Addr, 10, 32); err == nil {
+			from.PortID = uint32(srcPort)
+		}
+		return int(n), mflags, from, fromLen, socket.ControlMessages{Unix: r.Control}, syserr.FromError(err)
 	}
 
 	// We'll have to block. Register for notification and keep trying to
@@ -805,7 +796,10 @@ func (s *Socket) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags int, have
 			if trunc {
 				n = int64(r.MsgSize)
 			}
-			return int(n), mflags, from, fromLen, socket.ControlMessages{}, syserr.FromError(err)
+			if srcPort, err := strconv.ParseUint(r.From.Addr, 10, 32); err == nil {
+				from.PortID = uint32(srcPort)
+			}
+			return int(n), mflags, from, fromLen, socket.ControlMessages{Unix: r.Control}, syserr.FromError(err)
 		}
 
 		if err := t.BlockWithDeadline(ch, haveDeadline, deadline); err != nil {
@@ -837,30 +831,34 @@ func (kernelSCM) Credentials(*kernel.Task) (kernel.ThreadID, auth.UID, auth.GID)
 // kernelCreds is the concrete version of kernelSCM used in all creds.
 var kernelCreds = &kernelSCM{}
 
-// SendResponse sends the response messages in ms back to userspace.
+func (s *Socket) sendBufs(ctx context.Context, bufs [][]byte, cms transport.ControlMessages, srcPort uint32) *syserr.Error {
+	from := transport.Address{Addr: strconv.FormatUint(uint64(srcPort), 10)}
+	_, notify, err := s.connection.Send(ctx, bufs, cms, from)
+	// If the buffer is full, we simply drop messages, just like Linux.
+	// TODO(b/456238795): Implement netlink ENOBUFS.
+	if err != nil && err != syserr.ErrWouldBlock {
+		return err
+	}
+	if notify {
+		s.connection.SendNotify()
+	}
+	return nil
+}
+
+// SendResponse sends the kernel's response messages in ms back to userspace.
 func (s *Socket) SendResponse(ctx context.Context, ms *nlmsg.MessageSet) *syserr.Error {
 	// Linux combines multiple netlink messages into a single datagram.
 	bufs := make([][]byte, 0, len(ms.Messages))
 	for _, m := range ms.Messages {
 		bufs = append(bufs, m.Finalize())
 	}
-
-	// All messages are from the kernel.
 	cms := transport.ControlMessages{
 		Credentials: kernelCreds,
 	}
 
 	if len(bufs) > 0 {
-		// RecvMsg never receives the address, so we don't need to send
-		// one.
-		_, notify, err := s.connection.Send(ctx, bufs, cms, transport.Address{})
-		// If the buffer is full, we simply drop messages, just like
-		// Linux.
-		if err != nil && err != syserr.ErrWouldBlock {
+		if err := s.sendBufs(ctx, bufs, cms, 0 /* srcPort */); err != nil {
 			return err
-		}
-		if notify {
-			s.connection.SendNotify()
 		}
 	}
 
@@ -880,12 +878,8 @@ func (s *Socket) SendResponse(ctx context.Context, ms *nlmsg.MessageSet) *syserr
 		// Add the dump_done_errno payload.
 		m.Put(primitive.AllocateInt64(0))
 
-		_, notify, err := s.connection.Send(ctx, [][]byte{m.Finalize()}, cms, transport.Address{})
-		if err != nil && err != syserr.ErrWouldBlock {
+		if err := s.sendBufs(ctx, [][]byte{m.Finalize()}, cms, 0 /* srcPort */); err != nil {
 			return err
-		}
-		if notify {
-			s.connection.SendNotify()
 		}
 	}
 
@@ -933,7 +927,7 @@ func (s *Socket) ProcessMessages(ctx context.Context, buf []byte) *syserr.Error 
 			continue
 		}
 
-		ms := nlmsg.NewMessageSet(s.portID, hdr.Seq)
+		ms := nlmsg.NewMessageSet(s.GetPortID(), hdr.Seq)
 		if err := s.protocol.ProcessMessage(ctx, s, msg, ms); err != nil {
 			DumpErrorMessage(hdr, ms, err)
 		} else if hdr.Flags&linux.NLM_F_ACK == linux.NLM_F_ACK {
@@ -951,6 +945,7 @@ func (s *Socket) ProcessMessages(ctx context.Context, buf []byte) *syserr.Error 
 // sendMsg is the core of message send, used for SendMsg and Write.
 func (s *Socket) sendMsg(ctx context.Context, src usermem.IOSequence, to []byte, flags int, controlMessages socket.ControlMessages) (int, *syserr.Error) {
 	dstPort := int32(0)
+	dstGroup := 0
 
 	if len(to) != 0 {
 		a, err := ExtractSockAddr(to)
@@ -958,9 +953,16 @@ func (s *Socket) sendMsg(ctx context.Context, src usermem.IOSequence, to []byte,
 			return 0, err
 		}
 
-		// No support for multicast groups yet.
 		if a.Groups != 0 {
-			return 0, syserr.ErrPermissionDenied
+			// man 7 netlink: "Since Linux 2.6.13, messages can't be broadcast to multiple groups"
+			// So we pick one like Linux.
+			dstGroup = bits.TrailingZeros32(a.Groups) + 1
+			if err := s.checkMcastSupport(); err != nil {
+				return 0, err
+			}
+			if !kernel.TaskFromContext(ctx).HasCapability(linux.CAP_NET_ADMIN) {
+				return 0, syserr.ErrNotPermitted
+			}
 		}
 
 		dstPort = int32(a.PortID)
@@ -973,14 +975,13 @@ func (s *Socket) sendMsg(ctx context.Context, src usermem.IOSequence, to []byte,
 	}
 
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	// An unbound socket has a port ID defaulted to 0. If it has not yet been bound,
 	// bind it to assign it a unique port ID.
 	// From net/netlink/af_netlink.c:netlink_sendmsg
 	if !s.bound {
 		s.bindPort(kernel.TaskFromContext(ctx), 0)
 	}
+	s.mu.Unlock()
 
 	// For simplicity, and consistency with Linux, we copy in the entire
 	// message up front.
@@ -1001,7 +1002,18 @@ func (s *Socket) sendMsg(ctx context.Context, src usermem.IOSequence, to []byte,
 		return 0, syserr.FromError(err)
 	}
 
-	// Because we ensure the kernel is the only valid destination,
+	if dstGroup != 0 {
+		s.netns.NetlinkMcastTable().ForEachMcastSock(s.Protocol(), dstGroup, func(ns inet.NetlinkSocket) {
+			if ns.(*Socket) == s {
+				return
+			}
+			cms := transport.ControlMessages{
+				Credentials: control.MakeCreds(kernel.TaskFromContext(ctx)),
+			}
+			ns.(*Socket).sendBufs(ctx, [][]byte{buf}, cms, uint32(s.GetPortID()))
+		})
+	}
+	// Because we ensure the kernel is the only valid port destination,
 	// we can start processing here.
 	if err := s.protocol.Receive(ctx, s, buf); err != nil {
 		return 0, err
@@ -1027,5 +1039,7 @@ func (s *Socket) Type() (family int, skType linux.SockType, protocol int) {
 
 // GetPortID returns the port ID of the NETLINK socket.
 func (s *Socket) GetPortID() int32 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	return s.portID
 }
