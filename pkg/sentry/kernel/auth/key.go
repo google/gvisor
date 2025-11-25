@@ -63,10 +63,10 @@ const (
 	// Corresponds to `KEY_MAX_DESC_SIZE` in Linux.
 	MaxKeyDescSize = 4096
 
-	// maxSetSize is the maximum number of a keys in a `Set`.
+	// MaxSetSize is the default maximum number of keys in a `KeySet`.
 	// By default, Linux limits this number to 200 per non-root user.
 	// Here, we limit it to 200 per Set, which is stricter.
-	maxSetSize = 200
+	MaxSetSize = 200
 )
 
 // Key represents a key in the keyrings subsystem.
@@ -361,13 +361,13 @@ func getNewID() (KeySerial, error) {
 }
 
 // Add adds a new Key to the KeySet.
-func (s *LockedKeySet) Add(description string, creds *Credentials, perms KeyPermissions) (*Key, error) {
+func (s *LockedKeySet) Add(description string, creds *Credentials, perms KeyPermissions, keySizeLimit int) (*Key, error) {
 	if len(description) >= MaxKeyDescSize {
 		return nil, linuxerr.EINVAL
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if len(s.keys) >= maxSetSize {
+	if len(s.keys) >= keySizeLimit {
 		return nil, linuxerr.EDQUOT
 	}
 	newID, err := getNewID()
