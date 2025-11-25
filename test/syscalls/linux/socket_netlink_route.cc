@@ -1958,6 +1958,7 @@ TEST(NetlinkRouteTest, LinkMulticastGroupBasic) {
           if (msg->ifi_index != tc.link.index) {
             return;
           }
+          EXPECT_EQ(hdr->nlmsg_pid, 0);
           CheckLinkMsg(hdr, tc.link);
           got_msg = true;
         },
@@ -2040,6 +2041,7 @@ TEST(NetlinkRouteTest, LinkMulticastGroupNamespaced) {
               reinterpret_cast<const struct ifinfomsg*>(NLMSG_DATA(hdr));
           if (hdr->nlmsg_type != RTM_DELLINK) return;
           if (msg->ifi_index != inner_veth_idx) return;
+          EXPECT_EQ(hdr->nlmsg_pid, 0);
           got_msg = true;
         },
         /*expect_nlmsgerr=*/false));
@@ -2065,6 +2067,7 @@ TEST(NetlinkRouteTest, LinkMulticastGroupNamespaced) {
           char ifname[IF_NAMESIZE];
           EXPECT_NE(if_indextoname(msg->ifi_index, ifname), nullptr);
           EXPECT_STREQ(ifname, "veth2");
+          EXPECT_EQ(hdr->nlmsg_pid, 0);
           got_msg = true;
         },
         /*expect_nlmsgerr=*/false));
@@ -2232,6 +2235,8 @@ TEST(NetlinkRouteTest, LinkMulticastGroupUserToUserSend) {
         const struct nlmsgerr* msg =
             reinterpret_cast<const struct nlmsgerr*>(NLMSG_DATA(hdr));
         ASSERT_EQ(msg->error, 0);
+        EXPECT_EQ(hdr->nlmsg_pid,
+                  ASSERT_NO_ERRNO_AND_VALUE(NetlinkPortID(nlsk_send.get())));
         got_msg = true;
       },
       /*expect_nlmsgerr=*/true));

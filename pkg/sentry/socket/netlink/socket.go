@@ -414,7 +414,8 @@ func (s *Socket) HandleInterfaceChangeEvent(ctx context.Context, idx int32, i in
 		panic(fmt.Sprintf("Non-ROUTE netlink socket (protocol %d) cannot handle interface events", s.Protocol()))
 	}
 
-	ms := nlmsg.NewMessageSet(s.GetPortID(), 0)
+	// Multicast messages from the kernel leave hdr->nlmsg_pid at 0.
+	ms := nlmsg.NewMessageSet(0 /*portID*/, 0 /*seq*/)
 	routeProtocol.AddNewLinkMessage(ms, idx, i)
 	s.SendResponse(ctx, ms)
 }
@@ -426,7 +427,8 @@ func (s *Socket) HandleInterfaceDeleteEvent(ctx context.Context, idx int32, i in
 		panic(fmt.Sprintf("Non-ROUTE netlink socket (protocol %d) cannot handle interface events", s.Protocol()))
 	}
 
-	ms := nlmsg.NewMessageSet(s.GetPortID(), 0)
+	// Multicast messages from the kernel leave hdr->nlmsg_pid at 0.
+	ms := nlmsg.NewMessageSet(0 /*portID*/, 0 /*seq*/)
 	routeProtocol.AddDelLinkMessage(ms, idx, i)
 	s.SendResponse(ctx, ms)
 }
