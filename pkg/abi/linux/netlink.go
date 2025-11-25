@@ -136,6 +136,33 @@ const NetlinkAttrHeaderSize = 4
 // uapi/linux/netlink.h.
 const NLA_ALIGNTO = 4
 
+// Standard attribute types to specify validation policy, from
+// include/net/netlink.h.
+const (
+	NLA_UNSPEC = iota
+	NLA_U8
+	NLA_U16
+	NLA_U32
+	NLA_U64
+	NLA_STRING
+	NLA_FLAG
+	NLA_MSECS
+	NLA_NESTED
+	NLA_NESTED_ARRAY
+	NLA_NUL_STRING
+	NLA_BINARY
+	NLA_S8
+	NLA_S16
+	NLA_S32
+	NLA_S64
+	NLA_BITFIELD32
+	NLA_REJECT
+	NLA_BE16
+	NLA_BE32
+	__NLA_TYPE_MAX
+	NLA_TYPE_MAX = __NLA_TYPE_MAX - 1
+)
+
 // Socket options, from uapi/linux/netlink.h.
 const (
 	NETLINK_ADD_MEMBERSHIP   = 1

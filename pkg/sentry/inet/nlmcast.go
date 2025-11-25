@@ -104,7 +104,8 @@ func (m *McastTable) RemoveSocket(s NetlinkSocket) {
 	delete(m.socks[p], s)
 }
 
-func (m *McastTable) forEachMcastSock(protocol int, mcastGroup int, fn func(s NetlinkSocket)) {
+// ForEachMcastSock calls fn on all Netlink sockets that are members of the given multicast group.
+func (m *McastTable) ForEachMcastSock(protocol int, mcastGroup int, fn func(s NetlinkSocket)) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if _, ok := m.socks[protocol]; !ok {
@@ -122,7 +123,7 @@ func (m *McastTable) forEachMcastSock(protocol int, mcastGroup int, fn func(s Ne
 // OnInterfaceChangeEvent implements InterfaceEventSubscriber.OnInterfaceChangeEvent.
 func (m *McastTable) OnInterfaceChangeEvent(ctx context.Context, idx int32, i Interface) {
 	// Relay the event to RTNLGRP_LINK subscribers.
-	m.forEachMcastSock(routeProtocol, routeLinkMcastGroup, func(s NetlinkSocket) {
+	m.ForEachMcastSock(routeProtocol, routeLinkMcastGroup, func(s NetlinkSocket) {
 		s.HandleInterfaceChangeEvent(ctx, idx, i)
 	})
 }
@@ -130,7 +131,7 @@ func (m *McastTable) OnInterfaceChangeEvent(ctx context.Context, idx int32, i In
 // OnInterfaceDeleteEvent implements InterfaceEventSubscriber.OnInterfaceDeleteEvent.
 func (m *McastTable) OnInterfaceDeleteEvent(ctx context.Context, idx int32, i Interface) {
 	// Relay the event to RTNLGRP_LINK subscribers.
-	m.forEachMcastSock(routeProtocol, routeLinkMcastGroup, func(s NetlinkSocket) {
+	m.ForEachMcastSock(routeProtocol, routeLinkMcastGroup, func(s NetlinkSocket) {
 		s.HandleInterfaceDeleteEvent(ctx, idx, i)
 	})
 }

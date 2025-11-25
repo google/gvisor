@@ -465,6 +465,7 @@ func (k *Kernel) StateFields() []string {
 		"SaveRestoreExecConfig",
 		"NvidiaDriverVersion",
 		"AllowSUID",
+		"MaxKeySetSize",
 	}
 }
 
@@ -522,6 +523,7 @@ func (k *Kernel) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(44, &k.SaveRestoreExecConfig)
 	stateSinkObject.Save(45, &k.NvidiaDriverVersion)
 	stateSinkObject.Save(46, &k.AllowSUID)
+	stateSinkObject.Save(47, &k.MaxKeySetSize)
 }
 
 func (k *Kernel) afterLoad(context.Context) {}
@@ -574,6 +576,7 @@ func (k *Kernel) StateLoad(ctx context.Context, stateSourceObject state.Source) 
 	stateSourceObject.Load(44, &k.SaveRestoreExecConfig)
 	stateSourceObject.Load(45, &k.NvidiaDriverVersion)
 	stateSourceObject.Load(46, &k.AllowSUID)
+	stateSourceObject.Load(47, &k.MaxKeySetSize)
 	stateSourceObject.LoadValue(21, new([]tcpip.Endpoint), func(y any) { k.loadDanglingEndpoints(ctx, y.([]tcpip.Endpoint)) })
 }
 

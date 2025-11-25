@@ -185,6 +185,34 @@ func (i *implStatFS) afterLoad(context.Context) {}
 func (i *implStatFS) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 }
 
+func (s *maxKeySize) StateTypeName() string {
+	return "pkg/sentry/fsimpl/proc.maxKeySize"
+}
+
+func (s *maxKeySize) StateFields() []string {
+	return []string{
+		"DynamicBytesFile",
+		"maxKeys",
+	}
+}
+
+func (s *maxKeySize) beforeSave() {}
+
+// +checklocksignore
+func (s *maxKeySize) StateSave(stateSinkObject state.Sink) {
+	s.beforeSave()
+	stateSinkObject.Save(0, &s.DynamicBytesFile)
+	stateSinkObject.Save(1, &s.maxKeys)
+}
+
+func (s *maxKeySize) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (s *maxKeySize) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &s.DynamicBytesFile)
+	stateSourceObject.Load(1, &s.maxKeys)
+}
+
 func (i *subtasksInode) StateTypeName() string {
 	return "pkg/sentry/fsimpl/proc.subtasksInode"
 }
@@ -2680,6 +2708,7 @@ func init() {
 	state.Register((*staticFile)(nil))
 	state.Register((*InternalData)(nil))
 	state.Register((*implStatFS)(nil))
+	state.Register((*maxKeySize)(nil))
 	state.Register((*subtasksInode)(nil))
 	state.Register((*subtasksFD)(nil))
 	state.Register((*subtasksInodeRefs)(nil))

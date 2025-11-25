@@ -401,6 +401,9 @@ type Kernel struct {
 
 	// AllowSUID determines if the SUID/SGID bits are honored during execve.
 	AllowSUID bool
+
+	// MaxKeySetSize is the maximum number of keys in a key set.
+	MaxKeySetSize atomicbitops.Int32
 }
 
 // InitKernelArgs holds arguments to Init.
@@ -581,6 +584,7 @@ func (k *Kernel) Init(args InitKernelArgs) error {
 
 	k.cgroupRegistry = newCgroupRegistry()
 	k.UnixSocketOpts = args.UnixSocketOpts
+	k.MaxKeySetSize = atomicbitops.FromInt32(auth.MaxSetSize)
 	return nil
 }
 
