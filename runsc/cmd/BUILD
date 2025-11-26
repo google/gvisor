@@ -49,7 +49,6 @@ go_library(
         "exec.go",
         "fd_mapping.go",
         "gofer.go",
-        "help.go",
         "install.go",
         "kill.go",
         "list.go",

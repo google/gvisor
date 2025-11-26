@@ -31,6 +31,7 @@ type Flag = flag.Flag
 // Aliases for flag functions.
 var (
 	Bool        = flag.Bool
+	BoolVar     = flag.BoolVar
 	CommandLine = flag.CommandLine
 	Duration    = flag.Duration
 	Float64     = flag.Float64

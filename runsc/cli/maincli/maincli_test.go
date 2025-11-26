@@ -66,7 +66,7 @@ func TestFlagSetIdempotent(t *testing.T) {
 		} else {
 			cmds[group] = []subcommands.Command{cmd}
 		}
-	})
+	}, nil)
 
 	for group, cmdList := range cmds {
 		t.Run(group, func(t *testing.T) {

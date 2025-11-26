@@ -7,7 +7,10 @@ package(
 
 go_library(
     name = "cli",
-    srcs = ["cli.go"],
+    srcs = [
+        "cli.go",
+        "help.go",
+    ],
     visibility = [
         "//runsc:__subpackages__",
     ],
