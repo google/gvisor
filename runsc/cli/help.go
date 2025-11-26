@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package cmd
+package cli
 
 import (
 	"context"
@@ -64,22 +64,7 @@ func (h *Help) SetFlags(*flag.FlagSet) {}
 func (h *Help) Execute(ctx context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
 	switch f.NArg() {
 	case 0:
-		fmt.Fprintf(h.cdr.Output, "Usage: %s <flags> <subcommand> <subcommand args>\n\n", h.cdr.Name())
-		fmt.Fprintf(h.cdr.Output, `runsc is the gVisor container runtime.
-
-Functionality is provided by subcommands. For help with a specific subcommand,
-use "%s %s <subcommand>".
-
-`, h.cdr.Name(), h.Name())
-		h.cdr.VisitGroups(func(g *subcommands.CommandGroup) {
-			h.cdr.ExplainGroup(h.cdr.Output, g)
-		})
-
-		fmt.Fprintf(h.cdr.Output, "Additional help topics (Use \"%s %s <topic>\" to see help on the topic):\n", h.cdr.Name(), h.Name())
-		for _, cmd := range h.commands {
-			fmt.Fprintf(h.cdr.Output, "\t%-15s  %s\n", cmd.Name(), cmd.Synopsis())
-		}
-		fmt.Fprintf(h.cdr.Output, "\nUse \"%s flags\" for a list of top-level flags\n", h.cdr.Name())
+		h.printTopLevelHelp()
 		return subcommands.ExitSuccess
 	default:
 		// Look for commands registered to the commander and print help explanation if found.
@@ -114,7 +99,64 @@ use "%s %s <subcommand>".
 	return subcommands.ExitUsageError
 }
 
+func (h *Help) printTopLevelHelp() {
+	fmt.Fprintf(h.cdr.Output, "Usage: %s <flags> <subcommand> <subcommand args>\n\n", h.cdr.Name())
+	fmt.Fprintf(h.cdr.Output, `runsc is the gVisor container runtime.
+
+Functionality is provided by subcommands. For help with a specific subcommand,
+use "%s %s <subcommand>".
+
+`, h.cdr.Name(), h.Name())
+	h.cdr.VisitGroups(func(g *subcommands.CommandGroup) {
+		h.cdr.ExplainGroup(h.cdr.Output, g)
+	})
+
+	fmt.Fprintf(h.cdr.Output, "Additional help topics (Use \"%s %s <topic>\" to see help on the topic):\n", h.cdr.Name(), h.Name())
+	for _, cmd := range h.commands {
+		fmt.Fprintf(h.cdr.Output, "\t%-15s  %s\n", cmd.Name(), cmd.Synopsis())
+	}
+	fmt.Fprintf(h.cdr.Output, "\nUse \"%s flags\" for a list of top-level flags\n", h.cdr.Name())
+}
+
 // Register registers a new help command.
 func (h *Help) Register(cmd subcommands.Command) {
 	h.commands = append(h.commands, cmd)
+}
+
+// helpCommandWrapper implements subcommands.Command by wrapping another
+// subcommands.Command and adding -h and -help flags.
+type helpCommandWrapper struct {
+	wrapped subcommands.Command
+	help    bool
+}
+
+// Name implements subcommands.Command.Name.
+func (h *helpCommandWrapper) Name() string {
+	return h.wrapped.Name()
+}
+
+// Synopsis implements subcommands.Command.Synopsis.
+func (h *helpCommandWrapper) Synopsis() string {
+	return h.wrapped.Synopsis()
+}
+
+// Usage implements subcommands.Command.Usage.
+func (h *helpCommandWrapper) Usage() string {
+	return h.wrapped.Usage()
+}
+
+// SetFlags implements subcommands.Command.SetFlags.
+func (h *helpCommandWrapper) SetFlags(f *flag.FlagSet) {
+	f.BoolVar(&h.help, "help", false, "show this message and exit")
+	f.BoolVar(&h.help, "h", false, "equivalent to the 'help' flag")
+	h.wrapped.SetFlags(f)
+}
+
+// Execute implements subcommands.Command.Execute.
+func (h *helpCommandWrapper) Execute(ctx context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
+	if h.help {
+		f.Usage()
+		return subcommands.ExitSuccess
+	}
+	return h.wrapped.Execute(ctx, f, args...)
 }

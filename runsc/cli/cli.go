@@ -58,12 +58,21 @@ var (
 // Run runs the binary, whose behavior is determined by the subcommand passed
 // on the command line. forEachCmd invokes the passed callback for each
 // supported subcommand.
-func Run(forEachCmd func(cb func(cmd subcommands.Command, group string))) {
+func Run(forEachCmd func(cb func(cmd subcommands.Command, group string), help *Help)) {
 	// Set the start time as soon as possible.
 	startTime := starttime.Get()
 
+	// Help flags, and help and flags commands, are generated automatically.
+	flagHelp := flag.Bool("help", false, "show information about runsc subcommands and exit")
+	flag.BoolVar(flagHelp, "h", false, "equivalent to the 'help' flag")
+	help := NewHelp(subcommands.DefaultCommander)
+	subcommands.Register(help, "")
+	subcommands.Register(subcommands.FlagsCommand(), "")
+
 	// Register all commands.
-	forEachCmd(subcommands.Register)
+	forEachCmd(func(cmd subcommands.Command, group string) {
+		subcommands.Register(&helpCommandWrapper{wrapped: cmd}, group)
+	}, help)
 
 	// Register with the main command line.
 	config.RegisterFlags(flag.CommandLine)
@@ -75,6 +84,12 @@ func Run(forEachCmd func(cb func(cmd subcommands.Command, group string))) {
 
 	// All subcommands must be registered before flag parsing.
 	flag.Parse()
+
+	// Are we showing help?
+	if *flagHelp {
+		help.printTopLevelHelp()
+		os.Exit(0)
+	}
 
 	// Are we showing the version?
 	if flag.Get(flag.Lookup(versionFlagName).Value).(bool) {
