@@ -236,6 +236,11 @@ TEST_P(CookedPacketTest, Receive) {
   // Receive and verify the data.
   int loopback_index = GetLoopbackIndex();
   ReceiveMessage(socket_, loopback_index);
+  // In this case, the last ReceiveMessage got the outbound packet, and we still
+  // need to get the inbound one.
+  if (GetParam() == ETH_P_ALL) {
+    ReceiveMessage(socket_, loopback_index);
+  }
 }
 
 // Send via a packet socket.
@@ -353,6 +358,11 @@ TEST_P(CookedPacketTest, BindReceive) {
 
   // Receive and verify the data.
   ReceiveMessage(socket_, bind_addr.sll_ifindex);
+  // In this case, the last ReceiveMessage got the outbound packet, and we still
+  // need to get the inbound one.
+  if (GetParam() == ETH_P_ALL) {
+    ReceiveMessage(socket_, bind_addr.sll_ifindex);
+  }
 }
 
 // Double Bind socket.
