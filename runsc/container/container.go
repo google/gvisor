@@ -911,7 +911,7 @@ func (c *Container) forEachSelfMount(fn func(mountSrc string)) {
 	}
 	goferMntIdx := 1 // First index is for rootfs.
 	for i := range c.Spec.Mounts {
-		if !specutils.IsGoferMount(c.Spec.Mounts[i]) {
+		if !specutils.HasMountConfig(c.Spec.Mounts[i]) {
 			continue
 		}
 		if c.GoferMountConfs[goferMntIdx].IsSelfBacked() {
@@ -983,14 +983,19 @@ func (c *Container) initGoferConfs(ovlConf config.Overlay2, mountHints *boot.Pod
 	}
 	c.GoferMountConfs = append(c.GoferMountConfs, goferConf)
 
-	// Handle bind mounts.
+	// Handle sub mounts.
 	for i := range c.Spec.Mounts {
-		if !specutils.IsGoferMount(c.Spec.Mounts[i]) {
+		if !specutils.HasMountConfig(c.Spec.Mounts[i]) {
 			continue
 		}
+		// Determine mount type: Bind for gofer mounts, erofs.Name for EROFS mounts
+		mountType := boot.Bind
+		if specutils.IsErofsMount(c.Spec.Mounts[i]) {
+			mountType = erofs.Name
+		}
+
 		overlayMedium := ovlConf.SubMountOverlayMedium()
 		overlaySize := ovlConf.SubMountOverlaySize()
-		mountType = boot.Bind
 		if specutils.IsReadonlyMount(c.Spec.Mounts[i].Options) {
 			overlayMedium = config.NoOverlay
 		}
@@ -1037,7 +1042,7 @@ func (c *Container) createGoferFilestores(ovlConf config.Overlay2, mountHints *b
 	// Then handle all the bind mounts.
 	mountIdx := 1 // first one is the root
 	for _, m := range c.Spec.Mounts {
-		if !specutils.IsGoferMount(m) {
+		if !specutils.HasMountConfig(m) {
 			continue
 		}
 		mountConf := c.GoferMountConfs[mountIdx]
@@ -1239,6 +1244,20 @@ func shouldSpawnGofer(spec *specs.Spec, conf *config.Config, goferConfs []boot.G
 	return shouldCreateDeviceGofer(spec, conf)
 }
 
+// createLisafsSocketPair creates a socket pair for Lisafs communication and
+// appends the sandbox end to sandEnds while donating the gofer end.
+func createLisafsSocketPair(sandEnds *[]*os.File, donations *donation.Agency) error {
+	fds, err := unix.Socketpair(unix.AF_UNIX, unix.SOCK_STREAM|unix.SOCK_CLOEXEC, 0)
+	if err != nil {
+		return err
+	}
+	*sandEnds = append(*sandEnds, os.NewFile(uintptr(fds[0]), "sandbox IO FD"))
+
+	goferEnd := os.NewFile(uintptr(fds[1]), "gofer IO FD")
+	donations.DonateAndClose("io-fds", goferEnd)
+	return nil
+}
+
 // createGoferProcess returns an IO file list and a mounts file on success.
 // The IO file list consists of image files and/or socket files to connect to
 // a gofer endpoint for the mount points using Gofers. The mounts file is the
@@ -1377,28 +1396,43 @@ func (c *Container) createGoferProcess(conf *config.Config, mountHints *boot.Pod
 	}
 
 	sandEnds := make([]*os.File, 0, ioFileCount)
-	for i, cfg := range c.GoferMountConfs {
+
+	// Handle rootfs (index 0)
+	switch {
+ 	case c.GoferMountConfs[0].ShouldUseLisafs():
+		if err := createLisafsSocketPair(&sandEnds, &donations); err != nil {
+			return nil, nil, nil, nil, err
+		}
+
+	case c.GoferMountConfs[0].ShouldUseErofs():
+		f, err := os.Open(rootfsHint.Mount.Source)
+		if err != nil {
+			return nil, nil, nil, nil, fmt.Errorf("opening rootfs image %q: %v", rootfsHint.Mount.Source, err)
+		}
+		sandEnds = append(sandEnds, f)
+	}
+
+	// Handle sub mounts
+	cfgIdx := 1
+	for _, m := range c.Spec.Mounts {
+		if !specutils.HasMountConfig(m) {
+			continue
+		}
+
 		switch {
-		case cfg.ShouldUseLisafs():
-			fds, err := unix.Socketpair(unix.AF_UNIX, unix.SOCK_STREAM|unix.SOCK_CLOEXEC, 0)
-			if err != nil {
+		case c.GoferMountConfs[cfgIdx].ShouldUseLisafs():
+			if err := createLisafsSocketPair(&sandEnds, &donations); err != nil {
 				return nil, nil, nil, nil, err
 			}
-			sandEnds = append(sandEnds, os.NewFile(uintptr(fds[0]), "sandbox IO FD"))
 
-			goferEnd := os.NewFile(uintptr(fds[1]), "gofer IO FD")
-			donations.DonateAndClose("io-fds", goferEnd)
-
-		case cfg.ShouldUseErofs():
-			if i > 0 {
-				return nil, nil, nil, nil, fmt.Errorf("EROFS lower layer is only supported for root mount")
-			}
-			f, err := os.Open(rootfsHint.Mount.Source)
+		case c.GoferMountConfs[cfgIdx].ShouldUseErofs():
+			f, err := os.Open(m.Source)
 			if err != nil {
-				return nil, nil, nil, nil, fmt.Errorf("opening rootfs image %q: %v", rootfsHint.Mount.Source, err)
+				return nil, nil, nil, nil, fmt.Errorf("opening EROFS image %q: %v", m.Source, err)
 			}
 			sandEnds = append(sandEnds, f)
 		}
+		cfgIdx++
 	}
 	var devSandEnd *os.File
 	if shouldCreateDeviceGofer(c.Spec, conf) {

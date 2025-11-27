@@ -812,9 +812,9 @@ func (c *containerMounter) prepareMounts() ([]mountInfo, error) {
 			hint:  c.hints.FindMount(c.mounts[i].Source),
 		}
 		specutils.MaybeConvertToBindMount(info.mount)
-		if specutils.IsGoferMount(*info.mount) {
+		if specutils.HasMountConfig(*info.mount) {
 			info.goferMountConf = c.goferMountConfs[goferMntIdx]
-			if info.goferMountConf.ShouldUseLisafs() {
+			if info.goferMountConf.ShouldUseLisafs() || info.goferMountConf.ShouldUseErofs() {
 				info.goferFD = c.goferFDs.removeAsFD()
 			}
 			if info.goferMountConf.IsFilestorePresent() {
@@ -986,6 +986,18 @@ func getMountNameAndOptions(spec *specs.Spec, conf *config.Config, m *mountInfo,
 		mopts, data, err = consumeMountOptions(mopts, cgroupfs.SupportedMountOptions...)
 		if err != nil {
 			return "", nil, err
+		}
+
+	case erofs.Name:
+		if m.goferFD == nil {
+			return "", nil, fmt.Errorf("EROFS mount requires an image file FD")
+		}
+		data = []string{fmt.Sprintf("ifd=%d", m.goferFD.Release())}
+		internalData = erofs.InternalFilesystemOptions{
+			UniqueID: vfs.RestoreID{
+				ContainerName: containerName,
+				Path:          m.mount.Destination,
+			},
 		}
 
 	default:
