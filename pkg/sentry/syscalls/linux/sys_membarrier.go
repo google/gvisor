@@ -25,6 +25,7 @@ import (
 func Membarrier(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	cmd := args[0].Int()
 	flags := args[1].Uint()
+	cpu := args[2].Int()
 
 	switch cmd {
 	case linux.MEMBARRIER_CMD_QUERY:
@@ -83,8 +84,17 @@ func Membarrier(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uint
 		if !t.MemoryManager().IsMembarrierRSeqEnabled() {
 			return 0, nil, linuxerr.EPERM
 		}
-		// MEMBARRIER_CMD_FLAG_CPU and cpu_id are ignored since we don't have
-		// the ability to preempt specific CPUs.
+
+		if flags&linux.MEMBARRIER_CMD_FLAG_CPU != 0 && cpu >= 0 && t.Kernel().Platform.HasCPUNumbers() {
+			// Per membarrier(2), an out of range cpu# that is >= 0 is a no-op.
+			if cpu >= t.Kernel().Platform.NumCPUs() {
+				return 0, nil, nil
+			}
+			return 0, nil, t.Kernel().Platform.PreemptCPU(cpu)
+		}
+
+		// Preempt all CPUs if the platform does not support CPU numbers or cpu # is less than 0 -
+		// this is the same behavior as Linux.
 		return 0, nil, t.Kernel().Platform.PreemptAllCPUs()
 	case linux.MEMBARRIER_CMD_REGISTER_PRIVATE_EXPEDITED_RSEQ:
 		if flags != 0 {

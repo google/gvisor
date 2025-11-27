@@ -16,6 +16,7 @@ package kvm
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	pkgcontext "gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/ring0"
@@ -36,6 +37,9 @@ type platformContext struct {
 
 	// interrupt is the interrupt platformContext.
 	interrupt interrupt.Forwarder
+
+	// lastUsedCPU is the last CPU ID used by this platformContext.
+	lastUsedCPU atomicbitops.Int32
 }
 
 // tryCPUIDError indicates that CPUID emulation should occur.
@@ -45,7 +49,7 @@ type tryCPUIDError struct{}
 func (tryCPUIDError) Error() string { return "cpuid emulation failed" }
 
 // Switch runs the provided platformContext in the given address space.
-func (c *platformContext) Switch(ctx pkgcontext.Context, mm platform.MemoryManager, ac *arch.Context64, _ int32) (*linux.SignalInfo, hostarch.AccessType, error) {
+func (c *platformContext) Switch(ctx pkgcontext.Context, mm platform.MemoryManager, ac *arch.Context64, rseqCPU int32) (*linux.SignalInfo, hostarch.AccessType, error) {
 	as := mm.AddressSpace()
 	localAS := as.(*addressSpace)
 
@@ -57,6 +61,20 @@ restart:
 	if !c.interrupt.Enable(cpu) {
 		c.machine.Put(cpu) // Already preempted.
 		return nil, hostarch.NoAccess, platform.ErrContextInterrupt
+	}
+	// If this CPU was last used to run a different context
+	// or if this context last ran on a different CPU, then we've
+	// been preempted.
+	last := cpu.lastCtx.Swap(c)
+	c.lastUsedCPU.Store(int32(cpu.id))
+	preempted := rseqCPU >= 0 && (last != c || rseqCPU != int32(cpu.id))
+	if preempted {
+		// Release resources.
+		c.machine.Put(cpu)
+
+		// All done.
+		c.interrupt.Disable()
+		return nil, hostarch.NoAccess, platform.ErrContextCPUPreempted
 	}
 
 	// Set the active address space.
@@ -136,3 +154,8 @@ func (c *platformContext) PullFullState(as platform.AddressSpace, ac *arch.Conte
 
 // PrepareSleep implements platform.Context.platform.Context.
 func (*platformContext) PrepareSleep() {}
+
+// LastCPUNumber implements platform.Context.LastCPUNumber.
+func (c *platformContext) LastCPUNumber() int32 {
+	return c.lastUsedCPU.Load()
+}

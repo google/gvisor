@@ -96,6 +96,17 @@ type Platform interface {
 	// NewContext returns a new execution context.
 	NewContext(context.Context) Context
 
+	// PreemptAllCPUs causes all concurrent calls to Context.Switch() on the given CPU, as well
+	// as the first following call to Context.Switch() for each Context, to
+	// return ErrContextCPUPreempted.
+	//
+	// Precondition(s): cpu must be in the range [0, NumCPUs()).
+	//
+	// PreemptCPU is only supported if DetectsCPUPremption() && HasCPUNumbers() == true.
+	// Platforms for which this does not hold may panic if PreemptCPU is
+	// called.
+	PreemptCPU(cpu int32) error
+
 	// PreemptAllCPUs causes all concurrent calls to Context.Switch(), as well
 	// as the first following call to Context.Switch() for each Context, to
 	// return ErrContextCPUPreempted.
@@ -121,6 +132,12 @@ type Platform interface {
 	// in parallel. Concurrent calls to Context.Switch() beyond
 	// ConcurrencyCount() may block until previous calls have returned.
 	ConcurrencyCount() int
+
+	// HasCPUNumbers returns true if the platform assigns CPU numbers to contexts.
+	HasCPUNumbers() bool
+
+	// NumCPUs returns the number of CPUs on the platform.
+	NumCPUs() int32
 }
 
 // NoCPUPreemptionDetection implements Platform.DetectsCPUPreemption and
@@ -135,6 +152,25 @@ func (NoCPUPreemptionDetection) DetectsCPUPreemption() bool {
 // PreemptAllCPUs implements Platform.PreemptAllCPUs.
 func (NoCPUPreemptionDetection) PreemptAllCPUs() error {
 	panic("This platform does not support CPU preemption detection")
+}
+
+// NoCPUNumbers implements Platform.HasCPUNumbers for platforms that do
+// not support it.
+type NoCPUNumbers struct{}
+
+// HasCPUNumbers implements Platform.HasCPUNumbers.
+func (NoCPUNumbers) HasCPUNumbers() bool {
+	return false
+}
+
+// NumCPUs implements Platform.NumCPUs.
+func (NoCPUNumbers) NumCPUs() int32 {
+	panic("platform does not support CPU numbers")
+}
+
+// PreemptCPU implements Platform.PreemptCPU.
+func (NoCPUNumbers) PreemptCPU(cpu int32) error {
+	panic("platform does not support preempting a specific CPU")
 }
 
 // UseHostGlobalMemoryBarrier implements Platform.HaveGlobalMemoryBarrier and
@@ -264,6 +300,16 @@ type Context interface {
 	// PrepareSleep() is called when the thread switches to the
 	// interruptible sleep state.
 	PrepareSleep()
+
+	// LastCPUNumber returns the last CPU number that this context was running on.
+	// If the context never ran on a CPU, it may return any valid CPU number, as long as the first
+	// call to Switch will detect that the CPU number is incorrect and return ErrContextCPUPreempted.
+	LastCPUNumber() int32
+}
+
+// LastCPUNumber implements Context.LastCPUNumber.
+func (NoCPUNumbers) LastCPUNumber() int32 {
+	panic("context does not support last CPU number")
 }
 
 // ContextError is one of the possible errors returned by Context.Switch().
@@ -538,6 +584,11 @@ type Options struct {
 	// ApplicationCores is used by KVM to determine the correct amount of
 	// vCPUs to create.
 	ApplicationCores int
+
+	// UseCPUNums is used by KVM to determine whether to use KVM CPU numbers
+	// as CPU numbers in the sentry. This is necessary to support features like
+	// rseq
+	UseCPUNums bool
 }
 
 // Constructor represents a platform type.
