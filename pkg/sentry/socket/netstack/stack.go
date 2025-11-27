@@ -229,7 +229,9 @@ func (s *Stack) SetInterface(ctx context.Context, msg *nlmsg.Message) *syserr.Er
 
 // precondition: s.linkLock is held.
 func (s *Stack) setLinkLocked(ctx context.Context, id tcpip.NICID, linkAttrs map[uint16]nlmsg.BytesView) *syserr.Error {
-	oldNicInfo, ok := s.Stack.SingleNICInfo(id)
+	home := s
+	changed := false
+	oldNicInfo, ok := home.Stack.SingleNICInfo(id)
 	if !ok {
 		return syserr.ErrUnknownNICID
 	}
@@ -250,23 +252,34 @@ func (s *Stack) setLinkLocked(ctx context.Context, id tcpip.NICID, linkAttrs map
 		}
 		defer ns.DecRef(ctx)
 		peer := ns.Stack().(*Stack)
-		if peer.Stack != s.Stack {
+		if peer.Stack != home.Stack {
 			var err tcpip.Error
 			oldID := id
 
-			id, err = s.Stack.SetNICStack(id, peer.Stack)
+			peer.linkMu.NestedLock(netstackLinkLockDeststack)
+			defer peer.linkMu.NestedUnlock(netstackLinkLockDeststack)
+
+			id, err = home.Stack.SetNICStack(id, peer.Stack)
 			if err != nil {
 				return syserr.TranslateNetstackError(err)
 			}
 
-			s.sendDeleteEvent(ctx, oldID, oldNicInfo) // inform about exit from old ns
-			peer.sendChangeEvent(ctx, id)             // inform about entry into new ns
+			home.sendDeleteEvent(ctx, oldID, oldNicInfo) // inform about exit from old ns
+			changed = true                               // inform about entry into new ns
+
+			oldNicInfo, ok = peer.Stack.SingleNICInfo(id)
+			if !ok {
+				// Because we hold peer.linkMu, this should never happen.
+				ctx.Warningf("Newly rehomed NIC %d not found in new stack %p", id, home.Stack)
+				return syserr.ErrUnknownNICID
+			}
+			home = peer
+
 			// TODO: Once we support IFLA_LINK_NETNSID, we need to call sendChangeEvent on
 			// the peer interface if this interface is part of a veth pair.
 		}
 	}
 
-	changed := false
 	for t, v := range linkAttrs {
 		switch t {
 		case linux.IFLA_MASTER:
@@ -274,11 +287,11 @@ func (s *Stack) setLinkLocked(ctx context.Context, id tcpip.NICID, linkAttrs map
 			if !ok {
 				return syserr.ErrInvalidArgument
 			}
-			if mid, ok := s.Stack.GetNICCoordinatorID(id); ok && mid == tcpip.NICID(master) {
+			if mid, ok := home.Stack.GetNICCoordinatorID(id); ok && mid == tcpip.NICID(master) {
 				continue
 			}
 			if master != 0 {
-				if err := s.Stack.SetNICCoordinator(id, tcpip.NICID(master)); err != nil {
+				if err := home.Stack.SetNICCoordinator(id, tcpip.NICID(master)); err != nil {
 					return syserr.TranslateNetstackError(err)
 				}
 				changed = true
@@ -291,7 +304,7 @@ func (s *Stack) setLinkLocked(ctx context.Context, id tcpip.NICID, linkAttrs map
 			if oldNicInfo.LinkAddress == addr {
 				continue
 			}
-			if err := s.Stack.SetNICAddress(id, addr); err != nil {
+			if err := home.Stack.SetNICAddress(id, addr); err != nil {
 				return syserr.TranslateNetstackError(err)
 			}
 			changed = true
@@ -299,7 +312,7 @@ func (s *Stack) setLinkLocked(ctx context.Context, id tcpip.NICID, linkAttrs map
 			if oldNicInfo.Name == v.String() {
 				continue
 			}
-			if err := s.Stack.SetNICName(id, v.String()); err != nil {
+			if err := home.Stack.SetNICName(id, v.String()); err != nil {
 				return syserr.TranslateNetstackError(err)
 			}
 			changed = true
@@ -311,7 +324,7 @@ func (s *Stack) setLinkLocked(ctx context.Context, id tcpip.NICID, linkAttrs map
 			if oldNicInfo.MTU == mtu {
 				continue
 			}
-			if err := s.Stack.SetNICMTU(id, mtu); err != nil {
+			if err := home.Stack.SetNICMTU(id, mtu); err != nil {
 				return syserr.TranslateNetstackError(err)
 			}
 			changed = true
@@ -321,7 +334,7 @@ func (s *Stack) setLinkLocked(ctx context.Context, id tcpip.NICID, linkAttrs map
 	}
 
 	if changed {
-		s.sendChangeEvent(ctx, id)
+		home.sendChangeEvent(ctx, id)
 	}
 	return nil
 }

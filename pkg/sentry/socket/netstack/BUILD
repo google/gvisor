@@ -9,6 +9,7 @@ package(
 declare_mutex(
     name = "netstack_link_mutex",
     out = "netstack_link_mutex.go",
+    nested_lock_names = ["destStack"],
     package = "netstack",
     prefix = "netstackLink",
 )
