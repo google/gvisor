@@ -32,23 +32,17 @@ func (t *Task) Futex() *futex.Manager {
 
 // SwapUint32 implements futex.Target.SwapUint32.
 func (t *Task) SwapUint32(addr hostarch.Addr, new uint32) (uint32, error) {
-	return t.MemoryManager().SwapUint32(t, addr, new, usermem.IOOpts{
-		AddressSpaceActive: true,
-	})
+	return t.MemoryManager().SwapUint32(t, addr, new, usermem.IOOpts{})
 }
 
 // CompareAndSwapUint32 implements futex.Target.CompareAndSwapUint32.
 func (t *Task) CompareAndSwapUint32(addr hostarch.Addr, old, new uint32) (uint32, error) {
-	return t.MemoryManager().CompareAndSwapUint32(t, addr, old, new, usermem.IOOpts{
-		AddressSpaceActive: true,
-	})
+	return t.MemoryManager().CompareAndSwapUint32(t, addr, old, new, usermem.IOOpts{})
 }
 
 // LoadUint32 implements futex.Target.LoadUint32.
 func (t *Task) LoadUint32(addr hostarch.Addr) (uint32, error) {
-	return t.MemoryManager().LoadUint32(t, addr, usermem.IOOpts{
-		AddressSpaceActive: true,
-	})
+	return t.MemoryManager().LoadUint32(t, addr, usermem.IOOpts{})
 }
 
 // GetSharedKey implements futex.Target.GetSharedKey.

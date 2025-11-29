@@ -43,15 +43,6 @@ type Platform interface {
 	// unchanged over the lifetime of the Platform.
 	SupportsAddressSpaceIO() bool
 
-	// CooperativelySchedulesAddressSpace returns true if the Platform has a
-	// limited number of AddressSpaces, such that mm.MemoryManager.Deactivate
-	// should call AddressSpace.Release when there are no goroutines that
-	// require the mm.MemoryManager to have an active AddressSpace.
-	//
-	// The value returned by CooperativelySchedulesAddressSpace is guaranteed
-	// to remain unchanged over the lifetime of the Platform.
-	CooperativelySchedulesAddressSpace() bool
-
 	// DetectsCPUPreemption returns true if Contexts returned by the Platform
 	// can reliably return ErrContextCPUPreempted.
 	DetectsCPUPreemption() bool
@@ -77,21 +68,7 @@ type Platform interface {
 	MaxUserAddress() hostarch.Addr
 
 	// NewAddressSpace returns a new memory context for this platform.
-	//
-	// If mappingsID is not nil, the platform may assume that (1) all calls
-	// to NewAddressSpace with the same mappingsID represent the same
-	// (mutable) set of mappings, and (2) the set of mappings has not
-	// changed since the last time AddressSpace.Release was called on an
-	// AddressSpace returned by a call to NewAddressSpace with the same
-	// mappingsID.
-	//
-	// If a new AddressSpace cannot be created immediately, a nil
-	// AddressSpace is returned, along with channel that is closed when
-	// the caller should retry a call to NewAddressSpace.
-	//
-	// In general, this blocking behavior only occurs when
-	// CooperativelySchedulesAddressSpace (above) returns false.
-	NewAddressSpace(mappingsID any) (AddressSpace, <-chan struct{}, error)
+	NewAddressSpace() (AddressSpace, error)
 
 	// NewContext returns a new execution context.
 	NewContext(context.Context) Context
@@ -264,6 +241,21 @@ type Context interface {
 	// PrepareSleep() is called when the thread switches to the
 	// interruptible sleep state.
 	PrepareSleep()
+
+	// PrepareUninterruptibleSleep is called when the thread switches to the
+	// uninterruptible sleep state.
+	PrepareUninterruptibleSleep()
+
+	// PrepareStop is called when the thread enters a kernel.TaskStop.
+	PrepareStop()
+
+	// PrepareExecve is called when the thread invokes execve(), immediately
+	// before switching MMs.
+	PrepareExecve()
+
+	// PrepareExit is called when the thread exits, immediately before
+	// releasing its MM.
+	PrepareExit()
 }
 
 // ContextError is one of the possible errors returned by Context.Switch().
@@ -439,6 +431,17 @@ type SegmentationFault struct {
 // Error implements error.Error.
 func (f SegmentationFault) Error() string {
 	return fmt.Sprintf("segmentation fault at %#x", f.Addr)
+}
+
+// AddressSpaceIOUnavailable is an error returned by AddressSpaceIO methods
+// when AddressSpaceIO is unavailable for this operation due to implementation
+// limitations, such that the caller should fall back to I/O through other
+// means (rather than returning an error).
+type AddressSpaceIOUnavailable struct{}
+
+// Error implements error.Error.
+func (AddressSpaceIOUnavailable) Error() string {
+	return "platform.AddressSpaceIO currently unavailable"
 }
 
 // Requirements is used to specify platform specific requirements.
