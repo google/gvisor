@@ -45,6 +45,9 @@ func (FilesystemType) Name() string {
 func (fst FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.VirtualFilesystem, creds *auth.Credentials, source string, opts vfs.GetFilesystemOptions) (*vfs.Filesystem, *vfs.Dentry, error) {
 	mntns, err := vfsObj.NewMountNamespace(ctx, creds, source /* source */, tmpfs.Name, &vfs.MountOptions{GetFilesystemOptions: vfs.GetFilesystemOptions{
 		Data: "mode=0755", // opts from drivers/base/devtmpfs.c:devtmpfs_init()
+		InternalData: tmpfs.FilesystemOpts{
+			FilesystemType: fst,
+		},
 	}}, nil)
 	if err != nil {
 		return nil, nil, err
@@ -84,7 +87,7 @@ func (fst FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virtual
 }
 
 // Release implements vfs.FilesystemType.Release.
-func (fst *FilesystemType) Release(ctx context.Context) {}
+func (fst FilesystemType) Release(ctx context.Context) {}
 
 // InternalData contains internal data passed in via vfs.GetFilesystemOptions.
 type InternalData struct {

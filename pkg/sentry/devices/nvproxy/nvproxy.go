@@ -56,15 +56,25 @@ func Register(vfsObj *vfs.VirtualFilesystem, version nvconf.DriverVersion, drive
 		frontendFDs: make(map[*frontendFD]struct{}),
 		clients:     make(map[nvgpu.Handle]*rootClient),
 	}
-	for minor := uint32(0); minor <= nvgpu.NV_CONTROL_DEVICE_MINOR; minor++ {
-		if err := vfsObj.RegisterDevice(vfs.CharDevice, nvgpu.NV_MAJOR_DEVICE_NUMBER, minor, &frontendDevice{
+	for minor := uint32(0); minor <= nvgpu.NV_MINOR_DEVICE_NUMBER_REGULAR_MAX; minor++ {
+		dev := &frontendDevice{
 			nvp:   nvp,
 			minor: minor,
-		}, &vfs.RegisterDeviceOptions{
+		}
+		nvp.regularDevs[minor] = dev
+		if err := vfsObj.RegisterDevice(vfs.CharDevice, nvgpu.NV_MAJOR_DEVICE_NUMBER, minor, dev, &vfs.RegisterDeviceOptions{
 			GroupName: "nvidia-frontend",
 		}); err != nil {
 			return err
 		}
+	}
+	if err := vfsObj.RegisterDevice(vfs.CharDevice, nvgpu.NV_MAJOR_DEVICE_NUMBER, nvgpu.NV_MINOR_DEVICE_NUMBER_CONTROL_DEVICE, &frontendDevice{
+		nvp:   nvp,
+		minor: nvgpu.NV_MINOR_DEVICE_NUMBER_CONTROL_DEVICE,
+	}, &vfs.RegisterDeviceOptions{
+		GroupName: "nvidia-frontend",
+	}); err != nil {
+		return err
 	}
 	if err := vfsObj.RegisterDevice(vfs.CharDevice, uvmDevMajor, nvgpu.NVIDIA_UVM_PRIMARY_MINOR_NUMBER, &uvmDevice{
 		nvp: nvp,
@@ -82,6 +92,7 @@ type nvproxy struct {
 	version     nvconf.DriverVersion
 	capsEnabled nvconf.DriverCaps
 	useDevGofer bool
+	regularDevs [nvgpu.NV_MINOR_DEVICE_NUMBER_REGULAR_MAX + 1]*frontendDevice
 
 	fdsMu       fdsMutex `state:"nosave"`
 	frontendFDs map[*frontendFD]struct{}
