@@ -18,6 +18,7 @@ import (
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/sentry/socket/netlink/nlmsg"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
@@ -36,36 +37,6 @@ type payloadLoad struct {
 // payloadBase is the header that determines the location of the packet data.
 // Note: corresponds to enum nft_payload_bases from
 // include/uapi/linux/netfilter/nf_tables.h and uses the same constants.
-type payloadBase int
-
-// payloadBaseStrings is a map of payloadBase to its string representation.
-var payloadBaseStrings = map[payloadBase]string{
-	linux.NFT_PAYLOAD_LL_HEADER:        "Link Layer Header",
-	linux.NFT_PAYLOAD_NETWORK_HEADER:   "Network Header",
-	linux.NFT_PAYLOAD_TRANSPORT_HEADER: "Transport Header",
-	linux.NFT_PAYLOAD_INNER_HEADER:     "Inner Header",
-	linux.NFT_PAYLOAD_TUN_HEADER:       "Tunneling Header",
-}
-
-// String for payloadBase returns the string representation of the payload base.
-func (base payloadBase) String() string {
-	if baseStr, ok := payloadBaseStrings[base]; ok {
-		return baseStr
-	}
-	panic(fmt.Sprintf("Invalid Payload Base: %d", int(base)))
-}
-
-// validatePayloadBase ensures the payload base is valid.
-func validatePayloadBase(base payloadBase) *syserr.AnnotatedError {
-	switch base {
-	// Supported payload bases.
-	case linux.NFT_PAYLOAD_LL_HEADER, linux.NFT_PAYLOAD_NETWORK_HEADER, linux.NFT_PAYLOAD_TRANSPORT_HEADER:
-		return nil
-	// Unsupported payload bases.
-	default:
-		return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("unknown payload base: %d", int(base)))
-	}
-}
 
 // getPayloadBuffer gets the data from the packet payload starting from the
 // the beginning of the specified base header.
@@ -122,4 +93,25 @@ func (op payloadLoad) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule 
 	// Copies payload data into the specified register.
 	data := newBytesData(payload[op.offset : op.offset+op.blen])
 	data.storeData(regs, op.dreg)
+}
+
+// Initialize based on net/netfilter/nft_payload.c nft_payload_init.
+func initPayloadLoad(tab *Table, attrs map[uint16]nlmsg.BytesView) (*payloadLoad, *syserr.AnnotatedError) {
+	base, ok := AttrNetToHostU32(linux.NFTA_PAYLOAD_BASE, attrs)
+	if !ok {
+		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "failed to parse NFTA_PAYLOAD_BASE attribute value")
+	}
+	offset, ok := AttrNetToHostU32(linux.NFTA_PAYLOAD_OFFSET, attrs)
+	if !ok {
+		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "failed to parse NFTA_PAYLOAD_OFFSET attribute value")
+	}
+	blen, ok := AttrNetToHostU32(linux.NFTA_PAYLOAD_LEN, attrs)
+	if !ok {
+		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "failed to parse NFTA_PAYLOAD_LEN attribute value")
+	}
+	dreg, ok := AttrNetToHostU32(linux.NFTA_PAYLOAD_DREG, attrs)
+	if !ok {
+		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "failed to parse NFTA_PAYLOAD_DREG attribute value")
+	}
+	return newPayloadLoad(payloadBase(base), uint8(offset), uint8(blen), uint8(dreg))
 }

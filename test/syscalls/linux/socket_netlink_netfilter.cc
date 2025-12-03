@@ -3342,6 +3342,165 @@ TEST(NetlinkNetfilterTest, GetGenerationID) {
       false));
 }
 
+struct PayloadRuleTestParams {
+  std::string test_name;
+  NlNestedAttr payload_attrs;
+  int expected_error_no;
+};
+
+class AddRuleWithPayloadTest
+    : public ::testing::TestWithParam<PayloadRuleTestParams> {};
+
+TEST_P(AddRuleWithPayloadTest, AddRuleWithPayload) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+  SKIP_IF(!IsRunningOnGvisor());
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
+  std::vector<char> payload_data =
+      NlNestedAttr(GetParam().payload_attrs).Build();
+  std::vector<char> rule_expr_data =
+      NlNestedAttr()
+          .StrAttr(NFTA_EXPR_NAME, "payload")
+          .RawAttr(NFTA_EXPR_DATA, payload_data.data(), payload_data.size())
+          .Build();
+  std::vector<char> list_expr_data = NlListAttr().Add(rule_expr_data).Build();
+  const std::string table_name = GetUniqueTestTableName();
+  const std::string chain_name = "test_chain";
+  std::vector<char> add_rule_request_buffer =
+      NlBatchReq()
+          .SeqStart(kSeq + 6)
+          .Req(NlReq("newrule req ack create inet")
+                   .Seq(kSeq + 7)
+                   .StrAttr(NFTA_RULE_TABLE, table_name)
+                   .StrAttr(NFTA_RULE_CHAIN, chain_name)
+                   .RawAttr(NFTA_RULE_EXPRESSIONS, list_expr_data.data(),
+                            list_expr_data.size())
+                   .Build())
+          .SeqEnd(kSeq + 8)
+          .Build();
+
+  AddDefaultTable({.fd = fd, .table_name = table_name, .seq = kSeq});
+  AddDefaultBaseChain({.fd = fd,
+                       .table_name = table_name,
+                       .chain_name = chain_name,
+                       .seq = kSeq + 3});
+
+  if (GetParam().expected_error_no != 0) {
+    ASSERT_THAT(NetlinkNetfilterBatchRequestAckOrError(
+                    fd, kSeq + 6, kSeq + 8, add_rule_request_buffer.data(),
+                    add_rule_request_buffer.size()),
+                PosixErrorIs(GetParam().expected_error_no, _));
+  } else {
+    ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
+        fd, kSeq + 6, kSeq + 8, add_rule_request_buffer.data(),
+        add_rule_request_buffer.size()));
+  }
+}
+
+std::vector<PayloadRuleTestParams> GetPayloadRuleTestParams() {
+  return {
+      PayloadRuleTestParams{
+          .test_name = "LoadValid",
+          .payload_attrs =
+              NlNestedAttr()
+                  .U32Attr(NFTA_PAYLOAD_BASE, NFT_PAYLOAD_NETWORK_HEADER)
+                  .U32Attr(NFTA_PAYLOAD_OFFSET, 1)
+                  .U32Attr(NFTA_PAYLOAD_LEN, 4)
+                  .U32Attr(NFTA_PAYLOAD_DREG, NFT_REG_1)},
+      PayloadRuleTestParams{
+          .test_name = "SetValid",
+          .payload_attrs =
+              NlNestedAttr()
+                  .U32Attr(NFTA_PAYLOAD_BASE, NFT_PAYLOAD_NETWORK_HEADER)
+                  .U32Attr(NFTA_PAYLOAD_OFFSET, 1)
+                  .U32Attr(NFTA_PAYLOAD_LEN, 4)
+                  .U32Attr(NFTA_PAYLOAD_SREG, NFT_REG32_00)},
+      PayloadRuleTestParams{
+          .test_name = "SetWithCsumValid",
+          .payload_attrs =
+              NlNestedAttr()
+                  .U32Attr(NFTA_PAYLOAD_BASE, NFT_PAYLOAD_NETWORK_HEADER)
+                  .U32Attr(NFTA_PAYLOAD_OFFSET, 1)
+                  .U32Attr(NFTA_PAYLOAD_LEN, 4)
+                  .U32Attr(NFTA_PAYLOAD_SREG, NFT_REG_1)
+                  .U32Attr(NFTA_PAYLOAD_CSUM_TYPE, NFT_PAYLOAD_CSUM_INET)
+                  .U32Attr(NFTA_PAYLOAD_CSUM_OFFSET, 1)},
+      PayloadRuleTestParams{
+          .test_name = "LoadWithInvalidRegister",
+          .payload_attrs =
+              NlNestedAttr()
+                  .U32Attr(NFTA_PAYLOAD_BASE, NFT_PAYLOAD_NETWORK_HEADER)
+                  .U32Attr(NFTA_PAYLOAD_OFFSET, 1)
+                  .U32Attr(NFTA_PAYLOAD_LEN, 4)
+                  // Verdict register is not supported for payload load.
+                  .U32Attr(NFTA_PAYLOAD_SREG, NFT_REG_VERDICT),
+          .expected_error_no = EINVAL},
+      PayloadRuleTestParams{
+          .test_name = "LoadWithInvalidOffset",
+          .payload_attrs =
+              NlNestedAttr()
+                  .U32Attr(NFTA_PAYLOAD_BASE, NFT_PAYLOAD_NETWORK_HEADER)
+                  .U32Attr(NFTA_PAYLOAD_OFFSET, UINT32_MAX)
+                  .U32Attr(NFTA_PAYLOAD_LEN, 4)
+                  .U32Attr(NFTA_PAYLOAD_SREG, NFT_REG_VERDICT),
+          .expected_error_no = EINVAL},
+      PayloadRuleTestParams{
+          .test_name = "LoadWithInvalidLen",
+          .payload_attrs =
+              NlNestedAttr()
+                  .U32Attr(NFTA_PAYLOAD_BASE, NFT_PAYLOAD_NETWORK_HEADER)
+                  .U32Attr(NFTA_PAYLOAD_OFFSET, 1)
+                  .U32Attr(NFTA_PAYLOAD_LEN, NFT_REG_SIZE + 1)
+                  .U32Attr(NFTA_PAYLOAD_SREG, NFT_REG_VERDICT),
+          .expected_error_no = EINVAL},
+      PayloadRuleTestParams{
+          .test_name = "SetWithInvalidBase",
+          .payload_attrs =
+              NlNestedAttr()
+                  .U32Attr(NFTA_PAYLOAD_BASE, /* NFT_PAYLOAD_INNER_HEADER */ 3)
+                  .U32Attr(NFTA_PAYLOAD_OFFSET, 1)
+                  .U32Attr(NFTA_PAYLOAD_LEN, 4)
+                  .U32Attr(NFTA_PAYLOAD_DREG, NFT_REG_1),
+          .expected_error_no = EINVAL},
+      PayloadRuleTestParams{
+          .test_name = "SetWithInvalidRegister",
+          .payload_attrs =
+              NlNestedAttr()
+                  .U32Attr(NFTA_PAYLOAD_BASE, NFT_PAYLOAD_NETWORK_HEADER)
+                  .U32Attr(NFTA_PAYLOAD_OFFSET, 1)
+                  .U32Attr(NFTA_PAYLOAD_LEN, 4)
+                  .U32Attr(NFTA_PAYLOAD_DREG, NFT_REG_VERDICT),
+          .expected_error_no = EINVAL},
+      PayloadRuleTestParams{
+          .test_name = "SetWithInvalidLen",
+          .payload_attrs =
+              NlNestedAttr()
+                  .U32Attr(NFTA_PAYLOAD_BASE, NFT_PAYLOAD_NETWORK_HEADER)
+                  .U32Attr(NFTA_PAYLOAD_OFFSET, 1)
+                  .U32Attr(NFTA_PAYLOAD_LEN, NFT_REG_SIZE + 1)
+                  .U32Attr(NFTA_PAYLOAD_SREG, NFT_REG_VERDICT),
+          .expected_error_no = EINVAL},
+      PayloadRuleTestParams{
+          .test_name = "WithSregAndDregSet",
+          .payload_attrs =
+              NlNestedAttr()
+                  .U32Attr(NFTA_PAYLOAD_BASE, NFT_PAYLOAD_NETWORK_HEADER)
+                  .U32Attr(NFTA_PAYLOAD_OFFSET, 1)
+                  .U32Attr(NFTA_PAYLOAD_LEN, NFT_REG_SIZE + 1)
+                  .U32Attr(NFTA_PAYLOAD_SREG, NFT_REG_1)
+                  .U32Attr(NFTA_PAYLOAD_DREG, NFT_REG_2),
+          .expected_error_no = EINVAL},
+  };
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    PayloadRuleTest, AddRuleWithPayloadTest,
+    /*param_generator=*/::testing::ValuesIn(GetPayloadRuleTestParams()),
+    /*param_name_generator=*/
+    [](const ::testing::TestParamInfo<PayloadRuleTestParams>& info) {
+      return info.param.test_name;
+    });
+
 }  // namespace
 
 }  // namespace testing

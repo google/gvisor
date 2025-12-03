@@ -1106,6 +1106,10 @@ func (r *Rule) AddOpFromExprInfo(tab *Table, exprInfo ExprInfo) *syserr.Annotate
 		if op, err = initImmediate(tab, exprInfo); err != nil {
 			return err
 		}
+	case "payload":
+		if op, err = initPayload(tab, exprInfo); err != nil {
+			return err
+		}
 	default:
 		return syserr.NewAnnotatedError(syserr.ErrNoFileOrDir, fmt.Sprintf("Nftables: Unknown expression type not found: %s", exprInfo.ExprName))
 	}
