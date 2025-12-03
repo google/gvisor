@@ -336,6 +336,22 @@ const (
 	NFTA_IMMEDIATE_MAX = __NFTA_IMMEDIATE_MAX - 1
 )
 
+// NfTablePayloadAttributes represents the netfilter payload attributes.
+// These correspond to values in include/uapi/linux/netfilter/nf_tables.h.
+const (
+	NFTA_PAYLOAD_UNSPEC uint16 = iota
+	NFTA_PAYLOAD_DREG
+	NFTA_PAYLOAD_BASE
+	NFTA_PAYLOAD_OFFSET
+	NFTA_PAYLOAD_LEN
+	NFTA_PAYLOAD_SREG
+	NFTA_PAYLOAD_CSUM_TYPE
+	NFTA_PAYLOAD_CSUM_OFFSET
+	NFTA_PAYLOAD_CSUM_FLAGS
+	__NFTA_PAYLOAD_MAX
+	NFTA_PAYLOAD_MAX = __NFTA_PAYLOAD_MAX - 1
+)
+
 // Nf table relational operators.
 // Used by the nft comparison operation to compare values in registers.
 // These correspond to enum values in include/uapi/linux/netfilter/nf_tables.h.
