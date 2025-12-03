@@ -483,6 +483,25 @@ steps:
       cgroup: "v2"
       kernel: "modern"
   - <<: *common
+    <<: *docker
+    <<: *source_test
+    label: ":docker: Containerd 2.1.0 tests (cgroupv1)"
+    command: make containerd-test-2.1.0
+    agents:
+      <<: *platform_specific_agents
+      <<: *ubuntu_agents
+      cgroup: "v1"
+      kernel: "modern"
+  - <<: *common
+    <<: *docker
+    <<: *source_test
+    label: ":docker: Containerd 2.1.0 tests (cgroupv2)"
+    command: make containerd-test-2.1.0
+    agents:
+      <<: *ubuntu_agents
+      cgroup: "v2"
+      kernel: "modern"
+  - <<: *common
     <<: *source_test
     label: ":podman: Podman"
     commands:
