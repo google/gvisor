@@ -33,7 +33,7 @@ import (
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/cleanup"
-	"gvisor.dev/gvisor/pkg/shim/v1/extension"
+	"gvisor.dev/gvisor/pkg/shim"
 	"gvisor.dev/gvisor/pkg/shim/v1/runsccmd"
 )
 
@@ -276,7 +276,7 @@ func (e *execProcess) start(ctx context.Context) error {
 	return nil
 }
 
-func (e *execProcess) Restore(context.Context, *extension.RestoreConfig) error {
+func (e *execProcess) Restore(context.Context, *shim.RestoreConfig) error {
 	return fmt.Errorf("cannot restore an exec'd process")
 }
 

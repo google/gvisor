@@ -84,8 +84,7 @@ global:
       - "panic recovered: .*types/sizes.go:82: assertion failed"
     exclude:
       # Generated: exempt all.
-      - pkg/shim/v1/runtimeoptions/runtimeoptions_cri.go
-      - pkg/shim/v1/runtimeoptions/v14/runtimeoptions_cri.go
+      - pkg/shim/runtimeoptions/runtimeoptions_cri.go
 analyzers:
   asmdecl:
     generated: # Enabled.

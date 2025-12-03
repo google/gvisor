@@ -10,11 +10,13 @@ require (
 	github.com/containerd/cgroups v1.0.4
 	github.com/containerd/console v1.0.3
 	github.com/containerd/containerd v1.6.36
+	github.com/containerd/containerd/api v1.9.0
 	github.com/containerd/errdefs v0.1.0
 	github.com/containerd/fifo v1.0.0
 	github.com/containerd/go-runc v1.0.0
 	github.com/containerd/log v0.1.0
 	github.com/containerd/typeurl v1.0.2
+	github.com/containerd/typeurl/v2 v2.2.3
 	github.com/coreos/go-systemd/v22 v22.6.0
 	github.com/godbus/dbus/v5 v5.1.0
 	github.com/gofrs/flock v0.8.0

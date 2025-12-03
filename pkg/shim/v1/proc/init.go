@@ -36,6 +36,7 @@ import (
 	runc "github.com/containerd/go-runc"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/shim"
 	"gvisor.dev/gvisor/pkg/shim/v1/extension"
 	"gvisor.dev/gvisor/pkg/shim/v1/runsccmd"
 	"gvisor.dev/gvisor/pkg/shim/v1/utils"
@@ -229,7 +230,7 @@ func (p *Init) Start(ctx context.Context) error {
 	return p.initState.Start(ctx, nil /* restoreConf */)
 }
 
-func (p *Init) start(ctx context.Context, restoreConf *extension.RestoreConfig) error {
+func (p *Init) start(ctx context.Context, restoreConf *shim.RestoreConfig) error {
 	var cio runc.IO
 	if !p.Sandbox {
 		cio = p.io
@@ -265,7 +266,7 @@ func (p *Init) start(ctx context.Context, restoreConf *extension.RestoreConfig) 
 }
 
 // Restore restores the container from a snapshot.
-func (p *Init) Restore(ctx context.Context, conf *extension.RestoreConfig) error {
+func (p *Init) Restore(ctx context.Context, conf *shim.RestoreConfig) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 

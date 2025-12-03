@@ -25,6 +25,7 @@ go_library(
     deps = [
         "//pkg/atomicbitops",
         "//pkg/cleanup",
+        "//pkg/shim",
         "//pkg/shim/v1/extension",
         "//pkg/shim/v1/runsccmd",
         "//pkg/shim/v1/utils",

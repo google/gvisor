@@ -10,6 +10,7 @@ go_library(
     srcs = ["extension.go"],
     visibility = ["//visibility:public"],
     deps = [
+        "//pkg/shim",
         "@com_github_containerd_containerd//pkg/process:go_default_library",
         "@com_github_containerd_containerd//runtime/v2/task:go_default_library",
     ],

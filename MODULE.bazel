@@ -142,11 +142,13 @@ use_repo(
     "com_github_containerd_cgroups",
     "com_github_containerd_console",
     "com_github_containerd_containerd",
+    "com_github_containerd_containerd_api",
     "com_github_containerd_errdefs",
     "com_github_containerd_fifo",
     "com_github_containerd_go_runc",
     "com_github_containerd_log",
     "com_github_containerd_typeurl",
+    "com_github_containerd_typeurl_v2",
     "com_github_coreos_go_systemd_v22",
     "com_github_distribution_reference",
     "com_github_docker_docker",
@@ -528,6 +530,11 @@ go_deps.module(
     version = "v1.6.36",
 )
 go_deps.module(
+    path = "github.com/containerd/containerd/api",
+    sum = "h1:HZ/licowTRazus+wt9fM6r/9BQO7S0vD5lMcWspGIg0=",
+    version = "v1.9.0",
+)
+go_deps.module(
     path = "github.com/containerd/cgroups",
     sum = "h1:iJnMvco9XGvKUvNQkv88bE4uJXxRQH18efbKo9w5vHQ=",
     version = "v1.0.1",
@@ -541,6 +548,11 @@ go_deps.module(
     path = "github.com/containerd/log",
     sum = "h1:TCJt7ioM2cr/tfR8GPbGf9/VRAX8D2B4PjzCpfX540I=",
     version = "v0.1.0",
+)
+go_deps.module(
+    path = "github.com/containerd/typeurl/v2",
+    sum = "h1:yNA/94zxWdvYACdYO8zofhrTVuQY73fFU1y++dYSw40=",
+    version = "v2.2.3",
 )
 go_deps.module(
     path = "github.com/googleapis/gnostic",

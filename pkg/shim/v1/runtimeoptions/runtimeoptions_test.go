@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package runtimeoptions
+package runtimeoptions_test
 
 import (
 	"bytes"
@@ -21,12 +21,13 @@ import (
 	shim "github.com/containerd/containerd/runtime/v1/shim/v1"
 	"github.com/containerd/typeurl"
 	"github.com/gogo/protobuf/proto"
+	"gvisor.dev/gvisor/pkg/shim/runtimeoptions"
 )
 
 func TestCreateTaskRequest(t *testing.T) {
 	// Serialize the top-level message.
 	const encodedText = `options: <
-  type_url: "runtimeoptions.v1.Options"
+  type_url: "runtimeoptions.Options"
   value: "\n\010type_url\022\013config_path"
 >`
 	got := &shim.CreateTaskRequest{} // Should have raw options.
@@ -40,14 +41,14 @@ func TestCreateTaskRequest(t *testing.T) {
 	t.Logf("got: %s", string(textBuffer.Bytes()))
 
 	// Check the options.
-	wantOptions := &Options{}
+	wantOptions := &runtimeoptions.Options{}
 	wantOptions.TypeUrl = "type_url"
 	wantOptions.ConfigPath = "config_path"
 	gotMessage, err := typeurl.UnmarshalAny(got.Options)
 	if err != nil {
 		t.Fatalf("unable to unmarshal any: %v", err)
 	}
-	gotOptions, ok := gotMessage.(*Options)
+	gotOptions, ok := gotMessage.(*runtimeoptions.Options)
 	if !ok {
 		t.Fatalf("got %v, want %v", gotMessage, wantOptions)
 	}
