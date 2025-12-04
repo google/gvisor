@@ -32,4 +32,7 @@ go_test(
     size = "small",
     srcs = ["gomaxprocs_test.go"],
     library = ":gomaxprocs",
+    deps = [
+        "//pkg/sync",
+    ],
 )

@@ -17,6 +17,8 @@ package gomaxprocs
 import (
 	"runtime"
 	"testing"
+
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // reset cancels the effect of all previous calls to SetBase and Add and sets
@@ -30,6 +32,11 @@ func reset(n int) {
 }
 
 func TestBasic(t *testing.T) {
+	if sync.RaceEnabled {
+		// FIXME: b/465516110
+		t.Skipf("Race detection enabled: skipping test")
+	}
+
 	init := runtime.GOMAXPROCS(0)
 	defer reset(init)
 
@@ -61,6 +68,11 @@ func TestBasic(t *testing.T) {
 }
 
 func TestAddIgnoredUntilSetBase(t *testing.T) {
+	if sync.RaceEnabled {
+		// FIXME: b/465516110
+		t.Skipf("Race detection enabled: skipping test")
+	}
+
 	init := runtime.GOMAXPROCS(0)
 	defer reset(init)
 
