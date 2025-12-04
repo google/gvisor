@@ -11,8 +11,8 @@ go_test(
     srcs = ["runtimeoptions_test.go"],
     deps = [
         "//pkg/shim/runtimeoptions",
-        "@com_github_containerd_containerd//runtime/v1/shim/v1:go_default_library",
-        "@com_github_containerd_typeurl//:go_default_library",
+        "@com_github_containerd_containerd_api//runtime/task/v3:go_default_library",
+        "@com_github_containerd_typeurl_v2//:go_default_library",
         "@com_github_gogo_protobuf//proto:go_default_library",
     ],
 )

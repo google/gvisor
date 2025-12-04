@@ -20,6 +20,7 @@ import (
 
 	"github.com/containerd/containerd/pkg/process"
 	"github.com/containerd/containerd/runtime/v2/task"
+	"gvisor.dev/gvisor/pkg/shim"
 )
 
 // NewExtension registers an extension constructor. It may return nil, nil to indicate that the
@@ -30,21 +31,14 @@ var NewExtension func(ctx context.Context, next TaskServiceExt, req *task.Create
 // task.StartRequest with restore functionality.
 type RestoreRequest struct {
 	Start task.StartRequest
-	Conf  RestoreConfig
+	Conf  shim.RestoreConfig
 }
 
 // Process extends process.Process with extra restore functionality.
 type Process interface {
 	process.Process
 	// Restore restores the container from a snapshot.
-	Restore(context.Context, *RestoreConfig) error
-}
-
-// RestoreConfig is the configuration for a restore request.
-type RestoreConfig struct {
-	ImagePath  string
-	Direct     bool
-	Background bool
+	Restore(context.Context, *shim.RestoreConfig) error
 }
 
 // TaskServiceExt extends TaskRequest with extra functionality required by the shim.

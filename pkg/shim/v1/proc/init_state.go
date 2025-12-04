@@ -23,6 +23,7 @@ import (
 	runc "github.com/containerd/go-runc"
 	"golang.org/x/sys/unix"
 
+	"gvisor.dev/gvisor/pkg/shim"
 	"gvisor.dev/gvisor/pkg/shim/v1/extension"
 )
 
@@ -50,7 +51,7 @@ func (s stateTransition) String() string {
 type initState interface {
 	// Start starts the process. If RestoreConfig is provided, the process is
 	// restored using the checkpoint image provided in the config.
-	Start(context.Context, *extension.RestoreConfig) error
+	Start(context.Context, *shim.RestoreConfig) error
 	Delete(context.Context) error
 	Exec(context.Context, string, *ExecConfig) (extension.Process, error)
 	State(ctx context.Context) (string, error)
@@ -80,7 +81,7 @@ func (s *createdState) transition(transition stateTransition) {
 	}
 }
 
-func (s *createdState) Start(ctx context.Context, restoreConf *extension.RestoreConfig) error {
+func (s *createdState) Start(ctx context.Context, restoreConf *shim.RestoreConfig) error {
 	if err := s.p.start(ctx, restoreConf); err != nil {
 		// Containerd doesn't allow deleting container in created state.
 		// However, for gVisor, a non-root container in created state can
@@ -149,7 +150,7 @@ func (s *runningState) transition(transition stateTransition) {
 	}
 }
 
-func (s *runningState) Start(context.Context, *extension.RestoreConfig) error {
+func (s *runningState) Start(context.Context, *shim.RestoreConfig) error {
 	return fmt.Errorf("cannot start a running container")
 }
 
@@ -199,7 +200,7 @@ func (s *stoppedState) transition(transition stateTransition) {
 	}
 }
 
-func (s *stoppedState) Start(context.Context, *extension.RestoreConfig) error {
+func (s *stoppedState) Start(context.Context, *shim.RestoreConfig) error {
 	return fmt.Errorf("cannot start a stopped container")
 }
 

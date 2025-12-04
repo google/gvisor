@@ -22,6 +22,7 @@ import (
 	"github.com/containerd/console"
 	"github.com/containerd/errdefs"
 	runc "github.com/containerd/go-runc"
+	"gvisor.dev/gvisor/pkg/shim"
 	"gvisor.dev/gvisor/pkg/shim/v1/extension"
 )
 
@@ -31,7 +32,7 @@ func (*deletedState) Resize(console.WinSize) error {
 	return fmt.Errorf("cannot resize a deleted container/process")
 }
 
-func (*deletedState) Start(context.Context, *extension.RestoreConfig) error {
+func (*deletedState) Start(context.Context, *shim.RestoreConfig) error {
 	return fmt.Errorf("cannot start a deleted container/process")
 }
 
