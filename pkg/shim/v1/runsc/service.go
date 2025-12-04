@@ -51,7 +51,6 @@ import (
 	"github.com/sirupsen/logrus"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/cleanup"
-	"gvisor.dev/gvisor/pkg/shim/v1/runtimeoptions/v14"
 
 	"gvisor.dev/gvisor/pkg/shim/v1/extension"
 	"gvisor.dev/gvisor/pkg/shim/v1/proc"
@@ -219,35 +218,7 @@ func (s *runscService) Create(ctx context.Context, r *taskAPI.CreateTaskRequest)
 		}
 		var path string
 		switch o := v.(type) {
-		case *runctypes.CreateOptions: // containerd 1.2.x
-			s.opts.IoUID = o.IoUid
-			s.opts.IoGID = o.IoGid
-			s.opts.ShimCgroup = o.ShimCgroup
-		case *runctypes.RuncOptions: // containerd 1.2.x
-			root := proc.RunscRoot
-			if o.RuntimeRoot != "" {
-				root = o.RuntimeRoot
-			}
-
-			s.opts.BinaryName = o.Runtime
-
-			path = filepath.Join(root, configFile)
-			if _, err := os.Stat(path); err != nil {
-				if !os.IsNotExist(err) {
-					return nil, fmt.Errorf("stat config file %q: %w", path, err)
-				}
-				// A config file in runtime root is not required.
-				path = ""
-			}
 		case *runtimeoptions.Options: // containerd 1.5+
-			if o.ConfigPath == "" {
-				break
-			}
-			if o.TypeUrl != optionsType {
-				return nil, fmt.Errorf("unsupported option type %q", o.TypeUrl)
-			}
-			path = o.ConfigPath
-		case *v14.Options: // containerd 1.4-
 			if o.ConfigPath == "" {
 				break
 			}
