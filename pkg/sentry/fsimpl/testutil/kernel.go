@@ -35,7 +35,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/sentry/seccheck"
-	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.dev/gvisor/pkg/sentry/time"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
@@ -107,7 +106,6 @@ func Boot() (*kernel.Kernel, error) {
 		RootUTSNamespace:  kernel.NewUTSNamespace("hostname", "domain", creds.UserNamespace),
 		RootIPCNamespace:  kernel.NewIPCNamespace(creds.UserNamespace),
 		RootPIDNamespace:  kernel.NewRootPIDNamespace(creds.UserNamespace),
-		UnixSocketOpts:    transport.UnixSocketOpts{},
 	}); err != nil {
 		return nil, fmt.Errorf("initializing kernel: %v", err)
 	}

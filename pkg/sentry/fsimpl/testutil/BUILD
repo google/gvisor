@@ -31,7 +31,6 @@ go_library(
         "//pkg/sentry/platform/kvm",
         "//pkg/sentry/platform/ptrace",
         "//pkg/sentry/seccheck",
-        "//pkg/sentry/socket/unix/transport",
         "//pkg/sentry/time",
         "//pkg/sentry/usage",
         "//pkg/sentry/vfs",

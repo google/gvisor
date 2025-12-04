@@ -339,11 +339,6 @@ func (r *Route) HasSaveRestoreCapability() bool {
 	return r.outgoingNIC.NetworkLinkEndpoint.Capabilities()&CapabilitySaveRestore != 0
 }
 
-// HasDisconnectOkCapability returns true if the route supports disconnecting.
-func (r *Route) HasDisconnectOkCapability() bool {
-	return r.outgoingNIC.NetworkLinkEndpoint.Capabilities()&CapabilityDisconnectOk != 0
-}
-
 // GSOMaxSize returns the maximum GSO packet size.
 func (r *Route) GSOMaxSize() uint32 {
 	if gso, ok := r.outgoingNIC.NetworkLinkEndpoint.(GSOEndpoint); ok {
