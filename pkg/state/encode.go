@@ -802,14 +802,19 @@ func (es *encodeState) Save(obj reflect.Value) {
 		})
 		for _, id := range ids {
 			// Encode the id.
+			oes = nil
 			wire.Save(&es.w, wire.Uint(id))
 			// Marshal the object.
-			oes := es.pending[id]
+			oes = es.pending[id]
 			wire.Save(&es.w, oes.encoded)
 		}
 	}); err != nil {
-		// Include the object and the error.
-		Failf("error serializing object %#v: %w", oes.encoded, err)
+		if oes != nil {
+			// Include the object and the error.
+			Failf("error serializing object %#v: %w", oes.encoded, err)
+		} else {
+			Failf("error serializing type or ID: %w", err)
+		}
 	}
 }
 
