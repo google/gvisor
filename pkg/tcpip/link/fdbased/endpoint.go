@@ -201,10 +201,6 @@ type Options struct {
 	// include CapabilitySaveRestore
 	SaveRestore bool
 
-	// DisconnectOk if true, indicates that this NIC capability set should
-	// include CapabilityDisconnectOk.
-	DisconnectOk bool
-
 	// GSOMaxSize is the maximum GSO packet size. It is zero if GSO is
 	// disabled.
 	GSOMaxSize uint32
@@ -275,10 +271,6 @@ func New(opts *Options) (stack.LinkEndpoint, error) {
 
 	if opts.SaveRestore {
 		caps |= stack.CapabilitySaveRestore
-	}
-
-	if opts.DisconnectOk {
-		caps |= stack.CapabilityDisconnectOk
 	}
 
 	if len(opts.FDs) == 0 {

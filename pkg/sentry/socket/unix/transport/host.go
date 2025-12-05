@@ -421,15 +421,10 @@ type SCMConnectedEndpoint struct {
 	HostConnectedEndpoint
 
 	queue *waiter.Queue
-	opts  UnixSocketOpts
 }
 
 // beforeSave is invoked by stateify.
 func (e *SCMConnectedEndpoint) beforeSave() {
-	if !e.opts.DisconnectOnSave {
-		panic("socket cannot be saved in a connected state")
-	}
-
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	fdnotifier.RemoveFD(int32(e.fd))
@@ -470,14 +465,13 @@ func (e *SCMConnectedEndpoint) Release(ctx context.Context) {
 // The caller is responsible for calling Init(). Additionally, Release needs to
 // be called twice because ConnectedEndpoint is both a Receiver and
 // ConnectedEndpoint.
-func NewSCMEndpoint(hostFD int, queue *waiter.Queue, addr string, opts UnixSocketOpts) (*SCMConnectedEndpoint, *syserr.Error) {
+func NewSCMEndpoint(hostFD int, queue *waiter.Queue, addr string) (*SCMConnectedEndpoint, *syserr.Error) {
 	e := SCMConnectedEndpoint{
 		HostConnectedEndpoint: HostConnectedEndpoint{
 			fd:   hostFD,
 			addr: addr,
 		},
 		queue: queue,
-		opts:  opts,
 	}
 
 	if err := e.init(); err != nil {

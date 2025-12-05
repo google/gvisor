@@ -1135,7 +1135,6 @@ const (
 	CapabilityRXChecksumOffload
 	CapabilityResolutionRequired
 	CapabilitySaveRestore
-	CapabilityDisconnectOk
 	CapabilityLoopback
 )
 

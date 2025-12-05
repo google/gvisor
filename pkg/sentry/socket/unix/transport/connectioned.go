@@ -293,7 +293,7 @@ func (e *connectionedEndpoint) swapPeerCredsLocked(ctx context.Context, cend Con
 }
 
 // BidirectionalConnect implements BoundEndpoint.BidirectionalConnect.
-func (e *connectionedEndpoint) BidirectionalConnect(ctx context.Context, ce ConnectingEndpoint, returnConnect func(Receiver, ConnectedEndpoint), opts UnixSocketOpts) *syserr.Error {
+func (e *connectionedEndpoint) BidirectionalConnect(ctx context.Context, ce ConnectingEndpoint, returnConnect func(Receiver, ConnectedEndpoint)) *syserr.Error {
 	if ce.Type() != e.stype {
 		return syserr.ErrWrongProtocolForSocket
 	}
@@ -400,13 +400,13 @@ func (e *connectionedEndpoint) BidirectionalConnect(ctx context.Context, ce Conn
 }
 
 // UnidirectionalConnect implements BoundEndpoint.UnidirectionalConnect.
-func (e *connectionedEndpoint) UnidirectionalConnect(ctx context.Context, opts UnixSocketOpts) (ConnectedEndpoint, *syserr.Error) {
+func (e *connectionedEndpoint) UnidirectionalConnect(ctx context.Context) (ConnectedEndpoint, *syserr.Error) {
 	return nil, syserr.ErrConnectionRefused
 }
 
 // Connect attempts to directly connect to another Endpoint.
 // Implements Endpoint.Connect.
-func (e *connectionedEndpoint) Connect(ctx context.Context, server BoundEndpoint, opts UnixSocketOpts) *syserr.Error {
+func (e *connectionedEndpoint) Connect(ctx context.Context, server BoundEndpoint) *syserr.Error {
 	returnConnect := func(r Receiver, ce ConnectedEndpoint) {
 		e.receiver = r
 		e.connected = ce
@@ -418,7 +418,7 @@ func (e *connectionedEndpoint) Connect(ctx context.Context, server BoundEndpoint
 		}
 	}
 
-	return server.BidirectionalConnect(ctx, e, returnConnect, opts)
+	return server.BidirectionalConnect(ctx, e, returnConnect)
 }
 
 // Listen starts listening on the connection.
@@ -460,7 +460,7 @@ func (e *connectionedEndpoint) Listen(ctx context.Context, backlog int) *syserr.
 }
 
 // Accept accepts a new connection.
-func (e *connectionedEndpoint) Accept(ctx context.Context, peerAddr *Address, opts UnixSocketOpts) (Endpoint, *syserr.Error) {
+func (e *connectionedEndpoint) Accept(ctx context.Context, peerAddr *Address) (Endpoint, *syserr.Error) {
 	e.Lock()
 
 	if !e.ListeningLocked() {
@@ -468,7 +468,7 @@ func (e *connectionedEndpoint) Accept(ctx context.Context, peerAddr *Address, op
 		return nil, syserr.ErrInvalidEndpointState
 	}
 
-	ne, err := e.getAcceptedEndpointLocked(ctx, opts)
+	ne, err := e.getAcceptedEndpointLocked(ctx)
 	e.Unlock()
 	if err != nil {
 		return nil, err
@@ -492,7 +492,7 @@ func (e *connectionedEndpoint) Accept(ctx context.Context, peerAddr *Address, op
 // Preconditions:
 //   - e.Listening()
 //   - e is locked.
-func (e *connectionedEndpoint) getAcceptedEndpointLocked(ctx context.Context, opts UnixSocketOpts) (*connectionedEndpoint, *syserr.Error) {
+func (e *connectionedEndpoint) getAcceptedEndpointLocked(ctx context.Context) (*connectionedEndpoint, *syserr.Error) {
 	// Accept connections from within the sentry first, since this avoids
 	// an RPC to the gofer on the common path.
 	select {
@@ -515,7 +515,7 @@ func (e *connectionedEndpoint) getAcceptedEndpointLocked(ctx context.Context, op
 		return nil, syserr.FromError(err)
 	}
 	q := &waiter.Queue{}
-	scme, serr := NewSCMEndpoint(nfd, q, e.path, opts)
+	scme, serr := NewSCMEndpoint(nfd, q, e.path)
 	if serr != nil {
 		unix.Close(nfd)
 		return nil, serr
