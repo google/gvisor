@@ -9,9 +9,19 @@ network driver and the bridge network driver are tested and supported.
 ### NOTE on runsc setup
 
 To run docker within gvisor, runsc must be enabled to allow raw sockets. This is
-not the default, `--net-raw` must be passed to runsc. To use the following
-tutorial, that means having the following runtimes configuration in
-`/etc/docker/daemon.json`:
+not the default, `--net-raw` must be passed to runsc.
+
+In addition, Docker versions 28 and beyond need the ability to write to
+AF_PACKET sockets. This is because dockerd sends unsolicited ARP/NA requests
+when bringing up interfaces. To allow this, the `--allow-packet-socket-write` is
+also to be supplied (the default behavior is to disallow writes to AF_PACKET
+sockets).
+
+To use the following tutorial, that means having the following runtimes
+configuration in `/etc/docker/daemon.json`:
+
+> **Note:** `--allow-packet-socket-write` allows sandboxed code to craft
+> arbitrary packets. It is only needed for Docker versions 28 and beyond.
 
 ```json
 {
@@ -19,7 +29,8 @@ tutorial, that means having the following runtimes configuration in
         "runsc": {
             "path": "/usr/local/bin/runsc",
             "runtimeArgs": [
-                "--net-raw"
+                "--net-raw",
+                "--allow-packet-socket-write"
             ]
         }
     }

@@ -320,7 +320,7 @@ func runRunsc(tc *gtest.TestCase, spec *specs.Spec) error {
 		"-network", *network,
 		"-log-format=text",
 		"-TESTONLY-unsafe-nonroot=true",
-		"-TESTONLY-allow-packet-endpoint-write=true",
+		"-allow-packet-socket-write=true",
 		fmt.Sprintf("-panic-signal=%d", unix.SIGTERM),
 		fmt.Sprintf("-iouring=%t", *ioUring),
 		"-watchdog-action=panic",
