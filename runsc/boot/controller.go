@@ -592,6 +592,7 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) (retErr error) 
 	cm.restorer = &restorer{
 		cm:         cm,
 		stateFile:  reader,
+		metadata:   metadata,
 		background: o.Background,
 		timer:      timer,
 		mainMF:     mf,
