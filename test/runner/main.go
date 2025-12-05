@@ -723,6 +723,10 @@ func isWarning(line string) bool {
 	// Caused by properties of the host that runsc doesn't necessarily control.
 	case strings.Contains(line, "Host limit is lower than recommended"):
 
+	// TODO(gvisor.dev/issue/11649): Systrap needs to roll back created
+	// patches for traced procs.
+	case strings.Contains(line, "LIKELY ERROR: Attached tracer to process with patched syscalls"):
+
 	case *save:
 		// Ignore these warnings for S/R tests as we try to delete the sandbox
 		// after the sandbox has exited and before attempting to restore it.
