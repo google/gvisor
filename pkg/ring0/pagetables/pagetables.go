@@ -110,8 +110,9 @@ func New(a Allocator) *PageTables {
 type mapVisitor struct {
 	target   uintptr // Input.
 	physical uintptr // Input.
-	opts     MapOpts // Input.
-	prev     bool    // Output.
+	// opts is a pointer just to reduce a stack usage. It should never be changed.
+	opts *MapOpts // Input.
+	prev bool     // Output.
 }
 
 // visit is used for map.
@@ -119,7 +120,7 @@ type mapVisitor struct {
 //go:nosplit
 func (v *mapVisitor) visit(start uintptr, pte *PTE, align uintptr) bool {
 	p := v.physical + (start - v.target)
-	if pte.Valid() && (pte.Address() != p || pte.Opts() != v.opts) {
+	if pte.Valid() && (pte.Address() != p || pte.Opts() != *v.opts) {
 		v.prev = true
 	}
 	if p&align != 0 {
@@ -169,7 +170,7 @@ func (p *PageTables) Map(addr hostarch.Addr, length uintptr, opts MapOpts, physi
 		visitor: mapVisitor{
 			target:   uintptr(addr),
 			physical: physical,
-			opts:     opts,
+			opts:     &opts,
 		},
 	}
 	w.iterateRange(uintptr(addr), uintptr(addr)+length)

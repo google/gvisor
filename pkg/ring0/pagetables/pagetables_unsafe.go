@@ -1,4 +1,4 @@
-// Copyright 2019 The gVisor Authors.
+// Copyright 2025 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,14 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package kvm
+package pagetables
 
-const (
-	reservedMemory = 0
-	// 5-level page tables are not implemeted on arm64.
-	exendedAddressSpaceAllowed = false
+import (
+	"unsafe"
 )
 
-func archSpecialRegions(vSize uintptr, maxUserAddr uintptr) (uintptr, []specialVirtualRegion) {
-	return vSize, nil
+// Get returns the entry with the specified index.
+//
+//go:nosplit
+func (p *PTEs) Get(idx uint16) *PTE {
+	return (*PTE)(unsafe.Pointer(uintptr(unsafe.Pointer(&p[0])) + 8*uintptr(idx)))
 }
