@@ -73,6 +73,7 @@ var (
 	saveResume       = flag.Bool("save-resume", false, "enables save resume")
 	netstackSR       = flag.Bool("netstack-sr", false, "enables netstack s/r")
 	nftables         = flag.Bool("nftables", false, "enables nftables")
+	kvmUseCPUNums    = flag.Bool("kvm-use-cpu-nums", false, "use cpu numbers in kvm platform")
 )
 
 const (
@@ -371,6 +372,11 @@ func runRunsc(tc *gtest.TestCase, spec *specs.Spec) error {
 		args = append(args, "-directfs")
 	} else {
 		args = append(args, "-directfs=false")
+	}
+	if *kvmUseCPUNums {
+		args = append(args, "-kvm-use-cpu-nums")
+	} else {
+		args = append(args, "-kvm-use-cpu-nums=false")
 	}
 
 	testLogDir := ""

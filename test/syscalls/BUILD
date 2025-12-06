@@ -645,6 +645,7 @@ syscall_test(
 )
 
 syscall_test(
+    kvm_use_cpu_nums = True,
     test = "//test/syscalls/linux:rseq_test",
 )
 
