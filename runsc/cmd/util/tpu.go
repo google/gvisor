@@ -41,7 +41,7 @@ var (
 	tpuV4DeviceIDs   = map[uint64]struct{}{tpu.TPUV4DeviceID: {}, tpu.TPUV4liteDeviceID: {}}
 	tpuVFIODeviceIDs = map[uint64]struct{}{
 		tpu.TPUV4DeviceID: {}, tpu.TPUV4liteDeviceID: {}, tpu.TPUV5eDeviceID: {}, tpu.TPUV5pDeviceID: {},
-		tpu.TPUV6eDeviceID: {}, tpu.TPUV6pDeviceID: {}, tpu.TPUV6ePFDeviceID: {}, tpu.TPUV6pPFDeviceID: {},
+		tpu.TPUV6eDeviceID: {}, tpu.TPU7xDeviceID: {}, tpu.TPUV6ePFDeviceID: {}, tpu.TPU7xPFDeviceID: {},
 	}
 	pciDeviceRegex = regexp.MustCompile(`0000:([[:xdigit:]]{2}|[[:xdigit:]]{4}):[[:xdigit:]]{2}\.[[:xdigit:]]{1,2}`)
 )
