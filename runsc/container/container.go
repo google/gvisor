@@ -911,6 +911,11 @@ func (c *Container) forEachSelfMount(fn func(mountSrc string)) {
 	}
 	goferMntIdx := 1 // First index is for rootfs.
 	for i := range c.Spec.Mounts {
+		// EROFS mounts are in goferMountConfs but don't have self-backed filestores
+		if specutils.IsErofsMount(c.Spec.Mounts[i]) {
+			goferMntIdx++
+			continue
+		}
 		if !specutils.IsGoferMount(c.Spec.Mounts[i]) {
 			continue
 		}
@@ -985,12 +990,17 @@ func (c *Container) initGoferConfs(ovlConf config.Overlay2, mountHints *boot.Pod
 
 	// Handle bind mounts.
 	for i := range c.Spec.Mounts {
-		if !specutils.IsGoferMount(c.Spec.Mounts[i]) {
+		if !specutils.IsGoferMount(c.Spec.Mounts[i]) && !specutils.IsErofsMount(c.Spec.Mounts[i]) {
 			continue
 		}
+		// Determine mount type: Bind for gofer mounts, erofs.Name for EROFS mounts
+		mountType := boot.Bind
+		if specutils.IsErofsMount(c.Spec.Mounts[i]) {
+			mountType = erofs.Name
+		}
+
 		overlayMedium := ovlConf.SubMountOverlayMedium()
 		overlaySize := ovlConf.SubMountOverlaySize()
-		mountType = boot.Bind
 		if specutils.IsReadonlyMount(c.Spec.Mounts[i].Options) {
 			overlayMedium = config.NoOverlay
 		}
@@ -1037,6 +1047,11 @@ func (c *Container) createGoferFilestores(ovlConf config.Overlay2, mountHints *b
 	// Then handle all the bind mounts.
 	mountIdx := 1 // first one is the root
 	for _, m := range c.Spec.Mounts {
+		// EROFS mounts are in goferMountConfs but don't need filestore processing
+		if specutils.IsErofsMount(m) {
+			mountIdx++
+			continue
+		}
 		if !specutils.IsGoferMount(m) {
 			continue
 		}
@@ -1377,7 +1392,19 @@ func (c *Container) createGoferProcess(conf *config.Config, mountHints *boot.Pod
 	}
 
 	sandEnds := make([]*os.File, 0, ioFileCount)
+	// Track which spec.Mount corresponds to which goferMountConf
+	mountIdx := 0
 	for i, cfg := range c.GoferMountConfs {
+		// Align spec mount with gofer mount conf by skipping non-gofer/non-erofs mounts
+		// Skip alignment for root mount (i == 0) because it is not present in spec.Mounts
+		if i > 0 {
+			for mountIdx < len(c.Spec.Mounts) &&
+				!specutils.IsGoferMount(c.Spec.Mounts[mountIdx]) &&
+				!specutils.IsErofsMount(c.Spec.Mounts[mountIdx]) {
+				mountIdx++
+			}
+		}
+
 		switch {
 		case cfg.ShouldUseLisafs():
 			fds, err := unix.Socketpair(unix.AF_UNIX, unix.SOCK_STREAM|unix.SOCK_CLOEXEC, 0)
@@ -1390,14 +1417,25 @@ func (c *Container) createGoferProcess(conf *config.Config, mountHints *boot.Pod
 			donations.DonateAndClose("io-fds", goferEnd)
 
 		case cfg.ShouldUseErofs():
-			if i > 0 {
-				return nil, nil, nil, nil, fmt.Errorf("EROFS lower layer is only supported for root mount")
+			// Get the source for the EROFS image
+			var mountSrc string
+			if i == 0 {
+				// Root mount
+				mountSrc = rootfsHint.Mount.Source
+			} else {
+				// Non-root mount: use the aligned mountIdx
+				mountSrc = c.Spec.Mounts[mountIdx].Source
 			}
-			f, err := os.Open(rootfsHint.Mount.Source)
+			f, err := os.Open(mountSrc)
 			if err != nil {
-				return nil, nil, nil, nil, fmt.Errorf("opening rootfs image %q: %v", rootfsHint.Mount.Source, err)
+				return nil, nil, nil, nil, fmt.Errorf("opening EROFS image %q: %v", mountSrc, err)
 			}
 			sandEnds = append(sandEnds, f)
+		}
+
+		// Move to next mount in spec (for non-root mounts)
+		if i > 0 {
+			mountIdx++
 		}
 	}
 	var devSandEnd *os.File
