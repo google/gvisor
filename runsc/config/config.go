@@ -120,7 +120,7 @@ type Config struct {
 	EnableRaw bool `flag:"net-raw"`
 
 	// AllowPacketEndpointWrite enables write operations on packet endpoints.
-	AllowPacketEndpointWrite bool `flag:"TESTONLY-allow-packet-endpoint-write"`
+	AllowPacketEndpointWrite bool `flag:"allow-packet-socket-write"`
 
 	// HostGSO indicates that host segmentation offload is enabled.
 	HostGSO bool `flag:"gso"`
