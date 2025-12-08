@@ -509,6 +509,12 @@ const (
 	// PacketHost indicates a packet addressed to the local host.
 	PacketHost PacketType = iota
 
+	// PacketBroadcast indicates a link layer broadcast packet.
+	PacketBroadcast
+
+	// PacketMulticast indicates a link layer multicast packet.
+	PacketMulticast
+
 	// PacketOtherHost indicates an outgoing packet addressed to
 	// another host caught by a NIC in promiscuous mode.
 	PacketOtherHost
@@ -517,11 +523,8 @@ const (
 	// that is looped back to a packet socket.
 	PacketOutgoing
 
-	// PacketBroadcast indicates a link layer broadcast packet.
-	PacketBroadcast
-
-	// PacketMulticast indicates a link layer multicast packet.
-	PacketMulticast
+	// PacketLoopback indicates a packet that is looped back to a packet socket.
+	PacketLoopback
 )
 
 // FullAddress represents a full transport node address, as required by the
