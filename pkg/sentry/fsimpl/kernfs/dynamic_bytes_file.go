@@ -25,6 +25,11 @@ import (
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
+// DataSourceProvider represents a dynamic data source provider for DynamicBytesFile.
+type DataSourceProvider interface {
+	DataSource(ctx context.Context) (vfs.DynamicBytesSource, error)
+}
+
 // DynamicBytesFile implements kernfs.Inode and represents a read-only file
 // whose contents are backed by a vfs.DynamicBytesSource. If data additionally
 // implements vfs.WritableDynamicBytesSource, the file also supports dispatching
@@ -49,6 +54,10 @@ type DynamicBytesFile struct {
 	// writes. This field cannot be changed to a different bytes source after
 	// Init.
 	data vfs.DynamicBytesSource
+
+	// dataSourceProvider is used to get the data source when the file is opened.
+	// If it is nil, the data source is fixed to the value in the data field.
+	dataSourceProvider DataSourceProvider
 }
 
 var _ Inode = (*DynamicBytesFile)(nil)
@@ -64,8 +73,12 @@ func (f *DynamicBytesFile) Init(ctx context.Context, creds *auth.Credentials, de
 
 // Open implements Inode.Open.
 func (f *DynamicBytesFile) Open(ctx context.Context, rp *vfs.ResolvingPath, d *Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
+	data, err := f.Data(ctx)
+	if err != nil {
+		return nil, err
+	}
 	fd := &DynamicBytesFD{}
-	if err := fd.Init(rp.Mount(), d, f.data, &f.locks, opts.Flags); err != nil {
+	if err := fd.Init(rp.Mount(), d, data, &f.locks, opts.Flags); err != nil {
 		return nil, err
 	}
 	return &fd.vfsfd, nil
@@ -83,9 +96,17 @@ func (f *DynamicBytesFile) Locks() *vfs.FileLocks {
 	return &f.locks
 }
 
+// SetDataSourceProvider sets a DataSourceProvider for the file.
+func (f *DynamicBytesFile) SetDataSourceProvider(p DataSourceProvider) {
+	f.dataSourceProvider = p
+}
+
 // Data returns the underlying data source.
-func (f *DynamicBytesFile) Data() vfs.DynamicBytesSource {
-	return f.data
+func (f *DynamicBytesFile) Data(ctx context.Context) (vfs.DynamicBytesSource, error) {
+	if f.dataSourceProvider != nil {
+		return f.dataSourceProvider.DataSource(ctx)
+	}
+	return f.data, nil
 }
 
 // DynamicBytesFD implements vfs.FileDescriptionImpl for an FD backed by a

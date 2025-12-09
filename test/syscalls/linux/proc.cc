@@ -2973,6 +2973,63 @@ TEST(Proc, GetdentsEnoent) {
               SyscallFailsWithErrno(ENOENT));
 }
 
+TEST(ProcPid, AccessDeny) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SETUID)));
+
+  int pfds[2] = {};
+
+  ASSERT_THAT(pipe(pfds), SyscallSucceeds());
+
+  // Create child process
+  pid_t const child_pid = fork();
+  if (child_pid == 0) {
+    // Close writing end
+    TEST_PCHECK(close(pfds[1]) == 0);
+
+    char ok = 0;
+    // Await parent OK to die
+    TEST_CHECK(ReadFd(pfds[0], &ok, sizeof(ok)) == sizeof(ok));
+
+    _exit(0);
+  }
+
+  // In parent process.
+  ASSERT_THAT(child_pid, SyscallSucceeds());
+
+  ScopedThread([&] {
+    constexpr int kNobody = 65534;
+    ASSERT_THAT(syscall(SYS_setuid, kNobody), SyscallSucceeds());
+
+    // Attempt to open /proc/[child_pid]/environ
+    std::string path = absl::StrCat("/proc/", child_pid);
+    const FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open(path, O_RDONLY));
+    EXPECT_THAT(openat(fd.get(), "auxv", O_RDONLY),
+                SyscallFailsWithErrno(EACCES));
+    EXPECT_THAT(openat(fd.get(), "environ", O_RDONLY),
+                SyscallFailsWithErrno(EACCES));
+    EXPECT_THAT(openat(fd.get(), "maps", O_RDONLY),
+                SyscallFailsWithErrno(EACCES));
+    EXPECT_THAT(openat(fd.get(), "smaps", O_RDONLY),
+                SyscallFailsWithErrno(EACCES));
+    EXPECT_THAT(openat(fd.get(), "fd", O_RDONLY),
+                SyscallFailsWithErrno(EACCES));
+    EXPECT_THAT(openat(fd.get(), "fd/0", O_RDONLY),
+                SyscallFailsWithErrno(EACCES));
+
+    // Tell proc its ok to go
+    EXPECT_THAT(close(pfds[0]), SyscallSucceeds());
+    char ok = 1;
+    EXPECT_THAT(WriteFd(pfds[1], &ok, sizeof(ok)),
+                SyscallSucceedsWithValue(sizeof(ok)));
+    EXPECT_THAT(close(pfds[1]), SyscallSucceeds());
+
+    // Expect termination
+    int status;
+    ASSERT_THAT(waitpid(child_pid, &status, 0), SyscallSucceeds());
+    EXPECT_EQ(status, 0);
+  });
+}
+
 void CheckSyscwFromIOFile(const std::string& path, const std::string& regex) {
   std::string output;
   ASSERT_NO_ERRNO(GetContents(path, &output));

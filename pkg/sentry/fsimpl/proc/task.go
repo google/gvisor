@@ -59,18 +59,18 @@ func (fs *filesystem) newTaskInode(ctx context.Context, task *kernel.Task, pidns
 	}
 
 	contents := map[string]kernfs.Inode{
-		"auxv":      fs.newTaskOwnedInode(ctx, task, fs.NextIno(), 0444, &auxvData{task: task}),
-		"cmdline":   fs.newTaskOwnedInode(ctx, task, fs.NextIno(), 0444, &metadataData{task: task, metaType: Cmdline}),
+		"auxv":      fs.newTaskOwnedInode(ctx, task, fs.NextIno(), 0400, &mmFile{task: task, ftype: auxvMMFile}),
+		"cmdline":   fs.newTaskOwnedInode(ctx, task, fs.NextIno(), 0444, &cmdlineData{task: task}),
 		"comm":      fs.newComm(ctx, task, fs.NextIno(), 0644),
 		"cwd":       fs.newCwdSymlink(ctx, task, fs.NextIno()),
-		"environ":   fs.newTaskOwnedInode(ctx, task, fs.NextIno(), 0444, &metadataData{task: task, metaType: Environ}),
+		"environ":   fs.newTaskOwnedInode(ctx, task, fs.NextIno(), 0400, &mmFile{task: task, ftype: environMMFile}),
 		"exe":       fs.newExeSymlink(ctx, task, fs.NextIno()),
 		"fd":        fs.newFDDirInode(ctx, task),
 		"fdinfo":    fs.newFDInfoDirInode(ctx, task),
 		"gid_map":   fs.newTaskOwnedInode(ctx, task, fs.NextIno(), 0644, &idMapData{task: task, gids: true}),
 		"io":        fs.newTaskOwnedInode(ctx, task, fs.NextIno(), 0400, newIO(task, isThreadGroup)),
 		"limits":    fs.newTaskOwnedInode(ctx, task, fs.NextIno(), 0444, &limitsData{task: task}),
-		"maps":      fs.newTaskOwnedInode(ctx, task, fs.NextIno(), 0444, &mapsData{task: task}),
+		"maps":      fs.newTaskOwnedInode(ctx, task, fs.NextIno(), 0444, &mmFile{task: task, ftype: mapsMMFile}),
 		"mem":       fs.newMemInode(ctx, task, fs.NextIno(), 0600),
 		"mountinfo": fs.newTaskOwnedInode(ctx, task, fs.NextIno(), 0444, &mountInfoData{fs: fs, task: task}),
 		"mounts":    fs.newTaskOwnedInode(ctx, task, fs.NextIno(), 0444, &mountsData{fs: fs, task: task}),
@@ -86,7 +86,7 @@ func (fs *filesystem) newTaskInode(ctx context.Context, task *kernel.Task, pidns
 		"oom_score":     fs.newTaskOwnedInode(ctx, task, fs.NextIno(), 0444, newStaticFile("0\n")),
 		"oom_score_adj": fs.newTaskOwnedInode(ctx, task, fs.NextIno(), 0644, &oomScoreAdj{task: task}),
 		"root":          fs.newRootSymlink(ctx, task, fs.NextIno()),
-		"smaps":         fs.newTaskOwnedInode(ctx, task, fs.NextIno(), 0444, &smapsData{task: task}),
+		"smaps":         fs.newTaskOwnedInode(ctx, task, fs.NextIno(), 0444, &mmFile{task: task, ftype: smapsMMFile}),
 		"stat":          fs.newTaskOwnedInode(ctx, task, fs.NextIno(), 0444, &taskStatData{task: task, pidns: pidns, tgstats: isThreadGroup}),
 		"statm":         fs.newTaskOwnedInode(ctx, task, fs.NextIno(), 0444, &statmData{task: task}),
 		"status":        fs.newStatusInode(ctx, task, pidns, fs.NextIno(), 0444),
@@ -248,7 +248,7 @@ func (i *taskOwnedInode) Stat(ctx context.Context, fs *vfs.Filesystem, opts vfs.
 }
 
 // CheckPermissions implements kernfs.Inode.CheckPermissions.
-func (i *taskOwnedInode) CheckPermissions(_ context.Context, creds *auth.Credentials, ats vfs.AccessTypes) error {
+func (i *taskOwnedInode) CheckPermissions(ctx context.Context, creds *auth.Credentials, ats vfs.AccessTypes) error {
 	mode := i.Mode()
 	uid, gid := i.getOwner(mode)
 	return vfs.GenericCheckPermissions(creds, ats, mode, uid, gid)

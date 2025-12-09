@@ -353,7 +353,11 @@ func (c *cgroupInode) ReadControl(ctx context.Context, name string) (string, err
 	}
 
 	var buf bytes.Buffer
-	err = cbf.Source().Data().Generate(ctx, &buf)
+	data, err := cbf.Source().Data(ctx)
+	if err != nil {
+		return "", err
+	}
+	err = data.Generate(ctx, &buf)
 	return buf.String(), err
 }
 
