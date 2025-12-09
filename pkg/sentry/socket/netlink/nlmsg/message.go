@@ -219,6 +219,8 @@ func (n *NestedAttr) PutAttr(atype uint16, v marshal.Marshallable) {
 		buf: *n,
 	}
 	m.PutAttr(atype, v)
+	// m.buf may have been reallocated in PutAttr, so update the NestedAttr.
+	*n = m.buf
 }
 
 // PutAttrString adds s to the provided NestedAttr, creating nested attributes.
@@ -227,6 +229,8 @@ func (n *NestedAttr) PutAttrString(atype uint16, s string) {
 		buf: *n,
 	}
 	m.PutAttrString(atype, s)
+	// m.buf may have been reallocated in PutAttrString, so update the NestedAttr.
+	*n = m.buf
 }
 
 // MessageSet contains a series of netlink messages.
