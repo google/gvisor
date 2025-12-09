@@ -107,6 +107,7 @@ go_library(
         "//pkg/sentry/strace",
         "//pkg/sentry/time",
         "//pkg/sentry/unimpl:unimplemented_syscall_go_proto",
+        "//pkg/sentry/uniqueid",
         "//pkg/sentry/usage",
         "//pkg/sentry/vfs",
         "//pkg/sentry/watchdog",

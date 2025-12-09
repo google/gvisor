@@ -9,6 +9,7 @@ package(
 declare_mutex(
     name = "netstack_link_mutex",
     out = "netstack_link_mutex.go",
+    nested_lock_names = ["destStack"],
     package = "netstack",
     prefix = "netstackLink",
 )
@@ -55,6 +56,7 @@ go_library(
         "//pkg/sentry/socket/netfilter",
         "//pkg/sentry/socket/netlink/nlmsg",
         "//pkg/sentry/socket/netstack/packetmmap",
+        "//pkg/sentry/uniqueid",
         "//pkg/sentry/vfs",
         "//pkg/sync",
         "//pkg/sync/locking",

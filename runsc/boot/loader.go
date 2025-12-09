@@ -59,6 +59,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/socket/netfilter"
 	"gvisor.dev/gvisor/pkg/sentry/socket/plugin"
 	"gvisor.dev/gvisor/pkg/sentry/time"
+	"gvisor.dev/gvisor/pkg/sentry/uniqueid"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sentry/watchdog"
@@ -607,7 +608,7 @@ func New(args Args) (*Loader, error) {
 		return nil, fmt.Errorf("getting root credentials")
 	}
 	// Create root network namespace/stack.
-	netns, err := newRootNetworkNamespace(args.Conf, tk, creds.UserNamespace)
+	netns, err := newRootNetworkNamespace(args.Conf, tk, creds.UserNamespace, l.k)
 	if err != nil {
 		return nil, fmt.Errorf("creating network: %w", err)
 	}
@@ -1627,7 +1628,7 @@ func (l *Loader) WaitExit() linux.WaitStatus {
 	return l.k.GlobalInit().ExitStatus()
 }
 
-func newRootNetworkNamespace(conf *config.Config, clock tcpip.Clock, userns *auth.UserNamespace) (*inet.Namespace, error) {
+func newRootNetworkNamespace(conf *config.Config, clock tcpip.Clock, userns *auth.UserNamespace, uid uniqueid.Provider) (*inet.Namespace, error) {
 	// Create an empty network stack because the network namespace may be empty at
 	// this point. Netns is configured before Run() is called. Netstack is
 	// configured using a control uRPC message. Host network is configured inside
@@ -1644,13 +1645,14 @@ func newRootNetworkNamespace(conf *config.Config, clock tcpip.Clock, userns *aut
 		return inet.NewRootNamespace(hostinet.NewStack(), nil, userns), nil
 
 	case config.NetworkNone, config.NetworkSandbox:
-		s, err := newEmptySandboxNetworkStack(clock, conf.AllowPacketEndpointWrite)
-		if err != nil {
-			return nil, err
-		}
 		creator := &sandboxNetstackCreator{
 			clock:                    clock,
 			allowPacketEndpointWrite: conf.AllowPacketEndpointWrite,
+			uid:                      uid,
+		}
+		s, err := creator.newEmptySandboxNetworkStack()
+		if err != nil {
+			return nil, err
 		}
 		return inet.NewRootNamespace(s, creator, userns), nil
 	case config.NetworkPlugin:
@@ -1662,7 +1664,7 @@ func newRootNetworkNamespace(conf *config.Config, clock tcpip.Clock, userns *aut
 
 }
 
-func newEmptySandboxNetworkStack(clock tcpip.Clock, allowPacketEndpointWrite bool) (*netstack.Stack, error) {
+func (c *sandboxNetstackCreator) newEmptySandboxNetworkStack() (*netstack.Stack, error) {
 	netProtos := []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol, arp.NewProtocol}
 	transProtos := []stack.TransportProtocolFactory{
 		tcp.NewProtocol,
@@ -1670,21 +1672,21 @@ func newEmptySandboxNetworkStack(clock tcpip.Clock, allowPacketEndpointWrite boo
 		icmp.NewProtocol4,
 		icmp.NewProtocol6,
 	}
-	s := netstack.Stack{Stack: stack.New(stack.Options{
+	s := netstack.NewStack(stack.New(stack.Options{
 		NetworkProtocols:   netProtos,
 		TransportProtocols: transProtos,
-		Clock:              clock,
+		Clock:              c.clock,
 		Stats:              netstack.Metrics,
 		HandleLocal:        true,
 		// Enable raw sockets for users with sufficient
 		// privileges.
 		RawFactory:               raw.EndpointFactory{},
-		AllowPacketEndpointWrite: allowPacketEndpointWrite,
+		AllowPacketEndpointWrite: c.allowPacketEndpointWrite,
 		DefaultIPTables:          netfilter.DefaultLinuxTables,
-	})}
+	}), c.uid.UniqueID())
 
 	if nftables.IsNFTablesEnabled() {
-		s.Stack.SetNFTables(nftables.NewNFTables(clock, s.Stack.SecureRNG()))
+		s.Stack.SetNFTables(nftables.NewNFTables(c.clock, s.Stack.SecureRNG()))
 	}
 
 	// Enable SACK Recovery.
@@ -1714,7 +1716,7 @@ func newEmptySandboxNetworkStack(clock tcpip.Clock, allowPacketEndpointWrite boo
 		}
 	}
 
-	return &s, nil
+	return s, nil
 }
 
 // sandboxNetstackCreator implements kernel.NetworkStackCreator.
@@ -1723,11 +1725,12 @@ func newEmptySandboxNetworkStack(clock tcpip.Clock, allowPacketEndpointWrite boo
 type sandboxNetstackCreator struct {
 	clock                    tcpip.Clock
 	allowPacketEndpointWrite bool
+	uid                      uniqueid.Provider
 }
 
 // CreateStack implements kernel.NetworkStackCreator.CreateStack.
-func (f *sandboxNetstackCreator) CreateStack() (inet.Stack, error) {
-	s, err := newEmptySandboxNetworkStack(f.clock, f.allowPacketEndpointWrite)
+func (c *sandboxNetstackCreator) CreateStack() (inet.Stack, error) {
+	s, err := c.newEmptySandboxNetworkStack()
 	if err != nil {
 		return nil, err
 	}
