@@ -123,7 +123,7 @@ func (t *Task) CanTrace(target *Task, attach bool) bool {
 		return false
 	}
 
-	if t.k.YAMAPtraceScope.Load() == linux.YAMA_SCOPE_RELATIONAL {
+	if attach && t.k.YAMAPtraceScope.Load() == linux.YAMA_SCOPE_RELATIONAL {
 		t.tg.pidns.owner.mu.RLock()
 		defer t.tg.pidns.owner.mu.RUnlock()
 		if !t.canTraceYAMALocked(target) {
@@ -144,7 +144,7 @@ func (t *Task) canTraceLocked(target *Task, attach bool) bool {
 		return false
 	}
 
-	if t.k.YAMAPtraceScope.Load() == linux.YAMA_SCOPE_RELATIONAL {
+	if attach && t.k.YAMAPtraceScope.Load() == linux.YAMA_SCOPE_RELATIONAL {
 		if !t.canTraceYAMALocked(target) {
 			return false
 		}

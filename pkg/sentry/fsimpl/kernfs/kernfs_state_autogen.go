@@ -80,6 +80,7 @@ func (f *DynamicBytesFile) StateFields() []string {
 		"InodeFSOwned",
 		"locks",
 		"data",
+		"dataSourceProvider",
 	}
 }
 
@@ -98,6 +99,7 @@ func (f *DynamicBytesFile) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(7, &f.InodeFSOwned)
 	stateSinkObject.Save(8, &f.locks)
 	stateSinkObject.Save(9, &f.data)
+	stateSinkObject.Save(10, &f.dataSourceProvider)
 }
 
 func (f *DynamicBytesFile) afterLoad(context.Context) {}
@@ -114,6 +116,7 @@ func (f *DynamicBytesFile) StateLoad(ctx context.Context, stateSourceObject stat
 	stateSourceObject.Load(7, &f.InodeFSOwned)
 	stateSourceObject.Load(8, &f.locks)
 	stateSourceObject.Load(9, &f.data)
+	stateSourceObject.Load(10, &f.dataSourceProvider)
 }
 
 func (fd *DynamicBytesFD) StateTypeName() string {

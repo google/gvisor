@@ -102,20 +102,13 @@ func (w *bufferWriter) WriteFromBlocks(srcs safemem.BlockSeq) (uint64, error) {
 //
 // +stateify savable
 type auxvData struct {
-	kernfs.DynamicBytesFile
-
-	task *kernel.Task
+	mm *mm.MemoryManager
 }
-
-var _ dynamicInode = (*auxvData)(nil)
 
 // Generate implements vfs.DynamicBytesSource.Generate.
 func (d *auxvData) Generate(ctx context.Context, buf *bytes.Buffer) error {
-	if d.task.ExitState() == kernel.TaskExitDead {
-		return linuxerr.ESRCH
-	}
-	m, err := getMMIncRef(d.task)
-	if err != nil {
+	m := d.mm
+	if m == nil || !m.IncUsers() {
 		// Return empty file.
 		return nil
 	}
@@ -228,25 +221,19 @@ func GetMetadata(ctx context.Context, mm *mm.MemoryManager, buf *bytes.Buffer, t
 	return nil
 }
 
-// metadataData implements vfs.DynamicBytesSource for proc metadata fields like:
-//
-//   - /proc/[pid]/cmdline
-//   - /proc/[pid]/environ
+// cmdlineData implements vfs.DynamicBytesSource for /proc/[pid]/cmdline:
 //
 // +stateify savable
-type metadataData struct {
+type cmdlineData struct {
 	kernfs.DynamicBytesFile
 
 	task *kernel.Task
-
-	// arg is the type of exec argument this file contains.
-	metaType MetadataType
 }
 
-var _ dynamicInode = (*metadataData)(nil)
+var _ dynamicInode = (*cmdlineData)(nil)
 
 // Generate implements vfs.DynamicBytesSource.Generate.
-func (d *metadataData) Generate(ctx context.Context, buf *bytes.Buffer) error {
+func (d *cmdlineData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	if d.task.ExitState() == kernel.TaskExitDead {
 		return linuxerr.ESRCH
 	}
@@ -256,7 +243,25 @@ func (d *metadataData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 		return nil
 	}
 	defer m.DecUsers(ctx)
-	return GetMetadata(ctx, m, buf, d.metaType)
+	return GetMetadata(ctx, m, buf, Cmdline)
+}
+
+// environData implements vfs.DynamicBytesSource for /proc/[pid]/environ:
+//
+// +stateify savable
+type environData struct {
+	mm *mm.MemoryManager
+}
+
+// Generate implements vfs.DynamicBytesSource.Generate.
+func (d *environData) Generate(ctx context.Context, buf *bytes.Buffer) error {
+	m := d.mm
+	if m == nil || !m.IncUsers() {
+		// Return empty file.
+		return nil
+	}
+	defer m.DecUsers(ctx)
+	return GetMetadata(ctx, m, buf, Environ)
 }
 
 // +stateify savable
@@ -444,11 +449,20 @@ func (f *memInode) init(ctx context.Context, creds *auth.Credentials, devMajor, 
 
 // Open implements kernfs.Inode.Open.
 func (f *memInode) Open(ctx context.Context, rp *vfs.ResolvingPath, d *kernfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
-	// TODO(gvisor.dev/issue/260): Add check for PTRACE_MODE_ATTACH_FSCREDS
-	// Permission to read this file is governed by PTRACE_MODE_ATTACH_FSCREDS
-	// Since we dont implement setfsuid/setfsgid we can just use PTRACE_MODE_ATTACH
-	if !kernel.ContextCanTrace(ctx, f.task, true) {
-		return nil, linuxerr.EACCES
+	m := getMM(f.task)
+	for {
+		// TODO(gvisor.dev/issue/260): Add check for PTRACE_MODE_ATTACH_FSCREDS
+		// Permission to read this file is governed by PTRACE_MODE_ATTACH_FSCREDS
+		// Since we dont implement setfsuid/setfsgid we can just use PTRACE_MODE_ATTACH
+		if !kernel.ContextCanTrace(ctx, f.task, true) {
+			return nil, linuxerr.EACCES
+		}
+		// Check that the task still has the same mm (hasn't called execve).
+		m2 := getMM(f.task)
+		if m == m2 {
+			break
+		}
+		m = m2
 	}
 	if err := checkTaskState(f.task); err != nil {
 		return nil, err
@@ -624,7 +638,6 @@ func (d *limitsData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 		} else {
 			fmt.Fprintf(buf, "%-20d ", l.Max)
 		}
-
 		if u := lt.Unit(); u != "" {
 			fmt.Fprintf(buf, "%-10s", u)
 		}
@@ -634,22 +647,82 @@ func (d *limitsData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	return nil
 }
 
+// mmFile implements vfs.DynamicBytesSource for files that links with a process mm.
+//
+// +stateify savable
+type mmFile struct {
+	kernfs.DynamicBytesFile
+
+	ftype mmFileType
+	task  *kernel.Task
+}
+
+type mmFileType int
+
+const (
+	mapsMMFile mmFileType = iota
+	smapsMMFile
+	auxvMMFile
+	environMMFile
+	cmdlineMMFile
+)
+
+var _ dynamicInode = (*mmFile)(nil)
+
+func (f *mmFile) Init(ctx context.Context, creds *auth.Credentials, devMajor, devMinor uint32, ino uint64, data vfs.DynamicBytesSource, perm linux.FileMode) {
+	f.DynamicBytesFile.Init(ctx, creds, devMajor, devMinor, ino, nil, perm)
+	f.SetDataSourceProvider(f)
+}
+
+// DataSource implements kernfs.DataSourceProvider.DataSource()
+func (f *mmFile) DataSource(ctx context.Context) (vfs.DynamicBytesSource, error) {
+	m := getMM(f.task)
+	for {
+		if !kernel.ContextCanTrace(ctx, f.task, false) {
+			return nil, linuxerr.EACCES
+		}
+		// Check that the task still has the same mm (hasn't called execve).
+		m2 := getMM(f.task)
+		if m == m2 {
+			break
+		}
+		m = m2
+	}
+	switch f.ftype {
+	case mapsMMFile:
+		return &mapsData{mm: m}, nil
+	case smapsMMFile:
+		return &smapsData{mm: m}, nil
+	case environMMFile:
+		return &environData{mm: m}, nil
+	case auxvMMFile:
+		return &auxvData{mm: m}, nil
+	default:
+		panic(fmt.Sprintf("unknown file type: %d", f.ftype))
+	}
+}
+
+var _ kernfs.DataSourceProvider = (*mmFile)(nil)
+
+// Generate implements vfs.DynamicBytesSource.Generate.
+func (f *mmFile) Generate(ctx context.Context, buf *bytes.Buffer) error {
+	panic("unreachable")
+}
+
 // mapsData implements vfs.DynamicBytesSource for /proc/[pid]/maps.
 //
 // +stateify savable
 type mapsData struct {
-	kernfs.DynamicBytesFile
-
-	task *kernel.Task
+	mm *mm.MemoryManager
 }
-
-var _ dynamicInode = (*mapsData)(nil)
 
 // Generate implements vfs.DynamicBytesSource.Generate.
 func (d *mapsData) Generate(ctx context.Context, buf *bytes.Buffer) error {
-	if mm := getMM(d.task); mm != nil {
-		mm.ReadMapsDataInto(ctx, mm.MapsCallbackFuncForBuffer(buf))
+	if d.mm == nil || !d.mm.IncUsers() {
+		return nil
 	}
+	defer d.mm.DecUsers(ctx)
+	d.mm.ReadMapsDataInto(ctx, d.mm.MapsCallbackFuncForBuffer(buf))
 	return nil
 }
 
@@ -657,18 +730,16 @@ func (d *mapsData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 //
 // +stateify savable
 type smapsData struct {
-	kernfs.DynamicBytesFile
-
-	task *kernel.Task
+	mm *mm.MemoryManager
 }
-
-var _ dynamicInode = (*smapsData)(nil)
 
 // Generate implements vfs.DynamicBytesSource.Generate.
 func (d *smapsData) Generate(ctx context.Context, buf *bytes.Buffer) error {
-	if mm := getMM(d.task); mm != nil {
-		mm.ReadSmapsDataInto(ctx, buf)
+	if d.mm == nil || !d.mm.IncUsers() {
+		return nil
 	}
+	defer d.mm.DecUsers(ctx)
+	d.mm.ReadSmapsDataInto(ctx, buf)
 	return nil
 }
 
