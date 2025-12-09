@@ -403,6 +403,30 @@ func loadObjdump(binary io.Reader) (map[string]map[string]struct{}, error) {
 
 	// Execute go tool objdump given the input.
 	cmd := exec.CommandContext(ctx, flags.Go, "tool", "objdump", input.Name())
+	if goroot, ok := os.LookupEnv("GOROOT"); ok && strings.HasPrefix(goroot, "bazel-out/") {
+		// Under Bazel, our nogo machinery sets GOROOT to a stdlib output tree,
+		// which does not include the prebuilt objdump tool. Some Go versions
+		// may build objdump on-demand via `go tool objdump`, which requires a
+		// writable build cache.
+		//
+		// See https://go.dev/issue/71867 and
+		// https://github.com/bazel-contrib/rules_go/issues/4535.
+		cacheDirRel := filepath.Join("bazel-out", ".checkescape-gocache")
+		if err := os.MkdirAll(cacheDirRel, 0755); err != nil {
+			return nil, fmt.Errorf("unable to create build cache dir %q: %w", cacheDirRel, err)
+		}
+		// GOCACHE must be an absolute path.
+		cacheDirAbs, err := filepath.Abs(cacheDirRel)
+		if err != nil {
+			return nil, fmt.Errorf("unable to get absolute path of build cache dir %q: %w", cacheDirRel, err)
+		}
+		env := os.Environ()
+		env = slices.DeleteFunc(env, func(kv string) bool {
+			return strings.HasPrefix(kv, "GOROOT=") || strings.HasPrefix(kv, "GOCACHE=")
+		})
+		env = append(env, "GOCACHE="+cacheDirAbs)
+		cmd.Env = env
+	}
 	pipeOut, err := cmd.StdoutPipe()
 	if err != nil {
 		return nil, fmt.Errorf("unable to get objdump stdout pipe: %w", err)
