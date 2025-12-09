@@ -24,7 +24,9 @@ var netstackLinklockNames []string
 type netstackLinklockNameIndex int
 
 // DO NOT REMOVE: The following function automatically replaced with lock index constants.
-// LOCK_NAME_INDEX_CONSTANTS
+const (
+	netstackLinkLockDeststack = netstackLinklockNameIndex(0)
+)
 const ()
 
 // Lock locks m.
@@ -56,7 +58,7 @@ func (m *netstackLinkMutex) NestedUnlock(i netstackLinklockNameIndex) {
 }
 
 // DO NOT REMOVE: The following function is automatically replaced.
-func netstackLinkinitLockNames() {}
+func netstackLinkinitLockNames() { netstackLinklockNames = []string{"destStack"} }
 
 func init() {
 	netstackLinkinitLockNames()
