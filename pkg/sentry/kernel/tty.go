@@ -159,6 +159,7 @@ func (tty *TTY) CheckChange(ctx context.Context, sig linux.Signal) error {
 	// the signal is not pending. Returning ERESTARTSYS without a pending signal
 	// causes an infinite tight loop. We must abort if signaling fails.
 	if err := pg.SendSignal(SignalInfoPriv(sig)); err != nil {
+		// Signal failed to queue. We cannot return ERESTARTSYS or we loop.
 		return linuxerr.EIO
 	}
 
