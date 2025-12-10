@@ -38,6 +38,9 @@
 #include "test/util/capability_util.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/fs_util.h"
+#include "test/util/linux_capability_util.h"
+#include "test/util/logging.h"
+#include "test/util/multiprocess_util.h"
 #include "test/util/posix_error.h"
 #include "test/util/socket_util.h"
 #include "test/util/test_util.h"
@@ -216,6 +219,31 @@ TEST_F(TuntapTest, CreateInterfaceNoCap) {
   strncpy(ifr.ifr_name, kTapName, IFNAMSIZ);
 
   EXPECT_THAT(ioctl(fd.get(), TUNSETIFF, &ifr), SyscallFailsWithErrno(EPERM));
+}
+
+TEST_F(TuntapTest, CreateInterfaceNoCapCantCheatWithUnshare) {
+  AutoCapability cap(CAP_NET_ADMIN, /*has_cap=*/false);
+
+  FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open(kDevNetTun, O_RDWR));
+  int fd_raw = fd.get();
+  struct ifreq ifr = {};
+  ifr.ifr_flags |= IFF_TUN;
+  strncpy(ifr.ifr_name, kTunName, IFNAMSIZ);
+
+  // Fork to avoid changing the user namespace of the original test process.
+  EXPECT_THAT(
+      InForkedProcess([&] {
+        // Fails with EPERM because we don't have CAP_NET_ADMIN.
+        TEST_CHECK_ERRNO(syscall(SYS_ioctl, fd_raw, TUNSETIFF, &ifr), EPERM);
+
+        // Enter a new user namespace in which we'd have all caps.
+        TEST_PCHECK(syscall(SYS_unshare, CLONE_NEWUSER) == 0);
+        // Still fails with EPERM because we still don't have CAP_NET_ADMIN in
+        // the owning namespace of the netns, even if we do in the new userns.
+        TEST_CHECK_ERRNO(syscall(SYS_ioctl, fd_raw, TUNSETIFF, &ifr), EPERM);
+        _exit(0);
+      }),
+      IsPosixErrorOkAndHolds(0));
 }
 
 TEST_F(TuntapTest, CreateFixedNameInterface) {
