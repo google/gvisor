@@ -18,6 +18,7 @@ import (
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/sentry/socket/netlink/nlmsg"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
@@ -49,6 +50,21 @@ func checkMetaKeySetCompatible(key metaKey) *syserr.AnnotatedError {
 	}
 }
 
+// evaluate for metaSet sets specific meta data to the value in the source
+// register.
+func (op metaSet) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *Rule) {
+	// Gets the data from the source register.
+	src := getRegisterBuffer(regs, op.sreg)[:metaDataLengths[op.key]]
+
+	// Sets the meta data of the appropriate field.
+	switch op.key {
+	// Only Packet Type is supported for now.
+	case linux.NFT_META_PKTTYPE:
+		pkt.PktType = tcpip.PacketType(src[0])
+		return
+	}
+}
+
 // newMetaSet creates a new metaSet operation.
 func newMetaSet(key metaKey, sreg uint8) (*metaSet, *syserr.AnnotatedError) {
 	if isVerdictRegister(sreg) {
@@ -63,25 +79,21 @@ func newMetaSet(key metaKey, sreg uint8) (*metaSet, *syserr.AnnotatedError) {
 	if metaDataLengths[key] > 4 && !is16ByteRegister(sreg) {
 		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("meta load operation cannot use 4-byte register as destination for key %s", key))
 	}
-
 	return &metaSet{key: key, sreg: sreg}, nil
 }
 
-// evaluate for metaSet sets specific meta data to the value in the source
-// register.
-func (op metaSet) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *Rule) {
-	// Gets the data from the source register.
-	src := getRegisterBuffer(regs, op.sreg)[:metaDataLengths[op.key]]
-
-	// Sets the meta data of the appropriate field.
-	switch op.key {
-	// Only Packet Type is supported for now.
-	case linux.NFT_META_PKTTYPE:
-		pkt.PktType = tcpip.PacketType(src[0])
-		return
+func initMetaSet(attrs map[uint16]nlmsg.BytesView) (*metaSet, *syserr.AnnotatedError) {
+	key, ok := AttrNetToHostU32(linux.NFTA_META_KEY, attrs)
+	if !ok {
+		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: Failed to parse NFTA_META_KEY attribute")
 	}
-
-	// Breaks if could not set the meta data.
-	regs.verdict = stack.NFVerdict{Code: VC(linux.NFT_BREAK)}
-	return
+	reg, ok := AttrNetToHostU32(linux.NFTA_META_SREG, attrs)
+	if !ok {
+		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: Failed to parse NFTA_META_SREG attribute")
+	}
+	sreg, err := nftMatchReg(reg)
+	if err != nil {
+		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("Nftables: Invalid source register: %d", reg))
+	}
+	return newMetaSet(metaKey(key), uint8(sreg))
 }

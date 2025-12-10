@@ -364,6 +364,17 @@ const (
 	NFT_CMP_GTE        // greater than or equal to
 )
 
+// Nf table cmp expression netlink attributes.
+// These correspond to enum values in include/uapi/linux/netfilter/nf_tables.h.
+const (
+	NFTA_CMP_UNSPEC uint16 = iota
+	NFTA_CMP_SREG
+	NFTA_CMP_OP
+	NFTA_CMP_DATA
+	__NFTA_CMP_MAX
+	NFTA_CMP_MAX = __NFTA_CMP_MAX - 1
+)
+
 // Nf table range operators.
 // Used by the nft range operation to compare values in registers.
 // These correspond to enum values in include/uapi/linux/netfilter/nf_tables.h.
@@ -477,6 +488,17 @@ const (
 	NFT_META_SDIF                 // Slave device interface index
 	NFT_META_SDIFNAME             // Slave device interface name
 	NFT_META_BRI_BROUTE           // Packet br_netfilter_broute bit
+)
+
+// Nf table meta expression netlink attributes
+// These correspond to enum values in include/uapi/linux/netfilter/nf_tables.h.
+const (
+	NFTA_META_UNSPEC = iota
+	NFTA_META_DREG
+	NFTA_META_KEY
+	NFTA_META_SREG
+	__NFTA_META_MAX
+	NFTA_META_MAX = __NFTA_META_MAX - 1
 )
 
 // Nftables Generation Attributes

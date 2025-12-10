@@ -3342,29 +3342,31 @@ TEST(NetlinkNetfilterTest, GetGenerationID) {
       false));
 }
 
-struct PayloadRuleTestParams {
+struct RuleWithExprTestParams {
   std::string test_name;
-  NlNestedAttr payload_attrs;
+  std::string expr_name;
+  NlNestedAttr expr_attrs;
   int expected_error_no;
 };
 
-class AddRuleWithPayloadTest
-    : public ::testing::TestWithParam<PayloadRuleTestParams> {};
+class AddRuleWithExprTest
+    : public ::testing::TestWithParam<RuleWithExprTestParams> {};
 
-TEST_P(AddRuleWithPayloadTest, AddRuleWithPayload) {
+TEST_P(AddRuleWithExprTest, AddRuleWithExpr) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
   SKIP_IF(!IsRunningOnGvisor());
   FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
-  std::vector<char> payload_data =
-      NlNestedAttr(GetParam().payload_attrs).Build();
+  std::vector<char> expr_data = NlNestedAttr(GetParam().expr_attrs).Build();
+  ASSERT_FALSE(GetParam().expr_name.empty());
   std::vector<char> rule_expr_data =
       NlNestedAttr()
-          .StrAttr(NFTA_EXPR_NAME, "payload")
-          .RawAttr(NFTA_EXPR_DATA, payload_data.data(), payload_data.size())
+          .StrAttr(NFTA_EXPR_NAME, GetParam().expr_name)
+          .RawAttr(NFTA_EXPR_DATA, expr_data.data(), expr_data.size())
           .Build();
   std::vector<char> list_expr_data = NlListAttr().Add(rule_expr_data).Build();
-  const std::string table_name = GetUniqueTestTableName();
+  const std::string table_name =
+      absl::StrCat("table_", GetParam().expr_name, "_", GetParam().test_name);
   const std::string chain_name = "test_chain";
   std::vector<char> add_rule_request_buffer =
       NlBatchReq()
@@ -3397,27 +3399,30 @@ TEST_P(AddRuleWithPayloadTest, AddRuleWithPayload) {
   }
 }
 
-std::vector<PayloadRuleTestParams> GetPayloadRuleTestParams() {
+std::vector<RuleWithExprTestParams> GetPayloadRuleTestParams() {
   return {
-      PayloadRuleTestParams{
+      RuleWithExprTestParams{
           .test_name = "LoadValid",
-          .payload_attrs =
+          .expr_name = "payload",
+          .expr_attrs =
               NlNestedAttr()
                   .U32Attr(NFTA_PAYLOAD_BASE, NFT_PAYLOAD_NETWORK_HEADER)
                   .U32Attr(NFTA_PAYLOAD_OFFSET, 1)
                   .U32Attr(NFTA_PAYLOAD_LEN, 4)
                   .U32Attr(NFTA_PAYLOAD_DREG, NFT_REG_1)},
-      PayloadRuleTestParams{
+      RuleWithExprTestParams{
           .test_name = "SetValid",
-          .payload_attrs =
+          .expr_name = "payload",
+          .expr_attrs =
               NlNestedAttr()
                   .U32Attr(NFTA_PAYLOAD_BASE, NFT_PAYLOAD_NETWORK_HEADER)
                   .U32Attr(NFTA_PAYLOAD_OFFSET, 1)
                   .U32Attr(NFTA_PAYLOAD_LEN, 4)
                   .U32Attr(NFTA_PAYLOAD_SREG, NFT_REG32_00)},
-      PayloadRuleTestParams{
+      RuleWithExprTestParams{
           .test_name = "SetWithCsumValid",
-          .payload_attrs =
+          .expr_name = "payload",
+          .expr_attrs =
               NlNestedAttr()
                   .U32Attr(NFTA_PAYLOAD_BASE, NFT_PAYLOAD_NETWORK_HEADER)
                   .U32Attr(NFTA_PAYLOAD_OFFSET, 1)
@@ -3425,9 +3430,10 @@ std::vector<PayloadRuleTestParams> GetPayloadRuleTestParams() {
                   .U32Attr(NFTA_PAYLOAD_SREG, NFT_REG_1)
                   .U32Attr(NFTA_PAYLOAD_CSUM_TYPE, NFT_PAYLOAD_CSUM_INET)
                   .U32Attr(NFTA_PAYLOAD_CSUM_OFFSET, 1)},
-      PayloadRuleTestParams{
+      RuleWithExprTestParams{
           .test_name = "LoadWithInvalidRegister",
-          .payload_attrs =
+          .expr_name = "payload",
+          .expr_attrs =
               NlNestedAttr()
                   .U32Attr(NFTA_PAYLOAD_BASE, NFT_PAYLOAD_NETWORK_HEADER)
                   .U32Attr(NFTA_PAYLOAD_OFFSET, 1)
@@ -3435,54 +3441,60 @@ std::vector<PayloadRuleTestParams> GetPayloadRuleTestParams() {
                   // Verdict register is not supported for payload load.
                   .U32Attr(NFTA_PAYLOAD_SREG, NFT_REG_VERDICT),
           .expected_error_no = EINVAL},
-      PayloadRuleTestParams{
+      RuleWithExprTestParams{
           .test_name = "LoadWithInvalidOffset",
-          .payload_attrs =
+          .expr_name = "payload",
+          .expr_attrs =
               NlNestedAttr()
                   .U32Attr(NFTA_PAYLOAD_BASE, NFT_PAYLOAD_NETWORK_HEADER)
                   .U32Attr(NFTA_PAYLOAD_OFFSET, UINT32_MAX)
                   .U32Attr(NFTA_PAYLOAD_LEN, 4)
                   .U32Attr(NFTA_PAYLOAD_SREG, NFT_REG_VERDICT),
           .expected_error_no = EINVAL},
-      PayloadRuleTestParams{
+      RuleWithExprTestParams{
           .test_name = "LoadWithInvalidLen",
-          .payload_attrs =
+          .expr_name = "payload",
+          .expr_attrs =
               NlNestedAttr()
                   .U32Attr(NFTA_PAYLOAD_BASE, NFT_PAYLOAD_NETWORK_HEADER)
                   .U32Attr(NFTA_PAYLOAD_OFFSET, 1)
                   .U32Attr(NFTA_PAYLOAD_LEN, NFT_REG_SIZE + 1)
                   .U32Attr(NFTA_PAYLOAD_SREG, NFT_REG_VERDICT),
           .expected_error_no = EINVAL},
-      PayloadRuleTestParams{
+      RuleWithExprTestParams{
           .test_name = "SetWithInvalidBase",
-          .payload_attrs =
+          .expr_name = "payload",
+          .expr_attrs =
               NlNestedAttr()
                   .U32Attr(NFTA_PAYLOAD_BASE, /* NFT_PAYLOAD_INNER_HEADER */ 3)
                   .U32Attr(NFTA_PAYLOAD_OFFSET, 1)
                   .U32Attr(NFTA_PAYLOAD_LEN, 4)
                   .U32Attr(NFTA_PAYLOAD_DREG, NFT_REG_1),
           .expected_error_no = EINVAL},
-      PayloadRuleTestParams{
+      RuleWithExprTestParams{
           .test_name = "SetWithInvalidRegister",
-          .payload_attrs =
+          .expr_name = "payload",
+          .expr_attrs =
               NlNestedAttr()
                   .U32Attr(NFTA_PAYLOAD_BASE, NFT_PAYLOAD_NETWORK_HEADER)
                   .U32Attr(NFTA_PAYLOAD_OFFSET, 1)
                   .U32Attr(NFTA_PAYLOAD_LEN, 4)
                   .U32Attr(NFTA_PAYLOAD_DREG, NFT_REG_VERDICT),
           .expected_error_no = EINVAL},
-      PayloadRuleTestParams{
+      RuleWithExprTestParams{
           .test_name = "SetWithInvalidLen",
-          .payload_attrs =
+          .expr_name = "payload",
+          .expr_attrs =
               NlNestedAttr()
                   .U32Attr(NFTA_PAYLOAD_BASE, NFT_PAYLOAD_NETWORK_HEADER)
                   .U32Attr(NFTA_PAYLOAD_OFFSET, 1)
                   .U32Attr(NFTA_PAYLOAD_LEN, NFT_REG_SIZE + 1)
                   .U32Attr(NFTA_PAYLOAD_SREG, NFT_REG_VERDICT),
           .expected_error_no = EINVAL},
-      PayloadRuleTestParams{
+      RuleWithExprTestParams{
           .test_name = "WithSregAndDregSet",
-          .payload_attrs =
+          .expr_name = "payload",
+          .expr_attrs =
               NlNestedAttr()
                   .U32Attr(NFTA_PAYLOAD_BASE, NFT_PAYLOAD_NETWORK_HEADER)
                   .U32Attr(NFTA_PAYLOAD_OFFSET, 1)
@@ -3494,10 +3506,88 @@ std::vector<PayloadRuleTestParams> GetPayloadRuleTestParams() {
 }
 
 INSTANTIATE_TEST_SUITE_P(
-    PayloadRuleTest, AddRuleWithPayloadTest,
+    PayloadRuleTest, AddRuleWithExprTest,
     /*param_generator=*/::testing::ValuesIn(GetPayloadRuleTestParams()),
     /*param_name_generator=*/
-    [](const ::testing::TestParamInfo<PayloadRuleTestParams>& info) {
+    [](const ::testing::TestParamInfo<RuleWithExprTestParams>& info) {
+      return info.param.test_name;
+    });
+
+std::vector<RuleWithExprTestParams> GetMetaRuleTestParams() {
+  return {
+      RuleWithExprTestParams{
+          .test_name = "GetValid",
+          .expr_name = "meta",
+          .expr_attrs = NlNestedAttr()
+                            .U32Attr(NFTA_META_DREG, NFT_REG_1)
+                            .U32Attr(NFTA_META_KEY, NFT_META_PKTTYPE)},
+      RuleWithExprTestParams{
+          .test_name = "SetValid",
+          .expr_name = "meta",
+          .expr_attrs = NlNestedAttr()
+                            .U32Attr(NFTA_META_DREG, NFT_REG_1)
+                            .U32Attr(NFTA_META_KEY, NFT_META_PKTTYPE)},
+      RuleWithExprTestParams{
+          .test_name = "WithSregAndDregSet",
+          .expr_name = "meta",
+          .expr_attrs = NlNestedAttr()
+                            .U32Attr(NFTA_META_DREG, NFT_REG_1)
+                            .U32Attr(NFTA_META_KEY, NFT_META_PKTTYPE)
+                            .U32Attr(NFTA_META_SREG, NFT_REG_2),
+          .expected_error_no = EINVAL},
+      RuleWithExprTestParams{
+          .test_name = "WithInvalidKey",
+          .expr_name = "meta",
+          .expr_attrs = NlNestedAttr()
+                            .U32Attr(NFTA_META_DREG, NFT_REG_1)
+                            .U32Attr(NFTA_META_KEY, 256),
+          .expected_error_no = EINVAL},
+  };
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    MetaRuleTest, AddRuleWithExprTest,
+    /*param_generator=*/::testing::ValuesIn(GetMetaRuleTestParams()),
+    /*param_name_generator=*/
+    [](const ::testing::TestParamInfo<RuleWithExprTestParams>& info) {
+      return info.param.test_name;
+    });
+
+std::vector<RuleWithExprTestParams> GetCmpRuleTestParams() {
+  return {
+      RuleWithExprTestParams{
+          .test_name = "Valid",
+          .expr_name = "cmp",
+          .expr_attrs =
+              []() {
+                std::vector<char> data_value =
+                    NlNestedAttr().U32Attr(NFTA_DATA_VALUE, 1).Build();
+                return NlNestedAttr()
+                    .U32Attr(NFTA_CMP_SREG, NFT_REG_1)
+                    .U32Attr(NFTA_CMP_OP, NFT_CMP_EQ)
+                    .RawAttr(NFTA_CMP_DATA, data_value.data(),
+                             data_value.size());
+              }()},
+      RuleWithExprTestParams{
+          .test_name = "InvalidCmpOp",
+          .expr_name = "cmp",
+          .expr_attrs = []() -> NlNestedAttr {
+            std::vector<char> data_value =
+                NlNestedAttr().U32Attr(NFTA_DATA_VALUE, 1).Build();
+            return NlNestedAttr()
+                .U32Attr(NFTA_CMP_SREG, NFT_REG_1)
+                .U32Attr(NFTA_CMP_OP, 100)
+                .RawAttr(NFTA_CMP_DATA, data_value.data(), data_value.size());
+          }(),
+          .expected_error_no = EINVAL},
+  };
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    CmpRuleTest, AddRuleWithExprTest,
+    /*param_generator=*/::testing::ValuesIn(GetCmpRuleTestParams()),
+    /*param_name_generator=*/
+    [](const ::testing::TestParamInfo<RuleWithExprTestParams>& info) {
       return info.param.test_name;
     });
 
