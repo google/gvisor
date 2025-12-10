@@ -25,11 +25,14 @@ import (
 var (
 	// faultBlockSize is the size used for servicing memory faults.
 	//
-	// This should be large enough to avoid frequent faults and avoid using
-	// all available KVM slots (~512), but small enough that KVM does not
-	// complain about slot sizes (~4GB). See handleBluepillFault for how
-	// this block is used.
-	faultBlockSize = uintptr(2 << 30)
+	// This should be large enough so that the total number of slots
+	// required to cover the 47-bit virtual address space does not exceed
+	// the KVM slot limit (e.g. 32764). Linux doesn't allocate virtual
+	// address space above 47-bit by default.
+	// It must be small enough to limit the memory overhead associated with
+	// KVM slot allocation. For example, using a 46-bit address space
+	// results in an overhead of ~250 MB.
+	faultBlockSize = uintptr(8 << 30)
 
 	// faultBlockMask is the mask for the fault blocks.
 	//
@@ -56,13 +59,17 @@ func calculateBluepillFault(physical uintptr) (virtualStart, physicalStart, leng
 		}
 
 		// Adjust the block to match our size.
-		physicalStart = pr.physical + (alignedPhysical-pr.physical)&faultBlockMask
-		virtualStart = pr.virtual + (physicalStart - pr.physical)
+		physicalStart = pr.physical / faultBlockSize * faultBlockSize
+		physicalStart = physicalStart + (alignedPhysical-physicalStart)&faultBlockMask
 		physicalEnd := physicalStart + faultBlockSize
+		if physicalStart < pr.physical {
+			physicalStart = pr.physical
+		}
 		if physicalEnd > end {
 			physicalEnd = end
 		}
 		length = physicalEnd - physicalStart
+		virtualStart = pr.virtual + (physicalStart - pr.physical)
 		return virtualStart, physicalStart, length, &physicalRegions[i]
 	}
 

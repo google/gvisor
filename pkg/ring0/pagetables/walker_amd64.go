@@ -43,7 +43,7 @@ func (w *Walker) walkPTEs(entries *PTEs, start, end uintptr) (bool, uint16) {
 	var clearEntries uint16
 	for start < end {
 		pteIndex := uint16((start & pteMask) >> pteShift)
-		entry := &entries[pteIndex]
+		entry := entries.Get(pteIndex)
 		if !entry.Valid() && !w.visitor.requiresAlloc() {
 			clearEntries++
 			start += pteSize
@@ -81,7 +81,7 @@ func (w *Walker) walkPMDs(pmdEntries *PTEs, start, end uintptr) (bool, uint16) {
 		var pteEntries *PTEs
 		nextBoundary := addrEnd(start, end, pmdSize)
 		pmdIndex := uint16((start & pmdMask) >> pmdShift)
-		pmdEntry := &pmdEntries[pmdIndex]
+		pmdEntry := pmdEntries.Get(pmdIndex)
 		if !pmdEntry.Valid() {
 			if !w.visitor.requiresAlloc() {
 				// Skip over this entry.
@@ -114,9 +114,10 @@ func (w *Walker) walkPMDs(pmdEntries *PTEs, start, end uintptr) (bool, uint16) {
 				// Install the relevant entries.
 				pteEntries = w.pageTables.Allocator.NewPTEs()
 				for index := uint16(0); index < entriesPerPage; index++ {
+					opts := pmdEntry.Opts()
 					pteEntries[index].Set(
 						pmdEntry.Address()+(pteSize*uintptr(index)),
-						pmdEntry.Opts())
+						&opts)
 				}
 				pmdEntry.setPageTable(w.pageTables, pteEntries)
 			} else {
@@ -173,7 +174,7 @@ func (w *Walker) walkPUDs(pudEntries *PTEs, start, end uintptr) (bool, uint16) {
 		var pmdEntries *PTEs
 		nextBoundary := addrEnd(start, end, pudSize)
 		pudIndex := uint16((start & pudMask) >> pudShift)
-		pudEntry := &pudEntries[pudIndex]
+		pudEntry := pudEntries.Get(pudIndex)
 		if !pudEntry.Valid() {
 			if !w.visitor.requiresAlloc() {
 				// Skip over this entry.
@@ -209,9 +210,10 @@ func (w *Walker) walkPUDs(pudEntries *PTEs, start, end uintptr) (bool, uint16) {
 				pmdEntries = w.pageTables.Allocator.NewPTEs() // escapes: see above.
 				for index := uint16(0); index < entriesPerPage; index++ {
 					pmdEntries[index].SetSuper()
+					opts := pudEntry.Opts()
 					pmdEntries[index].Set(
 						pudEntry.Address()+(pmdSize*uintptr(index)),
-						pudEntry.Opts())
+						&opts)
 				}
 				pudEntry.setPageTable(w.pageTables, pmdEntries)
 			} else {
@@ -261,7 +263,7 @@ func (w *Walker) iterateRangeCanonical(start, end uintptr) bool {
 		var pudEntries *PTEs
 		nextBoundary := addrEnd(start, end, pgdSize)
 		pgdIndex := uint16((start & pgdMask) >> pgdShift)
-		pgdEntry := &w.pageTables.root[pgdIndex]
+		pgdEntry := w.pageTables.root.Get(pgdIndex)
 		if !w.pageTables.largeAddressesEnabled {
 			if !pgdEntry.Valid() {
 				if !w.visitor.requiresAlloc() {
