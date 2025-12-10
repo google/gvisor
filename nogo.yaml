@@ -190,6 +190,8 @@ analyzers:
         - pkg/aio/aio_linux_unsafe.go                              # Special case.
         - pkg/eventfd/eventfd_unsafe.go                            # Special case.
         - "pkg/flipcall/.*_unsafe.go"                              # Special case.
+        - pkg/memutil/memutil_unsafe.go                            # Special case.
+        - pkg/tcpip/link/sharedmem/sharedmem_unsafe.go             # Special case.
         - pkg/gohacks/noescape_unsafe.go                           # Special case.
         - pkg/ring0/pagetables/allocator_unsafe.go                 # Special case.
         - pkg/sentry/devices/nvproxy/frontend_mmap_unsafe.go       # Special case.
