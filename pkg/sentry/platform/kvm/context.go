@@ -134,5 +134,18 @@ func (c *platformContext) PullFullState(as platform.AddressSpace, ac *arch.Conte
 	return nil
 }
 
-// PrepareSleep implements platform.Context.platform.Context.
+// PrepareSleep implements platform.Context.PrepareSleep.
 func (*platformContext) PrepareSleep() {}
+
+// PrepareUninterruptibleSleep implements
+// platform.Context.PrepareUninterruptibleSleep.
+func (*platformContext) PrepareUninterruptibleSleep() {}
+
+// PrepareStop implements platform.Context.PrepareStop.
+func (*platformContext) PrepareStop() {}
+
+// PrepareExecve implements platform.Context.PrepareExecve.
+func (*platformContext) PrepareExecve() {}
+
+// PrepareExit implements platform.Context.PrepareExit.
+func (*platformContext) PrepareExit() {}

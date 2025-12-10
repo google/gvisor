@@ -158,28 +158,9 @@ type MemoryManager struct {
 	// maxRSS is protected by activeMu.
 	maxRSS uint64
 
-	// as is the platform.AddressSpace that pmas are mapped into. active is the
-	// number of contexts that require as to be non-nil; if active == 0, as may
-	// be nil.
-	//
-	// as is protected by activeMu. active is manipulated with atomic memory
-	// operations; transitions to and from zero are additionally protected by
-	// activeMu. (This is because such transitions may need to be atomic with
-	// changes to as.)
-	as     platform.AddressSpace `state:"nosave"`
-	active atomicbitops.Int32    `state:"zerovalue"`
-
-	// unmapAllOnActivate indicates that the next Activate call should activate
-	// an empty AddressSpace.
-	//
-	// This is used to ensure that an AddressSpace cached in
-	// NewAddressSpace is not used after some change in the MemoryManager
-	// or VMAs has made that AddressSpace stale.
-	//
-	// unmapAllOnActivate is protected by activeMu. It must only be set when
-	// there is no active or cached AddressSpace. If as != nil, then
-	// invalidations should be propagated immediately.
-	unmapAllOnActivate bool `state:"nosave"`
+	// as is the platform.AddressSpace that pmas are mapped into. as is immutable
+	// until users becomes 0, at which point as becomes nil.
+	as platform.AddressSpace `state:"nosave"`
 
 	// If captureInvalidations is true, calls to MM.Invalidate() are recorded
 	// in capturedInvalidations rather than being applied immediately to pmas.
@@ -227,11 +208,6 @@ type MemoryManager struct {
 	// aioManager keeps track of AIOContexts used for async IOs. AIOManager
 	// must be cloned when CLONE_VM is used.
 	aioManager aioManager
-
-	// sleepForActivation indicates whether the task should report to be sleeping
-	// before trying to activate the address space. When set to true, delays in
-	// activation are not reported as stuck tasks by the watchdog.
-	sleepForActivation bool
 
 	// vdsoSigReturnAddr is the address of 'vdso_sigreturn'.
 	vdsoSigReturnAddr uint64

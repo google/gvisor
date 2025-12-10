@@ -137,11 +137,6 @@ func (*KVM) SupportsAddressSpaceIO() bool {
 	return false
 }
 
-// CooperativelySchedulesAddressSpace implements platform.Platform.CooperativelySchedulesAddressSpace.
-func (*KVM) CooperativelySchedulesAddressSpace() bool {
-	return false
-}
-
 // MapUnit implements platform.Platform.MapUnit.
 func (*KVM) MapUnit() uint64 {
 	// We greedily creates PTEs in MapFile, so extremely large mappings can
@@ -162,7 +157,7 @@ func (*KVM) MaxUserAddress() hostarch.Addr {
 }
 
 // NewAddressSpace returns a new pagetable root.
-func (k *KVM) NewAddressSpace(any) (platform.AddressSpace, <-chan struct{}, error) {
+func (k *KVM) NewAddressSpace() (platform.AddressSpace, error) {
 	// Allocate page tables and install system mappings.
 	pageTables := pagetables.NewWithUpper(newAllocator(), k.machine.upperSharedPageTables, ring0.KernelStartAddress)
 
@@ -171,7 +166,7 @@ func (k *KVM) NewAddressSpace(any) (platform.AddressSpace, <-chan struct{}, erro
 		machine:    k.machine,
 		pageTables: pageTables,
 		dirtySet:   k.machine.newDirtySet(),
-	}, nil, nil
+	}, nil
 }
 
 // ConcurrencyCount implements platform.Platform.ConcurrencyCount.

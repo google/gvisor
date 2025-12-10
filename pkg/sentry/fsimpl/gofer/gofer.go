@@ -636,8 +636,8 @@ func (fs *filesystem) initClientAndGetRoot(ctx context.Context) (lisafs.Inode, i
 		return lisafs.Inode{}, -1, err
 	}
 
-	ctx.UninterruptibleSleepStart(false)
-	defer ctx.UninterruptibleSleepFinish(false)
+	ctx.UninterruptibleSleepStart()
+	defer ctx.UninterruptibleSleepFinish()
 
 	var (
 		rootInode  lisafs.Inode

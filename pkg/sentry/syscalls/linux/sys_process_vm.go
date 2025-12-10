@@ -86,7 +86,6 @@ func processVMOp(t *kernel.Task, args arch.SyscallArguments, op processVMOpType)
 	}
 	localOps := processVMOps{
 		mm:     t.MemoryManager(),
-		ioOpts: usermem.IOOpts{AddressSpaceActive: true},
 		iovecs: localIovecs,
 	}
 	remoteIovecs, err := t.CopyInIovecsAsSlice(rvec, riovcnt)
@@ -97,10 +96,8 @@ func processVMOp(t *kernel.Task, args arch.SyscallArguments, op processVMOpType)
 		iovecs: remoteIovecs,
 	}
 	if remoteTask == t {
-		// No need to take remoteTask.mu to fetch the memory manager,
-		// and we can assume address space is active.
+		// No need to take remoteTask.mu to fetch the memory manager.
 		remoteOps.mm = t.MemoryManager()
-		remoteOps.ioOpts = usermem.IOOpts{AddressSpaceActive: true}
 	} else {
 		// Grab the remoteTask memory manager, and pin it by adding
 		// ourselves as a user.
