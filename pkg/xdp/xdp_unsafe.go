@@ -16,7 +16,6 @@ package xdp
 
 import (
 	"fmt"
-	"reflect"
 	"unsafe"
 
 	"golang.org/x/sys/unix"
@@ -62,20 +61,16 @@ func sizeOfTXQueueDesc() uint64 {
 }
 
 func (fq *FillQueue) init(off unix.XDPMmapOffsets, opts Opts) {
-	fillQueueRingHdr := (*reflect.SliceHeader)(unsafe.Pointer(&fq.ring))
-	fillQueueRingHdr.Data = uintptr(unsafe.Pointer(&fq.mem[off.Fr.Desc]))
-	fillQueueRingHdr.Len = int(opts.NDescriptors)
-	fillQueueRingHdr.Cap = fillQueueRingHdr.Len
+	base := unsafe.Pointer(&fq.mem[off.Fr.Desc])
+	fq.ring = unsafe.Slice((*uint64)(base), int(opts.NDescriptors))
 	fq.producer = (*atomicbitops.Uint32)(unsafe.Pointer(&fq.mem[off.Fr.Producer]))
 	fq.consumer = (*atomicbitops.Uint32)(unsafe.Pointer(&fq.mem[off.Fr.Consumer]))
 	fq.flags = (*atomicbitops.Uint32)(unsafe.Pointer(&fq.mem[off.Fr.Flags]))
 }
 
 func (rq *RXQueue) init(off unix.XDPMmapOffsets, opts Opts) {
-	rxQueueRingHdr := (*reflect.SliceHeader)(unsafe.Pointer(&rq.ring))
-	rxQueueRingHdr.Data = uintptr(unsafe.Pointer(&rq.mem[off.Rx.Desc]))
-	rxQueueRingHdr.Len = int(opts.NDescriptors)
-	rxQueueRingHdr.Cap = rxQueueRingHdr.Len
+	base := unsafe.Pointer(&rq.mem[off.Rx.Desc])
+	rq.ring = unsafe.Slice((*unix.XDPDesc)(base), int(opts.NDescriptors))
 	rq.producer = (*atomicbitops.Uint32)(unsafe.Pointer(&rq.mem[off.Rx.Producer]))
 	rq.consumer = (*atomicbitops.Uint32)(unsafe.Pointer(&rq.mem[off.Rx.Consumer]))
 	rq.flags = (*atomicbitops.Uint32)(unsafe.Pointer(&rq.mem[off.Rx.Flags]))
@@ -86,10 +81,8 @@ func (rq *RXQueue) init(off unix.XDPMmapOffsets, opts Opts) {
 }
 
 func (cq *CompletionQueue) init(off unix.XDPMmapOffsets, opts Opts) {
-	completionQueueRingHdr := (*reflect.SliceHeader)(unsafe.Pointer(&cq.ring))
-	completionQueueRingHdr.Data = uintptr(unsafe.Pointer(&cq.mem[off.Cr.Desc]))
-	completionQueueRingHdr.Len = int(opts.NDescriptors)
-	completionQueueRingHdr.Cap = completionQueueRingHdr.Len
+	base := unsafe.Pointer(&cq.mem[off.Cr.Desc])
+	cq.ring = unsafe.Slice((*uint64)(base), int(opts.NDescriptors))
 	cq.producer = (*atomicbitops.Uint32)(unsafe.Pointer(&cq.mem[off.Cr.Producer]))
 	cq.consumer = (*atomicbitops.Uint32)(unsafe.Pointer(&cq.mem[off.Cr.Consumer]))
 	cq.flags = (*atomicbitops.Uint32)(unsafe.Pointer(&cq.mem[off.Cr.Flags]))
@@ -100,10 +93,8 @@ func (cq *CompletionQueue) init(off unix.XDPMmapOffsets, opts Opts) {
 }
 
 func (tq *TXQueue) init(off unix.XDPMmapOffsets, opts Opts) {
-	txQueueRingHdr := (*reflect.SliceHeader)(unsafe.Pointer(&tq.ring))
-	txQueueRingHdr.Data = uintptr(unsafe.Pointer(&tq.mem[off.Tx.Desc]))
-	txQueueRingHdr.Len = int(opts.NDescriptors)
-	txQueueRingHdr.Cap = txQueueRingHdr.Len
+	base := unsafe.Pointer(&tq.mem[off.Tx.Desc])
+	tq.ring = unsafe.Slice((*unix.XDPDesc)(base), int(opts.NDescriptors))
 	tq.producer = (*atomicbitops.Uint32)(unsafe.Pointer(&tq.mem[off.Tx.Producer]))
 	tq.consumer = (*atomicbitops.Uint32)(unsafe.Pointer(&tq.mem[off.Tx.Consumer]))
 	tq.flags = (*atomicbitops.Uint32)(unsafe.Pointer(&tq.mem[off.Tx.Flags]))
