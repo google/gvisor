@@ -139,9 +139,10 @@ use_repo(
     "com_github_burntsushi_toml",
     "com_github_cenkalti_backoff",
     "com_github_cilium_ebpf",
-    "com_github_containerd_cgroups",
+    "com_github_containerd_cgroups_v3",
     "com_github_containerd_console",
     "com_github_containerd_containerd",
+    "com_github_containerd_containerd_api",
     "com_github_containerd_errdefs",
     "com_github_containerd_fifo",
     "com_github_containerd_go_runc",
@@ -524,13 +525,18 @@ go_deps.module(
 )
 go_deps.module(
     path = "github.com/containerd/containerd",
-    sum = "h1:Bcj0ZXqgIs6GG+YbaKkMX3Dap0JsIVG4UYFOLRo7iX4=",
-    version = "v1.6.36",
+    sum = "h1:khEQOAXOEJalRO228yzVsuASLH42vT7DIo9Ss+9SMFQ=",
+    version = "v1.7.25",
 )
 go_deps.module(
-    path = "github.com/containerd/cgroups",
-    sum = "h1:iJnMvco9XGvKUvNQkv88bE4uJXxRQH18efbKo9w5vHQ=",
-    version = "v1.0.1",
+    path = "github.com/containerd/containerd/api",
+    sum = "h1:hVTNJKR8fMc/2Tiw60ZRijntNMd1U+JVMyTRdsD2bS0=",
+    version = "v1.8.0",
+)
+go_deps.module(
+    path = "github.com/containerd/cgroups/v3",
+    sum = "h1:f5WFqIVSgo5IZmtTT3qVBo6TzI1ON6sycSBKkymb9L0=",
+    version = "v3.0.2",
 )
 go_deps.module(
     path = "github.com/containerd/errdefs",
@@ -573,7 +579,7 @@ go_deps.gazelle_override(
     directives = [
         "gazelle:proto disable",
     ],
-    path = "github.com/containerd/cgroups",
+    path = "github.com/containerd/cgroups/v3",
 )
 go_deps.gazelle_override(
     directives = [
