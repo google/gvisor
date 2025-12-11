@@ -23,12 +23,15 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"unsafe"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/abi/nvgpu"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
+
 	pb "gvisor.dev/gvisor/tools/ioctl_sniffer/ioctl_go_proto"
 )
 
@@ -256,6 +259,70 @@ func (c Connection) ReadHookOutput(ctx context.Context) *Results {
 		}
 	}
 	return res
+}
+
+func ServeSeccompRequest(res *Results, req linux.SeccompNotif, ret int) {
+	pid := req.Pid
+	fd := req.Data.Args[0]
+	cmd := req.Data.Args[1]
+	ioctlPB := &pb.Ioctl{
+		Request: cmd,
+		Ret:     int32(ret),
+	}
+
+	path := fmt.Sprintf("/proc/%d/fd/%d", pid, fd)
+	fileName, err := os.Readlink(path)
+	if err != nil {
+		log.Warningf("Error getting descriptor path for ioctl %v: %v", cmd, err)
+		return
+	}
+	if !strings.HasPrefix(fileName, "/dev/nvidia") {
+		return
+	}
+	ioctlPB.FdPath = fileName
+
+	size := linux.IOC_SIZE(uint32(cmd))
+	if size != 0 && !strings.HasPrefix(fileName, "/dev/nvidia-uvm") {
+		localBuffer := make([]byte, size)
+
+		localIov := unix.Iovec{
+			Base: &localBuffer[0],
+			Len:  uint64(size),
+		}
+
+		remoteIov := unix.Iovec{
+			Base: (*byte)(unsafe.Pointer(uintptr(req.Data.Args[2]))),
+			Len:  uint64(size),
+		}
+
+		bytesRead, _, errno := unix.Syscall6(
+			unix.SYS_PROCESS_VM_READV,
+			uintptr(pid),
+			uintptr(unsafe.Pointer(&localIov)),
+			1, // Number of local iovec structures
+			uintptr(unsafe.Pointer(&remoteIov)),
+			1, // Number of remote iovec structures
+			0, // flags
+		)
+		if errno != 0 {
+			log.Warningf("Error getting request (addr %x size %x) for ioctl %v: %s", req.Data.Args[2], size, cmd, errno)
+		} else {
+			ioctlPB.ArgData = localBuffer[:bytesRead]
+		}
+	}
+	ioctl, err := ParseIoctlOutput(ioctlPB)
+	if err != nil {
+		log.Warningf("Error parsing ioctl %v: %v", ioctlPB, err)
+		return
+	}
+
+	if !ioctl.IsSupported() {
+		res.AddUnsupportedIoctl(ioctl)
+		if crashOnUnsupportedIoctl {
+			log.Warningf("Unsupported ioctl found; crashing immediately: %v", ioctl)
+			os.Exit(1)
+		}
+	}
 }
 
 // ParseIoctlOutput parses an ioctl protobuf from the ioctl hook.
