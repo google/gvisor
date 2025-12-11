@@ -18,6 +18,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/google/go-cmp/cmp"
@@ -34,217 +35,253 @@ import (
 )
 
 func TestV4MappedConnectOnV6Only(t *testing.T) {
-	c := context.New(t, e2e.DefaultMTU)
-	defer c.Cleanup()
+	synctest.Test(t, func(t *testing.T) {
+		defer synctest.Wait()
+		c := context.New(t, e2e.DefaultMTU)
+		defer c.Cleanup()
 
-	c.CreateV6Endpoint(true)
+		c.CreateV6Endpoint(true)
 
-	// Start connection attempt, it must fail.
-	err := c.EP.Connect(tcpip.FullAddress{Addr: context.TestV4MappedAddr, Port: context.TestPort})
-	if d := cmp.Diff(&tcpip.ErrHostUnreachable{}, err); d != "" {
-		t.Fatalf("c.EP.Connect(...) mismatch (-want +got):\n%s", d)
-	}
+		// Start connection attempt, it must fail.
+		err := c.EP.Connect(tcpip.FullAddress{Addr: context.TestV4MappedAddr, Port: context.TestPort})
+		if d := cmp.Diff(&tcpip.ErrHostUnreachable{}, err); d != "" {
+			t.Fatalf("c.EP.Connect(...) mismatch (-want +got):\n%s", d)
+		}
+	})
 }
 
 func TestV4MappedConnect(t *testing.T) {
-	c := context.New(t, e2e.DefaultMTU)
-	defer c.Cleanup()
+	synctest.Test(t, func(t *testing.T) {
+		defer synctest.Wait()
+		c := context.New(t, e2e.DefaultMTU)
+		defer c.Cleanup()
 
-	c.CreateV6Endpoint(false)
+		c.CreateV6Endpoint(false)
 
-	// Test the connection request.
-	e2e.TestV4Connect(t, c)
+		// Test the connection request.
+		e2e.TestV4Connect(t, c)
+	})
 }
 
 func TestV4ConnectWhenBoundToWildcard(t *testing.T) {
-	c := context.New(t, e2e.DefaultMTU)
-	defer c.Cleanup()
+	synctest.Test(t, func(t *testing.T) {
+		defer synctest.Wait()
+		c := context.New(t, e2e.DefaultMTU)
+		defer c.Cleanup()
 
-	c.CreateV6Endpoint(false)
+		c.CreateV6Endpoint(false)
 
-	// Bind to wildcard.
-	if err := c.EP.Bind(tcpip.FullAddress{}); err != nil {
-		t.Fatalf("Bind failed: %v", err)
-	}
+		// Bind to wildcard.
+		if err := c.EP.Bind(tcpip.FullAddress{}); err != nil {
+			t.Fatalf("Bind failed: %v", err)
+		}
 
-	// Test the connection request.
-	e2e.TestV4Connect(t, c)
+		// Test the connection request.
+		e2e.TestV4Connect(t, c)
+	})
 }
 
 func TestV4ConnectWhenBoundToV4MappedWildcard(t *testing.T) {
-	c := context.New(t, e2e.DefaultMTU)
-	defer c.Cleanup()
+	synctest.Test(t, func(t *testing.T) {
+		defer synctest.Wait()
+		c := context.New(t, e2e.DefaultMTU)
+		defer c.Cleanup()
 
-	c.CreateV6Endpoint(false)
+		c.CreateV6Endpoint(false)
 
-	// Bind to v4 mapped wildcard.
-	if err := c.EP.Bind(tcpip.FullAddress{Addr: context.V4MappedWildcardAddr}); err != nil {
-		t.Fatalf("Bind failed: %v", err)
-	}
+		// Bind to v4 mapped wildcard.
+		if err := c.EP.Bind(tcpip.FullAddress{Addr: context.V4MappedWildcardAddr}); err != nil {
+			t.Fatalf("Bind failed: %v", err)
+		}
 
-	// Test the connection request.
-	e2e.TestV4Connect(t, c)
+		// Test the connection request.
+		e2e.TestV4Connect(t, c)
+	})
 }
 
 func TestV4ConnectWhenBoundToV4Mapped(t *testing.T) {
-	c := context.New(t, e2e.DefaultMTU)
-	defer c.Cleanup()
+	synctest.Test(t, func(t *testing.T) {
+		defer synctest.Wait()
+		c := context.New(t, e2e.DefaultMTU)
+		defer c.Cleanup()
 
-	c.CreateV6Endpoint(false)
+		c.CreateV6Endpoint(false)
 
-	// Bind to v4 mapped address.
-	if err := c.EP.Bind(tcpip.FullAddress{Addr: context.StackV4MappedAddr}); err != nil {
-		t.Fatalf("Bind failed: %v", err)
-	}
+		// Bind to v4 mapped address.
+		if err := c.EP.Bind(tcpip.FullAddress{Addr: context.StackV4MappedAddr}); err != nil {
+			t.Fatalf("Bind failed: %v", err)
+		}
 
-	// Test the connection request.
-	e2e.TestV4Connect(t, c)
+		// Test the connection request.
+		e2e.TestV4Connect(t, c)
+	})
 }
 
 func TestV6Connect(t *testing.T) {
-	c := context.New(t, e2e.DefaultMTU)
-	defer c.Cleanup()
+	synctest.Test(t, func(t *testing.T) {
+		defer synctest.Wait()
+		c := context.New(t, e2e.DefaultMTU)
+		defer c.Cleanup()
 
-	c.CreateV6Endpoint(false)
+		c.CreateV6Endpoint(false)
 
-	// Test the connection request.
-	e2e.TestV6Connect(t, c)
+		// Test the connection request.
+		e2e.TestV6Connect(t, c)
+	})
 }
 
 func TestV6ConnectV6Only(t *testing.T) {
-	c := context.New(t, e2e.DefaultMTU)
-	defer c.Cleanup()
+	synctest.Test(t, func(t *testing.T) {
+		defer synctest.Wait()
+		c := context.New(t, e2e.DefaultMTU)
+		defer c.Cleanup()
 
-	c.CreateV6Endpoint(true)
+		c.CreateV6Endpoint(true)
 
-	// Test the connection request.
-	e2e.TestV6Connect(t, c)
+		// Test the connection request.
+		e2e.TestV6Connect(t, c)
+	})
 }
 
 func TestV6ConnectWhenBoundToWildcard(t *testing.T) {
-	c := context.New(t, e2e.DefaultMTU)
-	defer c.Cleanup()
+	synctest.Test(t, func(t *testing.T) {
+		defer synctest.Wait()
+		c := context.New(t, e2e.DefaultMTU)
+		defer c.Cleanup()
 
-	c.CreateV6Endpoint(false)
+		c.CreateV6Endpoint(false)
 
-	// Bind to wildcard.
-	if err := c.EP.Bind(tcpip.FullAddress{}); err != nil {
-		t.Fatalf("Bind failed: %v", err)
-	}
+		// Bind to wildcard.
+		if err := c.EP.Bind(tcpip.FullAddress{}); err != nil {
+			t.Fatalf("Bind failed: %v", err)
+		}
 
-	// Test the connection request.
-	e2e.TestV6Connect(t, c)
+		// Test the connection request.
+		e2e.TestV6Connect(t, c)
+	})
 }
 
 func TestStackV6OnlyConnectWhenBoundToWildcard(t *testing.T) {
-	c := context.NewWithOpts(t, context.Options{
-		EnableV6: true,
-		MTU:      e2e.DefaultMTU,
+	synctest.Test(t, func(t *testing.T) {
+		defer synctest.Wait()
+		c := context.NewWithOpts(t, context.Options{
+			EnableV6:	true,
+			MTU:		e2e.DefaultMTU,
+		})
+		defer c.Cleanup()
+
+		// Create a v6 endpoint but don't set the v6-only TCP option.
+		c.CreateV6Endpoint(false)
+
+		// Bind to wildcard.
+		if err := c.EP.Bind(tcpip.FullAddress{}); err != nil {
+			t.Fatalf("Bind failed: %v", err)
+		}
+
+		// Test the connection request.
+		e2e.TestV6Connect(t, c)
 	})
-	defer c.Cleanup()
-
-	// Create a v6 endpoint but don't set the v6-only TCP option.
-	c.CreateV6Endpoint(false)
-
-	// Bind to wildcard.
-	if err := c.EP.Bind(tcpip.FullAddress{}); err != nil {
-		t.Fatalf("Bind failed: %v", err)
-	}
-
-	// Test the connection request.
-	e2e.TestV6Connect(t, c)
 }
 
 func TestV6ConnectWhenBoundToLocalAddress(t *testing.T) {
-	c := context.New(t, e2e.DefaultMTU)
-	defer c.Cleanup()
+	synctest.Test(t, func(t *testing.T) {
+		defer synctest.Wait()
+		c := context.New(t, e2e.DefaultMTU)
+		defer c.Cleanup()
 
-	c.CreateV6Endpoint(false)
+		c.CreateV6Endpoint(false)
 
-	// Bind to local address.
-	if err := c.EP.Bind(tcpip.FullAddress{Addr: context.StackV6Addr}); err != nil {
-		t.Fatalf("Bind failed: %v", err)
-	}
+		// Bind to local address.
+		if err := c.EP.Bind(tcpip.FullAddress{Addr: context.StackV6Addr}); err != nil {
+			t.Fatalf("Bind failed: %v", err)
+		}
 
-	// Test the connection request.
-	e2e.TestV6Connect(t, c)
+		// Test the connection request.
+		e2e.TestV6Connect(t, c)
+	})
 }
 
 func TestV4RefuseOnV6Only(t *testing.T) {
-	c := context.New(t, e2e.DefaultMTU)
-	defer c.Cleanup()
+	synctest.Test(t, func(t *testing.T) {
+		defer synctest.Wait()
+		c := context.New(t, e2e.DefaultMTU)
+		defer c.Cleanup()
 
-	c.CreateV6Endpoint(true)
+		c.CreateV6Endpoint(true)
 
-	// Bind to wildcard.
-	if err := c.EP.Bind(tcpip.FullAddress{Port: context.StackPort}); err != nil {
-		t.Fatalf("Bind failed: %v", err)
-	}
+		// Bind to wildcard.
+		if err := c.EP.Bind(tcpip.FullAddress{Port: context.StackPort}); err != nil {
+			t.Fatalf("Bind failed: %v", err)
+		}
 
-	// Start listening.
-	if err := c.EP.Listen(10); err != nil {
-		t.Fatalf("Listen failed: %v", err)
-	}
+		// Start listening.
+		if err := c.EP.Listen(10); err != nil {
+			t.Fatalf("Listen failed: %v", err)
+		}
 
-	// Send a SYN request.
-	irs := seqnum.Value(789)
-	c.SendPacket(nil, &context.Headers{
-		SrcPort: context.TestPort,
-		DstPort: context.StackPort,
-		Flags:   header.TCPFlagSyn,
-		SeqNum:  irs,
-		RcvWnd:  30000,
+		// Send a SYN request.
+		irs := seqnum.Value(789)
+		c.SendPacket(nil, &context.Headers{
+			SrcPort:	context.TestPort,
+			DstPort:	context.StackPort,
+			Flags:		header.TCPFlagSyn,
+			SeqNum:		irs,
+			RcvWnd:		30000,
+		})
+
+		// Receive the RST reply.
+		v := c.GetPacket()
+		defer v.Release()
+		checker.IPv4(t, v,
+			checker.TCP(
+				checker.SrcPort(context.StackPort),
+				checker.DstPort(context.TestPort),
+				checker.TCPFlags(header.TCPFlagRst|header.TCPFlagAck),
+				checker.TCPAckNum(uint32(irs)+1),
+			),
+		)
 	})
-
-	// Receive the RST reply.
-	v := c.GetPacket()
-	defer v.Release()
-	checker.IPv4(t, v,
-		checker.TCP(
-			checker.SrcPort(context.StackPort),
-			checker.DstPort(context.TestPort),
-			checker.TCPFlags(header.TCPFlagRst|header.TCPFlagAck),
-			checker.TCPAckNum(uint32(irs)+1),
-		),
-	)
 }
 
 func TestV6RefuseOnBoundToV4Mapped(t *testing.T) {
-	c := context.New(t, e2e.DefaultMTU)
-	defer c.Cleanup()
+	synctest.Test(t, func(t *testing.T) {
+		defer synctest.Wait()
+		c := context.New(t, e2e.DefaultMTU)
+		defer c.Cleanup()
 
-	c.CreateV6Endpoint(false)
+		c.CreateV6Endpoint(false)
 
-	// Bind and listen.
-	if err := c.EP.Bind(tcpip.FullAddress{Addr: context.V4MappedWildcardAddr, Port: context.StackPort}); err != nil {
-		t.Fatalf("Bind failed: %v", err)
-	}
+		// Bind and listen.
+		if err := c.EP.Bind(tcpip.FullAddress{Addr: context.V4MappedWildcardAddr, Port: context.StackPort}); err != nil {
+			t.Fatalf("Bind failed: %v", err)
+		}
 
-	if err := c.EP.Listen(10); err != nil {
-		t.Fatalf("Listen failed: %v", err)
-	}
+		if err := c.EP.Listen(10); err != nil {
+			t.Fatalf("Listen failed: %v", err)
+		}
 
-	// Send a SYN request.
-	irs := seqnum.Value(789)
-	c.SendV6Packet(nil, &context.Headers{
-		SrcPort: context.TestPort,
-		DstPort: context.StackPort,
-		Flags:   header.TCPFlagSyn,
-		SeqNum:  irs,
-		RcvWnd:  30000,
+		// Send a SYN request.
+		irs := seqnum.Value(789)
+		c.SendV6Packet(nil, &context.Headers{
+			SrcPort:	context.TestPort,
+			DstPort:	context.StackPort,
+			Flags:		header.TCPFlagSyn,
+			SeqNum:		irs,
+			RcvWnd:		30000,
+		})
+
+		// Receive the RST reply.
+		p := c.GetV6Packet()
+		defer p.Release()
+		checker.IPv6(t, p,
+			checker.TCP(
+				checker.SrcPort(context.StackPort),
+				checker.DstPort(context.TestPort),
+				checker.TCPFlags(header.TCPFlagRst|header.TCPFlagAck),
+				checker.TCPAckNum(uint32(irs)+1),
+			),
+		)
 	})
-
-	// Receive the RST reply.
-	p := c.GetV6Packet()
-	defer p.Release()
-	checker.IPv6(t, p,
-		checker.TCP(
-			checker.SrcPort(context.StackPort),
-			checker.DstPort(context.TestPort),
-			checker.TCPFlags(header.TCPFlagRst|header.TCPFlagAck),
-			checker.TCPAckNum(uint32(irs)+1),
-		),
-	)
 }
 
 func testV4Accept(t *testing.T, c *context.Context) {
@@ -259,11 +296,11 @@ func testV4Accept(t *testing.T, c *context.Context) {
 	// Send a SYN request.
 	irs := seqnum.Value(789)
 	c.SendPacket(nil, &context.Headers{
-		SrcPort: context.TestPort,
-		DstPort: context.StackPort,
-		Flags:   header.TCPFlagSyn,
-		SeqNum:  irs,
-		RcvWnd:  30000,
+		SrcPort:	context.TestPort,
+		DstPort:	context.StackPort,
+		Flags:		header.TCPFlagSyn,
+		SeqNum:		irs,
+		RcvWnd:		30000,
 	})
 
 	// Receive the SYN-ACK reply.
@@ -282,12 +319,12 @@ func testV4Accept(t *testing.T, c *context.Context) {
 
 	// Send ACK.
 	c.SendPacket(nil, &context.Headers{
-		SrcPort: context.TestPort,
-		DstPort: context.StackPort,
-		Flags:   header.TCPFlagAck,
-		SeqNum:  irs + 1,
-		AckNum:  iss + 1,
-		RcvWnd:  30000,
+		SrcPort:	context.TestPort,
+		DstPort:	context.StackPort,
+		Flags:		header.TCPFlagAck,
+		SeqNum:		irs + 1,
+		AckNum:		iss + 1,
+		RcvWnd:		30000,
 	})
 
 	// Try to accept the connection.
@@ -333,142 +370,157 @@ func testV4Accept(t *testing.T, c *context.Context) {
 }
 
 func TestV4AcceptOnV6(t *testing.T) {
-	c := context.New(t, e2e.DefaultMTU)
-	defer c.Cleanup()
+	synctest.Test(t, func(t *testing.T) {
+		defer synctest.Wait()
+		c := context.New(t, e2e.DefaultMTU)
+		defer c.Cleanup()
 
-	c.CreateV6Endpoint(false)
+		c.CreateV6Endpoint(false)
 
-	// Bind to wildcard.
-	if err := c.EP.Bind(tcpip.FullAddress{Port: context.StackPort}); err != nil {
-		t.Fatalf("Bind failed: %v", err)
-	}
+		// Bind to wildcard.
+		if err := c.EP.Bind(tcpip.FullAddress{Port: context.StackPort}); err != nil {
+			t.Fatalf("Bind failed: %v", err)
+		}
 
-	// Test acceptance.
-	testV4Accept(t, c)
+		// Test acceptance.
+		testV4Accept(t, c)
+	})
 }
 
 func TestV4AcceptOnBoundToV4MappedWildcard(t *testing.T) {
-	c := context.New(t, e2e.DefaultMTU)
-	defer c.Cleanup()
+	synctest.Test(t, func(t *testing.T) {
+		defer synctest.Wait()
+		c := context.New(t, e2e.DefaultMTU)
+		defer c.Cleanup()
 
-	c.CreateV6Endpoint(false)
+		c.CreateV6Endpoint(false)
 
-	// Bind to v4 mapped wildcard.
-	if err := c.EP.Bind(tcpip.FullAddress{Addr: context.V4MappedWildcardAddr, Port: context.StackPort}); err != nil {
-		t.Fatalf("Bind failed: %v", err)
-	}
+		// Bind to v4 mapped wildcard.
+		if err := c.EP.Bind(tcpip.FullAddress{Addr: context.V4MappedWildcardAddr, Port: context.StackPort}); err != nil {
+			t.Fatalf("Bind failed: %v", err)
+		}
 
-	// Test acceptance.
-	testV4Accept(t, c)
+		// Test acceptance.
+		testV4Accept(t, c)
+	})
 }
 
 func TestV4AcceptOnBoundToV4Mapped(t *testing.T) {
-	c := context.New(t, e2e.DefaultMTU)
-	defer c.Cleanup()
+	synctest.Test(t, func(t *testing.T) {
+		defer synctest.Wait()
+		c := context.New(t, e2e.DefaultMTU)
+		defer c.Cleanup()
 
-	c.CreateV6Endpoint(false)
+		c.CreateV6Endpoint(false)
 
-	// Bind and listen.
-	if err := c.EP.Bind(tcpip.FullAddress{Addr: context.StackV4MappedAddr, Port: context.StackPort}); err != nil {
-		t.Fatalf("Bind failed: %v", err)
-	}
+		// Bind and listen.
+		if err := c.EP.Bind(tcpip.FullAddress{Addr: context.StackV4MappedAddr, Port: context.StackPort}); err != nil {
+			t.Fatalf("Bind failed: %v", err)
+		}
 
-	// Test acceptance.
-	testV4Accept(t, c)
+		// Test acceptance.
+		testV4Accept(t, c)
+	})
 }
 
 func TestV6AcceptOnV6(t *testing.T) {
-	c := context.New(t, e2e.DefaultMTU)
-	defer c.Cleanup()
+	synctest.Test(t, func(t *testing.T) {
+		defer synctest.Wait()
+		c := context.New(t, e2e.DefaultMTU)
+		defer c.Cleanup()
 
-	c.CreateV6Endpoint(false)
+		c.CreateV6Endpoint(false)
 
-	// Bind and listen.
-	if err := c.EP.Bind(tcpip.FullAddress{Port: context.StackPort}); err != nil {
-		t.Fatalf("Bind failed: %v", err)
-	}
-
-	if err := c.EP.Listen(10); err != nil {
-		t.Fatalf("Listen failed: %v", err)
-	}
-
-	// Send a SYN request.
-	irs := seqnum.Value(789)
-	c.SendV6Packet(nil, &context.Headers{
-		SrcPort: context.TestPort,
-		DstPort: context.StackPort,
-		Flags:   header.TCPFlagSyn,
-		SeqNum:  irs,
-		RcvWnd:  30000,
-	})
-
-	// Receive the SYN-ACK reply.
-	v := c.GetV6Packet()
-	defer v.Release()
-	tcp := header.TCP(header.IPv6(v.AsSlice()).Payload())
-	iss := seqnum.Value(tcp.SequenceNumber())
-	checker.IPv6(t, v,
-		checker.TCP(
-			checker.SrcPort(context.StackPort),
-			checker.DstPort(context.TestPort),
-			checker.TCPFlags(header.TCPFlagAck|header.TCPFlagSyn),
-			checker.TCPAckNum(uint32(irs)+1),
-		),
-	)
-
-	// Send ACK.
-	c.SendV6Packet(nil, &context.Headers{
-		SrcPort: context.TestPort,
-		DstPort: context.StackPort,
-		Flags:   header.TCPFlagAck,
-		SeqNum:  irs + 1,
-		AckNum:  iss + 1,
-		RcvWnd:  30000,
-	})
-
-	// Try to accept the connection.
-	we, ch := waiter.NewChannelEntry(waiter.ReadableEvents)
-	c.WQ.EventRegister(&we)
-	defer c.WQ.EventUnregister(&we)
-	var addr tcpip.FullAddress
-	_, _, err := c.EP.Accept(&addr)
-	if cmp.Equal(&tcpip.ErrWouldBlock{}, err) {
-		// Wait for connection to be established.
-		select {
-		case <-ch:
-			_, _, err = c.EP.Accept(&addr)
-			if err != nil {
-				t.Fatalf("Accept failed: %v", err)
-			}
-
-		case <-time.After(1 * time.Second):
-			t.Fatalf("Timed out waiting for accept")
+		// Bind and listen.
+		if err := c.EP.Bind(tcpip.FullAddress{Port: context.StackPort}); err != nil {
+			t.Fatalf("Bind failed: %v", err)
 		}
-	}
 
-	if addr.Addr != context.TestV6Addr {
-		t.Errorf("Unexpected remote address: got %s, want %s", addr.Addr, context.TestV6Addr)
-	}
+		if err := c.EP.Listen(10); err != nil {
+			t.Fatalf("Listen failed: %v", err)
+		}
+
+		// Send a SYN request.
+		irs := seqnum.Value(789)
+		c.SendV6Packet(nil, &context.Headers{
+			SrcPort:	context.TestPort,
+			DstPort:	context.StackPort,
+			Flags:		header.TCPFlagSyn,
+			SeqNum:		irs,
+			RcvWnd:		30000,
+		})
+
+		// Receive the SYN-ACK reply.
+		v := c.GetV6Packet()
+		defer v.Release()
+		tcp := header.TCP(header.IPv6(v.AsSlice()).Payload())
+		iss := seqnum.Value(tcp.SequenceNumber())
+		checker.IPv6(t, v,
+			checker.TCP(
+				checker.SrcPort(context.StackPort),
+				checker.DstPort(context.TestPort),
+				checker.TCPFlags(header.TCPFlagAck|header.TCPFlagSyn),
+				checker.TCPAckNum(uint32(irs)+1),
+			),
+		)
+
+		// Send ACK.
+		c.SendV6Packet(nil, &context.Headers{
+			SrcPort:	context.TestPort,
+			DstPort:	context.StackPort,
+			Flags:		header.TCPFlagAck,
+			SeqNum:		irs + 1,
+			AckNum:		iss + 1,
+			RcvWnd:		30000,
+		})
+
+		// Try to accept the connection.
+		we, ch := waiter.NewChannelEntry(waiter.ReadableEvents)
+		c.WQ.EventRegister(&we)
+		defer c.WQ.EventUnregister(&we)
+		var addr tcpip.FullAddress
+		_, _, err := c.EP.Accept(&addr)
+		if cmp.Equal(&tcpip.ErrWouldBlock{}, err) {
+			// Wait for connection to be established.
+			select {
+			case <-ch:
+				_, _, err = c.EP.Accept(&addr)
+				if err != nil {
+					t.Fatalf("Accept failed: %v", err)
+				}
+
+			case <-time.After(1 * time.Second):
+				t.Fatalf("Timed out waiting for accept")
+			}
+		}
+
+		if addr.Addr != context.TestV6Addr {
+			t.Errorf("Unexpected remote address: got %s, want %s", addr.Addr, context.TestV6Addr)
+		}
+	})
 }
 
 func TestV4AcceptOnV4(t *testing.T) {
-	c := context.New(t, e2e.DefaultMTU)
-	defer c.Cleanup()
+	synctest.Test(t, func(t *testing.T) {
+		defer synctest.Wait()
+		c := context.New(t, e2e.DefaultMTU)
+		defer c.Cleanup()
 
-	// Create TCP endpoint.
-	var err tcpip.Error
-	c.EP, err = c.Stack().NewEndpoint(tcp.ProtocolNumber, ipv4.ProtocolNumber, &c.WQ)
-	if err != nil {
-		t.Fatalf("NewEndpoint failed: %v", err)
-	}
+		// Create TCP endpoint.
+		var err tcpip.Error
+		c.EP, err = c.Stack().NewEndpoint(tcp.ProtocolNumber, ipv4.ProtocolNumber, &c.WQ)
+		if err != nil {
+			t.Fatalf("NewEndpoint failed: %v", err)
+		}
 
-	// Bind to wildcard.
-	if err := c.EP.Bind(tcpip.FullAddress{Port: context.StackPort}); err != nil {
-		t.Fatalf("Bind failed: %v", err)
-	}
+		// Bind to wildcard.
+		if err := c.EP.Bind(tcpip.FullAddress{Port: context.StackPort}); err != nil {
+			t.Fatalf("Bind failed: %v", err)
+		}
 
-	// Test acceptance.
-	testV4Accept(t, c)
+		// Test acceptance.
+		testV4Accept(t, c)
+	})
 }
 
 func testV4ListenClose(t *testing.T, c *context.Context) {
@@ -488,11 +540,11 @@ func testV4ListenClose(t *testing.T, c *context.Context) {
 	for i := uint16(0); i < n; i++ {
 		// Send a SYN request.
 		c.SendPacket(nil, &context.Headers{
-			SrcPort: context.TestPort + i,
-			DstPort: context.StackPort,
-			Flags:   header.TCPFlagSyn,
-			SeqNum:  irs,
-			RcvWnd:  30000,
+			SrcPort:	context.TestPort + i,
+			DstPort:	context.StackPort,
+			Flags:		header.TCPFlagSyn,
+			SeqNum:		irs,
+			RcvWnd:		30000,
 		})
 	}
 
@@ -505,12 +557,12 @@ func testV4ListenClose(t *testing.T, c *context.Context) {
 		iss := seqnum.Value(tcp.SequenceNumber())
 		// Send ACK.
 		c.SendPacket(nil, &context.Headers{
-			SrcPort: tcp.DestinationPort(),
-			DstPort: context.StackPort,
-			Flags:   header.TCPFlagAck,
-			SeqNum:  irs + 1,
-			AckNum:  iss + 1,
-			RcvWnd:  30000,
+			SrcPort:	tcp.DestinationPort(),
+			DstPort:	context.StackPort,
+			Flags:		header.TCPFlagAck,
+			SeqNum:		irs + 1,
+			AckNum:		iss + 1,
+			RcvWnd:		30000,
 		})
 	}
 
@@ -537,31 +589,31 @@ func testV4ListenClose(t *testing.T, c *context.Context) {
 }
 
 func TestV4ListenCloseOnV4(t *testing.T) {
-	c := context.New(t, e2e.DefaultMTU)
-	defer c.Cleanup()
+	synctest.Test(t, func(t *testing.T) {
+		defer synctest.Wait()
+		c := context.New(t, e2e.DefaultMTU)
+		defer c.Cleanup()
 
-	// Create TCP endpoint.
-	var err tcpip.Error
-	c.EP, err = c.Stack().NewEndpoint(tcp.ProtocolNumber, ipv4.ProtocolNumber, &c.WQ)
-	if err != nil {
-		t.Fatalf("NewEndpoint failed: %v", err)
-	}
+		// Create TCP endpoint.
+		var err tcpip.Error
+		c.EP, err = c.Stack().NewEndpoint(tcp.ProtocolNumber, ipv4.ProtocolNumber, &c.WQ)
+		if err != nil {
+			t.Fatalf("NewEndpoint failed: %v", err)
+		}
 
-	// Bind to wildcard.
-	if err := c.EP.Bind(tcpip.FullAddress{Port: context.StackPort}); err != nil {
-		t.Fatalf("Bind failed: %v", err)
-	}
+		// Bind to wildcard.
+		if err := c.EP.Bind(tcpip.FullAddress{Port: context.StackPort}); err != nil {
+			t.Fatalf("Bind failed: %v", err)
+		}
 
-	// Test acceptance.
-	testV4ListenClose(t, c)
+		// Test acceptance.
+		testV4ListenClose(t, c)
+	})
 }
 
 func TestMain(m *testing.M) {
 	refs.SetLeakMode(refs.LeaksPanic)
 	code := m.Run()
-	// Allow TCP async work to complete to avoid false reports of leaks.
-	// TODO(gvisor.dev/issue/5940): Use fake clock in tests.
-	time.Sleep(1 * time.Second)
 	refs.DoLeakCheck()
 	os.Exit(code)
 }
