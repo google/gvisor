@@ -479,6 +479,17 @@ const (
 	NFT_META_BRI_BROUTE           // Packet br_netfilter_broute bit
 )
 
+// Nf table meta expression netlink attributes
+// These correspond to enum values in include/uapi/linux/netfilter/nf_tables.h.
+const (
+	NFTA_META_UNSPEC = iota
+	NFTA_META_DREG
+	NFTA_META_KEY
+	NFTA_META_SREG
+	__NFTA_META_MAX
+	NFTA_META_MAX = __NFTA_META_MAX - 1
+)
+
 // Nftables Generation Attributes
 // These correspond to values in include/uapi/linux/netfilter/nf_tables.h.
 const (

@@ -22,6 +22,7 @@ go_library(
         "nft_counter.go",
         "nft_immediate.go",
         "nft_last.go",
+        "nft_meta.go",
         "nft_metaload.go",
         "nft_metaset.go",
         "nft_payload.go",
