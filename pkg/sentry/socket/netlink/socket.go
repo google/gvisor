@@ -170,6 +170,11 @@ func (s *Socket) Stack() inet.Stack {
 	return s.netns.Stack()
 }
 
+// NetworkNamespace returns the network namespace associated with the socket.
+func (s *Socket) NetworkNamespace() *inet.Namespace {
+	return s.netns
+}
+
 // Release implements vfs.FileDescriptionImpl.Release.
 func (s *Socket) Release(ctx context.Context) {
 	if s.groups.Load() != 0 {
@@ -962,7 +967,7 @@ func (s *Socket) sendMsg(ctx context.Context, src usermem.IOSequence, to []byte,
 			if err := s.checkMcastSupport(); err != nil {
 				return 0, err
 			}
-			if !kernel.TaskFromContext(ctx).HasCapability(linux.CAP_NET_ADMIN) {
+			if !kernel.TaskFromContext(ctx).HasCapabilityIn(linux.CAP_NET_ADMIN, s.netns.UserNamespace()) {
 				return 0, syserr.ErrNotPermitted
 			}
 		}

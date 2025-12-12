@@ -75,8 +75,8 @@ func (p *Protocol) Receive(ctx context.Context, s *netlink.Socket, buf []byte) *
 	creds := auth.CredentialsFromContext(ctx)
 	// Currently, the kernel is the only valid destination so simply return
 	// the error to the caller.
-	if !creds.HasCapability(linux.CAP_NET_ADMIN) {
-		return syserr.ErrPermissionDenied
+	if !creds.HasCapabilityIn(linux.CAP_NET_ADMIN, s.NetworkNamespace().UserNamespace()) {
+		return syserr.ErrNotPermittedNet
 	}
 
 	// TODO: b/434785410 - Support batch messages.

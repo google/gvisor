@@ -44,6 +44,8 @@
 #include "test/util/cleanup.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/linux_capability_util.h"
+#include "test/util/logging.h"
+#include "test/util/multiprocess_util.h"
 #include "test/util/posix_error.h"
 #include "test/util/save_util.h"
 #include "test/util/socket_util.h"
@@ -2506,6 +2508,77 @@ TEST(NetlinkRouteTest, LinkMulticastGroupNoSelfBroadcast) {
         /*expect_nlmsgerr=*/false));
   }
   EXPECT_TRUE(got_broadcast) << "Did not get the broadcast.";
+}
+
+TEST(NetlinkRouteTest, NonGetRequestsRequireCapNetAdmin) {
+  SKIP_IF(IsRunningWithHostinet());
+  AutoCapability cap(CAP_NET_ADMIN, false);
+  FileDescriptor nlsk =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
+  const int fd_raw = nlsk.get();
+
+  struct request {
+    struct nlmsghdr hdr;
+    struct ifinfomsg ifm;
+  };
+  request req = {};
+  req.hdr = {
+      .nlmsg_len = sizeof(req),
+      .nlmsg_type = RTM_NEWLINK,
+      .nlmsg_flags = NLM_F_REQUEST,
+      .nlmsg_seq = kSeq,
+  };
+  req.ifm.ifi_family = AF_UNSPEC;
+  struct iovec iov = {
+      .iov_base = &req,
+      .iov_len = sizeof(req),
+  };
+  struct msghdr msg = {
+      .msg_iov = &iov,
+      .msg_iovlen = 1,
+  };
+  ASSERT_THAT(RetryEINTR(sendmsg)(nlsk.get(), &msg, 0), SyscallSucceeds());
+
+  bool got_eperm = false;
+  ASSERT_NO_ERRNO(NetlinkResponse(
+      nlsk,
+      [&](const struct nlmsghdr* hdr) {
+        EXPECT_EQ(NLMSG_ERROR, hdr->nlmsg_type);
+        EXPECT_EQ(hdr->nlmsg_seq, kSeq);
+        EXPECT_GE(hdr->nlmsg_len, sizeof(*hdr) + sizeof(struct nlmsgerr));
+        const struct nlmsgerr* msg =
+            reinterpret_cast<const struct nlmsgerr*>(NLMSG_DATA(hdr));
+        ASSERT_EQ(msg->error, -EPERM);
+        got_eperm = true;
+      },
+      /*expect_nlmsgerr=*/true));
+  ASSERT_TRUE(got_eperm) << "Did not get an EPERM from the kernel.";
+
+  // Try to beat the EPERM with an unshare().
+  ASSERT_THAT(InForkedProcess([&] {
+                // Enter a new user namespace in which we'd have all caps.
+                TEST_PCHECK(syscall(SYS_unshare, CLONE_NEWUSER) == 0);
+                // And then send the RTM_NEWLINK again.
+                TEST_CHECK_SUCCESS(syscall(SYS_sendmsg, fd_raw, &msg, 0));
+                _exit(0);
+              }),
+              IsPosixErrorOkAndHolds(0));
+
+  // Even with the unshare, the RTM_NEWLINK should still be rejected.
+  got_eperm = false;
+  ASSERT_NO_ERRNO(NetlinkResponse(
+      nlsk,
+      [&](const struct nlmsghdr* hdr) {
+        EXPECT_EQ(NLMSG_ERROR, hdr->nlmsg_type);
+        EXPECT_EQ(hdr->nlmsg_seq, kSeq);
+        EXPECT_GE(hdr->nlmsg_len, sizeof(*hdr) + sizeof(struct nlmsgerr));
+        const struct nlmsgerr* msg =
+            reinterpret_cast<const struct nlmsgerr*>(NLMSG_DATA(hdr));
+        ASSERT_EQ(msg->error, -EPERM);
+        got_eperm = true;
+      },
+      /*expect_nlmsgerr=*/true));
+  EXPECT_TRUE(got_eperm) << "Did not get an EPERM from the kernel.";
 }
 
 }  // namespace
