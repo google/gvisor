@@ -634,8 +634,8 @@ func (p *Protocol) ProcessMessage(ctx context.Context, s *netlink.Socket, msg *n
 	// Non-GET message types require CAP_NET_ADMIN.
 	if typeKind(hdr.Type) != kindGet {
 		creds := auth.CredentialsFromContext(ctx)
-		if !creds.HasCapability(linux.CAP_NET_ADMIN) {
-			return syserr.ErrPermissionDenied
+		if !creds.HasCapabilityIn(linux.CAP_NET_ADMIN, s.NetworkNamespace().UserNamespace()) {
+			return syserr.ErrNotPermittedNet
 		}
 	}
 
