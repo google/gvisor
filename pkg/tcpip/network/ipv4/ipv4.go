@@ -426,6 +426,11 @@ func (e *endpoint) MTU() uint32 {
 	return networkMTU
 }
 
+// EndpointHeaderSize returns the size necessary for the IPv4 header.
+func (e *endpoint) EndpointHeaderSize() uint32 {
+	return header.IPv4MinimumSize
+}
+
 // MaxHeaderLength returns the maximum length needed by ipv4 headers (and
 // underlying protocols).
 func (e *endpoint) MaxHeaderLength() uint16 {
