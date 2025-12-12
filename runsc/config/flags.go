@@ -15,15 +15,12 @@
 package config
 
 import (
-	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
-	"sort"
 	"strconv"
 	"strings"
-	"text/template"
 
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/refs"
@@ -323,57 +320,6 @@ func (c *Config) ToFlags() []string {
 
 	// Construct a temporary set for default plumbing.
 	return rv
-}
-
-// KeyVal is a key value pair. It is used so ToContainerdConfigTOML returns
-// predictable ordering for runsc flags.
-type KeyVal struct {
-	Key string
-	Val string
-}
-
-// ContainerdConfigOptions contains arguments for ToContainerdConfigTOML.
-type ContainerdConfigOptions struct {
-	BinaryPath string
-	RootPath   string
-	Options    map[string]string
-	RunscFlags []KeyVal
-}
-
-// ToContainerdConfigTOML turns a given config into a format for a k8s containerd config.toml file.
-// See: https://gvisor.dev/docs/user_guide/containerd/quick_start/
-func (c *Config) ToContainerdConfigTOML(opts ContainerdConfigOptions) (string, error) {
-	flagSet := flag.NewFlagSet("tmp", flag.ContinueOnError)
-	RegisterFlags(flagSet)
-	keyVals := c.keyVals(flagSet, true /*onlyIfSet*/)
-	keys := []string{}
-	for k := range keyVals {
-		keys = append(keys, k)
-	}
-
-	sort.Strings(keys)
-
-	for _, k := range keys {
-		opts.RunscFlags = append(opts.RunscFlags, KeyVal{k, keyVals[k]})
-	}
-
-	const temp = `{{if .BinaryPath}}binary_name = "{{.BinaryPath}}"{{end}}
-{{if .RootPath}}root = "{{.RootPath}}"{{end}}
-{{if .Options}}{{ range $key, $value := .Options}}{{$key}} = "{{$value}}"
-{{end}}{{end}}{{if .RunscFlags}}[runsc_config]
-{{ range $fl:= .RunscFlags}}  {{$fl.Key}} = "{{$fl.Val}}"
-{{end}}{{end}}`
-
-	t := template.New("temp")
-	t, err := t.Parse(temp)
-	if err != nil {
-		return "", err
-	}
-	var buf bytes.Buffer
-	if err := t.Execute(&buf, opts); err != nil {
-		return "", err
-	}
-	return buf.String(), nil
 }
 
 func (c *Config) keyVals(flagSet *flag.FlagSet, onlyIfSet bool) map[string]string {
