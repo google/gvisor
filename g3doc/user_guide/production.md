@@ -115,7 +115,9 @@ If you absolutely must run gVisor in a virtual machine, we recommend using the
 `systrap` platform. This platform has the most flexibility, but its performance
 will lag behind that of KVM.
 
-<a class="button" href="/docs/user_guide/platforms/">Configure Platform
+<!-- disableFinding(LINK_RELATIVE_G3DOC) -->
+
+<a class="button">[Configure Platform](../architecture_guide/platforms.md)
 &raquo;</a>
 
 ### Optimizing I/O performance {#configure-io}
@@ -126,8 +128,7 @@ default configuration must support all possible I/O interaction patterns.
 However, you can configure gVisor to use more aggressive caching policies where
 it makes sense.
 
-<a class="button" href="/docs/user_guide/filesystem/">Configure Filesystem
-&raquo;</a>
+<a class="button">[Configure Filesystem](filesystem.md) &raquo;</a>
 
 ### Optimizing network performance {#configure-network}
 
@@ -137,7 +138,9 @@ is optimized for security over performance. If your application is semi-trusted
 and network performance is paramount, you can optionally enable Network
 Passthrough to use the host's (Linux's) network stack, rather than gVisor's own.
 
-<a class="button" href="/docs/user_guide/networking/">Configure Networking
+<!-- disableFinding(LINK_RELATIVE_G3DOC) -->
+
+<a class="button">[Configure Networking](../architecture_guide/networking.md)
 &raquo;</a>
 
 ### Optimizing MM performance {#configure-mm}
