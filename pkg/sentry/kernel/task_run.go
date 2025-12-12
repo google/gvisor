@@ -24,7 +24,6 @@ import (
 	"gvisor.dev/gvisor/pkg/goid"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/refs"
-	"gvisor.dev/gvisor/pkg/sentry/hostcpu"
 	"gvisor.dev/gvisor/pkg/sentry/ktime"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
@@ -207,7 +206,7 @@ func (app *runApp) execute(t *Task) taskRunState {
 	if t.rseqPreempted {
 		t.rseqPreempted = false
 		if t.rseqAddr != 0 || t.oldRSeqCPUAddr != 0 {
-			t.rseqCPU = int32(hostcpu.GetCPU())
+			t.rseqCPU = t.CPU()
 			if err := t.rseqCopyOutCPU(); err != nil {
 				t.Debugf("Failed to copy CPU to %#x for rseq: %v", t.rseqAddr, err)
 				t.forceSignal(linux.SIGSEGV, false)

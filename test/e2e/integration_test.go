@@ -32,6 +32,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -327,6 +328,18 @@ func TestMemLimit(t *testing.T) {
 func TestNumCPU(t *testing.T) {
 	ctx := context.Background()
 	d := dockerutil.MakeContainer(ctx, t)
+	runArgs, err := dockerutil.RuntimeArgs()
+	if err != nil {
+		t.Fatalf("dockerutil.RuntimeArgs() failed: %v", err)
+	}
+	want := 1
+	if slices.Contains(runArgs, "--platform=kvm") && slices.Contains(runArgs, "--kvm-use-cpu-nums") {
+		// When kvm-use-cpu-nums is enabled, platform/KVM will advertise vCPU IDs as CPU numbers.
+		// platform/KVM under-the-hood adjusts vCPUs to optimize scheduling.
+		// This means the number of CPUs reported inside the container may not match the number
+		// of application cores requested by the user.
+		want = 3
+	}
 	defer d.CleanUp(ctx)
 
 	// Read how many cores are in the container.
@@ -343,8 +356,8 @@ func TestNumCPU(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to parse %q: %v", out, err)
 	}
-	if want := 1; got != want {
-		t.Errorf("MemTotal got: %d, want: %d", got, want)
+	if got != want {
+		t.Errorf("NumCPU got: %d, want: %d", got, want)
 	}
 }
 
