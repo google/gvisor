@@ -18,7 +18,6 @@ import (
 	"fmt"
 	"io/ioutil"
 	"math/rand"
-	"reflect"
 	"strconv"
 	"strings"
 	"unsafe"
@@ -69,11 +68,7 @@ func copySeccompRulesToStub(instrs []bpf.Instruction, stubAddr, size uintptr) {
 		panic("not enough space for sysmsg seccomp rules")
 	}
 
-	var targetSlice []bpf.Instruction
-	sh := (*reflect.SliceHeader)(unsafe.Pointer(&targetSlice))
-	sh.Data = progPtr
-	sh.Cap = len(instrs)
-	sh.Len = sh.Cap
+	targetSlice := unsafe.Slice((*bpf.Instruction)(unsafe.Pointer(progPtr)), len(instrs))
 
 	copy(targetSlice, instrs)
 

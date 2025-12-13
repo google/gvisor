@@ -83,9 +83,6 @@ func (t *mockCopyContext) CopyInBytes(_ hostarch.Addr, b []byte) (int, error) {
 	return t.taskMem.CopyIn(nil, 0, b, usermem.IOOpts{})
 }
 
-// unsafeMemory returns the underlying memory for m. The returned slice is only
-// valid for the lifetime for m. The garbage collector isn't aware that the
-// returned slice is related to m, the caller must ensure m lives long enough.
 func unsafeMemory(m marshal.Marshallable) []byte {
 	if !m.Packed() {
 		// We can't return a slice pointing to the underlying memory
@@ -100,25 +97,14 @@ func unsafeMemory(m marshal.Marshallable) []byte {
 
 	// reflect.ValueOf(m)
 	//   .Elem() // Unwrap interface to inner concrete object
-	//   .Addr() // Pointer value to object
-	//   .Pointer() // Actual address from the pointer value
-	ptr := reflect.ValueOf(m).Elem().Addr().Pointer()
-
+	ptr := unsafe.Pointer(reflect.ValueOf(m).Elem().UnsafeAddr())
 	size := m.SizeBytes()
 
-	var mem []byte
-	hdr := (*reflect.SliceHeader)(unsafe.Pointer(&mem))
-	hdr.Data = ptr
-	hdr.Len = size
-	hdr.Cap = size
+	mem := unsafe.Slice((*byte)(ptr), size)
 
 	return mem
 }
 
-// unsafeMemorySlice returns the underlying memory for m. The returned slice is
-// only valid for the lifetime for m. The garbage collector isn't aware that the
-// returned slice is related to m, the caller must ensure m lives long enough.
-//
 // Precondition: m must be a slice.
 func unsafeMemorySlice(m any, elt marshal.Marshallable) []byte {
 	kind := reflect.TypeOf(m).Kind()
@@ -140,11 +126,8 @@ func unsafeMemorySlice(m any, elt marshal.Marshallable) []byte {
 	v := reflect.ValueOf(m)
 	length := v.Len() * elt.SizeBytes()
 
-	var mem []byte
-	hdr := (*reflect.SliceHeader)(unsafe.Pointer(&mem))
-	hdr.Data = v.Pointer() // This is a pointer to the first elem for slices.
-	hdr.Len = length
-	hdr.Cap = length
+	ptr := unsafe.Pointer(v.Pointer())
+	mem := unsafe.Slice((*byte)(ptr), length)
 
 	return mem
 }
