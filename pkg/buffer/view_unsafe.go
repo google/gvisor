@@ -15,12 +15,10 @@
 package buffer
 
 import (
-	"reflect"
 	"unsafe"
 )
 
 // BasePtr returns a pointer to the view's chunk.
 func (v *View) BasePtr() *byte {
-	hdr := (*reflect.SliceHeader)(unsafe.Pointer(&v.chunk.data))
-	return (*byte)(unsafe.Pointer(hdr.Data))
+	return unsafe.SliceData(v.chunk.data)
 }

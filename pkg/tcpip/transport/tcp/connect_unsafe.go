@@ -15,7 +15,6 @@
 package tcp
 
 import (
-	"reflect"
 	"unsafe"
 )
 
@@ -26,5 +25,5 @@ import (
 func optionsToArray(options []byte) *[maxOptionSize]byte {
 	// Reslice to full capacity.
 	options = options[0:maxOptionSize]
-	return (*[maxOptionSize]byte)(unsafe.Pointer((*reflect.SliceHeader)(unsafe.Pointer(&options)).Data))
+	return (*[maxOptionSize]byte)(unsafe.Pointer(&options[0]))
 }

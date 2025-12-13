@@ -19,7 +19,6 @@
 package rawfile
 
 import (
-	"reflect"
 	"unsafe"
 
 	"golang.org/x/sys/unix"
@@ -43,12 +42,9 @@ func IovecFromBytes(bs []byte) unix.Iovec {
 	return iov
 }
 
-func bytesFromIovec(iov unix.Iovec) (bs []byte) {
-	sh := (*reflect.SliceHeader)(unsafe.Pointer(&bs))
-	sh.Data = uintptr(unsafe.Pointer(iov.Base))
-	sh.Len = int(iov.Len)
-	sh.Cap = int(iov.Len)
-	return
+func bytesFromIovec(iov unix.Iovec) []byte {
+	ptr := unsafe.Pointer(iov.Base)
+	return unsafe.Slice((*byte)(ptr), int(iov.Len))
 }
 
 // AppendIovecFromBytes returns append(iovs, IovecFromBytes(bs)). If len(bs) ==

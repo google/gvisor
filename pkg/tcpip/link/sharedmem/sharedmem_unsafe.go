@@ -16,7 +16,6 @@ package sharedmem
 
 import (
 	"fmt"
-	"reflect"
 	"unsafe"
 
 	"golang.org/x/sys/unix"
@@ -48,12 +47,7 @@ func getBuffer(fd int) ([]byte, error) {
 		return nil, fmt.Errorf("failed to map memory for buffer fd: %d, error: %s", fd, err)
 	}
 
-	// Use unsafe to convert addr into a []byte.
-	var b []byte
-	hdr := (*reflect.SliceHeader)(unsafe.Pointer(&b))
-	hdr.Data = addr
-	hdr.Len = int(s.Size)
-	hdr.Cap = int(s.Size)
+	b := unsafe.Slice((*byte)(unsafe.Pointer(addr)), int(s.Size))
 
 	return b, nil
 }
