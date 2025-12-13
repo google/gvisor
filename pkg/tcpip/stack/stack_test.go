@@ -169,6 +169,10 @@ func (f *fakeNetworkEndpoint) HandlePacket(pkt *stack.PacketBuffer) {
 	f.dispatcher.DeliverTransportPacket(transProtoNum, pkt)
 }
 
+func (f *fakeNetworkEndpoint) EndpointHeaderSize() uint32 {
+	return fakeNetHeaderLen
+}
+
 func (f *fakeNetworkEndpoint) MaxHeaderLength() uint16 {
 	return f.nic.MaxHeaderLength() + fakeNetHeaderLen
 }

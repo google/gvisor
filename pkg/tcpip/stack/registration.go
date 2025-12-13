@@ -872,6 +872,9 @@ type NetworkEndpoint interface {
 	// minus the network endpoint max header length.
 	MTU() uint32
 
+	// EndpointHeaderSize returns the size of this endpoint header.
+	EndpointHeaderSize() uint32
+
 	// MaxHeaderLength returns the maximum size the network (and lower
 	// level layers combined) headers can have. Higher levels use this
 	// information to reserve space in the front of the packets they're

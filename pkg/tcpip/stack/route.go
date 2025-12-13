@@ -245,6 +245,14 @@ func makeRoute(netProto tcpip.NetworkProtocolNumber, gateway, localAddr, remoteA
 }
 
 func makeRouteInner(netProto tcpip.NetworkProtocolNumber, localAddr, remoteAddr tcpip.Address, outgoingNIC, localAddressNIC *nic, localAddressEndpoint AssignableAddressEndpoint, loop PacketLooping, mtu uint32) *Route {
+	if mtu != 0 {
+		adjusted := mtu - outgoingNIC.getNetworkEndpoint(netProto).EndpointHeaderSize()
+		if adjusted > mtu {
+			mtu = 0
+		} else {
+			mtu = adjusted
+		}
+	}
 	r := &Route{
 		routeInfo: routeInfo{
 			NetProto:         netProto,
