@@ -115,6 +115,18 @@ TEST(LinkTest, HardlinkChangeMode) {
 TEST(LinkTest, PermissionDenied) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_FOWNER)));
 
+  // In Linux, the constraints checked by this test are only enforced by
+  // fs/namei.c:may_linkat() => safe_hardlink_source() when
+  // sysctl_protected_hardlinks is enabled.
+  if (auto maybe_protected_hardlinks =
+          GetContents("/proc/sys/fs/protected_hardlinks");
+      maybe_protected_hardlinks.ok()) {
+    if (auto protected_hardlinks = maybe_protected_hardlinks.ValueOrDie();
+        !protected_hardlinks.empty() && protected_hardlinks[0] == '0') {
+      GTEST_SKIP() << "protected_hardlinks is disabled";
+    }
+  }
+
   // Make the file "unsafe" to link by making it only readable, but not
   // writable.
   const auto unwriteable_file =

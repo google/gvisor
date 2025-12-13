@@ -21,6 +21,7 @@
 #include "test/util/capability_util.h"
 #include "test/util/cleanup.h"
 #include "test/util/fs_util.h"
+#include "test/util/linux_capability_util.h"
 #include "test/util/posix_error.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
@@ -345,6 +346,7 @@ class FileModeTest : public ::testing::TestWithParam<FileModeTestcase> {};
 TEST_P(FileModeTest, WriteToFile) {
   PosixErrorOr<std::pair<gid_t, gid_t>> groups = Groups();
   SKIP_IF(!groups.ok());
+  AutoCapability drop_fsetid(CAP_FSETID, false);
 
   auto cleanup = Setegid(groups.ValueOrDie().first);
   auto temp_dir = ASSERT_NO_ERRNO_AND_VALUE(
@@ -371,6 +373,7 @@ TEST_P(FileModeTest, WriteToFile) {
 TEST_P(FileModeTest, TruncateFile) {
   PosixErrorOr<std::pair<gid_t, gid_t>> groups = Groups();
   SKIP_IF(!groups.ok());
+  AutoCapability drop_fsetid(CAP_FSETID, false);
 
   auto cleanup = Setegid(groups.ValueOrDie().first);
   auto temp_dir = ASSERT_NO_ERRNO_AND_VALUE(
