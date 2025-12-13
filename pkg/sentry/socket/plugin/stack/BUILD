@@ -30,7 +30,6 @@ go_library(
         "//pkg/sentry/fsimpl/sockfs",
         "//pkg/sentry/inet",
         "//pkg/sentry/kernel",
-        "//pkg/sentry/kernel/auth",
         "//pkg/sentry/ktime",
         "//pkg/sentry/socket",
         "//pkg/sentry/socket/plugin",

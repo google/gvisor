@@ -19,7 +19,6 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
-	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/socket"
 	"gvisor.dev/gvisor/pkg/sentry/socket/plugin/cgo"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
@@ -63,8 +62,8 @@ func (p *provider) Socket(t *kernel.Task, skType linux.SockType, protocol int) (
 		}
 	case syscall.SOCK_RAW:
 		// Raw sockets require CAP_NET_RAW.
-		creds := auth.CredentialsFromContext(t)
-		if !creds.HasCapability(linux.CAP_NET_RAW) {
+		creds := t.Credentials()
+		if !creds.HasCapabilityIn(linux.CAP_NET_RAW, t.NetworkNamespace().UserNamespace()) {
 			return nil, syserr.ErrPermissionDenied
 		}
 	default:

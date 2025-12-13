@@ -31,6 +31,9 @@
 #include "test/syscalls/linux/unix_domain_socket_test_util.h"
 #include "test/util/capability_util.h"
 #include "test/util/file_descriptor.h"
+#include "test/util/linux_capability_util.h"
+#include "test/util/logging.h"
+#include "test/util/multiprocess_util.h"
 #include "test/util/posix_error.h"
 #include "test/util/socket_util.h"
 #include "test/util/test_util.h"
@@ -47,6 +50,36 @@ namespace {
 #define TCPHDR_FLAGS_OFF 13
 
 using ::testing::AnyOf;
+
+#ifndef __Fuchsia__  // Fuchsia doesn't support caps.
+TEST(RawSocketNoCapTest, CreationFailsWithEPERM) {
+  AutoCapability cap(CAP_NET_RAW, false);
+  ASSERT_THAT(socket(AF_INET, SOCK_RAW, IPPROTO_UDP),
+              SyscallFailsWithErrno(EPERM));
+  ASSERT_THAT(socket(AF_INET6, SOCK_RAW, IPPROTO_UDP),
+              SyscallFailsWithErrno(EPERM));
+
+  // Fork to avoid changing the user namespace of the original test process.
+  EXPECT_THAT(
+      InForkedProcess([&] {
+        // Fails with EPERM because we don't have CAP_NET_RAW.
+        TEST_CHECK_ERRNO(syscall(SYS_socket, AF_INET, SOCK_RAW, IPPROTO_UDP),
+                         EPERM);
+        TEST_CHECK_ERRNO(syscall(SYS_socket, AF_INET6, SOCK_RAW, IPPROTO_UDP),
+                         EPERM);
+        // Enter a new userns to gain all caps in the new userns.
+        TEST_CHECK_SUCCESS(syscall(SYS_unshare, CLONE_NEWUSER));
+        // But socket() should still fails with EPERM, for we don't have
+        // CAP_NET_RAW in the original userns (that owns the netns we are in).
+        TEST_CHECK_ERRNO(syscall(SYS_socket, AF_INET, SOCK_RAW, IPPROTO_UDP),
+                         EPERM);
+        TEST_CHECK_ERRNO(syscall(SYS_socket, AF_INET6, SOCK_RAW, IPPROTO_UDP),
+                         EPERM);
+        _exit(0);
+      }),
+      IsPosixErrorOkAndHolds(0));
+}
+#endif  // __Fuchsia__
 
 // Fixture for tests parameterized by protocol.
 class RawSocketTest : public ::testing::TestWithParam<std::tuple<int, int>> {

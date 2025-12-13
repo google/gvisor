@@ -31,7 +31,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/sockfs"
 	"gvisor.dev/gvisor/pkg/sentry/hostfd"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
-	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/ktime"
 	"gvisor.dev/gvisor/pkg/sentry/socket"
 	"gvisor.dev/gvisor/pkg/sentry/socket/control"
@@ -236,7 +235,8 @@ func (p *socketProvider) Socket(t *kernel.Task, stypeflags linux.SockType, proto
 
 	// Raw and packet sockets require CAP_NET_RAW.
 	if stype == linux.SOCK_RAW || p.family == linux.AF_PACKET {
-		if creds := auth.CredentialsFromContext(t); !creds.HasCapability(linux.CAP_NET_RAW) {
+		creds := t.Credentials()
+		if !creds.HasCapabilityIn(linux.CAP_NET_RAW, t.NetworkNamespace().UserNamespace()) {
 			return nil, syserr.ErrNotPermitted
 		}
 	}
