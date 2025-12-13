@@ -506,8 +506,6 @@ func routesForIface(iface net.Interface, disableIPv6 bool) ([]boot.Route, *boot.
 	var defv4, defv6 *boot.Route
 	var routes []boot.Route
 	for _, r := range rs {
-		mtu := uint32(r.MTU)
-
 		// Is it a default route?
 		if r.Dst == nil {
 			if r.Gw == nil {
@@ -525,7 +523,6 @@ func routesForIface(iface net.Interface, disableIPv6 bool) ([]boot.Route, *boot.
 						Mask: net.IPMask(net.IPv4zero),
 					},
 					Gateway: r.Gw,
-					MTU:     mtu,
 				}
 			case header.IPv6AddressSize:
 				if defv6 != nil {
@@ -539,7 +536,6 @@ func routesForIface(iface net.Interface, disableIPv6 bool) ([]boot.Route, *boot.
 							Mask: net.IPMask(net.IPv6zero),
 						},
 						Gateway: r.Gw,
-						MTU:     mtu,
 					}
 				}
 			default:
@@ -556,7 +552,6 @@ func routesForIface(iface net.Interface, disableIPv6 bool) ([]boot.Route, *boot.
 		routes = append(routes, boot.Route{
 			Destination: dst,
 			Gateway:     r.Gw,
-			MTU:         mtu,
 		})
 	}
 	return routes, defv4, defv6, nil
