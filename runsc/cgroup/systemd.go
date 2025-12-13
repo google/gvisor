@@ -265,26 +265,41 @@ func isRunningSystemd() bool {
 	return systemdCheck.cache
 }
 
+const (
+	systemdVersionRetries = 3
+	systemdVersionBackoff = 50 * time.Millisecond
+)
+
 func systemdVersion(conn *systemdDbus.Conn) (int, error) {
-	vStr, err := conn.GetManagerProperty("Version")
-	if err != nil {
-		return -1, errors.New("unable to get systemd version")
+	var lastErr error
+
+	for i := 0; i < systemdVersionRetries; i++ {
+		vStr, err := conn.GetManagerProperty("Version")
+		if err == nil {
+			// vStr should be of the form:
+			// "v245.4-1.fc32", "245", "v245-1.fc32", "245-1.fc32" (without quotes).
+			// The result for all of the above should be 245.
+			// Thus, we unconditionally remove the "v" prefix
+			// and then match on the first integer we can grab.
+			re := regexp.MustCompile(`v?([0-9]+)`)
+			matches := re.FindStringSubmatch(vStr)
+			if len(matches) < 2 {
+				return -1, fmt.Errorf("can't parse version %q: incorrect number of matches %d", vStr, len(matches))
+			}
+			version, err := strconv.Atoi(matches[1])
+			if err != nil {
+				return -1, fmt.Errorf("%w: can't parse version %q", err, vStr)
+			}
+			return version, nil
+		}
+
+		lastErr = err
+		if i < systemdVersionRetries-1 {
+			time.Sleep(systemdVersionBackoff * time.Duration(1<<i))
+		}
 	}
-	// vStr should be of the form:
-	// "v245.4-1.fc32", "245", "v245-1.fc32", "245-1.fc32" (without quotes).
-	// The result for all of the above should be 245.
-	// Thus, we unconditionally remove the "v" prefix
-	// and then match on the first integer we can grab.
-	re := regexp.MustCompile(`v?([0-9]+)`)
-	matches := re.FindStringSubmatch(vStr)
-	if len(matches) < 2 {
-		return -1, fmt.Errorf("can't parse version %q: incorrect number of matches %d", vStr, len(matches))
-	}
-	version, err := strconv.Atoi(matches[1])
-	if err != nil {
-		return -1, fmt.Errorf("%w: can't parse version %q", err, vStr)
-	}
-	return version, nil
+
+	return -1, fmt.Errorf("unable to get systemd version via D-Bus after %d attempts: %w", systemdVersionRetries, lastErr)
 }
 
 func addIOProps(props []systemdDbus.Property, name string, devs []specs.LinuxThrottleDevice) []systemdDbus.Property {
