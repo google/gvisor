@@ -433,7 +433,7 @@ func Init() {
 				getInfo: func() *DriverABIInfo {
 					return &DriverABIInfo{
 						FrontendInfos: map[uint32]IoctlInfo{
-							nvgpu.NV_ESC_CARD_INFO:                     simpleIoctlInfo("NV_ESC_CARD_INFO", "nv_ioctl_card_info_t"),
+							nvgpu.NV_ESC_CARD_INFO:                     ioctlInfoWithStructName("NV_ESC_CARD_INFO", nvgpu.IoctlCardInfo{}, "nv_ioctl_card_info_t"),
 							nvgpu.NV_ESC_CHECK_VERSION_STR:             ioctlInfoWithStructName("NV_ESC_CHECK_VERSION_STR", nvgpu.RMAPIVersion{}, "nv_ioctl_rm_api_version_t"),
 							nvgpu.NV_ESC_ATTACH_GPUS_TO_FD:             simpleIoctlInfo("NV_ESC_ATTACH_GPUS_TO_FD"), // No params struct, params is a NvU32 array containing GPU IDs
 							nvgpu.NV_ESC_SYS_PARAMS:                    ioctlInfoWithStructName("NV_ESC_SYS_PARAMS", nvgpu.IoctlSysParams{}, "nv_ioctl_sys_params_t"),
@@ -494,10 +494,10 @@ func Init() {
 							nvgpu.NV0000_CTRL_CMD_GPU_GET_DEVICE_IDS:                               simpleIoctlInfo("NV0000_CTRL_CMD_GPU_GET_DEVICE_IDS", "NV0000_CTRL_GPU_GET_DEVICE_IDS_PARAMS"),
 							nvgpu.NV0000_CTRL_CMD_GPU_GET_ID_INFO_V2:                               simpleIoctlInfo("NV0000_CTRL_CMD_GPU_GET_ID_INFO_V2", "NV0000_CTRL_GPU_GET_ID_INFO_V2_PARAMS"),
 							nvgpu.NV0000_CTRL_CMD_GPU_GET_PROBED_IDS:                               simpleIoctlInfo("NV0000_CTRL_CMD_GPU_GET_PROBED_IDS", "NV0000_CTRL_GPU_GET_PROBED_IDS_PARAMS"),
-							nvgpu.NV0000_CTRL_CMD_GPU_ATTACH_IDS:                                   simpleIoctlInfo("NV0000_CTRL_CMD_GPU_ATTACH_IDS", "NV0000_CTRL_GPU_ATTACH_IDS_PARAMS"),
+							nvgpu.NV0000_CTRL_CMD_GPU_ATTACH_IDS:                                   ioctlInfo("NV0000_CTRL_CMD_GPU_ATTACH_IDS", nvgpu.NV0000_CTRL_GPU_ATTACH_IDS_PARAMS{}),
 							nvgpu.NV0000_CTRL_CMD_GPU_DETACH_IDS:                                   simpleIoctlInfo("NV0000_CTRL_CMD_GPU_DETACH_IDS", "NV0000_CTRL_GPU_DETACH_IDS_PARAMS"),
 							nvgpu.NV0000_CTRL_CMD_GPU_GET_PCI_INFO:                                 simpleIoctlInfo("NV0000_CTRL_CMD_GPU_GET_PCI_INFO", "NV0000_CTRL_GPU_GET_PCI_INFO_PARAMS"),
-							nvgpu.NV0000_CTRL_CMD_GPU_GET_UUID_FROM_GPU_ID:                         simpleIoctlInfo("NV0000_CTRL_CMD_GPU_GET_UUID_FROM_GPU_ID", "NV0000_CTRL_GPU_GET_UUID_FROM_GPU_ID_PARAMS"),
+							nvgpu.NV0000_CTRL_CMD_GPU_GET_UUID_FROM_GPU_ID:                         ioctlInfo("NV0000_CTRL_CMD_GPU_GET_UUID_FROM_GPU_ID", nvgpu.NV0000_CTRL_GPU_GET_UUID_FROM_GPU_ID_PARAMS{}),
 							nvgpu.NV0000_CTRL_CMD_GPU_QUERY_DRAIN_STATE:                            simpleIoctlInfo("NV0000_CTRL_CMD_GPU_QUERY_DRAIN_STATE", "NV0000_CTRL_GPU_QUERY_DRAIN_STATE_PARAMS"),
 							nvgpu.NV0000_CTRL_CMD_GPU_GET_MEMOP_ENABLE:                             simpleIoctlInfo("NV0000_CTRL_CMD_GPU_GET_MEMOP_ENABLE", "NV0000_CTRL_GPU_GET_MEMOP_ENABLE_PARAMS"),
 							nvgpu.NV0000_CTRL_CMD_GSYNC_GET_ATTACHED_IDS:                           simpleIoctlInfo("NV0000_CTRL_CMD_GSYNC_GET_ATTACHED_IDS", "NV0000_CTRL_GSYNC_GET_ATTACHED_IDS_PARAMS"),

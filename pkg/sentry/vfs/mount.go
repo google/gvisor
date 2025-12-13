@@ -1623,3 +1623,19 @@ func (vfs *VirtualFilesystem) generateOptionalTags(ctx context.Context, mnt *Mou
 	}
 	return optionalSb.String()
 }
+
+// GetAllMounts returns a slice containing every Mount in vfs, regardless of
+// namespace. A reference is held on each returned Mount, which must be dropped
+// by the caller when no longer needed.
+func (vfs *VirtualFilesystem) GetAllMounts(ctx context.Context) []*Mount {
+	var mnts []*Mount
+	vfs.lockMounts()
+	defer vfs.unlockMounts(ctx)
+	for mnt := range vfs.mounts.Range {
+		if !mnt.tryIncMountedRef() {
+			continue
+		}
+		mnts = append(mnts, mnt)
+	}
+	return mnts
+}
