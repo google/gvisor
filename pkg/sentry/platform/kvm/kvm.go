@@ -187,6 +187,11 @@ func (k *KVM) NewContext(pkgcontext.Context) platform.Context {
 	}
 }
 
+// Name implements platform.Platform.Name.
+func (*KVM) Name() string {
+	return "kvm"
+}
+
 type constructor struct{}
 
 func (*constructor) New(opts platform.Options) (platform.Platform, error) {
