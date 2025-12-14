@@ -29,9 +29,12 @@ import (
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
-func testMemoryManagerWithMmapDirection(ctx context.Context, mmapDirection arch.MmapDirection) *MemoryManager {
+func testMemoryManagerWithMmapDirection(ctx context.Context, t *testing.T, mmapDirection arch.MmapDirection) *MemoryManager {
 	p := platform.FromContext(ctx)
-	mm := NewMemoryManager(p, pgalloc.MemoryFileFromContext(ctx), false)
+	mm, err := NewMemoryManager(p, pgalloc.MemoryFileFromContext(ctx))
+	if err != nil {
+		t.Fatalf("failed to create MemoryManager: %s", err)
+	}
 	mm.layout = arch.MmapLayout{
 		MinAddr:          p.MinUserAddress(),
 		MaxAddr:          p.MaxUserAddress(),
@@ -42,8 +45,8 @@ func testMemoryManagerWithMmapDirection(ctx context.Context, mmapDirection arch.
 	return mm
 }
 
-func testMemoryManager(ctx context.Context) *MemoryManager {
-	return testMemoryManagerWithMmapDirection(ctx, arch.MmapBottomUp)
+func testMemoryManager(ctx context.Context, t *testing.T) *MemoryManager {
+	return testMemoryManagerWithMmapDirection(ctx, t, arch.MmapBottomUp)
 }
 
 func (mm *MemoryManager) realUsageAS() uint64 {
@@ -52,7 +55,7 @@ func (mm *MemoryManager) realUsageAS() uint64 {
 
 func TestUsageASUpdates(t *testing.T) {
 	ctx := contexttest.Context(t)
-	mm := testMemoryManager(ctx)
+	mm := testMemoryManager(ctx, t)
 	defer mm.DecUsers(ctx)
 
 	addr, err := mm.MMap(ctx, memmap.MMapOpts{
@@ -87,7 +90,7 @@ func (mm *MemoryManager) realDataAS() uint64 {
 
 func TestDataASUpdates(t *testing.T) {
 	ctx := contexttest.Context(t)
-	mm := testMemoryManager(ctx)
+	mm := testMemoryManager(ctx, t)
 	defer mm.DecUsers(ctx)
 
 	addr, err := mm.MMap(ctx, memmap.MMapOpts{
@@ -133,7 +136,7 @@ func TestBrkDataLimitUpdates(t *testing.T) {
 	limitSet.Set(limits.Data, limits.Limit{}, true /* privileged */) // zero RLIMIT_DATA
 
 	ctx := contexttest.WithLimitSet(contexttest.Context(t), limitSet)
-	mm := testMemoryManager(ctx)
+	mm := testMemoryManager(ctx, t)
 	defer mm.DecUsers(ctx)
 
 	// Try to extend the brk by one page and expect doing so to fail.
@@ -146,7 +149,7 @@ func TestBrkDataLimitUpdates(t *testing.T) {
 // TestIOAfterUnmap ensures that IO fails after unmap.
 func TestIOAfterUnmap(t *testing.T) {
 	ctx := contexttest.Context(t)
-	mm := testMemoryManager(ctx)
+	mm := testMemoryManager(ctx, t)
 	defer mm.DecUsers(ctx)
 
 	addr, err := mm.MMap(ctx, memmap.MMapOpts{
@@ -186,7 +189,7 @@ func TestIOAfterUnmap(t *testing.T) {
 // TestIOAfterMProtect tests IO interaction with mprotect permissions.
 func TestIOAfterMProtect(t *testing.T) {
 	ctx := contexttest.Context(t)
-	mm := testMemoryManager(ctx)
+	mm := testMemoryManager(ctx, t)
 	defer mm.DecUsers(ctx)
 
 	addr, err := mm.MMap(ctx, memmap.MMapOpts{
@@ -239,7 +242,7 @@ func TestIOAfterMProtect(t *testing.T) {
 // prepared after destruction.
 func TestAIOPrepareAfterDestroy(t *testing.T) {
 	ctx := contexttest.Context(t)
-	mm := testMemoryManager(ctx)
+	mm := testMemoryManager(ctx, t)
 	defer mm.DecUsers(ctx)
 
 	id, err := mm.NewAIOContext(ctx, 1)
@@ -264,7 +267,7 @@ func TestAIOPrepareAfterDestroy(t *testing.T) {
 // looked up after memory manager is destroyed.
 func TestAIOLookupAfterDestroy(t *testing.T) {
 	ctx := contexttest.Context(t)
-	mm := testMemoryManager(ctx)
+	mm := testMemoryManager(ctx, t)
 
 	id, err := mm.NewAIOContext(ctx, 1)
 	if err != nil {
@@ -332,7 +335,7 @@ func TestGetAllocationDirection(t *testing.T) {
 	for _, test := range testCases {
 		t.Run(test.name, func(t *testing.T) {
 			ctx := contexttest.Context(t)
-			mm := testMemoryManagerWithMmapDirection(ctx, test.mmapDirection)
+			mm := testMemoryManagerWithMmapDirection(ctx, t, test.mmapDirection)
 			actual := mm.getAllocationDirection(test.ar, test.vma)
 			if actual != test.expected {
 				t.Errorf("Unexpected allocation direction. Expected: %s, Actual: %s", test.expected, actual)

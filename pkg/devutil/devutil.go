@@ -36,8 +36,8 @@ type GoferClient struct {
 // NewGoferClient establishes the LISAFS connection to the dev gofer server.
 // It takes ownership of fd. contName is the owning container name.
 func NewGoferClient(ctx context.Context, contName string, fd int) (*GoferClient, error) {
-	ctx.UninterruptibleSleepStart(false)
-	defer ctx.UninterruptibleSleepFinish(false)
+	ctx.UninterruptibleSleepStart()
+	defer ctx.UninterruptibleSleepFinish()
 
 	sock, err := unet.NewSocket(fd)
 	if err != nil {
