@@ -113,4 +113,4 @@ Docker configuration (`/etc/docker/daemon.json`) and restart the Docker daemon:
 }
 ```
 
-[Production guide]: ../production/
+[Production guide]: production.md
