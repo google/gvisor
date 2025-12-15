@@ -119,6 +119,19 @@ func (vfs *VirtualFilesystem) IsDeviceRegistered(kind DeviceKind, major, minor u
 	return ok
 }
 
+// GetRegisteredDevice returns the device registered for the given (kind,
+// major, minor) tuple.
+func (vfs *VirtualFilesystem) GetRegisteredDevice(kind DeviceKind, major, minor uint32) Device {
+	tup := devTuple{kind, major, minor}
+	vfs.devicesMu.RLock()
+	defer vfs.devicesMu.RUnlock()
+	rd, ok := vfs.devices[tup]
+	if !ok {
+		return nil
+	}
+	return rd.dev
+}
+
 // OpenDeviceSpecialFile returns a FileDescription representing the given
 // device.
 func (vfs *VirtualFilesystem) OpenDeviceSpecialFile(ctx context.Context, mnt *Mount, d *Dentry, kind DeviceKind, major, minor uint32, opts *OpenOptions) (*FileDescription, error) {

@@ -89,6 +89,9 @@ type machine struct {
 
 	// usedSlots is the set of used physical addresses (not sorted).
 	usedSlots []uintptr
+
+	// useCPUNums indicates whether to enable the use vCPU numbers as CPU numbers.
+	useCPUNums bool
 }
 
 const (
@@ -216,6 +219,9 @@ type vCPU struct {
 
 	// dieState holds state related to vCPU death.
 	dieState dieState
+
+	// lastCtx is the last context that was scheduled on this vCPU
+	lastCtx atomic.Pointer[platformContext]
 }
 
 type dieState struct {
@@ -275,6 +281,7 @@ func newMachine(vm int, config *Config) (*machine, error) {
 	m := &machine{
 		fd:               vm,
 		applicationCores: config.ApplicationCores,
+		useCPUNums:       config.UseCPUNums,
 	}
 	m.available.L = &m.mu
 

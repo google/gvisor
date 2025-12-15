@@ -48,7 +48,7 @@ type frontendDevice struct {
 }
 
 func (dev *frontendDevice) isCtlDevice() bool {
-	return dev.minor == nvgpu.NV_CONTROL_DEVICE_MINOR
+	return dev.minor == nvgpu.NV_MINOR_DEVICE_NUMBER_CONTROL_DEVICE
 }
 
 func (dev *frontendDevice) basename() string {

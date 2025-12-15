@@ -59,6 +59,39 @@ const (
 // Frontend ioctl parameter structs, from src/common/sdk/nvidia/inc/nvos.h or
 // kernel-open/common/inc/nv-ioctl.h.
 
+// IoctlCardInfo is nv_ioctl_card_info_t. NV_ESC_CARD_INFO takes an array of
+// IoctlCardInfo as parameter.
+//
+// +marshal
+type IoctlCardInfo struct {
+	Valid         uint8
+	Pad0          [3]byte
+	PCIInfo       PCIInfo
+	GPUID         uint32
+	InterruptLine uint16
+	Pad1          [2]byte
+	RegAddress    uint64
+	RegSize       uint64
+	FBAddress     uint64
+	FBSize        uint64
+	MinorNumber   uint32
+	DevName       [10]byte
+	Pad2          [2]byte
+}
+
+// PCIInfo is nv_pci_info_t.
+//
+// +marshal
+type PCIInfo struct {
+	Domain   uint32
+	Bus      uint8
+	Slot     uint8
+	Function uint8
+	Pad0     uint8
+	VendorID uint16
+	DeviceID uint16
+}
+
 // IoctlRegisterFD is the parameter type for NV_ESC_REGISTER_FD.
 //
 // +marshal

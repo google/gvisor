@@ -15,18 +15,12 @@
 //go:build !false
 // +build !false
 
-package kvm
+package specutils
 
-// Config sets configuration options for each platform instance.
-type Config struct {
-	// ApplicationCores is the same parameter passed into
-	// kernel.InitKernelArgs. It is necessary to forward it to KVM in order
-	// to initialize the correct amount of vCPUs.
-	ApplicationCores int
+import (
+	specs "github.com/opencontainers/runtime-spec/specs-go"
+)
 
-	// UseCPUNums use KVM vCPU numbers as CPU numbers in the sentry.
-	// This is necessary to support features like RSEQ and CPU preemption detection.
-	UseCPUNums bool
+func prevalidateDevicesImpl(field, cName string, o, n []specs.LinuxDevice) ([]specs.LinuxDevice, []specs.LinuxDevice, error) {
+	return o, n, nil
 }
-
-func (*machine) applyConfig(config *Config) error { return nil }

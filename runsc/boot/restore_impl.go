@@ -21,7 +21,9 @@ import (
 	"io"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/proc"
+	"gvisor.dev/gvisor/pkg/sentry/state"
 	"gvisor.dev/gvisor/pkg/sentry/state/stateio"
 	"gvisor.dev/gvisor/runsc/config"
 )
@@ -32,10 +34,19 @@ func newProcInternalData(conf *config.Config, _ *specs.Spec) *proc.InternalData 
 	}
 }
 
-func (l *Loader) kernelInitExtra() {}
+func (l *Loader) kernelInitExtra(ctx context.Context) {}
 
 type RestoreOptsExtra struct{}
 
 func getRestoreReadersImpl(o *RestoreOpts) (io.ReadCloser, io.ReadCloser, stateio.AsyncReader, error) {
 	return getRestoreReadersForLocalCheckpointFiles(o)
+}
+
+func (l *Loader) prepareSaveOptsExtra(saveOpts *state.SaveOpts) error {
+	return nil
+}
+
+// +checklocks:l.mu
+func (r *restorer) prepareRestoreContextExtraLocked(ctx context.Context, l *Loader) (context.Context, error) {
+	return ctx, nil
 }

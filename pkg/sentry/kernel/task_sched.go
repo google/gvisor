@@ -365,7 +365,7 @@ func (t *Task) SetCPUMask(mask sched.CPUSet) error {
 		return linuxerr.EINVAL
 	}
 
-	if t.k.useHostCores {
+	if t.k.useHostCores || t.k.Platform.HasCPUNumbers() {
 		// No-op; pretend the mask was immediately changed back.
 		return nil
 	}
@@ -383,6 +383,10 @@ func (t *Task) SetCPUMask(mask sched.CPUSet) error {
 
 // CPU returns the cpu id for a given task.
 func (t *Task) CPU() int32 {
+	if t.k.Platform.HasCPUNumbers() {
+		return t.p.LastCPUNumber()
+	}
+
 	if t.k.useHostCores {
 		return int32(hostcpu.GetCPU())
 	}

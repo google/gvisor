@@ -22,9 +22,13 @@ import (
 
 // Device numbers.
 const (
-	NV_MAJOR_DEVICE_NUMBER          = 195 // from kernel-open/common/inc/nv.h
-	NV_CONTROL_DEVICE_MINOR         = 255 // from kernel-open/common/inc/nv-linux.h
-	NVIDIA_UVM_PRIMARY_MINOR_NUMBER = 0   // from kernel-open/nvidia-uvm/uvm_common.h
+	// From kernel-open/common/inc/nv-chardev-numbers.h:
+	NV_MAJOR_DEVICE_NUMBER                = 195
+	NV_MINOR_DEVICE_NUMBER_REGULAR_MAX    = 247
+	NV_MINOR_DEVICE_NUMBER_CONTROL_DEVICE = 255
+
+	// From kernel-open/nvidia-uvm/uvm_common.h:
+	NVIDIA_UVM_PRIMARY_MINOR_NUMBER = 0
 )
 
 // Handle is NvHandle, from src/common/sdk/nvidia/inc/nvtypes.h.

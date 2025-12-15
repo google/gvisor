@@ -20,7 +20,6 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
-	"gvisor.dev/gvisor/pkg/sentry/hostcpu"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -50,7 +49,7 @@ type OldRSeqCriticalRegion struct {
 
 // RSeqAvailable returns true if t supports (old and new) restartable sequences.
 func (t *Task) RSeqAvailable() bool {
-	return t.k.useHostCores && t.k.Platform.DetectsCPUPreemption()
+	return (t.k.useHostCores || t.k.Platform.HasCPUNumbers()) && t.k.Platform.DetectsCPUPreemption()
 }
 
 // SetRSeq registers addr as this thread's rseq structure.
@@ -201,7 +200,7 @@ func (t *Task) rseqUpdateCPU() error {
 		return nil
 	}
 
-	t.rseqCPU = int32(hostcpu.GetCPU())
+	t.rseqCPU = t.CPU()
 
 	// Update both CPUs, even if one fails.
 	rerr := t.rseqCopyOutCPU()

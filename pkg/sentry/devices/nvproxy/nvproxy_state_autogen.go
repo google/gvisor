@@ -131,6 +131,7 @@ func (nvp *nvproxy) StateFields() []string {
 		"version",
 		"capsEnabled",
 		"useDevGofer",
+		"regularDevs",
 		"frontendFDs",
 		"clients",
 	}
@@ -142,8 +143,9 @@ func (nvp *nvproxy) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &nvp.version)
 	stateSinkObject.Save(1, &nvp.capsEnabled)
 	stateSinkObject.Save(2, &nvp.useDevGofer)
-	stateSinkObject.Save(3, &nvp.frontendFDs)
-	stateSinkObject.Save(4, &nvp.clients)
+	stateSinkObject.Save(3, &nvp.regularDevs)
+	stateSinkObject.Save(4, &nvp.frontendFDs)
+	stateSinkObject.Save(5, &nvp.clients)
 }
 
 // +checklocksignore
@@ -151,8 +153,9 @@ func (nvp *nvproxy) StateLoad(ctx context.Context, stateSourceObject state.Sourc
 	stateSourceObject.Load(0, &nvp.version)
 	stateSourceObject.Load(1, &nvp.capsEnabled)
 	stateSourceObject.Load(2, &nvp.useDevGofer)
-	stateSourceObject.Load(3, &nvp.frontendFDs)
-	stateSourceObject.Load(4, &nvp.clients)
+	stateSourceObject.Load(3, &nvp.regularDevs)
+	stateSourceObject.Load(4, &nvp.frontendFDs)
+	stateSourceObject.Load(5, &nvp.clients)
 	stateSourceObject.AfterLoad(func() { nvp.afterLoad(ctx) })
 }
 
