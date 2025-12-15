@@ -81,6 +81,7 @@ def _syscall_test(
         save_resume = False,
         netstack_sr = False,
         nftables = False,
+        kvm_use_cpu_nums = False,
         **kwargs):
     # Prepend "runsc" to non-native platform names.
     full_platform = platform if platform == "native" else "runsc_" + platform
@@ -177,6 +178,7 @@ def _syscall_test(
         "--save-resume=" + str(save_resume),
         "--netstack-sr=" + str(netstack_sr),
         "--nftables=" + str(nftables),
+        "--kvm-use-cpu-nums=" + str(kvm_use_cpu_nums),
     ]
 
     # Trace points are platform agnostic, so enable them for ptrace only.
@@ -222,6 +224,7 @@ def syscall_test_variants(
         overlay = False,
         netstack_sr = False,
         nftables = False,
+        kvm_use_cpu_nums = False,
         **kwargs):
     """Generates syscall tests for all variants.
 
@@ -246,6 +249,10 @@ def syscall_test_variants(
       size: test size.
       timeout: timeout for the test.
       save_resume: save resume test.
+      overlay: add overlayfs test variants.
+      netstack_sr: if save is true, add netstack save/restore test variants.
+      nftables: if nftables is true, enable nftables.
+      kvm_use_cpu_nums: use cpu numbers in kvm platform.
       **kwargs: additional test arguments.
     """
     for platform, platform_tags in all_platforms():
@@ -272,6 +279,7 @@ def syscall_test_variants(
             overlay = overlay,
             netstack_sr = netstack_sr,
             nftables = nftables,
+            kvm_use_cpu_nums = kvm_use_cpu_nums,
             **kwargs
         )
 
@@ -296,6 +304,7 @@ def syscall_test_variants(
             timeout = timeout,
             netstack_sr = netstack_sr,
             nftables = nftables,
+            kvm_use_cpu_nums = kvm_use_cpu_nums,
             **kwargs
         )
 
@@ -321,6 +330,7 @@ def syscall_test_variants(
             timeout = timeout,
             netstack_sr = netstack_sr,
             nftables = nftables,
+            kvm_use_cpu_nums = kvm_use_cpu_nums,
             **kwargs
         )
     if not use_tmpfs:
@@ -345,6 +355,7 @@ def syscall_test_variants(
             timeout = timeout,
             netstack_sr = netstack_sr,
             nftables = nftables,
+            kvm_use_cpu_nums = kvm_use_cpu_nums,
             **kwargs
         )
     if add_fusefs:
@@ -367,6 +378,7 @@ def syscall_test_variants(
             timeout = timeout,
             netstack_sr = netstack_sr,
             nftables = nftables,
+            kvm_use_cpu_nums = kvm_use_cpu_nums,
             **kwargs
         )
 
@@ -393,6 +405,7 @@ def syscall_test(
         netstack_sr = False,
         nftables = False,
         perf = False,
+        kvm_use_cpu_nums = False,
         **kwargs):
     """syscall_test is a macro that will create targets for all platforms.
 
@@ -417,7 +430,9 @@ def syscall_test(
       size: test size.
       overlay: add overlayfs test variants.
       netstack_sr: if save is true, add netstack save/restore test variants.
+      nftables: if nftables is true, enable nftables.
       perf: test is a benchmark.
+      kvm_use_cpu_nums: use cpu numbers in kvm platform.
       **kwargs: additional test arguments.
     """
     if not tags:
@@ -445,6 +460,7 @@ def syscall_test(
             debug = debug,
             container = container,
             one_sandbox = one_sandbox,
+            kvm_use_cpu_nums = kvm_use_cpu_nums,
             **kwargs
         )
 
@@ -471,6 +487,7 @@ def syscall_test(
         overlay = overlay,
         netstack_sr = False,
         nftables = nftables,
+        kvm_use_cpu_nums = kvm_use_cpu_nums,
         **kwargs
     )
 
@@ -501,6 +518,7 @@ def syscall_test(
             "long",  # timeout, use long timeout for S/R tests.
             netstack_sr = False,
             nftables = nftables,
+            kvm_use_cpu_nums = kvm_use_cpu_nums,
             **kwargs
         )
 
@@ -528,6 +546,7 @@ def syscall_test(
                 "long",  # timeout, use long timeout for S/R tests.
                 netstack_sr = True,  # netstack_sr, generate all tests with netstack s/r.
                 nftables = nftables,
+                kvm_use_cpu_nums = kvm_use_cpu_nums,
                 **kwargs
             )
 
@@ -555,5 +574,6 @@ def syscall_test(
             "long",  # timeout, use long timeout for S/R tests.
             netstack_sr = False,
             nftables = nftables,
+            kvm_use_cpu_nums = kvm_use_cpu_nums,
             **kwargs
         )

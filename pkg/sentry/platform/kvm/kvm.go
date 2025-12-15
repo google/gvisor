@@ -22,6 +22,7 @@ import (
 	pkgcontext "gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/ring0"
 	"gvisor.dev/gvisor/pkg/ring0/pagetables"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
@@ -62,8 +63,6 @@ type runData struct {
 
 // KVM represents a lightweight VM context.
 type KVM struct {
-	platform.NoCPUPreemptionDetection
-
 	// KVM never changes mm_structs.
 	platform.UseHostProcessMemoryBarrier
 
@@ -180,6 +179,41 @@ func (k *KVM) ConcurrencyCount() int {
 	return k.machine.maxVCPUs
 }
 
+// HasCPUNumbers implements platform.Platform.HasCPUNumbers.
+func (k *KVM) HasCPUNumbers() bool {
+	return k.machine.useCPUNums
+}
+
+// NumCPUs implements platform.Platform.NumCPUs.
+func (k *KVM) NumCPUs() int {
+	if !k.HasCPUNumbers() {
+		panic("platform is not configured to use CPU numbers")
+	}
+	return k.machine.maxVCPUs
+}
+
+// DetectsCPUPreemption implements platform.Platform.DetectsCPUPreemption.
+func (*KVM) DetectsCPUPreemption() bool {
+	return true
+}
+
+// PreemptAllCPUs implements platform.Platform.PreemptAllCPUs.
+func (k *KVM) PreemptAllCPUs() error {
+	for _, c := range k.machine.vCPUsByID {
+		c.lastCtx.Store(nil)
+		c.BounceToHost()
+	}
+	return nil
+}
+
+// PreemptCPU implements platform.Platform.PreemptCPU.
+func (k *KVM) PreemptCPU(cpu int32) error {
+	c := k.machine.vCPUsByID[cpu]
+	c.lastCtx.Store(nil)
+	c.BounceToHost()
+	return nil
+}
+
 // NewContext returns an interruptible context.
 func (k *KVM) NewContext(pkgcontext.Context) platform.Context {
 	return &platformContext{
@@ -190,8 +224,10 @@ func (k *KVM) NewContext(pkgcontext.Context) platform.Context {
 type constructor struct{}
 
 func (*constructor) New(opts platform.Options) (platform.Platform, error) {
+	log.Infof("UseCPUNums: %v", opts.UseCPUNums)
 	return New(opts.DeviceFile, Config{
 		ApplicationCores: opts.ApplicationCores,
+		UseCPUNums:       opts.UseCPUNums,
 	})
 }
 

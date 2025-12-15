@@ -23,6 +23,10 @@ type Config struct {
 	// kernel.InitKernelArgs. It is necessary to forward it to KVM in order
 	// to initialize the correct amount of vCPUs.
 	ApplicationCores int
+
+	// UseCPUNums use KVM vCPU numbers as CPU numbers in the sentry.
+	// This is necessary to support features like RSEQ and CPU preemption detection.
+	UseCPUNums bool
 }
 
 func (*machine) applyConfig(config *Config) error { return nil }

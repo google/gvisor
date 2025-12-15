@@ -92,6 +92,8 @@ TEST_F(AffinityTest, SchedSetAffinityZeroMask) {
 // N.B. This test case relies on cpuset_size_ larger than the actual number of
 // of all existing CPUs. Check your machine if the test fails.
 TEST_F(AffinityTest, SchedSetAffinityNonexistentCPUDropped) {
+  // sched_setaffinity() is a no-op on platform/KVM
+  SKIP_IF(GvisorPlatform() == Platform::kKVM);
   cpu_set_t mask = mask_;
   // Add a nonexistent CPU.
   //
@@ -115,6 +117,8 @@ TEST_F(AffinityTest, SchedSetAffinityNonexistentCPUDropped) {
 }
 
 TEST_F(AffinityTest, SchedSetAffinityOnlyNonexistentCPUFails) {
+  // sched_setaffinity() is a no-op on platform/KVM
+  SKIP_IF(GvisorPlatform() == Platform::kKVM);
   // Make an empty cpu set.
   CPU_ZERO(&mask_);
   // Add a nonexistent CPU.
@@ -145,6 +149,8 @@ TEST_F(AffinityTest, SchedSetAffinityInvalidSize) {
 }
 
 TEST_F(AffinityTest, Sanity) {
+  // sched_setaffinity() is a no-op on platform/KVM
+  SKIP_IF(GvisorPlatform() == Platform::kKVM);
   ASSERT_NO_ERRNO(ClearLowestBit());
   EXPECT_THAT(sched_setaffinity(/*pid=*/0, sizeof(cpu_set_t), &mask_),
               SyscallSucceeds());
@@ -157,6 +163,8 @@ TEST_F(AffinityTest, Sanity) {
 }
 
 TEST_F(AffinityTest, NewThread) {
+  // sched_setaffinity() is a no-op on platform/KVM
+  SKIP_IF(GvisorPlatform() == Platform::kKVM);
   SKIP_IF(CPU_COUNT(&mask_) < 3);
   ASSERT_NO_ERRNO(ClearLowestBit());
   ASSERT_NO_ERRNO(ClearLowestBit());
@@ -208,6 +216,8 @@ TEST_F(AffinityTest, SmallCpuMask) {
 }
 
 TEST_F(AffinityTest, LargeCpuMask) {
+  // sched_setaffinity() is a no-op on platform/KVM
+  SKIP_IF(GvisorPlatform() == Platform::kKVM);
   // Allocate mask bigger than cpu_set_t normally allocates.
   const size_t cpus = CPU_SETSIZE * 8;
   const size_t mask_size = CPU_ALLOC_SIZE(cpus);
