@@ -1896,14 +1896,10 @@ func (e *Endpoint) SetSockOptInt(opt tcpip.SockOptInt, v int) tcpip.Error {
 
 	case tcpip.MTUDiscoverOption:
 		switch v := tcpip.PMTUDStrategy(v); v {
-		case tcpip.PMTUDiscoveryWant, tcpip.PMTUDiscoveryDont, tcpip.PMTUDiscoveryDo:
+		case tcpip.PMTUDiscoveryWant, tcpip.PMTUDiscoveryDont, tcpip.PMTUDiscoveryDo, tcpip.PMTUDiscoveryProbe:
 			e.LockUser()
 			e.pmtud = v
 			e.UnlockUser()
-		case tcpip.PMTUDiscoveryProbe:
-			// We don't support a way to ignore MTU updates; it's
-			// either on or it's off.
-			return &tcpip.ErrNotSupported{}
 		default:
 			return &tcpip.ErrNotSupported{}
 		}
@@ -2965,7 +2961,14 @@ func (e *Endpoint) HandleError(transErr stack.TransportError, pkt *stack.PacketB
 	// TODO(gvisor.dev/issues/5270): Handle all transport errors.
 	switch transErr.Kind() {
 	case stack.PacketTooBigTransportError:
-		handlePacketTooBig(transErr.Info())
+		e.mu.Lock()
+		pmtud := e.pmtud
+		e.mu.Unlock()
+		if pmtud == tcpip.PMTUDiscoveryProbe {
+			e.onICMPError(&tcpip.ErrMessageTooLong{}, transErr, pkt)
+		} else {
+			handlePacketTooBig(transErr.Info())
+		}
 	case stack.DestinationHostUnreachableTransportError:
 		e.onICMPError(&tcpip.ErrHostUnreachable{}, transErr, pkt)
 	case stack.DestinationNetworkUnreachableTransportError:
