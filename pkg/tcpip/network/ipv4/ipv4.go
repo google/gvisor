@@ -609,9 +609,7 @@ func (e *endpoint) writePacketPostRouting(r *stack.Route, pkt *stack.PacketBuffe
 
 	if packetMustBeFragmented(pkt, networkMTU) {
 		h := header.IPv4(pkt.NetworkHeader().Slice())
-		if h.Flags()&header.IPv4FlagDontFragment != 0 && pkt.NetworkPacketInfo.IsForwardedPacket {
-			// TODO(gvisor.dev/issue/5919): Handle error condition in which DontFragment
-			// is set but the packet must be fragmented for the non-forwarding case.
+		if h.Flags()&header.IPv4FlagDontFragment != 0 {
 			return &tcpip.ErrMessageTooLong{}
 		}
 		sent, remain, err := e.handleFragments(r, networkMTU, pkt, func(fragPkt *stack.PacketBuffer) tcpip.Error {
