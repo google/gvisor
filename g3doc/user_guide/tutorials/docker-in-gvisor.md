@@ -6,6 +6,8 @@ applications.
 In gVisor, all basic docker commands should function as expected. The host
 network driver and the bridge network driver are tested and supported.
 
+> gVisor supports Docker Engine up to version 28.
+
 ### NOTE on runsc setup
 
 To run docker within gvisor, runsc must be enabled to allow raw sockets. This is

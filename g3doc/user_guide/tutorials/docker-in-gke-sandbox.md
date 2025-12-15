@@ -6,6 +6,8 @@ applications.
 In gVisor, all basic docker commands should function as expected. The host
 network driver and the bridge network driver are tested and supported.
 
+> gVisor supports Docker Engine up to version 27 in GKE.
+
 ## How to run Docker in a GKE Sandbox
 
 ### GKE standard cluster
@@ -25,7 +27,7 @@ granted by the gVisor sandbox.
 An example command to start an GKE autopilot cluster will be:
 
 ```sh
-gcloud container clusters create-auto [CLUTER_NAME] --workload-policies=allow-net-admin --location=[LOCATION] --cluster-version=1.33.2-gke.4655000
+gcloud container clusters create-auto [CLUTER_NAME] --workload-policies=allow-net-admin --location=[LOCATION]
 ```
 
 ### Get started
@@ -33,7 +35,7 @@ gcloud container clusters create-auto [CLUTER_NAME] --workload-policies=allow-ne
 Prepare a container image with pre-installed Docker:
 
 ```shell
-$ docker build -t docker-in-gvisor images/basic/docker
+$ docker build -t docker-in-gvisor images/basic/docker/
 $ docker push {registry_url}/docker-in-gvisor:latest
 ```
 
