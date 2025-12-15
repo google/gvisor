@@ -222,7 +222,7 @@ bool handshake(int client_fd) {
     return false;
   }
   ::gvisor::common::Handshake in = {};
-  if (!in.ParseFromArray(buf.data(), bytes)) {
+  if (!in.ParseFromString(absl::string_view(buf.data(), bytes))) {
     printf("Error parsing handshake message\n");
     return false;
   }
