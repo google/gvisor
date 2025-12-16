@@ -37,6 +37,7 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
+	"gvisor.dev/gvisor/pkg/cgroup"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/control/client"
 	"gvisor.dev/gvisor/pkg/control/server"
@@ -1214,7 +1215,7 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 			// leaving two cores as reasonable default.
 			const minCPUs = 2
 
-			quota, err := s.CgroupJSON.Cgroup.CPUQuota()
+			quota, err := getEffectiveCPUQuota(s.CgroupJSON.Cgroup)
 			if err != nil {
 				return fmt.Errorf("getting cpu quota from cgroups: %v", err)
 			}
@@ -2033,4 +2034,31 @@ func SetCloExeOnAllFDs() (retErr error) {
 	// Sufficient to do this only once per runsc invocation. Avoid double work.
 	setCloseExecOnce.Do(func() { retErr = setCloExeOnAllFDs() })
 	return
+}
+
+// getEffectiveCPUQuota walks up the cgroup hierarchy to find a valid CPU quota.
+// This is a workaround for cgroups v2 + systemd where the immediate cgroup
+// might be a slice with "max" quota, inheriting the actual limit from a parent.
+func getEffectiveCPUQuota(cg cgroup.Cgroup) (float64, error) {
+	for cg != nil {
+		quota, err := cg.CPUQuota()
+		if err != nil {
+			return -1, err
+		}
+
+		// If we find a specific quota (not -1/unlimited), return it.
+		if quota != -1 {
+			return quota, nil
+		}
+
+		// If unlimited, try the parent.
+		parent, err := cg.Parent()
+		if err != nil {
+			// If we can't get the parent (e.g. root or permission), stop.
+			// We default to -1 (unlimited).
+			break
+		}
+		cg = parent
+	}
+	return -1, nil
 }
