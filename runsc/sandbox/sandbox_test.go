@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
-	"gvisor.dev/gvisor/pkg/cgroup"
+	"gvisor.dev/gvisor/runsc/cgroup"
 )
 
 // MockCgroup implements cgroup.Cgroup for testing
