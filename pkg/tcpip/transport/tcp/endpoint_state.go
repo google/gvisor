@@ -33,7 +33,7 @@ var logDisconnectOnce sync.Once
 
 func logDisconnect() {
 	logDisconnectOnce.Do(func() {
-		log.Infof("One or more TCP connections terminated during save")
+		log.Infof("One or more TCP connections terminated during save restore")
 	})
 }
 
@@ -49,12 +49,22 @@ func (e *Endpoint) beforeSave() {
 	switch {
 	case epState == StateInitial || epState == StateBound:
 	case epState.connected() || epState.handshake():
+		// Terminate valid connections only for restore.
 		if !e.route.HasSaveRestoreCapability() {
-			logDisconnect()
-			e.resetConnectionLocked(&tcpip.ErrConnectionAborted{})
-			e.mu.Unlock()
-			e.Close()
-			e.mu.Lock()
+			if e.stack.GetRemoveConf() {
+				// Terminate the endpoint when resume=false.
+				logDisconnect()
+				e.terminateAtRestore = false
+				e.resetConnectionLocked(&tcpip.ErrConnectionAborted{})
+				e.mu.Unlock()
+				e.Close()
+				e.mu.Lock()
+			} else {
+				// This is set only when resume=true, the termination
+				// of this endpoint will happen during restore of the
+				// saved snapshot.
+				e.terminateAtRestore = true
+			}
 		}
 		fallthrough
 	case epState == StateListen:
@@ -133,6 +143,41 @@ func (e *Endpoint) afterLoad(ctx context.Context) {
 	}
 }
 
+// Close the endpoint during restore if terminateAtRestore was set for the endpoint.
+func (e *Endpoint) closeEndpointAtRestore() {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	epState := EndpointState(e.origEndpointState)
+	if !epState.connected() && !epState.handshake() {
+		log.Debugf("endpoint was marked to terminate at restore in a wrong state, ID: %+v state: %v", e.ID, epState)
+		return
+	}
+
+	if epState.handshake() {
+		connectedLoading.Wait()
+		listenLoading.Wait()
+	}
+
+	// Put the endpoint in the error state and do cleanup. Do not
+	// attempt to send RST as route will be nil.
+	e.purgeReadQueue()
+	if epState.connected() {
+		e.purgeWriteQueue()
+		e.purgePendingRcvQueue()
+		e.cleanupLocked()
+	}
+	e.state.Store(uint32(StateError))
+	e.closeNoShutdownLocked()
+	tcpip.DeleteDanglingEndpoint(e)
+
+	if epState.connected() {
+		connectedLoading.Done()
+	} else {
+		connectingLoading.Done()
+	}
+}
+
 // Restore implements tcpip.RestoredEndpoint.Restore.
 func (e *Endpoint) Restore(s *stack.Stack) {
 	if !e.EndpointState().closed() {
@@ -154,6 +199,7 @@ func (e *Endpoint) Restore(s *stack.Stack) {
 
 	e.mu.Lock()
 	id := e.ID
+	terminateAtRestore := e.terminateAtRestore
 	e.mu.Unlock()
 
 	bind := func() {
@@ -181,6 +227,11 @@ func (e *Endpoint) Restore(s *stack.Stack) {
 
 		// Mark endpoint as bound.
 		e.setEndpointState(StateBound)
+	}
+
+	if terminateAtRestore {
+		e.closeEndpointAtRestore()
+		return
 	}
 
 	epState := EndpointState(e.origEndpointState)
