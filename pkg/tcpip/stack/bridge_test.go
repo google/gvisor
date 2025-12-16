@@ -158,7 +158,7 @@ func TestWritePacketBetweenDevices(t *testing.T) {
 	n2 := &testNotification{ch: make(chan bool, 1)}
 	ch1.AddNotify(n1)
 	ch2.AddNotify(n2)
-	// Write a packte to the veth device at the stack secondStack, the packet
+	// Write a packet to the veth device at the stack secondStack, the packet
 	// will be available at the veth device at the stack s.
 	if err := secondStack.WritePacketToRemote(vethID, remoteLinkAddr, netProto, buffer.Buffer{}); err != nil {
 		t.Fatalf("s.WritePacketToRemote(%d, %s, _): %s", bridgeID, remoteLinkAddr, err)
@@ -288,6 +288,63 @@ func TestMTU(t *testing.T) {
 		if want, v := mtu-header.EthernetMinimumSize, e.MTU(); want != v {
 			t.Errorf("MTU() = %v, want %v", v, want)
 		}
+	}
+}
+
+func TestNicExitingStackExitsBridgeToo(t *testing.T) {
+	const (
+		netProto        = 55
+		nicID           = 5
+		bridgeID        = 7
+		bridgeLinkAddr  = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x09")
+		channelLinkAddr = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x04")
+		remoteLinkAddr  = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x07")
+	)
+
+	src := stack.New(stack.Options{})
+
+	// Create a bridge in src.
+	bridgeEndpoint := stack.NewBridgeEndpoint(1500)
+	bridgeEndpoint.SetLinkAddress(bridgeLinkAddr)
+	if err := src.CreateNIC(bridgeID, bridgeEndpoint); err != nil {
+		t.Fatalf("s.CreateNIC(%d, _): %s", bridgeID, err)
+	}
+
+	// Create a channel-endpoint-based nic in src.
+	ch := channel.New(1, header.EthernetMinimumSize, channelLinkAddr)
+	if err := src.CreateNIC(nicID, ethernet.New(ch)); err != nil {
+		t.Fatalf("s.CreateNIC(%d, _): %s", nicID, err)
+	}
+	// And add it to the bridge.
+	if err := src.SetNICCoordinator(nicID, bridgeID); err != nil {
+		t.Fatalf("s.SetNICCoordinator(%d, %d)", nicID, bridgeID)
+	}
+
+	// The bridge should forward pkts to the nic.
+	if err := src.WritePacketToRemote(bridgeID, remoteLinkAddr, netProto, buffer.Buffer{}); err != nil {
+		t.Fatalf("s.WritePacketToRemote(%d, %s, _): %s", bridgeID, remoteLinkAddr, err)
+	}
+	pkt := ch.Read()
+	if pkt == nil {
+		t.Fatal("expected to read a packet")
+	}
+	pkt.DecRef()
+
+	// Now move the nic into dst.
+	dst := stack.New(stack.Options{})
+	if _, err := src.SetNICStack(nicID, dst); err != nil {
+		t.Fatalf("s.SetNICStack(%d, %p) = %s, want nil", nicID, dst, err)
+	}
+
+	// The bridge should no longer forward pkts to the nic, lest it defeat the purpose of network
+	// namespaces.
+	if err := src.WritePacketToRemote(bridgeID, remoteLinkAddr, netProto, buffer.Buffer{}); err != nil {
+		t.Fatalf("s.WritePacketToRemote(%d, %s, _): %s", bridgeID, remoteLinkAddr, err)
+	}
+	pkt = ch.Read()
+	if pkt != nil {
+		pkt.DecRef()
+		t.Fatal("did not expect to read a packet")
 	}
 }
 

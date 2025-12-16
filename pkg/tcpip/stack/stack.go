@@ -1024,7 +1024,7 @@ func (s *Stack) CheckNIC(id tcpip.NICID) bool {
 // RemoveNIC removes NIC and all related routes from the network stack.
 func (s *Stack) RemoveNIC(id tcpip.NICID) tcpip.Error {
 	s.mu.Lock()
-	deferAct, err := s.removeNICLocked(id)
+	deferAct, err := s.removeNICLocked(id, true /* closeLinkEndpoint */)
 	s.mu.Unlock()
 	if deferAct != nil {
 		deferAct()
@@ -1035,7 +1035,7 @@ func (s *Stack) RemoveNIC(id tcpip.NICID) tcpip.Error {
 // removeNICLocked removes NIC and all related routes from the network stack.
 //
 // +checklocks:s.mu
-func (s *Stack) removeNICLocked(id tcpip.NICID) (func(), tcpip.Error) {
+func (s *Stack) removeNICLocked(id tcpip.NICID, closeLinkEndpoint bool) (func(), tcpip.Error) {
 	nic, ok := s.nics[id]
 	if !ok {
 		return nil, &tcpip.ErrUnknownNICID{}
@@ -1063,7 +1063,7 @@ func (s *Stack) removeNICLocked(id tcpip.NICID) (func(), tcpip.Error) {
 	if s.loopbackNIC == nic {
 		s.loopbackNIC = nil
 	}
-	return nic.remove(true /* closeLinkEndpoint */)
+	return nic.remove(closeLinkEndpoint)
 }
 
 // GetNICCoordinatorID returns the ID of the coordinator device of a NIC.
@@ -2028,7 +2028,7 @@ func (s *Stack) Wait() {
 	for id, n := range s.nics {
 		// Remove NIC to ensure that qDisc goroutines are correctly
 		// terminated on stack teardown.
-		act, _ := s.removeNICLocked(id)
+		act, _ := s.removeNICLocked(id, true /* closeLinkEndpoint */)
 		n.NetworkLinkEndpoint.Wait()
 		if act != nil {
 			deferActs = append(deferActs, act)
@@ -2511,12 +2511,11 @@ func (s *Stack) SetNICStack(id tcpip.NICID, peer *Stack) (tcpip.NICID, tcpip.Err
 		s.mu.Unlock()
 		return id, nil
 	}
-	delete(s.nics, id)
 
-	// Remove routes in-place. n tracks the number of routes written.
-	s.RemoveRoutes(func(r tcpip.Route) bool { return r.NIC == id })
-	ne := nic.NetworkLinkEndpoint.(LinkEndpoint)
-	deferAct, err := nic.remove(false /* closeLinkEndpoint */)
+	linkEp := nic.NetworkLinkEndpoint.(LinkEndpoint)
+	name := nic.Name()
+
+	deferAct, err := s.removeNICLocked(id, false /* closeLinkEndpoint */)
 	s.mu.Unlock()
 	if deferAct != nil {
 		deferAct()
@@ -2526,7 +2525,7 @@ func (s *Stack) SetNICStack(id tcpip.NICID, peer *Stack) (tcpip.NICID, tcpip.Err
 	}
 
 	id = tcpip.NICID(peer.NextNICID())
-	return id, peer.CreateNICWithOptions(id, ne, NICOptions{Name: nic.Name()})
+	return id, peer.CreateNICWithOptions(id, linkEp, NICOptions{Name: name})
 }
 
 // EnableSaveRestore marks the saveRestoreEnabled to true.
