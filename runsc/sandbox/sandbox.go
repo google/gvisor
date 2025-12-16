@@ -2040,25 +2040,65 @@ func SetCloExeOnAllFDs() (retErr error) {
 // This is a workaround for cgroups v2 + systemd where the immediate cgroup
 // might be a slice with "max" quota, inheriting the actual limit from a parent.
 func getEffectiveCPUQuota(cg cgroup.Cgroup) (float64, error) {
-	for cg != nil {
-		quota, err := cg.CPUQuota()
-		if err != nil {
-			return -1, err
-		}
+	quota, err := cg.CPUQuota()
+	if err != nil {
+		return -1, err
+	}
 
-		// If we find a specific quota (not -1/unlimited), return it.
-		if quota != -1 {
-			return quota, nil
-		}
+	// If we find a specific quota (not -1/unlimited), return it.
+	if quota != -1 {
+		return quota, nil
+	}
 
-		// If unlimited, try the parent.
-		parent, err := cg.Parent()
-		if err != nil {
-			// If we can't get the parent (e.g. root or permission), stop.
-			// We default to -1 (unlimited).
+	// Try to walk up hierarchy for cgroups v2 using filesystem
+	path := cg.MakePath("")
+	
+	// Safety check: if path is empty or root, stop
+	if path == "" || path == "/" {
+		return -1, nil
+	}
+
+	for {
+		parent := filepath.Dir(path)
+		if parent == path || parent == "/" || parent == "." {
 			break
 		}
-		cg = parent
+		path = parent
+
+		q, err := readCPUQuotaV2(path)
+		if err != nil {
+			log.Debugf("Failed to read cpu.max at %q: %v", path, err)
+			continue
+		}
+		if q != -1 {
+			return q, nil
+		}
 	}
 	return -1, nil
+}
+
+func readCPUQuotaV2(path string) (float64, error) {
+	data, err := os.ReadFile(filepath.Join(path, "cpu.max"))
+	if err != nil {
+		// Not a cgroup v2 dir or no cpu controller
+		return -1, err
+	}
+	parts := strings.Fields(string(data))
+	if len(parts) == 0 || parts[0] == "max" {
+		return -1, nil
+	}
+	limit, err := strconv.ParseFloat(parts[0], 64)
+	if err != nil {
+		return -1, err
+	}
+	
+	var period float64 = 100000
+	if len(parts) > 1 {
+		p, err := strconv.ParseFloat(parts[1], 64)
+		if err == nil && p > 0 {
+			period = p
+		}
+	}
+	
+	return limit / period, nil
 }
