@@ -16,7 +16,6 @@
 package memutil
 
 import (
-	"reflect"
 	"unsafe"
 
 	"golang.org/x/sys/unix"
@@ -28,17 +27,13 @@ func MapSlice(addr, size, prot, flags, fd, offset uintptr) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	var slice []byte
-	hdr := (*reflect.SliceHeader)(unsafe.Pointer(&slice))
-	hdr.Data = addr
-	hdr.Len = int(size)
-	hdr.Cap = int(size)
-	return slice, nil
+
+	return unsafe.Slice((*byte)(unsafe.Pointer(addr)), int(size)), nil
 }
 
 // UnmapSlice unmaps a mapping returned by MapSlice.
 func UnmapSlice(slice []byte) error {
-	hdr := (*reflect.SliceHeader)(unsafe.Pointer(&slice))
-	_, _, err := unix.RawSyscall6(unix.SYS_MUNMAP, uintptr(unsafe.Pointer(hdr.Data)), uintptr(hdr.Cap), 0, 0, 0, 0)
+	ptr := unsafe.SliceData(slice)
+	_, _, err := unix.RawSyscall6(unix.SYS_MUNMAP, uintptr(unsafe.Pointer(ptr)), uintptr(cap(slice)), 0, 0, 0, 0)
 	return err
 }

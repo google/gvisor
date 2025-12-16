@@ -54,13 +54,9 @@ func RandomizeValue(x any) {
 		panic("RandomizeType() called with an unaddressable value. You probably need to pass a pointer to the argument")
 	}
 
-	// Cast the underlying memory for the type into a byte slice.
-	var b []byte
-	hdr := (*reflect.SliceHeader)(unsafe.Pointer(&b))
+	size := int(v.Type().Size())
 	// Note: v.UnsafeAddr panics if x is passed by value. x should be a pointer.
-	hdr.Data = v.UnsafeAddr()
-	hdr.Len = int(v.Type().Size())
-	hdr.Cap = hdr.Len
+	b := unsafe.Slice((*byte)(unsafe.Pointer(v.UnsafeAddr())), size)
 
 	// Fill the byte slice with random data, which in effect fills the type with
 	// random values.
