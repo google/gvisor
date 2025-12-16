@@ -14,11 +14,17 @@
 
 #include <sys/mount.h>
 
+#include <cerrno>
+
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "test/syscalls/linux/ip_socket_test_util.h"
 #include "test/util/capability_util.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/linux_capability_util.h"
+#include "test/util/logging.h"
+#include "test/util/multiprocess_util.h"
+#include "test/util/posix_error.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
@@ -89,6 +95,22 @@ TEST(NetworkNamespaceTest, BindMount) {
   ASSERT_THAT(setns(nsfd.get(), CLONE_NEWNET), SyscallSucceedsWithValue(0));
 
   ASSERT_NE(ASSERT_NO_ERRNO_AND_VALUE(GetLoopbackIndex()), 0);
+}
+
+TEST(NetworkNamespaceTest, CloneNewNetWithCloneNewUserDoesNotNeedCapSysAdmin) {
+  AutoCapability cap(CAP_SYS_ADMIN, false);
+  ASSERT_THAT(unshare(CLONE_NEWNET), SyscallFailsWithErrno(EPERM));
+
+  // Fork to avoid changing the user namespace of the original test process.
+  ASSERT_THAT(
+      InForkedProcess([&] {
+        // Fails with EPERM because we don't have CAP_SYS_ADMIN.
+        TEST_CHECK_ERRNO(syscall(SYS_unshare, CLONE_NEWNET), EPERM);
+        // Succeeds because we also requested a new user namespace.
+        TEST_CHECK_SUCCESS(syscall(SYS_unshare, CLONE_NEWUSER | CLONE_NEWNET));
+        _exit(0);
+      }),
+      IsPosixErrorOkAndHolds(0));
 }
 
 }  // namespace
