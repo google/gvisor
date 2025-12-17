@@ -36,7 +36,9 @@ if ip link set br0 master br0; then
 fi
 
 ip link set hveth0 master br0
+ip link show master br0 | grep "hveth0" || exit 1
 ip link set hveth1 master br0
+ip link show master br0 | grep "hveth1" || exit 1
 
 ip addr add 192.168.0.3/24 dev br0
 ip link set up dev br0

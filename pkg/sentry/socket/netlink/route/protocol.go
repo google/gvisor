@@ -254,6 +254,9 @@ func writeLinkInfo(m *nlmsg.Message, idx int32, i inet.Interface) {
 	}
 	m.PutAttr(linux.IFLA_ADDRESS, primitive.AsByteSlice(mac))
 	m.PutAttr(linux.IFLA_BROADCAST, primitive.AsByteSlice(brd))
+	if i.Master != 0 {
+		m.PutAttr(linux.IFLA_MASTER, primitive.AllocateUint32(i.Master))
+	}
 
 	// TODO(gvisor.dev/issue/578): There are many more attributes.
 }

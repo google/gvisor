@@ -1178,6 +1178,9 @@ type NICInfo struct {
 	// MulticastForwarding holds the forwarding status for each network endpoint
 	// that supports multicast forwarding.
 	MulticastForwarding map[tcpip.NetworkProtocolNumber]bool
+
+	// Primary is the index of the main controlling interface in a bonded setup.
+	Primary tcpip.NICID
 }
 
 // HasNIC returns true if the NICID is defined in the stack.
@@ -1240,6 +1243,10 @@ func (s *Stack) nicInfo(nic *nic, id tcpip.NICID) *NICInfo {
 		if multicastForwarding, ok := forwardingValue(nic.multicastForwarding, proto, id, "multicastForwarding"); ok {
 			info.MulticastForwarding[proto] = multicastForwarding
 		}
+	}
+
+	if nic.Primary != nil {
+		info.Primary = nic.Primary.id
 	}
 
 	return &info

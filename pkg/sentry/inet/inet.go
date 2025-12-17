@@ -167,6 +167,9 @@ type Interface struct {
 	// Features are the device features queried from the host at
 	// stack creation time. These are immutable after startup.
 	Features []linux.EthtoolGetFeaturesBlock
+
+	// Master is the index of the main controlling interface in a bonded setup.
+	Master uint32
 }
 
 // InterfaceAddr contains information about a network interface address.
