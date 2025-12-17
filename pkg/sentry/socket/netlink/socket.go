@@ -113,19 +113,23 @@ type Socket struct {
 	mu sync.Mutex `state:"nosave"`
 
 	// bound indicates that portid is valid.
+	// +checklocks:mu
 	bound bool
 
 	// portID is the port ID allocated for this socket.
+	// +checklocks:mu
 	portID int32
 
 	// sendBufferSize is the send buffer "size". We don't actually have a
 	// fixed buffer but only consume this many bytes.
+	// +checklocks:mu
 	sendBufferSize uint32
 
 	// filter indicates that this socket has a BPF filter "installed".
 	//
 	// TODO(gvisor.dev/issue/1119): We don't actually support filtering,
 	// this is just bookkeeping for tracking add/remove.
+	// +checklocks:mu
 	filter bool
 }
 
@@ -134,6 +138,7 @@ var _ transport.Credentialer = (*Socket)(nil)
 var _ inet.NetlinkSocket = (*Socket)(nil)
 
 // New creates a new Socket.
+// +checklocksignore: we don't have to hold locks during initialization.
 func New(t *kernel.Task, skType linux.SockType, protocol Protocol) (*Socket, *syserr.Error) {
 	// Datagram endpoint used to buffer kernel -> user messages.
 	ep := transport.NewConnectionless(t)
@@ -176,6 +181,7 @@ func (s *Socket) NetworkNamespace() *inet.Namespace {
 }
 
 // Release implements vfs.FileDescriptionImpl.Release.
+// +checklocksignore: we don't have to hold locks during Release.
 func (s *Socket) Release(ctx context.Context) {
 	if s.groups.Load() != 0 {
 		s.netns.NetlinkMcastTable().WithTableLocked(func() {
@@ -302,12 +308,12 @@ func ExtractSockAddr(b []byte) (*linux.SockAddrNetlink, *syserr.Error) {
 	return &sa, nil
 }
 
-// bindPort binds this socket to a port, preferring 'port' if it is available.
+// bindPortLocked binds this socket to a port, preferring 'port' if it is available.
 //
 // port of 0 defaults to the ThreadGroup ID.
 //
-// Preconditions: mu is held.
-func (s *Socket) bindPort(t *kernel.Task, port int32) *syserr.Error {
+// +checklocks:s.mu
+func (s *Socket) bindPortLocked(t *kernel.Task, port int32) *syserr.Error {
 	if s.bound {
 		// Re-binding is only allowed if the port doesn't change.
 		if port != s.portID {
@@ -457,7 +463,7 @@ func (s *Socket) Bind(t *kernel.Task, sockaddr []byte) *syserr.Error {
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.bindPort(t, int32(a.PortID))
+	return s.bindPortLocked(t, int32(a.PortID))
 }
 
 // Connect implements socket.Socket.Connect.
@@ -480,7 +486,7 @@ func (s *Socket) Connect(t *kernel.Task, sockaddr []byte, blocking bool) *syserr
 		// connecting anyways automatically binds if not already bound.
 		if !s.bound {
 			// Pass port 0 to get an auto-selected port ID.
-			return s.bindPort(t, 0)
+			return s.bindPortLocked(t, 0)
 		}
 		return nil
 	}
@@ -986,15 +992,16 @@ func (s *Socket) sendMsg(ctx context.Context, src usermem.IOSequence, to []byte,
 	// bind it to assign it a unique port ID.
 	// From net/netlink/af_netlink.c:netlink_sendmsg
 	if !s.bound {
-		s.bindPort(kernel.TaskFromContext(ctx), 0)
+		s.bindPortLocked(kernel.TaskFromContext(ctx), 0)
 	}
-	s.mu.Unlock()
 
 	// For simplicity, and consistency with Linux, we copy in the entire
 	// message up front.
 	if src.NumBytes() > int64(s.sendBufferSize) {
+		s.mu.Unlock()
 		return 0, syserr.ErrMessageTooLong
 	}
+	s.mu.Unlock()
 
 	buf := make([]byte, src.NumBytes())
 	n, err := src.CopyIn(ctx, buf)

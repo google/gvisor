@@ -35,7 +35,7 @@ func (s *Stack) beforeSave() {
 	// created again during restore based on the new network config.
 	deferActs := make([]func(), 0)
 	for id := range s.nics {
-		act, _ := s.removeNICLocked(id)
+		act, _ := s.removeNICLocked(id, true /* closeLinkEndpoint */)
 		if act != nil {
 			deferActs = append(deferActs, act)
 		}

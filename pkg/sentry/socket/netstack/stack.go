@@ -76,6 +76,7 @@ func makeInterfaceInfo(ni *stack.NICInfo) inet.Interface {
 		Flags:      uint32(nicStateFlagsToLinux(ni.Flags)),
 		DeviceType: toLinuxARPHardwareType(ni.ARPHardwareType),
 		MTU:        ni.MTU,
+		Master:     uint32(ni.Primary),
 	}
 }
 

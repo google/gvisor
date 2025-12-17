@@ -314,7 +314,7 @@ func (n *nic) enable() tcpip.Error {
 // resources. This guarantees no packets between this NIC and the network
 // stack.
 //
-// It returns an action that has to be excuted after releasing the Stack lock
+// It returns an action that has to be executed after releasing the Stack lock
 // and any error encountered.
 func (n *nic) remove(closeLinkEndpoint bool) (func(), tcpip.Error) {
 	n.enableDisableMu.Lock()
