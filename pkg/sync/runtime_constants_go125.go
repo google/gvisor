@@ -13,7 +13,8 @@
 // limitations under the License.
 
 // https://go.dev/cl/670497 (1.25) adds a new wait reason, adjusting the value of waitReasonSemacquire.
-//go:build go1.25
+// https://go.dev/cl/714800 (1.26) changes size of the schedt.midle field.
+//go:build go1.25 && !go1.26
 
 package sync
 
