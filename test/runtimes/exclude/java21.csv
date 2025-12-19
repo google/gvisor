@@ -119,3 +119,5 @@ tools/jpackage/share/jdk/jpackage/tests/NoMPathRuntimeTest.java,,Broken test
 tools/launcher/BigJar.java,b/111611473,Broken test
 tools/launcher/JliLaunchTest.java,,Broken test
 java/net/CookieHandler/B6644726.java,,Broken test
+java/net/httpclient/ConnectTimeoutWithProxyAsync.java,,Broken test
+java/net/httpclient/ConnectTimeoutWithProxySync.java,,Broken test
