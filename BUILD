@@ -5,7 +5,7 @@ load("//tools/yamltest:defs.bzl", "yaml_test")
 load("//website:defs.bzl", "doc")
 
 package(
-    default_applicable_licenses = ["//:license"],
+    default_applicable_licenses = [":license"],
     licenses = ["notice"],
 )
 
