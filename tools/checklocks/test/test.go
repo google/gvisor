@@ -68,6 +68,8 @@ type nestedGuardStruct struct {
 // fieldCommentStruct has one lock and a single field, but uses the
 // field.Comment instead of field.Doc for the guard.
 type fieldCommentStruct struct {
-	mu           sync.Mutex
+	mu sync.Mutex
+
+	// Check that the eol comment works even if there is a doc comment.
 	guardedField int // +checklocks:mu
 }

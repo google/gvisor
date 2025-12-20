@@ -672,7 +672,8 @@ func (pc *passContext) structLockGuardFacts(structType *types.Struct, ss *ast.St
 		fieldObj = structType.Field(i) // N.B. Captured above.
 		if field.Doc != nil {
 			pc.fillLockGuardFacts(fieldObj, field.Doc, findLocal, &lgf)
-		} else if field.Comment != nil {
+		}
+		if field.Comment != nil {
 			pc.fillLockGuardFacts(fieldObj, field.Comment, findLocal, &lgf)
 		}
 
