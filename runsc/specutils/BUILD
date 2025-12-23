@@ -21,6 +21,7 @@ go_library(
         "//pkg/abi/linux",
         "//pkg/log",
         "//pkg/sentry/devices/nvproxy/nvconf",
+        "//pkg/sentry/fsimpl/erofs",
         "//pkg/sentry/kernel/auth",
         "//runsc/config",
         "//runsc/flag",
