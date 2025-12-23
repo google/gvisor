@@ -110,8 +110,9 @@ func New(a Allocator) *PageTables {
 type mapVisitor struct {
 	target   uintptr // Input.
 	physical uintptr // Input.
-	opts     MapOpts // Input.
-	prev     bool    // Output.
+	// opts is a pointer just to reduce a stack usage. It should never be changed.
+	opts *MapOpts // Input.
+	prev bool     // Output.
 }
 
 // visit is used for map.
@@ -119,7 +120,7 @@ type mapVisitor struct {
 //go:nosplit
 func (v *mapVisitor) visit(start uintptr, pte *PTE, align uintptr) bool {
 	p := v.physical + (start - v.target)
-	if pte.Valid() && (pte.Address() != p || pte.Opts() != v.opts) {
+	if pte.Valid() && (pte.Address() != p || pte.Opts() != *v.opts) {
 		v.prev = true
 	}
 	if p&align != 0 {
@@ -169,7 +170,7 @@ func (p *PageTables) Map(addr hostarch.Addr, length uintptr, opts MapOpts, physi
 		visitor: mapVisitor{
 			target:   uintptr(addr),
 			physical: physical,
-			opts:     opts,
+			opts:     &opts,
 		},
 	}
 	w.iterateRange(uintptr(addr), uintptr(addr)+length)
@@ -330,4 +331,17 @@ func (p *PageTables) Lookup(addr hostarch.Addr, findFirst bool) (virtual hostarc
 // It is usually used on the pagetables that are used as the upper
 func (p *PageTables) MarkReadOnlyShared() {
 	p.readOnlyShared = true
+}
+
+// EstimatePTEsPoolSize calculate a maximum number of PTEs required to map
+// the specified number of regions.
+func EstimatePTEsPoolSize(vsize uintptr, numRegions int, extendedAddressSpaceAllowed bool) uintptr {
+	if extendedAddressSpaceAllowed {
+		panic("unimplemented")
+	}
+	cnt := uintptr(1)                    // pgd
+	cnt += (vsize + pudMask) >> p4dShift // pud
+	cnt += uintptr(numRegions) * 4       // pmd + pud
+	cnt += uintptr(numRegions) * 6       // pte + pmd + pud
+	return cnt
 }
