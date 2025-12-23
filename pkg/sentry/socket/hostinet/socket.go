@@ -235,8 +235,7 @@ func (p *socketProvider) Socket(t *kernel.Task, stypeflags linux.SockType, proto
 
 	// Raw and packet sockets require CAP_NET_RAW.
 	if stype == linux.SOCK_RAW || p.family == linux.AF_PACKET {
-		creds := t.Credentials()
-		if !creds.HasCapabilityIn(linux.CAP_NET_RAW, t.NetworkNamespace().UserNamespace()) {
+		if !t.NetworkNamespace().Capable(t, linux.CAP_NET_RAW) {
 			return nil, syserr.ErrNotPermitted
 		}
 	}

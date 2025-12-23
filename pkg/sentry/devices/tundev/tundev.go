@@ -83,7 +83,7 @@ func (fd *tunFD) Ioctl(ctx context.Context, uio usermem.IO, sysno uintptr, args 
 
 	switch request {
 	case linux.TUNSETIFF:
-		if !t.HasCapabilityIn(linux.CAP_NET_ADMIN, t.NetworkNamespace().UserNamespace()) {
+		if !t.NetworkNamespace().Capable(ctx, linux.CAP_NET_ADMIN) {
 			return 0, linuxerr.EPERM
 		}
 		stack, ok := t.NetworkContext().(*netstack.Stack)

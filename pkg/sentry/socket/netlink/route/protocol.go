@@ -24,7 +24,6 @@ import (
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
-	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netlink"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netlink/nlmsg"
 	"gvisor.dev/gvisor/pkg/syserr"
@@ -636,8 +635,7 @@ func (p *Protocol) ProcessMessage(ctx context.Context, s *netlink.Socket, msg *n
 
 	// Non-GET message types require CAP_NET_ADMIN.
 	if typeKind(hdr.Type) != kindGet {
-		creds := auth.CredentialsFromContext(ctx)
-		if !creds.HasCapabilityIn(linux.CAP_NET_ADMIN, s.NetworkNamespace().UserNamespace()) {
+		if !s.NetworkNamespace().Capable(ctx, linux.CAP_NET_ADMIN) {
 			return syserr.ErrNotPermittedNet
 		}
 	}

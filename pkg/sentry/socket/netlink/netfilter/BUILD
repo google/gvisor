@@ -18,7 +18,6 @@ go_library(
         "//pkg/marshal/primitive",
         "//pkg/sentry/inet",
         "//pkg/sentry/kernel",
-        "//pkg/sentry/kernel/auth",
         "//pkg/sentry/socket/netlink",
         "//pkg/sentry/socket/netlink/nlmsg",
         "//pkg/sentry/socket/netstack",

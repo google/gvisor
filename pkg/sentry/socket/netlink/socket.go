@@ -973,7 +973,7 @@ func (s *Socket) sendMsg(ctx context.Context, src usermem.IOSequence, to []byte,
 			if err := s.checkMcastSupport(); err != nil {
 				return 0, err
 			}
-			if !kernel.TaskFromContext(ctx).HasCapabilityIn(linux.CAP_NET_ADMIN, s.netns.UserNamespace()) {
+			if !s.netns.Capable(ctx, linux.CAP_NET_ADMIN) {
 				return 0, syserr.ErrNotPermitted
 			}
 		}

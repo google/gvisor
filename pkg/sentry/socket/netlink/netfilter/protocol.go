@@ -26,7 +26,6 @@ import (
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
-	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netlink"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netlink/nlmsg"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netstack"
@@ -72,10 +71,9 @@ func (p *Protocol) Receive(ctx context.Context, s *netlink.Socket, buf []byte) *
 		return nil
 	}
 
-	creds := auth.CredentialsFromContext(ctx)
 	// Currently, the kernel is the only valid destination so simply return
 	// the error to the caller.
-	if !creds.HasCapabilityIn(linux.CAP_NET_ADMIN, s.NetworkNamespace().UserNamespace()) {
+	if !s.NetworkNamespace().Capable(ctx, linux.CAP_NET_ADMIN) {
 		return syserr.ErrNotPermittedNet
 	}
 
