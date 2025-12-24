@@ -51,19 +51,19 @@ func New(ctx context.Context, id string, publisher shim.Publisher, cancel func()
 		opts = ctxOpts.(shim.Opts)
 	}
 
-	runsc, err := runsc.New(ctx, id, publisher)
+	var shimAddress string
+	if address, err := shim.ReadAddress(shimAddressPath); err == nil {
+		shimAddress = address
+	}
+
+	runsc, err := runsc.New(ctx, id, publisher, cancel, shimAddress)
 	if err != nil {
 		cancel()
 		return nil, err
 	}
 	s := &service{
 		genericOptions: opts,
-		cancel:         cancel,
 		main:           runsc,
-	}
-
-	if address, err := shim.ReadAddress(shimAddressPath); err == nil {
-		s.shimAddress = address
 	}
 
 	return s, nil
@@ -86,13 +86,6 @@ type service struct {
 	// genericOptions are options that come from the shim interface and are common
 	// to all shims.
 	genericOptions shim.Opts
-
-	// cancel is a function that needs to be called before the shim stops. The
-	// function is provided by the caller to New().
-	cancel func()
-
-	// shimAddress is the location of the UDS used to communicate to containerd.
-	shimAddress string
 
 	// main is the extension.TaskServiceExt that is used for all calls to the
 	// container's shim, except for the cases where `ext` is set.
@@ -345,12 +338,7 @@ func (s *service) Shutdown(ctx context.Context, r *taskapi.ShutdownRequest) (*ty
 		return resp, errdefs.ToGRPC(err)
 	}
 
-	s.cancel()
-	if len(s.shimAddress) != 0 {
-		_ = shim.RemoveSocket(s.shimAddress)
-	}
-	os.Exit(0)
-	panic("Should not get here")
+	return resp, errdefs.ToGRPC(err)
 }
 
 func (s *service) Stats(ctx context.Context, r *taskapi.StatsRequest) (*taskapi.StatsResponse, error) {
