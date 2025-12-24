@@ -96,6 +96,7 @@ func standaloneFunctionWithGuard(a *testMethodsWithParameters) {
 	a.guardedField = 1
 	a.mu.Unlock()
 	a.guardedField = 1 // +checklocksfail
+	return // +checklocksfail
 }
 
 type testMethodsWithEmbedded struct {
