@@ -34,6 +34,7 @@ genrule(
           "-static " +
           "-nostdlib " +
           "-ffreestanding " +
+          "-fno-exceptions " +
           "-o " +
           "$(location rseq) " +
           select_arch(
