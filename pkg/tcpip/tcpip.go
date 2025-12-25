@@ -30,6 +30,7 @@ package tcpip
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -1641,6 +1642,21 @@ func (s *StatCounter) IncrementBy(v uint64) {
 
 func (s *StatCounter) String() string {
 	return strconv.FormatUint(s.Value(), 10)
+}
+
+// MarshalJSON implements json.Marshaler.MarshalJSON
+func (s *StatCounter) MarshalJSON() ([]byte, error) {
+	return json.Marshal(s.Value())
+}
+
+// UnmarshalJSON implements json.Unmarshaler.UnmarshalJSON
+func (s *StatCounter) UnmarshalJSON(data []byte) error {
+	var val uint64
+	if err := json.Unmarshal(data, &val); err != nil {
+		return err
+	}
+	s.count.Store(val)
+	return nil
 }
 
 // A MultiCounterStat keeps track of two counters at once.
