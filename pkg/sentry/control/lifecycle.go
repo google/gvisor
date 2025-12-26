@@ -48,12 +48,18 @@ type Lifecycle struct {
 	// the sentry/sandbox.
 	ShutdownCh chan struct{}
 
-	// MountNamespacesMap is a map of container id/names and the mount
-	// namespaces.
-	MountNamespacesMap map[string]*vfs.MountNamespace
+	// ContainerNamespacesMap maps container IDs to namespaces.
+	ContainerNamespacesMap map[string]ContainerNamespaces
 
 	// containerMap is a map of the container id and the container.
 	containerMap map[string]*Container
+}
+
+// ContainerNamespaces holds container namespaces that are constructed before
+// StartContainer.
+type ContainerNamespaces struct {
+	MountNamespace *vfs.MountNamespace
+	PIDNamespace   *kernel.PIDNamespace
 }
 
 // containerState is the state of the container.
@@ -203,7 +209,7 @@ func (l *Lifecycle) StartContainer(args *StartContainerArgs, _ *uint32) error {
 	}
 
 	l.mu.RLock()
-	mntns, ok := l.MountNamespacesMap[args.ContainerID]
+	contNS, ok := l.ContainerNamespacesMap[args.ContainerID]
 	if !ok {
 		l.mu.RUnlock()
 		return fmt.Errorf("mount namespace is nil for %s", args.ContainerID)
@@ -216,7 +222,7 @@ func (l *Lifecycle) StartContainer(args *StartContainerArgs, _ *uint32) error {
 		if uid != 0 || gid != 0 {
 			return fmt.Errorf("container spec specified both an explicit UID/GID and a user name, only one or the other may be provided")
 		}
-		uid, gid = user.GetExecUIDGIDFromUser(l.Kernel.SupervisorContext(), mntns, args.User)
+		uid, gid = user.GetExecUIDGIDFromUser(l.Kernel.SupervisorContext(), contNS.MountNamespace, args.User)
 	}
 
 	creds := auth.NewUserCredentials(
@@ -250,14 +256,11 @@ func (l *Lifecycle) StartContainer(args *StartContainerArgs, _ *uint32) error {
 		MaxSymlinkTraversals: linux.MaxSymlinkTraversals,
 		UTSNamespace:         l.Kernel.RootUTSNamespace(),
 		IPCNamespace:         l.Kernel.RootIPCNamespace(),
+		PIDNamespace:         contNS.PIDNamespace,
 		ContainerID:          args.ContainerID,
 	}
 
 	ctx := initArgs.NewContext(l.Kernel)
-
-	// Create a new pid namespace for the container. Each container must run
-	// in its own pid namespace.
-	initArgs.PIDNamespace = l.Kernel.RootPIDNamespace().NewChild(ctx, l.Kernel, l.Kernel.RootUserNamespace())
 
 	// Import file descriptors.
 	fdTable := l.Kernel.NewFDTable()
@@ -287,7 +290,7 @@ func (l *Lifecycle) StartContainer(args *StartContainerArgs, _ *uint32) error {
 	}
 	initArgs.FDTable = fdTable
 
-	initArgs.MountNamespace = mntns
+	initArgs.MountNamespace = contNS.MountNamespace
 	initArgs.MountNamespace.IncRef()
 	mntnsCu := cleanup.Make(func() { initArgs.MountNamespace.DecRef(ctx) })
 	defer mntnsCu.Clean()
