@@ -22,6 +22,7 @@ go_library(
         "locker.go",
         "methods.go",
         "parameters.go",
+        "rangefunc.go",
         "return.go",
         "rwmutex.go",
         "test.go",
