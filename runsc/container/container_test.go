@@ -4053,7 +4053,7 @@ func TestTarRootfsUpperLayer(t *testing.T) {
 	}
 	defer os.Remove(tarFile1.Name())
 
-	if err := cont.Sandbox.TarRootfsUpperLayer(tarFile1); err != nil {
+	if err := cont.Sandbox.TarRootfsUpperLayer(cont.ID, tarFile1); err != nil {
 		t.Fatalf("error serializing rootfs upper layer to tar: %v", err)
 	}
 	tarFile1.Close()
@@ -4103,7 +4103,7 @@ func TestTarRootfsUpperLayer(t *testing.T) {
 	}
 	defer os.Remove(tarFile2.Name())
 
-	if err := newCont.Sandbox.TarRootfsUpperLayer(tarFile2); err != nil {
+	if err := newCont.Sandbox.TarRootfsUpperLayer(newCont.ID, tarFile2); err != nil {
 		t.Fatalf("error serializing rootfs upper layer to tar: %v", err)
 	}
 	tarFile2.Close()
@@ -4122,6 +4122,82 @@ func TestTarRootfsUpperLayer(t *testing.T) {
 		if count != 0 {
 			t.Errorf("unexpected diff in tar file: line %q has %d occurrences", line, count)
 		}
+	}
+}
+
+func TestMultiContainerTarRootfsUpperLayer(t *testing.T) {
+	conf := testutil.TestConfig(t)
+	conf.Overlay2.Set("all:memory")
+
+	rootDir, cleanup, err := testutil.SetupRootDir()
+	if err != nil {
+		t.Fatalf("error creating root dir: %v", err)
+	}
+	defer cleanup()
+	conf.RootDir = rootDir
+
+	specs, ids := createSpecs(sleepCmd, sleepCmd)
+	for _, spec := range specs {
+		spec.Root.Readonly = false
+	}
+
+	containers, cleanup, err := startContainers(conf, specs, ids)
+	if err != nil {
+		t.Fatalf("error starting containers: %v", err)
+	}
+	defer cleanup()
+
+	rootFile := "root-upper-file.txt"
+	subFile := "sub-upper-file.txt"
+
+	if ws, err := execute(conf, containers[0], "/bin/sh", "-c", fmt.Sprintf("mkdir -p /root-upper && echo root > /root-upper/%s", rootFile)); err != nil || ws != 0 {
+		t.Fatalf("failed to create file in root container, ws: %v, err: %v", ws, err)
+	}
+	if ws, err := execute(conf, containers[1], "/bin/sh", "-c", fmt.Sprintf("mkdir -p /sub-upper && echo sub > /sub-upper/%s", subFile)); err != nil || ws != 0 {
+		t.Fatalf("failed to create file in sub-container, ws: %v, err: %v", ws, err)
+	}
+
+	rootTar, err := os.CreateTemp(testutil.TmpDir(), "root-tar-*.tar")
+	if err != nil {
+		t.Fatalf("error creating temp file: %v", err)
+	}
+	defer os.Remove(rootTar.Name())
+
+	subTar, err := os.CreateTemp(testutil.TmpDir(), "sub-tar-*.tar")
+	if err != nil {
+		t.Fatalf("error creating temp file: %v", err)
+	}
+	defer os.Remove(subTar.Name())
+
+	if err := containers[0].Sandbox.TarRootfsUpperLayer(containers[0].ID, rootTar); err != nil {
+		t.Fatalf("error serializing root container upper layer: %v", err)
+	}
+	if err := containers[1].Sandbox.TarRootfsUpperLayer(containers[1].ID, subTar); err != nil {
+		t.Fatalf("error serializing sub-container upper layer: %v", err)
+	}
+	rootTar.Close()
+	subTar.Close()
+
+	rootSnap, err := exec.Command("tar", "-tf", rootTar.Name()).CombinedOutput()
+	if err != nil {
+		t.Fatalf("error listing root tar contents: %v, output: %s", err, rootSnap)
+	}
+	subSnap, err := exec.Command("tar", "-tf", subTar.Name()).CombinedOutput()
+	if err != nil {
+		t.Fatalf("error listing sub tar contents: %v, output: %s", err, subSnap)
+	}
+
+	if !strings.Contains(string(rootSnap), rootFile) {
+		t.Fatalf("root container tar missing expected file %q: %s", rootFile, rootSnap)
+	}
+	if strings.Contains(string(rootSnap), subFile) {
+		t.Fatalf("root container tar unexpectedly contains sub container file %q: %s", subFile, rootSnap)
+	}
+	if !strings.Contains(string(subSnap), subFile) {
+		t.Fatalf("sub container tar missing expected file %q: %s", subFile, subSnap)
+	}
+	if strings.Contains(string(subSnap), rootFile) {
+		t.Fatalf("sub container tar unexpectedly contains root container file %q: %s", rootFile, subSnap)
 	}
 }
 
