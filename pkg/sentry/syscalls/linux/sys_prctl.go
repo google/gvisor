@@ -116,7 +116,7 @@ func Prctl(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, 
 		}
 
 	case linux.PR_SET_MM:
-		if !t.HasCapability(linux.CAP_SYS_RESOURCE) {
+		if !t.HasRootCapability(linux.CAP_SYS_RESOURCE) {
 			return 0, nil, linuxerr.EPERM
 		}
 
