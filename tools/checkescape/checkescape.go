@@ -396,7 +396,7 @@ func loadObjdump(binary io.Reader) (finalResults map[string][]string, finalErr e
 		input = f
 	}
 
-	// Execute go tool objdump ggiven the input.
+	// Execute go tool objdump given the input.
 	cmd := exec.Command(flags.Go, "tool", "objdump", input.Name())
 	pipeOut, err := cmd.StdoutPipe()
 	if err != nil {

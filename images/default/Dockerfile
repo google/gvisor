@@ -41,7 +41,7 @@ RUN curl https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud
 
 # FIXME: rules_go is configured in MODULE.bazel to download its own Go SDK and
 # it should not use other go binaries.
-ENV GO_VERSION 1.25.1
+ENV GO_VERSION 1.25.5
 ENV GO_DOWNLOAD_BASE_URL https://dl.google.com/go/
 RUN ARCH="$(uname -m)" && \
     case "$ARCH" in \
