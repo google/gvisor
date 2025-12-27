@@ -234,7 +234,7 @@ func (w *Watchdog) waitForStart() {
 
 	var buf bytes.Buffer
 	buf.WriteString(fmt.Sprintf("Watchdog.Start() not called within %s", w.StartupTimeout))
-	w.doAction(w.StartupTimeoutAction, false, &buf)
+	w.doAction(w.StartupTimeoutAction, false /* forceStack */, nil /* stuckTasks */, &buf)
 }
 
 // loop is the main watchdog routine. It only returns when 'Stop()' is called.
@@ -320,26 +320,28 @@ func (w *Watchdog) runTurn() {
 func (w *Watchdog) report(offenders map[*kernel.Task]*offender, newTaskFound bool, now ktime.Time) {
 	var buf bytes.Buffer
 	buf.WriteString(fmt.Sprintf("Sentry detected %d stuck task(s):\n", len(offenders)))
+	stuckTasks := make(map[int64]struct{})
 	for t, o := range offenders {
 		tid := w.k.TaskSet().Root.IDOfTask(t)
 		buf.WriteString(fmt.Sprintf("\tTask tid: %v (goroutine %d), entered RunSys state %v ago.\n", tid, t.GoroutineID(), now.Sub(o.lastUpdateTime)))
+		stuckTasks[t.GoroutineID()] = struct{}{}
 	}
 	buf.WriteString("Search for 'goroutine <id>' in the stack dump to find the offending goroutine(s)")
 
 	// Force stack dump only if a new task is detected.
-	w.doAction(w.TaskTimeoutAction, newTaskFound, &buf)
+	w.doAction(w.TaskTimeoutAction, newTaskFound, stuckTasks, &buf)
 }
 
 func (w *Watchdog) reportStuckWatchdog() {
 	var buf bytes.Buffer
 	buf.WriteString("Watchdog goroutine is stuck")
-	w.doAction(w.TaskTimeoutAction, false, &buf)
+	w.doAction(w.TaskTimeoutAction, false /* forceStack */, nil /* stuckTasks */, &buf)
 }
 
 // doAction will take the given action. If the action is LogWarning, the stack
 // is not always dumped to the log to prevent log flooding. "forceStack"
 // guarantees that the stack will be dumped regardless.
-func (w *Watchdog) doAction(action Action, forceStack bool, msg *bytes.Buffer) {
+func (w *Watchdog) doAction(action Action, forceStack bool, stuckTasks map[int64]struct{}, msg *bytes.Buffer) {
 	switch action {
 	case LogWarning:
 		// Dump stack only if forced or sometime has passed since the last time a
@@ -355,7 +357,11 @@ func (w *Watchdog) doAction(action Action, forceStack bool, msg *bytes.Buffer) {
 	case Panic:
 		// Panic will skip over running tasks, which is likely the culprit here. So manually
 		// dump all stacks before panic'ing.
-		log.TracebackAll(msg.String())
+		if stuckTasks != nil && len(stuckTasks) > 0 {
+			log.TracebackAllWithStuckSuffix(stuckTasks, msg.String())
+		} else {
+			log.TracebackAll(msg.String())
+		}
 
 		// Attempt to flush metrics, timeout and move on in case metrics are stuck as well.
 		metricsEmitted := make(chan struct{}, 1)
