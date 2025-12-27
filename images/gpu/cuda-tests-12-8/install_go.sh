@@ -20,6 +20,6 @@ if [[ "$(uname -m)" == "aarch64" ]]; then
         ARCH="arm64"
 fi
 
-wget "https://go.dev/dl/go1.24.1.linux-${ARCH}.tar.gz" && \
-    tar -C /usr/local -xzf "go1.24.1.linux-${ARCH}.tar.gz" && \
+wget "https://go.dev/dl/go1.25.5.linux-${ARCH}.tar.gz" && \
+    tar -C /usr/local -xzf "go1.25.5.linux-${ARCH}.tar.gz" && \
     ln -s /usr/local/go/bin/go /usr/local/bin/go
