@@ -15,6 +15,8 @@
 package linux
 
 import (
+	"fmt"
+
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fspath"
@@ -139,7 +141,11 @@ func execveat(t *kernel.Task, dirfd int32, pathnameAddr, argvAddr, envvAddr host
 			return 0, nil, err
 		}
 		executable = file
-		pathname = executable.MappedName(t)
+		if path.HasComponents() {
+			pathname = fmt.Sprintf("/dev/fd/%d/%s", dirfd, pathname)
+		} else {
+			pathname = fmt.Sprintf("/dev/fd/%d", dirfd)
+		}
 	}
 
 	// Execve takes ownership of `executable`.
