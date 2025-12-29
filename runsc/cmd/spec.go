@@ -19,15 +19,71 @@ import (
 	"encoding/json"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
+	"syscall"
 
 	"github.com/google/subcommands"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"google.golang.org/protobuf/proto"
 	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/flag"
 )
 
-func writeSpec(w io.Writer, cwd string, netns string, args []string) error {
+func major(dev uint64) uint32 {
+	return uint32((dev >> 8) & 0xfff)
+}
+
+func minor(dev uint64) uint32 {
+	return uint32((dev & 0xff) | ((dev >> 12) & 0xfff00))
+}
+
+func findAllTPUs(testDevicePrefix string) []specs.LinuxDevice {
+	vfioGlob := path.Join(testDevicePrefix, "/dev/vfio/*")
+	paths, err := filepath.Glob(vfioGlob)
+	if err != nil {
+		util.Errorf("failed to list %q: %v", vfioGlob, err)
+		return nil
+	}
+	accelGlob := path.Join(testDevicePrefix, "/dev/accel*")
+	accelPaths, err := filepath.Glob(accelGlob)
+	if err != nil {
+		util.Errorf("failed to list %q: %v", accelGlob, err)
+		return nil
+	}
+	paths = append(paths, accelPaths...)
+
+	var devs []specs.LinuxDevice
+	for _, path := range paths {
+		st, err := os.Stat(path)
+		if err != nil {
+			util.Errorf("failed to stat %q: %v", path, err)
+			continue
+		}
+		if st.Mode()&os.ModeDevice == 0 || st.Mode()&os.ModeCharDevice == 0 {
+			util.Infof("Skipping non-character device file %q", path)
+			continue
+		}
+		stat, ok := st.Sys().(*syscall.Stat_t)
+		if !ok {
+			util.Errorf("failed to get syscall.Stat_t for %q", path)
+			continue
+		}
+		mode := os.FileMode(0666)
+		devs = append(devs, specs.LinuxDevice{
+			Path:     path,
+			Type:     "c",
+			Major:    int64(major(stat.Rdev)),
+			Minor:    int64(minor(stat.Rdev)),
+			FileMode: &mode,
+			UID:      proto.Uint32(0),
+			GID:      proto.Uint32(0),
+		})
+	}
+	return devs
+}
+
+func writeSpec(w io.Writer, cwd string, netns string, args []string, tpu bool) error {
 	spec := &specs.Spec{
 		Version: "1.0.0",
 		Process: &specs.Process{
@@ -122,6 +178,10 @@ func writeSpec(w io.Writer, cwd string, netns string, args []string) error {
 		},
 	}
 
+	if tpu {
+		spec.Linux.Devices = append(spec.Linux.Devices, findAllTPUs( /*testDevicePrefix= */ "")...)
+	}
+
 	e := json.NewEncoder(w)
 	e.SetIndent("", "    ")
 	return e.Encode(spec)
@@ -132,6 +192,7 @@ type Spec struct {
 	bundle string
 	cwd    string
 	netns  string
+	tpu    bool
 }
 
 // Name implements subcommands.Command.Name.
@@ -177,6 +238,7 @@ func (s *Spec) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&s.cwd, "cwd", "/", "working directory that will be set for the executable, "+
 		"this value MUST be an absolute path")
 	f.StringVar(&s.netns, "netns", "", "network namespace path")
+	f.BoolVar(&s.tpu, "tpu", false, "whether to configure the container with access to TPU devices")
 }
 
 // Execute implements subcommands.Command.Execute.
@@ -197,7 +259,7 @@ func (s *Spec) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 		util.Fatalf("opening file %q: %v", confPath, err)
 	}
 
-	err = writeSpec(configFile, s.cwd, s.netns, containerArgs)
+	err = writeSpec(configFile, s.cwd, s.netns, containerArgs, s.tpu)
 	if err != nil {
 		util.Fatalf("writing to %q: %v", confPath, err)
 	}

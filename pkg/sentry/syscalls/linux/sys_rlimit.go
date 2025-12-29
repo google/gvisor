@@ -118,7 +118,7 @@ func prlimit64(t *kernel.Task, resource limits.LimitType, newLim *limits.Limit) 
 	// "A privileged process (under Linux: one with the CAP_SYS_RESOURCE
 	// capability in the initial user namespace) may make arbitrary changes
 	// to either limit value."
-	privileged := t.HasCapabilityIn(linux.CAP_SYS_RESOURCE, t.Kernel().RootUserNamespace())
+	privileged := t.HasRootCapability(linux.CAP_SYS_RESOURCE)
 
 	oldLim, err := t.ThreadGroup().Limits().Set(resource, *newLim, privileged)
 	if err != nil {

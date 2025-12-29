@@ -95,8 +95,34 @@ func (r *MappingOfRange) StateLoad(ctx context.Context, stateSourceObject state.
 	stateSourceObject.Load(2, &r.Writable)
 }
 
+func (n *NoMapInternal) StateTypeName() string {
+	return "pkg/sentry/memmap.NoMapInternal"
+}
+
+func (n *NoMapInternal) StateFields() []string {
+	return []string{
+		"NoBufferedIOFallback",
+	}
+}
+
+func (n *NoMapInternal) beforeSave() {}
+
+// +checklocksignore
+func (n *NoMapInternal) StateSave(stateSinkObject state.Sink) {
+	n.beforeSave()
+	stateSinkObject.Save(0, &n.NoBufferedIOFallback)
+}
+
+func (n *NoMapInternal) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (n *NoMapInternal) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &n.NoBufferedIOFallback)
+}
+
 func init() {
 	state.Register((*FileRange)(nil))
 	state.Register((*MappableRange)(nil))
 	state.Register((*MappingOfRange)(nil))
+	state.Register((*NoMapInternal)(nil))
 }

@@ -396,7 +396,7 @@ func PivotRoot(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintp
 	addr1 := args[0].Pointer()
 	addr2 := args[1].Pointer()
 
-	if !t.HasCapability(linux.CAP_SYS_ADMIN) {
+	if !t.HasCapabilityIn(linux.CAP_SYS_ADMIN, t.MountNamespace().Owner) {
 		return 0, nil, linuxerr.EPERM
 	}
 

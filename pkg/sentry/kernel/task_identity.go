@@ -43,6 +43,11 @@ func (t *Task) HasCapability(cp linux.Capability) bool {
 	return t.Credentials().HasCapability(cp)
 }
 
+// HasRootCapability checks if the task has capability cp in the root user namespace.
+func (t *Task) HasRootCapability(cp linux.Capability) bool {
+	return t.Credentials().HasCapabilityIn(cp, t.Kernel().RootUserNamespace())
+}
+
 // SetUID implements the semantics of setuid(2).
 //
 // Preconditions: The caller must be running on the task goroutine.

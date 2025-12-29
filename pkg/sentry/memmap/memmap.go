@@ -561,6 +561,8 @@ func (NoBufferedIOFallback) BufferWriteAt(off uint64, src []byte) (uint64, error
 // NoMapInternal implements File.MapInternal(), File.MemoryType(),
 // File.BufferReadAt(), and File.BufferWriteAt() for implementations of File
 // that do not support MapInternal.
+//
+// +stateify savable
 type NoMapInternal struct {
 	NoBufferedIOFallback
 }
