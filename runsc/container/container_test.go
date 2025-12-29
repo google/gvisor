@@ -4053,7 +4053,7 @@ func TestTarRootfsUpperLayer(t *testing.T) {
 	}
 	defer os.Remove(tarFile1.Name())
 
-	if err := cont.Sandbox.TarRootfsUpperLayer(tarFile1); err != nil {
+	if err := cont.TarRootfsUpperLayer(tarFile1); err != nil {
 		t.Fatalf("error serializing rootfs upper layer to tar: %v", err)
 	}
 	tarFile1.Close()
@@ -4103,7 +4103,7 @@ func TestTarRootfsUpperLayer(t *testing.T) {
 	}
 	defer os.Remove(tarFile2.Name())
 
-	if err := newCont.Sandbox.TarRootfsUpperLayer(tarFile2); err != nil {
+	if err := newCont.TarRootfsUpperLayer(tarFile2); err != nil {
 		t.Fatalf("error serializing rootfs upper layer to tar: %v", err)
 	}
 	tarFile2.Close()
