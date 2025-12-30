@@ -36,8 +36,40 @@ type Fs struct {
 
 // TarRootfsUpperLayerOpts contains options for the TarRootfsUpperLayer RPC.
 type TarRootfsUpperLayerOpts struct {
+	// ContainerID identifies which container's rootfs upper layer should be
+	// serialized.
+	ContainerID string
 	// FilePayload contains the destination for output.
 	urpc.FilePayload
+}
+
+// Returns a referenced mount namespace for the given container ID,
+// or the root container if no ID is provided. Caller must DecRef the
+// returned mntns when done.
+func (f *Fs) mountNamespaceForContainer(containerID string) (*vfs.MountNamespace, error) {
+	if containerID == "" {
+		mntns := f.Kernel.GlobalInit().Leader().MountNamespace()
+		if mntns == nil {
+			return nil, fmt.Errorf("global init mount namespace not found")
+		}
+		mntns.IncRef()
+		return mntns, nil
+	}
+
+	var mntns *vfs.MountNamespace
+	f.Kernel.TaskSet().ForEachThreadGroup(func(_ *kernel.ThreadGroup, leader *kernel.Task) {
+		if mntns != nil {
+			return
+		}
+		if leader.ContainerID() != containerID {
+			return
+		}
+		mntns = leader.GetMountNamespace()
+	})
+	if mntns == nil {
+		return nil, fmt.Errorf("could not find any tasks for %s", containerID)
+	}
+	return mntns, nil
 }
 
 // TarRootfsUpperLayer is a RPC stub which serializes the rootfs upper layer to
@@ -50,8 +82,14 @@ func (f *Fs) TarRootfsUpperLayer(o *TarRootfsUpperLayerOpts, _ *struct{}) error 
 	defer outFD.Close()
 
 	ctx := f.Kernel.SupervisorContext()
-	mns := f.Kernel.GlobalInit().Leader().MountNamespace()
-	root := mns.Root(ctx)
+	mntns, err := f.mountNamespaceForContainer(o.ContainerID)
+	if err != nil {
+		return err
+	}
+	defer mntns.DecRef(ctx)
+
+	root := mntns.Root(ctx)
+	defer root.DecRef(ctx)
 	ts, ok := root.Mount().Filesystem().Impl().(vfs.TarSerializer)
 	if !ok {
 		return fmt.Errorf("rootfs is not an overlayfs")
