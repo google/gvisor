@@ -824,6 +824,25 @@ TEST(ExecveatTest, InvalidFlags) {
   EXPECT_EQ(execve_errno, EINVAL);
 }
 
+int memfd_create(const std::string& name, unsigned int flags) {
+  return syscall(__NR_memfd_create, name.c_str(), flags);
+}
+
+TEST(ExecveatTest, MemfdScript) {
+  int fd;
+  ASSERT_THAT(fd = memfd_create("test_script", 0), SyscallSucceeds());
+  FileDescriptor memfd(fd);
+
+  std::string script = "#!/bin/sh\necho $0 >&2\n";
+  ASSERT_THAT(WriteFd(memfd.get(), script.c_str(), script.size()),
+              SyscallSucceedsWithValue(script.size()));
+
+  std::string expected = absl::StrCat("/dev/fd/", memfd.get(), "\n");
+
+  CheckExecveat(memfd.get(), "", {"script_name"}, {}, AT_EMPTY_PATH,
+                W_EXITCODE(0, 0), expected);
+}
+
 // Priority consistent across calls to execve()
 TEST(GetpriorityTest, ExecveMaintainsPriority) {
   int prio = 16;
