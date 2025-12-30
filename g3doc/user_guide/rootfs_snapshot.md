@@ -85,7 +85,3 @@ hello world
 ```
 
 > Please make sure you kill and delete the sandbox after the experiment.
-
-## Limitation
-
-*   Snapshotting is only supported for single-container sandboxes.

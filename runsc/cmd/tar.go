@@ -107,10 +107,6 @@ func (r *RootfsUpper) Execute(ctx context.Context, f *flag.FlagSet, args ...any)
 		util.Fatalf("error loading container: %v", err)
 	}
 
-	if c.Sandbox.ID != id {
-		util.Fatalf("`tar rootfs-upper` is only supported for the root container as of now")
-	}
-
 	util.Infof("Serializing rootfs upper layer into a tar archive for container: %s, sandbox: %s", id, c.Sandbox.ID)
 
 	out := os.Stdout
@@ -122,7 +118,7 @@ func (r *RootfsUpper) Execute(ctx context.Context, f *flag.FlagSet, args ...any)
 		defer out.Close()
 	}
 
-	if err := c.Sandbox.TarRootfsUpperLayer(out); err != nil {
+	if err := c.TarRootfsUpperLayer(out); err != nil {
 		util.Fatalf("TarRootfsUpperLayer failed: %v", err)
 	}
 	return subcommands.ExitSuccess
