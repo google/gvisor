@@ -4479,6 +4479,7 @@ cc_binary(
     deps = select_gtest() + [
         "//test/util:logging",
         "//test/util:multiprocess_util",
+        "//test/util:signal_util",
         "//test/util:test_util",
         "//test/util:time_util",
         "@com_google_absl//absl/flags:flag",
