@@ -110,7 +110,8 @@ machine.
 
 ### Limitation
 
-It is not supported on the arm64 architecture.
+GPU checkpoint/restore is not supported on the arm64 architecture due to lack of
+support in [cuda-checkpoint](https://github.com/NVIDIA/cuda-checkpoint).
 
 [leave-running]: https://github.com/moby/moby/pull/37360
 [checkpoint-dir]: https://github.com/moby/moby/issues/37344
