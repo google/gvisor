@@ -34,12 +34,15 @@
 package log
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	stdlog "log"
 	"os"
 	"regexp"
 	"runtime"
+	"sort"
+	"strconv"
 	"sync/atomic"
 	"time"
 
@@ -62,6 +65,14 @@ const (
 
 	// Debug indicates that output should not normally be emitted.
 	Debug
+
+	// MaxStuckGoroutinesToLog is the maximum number of stuck goroutines to log in
+	// the "stuck goroutines" footer.
+	MaxStuckGoroutinesToLog = 10
+
+	// MaxPerGoroutineStackBytesToLog is the maximum number of bytes to log per
+	// goroutine stack in the "stuck goroutines" footer.
+	MaxPerGoroutineStackBytesToLog = 10000
 )
 
 func (l Level) String() string {
@@ -357,6 +368,98 @@ func Traceback(format string, v ...any) {
 func TracebackAll(format string, v ...any) {
 	v = append(v, Stacks(true))
 	Warningf(format+":\n%s", v...)
+}
+
+// TracebackAllWithStuckSuffix logs the given message and dumps a stacktrace of all goroutines,
+// and then adds a footer with the stacks of goroutines deemed to be stuck. These include the
+// given stuckTasks, as well as any other goroutines languishing in an obviously stuck state.
+//
+// The number of goroutines logged is limited to MaxStuckGoroutinesToLog.
+func TracebackAllWithStuckSuffix(stuckTasks map[int64]struct{}, format string, v ...any) {
+	stacks := Stacks(true)
+	v = append(v, stacks)
+	header := "***** BEGIN STUCK GOROUTINES (there may be more, read the preceding full dump) *****"
+	v = append(v, stuckGoroutineStacks(stacks, stuckTasks))
+	footer := "***** END STUCK GOROUTINES *****\n"
+	Warningf(format+":\n%s\n"+header+"%s\n"+footer, v...)
+}
+
+func goroutinesInState(stacks []byte, state string) map[int64]struct{} {
+	ids := make(map[int64]struct{})
+	regex := regexp.MustCompile(fmt.Sprintf(
+		`(?m)^\s*goroutine\s(\d+)\s\[%s(, \d+ minutes)?\]:$`, state))
+
+	matches := regex.FindAllSubmatch(stacks, -1)
+	for _, match := range matches {
+		if len(match) <= 1 {
+			continue
+		}
+		if id, err := strconv.ParseInt(string(match[1]), 10, 64); err == nil {
+			ids[id] = struct{}{}
+		}
+	}
+	return ids
+}
+
+func stuckGoroutineIDs(stacks []byte) map[int64]struct{} {
+	stuckStates := []string{"semacquire", "sync.Mutex.Lock"}
+	ids := make(map[int64]struct{})
+
+	for _, state := range stuckStates {
+		for id := range goroutinesInState(stacks, state) {
+			ids[id] = struct{}{}
+		}
+	}
+	return ids
+}
+
+func singleGoroutineStack(stacks []byte, goroutineID int64) []byte {
+	headerAndStack := fmt.Sprintf(`(?sm)(^\s*goroutine\s%d\s\[.*?\]:.*?)`, goroutineID)
+	footer := `(\n\n\s*goroutine\s\d+\s\[|\z)` // Another stack or end of the trace.
+	regex := regexp.MustCompile(headerAndStack + footer)
+
+	match := regex.FindSubmatch(stacks)
+	if match != nil && len(match) > 1 {
+		if len(match[1]) > MaxPerGoroutineStackBytesToLog {
+			return []byte(fmt.Sprintf("goroutine %d stack is too large, skipped.\n", goroutineID))
+		}
+		return match[1]
+	}
+	return nil
+}
+
+func stuckGoroutineStacks(stacks []byte, stuckTasks map[int64]struct{}) []byte {
+	stuckIDs := stuckGoroutineIDs(stacks)
+	if stuckTasks != nil {
+		// Stuck task goroutines are deemed stuck independent of the state of their goroutines.
+		for taskID := range stuckTasks {
+			stuckIDs[taskID] = struct{}{}
+		}
+	}
+
+	var sortedIDs []int64
+	for id := range stuckIDs {
+		sortedIDs = append(sortedIDs, id)
+	}
+	sort.Slice(sortedIDs, func(i, j int) bool {
+		return sortedIDs[i] < sortedIDs[j]
+	})
+
+	var buf bytes.Buffer
+	for i, id := range sortedIDs {
+		stack := singleGoroutineStack(stacks, id)
+		if stack != nil {
+			if i > 0 {
+				buf.WriteString("\n")
+			}
+			buf.Write(stack)
+		}
+		if i > MaxStuckGoroutinesToLog {
+			buf.WriteString("\n...<too many stuck goroutines, truncated>")
+			break
+		}
+	}
+	return buf.Bytes()
 }
 
 // IsLogging returns whether the global logger is logging.
