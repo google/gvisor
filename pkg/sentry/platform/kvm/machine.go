@@ -316,7 +316,16 @@ func newMachine(vm int, config *Config) (*machine, error) {
 	m.mapUpperHalf(m.upperSharedPageTables)
 	m.upperSharedPageTables.Allocator.(*allocator).base.Drain()
 	m.upperSharedPageTables.MarkReadOnlyShared()
-	m.kernel.PageTables = pagetables.NewWithUpper(newAllocator(), m.upperSharedPageTables, ring0.KernelStartAddress)
+	kernelPageTablesAllocator := newAllocator()
+	m.kernel.PageTables = pagetables.NewWithUpper(kernelPageTablesAllocator, m.upperSharedPageTables, ring0.KernelStartAddress)
+	vsize := uintptr(0)
+	applyPhysicalRegions(func(pr physicalRegion) bool {
+		vsize += pr.length
+		return true
+	})
+	sentryPTEsPoolSize := pagetables.EstimatePTEsPoolSize(vsize, len(physicalRegions), extendedAddressSpaceAllowed)
+	log.Debugf("Sentry PTE pool size: 0x%x", sentryPTEsPoolSize)
+	kernelPageTablesAllocator.base.PreallocatePTEs(sentryPTEsPoolSize)
 
 	// On x86_64, we prefer not to map the entire sentry address space into
 	// the VM due to memory overhead. It is about 3MB for a 40-bit address
@@ -339,25 +348,17 @@ func newMachine(vm int, config *Config) (*machine, error) {
 		// faultBlockSize has to equal or less than KVM_MEM_MAX_NR_PAGES.
 		faultBlockSize = uintptr(1) << 42
 		faultBlockMask = ^uintptr(faultBlockSize - 1)
+		for _, r := range physicalRegions {
+			m.mapPhysical(r.physical, r.length)
+		}
+		for _, r := range physicalRegions {
+			m.mapPhysical(r.physical, r.length)
+		}
 	} else {
 		// Install seccomp rules to trap runtime mmap system calls. They will
 		// be handled by seccompMmapHandler.
 		seccompMmapRules(m)
 	}
-
-	// Apply the physical mappings. Note that these mappings may point to
-	// guest physical addresses that are not actually available. These
-	// physical pages are mapped on demand, see kernel_unsafe.go.
-	applyPhysicalRegions(func(pr physicalRegion) bool {
-		// Map everything in the lower half.
-		m.kernel.PageTables.Map(
-			hostarch.Addr(pr.virtual),
-			pr.length,
-			pagetables.MapOpts{AccessType: hostarch.ReadWrite},
-			pr.physical)
-
-		return true // Keep iterating.
-	})
 
 	// Ensure that the currently mapped virtual regions are actually
 	// available in the VM. Note that this doesn't guarantee no future
@@ -375,6 +376,9 @@ func newMachine(vm int, config *Config) (*machine, error) {
 				// Cap the length to the end of the area.
 				length = vr.virtual + vr.length - virtual
 			}
+			// Ensure the physical range is mapped.
+			m.mapPhysical(physical, length)
+
 			// Update page tables for executable mappings.
 			if vr.accessType.Execute {
 				if vr.accessType.Write {
@@ -387,8 +391,6 @@ func newMachine(vm int, config *Config) (*machine, error) {
 					physical)
 			}
 
-			// Ensure the physical range is mapped.
-			m.mapPhysical(physical, length)
 			virtual += length
 		}
 	}
@@ -411,11 +413,6 @@ func newMachine(vm int, config *Config) (*machine, error) {
 		mapRegion(vr, 0)
 
 	})
-	if mapEntireAddressSpace {
-		for _, r := range physicalRegions {
-			m.mapPhysical(r.physical, r.length)
-		}
-	}
 	enableAsyncPreemption()
 	// Initialize architecture state.
 	if err := m.initArchState(); err != nil {
@@ -465,8 +462,19 @@ func (m *machine) mapPhysical(physical, length uintptr) {
 		}
 
 		// Is this already mapped? Check the usedSlots.
-		if !pr.mmio && !m.hasSlot(physicalStart) {
-			m.mapMemorySlot(virtualStart, physicalStart, length, pr.readOnly)
+		if !m.hasSlot(physicalStart) {
+			at := hostarch.ReadWrite
+			if pr.readOnly {
+				at = hostarch.Read
+			}
+			m.kernel.PageTables.Map(
+				hostarch.Addr(virtualStart),
+				length,
+				pagetables.MapOpts{AccessType: at},
+				physicalStart)
+			if !pr.mmio {
+				m.mapMemorySlot(virtualStart, physicalStart, length, pr.readOnly)
+			}
 		}
 
 		// Move to the next chunk.
