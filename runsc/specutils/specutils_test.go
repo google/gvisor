@@ -526,10 +526,63 @@ func TestRootfsUpperTarPath(t *testing.T) {
 			name: "get gvisor tar rootfs upper annotation",
 			spec: specs.Spec{
 				Annotations: map[string]string{
-					"dev.gvisor.tar.rootfs.upper": "123",
+					annotationRootfsUpperTar: "123",
 				},
 			},
 			want: "123",
+		},
+		{
+			name: "container specific rootfs upper annotation",
+			spec: specs.Spec{
+				Annotations: map[string]string{
+					annotationContainerName:                    "cont",
+					annotationRootfsUpperTarContainer + "cont": "456",
+				},
+			},
+			want: "456",
+		},
+		{
+			name: "container specific rootfs upper annotation with remap",
+			spec: specs.Spec{
+				Annotations: map[string]string{
+					annotationContainerName:                    "cont-123",
+					annotationContainerNameRemap + "1":         "cont-123=cont",
+					annotationRootfsUpperTarContainer + "cont": "789",
+				},
+			},
+			want: "789",
+		},
+		{
+			name: "fallback to base rootfs upper annotation when container does not match",
+			spec: specs.Spec{
+				Annotations: map[string]string{
+					annotationContainerName:                     "cont",
+					annotationRootfsUpperTarContainer + "other": "should-not-be-used",
+					annotationRootfsUpperTar:                    "base",
+				},
+			},
+			want: "base",
+		},
+		{
+			name: "container specific takes priority over base",
+			spec: specs.Spec{
+				Annotations: map[string]string{
+					annotationContainerName:                    "cont",
+					annotationRootfsUpperTar:                    "base-path",
+					annotationRootfsUpperTarContainer + "cont": "specific-path",
+				},
+			},
+			want: "specific-path",
+		},
+		{
+			name: "empty container name falls back to base",
+			spec: specs.Spec{
+				Annotations: map[string]string{
+					annotationContainerName:  "",
+					annotationRootfsUpperTar: "base-path",
+				},
+			},
+			want: "base-path",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

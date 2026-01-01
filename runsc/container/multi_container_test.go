@@ -120,6 +120,11 @@ func TestMultiContainerTarRootfsUpperLayer(t *testing.T) {
 		spec.Root.Readonly = false
 	}
 
+	const rootContainerName = "root-container"
+	const subContainerName = "sub-container"
+	specs[0].Annotations["io.kubernetes.cri.container-name"] = rootContainerName
+	specs[1].Annotations["io.kubernetes.cri.container-name"] = subContainerName
+
 	containers, cleanupContainers, err := startContainers(conf, specs, ids)
 	if err != nil {
 		t.Fatalf("error starting containers: %v", err)
@@ -183,8 +188,12 @@ func TestMultiContainerTarRootfsUpperLayer(t *testing.T) {
 	for _, spec := range restoreSpecs {
 		spec.Root.Readonly = false
 	}
-	restoreSpecs[0].Annotations["dev.gvisor.tar.rootfs.upper"] = rootTar.Name()
-	restoreSpecs[1].Annotations["dev.gvisor.tar.rootfs.upper"] = subTar.Name()
+
+	restoreSpecs[0].Annotations["io.kubernetes.cri.container-name"] = rootContainerName
+	restoreSpecs[0].Annotations["dev.gvisor.tar.rootfs.upper."+rootContainerName] = rootTar.Name()
+
+	restoreSpecs[1].Annotations["io.kubernetes.cri.container-name"] = subContainerName
+	restoreSpecs[1].Annotations["dev.gvisor.tar.rootfs.upper."+subContainerName] = subTar.Name()
 
 	restoreContainers, restoreCleanup, err := startContainers(conf, restoreSpecs, restoreIDs)
 	if err != nil {
