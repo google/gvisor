@@ -34,6 +34,7 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/erofs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/flag"
@@ -500,6 +501,11 @@ func capsFromNames(names []string, skipSet map[linux.Capability]struct{}) (auth.
 func IsGoferMount(m specs.Mount) bool {
 	MaybeConvertToBindMount(&m)
 	return m.Type == "bind" && m.Source != ""
+}
+
+// IsErofsMount returns true if the given mount can be mounted as EROFS.
+func IsErofsMount(m specs.Mount) bool {
+	return m.Type == erofs.Name
 }
 
 // MaybeConvertToBindMount converts mount type to "bind" in case any of the
