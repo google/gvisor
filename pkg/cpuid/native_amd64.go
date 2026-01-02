@@ -192,50 +192,88 @@ func HostFeatureSet() FeatureSet {
 var (
 	// cpuFreqMHz is the native CPU frequency.
 	cpuFreqMHz float64
+
+	// IsFiveLevelPagingEnabled is true if 5-level paging is enabled on the host.
+	IsFiveLevelPagingEnabled bool
 )
 
-// Reads max cpu frequency from host /proc/cpuinfo. Must run before syscall
-// filter installation. This value is used to create the fake /proc/cpuinfo
-// from a FeatureSet.
-func readMaxCPUFreq() {
+// readCPUInfo reads cpu frequency and checks for 5-level paging support from
+// /proc/cpuinfo in a single pass. It sets the global cpuFreqMHz and returns
+// whether 5-level paging is enabled.
+func readCPUInfo() {
 	cpuinfoFile, err := os.Open("/proc/cpuinfo")
 	if err != nil {
-		// Leave it as 0... the VDSO bails out in the same way.
+		// Leave cpuFreqMHz as 0... the VDSO bails out in the same way.
+		// Default to assuming 5-level paging is not enabled.
+		IsFiveLevelPagingEnabled = false
 		log.Warningf("Could not open /proc/cpuinfo: %v", err)
 		return
 	}
 	defer cpuinfoFile.Close()
 
-	// We get the value straight from host /proc/cpuinfo. On machines with
-	// frequency scaling enabled, this will only get the current value
-	// which will likely be inaccurate. This is fine on machines with
-	// frequency scaling disabled.
+	var (
+		foundCPUFreq bool
+		foundFlags   bool
+	)
+
 	s := bufio.NewScanner(cpuinfoFile)
 	for s.Scan() {
 		line := s.Bytes()
-		if bytes.Contains(line, []byte("cpu MHz")) {
+		// We get the value straight from host /proc/cpuinfo. On machines with
+		// frequency scaling enabled, this will only get the current value
+		// which will likely be inaccurate. This is fine on machines with
+		// frequency scaling disabled.
+		if !foundCPUFreq && bytes.Contains(line, []byte("cpu MHz")) {
 			splitMHz := bytes.Split(line, []byte(":"))
 			if len(splitMHz) < 2 {
 				log.Warningf("Could not parse /proc/cpuinfo: malformed cpu MHz line: %q", line)
-				return
+			} else {
+				splitMHzStr := string(bytes.TrimSpace(splitMHz[1]))
+				f64MHz, err := strconv.ParseFloat(splitMHzStr, 64)
+				if err != nil {
+					log.Warningf("Could not parse cpu MHz value %q: %v", splitMHzStr, err)
+				} else {
+					cpuFreqMHz = f64MHz
+				}
 			}
+			foundCPUFreq = true
+		}
 
-			var err error
-			splitMHzStr := string(bytes.TrimSpace(splitMHz[1]))
-			f64MHz, err := strconv.ParseFloat(splitMHzStr, 64)
-			if err != nil {
-				log.Warningf("Could not parse cpu MHz value %q: %v", splitMHzStr, err)
-				return
+		// https://www.kernel.org/doc/html/v6.0/x86/cpuinfo.html#flags-are-missing-when-one-or-more-of-these-happen
+		// We check for the "la57" flag instead of "address sizes" because /proc/cpuinfo
+		// reports "57 bits virtual" for 5lvl-capable CPUs even if 5-level paging is disabled.
+		// The "la57" flag correctly indicates that it is enabled.
+		if !foundFlags && bytes.Contains(line, []byte("flags")) {
+			parts := bytes.SplitN(line, []byte(":"), 2)
+			if len(parts) >= 2 {
+				flags := bytes.Fields(parts[1])
+				for _, flag := range flags {
+					if bytes.Equal(flag, []byte("la57")) {
+						IsFiveLevelPagingEnabled = true
+						break
+					}
+				}
 			}
-			cpuFreqMHz = f64MHz
-			return
+			foundFlags = true
+		}
+
+		if foundCPUFreq && foundFlags {
+			break
 		}
 	}
+
 	if err := s.Err(); err != nil {
 		log.Warningf("Could not read /proc/cpuinfo: %v", err)
-		return
 	}
-	log.Warningf("Could not parse /proc/cpuinfo, it is empty or does not contain cpu MHz")
+
+	if !foundCPUFreq {
+		log.Warningf("Could not parse /proc/cpuinfo, it is empty or does not contain cpu MHz")
+	}
+	if !foundFlags {
+		log.Warningf("Could not parse /proc/cpuinfo, it is empty or does not contain flags")
+	}
+	// Default to assuming 5-level paging is not enabled.
+	IsFiveLevelPagingEnabled = false
 }
 
 // xgetbv reads an extended control register.
@@ -247,6 +285,6 @@ func archInitialize() {
 		Function: &Native{},
 	}.Fixed()
 
-	readMaxCPUFreq()
+	readCPUInfo()
 	initHWCap()
 }
