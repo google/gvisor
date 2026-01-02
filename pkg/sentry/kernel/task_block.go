@@ -65,6 +65,8 @@ func (t *Task) BlockWithTimeout(C chan struct{}, haveTimeout bool, timeout time.
 }
 
 // BlockWithTimeoutOn implements context.Context.BlockWithTimeoutOn.
+//
+// Preconditions: The caller must be running on the task goroutine.
 func (t *Task) BlockWithTimeoutOn(w waiter.Waitable, mask waiter.EventMask, timeout time.Duration) (time.Duration, bool) {
 	e, ch := waiter.NewChannelEntry(mask)
 	w.EventRegister(&e)
@@ -146,11 +148,15 @@ func (t *Task) blockWithDeadlineFromSampledClock(C <-chan struct{}, clock ktime.
 }
 
 // Block implements context.Context.Block
+//
+// Preconditions: The caller must be running on the task goroutine.
 func (t *Task) Block(C <-chan struct{}) error {
 	return t.block(C, nil)
 }
 
 // BlockOn implements context.Context.BlockOn.
+//
+// Preconditions: The caller must be running on the task goroutine.
 func (t *Task) BlockOn(w waiter.Waitable, mask waiter.EventMask) bool {
 	e, ch := waiter.NewChannelEntry(mask)
 	w.EventRegister(&e)
