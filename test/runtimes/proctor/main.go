@@ -21,6 +21,8 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/exec"
+	"reflect"
 	"strings"
 	"time"
 
@@ -61,6 +63,23 @@ func setNumFilesLimit() error {
 		}
 	}
 	return nil
+}
+
+// cloneExecCmd copies all exported field of exec.Cmd into a newly allocated
+// exec.Cmd. *dst = *src would copy unexported fields which is unsafe in general.
+// It uses reflections to be forward compatible in case os/exec.Cmd ever gets a
+// new exported field.
+func cloneExecCmd(src *exec.Cmd) *exec.Cmd {
+	dst := new(exec.Cmd)
+	t := reflect.TypeFor[exec.Cmd]()
+	srcVal := reflect.ValueOf(src).Elem()
+	dstVal := reflect.ValueOf(dst).Elem()
+	for i := range t.NumField() {
+		if t.Field(i).IsExported() {
+			dstVal.Field(i).Set(srcVal.Field(i))
+		}
+	}
+	return dst
 }
 
 func main() {
@@ -157,7 +176,7 @@ func main() {
 		var firstFailure error
 		for iteration := 1; iteration <= *runsPerTest; iteration++ {
 			// Make a copy of the command, as the same exec.Cmd object cannot be started multiple times.
-			cmdCopy := *cmd
+			cmdCopy := cloneExecCmd(cmd)
 
 			// Handle test timeout.
 			testDone := make(chan struct{})
