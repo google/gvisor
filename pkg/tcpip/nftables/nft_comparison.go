@@ -19,6 +19,7 @@ import (
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/sentry/socket/netlink/nlmsg"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
@@ -114,4 +115,38 @@ func (op comparison) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *
 		// Comparison is false, so break from the rule.
 		regs.verdict = stack.NFVerdict{Code: VC(linux.NFT_BREAK)}
 	}
+}
+
+var cmpAttrPolicy = []NlaPolicy{
+	linux.NFTA_CMP_SREG: NlaPolicy{nlaType: linux.NLA_U32},
+	linux.NFTA_CMP_OP:   NlaPolicy{nlaType: linux.NLA_U32},
+	linux.NFTA_CMP_DATA: NlaPolicy{nlaType: linux.NLA_NESTED},
+}
+
+func initComparison(tab *Table, exprInfo ExprInfo) (*comparison, *syserr.AnnotatedError) {
+	attrs, ok := NfParseWithPolicy(exprInfo.ExprData, cmpAttrPolicy)
+	if !ok {
+		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: Failed to parse comparison expression data")
+	}
+	sreg, ok := AttrNetToHostU32(linux.NFTA_CMP_SREG, attrs)
+	if !ok {
+		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: Failed to parse NFTA_CMP_SREG attribute")
+	}
+	op, ok := AttrNetToHostU32(linux.NFTA_CMP_OP, attrs)
+	if !ok {
+		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: Failed to parse NFTA_CMP_OP attribute")
+	}
+	dataAttrBytes, ok := attrs[linux.NFTA_CMP_DATA]
+	if !ok {
+		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: NFTA_CMP_DATA attribute is not found")
+	}
+	dataAttrs, ok := NfParse(nlmsg.AttrsView(dataAttrBytes))
+	if !ok {
+		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: Failed to parse NFTA_CMP_DATA attribute")
+	}
+	valueBytes, ok := dataAttrs[linux.NFTA_DATA_VALUE]
+	if !ok {
+		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: NFTA_DATA_VALUE attribute is not found")
+	}
+	return newComparison(uint8(sreg), int(op), valueBytes)
 }

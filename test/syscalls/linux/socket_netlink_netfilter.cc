@@ -54,7 +54,9 @@ namespace {
 constexpr uint32_t kSeq = 12345;
 
 using ::testing::_;
+using ::testing::TestParamInfo;
 using ::testing::UnitTest;
+using ::testing::ValuesIn;
 
 using SockOptTest = ::testing::TestWithParam<
     std::tuple<int, std::function<bool(int)>, std::string>>;
@@ -3507,9 +3509,9 @@ std::vector<RuleWithExprTestParams> GetPayloadRuleTestParams() {
 
 INSTANTIATE_TEST_SUITE_P(
     PayloadRuleTest, AddRuleWithExprTest,
-    /*param_generator=*/::testing::ValuesIn(GetPayloadRuleTestParams()),
+    /*param_generator=*/ValuesIn(GetPayloadRuleTestParams()),
     /*param_name_generator=*/
-    [](const ::testing::TestParamInfo<RuleWithExprTestParams>& info) {
+    [](const TestParamInfo<RuleWithExprTestParams>& info) {
       return info.param.test_name;
     });
 
@@ -3545,13 +3547,51 @@ std::vector<RuleWithExprTestParams> GetMetaRuleTestParams() {
   };
 }
 
-INSTANTIATE_TEST_SUITE_P(
-    MetaRuleTest, AddRuleWithExprTest,
-    /*param_generator=*/::testing::ValuesIn(GetMetaRuleTestParams()),
-    /*param_name_generator=*/
-    [](const ::testing::TestParamInfo<RuleWithExprTestParams>& info) {
-      return info.param.test_name;
-    });
+INSTANTIATE_TEST_SUITE_P(MetaRuleTest, AddRuleWithExprTest,
+                         /*param_generator=*/ValuesIn(GetMetaRuleTestParams()),
+                         /*param_name_generator=*/
+                         [](const TestParamInfo<RuleWithExprTestParams>& info) {
+                           return info.param.test_name;
+                         });
+
+std::vector<RuleWithExprTestParams> GetCmpRuleTestParams() {
+  return {
+      RuleWithExprTestParams{
+          .test_name = "Valid",
+          .expr_name = "cmp",
+          .expr_attrs =
+              []() {
+                std::vector<char> data_value =
+                    NlNestedAttr().U32Attr(NFTA_DATA_VALUE, 1).Build();
+                return NlNestedAttr()
+                    .U32Attr(NFTA_CMP_SREG, NFT_REG_1)
+                    .U32Attr(NFTA_CMP_OP, NFT_CMP_EQ)
+                    .RawAttr(NFTA_CMP_DATA, data_value.data(),
+                             data_value.size());
+              }()},
+      RuleWithExprTestParams{
+          .test_name = "InvalidCmpOp",
+          .expr_name = "cmp",
+          .expr_attrs = []() -> NlNestedAttr {
+            std::vector<char> data_value =
+                NlNestedAttr().U32Attr(NFTA_DATA_VALUE, 1).Build();
+            return NlNestedAttr()
+                .U32Attr(NFTA_CMP_SREG, NFT_REG_1)
+                // Invalid comparison operator as only 6 operators are
+                // supported.
+                .U32Attr(NFTA_CMP_OP, 100)
+                .RawAttr(NFTA_CMP_DATA, data_value.data(), data_value.size());
+          }(),
+          .expected_error_no = EINVAL},
+  };
+}
+
+INSTANTIATE_TEST_SUITE_P(CmpRuleTest, AddRuleWithExprTest,
+                         /*param_generator=*/ValuesIn(GetCmpRuleTestParams()),
+                         /*param_name_generator=*/
+                         [](const TestParamInfo<RuleWithExprTestParams>& info) {
+                           return info.param.test_name;
+                         });
 
 }  // namespace
 
