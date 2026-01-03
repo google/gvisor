@@ -279,12 +279,20 @@ def _nogo_aspect_impl(target, ctx):
     # Build the argument file, and the runner.
     facts_file = ctx.actions.declare_file(ctx.label.name + ".facts")
     findings_file = ctx.actions.declare_file(ctx.label.name + ".findings")
+    env = dict(go_ctx.env)
+
+    # Go 1.25 distributions do not ship objdump in $GOROOT/pkg/tool, but
+    # analyzers may exec "go tool objdump". The go command can build it on
+    # demand, but that requires a writable build cache.
+    #
+    # Reference: https://go.dev/issue/71867
+    env["GOCACHE"] = ctx.bin_dir.path + "/.gocache"
     ctx.actions.run(
         inputs = inputs + srcs,
         outputs = [findings_file, facts_file],
         tools = depset(go_ctx.runfiles.to_list() + ctx.files._nogo),
         executable = ctx.files._nogo[0],
-        env = go_ctx.env,
+        env = env,
         mnemonic = "GoStaticAnalysis",
         progress_message = "Analyzing %s" % target.label,
         # See above.
