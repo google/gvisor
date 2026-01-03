@@ -28,7 +28,6 @@ namespace testing {
 
 namespace {
 
-// TODO(gvisor.dev/issue/2370): This test is currently very rudimentary.
 class Pwrite64 : public ::testing::Test {
   void SetUp() override {
     name_ = NewTempAbsPath();
@@ -85,6 +84,89 @@ TEST_F(Pwrite64, Pwrite64WithOpath) {
   std::vector<char> buf(1);
   EXPECT_THAT(PwriteFd(fd.get(), buf.data(), 1, 0),
               SyscallFailsWithErrno(EBADF));
+}
+
+// Test that pwrite64 with a nullptr buffer fails with EFAULT.
+TEST_F(Pwrite64, NullBuffer) {
+  int fd;
+  ASSERT_THAT(fd = open(name_.c_str(), O_RDWR), SyscallSucceeds());
+  EXPECT_THAT(pwrite64(fd, nullptr, 1, 0), SyscallFailsWithErrno(EFAULT));
+  EXPECT_THAT(close(fd), SyscallSucceeds());
+}
+
+// Test that pwrite64 with zero length and nullptr buffer succeeds.
+TEST_F(Pwrite64, ZeroLengthNullBuffer) {
+  int fd;
+  ASSERT_THAT(fd = open(name_.c_str(), O_RDWR), SyscallSucceeds());
+  EXPECT_THAT(pwrite64(fd, nullptr, 0, 0), SyscallSucceedsWithValue(0));
+  EXPECT_THAT(close(fd), SyscallSucceeds());
+}
+
+// Test that pwrite64 to a closed fd fails with EBADF.
+TEST_F(Pwrite64, ClosedFd) {
+  int fd;
+  ASSERT_THAT(fd = open(name_.c_str(), O_RDWR), SyscallSucceeds());
+  ASSERT_THAT(close(fd), SyscallSucceeds());
+
+  char buf[16];
+  EXPECT_THAT(pwrite64(fd, buf, sizeof(buf), 0), SyscallFailsWithErrno(EBADF));
+}
+
+// Test that pwrite64 to a read-only fd fails with EBADF.
+TEST_F(Pwrite64, ReadOnlyFd) {
+  int fd;
+  ASSERT_THAT(fd = open(name_.c_str(), O_RDONLY), SyscallSucceeds());
+
+  char buf[16];
+  EXPECT_THAT(pwrite64(fd, buf, sizeof(buf), 0), SyscallFailsWithErrno(EBADF));
+  EXPECT_THAT(close(fd), SyscallSucceeds());
+}
+
+// Test that pwrite64 does not change file offset.
+TEST_F(Pwrite64, DoesNotChangeOffset) {
+  int fd;
+  ASSERT_THAT(fd = open(name_.c_str(), O_RDWR), SyscallSucceeds());
+
+  // Set initial offset.
+  const off_t initial_offset = 50;
+  ASSERT_THAT(lseek(fd, initial_offset, SEEK_SET),
+              SyscallSucceedsWithValue(initial_offset));
+
+  char buf[16] = "test data";
+  EXPECT_THAT(pwrite64(fd, buf, sizeof(buf), 100),
+              SyscallSucceedsWithValue(sizeof(buf)));
+
+  // Offset should remain unchanged.
+  EXPECT_THAT(lseek(fd, 0, SEEK_CUR),
+              SyscallSucceedsWithValue(initial_offset));
+
+  EXPECT_THAT(close(fd), SyscallSucceeds());
+}
+
+// Test that pwrite64 to a pipe fails with ESPIPE.
+TEST_F(Pwrite64, Pipe) {
+  int pipe_fds[2];
+  ASSERT_THAT(pipe(pipe_fds), SyscallSucceeds());
+
+  char buf[16];
+  EXPECT_THAT(pwrite64(pipe_fds[1], buf, sizeof(buf), 0),
+              SyscallFailsWithErrno(ESPIPE));
+
+  EXPECT_THAT(close(pipe_fds[0]), SyscallSucceeds());
+  EXPECT_THAT(close(pipe_fds[1]), SyscallSucceeds());
+}
+
+// Test that pwrite64 to a socket fails with ESPIPE.
+TEST_F(Pwrite64, Socket) {
+  int sock_fds[2];
+  ASSERT_THAT(socketpair(AF_UNIX, SOCK_STREAM, 0, sock_fds), SyscallSucceeds());
+
+  char buf[16];
+  EXPECT_THAT(pwrite64(sock_fds[0], buf, sizeof(buf), 0),
+              SyscallFailsWithErrno(ESPIPE));
+
+  EXPECT_THAT(close(sock_fds[0]), SyscallSucceeds());
+  EXPECT_THAT(close(sock_fds[1]), SyscallSucceeds());
 }
 
 }  // namespace
