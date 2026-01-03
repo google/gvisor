@@ -65,8 +65,7 @@ func getTransportProtocol(t *kernel.Task, stype linux.SockType, protocol int) (t
 
 	case linux.SOCK_RAW:
 		// Raw sockets require CAP_NET_RAW.
-		creds := t.Credentials()
-		if !creds.HasCapabilityIn(linux.CAP_NET_RAW, t.NetworkNamespace().UserNamespace()) {
+		if !t.NetworkNamespace().Capable(t, linux.CAP_NET_RAW) {
 			rawMissingLogger.Infof("A process tried to create a raw socket without CAP_NET_RAW. Should the container config enable CAP_NET_RAW?")
 			return 0, true, syserr.ErrNotPermitted
 		}
@@ -141,8 +140,7 @@ func (p *provider) Socket(t *kernel.Task, stype linux.SockType, protocol int) (*
 
 func packetSocket(t *kernel.Task, epStack *Stack, stype linux.SockType, protocol int) (*vfs.FileDescription, *syserr.Error) {
 	// Packet sockets require CAP_NET_RAW.
-	creds := t.Credentials()
-	if !creds.HasCapabilityIn(linux.CAP_NET_RAW, t.NetworkNamespace().UserNamespace()) {
+	if !t.NetworkNamespace().Capable(t, linux.CAP_NET_RAW) {
 		rawMissingLogger.Infof("A process tried to create a raw socket without CAP_NET_RAW. Should the container config enable CAP_NET_RAW?")
 		return nil, syserr.ErrNotPermitted
 	}

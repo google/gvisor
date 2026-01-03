@@ -17,6 +17,7 @@ package inet
 import (
 	goContext "context"
 
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/nsfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -176,6 +177,13 @@ func (n *Namespace) AbstractSockets() *AbstractSocketNamespace {
 // NetlinkMcastTable returns the netlink multicast group table.
 func (n *Namespace) NetlinkMcastTable() *McastTable {
 	return n.netlinkMcastTable
+}
+
+// Capable checks if the current context has the given capability with respect
+// to the network namespace n.
+func (n *Namespace) Capable(ctx context.Context, cp linux.Capability) bool {
+	creds := auth.CredentialsFromContext(ctx)
+	return creds.HasCapabilityIn(cp, n.userNS)
 }
 
 // NetworkStackCreator allows new instances of a network stack to be created. It
