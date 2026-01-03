@@ -24,24 +24,25 @@ runsc_main_go="$5"
 golang_patch=$(realpath "$6")
 race="$7"
 
-go_version=1.25.5
-
-go_base_url="https://dl.google.com/go/go${go_version}"
-arch="$(uname -m)"
-case "$arch" in
-    x86_64) go_arch="amd64" ;;
-    aarch64) go_arch="arm64" ;;
-    *) echo "Unsupported architecture: $arch" >&2; exit 1 ;;
-esac
-
 mkdir .gocache
 GOMODCACHE="$(pwd)/.gocache"
 GOCACHE="$(pwd)/.gocache"
 export GOMODCACHE GOCACHE
 
 (
-  # The gVisor code coverate implementation uses internal packages. More details
+  # The gVisor code coverage implementation uses internal packages. More details
   # can be found here: https://github.com/golang/go/issues/76098.
+
+  go_version=1.25.5
+
+  go_base_url="https://dl.google.com/go/go${go_version}"
+  arch="$(uname -m)"
+  case "$arch" in
+      x86_64) go_arch="amd64" ;;
+      aarch64) go_arch="arm64" ;;
+      *) echo "Unsupported architecture: $arch" >&2; exit 1 ;;
+  esac
+
   mkdir go-bootstrap
   curl -fsSL "${go_base_url}.linux-${go_arch}.tar.gz" | tar -xz -C go-bootstrap
   GOROOT_BOOTSTRAP="$(pwd)/go-bootstrap/go"
