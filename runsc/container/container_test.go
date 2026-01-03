@@ -4012,8 +4012,10 @@ func TestTarRootfsUpperLayer(t *testing.T) {
 		t.Fatal("error finding test_app:", err)
 	}
 
+	const containerName = "container-with-rootfs-snapshot"
 	spec, _ := sleepSpecConf(t)
 	spec.Root.Readonly = false
+	spec.Annotations["io.kubernetes.cri.container-name"] = containerName
 
 	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
 	if err != nil {
@@ -4074,7 +4076,7 @@ func TestTarRootfsUpperLayer(t *testing.T) {
 	}
 
 	// Add the tar file to the spec annotations and create a new container.
-	spec.Annotations["dev.gvisor.tar.rootfs.upper"] = tarFile1.Name()
+	spec.Annotations["dev.gvisor.tar.rootfs.upper."+containerName] = tarFile1.Name()
 	_, bundleDir, cleanup, err = testutil.SetupContainer(spec, conf)
 	if err != nil {
 		t.Fatalf("error setting up container: %v", err)

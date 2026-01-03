@@ -61,6 +61,16 @@ const (
 	//	"dev.gvisor.container-name-remap.1": "cont-123=cont"
 	annotationContainerNameRemap = "dev.gvisor.container-name-remap."
 
+	// annotationRootfsUpperTar allows the rootfs upper layer tar path to be specified.
+	annotationRootfsUpperTar = "dev.gvisor.tar.rootfs.upper"
+	// annotationRootfsUpperTarContainer allows the container name to be appended to the
+	// rootfs upper layer tar annotation to select a specific container in a pod.
+	//
+	// Usage:
+	//	"dev.gvisor.tar.rootfs.upper.<container-name>": "<path>"
+	//	"dev.gvisor.tar.rootfs.upper.my-container": "/tmp/my-container.tar"
+	annotationRootfsUpperTarContainer = annotationRootfsUpperTar + "."
+
 	// annotationSeccomp indicates what seccomp rules was set to a given container.
 	//
 	// Usage:
@@ -813,13 +823,19 @@ func containerNameNoRemap(spec *specs.Spec) string {
 	return spec.Annotations[annotationContainerName]
 }
 
-// RootfsTarUpperPath returns the path to the rootfs upper tar file. Returns empty string if no
-// annotation is found.
+// RootfsTarUpperPath returns the path to the rootfs upper tar file.
+// Prioritizes container-specific upper rootfs snapshot annotation.
+// Returns empty string if no annotation is found.
 func RootfsTarUpperPath(spec *specs.Spec) string {
 	if spec == nil || spec.Annotations == nil {
 		return ""
 	}
-	return spec.Annotations["dev.gvisor.tar.rootfs.upper"]
+	if name := ContainerName(spec); name != "" {
+		if path := spec.Annotations[annotationRootfsUpperTarContainer+name]; path != "" {
+			return path
+		}
+	}
+	return spec.Annotations[annotationRootfsUpperTar]
 }
 
 // AnnotationToBool parses the annotation value as a bool. On failure, it logs a warning and
