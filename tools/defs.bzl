@@ -12,6 +12,7 @@ load("//tools/bazeldefs:pkg.bzl", _pkg_deb = "pkg_deb", _pkg_tar = "pkg_tar")
 load("//tools/bazeldefs:platforms.bzl", _default_platform = "default_platform", _platform_capabilities = "platform_capabilities", _platforms = "platforms", _save_restore_platforms = "save_restore_platforms")
 load("//tools/bazeldefs:tags.bzl", _go_suffixes = "go_suffixes", _local_test_tags = "local_test_tags")
 load("//tools/go_marshal:defs.bzl", "go_marshal", "marshal_deps", "marshal_test_deps")
+load("//tools:go_imports.bzl", "go_imports")
 load("//tools/go_stateify:defs.bzl", "go_stateify")
 load("//tools/nogo:defs.bzl", "nogo_test")
 
@@ -132,16 +133,6 @@ def calculate_sets(srcs):
         else:
             result[target].append(file)
     return result
-
-def go_imports(name, src, out):
-    """Simplify a single Go source file by eliminating unused imports."""
-    native.genrule(
-        name = name,
-        srcs = [src],
-        outs = [out],
-        tools = ["@org_golang_x_tools//cmd/goimports:goimports"],
-        cmd = ("$(location @org_golang_x_tools//cmd/goimports:goimports) $(SRCS) > $@"),
-    )
 
 def go_library(name, srcs, deps = [], imports = [], stateify = True, force_add_state_pkg = False, marshal = False, marshal_debug = False, nogo = True, **kwargs):
     """Wraps the standard go_library and does stateification and marshalling.

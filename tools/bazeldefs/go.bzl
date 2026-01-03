@@ -133,25 +133,25 @@ def go_rule(rule, implementation, **kwargs):
     Returns:
         The result of invoking the rule.
     """
-    attrs = kwargs.pop("attrs", dict())
-    attrs["_go_context_data"] = attr.label(default = "@io_bazel_rules_go//:go_context_data")
-    attrs["_stdlib"] = attr.label(default = "@io_bazel_rules_go//:stdlib")
-    toolchains = kwargs.get("toolchains", []) + ["@io_bazel_rules_go//go:toolchain"]
-    return rule(implementation, attrs = attrs, toolchains = toolchains, **kwargs)
+    kwargs.setdefault("attrs", dict()).update({
+        "_go_context_data": attr.label(default = "@io_bazel_rules_go//:go_context_data"),
+        "_stdlib": attr.label(default = "@io_bazel_rules_go//:stdlib"),
+    })
+    kwargs.setdefault("toolchains", []).append("@io_bazel_rules_go//go:toolchain")
+    return rule(implementation, **kwargs)
 
 def go_embed_libraries(target):
     if hasattr(target.attr, "embed"):
         return target.attr.embed
     return []
 
-def go_context(ctx, goos = None, goarch = None, std = False):
+def go_context(ctx, goos = None, goarch = None):
     """Extracts a standard Go context struct.
 
     Args:
       ctx: the starlark context (required).
       goos: the GOOS value.
       goarch: the GOARCH value.
-      std: ignored.
 
     Returns:
       A context Go struct with pointers to Go toolchain components.
@@ -161,17 +161,11 @@ def go_context(ctx, goos = None, goarch = None, std = False):
     # are available in all instances. Note that this includes the standard
     # library sources, which are analyzed by nogo.
     go_ctx = _go_context(ctx)
-    if goos == None:
-        goos = go_ctx.sdk.goos
-    if goarch == None:
-        goarch = go_ctx.sdk.goarch
-    env = go_ctx.env
-    env["CGO_ENABLED"] = "0"
     return struct(
-        env = env,
+        env = dict(go_ctx.env, CGO_ENABLED = "0"),
         go = go_ctx.go,
-        goarch = goarch,
-        goos = goos,
+        goarch = goarch or go_ctx.sdk.goarch,
+        goos = goos or go_ctx.sdk.goos,
         gotags = go_ctx.tags,
         nogo_args = [],
         runfiles = depset([go_ctx.go] + go_ctx.sdk.srcs.to_list() + go_ctx.sdk.tools.to_list() + go_ctx.stdlib.libs.to_list()),
