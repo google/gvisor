@@ -31,7 +31,7 @@ export GOMODCACHE GOCACHE
 (
   # The gVisor code coverate implementation uses internal packages. More details
   # can be found here: https://github.com/golang/go/issues/76098.
-  curl -L https://go.dev/dl/go1.25.3.src.tar.gz | tar -xz
+  curl -L https://go.dev/dl/go1.25.5.src.tar.gz | tar -xz
   cd go
   patch -p1 < "$golang_patch"
   cd src
