@@ -81,7 +81,7 @@ def _syscall_test(
         save_resume = False,
         netstack_sr = False,
         nftables = False,
-        kvm_use_cpu_nums = False,
+        kvm_use_cpu_nums = True,
         **kwargs):
     # Prepend "runsc" to non-native platform names.
     full_platform = platform if platform == "native" else "runsc_" + platform
