@@ -215,7 +215,7 @@ func CheckSetStat(ctx context.Context, creds *auth.Credentials, opts *SetStatOpt
 			return linuxerr.EPERM
 		}
 	}
-	if opts.NeedWritePerm && !creds.HasCapability(linux.CAP_DAC_OVERRIDE) {
+	if opts.NeedWritePerm {
 		if err := GenericCheckPermissions(creds, MayWrite, mode, kuid, kgid); err != nil {
 			return err
 		}

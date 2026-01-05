@@ -30,6 +30,9 @@
 #include "test/util/capability_util.h"
 #include "test/util/cleanup.h"
 #include "test/util/file_descriptor.h"
+#include "test/util/logging.h"
+#include "test/util/multiprocess_util.h"
+#include "test/util/posix_error.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
 
@@ -184,8 +187,16 @@ TEST(TruncateTest, TruncateNonWriteable) {
   AutoCapability cap(CAP_DAC_OVERRIDE, false);
   auto temp_file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileWith(
       GetAbsoluteTestTmpdir(), absl::string_view(), 0555 /* mode */));
-  EXPECT_THAT(truncate(temp_file.path().c_str(), 0),
-              SyscallFailsWithErrno(EACCES));
+  const char* path = temp_file.path().c_str();
+  EXPECT_THAT(truncate(path, 0), SyscallFailsWithErrno(EACCES));
+
+  // We shouldn't be able to get around the lack of the cap by gaining it in a
+  // new userns.
+  EXPECT_THAT(InForkedProcess([&] {
+                TEST_CHECK_SUCCESS(syscall(SYS_unshare, CLONE_NEWUSER));
+                TEST_CHECK_ERRNO(syscall(SYS_truncate, path, 0), EACCES);
+              }),
+              IsPosixErrorOkAndHolds(0));
 }
 
 TEST(TruncateTest, FtruncateNonWriteable) {
