@@ -709,6 +709,7 @@ var (
 	_ operation = (*route)(nil)
 	_ operation = (*byteorder)(nil)
 	_ operation = (*metaLoad)(nil)
+	_ operation = (*metaSet)(nil)
 )
 
 //
