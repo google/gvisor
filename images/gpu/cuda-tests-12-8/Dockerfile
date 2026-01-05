@@ -23,19 +23,17 @@ RUN export DEBIAN_FRONTEND=noninteractive; \
       mpich \
       pkg-config \
       vim \
-      wget \
       x11-xserver-utils \
       xdotool \
       xvfb \
-      zlib1g zlib1g-dev \
-      && apt -y purge 'golang*'
+      zlib1g zlib1g-dev
 
 RUN git clone --depth=1 --branch=v12.8 --single-branch \
       https://github.com/NVIDIA/cuda-samples.git /cuda-samples && cd /cuda-samples
 
 ADD *.cu *.h *.sh *.go *.cc /
 
-RUN chmod 555 /*.sh && /install_go.sh && rm /install_go.sh && \
+RUN chmod 555 /*.sh && \
     gcc -o /unsupported_ioctl /unsupported_ioctl.cc && \
     go install \
       github.com/TheZoraiz/ascii-image-converter@d05a757c5e02ab23e97b6f6fca4e1fbeb10ab559 && \
