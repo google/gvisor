@@ -13,10 +13,13 @@
 // limitations under the License.
 
 #include <errno.h>
+#include <signal.h>
+#include <stdint.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include <atomic>
 #include <string>
 #include <utility>
 
@@ -26,6 +29,7 @@
 #include "absl/time/time.h"
 #include "test/util/logging.h"
 #include "test/util/multiprocess_util.h"
+#include "test/util/signal_util.h"
 #include "test/util/test_util.h"
 #include "test/util/time_util.h"
 
@@ -55,6 +59,14 @@ int64_t MonotonicNow() {
   struct timespec now;
   TEST_PCHECK(clock_gettime(CLOCK_MONOTONIC, &now) == 0);
   return now.tv_sec * 1000000000ll + now.tv_nsec;
+}
+
+std::atomic<uint64_t> sigchld_count = 0;
+
+void SigchldCountingHandler(int signo, siginfo_t* siginfo, void* uc) {
+  if (signo == SIGCHLD) {
+    sigchld_count.fetch_add(1, std::memory_order_relaxed);
+  }
 }
 
 TEST(VforkTest, ParentStopsUntilChildExits) {
@@ -169,6 +181,61 @@ TEST(VforkTest, ExecedChildExitDoesntUnstopParent) {
     TEST_PCHECK(RetryEINTR(waitpid)(pid2, &status, 0));
     TEST_CHECK(WIFEXITED(status));
     TEST_CHECK(WEXITSTATUS(status) == kChildExitCode);
+  };
+
+  EXPECT_THAT(InForkedProcess(test), IsPosixErrorOkAndHolds(0));
+}
+
+TEST(VforkTest, SigchldReceivedDuringVforkIsDelivered) {
+  const auto test = [&] {
+    struct sigaction sa = {};
+    sa.sa_sigaction = SigchldCountingHandler;
+    sigfillset(&sa.sa_mask);
+    sa.sa_flags = SA_SIGINFO;
+    const auto cleanup_sigaction =
+        TEST_CHECK_NO_ERRNO_AND_VALUE(ScopedSigaction(SIGCHLD, sa));
+    const auto cleanup_sigmask =
+        TEST_CHECK_NO_ERRNO_AND_VALUE(ScopedSignalMask(SIG_UNBLOCK, SIGCHLD));
+
+    const auto sigchld_count_before =
+        sigchld_count.load(std::memory_order_relaxed);
+    std::atomic_signal_fence(std::memory_order_seq_cst);
+
+    // Create a non-vfork child that will exit after kChildDelay/2, sending
+    // SIGCHLD.
+    const pid_t pid1 = fork();
+    if (pid1 == 0) {
+      SleepSafe(kChildDelay / 2);
+      _exit(kChildExitCode);
+    }
+    TEST_PCHECK_MSG(pid1 > 0, "fork failed");
+    MaybeSave();
+
+    // Create a vfork child that will exit after kChildDelay, so that SIGCHLD
+    // is sent for the first child while the parent is stopped for vfork.
+    const pid_t pid2 = vfork();
+    if (pid2 == 0) {
+      SleepSafe(kChildDelay);
+      _exit(kChildExitCode);
+    }
+    TEST_PCHECK_MSG(pid2 > 0, "vfork failed");
+    MaybeSave();
+
+    int status = 0;
+    TEST_PCHECK(RetryEINTR(waitpid)(pid1, &status, 0));
+    TEST_CHECK(WIFEXITED(status));
+    TEST_CHECK(WEXITSTATUS(status) == kChildExitCode);
+
+    TEST_PCHECK(RetryEINTR(waitpid)(pid2, &status, 0));
+    TEST_CHECK(WIFEXITED(status));
+    TEST_CHECK(WEXITSTATUS(status) == kChildExitCode);
+
+    // Check that at least one SIGCHLD was delivered (two child processes died,
+    // but one SIGCHLD may have been deduplicated.)
+    std::atomic_signal_fence(std::memory_order_seq_cst);
+    const auto sigchld_count_after =
+        sigchld_count.load(std::memory_order_relaxed);
+    TEST_CHECK(sigchld_count_before < sigchld_count_after);
   };
 
   EXPECT_THAT(InForkedProcess(test), IsPosixErrorOkAndHolds(0));

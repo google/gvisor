@@ -135,6 +135,11 @@ func (t *Task) endInternalStopLocked() {
 	}
 	t.Debugf("Leaving internal stop %#v", t.stop)
 	t.stop = nil
+	// t.canReceiveSignalLocked() skips stopped tasks, so we may need to handle
+	// signals that were sent while we were stopped.
+	if (t.pendingSignals.pendingSet.RacyLoad()|t.tg.pendingSignals.pendingSet.RacyLoad())&^t.signalMask.RacyLoad() != 0 {
+		t.interrupt()
+	}
 	t.endStopLocked()
 }
 
