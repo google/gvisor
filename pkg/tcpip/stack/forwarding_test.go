@@ -109,6 +109,11 @@ func (f *fwdTestNetworkEndpoint) HandlePacket(pkt *PacketBuffer) {
 	_ = r.WriteHeaderIncludedPacket(pkt)
 }
 
+// EndpointHeaderSize implements NetworkEndpoint.EndpointHeaderSize.
+func (f *fwdTestNetworkEndpoint) EndpointHeaderSize() uint32 {
+	return fwdTestNetHeaderLen
+}
+
 func (f *fwdTestNetworkEndpoint) MaxHeaderLength() uint16 {
 	return f.nic.MaxHeaderLength() + fwdTestNetHeaderLen
 }

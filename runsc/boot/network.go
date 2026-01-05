@@ -43,31 +43,29 @@ import (
 	"gvisor.dev/gvisor/runsc/config"
 )
 
-var (
-	// DefaultLoopbackLink contains IP addresses and routes of "127.0.0.1/8" and
-	// "::1/8" on "lo" interface.
-	DefaultLoopbackLink = LoopbackLink{
-		Name: "lo",
-		Addresses: []IPWithPrefix{
-			{Address: net.IP("\x7f\x00\x00\x01"), PrefixLen: 8},
-			{Address: net.IPv6loopback, PrefixLen: 128},
-		},
-		Routes: []Route{
-			{
-				Destination: net.IPNet{
-					IP:   net.IPv4(0x7f, 0, 0, 0),
-					Mask: net.IPv4Mask(0xff, 0, 0, 0),
-				},
-			},
-			{
-				Destination: net.IPNet{
-					IP:   net.IPv6loopback,
-					Mask: net.IPMask(strings.Repeat("\xff", net.IPv6len)),
-				},
+// DefaultLoopbackLink contains IP addresses and routes of "127.0.0.1/8" and
+// "::1/8" on "lo" interface.
+var DefaultLoopbackLink = LoopbackLink{
+	Name: "lo",
+	Addresses: []IPWithPrefix{
+		{Address: net.IP("\x7f\x00\x00\x01"), PrefixLen: 8},
+		{Address: net.IPv6loopback, PrefixLen: 128},
+	},
+	Routes: []Route{
+		{
+			Destination: net.IPNet{
+				IP:   net.IPv4(0x7f, 0, 0, 0),
+				Mask: net.IPv4Mask(0xff, 0, 0, 0),
 			},
 		},
-	}
-)
+		{
+			Destination: net.IPNet{
+				IP:   net.IPv6loopback,
+				Mask: net.IPMask(strings.Repeat("\xff", net.IPv6len)),
+			},
+		},
+	},
+}
 
 // Network exposes methods that can be used to configure a network stack.
 type Network struct {
@@ -83,6 +81,7 @@ type Network struct {
 type Route struct {
 	Destination net.IPNet
 	Gateway     net.IP
+	MTU         uint32
 }
 
 // DefaultRoute represents a catch all route to the default gateway.
@@ -220,6 +219,7 @@ func (r *Route) toTcpipRoute(id tcpip.NICID) (tcpip.Route, error) {
 		Destination: subnet,
 		Gateway:     ipToAddress(r.Gateway),
 		NIC:         id,
+		MTU:         r.MTU,
 	}, nil
 }
 

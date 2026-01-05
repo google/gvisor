@@ -169,6 +169,10 @@ func (f *fakeNetworkEndpoint) HandlePacket(pkt *stack.PacketBuffer) {
 	f.dispatcher.DeliverTransportPacket(transProtoNum, pkt)
 }
 
+func (f *fakeNetworkEndpoint) EndpointHeaderSize() uint32 {
+	return fakeNetHeaderLen
+}
+
 func (f *fakeNetworkEndpoint) MaxHeaderLength() uint16 {
 	return f.nic.MaxHeaderLength() + fakeNetHeaderLen
 }
@@ -832,6 +836,8 @@ func TestNetworkSendMultiRoute(t *testing.T) {
 }
 
 func testRoute(t *testing.T, s *stack.Stack, nic tcpip.NICID, srcAddr, dstAddr, expectedSrcAddr tcpip.Address, expectedRouteMTU int) {
+	t.Helper()
+
 	r, err := s.FindRoute(nic, srcAddr, dstAddr, fakeNetNumber, false /* multicastLoop */)
 	if err != nil {
 		t.Fatal("FindRoute failed:", err)
@@ -840,19 +846,21 @@ func testRoute(t *testing.T, s *stack.Stack, nic tcpip.NICID, srcAddr, dstAddr, 
 	defer r.Release()
 
 	if r.LocalAddress() != expectedSrcAddr {
-		t.Fatalf("got Route.LocalAddress() = %s, want = %s", expectedSrcAddr, r.LocalAddress())
+		t.Errorf("got Route.LocalAddress() = %s, want = %s", expectedSrcAddr, r.LocalAddress())
 	}
 
 	if r.RemoteAddress() != dstAddr {
-		t.Fatalf("got Route.RemoteAddress() = %s, want = %s", dstAddr, r.RemoteAddress())
+		t.Errorf("got Route.RemoteAddress() = %s, want = %s", dstAddr, r.RemoteAddress())
 	}
 
 	if int(r.MTU()) != expectedRouteMTU {
-		t.Fatalf("got Route.MTU() = %d, want = %d", r.MTU(), expectedRouteMTU)
+		t.Errorf("got Route.MTU() = %d, want = %d", r.MTU(), expectedRouteMTU)
 	}
 }
 
 func testNoRoute(t *testing.T, s *stack.Stack, nic tcpip.NICID, srcAddr, dstAddr tcpip.Address) {
+	t.Helper()
+
 	_, err := s.FindRoute(nic, srcAddr, dstAddr, fakeNetNumber, false /* multicastLoop */)
 	if _, ok := err.(*tcpip.ErrNetworkUnreachable); !ok {
 		t.Fatalf("FindRoute returned unexpected error, got = %v, want = %s", err, &tcpip.ErrNetworkUnreachable{})
@@ -1043,17 +1051,22 @@ func TestRouteWithDownNIC(t *testing.T) {
 	const unspecifiedNIC = 0
 	const nicID1 = 1
 	const nicID2 = 2
-	var addr1 = tcpip.AddrFrom4Slice([]byte("\x01\x00\x00\x00"))
-	var addr2 = tcpip.AddrFrom4Slice([]byte("\x02\x00\x00\x00"))
-	var nic1Dst = tcpip.AddrFrom4Slice([]byte("\x05\x00\x00\x00"))
-	var nic2Dst = tcpip.AddrFrom4Slice([]byte("\x06\x00\x00\x00"))
-	var nic1RouteMTU = 1500
-	var nic2RouteMTU = 1460
+	addr1 := tcpip.AddrFrom4Slice([]byte("\x01\x00\x00\x00"))
+	addr2 := tcpip.AddrFrom4Slice([]byte("\x02\x00\x00\x00"))
+	nic1Dst := tcpip.AddrFrom4Slice([]byte("\x05\x00\x00\x00"))
+	nic2Dst := tcpip.AddrFrom4Slice([]byte("\x06\x00\x00\x00"))
+	nic1RouteMTU := 1500
+	nic2RouteMTU := 1460
+	// These are set in setup function, because they depend on protocl being used.
+	nic1RouteMTUAtNetworkLayer := 0
+	nic2RouteMTUAtNetworkLayer := 0
 
 	setup := func(t *testing.T) (*stack.Stack, *channel.Endpoint, *channel.Endpoint) {
 		s := stack.New(stack.Options{
 			NetworkProtocols: []stack.NetworkProtocolFactory{fakeNetFactory},
 		})
+		nic1RouteMTUAtNetworkLayer = nic1RouteMTU - fakeNetHeaderLen
+		nic2RouteMTUAtNetworkLayer = nic2RouteMTU - fakeNetHeaderLen
 
 		ep1 := channel.New(1, defaultMTU, "")
 		if err := s.CreateNIC(nicID1, ep1); err != nil {
@@ -1116,14 +1129,14 @@ func TestRouteWithDownNIC(t *testing.T) {
 				s, _, _ := setup(t)
 
 				// Test routes to odd address.
-				testRoute(t, s, unspecifiedNIC, tcpip.Address{}, tcpip.AddrFromSlice([]byte("\x05\x00\x00\x00")), addr1, nic1RouteMTU)
-				testRoute(t, s, unspecifiedNIC, addr1, tcpip.AddrFromSlice([]byte("\x05\x00\x00\x00")), addr1, nic1RouteMTU)
-				testRoute(t, s, nicID1, addr1, tcpip.AddrFromSlice([]byte("\x05\x00\x00\x00")), addr1, nic1RouteMTU)
+				testRoute(t, s, unspecifiedNIC, tcpip.Address{}, tcpip.AddrFromSlice([]byte("\x05\x00\x00\x00")), addr1, nic1RouteMTUAtNetworkLayer)
+				testRoute(t, s, unspecifiedNIC, addr1, tcpip.AddrFromSlice([]byte("\x05\x00\x00\x00")), addr1, nic1RouteMTUAtNetworkLayer)
+				testRoute(t, s, nicID1, addr1, tcpip.AddrFromSlice([]byte("\x05\x00\x00\x00")), addr1, nic1RouteMTUAtNetworkLayer)
 
 				// Test routes to even address.
-				testRoute(t, s, unspecifiedNIC, tcpip.Address{}, tcpip.AddrFromSlice([]byte("\x06\x00\x00\x00")), addr2, nic2RouteMTU)
-				testRoute(t, s, unspecifiedNIC, addr2, tcpip.AddrFromSlice([]byte("\x06\x00\x00\x00")), addr2, nic2RouteMTU)
-				testRoute(t, s, nicID2, addr2, tcpip.AddrFromSlice([]byte("\x06\x00\x00\x00")), addr2, nic2RouteMTU)
+				testRoute(t, s, unspecifiedNIC, tcpip.Address{}, tcpip.AddrFromSlice([]byte("\x06\x00\x00\x00")), addr2, nic2RouteMTUAtNetworkLayer)
+				testRoute(t, s, unspecifiedNIC, addr2, tcpip.AddrFromSlice([]byte("\x06\x00\x00\x00")), addr2, nic2RouteMTUAtNetworkLayer)
+				testRoute(t, s, nicID2, addr2, tcpip.AddrFromSlice([]byte("\x06\x00\x00\x00")), addr2, nic2RouteMTUAtNetworkLayer)
 
 				// Bringing NIC1 down should result in no routes to odd addresses. Routes to
 				// even addresses should continue to be available as NIC2 is still up.
@@ -1133,9 +1146,9 @@ func TestRouteWithDownNIC(t *testing.T) {
 				testNoRoute(t, s, unspecifiedNIC, tcpip.Address{}, nic1Dst)
 				testNoRoute(t, s, unspecifiedNIC, addr1, nic1Dst)
 				testNoRoute(t, s, nicID1, addr1, nic1Dst)
-				testRoute(t, s, unspecifiedNIC, tcpip.Address{}, nic2Dst, addr2, nic2RouteMTU)
-				testRoute(t, s, unspecifiedNIC, addr2, nic2Dst, addr2, nic2RouteMTU)
-				testRoute(t, s, nicID2, addr2, nic2Dst, addr2, nic2RouteMTU)
+				testRoute(t, s, unspecifiedNIC, tcpip.Address{}, nic2Dst, addr2, nic2RouteMTUAtNetworkLayer)
+				testRoute(t, s, unspecifiedNIC, addr2, nic2Dst, addr2, nic2RouteMTUAtNetworkLayer)
+				testRoute(t, s, nicID2, addr2, nic2Dst, addr2, nic2RouteMTUAtNetworkLayer)
 
 				// Bringing NIC2 down should result in no routes to even addresses. No
 				// route should be available to any address as routes to odd addresses
@@ -1157,9 +1170,9 @@ func TestRouteWithDownNIC(t *testing.T) {
 					if err := upFn(s, nicID1); err != nil {
 						t.Fatalf("test.upFn(_, %d): %s", nicID1, err)
 					}
-					testRoute(t, s, unspecifiedNIC, tcpip.Address{}, nic1Dst, addr1, nic1RouteMTU)
-					testRoute(t, s, unspecifiedNIC, addr1, nic1Dst, addr1, nic1RouteMTU)
-					testRoute(t, s, nicID1, addr1, nic1Dst, addr1, nic1RouteMTU)
+					testRoute(t, s, unspecifiedNIC, tcpip.Address{}, nic1Dst, addr1, nic1RouteMTUAtNetworkLayer)
+					testRoute(t, s, unspecifiedNIC, addr1, nic1Dst, addr1, nic1RouteMTUAtNetworkLayer)
+					testRoute(t, s, nicID1, addr1, nic1Dst, addr1, nic1RouteMTUAtNetworkLayer)
 					testNoRoute(t, s, unspecifiedNIC, tcpip.Address{}, nic2Dst)
 					testNoRoute(t, s, unspecifiedNIC, addr2, nic2Dst)
 					testNoRoute(t, s, nicID2, addr2, nic2Dst)
@@ -1293,7 +1306,9 @@ func TestRoutes(t *testing.T) {
 	// addresses through the first NIC, and all even destination address
 	// through the second one.
 	nic1RouteMTU := 1500
+	nic1RouteMTUAtNetworkLayer := nic1RouteMTU - fakeNetHeaderLen
 	nic2RouteMTU := 1460
+	nic2RouteMTUAtNetworkLayer := nic2RouteMTU - fakeNetHeaderLen
 	{
 		subnet0, err := tcpip.NewSubnet(tcpip.AddrFromSlice([]byte("\x00\x00\x00\x00")), tcpip.MaskFrom("\x01\x00\x00\x00"))
 		if err != nil {
@@ -1311,18 +1326,18 @@ func TestRoutes(t *testing.T) {
 	}
 
 	// Test routes to odd address.
-	testRoute(t, s, 0, tcpip.Address{}, tcpip.AddrFromSlice([]byte("\x05\x00\x00\x00")), tcpip.AddrFromSlice([]byte("\x01\x00\x00\x00")), nic1RouteMTU)
-	testRoute(t, s, 0, tcpip.AddrFromSlice([]byte("\x01\x00\x00\x00")), tcpip.AddrFromSlice([]byte("\x05\x00\x00\x00")), tcpip.AddrFromSlice([]byte("\x01\x00\x00\x00")), nic1RouteMTU)
-	testRoute(t, s, 1, tcpip.AddrFromSlice([]byte("\x01\x00\x00\x00")), tcpip.AddrFromSlice([]byte("\x05\x00\x00\x00")), tcpip.AddrFromSlice([]byte("\x01\x00\x00\x00")), nic1RouteMTU)
-	testRoute(t, s, 0, tcpip.AddrFromSlice([]byte("\x03\x00\x00\x00")), tcpip.AddrFromSlice([]byte("\x05\x00\x00\x00")), tcpip.AddrFromSlice([]byte("\x03\x00\x00\x00")), nic1RouteMTU)
-	testRoute(t, s, 1, tcpip.AddrFromSlice([]byte("\x03\x00\x00\x00")), tcpip.AddrFromSlice([]byte("\x05\x00\x00\x00")), tcpip.AddrFromSlice([]byte("\x03\x00\x00\x00")), nic1RouteMTU)
+	testRoute(t, s, 0, tcpip.Address{}, tcpip.AddrFromSlice([]byte("\x05\x00\x00\x00")), tcpip.AddrFromSlice([]byte("\x01\x00\x00\x00")), nic1RouteMTUAtNetworkLayer)
+	testRoute(t, s, 0, tcpip.AddrFromSlice([]byte("\x01\x00\x00\x00")), tcpip.AddrFromSlice([]byte("\x05\x00\x00\x00")), tcpip.AddrFromSlice([]byte("\x01\x00\x00\x00")), nic1RouteMTUAtNetworkLayer)
+	testRoute(t, s, 1, tcpip.AddrFromSlice([]byte("\x01\x00\x00\x00")), tcpip.AddrFromSlice([]byte("\x05\x00\x00\x00")), tcpip.AddrFromSlice([]byte("\x01\x00\x00\x00")), nic1RouteMTUAtNetworkLayer)
+	testRoute(t, s, 0, tcpip.AddrFromSlice([]byte("\x03\x00\x00\x00")), tcpip.AddrFromSlice([]byte("\x05\x00\x00\x00")), tcpip.AddrFromSlice([]byte("\x03\x00\x00\x00")), nic1RouteMTUAtNetworkLayer)
+	testRoute(t, s, 1, tcpip.AddrFromSlice([]byte("\x03\x00\x00\x00")), tcpip.AddrFromSlice([]byte("\x05\x00\x00\x00")), tcpip.AddrFromSlice([]byte("\x03\x00\x00\x00")), nic1RouteMTUAtNetworkLayer)
 
 	// Test routes to even address.
-	testRoute(t, s, 0, tcpip.Address{}, tcpip.AddrFromSlice([]byte("\x06\x00\x00\x00")), tcpip.AddrFromSlice([]byte("\x04\x00\x00\x00")), nic2RouteMTU)
-	testRoute(t, s, 0, tcpip.AddrFromSlice([]byte("\x02\x00\x00\x00")), tcpip.AddrFromSlice([]byte("\x06\x00\x00\x00")), tcpip.AddrFromSlice([]byte("\x02\x00\x00\x00")), nic2RouteMTU)
-	testRoute(t, s, 2, tcpip.AddrFromSlice([]byte("\x02\x00\x00\x00")), tcpip.AddrFromSlice([]byte("\x06\x00\x00\x00")), tcpip.AddrFromSlice([]byte("\x02\x00\x00\x00")), nic2RouteMTU)
-	testRoute(t, s, 0, tcpip.AddrFromSlice([]byte("\x04\x00\x00\x00")), tcpip.AddrFromSlice([]byte("\x06\x00\x00\x00")), tcpip.AddrFromSlice([]byte("\x04\x00\x00\x00")), nic2RouteMTU)
-	testRoute(t, s, 2, tcpip.AddrFromSlice([]byte("\x04\x00\x00\x00")), tcpip.AddrFromSlice([]byte("\x06\x00\x00\x00")), tcpip.AddrFromSlice([]byte("\x04\x00\x00\x00")), nic2RouteMTU)
+	testRoute(t, s, 0, tcpip.Address{}, tcpip.AddrFromSlice([]byte("\x06\x00\x00\x00")), tcpip.AddrFromSlice([]byte("\x04\x00\x00\x00")), nic2RouteMTUAtNetworkLayer)
+	testRoute(t, s, 0, tcpip.AddrFromSlice([]byte("\x02\x00\x00\x00")), tcpip.AddrFromSlice([]byte("\x06\x00\x00\x00")), tcpip.AddrFromSlice([]byte("\x02\x00\x00\x00")), nic2RouteMTUAtNetworkLayer)
+	testRoute(t, s, 2, tcpip.AddrFromSlice([]byte("\x02\x00\x00\x00")), tcpip.AddrFromSlice([]byte("\x06\x00\x00\x00")), tcpip.AddrFromSlice([]byte("\x02\x00\x00\x00")), nic2RouteMTUAtNetworkLayer)
+	testRoute(t, s, 0, tcpip.AddrFromSlice([]byte("\x04\x00\x00\x00")), tcpip.AddrFromSlice([]byte("\x06\x00\x00\x00")), tcpip.AddrFromSlice([]byte("\x04\x00\x00\x00")), nic2RouteMTUAtNetworkLayer)
+	testRoute(t, s, 2, tcpip.AddrFromSlice([]byte("\x04\x00\x00\x00")), tcpip.AddrFromSlice([]byte("\x06\x00\x00\x00")), tcpip.AddrFromSlice([]byte("\x04\x00\x00\x00")), nic2RouteMTUAtNetworkLayer)
 
 	// Try to send to odd numbered address from even numbered ones, then
 	// vice-versa.

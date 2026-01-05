@@ -128,6 +128,11 @@ func (e *endpoint) MTU() uint32 {
 	return lmtu - uint32(e.MaxHeaderLength())
 }
 
+// EndpointHeaderSize returns the size necessary for the ARP header.
+func (e *endpoint) EndpointHeaderSize() uint32 {
+	return header.ARPSize
+}
+
 func (e *endpoint) MaxHeaderLength() uint16 {
 	return e.nic.MaxHeaderLength() + header.ARPSize
 }
