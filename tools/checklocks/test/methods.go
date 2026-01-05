@@ -40,6 +40,13 @@ func (t *testMethods) MethodLocked(a, b, c int) {
 	t.guardedField = 3
 }
 
+// +checklocksexclude:t.mu
+func (t *testMethods) MethodExclude() {
+	t.mu.Lock()
+	t.guardedField++
+	t.mu.Unlock()
+}
+
 // +checklocksignore
 func (t *testMethods) methodIgnore() {
 	t.guardedField = 2
@@ -57,6 +64,16 @@ func testMethodCallsValidPreconditions(tc *testMethods) {
 
 func testMethodCallsInvalid(tc *testMethods) {
 	tc.MethodLocked(4, 5, 6) // +checklocksfail
+}
+
+func testMethodCallsExcludeValid(tc *testMethods) {
+	tc.MethodExclude()
+}
+
+func testMethodCallsExcludeInvalid(tc *testMethods) {
+	tc.mu.Lock()
+	tc.MethodExclude() // +checklocksfail
+	tc.mu.Unlock()
 }
 
 func testMultipleParameters(tc1, tc2, tc3 *testMethods) {

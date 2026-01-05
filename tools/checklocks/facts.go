@@ -303,7 +303,7 @@ type functionGuardInfo struct {
 	// IsAlias indicates that this guard is an alias.
 	IsAlias bool
 
-	// Exclusive indicates an exclusive lock is required.
+	// Exclusive indicates an exclusive lock is required or excluded.
 	Exclusive bool
 }
 
@@ -332,6 +332,15 @@ type lockFunctionFacts struct {
 	// HeldOnExit tracks the locks that are expected to be held on exit.
 	HeldOnExit map[string]functionGuardInfo
 
+	// ExcludedOnEntry tracks locks that must not be held on entry.
+	//
+	// ExcludedOnEntry differs from HeldOnEntry in that it is checked only at call
+	// sites, and does not affect the caller's lock state after the call.
+	//
+	// Exclusive indicates whether the lock must not be held exclusively. If
+	// false, then the lock must not be held in any mode.
+	ExcludedOnEntry map[string]functionGuardInfo
+
 	// Ignore means this function has local analysis ignores.
 	//
 	// This is not used outside the local package.
@@ -343,6 +352,12 @@ func (*lockFunctionFacts) AFact() {}
 
 // checkGuard validates the guardName.
 func (lff *lockFunctionFacts) checkGuard(pc *passContext, d *ast.FuncDecl, guardName string, exclusive bool, allowReturn bool) (functionGuardInfo, bool) {
+	if fg, ok := lff.ExcludedOnEntry[guardName]; ok {
+		if exclusive || !fg.Exclusive {
+			pc.maybeFail(d.Pos(), "annotation %s cannot be both required and forbidden", guardName)
+			return functionGuardInfo{}, false
+		}
+	}
 	if _, ok := lff.HeldOnEntry[guardName]; ok {
 		pc.maybeFail(d.Pos(), "annotation %s specified more than once, already required", guardName)
 		return functionGuardInfo{}, false
@@ -362,6 +377,31 @@ func (lff *lockFunctionFacts) checkGuard(pc *passContext, d *ast.FuncDecl, guard
 		Resolver:  res,
 		Exclusive: exclusive,
 	}, true
+}
+
+func (lff *lockFunctionFacts) addExcludes(pc *passContext, d *ast.FuncDecl, guardName string, exclusiveOnly bool) {
+	if _, ok := lff.ExcludedOnEntry[guardName]; ok {
+		pc.maybeFail(d.Pos(), "annotation %s specified more than once, already forbidden", guardName)
+		return
+	}
+	if fg, ok := lff.HeldOnEntry[guardName]; ok {
+		if !exclusiveOnly || fg.Exclusive {
+			pc.maybeFail(d.Pos(), "annotation %s cannot be both required and forbidden", guardName)
+			return
+		}
+	}
+
+	res, _, ok := pc.resolveFunctionGuard(d, guardName, false /* allowReturn */)
+	if !ok {
+		return
+	}
+	if lff.ExcludedOnEntry == nil {
+		lff.ExcludedOnEntry = make(map[string]functionGuardInfo)
+	}
+	lff.ExcludedOnEntry[guardName] = functionGuardInfo{
+		Resolver:  res,
+		Exclusive: exclusiveOnly,
+	}
 }
 
 // addGuardedBy adds a field to both HeldOnEntry and HeldOnExit.
@@ -866,11 +906,13 @@ func (pc *passContext) functionFacts(d *ast.FuncDecl) {
 			checkLocksReleases:       func(guardName string) { lff.addReleases(pc, d, guardName, true /* exclusive */) },
 			checkLocksReleasesRead:   func(guardName string) { lff.addReleases(pc, d, guardName, false /* exclusive */) },
 			checkLocksAlias:          func(guardName string) { lff.addAlias(pc, d, guardName) },
+			checkLocksExcludes:       func(guardName string) { lff.addExcludes(pc, d, guardName, false /* exclusiveOnly */) },
+			checkLocksExcludesWrite:  func(guardName string) { lff.addExcludes(pc, d, guardName, true /* exclusiveOnly */) },
 		})
 	}
 
 	// Export the function facts if there is anything to save.
-	if lff.Ignore || len(lff.HeldOnEntry) > 0 || len(lff.HeldOnExit) > 0 {
+	if lff.Ignore || len(lff.HeldOnEntry) > 0 || len(lff.HeldOnExit) > 0 || len(lff.ExcludedOnEntry) > 0 {
 		funcObj := pc.pass.TypesInfo.Defs[d.Name].(*types.Func)
 		pc.pass.ExportObjectFact(funcObj, &lff)
 	}

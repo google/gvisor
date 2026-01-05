@@ -475,16 +475,38 @@ func (pc *passContext) checkFunctionCall(call callCommon, fn *types.Func, lff *l
 		args = call.Common().Args
 	}
 
+	callPos := call.Pos()
+	posKey := pc.positionKey(callPos)
+	_, forced := pc.forced[posKey]
+	callValue := call.Value()
+	resolve := func(fg functionGuardInfo) resolvedValue {
+		return fg.Resolver.resolveCall(pc, ls, args, callValue)
+	}
+
+	// Check that excluded locks are not held on entry.
+	for fieldName, fg := range lff.ExcludedOnEntry {
+		r := resolve(fg)
+		if s, ok := ls.isHeld(r, fg.Exclusive); ok {
+			if !forced && !lff.Ignore {
+				if fg.Exclusive {
+					pc.maybeFail(callPos, "must not hold %s exclusively (%s) to call %s, but held (locks: %s)", fieldName, s, fn.Name(), ls.String())
+				} else {
+					pc.maybeFail(callPos, "must not hold %s (%s) to call %s, but held (locks: %s)", fieldName, s, fn.Name(), ls.String())
+				}
+			}
+		}
+	}
+
 	// Check all guards required are held. Note that this explicitly does
 	// not include aliases, hence false being passed below.
 	for fieldName, fg := range lff.HeldOnEntry {
 		if fg.IsAlias {
 			continue
 		}
-		r := fg.Resolver.resolveCall(pc, ls, args, call.Value())
+		r := resolve(fg)
 		if s, ok := ls.isHeld(r, fg.Exclusive); !ok {
-			if _, ok := pc.forced[pc.positionKey(call.Pos())]; !ok && !lff.Ignore {
-				pc.maybeFail(call.Pos(), "must hold %s %s (%s) to call %s, but not held (locks: %s)", fieldName, exclusiveStr(fg.Exclusive), s, fn.Name(), ls.String())
+			if !forced && !lff.Ignore {
+				pc.maybeFail(callPos, "must hold %s %s (%s) to call %s, but not held (locks: %s)", fieldName, exclusiveStr(fg.Exclusive), s, fn.Name(), ls.String())
 			} else {
 				// Force the lock to be acquired.
 				ls.lockField(r, fg.Exclusive)
@@ -507,9 +529,9 @@ func (pc *passContext) checkFunctionCall(call callCommon, fn *types.Func, lff *l
 			fallthrough
 		case "RLock":
 			if s, ok := ls.lockField(rv, isExclusive); !ok && !lff.Ignore {
-				if _, ok := pc.forced[pc.positionKey(call.Pos())]; !ok {
+				if !forced {
 					// Double locking a mutex that is already locked.
-					pc.maybeFail(call.Pos(), "%s already locked (locks: %s)", s, ls.String())
+					pc.maybeFail(callPos, "%s already locked (locks: %s)", s, ls.String())
 				}
 			}
 		case "Unlock", "NestedUnlock":
@@ -517,16 +539,16 @@ func (pc *passContext) checkFunctionCall(call callCommon, fn *types.Func, lff *l
 			fallthrough
 		case "RUnlock":
 			if s, ok := ls.unlockField(rv, isExclusive); !ok && !lff.Ignore {
-				if _, ok := pc.forced[pc.positionKey(call.Pos())]; !ok {
+				if !forced {
 					// Unlocking something that is already unlocked.
-					pc.maybeFail(call.Pos(), "%s already unlocked or locked differently (locks: %s)", s, ls.String())
+					pc.maybeFail(callPos, "%s already unlocked or locked differently (locks: %s)", s, ls.String())
 				}
 			}
 		case "DowngradeLock":
 			if s, ok := ls.downgradeField(rv); !ok {
-				if _, ok := pc.forced[pc.positionKey(call.Pos())]; !ok && !lff.Ignore {
+				if !forced && !lff.Ignore {
 					// Downgrading something that may not be downgraded.
-					pc.maybeFail(call.Pos(), "%s already unlocked or not exclusive (locks: %s)", s, ls.String())
+					pc.maybeFail(callPos, "%s already unlocked or not exclusive (locks: %s)", s, ls.String())
 				}
 			}
 		}

@@ -50,3 +50,19 @@ func testRWAccessInvalidWrite(tc *oneReadGuardStruct) {
 func testRWAccessInvalidRead(tc *oneReadGuardStruct) {
 	_ = tc.guardedField // +checklocksfail
 }
+
+// +checklocksexcludewrite:tc.mu
+func testRWExcludeWrite(tc *oneReadGuardStruct) {
+}
+
+func testRWExcludeWriteSatisfied(tc *oneReadGuardStruct) {
+	tc.mu.RLock()
+	testRWExcludeWrite(tc)
+	tc.mu.RUnlock()
+}
+
+func testRWExcludeWriteViolated(tc *oneReadGuardStruct) {
+	tc.mu.Lock()
+	testRWExcludeWrite(tc) // +checklocksfail
+	tc.mu.Unlock()
+}

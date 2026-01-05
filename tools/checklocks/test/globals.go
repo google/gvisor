@@ -79,6 +79,20 @@ func testGlobalValidPreconditions3() {
 	otherStruct.guardedField3 = 1
 }
 
+// +checklocksexclude:globalMu
+func testGlobalExcludePreconditions() {
+}
+
+func testGlobalExcludeValid() {
+	testGlobalExcludePreconditions()
+}
+
+func testGlobalExcludeInvalid() {
+	globalMu.Lock()
+	testGlobalExcludePreconditions() // +checklocksfail
+	globalMu.Unlock()
+}
+
 func testGlobalInvalid() {
 	globalStruct.guardedField = 1 // +checklocksfail
 	otherStruct.guardedField1 = 1 // +checklocksfail
