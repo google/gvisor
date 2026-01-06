@@ -37,7 +37,9 @@ const (
 	UVM_PAGEABLE_MEM_ACCESS            = 39
 	UVM_SET_PREFERRED_LOCATION         = 42
 	UVM_UNSET_PREFERRED_LOCATION       = 43
+	UVM_ENABLE_READ_DUPLICATION        = 44
 	UVM_DISABLE_READ_DUPLICATION       = 45
+	UVM_SET_ACCESSED_BY                = 46
 	UVM_UNSET_ACCESSED_BY              = 47
 	UVM_MIGRATE                        = 51
 	UVM_MIGRATE_RANGE_GROUP            = 53
@@ -463,6 +465,24 @@ func (p *UVM_UNSET_PREFERRED_LOCATION_PARAMS) SetStatus(status uint32) {
 }
 
 // +marshal
+type UVM_ENABLE_READ_DUPLICATION_PARAMS struct {
+	RequestedBase uint64
+	Length        uint64
+	RMStatus      uint32
+	Pad0          [4]byte
+}
+
+// GetStatus implements HasStatus.GetStatus.
+func (p *UVM_ENABLE_READ_DUPLICATION_PARAMS) GetStatus() uint32 {
+	return p.RMStatus
+}
+
+// SetStatus implements HasStatus.SetStatus.
+func (p *UVM_ENABLE_READ_DUPLICATION_PARAMS) SetStatus(status uint32) {
+	p.RMStatus = status
+}
+
+// +marshal
 type UVM_DISABLE_READ_DUPLICATION_PARAMS struct {
 	RequestedBase uint64
 	Length        uint64
@@ -477,6 +497,25 @@ func (p *UVM_DISABLE_READ_DUPLICATION_PARAMS) GetStatus() uint32 {
 
 // SetStatus implements HasStatus.SetStatus.
 func (p *UVM_DISABLE_READ_DUPLICATION_PARAMS) SetStatus(status uint32) {
+	p.RMStatus = status
+}
+
+// +marshal
+type UVM_SET_ACCESSED_BY_PARAMS struct {
+	RequestedBase  uint64
+	Length         uint64
+	AccessedByUUID NvUUID
+	RMStatus       uint32
+	Pad0           [4]byte
+}
+
+// GetStatus implements HasStatus.GetStatus.
+func (p *UVM_SET_ACCESSED_BY_PARAMS) GetStatus() uint32 {
+	return p.RMStatus
+}
+
+// SetStatus implements HasStatus.SetStatus.
+func (p *UVM_SET_ACCESSED_BY_PARAMS) SetStatus(status uint32) {
 	p.RMStatus = status
 }
 
