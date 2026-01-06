@@ -221,7 +221,7 @@ func (pc *passContext) checkGuards(inst almostInst, from ssa.Value, accessObj ty
 	)
 
 	// Load the facts for the object accessed.
-	pc.pass.ImportObjectFact(accessObj, &lgf)
+	pc.importLockGuardFacts(accessObj, &lgf)
 
 	// Check guards held.
 	for guardName, fgr := range lgf.GuardedBy {
@@ -356,7 +356,7 @@ func (pc *passContext) checkCall(call callCommon, lff *lockFunctionFacts, ls *lo
 	// "invoke" mode: Method is non-nil, and Value is the underlying value.
 	if fn := call.Common().Method; fn != nil {
 		var nlff lockFunctionFacts
-		pc.pass.ImportObjectFact(fn, &nlff)
+		pc.importLockFunctionFacts(fn, &nlff)
 		nlff.Ignore = nlff.Ignore || lff.Ignore // Inherit ignore.
 		pc.checkFunctionCall(call, fn, &nlff, ls)
 		return
@@ -385,9 +385,10 @@ func (pc *passContext) checkCall(call callCommon, lff *lockFunctionFacts, ls *lo
 			Ignore: lff.Ignore, // Inherit ignore.
 		}
 		if obj := fn.Object(); obj != nil {
-			pc.pass.ImportObjectFact(obj, &nlff)
+			tf := obj.(*types.Func)
+			pc.importLockFunctionFacts(tf, &nlff)
 			nlff.Ignore = nlff.Ignore || lff.Ignore // See above.
-			pc.checkFunctionCall(call, obj.(*types.Func), &nlff, ls)
+			pc.checkFunctionCall(call, tf, &nlff, ls)
 		} else {
 			// Anonymous functions have no facts, and cannot be
 			// annotated.  We don't check for violations using the
@@ -869,7 +870,7 @@ func (pc *passContext) checkFunction(call callCommon, fn *ssa.Function, lff *loc
 func (pc *passContext) checkInferred() {
 	for obj, oo := range pc.observations {
 		var lgf lockGuardFacts
-		pc.pass.ImportObjectFact(obj, &lgf)
+		pc.importLockGuardFacts(obj, &lgf)
 		for other, count := range oo.counts {
 			// Is this already a guard?
 			if _, ok := lgf.GuardedBy[other.Name()]; ok {

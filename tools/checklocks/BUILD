@@ -12,6 +12,7 @@ go_library(
         "annotations.go",
         "checklocks.go",
         "facts.go",
+        "importfacts.go",
         "state.go",
     ],
     nogo = False,

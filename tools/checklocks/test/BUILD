@@ -19,6 +19,7 @@ go_library(
         "globals.go",
         "incompat.go",
         "inferred.go",
+        "generics.go",
         "locker.go",
         "methods.go",
         "parameters.go",

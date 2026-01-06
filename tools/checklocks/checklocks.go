@@ -79,6 +79,7 @@ type passContext struct {
 
 // observationsFor retrieves observations for the given object.
 func (pc *passContext) observationsFor(obj types.Object) *objectObservations {
+	obj = originObject(obj)
 	if pc.observations == nil {
 		pc.observations = make(map[types.Object]*objectObservations)
 	}
@@ -187,11 +188,12 @@ func run(pass *analysis.Pass) (any, error) {
 		// by named functions in the package, and they are analyzing
 		// inline on every call. Thus we skip the analysis here. They
 		// will be hit on calls, or picked up in the pass below.
-		if obj := fn.Object(); obj == nil {
+		obj := fn.Object()
+		if obj == nil {
 			continue
 		}
 		var lff lockFunctionFacts
-		pc.pass.ImportObjectFact(fn.Object(), &lff)
+		pc.importLockFunctionFacts(obj.(*types.Func), &lff)
 
 		// Check the basic blocks in the function.
 		pc.checkFunction(nil, fn, &lff, nil, false /* force */)

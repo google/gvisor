@@ -24,3 +24,12 @@ var (
 	Foo   int
 	FooMu sync.Mutex
 )
+
+// GenericGuard is a generic type with a guarded field. This is used to verify
+// that facts exported by this package are correctly imported when another
+// package instantiates GenericGuard[T].
+type GenericGuard[T any] struct {
+	Mu sync.Mutex
+	// +checklocks:Mu
+	Value T
+}
