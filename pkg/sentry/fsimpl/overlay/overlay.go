@@ -803,6 +803,11 @@ func (d *dentry) OnZeroWatches(ctx context.Context) {
 	}
 }
 
+// IsDir implements vfs.DentryImpl.IsDir.
+func (d *dentry) IsDir() bool {
+	return d.isDir()
+}
+
 // iterLayers invokes yield on each layer comprising d, from top to bottom. If
 // any call to yield returns false, iterLayer stops iteration.
 func (d *dentry) iterLayers(yield func(vd vfs.VirtualDentry, isUpper bool) bool) {

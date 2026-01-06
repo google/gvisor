@@ -591,6 +591,11 @@ func (d *Dentry) Watches() *vfs.Watches {
 // OnZeroWatches implements vfs.Dentry.OnZeroWatches.
 func (d *Dentry) OnZeroWatches(context.Context) {}
 
+// IsDir implements vfs.DentryImpl.IsDir.
+func (d *Dentry) IsDir() bool {
+	return d.isDir()
+}
+
 // insertChild inserts child into the vfs dentry cache with the given name under
 // this dentry. This does not update the directory inode, so calling this on its
 // own isn't sufficient to insert a child into a directory.

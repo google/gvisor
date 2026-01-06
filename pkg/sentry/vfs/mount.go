@@ -563,6 +563,12 @@ func (vfs *VirtualFilesystem) BindAt(ctx context.Context, creds *auth.Credential
 		return err
 	}
 
+	// Linux's graft_tree() (fs/namespace.c) returns ENOTDIR if the source and
+	// target have mismatched types (one is a directory, the other is not).
+	if sourceVd.Dentry().Impl().IsDir() != targetVd.Dentry().Impl().IsDir() {
+		return linuxerr.ENOTDIR
+	}
+
 	vfs.lockMounts()
 	defer vfs.unlockMounts(ctx)
 	mp, err := vfs.lockMountpoint(targetVd)

@@ -334,3 +334,8 @@ func (d *anonDentry) Watches() *Watches {
 
 // OnZeroWatches implements Dentry.OnZeroWatches.
 func (d *anonDentry) OnZeroWatches(context.Context) {}
+
+// IsDir implements DentryImpl.IsDir.
+func (d *anonDentry) IsDir() bool {
+	return false
+}
