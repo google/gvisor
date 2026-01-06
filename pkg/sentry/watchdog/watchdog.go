@@ -31,6 +31,9 @@ package watchdog
 import (
 	"bytes"
 	"fmt"
+	"regexp"
+	"strconv"
+	"strings"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/log"
@@ -234,7 +237,9 @@ func (w *Watchdog) waitForStart() {
 
 	var buf bytes.Buffer
 	buf.WriteString(fmt.Sprintf("Watchdog.Start() not called within %s", w.StartupTimeout))
-	w.doAction(w.StartupTimeoutAction, false, &buf)
+	var stuckTasks map[int64]struct{}
+	forceStackDump := false
+	w.doAction(w.StartupTimeoutAction, forceStackDump, stuckTasks, &buf)
 }
 
 // loop is the main watchdog routine. It only returns when 'Stop()' is called.
@@ -320,26 +325,30 @@ func (w *Watchdog) runTurn() {
 func (w *Watchdog) report(offenders map[*kernel.Task]*offender, newTaskFound bool, now ktime.Time) {
 	var buf bytes.Buffer
 	buf.WriteString(fmt.Sprintf("Sentry detected %d stuck task(s):\n", len(offenders)))
+	stuckTasks := make(map[int64]struct{})
 	for t, o := range offenders {
 		tid := w.k.TaskSet().Root.IDOfTask(t)
 		buf.WriteString(fmt.Sprintf("\tTask tid: %v (goroutine %d), entered RunSys state %v ago.\n", tid, t.GoroutineID(), now.Sub(o.lastUpdateTime)))
+		stuckTasks[t.GoroutineID()] = struct{}{}
 	}
 	buf.WriteString("Search for 'goroutine <id>' in the stack dump to find the offending goroutine(s)")
 
-	// Force stack dump only if a new task is detected.
-	w.doAction(w.TaskTimeoutAction, newTaskFound, &buf)
+	forceStackDump := newTaskFound
+	w.doAction(w.TaskTimeoutAction, forceStackDump, stuckTasks, &buf)
 }
 
 func (w *Watchdog) reportStuckWatchdog() {
 	var buf bytes.Buffer
 	buf.WriteString("Watchdog goroutine is stuck")
-	w.doAction(w.TaskTimeoutAction, false, &buf)
+	var stuckTasks map[int64]struct{}
+	forceStackDump := false
+	w.doAction(w.StartupTimeoutAction, forceStackDump, stuckTasks, &buf)
 }
 
 // doAction will take the given action. If the action is LogWarning, the stack
 // is not always dumped to the log to prevent log flooding. "forceStack"
 // guarantees that the stack will be dumped regardless.
-func (w *Watchdog) doAction(action Action, forceStack bool, msg *bytes.Buffer) {
+func (w *Watchdog) doAction(action Action, forceStack bool, stuckTasks map[int64]struct{}, msg *bytes.Buffer) {
 	switch action {
 	case LogWarning:
 		// Dump stack only if forced or sometime has passed since the last time a
@@ -355,7 +364,7 @@ func (w *Watchdog) doAction(action Action, forceStack bool, msg *bytes.Buffer) {
 	case Panic:
 		// Panic will skip over running tasks, which is likely the culprit here. So manually
 		// dump all stacks before panic'ing.
-		log.TracebackAll(msg.String())
+		tracebackAllWithStuckSuffix(stuckTasks, msg.Bytes())
 
 		// Attempt to flush metrics, timeout and move on in case metrics are stuck as well.
 		metricsEmitted := make(chan struct{}, 1)
@@ -374,4 +383,71 @@ func (w *Watchdog) doAction(action Action, forceStack bool, msg *bytes.Buffer) {
 		panic(fmt.Sprintf("Unknown watchdog action %v", action))
 
 	}
+}
+
+func tracebackAllWithStuckSuffix(stuckTasks map[int64]struct{}, msg []byte) {
+	stacks := log.Stacks(true)
+	// The full stack dump can be too big to search for stuck goroutines.
+	// Moreover, Syzkaller-produced console logs are limited to 128KB on either
+	// side of the panic message in doAction(), causing the full dump being
+	// written here to be truncated. So we add a section where we collate all
+	// known stuck stacks.
+	stuckHeader := "***** BEGIN STUCK GOROUTINES (there may be more, read the preceding full dump) *****"
+	stuckStacks := stuckGoroutineStacks(stacks, stuckTasks)
+	stuckFooter := "***** END STUCK GOROUTINES *****\n"
+
+	log.Warningf("%s\n%s\n\n%s\n%s\n%s", msg, stacks, stuckHeader, stuckStacks, stuckFooter)
+}
+
+func stuckGoroutineStacks(stacks []byte, stuckTasks map[int64]struct{}) []byte {
+	const maxStuckGoroutineSectionBytes = 64 * 1024
+
+	// goroutineheader() from runtime/traceback.go always prints the "goroutine <id>" prefix.
+	// The header always includes a "[<state>" and always ends with a "]:". The goroutine ID is
+	// the first capture group, and the stuff within the brackets is the second.
+	anyHdrRegex := regexp.MustCompile(`^\s*goroutine\s(\d+).*\s\[(.*)\]\:`)
+	stuckStateRegex := regexp.MustCompile(strings.Join([]string{
+		`semacquire`,
+		`sync\.(RW)?Mutex\.R?Lock`,
+	}, "|"))
+
+	result := new(bytes.Buffer)
+	inStuckStack := false
+	remaining := stacks
+	result.WriteByte('\n')
+
+	for len(remaining) > 0 {
+		lineEnd := bytes.IndexByte(remaining, '\n')
+		var line []byte
+
+		if lineEnd == -1 {
+			line = remaining
+			remaining = nil
+		} else {
+			line = remaining[:lineEnd]
+			remaining = remaining[lineEnd+1:]
+		}
+
+		if match := anyHdrRegex.FindSubmatch(line); match != nil {
+			isStuckHdr := false
+			if goroutineID, err := strconv.ParseInt(string(match[1]), 10, 64); err == nil {
+				if _, ok := stuckTasks[goroutineID]; ok {
+					isStuckHdr = true
+				}
+			}
+			isStuckHdr = isStuckHdr || stuckStateRegex.Match(match[2])
+			inStuckStack = isStuckHdr
+		}
+
+		if inStuckStack {
+			if result.Len() >= maxStuckGoroutineSectionBytes {
+				fmt.Fprintf(result, "... stuck section truncated, hit the limit of %d bytes\n", maxStuckGoroutineSectionBytes)
+				break
+			}
+			result.Write(line)
+			result.WriteByte('\n')
+		}
+	}
+
+	return result.Bytes()
 }
