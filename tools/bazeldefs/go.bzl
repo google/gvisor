@@ -205,7 +205,8 @@ def _go_imports_impl(ctx):
 
     goimports_tool = ctx.attr._goimports[DefaultInfo].files_to_run
 
-    tools_path = paths.join(ctx.label.name + "_tools")
+    unique_id = str(abs(hash(str(ctx.label))))[:8]
+    tools_path = paths.join(ctx.label.name + "_tools" + unique_id)
 
     # Use a symlink to the `go` binary to avoid exposing undeclared dependencies
     # on other binaries in the same directory in the toolchain.
