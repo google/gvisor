@@ -60,7 +60,8 @@ func (s *maxKeySize) Write(ctx context.Context, _ *vfs.FileDescription, src user
 		// Ignore partial writes.
 		return 0, linuxerr.EINVAL
 	}
-	if !auth.CredentialsFromContext(ctx).HasCapability(linux.CAP_SYS_ADMIN) {
+	creds := auth.CredentialsFromContext(ctx)
+	if !creds.HasCapabilityIn(linux.CAP_SYS_ADMIN, creds.UserNamespace.Root()) {
 		return 0, linuxerr.EPERM
 	}
 	buf := make([]int32, 1)
