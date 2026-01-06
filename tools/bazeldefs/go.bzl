@@ -208,15 +208,6 @@ def _go_imports_impl(ctx):
     unique_id = str(abs(hash(str(ctx.label))))[:8]
     tools_path = paths.join(ctx.label.name + "_tools" + unique_id)
 
-    # Use a symlink to the `go` binary to avoid exposing undeclared dependencies
-    # on other binaries in the same directory in the toolchain.
-    go_symlink = ctx.actions.declare_file(paths.join(tools_path, "go"))
-    ctx.actions.symlink(
-        output = go_symlink,
-        target_file = go_ctx.go,
-        is_executable = True,
-    )
-
     # Use a launcher script rather than ctx.actions.run(env=...) because we need
     # to refer to the action's runtime working directory ($PWD) to build an
     # absolute PATH entry. This matters because `goimports` locates `go` via
@@ -229,7 +220,7 @@ def _go_imports_impl(ctx):
         output = goimports_launcher,
         is_executable = True,
         content = "PATH=$PWD/{} exec {} {} > {}".format(
-            shell.quote(go_symlink.dirname),
+            shell.quote(go_ctx.go.dirname),
             shell.quote(goimports_tool.executable.path),
             shell.quote(src.path),
             shell.quote(out.path),
@@ -238,7 +229,7 @@ def _go_imports_impl(ctx):
 
     ctx.actions.run(
         inputs = [src],
-        tools = [goimports_tool, go_symlink, go_ctx.runfiles],
+        tools = [goimports_tool, go_ctx.runfiles],
         outputs = [out],
         executable = goimports_launcher,
         env = go_ctx.env,
