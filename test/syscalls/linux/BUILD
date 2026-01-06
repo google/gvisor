@@ -4776,6 +4776,7 @@ cc_binary(
         "//test/util:capability_util",
         "//test/util:file_descriptor",
         "//test/util:fs_util",
+        "//test/util:multiprocess_util",
         "//test/util:posix_error",
         "//test/util:temp_path",
         "//test/util:test_main",

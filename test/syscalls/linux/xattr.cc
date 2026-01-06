@@ -19,16 +19,20 @@
 #include <sys/xattr.h>
 #include <unistd.h>
 
+#include <cstddef>
 #include <string>
 #include <vector>
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/container/flat_hash_set.h"
+#include "absl/strings/string_view.h"
 #include "test/syscalls/linux/file_base.h"
 #include "test/util/capability_util.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/fs_util.h"
+#include "test/util/linux_capability_util.h"
+#include "test/util/multiprocess_util.h"
 #include "test/util/posix_error.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
@@ -40,6 +44,8 @@ namespace {
 
 using ::gvisor::testing::IsTmpfs;
 using ::testing::AnyOf;
+
+constexpr char kUnshareAndSetTrustedXattrInNewUserns[] = "--set_trusted_xattr";
 
 class XattrTest : public FileTest {};
 
@@ -734,7 +740,74 @@ TEST_F(XattrTest, TrustedNamespaceWithoutCapSysAdmin) {
   EXPECT_THAT(removexattr(path, name), SyscallFailsWithErrno(EPERM));
 }
 
+int UnshareAndSetxattrInNewUserns(const char* path) {
+  if (syscall(SYS_unshare, CLONE_NEWUSER) == -1) {
+    return 1;
+  }
+
+  const char name[] = "trusted.test";
+  char val = 'a';
+  size_t size = sizeof(val);
+  if (setxattr(path, name, &val, size, /*flags=*/0) != -1) {
+    return 2;
+  }
+  return (errno == EPERM) ? 0 : 3;
+}
+
+TEST_F(XattrTest, TrustedNamespaceWithCapSysAdminInNewUserns) {
+  // TODO(b/66162845): Only gVisor tmpfs currently supports trusted namespace.
+  SKIP_IF(IsRunningOnGvisor() &&
+          !ASSERT_NO_ERRNO_AND_VALUE(IsTmpfs(test_file_name_)));
+
+  // Drop CAP_SYS_ADMIN if we have it, this test tries to beat the lack of
+  // the cap by gaining it in a new userns.
+  AutoCapability cap(CAP_SYS_ADMIN, false);
+
+  // We fork and exec into setxattr_in_new_userns() which unshares to gain the
+  // missing cap, and then tries to set a trusted xattr. This should fail with
+  // EPERM.
+  int child_pid;
+  auto cleanup = ASSERT_NO_ERRNO_AND_VALUE(
+      ForkAndExec("/proc/self/exe",
+                  {
+                      "/proc/self/exe",
+                      kUnshareAndSetTrustedXattrInNewUserns,
+                      test_file_name_,
+                  },
+                  {}, /*fn=*/nullptr, /*child=*/&child_pid,
+                  /*execve_errno=*/nullptr));
+  int status;
+  ASSERT_THAT(child_pid, SyscallSucceeds());
+  ASSERT_THAT(waitpid(child_pid, &status, 0),
+              SyscallSucceedsWithValue(child_pid));
+
+  // setxattr_in_new_userns() exits with 0 only if it sees an EPERM.
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0)
+      << "status = " << status;
+}
+
 }  // namespace
 
 }  // namespace testing
 }  // namespace gvisor
+
+int main(int argc, char** argv) {
+  // TrustedNamespaceWithCapSysAdminInNewUserns will exec with the following
+  // flag, but we avoid using absl::GetFlag because we intend to unshare(), an
+  // act that demands us to be single-threaded, which may not be true after
+  // TestInit().
+  for (int i = 0; i < argc; i++) {
+    absl::string_view arg(argv[i]);
+    if (arg == gvisor::testing::kUnshareAndSetTrustedXattrInNewUserns) {
+      // The next argument is the path to set the trusted xattr on.
+      if (i + 1 < argc) {
+        return gvisor::testing::UnshareAndSetxattrInNewUserns(
+            argv[i + 1]);
+      }
+      return 4;
+    }
+  }
+
+  gvisor::testing::TestInit(&argc, &argv);
+  return gvisor::testing::RunAllTests();
+}

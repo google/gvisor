@@ -293,7 +293,7 @@ func CheckXattrPermissions(creds *auth.Credentials, ats AccessTypes, mode linux.
 	case strings.HasPrefix(name, linux.XATTR_TRUSTED_PREFIX):
 		// The trusted.* namespace can only be accessed by privileged
 		// users.
-		if creds.HasCapability(linux.CAP_SYS_ADMIN) {
+		if creds.HasCapabilityIn(linux.CAP_SYS_ADMIN, creds.UserNamespace.Root()) {
 			return nil
 		}
 		if ats.MayWrite() {
