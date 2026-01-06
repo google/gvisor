@@ -108,6 +108,12 @@ Additional variants of the `+checklocks` annotation are supported for functions:
 *   `+checklocksread`: This enforces that at least a read lock is held. Note
     that this assumption will apply locally, so accesses and function calls will
     assume that only a read lock is available.
+*   `+checklocksexclude`: This enforces that the given lock is *not* held on
+    entry. This assertion is checked at call sites, but does not modify the
+    caller's lock state.
+*   `+checklocksexcludewrite`: This enforces that the given lock is *not* held
+    exclusively on entry. This assertion is checked at call sites, but does not
+    modify the caller's lock state.
 *   `+checklocksacquire`: This enforces that the given lock is *not* held on
     entry, but it will be held on exit. This assertion will be checked locally
     and applied to the caller's lock state.

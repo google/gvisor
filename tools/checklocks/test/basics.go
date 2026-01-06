@@ -78,6 +78,23 @@ func callPreconditions(tc *oneGuardStruct) {
 	tc.guardedField = 1
 }
 
+func testCallExcludePreconditionsValid(tc *oneGuardStruct) {
+	callExcludePreconditions(tc)
+}
+
+func testCallExcludePreconditionsInvalid(tc *oneGuardStruct) {
+	tc.mu.Lock()
+	callExcludePreconditions(tc) // +checklocksfail
+	tc.mu.Unlock()
+}
+
+// +checklocksexclude:tc.mu
+func callExcludePreconditions(tc *oneGuardStruct) {
+	tc.mu.Lock()
+	tc.guardedField = 1
+	tc.mu.Unlock()
+}
+
 type nestedFieldsStruct struct {
 	mu sync.Mutex
 

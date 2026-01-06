@@ -29,6 +29,8 @@ const (
 	checkLocksAcquiresRead   = "// +checklocksacquireread:"
 	checkLocksReleases       = "// +checklocksrelease:"
 	checkLocksReleasesRead   = "// +checklocksreleaseread:"
+	checkLocksExcludes       = "// +checklocksexclude:"
+	checkLocksExcludesWrite  = "// +checklocksexcludewrite:"
 	checkLocksIgnore         = "// +checklocksignore"
 	checkLocksForce          = "// +checklocksforce"
 	checkLocksFail           = "// +checklocksfail"
