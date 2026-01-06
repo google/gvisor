@@ -160,11 +160,11 @@ func (op metaLoad) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *Ru
 }
 
 func initMetaLoad(attrs map[uint16]nlmsg.BytesView) (*metaLoad, *syserr.AnnotatedError) {
-	key, ok := AttrNetToHostU32(linux.NFTA_META_KEY, attrs)
+	key, ok := AttrNetToHost[uint32](linux.NFTA_META_KEY, attrs)
 	if !ok {
 		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: Failed to parse NFTA_META_KEY attribute")
 	}
-	reg, ok := AttrNetToHostU32(linux.NFTA_META_DREG, attrs)
+	reg, ok := AttrNetToHost[uint32](linux.NFTA_META_DREG, attrs)
 	if !ok {
 		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: Failed to parse NFTA_META_DREG attribute")
 	}

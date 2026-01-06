@@ -728,6 +728,11 @@ func (e *endpoint) MTU() uint32 {
 	return networkMTU
 }
 
+// EndpointHeaderSize returns the size necessary for the IPv6 header.
+func (e *endpoint) EndpointHeaderSize() uint32 {
+	return header.IPv6MinimumSize
+}
+
 // MaxHeaderLength returns the maximum length needed by ipv6 headers (and
 // underlying protocols).
 func (e *endpoint) MaxHeaderLength() uint16 {

@@ -83,11 +83,11 @@ func newMetaSet(key metaKey, sreg uint8) (*metaSet, *syserr.AnnotatedError) {
 }
 
 func initMetaSet(attrs map[uint16]nlmsg.BytesView) (*metaSet, *syserr.AnnotatedError) {
-	key, ok := AttrNetToHostU32(linux.NFTA_META_KEY, attrs)
+	key, ok := AttrNetToHost[uint32](linux.NFTA_META_KEY, attrs)
 	if !ok {
 		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: Failed to parse NFTA_META_KEY attribute")
 	}
-	reg, ok := AttrNetToHostU32(linux.NFTA_META_SREG, attrs)
+	reg, ok := AttrNetToHost[uint32](linux.NFTA_META_SREG, attrs)
 	if !ok {
 		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: Failed to parse NFTA_META_SREG attribute")
 	}

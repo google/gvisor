@@ -73,16 +73,10 @@ func GenericCheckPermissions(creds *auth.Credentials, ats AccessTypes, mode linu
 		return nil
 	}
 
-	// Caller capabilities require that the file's KUID and KGID are mapped in
-	// the caller's user namespace; compare
-	// kernel/capability.c:privileged_wrt_inode_uidgid().
-	if !kuid.In(creds.UserNamespace).Ok() || !kgid.In(creds.UserNamespace).Ok() {
-		return linuxerr.EACCES
-	}
 	// CAP_DAC_READ_SEARCH allows the caller to read and search arbitrary
 	// directories, and read arbitrary non-directory files.
 	if (mode.IsDir() && !ats.MayWrite()) || ats.OnlyRead() {
-		if creds.HasCapability(linux.CAP_DAC_READ_SEARCH) {
+		if creds.HasCapabilityOnFile(linux.CAP_DAC_READ_SEARCH, kuid, kgid) {
 			return nil
 		}
 	}
@@ -90,7 +84,7 @@ func GenericCheckPermissions(creds *auth.Credentials, ats AccessTypes, mode linu
 	// access to non-directory files, and execute access to non-directory files
 	// for which at least one execute bit is set.
 	if mode.IsDir() || !ats.MayExec() || (mode.Permissions()&0111 != 0) {
-		if creds.HasCapability(linux.CAP_DAC_OVERRIDE) {
+		if creds.HasCapabilityOnFile(linux.CAP_DAC_OVERRIDE, kuid, kgid) {
 			return nil
 		}
 	}
@@ -221,7 +215,7 @@ func CheckSetStat(ctx context.Context, creds *auth.Credentials, opts *SetStatOpt
 			return linuxerr.EPERM
 		}
 	}
-	if opts.NeedWritePerm && !creds.HasCapability(linux.CAP_DAC_OVERRIDE) {
+	if opts.NeedWritePerm {
 		if err := GenericCheckPermissions(creds, MayWrite, mode, kuid, kgid); err != nil {
 			return err
 		}

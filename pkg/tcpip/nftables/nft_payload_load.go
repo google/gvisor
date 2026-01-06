@@ -97,19 +97,19 @@ func (op payloadLoad) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule 
 
 // Initialize based on net/netfilter/nft_payload.c nft_payload_init.
 func initPayloadLoad(tab *Table, attrs map[uint16]nlmsg.BytesView) (*payloadLoad, *syserr.AnnotatedError) {
-	base, ok := AttrNetToHostU32(linux.NFTA_PAYLOAD_BASE, attrs)
+	base, ok := AttrNetToHost[uint32](linux.NFTA_PAYLOAD_BASE, attrs)
 	if !ok {
 		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "failed to parse NFTA_PAYLOAD_BASE attribute value")
 	}
-	offset, ok := AttrNetToHostU32(linux.NFTA_PAYLOAD_OFFSET, attrs)
+	offset, ok := AttrNetToHost[uint32](linux.NFTA_PAYLOAD_OFFSET, attrs)
 	if !ok {
 		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "failed to parse NFTA_PAYLOAD_OFFSET attribute value")
 	}
-	blen, ok := AttrNetToHostU32(linux.NFTA_PAYLOAD_LEN, attrs)
+	blen, ok := AttrNetToHost[uint32](linux.NFTA_PAYLOAD_LEN, attrs)
 	if !ok {
 		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "failed to parse NFTA_PAYLOAD_LEN attribute value")
 	}
-	dreg, ok := AttrNetToHostU32(linux.NFTA_PAYLOAD_DREG, attrs)
+	dreg, ok := AttrNetToHost[uint32](linux.NFTA_PAYLOAD_DREG, attrs)
 	if !ok {
 		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "failed to parse NFTA_PAYLOAD_DREG attribute value")
 	}
