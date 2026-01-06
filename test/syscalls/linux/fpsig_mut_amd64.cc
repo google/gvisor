@@ -156,10 +156,12 @@ TEST(FPSigTest, XFeaturesInFrame) {
             "rcx", "r11");
       switch (testXsaveFeature) {
         case 8:   // PT (Processor Trace)
+        case 10:  // PASID (Process Address Space ID)
+        case 11:  // CET_U (Control-flow Enforcement Tech (User-mode state))
+        case 12:  // CET_M (Control-flow Enforcement Tech (Machine-mode state))
         case 13:  // HDC (Hardware Debug Controls)
-        case 17:  // LBR (Last Branch Record)
-        case 18:  // CET (Control-flow Enforcement Technology)
-        case 19:  // HRESET (Host Reset)
+        case 15:  // LBR (Last Branch Record)
+        case 16:  // HWP (Hardware P-state)
           FAIL() << testXsaveFeature << " didn't trigger a fault";
         default:
           LOG(INFO) << testXsaveFeature << " has been accepted";
