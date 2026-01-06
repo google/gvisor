@@ -163,15 +163,39 @@ func HasAttr(attrName uint16, attrs map[uint16]nlmsg.BytesView) bool {
 	return ok
 }
 
-// AttrNetToHostU32 returns the uint32 value of the attribute in host byte order.
-func AttrNetToHostU32(attrName uint16, attrs map[uint16]nlmsg.BytesView) (uint32, bool) {
+// AttrNetToHost returns the uint32 value of the attribute in host byte order.
+func AttrNetToHost[T integer](attrName uint16, attrs map[uint16]nlmsg.BytesView) (T, bool) {
 	attrData, ok := attrs[attrName]
 	if !ok {
 		return 0, false
 	}
-	v, ok := attrData.Uint32()
-	if !ok {
+	var t T
+	switch any(t).(type) {
+	case uint8:
+		v, ok := attrData.Uint8()
+		if !ok {
+			return 0, false
+		}
+		return T(v), true
+	case uint16:
+		v, ok := attrData.Uint16()
+		if !ok {
+			return 0, false
+		}
+		return T(nlmsg.NetToHostU16(v)), true
+	case uint32:
+		v, ok := attrData.Uint32()
+		if !ok {
+			return 0, false
+		}
+		return T(nlmsg.NetToHostU32(v)), true
+	case uint64:
+		v, ok := attrData.Uint64()
+		if !ok {
+			return 0, false
+		}
+		return T(nlmsg.NetToHostU64(v)), true
+	default:
 		return 0, false
 	}
-	return nlmsg.NetToHostU32(v), true
 }

@@ -3925,3 +3925,90 @@ func TestNfAttrParser(t *testing.T) {
 		})
 	}
 }
+
+func TestAttrNetToHost(t *testing.T) {
+	const attr uint16 = 1
+	tests := []struct {
+		name   string
+		attrs  map[uint16]nlmsg.BytesView
+		wantOK bool
+		want   any
+	}{
+		{
+			name:   "uint8",
+			attrs:  map[uint16]nlmsg.BytesView{attr: nlmsg.BytesView([]byte{0x01})},
+			wantOK: true,
+			want:   any(uint8(0x01)),
+		},
+		{
+			name:   "uint16",
+			attrs:  map[uint16]nlmsg.BytesView{attr: nlmsg.BytesView([]byte{0x01, 0x02})},
+			wantOK: true,
+			want:   any(uint16(0x0102)),
+		},
+		{
+			name:   "uint32",
+			attrs:  map[uint16]nlmsg.BytesView{attr: nlmsg.BytesView([]byte{0x01, 0x02, 0x03, 0x04})},
+			wantOK: true,
+			want:   any(uint32(0x01020304)),
+		},
+		{
+			name:   "uint64",
+			attrs:  map[uint16]nlmsg.BytesView{attr: nlmsg.BytesView([]byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08})},
+			wantOK: true,
+			want:   any(uint64(0x0102030405060708)),
+		},
+		{
+			name:   "empty",
+			attrs:  map[uint16]nlmsg.BytesView{},
+			wantOK: false,
+		},
+		{
+			name:   "invalidUint8",
+			attrs:  map[uint16]nlmsg.BytesView{attr: nlmsg.BytesView([]byte{})},
+			wantOK: false,
+			want:   any(uint8(0)),
+		},
+		{
+			name:   "invalidUint16",
+			attrs:  map[uint16]nlmsg.BytesView{attr: nlmsg.BytesView([]byte{0x01})},
+			wantOK: false,
+			want:   any(uint16(0)),
+		},
+		{
+			name:   "invalidUint32",
+			attrs:  map[uint16]nlmsg.BytesView{attr: nlmsg.BytesView([]byte{0x01})},
+			wantOK: false,
+			want:   any(uint32(0)),
+		},
+		{
+			name:   "invalidUint64",
+			attrs:  map[uint16]nlmsg.BytesView{attr: nlmsg.BytesView([]byte{0x01})},
+			wantOK: false,
+			want:   any(uint64(0)),
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var got any
+			var gotOk bool
+			switch test.want.(type) {
+			case uint8:
+				got, gotOk = AttrNetToHost[uint8](attr, test.attrs)
+			case uint16:
+				got, gotOk = AttrNetToHost[uint16](attr, test.attrs)
+			case uint32:
+				got, gotOk = AttrNetToHost[uint32](attr, test.attrs)
+			case uint64:
+				got, gotOk = AttrNetToHost[uint64](attr, test.attrs)
+			}
+			if gotOk != test.wantOK {
+				t.Errorf("AttrNetToHost: got ok %v, want ok %v", gotOk, test.wantOK)
+			}
+			if !reflect.DeepEqual(got, test.want) {
+				t.Errorf("AttrNetToHost: got 0x%x, want 0x%x", got, test.want)
+			}
+		})
+	}
+}

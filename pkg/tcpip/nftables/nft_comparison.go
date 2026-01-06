@@ -128,11 +128,11 @@ func initComparison(tab *Table, exprInfo ExprInfo) (*comparison, *syserr.Annotat
 	if !ok {
 		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: Failed to parse comparison expression data")
 	}
-	sreg, ok := AttrNetToHostU32(linux.NFTA_CMP_SREG, attrs)
+	sreg, ok := AttrNetToHost[uint32](linux.NFTA_CMP_SREG, attrs)
 	if !ok {
 		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: Failed to parse NFTA_CMP_SREG attribute")
 	}
-	op, ok := AttrNetToHostU32(linux.NFTA_CMP_OP, attrs)
+	op, ok := AttrNetToHost[uint32](linux.NFTA_CMP_OP, attrs)
 	if !ok {
 		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: Failed to parse NFTA_CMP_OP attribute")
 	}

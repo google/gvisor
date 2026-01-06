@@ -185,25 +185,25 @@ func (op payloadSet) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *
 }
 
 func initPayloadSet(tab *Table, attrs map[uint16]nlmsg.BytesView) (*payloadSet, *syserr.AnnotatedError) {
-	base, ok := AttrNetToHostU32(linux.NFTA_PAYLOAD_BASE, attrs)
+	base, ok := AttrNetToHost[uint32](linux.NFTA_PAYLOAD_BASE, attrs)
 	if !ok {
 		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "failed to parse NFTA_PAYLOAD_BASE attribute value")
 	}
-	offset, ok := AttrNetToHostU32(linux.NFTA_PAYLOAD_OFFSET, attrs)
+	offset, ok := AttrNetToHost[uint32](linux.NFTA_PAYLOAD_OFFSET, attrs)
 	if !ok {
 		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "failed to parse NFTA_PAYLOAD_OFFSET attribute value")
 	}
-	blen, ok := AttrNetToHostU32(linux.NFTA_PAYLOAD_LEN, attrs)
+	blen, ok := AttrNetToHost[uint32](linux.NFTA_PAYLOAD_LEN, attrs)
 	if !ok {
 		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "failed to parse NFTA_PAYLOAD_LEN attribute value")
 	}
-	sreg, ok := AttrNetToHostU32(linux.NFTA_PAYLOAD_SREG, attrs)
+	sreg, ok := AttrNetToHost[uint32](linux.NFTA_PAYLOAD_SREG, attrs)
 	if !ok {
 		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "failed to parse NFTA_PAYLOAD_SREG attribute value")
 	}
 	// Optional attributes; validation is not required.
-	csumType, _ := AttrNetToHostU32(linux.NFTA_PAYLOAD_CSUM_TYPE, attrs)
-	csumOffset, _ := AttrNetToHostU32(linux.NFTA_PAYLOAD_CSUM_OFFSET, attrs)
-	csumFlags, _ := AttrNetToHostU32(linux.NFTA_PAYLOAD_CSUM_FLAGS, attrs)
+	csumType, _ := AttrNetToHost[uint32](linux.NFTA_PAYLOAD_CSUM_TYPE, attrs)
+	csumOffset, _ := AttrNetToHost[uint32](linux.NFTA_PAYLOAD_CSUM_OFFSET, attrs)
+	csumFlags, _ := AttrNetToHost[uint32](linux.NFTA_PAYLOAD_CSUM_FLAGS, attrs)
 	return newPayloadSet(payloadBase(base), uint8(offset), uint8(blen), uint8(sreg), uint8(csumType), uint8(csumOffset), uint8(csumFlags))
 }
