@@ -16,6 +16,7 @@ go_library(
         "branches.go",
         "closures.go",
         "defer.go",
+        "generics.go",
         "globals.go",
         "incompat.go",
         "inferred.go",
