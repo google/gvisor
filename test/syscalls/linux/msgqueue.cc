@@ -18,6 +18,8 @@
 #include <sys/msg.h>
 #include <sys/types.h>
 
+#include <utility>
+
 #include "absl/synchronization/notification.h"
 #include "absl/time/clock.h"
 #include "test/util/capability_util.h"
@@ -101,6 +103,29 @@ struct msgmax {
   int64_t mtype;
   char mtext[msgMax];
 };
+
+// MsgCopySupported returns true if MSG_COPY is supported.
+bool MsgCopySupported() {
+  // msgrcv(2) man page states that MSG_COPY flag is available only if the
+  // kernel was built with the CONFIG_CHECKPOINT_RESTORE option. If MSG_COPY
+  // is used when the kernel was configured without the option, msgrcv produces
+  // a ENOSYS error.
+  // To avoid test failure, we perform a small test using msgrcv, and skip the
+  // test if errno == ENOSYS. This means that the test will always run on
+  // gVisor, but may be skipped on native linux.
+
+  auto maybe_id = Msgget(IPC_PRIVATE, 0600);
+  if (!maybe_id.ok()) {
+    return false;
+  }
+  Queue queue(std::move(maybe_id.ValueOrDie()));
+  msgbuf buf{1, "Test message."};
+
+  msgsnd(queue.get(), &buf, sizeof(buf.mtext), 0);
+  return !(msgrcv(queue.get(), &buf, sizeof(buf.mtext) + 1, 0,
+                  MSG_COPY | IPC_NOWAIT) == -1 &&
+           errno == ENOSYS);
+}
 
 // Test simple creation and retrieval for msgget(2).
 TEST(MsgqueueTest, MsgGet) {
@@ -307,6 +332,11 @@ TEST(MsgqueueTest, MsgOpPermissions) {
               SyscallFailsWithErrno(EACCES));
   EXPECT_THAT(msgrcv(queue.get(), &buf, sizeof(buf.mtext), 0, 0),
               SyscallFailsWithErrno(EACCES));
+  if (MsgCopySupported()) {
+    EXPECT_THAT(
+        msgrcv(queue.get(), &buf, sizeof(buf.mtext), 0, MSG_COPY | IPC_NOWAIT),
+        SyscallFailsWithErrno(EACCES));
+  }
 }
 
 // Test limits for messages and queues.
@@ -327,29 +357,6 @@ TEST(MsgqueueTest, MsgOpLimits) {
   }
   EXPECT_THAT(msgsnd(queue.get(), &limit, sizeof(limit.mtext), IPC_NOWAIT),
               SyscallFailsWithErrno(EAGAIN));
-}
-
-// MsgCopySupported returns true if MSG_COPY is supported.
-bool MsgCopySupported() {
-  // msgrcv(2) man page states that MSG_COPY flag is available only if the
-  // kernel was built with the CONFIG_CHECKPOINT_RESTORE option. If MSG_COPY
-  // is used when the kernel was configured without the option, msgrcv produces
-  // a ENOSYS error.
-  // To avoid test failure, we perform a small test using msgrcv, and skip the
-  // test if errno == ENOSYS. This means that the test will always run on
-  // gVisor, but may be skipped on native linux.
-
-  auto maybe_id = Msgget(IPC_PRIVATE, 0600);
-  if (!maybe_id.ok()) {
-    return false;
-  }
-  Queue queue(std::move(maybe_id.ValueOrDie()));
-  msgbuf buf{1, "Test message."};
-
-  msgsnd(queue.get(), &buf, sizeof(buf.mtext), 0);
-  return !(msgrcv(queue.get(), &buf, sizeof(buf.mtext) + 1, 0,
-                  MSG_COPY | IPC_NOWAIT) == -1 &&
-           errno == ENOSYS);
 }
 
 // Test msgrcv using MSG_COPY.

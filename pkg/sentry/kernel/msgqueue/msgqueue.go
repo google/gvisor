@@ -354,7 +354,7 @@ func (q *Queue) push(ctx context.Context, m Message, creds *auth.Credentials, pi
 }
 
 // Receive removes a message from the queue and returns it. See msgrcv(2).
-func (q *Queue) Receive(ctx context.Context, b Blocker, mType int64, maxSize int64, wait, truncate, except bool, pid int32) (*Message, error) {
+func (q *Queue) Receive(ctx context.Context, mType int64, maxSize int64, wait, truncate, except bool, pid int32) (*Message, error) {
 	if maxSize < 0 || maxSize > maxMessageBytes {
 		return nil, linuxerr.EINVAL
 	}
@@ -383,7 +383,7 @@ func (q *Queue) Receive(ctx context.Context, b Blocker, mType int64, maxSize int
 		if msg, err := q.pop(ctx, creds, mType, max, truncate, except, pid); err != linuxerr.EWOULDBLOCK {
 			return msg, err
 		}
-		if err := b.Block(ch); err != nil {
+		if err := ctx.Block(ch); err != nil {
 			return nil, err
 		}
 	}
@@ -453,9 +453,15 @@ func (q *Queue) pop(ctx context.Context, creds *auth.Credentials, mType int64, m
 
 // Copy copies a message from the queue without deleting it. If no message
 // exists, an error is returned. See msgrcv(MSG_COPY).
-func (q *Queue) Copy(mType int64) (*Message, error) {
+func (q *Queue) Copy(ctx context.Context, mType int64) (*Message, error) {
+	creds := auth.CredentialsFromContext(ctx)
+
 	q.mu.Lock()
 	defer q.mu.Unlock()
+
+	if !q.obj.CheckPermissions(creds, vfs.MayRead) {
+		return nil, linuxerr.EACCES
+	}
 
 	if mType < 0 || q.messages.Empty() {
 		return nil, linuxerr.ENOMSG

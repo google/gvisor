@@ -121,9 +121,9 @@ func receive(t *kernel.Task, id ipc.ID, mType int64, maxSize int64, msgCopy, wai
 		if wait || except {
 			return nil, linuxerr.EINVAL
 		}
-		return queue.Copy(mType)
+		return queue.Copy(t, mType)
 	}
-	return queue.Receive(t, t, mType, maxSize, wait, truncate, except, pid)
+	return queue.Receive(t, mType, maxSize, wait, truncate, except, pid)
 }
 
 // Msgctl implements msgctl(2).
