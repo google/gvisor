@@ -182,7 +182,10 @@ func (fs *filesystem) Write(ctx context.Context, fd *regularFileFD, offset int64
 		// buffer cache. Ideally we write from src to our buffer cache first.
 		// The slice passed to fs.Write() should be a slice from buffer cache.
 		data := make([]byte, writeSize)
-		cp, _ := src.CopyIn(ctx, data)
+		cp, err := src.CopyIn(ctx, data)
+		if err != nil {
+			return n, offset, err
+		}
 		data = data[:cp]
 
 		in.Header.Offset = uint64(offset)
