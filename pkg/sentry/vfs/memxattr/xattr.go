@@ -102,7 +102,7 @@ func (x *SimpleExtendedAttributes) ListXattr(creds *auth.Credentials, size uint6
 	listSize := 0
 	x.mu.RLock()
 	names := make([]string, 0, len(x.xattrs))
-	haveCap := creds.HasCapability(linux.CAP_SYS_ADMIN)
+	haveCap := creds.HasCapabilityIn(linux.CAP_SYS_ADMIN, creds.UserNamespace.Root())
 	for n := range x.xattrs {
 		// Hide extended attributes in the "trusted" namespace from
 		// non-privileged users. This is consistent with Linux's
