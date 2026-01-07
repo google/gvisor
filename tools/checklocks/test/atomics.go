@@ -61,10 +61,15 @@ type atomicMixedStruct struct {
 	// +checkatomic
 	// +checklocks:mu
 	accessedMixed int32
+
+	// +checkatomic
+	// +checklocks:mu
+	wrapper atomic.Int32
 }
 
 func testAtomicMixedValidRead(tc *atomicMixedStruct, v chan int32) {
 	v <- atomic.LoadInt32(&tc.accessedMixed)
+	v <- tc.wrapper.Load()
 }
 
 func testAtomicMixedInvalidRead(tc *atomicMixedStruct, v chan int32, p chan *int32) {
@@ -75,6 +80,7 @@ func testAtomicMixedInvalidRead(tc *atomicMixedStruct, v chan int32, p chan *int
 func testAtomicMixedValidLockedWrite(tc *atomicMixedStruct, v chan int32, p chan *int32) {
 	tc.mu.Lock()
 	atomic.StoreInt32(&tc.accessedMixed, 1)
+	tc.wrapper.Store(1)
 	tc.mu.Unlock()
 }
 
@@ -86,10 +92,12 @@ func testAtomicMixedInvalidLockedWrite(tc *atomicMixedStruct, v chan int32, p ch
 
 func testAtomicMixedInvalidAtomicWrite(tc *atomicMixedStruct, v chan int32, p chan *int32) {
 	atomic.StoreInt32(&tc.accessedMixed, 1) // +checklocksfail
+	tc.wrapper.Store(1)                     // +checklocksfail
 }
 
 func testAtomicMixedInvalidWrite(tc *atomicMixedStruct, v chan int32, p chan *int32) {
 	tc.accessedMixed = 1 // +checklocksfail:2
+	tc.wrapper.Store(1)  // +checklocksfail:1
 }
 
 func testAtomicWrapper(tc *atomicStruct, v chan int32) {
