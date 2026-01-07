@@ -53,6 +53,45 @@ int sys_rseq(struct rseq* rseq, uint32_t rseq_len, int flags, uint32_t sig) {
   return raw_syscall(kRseqSyscall, rseq, rseq_len, flags, sig);
 }
 
+// RSeqRegistration represents a registered struct rseq, which is unregistered
+// when the RSeqRegistration is destroyed.
+class RSeqRegistration {
+ public:
+  ~RSeqRegistration() {
+    if (rseq_) {
+      sys_rseq(rseq_, rseq_len_, kRseqFlagUnregister, sig_);
+    }
+  }
+
+  RSeqRegistration(const RSeqRegistration&) = delete;
+  RSeqRegistration& operator=(const RSeqRegistration&) = delete;
+  RSeqRegistration(RSeqRegistration&&) = delete;
+  RSeqRegistration& operator=(RSeqRegistration&&) = delete;
+
+  int errno() const { return errno_; }
+
+ private:
+  RSeqRegistration(struct rseq* rseq, uint32_t rseq_len, uint32_t sig,
+                   int errno)
+      : rseq_(rseq), rseq_len_(rseq_len), sig_(sig), errno_(errno) {}
+
+  struct rseq* rseq_;
+  uint32_t rseq_len_;
+  uint32_t sig_;
+  int errno_;
+
+  friend RSeqRegistration RSeqRegister(struct rseq*, uint32_t, int, uint32_t);
+};
+
+RSeqRegistration RSeqRegister(struct rseq* rseq, uint32_t rseq_len, int flags,
+                              uint32_t sig) {
+  int ret = sys_rseq(rseq, rseq_len, flags, sig);
+  if (int errno = sys_errno(ret); errno != 0) {
+    return RSeqRegistration(nullptr, 0, 0, errno);
+  }
+  return RSeqRegistration(rseq, rseq_len, sig, 0);
+}
+
 // Test that rseq must be aligned.
 int TestUnaligned() {
   constexpr uintptr_t kRequiredAlignment = alignof(rseq);
@@ -64,8 +103,8 @@ int TestUnaligned() {
     ptr++;
   }
 
-  int ret = sys_rseq(reinterpret_cast<rseq*>(ptr), sizeof(rseq), 0, 0);
-  if (sys_errno(ret) != EINVAL) {
+  auto reg = RSeqRegister(reinterpret_cast<rseq*>(ptr), sizeof(rseq), 0, 0);
+  if (reg.errno() != EINVAL) {
     return 1;
   }
   return 0;
@@ -74,8 +113,8 @@ int TestUnaligned() {
 // Sanity test that registration works.
 int TestRegister() {
   struct rseq r = {};
-  int ret = sys_rseq(&r, sizeof(r), 0, 0);
-  if (sys_errno(ret) != 0) {
+  auto reg = RSeqRegister(&r, sizeof(r), 0, 0);
+  if (reg.errno() != 0) {
     return 1;
   }
   return 0;
@@ -84,13 +123,13 @@ int TestRegister() {
 // Registration can't be done twice.
 int TestDoubleRegister() {
   struct rseq r = {};
-  int ret = sys_rseq(&r, sizeof(r), 0, 0);
-  if (sys_errno(ret) != 0) {
+  auto reg1 = RSeqRegister(&r, sizeof(r), 0, 0);
+  if (reg1.errno() != 0) {
     return 1;
   }
 
-  ret = sys_rseq(&r, sizeof(r), 0, 0);
-  if (sys_errno(ret) != EBUSY) {
+  auto reg2 = RSeqRegister(&r, sizeof(r), 0, 0);
+  if (reg2.errno() != EBUSY) {
     return 1;
   }
 
@@ -111,8 +150,8 @@ int TestRegisterUnregister() {
     return 1;
   }
 
-  ret = sys_rseq(&r, sizeof(r), 0, 0);
-  if (sys_errno(ret) != 0) {
+  auto reg = RSeqRegister(&r, sizeof(r), 0, 0);
+  if (reg.errno() != 0) {
     return 1;
   }
 
@@ -123,14 +162,14 @@ int TestRegisterUnregister() {
 int TestUnregisterDifferentPtr() {
   struct rseq r = {};
 
-  int ret = sys_rseq(&r, sizeof(r), 0, 0);
-  if (sys_errno(ret) != 0) {
+  auto reg = RSeqRegister(&r, sizeof(r), 0, 0);
+  if (reg.errno() != 0) {
     return 1;
   }
 
   struct rseq r2 = {};
 
-  ret = sys_rseq(&r2, sizeof(r2), kRseqFlagUnregister, 0);
+  int ret = sys_rseq(&r2, sizeof(r2), kRseqFlagUnregister, 0);
   if (sys_errno(ret) != EINVAL) {
     return 1;
   }
@@ -143,12 +182,12 @@ int TestUnregisterDifferentSignature() {
   constexpr int kSignature = 0;
 
   struct rseq r = {};
-  int ret = sys_rseq(&r, sizeof(r), 0, kSignature);
-  if (sys_errno(ret) != 0) {
+  auto reg = RSeqRegister(&r, sizeof(r), 0, kSignature);
+  if (reg.errno() != 0) {
     return 1;
   }
 
-  ret = sys_rseq(&r, sizeof(r), kRseqFlagUnregister, kSignature + 1);
+  int ret = sys_rseq(&r, sizeof(r), kRseqFlagUnregister, kSignature + 1);
   if (sys_errno(ret) != EPERM) {
     return 1;
   }
@@ -161,8 +200,8 @@ int TestCPU() {
   struct rseq r = {};
   r.cpu_id = kRseqCPUIDUninitialized;
 
-  int ret = sys_rseq(&r, sizeof(r), 0, 0);
-  if (sys_errno(ret) != 0) {
+  auto reg = RSeqRegister(&r, sizeof(r), 0, 0);
+  if (reg.errno() != 0) {
     return 1;
   }
 
@@ -179,8 +218,8 @@ int TestCPU() {
 // Critical section is eventually aborted.
 int TestAbort() {
   struct rseq r = {};
-  int ret = sys_rseq(&r, sizeof(r), 0, kRseqSignature);
-  if (sys_errno(ret) != 0) {
+  auto reg = RSeqRegister(&r, sizeof(r), 0, kRseqSignature);
+  if (reg.errno() != 0) {
     return 1;
   }
 
@@ -201,8 +240,8 @@ int TestAbort() {
 // Abort may be before the critical section.
 int TestAbortBefore() {
   struct rseq r = {};
-  int ret = sys_rseq(&r, sizeof(r), 0, kRseqSignature);
-  if (sys_errno(ret) != 0) {
+  auto reg = RSeqRegister(&r, sizeof(r), 0, kRseqSignature);
+  if (reg.errno() != 0) {
     return 1;
   }
 
@@ -223,8 +262,8 @@ int TestAbortBefore() {
 // Signature must match.
 int TestAbortSignature() {
   struct rseq r = {};
-  int ret = sys_rseq(&r, sizeof(r), 0, kRseqSignature + 1);
-  if (sys_errno(ret) != 0) {
+  auto reg = RSeqRegister(&r, sizeof(r), 0, kRseqSignature + 1);
+  if (reg.errno() != 0) {
     return 1;
   }
 
@@ -245,8 +284,8 @@ int TestAbortSignature() {
 // Abort must not be in the critical section.
 int TestAbortPreCommit() {
   struct rseq r = {};
-  int ret = sys_rseq(&r, sizeof(r), 0, kRseqSignature + 1);
-  if (sys_errno(ret) != 0) {
+  auto reg = RSeqRegister(&r, sizeof(r), 0, kRseqSignature + 1);
+  if (reg.errno() != 0) {
     return 1;
   }
 
@@ -267,8 +306,8 @@ int TestAbortPreCommit() {
 // rseq.rseq_cs is cleared on abort.
 int TestAbortClearsCS() {
   struct rseq r = {};
-  int ret = sys_rseq(&r, sizeof(r), 0, kRseqSignature);
-  if (sys_errno(ret) != 0) {
+  auto reg = RSeqRegister(&r, sizeof(r), 0, kRseqSignature);
+  if (reg.errno() != 0) {
     return 1;
   }
 
@@ -293,8 +332,8 @@ int TestAbortClearsCS() {
 // rseq.rseq_cs is cleared on abort outside of critical section.
 int TestInvalidAbortClearsCS() {
   struct rseq r = {};
-  int ret = sys_rseq(&r, sizeof(r), 0, kRseqSignature);
-  if (sys_errno(ret) != 0) {
+  auto reg = RSeqRegister(&r, sizeof(r), 0, kRseqSignature);
+  if (reg.errno() != 0) {
     return 1;
   }
 
@@ -305,6 +344,11 @@ int TestInvalidAbortClearsCS() {
   cs.post_commit_offset = reinterpret_cast<uint64_t>(&rseq_loop_post_commit) -
                           reinterpret_cast<uint64_t>(&rseq_loop_start);
   cs.abort_ip = reinterpret_cast<uint64_t>(&rseq_loop_abort);
+
+  // Ensure that the kernel, running on this CPU, will observe the preceding
+  // stores to cs before the following store to r.rseq_cs. This is a compiler
+  // barrier, equivalent to std::atomic_signal_fence() but without stdlib.
+  asm volatile("" ::: "memory");
 
   __atomic_store_n(&r.rseq_cs, &cs, __ATOMIC_RELAXED);
 
@@ -322,11 +366,11 @@ int TestInvalidAbortClearsCS() {
 // rseq.cpu_id_start is overwritten by RSEQ fence.
 int TestMembarrierResetsCpuIdStart() {
   struct rseq r = {};
-  int ret = sys_rseq(&r, sizeof(r), 0, kRseqSignature);
-  if (sys_errno(ret) != 0) {
+  auto reg = RSeqRegister(&r, sizeof(r), 0, kRseqSignature);
+  if (reg.errno() != 0) {
     return 1;
   }
-  ret = sys_membarrier(MEMBARRIER_CMD_REGISTER_PRIVATE_EXPEDITED_RSEQ, 0);
+  int ret = sys_membarrier(MEMBARRIER_CMD_REGISTER_PRIVATE_EXPEDITED_RSEQ, 0);
   if (sys_errno(ret) != 0) {
     return 1;
   }
