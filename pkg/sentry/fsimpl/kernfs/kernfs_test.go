@@ -124,7 +124,7 @@ func (fs *filesystem) newReadonlyDir(ctx context.Context, creds *auth.Credential
 }
 
 func (d *readonlyDir) Open(ctx context.Context, rp *vfs.ResolvingPath, kd *kernfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
-	fd, err := kernfs.NewGenericDirectoryFD(rp.Mount(), kd, &d.OrderedChildren, &d.locks, &opts, kernfs.GenericDirectoryFDOptions{
+	fd, err := kernfs.NewGenericDirectoryFD(rp.Mount(), kd, rp.Credentials(), &d.OrderedChildren, &d.locks, &opts, kernfs.GenericDirectoryFDOptions{
 		SeekEnd: kernfs.SeekEndStaticEntries,
 	})
 	if err != nil {
@@ -166,7 +166,7 @@ func (fs *filesystem) newDir(ctx context.Context, creds *auth.Credentials, mode 
 }
 
 func (d *dir) Open(ctx context.Context, rp *vfs.ResolvingPath, kd *kernfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
-	fd, err := kernfs.NewGenericDirectoryFD(rp.Mount(), kd, &d.OrderedChildren, &d.locks, &opts, kernfs.GenericDirectoryFDOptions{
+	fd, err := kernfs.NewGenericDirectoryFD(rp.Mount(), kd, rp.Credentials(), &d.OrderedChildren, &d.locks, &opts, kernfs.GenericDirectoryFDOptions{
 		SeekEnd: kernfs.SeekEndStaticEntries,
 	})
 	if err != nil {

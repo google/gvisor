@@ -134,7 +134,7 @@ func newUnlinkedRegularFileDescription(ctx context.Context, creds *auth.Credenti
 	fd := &regularFileFD{}
 	fd.Init(&inode.locks)
 	flags := uint32(linux.O_RDWR)
-	if err := fd.vfsfd.Init(fd, flags, mount, &d.vfsd, &vfs.FileDescriptionOptions{}); err != nil {
+	if err := fd.vfsfd.Init(fd, flags, creds, mount, &d.vfsd, &vfs.FileDescriptionOptions{}); err != nil {
 		return nil, err
 	}
 	return fd, nil

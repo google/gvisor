@@ -21,6 +21,7 @@ go_library(
         "//pkg/hostarch",
         "//pkg/safemem",
         "//pkg/sentry/kernel",
+        "//pkg/sentry/kernel/auth",
         "//pkg/sentry/memmap",
         "//pkg/sentry/pgalloc",
         "//pkg/sentry/usage",

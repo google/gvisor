@@ -38,6 +38,7 @@ go_library(
         "//pkg/sentry/fsimpl/eventfd",
         "//pkg/sentry/fsutil",
         "//pkg/sentry/kernel",
+        "//pkg/sentry/kernel/auth",
         "//pkg/sentry/memmap",
         "//pkg/sentry/mm",
         "//pkg/sentry/vfs",

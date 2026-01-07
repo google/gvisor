@@ -28,6 +28,7 @@ import (
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/fsmetric"
 	"gvisor.dev/gvisor/pkg/sentry/fsutil"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
@@ -49,10 +50,10 @@ type regularFileFD struct {
 	off int64
 }
 
-func newRegularFileFD(mnt *vfs.Mount, d *dentry, flags uint32) (*regularFileFD, error) {
+func newRegularFileFD(mnt *vfs.Mount, d *dentry, flags uint32, creds *auth.Credentials) (*regularFileFD, error) {
 	fd := &regularFileFD{}
 	fd.LockFD.Init(&d.inode.locks)
-	if err := fd.vfsfd.Init(fd, flags, mnt, &d.vfsd, &vfs.FileDescriptionOptions{
+	if err := fd.vfsfd.Init(fd, flags, creds, mnt, &d.vfsd, &vfs.FileDescriptionOptions{
 		AllowDirectIO: true,
 	}); err != nil {
 		return nil, err

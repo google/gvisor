@@ -1111,7 +1111,7 @@ func (d *dentry) open(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.Open
 			if err := d.ensureSharedHandle(ctx, ats.MayRead(), ats.MayWrite(), trunc); err != nil {
 				return nil, err
 			}
-			fd, err := newRegularFileFD(mnt, d, opts.Flags)
+			fd, err := newRegularFileFD(mnt, d, opts.Flags, rp.Credentials())
 			if err != nil {
 				return nil, err
 			}
@@ -1136,7 +1136,7 @@ func (d *dentry) open(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.Open
 		}
 		fd := &directoryFD{}
 		fd.LockFD.Init(&d.inode.locks)
-		if err := fd.vfsfd.Init(fd, opts.Flags, mnt, &d.vfsd, &vfs.FileDescriptionOptions{}); err != nil {
+		if err := fd.vfsfd.Init(fd, opts.Flags, rp.Credentials(), mnt, &d.vfsd, &vfs.FileDescriptionOptions{}); err != nil {
 			return nil, err
 		}
 		if d.inode.readFD.Load() >= 0 {
@@ -1256,7 +1256,7 @@ retry:
 			return nil, err
 		}
 	}
-	fd, err := newSpecialFileFD(h, mnt, d, opts.Flags)
+	fd, err := newSpecialFileFD(h, mnt, d, opts.Flags, auth.CredentialsFromContext(ctx))
 	if err != nil {
 		h.close(ctx)
 		return nil, err
@@ -1331,13 +1331,13 @@ func (d *dentry) createAndOpenChildLocked(ctx context.Context, rp *vfs.Resolving
 	// Finally, construct a file description representing the created file.
 	var childVFSFD *vfs.FileDescription
 	if useRegularFileFD {
-		fd, err := newRegularFileFD(mnt, child, opts.Flags)
+		fd, err := newRegularFileFD(mnt, child, opts.Flags, creds)
 		if err != nil {
 			return nil, err
 		}
 		childVFSFD = &fd.vfsfd
 	} else {
-		fd, err := newSpecialFileFD(h, mnt, child, opts.Flags)
+		fd, err := newSpecialFileFD(h, mnt, child, opts.Flags, creds)
 		if err != nil {
 			h.close(ctx)
 			return nil, err

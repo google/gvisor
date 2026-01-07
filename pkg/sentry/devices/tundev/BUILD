@@ -17,6 +17,7 @@ go_library(
         "//pkg/sentry/arch",
         "//pkg/sentry/inet",
         "//pkg/sentry/kernel",
+        "//pkg/sentry/kernel/auth",
         "//pkg/sentry/socket/netstack",
         "//pkg/sentry/vfs",
         "//pkg/tcpip/link/tun",

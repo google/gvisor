@@ -25,6 +25,7 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/contexttest"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -85,7 +86,7 @@ func newTestFD(ctx context.Context, vfsObj *VirtualFilesystem, statusFlags uint3
 	vd := vfsObj.NewAnonVirtualDentry("genCountFD")
 	defer vd.DecRef(ctx)
 	var fd testFD
-	fd.fileDescription.vfsfd.Init(&fd, statusFlags, vd.Mount(), vd.Dentry(), &FileDescriptionOptions{})
+	fd.fileDescription.vfsfd.Init(&fd, statusFlags, auth.CredentialsFromContext(ctx), vd.Mount(), vd.Dentry(), &FileDescriptionOptions{})
 	fd.DynamicBytesFileDescriptionImpl.Init(&fd.fileDescription.vfsfd, data)
 	return &fd.fileDescription.vfsfd
 }

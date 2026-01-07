@@ -929,7 +929,7 @@ func (d *dentry) openCopiedUp(ctx context.Context, rp *vfs.ResolvingPath, opts *
 	if ftype == linux.S_IFDIR {
 		fd := &directoryFD{}
 		fd.LockFD.Init(&d.locks)
-		if err := fd.vfsfd.Init(fd, opts.Flags, mnt, &d.vfsd, &vfs.FileDescriptionOptions{
+		if err := fd.vfsfd.Init(fd, opts.Flags, rp.Credentials(), mnt, &d.vfsd, &vfs.FileDescriptionOptions{
 			UseDentryMetadata: true,
 		}); err != nil {
 			return nil, err
@@ -956,7 +956,7 @@ func (d *dentry) openCopiedUp(ctx context.Context, rp *vfs.ResolvingPath, opts *
 	}
 	fd.LockFD.Init(&d.locks)
 	layerFDOpts := layerFD.Options()
-	if err := fd.vfsfd.Init(fd, layerFlags, mnt, &d.vfsd, &layerFDOpts); err != nil {
+	if err := fd.vfsfd.Init(fd, layerFlags, rp.Credentials(), mnt, &d.vfsd, &layerFDOpts); err != nil {
 		layerFD.DecRef(ctx)
 		return nil, err
 	}
@@ -1034,7 +1034,7 @@ func (fs *filesystem) createAndOpenLocked(ctx context.Context, rp *vfs.Resolving
 	}
 	fd.LockFD.Init(&child.locks)
 	upperFDOpts := upperFD.Options()
-	if err := fd.vfsfd.Init(fd, upperFlags, mnt, &child.vfsd, &upperFDOpts); err != nil {
+	if err := fd.vfsfd.Init(fd, upperFlags, rp.Credentials(), mnt, &child.vfsd, &upperFDOpts); err != nil {
 		upperFD.DecRef(ctx)
 		return nil, err
 	}

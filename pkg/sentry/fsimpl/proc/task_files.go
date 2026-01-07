@@ -470,7 +470,7 @@ func (f *memInode) Open(ctx context.Context, rp *vfs.ResolvingPath, d *kernfs.De
 	fd := &memFD{
 		mm: getMM(f.task),
 	}
-	if err := fd.Init(rp.Mount(), d, f, opts.Flags); err != nil {
+	if err := fd.Init(rp.Mount(), d, f, opts.Flags, rp.Credentials()); err != nil {
 		return nil, err
 	}
 	return &fd.vfsfd, nil
@@ -499,9 +499,9 @@ type memFD struct {
 }
 
 // Init initializes memFD.
-func (fd *memFD) Init(m *vfs.Mount, d *kernfs.Dentry, inode *memInode, flags uint32) error {
+func (fd *memFD) Init(m *vfs.Mount, d *kernfs.Dentry, inode *memInode, flags uint32, creds *auth.Credentials) error {
 	fd.LockFD.Init(&inode.locks)
-	if err := fd.vfsfd.Init(fd, flags, m, d.VFSDentry(), &vfs.FileDescriptionOptions{}); err != nil {
+	if err := fd.vfsfd.Init(fd, flags, creds, m, d.VFSDentry(), &vfs.FileDescriptionOptions{}); err != nil {
 		return err
 	}
 	fd.inode = inode
@@ -905,7 +905,7 @@ func (s *statusInode) Open(ctx context.Context, rp *vfs.ResolvingPath, d *kernfs
 		userns: rp.Credentials().UserNamespace,
 	}
 	fd.LockFD.Init(&s.locks)
-	if err := fd.vfsfd.Init(fd, opts.Flags, rp.Mount(), d.VFSDentry(), &vfs.FileDescriptionOptions{}); err != nil {
+	if err := fd.vfsfd.Init(fd, opts.Flags, rp.Credentials(), rp.Mount(), d.VFSDentry(), &vfs.FileDescriptionOptions{}); err != nil {
 		return nil, err
 	}
 	fd.DynamicBytesFileDescriptionImpl.Init(&fd.vfsfd, fd)
@@ -1486,7 +1486,7 @@ func (i *namespaceInode) Open(ctx context.Context, rp *vfs.ResolvingPath, d *ker
 	fd := &namespaceFD{inode: i}
 	i.IncRef()
 	fd.LockFD.Init(&i.locks)
-	if err := fd.vfsfd.Init(fd, opts.Flags, rp.Mount(), d.VFSDentry(), &vfs.FileDescriptionOptions{}); err != nil {
+	if err := fd.vfsfd.Init(fd, opts.Flags, rp.Credentials(), rp.Mount(), d.VFSDentry(), &vfs.FileDescriptionOptions{}); err != nil {
 		return nil, err
 	}
 	return &fd.vfsfd, nil

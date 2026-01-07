@@ -51,6 +51,7 @@ go_library(
         "//pkg/safemem",
         "//pkg/sentry/arch",
         "//pkg/sentry/fsutil",
+        "//pkg/sentry/kernel/auth",
         "//pkg/sentry/vfs",
         "//pkg/sync",
         "//pkg/sync/locking",

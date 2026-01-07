@@ -699,7 +699,7 @@ func (i *inode) open(ctx context.Context, d *kernfs.Dentry, mnt *vfs.Mount, file
 			return nil, err
 		}
 		// Currently, we only allow Unix sockets to be imported.
-		return unixsocket.NewFileDescription(ep, ep.Type(), flags, nil, mnt, d.VFSDentry(), &i.locks)
+		return unixsocket.NewFileDescription(ep, ep.Type(), flags, nil, mnt, d.VFSDentry(), &i.locks, auth.CredentialsFromContext(ctx))
 
 	case unix.S_IFREG, unix.S_IFIFO, unix.S_IFCHR:
 		if i.tty != nil {
@@ -709,7 +709,7 @@ func (i *inode) open(ctx context.Context, d *kernfs.Dentry, mnt *vfs.Mount, file
 		fd := &fileDescription{inode: i}
 		fd.LockFD.Init(&i.locks)
 		vfsfd := &fd.vfsfd
-		if err := vfsfd.Init(fd, flags, mnt, d.VFSDentry(), &vfs.FileDescriptionOptions{}); err != nil {
+		if err := vfsfd.Init(fd, flags, auth.CredentialsFromContext(ctx), mnt, d.VFSDentry(), &vfs.FileDescriptionOptions{}); err != nil {
 			return nil, err
 		}
 		return vfsfd, nil
@@ -732,7 +732,7 @@ func (i *inode) OpenTTY(ctx context.Context, mnt *vfs.Mount, d *vfs.Dentry, opts
 	}
 	fd.LockFD.Init(&i.locks)
 	vfsfd := &fd.vfsfd
-	if err := vfsfd.Init(fd, flags, mnt, d, &vfs.FileDescriptionOptions{}); err != nil {
+	if err := vfsfd.Init(fd, flags, auth.CredentialsFromContext(ctx), mnt, d, &vfs.FileDescriptionOptions{}); err != nil {
 		return nil, err
 	}
 	return vfsfd, nil

@@ -767,7 +767,7 @@ func (s *StaticDirectory) Init(ctx context.Context, creds *auth.Credentials, dev
 
 // Open implements Inode.Open.
 func (s *StaticDirectory) Open(ctx context.Context, rp *vfs.ResolvingPath, d *Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
-	fd, err := NewGenericDirectoryFD(rp.Mount(), d, &s.OrderedChildren, &s.locks, &opts, s.fdOpts)
+	fd, err := NewGenericDirectoryFD(rp.Mount(), d, rp.Credentials(), &s.OrderedChildren, &s.locks, &opts, s.fdOpts)
 	if err != nil {
 		return nil, err
 	}

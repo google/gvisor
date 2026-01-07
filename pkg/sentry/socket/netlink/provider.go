@@ -117,7 +117,7 @@ func (*socketProvider) Socket(t *kernel.Task, stype linux.SockType, protocol int
 	mnt := t.Kernel().SocketMount()
 	d := sockfs.NewDentry(t, mnt)
 	defer d.DecRef(t)
-	if err := vfsfd.Init(s, linux.O_RDWR, mnt, d, &vfs.FileDescriptionOptions{
+	if err := vfsfd.Init(s, linux.O_RDWR, t.Credentials(), mnt, d, &vfs.FileDescriptionOptions{
 		DenyPRead:         true,
 		DenyPWrite:        true,
 		UseDentryMetadata: true,

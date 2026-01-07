@@ -53,7 +53,7 @@ func newTestConnection(system *testutil.System, maxActiveRequests uint64) (*conn
 
 	vd := system.VFS.NewAnonVirtualDentry("fuse")
 	defer vd.DecRef(system.Ctx)
-	if err := fuseDev.vfsfd.Init(fuseDev, linux.O_RDWR, vd.Mount(), vd.Dentry(), &vfs.FileDescriptionOptions{}); err != nil {
+	if err := fuseDev.vfsfd.Init(fuseDev, linux.O_RDWR, auth.CredentialsFromContext(system.Ctx), vd.Mount(), vd.Dentry(), &vfs.FileDescriptionOptions{}); err != nil {
 		return nil, nil, err
 	}
 

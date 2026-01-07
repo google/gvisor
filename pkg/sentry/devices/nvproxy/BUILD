@@ -86,6 +86,7 @@ go_library(
         "//pkg/sentry/devices/nvproxy/nvconf",
         "//pkg/sentry/fsutil",
         "//pkg/sentry/kernel",
+        "//pkg/sentry/kernel/auth",
         "//pkg/sentry/memmap",
         "//pkg/sentry/mm",
         "//pkg/sentry/vfs",

@@ -22,6 +22,7 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
@@ -50,14 +51,15 @@ func NewVFSPipe(isNamed bool, sizeBytes int64) *VFSPipe {
 //
 // Preconditions: statusFlags should not contain an open access mode.
 func (vp *VFSPipe) ReaderWriterPair(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dentry, statusFlags uint32) (*vfs.FileDescription, *vfs.FileDescription, error) {
+	creds := auth.CredentialsFromContext(ctx)
 	// Connected pipes share the same locks.
 	locks := &vfs.FileLocks{}
-	r, err := vp.newFD(mnt, vfsd, linux.O_RDONLY|statusFlags, locks)
+	r, err := vp.newFD(mnt, vfsd, linux.O_RDONLY|statusFlags, locks, creds)
 	if err != nil {
 		return nil, nil, err
 	}
 	vp.pipe.rOpen()
-	w, err := vp.newFD(mnt, vfsd, linux.O_WRONLY|statusFlags, locks)
+	w, err := vp.newFD(mnt, vfsd, linux.O_WRONLY|statusFlags, locks, creds)
 	if err != nil {
 		r.DecRef(ctx)
 		return nil, nil, err
@@ -79,7 +81,7 @@ func (vp *VFSPipe) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dentry, s
 		return nil, linuxerr.EINVAL
 	}
 
-	fd, err := vp.newFD(mnt, vfsd, statusFlags, locks)
+	fd, err := vp.newFD(mnt, vfsd, statusFlags, locks, auth.CredentialsFromContext(ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -138,12 +140,12 @@ func (vp *VFSPipe) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dentry, s
 }
 
 // Preconditions: vp.mu must be held.
-func (vp *VFSPipe) newFD(mnt *vfs.Mount, vfsd *vfs.Dentry, statusFlags uint32, locks *vfs.FileLocks) (*vfs.FileDescription, error) {
+func (vp *VFSPipe) newFD(mnt *vfs.Mount, vfsd *vfs.Dentry, statusFlags uint32, locks *vfs.FileLocks, creds *auth.Credentials) (*vfs.FileDescription, error) {
 	fd := &VFSPipeFD{
 		pipe: &vp.pipe,
 	}
 	fd.LockFD.Init(locks)
-	if err := fd.vfsfd.Init(fd, statusFlags, mnt, vfsd, &vfs.FileDescriptionOptions{
+	if err := fd.vfsfd.Init(fd, statusFlags, creds, mnt, vfsd, &vfs.FileDescriptionOptions{
 		DenyPRead:         true,
 		DenyPWrite:        true,
 		UseDentryMetadata: true,

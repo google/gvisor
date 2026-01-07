@@ -227,7 +227,7 @@ func (i *tasksInode) IterDirents(ctx context.Context, mnt *vfs.Mount, cb vfs.Ite
 
 // Open implements kernfs.Inode.Open.
 func (i *tasksInode) Open(ctx context.Context, rp *vfs.ResolvingPath, d *kernfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
-	fd, err := kernfs.NewGenericDirectoryFD(rp.Mount(), d, &i.OrderedChildren, &i.locks, &opts, kernfs.GenericDirectoryFDOptions{
+	fd, err := kernfs.NewGenericDirectoryFD(rp.Mount(), d, rp.Credentials(), &i.OrderedChildren, &i.locks, &opts, kernfs.GenericDirectoryFDOptions{
 		SeekEnd: kernfs.SeekEndZero,
 	})
 	if err != nil {

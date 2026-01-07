@@ -461,7 +461,7 @@ func New(t *kernel.Task, family int, skType linux.SockType, protocol int, queue 
 	}
 	s.LockFD.Init(&vfs.FileLocks{})
 	vfsfd := &s.vfsfd
-	if err := vfsfd.Init(s, linux.O_RDWR, mnt, d, &vfs.FileDescriptionOptions{
+	if err := vfsfd.Init(s, linux.O_RDWR, t.Credentials(), mnt, d, &vfs.FileDescriptionOptions{
 		DenyPRead:         true,
 		DenyPWrite:        true,
 		UseDentryMetadata: true,

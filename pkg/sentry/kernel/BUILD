@@ -429,6 +429,7 @@ go_test(
         "//pkg/hostarch",
         "//pkg/sentry/arch",
         "//pkg/sentry/contexttest",
+        "//pkg/sentry/kernel/auth",
         "//pkg/sentry/kernel/sched",
         "//pkg/sentry/limits",
         "//pkg/sentry/pgalloc",

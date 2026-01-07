@@ -20,6 +20,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/contexttest"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
@@ -47,7 +48,7 @@ func newTestFD(ctx context.Context, vfsObj *vfs.VirtualFilesystem) *vfs.FileDesc
 	vd := vfsObj.NewAnonVirtualDentry("testFD")
 	defer vd.DecRef(ctx)
 	var fd testFD
-	fd.vfsfd.Init(&fd, 0 /* flags */, vd.Mount(), vd.Dentry(), &vfs.FileDescriptionOptions{})
+	fd.vfsfd.Init(&fd, 0 /* flags */, auth.CredentialsFromContext(ctx), vd.Mount(), vd.Dentry(), &vfs.FileDescriptionOptions{})
 	return &fd.vfsfd
 }
 

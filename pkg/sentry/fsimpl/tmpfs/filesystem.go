@@ -460,7 +460,7 @@ func (d *dentry) open(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.Open
 		var fd regularFileFD
 		fd.LockFD.Init(&d.inode.locks)
 		mnt := rp.Mount()
-		if err := fd.vfsfd.Init(&fd, opts.Flags, mnt, &d.vfsd, &vfs.FileDescriptionOptions{AllowDirectIO: true}); err != nil {
+		if err := fd.vfsfd.Init(&fd, opts.Flags, rp.Credentials(), mnt, &d.vfsd, &vfs.FileDescriptionOptions{AllowDirectIO: true}); err != nil {
 			return nil, err
 		}
 		if !afterCreate && opts.Flags&linux.O_TRUNC != 0 {
@@ -495,7 +495,7 @@ func (d *dentry) open(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.Open
 		}
 		var fd directoryFD
 		fd.LockFD.Init(&d.inode.locks)
-		if err := fd.vfsfd.Init(&fd, opts.Flags, rp.Mount(), &d.vfsd, &vfs.FileDescriptionOptions{AllowDirectIO: true}); err != nil {
+		if err := fd.vfsfd.Init(&fd, opts.Flags, rp.Credentials(), rp.Mount(), &d.vfsd, &vfs.FileDescriptionOptions{AllowDirectIO: true}); err != nil {
 			return nil, err
 		}
 		return &fd.vfsfd, nil

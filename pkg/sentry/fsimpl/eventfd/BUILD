@@ -18,6 +18,7 @@ go_library(
         "//pkg/fdnotifier",
         "//pkg/hostarch",
         "//pkg/log",
+        "//pkg/sentry/kernel/auth",
         "//pkg/sentry/vfs",
         "//pkg/usermem",
         "//pkg/waiter",

@@ -14,6 +14,7 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <linux/capability.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -26,9 +27,13 @@
 #include "gtest/gtest.h"
 #include "absl/flags/flag.h"
 #include "absl/strings/str_cat.h"
+#include "absl/strings/strip.h"
+#include "test/util/cleanup.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/fs_util.h"
 #include "test/util/linux_capability_util.h"
+#include "test/util/logging.h"
+#include "test/util/multiprocess_util.h"
 #include "test/util/posix_error.h"
 #include "test/util/save_util.h"
 #include "test/util/temp_path.h"
@@ -57,8 +62,6 @@ bool IsSameFile(const std::string& f1, const std::string& f2) {
 
   return stat1.st_dev == stat2.st_dev && stat1.st_ino == stat2.st_ino;
 }
-
-// TODO(b/178640646): Add test for linkat with AT_EMPTY_PATH
 
 TEST(LinkTest, CanCreateLinkFile) {
   auto oldfile = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
@@ -404,6 +407,138 @@ TEST(LinkTest, KernfsAcrossFilesystem) {
   auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   EXPECT_THAT(link(file.path().c_str(), "/sys/newfile"),
               SyscallFailsWithErrno(::testing::AnyOf(EROFS, EXDEV)));
+}
+
+// A test for a relaxed linkat(AT_EMPTY_PATH) where the need for
+// CAP_DAC_READ_SEARCH is excused if the creds struct has not changed. See
+// https://github.com/torvalds/linux/commit/42bd2af5950456d, which first
+// appears in Linux 6.10.
+TEST(LinkTest, LinkAtWithEmptyPathNeedsNoCapForSameCreds) {
+  if (!IsRunningOnGvisor()) {
+    KernelVersion version = ASSERT_NO_ERRNO_AND_VALUE(GetKernelVersion());
+    if (version.major < 6 || (version.major == 6 && version.minor < 10)) {
+      GTEST_SKIP() << "Kernel version is too old";
+    }
+  }
+
+  // Drop the cap before opening the fd.
+  AutoCapability cap(CAP_DAC_READ_SEARCH, false);
+
+  auto old_file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  auto old_fd = ASSERT_NO_ERRNO_AND_VALUE(Open(old_file.path(), O_RDONLY));
+  int old_fd_raw = old_fd.get();
+  auto new_dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto new_dir_fd = ASSERT_NO_ERRNO_AND_VALUE(Open(new_dir.path(), O_RDONLY));
+  int new_dir_fd_raw = new_dir_fd.get();
+
+  // linkat(AT_EMPTY_PATH) should succeed for a dirfd we just opened,
+  // even though we don't have CAP_DAC_READ_SEARCH, because our creds struct
+  // remained the same.
+  constexpr char kOldCredsNoCap[] = "old_creds_no_cap";
+  ASSERT_THAT(
+      linkat(old_fd_raw, "", new_dir_fd_raw, kOldCredsNoCap, AT_EMPTY_PATH),
+      SyscallSucceeds());
+  ASSERT_THAT(unlinkat(new_dir_fd_raw, kOldCredsNoCap, 0), SyscallSucceeds());
+}
+
+TEST(LinkTest, LinkAtWithEmptyPathNeedsCapDacReadSearch) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_DAC_READ_SEARCH)));
+
+  auto old_file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  auto old_file_fd = ASSERT_NO_ERRNO_AND_VALUE(Open(old_file.path(), O_RDONLY));
+  int old_file_fd_raw = old_file_fd.get();
+  auto new_dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto new_dir_fd = ASSERT_NO_ERRNO_AND_VALUE(Open(new_dir.path(), O_RDONLY));
+  int new_dir_fd_raw = new_dir_fd.get();
+
+  // Toggling CAP_DAC_READ_SEARCH forces the creds struct of this task to change
+  // since we opened the fd, but linkat(AT_EMPTY_PATH) should succeed because we
+  // still have the cap. See
+  // https://github.com/torvalds/linux/commit/42bd2af5950456d.
+  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_READ_SEARCH, false));
+  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_READ_SEARCH, true));
+  constexpr char kNewCredsWithCap[] = "new_creds_with_cap";
+  ASSERT_THAT(linkat(old_file_fd_raw, "", new_dir_fd_raw, kNewCredsWithCap,
+                     AT_EMPTY_PATH),
+              SyscallSucceeds());
+  auto cleanup1 = Cleanup([&] {
+    ASSERT_THAT(unlinkat(new_dir_fd_raw, kNewCredsWithCap, 0),
+                SyscallSucceeds());
+  });
+
+  // Once the cap is dropped, linkat(AT_EMPTY_PATH) should fail with ENOENT.
+  AutoCapability cap(CAP_DAC_READ_SEARCH, false);
+  constexpr char kNewCredsNoCap[] = "new_creds_no_cap";
+  ASSERT_THAT(linkat(old_file_fd_raw, "", new_dir_fd_raw, kNewCredsNoCap,
+                     AT_EMPTY_PATH),
+              SyscallFailsWithErrno(ENOENT));
+
+  // In this forked process, the creds struct is decidedly different from the
+  // fd-creator's creds struct, so we do need CAP_DAC_READ_SEARCH to succeed.
+  // But it's not enough to possess the cap in one's own userns.
+  constexpr char kNewCredsWithCapButInDiffUserns[] =
+      "new_creds_with_cap_in_wrong_userns";
+  ASSERT_THAT(InForkedProcess([&] {
+                // unshare to gain CAP_DAC_READ_SEARCH in a new userns.
+                TEST_CHECK_SUCCESS(syscall(SYS_unshare, CLONE_NEWUSER));
+                // But the linkat should still fail with ENOENT for we still
+                // lack CAP_DAC_READ_SEARCH in the userns in which the fd was
+                // opened.
+                TEST_CHECK_ERRNO(
+                    syscall(SYS_linkat, old_file_fd_raw, "", new_dir_fd_raw,
+                            kNewCredsWithCapButInDiffUserns, AT_EMPTY_PATH),
+                    ENOENT);
+              }),
+              IsPosixErrorOkAndHolds(0));
+}
+
+TEST(LinkTest, LinkAtWithEmptyPathNeedsNoCapForAtFcwd) {
+  // The Linux commit 42bd2af5950456d described above appears only in 6.10.
+  if (!IsRunningOnGvisor()) {
+    KernelVersion version = ASSERT_NO_ERRNO_AND_VALUE(GetKernelVersion());
+    if (version.major < 6 || (version.major == 6 && version.minor < 10)) {
+      GTEST_SKIP() << "Kernel version is too old";
+    }
+  }
+  AutoCapability cap(CAP_DAC_READ_SEARCH, false);
+
+  auto old_dir = GetAbsoluteTestTmpdir();
+  auto old_dir_fd = ASSERT_NO_ERRNO_AND_VALUE(Open(old_dir, O_RDONLY));
+  int old_dir_fd_raw = old_dir_fd.get();
+  auto old_file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileIn(old_dir));
+  const char* old_file_path = old_file.path().c_str();
+
+  std::string old_file_rel_path =
+      std::string(absl::StripPrefix(old_file_path, old_dir));
+  if (!old_file_rel_path.empty() && old_file_rel_path[0] == '/') {
+    old_file_rel_path.erase(0, 1);
+  }
+
+  auto new_dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto new_dir_fd = ASSERT_NO_ERRNO_AND_VALUE(Open(new_dir.path(), O_RDONLY));
+  int new_dir_fd_raw = new_dir_fd.get();
+
+  // If we try to linkat with olddirfd=AT_FDCWD, it should succeed, because
+  // the AT_EMPTY_PATH cap checks are triggered only if the olddirfd is not
+  // AT_FDCWD (If they were triggered, our lack of CAP_DAC_READ_SEARCH would
+  // have caused a failure).
+  EXPECT_THAT(InForkedProcess([&] {
+                // Change the cwd to old_dir (in a forked process to avoid
+                // affecting the test process's cwd).
+                TEST_CHECK_SUCCESS(syscall(SYS_fchdir, old_dir_fd_raw));
+
+                constexpr char kAtFdcwdNewCredsNoCap[] =
+                    "at_fdcwd_new_creds_no_cap";
+                // linkat() skips the AT_EMPTY_PATH check if the olddirfd
+                // is AT_FDCWD or if the oldpath is absolute: so we use a
+                // relative oldpath.
+                TEST_CHECK_SUCCESS(syscall(
+                    SYS_linkat, AT_FDCWD, old_file_rel_path.c_str(),
+                    new_dir_fd_raw, kAtFdcwdNewCredsNoCap, AT_EMPTY_PATH));
+                TEST_CHECK_SUCCESS(syscall(SYS_unlinkat, new_dir_fd_raw,
+                                           kAtFdcwdNewCredsNoCap, 0));
+              }),
+              IsPosixErrorOkAndHolds(0));
 }
 
 }  // namespace

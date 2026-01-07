@@ -27,6 +27,7 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/contexttest"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
@@ -83,7 +84,7 @@ func newMockFileDescription(ctx context.Context, fdImpl vfs.FileDescriptionImpl)
 		impl:   fdImpl,
 		vfsObj: vfsObj,
 	}
-	fd.vfsfd.Init(fd.impl, linux.O_RDWR, vd.Mount(), vd.Dentry(), &vfs.FileDescriptionOptions{})
+	fd.vfsfd.Init(fd.impl, linux.O_RDWR, auth.CredentialsFromContext(ctx), vd.Mount(), vd.Dentry(), &vfs.FileDescriptionOptions{})
 	fd.vfsObj = vfsObj
 	return &fd.vfsfd, nil
 }

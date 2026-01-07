@@ -71,9 +71,9 @@ type queueFD struct {
 
 // Init initializes a queueFD. Mostly copied from DynamicBytesFD.Init, but uses
 // the queueFD as FileDescriptionImpl.
-func (fd *queueFD) Init(m *vfs.Mount, d *kernfs.Dentry, data vfs.DynamicBytesSource, locks *vfs.FileLocks, flags uint32) error {
+func (fd *queueFD) Init(m *vfs.Mount, d *kernfs.Dentry, data vfs.DynamicBytesSource, locks *vfs.FileLocks, flags uint32, creds *auth.Credentials) error {
 	fd.LockFD.Init(locks)
-	if err := fd.vfsfd.Init(fd, flags, m, d.VFSDentry(), &vfs.FileDescriptionOptions{}); err != nil {
+	if err := fd.vfsfd.Init(fd, flags, creds, m, d.VFSDentry(), &vfs.FileDescriptionOptions{}); err != nil {
 		return err
 	}
 	fd.inode = d.Inode()

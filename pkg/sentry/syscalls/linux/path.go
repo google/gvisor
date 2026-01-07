@@ -36,12 +36,12 @@ type taskPathOperation struct {
 	haveStartRef bool
 }
 
-func getTaskPathOperation(t *kernel.Task, dirfd int32, path fspath.Path, shouldAllowEmptyPath shouldAllowEmptyPath, shouldFollowFinalSymlink shouldFollowFinalSymlink) (taskPathOperation, error) {
+func getTaskPathOperation(t *kernel.Task, dirfd int32, path fspath.Path, emptyPathCheck shouldAllowEmptyPathType, shouldFollowFinalSymlink shouldFollowFinalSymlink) (taskPathOperation, error) {
 	root := t.FSContext().RootDirectory()
 	start := root
 	haveStartRef := false
 	if !path.Absolute {
-		if !path.HasComponents() && !bool(shouldAllowEmptyPath) {
+		if !path.HasComponents() && !emptyPathCheck.allow() {
 			root.DecRef(t)
 			return taskPathOperation{}, linuxerr.ENOENT
 		}
@@ -54,10 +54,21 @@ func getTaskPathOperation(t *kernel.Task, dirfd int32, path fspath.Path, shouldA
 				root.DecRef(t)
 				return taskPathOperation{}, linuxerr.EBADF
 			}
+			defer dirfile.DecRef(t)
+
+			// AT_EMPTY_PATH is allowed only if t's creds are identical to the creds under which the FD was
+			// opened, or if t has CAP_DAC_READ_SEARCH in those creds' userns.
+			// Similar to how Linux handles LOOKUP_LINKAT_EMPTY in path_init() in fs/namei.c.
+			if emptyPathCheck == allowEmptyPathWithCredsCheck {
+				if dirfile.Credentials() != t.Credentials() && !t.HasCapabilityIn(linux.CAP_DAC_READ_SEARCH, dirfile.Credentials().UserNamespace) {
+					root.DecRef(t)
+					return taskPathOperation{}, linuxerr.ENOENT
+				}
+			}
+
 			start = dirfile.VirtualDentry()
 			start.IncRef()
 			haveStartRef = true
-			dirfile.DecRef(t)
 		}
 	}
 	return taskPathOperation{
@@ -79,12 +90,24 @@ func (tpop *taskPathOperation) Release(t *kernel.Task) {
 	}
 }
 
-type shouldAllowEmptyPath bool
+type shouldAllowEmptyPathType uint8
 
 const (
-	disallowEmptyPath shouldAllowEmptyPath = false
-	allowEmptyPath    shouldAllowEmptyPath = true
+	disallowEmptyPath shouldAllowEmptyPathType = iota
+	allowEmptyPath
+	allowEmptyPathWithCredsCheck
 )
+
+func (sa shouldAllowEmptyPathType) allow() bool {
+	return sa != disallowEmptyPath
+}
+
+func shouldAllowEmptyPath(allow bool) shouldAllowEmptyPathType {
+	if allow {
+		return allowEmptyPath
+	}
+	return disallowEmptyPath
+}
 
 type shouldFollowFinalSymlink bool
 

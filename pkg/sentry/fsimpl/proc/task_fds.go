@@ -157,7 +157,7 @@ func (i *fdDirInode) Lookup(ctx context.Context, name string) (kernfs.Inode, err
 
 // Open implements kernfs.Inode.Open.
 func (i *fdDirInode) Open(ctx context.Context, rp *vfs.ResolvingPath, d *kernfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
-	fd, err := kernfs.NewGenericDirectoryFD(rp.Mount(), d, &i.OrderedChildren, &i.locks, &opts, kernfs.GenericDirectoryFDOptions{
+	fd, err := kernfs.NewGenericDirectoryFD(rp.Mount(), d, rp.Credentials(), &i.OrderedChildren, &i.locks, &opts, kernfs.GenericDirectoryFDOptions{
 		SeekEnd: kernfs.SeekEndZero,
 	})
 	if err != nil {
@@ -315,7 +315,7 @@ func (i *fdInfoDirInode) IterDirents(ctx context.Context, mnt *vfs.Mount, cb vfs
 
 // Open implements kernfs.Inode.Open.
 func (i *fdInfoDirInode) Open(ctx context.Context, rp *vfs.ResolvingPath, d *kernfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
-	fd, err := kernfs.NewGenericDirectoryFD(rp.Mount(), d, &i.OrderedChildren, &i.locks, &opts, kernfs.GenericDirectoryFDOptions{
+	fd, err := kernfs.NewGenericDirectoryFD(rp.Mount(), d, rp.Credentials(), &i.OrderedChildren, &i.locks, &opts, kernfs.GenericDirectoryFDOptions{
 		SeekEnd: kernfs.SeekEndZero,
 	})
 	if err != nil {

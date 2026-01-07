@@ -44,6 +44,9 @@ import (
 type FileDescription struct {
 	FileDescriptionRefs
 
+	// creds is the credentials under which the FileDescription was opened. It is immutable.
+	creds *auth.Credentials
+
 	// flagsMu protects `statusFlags` and `asyncHandler` below.
 	flagsMu sync.Mutex `state:"nosave"`
 
@@ -130,7 +133,7 @@ const FileCreationFlags = linux.O_CREAT | linux.O_EXCL | linux.O_NOCTTY | linux.
 // Init must be called before first use of fd. If it succeeds, it takes
 // references on mnt and d. flags is the initial file description flags, which
 // is usually the full set of flags passed to open(2).
-func (fd *FileDescription) Init(impl FileDescriptionImpl, flags uint32, mnt *Mount, d *Dentry, opts *FileDescriptionOptions) error {
+func (fd *FileDescription) Init(impl FileDescriptionImpl, flags uint32, creds *auth.Credentials, mnt *Mount, d *Dentry, opts *FileDescriptionOptions) error {
 	writable := MayWriteFileWithOpenFlags(flags)
 	if writable {
 		if err := mnt.CheckBeginWrite(); err != nil {
@@ -139,6 +142,7 @@ func (fd *FileDescription) Init(impl FileDescriptionImpl, flags uint32, mnt *Mou
 	}
 
 	fd.InitRefs()
+	fd.creds = creds
 
 	// Remove "file creation flags" to mirror the behavior from file.f_flags in
 	// fs/open.c:do_dentry_open.
@@ -1032,4 +1036,9 @@ func (fd *FileDescription) GetFilePrivileges(ctx context.Context) (auth.FilePriv
 	filePrivs.CapRootID = auth.KUID(vfsCaps.RootID)
 
 	return filePrivs, nil
+}
+
+// Credentials returns the credentials under which fd was opened.
+func (fd *FileDescription) Credentials() *auth.Credentials {
+	return fd.creds
 }

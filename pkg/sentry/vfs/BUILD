@@ -218,6 +218,7 @@ go_test(
         "//pkg/context",
         "//pkg/errors/linuxerr",
         "//pkg/sentry/contexttest",
+        "//pkg/sentry/kernel/auth",
         "//pkg/sync",
         "//pkg/usermem",
     ],
