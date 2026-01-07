@@ -162,7 +162,6 @@ func (m *Message) StateFields() []string {
 		"msgEntry",
 		"Type",
 		"Text",
-		"Size",
 	}
 }
 
@@ -174,7 +173,6 @@ func (m *Message) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &m.msgEntry)
 	stateSinkObject.Save(1, &m.Type)
 	stateSinkObject.Save(2, &m.Text)
-	stateSinkObject.Save(3, &m.Size)
 }
 
 func (m *Message) afterLoad(context.Context) {}
@@ -184,7 +182,6 @@ func (m *Message) StateLoad(ctx context.Context, stateSourceObject state.Source)
 	stateSourceObject.Load(0, &m.msgEntry)
 	stateSourceObject.Load(1, &m.Type)
 	stateSourceObject.Load(2, &m.Text)
-	stateSourceObject.Load(3, &m.Size)
 }
 
 func init() {
