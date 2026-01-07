@@ -72,26 +72,19 @@ func Msgsnd(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr,
 	msg := msgqueue.Message{
 		Type: int64(buf.Type),
 		Text: buf.Text,
-		Size: uint64(size),
 	}
-	return 0, nil, queue.Send(t, msg, t, wait, pid)
+	return 0, nil, queue.Send(t, msg, wait, pid)
 }
 
 // Msgrcv implements msgrcv(2).
 func Msgrcv(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	id := ipc.ID(args[0].Int())
 	msgAddr := args[1].Pointer()
-	size := args[2].Int64()
+	size := args[2].Uint64()
 	mType := args[3].Int64()
-	flag := args[4].Int()
+	flags := args[4].Int()
 
-	wait := flag&linux.IPC_NOWAIT != linux.IPC_NOWAIT
-	except := flag&linux.MSG_EXCEPT == linux.MSG_EXCEPT
-	truncate := flag&linux.MSG_NOERROR == linux.MSG_NOERROR
-
-	msgCopy := flag&linux.MSG_COPY == linux.MSG_COPY
-
-	msg, err := receive(t, id, mType, size, msgCopy, wait, truncate, except)
+	msg, err := receive(t, id, mType, size, flags)
 	if err != nil {
 		return 0, nil, err
 	}
@@ -100,30 +93,31 @@ func Msgrcv(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr,
 		Type: primitive.Int64(msg.Type),
 		Text: msg.Text,
 	}
+	if uint64(len(buf.Text)) > size {
+		buf.Text = buf.Text[:size]
+	}
 	if _, err := buf.CopyOut(t, msgAddr); err != nil {
 		return 0, nil, err
 	}
-	return uintptr(msg.Size), nil, nil
+	return uintptr(len(buf.Text)), nil, nil
 }
 
 // receive returns a message from the queue with the given ID. If msgCopy is
 // true, a message is copied from the queue without being removed. Otherwise,
 // a message is removed from the queue and returned.
-func receive(t *kernel.Task, id ipc.ID, mType int64, maxSize int64, msgCopy, wait, truncate, except bool) (*msgqueue.Message, error) {
-	pid := int32(t.ThreadGroup().ID())
+func receive(t *kernel.Task, id ipc.ID, mType int64, maxSize uint64, flags int32) (*msgqueue.Message, error) {
+	if flags&linux.MSG_COPY != 0 {
+		if flags&(linux.IPC_NOWAIT|linux.MSG_EXCEPT) != linux.IPC_NOWAIT {
+			return nil, linuxerr.EINVAL
+		}
+	}
 
 	queue, err := t.IPCNamespace().MsgqueueRegistry().FindByID(id)
 	if err != nil {
 		return nil, err
 	}
-
-	if msgCopy {
-		if wait || except {
-			return nil, linuxerr.EINVAL
-		}
-		return queue.Copy(t, mType)
-	}
-	return queue.Receive(t, mType, maxSize, wait, truncate, except, pid)
+	pid := int32(t.ThreadGroup().ID())
+	return queue.Receive(t, mType, maxSize, flags, pid)
 }
 
 // Msgctl implements msgctl(2).

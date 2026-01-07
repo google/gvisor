@@ -16,6 +16,8 @@
 package msgqueue
 
 import (
+	"math"
+
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
@@ -124,26 +126,15 @@ type Message struct {
 
 	// Text is an untyped block of memory.
 	Text []byte
-
-	// Size is the size of Text.
-	Size uint64
 }
 
 func (m *Message) makeCopy() *Message {
 	new := &Message{
 		Type: m.Type,
-		Size: m.Size,
 	}
 	new.Text = make([]byte, len(m.Text))
 	copy(new.Text, m.Text)
 	return new
-}
-
-// Blocker is used for blocking Queue.Send, and Queue.Receive calls that serves
-// as an abstracted version of kernel.Task. kernel.Task is not directly used to
-// prevent circular dependencies.
-type Blocker interface {
-	Block(C <-chan struct{}) error
 }
 
 // FindOrCreate creates a new message queue or returns an existing one. See
@@ -260,7 +251,7 @@ func (r *Registry) MsgInfo(ctx context.Context) *linux.MsgInfo {
 
 // Send appends a message to the message queue, and returns an error if sending
 // fails. See msgsnd(2).
-func (q *Queue) Send(ctx context.Context, m Message, b Blocker, wait bool, pid int32) error {
+func (q *Queue) Send(ctx context.Context, m Message, wait bool, pid int32) error {
 	// Try to perform a non-blocking send using queue.append. If EWOULDBLOCK
 	// is returned, start the blocking procedure. Otherwise, return normally.
 	creds := auth.CredentialsFromContext(ctx)
@@ -287,7 +278,7 @@ func (q *Queue) Send(ctx context.Context, m Message, b Blocker, wait bool, pid i
 		if err := q.push(ctx, m, creds, pid); err != linuxerr.EWOULDBLOCK {
 			return err
 		}
-		if err := b.Block(ch); err != nil {
+		if err := ctx.Block(ch); err != nil {
 			return err
 		}
 	}
@@ -335,14 +326,14 @@ func (q *Queue) push(ctx context.Context, m Message, creds *auth.Credentials, pi
 	//    they nevertheless consume (locked) kernel memory."
 	//
 	// The msg_qbytes field in our implementation is q.maxBytes.
-	if m.Size+q.byteCount > q.maxBytes || q.messageCount+1 > q.maxBytes {
+	if uint64(len(m.Text))+q.byteCount > q.maxBytes || q.messageCount+1 > q.maxBytes {
 		return linuxerr.EWOULDBLOCK
 	}
 
 	// Copy the message into the queue.
 	q.messages.PushBack(&m)
 
-	q.byteCount += m.Size
+	q.byteCount += uint64(len(m.Text))
 	q.messageCount++
 	q.sendPID = pid
 	q.sendTime = ktime.NowFromContext(ctx)
@@ -354,19 +345,18 @@ func (q *Queue) push(ctx context.Context, m Message, creds *auth.Credentials, pi
 }
 
 // Receive removes a message from the queue and returns it. See msgrcv(2).
-func (q *Queue) Receive(ctx context.Context, mType int64, maxSize int64, wait, truncate, except bool, pid int32) (*Message, error) {
-	if maxSize < 0 || maxSize > maxMessageBytes {
+func (q *Queue) Receive(ctx context.Context, mType int64, maxSize uint64, flags, pid int32) (*Message, error) {
+	if maxSize > math.MaxInt64 {
 		return nil, linuxerr.EINVAL
 	}
-	max := uint64(maxSize)
 	creds := auth.CredentialsFromContext(ctx)
 
 	// Fast path: first attempt a non-blocking pop.
-	if msg, err := q.pop(ctx, creds, mType, max, truncate, except, pid); err != linuxerr.EWOULDBLOCK {
+	if msg, err := q.pop(ctx, creds, mType, maxSize, flags, pid); err != linuxerr.EWOULDBLOCK {
 		return msg, err
 	}
 
-	if !wait {
+	if flags&linux.IPC_NOWAIT != 0 {
 		return nil, linuxerr.ENOMSG
 	}
 
@@ -380,7 +370,7 @@ func (q *Queue) Receive(ctx context.Context, mType int64, maxSize int64, wait, t
 	// Note: we need to check again before blocking the first time since a
 	// message may have become available.
 	for {
-		if msg, err := q.pop(ctx, creds, mType, max, truncate, except, pid); err != linuxerr.EWOULDBLOCK {
+		if msg, err := q.pop(ctx, creds, mType, maxSize, flags, pid); err != linuxerr.EWOULDBLOCK {
 			return msg, err
 		}
 		if err := ctx.Block(ch); err != nil {
@@ -393,7 +383,7 @@ func (q *Queue) Receive(ctx context.Context, mType int64, maxSize int64, wait, t
 // returns an error for all the cases specified in msgrcv(2). If the queue is
 // empty or no message of the specified type is available, a EWOULDBLOCK error
 // is returned, which can then be used as a signal to block the process or fail.
-func (q *Queue) pop(ctx context.Context, creds *auth.Credentials, mType int64, maxSize uint64, truncate, except bool, pid int32) (*Message, error) {
+func (q *Queue) pop(ctx context.Context, creds *auth.Credentials, mType int64, maxSize uint64, flags, pid int32) (*Message, error) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
@@ -416,10 +406,12 @@ func (q *Queue) pop(ctx context.Context, creds *auth.Credentials, mType int64, m
 	// Get a message from the queue.
 	var msg *Message
 	switch {
+	case flags&linux.MSG_COPY != 0:
+		msg = q.msgAtIndex(mType)
 	case mType == 0:
 		msg = q.messages.Front()
 	case mType > 0:
-		msg = q.msgOfType(mType, except)
+		msg = q.msgOfType(mType, flags&linux.MSG_EXCEPT != 0)
 	case mType < 0:
 		msg = q.msgOfTypeLessThan(-1 * mType)
 	}
@@ -430,48 +422,30 @@ func (q *Queue) pop(ctx context.Context, creds *auth.Credentials, mType int64, m
 	}
 
 	// Check message's size is acceptable.
-	if maxSize < msg.Size {
-		if !truncate {
+	if maxSize < uint64(len(msg.Text)) {
+		if flags&linux.MSG_NOERROR == 0 {
 			return nil, linuxerr.E2BIG
 		}
-		msg.Size = maxSize
-		msg.Text = msg.Text[:maxSize+1]
+		if flags&linux.MSG_COPY != 0 {
+			// Linux: ipc/msgutil.c:copy_msg()
+			return nil, linuxerr.EINVAL
+		}
+		// msg will be truncated during copy-out.
 	}
 
-	q.messages.Remove(msg)
+	if flags&linux.MSG_COPY == 0 {
+		q.messages.Remove(msg)
 
-	q.byteCount -= msg.Size
-	q.messageCount--
-	q.receivePID = pid
-	q.receiveTime = ktime.NowFromContext(ctx)
+		q.byteCount -= uint64(len(msg.Text))
+		q.messageCount--
+		q.receivePID = pid
+		q.receiveTime = ktime.NowFromContext(ctx)
 
-	// Notify senders about available space.
-	q.senders.Notify(waiter.EventOut)
+		// Notify senders about available space.
+		q.senders.Notify(waiter.EventOut)
+	}
 
 	return msg, nil
-}
-
-// Copy copies a message from the queue without deleting it. If no message
-// exists, an error is returned. See msgrcv(MSG_COPY).
-func (q *Queue) Copy(ctx context.Context, mType int64) (*Message, error) {
-	creds := auth.CredentialsFromContext(ctx)
-
-	q.mu.Lock()
-	defer q.mu.Unlock()
-
-	if !q.obj.CheckPermissions(creds, vfs.MayRead) {
-		return nil, linuxerr.EACCES
-	}
-
-	if mType < 0 || q.messages.Empty() {
-		return nil, linuxerr.ENOMSG
-	}
-
-	msg := q.msgAtIndex(mType)
-	if msg == nil {
-		return nil, linuxerr.ENOMSG
-	}
-	return msg.makeCopy(), nil
 }
 
 // msgOfType returns the first message with the specified type, nil if no

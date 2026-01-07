@@ -4626,7 +4626,7 @@ cc_binary(
     srcs = ["msgqueue.cc"],
     linkstatic = 1,
     malloc = "//test/util:errno_safe_allocator",
-    deps = [
+    deps = select_gtest() + [
         "//test/util:capability_util",
         "//test/util:signal_util",
         "//test/util:temp_path",
