@@ -86,7 +86,7 @@ func testAtomicMixedValidLockedWrite(tc *atomicMixedStruct, v chan int32, p chan
 
 func testAtomicMixedInvalidLockedWrite(tc *atomicMixedStruct, v chan int32, p chan *int32) {
 	tc.mu.Lock()
-	tc.accessedMixed = 1 // +checklocksfail:2
+	tc.accessedMixed = 1 // +checklocksfail=illegal use of atomic-only field|non-atomic write of field accessedMixed
 	tc.mu.Unlock()
 }
 
@@ -96,8 +96,8 @@ func testAtomicMixedInvalidAtomicWrite(tc *atomicMixedStruct, v chan int32, p ch
 }
 
 func testAtomicMixedInvalidWrite(tc *atomicMixedStruct, v chan int32, p chan *int32) {
-	tc.accessedMixed = 1 // +checklocksfail:2
-	tc.wrapper.Store(1)  // +checklocksfail:1
+	tc.accessedMixed = 1 // +checklocksfail=illegal use of atomic-only field|non-atomic write of field accessedMixed
+	tc.wrapper.Store(1)  // +checklocksfail
 }
 
 func testAtomicWrapper(tc *atomicStruct, v chan int32) {

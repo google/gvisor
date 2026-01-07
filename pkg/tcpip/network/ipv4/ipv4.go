@@ -82,6 +82,7 @@ var _ stack.AddressableEndpoint = (*endpoint)(nil)
 var _ stack.NetworkEndpoint = (*endpoint)(nil)
 var _ IGMPEndpoint = (*endpoint)(nil)
 
+// +checklocksalias:igmp.ep.mu=mu
 // +stateify savable
 type endpoint struct {
 	nic        stack.NetworkInterface
@@ -126,13 +127,11 @@ func (e *endpoint) GetIGMPVersion() IGMPVersion {
 }
 
 // +checklocks:e.mu
-// +checklocksalias:e.igmp.ep.mu=e.mu
 func (e *endpoint) setIGMPVersionLocked(v IGMPVersion) IGMPVersion {
 	return e.igmp.setVersion(v)
 }
 
 // +checklocksread:e.mu
-// +checklocksalias:e.igmp.ep.mu=e.mu
 func (e *endpoint) getIGMPVersionLocked() IGMPVersion {
 	return e.igmp.getVersion()
 }
@@ -291,7 +290,6 @@ func (e *endpoint) Enable() tcpip.Error {
 }
 
 // +checklocks:e.mu
-// +checklocksalias:e.igmp.ep.mu=e.mu
 func (e *endpoint) enableLocked() tcpip.Error {
 	// If the NIC is not enabled, the endpoint can't do anything meaningful so
 	// don't enable the endpoint.
@@ -362,7 +360,6 @@ func (e *endpoint) Disable() {
 }
 
 // +checklocks:e.mu
-// +checklocksalias:e.igmp.ep.mu=e.mu
 func (e *endpoint) disableLocked() {
 	if !e.isEnabled() {
 		return
@@ -1387,7 +1384,7 @@ func (e *endpoint) deliverPacketLocally(h header.IPv4, pkt *stack.PacketBuffer, 
 	}
 	if p == header.IGMPProtocolNumber {
 		e.mu.Lock()
-		e.igmp.handleIGMP(pkt, hasRouterAlertOption) // +checklocksforce: e == e.igmp.ep.
+		e.igmp.handleIGMP(pkt, hasRouterAlertOption)
 		e.mu.Unlock()
 		return
 	}
@@ -1437,7 +1434,6 @@ func (e *endpoint) AddAndAcquirePermanentAddress(addr tcpip.AddressWithPrefix, p
 // sendQueuedReports sends queued igmp reports.
 //
 // +checklocks:e.mu
-// +checklocksalias:e.igmp.ep.mu=e.mu
 func (e *endpoint) sendQueuedReports() {
 	e.igmp.sendQueuedReports()
 }
@@ -1523,7 +1519,6 @@ func (e *endpoint) JoinGroup(addr tcpip.Address) tcpip.Error {
 // joinGroupLocked is like JoinGroup but with locking requirements.
 //
 // +checklocks:e.mu
-// +checklocksalias:e.igmp.ep.mu=e.mu
 func (e *endpoint) joinGroupLocked(addr tcpip.Address) tcpip.Error {
 	if !header.IsV4MulticastAddress(addr) {
 		return &tcpip.ErrBadAddress{}
@@ -1543,7 +1538,6 @@ func (e *endpoint) LeaveGroup(addr tcpip.Address) tcpip.Error {
 // leaveGroupLocked is like LeaveGroup but with locking requirements.
 //
 // +checklocks:e.mu
-// +checklocksalias:e.igmp.ep.mu=e.mu
 func (e *endpoint) leaveGroupLocked(addr tcpip.Address) tcpip.Error {
 	return e.igmp.leaveGroup(addr)
 }
@@ -1552,7 +1546,7 @@ func (e *endpoint) leaveGroupLocked(addr tcpip.Address) tcpip.Error {
 func (e *endpoint) IsInGroup(addr tcpip.Address) bool {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
-	return e.igmp.isInGroup(addr) // +checklocksforce: e.mu==e.igmp.ep.mu.
+	return e.igmp.isInGroup(addr)
 }
 
 // Stats implements stack.NetworkEndpoint.
