@@ -2135,6 +2135,7 @@ cc_binary(
     linkstatic = 1,
     malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
+        "//test/util:cleanup",
         "//test/util:temp_path",
         "//test/util:test_main",
         "//test/util:test_util",

@@ -16,10 +16,12 @@
 #include <fcntl.h>
 #include <linux/unistd.h>
 #include <sys/socket.h>
+#include <sys/syscall.h>
 #include <sys/types.h>
 #include <unistd.h>
 
 #include "gtest/gtest.h"
+#include "test/util/cleanup.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
 
@@ -28,7 +30,6 @@ namespace testing {
 
 namespace {
 
-// TODO(gvisor.dev/issue/2370): This test is currently very rudimentary.
 class Pwrite64 : public ::testing::Test {
   void SetUp() override {
     name_ = NewTempAbsPath();
@@ -85,6 +86,87 @@ TEST_F(Pwrite64, Pwrite64WithOpath) {
   std::vector<char> buf(1);
   EXPECT_THAT(PwriteFd(fd.get(), buf.data(), 1, 0),
               SyscallFailsWithErrno(EBADF));
+}
+
+// Test that pwrite64 with a nullptr buffer fails with EFAULT.
+TEST_F(Pwrite64, NullBuffer) {
+  FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open(name_.c_str(), O_RDWR));
+
+  // Use raw syscall to bypass libc's nonnull annotation.
+  EXPECT_THAT(syscall(SYS_pwrite64, fd.get(), nullptr, 1, 0),
+              SyscallFailsWithErrno(EFAULT));
+}
+
+// Test that pwrite64 with zero length and nullptr buffer succeeds.
+TEST_F(Pwrite64, ZeroLengthNullBuffer) {
+  FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open(name_.c_str(), O_RDWR));
+  EXPECT_THAT(pwrite64(fd.get(), nullptr, 0, 0), SyscallSucceedsWithValue(0));
+}
+
+// Test that pwrite64 to a closed fd fails with EBADF.
+TEST_F(Pwrite64, ClosedFd) {
+  FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open(name_.c_str(), O_RDWR));
+  int raw_fd = fd.get();
+  fd.reset();
+
+  char buf[16] = {};
+  EXPECT_THAT(pwrite64(raw_fd, buf, sizeof(buf), 0),
+              SyscallFailsWithErrno(EBADF));
+}
+
+// Test that pwrite64 to a read-only fd fails with EBADF.
+TEST_F(Pwrite64, ReadOnlyFd) {
+  FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open(name_.c_str(), O_RDONLY));
+
+  char buf[16] = {};
+  EXPECT_THAT(pwrite64(fd.get(), buf, sizeof(buf), 0),
+              SyscallFailsWithErrno(EBADF));
+}
+
+// Test that pwrite64 does not change file offset.
+TEST_F(Pwrite64, DoesNotChangeOffset) {
+  FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open(name_.c_str(), O_RDWR));
+
+  // Set initial offset.
+  const off_t initial_offset = 50;
+  ASSERT_THAT(lseek(fd.get(), initial_offset, SEEK_SET),
+              SyscallSucceedsWithValue(initial_offset));
+
+  char buf[16] = "test data";
+  EXPECT_THAT(pwrite64(fd.get(), buf, sizeof(buf), 100),
+              SyscallSucceedsWithValue(sizeof(buf)));
+
+  // Offset should remain unchanged.
+  EXPECT_THAT(lseek(fd.get(), 0, SEEK_CUR),
+              SyscallSucceedsWithValue(initial_offset));
+}
+
+// Test that pwrite64 to a pipe fails with ESPIPE.
+TEST_F(Pwrite64, Pipe) {
+  int pipe_fds[2];
+  ASSERT_THAT(pipe(pipe_fds), SyscallSucceeds());
+  auto cleanup = Cleanup([&pipe_fds] {
+    close(pipe_fds[0]);
+    close(pipe_fds[1]);
+  });
+
+  char buf[16] = {};
+  EXPECT_THAT(pwrite64(pipe_fds[1], buf, sizeof(buf), 0),
+              SyscallFailsWithErrno(ESPIPE));
+}
+
+// Test that pwrite64 to a socket fails with ESPIPE.
+TEST_F(Pwrite64, Socket) {
+  int sock_fds[2];
+  ASSERT_THAT(socketpair(AF_UNIX, SOCK_STREAM, 0, sock_fds), SyscallSucceeds());
+  auto cleanup = Cleanup([&sock_fds] {
+    close(sock_fds[0]);
+    close(sock_fds[1]);
+  });
+
+  char buf[16] = {};
+  EXPECT_THAT(pwrite64(sock_fds[0], buf, sizeof(buf), 0),
+              SyscallFailsWithErrno(ESPIPE));
 }
 
 }  // namespace
