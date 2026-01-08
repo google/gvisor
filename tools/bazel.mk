@@ -53,7 +53,14 @@ PLUGIN_STACK_FLAGS := --config=plugin-tldk
 
 # Bazel container configuration (see below).
 USER := $(shell whoami)
-HASH := $(shell realpath -m $(CURDIR) | md5sum | cut -c1-8)
+REALPATH_M := $(REPO_DIR)/tools/compat/realpath.py
+HASH := $(shell $(REALPATH_M) $(CURDIR) | md5sum | cut -c1-8)
+UNAME_S := $(shell uname -s)
+ifeq ($(UNAME_S),Darwin)
+STAT_G := stat -f '%g'
+else
+STAT_G := stat -c '%g'
+endif
 BUILDER_NAME := gvisor-builder-$(HASH)-$(ARCH)
 BUILDER_HOSTNAME := $(BUILDER_NAME)
 DOCKER_NAME := gvisor-bazel-$(HASH)-$(ARCH)
@@ -117,9 +124,9 @@ DOCKER_EXEC_OPTIONS := --user $(UID):$(GID)
 ifneq (,$(UNSANDBOXED_RUNTIME))
 DOCKER_RUN_OPTIONS += --runtime=$(UNSANDBOXED_RUNTIME)
 endif
-DOCKER_RUN_OPTIONS += -v "$(shell realpath -m $(BAZEL_CACHE)):$(BAZEL_CACHE)"
+DOCKER_RUN_OPTIONS += -v "$(shell $(REALPATH_M) $(BAZEL_CACHE)):$(BAZEL_CACHE)"
 ifneq ($(patsubst %/,%,$(BAZEL_CACHE)),$(HOME)/.cache/bazel)
-DOCKER_RUN_OPTIONS += -v "$(shell realpath -m $(BAZEL_CACHE)):$(HOME)/.cache/bazel"
+DOCKER_RUN_OPTIONS += -v "$(shell $(REALPATH_M) $(BAZEL_CACHE)):$(HOME)/.cache/bazel"
 endif
 ifneq ($(GO_REPOSITORY_USE_HOST_CACHE),)
 DOCKER_RUN_OPTIONS  += -e GO_REPOSITORY_USE_HOST_CACHE=$(GO_REPOSITORY_USE_HOST_CACHE)
@@ -127,20 +134,20 @@ DOCKER_EXEC_OPTIONS += -e GO_REPOSITORY_USE_HOST_CACHE=$(GO_REPOSITORY_USE_HOST_
 ifneq ($(GOPATH),)
 DOCKER_RUN_OPTIONS  += -e GOPATH=$(GOPATH)
 DOCKER_EXEC_OPTIONS += -e GOPATH=$(GOPATH)
-DOCKER_RUN_OPTIONS  += -v "$(shell realpath -m $(GOPATH)):$(GOPATH)"
+DOCKER_RUN_OPTIONS  += -v "$(shell $(REALPATH_M) $(GOPATH)):$(GOPATH)"
 endif
 ifneq ($(GOCACHE),)
 DOCKER_RUN_OPTIONS  += -e GOCACHE=$(GOCACHE)
 DOCKER_EXEC_OPTIONS += -e GOCACHE=$(GOCACHE)
-DOCKER_RUN_OPTIONS  += -v "$(shell realpath -m $(GOCACHE)):$(GOCACHE)"
+DOCKER_RUN_OPTIONS  += -v "$(shell $(REALPATH_M) $(GOCACHE)):$(GOCACHE)"
 endif
 ifneq ($(GOMODCACHE),)
 DOCKER_RUN_OPTIONS  += -e GOMODCACHE=$(GOMODCACHE)
 DOCKER_EXEC_OPTIONS += -e GOMODCACHE=$(GOMODCACHE)
-DOCKER_RUN_OPTIONS  += -v "$(shell realpath -m $(GOMODCACHE)):$(GOMODCACHE)"
+DOCKER_RUN_OPTIONS  += -v "$(shell $(REALPATH_M) $(GOMODCACHE)):$(GOMODCACHE)"
 endif
 endif
-DOCKER_RUN_OPTIONS += -v "$(shell realpath -m $(GCLOUD_CONFIG)):$(GCLOUD_CONFIG)"
+DOCKER_RUN_OPTIONS += -v "$(shell $(REALPATH_M) $(GCLOUD_CONFIG)):$(GCLOUD_CONFIG)"
 DOCKER_RUN_OPTIONS += -v "/tmp:/tmp"
 DOCKER_EXEC_OPTIONS += --interactive
 ifeq (true,$(shell test -t 1 && echo true))
@@ -150,11 +157,11 @@ endif
 ifneq (,$(wildcard /lib/modules))
 DOCKER_RUN_OPTIONS += -v "/lib/modules:/lib/modules"
 endif
-KERNEL_HEADERS_DIR := $(shell realpath -m /lib/modules/$(shell uname -r)/build)
+KERNEL_HEADERS_DIR := $(shell $(REALPATH_M) /lib/modules/$(shell uname -r)/build)
 ifneq (,$(wildcard $(KERNEL_HEADERS_DIR)))
 DOCKER_RUN_OPTIONS += -v "$(KERNEL_HEADERS_DIR):$(KERNEL_HEADERS_DIR)"
-ifneq ($(shell realpath -m $(KERNEL_HEADERS_DIR)/Makefile),$(KERNEL_HEADERS_DIR)/Makefile)
-KERNEL_HEADERS_DIR_LINKED := $(dir $(shell realpath -m $(KERNEL_HEADERS_DIR)/Makefile))
+ifneq ($(shell $(REALPATH_M) $(KERNEL_HEADERS_DIR)/Makefile),$(KERNEL_HEADERS_DIR)/Makefile)
+KERNEL_HEADERS_DIR_LINKED := $(dir $(shell $(REALPATH_M) $(KERNEL_HEADERS_DIR)/Makefile))
 DOCKER_RUN_OPTIONS += -v "$(KERNEL_HEADERS_DIR_LINKED):$(KERNEL_HEADERS_DIR_LINKED)"
 endif
 endif
@@ -187,7 +194,7 @@ endif
 DOCKER_RUN_OPTIONS += $(DOCKER_PRIVILEGED)
 DOCKER_RUN_OPTIONS += --cap-add SYS_MODULE
 DOCKER_EXEC_OPTIONS += $(DOCKER_PRIVILEGED)
-DOCKER_GROUP := $(shell stat -c '%g' $(DOCKER_SOCKET))
+DOCKER_GROUP := $(shell $(STAT_G) $(DOCKER_SOCKET))
 ifneq ($(GID),$(DOCKER_GROUP))
 USERADD_OPTIONS += --groups $(DOCKER_GROUP)
 GROUPADD_DOCKER += groupadd --gid $(DOCKER_GROUP) --non-unique docker-$(HASH) &&
@@ -198,7 +205,7 @@ endif
 # Add KVM passthrough options.
 ifneq (,$(wildcard /dev/kvm))
 DOCKER_RUN_OPTIONS += --device=/dev/kvm
-KVM_GROUP := $(shell stat -c '%g' /dev/kvm)
+KVM_GROUP := $(shell $(STAT_G) /dev/kvm)
 ifneq ($(GID),$(KVM_GROUP))
 USERADD_OPTIONS += --groups $(KVM_GROUP)
 GROUPADD_DOCKER += groupadd --gid $(KVM_GROUP) --non-unique kvm-$(HASH) &&
@@ -306,9 +313,9 @@ build_paths = \
   (set -euo pipefail; \
   $(call wrapper,$(BAZEL) build $(BASE_OPTIONS) $(BAZEL_OPTIONS) $(1)) && \
   $(call wrapper,$(BAZEL) cquery $(BASE_OPTIONS) $(BAZEL_OPTIONS) --output=starlark --starlark:file=tools/show_paths.bzl $(1)) \
-  | $(call wrapper,xargs -r -I {} bash -c 'test -e "{}" || exit 0; realpath -m "{}"') \
+  | $(call wrapper,xargs -r -I {} bash -c 'test -e "{}" || exit 0; $(REALPATH_M) "{}"') \
   | sed 's~^$(HOME)/\.cache/bazel/~$(patsubst %/,%,$(BAZEL_CACHE))/~' \
-  | xargs -r -I {} bash -c 'test -e "{}" || exit 0; realpath -m "{}"' \
+  | xargs -r -I {} bash -c 'test -e "{}" || exit 0; $(REALPATH_M) "{}"' \
   | xargs -r -I {} bash -c 'set -euo pipefail; $(2)')
 
 clean = $(call header,CLEAN) && $(call wrapper,$(BAZEL) clean)
