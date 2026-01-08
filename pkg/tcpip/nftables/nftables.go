@@ -1165,6 +1165,11 @@ func (r *Rule) GetAddressFamily() stack.AddressFamily {
 	return r.chain.GetAddressFamily()
 }
 
+// GetOperations returns the list of operations in the rule.
+func (r *Rule) GetOperations() []operation {
+	return r.ops
+}
+
 //
 // Private hookFunctionStack functions
 //

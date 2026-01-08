@@ -3041,8 +3041,13 @@ TEST(NetlinkNetfilterTest, GetRuleDump) {
 
   uint8_t udata[] = {0, 1, 2};
   size_t expected_udata_size = sizeof(udata);
-  std::vector<char> rule_expr_data = NlImmExpr::DefaultAcceptAll();
-  std::vector<char> list_expr_data = NlListAttr().Add(rule_expr_data).Build();
+  // Add two expressions.
+  std::vector<char> imm_expr_accept_all_data = NlImmExpr::DefaultAcceptAll();
+  std::vector<char> imm_expr_drop_all_data = NlImmExpr::DefaultDropAll();
+  std::vector<char> list_expr_data = NlListAttr()
+                                         .Add(imm_expr_accept_all_data)
+                                         .Add(imm_expr_drop_all_data)
+                                         .Build();
 
   AddDefaultTable({.fd = fd, .table_name = test_table_name, .seq = kSeq});
   AddDefaultBaseChain(
@@ -3091,7 +3096,6 @@ TEST(NetlinkNetfilterTest, GetRuleDump) {
         }
 
         EXPECT_TRUE(hdr->nlmsg_flags & NLM_F_MULTI);
-
         CheckNetfilterRuleAttributes({
             .hdr = hdr,
             .expected_table_name = test_table_name,
@@ -3099,6 +3103,8 @@ TEST(NetlinkNetfilterTest, GetRuleDump) {
             .expected_udata = udata,
             .expected_udata_size = &expected_udata_size,
             .skip_handle_check = true,
+            .expected_rule_exprs_data = std::vector<std::vector<char>>(
+                {imm_expr_accept_all_data, imm_expr_drop_all_data}),
         });
         rules_found++;
       },

@@ -19,6 +19,7 @@ import (
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netlink/nlmsg"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
@@ -115,6 +116,21 @@ func (op comparison) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *
 		// Comparison is false, so break from the rule.
 		regs.verdict = stack.NFVerdict{Code: VC(linux.NFT_BREAK)}
 	}
+}
+func (op comparison) GetExprName() string {
+	return "cmp"
+}
+
+func (op comparison) Dump() ([]byte, *syserr.AnnotatedError) {
+	m := &nlmsg.Message{}
+	m.PutAttr(linux.NFTA_CMP_SREG, nlmsg.PutU32(uint32(op.sreg)))
+	m.PutAttr(linux.NFTA_CMP_OP, nlmsg.PutU32(uint32(op.cop)))
+	regDump, err := op.data.Dump()
+	if err != nil {
+		return nil, err
+	}
+	m.PutAttr(linux.NFTA_CMP_DATA, primitive.AsByteSlice(regDump))
+	return m.Buffer(), nil
 }
 
 var cmpAttrPolicy = []NlaPolicy{

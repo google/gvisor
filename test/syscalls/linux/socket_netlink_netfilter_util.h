@@ -90,6 +90,7 @@ struct NfRuleCheckOptions {
   uint8_t* expected_udata;
   size_t* expected_udata_size;
   bool skip_handle_check;
+  std::vector<std::vector<char>> expected_rule_exprs_data;
 };
 
 struct AddDefaultTableOptions {

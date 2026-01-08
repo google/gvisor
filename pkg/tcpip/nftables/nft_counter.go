@@ -18,6 +18,7 @@ import (
 	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/sentry/socket/netlink/nlmsg"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
@@ -44,6 +45,17 @@ func newCounter(startBytes, startPackets uint64) *counter {
 func (op *counter) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *Rule) {
 	op.bytes.Add(uint64(pkt.Size()))
 	op.packets.Add(1)
+}
+
+func (op *counter) GetExprName() string {
+	return "counter"
+}
+
+func (op *counter) Dump() ([]byte, *syserr.AnnotatedError) {
+	m := &nlmsg.Message{}
+	m.PutAttr(linux.NFTA_COUNTER_BYTES, nlmsg.PutU64(op.bytes.Load()))
+	m.PutAttr(linux.NFTA_COUNTER_PACKETS, nlmsg.PutU64(op.packets.Load()))
+	return m.Buffer(), nil
 }
 
 var counterAttrPolicy = []NlaPolicy{

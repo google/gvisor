@@ -1088,13 +1088,23 @@ func fillRuleInfo(rule *nftables.Rule, ms *nlmsg.MessageSet) *syserr.AnnotatedEr
 		return syserr.NewAnnotatedError(syserr.ErrNotSupported, "Nftables: Hardware offload chains are not supported")
 	}
 
-	// TODO(b/434244017): Add support for dumping expressions. This means
-	// expanding the nftables operation interface to include dump operations.
-	var exprsData []byte
 	// The NLA_F_NESTED flag is explicitly not set here, for backwards
 	// compatibility with older kernels.
 	// From linux/net/netfilter/nf_tables_api.c: nf_tables_fill_rule_info
-	m.PutAttr(linux.NFTA_RULE_EXPRESSIONS, primitive.AsByteSlice(exprsData))
+	var nestedList nlmsg.NestedAttr
+	for _, op := range rule.GetOperations() {
+		var exprs nlmsg.NestedAttr
+		exprs.PutAttrString(linux.NFTA_EXPR_NAME, op.GetExprName())
+		exprDump, err := op.Dump()
+		if err != nil {
+			return err
+		}
+		if len(exprDump) > 0 {
+			exprs.PutAttr(linux.NFTA_EXPR_DATA, primitive.AsByteSlice(exprDump))
+		}
+		nestedList.PutAttr(linux.NFTA_LIST_ELEM, primitive.AsByteSlice(exprs))
+	}
+	m.PutNestedAttr(linux.NFTA_RULE_EXPRESSIONS, nestedList)
 
 	if rule.HasUserData() {
 		m.PutAttr(linux.NFTA_RULE_USERDATA, primitive.AsByteSlice(rule.GetUserData()))

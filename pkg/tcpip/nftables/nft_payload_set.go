@@ -184,6 +184,22 @@ func (op payloadSet) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *
 	}
 }
 
+func (op payloadSet) GetExprName() string {
+	return "payload"
+}
+
+func (op payloadSet) Dump() ([]byte, *syserr.AnnotatedError) {
+	m := &nlmsg.Message{}
+	m.PutAttr(linux.NFTA_PAYLOAD_SREG, nlmsg.PutU32(uint32(op.sreg)))
+	m.PutAttr(linux.NFTA_PAYLOAD_BASE, nlmsg.PutU32(uint32(op.base)))
+	m.PutAttr(linux.NFTA_PAYLOAD_OFFSET, nlmsg.PutU32(uint32(op.offset)))
+	m.PutAttr(linux.NFTA_PAYLOAD_LEN, nlmsg.PutU32(uint32(op.blen)))
+	m.PutAttr(linux.NFTA_PAYLOAD_CSUM_TYPE, nlmsg.PutU32(uint32(op.csumType)))
+	m.PutAttr(linux.NFTA_PAYLOAD_CSUM_OFFSET, nlmsg.PutU32(uint32(op.csumOffset)))
+	m.PutAttr(linux.NFTA_PAYLOAD_CSUM_FLAGS, nlmsg.PutU32(uint32(op.csumFlags)))
+	return m.Buffer(), nil
+}
+
 func initPayloadSet(tab *Table, attrs map[uint16]nlmsg.BytesView) (*payloadSet, *syserr.AnnotatedError) {
 	base, ok := AttrNetToHost[uint32](linux.NFTA_PAYLOAD_BASE, attrs)
 	if !ok {

@@ -19,6 +19,7 @@ import (
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netlink/nlmsg"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -157,6 +158,15 @@ func (op metaLoad) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *Ru
 	}
 	// Copies target data into the destination register.
 	copy(dst, target)
+}
+
+func (op metaLoad) GetExprName() string {
+	return "meta"
+}
+
+func (op metaLoad) Dump() ([]byte, *syserr.AnnotatedError) {
+	log.Warningf("Nftables: Dumping meta load operation is not implemented")
+	return nil, nil
 }
 
 func initMetaLoad(attrs map[uint16]nlmsg.BytesView) (*metaLoad, *syserr.AnnotatedError) {

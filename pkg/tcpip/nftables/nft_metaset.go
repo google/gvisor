@@ -18,6 +18,7 @@ import (
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netlink/nlmsg"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -63,6 +64,16 @@ func (op metaSet) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *Rul
 		pkt.PktType = tcpip.PacketType(src[0])
 		return
 	}
+}
+
+func (op metaSet) GetExprName() string {
+	return "meta"
+}
+
+// TODO: b/452648112 - Implement dump for last operation.
+func (op metaSet) Dump() ([]byte, *syserr.AnnotatedError) {
+	log.Warningf("Nftables: Dumping meta set operation is not implemented")
+	return nil, nil
 }
 
 // newMetaSet creates a new metaSet operation.

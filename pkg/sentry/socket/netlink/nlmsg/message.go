@@ -108,6 +108,11 @@ func (m *Message) Header() linux.NetlinkMessageHeader {
 	return m.hdr
 }
 
+// Buffer returns the buffer of this message.
+func (m *Message) Buffer() []byte {
+	return m.buf
+}
+
 // GetData unmarshals the payload message header from this netlink message, and
 // returns the attributes portion.
 func (m *Message) GetData(msg marshal.Marshallable) (AttrsView, bool) {

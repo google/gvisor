@@ -28,6 +28,7 @@
 
 #include "gtest/gtest.h"
 #include "absl/strings/str_cat.h"
+#include "absl/types/span.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/posix_error.h"
 #include "test/util/save_util.h"
@@ -260,6 +261,18 @@ const struct nfattr* FindNfAttr(const struct nlmsghdr* hdr,
     }
   }
   return nullptr;
+}
+
+std::vector<const struct nfattr*> ParseNfAttrs(
+    absl::Span<const char> attributes) {
+  int attrlen = attributes.size();
+  const struct nfattr* nfa =
+      reinterpret_cast<const struct nfattr*>(attributes.data());
+  std::vector<const struct nfattr*> attrs;
+  for (; NFA_OK(nfa, attrlen); nfa = NFA_NEXT(nfa, attrlen)) {
+    attrs.push_back(nfa);
+  }
+  return attrs;
 }
 
 }  // namespace testing

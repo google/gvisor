@@ -25,9 +25,11 @@
 #include <utility>
 #include <vector>
 
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/base/no_destructor.h"
 #include "absl/strings/string_view.h"
+#include "absl/types/span.h"
 #include "test/syscalls/linux/socket_netlink_util.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/posix_error.h"
@@ -36,6 +38,9 @@
 
 namespace gvisor {
 namespace testing {
+
+using ::testing::NotNull;
+using ::testing::UnorderedElementsAreArray;
 
 const std::string& GetDefaultTableName() {
   static const absl::NoDestructor<std::string> name("default_test_table");
@@ -277,8 +282,34 @@ void CheckNetfilterChainAttributes(const NfChainCheckOptions& options) {
   }
 }
 
+void CheckNetfilterRuleExprAttributes(
+    const struct nfattr* rule_exprs_list_attr,
+    const std::vector<std::vector<char>>& expected_rule_exprs_data) {
+  ASSERT_THAT(rule_exprs_list_attr, NotNull());
+  // Parse the rule expressions list attribute.
+  absl::Span<const char> rule_exprs_list_data =
+      absl::MakeSpan((const char*)NFA_DATA(rule_exprs_list_attr),
+                     rule_exprs_list_attr->nfa_len - NLA_HDRLEN);
+  // Parse the list elements.
+  std::vector<const struct nfattr*> rule_exprs_list =
+      ParseNfAttrs(rule_exprs_list_data);
+  std::vector<std::vector<char>> actual_exprs_data;
+  actual_exprs_data.reserve(rule_exprs_list.size());
+  // Extract the dump data for each expression.
+  for (const struct nfattr* rule_exprs_list_elem : rule_exprs_list) {
+    ASSERT_EQ(rule_exprs_list_elem->nfa_type, NFTA_LIST_ELEM);
+    const char* expr_data_begin =
+        reinterpret_cast<const char*>(NFA_DATA(rule_exprs_list_elem));
+    const char* expr_data_end =
+        expr_data_begin + rule_exprs_list_elem->nfa_len - NLA_HDRLEN;
+    std::vector<char> expr_data(expr_data_begin, expr_data_end);
+    actual_exprs_data.push_back(expr_data);
+  }
+  EXPECT_THAT(actual_exprs_data,
+              UnorderedElementsAreArray(expected_rule_exprs_data));
+}
+
 // Helper function to check the netfilter rule attributes.
-// TODO(b/434244017) - Add support for checking the rule expression.
 void CheckNetfilterRuleAttributes(const NfRuleCheckOptions& options) {
   // Check for the NFTA_RULE_TABLE attribute.
   const struct nfattr* table_name_attr =
@@ -330,6 +361,13 @@ void CheckNetfilterRuleAttributes(const NfRuleCheckOptions& options) {
   } else {
     EXPECT_EQ(user_data_attr, nullptr);
     EXPECT_EQ(options.expected_udata_size, nullptr);
+  }
+
+  if (!options.expected_rule_exprs_data.empty()) {
+    const struct nfattr* rule_exprs_list_attr =
+        FindNfAttr(options.hdr, nullptr, NFTA_RULE_EXPRESSIONS);
+    CheckNetfilterRuleExprAttributes(rule_exprs_list_attr,
+                                     options.expected_rule_exprs_data);
   }
 }
 
