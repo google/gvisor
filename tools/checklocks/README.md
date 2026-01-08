@@ -204,6 +204,11 @@ type foo struct {
 
 This enforces that the preconditions above are upheld.
 
+This also applies to atomic wrapper types (for example, atomic.Int32). In the
+mixed case, lock-free access is limited to read-only atomic operations such as
+Load. Any atomic write operation (for example, Store, Swap, or Add) requires the
+lock to be held.
+
 ## Ignoring and Forcing
 
 From time to time, it may be necessary to ignore results produced by the
