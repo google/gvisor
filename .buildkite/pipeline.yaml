@@ -22,6 +22,7 @@ _templates:
   platform_specific_agents: &platform_specific_agents {}
   kvm_agents: &kvm_agents {kvm: "true"}
   ubuntu_agents: &ubuntu_agents {os: "ubuntu"}
+  containerd_agents: &containerd_agents {kernel: "modern", cgroup: "v2"}
   docker: &docker
     env:
       BUILDKITE_PIPELINE_INSTALL_RUNTIME: true
@@ -437,77 +438,35 @@ steps:
   - <<: *common
     <<: *docker
     <<: *source_test
-    label: ":docker: Containerd 1.6.2 tests (cgroupv1)"
-    command: make containerd-test-1.6.2
-    agents:
-      <<: *platform_specific_agents
-      <<: *ubuntu_agents
-      cgroup: "v1"
-  - <<: *common
-    <<: *docker
-    <<: *source_test
-    label: ":docker: Containerd 1.6.2 tests (cgroupv2)"
+    label: ":docker: Containerd 1.6.2 tests"
     command: make containerd-test-1.6.2
     agents:
       <<: *ubuntu_agents
-      cgroup: "v2"
+      <<: *containerd_agents
   - <<: *common
     <<: *docker
     <<: *source_test
-    label: ":docker: Containerd 1.7.25 tests (cgroupv1)"
-    command: make containerd-test-1.7.25
-    agents:
-      <<: *platform_specific_agents
-      <<: *ubuntu_agents
-      cgroup: "v1"
-      kernel: "modern"
-  - <<: *common
-    <<: *docker
-    <<: *source_test
-    label: ":docker: Containerd 1.7.25 tests (cgroupv2)"
+    label: ":docker: Containerd 1.7.25 tests"
     command: make containerd-test-1.7.25
     agents:
       <<: *ubuntu_agents
-      cgroup: "v2"
-      kernel: "modern"
+      <<: *containerd_agents
   - <<: *common
     <<: *docker
     <<: *source_test
-    label: ":docker: Containerd 2.0.6 tests (cgroupv1)"
-    command: make containerd-test-2.0.6
-    agents:
-      <<: *platform_specific_agents
-      <<: *ubuntu_agents
-      cgroup: "v1"
-      kernel: "modern"
-  - <<: *common
-    <<: *docker
-    <<: *source_test
-    label: ":docker: Containerd 2.0.6 tests (cgroupv2)"
+    label: ":docker: Containerd 2.0.6 tests"
     command: make containerd-test-2.0.6
     agents:
       <<: *ubuntu_agents
-      cgroup: "v2"
-      kernel: "modern"
+      <<: *containerd_agents
   - <<: *common
     <<: *docker
     <<: *source_test
-    label: ":docker: Containerd 2.1.0 tests (cgroupv1)"
-    command: make containerd-test-2.1.0
-    agents:
-      <<: *platform_specific_agents
-      <<: *ubuntu_agents
-      cgroup: "v1"
-      kernel: "modern"
-  - <<: *common
-    <<: *docker
-    <<: *source_test
-    label: ":docker: Containerd 2.1.0 tests (cgroupv2)"
+    label: ":docker: Containerd 2.1.0 tests"
     command: make containerd-test-2.1.0
     agents:
       <<: *ubuntu_agents
-      cgroup: "v2"
-      kernel: "modern"
+      <<: *containerd_agents
   - <<: *common
     <<: *source_test
     label: ":podman: Podman"
