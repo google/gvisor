@@ -3593,6 +3593,24 @@ INSTANTIATE_TEST_SUITE_P(CmpRuleTest, AddRuleWithExprTest,
                            return info.param.test_name;
                          });
 
+std::vector<RuleWithExprTestParams> GetCounterRuleTestParams() {
+  return {
+      RuleWithExprTestParams{.test_name = "Valid",
+                             .expr_name = "counter",
+                             .expr_attrs = NlNestedAttr()
+                                               .U64Attr(NFTA_COUNTER_PACKETS, 0)
+                                               .U64Attr(NFTA_COUNTER_BYTES, 0)},
+  };
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    CounterRuleTest, AddRuleWithExprTest,
+    /*param_generator=*/::testing::ValuesIn(GetCounterRuleTestParams()),
+    /*param_name_generator=*/
+    [](const ::testing::TestParamInfo<RuleWithExprTestParams>& info) {
+      return info.param.test_name;
+    });
+
 }  // namespace
 
 }  // namespace testing

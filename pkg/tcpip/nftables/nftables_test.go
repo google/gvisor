@@ -2337,9 +2337,9 @@ func TestEvaluateCounter(t *testing.T) {
 				t.Fatalf("unexpected error for EvaluateHook for packet %d: %v", i, err)
 			}
 			// Checks whether the counter should have incremented for the packet.
-			expectedDBytes, expectedDPackets := int64(0), int64(0)
+			expectedDBytes, expectedDPackets := uint64(0), uint64(0)
 			if pkt.Network().SourceAddress() == desiredIpv4Address {
-				expectedDBytes, expectedDPackets = int64(pkt.Size()), 1
+				expectedDBytes, expectedDPackets = uint64(pkt.Size()), 1
 			}
 			// Checks that the counter incremented correctly.
 			newBytes := counter.bytes.Load()
