@@ -30,7 +30,7 @@ baseid=''
 if [[ "$BUILDKITE_BRANCH" == master ]]; then
   # If we are already on the master branch (this is a continuous test),
   # we should diff against the previous commit.
-  baseid='master~'
+  baseid='HEAD~1'
 else
   git fetch origin master
   baseid="$(git merge-base origin/master "origin/${BUILDKITE_BRANCH}")"
