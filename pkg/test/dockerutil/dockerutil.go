@@ -16,6 +16,7 @@
 package dockerutil
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"flag"
@@ -91,14 +92,17 @@ func PrintDockerConfig() {
 
 func getDockerVersion() (int, int) {
 	cmd := exec.Command(dockerCLIPath(), "version")
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		log.Fatalf("error running %q: %v", dockerCLIPath()+" version", err)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		log.Fatalf("error running %q: %s: %s", cmd, err, stderr.String())
 	}
 	re := regexp.MustCompile(`Version:\s+(\d+)\.(\d+)\.\d.*`)
-	matches := re.FindStringSubmatch(string(out))
+	stdoutStr := stdout.String()
+	matches := re.FindStringSubmatch(stdoutStr)
 	if len(matches) != 3 {
-		log.Fatalf("Invalid docker output: %s", out)
+		log.Fatalf("invalid %q output: %s", cmd, stdoutStr)
 	}
 	major, _ := strconv.Atoi(matches[1])
 	minor, _ := strconv.Atoi(matches[2])
@@ -118,11 +122,13 @@ func EnsureSupportedDockerVersion() {
 // EnsureDockerExperimentalEnabled ensures that Docker has experimental features enabled.
 func EnsureDockerExperimentalEnabled() {
 	cmd := exec.Command(dockerCLIPath(), "version", "--format={{.Server.Experimental}}")
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		log.Fatalf("error running %s: %v", dockerCLIPath()+" version --format='{{.Server.Experimental}}'", err)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		log.Fatalf("error running %q: %s: %s", cmd, err, stderr.String())
 	}
-	if strings.TrimSpace(string(out)) != "true" {
+	if strings.TrimSpace(stdout.String()) != "true" {
 		PrintDockerConfig()
 		log.Fatalf("Docker is running without experimental features enabled.")
 	}

@@ -3,20 +3,20 @@ module(
     version = "0.0.1",
 )
 
-bazel_dep(name = "rules_go", version = "0.57.0", repo_name = "io_bazel_rules_go")
-bazel_dep(name = "gazelle", version = "0.37.0", repo_name = "bazel_gazelle")
+bazel_dep(name = "rules_go", version = "0.59.0", repo_name = "io_bazel_rules_go")
+bazel_dep(name = "gazelle", version = "0.47.0", repo_name = "bazel_gazelle")
 bazel_dep(name = "rules_license", version = "1.0.0")
 bazel_dep(name = "bazel_skylib", version = "1.7.1")
 bazel_dep(name = "rules_pkg", version = "1.0.1")
-bazel_dep(name = "rules_cc", version = "0.1.4")
-bazel_dep(name = "grpc", version = "1.75.0", repo_name = "com_github_grpc_grpc")
-bazel_dep(name = "protobuf", version = "31.1", repo_name = "com_google_protobuf")
+bazel_dep(name = "rules_cc", version = "0.2.16")
+bazel_dep(name = "grpc", version = "1.76.0", repo_name = "com_github_grpc_grpc")
+bazel_dep(name = "protobuf", version = "33.2", repo_name = "com_google_protobuf")
 bazel_dep(name = "platforms", version = "1.0.0")
-bazel_dep(name = "abseil-cpp", version = "20250512.1", repo_name = "com_google_absl")
+bazel_dep(name = "abseil-cpp", version = "20250814.1", repo_name = "com_google_absl")
 bazel_dep(name = "googletest", version = "1.17.0", repo_name = "com_google_googletest")
 bazel_dep(name = "google_benchmark", version = "1.8.4", repo_name = "com_google_benchmark")
 bazel_dep(name = "nlohmann_json", version = "3.11.3")
-bazel_dep(name = "rules_python", version = "1.4.0")
+bazel_dep(name = "rules_python", version = "1.7.0")
 bazel_dep(name = "zstd", version = "1.5.5", repo_name = "llvm_zstd")
 
 archive_override(
@@ -125,10 +125,10 @@ register_toolchains("//:cc_toolchain_aarch64")
 
 ### Go
 go_sdk = use_extension("@io_bazel_rules_go//go:extensions.bzl", "go_sdk")
-go_sdk.download(
+go_sdk.from_file(
+    go_mod = "//:go.mod",
     patch_strip = 1,
     patches = ["//tools:go_types_memoize.patch"],
-    version = "1.24.1",
 )
 
 go_deps = use_extension("@bazel_gazelle//:extensions.bzl", "go_deps")

@@ -119,8 +119,9 @@ declare -r TEST_RUNNER_NET_SUFFIX=".20"
 declare -r TIMEOUT="60"
 declare -r IMAGE_TAG="gvisor.dev/images/packetdrill"
 
-# Make sure that docker is installed.
+# Make sure that docker is installed and usable.
 docker --version
+docker info
 
 function finish {
   local cleanup_success=1

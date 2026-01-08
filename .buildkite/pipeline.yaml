@@ -347,6 +347,7 @@ steps:
       <<: *ubuntu_agents
       arch: "amd64"
       cgroup: "v1"
+      kernel: "modern"
   - <<: *common
     <<: *docker
     # See above: not truly a source test.
@@ -365,6 +366,7 @@ steps:
       <<: *platform_specific_agents
       <<: *ubuntu_agents
       arch: "amd64"
+      kernel: "modern"
   - <<: *common
     <<: *source_test
     <<: *docker
@@ -381,6 +383,7 @@ steps:
       <<: *platform_specific_agents
       <<: *ubuntu_agents
       arch: "amd64"
+      kernel: "modern"
   - <<: *common
     <<: *docker
     label: ":satellite: gVisor GSO tests"
@@ -389,6 +392,7 @@ steps:
       <<: *platform_specific_agents
       <<: *ubuntu_agents
       arch: "amd64"
+      kernel: "modern"
   - <<: *common
     <<: *docker
     <<: *source_test
@@ -411,6 +415,7 @@ steps:
     agents:
       <<: *kvm_agents
       arch: "amd64"
+      kernel: "modern"
   - <<: *common
     <<: *docker
     <<: *source_test
@@ -419,6 +424,7 @@ steps:
     agents:
       <<: *kvm_agents
       arch: "amd64"
+      kernel: "modern"
   - <<: *common
     <<: *docker
     label: ":weight_lifter: Fsstress test"
@@ -427,6 +433,7 @@ steps:
       <<: *platform_specific_agents
       <<: *ubuntu_agents
       arch: "amd64"
+      kernel: "modern"
   - <<: *common
     <<: *docker
     <<: *source_test
@@ -533,6 +540,7 @@ steps:
     command: make packetdrill-tests
     agents:
       <<: *ubuntu_agents
+      kernel: "modern"
   - <<: *common
     <<: *source_test
     label: ":hammer: Packetimpact tests"
@@ -541,6 +549,7 @@ steps:
       <<: *ubuntu_agents
       # This test is flaky on old agents.
       cgroup: "v2"
+      kernel: "modern"
 
   # Runtime tests.
   - <<: *common

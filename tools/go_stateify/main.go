@@ -232,23 +232,20 @@ func main() {
 	fmt.Fprintf(outputFile, "package %s\n\n", pkg)
 
 	// Emit the imports lazily.
-	var once sync.Once
-	maybeEmitImports := func() {
-		once.Do(func() {
-			// Emit the imports.
-			fmt.Fprint(outputFile, "import (\n")
-			fmt.Fprint(outputFile, " \"context\"\n")
-			if *statePkg != "" {
-				fmt.Fprintf(outputFile, "	\"%s\"\n", *statePkg)
+	maybeEmitImports := sync.OnceFunc(func() {
+		// Emit the imports.
+		fmt.Fprint(outputFile, "import (\n")
+		fmt.Fprint(outputFile, " \"context\"\n")
+		if *statePkg != "" {
+			fmt.Fprintf(outputFile, "	\"%s\"\n", *statePkg)
+		}
+		if *imports != "" {
+			for _, i := range strings.Split(*imports, ",") {
+				fmt.Fprintf(outputFile, "	\"%s\"\n", i)
 			}
-			if *imports != "" {
-				for _, i := range strings.Split(*imports, ",") {
-					fmt.Fprintf(outputFile, "	\"%s\"\n", i)
-				}
-			}
-			fmt.Fprint(outputFile, ")\n\n")
-		})
-	}
+		}
+		fmt.Fprint(outputFile, ")\n\n")
+	})
 
 	files := make([]*ast.File, 0, len(flag.Args()))
 

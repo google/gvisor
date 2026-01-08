@@ -61,16 +61,18 @@ package checkescape
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"fmt"
 	"go/ast"
 	"go/token"
 	"go/types"
 	"io"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
-	"sync"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/buildssa"
@@ -359,7 +361,7 @@ func MergeAll(others []Escapes) (es Escapes) {
 //
 // Note that the map uses <basename.go>:<line> because that is all that is
 // provided in the objdump format. Since this is all local, it is sufficient.
-func loadObjdump(binary io.Reader) (finalResults map[string][]string, finalErr error) {
+func loadObjdump(binary io.Reader) (map[string]map[string]struct{}, error) {
 	// Do we have a binary? If it's missing, then the nil will simply be
 	// plumbed all the way down here.
 	if binary == nil {
@@ -396,43 +398,45 @@ func loadObjdump(binary io.Reader) (finalResults map[string][]string, finalErr e
 		input = f
 	}
 
-	// Execute go tool objdump ggiven the input.
-	cmd := exec.Command(flags.Go, "tool", "objdump", input.Name())
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Execute go tool objdump given the input.
+	cmd := exec.CommandContext(ctx, flags.Go, "tool", "objdump", input.Name())
+	if goroot, ok := os.LookupEnv("GOROOT"); ok && strings.HasPrefix(goroot, "bazel-out/") {
+		// Under Bazel, our nogo machinery sets GOROOT to a stdlib output tree,
+		// which does not include the prebuilt objdump tool. Some Go versions
+		// may build objdump on-demand via `go tool objdump`, which requires a
+		// writable build cache.
+		//
+		// See https://go.dev/issue/71867 and
+		// https://github.com/bazel-contrib/rules_go/issues/4535.
+		cacheDirRel := filepath.Join("bazel-out", ".checkescape-gocache")
+		if err := os.MkdirAll(cacheDirRel, 0755); err != nil {
+			return nil, fmt.Errorf("unable to create build cache dir %q: %w", cacheDirRel, err)
+		}
+		// GOCACHE must be an absolute path.
+		cacheDirAbs, err := filepath.Abs(cacheDirRel)
+		if err != nil {
+			return nil, fmt.Errorf("unable to get absolute path of build cache dir %q: %w", cacheDirRel, err)
+		}
+		env := os.Environ()
+		env = slices.DeleteFunc(env, func(kv string) bool {
+			return strings.HasPrefix(kv, "GOROOT=") || strings.HasPrefix(kv, "GOCACHE=")
+		})
+		env = append(env, "GOCACHE="+cacheDirAbs)
+		cmd.Env = env
+	}
 	pipeOut, err := cmd.StdoutPipe()
 	if err != nil {
-		return nil, fmt.Errorf("unable to load objdump: %w", err)
+		return nil, fmt.Errorf("unable to get objdump stdout pipe: %w", err)
 	}
 	defer pipeOut.Close()
-	pipeErr, err := cmd.StderrPipe()
-	if err != nil {
-		return nil, fmt.Errorf("unable to load objdump: %w", err)
-	}
-	defer pipeErr.Close()
+	var bufErr bytes.Buffer
+	cmd.Stderr = &bufErr
 	if startErr := cmd.Start(); startErr != nil {
-		return nil, fmt.Errorf("unable to start objdump: %w", startErr)
+		return nil, fmt.Errorf("unable to start objdump: %w: %s", startErr, bufErr.String())
 	}
-
-	// Ensure that the command has finished successfully. Note that even if
-	// we parse the first few lines correctly, and early exit could
-	// indicate that the dump was incomplete and we could be missed some
-	// escapes that would have appeared. We need to force failure.
-	defer func() {
-		var (
-			wg  sync.WaitGroup
-			buf bytes.Buffer
-		)
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			io.Copy(&buf, pipeErr)
-		}()
-		waitErr := cmd.Wait()
-		wg.Wait()
-		if finalErr == nil && waitErr != nil {
-			// Override the function's return value in this case.
-			finalErr = fmt.Errorf("error running objdump %s: %v (%s)", input.Name(), waitErr, buf.Bytes())
-		}
-	}()
 
 	// Identify calls by address or name. Note that the list of allowed addresses
 	// -- not the list of allowed function names -- is also constructed
@@ -468,14 +472,10 @@ func loadObjdump(binary io.Reader) (finalResults map[string][]string, finalErr e
 
 	// Build the map.
 	nextFunc := "" // For funcsAllowed.
-	m := make(map[string][]string)
-	r := bufio.NewReader(pipeOut)
-NextLine:
-	for {
-		line, err := r.ReadString('\n')
-		if err != nil && err != io.EOF {
-			return nil, err
-		}
+	m := make(map[string]map[string]struct{})
+	s := bufio.NewScanner(pipeOut)
+	for s.Scan() {
+		line := s.Text()
 		fields := strings.Fields(line)
 
 		// Is this an "allowed" function definition? If so, record every address of
@@ -524,45 +524,48 @@ NextLine:
 				// If it contains any of the functions allowed
 				// above as a string, we let it go.
 				softTarget := strings.Join(fields[5:], " ")
-				for name := range funcsAllowed {
-					if strings.Contains(softTarget, name) {
-						continue NextLine
+				if func() bool {
+					for name := range funcsAllowed {
+						if strings.Contains(softTarget, name) {
+							return true
+						}
 					}
+					return false
+				}() {
+					continue
 				}
 			}
 
-			// Does this exist already?
-			existing, ok := m[site]
+			calls, ok := m[site]
 			if !ok {
-				existing = make([]string, 0, 1)
+				calls = make(map[string]struct{})
+				m[site] = calls
 			}
-			for _, other := range existing {
-				if target == other {
-					continue NextLine
-				}
-			}
-			existing = append(existing, target)
-			m[site] = existing // Update.
+			calls[target] = struct{}{}
 		}
-		if err == io.EOF {
-			break
-		}
+	}
+	if err := s.Err(); err != nil {
+		return nil, err
+	}
+
+	// Ensure that the command has finished successfully. Note that even if
+	// we parse the first few lines correctly, and early exit could
+	// indicate that the dump was incomplete and we could be missed some
+	// escapes that would have appeared. We need to force failure.
+	if err := cmd.Wait(); err != nil {
+		return nil, fmt.Errorf("error running %q: %s (%s)", cmd, err, bufErr.String())
 	}
 
 	// Zap any accidental false positives.
-	final := make(map[string][]string)
-	for site, calls := range m {
-		filteredCalls := make([]string, 0, len(calls))
-		for _, call := range calls {
+	for _, calls := range m {
+		for call := range calls {
 			if _, ok := addrsAllowed[call]; ok {
-				continue // Omit this call.
+				delete(calls, call)
 			}
-			filteredCalls = append(filteredCalls, call)
 		}
-		final[site] = filteredCalls
 	}
 
-	return final, nil
+	return m, nil
 }
 
 // poser is a type that implements Pos.
@@ -674,18 +677,18 @@ func run(pass *analysis.Pass, binary io.Reader) (any, error) {
 		}
 	}
 	hasCall := func(inst poser) (string, bool) {
-		p := linePosition(inst, nil)
 		if callsErr != nil {
 			// See above: we don't have access to the binary
 			// itself, so need to include every possible call.
-			return fmt.Sprintf("(possible, unable to load objdump: %v)", callsErr), true
+			return fmt.Sprintf("(possible, %s)", callsErr), true
 		}
+		p := linePosition(inst, nil)
 		s, ok := calls[p.Simplified()]
 		if !ok {
 			return "", false
 		}
 		// Join all calls together.
-		return strings.Join(s, " or "), true
+		return strings.Join(slices.Sorted(maps.Keys(s)), " or "), true
 	}
 	state := pass.ResultOf[buildssa.Analyzer].(*buildssa.SSA)
 
