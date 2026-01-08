@@ -64,7 +64,9 @@ BAZEL_CACHE ?= $(HOME)/.cache/bazel/
 GCLOUD_CONFIG := $(HOME)/.config/gcloud/
 DOCKER_HOST   ?= unix:///var/run/docker.sock
 DOCKER_SOCKET ?= $(patsubst unix://%,%,$(DOCKER_HOST))
-DOCKER_CONFIG ?= /etc/docker
+# This is used by TestNumCPU test/e2e.go which relies on
+# `dockerutil.RuntimeArgs()` to determine the expected number of CPUs.
+DOCKER_CONFIG ?= /etc/docker/daemon.json
 DOCKER_CLI_PATH ?= docker
 DEVICE_FILE ?=
 PRE_BAZEL_INIT ?=
