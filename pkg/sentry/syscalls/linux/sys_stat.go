@@ -165,7 +165,7 @@ func Statx(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, 
 	}
 	// Make sure that only one sync type option is set.
 	syncType := uint32(flags & linux.AT_STATX_SYNC_TYPE)
-	if syncType != 0 && !bits.IsPowerOfTwo32(syncType) {
+	if syncType != 0 && !bits.IsPowerOfTwo(syncType) {
 		return 0, nil, linuxerr.EINVAL
 	}
 	if mask&linux.STATX__RESERVED != 0 {
