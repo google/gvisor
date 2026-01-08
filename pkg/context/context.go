@@ -58,11 +58,23 @@ type Blocker interface {
 	// is interrupted.
 	Block(C <-chan struct{}) error
 
+	// BlockWithTimeout blocks until an event is received from C, the timeout
+	// has elapsed (only if haveTimeout is true), or some external interrupt.
+	//
+	// It returns:
+	//   - The remaining timeout, which is guaranteed to be 0 if the timeout
+	//     expired, and is unspecified if haveTimeout is false.
+	//   - An error which if the timeout expired or if interrupted.
+	BlockWithTimeout(C chan struct{}, haveTimeout bool, timeout time.Duration) (time.Duration, error)
+
 	// BlockWithTimeoutOn blocks until either the conditions of Block are
 	// satisfied, or the timeout is hit. Note that deadlines are not supported
 	// since the notion of "with respect to what clock" is not resolved.
 	//
-	// The return value is per BlockOn.
+	// It returns:
+	//   - The remaining timeout, which is guaranteed to be 0 if the timeout
+	//     expired.
+	//   - Boolean as per BlockOn return value.
 	BlockWithTimeoutOn(waiter.Waitable, waiter.EventMask, time.Duration) (time.Duration, bool)
 
 	// UninterruptibleSleepStart indicates the beginning of an uninterruptible
@@ -131,27 +143,40 @@ func (nt *NoTask) BlockOn(w waiter.Waitable, mask waiter.EventMask) bool {
 	}
 }
 
-// BlockWithTimeoutOn implements Blocker.BlockWithTimeoutOn.
-func (nt *NoTask) BlockWithTimeoutOn(w waiter.Waitable, mask waiter.EventMask, duration time.Duration) (time.Duration, bool) {
+// BlockWithTimeout implements Blocker.BlockWithTimeout.
+func (nt *NoTask) BlockWithTimeout(C chan struct{}, haveTimeout bool, timeout time.Duration) (time.Duration, error) {
+	if !haveTimeout {
+		return timeout, nt.Block(C)
+	}
+
 	if nt.cancel == nil {
 		nt.cancel = make(chan struct{}, 1)
 	}
+	start := time.Now() // In system time.
+	remainingTimeout := func() time.Duration {
+		rt := timeout - time.Since(start)
+		if rt < 0 {
+			rt = 0
+		}
+		return rt
+	}
+	select {
+	case <-nt.cancel:
+		return remainingTimeout(), errors.New("interrupted system call") // Interrupted.
+	case <-C:
+		return remainingTimeout(), nil
+	case <-time.After(timeout):
+		return 0, errors.New("timeout expired")
+	}
+}
+
+// BlockWithTimeoutOn implements Blocker.BlockWithTimeoutOn.
+func (nt *NoTask) BlockWithTimeoutOn(w waiter.Waitable, mask waiter.EventMask, timeout time.Duration) (time.Duration, bool) {
 	e, ch := waiter.NewChannelEntry(mask)
 	w.EventRegister(&e)
 	defer w.EventUnregister(&e)
-	start := time.Now() // In system time.
-	t := time.AfterFunc(duration, func() { ch <- struct{}{} })
-	select {
-	case <-nt.cancel:
-		return time.Since(start), false // Interrupted.
-	case _, ok := <-ch:
-		if ok && t.Stop() {
-			// Timer never fired.
-			return time.Since(start), ok
-		}
-		// Timer fired, remain is zero.
-		return time.Duration(0), ok
-	}
+	left, err := nt.BlockWithTimeout(ch, true, timeout)
+	return left, err == nil
 }
 
 // UninterruptibleSleepStart implmenents Blocker.UninterruptedSleepStart.

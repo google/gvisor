@@ -490,10 +490,7 @@ func (s *sock) Release(ctx context.Context) {
 		// CLOSING and LAST_ACK.
 		// 2. Timeout is reached.
 		if v.Enabled && v.Timeout != 0 {
-			t := kernel.TaskFromContext(ctx)
-			start := t.Kernel().MonotonicClock().Now()
-			deadline := start.Add(v.Timeout)
-			_ = t.BlockWithDeadline(ch, true, deadline)
+			_, _ = ctx.BlockWithTimeout(ch, true, v.Timeout)
 		}
 	}
 	s.namespace.DecRef(ctx)

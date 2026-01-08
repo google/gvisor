@@ -25,15 +25,7 @@ import (
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
-// BlockWithTimeout blocks t until an event is received from C, the application
-// monotonic clock indicates that timeout has elapsed (only if haveTimeout is true),
-// or t is interrupted. It returns:
-//
-//   - The remaining timeout, which is guaranteed to be 0 if the timeout expired,
-//     and is unspecified if haveTimeout is false.
-//
-//   - An error which is nil if an event is received from C, ETIMEDOUT if the timeout
-//     expired, and linuxerr.ErrInterrupted if t is interrupted.
+// BlockWithTimeout implements context.Context.BlockWithTimeout.
 //
 // Preconditions: The caller must be running on the task goroutine.
 func (t *Task) BlockWithTimeout(C chan struct{}, haveTimeout bool, timeout time.Duration) (time.Duration, error) {
@@ -65,6 +57,8 @@ func (t *Task) BlockWithTimeout(C chan struct{}, haveTimeout bool, timeout time.
 }
 
 // BlockWithTimeoutOn implements context.Context.BlockWithTimeoutOn.
+//
+// Preconditions: The caller must be running on the task goroutine.
 func (t *Task) BlockWithTimeoutOn(w waiter.Waitable, mask waiter.EventMask, timeout time.Duration) (time.Duration, bool) {
 	e, ch := waiter.NewChannelEntry(mask)
 	w.EventRegister(&e)
@@ -146,11 +140,15 @@ func (t *Task) blockWithDeadlineFromSampledClock(C <-chan struct{}, clock ktime.
 }
 
 // Block implements context.Context.Block
+//
+// Preconditions: The caller must be running on the task goroutine.
 func (t *Task) Block(C <-chan struct{}) error {
 	return t.block(C, nil)
 }
 
 // BlockOn implements context.Context.BlockOn.
+//
+// Preconditions: The caller must be running on the task goroutine.
 func (t *Task) BlockOn(w waiter.Waitable, mask waiter.EventMask) bool {
 	e, ch := waiter.NewChannelEntry(mask)
 	w.EventRegister(&e)
