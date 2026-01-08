@@ -102,8 +102,8 @@ func (uc *UserCounters) incRLimitNProc(ctx context.Context) error {
 	creds := auth.CredentialsFromContext(ctx)
 	nproc := uc.rlimitNProc.Add(1)
 	if nproc > lim.Cur &&
-		!creds.HasCapability(linux.CAP_SYS_ADMIN) &&
-		!creds.HasCapability(linux.CAP_SYS_RESOURCE) {
+		!creds.HasCapabilityIn(linux.CAP_SYS_ADMIN, creds.UserNamespace.Root()) &&
+		!creds.HasCapabilityIn(linux.CAP_SYS_RESOURCE, creds.UserNamespace.Root()) {
 		uc.rlimitNProc.Add(^uint64(0))
 		return linuxerr.EAGAIN
 	}

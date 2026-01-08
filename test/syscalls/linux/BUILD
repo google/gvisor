@@ -2647,6 +2647,9 @@ cc_library(
     deps = select_gtest() + [
         ":unix_domain_socket_test_util",
         "//test/util:capability_util",
+        "//test/util:logging",
+        "//test/util:multiprocess_util",
+        "//test/util:posix_error",
         "//test/util:save_util",
         "//test/util:socket_util",
         "//test/util:test_util",

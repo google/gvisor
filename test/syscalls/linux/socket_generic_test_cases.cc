@@ -12,7 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <cerrno>
+
+#include "gmock/gmock.h"
 #include "test/syscalls/linux/socket_generic.h"
+#include "test/util/linux_capability_util.h"
+#include "test/util/logging.h"
+#include "test/util/multiprocess_util.h"
+#include "test/util/posix_error.h"
 
 #ifdef __linux__
 #include <linux/capability.h>
@@ -418,35 +425,51 @@ TEST_P(AllSocketPairTest, SetSocketRecvBufForceAboveMax) {
 
   std::unique_ptr<SocketPair> sockets =
       ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+  int fd = sockets->first_fd();
 
   // Discover maximum buffer size by setting to a really large value.
   constexpr int kRcvBufSz = 0xffffffff;
-  ASSERT_THAT(setsockopt(sockets->first_fd(), SOL_SOCKET, SO_RCVBUF, &kRcvBufSz,
-                         sizeof(kRcvBufSz)),
-              SyscallSucceeds());
+  ASSERT_THAT(
+      setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &kRcvBufSz, sizeof(kRcvBufSz)),
+      SyscallSucceeds());
 
   int max = 0;
   socklen_t max_len = sizeof(max);
-  ASSERT_THAT(
-      getsockopt(sockets->first_fd(), SOL_SOCKET, SO_RCVBUF, &max, &max_len),
-      SyscallSucceeds());
-
+  ASSERT_THAT(getsockopt(fd, SOL_SOCKET, SO_RCVBUF, &max, &max_len),
+              SyscallSucceeds());
   int above_max = max + 1;
-  int sso = setsockopt(sockets->first_fd(), SOL_SOCKET, SO_RCVBUFFORCE,
-                       &above_max, sizeof(above_max));
+
+  // We shouldn't be able to get around the lack of a cap by gaining it in a
+  // new userns.
+  auto tryBeatingCapWithUnshare = [fd, above_max] {
+    EXPECT_THAT(InForkedProcess([&] {
+                  TEST_CHECK_SUCCESS(syscall(SYS_unshare, CLONE_NEWUSER));
+                  TEST_CHECK_ERRNO(
+                      syscall(SYS_setsockopt, fd, SOL_SOCKET, SO_RCVBUFFORCE,
+                              &above_max, sizeof(above_max)),
+                      EPERM);
+                }),
+                IsPosixErrorOkAndHolds(0));
+  };
+
+  int sso =
+      setsockopt(fd, SOL_SOCKET, SO_RCVBUFFORCE, &above_max, sizeof(above_max));
   if (!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN))) {
     ASSERT_THAT(sso, SyscallFailsWithErrno(EPERM));
+    tryBeatingCapWithUnshare();
     return;
   }
   ASSERT_THAT(sso, SyscallSucceeds());
 
   int val = 0;
   socklen_t val_len = sizeof(val);
-  ASSERT_THAT(
-      getsockopt(sockets->first_fd(), SOL_SOCKET, SO_RCVBUF, &val, &val_len),
-      SyscallSucceeds());
+  ASSERT_THAT(getsockopt(fd, SOL_SOCKET, SO_RCVBUF, &val, &val_len),
+              SyscallSucceeds());
   // The system doubles the passed-in maximum.
   ASSERT_EQ(above_max * 2, val);
+
+  AutoCapability cap(CAP_NET_ADMIN, false);
+  tryBeatingCapWithUnshare();
 }
 
 #endif  // __linux__
