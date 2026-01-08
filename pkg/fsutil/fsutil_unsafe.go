@@ -15,6 +15,7 @@
 package fsutil
 
 import (
+	"bytes"
 	"unsafe"
 
 	"golang.org/x/sys/unix"
@@ -95,21 +96,14 @@ func ParseDirents(buf []byte, handleDirent DirentHandler) {
 		// Interpret the buf populated by unix.Getdents as unix.Dirent.
 		dirent := *(*unix.Dirent)(unsafe.Pointer(&buf[0]))
 
+		// Extract the name from buf, since len(unix.Dirent.Name) == 256 is
+		// incorrect in general. The name is null-terminated.
+		nameBuf := buf[unsafe.Offsetof(dirent.Name):dirent.Reclen]
+		nameLen := bytes.IndexByte(nameBuf, 0)
+		name := string(nameBuf[:nameLen])
+
 		// Advance buf for the next dirent.
 		buf = buf[dirent.Reclen:]
-
-		// Extracting the name is pretty tedious...
-		var nameBuf [unix.NAME_MAX]byte
-		var nameLen int
-		for i := 0; i < len(dirent.Name); i++ {
-			// The name is null terminated.
-			if dirent.Name[i] == 0 {
-				nameLen = i
-				break
-			}
-			nameBuf[i] = byte(dirent.Name[i])
-		}
-		name := string(nameBuf[:nameLen])
 
 		// Skip `.` and `..` entries. It is anyways ignored by the client. We also
 		// don't want to leak information about `..`.

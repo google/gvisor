@@ -59,7 +59,7 @@ func newSyntheticDirectory(ctx context.Context, creds *auth.Credentials, perm li
 
 // Open implements Inode.Open.
 func (dir *syntheticDirectory) Open(ctx context.Context, rp *vfs.ResolvingPath, d *Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
-	fd, err := NewGenericDirectoryFD(rp.Mount(), d, &dir.OrderedChildren, &dir.locks, &opts, GenericDirectoryFDOptions{})
+	fd, err := NewGenericDirectoryFD(rp.Mount(), d, rp.Credentials(), &dir.OrderedChildren, &dir.locks, &opts, GenericDirectoryFDOptions{})
 	if err != nil {
 		return nil, err
 	}

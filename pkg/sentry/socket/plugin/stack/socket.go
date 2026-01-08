@@ -94,7 +94,7 @@ func newSocket(t *kernel.Task, family int, skType linux.SockType, protocol int, 
 	sop.LockFD.Init(&vfs.FileLocks{})
 
 	vfsfd := &sop.vfsfd
-	if err := vfsfd.Init(sop, linux.O_RDWR|(flags&linux.O_NONBLOCK), mnt, d, &vfs.FileDescriptionOptions{
+	if err := vfsfd.Init(sop, linux.O_RDWR|(flags&linux.O_NONBLOCK), t.Credentials(), mnt, d, &vfs.FileDescriptionOptions{
 		DenyPRead:         true,
 		DenyPWrite:        true,
 		UseDentryMetadata: true,

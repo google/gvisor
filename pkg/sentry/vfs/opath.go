@@ -161,7 +161,7 @@ func (vfs *VirtualFilesystem) openOPathFD(ctx context.Context, creds *auth.Crede
 	}
 
 	fd := &opathFD{}
-	if err := fd.vfsfd.Init(fd, flags, vd.Mount(), vd.Dentry(), &FileDescriptionOptions{}); err != nil {
+	if err := fd.vfsfd.Init(fd, flags, creds, vd.Mount(), vd.Dentry(), &FileDescriptionOptions{}); err != nil {
 		return nil, err
 	}
 	return &fd.vfsfd, err

@@ -57,7 +57,7 @@ func (i *kcovInode) Open(ctx context.Context, rp *vfs.ResolvingPath, d *kernfs.D
 		kcov:  k.NewKcov(),
 	}
 
-	if err := fd.vfsfd.Init(fd, opts.Flags, rp.Mount(), d.VFSDentry(), &vfs.FileDescriptionOptions{
+	if err := fd.vfsfd.Init(fd, opts.Flags, rp.Credentials(), rp.Mount(), d.VFSDentry(), &vfs.FileDescriptionOptions{
 		DenyPRead:  true,
 		DenyPWrite: true,
 	}); err != nil {

@@ -374,7 +374,7 @@ func (i *inode) Open(ctx context.Context, rp *vfs.ResolvingPath, d *kernfs.Dentr
 		fd.Nonseekable = true
 	}
 
-	if err := fd.vfsfd.Init(fdImpl, opts.Flags, rp.Mount(), d.VFSDentry(), fdOptions); err != nil {
+	if err := fd.vfsfd.Init(fdImpl, opts.Flags, rp.Credentials(), rp.Mount(), d.VFSDentry(), fdOptions); err != nil {
 		return nil, err
 	}
 	return &fd.vfsfd, nil

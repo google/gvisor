@@ -27,6 +27,7 @@ import (
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/fsmetric"
 	"gvisor.dev/gvisor/pkg/sentry/fsutil"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
@@ -91,7 +92,7 @@ type specialFileFD struct {
 	fileRefs   fsutil.FrameRefSet
 }
 
-func newSpecialFileFD(h handle, mnt *vfs.Mount, d *dentry, flags uint32) (*specialFileFD, error) {
+func newSpecialFileFD(h handle, mnt *vfs.Mount, d *dentry, flags uint32, creds *auth.Credentials) (*specialFileFD, error) {
 	ftype := d.inode.fileType()
 	seekable := ftype == linux.S_IFREG || ftype == linux.S_IFCHR || ftype == linux.S_IFBLK
 	haveQueue := (ftype == linux.S_IFIFO || ftype == linux.S_IFSOCK || ftype == linux.S_IFCHR) && h.fd >= 0
@@ -107,7 +108,7 @@ func newSpecialFileFD(h handle, mnt *vfs.Mount, d *dentry, flags uint32) (*speci
 			return nil, err
 		}
 	}
-	if err := fd.vfsfd.Init(fd, flags, mnt, &d.vfsd, &vfs.FileDescriptionOptions{
+	if err := fd.vfsfd.Init(fd, flags, creds, mnt, &d.vfsd, &vfs.FileDescriptionOptions{
 		AllowDirectIO: true,
 		DenyPRead:     !seekable,
 		DenyPWrite:    !seekable,

@@ -273,6 +273,9 @@ func (fd *regularFileFD) pwrite(ctx context.Context, src usermem.IOSequence, off
 	n, offset, err := inode.fs.Write(ctx, fd, offset, src)
 	if n == 0 {
 		// We have checked srclen != 0 previously.
+		if err != nil {
+			return 0, offset, err
+		}
 		// If err == nil, then it's a short write and we return EIO.
 		return 0, offset, linuxerr.EIO
 	}

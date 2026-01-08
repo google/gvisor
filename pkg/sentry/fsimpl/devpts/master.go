@@ -62,7 +62,7 @@ func (mi *masterInode) Open(ctx context.Context, rp *vfs.ResolvingPath, d *kernf
 		t:     t,
 	}
 	fd.LockFD.Init(&mi.locks)
-	if err := fd.vfsfd.Init(fd, opts.Flags, rp.Mount(), d.VFSDentry(), &vfs.FileDescriptionOptions{}); err != nil {
+	if err := fd.vfsfd.Init(fd, opts.Flags, rp.Credentials(), rp.Mount(), d.VFSDentry(), &vfs.FileDescriptionOptions{}); err != nil {
 		return nil, err
 	}
 	return &fd.vfsfd, nil

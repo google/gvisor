@@ -150,7 +150,7 @@ func (r *RegistryImpl) newFD(ctx context.Context, q *mq.Queue, inode *queueInode
 	defer dentry.DecRef(ctx)
 
 	fd := &queueFD{queue: view}
-	err = fd.Init(r.mount, &dentry, inode.queue, inode.Locks(), flags)
+	err = fd.Init(r.mount, &dentry, inode.queue, inode.Locks(), flags, auth.CredentialsFromContext(ctx))
 	if err != nil {
 		return nil, err
 	}

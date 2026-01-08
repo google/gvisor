@@ -66,7 +66,7 @@ func New(vfsObj *vfs.VirtualFilesystem, target *kernel.Task, mask linux.SignalSe
 	}
 	sfd.entry.Init(sfd, waiter.EventMask(mask))
 	sfd.target.SignalRegister(&sfd.entry)
-	if err := sfd.vfsfd.Init(sfd, flags, vd.Mount(), vd.Dentry(), &vfs.FileDescriptionOptions{
+	if err := sfd.vfsfd.Init(sfd, flags, target.Credentials(), vd.Mount(), vd.Dentry(), &vfs.FileDescriptionOptions{
 		UseDentryMetadata: true,
 		DenyPRead:         true,
 		DenyPWrite:        true,

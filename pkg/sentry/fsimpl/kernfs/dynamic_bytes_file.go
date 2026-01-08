@@ -78,7 +78,7 @@ func (f *DynamicBytesFile) Open(ctx context.Context, rp *vfs.ResolvingPath, d *D
 		return nil, err
 	}
 	fd := &DynamicBytesFD{}
-	if err := fd.Init(rp.Mount(), d, data, &f.locks, opts.Flags); err != nil {
+	if err := fd.Init(rp.Mount(), d, data, &f.locks, opts.Flags, rp.Credentials()); err != nil {
 		return nil, err
 	}
 	return &fd.vfsfd, nil
@@ -125,9 +125,9 @@ type DynamicBytesFD struct {
 }
 
 // Init initializes a DynamicBytesFD.
-func (fd *DynamicBytesFD) Init(m *vfs.Mount, d *Dentry, data vfs.DynamicBytesSource, locks *vfs.FileLocks, flags uint32) error {
+func (fd *DynamicBytesFD) Init(m *vfs.Mount, d *Dentry, data vfs.DynamicBytesSource, locks *vfs.FileLocks, flags uint32, creds *auth.Credentials) error {
 	fd.LockFD.Init(locks)
-	if err := fd.vfsfd.Init(fd, flags, m, d.VFSDentry(),
+	if err := fd.vfsfd.Init(fd, flags, creds, m, d.VFSDentry(),
 		&vfs.FileDescriptionOptions{
 			DenySpliceIn: true,
 		},

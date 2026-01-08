@@ -163,7 +163,7 @@ func (i *subtasksInode) Open(ctx context.Context, rp *vfs.ResolvingPath, d *kern
 	}); err != nil {
 		return nil, err
 	}
-	if err := fd.VFSFileDescription().Init(fd, opts.Flags, rp.Mount(), d.VFSDentry(), &vfs.FileDescriptionOptions{}); err != nil {
+	if err := fd.VFSFileDescription().Init(fd, opts.Flags, rp.Credentials(), rp.Mount(), d.VFSDentry(), &vfs.FileDescriptionOptions{}); err != nil {
 		return nil, err
 	}
 	return fd.VFSFileDescription(), nil
