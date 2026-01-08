@@ -30,15 +30,15 @@ RUN export DEBIAN_FRONTEND=noninteractive; \
       x11-xserver-utils \
       xdotool \
       xvfb \
-      zlib1g zlib1g-dev \
-    && \
-    chmod 555 /*.sh && \
-    git clone --depth=1 --branch="$CUDA_SAMPLES_VERSION" --single-branch \
-      https://github.com/NVIDIA/cuda-samples.git /cuda-samples && \
-    go install \
-      github.com/TheZoraiz/ascii-image-converter@d05a757c5e02ab23e97b6f6fca4e1fbeb10ab559 && \
-    mv "$HOME/go/bin/ascii-image-converter" /usr/bin/ && \
+      zlib1g zlib1g-dev
+
+RUN git clone --depth=1 --branch="$CUDA_SAMPLES_VERSION" --single-branch \
+      https://github.com/NVIDIA/cuda-samples.git /cuda-samples
+
+RUN chmod 555 /*.sh && \
     gcc -o /unsupported_ioctl /unsupported_ioctl.cc && \
+    GOBIN=/usr/bin go install \
+      github.com/TheZoraiz/ascii-image-converter@d05a757c5e02ab23e97b6f6fca4e1fbeb10ab559 && \
     go build -o /run_sample /run_sample.go
 
 # Override entrypoint to nothing, otherwise all invocations will have

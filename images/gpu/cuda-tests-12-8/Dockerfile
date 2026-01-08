@@ -1,6 +1,11 @@
 FROM nvidia/cuda:12.8.1-devel-ubuntu22.04
 
+# From: https://github.com/NVIDIA/cuda-samples/releases
+# Ideally, pick a release that matches the CUDA version of the image above.
+ARG CUDA_SAMPLES_VERSION=v12.8
+
 WORKDIR /
+COPY *.cu *.h *.sh *.go *.cc /
 ENV PATH=$PATH:/usr/local/nvidia/bin
 RUN export DEBIAN_FRONTEND=noninteractive; \
     apt-get update && \
@@ -22,25 +27,21 @@ RUN export DEBIAN_FRONTEND=noninteractive; \
       llvm \
       mpich \
       pkg-config \
-      vim \
       x11-xserver-utils \
       xdotool \
       xvfb \
       zlib1g zlib1g-dev
 
-RUN git clone --depth=1 --branch=v12.8 --single-branch \
-      https://github.com/NVIDIA/cuda-samples.git /cuda-samples && cd /cuda-samples
-
-ADD *.cu *.h *.sh *.go *.cc /
+RUN git clone --depth=1 --branch="$CUDA_SAMPLES_VERSION" --single-branch \
+      https://github.com/NVIDIA/cuda-samples.git /cuda-samples && \
+    mkdir /cuda-samples/build && cd /cuda-samples/build && \
+    cmake ..
 
 RUN chmod 555 /*.sh && \
     gcc -o /unsupported_ioctl /unsupported_ioctl.cc && \
-    go install \
+    GOBIN=/usr/bin go install \
       github.com/TheZoraiz/ascii-image-converter@d05a757c5e02ab23e97b6f6fca4e1fbeb10ab559 && \
-    mv "$HOME/go/bin/ascii-image-converter" /usr/bin/ && \
-    go build -o /run_sample /run_sample.go && \
-    mkdir /cuda-samples/build && cd /cuda-samples/build && \
-    cmake ..
+    go build -o /run_sample /run_sample.go
 
 # Override entrypoint to nothing, otherwise all invocations will have
 # a copyright notice printed, which breaks parsing the stdout logs.
