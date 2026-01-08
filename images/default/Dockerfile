@@ -34,7 +34,8 @@ RUN add-apt-repository \
 RUN apt-get -y install docker-ce-cli
 
 # Install gcloud.
-RUN curl -fsSL https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-sdk-535.0.0-linux-x86_64.tar.gz | \
+RUN ARCH="$(uname -m | sed s/aarch64/arm/)" && \
+    curl -fsSL https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-sdk-535.0.0-linux-${ARCH}.tar.gz | \
     tar zxf - google-cloud-sdk && \
     google-cloud-sdk/install.sh --quiet && \
     ln -s /google-cloud-sdk/bin/gcloud /usr/bin/gcloud
