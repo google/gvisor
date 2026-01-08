@@ -239,6 +239,136 @@ analyzers:
         # See above.
         - "symbol \"runtime_pollWaitCanceled\".*"
         - "symbol \"runtime_procPin\".*"
+  QF1001: # Apply De Morgan’s law
+    # disabled for now due to existing violations.
+    internal:
+      exclude: [".*"]
+  QF1002: # Convert untagged switch to tagged switch
+    # disabled for now due to existing violations.
+    internal:
+      exclude: [".*"]
+  QF1003: # Convert if/else-if chain to tagged switch
+    # disabled for now due to existing violations.
+    internal:
+      exclude: [".*"]
+  QF1004: # Use strings.ReplaceAll instead of Replace(..., -1)
+    # disabled for now due to existing violations.
+    internal:
+      exclude: [".*"]
+  QF1005: # Expand call to math.Pow
+    # disabled for now due to existing violations.
+    internal:
+      exclude: [".*"]
+  QF1006: # Lift if+break into loop condition
+    # disabled for now due to existing violations.
+    internal:
+      exclude: [".*"]
+  QF1007: # Merge conditional assignment into variable declaration
+    internal:
+      exclude:
+        - pkg/sentry/kernel/auth/capability_set.go
+  QF1008: # Omit embedded fields from selector expression
+    # disabled for now due to existing violations.
+    internal:
+      exclude: [".*"]
+  QF1012: # Use `fmt.Fprintf(x, ...)` instead of `x.Write(fmt.Sprintf(...))`
+    # disabled for now due to existing violations.
+    generated:
+      exclude: [".*"]
+    internal:
+      exclude: [".*"]
+  S1000: # Use plain channel ops instead of single-case select
+    # disabled for now due to existing violations.
+    internal:
+      exclude: [".*"]
+  S1002: # Simplify boolean comparison against constants
+    # disabled for now due to existing violations.
+    internal:
+      exclude: [".*"]
+  S1003: # Replace index+len check with strings.Contains
+    # disabled for now due to existing violations.
+    internal:
+      exclude: [".*"]
+  S1004: # Simplify bytes.Compare(...) != 0 into bytes.Equal(...)
+    # disabled for now due to existing violations.
+    internal:
+      exclude: [".*"]
+  S1005: # Drop unnecessary assignment to blank identifier
+    internal:
+      exclude:
+        - pkg/state/pretty/pretty.go
+  S1007: # Simplify regular expression by using raw string literal
+    # disabled for now due to existing violations.
+    internal:
+      exclude: [".*"]
+  S1008: # Simplify returning boolean expression
+    # disabled for now due to existing violations.
+    internal:
+      exclude: [".*"]
+  S1009: # Omit redundant nil check on slices, maps, and channels
+    # disabled for now due to existing violations.
+    internal:
+      exclude: [".*"]
+  S1011: # Use append directly instead of looped appends
+    # disabled for now due to existing violations.
+    internal:
+      exclude: [".*"]
+  S1012: # Use time.Since instead of time.Now().Sub
+    # disabled for now due to existing violations.
+    internal:
+      exclude: [".*"]
+  S1016: # Use a type conversion instead of manually copying struct fields
+    # disabled for now due to existing violations.
+    generated:
+      exclude: [".*"]
+    internal:
+      exclude: [".*"]
+  S1019: # Simplify make invocation for empty slices
+    # disabled for now due to existing violations.
+    internal:
+      exclude: [".*"]
+  S1020: # Simplify type assertion result handling
+    internal:
+      exclude:
+        - pkg/sentry/platform/kvm/context.go
+  S1021: # Merge variable declaration and assignment
+    # disabled for now due to existing violations.
+    generated:
+      exclude: [".*"]
+    internal:
+      exclude: [".*"]
+  S1023: # Omit redundant control flow
+    # disabled for now due to existing violations.
+    internal:
+      exclude: [".*"]
+  S1024: # Replace `x.Sub(time.Now())` with `time.Until(x)`
+    # disabled for now due to existing violations.
+    internal:
+      exclude: [".*"]
+  S1025: # Drop redundant fmt.Sprintf for strings
+    # disabled for now due to existing violations.
+    internal:
+      exclude: [".*"]
+  S1030: # Use `bytes.Buffer.String` or `bytes.Buffer.Bytes`
+    # disabled for now due to existing violations.
+    internal:
+      exclude: [".*"]
+  S1033: # Remove unnecessary guard around delete
+    # disabled for now due to existing violations.
+    internal:
+      exclude: [".*"]
+  S1034: # Use result of type assertion to simplify cases
+    # disabled for now due to existing violations.
+    internal:
+      exclude: [".*"]
+  S1039: # Unnecessary use of `fmt.Sprint`
+    # disabled for now due to existing violations.
+    internal:
+      exclude: [".*"]
+  S1040: # Type assertion to the same type
+    internal:
+      exclude:
+        - pkg/tcpip/hash/jenkins/jenkins_test.go
   SA1019: # Use of deprecated identifier.
     # disable for now due to misattribution from golang.org/issue/44195.
     generated:
