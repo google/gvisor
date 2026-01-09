@@ -501,6 +501,17 @@ const (
 	NFTA_META_MAX = __NFTA_META_MAX - 1
 )
 
+// Nf table counter expression netlink attributes.
+// These correspond to enum values in include/uapi/linux/netfilter/nf_tables.h.
+const (
+	NFTA_COUNTER_UNSPEC = iota
+	NFTA_COUNTER_BYTES
+	NFTA_COUNTER_PACKETS
+	NFTA_COUNTER_PAD
+	__NFTA_COUNTER_MAX
+	NFTA_COUNTER_MAX = __NFTA_COUNTER_MAX - 1
+)
+
 // Nftables Generation Attributes
 // These correspond to values in include/uapi/linux/netfilter/nf_tables.h.
 const (

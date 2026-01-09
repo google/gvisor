@@ -19,6 +19,7 @@ import (
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
@@ -133,4 +134,14 @@ func (op route) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *Rule)
 	// Stores the target data in the destination register.
 	data := newBytesData(target)
 	data.storeData(regs, op.dreg)
+}
+
+func (op route) GetExprName() string {
+	return "route"
+}
+
+// TODO: b/452648112 - Implement dump for last operation.
+func (op route) Dump() ([]byte, *syserr.AnnotatedError) {
+	log.Warningf("Nftables: Dumping route operation is not implemented")
+	return nil, nil
 }

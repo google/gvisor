@@ -19,6 +19,7 @@ import (
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
@@ -146,4 +147,14 @@ func (op byteorder) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *R
 	if rem := op.blen % 4; rem != 0 {
 		clear(dst[op.blen : op.blen+4-rem])
 	}
+}
+
+func (op byteorder) GetExprName() string {
+	return "byteorder"
+}
+
+// TODO: b/452648112 - Implement dump for last operation.
+func (op byteorder) Dump() ([]byte, *syserr.AnnotatedError) {
+	log.Warningf("Nftables: Dumping byteorder operation is not implemented")
+	return nil, nil
 }

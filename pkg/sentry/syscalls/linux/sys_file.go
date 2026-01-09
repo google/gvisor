@@ -366,7 +366,7 @@ func Fchdir(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr,
 func Chroot(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	addr := args[0].Pointer()
 
-	if !t.HasCapability(linux.CAP_SYS_CHROOT) {
+	if !t.HasSelfCapability(linux.CAP_SYS_CHROOT) {
 		return 0, nil, linuxerr.EPERM
 	}
 

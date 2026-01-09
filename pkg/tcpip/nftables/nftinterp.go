@@ -663,7 +663,7 @@ func InterpretCounter(line string, lnIdx int) (operation, *syserr.AnnotatedError
 	tkIdx++
 
 	// Third token should be int64 representing initial packets.
-	initialPkts, err := strconv.ParseInt(tokens[tkIdx], 10, 64)
+	initialPkts, err := strconv.ParseUint(tokens[tkIdx], 10, 64)
 	if err != nil {
 		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("could not parse int64 initial packets: '%s'", tokens[tkIdx]))
 	}
@@ -676,7 +676,7 @@ func InterpretCounter(line string, lnIdx int) (operation, *syserr.AnnotatedError
 	tkIdx++
 
 	// Fifth token should be int64 representing initial bytes.
-	initialBytes, err := strconv.ParseInt(tokens[tkIdx], 10, 64)
+	initialBytes, err := strconv.ParseUint(tokens[tkIdx], 10, 64)
 	if err != nil {
 		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("could not parse int64 initial bytes: '%s'", tokens[tkIdx]))
 	}

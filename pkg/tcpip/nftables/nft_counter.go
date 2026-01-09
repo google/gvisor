@@ -17,6 +17,9 @@ package nftables
 import (
 	"sync/atomic"
 
+	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/sentry/socket/netlink/nlmsg"
+	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
@@ -26,12 +29,12 @@ type counter struct {
 	// Must be thread-safe because data stored here is updated for each evaluation
 	// and evaluations can happen in parallel for processing multiple packets.
 
-	bytes   atomic.Int64 // Number of bytes that have passed through counter.
-	packets atomic.Int64 // Number of packets that have passed through counter.
+	bytes   atomic.Uint64 // Number of bytes that have passed through counter.
+	packets atomic.Uint64 // Number of packets that have passed through counter.
 }
 
 // newCounter creates a new counter operation.
-func newCounter(startBytes, startPackets int64) *counter {
+func newCounter(startBytes, startPackets uint64) *counter {
 	cntr := &counter{}
 	cntr.bytes.Store(startBytes)
 	cntr.packets.Store(startPackets)
@@ -40,6 +43,38 @@ func newCounter(startBytes, startPackets int64) *counter {
 
 // evaluate for counter increments the counter for the packet and bytes.
 func (op *counter) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *Rule) {
-	op.bytes.Add(int64(pkt.Size()))
+	op.bytes.Add(uint64(pkt.Size()))
 	op.packets.Add(1)
+}
+
+func (op *counter) GetExprName() string {
+	return "counter"
+}
+
+func (op *counter) Dump() ([]byte, *syserr.AnnotatedError) {
+	m := &nlmsg.Message{}
+	m.PutAttr(linux.NFTA_COUNTER_BYTES, nlmsg.PutU64(op.bytes.Load()))
+	m.PutAttr(linux.NFTA_COUNTER_PACKETS, nlmsg.PutU64(op.packets.Load()))
+	return m.Buffer(), nil
+}
+
+var counterAttrPolicy = []NlaPolicy{
+	linux.NFTA_COUNTER_PACKETS: NlaPolicy{nlaType: linux.NLA_U64},
+	linux.NFTA_COUNTER_BYTES:   NlaPolicy{nlaType: linux.NLA_U64},
+}
+
+func initCounter(tab *Table, exprInfo ExprInfo) (*counter, *syserr.AnnotatedError) {
+	attrs, ok := NfParseWithPolicy(exprInfo.ExprData, counterAttrPolicy)
+	if !ok {
+		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: Failed to parse counter expression data")
+	}
+	packets, ok := AttrNetToHost[uint64](linux.NFTA_COUNTER_PACKETS, attrs)
+	if !ok {
+		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: Failed to parse NFTA_COUNTER_PACKETS attribute")
+	}
+	bytes, ok := AttrNetToHost[uint64](linux.NFTA_COUNTER_BYTES, attrs)
+	if !ok {
+		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: Failed to parse NFTA_COUNTER_BYTES attribute")
+	}
+	return newCounter(bytes, packets), nil
 }

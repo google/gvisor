@@ -19,6 +19,7 @@ import (
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
@@ -110,4 +111,14 @@ func (op ranged) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *Rule
 		// Comparison is false, so break from the rule.
 		regs.verdict = stack.NFVerdict{Code: VC(linux.NFT_BREAK)}
 	}
+}
+
+func (op ranged) GetExprName() string {
+	return "ranged"
+}
+
+// TODO: b/452648112 - Implement dump for ranged operation.
+func (op ranged) Dump() ([]byte, *syserr.AnnotatedError) {
+	log.Warningf("Nftables: Dumping ranged operation is not implemented")
+	return nil, nil
 }

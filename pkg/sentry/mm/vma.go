@@ -73,7 +73,7 @@ func (mm *MemoryManager) createVMALocked(ctx context.Context, opts memmap.MMapOp
 
 	if opts.MLockMode != memmap.MLockNone {
 		// Check against RLIMIT_MEMLOCK.
-		if creds := auth.CredentialsFromContext(ctx); !creds.HasCapabilityIn(linux.CAP_IPC_LOCK, creds.UserNamespace.Root()) {
+		if !auth.CredentialsFromContext(ctx).HasRootCapability(linux.CAP_IPC_LOCK) {
 			mlockLimit := limits.FromContext(ctx).Get(limits.MemoryLocked).Cur
 			if mlockLimit == 0 {
 				return vmaIterator{}, hostarch.AddrRange{}, droppedIDs, linuxerr.EPERM

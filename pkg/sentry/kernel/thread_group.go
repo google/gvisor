@@ -445,7 +445,7 @@ func (tg *ThreadGroup) SetControllingTTY(ctx context.Context, tty *TTY, steal bo
 	}
 
 	creds := auth.CredentialsFromContext(ctx)
-	hasAdmin := creds.HasCapabilityIn(linux.CAP_SYS_ADMIN, creds.UserNamespace.Root())
+	hasAdmin := creds.HasRootCapability(linux.CAP_SYS_ADMIN)
 
 	// "If this terminal is already the controlling terminal of a different
 	// session group, then the ioctl fails with EPERM, unless the caller

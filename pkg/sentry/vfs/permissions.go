@@ -258,7 +258,7 @@ func CanActAsOwner(creds *auth.Credentials, kuid auth.KUID) bool {
 	if creds.EffectiveKUID == kuid {
 		return true
 	}
-	return creds.HasCapability(linux.CAP_FOWNER) && creds.UserNamespace.MapFromKUID(kuid).Ok()
+	return creds.HasSelfCapability(linux.CAP_FOWNER) && creds.UserNamespace.MapFromKUID(kuid).Ok()
 }
 
 // CheckLimit enforces file size rlimits. It returns error if the write
@@ -293,7 +293,7 @@ func CheckXattrPermissions(creds *auth.Credentials, ats AccessTypes, mode linux.
 	case strings.HasPrefix(name, linux.XATTR_TRUSTED_PREFIX):
 		// The trusted.* namespace can only be accessed by privileged
 		// users.
-		if creds.HasCapabilityIn(linux.CAP_SYS_ADMIN, creds.UserNamespace.Root()) {
+		if creds.HasRootCapability(linux.CAP_SYS_ADMIN) {
 			return nil
 		}
 		if ats.MayWrite() {

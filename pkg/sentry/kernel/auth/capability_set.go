@@ -93,7 +93,7 @@ func FixupVfsCapDataOnSet(creds *Credentials, value string, kuid KUID, kgid KGID
 	if !creds.HasCapabilityOnFile(linux.CAP_SETFCAP, kuid, kgid) {
 		return "", linuxerr.EPERM
 	}
-	if vfsCaps.IsRevision2() && creds.HasCapabilityIn(linux.CAP_SETFCAP, creds.UserNamespace.Root()) {
+	if vfsCaps.IsRevision2() && creds.HasRootCapability(linux.CAP_SETFCAP) {
 		// The user is privileged, allow the v2 write.
 		return value, nil
 	}
@@ -280,7 +280,7 @@ func ComputeCredsForExec(c *Credentials, f FilePrivileges, filename string,
 	gainedID := (newC.EffectiveKUID != c.RealKUID) || (newC.EffectiveKGID != c.RealKGID)
 	gainedCaps := !newC.PermittedCaps.IsSubsetOf(c.PermittedCaps)
 	if (gainedID || gainedCaps) && (noNewPrivs || stopPrivGain) {
-		if noNewPrivs || !c.HasCapability(linux.CAP_SETUID) {
+		if noNewPrivs || !c.HasSelfCapability(linux.CAP_SETUID) {
 			newC.EffectiveKUID = c.RealKUID
 			newC.EffectiveKGID = c.RealKGID
 		}

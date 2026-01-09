@@ -1118,6 +1118,10 @@ func (r *Rule) AddOpFromExprInfo(tab *Table, exprInfo ExprInfo) *syserr.Annotate
 		if op, err = initComparison(tab, exprInfo); err != nil {
 			return err
 		}
+	case "counter":
+		if op, err = initCounter(tab, exprInfo); err != nil {
+			return err
+		}
 
 	default:
 		return syserr.NewAnnotatedError(syserr.ErrNoFileOrDir, fmt.Sprintf("Nftables: Unknown expression type not found: %s", exprInfo.ExprName))
@@ -1159,6 +1163,11 @@ func (r *Rule) GetUserData() []byte {
 // GetAddressFamily returns the address family of the rule.
 func (r *Rule) GetAddressFamily() stack.AddressFamily {
 	return r.chain.GetAddressFamily()
+}
+
+// GetOperations returns the list of operations in the rule.
+func (r *Rule) GetOperations() []operation {
+	return r.ops
 }
 
 //

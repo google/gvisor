@@ -418,7 +418,7 @@ func (mm *MemoryManager) MRemap(ctx context.Context, oldAddr hostarch.Addr, oldS
 		// therefore does not return EPERM if RLIMIT_MEMLOCK is 0 and
 		// !CAP_IPC_LOCK.
 		mlockLimit := limits.FromContext(ctx).Get(limits.MemoryLocked).Cur
-		if creds := auth.CredentialsFromContext(ctx); !creds.HasCapabilityIn(linux.CAP_IPC_LOCK, creds.UserNamespace.Root()) {
+		if !auth.CredentialsFromContext(ctx).HasRootCapability(linux.CAP_IPC_LOCK) {
 			if newLockedAS := mm.lockedAS - oldSize + newSize; newLockedAS > mlockLimit {
 				return 0, linuxerr.EAGAIN
 			}
@@ -849,7 +849,7 @@ func (mm *MemoryManager) MLock(ctx context.Context, addr hostarch.Addr, length u
 
 	if mode != memmap.MLockNone {
 		// Check against RLIMIT_MEMLOCK.
-		if creds := auth.CredentialsFromContext(ctx); !creds.HasCapabilityIn(linux.CAP_IPC_LOCK, creds.UserNamespace.Root()) {
+		if !auth.CredentialsFromContext(ctx).HasRootCapability(linux.CAP_IPC_LOCK) {
 			mlockLimit := limits.FromContext(ctx).Get(limits.MemoryLocked).Cur
 			if mlockLimit == 0 {
 				mm.mappingMu.Unlock()
@@ -968,7 +968,7 @@ func (mm *MemoryManager) MLockAll(ctx context.Context, opts MLockAllOpts) error 
 	if opts.Current {
 		if opts.Mode != memmap.MLockNone {
 			// Check against RLIMIT_MEMLOCK.
-			if creds := auth.CredentialsFromContext(ctx); !creds.HasCapabilityIn(linux.CAP_IPC_LOCK, creds.UserNamespace.Root()) {
+			if !auth.CredentialsFromContext(ctx).HasRootCapability(linux.CAP_IPC_LOCK) {
 				mlockLimit := limits.FromContext(ctx).Get(limits.MemoryLocked).Cur
 				if mlockLimit == 0 {
 					mm.mappingMu.Unlock()

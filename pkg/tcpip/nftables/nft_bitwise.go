@@ -19,6 +19,7 @@ import (
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
@@ -189,4 +190,14 @@ func (op bitwise) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *Rul
 		evaluateBitwiseRshift(sregBuf, dregBuf, op.shift)
 	}
 
+}
+
+func (op bitwise) GetExprName() string {
+	return "bitwise"
+}
+
+// TODO: b/452648112 - Implement dump for bitwise operation.
+func (op bitwise) Dump() ([]byte, *syserr.AnnotatedError) {
+	log.Warningf("Nftables: Dumping bitwise operation is not implemented")
+	return nil, nil
 }

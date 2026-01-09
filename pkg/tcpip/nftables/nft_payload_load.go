@@ -115,3 +115,16 @@ func initPayloadLoad(tab *Table, attrs map[uint16]nlmsg.BytesView) (*payloadLoad
 	}
 	return newPayloadLoad(payloadBase(base), uint8(offset), uint8(blen), uint8(dreg))
 }
+
+func (op payloadLoad) GetExprName() string {
+	return "payload"
+}
+
+func (op payloadLoad) Dump() ([]byte, *syserr.AnnotatedError) {
+	m := &nlmsg.Message{}
+	m.PutAttr(linux.NFTA_PAYLOAD_DREG, nlmsg.PutU32(uint32(op.dreg)))
+	m.PutAttr(linux.NFTA_PAYLOAD_BASE, nlmsg.PutU32(uint32(op.base)))
+	m.PutAttr(linux.NFTA_PAYLOAD_OFFSET, nlmsg.PutU32(uint32(op.offset)))
+	m.PutAttr(linux.NFTA_PAYLOAD_LEN, nlmsg.PutU32(uint32(op.blen)))
+	return m.Buffer(), nil
+}

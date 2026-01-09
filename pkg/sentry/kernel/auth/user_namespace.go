@@ -132,7 +132,7 @@ func (c *Credentials) NewChildUserNamespace() (*UserNamespace, error) {
 	return &UserNamespace{
 		parent:           c.UserNamespace,
 		owner:            c.EffectiveKUID,
-		parentHadSetfcap: c.HasCapability(linux.CAP_SETFCAP),
+		parentHadSetfcap: c.HasSelfCapability(linux.CAP_SETFCAP),
 		// "When a user namespace is created, it starts without a mapping of
 		// user IDs (group IDs) to the parent user namespace." -
 		// user_namespaces(7)

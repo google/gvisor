@@ -17,6 +17,8 @@ package nftables
 import (
 	"sync/atomic"
 
+	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
@@ -44,4 +46,14 @@ func (op *last) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *Rule)
 	clock := rule.chain.table.afFilter.nftState.clock
 	op.timestampMS.Store(clock.Now().UnixMilli())
 	op.set.CompareAndSwap(false, true)
+}
+
+func (op *last) GetExprName() string {
+	return "last"
+}
+
+// TODO: b/452648112 - Implement dump for last operation.
+func (op *last) Dump() ([]byte, *syserr.AnnotatedError) {
+	log.Warningf("Nftables: Dumping last operation is not implemented")
+	return nil, nil
 }

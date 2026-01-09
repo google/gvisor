@@ -80,7 +80,7 @@ func seccomp(t *kernel.Task, mode, flags uint64, addr hostarch.Addr) (*kernel.Sy
 	}
 
 	// To prevent unprivileged parents from affecting privileged children
-	if !t.GetNoNewPrivs() && !t.Credentials().HasCapability(linux.CAP_SYS_ADMIN) {
+	if !t.GetNoNewPrivs() && !t.Credentials().HasSelfCapability(linux.CAP_SYS_ADMIN) {
 		return nil, linuxerr.EACCES
 	}
 
