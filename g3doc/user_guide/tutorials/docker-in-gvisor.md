@@ -6,7 +6,16 @@ applications.
 In gVisor, all basic docker commands should function as expected. The host
 network driver and the bridge network driver are tested and supported.
 
-> gVisor supports Docker Engine up to version 28.
+### Limitations
+
+-   gVisor supports Docker Engine up to version 28
+-   `dockerd` inside gVisor needs to be executed with flags `--iptables=false
+    --ip6tables=false` and additional network setup is needed, check
+    [images/basic/docker/start-dockerd.sh](https://github.com/google/gvisor/blob/master/images/basic/docker/start-dockerd.sh)
+    for the reference
+-   because iptables disabled, `docker run --expose=` does not expose the port;
+    if a nested container needs to expose ports, inside gVisor use `docker run
+    --network=host`
 
 ### NOTE on runsc setup
 
