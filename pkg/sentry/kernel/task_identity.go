@@ -38,9 +38,9 @@ func (t *Task) HasCapabilityIn(cp linux.Capability, ns *auth.UserNamespace) bool
 	return t.Credentials().HasCapabilityIn(cp, ns)
 }
 
-// HasCapability checks if the task has capability cp in its user namespace.
-func (t *Task) HasCapability(cp linux.Capability) bool {
-	return t.Credentials().HasCapability(cp)
+// HasSelfCapability checks if the task has capability cp in its user namespace.
+func (t *Task) HasSelfCapability(cp linux.Capability) bool {
+	return t.Credentials().HasSelfCapability(cp)
 }
 
 // HasRootCapability checks if the task has capability cp in the root user namespace.
@@ -66,7 +66,7 @@ func (t *Task) SetUID(uid auth.UID) error {
 	// effective UID of the caller is root (more precisely: if the caller has
 	// the CAP_SETUID capability), the real UID and saved set-user-ID are also
 	// set." - setuid(2)
-	if creds.HasCapability(linux.CAP_SETUID) {
+	if creds.HasSelfCapability(linux.CAP_SETUID) {
 		t.setKUIDsUnchecked(kuid, kuid, kuid)
 		return nil
 	}
@@ -101,7 +101,7 @@ func (t *Task) SetREUID(r, e auth.UID) error {
 			return linuxerr.EINVAL
 		}
 	}
-	if !creds.HasCapability(linux.CAP_SETUID) {
+	if !creds.HasSelfCapability(linux.CAP_SETUID) {
 		// "Unprivileged processes may only set the effective user ID to the
 		// real user ID, the effective user ID, or the saved set-user-ID."
 		if newE != creds.RealKUID && newE != creds.EffectiveKUID && newE != creds.SavedKUID {
@@ -237,7 +237,7 @@ func (t *Task) SetGID(gid auth.GID) error {
 	if !kgid.Ok() {
 		return linuxerr.EINVAL
 	}
-	if creds.HasCapability(linux.CAP_SETGID) {
+	if creds.HasSelfCapability(linux.CAP_SETGID) {
 		t.setKGIDsUnchecked(kgid, kgid, kgid)
 		return nil
 	}
@@ -267,7 +267,7 @@ func (t *Task) SetREGID(r, e auth.GID) error {
 			return linuxerr.EINVAL
 		}
 	}
-	if !creds.HasCapability(linux.CAP_SETGID) {
+	if !creds.HasSelfCapability(linux.CAP_SETGID) {
 		if newE != creds.RealKGID && newE != creds.EffectiveKGID && newE != creds.SavedKGID {
 			return linuxerr.EPERM
 		}
@@ -346,7 +346,7 @@ func (t *Task) SetExtraGIDs(gids []auth.GID) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	creds := t.Credentials()
-	if !creds.HasCapability(linux.CAP_SETGID) {
+	if !creds.HasSelfCapability(linux.CAP_SETGID) {
 		return linuxerr.EPERM
 	}
 	kgids := make([]auth.KGID, len(gids))
@@ -387,7 +387,7 @@ func (t *Task) SetCapabilitySets(permitted, inheritable, effective auth.Capabili
 	// "It is also a limiting superset for the capabilities that may be added
 	// to the inheritable set by a thread that does not have the CAP_SETPCAP
 	// capability in its effective set."
-	if !creds.HasCapability(linux.CAP_SETPCAP) && (inheritable & ^(creds.InheritableCaps|creds.PermittedCaps) != 0) {
+	if !creds.HasSelfCapability(linux.CAP_SETPCAP) && (inheritable & ^(creds.InheritableCaps|creds.PermittedCaps) != 0) {
 		return linuxerr.EPERM
 	}
 	// "If a thread drops a capability from its permitted set, it can never
@@ -415,7 +415,7 @@ func (t *Task) SetCapabilitySets(permitted, inheritable, effective auth.Capabili
 // Preconditions: The caller must be running on the task goroutine.
 func (t *Task) DropBoundingCapability(cp linux.Capability) error {
 	creds := t.Credentials()
-	if !creds.HasCapability(linux.CAP_SETPCAP) {
+	if !creds.HasSelfCapability(linux.CAP_SETPCAP) {
 		return linuxerr.EPERM
 	}
 	creds = creds.Fork() // The credentials object is immutable. See doc for creds.

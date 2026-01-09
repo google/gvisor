@@ -479,8 +479,7 @@ func (t *Task) Setns(fd *vfs.FileDescription, flags int32) error {
 		if flags != 0 && flags != linux.CLONE_NEWNET {
 			return linuxerr.EINVAL
 		}
-		if !t.HasCapabilityIn(linux.CAP_SYS_ADMIN, ns.UserNamespace()) ||
-			!t.Credentials().HasCapability(linux.CAP_SYS_ADMIN) {
+		if !t.HasCapabilityIn(linux.CAP_SYS_ADMIN, ns.UserNamespace()) || !t.HasSelfCapability(linux.CAP_SYS_ADMIN) {
 			return linuxerr.EPERM
 		}
 		oldNS := t.NetworkNamespace()
@@ -494,8 +493,7 @@ func (t *Task) Setns(fd *vfs.FileDescription, flags int32) error {
 		if flags != 0 && flags != linux.CLONE_NEWIPC {
 			return linuxerr.EINVAL
 		}
-		if !t.HasCapabilityIn(linux.CAP_SYS_ADMIN, ns.UserNamespace()) ||
-			!t.Credentials().HasCapability(linux.CAP_SYS_ADMIN) {
+		if !t.HasCapabilityIn(linux.CAP_SYS_ADMIN, ns.UserNamespace()) || !t.HasSelfCapability(linux.CAP_SYS_ADMIN) {
 			return linuxerr.EPERM
 		}
 		oldNS := t.IPCNamespace()
@@ -509,9 +507,7 @@ func (t *Task) Setns(fd *vfs.FileDescription, flags int32) error {
 		if flags != 0 && flags != linux.CLONE_NEWNS {
 			return linuxerr.EINVAL
 		}
-		if !t.HasCapabilityIn(linux.CAP_SYS_ADMIN, ns.Owner) ||
-			!t.Credentials().HasCapability(linux.CAP_SYS_CHROOT) ||
-			!t.Credentials().HasCapability(linux.CAP_SYS_ADMIN) {
+		if !t.HasCapabilityIn(linux.CAP_SYS_ADMIN, ns.Owner) || !t.HasSelfCapability(linux.CAP_SYS_CHROOT) || !t.HasSelfCapability(linux.CAP_SYS_ADMIN) {
 			return linuxerr.EPERM
 		}
 		oldFSContext := t.FSContext()
@@ -540,8 +536,7 @@ func (t *Task) Setns(fd *vfs.FileDescription, flags int32) error {
 		if flags != 0 && flags != linux.CLONE_NEWUTS {
 			return linuxerr.EINVAL
 		}
-		if !t.HasCapabilityIn(linux.CAP_SYS_ADMIN, ns.UserNamespace()) ||
-			!t.Credentials().HasCapability(linux.CAP_SYS_ADMIN) {
+		if !t.HasCapabilityIn(linux.CAP_SYS_ADMIN, ns.UserNamespace()) || !t.HasSelfCapability(linux.CAP_SYS_ADMIN) {
 			return linuxerr.EPERM
 		}
 		oldNS := t.UTSNamespace()
@@ -555,8 +550,7 @@ func (t *Task) Setns(fd *vfs.FileDescription, flags int32) error {
 		if flags != 0 && flags != linux.CLONE_NEWPID {
 			return linuxerr.EINVAL
 		}
-		if !t.HasCapabilityIn(linux.CAP_SYS_ADMIN, ns.UserNamespace()) ||
-			!t.Credentials().HasCapability(linux.CAP_SYS_ADMIN) {
+		if !t.HasCapabilityIn(linux.CAP_SYS_ADMIN, ns.UserNamespace()) || !t.HasSelfCapability(linux.CAP_SYS_ADMIN) {
 			return linuxerr.EPERM
 		}
 
@@ -676,7 +670,7 @@ func (t *Task) Unshare(flags int32) error {
 		newCreds = true
 	}
 	if flags&(linux.CLONE_NEWPID|linux.CLONE_NEWNET|linux.CLONE_NEWUTS|linux.CLONE_NEWIPC|linux.CLONE_NEWNS) != 0 {
-		if !creds.HasCapability(linux.CAP_SYS_ADMIN) {
+		if !creds.HasSelfCapability(linux.CAP_SYS_ADMIN) {
 			return linuxerr.EPERM
 		}
 	}

@@ -62,8 +62,7 @@ func (p *provider) Socket(t *kernel.Task, skType linux.SockType, protocol int) (
 		}
 	case syscall.SOCK_RAW:
 		// Raw sockets require CAP_NET_RAW.
-		creds := t.Credentials()
-		if !creds.HasCapabilityIn(linux.CAP_NET_RAW, t.NetworkNamespace().UserNamespace()) {
+		if !t.HasCapabilityIn(linux.CAP_NET_RAW, t.NetworkNamespace().UserNamespace()) {
 			return nil, syserr.ErrPermissionDenied
 		}
 	default:

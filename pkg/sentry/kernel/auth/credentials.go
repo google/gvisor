@@ -213,16 +213,21 @@ func (c *Credentials) HasCapabilityIn(cp linux.Capability, ns *UserNamespace) bo
 	}
 }
 
-// HasCapability returns true if c has capability cp in its user namespace.
-func (c *Credentials) HasCapability(cp linux.Capability) bool {
+// HasSelfCapability returns true if c has capability cp in its user namespace.
+func (c *Credentials) HasSelfCapability(cp linux.Capability) bool {
 	return c.HasCapabilityIn(cp, c.UserNamespace)
+}
+
+// HasRootCapability returns true if c has capability cp in c's user namespace's root.
+func (c *Credentials) HasRootCapability(cp linux.Capability) bool {
+	return c.HasCapabilityIn(cp, c.UserNamespace.Root())
 }
 
 // HasCapabilityOnFile returns true if creds has the given capability with
 // respect to a file with the given owning UID and GID, consistent with Linux's
 // kernel/capability.c:capable_wrt_inode_uidgid().
 func (c *Credentials) HasCapabilityOnFile(cp linux.Capability, kuid KUID, kgid KGID) bool {
-	return c.HasCapability(cp) && c.UserNamespace.MapFromKUID(kuid).Ok() && c.UserNamespace.MapFromKGID(kgid).Ok()
+	return c.HasSelfCapability(cp) && c.UserNamespace.MapFromKUID(kuid).Ok() && c.UserNamespace.MapFromKGID(kgid).Ok()
 }
 
 // UseUID checks that c can use uid in its user namespace, then translates it
@@ -237,7 +242,7 @@ func (c *Credentials) UseUID(uid UID) (KUID, error) {
 		return NoID, linuxerr.EINVAL
 	}
 	// If c has CAP_SETUID, then it can use any UID in its user namespace.
-	if c.HasCapability(linux.CAP_SETUID) {
+	if c.HasSelfCapability(linux.CAP_SETUID) {
 		return kuid, nil
 	}
 	// Otherwise, c must already have the UID as its real, effective, or saved
@@ -255,7 +260,7 @@ func (c *Credentials) UseGID(gid GID) (KGID, error) {
 	if !kgid.Ok() {
 		return NoID, linuxerr.EINVAL
 	}
-	if c.HasCapability(linux.CAP_SETGID) {
+	if c.HasSelfCapability(linux.CAP_SETGID) {
 		return kgid, nil
 	}
 	if kgid == c.RealKGID || kgid == c.EffectiveKGID || kgid == c.SavedKGID {

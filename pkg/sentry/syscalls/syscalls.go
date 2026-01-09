@@ -115,7 +115,7 @@ func CapError(name string, c linux.Capability, note string, urls []string) kerne
 	return kernel.Syscall{
 		Name: name,
 		Fn: func(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-			if !t.HasCapability(c) {
+			if !t.HasRootCapability(c) {
 				return 0, nil, linuxerr.EPERM
 			}
 			t.Kernel().EmitUnimplementedEvent(t, sysno)
