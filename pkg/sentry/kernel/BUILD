@@ -9,7 +9,7 @@ package(
 
 go_template_instance(
     name = "atomicptr_bucket_slice",
-    out = "atomicptr_bucket_slice_unsafe.go",
+    out = "atomicptr_bucket_slice.go",
     package = "kernel",
     prefix = "descriptorBucketSlice",
     template = "//pkg/sync/atomicptr:generic_atomicptr",
@@ -20,7 +20,7 @@ go_template_instance(
 
 go_template_instance(
     name = "atomicptr_bucket",
-    out = "atomicptr_bucket_unsafe.go",
+    out = "atomicptr_bucket.go",
     package = "kernel",
     prefix = "descriptorBucket",
     template = "//pkg/sync/atomicptr:generic_atomicptr",
@@ -31,7 +31,7 @@ go_template_instance(
 
 go_template_instance(
     name = "atomicptr_descriptor",
-    out = "atomicptr_descriptor_unsafe.go",
+    out = "atomicptr_descriptor.go",
     package = "kernel",
     prefix = "descriptor",
     template = "//pkg/sync/atomicptr:generic_atomicptr",
@@ -42,7 +42,7 @@ go_template_instance(
 
 go_template_instance(
     name = "atomicptr_fscontext",
-    out = "atomicptr_fscontext_unsafe.go",
+    out = "atomicptr_fscontext.go",
     package = "kernel",
     prefix = "fsContext",
     template = "//pkg/sync/atomicptr:generic_atomicptr",
@@ -240,9 +240,9 @@ go_library(
     name = "kernel",
     srcs = [
         "aio.go",
-        "atomicptr_bucket_slice_unsafe.go",
-        "atomicptr_bucket_unsafe.go",
-        "atomicptr_descriptor_unsafe.go",
+        "atomicptr_bucket.go",
+        "atomicptr_bucket_slice.go",
+        "atomicptr_descriptor.go",
         "cgroup.go",
         "cgroup_mounts_mutex.go",
         "cgroup_mutex.go",
