@@ -2357,21 +2357,14 @@ TEST_P(TcpSocketTest, SetPMTUD) {
       SyscallSucceeds());
   EXPECT_EQ(got, IP_PMTUDISC_DONT);
 
-  // IP_PMTUDISC_PROBE is not supported by gVisor.
   set = IP_PMTUDISC_PROBE;
-  if (IsRunningOnGvisor() && !IsRunningWithHostinet()) {
-    ASSERT_THAT(
-        setsockopt(accepted_.get(), SOL_IP, IP_MTU_DISCOVER, &set, length),
-        SyscallFailsWithErrno(ENOTSUP));
-  } else {
-    ASSERT_THAT(
-        setsockopt(accepted_.get(), SOL_IP, IP_MTU_DISCOVER, &set, length),
-        SyscallSucceeds());
-    ASSERT_THAT(
-        getsockopt(accepted_.get(), SOL_IP, IP_MTU_DISCOVER, &got, &length),
-        SyscallSucceeds());
-    EXPECT_EQ(got, IP_PMTUDISC_PROBE);
-  }
+  ASSERT_THAT(
+      setsockopt(accepted_.get(), SOL_IP, IP_MTU_DISCOVER, &set, length),
+      SyscallSucceeds());
+  ASSERT_THAT(
+      getsockopt(accepted_.get(), SOL_IP, IP_MTU_DISCOVER, &got, &length),
+      SyscallSucceeds());
+  EXPECT_EQ(got, IP_PMTUDISC_PROBE);
 }
 
 TEST_P(SimpleTcpSocketTest, GetSocketAcceptConnWithShutdown) {
