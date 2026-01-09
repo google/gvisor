@@ -729,6 +729,10 @@ func (rw *regularFileReadWriter) ReadToBlocks(dsts safemem.BlockSeq) (uint64, er
 //
 // Preconditions: rw.file.inode.mu must be held.
 func (rw *regularFileReadWriter) WriteFromBlocks(srcs safemem.BlockSeq) (uint64, error) {
+	if srcs.IsEmpty() {
+		return 0, nil
+	}
+
 	// Hold dataMu so we can modify size.
 	rw.file.dataMu.Lock()
 	defer rw.file.dataMu.Unlock()
