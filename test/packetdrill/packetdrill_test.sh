@@ -120,8 +120,7 @@ declare -r TIMEOUT="60"
 declare -r IMAGE_TAG="gvisor.dev/images/packetdrill"
 
 # Make sure that docker is installed and usable.
-docker --version
-docker info
+docker version
 
 function finish {
   local cleanup_success=1

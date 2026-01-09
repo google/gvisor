@@ -1,6 +1,17 @@
+FROM golang:1.22 AS builder
+
+COPY run_sample.go /run_sample.go
+RUN CGO_ENABLED=0         go build -o /run_sample /run_sample.go && \
+    CGO_ENABLED=0 GOBIN=/ go install github.com/TheZoraiz/ascii-image-converter@d05a757c5e02ab23e97b6f6fca4e1fbeb10ab559
+
 FROM nvidia/cuda:12.8.1-devel-ubuntu22.04
 
+# From: https://github.com/NVIDIA/cuda-samples/releases
+# Ideally, pick a release that matches the CUDA version of the image above.
+ARG CUDA_SAMPLES_VERSION=v12.8
+
 WORKDIR /
+COPY *.cu *.h *.sh *.cc /
 ENV PATH=$PATH:/usr/local/nvidia/bin
 RUN export DEBIAN_FRONTEND=noninteractive; \
     apt-get update && \
@@ -9,7 +20,6 @@ RUN export DEBIAN_FRONTEND=noninteractive; \
       cmake \
       freeglut3 freeglut3-dev \
       git \
-      golang \
       imagemagick \
       libegl-dev \
       libfreeimage3 libfreeimage-dev \
@@ -22,27 +32,21 @@ RUN export DEBIAN_FRONTEND=noninteractive; \
       llvm \
       mpich \
       pkg-config \
-      vim \
-      wget \
       x11-xserver-utils \
       xdotool \
       xvfb \
-      zlib1g zlib1g-dev \
-      && apt -y purge 'golang*'
+      zlib1g zlib1g-dev
 
-RUN git clone --depth=1 --branch=v12.8 --single-branch \
-      https://github.com/NVIDIA/cuda-samples.git /cuda-samples && cd /cuda-samples
-
-ADD *.cu *.h *.sh *.go *.cc /
-
-RUN chmod 555 /*.sh && /install_go.sh && rm /install_go.sh && \
-    gcc -o /unsupported_ioctl /unsupported_ioctl.cc && \
-    go install \
-      github.com/TheZoraiz/ascii-image-converter@d05a757c5e02ab23e97b6f6fca4e1fbeb10ab559 && \
-    mv "$HOME/go/bin/ascii-image-converter" /usr/bin/ && \
-    go build -o /run_sample /run_sample.go && \
+RUN git clone --depth=1 --branch="$CUDA_SAMPLES_VERSION" --single-branch \
+      https://github.com/NVIDIA/cuda-samples.git /cuda-samples && \
     mkdir /cuda-samples/build && cd /cuda-samples/build && \
     cmake ..
+
+RUN chmod 555 /*.sh && \
+    gcc -o /unsupported_ioctl /unsupported_ioctl.cc
+
+COPY --from=builder /run_sample /run_sample
+COPY --from=builder /ascii-image-converter /usr/bin/
 
 # Override entrypoint to nothing, otherwise all invocations will have
 # a copyright notice printed, which breaks parsing the stdout logs.
