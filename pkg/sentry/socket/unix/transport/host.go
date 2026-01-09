@@ -24,6 +24,7 @@ import (
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fdnotifier"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -61,7 +62,7 @@ func (c *SCMRights) Release(ctx context.Context) {
 //
 // +stateify savable
 type HostConnectedEndpoint struct {
-	HostConnectedEndpointRefs
+	hostConnectedEndpointRefs
 
 	// mu protects fd below.
 	mu sync.RWMutex `state:"nosave"`
@@ -88,6 +89,11 @@ type HostConnectedEndpoint struct {
 
 	// wrShutdown is true if transmissions have been shutdown with SHUT_WR.
 	wrShutdown atomicbitops.Bool
+}
+
+// +stateify transparent
+type hostConnectedEndpointRefs struct {
+	refs.Refs[HostConnectedEndpoint]
 }
 
 // init performs initialization required for creating new
@@ -149,7 +155,7 @@ func NewHostConnectedEndpoint(hostFD int, addr string) (*HostConnectedEndpoint, 
 		return nil, err
 	}
 
-	// HostConnectedEndpointRefs start off with a single reference. We need two.
+	// hostConnectedEndpointRefs start off with a single reference. We need two.
 	e.IncRef()
 	return &e, nil
 }

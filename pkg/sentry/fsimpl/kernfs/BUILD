@@ -42,50 +42,6 @@ go_template_instance(
     },
 )
 
-go_template_instance(
-    name = "static_directory_refs",
-    out = "static_directory_refs.go",
-    package = "kernfs",
-    prefix = "StaticDirectory",
-    template = "//pkg/refs:refs_template",
-    types = {
-        "T": "StaticDirectory",
-    },
-)
-
-go_template_instance(
-    name = "dir_refs",
-    out = "dir_refs.go",
-    package = "kernfs_test",
-    prefix = "dir",
-    template = "//pkg/refs:refs_template",
-    types = {
-        "T": "dir",
-    },
-)
-
-go_template_instance(
-    name = "readonly_dir_refs",
-    out = "readonly_dir_refs.go",
-    package = "kernfs_test",
-    prefix = "readonlyDir",
-    template = "//pkg/refs:refs_template",
-    types = {
-        "T": "readonlyDir",
-    },
-)
-
-go_template_instance(
-    name = "synthetic_directory_refs",
-    out = "synthetic_directory_refs.go",
-    package = "kernfs",
-    prefix = "syntheticDirectory",
-    template = "//pkg/refs:refs_template",
-    types = {
-        "T": "syntheticDirectory",
-    },
-)
-
 declare_rwmutex(
     name = "ancestry_mutex",
     out = "ancestry_mutex.go",
@@ -123,10 +79,8 @@ go_library(
         "mmap_util.go",
         "save_restore.go",
         "slot_list.go",
-        "static_directory_refs.go",
         "symlink.go",
         "synthetic_directory.go",
-        "synthetic_directory_refs.go",
     ],
     visibility = ["//pkg/sentry:internal"],
     deps = [
@@ -156,9 +110,7 @@ go_test(
     name = "kernfs_test",
     size = "small",
     srcs = [
-        "dir_refs.go",
         "kernfs_test.go",
-        "readonly_dir_refs.go",
     ],
     deps = [
         ":kernfs",

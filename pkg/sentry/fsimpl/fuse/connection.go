@@ -24,6 +24,7 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/syserr"
@@ -230,6 +231,9 @@ type connection struct {
 	// This flag only influences performance, not correctness of the program.
 	noOpen bool
 }
+
+// +stateify transparent
+type connectionRefs struct{ refs.Refs[connection] }
 
 func connError(err error) error {
 	// The error may contain arbitrary errno values that can't be converted.

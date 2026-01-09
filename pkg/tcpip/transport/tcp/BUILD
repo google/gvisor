@@ -118,17 +118,6 @@ go_template_instance(
 )
 
 go_template_instance(
-    name = "tcp_segment_refs",
-    out = "tcp_segment_refs.go",
-    package = "tcp",
-    prefix = "segment",
-    template = "//pkg/refs:refs_template",
-    types = {
-        "T": "segment",
-    },
-)
-
-go_template_instance(
     name = "tcp_endpoint_list",
     out = "tcp_endpoint_list.go",
     package = "tcp",
@@ -182,7 +171,6 @@ go_library(
         "state.go",
         "tcp_endpoint_list.go",
         "tcp_segment_list.go",
-        "tcp_segment_refs.go",
         "timer.go",
     ],
     visibility = ["//visibility:public"],

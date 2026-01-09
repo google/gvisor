@@ -88,39 +88,6 @@ go_template_instance(
     },
 )
 
-go_template_instance(
-    name = "file_description_refs",
-    out = "file_description_refs.go",
-    package = "vfs",
-    prefix = "FileDescription",
-    template = "//pkg/refs:refs_template",
-    types = {
-        "T": "FileDescription",
-    },
-)
-
-go_template_instance(
-    name = "mount_namespace_refs",
-    out = "mount_namespace_refs.go",
-    package = "vfs",
-    prefix = "namespace",
-    template = "//pkg/refs:refs_template",
-    types = {
-        "T": "MountNamespace",
-    },
-)
-
-go_template_instance(
-    name = "filesystem_refs",
-    out = "filesystem_refs.go",
-    package = "vfs",
-    prefix = "Filesystem",
-    template = "//pkg/refs:refs_template",
-    types = {
-        "T": "Filesystem",
-    },
-)
-
 proto_library(
     name = "events",
     srcs = ["events.proto"],
@@ -143,10 +110,8 @@ go_library(
         "event_list.go",
         "file_description.go",
         "file_description_impl_util.go",
-        "file_description_refs.go",
         "filesystem.go",
         "filesystem_impl_util.go",
-        "filesystem_refs.go",
         "filesystem_type.go",
         "inotify.go",
         "inotify_event_mutex.go",
@@ -154,7 +119,6 @@ go_library(
         "lock.go",
         "mount.go",
         "mount_list.go",
-        "mount_namespace_refs.go",
         "mount_ring.go",
         "mount_unsafe.go",
         "namespace.go",

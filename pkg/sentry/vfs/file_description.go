@@ -21,6 +21,7 @@ import (
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/lock"
 	"gvisor.dev/gvisor/pkg/sentry/fsmetric"
@@ -42,7 +43,7 @@ import (
 //
 // +stateify savable
 type FileDescription struct {
-	FileDescriptionRefs
+	fileDescriptionRefs
 
 	// creds is the credentials under which the FileDescription was opened. It is immutable.
 	creds *auth.Credentials
@@ -93,6 +94,9 @@ type FileDescription struct {
 	// immutable. This should be the last field in FileDescription.
 	impl FileDescriptionImpl
 }
+
+// +stateify transparent
+type fileDescriptionRefs struct{ refs.Refs[FileDescription] }
 
 // FileDescriptionOptions contains options to FileDescription.Init().
 //
@@ -162,7 +166,7 @@ func (fd *FileDescription) Init(impl FileDescriptionImpl, flags uint32, creds *a
 
 // DecRef decrements fd's reference count.
 func (fd *FileDescription) DecRef(ctx context.Context) {
-	fd.FileDescriptionRefs.DecRef(func() {
+	fd.fileDescriptionRefs.DecRef(func() {
 		// Generate inotify events.
 		ev := uint32(linux.IN_CLOSE_NOWRITE)
 		if fd.IsWritable() {

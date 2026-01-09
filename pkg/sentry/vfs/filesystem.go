@@ -20,6 +20,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fspath"
+	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
 )
@@ -34,7 +35,7 @@ import (
 //
 // +stateify savable
 type Filesystem struct {
-	FilesystemRefs
+	filesystemRefs
 
 	// vfs is the VirtualFilesystem that uses this Filesystem. vfs is
 	// immutable.
@@ -47,6 +48,9 @@ type Filesystem struct {
 	// immutable. This should be the last field in Dentry.
 	impl FilesystemImpl
 }
+
+// +stateify transparent
+type filesystemRefs struct{ refs.Refs[Filesystem] }
 
 // Init must be called before first use of fs.
 func (fs *Filesystem) Init(vfsObj *VirtualFilesystem, fsType FilesystemType, impl FilesystemImpl) {
@@ -76,7 +80,7 @@ func (fs *Filesystem) Impl() FilesystemImpl {
 
 // DecRef decrements fs' reference count.
 func (fs *Filesystem) DecRef(ctx context.Context) {
-	fs.FilesystemRefs.DecRef(func() {
+	fs.filesystemRefs.DecRef(func() {
 		fs.vfs.filesystemsMu.Lock()
 		delete(fs.vfs.filesystems, fs)
 		fs.vfs.filesystemsMu.Unlock()

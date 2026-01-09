@@ -19,6 +19,7 @@ import (
 	"io"
 
 	"gvisor.dev/gvisor/pkg/buffer"
+	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -91,6 +92,9 @@ type segment struct {
 	// lost indicates if the segment is marked as lost by RACK.
 	lost bool
 }
+
+// +stateify transparent
+type segmentRefs struct{ refs.Refs[segment] }
 
 func newIncomingSegment(id stack.TransportEndpointID, clock tcpip.Clock, pkt *stack.PacketBuffer) (*segment, error) {
 	hdr := header.TCP(pkt.TransportHeader().Slice())

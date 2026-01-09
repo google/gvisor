@@ -18,6 +18,7 @@ import (
 	"io"
 
 	"gvisor.dev/gvisor/pkg/buffer"
+	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -167,6 +168,9 @@ type PacketBuffer struct {
 	// referenced (released back to the pool).
 	onRelease func() `state:"nosave"`
 }
+
+// +stateify transparent
+type packetBufferRefs struct{ refs.Refs[PacketBuffer] }
 
 // NewPacketBuffer creates a new PacketBuffer with opts.
 func NewPacketBuffer(opts PacketBufferOptions) *PacketBuffer {

@@ -20,6 +20,7 @@ import (
 	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
@@ -371,6 +372,9 @@ type tunEndpoint struct {
 	persistent    bool
 	closed        bool
 }
+
+// +stateify transparent
+type tunEndpointRefs struct{ refs.Refs[tunEndpoint] }
 
 func (e *tunEndpoint) setPersistent(v bool) {
 	e.mu.Lock()

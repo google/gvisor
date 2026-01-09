@@ -30,17 +30,6 @@ go_template_instance(
     },
 )
 
-go_template_instance(
-    name = "inode_refs",
-    out = "inode_refs.go",
-    package = "tmpfs",
-    prefix = "inode",
-    template = "//pkg/refs:refs_template",
-    types = {
-        "T": "inode",
-    },
-)
-
 declare_rwmutex(
     name = "ancestry_mutex",
     out = "ancestry_mutex.go",
@@ -87,7 +76,6 @@ go_library(
         "filesystem_mutex.go",
         "fstree.go",
         "inode_mutex.go",
-        "inode_refs.go",
         "iter_mutex.go",
         "named_pipe.go",
         "pages_used_mutex.go",

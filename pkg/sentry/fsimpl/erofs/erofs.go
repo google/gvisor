@@ -26,6 +26,7 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/erofs"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
@@ -282,6 +283,9 @@ type inode struct {
 	watches vfs.Watches
 }
 
+// +stateify transparent
+type inodeRefs struct{ refs.Refs[inode] }
+
 // getInode returns the inode identified by nid. A reference on inode is also
 // returned to caller.
 func (fs *filesystem) getInode(nid uint64) (*inode, error) {
@@ -394,6 +398,9 @@ type dentry struct {
 	// +checklocks:dirMu
 	childMap map[string]*dentry
 }
+
+// +stateify transparent
+type dentryRefs struct{ refs.Refs[dentry] }
 
 // The caller is expected to handle dentry insertion into dentry tree.
 func (fs *filesystem) newDentry(nid uint64) (*dentry, error) {

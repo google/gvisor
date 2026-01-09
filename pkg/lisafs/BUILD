@@ -8,50 +8,6 @@ package(
 )
 
 go_template_instance(
-    name = "control_fd_refs",
-    out = "control_fd_refs.go",
-    package = "lisafs",
-    prefix = "controlFD",
-    template = "//pkg/refs:refs_template",
-    types = {
-        "T": "ControlFD",
-    },
-)
-
-go_template_instance(
-    name = "open_fd_refs",
-    out = "open_fd_refs.go",
-    package = "lisafs",
-    prefix = "openFD",
-    template = "//pkg/refs:refs_template",
-    types = {
-        "T": "OpenFD",
-    },
-)
-
-go_template_instance(
-    name = "bound_socket_fd_refs",
-    out = "bound_socket_fd_refs.go",
-    package = "lisafs",
-    prefix = "boundSocketFD",
-    template = "//pkg/refs:refs_template",
-    types = {
-        "T": "BoundSocketFD",
-    },
-)
-
-go_template_instance(
-    name = "node_fd_refs",
-    out = "node_fd_refs.go",
-    package = "lisafs",
-    prefix = "node",
-    template = "//pkg/refs:refs_template",
-    types = {
-        "T": "Node",
-    },
-)
-
-go_template_instance(
     name = "control_fd_list",
     out = "control_fd_list.go",
     package = "lisafs",
@@ -78,22 +34,18 @@ go_template_instance(
 go_library(
     name = "lisafs",
     srcs = [
-        "bound_socket_fd_refs.go",
         "channel.go",
         "client.go",
         "client_file.go",
         "communicator.go",
         "connection.go",
         "control_fd_list.go",
-        "control_fd_refs.go",
         "fd.go",
         "handlers.go",
         "lisafs.go",
         "message.go",
         "node.go",
-        "node_fd_refs.go",
         "open_fd_list.go",
-        "open_fd_refs.go",
         "sample_message.go",
         "server.go",
         "sock.go",

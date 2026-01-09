@@ -23,6 +23,7 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -63,6 +64,9 @@ type tasksInode struct {
 	// in /proc/pid/cgroup if not nil.
 	fakeCgroupControllers map[string]string
 }
+
+// +stateify transparent
+type tasksInodeRefs struct{ refs.Refs[tasksInode] }
 
 var _ kernfs.Inode = (*tasksInode)(nil)
 

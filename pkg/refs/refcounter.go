@@ -31,8 +31,8 @@ type RefCounter interface {
 	// IncRef increments the reference counter on the object.
 	IncRef()
 
-	// DecRef decrements the object's reference count. Users of refs_template.Refs
-	// may specify a destructor to be called once the reference count reaches zero.
+	// DecRef decrements the object's reference count. Users of Refs may specify
+	// a destructor to be called once the reference count reaches zero.
 	DecRef(ctx context.Context)
 }
 
