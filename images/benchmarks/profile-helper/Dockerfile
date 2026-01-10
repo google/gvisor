@@ -1,4 +1,4 @@
-FROM golang:1.22 AS builder
+FROM golang:1.25 AS builder
 
 COPY main.go /main.go
 RUN CGO_ENABLED=0 go build -o /profilehelper /main.go
