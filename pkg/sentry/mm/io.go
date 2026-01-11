@@ -313,9 +313,6 @@ func (mm *MemoryManager) CopyInTo(ctx context.Context, ars hostarch.AddrRangeSeq
 			}
 			ars = ars.Tail()
 		}
-		if done == 0 {
-			return int64(done), bufErr
-		}
 		n, err := dst.WriteFromBlocks(safemem.BlockSeqOf(safemem.BlockFromSafeSlice(buf[:done])))
 		if err != nil {
 			return int64(n), err
