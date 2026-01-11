@@ -30,7 +30,7 @@ def _runtime_test_impl(ctx):
     return [DefaultInfo(
         executable = runner,
         runfiles = ctx.runfiles(
-            files = ctx.files._runner + ctx.files.exclude_file + ctx.files._proctor,
+            files = ctx.files._runner + ctx.files.exclude_file + ctx.files._proctor + ctx.files._runsc,
             collect_default = True,
             collect_data = True,
         ),
