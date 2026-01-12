@@ -105,7 +105,7 @@ func (vfs *VirtualFilesystem) SetMountPropagationAt(ctx context.Context, creds *
 	recursive := propFlag&linux.MS_REC != 0
 	propFlag &= propagationFlags
 	// Check if flags is a power of 2. If not then more than one flag is set.
-	if !bits.IsPowerOfTwo32(propFlag) {
+	if !bits.IsPowerOfTwo(propFlag) {
 		return linuxerr.EINVAL
 	}
 	vd, err := vfs.getMountpoint(ctx, creds, pop)

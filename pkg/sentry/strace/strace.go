@@ -682,10 +682,10 @@ func (s SyscallMap) SyscallEnter(t *kernel.Task, sysno uintptr, args arch.Syscal
 	}
 
 	var output, eventOutput []string
-	if bits.IsOn32(flags, kernel.StraceEnableLog) {
+	if bits.IsOn(flags, kernel.StraceEnableLog) {
 		output = info.printEnter(t, args)
 	}
-	if bits.IsOn32(flags, kernel.StraceEnableEvent) {
+	if bits.IsOn(flags, kernel.StraceEnableEvent) {
 		eventOutput = info.sendEnter(t, args)
 	}
 
@@ -706,10 +706,10 @@ func (s SyscallMap) SyscallExit(context any, t *kernel.Task, sysno, rval uintptr
 	c := context.(*syscallContext)
 
 	elapsed := time.Since(c.start)
-	if bits.IsOn32(c.flags, kernel.StraceEnableLog) {
+	if bits.IsOn(c.flags, kernel.StraceEnableLog) {
 		c.info.printExit(t, elapsed, c.logOutput, c.args, rval, err, errno)
 	}
-	if bits.IsOn32(c.flags, kernel.StraceEnableEvent) {
+	if bits.IsOn(c.flags, kernel.StraceEnableEvent) {
 		c.info.sendExit(t, elapsed, c.eventOutput, c.args, rval, err, errno)
 	}
 }
@@ -786,10 +786,10 @@ const (
 
 func convertToSyscallFlag(sinks SinkType) uint32 {
 	ret := uint32(0)
-	if bits.IsOn32(uint32(sinks), uint32(SinkTypeLog)) {
+	if bits.IsOn(uint32(sinks), uint32(SinkTypeLog)) {
 		ret |= kernel.StraceEnableLog
 	}
-	if bits.IsOn32(uint32(sinks), uint32(SinkTypeEvent)) {
+	if bits.IsOn(uint32(sinks), uint32(SinkTypeEvent)) {
 		ret |= kernel.StraceEnableEvent
 	}
 	return ret
