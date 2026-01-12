@@ -74,8 +74,6 @@ type Endpoint struct {
 	ipv4TOS uint8
 	// +checklocks:mu
 	ipv6TClass uint8
-	// +checklocks:mu
-	pmtudStrategy tcpip.PMTUDStrategy
 
 	// Lock ordering: mu > infoMu.
 	infoMu sync.RWMutex `state:"nosave"`
@@ -360,15 +358,10 @@ func (c *WriteContext) WritePacket(pkt *stack.PacketBuffer, headerIncluded bool)
 		expOptVal = c.e.ops.GetExperimentOptionValue()
 	}
 
-	c.e.mu.RLock()
-	pmtud := c.e.pmtudStrategy
-	c.e.mu.RUnlock()
-
 	err := c.route.WritePacket(stack.NetworkHeaderParams{
 		Protocol:              c.e.transProto,
 		TTL:                   c.ttl,
 		TOS:                   c.tos,
-		DF:                    pmtud == tcpip.PMTUDiscoveryWant || pmtud == tcpip.PMTUDiscoveryDo || pmtud == tcpip.PMTUDiscoveryProbe,
 		ExperimentOptionValue: expOptVal,
 	}, pkt)
 
@@ -847,13 +840,9 @@ func (e *Endpoint) GetRemoteAddress() (tcpip.FullAddress, bool) {
 func (e *Endpoint) SetSockOptInt(opt tcpip.SockOptInt, v int) tcpip.Error {
 	switch opt {
 	case tcpip.MTUDiscoverOption:
-		strategy := tcpip.PMTUDStrategy(v)
-		switch strategy {
-		case tcpip.PMTUDiscoveryWant, tcpip.PMTUDiscoveryDont, tcpip.PMTUDiscoveryDo, tcpip.PMTUDiscoveryProbe:
-			e.mu.Lock()
-			e.pmtudStrategy = strategy
-			e.mu.Unlock()
-		default:
+		// Return not supported if the value is not disabling path
+		// MTU discovery.
+		if tcpip.PMTUDStrategy(v) != tcpip.PMTUDiscoveryDont {
 			return &tcpip.ErrNotSupported{}
 		}
 
@@ -902,10 +891,8 @@ func (e *Endpoint) SetSockOptInt(opt tcpip.SockOptInt, v int) tcpip.Error {
 func (e *Endpoint) GetSockOptInt(opt tcpip.SockOptInt) (int, tcpip.Error) {
 	switch opt {
 	case tcpip.MTUDiscoverOption:
-		e.mu.Lock()
-		v := int(e.pmtudStrategy)
-		e.mu.Unlock()
-		return v, nil
+		// The only supported setting is path MTU discovery disabled.
+		return int(tcpip.PMTUDiscoveryDont), nil
 
 	case tcpip.MulticastTTLOption:
 		e.mu.Lock()

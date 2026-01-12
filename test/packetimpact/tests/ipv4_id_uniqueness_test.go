@@ -79,9 +79,14 @@ func TestIPv4RetransmitIdentificationUniqueness(t *testing.T) {
 
 			dut.SetSockOptInt(t, remoteFD, unix.IPPROTO_TCP, unix.TCP_NODELAY, 1)
 
-			// Set IP_PMTUDISC_DONT to clear the DF bit on IP packets.
-			// Fuchsia will return ENOPROTOOPT errno.
+			// TODO(b/129291778) The following socket option clears the DF bit on
+			// IP packets sent over the socket, and is currently not supported by
+			// gVisor. gVisor by default sends packets with DF=0 anyway, so the
+			// socket option being not supported does not affect the operation of
+			// this test. Once the socket option is supported, the following call
+			// can be changed to simply assert success.
 			ret, errno := dut.SetSockOptIntWithErrno(context.Background(), t, remoteFD, unix.IPPROTO_IP, linux.IP_MTU_DISCOVER, linux.IP_PMTUDISC_DONT)
+			// Fuchsia will return ENOPROTOPT errno.
 			if ret == -1 && errno != unix.ENOPROTOOPT {
 				t.Fatalf("failed to set IP_MTU_DISCOVER socket option to IP_PMTUDISC_DONT: %s", errno)
 			}
