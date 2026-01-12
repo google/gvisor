@@ -57,8 +57,10 @@ REALPATH_M := $(REPO_DIR)/tools/compat/realpath.py
 HASH := $(shell $(REALPATH_M) $(CURDIR) | md5sum | cut -c1-8)
 UNAME_S := $(shell uname -s)
 ifeq ($(UNAME_S),Darwin)
+DOCKER_HOST ?= unix://$(HOME)/.docker/run/docker.sock
 STAT_G := stat -f '%g'
 else
+DOCKER_HOST ?= unix:///var/run/docker.sock
 STAT_G := stat -c '%g'
 endif
 BUILDER_NAME := gvisor-builder-$(HASH)-$(ARCH)
@@ -69,7 +71,6 @@ DOCKER_PRIVILEGED := --privileged
 UNSANDBOXED_RUNTIME ?= runc
 BAZEL_CACHE ?= $(HOME)/.cache/bazel/
 GCLOUD_CONFIG := $(HOME)/.config/gcloud/
-DOCKER_HOST   ?= unix:///var/run/docker.sock
 DOCKER_SOCKET ?= $(patsubst unix://%,%,$(DOCKER_HOST))
 # This is used by TestNumCPU test/e2e.go which relies on
 # `dockerutil.RuntimeArgs()` to determine the expected number of CPUs.
