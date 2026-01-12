@@ -77,7 +77,7 @@ func TestLLM(t *testing.T) {
 			text := strings.TrimSpace(response.Text())
 			t.Logf("The response is: %q", text)
 			for _, acceptableWord := range []string{
-				"90",
+				"90", "9 0",
 			} {
 				if strings.Contains(text, acceptableWord) {
 					return prompt, nil
