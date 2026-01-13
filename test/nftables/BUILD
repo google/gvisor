@@ -14,6 +14,7 @@ go_library(
         "iptables_util.go",
         "nftables.go",
         "nftables_util.go",
+        "nftables_validation.go",
     ],
     visibility = ["//test/nftables:__subpackages__"],
     deps = ["//test/netutils"],

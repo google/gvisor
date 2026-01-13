@@ -42,7 +42,7 @@ func singleTest(t *testing.T, test TestCase) {
 		if tc {
 			subtest = "IPv6"
 		}
-		t.Run(subtest, func(t *testing.T) {
+		t.Run(test.Name()+"_"+subtest, func(t *testing.T) {
 			nftablesTest(t, test, tc)
 		})
 	}
@@ -150,6 +150,12 @@ func nftablesTest(t *testing.T, test TestCase, ipv6 bool) {
 
 func TestFilterInputDropAll(t *testing.T) {
 	singleTest(t, &FilterInputDropAll{})
+}
+
+func TestNftablesValidation(t *testing.T) {
+	for _, tc := range validationTests {
+		singleTest(t, tc)
+	}
 }
 
 func sendIP(ip net.IP) error {

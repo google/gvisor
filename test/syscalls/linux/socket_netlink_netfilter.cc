@@ -3601,11 +3601,14 @@ INSTANTIATE_TEST_SUITE_P(CmpRuleTest, AddRuleWithExprTest,
 
 std::vector<RuleWithExprTestParams> GetCounterRuleTestParams() {
   return {
-      RuleWithExprTestParams{.test_name = "Valid",
+      RuleWithExprTestParams{.test_name = "ValidWithDefaultValues",
                              .expr_name = "counter",
                              .expr_attrs = NlNestedAttr()
                                                .U64Attr(NFTA_COUNTER_PACKETS, 0)
                                                .U64Attr(NFTA_COUNTER_BYTES, 0)},
+      RuleWithExprTestParams{.test_name = "ValidWithNoDefaultValues",
+                             .expr_name = "counter",
+                             .expr_attrs = NlNestedAttr()},
   };
 }
 
