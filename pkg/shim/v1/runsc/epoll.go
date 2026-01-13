@@ -23,7 +23,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/containerd/cgroups"
+	cgroups "github.com/containerd/cgroups/v3/cgroup1"
 	"github.com/containerd/containerd/events"
 	"github.com/containerd/containerd/runtime"
 	"golang.org/x/sys/unix"

@@ -22,7 +22,7 @@ import (
 	"context"
 	"fmt"
 
-	cgroupsv2 "github.com/containerd/cgroups/v2"
+	cgroupsv2 "github.com/containerd/cgroups/v3/cgroup2"
 	"github.com/containerd/containerd/runtime"
 	"github.com/containerd/containerd/runtime/v2/shim"
 	"github.com/sirupsen/logrus"

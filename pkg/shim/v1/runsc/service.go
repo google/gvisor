@@ -26,10 +26,11 @@ import (
 	"time"
 
 	"github.com/BurntSushi/toml"
-	"github.com/containerd/cgroups"
-	cgroupsstats "github.com/containerd/cgroups/stats/v1"
-	cgroupsv2 "github.com/containerd/cgroups/v2"
-	cgroupsv2stats "github.com/containerd/cgroups/v2/stats"
+	cgroups "github.com/containerd/cgroups/v3"
+	cgroupsv1 "github.com/containerd/cgroups/v3/cgroup1"
+	cgroupsv1stats "github.com/containerd/cgroups/v3/cgroup1/stats"
+	cgroupsv2 "github.com/containerd/cgroups/v3/cgroup2"
+	cgroupsv2stats "github.com/containerd/cgroups/v3/cgroup2/stats"
 	"github.com/containerd/console"
 	"github.com/containerd/containerd/api/events"
 	"github.com/containerd/containerd/api/types/task"
@@ -351,10 +352,10 @@ func (s *runscService) Create(ctx context.Context, r *taskAPI.CreateTaskRequest)
 			var cgPath string
 			cgPath, err = cgroupsv2.PidGroupPath(pid)
 			if err == nil {
-				cg, err = cgroupsv2.LoadManager("/sys/fs/cgroup", cgPath)
+				cg, err = cgroupsv2.Load(cgPath)
 			}
 		} else {
-			cg, err = cgroups.Load(cgroups.V1, cgroups.PidPath(pid))
+			cg, err = cgroupsv1.Load(cgroupsv1.PidPath(pid))
 		}
 		if err != nil {
 			return nil, fmt.Errorf("loading cgroup for %d: %w", pid, err)
@@ -645,48 +646,48 @@ func (s *runscService) getStats(stats *runc.Stats, r *taskAPI.StatsRequest) (*ta
 }
 
 func (s *runscService) getV1Stats(stats *runc.Stats, r *taskAPI.StatsRequest) (*taskAPI.StatsResponse, error) {
-	metrics := &cgroupsstats.Metrics{
-		CPU: &cgroupsstats.CPUStat{
-			Usage: &cgroupsstats.CPUUsage{
+	metrics := &cgroupsv1stats.Metrics{
+		CPU: &cgroupsv1stats.CPUStat{
+			Usage: &cgroupsv1stats.CPUUsage{
 				Total:  stats.Cpu.Usage.Total,
 				Kernel: stats.Cpu.Usage.Kernel,
 				User:   stats.Cpu.Usage.User,
 				PerCPU: stats.Cpu.Usage.Percpu,
 			},
-			Throttling: &cgroupsstats.Throttle{
+			Throttling: &cgroupsv1stats.Throttle{
 				Periods:          stats.Cpu.Throttling.Periods,
 				ThrottledPeriods: stats.Cpu.Throttling.ThrottledPeriods,
 				ThrottledTime:    stats.Cpu.Throttling.ThrottledTime,
 			},
 		},
-		Memory: &cgroupsstats.MemoryStat{
+		Memory: &cgroupsv1stats.MemoryStat{
 			Cache: stats.Memory.Cache,
-			Usage: &cgroupsstats.MemoryEntry{
+			Usage: &cgroupsv1stats.MemoryEntry{
 				Limit:   stats.Memory.Usage.Limit,
 				Usage:   stats.Memory.Usage.Usage,
 				Max:     stats.Memory.Usage.Max,
 				Failcnt: stats.Memory.Usage.Failcnt,
 			},
-			Swap: &cgroupsstats.MemoryEntry{
+			Swap: &cgroupsv1stats.MemoryEntry{
 				Limit:   stats.Memory.Swap.Limit,
 				Usage:   stats.Memory.Swap.Usage,
 				Max:     stats.Memory.Swap.Max,
 				Failcnt: stats.Memory.Swap.Failcnt,
 			},
-			Kernel: &cgroupsstats.MemoryEntry{
+			Kernel: &cgroupsv1stats.MemoryEntry{
 				Limit:   stats.Memory.Kernel.Limit,
 				Usage:   stats.Memory.Kernel.Usage,
 				Max:     stats.Memory.Kernel.Max,
 				Failcnt: stats.Memory.Kernel.Failcnt,
 			},
-			KernelTCP: &cgroupsstats.MemoryEntry{
+			KernelTCP: &cgroupsv1stats.MemoryEntry{
 				Limit:   stats.Memory.KernelTCP.Limit,
 				Usage:   stats.Memory.KernelTCP.Usage,
 				Max:     stats.Memory.KernelTCP.Max,
 				Failcnt: stats.Memory.KernelTCP.Failcnt,
 			},
 		},
-		Pids: &cgroupsstats.PidsStat{
+		Pids: &cgroupsv1stats.PidsStat{
 			Current: stats.Pids.Current,
 			Limit:   stats.Pids.Limit,
 		},
