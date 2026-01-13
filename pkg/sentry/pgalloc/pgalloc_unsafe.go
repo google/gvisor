@@ -26,7 +26,7 @@ func (c *chunkInfo) sliceAt(fr memmap.FileRange) []byte {
 	return unsafe.Slice((*byte)(unsafe.Pointer(c.mapping+uintptr(fr.Start&chunkMask))), fr.Length())
 }
 
-func mincore(s []byte, buf []byte, off uint64, wasCommitted bool) error {
+func mincore(s []byte, buf []byte) error {
 	if _, _, errno := unix.RawSyscall(
 		unix.SYS_MINCORE,
 		uintptr(unsafe.Pointer(&s[0])),

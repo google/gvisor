@@ -160,7 +160,7 @@ type MemoryFile struct {
 	// nextCommitScan is the next time at which UpdateUsage() may scan the
 	// backing file for commitment information.
 	//
-	// isSaving is non-zero during f.SaveTo() to prevent concurrent calls to
+	// isSaving is true during f.SaveTo() to prevent concurrent calls to
 	// f.UpdateUsage() from marking pages as committed.
 	//
 	// All of these fields are protected by mu.
@@ -168,7 +168,7 @@ type MemoryFile struct {
 	knownCommittedBytes uint64
 	commitSeq           uint64
 	nextCommitScan      time.Time
-	isSaving            uint
+	isSaving            bool
 
 	// evictable maps EvictableMemoryUsers to eviction state.
 	//
@@ -825,7 +825,7 @@ func (f *MemoryFile) findAllocatableAndMarkUsed(alloc *allocState) (fr memmap.Fi
 						panic(fmt.Sprintf("waste pages %v have unexpected kind %v\n%s", maseg.Range(), ma.kind, f.stringLocked()))
 					}
 					ma.knownCommitted = false
-					ma.commitSeq = 0
+					ma.commitSeq = f.commitSeq
 					f.knownCommittedBytes -= malen
 					if !f.opts.DisableMemoryAccounting {
 						usage.MemoryAccounting.Dec(malen, usage.System, ma.memCgID)
@@ -1572,7 +1572,7 @@ func (f *MemoryFile) UpdateUsage(memCgIDs map[uint32]struct{}) error {
 		return nil
 	}
 
-	if f.isSaving != 0 {
+	if f.isSaving {
 		log.Debugf("pgalloc.MemoryFile.UpdateUsage() inhibited during MemoryFile save")
 		return nil
 	}
@@ -1587,7 +1587,7 @@ func (f *MemoryFile) UpdateUsage(memCgIDs map[uint32]struct{}) error {
 		f.nextCommitScan = startTime.Add(time.Second / linux.CLOCKS_PER_SEC)
 	}
 
-	err = f.updateUsageLocked(memCgIDs, false /* alsoScanCommitted */, false /* callerIsSaveTo */, mincore)
+	err = f.updateUsageLocked(memCgIDs)
 	if _, ok := err.(updateUsageDuringSaveErr); ok {
 		log.Debugf("pgalloc.MemoryFile.UpdateUsage() inhibited during MemoryFile save")
 		return nil
@@ -1600,24 +1600,11 @@ func (f *MemoryFile) UpdateUsage(memCgIDs map[uint32]struct{}) error {
 }
 
 // updateUsageLocked attempts to detect commitment of previously-uncommitted
-// pages by invoking checkCommitted, and updates memory accounting to reflect
-// newly-committed pages. If alsoScanCommitted is true, updateUsageLocked also
-// attempts to detect decommitment of previously-committed pages; this is only
-// used by save/restore, which optionally temporarily treats zeroed pages as
-// decommitted in order to skip saving them.
-//
-// For each page i in bs, checkCommitted must set committed[i] to 1 if the page
-// is committed and 0 otherwise. off is the offset at which bs begins.
-// wasCommitted is true if the page was known-committed before the call to
-// checkCommitted and false otherwise; wasCommitted can only be true if
-// alsoScanCommitted is true.
-//
-// callerIsSaveTo is true if the caller is f.SaveTo() and false if the caller
-// is f.UpdateUsage().
+// pages, and updates memory accounting to reflect newly-committed pages.
 //
 // Precondition: f.mu must be held; it may be unlocked and reacquired.
 // +checklocks:f.mu
-func (f *MemoryFile) updateUsageLocked(memCgIDs map[uint32]struct{}, alsoScanCommitted, callerIsSaveTo bool, checkCommitted func(bs []byte, committed []byte, off uint64, wasCommitted bool) error) error {
+func (f *MemoryFile) updateUsageLocked(memCgIDs map[uint32]struct{}) error {
 	// Track if anything changed to elide the merge.
 	changedAny := false
 	defer func() {
@@ -1642,8 +1629,9 @@ func (f *MemoryFile) updateUsageLocked(memCgIDs map[uint32]struct{}, alsoScanCom
 			maseg = maseg.NextSegment()
 			continue
 		}
-		wasCommitted := ma.knownCommitted
-		if !alsoScanCommitted && wasCommitted {
+		if ma.knownCommitted {
+			// Known-committed pages remain known-committed until they are
+			// decommitted.
 			maseg = maseg.NextSegment()
 			continue
 		}
@@ -1675,13 +1663,12 @@ func (f *MemoryFile) updateUsageLocked(memCgIDs map[uint32]struct{}, alsoScanCom
 			}
 
 			// Query for new pages in core.
-			// NOTE(b/165896008): mincore (which is passed as checkCommitted by
-			// f.UpdateUsage()) might take a really long time. So unlock f.mu while
-			// checkCommitted runs.
+			// NOTE(b/165896008): mincore might take a really long time. So
+			// unlock f.mu while mincore runs.
 			lastCommitSeq := f.commitSeq
 			f.commitSeq++
 			f.mu.Unlock() // +checklocksforce
-			err := checkCommitted(s, buf, chunkFR.Start, wasCommitted)
+			err := mincore(s, buf)
 			f.mu.Lock()
 			if err != nil {
 				checkErr = err
@@ -1693,58 +1680,43 @@ func (f *MemoryFile) updateUsageLocked(memCgIDs map[uint32]struct{}, alsoScanCom
 			// are no longer valid. If wasCommitted is false, then we are
 			// marking ranges that are now committed; otherwise, we are marking
 			// ranges that are now uncommitted.
-			if !callerIsSaveTo && f.isSaving != 0 {
+			if f.isSaving {
 				checkErr = updateUsageDuringSaveErr{}
 				return false
 			}
-			unchangedVal := byte(0)
-			if wasCommitted {
-				unchangedVal = 1
-			}
 			maseg = f.memAcct.LowerBoundSegment(chunkFR.Start)
 			for i := 0; i < bufLen; {
-				if buf[i]&0x1 == unchangedVal {
+				if buf[i]&0x1 == 0 {
 					i++
 					continue
 				}
-				// Scan to the end of this changed range.
+				// Scan to the end of this newly-committed range.
 				j := i + 1
 				for ; j < bufLen; j++ {
-					if buf[j]&0x1 == unchangedVal {
+					if buf[j]&0x1 == 0 {
 						break
 					}
 				}
-				changedFR := memmap.FileRange{
+				commitFR := memmap.FileRange{
 					Start: chunkFR.Start + uint64(i*hostarch.PageSize),
 					End:   chunkFR.Start + uint64(j*hostarch.PageSize),
 				}
-				// Advance maseg to changedFR.Start.
-				for maseg.Ok() && maseg.End() <= changedFR.Start {
+				// Advance maseg to commitFR.Start.
+				for maseg.Ok() && maseg.End() <= commitFR.Start {
 					maseg = maseg.NextSegment()
 				}
-				// Update pages overlapping changedFR, but don't mark ranges as
+				// Update pages overlapping commitFR, but don't mark ranges as
 				// committed if they might have raced with decommit.
-				for maseg.Ok() && maseg.Start() < changedFR.End {
-					if !maseg.ValuePtr().wasteOrReleasing &&
-						((!wasCommitted && !maseg.ValuePtr().knownCommitted && ma.commitSeq <= lastCommitSeq) ||
-							(wasCommitted && maseg.ValuePtr().knownCommitted)) {
-						maseg = f.memAcct.Isolate(maseg, changedFR)
+				for maseg.Ok() && maseg.Start() < commitFR.End {
+					if !maseg.ValuePtr().wasteOrReleasing && !maseg.ValuePtr().knownCommitted && ma.commitSeq <= lastCommitSeq {
+						maseg = f.memAcct.Isolate(maseg, commitFR)
 						ma := maseg.ValuePtr()
 						amount := maseg.Range().Length()
-						if wasCommitted {
-							ma.knownCommitted = false
-							ma.commitSeq = f.commitSeq
-							f.knownCommittedBytes -= amount
-							if !f.opts.DisableMemoryAccounting {
-								usage.MemoryAccounting.Dec(amount, ma.kind, ma.memCgID)
-							}
-						} else {
-							ma.knownCommitted = true
-							ma.commitSeq = 0
-							f.knownCommittedBytes += amount
-							if !f.opts.DisableMemoryAccounting {
-								usage.MemoryAccounting.Inc(amount, ma.kind, ma.memCgID)
-							}
+						ma.knownCommitted = true
+						ma.commitSeq = 0
+						f.knownCommittedBytes += amount
+						if !f.opts.DisableMemoryAccounting {
+							usage.MemoryAccounting.Inc(amount, ma.kind, ma.memCgID)
 						}
 						changedAny = true
 					}

@@ -62,6 +62,19 @@ func (f *MemoryFile) RestoreID() string {
 	return f.opts.RestoreID
 }
 
+// memoryFileSaved is the subset of MemoryFile that is stored in checkpoints.
+//
+// +stateify savable
+type memoryFileSaved struct {
+	unwasteSmall *unwasteSet
+	unwasteHuge  *unwasteSet
+	unfreeSmall  *unfreeSet
+	unfreeHuge   *unfreeSet
+	subreleased  map[uint64]uint64
+	memAcct      *memAcctSet
+	chunks       []chunkInfo
+}
+
 // SaveOpts provides options to MemoryFile.SaveTo().
 type SaveOpts struct {
 	// If PagesFile is not nil, then page contents will be written to PagesFile
@@ -101,28 +114,74 @@ func (f *MemoryFile) SaveTo(ctx context.Context, w io.Writer, opts *SaveOpts) er
 		panic(fmt.Sprintf("evictions still pending for %d users; call StartEvictions and WaitForEvictions before SaveTo", len(f.evictable)))
 	}
 
-	// Ensure that all pages that contain non-zero bytes are marked
-	// known-committed, since we only store known-committed pages below.
+	// Register this MemoryFile with async page saving if a pages file has been
+	// provided.
+	var amfs *asyncMemoryFileSave
+	if opts.PagesFile != nil {
+		var sf stateio.SourceFile
+		if opts.PagesFile.aw.NeedRegisterSourceFD() {
+			fileSize := uint64(len(f.chunksLoad())) * chunkSize
+			var err error
+			sf, err = opts.PagesFile.aw.RegisterSourceFD(int32(f.file.Fd()), fileSize, f.getClientFileRangeSettings(fileSize))
+			if err != nil {
+				return fmt.Errorf("failed to register MemoryFile with pages file: %w", err)
+			}
+		}
+		amfs = &asyncMemoryFileSave{
+			f:  f,
+			pf: opts.PagesFile,
+			sf: sf,
+		}
+	}
+
+	// We only want to explicitly include pages containing non-zero bytes in
+	// the checkpoint, to reduce the size of the checkpoint and improve restore
+	// performance. Scan pages for non-zero bytes and ensure that they are
+	// marked known-committed.
 	//
-	// f.updateUsageLocked() will unlock f.mu before calling our callback,
-	// allowing concurrent calls to f.UpdateUsage() => f.updateUsageLocked() to
-	// observe pages that we transiently commit (for comparisons to zero) or
-	// leave committed (if opts.ExcludeCommittedZeroPages is true). Bump
-	// f.isSaving to prevent this.
-	f.isSaving++
-	defer func() { f.isSaving-- }()
-	timeScanStart := time.Now()
-	zeroPage := make([]byte, hostarch.PageSize)
+	// If async page saving is enabled, emit writes to the pages file during
+	// scanning, which is feasible since the pages metadata file and pages file
+	// are distinct. If async page saving is disabled, we can't do this since
+	// pages would be written to the state file before the metadata needed to
+	// determine where to load them to. (We could instead emit one memAcct
+	// segment at a time, immediately before the contents of the pages it
+	// represents. However, each call to state.Save() writes some overhead
+	// (header and type information), which would bloat the state file and slow
+	// down loading when the number of memAcct segments is large.)
+	timeScanStart := gohacks.Nanotime()
+	var (
+		allocatedBytes          uint64
+		alreadyCommittedBytes   uint64
+		newCommittedBytes       uint64
+		alreadyUncommittedBytes uint64
+		newUncommittedBytes     uint64
+	)
+	asyncWritePages := func(fr memmap.FileRange) {}
+	if amfs != nil {
+		asyncWritePages = func(fr memmap.FileRange) {
+			amount := fr.Length()
+			amfs.pf.mu.Lock()
+			amfs.pf.unsaved.PushBack(apsRange{
+				amfs:      amfs,
+				FileRange: fr,
+			})
+			amfs.pf.saveOff += amount
+			amfs.pf.mu.Unlock()
+			amfs.pf.stStatus.Notify(apsSTPending)
+		}
+	}
+
+	// Reading an uncommitted page to determine if it is zero-filled will cause
+	// it to become committed. Thus, we need to decommit zero-filled pages that
+	// were not previously known to be committed to avoid increasing memory
+	// usage during scanning. Batch decommitment of transiently-committed pages
+	// to reduce host syscalls.
 	var (
 		decommitWarnOnce  sync.Once
 		decommitPendingFR memmap.FileRange
-		scanTotal         uint64
-		committedTotal    uint64
-		decommitTotal     uint64
 		decommitCount     uint64
 	)
 	decommitNow := func(fr memmap.FileRange) {
-		decommitTotal += fr.Length()
 		decommitCount++
 		if err := f.decommitFile(fr); err != nil {
 			// This doesn't impact the correctness of saved memory, it just
@@ -158,108 +217,199 @@ func (f *MemoryFile) SaveTo(ctx context.Context, w io.Writer, opts *SaveOpts) er
 			decommitPendingFR = memmap.FileRange{}
 		}
 	}
-	err := f.updateUsageLocked(nil, opts.ExcludeCommittedZeroPages, true /* callerIsSaveTo */, func(bs []byte, committed []byte, off uint64, wasCommitted bool) error {
-		scanTotal += uint64(len(bs))
-		for pgoff := 0; pgoff < len(bs); pgoff += hostarch.PageSize {
-			i := pgoff / hostarch.PageSize
-			pg := bs[pgoff : pgoff+hostarch.PageSize]
-			if !bytes.Equal(pg, zeroPage) {
-				committed[i] = 1
-				committedTotal += hostarch.PageSize
-				continue
+
+	// Batch updates to f.memAcct to reduce set mutation overhead.
+	//
+	// Invariant: If updatePendingFR.Length() != 0, all of updatePendingFR
+	// corresponds to a single segment in f.memAcct.
+	var (
+		updatePendingFR           memmap.FileRange
+		updatePendingWasCommitted bool
+		updatePendingNowCommitted bool
+	)
+	updateNow := func(maseg memAcctIterator, fr memmap.FileRange, wasCommitted, nowCommitted bool) memAcctIterator {
+		amount := fr.Length()
+		if amount == 0 {
+			return maseg
+		}
+		if wasCommitted != nowCommitted {
+			maseg = f.memAcct.Isolate(maseg, fr)
+			ma := maseg.ValuePtr()
+			if nowCommitted {
+				ma.knownCommitted = true
+				ma.commitSeq = 0
+				f.knownCommittedBytes += amount
+				if !f.opts.DisableMemoryAccounting {
+					usage.MemoryAccounting.Inc(amount, ma.kind, ma.memCgID)
+				}
+			} else {
+				ma.knownCommitted = false
+				ma.commitSeq = f.commitSeq
+				f.knownCommittedBytes -= amount
+				if !f.opts.DisableMemoryAccounting {
+					usage.MemoryAccounting.Dec(amount, ma.kind, ma.memCgID)
+				}
 			}
-			committed[i] = 0
-			if !wasCommitted {
-				// Reading the page may have caused it to be committed;
-				// decommit it to reduce memory usage.
-				decommitAddPage(off + uint64(pgoff))
+			maseg = f.memAcct.Unisolate(maseg)
+		}
+		if nowCommitted {
+			asyncWritePages(fr)
+		}
+		return maseg
+	}
+	// Precondition: maseg.Range().IsSupersetOf(fr).
+	// Postcondition: The returned memAcctIterator.Range().IsSupersetOf(fr).
+	updateAddRange := func(maseg memAcctIterator, fr memmap.FileRange, wasCommitted, nowCommitted bool) memAcctIterator {
+		if updatePendingFR.End == fr.Start && updatePendingWasCommitted == wasCommitted && updatePendingNowCommitted == nowCommitted {
+			updatePendingFR.End = fr.End
+			return maseg
+		}
+		if updatePendingFR.Length() != 0 {
+			maseg = updateNow(maseg, updatePendingFR, updatePendingWasCommitted, updatePendingNowCommitted)
+			if maseg.End() == fr.Start {
+				maseg = maseg.NextSegment()
 			}
 		}
-		return nil
-	})
+		updatePendingFR = fr
+		updatePendingWasCommitted = wasCommitted
+		updatePendingNowCommitted = nowCommitted
+		return maseg
+	}
+	updateFlush := func(maseg memAcctIterator) memAcctIterator {
+		if updatePendingFR.Length() != 0 {
+			maseg = updateNow(maseg, updatePendingFR, updatePendingWasCommitted, updatePendingNowCommitted)
+		}
+		updatePendingFR = memmap.FileRange{}
+		return maseg
+	}
+
+	zeroPage := make([]byte, hostarch.PageSize)
+	// f.mu is unlocked below, allowing concurrent calls to f.UpdateUsage() to
+	// observe pages that we transiently commit (for comparisons to zero) or
+	// leave committed (if opts.ExcludeCommittedZeroPages is true). Set
+	// f.isSaving to prevent this.
+	if f.isSaving {
+		panic(fmt.Sprintf("pgalloc.MemoryFile(%p).SaveTo() called concurrently", f))
+	}
+	f.isSaving = true
+	defer func() { f.isSaving = false }()
+	// Reset f.commitSeq and memAcctInfo.commitSeq to 0 to make more segments
+	// in f.memAcct mergeable. This is safe because f.updateUsageLocked() is
+	// excluded by f.isSaving being set to true.
+	f.commitSeq = 0
+	maseg := f.memAcct.FirstSegment()
+	unscannedStart := uint64(0)
+	for maseg.Ok() {
+		ma := maseg.ValuePtr()
+		if ma.wasteOrReleasing {
+			// This shouldn't be possible since we waited for memory release
+			// above, and f shouldn't be mutated during saving.
+			panic(fmt.Sprintf("found waste or releasing pages %v during pgalloc.MemoryFile.SaveTo()", maseg.Range()))
+		}
+		fr := maseg.Range()
+		if fr.Start < unscannedStart {
+			fr.Start = unscannedStart
+		}
+		unscannedStart = fr.End
+		allocatedBytes += fr.Length()
+		ma.commitSeq = 0
+		wasCommitted := ma.knownCommitted
+		if !opts.ExcludeCommittedZeroPages && wasCommitted {
+			alreadyCommittedBytes += fr.Length()
+			maseg = updateAddRange(maseg, fr, true /* wasCommitted */, true /* nowCommitted */)
+			maseg = updateFlush(maseg)
+			if maseg.End() == unscannedStart {
+				maseg = maseg.NextSegment()
+			}
+			continue
+		}
+		f.forEachChunk(fr, func(chunk *chunkInfo, chunkFR memmap.FileRange) bool {
+			bs := chunk.sliceAt(chunkFR)
+			for pgoff := 0; pgoff < len(bs); pgoff += hostarch.PageSize {
+				pg := bs[pgoff : pgoff+hostarch.PageSize]
+				off := chunkFR.Start + uint64(pgoff)
+				isZeroed := bytes.Equal(pg, zeroPage)
+				if isZeroed {
+					if !wasCommitted {
+						alreadyUncommittedBytes += hostarch.PageSize
+						decommitAddPage(off)
+					} else {
+						newUncommittedBytes += hostarch.PageSize
+					}
+				} else {
+					if !wasCommitted {
+						newCommittedBytes += hostarch.PageSize
+					} else {
+						alreadyCommittedBytes += hostarch.PageSize
+					}
+				}
+				maseg = updateAddRange(maseg, memmap.FileRange{off, off + hostarch.PageSize}, wasCommitted, !isZeroed)
+			}
+			// f.UpdateUsage() may be called concurrently with f.SaveTo();
+			// occasionally unlock f.mu to ensure that the former can promptly
+			// observe f.isSaving and return. Assume that maseg is not
+			// invalidated while f.mu is unlocked, since it should still be the
+			// case that nothing is concurrently trying to mutate f.
+			f.mu.Unlock()
+			f.mu.Lock()
+			return true
+		})
+		// We need to flush batched updates to f.memAcct whenever potentially
+		// reaching the end of a segment, in order to maintain the invariant
+		// that updatePendingFR corresponds to a single segment.
+		maseg = updateFlush(maseg)
+		// maseg might already include offsets beyond unscannedStart if it was
+		// merged with a successor segment.
+		if maseg.End() == unscannedStart {
+			maseg = maseg.NextSegment()
+		}
+	}
 	if decommitPendingFR.Length() != 0 {
 		decommitNow(decommitPendingFR)
 		decommitPendingFR = memmap.FileRange{}
 	}
-	if err != nil {
-		return err
-	}
-	log.Infof("MemoryFile(%p): saving scanned %d bytes, saw %d committed bytes (ExcludeCommittedZeroPages=%v), decommitted %d bytes in %d syscalls, %s", f, scanTotal, committedTotal, opts.ExcludeCommittedZeroPages, decommitTotal, decommitCount, time.Since(timeScanStart))
+
+	durScan := time.Duration(gohacks.Nanotime() - timeScanStart)
+	log.Infof("MemoryFile(%p): save scanning took %s for %d allocated bytes: %d bytes of zero pages (%d bytes expected, decommitted in %d syscalls, + %d bytes new), %d bytes of non-zero pages (%d bytes expected + %d bytes new); ExcludeCommittedZeroPages=%v",
+		f,
+		durScan,
+		allocatedBytes,
+		alreadyUncommittedBytes+newUncommittedBytes,
+		alreadyUncommittedBytes,
+		decommitCount,
+		newUncommittedBytes,
+		alreadyCommittedBytes+newCommittedBytes,
+		alreadyCommittedBytes,
+		newCommittedBytes,
+		opts.ExcludeCommittedZeroPages)
 
 	// Save metadata.
-	timeMetadataStart := time.Now()
-	if _, err := state.Save(ctx, w, &f.unwasteSmall); err != nil {
-		return err
+	timeMetadataStart := gohacks.Nanotime()
+	if _, err := state.Save(ctx, w, &memoryFileSaved{
+		unwasteSmall: &f.unwasteSmall,
+		unwasteHuge:  &f.unwasteHuge,
+		unfreeSmall:  &f.unfreeSmall,
+		unfreeHuge:   &f.unfreeHuge,
+		subreleased:  f.subreleased,
+		memAcct:      &f.memAcct,
+		chunks:       f.chunksLoad(),
+	}); err != nil {
+		return fmt.Errorf("failed to save metadata: %w", err)
 	}
-	if _, err := state.Save(ctx, w, &f.unwasteHuge); err != nil {
-		return err
-	}
-	if _, err := state.Save(ctx, w, &f.unfreeSmall); err != nil {
-		return err
-	}
-	if _, err := state.Save(ctx, w, &f.unfreeHuge); err != nil {
-		return err
-	}
-	if _, err := state.Save(ctx, w, &f.subreleased); err != nil {
-		return err
-	}
-	if _, err := state.Save(ctx, w, &f.memAcct); err != nil {
-		return err
-	}
-	if _, err := state.Save(ctx, w, &f.knownCommittedBytes); err != nil {
-		return err
-	}
-	if _, err := state.Save(ctx, w, &f.commitSeq); err != nil {
-		return err
-	}
-	if _, err := state.Save(ctx, w, f.chunks.Load()); err != nil {
-		return err
-	}
-	log.Infof("MemoryFile(%p): saved metadata in %s", f, time.Since(timeMetadataStart))
+	log.Infof("MemoryFile(%p): saved metadata in %s", f, time.Duration(gohacks.Nanotime()-timeMetadataStart))
 
-	// Register this MemoryFile with async page saving if a pages file has been
-	// provided.
-	var amfs *asyncMemoryFileSave
-	if opts.PagesFile != nil {
-		var sf stateio.SourceFile
-		if opts.PagesFile.aw.NeedRegisterSourceFD() {
-			fileSize := uint64(len(f.chunksLoad())) * chunkSize
-			var err error
-			sf, err = opts.PagesFile.aw.RegisterSourceFD(int32(f.file.Fd()), fileSize, f.getClientFileRangeSettings(fileSize))
-			if err != nil {
-				return fmt.Errorf("failed to register MemoryFile with pages file: %w", err)
+	if amfs == nil {
+		// Save committed pages.
+		ww := wire.Writer{Writer: w}
+		timePagesStart := gohacks.Nanotime()
+		bytesSaved := uint64(0)
+		for maseg := f.memAcct.FirstSegment(); maseg.Ok(); maseg = maseg.NextSegment() {
+			if !maseg.ValuePtr().knownCommitted {
+				continue
 			}
-		}
-		amfs = &asyncMemoryFileSave{
-			f:  f,
-			pf: opts.PagesFile,
-			sf: sf,
-		}
-	}
-
-	// Save committed pages.
-	ww := wire.Writer{Writer: w}
-	timePagesStart := time.Now()
-	bytesSaved := uint64(0)
-	for maseg := f.memAcct.FirstSegment(); maseg.Ok(); maseg = maseg.NextSegment() {
-		if !maseg.ValuePtr().knownCommitted {
-			continue
-		}
-		maFR := maseg.Range()
-		amount := maFR.Length()
-		if amfs != nil {
-			// Record data to be written.
-			amfs.pf.mu.Lock()
-			amfs.pf.unsaved.PushBack(apsRange{
-				amfs:      amfs,
-				FileRange: maFR,
-			})
-			amfs.pf.saveOff += amount
-			amfs.pf.mu.Unlock()
-			amfs.pf.stStatus.Notify(apsSTPending)
-		} else {
+			maFR := maseg.Range()
 			// Write a header to distinguish from objects.
-			if err := state.WriteHeader(&ww, amount, false); err != nil {
+			if err := state.WriteHeader(&ww, maFR.Length(), false); err != nil {
 				return err
 			}
 			// Write out data.
@@ -274,12 +424,7 @@ func (f *MemoryFile) SaveTo(ctx context.Context, w io.Writer, opts *SaveOpts) er
 				return ioErr
 			}
 		}
-		bytesSaved += amount
-	}
-	durPages := time.Since(timePagesStart)
-	if amfs != nil {
-		log.Infof("MemoryFile(%p): saved page file offsets in %s; async saving %d bytes", f, durPages, bytesSaved)
-	} else {
+		durPages := time.Duration(gohacks.Nanotime() - timePagesStart)
 		log.Infof("MemoryFile(%p): saved pages in %s (%d bytes, %.3f MB/s)", f, durPages, bytesSaved, float64(bytesSaved)*1e-6/durPages.Seconds())
 	}
 
@@ -301,8 +446,32 @@ type AsyncPagesFileSave struct {
 	// the goroutine.
 	stStatus syncevent.Waiter
 
-	// Padding before fields exclusive to the async page saver goroutine:
+	// Padding before fields used mostly by the async page saver goroutine:
 	_ [hostarch.CacheLineSize]byte
+
+	// bytesSaved is the number of write-completed bytes. bytesSaved is
+	// protected by statsMu.
+	bytesSaved uint64
+
+	// When async page saving is enabled, MemoryFile.SaveTo() enqueues writes
+	// while scanning for zero pages, and skips writing zero pages.
+	// Consequently, if MemoryFile.SaveTo() finds a large number of zero pages
+	// in close proximity, unsaved may become empty, causing writing to stall
+	// and observed write throughput to drop. To differentiate this case from
+	// write throughput being limited by I/O limitations, separately record and
+	// report throughput for when the I/O queue is full (qavail == 0).
+	//
+	// bytesFull is the number of write-completed bytes while the I/O queue was
+	// full. timeFullStart was the value of gohacks.Nanotime() when the I/O
+	// queue last became full; if it is currently not full, timeFullStart is
+	// MaxInt64. durFull is the duration elapsed while the I/O queue was full,
+	// not counting time elapsed since timeFullStart. These fields are
+	// protected by statsMu.
+	bytesFull     uint64
+	timeFullStart int64
+	durFull       time.Duration
+
+	// Following fields are exclusive to the async page saver goroutine.
 
 	doneCallback func(error) // immutable
 
@@ -384,6 +553,7 @@ func StartAsyncPagesFileSave(aw stateio.AsyncWriter, doneCallback func(error)) (
 	// Cap maxParallel due to the uint32 range of bitmap.Bitmap.
 	maxParallel := min(aw.MaxParallel(), 1<<30)
 	apfs := &AsyncPagesFileSave{
+		timeFullStart: math.MaxInt64,
 		doneCallback:  doneCallback,
 		aw:            aw,
 		maxWriteBytes: maxWriteBytes,
@@ -543,7 +713,7 @@ func (apfs *AsyncPagesFileSave) combine(mfr apsRange) uint64 {
 func (apfs *AsyncPagesFileSave) main() {
 	defer func() {
 		if apfs.err != nil {
-			log.Warningf("Async page saving failed: %w", apfs.err)
+			log.Warningf("Async page saving failed: %v", apfs.err)
 		}
 		if err := apfs.aw.Close(); err != nil {
 			// Saving success is independent of err, so log it rather than
@@ -562,7 +732,6 @@ func (apfs *AsyncPagesFileSave) main() {
 	// Don't start timing until we have pages to save.
 	apfs.stStatus.Wait()
 	timeStart := gohacks.Nanotime()
-	var bytesSaved atomicbitops.Uint64
 	if log.IsLogging(log.Debug) {
 		log.Debugf("Async page saving started")
 		progressTicker := time.NewTicker(5 * time.Second)
@@ -578,21 +747,40 @@ func (apfs *AsyncPagesFileSave) main() {
 					return
 				case <-progressTicker.C:
 					// Take a snapshot of our progress.
-					bytesSavedNow := bytesSaved.Load()
+					apfs.mu.Lock()
+					bytesSaved := apfs.bytesSaved
+					bytesFull := apfs.bytesFull
+					timeFullStart := apfs.timeFullStart
+					durFull := apfs.durFull
+					apfs.mu.Unlock()
 					now := gohacks.Nanotime()
 					durTotal := time.Duration(now - timeStart)
+					if timeFullStart < now {
+						durFull += time.Duration(now - timeFullStart)
+					}
 					durDelta := time.Duration(now - timeLast)
-					bytesSavedDelta := bytesSavedNow - bytesSavedLast
-					bandwidthTotal := float64(bytesSavedNow) * 1e-6 / durTotal.Seconds()
+					bytesSavedDelta := bytesSaved - bytesSavedLast
+					bandwidthTotal := float64(bytesSaved) * 1e-6 / durTotal.Seconds()
+					bandwidthFull := float64(bytesFull) * 1e-6 / durFull.Seconds()
 					bandwidthSinceLast := float64(bytesSavedDelta) * 1e-6 / durDelta.Seconds()
-					log.Infof("Async page saving in progress for %s (%d bytes, %.3f MB/s); since last update %s ago: %d bytes, %.3f MB/s", durTotal.Round(time.Millisecond), bytesSavedNow, bandwidthTotal, durDelta.Round(time.Millisecond), bytesSavedDelta, bandwidthSinceLast)
+					log.Infof("Async page saving in progress for %s (%d bytes, %.3f MB/s); queue full for %s (%d bytes, %.3f MB/s); since last update %s ago: %d bytes, %.3f MB/s",
+						durTotal.Round(time.Millisecond),
+						bytesSaved,
+						bandwidthTotal,
+						durFull.Round(time.Millisecond),
+						bytesFull,
+						bandwidthFull,
+						durDelta.Round(time.Millisecond),
+						bytesSavedDelta,
+						bandwidthSinceLast)
 					timeLast = now
-					bytesSavedLast = bytesSavedNow
+					bytesSavedLast = bytesSaved
 				}
 			}
 		}()
 	}
 
+	prevFull := false
 	for {
 		// Enqueue as many writes as possible.
 		if !apfs.canEnqueue() {
@@ -614,6 +802,14 @@ func (apfs *AsyncPagesFileSave) main() {
 				break
 			}
 		}
+		full := apfs.qavail == 0
+		if full && !prevFull {
+			apfs.timeFullStart = gohacks.Nanotime()
+		} else if !full && prevFull {
+			apfs.durFull += time.Duration(gohacks.Nanotime() - apfs.timeFullStart)
+			apfs.timeFullStart = math.MaxInt64
+		}
+		prevFull = full
 		apfs.mu.Unlock()
 		// Don't flush pending op unless it's the last one; this differs from
 		// async page loading since writers are likely to be more sensitive to
@@ -643,9 +839,20 @@ func (apfs *AsyncPagesFileSave) main() {
 				}
 				// Successfully completed all saving for all MemoryFiles.
 				durTotal := time.Duration(gohacks.Nanotime() - timeStart)
-				bytesTotal := bytesSaved.RacyLoad()
+				apfs.mu.Lock()
+				bytesTotal := apfs.bytesSaved
+				bytesFull := apfs.bytesFull
+				durFull := apfs.durFull
+				apfs.mu.Unlock()
 				bandwidthTotal := float64(bytesTotal) * 1e-6 / durTotal.Seconds()
-				log.Infof("Async page saving completed in %s (%d bytes, %.3f MB/s)", durTotal.Round(time.Millisecond), bytesTotal, bandwidthTotal)
+				bandwidthFull := float64(bytesFull) * 1e-6 / durFull.Seconds()
+				log.Infof("Async page saving completed in %s (%d bytes, %.3f MB/s); queue full for %s (%d bytes, %.3f MB/s)",
+					durTotal.Round(time.Millisecond),
+					bytesTotal,
+					bandwidthTotal,
+					durFull.Round(time.Millisecond),
+					bytesFull,
+					bandwidthFull)
 				return
 			}
 			panic(fmt.Sprintf("unknown events in stStatus: %#x", ev))
@@ -660,20 +867,27 @@ func (apfs *AsyncPagesFileSave) main() {
 		}
 
 		// Process completions.
+		apfs.mu.Lock()
 		for _, c := range completions {
 			op := &apfs.ops[c.ID]
 			apfs.opsBusy.Remove(uint32(c.ID))
 			apfs.qavail++
 			if c.Err != nil {
-				apfs.err = fmt.Errorf("write for MemoryFile(%p) pages %v failed: %w", op.amfs.f, op.frs, err)
+				apfs.mu.Unlock()
+				apfs.err = fmt.Errorf("write for MemoryFile(%p) pages %v failed: %w", op.amfs.f, op.frs, c.Err)
 				return
 			}
 			if c.N != op.total {
+				apfs.mu.Unlock()
 				apfs.err = fmt.Errorf("write for MemoryFile(%p) pages %v (total %d bytes) returned %d bytes", op.amfs.f, op.frs, op.total, c.N)
 				return
 			}
-			bytesSaved.Add(op.total)
+			apfs.bytesSaved += op.total
+			if full {
+				apfs.bytesFull += op.total
+			}
 		}
+		apfs.mu.Unlock()
 	}
 }
 
@@ -694,47 +908,24 @@ type LoadOpts struct {
 func (f *MemoryFile) LoadFrom(ctx context.Context, r io.Reader, opts *LoadOpts) error {
 	mfTimeline := opts.Timeline.Fork(fmt.Sprintf("mf:%p", f)).Lease()
 	defer mfTimeline.End()
-	timeMetadataStart := time.Now()
-
-	// Clear sets since non-empty sets will panic if loaded into.
-	f.unwasteSmall.RemoveAll()
-	f.unwasteHuge.RemoveAll()
-	f.unfreeSmall.RemoveAll()
-	f.unfreeHuge.RemoveAll()
-	f.memAcct.RemoveAll()
 
 	// Load metadata.
-	if _, err := state.Load(ctx, r, &f.unwasteSmall); err != nil {
-		return err
+	timeMetadataStart := gohacks.Nanotime()
+	var mfs memoryFileSaved
+	if _, err := state.Load(ctx, r, &mfs); err != nil {
+		return fmt.Errorf("failed to load metadata: %w", err)
 	}
-	if _, err := state.Load(ctx, r, &f.unwasteHuge); err != nil {
-		return err
-	}
-	if _, err := state.Load(ctx, r, &f.unfreeSmall); err != nil {
-		return err
-	}
-	if _, err := state.Load(ctx, r, &f.unfreeHuge); err != nil {
-		return err
-	}
-	if _, err := state.Load(ctx, r, &f.subreleased); err != nil {
-		return err
-	}
-	if _, err := state.Load(ctx, r, &f.memAcct); err != nil {
-		return err
-	}
-	if _, err := state.Load(ctx, r, &f.knownCommittedBytes); err != nil {
-		return err
-	}
-	if _, err := state.Load(ctx, r, &f.commitSeq); err != nil {
-		return err
-	}
-	var chunks []chunkInfo
-	if _, err := state.Load(ctx, r, &chunks); err != nil {
-		return err
-	}
+	f.unwasteSmall.MoveFrom(mfs.unwasteSmall)
+	f.unwasteHuge.MoveFrom(mfs.unwasteHuge)
+	f.unfreeSmall.MoveFrom(mfs.unfreeSmall)
+	f.unfreeHuge.MoveFrom(mfs.unfreeHuge)
+	f.subreleased = mfs.subreleased
+	f.memAcct.MoveFrom(mfs.memAcct)
+	chunks := mfs.chunks
 	f.chunks.Store(&chunks)
 	mfTimeline.Reached("metadata loaded")
-	log.Infof("MemoryFile(%p): loaded metadata in %s", f, time.Since(timeMetadataStart))
+	log.Infof("MemoryFile(%p): loaded metadata in %s", f, time.Duration(gohacks.Nanotime()-timeMetadataStart))
+
 	fileSize := uint64(len(chunks)) * chunkSize
 	if err := f.file.Truncate(int64(fileSize)); err != nil {
 		return fmt.Errorf("failed to truncate MemoryFile: %w", err)
@@ -826,10 +1017,9 @@ func (f *MemoryFile) LoadFrom(ctx context.Context, r io.Reader, opts *LoadOpts) 
 		}()
 	}
 
-	// Load committed pages.
+	// Load committed pages and reconstruct memory accounting state.
 	wr := wire.Reader{Reader: r}
-	timePagesStart := time.Now()
-	loadedBytes := uint64(0)
+	timePagesStart := gohacks.Nanotime()
 	minUnloadedInit := false
 	for maseg := f.memAcct.FirstSegment(); maseg.Ok(); maseg = maseg.NextSegment() {
 		if !maseg.ValuePtr().knownCommitted {
@@ -884,16 +1074,16 @@ func (f *MemoryFile) LoadFrom(ctx context.Context, r io.Reader, opts *LoadOpts) 
 		// Update accounting for restored pages. We need to do this here since
 		// these segments are marked as "known committed", and will be skipped
 		// over on accounting scans.
-		loadedBytes += amount
+		f.knownCommittedBytes += amount
 		if !f.opts.DisableMemoryAccounting {
 			usage.MemoryAccounting.Inc(amount, maseg.ValuePtr().kind, maseg.ValuePtr().memCgID)
 		}
 	}
-	durPages := time.Since(timePagesStart)
+	durPages := time.Duration(gohacks.Nanotime() - timePagesStart)
 	if amfl != nil {
-		log.Infof("MemoryFile(%p): loaded page file offsets in %s; async loading %d bytes", f, durPages, loadedBytes)
+		log.Infof("MemoryFile(%p): loaded page file offsets in %s; async loading %d bytes", f, durPages, f.knownCommittedBytes)
 	} else {
-		log.Infof("MemoryFile(%p): loaded pages in %s (%d bytes, %.3f MB/s)", f, durPages, loadedBytes, float64(loadedBytes)*1e-6/durPages.Seconds())
+		log.Infof("MemoryFile(%p): loaded pages in %s (%d bytes, %.3f MB/s)", f, durPages, f.knownCommittedBytes, float64(f.knownCommittedBytes)*1e-6/durPages.Seconds())
 	}
 
 	return nil
@@ -1112,13 +1302,14 @@ func StartAsyncPagesFileLoad(ar stateio.AsyncReader, doneCallback func(error), t
 	// Cap maxParallel due to the uint32 range of bitmap.Bitmap.
 	maxParallel := min(ar.MaxParallel(), 1<<30)
 	apfl := &AsyncPagesFileLoad{
-		timeline:     timeline.Fork("async page loading"),
-		doneCallback: doneCallback,
-		ar:           ar,
-		maxReadBytes: maxReadBytes,
-		qavail:       maxParallel,
-		opsBusy:      bitmap.New(uint32(maxParallel)),
-		ops:          make([]aplOp, maxParallel),
+		timeStartWaiters: math.MaxInt64,
+		timeline:         timeline.Fork("async page loading"),
+		doneCallback:     doneCallback,
+		ar:               ar,
+		maxReadBytes:     maxReadBytes,
+		qavail:           maxParallel,
+		opsBusy:          bitmap.New(uint32(maxParallel)),
+		ops:              make([]aplOp, maxParallel),
 	}
 	// Mark ops in opsBusy that don't actually exist as permanently busy.
 	for i, n := maxParallel, apfl.opsBusy.Size(); i < n; i++ {
