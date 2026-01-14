@@ -31,16 +31,16 @@ var AllCapabilities = CapabilitySetOf(linux.CAP_LAST_CAP+1) - 1
 // CapabilitySetOf returns a CapabilitySet containing only the given
 // capability.
 func CapabilitySetOf(cp linux.Capability) CapabilitySet {
-	return CapabilitySet(bits.MaskOf64(int(cp)))
+	return bits.MaskOf[CapabilitySet](int(cp))
 }
 
 // CapabilitySetOfMany returns a CapabilitySet containing the given capabilities.
 func CapabilitySetOfMany(cps []linux.Capability) CapabilitySet {
-	var cs uint64
+	var cs CapabilitySet
 	for _, cp := range cps {
-		cs |= bits.MaskOf64(int(cp))
+		cs |= bits.MaskOf[CapabilitySet](int(cp))
 	}
-	return CapabilitySet(cs)
+	return cs
 }
 
 // Add adds the given capability to the CapabilitySet.

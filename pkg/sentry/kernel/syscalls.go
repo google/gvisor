@@ -165,7 +165,7 @@ func (e *SyscallFlagsTable) UpdateSecCheck(state *seccheck.State) {
 	defer e.mu.Unlock()
 	for sysno := uintptr(0); sysno <= sentry.MaxSyscallNum; sysno++ {
 		oldFlags := e.enable[sysno].Load()
-		if !bits.IsOn32(oldFlags, syscallPresent) {
+		if !bits.IsOn(oldFlags, syscallPresent) {
 			continue
 		}
 		flags := oldFlags
@@ -226,7 +226,7 @@ func (e *SyscallFlagsTable) Enable(bit uint32, s map[uintptr]bool, missingEnable
 
 	for num := range e.enable {
 		val := e.enable[num].Load()
-		if !bits.IsOn32(val, syscallPresent) {
+		if !bits.IsOn(val, syscallPresent) {
 			// Missing.
 			e.enable[num].Store(missingVal)
 			continue
@@ -252,7 +252,7 @@ func (e *SyscallFlagsTable) EnableAll(bit uint32) {
 
 	for num := range e.enable {
 		val := e.enable[num].Load()
-		if !bits.IsOn32(val, syscallPresent) {
+		if !bits.IsOn(val, syscallPresent) {
 			// Missing.
 			e.enable[num].Store(missingVal)
 			continue

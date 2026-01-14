@@ -65,6 +65,11 @@ func TestMostSignificantOne64(t *testing.T) {
 	}
 }
 
+// Mask64 returns a uint64 with all of the given bits set.
+func Mask64(is ...int) uint64 {
+	return Mask[uint64](is...)
+}
+
 func TestForEachSetBit64(t *testing.T) {
 	for _, want := range [][]int{
 		{},
@@ -106,10 +111,10 @@ func TestIsOn(t *testing.T) {
 		{Mask64(1, 63), Mask64(0, 1, 63), true, false},
 		{Mask64(1, 63), Mask64(0, 62), false, false},
 	} {
-		if ok := IsAnyOn64(s.mask, s.bits); ok != s.any {
+		if ok := IsAnyOn(s.mask, s.bits); ok != s.any {
 			t.Errorf("IsAnyOn(%#x, %#x) = %v, wanted: %v", s.mask, s.bits, ok, s.any)
 		}
-		if ok := IsOn64(s.mask, s.bits); ok != s.all {
+		if ok := IsOn(s.mask, s.bits); ok != s.all {
 			t.Errorf("IsOn(%#x, %#x) = %v, wanted: %v", s.mask, s.bits, ok, s.all)
 		}
 	}
@@ -127,7 +132,7 @@ func TestIsPowerOfTwo(t *testing.T) {
 		{v: 4, want: true},
 		{v: 5, want: false},
 	} {
-		if got := IsPowerOfTwo64(tc.v); got != tc.want {
+		if got := IsPowerOfTwo(tc.v); got != tc.want {
 			t.Errorf("IsPowerOfTwo(%d) = %t, want: %t", tc.v, got, tc.want)
 		}
 	}

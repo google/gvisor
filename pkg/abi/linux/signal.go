@@ -130,12 +130,12 @@ func MakeSignalSet(sigs ...Signal) SignalSet {
 	for i, sig := range sigs {
 		indices[i] = sig.Index()
 	}
-	return SignalSet(bits.Mask64(indices...))
+	return bits.Mask[SignalSet](indices...)
 }
 
 // SignalSetOf returns a SignalSet with a single signal set.
 func SignalSetOf(sig Signal) SignalSet {
-	return SignalSet(bits.MaskOf64(sig.Index()))
+	return bits.MaskOf[SignalSet](sig.Index())
 }
 
 // ForEachSignal invokes f for each signal set in the given mask.

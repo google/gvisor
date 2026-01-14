@@ -14,37 +14,36 @@
 
 package bits
 
-// Non-atomic bit operations on a template type T.
+import "golang.org/x/exp/constraints"
 
-// T is a required type parameter that must be an integral type.
-type T uint64
+// Non-atomic bit operations on integral types.
 
 // IsOn returns true if *all* bits set in 'bits' are set in 'mask'.
-func IsOn(mask, bits T) bool {
+func IsOn[T constraints.Integer](mask, bits T) bool {
 	return mask&bits == bits
 }
 
 // IsAnyOn returns true if *any* bit set in 'bits' is set in 'mask'.
-func IsAnyOn(mask, bits T) bool {
+func IsAnyOn[T constraints.Integer](mask, bits T) bool {
 	return mask&bits != 0
 }
 
 // Mask returns a T with all of the given bits set.
-func Mask(is ...int) T {
+func Mask[T constraints.Integer](is ...int) T {
 	ret := T(0)
 	for _, i := range is {
-		ret |= MaskOf(i)
+		ret |= MaskOf[T](i)
 	}
 	return ret
 }
 
 // MaskOf is like Mask, but sets only a single bit (more efficiently).
-func MaskOf(i int) T {
+func MaskOf[T constraints.Integer](i int) T {
 	return T(1) << T(i)
 }
 
 // IsPowerOfTwo returns true if v is power of 2.
-func IsPowerOfTwo(v T) bool {
+func IsPowerOfTwo[T constraints.Integer](v T) bool {
 	if v == 0 {
 		return false
 	}
