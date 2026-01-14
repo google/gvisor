@@ -38,7 +38,17 @@ impact.
 
 ### Supported TPUs {#tpu-models}
 
-gVisor currently supports TPU models: V4, V4lite, V4pod, V5e, V5p, V6e, and V6p.
+gVisor currently supports TPU models:
+
+*   V4
+*   V4lite
+*   V4pod
+*   V5e
+*   V5p
+*   V6e
+*   V6p
+*   TPU7x
+
 [open a GitHub issue](https://github.com/google/gvisor/issues/new?labels=type%3A+enhancement,area%3A+gpu&template=bug_report.yml)
 if you want support for another TPU model. gVisor only supports "1VM" TPU
 shapes.
