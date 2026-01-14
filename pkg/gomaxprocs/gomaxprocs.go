@@ -29,7 +29,6 @@ import (
 	"runtime"
 
 	"gvisor.dev/gvisor/pkg/log"
-	"gvisor.dev/gvisor/pkg/sync"
 )
 
 var (
@@ -57,11 +56,6 @@ func SetBase(n int) {
 // with negative n to remove temporary GOMAXPROCS when they are no longer
 // needed.
 func Add(n int) {
-	if sync.RaceEnabled {
-		// FIXME: b/465516110
-		log.Infof("Race detection enabled: skipping temporary GOMAXPROCS adjustment")
-		return
-	}
 	mu.Lock()
 	defer mu.Unlock()
 	t := temp + n
