@@ -93,9 +93,9 @@ func initImmediate(tab *Table, exprInfo ExprInfo) (*immediate, *syserr.Annotated
 	}
 
 	switch int32(dreg) {
-	case linux.NFT_JUMP, linux.NFT_GOTO:
-		// TODO - b/434244017: Add support for jump and goto verdicts.
-		return nil, syserr.NewAnnotatedError(syserr.ErrNotSupported, "Nftables: Verdicts with jump or goto codes are not yet supported")
+	case linux.NFT_GOTO:
+		// TODO - b/434244017: Add support for goto verdicts.
+		return nil, syserr.NewAnnotatedError(syserr.ErrNotSupported, "Nftables: Verdicts with goto codes are not yet supported")
 	}
 	return newImmediate(dreg, regData)
 }

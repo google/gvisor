@@ -68,13 +68,9 @@ func initCounter(tab *Table, exprInfo ExprInfo) (*counter, *syserr.AnnotatedErro
 	if !ok {
 		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: Failed to parse counter expression data")
 	}
-	packets, ok := AttrNetToHost[uint64](linux.NFTA_COUNTER_PACKETS, attrs)
-	if !ok {
-		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: Failed to parse NFTA_COUNTER_PACKETS attribute")
-	}
-	bytes, ok := AttrNetToHost[uint64](linux.NFTA_COUNTER_BYTES, attrs)
-	if !ok {
-		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: Failed to parse NFTA_COUNTER_BYTES attribute")
-	}
+	// Nftables uses 0 as the default value for both bytes and packets if the
+	// attributes are not specified.
+	packets, _ := AttrNetToHost[uint64](linux.NFTA_COUNTER_PACKETS, attrs)
+	bytes, _ := AttrNetToHost[uint64](linux.NFTA_COUNTER_BYTES, attrs)
 	return newCounter(bytes, packets), nil
 }

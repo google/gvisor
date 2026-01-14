@@ -342,7 +342,7 @@ func (g *Gofer) serve(spec *specs.Spec, conf *config.Config, root string, ruid i
 
 	mountIdx := 1 // first one is the root
 	for _, m := range spec.Mounts {
-		if !specutils.IsGoferMount(m) {
+		if !specutils.HasMountConfig(m) {
 			continue
 		}
 		mountConf := g.mountConfs[mountIdx]
@@ -528,7 +528,7 @@ func (g *Gofer) setupRootFS(spec *specs.Spec, conf *config.Config, goferToHostRP
 func (g *Gofer) setupMounts(conf *config.Config, mounts []specs.Mount, root, procPath string, goferToHostRPC *urpc.Client) (retErr error) {
 	mountIdx := 1 // First index is for rootfs.
 	for _, m := range mounts {
-		if !specutils.IsGoferMount(m) {
+		if !specutils.HasMountConfig(m) {
 			continue
 		}
 		mountConf := g.mountConfs[mountIdx]
@@ -690,7 +690,7 @@ func (g *Gofer) resolveMounts(conf *config.Config, mounts []specs.Mount, root st
 	mountIdx := 1 // First index is for rootfs.
 	cleanMounts := make([]specs.Mount, 0, len(mounts))
 	for _, m := range mounts {
-		if !specutils.IsGoferMount(m) {
+		if !specutils.HasMountConfig(m) {
 			cleanMounts = append(cleanMounts, m)
 			continue
 		}

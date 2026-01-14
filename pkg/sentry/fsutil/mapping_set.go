@@ -602,6 +602,19 @@ func (s *mappingSet) RemoveFullRangeWith(r __generics_imported0.FileRange, f fun
 	}
 }
 
+// MoveFrom moves all segments from s2 to s, replacing all existing segments in
+// s and leaving s2 empty.
+func (s *mappingSet) MoveFrom(s2 *mappingSet) {
+	*s = *s2
+	for _, child := range s.root.children {
+		if child == nil {
+			break
+		}
+		child.parent = &s.root
+	}
+	s2.RemoveAll()
+}
+
 // Merge attempts to merge two neighboring segments. If successful, Merge
 // returns an iterator to the merged segment, and all existing iterators are
 // invalidated. Otherwise, Merge returns a terminal iterator.

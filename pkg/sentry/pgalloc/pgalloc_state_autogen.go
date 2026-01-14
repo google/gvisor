@@ -512,6 +512,49 @@ func (m *memAcctInfo) StateLoad(ctx context.Context, stateSourceObject state.Sou
 	stateSourceObject.Load(4, &m.commitSeq)
 }
 
+func (m *memoryFileSaved) StateTypeName() string {
+	return "pkg/sentry/pgalloc.memoryFileSaved"
+}
+
+func (m *memoryFileSaved) StateFields() []string {
+	return []string{
+		"unwasteSmall",
+		"unwasteHuge",
+		"unfreeSmall",
+		"unfreeHuge",
+		"subreleased",
+		"memAcct",
+		"chunks",
+	}
+}
+
+func (m *memoryFileSaved) beforeSave() {}
+
+// +checklocksignore
+func (m *memoryFileSaved) StateSave(stateSinkObject state.Sink) {
+	m.beforeSave()
+	stateSinkObject.Save(0, &m.unwasteSmall)
+	stateSinkObject.Save(1, &m.unwasteHuge)
+	stateSinkObject.Save(2, &m.unfreeSmall)
+	stateSinkObject.Save(3, &m.unfreeHuge)
+	stateSinkObject.Save(4, &m.subreleased)
+	stateSinkObject.Save(5, &m.memAcct)
+	stateSinkObject.Save(6, &m.chunks)
+}
+
+func (m *memoryFileSaved) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (m *memoryFileSaved) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &m.unwasteSmall)
+	stateSourceObject.Load(1, &m.unwasteHuge)
+	stateSourceObject.Load(2, &m.unfreeSmall)
+	stateSourceObject.Load(3, &m.unfreeHuge)
+	stateSourceObject.Load(4, &m.subreleased)
+	stateSourceObject.Load(5, &m.memAcct)
+	stateSourceObject.Load(6, &m.chunks)
+}
+
 func (s *unfreeSet) StateTypeName() string {
 	return "pkg/sentry/pgalloc.unfreeSet"
 }
@@ -737,6 +780,7 @@ func init() {
 	state.Register((*unwasteInfo)(nil))
 	state.Register((*unfreeInfo)(nil))
 	state.Register((*memAcctInfo)(nil))
+	state.Register((*memoryFileSaved)(nil))
 	state.Register((*unfreeSet)(nil))
 	state.Register((*unfreenode)(nil))
 	state.Register((*unfreeFlatSegment)(nil))
