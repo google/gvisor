@@ -18,6 +18,7 @@
 #include <sys/mman.h>
 #include <sys/resource.h>
 #include <sys/stat.h>
+#include <sys/syscall.h>
 #include <sys/types.h>
 #include <time.h>
 #include <unistd.h>
@@ -34,7 +35,6 @@ namespace testing {
 
 namespace {
 
-// TODO(gvisor.dev/issue/2370): This test is currently very rudimentary.
 class WriteTest : public ::testing::Test {
  public:
   ssize_t WriteBytes(int fd, int bytes) {
@@ -144,11 +144,16 @@ TEST_F(WriteTest, WriteIncrementOffset) {
   EXPECT_THAT(WriteBytes(fd, 0), SyscallSucceedsWithValue(0));
   EXPECT_THAT(lseek(fd, 0, SEEK_CUR), SyscallSucceedsWithValue(0));
 
-  const int bytes_total = 1024;
+  const int bytes_first = 1024;
+  EXPECT_THAT(WriteBytes(fd, bytes_first),
+              SyscallSucceedsWithValue(bytes_first));
+  EXPECT_THAT(lseek(fd, 0, SEEK_CUR), SyscallSucceedsWithValue(bytes_first));
 
-  EXPECT_THAT(WriteBytes(fd, bytes_total),
-              SyscallSucceedsWithValue(bytes_total));
-  EXPECT_THAT(lseek(fd, 0, SEEK_CUR), SyscallSucceedsWithValue(bytes_total));
+  const int bytes_second = 512;
+  EXPECT_THAT(WriteBytes(fd, bytes_second),
+              SyscallSucceedsWithValue(bytes_second));
+  EXPECT_THAT(lseek(fd, 0, SEEK_CUR),
+              SyscallSucceedsWithValue(bytes_first + bytes_second));
 }
 
 TEST_F(WriteTest, WriteIncrementOffsetSeek) {
@@ -331,6 +336,315 @@ TEST_F(WriteTest, PartialWriteSIGBUS) {
   // Write should succeed for the first iovec and half of the second (=2 pages).
   ASSERT_THAT(pwritev(fd.get(), iov, ABSL_ARRAYSIZE(iov), 0),
               SyscallSucceedsWithValue(2 * kPageSize));
+}
+
+// Test that write with a nullptr buffer fails with EFAULT.
+TEST_F(WriteTest, WriteNullBuffer) {
+  TempPath tmpfile = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(tmpfile.path().c_str(), O_WRONLY));
+
+  // Use raw syscall to bypass libc's nonnull annotation.
+  EXPECT_THAT(syscall(SYS_write, fd.get(), nullptr, 1),
+              SyscallFailsWithErrno(EFAULT));
+}
+
+// Test that pwrite with a nullptr buffer fails with EFAULT.
+TEST_F(WriteTest, PwriteNullBuffer) {
+  TempPath tmpfile = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(tmpfile.path().c_str(), O_WRONLY));
+
+  // Use raw syscall to bypass libc's nonnull annotation and check kernel
+  // EFAULT.
+  EXPECT_THAT(syscall(SYS_pwrite64, fd.get(), nullptr, 1, 0),
+              SyscallFailsWithErrno(EFAULT));
+}
+
+// Test that writev with a bad iov_base buffer fails with EFAULT.
+TEST_F(WriteTest, WritevBadBuffer) {
+  TempPath tmpfile = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(tmpfile.path().c_str(), O_WRONLY));
+
+  struct iovec iov;
+  iov.iov_base = reinterpret_cast<void*>(0x1);  // Bad address
+  iov.iov_len = 1;
+
+  EXPECT_THAT(writev(fd.get(), &iov, 1), SyscallFailsWithErrno(EFAULT));
+}
+
+// Test that write with zero length and nullptr buffer succeeds.
+TEST_F(WriteTest, WriteZeroLengthNullBuffer) {
+  TempPath tmpfile = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(tmpfile.path().c_str(), O_WRONLY));
+
+  EXPECT_THAT(write(fd.get(), nullptr, 0), SyscallSucceedsWithValue(0));
+}
+
+// Test that write to a closed fd fails with EBADF.
+TEST_F(WriteTest, WriteClosedFd) {
+  TempPath tmpfile = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(tmpfile.path().c_str(), O_WRONLY));
+  int raw_fd = fd.get();
+  fd.reset();
+
+  char buf[16] = {};
+  EXPECT_THAT(write(raw_fd, buf, sizeof(buf)), SyscallFailsWithErrno(EBADF));
+}
+
+// Test that pwrite to a closed fd fails with EBADF.
+TEST_F(WriteTest, PwriteClosedFd) {
+  TempPath tmpfile = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(tmpfile.path().c_str(), O_WRONLY));
+  int raw_fd = fd.get();
+  fd.reset();
+
+  char buf[16] = {};
+  EXPECT_THAT(pwrite(raw_fd, buf, sizeof(buf), 0),
+              SyscallFailsWithErrno(EBADF));
+}
+
+// Test that write to a negative fd fails with EBADF.
+TEST_F(WriteTest, WriteNegativeFd) {
+  char buf[16] = {};
+  EXPECT_THAT(write(-1, buf, sizeof(buf)), SyscallFailsWithErrno(EBADF));
+}
+
+// Test that pwrite to a negative fd fails with EBADF.
+TEST_F(WriteTest, PwriteNegativeFd) {
+  char buf[16] = {};
+  EXPECT_THAT(pwrite(-1, buf, sizeof(buf), 0), SyscallFailsWithErrno(EBADF));
+}
+
+// Test that write to a read-only fd fails with EBADF.
+TEST_F(WriteTest, WriteReadOnlyFd) {
+  TempPath tmpfile = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(tmpfile.path().c_str(), O_RDONLY));
+
+  char buf[16] = {};
+  EXPECT_THAT(write(fd.get(), buf, sizeof(buf)), SyscallFailsWithErrno(EBADF));
+}
+
+// Test that pwrite to a read-only fd fails with EBADF.
+TEST_F(WriteTest, PwriteReadOnlyFd) {
+  TempPath tmpfile = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(tmpfile.path().c_str(), O_RDONLY));
+
+  char buf[16] = {};
+  EXPECT_THAT(pwrite(fd.get(), buf, sizeof(buf), 0),
+              SyscallFailsWithErrno(EBADF));
+}
+
+// Test that pwrite with a negative offset fails with EINVAL.
+TEST_F(WriteTest, PwriteNegativeOffset) {
+  TempPath tmpfile = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(tmpfile.path().c_str(), O_WRONLY));
+
+  char buf[16] = {};
+  EXPECT_THAT(pwrite(fd.get(), buf, sizeof(buf), -1),
+              SyscallFailsWithErrno(EINVAL));
+}
+
+// Test writing to a pipe.
+TEST_F(WriteTest, WriteToPipe) {
+  int pipe_fds[2];
+  ASSERT_THAT(pipe(pipe_fds), SyscallSucceeds());
+  auto cleanup = Cleanup([&pipe_fds] {
+    close(pipe_fds[0]);
+    close(pipe_fds[1]);
+  });
+
+  const std::string data = "hello pipe";
+  EXPECT_THAT(write(pipe_fds[1], data.data(), data.size()),
+              SyscallSucceedsWithValue(data.size()));
+
+  char buf[32];
+  EXPECT_THAT(read(pipe_fds[0], buf, sizeof(buf)),
+              SyscallSucceedsWithValue(data.size()));
+  EXPECT_EQ(std::string(buf, data.size()), data);
+}
+
+// Test that pwrite to a pipe fails with ESPIPE.
+TEST_F(WriteTest, PwriteToPipe) {
+  int pipe_fds[2];
+  ASSERT_THAT(pipe(pipe_fds), SyscallSucceeds());
+  auto cleanup = Cleanup([&pipe_fds] {
+    close(pipe_fds[0]);
+    close(pipe_fds[1]);
+  });
+
+  const std::string data = "hello pipe";
+  EXPECT_THAT(pwrite(pipe_fds[1], data.data(), data.size(), 0),
+              SyscallFailsWithErrno(ESPIPE));
+}
+
+// Test that write to the read end of a pipe fails with EBADF.
+TEST_F(WriteTest, WriteToReadEndOfPipe) {
+  int pipe_fds[2];
+  ASSERT_THAT(pipe(pipe_fds), SyscallSucceeds());
+  auto cleanup = Cleanup([&pipe_fds] {
+    close(pipe_fds[0]);
+    close(pipe_fds[1]);
+  });
+
+  char buf[16] = {};
+  EXPECT_THAT(write(pipe_fds[0], buf, sizeof(buf)),
+              SyscallFailsWithErrno(EBADF));
+}
+
+// Test writing through a symlink.
+TEST_F(WriteTest, WriteToSymlink) {
+  TempPath tmpfile = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  const std::string link_path = NewTempAbsPath();
+  ASSERT_THAT(symlink(tmpfile.path().c_str(), link_path.c_str()),
+              SyscallSucceeds());
+  auto cleanup = Cleanup([&link_path] { unlink(link_path.c_str()); });
+
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(link_path.c_str(), O_WRONLY));
+
+  const std::string data = "hello symlink";
+  EXPECT_THAT(write(fd.get(), data.data(), data.size()),
+              SyscallSucceedsWithValue(data.size()));
+
+  // Verify data was written to the actual file.
+  FileDescriptor read_fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(tmpfile.path().c_str(), O_RDONLY));
+  char buf[32];
+  EXPECT_THAT(read(read_fd.get(), buf, sizeof(buf)),
+              SyscallSucceedsWithValue(data.size()));
+  EXPECT_EQ(std::string(buf, data.size()), data);
+}
+
+// Test that opening a symlink with O_NOFOLLOW for writing fails.
+TEST_F(WriteTest, WriteToSymlinkNoFollow) {
+  TempPath tmpfile = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  const std::string link_path = NewTempAbsPath();
+  ASSERT_THAT(symlink(tmpfile.path().c_str(), link_path.c_str()),
+              SyscallSucceeds());
+  auto cleanup = Cleanup([&link_path] { unlink(link_path.c_str()); });
+
+  EXPECT_THAT(open(link_path.c_str(), O_WRONLY | O_NOFOLLOW),
+              SyscallFailsWithErrno(ELOOP));
+}
+
+// Test writing to /dev/null succeeds and discards data.
+TEST_F(WriteTest, WriteToDevNull) {
+  FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open("/dev/null", O_WRONLY));
+
+  const std::string data = "this will be discarded";
+  EXPECT_THAT(write(fd.get(), data.data(), data.size()),
+              SyscallSucceedsWithValue(data.size()));
+}
+
+// Test writing to /dev/null with large buffer.
+TEST_F(WriteTest, WriteLargeToDevNull) {
+  FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open("/dev/null", O_WRONLY));
+
+  std::vector<char> large_buf(1024 * 1024, 'x');  // 1MB
+  EXPECT_THAT(write(fd.get(), large_buf.data(), large_buf.size()),
+              SyscallSucceedsWithValue(large_buf.size()));
+}
+
+// Test pwrite to /dev/null.
+TEST_F(WriteTest, PwriteToDevNull) {
+  FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open("/dev/null", O_WRONLY));
+
+  const std::string data = "pwrite to null";
+  EXPECT_THAT(pwrite(fd.get(), data.data(), data.size(), 100),
+              SyscallSucceedsWithValue(data.size()));
+}
+
+// Test writing to /dev/zero succeeds.
+TEST_F(WriteTest, WriteToDevZero) {
+  FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open("/dev/zero", O_WRONLY));
+
+  const std::string data = "writing to zero";
+  EXPECT_THAT(write(fd.get(), data.data(), data.size()),
+              SyscallSucceedsWithValue(data.size()));
+}
+
+// Test that writev with zero-length iovec array returns 0.
+TEST_F(WriteTest, WritevEmptyIovec) {
+  TempPath tmpfile = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(tmpfile.path().c_str(), O_WRONLY));
+
+  EXPECT_THAT(writev(fd.get(), nullptr, 0), SyscallSucceedsWithValue(0));
+}
+
+// Test that writev with iov_len=0 entries succeeds.
+TEST_F(WriteTest, WritevZeroLengthEntries) {
+  TempPath tmpfile = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(tmpfile.path().c_str(), O_WRONLY));
+
+  char buf1[] = "hello";
+  char buf2[] = "world";
+  struct iovec iov[] = {
+      {.iov_base = nullptr, .iov_len = 0},  // Zero-length entry
+      {.iov_base = buf1, .iov_len = 5},
+      {.iov_base = nullptr, .iov_len = 0},  // Another zero-length entry
+      {.iov_base = buf2, .iov_len = 5},
+  };
+
+  EXPECT_THAT(writev(fd.get(), iov, ABSL_ARRAYSIZE(iov)),
+              SyscallSucceedsWithValue(10));
+}
+
+// Test write extends file past EOF.
+TEST_F(WriteTest, WriteExtendsPastEOF) {
+  const std::string initial_data = "initial";
+  TempPath tmpfile = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileWith(
+      GetAbsoluteTestTmpdir(), initial_data, TempPath::kDefaultFileMode));
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(tmpfile.path().c_str(), O_RDWR));
+
+  // Seek to end.
+  ASSERT_THAT(lseek(fd.get(), 0, SEEK_END),
+              SyscallSucceedsWithValue(initial_data.size()));
+
+  // Write extends past EOF.
+  const std::string additional = " plus more";
+  EXPECT_THAT(write(fd.get(), additional.data(), additional.size()),
+              SyscallSucceedsWithValue(additional.size()));
+
+  // Verify the file size increased.
+  struct stat st;
+  ASSERT_THAT(fstat(fd.get(), &st), SyscallSucceeds());
+  EXPECT_EQ(st.st_size,
+            static_cast<off_t>(initial_data.size() + additional.size()));
+}
+
+// Test pwrite at offset beyond EOF creates a hole.
+TEST_F(WriteTest, PwriteBeyondEOFCreatesHole) {
+  TempPath tmpfile = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(tmpfile.path().c_str(), O_RDWR));
+
+  const std::string data = "at offset 100";
+  const off_t write_offset = 100;
+
+  EXPECT_THAT(pwrite(fd.get(), data.data(), data.size(), write_offset),
+              SyscallSucceedsWithValue(data.size()));
+
+  // Verify file size.
+  struct stat st;
+  ASSERT_THAT(fstat(fd.get(), &st), SyscallSucceeds());
+  EXPECT_EQ(st.st_size, static_cast<off_t>(write_offset + data.size()));
+
+  // Read back and verify hole contains zeros.
+  std::vector<char> buf(write_offset);
+  EXPECT_THAT(pread(fd.get(), buf.data(), buf.size(), 0),
+              SyscallSucceedsWithValue(buf.size()));
+  EXPECT_EQ(buf, std::vector<char>(write_offset, '\0'));
 }
 
 }  // namespace
