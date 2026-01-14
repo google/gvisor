@@ -502,6 +502,16 @@ func IsGoferMount(m specs.Mount) bool {
 	return m.Type == "bind" && m.Source != ""
 }
 
+// IsErofsMount returns true if the given mount can be mounted as EROFS.
+func IsErofsMount(m specs.Mount) bool {
+	return m.Type == "erofs"
+}
+
+// HasMountConfig returns true if the given mount has an associated GoferMountConf.
+func HasMountConfig(m specs.Mount) bool {
+	return IsGoferMount(m) || IsErofsMount(m)
+}
+
 // MaybeConvertToBindMount converts mount type to "bind" in case any of the
 // mount options are either "bind" or "rbind" as required by the OCI spec.
 //

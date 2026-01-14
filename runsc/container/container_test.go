@@ -3287,24 +3287,39 @@ func createImageEROFS(image, source string, options ...string) error {
 	return nil
 }
 
-// TestMountEROFS checks that the checksums from the target directory in the container
-// are identical with the ones from the source directory on the host.
-func TestMountEROFS(t *testing.T) {
-	// Skip this test if mkfs.erofs is not available.
-	skipIfNotAvailable(t, "mkfs.erofs")
+// erofsImageInfo contains information about a created EROFS image.
+type erofsImageInfo struct {
+	name    string
+	options string
+	path    string
+}
 
+// erofsTestEnv holds the environment details for EROFS tests.
+type erofsTestEnv struct {
+	scriptFile string
+	checksums  string
+	images     []erofsImageInfo
+}
+
+// setupEROFS creates a temporary directory with some random files and EROFS images.
+// It returns a test environment struct containing the directory paths and images,
+// a cleanup function that must be called to remove the temporary files, and an error.
+func setupEROFS() (*erofsTestEnv, func(), error) {
 	// Create a temporary directory to save the test files.
 	testDir, err := os.MkdirTemp(testutil.TmpDir(), "erofs_mount_test_")
 	if err != nil {
-		t.Fatalf("os.MkdirTemp() failed: %v", err)
+		return nil, nil, fmt.Errorf("os.MkdirTemp() failed: %v", err)
 	}
-	defer os.RemoveAll(testDir)
+	cu := cleanup.Make(func() {
+		os.RemoveAll(testDir)
+	})
+	defer cu.Clean()
 
 	// Create a temporary directory with some random files in it, which will
 	// be used as the source directory to create the EROFS images.
 	sourceDir := filepath.Join(testDir, "source")
 	if err := os.Mkdir(sourceDir, 0755); err != nil {
-		t.Fatalf("os.Mkdir() failed: %v", err)
+		return nil, nil, fmt.Errorf("os.Mkdir() failed: %v", err)
 	}
 	// Create some files with leading non-alphanumeric characters in name. It's helpful
 	// to verify the on-disk directory entries order.
@@ -3312,18 +3327,18 @@ func TestMountEROFS(t *testing.T) {
 		name := fmt.Sprintf("%s/%c_file", sourceDir, c)
 		// Create the file with random data.
 		if err := os.WriteFile(name, []byte(fmt.Sprintf("%v", rand.Uint64())), 0644); err != nil {
-			t.Fatalf("error creating %q: %v", name, err)
+			return nil, nil, fmt.Errorf("error creating %q: %v", name, err)
 		}
 	}
 	testApp, err := testutil.FindFile("test/cmd/test_app/test_app")
 	if err != nil {
-		t.Fatalf("error finding test_app: %v", err)
+		return nil, nil, fmt.Errorf("error finding test_app: %v", err)
 	}
 	// Source directory is a small directory. Let's create a big directory in it.
 	// So we can cover both cases.
 	cmd := fmt.Sprintf("%s fsTreeCreate --target-dir=%s --create-symlink --depth=1 --file-per-level=500 --file-size=5000", testApp, filepath.Join(sourceDir, "big-directory"))
 	if out, err := exec.Command("/bin/sh", "-c", cmd).CombinedOutput(); err != nil {
-		t.Fatalf("exec: sh -c %q, err: %v, out: %s", cmd, err, out)
+		return nil, nil, fmt.Errorf("exec: sh -c %q, err: %v, out: %s", cmd, err, out)
 	}
 
 	// Create a test script which can be used to get the checksums
@@ -3335,13 +3350,13 @@ dir=$1
 find $dir -printf "%P\n" | sort | md5sum
 find $dir -type l | sort | xargs -L 1 readlink | md5sum
 find $dir -type l -o -type f | sort | xargs cat | md5sum`), 0755); err != nil {
-		t.Fatalf("os.WriteFile() failed: %v", err)
+		return nil, nil, fmt.Errorf("os.WriteFile() failed: %v", err)
 	}
 
 	// Get the checksums from the source directory on the host.
 	var checksums string
 	if out, err := exec.Command(scriptFile, sourceDir).CombinedOutput(); err != nil {
-		t.Fatalf("exec: %s %s, err: %v, out: %s", scriptFile, sourceDir, err, out)
+		return nil, nil, fmt.Errorf("exec: %s %s, err: %v, out: %s", scriptFile, sourceDir, err, out)
 	} else {
 		checksums = string(out)
 	}
@@ -3372,19 +3387,45 @@ find $dir -type l -o -type f | sort | xargs cat | md5sum`), 0755); err != nil {
 		},
 	}
 
+	var resultImages []erofsImageInfo
 	// Create the EROFS images.
 	for _, i := range images {
-		if err := createImageEROFS(filepath.Join(testDir, i.name), sourceDir, i.options); err != nil {
-			t.Fatalf("error creating EROFS image: %v", err)
+		imagePath := filepath.Join(testDir, i.name)
+		if err := createImageEROFS(imagePath, sourceDir, i.options); err != nil {
+			return nil, nil, fmt.Errorf("error creating EROFS image: %v", err)
 		}
+		resultImages = append(resultImages, erofsImageInfo{
+			name:    i.name,
+			options: i.options,
+			path:    imagePath,
+		})
 	}
 
+	return &erofsTestEnv{
+		scriptFile: scriptFile,
+		checksums:  checksums,
+		images:     resultImages,
+	}, cu.Release(), nil
+}
+
+// TestMountEROFS checks that the checksums from the target directory in the container
+// are identical with the ones from the source directory on the host.
+func TestMountEROFS(t *testing.T) {
+	// Skip this test if mkfs.erofs is not available.
+	skipIfNotAvailable(t, "mkfs.erofs")
+
+	env, cleanup, err := setupEROFS()
+	if err != nil {
+		t.Fatalf("setupEROFS failed: %v", err)
+	}
+	defer cleanup()
+
 	spec, conf := sleepSpecConf(t)
-	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+	_, bundleDir, cleanupContainer, err := testutil.SetupContainer(spec, conf)
 	if err != nil {
 		t.Fatalf("error setting up container: %v", err)
 	}
-	defer cleanup()
+	defer cleanupContainer()
 
 	// Create and start the container.
 	args := Args{
@@ -3411,25 +3452,83 @@ find $dir -type l -o -type f | sort | xargs cat | md5sum`), 0755); err != nil {
 	}
 
 	targetDir := "/mnt"
-	for _, i := range images {
+	for _, i := range env.images {
 		// Mount the EROFS image in the container.
-		imageFile := filepath.Join(testDir, i.name)
-		if err := c.Sandbox.Mount(c.ID, erofs.Name, imageFile, targetDir); err != nil {
-			t.Fatalf("error mounting EROFS image %q at %q, err: %v", imageFile, targetDir, err)
+		if err := c.Sandbox.Mount(c.ID, erofs.Name, i.path, targetDir); err != nil {
+			t.Fatalf("error mounting EROFS image %q at %q, err: %v", i.path, targetDir, err)
 		}
 
 		// Get the checksums from the target directory in the container, and check if they are
 		// identical with the ones got from the source directory on the host.
-		if out, err := executeCombinedOutput(conf, c, nil, scriptFile, targetDir); err != nil {
-			t.Fatalf("exec: %s %s, err: %v, out: %s", scriptFile, targetDir, err, out)
-		} else if checksums != string(out) {
-			t.Errorf("checksums do not match, got: %s from %s, expected: %s", out, imageFile, checksums)
+		if out, err := executeCombinedOutput(conf, c, nil, env.scriptFile, targetDir); err != nil {
+			t.Fatalf("exec: %s %s, err: %v, out: %s", env.scriptFile, targetDir, err, out)
+		} else if env.checksums != string(out) {
+			t.Errorf("checksums do not match, got: %s from %s, expected: %s", out, i.path, env.checksums)
 		}
 
 		// Unmount the EROFS image in the container.
 		if out, err := executeCombinedOutput(conf, c, nil, copiedUmount, targetDir); err != nil {
 			t.Fatalf("exec: umount %q, err: %v, out: %s", targetDir, err, out)
 		}
+	}
+}
+
+// TestMountEROFSConfig checks that the checksums from the target directory in the container
+// are identical with the ones from the source directory on the host.
+// This test verifies EROFS mounts specified in config.json.
+func TestMountEROFSConfig(t *testing.T) {
+	// Skip this test if mkfs.erofs is not available.
+	skipIfNotAvailable(t, "mkfs.erofs")
+
+	env, cleanup, err := setupEROFS()
+	if err != nil {
+		t.Fatalf("setupEROFS failed: %v", err)
+	}
+	defer cleanup()
+
+	targetDir := "/mnt"
+
+	for _, i := range env.images {
+		t.Run(i.name, func(t *testing.T) {
+			spec, conf := sleepSpecConf(t)
+
+			// Add EROFS mount to spec.
+			spec.Mounts = append(spec.Mounts, specs.Mount{
+				Source:      i.path,
+				Destination: targetDir,
+				Type:        erofs.Name,
+				Options:     []string{"ro"},
+			})
+
+			_, bundleDir, cleanupContainer, err := testutil.SetupContainer(spec, conf)
+			if err != nil {
+				t.Fatalf("error setting up container: %v", err)
+			}
+			defer cleanupContainer()
+
+			// Create and start the container.
+			args := Args{
+				ID:        testutil.RandomContainerID(),
+				Spec:      spec,
+				BundleDir: bundleDir,
+			}
+			c, err := New(conf, args)
+			if err != nil {
+				t.Fatalf("error creating container: %v", err)
+			}
+			defer c.Destroy()
+			if err := c.Start(conf); err != nil {
+				t.Fatalf("error starting container: %v", err)
+			}
+
+			// Get the checksums from the target directory in the container, and check if they are
+			// identical with the ones got from the source directory on the host.
+			if out, err := executeCombinedOutput(conf, c, nil, env.scriptFile, targetDir); err != nil {
+				t.Fatalf("exec: %s %s, err: %v, out: %s", env.scriptFile, targetDir, err, out)
+			} else if env.checksums != string(out) {
+				t.Errorf("checksums do not match, got: %s from %s, expected: %s", out, i.path, env.checksums)
+			}
+		})
 	}
 }
 
