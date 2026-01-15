@@ -8,14 +8,22 @@ network driver and the bridge network driver are tested and supported.
 
 ### Limitations
 
--   gVisor supports Docker Engine up to version 28
+-   Since version 29, docker defaults to using the
+    [containerd image store](https://docs.docker.com/engine/storage/containerd/)
+    as its default storage backend. For this to work inside gVisor, we need to
+    mount a tmpfs at `/var/lib/docker` because gVisor currently only allows
+    tmpfs mounts as upper layers of an overlay filesystem. See
+    [images/basic/docker/start-dockerd.sh](https://github.com/google/gvisor/blob/master/images/basic/docker/start-dockerd.sh)
+    for reference. Alternately, one can chose to avoid the new storage backend
+    altogether by launching dockerd with `--feature
+    containerd-snapshotter=false`.
 -   `dockerd` inside gVisor needs to be executed with flags `--iptables=false
     --ip6tables=false` and additional network setup is needed, check
     [images/basic/docker/start-dockerd.sh](https://github.com/google/gvisor/blob/master/images/basic/docker/start-dockerd.sh)
-    for the reference
--   because iptables disabled, `docker run --expose=` does not expose the port;
-    if a nested container needs to expose ports, inside gVisor use `docker run
-    --network=host`
+    for reference.
+-   With iptables disabled, `docker run --expose=` does not expose the port; if
+    a nested container needs to expose ports, inside gVisor use `docker run
+    --network=host`.
 
 ### NOTE on runsc setup
 

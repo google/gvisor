@@ -34,7 +34,6 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff"
-	"github.com/docker/docker/api/types/mount"
 	yaml "gopkg.in/yaml.v3"
 	"gvisor.dev/gvisor/pkg/test/dockerutil"
 	"gvisor.dev/gvisor/pkg/test/testutil"
@@ -546,28 +545,15 @@ func startDockerdInGvisor(ctx context.Context, t *testing.T, overlay bool) *dock
 		Image:  "basic/docker",
 		CapAdd: dockerInGvisorCapabilities(),
 	}
-	if overlay {
-		opts.Mounts = []mount.Mount{
-			{
-				Target: "/var/lib/docker",
-				Type:   mount.TypeTmpfs,
-			},
-		}
+
+	var args []string
+	if !overlay {
+		args = append(args, "--no-overlay")
 	}
-	if err := d.Spawn(ctx, opts); err != nil {
+	if err := d.Spawn(ctx, opts, args...); err != nil {
 		t.Fatalf("docker run failed: %v", err)
 	}
 
-	if overlay {
-		// Docker creates tmpfs mounts with the noexec flag.
-		output, err := d.Exec(ctx,
-			dockerutil.ExecOpts{Privileged: true},
-			"mount", "-o", "remount,exec", "/var/lib/docker",
-		)
-		if err != nil {
-			t.Fatalf("docker exec failed: %v\n%s", err, output)
-		}
-	}
 	// Wait for the docker daemon.
 	for i := 0; i < 10; i++ {
 		_, err := d.Exec(ctx, dockerutil.ExecOpts{}, "docker", "info")
