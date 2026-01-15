@@ -66,7 +66,6 @@ go_library(
     srcs = [
         "addr_range.go",
         "addr_set.go",
-        "debug.go",
         "decode.go",
         "decode_unsafe.go",
         "deferred_list.go",
