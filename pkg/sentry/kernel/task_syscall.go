@@ -87,11 +87,11 @@ func (t *Task) executeSyscall(sysno uintptr, args arch.SyscallArguments) (rval u
 	fe := s.FeatureEnable.Word(sysno)
 
 	var straceContext any
-	if bits.IsAnyOn32(fe, StraceEnableBits) {
+	if bits.IsAnyOn(fe, StraceEnableBits) {
 		straceContext = s.Stracer.SyscallEnter(t, sysno, args, fe)
 	}
 
-	if bits.IsAnyOn32(fe, SecCheckRawEnter) {
+	if bits.IsAnyOn(fe, SecCheckRawEnter) {
 		info := pb.Syscall{
 			Sysno: uint64(sysno),
 			Arg1:  args[0].Uint64(),
@@ -110,7 +110,7 @@ func (t *Task) executeSyscall(sysno uintptr, args arch.SyscallArguments) (rval u
 			return c.RawSyscall(t, fields, &info)
 		})
 	}
-	if bits.IsAnyOn32(fe, SecCheckEnter) {
+	if bits.IsAnyOn(fe, SecCheckEnter) {
 		fields := seccheck.Global.GetFieldSet(seccheck.GetPointForSyscall(seccheck.SyscallEnter, sysno))
 		var ctxData *pb.ContextData
 		if !fields.Context.Empty() {
@@ -128,7 +128,7 @@ func (t *Task) executeSyscall(sysno uintptr, args arch.SyscallArguments) (rval u
 		})
 	}
 
-	if bits.IsOn32(fe, ExternalBeforeEnable) && (s.ExternalFilterBefore == nil || s.ExternalFilterBefore(t, sysno, args)) {
+	if bits.IsOn(fe, ExternalBeforeEnable) && (s.ExternalFilterBefore == nil || s.ExternalFilterBefore(t, sysno, args)) {
 		t.invokeExternal()
 		// Ensure we check for stops, then invoke the syscall again.
 		ctrl = ctrlStopAndReinvokeSyscall
@@ -150,16 +150,16 @@ func (t *Task) executeSyscall(sysno uintptr, args arch.SyscallArguments) (rval u
 		}
 	}
 
-	if bits.IsOn32(fe, ExternalAfterEnable) && (s.ExternalFilterAfter == nil || s.ExternalFilterAfter(t, sysno, args)) {
+	if bits.IsOn(fe, ExternalAfterEnable) && (s.ExternalFilterAfter == nil || s.ExternalFilterAfter(t, sysno, args)) {
 		t.invokeExternal()
 		// Don't reinvoke the unix.
 	}
 
-	if bits.IsAnyOn32(fe, StraceEnableBits) {
+	if bits.IsAnyOn(fe, StraceEnableBits) {
 		s.Stracer.SyscallExit(straceContext, t, sysno, rval, err)
 	}
 
-	if bits.IsAnyOn32(fe, SecCheckRawExit) {
+	if bits.IsAnyOn(fe, SecCheckRawExit) {
 		info := pb.Syscall{
 			Sysno: uint64(sysno),
 			Arg1:  args[0].Uint64(),
@@ -182,7 +182,7 @@ func (t *Task) executeSyscall(sysno uintptr, args arch.SyscallArguments) (rval u
 			return c.RawSyscall(t, fields, &info)
 		})
 	}
-	if bits.IsAnyOn32(fe, SecCheckExit) {
+	if bits.IsAnyOn(fe, SecCheckExit) {
 		fields := seccheck.Global.GetFieldSet(seccheck.GetPointForSyscall(seccheck.SyscallExit, sysno))
 		var ctxData *pb.ContextData
 		if !fields.Context.Empty() {

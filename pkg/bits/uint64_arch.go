@@ -32,6 +32,6 @@ func ForEachSetBit64(x uint64, f func(i int)) {
 	for x != 0 {
 		i := TrailingZeros64(x)
 		f(i)
-		x &^= MaskOf64(i)
+		x &^= MaskOf[uint64](i)
 	}
 }
