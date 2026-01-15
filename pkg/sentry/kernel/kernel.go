@@ -49,6 +49,7 @@ import (
 	"gvisor.dev/gvisor/pkg/devutil"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/eventchannel"
+	"gvisor.dev/gvisor/pkg/fdnotifier"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/refs"
@@ -641,6 +642,10 @@ func (k *Kernel) SaveTo(ctx context.Context, stateFile, pagesMetadata io.WriteCl
 	k.extMu.Lock()
 	defer k.extMu.Unlock()
 
+	// Suspend fdnotifier notifications.
+	fdnotifier.Pause()
+	defer fdnotifier.Resume()
+
 	// Stop time.
 	k.pauseTimeLocked(ctx)
 	defer k.resumeTimeLocked(ctx)
@@ -713,9 +718,7 @@ func (k *Kernel) SaveTo(ctx context.Context, stateFile, pagesMetadata io.WriteCl
 
 	// Save the kernel state.
 	kernelStart := time.Now()
-	state.IsSaving.Store(true)
 	stats, err := state.Save(ctx, stateFile, k)
-	state.IsSaving.Store(false)
 	if err != nil {
 		return err
 	}
@@ -879,6 +882,10 @@ func (k *Kernel) LoadFrom(ctx context.Context, r io.Reader, asyncMFLoader *Async
 	if err := k.featureSet.CheckHostCompatible(); err != nil {
 		return err
 	}
+
+	// Suspend fdnotifier notifications.
+	fdnotifier.Pause()
+	defer fdnotifier.Resume()
 
 	// Load the kernel state.
 	kernelStart := time.Now()

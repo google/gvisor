@@ -1,4 +1,4 @@
-// Copyright 2025 The gVisor Authors.
+// Copyright 2026 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,11 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package state
+// Package version holds the kernel versioning information.
+package version
 
-import (
-	"sync/atomic"
+const (
+	// LinuxSysname is the OS name advertised by gVisor.
+	LinuxSysname = "Linux"
+
+	// LinuxRelease is the Linux release version number advertised by gVisor.
+	LinuxRelease = "4.4.0"
+
+	// LinuxVersion is the version info advertised by gVisor.
+	LinuxVersion = "#1 SMP Sun Jan 10 15:06:54 PST 2016"
 )
-
-// IsSaving is set to true during kernel object graph saving for debugging.
-var IsSaving atomic.Bool

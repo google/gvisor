@@ -41,6 +41,9 @@ type notifier struct {
 	// notifications.
 	epFD int
 
+	// pauseMu synchronizes notifications with save/restore.
+	pauseMu sync.Mutex
+
 	// mu protects fdMap.
 	mu sync.Mutex
 
@@ -162,6 +165,7 @@ func (n *notifier) waitAndNotify() error {
 		}
 
 		notified := false
+		n.pauseMu.Lock()
 		n.mu.Lock()
 		for i := 0; i < v; i++ {
 			if fi, ok := n.fdMap[e[i].Fd]; ok {
@@ -170,6 +174,7 @@ func (n *notifier) waitAndNotify() error {
 			}
 		}
 		n.mu.Unlock()
+		n.pauseMu.Unlock()
 		if notified {
 			// Let goroutines woken by Notify get a chance to run before we
 			// epoll_wait again.
@@ -178,18 +183,31 @@ func (n *notifier) waitAndNotify() error {
 	}
 }
 
+// pause suspends notifications until resume is called.
+func (n *notifier) pause() {
+	n.pauseMu.Lock()
+}
+
+// resume ends the effect of a previous call to pause.
+func (n *notifier) resume() {
+	n.pauseMu.Unlock()
+}
+
 var shared struct {
 	notifier *notifier
 	once     sync.Once
 	initErr  error
 }
 
-// AddFD adds an FD to the list of observed FDs.
-func AddFD(fd int32, queue *waiter.Queue) error {
+func ensureSharedNotifier() {
 	shared.once.Do(func() {
 		shared.notifier, shared.initErr = newNotifier()
 	})
+}
 
+// AddFD adds an FD to the list of observed FDs.
+func AddFD(fd int32, queue *waiter.Queue) error {
+	ensureSharedNotifier()
 	if shared.initErr != nil {
 		return shared.initErr
 	}
@@ -212,4 +230,15 @@ func RemoveFD(fd int32) {
 // This should only be used by tests to assert that FDs are correctly registered.
 func HasFD(fd int32) bool {
 	return shared.notifier.hasFD(fd)
+}
+
+// Pause suspends notifications until Resume is called.
+func Pause() {
+	ensureSharedNotifier()
+	shared.notifier.pause()
+}
+
+// Resume ends the effect of a previous call to Pause.
+func Resume() {
+	shared.notifier.resume()
 }
