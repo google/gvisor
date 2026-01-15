@@ -473,7 +473,9 @@ func (s *Sandbox) StartSubcontainer(spec *specs.Spec, conf *config.Config, cid s
 			return fmt.Errorf("opening rootfs upper tar file: %v", err)
 		}
 	}
-	defer rootfsUpperTarFile.Close()
+	if rootfsUpperTarFile != nil {
+		defer rootfsUpperTarFile.Close()
+	}
 
 	// The payload contains (in this specific order):
 	// * stdin/stdout/stderr (optional: only present when not using TTY)

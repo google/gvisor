@@ -50,8 +50,6 @@ const (
 	// `config.overrideAllowlist` for the list of allowed flags.
 	annotationFlagPrefix = "dev.gvisor.flag."
 
-	annotationContainerName = "io.kubernetes.cri.container-name"
-
 	// annotationContainerNameRemap allows the container name to be changed. This is useful during
 	// restore when container name has changed after it has been saved.
 	//
@@ -60,6 +58,15 @@ const (
 	//	"dev.gvisor.container-name-remap.<any-unique-id>": "<from>=<to>"
 	//	"dev.gvisor.container-name-remap.1": "cont-123=cont"
 	annotationContainerNameRemap = "dev.gvisor.container-name-remap."
+
+	// AnnotationRootfsUpperTar specifies the rootfs upper layer tar path.
+	// In multi-container pods, append the container name to select a specific
+	// container:
+	//
+	// Usage:
+	//	"dev.gvisor.tar.rootfs.upper": "<path>"
+	//	"dev.gvisor.tar.rootfs.upper.<container-name>": "<path>"
+	AnnotationRootfsUpperTar = "dev.gvisor.tar.rootfs.upper"
 
 	// annotationSeccomp indicates what seccomp rules was set to a given container.
 	//
@@ -810,16 +817,25 @@ func ContainerName(spec *specs.Spec) string {
 }
 
 func containerNameNoRemap(spec *specs.Spec) string {
-	return spec.Annotations[annotationContainerName]
+	return spec.Annotations[ContainerdContainerNameAnnotation]
 }
 
-// RootfsTarUpperPath returns the path to the rootfs upper tar file. Returns empty string if no
-// annotation is found.
+// RootfsTarUpperPath returns the path to the rootfs upper tar file, or empty
+// string if not set. In multi-container mode, only container-specific
+// annotations are used.
 func RootfsTarUpperPath(spec *specs.Spec) string {
 	if spec == nil || spec.Annotations == nil {
 		return ""
 	}
-	return spec.Annotations["dev.gvisor.tar.rootfs.upper"]
+	if name := ContainerName(spec); name != "" {
+		return spec.Annotations[AnnotationRootfsUpperTar+"."+name]
+	}
+	// Multi-container sandbox must use container-specific annotations.
+	cType := SpecContainerType(spec)
+	if cType == ContainerTypeContainer || cType == ContainerTypeSandbox {
+		return ""
+	}
+	return spec.Annotations[AnnotationRootfsUpperTar]
 }
 
 // AnnotationToBool parses the annotation value as a bool. On failure, it logs a warning and

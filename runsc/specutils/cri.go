@@ -35,6 +35,10 @@ const (
 	// is not the first container in the sandbox.
 	ContainerdSandboxIDAnnotation = "io.kubernetes.cri.sandbox-id"
 
+	// ContainerdContainerNameAnnotation is the OCI annotation set by
+	// containerd to indicate the name of the container.
+	ContainerdContainerNameAnnotation = "io.kubernetes.cri.container-name"
+
 	// CRIOContainerTypeAnnotation is the OCI annotation set by
 	// CRI-O to indicate whether the container to create should have
 	// its own sandbox or a container within an existing sandbox.

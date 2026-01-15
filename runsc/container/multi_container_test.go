@@ -120,6 +120,12 @@ func TestMultiContainerTarRootfsUpperLayer(t *testing.T) {
 		spec.Root.Readonly = false
 	}
 
+	const rootContainerName = "root-container"
+	const subContainerName = "sub-container"
+	contNameKey := specutils.ContainerdContainerNameAnnotation
+	specs[0].Annotations[contNameKey] = rootContainerName
+	specs[1].Annotations[contNameKey] = subContainerName
+
 	containers, cleanupContainers, err := startContainers(conf, specs, ids)
 	if err != nil {
 		t.Fatalf("error starting containers: %v", err)
@@ -183,8 +189,19 @@ func TestMultiContainerTarRootfsUpperLayer(t *testing.T) {
 	for _, spec := range restoreSpecs {
 		spec.Root.Readonly = false
 	}
-	restoreSpecs[0].Annotations["dev.gvisor.tar.rootfs.upper"] = rootTar.Name()
-	restoreSpecs[1].Annotations["dev.gvisor.tar.rootfs.upper"] = subTar.Name()
+
+	// Mimic k8s pod annotations: all containers see all annotations.
+	rootfsKey := specutils.AnnotationRootfsUpperTar
+	rootRootfsAnnotation := rootfsKey + "." + rootContainerName
+	subRootfsAnnotation := rootfsKey + "." + subContainerName
+
+	restoreSpecs[0].Annotations[contNameKey] = rootContainerName
+	restoreSpecs[0].Annotations[rootRootfsAnnotation] = rootTar.Name()
+	restoreSpecs[0].Annotations[subRootfsAnnotation] = subTar.Name()
+
+	restoreSpecs[1].Annotations[contNameKey] = subContainerName
+	restoreSpecs[1].Annotations[rootRootfsAnnotation] = rootTar.Name()
+	restoreSpecs[1].Annotations[subRootfsAnnotation] = subTar.Name()
 
 	restoreContainers, restoreCleanup, err := startContainers(conf, restoreSpecs, restoreIDs)
 	if err != nil {

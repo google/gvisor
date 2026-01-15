@@ -51,8 +51,11 @@ hello world
 ## How to start a container with the tar file
 
 To start a new gVisor sandbox with the tar file we just get, you will need
-provide the annotation to OCI runtime spec, the key is
-`dev.gvisor.tar.rootfs.upper`, the value is the path to the tar file.
+provide the annotation to OCI runtime spec. For single-container sandboxes the
+key is `dev.gvisor.tar.rootfs.upper`, whose value is the path to the tar
+file. For pods with multiple containers, append the container name to the key,
+for example `dev.gvisor.tar.rootfs.upper.my-container`, allowing different containers'
+rootfs snapshots to be restored from different tar files.
 
 ### Start with Docker
 
@@ -76,7 +79,14 @@ You can add annotation to the bundle's `config.json` as:
 ```
 
 Then you can start a new sandbox and observe the file changes from the previous
-sandbox:
+sandbox. For a multi-container pod, add one entry per container name:
+
+```json
+    "annotations": {
+      "dev.gvisor.tar.rootfs.upper.app": "/tmp/app-rootfs.tar",
+      "dev.gvisor.tar.rootfs.upper.sidecar": "/tmp/sidecar-rootfs.tar"
+    },
+```
 
 ```
 $ sudo runsc run -detach=true alpine
