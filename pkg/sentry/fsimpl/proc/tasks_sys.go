@@ -30,6 +30,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/version"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
@@ -69,6 +70,9 @@ func (fs *filesystem) newSysDir(ctx context.Context, root *auth.Credentials, k *
 			"keys": fs.newStaticDir(ctx, root, map[string]kernfs.Inode{
 				"maxkeys": fs.newMaxKeySizeFile(ctx, k, root),
 			}),
+			"osrelease": fs.newInode(ctx, root, 0444, newStaticFile(version.LinuxRelease)),
+			"ostype":    fs.newInode(ctx, root, 0444, newStaticFile(version.LinuxSysname)),
+			"version":   fs.newInode(ctx, root, 0444, newStaticFile(version.LinuxVersion)),
 		}),
 		"fs": fs.newStaticDir(ctx, root, map[string]kernfs.Inode{
 			"nr_open": fs.newInode(ctx, root, 0644, &atomicInt32File{val: &k.MaxFDLimit, min: 8, max: kernel.MaxFdLimit}),
