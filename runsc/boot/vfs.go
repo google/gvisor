@@ -381,6 +381,10 @@ type containerMounter struct {
 	// for bind mounts in Spec.Mounts (in the same order).
 	goferMountConfs []GoferMountConf
 
+	// numRootfsGoferFDs is the number of gofer FDs for rootfs. Typically 1,
+	// but can be more when rootfs uses multiple lower directories for overlayfs.
+	numRootfsGoferFDs int
+
 	k *kernel.Kernel
 
 	// hints is the set of pod mount hints for the sandbox.
@@ -419,6 +423,7 @@ func newContainerMounter(info *containerInfo, k *kernel.Kernel, hints *PodMountH
 		goferFilestoreFDs: fdDispenser{fds: info.goferFilestoreFDs},
 		devGoferFD:        info.devGoferFD,
 		goferMountConfs:   info.goferMountConfs,
+		numRootfsGoferFDs: info.numRootfsGoferFDs,
 		k:                 k,
 		hints:             hints,
 		sharedMounts:      sharedMounts,
@@ -484,8 +489,19 @@ func (c *containerMounter) mountAll(rootCtx context.Context, rootCreds *auth.Cre
 
 // createMountNamespace creates the container's root mount and namespace.
 func (c *containerMounter) createMountNamespace(ctx context.Context, conf *config.Config, creds *auth.Credentials) (*vfs.MountNamespace, error) {
-	ioFD := c.goferFDs.remove()
 	rootfsConf := c.goferMountConfs[0]
+
+	// Check if we have multiple rootfs gofer FDs (multiple lower dirs)
+	if c.numRootfsGoferFDs > 1 {
+		if !rootfsConf.ShouldUseLisafs() || !rootfsConf.ShouldUseOverlayfs() {
+			return nil, fmt.Errorf("multi-layer rootfs requires lisafs and overlayfs")
+		}
+		log.Infof("Mounting root with %d lower layers", c.numRootfsGoferFDs)
+		return c.createMultiLowerRootfs(ctx, conf, creds, rootfsConf)
+	}
+
+	// Single rootfs case (existing logic)
+	ioFD := c.goferFDs.remove()
 
 	var (
 		fsName string
@@ -597,19 +613,6 @@ func (c *containerMounter) createMountNamespace(ctx context.Context, conf *confi
 // after the options have been used to mount the overlay, to release refs on
 // lower and upper mounts.
 func (c *containerMounter) configureOverlay(ctx context.Context, conf *config.Config, creds *auth.Credentials, lowerOpts *vfs.MountOptions, lowerFSName string, filestoreFD *fd.FD, mountConf GoferMountConf, dst string, rootfsUpperTarFD *fd.FD) (*vfs.MountOptions, func(), error) {
-	// First copy options from lower layer to upper layer and overlay. Clear
-	// filesystem specific options.
-	upperOpts := *lowerOpts
-	upperOpts.GetFilesystemOptions = vfs.GetFilesystemOptions{InternalMount: true}
-	if mountConf.Size != "" {
-		if upperOpts.GetFilesystemOptions.Data != "" {
-			upperOpts.GetFilesystemOptions.Data += ","
-		}
-		upperOpts.GetFilesystemOptions.Data += "size=" + mountConf.Size
-	}
-	overlayOpts := *lowerOpts
-	overlayOpts.GetFilesystemOptions = vfs.GetFilesystemOptions{InternalMount: true}
-
 	// All writes go to the upper layer, be paranoid and make lower readonly.
 	lowerOpts.ReadOnly = true
 	lower, err := c.k.VFS().MountDisconnected(ctx, creds, "" /* source */, lowerFSName, lowerOpts)
@@ -619,8 +622,133 @@ func (c *containerMounter) configureOverlay(ctx context.Context, conf *config.Co
 	cu := cleanup.Make(func() { lower.DecRef(ctx) })
 	defer cu.Clean()
 
-	// Determine the lower layer's root's type.
 	lowerRootVD := vfs.MakeVirtualDentry(lower, lower.Root())
+
+	overlayOpts, upperCleanup, err := c.configureOverlayLayers(ctx, creds, []vfs.VirtualDentry{lowerRootVD}, mountConf, filestoreFD, rootfsUpperTarFD, dst)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// Combine cleanups.
+	lowerCleanup := cu.Release()
+	fullCleanup := func() {
+		upperCleanup()
+		lowerCleanup()
+	}
+
+	return overlayOpts, fullCleanup, nil
+}
+
+// createMultiLowerRootfs creates a root filesystem with multiple lower layers.
+func (c *containerMounter) createMultiLowerRootfs(ctx context.Context, conf *config.Config, creds *auth.Credentials, rootfsConf GoferMountConf) (*vfs.MountNamespace, error) {
+	var (
+		lowerMounts []*vfs.Mount
+		lowerRoots  []vfs.VirtualDentry
+	)
+	// Clean up lower mounts on error, or after overlay is mounted.
+	cu := cleanup.Make(func() {
+		for _, mnt := range lowerMounts {
+			mnt.DecRef(ctx)
+		}
+	})
+	defer cu.Clean()
+
+	// Mount each lower layer.
+	// NOTE: The order of lower layers in the annotation (and thus gofer connections)
+	// corresponds to the order in the overlay stack (index 0 is the top-most layer).
+	for i := 0; i < c.numRootfsGoferFDs; i++ {
+		ioFD := c.goferFDs.remove()
+		data := goferMountData(ioFD, conf.FileAccess, conf)
+		data = append(data, "overlayfs_stale_read")
+
+		opts := &vfs.MountOptions{
+			ReadOnly: true, // Lower layers are always readonly
+			GetFilesystemOptions: vfs.GetFilesystemOptions{
+				InternalMount: true,
+				Data:          strings.Join(data, ","),
+				InternalData: gofer.InternalFilesystemOptions{
+					UniqueID: vfs.RestoreID{
+						ContainerName: c.containerName,
+						Path:          fmt.Sprintf("/__lower%d", i),
+					},
+				},
+			},
+		}
+
+		lower, err := c.k.VFS().MountDisconnected(ctx, creds, "", gofer.Name, opts)
+		if err != nil {
+			return nil, fmt.Errorf("mounting lower layer %d: %w", i, err)
+		}
+		lowerMounts = append(lowerMounts, lower)
+		lowerRoots = append(lowerRoots, vfs.MakeVirtualDentry(lower, lower.Root()))
+		log.Infof("Mounted lower layer %d for rootfs, ioFD: %d", i, ioFD)
+	}
+
+	var filestoreFD *fd.FD
+	if rootfsConf.IsFilestorePresent() {
+		filestoreFD = c.goferFilestoreFDs.removeAsFD()
+	}
+
+	opts, layersCleanup, err := c.configureOverlayLayers(ctx, creds, lowerRoots, rootfsConf, filestoreFD, c.rootfsUpperTarFD, "/")
+	if err != nil {
+		return nil, fmt.Errorf("configuring overlay: %w", err)
+	}
+	// layersCleanup cleans up the upper layer. cu cleans up lower layers.
+	fullCleanup := func() {
+		layersCleanup()
+		cu.Clean()
+	}
+	defer fullCleanup()
+
+	// The namespace root mount can't be changed, so let's mount a dummy
+	// read-only tmpfs here. It simplifies creation of containers without
+	// leaking the root file system.
+	mns, err := c.k.VFS().NewMountNamespace(ctx, creds, "rootfs", "tmpfs",
+		&vfs.MountOptions{ReadOnly: true, Locked: true}, c.k)
+	if err != nil {
+		return nil, fmt.Errorf("setting up mount namespace: %w", err)
+	}
+	defer mns.DecRef(ctx)
+
+	// Mount the overlay
+	mnt, err := c.k.VFS().MountDisconnected(ctx, creds, "root", overlay.Name, opts)
+	if err != nil {
+		return nil, fmt.Errorf("creating overlay file system: %w", err)
+	}
+	defer mnt.DecRef(ctx)
+
+	root := mns.Root(ctx)
+	defer root.DecRef(ctx)
+	target := &vfs.PathOperation{
+		Root:  root,
+		Start: root,
+	}
+	if err := c.k.VFS().ConnectMountAt(ctx, creds, mnt, target); err != nil {
+		return nil, fmt.Errorf("mounting overlay file system: %w", err)
+	}
+
+	mns.IncRef()
+	return mns, nil
+}
+
+// configureOverlayLayers configures the upper layer of an overlayfs and combines it
+// with the provided lower layers.
+func (c *containerMounter) configureOverlayLayers(
+	ctx context.Context,
+	creds *auth.Credentials,
+	lowerRoots []vfs.VirtualDentry,
+	mountConf GoferMountConf,
+	filestoreFD *fd.FD,
+	rootfsUpperTarFD *fd.FD,
+	dst string,
+) (*vfs.MountOptions, func(), error) {
+	if len(lowerRoots) == 0 {
+		return nil, nil, fmt.Errorf("no lower layers provided for overlay")
+	}
+
+	// Determine the lower layer's root's type from the top-most layer.
+	// Overlayfs expects lower layers to be directories, but we check anyway.
+	lowerRootVD := lowerRoots[0]
 	stat, err := c.k.VFS().StatAt(ctx, creds, &vfs.PathOperation{
 		Root:  lowerRootVD,
 		Start: lowerRootVD,
@@ -636,6 +764,10 @@ func (c *containerMounter) configureOverlay(ctx context.Context, conf *config.Co
 	rootType := stat.Mode & linux.S_IFMT
 	if rootType != linux.S_IFDIR && rootType != linux.S_IFREG {
 		return nil, nil, fmt.Errorf("lower layer's root has unsupported file type %v", rootType)
+	}
+	// For multiple lower layers, they should be directories.
+	if len(lowerRoots) > 1 && rootType != linux.S_IFDIR {
+		return nil, nil, fmt.Errorf("multiple lower layers must be directories")
 	}
 
 	// Upper is a tmpfs mount to keep all modifications inside the sandbox.
@@ -658,16 +790,25 @@ func (c *containerMounter) configureOverlay(ctx context.Context, conf *config.Co
 	if rootfsUpperTarFD != nil {
 		tmpfsOpts.SourceTarFile = rootfsUpperTarFD.ReleaseToFile("rootfs-upper-tar-fd")
 	}
-	upperOpts.GetFilesystemOptions.InternalData = tmpfsOpts
-	upper, err := c.k.VFS().MountDisconnected(ctx, creds, "" /* source */, tmpfs.Name, &upperOpts)
+
+	upperOpts := &vfs.MountOptions{
+		GetFilesystemOptions: vfs.GetFilesystemOptions{
+			InternalMount: true,
+			InternalData:  tmpfsOpts,
+		},
+	}
+	if mountConf.Size != "" {
+		upperOpts.GetFilesystemOptions.Data = "size=" + mountConf.Size
+	}
+
+	upper, err := c.k.VFS().MountDisconnected(ctx, creds, "" /* source */, tmpfs.Name, upperOpts)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to create upper layer for overlay, opts: %+v: %v", upperOpts, err)
 	}
-	cu.Add(func() { upper.DecRef(ctx) })
+	cu := cleanup.Make(func() { upper.DecRef(ctx) })
+	defer cu.Clean() // This runs if we error out, otherwise we Release it.
 
-	// If the overlay mount consists of a regular file, copy up its contents
-	// from the lower layer, since in the overlay the otherwise-empty upper
-	// layer file will take precedence.
+	// If the overlay mount consists of a regular file, copy up its contents.
 	upperRootVD := vfs.MakeVirtualDentry(upper, upper.Root())
 	if rootType == linux.S_IFREG {
 		lowerFD, err := c.k.VFS().OpenAt(ctx, creds, &vfs.PathOperation{
@@ -706,8 +847,7 @@ func (c *containerMounter) configureOverlay(ctx context.Context, conf *config.Co
 		}
 	}
 
-	// Propagate the lower layer's root's owner, group, and mode to the upper
-	// layer's root for consistency with VFS1.
+	// Propagate the lower layer's root's owner, group, and mode to the upper layer.
 	err = c.k.VFS().SetStatAt(ctx, creds, &vfs.PathOperation{
 		Root:  upperRootVD,
 		Start: upperRootVD,
@@ -723,12 +863,18 @@ func (c *containerMounter) configureOverlay(ctx context.Context, conf *config.Co
 		return nil, nil, err
 	}
 
-	// Configure overlay with both layers.
-	overlayOpts.GetFilesystemOptions.InternalData = overlay.FilesystemOptions{
-		UpperRoot:  upperRootVD,
-		LowerRoots: []vfs.VirtualDentry{lowerRootVD},
+	// Configure overlay with all layers.
+	overlayOpts := &vfs.MountOptions{
+		GetFilesystemOptions: vfs.GetFilesystemOptions{
+			InternalMount: true,
+			InternalData: overlay.FilesystemOptions{
+				UpperRoot:  upperRootVD,
+				LowerRoots: lowerRoots,
+			},
+		},
 	}
-	return &overlayOpts, cu.Release(), nil
+
+	return overlayOpts, cu.Release(), nil
 }
 
 func (c *containerMounter) mountSubmounts(ctx context.Context, spec *specs.Spec, conf *config.Config, mns *vfs.MountNamespace, creds *auth.Credentials) error {

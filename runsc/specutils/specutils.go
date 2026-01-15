@@ -269,6 +269,26 @@ func fixSpec(spec *specs.Spec, bundleDir string, conf *config.Config) error {
 		}
 	}
 
+	// Resolve rootfs annotation paths to absolute paths
+	const rootfsPrefix = "dev.gvisor.spec.rootfs."
+	for annotation, val := range spec.Annotations {
+		if strings.HasPrefix(annotation, rootfsPrefix) {
+			key := annotation[len(rootfsPrefix):]
+			if key == "lowerdirs" {
+				// Resolve colon-separated paths to absolute paths
+				dirs := strings.Split(val, ":")
+				var absDirs []string
+				for _, dir := range dirs {
+					absDirs = append(absDirs, absPath(bundleDir, dir))
+				}
+				spec.Annotations[annotation] = strings.Join(absDirs, ":")
+			} else if key == "source" {
+				// Resolve source path to absolute path
+				spec.Annotations[annotation] = absPath(bundleDir, val)
+			}
+		}
+	}
+
 	containerName := containerNameNoRemap(spec)
 	for annotation, val := range spec.Annotations {
 		if strings.HasPrefix(annotation, annotationFlagPrefix) {

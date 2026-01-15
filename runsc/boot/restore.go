@@ -111,6 +111,13 @@ type restorer struct {
 // It takes ownership of subcontainerTimeline and will end it.
 func (r *restorer) restoreSubcontainer(spec *specs.Spec, conf *config.Config, l *Loader, cid string, stdioFDs, goferFDs, goferFilestoreFDs []*fd.FD, devGoferFD *fd.FD, goferMountConfs []GoferMountConf, subcontainerTimeline *timing.Timeline) error {
 	containerName := l.registerContainer(spec, cid)
+	
+	// Calculate numRootfsGoferFDs from spec annotations
+	numRootfsGoferFDs := 1 // Default to 1
+	if rootfsHint, err := NewRootfsHint(spec); err == nil && rootfsHint != nil && len(rootfsHint.LowerDirs) > 0 {
+		numRootfsGoferFDs = len(rootfsHint.LowerDirs)
+	}
+	
 	info := &containerInfo{
 		cid:               cid,
 		containerName:     containerName,
@@ -121,6 +128,7 @@ func (r *restorer) restoreSubcontainer(spec *specs.Spec, conf *config.Config, l 
 		devGoferFD:        devGoferFD,
 		goferFilestoreFDs: goferFilestoreFDs,
 		goferMountConfs:   goferMountConfs,
+		numRootfsGoferFDs: numRootfsGoferFDs,
 	}
 	r.timer.Adopt(subcontainerTimeline)
 	return r.restoreContainerInfo(l, info, subcontainerTimeline)

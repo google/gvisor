@@ -344,6 +344,10 @@ type StartArgs struct {
 	// for bind mounts in Spec.Mounts (in the same order).
 	GoferMountConfs []GoferMountConf
 
+	// NumRootfsGoferFDs is the number of gofer FDs for rootfs. This is typically 1,
+	// but can be more when rootfs uses multiple lower directories for overlayfs.
+	NumRootfsGoferFDs int
+
 	// IsRootfsUpperTarFilePresent indicates whether the rootfs upper tar file is present.
 	IsRootfsUpperTarFilePresent bool
 

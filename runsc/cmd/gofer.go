@@ -243,9 +243,26 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomm
 	//
 	// Note that all mount points have been mounted in the proper location in
 	// setupRootFS().
-	cleanMounts, err := g.resolveMounts(conf, spec.Mounts, root)
+	rootfsConf := g.mountConfs[0]
+	rootfsHint, err := boot.NewRootfsHint(spec)
 	if err != nil {
-		util.Fatalf("Failure to resolve mounts: %v", err)
+		util.Fatalf("Failure to parse rootfs hint: %v", err)
+	}
+	
+	var cleanMounts []specs.Mount
+	if rootfsConf.ShouldUseLisafs() && rootfsHint != nil && len(rootfsHint.LowerDirs) > 0 {
+		// For multiple lower dirs, use the first lower dir for mount resolution
+		// since the root directory itself is empty
+		resolveRoot := filepath.Join(root, "__lower0")
+		cleanMounts, err = g.resolveMounts(conf, spec.Mounts, resolveRoot)
+		if err != nil {
+			util.Fatalf("Failure to resolve mounts: %v", err)
+		}
+	} else {
+		cleanMounts, err = g.resolveMounts(conf, spec.Mounts, root)
+		if err != nil {
+			util.Fatalf("Failure to resolve mounts: %v", err)
+		}
 	}
 	spec.Mounts = cleanMounts
 	go func() {
@@ -330,14 +347,39 @@ func (g *Gofer) serve(spec *specs.Spec, conf *config.Config, root string, ruid i
 	ioFDs := g.ioFDs
 	rootfsConf := g.mountConfs[0]
 	if rootfsConf.ShouldUseLisafs() {
-		// Start with root mount, then add any other additional mount as needed.
-		cfgs = append(cfgs, connectionConfig{
-			sock:      newSocket(ioFDs[0]),
-			mountPath: "/", // fsgofer process is always chroot()ed. So serve root.
-			readonly:  spec.Root.Readonly || rootfsConf.ShouldUseOverlayfs(),
-		})
-		log.Infof("Serving %q mapped to %q on FD %d (ro: %t)", "/", root, ioFDs[0], cfgs[0].readonly)
-		ioFDs = ioFDs[1:]
+		// Check if rootfs hint specifies multiple lower dirs
+		rootfsHint, err := boot.NewRootfsHint(spec)
+		if err != nil {
+			util.Fatalf("parsing rootfs hint: %v", err)
+		}
+		
+		if rootfsHint != nil && len(rootfsHint.LowerDirs) > 0 {
+			// Multiple lower dirs case: create a connection for each lower dir
+			log.Infof("Serving multiple lower dirs for rootfs: %v", rootfsHint.LowerDirs)
+			for i := range rootfsHint.LowerDirs {
+				if len(ioFDs) == 0 {
+					util.Fatalf("no FD found for lower dir %d. FDs: %d", i, len(g.ioFDs))
+				}
+				mountPath := fmt.Sprintf("/__lower%d", i)
+				cfgs = append(cfgs, connectionConfig{
+					sock:      newSocket(ioFDs[0]),
+					mountPath: mountPath,
+					readonly:  true, // Lower layers are always readonly
+				})
+				log.Infof("Serving %q (lower dir %d) on FD %d (ro: true)", mountPath, i, ioFDs[0])
+				ioFDs = ioFDs[1:]
+			}
+		} else {
+			// Single root mount case (existing behavior)
+			// Start with root mount, then add any other additional mount as needed.
+			cfgs = append(cfgs, connectionConfig{
+				sock:      newSocket(ioFDs[0]),
+				mountPath: "/", // fsgofer process is always chroot()ed. So serve root.
+				readonly:  spec.Root.Readonly || rootfsConf.ShouldUseOverlayfs(),
+			})
+			log.Infof("Serving %q mapped to %q on FD %d (ro: %t)", "/", root, ioFDs[0], cfgs[0].readonly)
+			ioFDs = ioFDs[1:]
+		}
 	}
 
 	mountIdx := 1 // first one is the root
@@ -471,18 +513,41 @@ func (g *Gofer) setupRootFS(spec *specs.Spec, conf *config.Config, goferToHostRP
 	}
 
 	rootfsConf := g.mountConfs[0]
+	// Parse rootfs hint once for use in multiple places
+	rootfsHint, err := boot.NewRootfsHint(spec)
+	if err != nil {
+		return fmt.Errorf("parsing rootfs hint: %v", err)
+	}
+	
 	if rootfsConf.ShouldUseLisafs() {
-		// Mount root path followed by submounts.
-		if err := specutils.SafeMount(spec.Root.Path, root, "bind", unix.MS_BIND|unix.MS_REC, "", procPath); err != nil {
-			return fmt.Errorf("mounting root on root (%q) err: %v", root, err)
-		}
-
-		flags := uint32(unix.MS_SLAVE | unix.MS_REC)
-		if spec.Linux != nil && spec.Linux.RootfsPropagation != "" {
-			flags = specutils.PropOptionsToFlags([]string{spec.Linux.RootfsPropagation})
-		}
-		if err := specutils.SafeMount("", root, "", uintptr(flags), "", procPath); err != nil {
-			return fmt.Errorf("mounting root (%q) with flags: %#x, err: %v", root, flags, err)
+		if rootfsHint != nil && len(rootfsHint.LowerDirs) > 0 {
+			// Multiple lower dirs case: bind-mount each lower dir to a subdirectory
+			log.Infof("Setting up multiple lower dirs: %v", rootfsHint.LowerDirs)
+			for i, lowerDir := range rootfsHint.LowerDirs {
+				lowerPath := filepath.Join(root, fmt.Sprintf("__lower%d", i))
+				if err := os.Mkdir(lowerPath, 0755); err != nil {
+					return fmt.Errorf("creating lower dir %q: %v", lowerPath, err)
+				}
+				if err := specutils.SafeMount(lowerDir, lowerPath, "bind", unix.MS_BIND|unix.MS_REC, "", procPath); err != nil {
+					return fmt.Errorf("mounting lower dir %q to %q: %v", lowerDir, lowerPath, err)
+				}
+				log.Infof("Mounted lower dir %q to %q", lowerDir, lowerPath)
+			}
+		} else {
+			// Single root path case (existing behavior)
+			// Mount root path followed by submounts.
+			if err := specutils.SafeMount(spec.Root.Path, root, "bind", unix.MS_BIND|unix.MS_REC, "", procPath); err != nil {
+				return fmt.Errorf("mounting root on root (%q) err: %v", root, err)
+			}
+			
+			// Set mount propagation for single root mount
+			flags := uint32(unix.MS_SLAVE | unix.MS_REC)
+			if spec.Linux != nil && spec.Linux.RootfsPropagation != "" {
+				flags = specutils.PropOptionsToFlags([]string{spec.Linux.RootfsPropagation})
+			}
+			if err := specutils.SafeMount("", root, "", uintptr(flags), "", procPath); err != nil {
+				return fmt.Errorf("mounting root (%q) with flags: %#x, err: %v", root, flags, err)
+			}
 		}
 	}
 
@@ -497,17 +562,25 @@ func (g *Gofer) setupRootFS(spec *specs.Spec, conf *config.Config, goferToHostRP
 	}
 
 	// Check if root needs to be remounted as readonly.
+	// Skip this for multiple lower dirs case since root is not a bind mount itself.
 	if rootfsConf.ShouldUseLisafs() && (spec.Root.Readonly || rootfsConf.ShouldUseOverlayfs()) {
-		// If root is a mount point but not read-only, we can change mount options
-		// to make it read-only for extra safety.
-		// unix.MS_NOSUID and unix.MS_NODEV are included here not only
-		// for safety reasons but also because they can be locked and
-		// any attempts to unset them will fail.  See
-		// mount_namespaces(7) for more details.
-		log.Infof("Remounting root as readonly: %q", root)
-		flags := uintptr(unix.MS_BIND | unix.MS_REMOUNT | unix.MS_RDONLY | unix.MS_NOSUID | unix.MS_NODEV)
-		if err := specutils.SafeMount(root, root, "bind", flags, "", procPath); err != nil {
-			return fmt.Errorf("remounting root as read-only with source: %q, target: %q, flags: %#x, err: %v", root, root, flags, err)
+		if rootfsHint != nil && len(rootfsHint.LowerDirs) > 0 {
+			// Multiple lower dirs case: individual lower mounts will be read-only,
+			// no need to remount root directory itself
+			log.Infof("Skipping root remount for multiple lower dirs setup")
+		} else {
+			// Single root mount case: remount as readonly
+			// If root is a mount point but not read-only, we can change mount options
+			// to make it read-only for extra safety.
+			// unix.MS_NOSUID and unix.MS_NODEV are included here not only
+			// for safety reasons but also because they can be locked and
+			// any attempts to unset them will fail.  See
+			// mount_namespaces(7) for more details.
+			log.Infof("Remounting root as readonly: %q", root)
+			flags := uintptr(unix.MS_BIND | unix.MS_REMOUNT | unix.MS_RDONLY | unix.MS_NOSUID | unix.MS_NODEV)
+			if err := specutils.SafeMount(root, root, "bind", flags, "", procPath); err != nil {
+				return fmt.Errorf("remounting root as read-only with source: %q, target: %q, flags: %#x, err: %v", root, root, flags, err)
+			}
 		}
 	}
 

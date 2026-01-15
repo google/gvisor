@@ -1370,14 +1370,61 @@ func (c *Container) createGoferProcess(conf *config.Config, mountHints *boot.Pod
 
 	// Count the number of mounts that needs an IO file.
 	ioFileCount := 0
-	for _, cfg := range c.GoferMountConfs {
+	// For rootfs with multiple lower dirs, we need one FD per lower dir
+	if rootfsHint != nil && len(rootfsHint.LowerDirs) > 0 {
+		ioFileCount += len(rootfsHint.LowerDirs)
+	} else {
+		// Single rootfs case
+		if c.GoferMountConfs[0].ShouldUseLisafs() || c.GoferMountConfs[0].ShouldUseErofs() {
+			ioFileCount++
+		}
+	}
+	// Add bind mounts
+	for i := 1; i < len(c.GoferMountConfs); i++ {
+		cfg := c.GoferMountConfs[i]
 		if cfg.ShouldUseLisafs() || cfg.ShouldUseErofs() {
 			ioFileCount++
 		}
 	}
 
 	sandEnds := make([]*os.File, 0, ioFileCount)
-	for i, cfg := range c.GoferMountConfs {
+	
+	// Handle rootfs
+	rootfsConf := c.GoferMountConfs[0]
+	if rootfsHint != nil && len(rootfsHint.LowerDirs) > 0 {
+		// Multiple lower dirs case: create a socket pair for each lower dir
+		for i := range rootfsHint.LowerDirs {
+			fds, err := unix.Socketpair(unix.AF_UNIX, unix.SOCK_STREAM|unix.SOCK_CLOEXEC, 0)
+			if err != nil {
+				return nil, nil, nil, nil, err
+			}
+			sandEnds = append(sandEnds, os.NewFile(uintptr(fds[0]), fmt.Sprintf("sandbox IO FD (lower %d)", i)))
+			goferEnd := os.NewFile(uintptr(fds[1]), fmt.Sprintf("gofer IO FD (lower %d)", i))
+			donations.DonateAndClose("io-fds", goferEnd)
+		}
+	} else {
+		// Single rootfs case
+		switch {
+		case rootfsConf.ShouldUseLisafs():
+			fds, err := unix.Socketpair(unix.AF_UNIX, unix.SOCK_STREAM|unix.SOCK_CLOEXEC, 0)
+			if err != nil {
+				return nil, nil, nil, nil, err
+			}
+			sandEnds = append(sandEnds, os.NewFile(uintptr(fds[0]), "sandbox IO FD"))
+			goferEnd := os.NewFile(uintptr(fds[1]), "gofer IO FD")
+			donations.DonateAndClose("io-fds", goferEnd)
+		case rootfsConf.ShouldUseErofs():
+			f, err := os.Open(rootfsHint.Mount.Source)
+			if err != nil {
+				return nil, nil, nil, nil, fmt.Errorf("opening rootfs image %q: %v", rootfsHint.Mount.Source, err)
+			}
+			sandEnds = append(sandEnds, f)
+		}
+	}
+	
+	// Handle bind mounts (starting from index 1)
+	for i := 1; i < len(c.GoferMountConfs); i++ {
+		cfg := c.GoferMountConfs[i]
 		switch {
 		case cfg.ShouldUseLisafs():
 			fds, err := unix.Socketpair(unix.AF_UNIX, unix.SOCK_STREAM|unix.SOCK_CLOEXEC, 0)
@@ -1385,19 +1432,10 @@ func (c *Container) createGoferProcess(conf *config.Config, mountHints *boot.Pod
 				return nil, nil, nil, nil, err
 			}
 			sandEnds = append(sandEnds, os.NewFile(uintptr(fds[0]), "sandbox IO FD"))
-
 			goferEnd := os.NewFile(uintptr(fds[1]), "gofer IO FD")
 			donations.DonateAndClose("io-fds", goferEnd)
-
 		case cfg.ShouldUseErofs():
-			if i > 0 {
-				return nil, nil, nil, nil, fmt.Errorf("EROFS lower layer is only supported for root mount")
-			}
-			f, err := os.Open(rootfsHint.Mount.Source)
-			if err != nil {
-				return nil, nil, nil, nil, fmt.Errorf("opening rootfs image %q: %v", rootfsHint.Mount.Source, err)
-			}
-			sandEnds = append(sandEnds, f)
+			return nil, nil, nil, nil, fmt.Errorf("EROFS lower layer is only supported for root mount")
 		}
 	}
 	var devSandEnd *os.File

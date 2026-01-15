@@ -354,3 +354,90 @@ func TestRootfsHintErrors(t *testing.T) {
 		})
 	}
 }
+
+// TestRootfsHintMultipleLowerDirs tests that multiple lower dirs can be parsed correctly.
+func TestRootfsHintMultipleLowerDirs(t *testing.T) {
+	spec := &specs.Spec{
+		Annotations: map[string]string{
+			RootfsPrefix + "lowerdirs": "/lower1:/lower2:/lower3",
+			RootfsPrefix + "type":      Bind,
+			RootfsPrefix + "overlay":   config.MemoryOverlay.String(),
+		},
+	}
+	hint, err := NewRootfsHint(spec)
+	if err != nil {
+		t.Fatalf("NewRootfsHint failed: %v", err)
+	}
+
+	// Check that fields were set correctly.
+	if len(hint.LowerDirs) != 3 {
+		t.Errorf("expected 3 lower dirs, got: %d", len(hint.LowerDirs))
+	}
+	expectedDirs := []string{"/lower1", "/lower2", "/lower3"}
+	if !slices.Equal(expectedDirs, hint.LowerDirs) {
+		t.Errorf("lower dirs, want: %v, got: %v", expectedDirs, hint.LowerDirs)
+	}
+	if hint.Mount.Source != "" {
+		t.Errorf("source should be empty when using lowerdirs, got: %q", hint.Mount.Source)
+	}
+	if hint.Mount.Type != Bind {
+		t.Errorf("rootfs type, want: %q, got: %q", Bind, hint.Mount.Type)
+	}
+	if hint.Overlay != config.MemoryOverlay {
+		t.Errorf("rootfs overlay, want: %q, got: %q", config.MemoryOverlay, hint.Overlay)
+	}
+}
+
+// TestRootfsHintLowerDirsErrors tests error cases for lowerdirs annotation.
+func TestRootfsHintLowerDirsErrors(t *testing.T) {
+	for _, tst := range []struct {
+		name        string
+		annotations map[string]string
+		error       string
+	}{
+		{
+			name: "both source and lowerdirs",
+			annotations: map[string]string{
+				RootfsPrefix + "source":    "/rootfs",
+				RootfsPrefix + "lowerdirs": "/lower1:/lower2",
+				RootfsPrefix + "type":      Bind,
+			},
+			error: "cannot specify both 'source' and 'lowerdirs'",
+		},
+		{
+			name: "relative path in lowerdirs",
+			annotations: map[string]string{
+				RootfsPrefix + "lowerdirs": "/lower1:relative/path:/lower3",
+				RootfsPrefix + "type":      Bind,
+			},
+			error: "lowerdir path should be absolute",
+		},
+		{
+			name: "empty lowerdirs",
+			annotations: map[string]string{
+				RootfsPrefix + "lowerdirs": "",
+				RootfsPrefix + "type":      Bind,
+			},
+			error: "lowerdirs cannot be empty",
+		},
+		{
+			name: "missing type with lowerdirs",
+			annotations: map[string]string{
+				RootfsPrefix + "lowerdirs": "/lower1:/lower2",
+			},
+			error: "rootfs annotations missing required field 'type'",
+		},
+	} {
+		t.Run(tst.name, func(t *testing.T) {
+			spec := &specs.Spec{Annotations: tst.annotations}
+			hint, err := NewRootfsHint(spec)
+			if err == nil || !strings.Contains(err.Error(), tst.error) {
+				t.Errorf("NewRootfsHint invalid error, want: .*%s.*, got: %v", tst.error, err)
+			}
+			if hint != nil {
+				t.Errorf("NewRootfsHint must return nil on failure: %+v", hint)
+			}
+		})
+	}
+}
+

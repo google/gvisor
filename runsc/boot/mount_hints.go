@@ -244,6 +244,9 @@ type RootfsHint struct {
 	// Size of overlay tmpfs. Passed as `size={Size}` to tmpfs mount.
 	// Use default if unspecified.
 	Size string
+	// LowerDirs contains multiple lower directories for overlayfs.
+	// When specified, Mount.Source should be empty.
+	LowerDirs []string
 }
 
 func (r *RootfsHint) setSource(val string) error {
@@ -251,6 +254,21 @@ func (r *RootfsHint) setSource(val string) error {
 		return fmt.Errorf("source should be an absolute path, got %q", val)
 	}
 	r.Mount.Source = val
+	return nil
+}
+
+func (r *RootfsHint) setLowerDirs(val string) error {
+	if len(val) == 0 {
+		return fmt.Errorf("lowerdirs cannot be empty")
+	}
+	// Split by colon, similar to overlayfs lowerdir syntax
+	dirs := strings.Split(val, ":")
+	for _, dir := range dirs {
+		if !filepath.IsAbs(dir) {
+			return fmt.Errorf("lowerdir path should be absolute, got %q", dir)
+		}
+		r.LowerDirs = append(r.LowerDirs, dir)
+	}
 	return nil
 }
 
@@ -292,6 +310,8 @@ func (r *RootfsHint) setField(key, val string) error {
 	switch key {
 	case "source":
 		return r.setSource(val)
+	case "lowerdirs":
+		return r.setLowerDirs(val)
 	case "type":
 		return r.setType(val)
 	case "overlay":
@@ -322,9 +342,24 @@ func NewRootfsHint(spec *specs.Spec) (*RootfsHint, error) {
 	}
 	// Validate the parsed hint.
 	if hint != nil {
-		log.Infof("Rootfs annotations found, source: %q, type: %q, overlay: %q", hint.Mount.Source, hint.Mount.Type, hint.Overlay)
-		if len(hint.Mount.Source) == 0 || len(hint.Mount.Type) == 0 {
-			return nil, fmt.Errorf("rootfs annotations missing required field(s): %+v", hint)
+		// Check that either source or lowerdirs is specified, but not both
+		hasSource := len(hint.Mount.Source) > 0
+		hasLowerDirs := len(hint.LowerDirs) > 0
+		
+		if hasSource && hasLowerDirs {
+			return nil, fmt.Errorf("cannot specify both 'source' and 'lowerdirs' in rootfs annotations")
+		}
+		
+		if hasLowerDirs {
+			log.Infof("Rootfs annotations found with multiple lower dirs: %v, type: %q, overlay: %q", hint.LowerDirs, hint.Mount.Type, hint.Overlay)
+			if len(hint.Mount.Type) == 0 {
+				return nil, fmt.Errorf("rootfs annotations missing required field 'type' when using lowerdirs")
+			}
+		} else {
+			log.Infof("Rootfs annotations found, source: %q, type: %q, overlay: %q", hint.Mount.Source, hint.Mount.Type, hint.Overlay)
+			if len(hint.Mount.Source) == 0 || len(hint.Mount.Type) == 0 {
+				return nil, fmt.Errorf("rootfs annotations missing required field(s): %+v", hint)
+			}
 		}
 	}
 	return hint, nil

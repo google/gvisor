@@ -150,6 +150,10 @@ type containerInfo struct {
 	// for bind mounts in Spec.Mounts (in the same order).
 	goferMountConfs []GoferMountConf
 
+	// numRootfsGoferFDs is the number of gofer FDs for rootfs. Typically 1,
+	// but can be more when rootfs uses multiple lower directories for overlayfs.
+	numRootfsGoferFDs int
+
 	// nvidiaUVMDevMajor is the device major number used for nvidia-uvm.
 	nvidiaUVMDevMajor uint32
 
@@ -541,6 +545,11 @@ func New(args Args) (*Loader, error) {
 	}
 	for _, goferFD := range args.GoferFDs {
 		l.root.goferFDs = append(l.root.goferFDs, fd.New(goferFD))
+	}
+	// Set numRootfsGoferFDs from spec annotations
+	l.root.numRootfsGoferFDs = 1 // Default to 1
+	if rootfsHint, err := NewRootfsHint(args.Spec); err == nil && rootfsHint != nil && len(rootfsHint.LowerDirs) > 0 {
+		l.root.numRootfsGoferFDs = len(rootfsHint.LowerDirs)
 	}
 	for _, filestoreFD := range args.GoferFilestoreFDs {
 		l.root.goferFilestoreFDs = append(l.root.goferFilestoreFDs, fd.New(filestoreFD))
@@ -1178,6 +1187,13 @@ func (l *Loader) startSubcontainer(spec *specs.Spec, conf *config.Config, cid st
 
 	containerName := l.registerContainerLocked(spec, cid)
 	l.k.RegisterContainerName(cid, containerName)
+	
+	// Calculate numRootfsGoferFDs from spec annotations
+	numRootfsGoferFDs := 1 // Default to 1
+	if rootfsHint, err := NewRootfsHint(spec); err == nil && rootfsHint != nil && len(rootfsHint.LowerDirs) > 0 {
+		numRootfsGoferFDs = len(rootfsHint.LowerDirs)
+	}
+	
 	info := &containerInfo{
 		cid:               cid,
 		containerName:     containerName,
@@ -1187,6 +1203,7 @@ func (l *Loader) startSubcontainer(spec *specs.Spec, conf *config.Config, cid st
 		devGoferFD:        devGoferFD,
 		goferFilestoreFDs: goferFilestoreFDs,
 		goferMountConfs:   goferMountConfs,
+		numRootfsGoferFDs: numRootfsGoferFDs,
 		nvidiaUVMDevMajor: l.root.nvidiaUVMDevMajor,
 		rootfsUpperTarFD:  rootfsUpperTarFD,
 	}

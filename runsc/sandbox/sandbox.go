@@ -492,6 +492,12 @@ func (s *Sandbox) StartSubcontainer(spec *specs.Spec, conf *config.Config, cid s
 	}
 	payload.Files = append(payload.Files, goferFiles...)
 
+	// Calculate number of rootfs gofer FDs
+	numRootfsGoferFDs := 1 // Default to 1
+	if rootfsHint, err := boot.NewRootfsHint(spec); err == nil && rootfsHint != nil && len(rootfsHint.LowerDirs) > 0 {
+		numRootfsGoferFDs = len(rootfsHint.LowerDirs)
+	}
+
 	// Start running the container.
 	args := boot.StartArgs{
 		Spec:                        spec,
@@ -500,6 +506,7 @@ func (s *Sandbox) StartSubcontainer(spec *specs.Spec, conf *config.Config, cid s
 		NumGoferFilestoreFDs:        len(goferFilestores),
 		IsDevIoFilePresent:          devIOFile != nil,
 		GoferMountConfs:             goferConfs,
+		NumRootfsGoferFDs:           numRootfsGoferFDs,
 		IsRootfsUpperTarFilePresent: rootfsUpperTarFile != nil,
 		FilePayload:                 payload,
 	}
@@ -617,6 +624,12 @@ func (s *Sandbox) RestoreSubcontainer(spec *specs.Spec, conf *config.Config, cid
 	}
 	payload.Files = append(payload.Files, goferFiles...)
 
+	// Calculate number of rootfs gofer FDs
+	numRootfsGoferFDs := 1 // Default to 1
+	if rootfsHint, err := boot.NewRootfsHint(spec); err == nil && rootfsHint != nil && len(rootfsHint.LowerDirs) > 0 {
+		numRootfsGoferFDs = len(rootfsHint.LowerDirs)
+	}
+
 	// Start running the container.
 	args := boot.StartArgs{
 		Spec:                 spec,
@@ -625,6 +638,7 @@ func (s *Sandbox) RestoreSubcontainer(spec *specs.Spec, conf *config.Config, cid
 		NumGoferFilestoreFDs: len(goferFilestoreFiles),
 		IsDevIoFilePresent:   devIOFile != nil,
 		GoferMountConfs:      goferMountConf,
+		NumRootfsGoferFDs:    numRootfsGoferFDs,
 		FilePayload:          payload,
 	}
 	if err := s.call(boot.ContMgrRestoreSubcontainer, &args, nil); err != nil {
