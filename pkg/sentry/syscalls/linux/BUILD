@@ -102,6 +102,7 @@ go_library(
         "//pkg/sentry/kernel/pipe",
         "//pkg/sentry/kernel/sched",
         "//pkg/sentry/kernel/shm",
+        "//pkg/sentry/kernel/version",
         "//pkg/sentry/ktime",
         "//pkg/sentry/limits",
         "//pkg/sentry/memmap",
