@@ -9,6 +9,7 @@ go_library(
     name = "runsc",
     srcs = [
         "api.go",
+        "container.go",
         "debug.go",
         "epoll.go",
         "oom_v2.go",

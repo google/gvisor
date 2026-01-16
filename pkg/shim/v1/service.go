@@ -51,7 +51,7 @@ func New(ctx context.Context, id string, publisher shim.Publisher, cancel func()
 		opts = ctxOpts.(shim.Opts)
 	}
 
-	runsc, err := runsc.New(ctx, id, publisher)
+	runsc, err := runsc.NewTaskService(ctx, id, publisher)
 	if err != nil {
 		cancel()
 		return nil, err
