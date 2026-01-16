@@ -284,7 +284,7 @@ func TestSeccomp(t *testing.T) {
 			seccompPresent: true,
 			spec: specs.Spec{
 				Annotations: map[string]string{
-					annotationContainerName: containerName,
+					ContainerdContainerNameAnnotation: containerName,
 				},
 				Linux: &specs.Linux{
 					Seccomp: &specs.LinuxSeccomp{},
@@ -296,8 +296,8 @@ func TestSeccomp(t *testing.T) {
 			seccompPresent: true,
 			spec: specs.Spec{
 				Annotations: map[string]string{
-					annotationContainerName:     containerName,
-					annotationSeccomp + "cont2": annotationSeccompRuntimeDefault,
+					ContainerdContainerNameAnnotation: containerName,
+					annotationSeccomp + "cont2":       annotationSeccompRuntimeDefault,
 				},
 				Linux: &specs.Linux{
 					Seccomp: &specs.LinuxSeccomp{},
@@ -309,7 +309,7 @@ func TestSeccomp(t *testing.T) {
 			seccompPresent: true,
 			spec: specs.Spec{
 				Annotations: map[string]string{
-					annotationContainerName:           containerName,
+					ContainerdContainerNameAnnotation: containerName,
 					annotationSeccomp + containerName: "foobar",
 				},
 				Linux: &specs.Linux{
@@ -322,7 +322,7 @@ func TestSeccomp(t *testing.T) {
 			seccompPresent: true,
 			spec: specs.Spec{
 				Annotations: map[string]string{
-					annotationContainerName:           containerName,
+					ContainerdContainerNameAnnotation: containerName,
 					annotationSeccomp + containerName: "foobar",
 					annotationSeccomp + "cont2":       annotationSeccompRuntimeDefault,
 				},
@@ -335,7 +335,7 @@ func TestSeccomp(t *testing.T) {
 			name: "remove",
 			spec: specs.Spec{
 				Annotations: map[string]string{
-					annotationContainerName:           containerName,
+					ContainerdContainerNameAnnotation: containerName,
 					annotationSeccomp + containerName: annotationSeccompRuntimeDefault,
 				},
 				Linux: &specs.Linux{
@@ -347,7 +347,7 @@ func TestSeccomp(t *testing.T) {
 			name: "remove many names",
 			spec: specs.Spec{
 				Annotations: map[string]string{
-					annotationContainerName:           containerName,
+					ContainerdContainerNameAnnotation: containerName,
 					annotationSeccomp + containerName: annotationSeccompRuntimeDefault,
 					annotationSeccomp + "cont2":       "foobar",
 				},
@@ -360,7 +360,7 @@ func TestSeccomp(t *testing.T) {
 			name: "remap does not affect seccomp",
 			spec: specs.Spec{
 				Annotations: map[string]string{
-					annotationContainerName:            containerName,
+					ContainerdContainerNameAnnotation:  containerName,
 					annotationSeccomp + containerName:  annotationSeccompRuntimeDefault,
 					annotationContainerNameRemap + "1": containerName + "=another",
 				},
@@ -526,10 +526,93 @@ func TestRootfsUpperTarPath(t *testing.T) {
 			name: "get gvisor tar rootfs upper annotation",
 			spec: specs.Spec{
 				Annotations: map[string]string{
-					"dev.gvisor.tar.rootfs.upper": "123",
+					AnnotationRootfsUpperTar: "123",
 				},
 			},
 			want: "123",
+		},
+		{
+			name: "container specific rootfs upper annotation",
+			spec: specs.Spec{
+				Annotations: map[string]string{
+					ContainerdContainerNameAnnotation:       "cont",
+					AnnotationRootfsUpperTar + "." + "cont": "456",
+				},
+			},
+			want: "456",
+		},
+		{
+			name: "container specific rootfs upper annotation with remap",
+			spec: specs.Spec{
+				Annotations: map[string]string{
+					ContainerdContainerNameAnnotation:       "cont-123",
+					annotationContainerNameRemap + "1":      "cont-123=cont",
+					AnnotationRootfsUpperTar + "." + "cont": "789",
+				},
+			},
+			want: "789",
+		},
+		{
+			name: "no fallback when other container-specific annotation exists",
+			spec: specs.Spec{
+				Annotations: map[string]string{
+					ContainerdContainerNameAnnotation:        "cont",
+					AnnotationRootfsUpperTar + "." + "other": "should-not-be-used",
+					AnnotationRootfsUpperTar:                 "base",
+				},
+			},
+			want: "",
+		},
+		{
+			name: "container specific takes priority over base",
+			spec: specs.Spec{
+				Annotations: map[string]string{
+					ContainerdContainerNameAnnotation:       "cont",
+					AnnotationRootfsUpperTar:                "base-path",
+					AnnotationRootfsUpperTar + "." + "cont": "specific-path",
+				},
+			},
+			want: "specific-path",
+		},
+		{
+			name: "empty container name falls back to base",
+			spec: specs.Spec{
+				Annotations: map[string]string{
+					ContainerdContainerNameAnnotation: "",
+					AnnotationRootfsUpperTar:          "base-path",
+				},
+			},
+			want: "base-path",
+		},
+		{
+			name: "container name set but no matching annotation",
+			spec: specs.Spec{
+				Annotations: map[string]string{
+					ContainerdContainerNameAnnotation: "cont",
+					AnnotationRootfsUpperTar:          "base-path",
+				},
+			},
+			want: "",
+		},
+		{
+			name: "CRI sandbox without container name returns empty",
+			spec: specs.Spec{
+				Annotations: map[string]string{
+					ContainerdContainerTypeAnnotation: ContainerdContainerTypeSandbox,
+					AnnotationRootfsUpperTar:          "base-path",
+				},
+			},
+			want: "",
+		},
+		{
+			name: "CRI container without container name returns empty",
+			spec: specs.Spec{
+				Annotations: map[string]string{
+					ContainerdContainerTypeAnnotation: ContainerdContainerTypeContainer,
+					AnnotationRootfsUpperTar:          "base-path",
+				},
+			},
+			want: "",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -556,7 +639,7 @@ func TestContainerName(t *testing.T) {
 			name: "container-name",
 			spec: specs.Spec{
 				Annotations: map[string]string{
-					annotationContainerName: "cont",
+					ContainerdContainerNameAnnotation: "cont",
 				},
 			},
 			want: "cont",
@@ -565,7 +648,7 @@ func TestContainerName(t *testing.T) {
 			name: "remap",
 			spec: specs.Spec{
 				Annotations: map[string]string{
-					annotationContainerName:            "cont-123",
+					ContainerdContainerNameAnnotation:  "cont-123",
 					annotationContainerNameRemap + "1": "cont-123=cont",
 				},
 			},
@@ -575,7 +658,7 @@ func TestContainerName(t *testing.T) {
 			name: "remap-not-found",
 			spec: specs.Spec{
 				Annotations: map[string]string{
-					annotationContainerName:            "cont",
+					ContainerdContainerNameAnnotation:  "cont",
 					annotationContainerNameRemap + "1": "another-123=another",
 				},
 			},
@@ -585,7 +668,7 @@ func TestContainerName(t *testing.T) {
 			name: "remap-invalid",
 			spec: specs.Spec{
 				Annotations: map[string]string{
-					annotationContainerName:            "cont",
+					ContainerdContainerNameAnnotation:  "cont",
 					annotationContainerNameRemap + "1": "another-123",
 				},
 			},
@@ -595,7 +678,7 @@ func TestContainerName(t *testing.T) {
 			name: "remap-invalid-empty",
 			spec: specs.Spec{
 				Annotations: map[string]string{
-					annotationContainerName:            "cont",
+					ContainerdContainerNameAnnotation:  "cont",
 					annotationContainerNameRemap + "1": "",
 				},
 			},
