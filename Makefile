@@ -432,8 +432,9 @@ iptables-tests: load-iptables $(RUNTIME_BIN)
 nftables-tests: load-nftables $(RUNTIME_BIN)
 	@sudo modprobe nfnetlink
 	@sudo modprobe nf_tables
+	@$(call test,--test_env=RUNTIME=runc //test/nftables:nftables_test) # run with runc
 	@$(call install_runtime,$(RUNTIME),--net-raw --TESTONLY-nftables)
-	@$(call test_runtime,$(RUNTIME),--test_env=TEST_NET_RAW=true //test/nftables:nftables_test)
+	@$(call test_runtime,$(RUNTIME),--test_env=TEST_NET_RAW=true //test/nftables:nftables_test) # run with runsc
 .PHONY: nftables-tests
 
 packetdrill-tests: load-packetdrill $(RUNTIME_BIN)

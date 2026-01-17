@@ -488,6 +488,13 @@ steps:
   # Networking tests.
   - <<: *common
     <<: *source_test
+    label: ":fire: :tetris: Nftables docker tests"
+    command: make nftables-tests
+    agents:
+      <<: *ubuntu_agents
+      cgroup: "v2"
+  - <<: *common
+    <<: *source_test
     label: ":table_tennis_paddle_and_ball: IPTables tests"
     command: make iptables-tests
     agents:
