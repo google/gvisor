@@ -1443,8 +1443,10 @@ func createDeviceFiles(ctx context.Context, creds *auth.Credentials, info *conta
 		mode := os.FileMode(0666)
 		nvidiaDevs := []specs.LinuxDevice{
 			{Path: "/dev/nvidiactl", Type: "c", Major: nvgpu.NV_MAJOR_DEVICE_NUMBER, Minor: nvgpu.NV_MINOR_DEVICE_NUMBER_CONTROL_DEVICE, FileMode: &mode},
-			{Path: "/dev/nvidia-uvm", Type: "c", Major: int64(info.nvidiaUVMDevMajor), Minor: nvgpu.NVIDIA_UVM_PRIMARY_MINOR_NUMBER, FileMode: &mode},
+			{Path: "/dev/nvidia-uvm", Type: "c", Major: int64(info.nvproxyDevInfo.UVMDevMajor), Minor: nvgpu.NVIDIA_UVM_PRIMARY_MINOR_NUMBER, FileMode: &mode},
 		}
+		// There is no nvidia-container-cli flag to enable fabric-imex-mgmt, so
+		// we never create a /dev/nvidia-caps/nvidia-cap# file for it here.
 		devClient := devutil.GoferClientFromContext(ctx)
 		if devClient == nil {
 			return fmt.Errorf("dev gofer client not found in context")
@@ -1495,6 +1497,7 @@ func createDeviceFile(ctx context.Context, creds *auth.Credentials, info *contai
 	default:
 		return fmt.Errorf("specified device at %q has invalid type %q", devSpec.Path, devSpec.Type)
 	}
+	// Convert host-assigned device major numbers to sentry-assigned ones.
 	if strings.HasPrefix(devSpec.Path, "/dev/vfio") || strings.HasPrefix(devSpec.Path, "/dev/accel") {
 		if devSpec.Path == "/dev/vfio/vfio" {
 			if err := vfio.RegisterVFIODevice(vfsObj, true /* useDevGofer */); err != nil {
@@ -1509,19 +1512,28 @@ func createDeviceFile(ctx context.Context, creds *auth.Credentials, info *contai
 			if err := tpuproxy.RegisterTPUv5Device(vfsObj, devSpec.Path, minor); err != nil {
 				return fmt.Errorf("registering TPUv5 device: %w", err)
 			}
-			log.Infof("Switching %v device major number from %d to %d", devSpec.Path, devSpec.Major, major)
 			var err error
 			major, err = vfio.GetTPUDeviceMajor(vfsObj)
 			if err != nil {
 				return fmt.Errorf("getting TPU device major number: %w", err)
 			}
+			log.Infof("Switching %v device major number from %d to %d", devSpec.Path, devSpec.Major, major)
 		}
-	} else if devSpec.Path == "/dev/nvidia-uvm" && info.nvidiaUVMDevMajor != 0 && major != info.nvidiaUVMDevMajor {
-		// nvidia-uvm's major device number is dynamically assigned, so the
-		// number that it has on the host may differ from the number that
-		// it has in sentry VFS; switch from the former to the latter.
-		log.Infof("Switching /dev/nvidia-uvm device major number from %d to %d", devSpec.Major, info.nvidiaUVMDevMajor)
-		major = info.nvidiaUVMDevMajor
+	} else if devSpec.Path == "/dev/nvidia-uvm" {
+		if info.nvproxyDevInfo.UVMDevMajor != 0 && major != info.nvproxyDevInfo.UVMDevMajor {
+			major = info.nvproxyDevInfo.UVMDevMajor
+			log.Infof("Switching /dev/nvidia-uvm device major number from %d to %d", devSpec.Major, major)
+		}
+	} else if strings.HasPrefix(devSpec.Path, "/dev/nvidia-caps/") {
+		if info.nvproxyDevInfo.CapsDevMajor != 0 && major != info.nvproxyDevInfo.CapsDevMajor {
+			major = info.nvproxyDevInfo.CapsDevMajor
+			log.Infof("Switching %s device major number from %d to %d", devSpec.Path, devSpec.Major, major)
+		}
+	} else if strings.HasPrefix(devSpec.Path, "/dev/nvidia-caps-imex-channels/") {
+		if info.nvproxyDevInfo.CapsIMEXChannelsDevMajor != 0 && major != info.nvproxyDevInfo.CapsIMEXChannelsDevMajor {
+			major = info.nvproxyDevInfo.CapsIMEXChannelsDevMajor
+			log.Infof("Switching %s device major number from %d to %d", devSpec.Path, devSpec.Major, major)
+		}
 	}
 	return dev.CreateDeviceFile(ctx, vfsObj, creds, root, devSpec.Path, major, minor, mode, devSpec.UID, devSpec.GID)
 }
@@ -1534,13 +1546,15 @@ func nvproxyRegisterDevices(info *containerInfo, vfsObj *vfs.VirtualFilesystem, 
 	if err != nil {
 		return fmt.Errorf("NVIDIA driver capabilities: %w", err)
 	}
-	uvmDevMajor, err := vfsObj.GetDynamicCharDevMajor()
+	devInfo, err := nvproxy.Register(vfsObj, &nvproxy.Options{
+		DriverVersion: nvidiaDriverVersion,
+		DriverCaps:    driverCaps,
+		HostSettings:  info.nvidiaHostSettings,
+		UseDevGofer:   true,
+	})
 	if err != nil {
-		return fmt.Errorf("reserving device major number for nvidia-uvm: %w", err)
-	}
-	if err := nvproxy.Register(vfsObj, nvidiaDriverVersion, driverCaps, uvmDevMajor, true /* useDevGofer */); err != nil {
 		return fmt.Errorf("registering nvproxy driver: %w", err)
 	}
-	info.nvidiaUVMDevMajor = uvmDevMajor
+	info.nvproxyDevInfo = devInfo
 	return nil
 }

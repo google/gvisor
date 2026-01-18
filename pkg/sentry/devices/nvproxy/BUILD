@@ -54,6 +54,8 @@ go_library(
         "object.go",
         "object_free_list.go",
         "objs_mutex.go",
+        "open_only.go",
+        "procfs.go",
         "save_restore.go",
         "save_restore_impl.go",
         "seccomp_filters.go",

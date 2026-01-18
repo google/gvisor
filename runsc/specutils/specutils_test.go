@@ -465,9 +465,9 @@ func TestNvidiaDriverCapabilities(t *testing.T) {
 		{
 			name:        "all-all",
 			allowedCaps: nvconf.AllCapabilitiesName,
-			wantAllowed: nvconf.SupportedDriverCaps,
+			wantAllowed: nvconf.AllContainerDriverCaps,
 			envCaps:     nvconf.AllCapabilitiesName,
-			wantActual:  nvconf.SupportedDriverCaps,
+			wantActual:  nvconf.AllContainerDriverCaps,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

@@ -80,6 +80,7 @@ func (fs *filesystem) newTasksInode(ctx context.Context, k *kernel.Kernel, pidns
 	contents := map[string]kernfs.Inode{
 		"cmdline":        fs.newInode(ctx, root, 0444, &cmdLineData{}),
 		"cpuinfo":        fs.newInode(ctx, root, 0444, newStaticFileSetStat(cpuInfoData(k))),
+		"devices":        fs.newInode(ctx, root, 0444, &devicesData{}),
 		"filesystems":    fs.newInode(ctx, root, 0444, &filesystemsData{}),
 		"loadavg":        fs.newInode(ctx, root, 0444, &loadavgData{}),
 		"sys":            fs.newSysDir(ctx, root, k),
@@ -100,6 +101,7 @@ func (fs *filesystem) newTasksInode(ctx context.Context, k *kernel.Kernel, pidns
 	if len(internalData.Cgroups) == 0 {
 		contents["cgroups"] = fs.newInode(ctx, root, 0444, &cgroupsData{})
 	}
+	fs.addNvproxyFiles(ctx, root, k, contents)
 
 	fs.newTasksInodeExtra(ctx, root, internalData, k, contents)
 
