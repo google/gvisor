@@ -836,10 +836,8 @@ TEST_P(TcpSocketTest, Tiocinq) {
 }
 
 TEST_P(TcpSocketTest, TcpSCMPriority) {
-  char buf[1024];
-  ASSERT_THAT(RetryEINTR(write)(connected_.get(), buf, sizeof(buf)),
-              SyscallSucceedsWithValue(sizeof(buf)));
-
+  // Enable socket options first so that when the data is sent, the appropriate
+  // data is populated in the control buffer.
   int val = 1;
   EXPECT_THAT(setsockopt(accepted_.get(), SOL_TCP, TCP_INQ, &val, sizeof(val)),
               SyscallSucceedsWithValue(0));
@@ -847,9 +845,13 @@ TEST_P(TcpSocketTest, TcpSCMPriority) {
       setsockopt(accepted_.get(), SOL_SOCKET, SO_TIMESTAMP, &val, sizeof(val)),
       SyscallSucceedsWithValue(0));
 
+  char buf[1024];
+  ASSERT_THAT(RetryEINTR(write)(connected_.get(), buf, sizeof(buf)),
+              SyscallSucceedsWithValue(sizeof(buf)));
+
   struct msghdr msg = {};
-  std::vector<char> control(
-      CMSG_SPACE(sizeof(struct timeval) + CMSG_SPACE(sizeof(int))));
+  std::vector<char> control(CMSG_SPACE(sizeof(struct timeval)) +
+                            CMSG_SPACE(sizeof(int)));
   struct iovec iov;
   msg.msg_control = &control[0];
   msg.msg_controllen = control.size();
@@ -865,20 +867,20 @@ TEST_P(TcpSocketTest, TcpSCMPriority) {
   ASSERT_NE(cmsg, nullptr);
   // TODO(b/78348848): SO_TIMESTAMP isn't implemented for TCP sockets.
   if (!IsRunningOnGvisor() || cmsg->cmsg_level == SOL_SOCKET) {
-    ASSERT_EQ(cmsg->cmsg_level, SOL_SOCKET);
-    ASSERT_EQ(cmsg->cmsg_type, SO_TIMESTAMP);
-    ASSERT_EQ(cmsg->cmsg_len, CMSG_LEN(sizeof(struct timeval)));
+    EXPECT_EQ(cmsg->cmsg_level, SOL_SOCKET);
+    EXPECT_EQ(cmsg->cmsg_type, SO_TIMESTAMP);
+    EXPECT_EQ(cmsg->cmsg_len, CMSG_LEN(sizeof(struct timeval)));
 
     cmsg = CMSG_NXTHDR(&msg, cmsg);
     ASSERT_NE(cmsg, nullptr);
   }
-  ASSERT_EQ(cmsg->cmsg_len, CMSG_LEN(sizeof(int)));
-  ASSERT_EQ(cmsg->cmsg_level, SOL_TCP);
-  ASSERT_EQ(cmsg->cmsg_type, TCP_INQ);
+  EXPECT_EQ(cmsg->cmsg_level, SOL_TCP);
+  EXPECT_EQ(cmsg->cmsg_type, TCP_INQ);
+  EXPECT_EQ(cmsg->cmsg_len, CMSG_LEN(sizeof(int)));
 
   int inq = 0;
   memcpy(&inq, CMSG_DATA(cmsg), sizeof(int));
-  ASSERT_EQ(inq, 0);
+  EXPECT_EQ(inq, 0);
 
   cmsg = CMSG_NXTHDR(&msg, cmsg);
   ASSERT_EQ(cmsg, nullptr);
