@@ -437,6 +437,15 @@ nftables-tests: load-nftables $(RUNTIME_BIN)
 	@$(call test_runtime,$(RUNTIME),--test_env=TEST_NET_RAW=true //test/nftables:nftables_test) # run with runsc
 .PHONY: nftables-tests
 
+# Runs the socket_netlink_netfilter_test with runc as root user in a docker
+# container.
+nftables-syscall-runc-tests: load-nftables
+	@sudo modprobe nfnetlink
+	@sudo modprobe nf_tables
+	@# Overrides the default `--user` flag of DOCKER_RUN_OPTIONS to run as root.
+	@$(call build_paths,//test/syscalls/linux:socket_netlink_netfilter_test,docker run $(DOCKER_RUN_OPTIONS) --user 0:0 --runtime runc --rm gvisor.dev/images/nftables {})
+.PHONY: nftables-syscall-runc-tests
+
 packetdrill-tests: load-packetdrill $(RUNTIME_BIN)
 	@$(call install_runtime,$(RUNTIME),) # Clear flags.
 	@$(call test_runtime,$(RUNTIME),//test/packetdrill:all_tests)
