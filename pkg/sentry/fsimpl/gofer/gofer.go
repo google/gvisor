@@ -744,7 +744,7 @@ func (fs *filesystem) Release(ctx context.Context) {
 		}
 		// Discard cached pages.
 		d.inode.cache.DropAll(mf)
-		d.inode.dirty.RemoveAll()
+		d.inode.dirty.RemoveAllAndAccount()
 		d.inode.dataMu.Unlock()
 		// Close host FDs if they exist.
 		d.inode.closeHostFDs()
@@ -1015,7 +1015,7 @@ func (i *inode) destroy(ctx context.Context, d *dentry) {
 	if !i.cache.IsEmpty() {
 		mf.MarkAllUnevictable(i)
 		i.cache.DropAll(mf)
-		i.dirty.RemoveAll()
+		i.dirty.RemoveAllAndAccount()
 	}
 
 	i.dataMu.Unlock()

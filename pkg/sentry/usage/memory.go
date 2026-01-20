@@ -171,6 +171,47 @@ type MemoryStats struct {
 	Ramdiskfs uint64
 }
 
+// DirtyMemoryAccounting tracks global dirty and writeback memory.
+// This is separate from MemoryAccounting because dirty memory tracking
+// needs to be updated from the fsutil package without creating import cycles.
+var DirtyMemoryAccounting = &DirtyMemoryStats{}
+
+// DirtyMemoryStats tracks dirty and writeback memory globally.
+type DirtyMemoryStats struct {
+	// Dirty is the total bytes of memory that have been modified but not yet
+	// written back to the underlying storage.
+	Dirty atomicbitops.Uint64
+
+	// Writeback is the total bytes of memory currently being written back
+	// to the underlying storage.
+	Writeback atomicbitops.Uint64
+}
+
+// IncDirty adds val bytes to the dirty memory counter.
+func (d *DirtyMemoryStats) IncDirty(val uint64) {
+	d.Dirty.Add(val)
+}
+
+// DecDirty removes val bytes from the dirty memory counter.
+func (d *DirtyMemoryStats) DecDirty(val uint64) {
+	d.Dirty.Add(^(val - 1))
+}
+
+// IncWriteback adds val bytes to the writeback memory counter.
+func (d *DirtyMemoryStats) IncWriteback(val uint64) {
+	d.Writeback.Add(val)
+}
+
+// DecWriteback removes val bytes from the writeback memory counter.
+func (d *DirtyMemoryStats) DecWriteback(val uint64) {
+	d.Writeback.Add(^(val - 1))
+}
+
+// Copy returns the current dirty and writeback values.
+func (d *DirtyMemoryStats) Copy() (dirty, writeback uint64) {
+	return d.Dirty.Load(), d.Writeback.Load()
+}
+
 // RTMemoryStats contains the memory usage values that need to be directly
 // exposed through a shared memory file for real-time access. These are
 // categories not backed by platform memory. For details about how this works,
