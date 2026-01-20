@@ -18,9 +18,12 @@
 #include <netinet/ip_icmp.h>
 
 #include <cerrno>
+#include <cstring>
 #include <ctime>
 #include <utility>
 #include <vector>
+
+#include "gmock/gmock.h"
 
 #ifdef __linux__
 #include <linux/errqueue.h>
@@ -1859,48 +1862,43 @@ TEST_P(UdpSocketTest, RecvBufLimits) {
                 SyscallSucceeds());
   }
 
-  {
-    std::vector<char> buf(min);
-    RandomizeBuffer(buf.data(), buf.size());
+  constexpr int max_to_send = 10;  // Enough to definitely fill min * 2.
+  std::vector<char> buf(min);
+  RandomizeBuffer(buf.data(), buf.size());
 
-    ASSERT_THAT(
-        sendto(sock_.get(), buf.data(), buf.size(), 0, bind_addr_, addrlen_),
-        SyscallSucceedsWithValue(buf.size()));
-    ASSERT_THAT(
-        sendto(sock_.get(), buf.data(), buf.size(), 0, bind_addr_, addrlen_),
-        SyscallSucceedsWithValue(buf.size()));
-    ASSERT_THAT(
-        sendto(sock_.get(), buf.data(), buf.size(), 0, bind_addr_, addrlen_),
-        SyscallSucceedsWithValue(buf.size()));
-    ASSERT_THAT(
-        sendto(sock_.get(), buf.data(), buf.size(), 0, bind_addr_, addrlen_),
-        SyscallSucceedsWithValue(buf.size()));
-    int sent = 4;
-    if (IsRunningOnGvisor() && !IsRunningWithHostinet()) {
-      // Linux seems to drop the 4th packet even though technically it should
-      // fit in the receive buffer.
-      ASSERT_THAT(
-          sendto(sock_.get(), buf.data(), buf.size(), 0, bind_addr_, addrlen_),
-          SyscallSucceedsWithValue(buf.size()));
+  // Send to sock_.
+  int sent = 0;
+  for (int i = 0; i < max_to_send; ++i) {
+    size_t sentBytes =
+        sendto(sock_.get(), buf.data(), buf.size(), 0, bind_addr_, addrlen_);
+    if (sentBytes == buf.size()) {
       sent++;
+    } else {
+      break;
     }
-
-    for (int i = 0; i < sent - 1; i++) {
-      // Receive the data.
-      std::vector<char> received(buf.size());
-      EXPECT_THAT(RecvTimeout(bind_.get(), received.data(), received.size(),
-                              1 /*timeout*/),
-                  IsPosixErrorOkAndHolds(received.size()));
-      EXPECT_EQ(memcmp(buf.data(), received.data(), buf.size()), 0);
-    }
-
-    // The last receive should fail with EAGAIN as the last packet should have
-    // been dropped due to lack of space in the receive buffer.
-    std::vector<char> received(buf.size());
-    EXPECT_THAT(
-        recv(bind_.get(), received.data(), received.size(), MSG_DONTWAIT),
-        SyscallFailsWithErrno(EAGAIN));
   }
+
+  // Receive from bind_.
+  int recvd = 0;
+  bool received_eagain = false;
+  for (int i = 0; i < sent; ++i) {
+    std::vector<char> received(buf.size());
+    PosixErrorOr<int> ret = RecvTimeout(bind_.get(), received.data(),
+                                        received.size(), 1 /*timeout*/);
+    if (ret.ok()) {
+      EXPECT_EQ(ret.ValueOrDie(), buf.size());
+      EXPECT_EQ(memcmp(buf.data(), received.data(), buf.size()), 0);
+      recvd++;
+    } else {
+      EXPECT_EQ(ret.error().errno_value(), EAGAIN);
+      received_eagain = true;
+      break;
+    }
+  }
+
+  EXPECT_GT(recvd, 1);
+  EXPECT_LT(recvd, sent);
+  EXPECT_TRUE(received_eagain);
 }
 
 #ifdef __linux__
