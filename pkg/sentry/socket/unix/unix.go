@@ -900,6 +900,12 @@ func (s *Socket) Type() (family int, skType linux.SockType, protocol int) {
 	return linux.AF_UNIX, s.stype, 0
 }
 
+// HasCapability implements socket.Socket.TaskHasCapability.
+func (s *Socket) HasCapability(cp linux.Capability, t *kernel.Task) bool {
+	// Unimplemented.
+	return false
+}
+
 func convertAddress(addr transport.Address) (linux.SockAddr, uint32) {
 	var out linux.SockAddrUnix
 	out.Family = linux.AF_UNIX
