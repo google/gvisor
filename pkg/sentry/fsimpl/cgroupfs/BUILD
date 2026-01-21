@@ -1,6 +1,5 @@
 load("//pkg/sync/locking:locking.bzl", "declare_mutex", "declare_rwmutex")
 load("//tools:defs.bzl", "go_library", "go_test")
-load("//tools/go_generics:defs.bzl", "go_template_instance")
 
 package(default_applicable_licenses = ["//:license"])
 
@@ -20,17 +19,6 @@ declare_rwmutex(
     prefix = "task",
 )
 
-go_template_instance(
-    name = "dir_refs",
-    out = "dir_refs.go",
-    package = "cgroupfs",
-    prefix = "dir",
-    template = "//pkg/refs:refs_template",
-    types = {
-        "T": "dir",
-    },
-)
-
 go_library(
     name = "cgroupfs",
     srcs = [
@@ -41,7 +29,6 @@ go_library(
         "cpuacct.go",
         "cpuset.go",
         "devices.go",
-        "dir_refs.go",
         "job.go",
         "memory.go",
         "pids.go",

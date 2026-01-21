@@ -7,17 +7,6 @@ package(
 )
 
 go_template_instance(
-    name = "chunk_refs",
-    out = "chunk_refs.go",
-    package = "buffer",
-    prefix = "chunk",
-    template = "//pkg/refs:refs_template",
-    types = {
-        "T": "chunk",
-    },
-)
-
-go_template_instance(
     name = "view_list",
     out = "view_list.go",
     package = "buffer",
@@ -35,7 +24,6 @@ go_library(
         "buffer.go",
         "buffer_state.go",
         "chunk.go",
-        "chunk_refs.go",
         "view.go",
         "view_list.go",
         "view_unsafe.go",

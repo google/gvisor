@@ -21,6 +21,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -50,6 +51,9 @@ type subtasksInode struct {
 	pidns             *kernel.PIDNamespace
 	cgroupControllers map[string]string
 }
+
+// +stateify transparent
+type subtasksInodeRefs struct{ refs.Refs[subtasksInode] }
 
 var _ kernfs.Inode = (*subtasksInode)(nil)
 

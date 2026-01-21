@@ -1,25 +1,12 @@
 load("//tools:defs.bzl", "go_library", "go_test")
-load("//tools/go_generics:defs.bzl", "go_template_instance")
 
 package(default_applicable_licenses = ["//:license"])
 
 licenses(["notice"])
 
-go_template_instance(
-    name = "dir_refs",
-    out = "dir_refs.go",
-    package = "sys",
-    prefix = "dir",
-    template = "//pkg/refs:refs_template",
-    types = {
-        "T": "dir",
-    },
-)
-
 go_library(
     name = "sys",
     srcs = [
-        "dir_refs.go",
         "kcov.go",
         "pci.go",
         "save_restore.go",

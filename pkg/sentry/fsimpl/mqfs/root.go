@@ -18,6 +18,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
@@ -40,6 +41,9 @@ type rootInode struct {
 
 	locks vfs.FileLocks
 }
+
+// +stateify transparent
+type rootInodeRefs struct{ refs.Refs[rootInode] }
 
 var _ kernfs.Inode = (*rootInode)(nil)
 

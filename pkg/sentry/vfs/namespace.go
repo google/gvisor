@@ -94,6 +94,9 @@ type namespaceDefaultRefs struct {
 	destroy func(ctx context.Context)
 }
 
+// +stateify transparent
+type namespaceRefs struct{ refs.Refs[MountNamespace] }
+
 func (r *namespaceDefaultRefs) DecRef(ctx context.Context) {
 	r.namespaceRefs.DecRef(
 		func() {

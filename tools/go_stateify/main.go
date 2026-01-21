@@ -17,10 +17,12 @@
 package main
 
 import (
+	"bytes"
 	"flag"
 	"fmt"
 	"go/ast"
 	"go/parser"
+	"go/printer"
 	"go/token"
 	"os"
 	"path/filepath"
@@ -38,40 +40,47 @@ var (
 	statePkg = flag.String("statepkg", "", "state import package; defaults to empty")
 )
 
-// resolveTypeName returns a qualified type name.
-func resolveTypeName(typ ast.Expr) (field string, qualified string) {
-	for done := false; !done; {
-		// Resolve star expressions.
-		switch rs := typ.(type) {
-		case *ast.StarExpr:
-			qualified += "*"
-			typ = rs.X
-		case *ast.ArrayType:
-			if rs.Len == nil {
-				// Slice type declaration.
-				qualified += "[]"
-			} else {
-				// Array type declaration.
-				qualified += "[" + rs.Len.(*ast.BasicLit).Value + "]"
+// resolveTypeName returns a type name for a field or receiver.
+func resolveTypeName(typ ast.Expr, full bool) string {
+	typ = func() ast.Expr {
+		for {
+			switch rs := typ.(type) {
+			case *ast.ParenExpr:
+				typ = rs.X
+			case *ast.StarExpr:
+				typ = rs.X
+			case *ast.ArrayType:
+				typ = rs.Elt
+			default:
+				return typ
 			}
-			typ = rs.Elt
+		}
+	}()
+
+	// Field names must be unqualified to match selector access, while receivers
+	// need the full printed type (including type parameters).
+	if full {
+		var buf bytes.Buffer
+		if err := printer.Fprint(&buf, token.NewFileSet(), typ); err != nil {
+			panic(fmt.Sprintf("failed to format %T: %v", typ, err))
+		}
+		return buf.String()
+	}
+
+	for {
+		switch t := typ.(type) {
+		case *ast.Ident:
+			return t.Name
+		case *ast.SelectorExpr:
+			typ = t.Sel
+		case *ast.IndexExpr:
+			typ = t.X
+		case *ast.IndexListExpr:
+			typ = t.X
 		default:
-			// No more descent.
-			done = true
+			panic(fmt.Sprintf("unsupported field type expression: %T", t))
 		}
 	}
-
-	// Resolve a package selector.
-	sel, ok := typ.(*ast.SelectorExpr)
-	if ok {
-		qualified = qualified + sel.X.(*ast.Ident).Name + "."
-		typ = sel.Sel
-	}
-
-	// Figure out actual type name.
-	field = typ.(*ast.Ident).Name
-	qualified = qualified + field
-	return
 }
 
 // extractStateTag pulls the relevant state tag.
@@ -110,7 +119,7 @@ func scanFields(ss *ast.StructType, fn scanFunctions) {
 		if field.Names == nil {
 			// Anonymous types can't be embedded, so we don't need
 			// to worry about providing a useful name here.
-			name, _ := resolveTypeName(field.Type)
+			name := resolveTypeName(field.Type, false)
 			scanField(name, field, fn)
 			continue
 		}
@@ -182,7 +191,7 @@ func main() {
 		os.Exit(1)
 	}
 	if *fullPkg == "" {
-		fmt.Fprintf(os.Stderr, "Error: package required.")
+		fmt.Fprintf(os.Stderr, "Error: package required")
 		os.Exit(1)
 	}
 
@@ -289,7 +298,7 @@ func main() {
 			}
 
 			// Save the method and the receiver.
-			name, _ := resolveTypeName(d.Recv.List[0].Type)
+			name := resolveTypeName(d.Recv.List[0].Type, true)
 			simpleMethods[method{
 				typeName:   name,
 				methodName: d.Name.Name,
@@ -323,6 +332,7 @@ func main() {
 				generateTypeInfo    = false
 				generateSaverLoader = false
 				isIdentType         = false
+				isTransparent       = false
 			)
 			for _, l := range d.Doc.List {
 				if l.Text == "// +stateify savable" {
@@ -335,6 +345,11 @@ func main() {
 				if l.Text == "// +stateify identtype" {
 					isIdentType = true
 				}
+				if l.Text == "// +stateify transparent" {
+					generateTypeInfo = true
+					generateSaverLoader = true
+					isTransparent = true
+				}
 			}
 			if !generateTypeInfo && !generateSaverLoader {
 				continue
@@ -342,17 +357,82 @@ func main() {
 
 			for _, gs := range d.Specs {
 				ts := gs.(*ast.TypeSpec)
-				recv, ok := receiverNames[ts.Name.Name]
+				recvType := ts.Name.Name
+				recv, ok := receiverNames[recvType]
 				if !ok {
 					// Maybe no methods were defined?
-					recv = strings.ToLower(ts.Name.Name[:1])
+					recv = strings.ToLower(recvType[:1])
+				}
+				typeParams := func() []string {
+					if ts.TypeParams == nil {
+						return nil
+					}
+					var typeParams []string
+					for _, field := range ts.TypeParams.List {
+						for _, name := range field.Names {
+							typeParams = append(typeParams, name.Name)
+						}
+					}
+					return typeParams
+				}()
+				if len(typeParams) != 0 {
+					recvType += "[" + strings.Join(typeParams, ", ") + "]"
 				}
 				switch x := ts.Type.(type) {
 				case *ast.StructType:
 					maybeEmitImports()
 					if isIdentType {
-						fmt.Fprintf(os.Stderr, "Cannot use `+stateify identtype` on a struct type (%v); must be a type definition of an identical type.", ts.Name.Name)
+						fmt.Fprintf(os.Stderr, "Cannot use `+stateify identtype` on a struct type (%v); must be a type definition of an identical type", recvType)
 						os.Exit(1)
+					}
+					if isTransparent && len(typeParams) != 0 {
+						fmt.Fprintf(os.Stderr, "Cannot use `+stateify transparent` on %v; transparent types must not have type parameters", recvType)
+						os.Exit(1)
+					}
+					if isTransparent {
+						if len(x.Fields.List) != 1 {
+							fmt.Fprintf(os.Stderr, "Cannot use `+stateify transparent` on %v; transparent types must contain exactly one field", recvType)
+							os.Exit(1)
+						}
+						field := x.Fields.List[0]
+						if len(field.Names) != 0 {
+							fmt.Fprintf(os.Stderr, "Cannot use `+stateify transparent` on %v; transparent types must use embedding", recvType)
+							os.Exit(1)
+						}
+						if tag := extractStateTag(field.Tag); tag != "" {
+							fmt.Fprintf(os.Stderr, "Cannot use `+stateify transparent` on %v; transparent types must not have a state tag on the embedded field", recvType)
+							os.Exit(1)
+						}
+						fieldName := resolveTypeName(field.Type, false)
+						fieldRef := fmt.Sprintf("%s.%s", recv, fieldName)
+
+						// Generate the type name method.
+						fmt.Fprintf(outputFile, "func (%s *%s) StateTypeName() string {\n", recv, recvType)
+						fmt.Fprintf(outputFile, "	return \"%s.%s\"\n", *fullPkg, recvType)
+						fmt.Fprintf(outputFile, "}\n\n")
+
+						// Generate the fields method.
+						fmt.Fprintf(outputFile, "func (%s *%s) StateFields() []string {\n", recv, recvType)
+						fmt.Fprintf(outputFile, "	var zero %s\n", recvType)
+						fmt.Fprintf(outputFile, "	return zero.%s.StateFields()\n", fieldName)
+						fmt.Fprintf(outputFile, "}\n\n")
+
+						if generateSaverLoader {
+							fmt.Fprintf(outputFile, "// +checklocksignore\n")
+							fmt.Fprintf(outputFile, "func (%s *%s) StateSave(stateSinkObject %sSink) {\n", recv, recvType, statePrefix)
+							fmt.Fprintf(outputFile, "	%s.StateSave(stateSinkObject)\n", fieldRef)
+							fmt.Fprintf(outputFile, "}\n\n")
+							fmt.Fprintf(outputFile, "// +checklocksignore\n")
+							fmt.Fprintf(outputFile, "func (%s *%s) StateLoad(ctx context.Context, stateSourceObject %sSource) {\n", recv, recvType, statePrefix)
+							fmt.Fprintf(outputFile, "	%s.StateLoad(ctx, stateSourceObject)\n", fieldRef)
+							fmt.Fprintf(outputFile, "}\n\n")
+						}
+
+						// Add to our registration.
+						if len(typeParams) == 0 {
+							emitRegister(recvType)
+						}
+						continue
 					}
 
 					// Record the slot for each field.
@@ -392,12 +472,12 @@ func main() {
 					}
 
 					// Generate the type name method.
-					fmt.Fprintf(outputFile, "func (%s *%s) StateTypeName() string {\n", recv, ts.Name.Name)
-					fmt.Fprintf(outputFile, "	return \"%s.%s\"\n", *fullPkg, ts.Name.Name)
+					fmt.Fprintf(outputFile, "func (%s *%s) StateTypeName() string {\n", recv, recvType)
+					fmt.Fprintf(outputFile, "	return \"%s.%s\"\n", *fullPkg, recvType)
 					fmt.Fprintf(outputFile, "}\n\n")
 
 					// Generate the fields method.
-					fmt.Fprintf(outputFile, "func (%s *%s) StateFields() []string {\n", recv, ts.Name.Name)
+					fmt.Fprintf(outputFile, "func (%s *%s) StateFields() []string {\n", recv, recvType)
 					fmt.Fprintf(outputFile, "	return []string{\n")
 					scanFields(x, scanFunctions{
 						normal: emitField,
@@ -412,10 +492,10 @@ func main() {
 					// file not provided to this binary and prevents inherited methods
 					// from being called multiple times by overriding them.
 					if _, ok := simpleMethods[method{
-						typeName:   ts.Name.Name,
+						typeName:   recvType,
 						methodName: "beforeSave",
 					}]; !ok && generateSaverLoader {
-						fmt.Fprintf(outputFile, "func (%s *%s) beforeSave() {}\n\n", recv, ts.Name.Name)
+						fmt.Fprintf(outputFile, "func (%s *%s) beforeSave() {}\n\n", recv, recvType)
 					}
 
 					// Generate the save method.
@@ -426,7 +506,7 @@ func main() {
 					// allows a manual implementation to be order-dependent.
 					if generateSaverLoader {
 						fmt.Fprintf(outputFile, "// +checklocksignore\n")
-						fmt.Fprintf(outputFile, "func (%s *%s) StateSave(stateSinkObject %sSink) {\n", recv, ts.Name.Name, statePrefix)
+						fmt.Fprintf(outputFile, "func (%s *%s) StateSave(stateSinkObject %sSink) {\n", recv, recvType, statePrefix)
 						fmt.Fprintf(outputFile, "	%s.beforeSave()\n", recv)
 						scanFields(x, scanFunctions{zerovalue: emitZeroCheck})
 						scanFields(x, scanFunctions{value: emitSaveValue})
@@ -437,11 +517,11 @@ func main() {
 					// Define afterLoad if a definition was not found. We do this for
 					// the same reason that we do it for beforeSave.
 					_, hasAfterLoad := simpleMethods[method{
-						typeName:   ts.Name.Name,
+						typeName:   recvType,
 						methodName: "afterLoad",
 					}]
 					if !hasAfterLoad && generateSaverLoader {
-						fmt.Fprintf(outputFile, "func (%s *%s) afterLoad(context.Context) {}\n\n", recv, ts.Name.Name)
+						fmt.Fprintf(outputFile, "func (%s *%s) afterLoad(context.Context) {}\n\n", recv, recvType)
 					}
 
 					// Generate the load method.
@@ -449,7 +529,7 @@ func main() {
 					// N.B. See the comment above for the save method.
 					if generateSaverLoader {
 						fmt.Fprintf(outputFile, "// +checklocksignore\n")
-						fmt.Fprintf(outputFile, "func (%s *%s) StateLoad(ctx context.Context, stateSourceObject %sSource) {\n", recv, ts.Name.Name, statePrefix)
+						fmt.Fprintf(outputFile, "func (%s *%s) StateLoad(ctx context.Context, stateSourceObject %sSource) {\n", recv, recvType, statePrefix)
 						scanFields(x, scanFunctions{normal: emitLoad, wait: emitLoadWait})
 						scanFields(x, scanFunctions{value: emitLoadValue})
 						if hasAfterLoad {
@@ -463,18 +543,20 @@ func main() {
 					}
 
 					// Add to our registration.
-					emitRegister(ts.Name.Name)
+					if len(typeParams) == 0 {
+						emitRegister(recvType)
+					}
 
 				case *ast.Ident, *ast.SelectorExpr, *ast.ArrayType:
 					maybeEmitImports()
 
 					// Generate the info methods.
-					fmt.Fprintf(outputFile, "func (%s *%s) StateTypeName() string {\n", recv, ts.Name.Name)
-					fmt.Fprintf(outputFile, "	return \"%s.%s\"\n", *fullPkg, ts.Name.Name)
+					fmt.Fprintf(outputFile, "func (%s *%s) StateTypeName() string {\n", recv, recvType)
+					fmt.Fprintf(outputFile, "	return \"%s.%s\"\n", *fullPkg, recvType)
 					fmt.Fprintf(outputFile, "}\n\n")
 
 					if !isIdentType {
-						fmt.Fprintf(outputFile, "func (%s *%s) StateFields() []string {\n", recv, ts.Name.Name)
+						fmt.Fprintf(outputFile, "func (%s *%s) StateFields() []string {\n", recv, recvType)
 						fmt.Fprintf(outputFile, "	return nil\n")
 						fmt.Fprintf(outputFile, "}\n\n")
 					} else {
@@ -490,26 +572,31 @@ func main() {
 							}
 							typeName = fmt.Sprintf("%s.%s", expIdent.Name, y.Sel.Name)
 						default:
-							fmt.Fprintf(os.Stderr, "Cannot use `+stateify identtype` on a non-identifier/non-selector type definition (%v => %v of type %T); must be a type definition of an identical type.", ts.Name.Name, x, x)
+							fmt.Fprintf(os.Stderr, "Cannot use `+stateify identtype` on a non-identifier/non-selector type definition (%v => %v of type %T); must be a type definition of an identical type", recvType, x, x)
 							os.Exit(1)
 						}
-						fmt.Fprintf(outputFile, "func (%s *%s) StateFields() []string {\n", recv, ts.Name.Name)
+						if len(typeParams) != 0 {
+							typeName += "[" + strings.Join(typeParams, ", ") + "]"
+						}
+						fmt.Fprintf(outputFile, "func (%s *%s) StateFields() []string {\n", recv, recvType)
 						fmt.Fprintf(outputFile, "	return (*%s)(%s).StateFields()\n", typeName, recv)
 						fmt.Fprintf(outputFile, "}\n\n")
 						if generateSaverLoader {
 							fmt.Fprintf(outputFile, "// +checklocksignore\n")
-							fmt.Fprintf(outputFile, "func (%s *%s) StateSave(stateSinkObject %sSink) {\n", recv, ts.Name.Name, statePrefix)
+							fmt.Fprintf(outputFile, "func (%s *%s) StateSave(stateSinkObject %sSink) {\n", recv, recvType, statePrefix)
 							fmt.Fprintf(outputFile, "	(*%s)(%s).StateSave(stateSinkObject)\n", typeName, recv)
 							fmt.Fprintf(outputFile, "}\n\n")
 							fmt.Fprintf(outputFile, "// +checklocksignore\n")
-							fmt.Fprintf(outputFile, "func (%s *%s) StateLoad(ctx context.Context, stateSourceObject %sSource) {\n", recv, ts.Name.Name, statePrefix)
+							fmt.Fprintf(outputFile, "func (%s *%s) StateLoad(ctx context.Context, stateSourceObject %sSource) {\n", recv, recvType, statePrefix)
 							fmt.Fprintf(outputFile, "	(*%s)(%s).StateLoad(ctx, stateSourceObject)\n", typeName, recv)
 							fmt.Fprintf(outputFile, "}\n\n")
 						}
 					}
 
 					// See above.
-					emitRegister(ts.Name.Name)
+					if len(typeParams) == 0 {
+						emitRegister(recvType)
+					}
 				}
 			}
 		}

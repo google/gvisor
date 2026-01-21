@@ -17,6 +17,7 @@ package transport
 import (
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -37,6 +38,9 @@ type queue struct {
 	limit    int64
 	dataList messageList
 }
+
+// +stateify transparent
+type queueRefs struct{ refs.Refs[queue] }
 
 // Close closes q for reading and writing. It is immediately not writable and
 // will become unreadable when no more data is pending.

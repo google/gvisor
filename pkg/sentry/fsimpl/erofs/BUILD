@@ -18,37 +18,13 @@ go_template_instance(
     },
 )
 
-go_template_instance(
-    name = "dentry_refs",
-    out = "dentry_refs.go",
-    package = "erofs",
-    prefix = "dentry",
-    template = "//pkg/refs:refs_template",
-    types = {
-        "T": "dentry",
-    },
-)
-
-go_template_instance(
-    name = "inode_refs",
-    out = "inode_refs.go",
-    package = "erofs",
-    prefix = "inode",
-    template = "//pkg/refs:refs_template",
-    types = {
-        "T": "inode",
-    },
-)
-
 go_library(
     name = "erofs",
     srcs = [
-        "dentry_refs.go",
         "directory.go",
         "erofs.go",
         "filesystem.go",
         "fstree.go",
-        "inode_refs.go",
         "regular_file.go",
         "save_restore.go",
     ],

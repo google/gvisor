@@ -1,27 +1,8 @@
 load("//tools:defs.bzl", "go_library")
-load("//tools/go_generics:defs.bzl", "go_template")
 
 package(
     default_applicable_licenses = ["//:license"],
     licenses = ["notice"],
-)
-
-go_template(
-    name = "refs_template",
-    srcs = [
-        "refs_template.go",
-    ],
-    opt_consts = [
-        "enableLogging",
-    ],
-    types = [
-        "T",
-    ],
-    visibility = ["//:sandbox"],
-    deps = [
-        "//pkg/log",
-        "//pkg/refs",
-    ],
 )
 
 go_library(
@@ -29,6 +10,7 @@ go_library(
     srcs = [
         "refcounter.go",
         "refs_map.go",
+        "refs_template.go",
     ],
     visibility = ["//:sandbox"],
     deps = [

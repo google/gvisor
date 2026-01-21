@@ -21,6 +21,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -50,6 +51,9 @@ type taskInode struct {
 	// dentries is a list of dentries to be invalidated when the task is destroyed.
 	dentries map[*kernfs.Dentry]struct{}
 }
+
+// +stateify transparent
+type taskInodeRefs struct{ refs.Refs[taskInode] }
 
 var _ kernfs.Inode = (*taskInode)(nil)
 

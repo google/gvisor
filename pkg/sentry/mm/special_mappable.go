@@ -18,6 +18,7 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 )
@@ -29,12 +30,15 @@ import (
 //
 // +stateify savable
 type SpecialMappable struct {
-	SpecialMappableRefs
+	specialMappableRefs
 
 	mf   *pgalloc.MemoryFile `state:"nosave"`
 	fr   memmap.FileRange
 	name string
 }
+
+// +stateify transparent
+type specialMappableRefs struct{ refs.Refs[SpecialMappable] }
 
 // NewSpecialMappable returns a SpecialMappable that owns fr, which represents
 // offsets in mfp.MemoryFile() that contain the SpecialMappable's data. The
@@ -49,7 +53,7 @@ func NewSpecialMappable(name string, mf *pgalloc.MemoryFile, fr memmap.FileRange
 
 // DecRef implements refs.RefCounter.DecRef.
 func (m *SpecialMappable) DecRef(ctx context.Context) {
-	m.SpecialMappableRefs.DecRef(func() {
+	m.specialMappableRefs.DecRef(func() {
 		m.mf.DecRef(m.fr)
 	})
 }

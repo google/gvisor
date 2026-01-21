@@ -6,17 +6,6 @@ package(default_applicable_licenses = ["//:license"])
 licenses(["notice"])
 
 go_template_instance(
-    name = "inode_refs",
-    out = "inode_refs.go",
-    package = "gofer",
-    prefix = "inode",
-    template = "//pkg/refs:refs_template",
-    types = {
-        "T": "inode",
-    },
-)
-
-go_template_instance(
     name = "string_list",
     out = "string_list.go",
     package = "gofer",
@@ -76,7 +65,6 @@ go_library(
         "handle.go",
         "host_named_pipe.go",
         "inode_impl.go",
-        "inode_refs.go",
         "lisafs_inode.go",
         "regular_file.go",
         "revalidate.go",
