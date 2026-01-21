@@ -983,8 +983,9 @@ syscall_test(
 )
 
 syscall_test(
-    size = "medium",
+    size = "large",
     add_hostinet = True,
+    shard_count = most_shards,
     test = "//test/syscalls/linux:socket_stream_local_test",
 )
 
