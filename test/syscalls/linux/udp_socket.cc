@@ -16,10 +16,13 @@
 #include <fcntl.h>
 #include <netinet/icmp6.h>
 #include <netinet/ip_icmp.h>
+#include <sched.h>
 
 #include <cerrno>
+#include <cstdint>
 #include <cstring>
 #include <ctime>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -581,11 +584,19 @@ TEST_P(UdpSocketTest, DisconnectAfterConnectAnyWithPort) {
 TEST_P(UdpSocketTest, DisconnectAfterBind) {
   ASSERT_NO_ERRNO(BindLoopback());
 
-  // Bind to the next port above bind_.
+  // Bind to the next available port near bind_.
   struct sockaddr_storage addr_storage = InetLoopbackAddr();
   struct sockaddr* addr = AsSockAddr(&addr_storage);
-  SetPort(&addr_storage, *Port(&bind_addr_storage_) - 1);
-  ASSERT_NO_ERRNO(BindSocket(sock_.get(), addr));
+  bool bound = false;
+  uint16_t base_port = ntohs(*Port(&bind_addr_storage_));
+  for (int i = 1; i <= 10; ++i) {
+    SetPort(&addr_storage, base_port - i);
+    if (BindSocket(sock_.get(), addr).ok()) {
+      bound = true;
+      break;
+    }
+  }
+  ASSERT_TRUE(bound);
 
   // Connect the socket.
   ASSERT_THAT(connect(sock_.get(), bind_addr_, addrlen_), SyscallSucceeds());
@@ -924,6 +935,9 @@ TEST_P(UdpSocketTest, RecvErrorConnRefused) {
   msg.msg_controllen = control_buf_len;
   msg.msg_name = reinterpret_cast<void*>(&remote);
   msg.msg_namelen = addrlen_;
+  struct pollfd pfd = {.fd = sock_.get(), .events = POLLIN};
+  int ready = poll(&pfd, 1, 1000);
+  ASSERT_TRUE(ready > 0 && (pfd.revents & POLLERR));
   ASSERT_THAT(recvmsg(sock_.get(), &msg, MSG_ERRQUEUE),
               SyscallSucceedsWithValue(kBufLen));
 
@@ -1342,12 +1356,18 @@ TEST_P(UdpSocketTest, BoundaryPreserved_SendRecv) {
   }
 
   // Receive the data as 3 separate packets.
-  char received[6 * psize];
+  std::vector<std::string> rcvd_pkts;
   for (int i = 0; i < 3; ++i) {
-    EXPECT_THAT(recv(bind_.get(), received + i * psize, 3 * psize, 0),
+    char recv_buf[psize];
+    ASSERT_THAT(recv(bind_.get(), recv_buf, psize, 0),
                 SyscallSucceedsWithValue(psize));
+    rcvd_pkts.push_back(std::string(recv_buf, psize));
   }
-  EXPECT_EQ(memcmp(buf, received, 3 * psize), 0);
+  // Note: the packets might be received in a different order.
+  for (int i = 0; i < 3; ++i) {
+    std::string sent_packet(buf + i * psize, psize);
+    EXPECT_THAT(rcvd_pkts, ::testing::Contains(sent_packet));
+  }
 }
 
 TEST_P(UdpSocketTest, BoundaryPreserved_WritevReadv) {
@@ -1375,6 +1395,7 @@ TEST_P(UdpSocketTest, BoundaryPreserved_WritevReadv) {
 
   // Receive the data as 2 separate packets.
   char received[6 * kPieceSize];
+  memset(received, 0, sizeof(received));
   for (int i = 0; i < 2; i++) {
     struct iovec iov[3];
     for (int j = 0; j < 3; j++) {
@@ -1385,7 +1406,17 @@ TEST_P(UdpSocketTest, BoundaryPreserved_WritevReadv) {
     ASSERT_THAT(readv(bind_.get(), iov, 3),
                 SyscallSucceedsWithValue(2 * kPieceSize));
   }
-  EXPECT_EQ(memcmp(buf, received, 4 * kPieceSize), 0);
+
+  std::string sent_pkt0 = std::string(buf, kPieceSize) +
+                          std::string(buf + 2 * kPieceSize, kPieceSize);
+  std::string sent_pkt1 = std::string(buf + kPieceSize, kPieceSize) +
+                          std::string(buf + 3 * kPieceSize, kPieceSize);
+  std::string rcvd_pkt0 = std::string(received, kPieceSize) +
+                          std::string(received + 2 * kPieceSize, kPieceSize);
+  std::string rcvd_pkt1 = std::string(received + kPieceSize, kPieceSize) +
+                          std::string(received + 3 * kPieceSize, kPieceSize);
+  EXPECT_THAT(std::vector<std::string>({rcvd_pkt0, rcvd_pkt1}),
+              ::testing::UnorderedElementsAre(sent_pkt0, sent_pkt1));
 }
 
 TEST_P(UdpSocketTest, BoundaryPreserved_SendMsgRecvMsg) {
@@ -1415,6 +1446,7 @@ TEST_P(UdpSocketTest, BoundaryPreserved_SendMsgRecvMsg) {
 
   // Receive the data as 2 separate packets.
   char received[6 * kPieceSize];
+  memset(received, 0, sizeof(received));
   for (int i = 0; i < 2; i++) {
     struct iovec iov[3];
     for (int j = 0; j < 3; j++) {
@@ -1428,7 +1460,17 @@ TEST_P(UdpSocketTest, BoundaryPreserved_SendMsgRecvMsg) {
     ASSERT_THAT(recvmsg(bind_.get(), &msg, 0),
                 SyscallSucceedsWithValue(2 * kPieceSize));
   }
-  EXPECT_EQ(memcmp(buf, received, 4 * kPieceSize), 0);
+
+  std::string sent_pkt0 = std::string(buf, kPieceSize) +
+                          std::string(buf + 2 * kPieceSize, kPieceSize);
+  std::string sent_pkt1 = std::string(buf + kPieceSize, kPieceSize) +
+                          std::string(buf + 3 * kPieceSize, kPieceSize);
+  std::string rcvd_pkt0 = std::string(received, kPieceSize) +
+                          std::string(received + 2 * kPieceSize, kPieceSize);
+  std::string rcvd_pkt1 = std::string(received + kPieceSize, kPieceSize) +
+                          std::string(received + 3 * kPieceSize, kPieceSize);
+  EXPECT_THAT(std::vector<std::string>({rcvd_pkt0, rcvd_pkt1}),
+              ::testing::UnorderedElementsAre(sent_pkt0, sent_pkt1));
 }
 
 TEST_P(UdpSocketTest, FIONREADShutdown) {
