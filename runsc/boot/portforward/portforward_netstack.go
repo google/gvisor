@@ -87,6 +87,9 @@ type bufWriter struct {
 func (b *bufWriter) Write(buf []byte) (int, error) {
 	n := copy(b.buf[b.offset:], buf)
 	b.offset += int64(n)
+	if n < len(buf) {
+		return n, io.ErrShortWrite
+	}
 	return n, nil
 }
 

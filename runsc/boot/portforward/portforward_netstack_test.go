@@ -20,8 +20,11 @@ import (
 	"sync"
 	"testing"
 
+	"gvisor.dev/gvisor/pkg/buffer"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/contexttest"
 	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
@@ -246,5 +249,144 @@ func TestNestackReadsWrites(t *testing.T) {
 	_, err = conn.Write(ctx, []byte("something"), cancel)
 	if err != io.EOF {
 		t.Fatalf("mismatch write err: want: %v got: %v", io.EOF, err)
+	}
+}
+
+type packetReadImpl struct {
+	payloadSize int
+}
+
+func (p *packetReadImpl) Close() {}
+
+func (p *packetReadImpl) Read(w io.Writer, _ tcpip.ReadOptions) (tcpip.ReadResult, tcpip.Error) {
+	payload := bytes.Repeat([]byte{'x'}, p.payloadSize)
+	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+		Payload: buffer.MakeWithData(payload),
+	})
+	n, err := pkt.Data().ReadTo(w, false)
+	if err != nil && n == 0 {
+		return tcpip.ReadResult{}, &tcpip.ErrBadBuffer{}
+	}
+	return tcpip.ReadResult{
+		Count: n,
+		Total: n,
+	}, nil
+}
+
+func (p *packetReadImpl) Write(tcpip.Payloader, tcpip.WriteOptions) (int64, tcpip.Error) {
+	return 0, &tcpip.ErrClosedForSend{}
+}
+
+func (p *packetReadImpl) Shutdown(tcpip.ShutdownFlags) tcpip.Error {
+	return nil
+}
+
+func TestNetstackConnReadHandlesShortWrite(t *testing.T) {
+	const bufLen = 1024
+	const payloadLen = bufLen + 512
+
+	ctx := contexttest.Context(t)
+	wq := &waiter.Queue{}
+	ep := newMockTCPEndpoint(&packetReadImpl{payloadSize: payloadLen}, wq)
+	conn := netstackConn{ep: ep, wq: wq}
+	cancel := make(chan struct{})
+	defer close(cancel)
+	defer conn.Close(ctx)
+
+	n, err := conn.Read(ctx, make([]byte, bufLen), cancel)
+	if err != nil {
+		t.Fatalf("Read failed: %v", err)
+	}
+	if n != bufLen {
+		t.Fatalf("Read returned %d bytes, want %d", n, bufLen)
+	}
+}
+
+type chunkedPacketReadImpl struct {
+	mu   sync.Mutex
+	data []byte
+}
+
+func (c *chunkedPacketReadImpl) Close() {}
+
+func (c *chunkedPacketReadImpl) Read(w io.Writer, _ tcpip.ReadOptions) (tcpip.ReadResult, tcpip.Error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if len(c.data) == 0 {
+		return tcpip.ReadResult{}, &tcpip.ErrClosedForReceive{}
+	}
+	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+		Payload: buffer.MakeWithData(c.data),
+	})
+	n, err := pkt.Data().ReadTo(w, false)
+	if err != nil && n == 0 {
+		return tcpip.ReadResult{}, &tcpip.ErrBadBuffer{}
+	}
+	c.data = c.data[n:]
+	return tcpip.ReadResult{
+		Count: n,
+		Total: n,
+	}, nil
+}
+
+func (c *chunkedPacketReadImpl) Write(tcpip.Payloader, tcpip.WriteOptions) (int64, tcpip.Error) {
+	return 0, &tcpip.ErrClosedForSend{}
+}
+
+func (c *chunkedPacketReadImpl) Shutdown(tcpip.ShutdownFlags) tcpip.Error {
+	return nil
+}
+
+type bufferConn struct {
+	name string
+	mu   sync.Mutex
+	buf  bytes.Buffer
+}
+
+func (b *bufferConn) Name() string {
+	return b.name
+}
+
+func (b *bufferConn) Write(_ context.Context, p []byte, _ <-chan struct{}) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *bufferConn) Read(_ context.Context, _ []byte, _ <-chan struct{}) (int, error) {
+	return 0, io.EOF
+}
+
+func (b *bufferConn) Close(context.Context) {}
+
+func TestDoCopyDrainsLargeRead(t *testing.T) {
+	const bufLen = 16 * 1024
+	payloadLen := bufLen*3 + 123
+	payload := bytes.Repeat([]byte{'v'}, payloadLen)
+
+	ctx := contexttest.Context(t)
+	wq := &waiter.Queue{}
+	ep := newMockTCPEndpoint(&chunkedPacketReadImpl{data: payload}, wq)
+	src := &netstackConn{ep: ep, wq: wq}
+	dst := &bufferConn{name: "dst"}
+	cancel := make(chan struct{})
+	defer close(cancel)
+	defer src.Close(ctx)
+
+	buf := make([]byte, bufLen)
+	for {
+		if err := doCopy(ctx, dst, src, buf, cancel); err != nil {
+			break
+		}
+	}
+
+	dst.mu.Lock()
+	got := append([]byte(nil), dst.buf.Bytes()...)
+	dst.mu.Unlock()
+	if len(got) != payloadLen {
+		t.Fatalf("copied %d bytes, want %d", len(got), payloadLen)
+	}
+	if !bytes.Equal(got, payload) {
+		t.Fatalf("copied data mismatch")
 	}
 }
