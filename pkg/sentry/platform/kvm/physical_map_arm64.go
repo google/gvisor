@@ -20,6 +20,9 @@ const (
 	extendedAddressSpaceAllowed = false
 )
 
-func archSpecialRegions(vSize uintptr, maxUserAddr uintptr) (uintptr, []specialVirtualRegion) {
+func archSpecialRegions(vSize uintptr) (uintptr, []specialVirtualRegion) {
 	return vSize, nil
+}
+
+func archSpecialRegion(vr virtualRegion) {
 }
