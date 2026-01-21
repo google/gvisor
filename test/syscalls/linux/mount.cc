@@ -2385,8 +2385,14 @@ TEST(MountTest, MountFailsOnPseudoFilesystemMountpoint) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
   auto const fd = ASSERT_NO_ERRNO_AND_VALUE(NewEventFD(0, 0));
   std::string path = absl::StrCat("/proc/self/fd/", fd.get());
-  EXPECT_THAT(mount("test", path.c_str(), kTmpfs, 0, 0),
-              SyscallFailsWithErrno(EINVAL));
+  // After 0d039eac6e595 ("fix a couple of races in MNT_TREE_BENEATH handling
+  // by do_move_mount()"), this hits fs/namespace.c:do_lock_mount() =>
+  // !is_mounted() (eventfds use fs/anon_inodes.c:anon_inode_mnt, which has
+  // real_mount(mnt)->mnt_ns == fs/mount.h:MNT_NS_INTERNAL == ERR_PTR(-EINVAL)
+  // from kern_mount()) and returns ENOENT.
+  EXPECT_THAT(
+      mount("test", path.c_str(), kTmpfs, 0, 0),
+      AnyOf(SyscallFailsWithErrno(EINVAL), SyscallFailsWithErrno(ENOENT)));
 }
 
 TEST(MountTest, ChangeMountFlags) {
