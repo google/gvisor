@@ -50,6 +50,7 @@ var (
 		"bus":            linux.DT_DIR,
 		"cmdline":        linux.DT_REG,
 		"cpuinfo":        linux.DT_REG,
+		"devices":        linux.DT_REG,
 		"filesystems":    linux.DT_REG,
 		"fs":             linux.DT_DIR,
 		"irq":            linux.DT_DIR,

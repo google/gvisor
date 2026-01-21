@@ -20,7 +20,6 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/nvgpu"
 	"gvisor.dev/gvisor/pkg/context"
-	"gvisor.dev/gvisor/pkg/devutil"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fdnotifier"
 	"gvisor.dev/gvisor/pkg/hostarch"
@@ -45,27 +44,10 @@ func (dev *uvmDevice) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dentry
 	fd := &uvmFD{
 		dev: dev,
 	}
-	if dev.nvp.useDevGofer {
-		devClient := devutil.GoferClientFromContext(ctx)
-		if devClient == nil {
-			log.Warningf("devutil.CtxDevGoferClient is not set")
-			return nil, linuxerr.ENOENT
-		}
-		fd.containerName = devClient.ContainerName()
-		hostFD, err := devClient.OpenAt(ctx, "nvidia-uvm", opts.Flags)
-		if err != nil {
-			ctx.Warningf("nvproxy: failed to open nvidia-uvm: %v", err)
-			return nil, err
-		}
-		fd.hostFD = int32(hostFD)
-	} else {
-		flags := int(opts.Flags&unix.O_ACCMODE | unix.O_NOFOLLOW)
-		hostFD, err := unix.Openat(-1, "/dev/nvidia-uvm", flags, 0)
-		if err != nil {
-			ctx.Warningf("nvproxy: failed to open host /dev/nvidia-uvm: %v", err)
-			return nil, err
-		}
-		fd.hostFD = int32(hostFD)
+	var err error
+	fd.hostFD, fd.containerName, err = openHostDevFile(ctx, "nvidia-uvm", dev.nvp.useDevGofer, opts.Flags)
+	if err != nil {
+		return nil, err
 	}
 	if err := fd.vfsfd.Init(fd, opts.Flags, auth.CredentialsFromContext(ctx), mnt, vfsd, &vfs.FileDescriptionOptions{
 		UseDentryMetadata: true,

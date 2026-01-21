@@ -29,6 +29,9 @@ const (
 
 	// From kernel-open/nvidia-uvm/uvm_common.h:
 	NVIDIA_UVM_PRIMARY_MINOR_NUMBER = 0
+
+	// From kernel-open/nvidia/nv-caps.c:
+	NV_CAP_DRV_MINOR_COUNT = 8192
 )
 
 // Handle is NvHandle, from src/common/sdk/nvidia/inc/nvtypes.h.

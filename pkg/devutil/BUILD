@@ -13,6 +13,8 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/context",
+        "//pkg/errors/linuxerr",
+        "//pkg/fspath",
         "//pkg/fsutil",
         "//pkg/lisafs",
         "//pkg/log",

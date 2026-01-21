@@ -15,7 +15,10 @@
 package vfs
 
 import (
+	"bytes"
+	"cmp"
 	"fmt"
+	"slices"
 
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
@@ -201,4 +204,74 @@ func (vfs *VirtualFilesystem) PutAnonBlockDevMinor(minor uint32) {
 	if minor < vfs.anonBlockDevMinorNext {
 		vfs.anonBlockDevMinorNext = minor
 	}
+}
+
+// GenerateProcDevices emits the contents of /proc/devices for vfs to buf.
+func (vfs *VirtualFilesystem) GenerateProcDevices(buf *bytes.Buffer) error {
+	type registeredDeviceGroup struct {
+		lowestMinorByName map[string]uint32
+	}
+	blockDevsByMajor := make(map[uint32]*registeredDeviceGroup)
+	charDevsByMajor := make(map[uint32]*registeredDeviceGroup)
+
+	func() {
+		vfs.devicesMu.Lock()
+		defer vfs.devicesMu.Unlock()
+		for tup, rd := range vfs.devices {
+			if rd.opts.GroupName == "" {
+				continue
+			}
+			var m map[uint32]*registeredDeviceGroup
+			switch tup.kind {
+			case BlockDevice:
+				m = blockDevsByMajor
+			case CharDevice:
+				m = charDevsByMajor
+			}
+			rdg := m[tup.major]
+			if rdg == nil {
+				rdg = &registeredDeviceGroup{
+					lowestMinorByName: make(map[string]uint32),
+				}
+				m[tup.major] = rdg
+			}
+			minor, ok := rdg.lowestMinorByName[rd.opts.GroupName]
+			if !ok || tup.minor < minor {
+				rdg.lowestMinorByName[rd.opts.GroupName] = tup.minor
+			}
+		}
+	}()
+
+	generateDevs := func(devsByMajor map[uint32]*registeredDeviceGroup, buf *bytes.Buffer) {
+		majors := make([]uint32, 0, len(devsByMajor))
+		for major := range devsByMajor {
+			majors = append(majors, major)
+		}
+		slices.Sort(majors)
+		for _, major := range majors {
+			rdg := devsByMajor[major]
+			type minorGroup struct {
+				lowestMinor uint32
+				groupName   string
+			}
+			minors := make([]minorGroup, 0, len(rdg.lowestMinorByName))
+			for name, minor := range rdg.lowestMinorByName {
+				minors = append(minors, minorGroup{
+					lowestMinor: minor,
+					groupName:   name,
+				})
+			}
+			slices.SortFunc(minors, func(a, b minorGroup) int {
+				return cmp.Or(cmp.Compare(a.lowestMinor, b.lowestMinor), cmp.Compare(a.groupName, b.groupName))
+			})
+			for _, minorGroup := range minors {
+				fmt.Fprintf(buf, "%3d %s\n", major, minorGroup.groupName)
+			}
+		}
+	}
+	buf.WriteString("Character devices:\n")
+	generateDevs(charDevsByMajor, buf)
+	buf.WriteString("\nBlock devices:\n")
+	generateDevs(blockDevsByMajor, buf)
+	return nil
 }

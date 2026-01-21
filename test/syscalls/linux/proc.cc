@@ -3120,6 +3120,22 @@ TEST(Proc, PidReuse) {
   _exit(0);
 }
 
+TEST(ProcDevices, ExpectedLines) {
+  auto devices = ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/devices"));
+  std::cout << "Contents of /proc/devices:\n" << devices;
+  // Expect to find:
+  // - The "Character devices:" header on the first line
+  // - "1 mem", for the "mem" character devices (/dev/null etc.)
+  // - The "Block devices:" header on a later line, prefixed by a blank line
+  // As of this writing, gVisor doesn't guarantee anything else.
+  EXPECT_EQ(devices.find("Character devices:\n"), 0);
+  auto memdev_idx = devices.find("1 mem\n");
+  EXPECT_NE(memdev_idx, std::string::npos);
+  auto blkdev_header_idx = devices.find("\n\nBlock devices:\n");
+  EXPECT_NE(blkdev_header_idx, std::string::npos);
+  EXPECT_LT(memdev_idx, blkdev_header_idx);
+}
+
 TEST(ProcFilesystems, ReadCapLastCap) {
   std::string lastCapStr =
       ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/sys/kernel/cap_last_cap"));

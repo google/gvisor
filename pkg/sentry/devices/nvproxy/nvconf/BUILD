@@ -8,11 +8,15 @@ go_library(
     name = "nvconf",
     srcs = [
         "caps.go",
+        "hostsettings.go",
         "nvconf.go",
         "version.go",
     ],
     visibility = [
         "//pkg/sentry:internal",
         "//tools:__subpackages__",
+    ],
+    deps = [
+        "//pkg/log",
     ],
 )

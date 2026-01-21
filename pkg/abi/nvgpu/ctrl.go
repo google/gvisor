@@ -460,17 +460,37 @@ const (
 	NV00DE_CTRL_CMD_REQUEST_DATA_POLL = 0xde0001
 )
 
+// From src/common/sdk/nvidia/inc/ctrl/ctrl00e0.h:
+const (
+	NV00E0_CTRL_CMD_IMPORT_MEM = 0xe00102
+)
+
+// From src/common/sdk/nvidia/inc/ctrl/ctrl00f1.h:
+const (
+	NV00F1_CTRL_CMD_GET_FABRIC_EVENTS   = 0xf10001
+	NV00F1_CTRL_CMD_FINISH_MEM_UNIMPORT = 0xf10002
+	NV00F1_CTRL_CMD_DISABLE_IMPORTERS   = 0xf10003
+)
+
 // From src/common/sdk/nvidia/inc/ctrl/ctrl00f8.h:
 const (
+	NV00F8_CTRL_CMD_DESCRIBE   = 0xf80102
 	NV00F8_CTRL_CMD_ATTACH_MEM = 0xf80103
+)
+
+// From src/common/sdk/nvidia/inc/ctrl/ctrl00fb.h:
+const (
+	NV00FB_CTRL_CMD_VALIDATE = 0xfb0101
 )
 
 // From src/common/sdk/nvidia/inc/ctrl/ctrl00fd.h:
 const (
-	NV00FD_CTRL_CMD_GET_INFO   = 0xfd0101
-	NV00FD_CTRL_CMD_ATTACH_MEM = 0xfd0102
-	NV00FD_CTRL_CMD_ATTACH_GPU = 0xfd0104
-	NV00FD_CTRL_CMD_DETACH_MEM = 0xfd0105
+	NV00FD_CTRL_CMD_GET_INFO          = 0xfd0101
+	NV00FD_CTRL_CMD_ATTACH_MEM        = 0xfd0102
+	NV00FD_CTRL_CMD_ATTACH_GPU        = 0xfd0104
+	NV00FD_CTRL_CMD_DETACH_MEM        = 0xfd0105
+	NV00FD_CTRL_CMD_ATTACH_REMOTE_GPU = 0xfd0106
+	NV00FD_CTRL_CMD_SET_FAILURE       = 0xfd0107
 )
 
 // +marshal
@@ -628,6 +648,7 @@ const (
 const (
 	NV2080_CTRL_CMD_NVLINK_GET_NVLINK_CAPS   = 0x20803001
 	NV2080_CTRL_CMD_NVLINK_GET_NVLINK_STATUS = 0x20803002
+	NV2080_CTRL_CMD_NVLINK_GET_PLATFORM_INFO = 0x20803083
 )
 
 // From src/common/sdk/nvidia/inc/ctrl/ctrl2080/ctrl2080perf.h:

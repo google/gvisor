@@ -58,7 +58,10 @@ const (
 	NV01_DEVICE_0                    = 0x00000080
 	NV_SEMAPHORE_SURFACE             = 0x000000da
 	RM_USER_SHARED_DATA              = 0x000000de
+	NV_MEMORY_EXPORT                 = 0x000000e0
+	NV_IMEX_SESSION                  = 0x000000f1
 	NV_MEMORY_FABRIC                 = 0x000000f8
+	NV_MEMORY_FABRIC_IMPORTED_REF    = 0x000000fb
 	NV_MEMORY_MULTICAST_FABRIC       = 0x000000fd
 	NV_MEMORY_MAPPER                 = 0x000000fe
 	NV20_SUBDEVICE_0                 = 0x00002080
@@ -489,6 +492,55 @@ type nv00f8Map struct {
 	flags   uint32
 }
 
+// From src/common/sdk/nvidia/inc/class/cl00e0.h:
+const (
+	NV_MEM_EXPORT_UUID_LEN     = 16
+	NV_MEM_EXPORT_METADATA_LEN = 64
+)
+
+// NV_EXPORT_MEM_PACKET is from
+// src/common/sdk/nvidia/inc/class/cl00e0.h
+//
+// +marshal
+type NV_EXPORT_MEM_PACKET struct {
+	UUID   [NV_MEM_EXPORT_UUID_LEN]uint8
+	Opaque [16]uint8
+}
+
+// NV00E0_ALLOCATION_PARAMETERS is the alloc params type for NV_MEMORY_EXPORT,
+// from src/common/sdk/nvidia/inc/class/cl00e0.h.
+//
+// +marshal
+type NV00E0_ALLOCATION_PARAMETERS struct {
+	IMEXChannel        uint32
+	Packet             NV_EXPORT_MEM_PACKET
+	NumMaxHandles      uint16
+	Pad0               [2]byte
+	Flags              uint32
+	Metadata           [NV_MEM_EXPORT_METADATA_LEN]uint8
+	DeviceInstanceMask uint32
+	GIIDMasks          [NV_MAX_DEVICES]uint32
+	NumCurHandles      uint16
+	Pad1               [2]byte
+}
+
+// NV00F1_ALLOCATION_PARAMETERS is the alloc params type for NV_IMEX_SESSION,
+// from src/common/sdk/nvidia/inc/class/cl00f1.h.
+//
+// +marshal
+type NV00F1_ALLOCATION_PARAMETERS struct {
+	CapDescriptor uint64
+	Flags         uint32
+	Pad0          [4]byte
+	// Despite being P64-typed by the driver, pOsEvent is a file descriptor
+	// whose numerical value is used by the driver. See
+	// src/nvidia/src/kernel/compute/imex_session_api.c:imexsessionapiConstruct_IMPL()
+	// => src/nvidia/arch/nvalloc/unix/src/os.c:osUserHandleToKernelPtr().
+	POsEvent P64
+	NodeID   uint16
+	Pad1     [6]byte
+}
+
 // NV00F8_ALLOCATION_PARAMETERS is the alloc param type for NV_MEMORY_FABRIC,
 // from src/common/sdk/nvidia/inc/class/cl00f8.h.
 //
@@ -502,18 +554,17 @@ type NV00F8_ALLOCATION_PARAMETERS struct {
 	Map        nv00f8Map
 }
 
-// From src/common/sdk/nvidia/inc/class/cl00e0.h
-const (
-	NV_MEM_EXPORT_UUID_LEN = 16
-)
-
-// NV_EXPORT_MEM_PACKET is from
-// src/common/sdk/nvidia/inc/class/cl00e0.h
+// NV00FB_ALLOCATION_PARAMETERS is the alloc param type for
+// NV_MEMORY_FABRIC_IMPORTED_REF, from
+// src/common/sdk/nvidia/inc/class/cl00fb.h.
 //
 // +marshal
-type NV_EXPORT_MEM_PACKET struct {
-	UUID   [NV_MEM_EXPORT_UUID_LEN]uint8
-	Opaque [16]uint8
+type NV00FB_ALLOCATION_PARAMETERS struct {
+	ExportUUID [NV_MEM_EXPORT_UUID_LEN]uint8
+	Index      uint16
+	Pad0       [2]byte
+	Flags      uint32
+	ID         uint64
 }
 
 // NV00FD_ALLOCATION_PARAMETERS is the alloc param type for NV_MEMORY_MULTICAST_FABRIC

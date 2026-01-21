@@ -26,6 +26,7 @@ type DriverCaps uint8
 
 // Individual NVIDIA driver capabilities.
 const (
+	// These correspond to capabilities defined by nvidia-container-toolkit.
 	CapCompute DriverCaps = 1 << iota
 	CapDisplay
 	CapGraphics
@@ -33,6 +34,11 @@ const (
 	CapUtility
 	CapVideo
 	CapCompat32
+
+	// These correspond loosely to capabilities defined in
+	// src/nvidia/inc/kernel/os/capability.h.
+	CapFabricIMEXManagement // NV_RM_CAP_SYS_FABRIC_IMEX_MGMT
+
 	numValidCaps int = iota
 )
 
@@ -45,9 +51,14 @@ const (
 	ValidCapabilities = DriverCaps(1<<numValidCaps - 1)
 
 	// SupportedDriverCaps is the set of driver capabilities that are supported by
-	// nvproxy. Similar to
+	// nvproxy.
+	SupportedDriverCaps = AllContainerDriverCaps | CapFabricIMEXManagement
+
+	// AllContainerDriverCaps is the subset of SupportedDriverCaps that are
+	// enabled when enabling "all" capabilities is requested, which excludes
+	// "privileged" capabilities that are usually not intended. Similar to
 	// nvidia-container-toolkit/internal/config/image/capabilities.go:SupportedDriverCapabilities.
-	SupportedDriverCaps = DriverCaps(CapCompute | CapUtility | CapGraphics | CapVideo)
+	AllContainerDriverCaps = CapCompute | CapUtility | CapGraphics | CapVideo
 
 	// DefaultDriverCaps is the set of driver capabilities that are enabled by
 	// default in the absence of any other configuration. See
@@ -73,6 +84,8 @@ func (c DriverCaps) individualString() string {
 		return "video"
 	case CapCompat32:
 		return "compat32"
+	case CapFabricIMEXManagement:
+		return "fabric-imex-mgmt"
 	default:
 		panic(fmt.Sprintf("capability has no string mapping: %x", uint8(c)))
 	}

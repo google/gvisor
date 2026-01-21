@@ -16,7 +16,6 @@ package nvproxy
 
 import (
 	"fmt"
-	"path/filepath"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -24,7 +23,6 @@ import (
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/context"
-	"gvisor.dev/gvisor/pkg/devutil"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fdnotifier"
 	"gvisor.dev/gvisor/pkg/hostarch"
@@ -64,29 +62,10 @@ func (dev *frontendDevice) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.D
 	fd := &frontendFD{
 		dev: dev,
 	}
-	basename := dev.basename()
-	if dev.nvp.useDevGofer {
-		devClient := devutil.GoferClientFromContext(ctx)
-		if devClient == nil {
-			log.Warningf("devutil.CtxDevGoferClient is not set")
-			return nil, linuxerr.ENOENT
-		}
-		fd.containerName = devClient.ContainerName()
-		hostFD, err := devClient.OpenAt(ctx, basename, opts.Flags)
-		if err != nil {
-			ctx.Warningf("nvproxy: failed to open %s: %v", basename, err)
-			return nil, err
-		}
-		fd.hostFD = int32(hostFD)
-	} else {
-		devPath := filepath.Join("/dev", basename)
-		flags := int(opts.Flags&unix.O_ACCMODE | unix.O_NOFOLLOW)
-		hostFD, err := unix.Openat(-1, devPath, flags, 0)
-		if err != nil {
-			ctx.Warningf("nvproxy: failed to open host %s: %v", devPath, err)
-			return nil, err
-		}
-		fd.hostFD = int32(hostFD)
+	var err error
+	fd.hostFD, fd.containerName, err = openHostDevFile(ctx, dev.basename(), dev.nvp.useDevGofer, opts.Flags)
+	if err != nil {
+		return nil, err
 	}
 	if err := fd.vfsfd.Init(fd, opts.Flags, auth.CredentialsFromContext(ctx), mnt, vfsd, &vfs.FileDescriptionOptions{
 		UseDentryMetadata: true,
@@ -1377,6 +1356,52 @@ func rmAllocContextShare(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64_PARAM
 		// is required.
 		fi.fd.dev.nvp.objAdd(fi.ctx, client, ioctlParams.HObjectNew, ioctlParams.HClass, newRmAllocObject(fi.fd, ioctlParams, rightsRequested, allocParams), ioctlParams.HObjectParent, allocParams.HVASpace)
 	})
+}
+
+func rmAllocIMEXSession(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64_PARAMETERS, isNVOS64 bool) (uintptr, error) {
+	var allocParams nvgpu.NV00F1_ALLOCATION_PARAMETERS
+	if _, err := allocParams.CopyIn(fi.t, addrFromP64(ioctlParams.PAllocParms)); err != nil {
+		return 0, err
+	}
+
+	origCapDescriptor := allocParams.CapDescriptor
+	capsFileGeneric, _ := fi.t.FDTable().Get(int32(allocParams.CapDescriptor))
+	if capsFileGeneric == nil {
+		return 0, linuxerr.EINVAL
+	}
+	defer capsFileGeneric.DecRef(fi.ctx)
+	capsFile, ok := capsFileGeneric.Impl().(*openOnlyFD)
+	if !ok {
+		fi.ctx.Warningf("nvproxy: rmAllocIMEXSession got capDescriptor file of incompatible type %T", capsFileGeneric.Impl())
+		return 0, linuxerr.EINVAL
+	}
+	allocParams.CapDescriptor = uint64(capsFile.hostFD)
+
+	origEventFD := allocParams.POsEvent
+	eventFileGeneric, _ := fi.t.FDTable().Get(int32(allocParams.POsEvent))
+	if eventFileGeneric == nil {
+		return 0, linuxerr.EINVAL
+	}
+	defer eventFileGeneric.DecRef(fi.ctx)
+	eventFile, ok := eventFileGeneric.Impl().(*frontendFD)
+	if !ok {
+		return 0, linuxerr.EINVAL
+	}
+	allocParams.POsEvent = nvgpu.P64(uint64(eventFile.hostFD))
+
+	n, err := rmAllocInvoke(fi, ioctlParams, &allocParams, isNVOS64, func(fi *frontendIoctlState, client *rootClient, ioctlParams *nvgpu.NVOS64_PARAMETERS, rightsRequested nvgpu.RS_ACCESS_MASK, allocParams *nvgpu.NV00F1_ALLOCATION_PARAMETERS) {
+		fi.fd.dev.nvp.objAdd(fi.ctx, client, ioctlParams.HObjectNew, ioctlParams.HClass, &miscObject{}, ioctlParams.HObjectParent)
+	})
+	if err != nil {
+		return n, err
+	}
+
+	allocParams.CapDescriptor = origCapDescriptor
+	allocParams.POsEvent = origEventFD
+	if _, err := allocParams.CopyOut(fi.t, addrFromP64(ioctlParams.PAllocParms)); err != nil {
+		return n, err
+	}
+	return n, nil
 }
 
 // See src/nvidia/interface/deprecated/rmapi_deprecated_misc.c:RmDeprecatedIdleChannels().
