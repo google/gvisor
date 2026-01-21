@@ -229,7 +229,8 @@ syscall_test(
 )
 
 syscall_test(
-    size = "medium",
+    size = "large",
+    shard_count = most_shards,
     test = "//test/syscalls/linux:fcntl_test",
 )
 
