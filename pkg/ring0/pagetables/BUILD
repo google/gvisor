@@ -49,6 +49,7 @@ go_library(
         "pagetables_aarch64.go",
         "pagetables_amd64.go",
         "pagetables_arm64.go",
+        "pagetables_unsafe.go",
         "pagetables_x86.go",
         "pcids.go",
         "pcids_aarch64.go",

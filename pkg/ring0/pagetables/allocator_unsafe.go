@@ -21,21 +21,20 @@ import (
 )
 
 // newAlignedPTEs returns a set of aligned PTEs.
-func newAlignedPTEs() *PTEs {
-	ptes := new(PTEs)
-	offset := physicalFor(ptes) & (hostarch.PageSize - 1)
+func newAlignedPTEs(n uintptr) []PTEs {
+	ptes := make([]PTEs, n)
+	offset := physicalFor(&ptes[0]) & (hostarch.PageSize - 1)
 	if offset == 0 {
-		// Already aligned.
 		return ptes
 	}
-
 	// Need to force an aligned allocation.
-	unaligned := make([]byte, (2*hostarch.PageSize)-1)
+	entrySize := unsafe.Sizeof(PTEs{})
+	unaligned := make([]byte, n*entrySize+hostarch.PageSize-1)
 	offset = uintptr(unsafe.Pointer(&unaligned[0])) & (hostarch.PageSize - 1)
 	if offset != 0 {
 		offset = hostarch.PageSize - offset
 	}
-	return (*PTEs)(unsafe.Pointer(&unaligned[offset]))
+	return unsafe.Slice((*PTEs)(unsafe.Pointer(&unaligned[offset])), n)
 }
 
 // physicalFor returns the "physical" address for PTEs.
