@@ -528,9 +528,6 @@ TEST_P(UdpSocketTest, Connect) {
 }
 
 TEST_P(UdpSocketTest, ConnectAnyZero) {
-  // TODO(138658473): Enable when we can connect to port 0 with gVisor.
-  SKIP_IF(IsRunningOnGvisor());
-
   struct sockaddr_storage any = InetAnyAddr();
   EXPECT_THAT(connect(sock_.get(), AsSockAddr(&any), addrlen_),
               SyscallSucceeds());
@@ -552,8 +549,6 @@ TEST_P(UdpSocketTest, ConnectAnyWithPort) {
 }
 
 TEST_P(UdpSocketTest, DisconnectAfterConnectAny) {
-  // TODO(138658473): Enable when we can connect to port 0 with gVisor.
-  SKIP_IF(IsRunningOnGvisor());
   struct sockaddr_storage any = InetAnyAddr();
   EXPECT_THAT(connect(sock_.get(), AsSockAddr(&any), addrlen_),
               SyscallSucceeds());
