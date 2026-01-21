@@ -699,7 +699,7 @@ func testDockerComposeBuild(ctx context.Context, t *testing.T, d *dockerutil.Con
 	if opts.hostNetwork {
 		network = "host"
 	} else {
-		// TODO(b/447472587): re-enable bridge network test.
+		// TODO(https://gvisor.dev/issues/11937): re-enable bridge network test.
 		t.Skip("Skip docker compose build test with bridge network.")
 	}
 	config := dockerComposeConfig{
