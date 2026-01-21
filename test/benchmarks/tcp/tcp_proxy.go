@@ -193,15 +193,19 @@ func newNetstackImpl(mode, probeFileName string) (impl, func() error, error) {
 		return nil, func() error { return nil }, fmt.Errorf("mask %d not supported", mask)
 	}
 
-	// Create Probe to dump out end point state.
-	probeFile, err := os.Create(probeFileName)
-	if err != nil {
-		log.Fatalf("failed to create tcp_probe file %s: %v", probeFileName, err)
-	}
-	probeEncoder := gob.NewEncoder(probeFile)
-	// Install a TCP Probe.
-	probe := func(state *tcp.TCPEndpointState) {
-		probeEncoder.Encode(state)
+	var probeFile *os.File
+	var err error
+	probe := func(_ *tcp.TCPEndpointState) {}
+	if probeFileName != "" {
+		probeFile, err = os.Create(probeFileName)
+		if err != nil {
+			return nil, func() error { return nil }, fmt.Errorf("failed to create tcp_probe file %s: %v", probeFileName, err)
+		}
+		probeEncoder := gob.NewEncoder(probeFile)
+		// Install a TCP Probe.
+		probe = func(state *tcp.TCPEndpointState) {
+			probeEncoder.Encode(state)
+		}
 	}
 
 	// Create a new network stack.
