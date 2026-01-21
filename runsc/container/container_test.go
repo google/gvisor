@@ -55,6 +55,8 @@ import (
 	"gvisor.dev/gvisor/runsc/specutils"
 )
 
+const pollTimeout = 60 * time.Second
+
 func TestMain(m *testing.M) {
 	config.RegisterFlags(flag.CommandLine)
 	log.SetLevel(log.Debug)
@@ -139,7 +141,7 @@ func waitForProcessList(cont *Container, want []*control.Process) error {
 		return nil
 	}
 	// Gives plenty of time as tests can run slow under --race.
-	return testutil.Poll(cb, 30*time.Second)
+	return testutil.Poll(cb, pollTimeout)
 }
 
 // waitForProcess waits for the given process to show up in the container.
@@ -158,7 +160,7 @@ func waitForProcess(cont *Container, want *control.Process) error {
 		return fmt.Errorf("container got process list: %s, want: %+v", procListToString(gots), want)
 	}
 	// Gives plenty of time as tests can run slow under --race.
-	return testutil.Poll(cb, 30*time.Second)
+	return testutil.Poll(cb, pollTimeout)
 }
 
 func waitForProcessCount(cont *Container, want int) error {
@@ -175,7 +177,7 @@ func waitForProcessCount(cont *Container, want int) error {
 		return nil
 	}
 	// Gives plenty of time as tests can run slow under --race.
-	return testutil.Poll(cb, 30*time.Second)
+	return testutil.Poll(cb, pollTimeout)
 }
 
 func blockUntilWaitable(pid int) error {
