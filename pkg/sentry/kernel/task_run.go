@@ -307,6 +307,13 @@ func (app *runApp) execute(t *Task) taskRunState {
 				}
 			}
 
+			// Fixup SIGSEGV err code if necessary; MProtect is capable of unmapping
+			// address ranges from the user process, in which case the initial
+			// signal may very well have appeared as SEGV_MAPERR, but we know better.
+			if sig == linux.SIGSEGV && err == linuxerr.EPERM {
+				info.Code = 2 // SEGV_ACCERR
+			}
+
 			if sig == linux.SIGSEGV && t.tg.sigsegvLockCount.Load() != 0 {
 				t.tg.signalHandlers.mu.Lock()
 				if t.tg.sigsegvLockCount.Load() != 0 {
