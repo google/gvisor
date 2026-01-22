@@ -398,6 +398,11 @@ func testSetStat(ctx context.Context, t *testing.T, tester Tester, root lisafs.C
 	defer closeFD(ctx, t, fd)
 	defer unix.Close(hostFD)
 
+	// Note: We add a 1s surplus to the atime to prevent the host kernel (which is likely to
+	// have relatime enabled) from updating the atime after our setstat call. Without this, the
+	// test flakes, with gotStat.Atime differing from wantStat.Atime by <=10ms occasionally,
+	// presumably due to something else accessing the file.
+
 	now := time.Now()
 	wantStat := linux.Statx{
 		Mask:  unix.STATX_MODE | unix.STATX_ATIME | unix.STATX_MTIME | unix.STATX_SIZE,
@@ -405,7 +410,7 @@ func testSetStat(ctx context.Context, t *testing.T, tester Tester, root lisafs.C
 		UID:   uint32(unix.Getuid()),
 		GID:   uint32(unix.Getgid()),
 		Size:  50,
-		Atime: linux.NsecToStatxTimestamp(now.UnixNano()),
+		Atime: linux.NsecToStatxTimestamp(now.Add(time.Second).UnixNano()),
 		Mtime: linux.NsecToStatxTimestamp(now.UnixNano()),
 	}
 	if tester.SetUserGroupIDSupported() {
