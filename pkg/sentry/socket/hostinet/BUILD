@@ -40,6 +40,7 @@ go_library(
         "//pkg/sentry/socket/control",
         "//pkg/sentry/socket/netlink/nlmsg",
         "//pkg/sentry/vfs",
+        "//pkg/sync",
         "//pkg/syserr",
         "//pkg/tcpip",
         "//pkg/tcpip/stack",
