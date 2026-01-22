@@ -23,6 +23,9 @@ func (s *Socket) StateFields() []string {
 		"stype",
 		"protocol",
 		"queue",
+		"persistentEventMu",
+		"persistentEventMask",
+		"persistentEntry",
 		"fd",
 		"recvClosed",
 	}
@@ -42,8 +45,11 @@ func (s *Socket) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(6, &s.stype)
 	stateSinkObject.Save(7, &s.protocol)
 	stateSinkObject.Save(8, &s.queue)
-	stateSinkObject.Save(9, &s.fd)
-	stateSinkObject.Save(10, &s.recvClosed)
+	stateSinkObject.Save(9, &s.persistentEventMu)
+	stateSinkObject.Save(10, &s.persistentEventMask)
+	stateSinkObject.Save(11, &s.persistentEntry)
+	stateSinkObject.Save(12, &s.fd)
+	stateSinkObject.Save(13, &s.recvClosed)
 }
 
 func (s *Socket) afterLoad(context.Context) {}
@@ -59,8 +65,11 @@ func (s *Socket) StateLoad(ctx context.Context, stateSourceObject state.Source) 
 	stateSourceObject.Load(6, &s.stype)
 	stateSourceObject.Load(7, &s.protocol)
 	stateSourceObject.Load(8, &s.queue)
-	stateSourceObject.Load(9, &s.fd)
-	stateSourceObject.Load(10, &s.recvClosed)
+	stateSourceObject.Load(9, &s.persistentEventMu)
+	stateSourceObject.Load(10, &s.persistentEventMask)
+	stateSourceObject.Load(11, &s.persistentEntry)
+	stateSourceObject.Load(12, &s.fd)
+	stateSourceObject.Load(13, &s.recvClosed)
 }
 
 func init() {

@@ -154,6 +154,15 @@ func (e *Entry) Init(eventListener EventListener, mask EventMask) {
 	e.mask = mask
 }
 
+// SetQueuedMask changes the entry mask.
+//
+// Preconditions: The Entry must be registered to the given Queue.
+func (e *Entry) SetQueuedMask(q *Queue, mask EventMask) {
+	q.mu.Lock()
+	e.mask = mask
+	q.mu.Unlock()
+}
+
 // Mask returns the entry mask.
 func (e *Entry) Mask() EventMask {
 	return e.mask
@@ -200,6 +209,12 @@ func NewFunctionEntry(mask EventMask, fn func(EventMask)) (e Entry) {
 	e.Init(functionNotifier(fn), mask)
 	return e
 }
+
+// NoopListener is an EventListener that does nothing.
+type NoopListener struct{}
+
+// NotifyEvent implements EventListener.NotifyEvent.
+func (NoopListener) NotifyEvent(mask EventMask) {}
 
 // Queue represents the wait queue where waiters can be added and
 // notifiers can notify them when events happen.
