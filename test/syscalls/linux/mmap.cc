@@ -16,6 +16,7 @@
 #include <fcntl.h>
 #include <linux/magic.h>
 #include <linux/unistd.h>
+#include <setjmp.h>  // IWYU pragma: keep
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -39,8 +40,10 @@
 #include "test/util/cleanup.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/fs_util.h"
+#include "test/util/logging.h"
 #include "test/util/memory_util.h"
 #include "test/util/multiprocess_util.h"
+#include "test/util/posix_error.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
 
@@ -52,6 +55,14 @@ namespace gvisor {
 namespace testing {
 
 namespace {
+
+static sigjmp_buf jmpbuf;
+static volatile int si_code_received;
+
+void MprotectProtNoneHandler(int sig, siginfo_t* info, void* ctx) {
+  si_code_received = info->si_code;
+  siglongjmp(jmpbuf, 1);
+}
 
 PosixErrorOr<int64_t> VirtualMemorySize() {
   ASSIGN_OR_RETURN_ERRNO(auto contents, GetContents("/proc/self/statm"));
@@ -557,6 +568,29 @@ TEST_F(MMapTest, MprotectNotPageAligned) {
               SyscallSucceeds());
   ASSERT_THAT(Protect(addr + 1, kPageSize - 1, PROT_READ),
               SyscallFailsWithErrno(EINVAL));
+}
+
+// Verify that regions mprotect'ed to PROT_NONE return SEGV_ACCERR.
+TEST_F(MMapTest, MprotectProtNone) {
+  const auto rest = [&] {
+    void* p = mmap(nullptr, kPageSize, PROT_READ | PROT_WRITE,
+                   MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    TEST_PCHECK(p != MAP_FAILED);
+    *static_cast<volatile char*>(p) = 1;  // ensure page is present
+    TEST_PCHECK(mprotect(p, kPageSize, PROT_NONE) == 0);
+
+    struct sigaction sa = {};
+    sa.sa_sigaction = MprotectProtNoneHandler;
+    sa.sa_flags = SA_SIGINFO;
+    TEST_PCHECK(sigaction(SIGSEGV, &sa, nullptr) == 0);
+
+    if (sigsetjmp(jmpbuf, 1) == 0) {
+      (void)*static_cast<volatile char*>(p);  // trigger fault
+    }
+
+    TEST_CHECK(si_code_received == SEGV_ACCERR);
+  };
+  EXPECT_THAT(InForkedProcess(rest), IsPosixErrorOkAndHolds(0));
 }
 
 // Verify that calling mprotect with an absurdly huge length fails.
