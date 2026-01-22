@@ -267,7 +267,7 @@ int TestSIGPROFFairness(absl::Duration sleep) {
 // Random save/restore is disabled as it introduces additional latency and
 // unpredictable distribution patterns.
 TEST(ItimerTest, DeliversSIGPROFToThreadsRoughlyFairlyActive) {
-  // On the KVM and ptrace platforms, switches between sentry and application
+  // On the ptrace platform, switches between sentry and application
   // context are sometimes extremely slow, causing the itimer to send SIGPROF to
   // a thread that either already has one pending or has had SIGPROF delivered,
   // but hasn't handled it yet (and thus therefore still has SIGPROF masked). In
@@ -275,11 +275,8 @@ TEST(ItimerTest, DeliversSIGPROFToThreadsRoughlyFairlyActive) {
   // back to notifying the thread group leader. ItimerSignalTest() fails if "too
   // many" signals are delivered to the thread group leader, so these tests are
   // flaky on these platforms.
-  //
-  // TODO(b/143247272): Clarify why context switches are so slow on KVM.
   const auto gvisor_platform = GvisorPlatform();
-  SKIP_IF(gvisor_platform == Platform::kKVM ||
-          gvisor_platform == Platform::kPtrace);
+  SKIP_IF(gvisor_platform == Platform::kPtrace);
 
   pid_t child;
   int execve_errno;
@@ -304,8 +301,7 @@ TEST(ItimerTest, DeliversSIGPROFToThreadsRoughlyFairlyActive) {
 TEST(ItimerTest, DeliversSIGPROFToThreadsRoughlyFairlyIdle) {
   // See comment in DeliversSIGPROFToThreadsRoughlyFairlyActive.
   const auto gvisor_platform = GvisorPlatform();
-  SKIP_IF(gvisor_platform == Platform::kKVM ||
-          gvisor_platform == Platform::kPtrace);
+  SKIP_IF(gvisor_platform == Platform::kPtrace);
 
   pid_t child;
   int execve_errno;
