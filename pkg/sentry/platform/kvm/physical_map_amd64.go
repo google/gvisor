@@ -15,6 +15,8 @@
 package kvm
 
 import (
+	"fmt"
+
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/ring0"
 )
@@ -51,25 +53,52 @@ const (
 
 // archSpecialRegions returns special regions that are excluded from the virtual
 // address space. Linux doesn't map vma-s above 47-bit by default.
-func archSpecialRegions(vSize uintptr, maxUserAddr uintptr) (uintptr, []specialVirtualRegion) {
+func archSpecialRegions(vSize uintptr) (uintptr, []specialVirtualRegion) {
 	var specialRegions []specialVirtualRegion
 	if extendedAddressSpaceAllowed || vSize <= defaultAddressSpaceSize {
 		return vSize, nil
 	}
-	// This is a workaround for the kernel bug when vdso can be
-	// mapped above the 47-bit address space boundary.
-	if defaultAddressSpaceSize > maxUserAddr {
-		maxUserAddr = defaultAddressSpaceSize
-	}
-	r := region{
-		virtual: maxUserAddr,
-		length:  ring0.MaximumUserAddress - defaultAddressSpaceSize,
-	}
-	specialRegions = append(specialRegions, specialVirtualRegion{
-		region: r,
-	})
-	vSize -= r.length
-	log.Infof("excluded: virtual [%x,%x)", r.virtual, r.virtual+r.length)
+	regionsInExtendedSpace := append(regionsInExtendedSpace,
+		region{
+			virtual: ring0.MaximumUserAddress,
+			length:  0,
+		},
+	)
 
+	// Exclude all unmapped regions in the extended virtual address space.
+	start := defaultAddressSpaceSize
+	for _, vr := range regionsInExtendedSpace {
+		if start > vr.virtual {
+			panic(fmt.Sprintf("start(%x) is greater than next(%x)", start, vr.virtual))
+		}
+		if start < vr.virtual {
+			r := region{
+				virtual: start,
+				length:  vr.virtual - start,
+			}
+			specialRegions = append(specialRegions, specialVirtualRegion{
+				region: r,
+			})
+			vSize -= r.length
+			log.Infof("excluded: virtual [%x,%x)", r.virtual, r.virtual+r.length)
+		}
+		start = vr.virtual + vr.length
+	}
 	return vSize, specialRegions
+}
+
+// regionsInExtendedSpace contains all regions mapped into the extended space.
+// This is primary to workaround the kernel bug when vdso can be
+// mapped above the 47-bit address space boundary.
+var regionsInExtendedSpace []region
+
+func archSpecialRegion(vr virtualRegion) {
+	if extendedAddressSpaceAllowed ||
+		vr.virtual+vr.length <= defaultAddressSpaceSize ||
+		vr.filename == "[vsyscall]" {
+		return
+	}
+	log.BugTracebackfOnce("[%x-%x](%s) is outside of the default virtual address space",
+		vr.virtual, vr.virtual+vr.length, vr.filename)
+	regionsInExtendedSpace = append(regionsInExtendedSpace, vr.region)
 }

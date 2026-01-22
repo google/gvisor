@@ -2417,6 +2417,31 @@ func (c *cmdLineData) StateLoad(ctx context.Context, stateSourceObject state.Sou
 	stateSourceObject.Load(0, &c.dynamicBytesFileSetAttr)
 }
 
+func (d *devicesData) StateTypeName() string {
+	return "pkg/sentry/fsimpl/proc.devicesData"
+}
+
+func (d *devicesData) StateFields() []string {
+	return []string{
+		"dynamicBytesFileSetAttr",
+	}
+}
+
+func (d *devicesData) beforeSave() {}
+
+// +checklocksignore
+func (d *devicesData) StateSave(stateSinkObject state.Sink) {
+	d.beforeSave()
+	stateSinkObject.Save(0, &d.dynamicBytesFileSetAttr)
+}
+
+func (d *devicesData) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (d *devicesData) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &d.dynamicBytesFileSetAttr)
+}
+
 func (s *sentryMeminfoData) StateTypeName() string {
 	return "pkg/sentry/fsimpl/proc.sentryMeminfoData"
 }
@@ -2817,6 +2842,7 @@ func init() {
 	state.Register((*filesystemsData)(nil))
 	state.Register((*cgroupsData)(nil))
 	state.Register((*cmdLineData)(nil))
+	state.Register((*devicesData)(nil))
 	state.Register((*sentryMeminfoData)(nil))
 	state.Register((*tasksInodeRefs)(nil))
 	state.Register((*tcpMemDir)(nil))

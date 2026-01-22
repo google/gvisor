@@ -66,7 +66,6 @@ func fillAddressSpace() (specialRegions []specialVirtualRegion) {
 	pSize := uintptr(1) << ring0.PhysicalAddressBits
 	pSize -= reservedMemory
 
-	maxUserAddr := uintptr(0)
 	// Add specifically excluded regions; see excludeVirtualRegion.
 	if err := applyVirtualRegions(func(vr virtualRegion) {
 		if excludeVirtualRegion(vr) {
@@ -81,16 +80,15 @@ func fillAddressSpace() (specialRegions []specialVirtualRegion) {
 				mmio:   true,
 			})
 			log.Infof("mmio: virtual [%x,%x)", vr.virtual, vr.virtual+vr.length)
-		}
-		if vr.filename != "[vsyscall]" {
-			maxUserAddr = vr.region.virtual + vr.region.length
+		} else {
+			archSpecialRegion(vr)
 		}
 	}); err != nil {
 		panic(fmt.Sprintf("error parsing /proc/self/maps: %v", err))
 	}
 
 	var archRegions []specialVirtualRegion
-	vSize, archRegions = archSpecialRegions(vSize, maxUserAddr)
+	vSize, archRegions = archSpecialRegions(vSize)
 	specialRegions = append(specialRegions, archRegions...)
 
 	// Do we need any more work?

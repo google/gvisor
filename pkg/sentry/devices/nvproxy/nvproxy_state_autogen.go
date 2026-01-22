@@ -122,6 +122,43 @@ func (mf *frontendFDMemmapFile) StateLoad(ctx context.Context, stateSourceObject
 	stateSourceObject.Load(1, &mf.fd)
 }
 
+func (d *DeviceInfo) StateTypeName() string {
+	return "pkg/sentry/devices/nvproxy.DeviceInfo"
+}
+
+func (d *DeviceInfo) StateFields() []string {
+	return []string{
+		"CapsDevMajor",
+		"HaveFabricIMEXManagement",
+		"FabricIMEXManagementDevMinor",
+		"CapsIMEXChannelsDevMajor",
+		"UVMDevMajor",
+	}
+}
+
+func (d *DeviceInfo) beforeSave() {}
+
+// +checklocksignore
+func (d *DeviceInfo) StateSave(stateSinkObject state.Sink) {
+	d.beforeSave()
+	stateSinkObject.Save(0, &d.CapsDevMajor)
+	stateSinkObject.Save(1, &d.HaveFabricIMEXManagement)
+	stateSinkObject.Save(2, &d.FabricIMEXManagementDevMinor)
+	stateSinkObject.Save(3, &d.CapsIMEXChannelsDevMajor)
+	stateSinkObject.Save(4, &d.UVMDevMajor)
+}
+
+func (d *DeviceInfo) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (d *DeviceInfo) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &d.CapsDevMajor)
+	stateSourceObject.Load(1, &d.HaveFabricIMEXManagement)
+	stateSourceObject.Load(2, &d.FabricIMEXManagementDevMinor)
+	stateSourceObject.Load(3, &d.CapsIMEXChannelsDevMajor)
+	stateSourceObject.Load(4, &d.UVMDevMajor)
+}
+
 func (nvp *nvproxy) StateTypeName() string {
 	return "pkg/sentry/devices/nvproxy.nvproxy"
 }
@@ -131,6 +168,8 @@ func (nvp *nvproxy) StateFields() []string {
 		"version",
 		"capsEnabled",
 		"useDevGofer",
+		"procDriverNvidiaParams",
+		"devInfo",
 		"regularDevs",
 		"frontendFDs",
 		"clients",
@@ -143,9 +182,11 @@ func (nvp *nvproxy) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &nvp.version)
 	stateSinkObject.Save(1, &nvp.capsEnabled)
 	stateSinkObject.Save(2, &nvp.useDevGofer)
-	stateSinkObject.Save(3, &nvp.regularDevs)
-	stateSinkObject.Save(4, &nvp.frontendFDs)
-	stateSinkObject.Save(5, &nvp.clients)
+	stateSinkObject.Save(3, &nvp.procDriverNvidiaParams)
+	stateSinkObject.Save(4, &nvp.devInfo)
+	stateSinkObject.Save(5, &nvp.regularDevs)
+	stateSinkObject.Save(6, &nvp.frontendFDs)
+	stateSinkObject.Save(7, &nvp.clients)
 }
 
 // +checklocksignore
@@ -153,9 +194,11 @@ func (nvp *nvproxy) StateLoad(ctx context.Context, stateSourceObject state.Sourc
 	stateSourceObject.Load(0, &nvp.version)
 	stateSourceObject.Load(1, &nvp.capsEnabled)
 	stateSourceObject.Load(2, &nvp.useDevGofer)
-	stateSourceObject.Load(3, &nvp.regularDevs)
-	stateSourceObject.Load(4, &nvp.frontendFDs)
-	stateSourceObject.Load(5, &nvp.clients)
+	stateSourceObject.Load(3, &nvp.procDriverNvidiaParams)
+	stateSourceObject.Load(4, &nvp.devInfo)
+	stateSourceObject.Load(5, &nvp.regularDevs)
+	stateSourceObject.Load(6, &nvp.frontendFDs)
+	stateSourceObject.Load(7, &nvp.clients)
 	stateSourceObject.AfterLoad(func() { nvp.afterLoad(ctx) })
 }
 
@@ -360,6 +403,34 @@ func (e *objectFreeEntry) StateLoad(ctx context.Context, stateSourceObject state
 	stateSourceObject.Load(1, &e.prev)
 }
 
+func (dev *openOnlyDevice) StateTypeName() string {
+	return "pkg/sentry/devices/nvproxy.openOnlyDevice"
+}
+
+func (dev *openOnlyDevice) StateFields() []string {
+	return []string{
+		"nvp",
+		"relpath",
+	}
+}
+
+func (dev *openOnlyDevice) beforeSave() {}
+
+// +checklocksignore
+func (dev *openOnlyDevice) StateSave(stateSinkObject state.Sink) {
+	dev.beforeSave()
+	stateSinkObject.Save(0, &dev.nvp)
+	stateSinkObject.Save(1, &dev.relpath)
+}
+
+func (dev *openOnlyDevice) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (dev *openOnlyDevice) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &dev.nvp)
+	stateSourceObject.Load(1, &dev.relpath)
+}
+
 func (dev *uvmDevice) StateTypeName() string {
 	return "pkg/sentry/devices/nvproxy.uvmDevice"
 }
@@ -466,6 +537,7 @@ func init() {
 	state.Register((*frontendDevice)(nil))
 	state.Register((*frontendFD)(nil))
 	state.Register((*frontendFDMemmapFile)(nil))
+	state.Register((*DeviceInfo)(nil))
 	state.Register((*nvproxy)(nil))
 	state.Register((*object)(nil))
 	state.Register((*capturedRmAllocParams)(nil))
@@ -473,6 +545,7 @@ func init() {
 	state.Register((*rootClient)(nil))
 	state.Register((*objectFreeList)(nil))
 	state.Register((*objectFreeEntry)(nil))
+	state.Register((*openOnlyDevice)(nil))
 	state.Register((*uvmDevice)(nil))
 	state.Register((*uvmFD)(nil))
 	state.Register((*uvmFDMemmapFile)(nil))

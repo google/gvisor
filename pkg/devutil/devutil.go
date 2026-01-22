@@ -20,6 +20,8 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/fsutil"
 	"gvisor.dev/gvisor/pkg/lisafs"
 	"gvisor.dev/gvisor/pkg/log"
@@ -99,23 +101,42 @@ func (g *GoferClient) DirentNames(ctx context.Context) ([]string, error) {
 	return names, nil
 }
 
-// OpenAt opens the device file at /dev/{name} on the gofer.
-func (g *GoferClient) OpenAt(ctx context.Context, name string, flags uint32) (int, error) {
+// OpenAt opens the device file at /dev/{relpath} on the gofer.
+func (g *GoferClient) OpenAt(ctx context.Context, relpath string, flags uint32) (int, error) {
 	flags &= unix.O_ACCMODE
 	if g.hostFD >= 0 {
-		return unix.Openat(g.hostFD, name, int(flags|unix.O_NOFOLLOW), 0)
+		return unix.Openat(g.hostFD, relpath, int(flags|unix.O_NOFOLLOW), 0)
 	}
-	childInode, err := g.clientFD.Walk(ctx, name)
+
+	pathComponents := make([]string, 0, 1)
+	for pit := fspath.Parse(relpath).Begin; pit.Ok(); pit = pit.Next() {
+		pathComponents = append(pathComponents, pit.String())
+	}
+	status, inodes, err := g.clientFD.WalkMultiple(ctx, pathComponents)
 	if err != nil {
-		log.Infof("failed to walk %q from dev gofer FD", name)
+		log.Infof("failed to walk %q from dev gofer FD", relpath)
 		return 0, err
 	}
 	client := g.clientFD.Client()
-	childFD := client.NewFD(childInode.ControlFD)
+	numInodes := len(inodes)
+	// Close intermediate FDs.
+	for i := range numInodes - 1 {
+		tmpFD := client.NewFD(inodes[i].ControlFD)
+		tmpFD.Close(ctx, false /* flush */)
+	}
+	if status != lisafs.WalkSuccess {
+		if numInodes != 0 {
+			lastFD := client.NewFD(inodes[numInodes-1].ControlFD)
+			lastFD.Close(ctx, true /* flush */)
+		}
+		log.Infof("failed to walk %q from dev gofer FD: after %d path components: %v", relpath, numInodes, status)
+		return 0, linuxerr.ENOENT
+	}
+	childFD := client.NewFD(inodes[numInodes-1].ControlFD)
 
 	childOpenFD, childHostFD, err := childFD.OpenAt(ctx, flags)
 	if err != nil {
-		log.Infof("failed to open %q from child FD", name)
+		log.Infof("failed to open %q from child FD", relpath)
 		client.CloseFD(ctx, childFD.ID(), true /* flush */)
 		return 0, err
 	}

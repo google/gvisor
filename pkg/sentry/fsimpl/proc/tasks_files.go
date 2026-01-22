@@ -426,6 +426,21 @@ func kernelVersion(ctx context.Context) kernel.Version {
 	return init.Leader().SyscallTable().Version
 }
 
+// devicesData backs /proc/devices.
+//
+// +stateify savable
+type devicesData struct {
+	dynamicBytesFileSetAttr
+}
+
+var _ dynamicInode = (*devicesData)(nil)
+
+// Generate implements vfs.DynamicBytesSource.Generate.
+func (*devicesData) Generate(ctx context.Context, buf *bytes.Buffer) error {
+	k := kernel.KernelFromContext(ctx)
+	return k.VFS().GenerateProcDevices(buf)
+}
+
 // sentryMeminfoData implements vfs.DynamicBytesSource for /proc/sentry-meminfo.
 //
 // +stateify savable
