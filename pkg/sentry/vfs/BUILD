@@ -155,6 +155,7 @@ go_library(
         "mount.go",
         "mount_list.go",
         "mount_namespace_refs.go",
+        "mount_promise.go",
         "mount_ring.go",
         "mount_unsafe.go",
         "namespace.go",

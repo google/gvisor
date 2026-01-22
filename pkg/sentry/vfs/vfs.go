@@ -39,33 +39,19 @@ package vfs
 import (
 	"fmt"
 	"path"
-	"time"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/bitmap"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
-	"gvisor.dev/gvisor/pkg/eventchannel"
 	"gvisor.dev/gvisor/pkg/fspath"
-	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/fsmetric"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
-	epb "gvisor.dev/gvisor/pkg/sentry/vfs/events_go_proto"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/waiter"
 )
-
-// How long to wait for a mount promise before proceeding with the VFS
-// operation. This should be configurable by the user eventually.
-const mountPromiseTimeout = 30 * time.Second
-
-type mountPromise struct {
-	wq       *waiter.Queue
-	resolved atomicbitops.Bool
-}
 
 // A VirtualFilesystem (VFS for short) combines Filesystems in trees of Mounts.
 //
@@ -240,15 +226,16 @@ type PathOperation struct {
 // the given path.
 func (vfs *VirtualFilesystem) AccessAt(ctx context.Context, creds *auth.Credentials, ats AccessTypes, pop *PathOperation) error {
 	rp := vfs.getResolvingPath(creds, pop)
+	defer rp.Release(ctx)
 	for {
-		vfs.maybeBlockOnMountPromise(ctx, rp)
+		if err := vfs.maybeBlockOnMountPromise(ctx, rp); err != nil {
+			return err
+		}
 		err := rp.mount.fs.impl.AccessAt(ctx, rp, creds, ats)
 		if err == nil {
-			rp.Release(ctx)
 			return nil
 		}
 		if !rp.handleError(ctx, err) {
-			rp.Release(ctx)
 			return err
 		}
 	}
@@ -258,8 +245,11 @@ func (vfs *VirtualFilesystem) AccessAt(ctx context.Context, creds *auth.Credenti
 // file must exist. A reference is taken on the returned VirtualDentry.
 func (vfs *VirtualFilesystem) GetDentryAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation, opts *GetDentryOptions) (VirtualDentry, error) {
 	rp := vfs.getResolvingPath(creds, pop)
+	defer rp.Release(ctx)
 	for {
-		vfs.maybeBlockOnMountPromise(ctx, rp)
+		if err := vfs.maybeBlockOnMountPromise(ctx, rp); err != nil {
+			return VirtualDentry{}, err
+		}
 		d, err := rp.mount.fs.impl.GetDentryAt(ctx, rp, *opts)
 		if err == nil {
 			vd := VirtualDentry{
@@ -267,11 +257,9 @@ func (vfs *VirtualFilesystem) GetDentryAt(ctx context.Context, creds *auth.Crede
 				dentry: d,
 			}
 			rp.mount.IncRef()
-			rp.Release(ctx)
 			return vd, nil
 		}
 		if !rp.handleError(ctx, err) {
-			rp.Release(ctx)
 			return VirtualDentry{}, err
 		}
 	}
@@ -280,8 +268,11 @@ func (vfs *VirtualFilesystem) GetDentryAt(ctx context.Context, creds *auth.Crede
 // Preconditions: pop.Path.Begin.Ok().
 func (vfs *VirtualFilesystem) getParentDirAndName(ctx context.Context, creds *auth.Credentials, pop *PathOperation) (VirtualDentry, string, error) {
 	rp := vfs.getResolvingPath(creds, pop)
+	defer rp.Release(ctx)
 	for {
-		vfs.maybeBlockOnMountPromise(ctx, rp)
+		if err := vfs.maybeBlockOnMountPromise(ctx, rp); err != nil {
+			return VirtualDentry{}, "", err
+		}
 		parent, err := rp.mount.fs.impl.GetParentDentryAt(ctx, rp)
 		if err == nil {
 			parentVD := VirtualDentry{
@@ -290,7 +281,6 @@ func (vfs *VirtualFilesystem) getParentDirAndName(ctx context.Context, creds *au
 			}
 			rp.mount.IncRef()
 			name := rp.Component()
-			rp.Release(ctx)
 			return parentVD, name, nil
 		}
 		if checkInvariants {
@@ -299,7 +289,6 @@ func (vfs *VirtualFilesystem) getParentDirAndName(ctx context.Context, creds *au
 			}
 		}
 		if !rp.handleError(ctx, err) {
-			rp.Release(ctx)
 			return VirtualDentry{}, "", err
 		}
 	}
@@ -327,11 +316,13 @@ func (vfs *VirtualFilesystem) LinkAt(ctx context.Context, creds *auth.Credential
 	}
 
 	rp := vfs.getResolvingPath(creds, newpop)
+	defer rp.Release(ctx)
 	for {
-		vfs.maybeBlockOnMountPromise(ctx, rp)
+		if err := vfs.maybeBlockOnMountPromise(ctx, rp); err != nil {
+			return err
+		}
 		err := rp.mount.fs.impl.LinkAt(ctx, rp, oldVD)
 		if err == nil {
-			rp.Release(ctx)
 			oldVD.DecRef(ctx)
 			return nil
 		}
@@ -341,7 +332,6 @@ func (vfs *VirtualFilesystem) LinkAt(ctx context.Context, creds *auth.Credential
 			}
 		}
 		if !rp.handleError(ctx, err) {
-			rp.Release(ctx)
 			oldVD.DecRef(ctx)
 			return err
 		}
@@ -367,11 +357,13 @@ func (vfs *VirtualFilesystem) MkdirAt(ctx context.Context, creds *auth.Credentia
 	opts.Mode &= 0777 | linux.S_ISVTX
 
 	rp := vfs.getResolvingPath(creds, pop)
+	defer rp.Release(ctx)
 	for {
-		vfs.maybeBlockOnMountPromise(ctx, rp)
+		if err := vfs.maybeBlockOnMountPromise(ctx, rp); err != nil {
+			return err
+		}
 		err := rp.mount.fs.impl.MkdirAt(ctx, rp, *opts)
 		if err == nil {
-			rp.Release(ctx)
 			return nil
 		}
 		if checkInvariants {
@@ -380,7 +372,6 @@ func (vfs *VirtualFilesystem) MkdirAt(ctx context.Context, creds *auth.Credentia
 			}
 		}
 		if !rp.handleError(ctx, err) {
-			rp.Release(ctx)
 			return err
 		}
 	}
@@ -403,11 +394,13 @@ func (vfs *VirtualFilesystem) MknodAt(ctx context.Context, creds *auth.Credentia
 	}
 
 	rp := vfs.getResolvingPath(creds, pop)
+	defer rp.Release(ctx)
 	for {
-		vfs.maybeBlockOnMountPromise(ctx, rp)
+		if err := vfs.maybeBlockOnMountPromise(ctx, rp); err != nil {
+			return err
+		}
 		err := rp.mount.fs.impl.MknodAt(ctx, rp, *opts)
 		if err == nil {
-			rp.Release(ctx)
 			return nil
 		}
 		if checkInvariants {
@@ -416,7 +409,6 @@ func (vfs *VirtualFilesystem) MknodAt(ctx context.Context, creds *auth.Credentia
 			}
 		}
 		if !rp.handleError(ctx, err) {
-			rp.Release(ctx)
 			return err
 		}
 	}
@@ -467,15 +459,16 @@ func (vfs *VirtualFilesystem) OpenAt(ctx context.Context, creds *auth.Credential
 		return vfs.openOPathFD(ctx, creds, pop, opts.Flags)
 	}
 	rp := vfs.getResolvingPath(creds, pop)
+	defer rp.Release(ctx)
 	if opts.Flags&linux.O_DIRECTORY != 0 {
 		rp.mustBeDir = true
 	}
 	for {
-		vfs.maybeBlockOnMountPromise(ctx, rp)
+		if err := vfs.maybeBlockOnMountPromise(ctx, rp); err != nil {
+			return nil, err
+		}
 		fd, err := rp.mount.fs.impl.OpenAt(ctx, rp, *opts)
 		if err == nil {
-			rp.Release(ctx)
-
 			if opts.FileExec {
 				if fd.Mount().Options().Flags.NoExec {
 					fd.DecRef(ctx)
@@ -498,7 +491,6 @@ func (vfs *VirtualFilesystem) OpenAt(ctx context.Context, creds *auth.Credential
 			return fd, nil
 		}
 		if !rp.handleError(ctx, err) {
-			rp.Release(ctx)
 			return nil, err
 		}
 	}
@@ -507,15 +499,16 @@ func (vfs *VirtualFilesystem) OpenAt(ctx context.Context, creds *auth.Credential
 // ReadlinkAt returns the target of the symbolic link at the given path.
 func (vfs *VirtualFilesystem) ReadlinkAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation) (string, error) {
 	rp := vfs.getResolvingPath(creds, pop)
+	defer rp.Release(ctx)
 	for {
-		vfs.maybeBlockOnMountPromise(ctx, rp)
+		if err := vfs.maybeBlockOnMountPromise(ctx, rp); err != nil {
+			return "", err
+		}
 		target, err := rp.mount.fs.impl.ReadlinkAt(ctx, rp)
 		if err == nil {
-			rp.Release(ctx)
 			return target, nil
 		}
 		if !rp.handleError(ctx, err) {
-			rp.Release(ctx)
 			return "", err
 		}
 	}
@@ -557,15 +550,17 @@ func (vfs *VirtualFilesystem) RenameAt(ctx context.Context, creds *auth.Credenti
 	}
 
 	rp := vfs.getResolvingPath(creds, newpop)
+	defer rp.Release(ctx)
 	renameOpts := *opts
 	if oldpop.Path.Dir {
 		renameOpts.MustBeDir = true
 	}
 	for {
-		vfs.maybeBlockOnMountPromise(ctx, rp)
+		if err := vfs.maybeBlockOnMountPromise(ctx, rp); err != nil {
+			return err
+		}
 		err := rp.mount.fs.impl.RenameAt(ctx, rp, oldParentVD, oldName, renameOpts)
 		if err == nil {
-			rp.Release(ctx)
 			oldParentVD.DecRef(ctx)
 			return nil
 		}
@@ -575,7 +570,6 @@ func (vfs *VirtualFilesystem) RenameAt(ctx context.Context, creds *auth.Credenti
 			}
 		}
 		if !rp.handleError(ctx, err) {
-			rp.Release(ctx)
 			oldParentVD.DecRef(ctx)
 			return err
 		}
@@ -598,11 +592,13 @@ func (vfs *VirtualFilesystem) RmdirAt(ctx context.Context, creds *auth.Credentia
 	}
 
 	rp := vfs.getResolvingPath(creds, pop)
+	defer rp.Release(ctx)
 	for {
-		vfs.maybeBlockOnMountPromise(ctx, rp)
+		if err := vfs.maybeBlockOnMountPromise(ctx, rp); err != nil {
+			return err
+		}
 		err := rp.mount.fs.impl.RmdirAt(ctx, rp)
 		if err == nil {
-			rp.Release(ctx)
 			return nil
 		}
 		if checkInvariants {
@@ -611,7 +607,6 @@ func (vfs *VirtualFilesystem) RmdirAt(ctx context.Context, creds *auth.Credentia
 			}
 		}
 		if !rp.handleError(ctx, err) {
-			rp.Release(ctx)
 			return err
 		}
 	}
@@ -620,15 +615,16 @@ func (vfs *VirtualFilesystem) RmdirAt(ctx context.Context, creds *auth.Credentia
 // SetStatAt changes metadata for the file at the given path.
 func (vfs *VirtualFilesystem) SetStatAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation, opts *SetStatOptions) error {
 	rp := vfs.getResolvingPath(creds, pop)
+	defer rp.Release(ctx)
 	for {
-		vfs.maybeBlockOnMountPromise(ctx, rp)
+		if err := vfs.maybeBlockOnMountPromise(ctx, rp); err != nil {
+			return err
+		}
 		err := rp.mount.fs.impl.SetStatAt(ctx, rp, *opts)
 		if err == nil {
-			rp.Release(ctx)
 			return nil
 		}
 		if !rp.handleError(ctx, err) {
-			rp.Release(ctx)
 			return err
 		}
 	}
@@ -637,15 +633,16 @@ func (vfs *VirtualFilesystem) SetStatAt(ctx context.Context, creds *auth.Credent
 // StatAt returns metadata for the file at the given path.
 func (vfs *VirtualFilesystem) StatAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation, opts *StatOptions) (linux.Statx, error) {
 	rp := vfs.getResolvingPath(creds, pop)
+	defer rp.Release(ctx)
 	for {
-		vfs.maybeBlockOnMountPromise(ctx, rp)
+		if err := vfs.maybeBlockOnMountPromise(ctx, rp); err != nil {
+			return linux.Statx{}, err
+		}
 		stat, err := rp.mount.fs.impl.StatAt(ctx, rp, *opts)
 		if err == nil {
-			rp.Release(ctx)
 			return stat, nil
 		}
 		if !rp.handleError(ctx, err) {
-			rp.Release(ctx)
 			return linux.Statx{}, err
 		}
 	}
@@ -655,16 +652,17 @@ func (vfs *VirtualFilesystem) StatAt(ctx context.Context, creds *auth.Credential
 // given path.
 func (vfs *VirtualFilesystem) StatFSAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation) (linux.Statfs, error) {
 	rp := vfs.getResolvingPath(creds, pop)
+	defer rp.Release(ctx)
 	for {
-		vfs.maybeBlockOnMountPromise(ctx, rp)
+		if err := vfs.maybeBlockOnMountPromise(ctx, rp); err != nil {
+			return linux.Statfs{}, err
+		}
 		statfs, err := rp.mount.fs.impl.StatFSAt(ctx, rp)
 		if err == nil {
 			statfs.Flags |= rp.mount.MountFlags()
-			rp.Release(ctx)
 			return statfs, nil
 		}
 		if !rp.handleError(ctx, err) {
-			rp.Release(ctx)
 			return linux.Statfs{}, err
 		}
 	}
@@ -686,11 +684,13 @@ func (vfs *VirtualFilesystem) SymlinkAt(ctx context.Context, creds *auth.Credent
 	}
 
 	rp := vfs.getResolvingPath(creds, pop)
+	defer rp.Release(ctx)
 	for {
-		vfs.maybeBlockOnMountPromise(ctx, rp)
+		if err := vfs.maybeBlockOnMountPromise(ctx, rp); err != nil {
+			return err
+		}
 		err := rp.mount.fs.impl.SymlinkAt(ctx, rp, target)
 		if err == nil {
-			rp.Release(ctx)
 			return nil
 		}
 		if checkInvariants {
@@ -699,7 +699,6 @@ func (vfs *VirtualFilesystem) SymlinkAt(ctx context.Context, creds *auth.Credent
 			}
 		}
 		if !rp.handleError(ctx, err) {
-			rp.Release(ctx)
 			return err
 		}
 	}
@@ -721,11 +720,13 @@ func (vfs *VirtualFilesystem) UnlinkAt(ctx context.Context, creds *auth.Credenti
 	}
 
 	rp := vfs.getResolvingPath(creds, pop)
+	defer rp.Release(ctx)
 	for {
-		vfs.maybeBlockOnMountPromise(ctx, rp)
+		if err := vfs.maybeBlockOnMountPromise(ctx, rp); err != nil {
+			return err
+		}
 		err := rp.mount.fs.impl.UnlinkAt(ctx, rp)
 		if err == nil {
-			rp.Release(ctx)
 			return nil
 		}
 		if checkInvariants {
@@ -734,7 +735,6 @@ func (vfs *VirtualFilesystem) UnlinkAt(ctx context.Context, creds *auth.Credenti
 			}
 		}
 		if !rp.handleError(ctx, err) {
-			rp.Release(ctx)
 			return err
 		}
 	}
@@ -743,11 +743,13 @@ func (vfs *VirtualFilesystem) UnlinkAt(ctx context.Context, creds *auth.Credenti
 // BoundEndpointAt gets the bound endpoint at the given path, if one exists.
 func (vfs *VirtualFilesystem) BoundEndpointAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation, opts *BoundEndpointOptions) (transport.BoundEndpoint, error) {
 	rp := vfs.getResolvingPath(creds, pop)
+	defer rp.Release(ctx)
 	for {
-		vfs.maybeBlockOnMountPromise(ctx, rp)
+		if err := vfs.maybeBlockOnMountPromise(ctx, rp); err != nil {
+			return nil, err
+		}
 		bep, err := rp.mount.fs.impl.BoundEndpointAt(ctx, rp, *opts)
 		if err == nil {
-			rp.Release(ctx)
 			return bep, nil
 		}
 		if checkInvariants {
@@ -756,7 +758,6 @@ func (vfs *VirtualFilesystem) BoundEndpointAt(ctx context.Context, creds *auth.C
 			}
 		}
 		if !rp.handleError(ctx, err) {
-			rp.Release(ctx)
 			return nil, err
 		}
 	}
@@ -766,11 +767,13 @@ func (vfs *VirtualFilesystem) BoundEndpointAt(ctx context.Context, creds *auth.C
 // path.
 func (vfs *VirtualFilesystem) ListXattrAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation, size uint64) ([]string, error) {
 	rp := vfs.getResolvingPath(creds, pop)
+	defer rp.Release(ctx)
 	for {
-		vfs.maybeBlockOnMountPromise(ctx, rp)
+		if err := vfs.maybeBlockOnMountPromise(ctx, rp); err != nil {
+			return nil, err
+		}
 		names, err := rp.mount.fs.impl.ListXattrAt(ctx, rp, size)
 		if err == nil {
-			rp.Release(ctx)
 			return names, nil
 		}
 		if linuxerr.Equals(linuxerr.EOPNOTSUPP, err) {
@@ -778,11 +781,9 @@ func (vfs *VirtualFilesystem) ListXattrAt(ctx context.Context, creds *auth.Crede
 			// fs/xattr.c:vfs_listxattr() falls back to allowing the security
 			// subsystem to return security extended attributes, which by
 			// default don't exist.
-			rp.Release(ctx)
 			return nil, nil
 		}
 		if !rp.handleError(ctx, err) {
-			rp.Release(ctx)
 			return nil, err
 		}
 	}
@@ -792,15 +793,16 @@ func (vfs *VirtualFilesystem) ListXattrAt(ctx context.Context, creds *auth.Crede
 // for the file at the given path.
 func (vfs *VirtualFilesystem) GetXattrAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation, opts *GetXattrOptions) (string, error) {
 	rp := vfs.getResolvingPath(creds, pop)
+	defer rp.Release(ctx)
 	for {
-		vfs.maybeBlockOnMountPromise(ctx, rp)
+		if err := vfs.maybeBlockOnMountPromise(ctx, rp); err != nil {
+			return "", err
+		}
 		val, err := rp.mount.fs.impl.GetXattrAt(ctx, rp, *opts)
 		if err == nil {
-			rp.Release(ctx)
 			return val, nil
 		}
 		if !rp.handleError(ctx, err) {
-			rp.Release(ctx)
 			return "", err
 		}
 	}
@@ -810,15 +812,16 @@ func (vfs *VirtualFilesystem) GetXattrAt(ctx context.Context, creds *auth.Creden
 // for the file at the given path.
 func (vfs *VirtualFilesystem) SetXattrAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation, opts *SetXattrOptions) error {
 	rp := vfs.getResolvingPath(creds, pop)
+	defer rp.Release(ctx)
 	for {
-		vfs.maybeBlockOnMountPromise(ctx, rp)
+		if err := vfs.maybeBlockOnMountPromise(ctx, rp); err != nil {
+			return err
+		}
 		err := rp.mount.fs.impl.SetXattrAt(ctx, rp, *opts)
 		if err == nil {
-			rp.Release(ctx)
 			return nil
 		}
 		if !rp.handleError(ctx, err) {
-			rp.Release(ctx)
 			return err
 		}
 	}
@@ -827,15 +830,16 @@ func (vfs *VirtualFilesystem) SetXattrAt(ctx context.Context, creds *auth.Creden
 // RemoveXattrAt removes the given extended attribute from the file at rp.
 func (vfs *VirtualFilesystem) RemoveXattrAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation, name string) error {
 	rp := vfs.getResolvingPath(creds, pop)
+	defer rp.Release(ctx)
 	for {
-		vfs.maybeBlockOnMountPromise(ctx, rp)
+		if err := vfs.maybeBlockOnMountPromise(ctx, rp); err != nil {
+			return err
+		}
 		err := rp.mount.fs.impl.RemoveXattrAt(ctx, rp, name)
 		if err == nil {
-			rp.Release(ctx)
 			return nil
 		}
 		if !rp.handleError(ctx, err) {
-			rp.Release(ctx)
 			return err
 		}
 	}
@@ -925,83 +929,6 @@ func (vfs *VirtualFilesystem) MakeSyntheticMountpoint(ctx context.Context, targe
 		return fmt.Errorf("failed to create mountpoint %q: %w", target, err)
 	}
 	return nil
-}
-
-func (vfs *VirtualFilesystem) getMountPromise(vd VirtualDentry) *mountPromise {
-	if mp, ok := vfs.mountPromises.Load(vd); ok {
-		return mp.(*mountPromise)
-	}
-	return nil
-}
-
-// RegisterMountPromise marks vd as a mount promise. This means any VFS
-// operation on vd will be blocked until another process mounts over it or the
-// mount promise times out.
-func (vfs *VirtualFilesystem) RegisterMountPromise(vd VirtualDentry) error {
-	if _, loaded := vfs.mountPromises.LoadOrStore(vd, &mountPromise{wq: &waiter.Queue{}}); loaded {
-		return fmt.Errorf("mount promise already registered for %v", vd)
-	}
-	return nil
-}
-
-// Emit a SentryMountPromiseBlockEvent and wait for the mount promise to be
-// resolved or time out.
-func (vfs *VirtualFilesystem) maybeBlockOnMountPromise(ctx context.Context, rp *ResolvingPath) {
-	vd := VirtualDentry{rp.mount, rp.start}
-	mp := vfs.getMountPromise(vd)
-	if mp == nil {
-		return
-	} else if mp.resolved.Load() {
-		vfs.updateResolvingPathForMountPromise(ctx, rp)
-		return
-	}
-
-	e, ch := waiter.NewChannelEntry(waiter.EventOut)
-	mp.wq.EventRegister(&e)
-	defer mp.wq.EventUnregister(&e)
-
-	var (
-		path string
-		err  error
-	)
-	// Unblock waiter entries that were created after this mount promise was
-	// resolved by a racing thread.
-	if mp.resolved.Load() {
-		close(ch)
-	} else {
-		root := RootFromContext(ctx)
-		defer root.DecRef(ctx)
-		path, err = vfs.PathnameReachable(ctx, root, vd)
-		if err != nil {
-			panic(fmt.Sprintf("could not reach %v from root", rp.Component()))
-		}
-		if path == "" {
-			log.Warningf("Attempting to block for a mount promise on an empty path.")
-			return
-		}
-		eventchannel.Emit(&epb.SentryMountPromiseBlockEvent{Path: path})
-	}
-
-	select {
-	case <-ch:
-		vfs.updateResolvingPathForMountPromise(ctx, rp)
-	case <-time.After(mountPromiseTimeout):
-		panic(fmt.Sprintf("mount promise for %s timed out, unable to proceed", path))
-	}
-}
-
-func (vfs *VirtualFilesystem) updateResolvingPathForMountPromise(ctx context.Context, rp *ResolvingPath) {
-	newMnt := vfs.getMountAt(ctx, rp.mount, rp.start)
-	rp.mount = newMnt
-	rp.start = newMnt.root
-	rp.flags = rp.flags&^rpflagsHaveStartRef | rpflagsHaveMountRef
-}
-
-func (vfs *VirtualFilesystem) maybeResolveMountPromise(vd VirtualDentry) {
-	if mp := vfs.getMountPromise(vd); mp != nil {
-		mp.resolved.Store(true)
-		mp.wq.Notify(waiter.EventOut)
-	}
 }
 
 // PopDelayedDecRefs transfers the ownership of vfs.toDecRef to the caller via
