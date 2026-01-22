@@ -57,6 +57,7 @@ syscall_test(
     size = "large",
     add_hostinet = True,
     add_overlay = True,
+    shard_count = more_shards,
     test = "//test/syscalls/linux:bind_test",
 )
 
