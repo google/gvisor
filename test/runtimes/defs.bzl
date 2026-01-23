@@ -20,8 +20,13 @@ def _runtime_test_impl(ctx):
 
     # Build a runner.
     runner = ctx.actions.declare_file("%s-executer" % ctx.label.name)
+    # if TEST_CHECK_UP_TO_DATE_FILE file exists, the goal is to check if test
+    # results are up-to-date in cache. runner has to return a non-zero code
+    # immediately.
     runner_content = "\n".join([
         "#!/bin/bash",
+        'test -n "$TEST_SHARD_STATUS_FILE" && touch "$TEST_SHARD_STATUS_FILE"',
+        'test -n "$TEST_CHECK_UP_TO_DATE_FILE" && test -f "$TEST_CHECK_UP_TO_DATE_FILE" && { echo "Test results in the cache are outdated." 1>&2; exit 1; }',
         "%s %s $@\n" % (ctx.files._runner[0].short_path, " ".join(args)),
     ])
     ctx.actions.write(runner, runner_content, is_executable = True)
