@@ -14,6 +14,10 @@
 
 package linux
 
+import (
+	"structs"
+)
+
 // Control commands used with semctl, shmctl, and msgctl.
 //
 // Source: include/uapi/linux/ipc.h.
@@ -46,6 +50,7 @@ const (
 //
 // +marshal
 type IPCPerm struct {
+	_       structs.HostLayout
 	Key     uint32
 	UID     uint32
 	GID     uint32

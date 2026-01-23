@@ -14,6 +14,10 @@
 
 package linux
 
+import (
+	"structs"
+)
+
 // Clone constants per clone(2).
 const (
 	CSIGNAL = 0xff
@@ -57,6 +61,7 @@ const (
 //
 // +marshal
 type CloneArgs struct {
+	_          structs.HostLayout
 	Flags      uint64
 	Pidfd      uint64
 	ChildTID   uint64

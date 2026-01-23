@@ -14,6 +14,10 @@
 
 package linux
 
+import (
+	"structs"
+)
+
 // Flags that may be used with wait4(2) and getrusage(2).
 const (
 	// wait4(2) uses this to aggregate RUSAGE_SELF and RUSAGE_CHILDREN.
@@ -29,6 +33,7 @@ const (
 //
 // +marshal
 type Rusage struct {
+	_        structs.HostLayout
 	UTime    Timeval
 	STime    Timeval
 	MaxRSS   int64

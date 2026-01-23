@@ -9,6 +9,7 @@ go_library(
     srcs = [
         "gasket.go",
     ],
+    hostlayout = True,
     marshal = True,
     visibility = ["//pkg/sentry:internal"],
     deps = ["//pkg/abi/linux"],

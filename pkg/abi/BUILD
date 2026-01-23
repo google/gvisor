@@ -12,5 +12,6 @@ go_library(
         "abi_linux.go",
         "flag.go",
     ],
+    hostlayout = True,
     visibility = ["//:sandbox"],
 )

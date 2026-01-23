@@ -15,6 +15,8 @@
 package linux
 
 import (
+	"structs"
+
 	"gvisor.dev/gvisor/pkg/marshal"
 )
 
@@ -31,6 +33,7 @@ const (
 //
 // +marshal
 type SockExtendedErr struct {
+	_      structs.HostLayout
 	Errno  uint32
 	Origin uint8
 	Type   uint8
@@ -54,6 +57,7 @@ type SockErrCMsg interface {
 //
 // +marshal
 type SockErrCMsgIPv4 struct {
+	_ structs.HostLayout
 	SockExtendedErr
 	Offender SockAddrInet
 }
@@ -76,6 +80,7 @@ func (*SockErrCMsgIPv4) CMsgType() uint32 {
 //
 // +marshal
 type SockErrCMsgIPv6 struct {
+	_ structs.HostLayout
 	SockExtendedErr
 	Offender SockAddrInet6
 }

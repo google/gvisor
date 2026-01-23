@@ -14,6 +14,10 @@
 
 package linux
 
+import (
+	"structs"
+)
+
 // Resources for getrlimit(2)/setrlimit(2)/prlimit(2).
 const (
 	RLIMIT_CPU        = 0
@@ -36,6 +40,7 @@ const (
 
 // RLimit corresponds to Linux's struct rlimit.
 type RLimit struct {
+	_ structs.HostLayout
 	// Cur specifies the soft limit.
 	Cur uint64
 	// Max specifies the hard limit.
@@ -69,20 +74,20 @@ const (
 // InitRLimits is a map of initial rlimits set by Linux in
 // include/asm-generic/resource.h.
 var InitRLimits = map[int]RLimit{
-	RLIMIT_CPU:        {RLimInfinity, RLimInfinity},
-	RLIMIT_FSIZE:      {RLimInfinity, RLimInfinity},
-	RLIMIT_DATA:       {RLimInfinity, RLimInfinity},
-	RLIMIT_STACK:      {DefaultStackSoftLimit, RLimInfinity},
-	RLIMIT_CORE:       {0, RLimInfinity},
-	RLIMIT_RSS:        {RLimInfinity, RLimInfinity},
-	RLIMIT_NPROC:      {DefaultNprocLimit, DefaultNprocLimit},
-	RLIMIT_NOFILE:     {DefaultNofileSoftLimit, DefaultNofileHardLimit},
-	RLIMIT_MEMLOCK:    {DefaultMemlockLimit, DefaultMemlockLimit},
-	RLIMIT_AS:         {RLimInfinity, RLimInfinity},
-	RLIMIT_LOCKS:      {RLimInfinity, RLimInfinity},
-	RLIMIT_SIGPENDING: {0, 0},
-	RLIMIT_MSGQUEUE:   {DefaultMsgqueueLimit, DefaultMsgqueueLimit},
-	RLIMIT_NICE:       {0, 0},
-	RLIMIT_RTPRIO:     {0, 0},
-	RLIMIT_RTTIME:     {RLimInfinity, RLimInfinity},
+	RLIMIT_CPU:        {Cur: RLimInfinity, Max: RLimInfinity},
+	RLIMIT_FSIZE:      {Cur: RLimInfinity, Max: RLimInfinity},
+	RLIMIT_DATA:       {Cur: RLimInfinity, Max: RLimInfinity},
+	RLIMIT_STACK:      {Cur: DefaultStackSoftLimit, Max: RLimInfinity},
+	RLIMIT_CORE:       {Cur: 0, Max: RLimInfinity},
+	RLIMIT_RSS:        {Cur: RLimInfinity, Max: RLimInfinity},
+	RLIMIT_NPROC:      {Cur: DefaultNprocLimit, Max: DefaultNprocLimit},
+	RLIMIT_NOFILE:     {Cur: DefaultNofileSoftLimit, Max: DefaultNofileHardLimit},
+	RLIMIT_MEMLOCK:    {Cur: DefaultMemlockLimit, Max: DefaultMemlockLimit},
+	RLIMIT_AS:         {Cur: RLimInfinity, Max: RLimInfinity},
+	RLIMIT_LOCKS:      {Cur: RLimInfinity, Max: RLimInfinity},
+	RLIMIT_SIGPENDING: {Cur: 0, Max: 0},
+	RLIMIT_MSGQUEUE:   {Cur: DefaultMsgqueueLimit, Max: DefaultMsgqueueLimit},
+	RLIMIT_NICE:       {Cur: 0, Max: 0},
+	RLIMIT_RTPRIO:     {Cur: 0, Max: 0},
+	RLIMIT_RTTIME:     {Cur: RLimInfinity, Max: RLimInfinity},
 }

@@ -16,6 +16,7 @@ package linux
 
 import (
 	"math"
+	"structs"
 
 	"gvisor.dev/gvisor/pkg/marshal"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
@@ -69,6 +70,7 @@ const IP6T_ORIGINAL_DST = 80
 //
 // +marshal
 type IP6TReplace struct {
+	_           structs.HostLayout
 	Name        TableName
 	ValidHooks  uint32
 	NumEntries  uint32
@@ -90,8 +92,9 @@ const SizeOfIP6TReplace = 96
 //
 // +marshal dynamic
 type KernelIP6TGetEntries struct {
+	_ structs.HostLayout
 	IPTGetEntries
-	Entrytable []KernelIP6TEntry
+	Entrytable []KernelIP6TEntry `hostlayout:"ignore"`
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
@@ -128,6 +131,7 @@ var _ marshal.Marshallable = (*KernelIP6TGetEntries)(nil)
 //
 // +marshal
 type IP6TEntry struct {
+	_ structs.HostLayout
 	// IPv6 is used to filter packets based on the IPv6 header.
 	IPv6 IP6TIP
 
@@ -169,13 +173,14 @@ const SizeOfIP6TEntry = 168
 //
 // +marshal dynamic
 type KernelIP6TEntry struct {
+	_     structs.HostLayout
 	Entry IP6TEntry
 
 	// Elems holds the data for all this rule's matches followed by the
 	// target. It is variable length -- users have to iterate over any
 	// matches and use TargetOffset and NextOffset to make sense of the
 	// data.
-	Elems primitive.ByteSlice
+	Elems primitive.ByteSlice `hostlayout:"ignore"`
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
@@ -203,6 +208,7 @@ var _ marshal.Marshallable = (*KernelIP6TEntry)(nil)
 //
 // +marshal
 type IP6TIP struct {
+	_ structs.HostLayout
 	// Src is the source IP address.
 	Src Inet6Addr
 
@@ -286,6 +292,7 @@ const (
 //
 // +marshal
 type NFNATRange struct {
+	_        structs.HostLayout
 	Flags    uint32
 	MinAddr  Inet6Addr
 	MaxAddr  Inet6Addr
@@ -301,6 +308,7 @@ const SizeOfNFNATRange = 40
 //
 // +marshal
 type NFNATRange2 struct {
+	_         structs.HostLayout
 	Flags     uint32
 	MinAddr   Inet6Addr
 	MaxAddr   Inet6Addr

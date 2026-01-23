@@ -14,6 +14,10 @@
 
 package linux
 
+import (
+	"structs"
+)
+
 const (
 	// SFD_NONBLOCK is a signalfd(2) flag.
 	SFD_NONBLOCK = 00004000
@@ -26,6 +30,7 @@ const (
 //
 // +marshal
 type SignalfdSiginfo struct {
+	_       structs.HostLayout
 	Signo   uint32
 	Errno   int32
 	Code    int32

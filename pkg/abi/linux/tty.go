@@ -14,6 +14,10 @@
 
 package linux
 
+import (
+	"structs"
+)
+
 const (
 	// NumControlCharacters is the number of control characters in Termios.
 	NumControlCharacters = 19
@@ -26,6 +30,7 @@ const (
 //
 // +marshal
 type Winsize struct {
+	_      structs.HostLayout
 	Row    uint16
 	Col    uint16
 	Xpixel uint16
@@ -36,6 +41,7 @@ type Winsize struct {
 //
 // +marshal
 type Termios struct {
+	_                 structs.HostLayout
 	InputFlags        uint32
 	OutputFlags       uint32
 	ControlFlags      uint32
@@ -49,6 +55,7 @@ type Termios struct {
 //
 // +stateify savable
 type KernelTermios struct {
+	_                 structs.HostLayout
 	InputFlags        uint32
 	OutputFlags       uint32
 	ControlFlags      uint32
@@ -343,6 +350,7 @@ var DefaultReplicaTermios = KernelTermios{
 // +stateify savable
 // +marshal
 type WindowSize struct {
+	_    structs.HostLayout
 	Rows uint16
 	Cols uint16
 	_    [4]byte // Padding for 2 unused shorts.

@@ -88,6 +88,7 @@ go_library(
         "wait.go",
         "xattr.go",
     ],
+    hostlayout = True,
     marshal = True,
     visibility = ["//visibility:public"],
     deps = [

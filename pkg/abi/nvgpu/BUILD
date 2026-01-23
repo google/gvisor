@@ -15,6 +15,7 @@ go_library(
         "status.go",
         "uvm.go",
     ],
+    hostlayout = True,
     marshal = True,
     visibility = [
         "//pkg/sentry:internal",

@@ -15,6 +15,10 @@
 // Package attestation includes definitions needed for gVisor attestation.
 package attestation
 
+import (
+	"structs"
+)
+
 // Attestation ioctls.
 const (
 	SIGN_ATTESTATION_REPORT = 0
@@ -29,7 +33,8 @@ const SizeOfQuoteInputData = 64
 // size is an input that specifies the size of buf. When returned, it's updated
 // to the size of quote.
 type SignReport struct {
+	_    structs.HostLayout
 	data [64]byte
 	size uint32
-	buf  []byte
+	buf  []byte `hostlayout:"ignore"`
 }

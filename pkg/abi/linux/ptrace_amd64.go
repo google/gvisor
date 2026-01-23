@@ -17,12 +17,17 @@
 
 package linux
 
+import (
+	"structs"
+)
+
 // PtraceRegs is the set of CPU registers exposed by ptrace. Source:
 // syscall.PtraceRegs.
 //
 // +marshal
 // +stateify savable
 type PtraceRegs struct {
+	_        structs.HostLayout
 	R15      uint64
 	R14      uint64
 	R13      uint64

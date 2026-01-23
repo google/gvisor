@@ -14,6 +14,10 @@
 
 package linux
 
+import (
+	"structs"
+)
+
 // Netlink message types for NETLINK_ROUTE sockets, from uapi/linux/rtnetlink.h.
 const (
 	RTM_NEWLINK = 16
@@ -88,6 +92,7 @@ const (
 //
 // +marshal
 type InterfaceInfoMessage struct {
+	_      structs.HostLayout
 	Family uint8
 	_      uint8
 	Type   uint16
@@ -187,6 +192,7 @@ const (
 //
 // +marshal
 type InterfaceAddrMessage struct {
+	_         structs.HostLayout
 	Family    uint8
 	PrefixLen uint8
 	Flags     uint8
@@ -221,6 +227,7 @@ const (
 //
 // +marshal
 type RouteMessage struct {
+	_      structs.HostLayout
 	Family uint8
 	DstLen uint8
 	SrcLen uint8
@@ -369,6 +376,7 @@ const (
 //
 // +marshal
 type RtAttr struct {
+	_    structs.HostLayout
 	Len  uint16
 	Type uint16
 }

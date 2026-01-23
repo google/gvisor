@@ -17,6 +17,7 @@ package gasket
 
 import (
 	"fmt"
+	"structs"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 )
@@ -80,6 +81,7 @@ func (i Ioctl) String() string {
 //
 // +marshal
 type GasketInterruptEventFd struct {
+	_         structs.HostLayout
 	Interrupt uint64
 	EventFD   uint64
 }
@@ -89,6 +91,7 @@ type GasketInterruptEventFd struct {
 //
 // +marshal
 type GasketPageTableIoctl struct {
+	_              structs.HostLayout
 	PageTableIndex uint64
 	Size           uint64
 	HostAddress    uint64
@@ -101,6 +104,7 @@ type GasketPageTableIoctl struct {
 //
 // +marshal
 type GasketInterruptMapping struct {
+	_         structs.HostLayout
 	Interrupt uint64
 	EventFD   uint64
 	BarIndex  uint64
@@ -112,6 +116,7 @@ type GasketInterruptMapping struct {
 //
 // +marshal
 type GasketPageTableDmaBufIoctl struct {
+	_              structs.HostLayout
 	PageTableIndex uint64
 	DeviceAddress  uint64
 	DMABufID       int32 `marshal:"unaligned"` // Struct ends mid 64bit word.

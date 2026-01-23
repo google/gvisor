@@ -8,5 +8,6 @@ package(
 go_library(
     name = "attestation",
     srcs = ["attestation.go"],
+    hostlayout = True,
     visibility = ["//visibility:public"],
 )

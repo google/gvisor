@@ -6,8 +6,7 @@ package(
 )
 
 go_library(
-    name = "errno",
-    srcs = ["errno.go"],
-    hostlayout = True,
+    name = "hostlayoutcheck",
+    srcs = ["hostlayoutcheck.go"],
     visibility = ["//visibility:public"],
 )

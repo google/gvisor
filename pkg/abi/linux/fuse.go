@@ -15,6 +15,7 @@
 package linux
 
 import (
+	"structs"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
@@ -93,6 +94,7 @@ const (
 // +marshal
 // +stateify savable
 type FUSEHeaderIn struct {
+	_ structs.HostLayout
 	// Len specifies the total length of the data, including this header.
 	Len uint32
 
@@ -127,6 +129,7 @@ var SizeOfFUSEHeaderIn = uint32((*FUSEHeaderIn)(nil).SizeBytes())
 // +marshal
 // +stateify savable
 type FUSEHeaderOut struct {
+	_ structs.HostLayout
 	// Len specifies the total length of the data, including this header.
 	Len uint32
 
@@ -182,6 +185,7 @@ const (
 //
 // +marshal
 type FUSEInitIn struct {
+	_ structs.HostLayout
 	// Major version supported by kernel.
 	Major uint32
 
@@ -201,6 +205,7 @@ type FUSEInitIn struct {
 //
 // +marshal
 type FUSEInitOut struct {
+	_ structs.HostLayout
 	// Major version supported by daemon.
 	Major uint32
 
@@ -249,6 +254,7 @@ type FUSEInitOut struct {
 //
 // +marshal
 type FUSEStatfsOut struct {
+	_ structs.HostLayout
 	// Blocks is the maximum number of data blocks the filesystem may store, in
 	// units of BlockSize.
 	Blocks uint64
@@ -290,6 +296,7 @@ const FUSE_GETATTR_FH = (1 << 0)
 //
 // +marshal
 type FUSEGetAttrIn struct {
+	_ structs.HostLayout
 	// GetAttrFlags specifies whether getattr request is sent with a nodeid or
 	// with a file handle.
 	GetAttrFlags uint32
@@ -305,6 +312,7 @@ type FUSEGetAttrIn struct {
 //
 // +marshal
 type FUSEAttr struct {
+	_ structs.HostLayout
 	// Ino is the inode number of this file.
 	Ino uint64
 
@@ -376,6 +384,7 @@ func (a FUSEAttr) CTimeNsec() int64 {
 //
 // +marshal
 type FUSEAttrOut struct {
+	_ structs.HostLayout
 	// AttrValid and AttrValidNsec describe the attribute cache duration
 	AttrValid uint64
 
@@ -394,6 +403,7 @@ type FUSEAttrOut struct {
 //
 // +marshal
 type FUSEEntryOut struct {
+	_ structs.HostLayout
 	// NodeID is the ID for current inode.
 	NodeID uint64
 
@@ -445,6 +455,7 @@ func (s *CString) SizeBytes() int {
 //
 // +marshal dynamic
 type FUSELookupIn struct {
+	_ structs.HostLayout
 	// Name is a file name to be looked up.
 	Name CString
 }
@@ -488,6 +499,7 @@ const (
 //
 // +marshal
 type FUSEOpenIn struct {
+	_ structs.HostLayout
 	// Flags of this open request.
 	Flags uint32
 
@@ -499,6 +511,7 @@ type FUSEOpenIn struct {
 //
 // +marshal
 type FUSEOpenOut struct {
+	_ structs.HostLayout
 	// Fh is the file handler for opened files.
 	Fh uint64
 
@@ -513,6 +526,7 @@ type FUSEOpenOut struct {
 //
 // +marshal
 type FUSECreateOut struct {
+	_ structs.HostLayout
 	FUSEEntryOut
 	FUSEOpenOut
 }
@@ -527,6 +541,7 @@ const (
 //
 // +marshal
 type FUSEReadIn struct {
+	_ structs.HostLayout
 	// Fh is the file handle in userspace.
 	Fh uint64
 
@@ -559,6 +574,7 @@ type FUSEReadIn struct {
 //
 // +marshal
 type FUSEWriteIn struct {
+	_ structs.HostLayout
 	// Fh is the file handle in userspace.
 	Fh uint64
 
@@ -589,8 +605,9 @@ var SizeOfFUSEWriteIn = uint32((*FUSEWriteIn)(nil).SizeBytes())
 //
 // +marshal dynamic
 type FUSEWritePayloadIn struct {
+	_       structs.HostLayout
 	Header  FUSEWriteIn
-	Payload primitive.ByteSlice
+	Payload primitive.ByteSlice `hostlayout:"ignore"`
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
@@ -618,6 +635,7 @@ func (r *FUSEWritePayloadIn) UnmarshalBytes(src []byte) []byte {
 //
 // +marshal
 type FUSEWriteOut struct {
+	_ structs.HostLayout
 	// Size is the number of bytes written.
 	Size uint32
 
@@ -629,6 +647,7 @@ type FUSEWriteOut struct {
 //
 // +marshal
 type FUSEReleaseIn struct {
+	_ structs.HostLayout
 	// Fh is the file handler for the file to be released.
 	Fh uint64
 
@@ -647,6 +666,7 @@ type FUSEReleaseIn struct {
 //
 // +marshal
 type FUSECreateMeta struct {
+	_ structs.HostLayout
 	// Flags of the creating file.
 	Flags uint32
 
@@ -662,6 +682,7 @@ type FUSECreateMeta struct {
 //
 // +marshal dynamic
 type FUSERenameIn struct {
+	_       structs.HostLayout
 	Newdir  primitive.Uint64
 	Oldname CString
 	Newname CString
@@ -689,6 +710,7 @@ func (r *FUSERenameIn) SizeBytes() int {
 //
 // +marshal dynamic
 type FUSECreateIn struct {
+	_ structs.HostLayout
 	// CreateMeta contains mode, rdev and umash fields for FUSE_MKNODS.
 	CreateMeta FUSECreateMeta
 
@@ -717,6 +739,7 @@ func (r *FUSECreateIn) SizeBytes() int {
 //
 // +marshal
 type FUSEMknodMeta struct {
+	_ structs.HostLayout
 	// Mode of the inode to create.
 	Mode uint32
 
@@ -734,6 +757,7 @@ type FUSEMknodMeta struct {
 //
 // +marshal dynamic
 type FUSEMknodIn struct {
+	_ structs.HostLayout
 	// MknodMeta contains mode, rdev and umash fields for FUSE_MKNODS.
 	MknodMeta FUSEMknodMeta
 	// Name is the name of the node to create.
@@ -761,6 +785,7 @@ func (r *FUSEMknodIn) SizeBytes() int {
 //
 // +marshal dynamic
 type FUSESymlinkIn struct {
+	_ structs.HostLayout
 	// Name of symlink to create.
 	Name CString
 
@@ -788,6 +813,7 @@ func (r *FUSESymlinkIn) SizeBytes() int {
 //
 // +marshal dynamic
 type FUSELinkIn struct {
+	_ structs.HostLayout
 	// OldNodeID is the ID of the inode that is being linked to.
 	OldNodeID primitive.Uint64
 	// Name of the new hard link to create.
@@ -813,7 +839,9 @@ func (r *FUSELinkIn) SizeBytes() int {
 // FUSEEmptyIn is used by operations without request body.
 //
 // +marshal dynamic
-type FUSEEmptyIn struct{}
+type FUSEEmptyIn struct {
+	_ structs.HostLayout
+}
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
 func (r *FUSEEmptyIn) MarshalBytes(buf []byte) []byte {
@@ -835,6 +863,7 @@ func (r *FUSEEmptyIn) SizeBytes() int {
 //
 // +marshal
 type FUSEMkdirMeta struct {
+	_ structs.HostLayout
 	// Mode of the directory of create.
 	Mode uint32
 	// Umask is the user file creation mask.
@@ -846,6 +875,7 @@ type FUSEMkdirMeta struct {
 //
 // +marshal dynamic
 type FUSEMkdirIn struct {
+	_ structs.HostLayout
 	// MkdirMeta contains Mode and Umask of the directory to create.
 	MkdirMeta FUSEMkdirMeta
 	// Name of the directory to create.
@@ -873,6 +903,7 @@ func (r *FUSEMkdirIn) SizeBytes() int {
 //
 // +marshal dynamic
 type FUSERmDirIn struct {
+	_ structs.HostLayout
 	// Name is a directory name to be removed.
 	Name CString
 }
@@ -897,7 +928,8 @@ func (r *FUSERmDirIn) SizeBytes() int {
 //
 // +marshal dynamic
 type FUSEDirents struct {
-	Dirents []*FUSEDirent
+	_       structs.HostLayout
+	Dirents []*FUSEDirent `hostlayout:"ignore"`
 }
 
 // FUSEDirent is a Dirent received from the FUSE daemon server.
@@ -905,10 +937,11 @@ type FUSEDirents struct {
 //
 // +marshal dynamic
 type FUSEDirent struct {
+	_ structs.HostLayout
 	// Meta contains all the static fields of FUSEDirent.
 	Meta FUSEDirentMeta
 	// Name is the filename of the dirent.
-	Name string
+	Name string `hostlayout:"ignore"`
 }
 
 // FUSEDirentMeta contains all the static fields of FUSEDirent.
@@ -916,6 +949,7 @@ type FUSEDirent struct {
 //
 // +marshal
 type FUSEDirentMeta struct {
+	_ structs.HostLayout
 	// Inode of the dirent.
 	Ino uint64
 	// Offset of the dirent.
@@ -1027,6 +1061,7 @@ const (
 //
 // +marshal
 type FUSESetAttrIn struct {
+	_ structs.HostLayout
 	// Valid indicates which attributes are modified by this request.
 	Valid uint32
 
@@ -1078,6 +1113,7 @@ type FUSESetAttrIn struct {
 //
 // +marshal dynamic
 type FUSEUnlinkIn struct {
+	_ structs.HostLayout
 	// Name of the node to unlink.
 	Name CString
 }
@@ -1102,6 +1138,7 @@ func (r *FUSEUnlinkIn) SizeBytes() int {
 //
 // +marshal
 type FUSEFsyncIn struct {
+	_  structs.HostLayout
 	Fh uint64
 
 	FsyncFlags uint32
@@ -1115,6 +1152,7 @@ type FUSEFsyncIn struct {
 //
 // +marshal
 type FUSEAccessIn struct {
+	_    structs.HostLayout
 	Mask uint32
 	// padding
 	_ uint32
@@ -1125,6 +1163,7 @@ type FUSEAccessIn struct {
 //
 // +marshal
 type FUSEFallocateIn struct {
+	_      structs.HostLayout
 	Fh     uint64
 	Offset uint64
 	Length uint64
@@ -1138,6 +1177,7 @@ type FUSEFallocateIn struct {
 //
 // +marshal
 type FUSEFlushIn struct {
+	_         structs.HostLayout
 	Fh        uint64
 	_         uint32 // unused
 	_         uint32 // padding

@@ -132,6 +132,16 @@ func (ins *Instruction) String() string {
 	return s
 }
 
+// RawInstruction returns a linux.BPFInstruction with the given fields.
+func RawInstruction(opCode uint16, jumpIfTrue, jumpIfFalse uint8, k uint32) Instruction {
+	return Instruction{
+		OpCode:      opCode,
+		JumpIfTrue:  jumpIfTrue,
+		JumpIfFalse: jumpIfFalse,
+		K:           k,
+	}
+}
+
 // Stmt returns an Instruction representing a BPF non-jump instruction.
 func Stmt(code uint16, k uint32) Instruction {
 	return Instruction{

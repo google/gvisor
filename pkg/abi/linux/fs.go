@@ -16,6 +16,7 @@ package linux
 
 import (
 	"math"
+	"structs"
 
 	"gvisor.dev/gvisor/pkg/hostarch"
 )
@@ -66,6 +67,7 @@ const (
 //
 // +marshal
 type Statfs struct {
+	_ structs.HostLayout
 	// Type is one of the filesystem magic values, defined above.
 	Type uint64
 

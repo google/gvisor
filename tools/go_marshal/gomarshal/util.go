@@ -65,6 +65,12 @@ func kindString(e ast.Expr) string {
 
 func forEachStructField(st *ast.StructType, fn func(f *ast.Field)) {
 	for _, field := range st.Fields.List {
+		// Ignore structs.HostLayout field if present.
+		if selExpr, ok := field.Type.(*ast.SelectorExpr); ok {
+			if xIdent, ok := selExpr.X.(*ast.Ident); ok && xIdent.Name == "structs" && selExpr.Sel.Name == "HostLayout" {
+				continue
+			}
+		}
 		fn(field)
 	}
 }

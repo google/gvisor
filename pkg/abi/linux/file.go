@@ -17,6 +17,7 @@ package linux
 import (
 	"fmt"
 	"strings"
+	"structs"
 
 	"gvisor.dev/gvisor/pkg/abi"
 )
@@ -284,6 +285,7 @@ const (
 //
 // +marshal boundCheck slice:StatxSlice
 type Statx struct {
+	_              structs.HostLayout
 	Mask           uint32
 	Blksize        uint32
 	Attributes     uint64

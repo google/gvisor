@@ -16,6 +16,10 @@
 // Linux kernel.
 package linux
 
+import (
+	"structs"
+)
+
 // NumSoftIRQ is the number of software IRQs, exposed via /proc/stat.
 //
 // Defined in linux/interrupt.h.
@@ -25,6 +29,7 @@ const NumSoftIRQ = 10
 //
 // +marshal
 type Sysinfo struct {
+	_         structs.HostLayout
 	Uptime    int64
 	Loads     [3]uint64
 	TotalRAM  uint64

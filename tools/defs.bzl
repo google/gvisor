@@ -11,6 +11,7 @@ load("//tools/bazeldefs:go.bzl", _gazelle = "gazelle", _go_binary = "go_binary",
 load("//tools/bazeldefs:pkg.bzl", _pkg_deb = "pkg_deb", _pkg_tar = "pkg_tar")
 load("//tools/bazeldefs:platforms.bzl", _default_platform = "default_platform", _platform_capabilities = "platform_capabilities", _platforms = "platforms", _save_restore_platforms = "save_restore_platforms")
 load("//tools/bazeldefs:tags.bzl", _go_suffixes = "go_suffixes", _local_test_tags = "local_test_tags")
+load("//tools/go_hostlayout:defs.bzl", "go_host_layout_struct_test")
 load("//tools/go_marshal:defs.bzl", "go_marshal", "marshal_deps", "marshal_test_deps")
 load("//tools/go_stateify:defs.bzl", "go_stateify")
 load("//tools/nogo:defs.bzl", "nogo_test")
@@ -134,7 +135,7 @@ def calculate_sets(srcs):
             result[target].append(file)
     return result
 
-def go_library(name, srcs, deps = [], imports = [], stateify = True, force_add_state_pkg = False, marshal = False, marshal_debug = False, nogo = True, **kwargs):
+def go_library(name, srcs, deps = [], imports = [], stateify = True, force_add_state_pkg = False, marshal = False, marshal_debug = False, nogo = True, hostlayout = False, **kwargs):
     """Wraps the standard go_library and does stateification and marshalling.
 
     The recommended way is to use this rule with mostly identical configuration as the native
@@ -233,6 +234,14 @@ def go_library(name, srcs, deps = [], imports = [], stateify = True, force_add_s
             srcs = all_srcs,
             deps = [":" + name],
             tags = ["nogo"],
+        )
+
+    if hostlayout:
+        go_host_layout_struct_test(
+            go_test_rule_func = _go_test,
+            name = name + "_hostlayout_test",
+            srcs = [src for src in srcs if src.endswith(".go")],
+            library = ":" + name,
         )
 
     if marshal:

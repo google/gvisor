@@ -14,6 +14,10 @@
 
 package linux
 
+import (
+	"structs"
+)
+
 // From <linux/futex.h> and <sys/time.h>.
 // Flags are used in syscall futex(2).
 const (
@@ -71,6 +75,7 @@ const ROBUST_LIST_LIMIT = 2048
 //
 // +marshal
 type RobustListHead struct {
+	_             structs.HostLayout
 	List          uint64
 	FutexOffset   uint64
 	ListOpPending uint64

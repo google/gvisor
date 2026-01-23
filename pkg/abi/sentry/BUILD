@@ -11,5 +11,6 @@ go_library(
         "sentry.go",
         "syscall.go",
     ],
+    hostlayout = True,
     visibility = ["//:sandbox"],
 )
