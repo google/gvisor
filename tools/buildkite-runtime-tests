@@ -39,27 +39,13 @@ function cleanup() {
 touch $TEST_CHECK_UP_TO_DATE_FILE
 trap cleanup EXIT
 
-for PARTITION in `seq "$TOTAL_PARTITIONS"`; do
-  export PARTITION
-  if make $cmd-runtime-tests; then
-          continue
-  fi
-  ( cat <<EOF
-  - label: "${BUILDKITE_LABEL} ($PARTITION/$TOTAL_PARTITIONS)"
-    timeout_in_minutes: 30
-    retry:
-      automatic:
-        - exit_status: -1
-          limit: 10
-        - exit_status: "*"
-          limit: 2
-    command: make $cmd-runtime-tests RUNTIME_ARGS="$@"
-    agents:
-      arch: "amd64"
-    env:
-      BUILDKITE_PIPELINE_INSTALL_RUNTIME: true
-      TOTAL_PARTITIONS: $TOTAL_PARTITIONS
-      PARTITION: $PARTITION
-EOF
-  ) |  tee /proc/self/fd/2 |  buildkite-agent pipeline upload
-done
+# Check if any tests need running by checking "all" (1/1).
+if PARTITION=1 TOTAL_PARTITIONS=1 make $cmd-runtime-tests; then
+  exit 0
+fi
+
+( export CMD="$cmd"
+  export RUNTIME_ARGS="$@"
+  export BUILDKITE_LABEL="$BUILDKITE_LABEL"
+  python3 tools/pipeline_generator.py
+) |  buildkite-agent pipeline upload
