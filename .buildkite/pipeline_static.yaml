@@ -68,8 +68,11 @@ env:
   SYSCALL_TEST_FILTERS: ''
 
 steps:
-  # Run basic smoke tests before preceding to other tests.
   - <<: *common
     <<: *docker
     label: ":golang: Go runtime tests"
-    command: "./tools/buildkite-runtime-tests 'go1.22' 5  --directfs"
+    command: make go1.22-runtime-tests RUNTIME_ARGS=--directfs
+    parallelism: 10
+    agents:
+      <<: *platform_specific_agents
+      arch: "amd64"

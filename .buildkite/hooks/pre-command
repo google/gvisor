@@ -177,3 +177,9 @@ if [[ -n "${BUILDKITE_PIPELINE_ID}" ]]; then
     pipeline_add_env SKIP_GPU_TESTS 1
   fi
 fi
+
+export TEST_CHECK_UP_TO_DATE_FILE=/tmp/.gvisor-bazel-test-up-to-date
+
+if [[ -f "$TEST_CHECK_UP_TO_DATE_FILE" ]]; then
+  rm -rf "$TEST_CHECK_UP_TO_DATE_FILE"
+fi
