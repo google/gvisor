@@ -484,6 +484,7 @@ steps:
     command: make website-build
     agents:
       arch: "amd64"
+      kernel: "modern"
 
   # Networking tests.
   - <<: *common
