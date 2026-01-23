@@ -219,9 +219,8 @@ const (
 	// TCPTotalHeaderMaximumSize is the maximum size of headers from all layers in
 	// a TCP packet. It analogous to MAX_TCP_HEADER in Linux.
 	//
-	// TODO(b/319936470): Investigate why this needs to be at least 140 bytes. In
-	// Linux this value is at least 160, but in theory we should be able to use
-	// 138. In practice anything less than 140 starts to break GSO on gVNIC
+	// Note: In Linux this value is at least 160, but in theory we should be able
+	// to use 138. In practice anything less than 140 starts to break GSO on gVNIC
 	// hardware.
 	TCPTotalHeaderMaximumSize = 160
 

@@ -24,7 +24,6 @@ import (
 	"syscall"
 
 	"golang.org/x/sys/unix"
-	"gvisor.dev/gvisor/pkg/hostos"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netfilter"
@@ -320,19 +319,9 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 	fdOffset := 0
 	if len(args.FDBasedLinks) > 0 {
 		// Choose a dispatch mode.
+		// Testing has shown that RecvMMsg is the fastest. Attempts to use
+		// the PacketMMap dispatcher have failed to result in higher throughput.
 		dispatchMode := fdbased.RecvMMsg
-		version, err := hostos.KernelVersion()
-		if err != nil {
-			return err
-		}
-		if version.AtLeast(5, 6) {
-			// TODO(b/333120887): Switch back to using the packet mmap dispatcher when
-			// we have the performance data to justify it.
-			// dispatchMode = fdbased.PacketMMap
-			// log.Infof("Host kernel version >= 5.6, using to packet mmap to dispatch")
-		} else {
-			log.Infof("Host kernel version < 5.6, using to RecvMMsg to dispatch")
-		}
 
 		for _, link := range args.FDBasedLinks {
 			nicID := n.Stack.NextNICID()

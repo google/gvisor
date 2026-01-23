@@ -50,7 +50,6 @@ go_library(
         "//pkg/fspath",
         "//pkg/fsutil",
         "//pkg/gomaxprocs",
-        "//pkg/hostos",
         "//pkg/log",
         "//pkg/memutil",
         "//pkg/metric",
