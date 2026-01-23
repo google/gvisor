@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <errno.h>
+#include <stdint.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
 #include <sys/uio.h>
@@ -52,8 +54,10 @@ TEST(PreadvTest, MMConcurrencyStress) {
   // Repeatedly fork in a separate thread to force the mapping to become
   // copy-on-write.
   std::atomic<bool> done(false);
+  std::atomic<uint64_t> reads(0);
   const ScopedThread t([&] {
     while (!done.load()) {
+      const uint64_t reads_prev = reads.load(std::memory_order_acquire);
       const pid_t pid = fork();
       TEST_CHECK(pid >= 0);
       if (pid == 0) {
@@ -66,6 +70,19 @@ TEST(PreadvTest, MMConcurrencyStress) {
                   SyscallSucceedsWithValue(pid));
       EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0)
           << "status = " << status;
+      // When reads are slow (e.g. the file is FUSE-backed), we can trigger
+      // save/restore cycles (via SyscallSucceedsWithValue above) faster than a
+      // single preadv() can be completed, causing the test to run
+      // indefinitely. Checking for EINTR doesn't solve this, since preadv()
+      // returns -ERESTARTSYS after being interrupted, causing it to
+      // automatically be restarted after save/restore. Avoid this by ensuring
+      // that at least one read is completed between each iteration of this
+      // loop.
+      while (reads.load(std::memory_order_relaxed) == reads_prev) {
+        if (done.load()) {
+          break;
+        }
+      }
     }
   });
 
@@ -78,9 +95,16 @@ TEST(PreadvTest, MMConcurrencyStress) {
   constexpr absl::Duration kTestDuration = absl::Seconds(5);
   const absl::Time end = absl::Now() + kTestDuration;
   while (absl::Now() < end) {
-    // Among other causes, save/restore cycles may cause interruptions resulting
-    // in partial reads, so we don't expect any particular return value.
-    EXPECT_THAT(RetryEINTR(preadv)(fd.get(), iov, 2, 0), SyscallSucceeds());
+    // Among other causes, save/restore cycles may cause interruptions
+    // resulting in partial reads, so we don't expect any particular return
+    // value. We don't use RetryEINTR here because we want to check for
+    // absl::Now() < end between preadv() attempts.
+    int ret = preadv(fd.get(), iov, 2, 0);
+    int errnum = errno;
+    reads.fetch_add(1, std::memory_order_release);
+    if (ret < 0) {
+      EXPECT_EQ(errnum, EINTR);
+    }
   }
 
   // Stop the other thread.
