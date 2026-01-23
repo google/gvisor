@@ -297,9 +297,6 @@ type Config struct {
 	// take during pod creation.
 	PodInitConfig string `flag:"pod-init-config"`
 
-	// Use pools to manage buffer memory instead of heap.
-	BufferPooling bool `flag:"buffer-pooling"`
-
 	// XDP controls Whether and how to use XDP.
 	XDP XDP `flag:"EXPERIMENTAL-xdp"`
 
