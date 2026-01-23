@@ -13,6 +13,7 @@ go_library(
         "config.go",
         "config_bundles.go",
         "flags.go",
+        "flags_graveyard.go",
     ],
     visibility = ["//:sandbox"],
     deps = [

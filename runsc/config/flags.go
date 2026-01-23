@@ -124,15 +124,10 @@ func RegisterFlags(flagSet *flag.FlagSet) {
 		"    'mount' can be 'root' or 'all'\n"+
 		"    'medium' can be 'memory', 'self' or 'dir=/abs/dir/path' in which filestore will be created\n"+
 		"    'size' optional parameter overrides default overlay upper layer size\n")
-	flagSet.Bool("fsgofer-host-uds", false, "DEPRECATED: use host-uds=all")
 	flagSet.Var(hostUDSPtr(HostUDSNone), flagHostUDS, "controls permission to access host Unix-domain sockets. Values: none|open|create|all, default: none")
 	flagSet.Var(hostFifoPtr(HostFifoNone), "host-fifo", "controls permission to access host FIFOs (or named pipes). Values: none|open, default: none")
 	flagSet.Bool("gvisor-marker-file", false, "enable the presence of the /proc/gvisor/kernel_is_gvisor file that can be used by applications to detect that gVisor is in use")
 
-	flagSet.Bool("vfs2", true, "DEPRECATED: this flag has no effect.")
-	flagSet.Bool("fuse", true, "DEPRECATED: this flag has no effect.")
-	flagSet.Bool("lisafs", true, "DEPRECATED: this flag has no effect.")
-	flagSet.Bool("cgroupfs", false, "DEPRECATED: this flag has no effect.")
 	flagSet.Bool("ignore-cgroups", false, "don't configure cgroups.")
 	flagSet.Int("fdlimit", -1, "Specifies a limit on the number of host file descriptors that can be open. Applies separately to the sentry and gofer. Note: each file in the sandbox holds more than one host FD open.")
 	flagSet.Int("dcache", -1, "Set the global dentry cache size. This acts as a coarse-grained control on the number of host FDs simultaneously open by the sentry. If negative, per-mount caches are used.")
@@ -152,7 +147,6 @@ func RegisterFlags(flagSet *flag.FlagSet) {
 	flagSet.Var(queueingDisciplinePtr(QDiscFIFO), "qdisc", "specifies which queueing discipline to apply by default to the non loopback nics used by the sandbox.")
 	flagSet.Int("num-network-channels", 1, "number of underlying channels(FDs) to use for network link endpoints.")
 	flagSet.Int("network-processors-per-channel", 0, "number of goroutines in each channel for processng inbound packets. If 0, the link endpoint will divide GOMAXPROCS evenly among the number of channels specified by num-network-channels.")
-	flagSet.Bool("buffer-pooling", true, "DEPRECATED: this flag has no effect. Buffer pooling is always enabled.")
 	flagSet.Var(&xdpConfig, "EXPERIMENTAL-xdp", `whether and how to use XDP. Can be one of: "off" (default), "ns", "redirect:<device name>", or "tunnel:<device name>"`)
 	flagSet.Bool("EXPERIMENTAL-xdp-need-wakeup", true, "EXPERIMENTAL. Use XDP_USE_NEED_WAKEUP with XDP sockets.") // TODO(b/240191988): Figure out whether this helps and remove it as a flag.
 	flagSet.Bool("reproduce-nat", false, "Scrape the host netns NAT table and reproduce it in the sandbox.")
@@ -162,7 +156,6 @@ func RegisterFlags(flagSet *flag.FlagSet) {
 
 	// Flags that control sandbox runtime behavior: accelerator related.
 	flagSet.Bool("nvproxy", false, "EXPERIMENTAL: enable support for Nvidia GPUs")
-	flagSet.Bool("nvproxy-docker", false, "DEPRECATED: use nvidia-container-runtime or `docker run --gpus` directly. Or manually add nvidia-container-runtime-hook as a prestart hook and set up NVIDIA_VISIBLE_DEVICES container environment variable.")
 	flagSet.String("nvproxy-driver-version", "", "NVIDIA driver ABI version to use. If empty, autodetect installed driver version. The special value 'latest' may also be used to use the latest ABI.")
 	flagSet.String("nvproxy-allowed-driver-capabilities", "utility,compute", "Comma separated list of NVIDIA driver capabilities that are allowed to be requested by the container. If 'all' is specified here, it is resolved to all driver capabilities supported in nvproxy. If 'all' is requested by the container, it is resolved to this list.")
 	flagSet.Bool("tpuproxy", false, "EXPERIMENTAL: enable support for TPU device passthrough.")
@@ -173,6 +166,8 @@ func RegisterFlags(flagSet *flag.FlagSet) {
 	flagSet.Bool("TESTONLY-afs-syscall-panic", false, "TEST ONLY; do not ever use! Used for tests exercising gVisor panic reporting.")
 	flagSet.String("TESTONLY-autosave-image-path", "", "TEST ONLY; enable auto save for syscall tests and set path for state file.")
 	flagSet.Bool("TESTONLY-autosave-resume", false, "TEST ONLY; enable auto save and resume for syscall tests and set path for state file.")
+
+	RegisterDeprecatedFlags(flagSet)
 }
 
 // overrideAllowlist lists all flags that can be changed using OCI
