@@ -1708,7 +1708,7 @@ func (f *MemoryFile) updateUsageLocked(memCgIDs map[uint32]struct{}) error {
 				// Update pages overlapping commitFR, but don't mark ranges as
 				// committed if they might have raced with decommit.
 				for maseg.Ok() && maseg.Start() < commitFR.End {
-					if !maseg.ValuePtr().wasteOrReleasing && !maseg.ValuePtr().knownCommitted && ma.commitSeq <= lastCommitSeq {
+					if ma := maseg.ValuePtr(); !ma.wasteOrReleasing && !ma.knownCommitted && ma.commitSeq <= lastCommitSeq {
 						maseg = f.memAcct.Isolate(maseg, commitFR)
 						ma := maseg.ValuePtr()
 						amount := maseg.Range().Length()
