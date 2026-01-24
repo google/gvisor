@@ -9,17 +9,52 @@ communicate with their respective sentry using the LISAFS protocol.
 Configuring the filesystem provides performance benefits, but isn't the only
 step to optimizing gVisor performance. See the [Production guide] for more.
 
-## Sandbox overlay
+## Filesystem Overlay
 
-To isolate the host filesystem from the sandbox, you can set a writable tmpfs
-overlay on top of the entire filesystem. All modifications are made to the
-overlay, keeping the host filesystem unmodified.
+To isolate the host filesystem from the sandbox, or to make a read-only
+filesystem (like EROFS) writable, you can set a writable tmpfs overlay on top of
+mounts. All modifications are made to the overlay, keeping the underlying
+filesystem unmodified.
 
-> **Note**: All created and modified files are stored in memory inside the
-> sandbox.
+### Backing Mediums
 
-To use the tmpfs overlay, add the following `runtimeArgs` to your Docker
-configuration (`/etc/docker/daemon.json`) and restart the Docker daemon:
+The overlay can be backed by different mediums to manage memory and disk usage:
+
+*   **Memory** (`memory`): The overlay is backed by application memory. This can
+    bloat up container memory usage as all file data is stored in memory.
+*   **Self** (`self`): The overlay is backed by a file within the mount itself
+    (hidden from the application). This is useful to store modifications on disk
+    instead of memory.
+    *   For the root filesystem, the file is created in the container's root
+        (configured via `spec.Root.Path`). This allows Kubernetes to account for
+        the overlay usage against the container's ephemeral storage limits.
+*   **Directory** (`dir=/path`): The overlay is backed by a file in the
+    specified absolute path on the host.
+
+### Global Configuration
+
+To configure the overlay globally for all containers, use the `--overlay2` flag
+with the format `--overlay2={mount}:{medium}[,size={size}]`.
+
+*   `mount`: Can be `root` (root filesystem only) or `all` (all mounts).
+*   `medium`: One of the [backing mediums](#backing-mediums) (`memory`, `self`,
+    `dir=...`).
+*   `size`: (Optional) Limit the size of the tmpfs upper layer (e.g., `2g`).
+
+Examples:
+
+*   `--overlay2=root:self`: Overlay the root filesystem with a file-backed tmpfs
+    stored in the root filesystem itself. This is the default.
+*   `--overlay2=all:memory`: Overlay all mounts with memory-backed tmpfs.
+*   `--overlay2=root:dir=/tmp/overlay`: Overlay the root filesystem with a
+    file-backed tmpfs stored in `/tmp/overlay`.
+
+> **Note**: `self` backed rootfs overlay is typically enabled by default in
+> runsc for performance. If you need to propagate rootfs changes to the host
+> filesystem, disable it with `--overlay2=none`.
+
+To use the tmpfs overlay, update the `runtimeArgs` in your Docker configuration
+(`/etc/docker/daemon.json`) and restart the Docker daemon:
 
 ```json
 {
@@ -33,33 +68,6 @@ configuration (`/etc/docker/daemon.json`) and restart the Docker daemon:
     }
 }
 ```
-
-### Root Filesystem Overlay
-
-Any modifications to the root filesystem is destroyed with the container. So it
-almost always makes sense to apply an overlay on top of the root filesystem.
-This can drastically boost performance, as runsc will handle root filesystem
-changes completely in memory instead of making costly round trips to the gofer
-and make syscalls to modify the host.
-
-However, holding so much file data in memory for the root filesystem can bloat
-up container memory usage. To circumvent this, you can have root mount's upper
-layer (tmpfs) be backed by a host file, so all file data is stored on disk.
-
-The newer `--overlay2` flag allows you to achieve these. You can specify
-`--overlay2=root:self` in `runtimeArgs`. The overlay backing host file will be
-created in the container's root filesystem. This file will be hidden from the
-containerized application. Placing the host file in the container's root
-filesystem is important because k8s scans the container's root filesystem from
-the host to enforce local ephemeral storage limits. You can also place the
-overlay host file in another directory using `--overlay2=root:/path/dir`.
-
-Self-backed rootfs overlay (`--overlay2=root:self`) is enabled by default in
-runsc for performance. If you need to propagate rootfs changes to the host
-filesystem, then disable it with `--overlay2=none`.
-
-Overlay has `size=` option which is passed as `size=` tmpfs mount option. For
-example, `--overlay2=root:memory,size=2g`.
 
 ## Directfs
 
@@ -97,7 +105,7 @@ required.
 
 > Note: External mounts are always shared.
 
-To use set the root filesystem shared, add the following `runtimeArgs` to your
+To set the root filesystem shared, add the following `runtimeArgs` to your
 Docker configuration (`/etc/docker/daemon.json`) and restart the Docker daemon:
 
 ```json
@@ -111,6 +119,63 @@ Docker configuration (`/etc/docker/daemon.json`) and restart the Docker daemon:
        }
     }
 }
+```
+
+## EROFS Support
+
+gVisor supports EROFS (Enhanced Read-Only File System) rootfs and mounts. It is
+a performant read-only filesystem and avoids having to talk to the host
+filesystem (via host syscalls) at all. The EROFS image file is memory mapped
+into the sentry and accessed via memory access by the sentry. It is ideal to
+define your rootfs overlay's lower layer as EROFS. This also allows running
+gVisor in gofer-less mode (given no other gofer mounts exist).
+
+### EROFS rootfs
+
+You can configure the rootfs overlay to have an EROFS lower layer by setting the
+following annotations in the container spec:
+
+```json
+    "annotations": {
+      "dev.gvisor.spec.rootfs.source": "/tmp/container_image.erofs",
+      "dev.gvisor.spec.rootfs.type": "erofs",
+      "dev.gvisor.spec.rootfs.overlay": "memory",
+      "dev.gvisor.spec.rootfs.options": "size=2g"
+    },
+```
+
+The `source` and `type` annotations are required. Other fields:
+
+-   The `overlay` annotation is optional. By default, no overlay will be applied
+    and you will have a read-only rootfs. It accepts one of the
+    [backing mediums](#backing-mediums).
+-   The `options` annotation is optional. It is a comma separated list of
+    options. Currently only `size` option is supported. It can be used to define
+    the size limit of tmpfs upper layer.
+
+### EROFS Mounts
+
+You can specify EROFS using 2 methods:
+
+-   You can start your container with an EROFS mount by adding it in the
+    container spec as a mount:
+
+```json
+    "mounts": [
+    ...
+        {
+            "destination": "/foo",
+            "type": "erofs",
+            "source": "/tmp/foo.erofs"
+        },
+    ...
+    ]
+```
+
+-   You can dynamically add an EROFS mount at runtime:
+
+```
+runsc --root=/path/to/rootdir debug --mount erofs:{source}:{destination}
 ```
 
 [Production guide]: production.md
