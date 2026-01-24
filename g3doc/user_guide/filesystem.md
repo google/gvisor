@@ -121,6 +121,100 @@ Docker configuration (`/etc/docker/daemon.json`) and restart the Docker daemon:
 }
 ```
 
+## Exclusive bind mounts
+
+By default, all bind mounts are served by the gofer in "shared" mode
+(`--file-access-mounts=shared`). In this mode, the gofer continuously
+revalidates its dentry tree against the host filesystem. This is necessary
+because the sandbox cannot assume exclusive access to the bind mounts, as they
+may be observed or mutated by other processes on the host.
+
+If you are confident that **all** bind mounts are exclusive to the sandbox
+(i.e., no external process will modify the files), you can set
+`--file-access-mounts=exclusive`. This enables aggressive caching in the
+sandbox, significantly improving performance by reducing revalidation overhead.
+
+Good candidates for this setting include:
+
+*   **Static Data**: Directories containing immutable files (e.g. ML models,
+    datasets) that are not modified on the host.
+*   **Dedicated Storage**: Directories created specifically for the container
+    that are not accessed by any other host process.
+
+Note that this setting applies to **all** bind mounts within the sandbox. It
+does not apply to the root filesystem, which is configured via the
+`--file-access` flag (see [Shared Root Filesystem](#shared-root-filesystem)).
+
+To enable exclusive access for bind mounts, add the following `runtimeArgs` to
+your Docker configuration (`/etc/docker/daemon.json`) and restart the Docker
+daemon:
+
+```json
+{
+    "runtimes": {
+        "runsc": {
+            "path": "/usr/local/bin/runsc",
+            "runtimeArgs": [
+                "--file-access-mounts=exclusive"
+            ]
+       }
+    }
+}
+```
+
+> **Warning**: Enabling exclusive mode on mounts that are modified externally
+> can lead to data corruption or undefined behavior, as the sandbox may work
+> with stale data.
+
+## Dentry Cache
+
+The gofer client maintains a tree of dentries (directory entries) that mirrors
+the filesystem tree to accelerate path resolution. The **dentry cache** is a
+subset of this tree that holds dentries with zero references. These correspond
+to unreferenced leaf nodes in the filesystem tree (since every dentry holds a
+reference to its parent, the internal nodes always have a reference).
+
+The cache is an LRU cache that retains these unused dentries to prevent them
+from being destroyed immediately. If a future filesystem request accesses the
+same path, we can reuse the existing dentry from the cache instead of recreating
+it, which improves performance.
+
+By default, every gofer mount has its own dentry cache with a size of 1000. This
+can be configured in two ways:
+
+-   **Global Flag**: Passing the `--dcache` flag to `runsc` creates a single,
+    global dentry cache of the specified size that is shared across all gofer
+    mounts. You can specify it in `runtimeArgs`:
+
+```json
+{
+    "runtimes": {
+        "runsc": {
+            "path": "/usr/local/bin/runsc",
+            "runtimeArgs": [
+                "--dcache=5000"
+            ]
+       }
+    }
+}
+```
+
+-   **Mount Option**: The `dcache` mount option can be used to set the cache
+    size on a per-mount basis:
+
+```json
+    "mounts": [
+        {
+            "type": "bind",
+            "source": "/host/path",
+            "destination": "/container/path",
+            "options": [
+                "dcache=500"
+            ]
+        }
+    ]
+```
+
 ## EROFS Support
 
 gVisor supports EROFS (Enhanced Read-Only File System) rootfs and mounts. It is
