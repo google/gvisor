@@ -15,6 +15,8 @@
 package linux
 
 import (
+	"structs"
+
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 )
 
@@ -55,6 +57,7 @@ const (
 //
 // +marshal
 type MsqidDS struct {
+	_         structs.HostLayout
 	MsgPerm   IPCPerm // IPC permissions.
 	MsgStime  TimeT   // Last msgsnd time.
 	MsgRtime  TimeT   // Last msgrcv time.
@@ -72,8 +75,9 @@ type MsqidDS struct {
 //
 // +marshal dynamic
 type MsgBuf struct {
+	_    structs.HostLayout
 	Type primitive.Int64
-	Text primitive.ByteSlice
+	Text primitive.ByteSlice `hostlayout:"ignore"`
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
@@ -97,6 +101,7 @@ func (b *MsgBuf) UnmarshalBytes(src []byte) []byte {
 //
 // +marshal
 type MsgInfo struct {
+	_       structs.HostLayout
 	MsgPool int32
 	MsgMap  int32
 	MsgMax  int32

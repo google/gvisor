@@ -16,6 +16,10 @@
 
 package linux
 
+import (
+	"structs"
+)
+
 // For IOCTLs requests from include/uapi/linux/vfio.h.
 const (
 	VFIO_TYPE = ';'
@@ -131,6 +135,7 @@ var (
 //
 // +marshal
 type VFIODeviceInfo struct {
+	_     structs.HostLayout
 	Argsz uint32
 	Flags uint32
 	// The total amount of regions.
@@ -147,6 +152,7 @@ type VFIODeviceInfo struct {
 //
 // +marshal
 type VFIORegionInfo struct {
+	_     structs.HostLayout
 	Argsz uint32
 	Flags uint32
 	Index uint32
@@ -163,6 +169,7 @@ type VFIORegionInfo struct {
 //
 // +marshal
 type VFIOIrqInfo struct {
+	_     structs.HostLayout
 	Argsz uint32
 	Flags uint32
 	Index uint32
@@ -176,6 +183,7 @@ type VFIOIrqInfo struct {
 //
 // +marshal
 type VFIOIrqSet struct {
+	_     structs.HostLayout
 	Argsz uint32
 	Flags uint32
 	Index uint32
@@ -188,6 +196,7 @@ type VFIOIrqSet struct {
 //
 // +marshal
 type VFIOIommuType1DmaMap struct {
+	_     structs.HostLayout
 	Argsz uint32
 	Flags uint32
 	// Process virtual address.
@@ -203,6 +212,7 @@ type VFIOIommuType1DmaMap struct {
 //
 // +marshal
 type VFIOIommuType1DmaUnmap struct {
+	_     structs.HostLayout
 	Argsz uint32
 	Flags uint32
 	// IO virtual address.

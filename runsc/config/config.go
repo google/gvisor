@@ -43,6 +43,11 @@ import (
 //  5. If adding an enum, follow the same pattern as FileAccessType
 //  6. Evaluate if the flag can be changed with OCI annotations. See
 //     overrideAllowlist for more details
+//
+// Follow these steps to deprecate a flag:
+//  1. Add a field to Config with the prefix "DEPRECATED", or remove the field
+//     if it is no longer needed at all.
+//  2. Add the flag to flags_graveyard.go and remove it from flags.go.
 type Config struct {
 	// RootDir is the runtime root directory.
 	RootDir string `flag:"root"`

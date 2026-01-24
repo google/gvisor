@@ -14,6 +14,10 @@
 
 package linux
 
+import (
+	"structs"
+)
+
 // Default values for POSIX message queues. Source:
 // include/linux/ipc_namespace.h
 const (
@@ -47,6 +51,7 @@ const (
 //
 // +marshal
 type MqAttr struct {
+	_         structs.HostLayout
 	MqFlags   int64    // Message queue flags.
 	MqMaxmsg  int64    // Maximum number of messages.
 	MqMsgsize int64    // Maximum message size.

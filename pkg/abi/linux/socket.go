@@ -15,6 +15,8 @@
 package linux
 
 import (
+	"structs"
+
 	"gvisor.dev/gvisor/pkg/marshal"
 )
 
@@ -174,6 +176,7 @@ const (
 //
 // +marshal
 type TpacketReq struct {
+	_           structs.HostLayout
 	TpBlockSize uint32
 	TpBlockNr   uint32
 	TpFrameSize uint32
@@ -185,6 +188,7 @@ type TpacketReq struct {
 //
 // +marshal
 type TpacketHdr struct {
+	_         structs.HostLayout
 	TpStatus  uint64
 	TpLen     uint32
 	TpSnaplen uint32
@@ -200,6 +204,7 @@ type TpacketHdr struct {
 //
 // +marshal
 type Tpacket2Hdr struct {
+	_          structs.HostLayout
 	TpStatus   uint32
 	TpLen      uint32
 	TpSnaplen  uint32
@@ -217,6 +222,7 @@ type Tpacket2Hdr struct {
 //
 // +marshal
 type TpacketStats struct {
+	_       structs.HostLayout
 	Packets uint32
 	Dropped uint32
 }
@@ -373,6 +379,7 @@ var SizeOfInetAddr = uint32((*InetAddr)(nil).SizeBytes())
 //
 // +marshal
 type SockAddrInet struct {
+	_      structs.HostLayout
 	Family uint16
 	Port   uint16
 	Addr   InetAddr
@@ -383,6 +390,7 @@ type SockAddrInet struct {
 //
 // +marshal
 type Inet6MulticastRequest struct {
+	_              structs.HostLayout
 	MulticastAddr  Inet6Addr
 	InterfaceIndex int32
 }
@@ -391,6 +399,7 @@ type Inet6MulticastRequest struct {
 //
 // +marshal
 type InetMulticastRequest struct {
+	_             structs.HostLayout
 	MulticastAddr InetAddr
 	InterfaceAddr InetAddr
 }
@@ -399,6 +408,7 @@ type InetMulticastRequest struct {
 //
 // +marshal
 type InetMulticastRequestWithNIC struct {
+	_ structs.HostLayout
 	InetMulticastRequest
 	InterfaceIndex int32
 }
@@ -412,6 +422,7 @@ type Inet6Addr [16]byte
 //
 // +marshal
 type SockAddrInet6 struct {
+	_        structs.HostLayout
 	Family   uint16
 	Port     uint16
 	Flowinfo uint32
@@ -423,6 +434,7 @@ type SockAddrInet6 struct {
 //
 // +marshal
 type SockAddrLink struct {
+	_               structs.HostLayout
 	Family          uint16
 	Protocol        uint16
 	InterfaceIndex  int32
@@ -441,6 +453,7 @@ const UnixPathMax = 108
 //
 // +marshal
 type SockAddrUnix struct {
+	_      structs.HostLayout
 	Family uint16
 	Path   [UnixPathMax]int8
 }
@@ -466,6 +479,7 @@ func (s *SockAddrNetlink) implementsSockAddr() {}
 //
 // +marshal
 type Linger struct {
+	_      structs.HostLayout
 	OnOff  int32
 	Linger int32
 }
@@ -482,6 +496,7 @@ const SizeOfLinger = 8
 //
 // +marshal
 type TCPInfo struct {
+	_ structs.HostLayout
 	// State is the state of the connection.
 	State uint8
 
@@ -640,6 +655,7 @@ const (
 //
 // +marshal
 type ControlMessageHeader struct {
+	_      structs.HostLayout
 	Length uint64
 	Level  int32
 	Type   int32
@@ -655,6 +671,7 @@ var SizeOfControlMessageHeader = (*ControlMessageHeader)(nil).SizeBytes()
 //
 // +marshal
 type ControlMessageCredentials struct {
+	_   structs.HostLayout
 	PID int32
 	UID uint32
 	GID uint32
@@ -667,6 +684,7 @@ type ControlMessageCredentials struct {
 // +marshal
 // +stateify savable
 type ControlMessageIPPacketInfo struct {
+	_               structs.HostLayout
 	NIC             int32
 	LocalAddr       InetAddr
 	DestinationAddr InetAddr
@@ -677,6 +695,7 @@ type ControlMessageIPPacketInfo struct {
 // +marshal
 // +stateify savable
 type ControlMessageIPv6PacketInfo struct {
+	_    structs.HostLayout
 	Addr Inet6Addr
 	NIC  uint32
 }
@@ -728,6 +747,7 @@ const SO_ACCEPTCON = 1 << 16
 // +marshal
 // +stateify savable
 type ICMP6Filter struct {
+	_      structs.HostLayout
 	Filter [8]uint32
 }
 

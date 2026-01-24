@@ -14,6 +14,10 @@
 
 package nvgpu
 
+import (
+	"structs"
+)
+
 // From src/nvidia/interface/deprecated/rmapi_deprecated.h:
 const (
 	RM_GSS_LEGACY_MASK = 0x00008000
@@ -38,6 +42,7 @@ const (
 //
 // +marshal
 type NVXXXX_CTRL_XXX_INFO struct {
+	_     structs.HostLayout
 	Index uint32
 	Data  uint32
 }
@@ -86,6 +91,7 @@ const (
 //
 // +marshal
 type NV0000_CTRL_GPU_GET_ID_INFO_PARAMS struct {
+	_                 structs.HostLayout
 	GpuID             uint32
 	GpuFlags          uint32
 	DeviceInstance    uint32
@@ -99,12 +105,14 @@ type NV0000_CTRL_GPU_GET_ID_INFO_PARAMS struct {
 
 // +marshal
 type NV0000_CTRL_GPU_ATTACH_IDS_PARAMS struct {
+	_        structs.HostLayout
 	GPUIDs   [NV0000_CTRL_GPU_MAX_PROBED_GPUS]uint32
 	FailedID uint32
 }
 
 // +marshal
 type NV0000_CTRL_GPU_GET_UUID_FROM_GPU_ID_PARAMS struct {
+	_          structs.HostLayout
 	GPUID      uint32
 	Flags      uint32
 	GPUUUID    [NV0000_GPU_MAX_GID_LENGTH]byte
@@ -139,6 +147,7 @@ const (
 //
 // +marshal
 type NV0000_CTRL_SYSTEM_GET_P2P_CAPS_PARAMS struct {
+	_                  structs.HostLayout
 	GpuIDs             [NV0000_CTRL_SYSTEM_MAX_ATTACHED_GPUS]uint32
 	GpuCount           uint32
 	P2PCaps            uint32
@@ -154,6 +163,7 @@ type NV0000_CTRL_SYSTEM_GET_P2P_CAPS_PARAMS struct {
 //
 // +marshal
 type NV0000_CTRL_SYSTEM_GET_P2P_CAPS_PARAMS_V550 struct {
+	_ structs.HostLayout
 	NV0000_CTRL_SYSTEM_GET_P2P_CAPS_PARAMS
 	BusEgmPeerIDs P64
 }
@@ -172,6 +182,7 @@ const (
 
 // +marshal
 type NV0000_CTRL_OS_UNIX_GET_EXPORT_OBJECT_INFO_PARAMS struct {
+	_              structs.HostLayout
 	FD             int32
 	DeviceInstance uint32
 	MaxObjects     uint16
@@ -191,6 +202,7 @@ func (p *NV0000_CTRL_OS_UNIX_GET_EXPORT_OBJECT_INFO_PARAMS) SetFrontendFD(fd int
 
 // +marshal
 type NV0000_CTRL_OS_UNIX_GET_EXPORT_OBJECT_INFO_PARAMS_V545 struct {
+	_              structs.HostLayout
 	FD             int32
 	DeviceInstance uint32
 	GpuInstanceID  uint32
@@ -211,12 +223,14 @@ func (p *NV0000_CTRL_OS_UNIX_GET_EXPORT_OBJECT_INFO_PARAMS_V545) SetFrontendFD(f
 
 // +marshal
 type NV0000_CTRL_OS_UNIX_EXPORT_OBJECT struct {
+	_    structs.HostLayout
 	Type uint32   // enum NV0000_CTRL_OS_UNIX_EXPORT_OBJECT_TYPE
 	Data [12]byte // union
 }
 
 // +marshal
 type NV0000_CTRL_OS_UNIX_EXPORT_OBJECT_TO_FD_PARAMS struct {
+	_      structs.HostLayout
 	Object NV0000_CTRL_OS_UNIX_EXPORT_OBJECT
 	FD     int32
 	Flags  uint32
@@ -234,6 +248,7 @@ func (p *NV0000_CTRL_OS_UNIX_EXPORT_OBJECT_TO_FD_PARAMS) SetFrontendFD(fd int32)
 
 // +marshal
 type NV0000_CTRL_OS_UNIX_IMPORT_OBJECT_FROM_FD_PARAMS struct {
+	_      structs.HostLayout
 	FD     int32
 	Object NV0000_CTRL_OS_UNIX_EXPORT_OBJECT
 }
@@ -250,6 +265,7 @@ func (p *NV0000_CTRL_OS_UNIX_IMPORT_OBJECT_FROM_FD_PARAMS) SetFrontendFD(fd int3
 
 // +marshal
 type NV0000_CTRL_OS_UNIX_EXPORT_OBJECTS_TO_FD_PARAMS struct {
+	_          structs.HostLayout
 	FD         int32
 	HDevice    Handle
 	MaxObjects uint16
@@ -272,6 +288,7 @@ func (p *NV0000_CTRL_OS_UNIX_EXPORT_OBJECTS_TO_FD_PARAMS) SetFrontendFD(fd int32
 
 // +marshal
 type NV0000_CTRL_OS_UNIX_IMPORT_OBJECTS_FROM_FD_PARAMS struct {
+	_           structs.HostLayout
 	FD          int32
 	HParent     Handle
 	Objects     [NV0000_CTRL_OS_UNIX_IMPORT_OBJECTS_TO_FD_MAX_OBJECTS]Handle
@@ -292,6 +309,7 @@ func (p *NV0000_CTRL_OS_UNIX_IMPORT_OBJECTS_FROM_FD_PARAMS) SetFrontendFD(fd int
 
 // +marshal
 type NV0000_CTRL_SYSTEM_GET_BUILD_VERSION_PARAMS struct {
+	_                        structs.HostLayout
 	SizeOfStrings            uint32
 	Pad                      [4]byte
 	PDriverVersionBuffer     P64
@@ -328,6 +346,7 @@ const (
 
 // +marshal
 type NV0080_CTRL_FIFO_GET_CHANNELLIST_PARAMS struct {
+	_                  structs.HostLayout
 	NumChannels        uint32
 	Pad                [4]byte
 	PChannelHandleList P64
@@ -349,6 +368,7 @@ const (
 //
 // +marshal
 type RmapiParamNvU32List struct {
+	_        structs.HostLayout
 	NumElems uint32
 	Pad      [4]byte
 	List     P64
@@ -369,6 +389,7 @@ const (
 //
 // +marshal
 type NV0080_CTRL_GET_CAPS_PARAMS struct {
+	_           structs.HostLayout
 	CapsTblSize uint32
 	Pad         [4]byte
 	CapsTbl     P64
@@ -376,6 +397,7 @@ type NV0080_CTRL_GET_CAPS_PARAMS struct {
 
 // +marshal
 type NV0080_CTRL_GR_ROUTE_INFO struct {
+	_     structs.HostLayout
 	Flags uint32
 	Pad   [4]byte
 	Route uint64
@@ -391,6 +413,7 @@ const (
 //
 // +marshal
 type NV208F_CTRL_GPU_VERIFY_INFOROM_PARAMS struct {
+	_        structs.HostLayout
 	Result   uint32
 	Checksum uint32
 }
@@ -404,6 +427,7 @@ type NV208F_CTRL_GPU_VERIFY_INFOROM_PARAMS struct {
 //
 // +marshal
 type NvxxxCtrlXxxGetInfoParams struct {
+	_            structs.HostLayout
 	InfoListSize uint32
 	Pad          [4]byte
 	InfoList     P64
@@ -495,6 +519,7 @@ const (
 
 // +marshal
 type NV00FD_CTRL_ATTACH_GPU_PARAMS struct {
+	_             structs.HostLayout
 	HSubDevice    Handle
 	Flags         uint32
 	DevDescriptor uint64
@@ -554,6 +579,7 @@ const (
 
 // +marshal
 type NV2080_CTRL_FIFO_DISABLE_CHANNELS_PARAMS struct {
+	_                      structs.HostLayout
 	BDisable               uint8
 	Pad1                   [3]byte
 	NumChannels            uint32
@@ -619,6 +645,7 @@ const (
 
 // +marshal
 type NV2080_CTRL_GR_GET_INFO_PARAMS struct {
+	_ structs.HostLayout
 	NvxxxCtrlXxxGetInfoParams
 	GRRouteInfo NV0080_CTRL_GR_ROUTE_INFO
 }
@@ -690,6 +717,7 @@ const (
 
 // +marshal
 type NV503C_CTRL_REGISTER_VA_SPACE_PARAMS struct {
+	_            structs.HostLayout
 	HVASpace     Handle
 	Pad          [4]byte
 	VASpaceToken uint64

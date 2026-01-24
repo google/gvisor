@@ -14,6 +14,10 @@
 
 package linux
 
+import (
+	"structs"
+)
+
 // Commands from linux/fcntl.h.
 const (
 	F_DUPFD         = 0
@@ -54,6 +58,7 @@ const (
 //
 // +marshal
 type Flock struct {
+	_      structs.HostLayout
 	Type   int16
 	Whence int16
 	_      [4]byte
@@ -74,6 +79,7 @@ const (
 //
 // +marshal
 type FOwnerEx struct {
+	_    structs.HostLayout
 	Type int32
 	PID  int32
 }

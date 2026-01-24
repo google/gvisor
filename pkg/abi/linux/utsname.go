@@ -17,6 +17,7 @@ package linux
 import (
 	"bytes"
 	"fmt"
+	"structs"
 )
 
 const (
@@ -29,6 +30,7 @@ const (
 //
 // +marshal
 type UtsName struct {
+	_          structs.HostLayout
 	Sysname    [UTSLen + 1]byte
 	Nodename   [UTSLen + 1]byte
 	Release    [UTSLen + 1]byte

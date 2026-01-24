@@ -14,10 +14,15 @@
 
 package linux
 
+import (
+	"structs"
+)
+
 // PollFD is struct pollfd, used by poll(2)/ppoll(2), from uapi/asm-generic/poll.h.
 //
 // +marshal slice:PollFDSlice
 type PollFD struct {
+	_       structs.HostLayout
 	FD      int32
 	Events  int16
 	REvents int16

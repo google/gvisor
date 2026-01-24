@@ -17,6 +17,10 @@
 
 package linux
 
+import (
+	"structs"
+)
+
 // Constants for open(2).
 const (
 	O_DIRECT    = 000040000
@@ -29,6 +33,7 @@ const (
 //
 // +marshal
 type Stat struct {
+	_       structs.HostLayout
 	Dev     uint64
 	Ino     uint64
 	Nlink   uint64

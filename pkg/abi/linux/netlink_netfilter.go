@@ -14,6 +14,10 @@
 
 package linux
 
+import (
+	"structs"
+)
+
 // Group describes Netlink Netfilter groups, from uapi/linux/netfilter/nfnetlink.h.
 // Users bind to specific groups to receive processing logs from those groups.
 type Group uint16
@@ -38,6 +42,7 @@ const (
 //
 // +marshal
 type NetFilterGenMsg struct {
+	_          structs.HostLayout
 	Family     uint8
 	Version    uint8
 	ResourceID uint16

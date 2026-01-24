@@ -14,6 +14,10 @@
 
 package linux
 
+import (
+	"structs"
+)
+
 // Constants for io_uring_setup(2). See include/uapi/linux/io_uring.h.
 const (
 	IORING_SETUP_IOPOLL     = (1 << 0)
@@ -75,6 +79,7 @@ type IORingIndex uint32
 //
 // +marshal
 type IOSqRingOffsets struct {
+	_           structs.HostLayout
 	Head        uint32 // Offset to io_rings.sq.head
 	Tail        uint32 // Offset to io_rings.sq.tail
 	RingMask    uint32 // Offset to io_rings.sq_ring_mask
@@ -92,6 +97,7 @@ type IOSqRingOffsets struct {
 //
 // +marshal
 type IOCqRingOffsets struct {
+	_           structs.HostLayout
 	Head        uint32 // Offset to io_rings.cq.head
 	Tail        uint32 // Offset to io_rings.cq.tail
 	RingMask    uint32 // Offset to io_rings.cq_ring_mask
@@ -108,6 +114,7 @@ type IOCqRingOffsets struct {
 //
 // +marshal
 type IOUringParams struct {
+	_            structs.HostLayout
 	SqEntries    uint32
 	CqEntries    uint32
 	Flags        uint32
@@ -128,6 +135,7 @@ type IOUringParams struct {
 // +marshal
 // +stateify savable
 type IOUringCqe struct {
+	_        structs.HostLayout
 	UserData uint64
 	Res      int32
 	Flags    uint32
@@ -139,6 +147,7 @@ type IOUringCqe struct {
 // +marshal
 // +stateify savable
 type IOUring struct {
+	_ structs.HostLayout
 	// Both head and tail should be cacheline aligned. And we assume that
 	// cacheline size is 64 bytes.
 	Head uint32
@@ -154,6 +163,7 @@ type IOUring struct {
 // +marshal
 // +stateify savable
 type IORings struct {
+	_             structs.HostLayout
 	Sq            IOUring
 	Cq            IOUring
 	SqRingMask    uint32
@@ -177,6 +187,7 @@ type IORings struct {
 // +marshal
 // +stateify savable
 type IOUringSqe struct {
+	_                   structs.HostLayout
 	Opcode              uint8
 	Flags               uint8
 	IoPrio              uint16

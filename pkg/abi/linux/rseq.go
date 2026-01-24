@@ -14,6 +14,10 @@
 
 package linux
 
+import (
+	"structs"
+)
+
 // Flags passed to rseq(2).
 //
 // Defined in include/uapi/linux/rseq.h.
@@ -45,6 +49,7 @@ const (
 //
 // +marshal
 type RSeqCriticalSection struct {
+	_ structs.HostLayout
 	// Version is the version of this structure. Version 0 is defined here.
 	Version uint32
 
@@ -88,6 +93,7 @@ const (
 //
 // In userspace, this structure is always aligned to 32 bytes.
 type RSeq struct {
+	_ structs.HostLayout
 	// CPUIDStart contains the current CPU ID if rseq is initialized.
 	//
 	// This field should only be read by the thread which registered this

@@ -99,6 +99,8 @@ func Run(forEachCmd func(cb func(cmd subcommands.Command, group string), help *H
 		os.Exit(0)
 	}
 
+	config.WarnOnDeprecatedFlagUsage(flag.CommandLine)
+
 	// Create a new Config from the flags.
 	conf, err := config.NewFromFlags(flag.CommandLine)
 	if err != nil {

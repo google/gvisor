@@ -14,6 +14,10 @@
 
 package linux
 
+import (
+	"structs"
+)
+
 // Linux auxiliary vector entry types.
 const (
 	// AT_NULL is the end of the auxiliary vector.
@@ -111,6 +115,7 @@ const (
 //
 // +marshal
 type ElfHeader64 struct {
+	_         structs.HostLayout
 	Ident     [16]byte // File identification.
 	Type      uint16   // File type.
 	Machine   uint16   // Machine architecture.
@@ -131,6 +136,7 @@ type ElfHeader64 struct {
 //
 // +marshal
 type ElfSection64 struct {
+	_         structs.HostLayout
 	Name      uint32 // Section name (index into the section header string table).
 	Type      uint32 // Section type.
 	Flags     uint64 // Section flags.
@@ -147,6 +153,7 @@ type ElfSection64 struct {
 //
 // +marshal
 type ElfProg64 struct {
+	_      structs.HostLayout
 	Type   uint32 // Entry type.
 	Flags  uint32 // Access permission flags.
 	Off    uint64 // File offset of contents.

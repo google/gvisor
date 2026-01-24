@@ -14,6 +14,10 @@
 
 package linux
 
+import (
+	"structs"
+)
+
 // semctl Command Definitions. Source: include/uapi/linux/sem.h
 const (
 	GETPID  = 11
@@ -58,6 +62,7 @@ const (
 //
 // +marshal slice:SembufSlice
 type Sembuf struct {
+	_      structs.HostLayout
 	SemNum uint16
 	SemOp  int16
 	SemFlg int16
@@ -69,6 +74,7 @@ type Sembuf struct {
 //
 // +marshal
 type SemInfo struct {
+	_      structs.HostLayout
 	SemMap uint32
 	SemMni uint32
 	SemMns uint32

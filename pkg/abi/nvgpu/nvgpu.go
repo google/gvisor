@@ -18,6 +18,7 @@ package nvgpu
 
 import (
 	"fmt"
+	"structs"
 )
 
 // Device numbers.
@@ -39,6 +40,7 @@ const (
 // +marshal
 // +stateify savable
 type Handle struct {
+	_   structs.HostLayout
 	Val uint32
 }
 
@@ -70,6 +72,7 @@ const (
 // +marshal
 // +stateify savable
 type RS_ACCESS_MASK struct {
+	_     structs.HostLayout
 	Limbs [SDK_RS_ACCESS_MAX_LIMBS]uint32 // RsAccessLimb
 }
 
@@ -80,6 +83,7 @@ const SDK_RS_ACCESS_MAX_LIMBS = 1
 //
 // +marshal
 type RS_SHARE_POLICY struct {
+	_          structs.HostLayout
 	Target     uint32
 	AccessMask RS_ACCESS_MASK
 	Type       uint16

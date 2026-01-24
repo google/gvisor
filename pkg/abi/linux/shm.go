@@ -14,7 +14,10 @@
 
 package linux
 
-import "math"
+import (
+	"math"
+	"structs"
+)
 
 // shmat(2) flags. Source: include/uapi/linux/shm.h
 const (
@@ -54,6 +57,7 @@ const (
 //
 // +marshal
 type ShmidDS struct {
+	_          structs.HostLayout
 	ShmPerm    IPCPerm
 	ShmSegsz   uint64
 	ShmAtime   TimeT
@@ -71,6 +75,7 @@ type ShmidDS struct {
 //
 // +marshal
 type ShmParams struct {
+	_      structs.HostLayout
 	ShmMax uint64
 	ShmMin uint64
 	ShmMni uint64
@@ -82,6 +87,7 @@ type ShmParams struct {
 //
 // +marshal
 type ShmInfo struct {
+	_             structs.HostLayout
 	UsedIDs       int32 // Number of currently existing segments.
 	_             [4]byte
 	ShmTot        uint64 // Total number of shared memory pages.

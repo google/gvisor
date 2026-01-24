@@ -16,6 +16,7 @@ package linux
 
 import (
 	"math"
+	"structs"
 	"time"
 )
 
@@ -106,6 +107,7 @@ func NsecToTimeT(nsec int64) TimeT {
 //
 // +marshal slice:TimespecSlice
 type Timespec struct {
+	_    structs.HostLayout
 	Sec  int64
 	Nsec int64
 }
@@ -162,6 +164,7 @@ const SizeOfTimeval = 16
 //
 // +marshal slice:TimevalSlice
 type Timeval struct {
+	_    structs.HostLayout
 	Sec  int64
 	Usec int64
 }
@@ -201,6 +204,7 @@ func DurationToTimeval(dur time.Duration) Timeval {
 //
 // +marshal
 type Itimerspec struct {
+	_        structs.HostLayout
 	Interval Timespec
 	Value    Timespec
 }
@@ -214,6 +218,7 @@ type Itimerspec struct {
 //
 // +marshal
 type ItimerVal struct {
+	_        structs.HostLayout
 	Interval Timeval
 	Value    Timeval
 }
@@ -232,6 +237,7 @@ func ClockTFromDuration(d time.Duration) ClockT {
 //
 // +marshal
 type Tms struct {
+	_      structs.HostLayout
 	UTime  ClockT
 	STime  ClockT
 	CUTime ClockT
@@ -248,6 +254,7 @@ type TimerID int32
 //
 // +marshal
 type StatxTimestamp struct {
+	_    structs.HostLayout
 	Sec  int64
 	Nsec uint32
 	_    int32
@@ -283,6 +290,7 @@ func (sxts StatxTimestamp) ToTime() time.Time {
 //
 // +marshal
 type Utime struct {
+	_       structs.HostLayout
 	Actime  int64
 	Modtime int64
 }

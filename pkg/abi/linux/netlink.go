@@ -14,6 +14,10 @@
 
 package linux
 
+import (
+	"structs"
+)
+
 // Netlink protocols, from uapi/linux/netlink.h.
 const (
 	NETLINK_ROUTE          = 0
@@ -43,6 +47,7 @@ const (
 //
 // +marshal
 type SockAddrNetlink struct {
+	_      structs.HostLayout
 	Family uint16
 	_      uint16
 	PortID uint32
@@ -56,6 +61,7 @@ const SockAddrNetlinkSize = 12
 //
 // +marshal
 type NetlinkMessageHeader struct {
+	_      structs.HostLayout
 	Length uint32
 	Type   uint16
 	Flags  uint16
@@ -118,6 +124,7 @@ const NLMSG_ALIGNTO = 4
 //
 // +marshal
 type NetlinkAttrHeader struct {
+	_      structs.HostLayout
 	Length uint16
 	Type   uint16
 }
@@ -181,6 +188,7 @@ const (
 //
 // +marshal
 type NetlinkErrorMessage struct {
+	_      structs.HostLayout
 	Error  int32
 	Header NetlinkMessageHeader
 }

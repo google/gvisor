@@ -17,6 +17,10 @@
 
 package linux
 
+import (
+	"structs"
+)
+
 const (
 	//PSR bits
 	PSR_MODE_EL0t = 0x00000000
@@ -54,6 +58,7 @@ const (
 // +marshal
 // +stateify savable
 type PtraceRegs struct {
+	_      structs.HostLayout
 	Regs   [31]uint64
 	Sp     uint64
 	Pc     uint64

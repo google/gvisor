@@ -15,6 +15,8 @@
 package linux
 
 import (
+	"structs"
+
 	"gvisor.dev/gvisor/pkg/marshal"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 )
@@ -109,6 +111,7 @@ const (
 //
 // +marshal
 type IPTEntry struct {
+	_ structs.HostLayout
 	// IP is used to filter packets based on the IP header.
 	IP IPTIP
 
@@ -148,13 +151,14 @@ const SizeOfIPTEntry = 112
 //
 // +marshal dynamic
 type KernelIPTEntry struct {
+	_     structs.HostLayout
 	Entry IPTEntry
 
 	// Elems holds the data for all this rule's matches followed by the
 	// target. It is variable length -- users have to iterate over any
 	// matches and use TargetOffset and NextOffset to make sense of the
 	// data.
-	Elems primitive.ByteSlice
+	Elems primitive.ByteSlice `hostlayout:"ignore"`
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
@@ -182,6 +186,7 @@ var _ marshal.Marshallable = (*KernelIPTEntry)(nil)
 //
 // +marshal
 type IPTIP struct {
+	_ structs.HostLayout
 	// Src is the source IP address.
 	Src InetAddr
 
@@ -246,6 +251,7 @@ const SizeOfIPTIP = 84
 //
 // +marshal
 type XTCounters struct {
+	_ structs.HostLayout
 	// Pcnt is the packet count.
 	Pcnt uint64
 
@@ -267,6 +273,7 @@ const SizeOfXTCounters = 16
 //
 // +marshal
 type XTEntryMatch struct {
+	_         structs.HostLayout
 	MatchSize uint16
 	Name      ExtensionName
 	Revision  uint8
@@ -281,8 +288,9 @@ const SizeOfXTEntryMatch = 32
 // KernelXTEntryMatch is identical to XTEntryMatch, but contains
 // variable-length Data field.
 type KernelXTEntryMatch struct {
+	_ structs.HostLayout
 	XTEntryMatch
-	Data []byte
+	Data []byte `hostlayout:"ignore"`
 }
 
 // XTGetRevision corresponds to xt_get_revision in
@@ -290,6 +298,7 @@ type KernelXTEntryMatch struct {
 //
 // +marshal
 type XTGetRevision struct {
+	_        structs.HostLayout
 	Name     ExtensionName
 	Revision uint8
 }
@@ -308,6 +317,7 @@ const SizeOfXTGetRevision = 30
 //
 // +marshal
 type XTEntryTarget struct {
+	_          structs.HostLayout
 	TargetSize uint16
 	Name       ExtensionName
 	Revision   uint8
@@ -322,8 +332,9 @@ const SizeOfXTEntryTarget = 32
 // KernelXTEntryTarget is identical to XTEntryTarget, but contains a
 // variable-length Data field.
 type KernelXTEntryTarget struct {
+	_ structs.HostLayout
 	XTEntryTarget
-	Data []byte
+	Data []byte `hostlayout:"ignore"`
 }
 
 // XTStandardTarget is a built-in target, one of ACCEPT, DROP, JUMP, QUEUE,
@@ -332,6 +343,7 @@ type KernelXTEntryTarget struct {
 //
 // +marshal
 type XTStandardTarget struct {
+	_      structs.HostLayout
 	Target XTEntryTarget
 	// A positive verdict indicates a jump, and is the offset from the
 	// start of the table to jump to. A negative value means one of the
@@ -350,6 +362,7 @@ const SizeOfXTStandardTarget = 40
 //
 // +marshal
 type XTErrorTarget struct {
+	_      structs.HostLayout
 	Target XTEntryTarget
 	Name   ErrorName
 	_      [2]byte
@@ -379,6 +392,7 @@ const (
 //
 // +marshal
 type NfNATIPV4Range struct {
+	_       structs.HostLayout
 	Flags   uint32
 	MinIP   [4]byte
 	MaxIP   [4]byte
@@ -391,6 +405,7 @@ type NfNATIPV4Range struct {
 //
 // +marshal
 type NfNATIPV4MultiRangeCompat struct {
+	_         structs.HostLayout
 	RangeSize uint32
 	RangeIPV4 NfNATIPV4Range
 }
@@ -400,6 +415,7 @@ type NfNATIPV4MultiRangeCompat struct {
 //
 // +marshal
 type XTRedirectTarget struct {
+	_       structs.HostLayout
 	Target  XTEntryTarget
 	NfRange NfNATIPV4MultiRangeCompat
 	_       [4]byte
@@ -413,6 +429,7 @@ const SizeOfXTRedirectTarget = 56
 //
 // +marshal
 type XTNATTargetV0 struct {
+	_       structs.HostLayout
 	Target  XTEntryTarget
 	NfRange NfNATIPV4MultiRangeCompat
 	_       [4]byte
@@ -425,6 +442,7 @@ const SizeOfXTNATTargetV0 = 56
 //
 // +marshal
 type XTNATTargetV1 struct {
+	_      structs.HostLayout
 	Target XTEntryTarget
 	Range  NFNATRange
 }
@@ -436,6 +454,7 @@ const SizeOfXTNATTargetV1 = SizeOfXTEntryTarget + SizeOfNFNATRange
 //
 // +marshal
 type XTNATTargetV2 struct {
+	_      structs.HostLayout
 	Target XTEntryTarget
 	Range  NFNATRange2
 }
@@ -448,6 +467,7 @@ const SizeOfXTNATTargetV2 = SizeOfXTEntryTarget + SizeOfNFNATRange2
 //
 // +marshal
 type IPTGetinfo struct {
+	_          structs.HostLayout
 	Name       TableName
 	ValidHooks uint32
 	HookEntry  [NF_INET_NUMHOOKS]uint32
@@ -465,6 +485,7 @@ const SizeOfIPTGetinfo = 84
 //
 // +marshal
 type IPTGetEntries struct {
+	_    structs.HostLayout
 	Name TableName
 	Size uint32
 	_    [4]byte
@@ -482,8 +503,9 @@ const SizeOfIPTGetEntries = 40
 //
 // +marshal dynamic
 type KernelIPTGetEntries struct {
+	_ structs.HostLayout
 	IPTGetEntries
-	Entrytable []KernelIPTEntry
+	Entrytable []KernelIPTEntry `hostlayout:"ignore"`
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
@@ -521,6 +543,7 @@ var _ marshal.Marshallable = (*KernelIPTGetEntries)(nil)
 //
 // +marshal
 type IPTReplace struct {
+	_           structs.HostLayout
 	Name        TableName
 	ValidHooks  uint32
 	NumEntries  uint32
@@ -582,6 +605,7 @@ func goString(cstring []byte) string {
 //
 // +marshal
 type XTTCP struct {
+	_ structs.HostLayout
 	// SourcePortStart specifies the inclusive start of the range of source
 	// ports to which the matcher applies.
 	SourcePortStart uint16
@@ -637,6 +661,7 @@ const (
 //
 // +marshal
 type XTUDP struct {
+	_ structs.HostLayout
 	// SourcePortStart is the inclusive start of the range of source ports
 	// to which the matcher applies.
 	SourcePortStart uint16
@@ -679,6 +704,7 @@ const (
 //
 // +marshal
 type IPTOwnerInfo struct {
+	_ structs.HostLayout
 	// UID is user id which created the packet.
 	UID uint32
 
@@ -711,6 +737,7 @@ const SizeOfIPTOwnerInfo = 34
 //
 // +marshal
 type XTOwnerMatchInfo struct {
+	_      structs.HostLayout
 	UIDMin uint32
 	UIDMax uint32
 	GIDMin uint32
@@ -753,6 +780,7 @@ const (
 //
 // +marshal
 type XTMultiport struct {
+	_ structs.HostLayout
 	// Flags indicates whether the match applies to
 	// source ports, destination ports, or either, as
 	// defined by "enum xt_multiport_flags".
@@ -774,6 +802,7 @@ type XTMultiport struct {
 //
 // +marshal
 type XTMultiportV1 struct {
+	_ structs.HostLayout
 	// Fields same as "XTMultiport".
 	Flags uint8
 	Count uint8
