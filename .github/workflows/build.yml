@@ -28,7 +28,7 @@ jobs:
           make copy TARGETS=runsc DESTINATION=bin/
 
     - name: Upload runsc
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v6
       with:
           name: runsc
           path: bin/runsc
