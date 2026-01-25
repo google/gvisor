@@ -688,14 +688,8 @@ func (rw *regularFileReadWriter) ReadToBlocks(dsts safemem.BlockSeq) (uint64, er
 		mr := memmap.MappableRange{uint64(rw.off), uint64(end)}
 		switch {
 		case seg.Ok():
-			// Get internal mappings.
-			ims, err := rw.file.inode.fs.mf.MapInternal(seg.FileRangeOf(seg.Range().Intersect(mr)), hostarch.Read)
-			if err != nil {
-				return done, err
-			}
+			n, err := rw.readFromMF(seg.FileRangeOf(seg.Range().Intersect(mr)), dsts)
 
-			// Copy from internal mappings.
-			n, err := safemem.CopySeq(dsts, ims)
 			done += n
 			rw.off += uint64(n)
 			dsts = dsts.DropFirst64(n)
@@ -854,6 +848,29 @@ exitLoop:
 	}
 
 	return done, retErr
+}
+
+func (rw *regularFileReadWriter) readFromMF(fr memmap.FileRange, dsts safemem.BlockSeq) (uint64, error) {
+	if rw.file.inode.fs.mf.IsDiskBacked() {
+		// Disk-backed files are not prepopulated. The safemem.CopySeq() approach
+		// used below incurs a lot of page faults without page prepopulation, which
+		// causes a lot of context switching. Use read(2) host syscall instead,
+		// which makes one context switch and faults all the pages that are touched
+		// during the read.
+		return hostfd.Preadv2(
+			int32(rw.file.inode.fs.mf.FD()), // fd
+			dsts.TakeFirst64(fr.Length()),   // dsts
+			int64(fr.Start),                 // offset
+			0,                               // flags
+		)
+	}
+	// Get internal mappings.
+	ims, err := rw.file.inode.fs.mf.MapInternal(fr, hostarch.Read)
+	if err != nil {
+		return 0, err
+	}
+	// Copy from internal mappings.
+	return safemem.CopySeq(dsts, ims)
 }
 
 func (rw *regularFileReadWriter) writeToMF(fr memmap.FileRange, srcs safemem.BlockSeq) (uint64, error) {
