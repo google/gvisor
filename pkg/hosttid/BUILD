@@ -9,10 +9,8 @@ go_library(
     name = "hosttid",
     srcs = [
         "hosttid.go",
-        "hosttid_124_amd64.s",
-        "hosttid_124_arm64.s",
-        "hosttid_125_amd64.s",
-        "hosttid_125_arm64.s",
+        "hosttid_amd64.tmpl.s",
+        "hosttid_arm64.tmpl.s",
     ],
     visibility = ["//visibility:public"],
 )

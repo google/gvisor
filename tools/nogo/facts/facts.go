@@ -26,6 +26,7 @@ import (
 	"archive/zip"
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/types/objectpath"
+	"gvisor.dev/gvisor/tools/checkconst"
 )
 
 // Serializer is used for fact serialization.
@@ -67,12 +68,14 @@ func readItems(r io.Reader) (is []item, err error) {
 // canonical types.Object shared among all packages being analyzed.
 type Package struct {
 	Objects map[types.Object][]analysis.Fact
+	Names   map[string][]analysis.Fact // Used only in decoding.
 }
 
 // NewPackage returns a new set of Package facts.
 func NewPackage() *Package {
 	return &Package{
 		Objects: make(map[types.Object][]analysis.Fact),
+		Names:   make(map[string][]analysis.Fact),
 	}
 }
 
@@ -146,6 +149,9 @@ func (p *Package) ExportFact(obj types.Object, ptr analysis.Fact) {
 
 // ImportFact imports an object fact.
 func (p *Package) ImportFact(obj types.Object, ptr analysis.Fact) bool {
+	// The regular package supports operating as a nil value, and reports
+	// no facts. This is used by the check framework for fastFacts
+	// (presumably when full analysis is not on).
 	if p == nil {
 		return false // No facts.
 	}
@@ -234,7 +240,7 @@ func (b *Bundle) Package(pkg *types.Package) (*Package, error) {
 		// Nothing available.
 		//
 		// N.B. some bundles contain only cached packages.
-		return nil, nil
+		return nil, fmt.Errorf("no facts available for package %q", pkg.Path())
 	}
 
 	// Find based on the reader.
@@ -261,6 +267,95 @@ func (b *Bundle) Package(pkg *types.Package) (*Package, error) {
 
 	// Nothing available.
 	return nil, fmt.Errorf("no facts available for package %q", pkg.Path())
+}
+
+func resolveConstants(pkg *types.Package, localPkg *types.Package, localFacts *Package, allFacts *Bundle) (checkconst.Constants, error) {
+	c := checkconst.Constants{}
+	fact := (analysis.Fact)(&c)
+	var factSource *Package
+	if pkg == localPkg {
+		factSource = localFacts
+	} else {
+		importFacts, err := allFacts.Package(pkg)
+		if err != nil {
+			return c, fmt.Errorf("no facts available for package %q", pkg.Path())
+		}
+		if importFacts == nil {
+			panic("nil importFacts")
+		}
+		factSource = importFacts
+	}
+
+	if ok := factSource.ImportFact(nil, fact); !ok {
+		return c, fmt.Errorf("no Constants fact available for pkg '%s'", pkg.Name())
+	}
+
+	return c, nil
+}
+
+// ResolveFuncs returns a map of functions used to resolve "facts".
+func ResolveFuncs(localPkg *types.Package, localFacts *Package, allFacts *Bundle) (map[string]any, error) {
+	funcMap := map[string]any{
+		// Used to specify facts from other packages.
+		"Import": func(s string) (*types.Package, error) {
+			// Scan the list of all imported packages, and return
+			// a reference to the given one. First we scan for the
+			// fully-qualified name, then we scan for the short name
+			// of the package. This is for convenience.
+			for _, importedPkg := range localPkg.Imports() {
+				if importedPkg.Path() == s {
+					return importedPkg, nil
+				}
+			}
+			for _, importedPkg := range localPkg.Imports() {
+				if importedPkg.Name() == s {
+					return importedPkg, nil
+				}
+			}
+			return nil, fmt.Errorf("no import found for %q", s)
+		},
+		"Constant": func(pkg *types.Package, s string) (string, error) {
+			c, err := resolveConstants(pkg, localPkg, localFacts, allFacts)
+			if err != nil {
+				return "", err
+			}
+			if v, ok := c.Values[s]; ok {
+				return v, nil
+			}
+			return "", fmt.Errorf("could not find Constant '%s' in pkg '%s'", s, pkg.Name())
+		},
+		"Offset": func(pkg *types.Package, s string) (int64, error) {
+			c, err := resolveConstants(pkg, localPkg, localFacts, allFacts)
+			if err != nil {
+				return 0, err
+			}
+			if v, ok := c.Offsets[s]; ok {
+				return v, nil
+			}
+			return 0, fmt.Errorf("could not find Offset of '%s' in pkg '%s'", s, pkg.Name())
+		},
+		"Size": func(pkg *types.Package, s string) (int64, error) {
+			c, err := resolveConstants(pkg, localPkg, localFacts, allFacts)
+			if err != nil {
+				return 0, err
+			}
+			if v, ok := c.Sizes[s]; ok {
+				return v, nil
+			}
+			return 0, fmt.Errorf("could not find Size of '%s' in pkg '%s'", s, pkg.Name())
+		},
+		"Alignment": func(pkg *types.Package, s string) (int64, error) {
+			c, err := resolveConstants(pkg, localPkg, localFacts, allFacts)
+			if err != nil {
+				return 0, err
+			}
+			if v, ok := c.Alignments[s]; ok {
+				return v, nil
+			}
+			return 0, fmt.Errorf("could not find Alignment of '%s' in pkg '%s'", s, pkg.Name())
+		},
+	}
+	return funcMap, nil
 }
 
 func init() {

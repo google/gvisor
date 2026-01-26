@@ -5,8 +5,9 @@ automagically creating cc_ and go_ proto targets) and act as a single point of
 change for Google-internal and bazel-compatible rules.
 """
 
+load("//tools:arch.bzl", "arch_genrule", "arch_transition_impl")
 load("//tools/bazeldefs:cc.bzl", _cc_binary = "cc_binary", _cc_flags_supplier = "cc_flags_supplier", _cc_grpc_library = "cc_grpc_library", _cc_library = "cc_library", _cc_proto_library = "cc_proto_library", _cc_test = "cc_test", _cc_toolchain = "cc_toolchain", _gbenchmark = "gbenchmark", _gbenchmark_internal = "gbenchmark_internal", _grpcpp = "grpcpp", _gtest = "gtest", _select_gtest = "select_gtest")
-load("//tools/bazeldefs:defs.bzl", _BuildSettingInfo = "BuildSettingInfo", _bool_flag = "bool_flag", _bpf_program = "bpf_program", _build_test = "build_test", _bzl_library = "bzl_library", _coreutil = "coreutil", _default_net_util = "default_net_util", _more_shards = "more_shards", _most_shards = "most_shards", _proto_library = "proto_library", _select_system = "select_system", _short_path = "short_path", _version = "version")
+load("//tools/bazeldefs:defs.bzl", _BuildSettingInfo = "BuildSettingInfo", _bool_flag = "bool_flag", _bpf_program = "bpf_program", _build_test = "build_test", _bzl_library = "bzl_library", _coreutil = "coreutil", _default_net_util = "default_net_util", _more_shards = "more_shards", _most_shards = "most_shards", _proto_library = "proto_library", _select_arch = "select_arch", _select_system = "select_system", _short_path = "short_path", _version = "version")
 load("//tools/bazeldefs:go.bzl", _gazelle = "gazelle", _go_binary = "go_binary", _go_cov = "go_cov", _go_grpc_and_proto_libraries = "go_grpc_and_proto_libraries", _go_imports = "go_imports", _go_library = "go_library", _go_path = "go_path", _go_proto_library = "go_proto_library", _go_test = "go_test", _gotsan_flag_values = "gotsan_flag_values", _gotsan_values = "gotsan_values", _select_goarch = "select_goarch", _select_goos = "select_goos")
 load("//tools/bazeldefs:pkg.bzl", _pkg_deb = "pkg_deb", _pkg_tar = "pkg_tar")
 load("//tools/bazeldefs:platforms.bzl", _default_platform = "default_platform", _platform_capabilities = "platform_capabilities", _platforms = "platforms", _save_restore_platforms = "save_restore_platforms")
@@ -14,7 +15,7 @@ load("//tools/bazeldefs:tags.bzl", _go_suffixes = "go_suffixes", _local_test_tag
 load("//tools/go_hostlayout:defs.bzl", "go_host_layout_struct_test")
 load("//tools/go_marshal:defs.bzl", "go_marshal", "marshal_deps", "marshal_test_deps")
 load("//tools/go_stateify:defs.bzl", "go_stateify")
-load("//tools/nogo:defs.bzl", "nogo_test")
+load("//tools/nogo:defs.bzl", "nogo_facts_render", "nogo_test")
 
 # Core rules.
 build_test = _build_test
@@ -22,6 +23,7 @@ bzl_library = _bzl_library
 bool_flag = _bool_flag
 BuildSettingInfo = _BuildSettingInfo
 default_net_util = _default_net_util
+select_arch = _select_arch
 select_system = _select_system
 short_path = _short_path
 coreutil = _coreutil
@@ -144,6 +146,10 @@ def go_library(name, srcs, deps = [], imports = [], stateify = True, force_add_s
     These definitions provide additional flags (stateify, marshal) that can be used
     with the generators to automatically supplement the library code.
 
+    Template rendering is performed on all files that are named with ".tmpl" as part of the
+    file name suffix (e.g.: main.tmpl.go, my_asm_amd64.tmpl.s). Templates are generated
+    per-architecture to avoid depending on architecture-specific derived facts accidentally.
+
     load("//tools:defs.bzl", "go_library")
 
     go_library(
@@ -224,6 +230,56 @@ def go_library(name, srcs, deps = [], imports = [], stateify = True, force_add_s
             for suffix in marshal_sets.keys()
         ]
 
+    # For template rendering, split all the sources into groups of related
+    # files. This will prevent us from generating non-sensical combinations,
+    # e.g.  foo_amd64_arm64.s. In most cases, the select_arch will use only the
+    # default selector.
+    template_srcs = [src for src in all_srcs if ".tmpl." in src]
+    non_template_srcs = [src for src in all_srcs if src not in template_srcs]
+    if len(template_srcs) > 0:
+        split_rules = dict()  # rule => dict(arch => src)
+        arch_suffixes = arch_transition_impl(dict(), dict()).keys()
+        for file in template_srcs:
+            file_base, suffix = file.split(".tmpl.")
+            arch_key = "default"  # Used if no matching arch is set.
+            rule_base = file_base
+            for arch in arch_suffixes:
+                if file_base.endswith(arch):
+                    rule_base = file_base.removesuffix("_" + arch)
+                    arch_key = arch
+            rule_base += "_asm" if suffix == "s" else "_go"
+            if not rule_base in split_rules:
+                split_rules[rule_base] = dict()
+            if arch_key in split_rules[rule_base]:
+                fail("duplicate arch %s found? unable to construct select_arch." % arch_key)
+            split_rules[rule_base][arch_key] = file
+        rendered_srcs = list()
+        for rule_base, arch_dict in split_rules.items():
+            suffix = "s" if rule_base.endswith("_asm") else "go"
+            nogo_facts_render(
+                name = rule_base + "_render",
+                srcs = all_srcs,
+                deps = all_deps,
+                output = rule_base + "_impl." + suffix,
+                format = suffix == "go",
+                template = select_arch(**arch_dict),
+            )
+            if len(arch_dict) == 1 and "default" in arch_dict:
+                # No need to render per-architecture.
+                rendered_srcs.append(":" + rule_base + "_render")
+            else:
+                arch_genrule(
+                    name = rule_base + "_render_arch",
+                    src = ":" + rule_base + "_render",
+                    template = rule_base + "_impl_%s." + suffix,
+                )
+                rendered_srcs.append(":" + rule_base + "_render_arch")
+
+        # Update the sources to reflect the final set. We no longer use the
+        # template_srcs, but switch over to the rendered_srcs.
+        all_srcs = non_template_srcs + rendered_srcs
+
+    # Generate the actual library.
     _go_library(
         name = name,
         srcs = all_srcs,

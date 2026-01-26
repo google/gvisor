@@ -16,12 +16,16 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"go/format"
 	"io"
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
+	"text/template" // NOLINT
 
 	"github.com/google/subcommands"
 	"golang.org/x/term"
@@ -459,12 +463,105 @@ func (f *Filter) Execute(ctx context.Context, fs *flag.FlagSet, args ...any) sub
 	return subcommands.ExitSuccess
 }
 
+// Render implements subcommands.Command for the "render" command.
+type Render struct {
+	Template string
+	Output   string
+	Format   bool
+}
+
+// Name implements subcommands.Command.Name.
+func (*Render) Name() string {
+	return "render"
+}
+
+// Synopsis implements subcommands.Command.Synopsis.
+func (*Render) Synopsis() string {
+	return "Renders facts about a package using a template."
+}
+
+// Usage implements subcommands.Command.Usage.
+func (*Render) Usage() string {
+	return `render <srcs...>
+
+	Loads all data and renders all known facts. Note that render is not
+	currently compatible with binary analyzers, and these facts will not
+	be included (unless they come from dependencies).
+
+`
+}
+
+// SetFlags implements subcommands.Command.SetFlags.
+func (r *Render) SetFlags(fs *flag.FlagSet) {
+	fs.StringVar(&r.Template, "template", "", "text template file for rendering (required)")
+	fs.StringVar(&r.Output, "output", "", "output file for rendering (or empty for stdout)")
+	fs.BoolVar(&r.Format, "format", false, "whether output should be formatted")
+}
+
+// Execute implements subcommands.Command.Execute.
+func (r *Render) Execute(ctx context.Context, fs *flag.FlagSet, args ...any) subcommands.ExitStatus {
+	// Open the output file.
+	output, err := openOutput(r.Output, os.Stdout)
+	if err != nil {
+		return failure("opening output: %v", err)
+	}
+	defer closeOutput(output)
+
+	// Open the input file.
+	//
+	// We run a super primitive preprocessor and replace everything in
+	// between /*->*/ /*<-*/ with the contents of the second comment block.
+	// This is essentially a multi-line regular expression.
+	contents, err := os.ReadFile(r.Template)
+	if err != nil {
+		return failure("unable to read file: %v", err)
+	}
+	replacePattern := regexp.MustCompile("/\\*.*?->\\*/.*?/\\*<-\\s*(.*?)\\s*\\*/")
+	newContents := replacePattern.ReplaceAll(contents, []byte("$1"))
+
+	// Process the facts.
+	funcMap, data, funcErr := check.TemplateFuncs("main", fs.Args())
+	if funcErr != nil {
+		return failure("facts error: %v", funcErr)
+	}
+
+	// Parse the template file.
+	t, err := template.New(path.Base(r.Template)).Funcs(funcMap).Parse(string(newContents))
+	if err != nil {
+		return failure("loading template: %v", err)
+	}
+
+	// Render as a template.
+	var buf bytes.Buffer
+	if err := t.Execute(&buf, data); err != nil {
+		return failure("during render: %v", err)
+	}
+
+	// Format appropriately.
+	if r.Format {
+		newContents, err = format.Source(buf.Bytes())
+		if err != nil {
+			return failure("format error: %v", err)
+		}
+	} else {
+		newContents = buf.Bytes()
+	}
+
+	// Write out the result.
+	if _, err := io.Copy(output, bytes.NewReader(newContents)); err != nil {
+		return failure("output error: %v", err)
+	}
+
+	return subcommands.ExitSuccess
+}
+
 // Main is the main entrypoint.
 func Main() {
 	subcommands.Register(&Check{}, "")
 	subcommands.Register(&Bundle{}, "")
 	subcommands.Register(&Stdlib{}, "")
 	subcommands.Register(&Filter{}, "")
+	subcommands.Register(&Render{}, "")
 	subcommands.Register(subcommands.HelpCommand(), "")
 	subcommands.Register(subcommands.FlagsCommand(), "")
 	flag.CommandLine.Parse(os.Args[1:])

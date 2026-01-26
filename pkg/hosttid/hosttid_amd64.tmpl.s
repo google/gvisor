@@ -12,12 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build go1.25
+//go:build amd64
 
 #include "textflag.h"
 
-#define M_OFFSET       48 // +checkoffset runtime g.m
-#define PROCID_OFFSET  64 // +checkoffset runtime m.procid
+#define M_OFFSET      {{ Offset (Import "runtime") "g.m" }}
+#define PROCID_OFFSET {{ Offset (Import "runtime") "m.procid" }}
 
 TEXT ·Current(SB),NOSPLIT|NOFRAME,$0-8
 	// procid is in getg().m.procid.

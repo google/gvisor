@@ -12,16 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// https://go.dev/cl/669235 (1.25) adds a new schedt field prior to nmspinning.
-// https://go.dev/cl/714800 (1.26) changes size of the schedt.midle field.
-//go:build amd64 && !go1.25 && !go1.26
+//go:build arm64
 
 #include "textflag.h"
 
-#define NMSPINNING_OFFSET 92 // +checkoffset runtime schedt.nmspinning
+#define M_OFFSET      {{ Offset (Import "runtime") "g.m" }}
+#define PROCID_OFFSET {{ Offset (Import "runtime") "m.procid" }}
 
-TEXT ·addrOfSpinning(SB),NOSPLIT|NOFRAME,$0-8
-	LEAQ runtime·sched(SB), AX
-	ADDQ $NMSPINNING_OFFSET, AX
-	MOVQ AX, ret+0(FP)
+TEXT ·Current(SB),NOSPLIT,$0-8
+	// procid is in getg().m.procid.
+	MOVD g, R0      // g
+	MOVD M_OFFSET(R0), R0 // gp.m
+	MOVD PROCID_OFFSET(R0), R0 // mp.procid
+	MOVD R0, ret+0(FP)
 	RET

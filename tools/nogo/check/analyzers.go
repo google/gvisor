@@ -91,6 +91,9 @@ var (
 	// use "findAnalyzer".
 	allAnalyzers = make(map[*analysis.Analyzer]analyzer)
 
+	// renderAnalyzers is a list of analyzers used during template render.
+	renderAnalyzers = make(map[*analysis.Analyzer]analyzer)
+
 	// allFactTypes is a list of all fact types, useful as a filter.
 	allFactTypes = make(map[reflect.Type]bool)
 )
@@ -99,8 +102,8 @@ var (
 //
 // This is guaranteed to work provided allAnalyzers is made into a transitive
 // closure of all known analyzers (see init).
-func findAnalyzer(orig *analysis.Analyzer) analyzer {
-	return allAnalyzers[orig]
+func findAnalyzer(analyzerSet map[*analysis.Analyzer]analyzer, orig *analysis.Analyzer) analyzer {
+	return analyzerSet[orig]
 }
 
 // registerFactType registers an analysis.Fact.
@@ -117,9 +120,9 @@ func registerFactType(f analysis.Fact) {
 }
 
 // register recursively registers an analyzer.
-func register(a analyzer) {
+func register(analyzerSet map[*analysis.Analyzer]analyzer, a analyzer) {
 	// Already registered?
-	if _, ok := allAnalyzers[a.Legacy()]; ok {
+	if _, ok := analyzerSet[a.Legacy()]; ok {
 		return
 	}
 
@@ -130,56 +133,62 @@ func register(a analyzer) {
 
 	// Register dependencies.
 	for _, orig := range a.Legacy().Requires {
-		if findAnalyzer(orig) == nil {
-			register(&plainAnalyzer{orig})
+		if findAnalyzer(analyzerSet, orig) == nil {
+			register(analyzerSet, &plainAnalyzer{orig})
 		}
 	}
 
 	// Save the analyzer.
-	allAnalyzers[a.Legacy()] = a
+	analyzerSet[a.Legacy()] = a
 }
 
 func init() {
 	// Standard & internal analyzers.
-	register(&plainAnalyzer{asmdecl.Analyzer})
-	register(&plainAnalyzer{assign.Analyzer})
-	register(&plainAnalyzer{atomic.Analyzer})
-	register(&plainAnalyzer{bools.Analyzer})
-	register(&plainAnalyzer{buildtag.Analyzer})
-	register(&plainAnalyzer{cgocall.Analyzer})
-	register(&plainAnalyzer{composite.Analyzer})
-	register(&plainAnalyzer{copylock.Analyzer})
-	register(&plainAnalyzer{errorsas.Analyzer})
-	register(&plainAnalyzer{httpresponse.Analyzer})
-	register(&plainAnalyzer{loopclosure.Analyzer})
-	register(&plainAnalyzer{lostcancel.Analyzer})
-	register(&plainAnalyzer{nilfunc.Analyzer})
-	register(&plainAnalyzer{nilness.Analyzer})
-	register(&plainAnalyzer{printf.Analyzer})
-	register(&plainAnalyzer{shift.Analyzer})
-	register(&plainAnalyzer{stdmethods.Analyzer})
-	register(&plainAnalyzer{stringintconv.Analyzer})
-	register(&plainAnalyzer{shadow.Analyzer})
-	register(&plainAnalyzer{structtag.Analyzer})
-	register(&plainAnalyzer{tests.Analyzer})
-	register(&plainAnalyzer{unmarshal.Analyzer})
-	register(&plainAnalyzer{unreachable.Analyzer})
-	register(&plainAnalyzer{unsafeptr.Analyzer})
-	register(&plainAnalyzer{unusedresult.Analyzer})
-	register(checkescape.Analyzer)
-	register(&plainAnalyzer{checkconst.Analyzer})
-	register(&plainAnalyzer{checkunsafe.Analyzer})
-	register(&plainAnalyzer{checklinkname.Analyzer})
-	register(&plainAnalyzer{checklocks.Analyzer})
-	register(&plainAnalyzer{checkaligned.Analyzer})
+	register(allAnalyzers, &plainAnalyzer{asmdecl.Analyzer})
+	register(allAnalyzers, &plainAnalyzer{assign.Analyzer})
+	register(allAnalyzers, &plainAnalyzer{atomic.Analyzer})
+	register(allAnalyzers, &plainAnalyzer{bools.Analyzer})
+	register(allAnalyzers, &plainAnalyzer{buildtag.Analyzer})
+	register(allAnalyzers, &plainAnalyzer{cgocall.Analyzer})
+	register(allAnalyzers, &plainAnalyzer{composite.Analyzer})
+	register(allAnalyzers, &plainAnalyzer{copylock.Analyzer})
+	register(allAnalyzers, &plainAnalyzer{errorsas.Analyzer})
+	register(allAnalyzers, &plainAnalyzer{httpresponse.Analyzer})
+	register(allAnalyzers, &plainAnalyzer{loopclosure.Analyzer})
+	register(allAnalyzers, &plainAnalyzer{lostcancel.Analyzer})
+	register(allAnalyzers, &plainAnalyzer{nilfunc.Analyzer})
+	register(allAnalyzers, &plainAnalyzer{nilness.Analyzer})
+	register(allAnalyzers, &plainAnalyzer{printf.Analyzer})
+	register(allAnalyzers, &plainAnalyzer{shift.Analyzer})
+	register(allAnalyzers, &plainAnalyzer{stdmethods.Analyzer})
+	register(allAnalyzers, &plainAnalyzer{stringintconv.Analyzer})
+	register(allAnalyzers, &plainAnalyzer{shadow.Analyzer})
+	register(allAnalyzers, &plainAnalyzer{structtag.Analyzer})
+	register(allAnalyzers, &plainAnalyzer{tests.Analyzer})
+	register(allAnalyzers, &plainAnalyzer{unmarshal.Analyzer})
+	register(allAnalyzers, &plainAnalyzer{unreachable.Analyzer})
+	register(allAnalyzers, &plainAnalyzer{unsafeptr.Analyzer})
+	register(allAnalyzers, &plainAnalyzer{unusedresult.Analyzer})
+	register(allAnalyzers, checkescape.Analyzer)
+	register(allAnalyzers, &plainAnalyzer{checkconst.Analyzer})
+	register(allAnalyzers, &plainAnalyzer{checkunsafe.Analyzer})
+	register(allAnalyzers, &plainAnalyzer{checklinkname.Analyzer})
+	register(allAnalyzers, &plainAnalyzer{checklocks.Analyzer})
+	register(allAnalyzers, &plainAnalyzer{checkaligned.Analyzer})
 
 	// Add all staticcheck analyzers.
 	for _, a := range staticcheck.Analyzers {
-		register(&plainAnalyzer{a.Analyzer})
+		register(allAnalyzers, &plainAnalyzer{a.Analyzer})
 	}
 
 	// Add all stylecheck analyzers.
 	for _, a := range stylecheck.Analyzers {
-		register(&plainAnalyzer{a.Analyzer})
+		register(allAnalyzers, &plainAnalyzer{a.Analyzer})
+	}
+
+	// Template rendering does not require all analyzers.
+	register(renderAnalyzers, &plainAnalyzer{checkconst.Analyzer})
+	for _, a := range staticcheck.Analyzers {
+		register(renderAnalyzers, &plainAnalyzer{a.Analyzer})
 	}
 }

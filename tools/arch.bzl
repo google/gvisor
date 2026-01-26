@@ -6,14 +6,14 @@ load("//tools/bazeldefs:defs.bzl", _amd64_config = "amd64_config", _arch_config 
 select_arch = _select_arch
 transition_allowlist = _transition_allowlist
 
-def _arch_transition_impl(settings, attr):
+def arch_transition_impl(settings, attr):
     return {
         "arm64": _arm64_config(settings, attr),
         "amd64": _amd64_config(settings, attr),
     }
 
 arch_transition = transition(
-    implementation = _arch_transition_impl,
+    implementation = arch_transition_impl,
     inputs = [],
     outputs = _arch_config,
 )

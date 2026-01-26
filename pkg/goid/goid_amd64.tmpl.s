@@ -12,11 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build go1.25
+//go:build amd64
 
 #include "textflag.h"
 
-#define GOID_OFFSET 152 // +checkoffset runtime g.goid
+#define GOID_OFFSET {{ Offset (Import "runtime") "g.goid" }}
 
 // func goid() int64
 TEXT ·goid(SB),NOSPLIT|NOFRAME,$0-8

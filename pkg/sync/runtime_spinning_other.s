@@ -15,4 +15,10 @@
 //go:build !amd64
 
 // This file is intentionally left blank. Other arches don't use
-// addrOfSpinning, but we still need an input to the nogo template rule.
+// addrOfSpinning, but because this package is partially used in Netstack, we
+// should support arches that aren't amd64 or arm64. Having this file here
+// ensures that `go build` doesn't compile the package with the `-complete`
+// flag, because the package isn't made up of just '.go' files.
+// This allows Netstack to use the architecture-independent portions of this
+// package, because the architecture-dependent portions are never compiled in
+// the first place.

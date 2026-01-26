@@ -27,6 +27,7 @@ import (
 	"go/token"
 	"go/types"
 	"io"
+	"log"
 	"os"
 	"path"
 	"path/filepath"
@@ -119,8 +120,9 @@ type importerEntry struct {
 // files, and the facts. Note that this importer implementation will always
 // pass when a given package is not available.
 type importer struct {
-	fset    *token.FileSet
-	sources map[string][]string
+	fset      *token.FileSet
+	sources   map[string][]string
+	analyzers map[*analysis.Analyzer]analyzer
 
 	// mu protects cache & bundles (see below).
 	mu    sync.Mutex
@@ -417,7 +419,7 @@ func (i *importer) checkPackage(path string, srcs []string) (*types.Package, Fin
 		errs      = make(map[*analysis.Analyzer]error)
 		findings  = make(FindingSet, 0)
 	)
-	for a := range allAnalyzers {
+	for a := range i.analyzers {
 		wg := new(sync.WaitGroup)
 		wg.Add(1) // For analysis.
 		ready[a] = wg
@@ -587,7 +589,7 @@ func (i *importer) checkPackage(path string, srcs []string) (*types.Package, Fin
 				errs[a] = err
 				resultsMu.Unlock()
 			}()
-			found := findAnalyzer(a)
+			found := findAnalyzer(i.analyzers, a)
 			resultsMu.RLock()
 			if ba, ok := found.(binaryAnalyzer); ok {
 				// Load the binary and analyze.
@@ -642,19 +644,30 @@ func (i *importer) checkPackage(path string, srcs []string) (*types.Package, Fin
 	return astPackage, findings, astFacts, nil
 }
 
+func (i *importer) hardImportPackages(pkgs []string) error {
+	for _, pkg := range internalPackages {
+		_, err := i.Import(pkg)
+		if err != nil && err != ErrSkip {
+			return fmt.Errorf("error importing %s: %w", pkg, err)
+		} else if err == ErrSkip {
+			log.Printf("NOTE: Importing '%s' has been skipped; this is likely due to this being a cgo build", pkg)
+		}
+	}
+	return nil
+}
+
 // Package runs all analyzer on a single package.
 func Package(path string, srcs []string) (FindingSet, facts.Serializer, error) {
 	i := &importer{
-		fset:    token.NewFileSet(),
-		cache:   make(map[string]*importerEntry),
-		imports: make(map[string]*types.Package),
+		fset:      token.NewFileSet(),
+		cache:     make(map[string]*importerEntry),
+		imports:   make(map[string]*types.Package),
+		analyzers: allAnalyzers,
 	}
 
 	// See comment on internalPackages.
-	for _, pkg := range internalPackages {
-		if _, err := i.Import(pkg); err != nil {
-			return nil, nil, fmt.Errorf("error importing %s: %w", pkg, err)
-		}
+	if err := i.hardImportPackages(internalPackages); err != nil {
+		return nil, nil, err
 	}
 
 	_, findings, facts, err := i.checkPackage(path, srcs)
@@ -672,9 +685,40 @@ func (i *importer) allFactsAndFindings() (FindingSet, *facts.Bundle) {
 	)
 	for path, entry := range i.cache {
 		findings = append(findings, entry.findings...)
-		allFacts.Add(path, entry.facts)
+		if entry.facts != nil {
+			allFacts.Add(path, entry.facts)
+		}
 	}
 	return findings, allFacts
+}
+
+// TemplateFuncs runs all analyzers necessary for template generation, and
+// returns a funcmap for template rendering.
+//
+// Look at facts.ResolveFuncs for a list of supported functions.
+func TemplateFuncs(path string, srcs []string) (map[string]any, any, error) {
+	i := &importer{
+		fset:      token.NewFileSet(),
+		cache:     make(map[string]*importerEntry),
+		imports:   make(map[string]*types.Package),
+		analyzers: renderAnalyzers,
+	}
+
+	// See comment on internalPackages.
+	if err := i.hardImportPackages(internalPackages); err != nil {
+		return nil, nil, err
+	}
+
+	pkg, _, localFacts, err := i.checkPackage(path, srcs)
+	if err != nil {
+		return nil, nil, err
+	}
+	_, allFacts := i.allFactsAndFindings()
+	funcMap, err := facts.ResolveFuncs(pkg, localFacts, allFacts)
+	if err != nil {
+		return nil, nil, err
+	}
+	return funcMap, pkg, nil
 }
 
 // FindRoots finds a package roots.
@@ -764,10 +808,11 @@ func SplitPackages(srcs []string, srcRootPrefix string) map[string][]string {
 func Bundle(sources map[string][]string) (FindingSet, facts.Serializer, error) {
 	// Process all packages.
 	i := &importer{
-		fset:    token.NewFileSet(),
-		sources: sources,
-		cache:   make(map[string]*importerEntry),
-		imports: make(map[string]*types.Package),
+		fset:      token.NewFileSet(),
+		sources:   sources,
+		cache:     make(map[string]*importerEntry),
+		imports:   make(map[string]*types.Package),
+		analyzers: allAnalyzers,
 	}
 	for pkg := range sources {
 		// Was there an error processing this package?
