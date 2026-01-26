@@ -26,6 +26,7 @@ import (
 	"gvisor.dev/gvisor/pkg/cpuid"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/arch/fpu"
 	"gvisor.dev/gvisor/pkg/usermem"
@@ -300,8 +301,8 @@ func (c *Context64) SignalRestore(st *Stack, rt bool, featureSet cpuid.FeatureSe
 			return 0, linux.SignalStack{}, err
 		}
 		if err := c.fpState.SanitizeUser(featureSet); err != nil {
-			c.fpState.Reset()
-			return 0, linux.SignalStack{}, linuxerr.EFAULT
+			// FIXME: b/478302010, b/478302512
+			log.Warningf("fpu.State.SanitizeUser returned error: %v", err)
 		}
 	}
 

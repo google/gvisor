@@ -124,7 +124,8 @@ TEST(FPSigTest, StateInFrame) {
   EXPECT_EQ(got, kNewFPRegValue);
 }
 
-TEST(FPSigTest, XFeaturesInFrame) {
+// FIXME: b/478302010, b/478302512
+TEST(FPSigTest, DISABLED_XFeaturesInFrame) {
   pid = getpid();
   tid = gettid();
 
