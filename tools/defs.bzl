@@ -164,6 +164,9 @@ def go_library(name, srcs, deps = [], imports = [], stateify = True, force_add_s
       marshal: whether marshal is enabled (default: false).
       marshal_debug: whether the gomarshal tools emits debugging output (default: false).
       nogo: enable nogo analysis.
+      hostlayout: Enforce that all exported structs have
+        `structs.HostLayout` annotations (default: false).
+        Useful for ABI-type structs where bit layout matters.
       **kwargs: standard go_library arguments.
     """
     all_srcs = srcs
