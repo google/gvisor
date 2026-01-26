@@ -49,5 +49,4 @@ func RegisterDeprecatedFlags(flagSet *flag.FlagSet) {
 	deprecatedBool(flagSet, "lisafs", true, "DEPRECATED: this flag has no effect.", time.Date(2027, time.January, 1, 0, 0, 0, 0, time.UTC))
 	deprecatedBool(flagSet, "cgroupfs", false, "DEPRECATED: this flag has no effect.", time.Date(2027, time.January, 1, 0, 0, 0, 0, time.UTC))
 	deprecatedBool(flagSet, "fsgofer-host-uds", false, "DEPRECATED: use host-uds=all", time.Date(2027, time.January, 1, 0, 0, 0, 0, time.UTC))
-	deprecatedBool(flagSet, "nvproxy-docker", false, "DEPRECATED: use nvidia-container-runtime or `docker run --gpus` directly. Or manually add nvidia-container-runtime-hook as a prestart hook and set up NVIDIA_VISIBLE_DEVICES container environment variable.", time.Date(2027, time.January, 1, 0, 0, 0, 0, time.UTC))
 }
