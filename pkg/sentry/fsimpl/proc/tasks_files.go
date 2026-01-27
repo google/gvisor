@@ -285,6 +285,7 @@ func (*meminfoData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 		// Underflow.
 		memFree = 0
 	}
+	dirty, writeback := usage.DirtyMemoryAccounting.Copy()
 	// We use MemFree as MemAvailable because we don't swap.
 	// TODO(rahat): When reclaim is implemented the value of MemAvailable
 	// should change.
@@ -304,8 +305,8 @@ func (*meminfoData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	fmt.Fprintf(buf, "Mlocked:               0 kB\n") // TODO(b/31823263)
 	fmt.Fprintf(buf, "SwapTotal:             0 kB\n")
 	fmt.Fprintf(buf, "SwapFree:              0 kB\n")
-	fmt.Fprintf(buf, "Dirty:                 0 kB\n")
-	fmt.Fprintf(buf, "Writeback:             0 kB\n")
+	fmt.Fprintf(buf, "Dirty:          %8d kB\n", dirty/1024)
+	fmt.Fprintf(buf, "Writeback:      %8d kB\n", writeback/1024)
 	fmt.Fprintf(buf, "AnonPages:      %8d kB\n", anon/1024)
 	fmt.Fprintf(buf, "Mapped:         %8d kB\n", file/1024) // doesn't count mapped tmpfs, which we don't know
 	fmt.Fprintf(buf, "Shmem:          %8d kB\n", snapshot.Tmpfs/1024)

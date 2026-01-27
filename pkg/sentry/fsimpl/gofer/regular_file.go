@@ -865,7 +865,7 @@ func (d *dentry) InvalidateUnsavable(ctx context.Context) error {
 	// because per InvalidateUnsavable invariants, no new translations can have
 	// been returned after we invalidated all existing translations above.
 	d.inode.cache.DropAll(mf)
-	d.inode.dirty.RemoveAll()
+	d.inode.dirty.RemoveAllAndAccount()
 
 	return nil
 }
