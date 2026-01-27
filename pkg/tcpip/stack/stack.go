@@ -902,8 +902,8 @@ type NICOptions struct {
 
 // GetNICByID return a network device associated with the specified ID.
 func (s *Stack) GetNICByID(id tcpip.NICID) (*nic, tcpip.Error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 
 	n, ok := s.nics[id]
 	if !ok {
@@ -1068,8 +1068,8 @@ func (s *Stack) removeNICLocked(id tcpip.NICID, closeLinkEndpoint bool) (func(),
 
 // GetNICCoordinatorID returns the ID of the coordinator device of a NIC.
 func (s *Stack) GetNICCoordinatorID(id tcpip.NICID) (tcpip.NICID, bool) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	if nic, ok := s.nics[id]; ok {
 		if nic.Primary != nil {
 			return nic.Primary.id, true
