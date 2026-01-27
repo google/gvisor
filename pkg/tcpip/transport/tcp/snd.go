@@ -96,6 +96,7 @@ type lossRecovery interface {
 
 // sender holds the state necessary to send TCP segments.
 //
+// +checklocksalias:rc.snd.ep.mu=ep.mu
 // +stateify savable
 type sender struct {
 	// +checklocks:ep.mu
@@ -242,13 +243,13 @@ type rtt struct {
 }
 
 // +checklocks:ep.mu
-func newSender(ep *Endpoint, iss, irs seqnum.Value, sndWnd seqnum.Size, mss uint16, sndWndScale int) *sender {
+func initSender(ep *Endpoint, iss, irs seqnum.Value, sndWnd seqnum.Size, mss uint16, sndWndScale int) {
 	// The sender MUST reduce the TCP data length to account for any IP or
 	// TCP options that it is including in the packets that it sends.
 	// See: https://tools.ietf.org/html/rfc6691#section-2
 	maxPayloadSize := int(mss) - ep.maxOptionSize()
 
-	s := &sender{
+	ep.snd = &sender{
 		ep: ep,
 		TCPSenderState: TCPSenderState{
 			SndWnd:           sndWnd,
@@ -271,59 +272,50 @@ func newSender(ep *Endpoint, iss, irs seqnum.Value, sndWnd seqnum.Size, mss uint
 			set: make(map[*segment]struct{}),
 		},
 	}
-	return newSenderHelper(ep, iss, irs, sndWnd, mss, sndWndScale, maxPayloadSize, s)
-}
 
-// newSenderHelper exists to sate checklocks.
-//
-// +checklocks:ep.mu
-// +checklocksalias:s.ep.mu=ep.mu
-func newSenderHelper(ep *Endpoint, iss, irs seqnum.Value, sndWnd seqnum.Size, mss uint16, sndWndScale int, maxPayloadSize int, s *sender) *sender {
-	if s.gso {
-		s.ep.gso.MSS = uint16(maxPayloadSize)
+	if ep.snd.gso {
+		ep.snd.ep.gso.MSS = uint16(maxPayloadSize)
 	}
 
-	s.cc = s.initCongestionControl(ep.cc)
-	s.lr = s.initLossRecovery()
-	s.rc.init(s, iss)
+	ep.snd.cc = ep.snd.initCongestionControl(ep.cc)
+	ep.snd.lr = ep.snd.initLossRecovery()
+	ep.snd.rc.init(ep.snd, iss)
 
 	// A negative sndWndScale means that no scaling is in use, otherwise we
 	// store the scaling value.
 	if sndWndScale > 0 {
-		s.SndWndScale = uint8(sndWndScale)
+		ep.snd.SndWndScale = uint8(sndWndScale)
 	}
 
-	s.resendTimer.init(s.ep.stack.Clock(), timerHandler(s.ep, s.retransmitTimerExpired))
-	s.reorderTimer.init(s.ep.stack.Clock(), timerHandler(s.ep, s.rc.reorderTimerExpired))
-	s.probeTimer.init(s.ep.stack.Clock(), timerHandler(s.ep, s.probeTimerExpired))
-	s.corkTimer.init(s.ep.stack.Clock(), timerHandler(s.ep, s.corkTimerExpired))
+	ep.snd.resendTimer.init(ep.snd.ep.stack.Clock(), timerHandler(ep.snd.ep, ep.snd.retransmitTimerExpired))
+	ep.snd.reorderTimer.init(ep.snd.ep.stack.Clock(), timerHandler(ep.snd.ep, ep.snd.rc.reorderTimerExpired))
+	ep.snd.probeTimer.init(ep.snd.ep.stack.Clock(), timerHandler(ep.snd.ep, ep.snd.probeTimerExpired))
+	ep.snd.corkTimer.init(ep.snd.ep.stack.Clock(), timerHandler(ep.snd.ep, ep.snd.corkTimerExpired))
 
-	s.updateMaxPayloadSize(int(ep.route.MTU()), 0)
+	ep.snd.updateMaxPayloadSize(int(ep.snd.ep.route.MTU()), 0)
 	// Initialize SACK Scoreboard after updating max payload size as we use
 	// the maxPayloadSize as the smss when determining if a segment is lost
 	// etc.
-	s.ep.scoreboard = NewSACKScoreboard(uint16(s.MaxPayloadSize), iss)
+	ep.snd.ep.scoreboard = NewSACKScoreboard(uint16(ep.snd.MaxPayloadSize), iss)
 
 	// Get Stack wide config.
 	var minRTO tcpip.TCPMinRTOOption
-	if err := ep.stack.TransportProtocolOption(ProtocolNumber, &minRTO); err != nil {
+	if err := ep.snd.ep.stack.TransportProtocolOption(ProtocolNumber, &minRTO); err != nil {
 		panic(fmt.Sprintf("unable to get minRTO from stack: %s", err))
 	}
-	s.minRTO = time.Duration(minRTO)
+	ep.snd.minRTO = time.Duration(minRTO)
 
 	var maxRTO tcpip.TCPMaxRTOOption
-	if err := ep.stack.TransportProtocolOption(ProtocolNumber, &maxRTO); err != nil {
+	if err := ep.snd.ep.stack.TransportProtocolOption(ProtocolNumber, &maxRTO); err != nil {
 		panic(fmt.Sprintf("unable to get maxRTO from stack: %s", err))
 	}
-	s.maxRTO = time.Duration(maxRTO)
+	ep.snd.maxRTO = time.Duration(maxRTO)
 
 	var maxRetries tcpip.TCPMaxRetriesOption
-	if err := ep.stack.TransportProtocolOption(ProtocolNumber, &maxRetries); err != nil {
+	if err := ep.snd.ep.stack.TransportProtocolOption(ProtocolNumber, &maxRetries); err != nil {
 		panic(fmt.Sprintf("unable to get maxRetries from stack: %s", err))
 	}
-	s.maxRetries = uint32(maxRetries)
-
-	return s
+	ep.snd.maxRetries = uint32(maxRetries)
 }
 
 // initCongestionControl initializes the specified congestion control module and
@@ -1518,7 +1510,6 @@ func (s *sender) inRecovery() bool {
 // handleRcvdSegment is called when a segment is received; it is responsible for
 // updating the send-related state.
 // +checklocks:s.ep.mu
-// +checklocksalias:s.rc.snd.ep.mu=s.ep.mu
 func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 	bestRTT := unknownRTT
 
@@ -1822,8 +1813,6 @@ func (s *sender) sendSegment(seg *segment) tcpip.Error {
 // sendSegmentFromPacketBuffer sends a new segment containing the given payload,
 // flags and sequence number.
 // +checklocks:s.ep.mu
-// +checklocksalias:s.ep.rcv.ep.mu=s.ep.mu
-// +checklocksalias:s.ep.rcv.ep.snd.ep.mu=s.ep.mu
 func (s *sender) sendSegmentFromPacketBuffer(pkt *stack.PacketBuffer, flags header.TCPFlags, seq seqnum.Value) tcpip.Error {
 	s.LastSendTime = s.ep.stack.Clock().NowMonotonic()
 	if seq == s.RTTMeasureSeqNum {
@@ -1845,9 +1834,6 @@ func (s *sender) sendSegmentFromPacketBuffer(pkt *stack.PacketBuffer, flags head
 
 // sendEmptySegment sends a new empty segment, flags and sequence number.
 // +checklocks:s.ep.mu
-// +checklocksalias:s.ep.rcv.ep.snd.ep.mu=s.ep.mu
-// +checklocksalias:s.ep.rcv.ep.mu=s.ep.mu
-// +checklocksalias:s.ep.snd.ep.mu=s.ep.mu
 func (s *sender) sendEmptySegment(flags header.TCPFlags, seq seqnum.Value) tcpip.Error {
 	s.LastSendTime = s.ep.stack.Clock().NowMonotonic()
 	if seq == s.RTTMeasureSeqNum {
