@@ -442,6 +442,11 @@ func (d *dentry) Watches() *vfs.Watches {
 // OnZeroWatches implements vfs.DentryImpl.OnZeroWatches.
 func (d *dentry) OnZeroWatches(ctx context.Context) {}
 
+// IsDir implements vfs.DentryImpl.IsDir.
+func (d *dentry) IsDir() bool {
+	return d.inode.IsDir()
+}
+
 func (d *dentry) open(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.OpenOptions) (*vfs.FileDescription, error) {
 	ats := vfs.AccessTypesForOpenFlags(opts)
 	if err := d.inode.checkPermissions(rp.Credentials(), ats); err != nil {
