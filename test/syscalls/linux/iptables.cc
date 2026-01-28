@@ -28,10 +28,16 @@
 #include <unistd.h>
 
 #include <algorithm>
+#include <cerrno>
+#include <memory>
+#include <string>
 
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "test/util/capability_util.h"
 #include "test/util/file_descriptor.h"
+#include "test/util/linux_capability_util.h"
+#include "test/util/posix_error.h"
 #include "test/util/test_util.h"
 
 namespace gvisor {
@@ -267,6 +273,75 @@ TEST_F(IPTablesTest, InitialState) {
 
   free(entries);
 }
+
+struct RequiresCapAdminTestParams {
+  std::string test_name;
+  // socket params
+  struct {
+    int domain;
+    int type;
+    int protocol;
+  } sock_params;
+  // getsockopt params
+  struct {
+    int level;
+    int optname;
+    std::shared_ptr<void> optval;
+    socklen_t optlen;
+  } getsockopt_params;
+};
+
+class RequiresCapAdminTest
+    : public ::testing::TestWithParam<RequiresCapAdminTestParams> {};
+
+TEST_P(RequiresCapAdminTest, AddRuleWithExprRequiresCapAdmin) {
+  const RequiresCapAdminTestParams& params = GetParam();
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+  if (HaveCapability(CAP_NET_ADMIN).ok()) {
+    ASSERT_NO_ERRNO(DropPermittedCapability(CAP_NET_ADMIN));
+  }
+  int sock;
+  ASSERT_THAT(sock = socket(params.sock_params.domain, params.sock_params.type,
+                            params.sock_params.protocol),
+              SyscallSucceeds());
+  socklen_t optlen = params.getsockopt_params.optlen;
+  // When the user doesn't have CAP_NET_ADMIN, we should get EPERM.
+  ASSERT_THAT(getsockopt(sock, params.getsockopt_params.level,
+                         params.getsockopt_params.optname,
+                         params.getsockopt_params.optval.get(), &optlen),
+              SyscallFailsWithErrno(EPERM));
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    RequiresCapAdminTests, RequiresCapAdminTest,
+    ::testing::ValuesIn<RequiresCapAdminTestParams>({
+        {"GetInfo",
+         {AF_INET, SOCK_RAW, IPPROTO_ICMP},
+         {SOL_IP, IPT_SO_GET_INFO, std::make_shared<struct ipt_getinfo>(),
+          sizeof(struct ipt_getinfo)}},
+        {"GetEntries",
+         {AF_INET, SOCK_RAW, IPPROTO_ICMP},
+         {SOL_IP, IPT_SO_GET_ENTRIES,
+          std::make_shared<struct ipt_get_entries>(),
+          sizeof(struct ipt_get_entries)}},
+        {"SetReplace",
+         {AF_INET, SOCK_RAW, IPPROTO_ICMP},
+         {SOL_IP, IPT_SO_SET_REPLACE, std::make_shared<struct ipt_entry>(),
+          sizeof(struct ipt_entry)}},
+        {"GetRevisionTarget",
+         {AF_INET, SOCK_RAW, IPPROTO_ICMP},
+         {SOL_IP, IPT_SO_GET_REVISION_TARGET,
+          std::make_shared<struct xt_get_revision>(),
+          sizeof(struct xt_get_revision) + 1}},
+        {"GetRevisionMatch",
+         {AF_INET, SOCK_RAW, IPPROTO_ICMP},
+         {SOL_IP, IPT_SO_GET_REVISION_MATCH,
+          std::make_shared<struct xt_get_revision>(),
+          sizeof(struct xt_get_revision)}},
+    }),
+    [](const ::testing::TestParamInfo<RequiresCapAdminTest::ParamType>& info) {
+      return info.param.test_name;
+    });
 
 }  // namespace
 
