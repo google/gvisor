@@ -708,7 +708,7 @@ func (k *Kernel) SaveTo(ctx context.Context, stateFile, pagesMetadata io.WriteCl
 		// Pause the network stack.
 		netstackPauseStart := time.Now()
 		if !resume {
-			k.rootNetworkNamespace.Stack().SetRemoveNICs()
+			k.rootNetworkNamespace.Stack().SetRemoveConf()
 		}
 		log.Infof("Pausing root network namespace")
 		k.rootNetworkNamespace.Stack().Pause()

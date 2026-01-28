@@ -33,7 +33,7 @@ var logDisconnectOnce sync.Once
 
 func logDisconnect() {
 	logDisconnectOnce.Do(func() {
-		log.Infof("One or more TCP connections terminated during save")
+		log.Infof("One or more TCP connections terminated during save restore")
 	})
 }
 
@@ -49,7 +49,8 @@ func (e *Endpoint) beforeSave() {
 	switch {
 	case epState == StateInitial || epState == StateBound:
 	case epState.connected() || epState.handshake():
-		if !e.route.HasSaveRestoreCapability() {
+		// Terminate valid connections only for restore.
+		if !e.route.HasSaveRestoreCapability() && e.stack.GetRemoveConf() {
 			logDisconnect()
 			e.resetConnectionLocked(&tcpip.ErrConnectionAborted{})
 			e.mu.Unlock()

@@ -26,7 +26,7 @@ import (
 func (s *Stack) beforeSave() {
 	// removeNICs will be set only in case of save/restore.
 	s.mu.Lock()
-	if !s.removeNICs {
+	if !s.removeConf {
 		s.mu.Unlock()
 		return
 	}
