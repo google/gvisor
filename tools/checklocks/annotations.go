@@ -86,17 +86,41 @@ func (pc *passContext) addForce(pos token.Pos) {
 
 // maybeFail checks a potential failure against a specific failure map.
 func (pc *passContext) maybeFail(pos token.Pos, fmtStr string, args ...any) {
-	if fd, ok := pc.failures[pc.positionKey(pos)]; ok {
+	// Build the message string to allow deduplication.
+	msg := fmt.Sprintf(fmtStr, args...)
+
+	origPos := pos
+	reportPos := pos
+	if !pos.IsValid() && pc.curFn != nil {
+		reportPos = pc.curFn.Pos()
+	}
+
+	key := pc.positionKey(origPos)
+
+	// Deduplicate: if we already reported this exact message for the same
+	// position key, ignore subsequent identical diagnostics so they donʼt
+	// affect failure-count logic.
+	if seenMsgs, ok := pc.reported[key]; ok {
+		if _, dup := seenMsgs[msg]; dup {
+			return
+		}
+	} else {
+		pc.reported[key] = make(map[string]struct{})
+	}
+
+	pc.reported[key][msg] = struct{}{}
+
+	if fd, ok := pc.failures[key]; ok {
 		fd.seen++
 		return
 	}
-	if _, ok := pc.exemptions[pc.positionKey(pos)]; ok {
+	if _, ok := pc.exemptions[key]; ok {
 		return // Ignored, not counted.
 	}
-	if !enableWrappers && !pos.IsValid() {
+	if !enableWrappers && !origPos.IsValid() {
 		return // Ignored, implicit.
 	}
-	pc.pass.Reportf(pos, fmtStr, args...)
+	pc.pass.Reportf(reportPos, fmtStr, args...)
 }
 
 // checkFailure checks for the expected failure counts.

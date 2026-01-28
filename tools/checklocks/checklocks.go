@@ -73,7 +73,9 @@ type passContext struct {
 	failures     map[positionKey]*failData
 	exemptions   map[positionKey]struct{}
 	forced       map[positionKey]struct{}
+	reported     map[positionKey]map[string]struct{}
 	functions    map[*ssa.Function]struct{}
+	curFn        *ssa.Function
 	observations map[types.Object]*objectObservations
 }
 
@@ -144,6 +146,7 @@ func run(pass *analysis.Pass) (any, error) {
 		exemptions: make(map[positionKey]struct{}),
 		forced:     make(map[positionKey]struct{}),
 		functions:  make(map[*ssa.Function]struct{}),
+		reported:   make(map[positionKey]map[string]struct{}),
 	}
 
 	// Find all line failure annotations.
