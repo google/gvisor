@@ -31,6 +31,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
+	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
@@ -683,6 +684,17 @@ func (fd *regularFileFD) ConfigureMMap(ctx context.Context, opts *memmap.MMapOpt
 			}
 		default:
 			panic(fmt.Sprintf("unknown InteropMode %v", d.inode.fs.opts.interop))
+		}
+		if opts.Perms.Any() && !d.fs.opts.forcePageCache && !d.fs.opts.limitHostFDTranslation && d.mmapFD.Load() >= 0 {
+			// d.Translate() will inexpensively return d.mmapFD ...
+			if p := platform.FromContext(ctx); p != nil && p.MapUnit() == 0 {
+				// ... and platform.AddressSpace.MapFile() will inexpensively
+				// map it. Ask MM to map the whole VMA immediately, which will
+				// probably save a page fault.
+				if opts.PlatformEffect < memmap.PlatformEffectPopulate {
+					opts.PlatformEffect = memmap.PlatformEffectPopulate
+				}
+			}
 		}
 	}
 	// After this point, d may be used as a memmap.Mappable.
