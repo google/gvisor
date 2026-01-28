@@ -77,7 +77,7 @@ func TestRust(t *testing.T) {
 		Image: "basic/rust",
 	})
 	if err != nil {
-		t.Fatalf("docker run failed: %v", err)
+		t.Fatalf("docker run failed: %v, docker logs: %v", err, out)
 	}
 
 	// Check the output.
@@ -161,7 +161,7 @@ func TestHttpd(t *testing.T) {
 
 	// Wait until it's up and running.
 	if err := testutil.WaitForHTTP(ip.String(), port, defaultWait); err != nil {
-		t.Errorf("WaitForHTTP() timeout: %v", err)
+		t.Errorf("WaitForHTTP() timeout: %v, docker logs: %v", err, dockerLogs(ctx, d))
 	}
 
 	testHTTPServer(t, ip.String(), port)
@@ -190,7 +190,7 @@ func TestNginx(t *testing.T) {
 
 	// Wait until it's up and running.
 	if err := testutil.WaitForHTTP(ip.String(), port, defaultWait); err != nil {
-		t.Errorf("WaitForHTTP() timeout: %v", err)
+		t.Errorf("WaitForHTTP() timeout: %v, docker logs: %v", err, dockerLogs(ctx, d))
 	}
 
 	testHTTPServer(t, ip.String(), port)
@@ -214,7 +214,7 @@ func TestMysql(t *testing.T) {
 
 	// Wait until it's up and running.
 	if _, err := server.WaitForOutput(ctx, "port: 3306  MySQL Community Server", defaultWait); err != nil {
-		t.Fatalf("WaitForOutput() timeout: %v", err)
+		t.Fatalf("WaitForOutput() timeout: %v, docker logs: %v", err, dockerLogs(ctx, server))
 	}
 
 	// Generate the client and copy in the SQL payload.
@@ -228,13 +228,13 @@ func TestMysql(t *testing.T) {
 		Links: []string{server.MakeLink("mysql")},
 	}
 	client.CopyFiles(&opts, "/sql", "test/image/mysql.sql")
-	if _, err := client.Run(ctx, opts, "mysql", "-hmysql", "-uroot", "-pfoobar123", "-v", "-e", "source /sql/mysql.sql"); err != nil {
-		t.Fatalf("docker run failed: %v", err)
+	if out, err := client.Run(ctx, opts, "mysql", "-hmysql", "-uroot", "-pfoobar123", "-v", "-e", "source /sql/mysql.sql"); err != nil {
+		t.Fatalf("docker run failed: %v, docker logs: %v", err, out)
 	}
 
 	// Ensure file executed to the end and shutdown mysql.
 	if _, err := server.WaitForOutput(ctx, "mysqld: Shutdown complete", defaultWait); err != nil {
-		t.Fatalf("WaitForOutput() timeout: %v", err)
+		t.Fatalf("WaitForOutput() timeout: %v, client logs: %v, server logs: %v", err, dockerLogs(ctx, client), dockerLogs(ctx, server))
 	}
 }
 
@@ -259,17 +259,17 @@ func TestTomcat(t *testing.T) {
 
 	// Wait until it's up and running.
 	if err := testutil.WaitForHTTP(ip.String(), port, defaultWait); err != nil {
-		t.Fatalf("WaitForHTTP() timeout: %v", err)
+		t.Fatalf("WaitForHTTP() timeout: %v, docker logs: %v", err, dockerLogs(ctx, d))
 	}
 
 	// Ensure that content is being served.
 	url := fmt.Sprintf("http://%s:%d", ip.String(), port)
 	resp, err := http.Get(url)
 	if err != nil {
-		t.Errorf("Error reaching http server: %v", err)
+		t.Errorf("Error reaching http server: %v, docker logs: %v", err, dockerLogs(ctx, d))
 	}
 	if want := http.StatusOK; resp.StatusCode != want {
-		t.Errorf("Wrong response code, got: %d, want: %d", resp.StatusCode, want)
+		t.Errorf("Wrong response code, got: %d, want: %d, docker logs: %v", resp.StatusCode, want, dockerLogs(ctx, d))
 	}
 }
 
@@ -341,7 +341,7 @@ func TestStdio(t *testing.T) {
 
 	for _, want := range []string{wantStdout, wantStderr} {
 		if _, err := d.WaitForOutput(ctx, want, defaultWait); err != nil {
-			t.Fatalf("docker didn't get output %q : %v", want, err)
+			t.Fatalf("docker didn't get output %q : %v, docker logs: %v", want, err, dockerLogs(ctx, d))
 		}
 	}
 }
@@ -368,52 +368,52 @@ func TestTcpdump(t *testing.T) {
 	cmd := "tcpdump -c 2 -i lo port 9999"
 	tcpdumpProc, err := d.ExecProcess(ctx, dockerutil.ExecOpts{}, "/bin/sh", "-c", cmd)
 	if err != nil {
-		t.Fatalf("docker run failed: %v", err)
+		t.Fatalf("docker run failed: %v, docker logs: %v", err, dockerLogs(ctx, d))
 	}
 	cmd = "python3 sender.py"
 	senderProc, err := d.ExecProcess(ctx, dockerutil.ExecOpts{}, "/bin/sh", "-c", cmd)
 	if err != nil {
-		t.Fatalf("docker exec failed: %v", err)
+		t.Fatalf("docker exec failed: %v, docker logs: %v", err, dockerLogs(ctx, d))
 	}
 
 	if status, err := senderProc.WaitExitStatus(ctx); err != nil || status != 0 {
-		t.Fatalf("docker exec failed: %v, status: %d", err, status)
+		t.Fatalf("docker exec failed: %v, status: %d, docker logs: %v", err, status, dockerLogs(ctx, d))
 	}
 	if status, err := tcpdumpProc.WaitExitStatus(ctx); err != nil || status != 0 {
-		t.Fatalf("docker exec failed: %v, status: %d", err, status)
+		t.Fatalf("docker exec failed: %v, status: %d, docker logs: %v", err, status, dockerLogs(ctx, d))
 	}
 	expectedOutputStr1 := "IP localhost.9999 > localhost.9999: UDP, length 4"
 	logs, err := tcpdumpProc.Logs()
 	if err != nil {
-		t.Fatalf("docker exec failed: %v", err)
+		t.Fatalf("docker exec failed: %v, docker logs: %v", err, dockerLogs(ctx, d))
 	}
 	if !strings.Contains(logs, expectedOutputStr1) {
-		t.Fatalf("docker didn't get output: %q, got: %q", expectedOutputStr1, logs)
+		t.Fatalf("docker didn't get output: %q, got: %q, docker logs: %v", expectedOutputStr1, logs, dockerLogs(ctx, d))
 	}
 	expectedOutputStr2 := "IP localhost.9999 > localhost.9999: UDP, length 8"
 	if !strings.Contains(logs, expectedOutputStr2) {
-		t.Fatalf("docker didn't get output: %q, got: %q", expectedOutputStr2, logs)
+		t.Fatalf("docker didn't get output: %q, got: %q, docker logs: %v", expectedOutputStr2, logs, dockerLogs(ctx, d))
 	}
 
 	// Check that `any` also works to guard against b/411198401.
 	cmd = "tcpdump -c 2 -i any port 9999"
 	tcpdumpProc, err = d.ExecProcess(ctx, dockerutil.ExecOpts{}, "/bin/sh", "-c", cmd)
 	if err != nil {
-		t.Fatalf("docker run failed: %v", err)
+		t.Fatalf("docker run failed: %v, docker logs: %v", err, dockerLogs(ctx, d))
 	}
 	cmd = "python3 sender.py"
 	senderProc, err = d.ExecProcess(ctx, dockerutil.ExecOpts{}, "/bin/sh", "-c", cmd)
 	if err != nil {
-		t.Fatalf("docker exec failed: %v", err)
+		t.Fatalf("docker exec failed: %v, docker logs: %v", err, dockerLogs(ctx, d))
 	}
 
 	// We make no assertions about the output because we might catch host packets
 	// too: we only rely on tcpdump's exit status.
 	if status, err := tcpdumpProc.WaitExitStatus(ctx); err != nil || status != 0 {
-		t.Fatalf("docker exec failed: %v, status: %d", err, status)
+		t.Fatalf("docker exec failed: %v, status: %d, docker logs: %v", err, status, dockerLogs(ctx, d))
 	}
 	if status, err := senderProc.WaitExitStatus(ctx); err != nil || status != 0 {
-		t.Fatalf("docker exec failed: %v, status: %d", err, status)
+		t.Fatalf("docker exec failed: %v, status: %d, docker logs: %v", err, status, dockerLogs(ctx, d))
 	}
 }
 
@@ -563,14 +563,21 @@ func startDockerdInGvisor(ctx context.Context, t *testing.T, overlay bool) *dock
 	}
 
 	// Wait for the docker daemon.
-	for i := 0; i < 10; i++ {
-		_, err := d.Exec(ctx, dockerutil.ExecOpts{}, "docker", "info")
+	var out string
+	retryFunc := func() error {
+		var err error
+		out, err = d.Exec(ctx, dockerutil.ExecOpts{}, "docker", "info")
 		if err != nil {
-			t.Logf("docker exec failed: %v", err)
-			time.Sleep(5 * time.Second)
-			continue
+			return fmt.Errorf("docker exec failed: %v", err)
 		}
-		break
+		return nil
+	}
+
+	// Retry up to 10 times, with a 5-second delay between attempts.
+	// backoff.WithMaxRetries(b, 9) means 1 initial attempt + 9 retries.
+	bo := backoff.WithMaxRetries(backoff.NewConstantBackOff(5*time.Second), 9)
+	if err := backoff.Retry(retryFunc, bo); err != nil {
+		t.Fatalf("docker daemon not ready after 10 attempts. Last output: %v, error: %v", out, err)
 	}
 	return d
 }
@@ -671,15 +678,24 @@ func testDockerExec(ctx context.Context, t *testing.T, d *dockerutil.Container, 
 		}
 	}()
 
-	for i := 0; i < 10; i++ {
-		inspectOutput, err := dockerInGvisorExecOutput(ctx, d, []string{"docker", "container", "inspect", containerName})
+	var inspectOutput string
+	retryFunc := func() error {
+		var err error
+		inspectOutput, err = dockerInGvisorExecOutput(ctx, d, []string{"docker", "container", "inspect", containerName})
 		if err != nil {
-			t.Fatalf("docker exec failed: %v", err)
+			return fmt.Errorf("docker exec failed: %v", err)
 		}
-		if strings.Contains(inspectOutput, "\"Status\": \"running\"") {
-			break
+		if !strings.Contains(inspectOutput, "\"Status\": \"running\"") {
+			return fmt.Errorf("container status is not 'running'")
 		}
-		time.Sleep(5 * time.Second)
+		return nil // Success
+	}
+
+	// Retry up to 10 times, with a 5-second delay between attempts.
+	// backoff.WithMaxRetries(b, 9) means 1 initial attempt + 9 retries.
+	bo := backoff.WithMaxRetries(backoff.NewConstantBackOff(5*time.Second), 9)
+	if err := backoff.Retry(retryFunc, bo); err != nil {
+		t.Fatalf("docker container %s not ready: %v, last output: %v", containerName, err, inspectOutput)
 	}
 
 	execCmd := []string{"docker", "exec"}
@@ -745,10 +761,26 @@ func testDockerComposeBuild(ctx context.Context, t *testing.T, d *dockerutil.Con
 		t.Fatalf("docker compose build failed: %v", err)
 	}
 	defer removeDockerImage(ctx, imageName, d)
-	d.WaitForOutput(ctx, fmt.Sprintf("%s  Built", imageName), defaultWait)
-	if err := checkDockerImage(ctx, imageName, d); err != nil {
-		t.Fatalf("failed to find docker image: %v", err)
+
+	// 2. Instead of waiting for a "Built" string, poll for the image existence.
+	// This is more resilient to UI changes in Docker Compose.
+	err = testutil.Poll(func() error {
+		return checkDockerImage(ctx, imageName, d)
+	}, 5*time.Second)
+
+	if err != nil {
+		t.Fatalf("image %s was not created after build: %v, docker logs: %v", imageName, err, dockerLogs(ctx, d))
 	}
+
+	// want := fmt.Sprintf("%s Built", imageName)
+	// _, err = d.WaitForOutput(ctx, want, 2*defaultWait)
+	// if err != nil {
+	// 	// t.Fatalf("failed to find %q in the logs: %v, docker logs: %v", want, err, dockerLogs(ctx, d))
+	// 	t.Logf("failed to find %q in the logs: %v, docker logs: %v", want, err, dockerLogs(ctx, d))
+	// }
+	// if err := checkDockerImage(ctx, imageName, d); err != nil {
+	// 	t.Fatalf("failed to find docker image: %v", err)
+	// }
 }
 
 func testDockerComposeRun(ctx context.Context, t *testing.T, d *dockerutil.Container, opts dockerCommandOptions) {
