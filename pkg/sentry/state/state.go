@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"time"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
@@ -30,6 +31,11 @@ import (
 )
 
 var previousMetadata map[string]string
+
+const (
+	GvisorCPUUsageKey = "gvisor_cpu_usage"
+	GvisorWallTimeKey = "gvisor_wall_time"
+)
 
 // SaveOpts contains save-related options.
 type SaveOpts struct {
@@ -60,6 +66,9 @@ type SaveOpts struct {
 
 	// Autosave indicates if the statefile is used for autosave.
 	Autosave bool
+
+	// StartTime stores the start time of the sandbox.
+	StartTime time.Time
 }
 
 // Close releases resources owned by opts.
@@ -79,8 +88,21 @@ func (opts *SaveOpts) Close() error {
 
 // Save saves the system state.
 func (opts *SaveOpts) Save(ctx context.Context, k *kernel.Kernel, w *watchdog.Watchdog) error {
-	t, _ := CPUTime()
+	t, err := CPUTime()
+	if err != nil {
+		log.Warningf("Error getting cpu time: %v", err)
+	}
 	log.Infof("Before save CPU usage: %s", t.String())
+
+	// Get the current time before save to calculate wall time.
+	var wt time.Duration
+	curTime := time.Now()
+	if opts.StartTime.IsZero() {
+		log.Warningf("Cannot calculate wall time as start time is not available")
+	} else {
+		wt = curTime.Sub(opts.StartTime)
+		log.Infof("Before save wall time: %s", wt.String())
+	}
 
 	log.Infof("Sandbox save started, pausing all tasks.")
 	k.Pause()
@@ -96,6 +118,24 @@ func (opts *SaveOpts) Save(ctx context.Context, k *kernel.Kernel, w *watchdog.Wa
 	// Supplement the metadata.
 	if opts.Metadata == nil {
 		opts.Metadata = make(map[string]string)
+	}
+	if previousMetadata != nil {
+		// Update CPU time and wall time based on the previous runs.
+		p, err := time.ParseDuration(previousMetadata[GvisorCPUUsageKey])
+		if err != nil {
+			log.Warningf("Error parsing previous runs' cpu time: %v", err)
+		}
+		t += p
+
+		w, err := time.ParseDuration(previousMetadata[GvisorWallTimeKey])
+		if err != nil {
+			log.Warningf("Error parsing previous runs' wall time: %v", err)
+		}
+		wt += w
+	}
+	opts.Metadata[GvisorCPUUsageKey] = t.String()
+	if wt != 0 {
+		opts.Metadata[GvisorWallTimeKey] = wt.String()
 	}
 	addSaveMetadata(opts.Metadata)
 
