@@ -64,12 +64,38 @@ func TestReduceRecvBuf(t *testing.T) {
 		payload = payload[payloadBytes:]
 	}
 
-	// First read should read < len(sampleData)
-	if ret, _, err := dut.RecvWithErrno(context.Background(), t, acceptFd, int32(len(sampleData)), 0); ret == -1 || int(ret) == len(sampleData) {
+	// First read should read < len(sampleData).
+	// Follow up with non-blocking reads to drain the receive buffer in case
+	// of partial reads.
+	var totalRead int
+	ret, _, err := dut.RecvWithErrno(context.Background(), t, acceptFd, int32(len(sampleData)), 0)
+	if ret == -1 {
 		t.Fatalf("dut.RecvWithErrno(ctx, t, %d, %d, 0) = %d,_, %s", acceptFd, int32(len(sampleData)), ret, err)
 	}
+	if ret == 0 {
+		t.Fatalf("dut.RecvWithErrno(ctx, t, %d, %d, 0) returned 0 bytes", acceptFd, int32(len(sampleData)))
+	}
+	totalRead += int(ret)
 
-	// Second read should return EAGAIN as the last segment should have been
+	for totalRead < len(sampleData) {
+		ret, _, err := dut.RecvWithErrno(context.Background(), t, acceptFd, int32(len(sampleData)-totalRead), unix.MSG_DONTWAIT)
+		if ret == -1 {
+			if err == unix.EAGAIN {
+				break
+			}
+			t.Fatalf("dut.RecvWithErrno(ctx, t, %d, %d, unix.MSG_DONTWAIT) failed: %s", acceptFd, int32(len(sampleData)-totalRead), err)
+		}
+		if ret == 0 {
+			t.Fatalf("dut.RecvWithErrno(ctx, t, %d, %d, unix.MSG_DONTWAIT) returned 0 bytes", acceptFd, int32(len(sampleData)-totalRead))
+		}
+		totalRead += int(ret)
+	}
+
+	if totalRead == len(sampleData) {
+		t.Fatalf("Read total of %d bytes, same as sampleData length %d, expected less data to be received", totalRead, len(sampleData))
+	}
+
+	// Next read should return EAGAIN as the last segment should have been
 	// dropped due to it exceeding the receive buffer space available in the
 	// socket.
 	if ret, got, err := dut.RecvWithErrno(context.Background(), t, acceptFd, int32(len(sampleData)), unix.MSG_DONTWAIT); got != nil || ret != -1 || err != unix.EAGAIN {
