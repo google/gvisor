@@ -301,8 +301,9 @@ func (c *Context64) SignalRestore(st *Stack, rt bool, featureSet cpuid.FeatureSe
 			return 0, linux.SignalStack{}, err
 		}
 		if err := c.fpState.SanitizeUser(featureSet); err != nil {
-			// FIXME: b/478302010, b/478302512
 			log.Warningf("fpu.State.SanitizeUser returned error: %v", err)
+			c.fpState.Reset()
+			return 0, linux.SignalStack{}, linuxerr.EFAULT
 		}
 	}
 
