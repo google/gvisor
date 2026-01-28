@@ -18,7 +18,6 @@
 package fpu
 
 import (
-	"errors"
 	"fmt"
 	"io"
 
@@ -26,6 +25,7 @@ import (
 	"gvisor.dev/gvisor/pkg/cpuid"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/safecopy"
 	"gvisor.dev/gvisor/pkg/sync"
 )
@@ -287,9 +287,7 @@ func (s *State) PtraceSetXstateRegs(src io.Reader, maxlen int, featureSet cpuid.
 	return n, nil
 }
 
-// ErrUnsupportedStateCleared is reported if an userspace state contains any
-// unsupported features.
-var ErrUnsupportedStateCleared = errors.New("contains unsupported states")
+var warnDisallowedXFeatureOnce sync.Once
 
 // SanitizeUser mutates s to ensure that restoring it is safe.
 func (s *State) SanitizeUser(featureSet cpuid.FeatureSet) error {
@@ -301,12 +299,28 @@ func (s *State) SanitizeUser(featureSet cpuid.FeatureSet) error {
 
 	if len(f) >= minXstateBytes {
 		// Users can't enable *more* XCR0 bits than what we, and the CPU, support.
-		xstateBV := hostarch.ByteOrder.Uint64(f[xstateBVOffset:])
-		xcr0Mask := featureSet.ValidXCR0Mask() & (SupportedXFeatureStates | ignoredXFeatureStates)
-		if xstateBV&xcr0Mask != xstateBV {
-			err = ErrUnsupportedStateCleared
+		xstateBV := hostarch.ByteOrder.Uint64(f[xstateBVOffset:]) &^ ignoredXFeatureStates
+		allowedMask := featureSet.ValidXCR0Mask() & SupportedXFeatureStates
+		if disallowedXstateBV := xstateBV &^ allowedMask; disallowedXstateBV != 0 {
+			// FIXME: b/478302010, b/478302512: If the app is using features
+			// that are not present in the app feature set, but supported by
+			// gVisor and the CPU, log a warning but permit the feature use.
+			// (Features are removed from app feature sets to support cross-CPU
+			// migration, not for security reasons; so if we observe the app
+			// using supported but disallowed features then it may no longer be
+			// migratable cross-CPU, but it's still better to not crash the
+			// app.)
+			supportedMask := cpuid.HostFeatureSet().ValidXCR0Mask() & SupportedXFeatureStates
+			if unsupportedXstateBV := xstateBV &^ supportedMask; unsupportedXstateBV == 0 {
+				warnDisallowedXFeatureOnce.Do(func() {
+					log.Warningf("Application using supported but disallowed xfeatures %#x", disallowedXstateBV)
+				})
+				xstateBV &= supportedMask
+			} else {
+				err = fmt.Errorf("xfeatures %#x disallowed, %#x unsupported", disallowedXstateBV, unsupportedXstateBV)
+				xstateBV &= allowedMask
+			}
 		}
-		xstateBV &= featureSet.ValidXCR0Mask() & SupportedXFeatureStates
 		hostarch.ByteOrder.PutUint64(f[xstateBVOffset:], xstateBV)
 		// Force XCOMP_BV and reserved bytes in the XSAVE header to 0.
 		reserved := f[xsaveHeaderZeroedOffset : xsaveHeaderZeroedOffset+xsaveHeaderZeroedBytes]
