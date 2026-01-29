@@ -19,7 +19,6 @@ package example
 
 import (
 	"golang.org/x/sys/unix"
-	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/seccomp"
 	"gvisor.dev/gvisor/pkg/seccomp/precompiledseccomp"
 )
@@ -28,7 +27,7 @@ import (
 // In this example, we have two file descriptors, which fit in 32 bits.
 // If you need a 64-bit variable, simply declare two 32-bit variables and
 // concatenate them to a single 64-bit number in the function that
-// generates the `ProgramDesc`.
+// generates the `seccomp.Program`.
 const (
 	FD1 = "fd1"
 	FD2 = "fd2"
@@ -47,9 +46,9 @@ const (
 
 // Program1 returns a program that allows reading from FDs `FD1` and `FD2`,
 // but writing only to FD `FD1`.
-func Program1(values precompiledseccomp.Values) precompiledseccomp.ProgramDesc {
-	return precompiledseccomp.ProgramDesc{
-		Rules: []seccomp.RuleSet{{
+func Program1(values precompiledseccomp.Values) *seccomp.Program {
+	return &seccomp.Program{
+		RuleSets: []seccomp.RuleSet{{
 			Rules: seccomp.NewSyscallRules().Add(
 				unix.SYS_READ,
 				seccomp.Or{
@@ -60,17 +59,16 @@ func Program1(values precompiledseccomp.Values) precompiledseccomp.ProgramDesc {
 				unix.SYS_WRITE,
 				seccomp.PerArg{seccomp.EqualTo(values[FD1])},
 			),
-			Action: linux.SECCOMP_RET_ALLOW,
+			Action: seccomp.Allow,
 		}},
-		SeccompOptions: seccomp.DefaultProgramOptions(),
 	}
 }
 
 // Program2 returns a program that allows reading from FDs `FD1` and `FD2`,
 // but writing only to FD `FD2`.
-func Program2(values precompiledseccomp.Values) precompiledseccomp.ProgramDesc {
-	return precompiledseccomp.ProgramDesc{
-		Rules: []seccomp.RuleSet{{
+func Program2(values precompiledseccomp.Values) *seccomp.Program {
+	return &seccomp.Program{
+		RuleSets: []seccomp.RuleSet{{
 			Rules: seccomp.NewSyscallRules().Add(
 				unix.SYS_READ,
 				seccomp.Or{
@@ -81,9 +79,8 @@ func Program2(values precompiledseccomp.Values) precompiledseccomp.ProgramDesc {
 				unix.SYS_WRITE,
 				seccomp.PerArg{seccomp.EqualTo(values[FD2])},
 			),
-			Action: linux.SECCOMP_RET_ALLOW,
+			Action: seccomp.Allow,
 		}},
-		SeccompOptions: seccomp.DefaultProgramOptions(),
 	}
 }
 
