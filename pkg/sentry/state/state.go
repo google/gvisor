@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"time"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
@@ -30,6 +31,8 @@ import (
 )
 
 var previousMetadata map[string]string
+
+const gvisorCPUUsageKey = "gvisor_cpu_usage"
 
 // SaveOpts contains save-related options.
 type SaveOpts struct {
@@ -79,7 +82,10 @@ func (opts *SaveOpts) Close() error {
 
 // Save saves the system state.
 func (opts *SaveOpts) Save(ctx context.Context, k *kernel.Kernel, w *watchdog.Watchdog) error {
-	t, _ := CPUTime()
+	t, err := CPUTime()
+	if err != nil {
+		log.Warningf("Error getting cpu time: %v", err)
+	}
 	log.Infof("Before save CPU usage: %s", t.String())
 
 	log.Infof("Sandbox save started, pausing all tasks.")
@@ -97,6 +103,14 @@ func (opts *SaveOpts) Save(ctx context.Context, k *kernel.Kernel, w *watchdog.Wa
 	if opts.Metadata == nil {
 		opts.Metadata = make(map[string]string)
 	}
+	if previousMetadata != nil {
+		p, err := time.ParseDuration(previousMetadata[gvisorCPUUsageKey])
+		if err != nil {
+			log.Warningf("Error parsing previous runs' cpu time: %v", err)
+		}
+		t += p
+	}
+	opts.Metadata[gvisorCPUUsageKey] = t.String()
 	addSaveMetadata(opts.Metadata)
 
 	// Open the statefile.

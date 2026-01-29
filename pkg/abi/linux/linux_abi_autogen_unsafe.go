@@ -20082,119 +20082,119 @@ func (i *ItimerVal) WriteTo(writer io.Writer) (int64, error) {
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
-func (i *Itimerspec) SizeBytes() int {
+func (its *Itimerspec) SizeBytes() int {
     return 0 +
         (*Timespec)(nil).SizeBytes() +
         (*Timespec)(nil).SizeBytes()
 }
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
-func (i *Itimerspec) MarshalBytes(dst []byte) []byte {
-    dst = i.Interval.MarshalUnsafe(dst)
-    dst = i.Value.MarshalUnsafe(dst)
+func (its *Itimerspec) MarshalBytes(dst []byte) []byte {
+    dst = its.Interval.MarshalUnsafe(dst)
+    dst = its.Value.MarshalUnsafe(dst)
     return dst
 }
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (i *Itimerspec) UnmarshalBytes(src []byte) []byte {
-    src = i.Interval.UnmarshalUnsafe(src)
-    src = i.Value.UnmarshalUnsafe(src)
+func (its *Itimerspec) UnmarshalBytes(src []byte) []byte {
+    src = its.Interval.UnmarshalUnsafe(src)
+    src = its.Value.UnmarshalUnsafe(src)
     return src
 }
 
 // Packed implements marshal.Marshallable.Packed.
 //go:nosplit
-func (i *Itimerspec) Packed() bool {
-    return i.Interval.Packed() && i.Value.Packed()
+func (its *Itimerspec) Packed() bool {
+    return its.Interval.Packed() && its.Value.Packed()
 }
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
-func (i *Itimerspec) MarshalUnsafe(dst []byte) []byte {
-    if i.Interval.Packed() && i.Value.Packed() {
-        size := i.SizeBytes()
-        gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(i), uintptr(size))
+func (its *Itimerspec) MarshalUnsafe(dst []byte) []byte {
+    if its.Interval.Packed() && its.Value.Packed() {
+        size := its.SizeBytes()
+        gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(its), uintptr(size))
         return dst[size:]
     }
     // Type Itimerspec doesn't have a packed layout in memory, fallback to MarshalBytes.
-    return i.MarshalBytes(dst)
+    return its.MarshalBytes(dst)
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
-func (i *Itimerspec) UnmarshalUnsafe(src []byte) []byte {
-    if i.Interval.Packed() && i.Value.Packed() {
-        size := i.SizeBytes()
-        gohacks.Memmove(unsafe.Pointer(i), unsafe.Pointer(&src[0]), uintptr(size))
+func (its *Itimerspec) UnmarshalUnsafe(src []byte) []byte {
+    if its.Interval.Packed() && its.Value.Packed() {
+        size := its.SizeBytes()
+        gohacks.Memmove(unsafe.Pointer(its), unsafe.Pointer(&src[0]), uintptr(size))
         return src[size:]
     }
     // Type Itimerspec doesn't have a packed layout in memory, fallback to UnmarshalBytes.
-    return i.UnmarshalBytes(src)
+    return its.UnmarshalBytes(src)
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
-func (i *Itimerspec) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
-    if !i.Interval.Packed() && i.Value.Packed() {
+func (its *Itimerspec) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
+    if !its.Interval.Packed() && its.Value.Packed() {
         // Type Itimerspec doesn't have a packed layout in memory, fall back to MarshalBytes.
-        buf := cc.CopyScratchBuffer(i.SizeBytes()) // escapes: okay.
-        i.MarshalBytes(buf) // escapes: fallback.
+        buf := cc.CopyScratchBuffer(its.SizeBytes()) // escapes: okay.
+        its.MarshalBytes(buf) // escapes: fallback.
         return cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
     }
 
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(i)))
-    hdr.Len = i.SizeBytes()
-    hdr.Cap = i.SizeBytes()
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(its)))
+    hdr.Len = its.SizeBytes()
+    hdr.Cap = its.SizeBytes()
 
     length, err := cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
-    // Since we bypassed the compiler's escape analysis, indicate that i
+    // Since we bypassed the compiler's escape analysis, indicate that its
     // must live until the use above.
-    runtime.KeepAlive(i) // escapes: replaced by intrinsic.
+    runtime.KeepAlive(its) // escapes: replaced by intrinsic.
     return length, err
 }
 
 // CopyOut implements marshal.Marshallable.CopyOut.
-func (i *Itimerspec) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
-    return i.CopyOutN(cc, addr, i.SizeBytes())
+func (its *Itimerspec) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+    return its.CopyOutN(cc, addr, its.SizeBytes())
 }
 
 // CopyInN implements marshal.Marshallable.CopyInN.
-func (i *Itimerspec) CopyInN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
-    if !i.Interval.Packed() && i.Value.Packed() {
+func (its *Itimerspec) CopyInN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
+    if !its.Interval.Packed() && its.Value.Packed() {
         // Type Itimerspec doesn't have a packed layout in memory, fall back to UnmarshalBytes.
-        buf := cc.CopyScratchBuffer(i.SizeBytes()) // escapes: okay.
+        buf := cc.CopyScratchBuffer(its.SizeBytes()) // escapes: okay.
         length, err := cc.CopyInBytes(addr, buf[:limit]) // escapes: okay.
         // Unmarshal unconditionally. If we had a short copy-in, this results in a
         // partially unmarshalled struct.
-        i.UnmarshalBytes(buf) // escapes: fallback.
+        its.UnmarshalBytes(buf) // escapes: fallback.
         return length, err
     }
 
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(i)))
-    hdr.Len = i.SizeBytes()
-    hdr.Cap = i.SizeBytes()
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(its)))
+    hdr.Len = its.SizeBytes()
+    hdr.Cap = its.SizeBytes()
 
     length, err := cc.CopyInBytes(addr, buf[:limit]) // escapes: okay.
-    // Since we bypassed the compiler's escape analysis, indicate that i
+    // Since we bypassed the compiler's escape analysis, indicate that its
     // must live until the use above.
-    runtime.KeepAlive(i) // escapes: replaced by intrinsic.
+    runtime.KeepAlive(its) // escapes: replaced by intrinsic.
     return length, err
 }
 
 // CopyIn implements marshal.Marshallable.CopyIn.
-func (i *Itimerspec) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
-    return i.CopyInN(cc, addr, i.SizeBytes())
+func (its *Itimerspec) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+    return its.CopyInN(cc, addr, its.SizeBytes())
 }
 
 // WriteTo implements io.WriterTo.WriteTo.
-func (i *Itimerspec) WriteTo(writer io.Writer) (int64, error) {
-    if !i.Interval.Packed() && i.Value.Packed() {
+func (its *Itimerspec) WriteTo(writer io.Writer) (int64, error) {
+    if !its.Interval.Packed() && its.Value.Packed() {
         // Type Itimerspec doesn't have a packed layout in memory, fall back to MarshalBytes.
-        buf := make([]byte, i.SizeBytes())
-        i.MarshalBytes(buf)
+        buf := make([]byte, its.SizeBytes())
+        its.MarshalBytes(buf)
         length, err := writer.Write(buf)
         return int64(length), err
     }
@@ -20202,14 +20202,14 @@ func (i *Itimerspec) WriteTo(writer io.Writer) (int64, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(i)))
-    hdr.Len = i.SizeBytes()
-    hdr.Cap = i.SizeBytes()
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(its)))
+    hdr.Len = its.SizeBytes()
+    hdr.Cap = its.SizeBytes()
 
     length, err := writer.Write(buf)
-    // Since we bypassed the compiler's escape analysis, indicate that i
+    // Since we bypassed the compiler's escape analysis, indicate that its
     // must live until the use above.
-    runtime.KeepAlive(i) // escapes: replaced by intrinsic.
+    runtime.KeepAlive(its) // escapes: replaced by intrinsic.
     return int64(length), err
 }
 
