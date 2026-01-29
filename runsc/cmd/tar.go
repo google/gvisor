@@ -20,6 +20,7 @@ import (
 	"os"
 
 	"github.com/google/subcommands"
+	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/container"
@@ -54,6 +55,14 @@ func (*Tar) Usage() string {
 
 // SetFlags implements subcommands.Command.
 func (*Tar) SetFlags(f *flag.FlagSet) {}
+
+// FetchSpec implements util.SubCommand.FetchSpec.
+func (c *Tar) FetchSpec(conf *config.Config, f *flag.FlagSet) (string, *specs.Spec, error) {
+	// This command has subcommands that may operate on individual containers.
+	// But that requires parsing the subcommand flags. To avoid complexity for
+	// now, return nothing as though no container is involved.
+	return "", nil, nil
+}
 
 // Execute implements subcommands.Command.
 func (*Tar) Execute(ctx context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {

@@ -17,9 +17,11 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 
 	"github.com/google/subcommands"
+	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/config"
@@ -28,7 +30,9 @@ import (
 )
 
 // State implements subcommands.Command for the "state" command.
-type State struct{}
+type State struct {
+	containerLoader
+}
 
 // Name implements subcommands.Command.Name.
 func (*State) Name() string {
@@ -48,17 +52,25 @@ func (*State) Usage() string {
 // SetFlags implements subcommands.Command.SetFlags.
 func (*State) SetFlags(*flag.FlagSet) {}
 
+// FetchSpec implements util.SubCommand.FetchSpec.
+func (s *State) FetchSpec(conf *config.Config, f *flag.FlagSet) (string, *specs.Spec, error) {
+	c, err := s.loadContainer(conf, f, container.LoadOpts{})
+	if err != nil {
+		return "", nil, fmt.Errorf("loading container: %w", err)
+	}
+	return c.ID, c.Spec, nil
+}
+
 // Execute implements subcommands.Command.Execute.
-func (*State) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
+func (s *State) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
 	if f.NArg() != 1 {
 		f.Usage()
 		return subcommands.ExitUsageError
 	}
 
-	id := f.Arg(0)
 	conf := args[0].(*config.Config)
 
-	c, err := container.Load(conf.RootDir, container.FullID{ContainerID: id}, container.LoadOpts{})
+	c, err := s.loadContainer(conf, f, container.LoadOpts{})
 	if err != nil {
 		util.Fatalf("loading container: %v", err)
 	}

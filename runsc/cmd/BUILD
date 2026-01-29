@@ -166,6 +166,7 @@ go_test(
         "//runsc/cmd/util",
         "//runsc/config",
         "//runsc/container",
+        "//runsc/flag",
         "//runsc/mitigate",
         "//runsc/specutils",
         "@com_github_google_go_cmp//cmp:go_default_library",

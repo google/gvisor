@@ -21,6 +21,7 @@ import (
 	"strings"
 
 	"github.com/google/subcommands"
+	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/config"
@@ -30,6 +31,7 @@ import (
 
 // Kill implements subcommands.Command for the "kill" command.
 type Kill struct {
+	containerLoader
 	all bool
 	pid int
 }
@@ -55,6 +57,15 @@ func (k *Kill) SetFlags(f *flag.FlagSet) {
 	f.IntVar(&k.pid, "pid", 0, "send the specified signal to a specific process. pid is relative to the root PID namespace")
 }
 
+// FetchSpec implements util.SubCommand.FetchSpec.
+func (k *Kill) FetchSpec(conf *config.Config, f *flag.FlagSet) (string, *specs.Spec, error) {
+	c, err := k.loadContainer(conf, f, container.LoadOpts{})
+	if err != nil {
+		return "", nil, fmt.Errorf("loading container: %w", err)
+	}
+	return c.ID, c.Spec, nil
+}
+
 // Execute implements subcommands.Command.Execute.
 func (k *Kill) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
 	if f.NArg() == 0 || f.NArg() > 2 {
@@ -62,14 +73,13 @@ func (k *Kill) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 		return subcommands.ExitUsageError
 	}
 
-	id := f.Arg(0)
 	conf := args[0].(*config.Config)
 
 	if k.pid != 0 && k.all {
 		util.Fatalf("it is invalid to specify both --all and --pid")
 	}
 
-	c, err := container.Load(conf.RootDir, container.FullID{ContainerID: id}, container.LoadOpts{})
+	c, err := k.loadContainer(conf, f, container.LoadOpts{})
 	if err != nil {
 		util.Fatalf("loading container: %v", err)
 	}

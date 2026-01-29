@@ -17,9 +17,11 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 
 	"github.com/google/subcommands"
+	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/runsc/cmd/util"
@@ -34,6 +36,7 @@ const (
 
 // Wait implements subcommands.Command for the "wait" command.
 type Wait struct {
+	containerLoader
 	rootPID    int
 	pid        int
 	checkpoint bool
@@ -63,6 +66,15 @@ func (wt *Wait) SetFlags(f *flag.FlagSet) {
 	f.BoolVar(&wt.restore, "restore", false, "wait for the restore to complete")
 }
 
+// FetchSpec implements util.SubCommand.FetchSpec.
+func (wt *Wait) FetchSpec(conf *config.Config, f *flag.FlagSet) (string, *specs.Spec, error) {
+	c, err := wt.loadContainer(conf, f, container.LoadOpts{})
+	if err != nil {
+		return "", nil, fmt.Errorf("loading container: %w", err)
+	}
+	return c.ID, c.Spec, nil
+}
+
 // Execute implements subcommands.Command.Execute. It waits for a process in a
 // container to exit before returning.
 func (wt *Wait) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
@@ -75,10 +87,9 @@ func (wt *Wait) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomm
 		util.Fatalf("only one of -pid and -rootPid can be set")
 	}
 
-	id := f.Arg(0)
 	conf := args[0].(*config.Config)
 
-	c, err := container.Load(conf.RootDir, container.FullID{ContainerID: id}, container.LoadOpts{})
+	c, err := wt.loadContainer(conf, f, container.LoadOpts{})
 	if err != nil {
 		util.Fatalf("loading container: %v", err)
 	}
@@ -128,7 +139,7 @@ func (wt *Wait) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomm
 		waitStatus = ws
 	}
 	result := waitResult{
-		ID:         id,
+		ID:         c.ID,
 		ExitStatus: exitStatus(waitStatus),
 	}
 	// Write json-encoded wait result directly to stdout.

@@ -21,8 +21,10 @@ import (
 	"runtime"
 
 	"github.com/google/subcommands"
+	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/runsc/cmd/util"
+	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/flag"
 	"gvisor.dev/gvisor/runsc/mitigate"
 )
@@ -70,6 +72,12 @@ func (m *Mitigate) SetFlags(f *flag.FlagSet) {
 	f.BoolVar(&m.dryRun, "dryrun", false, "run the command without changing system")
 	f.BoolVar(&m.reverse, "reverse", false, "reverse mitigate by enabling all CPUs")
 	m.setFlags(f)
+}
+
+// FetchSpec implements util.SubCommand.FetchSpec.
+func (*Mitigate) FetchSpec(_ *config.Config, _ *flag.FlagSet) (string, *specs.Spec, error) {
+	// This command does not operate on a single container, so nothing to fetch.
+	return "", nil, nil
 }
 
 // Execute implements subcommands.Command.Execute.

@@ -16,8 +16,10 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/google/subcommands"
+	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/container"
@@ -48,6 +50,9 @@ type Create struct {
 	// container, e.g. unsupported syscalls, while the later is more verbose and
 	// consumed by developers.
 	userLog string
+
+	// spec is the cached OCI spec.
+	spec *specs.Spec
 }
 
 // Name implements subcommands.Command.Name.
@@ -73,6 +78,27 @@ func (c *Create) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&c.userLog, "user-log", "", "filename to send user-visible logs to. Empty means no logging.")
 }
 
+// FetchSpec implements util.SubCommand.FetchSpec.
+func (c *Create) FetchSpec(conf *config.Config, f *flag.FlagSet) (string, *specs.Spec, error) {
+	if f.NArg() < 1 {
+		return "", nil, fmt.Errorf("a container id is required")
+	}
+	cid := f.Arg(0)
+	if c.spec != nil {
+		return cid, c.spec, nil
+	}
+	bundleDir := c.bundleDir
+	if bundleDir == "" {
+		c.bundleDir = getwdOrDie()
+	}
+	spec, err := specutils.ReadSpec(bundleDir, conf)
+	if err != nil {
+		return cid, nil, fmt.Errorf("reading spec: %w", err)
+	}
+	c.spec = spec
+	return cid, c.spec, nil
+}
+
 // Execute implements subcommands.Command.Execute.
 func (c *Create) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
 	if f.NArg() != 1 {
@@ -80,22 +106,16 @@ func (c *Create) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcom
 		return subcommands.ExitUsageError
 	}
 
-	id := f.Arg(0)
 	conf := args[0].(*config.Config)
 
 	if conf.Rootless {
 		return util.Errorf("Rootless mode not supported with %q", c.Name())
 	}
 
-	bundleDir := c.bundleDir
-	if bundleDir == "" {
-		bundleDir = getwdOrDie()
-	}
-	spec, err := specutils.ReadSpec(bundleDir, conf)
+	id, spec, err := c.FetchSpec(conf, f)
 	if err != nil {
-		return util.Errorf("reading spec: %v", err)
+		return util.Errorf("FetchSpec: %v", err)
 	}
-	specutils.LogSpecDebug(spec, conf.OCISeccomp)
 
 	// Create the container. A new sandbox will be created for the
 	// container unless the metadata specifies that it should be run in an
@@ -103,7 +123,7 @@ func (c *Create) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcom
 	contArgs := container.Args{
 		ID:            id,
 		Spec:          spec,
-		BundleDir:     bundleDir,
+		BundleDir:     c.bundleDir,
 		ConsoleSocket: c.consoleSocket,
 		PIDFile:       c.pidFile,
 		UserLog:       c.userLog,

@@ -260,6 +260,26 @@ func fixSpec(spec *specs.Spec, bundleDir string, conf *config.Config) error {
 			m.Source = absPath(bundleDir, m.Source)
 		}
 	}
+
+	if containerName := containerNameNoRemap(spec); len(containerName) > 0 {
+		// If we know the container name, then check to see if seccomp
+		// instructions were given to the container.
+		for annotation, val := range spec.Annotations {
+			if annotation == annotationSeccomp+containerName && val == annotationSeccompRuntimeDefault {
+				// Container seccomp rules are redundant when using gVisor, so remove
+				// them when seccomp is set to RuntimeDefault.
+				if spec.Linux != nil && spec.Linux.Seccomp != nil {
+					log.Debugf("Seccomp is being ignored because annotation %q is set to default.", annotationSeccomp)
+					spec.Linux.Seccomp = nil
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// FixConfig fixes config options that are set via annotations in the spec.
+func FixConfig(conf *config.Config, spec *specs.Spec) error {
 	// Look for config bundle annotations and verify that they exist.
 	const configBundlePrefix = "dev.gvisor.bundle."
 	var bundles []config.BundleName
@@ -286,7 +306,6 @@ func fixSpec(spec *specs.Spec, bundleDir string, conf *config.Config) error {
 		}
 	}
 
-	containerName := containerNameNoRemap(spec)
 	for annotation, val := range spec.Annotations {
 		if strings.HasPrefix(annotation, annotationFlagPrefix) {
 			// Override flags using annotation to allow customization per sandbox
@@ -295,17 +314,6 @@ func fixSpec(spec *specs.Spec, bundleDir string, conf *config.Config) error {
 			log.Infof("Overriding flag from flag annotation: --%s=%q", name, val)
 			if err := conf.Override(flag.CommandLine, name, val /* force= */, false); err != nil {
 				return err
-			}
-		} else if len(containerName) > 0 {
-			// If we know the container name, then check to see if seccomp
-			// instructions were given to the container.
-			if annotation == annotationSeccomp+containerName && val == annotationSeccompRuntimeDefault {
-				// Container seccomp rules are redundant when using gVisor, so remove
-				// them when seccomp is set to RuntimeDefault.
-				if spec.Linux != nil && spec.Linux.Seccomp != nil {
-					log.Debugf("Seccomp is being ignored because annotation %q is set to default.", annotationSeccomp)
-					spec.Linux.Seccomp = nil
-				}
 			}
 		}
 	}
@@ -578,27 +586,51 @@ func WaitForReady(pid int, timeout time.Duration, ready func() (bool, error)) er
 	return backoff.Retry(op, b)
 }
 
-// DebugLogFile opens a log file using 'logPattern' as location. If 'logPattern'
-// ends with '/', it's used as a directory with default file name.
-// 'logPattern' can contain variables that are substituted:
-//   - %TIMESTAMP%: is replaced with a timestamp using the following format:
-//     <yyyymmdd-hhmmss.uuuuuu>
-//   - %COMMAND%: is replaced with 'command'
-//   - %TEST%: is replaced with 'test' (omitted by default)
-func DebugLogFile(logPattern, command, test string, timestamp time.Time) (*os.File, error) {
+// OpenDebugLogFile opens a log file using 'logPattern' as location. If 'logPattern'
+// ends with '/', it's used as a directory with default file name. See OpenLogFile
+// for more details about variable substitutions.
+func OpenDebugLogFile(logPattern string, opts *LogFileOpts) (*os.File, error) {
 	if strings.HasSuffix(logPattern, "/") {
 		// Default format: <debug-log>/runsc.log.<yyyymmdd-hhmmss.uuuuuu>.<command>.txt
 		logPattern += "runsc.log.%TIMESTAMP%.%COMMAND%.txt"
 	}
-	logPattern = strings.ReplaceAll(logPattern, "%TIMESTAMP%", timestamp.Format("20060102-150405.000000"))
-	logPattern = strings.ReplaceAll(logPattern, "%COMMAND%", command)
-	logPattern = strings.ReplaceAll(logPattern, "%TEST%", test)
+	return log.OpenFile(logPattern, os.O_WRONLY|os.O_CREATE|os.O_APPEND, opts)
+}
 
-	dir := filepath.Dir(logPattern)
-	if err := os.MkdirAll(dir, 0775); err != nil {
-		return nil, fmt.Errorf("error creating dir %q: %v", dir, err)
+// LogFileOpts implements log.FileOpts for runsc log files.
+// It builds the log file path based using the following variables:
+//   - %TIMESTAMP%: is replaced with Timestamp using the following format:
+//     <yyyymmdd-hhmmss.uuuuuu>
+//   - %COMMAND%: is replaced with Command
+//   - %TEST%: is replaced with Test
+//   - %ID%: is replaced with SandboxID
+//   - %CID%: is replaced with CID (container ID)
+type LogFileOpts struct {
+	SandboxID string
+	CID       string
+	Command   string
+	Test      string
+	Timestamp time.Time
+}
+
+// Build implements log.FileOpts.Build.
+func (l *LogFileOpts) Build(logPattern string) string {
+	// Replace variables in the log pattern.
+	logPattern = strings.ReplaceAll(logPattern, "%TIMESTAMP%", l.Timestamp.Format("20060102-150405.000000"))
+	logPattern = strings.ReplaceAll(logPattern, "%COMMAND%", l.Command)
+	logPattern = strings.ReplaceAll(logPattern, "%TEST%", l.Test)
+	logPattern = strings.ReplaceAll(logPattern, "%ID%", l.SandboxID)
+	logPattern = strings.ReplaceAll(logPattern, "%CID%", l.CID)
+	return logPattern
+}
+
+// TestName returns the test name if `TESTONLY-test-name-env` flag is set.
+func TestName(conf *config.Config, spec *specs.Spec) string {
+	if len(conf.TestOnlyTestNameEnv) == 0 {
+		return ""
 	}
-	return os.OpenFile(logPattern, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0664)
+	t, _ := EnvVar(spec.Process.Env, conf.TestOnlyTestNameEnv)
+	return t
 }
 
 // IsDebugCommand returns true if the command should be debugged or not, based

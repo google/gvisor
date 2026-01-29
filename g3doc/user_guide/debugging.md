@@ -20,9 +20,9 @@ To enable debug and system call logging, add the `runtimeArgs` below to your
 }
 ```
 
-> Note: the last `/` in `--debug-log` is needed to interpret it as a directory.
-> Then each `runsc` command executed will create a separate log file. Otherwise,
-> log messages from all commands will be appended to the same file.
+> Note: The trailing `/` in `--debug-log` interprets the path as a directory,
+> creating a unique log file for each command using the default format. See
+> [File Path Variables](#file-path-variables) for details.
 
 You may also want to pass `--log-packets` to troubleshoot network problems. Then
 restart the Docker daemon:
@@ -36,6 +36,48 @@ ending with `.boot` will contain the strace logs from your application, which
 can be useful for identifying missing or broken system calls in gVisor. If you
 are having problems starting the container, the log file ending with `.create`
 may have the reason for the failure.
+
+### File Path Variables
+
+Flags that accept a file path support variable substitution. This is useful for
+generating unique log files per sandbox or container without relying on the
+default naming scheme when a directory is provided.
+
+The following variables are supported:
+
+*   `%TIMESTAMP%`: Timestamp in `yyyymmdd-hhmmss.uuuuuu` format.
+*   `%COMMAND%`: The `runsc` subcommand (e.g., `run`, `boot`).
+*   `%ID%`: Sandbox ID.
+*   `%CID%`: Container ID. This may be different from sandbox ID in
+    multi-container sandboxes.
+*   `%TEST%`: Test name (only if `TESTONLY-test-name-env` is set).
+
+As of writing, the supported flags include:
+
+*   `--log`
+*   `--debug-log`
+*   `--panic-log`
+*   `--coverage-report`
+*   `--profiling-metrics-log`
+*   `--user-log`
+*   `--final-metrics-log`
+*   `--pod-init-config`
+*   `--profile-block`
+*   `--profile-cpu`
+*   `--profile-heap`
+*   `--profile-mutex`
+*   `--trace`
+
+For example, `--debug-log=/tmp/runsc/log.%ID%.%COMMAND%.txt` will generate logs
+with names providing the sandbox ID and command, like
+`/tmp/runsc/log.my-sandbox-id.boot.txt`.
+
+> Note: For flags `--debug-log`, `--panic-log`, `--coverage-report`, and
+> `--profiling-metrics-log`, a trailing `/` enables directory mode using the
+> default filename `runsc.log.%TIMESTAMP%.%COMMAND%.txt`. This ensures log
+> separation per command. If a file path is used without variables (e.g.,
+> `%ID%`), output from multiple commands or sandboxes will be concurrently
+> written to the same file, causing logs to be clobbered.
 
 ## Stack traces
 

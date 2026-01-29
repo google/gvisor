@@ -28,6 +28,7 @@ import (
 	"syscall"
 
 	"github.com/google/subcommands"
+	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/urpc"
 	"gvisor.dev/gvisor/runsc/boot"
@@ -39,6 +40,7 @@ import (
 
 // PortForward implements subcommands.Command for the "portforward" command.
 type PortForward struct {
+	containerLoader
 	portNum int
 	stream  string
 }
@@ -82,6 +84,15 @@ func (p *PortForward) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&p.stream, "stream", "", "Stream mode - a Unix domain socket")
 }
 
+// FetchSpec implements util.SubCommand.FetchSpec.
+func (p *PortForward) FetchSpec(conf *config.Config, f *flag.FlagSet) (string, *specs.Spec, error) {
+	c, err := p.loadContainer(conf, f, container.LoadOpts{})
+	if err != nil {
+		return "", nil, fmt.Errorf("loading container: %w", err)
+	}
+	return c.ID, c.Spec, nil
+}
+
 // Execute implements subcommands.Command.Execute.
 func (p *PortForward) Execute(ctx context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
 	conf := args[0].(*config.Config)
@@ -91,10 +102,9 @@ func (p *PortForward) Execute(ctx context.Context, f *flag.FlagSet, args ...any)
 		return subcommands.ExitUsageError
 	}
 
-	id := f.Arg(0)
 	portStr := f.Arg(1)
 
-	c, err := container.Load(conf.RootDir, container.FullID{ContainerID: id}, container.LoadOpts{})
+	c, err := p.loadContainer(conf, f, container.LoadOpts{})
 	if err != nil {
 		util.Fatalf("loading container: %v", err)
 	}
@@ -168,8 +178,8 @@ func localForward(ctx context.Context, c *container.Container, localPort int, co
 	}
 	defer l.Close()
 
-	var localConnChan = make(chan net.Conn, 1)
-	var errChan = make(chan error, 1)
+	localConnChan := make(chan net.Conn, 1)
+	errChan := make(chan error, 1)
 	go func() {
 		for {
 			if ctx.Err() != nil {

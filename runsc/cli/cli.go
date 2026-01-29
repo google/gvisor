@@ -27,10 +27,12 @@ import (
 	"time"
 
 	"github.com/google/subcommands"
+	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/coverage"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/refs"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/flag"
@@ -58,14 +60,15 @@ var (
 // Run runs the binary, whose behavior is determined by the subcommand passed
 // on the command line. commands is a mapping of all top level runsc commands
 // to their command group name. helpTopics is a list of additional help topics.
-func Run(commands map[subcommands.Command]string, helpTopics []subcommands.Command) {
+func Run(commands map[util.SubCommand]string, helpTopics []subcommands.Command) {
 	// Set the start time as soon as possible.
 	startTime := starttime.Get()
 
 	// Help flags, and help and flags commands, are generated automatically.
 	flagHelp := flag.Bool("help", false, "show information about runsc subcommands and exit")
 	flag.BoolVar(flagHelp, "h", false, "equivalent to the 'help' flag")
-	help := NewHelp(subcommands.DefaultCommander)
+	cdr := subcommands.DefaultCommander
+	help := NewHelp(cdr)
 	subcommands.Register(help, "")
 	subcommands.Register(subcommands.FlagsCommand(), "")
 
@@ -104,6 +107,14 @@ func Run(commands map[subcommands.Command]string, helpTopics []subcommands.Comma
 		os.Exit(0)
 	}
 
+	// Create a buffered emitter to capture logs during initialization. This is
+	// needed because log package initializes the target with an emitter that
+	// writes to stderr (which is reserved for the application). This would
+	// prevent any intermediate logs from leaking to stderr. This is later
+	// drained to the right target once the emitter is created below.
+	bufEmitter := &bufferedEmitter{}
+	log.SetTarget(bufEmitter)
+
 	config.WarnOnDeprecatedFlagUsage(flag.CommandLine)
 
 	// Create a new Config from the flags.
@@ -112,16 +123,68 @@ func Run(commands map[subcommands.Command]string, helpTopics []subcommands.Comma
 		util.Fatalf("%s", err.Error())
 	}
 
+	// Fetch the container ID and spec for the subcommand, if possible.
+	subCmdName := flag.CommandLine.Arg(0)
+	var (
+		subCmd      util.SubCommand
+		subCmdFlags *flag.FlagSet
+		cid         string
+		spec        *specs.Spec
+	)
+	for cmd := range commands {
+		if cmd.Name() == subCmdName {
+			subCmd = cmd
+			break
+		}
+	}
+	// If subCmd is nil, it will fail later. Ignore it.
+	if subCmd != nil {
+		subCmdFlags = flag.NewFlagSet(subCmdName, flag.ContinueOnError)
+		subCmdFlags.Usage = func() { cdr.ExplainCommand(cdr.Error, subCmd) }
+		subCmd.SetFlags(subCmdFlags)
+		if err := subCmdFlags.Parse(flag.CommandLine.Args()[1:]); err != nil {
+			util.Fatalf("failed to parse flags for %q: %v", subCmdName, err)
+		}
+		cid, spec, err = subCmd.FetchSpec(conf, subCmdFlags)
+		if err != nil {
+			util.Fatalf("FetchSpec failed: %v", err)
+		}
+		// Fix the config based on the OCI spec. If spec is nil, it means that the
+		// subcommand doesn't operate on a container, so there is no corresponding
+		// container spec to apply.
+		if spec != nil {
+			if err := specutils.FixConfig(conf, spec); err != nil {
+				util.Fatalf("Failed to apply OCI spec annotations to runsc config: %v", err)
+			}
+		}
+	}
+
+	// Construct LogFileOpts for the subcommand.
+	lfOpts := &specutils.LogFileOpts{
+		SandboxID: "<unknown>",
+		CID:       "<unknown>",
+		Command:   subCmdName,
+		Timestamp: startTime,
+	}
+	if spec != nil {
+		lfOpts.Test = specutils.TestName(conf, spec)
+		lfOpts.CID = cid
+		if specutils.IsRootContainer(spec) {
+			lfOpts.SandboxID = cid
+		} else {
+			lfOpts.SandboxID, _ = specutils.SandboxID(spec)
+		}
+	}
+
 	var errorLogger io.Writer
 	if *logFD > -1 {
 		errorLogger = os.NewFile(uintptr(*logFD), "error log file")
-
 	} else if conf.LogFilename != "" {
 		// We must set O_APPEND and not O_TRUNC because Docker passes
 		// the same log file for all commands (and also parses these
 		// log files), so we can't destroy them on each command.
 		var err error
-		errorLogger, err = os.OpenFile(conf.LogFilename, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
+		errorLogger, err = log.OpenFile(conf.LogFilename, os.O_WRONLY|os.O_CREATE|os.O_APPEND, lfOpts)
 		if err != nil {
 			util.Fatalf("error opening log file %q: %v", conf.LogFilename, err)
 		}
@@ -132,10 +195,8 @@ func Run(commands map[subcommands.Command]string, helpTopics []subcommands.Comma
 	// propagate it to child processes.
 	refs.SetLeakMode(conf.ReferenceLeak)
 
-	subcommand := flag.CommandLine.Arg(0)
-
 	// Set up logging.
-	if conf.Debug && specutils.IsDebugCommand(conf, subcommand) {
+	if conf.Debug && specutils.IsDebugCommand(conf, subCmdName) {
 		log.SetLevel(log.Debug)
 	}
 
@@ -154,16 +215,13 @@ func Run(commands map[subcommands.Command]string, helpTopics []subcommands.Comma
 	var emitters log.MultiEmitter
 	if *debugLogFD > -1 {
 		f := os.NewFile(uintptr(*debugLogFD), "debug log file")
-
 		emitters = append(emitters, newEmitter(conf.DebugLogFormat, f))
-
-	} else if len(conf.DebugLog) > 0 && specutils.IsDebugCommand(conf, subcommand) {
-		f, err := specutils.DebugLogFile(conf.DebugLog, subcommand, "" /* name */, startTime)
+	} else if len(conf.DebugLog) > 0 && specutils.IsDebugCommand(conf, subCmdName) {
+		f, err := specutils.OpenDebugLogFile(conf.DebugLog, lfOpts)
 		if err != nil {
 			util.Fatalf("error opening debug log file in %q: %v", conf.DebugLog, err)
 		}
 		emitters = append(emitters, newEmitter(conf.DebugLogFormat, f))
-
 	} else {
 		// Stderr is reserved for the application, just discard the logs if no debug
 		// log is specified.
@@ -177,8 +235,8 @@ func Run(commands map[subcommands.Command]string, helpTopics []subcommands.Comma
 		}
 		// Quick sanity check to make sure no other commands get passed
 		// a log fd (they should use log dir instead).
-		if subcommand != "boot" && subcommand != "gofer" {
-			util.Fatalf("flags --debug-log-fd and --panic-log-fd should only be passed to 'boot' and 'gofer' command, but was passed to %q", subcommand)
+		if _, ok := subCmd.(util.InternalCommand); !ok {
+			util.Fatalf("flags --debug-log-fd and --panic-log-fd should only be passed to internal commands, but was passed to %q", subCmdName)
 		}
 
 		// If we are the boot process, then we own our stdio FDs and can do what we
@@ -191,7 +249,7 @@ func Run(commands map[subcommands.Command]string, helpTopics []subcommands.Comma
 	} else if conf.AlsoLogToStderr {
 		emitters = append(emitters, newEmitter(conf.DebugLogFormat, os.Stderr))
 	}
-	if ulEmittter, add := userLogEmitter(conf, subcommand); add {
+	if ulEmittter, add := userLogEmitter(conf, subCmdName); add {
 		emitters = append(emitters, ulEmittter)
 	}
 
@@ -205,6 +263,9 @@ func Run(commands map[subcommands.Command]string, helpTopics []subcommands.Comma
 	default:
 		log.SetTarget(&emitters)
 	}
+
+	// Drain the buffered logs to the configured target.
+	bufEmitter.drain(log.Log().Emitter)
 
 	const delimString = `**************** gVisor ****************`
 	log.Infof(delimString)
@@ -233,12 +294,19 @@ func Run(commands map[subcommands.Command]string, helpTopics []subcommands.Comma
 	}
 
 	// Call the subcommand and pass in the configuration.
-	var ws unix.WaitStatus
-	subcmdCode := subcommands.Execute(context.Background(), conf, &ws)
+	var (
+		subCmdCode subcommands.ExitStatus
+		ws         unix.WaitStatus
+	)
+	if subCmd != nil {
+		subCmdCode = subCmd.Execute(context.Background(), subCmdFlags, conf, &ws)
+	} else {
+		subCmdCode = subcommands.Execute(context.Background(), conf, &ws)
+	}
 	// Check for leaks and write coverage report before os.Exit().
 	refs.DoLeakCheck()
 	_ = coverage.Report()
-	if subcmdCode == subcommands.ExitSuccess {
+	if subCmdCode == subcommands.ExitSuccess {
 		log.Infof("Exiting with status: %v", ws)
 		if ws.Signaled() {
 			// No good way to return it, emulate what the shell does. Maybe raise
@@ -248,7 +316,7 @@ func Run(commands map[subcommands.Command]string, helpTopics []subcommands.Comma
 		os.Exit(ws.ExitStatus())
 	}
 	// Return an error that is unlikely to be used by the application.
-	log.Warningf("Failure to execute command, err: %v", subcmdCode)
+	log.Warningf("Failure to execute command, err: %v", subCmdCode)
 	os.Exit(128)
 }
 
@@ -292,4 +360,35 @@ func userLogEmitter(conf *config.Config, subcommand string) (log.Emitter, bool) 
 		return nil, false
 	}
 	return log.K8sJSONEmitter{&log.Writer{Next: userLog}}, true
+}
+
+type bufferedLog struct {
+	depth     int
+	level     log.Level
+	timestamp time.Time
+	message   string
+}
+
+type bufferedEmitter struct {
+	mu     sync.Mutex
+	buffer []bufferedLog
+}
+
+// Emit implements log.Emitter.Emit.
+func (b *bufferedEmitter) Emit(depth int, level log.Level, timestamp time.Time, format string, v ...any) {
+	// Render the message now to capture the state of `v` args (at the time it
+	// was originally emitted).
+	message := fmt.Sprintf(format, v...)
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.buffer = append(b.buffer, bufferedLog{depth: depth, level: level, timestamp: timestamp, message: message})
+}
+
+func (b *bufferedEmitter) drain(emitter log.Emitter) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	for _, l := range b.buffer {
+		emitter.Emit(l.depth, l.level, l.timestamp, l.message)
+	}
+	b.buffer = nil
 }

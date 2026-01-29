@@ -868,23 +868,24 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 	//
 
 	// Open the log files to pass to the sandbox as FDs.
-	if err := donations.OpenAndDonate("log-fd", conf.LogFilename, os.O_CREATE|os.O_WRONLY|os.O_APPEND); err != nil {
+
+	lfOpts := &specutils.LogFileOpts{
+		SandboxID: s.ID,
+		CID:       s.ID,
+		Command:   "boot",
+		Timestamp: s.StartTime,
+		Test:      specutils.TestName(conf, args.Spec),
+	}
+	if err := donations.DonateLogFile("log-fd", conf.LogFilename, os.O_CREATE|os.O_WRONLY|os.O_APPEND, lfOpts); err != nil {
 		return fmt.Errorf("failed to opening or donating log file %q: %w", conf.LogFilename, err)
 	}
-
-	test := ""
-	if len(conf.TestOnlyTestNameEnv) != 0 {
-		// Fetch test name if one is provided and the test only flag was set.
-		if t, ok := specutils.EnvVar(args.Spec.Process.Env, conf.TestOnlyTestNameEnv); ok {
-			test = t
-		}
-	}
 	if specutils.IsDebugCommand(conf, "boot") {
-		if err := donations.DonateDebugLogFile("debug-log-fd", conf.DebugLog, "boot", test, s.StartTime); err != nil {
+		if err := donations.DonateDebugLogFile("debug-log-fd", conf.DebugLog, lfOpts); err != nil {
 			return fmt.Errorf("donating debug log file: %w", err)
 		}
 	}
-	if err := donations.DonateDebugLogFile("panic-log-fd", conf.PanicLog, "panic", test, s.StartTime); err != nil {
+	lfOpts.Command = "panic"
+	if err := donations.DonateDebugLogFile("panic-log-fd", conf.PanicLog, lfOpts); err != nil {
 		return fmt.Errorf("donating panic log file: %w", err)
 	}
 	covFilename := conf.CoverageReport
@@ -892,10 +893,12 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 		covFilename = os.Getenv("GO_COVERAGE_FILE")
 	}
 	if covFilename != "" && coverage.Available() {
-		if err := donations.DonateDebugLogFile("coverage-fd", covFilename, "cov", test, s.StartTime); err != nil {
+		lfOpts.Command = "cov"
+		if err := donations.DonateDebugLogFile("coverage-fd", covFilename, lfOpts); err != nil {
 			return fmt.Errorf("donating coverage log file: %w", err)
 		}
 	}
+	lfOpts.Command = "boot" // Revert command to "boot".
 
 	// Relay all the config flags to the sandbox process.
 	cmd := exec.Command(specutils.ExePath, conf.ToFlags()...)
@@ -936,30 +939,16 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 	donations.DonateAndClose("gofer-filestore-fds", args.GoferFilestoreFiles...)
 	donations.DonateAndClose("mounts-fd", args.MountsFile)
 	donations.Donate("start-sync-fd", startSyncFile)
-	if err := donations.OpenAndDonate("user-log-fd", args.UserLog, os.O_CREATE|os.O_WRONLY|os.O_APPEND); err != nil {
+	if err := donations.DonateLogFile("user-log-fd", args.UserLog, os.O_CREATE|os.O_WRONLY|os.O_APPEND, lfOpts); err != nil {
 		return err
 	}
-	const profFlags = os.O_CREATE | os.O_WRONLY | os.O_TRUNC
-	profile.UpdatePaths(conf, s.StartTime)
-	if err := donations.OpenAndDonate("profile-block-fd", conf.ProfileBlock, profFlags); err != nil {
-		return fmt.Errorf("donating profile block file: %w", err)
+	if err := profile.DonateProfileFDs(conf, &donations, false /* isGofer */, lfOpts); err != nil {
+		return fmt.Errorf("donating profile FDs: %w", err)
 	}
-	if err := donations.OpenAndDonate("profile-cpu-fd", conf.ProfileCPU, profFlags); err != nil {
-		return fmt.Errorf("donating profile cpu file: %w", err)
-	}
-	if err := donations.OpenAndDonate("profile-heap-fd", conf.ProfileHeap, profFlags); err != nil {
-		return fmt.Errorf("donating profile heap file: %w", err)
-	}
-	if err := donations.OpenAndDonate("profile-mutex-fd", conf.ProfileMutex, profFlags); err != nil {
-		return fmt.Errorf("donating profile mutex file: %w", err)
-	}
-	if err := donations.OpenAndDonate("trace-fd", conf.TraceFile, profFlags); err != nil {
-		return fmt.Errorf("donating trace file: %w", err)
-	}
-	if err := donations.OpenAndDonate("final-metrics-log-fd", conf.FinalMetricsLog, profFlags); err != nil {
+	if err := donations.DonateLogFile("final-metrics-log-fd", conf.FinalMetricsLog, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, lfOpts); err != nil {
 		return fmt.Errorf("donating final metrics log file: %w", err)
 	}
-	if err := donations.OpenAndDonate("rootfs-upper-tar-fd", specutils.RootfsTarUpperPath(args.Spec), os.O_RDONLY); err != nil {
+	if err := donations.DonateLogFile("rootfs-upper-tar-fd", specutils.RootfsTarUpperPath(args.Spec), os.O_RDONLY, lfOpts); err != nil {
 		return fmt.Errorf("donating rootfs tar file: %w", err)
 	}
 
@@ -981,7 +970,7 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 	}
 	donations.DonateAndClose("spec-fd", specFile)
 
-	if err := donations.OpenAndDonate("pod-init-config-fd", conf.PodInitConfig, os.O_RDONLY); err != nil {
+	if err := donations.DonateLogFile("pod-init-config-fd", conf.PodInitConfig, os.O_RDONLY, lfOpts); err != nil {
 		return err
 	}
 	donations.DonateAndClose("sink-fds", args.SinkFiles...)
@@ -1230,9 +1219,11 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 		donations.Donate("profiling-metrics-fd", stdios[1])
 		cmd.Args = append(cmd.Args, "--profiling-metrics-fd-lossy=true")
 	} else if conf.ProfilingMetricsLog != "" {
-		if err := donations.DonateDebugLogFile("profiling-metrics-fd", conf.ProfilingMetricsLog, "metrics", test, s.StartTime); err != nil {
+		lfOpts.Command = "metrics"
+		if err := donations.DonateDebugLogFile("profiling-metrics-fd", conf.ProfilingMetricsLog, lfOpts); err != nil {
 			return err
 		}
+		lfOpts.Command = "boot"
 		cmd.Args = append(cmd.Args, "--profiling-metrics-fd-lossy=false")
 	}
 
@@ -2116,7 +2107,8 @@ func setCloExeOnAllFDs() error {
 		dents, err := f.Readdirnames(256)
 		if err == io.EOF {
 			break
-		} else if err != nil {
+		}
+		if err != nil {
 			return fmt.Errorf("failed to read /proc/self/fd: %w", err)
 		}
 		for _, dent := range dents {

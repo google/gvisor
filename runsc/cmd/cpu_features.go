@@ -20,7 +20,9 @@ import (
 	"strings"
 
 	"github.com/google/subcommands"
+	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.dev/gvisor/pkg/cpuid"
+	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/flag"
 )
 
@@ -44,6 +46,12 @@ func (*CPUFeatures) Usage() string {
 
 // SetFlags implements subcommands.Command.SetFlags.
 func (*CPUFeatures) SetFlags(*flag.FlagSet) {}
+
+// FetchSpec implements util.SubCommand.FetchSpec.
+func (*CPUFeatures) FetchSpec(_ *config.Config, _ *flag.FlagSet) (string, *specs.Spec, error) {
+	// This command does not operate on a single container, so nothing to fetch.
+	return "", nil, nil
+}
 
 // Execute implements subcommands.Command.Execute.
 func (*CPUFeatures) Execute(_ context.Context, _ *flag.FlagSet, args ...any) subcommands.ExitStatus {

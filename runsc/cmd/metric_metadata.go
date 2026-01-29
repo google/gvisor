@@ -19,9 +19,11 @@ import (
 	"fmt"
 
 	"github.com/google/subcommands"
+	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"google.golang.org/protobuf/encoding/prototext"
 	"gvisor.dev/gvisor/pkg/metric"
 	"gvisor.dev/gvisor/runsc/cmd/util"
+	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/flag"
 )
 
@@ -46,6 +48,12 @@ func (*MetricMetadata) Usage() string {
 
 // SetFlags implements subcommands.Command.SetFlags.
 func (m *MetricMetadata) SetFlags(f *flag.FlagSet) {
+}
+
+// FetchSpec implements util.SubCommand.FetchSpec.
+func (m *MetricMetadata) FetchSpec(conf *config.Config, f *flag.FlagSet) (string, *specs.Spec, error) {
+	// This command does not operate on a single container, so nothing to fetch.
+	return "", nil, nil
 }
 
 // Execute implements subcommands.Command.Execute.

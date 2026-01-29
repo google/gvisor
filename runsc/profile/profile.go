@@ -27,7 +27,9 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/runsc/config"
+	"gvisor.dev/gvisor/runsc/donation"
 	"gvisor.dev/gvisor/runsc/flag"
+	"gvisor.dev/gvisor/runsc/specutils"
 )
 
 // Kind is the kind of profiling to perform.
@@ -234,25 +236,43 @@ func Start(opts Opts) func() {
 	return stopProfiling
 }
 
-// UpdatePaths updates profiling-related file paths in the given config.
-func UpdatePaths(conf *config.Config, timestamp time.Time) {
-	if !conf.ProfileEnable {
-		return
+// DonateProfileFDs will open profile files and donate their FDs to donations.
+func DonateProfileFDs(conf *config.Config, donations *donation.Agency, isGofer bool, lfOpts *specutils.LogFileOpts) error {
+	const profFlags = os.O_CREATE | os.O_WRONLY | os.O_TRUNC
+	if err := donations.DonateLogFile("profile-block-fd", updatePath(conf.ProfileBlock, "block.pprof", isGofer), profFlags, lfOpts); err != nil {
+		return fmt.Errorf("donating profile block file: %w", err)
 	}
-	conf.ProfileCPU = updatePath(conf.ProfileCPU, timestamp)
-	conf.ProfileHeap = updatePath(conf.ProfileHeap, timestamp)
-	conf.ProfileMutex = updatePath(conf.ProfileMutex, timestamp)
-	conf.ProfileBlock = updatePath(conf.ProfileBlock, timestamp)
+	if err := donations.DonateLogFile("profile-cpu-fd", updatePath(conf.ProfileCPU, "cpu.pprof", isGofer), profFlags, lfOpts); err != nil {
+		return fmt.Errorf("donating profile cpu file: %w", err)
+	}
+	if err := donations.DonateLogFile("profile-heap-fd", updatePath(conf.ProfileHeap, "heap.pprof", isGofer), profFlags, lfOpts); err != nil {
+		return fmt.Errorf("donating profile heap file: %w", err)
+	}
+	if err := donations.DonateLogFile("profile-mutex-fd", updatePath(conf.ProfileMutex, "mutex.pprof", isGofer), profFlags, lfOpts); err != nil {
+		return fmt.Errorf("donating profile mutex file: %w", err)
+	}
+	if err := donations.DonateLogFile("trace-fd", updatePath(conf.TraceFile, "trace", isGofer), profFlags, lfOpts); err != nil {
+		return fmt.Errorf("donating trace file: %w", err)
+	}
+	return nil
 }
 
-func updatePath(path string, now time.Time) string {
-	path = strings.ReplaceAll(path, "%TIMESTAMP%", fmt.Sprintf("%d", now.Unix()))
-	path = strings.ReplaceAll(path, "%YYYY%", now.Format("2006"))
-	path = strings.ReplaceAll(path, "%MM%", now.Format("01"))
-	path = strings.ReplaceAll(path, "%DD%", now.Format("02"))
-	path = strings.ReplaceAll(path, "%HH%", now.Format("15"))
-	path = strings.ReplaceAll(path, "%II%", now.Format("04"))
-	path = strings.ReplaceAll(path, "%SS%", now.Format("05"))
-	path = strings.ReplaceAll(path, "%NN%", fmt.Sprintf("%09d", now.Nanosecond()))
+func updatePath(path string, suffix string, isGofer bool) string {
+	if strings.HasSuffix(path, "/") {
+		path += "runsc-profile." + suffix
+	}
+	if isGofer {
+		// The gofer profile files are suffixed with "gofer" to avoid collisions
+		// with the sentry profile file.
+		//
+		// TODO(b/243183772): Merge gofer profile data with sentry profile data
+		// into a single file.
+		path += ".gofer"
+		if !strings.Contains(path, "%CID%") {
+			// Add the container ID to the path to avoid collisions with profile
+			// files from other gofers in multi-container sandboxes.
+			path += ".%CID%"
+		}
+	}
 	return path
 }
