@@ -792,6 +792,11 @@ func testDockerComposeRun(ctx context.Context, t *testing.T, d *dockerutil.Conta
 	if err != nil {
 		t.Fatalf("docker compose run failed: %v", err)
 	}
+	waitCtx, cancel := context.WithTimeout(ctx, defaultWait)
+	defer cancel()
+	if status, err := execProc.WaitExitStatus(waitCtx); err != nil || status != 0 {
+		t.Fatalf("docker compose run exited with error: %v, status: %d, docker logs: %v", err, status, dockerLogs(ctx, d))
+	}
 	output, err := execProc.Logs()
 	if err != nil {
 		t.Fatalf("docker logs failed: %v", err)
