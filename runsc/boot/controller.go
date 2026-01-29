@@ -638,7 +638,7 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) (retErr error) 
 
 	containerSpecs, ok := metadata[ContainerSpecsKey]
 	if !ok {
-		return fmt.Errorf("container specs not found in metdata during restore")
+		return fmt.Errorf("container specs not found in metadata during restore")
 	}
 	specs, err := specutils.GetSpecsFromString(containerSpecs)
 	if err != nil {
