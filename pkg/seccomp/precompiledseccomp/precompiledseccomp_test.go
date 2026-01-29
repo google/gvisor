@@ -20,7 +20,6 @@ import (
 	"testing"
 
 	"golang.org/x/sys/unix"
-	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/seccomp"
 )
 
@@ -41,14 +40,13 @@ func TestPrecompile(t *testing.T) {
 			name: "simple case",
 			fn: func(Values) ProgramDesc {
 				return ProgramDesc{
-					Rules: []seccomp.RuleSet{{
+					RuleSets: []seccomp.RuleSet{{
 						Rules: seccomp.NewSyscallRules().Add(
 							unix.SYS_READ,
 							seccomp.MatchAll{},
 						),
-						Action: linux.SECCOMP_RET_ALLOW,
+						Action: seccomp.Allow,
 					}},
-					SeccompOptions: seccomp.DefaultProgramOptions(),
 				}
 			},
 		},
@@ -57,16 +55,15 @@ func TestPrecompile(t *testing.T) {
 			vars: []string{"var1"},
 			fn: func(values Values) ProgramDesc {
 				return ProgramDesc{
-					Rules: []seccomp.RuleSet{{
+					RuleSets: []seccomp.RuleSet{{
 						Rules: seccomp.NewSyscallRules().Add(
 							unix.SYS_READ,
 							seccomp.PerArg{
 								seccomp.EqualTo(values["var1"]),
 							},
 						),
-						Action: linux.SECCOMP_RET_ALLOW,
+						Action: seccomp.Allow,
 					}},
-					SeccompOptions: seccomp.DefaultProgramOptions(),
 				}
 			},
 		},
@@ -83,7 +80,7 @@ func TestPrecompile(t *testing.T) {
 			vars: []string{"var1", "var2"},
 			fn: func(values Values) ProgramDesc {
 				return ProgramDesc{
-					Rules: []seccomp.RuleSet{{
+					RuleSets: []seccomp.RuleSet{{
 						Rules: seccomp.NewSyscallRules().Add(
 							unix.SYS_READ,
 							seccomp.Or{
@@ -94,9 +91,8 @@ func TestPrecompile(t *testing.T) {
 							unix.SYS_WRITE,
 							seccomp.PerArg{seccomp.EqualTo(values["var1"])},
 						),
-						Action: linux.SECCOMP_RET_ALLOW,
+						Action: seccomp.Allow,
 					}},
-					SeccompOptions: seccomp.DefaultProgramOptions(),
 				}
 			},
 		},
@@ -105,14 +101,13 @@ func TestPrecompile(t *testing.T) {
 			vars: []string{"var1"},
 			fn: func(values Values) ProgramDesc {
 				return ProgramDesc{
-					Rules: []seccomp.RuleSet{{
+					RuleSets: []seccomp.RuleSet{{
 						Rules: seccomp.NewSyscallRules().Add(
 							unix.SYS_READ,
 							seccomp.MatchAll{},
 						),
-						Action: linux.SECCOMP_RET_ALLOW,
+						Action: seccomp.Allow,
 					}},
-					SeccompOptions: seccomp.DefaultProgramOptions(),
 				}
 			},
 			wantErr: true,
@@ -122,7 +117,7 @@ func TestPrecompile(t *testing.T) {
 			vars: []string{"var1"},
 			fn: func(values Values) ProgramDesc {
 				return ProgramDesc{
-					Rules: []seccomp.RuleSet{{
+					RuleSets: []seccomp.RuleSet{{
 						Rules: seccomp.NewSyscallRules().Add(
 							unix.SYS_READ,
 							seccomp.Or{
@@ -132,9 +127,8 @@ func TestPrecompile(t *testing.T) {
 								seccomp.MatchAll{},
 							},
 						),
-						Action: linux.SECCOMP_RET_ALLOW,
+						Action: seccomp.Allow,
 					}},
-					SeccompOptions: seccomp.DefaultProgramOptions(),
 				}
 			},
 		},
@@ -143,16 +137,15 @@ func TestPrecompile(t *testing.T) {
 			vars: []string{"var1" + uint64VarSuffixHigh, "var1" + uint64VarSuffixLow},
 			fn: func(values Values) ProgramDesc {
 				return ProgramDesc{
-					Rules: []seccomp.RuleSet{{
+					RuleSets: []seccomp.RuleSet{{
 						Rules: seccomp.NewSyscallRules().Add(
 							unix.SYS_READ,
 							seccomp.PerArg{
 								seccomp.EqualTo(values.GetUint64("var1")),
 							},
 						),
-						Action: linux.SECCOMP_RET_ALLOW,
+						Action: seccomp.Allow,
 					}},
-					SeccompOptions: seccomp.DefaultProgramOptions(),
 				}
 			},
 		},
@@ -170,14 +163,13 @@ func TestPrecompile(t *testing.T) {
 				}
 				counter++
 				return ProgramDesc{
-					Rules: []seccomp.RuleSet{{
+					RuleSets: []seccomp.RuleSet{{
 						Rules: seccomp.NewSyscallRules().Add(
 							unix.SYS_READ,
 							pa,
 						),
-						Action: linux.SECCOMP_RET_ALLOW,
+						Action: seccomp.Allow,
 					}},
-					SeccompOptions: seccomp.DefaultProgramOptions(),
 				}
 			},
 			wantErr: true,
@@ -192,14 +184,13 @@ func TestPrecompile(t *testing.T) {
 				}
 				counter++
 				return ProgramDesc{
-					Rules: []seccomp.RuleSet{{
+					RuleSets: []seccomp.RuleSet{{
 						Rules: seccomp.NewSyscallRules().Add(
 							unix.SYS_READ,
 							pa,
 						),
-						Action: linux.SECCOMP_RET_ALLOW,
+						Action: seccomp.Allow,
 					}},
-					SeccompOptions: seccomp.DefaultProgramOptions(),
 				}
 			},
 			wantErr: true,
@@ -217,14 +208,13 @@ func TestPrecompile(t *testing.T) {
 				}
 				counter++
 				return ProgramDesc{
-					Rules: []seccomp.RuleSet{{
+					RuleSets: []seccomp.RuleSet{{
 						Rules: seccomp.NewSyscallRules().Add(
 							unix.SYS_READ,
 							pa,
 						),
-						Action: linux.SECCOMP_RET_ALLOW,
+						Action: seccomp.Allow,
 					}},
-					SeccompOptions: seccomp.DefaultProgramOptions(),
 				}
 			},
 			wantErr: true,

@@ -18,7 +18,6 @@ import (
 	"fmt"
 
 	"golang.org/x/sync/errgroup"
-	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/seccomp"
 	"gvisor.dev/gvisor/pkg/seccomp/precompiledseccomp"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
@@ -151,17 +150,16 @@ func PrecompiledPrograms() ([]precompiledseccomp.Program, error) {
 				seccompOpts := SeccompOptions(opt)
 				rules, denyRules := rules(opt, vars)
 				return precompiledseccomp.ProgramDesc{
-					Rules: []seccomp.RuleSet{
+					RuleSets: []seccomp.RuleSet{
 						{
-							Rules:  denyRules.Copy(),
-							Action: seccompOpts.DefaultAction,
+							Rules: denyRules.Copy(),
 						},
 						{
 							Rules:  rules.Copy(),
-							Action: linux.SECCOMP_RET_ALLOW,
+							Action: seccomp.Allow,
 						},
 					},
-					SeccompOptions: seccompOpts,
+					Options: seccompOpts,
 				}
 			})
 			if err != nil {

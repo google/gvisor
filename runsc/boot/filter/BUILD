@@ -59,7 +59,6 @@ go_test(
         "filter_fuzz_test.go",
     ],
     deps = [
-        "//pkg/abi/linux",
         "//pkg/seccomp",
         "//pkg/sentry/platform/systrap",
         "//runsc/boot/filter/config",

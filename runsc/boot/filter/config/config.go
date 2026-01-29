@@ -188,7 +188,7 @@ func SeccompOptions(opt Options) seccomp.ProgramOptions {
 		}
 	}
 
-	opts := seccomp.DefaultProgramOptions()
-	opts.HotSyscalls = uniqueHotSyscalls
-	return opts
+	return seccomp.ProgramOptions{
+		HotSyscalls: uniqueHotSyscalls,
+	}
 }

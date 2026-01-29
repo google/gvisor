@@ -29,7 +29,7 @@ func appendSysThreadArchSeccompRules(rules []seccomp.RuleSet) []seccomp.RuleSet 
 				unix.SYS_TIME:         seccomp.MatchAll{},
 				unix.SYS_GETCPU:       seccomp.MatchAll{}, // SYS_GETCPU was not defined in package syscall on amd64.
 			}),
-			Action:   linux.SECCOMP_RET_TRAP,
+			Action:   seccomp.Trap,
 			Vsyscall: true,
 		},
 		{
@@ -55,7 +55,7 @@ func appendSysThreadArchSeccompRules(rules []seccomp.RuleSet) []seccomp.RuleSet 
 					},
 				},
 			}),
-			Action: linux.SECCOMP_RET_ALLOW,
+			Action: seccomp.Allow,
 		},
 	}...)
 }

@@ -19,7 +19,6 @@ package example
 
 import (
 	"golang.org/x/sys/unix"
-	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/seccomp"
 	"gvisor.dev/gvisor/pkg/seccomp/precompiledseccomp"
 )
@@ -49,7 +48,7 @@ const (
 // but writing only to FD `FD1`.
 func Program1(values precompiledseccomp.Values) precompiledseccomp.ProgramDesc {
 	return precompiledseccomp.ProgramDesc{
-		Rules: []seccomp.RuleSet{{
+		RuleSets: []seccomp.RuleSet{{
 			Rules: seccomp.NewSyscallRules().Add(
 				unix.SYS_READ,
 				seccomp.Or{
@@ -60,9 +59,8 @@ func Program1(values precompiledseccomp.Values) precompiledseccomp.ProgramDesc {
 				unix.SYS_WRITE,
 				seccomp.PerArg{seccomp.EqualTo(values[FD1])},
 			),
-			Action: linux.SECCOMP_RET_ALLOW,
+			Action: seccomp.Allow,
 		}},
-		SeccompOptions: seccomp.DefaultProgramOptions(),
 	}
 }
 
@@ -70,7 +68,7 @@ func Program1(values precompiledseccomp.Values) precompiledseccomp.ProgramDesc {
 // but writing only to FD `FD2`.
 func Program2(values precompiledseccomp.Values) precompiledseccomp.ProgramDesc {
 	return precompiledseccomp.ProgramDesc{
-		Rules: []seccomp.RuleSet{{
+		RuleSets: []seccomp.RuleSet{{
 			Rules: seccomp.NewSyscallRules().Add(
 				unix.SYS_READ,
 				seccomp.Or{
@@ -81,9 +79,8 @@ func Program2(values precompiledseccomp.Values) precompiledseccomp.ProgramDesc {
 				unix.SYS_WRITE,
 				seccomp.PerArg{seccomp.EqualTo(values[FD2])},
 			),
-			Action: linux.SECCOMP_RET_ALLOW,
+			Action: seccomp.Allow,
 		}},
-		SeccompOptions: seccomp.DefaultProgramOptions(),
 	}
 }
 
