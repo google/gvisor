@@ -142,6 +142,9 @@ func TimerSettime(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (ui
 	if _, err := newVal.CopyIn(t, newValAddr); err != nil {
 		return 0, nil, err
 	}
+	if !newVal.Valid() {
+		return 0, nil, linuxerr.EINVAL
+	}
 	oldVal, err := t.IntervalTimerSettime(timerID, newVal, flags&linux.TIMER_ABSTIME != 0)
 	if err != nil {
 		return 0, nil, err

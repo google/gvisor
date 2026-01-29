@@ -580,6 +580,21 @@ TEST(IntervalTimerTest, AlreadyPendingSignal) {
   sigtimedwait(&mask, &si, &zero_ts);
 }
 
+TEST(IntervalTimerTest, NegativeInterval) {
+  timer_t timerid;
+  EXPECT_THAT(timer_create(CLOCK_PROCESS_CPUTIME_ID, nullptr, &timerid),
+              SyscallSucceeds());
+  struct itimerspec new_value = {};
+  new_value.it_interval.tv_sec = 0;
+  new_value.it_interval.tv_nsec = -2;  // Negative.
+  new_value.it_value.tv_sec = 0;
+  new_value.it_value.tv_nsec = 1000000;
+  // Make sure this fails with EINVAL.
+  EXPECT_THAT(timer_settime(timerid, 0, &new_value, nullptr),
+              SyscallFailsWithErrno(EINVAL));
+  timer_delete(timerid);
+}
+
 }  // namespace
 }  // namespace testing
 }  // namespace gvisor

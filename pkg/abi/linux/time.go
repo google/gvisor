@@ -209,6 +209,11 @@ type Itimerspec struct {
 	Value    Timespec
 }
 
+// Valid returns whether the itimerspec contains valid values.
+func (its Itimerspec) Valid() bool {
+	return its.Interval.Valid() && its.Value.Valid()
+}
+
 // ItimerVal mimics the following struct in <sys/time.h>
 //
 //	struct itimerval {
