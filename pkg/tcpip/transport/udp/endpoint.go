@@ -520,6 +520,21 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, tcp
 	}
 	if err := udpInfo.ctx.WritePacket(pkt, false /* headerIncluded */); err != nil {
 		e.stack.Stats().UDP.PacketSendErrors.Increment()
+		if _, ok := err.(*tcpip.ErrMessageTooLong); ok {
+			so := e.SocketOptions()
+			if so.GetIPv4RecvError() || so.GetIPv6RecvError() {
+				so.QueueLocalErr(
+					err,
+					udpInfo.ctx.PacketInfo().NetProto,
+					udpInfo.ctx.MTU(),
+					tcpip.FullAddress{
+						Addr: udpInfo.ctx.PacketInfo().RemoteAddress,
+						Port: udpInfo.remotePort,
+					},
+					nil,
+				)
+			}
+		}
 		return 0, err
 	}
 
@@ -1050,6 +1065,8 @@ func (e *endpoint) HandleError(transErr stack.TransportError, pkt *stack.PacketB
 		if e.net.State() == transport.DatagramEndpointStateConnected {
 			e.onICMPError(&tcpip.ErrConnectionRefused{}, transErr, pkt)
 		}
+	case stack.PacketTooBigTransportError:
+		e.onICMPError(&tcpip.ErrMessageTooLong{}, transErr, pkt)
 	}
 }
 
