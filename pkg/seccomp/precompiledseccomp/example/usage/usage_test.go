@@ -21,7 +21,6 @@ import (
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/bpf"
-	"gvisor.dev/gvisor/pkg/seccomp"
 	"gvisor.dev/gvisor/pkg/seccomp/precompiledseccomp"
 	"gvisor.dev/gvisor/pkg/seccomp/precompiledseccomp/example"
 )
@@ -60,7 +59,7 @@ func TestProgram1(t *testing.T) {
 		example.FD1: fd1,
 		example.FD2: fd2,
 	})
-	freshlyCompiled, _, err := seccomp.BuildProgram(prog.Rules, prog.SeccompOptions)
+	freshlyCompiled, _, err := prog.Build()
 	if err != nil {
 		t.Fatalf("cannot freshly compile the program: %v", err)
 	}
@@ -77,7 +76,7 @@ func TestProgram2(t *testing.T) {
 		example.FD1: fd1,
 		example.FD2: fd2,
 	})
-	freshlyCompiled, _, err := seccomp.BuildProgram(prog.Rules, prog.SeccompOptions)
+	freshlyCompiled, _, err := prog.Build()
 	if err != nil {
 		t.Fatalf("cannot freshly compile the program: %v", err)
 	}

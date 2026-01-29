@@ -29,13 +29,7 @@ import (
 )
 
 // ProgramDesc describes a program to be compiled.
-type ProgramDesc struct {
-	// Rules contains the seccomp-bpf rulesets to compile.
-	Rules []seccomp.RuleSet
-
-	// SeccompOptions is the seccomp-bpf program options used in compilation.
-	SeccompOptions seccomp.ProgramOptions
-}
+type ProgramDesc = seccomp.Program
 
 // Program is a precompiled seccomp-bpf program.
 // To get actual BPF instructions, call the `RenderInstructions` function.
@@ -210,8 +204,8 @@ func Precompile(name string, varNames []string, fn func(Values) ProgramDesc) (Pr
 
 // precompile compiles a `ProgramDesc` with the given values.
 func precompile(name string, values Values, fn func(Values) ProgramDesc) (Program, error) {
-	precompileOpts := fn(values)
-	insns, _, err := seccomp.BuildProgram(precompileOpts.Rules, precompileOpts.SeccompOptions)
+	prog := fn(values)
+	insns, _, err := prog.Build()
 	if err != nil {
 		return Program{}, err
 	}
@@ -232,13 +226,13 @@ func precompile(name string, values Values, fn func(Values) ProgramDesc) (Progra
 		if nonOptimizedOffsets != nil {
 			return nil
 		}
-		if !precompileOpts.SeccompOptions.Optimize {
+		if prog.Options.SkipOptimizations {
 			nonOptimizedOffsets = varOffsets
 			return nil
 		}
-		nonOptimizedOpts := precompileOpts.SeccompOptions
-		nonOptimizedOpts.Optimize = false
-		nonOptInsns, _, err := seccomp.BuildProgram(precompileOpts.Rules, nonOptimizedOpts)
+		nonOptimizedProg := prog
+		nonOptimizedProg.Options.SkipOptimizations = true
+		nonOptInsns, _, err := nonOptimizedProg.Build()
 		if err != nil {
 			return fmt.Errorf("cannot build seccomp program with optimizations disabled: %w", err)
 		}

@@ -103,13 +103,17 @@ func sysmsgSyscallNotifyRules() []bpf.Instruction {
 			Rules: seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 				unix.SYS_EXIT_GROUP: seccomp.MatchAll{},
 			}),
-			Action: linux.SECCOMP_RET_USER_NOTIF,
+			Action: seccomp.UserNotify,
 		},
 	}
-	instrs, _, err := seccomp.BuildProgram(rules, seccomp.ProgramOptions{
-		DefaultAction: linux.SECCOMP_RET_ALLOW,
-		BadArchAction: linux.SECCOMP_RET_ALLOW,
-	})
+	program := &seccomp.Program{
+		RuleSets: rules,
+		Options: seccomp.ProgramOptions{
+			DefaultAction: seccomp.Allow,
+			BadArchAction: seccomp.Allow,
+		},
+	}
+	instrs, _, err := program.Build()
 	if err != nil {
 		panic(fmt.Sprintf("failed to build rules for sysmsg threads: %v", err))
 	}
@@ -117,7 +121,7 @@ func sysmsgSyscallNotifyRules() []bpf.Instruction {
 }
 
 func sysmsgThreadRules(stubStart uintptr) []bpf.Instruction {
-	rules := []seccomp.RuleSet{}
+	var rules []seccomp.RuleSet
 	rules = appendSysThreadArchSeccompRules(rules)
 	rules = append(rules, []seccomp.RuleSet{
 		// Allow instructions from the sysmsg code stub, which is limited by one page.
@@ -162,13 +166,17 @@ func sysmsgThreadRules(stubStart uintptr) []bpf.Instruction {
 					seccomp.GreaterThan(stubStart), // rip
 				},
 			}),
-			Action: linux.SECCOMP_RET_ALLOW,
+			Action: seccomp.Allow,
 		},
 	}...)
-	instrs, _, err := seccomp.BuildProgram(rules, seccomp.ProgramOptions{
-		DefaultAction: linux.SECCOMP_RET_TRAP,
-		BadArchAction: linux.SECCOMP_RET_TRAP,
-	})
+	program := &seccomp.Program{
+		RuleSets: rules,
+		Options: seccomp.ProgramOptions{
+			DefaultAction: seccomp.Trap,
+			BadArchAction: seccomp.Trap,
+		},
+	}
+	instrs, _, err := program.Build()
 	if err != nil {
 		panic(fmt.Sprintf("failed to build rules for sysmsg threads: %v", err))
 	}

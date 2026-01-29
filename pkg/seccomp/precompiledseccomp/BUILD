@@ -45,7 +45,6 @@ go_test(
     srcs = ["precompiledseccomp_test.go"],
     library = ":precompiledseccomp",
     deps = [
-        "//pkg/abi/linux",
         "//pkg/seccomp",
         "@org_golang_x_sys//unix:go_default_library",
     ],

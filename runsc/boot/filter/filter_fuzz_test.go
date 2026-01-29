@@ -17,7 +17,6 @@ package filter_fuzz_test
 import (
 	"testing"
 
-	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/seccomp"
 	"gvisor.dev/gvisor/pkg/sentry/platform/systrap"
 	"gvisor.dev/gvisor/runsc/boot/filter/config"
@@ -49,16 +48,20 @@ func fuzzFilterOptimizationsResultInConsistentProgram(f secfuzz.FuzzLike) {
 	ruleSets := []seccomp.RuleSet{
 		{
 			Rules:  denyRules,
-			Action: linux.SECCOMP_RET_ERRNO,
+			Action: seccomp.ReturnError,
 		},
 		{
 			Rules:  rules,
-			Action: linux.SECCOMP_RET_ALLOW,
+			Action: seccomp.Allow,
 		},
 	}
 	unoptimizedOpts := config.SeccompOptions(filterOpts)
-	unoptimizedOpts.Optimize = false
-	unoptimized, _, err := seccomp.BuildProgram(ruleSets, unoptimizedOpts)
+	unoptimizedOpts.SkipOptimizations = true
+	unoptimizedProg := &seccomp.Program{
+		RuleSets: ruleSets,
+		Options:  unoptimizedOpts,
+	}
+	unoptimized, _, err := unoptimizedProg.Build()
 	if err != nil {
 		f.Fatalf("failed to build unoptimized program: %v", err)
 	}
@@ -75,8 +78,12 @@ func fuzzFilterOptimizationsResultInConsistentProgram(f secfuzz.FuzzLike) {
 		EnforceFullCoverage: false,
 	}
 	optimizedOpts := config.SeccompOptions(filterOpts)
-	optimizedOpts.Optimize = true
-	optimized, _, err := seccomp.BuildProgram(ruleSets, optimizedOpts)
+	optimizedOpts.SkipOptimizations = false
+	optimizedProg := &seccomp.Program{
+		RuleSets: ruleSets,
+		Options:  optimizedOpts,
+	}
+	optimized, _, err := optimizedProg.Build()
 	if err != nil {
 		f.Fatalf("failed to build optimized program: %v", err)
 	}
