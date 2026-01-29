@@ -46,6 +46,7 @@ import (
 	"gvisor.dev/gvisor/runsc/boot/pprof"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/specutils"
+	"gvisor.dev/gvisor/runsc/starttime"
 	"gvisor.dev/gvisor/runsc/version"
 )
 
@@ -399,6 +400,42 @@ func (r *restorer) restore(l *Loader) error {
 		postRestoreThread.Reached("kernel notified")
 
 		log.Infof("Restore successful")
+
+		// Calculate the CPU time saved for restore.
+		t, err := state.CPUTime()
+		if err != nil {
+			log.Warningf("Failed to get CPU time usage for restore, err: %v", err)
+		} else {
+			log.Infof("Restore CPU usage: %s", t.String())
+			savedTimeStr, ok := r.metadata[state.GvisorCPUUsageKey]
+			if !ok {
+				log.Warningf("Failed to retrieve CPU time usage from the metadata")
+			} else {
+				savedTime, err := time2.ParseDuration(savedTimeStr)
+				if err != nil {
+					log.Warningf("CPU time usage in metadata %v is invalid, err: %v", savedTimeStr, err)
+				} else {
+					log.Infof("CPU time saved with restore: %v", (savedTime - t).String())
+				}
+			}
+		}
+
+		// Calculate the walltime saved for restore.
+		startTime := starttime.Get()
+		curTime := time2.Now()
+		wt := curTime.Sub(startTime)
+		log.Infof("Restore wall time: %s", wt.String())
+		savedWtStr, ok := r.metadata[state.GvisorWallTimeKey]
+		if !ok {
+			log.Warningf("Failed to retrieve walltime from the metadata")
+		} else {
+			savedWt, err := time2.ParseDuration(savedWtStr)
+			if err != nil {
+				log.Warningf("Walltime in metadata %v is invalid, err: %v", savedWtStr, err)
+			} else {
+				log.Infof("Walltime saved with restore: %v", (savedWt - wt).String())
+			}
+		}
 	}()
 
 	// Transfer ownership of the `timer` to a new goroutine.
@@ -448,6 +485,9 @@ func (l *Loader) saveWithOpts(saveOpts *state.SaveOpts, execOpts *control.SaveRe
 		return err
 	}
 	saveOpts.Metadata[ContainerSpecsKey] = specsStr
+
+	// Save start time of the runsc process.
+	saveOpts.StartTime = starttime.Get()
 
 	if err := l.prepareSaveOptsExtra(saveOpts); err != nil {
 		return err
