@@ -745,9 +745,14 @@ func testDockerComposeBuild(ctx context.Context, t *testing.T, d *dockerutil.Con
 		t.Fatalf("docker compose build failed: %v", err)
 	}
 	defer removeDockerImage(ctx, imageName, d)
-	d.WaitForOutput(ctx, fmt.Sprintf("%s  Built", imageName), defaultWait)
-	if err := checkDockerImage(ctx, imageName, d); err != nil {
-		t.Fatalf("failed to find docker image: %v", err)
+	// Instead of waiting for a "Built" string, poll for the image existence.
+	// This is more resilient to UI changes in Docker Compose.
+	err = testutil.Poll(func() error {
+		return checkDockerImage(ctx, imageName, d)
+	}, defaultWait)
+
+	if err != nil {
+		t.Fatalf("image %s was not created after build: %v, docker logs: %v", imageName, err, dockerLogs(ctx, d))
 	}
 }
 
