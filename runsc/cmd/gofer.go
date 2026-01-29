@@ -103,6 +103,7 @@ type goferSyncFDs struct {
 // Gofer implements subcommands.Command for the "gofer" command, which starts a
 // filesystem gofer.  This command should not be called directly.
 type Gofer struct {
+	util.InternalSubCommand
 	bundleDir  string
 	ioFDs      intFlags
 	devIoFD    int

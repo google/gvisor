@@ -20,9 +20,11 @@ import (
 	"os"
 
 	"github.com/google/subcommands"
+	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.dev/gvisor/pkg/state/pretty"
 	"gvisor.dev/gvisor/pkg/state/statefile"
 	"gvisor.dev/gvisor/runsc/cmd/util"
+	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/flag"
 )
 
@@ -57,6 +59,12 @@ func (s *Statefile) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&s.key, "key", "", "the integrity key for the file.")
 	f.StringVar(&s.output, "output", "", "target to write the result.")
 	f.BoolVar(&s.html, "html", false, "outputs in HTML format.")
+}
+
+// FetchSpec implements util.SubCommand.FetchSpec.
+func (*Statefile) FetchSpec(_ *config.Config, _ *flag.FlagSet) (string, *specs.Spec, error) {
+	// This command does not operate on a single container, so nothing to fetch.
+	return "", nil, nil
 }
 
 // Execute implements subcommands.Command.Execute.

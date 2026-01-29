@@ -19,10 +19,12 @@ import (
 	"testing"
 
 	"gvisor.dev/gvisor/runsc/config"
+	"gvisor.dev/gvisor/runsc/flag"
 )
 
 func TestNotFound(t *testing.T) {
-	ids := []string{"123"}
+	f := flag.NewFlagSet("test", flag.ContinueOnError)
+	f.Parse([]string{"123"})
 	dir, err := os.MkdirTemp("", "metadata")
 	if err != nil {
 		t.Fatalf("error creating dir: %v", err)
@@ -30,12 +32,12 @@ func TestNotFound(t *testing.T) {
 	conf := &config.Config{RootDir: dir}
 
 	d := Delete{}
-	if err := d.execute(ids, conf); err == nil {
+	if err := d.execute(f, conf); err == nil {
 		t.Error("Deleting non-existent container should have failed")
 	}
 
 	d = Delete{force: true}
-	if err := d.execute(ids, conf); err != nil {
+	if err := d.execute(f, conf); err != nil {
 		t.Errorf("Deleting non-existent container with --force should NOT have failed: %v", err)
 	}
 }

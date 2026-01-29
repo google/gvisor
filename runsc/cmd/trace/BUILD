@@ -27,6 +27,7 @@ go_library(
         "//runsc/container",
         "//runsc/flag",
         "@com_github_google_subcommands//:go_default_library",
+        "@com_github_opencontainers_runtime_spec//specs-go:go_default_library",
     ],
 )
 

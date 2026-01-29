@@ -16,6 +16,8 @@
 package metricservercmd
 
 import (
+	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/flag"
 )
 
@@ -40,6 +42,12 @@ func (*Cmd) Synopsis() string {
 // Usage implements subcommands.Command.Usage.
 func (*Cmd) Usage() string {
 	return "-root=<root dir> -metric-server=<addr> metric-server [-exporter-prefix=<runsc_>]\n"
+}
+
+// FetchSpec implements util.SubCommand.FetchSpec.
+func (*Cmd) FetchSpec(conf *config.Config, f *flag.FlagSet) (string, *specs.Spec, error) {
+	// This command does not operate on a single container, so nothing to fetch.
+	return "", nil, nil
 }
 
 // SetFlags implements subcommands.Command.SetFlags.

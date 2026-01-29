@@ -27,6 +27,7 @@ import (
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"google.golang.org/protobuf/proto"
 	"gvisor.dev/gvisor/runsc/cmd/util"
+	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/flag"
 )
 
@@ -239,6 +240,12 @@ func (s *Spec) SetFlags(f *flag.FlagSet) {
 		"this value MUST be an absolute path")
 	f.StringVar(&s.netns, "netns", "", "network namespace path")
 	f.BoolVar(&s.tpu, "tpu", false, "whether to configure the container with access to TPU devices")
+}
+
+// FetchSpec implements util.SubCommand.FetchSpec.
+func (s *Spec) FetchSpec(conf *config.Config, f *flag.FlagSet) (string, *specs.Spec, error) {
+	// This command does not operate on a single container, so nothing to fetch.
+	return "", nil, nil
 }
 
 // Execute implements subcommands.Command.Execute.
