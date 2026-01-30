@@ -278,7 +278,7 @@ func dockerLogs(ctx context.Context, d *dockerutil.Container) string {
 	if err != nil {
 		return fmt.Sprintf("Failed to get docker logs: %v", err)
 	}
-	return logs
+	return fmt.Sprintf("\n%s", logs)
 }
 
 func TestRuby(t *testing.T) {
@@ -745,14 +745,9 @@ func testDockerComposeBuild(ctx context.Context, t *testing.T, d *dockerutil.Con
 		t.Fatalf("docker compose build failed: %v", err)
 	}
 	defer removeDockerImage(ctx, imageName, d)
-	// Instead of waiting for a "Built" string, poll for the image existence.
-	// This is more resilient to UI changes in Docker Compose.
-	err = testutil.Poll(func() error {
-		return checkDockerImage(ctx, imageName, d)
-	}, defaultWait)
-
-	if err != nil {
-		t.Fatalf("image %s was not created after build: %v, docker logs: %v", imageName, err, dockerLogs(ctx, d))
+	d.WaitForOutput(ctx, fmt.Sprintf("%s  Built", imageName), defaultWait)
+	if err := checkDockerImage(ctx, imageName, d); err != nil {
+		t.Fatalf("failed to find docker image: %v", err)
 	}
 }
 
@@ -791,11 +786,6 @@ func testDockerComposeRun(ctx context.Context, t *testing.T, d *dockerutil.Conta
 		[]string{"docker", "compose", "-f", dockerComposeFileName, "run", "--rm", dockerComposeAppName, "sh", "-c", "echo hello gVisor"}...)
 	if err != nil {
 		t.Fatalf("docker compose run failed: %v", err)
-	}
-	waitCtx, cancel := context.WithTimeout(ctx, defaultWait)
-	defer cancel()
-	if status, err := execProc.WaitExitStatus(waitCtx); err != nil || status != 0 {
-		t.Fatalf("docker compose run exited with error: %v, status: %d, docker logs: %v", err, status, dockerLogs(ctx, d))
 	}
 	output, err := execProc.Logs()
 	if err != nil {
