@@ -139,34 +139,44 @@ func (c *cgroupV2) Install(res *specs.LinuxResources) error {
 		return err
 	}
 	if created {
-		// If we created our final cgroup path then we can set the resources.
-		for controllerName, ctrlr := range controllers2 {
-			// First check if our controller is found in the system.
-			found := false
-			for _, knownController := range c.Controllers {
-				if controllerName == knownController {
-					found = true
-				}
-			}
-
-			// In case we don't have the controller.
-			if found {
-				if err := ctrlr.set(res, c.MakePath("")); err != nil {
-					return err
-				}
-				continue
-			}
-			if ctrlr.optional() {
-				if err := ctrlr.skip(res); err != nil {
-					return err
-				}
-			} else {
-				return fmt.Errorf("mandatory cgroup controller %q is missing for %q", controllerName, c.MakePath(""))
-			}
+		if err := c.Update(res); err != nil {
+			return err
 		}
 	}
 
 	clean.Release()
+	return nil
+}
+
+// Update updates the cgroup resources.
+func (c *cgroupV2) Update(res *specs.LinuxResources) error {
+	path := c.MakePath("")
+	log.Debugf("Updating cgroup resources for %q", path)
+	for controllerName, ctrlr := range controllers2 {
+		// First check if our controller is found in the system.
+		found := false
+		for _, knownController := range c.Controllers {
+			if controllerName == knownController {
+				found = true
+				break
+			}
+		}
+
+		// In case we don't have the controller.
+		if found {
+			if err := ctrlr.set(res, path); err != nil {
+				return err
+			}
+			continue
+		}
+		if ctrlr.optional() {
+			if err := ctrlr.skip(res); err != nil {
+				return err
+			}
+		} else {
+			return fmt.Errorf("mandatory cgroup controller %q is missing for %q", controllerName, path)
+		}
+	}
 	return nil
 }
 
@@ -540,7 +550,7 @@ func (*memory2) set(spec *specs.LinuxResources, path string) error {
 
 		swap, err := convertMemorySwapToCgroupV2Value(*spec.Memory.Swap, *spec.Memory.Limit)
 		if err != nil {
-			return nil
+			return err
 		}
 		swapStr := numToStr(swap)
 		// memory and memorySwap set to the same value -- disable swap

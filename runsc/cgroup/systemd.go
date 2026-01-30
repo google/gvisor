@@ -111,29 +111,25 @@ func (c *cgroupSystemd) Install(res *specs.LinuxResources) error {
 	// For compatibility with runc.
 	c.addProp("DefaultDependencies", false)
 
-	for controllerName, ctrlr := range controllers2 {
-		// First check if our controller is found in the system.
-		found := false
-		for _, knownController := range c.Controllers {
-			if controllerName == knownController {
-				found = true
-			}
-		}
-		if found {
-			props, err := ctrlr.generateProperties(res)
-			if err != nil {
-				return err
-			}
-			c.properties = append(c.properties, props...)
-			continue
-		}
-		if ctrlr.optional() {
-			if err := ctrlr.skip(res); err != nil {
-				return err
-			}
-		} else {
-			return fmt.Errorf("mandatory cgroup controller %q is missing for %q", controllerName, c.Path)
-		}
+	return c.updateControllersProps(res)
+}
+
+// Update updates the cgroup resources of an existing systemd unit.
+func (c *cgroupSystemd) Update(res *specs.LinuxResources) error {
+	log.Debugf("Updating systemd cgroup resource controller under %v", c.Parent)
+	if err := c.updateControllersProps(res); err != nil {
+		return err
+	}
+
+	ctx := context.Background()
+	conn, err := systemdDbus.NewWithContext(ctx)
+	if err != nil {
+		return err
+	}
+	c.dbusConn = conn
+	// Our systemd units are transient, hence runtime=true.
+	if err := c.dbusConn.SetUnitPropertiesContext(ctx, c.unitName(), true /* runtime */, c.properties...); err != nil {
+		return fmt.Errorf("error setting systemd unit properties: %v", err)
 	}
 	return nil
 }
@@ -307,6 +303,35 @@ func newProp(name string, units any) systemdDbus.Property {
 		Name:  name,
 		Value: dbus.MakeVariant(units),
 	}
+}
+
+func (c *cgroupSystemd) updateControllersProps(res *specs.LinuxResources) error {
+	for controllerName, ctrlr := range controllers2 {
+		// First check if our controller is found in the system.
+		found := false
+		for _, knownController := range c.Controllers {
+			if controllerName == knownController {
+				found = true
+				break
+			}
+		}
+		if found {
+			props, err := ctrlr.generateProperties(res)
+			if err != nil {
+				return err
+			}
+			c.properties = append(c.properties, props...)
+			continue
+		}
+		if ctrlr.optional() {
+			if err := ctrlr.skip(res); err != nil {
+				return err
+			}
+		} else {
+			return fmt.Errorf("mandatory cgroup controller %q is missing for %q", controllerName, c.Path)
+		}
+	}
+	return nil
 }
 
 // CreateMockSystemdCgroup returns a mock Cgroup configured for systemd. This
