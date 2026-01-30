@@ -138,6 +138,9 @@ type DentryImpl interface {
 	// may acquire inotify locks, so to prevent deadlock, no inotify locks should
 	// be held by the caller.
 	OnZeroWatches(ctx context.Context)
+
+	// IsDir returns true if the file represented by this dentry is a directory.
+	IsDir() bool
 }
 
 // IncRef increments d's reference count.

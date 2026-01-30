@@ -1621,6 +1621,11 @@ func (d *dentry) OnZeroWatches(ctx context.Context) {
 	d.checkCachingLocked(ctx, false /* renameMuWriteLocked */)
 }
 
+// IsDir implements vfs.DentryImpl.IsDir.
+func (d *dentry) IsDir() bool {
+	return d.isDir()
+}
+
 // checkCachingLocked should be called after d's reference count becomes 0 or
 // it becomes disowned.
 //
