@@ -25,6 +25,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/docker/docker/api/types/container"
 	"gvisor.dev/gvisor/pkg/test/dockerutil"
 	"gvisor.dev/gvisor/pkg/test/testutil"
 	"gvisor.dev/gvisor/runsc/cgroup"
@@ -296,21 +297,51 @@ func TestCgroupV1(t *testing.T) {
 	gid := d.ID()
 	t.Logf("cgroup ID: %s", gid)
 
-	// Check list of attributes defined above.
-	for _, attr := range attrs {
-		path := cgroupPath(attr.ctrl, "docker", gid, attr.file)
-		out, err := os.ReadFile(path)
-		if err != nil {
-			if os.IsNotExist(err) && attr.skipIfNotFound {
-				t.Logf("skipped %s/%s", attr.ctrl, attr.file)
-				continue
+	checkAttrs := func() {
+		// Check list of attributes defined above.
+		for _, attr := range attrs {
+			path := cgroupPath(attr.ctrl, "docker", gid, attr.file)
+			out, err := os.ReadFile(path)
+			if err != nil {
+				if os.IsNotExist(err) && attr.skipIfNotFound {
+					t.Logf("skipped %s/%s", attr.ctrl, attr.file)
+					continue
+				}
+				t.Fatalf("failed to read %q: %v", path, err)
 			}
-			t.Fatalf("failed to read %q: %v", path, err)
-		}
-		if got := strings.TrimSpace(string(out)); got != attr.want {
-			t.Errorf("field: %q, cgroup attribute %s/%s, got: %q, want: %q", attr.field, attr.ctrl, attr.file, got, attr.want)
+			if got := strings.TrimSpace(string(out)); got != attr.want {
+				t.Errorf("field: %q, cgroup attribute %s/%s, got: %q, want: %q", attr.field, attr.ctrl, attr.file, got, attr.want)
+			}
 		}
 	}
+
+	checkAttrs()
+
+	// Update memory.
+	updatedMemory := struct {
+		field          string
+		value          int64
+		ctrl           string
+		file           string
+		want           string
+		skipIfNotFound bool
+	}{
+		field: "memory",
+		value: 1 << 20,
+		ctrl:  "memory",
+		file:  "memory.limit_in_bytes",
+		want:  "1048576",
+	}
+	attrs[3] = updatedMemory
+	if err := d.Update(ctx, container.UpdateConfig{
+		Resources: container.Resources{
+			Memory: updatedMemory.value,
+		},
+	}); err != nil {
+		t.Fatalf("failed to update container: %v", err)
+	}
+
+	checkAttrs()
 
 	// Check that sandbox is inside cgroup.
 	controllers := []string{
@@ -471,24 +502,52 @@ func TestCgroupV2(t *testing.T) {
 	gid := d.ID()
 	t.Logf("cgroup ID: %s", gid)
 
-	// Check list of attributes defined above.
-	for _, attr := range attrs {
-		path := cgroupPath("docker", gid, attr.file)
-		if useSystemd {
-			path = filepath.Join(baseCgroupPath, "docker-"+gid+".scope", attr.file)
-		}
-		out, err := os.ReadFile(path)
-		if err != nil {
-			if os.IsNotExist(err) && attr.skipIfNotFound {
-				t.Logf("skipped %s", attr.file)
-				continue
+	checkAttrs := func() {
+		// Check list of attributes defined above.
+		for _, attr := range attrs {
+			path := cgroupPath("docker", gid, attr.file)
+			if useSystemd {
+				path = filepath.Join(baseCgroupPath, "docker-"+gid+".scope", attr.file)
 			}
-			t.Fatalf("failed to read %q: %v", path, err)
-		}
-		if got := strings.TrimSpace(string(out)); got != attr.want {
-			t.Errorf("field: %q, cgroup attribute %s, got: %q, want: %q", attr.field, attr.file, got, attr.want)
+			out, err := os.ReadFile(path)
+			if err != nil {
+				if os.IsNotExist(err) && attr.skipIfNotFound {
+					t.Logf("skipped %s", attr.file)
+					continue
+				}
+				t.Fatalf("failed to read %q: %v", path, err)
+			}
+			if got := strings.TrimSpace(string(out)); got != attr.want {
+				t.Errorf("field: %q, cgroup attribute %s, got: %q, want: %q", attr.field, attr.file, got, attr.want)
+			}
 		}
 	}
+
+	checkAttrs()
+
+	// Update pids-limit.
+	updatedPidsLimit := struct {
+		field          string
+		value          int64
+		file           string
+		want           string
+		skipIfNotFound bool
+	}{
+		field: "pids-limit",
+		value: 1500,
+		file:  "pids.max",
+		want:  "1500",
+	}
+	attrs[len(attrs)-1] = updatedPidsLimit
+	if err := d.Update(ctx, container.UpdateConfig{
+		Resources: container.Resources{
+			PidsLimit: &updatedPidsLimit.value,
+		},
+	}); err != nil {
+		t.Fatalf("failed to update container: %v", err)
+	}
+
+	checkAttrs()
 
 	// Check that sandbox is inside cgroup.
 	pid, err := d.SandboxPid(ctx)
