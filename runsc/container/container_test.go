@@ -4260,27 +4260,67 @@ func TestSpecValidationIgnore(t *testing.T) {
 }
 
 func TestSpecValidationForArgs(t *testing.T) {
-	conf := testutil.TestConfig(t)
-	oldSpecs := make(map[string]*specs.Spec)
-	spec, _ := sleepSpecConf(t)
-	spec.Process.Cwd = "/bin"
-	spec.Process.Args[0] = "/bin/sleep"
-	oldSpecs["container1"] = spec
-
-	newSpecs := make(map[string]*specs.Spec)
-	restoreSpec, _ := sleepSpecConf(t)
-	restoreSpec.Process.Cwd = "/bin"
-	restoreSpec.Process.Args[0] = "./sleep"
-	newSpecs["container1"] = restoreSpec
-
-	if err := specutils.RestoreValidateSpec(oldSpecs, newSpecs, conf); err != nil {
-		t.Errorf("spec validation failed, got: %v, want: nil", err)
+	tests := []struct {
+		name        string
+		args        []string
+		restoreArgs []string
+		wantErr     bool
+	}{
+		{
+			name:        "base path same",
+			args:        []string{"/bin/sleep", "1000"},
+			restoreArgs: []string{"sleep", "1000"},
+			wantErr:     false,
+		},
+		{
+			name:        "executable path",
+			args:        []string{"/bin/sleep", "1000"},
+			restoreArgs: []string{"./sleep", "1000"},
+			wantErr:     false,
+		},
+		{
+			name:        "different args",
+			args:        []string{"/bin/sleep", "1000", "1"},
+			restoreArgs: []string{"./sleep", "1000", "infinity"},
+			wantErr:     true,
+		},
+		{
+			name:        "no base path",
+			args:        []string{"/bin/sleep/", "1000", "1"},
+			restoreArgs: []string{"sleep", "1000", "infinity"},
+			wantErr:     true,
+		},
+		{
+			name:        "same length with different path",
+			args:        []string{"/bin/sleep", "1000", "1"},
+			restoreArgs: []string{"/bin/sheep", "1000", "1"},
+			wantErr:     true,
+		},
 	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			conf := testutil.TestConfig(t)
 
-	spec.Process.Args = append(spec.Process.Args, "1")
-	restoreSpec.Process.Args = append(restoreSpec.Process.Args, "infinity")
-	if err := specutils.RestoreValidateSpec(oldSpecs, newSpecs, conf); err == nil {
-		t.Errorf("spec validation passed when we expected it to fail")
+			oldSpecs := make(map[string]*specs.Spec)
+			spec, _ := sleepSpecConf(t)
+			spec.Process.Cwd = "/bin"
+			spec.Process.Args = test.args
+			oldSpecs["container1"] = spec
+
+			newSpecs := make(map[string]*specs.Spec)
+			restoreSpec, _ := sleepSpecConf(t)
+			restoreSpec.Process.Cwd = "/bin"
+			restoreSpec.Process.Args = test.restoreArgs
+			newSpecs["container1"] = restoreSpec
+
+			err := specutils.RestoreValidateSpec(oldSpecs, newSpecs, conf)
+			if !test.wantErr && err != nil {
+				t.Errorf("spec validation failed, got: %v, want: nil", err)
+			}
+			if test.wantErr && err == nil {
+				t.Errorf("spec validation passed when we expected it to fail")
+			}
+		})
 	}
 }
 
