@@ -18,6 +18,8 @@ import (
 	"fmt"
 	"go/token"
 	"go/types"
+	"maps"
+	"slices"
 	"strings"
 	"sync/atomic"
 
@@ -38,6 +40,8 @@ type lockState struct {
 	//
 	// The value indicates whether this is an exclusive lock.
 	lockedMutexes map[string]lockInfo
+
+	aliases map[string]string
 
 	// stored stores values that have been stored in memory, bound to
 	// FreeVars or passed as Parameterse.
@@ -60,6 +64,7 @@ func newLockState() *lockState {
 	refs := int32(1) // Not shared.
 	return &lockState{
 		lockedMutexes: make(map[string]lockInfo),
+		aliases:       make(map[string]string),
 		used:          make(map[ssa.Value]struct{}),
 		stored:        make(map[ssa.Value]ssa.Value),
 		defers:        make([]*ssa.Defer, 0),
@@ -76,6 +81,7 @@ func (l *lockState) fork() *lockState {
 	atomic.AddInt32(l.refs, 1)
 	return &lockState{
 		lockedMutexes: l.lockedMutexes,
+		aliases:       l.aliases,
 		used:          make(map[ssa.Value]struct{}),
 		stored:        l.stored,
 		defers:        l.defers,
@@ -87,26 +93,19 @@ func (l *lockState) fork() *lockState {
 func (l *lockState) modify() {
 	if atomic.LoadInt32(l.refs) > 1 {
 		// Copy the lockedMutexes.
-		lm := make(map[string]lockInfo)
-		for k, v := range l.lockedMutexes {
-			lm[k] = v
-		}
-		l.lockedMutexes = lm
+		l.lockedMutexes = maps.Clone(l.lockedMutexes)
+
+		// Copy the aliases.
+		l.aliases = maps.Clone(l.aliases)
 
 		// Copy the stored values.
-		s := make(map[ssa.Value]ssa.Value)
-		for k, v := range l.stored {
-			s[k] = v
-		}
-		l.stored = s
+		l.stored = maps.Clone(l.stored)
 
 		// Reset the used values.
 		clear(l.used)
 
 		// Copy the defers.
-		ds := make([]*ssa.Defer, len(l.defers))
-		copy(ds, l.defers)
-		l.defers = ds
+		l.defers = slices.Clone(l.defers)
 
 		// Drop our reference.
 		atomic.AddInt32(l.refs, -1)
@@ -123,6 +122,7 @@ func (l *lockState) isHeld(rv resolvedValue, exclusiveRequired bool) (string, bo
 		panic("invalid resolvedValue passed to isHeld")
 	}
 	s, _ := rv.valueAndObject(l)
+	s = l.aliasKey(s)
 	info, ok := l.lockedMutexes[s]
 	if !ok {
 		return s, false
@@ -144,6 +144,7 @@ func (l *lockState) lockField(rv resolvedValue, exclusive bool) (string, bool) {
 		panic("invalid resolvedValue passed to isHeld")
 	}
 	s, obj := rv.valueAndObject(l)
+	s = l.aliasKey(s)
 	if _, ok := l.lockedMutexes[s]; ok {
 		return s, false
 	}
@@ -165,6 +166,7 @@ func (l *lockState) unlockField(rv resolvedValue, exclusive bool) (string, bool)
 		panic("invalid resolvedValue passed to isHeld")
 	}
 	s, _ := rv.valueAndObject(l)
+	s = l.aliasKey(s)
 	info, ok := l.lockedMutexes[s]
 	if !ok {
 		return s, false
@@ -187,6 +189,7 @@ func (l *lockState) downgradeField(rv resolvedValue) (string, bool) {
 		panic("invalid resolvedValue passed to isHeld")
 	}
 	s, _ := rv.valueAndObject(l)
+	s = l.aliasKey(s)
 	info, ok := l.lockedMutexes[s]
 	if !ok {
 		return s, false
@@ -204,6 +207,35 @@ func (l *lockState) downgradeField(rv resolvedValue) (string, bool) {
 func (l *lockState) store(addr ssa.Value, v ssa.Value) {
 	l.modify()
 	l.stored[addr] = v
+}
+
+func (l *lockState) addAlias(left, right resolvedValue) {
+	leftKey, _ := left.valueAndObject(l)
+	rightKey, _ := right.valueAndObject(l)
+	leftRoot := l.aliasKey(leftKey)
+	rightRoot := l.aliasKey(rightKey)
+	if leftRoot == rightRoot {
+		return
+	}
+	l.modify()
+	l.aliases[leftRoot] = rightRoot
+	if leftInfo, ok := l.lockedMutexes[leftRoot]; ok {
+		if rightInfo, ok := l.lockedMutexes[rightRoot]; ok {
+			leftInfo.exclusive = leftInfo.exclusive || rightInfo.exclusive
+		}
+		l.lockedMutexes[rightRoot] = leftInfo
+		delete(l.lockedMutexes, leftRoot)
+	}
+}
+
+func (l *lockState) aliasKey(key string) string {
+	for {
+		parent, ok := l.aliases[key]
+		if !ok {
+			return key
+		}
+		key = parent
+	}
 }
 
 // isSubset indicates other holds all the locks held by l.

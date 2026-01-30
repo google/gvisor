@@ -18,7 +18,7 @@ import (
 	"fmt"
 
 	"go/token"
-	"strconv"
+	"slices"
 	"strings"
 )
 
@@ -41,8 +41,7 @@ const (
 // failData indicates an expected failure.
 type failData struct {
 	pos   token.Pos
-	count int
-	seen  int
+	wants []string
 }
 
 // positionKey is a simple position string.
@@ -59,18 +58,14 @@ func (pc *passContext) positionKey(pos token.Pos) positionKey {
 
 // addFailures adds an expected failure.
 func (pc *passContext) addFailures(pos token.Pos, s string) {
-	count := 1
-	if len(s) > 0 && s[0] == ':' {
-		parsedCount, err := strconv.Atoi(s[1:])
-		if err != nil {
-			pc.pass.Reportf(pos, "unable to parse failure annotation %q: %v", s[1:], err)
-			return
-		}
-		count = parsedCount
+	s, want, ok := strings.Cut(s, "=")
+	if !ok && s != "" {
+		pc.pass.Reportf(pos, "unable to parse failure annotation %q", s)
+		return
 	}
 	pc.failures[pc.positionKey(pos)] = &failData{
 		pos:   pos,
-		count: count,
+		wants: strings.Split(want, "|"),
 	}
 }
 
@@ -87,8 +82,14 @@ func (pc *passContext) addForce(pos token.Pos) {
 // maybeFail checks a potential failure against a specific failure map.
 func (pc *passContext) maybeFail(pos token.Pos, fmtStr string, args ...any) {
 	if fd, ok := pc.failures[pc.positionKey(pos)]; ok {
-		fd.seen++
-		return
+		msg := fmt.Sprintf(fmtStr, args...)
+		index := slices.IndexFunc(fd.wants, func(want string) bool {
+			return strings.Contains(msg, want)
+		})
+		if index != -1 {
+			fd.wants = slices.Delete(fd.wants, index, index+1)
+			return
+		}
 	}
 	if _, ok := pc.exemptions[pc.positionKey(pos)]; ok {
 		return // Ignored, not counted.
@@ -102,9 +103,16 @@ func (pc *passContext) maybeFail(pos token.Pos, fmtStr string, args ...any) {
 // checkFailure checks for the expected failure counts.
 func (pc *passContext) checkFailures() {
 	for _, fd := range pc.failures {
-		if fd.count != fd.seen {
-			// We are missing expect failures, report as much as possible.
-			pc.pass.Reportf(fd.pos, "got %d failures, want %d failures", fd.seen, fd.count)
+		wildcards := 0
+		for _, want := range fd.wants {
+			if want == "" {
+				wildcards++
+				continue
+			}
+			pc.pass.Reportf(fd.pos, "missing expected failure %q", want)
+		}
+		if wildcards != 0 {
+			pc.pass.Reportf(fd.pos, "missing %d expected failures", wildcards)
 		}
 	}
 }

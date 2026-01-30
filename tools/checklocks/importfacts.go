@@ -57,3 +57,16 @@ func (pc *passContext) importLockFunctionFacts(fn *types.Func, lff *lockFunction
 		pc.pass.ImportObjectFact(orig, lff)
 	}
 }
+
+func (pc *passContext) importLockTypeFacts(typ types.Type, ltf *lockTypeFacts) {
+	for {
+		if ptr, ok := typ.(*types.Pointer); ok {
+			typ = ptr.Elem()
+			continue
+		}
+		if named, ok := types.Unalias(typ).(*types.Named); ok {
+			pc.pass.ImportObjectFact(named.Obj(), ltf)
+		}
+		return
+	}
+}
