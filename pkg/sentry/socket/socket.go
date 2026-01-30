@@ -260,6 +260,11 @@ type Socket interface {
 	// GetPeerCreds returns the peer credentials of the socket.
 	GetPeerCreds(t *kernel.Task) (marshal.Marshallable, *syserr.Error)
 
+	// HasCapability returns true if the task has the given capability in
+	// the socket opener's user namespace.
+	// Similar to `sk_net_capable` in Linux.
+	HasCapability(cp linux.Capability, t *kernel.Task) bool
+
 	// RecvMsg implements the recvmsg(2) linux unix.
 	//
 	// senderAddrLen is the address length to be returned to the application,

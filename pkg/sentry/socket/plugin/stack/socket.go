@@ -855,3 +855,9 @@ func (s *socketOperations) waitEventT(ctx context.Context, event waiter.EventMas
 	s.EventUnregister(&e)
 	return err
 }
+
+// HasCapability implements socket.Socket.TaskHasCapability.
+func (s *socketOperations) HasCapability(cp linux.Capability, t *kernel.Task) bool {
+	// Unimplemented.
+	return false
+}
