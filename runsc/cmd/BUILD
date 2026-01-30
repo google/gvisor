@@ -75,6 +75,7 @@ go_library(
         "syscalls.go",
         "tar.go",
         "umount_unsafe.go",
+        "update.go",
         "usage.go",
         "wait.go",
         "write_control.go",
