@@ -1544,6 +1544,10 @@ func getSockOptIPv6(t *kernel.Task, s socket.Socket, ep commonEndpoint, name int
 			return nil, syserr.ErrProtocolNotAvailable
 		}
 
+		if !t.HasCapabilityIn(linux.CAP_NET_ADMIN, t.NetworkNamespace().UserNamespace()) {
+			return nil, syserr.ErrNotPermitted
+		}
+
 		stk := inet.StackFromContext(t)
 		if stk == nil {
 			return nil, syserr.ErrNoDevice
@@ -1564,6 +1568,10 @@ func getSockOptIPv6(t *kernel.Task, s socket.Socket, ep commonEndpoint, name int
 			return nil, syserr.ErrProtocolNotAvailable
 		}
 
+		if !t.HasCapabilityIn(linux.CAP_NET_ADMIN, t.NetworkNamespace().UserNamespace()) {
+			return nil, syserr.ErrNotPermitted
+		}
+
 		stk := inet.StackFromContext(t)
 		if stk == nil {
 			return nil, syserr.ErrNoDevice
@@ -1582,6 +1590,10 @@ func getSockOptIPv6(t *kernel.Task, s socket.Socket, ep commonEndpoint, name int
 		// Only valid for raw IPv6 sockets.
 		if skType != linux.SOCK_RAW {
 			return nil, syserr.ErrProtocolNotAvailable
+		}
+
+		if !t.HasCapabilityIn(linux.CAP_NET_ADMIN, t.NetworkNamespace().UserNamespace()) {
+			return nil, syserr.ErrNotPermitted
 		}
 
 		stk := inet.StackFromContext(t)
@@ -1605,6 +1617,10 @@ func getSockOptIPv6(t *kernel.Task, s socket.Socket, ep commonEndpoint, name int
 		// Only valid for raw IPv6 sockets.
 		if skType != linux.SOCK_RAW {
 			return nil, syserr.ErrProtocolNotAvailable
+		}
+
+		if !t.HasCapabilityIn(linux.CAP_NET_ADMIN, t.NetworkNamespace().UserNamespace()) {
+			return nil, syserr.ErrNotPermitted
 		}
 
 		stk := inet.StackFromContext(t)
@@ -1785,6 +1801,10 @@ func getSockOptIP(t *kernel.Task, s socket.Socket, ep commonEndpoint, name int, 
 			return nil, syserr.ErrProtocolNotAvailable
 		}
 
+		if !t.HasCapabilityIn(linux.CAP_NET_ADMIN, t.NetworkNamespace().UserNamespace()) {
+			return nil, syserr.ErrNotPermitted
+		}
+
 		stk := inet.StackFromContext(t)
 		if stk == nil {
 			return nil, syserr.ErrNoDevice
@@ -1803,6 +1823,10 @@ func getSockOptIP(t *kernel.Task, s socket.Socket, ep commonEndpoint, name int, 
 		// Only valid for raw IPv4 sockets.
 		if family, skType, _ := s.Type(); family != linux.AF_INET || skType != linux.SOCK_RAW {
 			return nil, syserr.ErrProtocolNotAvailable
+		}
+
+		if !t.HasCapabilityIn(linux.CAP_NET_ADMIN, t.NetworkNamespace().UserNamespace()) {
+			return nil, syserr.ErrNotPermitted
 		}
 
 		stk := inet.StackFromContext(t)
@@ -1826,6 +1850,10 @@ func getSockOptIP(t *kernel.Task, s socket.Socket, ep commonEndpoint, name int, 
 			return nil, syserr.ErrProtocolNotAvailable
 		}
 
+		if !t.HasCapabilityIn(linux.CAP_NET_ADMIN, t.NetworkNamespace().UserNamespace()) {
+			return nil, syserr.ErrNotPermitted
+		}
+
 		stk := inet.StackFromContext(t)
 		if stk == nil {
 			return nil, syserr.ErrNoDevice
@@ -1847,6 +1875,10 @@ func getSockOptIP(t *kernel.Task, s socket.Socket, ep commonEndpoint, name int, 
 		// Only valid for raw IPv4 sockets.
 		if family, skType, _ := s.Type(); family != linux.AF_INET || skType != linux.SOCK_RAW {
 			return nil, syserr.ErrProtocolNotAvailable
+		}
+
+		if !t.HasCapabilityIn(linux.CAP_NET_ADMIN, t.NetworkNamespace().UserNamespace()) {
+			return nil, syserr.ErrNotPermitted
 		}
 
 		stk := inet.StackFromContext(t)
@@ -2583,6 +2615,10 @@ func setSockOptIPv6(t *kernel.Task, s socket.Socket, ep commonEndpoint, name int
 			return syserr.ErrProtocolNotAvailable
 		}
 
+		if !t.HasCapabilityIn(linux.CAP_NET_ADMIN, t.NetworkNamespace().UserNamespace()) {
+			return syserr.ErrNotPermitted
+		}
+
 		stk := inet.StackFromContext(t)
 		if stk == nil {
 			return syserr.ErrNoDevice
@@ -2627,6 +2663,7 @@ func setSockOptIPv6(t *kernel.Task, s socket.Socket, ep commonEndpoint, name int
 		linux.MCAST_MSFILTER,
 		linux.IPV6_FLOWLABEL_MGR,
 		linux.IPV6_RECVFRAGSIZE:
+
 		// Not supported, but we choose to silently ignore these for compatibility
 		// with old gVisor behavior.
 		//
@@ -2880,6 +2917,10 @@ func setSockOptIP(t *kernel.Task, s socket.Socket, ep commonEndpoint, name int, 
 			return syserr.ErrProtocolNotAvailable
 		}
 
+		if !t.HasCapabilityIn(linux.CAP_NET_ADMIN, t.NetworkNamespace().UserNamespace()) {
+			return syserr.ErrNotPermitted
+		}
+
 		stk := inet.StackFromContext(t)
 		if stk == nil {
 			return syserr.ErrNoDevice
@@ -2940,6 +2981,7 @@ func setSockOptIP(t *kernel.Task, s socket.Socket, ep commonEndpoint, name int, 
 		linux.IP_IPSEC_POLICY,
 		linux.IP_XFRM_POLICY,
 		linux.IPT_SO_SET_ADD_COUNTERS:
+
 		// Not supported, but we choose to silently ignore these for compatibility
 		// with old gVisor behavior.
 		//
