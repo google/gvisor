@@ -18,6 +18,7 @@ go_library(
     nogo = False,
     visibility = [
         "//:__pkg__",
+        "//go/src/analyzerpipeline:__subpackages__",  # experimental usage, don't expect compatibility or support
         "//go/tools/blazechecker:__subpackages__",  # experimental usage, don't expect compatibility or support
         "//tools/checklocks/cmd:__subpackages__",
         "//tools/nogo:__subpackages__",
