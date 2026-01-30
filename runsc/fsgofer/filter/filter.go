@@ -65,7 +65,19 @@ func Install(opt Options) error {
 		s.Merge(lisafsFilters)
 	}
 
-	return seccomp.Install(s, seccomp.DenyNewExecMappings, seccomp.DefaultProgramOptions())
+	program := &seccomp.Program{
+		RuleSets: []seccomp.RuleSet{
+			{
+				Rules: seccomp.DenyNewExecMappings,
+			},
+			{
+				Rules:  s,
+				Action: seccomp.Allow,
+			},
+		},
+	}
+
+	return program.Install()
 }
 
 // report writes a warning message to the log.

@@ -19,7 +19,6 @@ package filter
 import (
 	"fmt"
 
-	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/seccomp"
 	"gvisor.dev/gvisor/runsc/boot/filter/config"
@@ -53,7 +52,7 @@ func Install(opt Options) error {
 	seccompOpts := config.SeccompOptions(opt)
 	if debugFilter {
 		log.Infof("Seccomp filter debugging is enabled; seccomp failures will result in a panic stack trace.")
-		seccompOpts.DefaultAction = linux.SECCOMP_RET_TRAP
+		seccompOpts.DefaultAction = seccomp.Trap
 	} else {
 		log.Infof("No precompiled program found for config options %v, building seccomp program from scratch. This may slow down container startup.", key)
 		if log.IsLogging(log.Debug) {
@@ -65,5 +64,17 @@ func Install(opt Options) error {
 		}
 	}
 	rules, denyRules := config.Rules(opt)
-	return seccomp.Install(rules, denyRules, seccompOpts)
+	program := &seccomp.Program{
+		RuleSets: []seccomp.RuleSet{
+			{
+				Rules: denyRules,
+			},
+			{
+				Rules:  rules,
+				Action: seccomp.Allow,
+			},
+		},
+		Options: seccompOpts,
+	}
+	return program.Install()
 }

@@ -20,7 +20,6 @@ import (
 	"testing"
 
 	"golang.org/x/sys/unix"
-	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/seccomp"
 )
 
@@ -34,56 +33,54 @@ func TestPrecompile(t *testing.T) {
 	for _, test := range []struct {
 		name    string
 		vars    []string
-		fn      func(Values) ProgramDesc
+		fn      func(Values) *seccomp.Program
 		wantErr bool
 	}{
 		{
 			name: "simple case",
-			fn: func(Values) ProgramDesc {
-				return ProgramDesc{
-					Rules: []seccomp.RuleSet{{
+			fn: func(Values) *seccomp.Program {
+				return &seccomp.Program{
+					RuleSets: []seccomp.RuleSet{{
 						Rules: seccomp.NewSyscallRules().Add(
 							unix.SYS_READ,
 							seccomp.MatchAll{},
 						),
-						Action: linux.SECCOMP_RET_ALLOW,
+						Action: seccomp.Allow,
 					}},
-					SeccompOptions: seccomp.DefaultProgramOptions(),
 				}
 			},
 		},
 		{
 			name: "one variable",
 			vars: []string{"var1"},
-			fn: func(values Values) ProgramDesc {
-				return ProgramDesc{
-					Rules: []seccomp.RuleSet{{
+			fn: func(values Values) *seccomp.Program {
+				return &seccomp.Program{
+					RuleSets: []seccomp.RuleSet{{
 						Rules: seccomp.NewSyscallRules().Add(
 							unix.SYS_READ,
 							seccomp.PerArg{
 								seccomp.EqualTo(values["var1"]),
 							},
 						),
-						Action: linux.SECCOMP_RET_ALLOW,
+						Action: seccomp.Allow,
 					}},
-					SeccompOptions: seccomp.DefaultProgramOptions(),
 				}
 			},
 		},
 		{
 			name: "duplicate variable name",
 			vars: []string{"var1", "var1"},
-			fn: func(values Values) ProgramDesc {
-				return ProgramDesc{}
+			fn: func(values Values) *seccomp.Program {
+				return &seccomp.Program{}
 			},
 			wantErr: true,
 		},
 		{
 			name: "multiple variables showing up multiple times",
 			vars: []string{"var1", "var2"},
-			fn: func(values Values) ProgramDesc {
-				return ProgramDesc{
-					Rules: []seccomp.RuleSet{{
+			fn: func(values Values) *seccomp.Program {
+				return &seccomp.Program{
+					RuleSets: []seccomp.RuleSet{{
 						Rules: seccomp.NewSyscallRules().Add(
 							unix.SYS_READ,
 							seccomp.Or{
@@ -94,25 +91,23 @@ func TestPrecompile(t *testing.T) {
 							unix.SYS_WRITE,
 							seccomp.PerArg{seccomp.EqualTo(values["var1"])},
 						),
-						Action: linux.SECCOMP_RET_ALLOW,
+						Action: seccomp.Allow,
 					}},
-					SeccompOptions: seccomp.DefaultProgramOptions(),
 				}
 			},
 		},
 		{
 			name: "unused variable",
 			vars: []string{"var1"},
-			fn: func(values Values) ProgramDesc {
-				return ProgramDesc{
-					Rules: []seccomp.RuleSet{{
+			fn: func(values Values) *seccomp.Program {
+				return &seccomp.Program{
+					RuleSets: []seccomp.RuleSet{{
 						Rules: seccomp.NewSyscallRules().Add(
 							unix.SYS_READ,
 							seccomp.MatchAll{},
 						),
-						Action: linux.SECCOMP_RET_ALLOW,
+						Action: seccomp.Allow,
 					}},
-					SeccompOptions: seccomp.DefaultProgramOptions(),
 				}
 			},
 			wantErr: true,
@@ -120,9 +115,9 @@ func TestPrecompile(t *testing.T) {
 		{
 			name: "variable that can be optimized away",
 			vars: []string{"var1"},
-			fn: func(values Values) ProgramDesc {
-				return ProgramDesc{
-					Rules: []seccomp.RuleSet{{
+			fn: func(values Values) *seccomp.Program {
+				return &seccomp.Program{
+					RuleSets: []seccomp.RuleSet{{
 						Rules: seccomp.NewSyscallRules().Add(
 							unix.SYS_READ,
 							seccomp.Or{
@@ -132,34 +127,32 @@ func TestPrecompile(t *testing.T) {
 								seccomp.MatchAll{},
 							},
 						),
-						Action: linux.SECCOMP_RET_ALLOW,
+						Action: seccomp.Allow,
 					}},
-					SeccompOptions: seccomp.DefaultProgramOptions(),
 				}
 			},
 		},
 		{
 			name: "64-bit variable",
 			vars: []string{"var1" + uint64VarSuffixHigh, "var1" + uint64VarSuffixLow},
-			fn: func(values Values) ProgramDesc {
-				return ProgramDesc{
-					Rules: []seccomp.RuleSet{{
+			fn: func(values Values) *seccomp.Program {
+				return &seccomp.Program{
+					RuleSets: []seccomp.RuleSet{{
 						Rules: seccomp.NewSyscallRules().Add(
 							unix.SYS_READ,
 							seccomp.PerArg{
 								seccomp.EqualTo(values.GetUint64("var1")),
 							},
 						),
-						Action: linux.SECCOMP_RET_ALLOW,
+						Action: seccomp.Allow,
 					}},
-					SeccompOptions: seccomp.DefaultProgramOptions(),
 				}
 			},
 		},
 		{
 			name: "inconsistent offsets",
 			vars: []string{"var1"},
-			fn: func(values Values) ProgramDesc {
+			fn: func(values Values) *seccomp.Program {
 				var pa seccomp.PerArg
 				if counter == 0 {
 					pa[0] = seccomp.EqualTo(values["var1"])
@@ -169,15 +162,14 @@ func TestPrecompile(t *testing.T) {
 					pa[1] = seccomp.EqualTo(values["var1"])
 				}
 				counter++
-				return ProgramDesc{
-					Rules: []seccomp.RuleSet{{
+				return &seccomp.Program{
+					RuleSets: []seccomp.RuleSet{{
 						Rules: seccomp.NewSyscallRules().Add(
 							unix.SYS_READ,
 							pa,
 						),
-						Action: linux.SECCOMP_RET_ALLOW,
+						Action: seccomp.Allow,
 					}},
-					SeccompOptions: seccomp.DefaultProgramOptions(),
 				}
 			},
 			wantErr: true,
@@ -185,21 +177,20 @@ func TestPrecompile(t *testing.T) {
 		{
 			name: "inconsistent program size",
 			vars: []string{"var1"},
-			fn: func(values Values) ProgramDesc {
+			fn: func(values Values) *seccomp.Program {
 				pa := seccomp.PerArg{seccomp.EqualTo(values["var1"])}
 				if counter == 1 {
 					pa[1] = seccomp.EqualTo(123)
 				}
 				counter++
-				return ProgramDesc{
-					Rules: []seccomp.RuleSet{{
+				return &seccomp.Program{
+					RuleSets: []seccomp.RuleSet{{
 						Rules: seccomp.NewSyscallRules().Add(
 							unix.SYS_READ,
 							pa,
 						),
-						Action: linux.SECCOMP_RET_ALLOW,
+						Action: seccomp.Allow,
 					}},
-					SeccompOptions: seccomp.DefaultProgramOptions(),
 				}
 			},
 			wantErr: true,
@@ -207,7 +198,7 @@ func TestPrecompile(t *testing.T) {
 		{
 			name: "inconsistent program bytecode",
 			vars: []string{"var1"},
-			fn: func(values Values) ProgramDesc {
+			fn: func(values Values) *seccomp.Program {
 				pa := seccomp.PerArg{seccomp.EqualTo(values["var1"])}
 				if counter == 0 {
 					pa[1] = seccomp.EqualTo(1337)
@@ -216,15 +207,14 @@ func TestPrecompile(t *testing.T) {
 					pa[1] = seccomp.EqualTo(42)
 				}
 				counter++
-				return ProgramDesc{
-					Rules: []seccomp.RuleSet{{
+				return &seccomp.Program{
+					RuleSets: []seccomp.RuleSet{{
 						Rules: seccomp.NewSyscallRules().Add(
 							unix.SYS_READ,
 							pa,
 						),
-						Action: linux.SECCOMP_RET_ALLOW,
+						Action: seccomp.Allow,
 					}},
-					SeccompOptions: seccomp.DefaultProgramOptions(),
 				}
 			},
 			wantErr: true,
