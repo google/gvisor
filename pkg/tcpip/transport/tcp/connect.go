@@ -1074,19 +1074,25 @@ func (e *Endpoint) resetConnectionLocked(err tcpip.Error) {
 	switch err.(type) {
 	case *tcpip.ErrConnectionReset, *tcpip.ErrTimeout:
 	default:
-		// The exact sequence number to be used for the RST is the same as the
-		// one used by Linux. We need to handle the case of window being shrunk
-		// which can cause sndNxt to be outside the acceptable window on the
-		// receiver.
-		//
-		// See: https://www.snellman.net/blog/archive/2016-02-01-tcp-rst/ for more
-		// information.
-		sndWndEnd := e.snd.SndUna.Add(e.snd.SndWnd)
-		resetSeqNum := sndWndEnd
-		if !sndWndEnd.LessThan(e.snd.SndNxt) || e.snd.SndNxt.Size(sndWndEnd) < (1<<e.snd.SndWndScale) {
-			resetSeqNum = e.snd.SndNxt
+		// snd and rcv are only initialized once the TCP handshake
+		// completes (in transitionToStateEstablishedLocked).
+		// Endpoints that are still in StateSynSent or StateSynRecv
+		// have nil snd/rcv and cannot send a RST.
+		if e.snd != nil {
+			// The exact sequence number to be used for the RST is the same as the
+			// one used by Linux. We need to handle the case of window being shrunk
+			// which can cause sndNxt to be outside the acceptable window on the
+			// receiver.
+			//
+			// See: https://www.snellman.net/blog/archive/2016-02-01-tcp-rst/ for more
+			// information.
+			sndWndEnd := e.snd.SndUna.Add(e.snd.SndWnd)
+			resetSeqNum := sndWndEnd
+			if !sndWndEnd.LessThan(e.snd.SndNxt) || e.snd.SndNxt.Size(sndWndEnd) < (1<<e.snd.SndWndScale) {
+				resetSeqNum = e.snd.SndNxt
+			}
+			e.sendEmptyRaw(header.TCPFlagAck|header.TCPFlagRst, resetSeqNum, e.rcv.RcvNxt, 0)
 		}
-		e.sendEmptyRaw(header.TCPFlagAck|header.TCPFlagRst, resetSeqNum, e.rcv.RcvNxt, 0)
 	}
 	// Don't purge read queues here. If there's buffered data, it's still allowed
 	// to be read.
