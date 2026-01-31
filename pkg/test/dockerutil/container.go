@@ -712,6 +712,14 @@ func (c *Container) CleanUp(ctx context.Context) {
 	c.mounts = nil
 }
 
+// Update is analogous to 'docker update'.
+func (c *Container) Update(ctx context.Context, updateConfig container.UpdateConfig) error {
+	if _, err := c.client.ContainerUpdate(ctx, c.id, updateConfig); err != nil {
+		return fmt.Errorf("updating container %s: %v", c.id, err)
+	}
+	return nil
+}
+
 // ContainerPool represents a pool of reusable containers.
 // Callers may request a container from the pool, and must release it back
 // when they are done with it.
