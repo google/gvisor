@@ -57,6 +57,16 @@ TEST_P(UnixSocketPairTest, InvalidGetSockOpt) {
               SyscallFailsWithErrno(ENOPROTOOPT));
 }
 
+TEST_P(UnixSocketPairTest, InvalidGetSockOptLevel) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+  int opt = 1;
+  socklen_t optlen = sizeof(opt);
+  // SOL_PACKET should not be supported by Unix domain sockets.
+  EXPECT_THAT(
+      setsockopt(sockets->first_fd(), SOL_PACKET, SO_TYPE, &opt, optlen),
+      SyscallFailsWithErrno(ENOPROTOOPT));
+}
+
 TEST_P(UnixSocketPairTest, BindToBadName) {
   auto pair =
       ASSERT_NO_ERRNO_AND_VALUE(UnixDomainSocketPair(SOCK_SEQPACKET).Create());
