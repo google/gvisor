@@ -215,6 +215,7 @@ go_test(
     name = "tcp_test",
     size = "small",
     srcs = [
+        "connect_test.go",
         "cubic_test.go",
         "main_test.go",
         "segment_test.go",
