@@ -186,8 +186,9 @@ type Stack struct {
 	// saveRestoreEnabled indicates whether the stack is saved and restored.
 	saveRestoreEnabled bool
 
-	// removeNICs indicates if the NICs and routes should be removed before saving.
-	removeNICs bool `state:"nosave"`
+	// removeConf indicates whether to remove NICs and routes and terminate active
+	// connections before saving. This flag will be set to true only for restore.
+	removeConf bool `state:"nosave"`
 }
 
 // NetworkProtocolFactory instantiates a network protocol.
@@ -2567,9 +2568,17 @@ func RestoreStackFromContext(ctx context.Context) *Stack {
 	return nil
 }
 
-// SetRemoveNICs sets the removeNICs in stack to true during save/restore.
-func (s *Stack) SetRemoveNICs() {
+// SetRemoveConf sets the removeConf in stack to true during save/restore.
+func (s *Stack) SetRemoveConf() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.removeNICs = true
+
+	s.removeConf = true
+}
+
+// GetRemoveConf gets the removeConf from stack.
+func (s *Stack) GetRemoveConf() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.removeConf
 }
