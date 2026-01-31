@@ -19,6 +19,7 @@ import (
 	"math/rand"
 	"os"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/google/go-cmp/cmp"
@@ -42,88 +43,91 @@ func createConnectedWithTimestampOption(c *context.Context) *context.RawEndpoint
 // an active connect and sets the TS Echo Reply fields correctly when the
 // SYN-ACK also indicates support for the TS option and provides a TSVal.
 func TestTimeStampEnabledConnect(t *testing.T) {
-	c := context.New(t, e2e.DefaultMTU)
-	defer c.Cleanup()
+	synctest.Test(t, func(t *testing.T) {
+		defer synctest.Wait()
+		c := context.New(t, e2e.DefaultMTU)
+		defer c.Cleanup()
 
-	rep := createConnectedWithTimestampOption(c)
+		rep := createConnectedWithTimestampOption(c)
 
-	// Register for read and validate that we have data to read.
-	we, ch := waiter.NewChannelEntry(waiter.ReadableEvents)
-	c.WQ.EventRegister(&we)
-	defer c.WQ.EventUnregister(&we)
+		// Register for read and validate that we have data to read.
+		we, ch := waiter.NewChannelEntry(waiter.ReadableEvents)
+		c.WQ.EventRegister(&we)
+		defer c.WQ.EventUnregister(&we)
 
-	// The following tests ensure that TS option once enabled behaves
-	// correctly as described in
-	// https://tools.ietf.org/html/rfc7323#section-4.3.
-	//
-	// We are not testing delayed ACKs here, but we do test out of order
-	// packet delivery and filling the sequence number hole created due to
-	// the out of order packet.
-	//
-	// The test also verifies that the sequence numbers and timestamps are
-	// as expected.
-	data := []byte{1, 2, 3}
+		// The following tests ensure that TS option once enabled behaves
+		// correctly as described in
+		// https://tools.ietf.org/html/rfc7323#section-4.3.
+		//
+		// We are not testing delayed ACKs here, but we do test out of order
+		// packet delivery and filling the sequence number hole created due to
+		// the out of order packet.
+		//
+		// The test also verifies that the sequence numbers and timestamps are
+		// as expected.
+		data := []byte{1, 2, 3}
 
-	// First we increment tsVal by a small amount.
-	tsVal := rep.TSVal + 100
-	rep.SendPacketWithTS(data, tsVal)
-	rep.VerifyACKWithTS(tsVal)
+		// First we increment tsVal by a small amount.
+		tsVal := rep.TSVal + 100
+		rep.SendPacketWithTS(data, tsVal)
+		rep.VerifyACKWithTS(tsVal)
 
-	// Next we send an out of order packet.
-	rep.NextSeqNum += 3
-	tsVal += 200
-	rep.SendPacketWithTS(data, tsVal)
+		// Next we send an out of order packet.
+		rep.NextSeqNum += 3
+		tsVal += 200
+		rep.SendPacketWithTS(data, tsVal)
 
-	// The ACK should contain the original sequenceNumber and an older TS.
-	rep.NextSeqNum -= 6
-	rep.VerifyACKWithTS(tsVal - 200)
+		// The ACK should contain the original sequenceNumber and an older TS.
+		rep.NextSeqNum -= 6
+		rep.VerifyACKWithTS(tsVal - 200)
 
-	// Next we fill the hole and the returned ACK should contain the
-	// cumulative sequence number acking all data sent till now and have the
-	// latest timestamp sent below in its TSEcr field.
-	tsVal -= 100
-	rep.SendPacketWithTS(data, tsVal)
-	rep.NextSeqNum += 3
-	rep.VerifyACKWithTS(tsVal)
+		// Next we fill the hole and the returned ACK should contain the
+		// cumulative sequence number acking all data sent till now and have the
+		// latest timestamp sent below in its TSEcr field.
+		tsVal -= 100
+		rep.SendPacketWithTS(data, tsVal)
+		rep.NextSeqNum += 3
+		rep.VerifyACKWithTS(tsVal)
 
-	// Increment tsVal by a large value that doesn't result in a wrap around.
-	tsVal += 0x7fffffff
-	rep.SendPacketWithTS(data, tsVal)
-	rep.VerifyACKWithTS(tsVal)
+		// Increment tsVal by a large value that doesn't result in a wrap around.
+		tsVal += 0x7fffffff
+		rep.SendPacketWithTS(data, tsVal)
+		rep.VerifyACKWithTS(tsVal)
 
-	// Increment tsVal again by a large value which should cause the
-	// timestamp value to wrap around. The returned ACK should contain the
-	// wrapped around timestamp in its tsEcr field and not the tsVal from
-	// the previous packet sent above.
-	tsVal += 0x7fffffff
-	rep.SendPacketWithTS(data, tsVal)
-	rep.VerifyACKWithTS(tsVal)
+		// Increment tsVal again by a large value which should cause the
+		// timestamp value to wrap around. The returned ACK should contain the
+		// wrapped around timestamp in its tsEcr field and not the tsVal from
+		// the previous packet sent above.
+		tsVal += 0x7fffffff
+		rep.SendPacketWithTS(data, tsVal)
+		rep.VerifyACKWithTS(tsVal)
 
-	select {
-	case <-ch:
-	case <-time.After(1 * time.Second):
-		t.Fatalf("Timed out waiting for data to arrive")
-	}
-
-	// There should be 5 views to read and each of them should
-	// contain the same data.
-	for i := 0; i < 5; i++ {
-		buf := make([]byte, len(data))
-		w := tcpip.SliceWriter(buf)
-		result, err := c.EP.Read(&w, tcpip.ReadOptions{})
-		if err != nil {
-			t.Fatalf("Unexpected error from Read: %v", err)
+		select {
+		case <-ch:
+		case <-time.After(1 * time.Second):
+			t.Fatalf("Timed out waiting for data to arrive")
 		}
-		if diff := cmp.Diff(tcpip.ReadResult{
-			Count: len(buf),
-			Total: len(buf),
-		}, result, checker.IgnoreCmpPath("ControlMessages")); diff != "" {
-			t.Errorf("Read: unexpected result (-want +got):\n%s", diff)
+
+		// There should be 5 views to read and each of them should
+		// contain the same data.
+		for i := 0; i < 5; i++ {
+			buf := make([]byte, len(data))
+			w := tcpip.SliceWriter(buf)
+			result, err := c.EP.Read(&w, tcpip.ReadOptions{})
+			if err != nil {
+				t.Fatalf("Unexpected error from Read: %v", err)
+			}
+			if diff := cmp.Diff(tcpip.ReadResult{
+				Count:	len(buf),
+				Total:	len(buf),
+			}, result, checker.IgnoreCmpPath("ControlMessages")); diff != "" {
+				t.Errorf("Read: unexpected result (-want +got):\n%s", diff)
+			}
+			if got, want := buf, data; bytes.Compare(got, want) != 0 {
+				t.Fatalf("Data is different: got: %v, want: %v", got, want)
+			}
 		}
-		if got, want := buf, data; bytes.Compare(got, want) != 0 {
-			t.Fatalf("Data is different: got: %v, want: %v", got, want)
-		}
-	}
+	})
 }
 
 // TestTimeStampDisabledConnect tests that netstack sends timestamp option on an
@@ -131,10 +135,13 @@ func TestTimeStampEnabledConnect(t *testing.T) {
 // timestamp option is not enabled and future packets do not contain a
 // timestamp.
 func TestTimeStampDisabledConnect(t *testing.T) {
-	c := context.New(t, e2e.DefaultMTU)
-	defer c.Cleanup()
+	synctest.Test(t, func(t *testing.T) {
+		defer synctest.Wait()
+		c := context.New(t, e2e.DefaultMTU)
+		defer c.Cleanup()
 
-	c.CreateConnectedWithOptionsNoDelay(header.TCPSynOptions{})
+		c.CreateConnectedWithOptionsNoDelay(header.TCPSynOptions{})
+	})
 }
 
 func timeStampEnabledAccept(t *testing.T, cookieEnabled bool, wndScale int, wndSize uint16) {
@@ -187,18 +194,21 @@ func timeStampEnabledAccept(t *testing.T, cookieEnabled bool, wndScale int, wndS
 // that Timestamp option is enabled in both cases if requested in the original
 // SYN.
 func TestTimeStampEnabledAccept(t *testing.T) {
-	testCases := []struct {
-		cookieEnabled bool
-		wndScale      int
-		wndSize       uint16
-	}{
-		{true, -1, 0xffff}, // When cookie is used window scaling is disabled.
-		// DefaultReceiveBufferSize is 1MB >> 5. Advertised window will be 1/2 of that.
-		{false, 5, 0x4000},
-	}
-	for _, tc := range testCases {
-		timeStampEnabledAccept(t, tc.cookieEnabled, tc.wndScale, tc.wndSize)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		defer synctest.Wait()
+		testCases := []struct {
+			cookieEnabled	bool
+			wndScale	int
+			wndSize		uint16
+		}{
+			{true, -1, 0xffff},	// When cookie is used window scaling is disabled.
+			// DefaultReceiveBufferSize is 1MB >> 5. Advertised window will be 1/2 of that.
+			{false, 5, 0x4000},
+		}
+		for _, tc := range testCases {
+			timeStampEnabledAccept(t, tc.cookieEnabled, tc.wndScale, tc.wndSize)
+		}
+	})
 }
 
 func timeStampDisabledAccept(t *testing.T, cookieEnabled bool, wndScale int, wndSize uint16) {
@@ -245,82 +255,88 @@ func timeStampDisabledAccept(t *testing.T, cookieEnabled bool, wndScale int, wnd
 // TestTimeStampDisabledAccept tests that Timestamp option is not used when the
 // peer doesn't advertise it and connection is established with Accept().
 func TestTimeStampDisabledAccept(t *testing.T) {
-	testCases := []struct {
-		cookieEnabled bool
-		wndScale      int
-		wndSize       uint16
-	}{
-		{true, -1, 0xffff}, // When cookie is used window scaling is disabled.
-		// DefaultReceiveBufferSize is 1MB >> 5. Advertised window will be half of
-		// that.
-		{false, 5, 0x4000},
-	}
-	for _, tc := range testCases {
-		timeStampDisabledAccept(t, tc.cookieEnabled, tc.wndScale, tc.wndSize)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		defer synctest.Wait()
+		testCases := []struct {
+			cookieEnabled	bool
+			wndScale	int
+			wndSize		uint16
+		}{
+			{true, -1, 0xffff},	// When cookie is used window scaling is disabled.
+			// DefaultReceiveBufferSize is 1MB >> 5. Advertised window will be half of
+			// that.
+			{false, 5, 0x4000},
+		}
+		for _, tc := range testCases {
+			timeStampDisabledAccept(t, tc.cookieEnabled, tc.wndScale, tc.wndSize)
+		}
+	})
 }
 
 func TestSendGreaterThanMTUWithOptions(t *testing.T) {
-	const maxPayload = 100
-	c := context.New(t, uint32(header.TCPMinimumSize+header.IPv4MinimumSize+maxPayload))
-	defer c.Cleanup()
+	synctest.Test(t, func(t *testing.T) {
+		defer synctest.Wait()
+		const maxPayload = 100
+		c := context.New(t, uint32(header.TCPMinimumSize+header.IPv4MinimumSize+maxPayload))
+		defer c.Cleanup()
 
-	createConnectedWithTimestampOption(c)
-	e2e.CheckBrokenUpWrite(t, c, maxPayload)
+		createConnectedWithTimestampOption(c)
+		e2e.CheckBrokenUpWrite(t, c, maxPayload)
+	})
 }
 
 func TestSegmentNotDroppedWhenTimestampMissing(t *testing.T) {
-	const maxPayload = 100
-	c := context.New(t, uint32(header.TCPMinimumSize+header.IPv4MinimumSize+maxPayload))
-	defer c.Cleanup()
+	synctest.Test(t, func(t *testing.T) {
+		defer synctest.Wait()
+		const maxPayload = 100
+		c := context.New(t, uint32(header.TCPMinimumSize+header.IPv4MinimumSize+maxPayload))
+		defer c.Cleanup()
 
-	rep := createConnectedWithTimestampOption(c)
+		rep := createConnectedWithTimestampOption(c)
 
-	// Register for read.
-	we, ch := waiter.NewChannelEntry(waiter.ReadableEvents)
-	c.WQ.EventRegister(&we)
-	defer c.WQ.EventUnregister(&we)
+		// Register for read.
+		we, ch := waiter.NewChannelEntry(waiter.ReadableEvents)
+		c.WQ.EventRegister(&we)
+		defer c.WQ.EventUnregister(&we)
 
-	droppedPacketsStat := c.Stack().Stats().DroppedPackets
-	droppedPackets := droppedPacketsStat.Value()
-	data := []byte{1, 2, 3}
-	// Send a packet with no TCP options/timestamp.
-	rep.SendPacket(data, nil)
+		droppedPacketsStat := c.Stack().Stats().DroppedPackets
+		droppedPackets := droppedPacketsStat.Value()
+		data := []byte{1, 2, 3}
+		// Send a packet with no TCP options/timestamp.
+		rep.SendPacket(data, nil)
 
-	select {
-	case <-ch:
-	case <-time.After(1 * time.Second):
-		t.Fatalf("Timed out waiting for data to arrive")
-	}
+		select {
+		case <-ch:
+		case <-time.After(1 * time.Second):
+			t.Fatalf("Timed out waiting for data to arrive")
+		}
 
-	// Assert that DroppedPackets was not incremented.
-	if got, want := droppedPacketsStat.Value(), droppedPackets; got != want {
-		t.Fatalf("incorrect number of dropped packets, got: %v, want: %v", got, want)
-	}
+		// Assert that DroppedPackets was not incremented.
+		if got, want := droppedPacketsStat.Value(), droppedPackets; got != want {
+			t.Fatalf("incorrect number of dropped packets, got: %v, want: %v", got, want)
+		}
 
-	// Issue a read and we should data.
-	var buf bytes.Buffer
-	result, err := c.EP.Read(&buf, tcpip.ReadOptions{})
-	if err != nil {
-		t.Fatalf("Unexpected error from Read: %v", err)
-	}
-	if diff := cmp.Diff(tcpip.ReadResult{
-		Count: buf.Len(),
-		Total: buf.Len(),
-	}, result, checker.IgnoreCmpPath("ControlMessages")); diff != "" {
-		t.Errorf("Read: unexpected result (-want +got):\n%s", diff)
-	}
-	if got, want := buf.Bytes(), data; bytes.Compare(got, want) != 0 {
-		t.Fatalf("Data is different: got: %v, want: %v", got, want)
-	}
+		// Issue a read and we should data.
+		var buf bytes.Buffer
+		result, err := c.EP.Read(&buf, tcpip.ReadOptions{})
+		if err != nil {
+			t.Fatalf("Unexpected error from Read: %v", err)
+		}
+		if diff := cmp.Diff(tcpip.ReadResult{
+			Count:	buf.Len(),
+			Total:	buf.Len(),
+		}, result, checker.IgnoreCmpPath("ControlMessages")); diff != "" {
+			t.Errorf("Read: unexpected result (-want +got):\n%s", diff)
+		}
+		if got, want := buf.Bytes(), data; bytes.Compare(got, want) != 0 {
+			t.Fatalf("Data is different: got: %v, want: %v", got, want)
+		}
+	})
 }
 
 func TestMain(m *testing.M) {
 	refs.SetLeakMode(refs.LeaksPanic)
 	code := m.Run()
-	// Allow TCP async work to complete to avoid false reports of leaks.
-	// TODO(gvisor.dev/issue/5940): Use fake clock in tests.
-	time.Sleep(1 * time.Second)
 	refs.DoLeakCheck()
 	os.Exit(code)
 }
