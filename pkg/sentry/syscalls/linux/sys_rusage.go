@@ -58,7 +58,7 @@ func getrusage(t *kernel.Task, which int32) linux.Rusage {
 //
 //	y    struct timeval ru_utime; /* user CPU time used */
 //	y    struct timeval ru_stime; /* system CPU time used */
-//	p    long   ru_maxrss;        /* maximum resident set size */
+//	y    long   ru_maxrss;        /* maximum resident set size */
 //	*    long   ru_ixrss;         /* integral shared memory size */
 //	*    long   ru_idrss;         /* integral unshared data size */
 //	*    long   ru_isrss;         /* integral unshared stack size */
@@ -71,7 +71,7 @@ func getrusage(t *kernel.Task, which int32) linux.Rusage {
 //	*    long   ru_msgrcv;        /* IPC messages received */
 //	*    long   ru_nsignals;      /* signals received */
 //	y    long   ru_nvcsw;         /* voluntary context switches */
-//	y    long   ru_nivcsw;        /* involuntary context switches */
+//	p    long   ru_nivcsw;        /* involuntary context switches */
 func Getrusage(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	which := args[0].Int()
 	addr := args[1].Pointer()
