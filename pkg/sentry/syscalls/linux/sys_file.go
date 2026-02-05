@@ -1212,6 +1212,7 @@ func Truncate(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintpt
 			Size: uint64(length),
 		},
 		NeedWritePerm: true,
+		ClearPrivs:    true,
 	})
 	return 0, nil, handleSetSizeError(t, err)
 }
@@ -1240,6 +1241,7 @@ func Ftruncate(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintp
 			Mask: linux.STATX_SIZE,
 			Size: uint64(length),
 		},
+		ClearPrivs: true,
 	})
 	return 0, nil, handleSetSizeError(t, err)
 }
@@ -1313,6 +1315,7 @@ func populateSetStatOptionsForChown(t *kernel.Task, owner, group int32, opts *vf
 		opts.Stat.Mask |= linux.STATX_GID
 		opts.Stat.GID = uint32(kgid)
 	}
+	opts.ClearPrivs = true
 	return nil
 }
 

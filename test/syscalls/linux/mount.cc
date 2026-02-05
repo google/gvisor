@@ -31,6 +31,7 @@
 #include <sys/vfs.h>
 #include <unistd.h>
 
+#include <array>
 #include <cerrno>
 #include <cmath>
 #include <cstdint>
@@ -2466,6 +2467,90 @@ TEST(MountTest, MountProc) {
   }
 }
 
+TEST(MountTest, OverlayfsSgidBitIsCopiedUp) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  // gVisor's overlayfs implementation only supports tmpfs's as upper layers.
+  auto base_dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  ASSERT_THAT(mount("tmpfs", base_dir.path().c_str(), "tmpfs", 0, "mode=1777"),
+              SyscallSucceeds());
+  auto tmpfs_cleanup = Cleanup([&base_dir] {
+    ASSERT_THAT(umount2(base_dir.path().c_str(), MNT_DETACH),
+                SyscallSucceeds());
+  });
+
+  // Create the files under test in `lower` and set the S_ISGID bit on them.
+  auto lower =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(base_dir.path()));
+  struct FileUT {
+    absl::string_view name;
+    void (*create)(const std::string& path);
+  };
+  static constexpr std::array kFilesUnderTest = {
+      FileUT{"setgid_dir",
+             [](const std::string& path) {
+               ASSERT_THAT(mkdir(path.c_str(), 0755), SyscallSucceeds());
+             }},
+      FileUT{"setgid_empty_file",
+             [](const std::string& path) {
+               ASSERT_NO_ERRNO_AND_VALUE(Open(path, O_CREAT | O_RDWR, 0755));
+             }},
+      FileUT{"setgid_nonempty_file",
+             [](const std::string& path) {
+               ASSERT_NO_ERRNO(CreateWithContents(path, "junk", 0755));
+             }},
+  };
+  for (const auto& file_ut : kFilesUnderTest) {
+    std::string lower_target = lower.path() + "/" + std::string(file_ut.name);
+    file_ut.create(lower_target);
+
+    struct stat st_lower;
+    ASSERT_THAT(stat(lower_target.c_str(), &st_lower), SyscallSucceeds());
+    ASSERT_THAT(chmod(lower_target.c_str(), st_lower.st_mode | S_ISGID),
+                SyscallSucceeds());
+    ASSERT_THAT(stat(lower_target.c_str(), &st_lower), SyscallSucceeds());
+    ASSERT_TRUE(st_lower.st_mode & S_ISGID);
+  }
+
+  // Mount the overlayfs.
+  auto upper =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(base_dir.path()));
+  auto work = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(base_dir.path()));
+  auto merged =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(base_dir.path()));
+  std::string opts = "lowerdir=" + lower.path() + ",upperdir=" + upper.path() +
+                     ",workdir=" + work.path();
+  ASSERT_THAT(
+      mount("overlay", merged.path().c_str(), "overlay", 0, opts.c_str()),
+      SyscallSucceeds());
+  auto overlayfs_cleanup =
+      Cleanup([&merged] { umount2(merged.path().c_str(), MNT_DETACH); });
+
+  for (const auto& file_ut : kFilesUnderTest) {
+    SCOPED_TRACE(file_ut.name);
+
+    // The S_ISGID bit is visible before any copy-up took place.
+    std::string merged_target = merged.path() + "/" + std::string(file_ut.name);
+    struct stat st_merged;
+    ASSERT_THAT(stat(merged_target.c_str(), &st_merged), SyscallSucceeds());
+    ASSERT_TRUE(st_merged.st_mode & S_ISGID);
+
+    // Touch the target to force a copy-up to `upper`.
+    ASSERT_THAT(utimensat(AT_FDCWD, merged_target.c_str(), nullptr, 0),
+                SyscallSucceeds());
+
+    // The S_ISGID bit must also be copied up.
+    std::string upper_target = upper.path() + "/" + std::string(file_ut.name);
+    struct stat upper_st_after_touch;
+    ASSERT_THAT(stat(upper_target.c_str(), &upper_st_after_touch),
+                SyscallSucceeds());
+    EXPECT_TRUE(upper_st_after_touch.st_mode & S_ISGID);
+    struct stat merged_st_after_touch;
+    ASSERT_THAT(stat(merged_target.c_str(), &merged_st_after_touch),
+                SyscallSucceeds());
+    EXPECT_TRUE(merged_st_after_touch.st_mode & S_ISGID);
+  }
+}
 }  // namespace
 
 }  // namespace testing

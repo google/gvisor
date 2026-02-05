@@ -314,16 +314,15 @@ func (a *InodeAttrs) SetStat(ctx context.Context, fs *vfs.Filesystem, creds *aut
 		return err
 	}
 
-	clearSID := false
 	stat := opts.Stat
 	if stat.Mask&linux.STATX_UID != 0 {
 		a.uid.Store(stat.UID)
-		clearSID = true
 	}
 	if stat.Mask&linux.STATX_GID != 0 {
 		a.gid.Store(stat.GID)
-		clearSID = true
 	}
+
+	clearSID := opts.ClearPrivs
 	if stat.Mask&linux.STATX_MODE != 0 {
 		for {
 			old := a.mode.Load()

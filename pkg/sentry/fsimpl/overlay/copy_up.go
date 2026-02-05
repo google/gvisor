@@ -164,12 +164,14 @@ func (d *dentry) copyUpMaybeSyntheticMountpointLocked(ctx context.Context, forSy
 		}
 		if err := newFD.SetStat(ctx, vfs.SetStatOptions{
 			Stat: linux.Statx{
-				Mask: linux.STATX_UID | linux.STATX_GID | oldStat.Mask&timestampsMask,
-				// d.uid and d.gid can be read because d.copyMu is locked.
+				Mask: linux.STATX_UID | linux.STATX_GID | oldStat.Mask&timestampsMask | linux.STATX_MODE,
+				// d.{uid,gid,mode} can be read because d.copyMu is locked.
 				UID:   d.uid.RacyLoad(),
 				GID:   d.gid.RacyLoad(),
 				Atime: oldStat.Atime,
 				Mtime: oldStat.Mtime,
+				// Mode is specified again because the vfs.CopyRegularFileData() clears the setid bits.
+				Mode: uint16(d.mode.RacyLoad() &^ linux.S_IFMT),
 			},
 		}); err != nil {
 			cleanupUndoCopyUp()
@@ -188,12 +190,14 @@ func (d *dentry) copyUpMaybeSyntheticMountpointLocked(ctx context.Context, forSy
 		}
 		if err := vfsObj.SetStatAt(ctx, d.fs.creds, &newpop, &vfs.SetStatOptions{
 			Stat: linux.Statx{
-				Mask: linux.STATX_UID | linux.STATX_GID | oldStat.Mask&timestampsMask,
-				// d.uid and d.gid can be read because d.copyMu is locked.
+				Mask: linux.STATX_UID | linux.STATX_GID | oldStat.Mask&timestampsMask | linux.STATX_MODE,
+				// d.{uid,gid,mode} can be read because d.copyMu is locked.
 				UID:   d.uid.RacyLoad(),
 				GID:   d.gid.RacyLoad(),
 				Atime: oldStat.Atime,
 				Mtime: oldStat.Mtime,
+				// Mode is specified again because vfs.MkdirAt() strips off the setgid bit.
+				Mode: uint16(d.mode.RacyLoad() &^ linux.S_IFMT),
 			},
 		}); err != nil {
 			cleanupUndoCopyUp()
