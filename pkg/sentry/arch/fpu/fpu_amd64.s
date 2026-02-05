@@ -28,8 +28,7 @@
 // TODO(gvisor.dev/issues/9896): Implement AMX support.
 // TODO(gvisor.dev/issues/10087): Implement PKRU support.
 #define XCR0_DISABLED_MASK ((1 << 3) | (1 << 4) | (1 << 9) | (1 << 17) | (1 << 18))
-#define XCR0_EAX (0xffffffff ^ XCR0_DISABLED_MASK)
-#define XCR0_EDX 0xffffffff
+#define XCR0_EAX_MASK (0xffffffff ^ XCR0_DISABLED_MASK)
 
 // initX86FPState initializes floating point state.
 //
@@ -75,8 +74,13 @@ TEXT ·initX86FPState(SB), $24-9
 	MOVL	$MXCSR_DEFAULT, MXCSR_OFFSET(DI)
 
 	// Initialize registers with XRSTOR.
-	MOVL	$XCR0_EAX, AX
-	MOVL	$XCR0_EDX, DX
+	// Use XGETBV to get the current XCR0 and then apply XCR0_EAX_MASK to remove
+	// bits we don't want. If we request features that are not enabled in XCR0,
+	// XSAVE/XRSTOR will #GP.
+	XORL	CX, CX // Clear ECX (index 0 selects XCR0)
+	BYTE	$0x0f; BYTE $0x01; BYTE $0xd0 // XGETBV
+	ANDL	$XCR0_EAX_MASK, AX // Mask AX.
+
 	BYTE $0x48; BYTE $0x0f; BYTE $0xae; BYTE $0x2f // XRSTOR64 0(DI)
 
 	// Now that all the state has been reset, write it back out to the
