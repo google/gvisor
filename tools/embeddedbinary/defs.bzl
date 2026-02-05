@@ -12,6 +12,7 @@ def embedded_binary_go_library(
         binary_name = None,
         out = None,
         go_package_name = None,
+        extract_to_disk = True,
         visibility = None):
     """Embed a binary and generate a go_library target that can execute it.
 
@@ -25,6 +26,10 @@ def embedded_binary_go_library(
           embedded, defaults to `name`.
         out: Output filename of the go_library rule, defaults to `name + ".go"`.
         go_package_name: Package name of the go_library, defaults to `name`.
+        extract_to_disk: If True, try to extract the binary to os.TempDir(). If
+          False, or when os.TempDir() is unavailable or not executable, extract
+          the binary to memory. Enabling extract_to_disk reduces memory usage
+          but increases the time taken to execute the binary.
         visibility: Visibility of the go_library rule.
     """
     if binary_name == None:
@@ -53,13 +58,14 @@ def embedded_binary_go_library(
         template = _EMBEDDED_BINARY_TEMPLATE,
         package = go_package_name,
         out = out,
-        substrs = select({
+        substrs = {
+            "embedded.bin.name": binary_name,
+            "extractToDisk": str(extract_to_disk).lower(),
+        } | select({
             "//tools/embeddedbinary:compilation_mode_opt": {
-                "embedded.bin.name": binary_name,
                 "//go:embed embedded.bin.flate": "//go:embed %s" % (compressed_binary,),
             },
             "//conditions:default": {
-                "embedded.bin.name": binary_name,
                 "//go:embed embedded.bin.flate": "//go:embed %s" % (uncompressed_binary,),
                 "flate.NewReader": "io.Reader",
             },
