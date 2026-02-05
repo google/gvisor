@@ -1697,6 +1697,9 @@ func (s *Sandbox) Stacks() (string, error) {
 
 // HeapProfile writes a heap profile to the given file.
 func (s *Sandbox) HeapProfile(f *os.File, delay time.Duration) error {
+	if delay > 0 {
+		log.Infof("Delaying heap profile collection for %v", delay)
+	}
 	log.Debugf("Heap profile %q", s.ID)
 	opts := control.HeapProfileOpts{
 		FilePayload: urpc.FilePayload{Files: []*os.File{f}},
