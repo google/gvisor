@@ -21,21 +21,24 @@
 ##   container to simplify development. Some options are available to
 ##   control the behavior of this container:
 ##
-##     USER                - The in-container user.
-##     DOCKER_RUN_OPTIONS  - Options for the container (default: --privileged, required for tests).
-##     DOCKER_NAME         - The container name (default: gvisor-bazel-HASH).
-##     DOCKER_HOSTNAME     - The container name (default: same as DOCKER_NAME).
-##     DOCKER_PRIVILEGED   - Docker privileged flags (default: --privileged).
-##     DOCKER_CLI_PATH     - The path to the docker CLI binary.
-##     UNSANDBOXED_RUNTIME - Name of the Docker runtime to use for the
-##                           unsandboxed build container. Defaults to runc.
-##     PRE_BAZEL_INIT      - If set, run this command with bash outside the Bazel
-##                           server container.
-##     BAZEL_CACHE         - The bazel cache directory (default: detected).
-##     GCLOUD_CONFIG       - The gcloud config directory (detect: detected).
-##     DOCKER_SOCKET       - The Docker socket (default: detected).
-##     DEVICE_FILE         - An optional device file to expose in the container
-##                           (default: no device file is exposed).
+##     USER                   - The in-container user.
+##     DOCKER_RUN_OPTIONS     - Options for the container (default: --privileged, required for tests).
+##     DOCKER_NAME            - The container name (default: gvisor-bazel-HASH).
+##     DOCKER_HOSTNAME        - The container name (default: same as DOCKER_NAME).
+##     DOCKER_PRIVILEGED      - Docker privileged flags (default: --privileged).
+##     DOCKER_CLI_PATH        - The path to the docker CLI binary.
+##     UNSANDBOXED_RUNTIME    - Name of the Docker runtime to use for the
+##                              unsandboxed build container. Defaults to runc.
+##     PRE_BAZEL_INIT         - If set, run this command with bash outside the Bazel
+##                              server container.
+##     BAZEL_CACHE            - The bazel cache directory (default: detected).
+##     BAZEL_CACHE_VOLUME     - Docker volume for Bazel cache (default: detected).
+##     BAZEL_CACHE_USE_VOLUME - If set to true, use a Docker volume for
+##                              BAZEL_CACHE instead of a host bind mount.
+##     GCLOUD_CONFIG          - The gcloud config directory (detect: detected).
+##     DOCKER_SOCKET          - The Docker socket (default: detected).
+##     DEVICE_FILE            - An optional device file to expose in the container
+##                              (default: no device file is exposed).
 ##
 ##   To opt out of these wrappers, set DOCKER_BUILD=false.
 DOCKER_BUILD := true
@@ -70,6 +73,14 @@ DOCKER_HOSTNAME := $(DOCKER_NAME)
 DOCKER_PRIVILEGED := --privileged
 UNSANDBOXED_RUNTIME ?= runc
 BAZEL_CACHE ?= $(HOME)/.cache/bazel/
+BAZEL_CACHE_VOLUME ?= gvisor-bazel-cache-$(HASH)-$(ARCH)
+ifeq ($(UNAME_S),Darwin)
+# Use a volume on macOS to avoid Docker Desktop cache corruption:
+# https://github.com/docker/for-mac/issues/6787
+BAZEL_CACHE_USE_VOLUME ?= true
+else
+BAZEL_CACHE_USE_VOLUME ?= false
+endif
 GCLOUD_CONFIG := $(HOME)/.config/gcloud/
 DOCKER_SOCKET ?= $(patsubst unix://%,%,$(DOCKER_HOST))
 # This is used by TestNumCPU test/e2e.go which relies on
@@ -125,9 +136,16 @@ DOCKER_EXEC_OPTIONS := --user $(UID):$(GID)
 ifneq (,$(UNSANDBOXED_RUNTIME))
 DOCKER_RUN_OPTIONS += --runtime=$(UNSANDBOXED_RUNTIME)
 endif
+ifeq ($(BAZEL_CACHE_USE_VOLUME),true)
+DOCKER_RUN_OPTIONS += -v "$(BAZEL_CACHE_VOLUME):$(BAZEL_CACHE)"
+ifneq ($(patsubst %/,%,$(BAZEL_CACHE)),$(HOME)/.cache/bazel)
+DOCKER_RUN_OPTIONS += -v "$(BAZEL_CACHE_VOLUME):$(HOME)/.cache/bazel"
+endif
+else
 DOCKER_RUN_OPTIONS += -v "$(shell $(REALPATH_M) $(BAZEL_CACHE)):$(BAZEL_CACHE)"
 ifneq ($(patsubst %/,%,$(BAZEL_CACHE)),$(HOME)/.cache/bazel)
 DOCKER_RUN_OPTIONS += -v "$(shell $(REALPATH_M) $(BAZEL_CACHE)):$(HOME)/.cache/bazel"
+endif
 endif
 ifneq ($(GO_REPOSITORY_USE_HOST_CACHE),)
 DOCKER_RUN_OPTIONS  += -e GO_REPOSITORY_USE_HOST_CACHE=$(GO_REPOSITORY_USE_HOST_CACHE)
@@ -289,6 +307,13 @@ endif
 	@$(DOCKER_CLI_PATH) rm -f $(DOCKER_NAME) 2>/dev/null || true
 	@mkdir -p "$(BAZEL_CACHE)"
 	@mkdir -p "$(GCLOUD_CONFIG)"
+ifeq ($(BAZEL_CACHE_USE_VOLUME),true)
+	# Ensure the cache volume is writable by the in-container user.
+	@$(DOCKER_CLI_PATH) run --rm --user 0:0 \
+	  -v "$(BAZEL_CACHE_VOLUME):$(BAZEL_CACHE)" \
+	  gvisor.dev/images/builder \
+	  bash -c "mkdir -p $(BAZEL_CACHE) && chown -R $(UID):$(GID) $(BAZEL_CACHE)"
+endif
 	@$(DOCKER_CLI_PATH) run -d \
 	  --name $(DOCKER_NAME) --hostname $(DOCKER_HOSTNAME) \
 	  -v "$(CURDIR):$(CURDIR)" \
