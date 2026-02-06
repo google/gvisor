@@ -299,10 +299,11 @@ func TestNonBlockingSend(t *testing.T) {
 		}
 	}
 
-	if blockCount == 1000 {
+	switch blockCount {
+	case 1000:
 		// Shouldn't have _always_ blocked.
 		t.Fatalf("Socket always blocked!")
-	} else if blockCount == 0 {
+	case 0:
 		// Should have started blocking eventually.
 		t.Fatalf("Socket never blocked!")
 	}
