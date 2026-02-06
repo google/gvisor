@@ -313,7 +313,15 @@ func NewFD(ctx context.Context, mnt *vfs.Mount, hostFD int, opts *NewFDOptions) 
 		vfsObj := mnt.Filesystem().VirtualFilesystem()
 		return eventfd.NewFromHost(ctx, vfsObj, hostFD, flags)
 	}
-	i, err := newInode(ctx, fs, hostFD, opts.Savable, opts.RestoreKey, fileType, opts.IsTTY, opts.Readonly)
+
+	isTTY := opts.IsTTY
+	if !isTTY && fileType == unix.S_IFCHR {
+		if _, err := ioctlGetTermios(hostFD); err == nil {
+			isTTY = true
+		}
+	}
+
+	i, err := newInode(ctx, fs, hostFD, opts.Savable, opts.RestoreKey, fileType, isTTY, opts.Readonly)
 	if err != nil {
 		return nil, err
 	}
