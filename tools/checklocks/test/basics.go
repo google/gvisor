@@ -158,7 +158,7 @@ func testTwoLocksDoubleGuardStructOnlyOne(tc *twoLocksDoubleGuardStruct) {
 }
 
 func testTwoLocksDoubleGuardStructInvalid(tc *twoLocksDoubleGuardStruct) {
-	tc.doubleGuardedField = 3 // +checklocksfail:2
+	tc.doubleGuardedField = 3 // +checklocksfail=invalid field access|invalid field access
 }
 
 func testFieldCommentValid(tc *fieldCommentStruct) {

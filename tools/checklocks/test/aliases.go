@@ -14,13 +14,96 @@
 
 package test
 
-// +checklocks:tc.mu
-// +checklocksalias:tc2.mu=tc.mu
-func testAliasValid(tc *oneGuardStruct, tc2 *oneGuardStruct) {
-	tc2.guardedField = 1
+import "sync"
+
+// +checklocksalias:inner.mu=mu
+type aliasOuter struct {
+	mu    sync.Mutex
+	inner aliasInner
+
+	// +checklocks:inner.mu
+	guardedField int
 }
 
-// +checklocks:tc.mu
-func testAliasInvalid(tc *oneGuardStruct, tc2 *oneGuardStruct) {
-	tc2.guardedField = 1 // +checklocksfail
+func testTypeAliasValid(a *aliasOuter) {
+	a.mu.Lock()
+	a.guardedField = 1
+	a.mu.Unlock()
+}
+
+func testTypeAliasInvalid(a *aliasOuter) {
+	a.guardedField = 1 // +checklocksfail
+}
+
+type aliasInner struct {
+	mu *sync.Mutex
+}
+
+// +checklocksalias:inner.mu=mu
+type aliasInnerNested struct {
+	mu    sync.Mutex
+	inner aliasInner
+}
+
+// +checklocksalias:inner.mu=mu
+// +checklocksalias:inner.mu=mu
+type aliasDuplicateExact struct { // +checklocksfail=is redundant
+	mu    sync.Mutex
+	inner aliasInner
+}
+
+// +checklocksalias:inner.mu=mu
+// +checklocksalias:mu=inner.mu
+type aliasDuplicateSwapped struct { // +checklocksfail=is redundant
+	mu    sync.Mutex
+	inner aliasInner
+}
+
+// +checklocksalias:inner.mu=mu
+type aliasNonStructField struct { // +checklocksfail=expected to be struct
+	mu    sync.Mutex
+	inner int
+}
+
+// +checklocksalias:mu=mu
+type aliasSameLock struct { // +checklocksfail=refers to the same lock
+	mu sync.Mutex
+}
+
+// +checklocksalias:mu=inner.mu
+type aliasRequiresPointer struct { // +checklocksfail=requires a pointer or interface lock
+	mu    sync.Mutex
+	inner struct{ mu sync.Mutex }
+}
+
+// +checklocksalias:mu
+type aliasInvalidFormat struct { // +checklocksfail=invalid annotation
+	mu sync.Mutex
+}
+
+// +checklocksalias:mu=other.mu
+type aliasNonStructType int // +checklocksfail=only valid on struct types
+
+// +checklocksalias:inner.inner.mu=inner.mu
+type aliasRedundantNested struct { // +checklocksfail=is redundant
+	inner aliasInnerNested
+}
+
+type aliasEndpoint struct {
+	mu sync.Mutex
+}
+
+type aliasSender struct {
+	ep *aliasEndpoint
+}
+
+// +checklocksalias:snd.ep.mu=ep.mu
+type aliasReceiver struct {
+	ep  *aliasEndpoint
+	snd aliasSender
+}
+
+// +checklocksalias:rc.snd.ep.mu=rc.ep.mu
+type aliasRedundantDeep struct { // +checklocksfail=is redundant
+	rc aliasReceiver
 }

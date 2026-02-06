@@ -152,7 +152,7 @@ func handleConnecting(ep *Endpoint) {
 		ep.mu.Unlock()
 		return
 	}
-	if err := ep.h.processSegments(); err != nil { // +checklocksforce:ep.h.ep.mu
+	if err := ep.h.processSegments(); err != nil {
 		// handshake failed. clean up the tcp endpoint and handshake
 		// state.
 		if lEP := ep.h.listenEP; lEP != nil {

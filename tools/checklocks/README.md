@@ -122,12 +122,25 @@ Additional variants of the `+checklocks` annotation are supported for functions:
     to the caller's lock state.
 *   `+checklocksacquireread`: A read variant of `+checklocksacquire`.
 *   `+checklocksreleaseread`: A read variant of `+checklocksrelease`.
-*   `+checklocksalias:a.b.c=x.y`: For parameters with complex relationships,
-    this annotation can be used to specify that the `a.b.c` lock is equivalent
-    to the `x.y` state. That is, any operation on either of these locks applies
-    to both, and any assertions that can be made about either applies to both.
 
 For examples of these cases see the tests.
+
+### Type Alias Annotations
+
+Types may declare aliases between locks that are structurally equivalent across
+all instances of the type. These annotations must appear on the type
+declaration, and the names are resolved relative to the type itself.
+
+```go
+// +checklocksalias:inner.mu=mu
+type example struct {
+  mu    sync.Mutex
+  inner struct{ mu sync.Mutex }
+}
+```
+
+The alias above means `example.inner.mu` is treated as the same lock as
+`example.mu` anywhere a value of type `example` is used.
 
 #### Anonymous Functions and Closures
 
@@ -248,11 +261,12 @@ applied consistently and without the need for ignoring and forcing.
 
 Tests can be built using the `+checklocksfail` annotation. When applied after a
 statement, these will generate a report if the line does *not* fail an
-assertion. For example:
+assertion. The optional value matches a substring of the failure message and
+multiple expected failures can be separated with `|`. For example:
 
 ```go
 func foo(ts *testStruct) {
-  ts.guardedField = 1 // +checklocksfail: violation.
+  ts.guardedField = 1 // +checklocksfail=violation
 }
 ```
 

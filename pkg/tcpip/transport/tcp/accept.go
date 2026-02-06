@@ -258,7 +258,7 @@ func (l *listenContext) startHandshake(s *segment, opts header.TCPSynOptions, qu
 
 		// Propagate any inheritable options from the listening endpoint
 		// to the newly created endpoint.
-		l.listenEP.propagateInheritableOptionsLocked(ep) // +checklocksforce
+		l.listenEP.propagateInheritableOptionsLocked(ep) // +checklocksforce:ep.mu
 
 		if !ep.reserveTupleLocked() {
 			ep.mu.Unlock()
