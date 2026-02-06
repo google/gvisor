@@ -3069,6 +3069,22 @@ cc_binary(
 )
 
 cc_binary(
+    name = "socket_unix_stream_listener_close_test",
+    testonly = 1,
+    srcs = ["socket_unix_stream_listener_close.cc"],
+    linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
+    deps = select_gtest() + [
+        "//test/util:file_descriptor",
+        "//test/util:posix_error",
+        "//test/util:socket_util",
+        "//test/util:temp_path",
+        "//test/util:test_main",
+        "//test/util:test_util",
+    ],
+)
+
+cc_binary(
     name = "socket_ip_tcp_generic_loopback_test",
     testonly = 1,
     srcs = [
