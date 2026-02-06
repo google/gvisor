@@ -576,32 +576,17 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) (retErr error) 
 		}
 	}()
 
-	reader, metadata, err := state.NewStatefileReader(stateFile /* transfers ownership on success */, nil)
-	if err != nil {
-		return fmt.Errorf("creating statefile reader: %w", err)
-	}
-	stateFile = nil
-
-	// Create the main MemoryFile.
-	mf, err := createMemoryFile(cm.l.root.conf.AppHugePages, cm.l.hostTHP)
-	if err != nil {
-		reader.Close()
-		return fmt.Errorf("creating memory file: %v", err)
-	}
-
 	cm.restorer = &restorer{
 		cm:         cm,
-		stateFile:  reader,
-		metadata:   metadata,
 		background: o.Background,
 		timer:      timer,
-		mainMF:     mf,
 	}
-	cm.l.restoreDone = sync.NewCond(&cm.l.mu)
-	cm.l.state = restoringUnstarted
 
-	// Release `cm.l.mu`.
-	cu.Clean()
+	// Create the main MemoryFile.
+	cm.restorer.mainMF, err = createMemoryFile(cm.l.root.conf.AppHugePages, cm.l.hostTHP)
+	if err != nil {
+		return fmt.Errorf("creating memory file: %v", err)
+	}
 
 	if o.HavePagesFile {
 		// This immediately starts loading the main MemoryFile asynchronously.
@@ -609,6 +594,18 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) (retErr error) 
 		pagesMetadata = nil
 		pagesFile = nil
 	}
+
+	cm.restorer.stateFile, cm.restorer.metadata, err = state.NewStatefileReader(stateFile /* transfers ownership on success */, nil)
+	if err != nil {
+		return fmt.Errorf("creating statefile reader: %w", err)
+	}
+	stateFile = nil
+
+	cm.l.restoreDone = sync.NewCond(&cm.l.mu)
+	cm.l.state = restoringUnstarted
+
+	// Release `cm.l.mu`.
+	cu.Clean()
 
 	if o.HaveDeviceFile {
 		cm.restorer.deviceFile, err = o.ReleaseFD(len(o.Files) - 1)
@@ -622,7 +619,7 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) (retErr error) 
 	cm.l.k.Pause()
 	timer.Reached("kernel paused")
 
-	countStr, ok := metadata[ContainerCountKey]
+	countStr, ok := cm.restorer.metadata[ContainerCountKey]
 	if !ok {
 		return errors.New("container count not present in state file")
 	}
@@ -636,7 +633,7 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) (retErr error) 
 	cm.restorer.totalContainers = count
 	log.Infof("Restoring a total of %d containers", cm.restorer.totalContainers)
 
-	containerSpecs, ok := metadata[ContainerSpecsKey]
+	containerSpecs, ok := cm.restorer.metadata[ContainerSpecsKey]
 	if !ok {
 		return fmt.Errorf("container specs not found in metadata during restore")
 	}
@@ -646,7 +643,7 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) (retErr error) 
 	}
 	cm.restorer.checkpointedSpecs = specs
 
-	checkpointVersion := metadata[VersionKey]
+	checkpointVersion := cm.restorer.metadata[VersionKey]
 	currentVersion := version.Version()
 	if checkpointVersion != currentVersion {
 		return fmt.Errorf("runsc version does not match across checkpoint restore, checkpoint: %v current: %v", checkpointVersion, currentVersion)
