@@ -1081,12 +1081,26 @@ func (e *Endpoint) resetConnectionLocked(err tcpip.Error) {
 		//
 		// See: https://www.snellman.net/blog/archive/2016-02-01-tcp-rst/ for more
 		// information.
-		sndWndEnd := e.snd.SndUna.Add(e.snd.SndWnd)
-		resetSeqNum := sndWndEnd
-		if !sndWndEnd.LessThan(e.snd.SndNxt) || e.snd.SndNxt.Size(sndWndEnd) < (1<<e.snd.SndWndScale) {
-			resetSeqNum = e.snd.SndNxt
+		//
+		// e.snd and e.rcv may be nil if the endpoint is in a handshake
+		// state (e.g. SynSent) where the sender and receiver have not
+		// yet been initialized. Per Linux behavior, use a sequence
+		// number of zero when no ACK has been received (snd is nil),
+		// and a receive window of zero when rcv is nil since the
+		// connection will be immediately terminated.
+		var resetSeqNum seqnum.Value
+		var ackNum seqnum.Value
+		if e.snd != nil {
+			sndWndEnd := e.snd.SndUna.Add(e.snd.SndWnd)
+			resetSeqNum = sndWndEnd
+			if !sndWndEnd.LessThan(e.snd.SndNxt) || e.snd.SndNxt.Size(sndWndEnd) < (1<<e.snd.SndWndScale) {
+				resetSeqNum = e.snd.SndNxt
+			}
 		}
-		e.sendEmptyRaw(header.TCPFlagAck|header.TCPFlagRst, resetSeqNum, e.rcv.RcvNxt, 0)
+		if e.rcv != nil {
+			ackNum = e.rcv.RcvNxt
+		}
+		e.sendEmptyRaw(header.TCPFlagAck|header.TCPFlagRst, resetSeqNum, ackNum, 0)
 	}
 	// Don't purge read queues here. If there's buffered data, it's still allowed
 	// to be read.

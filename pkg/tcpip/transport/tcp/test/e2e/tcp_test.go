@@ -9576,6 +9576,95 @@ func TestSetExperimentOptionWithOptionDisabled(t *testing.T) {
 	checker.IPv4(t, v, checker.IPv4Options(want))
 }
 
+func TestCloseInSynRecvWithLinger(t *testing.T) {
+	c := context.New(t, e2e.DefaultMTU)
+	defer c.Cleanup()
+
+	// Create an endpoint, don't handshake because we want to interfere with the
+	// handshake process.
+	c.Create(-1)
+
+	// Set SO_LINGER with 0 timeout.
+	l := tcpip.LingerOption{Enabled: true, Timeout: 0}
+	c.EP.(*tcp.Endpoint).SocketOptions().SetLinger(l)
+
+	// Start connection attempt.
+	waitEntry, _ := waiter.NewChannelEntry(waiter.EventHUp)
+	c.WQ.EventRegister(&waitEntry)
+	defer c.WQ.EventUnregister(&waitEntry)
+
+	addr := tcpip.FullAddress{Addr: context.TestAddr, Port: context.TestPort}
+	{
+		err := c.EP.Connect(addr)
+		if d := cmp.Diff(&tcpip.ErrConnectStarted{}, err); d != "" {
+			t.Fatalf("Connect(...) mismatch (-want +got):\n%s", d)
+		}
+	}
+
+	// Receive SYN packet.
+	v := c.GetPacket()
+	defer v.Release()
+	checker.IPv4(t, v,
+		checker.TCP(
+			checker.DstPort(context.TestPort),
+			checker.TCPFlags(header.TCPFlagSyn),
+		),
+	)
+
+	if got, want := tcp.EndpointState(c.EP.State()), tcp.StateSynSent; got != want {
+		t.Fatalf("got State() = %s, want %s", got, want)
+	}
+	tcpHdr := header.TCP(header.IPv4(v.AsSlice()).Payload())
+	c.IRS = seqnum.Value(tcpHdr.SequenceNumber())
+
+	// Send SYN instead of SYN-ACK to trigger simultaneous open and move
+	// endpoint to SYN-RCVD state.
+	iss := seqnum.Value(context.TestInitialSequenceNumber)
+	c.SendPacket(nil, &context.Headers{
+		SrcPort: tcpHdr.DestinationPort(),
+		DstPort: tcpHdr.SourcePort(),
+		Flags:   header.TCPFlagSyn,
+		SeqNum:  iss,
+		RcvWnd:  30000,
+	})
+
+	// Receive SYN-ACK from endpoint.
+	v = c.GetPacket()
+	defer v.Release()
+	checker.IPv4(t, v,
+		checker.TCP(
+			checker.DstPort(context.TestPort),
+			checker.TCPFlags(header.TCPFlagSyn|header.TCPFlagAck),
+			checker.TCPAckNum(uint32(iss)+1),
+		),
+	)
+
+	if got, want := tcp.EndpointState(c.EP.State()), tcp.StateSynRecv; got != want {
+		t.Fatalf("got State() = %s, want %s", got, want)
+	}
+
+	c.EP.Close()
+
+	// With SO_LINGER enabled and timeout 0, Close() should cause an RST to
+	// be sent. As the endpoint is not established, it should have snd and rcv
+	// fields as nil, which should cause the RST packet to have sequence number
+	// and receive window size to be zero.
+	v = c.GetPacket()
+	defer v.Release()
+	checker.IPv4(t, v,
+		checker.TCP(
+			checker.DstPort(context.TestPort),
+			checker.TCPFlags(header.TCPFlagRst|header.TCPFlagAck),
+			checker.TCPSeqNum(0),
+			checker.TCPWindow(0),
+		),
+	)
+
+	if got, want := tcp.EndpointState(c.EP.State()), tcp.StateError; got != want {
+		t.Fatalf("got State() = %s, want %s", got, want)
+	}
+}
+
 func TestMain(m *testing.M) {
 	refs.SetLeakMode(refs.LeaksPanic)
 	code := m.Run()
