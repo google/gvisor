@@ -396,13 +396,9 @@ func (r *restorer) restore(l *Loader) error {
 			}
 		}
 
-		r.cm.onRestoreDone()
-		postRestoreThread.Reached("kernel notified")
-
-		log.Infof("Restore successful")
-
 		// Calculate the CPU time saved for restore.
 		t, err := state.CPUTime()
+		var s Savings
 		if err != nil {
 			log.Warningf("Failed to get CPU time usage for restore, err: %v", err)
 		} else {
@@ -415,7 +411,8 @@ func (r *restorer) restore(l *Loader) error {
 				if err != nil {
 					log.Warningf("CPU time usage in metadata %v is invalid, err: %v", savedTimeStr, err)
 				} else {
-					log.Infof("CPU time saved with restore: %v", (savedTime - t).String())
+					s.CPUTimeSaved = savedTime - t
+					log.Infof("CPU time saved with restore: %v ms", s.CPUTimeSaved.Milliseconds())
 				}
 			}
 		}
@@ -433,9 +430,15 @@ func (r *restorer) restore(l *Loader) error {
 			if err != nil {
 				log.Warningf("Walltime in metadata %v is invalid, err: %v", savedWtStr, err)
 			} else {
-				log.Infof("Walltime saved with restore: %v", (savedWt - wt).String())
+				s.WallTimeSaved = savedWt - wt
+				log.Infof("Walltime saved with restore: %v ms", s.WallTimeSaved.Milliseconds())
 			}
 		}
+
+		r.cm.onRestoreDone(s)
+		postRestoreThread.Reached("kernel notified")
+
+		log.Infof("Restore successful")
 	}()
 
 	// Transfer ownership of the `timer` to a new goroutine.

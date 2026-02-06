@@ -66,6 +66,9 @@ const (
 	// ContMgrExecuteAsync executes a command in a container.
 	ContMgrExecuteAsync = "containerManager.ExecuteAsync"
 
+	// ContMgrGetSavings gets the savings for restored sandboxes.
+	ContMgrGetSavings = "containerManager.GetSavings"
+
 	// ContMgrPortForward starts port forwarding with the sandbox.
 	ContMgrPortForward = "containerManager.PortForward"
 
@@ -699,9 +702,10 @@ func (cm *containerManager) onRestoreFailed(err error) {
 	cm.restorer = nil
 }
 
-func (cm *containerManager) onRestoreDone() {
+func (cm *containerManager) onRestoreDone(s Savings) {
 	cm.l.mu.Lock()
 	cm.l.state = restored
+	cm.l.savings = s
 	cm.l.mu.Unlock()
 	cm.l.restoreDone.Broadcast()
 	cm.restorer = nil
@@ -1056,5 +1060,22 @@ func (cm *containerManager) Mount(args *MountArgs, _ *struct{}) error {
 func (cm *containerManager) ContainerRuntimeState(cid *string, state *ContainerRuntimeState) error {
 	log.Debugf("containerManager.ContainerRuntimeState: cid: %s", *cid)
 	*state = cm.l.containerRuntimeState(*cid)
+	return nil
+}
+
+// Savings holds the savings with restore.
+type Savings struct {
+	// CPUTimeSaved is the CPU time saved at restore.
+	CPUTimeSaved gtime.Duration
+	// WallTimeSaved is the wall time saved at restore.
+	WallTimeSaved gtime.Duration
+}
+
+// GetSavings returns the savings for restored sandboxes.
+func (cm *containerManager) GetSavings(_ *struct{}, s *Savings) error {
+	log.Debugf("containerManager.GetSavings")
+	cm.l.mu.Lock()
+	*s = cm.l.savings
+	cm.l.mu.Unlock()
 	return nil
 }
