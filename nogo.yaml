@@ -239,10 +239,6 @@ analyzers:
         # See above.
         - "symbol \"runtime_pollWaitCanceled\".*"
         - "symbol \"runtime_procPin\".*"
-  QF1002: # Convert untagged switch to tagged switch
-    # disabled for now due to existing violations.
-    internal:
-      exclude: [".*"]
   QF1003: # Convert if/else-if chain to tagged switch
     # disabled for now due to existing violations.
     internal:

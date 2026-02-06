@@ -435,8 +435,8 @@ func (e *Endpoint) AcquireContextForWrite(opts tcpip.WriteOptions) (WriteContext
 	route := e.connectedRoute
 	to := opts.To
 	info := e.Info()
-	switch {
-	case to == nil:
+	switch to {
+	case nil:
 		// If the user doesn't specify a destination, they should have
 		// connected to another address.
 		if e.State() != transport.DatagramEndpointStateConnected {
