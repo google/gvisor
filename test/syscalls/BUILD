@@ -1047,6 +1047,10 @@ syscall_test(
 )
 
 syscall_test(
+    test = "//test/syscalls/linux:socket_unix_stream_listener_close_test",
+)
+
+syscall_test(
     size = "medium",
     # TODO(b/323000153): Test fails with S/R enabled during restore of abstract
     # sockets. Fix this and then enable S/R.
