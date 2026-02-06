@@ -38,6 +38,23 @@ func ioctlSetTermios(fd int, req uint64, t *linux.Termios) error {
 	return nil
 }
 
+func ioctlGetTermios2(fd int) (*linux.KernelTermios, error) {
+	var t linux.KernelTermios
+	_, _, errno := unix.Syscall(unix.SYS_IOCTL, uintptr(fd), linux.TCGETS2, uintptr(unsafe.Pointer(&t)))
+	if errno != 0 {
+		return nil, errno
+	}
+	return &t, nil
+}
+
+func ioctlSetTermios2(fd int, req uint64, t *linux.KernelTermios) error {
+	_, _, errno := unix.Syscall(unix.SYS_IOCTL, uintptr(fd), uintptr(req), uintptr(unsafe.Pointer(t)))
+	if errno != 0 {
+		return errno
+	}
+	return nil
+}
+
 func ioctlGetWinsize(fd int) (*linux.Winsize, error) {
 	var w linux.Winsize
 	_, _, errno := unix.Syscall(unix.SYS_IOCTL, uintptr(fd), linux.TIOCGWINSZ, uintptr(unsafe.Pointer(&w)))

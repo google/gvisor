@@ -147,6 +147,8 @@ func (rfd *replicaFileDescription) Ioctl(ctx context.Context, io usermem.IO, sys
 		return 0, rfd.inode.t.ld.inputQueueReadSize(t, io, args)
 	case linux.TCGETS:
 		return rfd.inode.t.ld.getTermios(t, args)
+	case linux.TCGETS2:
+		return rfd.inode.t.ld.getTermios2(t, args)
 	case linux.TCSETS:
 		return rfd.inode.t.ld.setTermios(t, args)
 	case linux.TCSETSW:
@@ -157,6 +159,16 @@ func (rfd *replicaFileDescription) Ioctl(ctx context.Context, io usermem.IO, sys
 		// This should drain the output queue and clear the input queue
 		// first, but we don't implement that yet.
 		return rfd.inode.t.ld.setTermios(t, args)
+	case linux.TCSETS2:
+		return rfd.inode.t.ld.setTermios2(t, args)
+	case linux.TCSETSW2:
+		// Note that this should drain the output queue first, but we
+		// don't implement that yet.
+		return rfd.inode.t.ld.setTermios2(t, args)
+	case linux.TCSETSF2:
+		// This should drain the output queue and clear the input queue
+		// first, but we don't implement that yet.
+		return rfd.inode.t.ld.setTermios2(t, args)
 	case linux.TIOCGPTN:
 		nP := primitive.Uint32(rfd.inode.t.n)
 		_, err := nP.CopyOut(t, args[2].Pointer())
