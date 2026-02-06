@@ -239,10 +239,6 @@ analyzers:
         # See above.
         - "symbol \"runtime_pollWaitCanceled\".*"
         - "symbol \"runtime_procPin\".*"
-  QF1001: # Apply De Morgan’s law
-    # disabled for now due to existing violations.
-    internal:
-      exclude: [".*"]
   QF1002: # Convert untagged switch to tagged switch
     # disabled for now due to existing violations.
     internal:
@@ -397,3 +393,8 @@ analyzers:
       suppress:
         - "comment on exported type Translation" # Intentional.
         - "comment on exported type PinnedRange" # Intentional.
+
+  QF1001: # Apply De Morgan’s law
+    # Controversial.
+    internal:
+      exclude: [".*"]
