@@ -97,7 +97,7 @@ func (d *DriverSourceDir) GetUVMIncludePaths() []string {
 func WriteIncludeFile(sources []string, w io.Writer, ioctls []nvproxy.IoctlName) error {
 	bufW := bufio.NewWriter(w)
 	for _, source := range sources {
-		if _, err := bufW.WriteString(fmt.Sprintf("#include \"%s\"\n", source)); err != nil {
+		if _, err := fmt.Fprintf(bufW, "#include \"%s\"\n", source); err != nil {
 			return fmt.Errorf("failed to write to include file: %w", err)
 		}
 	}
@@ -110,7 +110,7 @@ func WriteIncludeFile(sources []string, w io.Writer, ioctls []nvproxy.IoctlName)
 	// in the source file, we create constants with name "GVISOR_<ioctl_name>"
 	// which are initialized with the ioctl macro.
 	for _, ioctl := range ioctls {
-		if _, err := bufW.WriteString(fmt.Sprintf("const uint64_t GVISOR_%s = %s;\n", ioctl, ioctl)); err != nil {
+		if _, err := fmt.Fprintf(bufW, "const uint64_t GVISOR_%s = %s;\n", ioctl, ioctl); err != nil {
 			return fmt.Errorf("failed to write to include file: %w", err)
 		}
 	}
