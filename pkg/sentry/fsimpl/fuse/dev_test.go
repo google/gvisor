@@ -167,9 +167,7 @@ func CallTest(conn *connection, t *kernel.Task, r *Request, i uint32) (*Response
 	// Wait until we're certain that a new request can be processed.
 	for conn.numActiveRequests == conn.maxActiveRequests {
 		conn.mu.Unlock()
-		select {
-		case <-conn.fullQueueCh:
-		}
+		<-conn.fullQueueCh
 		conn.mu.Lock()
 	}
 
@@ -183,9 +181,7 @@ func CallTest(conn *connection, t *kernel.Task, r *Request, i uint32) (*Response
 	// Resolve the response.
 	//
 	// Block without a task.
-	select {
-	case <-fut.ch:
-	}
+	<-fut.ch
 
 	// A response is ready. Resolve and return it.
 	return fut.getResponse(), nil

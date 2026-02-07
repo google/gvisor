@@ -239,10 +239,6 @@ analyzers:
         # See above.
         - "symbol \"runtime_pollWaitCanceled\".*"
         - "symbol \"runtime_procPin\".*"
-  S1000: # Use plain channel ops instead of single-case select
-    # disabled for now due to existing violations.
-    internal:
-      exclude: [".*"]
   S1002: # Simplify boolean comparison against constants
     # disabled for now due to existing violations.
     internal:

@@ -133,17 +133,15 @@ func TestVethOverflows(t *testing.T) {
 	if err := s.WritePacketToRemote(nicID, remoteLinkAddr, netProto, buffer.Buffer{}); err != nil {
 		t.Fatalf("s.WritePacketToRemote(%d, %s, _): %s", nicID, remoteLinkAddr, err)
 	}
-	select {
-	case pkt := <-sink.ch:
-		defer pkt.DecRef()
-		if err := s.WritePacketToRemote(nicID, remoteLinkAddr, netProto, buffer.Buffer{}); err != nil {
-			t.Fatalf("s.WritePacketToRemote(%d, %s, _): %s", nicID, remoteLinkAddr, err)
-		}
-		if err := s.WritePacketToRemote(nicID, remoteLinkAddr, netProto, buffer.Buffer{}); err == nil {
-			t.Fatalf("s.WritePacketToRemote(%d, %s, _) got: %v, want: %v", nicID, remoteLinkAddr, err, &tcpip.ErrNoBufferSpace{})
-		}
-		wg.Done()
+	firstPkt := <-sink.ch
+	defer firstPkt.DecRef()
+	if err := s.WritePacketToRemote(nicID, remoteLinkAddr, netProto, buffer.Buffer{}); err != nil {
+		t.Fatalf("s.WritePacketToRemote(%d, %s, _): %s", nicID, remoteLinkAddr, err)
 	}
+	if err := s.WritePacketToRemote(nicID, remoteLinkAddr, netProto, buffer.Buffer{}); err == nil {
+		t.Fatalf("s.WritePacketToRemote(%d, %s, _) got: %v, want: %v", nicID, remoteLinkAddr, err, &tcpip.ErrNoBufferSpace{})
+	}
+	wg.Done()
 	pkt := <-sink.ch
 	if pkt == nil {
 		t.Fatal("expected to read a packet")
