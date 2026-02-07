@@ -239,10 +239,6 @@ analyzers:
         # See above.
         - "symbol \"runtime_pollWaitCanceled\".*"
         - "symbol \"runtime_procPin\".*"
-  S1002: # Simplify boolean comparison against constants
-    # disabled for now due to existing violations.
-    internal:
-      exclude: [".*"]
   S1003: # Replace index+len check with strings.Contains
     # disabled for now due to existing violations.
     internal:
