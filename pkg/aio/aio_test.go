@@ -80,7 +80,7 @@ func testRead(t *testing.T, newQueue func(cap int) (Queue, error)) {
 			done += chunkSize
 		}
 	}
-	if bytes.Compare(data, buf) != 0 {
+	if !bytes.Equal(data, buf) {
 		t.Errorf("bytes differ")
 	}
 }
@@ -153,7 +153,7 @@ func testReadv(t *testing.T, newQueue func(cap int) (Queue, error)) {
 			done += 2 * chunkSize
 		}
 	}
-	if bytes.Compare(data, buf) != 0 {
+	if !bytes.Equal(data, buf) {
 		t.Errorf("bytes differ")
 	}
 }
@@ -213,7 +213,7 @@ func testWrite(t *testing.T, newQueue func(cap int) (Queue, error)) {
 	if n, err := io.ReadFull(testFile, buf); err != nil {
 		t.Fatalf("failed to read temp file after %d bytes: %v", n, err)
 	}
-	if bytes.Compare(data, buf) != 0 {
+	if !bytes.Equal(data, buf) {
 		t.Errorf("bytes differ")
 	}
 }
@@ -286,7 +286,7 @@ func testWritev(t *testing.T, newQueue func(cap int) (Queue, error)) {
 	if n, err := io.ReadFull(testFile, buf); err != nil {
 		t.Fatalf("failed to read temp file after %d bytes: %v", n, err)
 	}
-	if bytes.Compare(data, buf) != 0 {
+	if !bytes.Equal(data, buf) {
 		t.Errorf("bytes differ")
 	}
 }

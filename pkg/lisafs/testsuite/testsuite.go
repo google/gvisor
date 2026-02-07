@@ -251,7 +251,7 @@ func readFDAndCmp(ctx context.Context, t *testing.T, fdLisa lisafs.ClientFD, off
 		t.Errorf("partial read: buf size = %d, read = %d", len(want), n)
 		return
 	}
-	if bytes.Compare(buf, want) != 0 {
+	if !bytes.Equal(buf, want) {
 		t.Errorf("bytes read differ from what was expected: want = %v, got = %v", want, buf)
 	}
 }
@@ -365,7 +365,7 @@ func testRegularFileIO(ctx context.Context, t *testing.T, tester Tester, root li
 		t.Errorf("host read failed: %v", err)
 	} else if n != len(hostReadData) {
 		t.Errorf("partial read: buf size = %d, read = %d", len(hostReadData), n)
-	} else if bytes.Compare(hostReadData, data) != 0 {
+	} else if !bytes.Equal(hostReadData, data) {
 		t.Errorf("bytes read differ from what was expected: want = %v, got = %v", data, hostReadData)
 	}
 

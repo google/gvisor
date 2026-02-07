@@ -239,10 +239,6 @@ analyzers:
         # See above.
         - "symbol \"runtime_pollWaitCanceled\".*"
         - "symbol \"runtime_procPin\".*"
-  S1004: # Simplify bytes.Compare(...) != 0 into bytes.Equal(...)
-    # disabled for now due to existing violations.
-    internal:
-      exclude: [".*"]
   S1005: # Drop unnecessary assignment to blank identifier
     internal:
       exclude:
