@@ -239,10 +239,6 @@ analyzers:
         # See above.
         - "symbol \"runtime_pollWaitCanceled\".*"
         - "symbol \"runtime_procPin\".*"
-  QF1004: # Use strings.ReplaceAll instead of Replace(..., -1)
-    # disabled for now due to existing violations.
-    internal:
-      exclude: [".*"]
   QF1005: # Expand call to math.Pow
     # disabled for now due to existing violations.
     internal:
