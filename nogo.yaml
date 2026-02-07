@@ -239,10 +239,6 @@ analyzers:
         # See above.
         - "symbol \"runtime_pollWaitCanceled\".*"
         - "symbol \"runtime_procPin\".*"
-  QF1006: # Lift if+break into loop condition
-    # disabled for now due to existing violations.
-    internal:
-      exclude: [".*"]
   QF1007: # Merge conditional assignment into variable declaration
     internal:
       exclude:

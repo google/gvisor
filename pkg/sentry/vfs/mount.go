@@ -1107,13 +1107,7 @@ retryFirst:
 	}
 	mnt = parent
 	d := point
-	for {
-		if mnt == vfsroot.mount && d == vfsroot.dentry {
-			break
-		}
-		if d != mnt.root {
-			break
-		}
+	for d == mnt.root && (mnt != vfsroot.mount || d != vfsroot.dentry) {
 	retryNotFirst:
 		epoch := vfs.mounts.seq.BeginRead()
 		parent, point := mnt.parent(), mnt.point()

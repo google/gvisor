@@ -720,10 +720,7 @@ func (f *MemoryFile) Allocate(length uint64, opts AllocOpts) (memmap.FileRange, 
 			}
 			if canPopulate() {
 				rem := dsts
-				for {
-					if !tryPopulate(rem.Head()) {
-						break
-					}
+				for tryPopulate(rem.Head()) {
 					rem = rem.Tail()
 					if rem.IsEmpty() {
 						needHugeTouch = false
