@@ -239,10 +239,6 @@ analyzers:
         # See above.
         - "symbol \"runtime_pollWaitCanceled\".*"
         - "symbol \"runtime_procPin\".*"
-  QF1007: # Merge conditional assignment into variable declaration
-    internal:
-      exclude:
-        - pkg/sentry/kernel/auth/capability_set.go
   QF1008: # Omit embedded fields from selector expression
     # disabled for now due to existing violations.
     internal:
