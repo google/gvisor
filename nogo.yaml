@@ -239,10 +239,6 @@ analyzers:
         # See above.
         - "symbol \"runtime_pollWaitCanceled\".*"
         - "symbol \"runtime_procPin\".*"
-  S1005: # Drop unnecessary assignment to blank identifier
-    internal:
-      exclude:
-        - pkg/state/pretty/pretty.go
   S1007: # Simplify regular expression by using raw string literal
     # disabled for now due to existing violations.
     internal:

@@ -147,7 +147,7 @@ func (p *printer) format(graph uint64, depth int, encoded wire.Object) (string, 
 		return strings.Join(items, tabs), len(zeros) < len(x.Contents)
 	case *wire.Struct:
 		tag := fmt.Sprintf("g%dt%d", graph, x.TypeID)
-		spec, _ := p.typeSpecs[tag]
+		spec := p.typeSpecs[tag]
 		typ, _ := p.formatType(x.TypeID, graph)
 		if x.Fields() == 0 {
 			return fmt.Sprintf("struct[%s]{}", typ), false
