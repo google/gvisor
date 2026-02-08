@@ -88,14 +88,13 @@ func (t *thread) clone() (*thread, error) {
 	if !ok {
 		return nil, unix.EINVAL
 	}
-	var flags uintptr
 	// Create a sysmsg thread.
 	//
 	// CLONE_THREAD isn't set, because a stub process has SIGSTOP
 	// in its queue. A sysmsg thread will not be traced by ptrace,
 	// so it will be stopped immediately if it will share signal
 	// queue with its stub process.
-	flags = uintptr(
+	flags := uintptr(
 		unix.CLONE_FILES |
 			unix.CLONE_FS |
 			unix.CLONE_PTRACE |

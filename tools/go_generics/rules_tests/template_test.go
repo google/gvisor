@@ -20,16 +20,14 @@ import (
 )
 
 func TestMax(t *testing.T) {
-	var a int
-	a = max(10, 20)
+	a := max(10, 20)
 	if a != 20 {
 		t.Errorf("Bad result of max, got %v, want %v", a, 20)
 	}
 }
 
 func TestIntConst(t *testing.T) {
-	var a int
-	a = add(10)
+	a := add(10)
 	if a != 30 {
 		t.Errorf("Bad result of add, got %v, want %v", a, 30)
 	}

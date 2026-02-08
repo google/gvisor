@@ -239,12 +239,6 @@ analyzers:
         # See above.
         - "symbol \"runtime_pollWaitCanceled\".*"
         - "symbol \"runtime_procPin\".*"
-  S1021: # Merge variable declaration and assignment
-    # disabled for now due to existing violations.
-    generated:
-      exclude: [".*"]
-    internal:
-      exclude: [".*"]
   S1023: # Omit redundant control flow
     # disabled for now due to existing violations.
     internal:

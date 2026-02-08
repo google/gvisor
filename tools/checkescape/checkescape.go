@@ -815,8 +815,7 @@ func run(pass *analysis.Pass, binary io.Reader) (any, error) {
 		return
 	}
 
-	var analyzeBasicBlock func(*ssa.BasicBlock) []Escapes // Recursive.
-	analyzeBasicBlock = func(block *ssa.BasicBlock) (rval []Escapes) {
+	analyzeBasicBlock := func(block *ssa.BasicBlock) (rval []Escapes) {
 		for _, inst := range block.Instrs {
 			if es := analyzeInstruction(inst); !es.IsEmpty() {
 				rval = append(rval, es)
