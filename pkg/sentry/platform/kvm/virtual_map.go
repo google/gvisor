@@ -69,7 +69,7 @@ func applyVirtualRegions(fn func(vr virtualRegion)) error {
 	r := bufio.NewReader(f)
 	for {
 		b, err := r.ReadBytes('\n')
-		if b != nil && len(b) > 0 {
+		if len(b) > 0 {
 			m := mapsLine.FindSubmatch(b)
 			if m == nil {
 				// This should not happen: kernel bug?
