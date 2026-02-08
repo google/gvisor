@@ -239,10 +239,6 @@ analyzers:
         # See above.
         - "symbol \"runtime_pollWaitCanceled\".*"
         - "symbol \"runtime_procPin\".*"
-  S1023: # Omit redundant control flow
-    # disabled for now due to existing violations.
-    internal:
-      exclude: [".*"]
   S1024: # Replace `x.Sub(time.Now())` with `time.Until(x)`
     # disabled for now due to existing violations.
     internal:

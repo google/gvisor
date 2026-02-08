@@ -1192,7 +1192,6 @@ func (hfStack *hookFunctionStack) attachBaseChain(chain *Chain) {
 		return a.baseChainInfo.Priority.GetValue() - b.baseChainInfo.Priority.GetValue()
 	})
 	hfStack.baseChains = slices.Insert(hfStack.baseChains, pos, chain)
-	return
 }
 
 // detachBaseChain removes a base chain with the specified name from the stack,

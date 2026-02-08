@@ -85,7 +85,6 @@ func isSingleStepping(regs *arch.Registers) bool {
 // updateSyscallRegs updates registers after finishing sysemu.
 func updateSyscallRegs(regs *arch.Registers) {
 	// No special work is necessary.
-	return
 }
 
 // syscallReturnValue extracts a sensible return from registers.

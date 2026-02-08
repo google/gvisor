@@ -727,7 +727,6 @@ func (e *Endpoint) UnlockUser() {
 	// processor goroutine starts running before we release the lock here
 	// then it will fail to process as TryLock() will fail.
 	processor.queueEndpoint(e)
-	return
 }
 
 // StopWork halts packet processing. Only to be used in tests.

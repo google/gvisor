@@ -106,7 +106,6 @@ func (s *Server) WaitForCount(count int) {
 	for len(s.points) < count {
 		s.cond.Wait()
 	}
-	return
 }
 
 // SetVersion sets the version to be used in handshake.

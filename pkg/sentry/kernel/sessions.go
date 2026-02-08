@@ -223,7 +223,6 @@ func (pg *ProcessGroup) handleOrphan() {
 		tg.signalHandlers.mu.NestedUnlock(signalHandlersLockTg)
 	})
 
-	return
 }
 
 // Session returns the process group's session without taking a reference.
