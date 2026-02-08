@@ -627,7 +627,7 @@ func TestNonBlockingClose(t *testing.T) {
 	// Close the endpoint and measure how long it takes.
 	t0 := time.Now()
 	ep.Close()
-	if diff := time.Now().Sub(t0); diff > 3*time.Second {
+	if diff := time.Since(t0); diff > 3*time.Second {
 		t.Fatalf("Took too long to close: %s", diff)
 	}
 }
@@ -3970,7 +3970,7 @@ func TestCloseListener(t *testing.T) {
 	// Close the listener and measure how long it takes.
 	t0 := time.Now()
 	ep.Close()
-	if diff := time.Now().Sub(t0); diff > 3*time.Second {
+	if diff := time.Since(t0); diff > 3*time.Second {
 		t.Fatalf("Took too long to close: %s", diff)
 	}
 }

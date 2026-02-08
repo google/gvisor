@@ -176,7 +176,7 @@ func TestBlock(t *testing.T) {
 	if s.Fetch(true) != &w {
 		t.Fatalf("Fetch did not match waker")
 	}
-	if d := time.Now().Sub(before); d < 500*time.Millisecond {
+	if d := time.Since(before); d < 500*time.Millisecond {
 		t.Fatalf("Duration was too short: %v", d)
 	}
 
@@ -196,7 +196,7 @@ func TestBlock(t *testing.T) {
 	if s.Fetch(true) != &w {
 		t.Fatalf("Fetch did not match waker")
 	}
-	if d := time.Now().Sub(before); d < 500*time.Millisecond {
+	if d := time.Since(before); d < 500*time.Millisecond {
 		t.Fatalf("Duration was too short: %v", d)
 	}
 }
