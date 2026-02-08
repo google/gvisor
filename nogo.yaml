@@ -239,10 +239,6 @@ analyzers:
         # See above.
         - "symbol \"runtime_pollWaitCanceled\".*"
         - "symbol \"runtime_procPin\".*"
-  S1040: # Type assertion to the same type
-    internal:
-      exclude:
-        - pkg/tcpip/hash/jenkins/jenkins_test.go
   SA1019: # Use of deprecated identifier.
     # disable for now due to misattribution from golang.org/issue/44195.
     generated:
