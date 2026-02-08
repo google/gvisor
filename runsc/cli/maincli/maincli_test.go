@@ -56,17 +56,18 @@ func TestFlagSetIdempotent(t *testing.T) {
 	nonIdempotentCommands := map[string]bool{
 		new(cmd.Exec).Name(): true,
 	}
-	forEachCmd(func(cmd subcommands.Command, group string) {
+	allCommands, _ := commands()
+	for cmd, group := range allCommands {
 		// Skip commands that are known to be non-idempotent.
 		if _, ok := nonIdempotentCommands[cmd.Name()]; ok {
-			return
+			continue
 		}
 		if cmdList, ok := cmds[group]; ok {
 			cmds[group] = append(cmdList, cmd)
 		} else {
 			cmds[group] = []subcommands.Command{cmd}
 		}
-	}, nil)
+	}
 
 	for group, cmdList := range cmds {
 		t.Run(group, func(t *testing.T) {

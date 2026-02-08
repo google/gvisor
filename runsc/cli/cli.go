@@ -56,9 +56,9 @@ var (
 )
 
 // Run runs the binary, whose behavior is determined by the subcommand passed
-// on the command line. forEachCmd invokes the passed callback for each
-// supported subcommand.
-func Run(forEachCmd func(cb func(cmd subcommands.Command, group string), help *Help)) {
+// on the command line. commands is a mapping of all top level runsc commands
+// to their command group name. helpTopics is a list of additional help topics.
+func Run(commands map[subcommands.Command]string, helpTopics []subcommands.Command) {
 	// Set the start time as soon as possible.
 	startTime := starttime.Get()
 
@@ -70,9 +70,14 @@ func Run(forEachCmd func(cb func(cmd subcommands.Command, group string), help *H
 	subcommands.Register(subcommands.FlagsCommand(), "")
 
 	// Register all commands.
-	forEachCmd(func(cmd subcommands.Command, group string) {
+	for cmd, group := range commands {
 		subcommands.Register(&helpCommandWrapper{wrapped: cmd}, group)
-	}, help)
+	}
+
+	// Register help commands.
+	for _, cmd := range helpTopics {
+		help.Register(cmd)
+	}
 
 	// Register with the main command line.
 	config.RegisterFlags(flag.CommandLine)
