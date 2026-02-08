@@ -17,7 +17,6 @@ package header_test
 import (
 	"bytes"
 	"crypto/sha256"
-	"fmt"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -369,7 +368,7 @@ func TestSolicitedNodeAddr(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		t.Run(fmt.Sprintf("%s", test.addr), func(t *testing.T) {
+		t.Run(test.addr, func(t *testing.T) {
 			if got := header.SolicitedNodeAddr(tcpip.AddrFrom16Slice([]byte(test.addr))); got != tcpip.AddrFrom16Slice([]byte(test.want)) {
 				t.Fatalf("got header.SolicitedNodeAddr(%s) = %s, want = %s", test.addr, got, test.want)
 			}
@@ -449,7 +448,7 @@ func TestV6MulticastScope(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		t.Run(fmt.Sprintf("%s", test.addr), func(t *testing.T) {
+		t.Run(test.addr, func(t *testing.T) {
 			if got := header.V6MulticastScope(tcpip.AddrFrom16Slice([]byte(test.addr))); got != test.want {
 				t.Fatalf("got header.V6MulticastScope(%s) = %d, want = %d", test.addr, got, test.want)
 			}

@@ -1788,7 +1788,7 @@ type mopt struct {
 
 func (m mopt) String() string {
 	if m.value == nil {
-		return fmt.Sprintf("%s", m.key)
+		return m.key
 	}
 	return fmt.Sprintf("%s=%v", m.key, m.value)
 }
