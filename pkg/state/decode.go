@@ -715,7 +715,7 @@ func (ds *decodeState) Load(obj reflect.Value) {
 			fmt.Fprintf(&buf, "%q", cycleOS.obj.Type())
 		}
 		buf.WriteString("}")
-		Failf("incomplete graph: %s", string(buf.Bytes()))
+		Failf("incomplete graph: %s", buf.String())
 	}
 }
 

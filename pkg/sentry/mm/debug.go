@@ -56,7 +56,7 @@ func (mm *MemoryManager) DebugString(ctx context.Context) string {
 		b.Write(pseg.debugStringEntryLocked())
 	}
 
-	return string(b.Bytes())
+	return b.String()
 }
 
 // Preconditions: mm.activeMu must be locked.

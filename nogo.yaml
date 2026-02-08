@@ -239,10 +239,6 @@ analyzers:
         # See above.
         - "symbol \"runtime_pollWaitCanceled\".*"
         - "symbol \"runtime_procPin\".*"
-  S1030: # Use `bytes.Buffer.String` or `bytes.Buffer.Bytes`
-    # disabled for now due to existing violations.
-    internal:
-      exclude: [".*"]
   S1033: # Remove unnecessary guard around delete
     # disabled for now due to existing violations.
     internal:

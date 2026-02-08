@@ -109,5 +109,5 @@ func (c *Agent) String() string {
 	// c.buf.Bytes(), which may be modified after c.mu.Unlock(). If you change
 	// this function to return []byte for some reason, c.buf.Bytes() needs to
 	// be cloned instead.
-	return string(c.buf.Bytes())
+	return c.buf.String()
 }

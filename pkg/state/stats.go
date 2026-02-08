@@ -141,5 +141,5 @@ func (s *Stats) String() string {
 	buf.WriteString("-----------------+----------+------------------+----------------\n")
 	buf.WriteString(fmt.Sprintf("% 16s | % 8d | % 16s | [all]",
 		total, count, total/time.Duration(count)))
-	return string(buf.Bytes())
+	return buf.String()
 }

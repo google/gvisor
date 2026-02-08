@@ -193,7 +193,7 @@ func TestBlockSeqIterBytes(t *testing.T) {
 				}
 				srcs = nextSrcs
 			}
-			if got := string(dst.Bytes()); got != test.want {
+			if got := dst.String(); got != test.want {
 				t.Errorf("Copied string: got %q, wanted %q", got, test.want)
 			}
 		})
