@@ -222,11 +222,11 @@ func (s *subprocess) initSyscallThread(ptraceThread *thread, seccompNotify bool)
 }
 
 func handlePtraceSyscallRequestError(req any, format string, values ...any) {
-	switch req.(type) {
+	switch req := req.(type) {
 	case requestThread:
-		req.(requestThread).thread <- nil
+		req.thread <- nil
 	case requestStub:
-		req.(requestStub).done <- nil
+		req.done <- nil
 	}
 	log.BugTracebackf("handlePtraceSyscallRequest failed: "+format, values...)
 }

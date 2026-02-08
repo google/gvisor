@@ -392,15 +392,13 @@ func TestBytesView(t *testing.T) {
 		},
 	}
 	for _, test := range tests {
-		switch test.(type) {
+		switch tst := test.(type) {
 		case bytesViewTest[string]:
-			tst := test.(bytesViewTest[string])
 			value := tst.input.String()
 			if value != tst.value {
 				t.Errorf("%v: BytesView.String() got %v, want %v", tst.desc, value, tst.value)
 			}
 		case bytesViewTest[uint32]:
-			tst := test.(bytesViewTest[uint32])
 			value, ok := tst.input.Uint32()
 			if ok != tst.ok {
 				t.Errorf("%v: BytesView.Uint32() got ok = %v, want %v", tst.desc, ok, tst.ok)
@@ -409,7 +407,6 @@ func TestBytesView(t *testing.T) {
 				t.Errorf("%v: BytesView.Uint32() got %v, want %v", tst.desc, value, tst.value)
 			}
 		case bytesViewTest[int32]:
-			tst := test.(bytesViewTest[int32])
 			value, ok := tst.input.Int32()
 			if ok != tst.ok {
 				t.Errorf("%v: BytesView.Int32() got ok = %v, want %v", tst.desc, ok, tst.ok)
@@ -418,7 +415,6 @@ func TestBytesView(t *testing.T) {
 				t.Errorf("%v: BytesView.Int32() got %v, want %v", tst.desc, value, tst.value)
 			}
 		case bytesViewTest[uint16]:
-			tst := test.(bytesViewTest[uint16])
 			value, ok := tst.input.Uint16()
 			if ok != tst.ok {
 				t.Errorf("%v: BytesView.Uint16() got ok = %v, want %v", tst.desc, ok, tst.ok)
@@ -427,7 +423,6 @@ func TestBytesView(t *testing.T) {
 				t.Errorf("%v: BytesView.Uint16() got %v, want %v", tst.desc, value, tst.value)
 			}
 		case bytesViewTest[int16]:
-			tst := test.(bytesViewTest[int16])
 			value, ok := tst.input.Int16()
 			if ok != tst.ok {
 				t.Errorf("%v: BytesView.Int16() got ok = %v, want %v", tst.desc, ok, tst.ok)
@@ -436,7 +431,6 @@ func TestBytesView(t *testing.T) {
 				t.Errorf("%v: BytesView.Int16() got %v, want %v", tst.desc, value, tst.value)
 			}
 		case bytesViewTest[uint8]:
-			tst := test.(bytesViewTest[uint8])
 			value, ok := tst.input.Uint8()
 			if ok != tst.ok {
 				t.Errorf("%v: BytesView.Uint8() got ok = %v, want %v", tst.desc, ok, tst.ok)
@@ -445,7 +439,6 @@ func TestBytesView(t *testing.T) {
 				t.Errorf("%v: BytesView.Uint8() got %v, want %v", tst.desc, value, tst.value)
 			}
 		case bytesViewTest[int8]:
-			tst := test.(bytesViewTest[int8])
 			value, ok := tst.input.Int8()
 			if ok != tst.ok {
 				t.Errorf("%v: BytesView.Int8() got ok = %v, want %v", tst.desc, ok, tst.ok)
