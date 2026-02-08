@@ -239,10 +239,6 @@ analyzers:
         # See above.
         - "symbol \"runtime_pollWaitCanceled\".*"
         - "symbol \"runtime_procPin\".*"
-  S1020: # Simplify type assertion result handling
-    internal:
-      exclude:
-        - pkg/sentry/platform/kvm/context.go
   S1021: # Merge variable declaration and assignment
     # disabled for now due to existing violations.
     generated:

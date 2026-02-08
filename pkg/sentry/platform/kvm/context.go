@@ -110,22 +110,20 @@ restart:
 	// All done.
 	c.interrupt.Disable()
 
-	if err != nil {
-		if _, ok := err.(tryCPUIDError); ok {
-			// Does emulation work for the CPUID?
-			//
-			// We have to put the current vCPU, because
-			// TryCPUIDEmulate needs to read a user memory and it
-			// has to lock mm.activeMu for that, but it can race
-			// with as.invalidate that bonce all vcpu-s to gr0 and
-			// is called under mm.activeMu too.
-			if platform.TryCPUIDEmulate(ctx, mm, ac) {
-				goto restart
-			}
-			// If not a valid CPUID, then the signal should be
-			// delivered as is and the information is filled.
-			err = platform.ErrContextSignal
+	if _, ok := err.(tryCPUIDError); ok {
+		// Does emulation work for the CPUID?
+		//
+		// We have to put the current vCPU, because
+		// TryCPUIDEmulate needs to read a user memory and it
+		// has to lock mm.activeMu for that, but it can race
+		// with as.invalidate that bonce all vcpu-s to gr0 and
+		// is called under mm.activeMu too.
+		if platform.TryCPUIDEmulate(ctx, mm, ac) {
+			goto restart
 		}
+		// If not a valid CPUID, then the signal should be
+		// delivered as is and the information is filled.
+		err = platform.ErrContextSignal
 	}
 	return &c.info, at, err
 }
