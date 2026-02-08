@@ -1149,9 +1149,7 @@ func TestMetricProfiling(t *testing.T) {
 			for i, m := range test.metricNames {
 				var fields []Field
 				if i == 0 {
-					for _, f := range test.firstMetricFields {
-						fields = append(fields, f)
-					}
+					fields = append(fields, test.firstMetricFields...)
 				}
 				newMetric, err := NewUint64Metric(m, Uint64Metadata{
 					Cumulative:  true,

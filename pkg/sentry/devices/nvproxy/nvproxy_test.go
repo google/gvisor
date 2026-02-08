@@ -271,9 +271,7 @@ func TestFilterCapabilities(t *testing.T) {
 		}
 		capSets = append(capSets, individualCap)
 	}
-	for _, capSet := range nvconf.PopularCapabilitySets() {
-		capSets = append(capSets, capSet)
-	}
+	capSets = append(capSets, nvconf.PopularCapabilitySets()...)
 
 	// Build all the ABIs.
 	Init()

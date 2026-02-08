@@ -239,10 +239,6 @@ analyzers:
         # See above.
         - "symbol \"runtime_pollWaitCanceled\".*"
         - "symbol \"runtime_procPin\".*"
-  S1011: # Use append directly instead of looped appends
-    # disabled for now due to existing violations.
-    internal:
-      exclude: [".*"]
   S1012: # Use time.Since instead of time.Now().Sub
     # disabled for now due to existing violations.
     internal:
