@@ -69,11 +69,11 @@ type bitwise struct {
 // newBitwiseBool creates a new bitwise boolean operation.
 func newBitwiseBool(sreg, dreg uint8, mask, xor []byte) (*bitwise, *syserr.AnnotatedError) {
 	if isVerdictRegister(sreg) || isVerdictRegister(dreg) {
-		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("bitwise operation does not support verdict register as source or destination register"))
+		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "bitwise operation does not support verdict register as source or destination register")
 	}
 	blen := len(mask)
 	if blen != len(xor) {
-		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("bitwise boolean operation mask and xor data lengths must be the same"))
+		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "bitwise boolean operation mask and xor data lengths must be the same")
 	}
 	if blen > linux.NFT_REG_SIZE || (blen > linux.NFT_REG32_SIZE && (is4ByteRegister(sreg) || is4ByteRegister(dreg))) {
 		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("bitwise boolean operation cannot use more than %d bytes", linux.NFT_REG_SIZE))
@@ -84,7 +84,7 @@ func newBitwiseBool(sreg, dreg uint8, mask, xor []byte) (*bitwise, *syserr.Annot
 // newBitwiseShift creates a new bitwise shift operation.
 func newBitwiseShift(sreg, dreg, blen uint8, shift uint32, right bool) (*bitwise, *syserr.AnnotatedError) {
 	if isVerdictRegister(sreg) || isVerdictRegister(dreg) {
-		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("bitwise shift operation does not support verdict register as source or destination register"))
+		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "bitwise shift operation does not support verdict register as source or destination register")
 	}
 	if blen > linux.NFT_REG_SIZE || (blen > linux.NFT_REG32_SIZE && (is4ByteRegister(sreg) || is4ByteRegister(dreg))) {
 		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("bitwise operation length %d is too long for source register %d, destination register %d", blen, sreg, dreg))

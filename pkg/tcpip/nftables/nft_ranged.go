@@ -73,10 +73,10 @@ func validateRangeOp(rop rngOp) *syserr.AnnotatedError {
 // newRanged creates a new ranged operation.
 func newRanged(sreg uint8, op int, low, high []byte) (*ranged, *syserr.AnnotatedError) {
 	if isVerdictRegister(sreg) {
-		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("ranged operation does not support verdict register as source register"))
+		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "ranged operation does not support verdict register as source register")
 	}
 	if len(low) != len(high) {
-		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("upper and lower bounds for ranged operation must be the same length"))
+		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "upper and lower bounds for ranged operation must be the same length")
 	}
 	lowData := newBytesData(low)
 	if err := lowData.validateRegister(sreg); err != nil {

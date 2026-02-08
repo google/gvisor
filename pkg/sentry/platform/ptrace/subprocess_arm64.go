@@ -192,7 +192,7 @@ func (s *subprocess) arm64SyscallWorkaround(t *thread, regs *arch.Registers) {
 			continue
 		}
 		if sig == (syscallEvent | unix.SIGTRAP) {
-			t.dumpAndPanic(fmt.Sprintf("unexpected syscall event"))
+			t.dumpAndPanic("unexpected syscall event")
 		}
 		break
 	}

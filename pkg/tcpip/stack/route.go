@@ -180,7 +180,7 @@ func constructAndValidateRoute(netProto tcpip.NetworkProtocolNumber, addressEndp
 // AssignableAddressEndpoint.
 func makeRoute(netProto tcpip.NetworkProtocolNumber, gateway, localAddr, remoteAddr tcpip.Address, outgoingNIC, localAddressNIC *nic, localAddressEndpoint AssignableAddressEndpoint, handleLocal, multicastLoop bool, mtu uint32) *Route {
 	if localAddressNIC.stack != outgoingNIC.stack {
-		panic(fmt.Sprintf("cannot create a route with NICs from different stacks"))
+		panic("cannot create a route with NICs from different stacks")
 	}
 
 	if localAddr.BitLen() == 0 {

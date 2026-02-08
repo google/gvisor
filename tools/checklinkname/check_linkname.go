@@ -270,7 +270,7 @@ var (
 // simplifyType returns a simplified type string.
 func simplifyType(t types.Type, maxDepth int) (string, int) {
 	if maxDepth <= 0 {
-		return fmt.Sprintf("..."), maxDepth // Don't bother.
+		return "...", maxDepth // Don't bother.
 	}
 	switch x := t.Underlying().(type) {
 	case *types.Pointer:

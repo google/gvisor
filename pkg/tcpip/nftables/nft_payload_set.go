@@ -63,7 +63,7 @@ func validateChecksumType(csumType uint8) *syserr.AnnotatedError {
 	case linux.NFT_PAYLOAD_CSUM_INET:
 		return nil
 	case linux.NFT_PAYLOAD_CSUM_SCTP:
-		return syserr.NewAnnotatedError(syserr.ErrNotSupported, fmt.Sprintf("sctp checksum type not supported"))
+		return syserr.NewAnnotatedError(syserr.ErrNotSupported, "sctp checksum type not supported")
 	default:
 		return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("invalid checksum type: %d", int(csumType)))
 	}
@@ -72,7 +72,7 @@ func validateChecksumType(csumType uint8) *syserr.AnnotatedError {
 // newPayloadSet creates a new payloadSet operation.
 func newPayloadSet(base payloadBase, offset, blen, sreg, csumType, csumOffset, csumFlags uint8) (*payloadSet, *syserr.AnnotatedError) {
 	if isVerdictRegister(sreg) {
-		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("payload set operation does not support verdict register as source register"))
+		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "payload set operation does not support verdict register as source register")
 	}
 	if blen > linux.NFT_REG_SIZE || (blen > linux.NFT_REG32_SIZE && is4ByteRegister(sreg)) {
 		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("payload size %d is not supported for register %d", blen, sreg))

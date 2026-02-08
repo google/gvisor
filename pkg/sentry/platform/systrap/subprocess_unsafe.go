@@ -63,7 +63,7 @@ func (s *subprocess) getThreadContextFromID(cid uint64) *sysmsg.ThreadContext {
 func mmapContextQueueForSentry(memoryFile *pgalloc.MemoryFile, opts pgalloc.AllocOpts) (memmap.FileRange, *contextQueue) {
 	fr, err := memoryFile.Allocate(uint64(stubContextQueueRegionLen), opts)
 	if err != nil {
-		panic(fmt.Sprintf("failed to allocate a new subprocess context memory region"))
+		panic("failed to allocate a new subprocess context memory region")
 	}
 	addr, errno := hostsyscall.RawSyscall6(
 		unix.SYS_MMAP,

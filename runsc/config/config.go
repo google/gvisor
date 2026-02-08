@@ -503,7 +503,7 @@ func (c *Config) Log() {
 func (c *Config) GetHostUDS() HostUDS {
 	if c.FSGoferHostUDS {
 		if c.HostUDS != HostUDSNone {
-			panic(fmt.Sprintf("HostUDS cannot be set when --fsgofer-host-uds=true"))
+			panic("HostUDS cannot be set when --fsgofer-host-uds=true")
 		}
 		// Using deprecated flag, honor it to avoid breaking users.
 		return HostUDSOpen
@@ -516,7 +516,7 @@ func (c *Config) GetHostUDS() HostUDS {
 func (c *Config) GetOverlay2() Overlay2 {
 	if c.Overlay {
 		if c.Overlay2.Enabled() {
-			panic(fmt.Sprintf("Overlay2 cannot be set when --overlay=true"))
+			panic("Overlay2 cannot be set when --overlay=true")
 		}
 		// Using a deprecated flag, honor it to avoid breaking users.
 		return Overlay2{rootMount: true, subMounts: true, medium: "memory"}
