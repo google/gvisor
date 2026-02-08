@@ -239,10 +239,6 @@ analyzers:
         # See above.
         - "symbol \"runtime_pollWaitCanceled\".*"
         - "symbol \"runtime_procPin\".*"
-  S1033: # Remove unnecessary guard around delete
-    # disabled for now due to existing violations.
-    internal:
-      exclude: [".*"]
   S1034: # Use result of type assertion to simplify cases
     # disabled for now due to existing violations.
     internal:
