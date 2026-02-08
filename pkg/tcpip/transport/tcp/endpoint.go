@@ -762,10 +762,7 @@ func (e *Endpoint) AssertLockHeld(locked *Endpoint) {
 // TODO(b/226403629): Remove this once checklocks understands TryLock.
 // +checklocksacquire:e.mu
 func (e *Endpoint) TryLock() bool {
-	if e.mu.TryLock() {
-		return true // +checklocksforce
-	}
-	return false // +checklocksignore
+	return e.mu.TryLock() // +checklocksforce: TryLock.
 }
 
 // setEndpointState updates the state of the endpoint to state atomically. This
