@@ -3272,11 +3272,7 @@ func GetTCPSendBufferLimits(sh tcpip.StackHandler) tcpip.SendBufferSizeOption {
 	// This type assertion is safe because only the TCP stack calls this
 	// function.
 	ss := sh.(*stack.Stack).TCPSendBufferLimits()
-	return tcpip.SendBufferSizeOption{
-		Min:     ss.Min,
-		Default: ss.Default,
-		Max:     ss.Max,
-	}
+	return tcpip.SendBufferSizeOption(ss)
 }
 
 // allowOutOfWindowAck returns true if an out-of-window ACK can be sent now.
@@ -3304,11 +3300,7 @@ func GetTCPReceiveBufferLimits(s tcpip.StackHandler) tcpip.ReceiveBufferSizeOpti
 		panic(fmt.Sprintf("s.TransportProtocolOption(%d, %#v) = %s", header.TCPProtocolNumber, ss, err))
 	}
 
-	return tcpip.ReceiveBufferSizeOption{
-		Min:     ss.Min,
-		Default: ss.Default,
-		Max:     ss.Max,
-	}
+	return tcpip.ReceiveBufferSizeOption(ss)
 }
 
 // computeTCPSendBufferSize implements auto tuning of send buffer size and

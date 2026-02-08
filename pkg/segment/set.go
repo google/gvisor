@@ -447,7 +447,7 @@ func (s *Set) InsertWithoutMergingUnchecked(gap GapIterator, r Range, val Value)
 	if splitMaxGap {
 		gap.node.updateMaxGapLeaf()
 	}
-	return Iterator{gap.node, gap.index}
+	return Iterator(gap)
 }
 
 // InsertRange inserts the given segment into the set. If the new segment can
@@ -586,7 +586,7 @@ func (s *Set) Remove(seg Iterator) GapIterator {
 	if trackGaps != 0 {
 		seg.node.updateMaxGapLeaf()
 	}
-	return seg.node.rebalanceAfterRemove(GapIterator{seg.node, seg.index})
+	return seg.node.rebalanceAfterRemove(GapIterator(seg))
 }
 
 // RemoveAll removes all segments from the set. All existing iterators are
@@ -1735,7 +1735,7 @@ func (seg Iterator) PrevGap() GapIterator {
 		// must be in a leaf node.
 		return seg.node.children[seg.index].lastSegment().NextGap()
 	}
-	return GapIterator{seg.node, seg.index}
+	return GapIterator(seg)
 }
 
 // NextGap returns the gap immediately after the iterated segment.
