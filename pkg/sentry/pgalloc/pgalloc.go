@@ -940,7 +940,7 @@ func (f *MemoryFile) extendChunksLocked(alloc *allocState) error {
 	}
 
 	// Update chunk state.
-	newChunks := make([]chunkInfo, newNrChunks, newNrChunks)
+	newChunks := make([]chunkInfo, newNrChunks)
 	copy(newChunks, oldChunks)
 	m := mapStart
 	for i := oldNrChunks; i < newNrChunks; i++ {

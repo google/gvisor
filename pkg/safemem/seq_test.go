@@ -156,7 +156,7 @@ func TestBlockSeqIterBlocks(t *testing.T) {
 			srcs := test.BlockSeq()
 			// "Note that a non-nil empty slice and a nil slice ... are not
 			// deeply equal." - reflect
-			slices := make([][]byte, 0, 0)
+			slices := make([][]byte, 0)
 			for !srcs.IsEmpty() {
 				src := srcs.Head()
 				slices = append(slices, src.ToSlice())
