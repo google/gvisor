@@ -35,6 +35,7 @@ def _arch_genrule_impl(ctx):
         ctx.actions.run_shell(
             inputs = input_files,
             outputs = [output],
+            mnemonic = "ArchGenruleCp",
             command = "cp %s %s" % (
                 " ".join([f.path for f in input_files.to_list()]),
                 output.path,

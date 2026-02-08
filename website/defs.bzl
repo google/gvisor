@@ -169,6 +169,7 @@ include_in_menu: {include_in_menu}"""
     ctx.actions.run(
         inputs = depset(ctx.files.deps),
         outputs = [tarball],
+        mnemonic = "GvisorWebsiteDocs",
         progress_message = "Generating %s" % ctx.label,
         executable = builder,
         toolchain = None,
