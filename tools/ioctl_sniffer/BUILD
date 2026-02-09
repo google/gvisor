@@ -54,7 +54,10 @@ go_binary(
         "//:sandbox",
     ],
     deps = [
+        "//pkg/abi/linux",
         "//pkg/log",
+        "//pkg/seccomp",
         "//tools/ioctl_sniffer/sniffer",
+        "@org_golang_x_sys//unix:go_default_library",
     ],
 )

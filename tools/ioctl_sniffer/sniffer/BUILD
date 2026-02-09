@@ -20,5 +20,6 @@ go_library(
         "//pkg/sentry/devices/nvproxy/nvconf",
         "//tools/ioctl_sniffer:ioctl_go_proto",
         "@org_golang_google_protobuf//proto:go_default_library",
+        "@org_golang_x_sys//unix:go_default_library",
     ],
 )
