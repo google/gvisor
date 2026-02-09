@@ -239,10 +239,6 @@ analyzers:
         # See above.
         - "symbol \"runtime_pollWaitCanceled\".*"
         - "symbol \"runtime_procPin\".*"
-  QF1008: # Omit embedded fields from selector expression
-    # disabled for now due to existing violations.
-    internal:
-      exclude: [".*"]
   QF1012: # Use `fmt.Fprintf(x, ...)` instead of `x.Write(fmt.Sprintf(...))`
     # disabled for now due to existing violations.
     generated:
@@ -371,6 +367,10 @@ analyzers:
         - "comment on exported type PinnedRange" # Intentional.
 
   QF1001: # Apply De Morgan’s law
+    # Controversial.
+    internal:
+      exclude: [".*"]
+  QF1008: # Omit embedded fields from selector expression
     # Controversial.
     internal:
       exclude: [".*"]
