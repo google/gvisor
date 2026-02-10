@@ -15,6 +15,10 @@
 package transport
 
 import (
+	"fmt"
+	"runtime"
+	"strings"
+
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/syserr"
@@ -30,6 +34,8 @@ import (
 // +stateify savable
 type connectionlessEndpoint struct {
 	baseEndpoint
+	closerStack    [32]uintptr
+	closerStackLen int
 }
 
 var (
@@ -39,7 +45,7 @@ var (
 
 // NewConnectionless creates a new unbound dgram endpoint.
 func NewConnectionless(ctx context.Context) Endpoint {
-	ep := &connectionlessEndpoint{baseEndpoint{Queue: &waiter.Queue{}}}
+	ep := &connectionlessEndpoint{baseEndpoint: baseEndpoint{Queue: &waiter.Queue{}}}
 	q := queue{ReaderQueue: ep.Queue, WriterQueue: &waiter.Queue{}, limit: defaultBufferSize}
 	q.InitRefs()
 	ep.receiver = &queueReceiver{readQueue: &q}
@@ -67,6 +73,7 @@ func (e *connectionlessEndpoint) Close(ctx context.Context) {
 
 	e.receiver.CloseRecv()
 	r := e.receiver
+	e.closerStackLen = runtime.Callers(0, e.closerStack[:])
 	e.receiver = nil
 	e.Unlock()
 
@@ -195,6 +202,21 @@ func (e *connectionlessEndpoint) Readiness(mask waiter.EventMask) waiter.EventMa
 	e.Lock()
 	defer e.Unlock()
 
+	if e.receiver == nil {
+		if e.closerStackLen == 0 {
+			panic("connectionlessEndpoint.Readiness called with receiver=nil; no closer stack available")
+		}
+		frames := runtime.CallersFrames(e.closerStack[:e.closerStackLen])
+		var b strings.Builder
+		for {
+			frame, more := frames.Next()
+			fmt.Fprintf(&b, "%s\n\t%s:%d pc=%#x\n", frame.Function, frame.File, frame.Line, frame.PC)
+			if !more {
+				break
+			}
+		}
+		panic(fmt.Sprintf("connectionlessEndpoint.Readiness called with receiver=nil; closer:\n%s", b.String()))
+	}
 	ready := waiter.EventMask(0)
 	if mask&waiter.ReadableEvents != 0 && e.receiver.Readable() {
 		ready |= waiter.ReadableEvents
