@@ -80,12 +80,12 @@ func TestBasic(t *testing.T) {
 			ruleSets: []RuleSet{
 				{
 					Rules:  MakeSyscallRules(map[uintptr]SyscallRule{1: MatchAll{}}),
-					Action: linux.SECCOMP_RET_ALLOW,
+					Action: Allow,
 				},
 			},
 			options: ProgramOptions{
-				DefaultAction: linux.SECCOMP_RET_TRAP,
-				BadArchAction: linux.SECCOMP_RET_KILL_THREAD,
+				DefaultAction: Trap,
+				BadArchAction: KillThread,
 			},
 			specs: []spec{
 				{
@@ -109,19 +109,19 @@ func TestBasic(t *testing.T) {
 							EqualTo(0x1),
 						},
 					}),
-					Action: linux.SECCOMP_RET_ALLOW,
+					Action: Allow,
 				},
 				{
 					Rules: MakeSyscallRules(map[uintptr]SyscallRule{
 						1: MatchAll{},
 						2: MatchAll{},
 					}),
-					Action: linux.SECCOMP_RET_TRAP,
+					Action: Trap,
 				},
 			},
 			options: ProgramOptions{
-				DefaultAction: linux.SECCOMP_RET_KILL_THREAD,
-				BadArchAction: linux.SECCOMP_RET_KILL_THREAD,
+				DefaultAction: KillThread,
+				BadArchAction: KillThread,
 			},
 			specs: []spec{
 				{
@@ -155,12 +155,12 @@ func TestBasic(t *testing.T) {
 						3: MatchAll{},
 						5: MatchAll{},
 					}),
-					Action: linux.SECCOMP_RET_ALLOW,
+					Action: Allow,
 				},
 			},
 			options: ProgramOptions{
-				DefaultAction: linux.SECCOMP_RET_TRAP,
-				BadArchAction: linux.SECCOMP_RET_KILL_THREAD,
+				DefaultAction: Trap,
+				BadArchAction: KillThread,
 			},
 			specs: []spec{
 				{
@@ -212,12 +212,12 @@ func TestBasic(t *testing.T) {
 					Rules: MakeSyscallRules(map[uintptr]SyscallRule{
 						1: MatchAll{},
 					}),
-					Action: linux.SECCOMP_RET_ALLOW,
+					Action: Allow,
 				},
 			},
 			options: ProgramOptions{
-				DefaultAction: linux.SECCOMP_RET_TRAP,
-				BadArchAction: linux.SECCOMP_RET_KILL_THREAD,
+				DefaultAction: Trap,
+				BadArchAction: KillThread,
 			},
 			specs: []spec{
 				{
@@ -234,12 +234,12 @@ func TestBasic(t *testing.T) {
 					Rules: MakeSyscallRules(map[uintptr]SyscallRule{
 						1: MatchAll{},
 					}),
-					Action: linux.SECCOMP_RET_ALLOW,
+					Action: Allow,
 				},
 			},
 			options: ProgramOptions{
-				DefaultAction: linux.SECCOMP_RET_TRAP,
-				BadArchAction: linux.SECCOMP_RET_KILL_THREAD,
+				DefaultAction: Trap,
+				BadArchAction: KillThread,
 			},
 			specs: []spec{
 				{
@@ -259,12 +259,12 @@ func TestBasic(t *testing.T) {
 							EqualTo(0xf),
 						},
 					}),
-					Action: linux.SECCOMP_RET_ALLOW,
+					Action: Allow,
 				},
 			},
 			options: ProgramOptions{
-				DefaultAction: linux.SECCOMP_RET_TRAP,
-				BadArchAction: linux.SECCOMP_RET_KILL_THREAD,
+				DefaultAction: Trap,
+				BadArchAction: KillThread,
 			},
 			specs: []spec{
 				{
@@ -293,12 +293,12 @@ func TestBasic(t *testing.T) {
 							},
 						},
 					}),
-					Action: linux.SECCOMP_RET_ALLOW,
+					Action: Allow,
 				},
 			},
 			options: ProgramOptions{
-				DefaultAction: linux.SECCOMP_RET_TRAP,
-				BadArchAction: linux.SECCOMP_RET_KILL_THREAD,
+				DefaultAction: Trap,
+				BadArchAction: KillThread,
 			},
 			specs: []spec{
 				{
@@ -325,7 +325,7 @@ func TestBasic(t *testing.T) {
 					Rules: MakeSyscallRules(map[uintptr]SyscallRule{
 						1: Or{},
 					}),
-					Action: linux.SECCOMP_RET_ALLOW,
+					Action: Allow,
 				},
 			},
 			wantPanic: true,
@@ -344,12 +344,12 @@ func TestBasic(t *testing.T) {
 							},
 						},
 					}),
-					Action: linux.SECCOMP_RET_ALLOW,
+					Action: Allow,
 				},
 			},
 			options: ProgramOptions{
-				DefaultAction: linux.SECCOMP_RET_TRAP,
-				BadArchAction: linux.SECCOMP_RET_KILL_THREAD,
+				DefaultAction: Trap,
+				BadArchAction: KillThread,
 			},
 			specs: []spec{
 				{
@@ -376,7 +376,7 @@ func TestBasic(t *testing.T) {
 					Rules: MakeSyscallRules(map[uintptr]SyscallRule{
 						1: And{},
 					}),
-					Action: linux.SECCOMP_RET_ALLOW,
+					Action: Allow,
 				},
 			},
 			wantPanic: true,
@@ -392,12 +392,12 @@ func TestBasic(t *testing.T) {
 							EqualTo(math.MaxUint32),
 						},
 					}),
-					Action: linux.SECCOMP_RET_ALLOW,
+					Action: Allow,
 				},
 			},
 			options: ProgramOptions{
-				DefaultAction: linux.SECCOMP_RET_TRAP,
-				BadArchAction: linux.SECCOMP_RET_KILL_THREAD,
+				DefaultAction: Trap,
+				BadArchAction: KillThread,
 			},
 			specs: []spec{
 				{
@@ -440,12 +440,12 @@ func TestBasic(t *testing.T) {
 							NotEqual(math.MaxUint32),
 						},
 					}),
-					Action: linux.SECCOMP_RET_ALLOW,
+					Action: Allow,
 				},
 			},
 			options: ProgramOptions{
-				DefaultAction: linux.SECCOMP_RET_TRAP,
-				BadArchAction: linux.SECCOMP_RET_KILL_THREAD,
+				DefaultAction: Trap,
+				BadArchAction: KillThread,
 			},
 			specs: []spec{
 				{
@@ -490,12 +490,12 @@ func TestBasic(t *testing.T) {
 							GreaterThan(0x00000002_00000002),
 						},
 					}),
-					Action: linux.SECCOMP_RET_ALLOW,
+					Action: Allow,
 				},
 			},
 			options: ProgramOptions{
-				DefaultAction: linux.SECCOMP_RET_TRAP,
-				BadArchAction: linux.SECCOMP_RET_KILL_THREAD,
+				DefaultAction: Trap,
+				BadArchAction: KillThread,
 			},
 			specs: []spec{
 				{
@@ -535,12 +535,12 @@ func TestBasic(t *testing.T) {
 							GreaterThan(0xabcd000d),
 						},
 					}),
-					Action: linux.SECCOMP_RET_ALLOW,
+					Action: Allow,
 				},
 			},
 			options: ProgramOptions{
-				DefaultAction: linux.SECCOMP_RET_TRAP,
-				BadArchAction: linux.SECCOMP_RET_KILL_THREAD,
+				DefaultAction: Trap,
+				BadArchAction: KillThread,
 			},
 			specs: []spec{
 				{
@@ -583,12 +583,12 @@ func TestBasic(t *testing.T) {
 							GreaterThanOrEqual(0x00000002_00000002),
 						},
 					}),
-					Action: linux.SECCOMP_RET_ALLOW,
+					Action: Allow,
 				},
 			},
 			options: ProgramOptions{
-				DefaultAction: linux.SECCOMP_RET_TRAP,
-				BadArchAction: linux.SECCOMP_RET_KILL_THREAD,
+				DefaultAction: Trap,
+				BadArchAction: KillThread,
 			},
 			specs: []spec{
 				{
@@ -628,12 +628,12 @@ func TestBasic(t *testing.T) {
 							GreaterThanOrEqual(0xabcd000d),
 						},
 					}),
-					Action: linux.SECCOMP_RET_ALLOW,
+					Action: Allow,
 				},
 			},
 			options: ProgramOptions{
-				DefaultAction: linux.SECCOMP_RET_TRAP,
-				BadArchAction: linux.SECCOMP_RET_KILL_THREAD,
+				DefaultAction: Trap,
+				BadArchAction: KillThread,
 			},
 			specs: []spec{
 				{
@@ -681,12 +681,12 @@ func TestBasic(t *testing.T) {
 							LessThan(0x00000002_00000002),
 						},
 					}),
-					Action: linux.SECCOMP_RET_ALLOW,
+					Action: Allow,
 				},
 			},
 			options: ProgramOptions{
-				DefaultAction: linux.SECCOMP_RET_TRAP,
-				BadArchAction: linux.SECCOMP_RET_KILL_THREAD,
+				DefaultAction: Trap,
+				BadArchAction: KillThread,
 			},
 			specs: []spec{
 				{
@@ -726,12 +726,12 @@ func TestBasic(t *testing.T) {
 							LessThan(0xabcd000d),
 						},
 					}),
-					Action: linux.SECCOMP_RET_ALLOW,
+					Action: Allow,
 				},
 			},
 			options: ProgramOptions{
-				DefaultAction: linux.SECCOMP_RET_TRAP,
-				BadArchAction: linux.SECCOMP_RET_KILL_THREAD,
+				DefaultAction: Trap,
+				BadArchAction: KillThread,
 			},
 			specs: []spec{
 				{
@@ -779,12 +779,12 @@ func TestBasic(t *testing.T) {
 							LessThanOrEqual(0x00000002_00000002),
 						},
 					}),
-					Action: linux.SECCOMP_RET_ALLOW,
+					Action: Allow,
 				},
 			},
 			options: ProgramOptions{
-				DefaultAction: linux.SECCOMP_RET_TRAP,
-				BadArchAction: linux.SECCOMP_RET_KILL_THREAD,
+				DefaultAction: Trap,
+				BadArchAction: KillThread,
 			},
 			specs: []spec{
 				{
@@ -825,12 +825,12 @@ func TestBasic(t *testing.T) {
 							LessThanOrEqual(0xabcd000d),
 						},
 					}),
-					Action: linux.SECCOMP_RET_ALLOW,
+					Action: Allow,
 				},
 			},
 			options: ProgramOptions{
-				DefaultAction: linux.SECCOMP_RET_TRAP,
-				BadArchAction: linux.SECCOMP_RET_KILL_THREAD,
+				DefaultAction: Trap,
+				BadArchAction: KillThread,
 			},
 			specs: []spec{
 				{
@@ -877,12 +877,12 @@ func TestBasic(t *testing.T) {
 							MaskedEqual(0x103, 0x1),
 						},
 					}),
-					Action: linux.SECCOMP_RET_ALLOW,
+					Action: Allow,
 				},
 			},
 			options: ProgramOptions{
-				DefaultAction: linux.SECCOMP_RET_TRAP,
-				BadArchAction: linux.SECCOMP_RET_KILL_THREAD,
+				DefaultAction: Trap,
+				BadArchAction: KillThread,
 			},
 			specs: []spec{
 				{
@@ -946,12 +946,12 @@ func TestBasic(t *testing.T) {
 							NonNegativeFD{},
 						},
 					}),
-					Action: linux.SECCOMP_RET_ALLOW,
+					Action: Allow,
 				},
 			},
 			options: ProgramOptions{
-				DefaultAction: linux.SECCOMP_RET_TRAP,
-				BadArchAction: linux.SECCOMP_RET_KILL_THREAD,
+				DefaultAction: Trap,
+				BadArchAction: KillThread,
 			},
 			specs: []spec{
 				{
@@ -1010,12 +1010,12 @@ func TestBasic(t *testing.T) {
 							RuleIP: EqualTo(0x7aabbccdd),
 						},
 					}),
-					Action: linux.SECCOMP_RET_ALLOW,
+					Action: Allow,
 				},
 			},
 			options: ProgramOptions{
-				DefaultAction: linux.SECCOMP_RET_TRAP,
-				BadArchAction: linux.SECCOMP_RET_KILL_THREAD,
+				DefaultAction: Trap,
+				BadArchAction: KillThread,
 			},
 			specs: []spec{
 				{
@@ -1041,19 +1041,23 @@ func TestBasic(t *testing.T) {
 					t.Helper()
 				}()
 				var err error
-				instrs, _, err = BuildProgram(test.ruleSets, test.options)
+				program := Program{
+					RuleSets: test.ruleSets,
+					Options:  test.options,
+				}
+				instrs, _, err = program.Build()
 				if err != nil {
-					t.Fatalf("BuildProgram() got error: %v", err)
+					t.Fatalf("program.Build() got error: %v", err)
 				}
 			}()
 			if test.wantPanic {
 				if panicErr == nil {
-					t.Fatal("BuildProgram did not panick")
+					t.Fatal("program.Build did not panic")
 				}
 				return
 			}
 			if panicErr != nil {
-				t.Fatalf("BuildProgram unexpectedly panicked: %v", panicErr)
+				t.Fatalf("program.Build unexpectedly panicked: %v", panicErr)
 			}
 			p, err := bpf.Compile(instrs, true /* optimize */)
 			if err != nil {
@@ -1086,15 +1090,19 @@ func TestRandom(t *testing.T) {
 	}
 
 	t.Logf("Testing filters: %v", syscallRules)
-	instrs, _, err := BuildProgram([]RuleSet{
-		{
-			Rules:  syscallRules,
-			Action: linux.SECCOMP_RET_ALLOW,
+	program := Program{
+		RuleSets: []RuleSet{
+			{
+				Rules:  syscallRules,
+				Action: Allow,
+			},
 		},
-	}, ProgramOptions{
-		DefaultAction: linux.SECCOMP_RET_TRAP,
-		BadArchAction: linux.SECCOMP_RET_KILL_THREAD,
-	})
+		Options: ProgramOptions{
+			DefaultAction: Trap,
+			BadArchAction: KillThread,
+		},
+	}
+	instrs, _, err := program.Build()
 	if err != nil {
 		t.Fatalf("buildProgram() got error: %v", err)
 	}
@@ -1534,22 +1542,20 @@ func TestOrderRuleSets(t *testing.T) {
 		wantErr  bool
 	}{
 		{
-			name:    "no RuleSets",
-			options: DefaultProgramOptions(),
-			want:    orderedRuleSets{},
+			name: "no RuleSets",
+			want: orderedRuleSets{},
 		},
 		{
-			name:    "inconsistent vsyscall",
-			options: DefaultProgramOptions(),
+			name: "inconsistent vsyscall",
 			ruleSets: []RuleSet{
 				{
 					Rules:    NewSyscallRules().Add(unix.SYS_READ, MatchAll{}),
-					Action:   linux.SECCOMP_RET_TRACE,
+					Action:   Trace,
 					Vsyscall: false,
 				},
 				{
 					Rules:    NewSyscallRules().Add(unix.SYS_READ, MatchAll{}),
-					Action:   linux.SECCOMP_RET_TRACE,
+					Action:   Trace,
 					Vsyscall: true,
 				},
 			},
@@ -1560,11 +1566,10 @@ func TestOrderRuleSets(t *testing.T) {
 			ruleSets: []RuleSet{
 				{
 					Rules:    NewSyscallRules().Add(unix.SYS_READ, MatchAll{}),
-					Action:   linux.SECCOMP_RET_TRACE,
+					Action:   Trace,
 					Vsyscall: false,
 				},
 			},
-			options: DefaultProgramOptions(),
 			want: orderedRuleSets{
 				trivial: map[uintptr]singleSyscallRuleSet{
 					unix.SYS_READ: {
@@ -1585,7 +1590,7 @@ func TestOrderRuleSets(t *testing.T) {
 			ruleSets: []RuleSet{
 				{
 					Rules:    NewSyscallRules().Add(unix.SYS_READ, MatchAll{}),
-					Action:   linux.SECCOMP_RET_TRACE,
+					Action:   Trace,
 					Vsyscall: false,
 				},
 			},
@@ -1614,7 +1619,7 @@ func TestOrderRuleSets(t *testing.T) {
 					Rules: NewSyscallRules().Add(
 						unix.SYS_READ, PerArg{EqualTo(0)},
 					),
-					Action:   linux.SECCOMP_RET_TRACE,
+					Action:   Trace,
 					Vsyscall: false,
 				},
 			},
@@ -1644,7 +1649,7 @@ func TestOrderRuleSets(t *testing.T) {
 					Rules: NewSyscallRules().Add(
 						unix.SYS_FLOCK, PerArg{EqualTo(0)},
 					),
-					Action:   linux.SECCOMP_RET_TRACE,
+					Action:   Trace,
 					Vsyscall: false,
 				},
 				{
@@ -1653,7 +1658,7 @@ func TestOrderRuleSets(t *testing.T) {
 					).Add(
 						unix.SYS_READ, PerArg{EqualTo(2)},
 					),
-					Action:   linux.SECCOMP_RET_TRACE,
+					Action:   Trace,
 					Vsyscall: false,
 				},
 			},
@@ -1711,7 +1716,7 @@ func TestOrderRuleSets(t *testing.T) {
 					Rules: NewSyscallRules().Add(
 						unix.SYS_READ, PerArg{EqualTo(0)},
 					),
-					Action:   linux.SECCOMP_RET_TRACE,
+					Action:   Trace,
 					Vsyscall: false,
 				},
 			},
@@ -1741,7 +1746,7 @@ func TestOrderRuleSets(t *testing.T) {
 					Rules: NewSyscallRules().Add(
 						unix.SYS_READ, PerArg{EqualTo(0)},
 					),
-					Action:   linux.SECCOMP_RET_TRACE,
+					Action:   Trace,
 					Vsyscall: true,
 				},
 			},
@@ -1778,7 +1783,7 @@ func TestOrderRuleSets(t *testing.T) {
 						// Hot, non-vsyscall, non-trivial
 						unix.SYS_FLOCK, PerArg{EqualTo(131)},
 					),
-					Action:   linux.SECCOMP_RET_TRACE,
+					Action:   Trace,
 					Vsyscall: false,
 				},
 				{
@@ -1795,7 +1800,7 @@ func TestOrderRuleSets(t *testing.T) {
 						// Cold, vsyscall, non-trivial
 						unix.SYS_MINCORE, PerArg{EqualTo(78)},
 					),
-					Action:   linux.SECCOMP_RET_ERRNO,
+					Action:   ReturnError,
 					Vsyscall: true,
 				},
 				{
@@ -1818,7 +1823,7 @@ func TestOrderRuleSets(t *testing.T) {
 						// later RuleSet will keep it trivial later.
 						unix.SYS_CHDIR, MatchAll{},
 					),
-					Action:   linux.SECCOMP_RET_KILL_THREAD,
+					Action:   KillThread,
 					Vsyscall: false,
 				},
 				{
@@ -1835,7 +1840,7 @@ func TestOrderRuleSets(t *testing.T) {
 						// Cold, non-vsyscall, remains trivial.
 						unix.SYS_FCHDIR, PerArg{AnyValue{}},
 					),
-					Action:   linux.SECCOMP_RET_KILL_PROCESS,
+					Action:   KillProcess,
 					Vsyscall: false,
 				},
 				{
@@ -1845,7 +1850,7 @@ func TestOrderRuleSets(t *testing.T) {
 						// same action.
 						unix.SYS_UNLINKAT, PerArg{EqualTo(472472)},
 					),
-					Action:   linux.SECCOMP_RET_KILL_PROCESS,
+					Action:   KillProcess,
 					Vsyscall: false,
 				},
 				{
@@ -1855,7 +1860,7 @@ func TestOrderRuleSets(t *testing.T) {
 						// action.
 						unix.SYS_UNLINKAT, PerArg{EqualTo(472472472)},
 					),
-					Action:   linux.SECCOMP_RET_TRAP,
+					Action:   Trap,
 					Vsyscall: false,
 				},
 			},
@@ -2042,7 +2047,7 @@ func TestOrderRuleSets(t *testing.T) {
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			test.options.Optimize = true
+			test.options.SkipOptimizations = false
 			got, _, gotErr := orderRuleSets(test.ruleSets, test.options)
 			if (gotErr != nil) != test.wantErr {
 				t.Errorf("got error: %v, want error: %v", gotErr, test.wantErr)

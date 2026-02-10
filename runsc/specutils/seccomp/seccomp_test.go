@@ -63,7 +63,7 @@ var (
 				DefaultAction: specs.ActAllow,
 			},
 			input:    testInput(nativeArchAuditNo, "read", nil),
-			expected: uint32(allowAction),
+			expected: uint32(linux.SECCOMP_RET_ALLOW),
 		},
 		{
 			name: "default_deny",
@@ -71,7 +71,7 @@ var (
 				DefaultAction: specs.ActErrno,
 			},
 			input:    testInput(nativeArchAuditNo, "read", nil),
-			expected: uint32(errnoAction),
+			expected: uint32(linux.SECCOMP_RET_ERRNO.WithReturnCode(uint16(unix.EPERM))),
 		},
 		{
 			name: "deny_arch",
@@ -92,7 +92,7 @@ var (
 				&linux.SeccompData{Nr: 183, Arch: 0x40000003},
 				make([]byte, (&linux.SeccompData{}).SizeBytes()),
 			),
-			expected: uint32(killThreadAction),
+			expected: uint32(linux.SECCOMP_RET_KILL_THREAD),
 		},
 		{
 			name: "match_name_errno",
@@ -115,7 +115,7 @@ var (
 				},
 			},
 			input:    testInput(nativeArchAuditNo, "getcwd", nil),
-			expected: uint32(errnoAction),
+			expected: uint32(linux.SECCOMP_RET_ERRNO.WithReturnCode(uint16(unix.EPERM))),
 		},
 		{
 			name: "match_name_trace",
@@ -138,7 +138,7 @@ var (
 				},
 			},
 			input:    testInput(nativeArchAuditNo, "write", nil),
-			expected: uint32(traceAction),
+			expected: uint32(linux.SECCOMP_RET_TRACE.WithReturnCode(uint16(unix.EPERM))),
 		},
 		{
 			name: "no_match_name_allow",
@@ -161,7 +161,7 @@ var (
 				},
 			},
 			input:    testInput(nativeArchAuditNo, "openat", nil),
-			expected: uint32(allowAction),
+			expected: uint32(linux.SECCOMP_RET_ALLOW),
 		},
 		{
 			name: "simple_match_args",
@@ -184,7 +184,7 @@ var (
 				},
 			},
 			input:    testInput(nativeArchAuditNo, "clone", &[6]uint64{unix.CLONE_FS}),
-			expected: uint32(errnoAction),
+			expected: uint32(linux.SECCOMP_RET_ERRNO.WithReturnCode(uint16(unix.EPERM))),
 		},
 		{
 			name: "match_args_or",
@@ -212,7 +212,7 @@ var (
 				},
 			},
 			input:    testInput(nativeArchAuditNo, "clone", &[6]uint64{unix.CLONE_FS}),
-			expected: uint32(errnoAction),
+			expected: uint32(linux.SECCOMP_RET_ERRNO.WithReturnCode(uint16(unix.EPERM))),
 		},
 		{
 			name: "match_args_and",
@@ -240,7 +240,7 @@ var (
 				},
 			},
 			input:    testInput(nativeArchAuditNo, "getsockopt", &[6]uint64{0, unix.SOL_SOCKET, unix.SO_PEERCRED}),
-			expected: uint32(errnoAction),
+			expected: uint32(linux.SECCOMP_RET_ERRNO.WithReturnCode(uint16(unix.EPERM))),
 		},
 		{
 			name: "no_match_args_and",
@@ -268,7 +268,7 @@ var (
 				},
 			},
 			input:    testInput(nativeArchAuditNo, "getsockopt", &[6]uint64{0, unix.SOL_SOCKET}),
-			expected: uint32(allowAction),
+			expected: uint32(linux.SECCOMP_RET_ALLOW),
 		},
 		{
 			name: "Simple args (no match)",
@@ -291,7 +291,7 @@ var (
 				},
 			},
 			input:    testInput(nativeArchAuditNo, "clone", &[6]uint64{unix.CLONE_VM}),
-			expected: uint32(allowAction),
+			expected: uint32(linux.SECCOMP_RET_ALLOW),
 		},
 		{
 			name: "OpMaskedEqual (match)",
@@ -315,7 +315,7 @@ var (
 				},
 			},
 			input:    testInput(nativeArchAuditNo, "clone", &[6]uint64{unix.CLONE_FS | unix.CLONE_VM}),
-			expected: uint32(errnoAction),
+			expected: uint32(linux.SECCOMP_RET_ERRNO.WithReturnCode(uint16(unix.EPERM))),
 		},
 		{
 			name: "OpMaskedEqual (no match)",
@@ -339,7 +339,7 @@ var (
 				},
 			},
 			input:    testInput(nativeArchAuditNo, "clone", &[6]uint64{unix.CLONE_FS}),
-			expected: uint32(allowAction),
+			expected: uint32(linux.SECCOMP_RET_ALLOW),
 		},
 		{
 			name: "OpMaskedEqual (clone)",
@@ -365,7 +365,7 @@ var (
 				},
 			},
 			input:    testInput(nativeArchAuditNo, "clone", &[6]uint64{0x50f00}),
-			expected: uint32(allowAction),
+			expected: uint32(linux.SECCOMP_RET_ALLOW),
 		},
 	}
 )

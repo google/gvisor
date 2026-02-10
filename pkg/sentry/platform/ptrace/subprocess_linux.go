@@ -21,7 +21,6 @@ import (
 	"fmt"
 
 	"golang.org/x/sys/unix"
-	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/bpf"
 	"gvisor.dev/gvisor/pkg/hosttid"
 	"gvisor.dev/gvisor/pkg/log"
@@ -45,14 +44,14 @@ func createStub() (*thread, error) {
 	// ptrace emulation check. This simplifies using SYSEMU, since seccomp
 	// will never run for emulation. Seccomp will only run for injected
 	// system calls, and thus we can use RET_KILL as our violation action.
-	var defaultAction linux.BPFAction
+	var defaultAction seccomp.Action
 	if probeSeccomp() {
 		log.Infof("Latest seccomp behavior found (kernel >= 4.8 likely)")
-		defaultAction = linux.SECCOMP_RET_KILL_THREAD
+		defaultAction = seccomp.KillThread
 	} else {
 		// We must rely on SYSEMU behavior; tracing with SYSEMU is broken.
 		log.Infof("Legacy seccomp behavior found (kernel < 4.8 likely)")
-		defaultAction = linux.SECCOMP_RET_ALLOW
+		defaultAction = seccomp.Allow
 	}
 
 	// When creating the new child process, we specify SIGKILL as the
@@ -71,13 +70,13 @@ func createStub() (*thread, error) {
 // attachedThread returns a new attached thread.
 //
 // Precondition: the runtime OS thread must be locked.
-func attachedThread(flags uintptr, defaultAction linux.BPFAction) (*thread, error) {
+func attachedThread(flags uintptr, defaultAction seccomp.Action) (*thread, error) {
 	// Create a BPF program that allows only the system calls needed by the
 	// stub and all its children. This is used to create child stubs
 	// (below), so we must include the ability to fork, but otherwise lock
 	// down available calls only to what is needed.
-	rules := []seccomp.RuleSet{}
-	if defaultAction != linux.SECCOMP_RET_ALLOW {
+	var rules []seccomp.RuleSet
+	if defaultAction != seccomp.Allow {
 		rules = append(rules, seccomp.RuleSet{
 			Rules: seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 				unix.SYS_CLONE: seccomp.Or{
@@ -110,14 +109,18 @@ func attachedThread(flags uintptr, defaultAction linux.BPFAction) (*thread, erro
 				unix.SYS_MMAP:   seccomp.MatchAll{},
 				unix.SYS_MUNMAP: seccomp.MatchAll{},
 			}),
-			Action: linux.SECCOMP_RET_ALLOW,
+			Action: seccomp.Allow,
 		})
 	}
 	rules = appendArchSeccompRules(rules, defaultAction)
-	instrs, _, err := seccomp.BuildProgram(rules, seccomp.ProgramOptions{
-		DefaultAction: defaultAction,
-		BadArchAction: defaultAction,
-	})
+	program := &seccomp.Program{
+		RuleSets: rules,
+		Options: seccomp.ProgramOptions{
+			DefaultAction: defaultAction,
+			BadArchAction: defaultAction,
+		},
+	}
+	instrs, _, err := program.Build()
 	if err != nil {
 		return nil, err
 	}

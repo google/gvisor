@@ -12,7 +12,6 @@ go_binary(
         "dumpfilter_unsafe.go",
     ],
     deps = [
-        "//pkg/abi/linux",
         "//pkg/bpf",
         "//pkg/log",
         "//pkg/seccomp",

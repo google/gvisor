@@ -22,7 +22,6 @@ import (
 	"time"
 
 	"golang.org/x/sys/unix"
-	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/hostsyscall"
@@ -862,13 +861,17 @@ func seccompMmapRules(m *machine) {
 						seccomp.MaskedEqual(unix.MAP_DENYWRITE, 0),
 					},
 				}),
-				Action: linux.SECCOMP_RET_TRAP,
+				Action: seccomp.Trap,
 			},
 		}
-		instrs, _, err := seccomp.BuildProgram(rules, seccomp.ProgramOptions{
-			DefaultAction: linux.SECCOMP_RET_ALLOW,
-			BadArchAction: linux.SECCOMP_RET_ALLOW,
-		})
+		program := &seccomp.Program{
+			RuleSets: rules,
+			Options: seccomp.ProgramOptions{
+				DefaultAction: seccomp.Allow,
+				BadArchAction: seccomp.Allow,
+			},
+		}
+		instrs, _, err := program.Build()
 		if err != nil {
 			panic(fmt.Sprintf("failed to build rules: %v", err))
 		}

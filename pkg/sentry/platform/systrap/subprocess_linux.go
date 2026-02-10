@@ -41,19 +41,19 @@ func createStub() (*thread, error) {
 	// transitively) will be killed as well. It's simply not possible to
 	// safely handle a single stub getting killed: the exact state of
 	// execution is unknown and not recoverable.
-	return attachedThread(unix.CLONE_FILES|uintptr(unix.SIGCHLD), linux.SECCOMP_RET_TRAP)
+	return attachedThread(unix.CLONE_FILES|uintptr(unix.SIGCHLD), seccomp.Trap)
 }
 
 // attachedThread returns a new attached thread.
 //
 // Precondition: the runtime OS thread must be locked.
-func attachedThread(flags uintptr, defaultAction linux.BPFAction) (*thread, error) {
+func attachedThread(flags uintptr, defaultAction seccomp.Action) (*thread, error) {
 	// Create a BPF program that allows only the system calls needed by the
 	// stub and all its children. This is used to create child stubs
 	// (below), so we must include the ability to fork, but otherwise lock
 	// down available calls only to what is needed.
-	rules := []seccomp.RuleSet{}
-	if defaultAction != linux.SECCOMP_RET_ALLOW {
+	var rules []seccomp.RuleSet
+	if defaultAction != seccomp.Allow {
 		ruleSet := seccomp.RuleSet{
 			Rules: seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 				unix.SYS_CLONE: seccomp.Or{
@@ -134,15 +134,19 @@ func attachedThread(flags uintptr, defaultAction linux.BPFAction) (*thread, erro
 					},
 				},
 			}),
-			Action: linux.SECCOMP_RET_ALLOW,
+			Action: seccomp.Allow,
 		}
 		rules = append(rules, ruleSet)
 		rules = appendArchSeccompRules(rules)
 	}
-	instrs, _, err := seccomp.BuildProgram(rules, seccomp.ProgramOptions{
-		DefaultAction: defaultAction,
-		BadArchAction: defaultAction,
-	})
+	program := &seccomp.Program{
+		RuleSets: rules,
+		Options: seccomp.ProgramOptions{
+			DefaultAction: defaultAction,
+			BadArchAction: defaultAction,
+		},
+	}
+	instrs, _, err := program.Build()
 	if err != nil {
 		return nil, err
 	}

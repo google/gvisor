@@ -21,6 +21,7 @@ go_library(
         "//pkg/abi/linux",
         "//pkg/bpf",
         "//pkg/log",
+        "//pkg/sync",
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )

@@ -47,18 +47,22 @@ func BenchFromSyscallRules(b *testing.B, name string, profile secbenchdef.Profil
 		}
 	}
 
-	options.DefaultAction = linux.SECCOMP_RET_ERRNO
-	options.BadArchAction = linux.SECCOMP_RET_ERRNO
-	insns, buildStats, err := seccomp.BuildProgram([]seccomp.RuleSet{
-		{
-			Rules:  denyRules,
-			Action: linux.SECCOMP_RET_ERRNO,
+	options.DefaultAction = seccomp.ReturnError
+	options.BadArchAction = seccomp.ReturnError
+	program := &seccomp.Program{
+		RuleSets: []seccomp.RuleSet{
+			{
+				Rules:  denyRules,
+				Action: seccomp.ReturnError,
+			},
+			{
+				Rules:  rules,
+				Action: seccomp.Allow,
+			},
 		},
-		{
-			Rules:  rules,
-			Action: linux.SECCOMP_RET_ALLOW,
-		},
-	}, options)
+		Options: options,
+	}
+	insns, buildStats, err := program.Build()
 	if err != nil {
 		b.Fatalf("BuildProgram() failed: %v", err)
 	}

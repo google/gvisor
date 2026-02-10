@@ -34,7 +34,6 @@ go_test(
     library = ":usage",
     deps = [
         "//pkg/bpf",
-        "//pkg/seccomp",
         "//pkg/seccomp/precompiledseccomp",
         "//pkg/seccomp/precompiledseccomp/example",
     ],

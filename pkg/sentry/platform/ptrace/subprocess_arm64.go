@@ -154,7 +154,7 @@ func enableCpuidFault() {
 
 // appendArchSeccompRules append architecture specific seccomp rules when creating BPF program.
 // Ref attachedThread() for more detail.
-func appendArchSeccompRules(rules []seccomp.RuleSet, defaultAction linux.BPFAction) []seccomp.RuleSet {
+func appendArchSeccompRules(rules []seccomp.RuleSet, defaultAction seccomp.Action) []seccomp.RuleSet {
 	return rules
 }
 

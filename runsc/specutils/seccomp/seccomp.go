@@ -30,13 +30,13 @@ import (
 )
 
 var (
-	killThreadAction = linux.SECCOMP_RET_KILL_THREAD
-	trapAction       = linux.SECCOMP_RET_TRAP
+	killThreadAction = seccomp.KillThread
+	trapAction       = seccomp.Trap
 	// runc always returns EPERM as the errorcode for SECCOMP_RET_ERRNO
-	errnoAction = linux.SECCOMP_RET_ERRNO.WithReturnCode(uint16(unix.EPERM))
+	errnoAction = seccomp.ReturnError.Code(uint16(unix.EPERM))
 	// runc always returns EPERM as the errorcode for SECCOMP_RET_TRACE
-	traceAction = linux.SECCOMP_RET_TRACE.WithReturnCode(uint16(unix.EPERM))
-	allowAction = linux.SECCOMP_RET_ALLOW
+	traceAction = seccomp.Trace.Code(uint16(unix.EPERM))
+	allowAction = seccomp.Allow
 )
 
 // BuildProgram generates a bpf program based on the given OCI seccomp
@@ -51,10 +51,14 @@ func BuildProgram(s *specs.LinuxSeccomp) (bpf.Program, error) {
 		return bpf.Program{}, fmt.Errorf("invalid seccomp rules: %w", err)
 	}
 
-	instrs, _, err := seccomp.BuildProgram(ruleset, seccomp.ProgramOptions{
-		DefaultAction: defaultAction,
-		BadArchAction: killThreadAction,
-	})
+	prog := &seccomp.Program{
+		RuleSets: ruleset,
+		Options: seccomp.ProgramOptions{
+			DefaultAction: defaultAction,
+			BadArchAction: killThreadAction,
+		},
+	}
+	instrs, _, err := prog.Build()
 	if err != nil {
 		return bpf.Program{}, fmt.Errorf("building seccomp program: %w", err)
 	}
@@ -88,7 +92,7 @@ func lookupSyscallNo(arch uint32, name string) (uint32, error) {
 }
 
 // convertAction converts a LinuxSeccompAction to BPFAction
-func convertAction(act specs.LinuxSeccompAction) (linux.BPFAction, error) {
+func convertAction(act specs.LinuxSeccompAction) (seccomp.Action, error) {
 	// TODO(gvisor.dev/issue/3124): Update specs package to include ActLog and ActKillProcess.
 	switch act {
 	case specs.ActKill:
@@ -102,7 +106,7 @@ func convertAction(act specs.LinuxSeccompAction) (linux.BPFAction, error) {
 	case specs.ActAllow:
 		return allowAction, nil
 	default:
-		return 0, fmt.Errorf("invalid action: %v", act)
+		return seccomp.Default, fmt.Errorf("invalid action: %v", act)
 	}
 }
 
@@ -113,7 +117,7 @@ func convertRules(s *specs.LinuxSeccomp) ([]seccomp.RuleSet, error) {
 	// on a 64bit system. Since we don't support that in gVisor anyway, we
 	// ignore Architectures and only test against the native architecture.
 
-	ruleset := []seccomp.RuleSet{}
+	var rulesets []seccomp.RuleSet
 
 	for _, syscall := range s.Syscalls {
 		sysRules := seccomp.NewSyscallRules()
@@ -142,13 +146,13 @@ func convertRules(s *specs.LinuxSeccomp) ([]seccomp.RuleSet, error) {
 			sysRules.Add(uintptr(syscallNo), rule)
 		}
 
-		ruleset = append(ruleset, seccomp.RuleSet{
+		rulesets = append(rulesets, seccomp.RuleSet{
 			Rules:  sysRules,
 			Action: action,
 		})
 	}
 
-	return ruleset, nil
+	return rulesets, nil
 }
 
 // convertArgs converts an OCI seccomp argument rule to a list of seccomp.Rule.

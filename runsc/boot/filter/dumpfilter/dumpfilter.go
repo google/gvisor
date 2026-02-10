@@ -19,7 +19,6 @@ import (
 	"fmt"
 	"os"
 
-	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/bpf"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/seccomp"
@@ -40,21 +39,16 @@ var (
 	out           = flag.String("out", "/dev/stdout", "Where to write the filter output (defaults to standard output)")
 )
 
-func action(s string) linux.BPFAction {
+func action(s string) seccomp.Action {
 	switch s {
 	case "default":
-		def, err := seccomp.DefaultAction()
-		if err != nil {
-			log.Warningf("cannot determine default seccomp action: %v", err)
-			os.Exit(1)
-		}
-		return def
+		return seccomp.Default
 	case "errno":
-		return linux.SECCOMP_RET_ERRNO
+		return seccomp.ReturnError
 	case "kill_process":
-		return linux.SECCOMP_RET_KILL_PROCESS
+		return seccomp.KillProcess
 	case "kill_thread":
-		return linux.SECCOMP_RET_KILL_THREAD
+		return seccomp.KillThread
 	default:
 		log.Warningf("invalid action %q (want one of: errno, kill_process, kill_thread)", s)
 		os.Exit(1)
@@ -84,19 +78,22 @@ func main() {
 	rules, denyRules := config.Rules(opt)
 
 	seccompOpts := config.SeccompOptions(opt)
-	seccompOpts.Optimize = *optimize
+	seccompOpts.SkipOptimizations = !*optimize
 	seccompOpts.DefaultAction = action(*defaultAction)
 	seccompOpts.BadArchAction = action(*badArchAction)
-	insns, stats, err := seccomp.BuildProgram([]seccomp.RuleSet{
-		{
-			Rules:  denyRules,
-			Action: action(*denyAction),
+	program := &seccomp.Program{
+		RuleSets: []seccomp.RuleSet{
+			{
+				Rules: denyRules,
+			},
+			{
+				Rules:  rules,
+				Action: seccomp.Allow,
+			},
 		},
-		{
-			Rules:  rules,
-			Action: linux.SECCOMP_RET_ALLOW,
-		},
-	}, seccompOpts)
+		Options: seccompOpts,
+	}
+	insns, stats, err := program.Build()
 	if err != nil {
 		log.Warningf("%v", err)
 		os.Exit(1)

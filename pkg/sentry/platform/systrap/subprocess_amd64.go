@@ -191,7 +191,7 @@ func appendArchSeccompRules(rules []seccomp.RuleSet) []seccomp.RuleSet {
 				unix.SYS_TIME:         seccomp.MatchAll{},
 				unix.SYS_GETCPU:       seccomp.MatchAll{}, // SYS_GETCPU was not defined in package syscall on amd64.
 			}),
-			Action:   linux.SECCOMP_RET_TRAP,
+			Action:   seccomp.Trap,
 			Vsyscall: true,
 		},
 		{
@@ -202,7 +202,7 @@ func appendArchSeccompRules(rules []seccomp.RuleSet) []seccomp.RuleSet {
 					seccomp.PerArg{seccomp.EqualTo(linux.ARCH_GET_FS)},
 				},
 			}),
-			Action: linux.SECCOMP_RET_ALLOW,
+			Action: seccomp.Allow,
 		},
 	}...)
 }
