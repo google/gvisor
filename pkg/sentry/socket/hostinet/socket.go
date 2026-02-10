@@ -867,6 +867,12 @@ func (s *Socket) Type() (family int, skType linux.SockType, protocol int) {
 	return s.family, s.stype, s.protocol
 }
 
+// HasCapability implements socket.Socket.TaskHasCapability.
+func (s *Socket) HasCapability(cp linux.Capability, t *kernel.Task) bool {
+	// Unimplemented.
+	return false
+}
+
 func init() {
 	// Register all families in AllowedSocketTypes and AllowedRawSocket
 	// types. If we don't allow raw sockets, they will be rejected in the

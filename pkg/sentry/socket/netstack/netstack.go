@@ -3853,3 +3853,8 @@ func (s *sock) ConfigureMMap(ctx context.Context, opts *memmap.MMapOpts) error {
 	}
 	return linuxerr.ENODEV
 }
+
+// HasCapability implements socket.Socket.TaskHasCapability.
+func (s *sock) HasCapability(cp linux.Capability, t *kernel.Task) bool {
+	return t.Credentials().HasCapabilityIn(cp, s.namespace.UserNamespace())
+}

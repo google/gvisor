@@ -1057,3 +1057,10 @@ func (s *Socket) GetPortID() int32 {
 	defer s.mu.Unlock()
 	return s.portID
 }
+
+// HasCapability implements socket.Socket.HasCapability.
+func (s *Socket) HasCapability(cp linux.Capability, t *kernel.Task) bool {
+	// Unimplemented, only to satisfy the interface.
+	// netlink_net_capable differs from sk_net_capable.
+	return false
+}
