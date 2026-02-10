@@ -678,7 +678,6 @@ func (i *inode) setStat(ctx context.Context, creds *auth.Credentials, opts *vfs.
 		needsMtimeBump bool
 		needsCtimeBump bool
 	)
-	clearSID := false
 	mask := stat.Mask
 	if mask&linux.STATX_SIZE != 0 {
 		switch impl := i.impl.(type) {
@@ -688,7 +687,6 @@ func (i *inode) setStat(ctx context.Context, creds *auth.Credentials, opts *vfs.
 				return err
 			}
 			if updated {
-				clearSID = true
 				needsMtimeBump = true
 				needsCtimeBump = true
 			}
@@ -701,13 +699,13 @@ func (i *inode) setStat(ctx context.Context, creds *auth.Credentials, opts *vfs.
 	if mask&linux.STATX_UID != 0 {
 		i.uid.Store(stat.UID)
 		needsCtimeBump = true
-		clearSID = true
 	}
 	if mask&linux.STATX_GID != 0 {
 		i.gid.Store(stat.GID)
 		needsCtimeBump = true
-		clearSID = true
 	}
+
+	clearSID := opts.ClearPrivs
 	if mask&linux.STATX_MODE != 0 {
 		for {
 			old := i.mode.Load()

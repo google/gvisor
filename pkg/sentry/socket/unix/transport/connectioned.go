@@ -268,6 +268,21 @@ func (e *connectionedEndpoint) Close(ctx context.Context) {
 	e.Unlock()
 	if acceptedChan != nil {
 		for n := range acceptedChan {
+			// When listener is closed, pending connections should receive
+			// ECONNRESET instead of EOF to match Linux behavior.
+			n.Lock()
+			if n.connected != nil {
+				// Try to set SO_ERROR on the client endpoint so that
+				// getsockopt(SO_ERROR) or read() returns ECONNRESET.
+				if ce, ok := n.connected.(*connectedEndpoint); ok {
+					if clientEP, ok := ce.endpoint.(*connectionedEndpoint); ok {
+						clientEP.SocketOptions().SetLastError(&tcpip.ErrConnectionReset{})
+						// Notify waiter queue about error events so epoll detects EPOLLERR.
+						clientEP.Queue.Notify(waiter.EventErr)
+					}
+				}
+			}
+			n.Unlock()
 			n.Close(ctx)
 		}
 	}
@@ -587,6 +602,15 @@ func (e *connectionedEndpoint) Readiness(mask waiter.EventMask) waiter.EventMask
 			ready |= waiter.EventRdHUp
 			if mask&waiter.EventHUp != 0 && e.connected.IsSendClosed() {
 				ready |= waiter.EventHUp
+			}
+		}
+		// Check for error condition (SO_ERROR is set).
+		if mask&waiter.EventErr != 0 {
+			e.lastErrorMu.Lock()
+			hasError := e.lastError != nil
+			e.lastErrorMu.Unlock()
+			if hasError {
+				ready |= waiter.EventErr
 			}
 		}
 	case e.ListeningLocked():

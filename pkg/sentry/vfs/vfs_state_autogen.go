@@ -1702,6 +1702,7 @@ func (s *SetStatOptions) StateFields() []string {
 	return []string{
 		"Stat",
 		"NeedWritePerm",
+		"ClearPrivs",
 	}
 }
 
@@ -1712,6 +1713,7 @@ func (s *SetStatOptions) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
 	stateSinkObject.Save(0, &s.Stat)
 	stateSinkObject.Save(1, &s.NeedWritePerm)
+	stateSinkObject.Save(2, &s.ClearPrivs)
 }
 
 func (s *SetStatOptions) afterLoad(context.Context) {}
@@ -1720,6 +1722,7 @@ func (s *SetStatOptions) afterLoad(context.Context) {}
 func (s *SetStatOptions) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &s.Stat)
 	stateSourceObject.Load(1, &s.NeedWritePerm)
+	stateSourceObject.Load(2, &s.ClearPrivs)
 }
 
 func (b *BoundEndpointOptions) StateTypeName() string {

@@ -19,6 +19,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/waiter"
@@ -876,6 +877,11 @@ type baseEndpoint struct {
 
 	// ops is used to get socket level options.
 	ops tcpip.SocketOptions
+
+	// lastError is the last error returned by getsockopt(SO_ERROR).
+	// This field is protected by lastErrorMu.
+	lastErrorMu sync.Mutex `state:"nosave"`
+	lastError   tcpip.Error
 }
 
 // EventRegister implements waiter.Waitable.EventRegister.
@@ -934,6 +940,12 @@ func (e *baseEndpoint) RecvMsg(ctx context.Context, data [][]byte, args RecvArgs
 
 	out, notify, err := receiver.Recv(ctx, data, args)
 	if err != nil {
+		// Check if there's a pending error (e.g., ECONNRESET set when listener closed).
+		if err == syserr.ErrClosedForReceive || err == syserr.ErrWouldBlock {
+			if lastErr := e.LastError(); lastErr != nil {
+				return RecvOutput{}, nil, syserr.TranslateNetstackError(lastErr)
+			}
+		}
 		return RecvOutput{}, nil, err
 	}
 
@@ -1021,8 +1033,20 @@ func (e *baseEndpoint) GetSockOpt(opt tcpip.GettableSocketOption) tcpip.Error {
 }
 
 // LastError implements Endpoint.LastError.
-func (*baseEndpoint) LastError() tcpip.Error {
-	return nil
+// It clears and returns the last error.
+func (e *baseEndpoint) LastError() tcpip.Error {
+	e.lastErrorMu.Lock()
+	defer e.lastErrorMu.Unlock()
+	err := e.lastError
+	e.lastError = nil
+	return err
+}
+
+// UpdateLastError implements tcpip.SocketOptionsHandler.UpdateLastError.
+func (e *baseEndpoint) UpdateLastError(err tcpip.Error) {
+	e.lastErrorMu.Lock()
+	e.lastError = err
+	e.lastErrorMu.Unlock()
 }
 
 // SocketOptions implements Endpoint.SocketOptions.

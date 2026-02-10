@@ -643,11 +643,10 @@ func (h *handshake) retransmitHandlerLocked() tcpip.Error {
 	return nil
 }
 
-// transitionToStateEstablisedLocked transitions the endpoint of the handshake
+// transitionToStateEstablishedLocked transitions the endpoint of the handshake
 // to an established state given the last segment received from peer. It also
 // initializes sender/receiver.
 // +checklocks:h.ep.mu
-// +checklocksalias:h.ep.snd.ep.mu=h.ep.mu
 func (h *handshake) transitionToStateEstablishedLocked(s *segment) {
 	// Stop the SYN retransmissions now that handshake is complete.
 	if h.retransmitTimer != nil {
@@ -657,7 +656,7 @@ func (h *handshake) transitionToStateEstablishedLocked(s *segment) {
 	// Transfer handshake state to TCP connection. We disable
 	// receive window scaling if the peer doesn't support it
 	// (indicated by a negative send window scale).
-	h.ep.snd = newSender(h.ep, h.iss, h.ackNum-1, h.sndWnd, h.mss, h.sndWndScale)
+	initSender(h.ep, h.iss, h.ackNum-1, h.sndWnd, h.mss, h.sndWndScale)
 
 	now := h.ep.stack.Clock().NowMonotonic()
 
@@ -1008,7 +1007,6 @@ func (e *Endpoint) makeOptions(sackBlocks []header.SACKBlock) []byte {
 // sendEmptyRaw sends a TCP segment with no payload to the endpoint's peer.
 //
 // +checklocks:e.mu
-// +checklocksalias:e.snd.ep.mu=e.mu
 func (e *Endpoint) sendEmptyRaw(flags header.TCPFlags, seq, ack seqnum.Value, rcvWnd seqnum.Size) tcpip.Error {
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{})
 	defer pkt.DecRef()
@@ -1019,7 +1017,6 @@ func (e *Endpoint) sendEmptyRaw(flags header.TCPFlags, seq, ack seqnum.Value, rc
 // ownership of pkt. pkt must not have any headers set.
 //
 // +checklocks:e.mu
-// +checklocksalias:e.snd.ep.mu=e.mu
 func (e *Endpoint) sendRaw(pkt *stack.PacketBuffer, flags header.TCPFlags, seq, ack seqnum.Value, rcvWnd seqnum.Size) tcpip.Error {
 	var sackBlocks []header.SACKBlock
 	if e.EndpointState() == StateEstablished && e.rcv.pendingRcvdSegments.Len() > 0 && (flags&header.TCPFlagAck != 0) {
@@ -1048,7 +1045,6 @@ func (e *Endpoint) sendRaw(pkt *stack.PacketBuffer, flags header.TCPFlags, seq, 
 }
 
 // +checklocks:e.mu
-// +checklocksalias:e.snd.ep.mu=e.mu
 func (e *Endpoint) sendData(next *segment) {
 	// Initialize the next segment to write if it's currently nil.
 	if e.snd.writeNext == nil {
@@ -1066,7 +1062,6 @@ func (e *Endpoint) sendData(next *segment) {
 // error code and sends a RST if and only if the error is not ErrConnectionReset
 // indicating that the connection is being reset due to receiving a RST.
 // +checklocks:e.mu
-// +checklocksalias:e.snd.ep.mu=e.mu
 func (e *Endpoint) resetConnectionLocked(err tcpip.Error) {
 	// Only send a reset if the connection is being aborted for a reason
 	// other than receiving a reset.
@@ -1081,12 +1076,26 @@ func (e *Endpoint) resetConnectionLocked(err tcpip.Error) {
 		//
 		// See: https://www.snellman.net/blog/archive/2016-02-01-tcp-rst/ for more
 		// information.
-		sndWndEnd := e.snd.SndUna.Add(e.snd.SndWnd)
-		resetSeqNum := sndWndEnd
-		if !sndWndEnd.LessThan(e.snd.SndNxt) || e.snd.SndNxt.Size(sndWndEnd) < (1<<e.snd.SndWndScale) {
-			resetSeqNum = e.snd.SndNxt
+		//
+		// e.snd and e.rcv may be nil if the endpoint is in a handshake
+		// state (e.g. SynSent) where the sender and receiver have not
+		// yet been initialized. Per Linux behavior, use a sequence
+		// number of zero when no ACK has been received (snd is nil),
+		// and a receive window of zero when rcv is nil since the
+		// connection will be immediately terminated.
+		var resetSeqNum seqnum.Value
+		var ackNum seqnum.Value
+		if e.snd != nil {
+			sndWndEnd := e.snd.SndUna.Add(e.snd.SndWnd)
+			resetSeqNum = sndWndEnd
+			if !sndWndEnd.LessThan(e.snd.SndNxt) || e.snd.SndNxt.Size(sndWndEnd) < (1<<e.snd.SndWndScale) {
+				resetSeqNum = e.snd.SndNxt
+			}
 		}
-		e.sendEmptyRaw(header.TCPFlagAck|header.TCPFlagRst, resetSeqNum, e.rcv.RcvNxt, 0)
+		if e.rcv != nil {
+			ackNum = e.rcv.RcvNxt
+		}
+		e.sendEmptyRaw(header.TCPFlagAck|header.TCPFlagRst, resetSeqNum, ackNum, 0)
 	}
 	// Don't purge read queues here. If there's buffered data, it's still allowed
 	// to be read.
@@ -1208,7 +1217,6 @@ func (e *Endpoint) handleReset(s *segment) (ok bool, err tcpip.Error) {
 // handleSegments processes all inbound segments.
 //
 // +checklocks:e.mu
-// +checklocksalias:e.snd.ep.mu=e.mu
 func (e *Endpoint) handleSegmentsLocked() tcpip.Error {
 	sndUna := e.snd.SndUna
 	for i := 0; i < maxSegmentsPerWake; i++ {
@@ -1263,8 +1271,6 @@ func (e *Endpoint) probeSegmentLocked() {
 // if the connection should be terminated.
 //
 // +checklocks:e.mu
-// +checklocksalias:e.rcv.ep.mu=e.mu
-// +checklocksalias:e.snd.ep.mu=e.mu
 func (e *Endpoint) handleSegmentLocked(s *segment) (cont bool, err tcpip.Error) {
 	// Invoke the tcp probe if installed. The tcp probe function will update
 	// the TCPEndpointState after the segment is processed.
@@ -1338,7 +1344,6 @@ func (e *Endpoint) handleSegmentLocked(s *segment) (cont bool, err tcpip.Error) 
 // keepalive packets periodically when the connection is idle. If we don't hear
 // from the other side after a number of tries, we terminate the connection.
 // +checklocks:e.mu
-// +checklocksalias:e.snd.ep.mu=e.mu
 func (e *Endpoint) keepaliveTimerExpired() tcpip.Error {
 	userTimeout := e.userTimeout
 
@@ -1380,7 +1385,6 @@ func (e *Endpoint) keepaliveTimerExpired() tcpip.Error {
 // whether it is enabled for this endpoint.
 //
 // +checklocks:e.mu
-// +checklocksalias:e.snd.ep.mu=e.mu
 func (e *Endpoint) resetKeepaliveTimer(receivedData bool) {
 	e.keepalive.Lock()
 	defer e.keepalive.Unlock()
@@ -1443,7 +1447,6 @@ func (e *Endpoint) handshakeFailed(err tcpip.Error) {
 // handleTimeWaitSegments processes segments received during TIME_WAIT
 // state.
 // +checklocks:e.mu
-// +checklocksalias:e.rcv.ep.mu=e.mu
 func (e *Endpoint) handleTimeWaitSegments() (extendTimeWait bool, reuseTW func()) {
 	for i := 0; i < maxSegmentsPerWake; i++ {
 		s := e.segmentQueue.dequeue()

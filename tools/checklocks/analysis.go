@@ -181,15 +181,36 @@ func (pc *passContext) checkAtomicCall(inst ssa.Instruction, obj types.Object, a
 }
 
 func resolveStruct(typ types.Type) (*types.Struct, bool) {
-	structType, ok := typ.Underlying().(*types.Struct)
-	if ok {
-		return structType, true
-	}
-	ptrType, ok := typ.Underlying().(*types.Pointer)
-	if ok {
-		return resolveStruct(ptrType.Elem())
+	switch typ := typ.Underlying().(type) {
+	case *types.Struct:
+		return typ, true
+	case *types.Pointer:
+		return resolveStruct(typ.Elem())
 	}
 	return nil, false
+}
+
+func (pc *passContext) applyTypeAliases(ls *lockState, v ssa.Value) {
+	for v != nil {
+		var ltf lockTypeFacts
+		pc.importLockTypeFacts(v.Type(), &ltf)
+		for _, alias := range ltf.Aliases {
+			ls.addAlias(makeResolvedValue(v, alias.Left), makeResolvedValue(v, alias.Right))
+		}
+		switch x := v.(type) {
+		case *ssa.Field:
+			v = x.X
+		case *ssa.FieldAddr:
+			v = x.X
+		case *ssa.UnOp:
+			if x.Op != token.MUL {
+				return
+			}
+			v = x.X
+		default:
+			return
+		}
+	}
 }
 
 func findField(typ types.Type, field int) (types.Object, bool) {
@@ -223,6 +244,7 @@ func (pc *passContext) checkGuards(inst almostInst, from ssa.Value, accessObj ty
 
 	// Load the facts for the object accessed.
 	pc.importLockGuardFacts(accessObj, &lgf)
+	pc.applyTypeAliases(ls, from)
 
 	// Check guards held.
 	for guardName, fgr := range lgf.GuardedBy {
@@ -412,13 +434,10 @@ func (pc *passContext) checkCall(call callCommon, lff *lockFunctionFacts, ls *lo
 }
 
 // postFunctionCallUpdate updates all conditions.
-func (pc *passContext) postFunctionCallUpdate(call callCommon, lff *lockFunctionFacts, ls *lockState, aliases bool) {
+func (pc *passContext) postFunctionCallUpdate(call callCommon, lff *lockFunctionFacts, ls *lockState) {
 	// Release all locks not still held.
 	for fieldName, fg := range lff.HeldOnEntry {
 		if _, ok := lff.HeldOnExit[fieldName]; ok {
-			continue
-		}
-		if fg.IsAlias && !aliases {
 			continue
 		}
 		r := fg.Resolver.resolveCall(pc, ls, call.Common().Args, call.Value())
@@ -437,9 +456,6 @@ func (pc *passContext) postFunctionCallUpdate(call callCommon, lff *lockFunction
 	// Update all held locks if acquired.
 	for fieldName, fg := range lff.HeldOnExit {
 		if _, ok := lff.HeldOnEntry[fieldName]; ok {
-			continue
-		}
-		if fg.IsAlias && !aliases {
 			continue
 		}
 		// Acquire the lock per the annotation.
@@ -484,6 +500,9 @@ func (pc *passContext) checkFunctionCall(call callCommon, fn *types.Func, lff *l
 	resolve := func(fg functionGuardInfo) resolvedValue {
 		return fg.Resolver.resolveCall(pc, ls, args, callValue)
 	}
+	for _, arg := range args {
+		pc.applyTypeAliases(ls, arg)
+	}
 
 	// Check that excluded locks are not held on entry.
 	for fieldName, fg := range lff.ExcludedOnEntry {
@@ -499,12 +518,8 @@ func (pc *passContext) checkFunctionCall(call callCommon, fn *types.Func, lff *l
 		}
 	}
 
-	// Check all guards required are held. Note that this explicitly does
-	// not include aliases, hence false being passed below.
+	// Check all guards required are held.
 	for fieldName, fg := range lff.HeldOnEntry {
-		if fg.IsAlias {
-			continue
-		}
 		r := resolve(fg)
 		if s, ok := ls.isHeld(r, fg.Exclusive); !ok {
 			if !forced && !lff.Ignore {
@@ -517,7 +532,7 @@ func (pc *passContext) checkFunctionCall(call callCommon, fn *types.Func, lff *l
 	}
 
 	// Update all lock state accordingly.
-	pc.postFunctionCallUpdate(call, lff, ls, false /* aliases */)
+	pc.postFunctionCallUpdate(call, lff, ls)
 
 	// Check if it's a method dispatch for something in the sync package.
 	// See: https://godoc.org/golang.org/x/tools/go/ssa#Function
@@ -825,13 +840,17 @@ func (pc *passContext) checkFunction(call callCommon, fn *ssa.Function, lff *loc
 	}
 
 	// Initialize ls with any preconditions that require locks to be held
-	// for the method to be invoked. Note that in the overwhleming majority
+	// for the method to be invoked. Note that in the overwhelming majority
 	// of cases, parent will be nil. However, in the case of closures and
 	// anonymous functions, we may start with a non-nil lock state.
-	//
-	// Note that this will include all aliases, which are also released
-	// appropriately below.
 	ls := parent.fork()
+	for _, param := range fn.Params {
+		pc.applyTypeAliases(ls, param)
+	}
+	for _, fv := range fn.FreeVars {
+		pc.applyTypeAliases(ls, fv)
+	}
+
 	for fieldName, fg := range lff.HeldOnEntry {
 		// The first is the method object itself so we skip that when looking
 		// for receiver/function parameters.
@@ -863,7 +882,7 @@ func (pc *passContext) checkFunction(call callCommon, fn *ssa.Function, lff *loc
 	// Update all lock state accordingly. This will be called only if we
 	// are doing inline analysis for e.g. an anonymous function.
 	if call != nil && parent != nil {
-		pc.postFunctionCallUpdate(call, lff, parent, true /* aliases */)
+		pc.postFunctionCallUpdate(call, lff, parent)
 	}
 }
 

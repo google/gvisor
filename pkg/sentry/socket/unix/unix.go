@@ -135,8 +135,11 @@ func (s *Socket) Release(ctx context.Context) {
 
 // GetSockOpt implements the linux syscall getsockopt(2) for sockets backed by
 // a transport.Endpoint.
-func (s *Socket) GetSockOpt(t *kernel.Task, level, name int, outPtr hostarch.Addr, outLen int) (marshal.Marshallable, *syserr.Error) {
-	return netstack.GetSockOpt(t, s, s.ep, linux.AF_UNIX, s.ep.Type(), level, name, outPtr, outLen)
+func (s *Socket) GetSockOpt(t *kernel.Task, level, name int, _ hostarch.Addr, outLen int) (marshal.Marshallable, *syserr.Error) {
+	if level != linux.SOL_SOCKET {
+		return nil, syserr.ErrEndpointOperation
+	}
+	return netstack.GetSockOptSocket(t, s, s.ep, linux.AF_UNIX, s.ep.Type(), name, outLen)
 }
 
 // blockingAccept implements a blocking version of accept(2), that is, if no
@@ -364,7 +367,10 @@ func (s *Socket) Epollable() bool {
 // SetSockOpt implements the linux syscall setsockopt(2) for sockets backed by
 // a transport.Endpoint.
 func (s *Socket) SetSockOpt(t *kernel.Task, level int, name int, optVal []byte) *syserr.Error {
-	return netstack.SetSockOpt(t, s, s.ep, level, name, optVal)
+	if level != linux.SOL_SOCKET {
+		return syserr.ErrEndpointOperation
+	}
+	return netstack.SetSockOptSocket(t, s, s.ep, name, optVal)
 }
 
 // provider is a unix domain socket provider.

@@ -179,7 +179,7 @@ func enableCpuidFault() {
 
 // appendArchSeccompRules append architecture specific seccomp rules when creating BPF program.
 // Ref attachedThread() for more detail.
-func appendArchSeccompRules(rules []seccomp.RuleSet, defaultAction linux.BPFAction) []seccomp.RuleSet {
+func appendArchSeccompRules(rules []seccomp.RuleSet, defaultAction seccomp.Action) []seccomp.RuleSet {
 	rules = append(rules,
 		// Rules for trapping vsyscall access.
 		seccomp.RuleSet{
@@ -188,10 +188,10 @@ func appendArchSeccompRules(rules []seccomp.RuleSet, defaultAction linux.BPFActi
 				unix.SYS_TIME:         seccomp.MatchAll{},
 				unix.SYS_GETCPU:       seccomp.MatchAll{}, // SYS_GETCPU was not defined in package syscall on amd64.
 			}),
-			Action:   linux.SECCOMP_RET_TRAP,
+			Action:   seccomp.Trap,
 			Vsyscall: true,
 		})
-	if defaultAction != linux.SECCOMP_RET_ALLOW {
+	if defaultAction != seccomp.Allow {
 		rules = append(rules,
 			seccomp.RuleSet{
 				Rules: seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
@@ -200,7 +200,7 @@ func appendArchSeccompRules(rules []seccomp.RuleSet, defaultAction linux.BPFActi
 						seccomp.EqualTo(0),
 					},
 				}),
-				Action: linux.SECCOMP_RET_ALLOW,
+				Action: seccomp.Allow,
 			})
 	}
 	return rules
@@ -215,7 +215,7 @@ func appendArchSeccompRules(rules []seccomp.RuleSet, defaultAction linux.BPFActi
 // Precondition: the runtime OS thread must be locked.
 func probeSeccomp() bool {
 	// Create a completely new, destroyable process.
-	t, err := attachedThread(0, linux.SECCOMP_RET_ERRNO)
+	t, err := attachedThread(0, seccomp.ReturnError)
 	if err != nil {
 		panic(fmt.Sprintf("seccomp probe failed: %v", err))
 	}

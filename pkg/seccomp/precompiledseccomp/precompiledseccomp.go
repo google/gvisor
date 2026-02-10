@@ -28,15 +28,6 @@ import (
 	"gvisor.dev/gvisor/pkg/seccomp"
 )
 
-// ProgramDesc describes a program to be compiled.
-type ProgramDesc struct {
-	// Rules contains the seccomp-bpf rulesets to compile.
-	Rules []seccomp.RuleSet
-
-	// SeccompOptions is the seccomp-bpf program options used in compilation.
-	SeccompOptions seccomp.ProgramOptions
-}
-
 // Program is a precompiled seccomp-bpf program.
 // To get actual BPF instructions, call the `RenderInstructions` function.
 type Program struct {
@@ -109,20 +100,20 @@ func (v Values) Copy() Values {
 	return v2
 }
 
-// Precompile compiles a `ProgramDesc` with the given values.
+// Precompile compiles a `seccomp.Program` with the given values.
 // It supports the notion of "variables", which are named in `vars`.
 // Variables are uint32s which are only known at runtime, and whose value
 // shows up in the BPF bytecode.
 //
 // `fn` takes in a mapping of variable names to their assigned values,
-// and should return a `ProgramDesc` describing the seccomp-bpf program
+// and should return a `seccomp.Program` describing the seccomp-bpf program
 // to be compiled.
 //
 // Precompile verifies that all variables in `vars` show up consistently in
 // the bytecode by compiling the program twice, ensures that the offsets at
 // which some stand-in values is consistent across these two compilation
 // attempts, and that nothing else about the BPF bytecode is different.
-func Precompile(name string, varNames []string, fn func(Values) ProgramDesc) (Program, error) {
+func Precompile(name string, varNames []string, fn func(Values) *seccomp.Program) (Program, error) {
 	vars := make(map[string]struct{}, len(varNames))
 	for _, varName := range varNames {
 		vars[varName] = struct{}{}
@@ -208,10 +199,10 @@ func Precompile(name string, varNames []string, fn func(Values) ProgramDesc) (Pr
 	return program1, nil
 }
 
-// precompile compiles a `ProgramDesc` with the given values.
-func precompile(name string, values Values, fn func(Values) ProgramDesc) (Program, error) {
-	precompileOpts := fn(values)
-	insns, _, err := seccomp.BuildProgram(precompileOpts.Rules, precompileOpts.SeccompOptions)
+// precompile compiles a `seccomp.Program` with the given values.
+func precompile(name string, values Values, fn func(Values) *seccomp.Program) (Program, error) {
+	prog := fn(values)
+	insns, _, err := prog.Build()
 	if err != nil {
 		return Program{}, err
 	}
@@ -232,13 +223,13 @@ func precompile(name string, values Values, fn func(Values) ProgramDesc) (Progra
 		if nonOptimizedOffsets != nil {
 			return nil
 		}
-		if !precompileOpts.SeccompOptions.Optimize {
+		if prog.Options.SkipOptimizations {
 			nonOptimizedOffsets = varOffsets
 			return nil
 		}
-		nonOptimizedOpts := precompileOpts.SeccompOptions
-		nonOptimizedOpts.Optimize = false
-		nonOptInsns, _, err := seccomp.BuildProgram(precompileOpts.Rules, nonOptimizedOpts)
+		nonOptimizedProg := prog
+		nonOptimizedProg.Options.SkipOptimizations = true
+		nonOptInsns, _, err := nonOptimizedProg.Build()
 		if err != nil {
 			return fmt.Errorf("cannot build seccomp program with optimizations disabled: %w", err)
 		}

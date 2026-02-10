@@ -46,6 +46,7 @@ var Analyzer = &analysis.Analyzer{
 		(*atomicAlignment)(nil),
 		(*lockGuardFacts)(nil),
 		(*lockFunctionFacts)(nil),
+		(*lockTypeFacts)(nil),
 	},
 }
 
@@ -109,7 +110,7 @@ func (pc *passContext) forAllGlobals(fn func(ts *ast.ValueSpec)) {
 }
 
 // forAllTypes applies the given function over all types.
-func (pc *passContext) forAllTypes(fn func(ts *ast.TypeSpec)) {
+func (pc *passContext) forAllTypes(fn func(ts *ast.TypeSpec, decl *ast.GenDecl)) {
 	for _, f := range pc.pass.Files {
 		for _, decl := range f.Decls {
 			d, ok := decl.(*ast.GenDecl)
@@ -117,7 +118,7 @@ func (pc *passContext) forAllTypes(fn func(ts *ast.TypeSpec)) {
 				continue
 			}
 			for _, gs := range d.Specs {
-				fn(gs.(*ast.TypeSpec))
+				fn(gs.(*ast.TypeSpec), d)
 			}
 		}
 	}
@@ -157,15 +158,16 @@ func run(pass *analysis.Pass) (any, error) {
 		}
 		pc.globalLockGuardFacts(vs)
 	})
-	pc.forAllTypes(func(ts *ast.TypeSpec) {
+	pc.forAllTypes(func(ts *ast.TypeSpec, decl *ast.GenDecl) {
 		if ss, ok := ts.Type.(*ast.StructType); ok {
 			structType := pc.pass.TypesInfo.TypeOf(ts.Name).Underlying().(*types.Struct)
 			pc.structLockGuardFacts(structType, ss)
 		}
+		pc.typeAliasFacts(ts, decl)
 	})
 
 	// Check all alignments.
-	pc.forAllTypes(func(ts *ast.TypeSpec) {
+	pc.forAllTypes(func(ts *ast.TypeSpec, _ *ast.GenDecl) {
 		typ, ok := types.Unalias(pass.TypesInfo.TypeOf(ts.Name)).(*types.Named)
 		if !ok {
 			return

@@ -188,6 +188,11 @@ type SetStatOptions struct {
 	// does not require the same check--instead, it checks that the fd is
 	// writable).
 	NeedWritePerm bool
+
+	// ClearPrivs is a directive from the chown and truncate family of syscalls
+	// to the filesystem's SetStat implementation to clear the SUID and SGID
+	// bits on the file.
+	ClearPrivs bool
 }
 
 // BoundEndpointOptions contains options to VirtualFilesystem.BoundEndpointAt()

@@ -25,65 +25,66 @@ import (
 
 // Main is the main entrypoint.
 func Main() {
-	cli.Run(forEachCmd)
+	cmds, helpCmds := commands()
+	cli.Run(cmds, helpCmds)
 }
 
-// forEachCmd invokes the passed callback for each command supported by runsc.
-func forEachCmd(cb func(cmd subcommands.Command, group string), help *cli.Help) {
-	if help != nil {
-		// For historical reasons, these subcommands are invoked as `runsc help
-		// platforms` and `runsc help syscalls`.
-		help.Register(new(cmd.Platforms))
-		help.Register(new(cmd.Syscalls))
-	}
-
-	// Register OCI user-facing runsc commands.
-	cb(new(cmd.Checkpoint), "")
-	cb(new(cmd.Create), "")
-	cb(new(cmd.Delete), "")
-	cb(new(cmd.Do), "")
-	cb(new(cmd.Events), "")
-	cb(new(cmd.Exec), "")
-	cb(new(cmd.Kill), "")
-	cb(new(cmd.List), "")
-	cb(new(cmd.PS), "")
-	cb(new(cmd.Pause), "")
-	cb(new(cmd.PortForward), "")
-	cb(new(cmd.Restore), "")
-	cb(new(cmd.Resume), "")
-	cb(new(cmd.Run), "")
-	cb(new(cmd.Spec), "")
-	cb(new(cmd.Start), "")
-	cb(new(cmd.State), "")
-	cb(new(cmd.Tar), "")
-	cb(new(cmd.Update), "")
-	cb(new(cmd.Wait), "")
-
-	// Helpers.
+func commands() (map[subcommands.Command]string, []subcommands.Command) {
 	const helperGroup = "helpers"
-	cb(new(cmd.Install), helperGroup)
-	cb(new(cmd.Mitigate), helperGroup)
-	cb(new(cmd.Uninstall), helperGroup)
-	cb(new(nvproxy.Nvproxy), helperGroup)
-	cb(new(trace.Trace), helperGroup)
-	cb(new(cmd.CPUFeatures), helperGroup)
-
 	const debugGroup = "debug"
-	cb(new(cmd.Debug), debugGroup)
-	cb(new(cmd.Statefile), debugGroup)
-	cb(new(cmd.Symbolize), debugGroup)
-	cb(new(cmd.Usage), debugGroup)
-	cb(new(cmd.ReadControl), debugGroup)
-	cb(new(cmd.WriteControl), debugGroup)
-
 	const metricGroup = "metrics"
-	cb(new(cmd.MetricMetadata), metricGroup)
-	cb(new(cmd.MetricExport), metricGroup)
-	cb(new(cmd.MetricServer), metricGroup)
-
-	// Internal commands.
 	const internalGroup = "internal use only"
-	cb(new(cmd.Boot), internalGroup)
-	cb(new(cmd.Gofer), internalGroup)
-	cb(new(cmd.Umount), internalGroup)
+
+	return map[subcommands.Command]string{
+			// Register OCI user-facing runsc commands.
+			new(cmd.Checkpoint):  "",
+			new(cmd.Create):      "",
+			new(cmd.Delete):      "",
+			new(cmd.Do):          "",
+			new(cmd.Events):      "",
+			new(cmd.Exec):        "",
+			new(cmd.Kill):        "",
+			new(cmd.List):        "",
+			new(cmd.PS):          "",
+			new(cmd.Pause):       "",
+			new(cmd.PortForward): "",
+			new(cmd.Restore):     "",
+			new(cmd.Resume):      "",
+			new(cmd.Run):         "",
+			new(cmd.Spec):        "",
+			new(cmd.Start):       "",
+			new(cmd.State):       "",
+			new(cmd.Tar):         "",
+			new(cmd.Update):      "",
+			new(cmd.Wait):        "",
+
+			// Helpers.
+			new(cmd.Install):     helperGroup,
+			new(cmd.Mitigate):    helperGroup,
+			new(cmd.Uninstall):   helperGroup,
+			new(nvproxy.Nvproxy): helperGroup,
+			new(trace.Trace):     helperGroup,
+			new(cmd.CPUFeatures): helperGroup,
+
+			new(cmd.Debug):        debugGroup,
+			new(cmd.Statefile):    debugGroup,
+			new(cmd.Symbolize):    debugGroup,
+			new(cmd.Usage):        debugGroup,
+			new(cmd.ReadControl):  debugGroup,
+			new(cmd.WriteControl): debugGroup,
+
+			new(cmd.MetricMetadata): metricGroup,
+			new(cmd.MetricExport):   metricGroup,
+			new(cmd.MetricServer):   metricGroup,
+
+			// Internal commands.
+			new(cmd.Boot):   internalGroup,
+			new(cmd.Gofer):  internalGroup,
+			new(cmd.Umount): internalGroup,
+		}, []subcommands.Command{
+			// For historical reasons, these subcommands are invoked as `runsc help
+			// platforms` and `runsc help syscalls`.
+			new(cmd.Platforms),
+			new(cmd.Syscalls),
+		}
 }

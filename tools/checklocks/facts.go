@@ -21,6 +21,7 @@ import (
 	"go/token"
 	"go/types"
 	"regexp"
+	"slices"
 	"strings"
 
 	"golang.org/x/tools/go/analysis/passes/buildssa"
@@ -59,29 +60,47 @@ type fieldEntry interface {
 }
 
 // fieldStruct is a non-pointer struct element.
-type fieldStruct int
+type fieldStruct struct {
+	Field int
+}
 
 // synthesize implements fieldEntry.synthesize.
-func (f fieldStruct) synthesize(s string, typ types.Type) (string, types.Object) {
-	field, ok := findField(typ, int(f))
+func (f *fieldStruct) synthesize(s string, typ types.Type) (string, types.Object) {
+	field, ok := findField(typ, f.Field)
 	if !ok {
 		// Should not happen as long as fieldList construction is correct.
-		panic(fmt.Sprintf("unable to resolve field %d in %s", int(f), typ.String()))
+		panic(fmt.Sprintf("unable to resolve field %d in %s", f.Field, typ.String()))
 	}
 	return fmt.Sprintf("&(%s.%s)", s, field.Name()), field
 }
 
 // fieldStructPtr is a pointer struct element.
-type fieldStructPtr int
+type fieldStructPtr struct {
+	Field int
+}
 
 // synthesize implements fieldEntry.synthesize.
-func (f fieldStructPtr) synthesize(s string, typ types.Type) (string, types.Object) {
-	field, ok := findField(typ, int(f))
+func (f *fieldStructPtr) synthesize(s string, typ types.Type) (string, types.Object) {
+	field, ok := findField(typ, f.Field)
 	if !ok {
 		// See above, this should not happen.
-		panic(fmt.Sprintf("unable to resolve ptr field %d in %s", int(f), typ.String()))
+		panic(fmt.Sprintf("unable to resolve ptr field %d in %s", f.Field, typ.String()))
 	}
 	return fmt.Sprintf("*(&(%s.%s))", s, field.Name()), field
+}
+
+func fieldEntryEqual(left, right fieldEntry) bool {
+	if left, ok := left.(*fieldStruct); ok {
+		if right, ok := right.(*fieldStruct); ok {
+			return left.Field == right.Field
+		}
+	}
+	if left, ok := left.(*fieldStructPtr); ok {
+		if right, ok := right.(*fieldStructPtr); ok {
+			return left.Field == right.Field
+		}
+	}
+	return false
 }
 
 // fieldList is a simple list of fields, used in two types below.
@@ -300,9 +319,6 @@ type functionGuardInfo struct {
 	// Resolver is the resolver for this guard.
 	Resolver functionGuardResolver
 
-	// IsAlias indicates that this guard is an alias.
-	IsAlias bool
-
 	// Exclusive indicates an exclusive lock is required or excluded.
 	Exclusive bool
 }
@@ -438,47 +454,114 @@ func (lff *lockFunctionFacts) addReleases(pc *passContext, d *ast.FuncDecl, guar
 	}
 }
 
-// addAlias adds an alias.
-func (lff *lockFunctionFacts) addAlias(pc *passContext, d *ast.FuncDecl, guardName string) {
-	// Parse the alias.
+func fieldListEqual(left fieldList, right fieldList) bool {
+	return slices.EqualFunc(left, right, fieldEntryEqual)
+}
+
+func aliasPathHasPtrOrIface(fl fieldList) bool {
+	return slices.ContainsFunc(fl, func(entry fieldEntry) bool {
+		_, ok := entry.(*fieldStructPtr)
+		return ok
+	})
+}
+
+type typeAlias struct {
+	Left  fieldList
+	Right fieldList
+}
+
+type lockTypeFacts struct {
+	Aliases []typeAlias
+}
+
+// AFact implements analysis.Fact.AFact.
+func (*lockTypeFacts) AFact() {}
+
+func (ltf *lockTypeFacts) addTypeAlias(pc *passContext, ts *ast.TypeSpec, structType *types.Struct, guardName string) {
 	parts := strings.Split(guardName, "=")
 	if len(parts) != 2 {
-		pc.maybeFail(d.Pos(), "invalid annotation %s for alias", guardName)
+		pc.maybeFail(ts.Pos(), "invalid annotation %s for alias", guardName)
 		return
 	}
 
-	// Parse the actual guard.
-	fg, ok := lff.checkGuard(pc, d, parts[0], true /* exclusive */, true /* allowReturn */)
+	leftName := parts[0]
+	rightName := parts[1]
+	if leftName == rightName {
+		pc.maybeFail(ts.Pos(), "alias annotation %s refers to the same lock", guardName)
+		return
+	}
+
+	leftParts := strings.Split(leftName, ".")
+	leftFL, leftPrefixLens, leftObjs, ok := pc.resolveFieldListParts(ts.Pos(), structType, leftParts)
 	if !ok {
 		return
 	}
-	fg.IsAlias = true
+	rightParts := strings.Split(rightName, ".")
+	rightFL, rightPrefixLens, rightObjs, ok := pc.resolveFieldListParts(ts.Pos(), structType, rightParts)
+	if !ok {
+		return
+	}
 
-	// Find the existing specification.
-	_, entryOk := lff.HeldOnEntry[parts[1]]
-	if entryOk {
-		lff.HeldOnEntry[guardName] = fg
+	leftObj := leftObjs[len(leftObjs)-1]
+	rightObj := rightObjs[len(rightObjs)-1]
+	if !pc.validateMutex(ts.Pos(), leftObj, true /* exclusive */) {
+		return
 	}
-	_, exitOk := lff.HeldOnExit[parts[1]]
-	if exitOk {
-		lff.HeldOnExit[guardName] = fg
+	if !pc.validateMutex(ts.Pos(), rightObj, true /* exclusive */) {
+		return
 	}
-	if !entryOk && !exitOk {
-		pc.maybeFail(d.Pos(), "alias annotation %s does not refer to an existing guard", guardName)
+	if !aliasPathHasPtrOrIface(leftFL) && !aliasPathHasPtrOrIface(rightFL) {
+		pc.maybeFail(ts.Pos(), "alias annotation %s requires a pointer or interface lock", guardName)
+		return
 	}
+
+	min := slices.Min([]int{len(leftPrefixLens), len(rightPrefixLens)})
+	for i := -1; i < min; i++ {
+		var aliases []typeAlias
+		var leftSuffix fieldList
+		var rightSuffix fieldList
+		if i == -1 {
+			aliases = ltf.Aliases
+			leftSuffix = leftFL
+			rightSuffix = rightFL
+		} else {
+			leftPrefix := leftFL[:leftPrefixLens[i]]
+			rightPrefix := rightFL[:rightPrefixLens[i]]
+			if !fieldListEqual(leftPrefix, rightPrefix) {
+				break
+			}
+			leftSuffix = leftFL[leftPrefixLens[i]:]
+			rightSuffix = rightFL[rightPrefixLens[i]:]
+			var nestedFacts lockTypeFacts
+			pc.importLockTypeFacts(leftObjs[i].Type(), &nestedFacts)
+			aliases = nestedFacts.Aliases
+		}
+		for _, alias := range aliases {
+			redundant := false
+			redundant = redundant || (fieldListEqual(alias.Left, leftSuffix) && fieldListEqual(alias.Right, rightSuffix))
+			redundant = redundant || (fieldListEqual(alias.Left, rightSuffix) && fieldListEqual(alias.Right, leftSuffix))
+			if redundant {
+				pc.maybeFail(ts.Pos(), "alias annotation %s is redundant", guardName)
+				return
+			}
+		}
+	}
+
+	ltf.Aliases = append(ltf.Aliases, typeAlias{
+		Left:  leftFL,
+		Right: rightFL,
+	})
 }
 
 // fieldEntryFor returns the fieldList value for the given object.
 func (pc *passContext) fieldEntryFor(fieldObj types.Object, index int) fieldEntry {
-
 	// Return the resolution path.
-	if _, ok := fieldObj.Type().Underlying().(*types.Pointer); ok {
-		return fieldStructPtr(index)
+	switch types.Unalias(fieldObj.Type()).Underlying().(type) {
+	case *types.Pointer, *types.Interface:
+		return &fieldStructPtr{Field: index}
+	default:
+		return &fieldStruct{Field: index}
 	}
-	if _, ok := fieldObj.Type().Underlying().(*types.Interface); ok {
-		return fieldStructPtr(index)
-	}
-	return fieldStruct(index)
 }
 
 // findField resolves a field in a single struct.
@@ -585,34 +668,32 @@ func (pc *passContext) validateMutex(pos token.Pos, obj types.Object, exclusive 
 	return true
 }
 
-// findFieldList resolves a set of fields given a string, such a 'a.b.c'.
-//
-// Note that parts must be non-zero in length. If it may be zero, then
-// maybeFindFieldList should be used instead with an appropriate object.
-func (pc *passContext) findFieldListObj(pos token.Pos, structType *types.Struct, parts []string) (fieldList, types.Object, bool) {
+func (pc *passContext) resolveFieldListParts(pos token.Pos, structType *types.Struct, parts []string) (fieldList, []int, []types.Object, bool) {
 	var fl fieldList
-	var obj types.Object
+	prefixLens := make([]int, 0, len(parts))
+	objs := make([]types.Object, 0, len(parts))
 
 	// This loop requires at least one iteration in order to ensure that
 	// obj above is non-nil, and the type can be validated.
 	for i, fieldName := range parts {
 		flOne, fieldObj, ok := pc.findField(structType, fieldName)
 		if !ok {
-			return nil, nil, false
+			return nil, nil, nil, false
 		}
 		fl = append(fl, flOne...)
-		obj = fieldObj
+		prefixLens = append(prefixLens, len(fl))
+		objs = append(objs, fieldObj)
 		if i < len(parts)-1 {
-			structType, ok = resolveStruct(obj.Type())
+			var ok bool
+			structType, ok = resolveStruct(fieldObj.Type())
 			if !ok {
 				// N.B. This is associated with the original position.
 				pc.maybeFail(pos, "field %s expected to be struct", fieldName)
-				return nil, nil, false
+				return nil, nil, nil, false
 			}
 		}
 	}
-
-	return fl, obj, true
+	return fl, prefixLens, objs, true
 }
 
 // maybeFindFieldList resolves the given object.
@@ -626,8 +707,11 @@ func (pc *passContext) maybeFindFieldListObj(pos token.Pos, obj types.Object, pa
 			pc.maybeFail(pos, "attempted field access on non-struct")
 			return nil, nil, false
 		}
-		fl, lockObj, ok := pc.findFieldListObj(pos, structType, parts)
-		return fl, lockObj, ok
+		fl, _, objs, ok := pc.resolveFieldListParts(pos, structType, parts)
+		if !ok {
+			return nil, nil, false
+		}
+		return fl, objs[len(objs)-1], true
 	}
 
 	return nil, obj, true
@@ -736,7 +820,8 @@ func (pc *passContext) structLockGuardFacts(structType *types.Struct, ss *ast.St
 	var fieldObj *types.Var
 	findLocal := func(pos token.Pos, guardName string) (fieldGuardResolver, bool) {
 		// Try to resolve from the local structure first.
-		if fl, lockObj, ok := pc.findFieldListObj(pos, structType, strings.Split(guardName, ".")); ok {
+		if fl, _, objs, ok := pc.resolveFieldListParts(pos, structType, strings.Split(guardName, ".")); ok {
+			lockObj := objs[len(objs)-1]
 			// Validate the final field.
 			if pc.validateMutex(pos, lockObj, true /* exclusive */) {
 				// Found a valid resolution.
@@ -905,7 +990,6 @@ func (pc *passContext) functionFacts(d *ast.FuncDecl) {
 			checkLocksAcquiresRead:   func(guardName string) { lff.addAcquires(pc, d, guardName, false /* exclusive */) },
 			checkLocksReleases:       func(guardName string) { lff.addReleases(pc, d, guardName, true /* exclusive */) },
 			checkLocksReleasesRead:   func(guardName string) { lff.addReleases(pc, d, guardName, false /* exclusive */) },
-			checkLocksAlias:          func(guardName string) { lff.addAlias(pc, d, guardName) },
 			checkLocksExcludes:       func(guardName string) { lff.addExcludes(pc, d, guardName, false /* exclusiveOnly */) },
 			checkLocksExcludesWrite:  func(guardName string) { lff.addExcludes(pc, d, guardName, true /* exclusiveOnly */) },
 		})
@@ -915,6 +999,32 @@ func (pc *passContext) functionFacts(d *ast.FuncDecl) {
 	if lff.Ignore || len(lff.HeldOnEntry) > 0 || len(lff.HeldOnExit) > 0 || len(lff.ExcludedOnEntry) > 0 {
 		funcObj := pc.pass.TypesInfo.Defs[d.Name].(*types.Func)
 		pc.pass.ExportObjectFact(funcObj, &lff)
+	}
+}
+
+func (pc *passContext) typeAliasFacts(ts *ast.TypeSpec, decl *ast.GenDecl) {
+	var ltf lockTypeFacts
+	structType, ok := resolveStruct(pc.pass.TypesInfo.TypeOf(ts.Name))
+	for _, cg := range []*ast.CommentGroup{ts.Doc, ts.Comment, decl.Doc} {
+		if cg == nil {
+			continue
+		}
+		for _, l := range cg.List {
+			pc.extractAnnotations(l.Text, map[string]func(string){
+				checkLocksAlias: func(guardName string) {
+					if !ok {
+						pc.maybeFail(ts.Pos(), "annotation %s is only valid on struct types", guardName)
+						return
+					}
+					ltf.addTypeAlias(pc, ts, structType, guardName)
+				},
+			})
+		}
+	}
+
+	if len(ltf.Aliases) > 0 {
+		typeObj := pc.pass.TypesInfo.Defs[ts.Name].(*types.TypeName)
+		pc.pass.ExportObjectFact(typeObj, &ltf)
 	}
 }
 
