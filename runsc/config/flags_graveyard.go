@@ -19,16 +19,18 @@ import (
 	"os"
 	"time"
 
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/runsc/flag"
 )
 
-var deprecatedFlags map[string]time.Time = make(map[string]time.Time)
+var deprecatedFlags sync.Map // map[string]*time.Time
 
 // WarnOnDeprecatedFlagUsage prints a warning message for any deprecated flags
 // that are set in the given flag set.
 func WarnOnDeprecatedFlagUsage(flagSet *flag.FlagSet) {
 	flagSet.Visit(func(f *flag.Flag) {
-		if deprecationDate, ok := deprecatedFlags[f.Name]; ok {
+		if deprecationDateAny, ok := deprecatedFlags.Load(f.Name); ok {
+			deprecationDate := deprecationDateAny.(*time.Time)
 			fmt.Fprintf(os.Stderr, "\033[1mWARNING\033[0m: --%s is deprecated. Expect it to be removed by %s.\n--%s usage: %s\n\n",
 				f.Name, deprecationDate.Format("2006-01"), f.Name, f.Usage)
 		}
@@ -37,7 +39,7 @@ func WarnOnDeprecatedFlagUsage(flagSet *flag.FlagSet) {
 
 func deprecatedBool(flagSet *flag.FlagSet, name string, defaultValue bool, usage string, removalDate time.Time) {
 	flagSet.Bool(name, defaultValue, usage)
-	deprecatedFlags[name] = removalDate
+	deprecatedFlags.LoadOrStore(name, &removalDate)
 }
 
 // RegisterDeprecatedFlags registers flags that should no longer be used and
