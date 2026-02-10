@@ -20,6 +20,7 @@ go_library(
         "//pkg/log",
         "//pkg/refs",
         "//pkg/sentry/devices/nvproxy/nvconf",
+        "//pkg/sync",
         "//runsc/flag",
         "//runsc/version",
     ],
