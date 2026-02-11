@@ -610,6 +610,16 @@ type Endpoint struct {
 	//
 	// +checklocks:mu
 	alsoBindToV4 bool
+
+	// terminateAtRestore indicates whether the endpoint must be terminated
+	// upon restore. This applies specifically when the snapshots are taken
+	// with the "save-resume" flag, ensuring that if such a snapshot is
+	// restored later, this endpoint is cleaned up. This flag is only set
+	// to true in beforeSave for external endpoints which do not have
+	// save-restore capability.
+	//
+	// +checklocks:mu
+	terminateAtRestore bool
 }
 
 // calculateAdvertisedMSS calculates the MSS to advertise.
