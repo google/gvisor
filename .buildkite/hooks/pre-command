@@ -95,7 +95,7 @@ if [[ "${BUILDKITE_PIPELINE_INSTALL_RUNTIME:-}" == "true" ]]; then
   if [[ -n "${STAGED_BINARIES:-}" ]]; then
     # Used `runsc` from STAGED_BINARIES instead of building it from scratch.
     export BUILDKITE_STAGED_BINARIES_DIRECTORY="$(mktemp -d)"
-    gsutil cat "$STAGED_BINARIES" \
+    gcloud storage cat "$STAGED_BINARIES" \
       | tar -C "$BUILDKITE_STAGED_BINARIES_DIRECTORY" -zxvf - runsc
     chmod +x "$BUILDKITE_STAGED_BINARIES_DIRECTORY/runsc"
     sudo "$BUILDKITE_STAGED_BINARIES_DIRECTORY/runsc" install \
