@@ -278,9 +278,7 @@ func (*runExitMain) execute(t *Task) taskRunState {
 	// Handle the robust futex list.
 	t.exitRobustList()
 
-	// Deactivate the address space and update max RSS before releasing the
-	// task's MM.
-	t.Deactivate()
+	// Update max RSS before releasing the task's MM.
 	t.tg.pidns.owner.mu.Lock()
 	t.updateRSSLocked()
 	t.tg.pidns.owner.mu.Unlock()
@@ -288,6 +286,7 @@ func (*runExitMain) execute(t *Task) taskRunState {
 	// Release the task image resources. Accessing these fields must be
 	// done with t.mu held, but the mm.DecUsers() call must be done outside
 	// of that lock.
+	t.p.PrepareExit()
 	t.mu.Lock()
 	mm := t.image.MemoryManager
 	t.image.MemoryManager = nil

@@ -290,9 +290,9 @@ func (c *Client) CloseFD(ctx context.Context, fd FDID, flush bool) {
 
 	req := CloseReq{FDs: toClose}
 	var resp CloseResp
-	ctx.UninterruptibleSleepStart(false)
+	ctx.UninterruptibleSleepStart()
 	err := c.SndRcvMessage(Close, uint32(req.SizeBytes()), req.MarshalBytes, resp.CheckedUnmarshal, nil, req.String, resp.String)
-	ctx.UninterruptibleSleepFinish(false)
+	ctx.UninterruptibleSleepFinish()
 	if err != nil {
 		log.Warningf("lisafs: batch closing FDs returned error: %v", err)
 	}
@@ -305,9 +305,9 @@ func (c *Client) SyncFDs(ctx context.Context, fds []FDID) error {
 	}
 	req := FsyncReq{FDs: fds}
 	var resp FsyncResp
-	ctx.UninterruptibleSleepStart(false)
+	ctx.UninterruptibleSleepStart()
 	err := c.SndRcvMessage(FSync, uint32(req.SizeBytes()), req.MarshalBytes, resp.CheckedUnmarshal, nil, req.String, resp.String)
-	ctx.UninterruptibleSleepFinish(false)
+	ctx.UninterruptibleSleepFinish()
 	return err
 }
 

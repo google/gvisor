@@ -101,6 +101,18 @@ func (v Addr) ToRange(length uint64) (AddrRange, bool) {
 	return AddrRange{v, end}, ok
 }
 
+// MustToRange is equivalent to ToRange, but panics if the end of the range
+// wraps around.
+//
+//go:nosplit
+func (v Addr) MustToRange(length uint64) AddrRange {
+	ar, ok := v.ToRange(length)
+	if !ok {
+		panic("hostarch.Addr.ToRange() wraps")
+	}
+	return ar
+}
+
 // IsPageAligned returns true if ar.Start.IsPageAligned() and
 // ar.End.IsPageAligned().
 func (ar AddrRange) IsPageAligned() bool {

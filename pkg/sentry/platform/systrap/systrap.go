@@ -225,7 +225,7 @@ func (c *platformContext) Release() {
 	}
 }
 
-// PrepareSleep implements platform.Context.platform.PrepareSleep.
+// PrepareSleep implements platform.Context.PrepareSleep.
 func (c *platformContext) PrepareSleep() {
 	ctx := c.sharedContext
 	if ctx == nil {
@@ -236,6 +236,21 @@ func (c *platformContext) PrepareSleep() {
 		ctx.subprocess.decAwakeContexts()
 	}
 }
+
+// PrepareUninterruptibleSleep implements
+// platform.Context.PrepareUninterruptibleSleep.
+func (*platformContext) PrepareUninterruptibleSleep() {}
+
+// PrepareStop implements platform.Context.PrepareStop.
+func (c *platformContext) PrepareStop() {
+	c.PrepareSleep()
+}
+
+// PrepareExecve implements platform.Context.PrepareExecve.
+func (*platformContext) PrepareExecve() {}
+
+// PrepareExit implements platform.Context.PrepareExit.
+func (*platformContext) PrepareExit() {}
 
 // Systrap represents a collection of seccomp subprocesses.
 type Systrap struct {
@@ -315,11 +330,6 @@ func (*Systrap) SupportsAddressSpaceIO() bool {
 	return false
 }
 
-// CooperativelySchedulesAddressSpace implements platform.Platform.CooperativelySchedulesAddressSpace.
-func (*Systrap) CooperativelySchedulesAddressSpace() bool {
-	return false
-}
-
 // MapUnit implements platform.Platform.MapUnit.
 func (*Systrap) MapUnit() uint64 {
 	// The host kernel manages page tables and arbitrary-sized mappings
@@ -334,9 +344,8 @@ func (*Systrap) MaxUserAddress() hostarch.Addr {
 }
 
 // NewAddressSpace returns a new subprocess.
-func (p *Systrap) NewAddressSpace(any) (platform.AddressSpace, <-chan struct{}, error) {
-	as, err := newSubprocess(globalPool.source.createStub, p.memoryFile, true)
-	return as, nil, err
+func (p *Systrap) NewAddressSpace() (platform.AddressSpace, error) {
+	return newSubprocess(globalPool.source.createStub, p.memoryFile, true)
 }
 
 // NewContext returns an interruptible platformContext.

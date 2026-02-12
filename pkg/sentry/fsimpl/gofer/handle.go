@@ -52,9 +52,9 @@ func (h *handle) readToBlocksAt(ctx context.Context, dsts safemem.BlockSeq, offs
 		return 0, nil
 	}
 	if h.fd >= 0 {
-		ctx.UninterruptibleSleepStart(false)
+		ctx.UninterruptibleSleepStart()
 		n, err := hostfd.Preadv2(h.fd, dsts, int64(offset), 0 /* flags */)
-		ctx.UninterruptibleSleepFinish(false)
+		ctx.UninterruptibleSleepFinish()
 		return n, err
 	}
 	rw := getHandleReadWriter(ctx, h, int64(offset))
@@ -67,9 +67,9 @@ func (h *handle) writeFromBlocksAt(ctx context.Context, srcs safemem.BlockSeq, o
 		return 0, nil
 	}
 	if h.fd >= 0 {
-		ctx.UninterruptibleSleepStart(false)
+		ctx.UninterruptibleSleepStart()
 		n, err := hostfd.Pwritev2(h.fd, srcs, int64(offset), 0 /* flags */)
-		ctx.UninterruptibleSleepFinish(false)
+		ctx.UninterruptibleSleepFinish()
 		return n, err
 	}
 	rw := getHandleReadWriter(ctx, h, int64(offset))
@@ -91,9 +91,9 @@ func (h *handle) sync(ctx context.Context) error {
 	// If we have a host FD, fsyncing it is likely to be faster than an fsync
 	// RPC.
 	if h.fd >= 0 {
-		ctx.UninterruptibleSleepStart(false)
+		ctx.UninterruptibleSleepStart()
 		err := unix.Fsync(int(h.fd))
-		ctx.UninterruptibleSleepFinish(false)
+		ctx.UninterruptibleSleepFinish()
 		return err
 	}
 	if h.fdLisa.Ok() {

@@ -50,8 +50,7 @@ func TryCPUIDEmulate(ctx context.Context, mm MemoryManager, ac *arch.Context64) 
 		taskWrapper: taskWrapper{ctx},
 	}
 	if _, err := mm.CopyIn(&tasklessCtx, hostarch.Addr(s.Regs.Rip), inst, usermem.IOOpts{
-		IgnorePermissions:  true,
-		AddressSpaceActive: true,
+		IgnorePermissions: true,
 	}); err != nil {
 		return false
 	}
