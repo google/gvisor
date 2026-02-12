@@ -242,7 +242,13 @@ func (*TestStack) Stats() tcpip.Stats {
 	return tcpip.Stats{}
 }
 
-// SetRemoveNICs implements Stack.
-func (*TestStack) SetRemoveNICs() {
+// SetRemoveConf implements Stack.
+func (*TestStack) SetRemoveConf(bool) {
 	// No-op.
+}
+
+// GetRemoveConf implements Stack.
+func (*TestStack) GetRemoveConf() bool {
+	// No-op.
+	return false
 }

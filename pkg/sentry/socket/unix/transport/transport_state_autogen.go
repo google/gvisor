@@ -57,6 +57,8 @@ func (e *connectionlessEndpoint) StateTypeName() string {
 func (e *connectionlessEndpoint) StateFields() []string {
 	return []string{
 		"baseEndpoint",
+		"closerStack",
+		"closerStackLen",
 	}
 }
 
@@ -66,11 +68,15 @@ func (e *connectionlessEndpoint) beforeSave() {}
 func (e *connectionlessEndpoint) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
 	stateSinkObject.Save(0, &e.baseEndpoint)
+	stateSinkObject.Save(1, &e.closerStack)
+	stateSinkObject.Save(2, &e.closerStackLen)
 }
 
 // +checklocksignore
 func (e *connectionlessEndpoint) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &e.baseEndpoint)
+	stateSourceObject.Load(1, &e.closerStack)
+	stateSourceObject.Load(2, &e.closerStackLen)
 	stateSourceObject.AfterLoad(func() { e.afterLoad(ctx) })
 }
 

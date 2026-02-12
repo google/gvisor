@@ -496,6 +496,7 @@ func (e *Endpoint) StateFields() []string {
 		"lastOutOfWindowAckTime",
 		"pmtud",
 		"alsoBindToV4",
+		"terminateAtRestore",
 	}
 }
 
@@ -561,6 +562,7 @@ func (e *Endpoint) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(54, &e.lastOutOfWindowAckTime)
 	stateSinkObject.Save(55, &e.pmtud)
 	stateSinkObject.Save(56, &e.alsoBindToV4)
+	stateSinkObject.Save(57, &e.terminateAtRestore)
 }
 
 // +checklocksignore
@@ -621,6 +623,7 @@ func (e *Endpoint) StateLoad(ctx context.Context, stateSourceObject state.Source
 	stateSourceObject.Load(54, &e.lastOutOfWindowAckTime)
 	stateSourceObject.Load(55, &e.pmtud)
 	stateSourceObject.Load(56, &e.alsoBindToV4)
+	stateSourceObject.Load(57, &e.terminateAtRestore)
 	stateSourceObject.LoadValue(12, new(EndpointState), func(y any) { e.loadState(ctx, y.(EndpointState)) })
 	stateSourceObject.AfterLoad(func() { e.afterLoad(ctx) })
 }

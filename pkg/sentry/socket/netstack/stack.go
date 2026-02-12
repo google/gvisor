@@ -1152,7 +1152,12 @@ func (s *Stack) SetPortRange(start uint16, end uint16) error {
 	return syserr.TranslateNetstackError(s.Stack.SetPortRange(start, end)).ToError()
 }
 
-// SetRemoveNICs implements inet.Stack.SetRemoveNICs.
-func (s *Stack) SetRemoveNICs() {
-	s.Stack.SetRemoveNICs()
+// SetRemoveConf implements inet.Stack.SetRemoveConf.
+func (s *Stack) SetRemoveConf(removeConf bool) {
+	s.Stack.SetRemoveConf(removeConf)
+}
+
+// GetRemoveConf implements inet.Stack.GetRemoveConf.
+func (s *Stack) GetRemoveConf() bool {
+	return s.Stack.GetRemoveConf()
 }
