@@ -34,6 +34,12 @@ const (
 	defaultBtreeDegree = 2
 )
 
+// sackBlockLess is the comparison function for BTreeG, replacing the
+// btree.Item interface method.
+func sackBlockLess(a, b header.SACKBlock) bool {
+	return a.Start.LessThan(b.Start)
+}
+
 // SACKScoreboard stores a set of disjoint SACK ranges.
 //
 // +stateify savable
@@ -47,22 +53,22 @@ type SACKScoreboard struct {
 	//    the TCP/IP headers and options.
 	smss      uint16
 	maxSACKED seqnum.Value
-	sacked    seqnum.Size  `state:"nosave"`
-	ranges    *btree.BTree `state:"nosave"`
+	sacked    seqnum.Size                       `state:"nosave"`
+	ranges    *btree.BTreeG[header.SACKBlock] `state:"nosave"`
 }
 
 // NewSACKScoreboard returns a new SACK Scoreboard.
 func NewSACKScoreboard(smss uint16, iss seqnum.Value) *SACKScoreboard {
 	return &SACKScoreboard{
 		smss:      smss,
-		ranges:    btree.New(defaultBtreeDegree),
+		ranges:    btree.NewG[header.SACKBlock](defaultBtreeDegree, sackBlockLess),
 		maxSACKED: iss,
 	}
 }
 
 // Reset erases all known range information from the SACK scoreboard.
 func (s *SACKScoreboard) Reset() {
-	s.ranges = btree.New(defaultBtreeDegree)
+	s.ranges = btree.NewG[header.SACKBlock](defaultBtreeDegree, sackBlockLess)
 	s.sacked = 0
 }
 
@@ -73,15 +79,14 @@ func (s *SACKScoreboard) Insert(r header.SACKBlock) {
 	}
 
 	// Check if we can merge the new range with a range before or after it.
-	var toDelete []btree.Item
+	var toDelete []header.SACKBlock
 	if s.maxSACKED.LessThan(r.End - 1) {
 		s.maxSACKED = r.End - 1
 	}
-	s.ranges.AscendGreaterOrEqual(r, func(i btree.Item) bool {
-		if i == r {
+	s.ranges.AscendGreaterOrEqual(r, func(sacked header.SACKBlock) bool {
+		if sacked == r {
 			return true
 		}
-		sacked := i.(header.SACKBlock)
 		// There is a hole between these two SACK blocks, so we can't
 		// merge anymore.
 		if r.End.LessThan(sacked.Start) {
@@ -96,21 +101,20 @@ func (s *SACKScoreboard) Insert(r header.SACKBlock) {
 		if sacked.End.LessThan(r.End) {
 			// sacked is contained in the newly inserted range.
 			// Delete this block.
-			toDelete = append(toDelete, i)
+			toDelete = append(toDelete, sacked)
 			return true
 		}
 		// sacked covers a range past end of the newly inserted
 		// block.
 		r.End = sacked.End
-		toDelete = append(toDelete, i)
+		toDelete = append(toDelete, sacked)
 		return true
 	})
 
-	s.ranges.DescendLessOrEqual(r, func(i btree.Item) bool {
-		if i == r {
+	s.ranges.DescendLessOrEqual(r, func(sacked header.SACKBlock) bool {
+		if sacked == r {
 			return true
 		}
-		sacked := i.(header.SACKBlock)
 		// sA------sE
 		//            rA----rE
 		if sacked.End.LessThan(r.Start) {
@@ -126,18 +130,17 @@ func (s *SACKScoreboard) Insert(r header.SACKBlock) {
 		if r.End.LessThan(sacked.End) {
 			r.End = sacked.End
 		}
-		toDelete = append(toDelete, i)
+		toDelete = append(toDelete, sacked)
 		return true
 	})
-	for _, i := range toDelete {
-		if sb := s.ranges.Delete(i); sb != nil {
-			sb := i.(header.SACKBlock)
+	for _, sb := range toDelete {
+		if _, ok := s.ranges.Delete(sb); ok {
 			s.sacked -= sb.Start.Size(sb.End)
 		}
 	}
 
-	replaced := s.ranges.ReplaceOrInsert(r)
-	if replaced == nil {
+	_, replaced := s.ranges.ReplaceOrInsert(r)
+	if !replaced {
 		s.sacked += r.Start.Size(r.End)
 	}
 }
@@ -150,8 +153,7 @@ func (s *SACKScoreboard) IsSACKED(r header.SACKBlock) bool {
 	}
 
 	found := false
-	s.ranges.DescendLessOrEqual(r, func(i btree.Item) bool {
-		sacked := i.(header.SACKBlock)
+	s.ranges.DescendLessOrEqual(r, func(sacked header.SACKBlock) bool {
 		if sacked.End.LessThan(r.Start) {
 			return false
 		}
@@ -168,8 +170,8 @@ func (s *SACKScoreboard) IsSACKED(r header.SACKBlock) bool {
 func (s *SACKScoreboard) String() string {
 	var str strings.Builder
 	str.WriteString("SACKScoreboard: {")
-	s.ranges.Ascend(func(i btree.Item) bool {
-		str.WriteString(fmt.Sprintf("%v,", i))
+	s.ranges.Ascend(func(sb header.SACKBlock) bool {
+		str.WriteString(fmt.Sprintf("%v,", sb))
 		return true
 	})
 	str.WriteString("}\n")
@@ -181,15 +183,14 @@ func (s *SACKScoreboard) Delete(seq seqnum.Value) {
 	if s.Empty() {
 		return
 	}
-	toDelete := []btree.Item{}
-	toInsert := []btree.Item{}
+	var toDelete []header.SACKBlock
+	var toInsert []header.SACKBlock
 	r := header.SACKBlock{seq, seq.Add(1)}
-	s.ranges.DescendLessOrEqual(r, func(i btree.Item) bool {
-		if i == r {
+	s.ranges.DescendLessOrEqual(r, func(sb header.SACKBlock) bool {
+		if sb == r {
 			return true
 		}
-		sb := i.(header.SACKBlock)
-		toDelete = append(toDelete, i)
+		toDelete = append(toDelete, sb)
 		if sb.End.LessThanEq(seq) {
 			s.sacked -= sb.Start.Size(sb.End)
 		} else {
@@ -209,8 +210,8 @@ func (s *SACKScoreboard) Delete(seq seqnum.Value) {
 
 // Copy provides a copy of the SACK scoreboard.
 func (s *SACKScoreboard) Copy() (sackBlocks []header.SACKBlock, maxSACKED seqnum.Value) {
-	s.ranges.Ascend(func(i btree.Item) bool {
-		sackBlocks = append(sackBlocks, i.(header.SACKBlock))
+	s.ranges.Ascend(func(sb header.SACKBlock) bool {
+		sackBlocks = append(sackBlocks, sb)
 		return true
 	})
 	return sackBlocks, s.maxSACKED
@@ -232,8 +233,7 @@ func (s *SACKScoreboard) IsRangeLost(r header.SACKBlock) bool {
 	// We need to check if the immediate lower (if any) sacked
 	// range contains or partially overlaps with r.
 	searchMore := true
-	s.ranges.DescendLessOrEqual(r, func(i btree.Item) bool {
-		sacked := i.(header.SACKBlock)
+	s.ranges.DescendLessOrEqual(r, func(sacked header.SACKBlock) bool {
 		if sacked.Contains(r) {
 			searchMore = false
 			return false
@@ -256,8 +256,7 @@ func (s *SACKScoreboard) IsRangeLost(r header.SACKBlock) bool {
 		return isLost
 	}
 
-	s.ranges.AscendGreaterOrEqual(r, func(i btree.Item) bool {
-		sacked := i.(header.SACKBlock)
+	s.ranges.AscendGreaterOrEqual(r, func(sacked header.SACKBlock) bool {
 		if sacked.Contains(r) {
 			return false
 		}

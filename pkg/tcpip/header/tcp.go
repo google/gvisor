@@ -17,7 +17,6 @@ package header
 import (
 	"encoding/binary"
 
-	"github.com/google/btree"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/checksum"
 	"gvisor.dev/gvisor/pkg/tcpip/seqnum"
@@ -173,11 +172,6 @@ type SACKBlock struct {
 	// End indicates the sequence number immediately following the last
 	// sequence number of this block.
 	End seqnum.Value
-}
-
-// Less returns true if r.Start < b.Start.
-func (r SACKBlock) Less(b btree.Item) bool {
-	return r.Start.LessThan(b.(SACKBlock).Start)
 }
 
 // Contains returns true if b is completely contained in r.
