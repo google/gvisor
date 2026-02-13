@@ -81,9 +81,9 @@ func IoDestroy(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintp
 		}
 		// The task cannot be interrupted during the wait. Equivalent to
 		// TASK_UNINTERRUPTIBLE in Linux.
-		t.UninterruptibleSleepStart(true /* deactivate */)
+		t.UninterruptibleSleepStart()
 		<-ch
-		t.UninterruptibleSleepFinish(true /* activate */)
+		t.UninterruptibleSleepFinish()
 	}
 }
 
@@ -187,19 +187,12 @@ func memoryFor(t *kernel.Task, cb *linux.IOCallback) (usermem.IOSequence, error)
 		return usermem.IOSequence{}, linuxerr.EINVAL
 	}
 
-	// Since this I/O will be asynchronous with respect to t's task goroutine,
-	// we have no guarantee that t's AddressSpace will be active during the
-	// I/O.
 	switch cb.OpCode {
 	case linux.IOCB_CMD_PREAD, linux.IOCB_CMD_PWRITE:
-		return t.SingleIOSequence(hostarch.Addr(cb.Buf), bytes, usermem.IOOpts{
-			AddressSpaceActive: false,
-		})
+		return t.SingleIOSequence(hostarch.Addr(cb.Buf), bytes, usermem.IOOpts{})
 
 	case linux.IOCB_CMD_PREADV, linux.IOCB_CMD_PWRITEV:
-		return t.IovecsIOSequence(hostarch.Addr(cb.Buf), bytes, usermem.IOOpts{
-			AddressSpaceActive: false,
-		})
+		return t.IovecsIOSequence(hostarch.Addr(cb.Buf), bytes, usermem.IOOpts{})
 
 	case linux.IOCB_CMD_FSYNC, linux.IOCB_CMD_FDSYNC, linux.IOCB_CMD_NOOP:
 		return usermem.IOSequence{}, nil

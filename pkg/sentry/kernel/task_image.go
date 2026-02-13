@@ -141,7 +141,10 @@ func (t *Task) Stack() *arch.Stack {
 // args.MemoryManager does not need to be set by the caller.
 func (k *Kernel) LoadTaskImage(ctx context.Context, args loader.LoadArgs) (*TaskImage, *auth.Credentials, bool, *syserr.Error) {
 	// Prepare a new user address space to load into.
-	m := mm.NewMemoryManager(k, k.mf, k.SleepForAddressSpaceActivation)
+	m, merr := mm.NewMemoryManager(k, k.mf)
+	if merr != nil {
+		return nil, nil, false, syserr.FromError(merr)
+	}
 	defer m.DecUsers(ctx)
 	args.MemoryManager = m
 

@@ -56,9 +56,7 @@ func GetRandom(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintp
 		return 0, nil, linuxerr.EFAULT
 	}
 
-	n, err := t.MemoryManager().CopyOutFrom(t, hostarch.AddrRangeSeqOf(ar), safemem.FromIOReader{rand.Reader}, usermem.IOOpts{
-		AddressSpaceActive: true,
-	})
+	n, err := t.MemoryManager().CopyOutFrom(t, hostarch.AddrRangeSeqOf(ar), safemem.FromIOReader{rand.Reader}, usermem.IOOpts{})
 	if n > 0 {
 		return uintptr(n), nil, nil
 	}

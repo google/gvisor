@@ -22,14 +22,8 @@
 // FXSAVE/XSAVE area. (Intel SDM Vol. 1, Table 10-2 "Format of an FXSAVE Area")
 #define MXCSR_OFFSET	24
 
-// The value for XCR0 is defined to xsave/xrstor everything except for MPX, PKRU
-// and AMX regions.
-// MPX has been deprecated.
-// TODO(gvisor.dev/issues/9896): Implement AMX support.
-// TODO(gvisor.dev/issues/10087): Implement PKRU support.
-#define XCR0_DISABLED_MASK ((1 << 3) | (1 << 4) | (1 << 9) | (1 << 17) | (1 << 18))
-#define XCR0_EAX (0xffffffff ^ XCR0_DISABLED_MASK)
-#define XCR0_EDX 0xffffffff
+#define XCR0_EAX 231 // +checkconst . SupportedXFeatureStates
+#define XCR0_EDX 0
 
 // initX86FPState initializes floating point state.
 //

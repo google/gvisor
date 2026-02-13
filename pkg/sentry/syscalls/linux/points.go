@@ -61,7 +61,7 @@ func getFilePath(t *kernel.Task, fd int32) string {
 }
 
 func getIovecSize(t *kernel.Task, addr hostarch.Addr, iovcnt int) uint64 {
-	dst, err := t.IovecsIOSequence(addr, iovcnt, usermem.IOOpts{AddressSpaceActive: true})
+	dst, err := t.IovecsIOSequence(addr, iovcnt, usermem.IOOpts{})
 	if err != nil {
 		return 0
 	}
