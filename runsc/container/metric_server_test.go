@@ -30,6 +30,7 @@ import (
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/test/testutil"
 	"gvisor.dev/gvisor/runsc/config"
+	"gvisor.dev/gvisor/runsc/sandbox"
 	"gvisor.dev/gvisor/test/metricclient"
 )
 
@@ -909,4 +910,114 @@ func TestMetricServerDoesNotExportZeroValueCounters(t *testing.T) {
 	if t.Failed() {
 		t.Logf("Last metric data:\n\n%s\n\n", metricData)
 	}
+}
+
+func TestContainerMetricsAfterRestore(t *testing.T) {
+	te, cleanup := setupMetrics(t /* forceTempUDS= */, false)
+	defer cleanup()
+
+	imagePath, err := os.MkdirTemp(testutil.TmpDir(), "checkpoint")
+	if err != nil {
+		t.Fatalf("os.MkdirTemp failed: %v", err)
+	}
+	defer os.RemoveAll(imagePath)
+
+	containerID := testutil.RandomContainerID()
+	args := Args{
+		ID:        containerID,
+		Spec:      te.sleepSpec,
+		BundleDir: te.bundleDir,
+	}
+	cont, err := New(te.sleepConf, args)
+	if err != nil {
+		t.Fatalf("error creating container: %v", err)
+	}
+
+	if err := cont.Start(te.sleepConf); err != nil {
+		t.Fatalf("Cannot start container: %v", err)
+	}
+
+	t.Logf("Running ps to consume some resources...")
+	if output, err := executeCombinedOutput(te.sleepConf, cont, nil, "/bin/bash", "-c", "for i in $(seq 1 100); do ps aux > /dev/null; done"); err != nil {
+		t.Fatalf("Exec of ps failed: %v; output: %v", err, output)
+	}
+	t.Logf("Finished running ps.")
+
+	if err := cont.Checkpoint(te.sleepConf, imagePath, sandbox.CheckpointOpts{Resume: true}); err != nil {
+		t.Fatalf("Checkpoint failed: %v", err)
+	}
+
+	// Check time saved metrics are zero before restore.
+	ckpData, err := te.client.GetMetrics(te.testCtx, nil)
+	if err != nil {
+		t.Fatalf("Cannot get metrics after restoring container: %v", err)
+	}
+	cpuTimeSavedBefore, _, err := ckpData.GetPrometheusContainerInteger(metricclient.WantMetric{
+		Metric:  "testmetric_meta_sandbox_cpu_time_saved_milliseconds",
+		Sandbox: containerID,
+	})
+	if err != nil {
+		t.Errorf("Cannot get testmetric_meta_sandbox_cpu_time_saved_milliseconds from following data (err: %v):\n\n%s\n\n", err, ckpData)
+	}
+	if cpuTimeSavedBefore != 0 {
+		t.Errorf("testmetric_meta_sandbox_cpu_time_saved_milliseconds should be zero, got %v", cpuTimeSavedBefore)
+	}
+	wallTimeSavedBefore, _, err := ckpData.GetPrometheusContainerInteger(metricclient.WantMetric{
+		Metric:  "testmetric_meta_sandbox_wall_time_saved_milliseconds",
+		Sandbox: containerID,
+	})
+	if err != nil {
+		t.Errorf("Cannot get testmetric_meta_sandbox_wall_time_saved_milliseconds from following data (err: %v):\n\n%s\n\n", err, ckpData)
+	}
+	if wallTimeSavedBefore != 0 {
+		t.Errorf("testmetric_meta_sandbox_wall_time_saved_milliseconds should be zero, got %v", wallTimeSavedBefore)
+	}
+
+	if err := cont.Destroy(); err != nil {
+		t.Fatalf("Destroy failed: %v", err)
+	}
+
+	// Create new container to restore into.
+	restoreCont, err := New(te.sleepConf, args)
+	if err != nil {
+		t.Fatalf("error creating container for restore: %v", err)
+	}
+	defer restoreCont.Destroy()
+
+	if err := restoreCont.Restore(te.sleepConf, imagePath, false, false); err != nil {
+		t.Fatalf("Restore failed: %v", err)
+	}
+
+	var cpuTimeSaved, wallTimeSaved int64
+	err = testutil.Poll(func() error {
+		restoreData, err := te.client.GetMetrics(te.testCtx, nil)
+		if err != nil {
+			return fmt.Errorf("cannot get metrics after restoring container: %v", err)
+		}
+
+		// Check time saved metrics are non-zero after restore.
+		cpuTimeSaved, _, err = restoreData.GetPrometheusContainerInteger(metricclient.WantMetric{
+			Metric:  "testmetric_meta_sandbox_cpu_time_saved_milliseconds",
+			Sandbox: containerID,
+		})
+		if err != nil {
+			return fmt.Errorf("cannot get testmetric_meta_sandbox_cpu_time_saved_milliseconds from following data (err: %v):\n%s", err, restoreData)
+		}
+		wallTimeSaved, _, err = restoreData.GetPrometheusContainerInteger(metricclient.WantMetric{
+			Metric:  "testmetric_meta_sandbox_wall_time_saved_milliseconds",
+			Sandbox: containerID,
+		})
+		if err != nil {
+			return fmt.Errorf("cannot get testmetric_meta_sandbox_wall_time_saved_milliseconds from following data (err: %v):\n%s", err, restoreData)
+		}
+		if cpuTimeSaved == 0 || wallTimeSaved == 0 {
+			return fmt.Errorf("time saved metrics are zero: cpu: %d, wall: %d", cpuTimeSaved, wallTimeSaved)
+		}
+		return nil
+	}, 500*time.Millisecond)
+	if err != nil {
+		t.Fatalf("Failed to get non-zero time saved metrics: %v", err)
+	}
+	t.Logf("After restore, cpu_time_saved_milliseconds=%d", cpuTimeSaved)
+	t.Logf("After restore, wall_time_saved_milliseconds=%d", wallTimeSaved)
 }

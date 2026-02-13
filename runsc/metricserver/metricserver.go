@@ -531,11 +531,13 @@ func (m *metricServer) loadSandboxesLocked(ctx context.Context) []sandboxLoadRes
 // metric data (if querying metrics from the sandbox process succeeded).
 type sandboxMetricsResult struct {
 	sandboxLoadResult
-	isRunning      bool
-	isCheckpointed bool
-	isRestored     bool
-	snapshot       *prometheus.Snapshot
-	err            error
+	isRunning       bool
+	isCheckpointed  bool
+	isRestored      bool
+	cpuTimeSavedMS  int64
+	wallTimeSavedMS int64
+	snapshot        *prometheus.Snapshot
+	err             error
 }
 
 // queryMultiSandboxMetrics queries metric data from multiple loaded sandboxes.
@@ -574,6 +576,8 @@ func queryMultiSandboxMetrics(ctx context.Context, loadedSandboxes []sandboxLoad
 				isRunning := false
 				isCheckpointed := false
 				isRestored := false
+				cpuTimeSavedMS := int64(0)
+				wallTimeSavedMS := int64(0)
 				var snapshot *prometheus.Snapshot
 				err := s.err
 				if err == nil {
@@ -583,12 +587,16 @@ func queryMultiSandboxMetrics(ctx context.Context, loadedSandboxes []sandboxLoad
 					isRunning = s.sandbox.IsRunning()
 					isCheckpointed = s.sandbox.Checkpointed
 					isRestored = s.sandbox.Restored
+					cpuTimeSavedMS = s.sandbox.CPUTimeSaved.Milliseconds()
+					wallTimeSavedMS = s.sandbox.WallTimeSaved.Milliseconds()
 				}
 				processSandbox(sandboxMetricsResult{
 					sandboxLoadResult: s,
 					isRunning:         isRunning,
 					isCheckpointed:    isCheckpointed,
 					isRestored:        isRestored,
+					cpuTimeSavedMS:    cpuTimeSavedMS,
+					wallTimeSavedMS:   wallTimeSavedMS,
 					snapshot:          snapshot,
 					err:               err,
 				})
@@ -687,6 +695,8 @@ func (m *metricServer) serveMetrics(w *httpResponseWriter, req *http.Request) ht
 		sandboxRunning := int64(0)
 		sandboxCheckpointed := int64(0)
 		sandboxRestored := int64(0)
+		sandboxCPUTimeSavedMS := int64(0)
+		sandboxWallTimeSavedMS := int64(0)
 		if r.isRunning {
 			sandboxRunning = 1
 			meta.numRunningSandboxes++
@@ -698,10 +708,14 @@ func (m *metricServer) serveMetrics(w *httpResponseWriter, req *http.Request) ht
 		if r.isRestored {
 			sandboxRestored = 1
 			meta.numRestoredSandboxes++
+			sandboxCPUTimeSavedMS = r.cpuTimeSavedMS
+			sandboxWallTimeSavedMS = r.wallTimeSavedMS
 		}
 		selfMetrics.Add(prometheus.LabeledIntData(&SandboxRunningMetric, nil, sandboxRunning).SetExternalLabels(r.served.extraLabels))
 		selfMetrics.Add(prometheus.LabeledIntData(&SandboxCheckpointedMetric, nil, sandboxCheckpointed).SetExternalLabels(r.served.extraLabels))
 		selfMetrics.Add(prometheus.LabeledIntData(&SandboxRestoredMetric, nil, sandboxRestored).SetExternalLabels(r.served.extraLabels))
+		selfMetrics.Add(prometheus.LabeledIntData(&SandboxCPUTimeSavedMSMetric, nil, sandboxCPUTimeSavedMS).SetExternalLabels(r.served.extraLabels))
+		selfMetrics.Add(prometheus.LabeledIntData(&SandboxWallTimeSavedMSMetric, nil, sandboxWallTimeSavedMS).SetExternalLabels(r.served.extraLabels))
 		if r.err == nil {
 			selfMetrics.Add(prometheus.LabeledIntData(&SandboxMetadataMetric, r.sandbox.MetricMetadata, 1).SetExternalLabels(r.served.extraLabels))
 			for _, cap := range r.served.capabilities {

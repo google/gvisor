@@ -40,6 +40,16 @@ var (
 		Type: prometheus.TypeGauge,
 		Help: "Boolean metric set to 1 for each restored sandbox.",
 	}
+	SandboxCPUTimeSavedMSMetric = prometheus.Metric{
+		Name: "sandbox_cpu_time_saved_milliseconds",
+		Type: prometheus.TypeGauge,
+		Help: "CPU time saved for each restored sandbox (in milliseconds).",
+	}
+	SandboxWallTimeSavedMSMetric = prometheus.Metric{
+		Name: "sandbox_wall_time_saved_milliseconds",
+		Type: prometheus.TypeGauge,
+		Help: "Wall time saved for each restored sandbox (in milliseconds).",
+	}
 	SandboxMetadataMetric = prometheus.Metric{
 		Name: "sandbox_metadata",
 		Type: prometheus.TypeGauge,
@@ -100,6 +110,8 @@ var Metrics = []*prometheus.Metric{
 	&SandboxMetadataMetric,
 	&SandboxCheckpointedMetric,
 	&SandboxRestoredMetric,
+	&SandboxCPUTimeSavedMSMetric,
+	&SandboxWallTimeSavedMSMetric,
 	&SandboxCapabilitiesMetric,
 	&SpecMetadataMetric,
 	&SandboxCreationMetric,
