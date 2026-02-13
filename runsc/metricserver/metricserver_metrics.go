@@ -61,6 +61,11 @@ var (
 		Type: prometheus.TypeGauge,
 		Help: "When the sandbox was created, as a unix timestamp in seconds.",
 	}
+	MetricServerPresenceMetric = prometheus.Metric{
+		Name: "metric_server_presence",
+		Type: prometheus.TypeGauge,
+		Help: "Boolean metric always set to 1 for the metric server process.",
+	}
 	NumRunningSandboxesMetric = prometheus.Metric{
 		Name: "num_sandboxes_running",
 		Type: prometheus.TypeGauge,
@@ -98,6 +103,7 @@ var Metrics = []*prometheus.Metric{
 	&SandboxCapabilitiesMetric,
 	&SpecMetadataMetric,
 	&SandboxCreationMetric,
+	&MetricServerPresenceMetric,
 	&NumRunningSandboxesMetric,
 	&NumCannotExportSandboxesMetric,
 	&NumTotalSandboxesMetric,

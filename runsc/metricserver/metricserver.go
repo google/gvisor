@@ -751,6 +751,7 @@ func (m *metricServer) serveMetrics(w *httpResponseWriter, req *http.Request) ht
 	}
 
 	// Add our own metrics.
+	selfMetrics.Add(prometheus.NewIntData(&MetricServerPresenceMetric, 1))
 	selfMetrics.Add(prometheus.NewIntData(&NumRunningSandboxesMetric, meta.numRunningSandboxes))
 	selfMetrics.Add(prometheus.NewIntData(&NumCannotExportSandboxesMetric, meta.numCannotExportSandboxes))
 	selfMetrics.Add(prometheus.NewIntData(&NumTotalSandboxesMetric, numSandboxesTotal))
