@@ -1563,6 +1563,10 @@ func (s *sock) getSockOptIPv6(t *kernel.Task, ep commonEndpoint, name int, outPt
 			return nil, syserr.ErrProtocolNotAvailable
 		}
 
+		if !s.HasCapability(linux.CAP_NET_ADMIN, t) {
+			return nil, syserr.ErrNotPermitted
+		}
+
 		stk := inet.StackFromContext(t)
 		if stk == nil {
 			return nil, syserr.ErrNoDevice
@@ -1583,6 +1587,10 @@ func (s *sock) getSockOptIPv6(t *kernel.Task, ep commonEndpoint, name int, outPt
 			return nil, syserr.ErrProtocolNotAvailable
 		}
 
+		if !s.HasCapability(linux.CAP_NET_ADMIN, t) {
+			return nil, syserr.ErrNotPermitted
+		}
+
 		stk := inet.StackFromContext(t)
 		if stk == nil {
 			return nil, syserr.ErrNoDevice
@@ -1601,6 +1609,10 @@ func (s *sock) getSockOptIPv6(t *kernel.Task, ep commonEndpoint, name int, outPt
 		// Only valid for raw IPv6 sockets.
 		if skType != linux.SOCK_RAW {
 			return nil, syserr.ErrProtocolNotAvailable
+		}
+
+		if !s.HasCapability(linux.CAP_NET_ADMIN, t) {
+			return nil, syserr.ErrNotPermitted
 		}
 
 		stk := inet.StackFromContext(t)
@@ -1624,6 +1636,10 @@ func (s *sock) getSockOptIPv6(t *kernel.Task, ep commonEndpoint, name int, outPt
 		// Only valid for raw IPv6 sockets.
 		if skType != linux.SOCK_RAW {
 			return nil, syserr.ErrProtocolNotAvailable
+		}
+
+		if !s.HasCapability(linux.CAP_NET_ADMIN, t) {
+			return nil, syserr.ErrNotPermitted
 		}
 
 		stk := inet.StackFromContext(t)
@@ -1804,6 +1820,10 @@ func (s *sock) getSockOptIP(t *kernel.Task, ep commonEndpoint, name int, outPtr 
 			return nil, syserr.ErrProtocolNotAvailable
 		}
 
+		if !s.HasCapability(linux.CAP_NET_ADMIN, t) {
+			return nil, syserr.ErrNotPermitted
+		}
+
 		stk := inet.StackFromContext(t)
 		if stk == nil {
 			return nil, syserr.ErrNoDevice
@@ -1822,6 +1842,10 @@ func (s *sock) getSockOptIP(t *kernel.Task, ep commonEndpoint, name int, outPtr 
 		// Only valid for raw IPv4 sockets.
 		if family, skType, _ := s.Type(); family != linux.AF_INET || skType != linux.SOCK_RAW {
 			return nil, syserr.ErrProtocolNotAvailable
+		}
+
+		if !s.HasCapability(linux.CAP_NET_ADMIN, t) {
+			return nil, syserr.ErrNotPermitted
 		}
 
 		stk := inet.StackFromContext(t)
@@ -1845,6 +1869,10 @@ func (s *sock) getSockOptIP(t *kernel.Task, ep commonEndpoint, name int, outPtr 
 			return nil, syserr.ErrProtocolNotAvailable
 		}
 
+		if !s.HasCapability(linux.CAP_NET_ADMIN, t) {
+			return nil, syserr.ErrNotPermitted
+		}
+
 		stk := inet.StackFromContext(t)
 		if stk == nil {
 			return nil, syserr.ErrNoDevice
@@ -1866,6 +1894,10 @@ func (s *sock) getSockOptIP(t *kernel.Task, ep commonEndpoint, name int, outPtr 
 		// Only valid for raw IPv4 sockets.
 		if family, skType, _ := s.Type(); family != linux.AF_INET || skType != linux.SOCK_RAW {
 			return nil, syserr.ErrProtocolNotAvailable
+		}
+
+		if !s.HasCapability(linux.CAP_NET_ADMIN, t) {
+			return nil, syserr.ErrNotPermitted
 		}
 
 		stk := inet.StackFromContext(t)
@@ -2574,6 +2606,10 @@ func (s *sock) setSockOptIPv6(t *kernel.Task, ep commonEndpoint, name int, optVa
 			return syserr.ErrProtocolNotAvailable
 		}
 
+		if !s.HasCapability(linux.CAP_NET_ADMIN, t) {
+			return syserr.ErrNotPermitted
+		}
+
 		stk := inet.StackFromContext(t)
 		if stk == nil {
 			return syserr.ErrNoDevice
@@ -2618,6 +2654,7 @@ func (s *sock) setSockOptIPv6(t *kernel.Task, ep commonEndpoint, name int, optVa
 		linux.MCAST_MSFILTER,
 		linux.IPV6_FLOWLABEL_MGR,
 		linux.IPV6_RECVFRAGSIZE:
+
 		// Not supported, but we choose to silently ignore these for compatibility
 		// with old gVisor behavior.
 		//
@@ -2871,6 +2908,10 @@ func (s *sock) setSockOptIP(t *kernel.Task, ep commonEndpoint, name int, optVal 
 			return syserr.ErrProtocolNotAvailable
 		}
 
+		if !s.HasCapability(linux.CAP_NET_ADMIN, t) {
+			return syserr.ErrNotPermitted
+		}
+
 		stk := inet.StackFromContext(t)
 		if stk == nil {
 			return syserr.ErrNoDevice
@@ -2931,6 +2972,7 @@ func (s *sock) setSockOptIP(t *kernel.Task, ep commonEndpoint, name int, optVal 
 		linux.IP_IPSEC_POLICY,
 		linux.IP_XFRM_POLICY,
 		linux.IPT_SO_SET_ADD_COUNTERS:
+
 		// Not supported, but we choose to silently ignore these for compatibility
 		// with old gVisor behavior.
 		//
@@ -3852,4 +3894,10 @@ func (s *sock) ConfigureMMap(ctx context.Context, opts *memmap.MMapOpts) error {
 		return ep.ConfigureMMap(ctx, opts)
 	}
 	return linuxerr.ENODEV
+}
+
+// HasCapability checks if the task has the given capability in the
+// socket owner's user namespace.
+func (s *sock) HasCapability(cap linux.Capability, t *kernel.Task) bool {
+	return t.HasCapabilityIn(cap, s.namespace.UserNamespace())
 }
