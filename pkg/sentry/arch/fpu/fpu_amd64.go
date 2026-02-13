@@ -420,6 +420,13 @@ func (s *State) AfterLoad() {
 	if savedBV&^(supportedBV|ignoredXFeatureStates) != 0 {
 		panic(ErrLoadingState{supportedFeatures: supportedBV, savedFeatures: savedBV})
 	}
+	// ignoredXFeatureStates needs to be cleared from savedXstate, otherwise
+	// XRSTOR could fault if the current CPU does not support one of these
+	// features.
+	if savedBV&ignoredXFeatureStates != 0 {
+		savedBV &^= ignoredXFeatureStates
+		hostarch.ByteOrder.PutUint64((old)[xstateBVOffset:], savedBV)
+	}
 
 	// Copy to the new, aligned location.
 	copy(*s, old)
