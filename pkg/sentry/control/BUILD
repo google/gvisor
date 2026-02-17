@@ -57,6 +57,7 @@ go_library(
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/ktime",
         "//pkg/sentry/limits",
+        "//pkg/sentry/socket/netstack",
         "//pkg/sentry/state",
         "//pkg/sentry/state/stateio",
         "//pkg/sentry/strace",

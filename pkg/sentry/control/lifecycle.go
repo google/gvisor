@@ -16,6 +16,7 @@ package control
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -31,6 +32,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
+	"gvisor.dev/gvisor/pkg/sentry/socket/netstack"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/urpc"
@@ -540,4 +542,24 @@ func (l *Lifecycle) SignalContainer(args *SignalContainerArgs, _ *struct{}) erro
 	l.Kernel.Pause()
 	defer l.Kernel.Unpause()
 	return l.Kernel.SendContainerSignal(args.ContainerID, &linux.SignalInfo{Signo: args.Signo})
+}
+
+// PauseExternalNetworking pauses external networking for the container.
+func (l *Lifecycle) PauseExternalNetworking(*ContainerArgs, *struct{}) error {
+	st, ok := l.Kernel.RootNetworkNamespace().Stack().(*netstack.Stack)
+	if !ok {
+		return errors.New("stack is not a netstack.Stack")
+	}
+	st.Stack.DisableAllNonLoopbackNICs()
+	return nil
+}
+
+// ResumeExternalNetworking resumes external networking for the container.
+func (l *Lifecycle) ResumeExternalNetworking(*ContainerArgs, *struct{}) error {
+	st, ok := l.Kernel.RootNetworkNamespace().Stack().(*netstack.Stack)
+	if !ok {
+		return errors.New("stack is not a netstack.Stack")
+	}
+	st.Stack.EnableAllNonLoopbackNICs()
+	return nil
 }
