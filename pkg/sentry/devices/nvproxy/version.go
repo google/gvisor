@@ -710,15 +710,15 @@ func Init() {
 		// 535.113.01 is an intermediate unqualified version from the main branch.
 		v535_113_01 := v535_104_05
 
-		// The following exist on the "535" branch. They branched off the main
-		// branch at 535.113.01.
-
+		// The following versions exist on the "535" branch, which was branched
+		// from the main branch at 535.113.01.
 		v535_129_03 := addDriverABI(535, 129, 03, "e6dca5626a2608c6bb2a046cfcb7c1af338b9e961a7dd90ac09bb8a126ff002e", "8ba8d961457a241bcdf91b76d6fe2f36cb473c8bbdb02fb6650a622ce2e85b33", v535_113_01) // Internal use.
 		v535_183_06 := addDriverABI(535, 183, 06, "c7bb0a0569c5347845479ed4e3e4d885c6ee3b8adf068c3401cdf754d5ba3d3b", ChecksumNoDriver, v535_129_03)                                                   // Internal use.
 		v535_230_02 := addDriverABI(535, 230, 02, "20cca9118083fcc8083158466e9cb2b616a7922206bcb7296b1fa5cc9af2e0fd", "ea000e6ff481f55e9bfedbea93b739368c635fe4be6156fdad560524ac7f363b", v535_183_06)
 		v535_247_01 := addDriverABI(535, 247, 01, "c250e686494cb0c1b5eeea58ba2003707510b2766df05b06ba20b11b3445466b", "bd8ea5c3747a588ff1a29b4f59300d2eba69402a605cb95fce10a30f535993d0", v535_230_02)
 		v535_261_03 := addDriverABI(535, 261, 03, "d74b61d11e9c9b9052f4042d6ec4437f13d1def30e964e232d47e5d659d11d68", "9a412d3ac01c99d2ca02100a7139597fce8804c52bf533d11b60437286834a93", v535_247_01)
-		_ = addDriverABI(535, 274, 02, "3b4ef54f06991e6dfff7868dde797fad9a451fee68d5267df87ca2be8e7f293b", "3e01dcaea19fe04fadb67a61a3e37c48ab0c4319d99f6f5f7df1d719b780c51c", v535_261_03)
+		v535_274_02 := addDriverABI(535, 274, 02, "3b4ef54f06991e6dfff7868dde797fad9a451fee68d5267df87ca2be8e7f293b", "3e01dcaea19fe04fadb67a61a3e37c48ab0c4319d99f6f5f7df1d719b780c51c", v535_261_03)
+		_ = addDriverABI(535, 288, 01, "f20c32fd6ecd1f705c6df2797c0c084253ecf7ff48f2c347f82a39619882ece1", "d9ddd163353e5b8b92ea652fa423427e855c00903f69eacdc26ed76e0d18241a", v535_274_02)
 
 		// 545.23.06 is an intermediate unqualified version from the main branch.
 		v545_23_06 := func() *driverABI {
@@ -914,8 +914,8 @@ func Init() {
 		v570_124_06 := addDriverABI(570, 124, 06, "1818c90657d17e510de9fa032385ff7e99063e848e901cb4636ee71c8b339313", ChecksumNoDriver, v570_86_15)
 		v570_133_20 := addDriverABI(570, 133, 20, "1253d17b1528e8a24bf1f34a8ac6591c924b98ad7a32344bde253aa622ac1605", ChecksumNoDriver, v570_124_06)
 
-		// The following exist on the "570" branch. They branched off the main
-		// branch at 570.133.20.
+		// The following versions exist on the "570" branch, which was branched
+		// from the main branch at 570.133.20.
 		v570_172_08 := addDriverABI(570, 172, 8, "0256867e082caf93d7b25fa7c8e69b316062a9c6c72c6e228fad7b238c6fa17d", "15547216f2b514ace7724a5ab4c3327669904a41cafb8d4d9048d3c9b60963d8", v570_133_20)
 		_ = addDriverABI(570, 195, 03, "d47de81d9a513496a60adc9cfa72fe9e162c65f2722fb960c4f531bd7ac5dc1e", "a38ae007abe8f82bfdd25272c28bc8c950114464b7475e73610523f9fd67cd64", v570_172_08)
 
@@ -959,7 +959,11 @@ func Init() {
 
 		v580_82_07 := addDriverABI(580, 82, 07, "061e48e11fe552232095811d0b1cea9b718ba2540d605074ff227fce0628798c", "a2bdfffda5784d070f0e070bc4507be47fe407c9fedd1cf04ced42d996c90092", v580_65_06)
 		v580_95_05 := addDriverABI(580, 95, 05, "849ef0ef8e842b9806b2cde9f11c1303d54f1a9a769467e4e5d961b2fe1182a7", "ccb4426e98a29367c60daf9df34c2a577655d54d5be25463ccd409b0b2e52029", v580_82_07)
-		_ = addDriverABI(580, 105, 8, "d9c6e8188672f3eb74dd04cfa69dd58479fa1d0162c8c28c8d17625763293475", ChecksumNoDriver, v580_95_05)
+		v580_105_08 := addDriverABI(580, 105, 8, "d9c6e8188672f3eb74dd04cfa69dd58479fa1d0162c8c28c8d17625763293475", ChecksumNoDriver, v580_95_05)
+
+		// The following versions exist on the "580" branch, which was branched
+		// from the main branch at 580.105.08.
+		_ = addDriverABI(580, 126, 9, "4cac53e48f8adff661d47c8788ed24059a248c9fd8098ceafd088a498986ec26", "7393c42b112fd6f0a498e1d2a33127b821be58b7570dc9f8d5589a51688da4ad", v580_105_08)
 	})
 }
 
