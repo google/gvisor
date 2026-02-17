@@ -2107,6 +2107,7 @@ func (s *Stack) StateFields() []string {
 		"tcpInvalidRateLimit",
 		"tsOffsetSecret",
 		"saveRestoreEnabled",
+		"externalNetworkingDisabled",
 	}
 }
 
@@ -2136,6 +2137,7 @@ func (s *Stack) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(20, &s.tcpInvalidRateLimit)
 	stateSinkObject.Save(21, &s.tsOffsetSecret)
 	stateSinkObject.Save(22, &s.saveRestoreEnabled)
+	stateSinkObject.Save(23, &s.externalNetworkingDisabled)
 }
 
 // +checklocksignore
@@ -2163,6 +2165,7 @@ func (s *Stack) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(20, &s.tcpInvalidRateLimit)
 	stateSourceObject.Load(21, &s.tsOffsetSecret)
 	stateSourceObject.Load(22, &s.saveRestoreEnabled)
+	stateSourceObject.Load(23, &s.externalNetworkingDisabled)
 	stateSourceObject.AfterLoad(func() { s.afterLoad(ctx) })
 }
 
