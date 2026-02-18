@@ -217,6 +217,7 @@ go_test(
     srcs = [
         "cubic_test.go",
         "main_test.go",
+        "sack_scoreboard_test.go",
         "segment_test.go",
         "timer_test.go",
     ],
@@ -227,6 +228,7 @@ go_test(
         "//pkg/sleep",
         "//pkg/tcpip",
         "//pkg/tcpip/faketime",
+        "//pkg/tcpip/header",
         "//pkg/tcpip/seqnum",
         "//pkg/tcpip/stack",
         "@com_github_google_go_cmp//cmp:go_default_library",

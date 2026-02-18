@@ -41,7 +41,6 @@ go_library(
         "//pkg/tcpip",
         "//pkg/tcpip/checksum",
         "//pkg/tcpip/seqnum",
-        "@com_github_google_btree//:go_default_library",
     ],
 )
 
