@@ -29,17 +29,18 @@ import (
 
 // Reused flag names.
 const (
-	flagDebug             = "debug"
-	flagDebugToUserLog    = "debug-to-user-log"
-	flagStrace            = "strace"
-	flagStraceSyscalls    = "strace-syscalls"
-	flagStraceLogSize     = "strace-log-size"
-	flagHostUDS           = "host-uds"
-	flagNetDisconnectOK   = "net-disconnect-ok"
-	flagReproduceNFTables = "reproduce-nftables"
-	flagOCISeccomp        = "oci-seccomp"
-	flagOverlay2          = "overlay2"
-	flagAllowFlagOverride = "allow-flag-override"
+	flagDebug                   = "debug"
+	flagDebugToUserLog          = "debug-to-user-log"
+	flagStrace                  = "strace"
+	flagStraceSyscalls          = "strace-syscalls"
+	flagStraceLogSize           = "strace-log-size"
+	flagHostUDS                 = "host-uds"
+	flagNetDisconnectOK         = "net-disconnect-ok"
+	flagReproduceNFTables       = "reproduce-nftables"
+	flagOCISeccomp              = "oci-seccomp"
+	flagOverlay2                = "overlay2"
+	flagAllowFlagOverride       = "allow-flag-override"
+	flagPauseExternalNetworking = "pause-external-networking"
 
 	defaultRootDir      = "/var/run/runsc"
 	xdgRuntimeDirEnvVar = "XDG_RUNTIME_DIR"
@@ -153,6 +154,7 @@ func RegisterFlags(flagSet *flag.FlagSet) {
 	flagSet.Bool(flagReproduceNFTables, false, "Attempt to scrape and reproduce nftable rules inside the sandbox. Overrides reproduce-nat when true.")
 	flagSet.Bool(flagNetDisconnectOK, true, "Indicates whether open network connections and open unix domain sockets should be disconnected upon save.")
 	flagSet.Bool("save-restore-netstack", true, "Indicates whether netstack save/restore is enabled.")
+	flagSet.Bool(flagPauseExternalNetworking, false, "Start the sandbox with external networking disabled. Only supported when using the sandbox network type. The network can be unpaused manually after the sandbox is running.")
 
 	// Flags that control sandbox runtime behavior: accelerator related.
 	flagSet.Bool("nvproxy", false, "EXPERIMENTAL: enable support for Nvidia GPUs")
@@ -178,16 +180,17 @@ func RegisterFlags(flagSet *flag.FlagSet) {
 var overrideAllowlist = map[string]struct {
 	check func(name string, value string) error
 }{
-	flagDebug:             {},
-	flagDebugToUserLog:    {},
-	flagStrace:            {},
-	flagStraceSyscalls:    {},
-	flagStraceLogSize:     {},
-	flagHostUDS:           {},
-	flagNetDisconnectOK:   {},
-	flagReproduceNFTables: {},
-	flagOverlay2:          {check: checkOverlay2},
-	flagOCISeccomp:        {check: checkOciSeccomp},
+	flagDebug:                   {},
+	flagDebugToUserLog:          {},
+	flagStrace:                  {},
+	flagStraceSyscalls:          {},
+	flagStraceLogSize:           {},
+	flagHostUDS:                 {},
+	flagNetDisconnectOK:         {},
+	flagReproduceNFTables:       {},
+	flagOverlay2:                {check: checkOverlay2},
+	flagOCISeccomp:              {check: checkOciSeccomp},
+	flagPauseExternalNetworking: {},
 }
 
 // checkOverlay2 ensures that overlay2 can only be enabled using "memory" or

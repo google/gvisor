@@ -416,6 +416,11 @@ type Config struct {
 	// UseCPUNums causes the sentry to use KVM CPU numbers as CPU numbers in the
 	// sentry. This is necessary to support features like rseq.
 	UseCPUNums bool `flag:"kvm-use-cpu-nums"`
+
+	// PauseExternalNetworking indicates whether external networking should be
+	// disabled on sandbox start. This is only supported with sandbox networking
+	// and can be unpaused manually.
+	PauseExternalNetworking bool `flag:"pause-external-networking"`
 }
 
 func (c *Config) validate() error {
@@ -428,6 +433,9 @@ func (c *Config) validate() error {
 	}
 	if c.NumNetworkChannels <= 0 {
 		return fmt.Errorf("num_network_channels must be > 0, got: %d", c.NumNetworkChannels)
+	}
+	if c.PauseExternalNetworking && c.Network != NetworkSandbox {
+		return fmt.Errorf("pause-external-networking flag is only supported with sandbox networking")
 	}
 	// Require profile flags to explicitly opt-in to profiling with
 	// -profile rather than implying it since these options have security

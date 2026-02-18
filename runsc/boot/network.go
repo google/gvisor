@@ -182,6 +182,10 @@ type CreateLinksAndRoutesArgs struct {
 	// NATBlob indicates whether FilePayload also contains an iptables NAT
 	// ruleset.
 	NATBlob bool
+
+	// PauseExternalNetworking indicates whether external networking should be
+	// disabled initially.
+	PauseExternalNetworking bool
 }
 
 // InitPluginStackArgs are arguments to InitPluginStack.
@@ -538,6 +542,10 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 		if err := netfilter.SetEntries(n.Kernel.RootUserNamespace(), n.Stack, iptReplaceBlob, false); err != nil {
 			return fmt.Errorf("failed to SetEntries: %v", err)
 		}
+	}
+
+	if args.PauseExternalNetworking {
+		n.Stack.DisableAllNonLoopbackNICs()
 	}
 
 	return nil
