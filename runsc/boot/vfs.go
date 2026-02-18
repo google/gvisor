@@ -1440,10 +1440,9 @@ func createDeviceFiles(ctx context.Context, creds *auth.Credentials, info *conta
 	if specutils.GPUFunctionalityRequestedViaHook(info.spec, info.conf) {
 		// When using nvidia-container-runtime-hook, devices are not injected into
 		// spec.Linux.Devices. So manually create appropriate device files.
-		mode := os.FileMode(0666)
 		nvidiaDevs := []specs.LinuxDevice{
-			{Path: "/dev/nvidiactl", Type: "c", Major: nvgpu.NV_MAJOR_DEVICE_NUMBER, Minor: nvgpu.NV_MINOR_DEVICE_NUMBER_CONTROL_DEVICE, FileMode: &mode},
-			{Path: "/dev/nvidia-uvm", Type: "c", Major: int64(info.nvproxyDevInfo.UVMDevMajor), Minor: nvgpu.NVIDIA_UVM_PRIMARY_MINOR_NUMBER, FileMode: &mode},
+			{Path: "/dev/nvidiactl", Type: "c", Major: nvgpu.NV_MAJOR_DEVICE_NUMBER, Minor: nvgpu.NV_MINOR_DEVICE_NUMBER_CONTROL_DEVICE},
+			{Path: "/dev/nvidia-uvm", Type: "c", Major: int64(info.nvproxyDevInfo.UVMDevMajor), Minor: nvgpu.NVIDIA_UVM_PRIMARY_MINOR_NUMBER},
 		}
 		// There is no nvidia-container-cli flag to enable fabric-imex-mgmt, so
 		// we never create a /dev/nvidia-caps/nvidia-cap# file for it here.
@@ -1468,7 +1467,7 @@ func createDeviceFiles(ctx context.Context, creds *auth.Credentials, info *conta
 			if minor > nvgpu.NV_MINOR_DEVICE_NUMBER_REGULAR_MAX {
 				return fmt.Errorf("invalid nvidia regular minor device number %d", minor)
 			}
-			nvidiaDevs = append(nvidiaDevs, specs.LinuxDevice{Path: fmt.Sprintf("/dev/nvidia%d", minor), Type: "c", Major: nvgpu.NV_MAJOR_DEVICE_NUMBER, Minor: int64(minor), FileMode: &mode})
+			nvidiaDevs = append(nvidiaDevs, specs.LinuxDevice{Path: fmt.Sprintf("/dev/nvidia%d", minor), Type: "c", Major: nvgpu.NV_MAJOR_DEVICE_NUMBER, Minor: int64(minor)})
 		}
 		for _, nvidiaDev := range nvidiaDevs {
 			if err := createDeviceFile(ctx, creds, info, vfsObj, root, nvidiaDev); err != nil {
@@ -1480,7 +1479,10 @@ func createDeviceFiles(ctx context.Context, creds *auth.Credentials, info *conta
 }
 
 func createDeviceFile(ctx context.Context, creds *auth.Credentials, info *containerInfo, vfsObj *vfs.VirtualFilesystem, root vfs.VirtualDentry, devSpec specs.LinuxDevice) error {
-	mode := linux.FileMode(devSpec.FileMode.Perm())
+	mode := linux.FileMode(0666)
+	if devSpec.FileMode != nil {
+		mode = linux.FileMode(devSpec.FileMode.Perm())
+	}
 	var major, minor uint32
 	// See https://github.com/opencontainers/runtime-spec/blob/main/config-linux.md#devices.
 	switch devSpec.Type {
