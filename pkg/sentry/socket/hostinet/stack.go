@@ -283,14 +283,11 @@ func (*Stack) SetTCPRecovery(inet.TCPLossRecovery) error {
 // The last argument, withHeader, specifies if it contains line header.
 func getLine(f *os.File, prefix string, withHeader bool) string {
 	data := make([]byte, 4096)
-
-	if _, err := f.Seek(0, 0); err != nil {
+	n, err := f.ReadAt(data, 0)
+	if err != nil && err != io.EOF {
 		return ""
 	}
-
-	if _, err := io.ReadFull(f, data); err != io.ErrUnexpectedEOF {
-		return ""
-	}
+	data = data[:n]
 
 	prefix = prefix + ":"
 	lines := strings.Split(string(data), "\n")
