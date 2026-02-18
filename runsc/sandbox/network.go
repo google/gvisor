@@ -164,7 +164,9 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, conf *con
 	}
 
 	// Collect addresses and routes from the interfaces.
-	args := boot.CreateLinksAndRoutesArgs{}
+	args := boot.CreateLinksAndRoutesArgs{
+		PauseExternalNetworking: conf.PauseExternalNetworking,
+	}
 
 	for _, iface := range ifaces {
 		if iface.Flags&net.FlagUp == 0 {
