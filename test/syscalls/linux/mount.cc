@@ -479,6 +479,38 @@ TEST(MountTest, BindMountReadonly) {
   EXPECT_EQ(s.st_size, strlen(msg));
 }
 
+// Test that bind mounting a directory onto a regular file fails with ENOTDIR.
+TEST(MountTest, BindMountDirectoryOntoFileFails) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto const source_dir =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(dir.path()));
+  auto const target_file =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileIn(dir.path()));
+
+  // Bind mounting a directory onto a file should fail with ENOTDIR.
+  EXPECT_THAT(mount(source_dir.path().c_str(), target_file.path().c_str(),
+                    nullptr, MS_BIND, nullptr),
+              SyscallFailsWithErrno(ENOTDIR));
+}
+
+// Test that bind mounting a regular file onto a directory fails with ENOTDIR.
+TEST(MountTest, BindMountFileOntoDirectoryFails) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto const source_file =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileIn(dir.path()));
+  auto const target_dir =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(dir.path()));
+
+  // Bind mounting a file onto a directory should fail with ENOTDIR.
+  EXPECT_THAT(mount(source_file.path().c_str(), target_dir.path().c_str(),
+                    nullptr, MS_BIND, nullptr),
+              SyscallFailsWithErrno(ENOTDIR));
+}
+
 PosixErrorOr<absl::Time> ATime(absl::string_view file) {
   struct stat s = {};
   if (stat(std::string(file).c_str(), &s) == -1) {

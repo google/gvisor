@@ -481,6 +481,11 @@ func (d *dentry) Watches() *vfs.Watches {
 // OnZeroWatches implements vfs.Dentry.OnZeroWatches.
 func (d *dentry) OnZeroWatches(context.Context) {}
 
+// IsDir implements vfs.DentryImpl.IsDir.
+func (d *dentry) IsDir() bool {
+	return d.inode.isDir()
+}
+
 // inode represents a filesystem object.
 //
 // +stateify savable
