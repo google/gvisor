@@ -16,9 +16,9 @@ package packet
 
 import (
 	"context"
-	"fmt"
 	"time"
 
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
@@ -58,7 +58,8 @@ func (ep *endpoint) Restore(_ *stack.Stack) {
 
 	ep.ops.InitHandler(ep, ep.stack, tcpip.GetStackSendBufferLimits, tcpip.GetStackReceiveBufferLimits)
 	if err := ep.stack.RegisterPacketEndpoint(ep.boundNIC, ep.boundNetProto, ep); err != nil {
-		panic(fmt.Sprintf("RegisterPacketEndpoint(%d, %d, _): %s", ep.boundNIC, ep.boundNetProto, err))
+		log.Warningf("RegisterPacketEndpoint(%d, %d, _) failed during restore with error: %s", ep.boundNIC, ep.boundNetProto, err)
+		return
 	}
 
 	ep.rcvMu.Lock()
