@@ -202,15 +202,14 @@ func (s *State) PatchSyscall(ctx context.Context, ac *arch.Context64, mm memoryM
 	//     existing patched syscalls, in case the traced program was patched
 	//     before being traced (e.g. PTRACE_ATTACH on an already running
 	//     process).
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if task.Tracer() != nil {
 		if s.nextTrap > 0 {
 			ctx.Warningf("LIKELY ERROR: Attached tracer to process with patched syscalls (traps %d)! Systrap is not fully compatible with ptrace/debuggers, program may die unexpectedly soon! Use `--systrap-disable-syscall-patching` as a workaround.", s.nextTrap)
 		}
 		return nil
 	}
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
 
 	sysno := ac.SyscallNo()
 	patchAddr := ac.IP() - uintptr(len(jmpInst))

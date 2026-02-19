@@ -30,6 +30,7 @@ import (
 // Reused flag names.
 const (
 	flagDebug                   = "debug"
+	flagDebugCommand            = "debug-command"
 	flagDebugToUserLog          = "debug-to-user-log"
 	flagStrace                  = "strace"
 	flagStraceSyscalls          = "strace-syscalls"
@@ -61,7 +62,7 @@ func RegisterFlags(flagSet *flag.FlagSet) {
 
 	// Debugging flags.
 	flagSet.String("debug-log", "", "additional location for logs. If it ends with '/', log files are created inside the directory with default names. The following variables are available: %TIMESTAMP%, %COMMAND%.")
-	flagSet.String("debug-command", "", `comma-separated list of commands to be debugged if --debug-log is also set. Empty means debug all. "!" negates the expression. E.g. "create,start" or "!boot,events"`)
+	flagSet.String(flagDebugCommand, "", `comma-separated list of commands to be debugged if --debug-log is also set. Empty means debug all. "!" negates the expression. E.g. "create,start" or "!boot,events"`)
 	flagSet.String("panic-log", "", "file path where panic reports and other Go's runtime messages are written.")
 	flagSet.String("coverage-report", "", "file path where Go coverage reports are written. Reports will only be generated if runsc is built with --collect_code_coverage and --instrumentation_filter Bazel flags.")
 	flagSet.Bool("log-packets", false, "enable network packet logging.")
@@ -181,6 +182,7 @@ var overrideAllowlist = map[string]struct {
 	check func(name string, value string) error
 }{
 	flagDebug:                   {},
+	flagDebugCommand:            {},
 	flagDebugToUserLog:          {},
 	flagStrace:                  {},
 	flagStraceSyscalls:          {},

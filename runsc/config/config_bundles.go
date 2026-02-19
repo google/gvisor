@@ -20,7 +20,8 @@ package config
 // Bundles is the set of each Bundle.
 // Each bundle is a named set of flag names and flag values.
 // Bundles may be turned on using pod annotations.
-// Bundles have lower precedence than flag pod annotation and command-line flags.
+// Bundles have lower precedence than flag pod annotation, but higher
+// precedence than command-line flags.
 // Bundles are mutually exclusive iff their flag values overlap and differ.
 var Bundles = map[BundleName]Bundle{
 	"experimental-high-performance": {
