@@ -876,9 +876,6 @@ func (s *Server) Run(ctx context.Context) error {
 	if conf.MetricServer == "" {
 		return errors.New("config does not specify the metric server address (--metric-server)")
 	}
-	if strings.Contains(conf.MetricServer, "%ID%") {
-		return fmt.Errorf("metric server address contains '%%ID%%': %v; this should have been replaced by the parent process", conf.MetricServer)
-	}
 	if _, err := container.ListSandboxes(conf.RootDir); err != nil {
 		if !m.allowUnknownRoot {
 			return fmt.Errorf("invalid root directory %q: tried to list sandboxes within it and got: %w", conf.RootDir, err)
