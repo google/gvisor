@@ -389,7 +389,7 @@ func runRunsc(tc *gtest.TestCase, spec *specs.Spec) error {
 	undeclaredOutputsDir, ok = unix.Getenv("TEST_UNDECLARED_OUTPUTS_DIR")
 	if ok {
 		// Create log directory dedicated for this test.
-		testLogDir = filepath.Join(undeclaredOutputsDir, strings.Replace(name, "/", "_", -1))
+		testLogDir = filepath.Join(undeclaredOutputsDir, strings.ReplaceAll(name, "/", "_"))
 		if err := os.MkdirAll(testLogDir, 0755); err != nil {
 			return fmt.Errorf("could not create test dir: %v", err)
 		}

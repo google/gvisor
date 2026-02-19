@@ -528,7 +528,7 @@ func (c *Container) FindPort(ctx context.Context, sandboxPort int) (int, error) 
 
 	port, err := strconv.Atoi(ports[0].HostPort)
 	if err != nil {
-		return -1, fmt.Errorf("error parsing port %q: %v", port, err)
+		return -1, fmt.Errorf("error parsing port %d: %v", port, err)
 	}
 	return port, nil
 }
@@ -1017,7 +1017,7 @@ func (cp *ContainerPool) String() string {
 	}
 	utilizationPct := 100.0 * cp.getUtilizationLocked(now)
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("ContainerPool[%d/%d containers in use, utilization=%.1f%%]: ", containersInUse, len(containers), utilizationPct))
+	fmt.Fprintf(&sb, "ContainerPool[%d/%d containers in use, utilization=%.1f%%]: ", containersInUse, len(containers), utilizationPct)
 	for i, container := range containers {
 		if i > 0 {
 			sb.WriteString(", ")

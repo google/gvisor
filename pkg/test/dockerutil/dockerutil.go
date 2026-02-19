@@ -70,7 +70,7 @@ var (
 	// This matches the string "native.cgroupdriver=systemd" (including optional
 	// whitespace), which can be found in a docker daemon configuration file's
 	// exec-opts field.
-	useSystemdRgx = regexp.MustCompile("\\s*(native\\.cgroupdriver)\\s*=\\s*(systemd)\\s*")
+	useSystemdRgx = regexp.MustCompile(`\s*(native\.cgroupdriver)\s*=\s*(systemd)\s*`)
 )
 
 // dockerCLIPath returns the path to the docker CLI binary.
