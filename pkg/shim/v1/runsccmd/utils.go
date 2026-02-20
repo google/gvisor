@@ -51,7 +51,7 @@ var pathLikeFlags = []string{
 
 // replaceID replaces %ID% in `path` with the given sandbox ID.
 func replaceID(id string, path string) string {
-	return strings.Replace(path, "%ID%", id, -1)
+	return strings.ReplaceAll(path, "%ID%", id)
 }
 
 // EmittedPaths returns a list of file paths that the sandbox may need to

@@ -456,14 +456,14 @@ func (ep *endpoint) UpdateLastError(err tcpip.Error) {
 
 // GetSockOpt implements tcpip.Endpoint.GetSockOpt.
 func (ep *endpoint) GetSockOpt(opt tcpip.GettableSocketOption) tcpip.Error {
-	switch opt.(type) {
+	switch opt := opt.(type) {
 	case *tcpip.TpacketStats:
 		ep.packetMmapMu.RLock()
 		defer ep.packetMmapMu.RUnlock()
 		if ep.packetMMapEp == nil {
 			return nil
 		}
-		*(opt.(*tcpip.TpacketStats)) = ep.packetMMapEp.Stats()
+		*opt = ep.packetMMapEp.Stats()
 		return nil
 	default:
 		return &tcpip.ErrUnknownProtocolOption{}

@@ -174,7 +174,7 @@ func TestParseSize(t *testing.T) {
 		{"9999999999999999P", 0, true},
 	}
 	for _, tt := range tests {
-		testname := fmt.Sprintf("%s", tt.s)
+		testname := tt.s
 		t.Run(testname, func(t *testing.T) {
 			size, err := parseSize(tt.s)
 			if tt.wantError && err == nil {

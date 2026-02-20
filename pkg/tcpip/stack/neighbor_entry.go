@@ -579,7 +579,7 @@ func (e *neighborEntry) handleConfirmationLocked(linkAddr tcpip.LinkAddress, fla
 			// here.
 			ep := e.cache.nic.getNetworkEndpoint(header.IPv6ProtocolNumber)
 			if ep == nil {
-				panic(fmt.Sprintf("have a neighbor entry for an IPv6 router but no IPv6 network endpoint"))
+				panic("have a neighbor entry for an IPv6 router but no IPv6 network endpoint")
 			}
 
 			if ndpEP, ok := ep.(NDPEndpoint); ok {

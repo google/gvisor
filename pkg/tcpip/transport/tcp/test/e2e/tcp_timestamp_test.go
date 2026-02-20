@@ -120,7 +120,7 @@ func TestTimeStampEnabledConnect(t *testing.T) {
 		}, result, checker.IgnoreCmpPath("ControlMessages")); diff != "" {
 			t.Errorf("Read: unexpected result (-want +got):\n%s", diff)
 		}
-		if got, want := buf, data; bytes.Compare(got, want) != 0 {
+		if got, want := buf, data; !bytes.Equal(got, want) {
 			t.Fatalf("Data is different: got: %v, want: %v", got, want)
 		}
 	}
@@ -310,7 +310,7 @@ func TestSegmentNotDroppedWhenTimestampMissing(t *testing.T) {
 	}, result, checker.IgnoreCmpPath("ControlMessages")); diff != "" {
 		t.Errorf("Read: unexpected result (-want +got):\n%s", diff)
 	}
-	if got, want := buf.Bytes(), data; bytes.Compare(got, want) != 0 {
+	if got, want := buf.Bytes(), data; !bytes.Equal(got, want) {
 		t.Fatalf("Data is different: got: %v, want: %v", got, want)
 	}
 }

@@ -386,8 +386,9 @@ func (i *importer) checkPackage(path string, srcs []string) (*types.Package, Fin
 	}
 	typesSizes := types.SizesFor("gc", flags.GOARCH)
 	typeConfig := types.Config{
-		Importer: ei,
-		Error:    func(error) {},
+		Importer:  ei,
+		Error:     func(error) {},
+		GoVersion: flags.GOVERSION,
 	}
 	typesInfo := &types.Info{
 		Types:      make(map[ast.Expr]types.TypeAndValue),

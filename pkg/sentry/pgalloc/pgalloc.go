@@ -720,10 +720,7 @@ func (f *MemoryFile) Allocate(length uint64, opts AllocOpts) (memmap.FileRange, 
 			}
 			if canPopulate() {
 				rem := dsts
-				for {
-					if !tryPopulate(rem.Head()) {
-						break
-					}
+				for tryPopulate(rem.Head()) {
 					rem = rem.Tail()
 					if rem.IsEmpty() {
 						needHugeTouch = false
@@ -943,7 +940,7 @@ func (f *MemoryFile) extendChunksLocked(alloc *allocState) error {
 	}
 
 	// Update chunk state.
-	newChunks := make([]chunkInfo, newNrChunks, newNrChunks)
+	newChunks := make([]chunkInfo, newNrChunks)
 	copy(newChunks, oldChunks)
 	m := mapStart
 	for i := oldNrChunks; i < newNrChunks; i++ {

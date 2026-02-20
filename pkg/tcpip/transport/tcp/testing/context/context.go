@@ -596,7 +596,7 @@ func (c *Context) ReceiveAndCheckPacketWithOptions(data []byte, offset, size, op
 	)
 
 	pdata := data[offset:][:size]
-	if p := v.AsSlice()[header.IPv4MinimumSize+header.TCPMinimumSize+optlen:]; bytes.Compare(pdata, p) != 0 {
+	if p := v.AsSlice()[header.IPv4MinimumSize+header.TCPMinimumSize+optlen:]; !bytes.Equal(pdata, p) {
 		c.t.Fatalf("Data is different: expected %v, got %v", pdata, p)
 	}
 }
@@ -624,7 +624,7 @@ func (c *Context) ReceiveNonBlockingAndCheckPacket(data []byte, offset, size int
 	)
 
 	pdata := data[offset:][:size]
-	if p := v.AsSlice()[header.IPv4MinimumSize+header.TCPMinimumSize:]; bytes.Compare(pdata, p) != 0 {
+	if p := v.AsSlice()[header.IPv4MinimumSize+header.TCPMinimumSize:]; !bytes.Equal(pdata, p) {
 		c.t.Fatalf("Data is different: expected %v, got %v", pdata, p)
 	}
 	return true

@@ -459,9 +459,7 @@ func (w *Watches) Remove(id uint64) {
 
 	// It is possible for w.Remove() to be called for the same watch multiple
 	// times. See the treatment of one-shot watches in Watches.Notify().
-	if _, ok := w.ws[id]; ok {
-		delete(w.ws, id)
-	}
+	delete(w.ws, id)
 }
 
 // Notify queues a new event with watches in this set. Watches with

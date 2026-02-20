@@ -38,6 +38,9 @@ var (
 	// GOARCH defines the GOARCH for analysis.
 	GOARCH string
 
+	// GOVERSION defines the Go version for analysis.
+	GOVERSION string
+
 	// BuildTags defines the set of build tags for analysis. Note that
 	// while this may also be a StringList, it is kept as an explicit
 	// comma-separated list in order to build the standard flag.
@@ -61,6 +64,7 @@ func init() {
 	flag.StringVar(&Go, "go", "go", "command used to invoke 'go tool'")
 	flag.StringVar(&GOOS, "GOOS", runtime.GOOS, "GOOS for analysis")
 	flag.StringVar(&GOARCH, "GOARCH", runtime.GOARCH, "GOARCH for analysis")
+	flag.StringVar(&GOVERSION, "GOVERSION", "", "GOVERSION for analysis")
 	flag.StringVar(&BuildTags, "tags", "", "comma-separated build tags")
 	flag.Var(&ImportMap, "import", "map of import paths to binaries")
 	flag.Var(&ArchiveMap, "archive", "map of import paths to archives")

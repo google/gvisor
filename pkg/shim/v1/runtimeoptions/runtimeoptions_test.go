@@ -37,7 +37,7 @@ func TestCreateTaskRequest(t *testing.T) {
 	if err := proto.MarshalText(&textBuffer, got); err != nil {
 		t.Errorf("unable to marshal text: %v", err)
 	}
-	t.Logf("got: %s", string(textBuffer.Bytes()))
+	t.Logf("got: %s", textBuffer.String())
 
 	// Check the options.
 	wantOptions := &Options{}

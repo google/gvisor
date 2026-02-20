@@ -16,7 +16,6 @@ package jenkins
 import (
 	"bytes"
 	"encoding/binary"
-	"hash"
 	"hash/fnv"
 	"math"
 	"testing"
@@ -78,7 +77,7 @@ func TestIntegrity32(t *testing.T) {
 		t.Fatalf("Sum()=0x%x, but with partial writes, Sum()=0x%x", sum, a)
 	}
 
-	sum32 := h.(hash.Hash32).Sum32()
+	sum32 := h.Sum32()
 	if sum32 != binary.BigEndian.Uint32(sum) {
 		t.Fatalf("Sum()=0x%x, but Sum32()=0x%x", sum, sum32)
 	}

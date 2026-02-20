@@ -84,11 +84,12 @@ func Prctl(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, 
 		val := args[1].Int()
 		// prctl(2): arg2 must be either 0 (permitted capabilities are cleared)
 		// or 1 (permitted capabilities are kept).
-		if val == 0 {
+		switch val {
+		case 0:
 			t.SetKeepCaps(false)
-		} else if val == 1 {
+		case 1:
 			t.SetKeepCaps(true)
-		} else {
+		default:
 			return 0, nil, linuxerr.EINVAL
 		}
 

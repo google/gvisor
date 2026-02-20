@@ -176,7 +176,7 @@ func (m *multiportMatcherV1) Match(hook stack.Hook, pkt *stack.PacketBuffer, _, 
 		if exact {
 			// Exact port match.
 			if exactPortMatch(m.flags, srcPort, dstPort, m.ports[i]) {
-				return (true != m.invert), false
+				return !m.invert, false
 			}
 
 			i++
@@ -184,13 +184,13 @@ func (m *multiportMatcherV1) Match(hook stack.Hook, pkt *stack.PacketBuffer, _, 
 		}
 
 		if rangedPortMatch(m.flags, srcPort, dstPort, m.ports[i], m.ports[i+1]) {
-			return (true != m.invert), false
+			return !m.invert, false
 		}
 		i += 2
 	}
 
 	// No match; invert if needed.
-	return (false != m.invert), false
+	return m.invert, false
 }
 
 // rangedPortMatch return true if "srcPort" or "dstPort" are

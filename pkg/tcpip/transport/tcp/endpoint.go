@@ -737,7 +737,6 @@ func (e *Endpoint) UnlockUser() {
 	// processor goroutine starts running before we release the lock here
 	// then it will fail to process as TryLock() will fail.
 	processor.queueEndpoint(e)
-	return
 }
 
 // StopWork halts packet processing. Only to be used in tests.
@@ -772,10 +771,7 @@ func (e *Endpoint) AssertLockHeld(locked *Endpoint) {
 // TODO(b/226403629): Remove this once checklocks understands TryLock.
 // +checklocksacquire:e.mu
 func (e *Endpoint) TryLock() bool {
-	if e.mu.TryLock() {
-		return true // +checklocksforce
-	}
-	return false // +checklocksignore
+	return e.mu.TryLock() // +checklocksforce: TryLock.
 }
 
 // setEndpointState updates the state of the endpoint to state atomically. This
@@ -3285,11 +3281,7 @@ func GetTCPSendBufferLimits(sh tcpip.StackHandler) tcpip.SendBufferSizeOption {
 	// This type assertion is safe because only the TCP stack calls this
 	// function.
 	ss := sh.(*stack.Stack).TCPSendBufferLimits()
-	return tcpip.SendBufferSizeOption{
-		Min:     ss.Min,
-		Default: ss.Default,
-		Max:     ss.Max,
-	}
+	return tcpip.SendBufferSizeOption(ss)
 }
 
 // allowOutOfWindowAck returns true if an out-of-window ACK can be sent now.
@@ -3317,11 +3309,7 @@ func GetTCPReceiveBufferLimits(s tcpip.StackHandler) tcpip.ReceiveBufferSizeOpti
 		panic(fmt.Sprintf("s.TransportProtocolOption(%d, %#v) = %s", header.TCPProtocolNumber, ss, err))
 	}
 
-	return tcpip.ReceiveBufferSizeOption{
-		Min:     ss.Min,
-		Default: ss.Default,
-		Max:     ss.Max,
-	}
+	return tcpip.ReceiveBufferSizeOption(ss)
 }
 
 // computeTCPSendBufferSize implements auto tuning of send buffer size and

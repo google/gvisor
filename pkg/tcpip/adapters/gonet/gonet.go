@@ -183,7 +183,7 @@ func (d *deadlineTimer) setDeadline(cancelCh *chan struct{}, timer **time.Timer,
 		return
 	}
 
-	timeout := t.Sub(time.Now())
+	timeout := time.Until(t)
 	if timeout <= 0 {
 		close(*cancelCh)
 		return

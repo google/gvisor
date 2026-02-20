@@ -580,9 +580,9 @@ func DebugLogFile(logPattern, command, test string, timestamp time.Time) (*os.Fi
 		// Default format: <debug-log>/runsc.log.<yyyymmdd-hhmmss.uuuuuu>.<command>.txt
 		logPattern += "runsc.log.%TIMESTAMP%.%COMMAND%.txt"
 	}
-	logPattern = strings.Replace(logPattern, "%TIMESTAMP%", timestamp.Format("20060102-150405.000000"), -1)
-	logPattern = strings.Replace(logPattern, "%COMMAND%", command, -1)
-	logPattern = strings.Replace(logPattern, "%TEST%", test, -1)
+	logPattern = strings.ReplaceAll(logPattern, "%TIMESTAMP%", timestamp.Format("20060102-150405.000000"))
+	logPattern = strings.ReplaceAll(logPattern, "%COMMAND%", command)
+	logPattern = strings.ReplaceAll(logPattern, "%TEST%", test)
 
 	dir := filepath.Dir(logPattern)
 	if err := os.MkdirAll(dir, 0775); err != nil {

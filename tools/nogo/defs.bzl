@@ -30,6 +30,7 @@ NogoTargetInfo = provider(
     fields = {
         "goarch": "the build architecture (GOARCH)",
         "goos": "the build OS target (GOOS)",
+        "goversion": "the Go language version (GOVERSION)",
     },
 )
 
@@ -37,6 +38,7 @@ def _nogo_target_impl(ctx):
     return [NogoTargetInfo(
         goarch = ctx.attr.goarch,
         goos = ctx.attr.goos,
+        goversion = ctx.attr.goversion,
     )]
 
 nogo_target = go_rule(
@@ -49,6 +51,10 @@ nogo_target = go_rule(
         ),
         "goos": attr.string(
             doc = "the Go OS target (propagated to other rules).",
+            mandatory = True,
+        ),
+        "goversion": attr.string(
+            doc = "the Go version (propagated to other rules).",
             mandatory = True,
         ),
     },
@@ -168,6 +174,7 @@ def _nogo_config(ctx, deps):
         "-go=%s" % go_ctx.go.path,
         "-GOOS=%s" % go_ctx.goos,
         "-GOARCH=%s" % go_ctx.goarch,
+        "-GOVERSION=%s" % nogo_target_info.goversion,
         "-tags=%s" % (",".join(go_ctx.gotags)),
     ]
     inputs = []

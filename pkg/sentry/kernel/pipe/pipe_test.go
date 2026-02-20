@@ -90,8 +90,8 @@ func TestPipeWriteUntilEnd(t *testing.T) {
 	runTest(t, atomicIOBytes, func(ctx context.Context, r *vfs.FileDescription, w *vfs.FileDescription) {
 		msg := []byte("here's some bytes")
 
-		wDone := make(chan struct{}, 0)
-		rDone := make(chan struct{}, 0)
+		wDone := make(chan struct{})
+		rDone := make(chan struct{})
 		defer func() {
 			// Signal the reader to stop and wait until it does so.
 			close(wDone)

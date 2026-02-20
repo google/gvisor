@@ -538,7 +538,7 @@ func NewStandardPriority(name string, family stack.AddressFamily, hook stack.NFH
 
 	// Ensures the standard priority name is set.
 	if name == "" {
-		return Priority{}, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("standard priority name cannot be empty"))
+		return Priority{}, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "standard priority name cannot be empty")
 	}
 
 	// Looks up standard priority name in the standard priority matrix.
@@ -646,7 +646,7 @@ var spmIP = map[string]standardPriority{ // from uapi/linux/netfilter_ipv4.h
 // Note: errors if the provided base chain info is nil.
 func validateBaseChainInfo(info *BaseChainInfo, family stack.AddressFamily) *syserr.AnnotatedError {
 	if info == nil {
-		return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("base chain info is nil"))
+		return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "base chain info is nil")
 	}
 
 	// Validates the hook.
@@ -788,7 +788,7 @@ func (rd verdictData) equal(other registerData) bool {
 // validateRegister ensures the register is compatible with verdictData.
 func (rd verdictData) validateRegister(reg uint8) *syserr.AnnotatedError {
 	if !isVerdictRegister(reg) {
-		return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("verdict can only be stored in verdict register"))
+		return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "verdict can only be stored in verdict register")
 	}
 	return nil
 }
@@ -850,7 +850,7 @@ func (rd bytesData) equal(other registerData) bool {
 // validateRegister ensures the register is compatible with this bytes data.
 func (rd bytesData) validateRegister(reg uint8) *syserr.AnnotatedError {
 	if isVerdictRegister(reg) {
-		return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("data cannot be stored in verdict register"))
+		return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "data cannot be stored in verdict register")
 	}
 	if is4ByteRegister(reg) && len(rd.data) > linux.NFT_REG32_SIZE {
 		return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("%d-byte data cannot be stored in %d-byte register", len(rd.data), linux.NFT_REG32_SIZE))
@@ -985,7 +985,7 @@ func AFtoNetlinkAF(af uint8) (stack.AddressFamily, *syserr.Error) {
 func nftDataInit(tab *Table, regType uint32, dataBytes nlmsg.AttrsView) (registerData, *syserr.AnnotatedError) {
 	dataAttrs, ok := NfParse(dataBytes)
 	if !ok {
-		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("Nftables: Failed to parse data bytes for nested expression data"))
+		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: Failed to parse data bytes for nested expression data")
 	}
 
 	if valueBytes, ok := dataAttrs[linux.NFTA_DATA_VALUE]; ok {
@@ -1009,7 +1009,7 @@ func nftDataInit(tab *Table, regType uint32, dataBytes nlmsg.AttrsView) (registe
 		return newVerdictData(verdict), nil
 	}
 
-	return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("Nftables: Attributes NFTA_DATA_VALUE or NFTA_DATA_VERDICT not found"))
+	return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: Attributes NFTA_DATA_VALUE or NFTA_DATA_VERDICT not found")
 }
 
 // nftParseReg parses the register type and returns the register number.
@@ -1050,12 +1050,12 @@ func nftValidateRegister(reg uint32, regType uint32, data registerData) (uint8, 
 
 		verdictData, ok := data.(verdictData)
 		if !ok {
-			return 0, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("Nftables: Register data is not a verdict data"))
+			return 0, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: Register data is not a verdict data")
 		}
 
 		// TODO - b/434244017: Add insertion-time validation of chains for jump and goto verdicts.
 		if int32(verdictData.data.Code) == linux.NFT_GOTO {
-			return 0, syserr.NewAnnotatedError(syserr.ErrNotSupported, fmt.Sprintf("Nftables: Verdicts with goto codes are not yet supported"))
+			return 0, syserr.NewAnnotatedError(syserr.ErrNotSupported, "Nftables: Verdicts with goto codes are not yet supported")
 		}
 	default:
 		if regType != linux.NFT_DATA_VALUE {
@@ -1088,7 +1088,7 @@ func validateVerdictData(tab *Table, bytes nlmsg.AttrsView) (stack.NFVerdict, *s
 
 	verdictCode, ok := verdictCodeBytes.Uint32()
 	if !ok {
-		return v, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("Nftables: NFTA_VERDICT_CODE attribute cannot be parsed to a uint32"))
+		return v, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: NFTA_VERDICT_CODE attribute cannot be parsed to a uint32")
 	}
 
 	verdictCode = nlmsg.NetToHostU32(verdictCode)
@@ -1105,21 +1105,21 @@ func validateVerdictData(tab *Table, bytes nlmsg.AttrsView) (stack.NFVerdict, *s
 			}
 		} else if _, ok := verdictAttrs[linux.NFTA_VERDICT_CHAIN_ID]; ok {
 			// TODO - b/434243967: Add support for looking up chains via their transaction id.
-			return v, syserr.NewAnnotatedError(syserr.ErrNotSupported, fmt.Sprintf("Nftables: Looking up chains via their id is not supported"))
+			return v, syserr.NewAnnotatedError(syserr.ErrNotSupported, "Nftables: Looking up chains via their id is not supported")
 		} else {
-			return v, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("Nftables: Attributes for verdict data must contain a chain name or chain id"))
+			return v, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: Attributes for verdict data must contain a chain name or chain id")
 		}
 
 		if chain.IsBaseChain() {
-			return v, syserr.NewAnnotatedError(syserr.ErrNotSupported, fmt.Sprintf("Nftables: Base chains are not supported as jump targets"))
+			return v, syserr.NewAnnotatedError(syserr.ErrNotSupported, "Nftables: Base chains are not supported as jump targets")
 		}
 
 		if chain.IsBound() {
-			return v, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("Nftables: Already Bound chains cannot be jump targets"))
+			return v, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: Already Bound chains cannot be jump targets")
 		}
 
 		if chain.GetFlags()&linux.NFT_CHAIN_BINDING != 0 {
-			return v, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("Nftables: Chain binding must be set for chains to be used as jump targets"))
+			return v, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: Chain binding must be set for chains to be used as jump targets")
 		}
 
 		if !chain.IncrementChainUse() {

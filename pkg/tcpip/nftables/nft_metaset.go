@@ -79,7 +79,7 @@ func (op metaSet) Dump() ([]byte, *syserr.AnnotatedError) {
 // newMetaSet creates a new metaSet operation.
 func newMetaSet(key metaKey, sreg uint8) (*metaSet, *syserr.AnnotatedError) {
 	if isVerdictRegister(sreg) {
-		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("meta set operation does not support verdict register as source register"))
+		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "meta set operation does not support verdict register as source register")
 	}
 	if err := validateMetaKey(key); err != nil {
 		return nil, err

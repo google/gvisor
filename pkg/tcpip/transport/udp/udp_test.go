@@ -878,7 +878,7 @@ func TestWriteOnConnectedInvalidPort(t *testing.T) {
 func TestWriteOnBoundToV4Multicast(t *testing.T) {
 	for _, writeOpSequence := range writeOpSequences {
 		for _, flow := range []context.TestFlow{context.UnicastV4, context.MulticastV4, context.Broadcast} {
-			t.Run(fmt.Sprintf("%s", flow), func(t *testing.T) {
+			t.Run(flow.String(), func(t *testing.T) {
 				c := context.New(t, []stack.TransportProtocolFactory{udp.NewProtocol, icmp.NewProtocol6, icmp.NewProtocol4})
 				defer c.Cleanup()
 
@@ -900,7 +900,7 @@ func TestWriteOnBoundToV4Multicast(t *testing.T) {
 func TestWriteOnBoundToV4MappedMulticast(t *testing.T) {
 	for _, writeOpSequence := range writeOpSequences {
 		for _, flow := range []context.TestFlow{context.UnicastV4in6, context.MulticastV4in6, context.BroadcastIn6} {
-			t.Run(fmt.Sprintf("%s", flow), func(t *testing.T) {
+			t.Run(flow.String(), func(t *testing.T) {
 				c := context.New(t, []stack.TransportProtocolFactory{udp.NewProtocol, icmp.NewProtocol6, icmp.NewProtocol4})
 				defer c.Cleanup()
 
@@ -922,7 +922,7 @@ func TestWriteOnBoundToV4MappedMulticast(t *testing.T) {
 func TestWriteOnBoundToV6Multicast(t *testing.T) {
 	for _, writeOpSequence := range writeOpSequences {
 		for _, flow := range []context.TestFlow{context.UnicastV6, context.MulticastV6} {
-			t.Run(fmt.Sprintf("%s", flow), func(t *testing.T) {
+			t.Run(flow.String(), func(t *testing.T) {
 				c := context.New(t, []stack.TransportProtocolFactory{udp.NewProtocol, icmp.NewProtocol6, icmp.NewProtocol4})
 				defer c.Cleanup()
 
@@ -944,7 +944,7 @@ func TestWriteOnBoundToV6Multicast(t *testing.T) {
 func TestWriteOnBoundToV6OnlyMulticast(t *testing.T) {
 	for _, writeOpSequence := range writeOpSequences {
 		for _, flow := range []context.TestFlow{context.UnicastV6Only, context.MulticastV6Only} {
-			t.Run(fmt.Sprintf("%s", flow), func(t *testing.T) {
+			t.Run(flow.String(), func(t *testing.T) {
 				c := context.New(t, []stack.TransportProtocolFactory{udp.NewProtocol, icmp.NewProtocol6, icmp.NewProtocol4})
 				defer c.Cleanup()
 
@@ -966,7 +966,7 @@ func TestWriteOnBoundToV6OnlyMulticast(t *testing.T) {
 func TestWriteOnBoundToBroadcast(t *testing.T) {
 	for _, writeOpSequence := range writeOpSequences {
 		for _, flow := range []context.TestFlow{context.UnicastV4, context.MulticastV4, context.Broadcast} {
-			t.Run(fmt.Sprintf("%s", flow), func(t *testing.T) {
+			t.Run(flow.String(), func(t *testing.T) {
 				c := context.New(t, []stack.TransportProtocolFactory{udp.NewProtocol, icmp.NewProtocol6, icmp.NewProtocol4})
 				defer c.Cleanup()
 
@@ -988,7 +988,7 @@ func TestWriteOnBoundToBroadcast(t *testing.T) {
 func TestWriteOnBoundToV4MappedBroadcast(t *testing.T) {
 	for _, writeOpSequence := range writeOpSequences {
 		for _, flow := range []context.TestFlow{context.UnicastV4in6, context.MulticastV4in6, context.BroadcastIn6} {
-			t.Run(fmt.Sprintf("%s", flow), func(t *testing.T) {
+			t.Run(flow.String(), func(t *testing.T) {
 				c := context.New(t, []stack.TransportProtocolFactory{udp.NewProtocol, icmp.NewProtocol6, icmp.NewProtocol4})
 				defer c.Cleanup()
 

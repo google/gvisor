@@ -65,8 +65,8 @@ func (s *symbolMap) mergeOrResolve(pass *analysis.Pass, other symbolMap, merge b
 				continue
 			}
 			if localSig != otherSig {
-				switch {
-				case symbolName == "ifaceE2I":
+				switch symbolName {
+				case "ifaceE2I":
 					// The runtime uses a different signature for this than other packages, e.g.
 					// the runtime has func(uintptr, eface, uintptr) whereas externally it is
 					// declared as func(uintptr, any, uintptr). This is a clever way to directly
@@ -270,7 +270,7 @@ var (
 // simplifyType returns a simplified type string.
 func simplifyType(t types.Type, maxDepth int) (string, int) {
 	if maxDepth <= 0 {
-		return fmt.Sprintf("..."), maxDepth // Don't bother.
+		return "...", maxDepth // Don't bother.
 	}
 	switch x := t.Underlying().(type) {
 	case *types.Pointer:

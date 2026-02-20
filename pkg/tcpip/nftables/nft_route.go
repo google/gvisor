@@ -76,9 +76,9 @@ func validateRouteKey(key routeKey) *syserr.AnnotatedError {
 		// the time of evaluation. In the worst case, we don't want the user to
 		// initialize a route with this key and then have it silently break and
 		// yield a difficult-to-debug error.
-		return syserr.NewAnnotatedError(syserr.ErrNotSupported, fmt.Sprintf("traffic class id not supported"))
+		return syserr.NewAnnotatedError(syserr.ErrNotSupported, "traffic class id not supported")
 	case linux.NFT_RT_XFRM:
-		return syserr.NewAnnotatedError(syserr.ErrNotSupported, fmt.Sprintf("xfrm transformation not supported"))
+		return syserr.NewAnnotatedError(syserr.ErrNotSupported, "xfrm transformation not supported")
 	default:
 		return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("unknown route key: %d", int(key)))
 	}
@@ -87,7 +87,7 @@ func validateRouteKey(key routeKey) *syserr.AnnotatedError {
 // newRoute creates a new route operation.
 func newRoute(key routeKey, dreg uint8) (*route, *syserr.AnnotatedError) {
 	if isVerdictRegister(dreg) {
-		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("route operation does not support verdict register as destination register"))
+		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "route operation does not support verdict register as destination register")
 	}
 	if err := validateRouteKey(key); err != nil {
 		return nil, err

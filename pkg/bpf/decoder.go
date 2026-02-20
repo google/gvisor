@@ -54,9 +54,9 @@ func decode(inst Instruction, line int, w *bytes.Buffer) error {
 	case Ldx:
 		err = decodeLdx(inst, w)
 	case St:
-		w.WriteString(fmt.Sprintf("M[%v] <- A", inst.K))
+		fmt.Fprintf(w, "M[%v] <- A", inst.K)
 	case Stx:
-		w.WriteString(fmt.Sprintf("M[%v] <- X", inst.K))
+		fmt.Fprintf(w, "M[%v] <- X", inst.K)
 	case Alu:
 		err = decodeAlu(inst, w)
 	case Jmp:
@@ -77,21 +77,21 @@ func decodeLd(inst Instruction, w *bytes.Buffer) error {
 
 	switch inst.OpCode & loadModeMask {
 	case Imm:
-		w.WriteString(fmt.Sprintf("%v", inst.K))
+		fmt.Fprintf(w, "%v", inst.K)
 	case Abs:
-		w.WriteString(fmt.Sprintf("P[%v:", inst.K))
+		fmt.Fprintf(w, "P[%v:", inst.K)
 		if err := decodeLdSize(inst, w); err != nil {
 			return err
 		}
 		w.WriteString("]")
 	case Ind:
-		w.WriteString(fmt.Sprintf("P[X+%v:", inst.K))
+		fmt.Fprintf(w, "P[X+%v:", inst.K)
 		if err := decodeLdSize(inst, w); err != nil {
 			return err
 		}
 		w.WriteString("]")
 	case Mem:
-		w.WriteString(fmt.Sprintf("M[%v]", inst.K))
+		fmt.Fprintf(w, "M[%v]", inst.K)
 	case Len:
 		w.WriteString("len")
 	default:
@@ -120,13 +120,13 @@ func decodeLdx(inst Instruction, w *bytes.Buffer) error {
 
 	switch inst.OpCode & loadModeMask {
 	case Imm:
-		w.WriteString(fmt.Sprintf("%v", inst.K))
+		fmt.Fprintf(w, "%v", inst.K)
 	case Mem:
-		w.WriteString(fmt.Sprintf("M[%v]", inst.K))
+		fmt.Fprintf(w, "M[%v]", inst.K)
 	case Len:
 		w.WriteString("len")
 	case Msh:
-		w.WriteString(fmt.Sprintf("4*(P[%v:1]&0xf)", inst.K))
+		fmt.Fprintf(w, "4*(P[%v:1]&0xf)", inst.K)
 	default:
 		return fmt.Errorf("invalid BPF LDX instruction: %v", linux.BPFInstruction(inst))
 	}
@@ -172,7 +172,7 @@ func decodeAlu(inst Instruction, w *bytes.Buffer) error {
 func decodeSource(inst Instruction, w *bytes.Buffer) error {
 	switch inst.OpCode & srcAluJmpMask {
 	case K:
-		w.WriteString(fmt.Sprintf("%v", inst.K))
+		fmt.Fprintf(w, "%v", inst.K)
 	case X:
 		w.WriteString("X")
 	default:
@@ -205,10 +205,9 @@ func decodeJmp(inst Instruction, line int, w *bytes.Buffer) error {
 		if err := decodeSource(inst, w); err != nil {
 			return err
 		}
-		w.WriteString(
-			fmt.Sprintf(") ? %s : %s",
-				printJmpTarget(uint32(inst.JumpIfTrue), line),
-				printJmpTarget(uint32(inst.JumpIfFalse), line)))
+		fmt.Fprintf(w, ") ? %s : %s",
+			printJmpTarget(uint32(inst.JumpIfTrue), line),
+			printJmpTarget(uint32(inst.JumpIfFalse), line))
 	}
 	return nil
 }
@@ -227,7 +226,7 @@ func decodeRet(inst Instruction, w *bytes.Buffer) error {
 	code := inst.OpCode & srcRetMask
 	switch code {
 	case K:
-		w.WriteString(fmt.Sprintf("%v", inst.K))
+		fmt.Fprintf(w, "%v", inst.K)
 	case A:
 		w.WriteString("A")
 	default:

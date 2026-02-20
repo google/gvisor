@@ -631,8 +631,7 @@ func (m *machine) Put(c *vCPU) {
 // newDirtySet returns a new dirty set.
 func (m *machine) newDirtySet() *dirtySet {
 	return &dirtySet{
-		vCPUMasks: make([]atomicbitops.Uint64,
-			(m.maxVCPUs+63)/64, (m.maxVCPUs+63)/64),
+		vCPUMasks: make([]atomicbitops.Uint64, (m.maxVCPUs+63)/64),
 	}
 }
 

@@ -112,7 +112,7 @@ func (vfs *VirtualFilesystem) getFilesystemType(name string) *registeredFilesyst
 	fsname := name
 	// Fetch a meaningful part of name if there is a dot in the name
 	// and use left part of a string as fname.
-	if strings.Index(name, ".") != -1 {
+	if strings.Contains(name, ".") {
 		fsname = strings.Split(name, ".")[0]
 	}
 	return vfs.fsTypes[fsname]

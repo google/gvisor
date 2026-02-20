@@ -604,16 +604,17 @@ func findReasons(pass *analysis.Pass, fdecl *ast.FuncDecl) ([]EscapeReason, bool
 			types := strings.Split(c.Text[len(magicParams):], ",")
 			found = true // For below.
 			for i := 0; i < len(types); i++ {
-				if types[i] == "local" {
+				switch types[i] {
+				case "local":
 					// Limit search to local escapes.
 					local = true
-				} else if types[i] == "all" {
+				case "all":
 					// Append all reasons.
 					reasons = append(reasons, allReasons...)
-				} else if types[i] == "hard" {
+				case "hard":
 					// Append all hard reasons.
 					reasons = append(reasons, hardReasons...)
-				} else {
+				default:
 					r, ok := escapeTypes[types[i]]
 					if !ok {
 						// This is not a valid escape reason.
@@ -814,8 +815,7 @@ func run(pass *analysis.Pass, binary io.Reader) (any, error) {
 		return
 	}
 
-	var analyzeBasicBlock func(*ssa.BasicBlock) []Escapes // Recursive.
-	analyzeBasicBlock = func(block *ssa.BasicBlock) (rval []Escapes) {
+	analyzeBasicBlock := func(block *ssa.BasicBlock) (rval []Escapes) {
 		for _, inst := range block.Instrs {
 			if es := analyzeInstruction(inst); !es.IsEmpty() {
 				rval = append(rval, es)

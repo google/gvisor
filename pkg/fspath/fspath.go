@@ -161,10 +161,7 @@ func (it Iterator) Next() Iterator {
 	// aren't at the end of the path, there is definitely another path
 	// component.
 	i := it.end + 1
-	for {
-		if it.partialPathname[i] != pathSep {
-			break
-		}
+	for it.partialPathname[i] == pathSep {
 		i++
 	}
 	nextPartialPathname := it.partialPathname[i:]

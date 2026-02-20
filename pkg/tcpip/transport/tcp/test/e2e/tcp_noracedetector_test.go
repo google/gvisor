@@ -345,7 +345,8 @@ func cubicCwnd(origCwnd int, wMax int, congEventTime time.Time, sRTT time.Durati
 	// should be close to 50ms.
 	elapsed := (time.Since(congEventTime) + sRTT).Seconds()
 	k := math.Cbrt(float64(wMax) * 0.3 / 0.7)
-	wtRTT := 0.4*math.Pow(elapsed-k, 3) + float64(wMax)
+	delta := elapsed - k
+	wtRTT := 0.4*delta*delta*delta + float64(wMax)
 	cwnd += (wtRTT - cwnd) / cwnd
 	return int(cwnd)
 }

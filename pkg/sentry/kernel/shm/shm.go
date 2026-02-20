@@ -664,5 +664,4 @@ func (s *Shm) MarkDestroyed(ctx context.Context) {
 	// N.B. This cannot be the final DecRef, as the caller also
 	// holds a reference.
 	s.DecRef(ctx)
-	return
 }

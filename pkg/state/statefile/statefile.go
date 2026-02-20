@@ -321,11 +321,12 @@ func NewReader(r io.ReadCloser, key []byte) (io.ReadCloser, map[string]string, e
 	// Pick correct reader
 	var cr io.ReadCloser
 
-	if compression == CompressionLevelFlateBestSpeed {
+	switch compression {
+	case CompressionLevelFlateBestSpeed:
 		cr, err = compressio.NewReader(r, key)
-	} else if compression == CompressionLevelNone {
+	case CompressionLevelNone:
 		cr = compressio.NewSimpleReader(r, key)
-	} else {
+	default:
 		// Should never occur, as it has the default path.
 		return nil, nil, fmt.Errorf("metadata contains invalid compression flag value: %v", compression)
 	}

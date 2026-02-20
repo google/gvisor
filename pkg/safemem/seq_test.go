@@ -156,7 +156,7 @@ func TestBlockSeqIterBlocks(t *testing.T) {
 			srcs := test.BlockSeq()
 			// "Note that a non-nil empty slice and a nil slice ... are not
 			// deeply equal." - reflect
-			slices := make([][]byte, 0, 0)
+			slices := make([][]byte, 0)
 			for !srcs.IsEmpty() {
 				src := srcs.Head()
 				slices = append(slices, src.ToSlice())
@@ -193,7 +193,7 @@ func TestBlockSeqIterBytes(t *testing.T) {
 				}
 				srcs = nextSrcs
 			}
-			if got := string(dst.Bytes()); got != test.want {
+			if got := dst.String(); got != test.want {
 				t.Errorf("Copied string: got %q, wanted %q", got, test.want)
 			}
 		})

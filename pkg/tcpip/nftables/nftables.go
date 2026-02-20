@@ -898,7 +898,7 @@ func (c *Chain) RegisterRule(rule *Rule, index int) *syserr.AnnotatedError {
 	// checked here for completeness for unit tests. Netfilter sockets should never attempt to register
 	// the exact same rule struct twice.
 	if rule.chain != nil {
-		return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("rule chain is malformed"))
+		return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "rule chain is malformed")
 	}
 
 	if index < -1 || index > c.RuleCount() {
@@ -1082,14 +1082,14 @@ func (c *Chain) checkLoops(source *Chain, depth int) *syserr.AnnotatedError {
 func (r *Rule) addOperation(op operation) *syserr.AnnotatedError {
 	// From net/netfilter/nf_tables_api.c:nft_expr_type
 	if op == nil {
-		return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("operation is nil"))
+		return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "operation is nil")
 	}
 
 	// Netfilter sockets should not try to register operations to rules that
 	// have already been registered to a chain. Instead, old rules should be unregistered
 	// and new rules should be created.
 	if r.chain != nil {
-		return syserr.NewAnnotatedError(syserr.ErrNotSupported, fmt.Sprintf("cannot add operation to a rule that is already registered to a chain"))
+		return syserr.NewAnnotatedError(syserr.ErrNotSupported, "cannot add operation to a rule that is already registered to a chain")
 	}
 	r.ops = append(r.ops, op)
 	return nil
@@ -1192,7 +1192,6 @@ func (hfStack *hookFunctionStack) attachBaseChain(chain *Chain) {
 		return a.baseChainInfo.Priority.GetValue() - b.baseChainInfo.Priority.GetValue()
 	})
 	hfStack.baseChains = slices.Insert(hfStack.baseChains, pos, chain)
-	return
 }
 
 // detachBaseChain removes a base chain with the specified name from the stack,

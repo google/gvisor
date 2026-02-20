@@ -100,7 +100,7 @@ func convertExpression(s string, imports mapValue, used map[string]*importedPack
 		return "", err
 	}
 
-	return string(buf.Bytes()), nil
+	return buf.String(), nil
 }
 
 // updateImports replaces all maps in the input slice with copies where the

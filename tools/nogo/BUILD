@@ -10,6 +10,7 @@ nogo_target(
     name = "target",
     goarch = select_goarch(),
     goos = select_goos(),
+    goversion = "go1.25.5",
     visibility = ["//visibility:public"],
 )
 

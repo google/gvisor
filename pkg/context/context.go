@@ -101,7 +101,7 @@ func (nt *NoTask) Interrupt() {
 
 // Interrupted implements Blocker.Interrupted.
 func (nt *NoTask) Interrupted() bool {
-	return nt.cancel != nil && len(nt.cancel) > 0
+	return len(nt.cancel) > 0
 }
 
 // Killed implements Blocker.Killed.

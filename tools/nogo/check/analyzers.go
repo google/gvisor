@@ -45,8 +45,12 @@ import (
 	"golang.org/x/tools/go/analysis/passes/unreachable"
 	"golang.org/x/tools/go/analysis/passes/unsafeptr"
 	"golang.org/x/tools/go/analysis/passes/unusedresult"
+	"honnef.co/go/tools/analysis/lint"
+	"honnef.co/go/tools/quickfix"
+	"honnef.co/go/tools/simple"
 	"honnef.co/go/tools/staticcheck"
 	"honnef.co/go/tools/stylecheck"
+	"honnef.co/go/tools/unused"
 
 	"gvisor.dev/gvisor/tools/checkaligned"
 	"gvisor.dev/gvisor/tools/checkconst"
@@ -176,14 +180,16 @@ func init() {
 	register(allAnalyzers, &plainAnalyzer{checklocks.Analyzer})
 	register(allAnalyzers, &plainAnalyzer{checkaligned.Analyzer})
 
-	// Add all staticcheck analyzers.
-	for _, a := range staticcheck.Analyzers {
-		register(allAnalyzers, &plainAnalyzer{a.Analyzer})
-	}
-
-	// Add all stylecheck analyzers.
-	for _, a := range stylecheck.Analyzers {
-		register(allAnalyzers, &plainAnalyzer{a.Analyzer})
+	for _, analyzers := range [][]*lint.Analyzer{
+		quickfix.Analyzers,
+		simple.Analyzers,
+		staticcheck.Analyzers,
+		stylecheck.Analyzers,
+		{unused.Analyzer},
+	} {
+		for _, a := range analyzers {
+			register(allAnalyzers, &plainAnalyzer{a.Analyzer})
+		}
 	}
 
 	// Template rendering does not require all analyzers.

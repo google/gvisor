@@ -514,7 +514,7 @@ func nameToPrometheusName(name string) string {
 	return strings.ReplaceAll(strings.TrimPrefix(name, "/"), "/", "_")
 }
 
-var validMetricNameRegexp = re.MustCompile("^(?:/[_\\w]+)+$")
+var validMetricNameRegexp = re.MustCompile(`^(?:/[_\w]+)+$`)
 
 // verifyName verifies that the given metric name is a valid path-style metric
 // name.

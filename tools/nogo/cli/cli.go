@@ -516,7 +516,7 @@ func (r *Render) Execute(ctx context.Context, fs *flag.FlagSet, args ...any) sub
 	if err != nil {
 		return failure("unable to read file: %v", err)
 	}
-	replacePattern := regexp.MustCompile("/\\*.*?->\\*/.*?/\\*<-\\s*(.*?)\\s*\\*/")
+	replacePattern := regexp.MustCompile(`/\*.*?->\*/.*?/\*<-\s*(.*?)\s*\*/`)
 	newContents := replacePattern.ReplaceAll(contents, []byte("$1"))
 
 	// Process the facts.

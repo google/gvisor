@@ -71,7 +71,7 @@ func validateComparisonOp(cop cmpOp) *syserr.AnnotatedError {
 // newComparison creates a new comparison operation.
 func newComparison(sreg uint8, op int, data []byte) (*comparison, *syserr.AnnotatedError) {
 	if isVerdictRegister(sreg) {
-		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("comparison operation does not support verdict register as source register"))
+		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "comparison operation does not support verdict register as source register")
 	}
 	bytesData := newBytesData(data)
 	if err := bytesData.validateRegister(sreg); err != nil {

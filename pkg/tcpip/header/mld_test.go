@@ -331,11 +331,7 @@ func TestMLDv2Report(t *testing.T) {
 			expectedRecords := test.serializer.Records
 
 			records := report.MulticastAddressRecords()
-			for {
-				if len(expectedRecords) == 0 {
-					break
-				}
-
+			for len(expectedRecords) != 0 {
 				record, res := records.Next()
 				if res != MLDv2ReportMulticastAddressRecordIteratorNextOk {
 					t.Fatalf("got records.Next() = (%#v, %d), want = (_, %d)", record, res, MLDv2ReportMulticastAddressRecordIteratorNextOk)
@@ -360,11 +356,7 @@ func TestMLDv2Report(t *testing.T) {
 				}
 
 				expectedSources := expectedRecords[0].Sources
-				for {
-					if len(expectedSources) == 0 {
-						break
-					}
-
+				for len(expectedSources) != 0 {
 					source, ok := sources.Next()
 					if !ok {
 						t.Fatal("got sources.Next() = (_, false), want = (_, true)")

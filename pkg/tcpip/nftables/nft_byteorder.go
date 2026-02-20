@@ -69,7 +69,7 @@ func validateByteorderOp(bop byteorderOp) *syserr.AnnotatedError {
 // newByteorder creates a new byteorder operation.
 func newByteorder(sreg, dreg uint8, bop byteorderOp, blen, size uint8) (*byteorder, *syserr.AnnotatedError) {
 	if isVerdictRegister(sreg) || isVerdictRegister(dreg) {
-		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("byteorder operation does not support verdict register as source or destination register"))
+		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "byteorder operation does not support verdict register as source or destination register")
 	}
 	if err := validateByteorderOp(bop); err != nil {
 		return nil, err

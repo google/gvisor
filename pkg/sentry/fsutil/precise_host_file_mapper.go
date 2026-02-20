@@ -68,7 +68,7 @@ func (f *PreciseHostFileMapper) RequireAddrEqualsFileOffset() {
 func (f *PreciseHostFileMapper) IncRefOn(mr memmap.MappableRange) {
 	f.refsMu.Lock()
 	defer f.refsMu.Unlock()
-	fr := memmap.FileRange{Start: mr.Start, End: mr.End}
+	fr := memmap.FileRange(mr)
 	seg, gap := f.refs.Find(fr.Start)
 	for seg.Ok() || gap.Ok() {
 		if seg.Ok() {
@@ -98,7 +98,7 @@ func (f *PreciseHostFileMapper) DecRefOn(mr memmap.MappableRange) {
 	if !rseg.Ok() {
 		panic(fmt.Sprintf("could not find segment for range %v", mr))
 	}
-	fr := memmap.FileRange{Start: mr.Start, End: mr.End}
+	fr := memmap.FileRange(mr)
 	for fr.Length() > 0 && rseg.Ok() {
 		rseg = f.refs.Isolate(rseg, fr)
 		refs := rseg.ValuePtr()
