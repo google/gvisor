@@ -236,6 +236,13 @@ type Kernel struct {
 	// Invariant: cpuClockTickerStopCond.L == &runningTasksMu.
 	cpuClockTickerStopCond sync.Cond `state:"nosave"`
 
+	// memoryUsageStop is closed to signal the memory usage ticker goroutine
+	// to exit.
+	memoryUsageStop chan struct{} `state:"nosave"`
+
+	// memoryUsageDone is closed when the memory usage ticker goroutine exits.
+	memoryUsageDone chan struct{} `state:"nosave"`
+
 	// cpuClock is a coarse monotonic clock that is advanced by the CPU clock
 	// ticker and thus approximates wall time when tasks are running (but is
 	// strictly slower due to CPU clock ticker goroutine wakeup latency). This
@@ -1307,6 +1314,7 @@ func (k *Kernel) Start() error {
 	k.cpuClockTickerRunning = true
 	k.runningTasksMu.Unlock()
 	go k.runCPUClockTicker()
+	k.startMemoryUsageTicker()
 	// If k was created by LoadKernelFrom, timers were stopped during
 	// Kernel.SaveTo and need to be resumed. If k was created by NewKernel,
 	// this is a no-op.
@@ -1346,6 +1354,9 @@ func (k *Kernel) pauseTimeLocked(ctx context.Context) {
 	}
 	k.runningTasksMu.Unlock()
 
+	// Stop the memory usage ticker goroutine.
+	k.stopMemoryUsageTicker()
+
 	// By precondition, nothing else can be interacting with PIDNamespace.tids
 	// or FDTable.files, so we can iterate them without synchronization. (We
 	// can't hold the TaskSet mutex when pausing thread group timers because
@@ -1383,6 +1394,7 @@ func (k *Kernel) resumeTimeLocked(ctx context.Context) {
 	// The CPU clock ticker will automatically resume as task goroutines resume
 	// execution.
 
+	k.startMemoryUsageTicker()
 	k.timekeeper.ResumeUpdates(k.vdsoParams)
 	for t := range k.tasks.Root.tids {
 		if t == t.tg.leader {
@@ -1398,6 +1410,48 @@ func (k *Kernel) resumeTimeLocked(ctx context.Context) {
 				}
 				return true
 			})
+		}
+	}
+}
+
+// startMemoryUsageTicker starts the background goroutine that periodically
+// updates memory usage accounting. It is a no-op if the ticker is already
+// running.
+func (k *Kernel) startMemoryUsageTicker() {
+	if k.memoryUsageDone != nil {
+		return // already running
+	}
+	k.memoryUsageStop = make(chan struct{})
+	k.memoryUsageDone = make(chan struct{})
+	go k.runMemoryUsageTicker()
+}
+
+// stopMemoryUsageTicker stops the background memory usage ticker goroutine
+// and waits for it to exit.
+func (k *Kernel) stopMemoryUsageTicker() {
+	if k.memoryUsageDone == nil {
+		return // not running
+	}
+	close(k.memoryUsageStop)
+	<-k.memoryUsageDone
+	k.memoryUsageStop = nil
+	k.memoryUsageDone = nil
+}
+
+// runMemoryUsageTicker periodically calls UpdateUsage on the MemoryFile to
+// keep memory accounting up to date without requiring external polling.
+func (k *Kernel) runMemoryUsageTicker() {
+	defer close(k.memoryUsageDone)
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			if err := k.mf.UpdateUsage(nil); err != nil {
+				log.Warningf("Memory usage update failed: %v", err)
+			}
+		case <-k.memoryUsageStop:
+			return
 		}
 	}
 }
