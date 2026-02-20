@@ -933,9 +933,9 @@ func (k *Kernel) LoadFrom(ctx context.Context, r io.Reader, asyncMFLoader *Async
 		if net != nil {
 			s.ReplaceConfig(net)
 		}
-		s.Restore()
+		s.Restore(k.Timekeeper())
 	} else if net != nil {
-		net.Restore()
+		net.Restore(k.Timekeeper())
 	}
 
 	if err := k.vfs.CompleteRestore(ctx, vfsOpts); err != nil {
