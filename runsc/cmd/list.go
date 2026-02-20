@@ -61,6 +61,12 @@ func (l *List) SetFlags(f *flag.FlagSet) {
 	f.BoolVar(&l.sandbox, "sandbox", false, "limit output to sandboxes only")
 }
 
+// FetchSpec implements util.SubCommand.FetchSpec.
+func (l *List) FetchSpec(conf *config.Config, f *flag.FlagSet) (string, *specs.Spec, error) {
+	// This command does not operate on a single container, so nothing to fetch.
+	return "", nil, nil
+}
+
 // Execute implements subcommands.Command.Execute.
 func (l *List) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
 	if f.NArg() != 0 {

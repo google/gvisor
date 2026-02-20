@@ -21,9 +21,11 @@ import (
 	"unsafe"
 
 	"github.com/google/subcommands"
+	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/runsc/cmd/util"
+	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/flag"
 )
 
@@ -50,6 +52,12 @@ func (*Umount) Usage() string {
 // SetFlags implements subcommands.Command.SetFlags.
 func (u *Umount) SetFlags(f *flag.FlagSet) {
 	f.IntVar(&u.syncFD, "sync-fd", -1, "")
+}
+
+// FetchSpec implements util.SubCommand.FetchSpec.
+func (u *Umount) FetchSpec(conf *config.Config, f *flag.FlagSet) (string, *specs.Spec, error) {
+	// This command does not operate on a single container, so nothing to fetch.
+	return "", nil, nil
 }
 
 // Execute implements subcommands.Command.Execute.
