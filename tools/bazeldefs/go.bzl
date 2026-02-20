@@ -59,6 +59,10 @@ def go_binary(name, static = False, pure = False, x_defs = None, **kwargs):
         x_defs: additional definitions.
         **kwargs: rest of the arguments are passed to _go_binary.
     """
+    if "noasan" in kwargs:
+        # no-op option, will need to do transitions when sanitizer configs are defined.
+        kwargs.pop("noasan")
+
     if static:
         kwargs["static"] = "on"
     if pure:
