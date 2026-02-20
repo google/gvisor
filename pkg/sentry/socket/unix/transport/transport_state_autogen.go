@@ -27,8 +27,8 @@ func (e *connectionedEndpoint) StateFields() []string {
 // +checklocksignore
 func (e *connectionedEndpoint) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
-	var acceptedChanValue []*connectionedEndpoint
-	acceptedChanValue = e.saveAcceptedChan()
+	acceptedChanValue := e.saveAcceptedChan()
+	_ = ([]*connectionedEndpoint)(acceptedChanValue)
 	stateSinkObject.SaveValue(5, acceptedChanValue)
 	stateSinkObject.Save(0, &e.baseEndpoint)
 	stateSinkObject.Save(1, &e.id)

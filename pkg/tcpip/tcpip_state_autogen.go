@@ -1480,8 +1480,8 @@ func (c *ReceivableControlMessages) beforeSave() {}
 // +checklocksignore
 func (c *ReceivableControlMessages) StateSave(stateSinkObject state.Sink) {
 	c.beforeSave()
-	var TimestampValue int64
-	TimestampValue = c.saveTimestamp()
+	TimestampValue := c.saveTimestamp()
+	_ = (int64)(TimestampValue)
 	stateSinkObject.SaveValue(0, TimestampValue)
 	stateSinkObject.Save(1, &c.HasInq)
 	stateSinkObject.Save(2, &c.Inq)

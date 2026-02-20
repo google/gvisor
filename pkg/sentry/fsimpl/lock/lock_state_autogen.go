@@ -138,8 +138,8 @@ func (s *LockSet) beforeSave() {}
 // +checklocksignore
 func (s *LockSet) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
-	var rootValue []LockFlatSegment
-	rootValue = s.saveRoot()
+	rootValue := s.saveRoot()
+	_ = ([]LockFlatSegment)(rootValue)
 	stateSinkObject.SaveValue(0, rootValue)
 }
 

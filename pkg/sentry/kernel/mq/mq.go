@@ -393,10 +393,8 @@ func (q *Queue) Generate(ctx context.Context, buf *bytes.Buffer) error {
 		// TODO: add method and sigNumber when mq_notify(2) is implemented.
 	}
 
-	buf.WriteString(
-		fmt.Sprintf("QSIZE:%-10d NOTIFY:%-5d SIGNO:%-5d NOTIFY_PID:%-6d\n",
-			q.byteCount, method, sigNumber, pid),
-	)
+	fmt.Fprintf(buf, "QSIZE:%-10d NOTIFY:%-5d SIGNO:%-5d NOTIFY_PID:%-6d\n",
+		q.byteCount, method, sigNumber, pid)
 	return nil
 }
 

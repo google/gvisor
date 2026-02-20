@@ -961,6 +961,10 @@ func ctrlClientSystemGetBuildVersion(fi *frontendIoctlState, ioctlParams *nvgpu.
 	if ctrlParams.SizeOfStrings == 0 {
 		return 0, linuxerr.EINVAL
 	}
+	// The driver internally uses NV0000_CTRL_CMD_SYSTEM_GET_BUILD_VERSION_V2 to
+	// fetch the version strings, which has a maximum string size limit. Any
+	// extra buffer space provided by the user is ignored.
+	ctrlParams.SizeOfStrings = min(ctrlParams.SizeOfStrings, nvgpu.NV0000_CTRL_SYSTEM_GET_BUILD_VERSION_V2_MAX_STRING_SIZE)
 	driverVersionBuf := make([]byte, ctrlParams.SizeOfStrings)
 	versionBuf := make([]byte, ctrlParams.SizeOfStrings)
 	titleBuf := make([]byte, ctrlParams.SizeOfStrings)

@@ -258,9 +258,10 @@ func (d *Device) Write(data *buffer.View) (int64, error) {
 		// TUN interface with IFF_NO_PI enabled, thus
 		// we need to determine protocol from version field
 		version := data.AsSlice()[0] >> 4
-		if version == 4 {
+		switch version {
+		case 4:
 			protocol = header.IPv4ProtocolNumber
-		} else if version == 6 {
+		case 6:
 			protocol = header.IPv6ProtocolNumber
 		}
 	}

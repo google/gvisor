@@ -299,11 +299,8 @@ func ComputeCredsForExec(c *Credentials, f FilePrivileges, filename string,
 	newC.KeepCaps = false
 
 	root := c.UserNamespace.MapToKUID(RootUID)
-	secureExec := false
 	// See commoncap.c:cap_bprm_secureexec() in Linux 4.2 (before the introduction of ambient caps).
-	if gainedID || (newC.RealKUID != root && (f.Effective || newC.PermittedCaps != CapabilitySet(0))) {
-		secureExec = true
-	}
+	secureExec := gainedID || (newC.RealKUID != root && (f.Effective || newC.PermittedCaps != CapabilitySet(0)))
 	return newC, secureExec, nil
 }
 

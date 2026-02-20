@@ -26,8 +26,8 @@ func (p *machineAtomicPtr) beforeSave() {}
 // +checklocksignore
 func (p *machineAtomicPtr) StateSave(stateSinkObject state.Sink) {
 	p.beforeSave()
-	var ptrValue *machine
-	ptrValue = p.savePtr()
+	ptrValue := p.savePtr()
+	_ = (*machine)(ptrValue)
 	stateSinkObject.SaveValue(0, ptrValue)
 }
 

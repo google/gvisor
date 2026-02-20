@@ -24,8 +24,8 @@ func (b *Buffer) beforeSave() {}
 // +checklocksignore
 func (b *Buffer) StateSave(stateSinkObject state.Sink) {
 	b.beforeSave()
-	var dataValue []byte
-	dataValue = b.saveData()
+	dataValue := b.saveData()
+	_ = ([]byte)(dataValue)
 	stateSinkObject.SaveValue(0, dataValue)
 	stateSinkObject.Save(1, &b.size)
 }

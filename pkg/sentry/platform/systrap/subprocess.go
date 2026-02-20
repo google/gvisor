@@ -212,7 +212,7 @@ func (s *subprocess) initSyscallThread(ptraceThread *thread, seccompNotify bool)
 	}
 
 	if err := t.init(seccompNotify); err != nil {
-		panic(fmt.Sprintf("failed to create a syscall thread"))
+		panic("failed to create a syscall thread")
 	}
 	s.syscallThread = &t
 
@@ -222,11 +222,11 @@ func (s *subprocess) initSyscallThread(ptraceThread *thread, seccompNotify bool)
 }
 
 func handlePtraceSyscallRequestError(req any, format string, values ...any) {
-	switch req.(type) {
+	switch req := req.(type) {
 	case requestThread:
-		req.(requestThread).thread <- nil
+		req.thread <- nil
 	case requestStub:
-		req.(requestStub).done <- nil
+		req.done <- nil
 	}
 	log.BugTracebackf("handlePtraceSyscallRequest failed: "+format, values...)
 }
@@ -443,7 +443,7 @@ func (s *subprocess) mapSharedRegions() {
 	// Map thread context region into the sentry.
 	threadContextFR, err := s.memoryFile.Allocate(uint64(stubContextRegionLen), opts)
 	if err != nil {
-		panic(fmt.Sprintf("failed to allocate a new subprocess context memory region"))
+		panic("failed to allocate a new subprocess context memory region")
 	}
 	sentryThreadContextRegionAddr, errno := hostsyscall.RawSyscall6(
 		unix.SYS_MMAP,

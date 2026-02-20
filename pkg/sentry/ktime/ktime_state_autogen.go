@@ -256,8 +256,8 @@ func (s *syntheticTimerSet) beforeSave() {}
 // +checklocksignore
 func (s *syntheticTimerSet) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
-	var rootValue []syntheticTimerFlatSegment
-	rootValue = s.saveRoot()
+	rootValue := s.saveRoot()
+	_ = ([]syntheticTimerFlatSegment)(rootValue)
 	stateSinkObject.SaveValue(0, rootValue)
 }
 

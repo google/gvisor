@@ -628,7 +628,7 @@ func (s *socketOperations) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags
 
 	// Store nonblock info from original flag.
 	nonblock := flags&syscall.MSG_DONTWAIT != 0
-	waitall := nonblock == false && flags&syscall.MSG_WAITALL != 0
+	waitall := !nonblock && flags&syscall.MSG_WAITALL != 0
 
 	var mflag int
 	var n int64

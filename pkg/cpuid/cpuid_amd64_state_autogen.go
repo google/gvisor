@@ -27,8 +27,8 @@ func (fs *FeatureSet) beforeSave() {}
 // +checklocksignore
 func (fs *FeatureSet) StateSave(stateSinkObject state.Sink) {
 	fs.beforeSave()
-	var FunctionValue Static
-	FunctionValue = fs.saveFunction()
+	FunctionValue := fs.saveFunction()
+	_ = (Static)(FunctionValue)
 	stateSinkObject.SaveValue(0, FunctionValue)
 	stateSinkObject.Save(1, &fs.hwCap)
 }

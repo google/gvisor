@@ -181,8 +181,8 @@ func (f *FDTable) beforeSave() {}
 // +checklocksignore
 func (f *FDTable) StateSave(stateSinkObject state.Sink) {
 	f.beforeSave()
-	var descriptorTableValue map[int32]descriptor
-	descriptorTableValue = f.saveDescriptorTable()
+	descriptorTableValue := f.saveDescriptorTable()
+	_ = (map[int32]descriptor)(descriptorTableValue)
 	stateSinkObject.SaveValue(2, descriptorTableValue)
 	stateSinkObject.Save(0, &f.FDTableRefs)
 	stateSinkObject.Save(1, &f.k)
@@ -473,8 +473,8 @@ func (k *Kernel) beforeSave() {}
 // +checklocksignore
 func (k *Kernel) StateSave(stateSinkObject state.Sink) {
 	k.beforeSave()
-	var danglingEndpointsValue []tcpip.Endpoint
-	danglingEndpointsValue = k.saveDanglingEndpoints()
+	danglingEndpointsValue := k.saveDanglingEndpoints()
+	_ = ([]tcpip.Endpoint)(danglingEndpointsValue)
 	stateSinkObject.SaveValue(21, danglingEndpointsValue)
 	stateSinkObject.Save(0, &k.featureSet)
 	stateSinkObject.Save(1, &k.timekeeper)
@@ -701,8 +701,8 @@ func (p *pendingSignals) beforeSave() {}
 // +checklocksignore
 func (p *pendingSignals) StateSave(stateSinkObject state.Sink) {
 	p.beforeSave()
-	var signalsValue []savedPendingSignal
-	signalsValue = p.saveSignals()
+	signalsValue := p.saveSignals()
+	_ = ([]savedPendingSignal)(signalsValue)
 	stateSinkObject.SaveValue(0, signalsValue)
 }
 
@@ -1506,17 +1506,17 @@ func (t *Task) beforeSave() {}
 // +checklocksignore
 func (t *Task) StateSave(stateSinkObject state.Sink) {
 	t.beforeSave()
-	var fsContextValue *FSContext
-	fsContextValue = t.saveFsContext()
+	fsContextValue := t.saveFsContext()
+	_ = (*FSContext)(fsContextValue)
 	stateSinkObject.SaveValue(27, fsContextValue)
-	var vforkParentValue *Task
-	vforkParentValue = t.saveVforkParent()
+	vforkParentValue := t.saveVforkParent()
+	_ = (*Task)(vforkParentValue)
 	stateSinkObject.SaveValue(29, vforkParentValue)
-	var ptraceTracerValue *Task
-	ptraceTracerValue = t.savePtraceTracer()
+	ptraceTracerValue := t.savePtraceTracer()
+	_ = (*Task)(ptraceTracerValue)
 	stateSinkObject.SaveValue(35, ptraceTracerValue)
-	var seccompValue *taskSeccomp
-	seccompValue = t.saveSeccomp()
+	seccompValue := t.saveSeccomp()
+	_ = (*taskSeccomp)(seccompValue)
 	stateSinkObject.SaveValue(52, seccompValue)
 	stateSinkObject.Save(0, &t.taskNode)
 	stateSinkObject.Save(1, &t.runState)
@@ -2063,8 +2063,8 @@ func (image *TaskImage) beforeSave() {}
 // +checklocksignore
 func (image *TaskImage) StateSave(stateSinkObject state.Sink) {
 	image.beforeSave()
-	var stValue syscallTableInfo
-	stValue = image.saveSt()
+	stValue := image.saveSt()
+	_ = (syscallTableInfo)(stValue)
 	stateSinkObject.SaveValue(4, stValue)
 	stateSinkObject.Save(0, &image.Name)
 	stateSinkObject.Save(1, &image.Arch)
@@ -2367,14 +2367,14 @@ func (tg *ThreadGroup) beforeSave() {}
 // +checklocksignore
 func (tg *ThreadGroup) StateSave(stateSinkObject state.Sink) {
 	tg.beforeSave()
-	var appCPUClockLastValue *Task
-	appCPUClockLastValue = tg.saveAppCPUClockLast()
+	appCPUClockLastValue := tg.saveAppCPUClockLast()
+	_ = (*Task)(appCPUClockLastValue)
 	stateSinkObject.SaveValue(26, appCPUClockLastValue)
-	var appSysCPUClockLastValue *Task
-	appSysCPUClockLastValue = tg.saveAppSysCPUClockLast()
+	appSysCPUClockLastValue := tg.saveAppSysCPUClockLast()
+	_ = (*Task)(appSysCPUClockLastValue)
 	stateSinkObject.SaveValue(28, appSysCPUClockLastValue)
-	var oldRSeqCriticalValue *OldRSeqCriticalRegion
-	oldRSeqCriticalValue = tg.saveOldRSeqCritical()
+	oldRSeqCriticalValue := tg.saveOldRSeqCritical()
+	_ = (*OldRSeqCriticalRegion)(oldRSeqCriticalValue)
 	stateSinkObject.SaveValue(38, oldRSeqCriticalValue)
 	stateSinkObject.Save(0, &tg.threadGroupNode)
 	stateSinkObject.Save(1, &tg.signalHandlers)

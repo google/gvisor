@@ -79,8 +79,8 @@ func (s *aplUnloadedSet) beforeSave() {}
 // +checklocksignore
 func (s *aplUnloadedSet) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
-	var rootValue []aplUnloadedFlatSegment
-	rootValue = s.saveRoot()
+	rootValue := s.saveRoot()
+	_ = ([]aplUnloadedFlatSegment)(rootValue)
 	stateSinkObject.SaveValue(0, rootValue)
 }
 
@@ -211,8 +211,8 @@ func (s *evictableRangeSet) beforeSave() {}
 // +checklocksignore
 func (s *evictableRangeSet) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
-	var rootValue []evictableRangeFlatSegment
-	rootValue = s.saveRoot()
+	rootValue := s.saveRoot()
+	_ = ([]evictableRangeFlatSegment)(rootValue)
 	stateSinkObject.SaveValue(0, rootValue)
 }
 
@@ -315,8 +315,8 @@ func (s *memAcctSet) beforeSave() {}
 // +checklocksignore
 func (s *memAcctSet) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
-	var rootValue []memAcctFlatSegment
-	rootValue = s.saveRoot()
+	rootValue := s.saveRoot()
+	_ = ([]memAcctFlatSegment)(rootValue)
 	stateSinkObject.SaveValue(0, rootValue)
 }
 
@@ -570,8 +570,8 @@ func (s *unfreeSet) beforeSave() {}
 // +checklocksignore
 func (s *unfreeSet) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
-	var rootValue []unfreeFlatSegment
-	rootValue = s.saveRoot()
+	rootValue := s.saveRoot()
+	_ = ([]unfreeFlatSegment)(rootValue)
 	stateSinkObject.SaveValue(0, rootValue)
 }
 
@@ -674,8 +674,8 @@ func (s *unwasteSet) beforeSave() {}
 // +checklocksignore
 func (s *unwasteSet) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
-	var rootValue []unwasteFlatSegment
-	rootValue = s.saveRoot()
+	rootValue := s.saveRoot()
+	_ = ([]unwasteFlatSegment)(rootValue)
 	stateSinkObject.SaveValue(0, rootValue)
 }
 

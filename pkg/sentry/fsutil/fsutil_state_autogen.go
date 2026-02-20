@@ -128,8 +128,8 @@ func (s *mappingSet) beforeSave() {}
 // +checklocksignore
 func (s *mappingSet) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
-	var rootValue []mappingFlatSegment
-	rootValue = s.saveRoot()
+	rootValue := s.saveRoot()
+	_ = ([]mappingFlatSegment)(rootValue)
 	stateSinkObject.SaveValue(0, rootValue)
 }
 
@@ -263,8 +263,8 @@ func (s *refsSet) beforeSave() {}
 // +checklocksignore
 func (s *refsSet) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
-	var rootValue []refsFlatSegment
-	rootValue = s.saveRoot()
+	rootValue := s.saveRoot()
+	_ = ([]refsFlatSegment)(rootValue)
 	stateSinkObject.SaveValue(0, rootValue)
 }
 

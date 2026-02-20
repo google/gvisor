@@ -31,8 +31,8 @@ func (p *udpPacket) beforeSave() {}
 // +checklocksignore
 func (p *udpPacket) StateSave(stateSinkObject state.Sink) {
 	p.beforeSave()
-	var receivedAtValue int64
-	receivedAtValue = p.saveReceivedAt()
+	receivedAtValue := p.saveReceivedAt()
+	_ = (int64)(receivedAtValue)
 	stateSinkObject.SaveValue(6, receivedAtValue)
 	stateSinkObject.Save(0, &p.udpPacketEntry)
 	stateSinkObject.Save(1, &p.netProto)

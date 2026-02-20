@@ -51,8 +51,8 @@ func (s *DevAddrSet) beforeSave() {}
 // +checklocksignore
 func (s *DevAddrSet) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
-	var rootValue []DevAddrFlatSegment
-	rootValue = s.saveRoot()
+	rootValue := s.saveRoot()
+	_ = ([]DevAddrFlatSegment)(rootValue)
 	stateSinkObject.SaveValue(0, rootValue)
 }
 

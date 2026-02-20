@@ -25,8 +25,8 @@ func (s *Sleeper) beforeSave() {}
 // +checklocksignore
 func (s *Sleeper) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
-	var sharedListValue *Waker
-	sharedListValue = s.saveSharedList()
+	sharedListValue := s.saveSharedList()
+	_ = (*Waker)(sharedListValue)
 	stateSinkObject.SaveValue(0, sharedListValue)
 	stateSinkObject.Save(1, &s.localList)
 	stateSinkObject.Save(2, &s.allWakers)
@@ -58,8 +58,8 @@ func (w *Waker) beforeSave() {}
 // +checklocksignore
 func (w *Waker) StateSave(stateSinkObject state.Sink) {
 	w.beforeSave()
-	var sValue wakerState
-	sValue = w.saveS()
+	sValue := w.saveS()
+	_ = (wakerState)(sValue)
 	stateSinkObject.SaveValue(0, sValue)
 	stateSinkObject.Save(1, &w.next)
 	stateSinkObject.Save(2, &w.allWakersNext)

@@ -25,8 +25,8 @@ func (a *acceptQueue) beforeSave() {}
 // +checklocksignore
 func (a *acceptQueue) StateSave(stateSinkObject state.Sink) {
 	a.beforeSave()
-	var endpointsValue []*Endpoint
-	endpointsValue = a.saveEndpoints()
+	endpointsValue := a.saveEndpoints()
+	_ = ([]*Endpoint)(endpointsValue)
 	stateSinkObject.SaveValue(0, endpointsValue)
 	stateSinkObject.Save(1, &a.pendingEndpoints)
 	stateSinkObject.Save(2, &a.capacity)
@@ -503,8 +503,8 @@ func (e *Endpoint) StateFields() []string {
 // +checklocksignore
 func (e *Endpoint) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
-	var stateValue EndpointState
-	stateValue = e.saveState()
+	stateValue := e.saveState()
+	_ = (EndpointState)(stateValue)
 	stateSinkObject.SaveValue(12, stateValue)
 	stateSinkObject.Save(0, &e.TCPEndpointStateInner)
 	stateSinkObject.Save(1, &e.TransportEndpointInfo)
@@ -967,8 +967,8 @@ func (s *segment) beforeSave() {}
 // +checklocksignore
 func (s *segment) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
-	var optionsValue []byte
-	optionsValue = s.saveOptions()
+	optionsValue := s.saveOptions()
+	_ = ([]byte)(optionsValue)
 	stateSinkObject.SaveValue(12, optionsValue)
 	stateSinkObject.Save(0, &s.segmentEntry)
 	stateSinkObject.Save(1, &s.segmentRefs)

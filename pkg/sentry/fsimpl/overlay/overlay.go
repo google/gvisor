@@ -711,7 +711,6 @@ func (d *dentry) checkDropLocked(ctx context.Context) {
 
 	// Refs is still zero; destroy it.
 	d.destroyLocked(ctx)
-	return
 }
 
 // destroyLocked destroys the dentry.

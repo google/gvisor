@@ -23,8 +23,8 @@ func (p *AtomicPtrBucket) beforeSave() {}
 // +checklocksignore
 func (p *AtomicPtrBucket) StateSave(stateSinkObject state.Sink) {
 	p.beforeSave()
-	var ptrValue *bucket
-	ptrValue = p.savePtr()
+	ptrValue := p.savePtr()
+	_ = (*bucket)(ptrValue)
 	stateSinkObject.SaveValue(0, ptrValue)
 }
 

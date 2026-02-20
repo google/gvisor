@@ -152,7 +152,7 @@ func (mt *mountTable) Init() {
 }
 
 func newMountTableSlots(cap uintptr) unsafe.Pointer {
-	slice := make([]mountSlot, cap, cap)
+	slice := make([]mountSlot, cap)
 	return unsafe.Pointer(&slice[0])
 }
 

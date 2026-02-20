@@ -402,8 +402,8 @@ func (fs *filesystem) beforeSave() {}
 // +checklocksignore
 func (fs *filesystem) StateSave(stateSinkObject state.Sink) {
 	fs.beforeSave()
-	var mfValue string
-	mfValue = fs.saveMf()
+	mfValue := fs.saveMf()
+	_ = (string)(mfValue)
 	stateSinkObject.SaveValue(1, mfValue)
 	stateSinkObject.Save(0, &fs.vfsfs)
 	stateSinkObject.Save(2, &fs.clock)
@@ -506,8 +506,8 @@ func (d *dentry) beforeSave() {}
 // +checklocksignore
 func (d *dentry) StateSave(stateSinkObject state.Sink) {
 	d.beforeSave()
-	var parentValue *dentry
-	parentValue = d.saveParent()
+	parentValue := d.saveParent()
+	_ = (*dentry)(parentValue)
 	stateSinkObject.SaveValue(1, parentValue)
 	stateSinkObject.Save(0, &d.vfsd)
 	stateSinkObject.Save(2, &d.name)

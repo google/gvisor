@@ -46,7 +46,7 @@ type metaLoad struct {
 // newMetaLoad creates a new metaLoad operation.
 func newMetaLoad(key metaKey, dreg uint8) (*metaLoad, *syserr.AnnotatedError) {
 	if isVerdictRegister(dreg) {
-		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("meta load operation does not support verdict register as destination register"))
+		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "meta load operation does not support verdict register as destination register")
 	}
 	if err := validateMetaKey(key); err != nil {
 		return nil, err

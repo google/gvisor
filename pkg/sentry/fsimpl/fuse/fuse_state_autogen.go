@@ -52,11 +52,11 @@ func (conn *connection) beforeSave() {}
 // +checklocksignore
 func (conn *connection) StateSave(stateSinkObject state.Sink) {
 	conn.beforeSave()
-	var initializedChanValue bool
-	initializedChanValue = conn.saveInitializedChan()
+	initializedChanValue := conn.saveInitializedChan()
+	_ = (bool)(initializedChanValue)
 	stateSinkObject.SaveValue(2, initializedChanValue)
-	var fullQueueChValue int
-	fullQueueChValue = conn.saveFullQueueCh()
+	fullQueueChValue := conn.saveFullQueueCh()
+	_ = (int)(fullQueueChValue)
 	stateSinkObject.SaveValue(4, fullQueueChValue)
 	stateSinkObject.Save(0, &conn.connectionRefs)
 	stateSinkObject.Save(1, &conn.initialized)

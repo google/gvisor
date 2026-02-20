@@ -15,8 +15,6 @@
 package kernel
 
 import (
-	"fmt"
-
 	"gvisor.dev/gvisor/pkg/abi/linux/errno"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/hostarch"
@@ -82,7 +80,7 @@ func (image *TaskImage) Fork(ctx context.Context, k *Kernel, shareAddressSpace b
 			if !newImage.MemoryManager.IncUsers() {
 				// Shouldn't be possible since image.MemoryManager should be a
 				// counted user.
-				panic(fmt.Sprintf("TaskImage.Fork called with userless TaskImage.MemoryManager"))
+				panic("TaskImage.Fork called with userless TaskImage.MemoryManager")
 			}
 		}
 		newImage.fu = image.fu

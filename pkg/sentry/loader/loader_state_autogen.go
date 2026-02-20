@@ -27,8 +27,8 @@ func (v *VDSO) beforeSave() {}
 // +checklocksignore
 func (v *VDSO) StateSave(stateSinkObject state.Sink) {
 	v.beforeSave()
-	var phdrsValue []elfProgHeader
-	phdrsValue = v.savePhdrs()
+	phdrsValue := v.savePhdrs()
+	_ = ([]elfProgHeader)(phdrsValue)
 	stateSinkObject.SaveValue(4, phdrsValue)
 	stateSinkObject.Save(0, &v.ParamPage)
 	stateSinkObject.Save(1, &v.vdso)

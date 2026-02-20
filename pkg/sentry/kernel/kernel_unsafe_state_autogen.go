@@ -23,8 +23,8 @@ func (p *descriptorBucketSliceAtomicPtr) beforeSave() {}
 // +checklocksignore
 func (p *descriptorBucketSliceAtomicPtr) StateSave(stateSinkObject state.Sink) {
 	p.beforeSave()
-	var ptrValue *descriptorBucketSlice
-	ptrValue = p.savePtr()
+	ptrValue := p.savePtr()
+	_ = (*descriptorBucketSlice)(ptrValue)
 	stateSinkObject.SaveValue(0, ptrValue)
 }
 
@@ -50,8 +50,8 @@ func (p *descriptorBucketAtomicPtr) beforeSave() {}
 // +checklocksignore
 func (p *descriptorBucketAtomicPtr) StateSave(stateSinkObject state.Sink) {
 	p.beforeSave()
-	var ptrValue *descriptorBucket
-	ptrValue = p.savePtr()
+	ptrValue := p.savePtr()
+	_ = (*descriptorBucket)(ptrValue)
 	stateSinkObject.SaveValue(0, ptrValue)
 }
 
@@ -77,8 +77,8 @@ func (p *descriptorAtomicPtr) beforeSave() {}
 // +checklocksignore
 func (p *descriptorAtomicPtr) StateSave(stateSinkObject state.Sink) {
 	p.beforeSave()
-	var ptrValue *descriptor
-	ptrValue = p.savePtr()
+	ptrValue := p.savePtr()
+	_ = (*descriptor)(ptrValue)
 	stateSinkObject.SaveValue(0, ptrValue)
 }
 

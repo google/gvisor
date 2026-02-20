@@ -547,8 +547,8 @@ func (d *dentry) StateFields() []string {
 // +checklocksignore
 func (d *dentry) StateSave(stateSinkObject state.Sink) {
 	d.beforeSave()
-	var parentValue *dentry
-	parentValue = d.saveParent()
+	parentValue := d.saveParent()
+	_ = (*dentry)(parentValue)
 	stateSinkObject.SaveValue(2, parentValue)
 	stateSinkObject.Save(0, &d.vfsd)
 	stateSinkObject.Save(1, &d.refs)

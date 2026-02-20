@@ -67,7 +67,7 @@ func getPayloadBuffer(pkt *stack.PacketBuffer, base payloadBase) []byte {
 // newPayloadLoad creates a new payloadLoad operation.
 func newPayloadLoad(base payloadBase, offset, blen, dreg uint8) (*payloadLoad, *syserr.AnnotatedError) {
 	if isVerdictRegister(dreg) {
-		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("payload load operation does not support verdict register as destination register"))
+		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "payload load operation does not support verdict register as destination register")
 	}
 	if blen > linux.NFT_REG_SIZE || (blen > linux.NFT_REG32_SIZE && is4ByteRegister(dreg)) {
 		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("payload size %d is not supported for register %d", blen, dreg))

@@ -684,8 +684,8 @@ func (fd *DynamicBytesFileDescriptionImpl) beforeSave() {}
 // +checklocksignore
 func (fd *DynamicBytesFileDescriptionImpl) StateSave(stateSinkObject state.Sink) {
 	fd.beforeSave()
-	var bufValue []byte
-	bufValue = fd.saveBuf()
+	bufValue := fd.saveBuf()
+	_ = ([]byte)(bufValue)
 	stateSinkObject.SaveValue(2, bufValue)
 	stateSinkObject.Save(0, &fd.vfsfd)
 	stateSinkObject.Save(1, &fd.data)
@@ -1197,8 +1197,8 @@ func (mnt *Mount) beforeSave() {}
 // +checklocksignore
 func (mnt *Mount) StateSave(stateSinkObject state.Sink) {
 	mnt.beforeSave()
-	var keyValue VirtualDentry
-	keyValue = mnt.saveKey()
+	keyValue := mnt.saveKey()
+	_ = (VirtualDentry)(keyValue)
 	stateSinkObject.SaveValue(5, keyValue)
 	stateSinkObject.Save(0, &mnt.vfs)
 	stateSinkObject.Save(1, &mnt.fs)
@@ -2077,11 +2077,11 @@ func (vfs *VirtualFilesystem) beforeSave() {}
 // +checklocksignore
 func (vfs *VirtualFilesystem) StateSave(stateSinkObject state.Sink) {
 	vfs.beforeSave()
-	var mountsValue []*Mount
-	mountsValue = vfs.saveMounts()
+	mountsValue := vfs.saveMounts()
+	_ = ([]*Mount)(mountsValue)
 	stateSinkObject.SaveValue(0, mountsValue)
-	var mountPromisesValue map[VirtualDentry]*mountPromise
-	mountPromisesValue = vfs.saveMountPromises()
+	mountPromisesValue := vfs.saveMountPromises()
+	_ = (map[VirtualDentry]*mountPromise)(mountPromisesValue)
 	stateSinkObject.SaveValue(11, mountPromisesValue)
 	stateSinkObject.Save(1, &vfs.mountpoints)
 	stateSinkObject.Save(2, &vfs.lastMountID)

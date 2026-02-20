@@ -40,8 +40,8 @@ func (i *IPControlMessages) beforeSave() {}
 // +checklocksignore
 func (i *IPControlMessages) StateSave(stateSinkObject state.Sink) {
 	i.beforeSave()
-	var TimestampValue int64
-	TimestampValue = i.saveTimestamp()
+	TimestampValue := i.saveTimestamp()
+	_ = (int64)(TimestampValue)
 	stateSinkObject.SaveValue(1, TimestampValue)
 	stateSinkObject.Save(0, &i.HasTimestamp)
 	stateSinkObject.Save(2, &i.HasInq)

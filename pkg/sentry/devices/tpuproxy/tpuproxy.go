@@ -71,7 +71,7 @@ func RegisterTPUv4Device(ctx context.Context, creds *auth.Credentials, root vfs.
 		return err
 	}
 
-	deviceIDStr := strings.Replace(buf.String(), "0x", "", -1)
+	deviceIDStr := strings.ReplaceAll(buf.String(), "0x", "")
 	deviceID, err := strconv.ParseInt(strings.TrimSpace(deviceIDStr), 16, 64)
 	if err != nil {
 		return fmt.Errorf("parsing PCI device ID: %w", err)

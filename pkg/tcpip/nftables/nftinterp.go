@@ -222,7 +222,7 @@ func InterpretImmediate(line string, lnIdx int) (operation, *syserr.AnnotatedErr
 
 	// Done parsing tokens.
 	if tkIdx != len(tokens)-1 {
-		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("unexpected token after immediate operation"))
+		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "unexpected token after immediate operation")
 	}
 
 	// Create the operation with the specified arguments.
@@ -285,7 +285,7 @@ func InterpretComparison(line string, lnIdx int) (operation, *syserr.AnnotatedEr
 
 	// Done parsing tokens.
 	if tkIdx != len(tokens)-1 {
-		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("unexpected token after comparison operation"))
+		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "unexpected token after comparison operation")
 	}
 
 	// Create the operation with the specified arguments.
@@ -622,7 +622,7 @@ func InterpretBitwiseBool(line string, lnIdx int) (operation, *syserr.AnnotatedE
 
 	// Done parsing tokens.
 	if tkIdx != len(tokens)-1 {
-		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("unexpected token after bitwise boolean operation"))
+		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "unexpected token after bitwise boolean operation")
 	}
 
 	// Create the operation with the specified arguments.
@@ -971,7 +971,7 @@ func checkOperationBrackets(tokens []string, lnIdx int) *syserr.AnnotatedError {
 		return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("expected operation to be surrounded by '[]', got '%s'", tokens[0]))
 	}
 	if tokens[len(tokens)-1] != "]" {
-		return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("operation missing closing square bracket"))
+		return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "operation missing closing square bracket")
 	}
 	return nil
 }

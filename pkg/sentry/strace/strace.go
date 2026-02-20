@@ -627,9 +627,7 @@ func (i *SyscallInfo) sendEnter(t *kernel.Task, args arch.SyscallArguments) []st
 			Enter: &pb.StraceEnter{},
 		},
 	}
-	for _, arg := range output {
-		event.Args = append(event.Args, arg)
-	}
+	event.Args = append(event.Args, output...)
 	eventchannel.Emit(&event)
 
 	return output
@@ -655,9 +653,7 @@ func (i *SyscallInfo) sendExit(t *kernel.Task, elapsed time.Duration, output []s
 		Function: i.name,
 		Info:     &pb.Strace_Exit{Exit: exit},
 	}
-	for _, arg := range output {
-		event.Args = append(event.Args, arg)
-	}
+	event.Args = append(event.Args, output...)
 	eventchannel.Emit(&event)
 }
 

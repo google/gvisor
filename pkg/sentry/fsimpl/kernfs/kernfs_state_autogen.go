@@ -774,8 +774,8 @@ func (d *Dentry) beforeSave() {}
 // +checklocksignore
 func (d *Dentry) StateSave(stateSinkObject state.Sink) {
 	d.beforeSave()
-	var parentValue *Dentry
-	parentValue = d.saveParent()
+	parentValue := d.saveParent()
+	_ = (*Dentry)(parentValue)
 	stateSinkObject.SaveValue(4, parentValue)
 	stateSinkObject.Save(0, &d.vfsd)
 	stateSinkObject.Save(1, &d.refs)

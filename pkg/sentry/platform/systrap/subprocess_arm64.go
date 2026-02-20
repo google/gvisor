@@ -77,7 +77,6 @@ func createSyscallRegs(initRegs *arch.Registers, sysno uintptr, args ...arch.Sys
 // updateSyscallRegs updates registers after finishing sysemu.
 func updateSyscallRegs(regs *arch.Registers) {
 	// No special work is necessary.
-	return
 }
 
 // syscallReturnValue extracts a sensible return from registers.
@@ -168,7 +167,7 @@ func (s *subprocess) arm64SyscallWorkaround(t *thread, regs *arch.Registers) {
 			continue
 		}
 		if sig == (syscallEvent | unix.SIGTRAP) {
-			t.dumpAndPanic(fmt.Sprintf("unexpected syscall event"))
+			t.dumpAndPanic("unexpected syscall event")
 		}
 		break
 	}

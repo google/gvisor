@@ -23,8 +23,8 @@ func (s *MappingSet) beforeSave() {}
 // +checklocksignore
 func (s *MappingSet) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
-	var rootValue []MappingFlatSegment
-	rootValue = s.saveRoot()
+	rootValue := s.saveRoot()
+	_ = ([]MappingFlatSegment)(rootValue)
 	stateSinkObject.SaveValue(0, rootValue)
 }
 

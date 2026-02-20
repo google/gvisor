@@ -266,7 +266,7 @@ func (d *tcpRecoveryData) Generate(ctx context.Context, buf *bytes.Buffer) error
 		return err
 	}
 
-	_, err = buf.WriteString(fmt.Sprintf("%d\n", recovery))
+	_, err = fmt.Fprintf(buf, "%d\n", recovery)
 	return err
 }
 
@@ -313,7 +313,7 @@ func (d *tcpMemData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	if err != nil {
 		return err
 	}
-	_, err = buf.WriteString(fmt.Sprintf("%d\t%d\t%d\n", size.Min, size.Default, size.Max))
+	_, err = fmt.Fprintf(buf, "%d\t%d\t%d\n", size.Min, size.Default, size.Max)
 	return err
 }
 

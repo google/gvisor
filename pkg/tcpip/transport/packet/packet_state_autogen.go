@@ -27,8 +27,8 @@ func (p *packet) beforeSave() {}
 // +checklocksignore
 func (p *packet) StateSave(stateSinkObject state.Sink) {
 	p.beforeSave()
-	var receivedAtValue int64
-	receivedAtValue = p.saveReceivedAt()
+	receivedAtValue := p.saveReceivedAt()
+	_ = (int64)(receivedAtValue)
 	stateSinkObject.SaveValue(2, receivedAtValue)
 	stateSinkObject.Save(0, &p.packetEntry)
 	stateSinkObject.Save(1, &p.data)

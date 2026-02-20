@@ -977,11 +977,7 @@ func (r *FUSEDirents) MarshalBytes(buf []byte) []byte {
 
 // UnmarshalBytes deserializes FUSEDirents from the src buffer.
 func (r *FUSEDirents) UnmarshalBytes(src []byte) []byte {
-	for {
-		if len(src) <= (*FUSEDirentMeta)(nil).SizeBytes() {
-			break
-		}
-
+	for len(src) > (*FUSEDirentMeta)(nil).SizeBytes() {
 		// Its unclear how many dirents there are in src. Each dirent is dynamically
 		// sized and so we can't make assumptions about how many dirents we can allocate.
 		if r.Dirents == nil {
