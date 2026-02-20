@@ -472,7 +472,7 @@ func (s *Sandbox) StartSubcontainer(spec *specs.Spec, conf *config.Config, cid s
 	s.fixPidns(spec)
 
 	var rootfsUpperTarFile *os.File
-	if path := specutils.RootfsTarUpperPath(spec); path != "" {
+	if path := specutils.RootfsTarUpperPath(spec, conf.AllowRootfsTarAnnotation); path != "" {
 		var err error
 		rootfsUpperTarFile, err = os.OpenFile(path, os.O_RDONLY, 0644)
 		if err != nil {
@@ -959,7 +959,7 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 	if err := donations.OpenAndDonate("final-metrics-log-fd", conf.FinalMetricsLog, profFlags); err != nil {
 		return fmt.Errorf("donating final metrics log file: %w", err)
 	}
-	if err := donations.OpenAndDonate("rootfs-upper-tar-fd", specutils.RootfsTarUpperPath(args.Spec), os.O_RDONLY); err != nil {
+	if err := donations.OpenAndDonate("rootfs-upper-tar-fd", specutils.RootfsTarUpperPath(args.Spec, conf.AllowRootfsTarAnnotation), os.O_RDONLY); err != nil {
 		return fmt.Errorf("donating rootfs tar file: %w", err)
 	}
 

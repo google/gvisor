@@ -154,6 +154,9 @@ type Container struct {
 	// This field isn't saved to json, because only a creator of a gofer
 	// process will have it as a child process.
 	goferIsChild bool `nojson:"true"`
+
+	// allowRootfsTarAnnotation is whether to allow the rootfs tar annotation.
+	allowRootfsTarAnnotation bool `json:"allowRootfsTarAnnotation"`
 }
 
 // Args is used to configure a new container.
@@ -1002,7 +1005,7 @@ func createGoferConf(overlayMedium config.OverlayMedium, overlaySize string, mou
 
 // initGoferConfs initializes c.GoferMountConfs with all the gofer configs that
 // dictate how each gofer mount should be configured.
-func (c *Container) initGoferConfs(ovlConf config.Overlay2, mountHints *boot.PodMountHints, rootfsHint *boot.RootfsHint) error {
+func (c *Container) initGoferConfs(ovlConf config.Overlay2, mountHints *boot.PodMountHints, rootfsHint *boot.RootfsHint, allowRootfsTarAnnotation bool) error {
 	// Handle root mount first.
 	overlayMedium := ovlConf.RootOverlayMedium()
 	overlaySize := ovlConf.RootOverlaySize()
@@ -1015,7 +1018,7 @@ func (c *Container) initGoferConfs(ovlConf config.Overlay2, mountHints *boot.Pod
 		overlaySize = rootfsHint.Size
 	}
 	if c.Spec.Root.Readonly {
-		if specutils.RootfsTarUpperPath(c.Spec) != "" {
+		if allowRootfsTarAnnotation {
 			return fmt.Errorf("rootfs tar upper path is set but rootfs is readonly")
 		}
 		log.Debugf("Setting rootfs overlay to NoOverlay because rootfs is readonly")
@@ -1312,7 +1315,7 @@ func (c *Container) createGoferProcess(conf *config.Config, mountHints *boot.Pod
 	if err != nil {
 		return nil, nil, nil, nil, fmt.Errorf("error creating rootfs hint: %w", err)
 	}
-	if err := c.initGoferConfs(conf.GetOverlay2(), mountHints, rootfsHint); err != nil {
+	if err := c.initGoferConfs(conf.GetOverlay2(), mountHints, rootfsHint, conf.AllowRootfsTarAnnotation); err != nil {
 		return nil, nil, nil, nil, fmt.Errorf("error initializing gofer confs: %w", err)
 	}
 	if !c.GoferMountConfs[0].ShouldUseLisafs() && specutils.GPUFunctionalityRequestedViaHook(c.Spec, conf) {

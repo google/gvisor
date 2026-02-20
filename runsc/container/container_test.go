@@ -4104,21 +4104,40 @@ func TestSpecValidation(t *testing.T) {
 	}
 }
 
-func TestTarRootfsUpperLayer(t *testing.T) {
+func TestUntarReadonlyRootfsUpperLayer(t *testing.T) {
 	conf := testutil.TestConfig(t)
-	conf.Overlay2.Set("root:memory")
-
-	app, err := testutil.FindFile("test/cmd/test_app/test_app")
-	if err != nil {
-		t.Fatal("error finding test_app:", err)
-	}
+	conf.AllowRootfsTarAnnotation = true
 
 	spec, _ := sleepSpecConf(t)
-	spec.Root.Readonly = false
+	spec.Root.Readonly = true
 
 	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
 	if err != nil {
 		t.Fatalf("error setting up container: %v", err)
+	}
+	defer cleanup()
+	// Create and start the container.
+	args := Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+	}
+	_, err = New(conf, args)
+	wantedErrorMsg := "rootfs tar upper path is set but rootfs is readonly"
+	if err == nil || !strings.Contains(err.Error(), wantedErrorMsg) {
+		t.Errorf("Error not as expected, got: %v, want: %v", err, wantedErrorMsg)
+	}
+}
+
+func snapshotRootfsUpperLayer(conf *config.Config, spec *specs.Spec) (string, error) {
+	app, err := testutil.FindFile("test/cmd/test_app/test_app")
+	if err != nil {
+		return "", fmt.Errorf("error finding test_app: %v", err)
+	}
+
+	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+	if err != nil {
+		return "", fmt.Errorf("error setting up container: %v", err)
 	}
 	defer cleanup()
 
@@ -4130,11 +4149,11 @@ func TestTarRootfsUpperLayer(t *testing.T) {
 	}
 	cont, err := New(conf, args)
 	if err != nil {
-		t.Fatalf("error creating container: %v", err)
+		return "", fmt.Errorf("error creating container: %v", err)
 	}
 	defer cont.Destroy()
 	if err := cont.Start(conf); err != nil {
-		t.Fatalf("error starting container: %v", err)
+		return "", fmt.Errorf("error starting container: %v", err)
 	}
 	// Exec the command in the container.
 	execArgs := &control.ExecArgs{
@@ -4142,25 +4161,38 @@ func TestTarRootfsUpperLayer(t *testing.T) {
 		Argv:     []string{app, "fsTreeCreate", "--depth=3", "--file-per-level=2", "--file-size=1470", "--create-symlink", "--add-empty-files"},
 	}
 	if ws, err := cont.executeSync(conf, execArgs); err != nil {
-		t.Fatalf("error exec'ing: %v", err)
+		return "", fmt.Errorf("error exec'ing: %v", err)
 	} else if ws.ExitStatus() != 0 {
-		t.Fatalf("exec failed with exit status %d", ws.ExitStatus())
+		return "", fmt.Errorf("exec failed with exit status %d", ws.ExitStatus())
 	}
 
 	// Create a temporary file to write the tar bytes to.
-	tarFile1, err := os.CreateTemp(testutil.TmpDir(), "tarfile-*.tar")
+	tarFile, err := os.CreateTemp(testutil.TmpDir(), "tarfile-*.tar")
 	if err != nil {
-		t.Fatalf("error creating temp file: %v", err)
+		return "", fmt.Errorf("error creating temp file: %v", err)
 	}
-	defer os.Remove(tarFile1.Name())
 
-	if err := cont.TarRootfsUpperLayer(tarFile1); err != nil {
-		t.Fatalf("error serializing rootfs upper layer to tar: %v", err)
+	if err := cont.TarRootfsUpperLayer(tarFile); err != nil {
+		return "", fmt.Errorf("error serializing rootfs upper layer to tar: %v", err)
 	}
-	tarFile1.Close()
+	tarFile.Close()
+	return tarFile.Name(), nil
+}
+
+func TestTarRootfsUpperLayer(t *testing.T) {
+	conf := testutil.TestConfig(t)
+	conf.Overlay2.Set("root:memory")
+	spec, _ := sleepSpecConf(t)
+	spec.Root.Readonly = false
+
+	tarFile1, err := snapshotRootfsUpperLayer(conf, spec)
+	if err != nil {
+		t.Fatalf("error snapshotting rootfs upper layer: %v", err)
+	}
+	defer os.Remove(tarFile1)
 
 	// List the contents of the tar file using the tar command.
-	snap1, err := exec.Command("tar", "-tvf", tarFile1.Name()).CombinedOutput()
+	snap1, err := exec.Command("tar", "-tvf", tarFile1).CombinedOutput()
 	if err != nil {
 		t.Fatalf("error listing contents of tar file: %v, output: %s", err, snap1)
 	} else {
@@ -4175,14 +4207,15 @@ func TestTarRootfsUpperLayer(t *testing.T) {
 	}
 
 	// Add the tar file to the spec annotations and create a new container.
-	spec.Annotations["dev.gvisor.tar.rootfs.upper"] = tarFile1.Name()
-	_, bundleDir, cleanup, err = testutil.SetupContainer(spec, conf)
+	spec.Annotations["dev.gvisor.tar.rootfs.upper"] = tarFile1
+	conf.AllowRootfsTarAnnotation = true
+	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
 	if err != nil {
 		t.Fatalf("error setting up container: %v", err)
 	}
 	defer cleanup()
 
-	args = Args{
+	args := Args{
 		ID:        testutil.RandomContainerID(),
 		Spec:      spec,
 		BundleDir: bundleDir,
@@ -4222,6 +4255,75 @@ func TestTarRootfsUpperLayer(t *testing.T) {
 	for line, count := range lineCounts {
 		if count != 0 {
 			t.Errorf("unexpected diff in tar file: line %q has %d occurrences", line, count)
+		}
+	}
+}
+
+func TestDisableTarRootfsUpperLayer(t *testing.T) {
+	conf := testutil.TestConfig(t)
+	conf.Overlay2.Set("root:memory")
+	spec, _ := sleepSpecConf(t)
+	spec.Root.Readonly = false
+
+	tarFile1, err := snapshotRootfsUpperLayer(conf, spec)
+	if err != nil {
+		t.Fatalf("error snapshotting rootfs upper layer: %v", err)
+	}
+	defer os.Remove(tarFile1)
+
+	// Add the tar file to the spec annotations and create a new container.
+	spec.Annotations["dev.gvisor.tar.rootfs.upper"] = tarFile1
+	conf.AllowRootfsTarAnnotation = false
+	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer cleanup()
+
+	args := Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+	}
+
+	newCont, err := New(conf, args)
+	if err != nil {
+		t.Fatalf("error creating container: %v", err)
+	}
+	defer newCont.Destroy()
+	if err := newCont.Start(conf); err != nil {
+		t.Fatalf("error starting container: %v", err)
+	}
+
+	// Create a new temporary file to write the tar bytes to.
+	tarFile2, err := os.CreateTemp(testutil.TmpDir(), "tarfile-*.tar")
+	if err != nil {
+		t.Fatalf("error creating temp file: %v", err)
+	}
+	defer os.Remove(tarFile2.Name())
+
+	if err := newCont.TarRootfsUpperLayer(tarFile2); err != nil {
+		t.Fatalf("error serializing rootfs upper layer to tar: %v", err)
+	}
+	tarFile2.Close()
+
+	// List the contents of the tar file using the tar command.
+	snap2, err := exec.Command("tar", "-tvf", tarFile2.Name()).CombinedOutput()
+	if err != nil {
+		t.Fatalf("error listing contents of tar file: %v, output: %s", err, snap2)
+	}
+
+	lineCounts := make(map[string]int)
+	if err := processSnapBytes(snap2, lineCounts, -1); err != nil {
+		t.Fatalf("error processing tar file: %v", err)
+	}
+	// There should be only one line in the tar file for the root directory.
+	if len(lineCounts) != 1 {
+		t.Fatalf("unexpected number of lines in tar file: %d", len(lineCounts))
+	}
+	for line := range lineCounts {
+		if !strings.HasSuffix(strings.TrimSpace(line), "./") {
+			t.Errorf("unexpected tar file contents %q", line)
 		}
 	}
 }
