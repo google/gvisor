@@ -628,18 +628,18 @@ func (i *lisafsInode) restoreInode(ctx context.Context, inode *lisafs.Inode, opt
 	if i.isRegularFile() {
 		if opts.ValidateFileSizes {
 			if inode.Stat.Mask&linux.STATX_SIZE == 0 {
-				return vfs.ErrCorruption{Err: fmt.Errorf("gofer.dentry(%q).restoreFile: file size validation failed: file size not available", genericDebugPathname(i.fs, d))}
+				return vfs.ErrCorruption{Err: fmt.Errorf("gofer.dentry(%q in mount %q).restoreFile: file size validation failed: file size not available", genericDebugPathname(i.fs, d), i.fs.iopts.UniqueID)}
 			}
 			if i.size.RacyLoad() != inode.Stat.Size {
-				return vfs.ErrCorruption{Err: fmt.Errorf("gofer.dentry(%q).restoreFile: file size validation failed: size changed from %d to %d", genericDebugPathname(i.fs, d), i.size.Load(), inode.Stat.Size)}
+				return vfs.ErrCorruption{Err: fmt.Errorf("gofer.dentry(%q in mount %q).restoreFile: file size validation failed: size changed from %d to %d", genericDebugPathname(i.fs, d), i.fs.iopts.UniqueID, i.size.Load(), inode.Stat.Size)}
 			}
 		}
 		if opts.ValidateFileModificationTimestamps {
 			if inode.Stat.Mask&linux.STATX_MTIME == 0 {
-				return vfs.ErrCorruption{Err: fmt.Errorf("gofer.dentry(%q).restoreFile: mtime validation failed: mtime not available", genericDebugPathname(i.fs, d))}
+				return vfs.ErrCorruption{Err: fmt.Errorf("gofer.dentry(%q in mount %q).restoreFile: mtime validation failed: mtime not available", genericDebugPathname(i.fs, d), i.fs.iopts.UniqueID)}
 			}
 			if want := dentryTimestamp(inode.Stat.Mtime); i.mtime.RacyLoad() != want {
-				return vfs.ErrCorruption{Err: fmt.Errorf("gofer.dentry(%q).restoreFile: mtime validation failed: mtime changed from %+v to %+v", genericDebugPathname(i.fs, d), linux.NsecToStatxTimestamp(i.mtime.RacyLoad()), linux.NsecToStatxTimestamp(want))}
+				return vfs.ErrCorruption{Err: fmt.Errorf("gofer.dentry(%q in mount %q).restoreFile: mtime validation failed: mtime changed from %+v to %+v", genericDebugPathname(i.fs, d), i.fs.iopts.UniqueID, linux.NsecToStatxTimestamp(i.mtime.RacyLoad()), linux.NsecToStatxTimestamp(want))}
 			}
 		}
 	}
@@ -649,7 +649,7 @@ func (i *lisafsInode) restoreInode(ctx context.Context, inode *lisafs.Inode, opt
 
 	if rw, ok := i.fs.savedDentryRW[d]; ok {
 		if err := d.ensureSharedHandle(ctx, rw.read, rw.write, false /* trunc */); err != nil {
-			return fmt.Errorf("failed to restore file handles (read=%t, write=%t) for %q: %w", rw.read, rw.write, genericDebugPathname(i.fs, d), err)
+			return fmt.Errorf("failed to restore file handles (read=%t, write=%t) for %q in mount %q: %w", rw.read, rw.write, genericDebugPathname(i.fs, d), i.fs.iopts.UniqueID, err)
 		}
 	}
 

@@ -713,7 +713,7 @@ func (i *directfsInode) restoreFile(ctx context.Context, controlFD int, opts *vf
 	var stat unix.Stat_t
 	if err := unix.Fstat(controlFD, &stat); err != nil {
 		_ = unix.Close(controlFD)
-		return fmt.Errorf("failed to stat %q: %w", genericDebugPathname(i.fs, d), err)
+		return fmt.Errorf("failed to stat %q in mount %q: %w", genericDebugPathname(i.fs, d), i.fs.iopts.UniqueID, err)
 	}
 	i.controlFD = controlFD
 	// We do not preserve inoKey across checkpoint/restore, so:
@@ -737,12 +737,12 @@ func (i *directfsInode) restoreFile(ctx context.Context, controlFD int, opts *vf
 	if i.isRegularFile() {
 		if opts.ValidateFileSizes {
 			if i.size.RacyLoad() != uint64(stat.Size) {
-				return vfs.ErrCorruption{Err: fmt.Errorf("gofer.dentry(%q).restoreFile: file size validation failed: size changed from %d to %d", genericDebugPathname(i.fs, d), i.size.Load(), stat.Size)}
+				return vfs.ErrCorruption{Err: fmt.Errorf("gofer.dentry(%q in mount %q).restoreFile: file size validation failed: size changed from %d to %d", genericDebugPathname(i.fs, d), i.fs.iopts.UniqueID, i.size.Load(), stat.Size)}
 			}
 		}
 		if opts.ValidateFileModificationTimestamps {
 			if want := dentryTimestampFromUnix(stat.Mtim); i.mtime.RacyLoad() != want {
-				return vfs.ErrCorruption{Err: fmt.Errorf("gofer.dentry(%q).restoreFile: mtime validation failed: mtime changed from %+v to %+v", genericDebugPathname(i.fs, d), linux.NsecToStatxTimestamp(i.mtime.RacyLoad()), linux.NsecToStatxTimestamp(want))}
+				return vfs.ErrCorruption{Err: fmt.Errorf("gofer.dentry(%q in mount %q).restoreFile: mtime validation failed: mtime changed from %+v to %+v", genericDebugPathname(i.fs, d), i.fs.iopts.UniqueID, linux.NsecToStatxTimestamp(i.mtime.RacyLoad()), linux.NsecToStatxTimestamp(want))}
 			}
 		}
 	}
@@ -752,7 +752,7 @@ func (i *directfsInode) restoreFile(ctx context.Context, controlFD int, opts *vf
 
 	if rw, ok := i.fs.savedDentryRW[d]; ok {
 		if err := d.ensureSharedHandle(ctx, rw.read, rw.write, false /* trunc */); err != nil {
-			return fmt.Errorf("failed to restore file handles (read=%t, write=%t) for %q: %w", rw.read, rw.write, genericDebugPathname(i.fs, d), err)
+			return fmt.Errorf("failed to restore file handles (read=%t, write=%t) for %q in mount %q: %w", rw.read, rw.write, genericDebugPathname(i.fs, d), i.fs.iopts.UniqueID, err)
 		}
 	}
 
