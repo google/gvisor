@@ -691,7 +691,7 @@ func (m *metricServer) serveMetrics(w *httpResponseWriter, req *http.Request) ht
 	queryMultiSandboxMetrics(ctx, loadedSandboxes, metricsFilter, func(r sandboxMetricsResult) {
 		metricsMu.Lock()
 		defer metricsMu.Unlock()
-		selfMetrics.Add(prometheus.LabeledIntData(&SandboxPresenceMetric, nil, 1).SetExternalLabels(r.served.extraLabels))
+		selfMetrics.Add(prometheus.LabeledIntData(&SandboxPresenceMetric.Metric, nil, 1).SetExternalLabels(r.served.extraLabels))
 		sandboxRunning := int64(0)
 		sandboxCheckpointed := int64(0)
 		sandboxRestored := int64(0)
@@ -711,24 +711,24 @@ func (m *metricServer) serveMetrics(w *httpResponseWriter, req *http.Request) ht
 			sandboxCPUTimeSavedMS = r.cpuTimeSavedMS
 			sandboxWallTimeSavedMS = r.wallTimeSavedMS
 		}
-		selfMetrics.Add(prometheus.LabeledIntData(&SandboxRunningMetric, nil, sandboxRunning).SetExternalLabels(r.served.extraLabels))
-		selfMetrics.Add(prometheus.LabeledIntData(&SandboxCheckpointedMetric, nil, sandboxCheckpointed).SetExternalLabels(r.served.extraLabels))
-		selfMetrics.Add(prometheus.LabeledIntData(&SandboxRestoredMetric, nil, sandboxRestored).SetExternalLabels(r.served.extraLabels))
-		selfMetrics.Add(prometheus.LabeledIntData(&SandboxCPUTimeSavedMSMetric, nil, sandboxCPUTimeSavedMS).SetExternalLabels(r.served.extraLabels))
-		selfMetrics.Add(prometheus.LabeledIntData(&SandboxWallTimeSavedMSMetric, nil, sandboxWallTimeSavedMS).SetExternalLabels(r.served.extraLabels))
+		selfMetrics.Add(prometheus.LabeledIntData(&SandboxRunningMetric.Metric, nil, sandboxRunning).SetExternalLabels(r.served.extraLabels))
+		selfMetrics.Add(prometheus.LabeledIntData(&SandboxCheckpointedMetric.Metric, nil, sandboxCheckpointed).SetExternalLabels(r.served.extraLabels))
+		selfMetrics.Add(prometheus.LabeledIntData(&SandboxRestoredMetric.Metric, nil, sandboxRestored).SetExternalLabels(r.served.extraLabels))
+		selfMetrics.Add(prometheus.LabeledIntData(&SandboxCPUTimeSavedMSMetric.Metric, nil, sandboxCPUTimeSavedMS).SetExternalLabels(r.served.extraLabels))
+		selfMetrics.Add(prometheus.LabeledIntData(&SandboxWallTimeSavedMSMetric.Metric, nil, sandboxWallTimeSavedMS).SetExternalLabels(r.served.extraLabels))
 		if r.err == nil {
-			selfMetrics.Add(prometheus.LabeledIntData(&SandboxMetadataMetric, r.sandbox.MetricMetadata, 1).SetExternalLabels(r.served.extraLabels))
+			selfMetrics.Add(prometheus.LabeledIntData(&SandboxMetadataMetric.Metric, r.sandbox.MetricMetadata, 1).SetExternalLabels(r.served.extraLabels))
 			for _, cap := range r.served.capabilities {
 				if capabilityFilterReg != nil && !capabilityFilterReg.MatchString(cap.String()) && !capabilityFilterReg.MatchString(cap.TrimmedString()) {
 					continue
 				}
-				selfMetrics.Add(prometheus.LabeledIntData(&SandboxCapabilitiesMetric, map[string]string{
+				selfMetrics.Add(prometheus.LabeledIntData(&SandboxCapabilitiesMetric.Metric, map[string]string{
 					SandboxCapabilitiesMetricLabel: cap.TrimmedString(),
 				}, 1).SetExternalLabels(r.served.extraLabels))
 			}
-			selfMetrics.Add(prometheus.LabeledIntData(&SpecMetadataMetric, r.served.specMetadataLabels, 1).SetExternalLabels(r.served.extraLabels))
+			selfMetrics.Add(prometheus.LabeledIntData(&SpecMetadataMetric.Metric, r.served.specMetadataLabels, 1).SetExternalLabels(r.served.extraLabels))
 			createdAt := float64(r.served.createdAt.Unix()) + (float64(r.served.createdAt.Nanosecond()) / 1e9)
-			selfMetrics.Add(prometheus.LabeledFloatData(&SandboxCreationMetric, nil, createdAt).SetExternalLabels(r.served.extraLabels))
+			selfMetrics.Add(prometheus.LabeledFloatData(&SandboxCreationMetric.Metric, nil, createdAt).SetExternalLabels(r.served.extraLabels))
 		} else {
 			// If the sandbox isn't running, it is normal that metrics are not exported for it, so
 			// do not report this case as an error.
@@ -765,12 +765,12 @@ func (m *metricServer) serveMetrics(w *httpResponseWriter, req *http.Request) ht
 	}
 
 	// Add our own metrics.
-	selfMetrics.Add(prometheus.NewIntData(&MetricServerPresenceMetric, 1))
-	selfMetrics.Add(prometheus.NewIntData(&NumRunningSandboxesMetric, meta.numRunningSandboxes))
-	selfMetrics.Add(prometheus.NewIntData(&NumCannotExportSandboxesMetric, meta.numCannotExportSandboxes))
-	selfMetrics.Add(prometheus.NewIntData(&NumTotalSandboxesMetric, numSandboxesTotal))
-	selfMetrics.Add(prometheus.NewIntData(&NumCheckpointedSandboxesMetric, meta.numCheckpointedSandboxes))
-	selfMetrics.Add(prometheus.NewIntData(&NumRestoredSandboxesMetric, meta.numRestoredSandboxes))
+	selfMetrics.Add(prometheus.NewIntData(&MetricServerPresenceMetric.Metric, 1))
+	selfMetrics.Add(prometheus.NewIntData(&NumRunningSandboxesMetric.Metric, meta.numRunningSandboxes))
+	selfMetrics.Add(prometheus.NewIntData(&NumCannotExportSandboxesMetric.Metric, meta.numCannotExportSandboxes))
+	selfMetrics.Add(prometheus.NewIntData(&NumTotalSandboxesMetric.Metric, numSandboxesTotal))
+	selfMetrics.Add(prometheus.NewIntData(&NumCheckpointedSandboxesMetric.Metric, meta.numCheckpointedSandboxes))
+	selfMetrics.Add(prometheus.NewIntData(&NumRestoredSandboxesMetric.Metric, meta.numRestoredSandboxes))
 
 	// Write out all data.
 	lastMetricsWrittenSize := int(m.lastMetricsWrittenSize.Load())
