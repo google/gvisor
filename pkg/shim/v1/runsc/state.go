@@ -28,7 +28,7 @@ type state struct {
 	Rootfs string `json:"rootfs"`
 
 	// Options is the configuration loaded from config.toml.
-	Options options `json:"options"`
+	Options Options `json:"options"`
 }
 
 func (s state) load(path string) error {
