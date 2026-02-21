@@ -833,7 +833,12 @@ func containerNameNoRemap(spec *specs.Spec) string {
 // RootfsTarUpperPath returns the path to the rootfs upper tar file, or empty
 // string if not set. In multi-container mode, only container-specific
 // annotations are used.
-func RootfsTarUpperPath(spec *specs.Spec) string {
+// If allowRootfsTarAnnotation is false, the function will ignore the annotation and
+// always return empty string.
+func RootfsTarUpperPath(spec *specs.Spec, allowRootfsTarAnnotation bool) string {
+	if !allowRootfsTarAnnotation {
+		return ""
+	}
 	if spec == nil || spec.Annotations == nil {
 		return ""
 	}

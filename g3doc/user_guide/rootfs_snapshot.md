@@ -57,7 +57,19 @@ For pods with multiple containers, append the container name to the key, for
 example `dev.gvisor.tar.rootfs.upper.my-container`, allowing different
 containers' rootfs snapshots to be restored from different tar files.
 
+To prevent unauthorized or unintended use, runsc requires a flag
+`allow-rootfs-tar-annotation` to authorize the use of the annotation.
+
 ### Start with Docker
+
+Enable the flag `allow-rootfs-tar-annotation` to runtimeArgs, e.g.
+
+```
+"runtimeArgs": [
+                "--allow-rootfs-tar-annotation",
+                ... // rest of the flags
+            ]
+```
 
 Since the tar file path is provided via OCI spec's annotation, it is compatible
 with Docker client when the runtime is gVisor. You can pass the annotation via
@@ -89,7 +101,7 @@ sandbox. For a multi-container pod, add one entry per container name:
 ```
 
 ```
-$ sudo runsc run -detach=true alpine
+$ sudo runsc --allow-rootfs-tar-annotation run -detach=true alpine
 $ sudo runsc exec alpine cat /dir/file
 hello world
 ```

@@ -504,14 +504,16 @@ func TestNvidiaDriverCapabilities(t *testing.T) {
 
 func TestRootfsUpperTarPath(t *testing.T) {
 	for _, tc := range []struct {
-		name string
-		spec specs.Spec
-		want string
+		name                     string
+		spec                     specs.Spec
+		allowRootfsTarAnnotation bool
+		want                     string
 	}{
 		{
-			name: "no annotation",
-			spec: specs.Spec{},
-			want: "",
+			name:                     "no annotation",
+			spec:                     specs.Spec{},
+			allowRootfsTarAnnotation: true,
+			want:                     "",
 		},
 		{
 			name: "no gvisor tar rootfs upper annotation",
@@ -520,7 +522,8 @@ func TestRootfsUpperTarPath(t *testing.T) {
 					"dev.gvisor": "123",
 				},
 			},
-			want: "",
+			allowRootfsTarAnnotation: true,
+			want:                     "",
 		},
 		{
 			name: "get gvisor tar rootfs upper annotation",
@@ -529,7 +532,18 @@ func TestRootfsUpperTarPath(t *testing.T) {
 					AnnotationRootfsUpperTar: "123",
 				},
 			},
-			want: "123",
+			allowRootfsTarAnnotation: true,
+			want:                     "123",
+		},
+		{
+			name: "disable gvisor tar rootfs upper annotation",
+			spec: specs.Spec{
+				Annotations: map[string]string{
+					AnnotationRootfsUpperTar: "123",
+				},
+			},
+			allowRootfsTarAnnotation: false,
+			want:                     "",
 		},
 		{
 			name: "container specific rootfs upper annotation",
@@ -539,7 +553,8 @@ func TestRootfsUpperTarPath(t *testing.T) {
 					AnnotationRootfsUpperTar + "." + "cont": "456",
 				},
 			},
-			want: "456",
+			allowRootfsTarAnnotation: true,
+			want:                     "456",
 		},
 		{
 			name: "container specific rootfs upper annotation with remap",
@@ -550,7 +565,8 @@ func TestRootfsUpperTarPath(t *testing.T) {
 					AnnotationRootfsUpperTar + "." + "cont": "789",
 				},
 			},
-			want: "789",
+			allowRootfsTarAnnotation: true,
+			want:                     "789",
 		},
 		{
 			name: "no fallback when other container-specific annotation exists",
@@ -561,7 +577,8 @@ func TestRootfsUpperTarPath(t *testing.T) {
 					AnnotationRootfsUpperTar:                 "base",
 				},
 			},
-			want: "",
+			allowRootfsTarAnnotation: true,
+			want:                     "",
 		},
 		{
 			name: "container specific takes priority over base",
@@ -572,7 +589,8 @@ func TestRootfsUpperTarPath(t *testing.T) {
 					AnnotationRootfsUpperTar + "." + "cont": "specific-path",
 				},
 			},
-			want: "specific-path",
+			allowRootfsTarAnnotation: true,
+			want:                     "specific-path",
 		},
 		{
 			name: "empty container name falls back to base",
@@ -582,7 +600,8 @@ func TestRootfsUpperTarPath(t *testing.T) {
 					AnnotationRootfsUpperTar:          "base-path",
 				},
 			},
-			want: "base-path",
+			allowRootfsTarAnnotation: true,
+			want:                     "base-path",
 		},
 		{
 			name: "container name set but no matching annotation",
@@ -592,7 +611,8 @@ func TestRootfsUpperTarPath(t *testing.T) {
 					AnnotationRootfsUpperTar:          "base-path",
 				},
 			},
-			want: "",
+			allowRootfsTarAnnotation: true,
+			want:                     "",
 		},
 		{
 			name: "CRI sandbox without container name returns empty",
@@ -602,7 +622,8 @@ func TestRootfsUpperTarPath(t *testing.T) {
 					AnnotationRootfsUpperTar:          "base-path",
 				},
 			},
-			want: "",
+			allowRootfsTarAnnotation: true,
+			want:                     "",
 		},
 		{
 			name: "CRI container without container name returns empty",
@@ -612,11 +633,12 @@ func TestRootfsUpperTarPath(t *testing.T) {
 					AnnotationRootfsUpperTar:          "base-path",
 				},
 			},
-			want: "",
+			allowRootfsTarAnnotation: true,
+			want:                     "",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got := RootfsTarUpperPath(&tc.spec)
+			got := RootfsTarUpperPath(&tc.spec, tc.allowRootfsTarAnnotation)
 			if got != tc.want {
 				t.Errorf("RootfsUpperTarFD() got: %v, want: %v", got, tc.want)
 			}
