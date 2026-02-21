@@ -91,18 +91,6 @@ constexpr int kMaxLineSize = 4096;
 
 constexpr char kMasterPath[] = "/dev/ptmx";
 
-// glibc defines its own, different, version of struct termios. We care about
-// what the kernel does, not glibc.
-#define KERNEL_NCCS 19
-struct kernel_termios {
-  tcflag_t c_iflag;
-  tcflag_t c_oflag;
-  tcflag_t c_cflag;
-  tcflag_t c_lflag;
-  cc_t c_line;
-  cc_t c_cc[KERNEL_NCCS];
-};
-
 bool operator==(struct kernel_termios const &a,
                 struct kernel_termios const &b) {
   return memcmp(&a, &b, sizeof(a)) == 0;
@@ -918,6 +906,46 @@ TEST_F(PtyTest, DefaultTermios) {
 
   EXPECT_THAT(ioctl(master_.get(), TCGETS, &t), SyscallSucceeds());
   EXPECT_EQ(t, DefaultTermios());
+}
+
+TEST_F(PtyTest, Termios2) {
+  struct kernel_termios t = {};
+  EXPECT_THAT(ioctl(replica_.get(), TCGETS, &t), SyscallSucceeds());
+
+  struct kernel_termios2 t2 = {};
+  EXPECT_THAT(ioctl(replica_.get(), TCGETS2, &t2), SyscallSucceeds());
+
+  EXPECT_EQ(t.c_iflag, t2.c_iflag);
+  EXPECT_EQ(t.c_oflag, t2.c_oflag);
+  EXPECT_EQ(t.c_cflag, t2.c_cflag);
+  EXPECT_EQ(t.c_lflag, t2.c_lflag);
+  EXPECT_EQ(t.c_line, t2.c_line);
+  for (int i = 0; i < KERNEL_NCCS; ++i) {
+    EXPECT_EQ(t.c_cc[i], t2.c_cc[i]);
+  }
+
+  // Default speed is 38400.
+  EXPECT_EQ(t2.c_ispeed, 38400);
+  EXPECT_EQ(t2.c_ospeed, 38400);
+
+  // Test TCSETS2.
+  t2.c_lflag ^= ICANON;
+  EXPECT_THAT(ioctl(replica_.get(), TCSETS2, &t2), SyscallSucceeds());
+  struct kernel_termios2 t3 = {};
+  EXPECT_THAT(ioctl(replica_.get(), TCGETS2, &t3), SyscallSucceeds());
+  EXPECT_EQ(t2.c_lflag, t3.c_lflag);
+
+  // Test TCSETSW2.
+  t2.c_lflag ^= ICANON;
+  EXPECT_THAT(ioctl(replica_.get(), TCSETSW2, &t2), SyscallSucceeds());
+  EXPECT_THAT(ioctl(replica_.get(), TCGETS2, &t3), SyscallSucceeds());
+  EXPECT_EQ(t2.c_lflag, t3.c_lflag);
+
+  // Test TCSETSF2.
+  t2.c_lflag ^= ICANON;
+  EXPECT_THAT(ioctl(replica_.get(), TCSETSF2, &t2), SyscallSucceeds());
+  EXPECT_THAT(ioctl(replica_.get(), TCGETS2, &t3), SyscallSucceeds());
+  EXPECT_EQ(t2.c_lflag, t3.c_lflag);
 }
 
 // Changing termios from the master actually affects the replica.

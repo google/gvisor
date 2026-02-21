@@ -15,6 +15,8 @@
 #ifndef GVISOR_TEST_UTIL_PTY_UTIL_H_
 #define GVISOR_TEST_UTIL_PTY_UTIL_H_
 
+#include <termios.h>
+
 #include "test/util/file_descriptor.h"
 #include "test/util/posix_error.h"
 
@@ -32,6 +34,50 @@ PosixErrorOr<FileDescriptor> OpenReplica(const FileDescriptor& master,
 
 // Get the number of the replica end of the master.
 PosixErrorOr<int> ReplicaID(const FileDescriptor& master);
+
+// glibc defines its own, different, version of struct termios. We care about
+// what the kernel does, not glibc.
+#define KERNEL_NCCS 19
+
+struct kernel_termios {
+  tcflag_t c_iflag;
+  tcflag_t c_oflag;
+  tcflag_t c_cflag;
+  tcflag_t c_lflag;
+  cc_t c_line;
+  cc_t c_cc[KERNEL_NCCS];
+};
+
+struct kernel_termios2 {
+  tcflag_t c_iflag;
+  tcflag_t c_oflag;
+  tcflag_t c_cflag;
+  tcflag_t c_lflag;
+  cc_t c_line;
+  cc_t c_cc[KERNEL_NCCS];
+  speed_t c_ispeed;
+  speed_t c_ospeed;
+};
+
+#ifdef TCGETS2
+#undef TCGETS2
+#endif
+#define TCGETS2 0x802c542a
+
+#ifdef TCSETS2
+#undef TCSETS2
+#endif
+#define TCSETS2 0x402c542b
+
+#ifdef TCSETSW2
+#undef TCSETSW2
+#endif
+#define TCSETSW2 0x402c542c
+
+#ifdef TCSETSF2
+#undef TCSETSF2
+#endif
+#define TCSETSF2 0x402c542d
 
 }  // namespace testing
 }  // namespace gvisor
