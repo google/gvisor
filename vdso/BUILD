@@ -78,4 +78,5 @@ py_test(
     ],
     data = [":vdso"],
     main = "check_vdso.py",
+    strict_deps = False,  # copybara:strip
 )
