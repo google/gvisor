@@ -239,7 +239,7 @@ func checkContainerStart(msg test.Message) error {
 		return fmt.Errorf("empty env")
 	}
 	for _, e := range p.Env {
-		if strings.IndexRune(e, '=') == -1 {
+		if !strings.ContainsRune(e, '=') {
 			return fmt.Errorf("malformed env: %q", e)
 		}
 	}

@@ -129,12 +129,12 @@ unreadLoop:
 func (s *Shell) logIO(prefix string, b []byte, err error) {
 	var sb strings.Builder
 	if len(b) > 0 {
-		sb.WriteString(fmt.Sprintf("%q", b))
+		fmt.Fprintf(&sb, "%q", b)
 	} else {
 		sb.WriteString("(nothing)")
 	}
 	if err != nil {
-		sb.WriteString(fmt.Sprintf(" [error: %v]", err))
+		fmt.Fprintf(&sb, " [error: %v]", err)
 	}
 	s.logf(prefix, "%s", sb.String())
 }

@@ -324,7 +324,7 @@ func setup(t *testing.T) (*criutil.Crictl, func(), error) {
 	if err != nil {
 		t.Fatalf("error extracting containerd version: %v (%s)", err, string(out))
 	}
-	r := regexp.MustCompile(" v([0-9]+)\\.([0-9]+)\\.([0-9+])")
+	r := regexp.MustCompile(` v([0-9]+)\.([0-9]+)\.([0-9+])`)
 	vs := r.FindStringSubmatch(string(out))
 	if len(vs) != 4 {
 		t.Fatalf("error unexpected version string: %s", string(out))

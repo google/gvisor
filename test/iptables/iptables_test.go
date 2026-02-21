@@ -141,11 +141,8 @@ func iptablesTest(t *testing.T, test TestCase, ipv6 bool) {
 	}()
 
 	for i := 0; i < 2; i++ {
-		select {
-		case err := <-errCh:
-			if err != nil {
-				t.Fatal(err)
-			}
+		if err := <-errCh; err != nil {
+			t.Fatal(err)
 		}
 	}
 }

@@ -54,9 +54,7 @@ func (goRunner) ListTests() ([]string, error) {
 		return nil, fmt.Errorf("failed to list: %v", err)
 	}
 	var toolSlice []string
-	for _, test := range strings.Split(string(out), "\n") {
-		toolSlice = append(toolSlice, test)
-	}
+	toolSlice = append(toolSlice, strings.Split(string(out), "\n")...)
 
 	// Go tests on disk.
 	diskSlice, err := Search(goTestDir, goTestRegEx)
