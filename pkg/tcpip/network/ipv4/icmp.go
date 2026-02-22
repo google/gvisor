@@ -16,6 +16,7 @@ package ipv4
 
 import (
 	"fmt"
+	"math"
 
 	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -599,7 +600,12 @@ func (*icmpReasonNetworkUnreachable) isICMPReason() {}
 // icmpReasonFragmentationNeeded is an error where a packet requires
 // fragmentation while also having the Don't Fragment flag set, as per RFC 792
 // page 3, Destination Unreachable Message.
-type icmpReasonFragmentationNeeded struct{}
+type icmpReasonFragmentationNeeded struct {
+	// mtu is the MTU of the next-hop link. Per RFC 1191 §4, this value
+	// must be included in the ICMP Fragmentation Needed message so the
+	// sender can update its path MTU cache.
+	mtu uint32
+}
 
 func (*icmpReasonFragmentationNeeded) isICMPReason() {}
 
@@ -704,30 +710,36 @@ func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer, deliv
 	}
 
 	sent := netEP.stats.icmp.packetsSent
-	icmpType, icmpCode, counter, pointer := func() (header.ICMPv4Type, header.ICMPv4Code, tcpip.MultiCounterStat, byte) {
+	icmpType, icmpCode, counter, pointer, nextHopMTU := func() (header.ICMPv4Type, header.ICMPv4Code, tcpip.MultiCounterStat, byte, uint16) {
 		switch reason := reason.(type) {
 		case *icmpReasonNetworkProhibited:
-			return header.ICMPv4DstUnreachable, header.ICMPv4NetProhibited, sent.dstUnreachable, 0
+			return header.ICMPv4DstUnreachable, header.ICMPv4NetProhibited, sent.dstUnreachable, 0, 0
 		case *icmpReasonHostProhibited:
-			return header.ICMPv4DstUnreachable, header.ICMPv4HostProhibited, sent.dstUnreachable, 0
+			return header.ICMPv4DstUnreachable, header.ICMPv4HostProhibited, sent.dstUnreachable, 0, 0
 		case *icmpReasonAdministrativelyProhibited:
-			return header.ICMPv4DstUnreachable, header.ICMPv4AdminProhibited, sent.dstUnreachable, 0
+			return header.ICMPv4DstUnreachable, header.ICMPv4AdminProhibited, sent.dstUnreachable, 0, 0
 		case *icmpReasonPortUnreachable:
-			return header.ICMPv4DstUnreachable, header.ICMPv4PortUnreachable, sent.dstUnreachable, 0
+			return header.ICMPv4DstUnreachable, header.ICMPv4PortUnreachable, sent.dstUnreachable, 0, 0
 		case *icmpReasonProtoUnreachable:
-			return header.ICMPv4DstUnreachable, header.ICMPv4ProtoUnreachable, sent.dstUnreachable, 0
+			return header.ICMPv4DstUnreachable, header.ICMPv4ProtoUnreachable, sent.dstUnreachable, 0, 0
 		case *icmpReasonNetworkUnreachable:
-			return header.ICMPv4DstUnreachable, header.ICMPv4NetUnreachable, sent.dstUnreachable, 0
+			return header.ICMPv4DstUnreachable, header.ICMPv4NetUnreachable, sent.dstUnreachable, 0, 0
 		case *icmpReasonHostUnreachable:
-			return header.ICMPv4DstUnreachable, header.ICMPv4HostUnreachable, sent.dstUnreachable, 0
+			return header.ICMPv4DstUnreachable, header.ICMPv4HostUnreachable, sent.dstUnreachable, 0, 0
 		case *icmpReasonFragmentationNeeded:
-			return header.ICMPv4DstUnreachable, header.ICMPv4FragmentationNeeded, sent.dstUnreachable, 0
+			// Per RFC 1191 §4, include the next-hop MTU in the ICMP message.
+			// Cap at MaxUint16 since the field is 16 bits wide.
+			mtu := reason.mtu
+			if mtu > math.MaxUint16 {
+				mtu = math.MaxUint16
+			}
+			return header.ICMPv4DstUnreachable, header.ICMPv4FragmentationNeeded, sent.dstUnreachable, 0, uint16(mtu)
 		case *icmpReasonTTLExceeded:
-			return header.ICMPv4TimeExceeded, header.ICMPv4TTLExceeded, sent.timeExceeded, 0
+			return header.ICMPv4TimeExceeded, header.ICMPv4TTLExceeded, sent.timeExceeded, 0, 0
 		case *icmpReasonReassemblyTimeout:
-			return header.ICMPv4TimeExceeded, header.ICMPv4ReassemblyTimeout, sent.timeExceeded, 0
+			return header.ICMPv4TimeExceeded, header.ICMPv4ReassemblyTimeout, sent.timeExceeded, 0, 0
 		case *icmpReasonParamProblem:
-			return header.ICMPv4ParamProblem, header.ICMPv4UnusedCode, sent.paramProblem, reason.pointer
+			return header.ICMPv4ParamProblem, header.ICMPv4UnusedCode, sent.paramProblem, reason.pointer, 0
 		default:
 			panic(fmt.Sprintf("unsupported ICMP type %T", reason))
 		}
@@ -796,6 +808,7 @@ func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer, deliv
 	icmpHdr.SetCode(icmpCode)
 	icmpHdr.SetType(icmpType)
 	icmpHdr.SetPointer(pointer)
+	icmpHdr.SetMTU(nextHopMTU)
 	icmpHdr.SetChecksum(header.ICMPv4Checksum(icmpHdr, icmpPkt.Data().Checksum()))
 
 	if err := route.WritePacket(
