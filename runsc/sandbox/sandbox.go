@@ -2092,11 +2092,13 @@ func (s *Sandbox) ContainerRuntimeState(cid string) (boot.ContainerRuntimeState,
 
 // TarRootfsUpperLayer serializes the rootfs upper layer of a given
 // container to a tar file. When the rootfs is not an overlayfs, it
-// returns an error. It writes the tar file to outFD.
-func (s *Sandbox) TarRootfsUpperLayer(containerID string, outFD *os.File) error {
-	log.Debugf("TarRootfsUpperLayer, sandbox: %q, container: %q", s.ID, containerID)
+// returns an error. It writes the tar file to outFD. If path is
+// non-empty, only the subtree under that path is included.
+func (s *Sandbox) TarRootfsUpperLayer(containerID string, outFD *os.File, path string) error {
+	log.Debugf("TarRootfsUpperLayer, sandbox: %q, container: %q, path: %q", s.ID, containerID, path)
 	opts := control.TarRootfsUpperLayerOpts{
 		ContainerID: containerID,
+		Path:        path,
 		FilePayload: urpc.FilePayload{Files: []*os.File{outFD}},
 	}
 	if err := s.call(boot.FsTarRootfsUpperLayer, &opts, nil); err != nil {

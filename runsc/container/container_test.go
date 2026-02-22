@@ -4154,7 +4154,7 @@ func TestTarRootfsUpperLayer(t *testing.T) {
 	}
 	defer os.Remove(tarFile1.Name())
 
-	if err := cont.TarRootfsUpperLayer(tarFile1); err != nil {
+	if err := cont.TarRootfsUpperLayer(tarFile1, ""); err != nil {
 		t.Fatalf("error serializing rootfs upper layer to tar: %v", err)
 	}
 	tarFile1.Close()
@@ -4204,7 +4204,7 @@ func TestTarRootfsUpperLayer(t *testing.T) {
 	}
 	defer os.Remove(tarFile2.Name())
 
-	if err := newCont.TarRootfsUpperLayer(tarFile2); err != nil {
+	if err := newCont.TarRootfsUpperLayer(tarFile2, ""); err != nil {
 		t.Fatalf("error serializing rootfs upper layer to tar: %v", err)
 	}
 	tarFile2.Close()
@@ -4311,7 +4311,7 @@ func TestTarRootfsUpperLayerOpaqueDir(t *testing.T) {
 	}
 	defer os.Remove(tarFile.Name())
 
-	if err := cont.TarRootfsUpperLayer(tarFile); err != nil {
+	if err := cont.TarRootfsUpperLayer(tarFile, ""); err != nil {
 		t.Fatalf("error serializing rootfs upper layer to tar: %v", err)
 	}
 	tarFile.Close()
@@ -4349,6 +4349,84 @@ func TestTarRootfsUpperLayerOpaqueDir(t *testing.T) {
 		t.Fatalf("opaque xattr not preserved: expected only 'marker' in /usr/share, got: %v (stale lower layer files leaked through)", restoredFiles)
 	}
 	t.Logf("/usr/share in restored container correctly contains only: %v", restoredFiles)
+}
+
+// TestTarRootfsUpperLayerPathFilter verifies that the path filter option
+// restricts the tar output to only the subtree under the specified path,
+// while keeping tar entries rooted at the upper root.
+func TestTarRootfsUpperLayerPathFilter(t *testing.T) {
+	conf := testutil.TestConfig(t)
+	conf.Overlay2.Set("root:memory")
+
+	spec, _ := sleepSpecConf(t)
+	spec.Root.Readonly = false
+
+	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer cleanup()
+
+	args := Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+	}
+	cont, err := New(conf, args)
+	if err != nil {
+		t.Fatalf("error creating container: %v", err)
+	}
+	defer cont.Destroy()
+	if err := cont.Start(conf); err != nil {
+		t.Fatalf("error starting container: %v", err)
+	}
+
+	// Create a nested directory structure and a sibling directory.
+	// /a/b/c/file1 is the target, /a/b/sibling and /other are outside the filter.
+	if _, err := executeCombinedOutput(conf, cont, nil, "/bin/sh", "-c",
+		"mkdir -p /a/b/c && echo deep > /a/b/c/file1 && echo sib > /a/b/sibling && mkdir -p /other && echo nope > /other/file2"); err != nil {
+		t.Fatalf("error creating test files: %v", err)
+	}
+
+	// Tar with path filter restricting to /a/b/c.
+	tarFile, err := os.CreateTemp(testutil.TmpDir(), "tarfile-pathfilter-*.tar")
+	if err != nil {
+		t.Fatalf("error creating temp file: %v", err)
+	}
+	defer os.Remove(tarFile.Name())
+
+	if err := cont.TarRootfsUpperLayer(tarFile, "/a/b/c"); err != nil {
+		t.Fatalf("error serializing filtered rootfs upper layer to tar: %v", err)
+	}
+	tarFile.Close()
+
+	// List the contents of the filtered tar file.
+	snap, err := exec.Command("tar", "-tf", tarFile.Name()).CombinedOutput()
+	if err != nil {
+		t.Fatalf("error listing contents of tar file: %v, output: %s", err, snap)
+	}
+	tarEntries := strings.Split(strings.TrimSpace(string(snap)), "\n")
+	t.Logf("filtered tar contents:\n%s", snap)
+
+	// Build a set of tar entries for precise checking.
+	entrySet := make(map[string]bool, len(tarEntries))
+	for _, e := range tarEntries {
+		entrySet[e] = true
+	}
+
+	// Verify ancestor directories are included.
+	for _, expected := range []string{"./", "./a/", "./a/b/", "./a/b/c/", "./a/b/c/file1"} {
+		if !entrySet[expected] {
+			t.Errorf("tar should contain ancestor/target entry %q, got entries: %v", expected, tarEntries)
+		}
+	}
+
+	// Verify siblings and other directories outside the filter are excluded.
+	for _, excluded := range []string{"./a/b/sibling", "./other/", "./other/file2"} {
+		if entrySet[excluded] {
+			t.Errorf("tar should NOT contain %q (outside filter path), got entries: %v", excluded, tarEntries)
+		}
+	}
 }
 
 func TestSpecValidationIgnore(t *testing.T) {

@@ -18,6 +18,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
+	"strings"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
@@ -39,6 +41,9 @@ type TarRootfsUpperLayerOpts struct {
 	// ContainerID identifies which container's rootfs upper layer should be
 	// serialized.
 	ContainerID string
+	// Path restricts the tar output to the subtree rooted at this path.
+	// An empty string means no filtering (export everything).
+	Path string
 	// FilePayload contains the destination for output.
 	urpc.FilePayload
 }
@@ -94,10 +99,20 @@ func (f *Fs) TarRootfsUpperLayer(o *TarRootfsUpperLayerOpts, _ *struct{}) error 
 	if !ok {
 		return fmt.Errorf("rootfs is not an overlayfs")
 	}
-	if err := ts.TarUpperLayer(ctx, outFD); err != nil {
+	if err := ts.TarUpperLayer(ctx, outFD, cleanPath(o.Path)); err != nil {
 		return fmt.Errorf("failed to serialize rootfs upper layer to tar: %v", err)
 	}
 	return nil
+}
+
+// cleanPath normalizes a path for filtering. It returns "" for no filtering.
+func cleanPath(p string) string {
+	if p == "" || p == "/" || p == "." {
+		return ""
+	}
+	p = path.Clean(p)
+	p = strings.TrimPrefix(p, "/")
+	return p
 }
 
 // CatOpts contains options for the Cat RPC call.

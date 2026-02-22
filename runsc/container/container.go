@@ -708,13 +708,13 @@ func (c *Container) WaitRestore() error {
 
 // TarRootfsUpperLayer serializes the rootfs upper layer of the container to a tar file. When
 // the rootfs is not an overlayfs, it returns an error. It writes the tar file
-// to outFD.
-func (c *Container) TarRootfsUpperLayer(outFD *os.File) error {
-	log.Debugf("TarRootfsUpperLayer, cid: %s", c.ID)
+// to outFD. If path is non-empty, only the subtree under that path is included.
+func (c *Container) TarRootfsUpperLayer(outFD *os.File, path string) error {
+	log.Debugf("TarRootfsUpperLayer, cid: %s, path: %q", c.ID, path)
 	if !c.IsSandboxRunning() {
 		return fmt.Errorf("sandbox is not running")
 	}
-	return c.Sandbox.TarRootfsUpperLayer(c.ID, outFD)
+	return c.Sandbox.TarRootfsUpperLayer(c.ID, outFD, path)
 }
 
 // SignalContainer sends the signal to the container. If all is true and signal

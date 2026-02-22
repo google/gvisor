@@ -529,8 +529,10 @@ type FilesystemImpl interface {
 // It is an extension of FilesystemImpl.
 type TarSerializer interface {
 	// TarUpperLayer serializes the writable upper layer of the filesystem to a
-	// tar archive. It writes the tar archive to outFD.
-	TarUpperLayer(ctx context.Context, outFD *os.File) error
+	// tar archive. It writes the tar archive to outFD. If path is non-empty,
+	// only the subtree rooted at that path (relative to the filesystem root,
+	// e.g. "usr/share") is included, along with ancestor directory headers.
+	TarUpperLayer(ctx context.Context, outFD *os.File, path string) error
 }
 
 // PrependPathAtVFSRootError is returned by implementations of
