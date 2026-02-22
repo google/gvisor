@@ -119,6 +119,22 @@ func (fs *filesystem) readFromTar(ctx context.Context, tr *tar.Reader) error {
 	return nil
 }
 
+// xattrsFromPAXRecords extracts xattrs from tar PAXRecords. Tar archives store
+// xattrs with the "SCHILY.xattr." prefix in PAXRecords.
+func xattrsFromPAXRecords(records map[string]string) map[string]string {
+	const prefix = "SCHILY.xattr."
+	var xattrs map[string]string
+	for k, v := range records {
+		if strings.HasPrefix(k, prefix) {
+			if xattrs == nil {
+				xattrs = make(map[string]string)
+			}
+			xattrs[strings.TrimPrefix(k, prefix)] = v
+		}
+	}
+	return xattrs
+}
+
 // mkdirFromTar recursively creates a directory and its parent directories
 // using the provided headers.
 func (fs *filesystem) mkdirFromTar(hdr *tar.Header, pathToInode map[string]*inode, pathToHeader map[string]*tar.Header) (*inode, error) {
@@ -132,6 +148,9 @@ func (fs *filesystem) mkdirFromTar(hdr *tar.Header, pathToInode map[string]*inod
 		ino.gid.Store(uint32(hdr.Gid))
 		ino.mode.Store(uint32(hdr.Mode) | linux.S_IFDIR)
 		ino.mtime.Store(hdr.ModTime.UnixNano())
+		if xattrs := xattrsFromPAXRecords(hdr.PAXRecords); len(xattrs) > 0 {
+			ino.xattrs.SetRawXattrs(xattrs)
+		}
 		pathToInode[hdr.Name] = ino
 		return ino, nil
 	}
@@ -158,6 +177,9 @@ func (fs *filesystem) mkdirFromTar(hdr *tar.Header, pathToInode map[string]*inod
 	parentDir.inode.incLinksLocked()
 	childDir := fs.newDirectory(auth.KUID(hdr.Uid), auth.KGID(hdr.Gid), linux.FileMode(hdr.Mode), parentDir)
 	childDir.inode.mtime.Store(hdr.ModTime.UnixNano())
+	if xattrs := xattrsFromPAXRecords(hdr.PAXRecords); len(xattrs) > 0 {
+		childDir.dentry.inode.xattrs.SetRawXattrs(xattrs)
+	}
 	parentDir.insertChildLocked(&childDir.dentry, name)
 	pathToInode[path] = childDir.dentry.inode
 	return childDir.dentry.inode, nil
@@ -190,6 +212,9 @@ func (fs *filesystem) mknodFromTar(ctx context.Context, hdr *tar.Header, pathToI
 		return fmt.Errorf("mknod unsupported file type %v for %v", hdr.Typeflag, hdr.Name)
 	}
 	childInode.mtime.Store(hdr.ModTime.UnixNano())
+	if xattrs := xattrsFromPAXRecords(hdr.PAXRecords); len(xattrs) > 0 {
+		childInode.xattrs.SetRawXattrs(xattrs)
+	}
 	child := fs.newDentry(childInode)
 	parentDir.insertChildLocked(child, name)
 	pathToInode[hdr.Name] = childInode
@@ -245,6 +270,9 @@ func (fs *filesystem) symlinkFromTar(hdr *tar.Header, pathToInode map[string]*in
 	}
 	child := fs.newDentry(fs.newSymlink(auth.KUID(hdr.Uid), auth.KGID(hdr.Gid), 0777, hdr.Linkname, parentDir))
 	child.inode.mtime.Store(hdr.ModTime.UnixNano())
+	if xattrs := xattrsFromPAXRecords(hdr.PAXRecords); len(xattrs) > 0 {
+		child.inode.xattrs.SetRawXattrs(xattrs)
+	}
 	parentDir.insertChildLocked(child, name)
 	pathToInode[hdr.Name] = child.inode
 	return nil
@@ -272,13 +300,18 @@ func (fs *filesystem) writeTo(ctx context.Context, path string, pathToInode map[
 }
 
 // TarUpperLayer implements vfs.TarSerializer.TarUpperLayer.
-func (fs *filesystem) TarUpperLayer(ctx context.Context, outFD *os.File) error {
+func (fs *filesystem) TarUpperLayer(ctx context.Context, outFD *os.File, pathFilter string) error {
 	tw := tar.NewWriter(outFD)
 
 	fs.mu.RLock()
 	defer fs.mu.RUnlock()
 
-	err := fs.root.writeToTar(ctx, tw, ".", make(map[uint64]string))
+	var pathComponents []string
+	if pathFilter != "" {
+		pathComponents = strings.Split(pathFilter, "/")
+	}
+
+	err := fs.root.writeToTar(ctx, tw, ".", make(map[uint64]string), pathComponents, 0)
 	if err != nil {
 		return fmt.Errorf("failed to write dentry to tar: %w", err)
 	}
@@ -291,7 +324,12 @@ func (fs *filesystem) TarUpperLayer(ctx context.Context, outFD *os.File) error {
 }
 
 // writeToTar recursively writes a dentry and its children to the tar archive.
-func (d *dentry) writeToTar(ctx context.Context, tw *tar.Writer, baseDir string, inoToPath map[uint64]string) error {
+// pathComponents is the parsed path split by "/" for filtering. depth indicates
+// how many components have been matched so far. When depth < len(pathComponents),
+// this dentry is an ancestor of the target path: its header is written but only
+// the child matching the next component is recursed into. When
+// depth >= len(pathComponents) (or pathComponents is empty), everything is written.
+func (d *dentry) writeToTar(ctx context.Context, tw *tar.Writer, baseDir string, inoToPath map[uint64]string, pathComponents []string, depth int) error {
 	path := baseDir
 	if d.name != "" {
 		path = path + "/" + d.name
@@ -315,9 +353,22 @@ func (d *dentry) writeToTar(ctx context.Context, tw *tar.Writer, baseDir string,
 
 	switch impl := d.inode.impl.(type) {
 	case *directory:
-		for _, child := range impl.childMap {
-			if err := child.writeToTar(ctx, tw, path, inoToPath); err != nil {
+		filtering := len(pathComponents) > 0 && depth < len(pathComponents)
+		if filtering {
+			// Ancestor of the target path: only recurse into the
+			// child matching the next path component.
+			child, ok := impl.childMap[pathComponents[depth]]
+			if !ok {
+				return nil
+			}
+			if err := child.writeToTar(ctx, tw, path, inoToPath, pathComponents, depth+1); err != nil {
 				return err
+			}
+		} else {
+			for _, child := range impl.childMap {
+				if err := child.writeToTar(ctx, tw, path, inoToPath, pathComponents, depth); err != nil {
+					return err
+				}
 			}
 		}
 	case *regularFile:
@@ -377,6 +428,15 @@ func (d *dentry) createTarHeader(path string, inoToPath map[uint64]string) (*tar
 	default:
 		return nil, fmt.Errorf("unsupported file type for %q", path)
 	}
+
+	// Serialize xattrs to PAXRecords.
+	if xattrs := d.inode.xattrs.RawXattrs(); len(xattrs) > 0 {
+		header.PAXRecords = make(map[string]string, len(xattrs))
+		for k, v := range xattrs {
+			header.PAXRecords["SCHILY.xattr."+k] = v
+		}
+	}
+
 	inoToPath[d.inode.ino] = path
 	return header, nil
 }

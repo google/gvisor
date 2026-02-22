@@ -71,6 +71,7 @@ func createCommander(f *flag.FlagSet) *subcommands.Commander {
 // RootfsUpper implements subcommands.Command for the "tar rootfs-upper" command.
 type RootfsUpper struct {
 	file string
+	path string
 }
 
 // Name implements subcommands.Command.
@@ -91,6 +92,7 @@ func (*RootfsUpper) Usage() string {
 // SetFlags implements subcommands.Command.
 func (r *RootfsUpper) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&r.file, "file", "", "output file path, if empty, output to stdout")
+	f.StringVar(&r.path, "path", "", "only include the subtree under this path (e.g., /usr/share)")
 }
 
 // Execute implements subcommands.Command.
@@ -118,7 +120,7 @@ func (r *RootfsUpper) Execute(ctx context.Context, f *flag.FlagSet, args ...any)
 		defer out.Close()
 	}
 
-	if err := c.TarRootfsUpperLayer(out); err != nil {
+	if err := c.TarRootfsUpperLayer(out, r.path); err != nil {
 		util.Fatalf("TarRootfsUpperLayer failed: %v", err)
 	}
 	return subcommands.ExitSuccess

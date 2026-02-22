@@ -154,10 +154,10 @@ func TestMultiContainerTarRootfsUpperLayer(t *testing.T) {
 	}
 	defer os.Remove(subTar.Name())
 
-	if err := containers[0].TarRootfsUpperLayer(rootTar); err != nil {
+	if err := containers[0].TarRootfsUpperLayer(rootTar, ""); err != nil {
 		t.Fatalf("error serializing root container upper layer: %v", err)
 	}
-	if err := containers[1].TarRootfsUpperLayer(subTar); err != nil {
+	if err := containers[1].TarRootfsUpperLayer(subTar, ""); err != nil {
 		t.Fatalf("error serializing sub-container upper layer: %v", err)
 	}
 	rootTar.Close()
