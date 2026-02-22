@@ -4240,6 +4240,117 @@ func processSnapBytes(data []byte, lineCounts map[string]int, increment int) err
 	return nil
 }
 
+// TestTarRootfsUpperLayerOpaqueDir verifies that opaque directory xattrs
+// (trusted.overlay.opaque) are preserved across tar serialization and
+// restoration. When a directory from the lower layer is deleted and recreated,
+// the overlay marks it as opaque so lower layer contents don't show through.
+// Without preserving this xattr in the tar, stale files from the lower layer
+// would be resurrected after restore.
+func TestTarRootfsUpperLayerOpaqueDir(t *testing.T) {
+	conf := testutil.TestConfig(t)
+	conf.Overlay2.Set("root:memory")
+
+	spec, _ := sleepSpecConf(t)
+	spec.Root.Readonly = false
+
+	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer cleanup()
+
+	// Create and start the container.
+	args := Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+	}
+	cont, err := New(conf, args)
+	if err != nil {
+		t.Fatalf("error creating container: %v", err)
+	}
+	defer cont.Destroy()
+	if err := cont.Start(conf); err != nil {
+		t.Fatalf("error starting container: %v", err)
+	}
+
+	// List the contents of /usr/share before deleting it to confirm it has
+	// files from the lower layer.
+	beforeOut, err := executeCombinedOutput(conf, cont, nil, "/bin/ls", "/usr/share")
+	if err != nil {
+		t.Fatalf("error listing /usr/share: %v", err)
+	}
+	beforeFiles := strings.Fields(strings.TrimSpace(string(beforeOut)))
+	if len(beforeFiles) == 0 {
+		t.Fatalf("/usr/share has no files in lower layer, cannot test opaque behavior")
+	}
+	t.Logf("/usr/share before delete has %d entries: %v", len(beforeFiles), beforeFiles)
+
+	// Delete /usr/share (which exists in the lower layer), recreate it, and
+	// add a single marker file. The overlay should mark the recreated
+	// directory as opaque (trusted.overlay.opaque=y).
+	if _, err := executeCombinedOutput(conf, cont, nil, "/bin/sh", "-c",
+		"rm -rf /usr/share && mkdir /usr/share && echo opaque_test > /usr/share/marker"); err != nil {
+		t.Fatalf("error recreating /usr/share: %v", err)
+	}
+
+	// Verify that after the delete+recreate, only the marker file is visible.
+	afterOut, err := executeCombinedOutput(conf, cont, nil, "/bin/ls", "/usr/share")
+	if err != nil {
+		t.Fatalf("error listing /usr/share after recreate: %v", err)
+	}
+	afterFiles := strings.Fields(strings.TrimSpace(string(afterOut)))
+	if len(afterFiles) != 1 || afterFiles[0] != "marker" {
+		t.Fatalf("expected only 'marker' in /usr/share after recreate, got: %v", afterFiles)
+	}
+
+	// Tar the upper layer.
+	tarFile, err := os.CreateTemp(testutil.TmpDir(), "tarfile-opaque-*.tar")
+	if err != nil {
+		t.Fatalf("error creating temp file: %v", err)
+	}
+	defer os.Remove(tarFile.Name())
+
+	if err := cont.TarRootfsUpperLayer(tarFile); err != nil {
+		t.Fatalf("error serializing rootfs upper layer to tar: %v", err)
+	}
+	tarFile.Close()
+
+	// Restore the tar into a new container.
+	spec.Annotations["dev.gvisor.tar.rootfs.upper"] = tarFile.Name()
+	_, bundleDir2, cleanup2, err := testutil.SetupContainer(spec, conf)
+	if err != nil {
+		t.Fatalf("error setting up restored container: %v", err)
+	}
+	defer cleanup2()
+
+	args2 := Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir2,
+	}
+	newCont, err := New(conf, args2)
+	if err != nil {
+		t.Fatalf("error creating restored container: %v", err)
+	}
+	defer newCont.Destroy()
+	if err := newCont.Start(conf); err != nil {
+		t.Fatalf("error starting restored container: %v", err)
+	}
+
+	// Verify that in the restored container, /usr/share only contains
+	// "marker" and no stale files from the lower layer.
+	restoredOut, err := executeCombinedOutput(conf, newCont, nil, "/bin/ls", "/usr/share")
+	if err != nil {
+		t.Fatalf("error listing /usr/share in restored container: %v", err)
+	}
+	restoredFiles := strings.Fields(strings.TrimSpace(string(restoredOut)))
+	if len(restoredFiles) != 1 || restoredFiles[0] != "marker" {
+		t.Fatalf("opaque xattr not preserved: expected only 'marker' in /usr/share, got: %v (stale lower layer files leaked through)", restoredFiles)
+	}
+	t.Logf("/usr/share in restored container correctly contains only: %v", restoredFiles)
+}
+
 func TestSpecValidationIgnore(t *testing.T) {
 	conf := testutil.TestConfig(t)
 	if err := conf.RestoreSpecValidation.Set("ignore"); err != nil {
