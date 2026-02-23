@@ -421,6 +421,10 @@ type Config struct {
 	// disabled on sandbox start. This is only supported with sandbox networking
 	// and can be unpaused manually.
 	PauseExternalNetworking bool `flag:"pause-external-networking"`
+
+	// AllowRootfsTarAnnotation indicates whether the rootfs tar annotation
+	// should be allowed.
+	AllowRootfsTarAnnotation bool `flag:"allow-rootfs-tar-annotation"`
 }
 
 func (c *Config) validate() error {

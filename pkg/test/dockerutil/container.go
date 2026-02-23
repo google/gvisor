@@ -127,6 +127,9 @@ type RunOpts struct {
 	// sniffGPUOpts, if set, sets the rules for GPU sniffing during this test.
 	// Must be set via `RunOpts.SniffGPU`.
 	sniffGPUOpts *SniffGPUOpts
+
+	// Annotations are annotations to set on the container.
+	Annotations map[string]string
 }
 
 func makeContainer(ctx context.Context, logger testutil.Logger, runtime string) *Container {
@@ -368,6 +371,7 @@ func (c *Container) hostConfig(r RunOpts) *container.HostConfig {
 			DeviceRequests: r.DeviceRequests,
 			Devices:        r.Devices,
 		},
+		Annotations: r.Annotations,
 	}
 }
 

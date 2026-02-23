@@ -122,7 +122,7 @@ func LogSpecCustomLogger(orig *specs.Spec, logSeccomp bool, logf func(format str
 }
 
 // ValidateSpec validates that the spec is compatible with runsc.
-func ValidateSpec(spec *specs.Spec) error {
+func ValidateSpec(spec *specs.Spec, conf *config.Config) error {
 	// Mandatory fields.
 	if spec.Process == nil {
 		return fmt.Errorf("Spec.Process must be defined: %+v", spec)
@@ -161,6 +161,16 @@ func ValidateSpec(spec *specs.Spec) error {
 	for _, m := range spec.Mounts {
 		if err := validateMount(&m); err != nil {
 			return err
+		}
+	}
+
+	// Validate rootfs upper tar annotation.
+	if path := RootfsTarUpperPath(spec); path != "" {
+		if !conf.AllowRootfsTarAnnotation {
+			return fmt.Errorf("rootfs tar annotation is disabled, use --allow-rootfs-tar-annotation to enable it")
+		}
+		if spec.Root.Readonly {
+			return fmt.Errorf("rootfs tar upper path is set but rootfs is readonly")
 		}
 	}
 
@@ -232,7 +242,7 @@ func ReadSpecFromFile(bundleDir string, specFile *os.File, conf *config.Config) 
 			log.Warningf("OCI spec file %q contains fields unknown to `runsc`: %v. Ignoring these fields and continuing anyway.", specFile.Name(), errStrictDecode)
 		}
 	}
-	if err := ValidateSpec(&spec); err != nil {
+	if err := ValidateSpec(&spec, conf); err != nil {
 		return nil, err
 	}
 	if err := fixSpec(&spec, bundleDir, conf); err != nil {
@@ -841,8 +851,7 @@ func RootfsTarUpperPath(spec *specs.Spec) string {
 		return spec.Annotations[AnnotationRootfsUpperTar+"."+name]
 	}
 	// Multi-container sandbox must use container-specific annotations.
-	cType := SpecContainerType(spec)
-	if cType == ContainerTypeContainer || cType == ContainerTypeSandbox {
+	if cType := SpecContainerType(spec); cType == ContainerTypeContainer || cType == ContainerTypeSandbox {
 		return ""
 	}
 	return spec.Annotations[AnnotationRootfsUpperTar]

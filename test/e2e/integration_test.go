@@ -42,6 +42,7 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/test/dockerutil"
 	"gvisor.dev/gvisor/pkg/test/testutil"
+	"gvisor.dev/gvisor/runsc/specutils"
 )
 
 const (
@@ -105,6 +106,22 @@ func TestLifeCycle(t *testing.T) {
 	}
 	if err := d.Remove(ctx); err != nil {
 		t.Fatalf("docker rm failed: %v", err)
+	}
+}
+
+func TestDisallowRootfsTarAnnotation(t *testing.T) {
+	ctx := context.Background()
+	d := dockerutil.MakeContainer(ctx, t)
+	defer d.CleanUp(ctx)
+
+	// --allow-rootfs-tar-annotation is false by default.
+	_, err := d.Run(ctx, dockerutil.RunOpts{
+		Image:       "basic/alpine",
+		Annotations: map[string]string{specutils.AnnotationRootfsUpperTar: "foo"},
+	}, "sh", "-c", "ls")
+	errMsg := "rootfs tar annotation is disabled, use --allow-rootfs-tar-annotation to enable it"
+	if err == nil || !strings.Contains(err.Error(), errMsg) {
+		t.Errorf("expected error containing %q, got %v", errMsg, err)
 	}
 }
 

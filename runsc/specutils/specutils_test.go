@@ -112,6 +112,7 @@ func TestSpecInvalid(t *testing.T) {
 	for _, test := range []struct {
 		name  string
 		spec  specs.Spec
+		conf  config.Config
 		error string
 	}{
 		{
@@ -258,8 +259,59 @@ func TestSpecInvalid(t *testing.T) {
 			},
 			error: "root mount propagation option must specify private or slave",
 		},
+		{
+			name: "valid rootfs tar upper path",
+			spec: specs.Spec{
+				Root: &specs.Root{Path: "/"},
+				Process: &specs.Process{
+					Args: []string{"/bin/true"},
+				},
+				Annotations: map[string]string{
+					AnnotationRootfsUpperTar: "foo",
+				},
+			},
+			conf: config.Config{
+				AllowRootfsTarAnnotation: true,
+			},
+			error: "",
+		},
+		{
+			name: "invalid rootfs tar upper path",
+			spec: specs.Spec{
+				Root: &specs.Root{Path: "/"},
+				Process: &specs.Process{
+					Args: []string{"/bin/true"},
+				},
+				Annotations: map[string]string{
+					AnnotationRootfsUpperTar: "foo",
+				},
+			},
+			conf: config.Config{
+				AllowRootfsTarAnnotation: false,
+			},
+			error: "rootfs tar annotation is disabled, use --allow-rootfs-tar-annotation to enable it",
+		},
+		{
+			name: "readonly rootfs with tar upper annotation enabled",
+			spec: specs.Spec{
+				Root: &specs.Root{
+					Readonly: true,
+					Path:     "/",
+				},
+				Process: &specs.Process{
+					Args: []string{"/bin/true"},
+				},
+				Annotations: map[string]string{
+					AnnotationRootfsUpperTar: "foo",
+				},
+			},
+			conf: config.Config{
+				AllowRootfsTarAnnotation: true,
+			},
+			error: "rootfs tar upper path is set but rootfs is readonly",
+		},
 	} {
-		err := ValidateSpec(&test.spec)
+		err := ValidateSpec(&test.spec, &test.conf)
 		if len(test.error) == 0 {
 			if err != nil {
 				t.Errorf("ValidateSpec(%q) failed, err: %v", test.name, err)

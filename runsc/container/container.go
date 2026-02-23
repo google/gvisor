@@ -1015,10 +1015,6 @@ func (c *Container) initGoferConfs(ovlConf config.Overlay2, mountHints *boot.Pod
 		overlaySize = rootfsHint.Size
 	}
 	if c.Spec.Root.Readonly {
-		if specutils.RootfsTarUpperPath(c.Spec) != "" {
-			return fmt.Errorf("rootfs tar upper path is set but rootfs is readonly")
-		}
-		log.Debugf("Setting rootfs overlay to NoOverlay because rootfs is readonly")
 		overlayMedium = config.NoOverlay
 	}
 	goferConf, err := createGoferConf(overlayMedium, overlaySize, mountType, c.Spec.Root.Path)

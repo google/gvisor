@@ -203,6 +203,7 @@ func TestMultiContainerTarRootfsUpperLayer(t *testing.T) {
 	restoreSpecs[1].Annotations[rootRootfsAnnotation] = rootTar.Name()
 	restoreSpecs[1].Annotations[subRootfsAnnotation] = subTar.Name()
 
+	conf.AllowRootfsTarAnnotation = true
 	restoreContainers, restoreCleanup, err := startContainers(conf, restoreSpecs, restoreIDs)
 	if err != nil {
 		t.Fatalf("error starting containers with restored rootfs: %v", err)
