@@ -132,7 +132,7 @@ func (s *LisafsServer) Mount(c *lisafs.Connection, mountNode *lisafs.Node) (*lis
 	}
 
 	if err := checkSupportedFileType(uint32(stat.Mode)); err != nil {
-		log.Warningf("Mount: checkSupportedFileType() failed for file %q with mode %o: %v", mountPath, stat.Mode, err)
+		log.Warningf("Mount: checkSupportedFileType() failed for file %q with mode %#o: %v", mountPath, stat.Mode, err)
 		return nil, linux.Statx{}, -1, err
 	}
 
@@ -431,7 +431,7 @@ func (fd *controlFDLisa) Walk(name string) (*lisafs.ControlFD, linux.Statx, erro
 
 	if err := checkSupportedFileType(uint32(stat.Mode)); err != nil {
 		_ = unix.Close(childHostFD)
-		log.Warningf("Walk: checkSupportedFileType() failed for %q with mode %o: %v", name, stat.Mode, err)
+		log.Warningf("Walk: checkSupportedFileType() failed for %q with mode %#o: %v", name, stat.Mode, err)
 		return nil, linux.Statx{}, err
 	}
 
@@ -484,7 +484,7 @@ func (fd *controlFDLisa) WalkStat(path lisafs.StringArray, recordStat func(linux
 			return err
 		}
 		if err := checkSupportedFileType(uint32(stat.Mode)); err != nil {
-			log.Warningf("WalkStat: checkSupportedFileType() failed for file %q with mode %o while walking path %+v: %v", name, stat.Mode, path, err)
+			log.Warningf("WalkStat: checkSupportedFileType() failed for file %q with mode %#o while walking path %+v: %v", name, stat.Mode, path, err)
 			return err
 		}
 		recordStat(stat)
@@ -1286,4 +1286,4 @@ func checkSupportedFileType(mode uint32) error {
 	}
 }
 
-// LINT.ThenChange(../../pkg/sentry/fsimpl/gofer/directfs_dentry.go)
+// LINT.ThenChange(../../pkg/sentry/fsimpl/gofer/directfs_inode.go)
