@@ -106,3 +106,7 @@ def bpf_program(name, src, bpf_object, visibility, hdrs):
         outs = [bpf_object],
         cmd = "clang -O2 -Wall -Werror -target bpf -c $< -o $@ -I/usr/include/$$(uname -m)-linux-gnu",
     )
+
+def get_goversion():
+    """Returns the current go-version used to build gVisor."""
+    return "1.25.5"

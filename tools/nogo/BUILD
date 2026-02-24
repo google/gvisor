@@ -1,4 +1,4 @@
-load("//tools:defs.bzl", "bzl_library", "go_binary", "select_goarch", "select_goos")
+load("//tools:defs.bzl", "bzl_library", "get_goversion", "go_binary", "select_goarch", "select_goos")
 load("//tools/nogo:defs.bzl", "nogo_stdlib", "nogo_target")
 
 package(
@@ -10,7 +10,7 @@ nogo_target(
     name = "target",
     goarch = select_goarch(),
     goos = select_goos(),
-    goversion = "go1.25.5",
+    goversion = get_goversion(),
     visibility = ["//visibility:public"],
 )
 

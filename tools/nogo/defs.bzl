@@ -174,9 +174,10 @@ def _nogo_config(ctx, deps):
         "-go=%s" % go_ctx.go.path,
         "-GOOS=%s" % go_ctx.goos,
         "-GOARCH=%s" % go_ctx.goarch,
-        "-GOVERSION=%s" % nogo_target_info.goversion,
         "-tags=%s" % (",".join(go_ctx.gotags)),
     ]
+    if nogo_target_info.goversion:
+        args = args + ["-GOVERSION=%s" % nogo_target_info.goversion]
     inputs = []
     raw_findings = []
     for dep in deps:
