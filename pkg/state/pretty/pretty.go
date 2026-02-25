@@ -48,7 +48,7 @@ func (p *printer) formatRef(x *wire.Ref, graph uint64) string {
 				buf.WriteString(".")
 				buf.WriteString(string(*v))
 			case wire.Index:
-				buf.WriteString(fmt.Sprintf("[%d]", v))
+				fmt.Fprintf(&buf, "[%d]", v)
 			default:
 				panic(fmt.Sprintf("unreachable: switch should be exhaustive, unhandled case %v", reflect.TypeOf(component)))
 			}

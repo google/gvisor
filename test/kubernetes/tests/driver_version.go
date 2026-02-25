@@ -243,8 +243,8 @@ func getCOSDriverFromReleaseVersion(cosVersion string) (*cospb.GPUDriverVersionI
 
 	var content []byte
 
-	switch {
-	case resp.StatusCode == 404:
+	switch resp.StatusCode {
+	case 404:
 		// When COS versions are newly released, they will often show up in projects but not the release
 		// page. In this case, we return an empty list of driver versions.
 		content = []byte("gpu_driver_version_info: []")

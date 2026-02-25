@@ -171,7 +171,7 @@ func (s *SACKScoreboard) String() string {
 	var str strings.Builder
 	str.WriteString("SACKScoreboard: {")
 	s.ranges.Ascend(func(sb header.SACKBlock) bool {
-		str.WriteString(fmt.Sprintf("%v,", sb))
+		fmt.Fprintf(&str, "%v,", sb)
 		return true
 	})
 	str.WriteString("}\n")

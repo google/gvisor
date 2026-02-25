@@ -1596,7 +1596,7 @@ func (vfs *VirtualFilesystem) generateOptionalTags(ctx context.Context, mnt *Mou
 	// TODO(b/305893463): Support MS_UNBINDABLE propagation type.
 	var optionalSb strings.Builder
 	if mnt.isShared {
-		optionalSb.WriteString(fmt.Sprintf("shared:%d ", mnt.groupID))
+		fmt.Fprintf(&optionalSb, "shared:%d ", mnt.groupID)
 	}
 	if mnt.isFollower() {
 		// Per man mount_namespaces(7), propagate_from should not be
@@ -1604,7 +1604,7 @@ func (vfs *VirtualFilesystem) generateOptionalTags(ctx context.Context, mnt *Mou
 		// mount, or if there is no dominant peer group under the same root". A
 		// dominant peer group is the nearest reachable mount in the leader/follower
 		// chain.
-		optionalSb.WriteString(fmt.Sprintf("master:%d ", mnt.leader.groupID))
+		fmt.Fprintf(&optionalSb, "master:%d ", mnt.leader.groupID)
 		var dominant *Mount
 		for m := mnt.leader; m != nil; m = m.leader {
 			if dominant = vfs.peerUnderRoot(ctx, m, mnt.ns, root); dominant != nil {
@@ -1612,7 +1612,7 @@ func (vfs *VirtualFilesystem) generateOptionalTags(ctx context.Context, mnt *Mou
 			}
 		}
 		if dominant != nil && dominant != mnt.leader {
-			optionalSb.WriteString(fmt.Sprintf("propagate_from:%d ", dominant.groupID))
+			fmt.Fprintf(&optionalSb, "propagate_from:%d ", dominant.groupID)
 		}
 	}
 	return optionalSb.String()

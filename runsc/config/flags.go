@@ -449,7 +449,7 @@ func (c *Config) ApplyBundles(flagSet *flag.FlagSet, bundleNames ...BundleName) 
 				if !first {
 					sb.WriteString(", ")
 				}
-				sb.WriteString(fmt.Sprintf("bundle %q sets --%s=%q", bundleName, flagName, val))
+				fmt.Fprintf(&sb, "bundle %q sets --%s=%q", bundleName, flagName, val)
 				first = false
 			}
 		}

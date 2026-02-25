@@ -965,7 +965,7 @@ func (t *NATPostSNATUDP) ContainerAction(ctx context.Context, ip net.IP, ipv6 bo
 	if ipv6 {
 		source = fmt.Sprintf("[%s]", snatAddrV6)
 	} else {
-		source = fmt.Sprintf("%s", snatAddrV4)
+		source = snatAddrV4
 	}
 	if t.withPort {
 		source += fmt.Sprintf(":%d", snatPort)
@@ -1027,7 +1027,7 @@ func (t *NATPostSNATTCP) ContainerAction(ctx context.Context, ip net.IP, ipv6 bo
 	for _, addr := range addrs {
 		if addr.To4() != nil {
 			if !ipv6 {
-				source = fmt.Sprintf("%s", addr)
+				source = addr.String()
 			}
 		} else if ipv6 && addr.IsGlobalUnicast() {
 			source = fmt.Sprintf("[%s]", addr)

@@ -765,7 +765,7 @@ func (f *FdArray) String() string {
 		if i > 0 {
 			b.WriteString(", ")
 		}
-		b.WriteString(fmt.Sprintf("%d", fd))
+		fmt.Fprintf(&b, "%d", fd)
 	}
 	b.WriteString("]")
 	return b.String()

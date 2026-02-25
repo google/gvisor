@@ -221,9 +221,9 @@ func aggregateProfile(p *profile.Profile) (aggregateProfileData, error) {
 			lineKey.WriteString(";")
 		}
 		if line.Function != nil {
-			lineKey.WriteString(fmt.Sprintf("%s:%s:%d:%d", line.Function.Filename, line.Function.Name, line.Line-line.Function.StartLine, line.Column))
+			fmt.Fprintf(&lineKey, "%s:%s:%d:%d", line.Function.Filename, line.Function.Name, line.Line-line.Function.StartLine, line.Column)
 		} else {
-			lineKey.WriteString(fmt.Sprintf("<unknown>:%d:%d", line.Line, line.Column))
+			fmt.Fprintf(&lineKey, "<unknown>:%d:%d", line.Line, line.Column)
 		}
 	}
 	sampleValueIndex := -1

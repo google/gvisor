@@ -28,7 +28,7 @@ import (
 
 func extraMatchers(t *testing.T, msgs []test.Message, matchers map[pb.MessageType]*checkers) {
 	// Register functions that verify each available point specific to arm64 architecture.
-	return
+
 }
 
 func checkSyscallSignalfdFlags(flags int32) error {

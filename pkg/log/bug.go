@@ -40,14 +40,14 @@ func reportBugErr(caller int, err error) {
 func reportBug(caller int, msg string, vars []any) {
 	var b strings.Builder
 	if _, file, line, ok := runtime.Caller(caller); ok {
-		b.WriteString(fmt.Sprintf(warnFmtStr, file, line))
+		fmt.Fprintf(&b, warnFmtStr, file, line)
 	} else {
 		b.WriteString(warnUnknownLineStr)
 	}
 	b.WriteByte('\n')
 	if len(msg) > 0 {
 		if len(vars) > 0 {
-			b.WriteString(fmt.Sprintf(msg, vars...))
+			fmt.Fprintf(&b, msg, vars...)
 		} else {
 			b.WriteString(msg)
 		}
@@ -77,11 +77,11 @@ func reportBugOnce(caller int, msg string, vars []any) {
 		defer warnedMu.Unlock()
 
 		if _, ok = warnedSet[key]; !ok {
-			b.WriteString(fmt.Sprintf(warnFmtStr, file, line))
+			fmt.Fprintf(&b, warnFmtStr, file, line)
 			b.WriteByte('\n')
 			if len(msg) > 0 {
 				if len(vars) > 0 {
-					b.WriteString(fmt.Sprintf(msg, vars...))
+					fmt.Fprintf(&b, msg, vars...)
 				} else {
 					b.WriteString(msg)
 				}
@@ -102,7 +102,7 @@ func reportBugOnce(caller int, msg string, vars []any) {
 			b.WriteByte('\n')
 			if len(msg) > 0 {
 				if len(vars) > 0 {
-					b.WriteString(fmt.Sprintf(msg, vars...))
+					fmt.Fprintf(&b, msg, vars...)
 				} else {
 					b.WriteString(msg)
 				}

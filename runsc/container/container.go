@@ -1817,7 +1817,7 @@ func (c *Container) populateStats(event *boot.EventOut) {
 	total := float64(containerUsage) * (float64(cgroupsUsage) / float64(allContainersUsage))
 	log.Debugf("Usage, container: %d, cgroups: %d, all: %d, total: %.0f", containerUsage, cgroupsUsage, allContainersUsage, total)
 	event.Event.Data.CPU.Usage.Total = uint64(total)
-	return
+
 }
 
 func (c *Container) createParentCgroup(parentPath string, conf *config.Config) (cgroup.Cgroup, error) {

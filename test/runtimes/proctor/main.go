@@ -202,7 +202,7 @@ func main() {
 			if *flakyIsError {
 				log.Fatalf("FLAKY: %v (%d failures out of %d)", firstFailure, iterations-successes, iterations)
 			} else {
-				log.Println(fmt.Sprintf("FLAKY: %v (%d failures out of %d)", firstFailure, iterations-successes, iterations))
+				log.Printf("FLAKY: %v (%d failures out of %d)\n", firstFailure, iterations-successes, iterations)
 			}
 		} else if successes == 0 && firstFailure != nil {
 			// Test is 100% failing.

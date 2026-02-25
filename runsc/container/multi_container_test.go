@@ -17,7 +17,6 @@ package container
 import (
 	"fmt"
 	"io"
-	"math"
 	"os"
 	"os/exec"
 	"path"
@@ -1172,11 +1171,11 @@ func TestMultiContainerKillAll(t *testing.T) {
 		defer cleanup()
 
 		// Wait until all processes are created.
-		rootProcCount := int(math.Pow(2, 3) - 1)
+		rootProcCount := int(1<<3 - 1)
 		if err := waitForProcessCount(containers[0], rootProcCount); err != nil {
 			t.Fatalf("error waiting for processes: %v", err)
 		}
-		procCount := int(math.Pow(2, 5) - 1)
+		procCount := int(1<<5 - 1)
 		if err := waitForProcessCount(containers[1], procCount); err != nil {
 			t.Fatalf("error waiting for processes: %v", err)
 		}
@@ -1190,7 +1189,7 @@ func TestMultiContainerKillAll(t *testing.T) {
 			t.Fatalf("error exec'ing: %v", err)
 		}
 		// Wait for these new processes to start.
-		procCount += int(math.Pow(2, 3) - 1)
+		procCount += int(1<<3 - 1)
 		if err := waitForProcessCount(containers[1], procCount); err != nil {
 			t.Fatalf("error waiting for processes: %v", err)
 		}

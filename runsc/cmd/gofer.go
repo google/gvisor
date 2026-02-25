@@ -125,7 +125,7 @@ func (*Gofer) Name() string {
 
 // Synopsis implements subcommands.Command.
 func (g *Gofer) Synopsis() string {
-	return fmt.Sprintf("launch a gofer process that proxies access to container files")
+	return "launch a gofer process that proxies access to container files"
 }
 
 // Usage implements subcommands.Command.

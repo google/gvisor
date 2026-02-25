@@ -585,7 +585,7 @@ func (ssrs singleSyscallRuleSet) String() string {
 	} else {
 		sb.WriteString("Syscall  ")
 	}
-	sb.WriteString(fmt.Sprintf("%3d: ", ssrs.sysno))
+	fmt.Fprintf(&sb, "%3d: ", ssrs.sysno)
 	switch len(ssrs.rules) {
 	case 0:
 		sb.WriteString("(no rules)")

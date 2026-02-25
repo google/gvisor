@@ -171,9 +171,7 @@ func (s *servedSandbox) load() (*sandbox.Sandbox, *prometheus.Verifier, error) {
 		if len(capSet) > 0 {
 			// Reallocate a slice with minimum size, since it will be long-lived.
 			s.capabilities = make([]linux.Capability, len(capSet))
-			for i, capLabels := range capSet {
-				s.capabilities[i] = capLabels
-			}
+			copy(s.capabilities, capSet)
 		}
 
 		// Compute spec metadata.
@@ -220,12 +218,13 @@ func querySandboxMetrics(ctx context.Context, sand *sandbox.Sandbox, verifier *p
 		snapshot, err := sand.ExportMetrics(control.MetricsExportOpts{
 			OnlyMetrics: metricsFilter,
 		})
-		select {
-		case <-canceled:
-		case ch <- struct {
+		res := struct {
 			snapshot *prometheus.Snapshot
 			err      error
-		}{snapshot, err}:
+		}{snapshot, err}
+		select {
+		case <-canceled:
+		case ch <- res:
 			close(ch)
 		}
 	}()

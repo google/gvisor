@@ -76,11 +76,11 @@ func NameToParameters(name string) ([]string, []*Parameter, error) {
 	var params []*Parameter
 	var separator string
 	switch {
-	case strings.IndexRune(name, '.') != -1 && strings.IndexRune(name, '=') != -1:
+	case strings.ContainsRune(name, '.') && strings.ContainsRune(name, '='):
 		return nil, nil, fmt.Errorf("ambiguity while parsing parameters from benchmark name %q: multiple types of parameter separators are present", name)
-	case strings.IndexRune(name, '.') != -1:
+	case strings.ContainsRune(name, '.'):
 		separator = "."
-	case strings.IndexRune(name, '=') != -1:
+	case strings.ContainsRune(name, '='):
 		separator = "="
 	default:
 		// No separator; use '=' which we know is not present in the name,

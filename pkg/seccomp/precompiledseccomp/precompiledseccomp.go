@@ -284,14 +284,14 @@ func getVarOffsets(bytecode32 []uint32, values Values) map[string][]int {
 // imported.
 func (program Program) Expr(indentPrefix, pkgName string) string {
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("%s.Program{\n", pkgName))
-	sb.WriteString(fmt.Sprintf("%s\tName: %q,\n", indentPrefix, program.Name))
-	sb.WriteString(fmt.Sprintf("%s\tBytecode32: []uint32{\n", indentPrefix))
+	fmt.Fprintf(&sb, "%s.Program{\n", pkgName)
+	fmt.Fprintf(&sb, "%s\tName: %q,\n", indentPrefix, program.Name)
+	fmt.Fprintf(&sb, "%s\tBytecode32: []uint32{\n", indentPrefix)
 	for _, v := range program.Bytecode32 {
-		sb.WriteString(fmt.Sprintf("%s\t\t0x%08x,\n", indentPrefix, v))
+		fmt.Fprintf(&sb, "%s\t\t0x%08x,\n", indentPrefix, v)
 	}
-	sb.WriteString(fmt.Sprintf("%s\t},\n", indentPrefix))
-	sb.WriteString(fmt.Sprintf("%s\tVarOffsets: map[string][]int{\n", indentPrefix))
+	fmt.Fprintf(&sb, "%s\t},\n", indentPrefix)
+	fmt.Fprintf(&sb, "%s\tVarOffsets: map[string][]int{\n", indentPrefix)
 	varNames := make([]string, 0, len(program.VarOffsets))
 	for varName := range program.VarOffsets {
 		varNames = append(varNames, varName)
@@ -299,17 +299,17 @@ func (program Program) Expr(indentPrefix, pkgName string) string {
 	sort.Strings(varNames)
 	for _, varName := range varNames {
 		if len(program.VarOffsets[varName]) == 0 {
-			sb.WriteString(fmt.Sprintf("%s\t\t%q: nil,\n", indentPrefix, varName))
+			fmt.Fprintf(&sb, "%s\t\t%q: nil,\n", indentPrefix, varName)
 			continue
 		}
-		sb.WriteString(fmt.Sprintf("%s\t\t%q: []int{\n", indentPrefix, varName))
+		fmt.Fprintf(&sb, "%s\t\t%q: []int{\n", indentPrefix, varName)
 		for _, v := range program.VarOffsets[varName] {
-			sb.WriteString(fmt.Sprintf("%s\t\t\t%d,\n", indentPrefix, v))
+			fmt.Fprintf(&sb, "%s\t\t\t%d,\n", indentPrefix, v)
 		}
-		sb.WriteString(fmt.Sprintf("%s\t\t},\n", indentPrefix))
+		fmt.Fprintf(&sb, "%s\t\t},\n", indentPrefix)
 	}
-	sb.WriteString(fmt.Sprintf("%s\t},\n", indentPrefix))
-	sb.WriteString(fmt.Sprintf("%s}", indentPrefix))
+	fmt.Fprintf(&sb, "%s\t},\n", indentPrefix)
+	fmt.Fprintf(&sb, "%s}", indentPrefix)
 	return sb.String()
 }
 

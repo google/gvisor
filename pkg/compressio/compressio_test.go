@@ -267,7 +267,7 @@ func benchmarkName(compression bool, write bool, hash bool, blockSize uint32) st
 	} else {
 		sb.WriteString("NoHash")
 	}
-	sb.WriteString(fmt.Sprintf("%dKbBlock", blockSize/1024))
+	fmt.Fprintf(&sb, "%dKbBlock", blockSize/1024)
 	return sb.String()
 }
 

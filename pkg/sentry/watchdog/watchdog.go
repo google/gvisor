@@ -236,7 +236,7 @@ func (w *Watchdog) waitForStart() {
 	metric.WeirdnessMetric.Increment(&metric.WeirdnessTypeWatchdogStuckStartup)
 
 	var buf bytes.Buffer
-	buf.WriteString(fmt.Sprintf("Watchdog.Start() not called within %s", w.StartupTimeout))
+	fmt.Fprintf(&buf, "Watchdog.Start() not called within %s", w.StartupTimeout)
 	var stuckTasks map[int64]struct{}
 	forceStackDump := false
 	w.doAction(w.StartupTimeoutAction, forceStackDump, stuckTasks, &buf)
@@ -324,11 +324,11 @@ func (w *Watchdog) runTurn() {
 // report takes appropriate action when a stuck task is detected.
 func (w *Watchdog) report(offenders map[*kernel.Task]*offender, newTaskFound bool, now ktime.Time) {
 	var buf bytes.Buffer
-	buf.WriteString(fmt.Sprintf("Sentry detected %d stuck task(s):\n", len(offenders)))
+	fmt.Fprintf(&buf, "Sentry detected %d stuck task(s):\n", len(offenders))
 	stuckTasks := make(map[int64]struct{})
 	for t, o := range offenders {
 		tid := w.k.TaskSet().Root.IDOfTask(t)
-		buf.WriteString(fmt.Sprintf("\tTask tid: %v (goroutine %d), entered RunSys state %v ago.\n", tid, t.GoroutineID(), now.Sub(o.lastUpdateTime)))
+		fmt.Fprintf(&buf, "\tTask tid: %v (goroutine %d), entered RunSys state %v ago.\n", tid, t.GoroutineID(), now.Sub(o.lastUpdateTime))
 		stuckTasks[t.GoroutineID()] = struct{}{}
 	}
 	buf.WriteString("Search for 'goroutine <id>' in the stack dump to find the offending goroutine(s)")

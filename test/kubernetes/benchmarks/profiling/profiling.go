@@ -272,7 +272,7 @@ type profileRun struct {
 // called regardless of whether profiling is actually enabled or not.
 func MaybeSetup(ctx context.Context, t *testing.T, k8sCtx k8sctx.KubernetesContext, c *testcluster.TestCluster, ns *testcluster.Namespace) (func(), error) {
 	profileDirName := fmt.Sprintf("%s.%s", t.Name(), time.Now().Format("20060102-150405"))
-	profileDirName = regexp.MustCompile("[^-_=.\\w]+").ReplaceAllString(profileDirName, ".")
+	profileDirName = regexp.MustCompile(`[^-_=.\w]+`).ReplaceAllString(profileDirName, ".")
 	hasGVisorRuntime, err := c.HasGVisorTestRuntime(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to check if the cluster uses gVisor: %w", err)

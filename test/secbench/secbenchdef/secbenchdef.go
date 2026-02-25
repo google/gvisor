@@ -96,9 +96,7 @@ func Sys(sysno uintptr, args ...uintptr) Syscall {
 		panic(fmt.Sprintf("cannot pass more than 6 syscall arguments, got: %v", args))
 	}
 	var sixArgs [6]uintptr
-	for i := 0; i < len(args); i++ {
-		sixArgs[i] = args[i]
-	}
+	copy(sixArgs[:], args)
 	return Syscall{
 		Sysno: sysno,
 		Args:  sixArgs,
