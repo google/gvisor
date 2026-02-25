@@ -522,23 +522,36 @@ TEST(LinkTest, LinkAtWithEmptyPathNeedsNoCapForAtFcwd) {
   // the AT_EMPTY_PATH cap checks are triggered only if the olddirfd is not
   // AT_FDCWD (If they were triggered, our lack of CAP_DAC_READ_SEARCH would
   // have caused a failure).
-  EXPECT_THAT(InForkedProcess([&] {
-                // Change the cwd to old_dir (in a forked process to avoid
-                // affecting the test process's cwd).
-                TEST_CHECK_SUCCESS(syscall(SYS_fchdir, old_dir_fd_raw));
+  EXPECT_THAT(
+      InForkedProcess([&] {
+        // Change the cwd to old_dir (in a forked process to avoid
+        // affecting the test process's cwd).
+        TEST_CHECK_SUCCESS(RetryEINTR(syscall)(SYS_fchdir, old_dir_fd_raw));
 
-                constexpr char kAtFdcwdNewCredsNoCap[] =
-                    "at_fdcwd_new_creds_no_cap";
-                // linkat() skips the AT_EMPTY_PATH check if the olddirfd
-                // is AT_FDCWD or if the oldpath is absolute: so we use a
-                // relative oldpath.
-                TEST_CHECK_SUCCESS(syscall(
-                    SYS_linkat, AT_FDCWD, old_file_rel_path.c_str(),
-                    new_dir_fd_raw, kAtFdcwdNewCredsNoCap, AT_EMPTY_PATH));
-                TEST_CHECK_SUCCESS(syscall(SYS_unlinkat, new_dir_fd_raw,
-                                           kAtFdcwdNewCredsNoCap, 0));
-              }),
-              IsPosixErrorOkAndHolds(0));
+        constexpr char kAtFdcwdNewCredsNoCap[] = "at_fdcwd_new_creds_no_cap";
+        int res;
+        while (true) {
+          // linkat() skips the AT_EMPTY_PATH check if the olddirfd
+          // is AT_FDCWD or if the oldpath is absolute: so we use a
+          // relative oldpath.
+          res = syscall(SYS_linkat, AT_FDCWD, old_file_rel_path.c_str(),
+                        new_dir_fd_raw, kAtFdcwdNewCredsNoCap, AT_EMPTY_PATH);
+          if (res == -1 && errno == EINTR) {
+            // Slow FSes like FUSE may return EINTR, unless we check if the link
+            // was created by way of an fstat(), we might encounter an EEXIST if
+            // we retry blindly.
+            struct stat st;
+            if (fstatat(new_dir_fd_raw, kAtFdcwdNewCredsNoCap, &st, 0) == 0) {
+              res = 0;
+              break;
+            }
+            continue;  // Retry on EINTR.
+          }
+          break;
+        }
+        TEST_CHECK_SUCCESS(res);
+      }),
+      IsPosixErrorOkAndHolds(0));
 }
 
 }  // namespace
