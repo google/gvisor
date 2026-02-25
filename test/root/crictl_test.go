@@ -485,34 +485,24 @@ grouping = ` + strconv.FormatBool(enableGrouping) + `
 	return cc, cu.Release(), nil
 }
 
-// countShimProcesses counts running containerd-shim-runsc-v1 processes whose
-// cwd contains the given ID. This is done by iterating through /proc/<pid>/cwd
-// and checking /proc/<pid>/cmdline for the shim path. When shim grouping is:
-// - Enabled: Only the pod ID should have an associated shim process. The
-// container IDs should not have shim process.
-// - Disabled: Pod ID and container IDs should have different shim processes.
-func countShimProcesses(t *testing.T, id string) (int, error) {
+// getShimPIDs finds running containerd-shim-runsc-v1 processes whose
+// cwd contains the given ID, and returns their PIDs.
+// If id is empty, it finds all shim processes.
+func getShimPIDs(id string) ([]string, error) {
 	const shimPath = "/usr/local/bin/containerd-shim-runsc-v1"
 	procDir, err := os.Open("/proc")
 	if err != nil {
-		return 0, fmt.Errorf("failed to open /proc: %v", err)
+		return nil, fmt.Errorf("failed to open /proc: %v", err)
 	}
 	defer procDir.Close()
 	names, err := procDir.Readdirnames(-1)
 	if err != nil {
-		return 0, fmt.Errorf("failed to read /proc: %v", err)
+		return nil, fmt.Errorf("failed to read /proc: %v", err)
 	}
 
-	count := 0
+	var pids []string
 	for _, name := range names {
 		if _, err := strconv.Atoi(name); err != nil {
-			continue
-		}
-		cwd, err := os.Readlink(path.Join("/proc", name, "cwd"))
-		if err != nil {
-			continue
-		}
-		if !strings.Contains(cwd, id) {
 			continue
 		}
 
@@ -524,11 +514,62 @@ func countShimProcesses(t *testing.T, id string) (int, error) {
 			continue
 		}
 		cmdline := bytes.Split(cmdlineBytes, []byte{0})
-		if len(cmdline) > 0 && string(cmdline[0]) == shimPath {
-			count++
+		if !(len(cmdline) > 0 && string(cmdline[0]) == shimPath) {
+			continue
+		}
+
+		if id != "" {
+			cwd, err := os.Readlink(path.Join("/proc", name, "cwd"))
+			if err != nil {
+				continue
+			}
+			if !strings.Contains(cwd, id) {
+				continue
+			}
+		}
+		pids = append(pids, name)
+	}
+	return pids, nil
+}
+
+// getPidsRSS returns the total RSS memory in KB for the given PIDs.
+func getPidsRSS(t *testing.T, pids []string) int64 {
+	var rssKB int64
+	for _, pid := range pids {
+		statusBytes, err := os.ReadFile(path.Join("/proc", pid, "status"))
+		if err != nil {
+			// Cannot read status, skip memory calculation for this process.
+			t.Logf("failed to read /proc/%s/status for shim process: %v", pid, err)
+			continue
+		}
+		for _, line := range strings.Split(string(statusBytes), "\n") {
+			if strings.HasPrefix(line, "VmRSS:") {
+				parts := strings.Fields(line)
+				if len(parts) >= 2 {
+					rss, err := strconv.ParseInt(parts[1], 10, 64)
+					if err == nil {
+						rssKB += rss
+					}
+				}
+				break
+			}
 		}
 	}
-	return count, nil
+	return rssKB
+}
+
+// countShimProcesses counts running containerd-shim-runsc-v1 processes whose
+// cwd contains the given ID. This is done by iterating through /proc/<pid>/cwd
+// and checking /proc/<pid>/cmdline for the shim path. When shim grouping is:
+// - Enabled: Only the pod ID should have an associated shim process. The
+// container IDs should not have an associated shim process.
+// - Disabled: The pod ID and container IDs should have different shim processes.
+func countShimProcesses(t *testing.T, id string) (int, error) {
+	pids, err := getShimPIDs(id)
+	if err != nil {
+		return 0, err
+	}
+	return len(pids), nil
 }
 
 // TestCrictlOneShim tests that only one shim is created for multiple containers in a pod.
@@ -627,6 +668,210 @@ func TestCrictlOneShim(t *testing.T) {
 	}
 	if err := crictl.RmPod(podID); err != nil {
 		t.Errorf("failed to remove pod: %v", err)
+	}
+}
+
+// TestExecWithGrouping tests that exec works correctly with shim grouping.
+func TestExecWithGrouping(t *testing.T) {
+	// Setup containerd and crictl.
+	crictl, cleanup, err := setup(t, true /* enableGrouping */)
+	if err != nil {
+		t.Fatalf("failed to setup crictl: %v", err)
+	}
+	defer cleanup()
+
+	if err := crictl.Import("basic/busybox"); err != nil {
+		t.Fatalf("failed to import image: %v", err)
+	}
+
+	sbSpec := Sandbox("exec")
+	sbSpecFile, specCleanup, err := testutil.WriteTmpFile("sbSpec", sbSpec)
+	if err != nil {
+		t.Fatalf("failed to write sandbox spec: %v", err)
+	}
+	defer specCleanup()
+
+	podID, err := crictl.RunPod(containerdRuntime, sbSpecFile)
+	if err != nil {
+		t.Fatalf("failed to run pod: %v", err)
+	}
+	t.Logf("podID: %v", podID)
+
+	contSpec1 := SimpleSpec("cont1", "basic/busybox", []string{"sleep", "1000"}, nil)
+	contSpecFile1, specCleanup1, err := testutil.WriteTmpFile("contSpec1", contSpec1)
+	if err != nil {
+		t.Fatalf("failed to write container spec 1: %v", err)
+	}
+	defer specCleanup1()
+
+	contID1, err := crictl.Create(podID, contSpecFile1, sbSpecFile)
+	t.Logf("container id 1: %v", contID1)
+	if err != nil {
+		t.Fatalf("failed to create container 1: %v", err)
+	}
+	if _, err := crictl.Start(contID1); err != nil {
+		t.Fatalf("failed to start container 1: %v", err)
+	}
+
+	contSpec2 := SimpleSpec("cont2", "basic/busybox", []string{"sleep", "1000"}, nil)
+	contSpecFile2, specCleanup2, err := testutil.WriteTmpFile("contSpec2", contSpec2)
+	if err != nil {
+		t.Fatalf("failed to write container spec 2: %v", err)
+	}
+	defer specCleanup2()
+
+	contID2, err := crictl.Create(podID, contSpecFile2, sbSpecFile)
+	t.Logf("container id 2: %v", contID2)
+	if err != nil {
+		t.Fatalf("failed to create container 2: %v", err)
+	}
+	if _, err := crictl.Start(contID2); err != nil {
+		t.Fatalf("failed to start container 2: %v", err)
+	}
+
+	// Check number of shim processes for pod ID.
+	count, err := countShimProcesses(t, podID)
+	if err != nil {
+		t.Fatalf("failed to count shim processes for podID %s: %v", podID, err)
+	}
+	if count != 1 {
+		t.Errorf("got %d shim processes for podID %s, want 1", count, podID)
+	}
+
+	if _, err := crictl.Exec(contID1, "sh", "-c", "setsid sleep 5 & echo $!"); err != nil {
+		t.Fatalf("failed to start background process in container 1: %v", err)
+	}
+
+	// Check number of shim processes for pod ID after exec.
+	count, err = countShimProcesses(t, podID)
+	if err != nil {
+		t.Fatalf("failed to count shim processes for podID %s: %v", podID, err)
+	}
+	if count != 1 {
+		t.Errorf("got %d shim processes for podID %s after exec, want 1", count, podID)
+	}
+
+	// Check that both containers are still running by exec'ing 'true'.
+	if _, err := crictl.Exec(contID1, "true"); err != nil {
+		t.Errorf("container 1 not running after killing exec'd process: %v", err)
+	}
+	if _, err := crictl.Exec(contID2, "true"); err != nil {
+		t.Errorf("container 2 not running after killing exec'd process: %v", err)
+	}
+
+	// Stop everything.
+	if err := crictl.StopContainer(contID1); err != nil {
+		t.Errorf("failed to stop container 1: %v", err)
+	}
+	if err := crictl.StopContainer(contID2); err != nil {
+		t.Errorf("failed to stop container 2: %v", err)
+	}
+	if err := crictl.StopPod(podID); err != nil {
+		t.Errorf("failed to stop pod: %v", err)
+	}
+	if err := crictl.RmPod(podID); err != nil {
+		t.Errorf("failed to remove pod: %v", err)
+	}
+}
+
+// runPodStartup is a helper for TestShimGroupingPerformance.
+func runPodStartup(t *testing.T, enableGrouping bool, numPods, numContsPerPod int) (time.Duration, int64) {
+	crictl, cleanup, err := setup(t, enableGrouping)
+	if err != nil {
+		t.Fatalf("failed to setup crictl: %v", err)
+	}
+	defer cleanup()
+
+	if err := crictl.Import("basic/busybox"); err != nil {
+		t.Fatalf("failed to import image: %v", err)
+	}
+
+	var sbSpecFiles []string
+	var sbSpecCleanups []func()
+	for i := 0; i < numPods; i++ {
+		sbSpec := Sandbox(fmt.Sprintf("pod-%d", i))
+		sbSpecFile, specCleanup, err := testutil.WriteTmpFile(fmt.Sprintf("sbSpec-%d", i), sbSpec)
+		if err != nil {
+			t.Fatalf("failed to write sandbox spec: %v", err)
+		}
+		sbSpecFiles = append(sbSpecFiles, sbSpecFile)
+		sbSpecCleanups = append(sbSpecCleanups, specCleanup)
+	}
+	defer func() {
+		for _, cleanup := range sbSpecCleanups {
+			cleanup()
+		}
+	}()
+
+	var contSpecFiles []string
+	var contSpecCleanups []func()
+	for j := 0; j < numContsPerPod; j++ {
+		contSpec := SimpleSpec(fmt.Sprintf("cont-%d", j), "basic/busybox", []string{"sleep", "1000"}, nil)
+		contSpecFile, contSpecCleanup, err := testutil.WriteTmpFile(fmt.Sprintf("contSpec-%d", j), contSpec)
+		if err != nil {
+			t.Fatalf("failed to write container spec: %v", err)
+		}
+		contSpecFiles = append(contSpecFiles, contSpecFile)
+		contSpecCleanups = append(contSpecCleanups, contSpecCleanup)
+	}
+	defer func() {
+		for _, cleanup := range contSpecCleanups {
+			cleanup()
+		}
+	}()
+
+	start := time.Now()
+	for i := 0; i < numPods; i++ {
+		podID, err := crictl.RunPod(containerdRuntime, sbSpecFiles[i])
+		if err != nil {
+			t.Fatalf("failed to run pod: %v", err)
+		}
+
+		for j := 0; j < numContsPerPod; j++ {
+			contID, err := crictl.Create(podID, contSpecFiles[j], sbSpecFiles[i])
+			if err != nil {
+				t.Fatalf("failed to create container: %v", err)
+			}
+			if _, err := crictl.Start(contID); err != nil {
+				t.Fatalf("failed to start container: %v", err)
+			}
+		}
+	}
+	duration := time.Since(start)
+
+	pids, err := getShimPIDs("")
+	if err != nil {
+		t.Fatalf("failed to get shim pids: %v", err)
+	}
+	rss := getPidsRSS(t, pids)
+	t.Logf("Grouping=%t: %d shim processes using %d KB RSS", enableGrouping, len(pids), rss)
+
+	return duration, rss
+}
+
+// TestShimGroupingPerformance measures startup time difference with and
+// without shim grouping.
+func TestShimGroupingPerformance(t *testing.T) {
+	const numPods = 10
+	const numContsPerPod = 5
+	var durationWithGrouping, durationWithoutGrouping time.Duration
+	var memWithGrouping, memWithoutGrouping int64
+	t.Run("WithGrouping", func(t *testing.T) {
+		durationWithGrouping, memWithGrouping = runPodStartup(t, true, numPods, numContsPerPod)
+	})
+	t.Run("WithoutGrouping", func(t *testing.T) {
+		durationWithoutGrouping, memWithoutGrouping = runPodStartup(t, false, numPods, numContsPerPod)
+	})
+	t.Logf("Pod startup with %d pods, %d containers each:", numPods, numContsPerPod)
+	t.Logf("  Grouping enabled: %v, memory: %d KB", durationWithGrouping, memWithGrouping)
+	t.Logf("  Grouping disabled: %v, memory: %d KB", durationWithoutGrouping, memWithoutGrouping)
+	if durationWithoutGrouping > 0 {
+		improvement := 100 * (durationWithoutGrouping - durationWithGrouping).Seconds() / durationWithoutGrouping.Seconds()
+		t.Logf("  Performance improvement: %.2f%% (%v)", improvement, durationWithoutGrouping-durationWithGrouping)
+	}
+	if memWithoutGrouping > 0 {
+		memSaved := 100 * float64(memWithoutGrouping-memWithGrouping) / float64(memWithoutGrouping)
+		t.Logf("  Memory saved: %.2f%% (%d KB)", memSaved, memWithoutGrouping-memWithGrouping)
 	}
 }
 
