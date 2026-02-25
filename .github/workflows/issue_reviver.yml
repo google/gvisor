@@ -11,7 +11,7 @@ jobs:
     permissions:
       issues: write
     steps:
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@v6
       if: github.repository == 'google/gvisor'
     - run: make run TARGETS="//tools/github" ARGS="-path=. revive"
       if: github.repository == 'google/gvisor'
