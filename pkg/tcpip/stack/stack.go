@@ -55,7 +55,7 @@ type RestoredEndpoint interface {
 	// workers such as protocol goroutines. This must be called after all
 	// indirect dependencies of the endpoint has been restored, which
 	// generally implies at the end of the restore process.
-	Restore(*Stack)
+	Restore(*Stack, bool)
 }
 
 // ResumableEndpoint is an endpoint that needs to be resumed after save.
@@ -90,13 +90,13 @@ type Stack struct {
 
 	// routeTable is a list of routes sorted by prefix length, longest (most specific) first.
 	// +checklocks:routeMu
-	routeTable tcpip.RouteList `state:"nosave"`
+	routeTable tcpip.RouteList
 
 	mu stackRWMutex `state:"nosave"`
 	// +checklocks:mu
-	nics map[tcpip.NICID]*nic `state:"nosave"`
+	nics map[tcpip.NICID]*nic
 	// +checklocks:mu
-	loopbackNIC *nic `state:"nosave"`
+	loopbackNIC *nic
 	// +checklocks:mu
 	defaultForwardingEnabled map[tcpip.NetworkProtocolNumber]struct{}
 
@@ -2110,7 +2110,7 @@ func (s *Stack) ReplaceConfig(st *Stack) {
 
 // Restore restarts the stack after a restore. This must be called after the
 // entire system has been restored.
-func (s *Stack) Restore() {
+func (s *Stack) Restore(inplaceRestore bool) {
 	// RestoredEndpoint.Restore() may call other methods on s, so we can't hold
 	// s.mu while restoring the endpoints.
 	s.mu.Lock()
@@ -2119,7 +2119,7 @@ func (s *Stack) Restore() {
 	saveRestoreEnabled := s.saveRestoreEnabled
 	s.mu.Unlock()
 	for _, e := range eps {
-		e.Restore(s)
+		e.Restore(s, inplaceRestore)
 	}
 
 	// Make sure all the endpoints are loaded correctly before resuming the

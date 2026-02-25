@@ -90,6 +90,9 @@ type SaveOpts struct {
 	// after checkpointing.
 	Resume bool
 
+	// InplaceRestore indicates if we are restoring inplace.
+	InplaceRestore bool
+
 	// ExecOpts contains options for executing a binary during save/restore.
 	ExecOpts SaveRestoreExecOpts
 
@@ -119,6 +122,7 @@ func ConvertToStateSaveOpts(o *SaveOpts) (*state.SaveOpts, error) {
 		Metadata:                       o.Metadata,
 		AppMFExcludeCommittedZeroPages: o.AppMFExcludeCommittedZeroPages,
 		Resume:                         o.Resume,
+		InplaceRestore:                 o.InplaceRestore,
 	}
 	if err := setSaveOptsImpl(o, saveOpts); err != nil {
 		saveOpts.Close()

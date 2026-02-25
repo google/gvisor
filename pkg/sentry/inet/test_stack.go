@@ -173,7 +173,7 @@ func (s *TestStack) NewRoute(ctx context.Context, msg *nlmsg.Message) *syserr.Er
 func (s *TestStack) Pause() {}
 
 // Restore implements Stack.
-func (s *TestStack) Restore() {}
+func (s *TestStack) Restore(bool) {}
 
 // ReplaceConfig implements Stack.
 func (s *TestStack) ReplaceConfig(_ Stack) {}

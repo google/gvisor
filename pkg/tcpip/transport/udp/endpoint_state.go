@@ -50,7 +50,8 @@ func (e *endpoint) beforeSave() {
 }
 
 // Restore implements tcpip.RestoredEndpoint.Restore.
-func (e *endpoint) Restore(s *stack.Stack) {
+func (e *endpoint) Restore(s *stack.Stack, inplaceRestore bool) {
+	log.Infof("inplace restore %v", inplaceRestore)
 	e.mu.Lock()
 	defer e.mu.Unlock()
 

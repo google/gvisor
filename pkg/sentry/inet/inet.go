@@ -98,7 +98,7 @@ type Stack interface {
 	Resume()
 
 	// Restore restarts the network stack after restore.
-	Restore()
+	Restore(bool)
 
 	// ReplaceConfig replaces the new network stack configuration to the
 	// loaded or saved network stack after restore.
