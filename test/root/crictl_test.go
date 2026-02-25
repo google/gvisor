@@ -98,7 +98,7 @@ var Httpd = SimpleSpec("httpd", "basic/httpd", nil, nil)
 // TestCrictlSanity refers to b/112433158.
 func TestCrictlSanity(t *testing.T) {
 	// Setup containerd and crictl.
-	crictl, cleanup, err := setup(t)
+	crictl, cleanup, err := setup(t, false /* enableGrouping */)
 	if err != nil {
 		t.Fatalf("failed to setup crictl: %v", err)
 	}
@@ -111,6 +111,24 @@ func TestCrictlSanity(t *testing.T) {
 	// Look for the httpd page.
 	if err = httpGet(crictl, podID, "index.html"); err != nil {
 		t.Fatalf("failed to get page: %v", err)
+	}
+
+	// Since shim grouping is disabled, there will be one shim process for the
+	// container and another one for the sandbox.
+	count, err := countShimProcesses(t, contID)
+	if err != nil {
+		t.Fatalf("failed to count shim processes for containerID %s: %v", contID, err)
+	}
+	if count != 1 {
+		t.Errorf("got %d shim processes for containerID %s, want 1", count, contID)
+	}
+
+	count, err = countShimProcesses(t, podID)
+	if err != nil {
+		t.Fatalf("failed to count shim processes for podID %s: %v", podID, err)
+	}
+	if count != 1 {
+		t.Errorf("got %d shim processes for podID %s, want 1", count, podID)
 	}
 
 	// Stop everything.
@@ -150,7 +168,7 @@ var HttpdMountPaths = SimpleSpec("httpd", "basic/httpd", nil, map[string]any{
 // TestMountPaths refers to b/117635704.
 func TestMountPaths(t *testing.T) {
 	// Setup containerd and crictl.
-	crictl, cleanup, err := setup(t)
+	crictl, cleanup, err := setup(t, true /* enableGrouping */)
 	if err != nil {
 		t.Fatalf("failed to setup crictl: %v", err)
 	}
@@ -174,7 +192,7 @@ func TestMountPaths(t *testing.T) {
 // TestMountPaths refers to b/118728671.
 func TestMountOverSymlinks(t *testing.T) {
 	// Setup containerd and crictl.
-	crictl, cleanup, err := setup(t)
+	crictl, cleanup, err := setup(t, true /* enableGrouping */)
 	if err != nil {
 		t.Fatalf("failed to setup crictl: %v", err)
 	}
@@ -216,7 +234,7 @@ func TestMountOverSymlinks(t *testing.T) {
 // Pod containers.
 func TestHomeDir(t *testing.T) {
 	// Setup containerd and crictl.
-	crictl, cleanup, err := setup(t)
+	crictl, cleanup, err := setup(t, true /* enableGrouping */)
 	if err != nil {
 		t.Fatalf("failed to setup crictl: %v", err)
 	}
@@ -289,18 +307,41 @@ disabled_plugins = ["io.containerd.internal.v1.restart"]
 `
 
 // setup sets up before a test. Specifically it:
+//   - Creates the /etc/containerd/runsc/config.toml file.
 //   - Creates directories and a socket for containerd to utilize.
 //   - Runs containerd and waits for it to reach a "ready" state for testing.
 //   - Returns a cleanup function that should be called at the end of the test.
-func setup(t *testing.T) (*criutil.Crictl, func(), error) {
+func setup(t *testing.T, enableGrouping bool) (*criutil.Crictl, func(), error) {
+	runscConfigPath := "/etc/containerd/runsc/config.toml"
+	runscConfigDir := path.Dir(runscConfigPath)
+	if err := os.MkdirAll(runscConfigDir, 0755); err != nil {
+		return nil, nil, fmt.Errorf("failed to create runsc config directory %q: %v", runscConfigDir, err)
+	}
+	cu := cleanup.Make(func() { os.RemoveAll(runscConfigDir) })
+	defer cu.Clean()
+
+	runscConfig := `
+log_path = "/tmp/shim-logs/"
+log_level = "debug"
+grouping = ` + strconv.FormatBool(enableGrouping) + `
+[runsc_config]
+    debug = "true"
+    debug-log = "/tmp/runsc-logs/"
+    strace = "true"
+    file-access = "shared"
+`
+	if err := os.WriteFile(runscConfigPath, []byte(runscConfig), 0644); err != nil {
+		return nil, nil, fmt.Errorf("failed to write runsc config file %q: %v", runscConfigPath, err)
+	}
+	t.Logf("Wrote runsc config:\n%s", runscConfig)
+
 	// Create temporary containerd root and state directories, and a socket
 	// via which crictl and containerd communicate.
 	containerdRoot, err := os.MkdirTemp(testutil.TmpDir(), "containerd-root")
 	if err != nil {
 		t.Fatalf("failed to create containerd root: %v", err)
 	}
-	cu := cleanup.Make(func() { os.RemoveAll(containerdRoot) })
-	defer cu.Clean()
+	cu.Add(func() { os.RemoveAll(containerdRoot) }) // Cleanup the directory
 	t.Logf("Using containerd root: %s", containerdRoot)
 
 	containerdState, err := os.MkdirTemp(testutil.TmpDir(), "containerd-state")
@@ -442,6 +483,151 @@ func setup(t *testing.T) (*criutil.Crictl, func(), error) {
 	})
 
 	return cc, cu.Release(), nil
+}
+
+// countShimProcesses counts running containerd-shim-runsc-v1 processes whose
+// cwd contains the given ID. This is done by iterating through /proc/<pid>/cwd
+// and checking /proc/<pid>/cmdline for the shim path. When shim grouping is:
+// - Enabled: Only the pod ID should have an associated shim process. The
+// container IDs should not have shim process.
+// - Disabled: Pod ID and container IDs should have different shim processes.
+func countShimProcesses(t *testing.T, id string) (int, error) {
+	const shimPath = "/usr/local/bin/containerd-shim-runsc-v1"
+	procDir, err := os.Open("/proc")
+	if err != nil {
+		return 0, fmt.Errorf("failed to open /proc: %v", err)
+	}
+	defer procDir.Close()
+	names, err := procDir.Readdirnames(-1)
+	if err != nil {
+		return 0, fmt.Errorf("failed to read /proc: %v", err)
+	}
+
+	count := 0
+	for _, name := range names {
+		if _, err := strconv.Atoi(name); err != nil {
+			continue
+		}
+		cwd, err := os.Readlink(path.Join("/proc", name, "cwd"))
+		if err != nil {
+			continue
+		}
+		if !strings.Contains(cwd, id) {
+			continue
+		}
+
+		cmdlineBytes, err := os.ReadFile(path.Join("/proc", name, "cmdline"))
+		if err != nil {
+			continue
+		}
+		if len(cmdlineBytes) == 0 {
+			continue
+		}
+		cmdline := bytes.Split(cmdlineBytes, []byte{0})
+		if len(cmdline) > 0 && string(cmdline[0]) == shimPath {
+			count++
+		}
+	}
+	return count, nil
+}
+
+// TestCrictlOneShim tests that only one shim is created for multiple containers in a pod.
+func TestCrictlOneShim(t *testing.T) {
+	// Setup containerd and crictl.
+	crictl, cleanup, err := setup(t, true /* enableGrouping */)
+	if err != nil {
+		t.Fatalf("failed to setup crictl: %v", err)
+	}
+	defer cleanup()
+
+	if err := crictl.Import("basic/httpd"); err != nil {
+		t.Fatalf("failed to import image: %v", err)
+	}
+
+	sbSpec := Sandbox("one-shim")
+	sbSpecFile, specCleanup, err := testutil.WriteTmpFile("sbSpec", sbSpec)
+	if err != nil {
+		t.Fatalf("failed to write sandbox spec: %v", err)
+	}
+	defer specCleanup()
+
+	podID, err := crictl.RunPod(containerdRuntime, sbSpecFile)
+	if err != nil {
+		t.Fatalf("failed to run pod: %v", err)
+	}
+	t.Logf("podID: %v", podID)
+
+	contSpec1 := SimpleSpec("httpd1", "basic/httpd", nil, nil)
+	contSpecFile1, specCleanup1, err := testutil.WriteTmpFile("contSpec1", contSpec1)
+	if err != nil {
+		t.Fatalf("failed to write container spec 1: %v", err)
+	}
+	defer specCleanup1()
+
+	contID1, err := crictl.Create(podID, contSpecFile1, sbSpecFile)
+	t.Logf("container id 1: %v", contID1)
+	if err != nil {
+		t.Fatalf("failed to create container 1: %v", err)
+	}
+	if _, err := crictl.Start(contID1); err != nil {
+		t.Fatalf("failed to start container 1: %v", err)
+	}
+
+	contSpec2 := SimpleSpec("httpd2", "basic/httpd", nil, nil)
+	contSpecFile2, specCleanup2, err := testutil.WriteTmpFile("contSpec2", contSpec2)
+	if err != nil {
+		t.Fatalf("failed to write container spec 2: %v", err)
+	}
+	defer specCleanup2()
+
+	contID2, err := crictl.Create(podID, contSpecFile2, sbSpecFile)
+	t.Logf("container id 2: %v", contID2)
+	if err != nil {
+		t.Fatalf("failed to create container 2: %v", err)
+	}
+	if _, err := crictl.Start(contID2); err != nil {
+		t.Fatalf("failed to start container 2: %v", err)
+	}
+
+	// Check number of shim processes for container ID.
+	count, err := countShimProcesses(t, contID1)
+	if err != nil {
+		t.Fatalf("failed to count shim processes for containerID %s: %v", contID1, err)
+	}
+	if count != 0 {
+		t.Errorf("got %d shim processes for containerID %s, want 0", count, contID1)
+	}
+
+	count, err = countShimProcesses(t, contID2)
+	if err != nil {
+		t.Fatalf("failed to count shim processes for containerID %s: %v", contID2, err)
+	}
+	if count != 0 {
+		t.Errorf("got %d shim processes for containerID %s, want 0", count, contID2)
+	}
+
+	// Check number of shim processes for pod ID.
+	count, err = countShimProcesses(t, podID)
+	if err != nil {
+		t.Fatalf("failed to count shim processes for podID %s: %v", podID, err)
+	}
+	if count != 1 {
+		t.Errorf("got %d shim processes for podID %s, want 1", count, podID)
+	}
+
+	// Stop everything.
+	if err := crictl.StopContainer(contID1); err != nil {
+		t.Errorf("failed to stop container 1: %v", err)
+	}
+	if err := crictl.StopContainer(contID2); err != nil {
+		t.Errorf("failed to stop container 2: %v", err)
+	}
+	if err := crictl.StopPod(podID); err != nil {
+		t.Errorf("failed to stop pod: %v", err)
+	}
+	if err := crictl.RmPod(podID); err != nil {
+		t.Errorf("failed to remove pod: %v", err)
+	}
 }
 
 // httpGet GETs the contents of a file served from a pod on port 80.

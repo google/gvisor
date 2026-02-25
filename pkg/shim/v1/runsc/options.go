@@ -16,8 +16,8 @@ package runsc
 
 const optionsType = "io.containerd.runsc.v1.options"
 
-// options is runtime options for io.containerd.runsc.v1.
-type options struct {
+// Options is runtime options for io.containerd.runsc.v1.
+type Options struct {
 	// ShimCgroup is the cgroup the shim should be in.
 	ShimCgroup string `toml:"shim_cgroup" json:"shimCgroup"`
 
@@ -44,6 +44,9 @@ type options struct {
 	//
 	// This configuration only applies when the shim is running as a service.
 	LogPath string `toml:"log_path" json:"logPath"`
+
+	// Grouping indicates if shim grouping should be enabled.
+	Grouping bool `toml:"grouping" json:"grouping"`
 
 	// RunscConfig is a key/value map of all runsc flags.
 	RunscConfig map[string]string `toml:"runsc_config" json:"runscConfig"`

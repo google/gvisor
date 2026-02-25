@@ -114,20 +114,6 @@ declare MINIMAL_CRITOOLS_VERSION
 MINIMAL_CRITOOLS_VERSION=$(get_critools_version github.com/containerd/containerd "v${CONTAINERD_VERSION}")
 install_helper github.com/kubernetes-sigs/cri-tools "${MINIMAL_CRITOOLS_VERSION}"
 
-# Configure containerd-shim.
-declare -r shim_config_path=/etc/containerd/runsc/config.toml
-mkdir -p "$(dirname "${shim_config_path}")"
-tee ${shim_config_path} <<-EOF
-log_path = "/tmp/shim-logs/"
-log_level = "debug"
-
-[runsc_config]
-    debug = "true"
-    debug-log = "/tmp/runsc-logs/"
-    strace = "true"
-    file-access = "shared"
-EOF
-
 # Configure CNI, the script install-cni depends on go.mod to determine the
 # version of github.com/containernetworking/plugins, it has to be installed
 # from containerd's root directory.
