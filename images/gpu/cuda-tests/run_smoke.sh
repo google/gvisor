@@ -19,4 +19,8 @@ set -euxo pipefail
 cd /
 nvcc cuda_malloc.cu -o cuda_malloc
 ./cuda_malloc
+nvcc cuda_malloc_managed_and_exit.cu -o cuda_malloc_managed_and_exit
+for i in $(seq 10); do
+  ./cuda_malloc_managed_and_exit
+done
 echo 'All tests passed'
