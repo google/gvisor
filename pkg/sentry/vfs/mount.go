@@ -574,6 +574,31 @@ func (vfs *VirtualFilesystem) BindAt(ctx context.Context, creds *auth.Credential
 		vfs.delayDecRef(mp) // +checklocksforce
 	})
 	defer cleanup.Clean()
+
+	// Linux's graft_tree() (fs/namespace.c) returns ENOTDIR if the source and
+	// target have mismatched types (one is a directory, the other is not).
+	sourceStat, err := vfs.StatAt(ctx, creds, &PathOperation{
+		Root:  sourceVd,
+		Start: sourceVd,
+	}, &StatOptions{
+		Mask: linux.STATX_MODE,
+	})
+	if err != nil {
+		return err
+	}
+	targetStat, err := vfs.StatAt(ctx, creds, &PathOperation{
+		Root:  mp,
+		Start: mp,
+	}, &StatOptions{
+		Mask: linux.STATX_MODE,
+	})
+	if err != nil {
+		return err
+	}
+	if sourceStat.Mode&linux.S_IFDIR != targetStat.Mode&linux.S_IFDIR {
+		return linuxerr.ENOTDIR
+	}
+
 	// Namespace mounts can be binded to other mount points.
 	fsName := sourceVd.mount.Filesystem().FilesystemType().Name()
 	if !vfs.validInMountNS(ctx, sourceVd.mount) && fsName != nsfsName && fsName != cgroupFsName {
