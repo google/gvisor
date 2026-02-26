@@ -152,18 +152,28 @@ func (mfd *masterFileDescription) Ioctl(ctx context.Context, io usermem.IO, sysn
 		// N.B. TCGETS on the master actually returns the configuration
 		// of the replica end.
 		return mfd.t.ld.getTermios(t, args)
-	case linux.TCSETS:
+	case linux.TCGETS2:
+		return mfd.t.ld.getTermios2(t, args)
+	case linux.TCSETS,
+		linux.TCSETSW,
+		linux.TCSETSF:
 		// N.B. TCSETS on the master actually affects the configuration
 		// of the replica end.
+		//
+		// Note that TCSETSW and TCSETSF should drain the output queue
+		// first (and flush input for F), but we don't implement that
+		// yet.
 		return mfd.t.ld.setTermios(t, args)
-	case linux.TCSETSW:
-		// Note that this should drain the output queue first, but we
-		// don't implement that yet.
-		return mfd.t.ld.setTermios(t, args)
-	case linux.TCSETSF:
-		// This should drain the output queue and clear the input queue
-		// first, but we don't implement that yet.
-		return mfd.t.ld.setTermios(t, args)
+	case linux.TCSETS2,
+		linux.TCSETSW2,
+		linux.TCSETSF2:
+		// N.B. TCSETS2 on the master actually affects the configuration
+		// of the replica end.
+		//
+		// Note that TCSETSW2 and TCSETSF2 should drain the output queue
+		// first (and flush input for F), but we don't implement that
+		// yet.
+		return mfd.t.ld.setTermios2(t, args)
 	case linux.TIOCGPTN:
 		nP := primitive.Uint32(mfd.t.n)
 		_, err := nP.CopyOut(t, args[2].Pointer())
@@ -237,9 +247,13 @@ func (mfd *masterFileDescription) Stat(ctx context.Context, opts vfs.StatOptions
 func maybeEmitUnimplementedEvent(ctx context.Context, sysno uintptr, cmd uint32) {
 	switch cmd {
 	case linux.TCGETS,
+		linux.TCGETS2,
 		linux.TCSETS,
+		linux.TCSETS2,
 		linux.TCSETSW,
+		linux.TCSETSW2,
 		linux.TCSETSF,
+		linux.TCSETSF2,
 		linux.TIOCGWINSZ,
 		linux.TIOCSWINSZ,
 		linux.TIOCSETD,

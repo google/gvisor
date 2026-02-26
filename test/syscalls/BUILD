@@ -297,6 +297,11 @@ syscall_test(
 )
 
 syscall_test(
+    add_host_tty = True,
+    test = "//test/syscalls/linux:host_pty_test",
+)
+
+syscall_test(
     size = "medium",
     add_overlay = True,
     test = "//test/syscalls/linux:inotify_test",
