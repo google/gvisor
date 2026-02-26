@@ -239,7 +239,10 @@ func (ex *Exec) execChildAndWait(waitStatus *unix.WaitStatus) subcommands.ExitSt
 		}
 		defer os.RemoveAll(tmpDir)
 		pidFile = filepath.Join(tmpDir, "pid")
-		args = append(args, "--pid-file="+pidFile)
+		// Current args: [<runsc flags>..., "exec", <exec flags>..., <cid>]
+		// We need:      [<runsc flags>..., "exec", <exec flags>..., --pid-file=<path>, <cid>]
+		n := len(args)
+		args = append(args[:n-1], append([]string{"--pid-file=" + pidFile}, args[n-1:]...)...)
 	}
 
 	cmd := exec.Command(specutils.ExePath, args...)
