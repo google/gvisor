@@ -45,6 +45,8 @@ import (
 	"gvisor.dev/gvisor/test/runner/gtest"
 	"gvisor.dev/gvisor/test/trace/config"
 	"gvisor.dev/gvisor/test/uds"
+
+	"github.com/kr/pty"
 )
 
 var (
@@ -66,6 +68,7 @@ var (
 	addHostUDS       = flag.Bool("add-host-uds", false, "expose a tree of UDS to test communication with the host")
 	addHostConnector = flag.Bool("add-host-connector", false, "create goroutines that connect to bound UDS that will be created by sandbox")
 	addHostFIFO      = flag.Bool("add-host-fifo", false, "expose a tree of FIFO to test communication with the host")
+	addHostTTY       = flag.Bool("add-host-tty", false, "expose the host's TTY at /dev/tty")
 	ioUring          = flag.Bool("iouring", false, "Enables IO_URING API for asynchronous I/O")
 	leakCheck        = flag.Bool("leak-check", false, "check for reference leaks")
 	waitForPid       = flag.Duration("delay-for-debugger", 0, "Print out the sandbox PID and wait for the specified duration to start the test. This is useful for attaching a debugger to the runsc-sandbox process.")
@@ -82,6 +85,13 @@ const (
 
 	// checkpointFile is the name of the checkpoint/save state file.
 	checkpointFile = "checkpoint.img"
+
+	// hostPTYGuestFD is the FD number used for the host PTY in tests.
+	hostPTYGuestFD = 100
+
+	// hostPTYHostFD is the FD number on the host that is passed to the sandbox.
+	// FDs passed via ExtraFiles start at 3.
+	hostPTYHostFD = 3
 )
 
 // getSetupContainerPath returns the path to the setup_container binary.
@@ -165,9 +175,25 @@ func runTestCaseNative(testBin string, tc *gtest.TestCase, args []string, t *tes
 		env = append(env, fmt.Sprintf("%s=%s", platformSupportEnvVar, *platformSupport))
 	}
 
+	var hostTTYFile *os.File
+	if *addHostTTY {
+		ptmx, pts, err := pty.Open()
+		if err != nil {
+			t.Fatalf("failed to open pty: %v", err)
+		}
+		defer ptmx.Close()
+		defer pts.Close()
+		hostTTYFile = pts
+		// Passed as first extra file, so it will be FD hostPTYHostFD.
+		env = append(env, fmt.Sprintf("TEST_HOST_PTY_FD=%d", hostPTYHostFD))
+	}
+
 	args = append(args, gtest.TestFlags...)
 	log.Infof("Executing: %v", append([]string{testBin}, args...))
 	cmd := exec.Command(testBin, args...)
+	if hostTTYFile != nil {
+		cmd.ExtraFiles = append(cmd.ExtraFiles, hostTTYFile)
+	}
 	cmd.Env = env
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -299,6 +325,19 @@ func deleteSandbox(args []string, id string) error {
 //
 // Returns an error if the sandboxed application exits non-zero.
 func runRunsc(tc *gtest.TestCase, spec *specs.Spec) error {
+	var hostTTYFile *os.File
+
+	if *addHostTTY {
+		ptmx, pts, err := pty.Open()
+		if err != nil {
+			return fmt.Errorf("failed to open pty: %v", err)
+		}
+		defer ptmx.Close()
+		defer pts.Close()
+		hostTTYFile = pts
+		spec.Process.Env = append(spec.Process.Env, fmt.Sprintf("TEST_HOST_PTY_FD=%d", hostPTYGuestFD))
+	}
+
 	bundleDir, cleanup, err := testutil.SetupBundleDir(spec)
 	if err != nil {
 		return fmt.Errorf("SetupBundleDir failed: %v", err)
@@ -451,12 +490,20 @@ func runRunsc(tc *gtest.TestCase, spec *specs.Spec) error {
 			Gid: 0,
 		},
 	}
+
 	var cmdArgs []string
 	if *waitForPid != 0 {
-		createArgs := append(args, "create", "-pid-file", filepath.Join(testLogDir, "pid"), "--bundle", bundleDir, id)
+		createArgs := append(args, "create")
+		if hostTTYFile != nil {
+			createArgs = append(createArgs, fmt.Sprintf("--pass-fd=%d:%d", hostPTYHostFD, hostPTYGuestFD))
+		}
+		createArgs = append(createArgs, "-pid-file", filepath.Join(testLogDir, "pid"), "--bundle", bundleDir, id)
 		defer os.Remove(filepath.Join(testLogDir, "pid"))
 		log.Infof("Executing: %v", append([]string{specutils.ExePath}, createArgs...))
 		createCmd := exec.Command(specutils.ExePath, createArgs...)
+		if hostTTYFile != nil {
+			createCmd.ExtraFiles = append(createCmd.ExtraFiles, hostTTYFile)
+		}
 		createCmd.SysProcAttr = sysProcAttr
 		createCmd.Stdout = os.Stdout
 		createCmd.Stderr = os.Stderr
@@ -490,10 +537,17 @@ func runRunsc(tc *gtest.TestCase, spec *specs.Spec) error {
 
 		cmdArgs = append(args, "start", id)
 	} else {
-		cmdArgs = append(args, "run", "--bundle", bundleDir, id)
+		cmdArgs = append(args, "run")
+		if hostTTYFile != nil {
+			cmdArgs = append(cmdArgs, fmt.Sprintf("--pass-fd=%d:%d", hostPTYHostFD, hostPTYGuestFD))
+		}
+		cmdArgs = append(cmdArgs, "--bundle", bundleDir, id)
 	}
 	log.Infof("Executing: %v", append([]string{specutils.ExePath}, cmdArgs...))
 	cmd := exec.Command(specutils.ExePath, cmdArgs...)
+	if hostTTYFile != nil {
+		cmd.ExtraFiles = append(cmd.ExtraFiles, hostTTYFile)
+	}
 	cmd.SysProcAttr = sysProcAttr
 	if *container || *network == "host" || (cmd.SysProcAttr.Cloneflags&unix.CLONE_NEWNET != 0) {
 		cmd.SysProcAttr.Cloneflags |= unix.CLONE_NEWNET
