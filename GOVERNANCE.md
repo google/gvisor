@@ -96,6 +96,9 @@ scale of known project use and exposure.
 Once a fix is widely available or the embargo period ends, the maintainers will
 make technical details about the vulnerability and associated fixes available.
 
+Please follow the [security issue reporting rules](SECURITY.md) when reporting
+security issues.
+
 ## Mailing lists
 
 There are four key mailing lists that span projects.
